@@ -13,6 +13,7 @@ import (
 )
 
 func TestParsePortsInLine(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		portString    string
 		expectedPorts []Port
@@ -25,6 +26,7 @@ func TestParsePortsInLine(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.portString, func(t *testing.T) {
+			t.Parallel()
 			actual, err := parsePortsInLine(tt.portString)
 			assert.NoError(t, err)
 			assert.Equal(t, tt.expectedPorts, actual)
@@ -33,6 +35,7 @@ func TestParsePortsInLine(t *testing.T) {
 }
 
 func TestAnalyzeDockerFromFile(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		dockerFileContent string
 		expectedPorts     []Port
@@ -47,6 +50,7 @@ func TestAnalyzeDockerFromFile(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.dockerFileContent, func(t *testing.T) {
+			t.Parallel()
 			tempDir := t.TempDir()
 			tempFile := filepath.Join(tempDir, "Dockerfile")
 			file, err := os.Create(tempFile)

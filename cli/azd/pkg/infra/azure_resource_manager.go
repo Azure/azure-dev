@@ -52,12 +52,20 @@ type ResourceManager interface {
 // WalkDeploymentOperationFunc is invoked for each valid deployment operation encountered during traversal.
 //
 // Returning a non-nil error will halt the traversal and return that error.
-// Returning SkipExpand will prevent traversal of any nested deployments within the current operation, but will continue
-// traversal of sibling operations.
+// Returning SkipExpand() will prevent traversal of any nested deployments within the current operation,
+// but will continue traversal of sibling operations.
 type WalkDeploymentOperationFunc func(ctx context.Context, operation *armresources.DeploymentOperation) error
 
-// SkipExpand can be returned by WalkDeploymentOperationFunc to skip expanding a nested deployment's children.
-var SkipExpand = errors.New("skip deployment expansion")
+// errSkipExpand is the unexported sentinel error used to skip expanding nested deployments.
+var errSkipExpand = errors.New("skip deployment expansion")
+
+// SkipExpand returns the sentinel error used to skip ARM resource expansion.
+// Return this from a [WalkDeploymentOperationFunc] to prevent traversal of
+// nested deployments within the current operation.
+func SkipExpand() error { return errSkipExpand }
+
+// IsSkipExpand reports whether err is the skip-expand sentinel.
+func IsSkipExpand(err error) bool { return errors.Is(err, errSkipExpand) }
 
 // maxConcurrentDeploymentFetches limits concurrent ARM API calls when fetching nested deployment operations.
 const maxConcurrentDeploymentFetches = 10
@@ -91,6 +99,27 @@ func (rm *AzureResourceManager) WalkDeploymentOperations(
 	errCh := make(chan error, 1)
 
 	var workers sync.WaitGroup
+
+	// shutdownWorkers closes the jobs channel and waits for all workers to exit,
+	// draining the results channel in parallel to prevent deadlock in case a worker
+	// is blocked trying to send a result.
+	shutdownWorkers := func() {
+		close(jobs)
+		done := make(chan struct{})
+		go func() {
+			workers.Wait()
+			close(done)
+		}()
+		for {
+			select {
+			case <-done:
+				return
+			case <-results:
+				// drain pending results to unblock workers
+			}
+		}
+	}
+
 	worker := func() {
 		defer workers.Done()
 
@@ -130,7 +159,7 @@ func (rm *AzureResourceManager) WalkDeploymentOperations(
 			if fn != nil {
 				// invoke the walk function for every deployment operation
 				walkErr := fn(ctx, operation)
-				if errors.Is(walkErr, SkipExpand) {
+				if IsSkipExpand(walkErr) {
 					continue
 				} else if walkErr != nil {
 					return nil, walkErr
@@ -159,8 +188,7 @@ func (rm *AzureResourceManager) WalkDeploymentOperations(
 	queue, err := queueNestedDeployments(nil, rootDeploymentOperations)
 	if err != nil {
 		cancel()
-		close(jobs)
-		workers.Wait()
+		shutdownWorkers()
 		return err
 	}
 
@@ -180,8 +208,7 @@ func (rm *AzureResourceManager) WalkDeploymentOperations(
 			queue = queue[1:]
 			pending++
 		case <-ctx.Done():
-			close(jobs)
-			workers.Wait()
+			shutdownWorkers()
 			select {
 			case walkErr := <-errCh:
 				return walkErr
@@ -189,8 +216,7 @@ func (rm *AzureResourceManager) WalkDeploymentOperations(
 				return ctx.Err()
 			}
 		case walkErr := <-errCh:
-			close(jobs)
-			workers.Wait()
+			shutdownWorkers()
 			return walkErr
 		case nestedOperations := <-results:
 			pending--
@@ -198,13 +224,13 @@ func (rm *AzureResourceManager) WalkDeploymentOperations(
 			queue, err = queueNestedDeployments(queue, nestedOperations)
 			if err != nil {
 				cancel()
-				close(jobs)
-				workers.Wait()
+				shutdownWorkers()
 				return err
 			}
 		}
 	}
 
+	// Normal exit: all results consumed (pending == 0), no workers blocked.
 	close(jobs)
 	workers.Wait()
 

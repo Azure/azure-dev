@@ -82,6 +82,7 @@ func createExtensionsManager(
 // ---------------------------------------------------------------------------
 
 func TestNewExperimentationMiddleware(t *testing.T) {
+	t.Parallel()
 	m := NewExperimentationMiddleware()
 	require.NotNil(t, m)
 
@@ -90,6 +91,7 @@ func TestNewExperimentationMiddleware(t *testing.T) {
 }
 
 func TestExperimentationMiddleware_Run_AlwaysCallsNext(t *testing.T) {
+	t.Parallel()
 	// The middleware attempts to contact TAS, but regardless of success or
 	// failure it must call next(ctx).  In a unit-test environment the TAS
 	// endpoint is unreachable, so the manager-creation or assignment call
@@ -120,6 +122,7 @@ func TestExperimentationMiddleware_Run_OverrideEndpoint(t *testing.T) {
 }
 
 func TestExperimentationMiddleware_Run_PropagatesNextError(t *testing.T) {
+	t.Parallel()
 	m := &ExperimentationMiddleware{}
 
 	expectedErr := context.DeadlineExceeded
@@ -138,6 +141,7 @@ func TestExperimentationMiddleware_Run_PropagatesNextError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestNewExtensionsMiddleware(t *testing.T) {
+	t.Parallel()
 	mockCtx := mocks.NewMockContext(context.Background())
 	manager := createExtensionsManager(t, mockCtx, nil)
 	runner := extensions.NewRunner(exec.NewCommandRunner(nil))
@@ -164,6 +168,7 @@ func TestNewExtensionsMiddleware(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestExtensionsMiddleware_Run_ChildAction_SkipsExtensions(t *testing.T) {
+	t.Parallel()
 	// When the context marks a child action, Run must delegate to next()
 	// immediately without touching the extension manager.
 	m := &ExtensionsMiddleware{
@@ -185,6 +190,7 @@ func TestExtensionsMiddleware_Run_ChildAction_SkipsExtensions(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestExtensionsMiddleware_Run_NoInstalledExtensions(t *testing.T) {
+	t.Parallel()
 	mockCtx := mocks.NewMockContext(context.Background())
 	manager := createExtensionsManager(t, mockCtx, nil)
 
@@ -213,6 +219,7 @@ func TestExtensionsMiddleware_Run_NoInstalledExtensions(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestExtensionsMiddleware_Run_NoListenCapabilities(t *testing.T) {
+	t.Parallel()
 	// Extensions exist but none have a listen capability, so the middleware
 	// should short-circuit and call next() without starting gRPC or processes.
 	installed := map[string]*extensions.Extension{
@@ -373,6 +380,7 @@ func TestGetReadyContext_DebugMode_NoTimeout(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestExtensionsMiddleware_Run_ListInstalledError(t *testing.T) {
+	t.Parallel()
 	// Seed the config with an invalid value for the installed extensions
 	// section so that GetSection fails during unmarshalling.
 	mockCtx := mocks.NewMockContext(context.Background())
@@ -413,6 +421,7 @@ func TestExtensionsMiddleware_Run_ListInstalledError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestExtensionsMiddleware_Run_ListenCapabilities_ResolveGrpcFails(t *testing.T) {
+	t.Parallel()
 	installed := map[string]*extensions.Extension{
 		"test.ext": {
 			Id:           "test.ext",
@@ -448,6 +457,7 @@ func TestExtensionsMiddleware_Run_ListenCapabilities_ResolveGrpcFails(t *testing
 // ---------------------------------------------------------------------------
 
 func TestExtensionsMiddleware_Run_ServiceTargetProviderCapability(t *testing.T) {
+	t.Parallel()
 	installed := map[string]*extensions.Extension{
 		"test.svc": {
 			Id:           "test.svc",
@@ -483,6 +493,7 @@ func TestExtensionsMiddleware_Run_ServiceTargetProviderCapability(t *testing.T) 
 // ---------------------------------------------------------------------------
 
 func TestExtensionsMiddleware_Run_FrameworkServiceProviderCapability(t *testing.T) {
+	t.Parallel()
 	installed := map[string]*extensions.Extension{
 		"test.fw": {
 			Id:           "test.fw",
@@ -518,6 +529,7 @@ func TestExtensionsMiddleware_Run_FrameworkServiceProviderCapability(t *testing.
 // ---------------------------------------------------------------------------
 
 func TestExtensionsMiddleware_Run_MixedCapabilities(t *testing.T) {
+	t.Parallel()
 	installed := map[string]*extensions.Extension{
 		"test.listen": {
 			Id:           "test.listen",
@@ -560,6 +572,7 @@ func TestExtensionsMiddleware_Run_MixedCapabilities(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestExperimentationMiddleware_Run_CancelledContext(t *testing.T) {
+	t.Parallel()
 	m := &ExperimentationMiddleware{}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -580,6 +593,7 @@ func TestExperimentationMiddleware_Run_CancelledContext(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestExtensionsMiddleware_Run_NoExtensions_PropagatesNextResult(t *testing.T) {
+	t.Parallel()
 	mockCtx := mocks.NewMockContext(context.Background())
 	manager := createExtensionsManager(t, mockCtx, nil)
 
@@ -607,6 +621,7 @@ func TestExtensionsMiddleware_Run_NoExtensions_PropagatesNextResult(t *testing.T
 }
 
 func TestExtensionsMiddleware_Run_NoExtensions_PropagatesNextError(t *testing.T) {
+	t.Parallel()
 	mockCtx := mocks.NewMockContext(context.Background())
 	manager := createExtensionsManager(t, mockCtx, nil)
 
@@ -635,6 +650,7 @@ func TestExtensionsMiddleware_Run_NoExtensions_PropagatesNextError(t *testing.T)
 // ---------------------------------------------------------------------------
 
 func TestListenCapabilities_ContainsExpectedValues(t *testing.T) {
+	t.Parallel()
 	require.Contains(t, listenCapabilities, extensions.LifecycleEventsCapability)
 	require.Contains(t, listenCapabilities, extensions.ServiceTargetProviderCapability)
 	require.Contains(t, listenCapabilities, extensions.FrameworkServiceProviderCapability)
@@ -646,6 +662,7 @@ func TestListenCapabilities_ContainsExpectedValues(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestExtensionFailure_Fields(t *testing.T) {
+	t.Parallel()
 	ext := &extensions.Extension{Id: "test.ext"}
 	err := context.DeadlineExceeded
 	f := extensionFailure{
@@ -660,6 +677,7 @@ func TestExtensionFailure_Fields(t *testing.T) {
 }
 
 func TestExtensionFailure_NotTimedOut(t *testing.T) {
+	t.Parallel()
 	ext := &extensions.Extension{Id: "test.ext2"}
 	f := extensionFailure{
 		extension: ext,
@@ -677,6 +695,7 @@ func TestExtensionFailure_NotTimedOut(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestNewLoginGuardMiddleware(t *testing.T) {
+	t.Parallel()
 	console := mockinput.NewMockConsole()
 	// Use the mock type from login_guard_test.go — but since we're in the same
 	// package we can just use the interface directly with a nil implementation
@@ -696,6 +715,7 @@ func TestNewLoginGuardMiddleware(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestTelemetryMiddleware_extensionCmdInfo_NilManager(t *testing.T) {
+	t.Parallel()
 	m := &TelemetryMiddleware{
 		options:          &Options{},
 		extensionManager: nil,
@@ -711,6 +731,7 @@ func TestTelemetryMiddleware_extensionCmdInfo_NilManager(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestTelemetryMiddleware_extensionCmdInfo_ExtensionNotFound(t *testing.T) {
+	t.Parallel()
 	// Create a manager with no installed extensions so GetInstalled fails
 	mockCtx := mocks.NewMockContext(context.Background())
 	manager := createExtensionsManager(t, mockCtx, nil)
@@ -730,6 +751,7 @@ func TestTelemetryMiddleware_extensionCmdInfo_ExtensionNotFound(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestTelemetryMiddleware_extensionCmdInfo_NoMetadataCapability(t *testing.T) {
+	t.Parallel()
 	installed := map[string]*extensions.Extension{
 		"test.ext": {
 			Id:           "test.ext",
@@ -757,6 +779,7 @@ func TestTelemetryMiddleware_extensionCmdInfo_NoMetadataCapability(t *testing.T)
 // ---------------------------------------------------------------------------
 
 func TestNewTelemetryMiddleware(t *testing.T) {
+	t.Parallel()
 	opts := &Options{Name: "test"}
 	lazyConfig := lazy.NewLazy(func() (*platform.Config, error) {
 		return &platform.Config{}, nil
@@ -776,6 +799,7 @@ func TestNewTelemetryMiddleware(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAssignmentEndpoint_IsNotEmpty(t *testing.T) {
+	t.Parallel()
 	require.NotEmpty(t, assignmentEndpoint)
 	require.Contains(t, assignmentEndpoint, "exp-tas.com")
 }
@@ -785,23 +809,28 @@ func TestAssignmentEndpoint_IsNotEmpty(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestShouldSkipErrorAnalysis_ContextCanceled(t *testing.T) {
+	t.Parallel()
 	require.True(t, shouldSkipErrorAnalysis(context.Canceled))
 }
 
 func TestShouldSkipErrorAnalysis_AbortedByUser(t *testing.T) {
+	t.Parallel()
 	require.True(t, shouldSkipErrorAnalysis(internal.ErrAbortedByUser))
 }
 
 func TestShouldSkipErrorAnalysis_RegularError(t *testing.T) {
+	t.Parallel()
 	require.False(t, shouldSkipErrorAnalysis(errors.New("some regular error")))
 }
 
 func TestShouldSkipErrorAnalysis_WrappedCanceled(t *testing.T) {
+	t.Parallel()
 	err := fmt.Errorf("operation failed: %w", context.Canceled)
 	require.True(t, shouldSkipErrorAnalysis(err))
 }
 
 func TestShouldSkipErrorAnalysis_NilError(t *testing.T) {
+	t.Parallel()
 	// nil error should not be skipped — though callers check nil before calling
 	require.False(t, shouldSkipErrorAnalysis(nil))
 }
@@ -811,6 +840,7 @@ func TestShouldSkipErrorAnalysis_NilError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestErrorMiddleware_displayUsageMetrics_WithTokens(t *testing.T) {
+	t.Parallel()
 	console := mockinput.NewMockConsole()
 	e := &ErrorMiddleware{
 		console: console,
@@ -830,6 +860,7 @@ func TestErrorMiddleware_displayUsageMetrics_WithTokens(t *testing.T) {
 }
 
 func TestErrorMiddleware_displayUsageMetrics_NilResult(t *testing.T) {
+	t.Parallel()
 	console := mockinput.NewMockConsole()
 	e := &ErrorMiddleware{
 		console: console,
@@ -842,6 +873,7 @@ func TestErrorMiddleware_displayUsageMetrics_NilResult(t *testing.T) {
 }
 
 func TestErrorMiddleware_displayUsageMetrics_ZeroTokens(t *testing.T) {
+	t.Parallel()
 	console := mockinput.NewMockConsole()
 	e := &ErrorMiddleware{
 		console: console,
@@ -865,6 +897,7 @@ func TestErrorMiddleware_displayUsageMetrics_ZeroTokens(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestErrorMiddleware_Run_NoError(t *testing.T) {
+	t.Parallel()
 	console := mockinput.NewMockConsole()
 	e := &ErrorMiddleware{
 		options:         &Options{},
@@ -891,6 +924,7 @@ func TestErrorMiddleware_Run_NoError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestErrorMiddleware_Run_ChildAction_PassesError(t *testing.T) {
+	t.Parallel()
 	console := mockinput.NewMockConsole()
 	e := &ErrorMiddleware{
 		options:         &Options{},
@@ -916,6 +950,7 @@ func TestErrorMiddleware_Run_ChildAction_PassesError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestErrorMiddleware_Run_SkippableError_NoPrompt(t *testing.T) {
+	t.Parallel()
 	console := mockinput.NewMockConsole()
 	e := &ErrorMiddleware{
 		options:         &Options{},
@@ -938,6 +973,7 @@ func TestErrorMiddleware_Run_SkippableError_NoPrompt(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestErrorMiddleware_Run_ErrorWithSuggestion(t *testing.T) {
+	t.Parallel()
 	console := mockinput.NewMockConsole()
 	e := &ErrorMiddleware{
 		options:         &Options{},
@@ -967,11 +1003,13 @@ func TestErrorMiddleware_Run_ErrorWithSuggestion(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestClassifyError_RegularError(t *testing.T) {
+	t.Parallel()
 	result := classifyError(errors.New("some unknown error"))
 	require.Equal(t, AzureContextAndOtherError, result)
 }
 
 func TestClassifyError_ContextCanceled(t *testing.T) {
+	t.Parallel()
 	// context.Canceled is not a typed auth/tool error, so it falls through to
 	// AzureContextAndOtherError (the catch-all default).
 	result := classifyError(context.Canceled)
@@ -983,6 +1021,7 @@ func TestClassifyError_ContextCanceled(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestErrorMiddleware_Run_RegularError_CopilotDisabled(t *testing.T) {
+	t.Parallel()
 	// With copilot feature disabled (default), a regular error should be
 	// returned as-is after the error pipeline check.
 	console := mockinput.NewMockConsole()
@@ -1008,6 +1047,7 @@ func TestErrorMiddleware_Run_RegularError_CopilotDisabled(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestErrorMiddleware_Run_ErrorPipelineMatch(t *testing.T) {
+	t.Parallel()
 	// Use an error string that matches one of the YAML rules in the error pipeline.
 	// The pipeline should wrap it with an ErrorWithSuggestion.
 	console := mockinput.NewMockConsole()
@@ -1060,6 +1100,7 @@ func TestErrorMiddleware_Run_OnCI_ShortCircuits(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestErrorMiddleware_Run_SkippableError_CancelledInNonPrompt(t *testing.T) {
+	t.Parallel()
 	console := mockinput.NewMockConsole()
 	e := &ErrorMiddleware{
 		options:         &Options{},
@@ -1082,6 +1123,7 @@ func TestErrorMiddleware_Run_SkippableError_CancelledInNonPrompt(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestUxMiddleware_Run_ErrorWithSuggestion(t *testing.T) {
+	t.Parallel()
 	console := mockinput.NewMockConsole()
 	m := &UxMiddleware{
 		options:         &Options{},
@@ -1108,6 +1150,7 @@ func TestUxMiddleware_Run_ErrorWithSuggestion(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestUxMiddleware_Run_ErrorWithTraceId(t *testing.T) {
+	t.Parallel()
 	console := mockinput.NewMockConsole()
 	m := &UxMiddleware{
 		options:         &Options{},
@@ -1133,6 +1176,7 @@ func TestUxMiddleware_Run_ErrorWithTraceId(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestUxMiddleware_Run_RegularError(t *testing.T) {
+	t.Parallel()
 	console := mockinput.NewMockConsole()
 	m := &UxMiddleware{
 		options:         &Options{},
@@ -1153,6 +1197,7 @@ func TestUxMiddleware_Run_RegularError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestUxMiddleware_Run_NilResult(t *testing.T) {
+	t.Parallel()
 	console := mockinput.NewMockConsole()
 	m := &UxMiddleware{
 		options:         &Options{},
@@ -1173,6 +1218,7 @@ func TestUxMiddleware_Run_NilResult(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestUxMiddleware_Run_SuccessWithFollowUp(t *testing.T) {
+	t.Parallel()
 	console := mockinput.NewMockConsole()
 	m := &UxMiddleware{
 		options:         &Options{},
@@ -1199,6 +1245,7 @@ func TestUxMiddleware_Run_SuccessWithFollowUp(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestUxMiddleware_Run_LocalErrorWithSuggestion(t *testing.T) {
+	t.Parallel()
 	console := mockinput.NewMockConsole()
 	m := &UxMiddleware{
 		options:         &Options{},
@@ -1225,6 +1272,7 @@ func TestUxMiddleware_Run_LocalErrorWithSuggestion(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestUxMiddleware_Run_ExtensionRunError(t *testing.T) {
+	t.Parallel()
 	console := mockinput.NewMockConsole()
 	m := &UxMiddleware{
 		options:         &Options{},

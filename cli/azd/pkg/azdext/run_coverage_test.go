@@ -4,6 +4,8 @@
 package azdext
 
 import (
+	"errors"
+	"fmt"
 	"regexp"
 	"testing"
 
@@ -48,8 +50,29 @@ func TestErrorSuggestion(t *testing.T) {
 		},
 		{
 			name:     "GenericError",
-			err:      &testGenericError{msg: "generic"},
+			err:      errors.New("generic"),
 			expected: "",
+		},
+		{
+			name:     "NilError",
+			err:      nil,
+			expected: "",
+		},
+		{
+			name: "WrappedLocalError",
+			err: fmt.Errorf("operation failed: %w", &LocalError{
+				Message:    "bad input",
+				Suggestion: "Fix the input",
+			}),
+			expected: "Fix the input",
+		},
+		{
+			name: "WrappedServiceError",
+			err: fmt.Errorf("deploy failed: %w", &ServiceError{
+				Message:    "quota exceeded",
+				Suggestion: "Request a quota increase",
+			}),
+			expected: "Request a quota increase",
 		},
 	}
 
@@ -90,8 +113,27 @@ func TestErrorMessage(t *testing.T) {
 		},
 		{
 			name:     "GenericError",
-			err:      &testGenericError{msg: "generic"},
+			err:      errors.New("generic"),
 			expected: "",
+		},
+		{
+			name:     "NilError",
+			err:      nil,
+			expected: "",
+		},
+		{
+			name: "WrappedLocalError",
+			err: fmt.Errorf("op: %w", &LocalError{
+				Message: "wrapped local",
+			}),
+			expected: "wrapped local",
+		},
+		{
+			name: "WrappedServiceError",
+			err: fmt.Errorf("op: %w", &ServiceError{
+				Message: "wrapped service",
+			}),
+			expected: "wrapped service",
 		},
 	}
 
@@ -101,15 +143,6 @@ func TestErrorMessage(t *testing.T) {
 			require.Equal(t, tt.expected, result)
 		})
 	}
-}
-
-// testGenericError is a plain error for testing non-extension error types.
-type testGenericError struct {
-	msg string
-}
-
-func (e *testGenericError) Error() string {
-	return e.msg
 }
 
 func TestVersion_IsSet(t *testing.T) {

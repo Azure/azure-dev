@@ -10,6 +10,7 @@ import (
 )
 
 func TestNewEndpointConfig(t *testing.T) {
+	t.Parallel()
 	type args struct {
 		connectionString string
 	}

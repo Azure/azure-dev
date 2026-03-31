@@ -100,6 +100,7 @@ func TestGetTelemetrySystem(t *testing.T) {
 }
 
 func TestTelemetrySystem_RunBackgroundUpload(t *testing.T) {
+	t.Parallel()
 	type args struct {
 		ctx                context.Context
 		enableDebugLogging bool

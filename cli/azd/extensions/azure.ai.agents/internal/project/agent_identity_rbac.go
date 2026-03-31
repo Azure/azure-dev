@@ -105,8 +105,8 @@ func agentIdentityDisplayName(accountName, projectName string) string {
 //
 // The platform provisions the agent identity automatically when an agent is deployed.
 // This function assumes the identity already exists and assigns permissions to it.
-func (p *FoundryParser) EnsureAgentIdentityRBAC(ctx context.Context) error {
-	azdEnvClient := p.AzdClient.Environment()
+func EnsureAgentIdentityRBAC(ctx context.Context, azdClient *azdext.AzdClient) error {
+	azdEnvClient := azdClient.Environment()
 	cEnvResponse, err := azdEnvClient.GetCurrent(ctx, &azdext.EmptyRequest{})
 	if err != nil {
 		return fmt.Errorf("failed to get current environment: %w", err)
@@ -137,7 +137,7 @@ func (p *FoundryParser) EnsureAgentIdentityRBAC(ctx context.Context) error {
 	}
 
 	// Get tenant ID and create credential
-	tenantResponse, err := p.AzdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
+	tenantResponse, err := azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
 		SubscriptionId: info.SubscriptionID,
 	})
 	if err != nil {

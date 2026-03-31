@@ -321,6 +321,9 @@ overrides:
   - filename: extensions/azure.ai.models/internal/cmd/custom_create.go
     words:
       - Qwen
+  - filename: pkg/infra/provisioning/bicep/local_preflight.go
+    words:
+      - actioned
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

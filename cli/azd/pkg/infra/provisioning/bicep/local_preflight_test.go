@@ -168,7 +168,7 @@ func TestPreflightCheck_DiagnosticIDPropagation(t *testing.T) {
 	require.Equal(t, "test_rule", check.RuleID)
 }
 
-func TestPreflightCheck_ErrorIncludesRuleID(t *testing.T) {
+func TestPreflightCheck_AddCheckStoresRuleID(t *testing.T) {
 	preflight := &localArmPreflight{}
 	preflight.AddCheck(PreflightCheck{
 		RuleID: "failing_rule",
@@ -177,8 +177,6 @@ func TestPreflightCheck_ErrorIncludesRuleID(t *testing.T) {
 		},
 	})
 
-	// We can't call validate() directly without a valid template, but we can
-	// verify the check struct is stored correctly.
 	require.Len(t, preflight.checks, 1)
 	require.Equal(t, "failing_rule", preflight.checks[0].RuleID)
 }

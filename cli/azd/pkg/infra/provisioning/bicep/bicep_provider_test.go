@@ -22,6 +22,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appconfiguration/armappconfiguration"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
@@ -1925,10 +1926,17 @@ func TestSetPreflightOutcome_SetsSpanAndUsageAttributes(t *testing.T) {
 	require.NotNil(t, outcomeAttr, "expected outcome attribute on span")
 	require.Equal(t, preflightOutcomeWarningsAccepted, outcomeAttr.Value.AsString())
 
-	// Diagnostics and outcome are also set as usage-level attributes for
-	// correlation on the parent command span (cmd.provision / cmd.up).
-	// Usage attributes are stored globally via tracing.SetUsageAttributes,
-	// not on this span, so we only verify the span-level outcome above.
+	// Verify usage-level attributes are set for parent command span correlation.
+	usageAttrs := tracing.GetUsageAttributes()
+	usageOutcome := findSpanAttribute(usageAttrs, "validation.preflight.outcome")
+	require.NotNil(t, usageOutcome, "expected outcome in usage attributes")
+	require.Equal(t, preflightOutcomeWarningsAccepted, usageOutcome.Value.AsString())
+
+	usageDiag := findSpanAttribute(
+		usageAttrs, "validation.preflight.diagnostics",
+	)
+	require.NotNil(t, usageDiag, "expected diagnostics in usage attributes")
+	require.Equal(t, diagnosticIDs, usageDiag.Value.AsStringSlice())
 }
 
 func TestSetPreflightOutcome_AllOutcomeValues(t *testing.T) {
@@ -1956,6 +1964,16 @@ func TestSetPreflightOutcome_AllOutcomeValues(t *testing.T) {
 			name:          "aborted by user",
 			outcome:       preflightOutcomeAbortedByUser,
 			diagnosticIDs: []string{"role_assignment_conditional"},
+		},
+		{
+			name:          "skipped",
+			outcome:       preflightOutcomeSkipped,
+			diagnosticIDs: nil,
+		},
+		{
+			name:          "error",
+			outcome:       preflightOutcomeError,
+			diagnosticIDs: nil,
 		},
 	}
 

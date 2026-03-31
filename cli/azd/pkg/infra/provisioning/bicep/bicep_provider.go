@@ -25,6 +25,9 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/ai"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
@@ -47,10 +50,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/drone/envsubst"
-
-	"github.com/azure/azure-dev/cli/azd/internal/tracing"
-	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
-	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 )
 
 type bicepFileMode int
@@ -2143,6 +2142,8 @@ const (
 	preflightOutcomeWarningsAccepted = "warnings_accepted"
 	preflightOutcomeAbortedByErrors  = "aborted_by_errors"
 	preflightOutcomeAbortedByUser    = "aborted_by_user"
+	preflightOutcomeSkipped          = "skipped"
+	preflightOutcomeError            = "error"
 )
 
 // validatePreflight runs client-side preflight validation on the ARM template.
@@ -2158,9 +2159,11 @@ func (p *BicepProvider) validatePreflight(
 	armParameters azure.ArmParameters,
 	tags map[string]*string,
 	options map[string]any,
-) (bool, error) {
+) (abort bool, err error) {
 	ctx, span := tracing.Start(ctx, events.PreflightValidationEvent)
-	defer span.End()
+	defer func() {
+		span.EndWithStatus(err)
+	}()
 
 	// Run local preflight validation before sending to Azure.
 	// Local validation catches common issues without requiring a network round-trip.
@@ -2175,17 +2178,23 @@ func (p *BicepProvider) validatePreflight(
 		Fn:     p.checkRoleAssignmentPermissions,
 	})
 
-	// Record the rule IDs that will be executed for telemetry.
+	results, err := localPreflight.validate(ctx, p.console, armTemplate, armParameters)
+	if err != nil {
+		p.setPreflightOutcome(span, preflightOutcomeError, nil)
+		return false, fmt.Errorf("local preflight validation failed: %w", err)
+	}
+
+	// Record the rule IDs that actually executed. This is done after validate()
+	// because validate() may skip checks entirely (e.g. when the bicep snapshot
+	// is unavailable). A nil results with nil error means checks were skipped.
+	if results == nil {
+		p.setPreflightOutcome(span, preflightOutcomeSkipped, nil)
+	}
 	ruleIDs := make([]string, len(localPreflight.checks))
 	for i, check := range localPreflight.checks {
 		ruleIDs[i] = check.RuleID
 	}
 	span.SetAttributes(fields.PreflightRulesKey.StringSlice(ruleIDs))
-
-	results, err := localPreflight.validate(ctx, p.console, armTemplate, armParameters)
-	if err != nil {
-		return false, fmt.Errorf("local preflight validation failed: %w", err)
-	}
 
 	// Compute telemetry metrics from the results.
 	var diagnosticIDs []string
@@ -2227,12 +2236,17 @@ func (p *BicepProvider) validatePreflight(
 
 		if report.HasWarnings() {
 			continueDeployment, promptErr := p.console.Confirm(ctx, input.ConsoleOptions{
-				Message: "Preflight validation found warnings that may cause the deployment to fail. " +
-					"Do you want to continue?",
+				Message: "Preflight validation found warnings that may cause the " +
+					"deployment to fail. Do you want to continue?",
 				DefaultValue: true,
 			})
 			if promptErr != nil {
-				return false, fmt.Errorf("prompting for preflight confirmation: %w", promptErr)
+				p.setPreflightOutcome(
+					span, preflightOutcomeError, diagnosticIDs,
+				)
+				return false, fmt.Errorf(
+					"prompting for preflight confirmation: %w", promptErr,
+				)
 			}
 			if !continueDeployment {
 				// User chose not to continue — this is an intentional abort, not a failure.
@@ -2241,7 +2255,7 @@ func (p *BicepProvider) validatePreflight(
 			}
 			p.setPreflightOutcome(span, preflightOutcomeWarningsAccepted, diagnosticIDs)
 		}
-	} else {
+	} else if results != nil {
 		p.setPreflightOutcome(span, preflightOutcomePassed, nil)
 	}
 

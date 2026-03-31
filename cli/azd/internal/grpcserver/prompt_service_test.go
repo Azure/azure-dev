@@ -19,6 +19,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockprompt"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func Test_PromptService_Confirm_NoPromptWithDefault(t *testing.T) {
@@ -997,6 +999,83 @@ func Test_selectModelNoPrompt(t *testing.T) {
 			require.NotNil(t, resp)
 			require.NotNil(t, resp.Model)
 			require.Equal(t, tt.wantModel, resp.Model.Name)
+		})
+	}
+}
+
+func Test_PromptService_NilOptions_Validation(t *testing.T) {
+	globalOptions := &internal.GlobalCommandOptions{NoPrompt: true}
+	service := NewPromptService(nil, nil, nil, globalOptions)
+
+	tests := []struct {
+		name   string
+		method string
+	}{
+		{"Confirm_nil_options", "Confirm"},
+		{"Select_nil_options", "Select"},
+		{"MultiSelect_nil_options", "MultiSelect"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var err error
+			switch tt.method {
+			case "Confirm":
+				_, err = service.Confirm(
+					t.Context(),
+					&azdext.ConfirmRequest{Options: nil},
+				)
+			case "Select":
+				_, err = service.Select(
+					t.Context(),
+					&azdext.SelectRequest{Options: nil},
+				)
+			case "MultiSelect":
+				_, err = service.MultiSelect(
+					t.Context(),
+					&azdext.MultiSelectRequest{Options: nil},
+				)
+			}
+
+			require.Error(t, err)
+			st, ok := status.FromError(err)
+			require.True(t, ok)
+			require.Equal(t, codes.InvalidArgument, st.Code())
+			require.Contains(t, st.Message(), "options are required")
+		})
+	}
+}
+
+func Test_PromptService_CreateAzureContext_NilScope(t *testing.T) {
+	globalOptions := &internal.GlobalCommandOptions{NoPrompt: false}
+	svc := NewPromptService(nil, nil, nil, globalOptions)
+	ps := svc.(*promptService)
+
+	tests := []struct {
+		name        string
+		wire        *azdext.AzureContext
+		errContains string
+	}{
+		{
+			name:        "nil_azure_context",
+			wire:        nil,
+			errContains: "azure context is required",
+		},
+		{
+			name:        "nil_scope",
+			wire:        &azdext.AzureContext{Scope: nil},
+			errContains: "azure context scope is required",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ps.createAzureContext(tt.wire)
+			require.Error(t, err)
+			st, ok := status.FromError(err)
+			require.True(t, ok)
+			require.Equal(t, codes.InvalidArgument, st.Code())
+			require.Contains(t, st.Message(), tt.errContains)
 		})
 	}
 }

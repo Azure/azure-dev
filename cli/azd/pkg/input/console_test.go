@@ -15,6 +15,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/stretchr/testify/require"
 )
 
@@ -365,8 +366,6 @@ func TestAskerConsole_Message_InvalidQuery_FallsBack(t *testing.T) {
 }
 
 func TestAskerConsole_JsonOutputMode_StderrRouting(t *testing.T) {
-	const waitTime = 50 * time.Millisecond
-
 	tests := []struct {
 		name         string
 		format       string
@@ -413,13 +412,23 @@ func TestAskerConsole_JsonOutputMode_StderrRouting(t *testing.T) {
 			wantStdout:   true,
 		},
 		{
+			name:   "JsonMode_MessageUxItem_GoesToStderr",
+			format: string(output.JsonFormat),
+			action: func(ctx context.Context, c Console) {
+				c.MessageUxItem(
+					ctx,
+					&ux.DoneMessage{Message: "deployed"},
+				)
+			},
+			wantOnStderr: "deployed",
+			wantStdout:   false,
+		},
+		{
 			name:   "NoneMode_Spinner_GoesToWriter",
 			format: string(output.NoneFormat),
 			action: func(ctx context.Context, c Console) {
 				c.ShowSpinner(ctx, "Working...", Step)
-				time.Sleep(waitTime)
 				c.StopSpinner(ctx, "Complete", StepDone)
-				time.Sleep(waitTime)
 			},
 			wantOnStderr: "",
 			wantStdout:   true,
@@ -507,6 +516,61 @@ func TestAskerConsole_JsonMode_EnsureBlankLine(t *testing.T) {
 		"stdout should be empty in JSON mode")
 	require.NotEmpty(t, stderrBuf.String(),
 		"EnsureBlankLine output should go to stderr")
+}
+
+func TestAskerConsole_JsonMode_ShowPreviewer_ReturnsStderr(
+	t *testing.T,
+) {
+	stderrBuf := &strings.Builder{}
+	stdoutBuf := &strings.Builder{}
+	formatter := &output.JsonFormatter{}
+
+	c := NewConsole(
+		true,
+		false,
+		Writers{Output: writerAdapter{stdoutBuf}},
+		ConsoleHandles{
+			Stderr: writerAdapter{stderrBuf},
+			Stdin:  os.Stdin,
+			Stdout: writerAdapter{stdoutBuf},
+		},
+		formatter,
+		nil,
+	)
+
+	ctx := t.Context()
+	w := c.ShowPreviewer(ctx, nil)
+	require.NotNil(t, w)
+
+	_, err := w.Write([]byte("preview line"))
+	require.NoError(t, err)
+	require.Contains(t, stderrBuf.String(), "preview line")
+	require.Empty(t, stdoutBuf.String())
+}
+
+func TestAskerConsole_JsonMode_StopPreviewer_NoOp(t *testing.T) {
+	stdoutBuf := &strings.Builder{}
+	stderrBuf := &strings.Builder{}
+	formatter := &output.JsonFormatter{}
+
+	c := NewConsole(
+		true,
+		false,
+		Writers{Output: writerAdapter{stdoutBuf}},
+		ConsoleHandles{
+			Stderr: writerAdapter{stderrBuf},
+			Stdin:  os.Stdin,
+			Stdout: writerAdapter{stdoutBuf},
+		},
+		formatter,
+		nil,
+	)
+
+	ctx := t.Context()
+	// StopPreviewer without ShowPreviewer should not panic
+	require.NotPanics(t, func() {
+		c.StopPreviewer(ctx, false)
+	})
 }
 
 // writerAdapter wraps *strings.Builder to satisfy io.Writer for test purposes.

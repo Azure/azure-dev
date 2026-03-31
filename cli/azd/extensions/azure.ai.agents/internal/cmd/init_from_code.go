@@ -594,7 +594,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 			return nil, fmt.Errorf("failed to set AZURE_AI_MODEL_DEPLOYMENT_NAME: %w", err)
 		}
 	} else if selectedModel != nil {
-		modelDetails, err := resolveModelDeployment(ctx, a.azdClient, a.azureContext, selectedModel, a.azureContext.Scope.Location)
+		modelDetails, err := a.resolveSelectedModelDeployment(ctx, selectedModel)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get model deployment details: %w", err)
 		}
@@ -623,6 +623,31 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 	}
 
 	return definition, nil
+}
+
+func (a *InitFromCodeAction) resolveSelectedModelDeployment(
+	ctx context.Context,
+	model *azdext.AiModel,
+) (*azdext.AiModelDeployment, error) {
+	deployments, err := resolveModelDeployments(ctx, a.azdClient, a.azureContext, model, a.azureContext.Scope.Location)
+	if err == nil {
+		if candidate := selectBestModelDeploymentCandidate(model, deployments); candidate != nil {
+			return candidate, nil
+		}
+	}
+
+	if err != nil && !isRecoverableDeploymentSelectionError(err) {
+		return nil, exterrors.FromAiService(err, exterrors.CodeModelResolutionFailed)
+	}
+
+	selector := &InitAction{
+		azdClient:    a.azdClient,
+		azureContext: a.azureContext,
+		environment:  a.environment,
+		flags:        a.flags,
+	}
+
+	return selector.getModelDetails(ctx, model.Name)
 }
 
 // sanitizeAgentName converts a string into a valid agent name:

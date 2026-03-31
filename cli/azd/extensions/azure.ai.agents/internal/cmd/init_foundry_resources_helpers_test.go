@@ -295,6 +295,16 @@ func TestFoundryProjectInfoFromResource(t *testing.T) {
 	}
 }
 
+func TestAgentModelFilter(t *testing.T) {
+	t.Parallel()
+
+	filter := agentModelFilter([]string{"eastus2"}, []string{"gpt-4.1-mini"})
+
+	require.Equal(t, []string{agentsV2ModelCapability}, filter.Capabilities)
+	require.Equal(t, []string{"eastus2"}, filter.Locations)
+	require.Equal(t, []string{"gpt-4.1-mini"}, filter.ExcludeModelNames)
+}
+
 func TestUpdateFoundryProjectInfo(t *testing.T) {
 	t.Parallel()
 

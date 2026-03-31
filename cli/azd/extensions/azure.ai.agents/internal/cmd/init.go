@@ -78,6 +78,7 @@ type GitHubUrlInfo struct {
 }
 
 const AiAgentHost = "azure.ai.agent"
+const agentsV2ModelCapability = "agentsV2"
 
 // checkAiModelServiceAvailable is a temporary check to ensure the azd host supports
 // required gRPC services. Remove once azd core enforces requiredAzdVersion.

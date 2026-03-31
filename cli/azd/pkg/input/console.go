@@ -145,10 +145,11 @@ type AskerConsole struct {
 	writer    io.Writer
 	formatter output.Formatter
 
-	// jsonOutputMode tracks whether JSON output format is active.
-	// When true, human-readable messages are routed to handles.Stderr
-	// so stdout contains only valid JSON.
-	jsonOutputMode bool
+	// structuredOutputMode indicates that stdout is reserved for
+	// machine-parsable structured output. When true, human-readable
+	// messages are routed to stderr and visual elements (spinners,
+	// previewers) are suppressed.
+	structuredOutputMode bool
 
 	// isTerminal controls whether terminal-style input/output will be used.
 	//
@@ -219,10 +220,10 @@ func (c *AskerConsole) IsUnformatted() bool {
 }
 
 // messageWriter returns the writer for human-readable messages.
-// In JSON output mode, returns stderr to keep stdout clean for
-// structured JSON. Otherwise, returns the current console writer.
+// In structured output mode, returns stderr to keep stdout clean for
+// machine-parsable output. Otherwise, returns the current console writer.
 func (c *AskerConsole) messageWriter() io.Writer {
-	if c.jsonOutputMode {
+	if c.structuredOutputMode {
 		return c.handles.Stderr
 	}
 	return c.writer
@@ -344,10 +345,10 @@ func (c *AskerConsole) ShowPreviewer(ctx context.Context, options *ShowPreviewer
 	c.showProgressMu.Lock()
 	defer c.showProgressMu.Unlock()
 
-	// In JSON output mode, skip the visual frame rendering (which writes to
+	// In structured output mode, skip the visual frame rendering (which writes to
 	// stdout via goterm) and return a writer that routes previewer output to
-	// stderr so it doesn't corrupt the JSON on stdout.
-	if c.jsonOutputMode {
+	// stderr so it doesn't corrupt the structured output on stdout.
+	if c.structuredOutputMode {
 		return c.handles.Stderr
 	}
 
@@ -379,8 +380,8 @@ func (c *AskerConsole) ShowPreviewer(ctx context.Context, options *ShowPreviewer
 }
 
 func (c *AskerConsole) StopPreviewer(ctx context.Context, keepLogs bool) {
-	// In JSON output mode the previewer was never started — nothing to stop.
-	if c.jsonOutputMode {
+	// In structured output mode the previewer was never started — nothing to stop.
+	if c.structuredOutputMode {
 		return
 	}
 
@@ -446,9 +447,9 @@ func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format Spi
 	c.showProgressMu.Lock()
 	defer c.showProgressMu.Unlock()
 
-	if c.jsonOutputMode {
-		// In JSON mode, emit spinner title as plain text to stderr
-		// so stdout remains clean for structured JSON output.
+	if c.structuredOutputMode {
+		// In structured output mode, emit spinner title as plain text to stderr
+		// so stdout remains clean for structured output.
 		fmt.Fprintln(c.messageWriter(), title)
 		return
 	}
@@ -524,9 +525,9 @@ func (c *AskerConsole) StopSpinner(
 	lastMessage string,
 	format SpinnerUxType,
 ) {
-	if c.jsonOutputMode {
-		// In JSON mode, emit the stop message as plain text to
-		// stderr so stdout remains clean for structured JSON.
+	if c.structuredOutputMode {
+		// In structured output mode, emit the stop message as plain text to
+		// stderr so stdout remains clean for structured output.
 		if lastMessage != "" {
 			msg := c.getStopChar(format) + " " + lastMessage
 			fmt.Fprintln(c.messageWriter(), msg)
@@ -1063,7 +1064,7 @@ func NewConsole(
 	externalPromptCfg *ExternalPromptConfiguration) Console {
 	asker := NewAsker(noPrompt, isTerminal, handles.Stdout, handles.Stdin)
 
-	jsonMode := formatter != nil &&
+	structuredMode := formatter != nil &&
 		formatter.Kind() == output.JsonFormat
 
 	c := &AskerConsole{
@@ -1072,7 +1073,7 @@ func NewConsole(
 		defaultWriter:  writers.Output,
 		writer:         writers.Output,
 		formatter:      formatter,
-		jsonOutputMode: jsonMode,
+		structuredOutputMode: structuredMode,
 		isTerminal:     isTerminal,
 		currentIndent:  atomic.NewString(""),
 		noPrompt:       noPrompt,

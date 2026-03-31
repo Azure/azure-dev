@@ -365,7 +365,7 @@ func TestAskerConsole_Message_InvalidQuery_FallsBack(t *testing.T) {
 		"invalid query should fall back to full envelope")
 }
 
-func TestAskerConsole_JsonOutputMode_StderrRouting(t *testing.T) {
+func TestAskerConsole_StructuredOutputMode_StderrRouting(t *testing.T) {
 	tests := []struct {
 		name         string
 		format       string
@@ -374,7 +374,7 @@ func TestAskerConsole_JsonOutputMode_StderrRouting(t *testing.T) {
 		wantStdout   bool
 	}{
 		{
-			name:   "JsonMode_Message_GoesToStderr",
+			name:   "StructuredMode_Message_GoesToStderr",
 			format: string(output.JsonFormat),
 			action: func(ctx context.Context, c Console) {
 				c.Message(ctx, "deploying resources")
@@ -383,7 +383,7 @@ func TestAskerConsole_JsonOutputMode_StderrRouting(t *testing.T) {
 			wantStdout:   false,
 		},
 		{
-			name:   "JsonMode_ShowSpinner_GoesToStderr",
+			name:   "StructuredMode_ShowSpinner_GoesToStderr",
 			format: string(output.JsonFormat),
 			action: func(ctx context.Context, c Console) {
 				c.ShowSpinner(ctx, "Provisioning...", Step)
@@ -392,7 +392,7 @@ func TestAskerConsole_JsonOutputMode_StderrRouting(t *testing.T) {
 			wantStdout:   false,
 		},
 		{
-			name:   "JsonMode_StopSpinner_GoesToStderr",
+			name:   "StructuredMode_StopSpinner_GoesToStderr",
 			format: string(output.JsonFormat),
 			action: func(
 				ctx context.Context, c Console,
@@ -412,7 +412,7 @@ func TestAskerConsole_JsonOutputMode_StderrRouting(t *testing.T) {
 			wantStdout:   true,
 		},
 		{
-			name:   "JsonMode_MessageUxItem_GoesToStderr",
+			name:   "StructuredMode_MessageUxItem_GoesToStderr",
 			format: string(output.JsonFormat),
 			action: func(ctx context.Context, c Console) {
 				c.MessageUxItem(
@@ -470,7 +470,7 @@ func TestAskerConsole_JsonOutputMode_StderrRouting(t *testing.T) {
 				require.Empty(
 					t,
 					stdoutBuf.String(),
-					"stdout should be empty in JSON mode",
+					"stdout should be empty in structured output mode",
 				)
 			}
 
@@ -483,14 +483,14 @@ func TestAskerConsole_JsonOutputMode_StderrRouting(t *testing.T) {
 				require.Empty(
 					t,
 					stderrBuf.String(),
-					"stderr should be empty in non-JSON mode",
+					"stderr should be empty in non-structured mode",
 				)
 			}
 		})
 	}
 }
 
-func TestAskerConsole_JsonMode_EnsureBlankLine(t *testing.T) {
+func TestAskerConsole_StructuredMode_EnsureBlankLine(t *testing.T) {
 	stdoutBuf := &strings.Builder{}
 	stderrBuf := &strings.Builder{}
 	formatter := &output.JsonFormatter{}
@@ -514,12 +514,12 @@ func TestAskerConsole_JsonMode_EnsureBlankLine(t *testing.T) {
 	c.EnsureBlankLine(ctx)
 
 	require.Empty(t, stdoutBuf.String(),
-		"stdout should be empty in JSON mode")
+		"stdout should be empty in structured output mode")
 	require.NotEmpty(t, stderrBuf.String(),
 		"EnsureBlankLine output should go to stderr")
 }
 
-func TestAskerConsole_JsonMode_ShowPreviewer_ReturnsStderr(
+func TestAskerConsole_StructuredMode_ShowPreviewer_ReturnsStderr(
 	t *testing.T,
 ) {
 	stderrBuf := &strings.Builder{}
@@ -549,7 +549,7 @@ func TestAskerConsole_JsonMode_ShowPreviewer_ReturnsStderr(
 	require.Empty(t, stdoutBuf.String())
 }
 
-func TestAskerConsole_JsonMode_StopPreviewer_NoOp(t *testing.T) {
+func TestAskerConsole_StructuredMode_StopPreviewer_NoOp(t *testing.T) {
 	stdoutBuf := &strings.Builder{}
 	stderrBuf := &strings.Builder{}
 	formatter := &output.JsonFormatter{}

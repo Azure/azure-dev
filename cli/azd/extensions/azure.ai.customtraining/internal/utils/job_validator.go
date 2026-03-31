@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -115,6 +116,21 @@ func ValidateJobOffline(job *JobDefinition, yamlDir string) *ValidationResult {
 		}
 	}
 
+	// 6. Validate ${{inputs.xxx}} and ${{outputs.xxx}} placeholders in command
+	if job.Command != "" {
+		validatePlaceholders(result, job)
+	}
+
+	// 7. Warn on single-brace {inputs.xxx} or {outputs.xxx} usage in command
+	if job.Command != "" {
+		validateSingleBracePlaceholders(result, job.Command)
+	}
+
+	// 8. Inputs/outputs with nil/empty definitions referenced in command
+	if job.Command != "" {
+		validateInputOutputDefinitions(result, job)
+	}
+
 	return result
 }
 
@@ -137,5 +153,122 @@ func validateLocalPath(result *ValidationResult, field string, path string, yaml
 			Severity: SeverityError,
 			Message:  fmt.Sprintf("local path does not exist: '%s'", path),
 		})
+	}
+}
+
+// Regex patterns for placeholder validation.
+var (
+	// Matches ${{inputs.key}} or ${{outputs.key}} — captures "inputs" or "outputs" and the key name.
+	placeholderRegex = regexp.MustCompile(`\$\{\{(inputs|outputs)\.(\w[\w.-]*)}}`)
+
+	// Matches optional blocks: [...] (content between square brackets).
+	optionalBlockRegex = regexp.MustCompile(`\[[^\]]*]`)
+
+	// Matches ${{inputs.key}} — used to extract input keys from optional blocks.
+	inputPlaceholderRegex = regexp.MustCompile(`\$\{\{inputs\.(\w[\w.-]*)}}`)
+
+	// Matches single-brace {inputs.key} or {outputs.key} that are NOT preceded by $ or another {.
+	// Uses a negative lookbehind approximation: we check matches and filter in code.
+	singleBraceRegex = regexp.MustCompile(`\{(inputs|outputs)\.(\w[\w.-]*)}}?`)
+)
+
+// validatePlaceholders checks that ${{inputs.xxx}} references in command exist in job.Inputs
+// and ${{outputs.xxx}} references exist in job.Outputs.
+// References inside [...] optional blocks are skipped for inputs.
+func validatePlaceholders(result *ValidationResult, job *JobDefinition) {
+	command := job.Command
+
+	// Build set of optional input keys (those inside [...] blocks)
+	optionalInputs := make(map[string]bool)
+	for _, block := range optionalBlockRegex.FindAllString(command, -1) {
+		for _, match := range inputPlaceholderRegex.FindAllStringSubmatch(block, -1) {
+			optionalInputs[match[1]] = true
+		}
+	}
+
+	// Find all ${{inputs.xxx}} and ${{outputs.xxx}} references
+	for _, match := range placeholderRegex.FindAllStringSubmatch(command, -1) {
+		kind := match[1] // "inputs" or "outputs"
+		key := match[2]
+
+		if kind == "inputs" {
+			if optionalInputs[key] {
+				continue // skip optional inputs
+			}
+			if job.Inputs == nil {
+				result.Findings = append(result.Findings, ValidationFinding{
+					Field:    "command",
+					Severity: SeverityError,
+					Message:  fmt.Sprintf("command references '${{inputs.%s}}' but no inputs are defined", key),
+				})
+			} else if _, exists := job.Inputs[key]; !exists {
+				result.Findings = append(result.Findings, ValidationFinding{
+					Field:    "command",
+					Severity: SeverityError,
+					Message:  fmt.Sprintf("command references '${{inputs.%s}}' but '%s' is not defined in inputs", key, key),
+				})
+			}
+		} else if kind == "outputs" {
+			if job.Outputs == nil {
+				result.Findings = append(result.Findings, ValidationFinding{
+					Field:    "command",
+					Severity: SeverityWarning,
+					Message:  fmt.Sprintf("command references '${{outputs.%s}}' but no outputs are defined", key),
+				})
+			} else if _, exists := job.Outputs[key]; !exists {
+				result.Findings = append(result.Findings, ValidationFinding{
+					Field:    "command",
+					Severity: SeverityWarning,
+					Message:  fmt.Sprintf("command references '${{outputs.%s}}' but '%s' is not defined in outputs", key, key),
+				})
+			}
+		}
+	}
+}
+
+// validateSingleBracePlaceholders flags when the command uses {inputs.xxx} or {outputs.xxx}
+// instead of the correct ${{inputs.xxx}} syntax. This is an error because the backend
+// will not resolve single-brace placeholders.
+func validateSingleBracePlaceholders(result *ValidationResult, command string) {
+	for _, match := range singleBraceRegex.FindAllStringSubmatchIndex(command, -1) {
+		start := match[0]
+		// Skip if this is already part of a ${{...}} (preceded by "${")
+		if start >= 2 && command[start-2:start] == "${" {
+			continue
+		}
+		if start >= 1 && command[start-1:start] == "$" {
+			continue
+		}
+
+		kind := command[match[2]:match[3]]
+		key := command[match[4]:match[5]]
+		result.Findings = append(result.Findings, ValidationFinding{
+			Field:    "command",
+			Severity: SeverityError,
+			Message:  fmt.Sprintf("command uses single-brace '{%s.%s}' — use '${{%s.%s}}' instead", kind, key, kind, key),
+		})
+	}
+}
+
+// validateInputOutputDefinitions checks that inputs referenced in command
+// are not empty/nil definitions (all fields zero-valued).
+func validateInputOutputDefinitions(result *ValidationResult, job *JobDefinition) {
+	command := job.Command
+
+	for _, match := range placeholderRegex.FindAllStringSubmatch(command, -1) {
+		kind := match[1]
+		key := match[2]
+
+		if kind == "inputs" && job.Inputs != nil {
+			if input, exists := job.Inputs[key]; exists {
+				if (input == InputDefinition{}) {
+					result.Findings = append(result.Findings, ValidationFinding{
+						Field:    fmt.Sprintf("inputs.%s", key),
+						Severity: SeverityError,
+						Message:  fmt.Sprintf("input '%s' is referenced in command but has an empty definition", key),
+					})
+				}
+			}
+		}
 	}
 }

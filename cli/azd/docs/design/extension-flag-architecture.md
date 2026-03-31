@@ -167,6 +167,19 @@ The canonical list is maintained in two locations that are kept in sync by a tes
 
 Any extension built with the azd SDK gets this check automatically — no opt-in required.
 
+### Scope & Limitations
+
+The enforcement above applies to **SDK-managed extensions** — those that use `azdext.Run()` to execute their command tree. Extensions that wire their own CLI root and call `ExecuteContext()` directly (the "self-managed" model) bypass `azdext.Run()` and do not get automatic validation.
+
+Currently, 6 of 9 in-repo extensions use the self-managed model. Since all in-repo extensions are Go, these can adopt enforcement by either:
+
+1. Migrating to `azdext.Run()` (full SDK lifecycle), or
+2. Calling `ValidateNoReservedFlagConflicts(rootCmd)` directly in `main.go`
+
+Non-Go extensions (Python, JS, .NET) would need a host-side enforcement mechanism — e.g., flag declarations in the extension manifest that azd validates at install or launch time.
+
+See [#7405](https://github.com/Azure/azure-dev/issues/7405) for tracking and [extension-authoring-models.md](https://github.com/Azure/azure-dev/pull/7406) for documentation of both authoring models.
+
 ### Sync Test
 
 A test (`TestReservedFlagsInSyncWithInternal`) ensures the SDK-side and host-side reserved flag lists stay in sync. If a developer adds a new global flag to one list but not the other, the test fails.

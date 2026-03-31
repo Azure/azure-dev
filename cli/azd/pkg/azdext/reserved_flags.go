@@ -130,11 +130,13 @@ func collectConflicts(root, cmd *cobra.Command) []FlagConflict {
 		}
 		checked[f.Name] = struct{}{}
 
-		// Skip flags that are the SDK-provided root persistent flags (same object).
-		// Use pointer equality so that a subcommand defining its own flag with the
-		// same name as a root persistent flag is still validated.
-		if rootFlag := root.PersistentFlags().Lookup(f.Name); rootFlag != nil && rootFlag == f {
-			return
+		// Skip only SDK-provided root persistent flags. The annotation check ensures that
+		// extensions using a plain root (not NewExtensionRootCommand) that manually add
+		// root persistent flags colliding with reserved globals are still caught.
+		if root.Annotations["azd-sdk-root"] == "true" {
+			if rootFlag := root.PersistentFlags().Lookup(f.Name); rootFlag != nil && rootFlag == f {
+				return
+			}
 		}
 
 		conflicts = append(conflicts, checkFlag(cmd, f)...)

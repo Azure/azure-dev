@@ -6,7 +6,8 @@ Usage
 
 Flags
     -e, --environment string 	: The name of the environment to use.
-        --export             	: Output in POSIX shell-ready format (export KEY="VALUE").
+        --export             	: Output in shell-ready format. Use --shell to select the shell syntax (default: bash).
+        --shell string       	: Shell syntax for --export output: bash (POSIX) or pwsh (PowerShell).
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

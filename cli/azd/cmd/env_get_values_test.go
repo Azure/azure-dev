@@ -22,6 +22,7 @@ func TestEnvGetValuesExport(t *testing.T) {
 		name     string
 		envVars  map[string]string
 		export   bool
+		shell    string
 		expected string
 	}{
 		{
@@ -31,6 +32,7 @@ func TestEnvGetValuesExport(t *testing.T) {
 				"BAZ": "qux",
 			},
 			export: true,
+			shell:  "bash",
 			expected: "export AZURE_ENV_NAME=\"test\"\n" +
 				"export BAZ=\"qux\"\n" +
 				"export FOO=\"bar\"\n",
@@ -41,6 +43,7 @@ func TestEnvGetValuesExport(t *testing.T) {
 				"CONN": `host="localhost" pass=$ecret`,
 			},
 			export: true,
+			shell:  "bash",
 			expected: "export AZURE_ENV_NAME=\"test\"\n" +
 				"export CONN=" +
 				`"host=\"localhost\" pass=\$ecret"` +
@@ -52,6 +55,7 @@ func TestEnvGetValuesExport(t *testing.T) {
 				"EMPTY": "",
 			},
 			export: true,
+			shell:  "bash",
 			expected: "export AZURE_ENV_NAME=\"test\"\n" +
 				"export EMPTY=\"\"\n",
 		},
@@ -61,6 +65,7 @@ func TestEnvGetValuesExport(t *testing.T) {
 				"MULTILINE": "line1\nline2\nline3",
 			},
 			export: true,
+			shell:  "bash",
 			expected: "export AZURE_ENV_NAME=\"test\"\n" +
 				"export MULTILINE=$'line1\\nline2\\nline3'\n",
 		},
@@ -70,6 +75,7 @@ func TestEnvGetValuesExport(t *testing.T) {
 				"WIN_PATH": `C:\path\to\dir`,
 			},
 			export: true,
+			shell:  "bash",
 			expected: "export AZURE_ENV_NAME=\"test\"\n" +
 				"export WIN_PATH=\"C:\\\\path\\\\to\\\\dir\"\n",
 		},
@@ -79,6 +85,7 @@ func TestEnvGetValuesExport(t *testing.T) {
 				"DANGEROUS": "value with `backticks` and $(command)",
 			},
 			export: true,
+			shell:  "bash",
 			expected: "export AZURE_ENV_NAME=\"test\"\n" +
 				"export DANGEROUS=\"value with \\`backticks\\` and \\$(command)\"\n",
 		},
@@ -88,6 +95,7 @@ func TestEnvGetValuesExport(t *testing.T) {
 				"CR_VALUE": "line1\rline2",
 			},
 			export: true,
+			shell:  "bash",
 			expected: "export AZURE_ENV_NAME=\"test\"\n" +
 				"export CR_VALUE=$'line1\\rline2'\n",
 		},
@@ -97,6 +105,7 @@ func TestEnvGetValuesExport(t *testing.T) {
 				"KEY": "value",
 			},
 			export: false,
+			shell:  "bash",
 			expected: "AZURE_ENV_NAME=\"test\"\n" +
 				"KEY=\"value\"\n",
 		},
@@ -109,9 +118,62 @@ func TestEnvGetValuesExport(t *testing.T) {
 				"_UNDERSCORE": "fine",
 			},
 			export: true,
+			shell:  "bash",
 			expected: "export AZURE_ENV_NAME=\"test\"\n" +
 				"export VALID_KEY=\"ok\"\n" +
 				"export _UNDERSCORE=\"fine\"\n",
+		},
+		{
+			name: "pwsh export basic values",
+			envVars: map[string]string{
+				"FOO": "bar",
+				"BAZ": "qux",
+			},
+			export: true,
+			shell:  "pwsh",
+			expected: "$env:AZURE_ENV_NAME = \"test\"\n" +
+				"$env:BAZ = \"qux\"\n" +
+				"$env:FOO = \"bar\"\n",
+		},
+		{
+			name: "pwsh export special characters",
+			envVars: map[string]string{
+				"CONN": `host="localhost" pass=$ecret`,
+			},
+			export: true,
+			shell:  "pwsh",
+			expected: "$env:AZURE_ENV_NAME = \"test\"\n" +
+				"$env:CONN = \"host=`\"localhost`\" pass=`$ecret\"\n",
+		},
+		{
+			name: "pwsh export with backticks",
+			envVars: map[string]string{
+				"CMD": "value with `backtick`",
+			},
+			export: true,
+			shell:  "pwsh",
+			expected: "$env:AZURE_ENV_NAME = \"test\"\n" +
+				"$env:CMD = \"value with ``backtick``\"\n",
+		},
+		{
+			name: "pwsh export with newlines",
+			envVars: map[string]string{
+				"MULTILINE": "line1\nline2",
+			},
+			export: true,
+			shell:  "pwsh",
+			expected: "$env:AZURE_ENV_NAME = \"test\"\n" +
+				"$env:MULTILINE = \"line1\nline2\"\n",
+		},
+		{
+			name: "pwsh export empty value",
+			envVars: map[string]string{
+				"EMPTY": "",
+			},
+			export: true,
+			shell:  "pwsh",
+			expected: "$env:AZURE_ENV_NAME = \"test\"\n" +
+				"$env:EMPTY = \"\"\n",
 		},
 	}
 
@@ -154,6 +216,7 @@ func TestEnvGetValuesExport(t *testing.T) {
 				flags: &envGetValuesFlags{
 					global: &internal.GlobalCommandOptions{},
 					export: tt.export,
+					shell:  tt.shell,
 				},
 			}
 
@@ -189,6 +252,7 @@ func TestEnvGetValuesExportOutputMutualExclusion(t *testing.T) {
 		flags: &envGetValuesFlags{
 			global: &internal.GlobalCommandOptions{},
 			export: true,
+			shell:  "bash",
 		},
 	}
 
@@ -196,5 +260,41 @@ func TestEnvGetValuesExportOutputMutualExclusion(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(
 		t, err.Error(), "mutually exclusive",
+	)
+}
+
+func TestEnvGetValuesExportInvalidShell(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+
+	azdCtx := azdcontext.NewAzdContextWithDirectory(
+		t.TempDir(),
+	)
+	err := azdCtx.SetProjectState(
+		azdcontext.ProjectState{
+			DefaultEnvironment: "test",
+		},
+	)
+	require.NoError(t, err)
+
+	formatter, err := output.NewFormatter("dotenv")
+	require.NoError(t, err)
+
+	var buf bytes.Buffer
+	action := &envGetValuesAction{
+		azdCtx:    azdCtx,
+		console:   mockContext.Console,
+		formatter: formatter,
+		writer:    &buf,
+		flags: &envGetValuesFlags{
+			global: &internal.GlobalCommandOptions{},
+			export: true,
+			shell:  "fish",
+		},
+	}
+
+	_, err = action.Run(t.Context())
+	require.Error(t, err)
+	require.Contains(
+		t, err.Error(), "unsupported shell",
 	)
 }

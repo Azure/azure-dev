@@ -1919,7 +1919,16 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['--export'],
-							description: 'Output in POSIX shell-ready format (export KEY="VALUE").',
+							description: 'Output in shell-ready format. Use --shell to select the shell syntax (default: bash).',
+						},
+						{
+							name: ['--shell'],
+							description: 'Shell syntax for --export output: bash (POSIX) or pwsh (PowerShell).',
+							args: [
+								{
+									name: 'shell',
+								},
+							],
 						},
 					],
 				},

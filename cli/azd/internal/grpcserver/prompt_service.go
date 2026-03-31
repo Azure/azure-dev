@@ -416,7 +416,8 @@ func (s *promptService) createAzureContext(wire *azdext.AzureContext) (*prompt.A
 	for _, resourceId := range wire.Resources {
 		parsedResource, err := arm.ParseResourceID(resourceId)
 		if err != nil {
-			return nil, err
+			return nil, status.Errorf(codes.InvalidArgument,
+				"invalid resource ID %q: %v", resourceId, err)
 		}
 
 		resources = append(resources, parsedResource)

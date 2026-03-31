@@ -58,7 +58,8 @@ func (c *containerService) Build(
 
 	serviceConfig, has := projectConfig.Services[req.ServiceName]
 	if !has {
-		return nil, fmt.Errorf("service %q not found in project configuration", req.ServiceName)
+		return nil, status.Errorf(codes.NotFound,
+			"service %q not found in project configuration", req.ServiceName)
 	}
 
 	containerHelper, err := c.lazyContainerHelper.GetValue()
@@ -112,7 +113,8 @@ func (c *containerService) Package(
 
 	serviceConfig, has := projectConfig.Services[req.ServiceName]
 	if !has {
-		return nil, fmt.Errorf("service %q not found in project configuration", req.ServiceName)
+		return nil, status.Errorf(codes.NotFound,
+			"service %q not found in project configuration", req.ServiceName)
 	}
 
 	containerHelper, err := c.lazyContainerHelper.GetValue()
@@ -166,7 +168,8 @@ func (c *containerService) Publish(
 
 	serviceConfig, has := projectConfig.Services[req.ServiceName]
 	if !has {
-		return nil, fmt.Errorf("service %q not found in project configuration", req.ServiceName)
+		return nil, status.Errorf(codes.NotFound,
+			"service %q not found in project configuration", req.ServiceName)
 	}
 
 	containerHelper, err := c.lazyContainerHelper.GetValue()

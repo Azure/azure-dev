@@ -53,8 +53,10 @@ def list_remaining_resources(subscription_id: str, resource_group: str, token: s
             {"name": r.get("name", ""), "type": r.get("type", "")}
             for r in data.get("value", [])
         ]
-    except HTTPError:
-        return []
+    except HTTPError as e:
+        if e.code == 404:
+            return []  # Resource group doesn't exist — that's clean
+        raise  # Auth failures, permission errors should surface
 
 
 def grade(context: dict) -> dict:

@@ -48,8 +48,10 @@ def list_resources(subscription_id: str, resource_group: str, token: str) -> lis
         resp = urlopen(req)
         data = json.loads(resp.read())
         return [r["type"] for r in data.get("value", [])]
-    except HTTPError:
-        return []
+    except HTTPError as e:
+        if e.code == 404:
+            return []  # Resource group doesn't exist
+        raise  # Auth failures, permission errors should surface
 
 
 def grade(context: dict) -> dict:

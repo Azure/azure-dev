@@ -181,45 +181,41 @@ func (m *HooksMiddleware) createServiceEventHandler(
 
 // validateHooks validates hook configurations and displays any warnings
 func (m *HooksMiddleware) validateHooks(ctx context.Context, projectConfig *project.ProjectConfig) error {
-	// Get service hooks for validation
-	var serviceHooks []map[string][]*ext.HookConfig
+	warningKeys := map[string]struct{}{}
+	validateAndWarn := func(cwd string, hooks map[string][]*ext.HookConfig) {
+		if len(hooks) == 0 {
+			return
+		}
+
+		hooksManager := ext.NewHooksManager(cwd, m.commandRunner)
+		validationResult := hooksManager.ValidateHooks(ctx, hooks)
+
+		for _, warning := range validationResult.Warnings {
+			key := warning.Message + "\x00" + warning.Suggestion
+			if _, has := warningKeys[key]; has {
+				continue
+			}
+
+			warningKeys[key] = struct{}{}
+			m.console.MessageUxItem(ctx, &ux.WarningMessage{
+				Description: warning.Message,
+			})
+			if warning.Suggestion != "" {
+				m.console.Message(ctx, warning.Suggestion)
+			}
+			m.console.Message(ctx, "")
+		}
+	}
+
+	validateAndWarn(projectConfig.Path, projectConfig.Hooks)
+
 	stableServices, err := m.importManager.ServiceStable(ctx, projectConfig)
 	if err != nil {
 		return fmt.Errorf("failed getting services for hook validation: %w", err)
 	}
 
 	for _, service := range stableServices {
-		serviceHooks = append(serviceHooks, service.Hooks)
-	}
-
-	// Combine project and service hooks into a single map
-	allHooks := make(map[string][]*ext.HookConfig)
-
-	// Add project hooks
-	for hookName, hookConfigs := range projectConfig.Hooks {
-		allHooks[hookName] = append(allHooks[hookName], hookConfigs...)
-	}
-
-	// Add service hooks
-	for _, serviceHookMap := range serviceHooks {
-		for hookName, hookConfigs := range serviceHookMap {
-			allHooks[hookName] = append(allHooks[hookName], hookConfigs...)
-		}
-	}
-
-	// Create hooks manager and validate
-	hooksManager := ext.NewHooksManager(projectConfig.Path, m.commandRunner)
-	validationResult := hooksManager.ValidateHooks(ctx, allHooks)
-
-	// Display any warnings
-	for _, warning := range validationResult.Warnings {
-		m.console.MessageUxItem(ctx, &ux.WarningMessage{
-			Description: warning.Message,
-		})
-		if warning.Suggestion != "" {
-			m.console.Message(ctx, warning.Suggestion)
-		}
-		m.console.Message(ctx, "")
+		validateAndWarn(service.Path(), service.Hooks)
 	}
 
 	return nil

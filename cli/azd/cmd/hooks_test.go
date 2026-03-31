@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -226,4 +227,50 @@ func Test_HooksRunAction_RejectsServiceAndLayerTogether(t *testing.T) {
 	_, err := action.Run(context.Background())
 	require.Error(t, err)
 	require.ErrorContains(t, err, "--service and --layer cannot be used together")
+}
+
+func Test_HooksRunAction_ValidatesLayerHooksRelativeToLayerPath(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	env := environment.NewWithValues("test", nil)
+
+	projectPath := t.TempDir()
+	layerScriptPath := filepath.Join(projectPath, "infra", "core", "scripts", "preprovision.sh")
+	require.NoError(t, os.MkdirAll(filepath.Dir(layerScriptPath), 0o755))
+	require.NoError(t, os.WriteFile(layerScriptPath, []byte("echo pre"), 0o600))
+
+	layerHook := &ext.HookConfig{
+		Run: filepath.Join("scripts", "preprovision.sh"),
+	}
+
+	projectConfig := &project.ProjectConfig{
+		Name:     "test",
+		Path:     projectPath,
+		Services: map[string]*project.ServiceConfig{},
+		Infra: provisioning.Options{
+			Layers: []provisioning.Options{
+				{
+					Name: "core",
+					Path: filepath.Join("infra", "core"),
+					Hooks: provisioning.HooksConfig{
+						"preprovision": {layerHook},
+					},
+				},
+			},
+		},
+	}
+
+	action := &hooksRunAction{
+		projectConfig:  projectConfig,
+		env:            env,
+		importManager:  project.NewImportManager(nil),
+		commandRunner:  mockContext.CommandRunner,
+		console:        mockContext.Console,
+		flags:          &hooksRunFlags{},
+		serviceLocator: mockContext.Container,
+	}
+
+	err := action.validateAndWarnHooks(*mockContext.Context)
+	require.NoError(t, err)
+	require.False(t, layerHook.IsUsingDefaultShell())
+	require.Equal(t, ext.ScriptTypeUnknown, layerHook.Shell)
 }

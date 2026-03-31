@@ -5,7 +5,6 @@ package provisioning
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -132,34 +131,40 @@ func (o *Options) GetLayer(name string) (Options, error) {
 //
 // This should be called immediately right after Unmarshal() before any defaulting is performed.
 func (o *Options) Validate() error {
-
 	if len(o.Hooks) > 0 {
-		return errors.New("'hooks' can only be declared under 'infra.layers[]'")
+		return validateErr("infra", "'hooks' can only be declared under 'infra.layers[]'")
 	}
 
 	if len(o.Layers) > 0 {
 		anyIncompatibleFieldsSet := func() bool {
-			return o.Name != "" || o.Module != "" || o.Path != "" || len(o.Hooks) > 0 || o.DeploymentStacks != nil
+			return o.Name != "" || o.Module != "" || o.Path != "" || o.DeploymentStacks != nil
 		}
 
 		if anyIncompatibleFieldsSet() {
-			return errors.New(
-				"properties on 'infra' cannot be declared when 'infra.layers' is declared")
+			return validateErr("infra", "properties on 'infra' cannot be declared when 'infra.layers' is declared")
 		}
 
 		if err := o.validateLayers(); err != nil {
-			return err
+			return wrapValidateErr("infra.layers", err)
 		}
 	}
 
 	return nil
 }
 
-func (o *Options) validateLayers() error {
-	errWrap := func(err string) error {
-		return fmt.Errorf("validating infra.layers: %s", err)
+func wrapValidateErr(scope string, err error) error {
+	if err == nil {
+		return nil
 	}
 
+	return fmt.Errorf("validating %s: %w", scope, err)
+}
+
+func validateErr(scope, format string, args ...any) error {
+	return wrapValidateErr(scope, fmt.Errorf(format, args...))
+}
+
+func (o *Options) validateLayers() error {
 	validateHooks := func(scope string, hooks HooksConfig) error {
 		for hookName := range hooks {
 			hookType, eventName := ext.InferHookType(hookName)
@@ -174,17 +179,17 @@ func (o *Options) validateLayers() error {
 	seenLayers := map[string]struct{}{}
 	for _, layer := range o.Layers {
 		if layer.Name == "" {
-			return errWrap("name must be specified for each provisioning layer")
+			return fmt.Errorf("name must be specified for each provisioning layer")
 		}
 
 		if _, has := seenLayers[layer.Name]; has {
-			return errWrap(fmt.Sprintf("duplicate layer name '%s' is not allowed", layer.Name))
+			return fmt.Errorf("duplicate layer name '%s' is not allowed", layer.Name)
 		}
 
 		seenLayers[layer.Name] = struct{}{}
 
 		if layer.Path == "" {
-			return errWrap(fmt.Sprintf("%s: path must be specified", layer.Name))
+			return fmt.Errorf("%s: path must be specified", layer.Name)
 		}
 
 		if err := validateHooks(layer.Name, layer.Hooks); err != nil {

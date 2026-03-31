@@ -425,8 +425,11 @@ func TestOptions_Validate_Hooks(t *testing.T) {
 			},
 		}).Validate()
 
-		require.Error(t, err)
-		require.ErrorContains(t, err, "only 'preprovision' and 'postprovision' hooks are supported")
+		require.EqualError(
+			t,
+			err,
+			"validating infra.layers: infra-core: only 'preprovision' and 'postprovision' hooks are supported",
+		)
 	})
 
 	t.Run("duplicate layer names are not allowed", func(t *testing.T) {
@@ -463,8 +466,7 @@ func TestOptions_Validate_Hooks(t *testing.T) {
 			},
 		}).Validate()
 
-		require.Error(t, err)
-		require.ErrorContains(t, err, "'hooks' can only be declared under 'infra.layers[]'")
+		require.EqualError(t, err, "validating infra: 'hooks' can only be declared under 'infra.layers[]'")
 	})
 
 	t.Run("root infra hooks are not allowed", func(t *testing.T) {
@@ -477,7 +479,6 @@ func TestOptions_Validate_Hooks(t *testing.T) {
 			},
 		}).Validate()
 
-		require.Error(t, err)
-		require.ErrorContains(t, err, "'hooks' can only be declared under 'infra.layers[]'")
+		require.EqualError(t, err, "validating infra: 'hooks' can only be declared under 'infra.layers[]'")
 	})
 }

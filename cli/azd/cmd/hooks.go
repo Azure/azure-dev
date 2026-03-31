@@ -351,44 +351,43 @@ func (hra *hooksRunAction) execHook(
 
 // Validates hooks and displays warnings for default shell usage and other issues
 func (hra *hooksRunAction) validateAndWarnHooks(ctx context.Context) error {
-	// Collect all hooks from project and services
-	allHooks := make(map[string][]*ext.HookConfig)
+	warningKeys := map[string]struct{}{}
+	validateAndWarn := func(cwd string, hooks map[string][]*ext.HookConfig) {
+		if len(hooks) == 0 {
+			return
+		}
 
-	// Add project hooks
-	for hookName, hookConfigs := range hra.projectConfig.Hooks {
-		allHooks[hookName] = append(allHooks[hookName], hookConfigs...)
+		hooksManager := ext.NewHooksManager(cwd, hra.commandRunner)
+		validationResult := hooksManager.ValidateHooks(ctx, hooks)
+
+		for _, warning := range validationResult.Warnings {
+			key := warning.Message + "\x00" + warning.Suggestion
+			if _, has := warningKeys[key]; has {
+				continue
+			}
+
+			warningKeys[key] = struct{}{}
+			hra.console.MessageUxItem(ctx, &ux.WarningMessage{
+				Description: warning.Message,
+			})
+			if warning.Suggestion != "" {
+				hra.console.Message(ctx, warning.Suggestion)
+			}
+			hra.console.Message(ctx, "")
+		}
 	}
 
-	// Add service hooks
+	validateAndWarn(hra.projectConfig.Path, hra.projectConfig.Hooks)
+
 	stableServices, err := hra.importManager.ServiceStable(ctx, hra.projectConfig)
 	if err == nil {
 		for _, service := range stableServices {
-			for hookName, hookConfigs := range service.Hooks {
-				allHooks[hookName] = append(allHooks[hookName], hookConfigs...)
-			}
+			validateAndWarn(service.Path(), service.Hooks)
 		}
 	}
 
-	// Add layer hooks
 	for _, layer := range hra.projectConfig.Infra.Layers {
-		for hookName, hookConfigs := range layer.Hooks {
-			allHooks[hookName] = append(allHooks[hookName], hookConfigs...)
-		}
-	}
-
-	// Create hooks manager and validate
-	hooksManager := ext.NewHooksManager(hra.projectConfig.Path, hra.commandRunner)
-	validationResult := hooksManager.ValidateHooks(ctx, allHooks)
-
-	// Display any warnings
-	for _, warning := range validationResult.Warnings {
-		hra.console.MessageUxItem(ctx, &ux.WarningMessage{
-			Description: warning.Message,
-		})
-		if warning.Suggestion != "" {
-			hra.console.Message(ctx, warning.Suggestion)
-		}
-		hra.console.Message(ctx, "")
+		validateAndWarn(layer.AbsolutePath(hra.projectConfig.Path), layer.Hooks)
 	}
 
 	return nil

@@ -531,8 +531,7 @@ func (p *ProvisionAction) runLayerProvisionWithHooks(
 	layerPath string,
 	actionFn ext.InvokeFn,
 ) error {
-	hooks := map[string][]*ext.HookConfig(layer.Hooks)
-	if len(hooks) == 0 {
+	if len(layer.Hooks) == 0 {
 		return actionFn()
 	}
 
@@ -543,12 +542,12 @@ func (p *ProvisionAction) runLayerProvisionWithHooks(
 		p.envManager,
 		p.console,
 		layerPath,
-		hooks,
+		layer.Hooks,
 		p.env,
 		p.serviceLocator,
 	)
 
-	p.validateAndWarnLayerHooks(ctx, hooksManager, hooks)
+	p.validateAndWarnLayerHooks(ctx, hooksManager, layer.Hooks)
 
 	if err := hooksRunner.Invoke(ctx, []string{string(project.ProjectEventProvision)}, actionFn); err != nil {
 		if layer.Name == "" {

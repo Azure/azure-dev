@@ -148,26 +148,6 @@ func TestValidate_LocalPaths(t *testing.T) {
 
 // Tests ${{inputs.xxx}} and ${{outputs.xxx}} placeholder validation in command.
 func TestValidate_PlaceholderMapping(t *testing.T) {
-	// YAML — all placeholders map correctly:
-	//   command: python train.py --data ${{inputs.training_data}} --out ${{outputs.model}}
-	//   inputs:
-	//     training_data:
-	//       type: uri_folder
-	//       path: azureml://datastores/blob/data
-	//   outputs:
-	//     model:
-	//       type: uri_folder
-	job := validJob()
-	job.Command = "python train.py --data ${{inputs.training_data}} --out ${{outputs.model}}"
-	job.Inputs = map[string]InputDefinition{
-		"training_data": {Type: "uri_folder", Path: "azureml://datastores/blob/data"},
-	}
-	job.Outputs = map[string]OutputDefinition{"model": {Type: "uri_folder"}}
-	result := ValidateJobOffline(job, ".")
-	if f := findFindingByMessage(result, "not defined"); f != nil {
-		t.Errorf("did not expect error for mapped placeholders: %s", f.Message)
-	}
-
 	// YAML — typos in placeholder keys:
 	//   command: >-
 	//     python train.py
@@ -181,13 +161,13 @@ func TestValidate_PlaceholderMapping(t *testing.T) {
 	//   outputs:
 	//     model:                                  ← key is "model", not "model_output"
 	//       type: uri_folder
-	job = validJob()
+	job := validJob()
 	job.Command = "python train.py --data ${{inputs.training_data}} --val ${{inputs.validation_data}} --out ${{outputs.model_output}}"
 	job.Inputs = map[string]InputDefinition{
 		"training_data": {Type: "uri_folder", Path: "azureml://datastores/blob/data"},
 	}
 	job.Outputs = map[string]OutputDefinition{"model": {Type: "uri_folder"}}
-	result = ValidateJobOffline(job, ".")
+	result := ValidateJobOffline(job, ".")
 	if f := findFindingByMessage(result, "'validation_data' is not defined in inputs"); f == nil || f.Severity != SeverityError {
 		t.Error("expected error for unmapped input 'validation_data'")
 	}

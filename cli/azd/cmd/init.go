@@ -223,7 +223,10 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// The positional [directory] argument is only valid with --template.
 	if len(i.args) > 0 && !isTemplateInit {
 		return nil, &internal.ErrorWithSuggestion{
-			Err: fmt.Errorf("positional [directory] argument requires --template"),
+			Err: fmt.Errorf(
+				"positional [directory] argument requires --template: %w",
+				internal.ErrInvalidFlagCombination,
+			),
 			Suggestion: "Use 'azd init --template <url> [directory]' to initialize " +
 				"a template into a new directory.",
 		}

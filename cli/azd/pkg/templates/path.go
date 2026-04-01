@@ -6,6 +6,7 @@ package templates
 import (
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -135,6 +136,17 @@ func DeriveDirectoryName(templatePath string) string {
 			}
 		}
 
+		// Strip query string and fragment from the URL path so that
+		// "repo?ref=main" or "repo#section" resolve to just "repo".
+		if parsed, err := url.Parse(path); err == nil {
+			path = parsed.Path
+			// url.Parse may leave the path empty for scheme-less remnants;
+			// fall back to the original when that happens.
+			if path == "" {
+				path = parsed.Opaque
+			}
+		}
+
 		// Take the last path segment
 		if idx := strings.LastIndex(path, "/"); idx >= 0 {
 			name = path[idx+1:]
@@ -145,6 +157,10 @@ func DeriveDirectoryName(templatePath string) string {
 		// For local paths and bare names, use the last path component
 		name = filepath.Base(path)
 	}
+
+	// Strip .git suffix from the extracted name (handles cases where the
+	// early TrimSuffix missed it, e.g. "repo.git?ref=main")
+	name = strings.TrimSuffix(name, ".git")
 
 	// Reject unsafe directory names that could cause path traversal
 	if name == "." || name == ".." || name == "" {

@@ -5,6 +5,7 @@ package pipeline
 
 import (
 	"context"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -412,9 +413,7 @@ func Test_escapeValuesForPipeline_additionalEdgeCases(t *testing.T) {
 
 			// Clone input to avoid test pollution
 			m := make(map[string]string, len(tt.input))
-			for k, v := range tt.input {
-				m[k] = v
-			}
+			maps.Copy(m, tt.input)
 
 			escapeValuesForPipeline(m)
 			assert.Equal(t, tt.expected, m)

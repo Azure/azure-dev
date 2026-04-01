@@ -75,11 +75,11 @@ func TestParseUseDeviceCode(t *testing.T) {
 		flagPtr     *string
 		expected    bool
 		expectError bool
-	}{		{
-			name:     "flag_true",
-			flagPtr:  new("true"),
-			expected: true,
-		},
+	}{{
+		name:     "flag_true",
+		flagPtr:  new("true"),
+		expected: true,
+	},
 		{
 			name:     "flag_false",
 			flagPtr:  new("false"),

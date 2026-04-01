@@ -13,8 +13,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -38,20 +36,6 @@ func fakeJWT(t *testing.T, claims TokenClaims) string {
 	body := base64.RawURLEncoding.EncodeToString(payload)
 	sig := base64.RawURLEncoding.EncodeToString([]byte("sig"))
 	return header + "." + body + "." + sig
-}
-
-// jwtTokenCredential returns a token credential that always
-// produces a JWT carrying the supplied claims.
-type jwtTokenCredential struct {
-	claims TokenClaims
-	t      *testing.T
-}
-
-func (j *jwtTokenCredential) GetToken(
-	_ context.Context,
-	_ policy.TokenRequestOptions,
-) (azcore.AccessToken, error) {
-	return azcore.AccessToken{Token: fakeJWT(j.t, j.claims)}, nil
 }
 
 // mockPublicClientFull supports all publicClient methods with
@@ -110,7 +94,7 @@ type stubDeviceCode struct {
 	err  error
 }
 
-func (s *stubDeviceCode) Message() string { return s.msg }
+func (s *stubDeviceCode) Message() string  { return s.msg }
 func (s *stubDeviceCode) UserCode() string { return s.code }
 func (s *stubDeviceCode) AuthenticationResult(
 	_ context.Context,
@@ -216,8 +200,8 @@ func TestClaimsForCurrentUser_ParsesJWT(t *testing.T) {
 			silentRes: public.AuthResult{
 				AccessToken: fakeJWT(t, TokenClaims{
 					PreferredUsername: "alice@example.com",
-					Oid:              "oid-1",
-					TenantId:         "tid-1",
+					Oid:               "oid-1",
+					TenantId:          "tid-1",
 				}),
 				Account: public.Account{
 					HomeAccountID: homeID,

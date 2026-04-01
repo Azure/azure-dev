@@ -64,7 +64,7 @@ func TestNewCompletionActions(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		factory func(cmd *cobra.Command) interface{ Run(ctx interface{}) }
+		factory func(cmd *cobra.Command) interface{ Run(ctx any) }
 		shell   string
 	}{
 		{
@@ -90,7 +90,7 @@ func TestNewCompletionActions(t *testing.T) {
 			t.Parallel()
 			cmd := &cobra.Command{Use: tt.shell}
 
-			var action interface{}
+			var action any
 			switch tt.shell {
 			case shellBash:
 				action = newCompletionBashAction(cmd)

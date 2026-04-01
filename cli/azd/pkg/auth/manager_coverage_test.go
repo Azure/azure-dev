@@ -322,10 +322,10 @@ func TestCredentialForCurrentUser_SPWithTenantOverride(t *testing.T) {
 
 func TestCredentialForCurrentUser_UserAccountWithTenantID(t *testing.T) {
 	m := &Manager{
-		configManager:     newMemoryConfigManager(),
-		userConfigManager: newMemoryUserConfigManager(),
-		publicClient:      &mockPublicClient{},
-		cloud:             cloud.AzurePublic(),
+		configManager:       newMemoryConfigManager(),
+		userConfigManager:   newMemoryUserConfigManager(),
+		publicClient:        &mockPublicClient{},
+		cloud:               cloud.AzurePublic(),
 		publicClientOptions: []public.Option{},
 	}
 

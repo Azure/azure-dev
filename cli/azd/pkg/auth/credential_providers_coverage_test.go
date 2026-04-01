@@ -4,7 +4,6 @@
 package auth
 
 import (
-	"net/http"
 	"testing"
 	"time"
 
@@ -69,15 +68,3 @@ func TestClaimsForCurrentUser_NotLoggedIn(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrNoCurrentUser)
 }
-
-// --- fakeHTTPClient for tests needing an HttpClient ---
-
-type fakeHTTPClient struct{}
-
-func (f *fakeHTTPClient) Do(
-	_ *http.Request,
-) (*http.Response, error) {
-	return nil, assert.AnError
-}
-
-func (f *fakeHTTPClient) CloseIdleConnections() {}

@@ -1249,7 +1249,9 @@ func (f *fakeSequenceAgent) SendMessage(_ context.Context, _ string, _ ...agent.
 	return nil, errors.New("unexpected call")
 }
 
-func (f *fakeSequenceAgent) SendMessageWithRetry(ctx context.Context, prompt string, opts ...agent.SendOption) (*agent.AgentResult, error) {
+func (f *fakeSequenceAgent) SendMessageWithRetry(
+	ctx context.Context, prompt string, opts ...agent.SendOption,
+) (*agent.AgentResult, error) {
 	return f.SendMessage(ctx, prompt, opts...)
 }
 

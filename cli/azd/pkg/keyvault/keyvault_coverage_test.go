@@ -33,38 +33,38 @@ func TestParseKeyVaultAppReference_ValidationEdgeCases(t *testing.T) {
 			errSubstr: "invalid @Microsoft.KeyVault reference",
 		},
 		{
-			name: "kv scheme (not real) is rejected",
-			input: "kv://myvault.vault.azure.net/secrets/mysecret",
+			name:      "kv scheme (not real) is rejected",
+			input:     "kv://myvault.vault.azure.net/secrets/mysecret",
 			wantErr:   true,
 			errSubstr: "invalid @Microsoft.KeyVault reference",
 		},
 		{
-			name: "empty SecretUri value",
-			input: "@Microsoft.KeyVault(SecretUri=)",
+			name:      "empty SecretUri value",
+			input:     "@Microsoft.KeyVault(SecretUri=)",
 			wantErr:   true,
 			errSubstr: "invalid @Microsoft.KeyVault reference",
 		},
 		{
-			name: "SecretUri with http (not https)",
-			input: "@Microsoft.KeyVault(SecretUri=http://myvault.vault.azure.net/secrets/s)",
+			name:      "SecretUri with http (not https)",
+			input:     "@Microsoft.KeyVault(SecretUri=http://myvault.vault.azure.net/secrets/s)",
 			wantErr:   true,
 			errSubstr: "https scheme",
 		},
 		{
-			name: "wrong host pattern (not vault.azure.net)",
-			input: "@Microsoft.KeyVault(SecretUri=https://myvault.example.com/secrets/s)",
+			name:      "wrong host pattern (not vault.azure.net)",
+			input:     "@Microsoft.KeyVault(SecretUri=https://myvault.example.com/secrets/s)",
 			wantErr:   true,
 			errSubstr: "not a known Azure Key Vault endpoint",
 		},
 		{
-			name: "empty secret name in path",
-			input: "@Microsoft.KeyVault(SecretUri=https://myvault.vault.azure.net/secrets/)",
+			name:      "empty secret name in path",
+			input:     "@Microsoft.KeyVault(SecretUri=https://myvault.vault.azure.net/secrets/)",
 			wantErr:   true,
 			errSubstr: "secret name must not be empty",
 		},
 		{
-			name: "path without /secrets/ segment",
-			input: "@Microsoft.KeyVault(SecretUri=https://myvault.vault.azure.net/keys/mykey)",
+			name:      "path without /secrets/ segment",
+			input:     "@Microsoft.KeyVault(SecretUri=https://myvault.vault.azure.net/keys/mykey)",
 			wantErr:   true,
 			errSubstr: "/secrets/<name>",
 		},
@@ -74,25 +74,25 @@ func TestParseKeyVaultAppReference_ValidationEdgeCases(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "extra path segments after version are ignored",
-			input: "@Microsoft.KeyVault(SecretUri=https://myvault.vault.azure.net/secrets/mysecret/v1/extra)",
+			name:    "extra path segments after version are ignored",
+			input:   "@Microsoft.KeyVault(SecretUri=https://myvault.vault.azure.net/secrets/mysecret/v1/extra)",
 			wantErr: false,
 		},
 		{
-			name: "missing host",
-			input: "@Microsoft.KeyVault(SecretUri=https:///secrets/s)",
+			name:      "missing host",
+			input:     "@Microsoft.KeyVault(SecretUri=https:///secrets/s)",
 			wantErr:   true,
 			errSubstr: "must include a host",
 		},
 		{
-			name: "leading .vault.azure.net host (no vault name)",
-			input: "@Microsoft.KeyVault(SecretUri=https://.vault.azure.net/secrets/s)",
+			name:      "leading .vault.azure.net host (no vault name)",
+			input:     "@Microsoft.KeyVault(SecretUri=https://.vault.azure.net/secrets/s)",
 			wantErr:   true,
 			errSubstr: "could not extract vault name",
 		},
 		{
-			name: "sovereign cloud endpoint (Azure China)",
-			input: "@Microsoft.KeyVault(SecretUri=https://myvault.vault.azure.cn/secrets/mysecret)",
+			name:    "sovereign cloud endpoint (Azure China)",
+			input:   "@Microsoft.KeyVault(SecretUri=https://myvault.vault.azure.cn/secrets/mysecret)",
 			wantErr: false,
 		},
 		{
@@ -505,7 +505,7 @@ func TestIsAzureKeyVaultSecret_Extended(t *testing.T) {
 		{"akvs://a", true},
 		{"AKVS://x/y/z", false}, // case-sensitive
 		{"Akvs://x/y/z", false},
-		{"akvs:/x", false},      // single slash
+		{"akvs:/x", false}, // single slash
 		{"akvs", false},
 		{"", false},
 	}

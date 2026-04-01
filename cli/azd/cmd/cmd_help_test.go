@@ -233,7 +233,7 @@ func TestGenerateCmdHelpSamplesBlock(t *testing.T) {
 		t.Parallel()
 		samples := map[string]string{
 			"Initialize a project": "azd init",
-			"Deploy to Azure":     "azd up",
+			"Deploy to Azure":      "azd up",
 		}
 		result := generateCmdHelpSamplesBlock(samples)
 		require.Contains(t, result, "Examples")

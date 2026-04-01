@@ -439,6 +439,11 @@ func Test_BuildPromptForCategory(t *testing.T) {
 			contains: []string{"azd provision", "QuotaExceeded", "EXPLAIN TO THE USER", "RECOMMEND MANUAL STEPS"},
 		},
 		{
+			name:     "fix category",
+			category: categoryFix,
+			contains: []string{"azd provision", "QuotaExceeded", "FIX", "minimal change"},
+		},
+		{
 			name:     "default falls back to troubleshoot manual",
 			category: troubleshootCategory("unknown"),
 			contains: []string{"azd provision", "QuotaExceeded", "EXPLAIN TO THE USER", "RECOMMEND MANUAL STEPS"},

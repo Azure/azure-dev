@@ -67,24 +67,6 @@ type ErrorMiddleware struct {
 	errorPipeline     *errorhandler.ErrorHandlerPipeline
 }
 
-// ErrorCategory represents the classification of an error for determining
-// the appropriate agent mode behavior.
-type ErrorCategory int
-
-const (
-	// AzureContextAndOtherError represents errors originating from Azure service interactions
-	// or any other unclassified errors. These are eligible for full agentic analysis and automated fix.
-	AzureContextAndOtherError ErrorCategory = iota
-
-	// MachineContextError represents errors caused by the local machine environment,
-	// such as missing tools, incompatible tool versions, extension failures, or build-tool issues.
-	MachineContextError
-
-	// UserContextError represents errors caused by user actions or configuration,
-	// such as authentication failures, missing credentials, or invalid project/environment settings.
-	UserContextError
-)
-
 func fixableError(err error) bool {
 	// --- Machine context: typed errors ---
 	_, extRunErr := errors.AsType[*extensions.ExtensionRunError](err)
@@ -242,10 +224,8 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		}
 
 		// Skip agent troubleshooting for errors that are not classified as fixable
-		// No need to return error message again as it is already printed above
-		// just return to the main message loop for next steps
 		if !fixableError(originalError) {
-			return nil, nil
+			return actionResult, originalError
 		}
 
 		// Step 1: Category selection — user chooses the troubleshooting scope
@@ -255,11 +235,9 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			return nil, fmt.Errorf("prompting for troubleshoot category: %w", err)
 		}
 
-		// No need to return error message again as it is already printed above
-		// just return to the main message loop for next steps
 		if category == categorySkip {
 			span.SetStatus(codes.Error, "agent.troubleshoot.skip")
-			return nil, nil
+			return actionResult, originalError
 		}
 
 		// Step 2: Execute the selected category prompt
@@ -274,6 +252,8 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 
 		span.SetStatus(codes.Ok, fmt.Sprintf("agent.%s.completed", category))
 		e.displayUsageMetrics(ctx, agentResult)
+
+		previousError = originalError
 
 		if category != categoryFix {
 			// Step 3: Ask if user wants the agent to fix the error
@@ -290,7 +270,6 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 
 			// Step 4: Agent applies the fix
 			fixPrompt := e.buildFixPrompt(originalError)
-			previousError = originalError
 			e.console.Message(ctx, output.WithHintFormat(
 				"Preparing %s to fix error...", agentcopilot.DisplayTitle))
 			fixResult, err := azdAgent.SendMessageWithRetry(ctx, fixPrompt)

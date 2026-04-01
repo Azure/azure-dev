@@ -82,7 +82,10 @@ def grade(context: dict) -> dict:
         return {"score": 1.0, "reason": f"Resource group '{resource_group}' exists"}
 
     # Check expected resources
-    actual_types = list_resources(subscription_id, resource_group, token)
+    try:
+        actual_types = list_resources(subscription_id, resource_group, token)
+    except HTTPError as e:
+        return {"score": 0.0, "reason": f"HTTP error listing resources: {e.code} {e.reason}"}
     found = sum(1 for expected in expected_resources if expected in actual_types)
     score = found / len(expected_resources)
 

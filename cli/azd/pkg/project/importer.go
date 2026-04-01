@@ -549,9 +549,15 @@ func pathHasModule(path, module string) (bool, error) {
 // GenerateAllInfrastructure returns a file system containing all infrastructure for the project,
 // rooted at the project directory.
 func (im *ImportManager) GenerateAllInfrastructure(ctx context.Context, projectConfig *ProjectConfig) (fs.FS, error) {
+	allImporters := im.allImporters()
+	log.Printf("GenerateAllInfrastructure: %d importers available, %d services in project",
+		len(allImporters), len(projectConfig.Services))
+
 	for _, svcConfig := range projectConfig.Services {
-		for _, importer := range im.allImporters() {
+		for _, importer := range allImporters {
 			canImport, err := importer.CanImport(ctx, svcConfig)
+			log.Printf("GenerateAllInfrastructure: %s.CanImport(svc=%s, path=%s) = %v, err=%v",
+				importer.Name(), svcConfig.Name, servicePath(svcConfig), canImport, err)
 			if err != nil {
 				log.Printf(
 					"error checking if %s can be imported by %s: %v",

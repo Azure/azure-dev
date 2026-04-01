@@ -231,7 +231,7 @@ If the user types `?`, a hint line appears below the prompt to provide additiona
 Hint: This is a help message
 ```
 
-> Colors: `?` and `[Type ? for hint]` → `WithHighLightFormat` + `WithBold`. Hint line → bold, color TBD.
+> Colors: `?` and `[Type ? for hint]` → `WithHighLightFormat` + `WithBold`.
 
 #### Yes or No Input
 

@@ -138,11 +138,12 @@ func isStandardMSIInstall() error {
 	// Normalize both paths for comparison (case-insensitive on Windows, clean slashes)
 	if !strings.EqualFold(filepath.Clean(actualDir), filepath.Clean(expectedDir)) {
 		return newUpdateError(CodeNonStandardInstall, fmt.Errorf(
-			"azd is installed in a non-standard location: %s\n"+
-				"azd update only supports the default per-user install.\n"+
-				"Please reinstall azd with the default configuration:\n"+
+			"azd installation might be managed by an administrator (installed at: %s).\n"+
+				"Contact your administrator to update azd, or reinstall with the "+
+				"default configuration:\n"+
 				"  ALLUSERS=2  INSTALLDIR=\"%s\"\n"+
-				"See https://github.com/Azure/azure-dev/blob/main/cli/installer/README.md#msi-configuration",
+				"See https://github.com/Azure/azure-dev/blob/main/cli/installer/README.md#msi-configuration\n"+
+				"To suppress update notifications, set AZD_SKIP_UPDATE_CHECK=1",
 			actualDir, expectedDir,
 		))
 	}

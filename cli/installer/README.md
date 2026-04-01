@@ -134,6 +134,8 @@ When installing using the MSI directly (instead of the install script) the MSI b
 | `ALLUSERS` | `2`: Default. Install for current user (no privilege elevation required). <br/> `1`: Install for _all_ users (may require privilege elevation). |
 | `INSTALLDIR` | Installation path. <br/> `"%LOCALAPPDATA%\Programs\Azure Dev CLI"`: Default. <br/> `"%PROGRAMFILES%\Azure Dev CLI"`: Default all users. |
 
+> **Note:** Installing per-machine (`ALLUSERS=1`) means the administrator is responsible for managing updates. To suppress update notifications in environments where administrators manage updates, set the `AZD_SKIP_UPDATE_CHECK=1` environment variable.
+
 ### Custom install location 
 
 #### Windows 

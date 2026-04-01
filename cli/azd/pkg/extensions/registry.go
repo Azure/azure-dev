@@ -44,6 +44,8 @@ const (
 	FrameworkServiceProviderCapability CapabilityType = "framework-service-provider"
 	// Metadata capability enables extensions to provide comprehensive metadata about their commands and capabilities
 	MetadataCapability CapabilityType = "metadata"
+	// Importer providers enable extensions to detect projects, extract services, and generate infrastructure
+	ImporterProviderCapability CapabilityType = "importer-provider"
 )
 
 type ProviderType string
@@ -51,6 +53,8 @@ type ProviderType string
 const (
 	// Service target provider type for custom deployment targets
 	ServiceTargetProviderType ProviderType = "service-target"
+	// Importer provider type for custom project importers
+	ImporterProviderType ProviderType = "importer"
 )
 
 // Extension represents an extension in the registry

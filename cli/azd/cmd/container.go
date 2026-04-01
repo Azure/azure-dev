@@ -949,6 +949,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(grpcserver.NewServiceTargetService)
 	container.MustRegisterSingleton(grpcserver.NewFrameworkService)
 	container.MustRegisterSingleton(grpcserver.NewAiModelService)
+	container.MustRegisterSingleton(grpcserver.NewImporterGrpcService)
 	container.MustRegisterScoped(grpcserver.NewCopilotService)
 
 	// Required for nested actions called from composite actions like 'up'

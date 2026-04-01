@@ -66,7 +66,8 @@
           "title": "Provider Type",
           "description": "The type of provider.",
           "enum": [
-            "service-target"
+            "service-target",
+            "importer"
           ]
         },
         "description": {
@@ -153,6 +154,12 @@
             "const": "metadata",
             "title": "Metadata",
             "description": "Metadata capability enables extensions to provide comprehensive metadata about their commands and capabilities via a metadata command."
+          },
+          {
+            "type": "string",
+            "const": "importer-provider",
+            "title": "Importer Provider",
+            "description": "Importer provider enables extensions to detect projects, extract services, and generate infrastructure from project configurations."
           }
         ]
       }

@@ -30,6 +30,7 @@ var (
 		extensions.LifecycleEventsCapability,
 		extensions.ServiceTargetProviderCapability,
 		extensions.FrameworkServiceProviderCapability,
+		extensions.ImporterProviderCapability,
 	}
 )
 

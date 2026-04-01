@@ -164,7 +164,7 @@ When working on CLI output, terminal UX, spinners, progress states, colors, or p
 📄 **`cli/azd/docs/style-guidelines/azd-style-guide.md`** (full path from repo root)
 
 This file is the authoritative reference for core azd terminal UX patterns including:
-- Progress report states (`(✓) Done`, `(✗) Failed`, `(!) Warning`, `(-) Skipped`)
+- Progress report states (`(✓) Done`, `(x) Failed`, `(!) Warning`, `(-) Skipped`)
 - Spinner type (bar-fill `|=======|`)
 - Color conventions (`WithSuccessFormat`, `WithErrorFormat`, `WithHighLightFormat`, etc.)
 - User input patterns (text input, list select, yes/no confirm)

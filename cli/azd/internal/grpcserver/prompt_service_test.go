@@ -6,6 +6,7 @@ package grpcserver
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -19,6 +20,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockprompt"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func Test_PromptService_Confirm_NoPromptWithDefault(t *testing.T) {
@@ -213,6 +216,39 @@ func Test_PromptService_PromptLocation(t *testing.T) {
 	require.Equal(t, expectedLocation.Name, resp.Location.Name)
 	require.Equal(t, expectedLocation.DisplayName, resp.Location.DisplayName)
 	require.Equal(t, expectedLocation.RegionalDisplayName, resp.Location.RegionalDisplayName)
+	mockPrompter.AssertExpectations(t)
+}
+
+func Test_PromptService_PromptLocation_WithAllowedLocations(t *testing.T) {
+	mockPrompter := &mockprompt.MockPromptService{}
+	globalOptions := &internal.GlobalCommandOptions{NoPrompt: false}
+
+	expectedLocation := &account.Location{
+		Name:                "westus3",
+		DisplayName:         "West US 3",
+		RegionalDisplayName: "(US) West US 3",
+	}
+
+	mockPrompter.
+		On("PromptLocation", mock.Anything, mock.Anything, mock.MatchedBy(func(opts *prompt.SelectOptions) bool {
+			return opts != nil && slices.Equal(opts.AllowedValues, []string{"westus3", "eastus2"})
+		})).
+		Return(expectedLocation, nil)
+
+	service := NewPromptService(mockPrompter, nil, nil, globalOptions)
+
+	resp, err := service.PromptLocation(context.Background(), &azdext.PromptLocationRequest{
+		AzureContext: &azdext.AzureContext{
+			Scope: &azdext.AzureScope{
+				SubscriptionId: "sub-123",
+			},
+		},
+		AllowedLocations: []string{"westus3", "eastus2"},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, resp.Location)
+	require.Equal(t, expectedLocation.Name, resp.Location.Name)
 	mockPrompter.AssertExpectations(t)
 }
 
@@ -826,6 +862,38 @@ func Test_buildSkuCandidatesForVersion(t *testing.T) {
 		require.NotNil(t, candidates[0].remaining)
 		require.Equal(t, float64(10), *candidates[0].remaining)
 	})
+
+	t.Run("falls back to lower capacity that fits remaining quota", func(t *testing.T) {
+		deepSeekVersion := ai.AiModelVersion{
+			Version: "1",
+			Skus: []ai.AiModelSku{
+				{
+					Name:            "GlobalStandard",
+					UsageName:       "AIServices.GlobalStandard.DeepSeek-R1-0528",
+					DefaultCapacity: 5000,
+					MinCapacity:     0,
+					MaxCapacity:     5000,
+					CapacityStep:    0,
+				},
+			},
+		}
+		quota := &azdext.QuotaCheckOptions{
+			MinRemainingCapacity: 1,
+		}
+		usageMap := map[string]ai.AiModelUsage{
+			"AIServices.GlobalStandard.DeepSeek-R1-0528": {
+				Name:         "AIServices.GlobalStandard.DeepSeek-R1-0528",
+				CurrentValue: 0,
+				Limit:        1000,
+			},
+		}
+
+		candidates := buildSkuCandidatesForVersion(deepSeekVersion, nil, quota, usageMap, false)
+		require.Len(t, candidates, 1)
+		require.Equal(t, "AIServices.GlobalStandard.DeepSeek-R1-0528", candidates[0].sku.UsageName)
+		require.NotNil(t, candidates[0].remaining)
+		require.Equal(t, float64(1000), *candidates[0].remaining)
+	})
 }
 
 func Test_maxSkuCandidateRemaining(t *testing.T) {
@@ -997,6 +1065,83 @@ func Test_selectModelNoPrompt(t *testing.T) {
 			require.NotNil(t, resp)
 			require.NotNil(t, resp.Model)
 			require.Equal(t, tt.wantModel, resp.Model.Name)
+		})
+	}
+}
+
+func Test_PromptService_NilOptions_Validation(t *testing.T) {
+	globalOptions := &internal.GlobalCommandOptions{NoPrompt: true}
+	service := NewPromptService(nil, nil, nil, globalOptions)
+
+	tests := []struct {
+		name   string
+		method string
+	}{
+		{"Confirm_nil_options", "Confirm"},
+		{"Select_nil_options", "Select"},
+		{"MultiSelect_nil_options", "MultiSelect"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var err error
+			switch tt.method {
+			case "Confirm":
+				_, err = service.Confirm(
+					t.Context(),
+					&azdext.ConfirmRequest{Options: nil},
+				)
+			case "Select":
+				_, err = service.Select(
+					t.Context(),
+					&azdext.SelectRequest{Options: nil},
+				)
+			case "MultiSelect":
+				_, err = service.MultiSelect(
+					t.Context(),
+					&azdext.MultiSelectRequest{Options: nil},
+				)
+			}
+
+			require.Error(t, err)
+			st, ok := status.FromError(err)
+			require.True(t, ok)
+			require.Equal(t, codes.InvalidArgument, st.Code())
+			require.Contains(t, st.Message(), "options are required")
+		})
+	}
+}
+
+func Test_PromptService_CreateAzureContext_NilScope(t *testing.T) {
+	globalOptions := &internal.GlobalCommandOptions{NoPrompt: false}
+	svc := NewPromptService(nil, nil, nil, globalOptions)
+	ps := svc.(*promptService)
+
+	tests := []struct {
+		name        string
+		wire        *azdext.AzureContext
+		errContains string
+	}{
+		{
+			name:        "nil_azure_context",
+			wire:        nil,
+			errContains: "azure context is required",
+		},
+		{
+			name:        "nil_scope",
+			wire:        &azdext.AzureContext{Scope: nil},
+			errContains: "azure context scope is required",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ps.createAzureContext(tt.wire)
+			require.Error(t, err)
+			st, ok := status.FromError(err)
+			require.True(t, ok)
+			require.Equal(t, codes.InvalidArgument, st.Code())
+			require.Contains(t, st.Message(), tt.errContains)
 		})
 	}
 }

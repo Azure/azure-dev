@@ -16,7 +16,13 @@
 
 .PARAMETER BuildId
     Azure DevOps build ID to download coverage from. If not specified, uses
-    the latest successful build from the main branch.
+    the latest successful build from the main branch (or the PR branch if
+    -PullRequestId is set).
+
+.PARAMETER PullRequestId
+    GitHub pull request number. Finds the latest CI build for this PR and
+    downloads its coverage artifacts. This lets you check coverage from a PR
+    without waiting for it to merge.
 
 .PARAMETER Organization
     Azure DevOps organization URL. Defaults to 'https://dev.azure.com/azure-sdk'.
@@ -38,6 +44,10 @@
     ./Get-CICoverageReport.ps1 -ShowReport
 
 .EXAMPLE
+    # Get coverage from a specific PR
+    ./Get-CICoverageReport.ps1 -PullRequestId 7350 -ShowReport
+
+.EXAMPLE
     # Show only packages below 10% coverage
     ./Get-CICoverageReport.ps1 -ShowReport -MinCoverage 10
 
@@ -48,6 +58,7 @@
 
 param(
     [int]$BuildId = 0,
+    [int]$PullRequestId = 0,
     [string]$Organization = 'https://dev.azure.com/azure-sdk',
     [string]$Project = 'internal',
     [string]$OutputFile = 'cover-ci-combined.out',
@@ -71,15 +82,43 @@ $headers = @{ Authorization = "Bearer $token" }
 
 # Find the build to use
 if ($BuildId -eq 0) {
-    Write-Host "Finding latest successful build from main..."
-    $buildsUrl = "$Organization/$Project/_apis/build/builds?definitions=$PipelineDefinitionId&branchName=refs/heads/main&resultFilter=succeeded&`$top=1&api-version=7.1"
-    $buildsResp = Invoke-RestMethod -Uri $buildsUrl -Headers $headers -Method Get
-    if ($buildsResp.count -eq 0) {
-        throw "No successful builds found for pipeline $PipelineDefinitionId on main"
+    if ($PullRequestId -gt 0) {
+        # Find the latest build for this PR by searching the merge ref branch
+        Write-Host "Finding latest build for PR #$PullRequestId..."
+
+        # Azure DevOps indexes PR builds under refs/pull/<id>/merge
+        $prBranch = "refs/pull/$PullRequestId/merge"
+        $buildsUrl = "$Organization/$Project/_apis/build/builds?definitions=$PipelineDefinitionId&branchName=$prBranch&`$top=1&api-version=7.1"
+        $buildsResp = Invoke-RestMethod -Uri $buildsUrl -Headers $headers -Method Get
+
+        if ($buildsResp.count -eq 0) {
+            throw "No builds found for PR #$PullRequestId (pipeline $PipelineDefinitionId). Make sure the PR CI pipeline has run."
+        }
+
+        $build = $buildsResp.value[0]
+        $BuildId = $build.id
+        $buildNumber = $build.buildNumber
+        $buildResult = $build.result
+        $buildStatus = $build.status
+
+        if ($buildStatus -ne 'completed') {
+            Write-Warning "Build $BuildId is still '$buildStatus' — coverage artifacts may not be available yet."
+        } elseif ($buildResult -ne 'succeeded') {
+            Write-Warning "Build $BuildId result is '$buildResult' — coverage artifacts may be incomplete."
+        }
+
+        Write-Host "Using PR #$PullRequestId build $BuildId ($buildNumber) [$buildResult]"
+    } else {
+        Write-Host "Finding latest successful build from main..."
+        $buildsUrl = "$Organization/$Project/_apis/build/builds?definitions=$PipelineDefinitionId&branchName=refs/heads/main&resultFilter=succeeded&`$top=1&api-version=7.1"
+        $buildsResp = Invoke-RestMethod -Uri $buildsUrl -Headers $headers -Method Get
+        if ($buildsResp.count -eq 0) {
+            throw "No successful builds found for pipeline $PipelineDefinitionId on main"
+        }
+        $BuildId = $buildsResp.value[0].id
+        $buildNumber = $buildsResp.value[0].buildNumber
+        Write-Host "Using build $BuildId ($buildNumber)"
     }
-    $BuildId = $buildsResp.value[0].id
-    $buildNumber = $buildsResp.value[0].buildNumber
-    Write-Host "Using build $BuildId ($buildNumber)"
 }
 
 # Create temp directory

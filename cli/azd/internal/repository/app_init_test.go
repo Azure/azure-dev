@@ -19,6 +19,7 @@ import (
 )
 
 func TestInitializer_prjConfigFromDetect(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name         string
 		detect       detectConfirm

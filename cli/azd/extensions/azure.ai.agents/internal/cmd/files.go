@@ -27,19 +27,27 @@ type filesFlags struct {
 
 // isVNextEnabled checks whether hosted agent vnext is enabled
 // by looking at both the OS environment and the azd environment.
-func isVNextEnabled(ctx context.Context) bool {
+// An optional AzdClient can be passed to avoid creating a new connection;
+// if nil, the function creates one internally.
+func isVNextEnabled(ctx context.Context, client ...*azdext.AzdClient) bool {
 	if v := os.Getenv("enableHostedAgentVNext"); v != "" {
 		if enabled, err := strconv.ParseBool(v); err == nil && enabled {
 			return true
 		}
 	}
 
-	// Best-effort check of azd environment
-	azdClient, err := azdext.NewAzdClient()
-	if err != nil {
-		return false
+	// Use provided client or create one for best-effort azd env check
+	var azdClient *azdext.AzdClient
+	if len(client) > 0 && client[0] != nil {
+		azdClient = client[0]
+	} else {
+		var err error
+		azdClient, err = azdext.NewAzdClient()
+		if err != nil {
+			return false
+		}
+		defer azdClient.Close()
 	}
-	defer azdClient.Close()
 
 	azdEnv, err := loadAzdEnvironment(ctx, azdClient)
 	if err != nil {

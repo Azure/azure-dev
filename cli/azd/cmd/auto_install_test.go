@@ -16,6 +16,7 @@ import (
 )
 
 func TestFindFirstNonFlagArg(t *testing.T) {
+	t.Parallel()
 	// Mock flags that take values for testing
 	flagsWithValues := map[string]bool{
 		"--output":         true,
@@ -121,6 +122,7 @@ func TestFindFirstNonFlagArg(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			result, _ := findFirstNonFlagArg(tt.args, flagsWithValues)
 			assert.Equal(t, tt.expected, result)
 		})
@@ -128,6 +130,7 @@ func TestFindFirstNonFlagArg(t *testing.T) {
 }
 
 func TestFindFirstNonFlagArgWithUnknownFlags(t *testing.T) {
+	t.Parallel()
 	flagsWithValues := map[string]bool{
 		"--output": true,
 		"-o":       true,
@@ -187,6 +190,7 @@ func TestFindFirstNonFlagArgWithUnknownFlags(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			command, unknownFlags := findFirstNonFlagArg(tt.args, flagsWithValues)
 			assert.Equal(t, tt.expectedCommand, command)
 			assert.Equal(t, tt.expectedUnknownFlags, unknownFlags)
@@ -195,6 +199,7 @@ func TestFindFirstNonFlagArgWithUnknownFlags(t *testing.T) {
 }
 
 func TestExtractFlagsWithValues(t *testing.T) {
+	t.Parallel()
 	// Create a test command with various flag types
 	cmd := &cobra.Command{
 		Use: "test",
@@ -234,6 +239,7 @@ func TestExtractFlagsWithValues(t *testing.T) {
 }
 
 func TestCheckForMatchingExtension_Unit(t *testing.T) {
+	t.Parallel()
 	// This is a unit test that tests the logic without external dependencies
 	// We'll create a mock-like test by testing the namespace matching logic directly
 
@@ -309,6 +315,7 @@ func TestCheckForMatchingExtension_Unit(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			// Test the namespace matching logic directly
 			var foundExtension *extensions.ExtensionMetadata
 			for _, ext := range tc.extensions {

@@ -16,6 +16,7 @@ import (
 )
 
 func TestUxMiddleware_ErrAbortedByUser_SwallowsError(t *testing.T) {
+	t.Parallel()
 	mockContext := mocks.NewMockContext(context.Background())
 	featureManager := &alpha.FeatureManager{}
 	ux := NewUxMiddleware(&Options{}, mockContext.Console, featureManager)
@@ -30,6 +31,7 @@ func TestUxMiddleware_ErrAbortedByUser_SwallowsError(t *testing.T) {
 }
 
 func TestUxMiddleware_ErrAbortedByUser_ChildAction_PassesThrough(t *testing.T) {
+	t.Parallel()
 	mockContext := mocks.NewMockContext(context.Background())
 	childCtx := WithChildAction(*mockContext.Context)
 	featureManager := &alpha.FeatureManager{}
@@ -45,6 +47,7 @@ func TestUxMiddleware_ErrAbortedByUser_ChildAction_PassesThrough(t *testing.T) {
 }
 
 func TestUxMiddleware_OtherErrors_NotSwallowed(t *testing.T) {
+	t.Parallel()
 	mockContext := mocks.NewMockContext(context.Background())
 	featureManager := &alpha.FeatureManager{}
 	ux := NewUxMiddleware(&Options{}, mockContext.Console, featureManager)
@@ -59,6 +62,7 @@ func TestUxMiddleware_OtherErrors_NotSwallowed(t *testing.T) {
 }
 
 func TestUxMiddleware_Success_ShowsActionResult(t *testing.T) {
+	t.Parallel()
 	mockContext := mocks.NewMockContext(context.Background())
 	featureManager := &alpha.FeatureManager{}
 	ux := NewUxMiddleware(&Options{}, mockContext.Console, featureManager)

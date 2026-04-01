@@ -72,6 +72,12 @@ func (m *mockKeyVaultService) SecretFromAkvs(
 	return "", nil
 }
 
+func (m *mockKeyVaultService) SecretFromKeyVaultReference(
+	_ context.Context, _ string, _ string,
+) (string, error) {
+	return "", nil
+}
+
 func Test_SecretOrRandomPassword_WrongCommand(t *testing.T) {
 	svc := &mockKeyVaultService{}
 	executor := NewSecretOrRandomPasswordExecutor(svc, "sub1")

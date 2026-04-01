@@ -74,6 +74,7 @@ message PromptSubscriptionResponse {
 
 message PromptLocationRequest {
   AzureContext azure_context = 1;
+  repeated string allowed_locations = 2;
 }
 
 message PromptLocationResponse {

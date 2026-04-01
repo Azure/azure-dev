@@ -383,6 +383,53 @@ var (
 	}
 )
 
+// Preflight validation related fields
+var (
+	// PreflightOutcomeKey records the outcome of preflight validation.
+	//
+	// Example: "passed", "warnings_accepted", "aborted_by_errors",
+	//          "aborted_by_user", "skipped", "error"
+	PreflightOutcomeKey = AttributeKey{
+		Key:            attribute.Key("validation.preflight.outcome"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+
+	// PreflightDiagnosticsKey records the list of diagnostic IDs emitted by preflight checks.
+	//
+	// Example: ["role_assignment_missing", "role_assignment_conditional"]
+	PreflightDiagnosticsKey = AttributeKey{
+		Key:            attribute.Key("validation.preflight.diagnostics"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+
+	// PreflightRulesKey records the list of rule IDs that were executed.
+	//
+	// Example: ["role_assignment_permissions"]
+	PreflightRulesKey = AttributeKey{
+		Key:            attribute.Key("validation.preflight.rules"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+
+	// PreflightWarningCountKey records the number of warnings produced by preflight validation.
+	PreflightWarningCountKey = AttributeKey{
+		Key:            attribute.Key("validation.preflight.warning.count"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+		IsMeasurement:  true,
+	}
+
+	// PreflightErrorCountKey records the number of errors produced by preflight validation.
+	PreflightErrorCountKey = AttributeKey{
+		Key:            attribute.Key("validation.preflight.error.count"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+		IsMeasurement:  true,
+	}
+)
+
 // The value used for ServiceNameKey
 const ServiceNameAzd = "azd"
 

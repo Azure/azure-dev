@@ -19,6 +19,7 @@ import (
 
 	"github.com/AlecAivazis/survey/v2/terminal"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
@@ -48,6 +49,7 @@ func MapError(err error, span tracing.Span) {
 		errCode = updateErr.Code
 	} else if _, ok := errors.AsType[*auth.ReLoginRequiredError](err); ok {
 		errCode = "auth.login_required"
+		errDetails = append(errDetails, fields.ErrCategory.String("auth"))
 	} else if errWithSuggestion, ok := errors.AsType[*internal.ErrorWithSuggestion](err); ok {
 		errCode = "error.suggestion"
 		span.SetAttributes(fields.ErrType.String(classifySuggestionType(errWithSuggestion.Unwrap())))
@@ -184,6 +186,12 @@ func MapError(err error, span tracing.Span) {
 				fields.ServiceCorrelationId.String(authFailedErr.Parsed.CorrelationId))
 		}
 		errCode = "service.aad.failed"
+	} else if errors.Is(err, auth.ErrNoCurrentUser) {
+		errCode = "auth.not_logged_in"
+		errDetails = append(errDetails, fields.ErrCategory.String("auth"))
+	} else if _, ok := errors.AsType[*azidentity.AuthenticationFailedError](err); ok {
+		errCode = "auth.identity_failed"
+		errDetails = append(errDetails, fields.ErrCategory.String("auth"))
 	} else if code := classifySentinel(err); code != "" {
 		errCode = code
 	} else if isNetworkError(err) {
@@ -263,13 +271,13 @@ func classifySentinel(err error) string {
 		return "internal.resource_not_found"
 	case errors.Is(err, internal.ErrOperationCancelled):
 		return "internal.operation_cancelled"
+	case errors.Is(err, internal.ErrAbortedByUser):
+		return "internal.operation_aborted"
 	case errors.Is(err, terminal.InterruptErr),
 		errors.Is(err, context.Canceled):
 		return "user.canceled"
 	case errors.Is(err, context.DeadlineExceeded):
 		return "internal.timeout"
-	case errors.Is(err, auth.ErrNoCurrentUser):
-		return "auth.not_logged_in"
 	case errors.Is(err, consent.ErrToolExecutionDenied):
 		return "user.tool_denied"
 	case errors.Is(err, git.ErrNotRepository):
@@ -372,6 +380,14 @@ func classifySuggestionType(err error) string {
 
 	if _, ok := errors.AsType[*auth.AuthFailedError](err); ok {
 		return "service.aad.failed"
+	}
+
+	if errors.Is(err, auth.ErrNoCurrentUser) {
+		return "auth.not_logged_in"
+	}
+
+	if _, ok := errors.AsType[*azidentity.AuthenticationFailedError](err); ok {
+		return "auth.identity_failed"
 	}
 
 	if code := classifySentinel(err); code != "" {

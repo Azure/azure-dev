@@ -16,8 +16,11 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	armcognitiveservices "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // FoundryProjectInfo holds information about a discovered or parsed Foundry project.
@@ -41,6 +44,8 @@ type FoundryDeploymentInfo struct {
 	SkuCapacity int
 }
 
+const foundryProjectResourceType = "Microsoft.CognitiveServices/accounts/projects"
+
 // setEnvValue sets a single environment variable in the azd environment.
 func setEnvValue(ctx context.Context, azdClient *azdext.AzdClient, envName, key, value string) error {
 	_, err := azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
@@ -55,16 +60,14 @@ func setEnvValue(ctx context.Context, azdClient *azdext.AzdClient, envName, key,
 	return nil
 }
 
+// projectResourceIdRegex is the precompiled regex for parsing Foundry project ARM resource IDs.
+var projectResourceIdRegex = regexp.MustCompile(
+	`^/subscriptions/([^/]+)/resourceGroups/([^/]+)/providers/Microsoft\.CognitiveServices/accounts/([^/]+)/projects/([^/]+)$`,
+)
+
 // extractProjectDetails parses an ARM resource ID into a FoundryProjectInfo.
 func extractProjectDetails(projectResourceId string) (*FoundryProjectInfo, error) {
-	pattern := `^/subscriptions/([^/]+)/resourceGroups/([^/]+)/providers/Microsoft\.CognitiveServices/accounts/([^/]+)/projects/([^/]+)$`
-
-	regex, err := regexp.Compile(pattern)
-	if err != nil {
-		return nil, fmt.Errorf("failed to compile regex pattern: %w", err)
-	}
-
-	matches := regex.FindStringSubmatch(projectResourceId)
+	matches := projectResourceIdRegex.FindStringSubmatch(projectResourceId)
 	if matches == nil || len(matches) != 5 {
 		return nil, fmt.Errorf(
 			"the given Microsoft Foundry project ID does not match expected format: " +
@@ -104,97 +107,106 @@ func extractResourceGroup(resourceId string) string {
 	return ""
 }
 
+func foundryProjectInfoFromResource(resource *armresources.GenericResourceExpanded) (*FoundryProjectInfo, bool) {
+	if resource == nil || resource.ID == nil || *resource.ID == "" {
+		return nil, false
+	}
+
+	project, err := extractProjectDetails(*resource.ID)
+	if err != nil {
+		return nil, false
+	}
+
+	if resource.Location != nil {
+		project.Location = *resource.Location
+	}
+
+	return project, true
+}
+
+func updateFoundryProjectInfo(project *FoundryProjectInfo, resource *armcognitiveservices.Project) {
+	if project == nil || resource == nil {
+		return
+	}
+
+	if resource.ID != nil && *resource.ID != "" {
+		project.ResourceId = *resource.ID
+	}
+
+	if resource.Name != nil && *resource.Name != "" {
+		if idx := strings.LastIndex(*resource.Name, "/"); idx != -1 {
+			project.ProjectName = (*resource.Name)[idx+1:]
+		} else {
+			project.ProjectName = *resource.Name
+		}
+	}
+
+	if resource.Location != nil {
+		project.Location = *resource.Location
+	}
+}
+
 // listFoundryProjects enumerates all Foundry projects in a subscription by listing
-// CognitiveServices accounts and their projects.
+// subscription resources filtered to Foundry projects.
 func listFoundryProjects(
 	ctx context.Context,
 	credential azcore.TokenCredential,
 	subscriptionId string,
 ) ([]FoundryProjectInfo, error) {
-	accountsClient, err := armcognitiveservices.NewAccountsClient(subscriptionId, credential, azure.NewArmClientOptions())
+	resourcesClient, err := armresources.NewClient(subscriptionId, credential, azure.NewArmClientOptions())
 	if err != nil {
-		return nil, fmt.Errorf("failed to create accounts client: %w", err)
-	}
-
-	projectsClient, err := armcognitiveservices.NewProjectsClient(subscriptionId, credential, azure.NewArmClientOptions())
-	if err != nil {
-		return nil, fmt.Errorf("failed to create projects client: %w", err)
+		return nil, fmt.Errorf("failed to create resources client: %w", err)
 	}
 
 	var results []FoundryProjectInfo
 
-	accountPager := accountsClient.NewListPager(nil)
-	for accountPager.More() {
-		page, err := accountPager.NextPage(ctx)
+	pager := resourcesClient.NewListPager(&armresources.ClientListOptions{
+		Filter: new(fmt.Sprintf("resourceType eq '%s'", foundryProjectResourceType)),
+	})
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("failed to list accounts: %w", err)
+			return nil, fmt.Errorf("failed to list Foundry projects: %w", err)
 		}
 
-		for _, account := range page.Value {
-			if account.Kind == nil {
-				continue
-			}
-			kind := strings.ToLower(*account.Kind)
-			if kind != "aiservices" && kind != "openai" {
-				continue
-			}
-
-			accountId := ""
-			if account.ID != nil {
-				accountId = *account.ID
-			}
-			rgName := extractResourceGroup(accountId)
-			if rgName == "" {
-				continue
-			}
-			accountName := ""
-			if account.Name != nil {
-				accountName = *account.Name
-			}
-			accountLocation := ""
-			if account.Location != nil {
-				accountLocation = *account.Location
-			}
-
-			projectPager := projectsClient.NewListPager(rgName, accountName, nil)
-			for projectPager.More() {
-				projectPage, err := projectPager.NextPage(ctx)
-				if err != nil {
-					// Skip accounts we can't list projects for (permissions, etc.)
-					break
-				}
-				for _, proj := range projectPage.Value {
-					projName := ""
-					if proj.Name != nil {
-						fullName := *proj.Name
-						if idx := strings.LastIndex(fullName, "/"); idx != -1 {
-							projName = fullName[idx+1:]
-						} else {
-							projName = fullName
-						}
-					}
-					projLocation := accountLocation
-					if proj.Location != nil {
-						projLocation = *proj.Location
-					}
-					resourceId := fmt.Sprintf(
-						"/subscriptions/%s/resourceGroups/%s/providers/Microsoft.CognitiveServices/accounts/%s/projects/%s",
-						subscriptionId, rgName, accountName, projName)
-
-					results = append(results, FoundryProjectInfo{
-						SubscriptionId:    subscriptionId,
-						ResourceGroupName: rgName,
-						AccountName:       accountName,
-						ProjectName:       projName,
-						Location:          projLocation,
-						ResourceId:        resourceId,
-					})
-				}
+		for _, resource := range page.Value {
+			if project, ok := foundryProjectInfoFromResource(resource); ok {
+				results = append(results, *project)
 			}
 		}
 	}
 
 	return results, nil
+}
+
+func getFoundryProject(
+	ctx context.Context,
+	credential azcore.TokenCredential,
+	subscriptionId string,
+	projectResourceId string,
+) (*FoundryProjectInfo, error) {
+	project, err := extractProjectDetails(projectResourceId)
+	if err != nil {
+		return nil, err
+	}
+
+	if !strings.EqualFold(project.SubscriptionId, subscriptionId) {
+		return nil, fmt.Errorf("provided project resource ID does not match the selected subscription")
+	}
+
+	projectsClient, err := armcognitiveservices.NewProjectsClient(project.SubscriptionId, credential, azure.NewArmClientOptions())
+	if err != nil {
+		return nil, fmt.Errorf("failed to create projects client: %w", err)
+	}
+
+	response, err := projectsClient.Get(ctx, project.ResourceGroupName, project.AccountName, project.ProjectName, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get Foundry project: %w", err)
+	}
+
+	updateFoundryProjectInfo(project, &response.Project)
+
+	return project, nil
 }
 
 // listProjectDeployments lists all model deployments in a Foundry account.
@@ -542,8 +554,13 @@ func configureAppInsightsConnection(
 		selectedConnection = &appInsightsConnections[int(*selectResp.Value)]
 	}
 
-	if selectedConnection != nil && selectedConnection.Credentials.Key != "" {
-		if err := setEnvValue(ctx, azdClient, envName, "APPLICATIONINSIGHTS_CONNECTION_STRING", selectedConnection.Credentials.Key); err != nil {
+	if selectedConnection != nil {
+		if err := setEnvValue(ctx, azdClient, envName, "APPLICATIONINSIGHTS_CONNECTION_NAME", selectedConnection.Name); err != nil {
+			return err
+		}
+		if err := setEnvValue(
+			ctx, azdClient, envName, "APPLICATIONINSIGHTS_CONNECTION_STRING", selectedConnection.Credentials.Key,
+		); err != nil {
 			return err
 		}
 	}
@@ -560,6 +577,12 @@ func createNewEnvironment(
 	azdClient *azdext.AzdClient,
 	envName string,
 ) (*azdext.Environment, error) {
+	if envName != "" {
+		if existingEnv := getExistingEnvironment(ctx, envName, azdClient); existingEnv != nil {
+			return existingEnv, nil
+		}
+	}
+
 	envArgs := []string{"env", "new"}
 	if envName != "" {
 		envArgs = append(envArgs, envName)
@@ -579,6 +602,14 @@ func createNewEnvironment(
 		if exterrors.IsCancellation(err) {
 			return nil, exterrors.Cancelled("environment creation was cancelled")
 		}
+		// The workflow may have created the environment on disk before returning
+		// an "already exists" error (e.g. a concurrent process raced, or a previous
+		// partial run left env files behind). Re-fetch so we can reuse it.
+		if envName != "" && status.Code(err) == codes.AlreadyExists {
+			if existingEnv := getExistingEnvironment(ctx, envName, azdClient); existingEnv != nil {
+				return existingEnv, nil
+			}
+		}
 		return nil, exterrors.Dependency(
 			exterrors.CodeEnvironmentCreationFailed,
 			fmt.Sprintf("failed to create new azd environment: %s", err),
@@ -587,7 +618,7 @@ func createNewEnvironment(
 	}
 
 	// Re-fetch the environment after creation
-	env := getExistingEnvironment(ctx, &initFlags{env: envName}, azdClient)
+	env := getExistingEnvironment(ctx, envName, azdClient)
 	if env == nil {
 		return nil, exterrors.Dependency(
 			exterrors.CodeEnvironmentNotFound,
@@ -896,11 +927,26 @@ func selectFoundryProject(
 		return nil, fmt.Errorf("failed to start spinner: %w", err)
 	}
 
-	projects, err := listFoundryProjects(ctx, credential, subscriptionId)
+	var (
+		projects []FoundryProjectInfo
+		err      error
+	)
+	if projectResourceId != "" {
+		var project *FoundryProjectInfo
+		project, err = getFoundryProject(ctx, credential, subscriptionId, projectResourceId)
+		if err == nil {
+			projects = append(projects, *project)
+		}
+	} else {
+		projects, err = listFoundryProjects(ctx, credential, subscriptionId)
+	}
 	if stopErr := spinner.Stop(ctx); stopErr != nil {
 		return nil, stopErr
 	}
 	if err != nil {
+		if projectResourceId != "" {
+			return nil, err
+		}
 		return nil, fmt.Errorf("failed to list Foundry projects: %w", err)
 	}
 
@@ -911,16 +957,7 @@ func selectFoundryProject(
 	var selectedIdx int32 = -1
 
 	if projectResourceId != "" {
-		// Match from flag
-		for i, p := range projects {
-			if strings.EqualFold(p.ResourceId, projectResourceId) {
-				selectedIdx = int32(i)
-				break
-			}
-		}
-		if selectedIdx == -1 {
-			return nil, fmt.Errorf("provided project resource ID does not match any Foundry projects in the subscription")
-		}
+		selectedIdx = 0
 	} else {
 		// Sort projects alphabetically by account/project name for display
 		slices.SortFunc(projects, func(a, b FoundryProjectInfo) int {

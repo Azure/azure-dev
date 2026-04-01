@@ -22,6 +22,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appconfiguration/armappconfiguration"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
@@ -38,9 +39,11 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazapi"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mocktracing"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 func TestBicepPlan(t *testing.T) {
@@ -1909,4 +1912,96 @@ func TestHelperEvalParamEnvSubst(t *testing.T) {
 	require.Contains(t, substResult.mappedEnvVars, "VAR1")
 	require.Contains(t, substResult.mappedEnvVars, "VAR2")
 	require.False(t, substResult.hasUnsetEnvVar)
+}
+
+func TestSetPreflightOutcome_SetsSpanAndUsageAttributes(t *testing.T) {
+	span := &mocktracing.Span{}
+	provider := &BicepProvider{}
+
+	diagnosticIDs := []string{"role_assignment_missing", "role_assignment_conditional"}
+	provider.setPreflightOutcome(span, preflightOutcomeWarningsAccepted, diagnosticIDs)
+
+	// Verify outcome is set on the span directly.
+	outcomeAttr := findSpanAttribute(span.Attributes, "validation.preflight.outcome")
+	require.NotNil(t, outcomeAttr, "expected outcome attribute on span")
+	require.Equal(t, preflightOutcomeWarningsAccepted, outcomeAttr.Value.AsString())
+
+	// Verify usage-level attributes are set for parent command span correlation.
+	usageAttrs := tracing.GetUsageAttributes()
+	usageOutcome := findSpanAttribute(usageAttrs, "validation.preflight.outcome")
+	require.NotNil(t, usageOutcome, "expected outcome in usage attributes")
+	require.Equal(t, preflightOutcomeWarningsAccepted, usageOutcome.Value.AsString())
+
+	usageDiag := findSpanAttribute(
+		usageAttrs, "validation.preflight.diagnostics",
+	)
+	require.NotNil(t, usageDiag, "expected diagnostics in usage attributes")
+	require.Equal(t, diagnosticIDs, usageDiag.Value.AsStringSlice())
+}
+
+func TestSetPreflightOutcome_AllOutcomeValues(t *testing.T) {
+	tests := []struct {
+		name          string
+		outcome       string
+		diagnosticIDs []string
+	}{
+		{
+			name:          "passed",
+			outcome:       preflightOutcomePassed,
+			diagnosticIDs: nil,
+		},
+		{
+			name:          "warnings accepted",
+			outcome:       preflightOutcomeWarningsAccepted,
+			diagnosticIDs: []string{"role_assignment_missing"},
+		},
+		{
+			name:          "aborted by errors",
+			outcome:       preflightOutcomeAbortedByErrors,
+			diagnosticIDs: []string{"role_assignment_missing"},
+		},
+		{
+			name:          "aborted by user",
+			outcome:       preflightOutcomeAbortedByUser,
+			diagnosticIDs: []string{"role_assignment_conditional"},
+		},
+		{
+			name:          "skipped",
+			outcome:       preflightOutcomeSkipped,
+			diagnosticIDs: nil,
+		},
+		{
+			name:          "error",
+			outcome:       preflightOutcomeError,
+			diagnosticIDs: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			span := &mocktracing.Span{}
+			provider := &BicepProvider{}
+
+			provider.setPreflightOutcome(span, tt.outcome, tt.diagnosticIDs)
+
+			outcomeAttr := findSpanAttribute(
+				span.Attributes, "validation.preflight.outcome",
+			)
+			require.NotNil(t, outcomeAttr)
+			require.Equal(t, tt.outcome, outcomeAttr.Value.AsString())
+		})
+	}
+}
+
+// findSpanAttribute searches for an attribute by key and returns a pointer to it, or nil.
+func findSpanAttribute(
+	attrs []attribute.KeyValue,
+	key attribute.Key,
+) *attribute.KeyValue {
+	for i := range attrs {
+		if attrs[i].Key == key {
+			return &attrs[i]
+		}
+	}
+	return nil
 }

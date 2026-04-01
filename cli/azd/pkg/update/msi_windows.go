@@ -150,35 +150,32 @@ func isStandardMSIInstall() error {
 	return nil
 }
 
-// versionFlag returns the install script parameter value for the given channel.
-func versionFlag(channel Channel) string {
-	switch channel {
-	case ChannelDaily:
-		return "daily"
-	case ChannelStable:
-		return "stable"
-	default:
-		return "stable"
-	}
+func escapeForPSSingleQuote(s string) string {
+	return strings.ReplaceAll(s, "'", "''")
 }
 
-// buildInstallScriptArgs constructs the PowerShell arguments to download and run
-// install-azd.ps1 with the appropriate -Version flag.
-// The -SkipVerify flag is passed because Authenticode verification via
-// Get-AuthenticodeSignature failed.
-// The MSI is already downloaded over HTTPS from a Microsoft-controlled domain,
-// so the transport-level integrity is sufficient.
+// buildInstallScriptArgs constructs the PowerShell arguments to run install-azd.ps1.
+// For all channels, the script is downloaded to a temp directory.
+// For daily channel, an additional parameter (-InstallFolder) is passed
+// to the script. The install folder is escaped for PowerShell single-quoted strings
+// to handle paths containing apostrophes (e.g. O'Connor).
 // Returns the arguments to pass to the "powershell" command.
 func buildInstallScriptArgs(channel Channel) []string {
-	version := versionFlag(channel)
-	// Download the script to a temp file, then invoke it with the appropriate -Version flag.
-	// Using -ExecutionPolicy Bypass ensures the script runs even if the system policy is restrictive.
+	var scriptArgs string
+	switch channel {
+	case ChannelDaily:
+		scriptArgs = fmt.Sprintf(" -Version 'daily' -InstallFolder '%s'",
+			escapeForPSSingleQuote(expectedPerUserInstallDir()))
+	default:
+		scriptArgs = " -Version 'stable'"
+	}
+
 	script := fmt.Sprintf(
-		`$script = Join-Path $env:TEMP 'install-azd.ps1'; `+
-			`Invoke-RestMethod '%s' -OutFile $script; `+
-			`& $script -Version '%s' -SkipVerify; `+
-			`Remove-Item $script -Force -ErrorAction SilentlyContinue`,
-		installScriptURL, version,
+		"$tmpScript = Join-Path $env:TEMP 'azd-install.ps1'; "+
+			"Invoke-RestMethod '%s' -OutFile $tmpScript; "+
+			"& $tmpScript%s; "+
+			"Remove-Item $tmpScript -Force -ErrorAction SilentlyContinue",
+		installScriptURL, scriptArgs,
 	)
 	return []string{"-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script}
 }

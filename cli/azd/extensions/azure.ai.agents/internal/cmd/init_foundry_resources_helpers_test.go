@@ -4,9 +4,17 @@
 package cmd
 
 import (
+	"context"
+	"net"
 	"testing"
 
+	armcognitiveservices "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func TestExtractProjectDetails(t *testing.T) {
@@ -104,6 +112,227 @@ func TestFoundryProjectInfoResourceIdConstruction(t *testing.T) {
 		"/projects/" + info.ProjectName
 
 	require.Equal(t, originalId, reconstructed)
+}
+
+func TestCreateNewEnvironment_ReturnsExistingNamedEnvironment(t *testing.T) {
+	t.Parallel()
+
+	envServer := &testEnvironmentServiceServer{
+		environments: map[string]*azdext.Environment{
+			"agent-dev": {Name: "agent-dev"},
+		},
+	}
+	workflowServer := &testWorkflowServiceServer{}
+	azdClient := newTestAzdClient(t, envServer, workflowServer)
+
+	env, err := createNewEnvironment(t.Context(), azdClient, "agent-dev")
+
+	require.NoError(t, err)
+	require.Equal(t, "agent-dev", env.Name)
+	require.Equal(t, 0, workflowServer.runCalls)
+}
+
+func TestCreateNewEnvironment_ReusesExistingEnvironmentAfterAlreadyExistsError(t *testing.T) {
+	t.Parallel()
+
+	const envName = "agent-dev"
+
+	envServer := &testEnvironmentServiceServer{
+		environments: make(map[string]*azdext.Environment),
+	}
+	workflowServer := &testWorkflowServiceServer{
+		runErr: status.Error(
+			codes.AlreadyExists,
+			"environment already exists",
+		),
+		runHook: func() {
+			envServer.environments[envName] = &azdext.Environment{Name: envName}
+		},
+	}
+	azdClient := newTestAzdClient(t, envServer, workflowServer)
+
+	env, err := createNewEnvironment(t.Context(), azdClient, envName)
+
+	require.NoError(t, err)
+	require.Equal(t, envName, env.Name)
+	require.Equal(t, 1, workflowServer.runCalls)
+}
+
+type testEnvironmentServiceServer struct {
+	azdext.UnimplementedEnvironmentServiceServer
+	environments map[string]*azdext.Environment
+	current      *azdext.Environment
+}
+
+func (s *testEnvironmentServiceServer) GetCurrent(context.Context, *azdext.EmptyRequest) (*azdext.EnvironmentResponse, error) {
+	if s.current == nil {
+		return nil, status.Error(codes.NotFound, "current environment not found")
+	}
+
+	return &azdext.EnvironmentResponse{Environment: s.current}, nil
+}
+
+func (s *testEnvironmentServiceServer) Get(_ context.Context, req *azdext.GetEnvironmentRequest) (*azdext.EnvironmentResponse, error) {
+	env, ok := s.environments[req.Name]
+	if !ok {
+		return nil, status.Error(codes.NotFound, "environment not found")
+	}
+
+	return &azdext.EnvironmentResponse{Environment: env}, nil
+}
+
+type testWorkflowServiceServer struct {
+	azdext.UnimplementedWorkflowServiceServer
+	runCalls int
+	runErr   error
+	runHook  func()
+}
+
+func (s *testWorkflowServiceServer) Run(context.Context, *azdext.RunWorkflowRequest) (*azdext.EmptyResponse, error) {
+	s.runCalls++
+	if s.runHook != nil {
+		s.runHook()
+	}
+	if s.runErr != nil {
+		return nil, s.runErr
+	}
+
+	return &azdext.EmptyResponse{}, nil
+}
+
+func newTestAzdClient(
+	t *testing.T,
+	envServer azdext.EnvironmentServiceServer,
+	workflowServer azdext.WorkflowServiceServer,
+) *azdext.AzdClient {
+	t.Helper()
+
+	grpcServer := grpc.NewServer()
+	azdext.RegisterEnvironmentServiceServer(grpcServer, envServer)
+	azdext.RegisterWorkflowServiceServer(grpcServer, workflowServer)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	serveErr := make(chan error, 1)
+	go func() {
+		if err := grpcServer.Serve(listener); err != nil {
+			serveErr <- err
+		}
+	}()
+
+	t.Cleanup(func() {
+		grpcServer.Stop()
+		_ = listener.Close()
+		select {
+		case err := <-serveErr:
+			require.ErrorIs(t, err, grpc.ErrServerStopped)
+		default:
+		}
+	})
+
+	azdClient, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		azdClient.Close()
+	})
+
+	return azdClient
+}
+
+func TestFoundryProjectInfoFromResource(t *testing.T) {
+	t.Parallel()
+
+	resourceId := "/subscriptions/sub-id/resourceGroups/my-rg/providers/Microsoft.CognitiveServices/accounts/my-account/projects/my-project"
+
+	tests := []struct {
+		name     string
+		resource *armresources.GenericResourceExpanded
+		want     *FoundryProjectInfo
+	}{
+		{
+			name: "maps filtered subscription resource",
+			resource: &armresources.GenericResourceExpanded{
+				ID:       new(resourceId),
+				Location: new("eastus"),
+			},
+			want: &FoundryProjectInfo{
+				SubscriptionId:    "sub-id",
+				ResourceGroupName: "my-rg",
+				AccountName:       "my-account",
+				ProjectName:       "my-project",
+				Location:          "eastus",
+				ResourceId:        resourceId,
+			},
+		},
+		{
+			name:     "skips resource without id",
+			resource: &armresources.GenericResourceExpanded{},
+		},
+		{
+			name: "skips malformed project resource id",
+			resource: &armresources.GenericResourceExpanded{
+				ID: new("/subscriptions/sub-id/resourceGroups/my-rg/providers/Microsoft.CognitiveServices/accounts/my-account"),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, ok := foundryProjectInfoFromResource(tt.resource)
+			if tt.want == nil {
+				require.False(t, ok)
+				require.Nil(t, got)
+				return
+			}
+
+			require.True(t, ok)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestUpdateFoundryProjectInfo(t *testing.T) {
+	t.Parallel()
+
+	project := &FoundryProjectInfo{
+		SubscriptionId:    "sub-id",
+		ResourceGroupName: "my-rg",
+		AccountName:       "my-account",
+		ProjectName:       "my-project",
+		ResourceId:        "/subscriptions/sub-id/resourceGroups/my-rg/providers/Microsoft.CognitiveServices/accounts/my-account/projects/my-project",
+	}
+
+	updateFoundryProjectInfo(project, &armcognitiveservices.Project{
+		ID:       new("/subscriptions/sub-id/resourceGroups/my-rg/providers/Microsoft.CognitiveServices/accounts/my-account/projects/my-project"),
+		Name:     new("my-account/updated-project"),
+		Location: new("westus"),
+	})
+
+	require.Equal(t, "updated-project", project.ProjectName)
+	require.Equal(t, "westus", project.Location)
+	require.Equal(
+		t,
+		"/subscriptions/sub-id/resourceGroups/my-rg/providers/Microsoft.CognitiveServices/accounts/my-account/projects/my-project",
+		project.ResourceId,
+	)
+}
+
+func TestGetFoundryProject_SubscriptionMismatch(t *testing.T) {
+	t.Parallel()
+
+	_, err := getFoundryProject(
+		t.Context(),
+		nil,
+		"selected-subscription",
+		"/subscriptions/other-subscription/resourceGroups/my-rg/providers/Microsoft.CognitiveServices/accounts/my-account/projects/my-project",
+	)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "does not match the selected subscription")
 }
 
 func TestNormalizeLoginServer(t *testing.T) {

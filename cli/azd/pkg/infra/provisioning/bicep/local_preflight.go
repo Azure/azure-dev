@@ -265,6 +265,10 @@ const (
 type PreflightCheckResult struct {
 	// Severity indicates whether this result is a warning or a blocking error.
 	Severity PreflightCheckSeverity
+	// DiagnosticID is a unique, stable identifier for this specific finding type
+	// (e.g. "role_assignment_missing"). Used in telemetry to correlate actioned
+	// warnings with deployment outcomes and to track error frequency over time.
+	DiagnosticID string
 	// Message is a human-readable description of the finding.
 	Message string
 }
@@ -300,6 +304,17 @@ type PreflightCheckFn func(
 	valCtx *validationContext,
 ) (*PreflightCheckResult, error)
 
+// PreflightCheck pairs a unique rule identifier with its check function.
+// The RuleID is a stable, unique string used in telemetry to identify which rule
+// produced a result (e.g. for crash tracking). Each rule may emit results with
+// different DiagnosticIDs to distinguish specific finding types.
+type PreflightCheck struct {
+	// RuleID is a unique, stable identifier for the rule (e.g. "role_assignment_permissions").
+	RuleID string
+	// Fn is the check function that performs the validation.
+	Fn PreflightCheckFn
+}
+
 // localArmPreflight provides local (client-side) validation of an ARM template before deployment.
 // It parses the template and parameters to build a comprehensive view of all resources that would
 // be deployed, enabling early detection of issues without making Azure API calls.
@@ -315,7 +330,7 @@ type localArmPreflight struct {
 	// target is the deployment scope (subscription or resource group) used to derive snapshot options.
 	// It may be nil, in which case snapshot options are left empty.
 	target infra.Deployment
-	checks []PreflightCheckFn
+	checks []PreflightCheck
 }
 
 // newLocalArmPreflight creates a new instance of localArmPreflight.
@@ -326,10 +341,10 @@ func newLocalArmPreflight(modulePath string, bicepCli *bicep.Cli, target infra.D
 	return &localArmPreflight{modulePath: modulePath, bicepCli: bicepCli, target: target}
 }
 
-// AddCheck registers a preflight check function to be executed during validate.
-// Check functions are invoked in the order they are added.
-func (l *localArmPreflight) AddCheck(fn PreflightCheckFn) {
-	l.checks = append(l.checks, fn)
+// AddCheck registers a preflight check to be executed during validate.
+// Checks are invoked in the order they are added.
+func (l *localArmPreflight) AddCheck(check PreflightCheck) {
+	l.checks = append(l.checks, check)
 }
 
 // validate performs local preflight validation on the given ARM template and parameters.
@@ -417,9 +432,9 @@ func (l *localArmPreflight) validate(
 
 	var results []PreflightCheckResult
 	for _, check := range l.checks {
-		result, err := check(ctx, valCtx)
+		result, err := check.Fn(ctx, valCtx)
 		if err != nil {
-			return results, fmt.Errorf("preflight check failed: %w", err)
+			return results, fmt.Errorf("preflight check %q failed: %w", check.RuleID, err)
 		}
 		if result != nil {
 			results = append(results, *result)

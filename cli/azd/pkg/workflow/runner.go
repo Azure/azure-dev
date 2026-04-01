@@ -5,9 +5,11 @@ package workflow
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 )
 
@@ -44,6 +46,11 @@ func (r *Runner) Run(ctx context.Context, workflow *Workflow) error {
 		cancel()
 
 		if err != nil {
+			// User intentionally aborted — stop the workflow without wrapping the error.
+			// Returning the original error preserves errors.Is checks upstream.
+			if errors.Is(err, internal.ErrAbortedByUser) {
+				return err
+			}
 			return fmt.Errorf("error executing step command '%s': %w", strings.Join(step.AzdCommand.Args, " "), err)
 		}
 	}

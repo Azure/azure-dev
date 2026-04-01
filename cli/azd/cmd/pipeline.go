@@ -10,6 +10,8 @@ import (
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -170,6 +172,13 @@ func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, 
 
 	// Command title
 	pipelineProviderName := p.manager.CiProviderName()
+
+	// Track the resolved pipeline provider (after CiProviderName resolves auto-detection).
+	// cmd.flags already indicates whether --provider was explicitly set by the user.
+	tracing.SetUsageAttributes(fields.PipelineProviderKey.String(pipelineProviderName))
+	if p.flags.PipelineAuthTypeName != "" {
+		tracing.SetUsageAttributes(fields.PipelineAuthKey.String(p.flags.PipelineAuthTypeName))
+	}
 	p.console.MessageUxItem(ctx, &ux.MessageTitle{
 		Title: fmt.Sprintf("Configure your %s pipeline", pipelineProviderName),
 	})

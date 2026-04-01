@@ -19,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	kv "github.com/azure/azure-dev/cli/azd/pkg/keyvault"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	pkgux "github.com/azure/azure-dev/cli/azd/pkg/ux"
@@ -119,6 +120,7 @@ type extensionAction struct {
 	extensionManager *extensions.Manager
 	azdServer        *grpcserver.Server
 	globalOptions    *internal.GlobalCommandOptions
+	kvService        kv.KeyVaultService
 	cmd              *cobra.Command
 	args             []string
 }
@@ -132,6 +134,7 @@ func newExtensionAction(
 	cmd *cobra.Command,
 	azdServer *grpcserver.Server,
 	globalOptions *internal.GlobalCommandOptions,
+	kvService kv.KeyVaultService,
 	args []string,
 ) actions.Action {
 	return &extensionAction{
@@ -141,6 +144,7 @@ func newExtensionAction(
 		extensionManager: extensionManager,
 		azdServer:        azdServer,
 		globalOptions:    globalOptions,
+		kvService:        kvService,
 		cmd:              cmd,
 		args:             args,
 	}
@@ -216,7 +220,18 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 
 	env, err := a.lazyEnv.GetValue()
 	if err == nil && env != nil {
-		allEnv = append(allEnv, env.Environ()...)
+		// Resolve Key Vault secret references only in azd-managed environment
+		// variables (akvs:// and @Microsoft.KeyVault formats). System env vars
+		// from os.Environ() are NOT processed — only the azd environment's
+		// variables may contain KV references.
+		azdEnvVars := env.Environ()
+		subId := env.Getenv("AZURE_SUBSCRIPTION_ID")
+		azdEnvVars, kvErr := kv.ResolveSecretEnvironment(ctx, a.kvService, azdEnvVars, subId)
+		if kvErr != nil {
+			log.Printf("warning: %v", kvErr)
+		}
+
+		allEnv = append(allEnv, azdEnvVars...)
 	}
 
 	serverInfo, err := a.azdServer.Start()
@@ -244,20 +259,22 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		allEnv = append(allEnv, traceEnv...)
 	}
 
-	// Use pre-parsed global options for flag propagation.
-	// For extension commands (DisableFlagParsing: true), cobra doesn't parse persistent flags,
-	// but ParseGlobalFlags already parsed them into globalOptions before command execution.
+	// Read global flags for propagation via InvokeOptions
+	debugEnabled, _ := a.cmd.Flags().GetBool("debug")
+	cwd, _ := a.cmd.Flags().GetString("cwd")
+	envName, _ := a.cmd.Flags().GetString("environment")
+
 	options := &extensions.InvokeOptions{
 		Args: a.args,
 		Env:  allEnv,
 		// cmd extensions are always interactive (connected to terminal)
 		Interactive: true,
-		Debug:       a.globalOptions.EnableDebugLogging,
+		Debug:       debugEnabled,
 		// Use globalOptions.NoPrompt which includes agent detection,
 		// not just the --no-prompt CLI flag
 		NoPrompt:    a.globalOptions.NoPrompt,
-		Cwd:         a.globalOptions.Cwd,
-		Environment: a.globalOptions.EnvironmentName,
+		Cwd:         cwd,
+		Environment: envName,
 	}
 
 	_, invokeErr := a.extensionRunner.Invoke(ctx, extension, options)

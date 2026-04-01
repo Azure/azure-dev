@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
@@ -38,20 +39,19 @@ func newListenCommand() *cobra.Command {
 			}
 			defer azdClient.Close()
 
-			projectParser := &project.FoundryParser{AzdClient: azdClient}
 			// IMPORTANT: service target name here must match the name used in the extension manifest.
 			host := azdext.NewExtensionHost(azdClient).
 				WithServiceTarget(AiAgentHost, func() azdext.ServiceTargetProvider {
 					return project.NewAgentServiceTargetProvider(azdClient)
 				}).
 				WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
-					return preprovisionHandler(ctx, azdClient, projectParser, args)
+					return preprovisionHandler(ctx, azdClient, args)
 				}).
 				WithProjectEventHandler("predeploy", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
-					return predeployHandler(ctx, azdClient, projectParser, args)
+					return predeployHandler(ctx, azdClient, args)
 				}).
 				WithProjectEventHandler("postdeploy", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
-					return postdeployHandler(ctx, projectParser, args)
+					return postdeployHandler(ctx, azdClient, args)
 				})
 
 			// Start listening for events
@@ -65,35 +65,7 @@ func newListenCommand() *cobra.Command {
 	}
 }
 
-func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, projectParser *project.FoundryParser, args *azdext.ProjectEventArgs) error {
-	if err := projectParser.SetIdentity(ctx, args); err != nil {
-		return fmt.Errorf("failed to set identity: %w", err)
-	}
-
-	for _, svc := range args.Project.Services {
-		switch svc.Host {
-		case AiAgentHost:
-			if err := populateContainerSettings(ctx, azdClient, svc); err != nil {
-				return fmt.Errorf("failed to populate container settings for service %q: %w", svc.Name, err)
-			}
-			if err := envUpdate(ctx, azdClient, args.Project, svc); err != nil {
-				return fmt.Errorf("failed to update environment for service %q: %w", svc.Name, err)
-			}
-		case ContainerAppHost:
-			if err := containerAgentHandling(ctx, azdClient, args.Project, svc); err != nil {
-				return fmt.Errorf("failed to handle container agent for service %q: %w", svc.Name, err)
-			}
-		}
-	}
-
-	return nil
-}
-
-func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, projectParser *project.FoundryParser, args *azdext.ProjectEventArgs) error {
-	if err := projectParser.SetIdentity(ctx, args); err != nil {
-		return fmt.Errorf("failed to set identity: %w", err)
-	}
-
+func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
 	for _, svc := range args.Project.Services {
 		switch svc.Host {
 		case AiAgentHost:
@@ -109,14 +81,37 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, projectP
 	return nil
 }
 
-func postdeployHandler(ctx context.Context, projectParser *project.FoundryParser, args *azdext.ProjectEventArgs) error {
-	if err := projectParser.CoboPostDeploy(ctx, args); err != nil {
-		return err
+func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
+	for _, svc := range args.Project.Services {
+		switch svc.Host {
+		case AiAgentHost:
+			if err := populateContainerSettings(ctx, azdClient, svc); err != nil {
+				return fmt.Errorf("failed to populate container settings for service %q: %w", svc.Name, err)
+			}
+			if err := envUpdate(ctx, azdClient, args.Project, svc); err != nil {
+				return fmt.Errorf("failed to update environment for service %q: %w", svc.Name, err)
+			}
+		}
+	}
+
+	return nil
+}
+
+func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
+	hasAgent := false
+	for _, svc := range args.Project.Services {
+		if svc.Host == AiAgentHost {
+			hasAgent = true
+			break
+		}
+	}
+	if !hasAgent {
+		return nil
 	}
 
 	// Ensure agent identity RBAC is configured when vnext is enabled.
 	// Runs post-deploy because the platform provisions the identity during agent deployment.
-	if err := projectParser.EnsureAgentIdentityRBAC(ctx); err != nil {
+	if err := project.EnsureAgentIdentityRBAC(ctx, azdClient); err != nil {
 		return fmt.Errorf("agent identity RBAC setup failed: %w", err)
 	}
 
@@ -186,6 +181,19 @@ func kindEnvUpdate(ctx context.Context, azdClient *azdext.AzdClient, project *az
 		if err := setEnvVar(ctx, azdClient, envName, "ENABLE_HOSTED_AGENTS", "true"); err != nil {
 			return err
 		}
+
+		vnextValue := os.Getenv("enableHostedAgentVNext")
+		if vnextValue == "" {
+			azdEnv, err := loadAzdEnvironment(ctx, azdClient)
+			if err == nil {
+				vnextValue = azdEnv["enableHostedAgentVNext"]
+			}
+		}
+		if enabled, err := strconv.ParseBool(vnextValue); err == nil && enabled {
+			if err := setEnvVar(ctx, azdClient, envName, "ENABLE_CAPABILITY_HOST", "false"); err != nil {
+				return err
+			}
+		}
 	}
 
 	return nil
@@ -217,35 +225,6 @@ func resourcesEnvUpdate(ctx context.Context, resources []project.Resource, azdCl
 	escapedJsonString = strings.ReplaceAll(escapedJsonString, "\"", "\\\"")
 
 	return setEnvVar(ctx, azdClient, envName, "AI_PROJECT_DEPENDENT_RESOURCES", escapedJsonString)
-}
-
-func containerAgentHandling(ctx context.Context, azdClient *azdext.AzdClient, project *azdext.ProjectConfig, svc *azdext.ServiceConfig) error {
-	servicePath := svc.RelativePath
-	fullPath := filepath.Join(project.Path, servicePath)
-	agentYamlPath := filepath.Join(fullPath, "agent.yaml")
-
-	//nolint:gosec // agentYamlPath is resolved from project/service paths in current workspace
-	data, err := os.ReadFile(agentYamlPath)
-	if err != nil {
-		return nil
-	}
-
-	var agentDef agent_yaml.AgentDefinition
-	if err := yaml.Unmarshal(data, &agentDef); err != nil {
-		return fmt.Errorf("YAML content is not valid: %w", err)
-	}
-
-	// If there is an agent.yaml in the project, and it can be properly parsed into an agent definition, add the env var to enable container agents
-	currentEnvResponse, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-	if err != nil {
-		return err
-	}
-
-	if err := setEnvVar(ctx, azdClient, currentEnvResponse.Environment.Name, "ENABLE_CONTAINER_AGENTS", "true"); err != nil {
-		return err
-	}
-
-	return nil
 }
 
 func setEnvVar(ctx context.Context, azdClient *azdext.AzdClient, envName string, key string, value string) error {
@@ -287,14 +266,14 @@ func populateContainerSettings(ctx context.Context, azdClient *azdext.AzdClient,
 		}
 	}
 
-	// Check and populate Scale
-	if containerSettings.Scale == nil {
-		result.Scale = &project.ScaleSettings{}
-	} else {
+	// Preserve existing Scale settings from azure.yaml, but don't create new defaults for VNext
+	if containerSettings.Scale != nil {
 		result.Scale = &project.ScaleSettings{
 			MinReplicas: containerSettings.Scale.MinReplicas,
 			MaxReplicas: containerSettings.Scale.MaxReplicas,
 		}
+	} else if !isVNextEnabled(ctx, azdClient) {
+		result.Scale = &project.ScaleSettings{}
 	}
 
 	// Set default values if zero or empty
@@ -306,12 +285,14 @@ func populateContainerSettings(ctx context.Context, azdClient *azdext.AzdClient,
 		result.Resources.Cpu = project.DefaultCpu
 	}
 
-	if result.Scale.MinReplicas == 0 {
-		result.Scale.MinReplicas = project.DefaultMinReplicas
-	}
+	if result.Scale != nil {
+		if result.Scale.MinReplicas == 0 {
+			result.Scale.MinReplicas = project.DefaultMinReplicas
+		}
 
-	if result.Scale.MaxReplicas == 0 {
-		result.Scale.MaxReplicas = project.DefaultMaxReplicas
+		if result.Scale.MaxReplicas == 0 {
+			result.Scale.MaxReplicas = project.DefaultMaxReplicas
+		}
 	}
 
 	// Update the container settings in the existing config

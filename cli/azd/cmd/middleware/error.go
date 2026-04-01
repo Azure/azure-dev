@@ -157,7 +157,8 @@ func shouldSkipErrorAnalysis(err error) bool {
 		errors.Is(err, azdcontext.ErrNoProject) ||
 		errors.Is(err, consent.ErrToolExecutionDenied) ||
 		errors.Is(err, consent.ErrElicitationDenied) ||
-		errors.Is(err, consent.ErrSamplingDenied) {
+		errors.Is(err, consent.ErrSamplingDenied) ||
+		errors.Is(err, internal.ErrAbortedByUser) {
 		return true
 	}
 

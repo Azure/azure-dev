@@ -17,6 +17,7 @@ import (
 )
 
 func TestConfigOptionsAction_JSON(t *testing.T) {
+	t.Parallel()
 	buf := &bytes.Buffer{}
 	mockContext := mocks.NewMockContext(context.Background())
 	console := mockContext.Console
@@ -92,6 +93,7 @@ func TestConfigOptionsAction_JSON(t *testing.T) {
 }
 
 func TestConfigOptionsAction_Table(t *testing.T) {
+	t.Parallel()
 	buf := &bytes.Buffer{}
 	mockContext := mocks.NewMockContext(context.Background())
 	console := mockContext.Console
@@ -129,6 +131,7 @@ func TestConfigOptionsAction_Table(t *testing.T) {
 }
 
 func TestConfigOptionsAction_DefaultFormat(t *testing.T) {
+	t.Parallel()
 	buf := &bytes.Buffer{}
 	mockContext := mocks.NewMockContext(context.Background())
 	console := mockContext.Console
@@ -169,6 +172,7 @@ func TestConfigOptionsAction_DefaultFormat(t *testing.T) {
 }
 
 func TestConfigOptionsAction_WithCurrentValues(t *testing.T) {
+	t.Parallel()
 	t.Skip("UserConfigManager loads from global config path, making this test complex to set up properly")
 	// This test would require mocking the global config directory or setting AZD_CONFIG_DIR
 	// The functionality is better tested through end-to-end tests or manual testing

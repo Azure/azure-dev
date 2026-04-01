@@ -21,6 +21,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
 	agentcopilot "github.com/azure/azure-dev/cli/azd/internal/agent/copilot"
+	"github.com/azure/azure-dev/cli/azd/internal/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -86,7 +87,10 @@ func (a *CopilotAgent) Initialize(ctx context.Context, opts ...InitOption) (resu
 				fields.CopilotInitReasoningEffort.String(result.ReasoningEffort),
 			)
 		}
-		span.EndWithStatus(err)
+		if err != nil {
+			cmd.MapError(err, span)
+		}
+		span.End()
 	}()
 
 	options := &initOptions{}
@@ -514,7 +518,7 @@ func (a *CopilotAgent) Stop() error {
 		fields.CopilotConsentDeniedCount.Int(a.consentDeniedCount),
 	)
 	if a.sessionID != "" {
-		tracing.SetUsageAttributes(fields.StringHashed(fields.CopilotSessionId, a.sessionID))
+		tracing.SetUsageAttributes(fields.CopilotSessionId.String(a.sessionID))
 	}
 
 	tasks := a.cleanupTasks
@@ -598,9 +602,12 @@ func (a *CopilotAgent) ensureSession(ctx context.Context, resumeSessionID string
 			sessionID = resumeSessionID
 		}
 		if sessionID != "" {
-			span.SetAttributes(fields.StringHashed(fields.CopilotSessionId, sessionID))
+			span.SetAttributes(fields.CopilotSessionId.String(sessionID))
 		}
-		span.EndWithStatus(err)
+		if err != nil {
+			cmd.MapError(err, span)
+		}
+		span.End()
 	}()
 
 	isResume := resumeSessionID != ""

@@ -37,6 +37,7 @@ words:
   # Looks like the protogen has a spelling error for panics
   - pancis
   - Paren
+  - OIDCREQUESTURI
   - pkgux
   - ppid
   - PPID
@@ -74,11 +75,46 @@ words:
   - subcmd
   - genproto
   - errdetails
+  - slogger
+  - SSRF
+  - ssrf
+  - Teredo
+  - allowlist
+  - blocklist
+  - metacharacter
+  - metacharacters
   - yarnpkg
   - azconfig
   - hostnames
+  - managedhsm
+  - microsoftazure
   - seekable
   - seekability
+  - APFS
+  - NTFS
+  - mcpgo
+  - cpus
+  - unsanitized
+  - PATHEXT
+  - mintty
+  - dockerenv
+  - dedup
+  - exfiltration
+  - Fprintf
+  - gocritic
+  - gradlew
+  - IMDS
+  - managedhsm
+  - microsoftazure
+  - myhost
+  - newtag
+  - preconfigured
+  - Println
+  - sctx
+  - secretname
+  - secretversion
+  - TTLs
+  - vaultname
 languageSettings:
   - languageId: go
     ignoreRegExpList:
@@ -92,6 +128,12 @@ dictionaryDefinitions:
 dictionaries:
   - azdProjectDictionary
 overrides:
+  - filename: cmd/mcp.go
+    words:
+      - internalcmd
+  - filename: pkg/azdext/config_helper.go
+    words:
+      - myext
   - filename: internal/tracing/fields/domains.go
     words:
       - azmk
@@ -318,6 +360,9 @@ overrides:
   - filename: extensions/azure.ai.models/internal/cmd/custom_create.go
     words:
       - Qwen
+  - filename: pkg/infra/provisioning/bicep/local_preflight.go
+    words:
+      - actioned
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

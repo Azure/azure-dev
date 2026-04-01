@@ -5,6 +5,15 @@ parameters:
       - cover-win
       - cover-lin
       - cover-mac
+  - name: MinimumCoveragePercent
+    type: number
+    default: 0
+  - name: MaxPackageTestSeconds
+    type: number
+    default: 0
+  - name: MaxTotalTestSeconds
+    type: number
+    default: 0
 stages: 
 - stage: CodeCoverage_Upload
   condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
@@ -59,11 +68,54 @@ stages:
           }
         displayName: Merge code coverage files
 
+      - ${{ if gt(parameters.MinimumCoveragePercent, 0) }}:
+        - task: PowerShell@2
+          inputs:
+            pwsh: true
+            targetType: filePath
+            filePath: $(Build.SourcesDirectory)/eng/scripts/Test-CodeCoverageThreshold.ps1
+            arguments: -CoverageFile $(Build.SourcesDirectory)/cover.out -MinimumCoveragePercent ${{ parameters.MinimumCoveragePercent }}
+            workingDirectory: $(Build.SourcesDirectory)/cli/azd
+          displayName: Check code coverage threshold
+
       - task: PublishCodeCoverageResults@1
+        condition: succeededOrFailed()
         inputs:
           codeCoverageTool: Cobertura
           summaryFileLocation: '$(Build.SourcesDirectory)/**/coverage.xml'
         displayName: Publish Code Coverage to DevOps
+
+      - pwsh: |
+          # Collect and analyze test timing from all platform artifacts
+          $timingFiles = @(Get-ChildItem cover-*/test-timing-unit.json -ErrorAction SilentlyContinue)
+          if (-not $timingFiles -or $timingFiles.Count -eq 0) {
+              Write-Host "No test timing files found. Skipping timing analysis."
+              exit 0
+          }
+
+          # Use the Linux timing file as the canonical source (most consistent CI environment)
+          $timingFile = $timingFiles | Where-Object { $_.FullName -match 'cover-lin' } | Select-Object -First 1
+          if (-not $timingFile) {
+              $timingFile = $timingFiles | Select-Object -First 1
+          }
+
+          Write-Host "Analyzing test timing from: $($timingFile.FullName)"
+          $timingArgs = @(
+              '-File', "$(Build.SourcesDirectory)/eng/scripts/Test-TestTiming.ps1",
+              '-JsonFile', $timingFile.FullName,
+              '-Top', '30'
+          )
+
+          if (${{ parameters.MaxPackageTestSeconds }} -gt 0) {
+              $timingArgs += @('-MaxPackageSeconds', '${{ parameters.MaxPackageTestSeconds }}')
+          }
+          if (${{ parameters.MaxTotalTestSeconds }} -gt 0) {
+              $timingArgs += @('-MaxTotalSeconds', '${{ parameters.MaxTotalTestSeconds }}')
+          }
+
+          pwsh @timingArgs
+        displayName: Analyze test timing
+        condition: succeededOrFailed()
     
     templateContext: 
       outputs: 

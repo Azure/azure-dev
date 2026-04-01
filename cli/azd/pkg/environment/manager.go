@@ -170,7 +170,7 @@ func (m *manager) Create(ctx context.Context, spec Spec) (*Environment, error) {
 	case err != nil:
 		return nil, fmt.Errorf("checking for existing environment: %w", err)
 	default:
-		return nil, fmt.Errorf("environment '%s' already exists", spec.Name)
+		return nil, fmt.Errorf("%w: '%s'", ErrExists, spec.Name)
 	}
 
 	env := New(spec.Name)

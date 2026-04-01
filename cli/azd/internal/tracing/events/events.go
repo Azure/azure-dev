@@ -38,3 +38,10 @@ const (
 	// CopilotSessionEvent tracks session creation or resumption.
 	CopilotSessionEvent = "copilot.session"
 )
+
+// Preflight validation events.
+const (
+	// PreflightValidationEvent tracks the local preflight validation operation
+	// and its outcome (passed, warnings accepted, aborted).
+	PreflightValidationEvent = "validation.preflight"
+)

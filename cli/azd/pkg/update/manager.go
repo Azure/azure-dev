@@ -8,6 +8,7 @@ import (
 	"archive/zip"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"log"
@@ -498,13 +499,12 @@ func (m *Manager) updateViaMSI(ctx context.Context, cfg *UpdateConfig, writer io
 	// safety copy at the original path with the new version.
 	psArgs := buildInstallScriptArgs(cfg.Channel)
 
-	// Snapshot the safety copy's mod time before the install so we can detect
-	// whether the MSI actually replaced the file. A plain os.Stat after install
-	// would always succeed because the safety copy already exists at originalPath.
-	preInfo, statErr := os.Stat(originalPath)
-	if statErr != nil {
+	// Hash the safety copy before install so we can detect whether the MSI
+	// actually replaced the file.
+	preHash, hashErr := hashFile(originalPath)
+	if hashErr != nil {
 		return newUpdateError(CodeReplaceFailed,
-			fmt.Errorf("failed to stat safety copy before install: %w", statErr))
+			fmt.Errorf("failed to hash safety copy before install: %w", hashErr))
 	}
 
 	log.Printf("Running install script: powershell %s", strings.Join(psArgs, " "))
@@ -518,19 +518,19 @@ func (m *Manager) updateViaMSI(ctx context.Context, cfg *UpdateConfig, writer io
 		return newUpdateError(CodeReplaceFailed, fmt.Errorf("install script failed: %w", err))
 	}
 
-	// Verify the MSI actually replaced the binary by comparing mod time and
-	// size against the pre-install safety copy. If both are identical the MSI
-	// did not write a new file (silent failure).
-	postInfo, statErr := os.Stat(originalPath)
-	if statErr != nil {
+	// Verify the MSI actually replaced the binary by comparing the SHA-256
+	// content hash against the pre-install safety copy. If the hashes are
+	// identical the MSI did not write a new file (silent failure).
+	postHash, hashErr := hashFile(originalPath)
+	if hashErr != nil {
 		return newUpdateError(CodeReplaceFailed,
-			fmt.Errorf("install script completed but %s was not found", originalPath))
+			fmt.Errorf("install script completed but %s could not be read: %w", originalPath, hashErr))
 	}
 
-	if postInfo.ModTime().Equal(preInfo.ModTime()) && postInfo.Size() == preInfo.Size() {
+	if preHash == postHash {
 		return newUpdateError(CodeReplaceFailed,
-			fmt.Errorf("install script completed but the binary at %s was not updated "+
-				"(file unchanged); the MSI may have failed silently", originalPath))
+			fmt.Errorf("install script completed but the binary at %s was not updated."+
+				" MSI may have failed silently", originalPath))
 	}
 
 	updateSucceeded = true
@@ -782,6 +782,22 @@ func currentExePath() (string, error) {
 		return "", fmt.Errorf("failed to resolve executable path: %w", err)
 	}
 	return resolved, nil
+}
+
+// hashFile returns the hex-encoded SHA-256 digest of the file at path.
+func hashFile(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("%x", h.Sum(nil)), nil
 }
 
 func copyFile(src, dst string) error {

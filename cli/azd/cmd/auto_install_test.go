@@ -9,7 +9,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/runcontext/agentdetect"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
@@ -17,6 +16,7 @@ import (
 )
 
 func TestFindFirstNonFlagArg(t *testing.T) {
+	t.Parallel()
 	// Mock flags that take values for testing
 	flagsWithValues := map[string]bool{
 		"--output":         true,
@@ -122,6 +122,7 @@ func TestFindFirstNonFlagArg(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			result, _ := findFirstNonFlagArg(tt.args, flagsWithValues)
 			assert.Equal(t, tt.expected, result)
 		})
@@ -129,6 +130,7 @@ func TestFindFirstNonFlagArg(t *testing.T) {
 }
 
 func TestFindFirstNonFlagArgWithUnknownFlags(t *testing.T) {
+	t.Parallel()
 	flagsWithValues := map[string]bool{
 		"--output": true,
 		"-o":       true,
@@ -188,6 +190,7 @@ func TestFindFirstNonFlagArgWithUnknownFlags(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			command, unknownFlags := findFirstNonFlagArg(tt.args, flagsWithValues)
 			assert.Equal(t, tt.expectedCommand, command)
 			assert.Equal(t, tt.expectedUnknownFlags, unknownFlags)
@@ -196,6 +199,7 @@ func TestFindFirstNonFlagArgWithUnknownFlags(t *testing.T) {
 }
 
 func TestExtractFlagsWithValues(t *testing.T) {
+	t.Parallel()
 	// Create a test command with various flag types
 	cmd := &cobra.Command{
 		Use: "test",
@@ -235,6 +239,7 @@ func TestExtractFlagsWithValues(t *testing.T) {
 }
 
 func TestCheckForMatchingExtension_Unit(t *testing.T) {
+	t.Parallel()
 	// This is a unit test that tests the logic without external dependencies
 	// We'll create a mock-like test by testing the namespace matching logic directly
 
@@ -310,6 +315,7 @@ func TestCheckForMatchingExtension_Unit(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			// Test the namespace matching logic directly
 			var foundExtension *extensions.ExtensionMetadata
 			for _, ext := range tc.extensions {
@@ -419,131 +425,6 @@ func TestParseGlobalFlags_AgentDetection(t *testing.T) {
 
 			// Clean up for next test
 			agentdetect.ResetDetection()
-		})
-	}
-}
-
-func TestParseGlobalFlags_EnvironmentName(t *testing.T) {
-	tests := []struct {
-		name     string
-		args     []string
-		envVar   string
-		expected string
-	}{
-		{
-			name: "short flag -e", args: []string{"-e", "dev", "app", "run"},
-			envVar: "", expected: "dev",
-		},
-		{
-			name:   "long flag --environment",
-			args:   []string{"--environment", "staging", "app", "run"},
-			envVar: "", expected: "staging",
-		},
-		{
-			name:   "long flag with equals",
-			args:   []string{"--environment=prod", "app", "run"},
-			envVar: "", expected: "prod",
-		},
-		{
-			name: "no env flag", args: []string{"--debug", "app", "run"},
-			envVar: "", expected: "",
-		},
-		{
-			name:   "env flag among other flags",
-			args:   []string{"--debug", "-e", "dev", "--no-prompt"},
-			envVar: "", expected: "dev",
-		},
-		{
-			name:   "env flag with unknown extension flags",
-			args:   []string{"-e", "dev", "--foo", "bar"},
-			envVar: "", expected: "dev",
-		},
-		{
-			name:   "AZURE_ENV_NAME fallback",
-			args:   []string{"--debug", "app", "run"},
-			envVar: "from-env", expected: "from-env",
-		},
-		{
-			name:     "-e flag overrides AZURE_ENV_NAME",
-			args:     []string{"-e", "from-flag", "app", "run"},
-			envVar:   "from-env",
-			expected: "from-flag",
-		},
-		{
-			name: "empty AZURE_ENV_NAME no effect",
-			args: []string{"app", "run"}, envVar: "", expected: "",
-		},
-		{
-			name:   "concatenated short flag -edev",
-			args:   []string{"-edev", "app", "run"},
-			envVar: "", expected: "dev",
-		},
-		{
-			name:   "multiple -e flags last wins",
-			args:   []string{"-e", "first", "-e", "second"},
-			envVar: "", expected: "second",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv(environment.EnvNameEnvVarName, tt.envVar)
-
-			opts := &internal.GlobalCommandOptions{}
-			err := ParseGlobalFlags(tt.args, opts)
-			require.NoError(t, err)
-			assert.Equal(t, tt.expected, opts.EnvironmentName)
-		})
-	}
-
-	// Cross-field assertion: verify -e does not interfere with adjacent flags
-	t.Run("env flag does not interfere with other flags", func(t *testing.T) {
-		t.Setenv(environment.EnvNameEnvVarName, "")
-
-		opts := &internal.GlobalCommandOptions{}
-		err := ParseGlobalFlags(
-			[]string{"--debug", "-e", "dev", "--no-prompt"},
-			opts,
-		)
-		require.NoError(t, err)
-		assert.Equal(t, "dev", opts.EnvironmentName)
-		assert.True(t, opts.EnableDebugLogging,
-			"--debug should be true alongside -e")
-		assert.True(t, opts.NoPrompt,
-			"--no-prompt should be true alongside -e")
-	})
-
-	// Edge case: -e at end of args with no value — pflag returns an error
-	t.Run("-e without value returns error", func(t *testing.T) {
-		t.Setenv(environment.EnvNameEnvVarName, "")
-
-		opts := &internal.GlobalCommandOptions{}
-		err := ParseGlobalFlags([]string{"app", "-e"}, opts)
-		require.Error(t, err)
-	})
-}
-
-func TestParseGlobalFlags_InvalidEnvironmentName(t *testing.T) {
-	tests := []struct {
-		name string
-		args []string
-	}{
-		{
-			name: "invalid characters",
-			args: []string{"-e", "env name with spaces"},
-		},
-		{
-			name: "special characters",
-			args: []string{"-e", "env@#$%"},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			opts := &internal.GlobalCommandOptions{}
-			err := ParseGlobalFlags(tt.args, opts)
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), "invalid environment name")
 		})
 	}
 }

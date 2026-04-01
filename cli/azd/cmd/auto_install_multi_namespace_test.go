@@ -12,6 +12,7 @@ import (
 )
 
 func TestCheckForMatchingExtensionsLogic(t *testing.T) {
+	t.Parallel()
 	// Test the core logic without needing to mock the extension manager
 	// We'll create a simple function that mimics the matching logic
 
@@ -110,6 +111,7 @@ func TestCheckForMatchingExtensionsLogic(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			// Execute function
 			matches := checkMatches(tt.args, testExtensions)
 

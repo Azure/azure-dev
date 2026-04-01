@@ -1,5 +1,54 @@
 # Release History
 
+## 1.24.0-beta.1 (Unreleased)
+
+### Features Added
+
+### Breaking Changes
+
+### Bugs Fixed
+
+### Other Changes
+
+## 1.23.13 (2026-03-26)
+
+### Features Added
+
+- [[#7247]](https://github.com/Azure/azure-dev/pull/7247) Add actionable suggestion to set `remoteBuild: true` for Container Apps and AKS services when Docker is not installed or not running. Thanks @spboyer for the contribution!
+- [[#7236]](https://github.com/Azure/azure-dev/pull/7236) Improve `azd auth status --output json` to exit non-zero when unauthenticated and include an `expiresOn` field, making it suitable as an auth validation endpoint for AI agents. Thanks @spboyer for the contribution!
+- [[#2743]](https://github.com/Azure/azure-dev/issues/2743) Support deploying Container App Jobs (`Microsoft.App/jobs`) via `host: containerapp`. The Bicep template determines whether the target is a Container App or Container App Job.
+- Add `ConfigHelper` for typed, ergonomic access to azd user and environment configuration through gRPC services, with validation support, shallow/deep merge, and structured error types (`ConfigError`).
+- Add `Pager[T]` generic pagination helper with SSRF-safe nextLink validation, `Collect` with `MaxPages`/`MaxItems` bounds, and `Truncated()` detection for callers.
+- Add `ResilientClient` hardening: exponential backoff with jitter, upfront body seekability validation, and `Retry-After` header cap at 120 s.
+- Add `SSRFGuard` standalone SSRF protection with metadata endpoint blocking, private network blocking, HTTPS enforcement, DNS fail-closed, IPv6 embedding extraction, and allowlist bypass.
+- Add atomic file operations (`WriteFileAtomic`, `CopyFileAtomic`, `BackupFile`, `EnsureDir`) with crash-safe write-temp-rename pattern.
+- Add runtime process utilities for cross-platform process management, tool discovery, and shell execution helpers.
+
+### Breaking Changes
+
+### Bugs Fixed
+
+- [[#7329]](https://github.com/Azure/azure-dev/pull/7329) Fix nil panic and incorrect workflow continuation when user declines preflight validation warnings; `azd provision` and `azd up` now exit cleanly with exit code 0.
+- [[#7346]](https://github.com/Azure/azure-dev/pull/7346) Fix extension startup failures on Windows caused by IPv4/IPv6 address mismatch in the gRPC server address, and increase extension startup timeout from 5s to 15s. Thanks @spboyer for the contribution!
+- [[#7311]](https://github.com/Azure/azure-dev/pull/7311) Fix `.funcignore` parsing failures caused by UTF-8 BOM and incorrect negation pattern handling in zip packaging. Thanks @jongio for the contribution!
+- [[#7250]](https://github.com/Azure/azure-dev/pull/7250) Add targeted error suggestions for common Container Apps and ARM deployment failures including `ContainerAppOperationError`, `InvalidTemplateDeployment`, `RoleAssignmentExists`, and `InvalidResourceGroupLocation`. Thanks @spboyer for the contribution!
+### Other Changes
+
+- [[#7235]](https://github.com/Azure/azure-dev/pull/7235) Fix auth error telemetry classification to properly categorize `login_required`, `not_logged_in`, and authentication failures under the `aad` service name. Thanks @spboyer for the contribution!
+- [[#7330]](https://github.com/Azure/azure-dev/pull/7330) Add `azure.yaml` schema metadata to enable automatic schema association in JetBrains IDEs, Neovim, and other editors via the SchemaStore catalog.
+
+## 1.23.12 (2026-03-24)
+
+### Bugs Fixed
+
+- [[#7223]](https://github.com/Azure/azure-dev/pull/7223) Improve `.funcignore` handling for flex-consumption function apps by inferring `remoteBuild` from file contents and failing fast on incompatible configurations.
+- [[#7274]](https://github.com/Azure/azure-dev/pull/7274) Revert env-flag change from v1.23.11 to fix regression where the `-e` shorthand for `--environment` conflicted with extension commands that use `-e` for their own flags (e.g., `--project-endpoint` in `azure.ai.models` and `azure.ai.finetune`), restoring compatibility with those extensions.
+
+### Other Changes
+
+- [[#7241]](https://github.com/Azure/azure-dev/pull/7241) Improve telemetry error classification by routing MCP tool, Copilot agent, and container/extension error spans through `MapError` to reduce unclassified error entries. Thanks @spboyer for the contribution!
+- [[#7253]](https://github.com/Azure/azure-dev/pull/7253) Fix `copilot.session.id` telemetry field classification to use the correct PII category.
+
 ## 1.23.11 (2026-03-20)
 
 ### Features Added
@@ -50,6 +99,9 @@
 
 - [[#7044]](https://github.com/Azure/azure-dev/pull/7044) Improve `--no-prompt` support for resource-group deployments by defaulting the resource group prompt to the `AZURE_RESOURCE_GROUP` environment variable value.
 - [[#7051]](https://github.com/Azure/azure-dev/pull/7051) Improve telemetry error classification with typed sentinel errors, replacing opaque `errors_errorString` result codes with descriptive error type codes across command domains.
+- Add Extension SDK Reference documentation covering `NewExtensionRootCommand`, `MCPServerBuilder`, `ToolArgs`, `MCPSecurityPolicy`, `BaseServiceTargetProvider`, and all SDK helpers introduced in [#6856](https://github.com/Azure/azure-dev/pull/6856). See [Extension SDK Reference](docs/extensions/extension-sdk-reference.md).
+- Add Extension Migration Guide with before/after examples for migrating from legacy patterns to SDK helpers. See [Extension Migration Guide](docs/extensions/extension-migration-guide.md).
+- Add Extension End-to-End Walkthrough demonstrating root command setup, MCP server construction, lifecycle event handlers, and security policy usage. See [Extension End-to-End Walkthrough](docs/extensions/extension-e2e-walkthrough.md).
 
 ## 1.23.8 (2026-03-06)
 

@@ -38,6 +38,29 @@ func ListActiveDeployments(
 	return filterActiveDeployments(all), nil
 }
 
+// ListActiveDeploymentsByName lists deployments at the given scope and returns
+// only those matching the specified name with an active provisioning state.
+// This allows parallel deployments with different names to proceed without
+// blocking each other, while still detecting same-name conflicts.
+func ListActiveDeploymentsByName(
+	ctx context.Context,
+	scope Scope,
+	deploymentName string,
+) ([]*azapi.ResourceDeployment, error) {
+	all, err := scope.ListDeployments(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var active []*azapi.ResourceDeployment
+	for _, d := range all {
+		if d.Name == deploymentName && azapi.IsActiveDeploymentState(d.ProvisioningState) {
+			active = append(active, d)
+		}
+	}
+	return active, nil
+}
+
 // filterActiveDeployments returns only deployments with an active provisioning state.
 func filterActiveDeployments(deployments []*azapi.ResourceDeployment) []*azapi.ResourceDeployment {
 	var active []*azapi.ResourceDeployment

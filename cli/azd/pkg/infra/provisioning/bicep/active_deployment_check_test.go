@@ -61,7 +61,7 @@ func TestWaitForActiveDeployments_NoActive(t *testing.T) {
 	scope := &activeDeploymentScope{}
 	p := newTestProvider()
 
-	err := p.waitForActiveDeployments(t.Context(), scope)
+	err := p.waitForActiveDeployments(t.Context(), scope, "test-deploy")
 	require.NoError(t, err)
 	require.Equal(t, int32(1), scope.calls.Load(),
 		"should call ListActiveDeployments once")
@@ -76,7 +76,7 @@ func TestWaitForActiveDeployments_InitialListError_NotFound(t *testing.T) {
 	p := newTestProvider()
 
 	// ErrDeploymentsNotFound (resource group doesn't exist yet) is safe to ignore.
-	err := p.waitForActiveDeployments(t.Context(), scope)
+	err := p.waitForActiveDeployments(t.Context(), scope, "test-deploy")
 	require.NoError(t, err)
 }
 
@@ -89,7 +89,7 @@ func TestWaitForActiveDeployments_InitialListError_Other(t *testing.T) {
 	p := newTestProvider()
 
 	// Non-NotFound errors should propagate so the user knows the check failed.
-	err := p.waitForActiveDeployments(t.Context(), scope)
+	err := p.waitForActiveDeployments(t.Context(), scope, "test-deploy")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "checking for active deployments")
 }
@@ -109,7 +109,7 @@ func TestWaitForActiveDeployments_ActiveThenClear(t *testing.T) {
 	}
 	p := newTestProvider()
 
-	err := p.waitForActiveDeployments(t.Context(), scope)
+	err := p.waitForActiveDeployments(t.Context(), scope, "deploy-1")
 	require.NoError(t, err)
 	require.Equal(t, int32(2), scope.calls.Load(),
 		"should poll once, then see clear")
@@ -140,7 +140,7 @@ func TestWaitForActiveDeployments_CancelledContext(t *testing.T) {
 	// Cancel immediately so the wait loop exits on the first select.
 	cancel()
 
-	err := p.waitForActiveDeployments(ctx, scope)
+	err := p.waitForActiveDeployments(ctx, scope, "deploy-forever")
 	require.ErrorIs(t, err, context.Canceled)
 }
 
@@ -161,7 +161,7 @@ func TestWaitForActiveDeployments_PollError(t *testing.T) {
 	}
 	p := newTestProvider()
 
-	err := p.waitForActiveDeployments(t.Context(), scope)
+	err := p.waitForActiveDeployments(t.Context(), scope, "deploy-1")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "transient ARM failure")
 }
@@ -186,7 +186,7 @@ func TestWaitForActiveDeployments_PollNotFound(t *testing.T) {
 	}
 	p := newTestProvider()
 
-	err := p.waitForActiveDeployments(t.Context(), scope)
+	err := p.waitForActiveDeployments(t.Context(), scope, "deploy-1")
 	require.NoError(t, err)
 }
 
@@ -210,7 +210,7 @@ func TestWaitForActiveDeployments_Timeout(t *testing.T) {
 		activeDeployTimeout:      50 * time.Millisecond,
 	}
 
-	err := p.waitForActiveDeployments(t.Context(), scope)
+	err := p.waitForActiveDeployments(t.Context(), scope, "stuck-deploy")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "timed out")
 	require.Contains(t, err.Error(), "stuck-deploy")

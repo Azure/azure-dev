@@ -630,8 +630,9 @@ const (
 func (p *BicepProvider) waitForActiveDeployments(
 	ctx context.Context,
 	scope infra.Scope,
+	deploymentName string,
 ) error {
-	active, err := infra.ListActiveDeployments(ctx, scope)
+	active, err := infra.ListActiveDeploymentsByName(ctx, scope, deploymentName)
 	if err != nil {
 		// If the resource group doesn't exist yet, there are no active
 		// deployments — proceed normally.
@@ -693,7 +694,7 @@ func (p *BicepProvider) waitForActiveDeployments(
 					"deployment(s) to complete: %s",
 				timeout, strings.Join(currentNames, ", "))
 		case <-ticker.C:
-			active, err = infra.ListActiveDeployments(ctx, scope)
+			active, err = infra.ListActiveDeploymentsByName(ctx, scope, deploymentName)
 			if err != nil {
 				if errors.Is(err, infra.ErrDeploymentsNotFound) {
 					spinnerResult = input.StepDone
@@ -825,7 +826,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 	// Use scopeForTemplate to get the raw scope — deployment.Scope may have a nil
 	// inner scope in test mocks.
 	if activeScope, err := p.scopeForTemplate(planned.Template); err == nil {
-		if err := p.waitForActiveDeployments(ctx, activeScope); err != nil {
+		if err := p.waitForActiveDeployments(ctx, activeScope, deployment.Name()); err != nil {
 			return nil, err
 		}
 	} else {

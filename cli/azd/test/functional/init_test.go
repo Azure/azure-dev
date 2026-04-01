@@ -294,19 +294,22 @@ func Test_CLI_Init_CanUseTemplate(t *testing.T) {
 // Test_CLI_Init_WithCwdAutoCreate tests the automatic directory creation when using -C/--cwd flag.
 func Test_CLI_Init_WithCwdAutoCreate(t *testing.T) {
 	tests := []struct {
-		name   string
-		subDir string // subdirectory to create within temp dir (using -C flag)
-		args   []string
+		name        string
+		subDir      string // subdirectory to create within temp dir (using -C flag)
+		templateDir string // directory name derived from template (like git clone)
+		args        []string
 	}{
 		{
-			name:   "single level directory",
-			subDir: "new-project",
-			args:   []string{"init", "-t", "azure-samples/todo-nodejs-mongo", "--no-prompt", "-e", "test-env"},
+			name:        "single level directory",
+			subDir:      "new-project",
+			templateDir: "todo-nodejs-mongo",
+			args:        []string{"init", "-t", "azure-samples/todo-nodejs-mongo", "--no-prompt", "-e", "test-env"},
 		},
 		{
-			name:   "nested directory",
-			subDir: "parent/child/project",
-			args:   []string{"init", "-t", "azure-samples/todo-nodejs-mongo", "--no-prompt", "-e", "test-env"},
+			name:        "nested directory",
+			subDir:      "parent/child/project",
+			templateDir: "todo-nodejs-mongo",
+			args:        []string{"init", "-t", "azure-samples/todo-nodejs-mongo", "--no-prompt", "-e", "test-env"},
 		},
 	}
 
@@ -334,8 +337,9 @@ func Test_CLI_Init_WithCwdAutoCreate(t *testing.T) {
 			// Verify the directory was created
 			require.DirExists(t, targetDir)
 
-			// Verify that the template was initialized in the created directory
-			require.FileExists(t, filepath.Join(targetDir, azdcontext.ProjectFileName))
+			// Verify that the template was initialized in the template subdirectory
+			// (init -t creates a directory named after the template, like git clone)
+			require.FileExists(t, filepath.Join(targetDir, tt.templateDir, azdcontext.ProjectFileName))
 		})
 	}
 }

@@ -791,13 +791,9 @@ func locationAllowed(location string, allowedLocations []string) bool {
 	}
 
 	normalized := normalizeLocationName(location)
-	for _, allowed := range allowedLocations {
-		if normalized == normalizeLocationName(allowed) {
-			return true
-		}
-	}
-
-	return false
+	return slices.ContainsFunc(allowedLocations, func(allowed string) bool {
+		return normalized == normalizeLocationName(allowed)
+	})
 }
 
 func promptLocationForInit(
@@ -871,9 +867,8 @@ func selectNewModel(
 	return modelResp.Model, nil
 }
 
-// resolveModelDeployment resolves a model deployment without prompting, selecting the best
-// candidate based on default versions, SKU priority, and available quota. Both init flows
-// use this for the "deploy new model" path in non-interactive mode.
+// resolveModelDeployments resolves model deployments without prompting, returning all candidates
+// filtered by location and quota. Both init flows use this for deployment resolution.
 func resolveModelDeployments(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,

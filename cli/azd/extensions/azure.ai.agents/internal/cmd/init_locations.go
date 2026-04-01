@@ -39,3 +39,12 @@ var supportedHostedAgentRegions = []string{
 func supportedRegionsForInit() []string {
 	return slices.Clone(supportedHostedAgentRegions)
 }
+
+// supportedModelLocations returns the intersection of a model's available locations
+// with the supported hosted agent regions.
+func supportedModelLocations(modelLocations []string) []string {
+	supported := supportedRegionsForInit()
+	return slices.DeleteFunc(slices.Clone(modelLocations), func(loc string) bool {
+		return !locationAllowed(loc, supported)
+	})
+}

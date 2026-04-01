@@ -231,7 +231,7 @@ If the user types `?`, a hint line appears below the prompt to provide additiona
 Hint: This is a help message
 ```
 
-> Colors: `?` and `[Type ? for hint]` → `WithHighLightFormat` + `WithBold`. Hint line → `WithHintFormat` + `WithBold`.
+> Colors: `?` and `[Type ? for hint]` → `WithHighLightFormat` + `WithBold`. Hint line → bold, color TBD.
 
 #### Yes or No Input
 
@@ -310,7 +310,6 @@ Use these functions for consistent color formatting across the CLI:
 | **Warning** | `WithWarningFormat(text string)` | Warning messages, non-critical issues |
 | **Error** | `WithErrorFormat(text string)` | Error messages, failures |
 | **Gray text** | `WithGrayFormat(text string)` | Secondary information, muted text |
-| **Hint text** | `WithHintFormat(text string)` | Helpful suggestions, tips |
 | **Bold text** | `WithBold(text string)` | Emphasis, headers |
 | **Underline** | `WithUnderline(text string)` | Emphasis (use sparingly) |
 

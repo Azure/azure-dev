@@ -231,11 +231,20 @@ func (ei *ExternalImporter) GenerateAllInfrastructure(
 }
 
 // mapServiceConfigToProto converts a project ServiceConfig to its proto representation.
+// It sends the fully resolved path so extensions can access project files.
 func mapServiceConfigToProto(svc *ServiceConfig, proto *azdext.ServiceConfig) {
 	proto.Name = svc.Name
-	proto.RelativePath = svc.RelativePath
 	proto.Host = string(svc.Host)
 	proto.Language = string(svc.Language)
+
+	// Send the fully resolved path so extensions can access project files
+	// regardless of their own working directory
+	if svc.Project != nil {
+		proto.RelativePath = svc.Path()
+	} else {
+		proto.RelativePath = svc.RelativePath
+	}
+
 	if !svc.ResourceName.Empty() {
 		noopMapping := func(string) string { return "" }
 		proto.ResourceName, _ = svc.ResourceName.Envsubst(noopMapping)

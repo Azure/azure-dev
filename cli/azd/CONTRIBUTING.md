@@ -91,7 +91,9 @@ CI enforces this check — PRs with pending `go fix` suggestions will fail the l
 
 ### Code Coverage
 
-azd collects coverage from both unit tests and integration/functional tests. Several modes are available depending on your needs:
+azd collects coverage from both unit tests and integration/functional tests. Several modes are available depending on your needs.
+
+> **Working directory**: Run all coverage commands from the **repository root** (not `cli/azd/`). The scripts handle `cd cli/azd` internally.
 
 | Mode | Command | Prerequisites | Speed |
 |------|---------|--------------|-------|

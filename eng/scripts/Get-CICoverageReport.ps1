@@ -47,6 +47,10 @@
 .PARAMETER MinCoverage
     If set, filters the report to only show packages below this coverage threshold.
 
+.PARAMETER PipelineDefinitionId
+    Azure DevOps pipeline definition ID. Defaults to '4643' (the azd release-cli
+    pipeline). Override when testing against a different pipeline definition.
+
 .EXAMPLE
     # Get latest main build coverage
     ./Get-CICoverageReport.ps1 -ShowReport

@@ -168,6 +168,18 @@ The CI pipeline enforces a minimum coverage threshold using
 - **Enforcement**: The threshold script parses `go tool cover -func` output and
   exits non-zero if the total statement coverage is below the minimum.
 
+## Scripts Reference
+
+| Script | Location | Purpose |
+|--------|----------|---------|
+| `Get-LocalCoverageReport.ps1` | `eng/scripts/` | Developer-facing: runs coverage locally in any of the 4 modes |
+| `Get-CICoverageReport.ps1` | `eng/scripts/` | Downloads combined coverage from Azure DevOps CI builds |
+| `Filter-GeneratedCoverage.ps1` | `eng/scripts/` | Strips auto-generated files (`.pb.go`) from coverage profiles |
+| `Test-CodeCoverageThreshold.ps1` | `eng/scripts/` | Enforces minimum coverage gate; used by CI and `-MinCoverage` |
+| `Convert-GoCoverageToCobertura.ps1` | `eng/scripts/` | Converts Go coverage to Cobertura XML for ADO reporting (CI only) |
+| `ci-build.ps1` | `eng/scripts/` | CI: builds azd binary with `-cover` instrumentation |
+| `ci-test.ps1` | `eng/scripts/` | CI: runs unit and integration tests with coverage collection |
+
 ## Troubleshooting
 
 | Error | Fix |

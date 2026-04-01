@@ -626,6 +626,9 @@ func TestParseGlobalFlags_EnvironmentName(t *testing.T) {
 }
 
 func TestParseGlobalFlags_InvalidEnvironmentName(t *testing.T) {
+	// Invalid environment names are silently ignored (not errors) so that
+	// third-party extensions reusing -e for their own flags (e.g., URLs)
+	// are not broken by azd's global flag parsing.
 	tests := []struct {
 		name string
 		args []string
@@ -659,9 +662,9 @@ func TestParseGlobalFlags_InvalidEnvironmentName(t *testing.T) {
 
 			opts := &internal.GlobalCommandOptions{}
 			err := ParseGlobalFlags(tt.args, opts)
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), "is invalid")
-			assert.Empty(t, opts.EnvironmentName)
+			require.NoError(t, err, "invalid env names should be silently ignored, not rejected")
+			assert.Empty(t, opts.EnvironmentName,
+				"EnvironmentName should be empty when -e value is not a valid env name")
 
 			agentdetect.ResetDetection()
 		})

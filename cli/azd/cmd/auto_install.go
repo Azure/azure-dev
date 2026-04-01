@@ -707,15 +707,16 @@ func ParseGlobalFlags(args []string, opts *internal.GlobalCommandOptions) error 
 		}
 	}
 
-	// Parse -e/--environment with strict validation.
-	// Invalid environment names are rejected with an error so users get clear feedback on typos.
-	// Extensions have been migrated off -e (see reserved flags registry), so any -e value
-	// should be a valid environment name.
+	// Parse -e/--environment with lenient validation.
+	// Only accept values that look like valid environment names (alphanumeric, hyphens, dots,
+	// underscores). Values that don't match (e.g., URLs from extensions reusing -e for
+	// --project-endpoint) are silently ignored — the extension still receives the raw args
+	// and can parse -e itself. This avoids breaking third-party extensions that use -e
+	// for their own flags while still fixing the environment leak for valid env names.
 	if strVal, err := globalFlagSet.GetString("environment"); err == nil && strVal != "" {
-		if !environment.IsValidEnvironmentName(strVal) {
-			return environment.InvalidEnvironmentNameError(strVal)
+		if environment.IsValidEnvironmentName(strVal) {
+			opts.EnvironmentName = strVal
 		}
-		opts.EnvironmentName = strVal
 	}
 
 	// Agent Detection: If no explicit flag or env var was set and we detect an AI coding

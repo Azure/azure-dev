@@ -151,13 +151,14 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 		}
 	}
 
-	protocol := a.resolveRemoteProtocol(ctx)
-	switch protocol {
-	case agent_api.AgentProtocolInvocations:
-		return a.invocationsRemote(ctx)
-	default:
-		return a.responsesRemote(ctx)
+	// Remote: only allow the invocations protocol when vnext is enabled.
+	if isVNextEnabled(ctx) {
+		protocol := a.resolveRemoteProtocol(ctx)
+		if protocol == agent_api.AgentProtocolInvocations {
+			return a.invocationsRemote(ctx)
+		}
 	}
+	return a.responsesRemote(ctx)
 }
 
 // resolveRemoteProtocol determines the protocol for remote invocation from agent.yaml.
@@ -299,6 +300,16 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 		"stream": true,
 	}
 
+	vnext := isVNextEnabled(ctx)
+
+	// The non-vnext /openai/responses endpoint requires an agent reference in the body.
+	if !vnext {
+		reqBody["agent"] = map[string]string{
+			"name": name,
+			"type": "agent_reference",
+		}
+	}
+
 	// Session ID — routes to the same microVM container instance.
 	// When empty, let the server assign one.
 	sid, err := resolveSessionID(ctx, azdClient, name, a.flags.session, a.flags.newSession)
@@ -348,10 +359,15 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	url := fmt.Sprintf(
-		"%s/agents/%s/endpoint/protocols/openai/responses?api-version=%s",
-		endpoint, name, DefaultAgentAPIVersion,
-	)
+	var url string
+	if vnext {
+		url = fmt.Sprintf(
+			"%s/agents/%s/endpoint/protocols/openai/responses?api-version=%s",
+			endpoint, name, DefaultAgentAPIVersion,
+		)
+	} else {
+		url = fmt.Sprintf("%s/openai/responses?api-version=%s", endpoint, DefaultAgentAPIVersion)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
@@ -381,6 +397,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	// Parse SSE stream for agent output
 	return readSSEStream(resp.Body, name)
 }
+
 func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 	port := a.flags.port
 

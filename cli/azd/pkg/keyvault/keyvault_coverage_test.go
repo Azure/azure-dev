@@ -6,6 +6,7 @@ package keyvault
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -579,10 +580,15 @@ func TestNewAzureKeyVaultSecret_Format(t *testing.T) {
 func TestErrAzCliSecretNotFound_IsSentinel(t *testing.T) {
 	t.Parallel()
 
-	// Verify the sentinel can be matched with errors.Is
-	wrappedErr := errors.New("secret not found")
-	assert.Equal(t, wrappedErr.Error(), ErrAzCliSecretNotFound.Error())
+	// Wrap the sentinel and verify errors.Is can unwrap it
+	wrapped := fmt.Errorf("failed to get secret: %w", ErrAzCliSecretNotFound)
+	assert.True(t, errors.Is(wrapped, ErrAzCliSecretNotFound))
 
-	// errors.Is with the exact sentinel
-	assert.True(t, errors.Is(ErrAzCliSecretNotFound, ErrAzCliSecretNotFound))
+	// Double-wrapped should still match
+	doubleWrapped := fmt.Errorf("outer: %w", wrapped)
+	assert.True(t, errors.Is(doubleWrapped, ErrAzCliSecretNotFound))
+
+	// A different error should not match
+	unrelated := errors.New("something else")
+	assert.False(t, errors.Is(unrelated, ErrAzCliSecretNotFound))
 }

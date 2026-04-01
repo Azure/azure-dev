@@ -289,8 +289,8 @@ try {
         try {
             $adoToken = az account get-access-token `
                 --resource "499b84ac-1321-427f-aa17-267ca6975798" `
-                --query accessToken -o tsv 2>&1
-            if ($LASTEXITCODE -or -not $adoToken) {
+                --query accessToken -o tsv
+            if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($adoToken)) {
                 throw "token_failed"
             }
         } catch {

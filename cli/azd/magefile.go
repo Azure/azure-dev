@@ -501,3 +501,174 @@ func addToPathUnix(dir string) error {
 	fmt.Printf("✓ Added %s to %s. Restart your terminal or run: source %s\n", dir, rcFile, rcFile)
 	return nil
 }
+
+// Coverage contains commands for measuring and reporting code coverage.
+// Four modes mirror the developer workflow in docs/code-coverage-guide.md:
+//
+//	mage coverage:unit    — unit tests only (fast, no Azure resources)
+//	mage coverage:full    — unit + integration tests locally (needs Azure)
+//	mage coverage:hybrid  — unit locally + CI integration coverage
+//	mage coverage:ci      — download latest CI combined coverage
+//	mage coverage:html    — generate and open an HTML report
+//	mage coverage:check   — enforce minimum coverage threshold
+//
+// See cli/azd/docs/code-coverage-guide.md for prerequisites and details.
+type Coverage mg.Namespace
+
+// Unit runs unit tests with coverage and shows a per-package report.
+// This is the fastest mode — no Azure resources or login required.
+//
+// Usage: mage coverage:unit
+func (Coverage) Unit() error {
+	return runLocalCoverage("-UnitOnly", "-ShowReport")
+}
+
+// Full runs unit and integration/functional tests locally with coverage.
+// Requires Azure resources configured per CONTRIBUTING.md prerequisites.
+//
+// Usage: mage coverage:full
+func (Coverage) Full() error {
+	return runLocalCoverage("-ShowReport")
+}
+
+// Hybrid runs unit tests locally and merges CI integration coverage.
+// Requires 'az login' for Azure DevOps artifact access.
+//
+// Environment variables (optional):
+//
+//	COVERAGE_PULL_REQUEST_ID — target a specific PR's CI run
+//	COVERAGE_BUILD_ID        — target a specific build ID
+//
+// Usage: mage coverage:hybrid
+func (Coverage) Hybrid() error {
+	args := []string{"-MergeWithCI", "-ShowReport"}
+	if id := os.Getenv("COVERAGE_PULL_REQUEST_ID"); id != "" {
+		args = append(args, "-PullRequestId", id)
+	}
+	if id := os.Getenv("COVERAGE_BUILD_ID"); id != "" {
+		args = append(args, "-BuildId", id)
+	}
+	return runLocalCoverage(args...)
+}
+
+// CI downloads and displays the latest combined coverage from Azure DevOps CI.
+// Requires 'az login' for Azure DevOps access.
+//
+// Environment variables (optional):
+//
+//	COVERAGE_BUILD_ID        — target a specific build ID
+//	COVERAGE_PULL_REQUEST_ID — target a specific PR's CI run
+//
+// Usage: mage coverage:ci
+func (Coverage) CI() error {
+	args := []string{"-ShowReport"}
+	if id := os.Getenv("COVERAGE_BUILD_ID"); id != "" {
+		args = append(args, "-BuildId", id)
+	}
+	if id := os.Getenv("COVERAGE_PULL_REQUEST_ID"); id != "" {
+		args = append(args, "-PullRequestId", id)
+	}
+	return runCICoverage(args...)
+}
+
+// Html generates and opens an HTML coverage report.
+// Uses unit-only mode by default for speed.
+//
+// Environment variables (optional):
+//
+//	COVERAGE_MODE — "unit" (default), "full", or "hybrid"
+//
+// Usage: mage coverage:html
+func (Coverage) Html() error {
+	args := []string{"-Html", "-ShowReport"}
+	switch os.Getenv("COVERAGE_MODE") {
+	case "full":
+		// default full mode — no extra flags
+	case "hybrid":
+		args = append(args, "-MergeWithCI")
+	default:
+		args = append(args, "-UnitOnly")
+	}
+	return runLocalCoverage(args...)
+}
+
+// Check enforces the minimum coverage threshold (default 55%).
+// Runs unit-only coverage for speed, then validates against the threshold.
+//
+// Environment variables (optional):
+//
+//	COVERAGE_MIN — minimum percentage (default "55")
+//
+// Usage: mage coverage:check
+func (Coverage) Check() error {
+	min := "55"
+	if v := os.Getenv("COVERAGE_MIN"); v != "" {
+		min = v
+	}
+	return runLocalCoverage("-UnitOnly", "-MinCoverage", min)
+}
+
+// findPwsh locates PowerShell (pwsh or powershell) on the system PATH.
+func findPwsh() (string, error) {
+	if p, err := exec.LookPath("pwsh"); err == nil {
+		return p, nil
+	}
+	if runtime.GOOS == "windows" {
+		if p, err := exec.LookPath("powershell"); err == nil {
+			return p, nil
+		}
+	}
+	return "", fmt.Errorf(
+		"PowerShell is required but not installed.\n  Install: https://aka.ms/install-powershell")
+}
+
+// runPwshScript runs a PowerShell script with GOWORK=off (mirroring CI).
+func runPwshScript(dir, script string, args ...string) error {
+	pwsh, err := findPwsh()
+	if err != nil {
+		return err
+	}
+
+	origGowork, hadGowork := os.LookupEnv("GOWORK")
+	os.Setenv("GOWORK", "off")
+	defer func() {
+		if hadGowork {
+			os.Setenv("GOWORK", origGowork)
+		} else {
+			os.Unsetenv("GOWORK")
+		}
+	}()
+
+	cmdArgs := append(
+		[]string{"-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script},
+		args...,
+	)
+	cmd := exec.Command(pwsh, cmdArgs...)
+	cmd.Dir = dir
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("script %s failed: %w", filepath.Base(script), err)
+	}
+	return nil
+}
+
+// runLocalCoverage runs Get-LocalCoverageReport.ps1 with the given flags.
+func runLocalCoverage(args ...string) error {
+	repoRoot, err := findRepoRoot()
+	if err != nil {
+		return err
+	}
+	script := filepath.Join(repoRoot, "eng", "scripts", "Get-LocalCoverageReport.ps1")
+	return runPwshScript(filepath.Join(repoRoot, "cli", "azd"), script, args...)
+}
+
+// runCICoverage runs Get-CICoverageReport.ps1 with the given flags.
+func runCICoverage(args ...string) error {
+	repoRoot, err := findRepoRoot()
+	if err != nil {
+		return err
+	}
+	script := filepath.Join(repoRoot, "eng", "scripts", "Get-CICoverageReport.ps1")
+	return runPwshScript(filepath.Join(repoRoot, "cli", "azd"), script, args...)
+}

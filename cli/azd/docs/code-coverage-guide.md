@@ -180,6 +180,28 @@ The CI pipeline enforces a minimum coverage threshold using
 | `ci-build.ps1` | `eng/scripts/` | CI: builds azd binary with `-cover` instrumentation |
 | `ci-test.ps1` | `eng/scripts/` | CI: runs unit and integration tests with coverage collection |
 
+## Mage Targets
+
+All modes are also available as `mage` targets (from `cli/azd/`):
+
+| Target | Mode | Prerequisites |
+|--------|------|---------------|
+| `mage coverage:unit` | Unit only + report | Go 1.26 |
+| `mage coverage:full` | Full local (unit + integration) + report | Go 1.26, Azure resources |
+| `mage coverage:hybrid` | Hybrid (local unit + CI integration) + report | Go 1.26, `az login` |
+| `mage coverage:ci` | CI baseline report | `az login` |
+| `mage coverage:html` | HTML report (unit only by default) | Go 1.26 |
+| `mage coverage:check` | Enforce 55% threshold (unit only) | Go 1.26 |
+
+Environment variables for optional overrides:
+
+| Variable | Used by | Purpose |
+|----------|---------|---------|
+| `COVERAGE_PULL_REQUEST_ID` | `hybrid`, `ci` | Target a specific PR's CI run |
+| `COVERAGE_BUILD_ID` | `hybrid`, `ci` | Target a specific ADO build ID |
+| `COVERAGE_MODE` | `html` | Set to `full` or `hybrid` (default: `unit`) |
+| `COVERAGE_MIN` | `check` | Override threshold (default: `55`) |
+
 ## Troubleshooting
 
 | Error | Fix |

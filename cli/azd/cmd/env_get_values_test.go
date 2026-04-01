@@ -90,6 +90,14 @@ func TestEnvGetValuesExport(t *testing.T) {
 				"export DANGEROUS=\"value with \\`backticks\\` and \\$(command)\"\n",
 		},
 		{
+			name:    "export value with newline and single quotes",
+			envVars: map[string]string{"MIXED": "it's\nmultiline"},
+			export:  true,
+			shell:   "bash",
+			expected: "export AZURE_ENV_NAME=\"test\"\n" +
+				"export MIXED=$'it\\'s\\nmultiline'\n",
+		},
+		{
 			name: "export values with carriage returns",
 			envVars: map[string]string{
 				"CR_VALUE": "line1\rline2",
@@ -225,6 +233,19 @@ func TestEnvGetValuesExport(t *testing.T) {
 			require.Equal(t, tt.expected, buf.String())
 		})
 	}
+}
+
+func TestWriteExportedEnvWarnings(t *testing.T) {
+	var out, warn bytes.Buffer
+	err := writeExportedEnv(
+		map[string]string{"bad;key": "val", "GOOD": "val"},
+		&out, &warn,
+	)
+	require.NoError(t, err)
+	require.Contains(t, warn.String(), "skipping key")
+	require.Contains(t, warn.String(), "bad;key")
+	require.Contains(t, out.String(), "GOOD")
+	require.NotContains(t, out.String(), "bad;key")
 }
 
 func TestEnvGetValuesExportOutputMutualExclusion(t *testing.T) {

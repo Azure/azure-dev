@@ -322,6 +322,7 @@ func TestMCPSecurityFluentBuilder(t *testing.T) {
 		t.Fatal("fluent builder should return non-nil policy")
 	}
 
+	//nolint:staticcheck // SA5011 false positive: t.Fatal above guarantees non-nil
 	if !policy.blockMetadata {
 		t.Error("blockMetadata should be true")
 	}

@@ -592,16 +592,18 @@ func (Coverage) Html() error {
 	return runLocalCoverage(args...)
 }
 
-// Check enforces the minimum coverage threshold (default 55%).
+// Check enforces the minimum coverage threshold (default 50%).
 // Runs unit-only coverage for speed, then validates against the threshold.
+// The CI gate (55%) uses combined unit+integration coverage which is higher
+// than unit-only; this target uses a lower default appropriate for unit-only.
 //
 // Environment variables (optional):
 //
-//	COVERAGE_MIN — minimum percentage (default "55")
+//	COVERAGE_MIN — minimum percentage (default "50")
 //
 // Usage: mage coverage:check
 func (Coverage) Check() error {
-	min := "55"
+	min := "50"
 	if v := os.Getenv("COVERAGE_MIN"); v != "" {
 		min = v
 	}

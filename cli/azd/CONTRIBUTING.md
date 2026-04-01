@@ -102,7 +102,7 @@ azd collects coverage from both unit tests and integration/functional tests. Sev
 | **Full local** (unit + integration) | `./eng/scripts/Get-LocalCoverageReport.ps1 -ShowReport` | `mage coverage:full` | Azure subscription + service principal | ~30-60 min |
 | **CI baseline** (latest main) | `./eng/scripts/Get-CICoverageReport.ps1 -ShowReport` | `mage coverage:ci` | `az login` | ~1 min |
 
-Additional mage targets: `mage coverage:html` (HTML report), `mage coverage:check` (enforce 55% threshold).
+Additional mage targets: `mage coverage:html` (HTML report), `mage coverage:check` (enforce 50% unit-only threshold; CI gate is 55% combined).
 
 **Typical workflow**: Use *Unit only* during development for fast feedback. After pushing a PR, use *Hybrid* or check your PR's CI coverage with `Get-CICoverageReport.ps1 -PullRequestId <N> -ShowReport`.
 

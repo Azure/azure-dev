@@ -191,7 +191,7 @@ All modes are also available as `mage` targets (from `cli/azd/`):
 | `mage coverage:hybrid` | Hybrid (local unit + CI integration) + report | Go 1.26, `az login` |
 | `mage coverage:ci` | CI baseline report | `az login` |
 | `mage coverage:html` | HTML report (unit only by default) | Go 1.26 |
-| `mage coverage:check` | Enforce 55% threshold (unit only) | Go 1.26 |
+| `mage coverage:check` | Enforce 50% threshold (unit only; CI gate is 55% combined) | Go 1.26 |
 
 Environment variables for optional overrides:
 

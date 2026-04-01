@@ -104,7 +104,7 @@ func (s *promptService) Select(ctx context.Context, req *azdext.SelectRequest) (
 		}
 		return nil, fmt.Errorf(
 			"interactive prompt not allowed in strict mode: %q"+
-				" (available options: %s — specify via"+
+				" (available options: %s -- specify via"+
 				" command-line flags or environment variables)",
 			req.Options.Message,
 			strings.Join(choiceLabels, ", "),
@@ -168,7 +168,7 @@ func (s *promptService) MultiSelect(
 		}
 		return nil, fmt.Errorf(
 			"interactive prompt not allowed in strict mode: %q"+
-				" (available options: %s — specify via"+
+				" (available options: %s -- specify via"+
 				" command-line flags or environment variables)",
 			req.Options.Message,
 			strings.Join(choiceLabels, ", "),

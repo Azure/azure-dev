@@ -46,7 +46,7 @@ func askOneFailOnPrompt(p survey.Prompt, _ any) error {
 	case *survey.Select:
 		return fmt.Errorf(
 			"interactive prompt not allowed in strict mode: %q"+
-				" (available options: %s — specify via"+
+				" (available options: %s -- specify via"+
 				" command-line flags or environment variables)",
 			v.Message,
 			strings.Join(v.Options, ", "),
@@ -61,7 +61,7 @@ func askOneFailOnPrompt(p survey.Prompt, _ any) error {
 	case *survey.MultiSelect:
 		return fmt.Errorf(
 			"interactive prompt not allowed in strict mode: %q"+
-				" (available options: %s — specify via"+
+				" (available options: %s -- specify via"+
 				" command-line flags or environment variables)",
 			v.Message,
 			strings.Join(v.Options, ", "),

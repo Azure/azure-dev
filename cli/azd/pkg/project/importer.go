@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 )
 
 // Importer defines the contract for project importers that can detect projects, extract services,
@@ -58,15 +59,30 @@ type Importer interface {
 
 // ImportManager manages the orchestration of project importers that detect services and generate infrastructure.
 type ImportManager struct {
-	importers []Importer
+	importers      []Importer
+	serviceLocator ioc.ServiceLocator
 }
 
 // NewImportManager creates a new ImportManager with the given importers.
 // Importers are evaluated in order; the first importer that can handle a project wins.
-func NewImportManager(importers []Importer) *ImportManager {
+// The serviceLocator is used to discover extension-registered importers at runtime.
+func NewImportManager(importers []Importer, serviceLocator ioc.ServiceLocator) *ImportManager {
 	return &ImportManager{
-		importers: importers,
+		importers:      importers,
+		serviceLocator: serviceLocator,
 	}
+}
+
+// allImporters returns the combined list of built-in and extension-registered importers.
+// Built-in importers come first to maintain backward compatibility.
+func (im *ImportManager) allImporters() []Importer {
+	return im.importers
+}
+
+// AddImporter adds an importer to the list. This is used by the gRPC server
+// to register extension-provided importers at runtime.
+func (im *ImportManager) AddImporter(importer Importer) {
+	im.importers = append(im.importers, importer)
 }
 
 // servicePath returns the resolved path for a service config, handling nil Project gracefully.
@@ -101,7 +117,7 @@ func (im *ImportManager) ServiceStable(ctx context.Context, projectConfig *Proje
 
 		// Only attempt import if the service config has a valid path
 
-		for _, importer := range im.importers {
+		for _, importer := range im.allImporters() {
 			canImport, err := importer.CanImport(ctx, svcConfig)
 			if err != nil {
 				log.Printf(
@@ -324,7 +340,7 @@ func (im *ImportManager) validateServiceDependencies(services []*ServiceConfig, 
 // HasImporter returns true when there is a service in the project that can be handled by an importer.
 func (im *ImportManager) HasImporter(ctx context.Context, projectConfig *ProjectConfig) bool {
 	for _, svcConfig := range projectConfig.Services {
-		for _, importer := range im.importers {
+		for _, importer := range im.allImporters() {
 			canImport, err := importer.CanImport(ctx, svcConfig)
 			if err != nil {
 				log.Printf(
@@ -398,7 +414,7 @@ func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfi
 
 	// Temp infra from importer
 	for _, svcConfig := range projectConfig.Services {
-		for _, importer := range im.importers {
+		for _, importer := range im.allImporters() {
 			canImport, err := importer.CanImport(ctx, svcConfig)
 			if err != nil {
 				log.Printf(
@@ -507,7 +523,7 @@ func pathHasModule(path, module string) (bool, error) {
 // rooted at the project directory.
 func (im *ImportManager) GenerateAllInfrastructure(ctx context.Context, projectConfig *ProjectConfig) (fs.FS, error) {
 	for _, svcConfig := range projectConfig.Services {
-		for _, importer := range im.importers {
+		for _, importer := range im.allImporters() {
 			canImport, err := importer.CanImport(ctx, svcConfig)
 			if err != nil {
 				log.Printf(

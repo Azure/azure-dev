@@ -434,7 +434,7 @@ func newDeployTimeoutAction(t *testing.T, flagTimeout *int) *DeployAction {
 		flags:         flags,
 		projectConfig: projectConfig,
 		env:           env,
-		importManager: project.NewImportManager(nil),
+		importManager: project.NewImportManager(nil, nil),
 		console:       mockinput.NewMockConsole(),
 		formatter:     &output.NoneFormatter{},
 		writer:        io.Discard,

@@ -165,7 +165,7 @@ func TestProvisionAction_PreflightAborted(t *testing.T) {
 		},
 		provisionManager:    provisionManager,
 		projectManager:      pm,
-		importManager:       project.NewImportManager(nil),
+		importManager:       project.NewImportManager(nil, nil),
 		projectConfig:       projectConfig,
 		env:                 env,
 		console:             console,

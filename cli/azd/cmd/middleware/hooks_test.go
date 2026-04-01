@@ -358,7 +358,7 @@ func runMiddlewareWithContext(
 		envManager,
 		env,
 		projectConfig,
-		project.NewImportManager(nil),
+		project.NewImportManager(nil, nil),
 		mockContext.CommandRunner,
 		mockContext.Console,
 		runOptions,

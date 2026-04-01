@@ -215,6 +215,7 @@ func TestEnsureCompatibleProject(t *testing.T) {
 			// as the ensureCompatibleProject function primarily checks infra compatibility
 			importManager := project.NewImportManager(
 				[]project.Importer{project.NewDotNetImporter(nil, nil, nil, nil, nil)},
+				nil,
 			)
 
 			err := ensureCompatibleProject(ctx, importManager, prjConfig)

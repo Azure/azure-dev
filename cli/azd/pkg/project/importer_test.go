@@ -43,7 +43,7 @@ func TestImportManagerHasService(t *testing.T) {
 		lazyEnvManager: lazy.NewLazy(func() (environment.Manager, error) {
 			return mockEnv, nil
 		}),
-	}})
+	}}, nil)
 
 	// has service
 	r, e := manager.HasService(*mockContext.Context, &ProjectConfig{
@@ -85,7 +85,7 @@ func TestImportManagerHasServiceErrorNoMultipleServicesWithAppHost(t *testing.T)
 			return mockEnv, nil
 		}),
 		hostCheck: make(map[string]hostCheckResult),
-	}})
+	}}, nil)
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "dotnet") &&
@@ -138,7 +138,7 @@ func TestImportManagerHasServiceErrorAppHostMustTargetContainerApp(t *testing.T)
 			return mockEnv, nil
 		}),
 		hostCheck: make(map[string]hostCheckResult),
-	}})
+	}}, nil)
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "dotnet") &&
@@ -185,7 +185,7 @@ func TestImportManagerProjectInfrastructureDefaults(t *testing.T) {
 		}),
 		hostCheck:           make(map[string]hostCheckResult),
 		alphaFeatureManager: mockContext.AlphaFeaturesManager,
-	}})
+	}}, nil)
 
 	// ProjectInfrastructure does defaulting when no infra exists (fallback path)
 	r, e := manager.ProjectInfrastructure(*mockContext.Context, &ProjectConfig{})
@@ -228,7 +228,7 @@ func TestImportManagerProjectInfrastructure(t *testing.T) {
 			return mockEnv, nil
 		}),
 		hostCheck: make(map[string]hostCheckResult),
-	}})
+	}}, nil)
 
 	// Do not use defaults
 	expectedDefaultFolder := "customFolder"
@@ -310,7 +310,7 @@ func TestImportManagerProjectInfrastructureAspire(t *testing.T) {
 		hostCheck:           make(map[string]hostCheckResult),
 		cache:               make(map[manifestCacheKey]*apphost.Manifest),
 		alphaFeatureManager: alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
-	}})
+	}}, nil)
 
 	// adding infra folder to test defaults
 	err := os.Mkdir(DefaultProvisioningOptions.Path, os.ModePerm)
@@ -502,7 +502,7 @@ func TestImportManagerServiceStableWithDependencyOrdering(t *testing.T) {
 		lazyEnvManager: lazy.NewLazy(func() (environment.Manager, error) {
 			return mockEnv, nil
 		}),
-	}})
+	}}, nil)
 
 	tests := []struct {
 		name               string
@@ -641,7 +641,7 @@ func TestImportManagerServiceStableValidation(t *testing.T) {
 		lazyEnvManager: lazy.NewLazy(func() (environment.Manager, error) {
 			return mockEnv, nil
 		}),
-	}})
+	}}, nil)
 
 	tests := []struct {
 		name      string
@@ -723,7 +723,7 @@ func TestImportManagerServiceStableWithDependencies(t *testing.T) {
 		lazyEnvManager: lazy.NewLazy(func() (environment.Manager, error) {
 			return mockEnv, nil
 		}),
-	}})
+	}}, nil)
 
 	// Test that ServiceStable returns services in dependency order
 	projectConfig := &ProjectConfig{

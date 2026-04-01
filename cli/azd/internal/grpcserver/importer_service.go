@@ -13,7 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
-	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -22,20 +22,20 @@ import (
 // ImporterGrpcService implements azdext.ImporterServiceServer.
 type ImporterGrpcService struct {
 	azdext.UnimplementedImporterServiceServer
-	container        *ioc.NestedContainer
 	extensionManager *extensions.Manager
+	lazyImportMgr    *lazy.Lazy[*project.ImportManager]
 	providerMap      map[string]*grpcbroker.MessageBroker[azdext.ImporterMessage]
 	providerMapMu    sync.Mutex
 }
 
 // NewImporterGrpcService creates a new ImporterGrpcService instance.
 func NewImporterGrpcService(
-	container *ioc.NestedContainer,
 	extensionManager *extensions.Manager,
+	lazyImportMgr *lazy.Lazy[*project.ImportManager],
 ) azdext.ImporterServiceServer {
 	return &ImporterGrpcService{
-		container:        container,
 		extensionManager: extensionManager,
+		lazyImportMgr:    lazyImportMgr,
 		providerMap:      make(map[string]*grpcbroker.MessageBroker[azdext.ImporterMessage]),
 	}
 }
@@ -109,18 +109,19 @@ func (s *ImporterGrpcService) onRegisterRequest(
 		return nil, status.Errorf(codes.AlreadyExists, "provider %s already registered", importerName)
 	}
 
-	// Register external importer with DI container, passing the broker
-	err := s.container.RegisterNamedSingleton(importerName, func() project.Importer {
-		return project.NewExternalImporter(
-			importerName,
-			extension,
-			broker,
-		)
-	})
+	// Register external importer with the ImportManager
+	externalImporter := project.NewExternalImporter(
+		importerName,
+		extension,
+		broker,
+	)
 
+	importMgr, err := s.lazyImportMgr.GetValue()
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to register importer: %s", err.Error())
+		return nil, status.Errorf(codes.Internal, "failed to get import manager: %s", err.Error())
 	}
+
+	importMgr.AddImporter(externalImporter)
 
 	s.providerMap[importerName] = broker
 	*registeredImporterName = importerName

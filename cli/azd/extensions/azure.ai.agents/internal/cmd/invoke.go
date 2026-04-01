@@ -204,6 +204,15 @@ func (a *InvokeAction) resolveBody() ([]byte, string, error) {
 	return []byte(a.flags.message), fmt.Sprintf("%q", a.flags.message), nil
 }
 
+// contentTypeForBody returns "application/json" if data is valid JSON,
+// otherwise "text/plain".
+func contentTypeForBody(data []byte) string {
+	if json.Valid(data) {
+		return "application/json"
+	}
+	return "text/plain"
+}
+
 func (a *InvokeAction) responsesLocal(ctx context.Context) error {
 	port := a.flags.port
 
@@ -436,7 +445,7 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", contentTypeForBody(body))
 
 	client := &http.Client{Timeout: a.httpTimeout()}
 	resp, err := client.Do(req) //nolint:gosec // G704: URL targets localhost with user-configured port
@@ -530,7 +539,7 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", contentTypeForBody(body))
 	req.Header.Set("Authorization", "Bearer "+token.Token)
 
 	client := &http.Client{Timeout: a.httpTimeout()}
@@ -689,7 +698,8 @@ const (
 )
 
 // handleInvocationLRO handles a long-running operation (202 Accepted) invocations response
-// by polling GET /invocations/{invocation_id} until a terminal state is reached.
+// by polling GET on the invocation's status URL (derived from the original request URL)
+// until a terminal state is reached.
 func handleInvocationLRO(
 	resp *http.Response,
 	endpoint string,
@@ -697,15 +707,17 @@ func handleInvocationLRO(
 	agentName string,
 	timeout time.Duration,
 ) error {
+	// Read the 202 body once — used for both invocation ID extraction and status display.
+	body202, _ := io.ReadAll(resp.Body)
+	var bodyJSON map[string]any
+	if len(body202) > 0 {
+		_ = json.Unmarshal(body202, &bodyJSON) // best-effort; bodyJSON stays nil on failure
+	}
+
 	invocationID := resp.Header.Get("x-agent-invocation-id")
-	if invocationID == "" {
-		// Try to read the ID from the response body as fallback
-		respBody, _ := io.ReadAll(resp.Body)
-		var result map[string]any
-		if json.Unmarshal(respBody, &result) == nil {
-			if id, ok := result["invocation_id"].(string); ok {
-				invocationID = id
-			}
+	if invocationID == "" && bodyJSON != nil {
+		if id, ok := bodyJSON["invocation_id"].(string); ok {
+			invocationID = id
 		}
 	}
 	if invocationID == "" {
@@ -715,14 +727,10 @@ func handleInvocationLRO(
 		)
 	}
 
-	// Read and display the initial 202 body if present
-	initialBody, _ := io.ReadAll(resp.Body)
-	if len(initialBody) > 0 {
-		var result map[string]any
-		if json.Unmarshal(initialBody, &result) == nil {
-			if status, _ := result["status"].(string); status != "" {
-				fmt.Printf("[%s] Invocation %s: %s\n", agentName, invocationID, status)
-			}
+	// Display initial 202 status if present
+	if bodyJSON != nil {
+		if status, _ := bodyJSON["status"].(string); status != "" {
+			fmt.Printf("[%s] Invocation %s: %s\n", agentName, invocationID, status)
 		}
 	}
 
@@ -732,10 +740,22 @@ func handleInvocationLRO(
 
 	fmt.Printf("[%s] Polling for result (invocation %s)...\n", agentName, invocationID)
 
-	pollURL := fmt.Sprintf(
-		"%s/agents/%s/endpoint/protocols/invocations/%s?api-version=%s",
-		endpoint, agentName, invocationID, DefaultAgentAPIVersion,
-	)
+	// Derive the poll URL from the original request URL so this works for both
+	// local and remote agents. The original URL looks like .../invocations?...
+	// and the poll URL inserts the invocation ID: .../invocations/{id}?...
+	var pollURL string
+	if resp.Request != nil && resp.Request.URL != nil {
+		baseURL := resp.Request.URL.String()
+		if i := strings.Index(baseURL, "/invocations?"); i >= 0 {
+			pollURL = baseURL[:i] + "/invocations/" + invocationID + baseURL[i+len("/invocations"):]
+		}
+	}
+	if pollURL == "" {
+		pollURL = fmt.Sprintf(
+			"%s/agents/%s/endpoint/protocols/invocations/%s?api-version=%s",
+			endpoint, agentName, invocationID, DefaultAgentAPIVersion,
+		)
+	}
 
 	var deadline time.Time
 	if timeout > 0 {

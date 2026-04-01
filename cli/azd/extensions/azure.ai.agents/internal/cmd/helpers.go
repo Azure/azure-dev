@@ -202,7 +202,12 @@ func fetchOpenAPISpec(
 	}
 	configDir := filepath.Dir(configPath)
 
-	specFile := filepath.Join(configDir, fmt.Sprintf("openapi-%s-%s.json", agentName, suffix))
+	// Sanitize agentName to prevent path traversal in the cached filename.
+	safeName := strings.ReplaceAll(agentName, "..", "_")
+	safeName = strings.ReplaceAll(safeName, "/", "_")
+	safeName = strings.ReplaceAll(safeName, "\\", "_")
+
+	specFile := filepath.Join(configDir, fmt.Sprintf("openapi-%s-%s.json", safeName, suffix))
 
 	if !forceRefresh {
 		if _, err := os.Stat(specFile); err == nil {

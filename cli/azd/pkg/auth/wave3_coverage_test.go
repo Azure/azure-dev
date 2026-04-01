@@ -905,11 +905,11 @@ func TestCredentialCachePaths(t *testing.T) {
 	authDir := filepath.Join(cfgDir, "auth")
 	msalDir := filepath.Join(authDir, "msal")
 
-	info, err := os.Stat(authDir)
+	info, err := os.Stat(authDir) //nolint:gosec // G703: path is from AZD_CONFIG_DIR test env var
 	require.NoError(t, err)
 	require.True(t, info.IsDir())
 
-	info, err = os.Stat(msalDir)
+	info, err = os.Stat(msalDir) //nolint:gosec // G703: path is from AZD_CONFIG_DIR test env var
 	require.NoError(t, err)
 	require.True(t, info.IsDir())
 	_ = mgr

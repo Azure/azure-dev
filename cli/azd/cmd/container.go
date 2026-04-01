@@ -561,7 +561,14 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterScoped(project.NewProjectManager)
 	// Currently caches manifest across command executions
 	container.MustRegisterSingleton(project.NewDotNetImporter)
-	container.MustRegisterScoped(project.NewImportManager)
+	container.MustRegisterScoped(func(dotNetImporter *project.DotNetImporter) *project.ImportManager {
+		// Build the list of importers with built-in ones first.
+		// Extensions will be able to add more importers at runtime via the gRPC server.
+		importers := []project.Importer{
+			dotNetImporter,
+		}
+		return project.NewImportManager(importers)
+	})
 	container.MustRegisterScoped(project.NewServiceManager)
 
 	// Even though the service manager is scoped based on its use of environment we can still

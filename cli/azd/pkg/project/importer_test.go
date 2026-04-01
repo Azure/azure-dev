@@ -34,7 +34,7 @@ func TestImportManagerHasService(t *testing.T) {
 	mockEnv := &mockenv.MockEnvManager{}
 	mockEnv.On("Save", mock.Anything, mock.Anything).Return(nil)
 
-	manager := NewImportManager(&DotNetImporter{
+	manager := NewImportManager([]Importer{&DotNetImporter{
 		dotnetCli: dotnet.NewCli(mockContext.CommandRunner),
 		console:   mockContext.Console,
 		lazyEnv: lazy.NewLazy(func() (*environment.Environment, error) {
@@ -43,7 +43,7 @@ func TestImportManagerHasService(t *testing.T) {
 		lazyEnvManager: lazy.NewLazy(func() (environment.Manager, error) {
 			return mockEnv, nil
 		}),
-	})
+	}})
 
 	// has service
 	r, e := manager.HasService(*mockContext.Context, &ProjectConfig{
@@ -75,7 +75,7 @@ func TestImportManagerHasServiceErrorNoMultipleServicesWithAppHost(t *testing.T)
 	mockEnv := &mockenv.MockEnvManager{}
 	mockEnv.On("Save", mock.Anything, mock.Anything).Return(nil)
 
-	manager := NewImportManager(&DotNetImporter{
+	manager := NewImportManager([]Importer{&DotNetImporter{
 		dotnetCli: dotnet.NewCli(mockContext.CommandRunner),
 		console:   mockContext.Console,
 		lazyEnv: lazy.NewLazy(func() (*environment.Environment, error) {
@@ -85,7 +85,7 @@ func TestImportManagerHasServiceErrorNoMultipleServicesWithAppHost(t *testing.T)
 			return mockEnv, nil
 		}),
 		hostCheck: make(map[string]hostCheckResult),
-	})
+	}})
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "dotnet") &&
@@ -97,7 +97,7 @@ func TestImportManagerHasServiceErrorNoMultipleServicesWithAppHost(t *testing.T)
 		}, nil
 	})
 
-	// errors ** errNoMultipleServicesWithAppHost **
+	// errors: multiple services not allowed with importer
 	r, e := manager.HasService(*mockContext.Context, &ProjectConfig{
 		Path: "path",
 		Services: map[string]*ServiceConfig{
@@ -119,7 +119,7 @@ func TestImportManagerHasServiceErrorNoMultipleServicesWithAppHost(t *testing.T)
 			},
 		},
 	}, "other")
-	require.Error(t, e, errNoMultipleServicesWithAppHost)
+	require.ErrorContains(t, e, "a project may only contain a single")
 	require.False(t, r)
 }
 
@@ -128,7 +128,7 @@ func TestImportManagerHasServiceErrorAppHostMustTargetContainerApp(t *testing.T)
 	mockEnv := &mockenv.MockEnvManager{}
 	mockEnv.On("Save", mock.Anything, mock.Anything).Return(nil)
 
-	manager := NewImportManager(&DotNetImporter{
+	manager := NewImportManager([]Importer{&DotNetImporter{
 		dotnetCli: dotnet.NewCli(mockContext.CommandRunner),
 		console:   mockContext.Console,
 		lazyEnv: lazy.NewLazy(func() (*environment.Environment, error) {
@@ -138,7 +138,7 @@ func TestImportManagerHasServiceErrorAppHostMustTargetContainerApp(t *testing.T)
 			return mockEnv, nil
 		}),
 		hostCheck: make(map[string]hostCheckResult),
-	})
+	}})
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "dotnet") &&
@@ -150,7 +150,7 @@ func TestImportManagerHasServiceErrorAppHostMustTargetContainerApp(t *testing.T)
 		}, nil
 	})
 
-	// errors ** errNoMultipleServicesWithAppHost **
+	// errors: multiple services not allowed with importer
 	r, e := manager.HasService(*mockContext.Context, &ProjectConfig{
 		Path: "path",
 		Services: map[string]*ServiceConfig{
@@ -165,7 +165,7 @@ func TestImportManagerHasServiceErrorAppHostMustTargetContainerApp(t *testing.T)
 			},
 		},
 	}, "other")
-	require.Error(t, e, errAppHostMustTargetContainerApp)
+	require.ErrorContains(t, e, "must be configured to target the container app host")
 	require.False(t, r)
 }
 
@@ -174,7 +174,7 @@ func TestImportManagerProjectInfrastructureDefaults(t *testing.T) {
 	mockEnv := &mockenv.MockEnvManager{}
 	mockEnv.On("Save", mock.Anything, mock.Anything).Return(nil)
 
-	manager := NewImportManager(&DotNetImporter{
+	manager := NewImportManager([]Importer{&DotNetImporter{
 		dotnetCli: dotnet.NewCli(mockContext.CommandRunner),
 		console:   mockContext.Console,
 		lazyEnv: lazy.NewLazy(func() (*environment.Environment, error) {
@@ -185,7 +185,7 @@ func TestImportManagerProjectInfrastructureDefaults(t *testing.T) {
 		}),
 		hostCheck:           make(map[string]hostCheckResult),
 		alphaFeatureManager: mockContext.AlphaFeaturesManager,
-	})
+	}})
 
 	// ProjectInfrastructure does defaulting when no infra exists (fallback path)
 	r, e := manager.ProjectInfrastructure(*mockContext.Context, &ProjectConfig{})
@@ -218,7 +218,7 @@ func TestImportManagerProjectInfrastructure(t *testing.T) {
 	mockEnv := &mockenv.MockEnvManager{}
 	mockEnv.On("Save", mock.Anything, mock.Anything).Return(nil)
 
-	manager := NewImportManager(&DotNetImporter{
+	manager := NewImportManager([]Importer{&DotNetImporter{
 		dotnetCli: dotnet.NewCli(mockContext.CommandRunner),
 		console:   mockContext.Console,
 		lazyEnv: lazy.NewLazy(func() (*environment.Environment, error) {
@@ -228,7 +228,7 @@ func TestImportManagerProjectInfrastructure(t *testing.T) {
 			return mockEnv, nil
 		}),
 		hostCheck: make(map[string]hostCheckResult),
-	})
+	}})
 
 	// Do not use defaults
 	expectedDefaultFolder := "customFolder"
@@ -296,7 +296,7 @@ func TestImportManagerProjectInfrastructureAspire(t *testing.T) {
 		return exec.RunResult{}, nil
 	})
 
-	manager := NewImportManager(&DotNetImporter{
+	manager := NewImportManager([]Importer{&DotNetImporter{
 		dotnetCli: dotnet.NewCli(mockContext.CommandRunner),
 		console:   mockContext.Console,
 		lazyEnv: lazy.NewLazy(func() (*environment.Environment, error) {
@@ -310,7 +310,7 @@ func TestImportManagerProjectInfrastructureAspire(t *testing.T) {
 		hostCheck:           make(map[string]hostCheckResult),
 		cache:               make(map[manifestCacheKey]*apphost.Manifest),
 		alphaFeatureManager: alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
-	})
+	}})
 
 	// adding infra folder to test defaults
 	err := os.Mkdir(DefaultProvisioningOptions.Path, os.ModePerm)
@@ -394,9 +394,9 @@ resources:
 
 func Test_ImportManager_ProjectInfrastructure_FromResources(t *testing.T) {
 	im := &ImportManager{
-		dotNetImporter: &DotNetImporter{
+		importers: []Importer{&DotNetImporter{
 			alphaFeatureManager: alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
-		},
+		}},
 	}
 
 	prjConfig := &ProjectConfig{}
@@ -416,9 +416,9 @@ func Test_ImportManager_ProjectInfrastructure_FromResources(t *testing.T) {
 
 func TestImportManager_GenerateAllInfrastructure_FromResources(t *testing.T) {
 	im := &ImportManager{
-		dotNetImporter: &DotNetImporter{
+		importers: []Importer{&DotNetImporter{
 			alphaFeatureManager: alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
-		},
+		}},
 	}
 
 	prjConfig := &ProjectConfig{}
@@ -493,7 +493,7 @@ func TestImportManagerServiceStableWithDependencyOrdering(t *testing.T) {
 	mockEnv := &mockenv.MockEnvManager{}
 	mockEnv.On("Save", mock.Anything, mock.Anything).Return(nil)
 
-	manager := NewImportManager(&DotNetImporter{
+	manager := NewImportManager([]Importer{&DotNetImporter{
 		dotnetCli: dotnet.NewCli(mockContext.CommandRunner),
 		console:   mockContext.Console,
 		lazyEnv: lazy.NewLazy(func() (*environment.Environment, error) {
@@ -502,7 +502,7 @@ func TestImportManagerServiceStableWithDependencyOrdering(t *testing.T) {
 		lazyEnvManager: lazy.NewLazy(func() (environment.Manager, error) {
 			return mockEnv, nil
 		}),
-	})
+	}})
 
 	tests := []struct {
 		name               string
@@ -632,7 +632,7 @@ func TestImportManagerServiceStableValidation(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	mockEnv := &mockenv.MockEnvManager{}
 
-	manager := NewImportManager(&DotNetImporter{
+	manager := NewImportManager([]Importer{&DotNetImporter{
 		dotnetCli: dotnet.NewCli(mockContext.CommandRunner),
 		console:   mockContext.Console,
 		lazyEnv: lazy.NewLazy(func() (*environment.Environment, error) {
@@ -641,7 +641,7 @@ func TestImportManagerServiceStableValidation(t *testing.T) {
 		lazyEnvManager: lazy.NewLazy(func() (environment.Manager, error) {
 			return mockEnv, nil
 		}),
-	})
+	}})
 
 	tests := []struct {
 		name      string
@@ -714,7 +714,7 @@ func TestImportManagerServiceStableWithDependencies(t *testing.T) {
 	mockEnv := &mockenv.MockEnvManager{}
 	mockEnv.On("Save", mock.Anything, mock.Anything).Return(nil)
 
-	manager := NewImportManager(&DotNetImporter{
+	manager := NewImportManager([]Importer{&DotNetImporter{
 		dotnetCli: dotnet.NewCli(mockContext.CommandRunner),
 		console:   mockContext.Console,
 		lazyEnv: lazy.NewLazy(func() (*environment.Environment, error) {
@@ -723,7 +723,7 @@ func TestImportManagerServiceStableWithDependencies(t *testing.T) {
 		lazyEnvManager: lazy.NewLazy(func() (environment.Manager, error) {
 			return mockEnv, nil
 		}),
-	})
+	}})
 
 	// Test that ServiceStable returns services in dependency order
 	projectConfig := &ProjectConfig{

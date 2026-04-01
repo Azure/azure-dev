@@ -213,7 +213,9 @@ func TestEnsureCompatibleProject(t *testing.T) {
 			// Create a mock ImportManager with minimal setup
 			// For this test, we don't need the ImportManager to do anything special
 			// as the ensureCompatibleProject function primarily checks infra compatibility
-			importManager := project.NewImportManager(project.NewDotNetImporter(nil, nil, nil, nil, nil))
+			importManager := project.NewImportManager(
+				[]project.Importer{project.NewDotNetImporter(nil, nil, nil, nil, nil)},
+			)
 
 			err := ensureCompatibleProject(ctx, importManager, prjConfig)
 

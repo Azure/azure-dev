@@ -38,6 +38,7 @@ jobs:
         run: npm ci
 
       - name: Run Waza evaluations
+        timeout-minutes: 30
         working-directory: cli/azd/test/eval
         env:
           COPILOT_CLI_TOKEN: ${{ secrets.COPILOT_CLI_TOKEN }}

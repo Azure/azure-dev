@@ -511,13 +511,6 @@ func TestParseGlobalFlags_NonInteractiveAliasAndEnvVar(t *testing.T) {
 			args:         []string{"--no-prompt", "--non-interactive"},
 			wantNoPrompt: true,
 		},
-		{
-			name:         "AZD_NON_INTERACTIVE=yes is unparseable, suppresses agent detection",
-			args:         []string{},
-			envKey:       "AZD_NON_INTERACTIVE",
-			envVal:       "yes",
-			wantNoPrompt: false,
-		},
 	}
 
 	for _, tt := range tests {
@@ -547,4 +540,24 @@ func TestParseGlobalFlags_NonInteractiveAliasAndEnvVar(t *testing.T) {
 			agentdetect.ResetDetection()
 		})
 	}
+
+	// Standalone test: prove that AZD_NON_INTERACTIVE presence suppresses agent detection.
+	// CLAUDE_CODE=1 would normally trigger NoPrompt via agent detection, but
+	// AZD_NON_INTERACTIVE=false should suppress agent detection entirely.
+	t.Run("AZD_NON_INTERACTIVE=false suppresses agent detection with CLAUDE_CODE set", func(t *testing.T) {
+		clearAgentEnvVarsForTest(t)
+		agentdetect.ResetDetection()
+
+		t.Setenv("CLAUDE_CODE", "1")
+		t.Setenv("AZD_NON_INTERACTIVE", "false")
+		agentdetect.ResetDetection()
+
+		opts := &internal.GlobalCommandOptions{}
+		err := ParseGlobalFlags([]string{}, opts)
+		require.NoError(t, err)
+		assert.False(t, opts.NoPrompt,
+			"AZD_NON_INTERACTIVE=false should suppress agent detection from setting NoPrompt")
+
+		agentdetect.ResetDetection()
+	})
 }

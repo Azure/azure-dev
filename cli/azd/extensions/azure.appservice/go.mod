@@ -6,7 +6,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.21.0
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.13.1
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice/v2 v2.3.0
-	github.com/azure/azure-dev/cli/azd v0.0.0-20260122173819-89795b295491
+	github.com/azure/azure-dev/cli/azd v1.23.13
 	github.com/fatih/color v1.18.0
 	github.com/spf13/cobra v1.10.2
 )
@@ -90,10 +90,3 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-// replace: The extension lives inside the azd monorepo and depends on the parent
-// module at cli/azd. During local development (and in CI for this repo) the
-// replace directive lets `go build` resolve the dependency from the working tree
-// instead of requiring a published module version. It is stripped automatically
-// by `go mod tidy` when the module is consumed as a standalone dependency.
-replace github.com/azure/azure-dev/cli/azd => ../..

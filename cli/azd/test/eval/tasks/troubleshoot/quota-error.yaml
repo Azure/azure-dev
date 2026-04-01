@@ -17,7 +17,7 @@ graders:
         - "(increase|request|limit|cores)"
       must_not_match:
         - "I don't know"
-        - "contact support"
+        - "only contact support"
   - type: text
     weight: 0.3
     config:

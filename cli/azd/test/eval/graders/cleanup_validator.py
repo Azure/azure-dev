@@ -89,7 +89,10 @@ def grade(context: dict) -> dict:
         }
 
     # Resource group exists with resources remaining
-    remaining = list_remaining_resources(subscription_id, resource_group, token)
+    try:
+        remaining = list_remaining_resources(subscription_id, resource_group, token)
+    except HTTPError as e:
+        return {"score": 0.0, "reason": f"HTTP error listing resources: {e.code} {e.reason}"}
     if remaining:
         details = ", ".join(f"{r['type']}/{r['name']}" for r in remaining[:10])
         suffix = f" (and {len(remaining) - 10} more)" if len(remaining) > 10 else ""

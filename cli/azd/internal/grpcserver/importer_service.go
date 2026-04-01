@@ -13,7 +13,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
-	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -23,7 +22,7 @@ import (
 type ImporterGrpcService struct {
 	azdext.UnimplementedImporterServiceServer
 	extensionManager *extensions.Manager
-	lazyImportMgr    *lazy.Lazy[*project.ImportManager]
+	importerRegistry *project.ImporterRegistry
 	providerMap      map[string]*grpcbroker.MessageBroker[azdext.ImporterMessage]
 	providerMapMu    sync.Mutex
 }
@@ -31,11 +30,11 @@ type ImporterGrpcService struct {
 // NewImporterGrpcService creates a new ImporterGrpcService instance.
 func NewImporterGrpcService(
 	extensionManager *extensions.Manager,
-	lazyImportMgr *lazy.Lazy[*project.ImportManager],
+	importerRegistry *project.ImporterRegistry,
 ) azdext.ImporterServiceServer {
 	return &ImporterGrpcService{
 		extensionManager: extensionManager,
-		lazyImportMgr:    lazyImportMgr,
+		importerRegistry: importerRegistry,
 		providerMap:      make(map[string]*grpcbroker.MessageBroker[azdext.ImporterMessage]),
 	}
 }
@@ -109,19 +108,13 @@ func (s *ImporterGrpcService) onRegisterRequest(
 		return nil, status.Errorf(codes.AlreadyExists, "provider %s already registered", importerName)
 	}
 
-	// Register external importer with the ImportManager
+	// Register external importer in the shared registry so all ImportManager instances can find it
 	externalImporter := project.NewExternalImporter(
 		importerName,
 		extension,
 		broker,
 	)
-
-	importMgr, err := s.lazyImportMgr.GetValue()
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get import manager: %s", err.Error())
-	}
-
-	importMgr.AddImporter(externalImporter)
+	s.importerRegistry.Add(externalImporter)
 
 	s.providerMap[importerName] = broker
 	*registeredImporterName = importerName

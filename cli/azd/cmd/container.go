@@ -561,25 +561,18 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterScoped(project.NewProjectManager)
 	// Currently caches manifest across command executions
 	container.MustRegisterSingleton(project.NewDotNetImporter)
+	// ImporterRegistry is a singleton shared between gRPC service (adds importers) and ImportManager (queries them)
+	container.MustRegisterSingleton(project.NewImporterRegistry)
 	container.MustRegisterScoped(func(
 		dotNetImporter *project.DotNetImporter,
-		serviceLocator ioc.ServiceLocator,
+		importerRegistry *project.ImporterRegistry,
 	) *project.ImportManager {
 		// Build the list of importers with built-in ones first.
-		// Extensions can add more importers at runtime via the gRPC server and ImportManager.AddImporter().
+		// Extensions add more importers at runtime via the ImporterRegistry.
 		importers := []project.Importer{
 			dotNetImporter,
 		}
-		return project.NewImportManager(importers, serviceLocator)
-	})
-	container.MustRegisterScoped(func() *lazy.Lazy[*project.ImportManager] {
-		return lazy.NewLazy(func() (*project.ImportManager, error) {
-			var mgr *project.ImportManager
-			if err := container.Resolve(&mgr); err != nil {
-				return nil, err
-			}
-			return mgr, nil
-		})
+		return project.NewImportManager(importers, importerRegistry)
 	})
 	container.MustRegisterScoped(project.NewServiceManager)
 

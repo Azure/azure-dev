@@ -13,9 +13,9 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
-	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 )
 
 // Importer defines the contract for project importers that can detect projects, extract services,
@@ -57,32 +57,59 @@ type Importer interface {
 	) (fs.FS, error)
 }
 
-// ImportManager manages the orchestration of project importers that detect services and generate infrastructure.
-type ImportManager struct {
-	importers      []Importer
-	serviceLocator ioc.ServiceLocator
+// ImporterRegistry holds external importers registered by extensions at runtime.
+// It is a singleton shared between the gRPC server (which adds importers) and
+// ImportManager instances (which query them).
+type ImporterRegistry struct {
+	importers []Importer
+	mu        sync.RWMutex
 }
 
-// NewImportManager creates a new ImportManager with the given importers.
-// Importers are evaluated in order; the first importer that can handle a project wins.
-// The serviceLocator is used to discover extension-registered importers at runtime.
-func NewImportManager(importers []Importer, serviceLocator ioc.ServiceLocator) *ImportManager {
+// NewImporterRegistry creates a new empty registry.
+func NewImporterRegistry() *ImporterRegistry {
+	return &ImporterRegistry{}
+}
+
+// Add registers an external importer.
+func (r *ImporterRegistry) Add(importer Importer) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.importers = append(r.importers, importer)
+}
+
+// All returns a snapshot of all registered external importers.
+func (r *ImporterRegistry) All() []Importer {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return slices.Clone(r.importers)
+}
+
+// ImportManager manages the orchestration of project importers that detect services and generate infrastructure.
+type ImportManager struct {
+	importers        []Importer
+	importerRegistry *ImporterRegistry
+}
+
+// NewImportManager creates a new ImportManager with the given built-in importers.
+// The importerRegistry provides access to extension-registered importers added at runtime.
+func NewImportManager(importers []Importer, importerRegistry *ImporterRegistry) *ImportManager {
 	return &ImportManager{
-		importers:      importers,
-		serviceLocator: serviceLocator,
+		importers:        importers,
+		importerRegistry: importerRegistry,
 	}
 }
 
 // allImporters returns the combined list of built-in and extension-registered importers.
 // Built-in importers come first to maintain backward compatibility.
 func (im *ImportManager) allImporters() []Importer {
-	return im.importers
-}
-
-// AddImporter adds an importer to the list. This is used by the gRPC server
-// to register extension-provided importers at runtime.
-func (im *ImportManager) AddImporter(importer Importer) {
-	im.importers = append(im.importers, importer)
+	if im.importerRegistry == nil {
+		return im.importers
+	}
+	external := im.importerRegistry.All()
+	if len(external) == 0 {
+		return im.importers
+	}
+	return append(slices.Clone(im.importers), external...)
 }
 
 // servicePath returns the resolved path for a service config, handling nil Project gracefully.

@@ -280,6 +280,26 @@ func Test_DeriveDirectoryName(t *testing.T) {
 			expected: "owner-..",
 		},
 		{
+			name:     "HttpsURLWithQueryParams",
+			input:    "https://github.com/user/repo?ref=main",
+			expected: "repo",
+		},
+		{
+			name:     "HttpsURLWithFragment",
+			input:    "https://github.com/user/repo#section",
+			expected: "repo",
+		},
+		{
+			name:     "HttpsURLWithQueryAndFragment",
+			input:    "https://github.com/user/repo?ref=main#readme",
+			expected: "repo",
+		},
+		{
+			name:     "HttpsURLWithDotGitAndQuery",
+			input:    "https://github.com/user/repo.git?ref=main",
+			expected: "repo",
+		},
+		{
 			name:     "BareDotDotFallsBackToDefault",
 			input:    "..",
 			expected: "new-project",

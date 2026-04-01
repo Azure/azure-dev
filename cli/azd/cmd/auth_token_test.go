@@ -66,6 +66,35 @@ func TestAuthToken(t *testing.T) {
 	require.Equal(t, time.Unix(1669153000, 0).UTC(), time.Time(res.ExpiresOn))
 }
 
+func TestAuthToken_DefaultUnformattedOutput(t *testing.T) {
+	buf := &bytes.Buffer{}
+
+	token := authTokenFn(func(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
+		require.ElementsMatch(t, []string{managementScope}, options.Scopes)
+
+		return azcore.AccessToken{
+			Token:     "ABC123",
+			ExpiresOn: time.Unix(1669153000, 0).UTC(),
+		}, nil
+	})
+
+	a := newAuthTokenAction(
+		credentialProviderForTokenFn(token),
+		&output.NoneFormatter{},
+		buf,
+		&authTokenFlags{},
+		func(ctx context.Context) (*environment.Environment, error) {
+			return nil, fmt.Errorf("not an azd env directory")
+		},
+		&mockSubscriptionTenantResolver{},
+		cloud.AzurePublic(),
+	)
+
+	_, err := a.Run(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, "ABC123\n", buf.String())
+}
+
 func TestAuthTokenSysEnv(t *testing.T) {
 	buf := &bytes.Buffer{}
 

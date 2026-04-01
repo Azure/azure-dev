@@ -40,7 +40,7 @@ func newAuthTokenFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions
 
 func newAuthTokenCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:    "token --output json",
+		Use:    "token",
 		Hidden: true,
 	}
 }
@@ -193,5 +193,10 @@ func (a *authTokenAction) Run(ctx context.Context) (*actions.ActionResult, error
 		ExpiresOn: contracts.RFC3339Time(token.ExpiresOn),
 	}
 
-	return nil, a.formatter.Format(res, a.writer, nil)
+	if a.formatter.Kind() != output.NoneFormat {
+		return nil, a.formatter.Format(res, a.writer, nil)
+	}
+
+	fmt.Fprintln(a.writer, res.Token)
+	return nil, nil
 }

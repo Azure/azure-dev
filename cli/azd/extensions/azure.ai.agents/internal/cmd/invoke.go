@@ -248,7 +248,7 @@ func (a *InvokeAction) responsesLocal(ctx context.Context) error {
 		if requestID != "" {
 			fmt.Printf("Trace ID: %s\n", requestID)
 		}
-		return fmt.Errorf("HTTP %d: %s\n%s", resp.StatusCode, resp.Status, string(respBody))
+		return fmt.Errorf("POST %s failed with HTTP %d: %s\n%s", url, resp.StatusCode, resp.Status, string(respBody))
 	}
 
 	var result map[string]any
@@ -303,12 +303,15 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 		"stream": true,
 	}
 
-	// Session ID — routes to the same microVM container instance
+	// Session ID — routes to the same microVM container instance.
+	// When empty, let the server assign one.
 	sid, err := resolveSessionID(ctx, azdClient, name, a.flags.session, a.flags.newSession)
 	if err != nil {
 		return err
 	}
-	reqBody["session_id"] = sid
+	if sid != "" {
+		reqBody["session_id"] = sid
+	}
 
 	// Acquire credential and token — used for both conversation creation and the invoke request
 	credential, err := newAgentCredential()
@@ -340,7 +343,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 
 	fmt.Printf("Agent:        %s (remote)\n", name)
 	fmt.Printf("Message:      %s\n", bodyLabel)
-	fmt.Printf("Session:      %s\n", sid)
+	printSessionStatus("Session:      ", sid)
 	fmt.Printf("Conversation: %s\n", convID)
 	fmt.Println()
 
@@ -349,7 +352,10 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/openai/responses?api-version=%s", endpoint, DefaultAgentAPIVersion)
+	url := fmt.Sprintf(
+		"%s/agents/%s/endpoint/protocols/openai/v1/responses?api-version=%s",
+		endpoint, name, DefaultAgentAPIVersion,
+	)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
@@ -360,7 +366,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	client := &http.Client{Timeout: a.httpTimeout()}
 	resp, err := client.Do(req) //nolint:gosec // G704: endpoint is resolved from azd environment configuration
 	if err != nil {
-		return fmt.Errorf("request failed: %w", err)
+		return fmt.Errorf("POST %s failed: %w", url, err)
 	}
 	defer resp.Body.Close()
 
@@ -369,17 +375,16 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 		fmt.Printf("Trace ID: %s\n", requestID)
 	}
 
+	captureResponseSession(ctx, azdClient, name, sid, resp, "Session:      ")
+
 	if resp.StatusCode >= 400 {
 		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("HTTP %d: %s\n%s", resp.StatusCode, resp.Status, string(respBody))
+		return fmt.Errorf("POST %s failed with HTTP %d: %s\n%s", url, resp.StatusCode, resp.Status, string(respBody))
 	}
 
 	// Parse SSE stream for agent output
 	return readSSEStream(resp.Body, name)
 }
-
-// invocationsLocal sends the user's message to a locally running agent using
-// the invocations protocol (POST /invocations).
 func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 	port := a.flags.port
 
@@ -388,13 +393,29 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 		return err
 	}
 
+	// Resolve session ID (empty means let the server assign one).
+	var sid string
+	var azdClient *azdext.AzdClient
+	if c, err := azdext.NewAzdClient(); err == nil {
+		azdClient = c
+		defer azdClient.Close()
+		sid, _ = resolveSessionID(ctx, azdClient, "local", a.flags.session, a.flags.newSession)
+	}
+
 	fmt.Printf("Target:   localhost:%d (local, invocations protocol)\n", port)
-	fmt.Printf("Input:    %s\n\n", bodyLabel)
+	fmt.Printf("Input:    %s\n", bodyLabel)
+	printSessionStatus("Session:  ", sid)
+	fmt.Println()
 
-	url := fmt.Sprintf("http://localhost:%d/invocations", port)
+	localBaseURL := fmt.Sprintf("http://localhost:%d", port)
 
-	// Pass agent_session_id as query parameter for multi-turn support (§5.5)
-	if sid := a.flags.session; sid != "" {
+	// Fetch and cache the agent's OpenAPI spec (always refresh for local).
+	if azdClient != nil {
+		fetchOpenAPISpec(ctx, azdClient, localBaseURL, "local", "local", "", true)
+	}
+
+	url := localBaseURL + "/invocations"
+	if sid != "" {
 		url += "?agent_session_id=" + sid
 	}
 
@@ -414,11 +435,18 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 	}
 	defer resp.Body.Close()
 
+	// Persist the most recent invocation ID for this agent (best-effort).
+	if invID := resp.Header.Get("x-agent-invocation-id"); invID != "" && azdClient != nil {
+		saveInvocationID(ctx, azdClient, "local", invID)
+	}
+
+	captureResponseSession(ctx, azdClient, "local", sid, resp, "Session:  ")
+
 	return handleInvocationResponse(resp, "", "", "local", a.httpTimeout())
 }
 
 // invocationsRemote sends the user's message to Foundry using
-// the invocations protocol (POST /agents/{name}/versions/{version}/invocations).
+// the invocations protocol (POST /agents/{name}/endpoint/protocols/invocations).
 func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
@@ -428,24 +456,16 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 
 	name := a.flags.name
 
-	// Auto-resolve agent name and version from azure.yaml / azd environment
-	var version string
+	// Auto-resolve agent name from azure.yaml / azd environment
 	if info, err := resolveAgentServiceFromProject(ctx, azdClient, name, rootFlags.NoPrompt); err == nil {
 		if name == "" && info.AgentName != "" {
 			name = info.AgentName
 		}
-		version = info.Version
 	}
 
 	if name == "" {
 		return fmt.Errorf(
 			"agent name is required; provide as the first argument or define an azure.ai.agent service in azure.yaml",
-		)
-	}
-	if version == "" {
-		return fmt.Errorf(
-			"agent version is required for the invocations protocol but was not found.\n\n" +
-				"Deploy your agent first with 'azd deploy' so that the version is recorded in the environment",
 		)
 	}
 
@@ -479,14 +499,19 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	}
 
 	fmt.Printf("Agent:    %s (remote, invocations protocol)\n", name)
-	fmt.Printf("Version:  %s\n", version)
 	fmt.Printf("Input:    %s\n", bodyLabel)
-	fmt.Printf("Session:  %s\n\n", sid)
+	printSessionStatus("Session:  ", sid)
+	fmt.Println()
 
-	url := fmt.Sprintf(
-		"%s/agents/%s/versions/%s/invocations?api-version=%s&agent_session_id=%s",
-		endpoint, name, version, DefaultAgentAPIVersion, sid,
-	)
+	remoteBaseURL := fmt.Sprintf("%s/agents/%s/endpoint/protocols", endpoint, name)
+
+	// Fetch and cache the agent's OpenAPI spec (skip if already cached).
+	fetchOpenAPISpec(ctx, azdClient, remoteBaseURL, name, "remote", token.Token, false)
+
+	url := fmt.Sprintf("%s/invocations?api-version=%s", remoteBaseURL, DefaultAgentAPIVersion)
+	if sid != "" {
+		url += "&agent_session_id=" + sid
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
@@ -498,9 +523,16 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	client := &http.Client{Timeout: a.httpTimeout()}
 	resp, err := client.Do(req) //nolint:gosec // G704: endpoint is resolved from azd environment configuration
 	if err != nil {
-		return fmt.Errorf("request failed: %w", err)
+		return fmt.Errorf("POST %s failed: %w", url, err)
 	}
 	defer resp.Body.Close()
+
+	// Persist the most recent invocation ID for this agent.
+	if invID := resp.Header.Get("x-agent-invocation-id"); invID != "" {
+		saveInvocationID(ctx, azdClient, name, invID)
+	}
+
+	captureResponseSession(ctx, azdClient, name, sid, resp, "Session:  ")
 
 	return handleInvocationResponse(resp, endpoint, token.Token, name, a.httpTimeout())
 }
@@ -521,7 +553,14 @@ func handleInvocationResponse(
 
 	if resp.StatusCode >= 400 {
 		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("HTTP %d: %s\n%s", resp.StatusCode, resp.Status, string(respBody))
+		requestURL := "/invocations"
+		if resp.Request != nil && resp.Request.URL != nil {
+			requestURL = resp.Request.URL.String()
+		}
+		return fmt.Errorf(
+			"POST %s failed with HTTP %d: %s\n%s",
+			requestURL, resp.StatusCode, resp.Status, string(respBody),
+		)
 	}
 
 	if resp.StatusCode == http.StatusAccepted {
@@ -680,7 +719,10 @@ func handleInvocationLRO(
 
 	fmt.Printf("[%s] Polling for result (invocation %s)...\n", agentName, invocationID)
 
-	pollURL := fmt.Sprintf("%s/agents/invocations/%s?api-version=%s", endpoint, invocationID, DefaultAgentAPIVersion)
+	pollURL := fmt.Sprintf(
+		"%s/agents/%s/endpoint/protocols/invocations/%s?api-version=%s",
+		endpoint, agentName, invocationID, DefaultAgentAPIVersion,
+	)
 
 	var deadline time.Time
 	if timeout > 0 {
@@ -712,7 +754,7 @@ func handleInvocationLRO(
 		client := &http.Client{Timeout: 30 * time.Second}
 		pollResp, err := client.Do(req) //nolint:gosec // G704: endpoint from azd environment
 		if err != nil {
-			return fmt.Errorf("poll request failed: %w", err)
+			return fmt.Errorf("GET %s failed: %w", pollURL, err)
 		}
 
 		pollBody, _ := io.ReadAll(pollResp.Body)
@@ -723,7 +765,10 @@ func handleInvocationLRO(
 		}
 
 		if pollResp.StatusCode >= 400 {
-			return fmt.Errorf("poll HTTP %d: %s\n%s", pollResp.StatusCode, pollResp.Status, string(pollBody))
+			return fmt.Errorf(
+				"GET %s failed with HTTP %d: %s\n%s",
+				pollURL, pollResp.StatusCode, pollResp.Status, string(pollBody),
+			)
 		}
 
 		var result map[string]any
@@ -776,12 +821,13 @@ func createConversation(ctx context.Context, endpoint string, bearerToken string
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req) //nolint:gosec // G704: endpoint is resolved from azd environment configuration
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("POST %s failed: %w", url, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		return "", fmt.Errorf("failed to create conversation: HTTP %d", resp.StatusCode)
+		respBody, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("POST %s failed with HTTP %d: %s\n%s", url, resp.StatusCode, resp.Status, string(respBody))
 	}
 
 	body, err := io.ReadAll(resp.Body)

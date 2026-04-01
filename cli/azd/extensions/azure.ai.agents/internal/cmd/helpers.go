@@ -8,10 +8,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
@@ -19,7 +22,6 @@ import (
 	projectpkg "azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/google/uuid"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -36,6 +38,7 @@ type AgentLocalContext struct {
 	AgentName     string            `json:"agent_name,omitempty"`
 	Sessions      map[string]string `json:"sessions,omitempty"`
 	Conversations map[string]string `json:"conversations,omitempty"`
+	Invocations   map[string]string `json:"invocations,omitempty"`
 }
 
 // resolveConfigPath returns the full path to the .foundry-agent.json file
@@ -85,31 +88,158 @@ func saveLocalContext(agentCtx *AgentLocalContext, configPath string) error {
 	return os.WriteFile(configPath, append(data, '\n'), 0600)
 }
 
-// resolveSessionID resolves or generates a session ID for invoke.
-// Returns the session ID (existing or newly generated).
-func resolveSessionID(ctx context.Context, azdClient *azdext.AzdClient, agentName string, explicit string, forceNew bool) (string, error) {
+// resolveSessionID looks up an existing session ID for the given agent.
+// Returns the explicit value if provided, or the saved session ID from the config file.
+// Returns "" when no session exists or forceNew is true, signaling the caller to let
+// the server assign one via the x-agent-session-id response header.
+func resolveSessionID(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	agentName string,
+	explicit string,
+	forceNew bool,
+) (string, error) {
 	if explicit != "" {
 		return explicit, nil
+	}
+	if forceNew {
+		return "", nil
 	}
 	configPath, err := resolveConfigPath(ctx, azdClient)
 	if err != nil {
 		return "", err
 	}
 	agentCtx := loadLocalContext(configPath)
-	if agentCtx.Sessions == nil {
-		agentCtx.Sessions = make(map[string]string)
-	}
-	if !forceNew {
+	if agentCtx.Sessions != nil {
 		if sid, ok := agentCtx.Sessions[agentName]; ok {
 			return sid, nil
 		}
 	}
-	sid := uuid.New().String()
-	agentCtx.Sessions[agentName] = sid
-	if err := saveLocalContext(agentCtx, configPath); err != nil {
-		return sid, fmt.Errorf("failed to save session ID: %w", err)
+	return "", nil
+}
+
+// saveSessionID persists a session ID received from the server.
+func saveSessionID(ctx context.Context, azdClient *azdext.AzdClient, agentName, sessionID string) {
+	if sessionID == "" {
+		return
 	}
-	return sid, nil
+	configPath, err := resolveConfigPath(ctx, azdClient)
+	if err != nil {
+		return
+	}
+	agentCtx := loadLocalContext(configPath)
+	if agentCtx.Sessions == nil {
+		agentCtx.Sessions = make(map[string]string)
+	}
+	agentCtx.Sessions[agentName] = sessionID
+	_ = saveLocalContext(agentCtx, configPath)
+}
+
+// saveInvocationID persists the most recent invocation ID for the given agent.
+func saveInvocationID(ctx context.Context, azdClient *azdext.AzdClient, agentName, invocationID string) {
+	if invocationID == "" {
+		return
+	}
+	configPath, err := resolveConfigPath(ctx, azdClient)
+	if err != nil {
+		return
+	}
+	agentCtx := loadLocalContext(configPath)
+	if agentCtx.Invocations == nil {
+		agentCtx.Invocations = make(map[string]string)
+	}
+	agentCtx.Invocations[agentName] = invocationID
+	_ = saveLocalContext(agentCtx, configPath)
+}
+
+// printSessionStatus prints the session line for the invoke banner.
+// label is the formatted prefix (e.g. "Session:  " or "Session:      ").
+func printSessionStatus(label, sid string) {
+	if sid != "" {
+		fmt.Printf("%s%s\n", label, sid)
+	} else {
+		fmt.Printf("%s(new — server will assign)\n", label)
+	}
+}
+
+// captureResponseSession reads the x-agent-session-id header from a response
+// and saves it when the caller had no pre-existing session (sid == "").
+// label is the formatted prefix for printing (e.g. "Session:  ").
+func captureResponseSession(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	agentName string,
+	sid string,
+	resp *http.Response,
+	label string,
+) {
+	if sid != "" || azdClient == nil {
+		return
+	}
+	if newSid := resp.Header.Get("x-agent-session-id"); newSid != "" {
+		saveSessionID(ctx, azdClient, agentName, newSid)
+		fmt.Printf("%s%s (assigned by server)\n", label, newSid)
+	}
+}
+
+// fetchOpenAPISpec fetches the OpenAPI spec from a running agent and caches it on disk.
+// baseURL is the root URL (e.g., "http://localhost:8088" or "{endpoint}/agents/{name}/endpoint/protocols").
+// suffix is "local" or "remote", used in the cached filename.
+// If forceRefresh is false and the file already exists, the fetch is skipped.
+// Failures are non-fatal and silently ignored.
+func fetchOpenAPISpec(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	baseURL string,
+	agentName string,
+	suffix string,
+	bearerToken string,
+	forceRefresh bool,
+) {
+	configPath, err := resolveConfigPath(ctx, azdClient)
+	if err != nil {
+		return
+	}
+	configDir := filepath.Dir(configPath)
+
+	specFile := filepath.Join(configDir, fmt.Sprintf("openapi-%s-%s.json", agentName, suffix))
+
+	if !forceRefresh {
+		if _, err := os.Stat(specFile); err == nil {
+			return // file exists, skip fetch
+		}
+	}
+
+	specURL := baseURL + "/invocations/docs/openapi.json"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, specURL, nil)
+	if err != nil {
+		return
+	}
+	if bearerToken != "" {
+		req.Header.Set("Authorization", "Bearer "+bearerToken)
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req) //nolint:gosec // G704: URL constructed from azd environment or localhost
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return
+	}
+
+	if err := os.WriteFile(specFile, body, 0600); err != nil {
+		return
+	}
+
+	fmt.Printf("OpenAPI spec saved to %s\n", specFile)
 }
 
 // resolveConversationID resolves a Foundry conversation ID.

@@ -105,3 +105,26 @@ func TestFoundryProjectInfoResourceIdConstruction(t *testing.T) {
 
 	require.Equal(t, originalId, reconstructed)
 }
+
+func TestNormalizeLoginServer(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"myregistry.azurecr.io", "myregistry.azurecr.io"},
+		{"https://myregistry.azurecr.io", "myregistry.azurecr.io"},
+		{"http://myregistry.azurecr.io", "myregistry.azurecr.io"},
+		{"https://myregistry.azurecr.io/", "myregistry.azurecr.io"},
+		{"https://crdyt765he4tmsy.azurecr.io", "crdyt765he4tmsy.azurecr.io"},
+		{"", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tt.want, normalizeLoginServer(tt.input))
+		})
+	}
+}

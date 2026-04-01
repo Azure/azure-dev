@@ -754,7 +754,7 @@ func handleInvocationLRO(
 		}
 
 		pollBody, _ := io.ReadAll(pollResp.Body)
-		pollResp.Body.Close()
+		_ = pollResp.Body.Close()
 
 		if pollResp.StatusCode == http.StatusNotFound {
 			continue // invocation not yet registered

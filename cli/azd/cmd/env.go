@@ -1338,6 +1338,18 @@ func newEnvGetValuesAction(
 }
 
 func (eg *envGetValuesAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	shell := strings.ToLower(eg.flags.shell)
+	if !eg.flags.export && shell != "bash" {
+		return nil, &internal.ErrorWithSuggestion{
+			Err: fmt.Errorf(
+				"--shell requires --export: %w",
+				internal.ErrInvalidFlagCombination,
+			),
+			Suggestion: "Use '--export --shell pwsh' together, " +
+				"or remove '--shell' when not using '--export'.",
+		}
+	}
+
 	if eg.flags.export && eg.formatter.Kind() != output.EnvVarsFormat {
 		return nil, &internal.ErrorWithSuggestion{
 			Err: fmt.Errorf(
@@ -1349,7 +1361,6 @@ func (eg *envGetValuesAction) Run(ctx context.Context) (*actions.ActionResult, e
 		}
 	}
 
-	shell := strings.ToLower(eg.flags.shell)
 	if eg.flags.export && shell != "bash" && shell != "pwsh" {
 		return nil, &internal.ErrorWithSuggestion{
 			Err: fmt.Errorf(
@@ -1396,11 +1407,11 @@ func (eg *envGetValuesAction) Run(ctx context.Context) (*actions.ActionResult, e
 	if eg.flags.export {
 		if shell == "pwsh" {
 			return nil, writePwshExportedEnv(
-				env.Dotenv(), eg.writer,
+				env.Dotenv(), eg.writer, os.Stderr,
 			)
 		}
 		return nil, writeExportedEnv(
-			env.Dotenv(), eg.writer,
+			env.Dotenv(), eg.writer, os.Stderr,
 		)
 	}
 
@@ -1418,6 +1429,14 @@ var shellEscaper = strings.NewReplacer(
 	"\r", `\r`,
 )
 
+// ansiCEscaper escapes characters for ANSI-C $'...' quoting.
+// In ANSI-C quoting, only backslash and single quote are special;
+// dollar signs and backticks are literal.
+var ansiCEscaper = strings.NewReplacer(
+	`\`, `\\`,
+	`'`, `\'`,
+)
+
 // validShellKey matches valid POSIX shell identifiers:
 // starts with a letter or underscore, followed by alphanumerics or underscores.
 var validShellKey = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
@@ -1430,12 +1449,13 @@ var validShellKey = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 func writeExportedEnv(
 	values map[string]string,
 	writer io.Writer,
+	warnWriter io.Writer,
 ) error {
 	keys := slices.Sorted(maps.Keys(values))
 	for _, key := range keys {
 		if !validShellKey.MatchString(key) {
 			fmt.Fprintf(
-				os.Stderr,
+				warnWriter,
 				"warning: skipping key %q "+
 					"(not a valid shell identifier)\n",
 				key,
@@ -1444,15 +1464,17 @@ func writeExportedEnv(
 		}
 
 		val := values[key]
-		escaped := shellEscaper.Replace(val)
 
 		// Use $'...' quoting for values containing newlines so \n is
 		// interpreted as an actual newline by the shell.
 		var line string
 		if strings.Contains(val, "\n") || strings.Contains(val, "\r") {
+			escaped := ansiCEscaper.Replace(val)
 			escaped = strings.ReplaceAll(escaped, "\n", `\n`)
-			line = fmt.Sprintf("export %s=$'%s'\n", key, strings.ReplaceAll(escaped, `'`, `\'`))
+			escaped = strings.ReplaceAll(escaped, "\r", `\r`)
+			line = fmt.Sprintf("export %s=$'%s'\n", key, escaped)
 		} else {
+			escaped := shellEscaper.Replace(val)
 			line = fmt.Sprintf("export %s=\"%s\"\n", key, escaped)
 		}
 
@@ -1464,26 +1486,30 @@ func writeExportedEnv(
 }
 
 // pwshEscaper escapes characters that are special inside PowerShell
-// double-quoted strings: backticks, double quotes, and dollar signs.
+// double-quoted strings: backticks, double quotes, dollar signs,
+// newlines, and carriage returns.
 var pwshEscaper = strings.NewReplacer(
 	"`", "``",
 	`"`, "`\"",
 	`$`, "`$",
+	"\n", "`n",
+	"\r", "`r",
 )
 
 // writePwshExportedEnv writes environment variables in PowerShell format
 // ($env:KEY = "VALUE") to the given writer. Values are double-quoted with
-// embedded backticks, double quotes, and dollar signs escaped using the
-// PowerShell backtick escape character.
+// embedded backticks, double quotes, dollar signs, newlines, and carriage
+// returns escaped using the PowerShell backtick escape character.
 func writePwshExportedEnv(
 	values map[string]string,
 	writer io.Writer,
+	warnWriter io.Writer,
 ) error {
 	keys := slices.Sorted(maps.Keys(values))
 	for _, key := range keys {
 		if !validShellKey.MatchString(key) {
 			fmt.Fprintf(
-				os.Stderr,
+				warnWriter,
 				"warning: skipping key %q "+
 					"(not a valid shell identifier)\n",
 				key,

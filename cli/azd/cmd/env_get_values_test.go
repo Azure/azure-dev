@@ -163,7 +163,7 @@ func TestEnvGetValuesExport(t *testing.T) {
 			export: true,
 			shell:  "pwsh",
 			expected: "$env:AZURE_ENV_NAME = \"test\"\n" +
-				"$env:MULTILINE = \"line1\nline2\"\n",
+				"$env:MULTILINE = \"line1`nline2\"\n",
 		},
 		{
 			name: "pwsh export empty value",
@@ -296,5 +296,41 @@ func TestEnvGetValuesExportInvalidShell(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(
 		t, err.Error(), "unsupported shell",
+	)
+}
+
+func TestEnvGetValuesShellWithoutExport(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+
+	azdCtx := azdcontext.NewAzdContextWithDirectory(
+		t.TempDir(),
+	)
+	err := azdCtx.SetProjectState(
+		azdcontext.ProjectState{
+			DefaultEnvironment: "test",
+		},
+	)
+	require.NoError(t, err)
+
+	formatter, err := output.NewFormatter("dotenv")
+	require.NoError(t, err)
+
+	var buf bytes.Buffer
+	action := &envGetValuesAction{
+		azdCtx:    azdCtx,
+		console:   mockContext.Console,
+		formatter: formatter,
+		writer:    &buf,
+		flags: &envGetValuesFlags{
+			global: &internal.GlobalCommandOptions{},
+			export: false,
+			shell:  "pwsh",
+		},
+	}
+
+	_, err = action.Run(t.Context())
+	require.Error(t, err)
+	require.Contains(
+		t, err.Error(), "--shell requires --export",
 	)
 }

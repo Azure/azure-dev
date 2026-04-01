@@ -80,7 +80,7 @@ Progress reports provide real-time feedback during a single command's execution,
 
 #### Progress Report States
 
-Items in a progress report list can be in one of six states:
+Items in a progress report list can be in one of five states:
 
 1. **Loading**: <code><span style="color:gray">|===    |</span> [Verb] Message goes here</code>
    - Indicates operation in progress

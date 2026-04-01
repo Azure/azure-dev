@@ -2,7 +2,6 @@
 // Posts a comment if no issue is found and fails the check.
 module.exports = async ({ github, context, core }) => {
   const pr = context.payload.pull_request;
-  const body = pr.body || '';
 
   // Skip for dependabot and automated PRs
   const skipAuthors = ['dependabot[bot]', 'dependabot', 'app/dependabot'];
@@ -21,25 +20,8 @@ module.exports = async ({ github, context, core }) => {
     return;
   }
 
-  // Check for issue references in body
-  const issuePatterns = [
-    /\b(?:fixes|closes|resolves|fix|close|resolve)\s+#(\d+)/gi,
-    /\b(?:fixes|closes|resolves|fix|close|resolve)\s+https:\/\/github\.com\/[^/]+\/[^/]+\/issues\/(\d+)/gi,
-    /https:\/\/github\.com\/[^/]+\/[^/]+\/issues\/(\d+)/gi,
-  ];
-
-  let linkedIssueNumbers = [];
-  for (const pattern of issuePatterns) {
-    let match;
-    while ((match = pattern.exec(body)) !== null) {
-      const num = parseInt(match[1]);
-      if (!linkedIssueNumbers.includes(num)) {
-        linkedIssueNumbers.push(num);
-      }
-    }
-  }
-
-  // Also check GitHub's closing issue references (sidebar links)
+  // Check linked issues via GitHub's closingIssuesReferences API
+  // Covers closing keywords (Fixes/Closes/Resolves #123) and sidebar links
   const query = `query($owner: String!, $repo: String!, $number: Int!) {
     repository(owner: $owner, name: $repo) {
       pullRequest(number: $number) {
@@ -56,12 +38,8 @@ module.exports = async ({ github, context, core }) => {
     number: pr.number,
   });
 
-  const sidebarLinked = result.repository.pullRequest.closingIssuesReferences.nodes;
-  for (const issue of sidebarLinked) {
-    if (!linkedIssueNumbers.includes(issue.number)) {
-      linkedIssueNumbers.push(issue.number);
-    }
-  }
+  const linkedIssues = result.repository.pullRequest.closingIssuesReferences.nodes;
+  const linkedIssueNumbers = linkedIssues.map(i => i.number);
 
   if (linkedIssueNumbers.length === 0) {
     const BOT_MARKER = '<!-- pr-governance-priority -->';

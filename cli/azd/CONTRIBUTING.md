@@ -89,6 +89,23 @@ go fix -diff ./...
 If `go fix -diff` reports any changes, apply them with `go fix ./...` and commit the result.
 CI enforces this check — PRs with pending `go fix` suggestions will fail the lint workflow.
 
+### Code Coverage
+
+azd collects coverage from both unit tests and integration/functional tests. Several modes are available depending on your needs:
+
+| Mode | Command | Prerequisites | Speed |
+|------|---------|--------------|-------|
+| **Unit only** (recommended for iteration) | `./eng/scripts/Get-LocalCoverageReport.ps1 -ShowReport -UnitOnly` | None | ~5-10 min |
+| **Hybrid** (local unit + CI integration) | `./eng/scripts/Get-LocalCoverageReport.ps1 -ShowReport -MergeWithCI` | `az login` | ~6-11 min |
+| **Full local** (unit + integration) | `./eng/scripts/Get-LocalCoverageReport.ps1 -ShowReport` | Azure subscription + service principal | ~30-60 min |
+| **CI baseline** (latest main) | `./eng/scripts/Get-CICoverageReport.ps1 -ShowReport` | `az login` | ~1 min |
+
+**Typical workflow**: Use *Unit only* during development for fast feedback. After pushing a PR, use *Hybrid* or check your PR's CI coverage with `Get-CICoverageReport.ps1 -PullRequestId <N> -ShowReport`.
+
+For HTML reports: add `-Html` to any local command. For threshold checks: add `-MinCoverage <N>`.
+
+See [Code Coverage Guide](./docs/code-coverage-guide.md) for architecture details, prerequisites, and troubleshooting.
+
 > Note: On Windows you may need to add `C:\Program Files\Git\usr\bin` to `%PATH%`
 
 ### Debugging (with VSCode)

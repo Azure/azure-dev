@@ -162,3 +162,13 @@ func TestProxyElicitationHandler_Elicit_NoSession(t *testing.T) {
 	assert.Nil(t, result)
 	assert.Contains(t, err.Error(), "MCP host session not set")
 }
+
+func TestEnsureMcpProxy_BothSet(t *testing.T) {
+	host := NewMcpHost()
+	host.proxyServer = &server.MCPServer{}
+	host.session = &simpleSession{}
+
+	err := ensureMcpProxy(host)
+
+	require.NoError(t, err)
+}

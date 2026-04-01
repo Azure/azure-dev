@@ -59,6 +59,12 @@ stages:
           go tool covdata textfmt -i=cover -o cover.out
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+          # Filter generated code (e.g. protobuf *.pb.go) from coverage profile
+          # so that coverage percentages reflect only hand-written source code.
+          Write-Host "Filtering generated code from coverage profile..."
+          pwsh -File "$(Build.SourcesDirectory)/eng/scripts/Filter-GeneratedCoverage.ps1" -CoverageFile cover.out
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
           # Convert Go coverage to Cobertura XML format using custom script
           Write-Host "Converting coverage to Cobertura XML format..."
           pwsh -File "$(Build.SourcesDirectory)/eng/scripts/Convert-GoCoverageToCobertura.ps1" -CoverageFile cover.out -OutputFile coverage.xml -SourceRoot "$(Build.SourcesDirectory)"

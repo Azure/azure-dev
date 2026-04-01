@@ -14,6 +14,14 @@
     'go test -short -cover' locally only measures unit test coverage and can
     significantly underestimate actual coverage.
 
+    For local combined coverage without Azure DevOps dependency, use
+    Get-LocalCoverageReport.ps1 which mirrors this pipeline locally. For a
+    hybrid approach (local unit + CI integration), use
+    Get-LocalCoverageReport.ps1 -MergeWithCI.
+
+    See cli/azd/docs/code-coverage-guide.md for a full overview of all
+    coverage modes, prerequisites, and troubleshooting.
+
 .PARAMETER BuildId
     Azure DevOps build ID to download coverage from. If not specified, uses
     the latest successful build from the main branch (or the PR branch if
@@ -171,6 +179,15 @@ Write-Host "Converting to text format..."
 go tool covdata textfmt -i="$mergedDir" -o $OutputFile
 if ($LASTEXITCODE) {
     throw "go tool covdata textfmt failed"
+}
+
+# Filter generated code (e.g. protobuf *.pb.go) so coverage reflects hand-written code only.
+$filterScript = Join-Path $PSScriptRoot "Filter-GeneratedCoverage.ps1"
+if (Test-Path $filterScript) {
+    & $filterScript -CoverageFile $OutputFile
+    if ($LASTEXITCODE) {
+        throw "Filter-GeneratedCoverage failed"
+    }
 }
 
 $lineCount = (Get-Content $OutputFile).Count

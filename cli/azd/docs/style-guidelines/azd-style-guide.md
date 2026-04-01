@@ -4,6 +4,8 @@
 
 This style guide establishes standards for code, user experience, testing, and documentation across the Azure Developer CLI project. Following these guidelines ensures consistency, maintainability, and a high-quality user experience.
 
+> **Scope**: This guide covers **core azd flows** only. Separate guidelines for agentic flows and extension-specific UX will be provided in dedicated files in the future.
+
 ## Code Style Guidelines
 
 ### Go Conventions
@@ -100,15 +102,9 @@ Items in a progress report list can be in one of six states:
    - Gray dash indicates intentionally skipped step
    - Different from failed - this is expected behavior
 
-6. **Cancelled**: <code><span style="color:#c5a332">(!) Cancelled:</span> [Verb] Message goes here – [reason]</code>
-   - Yellow exclamation indicates the operation was cancelled due to another failure
-   - Includes the reason (typically which sibling operation failed)
-   - Used in multi-service scenarios when a failure in one service causes others to be cancelled
-
 #### Progress Report Guidelines
 
 - **Indentation**: Progress items are always indented under the main command
-- **Hierarchy**: Sub-steps appear indented under parent steps
 - **Verb consistency**: Use present progressive for loading, past tense for completed
 - **Contextual information**: Include resource names, identifiers when relevant
 
@@ -134,9 +130,7 @@ Provisioning Azure resources can take some time.
   <span style="color:green">(✓) Done:</span> Creating App Service Plan: plan-r2w2adrz3rvwxu
   <span style="color:green">(✓) Done:</span> Creating Log Analytics workspace: log-r2w2adrz3rvwxu
   <span style="color:red">(✗) Failed:</span> Creating Cosmos DB: cosmos-r2w2adrz3rvwxu
-
-  The '{US} West US 2 (westus)' region is currently experiencing high demand
-  and cannot fulfill your request. Failed to create Cosmos DB account.
+  <span style="color:red">The '{US} West US 2 (westus)' region is currently experiencing high demand and cannot fulfill your request. Failed to create Cosmos DB account.</span>
 
 <span style="color:red">ERROR:</span> Unable to complete provisioning of Azure resources, 'azd up' failed
 </pre>
@@ -144,36 +138,10 @@ Provisioning Azure resources can take some time.
 **Skipped scenario:**
 
 <pre>
-Note: Steps were skipped because _____ (directory, or specified service name)
-If you want to deploy all services, you can run azd deploy --all or
-move to root directory.
-
   <span style="color:green">(✓) Done:</span> [Verb] Message goes here
   <span style="color:green">(✓) Done:</span> [Verb] Message goes here
   <span style="color:gray">(-) Skipped:</span> [Verb] Message goes here
 </pre>
-
-**Cancelled scenario (multi-service deployment with failure):**
-
-<pre>
-<b>Deploying services (6)</b>
-
-  <span style="color:#c5a332">(!) Cancelled:</span> postgres (59s) – catalogservice failed
-  <span style="color:#c5a332">(!) Cancelled:</span> basketcache (45s) – catalogservice failed
-  <span style="color:green">(✓) Done:</span> basketservice (25s)
-  - Endpoint: <span style="color:cyan">https://basketservice-yo2mecxyj3dmw.azurewebsites.net/</span>
-  <span style="color:green">(✓) Done:</span> catalogdbmanager (58s)
-  <span style="color:red">(✗) Failed:</span>  catalogservice (51s)
-  <span style="color:red">Required Azure Developer CLI dependencies are missing:</span>
-  - git CLI version ≥ 2.0.0 (current: 1.9.0), see https://git-scm.com/downloads to install.
-  Log:  <span style="color:cyan">/path/to/.azure/logs/deploy/deploy-catalogservice.log</span>
-  <span style="color:green">(✓) Done:</span> frontend (27s)
-
-<span style="color:red">ERROR:</span> Unable to complete deployment, 'azd concurx up' failed.
-To complete the operation, install the required dependencies and try again.
-</pre>
-
-When one service fails in a concurrent deployment, sibling services that cannot continue are **cancelled** (not failed). The cancelled message includes the reason (e.g., `– catalogservice failed`) so the user knows which service caused the cancellation.
 
 ### Success / Error / Warning Logs
 
@@ -219,14 +187,6 @@ PREFIX: Message goes here.
 (->) NEXT STEPS: Message goes here.
 </pre>
 
-#### Hint Text
-
-Hint copy can directly follow any Success, Error, or Warning log. Hint text should:
-
-- Provide more context to the log above
-- In some cases, provide an actionable path forward (see: Actionable Hints)
-- Use the white color variable (`WithHintFormat`)
-
 #### In-Context Examples
 
 **Success example:**
@@ -241,14 +201,14 @@ You can view the resources created under the resource group case-code-test-rg in
 
 <pre>
 <span style="color:red">ERROR: 'todo-mongojs' is misspelled or missing a recognized flag.</span>
-Run <span style="color:blue">azd up --help</span> to see all available flags.
+Run <span style="color:#5555ff">azd up --help</span> to see all available flags.
 </pre>
 
 **Warning example:**
 
 <pre>
 <span style="color:#c5a332">WARNING: You have already provisioned Azure resources to the (US) West US (westus) region.</span>
-You may want to run <span style="color:blue">azd down</span> to delete your existing resources before provisioning to a new region.
+You may want to run <span style="color:#5555ff">azd down</span> to delete your existing resources before provisioning to a new region.
 </pre>
 
 ### User Inputs
@@ -269,55 +229,28 @@ Text input captures a single line of input from the user.
 
 **Initial state:**
 
-The prompt is displayed with a `[Type ? for hint]` helper in hi-blue bold text (via `WithHighLightFormat`), followed by ghost-text (secondary text color) as placeholder content.
+The prompt is displayed with a `[Type ? for hint]` helper in **hi-blue bold text** via `WithHighLightFormat` (Bright Blue, ANSI 94), followed by ghost-text (secondary text color) as placeholder content.
 
 <pre>
-<span style="color:blue"><b>?</b></span> This captures a single line of input: <span style="color:blue"><b>[Type ? for hint]</b></span> <span style="color:gray">This is ghost-text</span>
+<span style="color:#5555ff"><b>?</b></span> This captures a single line of input: <span style="color:#5555ff"><b>[Type ? for hint]</b></span>
 </pre>
 
 **Hint feature:**
 
-If the user types `?`, a hint line appears below the prompt to provide additional guidance. The hint label is displayed in magenta.
+If the user types `?`, a hint line appears below the prompt to provide additional guidance. 
 
 <pre>
-<span style="color:blue"><b>?</b></span> This captures a single line of input: <span style="color:blue"><b>[Type ? for hint]</b></span> <span style="color:gray">This is ghost-text</span>
-<span style="color:magenta"><b>Hint:</b></span> <span style="color:magenta">This is a help message</span>
-</pre>
-
-**User input (before submitting):**
-
-As the user types, their input replaces the ghost-text and appears in primary text color.
-
-<pre>
-<span style="color:blue"><b>?</b></span> This captures a single line of input: <span style="color:blue"><b>[Type ? for hint]</b></span> Input
-</pre>
-
-**After submitting:**
-
-Once the user submits their answer:
-
-- The input changes from primary text to hi-blue text
-- The `[Type ? for hint]` helper disappears
-- If the hint line was visible, it also disappears
-
-<pre>
-<span style="color:blue"><b>?</b></span> This captures a single line of input: <span style="color:blue">Input</span>
+<span style="color:#5555ff"><b>?</b></span> This captures a single line of input: <span style="color:#5555ff"><b>[Type ? for hint]</b></span>
+<span style="color:grey"><b>Hint: This is a help message</b></span>
 </pre>
 
 #### Yes or No Input
 
 - Yes/no inputs include a `(Y/n)` delineator at the end of the input request (before the colon).
 - Users can either input `y`/`n` or hit the return key which will select the capitalized choice in the `(Y/n)` delineator.
-- Once a user has selected y or n, the result should be printed in blue text (**yes** or **no**).
 
 <pre>
-<span style="color:blue"><b>?</b></span> Do you want to initialize a new Git repository in this directory? (Y/n):
-</pre>
-
-With input provided:
-
-<pre>
-<span style="color:blue"><b>?</b></span> Do you want to initialize a new Git repository in this directory? (Y/n): <span style="color:blue">Yes</span>
+<span style="color:#5555ff"><b>?</b></span> Do you want to initialize a new Git repository in this directory? (Y/n):
 </pre>
 
 #### List Select
@@ -326,12 +259,12 @@ The list select pattern presents a list of options for the user to choose from.
 
 **Initial state:**
 
-The prompt is displayed with a `Filter:` line showing ghost-text ("Type to filter list") and a footer hint ("Use arrows to move, type ? for hint"). The active selection is indicated by `>` and displayed in bold blue text.
+The prompt is displayed with a `Filter:` line showing ghost-text ("Type to filter list") and a footer hint in **hi-blue text** via `WithHighLightFormat` (Bright Blue, ANSI 94). The active selection is indicated by `>` and displayed in bold blue text.
 
 <pre>
-<span style="color:blue"><b>?</b></span> Select an single option:  <span style="color:gray">[Use arrows to move, type to filter]</span>
+<span style="color:#5555ff"><b>?</b></span> Select a single option:  <span style="color:#5555ff"><b>[Use arrows to move, type to filter]</b></span>
 
-  <span style="color:blue"><b>> Option 1</b></span>
+  <span style="color:#5555ff"><b>> Option 1</b></span>
     Option 2
     Option 3
     Option 4
@@ -349,7 +282,7 @@ The prompt is displayed with a `Filter:` line showing ghost-text ("Type to filte
 
 **Hint:**
 
-- The `[Type ? for hint]` pattern follows the same behavior as Text Input — hi-blue in bold (via `WithHighLightFormat`), with ghost-text in secondary text color.
+- The `[Type ? for hint]` pattern follows the same behavior as Text Input — **hi-blue bold** via `WithHighLightFormat` (Bright Blue, ANSI 94).
 
 **After submitting:**
 
@@ -361,23 +294,14 @@ Once the user makes their selection:
 - The list collapses and the selected value is printed in blue text next to the prompt
 
 <pre>
-<span style="color:blue"><b>?</b></span> Select an Azure location to use: <span style="color:blue">(US) East US 2 (eastus2)</span>
+<span style="color:#5555ff"><b>?</b></span> Select an Azure location to use: <span style="color:#5555ff">(US) East US 2 (eastus2)</span>
 </pre>
-
-### Command Output Standards
-
-- **Structured output**: Support `--output json` for machine-readable output
-- **Progress indicators**: Use spinners and progress bars for long operations
-- **Colorization**: Use consistent colors (green=success, red=error, yellow=warning)
-- **URLs**: Always include relevant portal/console URLs for created resources
 
 ### CLI Color Standards
 
 The CLI uses consistent color formatting through helper functions defined in [`cli/azd/pkg/output/colors.go`](../../pkg/output/colors.go). **Always use these helper functions** instead of writing raw ANSI escape codes.
 
 **Important**: Colors will appear differently depending on which terminal and theme (dark/light) the customer prefers. Always test output in both dark and light terminal themes.
-
-**Magenta for agentic experiences**: Agentic flows use magenta as their primary accent color (see [Agentic Flow UX](#agentic-flow-ux) below). Use `color.MagentaString()` for tool names, agent labels, status messages, and spinner characters in agent mode. Use `color.HiMagentaString()` for the agent badge (`🤖 [azd] Agent`), subagent names, and next-steps headers.
 
 #### Standard Color Helper Functions
 
@@ -491,162 +415,14 @@ The full animation cycle frames are:
 
 These frames repeat continuously on the **same line** until the operation completes. The spinner bar is displayed in **hint-colored** text (gray) to keep focus on the status message.
 
-#### When to Use: Bar Spinner vs. Braille Spinner
+#### Implementation
 
-The **bar-fill spinner** (`|=======|`) is designed for **single-operation progress** — one task happening at a time on one line. When **multiple concurrent operations** are displayed as a list (e.g., deploying several services simultaneously), use the **braille spinner** instead. The bar spinner would be visually overwhelming when repeated across many lines.
+Use `console.ShowSpinner()` and `console.StopSpinner()` from [`pkg/input/console.go`](../../pkg/input/console.go) to display the bar-fill spinner. These are the standard functions used across all azd commands.
 
-The braille spinner animates in place with dot patterns that fill in clockwise, then drain away:
-
+```go
+// Start or update spinner
+console.ShowSpinner(ctx, "Creating App Service: my-app-r2w2adrz3rvwxu", input.Step)
 ```
-⠁ → ⠃ → ⠇ → ⡇ → ⡏ → ⡟ → ⡿ → ⣿ → ⣾ → ⣴ → ⣠ → ⣀ → ...repeats
-```
-
-**Multi-service deployment example:**
-
-```
-Deploying 6 services
-
-  ⠙  Deploying: postgres (5s)
-  ⠙  Deploying: basketcache (5s)
- (•) Queued: basketservice
- (•) Queued: catalogdbmanager
-  ⠙  Deploying: catalogservice (5s)
- (•) Queued: frontend
-```
-
-| Scenario | Spinner Type | Reason |
-| --- | --- | --- |
-| Single long-running operation (provisioning, creating a resource) | **Bar-fill** (`\|===   \|`) | Clear progress indicator for one task |
-| Multiple concurrent operations shown as a list | **Braille** (`⠋⠙⠹...`) | Compact — doesn't clutter multi-line lists |
-| Queued / waiting items in a list | **Static dot** `(•)` | No animation needed — item hasn't started |
-
-#### Character Sets
-
-There are three spinner variants based on terminal capability:
-
-| Variant | Characters | When Used |
-| --- | --- | --- |
-| **Bar-fill** | `\|=======\|` (bouncing fill bar) | Single-operation progress in interactive terminal |
-| **Braille** | `⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏` | Multi-item concurrent progress lists |
-| **Short** | `.`, `..`, `...` | Non-interactive or limited terminals |
-| **No Terminal** | *(empty)* | No terminal attached (e.g., piped output) |
-
-#### Guidelines
-
-- **Use the bar-fill spinner** for single in-progress operations (resource creation, provisioning)
-- **Use the braille spinner** when showing a list of multiple concurrent operations
-- **Use `(•)` static indicator** for queued items that haven't started yet
-- **Keep status messages concise** — use the format `"<Verb>ing <Resource Type>: <resource-name>"`
-
-### Agentic Flow UX
-
-Any command or flow that involves **AI-driven or agentic operations** — such as `azd init` → "Use agent mode", `azd ai agent` commands, or future agentic features — should follow the UX patterns in this section. These patterns visually differentiate AI-driven operations from standard CLI output and should be applied consistently across all agentic experiences.
-
-#### When Agentic Flow Applies
-
-| Entry Point | Description |
-| --- | --- |
-| `azd init` → "Use agent mode" | Initializes a project using Copilot agent |
-| `azd ai agent *` commands | All agent subcommands follow agentic UX |
-
-#### Agentic Spinner
-
-The agentic spinner uses the **same default character set** as the standard spinner (`|`, `/`, `-`, `\`) rendered in **magenta** via `WithHintFormat()`, cycling at 250ms intervals. This is different from the bar-fill spinner (`|=======|`) used for standard provisioning/deployment progress.
-
-**Animation frames:**
-
-```
-|  →  /  →  -  →  \  →  (repeats)
-```
-
-The spinner characters appear in **magenta** while the accompanying text describes the current operation:
-
-<pre>
-<span style="color:magenta">/</span> Thinking...
-</pre>
-
-<pre>
-<span style="color:magenta">-</span> Running <span style="color:magenta">powershell</span> <span style="color:gray">azd env list...</span> <span style="color:gray">(5s)</span>
-</pre>
-
-| Scenario | Spinner Type | Reason |
-| --- | --- | --- |
-| Standard single operation (provisioning, creating a resource) | **Bar-fill** (`\|===   \|`) | Clear progress for deterministic operations |
-| Agentic flow (agent thinking, tool execution) | **Character rotation** (`\| / - \`) | Lightweight indicator for non-deterministic AI operations |
-| Multiple concurrent operations in a list | **Braille** (`⠋⠙⠹...`) | Compact for multi-line lists |
-
-#### Agentic Display Layers
-
-The agentic display uses a canvas with multiple visual layers rendered together:
-
-1. **Reasoning display** — Shows the last ~5 lines of the agent's reasoning in **gray** text above the spinner
-2. **Spinner** — The rotating `| / - \` character in **magenta** with a status message
-3. **Sub-detail lines** — Optional tree-structured lines below the spinner showing command arguments or file paths, using ASCII connectors (`├`, `└`)
-4. **Cancel hint** — A `Press Ctrl+C to cancel` message at the bottom
-
-**Example — agent thinking:**
-
-<pre>
-<span style="color:magenta">/</span> Thinking...
-</pre>
-
-**Example — tool execution with elapsed time:**
-
-<pre>
-<span style="color:magenta">\</span> Running <span style="color:magenta">powershell</span> <span style="color:gray">npm install... (12s)</span>
-</pre>
-
-**Example — tool completion:**
-
-<pre>
-<span style="color:green">✔︎</span> Ran <span style="color:magenta">powershell</span> <span style="color:gray">npm install</span>
-</pre>
-
-**Example — tool failure:**
-
-<pre>
-<span style="color:red">✖</span> <span style="color:magenta">powershell</span> <span style="color:gray">npm install</span>
-  <span style="color:gray">└ Error: ENOENT: no such file or directory</span>
-</pre>
-
-#### Agentic Hint Text
-
-The hint mechanism (`?` key) works the same way in agentic flow as in standard flow — pressing `?` reveals help text, pressing `Escape` dismisses it. In both cases, the hint label and message are rendered in **magenta** via `WithHintFormat()`:
-
-<pre>
-? Enter your environment name: <span style="color:magenta"><b>[Type ? for hint]</b></span> <span style="color:gray">my-env</span>
-<span style="color:magenta"><b>Hint:</b></span> <span style="color:magenta">The environment name is used to create a resource group and identify resources in Azure.</span>
-</pre>
-
-#### Agentic Status Messages
-
-Key status messages in agentic flow use magenta to reinforce the agentic context:
-
-<pre>
-<span style="color:magenta">Preparing application for Azure deployment...</span>
-</pre>
-
-<pre>
-<span style="color:magenta"><b>(->) Next steps:</b></span> Run <span style="color:blue">azd up</span> to provision and deploy your application.
-</pre>
-
-#### Color Summary for Agentic Flow
-
-| Element | Color | Function |
-| --- | --- | --- |
-| Spinner character (`\| / - \`) | Magenta | `WithHintFormat()` |
-| Tool names in spinner text | Magenta | `color.MagentaString()` |
-| Hint label and text | Magenta | `WithHintFormat()` |
-| Status messages (e.g., "Preparing...") | Magenta | `color.MagentaString()` |
-| Next-steps header | Hi-Magenta | `color.HiMagentaString()` |
-| Reasoning text | Gray | `color.HiBlackString()` |
-| Elapsed time / secondary info | Gray | `color.HiBlackString()` |
-| Tool success checkmark | Green | `color.GreenString()` |
-| Tool failure X | Red | `color.RedString()` |
-
-#### Implementation Reference
-
-The agentic display is implemented in [`internal/agent/display.go`](../../internal/agent/display.go) via the `AgentDisplay` struct, which subscribes to Copilot SDK session events and manages a multi-layer canvas for rendering.
 
 ## Testing Standards
 

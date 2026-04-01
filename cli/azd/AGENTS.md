@@ -159,7 +159,18 @@ func (a *myAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 ### CLI UX & Style
 
-When designing CLI output, terminal UX, spinners, progress states, or colors, follow the guidelines in `docs/style-guidelines/azd-style-guide.md`.
+When working on CLI output, terminal UX, spinners, progress states, colors, or prompts for **core azd flows**, you **MUST read** the style guide before making any changes or recommendations:
+
+📄 **`cli/azd/docs/style-guidelines/azd-style-guide.md`** (full path from repo root)
+
+This file is the authoritative reference for core azd terminal UX patterns including:
+- Progress report states (`(✓) Done`, `(✗) Failed`, `(!) Warning`, `(-) Skipped`)
+- Spinner type (bar-fill `|=======|`)
+- Color conventions (`WithSuccessFormat`, `WithErrorFormat`, `WithHighLightFormat`, etc.)
+- User input patterns (text input, list select, yes/no confirm)
+- Prompt styling (`?` marker in bold blue, `[Type ? for hint]`, post-submit states)
+
+> **Note**: This style guide covers **core azd flows only**. Separate guidelines for agentic flows and extension-specific UX will be provided in dedicated files in the future. Do not apply core azd patterns to agentic or extension flows without a dedicated style reference.
 
 ### Code Organization
 

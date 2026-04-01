@@ -1725,16 +1725,25 @@ type loadParametersResult struct {
 	locationParams []string
 	// envMapping is a map of parameter name to environment variable names
 	// holds information about which parameters are mapped to which env vars for
-	// cases like "param": "${env:AZURE_FOO}-${env:AZURE_BAR}", envMapping will
+	// cases like "param": "${AZURE_FOO}-${AZURE_BAR}", envMapping will
 	// contain {"param": ["AZURE_FOO", "AZURE_BAR"]}
+	//
 	// This information is useful for setting a CI/CD automatically. Each env var
 	// will be set to the value of the parameter as variable or secret.
 	envMapping map[string][]string
+
+	// parameters that should be considered virtual, i.e. their values are only
+	// known at runtime.
+	//
+	// These parameters should not be prompted and treated as resolved values,
+	// with other potential unmapped environment variables stored in envMapping.
+	virtualMapping map[string]struct{}
 }
 
 // envSubstResult contains the results of environment variable substitution
 type envSubstResult struct {
 	hasUnsetEnvVar                  bool
+	hasVirtualEnvVar                bool
 	mappedEnvVars                   []string
 	parametersMappedToAzureLocation []string
 }
@@ -1747,6 +1756,7 @@ func evalParamEnvSubst(
 	principalType string,
 	paramName string,
 	env *environment.Environment,
+	virtualEnv map[string]string,
 ) (string, envSubstResult, error) {
 	result := envSubstResult{}
 
@@ -1760,13 +1770,23 @@ func evalParamEnvSubst(
 		if name == environment.LocationEnvVarName {
 			result.parametersMappedToAzureLocation = append(result.parametersMappedToAzureLocation, paramName)
 		}
-		// principalId and locations are intentionally excluded from the mapped env vars as
-		// they are global env vars
+
+		if virtualEnv != nil {
+			if value, has := virtualEnv[name]; has {
+				result.hasVirtualEnvVar = true
+				return value
+			}
+		}
+
+		// principalId and principalType are intentionally excluded from the mapped env vars
+		// as they are global env vars.
 		result.mappedEnvVars = append(result.mappedEnvVars, name)
-		if _, isDefined := env.LookupEnv(name); !isDefined {
+
+		value, isDefined := env.LookupEnv(name)
+		if !isDefined {
 			result.hasUnsetEnvVar = true
 		}
-		return env.Getenv(name)
+		return value
 	})
 	return replaced, result, err
 }
@@ -1820,6 +1840,7 @@ func (p *BicepProvider) loadParameters(ctx context.Context, template *azure.ArmT
 	parametersMappedToAzureLocation := []string{}
 	resolvedParams := map[string]azure.ArmParameter{}
 	envMapping := map[string][]string{}
+	virtualMapping := map[string]struct{}{}
 
 	// resolving each parameter to keep track of the name during the resolution.
 	// We used to resolve all the file before, supporting env var substitution at any part of the file.
@@ -1847,6 +1868,7 @@ func (p *BicepProvider) loadParameters(ctx context.Context, template *azure.ArmT
 					string(principalType),
 					paramName,
 					p.env,
+					p.options.VirtualEnv,
 				)
 				if err != nil {
 					return loadParametersResult{}, err
@@ -1855,6 +1877,12 @@ func (p *BicepProvider) loadParameters(ctx context.Context, template *azure.ArmT
 				envMapping[paramName] = substResult.mappedEnvVars
 				parametersMappedToAzureLocation = append(
 					parametersMappedToAzureLocation, substResult.parametersMappedToAzureLocation...)
+
+				if substResult.hasVirtualEnvVar {
+					// Record the parameter as virtual, skip further processing
+					virtualMapping[paramName] = struct{}{}
+					continue
+				}
 
 				// Omit unset parameters
 				if replaced == "" && substResult.hasUnsetEnvVar {
@@ -1901,6 +1929,7 @@ func (p *BicepProvider) loadParameters(ctx context.Context, template *azure.ArmT
 			string(principalType),
 			paramName,
 			p.env,
+			p.options.VirtualEnv,
 		)
 		if err != nil {
 			return loadParametersResult{}, fmt.Errorf("substituting environment variables for %s: %w", paramName, err)
@@ -1910,12 +1939,17 @@ func (p *BicepProvider) loadParameters(ctx context.Context, template *azure.ArmT
 		parametersMappedToAzureLocation = append(
 			parametersMappedToAzureLocation, substResult.parametersMappedToAzureLocation...)
 
+		if substResult.hasVirtualEnvVar {
+			// Record the parameter as virtual, skip further processing
+			virtualMapping[paramName] = struct{}{}
+			continue
+		}
+
 		// resolve command substitutions like `secretOrRandomPassword`
 		replaced, err = p.evalCommandSubstitution(ctx, replaced)
 		if err != nil {
 			return loadParametersResult{}, err
 		}
-
 		var resolvedParam azure.ArmParameter
 		if err := json.Unmarshal([]byte(replaced), &resolvedParam); err != nil {
 			return loadParametersResult{}, fmt.Errorf("error unmarshalling Bicep template parameters: %w", err)
@@ -1952,6 +1986,7 @@ func (p *BicepProvider) loadParameters(ctx context.Context, template *azure.ArmT
 		parameters:     resolvedParams,
 		locationParams: parametersMappedToAzureLocation,
 		envMapping:     envMapping,
+		virtualMapping: virtualMapping,
 	}, nil
 }
 
@@ -2490,6 +2525,7 @@ func (p *BicepProvider) ensureParameters(
 	}
 	parameters := parametersResult.parameters
 	locationParameters := parametersResult.locationParams
+	virtualParameters := parametersResult.virtualMapping
 
 	if len(template.Parameters) == 0 {
 		return azure.ArmParameters{}, nil
@@ -2542,6 +2578,11 @@ func (p *BicepProvider) ensureParameters(
 		param := template.Parameters[key]
 		parameterType := provisioning.ParameterTypeFromArmType(param.Type)
 		azdMetadata, hasMetadata := param.AzdMetadata()
+
+		// If a value is marked virtual, we skip configuration entirely
+		if _, has := virtualParameters[key]; has {
+			continue
+		}
 
 		// If a value is explicitly configured via a parameters file, use it.
 		if v, has := parameters[key]; has {
@@ -2852,10 +2893,24 @@ func (p *BicepProvider) Parameters(ctx context.Context) ([]provisioning.Paramete
 
 	provisionParameters := []provisioning.Parameter{}
 	for key, param := range templateParameters {
+		_, isVirtual := parametersInfo.virtualMapping[key]
+		if isVirtual {
+			// For virtual parameters, we pass through remaining env var mappings
+			provisionParameters = append(provisionParameters, provisioning.Parameter{
+				Name:               key,
+				Secret:             param.Secure(),
+				EnvVarMapping:      parametersInfo.envMapping[key],
+				LocalPrompt:        false,
+				UsingEnvVarMapping: true,
+			})
+			continue
+		}
+
 		if _, usingParam := resolvedParams[key]; !usingParam {
 			// No resolved param for this parameter definition.
 			continue
 		}
+
 		_, isPrompt := p.env.Config.Get(fmt.Sprintf("infra.parameters.%s", key))
 		singleMapping := len(parametersInfo.envMapping[key]) == 1
 		usingEnvVarMapping := false
@@ -2877,4 +2932,24 @@ func (p *BicepProvider) Parameters(ctx context.Context) ([]provisioning.Paramete
 	}
 
 	return provisionParameters, nil
+}
+
+func (p *BicepProvider) PlannedOutputs(ctx context.Context) ([]provisioning.PlannedOutput, error) {
+	compileResult, err := p.compileBicep(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("creating template: %w", err)
+	}
+
+	var outputs []provisioning.PlannedOutput
+	for key, output := range compileResult.Template.Outputs {
+		if azure.IsSecuredARMType(output.Type) {
+			continue
+		}
+
+		outputs = append(outputs, provisioning.PlannedOutput{
+			Name: key,
+		})
+	}
+
+	return outputs, nil
 }

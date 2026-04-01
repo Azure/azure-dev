@@ -1,0 +1,4 @@
+*
+!.gitignore
+!azure.yaml
+!src/

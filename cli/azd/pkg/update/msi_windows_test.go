@@ -186,7 +186,7 @@ func TestIsStandardMSIInstall_NonStandardPath(t *testing.T) {
 	var updateErr *UpdateError
 	require.ErrorAs(t, err, &updateErr)
 	require.Equal(t, CodeNonStandardInstall, updateErr.Code)
-	require.Contains(t, err.Error(), "non-standard location")
+	require.Contains(t, err.Error(), "managed by an administrator")
 }
 
 func TestIsStandardMSIInstall_MissingLocalAppData(t *testing.T) {

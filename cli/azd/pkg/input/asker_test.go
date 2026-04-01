@@ -606,6 +606,17 @@ func Test_askOneFailOnPrompt(t *testing.T) {
 				"storage",
 			},
 		},
+		{
+			name: "Password_WithMessage",
+			prompt: &survey.Password{
+				Message: "Enter token:",
+			},
+			errContains: []string{
+				"interactive prompt not allowed in strict mode",
+				"Enter token:",
+				"command-line flags or environment variables",
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -620,6 +631,8 @@ func Test_askOneFailOnPrompt(t *testing.T) {
 				response = new(bool)
 			case *survey.MultiSelect:
 				response = new([]string)
+			case *survey.Password:
+				response = new(string)
 			}
 
 			err := askOneFailOnPrompt(tt.prompt, response)

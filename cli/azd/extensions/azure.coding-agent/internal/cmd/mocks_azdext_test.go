@@ -305,3 +305,83 @@ func (mr *MockPromptServiceClientMockRecorder) Select(ctx, in any, opts ...any) 
 	varargs := append([]any{ctx, in}, opts...)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Select", reflect.TypeOf((*MockPromptServiceClient)(nil).Select), varargs...)
 }
+
+// PromptAiDeployment mocks base method.
+func (m *MockPromptServiceClient) PromptAiDeployment(ctx context.Context, in *azdext.PromptAiDeploymentRequest, opts ...grpc.CallOption) (*azdext.PromptAiDeploymentResponse, error) {
+	m.ctrl.T.Helper()
+	varargs := []any{ctx, in}
+	for _, a := range opts {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "PromptAiDeployment", varargs...)
+	ret0, _ := ret[0].(*azdext.PromptAiDeploymentResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// PromptAiDeployment indicates an expected call of PromptAiDeployment.
+func (mr *MockPromptServiceClientMockRecorder) PromptAiDeployment(ctx, in any, opts ...any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]any{ctx, in}, opts...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PromptAiDeployment", reflect.TypeOf((*MockPromptServiceClient)(nil).PromptAiDeployment), varargs...)
+}
+
+// PromptAiModel mocks base method.
+func (m *MockPromptServiceClient) PromptAiModel(ctx context.Context, in *azdext.PromptAiModelRequest, opts ...grpc.CallOption) (*azdext.PromptAiModelResponse, error) {
+	m.ctrl.T.Helper()
+	varargs := []any{ctx, in}
+	for _, a := range opts {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "PromptAiModel", varargs...)
+	ret0, _ := ret[0].(*azdext.PromptAiModelResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// PromptAiModel indicates an expected call of PromptAiModel.
+func (mr *MockPromptServiceClientMockRecorder) PromptAiModel(ctx, in any, opts ...any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]any{ctx, in}, opts...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PromptAiModel", reflect.TypeOf((*MockPromptServiceClient)(nil).PromptAiModel), varargs...)
+}
+
+// PromptAiLocationWithQuota mocks base method.
+func (m *MockPromptServiceClient) PromptAiLocationWithQuota(ctx context.Context, in *azdext.PromptAiLocationWithQuotaRequest, opts ...grpc.CallOption) (*azdext.PromptAiLocationWithQuotaResponse, error) {
+	m.ctrl.T.Helper()
+	varargs := []any{ctx, in}
+	for _, a := range opts {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "PromptAiLocationWithQuota", varargs...)
+	ret0, _ := ret[0].(*azdext.PromptAiLocationWithQuotaResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// PromptAiLocationWithQuota indicates an expected call of PromptAiLocationWithQuota.
+func (mr *MockPromptServiceClientMockRecorder) PromptAiLocationWithQuota(ctx, in any, opts ...any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]any{ctx, in}, opts...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PromptAiLocationWithQuota", reflect.TypeOf((*MockPromptServiceClient)(nil).PromptAiLocationWithQuota), varargs...)
+}
+
+// PromptAiModelLocationWithQuota mocks base method.
+func (m *MockPromptServiceClient) PromptAiModelLocationWithQuota(ctx context.Context, in *azdext.PromptAiModelLocationWithQuotaRequest, opts ...grpc.CallOption) (*azdext.PromptAiModelLocationWithQuotaResponse, error) {
+	m.ctrl.T.Helper()
+	varargs := []any{ctx, in}
+	for _, a := range opts {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "PromptAiModelLocationWithQuota", varargs...)
+	ret0, _ := ret[0].(*azdext.PromptAiModelLocationWithQuotaResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// PromptAiModelLocationWithQuota indicates an expected call of PromptAiModelLocationWithQuota.
+func (mr *MockPromptServiceClientMockRecorder) PromptAiModelLocationWithQuota(ctx, in any, opts ...any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]any{ctx, in}, opts...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PromptAiModelLocationWithQuota", reflect.TypeOf((*MockPromptServiceClient)(nil).PromptAiModelLocationWithQuota), varargs...)
+}

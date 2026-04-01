@@ -82,25 +82,40 @@ Progress reports provide real-time feedback during a single command's execution,
 
 Items in a progress report list can be in one of five states:
 
-1. **Loading**: <code><span style="color:gray">|===    |</span> [Verb] Message goes here</code>
-   - Indicates operation in progress
-   - Shows loading bar animation
+1. **Loading**: `|===    | [Verb] Message goes here`
+   - Indicates operation in progress; animated bar-fill spinner in gray (`WithGrayFormat`)
 
-2. **Done**: <code><span style="color:green">(✓) Done:</span> [Verb] Message goes here</code>
-   - Green checkmark indicates successful completion
-   - Past tense verb
+2. **Done**: `(✓) Done: [Verb] Message goes here`
+   - Green checkmark via `WithSuccessFormat`; use past tense verb
 
-3. **Failed**: <code><span style="color:red">(✗) Failed:</span> [Verb] Message goes here</code>
-   - Red X indicates error
-   - Include specific error message below
+3. **Failed**: `(x) Failed: [Verb] Message goes here`
+   - Red `x` via `WithErrorFormat`; include specific error message below
 
-4. **Warning**: <code><span style="color:#c5a332">(!) Warning:</span> [Verb] Message goes here</code>
-   - Yellow exclamation for non-blocking issues
-   - Command continues but user should be aware
+4. **Warning**: `(!) Warning: [Verb] Message goes here`
+   - Yellow exclamation via `WithWarningFormat`; non-blocking, command continues
 
-5. **Skipped**: <code><span style="color:gray">(-) Skipped:</span> [Verb] Message goes here</code>
-   - Gray dash indicates intentionally skipped step
-   - Different from failed - this is expected behavior
+5. **Skipped**: `(-) Skipped: [Verb] Message goes here`
+   - Gray dash via `WithGrayFormat`; intentionally skipped (not a failure)
+
+#### Quick Reference
+
+**Progress report state → prefix → color function:**
+
+| State    | Prefix         | Color Function      | Notes                     |
+| -------- | -------------- | ------------------- | ------------------------- |
+| Loading  | `\|===    \|`  | `WithGrayFormat`    | Animated bar-fill spinner |
+| Done     | `(✓) Done:`    | `WithSuccessFormat` | Past tense verb           |
+| Failed   | `(x) Failed:`  | `WithErrorFormat`   | Follow with error detail  |
+| Warning  | `(!) Warning:` | `WithWarningFormat` | Non-blocking issue        |
+| Skipped  | `(-) Skipped:` | `WithGrayFormat`    | Expected, not a failure   |
+
+**Log type → prefix → color function:**
+
+| Log Type   | Prefix            | Color Function      | When to use                                |
+| ---------- | ----------------- | ------------------- | ------------------------------------------ |
+| Success    | `SUCCESS:`        | `WithSuccessFormat` | Command completed its primary goal         |
+| Error      | `ERROR:`          | `WithErrorFormat`   | Command failed; top-level failure message  |
+| Warning    | `WARNING:`        | `WithWarningFormat` | Non-fatal issue the user should know about |
 
 #### Progress Report Guidelines
 
@@ -108,40 +123,23 @@ Items in a progress report list can be in one of five states:
 - **Verb consistency**: Use present progressive for loading, past tense for completed
 - **Contextual information**: Include resource names, identifiers when relevant
 
-#### Examples
+#### Example
 
-**Success scenario:**
+**Failure scenario** (shows how multiple states compose with error detail):
 
-<pre>
-<b>Provisioning Azure resources (azd provision)</b>
-Provisioning Azure resources can take some time.
+```
+Provisioning Azure resources (azd provision)
 
-  <span style="color:green">(✓) Done:</span> Creating App Service Plan: plan-r2w2adrz3rvwxu
-  <span style="color:green">(✓) Done:</span> Creating Log Analytics workspace: log-r2w2adrz3rvwxu
-  <span style="color:green">(✓) Done:</span> Creating Application Insights: appi-r2w2adrz3rvwxu
-  <span style="color:green">(✓) Done:</span> Creating App Service: app-api-r2w2adrz3rvwxu
-</pre>
+  (✓) Done: Creating App Service Plan: plan-r2w2adrz3rvwxu
+  (✓) Done: Creating Log Analytics workspace: log-r2w2adrz3rvwxu
+  (x) Failed: Creating Cosmos DB: cosmos-r2w2adrz3rvwxu
+  The '{US} West US 2 (westus)' region is currently experiencing high demand
+  and cannot fulfill your request. Failed to create Cosmos DB account.
 
-**Failure scenario:**
+ERROR: Unable to complete provisioning of Azure resources, 'azd up' failed
+```
 
-<pre>
-<b>Provisioning Azure resources (azd provision)</b>
-
-  <span style="color:green">(✓) Done:</span> Creating App Service Plan: plan-r2w2adrz3rvwxu
-  <span style="color:green">(✓) Done:</span> Creating Log Analytics workspace: log-r2w2adrz3rvwxu
-  <span style="color:red">(✗) Failed:</span> Creating Cosmos DB: cosmos-r2w2adrz3rvwxu
-  <span style="color:red">The '{US} West US 2 (westus)' region is currently experiencing high demand and cannot fulfill your request. Failed to create Cosmos DB account.</span>
-
-<span style="color:red">ERROR:</span> Unable to complete provisioning of Azure resources, 'azd up' failed
-</pre>
-
-**Skipped scenario:**
-
-<pre>
-  <span style="color:green">(✓) Done:</span> [Verb] Message goes here
-  <span style="color:green">(✓) Done:</span> [Verb] Message goes here
-  <span style="color:gray">(-) Skipped:</span> [Verb] Message goes here
-</pre>
+> Colors: Title → `WithBold`. `(✓) Done:` → `WithSuccessFormat`. `(x) Failed:` and error detail → `WithErrorFormat`. `ERROR:` line → `WithErrorFormat`.
 
 ### Success / Error / Warning Logs
 
@@ -155,6 +153,12 @@ All logs should:
 
 There are some specific edge cases where the log prefix is not required.
 
+#### When to Use Each Log Type
+
+- **SUCCESS**: The command achieved its primary goal. Use after deployments, provisioning, or any command that completes a user-requested action.
+- **ERROR**: The command failed and cannot continue. Always include the reason and, when possible, a suggested fix. Only use for top-level command failures, not internal retries.
+- **WARNING**: The command succeeded (or will proceed), but something unexpected happened that the user should know about. Examples: deprecated flags, region capacity concerns, overwriting existing resources.
+
 #### Log Format
 
 ```
@@ -163,53 +167,34 @@ PREFIX: Message goes here.
 
 #### Log Types
 
-**Success logs** — Indicate the success of a specific command or action. Success logs use the green (or bright green) color variable (`WithSuccessFormat`).
+**Success logs** — Use `WithSuccessFormat` (green/bright green).
 
-<pre>
-<span style="color:green">SUCCESS: Message goes here.</span>
-</pre>
+```
+SUCCESS: Message goes here.
+```
 
-**Error logs** — Indicate when an error occurs, or indicate overall command failure. Error logs use the red (or bright red) color variable (`WithErrorFormat`). Error logs should attempt to follow a `[Reason] [Outcome]` structure when possible.
+**Error logs** — Use `WithErrorFormat` (red/bright red). Follow a `[Reason] [Outcome]` structure when possible.
 
-<pre>
-<span style="color:red">ERROR: Message goes here.</span>
-</pre>
+```
+ERROR: Message goes here.
+```
 
-**Warning logs** — Used when a command or action has an outcome that may provide unexpected results, or when the user needs to be made aware of something potentially destructive. Warning logs use the yellow (or bright yellow) color variable (`WithWarningFormat`).
+**Warning logs** — Use `WithWarningFormat` (yellow/bright yellow).
 
-<pre>
-<span style="color:#c5a332">WARNING: Message goes here.</span>
-</pre>
+```
+WARNING: Message goes here.
+```
 
-**Next steps logs** — The arrow indicates the next step. Used when the command output includes follow-up actions or recommended next steps for the user. Next steps logs use the format `(->) NEXT STEPS:` followed by the message.
+#### In-Context Example
 
-<pre>
-(->) NEXT STEPS: Message goes here.
-</pre>
+**Error with suggested command** (shows multi-line composition with inline highlights):
 
-#### In-Context Examples
+```
+ERROR: 'todo-mongojs' is misspelled or missing a recognized flag.
+Run azd up --help to see all available flags.
+```
 
-**Success example:**
-
-<pre>
-<span style="color:green">SUCCESS: Your Azure app has been deployed!</span>
-You can view the resources created under the resource group case-code-test-rg in Azure Portal:
-<span style="color:cyan">https://portal.azure.com/#@/resource/subscriptions/.../resourceGroups/case-code-test-rg</span>
-</pre>
-
-**Error example:**
-
-<pre>
-<span style="color:red">ERROR: 'todo-mongojs' is misspelled or missing a recognized flag.</span>
-Run <span style="color:#5555ff">azd up --help</span> to see all available flags.
-</pre>
-
-**Warning example:**
-
-<pre>
-<span style="color:#c5a332">WARNING: You have already provisioned Azure resources to the (US) West US (westus) region.</span>
-You may want to run <span style="color:#5555ff">azd down</span> to delete your existing resources before provisioning to a new region.
-</pre>
+> Colors: `ERROR:` line → `WithErrorFormat`. `azd up --help` → `WithHighLightFormat`.
 
 ### User Inputs
 
@@ -231,27 +216,33 @@ Text input captures a single line of input from the user.
 
 The prompt is displayed with a `[Type ? for hint]` helper in **hi-blue bold text** via `WithHighLightFormat` (Bright Blue, ANSI 94), followed by ghost-text (secondary text color) as placeholder content.
 
-<pre>
-<span style="color:#5555ff"><b>?</b></span> This captures a single line of input: <span style="color:#5555ff"><b>[Type ? for hint]</b></span>
-</pre>
+```
+? This captures a single line of input: [Type ? for hint]
+```
+
+> Colors: `?` → `WithHighLightFormat` + `WithBold`. `[Type ? for hint]` → `WithHighLightFormat` + `WithBold`.
 
 **Hint feature:**
 
-If the user types `?`, a hint line appears below the prompt to provide additional guidance. 
+If the user types `?`, a hint line appears below the prompt to provide additional guidance.
 
-<pre>
-<span style="color:#5555ff"><b>?</b></span> This captures a single line of input: <span style="color:#5555ff"><b>[Type ? for hint]</b></span>
-<span style="color:grey"><b>Hint: This is a help message</b></span>
-</pre>
+```
+? This captures a single line of input: [Type ? for hint]
+Hint: This is a help message
+```
+
+> Colors: `?` and `[Type ? for hint]` → `WithHighLightFormat` + `WithBold`. Hint line → `WithHintFormat` + `WithBold`.
 
 #### Yes or No Input
 
 - Yes/no inputs include a `(Y/n)` delineator at the end of the input request (before the colon).
 - Users can either input `y`/`n` or hit the return key which will select the capitalized choice in the `(Y/n)` delineator.
 
-<pre>
-<span style="color:#5555ff"><b>?</b></span> Do you want to initialize a new Git repository in this directory? (Y/n):
-</pre>
+```
+? Do you want to initialize a new Git repository in this directory? (Y/n):
+```
+
+> Colors: `?` → `WithHighLightFormat` + `WithBold`.
 
 #### List Select
 
@@ -261,17 +252,19 @@ The list select pattern presents a list of options for the user to choose from.
 
 The prompt is displayed with a `Filter:` line showing ghost-text ("Type to filter list") and a footer hint in **hi-blue text** via `WithHighLightFormat` (Bright Blue, ANSI 94). The active selection is indicated by `>` and displayed in bold blue text.
 
-<pre>
-<span style="color:#5555ff"><b>?</b></span> Select a single option:  <span style="color:#5555ff"><b>[Use arrows to move, type to filter]</b></span>
+```
+? Select a single option:  [Use arrows to move, type to filter]
 
-  <span style="color:#5555ff"><b>> Option 1</b></span>
+  > Option 1
     Option 2
     Option 3
     Option 4
     Option 5
     Option 6
     ...
-</pre>
+```
+
+> Colors: `?` → `WithHighLightFormat` + `WithBold`. `[Use arrows to move, type to filter]` → `WithHighLightFormat` + `WithBold`. `> Option 1` (selected item) → `WithHighLightFormat` + `WithBold`.
 
 **Display rules:**
 
@@ -293,9 +286,11 @@ Once the user makes their selection:
 - If the hint line was visible, it also disappears
 - The list collapses and the selected value is printed in blue text next to the prompt
 
-<pre>
-<span style="color:#5555ff"><b>?</b></span> Select an Azure location to use: <span style="color:#5555ff">(US) East US 2 (eastus2)</span>
-</pre>
+```
+? Select an Azure location to use: (US) East US 2 (eastus2)
+```
+
+> Colors: `?` → `WithHighLightFormat` + `WithBold`. `(US) East US 2 (eastus2)` (selected value) → `WithHighLightFormat`.
 
 ### CLI Color Standards
 
@@ -329,7 +324,7 @@ fmt.Println(output.WithSuccessFormat("(✓) Done:") + " Creating resource")
 fmt.Println(output.WithWarningFormat("(!) Warning:") + " Configuration may need update")
 
 // Error message
-fmt.Println(output.WithErrorFormat("(✗) Failed:") + " Unable to connect")
+fmt.Println(output.WithErrorFormat("(x) Failed:") + " Unable to connect")
 
 // Hyperlink
 fmt.Printf("View in portal: %s\n", output.WithLinkFormat(url))
@@ -345,6 +340,16 @@ fmt.Printf("Run %s to deploy\n", output.WithHighLightFormat("azd deploy"))
 - **Terminal compatibility**: Colors will render differently across terminals - test in multiple environments
 - **Theme support**: Test in both light and dark terminal themes
 - **Fallback**: Ensure output remains readable if colors are disabled
+
+#### Common Mistakes
+
+| ❌ Don't | ✅ Do | Why |
+| --- | --- | --- |
+| `Error: something went wrong` | `ERROR: something went wrong.` | All-caps prefix is required |
+| `Done: Created resource` | `(✓) Done: Created resource` | Include icon prefix for progress states |
+| `color.Red("ERROR")` | `output.WithErrorFormat("ERROR:")` | Always use helper functions |
+| Print bare success text | `SUCCESS: Your app has been deployed!` | Always include the `SUCCESS:` prefix |
+| `(✗) Failed:` (Unicode ballot X) | `(x) Failed:` (lowercase letter x) | Match the codebase symbol |
 
 <details>
 <summary>📚 Learn more about ANSI color codes (optional reference)</summary>
@@ -413,7 +418,7 @@ The full animation cycle frames are:
 |=======|  →  | ======|  →  |  =====|  →  |   ====|  →  |    ===|  →  |     ==|  →  |      =|  →  |       |
 ```
 
-These frames repeat continuously on the **same line** until the operation completes. The spinner bar is displayed in **hint-colored** text (gray) to keep focus on the status message.
+These frames repeat continuously on the **same line** until the operation completes. The spinner bar is displayed in **gray text** via `WithGrayFormat` to keep focus on the status message.
 
 #### Implementation
 

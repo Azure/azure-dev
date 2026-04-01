@@ -49,7 +49,9 @@ func infraActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 			ActionResolver: newInfraGenerateAction,
 			OutputFormats:  []output.Format{output.NoneFormat},
 			DefaultFormat:  output.NoneFormat,
-		})
+		}).
+		UseMiddleware("hooks", middleware.NewHooksMiddleware).
+		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
 
 	return group
 }

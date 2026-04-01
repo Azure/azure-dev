@@ -295,11 +295,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 
 	// Build request body — uses streaming to receive the full agent response.
 	reqBody := map[string]any{
-		"input": msg,
-		"agent": map[string]string{
-			"name": name,
-			"type": "agent_reference",
-		},
+		"input":  msg,
 		"stream": true,
 	}
 
@@ -353,7 +349,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	}
 
 	url := fmt.Sprintf(
-		"%s/agents/%s/endpoint/protocols/openai/v1/responses?api-version=%s",
+		"%s/agents/%s/endpoint/protocols/openai/responses?api-version=%s",
 		endpoint, name, DefaultAgentAPIVersion,
 	)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))

@@ -423,6 +423,10 @@ func TestLoginWithManagedIdentity(t *testing.T) {
 
 func TestLoginWithAzurePipelinesFederatedTokenProvider(t *testing.T) {
 	t.Run("MissingSystemAccessToken", func(t *testing.T) {
+		// Explicitly clear so the test works even in Azure Pipelines CI
+		// where SYSTEM_ACCESSTOKEN is set in the process environment.
+		t.Setenv("SYSTEM_ACCESSTOKEN", "")
+
 		m := Manager{
 			configManager:     newMemoryConfigManager(),
 			userConfigManager: newMemoryUserConfigManager(),
@@ -488,10 +492,13 @@ func TestLoginWithOidcFederatedTokenProvider(t *testing.T) {
 	})
 
 	t.Run("MissingAllEnvVars", func(t *testing.T) {
-		// Ensure none of the env vars are set
+		// Code uses os.LookupEnv, so vars must be truly unset (not just empty).
+		// t.Setenv registers cleanup to restore original values.
 		t.Setenv("AZURE_OIDC_TOKEN", "")
 		os.Unsetenv("AZURE_OIDC_TOKEN")
+		t.Setenv("AZURE_OIDC_REQUEST_TOKEN", "")
 		os.Unsetenv("AZURE_OIDC_REQUEST_TOKEN")
+		t.Setenv("AZURE_OIDC_REQUEST_URL", "")
 		os.Unsetenv("AZURE_OIDC_REQUEST_URL")
 
 		credCache := &memoryCache{cache: make(map[string][]byte)}
@@ -805,7 +812,8 @@ func TestNewCredentialFromFederatedTokenProvider_AzurePipelines_NoServiceConnect
 }
 
 func TestNewCredentialFromFederatedTokenProvider_AzurePipelines_MissingToken(t *testing.T) {
-	// Don't set SYSTEM_ACCESSTOKEN
+	// Explicitly clear so the test works even in Azure Pipelines CI.
+	t.Setenv("SYSTEM_ACCESSTOKEN", "")
 	m := Manager{cloud: cloud.AzurePublic()}
 	_, err := m.newCredentialFromFederatedTokenProvider(
 		"tenant", "client", azurePipelinesFederatedTokenProvider, nil,
@@ -815,8 +823,11 @@ func TestNewCredentialFromFederatedTokenProvider_AzurePipelines_MissingToken(t *
 }
 
 func TestNewCredentialFromFederatedTokenProvider_GitHub_MissingEnvVars(t *testing.T) {
-	// Ensure env vars are not set
+	// Code uses os.LookupEnv — vars must be truly unset.
+	// t.Setenv registers cleanup; os.Unsetenv actually removes them.
+	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "")
 	os.Unsetenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN")
+	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_URL", "")
 	os.Unsetenv("ACTIONS_ID_TOKEN_REQUEST_URL")
 
 	m := Manager{cloud: cloud.AzurePublic()}
@@ -829,6 +840,7 @@ func TestNewCredentialFromFederatedTokenProvider_GitHub_MissingEnvVars(t *testin
 
 func TestNewCredentialFromFederatedTokenProvider_GitHub_MissingURL(t *testing.T) {
 	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "token-value")
+	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_URL", "")
 	os.Unsetenv("ACTIONS_ID_TOKEN_REQUEST_URL")
 
 	m := Manager{cloud: cloud.AzurePublic()}
@@ -840,8 +852,10 @@ func TestNewCredentialFromFederatedTokenProvider_GitHub_MissingURL(t *testing.T)
 }
 
 func TestNewCredentialFromFederatedTokenProvider_Oidc_MissingRequestToken(t *testing.T) {
+	t.Setenv("AZURE_OIDC_TOKEN", "")
 	os.Unsetenv("AZURE_OIDC_TOKEN")
 	t.Setenv("AZURE_OIDC_REQUEST_URL", "https://example.com")
+	t.Setenv("AZURE_OIDC_REQUEST_TOKEN", "")
 	os.Unsetenv("AZURE_OIDC_REQUEST_TOKEN")
 
 	m := Manager{cloud: cloud.AzurePublic()}
@@ -853,8 +867,10 @@ func TestNewCredentialFromFederatedTokenProvider_Oidc_MissingRequestToken(t *tes
 }
 
 func TestNewCredentialFromFederatedTokenProvider_Oidc_MissingRequestURL(t *testing.T) {
+	t.Setenv("AZURE_OIDC_TOKEN", "")
 	os.Unsetenv("AZURE_OIDC_TOKEN")
 	t.Setenv("AZURE_OIDC_REQUEST_TOKEN", "token-value")
+	t.Setenv("AZURE_OIDC_REQUEST_URL", "")
 	os.Unsetenv("AZURE_OIDC_REQUEST_URL")
 
 	m := Manager{cloud: cloud.AzurePublic()}
@@ -877,6 +893,7 @@ func TestNewCredentialFromFederatedTokenProvider_Oidc_WithDirectToken(t *testing
 }
 
 func TestNewCredentialFromFederatedTokenProvider_Oidc_WithRequestTokenAndURL(t *testing.T) {
+	t.Setenv("AZURE_OIDC_TOKEN", "")
 	os.Unsetenv("AZURE_OIDC_TOKEN")
 	t.Setenv("AZURE_OIDC_REQUEST_TOKEN", "request-token")
 	t.Setenv("AZURE_OIDC_REQUEST_URL", "https://example.com/token")

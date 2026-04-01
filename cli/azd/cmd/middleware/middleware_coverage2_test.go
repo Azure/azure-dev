@@ -1101,6 +1101,11 @@ func TestErrorCategory_Constants(t *testing.T) {
 
 func TestLoginGuard_EnsureLogin_ConfirmError(t *testing.T) {
 	t.Parallel()
+	// In CI, IsRunningOnCI() causes ensureLogin to short-circuit before
+	// reaching the Confirm prompt, so this test is only meaningful locally.
+	if isCI() {
+		t.Skip("skipping: CI short-circuits before console Confirm")
+	}
 	mockCtx := mocks.NewMockContext(t.Context())
 
 	mockAuthManager := &mockCurrentUserAuthManager{}

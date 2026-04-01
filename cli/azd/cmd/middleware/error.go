@@ -23,8 +23,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
-	"github.com/azure/azure-dev/cli/azd/pkg/auth"
-	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -35,8 +33,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/pipeline"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/maven"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/pack"
 	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"go.opentelemetry.io/otel/codes"
@@ -71,56 +67,15 @@ type ErrorMiddleware struct {
 	errorPipeline     *errorhandler.ErrorHandlerPipeline
 }
 
-// ErrorCategory represents the classification of an error for determining
-// the appropriate agent mode behavior.
-type ErrorCategory int
-
-const (
-	// AzureContextAndOtherError represents errors originating from Azure service interactions
-	// or any other unclassified errors. These are eligible for full agentic analysis and automated fix.
-	AzureContextAndOtherError ErrorCategory = iota
-
-	// MachineContextError represents errors caused by the local machine environment,
-	// such as missing tools, incompatible tool versions, extension failures, or build-tool issues.
-	MachineContextError
-
-	// UserContextError represents errors caused by user actions or configuration,
-	// such as authentication failures, missing credentials, or invalid project/environment settings.
-	UserContextError
-)
-
-// classifyError categorizes an error into one of three buckets:
-// AzureContextAndOtherError, MachineContextError, or UserContextError
-func classifyError(err error) ErrorCategory {
+func fixableError(err error) bool {
 	// --- Machine context: typed errors ---
-	_, toolCheckErr := errors.AsType[*tools.MissingToolErrors](err)
-	_, semverErr := errors.AsType[*tools.ErrSemver](err)
 	_, extRunErr := errors.AsType[*extensions.ExtensionRunError](err)
 	_, packStatusErr := errors.AsType[*pack.StatusCodeError](err)
 
-	if toolCheckErr || semverErr || extRunErr || packStatusErr {
-		return MachineContextError
+	if extRunErr || packStatusErr {
+		return false
 	}
-
-	if errors.Is(err, maven.ErrPropertyNotFound) {
-		return MachineContextError
-	}
-
-	// --- User context: typed errors ---
-	_, loginErr := errors.AsType[*auth.ReLoginRequiredError](err)
-	_, authFailedErr := errors.AsType[*auth.AuthFailedError](err)
-
-	if loginErr || authFailedErr {
-		return UserContextError
-	}
-
-	if errors.Is(err, auth.ErrNoCurrentUser) ||
-		errors.Is(err, azapi.ErrAzCliNotLoggedIn) ||
-		errors.Is(err, azapi.ErrAzCliRefreshTokenExpired) ||
-		errors.Is(err, github.ErrGitHubCliNotLoggedIn) ||
-		errors.Is(err, github.ErrUserNotAuthorized) ||
-		errors.Is(err, github.ErrRepositoryNameInUse) ||
-		errors.Is(err, environment.ErrNotFound) ||
+	if errors.Is(err, environment.ErrNotFound) ||
 		errors.Is(err, environment.ErrNameNotSpecified) ||
 		errors.Is(err, environment.ErrDefaultEnvironmentNotFound) ||
 		errors.Is(err, environment.ErrAccessDenied) ||
@@ -129,10 +84,10 @@ func classifyError(err error) ErrorCategory {
 		errors.Is(err, pipeline.ErrSSHNotSupported) ||
 		errors.Is(err, pipeline.ErrRemoteHostIsNotGitHub) ||
 		errors.Is(err, project.ErrNoDefaultService) {
-		return UserContextError
+		return false
 	}
 
-	return AzureContextAndOtherError
+	return true
 }
 
 // troubleshootCategory represents the user's chosen troubleshooting scope.
@@ -145,6 +100,8 @@ const (
 	categoryGuidance troubleshootCategory = "guidance"
 	// categoryTroubleshoot shows both explanation and guidance.
 	categoryTroubleshoot troubleshootCategory = "troubleshoot"
+	// categoryFix skips explanation and jumps directly to agent-driven fix.
+	categoryFix troubleshootCategory = "fix"
 	// categorySkip skips troubleshooting entirely.
 	categorySkip troubleshootCategory = "skip"
 )
@@ -266,6 +223,11 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			e.console.Message(ctx, output.WithErrorFormat("TraceID: %s", errorWithTraceId.TraceId))
 		}
 
+		// Skip agent troubleshooting for errors that are not classified as fixable
+		if !fixableError(originalError) {
+			return actionResult, originalError
+		}
+
 		// Step 1: Category selection — user chooses the troubleshooting scope
 		category, err := e.promptTroubleshootCategory(ctx)
 		if err != nil {
@@ -276,45 +238,49 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		if category == categorySkip {
 			span.SetStatus(codes.Error, "agent.troubleshoot.skip")
 			return actionResult, originalError
-		} else {
-			// Step 2: Execute the selected category prompt
-			categoryPrompt := e.buildPromptForCategory(category, originalError)
-			e.console.Message(ctx, output.WithHintFormat(
-				"Preparing %s to %s error...", agentcopilot.DisplayTitle, category))
-			agentResult, err := azdAgent.SendMessage(ctx, categoryPrompt)
-			if err != nil {
-				span.SetStatus(codes.Error, "agent.send_message.failed")
-				return nil, err
-			}
-
-			span.SetStatus(codes.Ok, fmt.Sprintf("agent.%s.completed", category))
-			e.displayUsageMetrics(ctx, agentResult)
 		}
 
-		// Step 3: Ask if user wants the agent to fix the error
-		wantFix, err := e.promptForFix(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("prompting for fix: %w", err)
-		}
-
-		if !wantFix {
-			span.SetStatus(codes.Ok, "agent.fix.declined")
-			return actionResult, originalError
-		}
-
-		// Step 4: Agent applies the fix
-		fixPrompt := e.buildFixPrompt(originalError)
-		previousError = originalError
+		// Step 2: Execute the selected category prompt
+		categoryPrompt := e.buildPromptForCategory(category, originalError)
 		e.console.Message(ctx, output.WithHintFormat(
-			"Preparing %s to fix error...", agentcopilot.DisplayTitle))
-		fixResult, err := azdAgent.SendMessage(ctx, fixPrompt)
+			"Preparing %s to %s error...", agentcopilot.DisplayTitle, category))
+		agentResult, err := azdAgent.SendMessageWithRetry(ctx, categoryPrompt)
 		if err != nil {
-			span.SetStatus(codes.Error, "agent.fix.failed")
+			span.SetStatus(codes.Error, "agent.send_message.failed")
 			return nil, err
 		}
 
-		span.SetStatus(codes.Ok, "agent.fix.completed")
-		e.displayUsageMetrics(ctx, fixResult)
+		span.SetStatus(codes.Ok, fmt.Sprintf("agent.%s.completed", category))
+		e.displayUsageMetrics(ctx, agentResult)
+
+		previousError = originalError
+
+		if category != categoryFix {
+			// Step 3: Ask if user wants the agent to fix the error
+			// (only if they didn't already choose the fix category)
+			wantFix, err := e.promptForFix(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("prompting for fix: %w", err)
+			}
+
+			if !wantFix {
+				span.SetStatus(codes.Ok, "agent.fix.declined")
+				return actionResult, originalError
+			}
+
+			// Step 4: Agent applies the fix
+			fixPrompt := e.buildFixPrompt(originalError)
+			e.console.Message(ctx, output.WithHintFormat(
+				"Preparing %s to fix error...", agentcopilot.DisplayTitle))
+			fixResult, err := azdAgent.SendMessageWithRetry(ctx, fixPrompt)
+			if err != nil {
+				span.SetStatus(codes.Error, "agent.fix.failed")
+				return nil, err
+			}
+
+			span.SetStatus(codes.Ok, "agent.fix.completed")
+			e.displayUsageMetrics(ctx, fixResult)
+		}
 
 		// Step 5: Ask user if they want to retry the command
 		shouldRetry, err := e.promptRetryAfterFix(ctx)
@@ -356,6 +322,8 @@ func (e *ErrorMiddleware) buildPromptForCategory(category troubleshootCategory, 
 		tmpl = guidanceTemplate
 	case categoryTroubleshoot:
 		tmpl = troubleshootManualTemplate
+	case categoryFix:
+		tmpl = fixTemplate
 	default:
 		tmpl = troubleshootManualTemplate
 	}
@@ -408,7 +376,7 @@ func (e *ErrorMiddleware) promptTroubleshootCategory(ctx context.Context) (troub
 	if val, ok := userConfig.GetString(agentcopilot.ConfigKeyErrorHandlingCategory); ok && val != "" {
 		saved := troubleshootCategory(val)
 		switch saved {
-		case categoryExplain, categoryGuidance, categoryTroubleshoot, categorySkip:
+		case categoryExplain, categoryGuidance, categoryTroubleshoot, categoryFix, categorySkip:
 			e.console.Message(ctx, output.WithWarningFormat(
 				"\n%s troubleshooting is set to always use '%s'. To change, run %s.",
 				agentcopilot.DisplayTitle,
@@ -425,9 +393,9 @@ func (e *ErrorMiddleware) promptTroubleshootCategory(ctx context.Context) (troub
 		{Value: string(categoryExplain), Label: "Explain this error"},
 		{Value: string(categoryGuidance), Label: "Show fix guidance"},
 		{Value: string(categoryTroubleshoot), Label: "Troubleshoot with explanation and guidance"},
+		{Value: string(categoryFix), Label: "Fix this error"},
 		{Value: string(categorySkip), Label: "Skip"},
 	}
-
 	selector := uxlib.NewSelect(&uxlib.SelectOptions{
 		Message: fmt.Sprintf("How would you like %s to help?", agentcopilot.DisplayTitle),
 		HelpMessage: fmt.Sprintf(

@@ -263,29 +263,28 @@ func Test_ErrorMiddleware_NoPatternMatch(t *testing.T) {
 	require.Equal(t, unknownError, err)
 }
 
-func Test_ClassifyError(t *testing.T) {
+func Test_FixableError(t *testing.T) {
 	t.Parallel()
-	// --- Machine context: typed errors ---
-	t.Run("MissingToolErrors classifies as MachineContext", func(t *testing.T) {
+	t.Run("MissingToolErrors is fixable", func(t *testing.T) {
 		t.Parallel()
 		err := &tools.MissingToolErrors{
 			Errs:      []error{errors.New("docker not found")},
 			ToolNames: []string{"docker"},
 		}
-		require.Equal(t, MachineContextError, classifyError(err))
+		require.True(t, fixableError(err))
 	})
 
-	t.Run("Wrapped MissingToolErrors classifies as MachineContext", func(t *testing.T) {
+	t.Run("Wrapped MissingToolErrors is fixable", func(t *testing.T) {
 		t.Parallel()
 		inner := &tools.MissingToolErrors{
 			Errs:      []error{errors.New("node not found")},
 			ToolNames: []string{"node"},
 		}
 		wrapped := fmt.Errorf("setup failed: %w", inner)
-		require.Equal(t, MachineContextError, classifyError(wrapped))
+		require.True(t, fixableError(wrapped))
 	})
 
-	t.Run("ErrSemver classifies as MachineContext", func(t *testing.T) {
+	t.Run("ErrSemver is fixable", func(t *testing.T) {
 		t.Parallel()
 		err := &tools.ErrSemver{
 			ToolName: "node",
@@ -294,77 +293,77 @@ func Test_ClassifyError(t *testing.T) {
 				UpdateCommand:  "nvm install",
 			},
 		}
-		require.Equal(t, MachineContextError, classifyError(err))
+		require.True(t, fixableError(err))
 	})
 
-	t.Run("ExtensionRunError classifies as MachineContext", func(t *testing.T) {
+	t.Run("ExtensionRunError is not fixable", func(t *testing.T) {
 		t.Parallel()
 		err := &extensions.ExtensionRunError{
 			ExtensionId: "my-extension",
 			Err:         errors.New("extension crashed"),
 		}
-		require.Equal(t, MachineContextError, classifyError(err))
+		require.False(t, fixableError(err))
 	})
 
-	t.Run("StatusCodeError classifies as MachineContext", func(t *testing.T) {
+	t.Run("StatusCodeError is not fixable", func(t *testing.T) {
 		t.Parallel()
 		err := &pack.StatusCodeError{
 			Code: 1,
 			Err:  errors.New("pack build failed"),
 		}
-		require.Equal(t, MachineContextError, classifyError(err))
+		require.False(t, fixableError(err))
 	})
 
-	// --- User context: typed errors ---
-	t.Run("ReLoginRequiredError classifies as UserContext", func(t *testing.T) {
+	t.Run("ReLoginRequiredError is fixable", func(t *testing.T) {
 		t.Parallel()
 		err := &auth.ReLoginRequiredError{}
-		require.Equal(t, UserContextError, classifyError(err))
+		require.True(t, fixableError(err))
 	})
 
-	t.Run("AuthFailedError classifies as UserContext", func(t *testing.T) {
+	t.Run("AuthFailedError is fixable", func(t *testing.T) {
 		t.Parallel()
 		err := &auth.AuthFailedError{}
-		require.Equal(t, UserContextError, classifyError(err))
+		require.True(t, fixableError(err))
 	})
 
-	userContextSentinels := []struct {
-		name string
-		err  error
+	sentinels := []struct {
+		name    string
+		err     error
+		fixable bool
 	}{
-		// auth
-		{"auth.ErrNoCurrentUser", auth.ErrNoCurrentUser},
-		// azapi
-		{"azapi.ErrAzCliNotLoggedIn", azapi.ErrAzCliNotLoggedIn},
-		{"azapi.ErrAzCliRefreshTokenExpired", azapi.ErrAzCliRefreshTokenExpired},
-		// github
-		{"github.ErrGitHubCliNotLoggedIn", github.ErrGitHubCliNotLoggedIn},
-		{"github.ErrUserNotAuthorized", github.ErrUserNotAuthorized},
-		{"github.ErrRepositoryNameInUse", github.ErrRepositoryNameInUse},
+		{"auth.ErrNoCurrentUser", auth.ErrNoCurrentUser, true},
+		{"azapi.ErrAzCliNotLoggedIn", azapi.ErrAzCliNotLoggedIn, true},
+		{"azapi.ErrAzCliRefreshTokenExpired",
+			azapi.ErrAzCliRefreshTokenExpired, true},
+		{"github.ErrGitHubCliNotLoggedIn",
+			github.ErrGitHubCliNotLoggedIn, true},
+		{"github.ErrUserNotAuthorized", github.ErrUserNotAuthorized, true},
+		{"github.ErrRepositoryNameInUse", github.ErrRepositoryNameInUse, true},
 		// environment
-		{"environment.ErrNotFound", environment.ErrNotFound},
-		{"environment.ErrNameNotSpecified", environment.ErrNameNotSpecified},
-		{"environment.ErrDefaultEnvironmentNotFound", environment.ErrDefaultEnvironmentNotFound},
-		{"environment.ErrAccessDenied", environment.ErrAccessDenied},
+		{"environment.ErrNotFound", environment.ErrNotFound, false},
+		{"environment.ErrNameNotSpecified", environment.ErrNameNotSpecified, false},
+		{"environment.ErrDefaultEnvironmentNotFound",
+			environment.ErrDefaultEnvironmentNotFound, false},
+		{"environment.ErrAccessDenied", environment.ErrAccessDenied, false},
 		// pipeline
-		{"pipeline.ErrAuthNotSupported", pipeline.ErrAuthNotSupported},
-		{"pipeline.ErrRemoteHostIsNotAzDo", pipeline.ErrRemoteHostIsNotAzDo},
-		{"pipeline.ErrSSHNotSupported", pipeline.ErrSSHNotSupported},
-		{"pipeline.ErrRemoteHostIsNotGitHub", pipeline.ErrRemoteHostIsNotGitHub},
+		{"pipeline.ErrAuthNotSupported", pipeline.ErrAuthNotSupported, false},
+		{"pipeline.ErrRemoteHostIsNotAzDo", pipeline.ErrRemoteHostIsNotAzDo, false},
+		{"pipeline.ErrSSHNotSupported", pipeline.ErrSSHNotSupported, false},
+		{"pipeline.ErrRemoteHostIsNotGitHub", pipeline.ErrRemoteHostIsNotGitHub, false},
 		// project
-		{"project.ErrNoDefaultService", project.ErrNoDefaultService},
+		{"project.ErrNoDefaultService", project.ErrNoDefaultService, false},
 	}
 
-	for _, tc := range userContextSentinels {
-		t.Run(tc.name+" classifies as UserContext", func(t *testing.T) {
+	for _, tc := range sentinels {
+		t.Run(tc.name+" fixableError", func(t *testing.T) {
 			t.Parallel()
-			require.Equal(t, UserContextError, classifyError(tc.err))
+			require.Equal(t, tc.fixable, fixableError(tc.err))
 		})
 
-		t.Run("Wrapped "+tc.name+" classifies as UserContext", func(t *testing.T) {
+		t.Run("Wrapped "+tc.name+" fixableError", func(t *testing.T) {
 			t.Parallel()
 			wrapped := fmt.Errorf("operation failed: %w", tc.err)
-			require.Equal(t, UserContextError, classifyError(wrapped))
+			require.Equal(t, tc.fixable, fixableError(wrapped))
 		})
 	}
 
@@ -372,7 +371,7 @@ func Test_ClassifyError(t *testing.T) {
 	t.Run("Generic error defaults to AzureContext", func(t *testing.T) {
 		t.Parallel()
 		err := errors.New("deploying to Azure: InternalServerError")
-		require.Equal(t, AzureContextAndOtherError, classifyError(err))
+		require.True(t, fixableError(err))
 	})
 }
 
@@ -408,6 +407,7 @@ func Test_TroubleshootCategory_Constants(t *testing.T) {
 	require.Equal(t, troubleshootCategory("explain"), categoryExplain)
 	require.Equal(t, troubleshootCategory("guidance"), categoryGuidance)
 	require.Equal(t, troubleshootCategory("troubleshoot"), categoryTroubleshoot)
+	require.Equal(t, troubleshootCategory("fix"), categoryFix)
 	require.Equal(t, troubleshootCategory("skip"), categorySkip)
 }
 
@@ -437,6 +437,11 @@ func Test_BuildPromptForCategory(t *testing.T) {
 			name:     "troubleshoot category",
 			category: categoryTroubleshoot,
 			contains: []string{"azd provision", "QuotaExceeded", "EXPLAIN TO THE USER", "RECOMMEND MANUAL STEPS"},
+		},
+		{
+			name:     "fix category",
+			category: categoryFix,
+			contains: []string{"azd provision", "QuotaExceeded", "FIX", "minimal change"},
 		},
 		{
 			name:     "default falls back to troubleshoot manual",

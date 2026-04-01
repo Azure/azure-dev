@@ -999,21 +999,21 @@ func TestErrorMiddleware_Run_ErrorWithSuggestion(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// classifyError — additional coverage
+// fixableError — additional coverage
 // ---------------------------------------------------------------------------
 
-func TestClassifyError_RegularError(t *testing.T) {
+func TestFixableError_RegularError(t *testing.T) {
 	t.Parallel()
-	result := classifyError(errors.New("some unknown error"))
-	require.Equal(t, AzureContextAndOtherError, result)
+	result := fixableError(errors.New("some unknown error"))
+	require.True(t, result)
 }
 
-func TestClassifyError_ContextCanceled(t *testing.T) {
+func TestFixableError_ContextCanceled(t *testing.T) {
 	t.Parallel()
 	// context.Canceled is not a typed auth/tool error, so it falls through to
-	// AzureContextAndOtherError (the catch-all default).
-	result := classifyError(context.Canceled)
-	require.Equal(t, AzureContextAndOtherError, result)
+	// the default fixable path.
+	result := fixableError(context.Canceled)
+	require.True(t, result)
 }
 
 // ---------------------------------------------------------------------------

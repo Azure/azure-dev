@@ -640,7 +640,7 @@ func (a *InitFromCodeAction) resolveSelectedModelDeployment(
 		return nil, exterrors.FromAiService(err, exterrors.CodeModelResolutionFailed)
 	}
 
-	selector := &InitAction{
+	selector := &modelSelector{
 		azdClient:    a.azdClient,
 		azureContext: a.azureContext,
 		environment:  a.environment,

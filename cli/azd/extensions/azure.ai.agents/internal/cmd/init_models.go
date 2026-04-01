@@ -26,7 +26,7 @@ import (
 
 var defaultSkuPriority = []string{"GlobalStandard", "DataZoneStandard", "Standard"}
 
-func (a *InitAction) loadAiCatalog(ctx context.Context) error {
+func (a *modelSelector) loadAiCatalog(ctx context.Context) error {
 	if a.modelCatalog != nil {
 		return nil
 	}
@@ -69,9 +69,8 @@ func mapModelsByName(models []*azdext.AiModel) map[string]*azdext.AiModel {
 	return modelMap
 }
 
-func (a *InitAction) updateEnvLocation(ctx context.Context, selectedLocation string) error {
+func (a *modelSelector) updateEnvLocation(ctx context.Context, selectedLocation string) error {
 	envName := ""
-	var err error
 	if a.environment != nil {
 		envName = a.environment.Name
 	} else {
@@ -82,7 +81,7 @@ func (a *InitAction) updateEnvLocation(ctx context.Context, selectedLocation str
 		envName = envResponse.Environment.Name
 	}
 
-	_, err = a.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+	_, err := a.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
 		EnvName: envName,
 		Key:     "AZURE_LOCATION",
 		Value:   selectedLocation,
@@ -288,7 +287,7 @@ func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_
 		}
 	}
 
-	modelDetails, err := a.getModelDetails(ctx, model.Id)
+	modelDetails, err := a.getModelSelector().getModelDetails(ctx, model.Id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get model details: %w", err)
 	}
@@ -322,7 +321,7 @@ func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_
 	}, nil
 }
 
-func (a *InitAction) getModelDetails(ctx context.Context, modelName string) (*azdext.AiModelDeployment, error) {
+func (a *modelSelector) getModelDetails(ctx context.Context, modelName string) (*azdext.AiModelDeployment, error) {
 	if err := a.loadAiCatalog(ctx); err != nil {
 		return nil, err
 	}
@@ -501,7 +500,7 @@ const (
 		"2) Create a new Foundry project after changing regions."
 )
 
-func (a *InitAction) promptForAlternativeModel(
+func (a *modelSelector) promptForAlternativeModel(
 	ctx context.Context,
 	originalModelName string,
 ) (*azdext.AiModel, error) {
@@ -565,7 +564,7 @@ func (a *InitAction) promptForAlternativeModel(
 	return modelResp.Model, nil
 }
 
-func (a *InitAction) promptForModelLocationMismatch(
+func (a *modelSelector) promptForModelLocationMismatch(
 	ctx context.Context,
 	model *azdext.AiModel,
 	currentLocation string,
@@ -626,7 +625,7 @@ func (a *InitAction) promptForModelLocationMismatch(
 				&azdext.PromptAiModelLocationWithQuotaRequest{
 					AzureContext:     a.azureContext,
 					ModelName:        currentModel.Name,
-					AllowedLocations: currentModel.Locations,
+					AllowedLocations: supportedModelLocations(currentModel.Locations),
 					Quota: &azdext.QuotaCheckOptions{
 						MinRemainingCapacity: 1,
 					},
@@ -677,7 +676,7 @@ func (a *InitAction) promptForModelLocationMismatch(
 				&azdext.PromptAiModelLocationWithQuotaRequest{
 					AzureContext:     a.azureContext,
 					ModelName:        selectedModel.Name,
-					AllowedLocations: selectedModel.Locations,
+					AllowedLocations: supportedModelLocations(selectedModel.Locations),
 					Quota: &azdext.QuotaCheckOptions{
 						MinRemainingCapacity: 1,
 					},

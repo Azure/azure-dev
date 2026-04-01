@@ -1,0 +1,338 @@
+name: pr-governance
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, edited, synchronize, labeled, unlabeled]
+
+permissions:
+  pull-requests: write
+  issues: write
+
+jobs:
+  governance-checks:
+    name: PR Governance
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check linked issue
+        id: issue-check
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const body = pr.body || '';
+
+            // Skip for dependabot and automated PRs
+            const skipAuthors = ['dependabot[bot]', 'dependabot', 'app/dependabot'];
+            if (skipAuthors.includes(pr.user.login)) {
+              console.log(`Skipping: automated PR by ${pr.user.login}`);
+              core.setOutput('skipped', 'true');
+              return;
+            }
+
+            // Skip for PRs with specific labels
+            const labels = pr.labels.map(l => l.name);
+            const skipLabels = ['skip-governance'];
+            if (labels.some(l => skipLabels.includes(l))) {
+              console.log(`Skipping: PR has exempt label`);
+              core.setOutput('skipped', 'true');
+              return;
+            }
+
+            // Check for issue references in body
+            const issuePatterns = [
+              /\b(?:fixes|closes|resolves|fix|close|resolve)\s+#(\d+)/gi,
+              /\b(?:fixes|closes|resolves|fix|close|resolve)\s+https:\/\/github\.com\/[^/]+\/[^/]+\/issues\/(\d+)/gi,
+              /https:\/\/github\.com\/[^/]+\/[^/]+\/issues\/(\d+)/gi,
+            ];
+
+            let linkedIssueNumbers = [];
+            for (const pattern of issuePatterns) {
+              let match;
+              while ((match = pattern.exec(body)) !== null) {
+                const num = parseInt(match[1]);
+                if (!linkedIssueNumbers.includes(num)) {
+                  linkedIssueNumbers.push(num);
+                }
+              }
+            }
+
+            // Also check GitHub's closing issue references (sidebar links)
+            const query = `query($owner: String!, $repo: String!, $number: Int!) {
+              repository(owner: $owner, name: $repo) {
+                pullRequest(number: $number) {
+                  closingIssuesReferences(first: 10) {
+                    nodes { number }
+                  }
+                }
+              }
+            }`;
+
+            const result = await github.graphql(query, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              number: pr.number,
+            });
+
+            const sidebarLinked = result.repository.pullRequest.closingIssuesReferences.nodes;
+            for (const issue of sidebarLinked) {
+              if (!linkedIssueNumbers.includes(issue.number)) {
+                linkedIssueNumbers.push(issue.number);
+              }
+            }
+
+            if (linkedIssueNumbers.length === 0) {
+              // Post or update a comment so the contributor sees the message on the PR
+              const BOT_MARKER = '<!-- pr-governance-priority -->';
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                per_page: 100,
+              });
+              const existingComment = comments.find(c => c.body && c.body.includes(BOT_MARKER));
+
+              const commentBody = [
+                BOT_MARKER,
+                `### 🔗 Linked Issue Required`,
+                '',
+                'Thanks for the contribution! Please link a GitHub issue to this PR by adding `Fixes #123` to the description or using the sidebar.',
+                'No issue yet? Feel free to [create one](https://github.com/Azure/azure-dev/issues/new)!',
+              ].join('\n');
+
+              try {
+                if (existingComment) {
+                  await github.rest.issues.updateComment({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    comment_id: existingComment.id,
+                    body: commentBody,
+                  });
+                } else {
+                  await github.rest.issues.createComment({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: pr.number,
+                    body: commentBody,
+                  });
+                }
+              } catch (e) {
+                console.log(`Could not post comment (expected for fork PRs): ${e.message}`);
+              }
+
+              core.setFailed('PR must be linked to a GitHub issue.');
+              return;
+            }
+
+            console.log(`✅ PR has linked issue(s): ${linkedIssueNumbers.join(', ')}`);
+            core.setOutput('issue_numbers', JSON.stringify(linkedIssueNumbers));
+
+      - name: Check issue priority
+        if: steps.issue-check.outputs.skipped != 'true' && steps.issue-check.outcome == 'success'
+        uses: actions/github-script@v7
+        env:
+          PROJECT_TOKEN: ${{ secrets.PROJECT_READ_TOKEN }}
+        with:
+          script: |
+            const issueNumbers = JSON.parse('${{ steps.issue-check.outputs.issue_numbers }}');
+            const pr = context.payload.pull_request;
+            const projectToken = process.env.PROJECT_TOKEN;
+
+            // Determine current month milestone name (e.g., "April 2026")
+            const now = new Date();
+            const monthNames = [
+              'January', 'February', 'March', 'April', 'May', 'June',
+              'July', 'August', 'September', 'October', 'November', 'December'
+            ];
+            const currentMilestoneName = `${monthNames[now.getMonth()]} ${now.getFullYear()}`;
+            let issueDetails = [];
+
+            // Check sprint assignment via Project #182 (if token available)
+            let sprintInfo = {};
+            if (projectToken) {
+              try {
+                async function graphqlWithToken(query, token) {
+                  const response = await fetch('https://api.github.com/graphql', {
+                    method: 'POST',
+                    headers: {
+                      'Authorization': `bearer ${token}`,
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ query }),
+                  });
+                  const json = await response.json();
+                  if (json.errors) throw new Error(json.errors[0].message);
+                  return json.data;
+                }
+
+                // Get current sprint iteration
+                const sprintData = await graphqlWithToken(`{
+                  organization(login: "Azure") {
+                    projectV2(number: 182) {
+                      field(name: "Sprint") {
+                        ... on ProjectV2IterationField {
+                          id
+                          configuration {
+                            iterations { id title startDate duration }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }`, projectToken);
+
+                const iterations = sprintData.organization.projectV2.field.configuration.iterations;
+
+                // Find the current sprint (today falls within start + duration)
+                const today = new Date();
+                const currentSprint = iterations.find(iter => {
+                  const start = new Date(iter.startDate);
+                  const end = new Date(start);
+                  end.setDate(end.getDate() + iter.duration);
+                  return today >= start && today < end;
+                });
+
+                if (currentSprint) {
+                  console.log(`Current sprint: ${currentSprint.title}`);
+
+                  // Query sprint assignment per issue (efficient — no pagination needed)
+                  for (const issueNum of issueNumbers) {
+                    try {
+                      const issueData = await graphqlWithToken(`{
+                        repository(owner: "Azure", name: "azure-dev") {
+                          issue(number: ${issueNum}) {
+                            projectItems(first: 10) {
+                              nodes {
+                                project { number }
+                                fieldValueByName(name: "Sprint") {
+                                  ... on ProjectV2ItemFieldIterationValue {
+                                    title
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }`, projectToken);
+
+                      const projectItems = issueData.repository.issue.projectItems.nodes;
+                      const match = projectItems.find(item =>
+                        item.project.number === 182 && item.fieldValueByName?.title
+                      );
+                      if (match) {
+                        sprintInfo[issueNum] = match.fieldValueByName.title;
+                        console.log(`Issue #${issueNum} sprint: ${match.fieldValueByName.title}`);
+                      }
+                    } catch (err) {
+                      console.log(`Could not check sprint for issue #${issueNum}: ${err.message}`);
+                    }
+                  }
+                }
+              } catch (err) {
+                console.log(`Sprint check skipped: ${err.message}`);
+              }
+            } else {
+              console.log('Sprint check skipped: no PROJECT_READ_TOKEN');
+            }
+
+            // If sprint found, skip milestone check entirely
+            const hasCurrentSprint = issueNumbers.some(n => sprintInfo[n]);
+
+            if (!hasCurrentSprint) {
+              // Fetch milestones for each issue
+              for (const issueNum of issueNumbers) {
+                try {
+                  const issue = await github.rest.issues.get({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: issueNum,
+                  });
+
+                  const milestone = issue.data.milestone;
+                  const milestoneTitle = milestone ? milestone.title : 'None';
+
+                  issueDetails.push({
+                    number: issueNum,
+                    milestone: milestoneTitle,
+                    sprint: null,
+                    isCurrentMonth: milestoneTitle === currentMilestoneName,
+                  });
+                } catch (err) {
+                  console.log(`Could not fetch issue #${issueNum}: ${err.message}`);
+                }
+              }
+            }
+
+            const hasCurrentMilestone = issueDetails.some(i => i.isCurrentMonth);
+
+            // Find existing bot comment to update
+            const BOT_MARKER = '<!-- pr-governance-priority -->';
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr.number,
+              per_page: 100,
+            });
+            const existingComment = comments.find(c => c.body && c.body.includes(BOT_MARKER));
+
+            let commentBody = '';
+
+            if (hasCurrentSprint) {
+              const sprintName = Object.values(sprintInfo)[0] || 'current sprint';
+              console.log(`✅ Issue is in current sprint: ${sprintName}. All good!`);
+
+              // Delete existing comment if one was posted earlier
+              if (existingComment) {
+                try {
+                  await github.rest.issues.deleteComment({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    comment_id: existingComment.id,
+                  });
+                  console.log('Removed prior governance comment — issue is now in sprint');
+                } catch (e) {
+                  console.log(`Could not remove comment (expected for fork PRs): ${e.message}`);
+                }
+              }
+              return;
+            } else if (hasCurrentMilestone) {
+              console.log('✅ Issue is in the current milestone');
+              commentBody = [
+                BOT_MARKER,
+                `### 📋 Milestone: ${currentMilestoneName}`,
+                '',
+                `This work is tracked for **${currentMilestoneName}**. The team will review it soon!`,
+              ].join('\n');
+            } else {
+              console.log('ℹ️ Issue is not in current sprint or milestone');
+              commentBody = [
+                BOT_MARKER,
+                `### 📋 Prioritization Note`,
+                '',
+                `Thanks for the contribution! The linked issue isn't in the current milestone yet.`,
+                'Review may take a bit longer — reach out to **@rajeshkamal5050** or **@kristenwomack** if you\'d like to discuss prioritization.',
+              ].join('\n');
+            }
+
+            // Post or update comment
+            try {
+              if (existingComment) {
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: existingComment.id,
+                  body: commentBody,
+                });
+                console.log('Updated existing governance comment');
+              } else {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: pr.number,
+                  body: commentBody,
+                });
+                console.log('Posted governance comment');
+              }
+            } catch (e) {
+              console.log(`Could not post comment (expected for fork PRs): ${e.message}`);
+            }

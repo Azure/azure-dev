@@ -8,26 +8,26 @@
 /**                                         @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA @tg-msft @rajeshkamal5050 @jongio
 
 # ── CLI installer ─────────────────────────────────────────────────────────────
-/cli/installer/                             @danieljurek @vhvb1989 @tg-msft @rajeshkamal5050
+/cli/installer/                             @jongio @wbreza @danieljurek @vhvb1989 @tg-msft @rajeshkamal5050
 
 # ── CLI extensions (AI) ──────────────────────────────────────────────────────
-/cli/azd/extensions/azure.ai.agents/        @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA @tg-msft @rajeshkamal5050 @trangevi @trrwilson @therealjohn
-/cli/azd/extensions/azure.ai.finetune/      @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA @tg-msft @rajeshkamal5050 @trangevi @achauhan-scc @kingernupur @rabollin @saanikaguptamicrosoft
-/cli/azd/extensions/azure.ai.models/        @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA @tg-msft @rajeshkamal5050 @trangevi @achauhan-scc @kingernupur @rabollin @saanikaguptamicrosoft
+/cli/azd/extensions/azure.ai.agents/        @jongio @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA @tg-msft @rajeshkamal5050 @trangevi @trrwilson @therealjohn
+/cli/azd/extensions/azure.ai.finetune/      @jongio @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA @tg-msft @rajeshkamal5050 @trangevi @achauhan-scc @kingernupur @rabollin @saanikaguptamicrosoft
+/cli/azd/extensions/azure.ai.models/        @jongio @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA @tg-msft @rajeshkamal5050 @trangevi @achauhan-scc @kingernupur @rabollin @saanikaguptamicrosoft
 
 # ── Extensions ────────────────────────────────────────────────────────────────
-/ext/                                       @karolz-ms @vhvb1989 @tg-msft @rajeshkamal5050
-/ext/azuredevops/                           @vhvb1989 @hemarina @tg-msft @rajeshkamal5050
-/ext/devcontainer/                          @vhvb1989 @hemarina @tg-msft @rajeshkamal5050
-/ext/vscode/                                @bwateratmsft @vhvb1989 @tg-msft @rajeshkamal5050 @karolz-ms
+/ext/                                       @jongio @wbreza @karolz-ms @vhvb1989 @tg-msft @rajeshkamal5050
+/ext/azuredevops/                           @jongio @wbreza @vhvb1989 @hemarina @tg-msft @rajeshkamal5050
+/ext/devcontainer/                          @jongio @wbreza @vhvb1989 @hemarina @tg-msft @rajeshkamal5050
+/ext/vscode/                                @jongio @wbreza @bwateratmsft @vhvb1989 @tg-msft @rajeshkamal5050 @karolz-ms
 
 # ── Infra / CI / Engineering ─────────────────────────────────────────────────
-/.github/                                   @danieljurek @vhvb1989 @tg-msft @rajeshkamal5050
-/eng/                                       @danieljurek @vhvb1989 @tg-msft @rajeshkamal5050
-/.config/1espt/                             @Azure/azure-sdk-eng
+/.github/                                   @jongio @wbreza @danieljurek @vhvb1989 @tg-msft @rajeshkamal5050
+/eng/                                       @jongio @wbreza @danieljurek @vhvb1989 @tg-msft @rajeshkamal5050
+/.config/1espt/                             @jongio @wbreza @Azure/azure-sdk-eng
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
-/schemas/                                   @wbreza @vhvb1989 @tg-msft @rajeshkamal5050
+/schemas/                                   @jongio @wbreza @vhvb1989 @tg-msft @rajeshkamal5050
 
 # ── This file (most specific -- must be last for /.github/) ───────────────────
 /.github/CODEOWNERS                         @rajeshkamal5050 @Azure/azure-sdk-eng

@@ -148,7 +148,7 @@ type AskerConsole struct {
 	// structuredOutputMode indicates that stdout is reserved for
 	// machine-parsable structured output. When true, human-readable
 	// messages are routed to stderr and visual elements (spinners,
-	// previewers) are suppressed.
+	// previewers) are redirected to stderr as plain text.
 	structuredOutputMode bool
 
 	// isTerminal controls whether terminal-style input/output will be used.

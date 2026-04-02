@@ -14,8 +14,11 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/language"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/python"
 )
 
 type HookFilterPredicateFn func(scriptName string, hookConfig *HookConfig) bool
@@ -246,5 +249,137 @@ func (h *HooksManager) ValidateHooks(ctx context.Context, allHooks map[string][]
 		log.Println(warningMessage)
 	}
 
+	// Check language runtime availability for language hooks.
+	langWarnings := h.validateLanguageRuntimes(ctx, allHooks)
+	result.Warnings = append(result.Warnings, langWarnings...)
+
 	return result
+}
+
+// validateLanguageRuntimes inspects all hook configurations and
+// verifies that required language runtimes are installed. It returns
+// warnings for each missing runtime, following the same pattern used
+// for the PowerShell 7 validation above.
+//
+// Currently only Python hooks are validated (Phase 1). JavaScript,
+// TypeScript, and DotNet hooks are deferred to later phases.
+func (h *HooksManager) validateLanguageRuntimes(
+	ctx context.Context,
+	allHooks map[string][]*HookConfig,
+) []HookWarning {
+	var warnings []HookWarning
+
+	// Collect unique language runtimes required across all hooks.
+	// Track the first hook name per language for actionable messages.
+	requiredLangs := map[language.ScriptLanguage]string{}
+
+	for hookName, hookConfigs := range allHooks {
+		for _, hookConfig := range hookConfigs {
+			if hookConfig == nil {
+				continue
+			}
+
+			// Apply OS-specific override if present.
+			cfg := hookConfig
+			if runtime.GOOS == "windows" && cfg.Windows != nil {
+				cfg = cfg.Windows
+			} else if (runtime.GOOS == "linux" ||
+				runtime.GOOS == "darwin") && cfg.Posix != nil {
+				cfg = cfg.Posix
+			}
+
+			if cfg.cwd == "" {
+				cfg.cwd = h.cwd
+			}
+
+			// Run validate to resolve the Language field from
+			// file extension / explicit config.
+			if err := cfg.validate(); err != nil {
+				// Validation errors are surfaced by GetAll /
+				// GetByParams; skip the hook here.
+				continue
+			}
+
+			if cfg.IsLanguageHook() {
+				if _, seen := requiredLangs[cfg.Language]; !seen {
+					requiredLangs[cfg.Language] = hookName
+				}
+			}
+		}
+	}
+
+	// Phase 1: validate Python runtime.
+	if hookName, ok := requiredLangs[language.ScriptLanguagePython]; ok {
+		pythonCli := python.NewCli(h.commandRunner)
+		if err := pythonCli.CheckInstalled(ctx); err != nil {
+			warnings = append(warnings, HookWarning{
+				Message: fmt.Sprintf(
+					"Python 3 is required to run hook '%s' "+
+						"but is not installed",
+					hookName,
+				),
+				Suggestion: fmt.Sprintf(
+					"Install Python 3 from %s",
+					output.WithHyperlink(
+						pythonCli.InstallUrl(),
+						"Python Downloads",
+					),
+				),
+			})
+		}
+	}
+
+	// Phase 2: JS/TS — not yet validated.
+	// Phase 4: DotNet — not yet validated.
+
+	return warnings
+}
+
+// ValidateLanguageRuntimesErr is a convenience wrapper around
+// ValidateHooks that returns an [errorhandler.ErrorWithSuggestion]
+// when any language runtime is missing. Callers that need a hard
+// early failure (e.g. before starting a long deployment) should use
+// this instead of inspecting warnings manually.
+func (h *HooksManager) ValidateLanguageRuntimesErr(
+	ctx context.Context,
+	allHooks map[string][]*HookConfig,
+) error {
+	warnings := h.validateLanguageRuntimes(ctx, allHooks)
+	if len(warnings) == 0 {
+		return nil
+	}
+
+	// Use the first warning for the primary error; additional
+	// warnings are appended as links.
+	first := warnings[0]
+	links := make([]errorhandler.ErrorLink, 0, len(warnings))
+	for _, w := range warnings {
+		links = append(links, errorhandler.ErrorLink{
+			URL:   extractURL(w.Suggestion),
+			Title: w.Message,
+		})
+	}
+
+	return &errorhandler.ErrorWithSuggestion{
+		Err: fmt.Errorf(
+			"missing required language runtime: %s",
+			first.Message,
+		),
+		Message:    first.Message,
+		Suggestion: first.Suggestion,
+		Links:      links,
+	}
+}
+
+// extractURL returns the first https:// URL found in s, or s itself
+// if none is found. Used to pull install URLs out of formatted
+// suggestion strings.
+func extractURL(s string) string {
+	for part := range strings.FieldsSeq(s) {
+		if strings.HasPrefix(part, "https://") ||
+			strings.HasPrefix(part, "http://") {
+			return strings.TrimRight(part, ")")
+		}
+	}
+	return s
 }

@@ -77,18 +77,18 @@ azd auth login
 
 ## Step 5: Use Custom Model Commands
 
-You can use the custom model commands by providing `--project-endpoint (-e)` and `--subscription (-s)` flags directly.
+You can use the custom model commands by providing `--project-endpoint` and `--subscription (-s)` flags directly.
 
 ### 5.1 List Custom Models
 
 ```bash
-azd ai models custom list -e <project_endpoint> -s <subscription_id>
+azd ai models custom list --project-endpoint <project_endpoint> -s <subscription_id>
 ```
 
 **Example:**
 
 ```bash
-azd ai models custom list -e "https://my-account.services.ai.azure.com/api/projects/my-project" -s "8861a79b-1234-5678-abcd-1234567890ab"
+azd ai models custom list --project-endpoint "https://my-account.services.ai.azure.com/api/projects/my-project" -s "8861a79b-1234-5678-abcd-1234567890ab"
 ```
 
 ![List Custom Models](images/06.1.jpg)
@@ -96,13 +96,13 @@ azd ai models custom list -e "https://my-account.services.ai.azure.com/api/proje
 ### 5.2 Create a Custom Model
 
 ```bash
-azd ai models custom create -e <project_endpoint> -s <subscription_id> --name <model-name> --source <local_path_or_remote_url>
+azd ai models custom create --project-endpoint <project_endpoint> -s <subscription_id> --name <model-name> --source <local_path_or_remote_url>
 ```
 
 **Example with local source:**
 
 ```bash
-azd ai models custom create -e "https://my-account.services.ai.azure.com/api/projects/my-project" -s "8861a79b-1234-5678-abcd-1234567890ab" --name my-model --source "D:\models\my-weights" --base-model "FW-DeepSeek-v3.1"
+azd ai models custom create --project-endpoint "https://my-account.services.ai.azure.com/api/projects/my-project" -s "8861a79b-1234-5678-abcd-1234567890ab" --name my-model --source "D:\models\my-weights" --base-model "FW-DeepSeek-v3.1"
 ```
 
 **Example with remote source:**
@@ -126,26 +126,26 @@ azd ai models custom create -e "https://my-account.services.ai.azure.com/api/pro
 ### 5.3 Show Custom Model Details
 
 ```bash
-azd ai models custom show -e <project_endpoint> -s <subscription_id> --name <model-name>
+azd ai models custom show --project-endpoint <project_endpoint> -s <subscription_id> --name <model-name>
 ```
 
 ### 5.4 Delete a Custom Model
 
 ```bash
-azd ai models custom delete -e <project_endpoint> -s <subscription_id> --name <model-name>
+azd ai models custom delete --project-endpoint <project_endpoint> -s <subscription_id> --name <model-name>
 ```
 
 Use `--force` to skip the confirmation prompt:
 
 ```bash
-azd ai models custom delete -e <project_endpoint> -s <subscription_id> --name <model-name> --force
+azd ai models custom delete --project-endpoint <project_endpoint> -s <subscription_id> --name <model-name> --force
 ```
 
 ---
 
 ## Step 6: Initialize Project (Optional — Recommended)
 
-Instead of passing `-e` and `-s` on every command, you can run `azd ai models init` to
+Instead of passing `--project-endpoint` and `-s` on every command, you can run `azd ai models init` to
 configure your project once. This stores the project endpoint and subscription in the
 azd environment so all subsequent commands pick them up automatically.
 
@@ -161,7 +161,7 @@ The init command will interactively guide you through:
 4. Selecting a resource group
 5. Selecting your AI Foundry project
 
-After init, you can run commands without `-e` and `-s`:
+After init, you can run commands without `--project-endpoint` and `-s`:
 
 ```bash
 azd ai models custom list
@@ -173,7 +173,7 @@ azd ai models custom delete --name my-model
 You can also provide flags during init to skip interactive prompts:
 
 ```bash
-azd ai models init -e "https://my-account.services.ai.azure.com/api/projects/my-project" -s "8861a79b-1234-5678-abcd-1234567890ab"
+azd ai models init --project-endpoint "https://my-account.services.ai.azure.com/api/projects/my-project" -s "8861a79b-1234-5678-abcd-1234567890ab"
 ```
 
 ![Init Command](images/07.jpg)
@@ -194,7 +194,7 @@ azd ai models init -e "https://my-account.services.ai.azure.com/api/projects/my-
 
 | Flag | Short | Description |
 |------|-------|-------------|
-| `--project-endpoint` | `-e` | Foundry project endpoint URL |
+| `--project-endpoint` | `-e` *(deprecated)* | Foundry project endpoint URL |
 | `--subscription` | `-s` | Azure subscription ID |
 | `--name` | `-n` | Model name |
 | `--version` | | Model version (default: "1") |

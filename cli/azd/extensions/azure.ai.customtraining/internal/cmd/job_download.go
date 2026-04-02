@@ -86,7 +86,7 @@ func newJobDownloadCommand() *cobra.Command {
 			if !models.TerminalStatuses[job.Properties.Status] {
 				return fmt.Errorf(
 					"job '%s' is in status '%s'. Download is only available for jobs in a terminal state "+
-						"(Completed, Failed, Canceled)",
+						"(Completed, Failed, Canceled, NotResponding, Paused)",
 					name, job.Properties.Status,
 				)
 			}

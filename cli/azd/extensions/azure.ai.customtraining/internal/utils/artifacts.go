@@ -10,8 +10,6 @@ import (
 )
 
 // CollectArtifactPrefixes extracts unique first-level folder prefixes from artifact paths.
-// Job artifacts have two top-level folders: "outputs/" and "user_logs/".
-// This yields at most 2 prefix/contentinfo API calls.
 func CollectArtifactPrefixes(artifacts []models.Artifact) []string {
 	seen := make(map[string]bool)
 	var prefixes []string

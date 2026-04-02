@@ -5,11 +5,13 @@ package ext
 
 import (
 	"os"
+	osexec "os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockexec"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
@@ -185,6 +187,205 @@ func Test_HookConfig_DefaultShell(t *testing.T) {
 			require.Equal(t, tt.expectingDefault, config.IsUsingDefaultShell())
 		})
 	}
+}
+
+func Test_ValidateHooks_PythonInstalled(t *testing.T) {
+	tempDir := t.TempDir()
+	ostest.Chdir(t, tempDir)
+
+	// Create a Python script file so validate() resolves it
+	// as a language hook.
+	scriptDir := filepath.Join(tempDir, "hooks")
+	require.NoError(t, os.MkdirAll(scriptDir, osutil.PermissionDirectory))
+	require.NoError(t,
+		os.WriteFile(
+			filepath.Join(scriptDir, "setup.py"),
+			[]byte("print('hello')"), osutil.PermissionExecutableFile,
+		),
+	)
+
+	hooksMap := map[string][]*HookConfig{
+		"preprovision": {
+			{Run: "hooks/setup.py"},
+		},
+	}
+
+	mockRunner := mockexec.NewMockCommandRunner()
+
+	// Mock Python as available: ToolInPath succeeds and
+	// --version returns a valid version.
+	mockRunner.MockToolInPath("py", nil)
+	mockRunner.When(func(args exec.RunArgs, cmd string) bool {
+		return strings.Contains(cmd, "--version")
+	}).Respond(exec.RunResult{Stdout: "Python 3.12.0"})
+
+	mgr := NewHooksManager(tempDir, mockRunner)
+	result := mgr.ValidateHooks(t.Context(), hooksMap)
+
+	// No language-runtime warnings should be present.
+	for _, w := range result.Warnings {
+		require.NotContains(t, w.Message, "Python",
+			"expected no Python warning when runtime is installed")
+	}
+
+	// Also verify the error-returning variant.
+	require.NoError(t,
+		mgr.ValidateLanguageRuntimesErr(t.Context(), hooksMap))
+}
+
+func Test_ValidateHooks_PythonNotInstalled(t *testing.T) {
+	tempDir := t.TempDir()
+	ostest.Chdir(t, tempDir)
+
+	scriptDir := filepath.Join(tempDir, "hooks")
+	require.NoError(t, os.MkdirAll(scriptDir, osutil.PermissionDirectory))
+	require.NoError(t,
+		os.WriteFile(
+			filepath.Join(scriptDir, "setup.py"),
+			[]byte("print('hello')"), osutil.PermissionExecutableFile,
+		),
+	)
+
+	hooksMap := map[string][]*HookConfig{
+		"preprovision": {
+			{Run: "hooks/setup.py"},
+		},
+	}
+
+	mockRunner := mockexec.NewMockCommandRunner()
+
+	// Mock Python as NOT available on any platform path.
+	mockRunner.MockToolInPath("py", osexec.ErrNotFound)
+	mockRunner.MockToolInPath("python", osexec.ErrNotFound)
+	mockRunner.MockToolInPath("python3", osexec.ErrNotFound)
+
+	mgr := NewHooksManager(tempDir, mockRunner)
+	result := mgr.ValidateHooks(t.Context(), hooksMap)
+
+	// Expect a warning about missing Python.
+	require.NotEmpty(t, result.Warnings,
+		"expected at least one warning for missing Python")
+
+	found := false
+	for _, w := range result.Warnings {
+		if strings.Contains(w.Message, "Python") {
+			found = true
+			require.Contains(t, w.Message, "preprovision")
+			require.Contains(t, w.Suggestion, "python")
+			break
+		}
+	}
+	require.True(t, found, "expected a Python-related warning")
+
+	// Verify the error-returning variant surfaces an
+	// ErrorWithSuggestion.
+	err := mgr.ValidateLanguageRuntimesErr(t.Context(), hooksMap)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "Python")
+}
+
+func Test_ValidateHooks_ShellHookNoValidation(t *testing.T) {
+	tempDir := t.TempDir()
+	ostest.Chdir(t, tempDir)
+
+	// Create shell scripts only — no language hooks.
+	scriptDir := filepath.Join(tempDir, "scripts")
+	require.NoError(t, os.MkdirAll(scriptDir, osutil.PermissionDirectory))
+	require.NoError(t,
+		os.WriteFile(
+			filepath.Join(scriptDir, "pre.sh"),
+			nil, osutil.PermissionExecutableFile,
+		),
+	)
+	require.NoError(t,
+		os.WriteFile(
+			filepath.Join(scriptDir, "post.ps1"),
+			nil, osutil.PermissionExecutableFile,
+		),
+	)
+
+	hooksMap := map[string][]*HookConfig{
+		"preprovision": {
+			{Run: "scripts/pre.sh"},
+		},
+		"postprovision": {
+			{Run: "scripts/post.ps1"},
+		},
+	}
+
+	mockRunner := mockexec.NewMockCommandRunner()
+	// pwsh available so PowerShell warning doesn't fire.
+	mockRunner.MockToolInPath("pwsh", nil)
+
+	mgr := NewHooksManager(tempDir, mockRunner)
+	result := mgr.ValidateHooks(t.Context(), hooksMap)
+
+	// No language-runtime warnings for shell hooks.
+	for _, w := range result.Warnings {
+		require.NotContains(t, w.Message, "Python",
+			"shell-only hooks must not trigger language warnings")
+	}
+
+	require.NoError(t,
+		mgr.ValidateLanguageRuntimesErr(t.Context(), hooksMap))
+}
+
+func Test_ValidateHooks_MixedHooks(t *testing.T) {
+	tempDir := t.TempDir()
+	ostest.Chdir(t, tempDir)
+
+	// Create both shell and Python scripts.
+	require.NoError(t,
+		os.MkdirAll(filepath.Join(tempDir, "scripts"), osutil.PermissionDirectory))
+	require.NoError(t,
+		os.WriteFile(
+			filepath.Join(tempDir, "scripts", "setup.sh"),
+			nil, osutil.PermissionExecutableFile,
+		),
+	)
+	require.NoError(t,
+		os.MkdirAll(filepath.Join(tempDir, "hooks"), osutil.PermissionDirectory))
+	require.NoError(t,
+		os.WriteFile(
+			filepath.Join(tempDir, "hooks", "migrate.py"),
+			[]byte("print('migrate')"), osutil.PermissionExecutableFile,
+		),
+	)
+
+	hooksMap := map[string][]*HookConfig{
+		"preprovision": {
+			{Run: "scripts/setup.sh"},
+		},
+		"postprovision": {
+			{Run: "hooks/migrate.py"},
+		},
+	}
+
+	mockRunner := mockexec.NewMockCommandRunner()
+	// Python NOT available.
+	mockRunner.MockToolInPath("py", osexec.ErrNotFound)
+	mockRunner.MockToolInPath("python", osexec.ErrNotFound)
+	mockRunner.MockToolInPath("python3", osexec.ErrNotFound)
+	// pwsh available — no PowerShell warning.
+	mockRunner.MockToolInPath("pwsh", nil)
+
+	mgr := NewHooksManager(tempDir, mockRunner)
+	result := mgr.ValidateHooks(t.Context(), hooksMap)
+
+	// Exactly one language warning (Python), no shell warnings.
+	pythonWarnings := 0
+	for _, w := range result.Warnings {
+		if strings.Contains(w.Message, "Python") {
+			pythonWarnings++
+			require.Contains(t, w.Message, "postprovision")
+		}
+	}
+	require.Equal(t, 1, pythonWarnings,
+		"expected exactly one Python warning for mixed hooks")
+
+	err := mgr.ValidateLanguageRuntimesErr(t.Context(), hooksMap)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "Python")
 }
 
 func ensureScriptsExist(t *testing.T, configs map[string][]*HookConfig) {

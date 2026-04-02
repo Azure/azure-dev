@@ -5,12 +5,15 @@ package ext
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
@@ -18,7 +21,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bash"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/language"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/powershell"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/python"
 )
 
 // Hooks enable support to invoke integration scripts before & after commands
@@ -137,7 +142,9 @@ func (h *HooksRunner) GetScript(hookConfig *HookConfig, envVars []string) (tools
 	}
 }
 
-func (h *HooksRunner) execHook(ctx context.Context, hookConfig *HookConfig, options *tools.ExecOptions) error {
+func (h *HooksRunner) execHook(
+	ctx context.Context, hookConfig *HookConfig, options *tools.ExecOptions,
+) error {
 	if options == nil {
 		options = &tools.ExecOptions{}
 	}
@@ -166,28 +173,151 @@ func (h *HooksRunner) execHook(ctx context.Context, hookConfig *HookConfig, opti
 		}
 	}
 
-	script, err := h.GetScript(hookConfig, hookEnv.Environ())
+	// validate() resolves the hook's language, path, and shell
+	// type. It must run before the language/shell branch below.
+	if err := hookConfig.validate(); err != nil {
+		return err
+	}
+
+	// Language hooks (Python, JS, TS, DotNet) are executed by a
+	// language-specific ScriptExecutor instead of a shell script.
+	if hookConfig.IsLanguageHook() {
+		return h.execLanguageHook(
+			ctx, hookConfig, hookEnv.Environ(), options,
+		)
+	}
+
+	return h.execShellHook(ctx, hookConfig, hookEnv.Environ(), options)
+}
+
+// execLanguageHook prepares and executes a programming-language hook
+// via the [language.ScriptExecutor] pipeline.
+func (h *HooksRunner) execLanguageHook(
+	ctx context.Context,
+	hookConfig *HookConfig,
+	envVars []string,
+	options *tools.ExecOptions,
+) error {
+	// Determine the boundary directory for project file discovery.
+	boundaryDir := h.cwd
+	if hookConfig.cwd != "" {
+		boundaryDir = hookConfig.cwd
+	}
+
+	// Determine working directory: explicit Dir → script dir → cwd.
+	cwd := h.cwd
+	if hookConfig.Dir != "" {
+		cwd = hookConfig.Dir
+	} else if hookConfig.path != "" {
+		cwd = filepath.Dir(
+			filepath.Join(boundaryDir, hookConfig.path),
+		)
+	}
+
+	pythonCli := python.NewCli(h.commandRunner)
+	executor, err := language.GetExecutor(
+		hookConfig.Language,
+		h.commandRunner,
+		pythonCli,
+		boundaryDir,
+		cwd,
+		envVars,
+	)
+	if err != nil {
+		if errors.Is(err, language.ErrUnsupportedLanguage) {
+			return &errorhandler.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"getting %s executor for hook '%s': %w",
+					hookConfig.Language,
+					hookConfig.Name,
+					err,
+				),
+				Message: fmt.Sprintf(
+					"The '%s' language is not yet supported "+
+						"for hook '%s'.",
+					hookConfig.Language,
+					hookConfig.Name,
+				),
+				Suggestion: "Currently only Python hooks are " +
+					"supported. Use a shell script (sh/pwsh)" +
+					" or Python instead.",
+			}
+		}
+		return fmt.Errorf(
+			"getting %s executor for hook '%s': %w",
+			hookConfig.Language, hookConfig.Name, err,
+		)
+	}
+
+	scriptPath := hookConfig.path
+	if hookConfig.cwd != "" {
+		scriptPath = filepath.Join(hookConfig.cwd, hookConfig.path)
+	}
+
+	log.Printf(
+		"Preparing %s hook '%s' (%s)\n",
+		hookConfig.Language, hookConfig.Name, scriptPath,
+	)
+
+	if err := executor.Prepare(ctx, scriptPath); err != nil {
+		return &errorhandler.ErrorWithSuggestion{
+			Err: fmt.Errorf(
+				"preparing %s hook '%s': %w",
+				hookConfig.Language,
+				hookConfig.Name,
+				err,
+			),
+			Message: fmt.Sprintf(
+				"Failed to prepare %s hook '%s'.",
+				hookConfig.Language,
+				hookConfig.Name,
+			),
+			Suggestion: fmt.Sprintf(
+				"Ensure the %s runtime is installed "+
+					"and the script at '%s' is valid. "+
+					"Check dependency files "+
+					"(requirements.txt / pyproject.toml) "+
+					"for errors.",
+				hookConfig.Language,
+				scriptPath,
+			),
+		}
+	}
+
+	if h.configureExecOptions(ctx, hookConfig, options) {
+		defer h.console.StopPreviewer(ctx, false)
+	}
+
+	log.Printf(
+		"Executing %s hook '%s' (%s)\n",
+		hookConfig.Language, hookConfig.Name, scriptPath,
+	)
+
+	res, err := executor.Execute(ctx, scriptPath, *options)
+	if err != nil {
+		return h.handleHookError(
+			ctx, hookConfig, res, scriptPath, err,
+		)
+	}
+
+	return nil
+}
+
+// execShellHook runs a hook through the existing bash/powershell
+// shell script pipeline. This preserves the original behaviour for
+// shell-based hooks.
+func (h *HooksRunner) execShellHook(
+	ctx context.Context,
+	hookConfig *HookConfig,
+	envVars []string,
+	options *tools.ExecOptions,
+) error {
+	script, err := h.GetScript(hookConfig, envVars)
 	if err != nil {
 		return err
 	}
 
-	formatter := h.console.GetFormatter()
-	consoleInteractive := (formatter == nil || formatter.Kind() == output.NoneFormat)
-	scriptInteractive := consoleInteractive && hookConfig.Interactive
-
-	if options.Interactive == nil {
-		options.Interactive = &scriptInteractive
-	}
-
-	// When the hook is not configured to run in interactive mode and no stdout has been configured
-	// Then show the hook execution output within the console previewer pane
-	if !*options.Interactive && options.StdOut == nil {
-		previewer := h.console.ShowPreviewer(ctx, &input.ShowPreviewerOptions{
-			Prefix:       "  ",
-			Title:        fmt.Sprintf("%s Hook Output", hookConfig.Name),
-			MaxLineCount: 8,
-		})
-		options.StdOut = previewer
+	if h.configureExecOptions(ctx, hookConfig, options) {
 		defer h.console.StopPreviewer(ctx, false)
 	}
 	options.UserPwsh = string(hookConfig.Shell)
@@ -195,32 +325,96 @@ func (h *HooksRunner) execHook(ctx context.Context, hookConfig *HookConfig, opti
 	log.Printf("Executing script '%s'\n", hookConfig.path)
 	res, err := script.Execute(ctx, hookConfig.path, *options)
 	if err != nil {
-		execErr := fmt.Errorf(
-			"'%s' hook failed with exit code: '%d', Path: '%s'. : %w",
-			hookConfig.Name,
-			res.ExitCode,
-			hookConfig.path,
-			err,
+		hookErr := h.handleHookError(
+			ctx, hookConfig, res, hookConfig.path, err,
 		)
-
-		// If an error occurred log the failure but continue
-		if hookConfig.ContinueOnError {
-			h.console.Message(ctx, output.WithBold("%s", output.WithWarningFormat("WARNING: %s", execErr.Error())))
-			h.console.Message(
-				ctx,
-				output.WithWarningFormat("Execution will continue since ContinueOnError has been set to true."),
-			)
-			log.Println(execErr.Error())
-		} else {
-			return execErr
+		if hookErr != nil {
+			return hookErr
 		}
 	}
 
 	// Delete any temporary inline scripts after execution
-	// Removing temp scripts only on success to support better debugging with failing scripts.
+	// Removing temp scripts only on success to support better
+	// debugging with failing scripts.
 	if hookConfig.location == ScriptLocationInline {
 		defer os.Remove(hookConfig.path)
 	}
 
 	return nil
+}
+
+// configureExecOptions resolves interactive mode and sets up the
+// console previewer for non-interactive hooks that have no custom
+// stdout. This logic is shared by both shell and language hooks.
+// Returns true when a previewer was started; the caller must defer
+// [input.Console.StopPreviewer] in that case.
+func (h *HooksRunner) configureExecOptions(
+	ctx context.Context,
+	hookConfig *HookConfig,
+	options *tools.ExecOptions,
+) bool {
+	formatter := h.console.GetFormatter()
+	consoleInteractive := (formatter == nil ||
+		formatter.Kind() == output.NoneFormat)
+	scriptInteractive := consoleInteractive && hookConfig.Interactive
+
+	if options.Interactive == nil {
+		options.Interactive = &scriptInteractive
+	}
+
+	// When the hook is not configured to run in interactive mode
+	// and no stdout has been configured, show the hook execution
+	// output within the console previewer pane.
+	if !*options.Interactive && options.StdOut == nil {
+		previewer := h.console.ShowPreviewer(
+			ctx,
+			&input.ShowPreviewerOptions{
+				Prefix:       "  ",
+				Title:        fmt.Sprintf("%s Hook Output", hookConfig.Name),
+				MaxLineCount: 8,
+			},
+		)
+		options.StdOut = previewer
+		return true
+	}
+
+	return false
+}
+
+// handleHookError wraps a hook execution error and either returns
+// it or logs a warning when ContinueOnError is set.
+func (h *HooksRunner) handleHookError(
+	ctx context.Context,
+	hookConfig *HookConfig,
+	res exec.RunResult,
+	scriptPath string,
+	err error,
+) error {
+	execErr := fmt.Errorf(
+		"'%s' hook failed with exit code: '%d', Path: '%s'. : %w",
+		hookConfig.Name,
+		res.ExitCode,
+		scriptPath,
+		err,
+	)
+
+	if hookConfig.ContinueOnError {
+		h.console.Message(
+			ctx,
+			output.WithBold(
+				"%s",
+				output.WithWarningFormat("WARNING: %s", execErr.Error()),
+			),
+		)
+		h.console.Message(
+			ctx,
+			output.WithWarningFormat(
+				"Execution will continue since ContinueOnError has been set to true.",
+			),
+		)
+		log.Println(execErr.Error())
+		return nil
+	}
+
+	return execErr
 }

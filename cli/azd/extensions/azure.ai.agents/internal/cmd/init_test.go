@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"azureaiagent/internal/pkg/agents/agent_yaml"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
@@ -392,5 +394,157 @@ func TestParseGitHubUrlNaive(t *testing.T) {
 				t.Errorf("Hostname = %q, want %q", result.Hostname, tt.expected.Hostname)
 			}
 		})
+	}
+}
+
+func TestExtractToolboxAndConnectionConfigs_TypedTools(t *testing.T) {
+	t.Parallel()
+
+	manifest := &agent_yaml.AgentManifest{
+		Resources: []any{
+			agent_yaml.ToolboxResource{
+				Resource: agent_yaml.Resource{
+					Name: "platform-tools",
+					Kind: agent_yaml.ResourceKindToolbox,
+				},
+				Description: "Platform tools",
+				Tools: []agent_yaml.ToolboxToolDefinition{
+					{
+						// Built-in tool — no connection
+						Id: "bing_grounding",
+					},
+					{
+						// External tool with name — connection name from Name field
+						Id:       "mcp",
+						Name:     "github-copilot",
+						Target:   "https://api.githubcopilot.com/mcp",
+						AuthType: "OAuth2",
+						Options: map[string]any{
+							"clientId":     "my-client-id",
+							"clientSecret": "my-secret",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	toolboxes, connections, err := extractToolboxAndConnectionConfigs(manifest)
+	if err != nil {
+		t.Fatalf("extractToolboxAndConnectionConfigs failed: %v", err)
+	}
+
+	// Only the external tool creates a connection (not bing_grounding)
+	if len(connections) != 1 {
+		t.Fatalf("Expected 1 connection, got %d", len(connections))
+	}
+	conn := connections[0]
+	if conn.Name != "github-copilot" {
+		t.Errorf("Expected connection name 'github-copilot', got '%s'", conn.Name)
+	}
+	if conn.Category != "RemoteTool" {
+		t.Errorf("Expected category 'RemoteTool', got '%s'", conn.Category)
+	}
+	if conn.Target != "https://api.githubcopilot.com/mcp" {
+		t.Errorf("Expected target, got '%s'", conn.Target)
+	}
+	if conn.AuthType != "OAuth2" {
+		t.Errorf("Expected authType 'OAuth2', got '%s'", conn.AuthType)
+	}
+	if conn.Credentials["clientId"] != "my-client-id" {
+		t.Errorf("Expected clientId, got '%v'", conn.Credentials["clientId"])
+	}
+
+	// Verify toolbox has both tools
+	if len(toolboxes) != 1 {
+		t.Fatalf("Expected 1 toolbox, got %d", len(toolboxes))
+	}
+	tb := toolboxes[0]
+	if tb.Name != "platform-tools" {
+		t.Errorf("Expected toolbox name 'platform-tools', got '%s'", tb.Name)
+	}
+	if tb.Description != "Platform tools" {
+		t.Errorf("Expected description 'Platform tools', got '%s'", tb.Description)
+	}
+	if len(tb.Tools) != 2 {
+		t.Fatalf("Expected 2 tools, got %d", len(tb.Tools))
+	}
+
+	// First tool: built-in (no project_connection_id)
+	if tb.Tools[0]["type"] != "bing_grounding" {
+		t.Errorf("Expected tool[0] type 'bing_grounding', got '%v'", tb.Tools[0]["type"])
+	}
+	if _, hasConn := tb.Tools[0]["project_connection_id"]; hasConn {
+		t.Errorf("Built-in tool should not have project_connection_id")
+	}
+
+	// Second tool: external (has project_connection_id)
+	if tb.Tools[1]["project_connection_id"] != "github-copilot" {
+		t.Errorf("Expected project_connection_id 'github-copilot', got '%v'",
+			tb.Tools[1]["project_connection_id"])
+	}
+	if tb.Tools[1]["type"] != "mcp" {
+		t.Errorf("Expected tool type 'mcp', got '%v'", tb.Tools[1]["type"])
+	}
+	if tb.Tools[1]["server_label"] != "github-copilot" {
+		t.Errorf("Expected server_label 'github-copilot', got '%v'", tb.Tools[1]["server_label"])
+	}
+}
+
+func TestExtractToolboxAndConnectionConfigs_RawToolsFallback(t *testing.T) {
+	t.Parallel()
+
+	manifest := &agent_yaml.AgentManifest{
+		Resources: []any{
+			agent_yaml.ToolboxResource{
+				Resource: agent_yaml.Resource{
+					Name: "raw-toolbox",
+					Kind: agent_yaml.ResourceKindToolbox,
+				},
+				Id: "raw-toolbox",
+				Options: map[string]any{
+					"description": "Raw tools",
+					"tools": []any{
+						map[string]any{
+							"type":                  "mcp",
+							"server_label":          "existing",
+							"project_connection_id": "existing-conn",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	toolboxes, connections, err := extractToolboxAndConnectionConfigs(manifest)
+	if err != nil {
+		t.Fatalf("extractToolboxAndConnectionConfigs failed: %v", err)
+	}
+
+	// No connections extracted from raw tools
+	if len(connections) != 0 {
+		t.Errorf("Expected 0 connections, got %d", len(connections))
+	}
+
+	if len(toolboxes) != 1 {
+		t.Fatalf("Expected 1 toolbox, got %d", len(toolboxes))
+	}
+	if toolboxes[0].Tools[0]["project_connection_id"] != "existing-conn" {
+		t.Errorf("Expected 'existing-conn', got '%v'", toolboxes[0].Tools[0]["project_connection_id"])
+	}
+}
+
+func TestExtractToolboxAndConnectionConfigs_NilManifest(t *testing.T) {
+	t.Parallel()
+
+	toolboxes, connections, err := extractToolboxAndConnectionConfigs(nil)
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+	if toolboxes != nil {
+		t.Errorf("Expected nil toolboxes, got %v", toolboxes)
+	}
+	if connections != nil {
+		t.Errorf("Expected nil connections, got %v", connections)
 	}
 }

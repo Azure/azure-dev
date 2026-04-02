@@ -1083,6 +1083,46 @@ func (p *AgentServiceTargetProvider) resolveEnvironmentVariables(value string, a
 	return resolved
 }
 
+// resolveToolboxEnvironmentVariables resolves ${ENV_VAR} references in all toolbox properties.
+func (p *AgentServiceTargetProvider) resolveToolboxEnvironmentVariables(
+	toolbox *Toolbox, azdEnv map[string]string,
+) {
+	toolbox.Name = p.resolveEnvironmentVariables(toolbox.Name, azdEnv)
+	toolbox.Description = p.resolveEnvironmentVariables(toolbox.Description, azdEnv)
+	for i, tool := range toolbox.Tools {
+		toolbox.Tools[i] = p.resolveMapValues(tool, azdEnv)
+	}
+}
+
+// resolveMapValues recursively resolves ${ENV_VAR} references in all string values of a map.
+func (p *AgentServiceTargetProvider) resolveMapValues(
+	m map[string]any, azdEnv map[string]string,
+) map[string]any {
+	resolved := make(map[string]any, len(m))
+	for k, v := range m {
+		resolved[k] = p.resolveAnyValue(v, azdEnv)
+	}
+	return resolved
+}
+
+// resolveAnyValue resolves ${ENV_VAR} references in a value of any type.
+func (p *AgentServiceTargetProvider) resolveAnyValue(v any, azdEnv map[string]string) any {
+	switch val := v.(type) {
+	case string:
+		return p.resolveEnvironmentVariables(val, azdEnv)
+	case map[string]any:
+		return p.resolveMapValues(val, azdEnv)
+	case []any:
+		resolved := make([]any, len(val))
+		for i, item := range val {
+			resolved[i] = p.resolveAnyValue(item, azdEnv)
+		}
+		return resolved
+	default:
+		return v
+	}
+}
+
 // deployToolboxes creates or updates Foundry Toolsets for each toolbox in the config.
 // For each toolbox, it calls the Foundry Toolsets API to upsert the toolset, then
 // sets environment variables with the MCP endpoints from the toolset's MCP tools.
@@ -1108,6 +1148,8 @@ func (p *AgentServiceTargetProvider) deployToolboxes(
 
 	for _, toolbox := range serviceTargetConfig.Toolboxes {
 		fmt.Fprintf(os.Stderr, "Deploying toolbox: %s\n", toolbox.Name)
+
+		p.resolveToolboxEnvironmentVariables(&toolbox, azdEnv)
 
 		_, err := p.upsertToolset(ctx, toolsetsClient, toolbox)
 		if err != nil {
@@ -1145,11 +1187,22 @@ func (p *AgentServiceTargetProvider) upsertToolset(
 		return toolset, nil
 	}
 
-	// 409 Conflict means the toolset already exists — treat as success
+	// 409 Conflict means the toolset already exists — update it
 	var respErr *azcore.ResponseError
 	if errors.As(err, &respErr) && respErr.StatusCode == http.StatusConflict {
-		fmt.Fprintf(os.Stderr, "  Toolset '%s' already exists, skipping update\n", toolbox.Name)
-		return nil, nil
+		fmt.Fprintf(os.Stderr, "  Toolset '%s' already exists, updating...\n", toolbox.Name)
+		updateReq := &azure.UpdateToolsetRequest{
+			Description: toolbox.Description,
+			Tools:       toolbox.Tools,
+		}
+		toolset, updateErr := client.UpdateToolset(ctx, toolbox.Name, updateReq)
+		if updateErr != nil {
+			return nil, exterrors.Internal(
+				exterrors.CodeCreateToolsetFailed,
+				fmt.Sprintf("failed to update toolset '%s': %s", toolbox.Name, updateErr),
+			)
+		}
+		return toolset, nil
 	}
 
 	return nil, exterrors.Internal(

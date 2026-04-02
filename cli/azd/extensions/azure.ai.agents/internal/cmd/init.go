@@ -1164,11 +1164,12 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	agentConfig.Resources = resourceDetails
 
 	// Process toolbox resources from the manifest
-	toolboxes, err := extractToolboxConfigs(agentManifest)
+	toolboxes, toolConnections, err := extractToolboxAndConnectionConfigs(agentManifest)
 	if err != nil {
 		return err
 	}
 	agentConfig.Toolboxes = toolboxes
+	agentConfig.ToolConnections = toolConnections
 
 	// Detect startup command from the project source directory
 	startupCmd, err := resolveStartupCommandForInit(ctx, a.azdClient, a.projectConfig.Path, targetDir, a.flags.NoPrompt)
@@ -1574,15 +1575,21 @@ func downloadDirectoryContentsWithoutGhCli(
 	return nil
 }
 
-// extractToolboxConfigs extracts toolbox resource definitions from the agent manifest
-// and converts them into project.Toolbox config entries.
-// Each toolbox resource's options must contain a "tools" array with tool definitions.
-func extractToolboxConfigs(manifest *agent_yaml.AgentManifest) ([]project.Toolbox, error) {
+// extractToolboxAndConnectionConfigs extracts toolbox resource definitions from the agent manifest
+// and converts them into project.Toolbox config entries and project.ToolConnection entries.
+// Toolbox resources with typed Tools (ToolboxToolDefinition) produce toolbox tool entries.
+// Tools with a target/authType also produce connection entries for Bicep provisioning.
+// Built-in tools (bing_grounding, azure_ai_search, etc.) produce toolbox tools but no connections.
+// Toolbox resources with only Options["tools"] are treated as raw tool definitions (existing behavior).
+func extractToolboxAndConnectionConfigs(
+	manifest *agent_yaml.AgentManifest,
+) ([]project.Toolbox, []project.ToolConnection, error) {
 	if manifest == nil || manifest.Resources == nil {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	var toolboxes []project.Toolbox
+	var connections []project.ToolConnection
 
 	for _, resource := range manifest.Resources {
 		tbResource, ok := resource.(agent_yaml.ToolboxResource)
@@ -1590,19 +1597,78 @@ func extractToolboxConfigs(manifest *agent_yaml.AgentManifest) ([]project.Toolbo
 			continue
 		}
 
-		description, _ := tbResource.Options["description"].(string)
+		// Description can come from the resource-level field (schema) or Options (legacy)
+		description := tbResource.Description
+		if description == "" {
+			description, _ = tbResource.Options["description"].(string)
+		}
 
+		// If typed tool definitions exist, extract connections and build toolbox tools
+		if len(tbResource.Tools) > 0 {
+			var tools []map[string]any
+			for _, toolDef := range tbResource.Tools {
+				// Built-in tools (no target) just become toolbox tools — no connection needed
+				if toolDef.Target == "" {
+					tool := map[string]any{
+						"type": toolDef.Id,
+					}
+					tools = append(tools, tool)
+					continue
+				}
+
+				// External tools with target/authType need a connection
+				connName := deriveConnectionName(tbResource.Name, toolDef)
+
+				conn := project.ToolConnection{
+					Name:     connName,
+					Category: "RemoteTool",
+					Target:   toolDef.Target,
+					AuthType: toolDef.AuthType,
+				}
+
+				// Extract credentials from options
+				if len(toolDef.Options) > 0 {
+					conn.Credentials = make(map[string]any, len(toolDef.Options))
+					for k, v := range toolDef.Options {
+						conn.Credentials[k] = v
+					}
+				}
+
+				connections = append(connections, conn)
+
+				// Build the toolbox tool entry referencing the connection
+				tool := map[string]any{
+					"type":                  toolDef.Id,
+					"server_url":            toolDef.Target,
+					"project_connection_id": connName,
+				}
+				if toolDef.Name != "" {
+					tool["server_label"] = toolDef.Name
+				}
+
+				tools = append(tools, tool)
+			}
+
+			toolboxes = append(toolboxes, project.Toolbox{
+				Name:        tbResource.Name,
+				Description: description,
+				Tools:       tools,
+			})
+			continue
+		}
+
+		// Fallback: raw tools from Options (existing behavior)
 		rawTools, ok := tbResource.Options["tools"]
 		if !ok {
-			return nil, fmt.Errorf(
-				"toolbox resource '%s' is missing required 'tools' in options",
+			return nil, nil, fmt.Errorf(
+				"toolbox resource '%s' is missing required 'tools' in options or typed Tools",
 				tbResource.Name,
 			)
 		}
 
 		toolsList, ok := rawTools.([]any)
 		if !ok {
-			return nil, fmt.Errorf(
+			return nil, nil, fmt.Errorf(
 				"toolbox resource '%s' has invalid 'tools' format: expected array",
 				tbResource.Name,
 			)
@@ -1612,7 +1678,7 @@ func extractToolboxConfigs(manifest *agent_yaml.AgentManifest) ([]project.Toolbo
 		for _, rawTool := range toolsList {
 			toolMap, ok := rawTool.(map[string]any)
 			if !ok {
-				return nil, fmt.Errorf(
+				return nil, nil, fmt.Errorf(
 					"toolbox resource '%s' has invalid tool entry: expected object",
 					tbResource.Name,
 				)
@@ -1627,5 +1693,15 @@ func extractToolboxConfigs(manifest *agent_yaml.AgentManifest) ([]project.Toolbo
 		})
 	}
 
-	return toolboxes, nil
+	return toolboxes, connections, nil
+}
+
+// deriveConnectionName builds a deterministic connection name from a toolbox name
+// and tool definition. Uses the tool's Name field when present, otherwise falls
+// back to toolboxName-id.
+func deriveConnectionName(toolboxName string, toolDef agent_yaml.ToolboxToolDefinition) string {
+	if toolDef.Name != "" {
+		return toolDef.Name
+	}
+	return toolboxName + "-" + toolDef.Id
 }

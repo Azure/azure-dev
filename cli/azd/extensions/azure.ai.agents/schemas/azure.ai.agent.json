@@ -24,6 +24,11 @@
       "description": "List of external resources for agent execution.",
       "items": { "$ref": "#/definitions/Resource" }
     },
+    "toolConnections": {
+      "type": "array",
+      "description": "List of tool connections to external services (MCP tools, A2A, custom APIs) created during provisioning.",
+      "items": { "$ref": "#/definitions/ToolConnection" }
+    },
     "toolboxes": {
       "type": "array",
       "description": "List of toolboxes (Foundry Toolsets) to deploy.",
@@ -123,6 +128,31 @@
         "connectionName": { "type": "string", "description": "Connection name for the resource." }
       },
       "required": ["resource", "connectionName"],
+      "additionalProperties": false
+    },
+    "ToolConnection": {
+      "type": "object",
+      "description": "A connection to an external service (MCP tool, A2A, custom API) created via Bicep during provisioning.",
+      "properties": {
+        "name": { "type": "string", "description": "Connection name used as project_connection_id in toolbox tools." },
+        "category": { "type": "string", "description": "Connection category (e.g., 'RemoteTool')." },
+        "target": { "type": "string", "description": "Target endpoint URL for the connection." },
+        "authType": {
+          "type": "string",
+          "description": "Authentication type for the connection.",
+          "enum": ["AAD", "AccessKey", "AccountKey", "ApiKey", "CustomKeys", "ManagedIdentity", "None", "OAuth2", "PAT", "ServicePrincipal", "UsernamePassword"]
+        },
+        "credentials": {
+          "type": "object",
+          "description": "Credentials for the connection. Values may contain ${ENV_VAR} references resolved at provision time."
+        },
+        "metadata": {
+          "type": "object",
+          "description": "Additional metadata for the connection.",
+          "additionalProperties": { "type": "string" }
+        }
+      },
+      "required": ["name", "category", "target", "authType"],
       "additionalProperties": false
     },
     "Toolbox": {

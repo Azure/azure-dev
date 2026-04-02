@@ -152,6 +152,12 @@ func envUpdate(ctx context.Context, azdClient *azdext.AzdClient, azdProject *azd
 		}
 	}
 
+	if len(foundryAgentConfig.ToolConnections) > 0 {
+		if err := connectionsEnvUpdate(ctx, foundryAgentConfig.ToolConnections, azdClient, currentEnvResponse.Environment.Name); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -219,6 +225,19 @@ func resourcesEnvUpdate(ctx context.Context, resources []project.Resource, azdCl
 	return setEnvVar(ctx, azdClient, envName, "AI_PROJECT_DEPENDENT_RESOURCES", escapedJsonString)
 }
 
+func connectionsEnvUpdate(ctx context.Context, connections []project.ToolConnection, azdClient *azdext.AzdClient, envName string) error {
+	connectionsJson, err := json.Marshal(connections)
+	if err != nil {
+		return fmt.Errorf("failed to marshal tool connections to JSON: %w", err)
+	}
+
+	// Escape backslashes and double quotes for environment variable
+	jsonString := string(connectionsJson)
+	escapedJsonString := strings.ReplaceAll(jsonString, "\\", "\\\\")
+	escapedJsonString = strings.ReplaceAll(escapedJsonString, "\"", "\\\"")
+
+	return setEnvVar(ctx, azdClient, envName, "AI_PROJECT_CONNECTIONS", escapedJsonString)
+}
 func containerAgentHandling(ctx context.Context, azdClient *azdext.AzdClient, project *azdext.ProjectConfig, svc *azdext.ServiceConfig) error {
 	servicePath := svc.RelativePath
 	fullPath := filepath.Join(project.Path, servicePath)

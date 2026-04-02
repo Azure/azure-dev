@@ -298,3 +298,101 @@ func TestDirIsEmpty(t *testing.T) {
 		require.False(t, empty)
 	})
 }
+
+func TestDetectLocalManifest(t *testing.T) {
+	t.Parallel()
+
+	// Valid agent manifest content (has template with kind + name)
+	validManifest := `name: test-agent
+template:
+  kind: hosted
+  name: test-agent
+  protocols:
+    - protocol: responses
+      version: v1
+`
+
+	t.Run("no manifest files", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "main.py"), []byte("print()"), 0600))
+
+		result := detectLocalManifest(dir)
+		require.Empty(t, result)
+	})
+
+	t.Run("valid agent.yaml", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte(validManifest), 0600))
+
+		result := detectLocalManifest(dir)
+		require.Equal(t, filepath.Join(dir, "agent.yaml"), result)
+	})
+
+	t.Run("valid agent.manifest.yaml", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.manifest.yaml"), []byte(validManifest), 0600))
+
+		result := detectLocalManifest(dir)
+		require.Equal(t, filepath.Join(dir, "agent.manifest.yaml"), result)
+	})
+
+	t.Run("both files prefers agent.manifest.yaml", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte(validManifest), 0600))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.manifest.yaml"), []byte(validManifest), 0600))
+
+		result := detectLocalManifest(dir)
+		require.Equal(t, filepath.Join(dir, "agent.manifest.yaml"), result)
+	})
+
+	t.Run("does not search subdirectories", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		subDir := filepath.Join(dir, "src")
+		require.NoError(t, os.MkdirAll(subDir, 0700))
+		require.NoError(t, os.WriteFile(filepath.Join(subDir, "agent.yaml"), []byte(validManifest), 0600))
+
+		result := detectLocalManifest(dir)
+		require.Empty(t, result)
+	})
+
+	t.Run("empty directory", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+
+		result := detectLocalManifest(dir)
+		require.Empty(t, result)
+	})
+
+	t.Run("invalid YAML content is skipped", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte("not: valid: yaml: ["), 0600))
+
+		result := detectLocalManifest(dir)
+		require.Empty(t, result)
+	})
+
+	t.Run("YAML without template is skipped", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte("foo: bar\n"), 0600))
+
+		result := detectLocalManifest(dir)
+		require.Empty(t, result)
+	})
+
+	t.Run("falls back to agent.yaml when manifest.yaml is invalid", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.manifest.yaml"), []byte("foo: bar\n"), 0600))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte(validManifest), 0600))
+
+		result := detectLocalManifest(dir)
+		require.Equal(t, filepath.Join(dir, "agent.yaml"), result)
+	})
+}

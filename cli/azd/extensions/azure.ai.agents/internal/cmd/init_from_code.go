@@ -85,6 +85,28 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 			srcDir = "."
 		}
 
+		// Check if agent.yaml already exists and prompt before overwriting
+		agentYamlPath := filepath.Join(srcDir, "agent.yaml")
+		if _, statErr := os.Stat(agentYamlPath); statErr == nil {
+			if !a.flags.NoPrompt {
+				confirmResp, err := a.azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+					Options: &azdext.ConfirmOptions{
+						Message:      fmt.Sprintf("An agent.yaml already exists in %q. Overwrite?", srcDir),
+						DefaultValue: new(false),
+					},
+				})
+				if err != nil {
+					if exterrors.IsCancellation(err) {
+						return exterrors.Cancelled("overwrite confirmation was cancelled")
+					}
+					return fmt.Errorf("prompting for overwrite confirmation: %w", err)
+				}
+				if !*confirmResp.Value {
+					return exterrors.Cancelled("agent.yaml already exists; overwrite declined")
+				}
+			}
+		}
+
 		// Write the definition to a file in the src directory
 		_, err := a.writeDefinitionToSrcDir(localDefinition, srcDir)
 		if err != nil {

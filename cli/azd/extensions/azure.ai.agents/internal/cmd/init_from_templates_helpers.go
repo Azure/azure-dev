@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents/agent_yaml"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
@@ -259,4 +260,33 @@ func findAgentManifest(dir string) (string, error) {
 	}
 
 	return found, nil
+}
+
+// detectLocalManifest checks only the immediate directory for an agent manifest file.
+// Returns the path to the found manifest, preferring agent.manifest.yaml over agent.yaml,
+// or an empty string if neither exists or none contain valid manifest content.
+func detectLocalManifest(dir string) string {
+	// Prefer agent.manifest.yaml (richer manifest format) over agent.yaml.
+	for _, name := range []string{"agent.manifest.yaml", "agent.yaml"} {
+		candidate := filepath.Join(dir, name)
+		if _, err := os.Stat(candidate); err == nil {
+			if isValidManifestFile(candidate) {
+				return candidate
+			}
+		}
+	}
+	return ""
+}
+
+// isValidManifestFile reads the file and checks whether it can be loaded as
+// a valid AgentManifest via LoadAndValidateAgentManifest.
+func isValidManifestFile(path string) bool {
+	//nolint:gosec // path comes from a known filename in a user-controlled directory
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+
+	_, err = agent_yaml.LoadAndValidateAgentManifest(content)
+	return err == nil
 }

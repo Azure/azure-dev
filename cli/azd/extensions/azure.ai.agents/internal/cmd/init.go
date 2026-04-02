@@ -210,6 +210,39 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 				Timeout: 30 * time.Second,
 			}
 
+			// Auto-detect an existing agent manifest in the target directory
+			// when no --manifest flag was provided.
+			if flags.manifestPointer == "" {
+				checkDir := flags.src
+				if checkDir == "" {
+					checkDir = "."
+				}
+				if detected := detectLocalManifest(checkDir); detected != "" {
+					useExisting := flags.NoPrompt
+					if !flags.NoPrompt {
+						confirmResp, promptErr := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+							Options: &azdext.ConfirmOptions{
+								Message: fmt.Sprintf(
+									"An existing agent manifest was found at %q. Use it?",
+									detected,
+								),
+								DefaultValue: new(true),
+							},
+						})
+						if promptErr != nil {
+							if exterrors.IsCancellation(promptErr) {
+								return exterrors.Cancelled("initialization was cancelled")
+							}
+							return fmt.Errorf("prompting for manifest detection: %w", promptErr)
+						}
+						useExisting = *confirmResp.Value
+					}
+					if useExisting {
+						flags.manifestPointer = detected
+					}
+				}
+			}
+
 			if flags.manifestPointer != "" {
 				if err := runInitFromManifest(ctx, flags, azdClient, httpClient); err != nil {
 					if exterrors.IsCancellation(err) {

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 
@@ -135,7 +136,9 @@ func (ei *ExternalImporter) ProjectInfrastructure(
 		},
 	}
 
-	resp, err := ei.broker.SendAndWait(ctx, req)
+	resp, err := ei.broker.SendAndWaitWithProgress(ctx, req, func(msg string) {
+		log.Printf("importer progress: %s", msg)
+	})
 	if err != nil {
 		return nil, err
 	}

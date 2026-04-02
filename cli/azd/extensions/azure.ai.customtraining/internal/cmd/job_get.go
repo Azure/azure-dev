@@ -18,6 +18,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/spf13/cobra"
 )
 
@@ -74,20 +75,28 @@ func newJobShowCommand() *cobra.Command {
 			}
 
 			// Always fetch job details first — required for both formats
+			spinner := ux.NewSpinner(&ux.SpinnerOptions{
+				Text: "Fetching job details...",
+			})
+			_ = spinner.Start(ctx)
+
 			job, err := apiClient.GetJob(ctx, name)
 			if err != nil {
+				_ = spinner.Stop(ctx)
 				return fmt.Errorf("failed to get job: %w", err)
 			}
 
 			// JSON mode: return raw job response only (backward compatible)
 			if utils.OutputFormat(outputFormat) == utils.FormatJSON {
+				_ = spinner.Stop(ctx)
 				return utils.PrintObject(job, utils.FormatJSON)
 			}
 
-			// Rich display: fetch supplementary data in parallel
-			details := fetchJobDetails(ctx, apiClient, name)
+			// Rich display: fetch supplementary data with progress updates
+			details := fetchJobDetails(ctx, apiClient, name, spinner)
 			details.Job = job
 
+			_ = spinner.Stop(ctx)
 			printJobDetails(details)
 			return nil
 		},
@@ -110,17 +119,48 @@ type jobDetails struct {
 	Artifacts *models.ArtifactList
 }
 
-// fetchJobDetails fetches run history, metrics, and artifacts concurrently.
+// fetchJobDetails fetches run history, metrics, and artifacts concurrently
+// while updating the spinner text to show progress.
 func fetchJobDetails(
-	ctx context.Context, apiClient *client.Client, jobID string,
+	ctx context.Context, apiClient *client.Client, jobID string, spinner *ux.Spinner,
 ) *jobDetails {
 	details := &jobDetails{
 		Metrics: make(map[string]*models.MetricsFullResponse),
 	}
 	debug := rootFlags.Debug
 
-	var wg sync.WaitGroup
+	type step struct {
+		name string
+		done bool
+	}
+	steps := []*step{
+		{name: "run history"},
+		{name: "metrics"},
+		{name: "artifacts"},
+	}
+
 	var mu sync.Mutex
+
+	updateSpinner := func(completed string) {
+		var pending []string
+		for _, s := range steps {
+			if s.name == completed {
+				s.done = true
+			}
+			if !s.done {
+				pending = append(pending, s.name)
+			}
+		}
+		if len(pending) == 0 {
+			spinner.UpdateText("Finalizing...")
+		} else {
+			spinner.UpdateText("Fetching " + strings.Join(pending, ", ") + "...")
+		}
+	}
+
+	spinner.UpdateText("Fetching run history, metrics, artifacts...")
+
+	var wg sync.WaitGroup
 
 	// Fetch run history
 	wg.Add(1)
@@ -141,6 +181,7 @@ func fetchJobDetails(
 		}
 		mu.Lock()
 		details.History = history
+		updateSpinner("run history")
 		mu.Unlock()
 	}()
 
@@ -163,6 +204,7 @@ func fetchJobDetails(
 		}
 		mu.Lock()
 		details.Artifacts = artifacts
+		updateSpinner("artifacts")
 		mu.Unlock()
 	}()
 
@@ -178,6 +220,9 @@ func fetchJobDetails(
 			if debug {
 				fmt.Fprintf(os.Stderr, "[DEBUG] no metrics available\n")
 			}
+			mu.Lock()
+			updateSpinner("metrics")
+			mu.Unlock()
 			return
 		}
 
@@ -212,6 +257,10 @@ func fetchJobDetails(
 			}
 		}
 		metricsWg.Wait()
+
+		mu.Lock()
+		updateSpinner("metrics")
+		mu.Unlock()
 	}()
 
 	wg.Wait()

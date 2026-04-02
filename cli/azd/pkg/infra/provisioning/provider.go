@@ -49,6 +49,11 @@ type Options struct {
 	IgnoreDeploymentState bool `yaml:"-"`
 	// The mode in which the deployment is being run.
 	Mode Mode `yaml:"-"`
+	// Environment variables that should be considered as resolved when prompting for parameters.
+	//
+	// This is used when planning multiple layers, and would be set to plan-time outputs
+	// from previous layers.
+	VirtualEnv map[string]string `yaml:"-"`
 }
 
 // GetWithDefaults merges the provided infra options with the default provisioning options
@@ -179,6 +184,13 @@ type Parameter struct {
 	UsingEnvVarMapping bool
 }
 
+// PlannedOutput represents a plan-time output.
+// It does not contain the actual output value.
+type PlannedOutput struct {
+	// The name of the planned output
+	Name string
+}
+
 type Provider interface {
 	Name() string
 	Initialize(ctx context.Context, projectPath string, options Options) error
@@ -188,4 +200,5 @@ type Provider interface {
 	Destroy(ctx context.Context, options DestroyOptions) (*DestroyResult, error)
 	EnsureEnv(ctx context.Context) error
 	Parameters(ctx context.Context) ([]Parameter, error)
+	PlannedOutputs(ctx context.Context) ([]PlannedOutput, error)
 }

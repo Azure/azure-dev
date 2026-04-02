@@ -811,3 +811,8 @@ func (t *TerraformProvider) Parameters(ctx context.Context) ([]provisioning.Para
 	// not supported (no-op)
 	return nil, nil
 }
+
+func (t *TerraformProvider) PlannedOutputs(ctx context.Context) ([]provisioning.PlannedOutput, error) {
+	// not supported (no-op)
+	return nil, nil
+}

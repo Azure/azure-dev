@@ -100,6 +100,10 @@ func (p *mockProvider) Parameters(_ context.Context) ([]provisioning.Parameter, 
 	return nil, nil
 }
 
+func (p *mockProvider) PlannedOutputs(_ context.Context) ([]provisioning.PlannedOutput, error) {
+	return nil, nil
+}
+
 // TestProvisionAction_PreflightAborted verifies that when the user declines
 // preflight warnings, ProvisionAction.Run returns ErrAbortedByUser and does NOT
 // attempt to read deployResult.Deployment.Outputs (which would nil-panic).

@@ -1,0 +1,193 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+syntax = "proto3";
+
+package azdext;
+
+option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext";
+
+import "include/google/protobuf/struct.proto";
+import "errors.proto";
+
+service ProvisioningService {
+  // Bidirectional stream for provisioning requests and responses
+  rpc Stream(stream ProvisioningMessage) returns (stream ProvisioningMessage);
+}
+
+// Envelope for all possible provisioning messages (requests and responses)
+message ProvisioningMessage {
+  string request_id = 1;
+  ExtensionError error = 99;
+  oneof message_type {
+    RegisterProvisioningProviderRequest register_provisioning_provider_request = 2;
+    RegisterProvisioningProviderResponse register_provisioning_provider_response = 3;
+    ProvisioningInitializeRequest initialize_request = 4;
+    ProvisioningInitializeResponse initialize_response = 5;
+    ProvisioningStateRequest state_request = 6;
+    ProvisioningStateResponse state_response = 7;
+    ProvisioningDeployRequest deploy_request = 8;
+    ProvisioningDeployResponse deploy_response = 9;
+    ProvisioningPreviewRequest preview_request = 10;
+    ProvisioningPreviewResponse preview_response = 11;
+    ProvisioningDestroyRequest destroy_request = 12;
+    ProvisioningDestroyResponse destroy_response = 13;
+    ProvisioningEnsureEnvRequest ensure_env_request = 14;
+    ProvisioningEnsureEnvResponse ensure_env_response = 15;
+    ProvisioningParametersRequest parameters_request = 16;
+    ProvisioningParametersResponse parameters_response = 17;
+    ProvisioningProgressMessage progress_message = 18;
+  }
+}
+
+// --- Registration ---
+
+message RegisterProvisioningProviderRequest {
+  string name = 1;
+}
+
+message RegisterProvisioningProviderResponse {}
+
+// --- Initialize ---
+
+message ProvisioningInitializeRequest {
+  string project_path = 1;
+  ProvisioningOptions options = 2;
+}
+
+message ProvisioningInitializeResponse {}
+
+// --- State ---
+
+message ProvisioningStateRequest {
+  ProvisioningStateOptions options = 1;
+}
+
+message ProvisioningStateResponse {
+  ProvisioningStateResult state_result = 1;
+}
+
+// --- Deploy ---
+
+message ProvisioningDeployRequest {}
+
+message ProvisioningDeployResponse {
+  ProvisioningDeployResult result = 1;
+}
+
+// --- Preview ---
+
+message ProvisioningPreviewRequest {}
+
+message ProvisioningPreviewResponse {
+  ProvisioningPreviewResult result = 1;
+}
+
+// --- Destroy ---
+
+message ProvisioningDestroyRequest {
+  ProvisioningDestroyOptions options = 1;
+}
+
+message ProvisioningDestroyResponse {
+  ProvisioningDestroyResult result = 1;
+}
+
+// --- EnsureEnv ---
+
+message ProvisioningEnsureEnvRequest {}
+
+message ProvisioningEnsureEnvResponse {}
+
+// --- Parameters ---
+
+message ProvisioningParametersRequest {}
+
+message ProvisioningParametersResponse {
+  repeated ProvisioningParameter parameters = 1;
+}
+
+// --- Shared types ---
+
+message ProvisioningOptions {
+  string provider = 1;
+  string path = 2;
+  string module = 3;
+  map<string, string> deployment_stacks = 4;
+  bool ignore_deployment_state = 5;
+  google.protobuf.Struct config = 6;
+}
+
+message ProvisioningStateOptions {}
+
+message ProvisioningStateResult {
+  ProvisioningState state = 1;
+}
+
+message ProvisioningState {
+  map<string, ProvisioningOutputParameter> outputs = 1;
+  repeated ProvisioningResource resources = 2;
+}
+
+message ProvisioningDeployment {
+  map<string, ProvisioningInputParameter> parameters = 1;
+  map<string, ProvisioningOutputParameter> outputs = 2;
+}
+
+message ProvisioningDeployResult {
+  ProvisioningDeployment deployment = 1;
+  ProvisioningSkippedReason skipped_reason = 2;
+}
+
+enum ProvisioningSkippedReason {
+  PROVISIONING_SKIPPED_REASON_UNSPECIFIED = 0;
+  PROVISIONING_SKIPPED_REASON_DEPLOYMENT_STATE = 1;
+}
+
+message ProvisioningDeploymentPreview {
+  string summary = 1;
+  map<string, ProvisioningInputParameter> parameters = 2;
+  map<string, ProvisioningOutputParameter> outputs = 3;
+}
+
+message ProvisioningPreviewResult {
+  ProvisioningDeploymentPreview preview = 1;
+}
+
+message ProvisioningDestroyOptions {
+  bool force = 1;
+  bool purge = 2;
+}
+
+message ProvisioningDestroyResult {
+  repeated string invalidated_env_keys = 1;
+}
+
+message ProvisioningInputParameter {
+  string type = 1;
+  string default_value = 2;
+  string value = 3;
+}
+
+message ProvisioningOutputParameter {
+  string type = 1;
+  string value = 2;
+}
+
+message ProvisioningResource {
+  string id = 1;
+}
+
+message ProvisioningParameter {
+  string name = 1;
+  bool secret = 2;
+  string value = 3;
+  repeated string env_var_mapping = 4;
+  bool local_prompt = 5;
+  bool using_env_var_mapping = 6;
+}
+
+message ProvisioningProgressMessage {
+  string request_id = 1;
+  string message = 2;
+  int64 timestamp = 3;
+}

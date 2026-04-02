@@ -238,8 +238,8 @@ func hasInfraGenHeader(path string) bool {
 		if line == "---" {
 			break // end of front-matter
 		}
-		if strings.HasPrefix(line, "format:") {
-			value := strings.TrimSpace(strings.TrimPrefix(line, "format:"))
+		if after, ok := strings.CutPrefix(line, "format:"); ok {
+			value := strings.TrimSpace(after)
 			return value == formatHeader
 		}
 	}
@@ -279,7 +279,7 @@ func parseResourceFile(path string) ([]resourceDef, error) {
 	inFrontMatter := false
 	parsingTags := false
 
-	for _, line := range strings.Split(string(data), "\n") {
+	for line := range strings.SplitSeq(string(data), "\n") {
 		trimmed := strings.TrimSpace(line)
 
 		// Skip front-matter
@@ -309,8 +309,8 @@ func parseResourceFile(path string) ([]resourceDef, error) {
 		}
 
 		// Parse "- key: value" properties
-		if strings.HasPrefix(trimmed, "- ") {
-			prop := strings.TrimPrefix(trimmed, "- ")
+		if after, ok := strings.CutPrefix(trimmed, "- "); ok {
+			prop := after
 
 			// Check for tag entries (indented under tags:)
 			if parsingTags {

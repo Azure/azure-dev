@@ -367,6 +367,9 @@ overrides:
     words:
       - covdata
       - GOWORK
+  - filename: pkg/tool/manifest.go
+    words:
+      - azureresourcegroups
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

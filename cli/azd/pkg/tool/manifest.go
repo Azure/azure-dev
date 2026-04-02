@@ -56,7 +56,7 @@ type ToolDefinition struct {
 	Id string
 	// Name is the human-readable display name.
 	Name string
-	// Description summarises what the tool does in one sentence.
+	// Description summarizes what the tool does in one sentence.
 	Description string
 	// Category classifies the tool (CLI, extension, server, or library).
 	Category ToolCategory

@@ -187,6 +187,7 @@ func TestIsStandardMSIInstall_NonStandardPath(t *testing.T) {
 	require.ErrorAs(t, err, &updateErr)
 	require.Equal(t, CodeNonStandardInstall, updateErr.Code)
 	require.Contains(t, err.Error(), "managed by an administrator")
+	require.Contains(t, err.Error(), "AZD_SKIP_UPDATE_CHECK=1")
 }
 
 func TestIsStandardMSIInstall_MissingLocalAppData(t *testing.T) {

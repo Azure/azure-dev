@@ -139,9 +139,9 @@ func isStandardMSIInstall() error {
 	if !strings.EqualFold(filepath.Clean(actualDir), filepath.Clean(expectedDir)) {
 		return newUpdateError(CodeNonStandardInstall, fmt.Errorf(
 			"azd installation might be managed by an administrator (installed at: %s).\n"+
-				"Contact your administrator to update azd, or reinstall with the "+
-				"default configuration:\n"+
-				"  ALLUSERS=2  INSTALLDIR=\"%s\"\n"+
+				"Contact your administrator to update azd, or reinstall with a "+
+				"user-managed configuration:\n"+
+				"ALLUSERS=2 INSTALLDIR=\"%s\"\n"+
 				"See https://github.com/Azure/azure-dev/blob/main/cli/installer/README.md#msi-configuration\n"+
 				"To suppress update notifications, set AZD_SKIP_UPDATE_CHECK=1",
 			actualDir, expectedDir,

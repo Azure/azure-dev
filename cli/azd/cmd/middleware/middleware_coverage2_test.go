@@ -1430,7 +1430,7 @@ func TestErrorMiddleware_Run_AgentSendMessageError(t *testing.T) {
 
 	ag := &mockAgent{}
 	ag.On("Stop").Return(nil)
-	ag.On("SendMessage", mock.Anything, mock.Anything, mock.Anything).
+	ag.On("SendMessageWithRetry", mock.Anything, mock.Anything, mock.Anything).
 		Return(nil, errors.New("model rate limited"))
 
 	factory := &mockAgentFactory{}
@@ -1695,7 +1695,7 @@ func TestErrorMiddleware_Run_ErrorWithTraceId(t *testing.T) {
 	console := mockinput.NewMockConsole()
 
 	ag := &mockAgent{}
-	ag.On("SendMessage", mock.Anything, mock.Anything, mock.Anything).
+	ag.On("SendMessageWithRetry", mock.Anything, mock.Anything, mock.Anything).
 		Return(nil, errors.New("agent failed"))
 	ag.On("Stop").Return(nil)
 
@@ -1737,7 +1737,7 @@ func TestErrorMiddleware_Run_SavedCategoryGuidance(t *testing.T) {
 	console := mockinput.NewMockConsole()
 
 	ag := &mockAgent{}
-	ag.On("SendMessage", mock.Anything, mock.Anything, mock.Anything).
+	ag.On("SendMessageWithRetry", mock.Anything, mock.Anything, mock.Anything).
 		Return(nil, errors.New("agent error"))
 	ag.On("Stop").Return(nil)
 
@@ -1771,7 +1771,7 @@ func TestErrorMiddleware_Run_SavedCategoryTroubleshoot(t *testing.T) {
 	console := mockinput.NewMockConsole()
 
 	ag := &mockAgent{}
-	ag.On("SendMessage", mock.Anything, mock.Anything, mock.Anything).
+	ag.On("SendMessageWithRetry", mock.Anything, mock.Anything, mock.Anything).
 		Return(nil, errors.New("agent error"))
 	ag.On("Stop").Return(nil)
 

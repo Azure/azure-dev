@@ -247,6 +247,8 @@ func clearAgentEnvVarsForTest(t *testing.T) {
 		"GEMINI_CLI", "GEMINI_CLI_NO_RELAUNCH",
 		// OpenCode
 		"OPENCODE",
+		// Non-interactive env var
+		"AZD_NON_INTERACTIVE",
 		// User agent
 		internal.AzdUserAgentEnvVar,
 	}

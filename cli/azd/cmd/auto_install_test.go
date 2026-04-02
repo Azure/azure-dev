@@ -428,3 +428,143 @@ func TestParseGlobalFlags_AgentDetection(t *testing.T) {
 		})
 	}
 }
+
+func TestParseGlobalFlags_NonInteractiveAliasAndEnvVar(t *testing.T) {
+	tests := []struct {
+		name         string
+		args         []string
+		envKey       string
+		envVal       string
+		wantNoPrompt bool
+	}{
+		{
+			name:         "no flags or env",
+			args:         []string{},
+			wantNoPrompt: false,
+		},
+		{
+			name:         "--no-prompt sets NoPrompt",
+			args:         []string{"--no-prompt"},
+			wantNoPrompt: true,
+		},
+		{
+			name:         "--non-interactive sets NoPrompt",
+			args:         []string{"--non-interactive"},
+			wantNoPrompt: true,
+		},
+		{
+			name:         "--no-prompt=false keeps NoPrompt false",
+			args:         []string{"--no-prompt=false"},
+			wantNoPrompt: false,
+		},
+		{
+			name:         "AZD_NON_INTERACTIVE=true sets NoPrompt",
+			args:         []string{},
+			envKey:       "AZD_NON_INTERACTIVE",
+			envVal:       "true",
+			wantNoPrompt: true,
+		},
+		{
+			name:         "AZD_NON_INTERACTIVE=1 sets NoPrompt",
+			args:         []string{},
+			envKey:       "AZD_NON_INTERACTIVE",
+			envVal:       "1",
+			wantNoPrompt: true,
+		},
+		{
+			name:         "AZD_NON_INTERACTIVE=false does not set NoPrompt",
+			args:         []string{},
+			envKey:       "AZD_NON_INTERACTIVE",
+			envVal:       "false",
+			wantNoPrompt: false,
+		},
+		{
+			name:         "AZD_NON_INTERACTIVE=0 does not set NoPrompt",
+			args:         []string{},
+			envKey:       "AZD_NON_INTERACTIVE",
+			envVal:       "0",
+			wantNoPrompt: false,
+		},
+		{
+			name:         "explicit --no-prompt=false overrides env true",
+			args:         []string{"--no-prompt=false"},
+			envKey:       "AZD_NON_INTERACTIVE",
+			envVal:       "true",
+			wantNoPrompt: false,
+		},
+		{
+			name:         "explicit --no-prompt overrides env false",
+			args:         []string{"--no-prompt"},
+			envKey:       "AZD_NON_INTERACTIVE",
+			envVal:       "false",
+			wantNoPrompt: true,
+		},
+		{
+			name:         "--non-interactive overrides env false",
+			args:         []string{"--non-interactive"},
+			envKey:       "AZD_NON_INTERACTIVE",
+			envVal:       "false",
+			wantNoPrompt: true,
+		},
+		{
+			name:         "AZD_NON_INTERACTIVE=TRUE (uppercase)",
+			args:         []string{},
+			envKey:       "AZD_NON_INTERACTIVE",
+			envVal:       "TRUE",
+			wantNoPrompt: true,
+		},
+		{
+			name:         "both flags coexist",
+			args:         []string{"--no-prompt", "--non-interactive"},
+			wantNoPrompt: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Clear agent detection and AZD_NON_INTERACTIVE to isolate
+			// from the ambient environment.
+			clearAgentEnvVarsForTest(t)
+			agentdetect.ResetDetection()
+
+			// Skip if we're inside an agent and expect false
+			if !tt.wantNoPrompt && tt.envKey == "" && len(tt.args) == 0 {
+				if agentdetect.GetCallingAgent().Detected {
+					t.Skip("skipping: agent process detected")
+				}
+				agentdetect.ResetDetection()
+			}
+
+			if tt.envKey != "" {
+				t.Setenv(tt.envKey, tt.envVal)
+			}
+
+			opts := &internal.GlobalCommandOptions{}
+			err := ParseGlobalFlags(tt.args, opts)
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantNoPrompt, opts.NoPrompt)
+
+			agentdetect.ResetDetection()
+		})
+	}
+
+	// Standalone test: prove that AZD_NON_INTERACTIVE presence suppresses agent detection.
+	// CLAUDE_CODE=1 would normally trigger NoPrompt via agent detection, but
+	// AZD_NON_INTERACTIVE=false should suppress agent detection entirely.
+	t.Run("AZD_NON_INTERACTIVE=false suppresses agent detection with CLAUDE_CODE set", func(t *testing.T) {
+		clearAgentEnvVarsForTest(t)
+		agentdetect.ResetDetection()
+
+		t.Setenv("CLAUDE_CODE", "1")
+		t.Setenv("AZD_NON_INTERACTIVE", "false")
+		agentdetect.ResetDetection()
+
+		opts := &internal.GlobalCommandOptions{}
+		err := ParseGlobalFlags([]string{}, opts)
+		require.NoError(t, err)
+		assert.False(t, opts.NoPrompt,
+			"AZD_NON_INTERACTIVE=false should suppress agent detection from setting NoPrompt")
+
+		agentdetect.ResetDetection()
+	})
+}

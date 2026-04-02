@@ -256,11 +256,20 @@ func resolvePythonCmd(
 	commandRunner exec.CommandRunner,
 ) string {
 	if runtime.GOOS == "windows" {
-		if commandRunner.ToolInPath("py") == nil {
-			return "py"
+		// Try py launcher first (PEP 397), then python.
+		for _, cmd := range []string{"py", "python"} {
+			if commandRunner.ToolInPath(cmd) == nil {
+				return cmd
+			}
 		}
+		// Fallback even if not found — Prepare() will catch this.
 		return "python"
 	}
+	// Unix: python3 is the standard command.
+	if commandRunner.ToolInPath("python3") == nil {
+		return "python3"
+	}
+	// Fallback — Prepare() will catch missing Python.
 	return "python3"
 }
 

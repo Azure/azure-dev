@@ -170,6 +170,26 @@ func TestDiscoverProjectFile_Priority(t *testing.T) {
 	assert.Equal(t, reqFile, result.DependencyFile)
 }
 
+func TestDiscoverProjectFile_PyprojectOverRequirements(t *testing.T) {
+	// When both pyproject.toml and requirements.txt exist in the
+	// same directory, pyproject.toml wins — matching the convention
+	// in framework_service_python.go and internal/appdetect/python.go.
+	dir := t.TempDir()
+	scriptPath := filepath.Join(dir, "hook.py")
+
+	pyprojectFile := filepath.Join(dir, "pyproject.toml")
+	writeFile(t, pyprojectFile, "[project]\nname = \"demo\"\n")
+	writeFile(t, filepath.Join(dir, "requirements.txt"), "flask\n")
+
+	result, err := DiscoverProjectFile(scriptPath, dir)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, ScriptLanguagePython, result.Language)
+	assert.Equal(t, pyprojectFile, result.DependencyFile,
+		"pyproject.toml should win over requirements.txt (PEP 621)")
+}
+
 func TestDiscoverProjectFile_WalkUpMultipleLevels(t *testing.T) {
 	// Script is nested several levels deep; project file is at root.
 	//

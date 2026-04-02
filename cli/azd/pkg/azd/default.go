@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	infraBicep "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
+	infraCode "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/code"
 	infraTerraform "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/terraform"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
@@ -80,6 +81,7 @@ func (p *DefaultPlatform) ConfigureContainer(container *ioc.NestedContainer) err
 	provisionProviderMap := map[provisioning.ProviderKind]any{
 		provisioning.Bicep:     infraBicep.NewBicepProvider,
 		provisioning.Terraform: infraTerraform.NewTerraformProvider,
+		provisioning.Code:      infraCode.NewCodeProvider,
 	}
 
 	for provider, constructor := range provisionProviderMap {

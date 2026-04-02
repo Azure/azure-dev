@@ -112,10 +112,10 @@ func NewProvisionFlagsFromEnvAndOptions(envFlag *internal.EnvFlag, global *inter
 
 func NewProvisionCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "provision [<layer>]",
+		Use:   "provision [<layer>] [flags]",
 		Short: "Provision Azure resources for your project.",
 	}
-	cmd.Args = cobra.MaximumNArgs(1)
+	cmd.Args = cobra.ArbitraryArgs
 
 	return cmd
 }
@@ -257,8 +257,19 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	defer func() { _ = infra.Cleanup() }()
 
 	layer := ""
+	var extraArgs []string
 	if len(p.args) > 0 {
-		layer = p.args[0]
+		// Check if the first arg matches a configured layer name.
+		// If it does, treat it as a layer selector; otherwise, all args are extra args
+		// forwarded to the provisioning provider (e.g., the C# program in the dotnet provider).
+		if _, err := infra.Options.GetLayer(p.args[0]); err == nil {
+			layer = p.args[0]
+			if len(p.args) > 1 {
+				extraArgs = p.args[1:]
+			}
+		} else {
+			extraArgs = p.args
+		}
 	}
 
 	layers := infra.Options.GetLayers()
@@ -281,6 +292,7 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	allSkipped := true
 	for i, layer := range layers {
 		layer.IgnoreDeploymentState = p.flags.ignoreDeploymentState
+		layer.ExtraArgs = extraArgs
 		if err := p.provisionManager.Initialize(ctx, p.projectConfig.Path, layer); err != nil {
 			return nil, fmt.Errorf("initializing provisioning manager: %w", err)
 		}

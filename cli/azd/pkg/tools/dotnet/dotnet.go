@@ -90,6 +90,19 @@ func (cli *Cli) CheckInstalled(ctx context.Context) error {
 	return nil
 }
 
+// SdkVersion returns the installed .NET SDK major version (e.g., 8, 9, 10).
+func (cli *Cli) SdkVersion(ctx context.Context) (int, error) {
+	dotnetRes, err := cli.commandRunner.Run(ctx, newDotNetRunArgs("--version"))
+	if err != nil {
+		return 0, fmt.Errorf("checking %s version: %w", cli.Name(), err)
+	}
+	dotnetSemver, err := tools.ExtractVersion(dotnetRes.Stdout)
+	if err != nil {
+		return 0, fmt.Errorf("parsing dotnet version: %w", err)
+	}
+	return int(dotnetSemver.Major), nil //nolint:gosec // SDK major version will never overflow int
+}
+
 func (cli *Cli) Restore(ctx context.Context, project string, env []string) error {
 	runArgs := newDotNetRunArgs("restore", project)
 	// Append user env vars to preserve base env set by newDotNetRunArgs (DOTNET_NOLOGO, etc.)
@@ -479,6 +492,32 @@ func (cli *Cli) IsSingleFileAspireHost(filePath string) (bool, error) {
 	}
 
 	return strings.Contains(string(content), AspireSdkDirective), nil
+}
+
+// Run executes a dotnet project or C# file, passing additional arguments after `--`.
+// If project ends in .cs, it uses `dotnet run <file.cs>` (dotnet 10+ file-based apps).
+// Otherwise, it uses `dotnet run --project <project>` where project may be a directory or project file.
+func (cli *Cli) Run(ctx context.Context, project string, args []string, env []string) (exec.RunResult, error) {
+	var runArgs exec.RunArgs
+	if strings.HasSuffix(strings.ToLower(project), ".cs") {
+		// dotnet 10+ file-based app: dotnet run file.cs -- <args>
+		runArgs = newDotNetRunArgs("run", project)
+	} else {
+		// Traditional project: dotnet run --project <project> -- <args> (project may be a directory or project file)
+		runArgs = newDotNetRunArgs("run", "--project", project)
+	}
+	if len(args) > 0 {
+		runArgs = runArgs.AppendParams("--")
+		runArgs = runArgs.AppendParams(args...)
+	}
+	if len(env) > 0 {
+		runArgs = runArgs.WithEnv(append(runArgs.Env, env...))
+	}
+	result, err := cli.commandRunner.Run(ctx, runArgs)
+	if err != nil {
+		return result, fmt.Errorf("dotnet run on '%s' failed: %w", project, err)
+	}
+	return result, nil
 }
 
 func NewCli(commandRunner exec.CommandRunner) *Cli {

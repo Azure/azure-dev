@@ -809,7 +809,7 @@ func TestDetectProviderFromFiles(t *testing.T) {
 			files:          []string{"main.bicep", "main.tf"},
 			expectedResult: provisioning.NotSpecified,
 			expectError:    true,
-			errorContains:  "both Bicep and Terraform files detected",
+			errorContains:  "multiple infrastructure provider types detected",
 		},
 		{
 			name:           "no IaC files",

@@ -47,7 +47,8 @@
                     "description": "Optional. The infrastructure provisioning provider used to provision the Azure resources for the application. (Default: bicep)",
                     "enum": [
                         "bicep",
-                        "terraform"
+                        "terraform",
+                        "code"
                     ]
                 },
                 "path": {

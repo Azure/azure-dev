@@ -2618,10 +2618,16 @@ const completionSpec: Fig.Spec = {
 					],
 				},
 			],
-			args: {
-				name: 'layer',
-				isOptional: true,
-			},
+			args: [
+				{
+					name: 'layer',
+					isOptional: true,
+				},
+				{
+					name: 'flags',
+					isOptional: true,
+				},
+			],
 		},
 		{
 			name: ['publish'],

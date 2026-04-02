@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
@@ -133,13 +134,13 @@ func (m *ProvisioningManager) Register(
 	factory ProvisioningProviderFactory,
 	providerName string,
 ) error {
+	if strings.TrimSpace(providerName) == "" {
+		return fmt.Errorf("provisioning provider name cannot be empty")
+	}
+
 	if err := m.ensureStream(ctx); err != nil {
 		return err
 	}
-
-	m.mu.Lock()
-	m.providerName = providerName
-	m.mu.Unlock()
 
 	registerReq := &ProvisioningMessage{
 		RequestId: uuid.NewString(),
@@ -152,7 +153,9 @@ func (m *ProvisioningManager) Register(
 
 	resp, err := m.broker.SendAndWait(ctx, registerReq)
 	if err != nil {
-		return fmt.Errorf("provisioning provider registration failed: %w", err)
+		return fmt.Errorf(
+			"provisioning provider registration failed: %w", err,
+		)
 	}
 
 	if resp.GetRegisterProvisioningProviderResponse() == nil {
@@ -162,9 +165,12 @@ func (m *ProvisioningManager) Register(
 		)
 	}
 
-	// Store the factory for later use during onInitialize
+	// Create provider and store with provider name in a single lock scope
+	provider := factory()
+
 	m.mu.Lock()
-	m.provider = factory()
+	m.providerName = providerName
+	m.provider = provider
 	m.mu.Unlock()
 
 	return nil
@@ -188,22 +194,38 @@ func (m *ProvisioningManager) Ready(ctx context.Context) error {
 	return m.broker.Ready(ctx)
 }
 
-// Handler methods - these are registered with the broker to handle incoming requests
+// Handler methods - these are registered with the broker to handle
+// incoming requests
+
+// getProvider returns the provisioning provider, or an error if
+// not initialized.
+func (m *ProvisioningManager) getProvider() (
+	ProvisioningProvider, error,
+) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if m.provider == nil {
+		return nil, fmt.Errorf(
+			"provisioning provider not initialized",
+		)
+	}
+	return m.provider, nil
+}
 
 // onInitialize handles initialization requests from the server
 func (m *ProvisioningManager) onInitialize(
 	ctx context.Context,
 	req *ProvisioningInitializeRequest,
 ) (*ProvisioningMessage, error) {
-	m.mu.RLock()
-	provider := m.provider
-	m.mu.RUnlock()
-
-	if provider == nil {
-		return nil, fmt.Errorf("provisioning provider not initialized")
+	provider, err := m.getProvider()
+	if err != nil {
+		return nil, err
 	}
 
-	err := provider.Initialize(ctx, req.GetProjectPath(), req.GetOptions())
+	err = provider.Initialize(
+		ctx, req.GetProjectPath(), req.GetOptions(),
+	)
 
 	return &ProvisioningMessage{
 		MessageType: &ProvisioningMessage_InitializeResponse{
@@ -217,12 +239,9 @@ func (m *ProvisioningManager) onState(
 	ctx context.Context,
 	req *ProvisioningStateRequest,
 ) (*ProvisioningMessage, error) {
-	m.mu.RLock()
-	provider := m.provider
-	m.mu.RUnlock()
-
-	if provider == nil {
-		return nil, fmt.Errorf("provisioning provider not initialized")
+	provider, err := m.getProvider()
+	if err != nil {
+		return nil, err
 	}
 
 	result, err := provider.State(ctx, req.GetOptions())
@@ -232,7 +251,9 @@ func (m *ProvisioningManager) onState(
 
 	return &ProvisioningMessage{
 		MessageType: &ProvisioningMessage_StateResponse{
-			StateResponse: &ProvisioningStateResponse{StateResult: result},
+			StateResponse: &ProvisioningStateResponse{
+				StateResult: result,
+			},
 		},
 	}, nil
 }
@@ -243,12 +264,9 @@ func (m *ProvisioningManager) onDeploy(
 	req *ProvisioningDeployRequest,
 	progress grpcbroker.ProgressFunc,
 ) (*ProvisioningMessage, error) {
-	m.mu.RLock()
-	provider := m.provider
-	m.mu.RUnlock()
-
-	if provider == nil {
-		return nil, fmt.Errorf("provisioning provider not initialized")
+	provider, err := m.getProvider()
+	if err != nil {
+		return nil, err
 	}
 
 	result, err := provider.Deploy(ctx, progress)
@@ -258,7 +276,9 @@ func (m *ProvisioningManager) onDeploy(
 
 	return &ProvisioningMessage{
 		MessageType: &ProvisioningMessage_DeployResponse{
-			DeployResponse: &ProvisioningDeployResponse{Result: result},
+			DeployResponse: &ProvisioningDeployResponse{
+				Result: result,
+			},
 		},
 	}, nil
 }
@@ -269,12 +289,9 @@ func (m *ProvisioningManager) onPreview(
 	req *ProvisioningPreviewRequest,
 	progress grpcbroker.ProgressFunc,
 ) (*ProvisioningMessage, error) {
-	m.mu.RLock()
-	provider := m.provider
-	m.mu.RUnlock()
-
-	if provider == nil {
-		return nil, fmt.Errorf("provisioning provider not initialized")
+	provider, err := m.getProvider()
+	if err != nil {
+		return nil, err
 	}
 
 	result, err := provider.Preview(ctx, progress)
@@ -284,7 +301,9 @@ func (m *ProvisioningManager) onPreview(
 
 	return &ProvisioningMessage{
 		MessageType: &ProvisioningMessage_PreviewResponse{
-			PreviewResponse: &ProvisioningPreviewResponse{Result: result},
+			PreviewResponse: &ProvisioningPreviewResponse{
+				Result: result,
+			},
 		},
 	}, nil
 }
@@ -295,22 +314,23 @@ func (m *ProvisioningManager) onDestroy(
 	req *ProvisioningDestroyRequest,
 	progress grpcbroker.ProgressFunc,
 ) (*ProvisioningMessage, error) {
-	m.mu.RLock()
-	provider := m.provider
-	m.mu.RUnlock()
-
-	if provider == nil {
-		return nil, fmt.Errorf("provisioning provider not initialized")
+	provider, err := m.getProvider()
+	if err != nil {
+		return nil, err
 	}
 
-	result, err := provider.Destroy(ctx, req.GetOptions(), progress)
+	result, err := provider.Destroy(
+		ctx, req.GetOptions(), progress,
+	)
 	if err != nil {
 		return nil, err
 	}
 
 	return &ProvisioningMessage{
 		MessageType: &ProvisioningMessage_DestroyResponse{
-			DestroyResponse: &ProvisioningDestroyResponse{Result: result},
+			DestroyResponse: &ProvisioningDestroyResponse{
+				Result: result,
+			},
 		},
 	}, nil
 }
@@ -320,15 +340,12 @@ func (m *ProvisioningManager) onEnsureEnv(
 	ctx context.Context,
 	req *ProvisioningEnsureEnvRequest,
 ) (*ProvisioningMessage, error) {
-	m.mu.RLock()
-	provider := m.provider
-	m.mu.RUnlock()
-
-	if provider == nil {
-		return nil, fmt.Errorf("provisioning provider not initialized")
+	provider, err := m.getProvider()
+	if err != nil {
+		return nil, err
 	}
 
-	err := provider.EnsureEnv(ctx)
+	err = provider.EnsureEnv(ctx)
 
 	return &ProvisioningMessage{
 		MessageType: &ProvisioningMessage_EnsureEnvResponse{
@@ -342,12 +359,9 @@ func (m *ProvisioningManager) onParameters(
 	ctx context.Context,
 	req *ProvisioningParametersRequest,
 ) (*ProvisioningMessage, error) {
-	m.mu.RLock()
-	provider := m.provider
-	m.mu.RUnlock()
-
-	if provider == nil {
-		return nil, fmt.Errorf("provisioning provider not initialized")
+	provider, err := m.getProvider()
+	if err != nil {
+		return nil, err
 	}
 
 	params, err := provider.Parameters(ctx)
@@ -357,7 +371,9 @@ func (m *ProvisioningManager) onParameters(
 
 	return &ProvisioningMessage{
 		MessageType: &ProvisioningMessage_ParametersResponse{
-			ParametersResponse: &ProvisioningParametersResponse{Parameters: params},
+			ParametersResponse: &ProvisioningParametersResponse{
+				Parameters: params,
+			},
 		},
 	}, nil
 }

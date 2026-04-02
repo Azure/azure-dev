@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -115,6 +116,12 @@ func (s *ProvisioningService) onRegisterRequest(
 	registeredProviderName *string,
 ) (*azdext.ProvisioningMessage, error) {
 	providerName := req.GetName()
+	if strings.TrimSpace(providerName) == "" {
+		return nil, status.Errorf(
+			codes.InvalidArgument, "provider name cannot be empty",
+		)
+	}
+
 	s.providerMapMu.Lock()
 	defer s.providerMapMu.Unlock()
 

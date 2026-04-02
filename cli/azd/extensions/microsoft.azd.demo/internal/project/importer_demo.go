@@ -319,7 +319,6 @@ func parseResourceFile(path string) ([]resourceDef, error) {
 					current.Tags[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
 					continue
 				}
-				parsingTags = false
 			}
 
 			if strings.HasPrefix(prop, "tags:") {
@@ -391,8 +390,8 @@ func generateBicep(resources []resourceDef) string {
 	}
 
 	if len(nonRGResources) > 0 && hasResourceGroup {
-		b.WriteString(fmt.Sprintf("\nmodule resources 'resources.bicep' = {\n"))
-		b.WriteString(fmt.Sprintf("  name: 'resources'\n"))
+		b.WriteString("\nmodule resources 'resources.bicep' = {\n")
+		b.WriteString("  name: 'resources'\n")
 		b.WriteString(fmt.Sprintf("  scope: %s\n", rgVarName))
 		b.WriteString("  params: {\n")
 		b.WriteString("    environmentName: environmentName\n")

@@ -8,6 +8,7 @@ type AgentProtocol string
 
 const (
 	AgentProtocolActivityProtocol AgentProtocol = "activity_protocol"
+	AgentProtocolInvocations      AgentProtocol = "invocations"
 	AgentProtocolResponses        AgentProtocol = "responses"
 )
 

@@ -21,6 +21,7 @@ Commands
     config      	: Manage azd configurations (ex: default Azure subscription, location).
     env         	: Manage environments (ex: default environment, environment variables).
     show        	: Display information about your project and its resources.
+    tool        	: Manage Azure development tools.
     version     	: Print the version number of Azure Developer CLI.
 
   Beta commands

@@ -1,0 +1,25 @@
+
+Manage Azure development tools.
+
+Usage
+  azd tool [command]
+
+Available Commands
+  check  	: Check for tool updates.
+  install	: Install specified tools.
+  list   	: List all tools with status.
+  show   	: Show details for a specific tool.
+  upgrade	: Upgrade installed tools.
+
+Global Flags
+    -C, --cwd string 	: Sets the current working directory.
+        --debug      	: Enables debugging and diagnostics logging.
+        --docs       	: Opens the documentation for azd tool in your web browser.
+    -h, --help       	: Gets help for tool.
+        --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
+
+Use azd tool [command] --help to view examples and more information about a specific command.
+
+Find a bug? Want to let us know how we're doing? Fill out this brief survey: https://aka.ms/azure-dev/hats.
+
+

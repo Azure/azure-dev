@@ -157,6 +157,21 @@ func (a *myAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 - **Shell-safe output**: When emitting shell commands in user-facing messages (e.g., `cd <path>`), quote paths that may contain spaces. Use `fmt.Sprintf("cd %q", path)` or conditionally wrap in quotes
 - **Consistent JSON types**: When adding fields to JSON output (`--output json`), match the types used by similar fields across commands. Don't mix `*time.Time` and custom timestamp wrappers (e.g., `*RFC3339Time`) in the same API surface
 
+### CLI UX & Style
+
+When working on CLI output, terminal UX, spinners, progress states, colors, or prompts for **core azd flows**, you **MUST read** the style guide before making any changes or recommendations:
+
+📄 **`cli/azd/docs/style-guidelines/azd-style-guide.md`** (full path from repo root)
+
+This file is the authoritative reference for core azd terminal UX patterns including:
+- Progress report states (`(✓) Done`, `(x) Failed`, `(!) Warning`, `(-) Skipped`)
+- Spinner type (bar-fill `|=======|`)
+- Color conventions (`WithSuccessFormat`, `WithErrorFormat`, `WithHighLightFormat`, etc.)
+- User input patterns (text input, list select, yes/no confirm)
+- Prompt styling (`?` marker in bold blue, `[Type ? for hint]`, post-submit states)
+
+> **Note**: This style guide covers **core azd flows only**. Separate guidelines for agentic flows and extension-specific UX will be provided in dedicated files in the future. Do not apply core azd patterns to agentic or extension flows without a dedicated style reference.
+
 ### Code Organization
 
 - **Import order**: stdlib → external → azure/azd internal → local
@@ -313,6 +328,7 @@ go build
 
 Feature-specific docs are in `docs/` — refer to them as needed. Some key docs include:
 
+- `docs/style-guidelines/azd-style-guide.md` - CLI style guide (colors, spinners, progress states, terminal UX)
 - `docs/style-guidelines/new-azd-command.md` - Adding new commands
 - `docs/extensions/extension-framework.md` - Extension development using gRPC extension framework
 - `docs/style-guidelines/guiding-principles.md` - Design principles

@@ -82,6 +82,26 @@ func (p *DemoImporterProvider) Services(
 // Extensions control their defaults — users can override via infra.importer.options.path in azure.yaml.
 const defaultImporterDir = "demo-importer"
 
+// mainParametersJSON is the standard azd parameters file that maps environment variables
+// to Bicep parameters. In a real importer, this would be dynamically generated based on
+// the parameters discovered in the resource definitions.
+const mainParametersJSON = `{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environmentName": {
+      "value": "${AZURE_ENV_NAME}"
+    },
+    "location": {
+      "value": "${AZURE_LOCATION}"
+    },
+    "principalId": {
+      "value": "${AZURE_PRINCIPAL_ID}"
+    }
+  }
+}
+`
+
 // resolvePath determines the directory containing resource definition files.
 // It checks the "path" option first, falling back to the default "demo-importer" directory.
 func resolvePath(projectPath string, options map[string]string) string {
@@ -114,6 +134,10 @@ func (p *DemoImporterProvider) ProjectInfrastructure(
 		{
 			Path:    "main.bicep",
 			Content: []byte(mainBicep),
+		},
+		{
+			Path:    "main.parameters.json",
+			Content: []byte(mainParametersJSON),
 		},
 	}
 
@@ -150,6 +174,10 @@ func (p *DemoImporterProvider) GenerateAllInfrastructure(
 		{
 			Path:    "infra/main.bicep",
 			Content: []byte(mainBicep),
+		},
+		{
+			Path:    "infra/main.parameters.json",
+			Content: []byte(mainParametersJSON),
 		},
 	}
 

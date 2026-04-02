@@ -35,6 +35,8 @@ func Test_detectConfirm_confirm(t *testing.T) {
 	err = os.MkdirAll(javaDir, 0700)
 	require.NoError(t, err)
 
+	t.Chdir(dir)
+
 	tests := []struct {
 		name         string
 		detection    []appdetect.Project

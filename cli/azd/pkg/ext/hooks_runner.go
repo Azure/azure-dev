@@ -304,7 +304,7 @@ func (h *HooksRunner) execLanguageHook(
 }
 
 // execShellHook runs a hook through the existing bash/powershell
-// shell script pipeline. This preserves the original behaviour for
+// shell script pipeline. This preserves the original behavior for
 // shell-based hooks.
 func (h *HooksRunner) execShellHook(
 	ctx context.Context,

@@ -21,21 +21,25 @@ import (
 // Importer defines the contract for project importers that can detect projects, extract services,
 // and generate infrastructure from project configurations.
 //
-// Importers are used by ImportManager to discover services and generate infrastructure for project types
-// that require special handling (e.g., .NET Aspire AppHost projects). Extensions can provide custom importers
-// via the extension framework to support additional project types.
+// Importers can be:
+//   - Built-in (e.g., DotNetImporter for Aspire) — auto-detect projects via CanImport/Services
+//   - Extension-provided — explicitly configured via infra.importer in azure.yaml
+//
+// When configured explicitly via azure.yaml, the infra.importer field specifies the importer name
+// and path. The ImportManager looks up the importer by name and calls ProjectInfrastructure or
+// GenerateAllInfrastructure directly with the configured path.
 type Importer interface {
-	// Name returns the display name of this importer (e.g., "Aspire", "Spring").
+	// Name returns the display name of this importer (e.g., "Aspire", "demo-importer").
 	Name() string
 
 	// CanImport returns true if the importer can handle the given service.
-	// This is the detection method — it determines whether a service's project directory
-	// contains something this importer understands (e.g., an Aspire AppHost).
+	// Used for auto-detection of importable projects (e.g., Aspire AppHost detection).
 	// Importers should check service properties (e.g., language) before performing
 	// expensive detection operations.
 	CanImport(ctx context.Context, svcConfig *ServiceConfig) (bool, error)
 
 	// Services extracts individual service configurations from the project.
+	// Used for auto-detection mode where the importer expands a single service into multiple.
 	// The returned map is keyed by service name.
 	Services(
 		ctx context.Context,
@@ -45,16 +49,13 @@ type Importer interface {
 
 	// ProjectInfrastructure generates temporary infrastructure for provisioning.
 	// Returns an Infra pointing to a temp directory with generated IaC files.
-	// Called during `azd provision` when no explicit infra directory exists.
-	ProjectInfrastructure(ctx context.Context, svcConfig *ServiceConfig) (*Infra, error)
+	// The importerPath is the resolved path to the importer's project files.
+	ProjectInfrastructure(ctx context.Context, importerPath string) (*Infra, error)
 
-	// GenerateAllInfrastructure generates the complete infrastructure filesystem for `azd infra synth`.
+	// GenerateAllInfrastructure generates the complete infrastructure filesystem for `azd infra gen`.
 	// Returns an in-memory FS rooted at the project directory with all generated files.
-	GenerateAllInfrastructure(
-		ctx context.Context,
-		projectConfig *ProjectConfig,
-		svcConfig *ServiceConfig,
-	) (fs.FS, error)
+	// The importerPath is the resolved path to the importer's project files.
+	GenerateAllInfrastructure(ctx context.Context, importerPath string) (fs.FS, error)
 }
 
 // ImporterRegistry holds external importers registered by extensions at runtime.
@@ -110,6 +111,17 @@ func (im *ImportManager) allImporters() []Importer {
 		return im.importers
 	}
 	return append(slices.Clone(im.importers), external...)
+}
+
+// findImporter looks up an importer by name from all available importers.
+func (im *ImportManager) findImporter(name string) (Importer, error) {
+	for _, importer := range im.allImporters() {
+		if importer.Name() == name {
+			return importer, nil
+		}
+	}
+	return nil, fmt.Errorf(
+		"importer '%s' is not available. Make sure the extension providing it is installed", name)
 }
 
 // servicePath returns the resolved path for a service config, handling nil Project gracefully.
@@ -439,7 +451,25 @@ func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfi
 		}, nil
 	}
 
-	// Temp infra from importer
+	// Infra from explicitly configured importer (infra.importer in azure.yaml)
+	if !infraOptions.Importer.Empty() {
+		importer, err := im.findImporter(infraOptions.Importer.Name)
+		if err != nil {
+			return nil, err
+		}
+
+		importerPath := infraOptions.Importer.Path
+		if importerPath == "" {
+			importerPath = projectConfig.Path
+		} else if !filepath.IsAbs(importerPath) {
+			importerPath = filepath.Join(projectConfig.Path, importerPath)
+		}
+
+		log.Printf("using importer '%s' from path '%s'", importer.Name(), importerPath)
+		return importer.ProjectInfrastructure(ctx, importerPath)
+	}
+
+	// Temp infra from auto-detected importer (backward compatibility with Aspire)
 	for _, svcConfig := range projectConfig.Services {
 		for _, importer := range im.allImporters() {
 			canImport, err := importer.CanImport(ctx, svcConfig)
@@ -466,7 +496,7 @@ func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfi
 					)
 				}
 
-				return importer.ProjectInfrastructure(ctx, svcConfig)
+				return importer.ProjectInfrastructure(ctx, svcConfig.Path())
 			}
 		}
 	}
@@ -549,15 +579,31 @@ func pathHasModule(path, module string) (bool, error) {
 // GenerateAllInfrastructure returns a file system containing all infrastructure for the project,
 // rooted at the project directory.
 func (im *ImportManager) GenerateAllInfrastructure(ctx context.Context, projectConfig *ProjectConfig) (fs.FS, error) {
-	allImporters := im.allImporters()
-	log.Printf("GenerateAllInfrastructure: %d importers available, %d services in project",
-		len(allImporters), len(projectConfig.Services))
+	// Check for explicitly configured importer (infra.importer in azure.yaml)
+	if !projectConfig.Infra.Importer.Empty() {
+		importerCfg := projectConfig.Infra.Importer
+		importer, err := im.findImporter(importerCfg.Name)
+		if err != nil {
+			return nil, err
+		}
 
+		importerPath := importerCfg.Path
+		if importerPath == "" {
+			importerPath = projectConfig.Path
+		} else if !filepath.IsAbs(importerPath) {
+			importerPath = filepath.Join(projectConfig.Path, importerPath)
+		}
+
+		log.Printf("GenerateAllInfrastructure: using configured importer '%s' from path '%s'",
+			importer.Name(), importerPath)
+		return importer.GenerateAllInfrastructure(ctx, importerPath)
+	}
+
+	// Auto-detect importer from services (backward compatibility with Aspire)
+	allImporters := im.allImporters()
 	for _, svcConfig := range projectConfig.Services {
 		for _, importer := range allImporters {
 			canImport, err := importer.CanImport(ctx, svcConfig)
-			log.Printf("GenerateAllInfrastructure: %s.CanImport(svc=%s, path=%s) = %v, err=%v",
-				importer.Name(), svcConfig.Name, servicePath(svcConfig), canImport, err)
 			if err != nil {
 				log.Printf(
 					"error checking if %s can be imported by %s: %v",
@@ -581,7 +627,7 @@ func (im *ImportManager) GenerateAllInfrastructure(ctx context.Context, projectC
 					)
 				}
 
-				return importer.GenerateAllInfrastructure(ctx, projectConfig, svcConfig)
+				return importer.GenerateAllInfrastructure(ctx, svcConfig.Path())
 			}
 		}
 	}

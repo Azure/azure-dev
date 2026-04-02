@@ -122,16 +122,17 @@ func (ei *ExternalImporter) Services(
 // ProjectInfrastructure generates temporary infrastructure for provisioning via the extension.
 func (ei *ExternalImporter) ProjectInfrastructure(
 	ctx context.Context,
-	svcConfig *ServiceConfig,
+	importerPath string,
 ) (*Infra, error) {
-	var protoSvcConfig azdext.ServiceConfig
-	mapServiceConfigToProto(svcConfig, &protoSvcConfig)
+	protoSvcConfig := &azdext.ServiceConfig{
+		RelativePath: importerPath,
+	}
 
 	req := &azdext.ImporterMessage{
 		RequestId: uuid.NewString(),
 		MessageType: &azdext.ImporterMessage_ProjectInfrastructureRequest{
 			ProjectInfrastructureRequest: &azdext.ImporterProjectInfrastructureRequest{
-				ServiceConfig: &protoSvcConfig,
+				ServiceConfig: protoSvcConfig,
 			},
 		},
 	}
@@ -184,21 +185,17 @@ func (ei *ExternalImporter) ProjectInfrastructure(
 // GenerateAllInfrastructure generates the complete infrastructure filesystem via the extension.
 func (ei *ExternalImporter) GenerateAllInfrastructure(
 	ctx context.Context,
-	projectConfig *ProjectConfig,
-	svcConfig *ServiceConfig,
+	importerPath string,
 ) (fs.FS, error) {
-	var protoSvcConfig azdext.ServiceConfig
-	mapServiceConfigToProto(svcConfig, &protoSvcConfig)
-
-	var protoProjectConfig azdext.ProjectConfig
-	mapProjectConfigToProto(projectConfig, &protoProjectConfig)
+	protoSvcConfig := &azdext.ServiceConfig{
+		RelativePath: importerPath,
+	}
 
 	req := &azdext.ImporterMessage{
 		RequestId: uuid.NewString(),
 		MessageType: &azdext.ImporterMessage_GenerateAllInfrastructureRequest{
 			GenerateAllInfrastructureRequest: &azdext.ImporterGenerateAllInfrastructureRequest{
-				ProjectConfig: &protoProjectConfig,
-				ServiceConfig: &protoSvcConfig,
+				ServiceConfig: protoSvcConfig,
 			},
 		},
 	}

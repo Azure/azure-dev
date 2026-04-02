@@ -33,6 +33,21 @@ const (
 	ModeDestroy Mode = "destroy"
 )
 
+// ImporterConfig defines the configuration for a project importer within the infra block.
+// Importers generate infrastructure from project-specific definitions (e.g., markdown resource files).
+// The importer implementation is provided by an extension identified by the Name field.
+type ImporterConfig struct {
+	// Name is the identifier of the importer (must match an extension-registered importer).
+	Name string `yaml:"name"`
+	// Path is the path to the directory containing the importer's project files.
+	Path string `yaml:"path,omitempty"`
+}
+
+// Empty returns true if no importer is configured.
+func (ic ImporterConfig) Empty() bool {
+	return ic.Name == ""
+}
+
 // Options for a provisioning provider.
 type Options struct {
 	Provider         ProviderKind   `yaml:"provider,omitempty"`
@@ -40,6 +55,8 @@ type Options struct {
 	Module           string         `yaml:"module,omitempty"`
 	Name             string         `yaml:"name,omitempty"`
 	DeploymentStacks map[string]any `yaml:"deploymentStacks,omitempty"`
+	// Importer configures an extension-provided importer that generates infrastructure.
+	Importer ImporterConfig `yaml:"importer,omitempty"`
 	// Provisioning options for each individually defined layer.
 	Layers []Options `yaml:"layers,omitempty"`
 

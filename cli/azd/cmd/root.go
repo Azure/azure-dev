@@ -196,6 +196,7 @@ func newRootCmd(
 	hooksActions(root)
 	mcpActions(root)
 	copilotActions(root)
+	toolActions(root)
 
 	root.Add("version", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
@@ -450,7 +451,23 @@ func newRootCmd(
 			}
 
 			return false
-		})
+		}).
+		UseMiddlewareWhen(
+			"toolFirstRun",
+			middleware.NewToolFirstRunMiddleware,
+			func(descriptor *actions.ActionDescriptor) bool {
+				name := descriptor.Options.Command.Name()
+				return name != "tool" && name != "version" && name != "config"
+			},
+		).
+		UseMiddlewareWhen(
+			"toolUpdateCheck",
+			middleware.NewToolUpdateCheckMiddleware,
+			func(descriptor *actions.ActionDescriptor) bool {
+				name := descriptor.Options.Command.Name()
+				return name != "tool" && name != "version" && name != "config"
+			},
+		)
 
 	ioc.RegisterNamedInstance(rootContainer, "root-cmd", rootCmd)
 

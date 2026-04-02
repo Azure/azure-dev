@@ -31,25 +31,43 @@ When omitted, the language is **auto-detected** from the file extension of the
 
 ### `dir` (string, optional)
 
-Specifies the working directory for language hook execution. This directory is
-used as the project root for dependency installation (e.g. `pip install` from
-`requirements.txt`) and as the working directory when running the script.
-Relative paths are resolved from the project or service root.
+Specifies the working directory for language hook execution, used as the project
+context for dependency installation (e.g. `pip install` from `requirements.txt`)
+and builds.
 
-When omitted, defaults to the directory containing the script file.
+When omitted, **automatically inferred** from the directory containing the script
+referenced by `run`. For example, `run: hooks/preprovision/main.py` sets the
+working directory to `hooks/preprovision/`. Only set `dir` when the project root
+differs from the script's directory (e.g. when the entry point lives in a `src/`
+subdirectory).
+
+Relative paths are resolved from the project or service root.
 
 ## Examples
 
 ### Python hook — auto-detected from .py extension
 
 The simplest way to use a Python hook. The language is inferred from the `.py`
-extension, and dependencies are installed automatically if a `requirements.txt`
-or `pyproject.toml` is found in the script's directory.
+extension, and the working directory is auto-inferred from the script's location.
+Dependencies are installed automatically if a `requirements.txt` or
+`pyproject.toml` is found in the script's directory.
 
 ```yaml
 hooks:
   postprovision:
     run: ./hooks/seed-database.py
+```
+
+### Python hook in a subdirectory (dir auto-inferred)
+
+When the script lives in a subdirectory, the `dir` is automatically set to that
+directory. No explicit `dir` field is needed:
+
+```yaml
+hooks:
+  preprovision:
+    run: hooks/preprovision/main.py
+    # dir is auto-inferred as hooks/preprovision/
 ```
 
 ### Python hook — explicit language
@@ -64,18 +82,18 @@ hooks:
     language: python
 ```
 
-### Python hook with project directory
+### Python hook with project directory override
 
-When the script's dependencies are in a different directory (e.g. a
-subdirectory with its own `requirements.txt`), use `dir` to point to the
-project root:
+When the script's project root differs from the script's directory (e.g. the
+entry point is in a `src/` subdirectory but dependencies are at the project
+level), use `dir` to override the auto-inferred value:
 
 ```yaml
 hooks:
   postprovision:
-    run: ./hooks/data-tool/main.py
+    run: ./hooks/data-tool/src/main.py
     language: python
-    dir: ./hooks/data-tool
+    dir: ./hooks/data-tool    # override: project root differs from script location
 ```
 
 ### Python hook with platform overrides

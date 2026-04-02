@@ -18,6 +18,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -722,23 +723,27 @@ func ensureLocation(
 	azureContext *azdext.AzureContext,
 	envName string,
 ) error {
-	if azureContext.Scope.Location != "" {
+	allowedLocations := supportedRegionsForInit()
+
+	if azureContext.Scope.Location != "" && locationAllowed(azureContext.Scope.Location, allowedLocations) {
 		return nil
+	}
+	if azureContext.Scope.Location != "" {
+		fmt.Printf("%s", output.WithWarningFormat(
+			"The current AZURE_LOCATION '%s' is not supported for this agent setup. Please choose a different location.\n",
+			azureContext.Scope.Location,
+		))
+		azureContext.Scope.Location = ""
 	}
 
 	fmt.Println("Select an Azure location. This determines which models are available and where your Foundry project resources will be deployed.")
 
-	locationResponse, err := azdClient.Prompt().PromptLocation(ctx, &azdext.PromptLocationRequest{
-		AzureContext: azureContext,
-	})
+	locationName, err := promptLocationForInit(ctx, azdClient, azureContext, allowedLocations)
 	if err != nil {
-		if exterrors.IsCancellation(err) {
-			return exterrors.Cancelled("location selection was cancelled")
-		}
-		return exterrors.FromPrompt(err, "failed to prompt for location")
+		return err
 	}
 
-	azureContext.Scope.Location = locationResponse.Location.Name
+	azureContext.Scope.Location = locationName
 
 	return setEnvValue(ctx, azdClient, envName, "AZURE_LOCATION", azureContext.Scope.Location)
 }
@@ -764,6 +769,57 @@ func ensureSubscriptionAndLocation(
 	return newCredential, nil
 }
 
+func normalizeLocationName(location string) string {
+	return strings.TrimSpace(strings.ToLower(location))
+}
+
+func locationAllowed(location string, allowedLocations []string) bool {
+	if len(allowedLocations) == 0 {
+		return true
+	}
+
+	normalized := normalizeLocationName(location)
+	return slices.ContainsFunc(allowedLocations, func(allowed string) bool {
+		return normalized == normalizeLocationName(allowed)
+	})
+}
+
+func promptLocationForInit(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	azureContext *azdext.AzureContext,
+	allowedLocations []string,
+) (string, error) {
+	locationResponse, err := azdClient.Prompt().PromptLocation(ctx, &azdext.PromptLocationRequest{
+		AzureContext:     azureContext,
+		AllowedLocations: allowedLocations,
+	})
+	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return "", exterrors.Cancelled("location selection was cancelled")
+		}
+		return "", exterrors.FromPrompt(err, "failed to prompt for location")
+	}
+
+	return locationResponse.Location.Name, nil
+}
+
+func agentModelFilter(locations []string, excludeModelNames []string) *azdext.AiModelFilterOptions {
+	filter := &azdext.AiModelFilterOptions{
+		Capabilities: []string{agentsV2ModelCapability},
+	}
+
+	if len(locations) > 0 {
+		filter.Locations = locations
+	}
+
+	if len(excludeModelNames) > 0 {
+		filter.ExcludeModelNames = excludeModelNames
+	}
+
+	return filter
+}
+
 // --- Shared model helpers ---
 
 // selectNewModel prompts the user to select a model from the AI catalog, filtered by location.
@@ -781,14 +837,12 @@ func selectNewModel(
 
 	promptReq := &azdext.PromptAiModelRequest{
 		AzureContext: azureContext,
+		Filter:       agentModelFilter([]string{azureContext.Scope.Location}, nil),
 		SelectOptions: &azdext.SelectOptions{
 			Message: "Select a model",
 		},
 		Quota: &azdext.QuotaCheckOptions{
 			MinRemainingCapacity: 1,
-		},
-		Filter: &azdext.AiModelFilterOptions{
-			Locations: []string{azureContext.Scope.Location},
 		},
 		DefaultValue: defaultModel,
 	}
@@ -801,16 +855,15 @@ func selectNewModel(
 	return modelResp.Model, nil
 }
 
-// resolveModelDeployment resolves a model deployment without prompting, selecting the best
-// candidate based on default versions, SKU priority, and available quota. Both init flows
-// use this for the "deploy new model" path in non-interactive mode.
-func resolveModelDeployment(
+// resolveModelDeployments resolves model deployments without prompting, returning all candidates
+// filtered by location and quota. Both init flows use this for deployment resolution.
+func resolveModelDeployments(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	azureContext *azdext.AzureContext,
 	model *azdext.AiModel,
 	location string,
-) (*azdext.AiModelDeployment, error) {
+) ([]*azdext.AiModelDeployment, error) {
 	resolveResp, err := azdClient.Ai().ResolveModelDeployments(ctx, &azdext.ResolveModelDeploymentsRequest{
 		AzureContext: azureContext,
 		ModelName:    model.Name,
@@ -822,19 +875,22 @@ func resolveModelDeployment(
 		},
 	})
 	if err != nil {
-		return nil, exterrors.FromAiService(err, exterrors.CodeModelResolutionFailed)
+		return nil, err
 	}
 
-	if len(resolveResp.Deployments) == 0 {
-		return nil, exterrors.Dependency(
-			exterrors.CodeModelResolutionFailed,
-			fmt.Sprintf("no deployment candidates found for model '%s' in location '%s'", model.Name, location),
-			"",
-		)
+	return resolveResp.Deployments, nil
+}
+
+func selectBestModelDeploymentCandidate(
+	model *azdext.AiModel,
+	deployments []*azdext.AiModelDeployment,
+) *azdext.AiModelDeployment {
+	if len(deployments) == 0 {
+		return nil
 	}
 
-	orderedCandidates := make([]*azdext.AiModelDeployment, len(resolveResp.Deployments))
-	copy(orderedCandidates, resolveResp.Deployments)
+	orderedCandidates := make([]*azdext.AiModelDeployment, len(deployments))
+	copy(orderedCandidates, deployments)
 
 	defaultVersions := make(map[string]struct{}, len(model.Versions))
 	for _, version := range model.Versions {
@@ -851,7 +907,34 @@ func resolveModelDeployment(
 			continue
 		}
 
-		return cloneDeploymentWithCapacity(candidate, capacity), nil
+		return cloneDeploymentWithCapacity(candidate, capacity)
+	}
+
+	return nil
+}
+
+func resolveModelDeployment(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	azureContext *azdext.AzureContext,
+	model *azdext.AiModel,
+	location string,
+) (*azdext.AiModelDeployment, error) {
+	deployments, err := resolveModelDeployments(ctx, azdClient, azureContext, model, location)
+	if err != nil {
+		return nil, exterrors.FromAiService(err, exterrors.CodeModelResolutionFailed)
+	}
+
+	if len(deployments) == 0 {
+		return nil, exterrors.Dependency(
+			exterrors.CodeModelResolutionFailed,
+			fmt.Sprintf("no deployment candidates found for model '%s' in location '%s'", model.Name, location),
+			"",
+		)
+	}
+
+	if candidate := selectBestModelDeploymentCandidate(model, deployments); candidate != nil {
+		return candidate, nil
 	}
 
 	return nil, fmt.Errorf("no deployment candidates found for model '%s' with a valid non-interactive capacity", model.Name)

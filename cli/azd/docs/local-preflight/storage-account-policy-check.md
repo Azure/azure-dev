@@ -145,7 +145,7 @@ properties) and Azure returns which policies would deny it and why.
 
 ```
 POST /subscriptions/{id}/providers/Microsoft.PolicyInsights/checkPolicyRestrictions
-     ?api-version=2022-03-01  # version tested in this investigation
+     ?api-version=2022-03-01
 
 {
   "resourceDetails": {
@@ -167,20 +167,66 @@ The API:
 
 **Result: Accurate evaluation but does not see management-group-inherited policies.**
 
-Testing against subscriptions with management-group-assigned deny policies
-confirmed that the API returns **empty results** (`policyEvaluations: []`,
-`fieldRestrictions: []`) even when:
+Testing against a subscription with a management-group-assigned deny policy
+("Storage Accounts - Safe Secrets Standard", assigned at the tenant root
+management group) confirmed that the API returns **empty results**
+(`policyEvaluations: []`, `fieldRestrictions: []`) even when:
 
-- The deny policy is confirmed active (deployments fail with
-  `RequestDisallowedByPolicy`)
-- The subscription tags satisfy all opt-in conditions
+- The deny policy is confirmed active (`policyStates` reports it with
+  `effect: deny` for existing storage accounts)
 - The resource content explicitly sets the denied property
 - Both subscription-scope and resource-group-scope endpoints are tried
 - A `PendingFields` parameter is included in the request
 
-The API only evaluates policies assigned directly at the subscription or resource
-group scope. Since enterprise storage deny policies originate from management
-groups, `checkPolicyRestrictions` does not evaluate them.
+The API correctly detects subscription-level policies — for example, a
+subscription-scoped `modify` policy for `allowBlobPublicAccess` returned the
+expected `fieldRestrictions` with `result: Required`. Only management-group-
+inherited policies are invisible.
+
+#### `api-version=2024-10-01` follow-up (April 2026)
+
+The `2024-10-01` API version added a
+[management group scope endpoint](https://learn.microsoft.com/en-us/rest/api/policyinsights/policy-restrictions/check-at-management-group-scope?view=rest-policyinsights-2024-10-01)
+and an `includeAuditEffect` parameter on the subscription scope. We tested both
+to see if they resolve the MG-inherited policy blind spot.
+
+**Subscription-scope with `2024-10-01`:** Same empty results as `2022-03-01`.
+The newer API version does not change the subscription-scope behavior — MG-
+inherited policies remain invisible. Adding `includeAuditEffect: true` also
+returned empty.
+
+**Management group scope endpoint:** This endpoint only supports `pendingFields`
+with a single `type` field — it rejects `resourceDetails` entirely:
+
+```
+POST /providers/Microsoft.Management/managementGroups/{mgId}
+     /providers/Microsoft.PolicyInsights/checkPolicyRestrictions
+     ?api-version=2024-10-01
+
+# Only this request body is accepted:
+{ "pendingFields": [{ "field": "type" }] }
+
+# This is rejected with InvalidCheckRestrictionsRequest:
+{ "resourceDetails": { ... } }
+```
+
+The error message confirms the limitation:
+> *"The 'resourceDetails' property is not supported in requests at Management
+> Group level. The request content can only have a single 'type' pending field."*
+
+Testing at multiple levels of the MG hierarchy (direct parent, intermediate MGs,
+tenant root) all returned empty `fieldRestrictions` even for the `type` field.
+The MG-scope endpoint is designed to answer "which resource types are
+restricted" at a management group level, not "would this specific resource
+configuration be denied" — making it unsuitable for property-level checks like
+`allowSharedKeyAccess`.
+
+| Endpoint | API Version | Sees MG deny policies | Supports resource properties |
+|---|---|---|---|
+| Subscription scope | `2022-03-01` | ❌ | ✅ |
+| Subscription scope | `2024-10-01` | ❌ | ✅ |
+| Resource group scope | `2024-10-01` | ❌ | ✅ |
+| MG scope | `2024-10-01` | Untested (empty for `type`) | ❌ (rejected) |
 
 ### Approach 3: Policy States API (`policyStates`)
 
@@ -197,7 +243,8 @@ warn *before* deployment, this API is not applicable.
 | Approach | Sees MG policies | Evaluates all conditions | Limitation | Suitable |
 |---|---|---|---|---|
 | Client-side ARM policy SDK parsing | ✅ Yes | ❌ No (ARM expressions) | Cannot evaluate runtime expressions → false positives | ❌ |
-| Server-side `checkPolicyRestrictions` | ❌ No | ✅ Yes | Subscription scope misses MG-inherited policies | ❌ |
+| Server-side `checkPolicyRestrictions` (sub scope) | ❌ No | ✅ Yes | Misses MG-inherited policies (confirmed with both `2022-03-01` and `2024-10-01`) | ❌ |
+| Server-side `checkPolicyRestrictions` (MG scope, `2024-10-01`) | Untested | ❌ No | Only supports `type` field; rejects `resourceDetails` | ❌ |
 | `policyStates` API | ✅ Yes | ✅ Yes | Only evaluates already-deployed resources | ❌ |
 
 No currently available approach provides both accurate policy detection
@@ -208,20 +255,12 @@ system.
 
 ## Future Considerations
 
-- **Management group scope endpoint (`2024-10-01`)**: The `checkPolicyRestrictions`
-  API added a [management group scope endpoint](https://learn.microsoft.com/en-us/rest/api/policyinsights/policy-restrictions/check-at-management-group-scope?view=rest-policyinsights-2024-10-01)
-  in `api-version=2024-10-01`:
-  ```
-  POST /providers/Microsoft.Management/managementGroups/{mgId}/providers/Microsoft.PolicyInsights/checkPolicyRestrictions
-       ?api-version=2024-10-01
-  ```
-  This could address the core limitation — the subscription-scope endpoint
-  doesn't see MG-inherited policies, but the MG-scope endpoint evaluates against
-  the full policy hierarchy. This is the most promising next step. A hybrid
-  approach (client-side detection to find relevant MG IDs + MG-scope server-side
-  evaluation) could combine accurate detection with full condition evaluation.
-  **Note**: This investigation tested only `api-version=2022-03-01` at the
-  subscription scope. The MG-scope endpoint was not tested.
+- **`checkPolicyRestrictions` MG-scope with `resourceDetails` support**: If
+  Microsoft updates the MG-scope endpoint to accept `resourceDetails` (not just
+  `type` pending fields), it would enable property-level evaluation against
+  MG-inherited policies. This is the only server-side path that could solve the
+  problem without client-side expression evaluation. As of `2024-10-01`, the
+  MG-scope endpoint rejects `resourceDetails` requests.
 - A hybrid approach (client-side detection + subscription tag evaluation for
   common patterns) could reduce false positives for the most common gating
   conditions, at the cost of maintaining a partial ARM expression evaluator.

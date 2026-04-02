@@ -139,17 +139,12 @@ type Console interface {
 type AskerConsole struct {
 	asker   Asker
 	handles ConsoleHandles
-	// the writer the console was constructed with, and what we reset to when SetWriter(nil) is called.
+	// defaultWriter is the stdout handle, used to detect when the caller has
+	// redirected console output (e.g., to stderr for structured output).
 	defaultWriter io.Writer
 	// the writer which output is written to.
 	writer    io.Writer
 	formatter output.Formatter
-
-	// structuredOutputMode indicates that stdout is reserved for
-	// machine-parsable structured output. When true, human-readable
-	// messages are routed to stderr and visual elements (spinners,
-	// previewers) are redirected to stderr as plain text.
-	structuredOutputMode bool
 
 	// isTerminal controls whether terminal-style input/output will be used.
 	//
@@ -220,12 +215,9 @@ func (c *AskerConsole) IsUnformatted() bool {
 }
 
 // messageWriter returns the writer for human-readable messages.
-// In structured output mode, returns stderr to keep stdout clean for
-// machine-parsable output. Otherwise, returns the current console writer.
+// The caller (e.g., container.go) is responsible for setting c.writer
+// to the appropriate destination (e.g., stderr for structured output).
 func (c *AskerConsole) messageWriter() io.Writer {
-	if c.structuredOutputMode {
-		return c.handles.Stderr
-	}
 	return c.writer
 }
 
@@ -345,11 +337,11 @@ func (c *AskerConsole) ShowPreviewer(ctx context.Context, options *ShowPreviewer
 	c.showProgressMu.Lock()
 	defer c.showProgressMu.Unlock()
 
-	// In structured output mode, skip the visual frame rendering (which writes to
-	// stdout via goterm) and return a writer that routes previewer output to
-	// stderr so it doesn't corrupt the structured output on stdout.
-	if c.structuredOutputMode {
-		return c.handles.Stderr
+	// When the caller has redirected console output (e.g., to stderr for
+	// structured output), skip the visual frame rendering (goterm writes
+	// to stdout directly) and return the redirected writer instead.
+	if c.writer != c.defaultWriter {
+		return c.writer
 	}
 
 	// Pause any active spinner
@@ -380,8 +372,9 @@ func (c *AskerConsole) ShowPreviewer(ctx context.Context, options *ShowPreviewer
 }
 
 func (c *AskerConsole) StopPreviewer(ctx context.Context, keepLogs bool) {
-	// In structured output mode the previewer was never started — nothing to stop.
-	if c.structuredOutputMode {
+	// If the previewer was never started (e.g., output was redirected),
+	// there's nothing to stop.
+	if c.previewer == nil {
 		return
 	}
 
@@ -447,10 +440,11 @@ func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format Spi
 	c.showProgressMu.Lock()
 	defer c.showProgressMu.Unlock()
 
-	if c.structuredOutputMode {
-		// In structured output mode, emit spinner title as plain text to stderr
-		// so stdout remains clean for structured output.
-		fmt.Fprintln(c.messageWriter(), title)
+	// When the caller has redirected console output, emit the spinner
+	// title as plain text to the writer instead of using terminal
+	// animations that write to stdout directly.
+	if c.writer != c.defaultWriter {
+		fmt.Fprintln(c.writer, title)
 		return
 	}
 
@@ -525,12 +519,12 @@ func (c *AskerConsole) StopSpinner(
 	lastMessage string,
 	format SpinnerUxType,
 ) {
-	if c.structuredOutputMode {
-		// In structured output mode, emit the stop message as plain text to
-		// stderr so stdout remains clean for structured output.
+	if c.writer != c.defaultWriter {
+		// When output is redirected, emit the stop message as plain
+		// text to the writer.
 		if lastMessage != "" {
 			msg := c.getStopChar(format) + " " + lastMessage
-			fmt.Fprintln(c.messageWriter(), msg)
+			fmt.Fprintln(c.writer, msg)
 		}
 		return
 	}
@@ -1064,19 +1058,15 @@ func NewConsole(
 	externalPromptCfg *ExternalPromptConfiguration) Console {
 	asker := NewAsker(noPrompt, isTerminal, handles.Stdout, handles.Stdin)
 
-	structuredMode := formatter != nil &&
-		formatter.Kind() == output.JsonFormat
-
 	c := &AskerConsole{
-		asker:                asker,
-		handles:              handles,
-		defaultWriter:        writers.Output,
-		writer:               writers.Output,
-		formatter:            formatter,
-		structuredOutputMode: structuredMode,
-		isTerminal:           isTerminal,
-		currentIndent:        atomic.NewString(""),
-		noPrompt:             noPrompt,
+		asker:         asker,
+		handles:       handles,
+		defaultWriter: handles.Stdout,
+		writer:        writers.Output,
+		formatter:     formatter,
+		isTerminal:    isTerminal,
+		currentIndent: atomic.NewString(""),
+		noPrompt:      noPrompt,
 	}
 
 	if writers.Spinner == nil {

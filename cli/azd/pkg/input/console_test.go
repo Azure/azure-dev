@@ -365,17 +365,19 @@ func TestAskerConsole_Message_InvalidQuery_FallsBack(t *testing.T) {
 		"invalid query should fall back to full envelope")
 }
 
-func TestAskerConsole_StructuredOutputMode_StderrRouting(t *testing.T) {
+func TestAskerConsole_RedirectedOutput_Routing(t *testing.T) {
 	tests := []struct {
-		name         string
-		format       string
-		action       func(ctx context.Context, c Console)
-		wantOnStderr string
-		wantStdout   bool
+		name           string
+		format         string
+		redirectOutput bool
+		action         func(ctx context.Context, c Console)
+		wantOnStderr   string
+		wantStdout     bool
 	}{
 		{
-			name:   "StructuredMode_Message_GoesToStderr",
-			format: string(output.JsonFormat),
+			name:           "Redirected_Message_GoesToWriter",
+			format:         string(output.JsonFormat),
+			redirectOutput: true,
 			action: func(ctx context.Context, c Console) {
 				c.Message(ctx, "deploying resources")
 			},
@@ -383,8 +385,9 @@ func TestAskerConsole_StructuredOutputMode_StderrRouting(t *testing.T) {
 			wantStdout:   false,
 		},
 		{
-			name:   "StructuredMode_ShowSpinner_GoesToStderr",
-			format: string(output.JsonFormat),
+			name:           "Redirected_ShowSpinner_GoesToWriter",
+			format:         string(output.JsonFormat),
+			redirectOutput: true,
 			action: func(ctx context.Context, c Console) {
 				c.ShowSpinner(ctx, "Provisioning...", Step)
 			},
@@ -392,8 +395,9 @@ func TestAskerConsole_StructuredOutputMode_StderrRouting(t *testing.T) {
 			wantStdout:   false,
 		},
 		{
-			name:   "StructuredMode_StopSpinner_GoesToStderr",
-			format: string(output.JsonFormat),
+			name:           "Redirected_StopSpinner_GoesToWriter",
+			format:         string(output.JsonFormat),
+			redirectOutput: true,
 			action: func(
 				ctx context.Context, c Console,
 			) {
@@ -412,8 +416,9 @@ func TestAskerConsole_StructuredOutputMode_StderrRouting(t *testing.T) {
 			wantStdout:   true,
 		},
 		{
-			name:   "StructuredMode_MessageUxItem_GoesToStderr",
-			format: string(output.JsonFormat),
+			name:           "Redirected_MessageUxItem_GoesToWriter",
+			format:         string(output.JsonFormat),
+			redirectOutput: true,
 			action: func(ctx context.Context, c Console) {
 				c.MessageUxItem(
 					ctx,
@@ -442,11 +447,19 @@ func TestAskerConsole_StructuredOutputMode_StderrRouting(t *testing.T) {
 			formatter, err := output.NewFormatter(tc.format)
 			require.NoError(t, err)
 
+			// When redirectOutput is true, simulate what container.go
+			// does for JSON mode: set Writers.Output to stderr so that
+			// c.writer != c.defaultWriter triggers the redirect path.
+			outputWriter := writerAdapter{stdoutBuf}
+			if tc.redirectOutput {
+				outputWriter = writerAdapter{stderrBuf}
+			}
+
 			c := NewConsole(
 				true,
 				false,
 				Writers{
-					Output: writerAdapter{stdoutBuf},
+					Output: outputWriter,
 				},
 				ConsoleHandles{
 					Stderr: writerAdapter{stderrBuf},
@@ -465,12 +478,12 @@ func TestAskerConsole_StructuredOutputMode_StderrRouting(t *testing.T) {
 					t,
 					stderrBuf.String(),
 					tc.wantOnStderr,
-					"expected message on stderr",
+					"expected message on redirected writer",
 				)
 				require.Empty(
 					t,
 					stdoutBuf.String(),
-					"stdout should be empty in structured output mode",
+					"stdout should be empty when output is redirected",
 				)
 			}
 
@@ -483,14 +496,14 @@ func TestAskerConsole_StructuredOutputMode_StderrRouting(t *testing.T) {
 				require.Empty(
 					t,
 					stderrBuf.String(),
-					"stderr should be empty in non-structured mode",
+					"stderr should be empty when output is not redirected",
 				)
 			}
 		})
 	}
 }
 
-func TestAskerConsole_StructuredMode_EnsureBlankLine(t *testing.T) {
+func TestAskerConsole_RedirectedOutput_EnsureBlankLine(t *testing.T) {
 	stdoutBuf := &strings.Builder{}
 	stderrBuf := &strings.Builder{}
 	formatter := &output.JsonFormatter{}
@@ -498,7 +511,7 @@ func TestAskerConsole_StructuredMode_EnsureBlankLine(t *testing.T) {
 	c := NewConsole(
 		true,
 		false,
-		Writers{Output: writerAdapter{stdoutBuf}},
+		Writers{Output: writerAdapter{stderrBuf}},
 		ConsoleHandles{
 			Stderr: writerAdapter{stderrBuf},
 			Stdin:  os.Stdin,
@@ -510,16 +523,16 @@ func TestAskerConsole_StructuredMode_EnsureBlankLine(t *testing.T) {
 
 	ctx := t.Context()
 	// Call EnsureBlankLine directly without a preceding Message call.
-	// EnsureBlankLine internally calls Message, so stderr gets output only from it.
+	// EnsureBlankLine internally calls Message, so the redirected writer gets output.
 	c.EnsureBlankLine(ctx)
 
 	require.Empty(t, stdoutBuf.String(),
-		"stdout should be empty in structured output mode")
+		"stdout should be empty when output is redirected")
 	require.NotEmpty(t, stderrBuf.String(),
-		"EnsureBlankLine output should go to stderr")
+		"EnsureBlankLine output should go to redirected writer")
 }
 
-func TestAskerConsole_StructuredMode_ShowPreviewer_ReturnsStderr(
+func TestAskerConsole_RedirectedOutput_ShowPreviewer_ReturnsWriter(
 	t *testing.T,
 ) {
 	stderrBuf := &strings.Builder{}
@@ -529,7 +542,7 @@ func TestAskerConsole_StructuredMode_ShowPreviewer_ReturnsStderr(
 	c := NewConsole(
 		true,
 		false,
-		Writers{Output: writerAdapter{stdoutBuf}},
+		Writers{Output: writerAdapter{stderrBuf}},
 		ConsoleHandles{
 			Stderr: writerAdapter{stderrBuf},
 			Stdin:  os.Stdin,
@@ -549,7 +562,7 @@ func TestAskerConsole_StructuredMode_ShowPreviewer_ReturnsStderr(
 	require.Empty(t, stdoutBuf.String())
 }
 
-func TestAskerConsole_StructuredMode_StopPreviewer_NoOp(t *testing.T) {
+func TestAskerConsole_RedirectedOutput_StopPreviewer_NoOp(t *testing.T) {
 	stdoutBuf := &strings.Builder{}
 	stderrBuf := &strings.Builder{}
 	formatter := &output.JsonFormatter{}
@@ -557,7 +570,7 @@ func TestAskerConsole_StructuredMode_StopPreviewer_NoOp(t *testing.T) {
 	c := NewConsole(
 		true,
 		false,
-		Writers{Output: writerAdapter{stdoutBuf}},
+		Writers{Output: writerAdapter{stderrBuf}},
 		ConsoleHandles{
 			Stderr: writerAdapter{stderrBuf},
 			Stdin:  os.Stdin,

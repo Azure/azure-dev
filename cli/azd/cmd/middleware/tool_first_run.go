@@ -5,6 +5,7 @@ package middleware
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -17,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tool"
+	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
 )
 
 // configKeyFirstRunCompleted is the user-config path that records
@@ -124,18 +126,22 @@ func (m *ToolFirstRunMiddleware) runFirstRunExperience(ctx context.Context) erro
 	// ---------------------------------------------------------------
 	// Opt-in prompt
 	// ---------------------------------------------------------------
-	runCheck, err := m.console.Confirm(ctx, input.ConsoleOptions{
+	confirm := uxlib.NewConfirm(&uxlib.ConfirmOptions{
 		Message:      "Would you like to check your Azure development tools?",
-		DefaultValue: true,
+		DefaultValue: new(true),
 	})
+	runCheck, err := confirm.Ask(ctx)
 	if err != nil {
 		// Confirm can fail on interrupt/cancel — mark completed so
 		// we don't pester the user again.
 		m.markCompleted()
+		if errors.Is(err, uxlib.ErrCancelled) {
+			return nil
+		}
 		return fmt.Errorf("prompting for tool check: %w", err)
 	}
 
-	if !runCheck {
+	if runCheck == nil || !*runCheck {
 		m.markCompleted()
 		return nil
 	}
@@ -144,13 +150,17 @@ func (m *ToolFirstRunMiddleware) runFirstRunExperience(ctx context.Context) erro
 	// Tool detection
 	// ---------------------------------------------------------------
 	m.console.Message(ctx, "")
-	m.console.ShowSpinner(ctx, "Detecting tools...", input.Step)
 
-	statuses, err := m.manager.DetectAll(ctx)
-
-	m.console.StopSpinner(ctx, "", input.StepDone)
-
-	if err != nil {
+	var statuses []*tool.ToolStatus
+	detectSpinner := uxlib.NewSpinner(&uxlib.SpinnerOptions{
+		Text:        "Detecting tools...",
+		ClearOnStop: true,
+	})
+	if err := detectSpinner.Run(ctx, func(ctx context.Context) error {
+		var detectErr error
+		statuses, detectErr = m.manager.DetectAll(ctx)
+		return detectErr
+	}); err != nil {
 		m.markCompleted()
 		return fmt.Errorf("detecting tools: %w", err)
 	}
@@ -213,19 +223,25 @@ func (m *ToolFirstRunMiddleware) offerInstall(
 	ctx context.Context,
 	missing []*tool.ToolStatus,
 ) error {
-	options := make([]string, 0, len(missing))
-	toolIDs := make([]string, 0, len(missing))
-	for _, s := range missing {
-		options = append(options, fmt.Sprintf("%s — %s", s.Tool.Name, s.Tool.Description))
-		toolIDs = append(toolIDs, s.Tool.Id)
+	choices := make([]*uxlib.MultiSelectChoice, len(missing))
+	for i, s := range missing {
+		choices[i] = &uxlib.MultiSelectChoice{
+			Value:    s.Tool.Id,
+			Label:    fmt.Sprintf("%s — %s", s.Tool.Name, s.Tool.Description),
+			Selected: true, // pre-select all recommended
+		}
 	}
 
-	selected, err := m.console.MultiSelect(ctx, input.ConsoleOptions{
-		Message:      "Select recommended tools to install:",
-		Options:      options,
-		DefaultValue: options, // pre-select all by default
+	multiSelect := uxlib.NewMultiSelect(&uxlib.MultiSelectOptions{
+		Message: "Select recommended tools to install:",
+		Choices: choices,
 	})
+
+	selected, err := multiSelect.Ask(ctx)
 	if err != nil {
+		if errors.Is(err, uxlib.ErrCancelled) {
+			return nil
+		}
 		return fmt.Errorf("prompting for tool selection: %w", err)
 	}
 
@@ -235,26 +251,25 @@ func (m *ToolFirstRunMiddleware) offerInstall(
 		return nil
 	}
 
-	// Map selected display strings back to tool IDs.
+	// Extract selected tool IDs.
 	selectedIDs := make([]string, 0, len(selected))
-	for _, sel := range selected {
-		for i, opt := range options {
-			if sel == opt {
-				selectedIDs = append(selectedIDs, toolIDs[i])
-				break
-			}
-		}
+	for _, choice := range selected {
+		selectedIDs = append(selectedIDs, choice.Value)
 	}
 
 	// Install selected tools.
 	m.console.Message(ctx, "")
-	m.console.ShowSpinner(ctx, "Installing tools...", input.Step)
 
-	results, err := m.manager.InstallTools(ctx, selectedIDs)
-
-	m.console.StopSpinner(ctx, "", input.StepDone)
-
-	if err != nil {
+	var results []*tool.InstallResult
+	installSpinner := uxlib.NewSpinner(&uxlib.SpinnerOptions{
+		Text:        "Installing tools...",
+		ClearOnStop: true,
+	})
+	if err := installSpinner.Run(ctx, func(ctx context.Context) error {
+		var installErr error
+		results, installErr = m.manager.InstallTools(ctx, selectedIDs)
+		return installErr
+	}); err != nil {
 		return fmt.Errorf("installing tools: %w", err)
 	}
 

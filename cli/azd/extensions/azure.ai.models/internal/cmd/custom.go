@@ -39,7 +39,7 @@ func newCustomCommand() *cobra.Command {
 	customCmd.PersistentFlags().StringVarP(&flags.projectEndpoint, "project-endpoint", "e", "",
 		"Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)")
 	customCmd.PersistentFlags().Lookup("project-endpoint").ShorthandDeprecated =
-		"use --project-endpoint instead; -e will be removed after April 2025"
+		"use --project-endpoint instead; -e will be removed in a future release"
 
 	customCmd.AddCommand(newCustomCreateCommand(flags))
 	customCmd.AddCommand(newCustomListCommand(flags))

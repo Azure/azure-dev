@@ -3,6 +3,7 @@
 
 ## 0.0.5-preview (2026-03-24)
 
+- Deprecated `-e` shorthand for `--project-endpoint`; use the full flag name instead
 - Improved error handling for 403 (Forbidden) during `custom create` upload, with guidance on required roles and links to prerequisites and RBAC documentation (#7278)
 
 ## 0.0.4-preview (2026-03-17)

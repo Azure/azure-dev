@@ -95,7 +95,7 @@ The init command will:
 	cmd.Flags().StringVarP(&flags.projectEndpoint, "project-endpoint", "e", "",
 		"Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)")
 	cmd.Flags().Lookup("project-endpoint").ShorthandDeprecated =
-		"use --project-endpoint instead; -e will be removed after April 2025"
+		"use --project-endpoint instead; -e will be removed in a future release"
 
 	cmd.Flags().StringVarP(&flags.projectResourceId, "project-resource-id", "p", "",
 		"ARM resource ID of the Foundry project")

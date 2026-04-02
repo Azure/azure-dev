@@ -593,8 +593,8 @@ func TestHandleInvocationLRO(t *testing.T) {
 			pollResponses: []pollStep{
 				{status: 200, body: `{"status":"failed","error":{"code":"runtime_error","message":"agent crashed"}}`},
 			},
-			timeout: 10 * time.Second,
-			wantErr: true,
+			timeout:     10 * time.Second,
+			wantErr:     true,
 			errContains: "invocation failed (runtime_error): agent crashed",
 		},
 		{
@@ -604,8 +604,8 @@ func TestHandleInvocationLRO(t *testing.T) {
 			pollResponses: []pollStep{
 				{status: 200, body: `{"status":"cancelled"}`},
 			},
-			timeout: 10 * time.Second,
-			wantErr: true,
+			timeout:     10 * time.Second,
+			wantErr:     true,
 			errContains: "invocation was cancelled",
 		},
 		{
@@ -615,8 +615,8 @@ func TestHandleInvocationLRO(t *testing.T) {
 			pollResponses: []pollStep{
 				{status: 500, body: "Internal Server Error"},
 			},
-			timeout: 10 * time.Second,
-			wantErr: true,
+			timeout:     10 * time.Second,
+			wantErr:     true,
 			errContains: "HTTP 500",
 		},
 		{
@@ -656,12 +656,12 @@ func TestHandleInvocationLRO(t *testing.T) {
 							w.Header().Set("Retry-After", last.retryAfter)
 						}
 						w.WriteHeader(last.status)
-						w.Write([]byte(last.body)) //nolint:errcheck
+						_, _ = w.Write([]byte(last.body))
 						return
 					}
 					// Shouldn't reach here in well-formed tests
 					w.WriteHeader(500)
-					w.Write([]byte("unexpected poll")) //nolint:errcheck
+					_, _ = w.Write([]byte("unexpected poll"))
 					return
 				}
 				step := tt.pollResponses[pollIndex]
@@ -670,7 +670,7 @@ func TestHandleInvocationLRO(t *testing.T) {
 					w.Header().Set("Retry-After", step.retryAfter)
 				}
 				w.WriteHeader(step.status)
-				w.Write([]byte(step.body)) //nolint:errcheck
+				_, _ = w.Write([]byte(step.body))
 			}))
 			defer srv.Close()
 

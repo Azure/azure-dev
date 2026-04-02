@@ -224,19 +224,48 @@ func (a *InvokeAction) responsesLocal(ctx context.Context) error {
 
 	msg := string(body)
 
-	fmt.Printf("Target:  localhost:%d (local)\n", port)
-	fmt.Printf("Message: %s\n\n", bodyLabel)
+	// Open azd client for session/conversation persistence.
+	var azdClient *azdext.AzdClient
+	if c, err := azdext.NewAzdClient(); err == nil {
+		azdClient = c
+		defer azdClient.Close()
+	}
+
+	agentKey := resolveLocalAgentKey(ctx, azdClient, a.flags.name, rootFlags.NoPrompt)
+
+	// Resolve local session and conversation IDs (always generated locally).
+	var sid, convID string
+	if azdClient != nil {
+		sid, _ = resolveStoredID(
+			ctx, azdClient, agentKey, a.flags.session, a.flags.newSession, "sessions", true,
+		)
+		convID, _ = resolveStoredID(
+			ctx, azdClient, agentKey, a.flags.conversation, a.flags.newConversation, "conversations", true,
+		)
+	}
+
+	fmt.Printf("Target:       localhost:%d (local)\n", port)
+	fmt.Printf("Message:      %s\n", bodyLabel)
+	printSessionStatus("Session:      ", sid)
+	fmt.Printf("Conversation: %s\n\n", convID)
 
 	reqBody := map[string]any{
 		"input": msg,
 	}
+	if sid != "" {
+		reqBody["session_id"] = sid
+	}
+	if convID != "" {
+		reqBody["conversation"] = map[string]string{"id": convID}
+	}
+
 	payload, err := json.Marshal(reqBody)
 	if err != nil {
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	url := fmt.Sprintf("http://localhost:%d/responses", port)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
+	reqURL := fmt.Sprintf("http://localhost:%d/responses", port)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(payload))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -245,7 +274,10 @@ func (a *InvokeAction) responsesLocal(ctx context.Context) error {
 	client := &http.Client{Timeout: a.httpTimeout()}
 	resp, err := client.Do(req) //nolint:gosec // G704: URL targets localhost with user-configured port
 	if err != nil {
-		return fmt.Errorf("could not connect to localhost:%d — is the agent running? Start it with: azd ai agent run", port)
+		return fmt.Errorf(
+			"could not connect to localhost:%d — is the agent running? Start it with: azd ai agent run",
+			port,
+		)
 	}
 	defer resp.Body.Close()
 
@@ -259,7 +291,10 @@ func (a *InvokeAction) responsesLocal(ctx context.Context) error {
 		if requestID != "" {
 			fmt.Printf("Trace ID: %s\n", requestID)
 		}
-		return fmt.Errorf("POST %s failed with HTTP %d: %s\n%s", url, resp.StatusCode, resp.Status, string(respBody))
+		return fmt.Errorf(
+			"POST %s failed with HTTP %d: %s\n%s",
+			reqURL, resp.StatusCode, resp.Status, string(respBody),
+		)
 	}
 
 	var result map[string]any
@@ -322,7 +357,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 
 	// Session ID — routes to the same microVM container instance.
 	// When empty, let the server assign one.
-	sid, err := resolveSessionID(ctx, azdClient, name, a.flags.session, a.flags.newSession)
+	sid, err := resolveStoredID(ctx, azdClient, name, a.flags.session, a.flags.newSession, "sessions", false)
 	if err != nil {
 		return err
 	}
@@ -416,13 +451,20 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 		return err
 	}
 
-	// Resolve session ID (empty means let the server assign one).
-	var sid string
 	var azdClient *azdext.AzdClient
 	if c, err := azdext.NewAzdClient(); err == nil {
 		azdClient = c
 		defer azdClient.Close()
-		sid, _ = resolveSessionID(ctx, azdClient, "local", a.flags.session, a.flags.newSession)
+	}
+
+	agentKey := resolveLocalAgentKey(ctx, azdClient, a.flags.name, rootFlags.NoPrompt)
+
+	// Resolve local session ID (generated locally, not server-assigned).
+	var sid string
+	if azdClient != nil {
+		sid, _ = resolveStoredID(
+			ctx, azdClient, agentKey, a.flags.session, a.flags.newSession, "sessions", true,
+		)
 	}
 
 	fmt.Printf("Target:   localhost:%d (local, invocations protocol)\n", port)
@@ -434,7 +476,7 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 
 	// Fetch and cache the agent's OpenAPI spec (always refresh for local).
 	if azdClient != nil {
-		fetchOpenAPISpec(ctx, azdClient, localBaseURL, "local", "local", "", true)
+		fetchOpenAPISpec(ctx, azdClient, localBaseURL, agentKey, "local", "", true)
 	}
 
 	invURL := localBaseURL + "/invocations"
@@ -460,12 +502,10 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 
 	// Persist the most recent invocation ID for this agent (best-effort).
 	if invID := resp.Header.Get("x-agent-invocation-id"); invID != "" && azdClient != nil {
-		saveInvocationID(ctx, azdClient, "local", invID)
+		saveContextValue(ctx, azdClient, agentKey, invID, "invocations")
 	}
 
-	captureResponseSession(ctx, azdClient, "local", sid, resp, "Session:  ")
-
-	return handleInvocationResponse(ctx, resp, "", "", "local", a.httpTimeout())
+	return handleInvocationResponse(ctx, resp, "", "", agentKey, a.httpTimeout())
 }
 
 // invocationsRemote sends the user's message to Foundry using
@@ -503,7 +543,7 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	}
 
 	// Session ID — routes to the same container instance
-	sid, err := resolveSessionID(ctx, azdClient, name, a.flags.session, a.flags.newSession)
+	sid, err := resolveStoredID(ctx, azdClient, name, a.flags.session, a.flags.newSession, "sessions", false)
 	if err != nil {
 		return err
 	}
@@ -552,7 +592,7 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 
 	// Persist the most recent invocation ID for this agent.
 	if invID := resp.Header.Get("x-agent-invocation-id"); invID != "" {
-		saveInvocationID(ctx, azdClient, name, invID)
+		saveContextValue(ctx, azdClient, name, invID, "invocations")
 	}
 
 	captureResponseSession(ctx, azdClient, name, sid, resp, "Session:  ")

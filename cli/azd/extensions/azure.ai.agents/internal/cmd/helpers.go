@@ -22,6 +22,7 @@ import (
 	projectpkg "azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/google/uuid"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -88,68 +89,111 @@ func saveLocalContext(agentCtx *AgentLocalContext, configPath string) error {
 	return os.WriteFile(configPath, append(data, '\n'), 0600)
 }
 
-// resolveSessionID looks up an existing session ID for the given agent.
-// Returns the explicit value if provided, or the saved session ID from the config file.
-// Returns "" when no session exists or forceNew is true, signaling the caller to let
-// the server assign one via the x-agent-session-id response header.
-func resolveSessionID(
+// saveContextValue persists a value into the named field of the local config.
+// storeField selects the map: "sessions", "conversations", or "invocations".
+func saveContextValue(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
-	agentName string,
+	agentKey string,
+	value string,
+	storeField string,
+) {
+	if value == "" {
+		return
+	}
+	configPath, err := resolveConfigPath(ctx, azdClient)
+	if err != nil {
+		return
+	}
+	agentCtx := loadLocalContext(configPath)
+	store := contextMap(agentCtx, storeField)
+	store[agentKey] = value
+	_ = saveLocalContext(agentCtx, configPath)
+}
+
+// resolveLocalAgentKey builds the storage key for local mode from the azd project config.
+// Returns "{serviceName}-local" when the service can be resolved, or "local" as fallback.
+func resolveLocalAgentKey(ctx context.Context, azdClient *azdext.AzdClient, name string, noPrompt bool) string {
+	if azdClient == nil {
+		return "local"
+	}
+	info, err := resolveAgentServiceFromProject(ctx, azdClient, name, noPrompt)
+	if err != nil || info.ServiceName == "" {
+		return "local"
+	}
+	return info.ServiceName + "-local"
+}
+
+// resolveStoredID resolves a persisted ID (session, conversation, etc.) from the local config.
+// It checks (in order): explicit flag value, persisted value in the config store, then either
+// returns "" (generateIfMissing=false, for remote mode where the server assigns the ID) or
+// generates and persists a new UUID (generateIfMissing=true, for local mode).
+// storeField selects which map to use: "sessions" or "conversations".
+func resolveStoredID(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	agentKey string,
 	explicit string,
 	forceNew bool,
+	storeField string,
+	generateIfMissing bool,
 ) (string, error) {
 	if explicit != "" {
 		return explicit, nil
 	}
-	if forceNew {
+	if forceNew && !generateIfMissing {
 		return "", nil
 	}
+
 	configPath, err := resolveConfigPath(ctx, azdClient)
 	if err != nil {
+		if generateIfMissing {
+			return uuid.NewString(), nil
+		}
 		return "", err
 	}
+
 	agentCtx := loadLocalContext(configPath)
-	if agentCtx.Sessions != nil {
-		if sid, ok := agentCtx.Sessions[agentName]; ok {
-			return sid, nil
+
+	store := contextMap(agentCtx, storeField)
+	if !forceNew {
+		if id, ok := store[agentKey]; ok {
+			return id, nil
 		}
 	}
-	return "", nil
+
+	if !generateIfMissing {
+		return "", nil
+	}
+
+	newID := uuid.NewString()
+	store[agentKey] = newID
+	_ = saveLocalContext(agentCtx, configPath)
+
+	return newID, nil
 }
 
-// saveSessionID persists a session ID received from the server.
-func saveSessionID(ctx context.Context, azdClient *azdext.AzdClient, agentName, sessionID string) {
-	if sessionID == "" {
-		return
+// contextMap returns the named map from AgentLocalContext, initializing it if nil.
+func contextMap(agentCtx *AgentLocalContext, field string) map[string]string {
+	switch field {
+	case "sessions":
+		if agentCtx.Sessions == nil {
+			agentCtx.Sessions = make(map[string]string)
+		}
+		return agentCtx.Sessions
+	case "conversations":
+		if agentCtx.Conversations == nil {
+			agentCtx.Conversations = make(map[string]string)
+		}
+		return agentCtx.Conversations
+	case "invocations":
+		if agentCtx.Invocations == nil {
+			agentCtx.Invocations = make(map[string]string)
+		}
+		return agentCtx.Invocations
+	default:
+		return make(map[string]string)
 	}
-	configPath, err := resolveConfigPath(ctx, azdClient)
-	if err != nil {
-		return
-	}
-	agentCtx := loadLocalContext(configPath)
-	if agentCtx.Sessions == nil {
-		agentCtx.Sessions = make(map[string]string)
-	}
-	agentCtx.Sessions[agentName] = sessionID
-	_ = saveLocalContext(agentCtx, configPath)
-}
-
-// saveInvocationID persists the most recent invocation ID for the given agent.
-func saveInvocationID(ctx context.Context, azdClient *azdext.AzdClient, agentName, invocationID string) {
-	if invocationID == "" {
-		return
-	}
-	configPath, err := resolveConfigPath(ctx, azdClient)
-	if err != nil {
-		return
-	}
-	agentCtx := loadLocalContext(configPath)
-	if agentCtx.Invocations == nil {
-		agentCtx.Invocations = make(map[string]string)
-	}
-	agentCtx.Invocations[agentName] = invocationID
-	_ = saveLocalContext(agentCtx, configPath)
 }
 
 // printSessionStatus prints the session line for the invoke banner.
@@ -177,7 +221,7 @@ func captureResponseSession(
 		return
 	}
 	if newSid := resp.Header.Get("x-agent-session-id"); newSid != "" {
-		saveSessionID(ctx, azdClient, agentName, newSid)
+		saveContextValue(ctx, azdClient, agentName, newSid, "sessions")
 		fmt.Printf("%s%s (assigned by server)\n", label, newSid)
 	}
 }

@@ -203,3 +203,102 @@ func TestServiceTargetAgentConfig_WithOtherFields(t *testing.T) {
 		t.Errorf("Expected toolbox name 'my-toolbox', got '%s'", roundTripped.Toolboxes[0].Name)
 	}
 }
+
+// TestServiceTargetAgentConfig_WithToolConnections tests MarshalStruct/UnmarshalStruct
+// round-trip with the ToolConnections field populated.
+func TestServiceTargetAgentConfig_WithToolConnections(t *testing.T) {
+	original := ServiceTargetAgentConfig{
+		ToolConnections: []ToolConnection{
+			{
+				Name:     "github-mcp",
+				Category: "RemoteTool",
+				Target:   "https://api.githubcopilot.com/mcp",
+				AuthType: "OAuth2",
+				Credentials: map[string]any{ //nolint:gosec // test data, not real credentials
+					"clientId":     "${GITHUB_CLIENT_ID}",
+					"clientSecret": "${GITHUB_CLIENT_SECRET}",
+				},
+				Metadata: map[string]string{
+					"ApiType": "Azure",
+				},
+			},
+		},
+		Toolboxes: []Toolbox{
+			{
+				Name: "platform-tools",
+				Tools: []map[string]any{
+					{
+						"type":                  "mcp",
+						"project_connection_id": "github-mcp",
+						"server_url":            "https://api.githubcopilot.com/mcp",
+					},
+				},
+			},
+		},
+	}
+
+	s, err := MarshalStruct(&original)
+	if err != nil {
+		t.Fatalf("MarshalStruct failed: %v", err)
+	}
+
+	var roundTripped ServiceTargetAgentConfig
+	if err := UnmarshalStruct(s, &roundTripped); err != nil {
+		t.Fatalf("UnmarshalStruct failed: %v", err)
+	}
+
+	if len(roundTripped.ToolConnections) != 1 {
+		t.Fatalf("Expected 1 tool connection, got %d", len(roundTripped.ToolConnections))
+	}
+
+	conn := roundTripped.ToolConnections[0]
+	if conn.Name != "github-mcp" {
+		t.Errorf("Expected connection name 'github-mcp', got '%s'", conn.Name)
+	}
+	if conn.Category != "RemoteTool" {
+		t.Errorf("Expected category 'RemoteTool', got '%s'", conn.Category)
+	}
+	if conn.Target != "https://api.githubcopilot.com/mcp" {
+		t.Errorf("Expected target 'https://api.githubcopilot.com/mcp', got '%s'", conn.Target)
+	}
+	if conn.AuthType != "OAuth2" {
+		t.Errorf("Expected authType 'OAuth2', got '%s'", conn.AuthType)
+	}
+	if conn.Credentials["clientId"] != "${GITHUB_CLIENT_ID}" {
+		t.Errorf("Expected clientId '${GITHUB_CLIENT_ID}', got '%v'", conn.Credentials["clientId"])
+	}
+	if conn.Metadata["ApiType"] != "Azure" {
+		t.Errorf("Expected metadata ApiType 'Azure', got '%s'", conn.Metadata["ApiType"])
+	}
+
+	// Verify toolbox is also preserved
+	if len(roundTripped.Toolboxes) != 1 {
+		t.Fatalf("Expected 1 toolbox, got %d", len(roundTripped.Toolboxes))
+	}
+	if roundTripped.Toolboxes[0].Tools[0]["project_connection_id"] != "github-mcp" {
+		t.Errorf("Expected project_connection_id 'github-mcp', got '%v'",
+			roundTripped.Toolboxes[0].Tools[0]["project_connection_id"])
+	}
+}
+
+// TestServiceTargetAgentConfig_EmptyToolConnections tests that an empty ToolConnections
+// slice is omitted and doesn't break round-trip.
+func TestServiceTargetAgentConfig_EmptyToolConnections(t *testing.T) {
+	original := ServiceTargetAgentConfig{
+		ToolConnections: []ToolConnection{},
+	}
+
+	s, err := MarshalStruct(&original)
+	if err != nil {
+		t.Fatalf("MarshalStruct failed: %v", err)
+	}
+
+	var roundTripped ServiceTargetAgentConfig
+	if err := UnmarshalStruct(s, &roundTripped); err != nil {
+		t.Fatalf("UnmarshalStruct failed: %v", err)
+	}
+
+	if len(roundTripped.ToolConnections) != 0 {
+		t.Errorf("Expected 0 tool connections, got %d", len(roundTripped.ToolConnections))
+	}
+}

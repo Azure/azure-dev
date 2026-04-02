@@ -334,3 +334,98 @@ resources:
 		t.Errorf("Expected id 'my-toolbox', got '%s'", toolboxRes.Id)
 	}
 }
+
+// TestExtractResourceDefinitions_ToolboxResourceWithTypedTools tests parsing a toolbox
+// resource that has typed tool definitions (ToolboxToolDefinition) in the Tools field,
+// matching the AgentSchema ToolboxResource/ToolboxTool format.
+func TestExtractResourceDefinitions_ToolboxResourceWithTypedTools(t *testing.T) {
+	yamlContent := []byte(`
+name: test-manifest
+template:
+  kind: prompt
+  name: test-agent
+  model:
+    id: gpt-4.1-mini
+resources:
+  - kind: toolbox
+    name: platform-tools
+    description: Platform tools with typed definitions
+    tools:
+      - id: bing_grounding
+      - id: mcp
+        name: github-copilot
+        target: https://api.githubcopilot.com/mcp
+        authType: OAuth2
+        options:
+          clientId: my-client-id
+          clientSecret: my-client-secret
+      - id: mcp
+        name: custom-api
+        target: https://my-api.example.com/sse
+        authType: CustomKeys
+        options:
+          key: my-api-key
+`)
+
+	resources, err := ExtractResourceDefinitions(yamlContent)
+	if err != nil {
+		t.Fatalf("ExtractResourceDefinitions failed: %v", err)
+	}
+
+	if len(resources) != 1 {
+		t.Fatalf("Expected 1 resource, got %d", len(resources))
+	}
+
+	toolboxRes, ok := resources[0].(ToolboxResource)
+	if !ok {
+		t.Fatalf("Expected ToolboxResource, got %T", resources[0])
+	}
+
+	if toolboxRes.Name != "platform-tools" {
+		t.Errorf("Expected name 'platform-tools', got '%s'", toolboxRes.Name)
+	}
+
+	if toolboxRes.Description != "Platform tools with typed definitions" {
+		t.Errorf("Expected description, got '%s'", toolboxRes.Description)
+	}
+
+	if len(toolboxRes.Tools) != 3 {
+		t.Fatalf("Expected 3 typed tools, got %d", len(toolboxRes.Tools))
+	}
+
+	// Check built-in tool (no target/authType/name)
+	if toolboxRes.Tools[0].Id != "bing_grounding" {
+		t.Errorf("Expected first tool id 'bing_grounding', got '%s'", toolboxRes.Tools[0].Id)
+	}
+	if toolboxRes.Tools[0].Target != "" {
+		t.Errorf("Expected empty target for built-in tool, got '%s'", toolboxRes.Tools[0].Target)
+	}
+
+	// Check MCP tool with name and OAuth2
+	if toolboxRes.Tools[1].Id != "mcp" {
+		t.Errorf("Expected second tool id 'mcp', got '%s'", toolboxRes.Tools[1].Id)
+	}
+	if toolboxRes.Tools[1].Name != "github-copilot" {
+		t.Errorf("Expected second tool name 'github-copilot', got '%s'", toolboxRes.Tools[1].Name)
+	}
+	if toolboxRes.Tools[1].Target != "https://api.githubcopilot.com/mcp" {
+		t.Errorf("Expected second tool target, got '%s'", toolboxRes.Tools[1].Target)
+	}
+	if toolboxRes.Tools[1].AuthType != "OAuth2" {
+		t.Errorf("Expected second tool authType 'OAuth2', got '%s'", toolboxRes.Tools[1].AuthType)
+	}
+	if toolboxRes.Tools[1].Options["clientId"] != "my-client-id" {
+		t.Errorf("Expected second tool clientId, got '%v'", toolboxRes.Tools[1].Options["clientId"])
+	}
+
+	// Check MCP tool with CustomKeys
+	if toolboxRes.Tools[2].Id != "mcp" {
+		t.Errorf("Expected third tool id 'mcp', got '%s'", toolboxRes.Tools[2].Id)
+	}
+	if toolboxRes.Tools[2].Name != "custom-api" {
+		t.Errorf("Expected third tool name 'custom-api', got '%s'", toolboxRes.Tools[2].Name)
+	}
+	if toolboxRes.Tools[2].AuthType != "CustomKeys" {
+		t.Errorf("Expected third tool authType 'CustomKeys', got '%s'", toolboxRes.Tools[2].AuthType)
+	}
+}

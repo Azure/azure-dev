@@ -306,12 +306,26 @@ type ToolResource struct {
 	Options  map[string]any `json:"options" yaml:"options"`
 }
 
+// ToolboxToolDefinition describes a tool within a toolbox resource.
+// Tools with a target/authType represent external connections (MCP, OpenAPI)
+// that must be created in the Foundry project. Built-in tools (bing_grounding,
+// azure_ai_search, etc.) only need an id.
+type ToolboxToolDefinition struct {
+	Id       string         `json:"id" yaml:"id"`
+	Name     string         `json:"name,omitempty" yaml:"name,omitempty"`
+	Target   string         `json:"target,omitempty" yaml:"target,omitempty"`
+	AuthType string         `json:"authType,omitempty" yaml:"authType,omitempty"`
+	Options  map[string]any `json:"options,omitempty" yaml:"options,omitempty"`
+}
+
 // ToolboxResource Represents a toolbox resource required by the agent.
 // A toolbox is a reusable collection of tools that can be deployed as a Foundry Toolset.
 type ToolboxResource struct {
-	Resource `json:",inline" yaml:",inline"`
-	Id       string         `json:"id" yaml:"id"`
-	Options  map[string]any `json:"options" yaml:"options"`
+	Resource    `json:",inline" yaml:",inline"`
+	Id          string                  `json:"id,omitempty" yaml:"id,omitempty"`
+	Description string                  `json:"description,omitempty" yaml:"description,omitempty"`
+	Tools       []ToolboxToolDefinition `json:"tools,omitempty" yaml:"tools,omitempty"`
+	Options     map[string]any          `json:"options,omitempty" yaml:"options,omitempty"`
 }
 
 // Template Template model for defining prompt templates.

@@ -46,6 +46,7 @@ type initFlags struct {
 	manifestPointer   string
 	src               string
 	env               string
+	protocols         []string
 }
 
 // AiProjectResourceConfig represents the configuration for an AI project resource
@@ -353,6 +354,9 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 		"Directory to download the agent definition to (defaults to 'src/<agent-id>')")
 
 	cmd.Flags().StringVarP(&flags.env, "environment", "e", "", "The name of the azd environment to use.")
+
+	cmd.Flags().StringSliceVar(&flags.protocols, "protocol", nil,
+		"Protocols supported by the agent (e.g., 'responses', 'invocations'). Can be specified multiple times.")
 
 	return cmd
 }

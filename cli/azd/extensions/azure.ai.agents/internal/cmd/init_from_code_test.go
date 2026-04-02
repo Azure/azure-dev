@@ -580,3 +580,105 @@ func containsAll(s string, substrings ...string) bool {
 	}
 	return true
 }
+
+func TestPromptProtocols_FlagValues(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		flagProtocols  []string
+		wantProtocols  []agent_yaml.ProtocolVersionRecord
+		wantErr        bool
+		wantErrContain string
+	}{
+		{
+			name:          "responses only",
+			flagProtocols: []string{"responses"},
+			wantProtocols: []agent_yaml.ProtocolVersionRecord{
+				{Protocol: "responses", Version: "v1"},
+			},
+		},
+		{
+			name:          "invocations only",
+			flagProtocols: []string{"invocations"},
+			wantProtocols: []agent_yaml.ProtocolVersionRecord{
+				{Protocol: "invocations", Version: "v0.0.1"},
+			},
+		},
+		{
+			name:          "both protocols",
+			flagProtocols: []string{"responses", "invocations"},
+			wantProtocols: []agent_yaml.ProtocolVersionRecord{
+				{Protocol: "responses", Version: "v1"},
+				{Protocol: "invocations", Version: "v0.0.1"},
+			},
+		},
+		{
+			name:           "unknown protocol",
+			flagProtocols:  []string{"unknown_proto"},
+			wantErr:        true,
+			wantErrContain: "unknown protocol",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := promptProtocols(t.Context(), nil, false, tt.flagProtocols)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if tt.wantErrContain != "" && !strings.Contains(err.Error(), tt.wantErrContain) {
+					t.Errorf("error = %q, want containing %q", err.Error(), tt.wantErrContain)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(got) != len(tt.wantProtocols) {
+				t.Fatalf("got %d protocols, want %d", len(got), len(tt.wantProtocols))
+			}
+			for i := range got {
+				if got[i].Protocol != tt.wantProtocols[i].Protocol {
+					t.Errorf("protocol[%d] = %q, want %q", i, got[i].Protocol, tt.wantProtocols[i].Protocol)
+				}
+				if got[i].Version != tt.wantProtocols[i].Version {
+					t.Errorf("version[%d] = %q, want %q", i, got[i].Version, tt.wantProtocols[i].Version)
+				}
+			}
+		})
+	}
+}
+
+func TestPromptProtocols_NoPromptDefault(t *testing.T) {
+	t.Parallel()
+
+	got, err := promptProtocols(t.Context(), nil, true, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("got %d protocols, want 1", len(got))
+	}
+	if got[0].Protocol != "responses" {
+		t.Errorf("protocol = %q, want %q", got[0].Protocol, "responses")
+	}
+	if got[0].Version != "v1" {
+		t.Errorf("version = %q, want %q", got[0].Version, "v1")
+	}
+}
+
+func TestKnownProtocolNames(t *testing.T) {
+	t.Parallel()
+
+	result := knownProtocolNames()
+	if !strings.Contains(result, "responses") {
+		t.Errorf("knownProtocolNames() = %q, want to contain 'responses'", result)
+	}
+	if !strings.Contains(result, "invocations") {
+		t.Errorf("knownProtocolNames() = %q, want to contain 'invocations'", result)
+	}
+}

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -132,9 +133,9 @@ session automatically. Pass --new-session to force a reset.`,
 	cmd.Flags().StringVarP(&flags.inputFile, "input-file", "f", "", "Path to a file whose contents are sent as the request body")
 	cmd.Flags().IntVar(&flags.port, "port", DefaultPort, "Local server port")
 	cmd.Flags().IntVarP(&flags.timeout, "timeout", "t", 120, "Request timeout in seconds (0 for no timeout)")
-	cmd.Flags().StringVarP(&flags.session, "session", "s", "", "Explicit session ID override")
+	cmd.Flags().StringVarP(&flags.session, "session-id", "s", "", "Explicit session ID override")
 	cmd.Flags().BoolVar(&flags.newSession, "new-session", false, "Force a new session (discard saved one)")
-	cmd.Flags().StringVar(&flags.conversation, "conversation", "", "Explicit conversation ID override")
+	cmd.Flags().StringVar(&flags.conversation, "conversation-id", "", "Explicit conversation ID override")
 	cmd.Flags().BoolVar(&flags.newConversation, "new-conversation", false, "Force a new conversation (discard saved one)")
 
 	return cmd
@@ -436,12 +437,12 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 		fetchOpenAPISpec(ctx, azdClient, localBaseURL, "local", "local", "", true)
 	}
 
-	url := localBaseURL + "/invocations"
+	invURL := localBaseURL + "/invocations"
 	if sid != "" {
-		url += "?agent_session_id=" + sid
+		invURL += "?agent_session_id=" + url.QueryEscape(sid)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, invURL, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -464,7 +465,7 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 
 	captureResponseSession(ctx, azdClient, "local", sid, resp, "Session:  ")
 
-	return handleInvocationResponse(resp, "", "", "local", a.httpTimeout())
+	return handleInvocationResponse(ctx, resp, "", "", "local", a.httpTimeout())
 }
 
 // invocationsRemote sends the user's message to Foundry using
@@ -530,12 +531,12 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	// Fetch and cache the agent's OpenAPI spec (skip if already cached).
 	fetchOpenAPISpec(ctx, azdClient, remoteBaseURL, name, "remote", token.Token, false)
 
-	url := fmt.Sprintf("%s/invocations?api-version=%s", remoteBaseURL, DefaultAgentAPIVersion)
+	invURL := fmt.Sprintf("%s/invocations?api-version=%s", remoteBaseURL, DefaultAgentAPIVersion)
 	if sid != "" {
-		url += "&agent_session_id=" + sid
+		invURL += "&agent_session_id=" + url.QueryEscape(sid)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, invURL, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -545,7 +546,7 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	client := &http.Client{Timeout: a.httpTimeout()}
 	resp, err := client.Do(req) //nolint:gosec // G704: endpoint is resolved from azd environment configuration
 	if err != nil {
-		return fmt.Errorf("POST %s failed: %w", url, err)
+		return fmt.Errorf("POST %s failed: %w", invURL, err)
 	}
 	defer resp.Body.Close()
 
@@ -556,12 +557,13 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 
 	captureResponseSession(ctx, azdClient, name, sid, resp, "Session:  ")
 
-	return handleInvocationResponse(resp, endpoint, token.Token, name, a.httpTimeout())
+	return handleInvocationResponse(ctx, resp, endpoint, token.Token, name, a.httpTimeout())
 }
 
 // handleInvocationResponse dispatches the response from a POST /invocations call
 // to the correct handler based on the HTTP status code and content type.
 func handleInvocationResponse(
+	ctx context.Context,
 	resp *http.Response,
 	endpoint string,
 	bearerToken string,
@@ -586,7 +588,7 @@ func handleInvocationResponse(
 	}
 
 	if resp.StatusCode == http.StatusAccepted {
-		return handleInvocationLRO(resp, endpoint, bearerToken, agentName, timeout)
+		return handleInvocationLRO(ctx, resp, endpoint, bearerToken, agentName, timeout)
 	}
 
 	contentType := resp.Header.Get("Content-Type")
@@ -692,8 +694,8 @@ func handleInvocationSSE(body io.Reader, agentName string) error {
 	return nil
 }
 
-const (
-	defaultLROPollInterval = 2 * time.Second
+var (
+	defaultLROPollInterval = 2 * time.Second //nolint:revive // package-level var allows test overrides
 	maxLROPollInterval     = 30 * time.Second
 )
 
@@ -701,6 +703,7 @@ const (
 // by polling GET on the invocation's status URL (derived from the original request URL)
 // until a terminal state is reached.
 func handleInvocationLRO(
+	ctx context.Context,
 	resp *http.Response,
 	endpoint string,
 	bearerToken string,
@@ -775,7 +778,7 @@ func handleInvocationLRO(
 		time.Sleep(pollInterval)
 
 		req, err := http.NewRequestWithContext(
-			resp.Request.Context(), http.MethodGet, pollURL, nil,
+			ctx, http.MethodGet, pollURL, nil,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to create poll request: %w", err)

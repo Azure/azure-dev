@@ -6,6 +6,8 @@ package cmd
 import (
 	"io"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -445,7 +447,7 @@ func TestHandleInvocationResponse_Routing(t *testing.T) {
 				resp.Header.Set(k, v)
 			}
 
-			err := handleInvocationResponse(resp, "", "", "test-agent", 10*time.Second)
+			err := handleInvocationResponse(t.Context(), resp, "", "", "test-agent", 10*time.Second)
 
 			if tt.wantErr {
 				if err == nil {
@@ -521,4 +523,190 @@ func TestResolveBody(t *testing.T) {
 			t.Errorf("error = %q, want it to mention failed to read", err.Error())
 		}
 	})
+}
+
+func TestHandleInvocationLRO(t *testing.T) {
+	// Override poll interval for fast tests. Not parallel since we modify a package var.
+	origInterval := defaultLROPollInterval
+	defaultLROPollInterval = 10 * time.Millisecond
+	t.Cleanup(func() { defaultLROPollInterval = origInterval })
+
+	tests := []struct {
+		name string
+		// initial202Header sets the x-agent-invocation-id on the 202 response.
+		// If empty, initial202Body should contain invocation_id.
+		initial202Header string
+		initial202Body   string
+		// pollResponses is a sequence of responses the poll server returns.
+		// Each entry is a status code + body pair.
+		pollResponses []pollStep
+		timeout       time.Duration
+		wantErr       bool
+		errContains   string
+	}{
+		{
+			name:             "happy path — completed on first poll",
+			initial202Header: "inv-001",
+			initial202Body:   `{"status":"accepted"}`,
+			pollResponses: []pollStep{
+				{status: 200, body: `{"status":"completed","result":"done"}`},
+			},
+			timeout: 10 * time.Second,
+			wantErr: false,
+		},
+		{
+			name:             "invocation ID from body when header is missing",
+			initial202Header: "",
+			initial202Body:   `{"invocation_id":"inv-from-body","status":"accepted"}`,
+			pollResponses: []pollStep{
+				{status: 200, body: `{"status":"completed","result":"ok"}`},
+			},
+			timeout: 10 * time.Second,
+			wantErr: false,
+		},
+		{
+			name:             "poll returns running then completed",
+			initial202Header: "inv-002",
+			initial202Body:   `{"status":"accepted"}`,
+			pollResponses: []pollStep{
+				{status: 200, body: `{"status":"running"}`},
+				{status: 200, body: `{"status":"completed","result":"done"}`},
+			},
+			timeout: 10 * time.Second,
+			wantErr: false,
+		},
+		{
+			name:             "poll returns 404 then completed",
+			initial202Header: "inv-003",
+			initial202Body:   `{}`,
+			pollResponses: []pollStep{
+				{status: 404, body: "not found"},
+				{status: 200, body: `{"status":"completed","result":"ok"}`},
+			},
+			timeout: 10 * time.Second,
+			wantErr: false,
+		},
+		{
+			name:             "poll returns failed with error details",
+			initial202Header: "inv-004",
+			initial202Body:   `{}`,
+			pollResponses: []pollStep{
+				{status: 200, body: `{"status":"failed","error":{"code":"runtime_error","message":"agent crashed"}}`},
+			},
+			timeout: 10 * time.Second,
+			wantErr: true,
+			errContains: "invocation failed (runtime_error): agent crashed",
+		},
+		{
+			name:             "poll returns cancelled",
+			initial202Header: "inv-005",
+			initial202Body:   `{}`,
+			pollResponses: []pollStep{
+				{status: 200, body: `{"status":"cancelled"}`},
+			},
+			timeout: 10 * time.Second,
+			wantErr: true,
+			errContains: "invocation was cancelled",
+		},
+		{
+			name:             "poll returns HTTP 500 error",
+			initial202Header: "inv-006",
+			initial202Body:   `{}`,
+			pollResponses: []pollStep{
+				{status: 500, body: "Internal Server Error"},
+			},
+			timeout: 10 * time.Second,
+			wantErr: true,
+			errContains: "HTTP 500",
+		},
+		{
+			name:             "timeout waiting for completion",
+			initial202Header: "inv-007",
+			initial202Body:   `{}`,
+			pollResponses: []pollStep{
+				// Always returns running — will repeat until timeout
+				{status: 200, body: `{"status":"running"}`, repeat: true},
+			},
+			timeout:     100 * time.Millisecond,
+			wantErr:     true,
+			errContains: "timed out",
+		},
+		{
+			name:             "retry-after header is respected",
+			initial202Header: "inv-008",
+			initial202Body:   `{}`,
+			pollResponses: []pollStep{
+				{status: 200, body: `{"status":"running"}`, retryAfter: "1"},
+				{status: 200, body: `{"status":"completed","result":"ok"}`},
+			},
+			timeout: 10 * time.Second,
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pollIndex := 0
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if pollIndex >= len(tt.pollResponses) {
+					// Repeat last response if marked as repeating
+					last := tt.pollResponses[len(tt.pollResponses)-1]
+					if last.repeat {
+						if last.retryAfter != "" {
+							w.Header().Set("Retry-After", last.retryAfter)
+						}
+						w.WriteHeader(last.status)
+						w.Write([]byte(last.body)) //nolint:errcheck
+						return
+					}
+					// Shouldn't reach here in well-formed tests
+					w.WriteHeader(500)
+					w.Write([]byte("unexpected poll")) //nolint:errcheck
+					return
+				}
+				step := tt.pollResponses[pollIndex]
+				pollIndex++
+				if step.retryAfter != "" {
+					w.Header().Set("Retry-After", step.retryAfter)
+				}
+				w.WriteHeader(step.status)
+				w.Write([]byte(step.body)) //nolint:errcheck
+			}))
+			defer srv.Close()
+
+			// Build a fake 202 response whose Request.URL points at our test server
+			// so the poll URL derivation works.
+			reqURL, _ := url.Parse(srv.URL + "/invocations?api-version=test")
+			resp := &http.Response{
+				StatusCode: http.StatusAccepted,
+				Status:     "202 Accepted",
+				Header:     http.Header{},
+				Body:       io.NopCloser(strings.NewReader(tt.initial202Body)),
+				Request:    &http.Request{URL: reqURL},
+			}
+			if tt.initial202Header != "" {
+				resp.Header.Set("x-agent-invocation-id", tt.initial202Header)
+			}
+
+			err := handleInvocationLRO(t.Context(), resp, "", "", "test-agent", tt.timeout)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if tt.errContains != "" && !strings.Contains(err.Error(), tt.errContains) {
+					t.Errorf("error = %q, want containing %q", err.Error(), tt.errContains)
+				}
+			} else if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+type pollStep struct {
+	status     int
+	body       string
+	retryAfter string
+	repeat     bool
 }

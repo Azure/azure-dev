@@ -40,16 +40,19 @@ func TestConsoleWidth_empty_COLUMNS_uses_default(t *testing.T) {
 func TestPtr(t *testing.T) {
 	intVal := 42
 	p := Ptr(intVal)
-	if p == nil {
+	switch {
+	case p == nil:
 		t.Fatal("Ptr should return non-nil pointer")
-	}
-	if *p != 42 {
+	case *p != 42:
 		t.Fatalf("*Ptr(42) = %d, want 42", *p)
 	}
 
 	strVal := "hello"
 	sp := Ptr(strVal)
-	if *sp != "hello" {
+	switch {
+	case sp == nil:
+		t.Fatal("Ptr should return non-nil pointer for string")
+	case *sp != "hello":
 		t.Fatalf("*Ptr(hello) = %q, want hello", *sp)
 	}
 }

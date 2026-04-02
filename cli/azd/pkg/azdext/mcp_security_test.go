@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestMCPSecurityCheckURL_BlocksMetadataEndpoints(t *testing.T) {
@@ -318,25 +320,12 @@ func TestMCPSecurityFluentBuilder(t *testing.T) {
 		RedactHeaders("Authorization").
 		ValidatePathsWithinBase("/tmp")
 
-	if policy == nil {
-		t.Fatal("fluent builder should return non-nil policy")
-	}
-
-	if !policy.blockMetadata {
-		t.Error("blockMetadata should be true")
-	}
-	if !policy.blockPrivate {
-		t.Error("blockPrivate should be true")
-	}
-	if !policy.requireHTTPS {
-		t.Error("requireHTTPS should be true")
-	}
-	if !policy.IsHeaderBlocked("Authorization") {
-		t.Error("Authorization should be blocked")
-	}
-	if len(policy.allowedBasePaths) != 1 {
-		t.Errorf("expected 1 base path, got %d", len(policy.allowedBasePaths))
-	}
+	require.NotNil(t, policy, "fluent builder should return non-nil policy")
+	require.True(t, policy.blockMetadata, "blockMetadata should be true")
+	require.True(t, policy.blockPrivate, "blockPrivate should be true")
+	require.True(t, policy.requireHTTPS, "requireHTTPS should be true")
+	require.True(t, policy.IsHeaderBlocked("Authorization"), "Authorization should be blocked")
+	require.Len(t, policy.allowedBasePaths, 1, "expected 1 base path")
 }
 
 func TestSSRFSafeRedirect_SchemeDowngrade(t *testing.T) {

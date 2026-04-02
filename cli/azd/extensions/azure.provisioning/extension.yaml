@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=../extension.schema.json
+id: azure.provisioning
+namespace: provisioning
+displayName: Azure.Provisioning (C# CDK)
+description: Enables defining Azure infrastructure in C# using Azure.Provisioning instead of Bicep.
+usage: azd provisioning <command> [options]
+version: 0.1.0
+language: go
+capabilities:
+  - importer-provider
+providers:
+  - name: csharp
+    type: importer
+    description: Generates Bicep from C# Azure.Provisioning code

@@ -31,9 +31,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
+	"github.com/azure/azure-dev/cli/azd/pkg/pipeline"
 	"github.com/azure/azure-dev/cli/azd/pkg/platform"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/maven"
 	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
@@ -473,18 +473,36 @@ func TestShouldSkipErrorAnalysis_WrappedEnvironmentInitError(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// classifyError — maven.ErrPropertyNotFound
+// fixableError — determines if an error is eligible for agentic fix
 // ---------------------------------------------------------------------------
 
-func TestClassifyError_MavenErrPropertyNotFound(t *testing.T) {
+func TestFixableError_ExtensionRunError(t *testing.T) {
 	t.Parallel()
-	require.Equal(t, MachineContextError, classifyError(maven.ErrPropertyNotFound))
+	err := &extensions.ExtensionRunError{ExtensionId: "test-ext", Err: fmt.Errorf("failed")}
+	require.False(t, fixableError(err), "ExtensionRunError should not be fixable")
 }
 
-func TestClassifyError_WrappedMavenErrPropertyNotFound(t *testing.T) {
+func TestFixableError_WrappedExtensionRunError(t *testing.T) {
 	t.Parallel()
-	err := fmt.Errorf("build failed: %w", maven.ErrPropertyNotFound)
-	require.Equal(t, MachineContextError, classifyError(err))
+	inner := &extensions.ExtensionRunError{ExtensionId: "test-ext", Err: fmt.Errorf("failed")}
+	err := fmt.Errorf("ext failed: %w", inner)
+	require.False(t, fixableError(err), "wrapped ExtensionRunError should not be fixable")
+}
+
+func TestFixableError_EnvironmentNotFound(t *testing.T) {
+	t.Parallel()
+	require.False(t, fixableError(environment.ErrNotFound), "ErrNotFound should not be fixable")
+}
+
+func TestFixableError_PipelineAuthNotSupported(t *testing.T) {
+	t.Parallel()
+	require.False(t, fixableError(pipeline.ErrAuthNotSupported), "ErrAuthNotSupported should not be fixable")
+}
+
+func TestFixableError_GenericError(t *testing.T) {
+	t.Parallel()
+	err := fmt.Errorf("some azure error")
+	require.True(t, fixableError(err), "generic error should be fixable")
 }
 
 // ---------------------------------------------------------------------------
@@ -1085,14 +1103,18 @@ func TestErrorMiddleware_Run_NullResultFromNext_NoError(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// ErrorCategory — constant values
+// fixableError — constant-style regression checks
 // ---------------------------------------------------------------------------
 
-func TestErrorCategory_Constants(t *testing.T) {
+func TestFixableError_ProjectErrNoDefaultService(t *testing.T) {
 	t.Parallel()
-	require.Equal(t, ErrorCategory(0), AzureContextAndOtherError)
-	require.Equal(t, ErrorCategory(1), MachineContextError)
-	require.Equal(t, ErrorCategory(2), UserContextError)
+	require.False(t, fixableError(project.ErrNoDefaultService))
+}
+
+func TestFixableError_WrappedGenericError(t *testing.T) {
+	t.Parallel()
+	err := fmt.Errorf("deploy failed: %w", fmt.Errorf("timeout"))
+	require.True(t, fixableError(err))
 }
 
 // ---------------------------------------------------------------------------

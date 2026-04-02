@@ -684,40 +684,59 @@ func TestParseGlobalFlags_ExtensionCompatibility(t *testing.T) {
 		description     string
 	}{
 		{
-			name:            "azure.ai.models: -e with project endpoint URL",
-			args:            []string{"ai", "models", "custom", "create", "-e", "https://myaccount.services.ai.azure.com/api/projects/myproject"},
+			name: "azure.ai.models: -e with project endpoint URL",
+			args: []string{
+				"ai", "models", "custom", "create",
+				"-e", "https://myaccount.services.ai.azure.com/api/projects/myproject",
+			},
 			expectedEnvName: "",
 			description:     "URL must not be captured as env name; extension receives raw args",
 		},
 		{
-			name:            "azure.ai.models: --project-endpoint with URL",
-			args:            []string{"ai", "models", "custom", "create", "--project-endpoint", "https://myaccount.services.ai.azure.com/api/projects/myproject"},
+			name: "azure.ai.models: --project-endpoint with URL",
+			args: []string{
+				"ai", "models", "custom", "create",
+				"--project-endpoint", "https://myaccount.services.ai.azure.com/api/projects/myproject",
+			},
 			expectedEnvName: "",
 			description:     "--project-endpoint is not a global flag, should be ignored",
 		},
 		{
-			name:            "valid env name before extension args",
-			args:            []string{"-e", "dev", "ai", "models", "custom", "create", "--project-endpoint", "https://endpoint.com"},
+			name: "valid env name before extension args",
+			args: []string{
+				"-e", "dev", "ai", "models", "custom", "create",
+				"--project-endpoint", "https://endpoint.com",
+			},
 			expectedEnvName: "dev",
 			description:     "valid -e before extension subcommand should be captured",
 		},
 		{
-			name:            "extension -e URL with other global flags",
-			args:            []string{"--debug", "ai", "models", "custom", "create", "-e", "https://endpoint.com", "--no-prompt"},
+			name: "extension -e URL with other global flags",
+			args: []string{
+				"--debug", "ai", "models", "custom", "create",
+				"-e", "https://endpoint.com", "--no-prompt",
+			},
 			expectedEnvName: "",
 			description:     "URL via -e among global flags must not error or capture",
 		},
 		{
-			name:            "azure.ai.finetune: -e with endpoint URL",
-			args:            []string{"ai", "fine-tuning", "init", "-e", "https://ai-endpoint.azure.com/v1"},
+			name: "azure.ai.finetune: -e with endpoint URL",
+			args: []string{
+				"ai", "fine-tuning", "init",
+				"-e", "https://ai-endpoint.azure.com/v1",
+			},
 			expectedEnvName: "",
 			description:     "fine-tuning extension's -e must not be captured",
 		},
 		{
-			name:            "both --environment and -e URL: last value wins per pflag",
-			args:            []string{"--environment", "staging", "ai", "models", "custom", "create", "-e", "https://endpoint.com"},
+			name: "both --environment and -e URL: last value wins per pflag",
+			args: []string{
+				"--environment", "staging", "ai", "models", "custom", "create",
+				"-e", "https://endpoint.com",
+			},
 			expectedEnvName: "",
-			description:     "pflag takes last -e value (the URL), which is invalid so env name stays empty",
+			description: "pflag takes last -e value (the URL), " +
+				"which is invalid so env name stays empty",
 		},
 	}
 

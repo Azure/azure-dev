@@ -299,6 +299,92 @@ func TestHookConfig_ValidateLanguageResolution(t *testing.T) {
 	}
 }
 
+func TestHookConfig_ValidateDirInference(t *testing.T) {
+	tests := []struct {
+		name        string
+		config      HookConfig
+		createFile  string
+		expectedDir string
+	}{
+		{
+			name: "InferDirFromPythonRunPath",
+			config: HookConfig{
+				Name: "test",
+				Run:  filepath.Join("hooks", "preprovision", "main.py"),
+			},
+			createFile:  filepath.Join("hooks", "preprovision", "main.py"),
+			expectedDir: filepath.Join("hooks", "preprovision"),
+		},
+		{
+			name: "InferDirFromNestedPath",
+			config: HookConfig{
+				Name: "test",
+				Run:  filepath.Join("src", "tools", "setup.py"),
+			},
+			createFile:  filepath.Join("src", "tools", "setup.py"),
+			expectedDir: filepath.Join("src", "tools"),
+		},
+		{
+			name: "InferDirForScriptInRoot",
+			config: HookConfig{
+				Name: "test",
+				Run:  "setup.py",
+			},
+			createFile:  "setup.py",
+			expectedDir: ".",
+		},
+		{
+			name: "ExplicitDirOverridesInferred",
+			config: HookConfig{
+				Name: "test",
+				Run:  filepath.Join("hooks", "deploy-tool", "src", "main.py"),
+				Dir:  filepath.Join("hooks", "deploy-tool"),
+			},
+			createFile:  filepath.Join("hooks", "deploy-tool", "src", "main.py"),
+			expectedDir: filepath.Join("hooks", "deploy-tool"),
+		},
+		{
+			name: "ShellHookDirUnchanged",
+			config: HookConfig{
+				Name:  "test",
+				Shell: ShellTypeBash,
+				Run:   filepath.Join("hooks", "setup.sh"),
+			},
+			createFile:  filepath.Join("hooks", "setup.sh"),
+			expectedDir: "",
+		},
+		{
+			name: "InlineScriptDirUnchanged",
+			config: HookConfig{
+				Name:  "test",
+				Shell: ShellTypeBash,
+				Run:   "echo hello",
+			},
+			expectedDir: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := tt.config
+			cwd := t.TempDir()
+			config.cwd = cwd
+
+			if tt.createFile != "" {
+				filePath := filepath.Join(cwd, tt.createFile)
+				err := os.MkdirAll(filepath.Dir(filePath), 0o755)
+				require.NoError(t, err)
+				err = os.WriteFile(filePath, nil, 0o600)
+				require.NoError(t, err)
+			}
+
+			err := config.validate()
+			require.NoError(t, err)
+			require.Equal(t, tt.expectedDir, config.Dir)
+		})
+	}
+}
+
 func TestHookConfig_IsLanguageHook(t *testing.T) {
 	tests := []struct {
 		name     string

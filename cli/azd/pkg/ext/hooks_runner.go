@@ -204,10 +204,15 @@ func (h *HooksRunner) execLanguageHook(
 		boundaryDir = hookConfig.cwd
 	}
 
-	// Determine working directory: explicit Dir → script dir → cwd.
+	// Determine working directory from Dir (set explicitly or
+	// auto-inferred from the run path by validate).
 	cwd := h.cwd
 	if hookConfig.Dir != "" {
-		cwd = hookConfig.Dir
+		dir := hookConfig.Dir
+		if !filepath.IsAbs(dir) {
+			dir = filepath.Join(boundaryDir, dir)
+		}
+		cwd = dir
 	} else if hookConfig.path != "" {
 		cwd = filepath.Dir(
 			filepath.Join(boundaryDir, hookConfig.path),

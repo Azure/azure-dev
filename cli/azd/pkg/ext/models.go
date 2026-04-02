@@ -101,12 +101,11 @@ type HookConfig struct {
 	// extension is used. For inline scripts, Shell or Language must be
 	// set explicitly.
 	Language language.ScriptLanguage `yaml:"language,omitempty" json:"language,omitempty"`
-	// Dir specifies an optional working directory for language hook
-	// execution. It is used as the project root for dependency
-	// installation (e.g. pip install) and as the cwd when running the
-	// script. Relative paths are resolved from the project or service
-	// root. When empty, defaults to the directory containing the
-	// script file.
+	// Dir specifies the working directory for language hook execution,
+	// used as the project context for dependency installation and builds.
+	// When empty, defaults to the directory containing the script
+	// referenced by the run field. Only set this when the project root
+	// differs from the script's directory.
 	Dir string `yaml:"dir,omitempty" json:"dir,omitempty"`
 	// The inline script to execute or path to existing file
 	Run string `yaml:"run,omitempty"`
@@ -176,6 +175,11 @@ func (hc *HookConfig) validate() error {
 	// Language hooks are executed by a language-specific executor;
 	// no shell type resolution or temp script is needed.
 	if hc.IsLanguageHook() {
+		// Auto-infer Dir from the script's directory when not
+		// explicitly set by the user.
+		if hc.Dir == "" && hc.location == ScriptLocationPath {
+			hc.Dir = filepath.Dir(hc.path)
+		}
 		hc.validated = true
 		return nil
 	}

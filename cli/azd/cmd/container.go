@@ -66,6 +66,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/state"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
+	"github.com/azure/azure-dev/cli/azd/pkg/tool"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/az"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bash"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
@@ -950,6 +951,35 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			err := serviceLocator.Resolve(&runner)
 			return runner, err
 		})
+	})
+
+	// Tool management
+	container.MustRegisterSingleton(func(commandRunner exec.CommandRunner) *tool.PlatformDetector {
+		return tool.NewPlatformDetector(commandRunner)
+	})
+	container.MustRegisterSingleton(func(commandRunner exec.CommandRunner) tool.Detector {
+		return tool.NewDetector(commandRunner)
+	})
+	container.MustRegisterSingleton(func(
+		commandRunner exec.CommandRunner,
+		platformDetector *tool.PlatformDetector,
+		detector tool.Detector,
+	) tool.Installer {
+		return tool.NewInstaller(commandRunner, platformDetector, detector)
+	})
+	container.MustRegisterSingleton(func(
+		configManager config.UserConfigManager,
+		detector tool.Detector,
+	) *tool.UpdateChecker {
+		azdConfigDir, _ := config.GetUserConfigDir()
+		return tool.NewUpdateChecker(configManager, detector, azdConfigDir)
+	})
+	container.MustRegisterSingleton(func(
+		detector tool.Detector,
+		installer tool.Installer,
+		updateChecker *tool.UpdateChecker,
+	) *tool.Manager {
+		return tool.NewManager(detector, installer, updateChecker)
 	})
 
 	// gRPC Server

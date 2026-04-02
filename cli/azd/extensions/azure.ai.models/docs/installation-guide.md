@@ -194,7 +194,7 @@ azd ai models init --project-endpoint "https://my-account.services.ai.azure.com/
 
 | Flag | Short | Description |
 |------|-------|-------------|
-| `--project-endpoint` | | Foundry project endpoint URL |
+| `--project-endpoint` | `-e` *(deprecated)* | Foundry project endpoint URL |
 | `--subscription` | `-s` | Azure subscription ID |
 | `--name` | `-n` | Model name |
 | `--version` | | Model version (default: "1") |

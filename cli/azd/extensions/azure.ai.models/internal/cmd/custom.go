@@ -36,8 +36,10 @@ func newCustomCommand() *cobra.Command {
 
 	customCmd.PersistentFlags().StringVarP(&flags.subscriptionId, "subscription", "s", "",
 		"Azure subscription ID")
-	customCmd.PersistentFlags().StringVar(&flags.projectEndpoint, "project-endpoint", "",
+	customCmd.PersistentFlags().StringVarP(&flags.projectEndpoint, "project-endpoint", "e", "",
 		"Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)")
+	customCmd.PersistentFlags().Lookup("project-endpoint").ShorthandDeprecated =
+		"use --project-endpoint instead; -e will be removed after April 2025"
 
 	customCmd.AddCommand(newCustomCreateCommand(flags))
 	customCmd.AddCommand(newCustomListCommand(flags))
@@ -119,7 +121,8 @@ func promptForProject(ctx context.Context, flags *customFlags, azdClient *azdext
 		azdClient, err = azdext.NewAzdClient()
 		if err != nil {
 			return fmt.Errorf("--project-endpoint is required when azd is not available.\n\n" +
-				"Example: azd ai models custom list --project-endpoint https://<account>.services.ai.azure.com/api/projects/<project>\n\n" +
+				"Example: azd ai models custom list " +
+				"--project-endpoint https://<account>.services.ai.azure.com/api/projects/<project>\n\n" +
 				"Or run 'azd ai models init' to set up your project first")
 		}
 		defer azdClient.Close()

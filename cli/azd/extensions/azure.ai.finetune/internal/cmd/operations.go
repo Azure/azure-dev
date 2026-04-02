@@ -41,8 +41,10 @@ func newOperationCommand() *cobra.Command {
 
 	cmd.PersistentFlags().StringVarP(&flags.subscriptionId, "subscription", "s", "",
 		"Azure subscription ID (enables implicit init if environment not configured)")
-	cmd.PersistentFlags().StringVar(&flags.projectEndpoint, "project-endpoint", "",
+	cmd.PersistentFlags().StringVarP(&flags.projectEndpoint, "project-endpoint", "e", "",
 		"Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)")
+	cmd.PersistentFlags().Lookup("project-endpoint").ShorthandDeprecated =
+		"use --project-endpoint instead; -e will be removed after April 2025"
 
 	cmd.AddCommand(newOperationSubmitCommand())
 	cmd.AddCommand(newOperationShowCommand())

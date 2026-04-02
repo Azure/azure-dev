@@ -11,19 +11,6 @@ Creates the main resource group for the application.
 - location: ${AZURE_LOCATION}
 - name: rg-${AZURE_ENV_NAME}
 
-# Storage Account
-
-Creates a storage account for application data.
-
-- type: Microsoft.Storage/storageAccounts
-- location: ${AZURE_LOCATION}
-- name: st${AZURE_ENV_NAME}
-- kind: StorageV2
-- sku: Standard_LRS
-- tags:
-  - environment: ${AZURE_ENV_NAME}
-  - managedBy: azd-demo-importer
-
 # Static Web App
 
 Hosts the frontend application. The azd-service-name tag links this

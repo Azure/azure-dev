@@ -30,7 +30,6 @@ var terminalStatuses = map[string]bool{
 
 func newJobDownloadCommand() *cobra.Command {
 	var name string
-	var outputName string
 	var downloadPath string
 
 	cmd := &cobra.Command{
@@ -39,7 +38,7 @@ func newJobDownloadCommand() *cobra.Command {
 		Long: "Download output artifacts from a completed training job to a local directory.\n\n" +
 			"Example:\n" +
 			"  azd ai training job download --name llama-sft\n" +
-			"  azd ai training job download --name llama-sft --output-name model --path ./downloads",
+			"  azd ai training job download --name llama-sft --path ./downloads",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
@@ -115,20 +114,10 @@ func newJobDownloadCommand() *cobra.Command {
 				return nil
 			}
 
-			// Filter by --output-name if specified (match artifacts under "outputs/{outputName}/")
-			filteredArtifacts := filterArtifacts(allArtifacts, outputName)
-			if len(filteredArtifacts) == 0 {
-				if outputName != "" {
-					return fmt.Errorf("no artifacts found matching output name '%s'", outputName)
-				}
-				fmt.Println("  No downloadable artifacts found.")
-				return nil
-			}
+			// Collect unique first-level folder prefixes for batch SAS URI retrieval
+			prefixes := collectPrefixes(allArtifacts)
 
-			// Collect unique path prefixes for batch SAS URI retrieval
-			prefixes := collectPrefixes(filteredArtifacts)
-
-			fmt.Printf("✓ Found %d artifacts\n\n", len(filteredArtifacts))
+			fmt.Printf("✓ Found %d artifacts\n\n", len(allArtifacts))
 
 			// Step 3: Get SAS URIs for all artifacts using prefix/contentinfo (batch)
 			var allSASItems []models.ArtifactContentInfo
@@ -142,15 +131,6 @@ func newJobDownloadCommand() *cobra.Command {
 
 			if len(allSASItems) == 0 {
 				return fmt.Errorf("no downloadable SAS URIs returned for job artifacts")
-			}
-
-			// If --output-name was specified, also filter the SAS items since
-			// prefix/contentinfo may return files outside the target output
-			if outputName != "" {
-				allSASItems = filterSASItems(allSASItems, outputName)
-				if len(allSASItems) == 0 {
-					return fmt.Errorf("no SAS URIs found matching output name '%s'", outputName)
-				}
 			}
 
 			// Compute total download size from SAS content info
@@ -204,45 +184,10 @@ func newJobDownloadCommand() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&name, "name", "", "Job name/ID (required)")
-	cmd.Flags().StringVar(&outputName, "output-name", "",
-		"Specific output to download (e.g., 'model'). Default: all outputs")
 	cmd.Flags().StringVar(&downloadPath, "path", "./",
 		"Local directory to download into")
 
 	return cmd
-}
-
-// filterArtifacts filters artifacts by output name. If outputName is empty, returns all artifacts.
-// Matches artifacts whose path starts with "outputs/{outputName}/".
-func filterArtifacts(artifacts []models.Artifact, outputName string) []models.Artifact {
-	if outputName == "" {
-		return artifacts
-	}
-
-	prefix := "outputs/" + outputName + "/"
-	var filtered []models.Artifact
-	for _, a := range artifacts {
-		if strings.HasPrefix(a.Path, prefix) {
-			filtered = append(filtered, a)
-		}
-	}
-	return filtered
-}
-
-// filterSASItems filters SAS content info items by output name.
-func filterSASItems(items []models.ArtifactContentInfo, outputName string) []models.ArtifactContentInfo {
-	if outputName == "" {
-		return items
-	}
-
-	prefix := "outputs/" + outputName + "/"
-	var filtered []models.ArtifactContentInfo
-	for _, item := range items {
-		if strings.HasPrefix(item.Path, prefix) {
-			filtered = append(filtered, item)
-		}
-	}
-	return filtered
 }
 
 // collectPrefixes extracts unique first-level folder prefixes from artifact paths.

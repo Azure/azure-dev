@@ -239,6 +239,9 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 					}
 					if useExisting {
 						flags.manifestPointer = detected
+						if flags.src == "" {
+							flags.src = checkDir
+						}
 					}
 				}
 			}

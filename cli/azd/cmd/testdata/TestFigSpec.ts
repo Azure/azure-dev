@@ -227,15 +227,6 @@ const completionSpec: Fig.Spec = {
 							description: 'Initialize a new AI agent project. (Preview)',
 							options: [
 								{
-									name: ['--host'],
-									description: 'For container based agents, can override the default host to target a container app instead. Accepted values: \'containerapp\'',
-									args: [
-										{
-											name: 'host',
-										},
-									],
-								},
-								{
 									name: ['--manifest', '-m'],
 									description: 'Path or URI to an agent manifest to add to your azd project',
 									args: [

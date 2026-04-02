@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"azure.ai.customtraining/internal/azcopy"
 	"azure.ai.customtraining/internal/utils"
@@ -18,15 +17,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
-
-// Terminal job statuses — download is allowed from these.
-var terminalStatuses = map[string]bool{
-	"Completed":     true,
-	"Failed":        true,
-	"Canceled":      true,
-	"NotResponding": true,
-	"Paused":        true,
-}
 
 func newJobDownloadCommand() *cobra.Command {
 	var name string
@@ -93,7 +83,7 @@ func newJobDownloadCommand() *cobra.Command {
 				return fmt.Errorf("failed to get job: %w", err)
 			}
 
-			if !terminalStatuses[job.Properties.Status] {
+			if !models.TerminalStatuses[job.Properties.Status] {
 				return fmt.Errorf(
 					"job '%s' is in status '%s'. Download is only available for jobs in a terminal state "+
 						"(Completed, Failed, Canceled)",
@@ -115,7 +105,7 @@ func newJobDownloadCommand() *cobra.Command {
 			}
 
 			// Collect unique first-level folder prefixes for batch SAS URI retrieval
-			prefixes := collectPrefixes(allArtifacts)
+			prefixes := utils.CollectArtifactPrefixes(allArtifacts)
 
 			fmt.Printf("✓ Found %d artifacts\n\n", len(allArtifacts))
 
@@ -138,7 +128,7 @@ func newJobDownloadCommand() *cobra.Command {
 			for _, item := range allSASItems {
 				totalSize += item.ContentLength
 			}
-			fmt.Printf("  Total download size: %s\n\n", formatSize(totalSize))
+			fmt.Printf("  Total download size: %s\n\n", utils.FormatSize(totalSize))
 
 			// Initialize azcopy runner
 			azRunner, err := azcopy.NewRunner(ctx, "")
@@ -169,7 +159,7 @@ func newJobDownloadCommand() *cobra.Command {
 				if i == len(allSASItems)-1 {
 					connector = "└─"
 				}
-				fmt.Printf("  %s %s (%s)\n", connector, item.Path, formatSize(item.ContentLength))
+				fmt.Printf("  %s %s (%s)\n", connector, item.Path, utils.FormatSize(item.ContentLength))
 
 				// Download: SAS URI → local file
 				if err := azRunner.Copy(ctx, item.ContentURI, localFilePath); err != nil {
@@ -188,48 +178,4 @@ func newJobDownloadCommand() *cobra.Command {
 		"Local directory to download into")
 
 	return cmd
-}
-
-// collectPrefixes extracts unique first-level folder prefixes from artifact paths.
-// Job artifacts have two top-level folders: "outputs/" and "user_logs/".
-// This yields at most 2 prefix/contentinfo API calls.
-func collectPrefixes(artifacts []models.Artifact) []string {
-	seen := make(map[string]bool)
-	var prefixes []string
-
-	for _, a := range artifacts {
-		parts := strings.SplitN(a.Path, "/", 2)
-		prefix := parts[0] + "/"
-
-		if !seen[prefix] {
-			seen[prefix] = true
-			prefixes = append(prefixes, prefix)
-		}
-	}
-
-	return prefixes
-}
-
-// formatSize formats a byte count as a human-readable string.
-func formatSize(bytes int64) string {
-	const (
-		KB = 1024
-		MB = KB * 1024
-		GB = MB * 1024
-	)
-
-	if bytes <= 0 {
-		return "unknown size"
-	}
-
-	switch {
-	case bytes >= GB:
-		return fmt.Sprintf("%.1f GB", float64(bytes)/float64(GB))
-	case bytes >= MB:
-		return fmt.Sprintf("%.1f MB", float64(bytes)/float64(MB))
-	case bytes >= KB:
-		return fmt.Sprintf("%.1f KB", float64(bytes)/float64(KB))
-	default:
-		return fmt.Sprintf("%d B", bytes)
-	}
 }

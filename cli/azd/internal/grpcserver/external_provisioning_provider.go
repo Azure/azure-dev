@@ -57,7 +57,12 @@ func (p *ExternalProvisioningProvider) Initialize(
 	projectPath string,
 	options provisioning.Options,
 ) error {
-	protoOptions := convertToProtoOptions(options)
+	protoOptions, err := convertToProtoOptions(options)
+	if err != nil {
+		return fmt.Errorf(
+			"failed to convert provisioning options: %w", err,
+		)
+	}
 
 	req := &azdext.ProvisioningMessage{
 		RequestId: uuid.NewString(),
@@ -69,8 +74,14 @@ func (p *ExternalProvisioningProvider) Initialize(
 		},
 	}
 
-	_, err := p.broker.SendAndWait(ctx, req)
-	return err
+	_, err = p.broker.SendAndWait(ctx, req)
+	if err != nil {
+		return fmt.Errorf(
+			"provisioning initialize failed: %w", err,
+		)
+	}
+
+	return nil
 }
 
 // State returns the current state of provisioned infrastructure.
@@ -89,7 +100,9 @@ func (p *ExternalProvisioningProvider) State(
 
 	resp, err := p.broker.SendAndWait(ctx, req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf(
+			"provisioning state failed: %w", err,
+		)
 	}
 
 	stateResp := resp.GetStateResponse()
@@ -115,7 +128,9 @@ func (p *ExternalProvisioningProvider) Deploy(
 		log.Printf("provisioning progress: %s", msg)
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf(
+			"provisioning deploy failed: %w", err,
+		)
 	}
 
 	deployResp := resp.GetDeployResponse()
@@ -141,7 +156,9 @@ func (p *ExternalProvisioningProvider) Preview(
 		log.Printf("provisioning preview progress: %s", msg)
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf(
+			"provisioning preview failed: %w", err,
+		)
 	}
 
 	previewResp := resp.GetPreviewResponse()
@@ -173,7 +190,9 @@ func (p *ExternalProvisioningProvider) Destroy(
 		log.Printf("provisioning destroy progress: %s", msg)
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf(
+			"provisioning destroy failed: %w", err,
+		)
 	}
 
 	destroyResp := resp.GetDestroyResponse()
@@ -196,7 +215,13 @@ func (p *ExternalProvisioningProvider) EnsureEnv(ctx context.Context) error {
 	}
 
 	_, err := p.broker.SendAndWait(ctx, req)
-	return err
+	if err != nil {
+		return fmt.Errorf(
+			"provisioning ensure env failed: %w", err,
+		)
+	}
+
+	return nil
 }
 
 // Parameters returns the provisioning parameters.
@@ -212,12 +237,14 @@ func (p *ExternalProvisioningProvider) Parameters(
 
 	resp, err := p.broker.SendAndWait(ctx, req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf(
+			"provisioning parameters failed: %w", err,
+		)
 	}
 
 	paramsResp := resp.GetParametersResponse()
 	if paramsResp == nil {
-		return nil, nil
+		return []provisioning.Parameter{}, nil
 	}
 
 	return convertFromProtoParameters(paramsResp.Parameters), nil
@@ -227,15 +254,17 @@ func (p *ExternalProvisioningProvider) Parameters(
 func (p *ExternalProvisioningProvider) PlannedOutputs(
 	ctx context.Context,
 ) ([]provisioning.PlannedOutput, error) {
-	return nil, nil
+	return []provisioning.PlannedOutput{}, nil
 }
 
 // --- Conversion helpers ---
 
 func convertToProtoOptions(
 	options provisioning.Options,
-) *azdext.ProvisioningOptions {
-	deploymentStacks := make(map[string]string, len(options.DeploymentStacks))
+) (*azdext.ProvisioningOptions, error) {
+	deploymentStacks := make(
+		map[string]string, len(options.DeploymentStacks),
+	)
 	for k, v := range options.DeploymentStacks {
 		deploymentStacks[k] = fmt.Sprintf("%v", v)
 	}
@@ -250,12 +279,17 @@ func convertToProtoOptions(
 
 	// Convert Config to protobuf Struct if present
 	if options.Config != nil {
-		if s, err := structpb.NewStruct(options.Config); err == nil {
-			protoOptions.Config = s
+		s, err := structpb.NewStruct(options.Config)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"failed to convert config to protobuf struct: %w",
+				err,
+			)
 		}
+		protoOptions.Config = s
 	}
 
-	return protoOptions
+	return protoOptions, nil
 }
 
 func convertFromProtoStateResult(
@@ -351,16 +385,16 @@ func convertFromProtoPreviewResult(
 func convertFromProtoParameters(
 	params []*azdext.ProvisioningParameter,
 ) []provisioning.Parameter {
-	result := make([]provisioning.Parameter, 0, len(params))
-	for _, p := range params {
-		result = append(result, provisioning.Parameter{
+	result := make([]provisioning.Parameter, len(params))
+	for i, p := range params {
+		result[i] = provisioning.Parameter{
 			Name:               p.Name,
 			Secret:             p.Secret,
 			Value:              p.Value,
 			EnvVarMapping:      p.EnvVarMapping,
 			LocalPrompt:        p.LocalPrompt,
 			UsingEnvVarMapping: p.UsingEnvVarMapping,
-		})
+		}
 	}
 	return result
 }

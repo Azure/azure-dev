@@ -3,7 +3,12 @@
 
 package agent_yaml
 
-import "slices"
+import (
+	"fmt"
+	"slices"
+
+	"go.yaml.in/yaml/v3"
+)
 
 // AgentKind represents the type of agent
 type AgentKind string
@@ -273,10 +278,232 @@ type ObjectProperty struct {
 
 // PropertySchema Definition for the property schema of a model.
 // This includes the properties and example records.
+//
+// The schema supports two YAML layouts for Properties:
+//
+// Array format (explicit):
+//
+//	properties:
+//	  - name: foo
+//	    kind: string
+//
+// Record/map format (canonical agent manifest shorthand):
+//
+//	parameters:
+//	  foo:
+//	    schema: { type: string }
+//	    description: a foo param
+//	    required: true
+//
+// UnmarshalYAML detects which layout is present and normalises to []Property.
 type PropertySchema struct {
-	Examples   *[]map[string]any `json:"examples,omitempty" yaml:"examples,omitempty"`
-	Strict     *bool             `json:"strict,omitempty" yaml:"strict,omitempty"`
-	Properties []Property        `json:"properties" yaml:"properties"`
+	Examples   *[]map[string]any `json:"examples,omitempty" yaml:"-"`
+	Strict     *bool             `json:"strict,omitempty" yaml:"-"`
+	Properties []Property        `json:"properties" yaml:"-"`
+}
+
+// UnmarshalYAML supports both the array format (properties: []) and the
+// record/map format where parameter names are direct YAML keys.
+func (ps *PropertySchema) UnmarshalYAML(value *yaml.Node) error {
+	// The node should be a mapping.
+	if value.Kind != yaml.MappingNode {
+		return fmt.Errorf("PropertySchema: expected mapping node, got %d", value.Kind)
+	}
+
+	// First pass: look for known struct keys (examples, strict, properties).
+	// Anything else is treated as a record-format parameter name.
+	var (
+		propertiesNode *yaml.Node
+		extraKeys      []string
+		extraValues    []*yaml.Node
+	)
+
+	for i := 0; i < len(value.Content)-1; i += 2 {
+		key := value.Content[i].Value
+		val := value.Content[i+1]
+
+		switch key {
+		case "examples":
+			var examples []map[string]any
+			if err := val.Decode(&examples); err != nil {
+				return fmt.Errorf("PropertySchema.examples: %w", err)
+			}
+			ps.Examples = &examples
+		case "strict":
+			var strict bool
+			if err := val.Decode(&strict); err != nil {
+				return fmt.Errorf("PropertySchema.strict: %w", err)
+			}
+			ps.Strict = &strict
+		case "properties":
+			propertiesNode = val
+		default:
+			extraKeys = append(extraKeys, key)
+			extraValues = append(extraValues, val)
+		}
+	}
+
+	// If an explicit "properties" key was found, decode it (array or map).
+	if propertiesNode != nil {
+		props, err := decodePropertiesNode(propertiesNode)
+		if err != nil {
+			return fmt.Errorf("PropertySchema.properties: %w", err)
+		}
+		ps.Properties = props
+		return nil
+	}
+
+	// No explicit "properties" key — treat extra keys as record-format params.
+	if len(extraKeys) > 0 {
+		for i, name := range extraKeys {
+			prop, err := decodeRecordProperty(name, extraValues[i])
+			if err != nil {
+				return fmt.Errorf("PropertySchema parameter %q: %w", name, err)
+			}
+			ps.Properties = append(ps.Properties, prop)
+		}
+	}
+
+	return nil
+}
+
+// decodePropertiesNode handles "properties:" as either an array or a map.
+func decodePropertiesNode(node *yaml.Node) ([]Property, error) {
+	switch node.Kind {
+	case yaml.SequenceNode:
+		var props []Property
+		if err := node.Decode(&props); err != nil {
+			return nil, err
+		}
+		return props, nil
+	case yaml.MappingNode:
+		var props []Property
+		for i := 0; i < len(node.Content)-1; i += 2 {
+			name := node.Content[i].Value
+			prop, err := decodeRecordProperty(name, node.Content[i+1])
+			if err != nil {
+				return nil, fmt.Errorf("property %q: %w", name, err)
+			}
+			props = append(props, prop)
+		}
+		return props, nil
+	default:
+		return nil, fmt.Errorf("expected sequence or mapping, got %d", node.Kind)
+	}
+}
+
+// recordEntry is the intermediate structure for parsing a single record-format
+// parameter entry like:
+//
+//	param_name:
+//	  schema: { type: string, enum: [...], default: ... }
+//	  description: some text
+//	  required: true
+type recordEntry struct {
+	Schema      *recordSchema `yaml:"schema"`
+	Description string        `yaml:"description"`
+	Required    bool          `yaml:"required"`
+	Default     *any          `yaml:"default"`
+	Example     *any          `yaml:"example"`
+	EnumValues  *[]any        `yaml:"enumValues"`
+}
+
+type recordSchema struct {
+	Type    string `yaml:"type"`
+	Enum    []any  `yaml:"enum"`
+	Default *any   `yaml:"default"`
+}
+
+// decodeRecordProperty converts a record-format parameter entry into a Property.
+func decodeRecordProperty(name string, node *yaml.Node) (Property, error) {
+	var entry recordEntry
+	if err := node.Decode(&entry); err != nil {
+		return Property{}, err
+	}
+
+	prop := Property{Name: name}
+	if entry.Description != "" {
+		prop.Description = &entry.Description
+	}
+	if entry.Required {
+		prop.Required = &entry.Required
+	}
+	if entry.Default != nil {
+		prop.Default = entry.Default
+	}
+	if entry.Example != nil {
+		prop.Example = entry.Example
+	}
+	if entry.EnumValues != nil {
+		prop.EnumValues = entry.EnumValues
+	}
+
+	// Extract kind/default/enum from nested schema if present
+	if entry.Schema != nil {
+		prop.Kind = entry.Schema.Type
+		if entry.Schema.Default != nil && prop.Default == nil {
+			prop.Default = entry.Schema.Default
+		}
+		if len(entry.Schema.Enum) > 0 && prop.EnumValues == nil {
+			prop.EnumValues = &entry.Schema.Enum
+		}
+	}
+
+	return prop, nil
+}
+
+// MarshalYAML writes PropertySchema back as the record/map format so that
+// {{param}} placeholders elsewhere in the document survive a marshal→unmarshal
+// round-trip through InjectParameterValuesIntoManifest.
+func (ps PropertySchema) MarshalYAML() (any, error) {
+	out := make(map[string]any)
+
+	if ps.Examples != nil {
+		out["examples"] = *ps.Examples
+	}
+	if ps.Strict != nil {
+		out["strict"] = *ps.Strict
+	}
+
+	// Emit each property as a record-format entry.
+	props := make(map[string]any, len(ps.Properties))
+	for _, p := range ps.Properties {
+		entry := map[string]any{}
+		schema := map[string]any{}
+
+		if p.Kind != "" {
+			schema["type"] = p.Kind
+		}
+		if p.Default != nil {
+			schema["default"] = *p.Default
+		}
+		if p.EnumValues != nil {
+			schema["enum"] = *p.EnumValues
+		}
+		if len(schema) > 0 {
+			entry["schema"] = schema
+		}
+
+		if p.Description != nil {
+			entry["description"] = *p.Description
+		}
+		if p.Required != nil {
+			entry["required"] = *p.Required
+		}
+		if p.Example != nil {
+			entry["example"] = *p.Example
+		}
+		props[p.Name] = entry
+	}
+
+	if len(props) > 0 {
+		// Merge property keys at the top level (record format)
+		for k, v := range props {
+			out[k] = v
+		}
+	}
+
+	return out, nil
 }
 
 // ProtocolVersionRecord represents a protocolversionrecord.

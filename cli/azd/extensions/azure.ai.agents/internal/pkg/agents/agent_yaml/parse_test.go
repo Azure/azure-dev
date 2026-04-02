@@ -429,3 +429,135 @@ resources:
 		t.Errorf("Expected third tool authType 'CustomKeys', got '%s'", toolboxRes.Tools[2].AuthType)
 	}
 }
+
+// TestLoadAndValidateAgentManifest_RecordFormatParameters verifies that the
+// record/map format for parameters (canonical agent manifest schema) is parsed
+// correctly into PropertySchema.Properties.
+func TestLoadAndValidateAgentManifest_RecordFormatParameters(t *testing.T) {
+	yamlContent := []byte(`
+name: test-params
+template:
+  name: test
+  kind: hosted
+  protocols:
+    - protocol: responses
+resources:
+  - kind: model
+    name: chat
+    id: gpt-5
+  - kind: toolbox
+    name: tools
+    tools:
+      - id: mcp
+        name: github
+        target: https://api.githubcopilot.com/mcp
+        authType: OAuth2
+        options:
+          clientId: "{{ github_client_id }}"
+          clientSecret: "{{ github_client_secret }}"
+parameters:
+  github_client_id:
+    schema:
+      type: string
+    description: OAuth client ID
+    required: true
+  github_client_secret:
+    schema:
+      type: string
+    description: OAuth client secret
+    required: true
+  model_name:
+    schema:
+      type: string
+      enum:
+        - gpt-4o
+        - gpt-4o-mini
+      default: gpt-4o
+    required: true
+`)
+
+	manifest, err := LoadAndValidateAgentManifest(yamlContent)
+	if err != nil {
+		t.Fatalf("LoadAndValidateAgentManifest failed: %v", err)
+	}
+
+	if len(manifest.Parameters.Properties) != 3 {
+		t.Fatalf("Expected 3 parameters, got %d", len(manifest.Parameters.Properties))
+	}
+
+	// Find parameters by name (map order is not guaranteed)
+	paramsByName := map[string]Property{}
+	for _, p := range manifest.Parameters.Properties {
+		paramsByName[p.Name] = p
+	}
+
+	// Check github_client_id
+	p, ok := paramsByName["github_client_id"]
+	if !ok {
+		t.Fatal("Missing parameter github_client_id")
+	}
+	if p.Kind != "string" {
+		t.Errorf("Expected kind 'string', got '%s'", p.Kind)
+	}
+	if p.Description == nil || *p.Description != "OAuth client ID" {
+		t.Errorf("Unexpected description: %v", p.Description)
+	}
+	if p.Required == nil || !*p.Required {
+		t.Error("Expected required=true")
+	}
+
+	// Check model_name with enum and default
+	p, ok = paramsByName["model_name"]
+	if !ok {
+		t.Fatal("Missing parameter model_name")
+	}
+	if p.EnumValues == nil || len(*p.EnumValues) != 2 {
+		t.Fatalf("Expected 2 enum values, got %v", p.EnumValues)
+	}
+	if p.Default == nil {
+		t.Fatal("Expected default value")
+	}
+	if defaultStr, ok := (*p.Default).(string); !ok || defaultStr != "gpt-4o" {
+		t.Errorf("Expected default 'gpt-4o', got %v", *p.Default)
+	}
+}
+
+// TestLoadAndValidateAgentManifest_ArrayFormatParameters verifies that the
+// traditional array format for parameters still works after the UnmarshalYAML change.
+func TestLoadAndValidateAgentManifest_ArrayFormatParameters(t *testing.T) {
+	yamlContent := []byte(`
+name: test-array-params
+template:
+  name: test
+  kind: hosted
+  protocols:
+    - protocol: responses
+resources:
+  - kind: model
+    name: chat
+    id: gpt-5
+parameters:
+  properties:
+    - name: my_param
+      kind: string
+      description: A test parameter
+      required: true
+`)
+
+	manifest, err := LoadAndValidateAgentManifest(yamlContent)
+	if err != nil {
+		t.Fatalf("LoadAndValidateAgentManifest failed: %v", err)
+	}
+
+	if len(manifest.Parameters.Properties) != 1 {
+		t.Fatalf("Expected 1 parameter, got %d", len(manifest.Parameters.Properties))
+	}
+
+	p := manifest.Parameters.Properties[0]
+	if p.Name != "my_param" {
+		t.Errorf("Expected name 'my_param', got '%s'", p.Name)
+	}
+	if p.Kind != "string" {
+		t.Errorf("Expected kind 'string', got '%s'", p.Kind)
+	}
+}

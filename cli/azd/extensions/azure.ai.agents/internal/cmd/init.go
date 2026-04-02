@@ -405,6 +405,14 @@ func (a *InitAction) Run(ctx context.Context) error {
 			return fmt.Errorf("configuring model choice: %w", err)
 		}
 
+		// Prompt for manifest parameters (e.g. tool credentials) after project selection
+		agentManifest, err = registry_api.ProcessManifestParameters(
+			ctx, agentManifest, a.azdClient, a.flags.NoPrompt,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to process manifest parameters: %w", err)
+		}
+
 		// Write the final agent.yaml to disk (after deployment names have been injected)
 		if err := writeAgentDefinitionFile(targetDir, agentManifest); err != nil {
 			return fmt.Errorf("writing agent definition: %w", err)
@@ -980,11 +988,6 @@ func (a *InitAction) downloadAgentYaml(
 				return nil, "", err
 			}
 		}
-	}
-
-	agentManifest, err = registry_api.ProcessManifestParameters(ctx, agentManifest, a.azdClient, a.flags.NoPrompt)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to process manifest parameters: %w", err)
 	}
 
 	_, isPromptAgent := agentManifest.Template.(agent_yaml.PromptAgent)

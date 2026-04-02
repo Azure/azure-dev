@@ -1,0 +1,9 @@
+{
+  "name": "extension-importer-sample",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Sample static web app for azd demo-importer extension",
+  "scripts": {
+    "build": "echo 'No build step needed - using pre-built dist/ folder'"
+  }
+}

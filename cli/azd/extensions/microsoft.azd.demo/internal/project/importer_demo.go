@@ -406,7 +406,7 @@ func generateResourcesBicep(resources []resourceDef) string {
 
 			b.WriteString(fmt.Sprintf("resource %s 'Microsoft.Storage/storageAccounts@2023-05-01' = {\n", varName))
 			b.WriteString(fmt.Sprintf("  name: %s\n", name))
-			b.WriteString(fmt.Sprintf("  location: location\n"))
+			b.WriteString("  location: location\n")
 			b.WriteString(fmt.Sprintf("  kind: '%s'\n", kind))
 			b.WriteString("  sku: {\n")
 			b.WriteString(fmt.Sprintf("    name: '%s'\n", sku))
@@ -415,7 +415,32 @@ func generateResourcesBicep(resources []resourceDef) string {
 			if len(res.Tags) > 0 {
 				b.WriteString("  tags: {\n")
 				for k, v := range res.Tags {
-					b.WriteString(fmt.Sprintf("    %s: %s\n", k, resolveEnvVars(v)))
+					b.WriteString(fmt.Sprintf("    '%s': %s\n", k, resolveEnvVars(v)))
+				}
+				b.WriteString("  }\n")
+			}
+
+			b.WriteString("}\n\n")
+
+		case "Microsoft.Web/staticSites":
+			sku := res.Sku
+			if sku == "" {
+				sku = "Free"
+			}
+
+			b.WriteString(fmt.Sprintf("resource %s 'Microsoft.Web/staticSites@2022-09-01' = {\n", varName))
+			b.WriteString(fmt.Sprintf("  name: %s\n", name))
+			b.WriteString("  location: location\n")
+			b.WriteString("  sku: {\n")
+			b.WriteString(fmt.Sprintf("    name: '%s'\n", sku))
+			b.WriteString("    tier: 'Free'\n")
+			b.WriteString("  }\n")
+			b.WriteString("  properties: {}\n")
+
+			if len(res.Tags) > 0 {
+				b.WriteString("  tags: {\n")
+				for k, v := range res.Tags {
+					b.WriteString(fmt.Sprintf("    '%s': %s\n", k, resolveEnvVars(v)))
 				}
 				b.WriteString("  }\n")
 			}

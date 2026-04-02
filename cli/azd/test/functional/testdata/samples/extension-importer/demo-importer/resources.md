@@ -23,4 +23,16 @@ Creates a storage account for application data.
 - tags:
   - environment: ${AZURE_ENV_NAME}
   - managedBy: azd-demo-importer
-  - foo: bar
+
+# Static Web App
+
+Hosts the frontend application. The azd-service-name tag links this
+resource to the "app" service defined in azure.yaml.
+
+- type: Microsoft.Web/staticSites
+- location: ${AZURE_LOCATION}
+- name: swa-${AZURE_ENV_NAME}
+- sku: Free
+- tags:
+  - azd-service-name: app
+  - environment: ${AZURE_ENV_NAME}

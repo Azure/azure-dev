@@ -1369,6 +1369,10 @@ func Test_PackageLevelErrorsMapped(t *testing.T) {
 
 		// Extension SDK errors used by extensions, never reach host MapError
 		"ErrProjectNotFound": "pkg/azdext: extension SDK helper, used by extensions not the host",
+
+		// Internal hook routing errors — caught and handled in hooks_runner.go before reaching the user
+		"ErrUnsupportedLanguage": "pkg/tools/language: internal hook routing error, caught in hooks_runner.go",
+		"ErrShellLanguage":       "pkg/tools/language: internal hook routing error, caught in hooks_runner.go",
 	}
 
 	// Find the azd root directory (two levels up from internal/cmd)

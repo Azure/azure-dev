@@ -1,7 +1,14 @@
 // PR Governance: Check sprint/milestone status of linked issues
 // and post informational comments to help contributors understand prioritization.
 module.exports = async ({ github, context, core }) => {
-  const issueNumbers = JSON.parse(process.env.ISSUE_NUMBERS);
+  let issueNumbers;
+  try {
+    issueNumbers = JSON.parse(process.env.ISSUE_NUMBERS || '[]');
+  } catch {
+    console.log('No valid issue numbers provided, skipping priority check');
+    return;
+  }
+  if (!Array.isArray(issueNumbers) || issueNumbers.length === 0) return;
   const pr = context.payload.pull_request;
   const projectToken = process.env.PROJECT_TOKEN;
 
@@ -27,7 +34,8 @@ module.exports = async ({ github, context, core }) => {
           },
           body: JSON.stringify({ query }),
         });
-        const json = await response.json();
+        const json = response.ok ? await response.json() : null;
+        if (!response.ok) throw new Error(`GitHub API returned ${response.status}: ${response.statusText}`);
         if (json.errors) throw new Error(json.errors[0].message);
         return json.data;
       }
@@ -64,10 +72,12 @@ module.exports = async ({ github, context, core }) => {
 
         // Query sprint assignment per issue
         for (const issueNum of issueNumbers) {
+          const num = parseInt(issueNum, 10);
+          if (isNaN(num)) continue;
           try {
             const issueData = await graphqlWithToken(`{
               repository(owner: "Azure", name: "azure-dev") {
-                issue(number: ${issueNum}) {
+                issue(number: ${num}) {
                   projectItems(first: 10) {
                     nodes {
                       project { number }
@@ -84,7 +94,7 @@ module.exports = async ({ github, context, core }) => {
 
             const projectItems = issueData.repository.issue.projectItems.nodes;
             const match = projectItems.find(item =>
-              item.project.number === 182 && item.fieldValueByName?.title
+              item.project.number === 182 && item.fieldValueByName?.title === currentSprint.title
             );
             if (match) {
               sprintInfo[issueNum] = match.fieldValueByName.title;
@@ -131,16 +141,27 @@ module.exports = async ({ github, context, core }) => {
   }
 
   const hasCurrentMilestone = issueDetails.some(i => i.isCurrentMonth);
+  const allLookupsFailed = !hasCurrentSprint && issueDetails.length === 0;
+
+  if (allLookupsFailed) {
+    console.log('⚠️ Could not determine sprint or milestone status — skipping comment');
+    return;
+  }
 
   // Find existing bot comment to update
   const BOT_MARKER = '<!-- pr-governance-priority -->';
-  const comments = await github.paginate(github.rest.issues.listComments, {
-    owner: context.repo.owner,
-    repo: context.repo.repo,
-    issue_number: pr.number,
-    per_page: 100,
-  });
-  const existingComment = comments.find(c => c.body && c.body.includes(BOT_MARKER));
+  let existingComment;
+  try {
+    const comments = await github.paginate(github.rest.issues.listComments, {
+      owner: context.repo.owner,
+      repo: context.repo.repo,
+      issue_number: pr.number,
+      per_page: 100,
+    });
+    existingComment = comments.find(c => c.body?.includes(BOT_MARKER));
+  } catch (e) {
+    console.log(`Could not list comments (expected for fork PRs): ${e.message}`);
+  }
 
   let commentBody = '';
 

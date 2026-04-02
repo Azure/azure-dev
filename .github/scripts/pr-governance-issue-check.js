@@ -3,6 +3,13 @@
 module.exports = async ({ github, context, core }) => {
   const pr = context.payload.pull_request;
 
+  // Skip for draft PRs
+  if (pr.draft) {
+    console.log('Skipping: draft PR');
+    core.setOutput('skipped', 'true');
+    return;
+  }
+
   // Skip for dependabot and automated PRs
   const skipAuthors = ['dependabot[bot]', 'dependabot', 'app/dependabot'];
   if (skipAuthors.includes(pr.user.login)) {
@@ -32,25 +39,22 @@ module.exports = async ({ github, context, core }) => {
     }
   }`;
 
-  const result = await github.graphql(query, {
-    owner: context.repo.owner,
-    repo: context.repo.repo,
-    number: pr.number,
-  });
-
-  const linkedIssues = result.repository.pullRequest.closingIssuesReferences.nodes;
-  const linkedIssueNumbers = linkedIssues.map(i => i.number);
-
-  if (linkedIssueNumbers.length === 0) {
-    const BOT_MARKER = '<!-- pr-governance-priority -->';
-    const comments = await github.paginate(github.rest.issues.listComments, {
+  let linkedIssueNumbers = [];
+  try {
+    const result = await github.graphql(query, {
       owner: context.repo.owner,
       repo: context.repo.repo,
-      issue_number: pr.number,
-      per_page: 100,
+      number: pr.number,
     });
-    const existingComment = comments.find(c => c.body && c.body.includes(BOT_MARKER));
+    linkedIssueNumbers = result?.repository?.pullRequest?.closingIssuesReferences?.nodes?.map(i => i.number) || [];
+  } catch (err) {
+    core.warning(`Could not check linked issues: ${err.message}`);
+    return;
+  }
 
+  const BOT_MARKER = '<!-- pr-governance-issue -->';
+
+  if (linkedIssueNumbers.length === 0) {
     const commentBody = [
       BOT_MARKER,
       `### 🔗 Linked Issue Required`,
@@ -60,6 +64,14 @@ module.exports = async ({ github, context, core }) => {
     ].join('\n');
 
     try {
+      const comments = await github.paginate(github.rest.issues.listComments, {
+        owner: context.repo.owner,
+        repo: context.repo.repo,
+        issue_number: pr.number,
+        per_page: 100,
+      });
+      const existingComment = comments.find(c => c.body?.includes(BOT_MARKER));
+
       if (existingComment) {
         await github.rest.issues.updateComment({
           owner: context.repo.owner,
@@ -81,6 +93,27 @@ module.exports = async ({ github, context, core }) => {
 
     core.setFailed('PR must be linked to a GitHub issue.');
     return;
+  }
+
+  // Issues found — clean up any prior "link issue" comment
+  try {
+    const comments = await github.paginate(github.rest.issues.listComments, {
+      owner: context.repo.owner,
+      repo: context.repo.repo,
+      issue_number: pr.number,
+      per_page: 100,
+    });
+    const existingComment = comments.find(c => c.body?.includes(BOT_MARKER));
+    if (existingComment) {
+      await github.rest.issues.deleteComment({
+        owner: context.repo.owner,
+        repo: context.repo.repo,
+        comment_id: existingComment.id,
+      });
+      console.log('Removed prior "link issue" comment');
+    }
+  } catch (e) {
+    console.log(`Could not clean up comment: ${e.message}`);
   }
 
   console.log(`✅ PR has linked issue(s): ${linkedIssueNumbers.join(', ')}`);

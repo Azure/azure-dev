@@ -26,9 +26,11 @@ type Distribution struct {
 
 // ResourceConfig represents compute resource specifications.
 type ResourceConfig struct {
-	InstanceCount int    `json:"instanceCount,omitempty"`
-	InstanceType  string `json:"instanceType,omitempty"`
-	ShmSize       string `json:"shmSize,omitempty"`
+	InstanceCount int            `json:"instanceCount,omitempty"`
+	InstanceType  string         `json:"instanceType,omitempty"`
+	ShmSize       string         `json:"shmSize,omitempty"`
+	DockerArgs    string         `json:"dockerArgs,omitempty"`
+	Properties    map[string]any `json:"properties,omitempty"`
 }
 
 // CommandJobLimits represents job limits.

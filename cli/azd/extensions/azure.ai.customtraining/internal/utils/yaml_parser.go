@@ -26,11 +26,21 @@ type JobDefinition struct {
 	Inputs               map[string]InputDefinition  `yaml:"inputs"`
 	Outputs              map[string]OutputDefinition `yaml:"outputs"`
 	Distribution         string                      `yaml:"distribution"`
+	Resources            *ResourceDefinition         `yaml:"resources"`
 	InstanceCount        int                         `yaml:"instance_count"`
 	ProcessPerNode       int                         `yaml:"process_per_node"`
 	EnvironmentVariables map[string]string           `yaml:"environment_variables"`
 	Timeout              string                      `yaml:"timeout"`
 	Tags                 map[string]string           `yaml:"tags"`
+}
+
+// ResourceDefinition represents the compute resource configuration in a YAML job definition.
+type ResourceDefinition struct {
+	InstanceCount int            `yaml:"instance_count"`
+	InstanceType  string         `yaml:"instance_type"`
+	ShmSize       string         `yaml:"shm_size"`
+	DockerArgs    string         `yaml:"docker_args"`
+	Properties    map[string]any `yaml:"properties"`
 }
 
 // InputDefinition represents an input in the YAML job definition.

@@ -32,6 +32,12 @@ type Client struct {
 	apiVersion string
 	credential azcore.TokenCredential
 	httpClient *http.Client
+	debugBody  bool
+}
+
+// SetDebugBody enables logging of request bodies.
+func (c *Client) SetDebugBody(enabled bool) {
+	c.debugBody = enabled
 }
 
 // NewClient creates a new client from a project endpoint URL.
@@ -89,6 +95,9 @@ func (c *Client) doDataPlaneWithVersion(ctx context.Context, method, path, apiVe
 		data, err := json.Marshal(body)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal request body: %w", err)
+		}
+		if c.debugBody {
+			fmt.Printf("[DEBUG] Request body: %s\n", string(data))
 		}
 		bodyReader = bytes.NewReader(data)
 	}

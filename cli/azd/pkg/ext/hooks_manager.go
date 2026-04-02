@@ -292,6 +292,13 @@ func (h *HooksManager) validateLanguageRuntimes(
 				cfg.cwd = h.cwd
 			}
 
+			// Set the hook name so that any temp scripts
+			// created by validate() use the correct name
+			// pattern (e.g. azd-predeploy-*.sh).
+			if cfg.Name == "" {
+				cfg.Name = hookName
+			}
+
 			// Run validate to resolve the Language field from
 			// file extension / explicit config.
 			if err := cfg.validate(); err != nil {

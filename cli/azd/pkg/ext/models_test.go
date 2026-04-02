@@ -69,8 +69,9 @@ func TestHookConfig_LanguageField(t *testing.T) {
 			expectedDir:      "",
 		},
 		{
-			name:             "AllFieldsTogether",
-			yamlInput:        "run: src/hooks/predeploy.py\nshell: sh\nlanguage: python\ndir: src/hooks\ncontinueOnError: true\n",
+			name: "AllFieldsTogether",
+			yamlInput: "run: src/hooks/predeploy.py\nshell: sh\n" +
+				"language: python\ndir: src/hooks\ncontinueOnError: true\n",
 			expectedLanguage: language.ScriptLanguagePython,
 			expectedDir:      "src/hooks",
 		},
@@ -275,7 +276,7 @@ func TestHookConfig_ValidateLanguageResolution(t *testing.T) {
 				filePath := filepath.Join(cwd, tt.createFile)
 				err := os.MkdirAll(filepath.Dir(filePath), 0o755)
 				require.NoError(t, err)
-				err = os.WriteFile(filePath, nil, 0o644)
+				err = os.WriteFile(filePath, nil, 0o600)
 				require.NoError(t, err)
 			}
 

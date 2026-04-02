@@ -191,7 +191,7 @@ func (hc *HookConfig) validate() error {
 		}
 	}
 
-	// --- existing shell behaviour (unchanged) ---
+	// --- existing shell behavior (unchanged) ---
 
 	// If shell is not specified and it's an inline script, use OS default
 	if hc.Shell == ScriptTypeUnknown && hc.path == "" {

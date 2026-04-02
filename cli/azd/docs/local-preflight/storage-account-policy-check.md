@@ -95,7 +95,7 @@ with `effect: deny`. The policy rule includes:
   "allOf": [
     { "field": "type", "equals": "Microsoft.Storage/storageAccounts" },
     { "field": "Microsoft.Storage/storageAccounts/allowSharedKeyAccess", "equals": "true" },
-    { "value": "[contains(subscription().tags, parameters('optInTagName'))]", "equals": "false" },
+    { "value": "[contains(subscription().tags, parameters('optInTagName'))]", "equals": "true" },
     { "anyOf": [
         { "field": "location", "in": "[split(subscription().tags[parameters('optInTagName')], ',')]" },
         { "value": "all_regions", "in": "[split(subscription().tags[parameters('optInTagName')], ',')]" }
@@ -107,9 +107,9 @@ with `effect: deny`. The policy rule includes:
 The assignment sets `optInTagName` = `"Az.Sec.DisableLocalAuth.Storage::OptIn"`.
 
 A subscription `contoso-dev-sub` does **not** have the
-`Az.Sec.DisableLocalAuth.Storage::OptIn` tag. The opt-in `anyOf` block evaluates
-to `false`, so the policy never fires — deployments with `allowSharedKeyAccess:
-true` succeed.
+`Az.Sec.DisableLocalAuth.Storage::OptIn` tag. The `contains()` condition evaluates
+to `false`, which does not match `"equals": "true"`, so the `allOf` short-circuits
+and the policy never fires — deployments with `allowSharedKeyAccess: true` succeed.
 
 The client-side parser cannot evaluate `subscription().tags[...]` or `split()`
 expressions. It sees the deny + `allowSharedKeyAccess` pattern and warns the
@@ -145,7 +145,7 @@ properties) and Azure returns which policies would deny it and why.
 
 ```
 POST /subscriptions/{id}/providers/Microsoft.PolicyInsights/checkPolicyRestrictions
-     ?api-version=2022-03-01
+     ?api-version=2022-03-01  # version tested in this investigation
 
 {
   "resourceDetails": {
@@ -194,11 +194,11 @@ warn *before* deployment, this API is not applicable.
 
 ## Conclusion
 
-| Approach | Sees MG policies | Evaluates all conditions | Suitable |
-|---|---|---|---|
-| Client-side ARM policy SDK parsing | ✅ Yes | ❌ No (ARM expressions) | ❌ False positives |
-| Server-side `checkPolicyRestrictions` | ❌ No | ✅ Yes | ❌ Misses real denials |
-| `policyStates` API | ✅ Yes | ✅ Yes | ❌ Existing resources only |
+| Approach | Sees MG policies | Evaluates all conditions | Limitation | Suitable |
+|---|---|---|---|---|
+| Client-side ARM policy SDK parsing | ✅ Yes | ❌ No (ARM expressions) | Cannot evaluate runtime expressions → false positives | ❌ |
+| Server-side `checkPolicyRestrictions` | ❌ No | ✅ Yes | Subscription scope misses MG-inherited policies | ❌ |
+| `policyStates` API | ✅ Yes | ✅ Yes | Only evaluates already-deployed resources | ❌ |
 
 No currently available approach provides both accurate policy detection
 (including management-group-inherited policies) and correct evaluation of
@@ -208,12 +208,24 @@ system.
 
 ## Future Considerations
 
-- If `checkPolicyRestrictions` is updated to evaluate management-group-inherited
-  policies, it would be the ideal solution — accurate server-side evaluation with
-  minimal client complexity.
+- **Management group scope endpoint (`2024-10-01`)**: The `checkPolicyRestrictions`
+  API added a [management group scope endpoint](https://learn.microsoft.com/en-us/rest/api/policyinsights/policy-restrictions/check-at-management-group-scope?view=rest-policyinsights-2024-10-01)
+  in `api-version=2024-10-01`:
+  ```
+  POST /providers/Microsoft.Management/managementGroups/{mgId}/providers/Microsoft.PolicyInsights/checkPolicyRestrictions
+       ?api-version=2024-10-01
+  ```
+  This could address the core limitation — the subscription-scope endpoint
+  doesn't see MG-inherited policies, but the MG-scope endpoint evaluates against
+  the full policy hierarchy. This is the most promising next step. A hybrid
+  approach (client-side detection to find relevant MG IDs + MG-scope server-side
+  evaluation) could combine accurate detection with full condition evaluation.
+  **Note**: This investigation tested only `api-version=2022-03-01` at the
+  subscription scope. The MG-scope endpoint was not tested.
 - A hybrid approach (client-side detection + subscription tag evaluation for
   common patterns) could reduce false positives for the most common gating
   conditions, at the cost of maintaining a partial ARM expression evaluator.
-- The ARM deployment validation API (`/validate`) does evaluate policies but
-  requires submitting the full deployment, making it equivalent to the
-  server-side preflight that already runs after local preflight.
+- The ARM deployment validation API (`/validate`) and what-if API (`/whatIf`) do
+  **not** evaluate Azure Policy deny effects. Only actual deployment submission
+  triggers deny policy evaluation, which is equivalent to the server-side
+  preflight that already runs after local preflight.

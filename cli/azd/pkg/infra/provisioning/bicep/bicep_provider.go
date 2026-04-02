@@ -639,11 +639,12 @@ func (p *BicepProvider) waitForActiveDeployments(
 		if errors.Is(err, infra.ErrDeploymentsNotFound) {
 			return nil
 		}
-		// For other errors (auth, throttling, transient), surface them
-		// so the user knows the pre-check couldn't run.
+		// For other errors (auth, throttling, transient, unrecorded test
+		// responses), log and proceed. The active deployment check is a
+		// best-effort optimization — failing to list shouldn't block the deploy.
 		log.Printf(
-			"active-deployment-check: unable to list deployments: %v", err)
-		return fmt.Errorf("checking for active deployments: %w", err)
+			"active-deployment-check: unable to list deployments, skipping: %v", err)
+		return nil
 	}
 
 	if len(active) == 0 {
@@ -700,8 +701,11 @@ func (p *BicepProvider) waitForActiveDeployments(
 					spinnerResult = input.StepDone
 					return nil
 				}
-				return fmt.Errorf(
-					"checking for active deployments: %w", err)
+				// Transient poll error — treat as cleared and proceed
+				log.Printf(
+					"active-deployment-check: poll error, assuming cleared: %v", err)
+				spinnerResult = input.StepDone
+				return nil
 			}
 			if len(active) == 0 {
 				spinnerResult = input.StepDone

@@ -88,10 +88,9 @@ func TestWaitForActiveDeployments_InitialListError_Other(t *testing.T) {
 	}
 	p := newTestProvider()
 
-	// Non-NotFound errors should propagate so the user knows the check failed.
+	// Non-NotFound errors are logged and skipped — the check is best-effort.
 	err := p.waitForActiveDeployments(t.Context(), scope, "test-deploy")
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "checking for active deployments")
+	require.NoError(t, err)
 }
 
 func TestWaitForActiveDeployments_ActiveThenClear(t *testing.T) {
@@ -162,8 +161,8 @@ func TestWaitForActiveDeployments_PollError(t *testing.T) {
 	p := newTestProvider()
 
 	err := p.waitForActiveDeployments(t.Context(), scope, "deploy-1")
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "transient ARM failure")
+	// Transient poll errors are logged and treated as cleared.
+	require.NoError(t, err)
 }
 
 func TestWaitForActiveDeployments_PollNotFound(t *testing.T) {

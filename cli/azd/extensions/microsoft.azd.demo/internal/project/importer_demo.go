@@ -78,15 +78,31 @@ func (p *DemoImporterProvider) Services(
 	}, nil
 }
 
+// defaultImporterDir is the default directory name where the demo importer looks for resource files.
+// Extensions control their defaults — users can override via infra.importer.options.path in azure.yaml.
+const defaultImporterDir = "demo-importer"
+
+// resolvePath determines the directory containing resource definition files.
+// It checks the "path" option first, falling back to the default "demo-importer" directory.
+func resolvePath(projectPath string, options map[string]string) string {
+	dir := defaultImporterDir
+	if v, ok := options["path"]; ok && v != "" {
+		dir = v
+	}
+	return filepath.Join(projectPath, dir)
+}
+
 // ProjectInfrastructure generates temporary Bicep infrastructure for `azd provision`.
 func (p *DemoImporterProvider) ProjectInfrastructure(
 	ctx context.Context,
-	svcConfig *azdext.ServiceConfig,
+	projectPath string,
+	options map[string]string,
 	progress azdext.ProgressReporter,
 ) (*azdext.ImporterProjectInfrastructureResponse, error) {
-	progress("Scanning for azd-infra-gen resource definitions...")
+	importerDir := resolvePath(projectPath, options)
+	progress(fmt.Sprintf("Scanning %s for azd-infra-gen resource definitions...", importerDir))
 
-	resources, err := p.parseAllResources(svcConfig.RelativePath)
+	resources, err := p.parseAllResources(importerDir)
 	if err != nil {
 		return nil, fmt.Errorf("parsing resource definitions: %w", err)
 	}
@@ -120,10 +136,11 @@ func (p *DemoImporterProvider) ProjectInfrastructure(
 // GenerateAllInfrastructure generates the complete infrastructure for `azd infra gen`.
 func (p *DemoImporterProvider) GenerateAllInfrastructure(
 	ctx context.Context,
-	projectConfig *azdext.ProjectConfig,
-	svcConfig *azdext.ServiceConfig,
+	projectPath string,
+	options map[string]string,
 ) ([]*azdext.GeneratedFile, error) {
-	resources, err := p.parseAllResources(svcConfig.RelativePath)
+	importerDir := resolvePath(projectPath, options)
+	resources, err := p.parseAllResources(importerDir)
 	if err != nil {
 		return nil, fmt.Errorf("parsing resource definitions: %w", err)
 	}

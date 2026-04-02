@@ -23,3 +23,4 @@ Creates a storage account for application data.
 - tags:
   - environment: ${AZURE_ENV_NAME}
   - managedBy: azd-demo-importer
+  - foo: bar

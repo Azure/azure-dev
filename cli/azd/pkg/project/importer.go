@@ -49,13 +49,23 @@ type Importer interface {
 
 	// ProjectInfrastructure generates temporary infrastructure for provisioning.
 	// Returns an Infra pointing to a temp directory with generated IaC files.
-	// The importerPath is the resolved path to the importer's project files.
-	ProjectInfrastructure(ctx context.Context, importerPath string) (*Infra, error)
+	// The projectPath is the root path of the azd project.
+	// The importerConfig contains the extension-owned options from azure.yaml.
+	ProjectInfrastructure(
+		ctx context.Context,
+		projectPath string,
+		importerConfig provisioning.ImporterConfig,
+	) (*Infra, error)
 
 	// GenerateAllInfrastructure generates the complete infrastructure filesystem for `azd infra gen`.
 	// Returns an in-memory FS rooted at the project directory with all generated files.
-	// The importerPath is the resolved path to the importer's project files.
-	GenerateAllInfrastructure(ctx context.Context, importerPath string) (fs.FS, error)
+	// The projectPath is the root path of the azd project.
+	// The importerConfig contains the extension-owned options from azure.yaml.
+	GenerateAllInfrastructure(
+		ctx context.Context,
+		projectPath string,
+		importerConfig provisioning.ImporterConfig,
+	) (fs.FS, error)
 }
 
 // ImporterRegistry holds external importers registered by extensions at runtime.
@@ -458,15 +468,8 @@ func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfi
 			return nil, err
 		}
 
-		importerPath := infraOptions.Importer.Path
-		if importerPath == "" {
-			importerPath = projectConfig.Path
-		} else if !filepath.IsAbs(importerPath) {
-			importerPath = filepath.Join(projectConfig.Path, importerPath)
-		}
-
-		log.Printf("using importer '%s' from path '%s'", importer.Name(), importerPath)
-		return importer.ProjectInfrastructure(ctx, importerPath)
+		log.Printf("using importer '%s'", importer.Name())
+		return importer.ProjectInfrastructure(ctx, projectConfig.Path, infraOptions.Importer)
 	}
 
 	// Temp infra from auto-detected importer (backward compatibility with Aspire)
@@ -496,7 +499,7 @@ func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfi
 					)
 				}
 
-				return importer.ProjectInfrastructure(ctx, svcConfig.Path())
+				return importer.ProjectInfrastructure(ctx, svcConfig.Path(), provisioning.ImporterConfig{})
 			}
 		}
 	}
@@ -587,16 +590,8 @@ func (im *ImportManager) GenerateAllInfrastructure(ctx context.Context, projectC
 			return nil, err
 		}
 
-		importerPath := importerCfg.Path
-		if importerPath == "" {
-			importerPath = projectConfig.Path
-		} else if !filepath.IsAbs(importerPath) {
-			importerPath = filepath.Join(projectConfig.Path, importerPath)
-		}
-
-		log.Printf("GenerateAllInfrastructure: using configured importer '%s' from path '%s'",
-			importer.Name(), importerPath)
-		return importer.GenerateAllInfrastructure(ctx, importerPath)
+		log.Printf("GenerateAllInfrastructure: using configured importer '%s'", importer.Name())
+		return importer.GenerateAllInfrastructure(ctx, projectConfig.Path, importerCfg)
 	}
 
 	// Auto-detect importer from services (backward compatibility with Aspire)
@@ -627,7 +622,7 @@ func (im *ImportManager) GenerateAllInfrastructure(ctx context.Context, projectC
 					)
 				}
 
-				return importer.GenerateAllInfrastructure(ctx, svcConfig.Path())
+				return importer.GenerateAllInfrastructure(ctx, svcConfig.Path(), provisioning.ImporterConfig{})
 			}
 		}
 	}

@@ -122,17 +122,15 @@ func (ei *ExternalImporter) Services(
 // ProjectInfrastructure generates temporary infrastructure for provisioning via the extension.
 func (ei *ExternalImporter) ProjectInfrastructure(
 	ctx context.Context,
-	importerPath string,
+	projectPath string,
+	importerConfig provisioning.ImporterConfig,
 ) (*Infra, error) {
-	protoSvcConfig := &azdext.ServiceConfig{
-		RelativePath: importerPath,
-	}
-
 	req := &azdext.ImporterMessage{
 		RequestId: uuid.NewString(),
 		MessageType: &azdext.ImporterMessage_ProjectInfrastructureRequest{
 			ProjectInfrastructureRequest: &azdext.ImporterProjectInfrastructureRequest{
-				ServiceConfig: protoSvcConfig,
+				ProjectPath: projectPath,
+				Options:     toStringMap(importerConfig.Options),
 			},
 		},
 	}
@@ -185,17 +183,15 @@ func (ei *ExternalImporter) ProjectInfrastructure(
 // GenerateAllInfrastructure generates the complete infrastructure filesystem via the extension.
 func (ei *ExternalImporter) GenerateAllInfrastructure(
 	ctx context.Context,
-	importerPath string,
+	projectPath string,
+	importerConfig provisioning.ImporterConfig,
 ) (fs.FS, error) {
-	protoSvcConfig := &azdext.ServiceConfig{
-		RelativePath: importerPath,
-	}
-
 	req := &azdext.ImporterMessage{
 		RequestId: uuid.NewString(),
 		MessageType: &azdext.ImporterMessage_GenerateAllInfrastructureRequest{
 			GenerateAllInfrastructureRequest: &azdext.ImporterGenerateAllInfrastructureRequest{
-				ServiceConfig: protoSvcConfig,
+				ProjectPath: projectPath,
+				Options:     toStringMap(importerConfig.Options),
 			},
 		},
 	}
@@ -267,4 +263,16 @@ func mapProtoToServiceConfig(proto *azdext.ServiceConfig, projectConfig *Project
 		Project:      projectConfig,
 	}
 	return svc
+}
+
+// toStringMap converts map[string]any to map[string]string for proto serialization.
+func toStringMap(m map[string]any) map[string]string {
+	if m == nil {
+		return nil
+	}
+	result := make(map[string]string, len(m))
+	for k, v := range m {
+		result[k] = fmt.Sprintf("%v", v)
+	}
+	return result
 }

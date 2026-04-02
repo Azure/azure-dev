@@ -27,13 +27,14 @@ type ImporterProvider interface {
 	) (map[string]*ServiceConfig, error)
 	ProjectInfrastructure(
 		ctx context.Context,
-		svcConfig *ServiceConfig,
+		projectPath string,
+		options map[string]string,
 		progress ProgressReporter,
 	) (*ImporterProjectInfrastructureResponse, error)
 	GenerateAllInfrastructure(
 		ctx context.Context,
-		projectConfig *ProjectConfig,
-		svcConfig *ServiceConfig,
+		projectPath string,
+		options map[string]string,
 	) ([]*GeneratedFile, error)
 }
 
@@ -265,16 +266,12 @@ func (m *ImporterManager) onProjectInfrastructure(
 	req *ImporterProjectInfrastructureRequest,
 	progress grpcbroker.ProgressFunc,
 ) (*ImporterMessage, error) {
-	if req.ServiceConfig == nil {
-		return nil, errors.New("service config is required for project infrastructure request")
-	}
-
 	provider, err := m.getAnyInstance()
 	if err != nil {
 		return nil, fmt.Errorf("no provider instance found for importer: %w", err)
 	}
 
-	result, err := provider.ProjectInfrastructure(ctx, req.ServiceConfig, progress)
+	result, err := provider.ProjectInfrastructure(ctx, req.ProjectPath, req.Options, progress)
 	if err != nil {
 		return nil, err
 	}
@@ -291,16 +288,12 @@ func (m *ImporterManager) onGenerateAllInfrastructure(
 	ctx context.Context,
 	req *ImporterGenerateAllInfrastructureRequest,
 ) (*ImporterMessage, error) {
-	if req.ServiceConfig == nil {
-		return nil, errors.New("service config is required for generate all infrastructure request")
-	}
-
 	provider, err := m.getAnyInstance()
 	if err != nil {
 		return nil, fmt.Errorf("no provider instance found for importer: %w", err)
 	}
 
-	files, err := provider.GenerateAllInfrastructure(ctx, req.ProjectConfig, req.ServiceConfig)
+	files, err := provider.GenerateAllInfrastructure(ctx, req.ProjectPath, req.Options)
 
 	return &ImporterMessage{
 		MessageType: &ImporterMessage_GenerateAllInfrastructureResponse{

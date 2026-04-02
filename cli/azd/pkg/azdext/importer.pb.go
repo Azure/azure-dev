@@ -534,7 +534,8 @@ func (x *ImporterServicesResponse) GetServices() map[string]*ServiceConfig {
 
 type ImporterProjectInfrastructureRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ServiceConfig *ServiceConfig         `protobuf:"bytes,1,opt,name=service_config,json=serviceConfig,proto3" json:"service_config,omitempty"`
+	ProjectPath   string                 `protobuf:"bytes,1,opt,name=project_path,json=projectPath,proto3" json:"project_path,omitempty"`
+	Options       map[string]string      `protobuf:"bytes,2,rep,name=options,proto3" json:"options,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -569,9 +570,16 @@ func (*ImporterProjectInfrastructureRequest) Descriptor() ([]byte, []int) {
 	return file_importer_proto_rawDescGZIP(), []int{7}
 }
 
-func (x *ImporterProjectInfrastructureRequest) GetServiceConfig() *ServiceConfig {
+func (x *ImporterProjectInfrastructureRequest) GetProjectPath() string {
 	if x != nil {
-		return x.ServiceConfig
+		return x.ProjectPath
+	}
+	return ""
+}
+
+func (x *ImporterProjectInfrastructureRequest) GetOptions() map[string]string {
+	if x != nil {
+		return x.Options
 	}
 	return nil
 }
@@ -631,8 +639,8 @@ func (x *ImporterProjectInfrastructureResponse) GetFiles() []*GeneratedFile {
 
 type ImporterGenerateAllInfrastructureRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ProjectConfig *ProjectConfig         `protobuf:"bytes,1,opt,name=project_config,json=projectConfig,proto3" json:"project_config,omitempty"`
-	ServiceConfig *ServiceConfig         `protobuf:"bytes,2,opt,name=service_config,json=serviceConfig,proto3" json:"service_config,omitempty"`
+	ProjectPath   string                 `protobuf:"bytes,1,opt,name=project_path,json=projectPath,proto3" json:"project_path,omitempty"`
+	Options       map[string]string      `protobuf:"bytes,2,rep,name=options,proto3" json:"options,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -667,16 +675,16 @@ func (*ImporterGenerateAllInfrastructureRequest) Descriptor() ([]byte, []int) {
 	return file_importer_proto_rawDescGZIP(), []int{9}
 }
 
-func (x *ImporterGenerateAllInfrastructureRequest) GetProjectConfig() *ProjectConfig {
+func (x *ImporterGenerateAllInfrastructureRequest) GetProjectPath() string {
 	if x != nil {
-		return x.ProjectConfig
+		return x.ProjectPath
 	}
-	return nil
+	return ""
 }
 
-func (x *ImporterGenerateAllInfrastructureRequest) GetServiceConfig() *ServiceConfig {
+func (x *ImporterGenerateAllInfrastructureRequest) GetOptions() map[string]string {
 	if x != nil {
-		return x.ServiceConfig
+		return x.Options
 	}
 	return nil
 }
@@ -877,15 +885,22 @@ const file_importer_proto_rawDesc = "" +
 	"\bservices\x18\x01 \x03(\v2..azdext.ImporterServicesResponse.ServicesEntryR\bservices\x1aR\n" +
 	"\rServicesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12+\n" +
-	"\x05value\x18\x02 \x01(\v2\x15.azdext.ServiceConfigR\x05value:\x028\x01\"d\n" +
-	"$ImporterProjectInfrastructureRequest\x12<\n" +
-	"\x0eservice_config\x18\x01 \x01(\v2\x15.azdext.ServiceConfigR\rserviceConfig\"\x8f\x01\n" +
+	"\x05value\x18\x02 \x01(\v2\x15.azdext.ServiceConfigR\x05value:\x028\x01\"\xda\x01\n" +
+	"$ImporterProjectInfrastructureRequest\x12!\n" +
+	"\fproject_path\x18\x01 \x01(\tR\vprojectPath\x12S\n" +
+	"\aoptions\x18\x02 \x03(\v29.azdext.ImporterProjectInfrastructureRequest.OptionsEntryR\aoptions\x1a:\n" +
+	"\fOptionsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x8f\x01\n" +
 	"%ImporterProjectInfrastructureResponse\x129\n" +
 	"\rinfra_options\x18\x01 \x01(\v2\x14.azdext.InfraOptionsR\finfraOptions\x12+\n" +
-	"\x05files\x18\x02 \x03(\v2\x15.azdext.GeneratedFileR\x05files\"\xa6\x01\n" +
-	"(ImporterGenerateAllInfrastructureRequest\x12<\n" +
-	"\x0eproject_config\x18\x01 \x01(\v2\x15.azdext.ProjectConfigR\rprojectConfig\x12<\n" +
-	"\x0eservice_config\x18\x02 \x01(\v2\x15.azdext.ServiceConfigR\rserviceConfig\"X\n" +
+	"\x05files\x18\x02 \x03(\v2\x15.azdext.GeneratedFileR\x05files\"\xe2\x01\n" +
+	"(ImporterGenerateAllInfrastructureRequest\x12!\n" +
+	"\fproject_path\x18\x01 \x01(\tR\vprojectPath\x12W\n" +
+	"\aoptions\x18\x02 \x03(\v2=.azdext.ImporterGenerateAllInfrastructureRequest.OptionsEntryR\aoptions\x1a:\n" +
+	"\fOptionsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"X\n" +
 	")ImporterGenerateAllInfrastructureResponse\x12+\n" +
 	"\x05files\x18\x01 \x03(\v2\x15.azdext.GeneratedFileR\x05files\"=\n" +
 	"\rGeneratedFile\x12\x12\n" +
@@ -911,7 +926,7 @@ func file_importer_proto_rawDescGZIP() []byte {
 	return file_importer_proto_rawDescData
 }
 
-var file_importer_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_importer_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_importer_proto_goTypes = []any{
 	(*ImporterMessage)(nil),                           // 0: azdext.ImporterMessage
 	(*RegisterImporterRequest)(nil),                   // 1: azdext.RegisterImporterRequest
@@ -927,13 +942,15 @@ var file_importer_proto_goTypes = []any{
 	(*GeneratedFile)(nil),                             // 11: azdext.GeneratedFile
 	(*ImporterProgressMessage)(nil),                   // 12: azdext.ImporterProgressMessage
 	nil,                                               // 13: azdext.ImporterServicesResponse.ServicesEntry
-	(*ExtensionError)(nil),                            // 14: azdext.ExtensionError
-	(*ServiceConfig)(nil),                             // 15: azdext.ServiceConfig
-	(*ProjectConfig)(nil),                             // 16: azdext.ProjectConfig
-	(*InfraOptions)(nil),                              // 17: azdext.InfraOptions
+	nil,                                               // 14: azdext.ImporterProjectInfrastructureRequest.OptionsEntry
+	nil,                                               // 15: azdext.ImporterGenerateAllInfrastructureRequest.OptionsEntry
+	(*ExtensionError)(nil),                            // 16: azdext.ExtensionError
+	(*ServiceConfig)(nil),                             // 17: azdext.ServiceConfig
+	(*ProjectConfig)(nil),                             // 18: azdext.ProjectConfig
+	(*InfraOptions)(nil),                              // 19: azdext.InfraOptions
 }
 var file_importer_proto_depIdxs = []int32{
-	14, // 0: azdext.ImporterMessage.error:type_name -> azdext.ExtensionError
+	16, // 0: azdext.ImporterMessage.error:type_name -> azdext.ExtensionError
 	1,  // 1: azdext.ImporterMessage.register_importer_request:type_name -> azdext.RegisterImporterRequest
 	2,  // 2: azdext.ImporterMessage.register_importer_response:type_name -> azdext.RegisterImporterResponse
 	3,  // 3: azdext.ImporterMessage.can_import_request:type_name -> azdext.ImporterCanImportRequest
@@ -945,24 +962,23 @@ var file_importer_proto_depIdxs = []int32{
 	9,  // 9: azdext.ImporterMessage.generate_all_infrastructure_request:type_name -> azdext.ImporterGenerateAllInfrastructureRequest
 	10, // 10: azdext.ImporterMessage.generate_all_infrastructure_response:type_name -> azdext.ImporterGenerateAllInfrastructureResponse
 	12, // 11: azdext.ImporterMessage.progress_message:type_name -> azdext.ImporterProgressMessage
-	15, // 12: azdext.ImporterCanImportRequest.service_config:type_name -> azdext.ServiceConfig
-	16, // 13: azdext.ImporterServicesRequest.project_config:type_name -> azdext.ProjectConfig
-	15, // 14: azdext.ImporterServicesRequest.service_config:type_name -> azdext.ServiceConfig
+	17, // 12: azdext.ImporterCanImportRequest.service_config:type_name -> azdext.ServiceConfig
+	18, // 13: azdext.ImporterServicesRequest.project_config:type_name -> azdext.ProjectConfig
+	17, // 14: azdext.ImporterServicesRequest.service_config:type_name -> azdext.ServiceConfig
 	13, // 15: azdext.ImporterServicesResponse.services:type_name -> azdext.ImporterServicesResponse.ServicesEntry
-	15, // 16: azdext.ImporterProjectInfrastructureRequest.service_config:type_name -> azdext.ServiceConfig
-	17, // 17: azdext.ImporterProjectInfrastructureResponse.infra_options:type_name -> azdext.InfraOptions
+	14, // 16: azdext.ImporterProjectInfrastructureRequest.options:type_name -> azdext.ImporterProjectInfrastructureRequest.OptionsEntry
+	19, // 17: azdext.ImporterProjectInfrastructureResponse.infra_options:type_name -> azdext.InfraOptions
 	11, // 18: azdext.ImporterProjectInfrastructureResponse.files:type_name -> azdext.GeneratedFile
-	16, // 19: azdext.ImporterGenerateAllInfrastructureRequest.project_config:type_name -> azdext.ProjectConfig
-	15, // 20: azdext.ImporterGenerateAllInfrastructureRequest.service_config:type_name -> azdext.ServiceConfig
-	11, // 21: azdext.ImporterGenerateAllInfrastructureResponse.files:type_name -> azdext.GeneratedFile
-	15, // 22: azdext.ImporterServicesResponse.ServicesEntry.value:type_name -> azdext.ServiceConfig
-	0,  // 23: azdext.ImporterService.Stream:input_type -> azdext.ImporterMessage
-	0,  // 24: azdext.ImporterService.Stream:output_type -> azdext.ImporterMessage
-	24, // [24:25] is the sub-list for method output_type
-	23, // [23:24] is the sub-list for method input_type
-	23, // [23:23] is the sub-list for extension type_name
-	23, // [23:23] is the sub-list for extension extendee
-	0,  // [0:23] is the sub-list for field type_name
+	15, // 19: azdext.ImporterGenerateAllInfrastructureRequest.options:type_name -> azdext.ImporterGenerateAllInfrastructureRequest.OptionsEntry
+	11, // 20: azdext.ImporterGenerateAllInfrastructureResponse.files:type_name -> azdext.GeneratedFile
+	17, // 21: azdext.ImporterServicesResponse.ServicesEntry.value:type_name -> azdext.ServiceConfig
+	0,  // 22: azdext.ImporterService.Stream:input_type -> azdext.ImporterMessage
+	0,  // 23: azdext.ImporterService.Stream:output_type -> azdext.ImporterMessage
+	23, // [23:24] is the sub-list for method output_type
+	22, // [22:23] is the sub-list for method input_type
+	22, // [22:22] is the sub-list for extension type_name
+	22, // [22:22] is the sub-list for extension extendee
+	0,  // [0:22] is the sub-list for field type_name
 }
 
 func init() { file_importer_proto_init() }
@@ -991,7 +1007,7 @@ func file_importer_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_importer_proto_rawDesc), len(file_importer_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   14,
+			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

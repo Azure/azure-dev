@@ -68,7 +68,8 @@ message ImporterServicesResponse {
 // --- ProjectInfrastructure ---
 
 message ImporterProjectInfrastructureRequest {
-  ServiceConfig service_config = 1;
+  string project_path = 1;
+  map<string, string> options = 2;
 }
 
 message ImporterProjectInfrastructureResponse {
@@ -80,8 +81,8 @@ message ImporterProjectInfrastructureResponse {
 // --- GenerateAllInfrastructure ---
 
 message ImporterGenerateAllInfrastructureRequest {
-  ProjectConfig project_config = 1;
-  ServiceConfig service_config = 2;
+  string project_path = 1;
+  map<string, string> options = 2;
 }
 
 message ImporterGenerateAllInfrastructureResponse {

@@ -123,12 +123,16 @@ func (ai *DotNetImporter) CanImport(ctx context.Context, svcConfig *ServiceConfi
 }
 
 // ProjectInfrastructure implements the Importer interface.
-// For DotNetImporter, the importerPath is the path to the AppHost project.
-func (ai *DotNetImporter) ProjectInfrastructure(ctx context.Context, importerPath string) (*Infra, error) {
+// For DotNetImporter, the projectPath combined with options determines the AppHost project location.
+func (ai *DotNetImporter) ProjectInfrastructure(
+	ctx context.Context,
+	projectPath string,
+	importerConfig provisioning.ImporterConfig,
+) (*Infra, error) {
 	// Use absolute path so ServiceConfig.Path() works without Project reference
-	absPath, err := filepath.Abs(importerPath)
+	absPath, err := filepath.Abs(projectPath)
 	if err != nil {
-		absPath = importerPath
+		absPath = projectPath
 	}
 	svcConfig := &ServiceConfig{
 		RelativePath: absPath,
@@ -608,11 +612,15 @@ func evaluateSingleBuildArg(
 }
 
 // GenerateAllInfrastructure implements the Importer interface.
-// For DotNetImporter, the importerPath is the path to the AppHost project.
-func (ai *DotNetImporter) GenerateAllInfrastructure(ctx context.Context, importerPath string) (fs.FS, error) {
-	absPath, err := filepath.Abs(importerPath)
+// For DotNetImporter, the projectPath combined with options determines the AppHost project location.
+func (ai *DotNetImporter) GenerateAllInfrastructure(
+	ctx context.Context,
+	projectPath string,
+	importerConfig provisioning.ImporterConfig,
+) (fs.FS, error) {
+	absPath, err := filepath.Abs(projectPath)
 	if err != nil {
-		absPath = importerPath
+		absPath = projectPath
 	}
 	svcConfig := &ServiceConfig{
 		RelativePath: absPath,

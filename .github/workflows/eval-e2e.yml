@@ -66,9 +66,18 @@ jobs:
 
       - name: Cleanup Azure resources
         if: always()
+        shell: pwsh
         run: |
-          # Cleanup is handled by eval tasks (teardown-only.yaml).
-          # As a safety net, delete any resource groups matching the eval pattern.
-          az group list --query "[?starts_with(name, 'rg-eval-')].name" -o tsv | \
-            xargs -I {} az group delete --name {} --yes --no-wait || true
+          # Tag matching resource groups for deletion so the cleanup script
+          # can detect and remove resources that resist deletion.
+          $deleteAfter = (Get-Date).ToUniversalTime().AddHours(1).ToString('o')
+          $groupsToDelete = az group list --query "[?starts_with(name, 'rg-eval-')].name" -o tsv
+
+          foreach ($group in $groupsToDelete) {
+            az group update --name $group --set "tags.DeleteAfter=$deleteAfter" 2>$null
+          }
+
+          foreach ($group in $groupsToDelete) {
+            az group delete --name $group --yes --no-wait 2>$null
+          }
         continue-on-error: true

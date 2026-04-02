@@ -79,7 +79,7 @@ type DatasetVersion struct {
 	Name        string            `json:"name,omitempty"`        // Dataset name, e.g. "code-myproject"
 	Version     string            `json:"version,omitempty"`     // Version string, e.g. truncated hash "a1b2c3..."
 	DataURI     string            `json:"dataUri,omitempty"`     // Permanent blob URI where files are stored
-	DataType    string            `json:"dataType,omitempty"`    // Always "uri_folder" (a directory of files)
+	DataType    string            `json:"type,omitempty"`        // Always "uri_folder" (a directory of files)
 	Description string            `json:"description,omitempty"` // Human-readable description
 	Tags        map[string]string `json:"tags,omitempty"`        // Key-value tags; we use "contentHash" for dedup sentinel
 }

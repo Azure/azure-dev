@@ -20,6 +20,7 @@ import (
 
 const (
 	DefaultAPIVersion = "2026-01-15-preview"
+	DatasetAPIVersion = "v1"
 	DataPlaneScope    = "https://ai.azure.com/.default"
 	ARMScope          = "https://management.azure.com/.default"
 )
@@ -31,6 +32,12 @@ type Client struct {
 	apiVersion string
 	credential azcore.TokenCredential
 	httpClient *http.Client
+	debugBody  bool
+}
+
+// SetDebugBody enables logging of request bodies.
+func (c *Client) SetDebugBody(enabled bool) {
+	c.debugBody = enabled
 }
 
 // NewClient creates a new client from a project endpoint URL.
@@ -74,9 +81,9 @@ func NewClient(projectEndpoint string, credential azcore.TokenCredential) (*Clie
 	}, nil
 }
 
-// doDataPlane executes an authenticated HTTP request against the data plane.
-func (c *Client) doDataPlane(ctx context.Context, method, path string, body interface{}, queryParams ...string) (*http.Response, error) {
-	reqURL := fmt.Sprintf("%s%s/%s?api-version=%s", c.baseURL, c.subPath, path, c.apiVersion)
+// doDataPlaneWithVersion executes an authenticated HTTP request with a specific API version.
+func (c *Client) doDataPlaneWithVersion(ctx context.Context, method, path, apiVersion string, body interface{}, queryParams ...string) (*http.Response, error) {
+	reqURL := fmt.Sprintf("%s%s/%s?api-version=%s", c.baseURL, c.subPath, path, apiVersion)
 	for i := 0; i+1 < len(queryParams); i += 2 {
 		reqURL += fmt.Sprintf("&%s=%s", queryParams[i], url.QueryEscape(queryParams[i+1]))
 	}
@@ -88,6 +95,9 @@ func (c *Client) doDataPlane(ctx context.Context, method, path string, body inte
 		data, err := json.Marshal(body)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal request body: %w", err)
+		}
+		if c.debugBody {
+			fmt.Printf("[DEBUG] Request body: %s\n", string(data))
 		}
 		bodyReader = bytes.NewReader(data)
 	}
@@ -108,6 +118,11 @@ func (c *Client) doDataPlane(ctx context.Context, method, path string, body inte
 	}
 
 	return resp, nil
+}
+
+// doDataPlane executes an authenticated HTTP request against the data plane.
+func (c *Client) doDataPlane(ctx context.Context, method, path string, body interface{}, queryParams ...string) (*http.Response, error) {
+	return c.doDataPlaneWithVersion(ctx, method, path, c.apiVersion, body, queryParams...)
 }
 
 // addAuth adds a bearer token to the request.

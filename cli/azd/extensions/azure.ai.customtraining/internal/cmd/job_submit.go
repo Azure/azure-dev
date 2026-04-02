@@ -6,6 +6,7 @@ package cmd
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"azure.ai.customtraining/internal/azcopy"
 	"azure.ai.customtraining/internal/service"
@@ -72,6 +73,7 @@ func newJobSubmitCommand() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("failed to create API client: %w", err)
 			}
+			apiClient.SetDebugBody(rootFlags.Debug)
 
 			// Auto-generate job name if not provided (same pattern as AML SDK)
 			if jobDef.Name == "" {
@@ -148,7 +150,7 @@ func buildJobResource(def *utils.JobDefinition) *models.JobResource {
 		for name, input := range def.Inputs {
 			ji := models.JobInput{
 				JobInputType: input.Type,
-				Mode:         input.Mode,
+				Mode:         mapInputMode(input.Mode),
 			}
 			if input.Value != "" {
 				ji.JobInputType = "literal"
@@ -166,7 +168,7 @@ func buildJobResource(def *utils.JobDefinition) *models.JobResource {
 		for name, output := range def.Outputs {
 			job.Outputs[name] = models.JobOutput{
 				JobOutputType: output.Type,
-				Mode:          output.Mode,
+				Mode:          mapOutputMode(output.Mode),
 				URI:           output.Path,
 			}
 		}
@@ -180,8 +182,16 @@ func buildJobResource(def *utils.JobDefinition) *models.JobResource {
 		}
 	}
 
-	// Resources
-	if def.InstanceCount > 0 {
+	// Resources — prefer structured resources block, fall back to flat instance_count
+	if def.Resources != nil {
+		job.Resources = &models.ResourceConfig{
+			InstanceCount: def.Resources.InstanceCount,
+			InstanceType:  def.Resources.InstanceType,
+			ShmSize:       def.Resources.ShmSize,
+			DockerArgs:    def.Resources.DockerArgs,
+			Properties:    def.Resources.Properties,
+		}
+	} else if def.InstanceCount > 0 {
 		job.Resources = &models.ResourceConfig{
 			InstanceCount: def.InstanceCount,
 		}
@@ -197,5 +207,37 @@ func buildJobResource(def *utils.JobDefinition) *models.JobResource {
 	return &models.JobResource{
 		Properties: job,
 		Tags:       def.Tags,
+	}
+}
+
+// mapInputMode converts AML YAML mode names to REST API mode names.
+func mapInputMode(mode string) string {
+	switch strings.ToLower(mode) {
+	case "ro_mount":
+		return "ReadOnlyMount"
+	case "download":
+		return "Download"
+	case "direct":
+		return "Direct"
+	case "":
+		return ""
+	default:
+		return mode // pass through if already in API format
+	}
+}
+
+// mapOutputMode converts AML YAML mode names to REST API mode names.
+func mapOutputMode(mode string) string {
+	switch strings.ToLower(mode) {
+	case "rw_mount":
+		return "ReadWriteMount"
+	case "upload":
+		return "Upload"
+	case "direct":
+		return "Direct"
+	case "":
+		return ""
+	default:
+		return mode // pass through if already in API format
 	}
 }

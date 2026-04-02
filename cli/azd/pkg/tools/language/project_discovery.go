@@ -32,11 +32,19 @@ type projectFileEntry struct {
 	IsGlob   bool           // true for patterns like "*.*proj"
 }
 
-// knownProjectFiles defines the project files to search for, in
-// priority order. The first match found in a directory wins.
+// knownProjectFiles defines project files to search for, in priority order.
+// The first match found in a directory wins.
+//
+// Python: pyproject.toml is preferred over requirements.txt, matching the
+// convention in framework_service_python.go and internal/appdetect/python.go
+// (PEP 621 preference).
+//
+// NOTE: This is intentionally separate from internal/appdetect/ which walks
+// DOWN a tree to detect service projects. Hook discovery walks UP from a
+// script to find the nearest project context.
 var knownProjectFiles = []projectFileEntry{
-	{Name: "requirements.txt", Language: ScriptLanguagePython},
 	{Name: "pyproject.toml", Language: ScriptLanguagePython},
+	{Name: "requirements.txt", Language: ScriptLanguagePython},
 	{Name: "package.json", Language: ScriptLanguageJavaScript},
 	{Name: "*.*proj", Language: ScriptLanguageDotNet, IsGlob: true},
 }

@@ -50,7 +50,7 @@ type CachedToolVersion struct {
 }
 
 // UpdateCheckCache is the on-disk representation of a tool update check
-// result set. It is serialised as JSON and written to
+// result set. It is serialized as JSON and written to
 // ~/.azd/tool-check-cache.json.
 type UpdateCheckCache struct {
 	// CheckedAt is the time the cache was last populated.
@@ -78,7 +78,7 @@ type UpdateCheckResult struct {
 }
 
 // UpdateChecker performs periodic update checks for registered tools,
-// caching results to disk so that expensive remote lookups are amortised
+// caching results to disk so that expensive remote lookups are amortized
 // across CLI invocations.
 type UpdateChecker struct {
 	configManager config.UserConfigManager
@@ -228,7 +228,7 @@ func (uc *UpdateChecker) GetCachedResults() (*UpdateCheckCache, error) {
 	return &cache, nil
 }
 
-// SaveCache serialises the cache to disk, creating any intermediate
+// SaveCache serializes the cache to disk, creating any intermediate
 // directories as needed.
 func (uc *UpdateChecker) SaveCache(cache *UpdateCheckCache) error {
 	dir := filepath.Dir(uc.cacheFilePath)
@@ -376,7 +376,7 @@ func (uc *UpdateChecker) ShouldShowNotification(
 
 // loadIntervalHours reads the check-interval configuration from a
 // pre-loaded [config.Config], falling back to the default when the key
-// is unset or unparseable.
+// is unset or unparsable.
 func loadIntervalHours(cfg config.Config) int {
 	raw, ok := cfg.Get(configKeyCheckIntervalHours)
 	if !ok {

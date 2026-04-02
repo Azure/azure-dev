@@ -363,6 +363,10 @@ overrides:
   - filename: pkg/infra/provisioning/bicep/local_preflight.go
     words:
       - actioned
+  - filename: docs/code-coverage-guide.md
+    words:
+      - covdata
+      - GOWORK
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

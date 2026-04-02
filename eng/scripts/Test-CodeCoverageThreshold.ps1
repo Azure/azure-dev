@@ -9,6 +9,14 @@
     total statement coverage percentage, then fails if it is below the
     specified minimum.
 
+    This script is called automatically by Get-LocalCoverageReport.ps1
+    (when -MinCoverage is set) and by the CI pipeline (release-cli.yml) to
+    enforce the coverage gate. It can also be run standalone on any Go
+    coverage profile.
+
+    See cli/azd/docs/code-coverage-guide.md for details on the CI gate
+    and ratchet policy.
+
 .PARAMETER CoverageFile
     Path to the Go coverage profile (typically cover.out).
 

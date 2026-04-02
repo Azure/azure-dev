@@ -744,3 +744,321 @@ func TestMcpHost_StructureFollowsStandards(t *testing.T) {
 		assert.True(t, found, "Expected field %s not found in McpHost struct", fieldName)
 	}
 }
+
+// newTestClient creates a fully initialized in-process MCP client for testing.
+// The client is backed by a real in-process MCPServer, avoiding network I/O.
+func newTestClient(t *testing.T, tools ...server.ServerTool) *client.Client {
+	t.Helper()
+
+	mcpServer := server.NewMCPServer("test-server", "1.0.0")
+	if len(tools) > 0 {
+		mcpServer.AddTools(tools...)
+	}
+
+	inProcessClient, err := client.NewInProcessClient(mcpServer)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = inProcessClient.Close() })
+
+	err = inProcessClient.Start(t.Context())
+	require.NoError(t, err)
+
+	initReq := mcp.InitializeRequest{}
+	initReq.Params.ProtocolVersion = mcp.LATEST_PROTOCOL_VERSION
+	initReq.Params.ClientInfo = mcp.Implementation{
+		Name:    "test-client",
+		Version: "1.0.0",
+	}
+	_, err = inProcessClient.Initialize(t.Context(), initReq)
+	require.NoError(t, err)
+
+	return inProcessClient
+}
+
+// dummyToolHandler is a no-op tool handler used in tests.
+func dummyToolHandler(
+	_ context.Context, _ mcp.CallToolRequest,
+) (*mcp.CallToolResult, error) {
+	return mcp.NewToolResultText("ok"), nil
+}
+
+func TestMcpHost_Start_EmptyServers(t *testing.T) {
+	host := NewMcpHost()
+
+	err := host.Start(t.Context())
+
+	require.NoError(t, err)
+	assert.Empty(t, host.clients)
+}
+
+func TestMcpHost_Start_UnsupportedServerType(t *testing.T) {
+	host := NewMcpHost(WithServers(map[string]*ServerConfig{
+		"grpc-server": {Type: "grpc", Command: "some-command"},
+	}))
+
+	err := host.Start(t.Context())
+
+	require.NoError(t, err)
+	assert.Empty(t, host.clients,
+		"unsupported type should not create a client")
+}
+
+func TestMcpHost_Start_StdioNonExistentCommand(t *testing.T) {
+	host := NewMcpHost(WithServers(map[string]*ServerConfig{
+		"bad-stdio": {
+			Type:    "stdio",
+			Command: "nonexistent-command-abc123xyz",
+			Args:    []string{"--flag"},
+			Env:     []string{"KEY=VAL"},
+		},
+	}))
+
+	err := host.Start(t.Context())
+
+	require.NoError(t, err)
+	assert.Empty(t, host.clients,
+		"failed transport start should not create a client")
+}
+
+func TestMcpHost_Start_HttpInvalidUrl(t *testing.T) {
+	host := NewMcpHost(WithServers(map[string]*ServerConfig{
+		"bad-http": {
+			Type: "http",
+			Url:  "://not-a-valid-url",
+		},
+	}))
+
+	err := host.Start(t.Context())
+
+	require.NoError(t, err)
+	assert.Empty(t, host.clients,
+		"invalid URL should not create a client")
+}
+
+func TestMcpHost_Start_EmptyTypeUsesHttp(t *testing.T) {
+	// An empty Type falls into the "http" case per the switch.
+	host := NewMcpHost(WithServers(map[string]*ServerConfig{
+		"default-type": {
+			Type: "",
+			Url:  "://also-bad",
+		},
+	}))
+
+	err := host.Start(t.Context())
+
+	require.NoError(t, err)
+	assert.Empty(t, host.clients,
+		"empty type with bad URL should not create a client")
+}
+
+func TestMcpHost_Start_MixedServerTypes(t *testing.T) {
+	host := NewMcpHost(WithServers(map[string]*ServerConfig{
+		"unsupported": {Type: "grpc"},
+		"bad-stdio": {
+			Type:    "stdio",
+			Command: "nonexistent-cmd-xyz789",
+		},
+		"bad-http": {Type: "http", Url: "://invalid"},
+	}))
+
+	err := host.Start(t.Context())
+
+	require.NoError(t, err)
+	assert.Empty(t, host.clients)
+}
+
+func TestMcpHost_ServerTools_WithClient(t *testing.T) {
+	testTool := server.ServerTool{
+		Tool: mcp.Tool{
+			Name:        "my-tool",
+			Description: "A test tool",
+		},
+		Handler: dummyToolHandler,
+	}
+
+	testClient := newTestClient(t, testTool)
+
+	host := NewMcpHost(WithServers(map[string]*ServerConfig{
+		"svc": {Type: "stdio", Command: "dummy"},
+	}))
+	host.clients["svc"] = testClient
+
+	tools, err := host.ServerTools(t.Context(), "svc")
+
+	require.NoError(t, err)
+	require.Len(t, tools, 1)
+	assert.Equal(t, "svc_my-tool", tools[0].Tool.Name)
+	assert.Equal(t, "A test tool", tools[0].Tool.Description)
+	assert.NotNil(t, tools[0].Handler)
+}
+
+func TestMcpHost_ServerTools_MultipleTools(t *testing.T) {
+	toolA := server.ServerTool{
+		Tool:    mcp.Tool{Name: "tool-a", Description: "Tool A"},
+		Handler: dummyToolHandler,
+	}
+	toolB := server.ServerTool{
+		Tool:    mcp.Tool{Name: "tool-b", Description: "Tool B"},
+		Handler: dummyToolHandler,
+	}
+
+	testClient := newTestClient(t, toolA, toolB)
+
+	host := NewMcpHost(WithServers(map[string]*ServerConfig{
+		"svc": {Type: "stdio", Command: "dummy"},
+	}))
+	host.clients["svc"] = testClient
+
+	result, err := host.ServerTools(t.Context(), "svc")
+
+	require.NoError(t, err)
+	require.Len(t, result, 2)
+
+	names := []string{result[0].Tool.Name, result[1].Tool.Name}
+	assert.Contains(t, names, "svc_tool-a")
+	assert.Contains(t, names, "svc_tool-b")
+}
+
+func TestMcpHost_ServerTools_ProxyHandlerForwardsToOriginal(t *testing.T) {
+	// Verify the proxy tool handler calls through to the
+	// backing client with the original (un-prefixed) tool name.
+	testTool := server.ServerTool{
+		Tool: mcp.Tool{Name: "echo", Description: "Echo tool"},
+		Handler: func(
+			_ context.Context, req mcp.CallToolRequest,
+		) (*mcp.CallToolResult, error) {
+			argsMap, _ := req.Params.Arguments.(map[string]any)
+			text, _ := argsMap["text"].(string)
+			return mcp.NewToolResultText(text), nil
+		},
+	}
+
+	testClient := newTestClient(t, testTool)
+
+	host := NewMcpHost(WithServers(map[string]*ServerConfig{
+		"ext": {Type: "stdio", Command: "dummy"},
+	}))
+	host.clients["ext"] = testClient
+
+	tools, err := host.ServerTools(t.Context(), "ext")
+	require.NoError(t, err)
+	require.Len(t, tools, 1)
+
+	// Invoke the proxy handler with a simple argument map.
+	req := mcp.CallToolRequest{}
+	req.Params.Name = "ext_echo"
+	args := map[string]any{"text": "hello"}
+	req.Params.Arguments = args
+
+	result, err := tools[0].Handler(t.Context(), req)
+
+	require.NoError(t, err)
+	require.Len(t, result.Content, 1)
+	assert.Equal(t, "hello",
+		result.Content[0].(mcp.TextContent).Text)
+}
+
+func TestMcpHost_AllTools_WithClients(t *testing.T) {
+	toolAlpha := server.ServerTool{
+		Tool:    mcp.Tool{Name: "alpha", Description: "Alpha"},
+		Handler: dummyToolHandler,
+	}
+	toolBeta := server.ServerTool{
+		Tool:    mcp.Tool{Name: "beta", Description: "Beta"},
+		Handler: dummyToolHandler,
+	}
+
+	client1 := newTestClient(t, toolAlpha)
+	client2 := newTestClient(t, toolBeta)
+
+	host := NewMcpHost(WithServers(map[string]*ServerConfig{
+		"svc1": {Type: "stdio", Command: "dummy"},
+		"svc2": {Type: "stdio", Command: "dummy"},
+	}))
+	host.clients["svc1"] = client1
+	host.clients["svc2"] = client2
+
+	allTools, err := host.AllTools(t.Context())
+
+	require.NoError(t, err)
+	assert.Len(t, allTools, 2)
+}
+
+func TestMcpHost_AllTools_MixedClientResults(t *testing.T) {
+	// One server has a working client; another has no client.
+	// AllTools should return tools from the working client and
+	// silently skip the server with no client.
+	tool := server.ServerTool{
+		Tool:    mcp.Tool{Name: "good-tool", Description: "Good"},
+		Handler: dummyToolHandler,
+	}
+
+	goodClient := newTestClient(t, tool)
+
+	host := NewMcpHost(WithServers(map[string]*ServerConfig{
+		"good": {Type: "stdio", Command: "dummy"},
+		"bad":  {Type: "stdio", Command: "dummy"},
+	}))
+	host.clients["good"] = goodClient
+	// "bad" server has no client entry → ServerTools returns error,
+	// AllTools logs and continues.
+
+	allTools, err := host.AllTools(t.Context())
+
+	require.NoError(t, err)
+	assert.Len(t, allTools, 1)
+	assert.Equal(t, "good_good-tool", allTools[0].Tool.Name)
+}
+
+func TestMcpHost_Stop_WithClient(t *testing.T) {
+	mcpServer := server.NewMCPServer("test-server", "1.0.0")
+	inProcessClient, err := client.NewInProcessClient(mcpServer)
+	require.NoError(t, err)
+
+	host := NewMcpHost()
+	host.clients["test"] = inProcessClient
+
+	err = host.Stop()
+
+	require.NoError(t, err)
+}
+
+func TestMcpHost_Stop_MultipleClients(t *testing.T) {
+	srv1 := server.NewMCPServer("server1", "1.0.0")
+	c1, err := client.NewInProcessClient(srv1)
+	require.NoError(t, err)
+
+	srv2 := server.NewMCPServer("server2", "1.0.0")
+	c2, err := client.NewInProcessClient(srv2)
+	require.NoError(t, err)
+
+	host := NewMcpHost()
+	host.clients["svc1"] = c1
+	host.clients["svc2"] = c2
+
+	err = host.Stop()
+
+	require.NoError(t, err)
+}
+
+func TestMcpHost_Start_WithCapabilities(t *testing.T) {
+	// Verify Start propagates capabilities to client options.
+	// The server won't connect, but we exercise the capability
+	// check branches inside Start.
+	host := NewMcpHost(
+		WithServers(map[string]*ServerConfig{
+			"bad": {
+				Type:    "stdio",
+				Command: "nonexistent-cap-test-cmd",
+			},
+		}),
+		WithCapabilities(Capabilities{
+			Sampling:    NewProxySamplingHandler(),
+			Elicitation: NewProxyElicitationHandler(),
+		}),
+	)
+
+	err := host.Start(t.Context())
+
+	require.NoError(t, err)
+	assert.Empty(t, host.clients)
+}

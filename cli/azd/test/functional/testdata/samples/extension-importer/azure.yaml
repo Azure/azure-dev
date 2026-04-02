@@ -1,11 +1,12 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
 
 # This sample project uses a demo importer extension to detect the project structure
-# and generate infrastructure from demo.manifest.json
+# from .md files in the infra-gen/ folder and generate Bicep infrastructure from them.
+# The demo importer recognizes files with the "azd-infra-gen/v1" format header.
 
 name: extension-importer
 services:
   app:
     host: containerapp
     language: dotnet
-    project: ./src
+    project: ./infra-gen

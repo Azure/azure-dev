@@ -302,17 +302,14 @@ func convertFromProtoDeployResult(
 		}
 
 		for k, v := range result.Deployment.Parameters {
-			deployment.Parameters[k] = provisioning.InputParameter{
+			param := provisioning.InputParameter{
 				Type:  v.Type,
 				Value: v.Value,
 			}
 			if v.DefaultValue != "" {
-				deployment.Parameters[k] = provisioning.InputParameter{
-					Type:         v.Type,
-					DefaultValue: v.DefaultValue,
-					Value:        v.Value,
-				}
+				param.DefaultValue = v.DefaultValue
 			}
+			deployment.Parameters[k] = param
 		}
 
 		for k, v := range result.Deployment.Outputs {

@@ -25,6 +25,14 @@ type GlobalCommandOptions struct {
 	//   - Automatic agent detection (lowest priority)
 	NoPrompt bool
 
+	// EnvironmentName holds the value of `-e/--environment` parsed from the command line
+	// before Cobra command tree construction. For extension commands (which use
+	// DisableFlagParsing), this is the only reliable way to know what `-e` value
+	// the user specified. It is empty when the user did not pass `-e` or when the
+	// value was not a valid environment name (extensions may reuse `-e` for other
+	// purposes such as URLs).
+	EnvironmentName string
+
 	// EnableTelemetry indicates if telemetry should be sent.
 	// The rootCmd will disable this based if the environment variable
 	// AZURE_DEV_COLLECT_TELEMETRY is set to 'no'.

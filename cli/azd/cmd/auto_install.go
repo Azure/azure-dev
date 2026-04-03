@@ -17,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/runcontext/agentdetect"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
@@ -623,6 +624,7 @@ func CreateGlobalFlagSet() *pflag.FlagSet {
 		false,
 		"Alias for --no-prompt.")
 	_ = globalFlags.MarkHidden("non-interactive")
+	globalFlags.StringP(internal.EnvironmentNameFlagName, "e", "", "The name of the environment to use.")
 
 	// The telemetry system is responsible for reading these flags value and using it to configure the telemetry
 	// system, but we still need to add it to our flag set so that when we parse the command line with Cobra we
@@ -702,6 +704,24 @@ func ParseGlobalFlags(args []string, opts *internal.GlobalCommandOptions) error 
 					envVal,
 				)
 			}
+		}
+	}
+
+	// Parse -e/--environment with lenient validation.
+	// Only accept values that look like valid environment names (alphanumeric, hyphens, dots,
+	// underscores). Values that don't match (e.g., URLs from extensions reusing -e for
+	// --project-endpoint) are silently ignored — the extension still receives the raw args
+	// and can parse -e itself. This avoids breaking third-party extensions that use -e
+	// for their own flags while still fixing the environment leak for valid env names.
+	if strVal, err := globalFlagSet.GetString(internal.EnvironmentNameFlagName); err == nil && strVal != "" {
+		if environment.IsValidEnvironmentName(strVal) {
+			opts.EnvironmentName = strVal
+		} else if opts.EnableDebugLogging {
+			log.Printf(
+				"debug: ignoring invalid environment name %q from -e/--environment flag"+
+					" (does not match %s pattern)",
+				strVal, environment.EnvironmentNameRegexp,
+			)
 		}
 	}
 

@@ -154,9 +154,9 @@ func NewManager(
 
 func (m *manager) Create(ctx context.Context, spec Spec) (*Environment, error) {
 	if spec.Name != "" && !IsValidEnvironmentName(spec.Name) {
-		errMsg := invalidEnvironmentNameMsg(spec.Name)
-		m.console.Message(ctx, errMsg)
-		return nil, errors.New(errMsg)
+		err := InvalidEnvironmentNameError(spec.Name)
+		m.console.Message(ctx, err.Error())
+		return nil, err
 	}
 
 	if err := m.ensureValidEnvironmentName(ctx, &spec); err != nil {
@@ -287,13 +287,9 @@ func (m *manager) loadOrInitEnvironment(ctx context.Context, environmentName str
 	// - The user has specified an environment name, but the named environment didn't exist and they told us they would
 	//   like us to create it.
 	if environmentName != "" && !IsValidEnvironmentName(environmentName) {
-		fmt.Fprintf(
-			m.console.Handles().Stdout,
-			"environment name '%s' is invalid (it should contain only alphanumeric characters and hyphens)\n",
-			environmentName)
-		return nil, false, fmt.Errorf(
-			"environment name '%s' is invalid (it should contain only alphanumeric characters and hyphens)",
-			environmentName)
+		err := InvalidEnvironmentNameError(environmentName)
+		fmt.Fprintln(m.console.Handles().Stdout, err.Error())
+		return nil, false, err
 	}
 
 	// No environment name, no default environment set.
@@ -620,7 +616,7 @@ func (m *manager) ensureValidEnvironmentName(ctx context.Context, spec *Spec) er
 		spec.Name = userInput
 
 		if !IsValidEnvironmentName(spec.Name) {
-			m.console.Message(ctx, invalidEnvironmentNameMsg(spec.Name))
+			m.console.Message(ctx, InvalidEnvironmentNameError(spec.Name).Error())
 		}
 	}
 
@@ -635,11 +631,4 @@ func (m *manager) InvalidateEnvCache(ctx context.Context, envName string) error 
 // GetStateCacheManager returns the state cache manager for accessing cached state
 func (m *manager) GetStateCacheManager() *state.StateCacheManager {
 	return m.stateCacheManager
-}
-
-func invalidEnvironmentNameMsg(environmentName string) string {
-	return fmt.Sprintf(
-		"environment name '%s' is invalid (it should contain only alphanumeric characters and hyphens)\n",
-		environmentName,
-	)
 }

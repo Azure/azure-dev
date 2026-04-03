@@ -227,15 +227,6 @@ const completionSpec: Fig.Spec = {
 							description: 'Initialize a new AI agent project. (Preview)',
 							options: [
 								{
-									name: ['--environment', '-e'],
-									description: 'The name of the azd environment to use.',
-									args: [
-										{
-											name: 'environment',
-										},
-									],
-								},
-								{
 									name: ['--manifest', '-m'],
 									description: 'Path or URI to an agent manifest to add to your azd project',
 									args: [
@@ -426,15 +417,6 @@ const completionSpec: Fig.Spec = {
 							name: ['init'],
 							description: 'Initialize a new AI Fine-tuning project. (Preview)',
 							options: [
-								{
-									name: ['--environment', '-n'],
-									description: 'The name of the azd environment to use.',
-									args: [
-										{
-											name: 'environment',
-										},
-									],
-								},
 								{
 									name: ['--from-job', '-j'],
 									description: 'Clone configuration from an existing job ID',
@@ -1149,15 +1131,6 @@ const completionSpec: Fig.Spec = {
 							name: ['init'],
 							description: 'Initialize a new AI models project. (Preview)',
 							options: [
-								{
-									name: ['--environment', '-n'],
-									description: 'The name of the azd environment to use',
-									args: [
-										{
-											name: 'environment',
-										},
-									],
-								},
 								{
 									name: ['--project-endpoint', '-e'],
 									description: 'Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)',
@@ -3688,6 +3661,16 @@ const completionSpec: Fig.Spec = {
 			name: ['--debug'],
 			description: 'Enables debugging and diagnostics logging.',
 			isPersistent: true,
+		},
+		{
+			name: ['--environment', '-e'],
+			description: 'The name of the environment to use.',
+			isPersistent: true,
+			args: [
+				{
+					name: 'environment',
+				},
+			],
 		},
 		{
 			name: ['--no-prompt'],

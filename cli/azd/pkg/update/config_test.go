@@ -162,6 +162,69 @@ func TestSaveAndLoadConfig(t *testing.T) {
 	require.Equal(t, 6, loaded.CheckIntervalHours)
 }
 
+func TestHasUpdateConfig(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		config map[string]any
+		want   bool
+	}{
+		{
+			name:   "empty config",
+			config: map[string]any{},
+			want:   false,
+		},
+		{
+			name: "channel only",
+			config: map[string]any{
+				"updates": map[string]any{
+					"channel": "stable",
+				},
+			},
+			want: true,
+		},
+		{
+			name: "autoUpdate only",
+			config: map[string]any{
+				"updates": map[string]any{
+					"autoUpdate": "on",
+				},
+			},
+			want: true,
+		},
+		{
+			name: "checkIntervalHours only",
+			config: map[string]any{
+				"updates": map[string]any{
+					"checkIntervalHours": float64(12),
+				},
+			},
+			want: true,
+		},
+		{
+			name: "all keys set",
+			config: map[string]any{
+				"updates": map[string]any{
+					"channel":            "daily",
+					"autoUpdate":         "on",
+					"checkIntervalHours": float64(8),
+				},
+			},
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg := config.NewConfig(tt.config)
+			require.Equal(t, tt.want, HasUpdateConfig(cfg))
+		})
+	}
+}
+
 func TestIsCacheValid(t *testing.T) {
 	future := time.Now().UTC().Add(1 * time.Hour).Format(time.RFC3339)
 	past := time.Now().UTC().Add(-1 * time.Hour).Format(time.RFC3339)

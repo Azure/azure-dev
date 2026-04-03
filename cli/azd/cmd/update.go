@@ -117,13 +117,16 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 					"To learn more about feature stages, visit %s.",
 				output.WithLinkFormat("https://aka.ms/azd-feature-stages")),
 		})
+
+		// Write a default channel so HasUpdateConfig returns true next time.
+		_ = update.SaveChannel(userConfig, update.LoadUpdateConfig(userConfig).Channel)
 	}
 
 	// Determine current channel BEFORE persisting any flags
 	currentCfg := update.LoadUpdateConfig(userConfig)
 	switchingChannels := a.flags.channel != "" && update.Channel(a.flags.channel) != currentCfg.Channel
 
-	// Persist non-channel config flags immediately (auto-update, check-interval)
+	// Persist non-channel config flags immediately (check-interval)
 	configChanged, err := a.persistNonChannelFlags(userConfig)
 	if err != nil {
 		tracing.SetUsageAttributes(fields.UpdateResult.String(update.CodeConfigFailed))

@@ -150,8 +150,9 @@ func SaveCheckIntervalHours(cfg config.Config, hours int) error {
 // HasUpdateConfig returns true if the user has any update configuration set.
 func HasUpdateConfig(cfg config.Config) bool {
 	_, hasChannel := cfg.Get(configKeyChannel)
+	_, hasAutoUpdate := cfg.Get(configKeyAutoUpdate)
 	_, hasInterval := cfg.Get(configKeyCheckIntervalHours)
-	return hasChannel || hasInterval
+	return hasChannel || hasAutoUpdate || hasInterval
 }
 
 // CacheFile represents the cached version check result.

@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -121,6 +122,7 @@ func TestUpdateErrorCodes(t *testing.T) {
 
 	for _, code := range codes {
 		assert.NotEmpty(t, code)
-		assert.Contains(t, code, "update.")
+		assert.True(t, strings.HasPrefix(code, "update."),
+			"code %q should have prefix %q", code, "update.")
 	}
 }

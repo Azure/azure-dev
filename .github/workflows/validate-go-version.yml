@@ -1,0 +1,60 @@
+name: validate-go-version
+
+on:
+  pull_request:
+    paths:
+      - "**/go.mod"
+      - "eng/pipelines/templates/steps/setup-go.yml"
+      - ".github/workflows/validate-go-version.yml"
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check-go-version-consistency:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate Go version consistency
+        run: |
+          # Source of truth: cli/azd/go.mod
+          EXPECTED=$(grep -m1 '^go ' cli/azd/go.mod | awk '{print $2}')
+          echo "Expected Go version (from cli/azd/go.mod): $EXPECTED"
+
+          ERRORS=0
+
+          # Check all go.mod files (skip testdata which may use older versions)
+          echo ""
+          echo "Checking go.mod files..."
+          for f in $(find cli/azd -name 'go.mod' ! -path '*/testdata/*'); do
+            VERSION=$(grep -m1 '^go ' "$f" | awk '{print $2}')
+            if [ "$VERSION" != "$EXPECTED" ]; then
+              echo "::error file=$f::Go version mismatch: found '$VERSION', expected '$EXPECTED'"
+              ERRORS=$((ERRORS + 1))
+            else
+              echo "  OK: $f ($VERSION)"
+            fi
+          done
+
+          # Check ADO pipeline template
+          echo ""
+          echo "Checking ADO pipeline template..."
+          ADO_FILE="eng/pipelines/templates/steps/setup-go.yml"
+          if [ -f "$ADO_FILE" ]; then
+            ADO_VERSION=$(grep -m1 'GoVersion:' "$ADO_FILE" | awk '{print $2}')
+            if [ "$ADO_VERSION" != "$EXPECTED" ]; then
+              echo "::error file=$ADO_FILE::GoVersion mismatch: found '$ADO_VERSION', expected '$EXPECTED'"
+              ERRORS=$((ERRORS + 1))
+            else
+              echo "  OK: $ADO_FILE ($ADO_VERSION)"
+            fi
+          fi
+
+          echo ""
+          if [ "$ERRORS" -gt 0 ]; then
+            echo "::error::$ERRORS Go version mismatch(es) found. Run 'pwsh eng/scripts/Update-GoVersion.ps1 -NewVersion $EXPECTED' to fix."
+            exit 1
+          fi
+          echo "All Go versions are consistent ($EXPECTED)."

@@ -82,6 +82,15 @@ gh release view --repo {upstream_repo} --json tagName,name,publishedAt,body
 
 The tag format is `v{version}` (e.g., `v2.86.0` or `v0.41.2`). Strip the `v` prefix to get the semver.
 
+After stripping the `v` prefix, **validate the version is strict semver** (no pre-release suffixes):
+
+```bash
+echo "$version" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "Unexpected version format: $version"; exit 1; }
+```
+
+If the latest release is a pre-release (e.g., `v0.42.0-rc1`), **stop and warn the user** — do not
+use pre-release versions. Suggest the user wait for the stable release or specify a version manually.
+
 If `gh release view` fails, fall back to:
 ```bash
 gh api repos/{upstream_repo}/releases/latest --jq '.tag_name'
@@ -109,7 +118,12 @@ If the two versions don't match, warn the user before proceeding.
    branch, or PR needed:
    > ✅ {tool_name} is already at the latest version (**{version}**). No update needed.
 
-2. If the latest is newer, present the upgrade summary via `ask_user`:
+2. If the current version is **newer** than the latest release, **stop and warn** — this likely
+   means the latest GitHub release is not yet stable, or the pinned version was set manually:
+   > ⚠️ The current {tool_name} version (**{current_version}**) is newer than the latest release
+   > (**{latest_version}**). This may indicate a pre-release pin or a release rollback. No action taken.
+
+3. If the latest is newer, present the upgrade summary via `ask_user`:
 
    > The current {tool_name} version is **{current_version}**.
    > The latest release is **{latest_version}** (released {release_date}).
@@ -151,7 +165,74 @@ Choices:
 
 If the user cancels, stop immediately — do not create the issue, branch, or PR.
 
-### Step 6 — Create Tracking Issue
+### Step 6 — Create Clean Branch, Apply Changes & Build
+
+Per [references/tool-upgrade-workflow.md](references/tool-upgrade-workflow.md) § Create Clean Branch from origin/main.
+
+1. Verify the working tree is clean (`git status --porcelain`). If dirty, **stop** and warn:
+   > Your working tree has uncommitted changes. Please commit or stash them before running
+   > this skill, so the upgrade PR contains only the version bump.
+
+   Do NOT proceed with dirty state — do not use `git stash` automatically.
+
+2. Delete any stale branch from a previous cancelled run, then create the branch from `origin/main`:
+   ```bash
+   git fetch origin main
+   git branch -D update/{tool_slug}-{latest_version} 2>/dev/null || true
+   git checkout -b update/{tool_slug}-{latest_version} origin/main
+   ```
+
+3. Verify zero commits ahead of origin/main:
+   ```bash
+   git --no-pager log --oneline origin/main..HEAD
+   ```
+   Must produce no output. If it shows any commits, abort.
+
+4. Apply the file edits:
+
+   **GitHub CLI**: Edit `cli/azd/pkg/tools/github/github.go`:
+   - Replace version in `semver.MustParse("{old}")` with the new version.
+   - Update any example URL comments that reference the old version.
+
+   **Bicep CLI**: Edit both files:
+   - `cli/azd/pkg/tools/bicep/bicep.go` — replace version in `semver.MustParse("{old}")`.
+   - `.github/workflows/lint-bicep.yml` — replace old version in the curl download URL.
+
+5. Build and verify:
+   ```bash
+   cd cli/azd && go build ./...
+   ```
+   If the build fails, **delete the branch, report the error, and stop**.
+   Do NOT create an issue or PR for a broken build.
+
+6. **Bicep only** — verify both files have the new version:
+   ```bash
+   grep 'MustParse' cli/azd/pkg/tools/bicep/bicep.go | head -1
+   grep 'bicep/releases/download' .github/workflows/lint-bicep.yml
+   ```
+
+7. Stage **only** the expected files (do NOT use `git add -A`):
+
+   **GitHub CLI**:
+   ```bash
+   git add cli/azd/pkg/tools/github/github.go
+   ```
+
+   **Bicep CLI**:
+   ```bash
+   git add cli/azd/pkg/tools/bicep/bicep.go .github/workflows/lint-bicep.yml
+   ```
+
+8. Verify nothing unexpected is staged:
+   ```bash
+   git --no-pager diff --cached --stat
+   ```
+   Output must show ONLY the expected files. If unexpected files appear, abort.
+
+### Step 7 — Create Tracking Issue
+
+> **Note**: The issue is created **after** the build succeeds to avoid orphan issues when the
+> build or staging validation fails.
 
 ```bash
 gh issue create \
@@ -187,73 +268,11 @@ Release: https://github.com/Azure/bicep/releases/tag/v{latest_version}
 
 Capture the issue number from the output.
 
-### Step 7 — Create Clean Branch & Apply Changes
-
-Per [references/tool-upgrade-workflow.md](references/tool-upgrade-workflow.md) § Create Clean Branch from origin/main.
-
-1. Verify the working tree is clean (`git status --porcelain`). If dirty, **stop** and warn:
-   > Your working tree has uncommitted changes. Please commit or stash them before running
-   > this skill, so the upgrade PR contains only the version bump.
-
-   Do NOT proceed with dirty state — do not use `git stash` automatically.
-
-2. Create branch directly from `origin/main`:
-   ```bash
-   git fetch origin main
-   git checkout -b update/{tool_slug}-{latest_version} origin/main
-   ```
-
-3. Verify zero commits ahead of origin/main:
-   ```bash
-   git --no-pager log --oneline origin/main..HEAD
-   ```
-   Must produce no output. If it shows any commits, abort.
-
-4. Apply the file edits:
-
-   **GitHub CLI**: Edit `cli/azd/pkg/tools/github/github.go`:
-   - Replace version in `semver.MustParse("{old}")` with the new version.
-   - Update any example URL comments that reference the old version.
-
-   **Bicep CLI**: Edit both files:
-   - `cli/azd/pkg/tools/bicep/bicep.go` — replace version in `semver.MustParse("{old}")`.
-   - `.github/workflows/lint-bicep.yml` — replace old version in the curl download URL.
-
-5. Build and verify:
-   ```bash
-   cd cli/azd && go build ./...
-   ```
-
-6. **Bicep only** — verify both files have the new version:
-   ```bash
-   grep 'MustParse' cli/azd/pkg/tools/bicep/bicep.go | head -1
-   grep 'bicep/releases/download' .github/workflows/lint-bicep.yml
-   ```
-
-7. Stage **only** the expected files (do NOT use `git add -A`):
-
-   **GitHub CLI**:
-   ```bash
-   git add cli/azd/pkg/tools/github/github.go
-   ```
-
-   **Bicep CLI**:
-   ```bash
-   git add cli/azd/pkg/tools/bicep/bicep.go .github/workflows/lint-bicep.yml
-   ```
-
-8. Verify nothing unexpected is staged:
-   ```bash
-   git --no-pager diff --cached --stat
-   ```
-   Output must show ONLY the expected files. If unexpected files appear, abort.
-
 ### Step 8 — Commit & PR
 
 ```bash
-git commit -m "Update {tool_name} to v{latest_version}
-
-Fixes #{issue_number}"
+git commit -m "Update {tool_name} to v{latest_version}" \
+  -m "Fixes #{issue_number}"
 git push -u origin update/{tool_slug}-{latest_version}
 gh pr create \
   --repo Azure/azure-dev \

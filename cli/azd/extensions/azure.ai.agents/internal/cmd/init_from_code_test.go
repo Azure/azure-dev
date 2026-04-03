@@ -5,10 +5,16 @@ package cmd
 
 import (
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func TestSanitizeAgentName(t *testing.T) {
@@ -619,6 +625,14 @@ func TestPromptProtocols_FlagValues(t *testing.T) {
 			wantErr:        true,
 			wantErrContain: "unknown protocol",
 		},
+		{
+			name:          "duplicates are removed",
+			flagProtocols: []string{"responses", "responses", "invocations"},
+			wantProtocols: []agent_yaml.ProtocolVersionRecord{
+				{Protocol: "responses", Version: "v1"},
+				{Protocol: "invocations", Version: "v0.0.1"},
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -680,5 +694,123 @@ func TestKnownProtocolNames(t *testing.T) {
 	}
 	if !strings.Contains(result, "invocations") {
 		t.Errorf("knownProtocolNames() = %q, want to contain 'invocations'", result)
+	}
+}
+
+// fakePromptClient is a lightweight test double for azdext.PromptServiceClient.
+type fakePromptClient struct {
+	azdext.PromptServiceClient
+	multiSelectFn func(
+		ctx context.Context,
+		in *azdext.MultiSelectRequest,
+		opts ...grpc.CallOption,
+	) (*azdext.MultiSelectResponse, error)
+}
+
+func (f *fakePromptClient) MultiSelect(
+	ctx context.Context,
+	in *azdext.MultiSelectRequest,
+	opts ...grpc.CallOption,
+) (*azdext.MultiSelectResponse, error) {
+	return f.multiSelectFn(ctx, in, opts...)
+}
+
+func TestPromptProtocols_Interactive(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		multiSelectFn  func(context.Context, *azdext.MultiSelectRequest, ...grpc.CallOption) (*azdext.MultiSelectResponse, error)
+		wantProtocols  []agent_yaml.ProtocolVersionRecord
+		wantErr        bool
+		wantErrContain string
+	}{
+		{
+			name: "both protocols selected",
+			multiSelectFn: func(_ context.Context, _ *azdext.MultiSelectRequest, _ ...grpc.CallOption) (*azdext.MultiSelectResponse, error) {
+				return &azdext.MultiSelectResponse{
+					Values: []*azdext.MultiSelectChoice{
+						{Value: "responses", Label: "responses", Selected: true},
+						{Value: "invocations", Label: "invocations", Selected: true},
+					},
+				}, nil
+			},
+			wantProtocols: []agent_yaml.ProtocolVersionRecord{
+				{Protocol: "responses", Version: "v1"},
+				{Protocol: "invocations", Version: "v0.0.1"},
+			},
+		},
+		{
+			name: "single protocol selected",
+			multiSelectFn: func(_ context.Context, _ *azdext.MultiSelectRequest, _ ...grpc.CallOption) (*azdext.MultiSelectResponse, error) {
+				return &azdext.MultiSelectResponse{
+					Values: []*azdext.MultiSelectChoice{
+						{Value: "responses", Label: "responses", Selected: true},
+						{Value: "invocations", Label: "invocations", Selected: false},
+					},
+				}, nil
+			},
+			wantProtocols: []agent_yaml.ProtocolVersionRecord{
+				{Protocol: "responses", Version: "v1"},
+			},
+		},
+		{
+			name: "user cancellation",
+			multiSelectFn: func(_ context.Context, _ *azdext.MultiSelectRequest, _ ...grpc.CallOption) (*azdext.MultiSelectResponse, error) {
+				return nil, status.Error(codes.Canceled, "cancelled by user")
+			},
+			wantErr:        true,
+			wantErrContain: "cancelled",
+		},
+		{
+			name: "empty selection returns validation error",
+			multiSelectFn: func(_ context.Context, _ *azdext.MultiSelectRequest, _ ...grpc.CallOption) (*azdext.MultiSelectResponse, error) {
+				return &azdext.MultiSelectResponse{
+					Values: []*azdext.MultiSelectChoice{
+						{Value: "responses", Label: "responses", Selected: false},
+						{Value: "invocations", Label: "invocations", Selected: false},
+					},
+				}, nil
+			},
+			wantErr:        true,
+			wantErrContain: "at least one protocol must be selected",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			client := &fakePromptClient{multiSelectFn: tt.multiSelectFn}
+			got, err := promptProtocols(t.Context(), client, false, nil)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if tt.wantErrContain != "" &&
+					!strings.Contains(err.Error(), tt.wantErrContain) {
+					t.Errorf("error = %q, want containing %q",
+						err.Error(), tt.wantErrContain)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(got) != len(tt.wantProtocols) {
+				t.Fatalf("got %d protocols, want %d",
+					len(got), len(tt.wantProtocols))
+			}
+			for i := range got {
+				if got[i].Protocol != tt.wantProtocols[i].Protocol {
+					t.Errorf("protocol[%d] = %q, want %q",
+						i, got[i].Protocol, tt.wantProtocols[i].Protocol)
+				}
+				if got[i].Version != tt.wantProtocols[i].Version {
+					t.Errorf("version[%d] = %q, want %q",
+						i, got[i].Version, tt.wantProtocols[i].Version)
+				}
+			}
+		})
 	}
 }

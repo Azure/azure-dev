@@ -443,7 +443,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 	agentKind := agent_yaml.AgentKindHosted
 
 	// Prompt user for supported protocols
-	protocols, err := promptProtocols(ctx, a.azdClient, a.flags.NoPrompt, a.flags.protocols)
+	protocols, err := promptProtocols(ctx, a.azdClient.Prompt(), a.flags.NoPrompt, a.flags.protocols)
 	if err != nil {
 		return nil, err
 	}
@@ -806,7 +806,7 @@ var knownProtocols = []protocolInfo{
 // When noPrompt is true and no flag values are provided, defaults to [responses/v1].
 func promptProtocols(
 	ctx context.Context,
-	azdClient *azdext.AzdClient,
+	promptClient azdext.PromptServiceClient,
 	noPrompt bool,
 	flagProtocols []string,
 ) ([]agent_yaml.ProtocolVersionRecord, error) {
@@ -816,10 +816,16 @@ func promptProtocols(
 		versionOf[p.Name] = p.Version
 	}
 
-	// If explicit flag values were provided, use them directly.
+	// If explicit flag values were provided, use them directly (with dedup).
 	if len(flagProtocols) > 0 {
+		seen := make(map[string]bool, len(flagProtocols))
 		records := make([]agent_yaml.ProtocolVersionRecord, 0, len(flagProtocols))
 		for _, name := range flagProtocols {
+			if seen[name] {
+				continue
+			}
+			seen[name] = true
+
 			version, ok := versionOf[name]
 			if !ok {
 				return nil, exterrors.Validation(
@@ -854,11 +860,11 @@ func promptProtocols(
 		})
 	}
 
-	resp, err := azdClient.Prompt().MultiSelect(ctx, &azdext.MultiSelectRequest{
+	resp, err := promptClient.MultiSelect(ctx, &azdext.MultiSelectRequest{
 		Options: &azdext.MultiSelectOptions{
-			Message: "Which protocols does your agent support?",
-			Choices: choices,
-			Hint:    "Use arrow keys to move, space to toggle, enter to confirm",
+			Message:     "Which protocols does your agent support?",
+			Choices:     choices,
+			HelpMessage: "Use arrow keys to move, space to toggle, enter to confirm",
 		},
 	})
 	if err != nil {
@@ -872,9 +878,16 @@ func promptProtocols(
 	var records []agent_yaml.ProtocolVersionRecord
 	for _, choice := range resp.Values {
 		if choice.Selected {
+			version, ok := versionOf[choice.Value]
+			if !ok {
+				return nil, exterrors.Internal(
+					"prompt_protocols",
+					fmt.Sprintf("unexpected protocol %q returned from prompt", choice.Value),
+				)
+			}
 			records = append(records, agent_yaml.ProtocolVersionRecord{
 				Protocol: choice.Value,
-				Version:  versionOf[choice.Value],
+				Version:  version,
 			})
 		}
 	}

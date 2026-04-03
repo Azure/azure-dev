@@ -1,3 +1,4 @@
+// Copyright (c) Microsoft Corporation. Licensed under the MIT License.
 // Tests for service_target_springapp.go, service_target_ai_endpoint.go,
 // service_target_dotnet_containerapp.go constructors and simple methods,
 // and service_target_containerapp.go RequiredExternalTools.

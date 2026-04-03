@@ -210,7 +210,7 @@ func TestServerInfo(t *testing.T) {
 	info := ServerInfo{
 		Address:    "127.0.0.1:8080",
 		Port:       8080,
-		SigningKey:  []byte("test-key"),
+		SigningKey: []byte("test-key"),
 	}
 	require.Equal(t, "127.0.0.1:8080", info.Address)
 	require.Equal(t, 8080, info.Port)

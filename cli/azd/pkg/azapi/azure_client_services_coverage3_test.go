@@ -32,9 +32,9 @@ func Test_AzureClient_GetApim_Coverage3(t *testing.T) {
 	}).RespondFn(func(req *http.Request) (*http.Response, error) {
 		return mocks.CreateHttpResponseWithBody(req, http.StatusOK,
 			armapimanagement.ServiceResource{
-				ID:       to.Ptr("/subscriptions/SUB/resourceGroups/RG/providers/Microsoft.ApiManagement/service/my-apim"),
-				Name:     to.Ptr("my-apim"),
-				Location: to.Ptr("eastus"),
+				ID:       new("/subscriptions/SUB/resourceGroups/RG/providers/Microsoft.ApiManagement/service/my-apim"),
+				Name:     new("my-apim"),
+				Location: new("eastus"),
 			})
 	})
 
@@ -71,11 +71,14 @@ func Test_AzureClient_GetAppConfig_Coverage3(t *testing.T) {
 	}).RespondFn(func(req *http.Request) (*http.Response, error) {
 		return mocks.CreateHttpResponseWithBody(req, http.StatusOK,
 			armappconfiguration.ConfigurationStore{
-				ID:       to.Ptr("/subscriptions/SUB/resourceGroups/RG/providers/Microsoft.AppConfiguration/configurationStores/my-config"),
-				Name:     to.Ptr("my-config"),
-				Location: to.Ptr("westus"),
+				ID: new(
+					"/subscriptions/SUB/resourceGroups/RG" +
+						"/providers/Microsoft.AppConfiguration" +
+						"/configurationStores/my-config"),
+				Name:     new("my-config"),
+				Location: new("westus"),
 				Properties: &armappconfiguration.ConfigurationStoreProperties{
-					EnablePurgeProtection: to.Ptr(true),
+					EnablePurgeProtection: new(true),
 				},
 			})
 	})
@@ -113,9 +116,12 @@ func Test_AzureClient_GetLogAnalyticsWorkspace_Coverage3(t *testing.T) {
 	}).RespondFn(func(req *http.Request) (*http.Response, error) {
 		return mocks.CreateHttpResponseWithBody(req, http.StatusOK,
 			armoperationalinsights.Workspace{
-				ID:       to.Ptr("/subscriptions/SUB/resourceGroups/RG/providers/Microsoft.OperationalInsights/workspaces/my-workspace"),
-				Name:     to.Ptr("my-workspace"),
-				Location: to.Ptr("eastus"),
+				ID: new(
+					"/subscriptions/SUB/resourceGroups/RG" +
+						"/providers/Microsoft.OperationalInsights" +
+						"/workspaces/my-workspace"),
+				Name:     new("my-workspace"),
+				Location: new("eastus"),
 			})
 	})
 
@@ -152,12 +158,12 @@ func Test_AzureClient_GetManagedHSM_Coverage3(t *testing.T) {
 	}).RespondFn(func(req *http.Request) (*http.Response, error) {
 		return mocks.CreateHttpResponseWithBody(req, http.StatusOK,
 			armkeyvault.ManagedHsm{
-				ID:       to.Ptr("/subscriptions/SUB/resourceGroups/RG/providers/Microsoft.KeyVault/managedHSMs/my-hsm"),
-				Name:     to.Ptr("my-hsm"),
-				Location: to.Ptr("eastus"),
+				ID:       new("/subscriptions/SUB/resourceGroups/RG/providers/Microsoft.KeyVault/managedHSMs/my-hsm"),
+				Name:     new("my-hsm"),
+				Location: new("eastus"),
 				Properties: &armkeyvault.ManagedHsmProperties{
-					EnableSoftDelete:      to.Ptr(true),
-					EnablePurgeProtection: to.Ptr(false),
+					EnableSoftDelete:      new(true),
+					EnablePurgeProtection: new(false),
 				},
 			})
 	})
@@ -172,7 +178,9 @@ func Test_AzureClient_PurgeManagedHSM_Coverage3(t *testing.T) {
 	mockCtx := mocks.NewMockContext(context.Background())
 	client := newAzureClientFromMockContext(mockCtx)
 
-	pollURL := "https://management.azure.com/subscriptions/SUB/providers/Microsoft.KeyVault/locations/eastus/operationResults/op123?api-version=2023-07-01"
+	pollURL := "https://management.azure.com/subscriptions/SUB/" +
+		"providers/Microsoft.KeyVault/locations/eastus/" +
+		"operationResults/op123?api-version=2023-07-01"
 
 	// Initial POST returns 202 with async operation header
 	mockCtx.HttpClient.When(func(req *http.Request) bool {
@@ -211,17 +219,17 @@ func Test_AzureClient_GetAppServiceProperties_Coverage3(t *testing.T) {
 	}).RespondFn(func(req *http.Request) (*http.Response, error) {
 		return mocks.CreateHttpResponseWithBody(req, http.StatusOK,
 			armappservice.Site{
-				ID:       to.Ptr("/subscriptions/SUB/resourceGroups/RG/providers/Microsoft.Web/sites/my-app"),
-				Name:     to.Ptr("my-app"),
-				Location: to.Ptr("eastus"),
-				Kind:     to.Ptr("app,linux"),
+				ID:       new("/subscriptions/SUB/resourceGroups/RG/providers/Microsoft.Web/sites/my-app"),
+				Name:     new("my-app"),
+				Location: new("eastus"),
+				Kind:     new("app,linux"),
 				Properties: &armappservice.SiteProperties{
-					DefaultHostName:    to.Ptr("my-app.azurewebsites.net"),
-					HTTPSOnly:          to.Ptr(true),
-					EnabledHostNames:   []*string{to.Ptr("my-app.azurewebsites.net")},
-					HostNameSSLStates:  []*armappservice.HostNameSSLState{},
-					SiteConfig:         &armappservice.SiteConfig{LinuxFxVersion: to.Ptr("NODE|18-lts")},
-					AvailabilityState:  to.Ptr(armappservice.SiteAvailabilityStateNormal),
+					DefaultHostName:   new("my-app.azurewebsites.net"),
+					HTTPSOnly:         new(true),
+					EnabledHostNames:  []*string{new("my-app.azurewebsites.net")},
+					HostNameSSLStates: []*armappservice.HostNameSSLState{},
+					SiteConfig:        &armappservice.SiteConfig{LinuxFxVersion: new("NODE|18-lts")},
+					AvailabilityState: to.Ptr(armappservice.SiteAvailabilityStateNormal),
 				},
 			})
 	})
@@ -241,17 +249,17 @@ func Test_AzureClient_GetAppServiceSlotProperties_Coverage3(t *testing.T) {
 	}).RespondFn(func(req *http.Request) (*http.Response, error) {
 		return mocks.CreateHttpResponseWithBody(req, http.StatusOK,
 			armappservice.Site{
-				ID:       to.Ptr("/subscriptions/SUB/resourceGroups/RG/providers/Microsoft.Web/sites/my-app/slots/staging"),
-				Name:     to.Ptr("my-app/staging"),
-				Location: to.Ptr("eastus"),
-				Kind:     to.Ptr("app,linux"),
+				ID:       new("/subscriptions/SUB/resourceGroups/RG/providers/Microsoft.Web/sites/my-app/slots/staging"),
+				Name:     new("my-app/staging"),
+				Location: new("eastus"),
+				Kind:     new("app,linux"),
 				Properties: &armappservice.SiteProperties{
-					DefaultHostName:    to.Ptr("my-app-staging.azurewebsites.net"),
-					HTTPSOnly:          to.Ptr(true),
-					EnabledHostNames:   []*string{to.Ptr("my-app-staging.azurewebsites.net")},
-					HostNameSSLStates:  []*armappservice.HostNameSSLState{},
-					SiteConfig:         &armappservice.SiteConfig{LinuxFxVersion: to.Ptr("NODE|18-lts")},
-					AvailabilityState:  to.Ptr(armappservice.SiteAvailabilityStateNormal),
+					DefaultHostName:   new("my-app-staging.azurewebsites.net"),
+					HTTPSOnly:         new(true),
+					EnabledHostNames:  []*string{new("my-app-staging.azurewebsites.net")},
+					HostNameSSLStates: []*armappservice.HostNameSSLState{},
+					SiteConfig:        &armappservice.SiteConfig{LinuxFxVersion: new("NODE|18-lts")},
+					AvailabilityState: to.Ptr(armappservice.SiteAvailabilityStateNormal),
 				},
 			})
 	})

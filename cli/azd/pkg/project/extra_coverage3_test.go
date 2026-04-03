@@ -1,3 +1,4 @@
+// Copyright (c) Microsoft Corporation. Licensed under the MIT License.
 package project
 
 import (
@@ -59,7 +60,10 @@ func Test_containerAppTarget_RequiredExternalTools_Coverage3(t *testing.T) {
 func Test_containerAppTarget_Package_Coverage3(t *testing.T) {
 	at := &containerAppTarget{}
 	progress := async.NewProgress[ServiceProgress]()
-	go func() { for range progress.Progress() {} }()
+	go func() {
+		for range progress.Progress() {
+		}
+	}()
 
 	result, err := at.Package(t.Context(), nil, nil, progress)
 	progress.Done()

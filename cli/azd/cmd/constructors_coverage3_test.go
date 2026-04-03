@@ -321,14 +321,14 @@ func Test_NewEnvSetSecretAction(t *testing.T) {
 		nil, // envManager
 		mockinput.NewMockConsole(),
 		&envSetFlags{},
-		nil,  // args
-		nil,  // prompter
-		nil,  // kvService
-		nil,  // entraIdService
-		nil,  // subResolver
-		nil,  // userProfileService
-		nil,  // alphaFeatureManager
-		nil,  // projectConfig
+		nil, // args
+		nil, // prompter
+		nil, // kvService
+		nil, // entraIdService
+		nil, // subResolver
+		nil, // userProfileService
+		nil, // alphaFeatureManager
+		nil, // projectConfig
 	)
 	require.NotNil(t, action)
 }

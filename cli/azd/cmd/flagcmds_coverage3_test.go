@@ -1,3 +1,4 @@
+// Copyright (c) Microsoft Corporation. Licensed under the MIT License.
 // Coverage3 – flag constructors, cmd constructors, action constructors, and Run() early paths.
 // Each newXxxFlags call exercises flag-binding code; each newXxxCmd exercises command setup.
 package cmd
@@ -874,19 +875,29 @@ func (m *mockKvSvcForSelect) ListKeyVaultSecrets(ctx context.Context, subId stri
 func (m *mockKvSvcForSelect) GetKeyVault(ctx context.Context, subId, rgName, vaultName string) (*keyvault.KeyVault, error) {
 	return nil, nil
 }
-func (m *mockKvSvcForSelect) GetKeyVaultSecret(ctx context.Context, subId, vaultName, secretName string) (*keyvault.Secret, error) {
+func (m *mockKvSvcForSelect) GetKeyVaultSecret(
+	ctx context.Context, subId, vaultName, secretName string,
+) (*keyvault.Secret, error) {
 	return nil, nil
 }
 func (m *mockKvSvcForSelect) PurgeKeyVault(ctx context.Context, subId, vaultName, location string) error {
 	return nil
 }
-func (m *mockKvSvcForSelect) ListSubscriptionVaults(ctx context.Context, subId string) ([]keyvault.Vault, error) {
+func (m *mockKvSvcForSelect) ListSubscriptionVaults(
+	ctx context.Context, subId string,
+) ([]keyvault.Vault, error) {
 	return nil, nil
 }
-func (m *mockKvSvcForSelect) CreateVault(ctx context.Context, tenantId, subId, rgName, location, vaultName string) (keyvault.Vault, error) {
+func (m *mockKvSvcForSelect) CreateVault(
+	ctx context.Context,
+	tenantId, subId, rgName, location, vaultName string,
+) (keyvault.Vault, error) {
 	return keyvault.Vault{}, nil
 }
-func (m *mockKvSvcForSelect) CreateKeyVaultSecret(ctx context.Context, subId, vaultName, secretName, secretValue string) error {
+func (m *mockKvSvcForSelect) CreateKeyVaultSecret(
+	ctx context.Context,
+	subId, vaultName, secretName, secretValue string,
+) error {
 	return nil
 }
 func (m *mockKvSvcForSelect) SecretFromAkvs(ctx context.Context, akvs string) (string, error) {

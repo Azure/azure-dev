@@ -476,7 +476,10 @@ func Test_EnvConfigGetAction_GenericError(t *testing.T) {
 	mgr.On("Get", mock.Anything, "myenv").
 		Return((*environment.Environment)(nil), errors.New("db error"))
 
-	action := newEnvConfigGetAction(azdCtx, mgr, &output.JsonFormatter{}, &bytes.Buffer{}, &envConfigGetFlags{}, []string{"k"})
+	action := newEnvConfigGetAction(
+		azdCtx, mgr, &output.JsonFormatter{}, &bytes.Buffer{},
+		&envConfigGetFlags{}, []string{"k"},
+	)
 	_, err := action.Run(context.Background())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "getting environment")
@@ -622,7 +625,7 @@ func Test_EnvNewAction_SaveError(t *testing.T) {
 }
 
 // ===========================================================================
-// envSelectAction.Run more paths  
+// envSelectAction.Run more paths
 // ===========================================================================
 
 func Test_EnvSelectAction_SaveError(t *testing.T) {
@@ -807,11 +810,11 @@ func Test_EnvSetSecretAction_AzureResourceVaultID_CreateNew(t *testing.T) {
 	kvSvc := &mockKvSvcForCreate{}
 
 	action := &envSetSecretAction{
-		args:      []string{"MY_SECRET"},
-		console:   console,
-		env:       env,
+		args:       []string{"MY_SECRET"},
+		console:    console,
+		env:        env,
 		envManager: mgr,
-		kvService: kvSvc,
+		kvService:  kvSvc,
 	}
 
 	result, err := action.Run(context.Background())
@@ -967,7 +970,11 @@ func Test_EnvSetAction_MultipleKVPairs(t *testing.T) {
 	mgr := newTestEnvManager()
 	mgr.On("Save", mock.Anything, mock.Anything).Return(nil)
 
-	action := newEnvSetAction(azdCtx, env, mgr, mockinput.NewMockConsole(), &envSetFlags{}, []string{"KEY1=val1", "KEY2=val2", "KEY3=val3"})
+	action := newEnvSetAction(
+		azdCtx, env, mgr, mockinput.NewMockConsole(),
+		&envSetFlags{},
+		[]string{"KEY1=val1", "KEY2=val2", "KEY3=val3"},
+	)
 	_, err := action.Run(context.Background())
 	require.NoError(t, err)
 }
@@ -1333,7 +1340,7 @@ func Test_ConfigShowAction_FormatError(t *testing.T) {
 }
 
 // ===========================================================================
-// configListAction.Run format path  
+// configListAction.Run format path
 // ===========================================================================
 
 func Test_ConfigListAction_Delegation(t *testing.T) {

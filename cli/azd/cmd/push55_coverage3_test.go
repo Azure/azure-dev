@@ -1,3 +1,4 @@
+// Copyright (c) Microsoft Corporation. Licensed under the MIT License.
 // Coverage push to reach 55% - targeting specific uncovered branches
 package cmd
 

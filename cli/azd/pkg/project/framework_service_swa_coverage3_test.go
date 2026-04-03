@@ -58,7 +58,7 @@ func Test_swaProject_SetSource_Coverage3(t *testing.T) {
 	p := NewSwaProject(env, nil, nil, nil, inner)
 
 	newInner := NewNoOpProject(environment.NewWithValues("new-env", nil))
-	p.(CompositeFrameworkService).SetSource(newInner)
+	p.SetSource(newInner)
 
 	err := p.(FrameworkService).Initialize(t.Context(), &ServiceConfig{})
 	require.NoError(t, err)

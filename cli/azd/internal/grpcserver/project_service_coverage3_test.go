@@ -154,7 +154,9 @@ func TestProjectService_GetServiceTargetResource_ResourceManagerError(t *testing
 
 // mockResourceManager implements project.ResourceManager for testing.
 type mockResourceManager struct {
-	getTargetResourceFunc func(ctx context.Context, subscriptionId string, serviceConfig *project.ServiceConfig) (*environment.TargetResource, error)
+	getTargetResourceFunc func(
+		ctx context.Context, subscriptionId string, serviceConfig *project.ServiceConfig,
+	) (*environment.TargetResource, error)
 }
 
 func (m *mockResourceManager) GetResourceGroupName(
@@ -199,7 +201,9 @@ func TestProjectService_GetServiceTargetResource_GetTargetResourceError(t *testi
 		}), nil
 	})
 	rm := &mockResourceManager{
-		getTargetResourceFunc: func(_ context.Context, _ string, _ *project.ServiceConfig) (*environment.TargetResource, error) {
+		getTargetResourceFunc: func(
+			_ context.Context, _ string, _ *project.ServiceConfig,
+		) (*environment.TargetResource, error) {
 			return nil, errors.New("target resource error")
 		},
 	}
@@ -233,7 +237,9 @@ func TestProjectService_GetServiceTargetResource_Success(t *testing.T) {
 		}), nil
 	})
 	rm := &mockResourceManager{
-		getTargetResourceFunc: func(_ context.Context, subId string, _ *project.ServiceConfig) (*environment.TargetResource, error) {
+		getTargetResourceFunc: func(
+			_ context.Context, subId string, _ *project.ServiceConfig,
+		) (*environment.TargetResource, error) {
 			return environment.NewTargetResource(subId, "rg-test", "web-app", "Microsoft.Web/sites"), nil
 		},
 	}
@@ -632,7 +638,8 @@ func TestProjectService_UnsetConfig_HappyPath(t *testing.T) {
 func TestProjectService_Get_HappyPath(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	yamlContent := "name: test-project\nservices:\n  api:\n    host: appservice\n    language: python\n    project: ./src/api\n"
+	yamlContent := "name: test-project\nservices:\n  api:\n" +
+		"    host: appservice\n    language: python\n    project: ./src/api\n"
 	err := os.WriteFile(filepath.Join(dir, "azure.yaml"), []byte(yamlContent), 0600)
 	require.NoError(t, err)
 

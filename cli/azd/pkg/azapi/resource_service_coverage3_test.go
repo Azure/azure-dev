@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/assert"
@@ -66,8 +65,8 @@ func Test_ResourceService_GetRawResource_Coverage3(t *testing.T) {
 			return req.Method == http.MethodGet
 		}).RespondFn(func(req *http.Request) (*http.Response, error) {
 			return mocks.CreateHttpResponseWithBody(req, http.StatusOK, armresources.GenericResource{
-				ID: to.Ptr("RES_ID"), Name: to.Ptr("RES"), Type: to.Ptr("Microsoft.Web/sites"),
-				Location: to.Ptr("eastus"), Kind: to.Ptr("app"),
+				ID: new("RES_ID"), Name: new("RES"), Type: new("Microsoft.Web/sites"),
+				Location: new("eastus"), Kind: new("app"),
 			})
 		})
 
@@ -106,9 +105,9 @@ func Test_ResourceService_ListResourceGroupResources_Coverage3(t *testing.T) {
 			return mocks.CreateHttpResponseWithBody(req, http.StatusOK, armresources.ResourceListResult{
 				Value: []*armresources.GenericResourceExpanded{
 					{
-						ID: to.Ptr("/subscriptions/SUB/resourceGroups/RG1/providers/Microsoft.Web/sites/app1"),
-						Name: to.Ptr("app1"), Type: to.Ptr("Microsoft.Web/sites"),
-						Location: to.Ptr("eastus"), Kind: to.Ptr("app"),
+						ID:   new("/subscriptions/SUB/resourceGroups/RG1/providers/Microsoft.Web/sites/app1"),
+						Name: new("app1"), Type: new("Microsoft.Web/sites"),
+						Location: new("eastus"), Kind: new("app"),
 					},
 				},
 			})
@@ -152,9 +151,9 @@ func Test_ResourceService_ListResourceGroup_Coverage3(t *testing.T) {
 				armresources.ResourceGroupListResult{
 					Value: []*armresources.ResourceGroup{
 						{
-							ID: to.Ptr("/subscriptions/SUB/resourceGroups/RG1"),
-							Name: to.Ptr("RG1"), Type: to.Ptr("Microsoft.Resources/resourceGroups"),
-							Location: to.Ptr("eastus"), ManagedBy: to.Ptr("aks"),
+							ID:   new("/subscriptions/SUB/resourceGroups/RG1"),
+							Name: new("RG1"), Type: new("Microsoft.Resources/resourceGroups"),
+							Location: new("eastus"), ManagedBy: new("aks"),
 						},
 					},
 				})
@@ -196,9 +195,9 @@ func Test_ResourceService_ListResourceGroup_Coverage3(t *testing.T) {
 				armresources.ResourceGroupListResult{
 					Value: []*armresources.ResourceGroup{
 						{
-							ID: to.Ptr("/subscriptions/SUB/resourceGroups/rg1"),
-							Name: to.Ptr("rg1"), Type: to.Ptr("Microsoft.Resources/resourceGroups"),
-							Location: to.Ptr("westus"),
+							ID:   new("/subscriptions/SUB/resourceGroups/rg1"),
+							Name: new("rg1"), Type: new("Microsoft.Resources/resourceGroups"),
+							Location: new("westus"),
 						},
 					},
 				})
@@ -221,9 +220,9 @@ func Test_ResourceService_ListSubscriptionResources_Coverage3(t *testing.T) {
 				armresources.ResourceListResult{
 					Value: []*armresources.GenericResourceExpanded{
 						{
-							ID: to.Ptr("/subscriptions/SUB/resourceGroups/RG/providers/Microsoft.Web/sites/app1"),
-							Name: to.Ptr("app1"), Type: to.Ptr("Microsoft.Web/sites"),
-							Location: to.Ptr("eastus"), Kind: to.Ptr("app,linux"),
+							ID:   new("/subscriptions/SUB/resourceGroups/RG/providers/Microsoft.Web/sites/app1"),
+							Name: new("app1"), Type: new("Microsoft.Web/sites"),
+							Location: new("eastus"), Kind: new("app,linux"),
 						},
 					},
 				})
@@ -262,13 +261,13 @@ func Test_ResourceService_CreateOrUpdateResourceGroup_Coverage3(t *testing.T) {
 			return req.Method == http.MethodPut
 		}).RespondFn(func(req *http.Request) (*http.Response, error) {
 			return mocks.CreateHttpResponseWithBody(req, http.StatusOK, armresources.ResourceGroup{
-				ID: to.Ptr("/subscriptions/SUB/resourceGroups/RG1"),
-				Name: to.Ptr("RG1"), Location: to.Ptr("eastus"),
+				ID:   new("/subscriptions/SUB/resourceGroups/RG1"),
+				Name: new("RG1"), Location: new("eastus"),
 			})
 		})
 
 		rg, err := rs.CreateOrUpdateResourceGroup(*mockCtx.Context, "SUB", "RG1", "eastus",
-			map[string]*string{"env": to.Ptr("test")})
+			map[string]*string{"env": new("test")})
 		require.NoError(t, err)
 		assert.Equal(t, "RG1", rg.Name)
 		assert.Equal(t, "eastus", rg.Location)
@@ -320,9 +319,9 @@ func Test_ResourceService_DeleteResourceGroup_Coverage3(t *testing.T) {
 func Test_GroupByResourceGroup_Coverage3(t *testing.T) {
 	t.Run("GroupsCorrectly", func(t *testing.T) {
 		resources := []*armresources.ResourceReference{
-			{ID: to.Ptr(
+			{ID: new(
 				"/subscriptions/SUB/resourceGroups/rg1/providers/Microsoft.Web/sites/app1")},
-			{ID: to.Ptr(
+			{ID: new(
 				"/subscriptions/SUB/resourceGroups/rg2/providers/Microsoft.Storage/storageAccounts/sa1")},
 		}
 		result, err := GroupByResourceGroup(resources)
@@ -336,9 +335,9 @@ func Test_GroupByResourceGroup_Coverage3(t *testing.T) {
 
 	t.Run("SkipsResourceGroupType", func(t *testing.T) {
 		resources := []*armresources.ResourceReference{
-			{ID: to.Ptr(
+			{ID: new(
 				"/subscriptions/S/resourceGroups/rg1/providers/Microsoft.Resources/resourceGroups/rg1")},
-			{ID: to.Ptr(
+			{ID: new(
 				"/subscriptions/S/resourceGroups/rg1/providers/Microsoft.Web/sites/app1")},
 		}
 		result, err := GroupByResourceGroup(resources)
@@ -349,7 +348,7 @@ func Test_GroupByResourceGroup_Coverage3(t *testing.T) {
 
 	t.Run("InvalidResourceID", func(t *testing.T) {
 		_, err := GroupByResourceGroup([]*armresources.ResourceReference{
-			{ID: to.Ptr("bad-id")},
+			{ID: new("bad-id")},
 		})
 		require.Error(t, err)
 	})

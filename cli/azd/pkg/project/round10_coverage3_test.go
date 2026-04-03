@@ -107,7 +107,10 @@ func (f *fakeLocator_r10) Invoke(_ any) error  { return nil }
 // helper to create a progress channel and drain it to avoid blocking.
 func newDrainedProgress_r10() *async.Progress[ServiceProgress] {
 	p := async.NewProgress[ServiceProgress]()
-	go func() { for range p.Progress() {} }()
+	go func() {
+		for range p.Progress() {
+		}
+	}()
 	return p
 }
 
@@ -635,7 +638,8 @@ func Test_ServiceManager_GetTargetResource_DotNetContainerApp_NoEnvName_Coverage
 func Test_ServiceManager_GetTargetResource_DotNetContainerApp_FromGlobalEnv_Coverage3(t *testing.T) {
 	// DotNetContainerAppTarget using AZURE_CONTAINER_APPS_ENVIRONMENT_ID (global fallback)
 	env := environment.NewWithValues("test", map[string]string{
-		"AZURE_CONTAINER_APPS_ENVIRONMENT_ID": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.App/managedEnvironments/myenv",
+		"AZURE_CONTAINER_APPS_ENVIRONMENT_ID": "/subscriptions/sub/resourceGroups/rg/" +
+			"providers/Microsoft.App/managedEnvironments/myenv",
 	})
 	resMgr := &fakeResourceManager_Cov3{resourceGroupName: "rg"}
 	sm := makeServiceManager_r10(env, &fakeLocator_r10{}, resMgr)

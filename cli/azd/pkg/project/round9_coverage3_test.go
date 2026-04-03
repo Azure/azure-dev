@@ -1,3 +1,4 @@
+// Copyright (c) Microsoft Corporation. Licensed under the MIT License.
 package project
 
 import (
@@ -159,11 +160,11 @@ func Test_ServiceStable_DotNet_Errors_Coverage3(t *testing.T) {
 			Path: tmpDir,
 			Services: map[string]*ServiceConfig{
 				"api": {
-					Name:     "api",
-					Host:     AppServiceTarget, // NOT ContainerAppTarget
-					Language: ServiceLanguageDotNet,
+					Name:         "api",
+					Host:         AppServiceTarget, // NOT ContainerAppTarget
+					Language:     ServiceLanguageDotNet,
 					RelativePath: ".",
-					Project:  &ProjectConfig{Path: tmpDir},
+					Project:      &ProjectConfig{Path: tmpDir},
 				},
 			},
 		}
@@ -187,18 +188,18 @@ func Test_ServiceStable_DotNet_Errors_Coverage3(t *testing.T) {
 			Path: tmpDir,
 			Services: map[string]*ServiceConfig{
 				"api": {
-					Name:     "api",
-					Host:     ContainerAppTarget,
-					Language: ServiceLanguageDotNet,
+					Name:         "api",
+					Host:         ContainerAppTarget,
+					Language:     ServiceLanguageDotNet,
 					RelativePath: ".",
-					Project:  &ProjectConfig{Path: tmpDir},
+					Project:      &ProjectConfig{Path: tmpDir},
 				},
 				"web": {
-					Name:     "web",
-					Host:     AppServiceTarget,
-					Language: ServiceLanguageJavaScript,
+					Name:         "web",
+					Host:         AppServiceTarget,
+					Language:     ServiceLanguageJavaScript,
 					RelativePath: "web",
-					Project:  &ProjectConfig{Path: tmpDir},
+					Project:      &ProjectConfig{Path: tmpDir},
 				},
 			},
 		}

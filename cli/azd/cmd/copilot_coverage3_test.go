@@ -9,7 +9,6 @@ import (
 	"io"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -491,8 +490,7 @@ func Test_NewCopilotConsentListAction_ReturnsAction(t *testing.T) {
 		mockinput.NewMockConsole(), testUserConfigManager(t), &mockConsentManager{},
 	)
 	require.NotNil(t, action)
-	_, ok := action.(actions.Action)
-	assert.True(t, ok)
+	_ = action // already actions.Action
 }
 
 func Test_NewCopilotConsentRevokeAction_ReturnsAction(t *testing.T) {
@@ -502,8 +500,7 @@ func Test_NewCopilotConsentRevokeAction_ReturnsAction(t *testing.T) {
 		mockinput.NewMockConsole(), testUserConfigManager(t), &mockConsentManager{},
 	)
 	require.NotNil(t, action)
-	_, ok := action.(actions.Action)
-	assert.True(t, ok)
+	_ = action // already actions.Action
 }
 
 func Test_NewCopilotConsentGrantAction_ReturnsAction(t *testing.T) {
@@ -513,8 +510,7 @@ func Test_NewCopilotConsentGrantAction_ReturnsAction(t *testing.T) {
 		mockinput.NewMockConsole(), testUserConfigManager(t), &mockConsentManager{},
 	)
 	require.NotNil(t, action)
-	_, ok := action.(actions.Action)
-	assert.True(t, ok)
+	_ = action // already actions.Action
 }
 
 // --- formatConsentDescription Tests ---
@@ -538,4 +534,3 @@ func Test_FormatConsentDescription(t *testing.T) {
 		})
 	}
 }
-

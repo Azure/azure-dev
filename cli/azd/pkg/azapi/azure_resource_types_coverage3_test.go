@@ -57,7 +57,7 @@ func Test_GetResourceTypeDisplayName_AllCases_Coverage3(t *testing.T) {
 		{AzureResourceTypeMachineLearningWorkspace, "Machine Learning Workspace"},
 		{AzureResourceTypeMachineLearningEndpoint, "Machine Learning Endpoint"},
 		{AzureResourceTypeMachineLearningConnection, "Machine Learning Connection"},
-		{AzureResourceTypeAppConfig, ""},  // not in switch
+		{AzureResourceTypeAppConfig, ""},   // not in switch
 		{AzureResourceTypeWebSiteSlot, ""}, // not in switch
 		{AzureResourceType("unknown.type"), ""},
 	}

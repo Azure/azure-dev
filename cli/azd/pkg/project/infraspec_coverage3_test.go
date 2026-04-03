@@ -1,3 +1,4 @@
+// Copyright (c) Microsoft Corporation. Licensed under the MIT License.
 package project
 
 import (
@@ -405,10 +406,10 @@ func Test_infraSpec_MultipleResourceTypes_Coverage3(t *testing.T) {
 
 func Test_DependentResourcesOf_Coverage3(t *testing.T) {
 	tests := []struct {
-		name     string
-		resType  ResourceType
-		hasDeps  bool
-		depType  ResourceType
+		name    string
+		resType ResourceType
+		hasDeps bool
+		depType ResourceType
 	}{
 		{"Mongo", ResourceTypeDbMongo, true, ResourceTypeKeyVault},
 		{"MySql", ResourceTypeDbMySql, true, ResourceTypeKeyVault},

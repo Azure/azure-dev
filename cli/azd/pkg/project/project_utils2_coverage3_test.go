@@ -1,3 +1,4 @@
+// Copyright (c) Microsoft Corporation. Licensed under the MIT License.
 package project
 
 import (
@@ -78,7 +79,10 @@ func Test_createDeployableZip_JSExcludesNodeModules_Coverage3(t *testing.T) {
 	dir := t.TempDir()
 	// Create node_modules directory
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "node_modules", "express"), 0755))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "node_modules", "express", "index.js"), []byte("module.exports={}"), 0600))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "node_modules", "express", "index.js"),
+		[]byte("module.exports={}"), 0600,
+	))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "index.js"), []byte("console.log('hi')"), 0600))
 
 	sc := &ServiceConfig{

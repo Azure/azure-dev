@@ -55,7 +55,7 @@ func Test_dockerProject_SetSource_Coverage3(t *testing.T) {
 	// Set a custom inner framework
 	innerEnv := environment.NewWithValues("inner-env", nil)
 	inner := NewNoOpProject(innerEnv)
-	p.(CompositeFrameworkService).SetSource(inner)
+	p.SetSource(inner)
 
 	// Verify Initialize now uses the new inner framework
 	err := p.(FrameworkService).Initialize(t.Context(), &ServiceConfig{})

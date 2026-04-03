@@ -1,11 +1,12 @@
+// Copyright (c) Microsoft Corporation. Licensed under the MIT License.
 package project
 
 import (
 	"encoding/json"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

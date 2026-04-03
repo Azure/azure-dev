@@ -1,3 +1,4 @@
+// Copyright (c) Microsoft Corporation. Licensed under the MIT License.
 package project
 
 import (
@@ -45,10 +46,10 @@ func Test_useDotnetPublishForDockerBuild_Coverage3(t *testing.T) {
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte("FROM scratch"), 0600))
 
 		sc := &ServiceConfig{
-			Language:      ServiceLanguageCsharp,
-			Project:       &ProjectConfig{Path: dir},
-			RelativePath:  ".",
-			Docker:        DockerProjectOptions{}, // defaults to "Dockerfile"
+			Language:     ServiceLanguageCsharp,
+			Project:      &ProjectConfig{Path: dir},
+			RelativePath: ".",
+			Docker:       DockerProjectOptions{}, // defaults to "Dockerfile"
 		}
 		result := useDotnetPublishForDockerBuild(sc)
 		assert.False(t, result)
@@ -59,10 +60,10 @@ func Test_useDotnetPublishForDockerBuild_Coverage3(t *testing.T) {
 		// Do NOT create Dockerfile - the stat should fail
 
 		sc := &ServiceConfig{
-			Language:      ServiceLanguageCsharp,
-			Project:       &ProjectConfig{Path: dir},
-			RelativePath:  ".",
-			Docker:        DockerProjectOptions{}, // defaults to "Dockerfile"
+			Language:     ServiceLanguageCsharp,
+			Project:      &ProjectConfig{Path: dir},
+			RelativePath: ".",
+			Docker:       DockerProjectOptions{}, // defaults to "Dockerfile"
 		}
 		result := useDotnetPublishForDockerBuild(sc)
 		assert.True(t, result)
@@ -76,10 +77,10 @@ func Test_useDotnetPublishForDockerBuild_Coverage3(t *testing.T) {
 		// No Dockerfile in dir
 
 		sc := &ServiceConfig{
-			Language:      ServiceLanguageFsharp,
-			Project:       &ProjectConfig{Path: dir},
-			RelativePath:  "app.csproj",
-			Docker:        DockerProjectOptions{},
+			Language:     ServiceLanguageFsharp,
+			Project:      &ProjectConfig{Path: dir},
+			RelativePath: "app.csproj",
+			Docker:       DockerProjectOptions{},
 		}
 		result := useDotnetPublishForDockerBuild(sc)
 		assert.True(t, result)

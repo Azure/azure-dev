@@ -19,42 +19,60 @@ import (
 
 // mockPromptService implements prompt.PromptService for testing.
 type mockPromptService struct {
-	promptSubscriptionFn         func(ctx context.Context, opts *prompt.SelectOptions) (*account.Subscription, error)
-	promptLocationFn             func(ctx context.Context, ac *prompt.AzureContext, opts *prompt.SelectOptions) (*account.Location, error)
-	promptResourceGroupFn        func(ctx context.Context, ac *prompt.AzureContext, opts *prompt.ResourceGroupOptions) (*azapi.ResourceGroup, error)
-	promptSubscriptionResourceFn func(ctx context.Context, ac *prompt.AzureContext, opts prompt.ResourceOptions) (*azapi.ResourceExtended, error)
-	promptResourceGroupResourceFn func(ctx context.Context, ac *prompt.AzureContext, opts prompt.ResourceOptions) (*azapi.ResourceExtended, error)
+	promptSubscriptionFn func(ctx context.Context, opts *prompt.SelectOptions) (*account.Subscription, error)
+	promptLocationFn     func(
+		ctx context.Context, ac *prompt.AzureContext, opts *prompt.SelectOptions,
+	) (*account.Location, error)
+	promptResourceGroupFn func(
+		ctx context.Context, ac *prompt.AzureContext, opts *prompt.ResourceGroupOptions,
+	) (*azapi.ResourceGroup, error)
+	promptSubscriptionResourceFn func(
+		ctx context.Context, ac *prompt.AzureContext, opts prompt.ResourceOptions,
+	) (*azapi.ResourceExtended, error)
+	promptResourceGroupResourceFn func(
+		ctx context.Context, ac *prompt.AzureContext, opts prompt.ResourceOptions,
+	) (*azapi.ResourceExtended, error)
 }
 
-func (m *mockPromptService) PromptSubscription(ctx context.Context, opts *prompt.SelectOptions) (*account.Subscription, error) {
+func (m *mockPromptService) PromptSubscription(
+	ctx context.Context, opts *prompt.SelectOptions,
+) (*account.Subscription, error) {
 	if m.promptSubscriptionFn != nil {
 		return m.promptSubscriptionFn(ctx, opts)
 	}
 	return nil, errors.New("not implemented")
 }
 
-func (m *mockPromptService) PromptLocation(ctx context.Context, ac *prompt.AzureContext, opts *prompt.SelectOptions) (*account.Location, error) {
+func (m *mockPromptService) PromptLocation(
+	ctx context.Context, ac *prompt.AzureContext, opts *prompt.SelectOptions,
+) (*account.Location, error) {
 	if m.promptLocationFn != nil {
 		return m.promptLocationFn(ctx, ac, opts)
 	}
 	return nil, errors.New("not implemented")
 }
 
-func (m *mockPromptService) PromptResourceGroup(ctx context.Context, ac *prompt.AzureContext, opts *prompt.ResourceGroupOptions) (*azapi.ResourceGroup, error) {
+func (m *mockPromptService) PromptResourceGroup(
+	ctx context.Context, ac *prompt.AzureContext, opts *prompt.ResourceGroupOptions,
+) (*azapi.ResourceGroup, error) {
 	if m.promptResourceGroupFn != nil {
 		return m.promptResourceGroupFn(ctx, ac, opts)
 	}
 	return nil, errors.New("not implemented")
 }
 
-func (m *mockPromptService) PromptSubscriptionResource(ctx context.Context, ac *prompt.AzureContext, opts prompt.ResourceOptions) (*azapi.ResourceExtended, error) {
+func (m *mockPromptService) PromptSubscriptionResource(
+	ctx context.Context, ac *prompt.AzureContext, opts prompt.ResourceOptions,
+) (*azapi.ResourceExtended, error) {
 	if m.promptSubscriptionResourceFn != nil {
 		return m.promptSubscriptionResourceFn(ctx, ac, opts)
 	}
 	return nil, errors.New("not implemented")
 }
 
-func (m *mockPromptService) PromptResourceGroupResource(ctx context.Context, ac *prompt.AzureContext, opts prompt.ResourceOptions) (*azapi.ResourceExtended, error) {
+func (m *mockPromptService) PromptResourceGroupResource(
+	ctx context.Context, ac *prompt.AzureContext, opts prompt.ResourceOptions,
+) (*azapi.ResourceExtended, error) {
 	if m.promptResourceGroupResourceFn != nil {
 		return m.promptResourceGroupResourceFn(ctx, ac, opts)
 	}
@@ -87,7 +105,7 @@ func TestPromptService_Confirm_NoPrompt_WithDefault(t *testing.T) {
 	resp, err := svc.Confirm(t.Context(), &azdext.ConfirmRequest{
 		Options: &azdext.ConfirmOptions{
 			Message:      "continue?",
-			DefaultValue: proto.Bool(true),
+			DefaultValue: new(true),
 		},
 	})
 	require.NoError(t, err)
@@ -296,7 +314,9 @@ func TestPromptService_PromptLocation_NilAzureContext(t *testing.T) {
 func TestPromptService_PromptLocation_Success(t *testing.T) {
 	t.Parallel()
 	mock := &mockPromptService{
-		promptLocationFn: func(ctx context.Context, ac *prompt.AzureContext, opts *prompt.SelectOptions) (*account.Location, error) {
+		promptLocationFn: func(
+			ctx context.Context, ac *prompt.AzureContext, opts *prompt.SelectOptions,
+		) (*account.Location, error) {
 			return &account.Location{
 				Name:                "westus2",
 				DisplayName:         "West US 2",
@@ -321,7 +341,9 @@ func TestPromptService_PromptLocation_Success(t *testing.T) {
 func TestPromptService_PromptLocation_WithAllowedLocations(t *testing.T) {
 	t.Parallel()
 	mock := &mockPromptService{
-		promptLocationFn: func(ctx context.Context, ac *prompt.AzureContext, opts *prompt.SelectOptions) (*account.Location, error) {
+		promptLocationFn: func(
+			ctx context.Context, ac *prompt.AzureContext, opts *prompt.SelectOptions,
+		) (*account.Location, error) {
 			return &account.Location{Name: "eastus"}, nil
 		},
 	}
@@ -342,7 +364,9 @@ func TestPromptService_PromptLocation_WithAllowedLocations(t *testing.T) {
 func TestPromptService_PromptLocation_Error(t *testing.T) {
 	t.Parallel()
 	mock := &mockPromptService{
-		promptLocationFn: func(ctx context.Context, ac *prompt.AzureContext, opts *prompt.SelectOptions) (*account.Location, error) {
+		promptLocationFn: func(
+			ctx context.Context, ac *prompt.AzureContext, opts *prompt.SelectOptions,
+		) (*account.Location, error) {
 			return nil, errors.New("location error")
 		},
 	}
@@ -370,7 +394,9 @@ func TestPromptService_PromptResourceGroup_NilAzureContext(t *testing.T) {
 func TestPromptService_PromptResourceGroup_Success(t *testing.T) {
 	t.Parallel()
 	mock := &mockPromptService{
-		promptResourceGroupFn: func(ctx context.Context, ac *prompt.AzureContext, opts *prompt.ResourceGroupOptions) (*azapi.ResourceGroup, error) {
+		promptResourceGroupFn: func(
+			ctx context.Context, ac *prompt.AzureContext, opts *prompt.ResourceGroupOptions,
+		) (*azapi.ResourceGroup, error) {
 			return &azapi.ResourceGroup{
 				Id:       "/subscriptions/sub/resourceGroups/rg-1",
 				Name:     "rg-1",
@@ -394,7 +420,9 @@ func TestPromptService_PromptResourceGroup_Success(t *testing.T) {
 func TestPromptService_PromptResourceGroup_Error(t *testing.T) {
 	t.Parallel()
 	mock := &mockPromptService{
-		promptResourceGroupFn: func(ctx context.Context, ac *prompt.AzureContext, opts *prompt.ResourceGroupOptions) (*azapi.ResourceGroup, error) {
+		promptResourceGroupFn: func(
+			ctx context.Context, ac *prompt.AzureContext, opts *prompt.ResourceGroupOptions,
+		) (*azapi.ResourceGroup, error) {
 			return nil, errors.New("rg error")
 		},
 	}
@@ -422,10 +450,15 @@ func TestPromptService_PromptSubscriptionResource_NilAzureContext(t *testing.T) 
 func TestPromptService_PromptSubscriptionResource_Success(t *testing.T) {
 	t.Parallel()
 	mock := &mockPromptService{
-		promptSubscriptionResourceFn: func(ctx context.Context, ac *prompt.AzureContext, opts prompt.ResourceOptions) (*azapi.ResourceExtended, error) {
+		promptSubscriptionResourceFn: func(
+			ctx context.Context, ac *prompt.AzureContext, opts prompt.ResourceOptions,
+		) (*azapi.ResourceExtended, error) {
 			return &azapi.ResourceExtended{
-				Resource: azapi.Resource{Id: "/sub/res-1", Name: "res-1", Type: "Microsoft.Web/sites", Location: "eastus"},
-				Kind:     "app",
+				Resource: azapi.Resource{
+					Id: "/sub/res-1", Name: "res-1",
+					Type: "Microsoft.Web/sites", Location: "eastus",
+				},
+				Kind: "app",
 			}, nil
 		},
 	}
@@ -440,7 +473,7 @@ func TestPromptService_PromptSubscriptionResource_Success(t *testing.T) {
 		Options: &azdext.PromptResourceOptions{
 			ResourceType: "Microsoft.Web/sites",
 			SelectOptions: &azdext.PromptResourceSelectOptions{
-				AllowNewResource: proto.Bool(false),
+				AllowNewResource: new(false),
 			},
 		},
 	})
@@ -452,7 +485,9 @@ func TestPromptService_PromptSubscriptionResource_Success(t *testing.T) {
 func TestPromptService_PromptSubscriptionResource_Error(t *testing.T) {
 	t.Parallel()
 	mock := &mockPromptService{
-		promptSubscriptionResourceFn: func(ctx context.Context, ac *prompt.AzureContext, opts prompt.ResourceOptions) (*azapi.ResourceExtended, error) {
+		promptSubscriptionResourceFn: func(
+			ctx context.Context, ac *prompt.AzureContext, opts prompt.ResourceOptions,
+		) (*azapi.ResourceExtended, error) {
 			return nil, errors.New("resource error")
 		},
 	}
@@ -480,10 +515,15 @@ func TestPromptService_PromptResourceGroupResource_NilAzureContext(t *testing.T)
 func TestPromptService_PromptResourceGroupResource_Success(t *testing.T) {
 	t.Parallel()
 	mock := &mockPromptService{
-		promptResourceGroupResourceFn: func(ctx context.Context, ac *prompt.AzureContext, opts prompt.ResourceOptions) (*azapi.ResourceExtended, error) {
+		promptResourceGroupResourceFn: func(
+			ctx context.Context, ac *prompt.AzureContext, opts prompt.ResourceOptions,
+		) (*azapi.ResourceExtended, error) {
 			return &azapi.ResourceExtended{
-				Resource: azapi.Resource{Id: "/sub/rg/res-2", Name: "res-2", Type: "Microsoft.Storage/storageAccounts", Location: "westus"},
-				Kind:     "StorageV2",
+				Resource: azapi.Resource{
+					Id: "/sub/rg/res-2", Name: "res-2",
+					Type: "Microsoft.Storage/storageAccounts", Location: "westus",
+				},
+				Kind: "StorageV2",
 			}, nil
 		},
 	}
@@ -503,7 +543,9 @@ func TestPromptService_PromptResourceGroupResource_Success(t *testing.T) {
 func TestPromptService_PromptResourceGroupResource_Error(t *testing.T) {
 	t.Parallel()
 	mock := &mockPromptService{
-		promptResourceGroupResourceFn: func(ctx context.Context, ac *prompt.AzureContext, opts prompt.ResourceOptions) (*azapi.ResourceExtended, error) {
+		promptResourceGroupResourceFn: func(
+			ctx context.Context, ac *prompt.AzureContext, opts prompt.ResourceOptions,
+		) (*azapi.ResourceExtended, error) {
 			return nil, errors.New("rg resource error")
 		},
 	}

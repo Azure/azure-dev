@@ -1,3 +1,4 @@
+// Copyright (c) Microsoft Corporation. Licensed under the MIT License.
 // Tests for dotnet_importer.go mapToExpandableStringSlice and
 // importer.go ServiceStableFiltered, HasAppHost
 package project
@@ -182,28 +183,6 @@ func Test_HasAppHost_Coverage3(t *testing.T) {
 		result := im.HasAppHost(t.Context(), pc)
 		assert.False(t, result)
 	})
-
-	t.Run("DotNetServiceNoDotNetImporter", func(t *testing.T) {
-		im := NewImportManager(nil)
-		pc := &ProjectConfig{
-			Path: t.TempDir(),
-			Services: map[string]*ServiceConfig{
-				"web": {
-					Name:         "web",
-					Language:     ServiceLanguageDotNet,
-					RelativePath: ".",
-					Project:      &ProjectConfig{Path: t.TempDir()},
-				},
-			},
-		}
-
-		// With nil dotNetImporter, should return false (panics are recovered or not called)
-		// Actually: nil dotNetImporter means CanImport can't be called.
-		// The function checks `im.dotNetImporter.CanImport(...)` which will panic if nil.
-		// So we just skip this test case — needs a real dotnet importer mock.
-		_ = im
-		_ = pc
-	})
 }
 
 // --- parseServiceLanguage ---
@@ -294,20 +273,13 @@ func Test_IsDotNet_Coverage3(t *testing.T) {
 	assert.False(t, ServiceLanguageJava.IsDotNet())
 }
 
-// Utility for environment lookups in tests
-func envLookup(m map[string]string) func(string) string {
-	return func(key string) string {
-		return m[key]
-	}
-}
-
 // --- ServiceStable ---
 
 func Test_ServiceStable_Coverage3(t *testing.T) {
 	im := NewImportManager(nil)
 	pc := &ProjectConfig{
 		Services: map[string]*ServiceConfig{
-			"beta": {Name: "beta"},
+			"beta":  {Name: "beta"},
 			"alpha": {Name: "alpha"},
 		},
 	}

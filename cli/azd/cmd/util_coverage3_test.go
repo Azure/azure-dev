@@ -20,8 +20,6 @@ import (
 )
 
 func Test_Since(t *testing.T) {
-	t.Parallel()
-
 	// Reset interact time for clean test
 	tracing.InteractTimeMs.Store(0)
 
@@ -53,15 +51,10 @@ func Test_OpenWithDefaultBrowser_Override(t *testing.T) {
 }
 
 func Test_OpenWithDefaultBrowser_NoOverride(t *testing.T) {
-	// Cannot use t.Parallel() because t.Setenv mutates global state
 	mockConsole := mockinput.NewMockConsole()
-
-	// Set BROWSER to something that will fail gracefully
-	t.Setenv("BROWSER", "")
-
-	// This will attempt browser.OpenURL which will fail, then fallback, etc.
-	// We're just testing it doesn't panic.
-	openWithDefaultBrowser(context.Background(), mockConsole, "https://example.com")
+	// Use a no-op browser override to prevent real browser launch
+	ctx := WithBrowserOverride(context.Background(), func(_ context.Context, _ input.Console, _ string) {})
+	openWithDefaultBrowser(ctx, mockConsole, "https://example.com")
 }
 
 func Test_ServiceNameWarningCheck(t *testing.T) {

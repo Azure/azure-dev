@@ -23,7 +23,7 @@ func TestCopilotService_ListSessions_Success(t *testing.T) {
 
 	factory.On("Create", mock.Anything, mock.Anything).Return(mockAgent, nil)
 	mockAgent.On("ListSessions", mock.Anything, mock.AnythingOfType("string")).Return([]agent.SessionMetadata{
-		{SessionID: "s1", ModifiedTime: "2024-01-01T00:00:00Z", Summary: ptrStr("Summary 1")},
+		{SessionID: "s1", ModifiedTime: "2024-01-01T00:00:00Z", Summary: new("Summary 1")},
 		{SessionID: "s2", ModifiedTime: "2024-01-02T00:00:00Z", Summary: nil},
 	}, nil)
 	mockAgent.On("Stop").Return(nil)
@@ -329,8 +329,10 @@ func TestCopilotService_SendMessage_ResumeWithSessionId(t *testing.T) {
 }
 
 // Helper
+//
+//go:fix inline
 func ptrStr(s string) *string {
-	return &s
+	return new(s)
 }
 
 // Ensure context is propagated for testing listSessions with empty working directory

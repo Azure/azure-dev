@@ -1,3 +1,4 @@
+// Copyright (c) Microsoft Corporation. Licensed under the MIT License.
 package project
 
 import (
@@ -14,9 +15,9 @@ func Test_createDeployableZip_AzureDirExcluded_Coverage3(t *testing.T) {
 	tmpDir := t.TempDir()
 	// Create .azure directory (should be excluded)
 	require.NoError(t, os.MkdirAll(filepath.Join(tmpDir, ".azure"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, ".azure", "config.json"), []byte("{}"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, ".azure", "config.json"), []byte("{}"), 0o600))
 	// Create a normal file (should be included)
-	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "app.py"), []byte("print('hi')"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "app.py"), []byte("print('hi')"), 0o600))
 
 	prj := &ProjectConfig{Name: "proj"}
 	sc := &ServiceConfig{
@@ -40,8 +41,8 @@ func Test_createDeployableZip_RemoteBuildFalse_Coverage3(t *testing.T) {
 	tmpDir := t.TempDir()
 	// Create node_modules directory
 	require.NoError(t, os.MkdirAll(filepath.Join(tmpDir, "node_modules", "express"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "node_modules", "express", "index.js"), []byte("module.exports={}"), 0o644))
-	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "index.js"), []byte("require('express')"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "node_modules", "express", "index.js"), []byte("module.exports={}"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "index.js"), []byte("require('express')"), 0o600))
 
 	remoteBuildFalse := false
 	prj := &ProjectConfig{Name: "proj"}
@@ -67,9 +68,9 @@ func Test_createDeployableZip_IgnoreFileExcluded_Coverage3(t *testing.T) {
 	tmpDir := t.TempDir()
 	// AppServiceTarget uses ".deployment" as ignore file; FunctionApp uses ".funcignore"
 	// Let's use FunctionApp and a .funcignore file
-	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, ".funcignore"), []byte("*.log\n"), 0o644))
-	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "app.py"), []byte("print('hi')"), 0o644))
-	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "debug.log"), []byte("log data"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, ".funcignore"), []byte("*.log\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "app.py"), []byte("print('hi')"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "debug.log"), []byte("log data"), 0o600))
 
 	prj := &ProjectConfig{Name: "proj"}
 	sc := &ServiceConfig{
@@ -94,9 +95,9 @@ func Test_createDeployableZip_IgnoreFileExcluded_Coverage3(t *testing.T) {
 func Test_createDeployableZip_WebAppIgnore_Coverage3(t *testing.T) {
 	tmpDir := t.TempDir()
 	// AppServiceTarget.IgnoreFile() returns ".webappignore"
-	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, ".webappignore"), []byte("*.tmp\n"), 0o644))
-	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "index.html"), []byte("<html></html>"), 0o644))
-	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "temp.tmp"), []byte("temp"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, ".webappignore"), []byte("*.tmp\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "index.html"), []byte("<html></html>"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "temp.tmp"), []byte("temp"), 0o600))
 
 	prj := &ProjectConfig{Name: "proj"}
 	sc := &ServiceConfig{

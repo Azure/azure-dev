@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v2"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/assert"
@@ -26,12 +25,12 @@ func Test_ManagedClustersService_Get_Coverage3(t *testing.T) {
 	}).RespondFn(func(req *http.Request) (*http.Response, error) {
 		return mocks.CreateHttpResponseWithBody(req, http.StatusOK,
 			armcontainerservice.ManagedCluster{
-				ID:       to.Ptr("/subscriptions/SUB/resourceGroups/RG/providers/Microsoft.ContainerService/managedClusters/my-aks"),
-				Name:     to.Ptr("my-aks"),
-				Location: to.Ptr("eastus"),
+				ID:       new("/subscriptions/SUB/resourceGroups/RG/providers/Microsoft.ContainerService/managedClusters/my-aks"),
+				Name:     new("my-aks"),
+				Location: new("eastus"),
 				Properties: &armcontainerservice.ManagedClusterProperties{
-					KubernetesVersion: to.Ptr("1.28.0"),
-					Fqdn:              to.Ptr("my-aks-dns.hcp.eastus.azmk8s.io"),
+					KubernetesVersion: new("1.28.0"),
+					Fqdn:              new("my-aks-dns.hcp.eastus.azmk8s.io"),
 				},
 			})
 	})
@@ -54,7 +53,7 @@ func Test_ManagedClustersService_GetUserCredentials_Coverage3(t *testing.T) {
 			armcontainerservice.CredentialResults{
 				Kubeconfigs: []*armcontainerservice.CredentialResult{
 					{
-						Name:  to.Ptr("clusterUser"),
+						Name:  new("clusterUser"),
 						Value: []byte("kubeconfig-data"),
 					},
 				},

@@ -34,15 +34,15 @@ func newStdDeployments(mockCtx *mocks.MockContext) *StandardDeployments {
 func makeDeploymentExtended(name string, state armresources.ProvisioningState) armresources.DeploymentExtended {
 	now := time.Now()
 	return armresources.DeploymentExtended{
-		ID:       to.Ptr("/subscriptions/SUB/providers/Microsoft.Resources/deployments/" + name),
-		Name:     to.Ptr(name),
-		Type:     to.Ptr("Microsoft.Resources/deployments"),
-		Location: to.Ptr("eastus"),
-		Tags:     map[string]*string{"env": to.Ptr("test")},
+		ID:       new("/subscriptions/SUB/providers/Microsoft.Resources/deployments/" + name),
+		Name:     new(name),
+		Type:     new("Microsoft.Resources/deployments"),
+		Location: new("eastus"),
+		Tags:     map[string]*string{"env": new("test")},
 		Properties: &armresources.DeploymentPropertiesExtended{
-			ProvisioningState: to.Ptr(state),
+			ProvisioningState: new(state),
 			Timestamp:         &now,
-			TemplateHash:      to.Ptr("hash123"),
+			TemplateHash:      new("hash123"),
 			Outputs:           nil,
 			OutputResources:   []*armresources.ResourceReference{},
 			Dependencies:      []*armresources.Dependency{},
@@ -60,7 +60,7 @@ func Test_StdDeployments_CalculateTemplateHash_Coverage3(t *testing.T) {
 	}).RespondFn(func(req *http.Request) (*http.Response, error) {
 		return mocks.CreateHttpResponseWithBody(req, http.StatusOK,
 			armresources.TemplateHashResult{
-				TemplateHash: to.Ptr("abc123hash"),
+				TemplateHash: new("abc123hash"),
 			})
 	})
 
@@ -193,10 +193,10 @@ func Test_StdDeployments_ListSubscriptionDeploymentOperations_Coverage3(t *testi
 			armresources.DeploymentOperationsListResult{
 				Value: []*armresources.DeploymentOperation{
 					{
-						ID:          to.Ptr("op1"),
-						OperationID: to.Ptr("op1-id"),
+						ID:          new("op1"),
+						OperationID: new("op1-id"),
 						Properties: &armresources.DeploymentOperationProperties{
-							ProvisioningState: to.Ptr("Succeeded"),
+							ProvisioningState: new("Succeeded"),
 						},
 					},
 				},
@@ -221,10 +221,10 @@ func Test_StdDeployments_ListResourceGroupDeploymentOperations_Coverage3(t *test
 			armresources.DeploymentOperationsListResult{
 				Value: []*armresources.DeploymentOperation{
 					{
-						ID:          to.Ptr("op2"),
-						OperationID: to.Ptr("op2-id"),
+						ID:          new("op2"),
+						OperationID: new("op2-id"),
 						Properties: &armresources.DeploymentOperationProperties{
-							ProvisioningState: to.Ptr("Failed"),
+							ProvisioningState: new("Failed"),
 						},
 					},
 				},
@@ -292,7 +292,7 @@ func Test_StdDeployments_WhatIfDeployToSubscription_Coverage3(t *testing.T) {
 	}).RespondFn(func(req *http.Request) (*http.Response, error) {
 		return mocks.CreateHttpResponseWithBody(req, http.StatusOK,
 			armresources.WhatIfOperationResult{
-				Status: to.Ptr("Succeeded"),
+				Status: new("Succeeded"),
 			})
 	})
 
@@ -313,7 +313,7 @@ func Test_StdDeployments_WhatIfDeployToResourceGroup_Coverage3(t *testing.T) {
 	}).RespondFn(func(req *http.Request) (*http.Response, error) {
 		return mocks.CreateHttpResponseWithBody(req, http.StatusOK,
 			armresources.WhatIfOperationResult{
-				Status: to.Ptr("Succeeded"),
+				Status: new("Succeeded"),
 			})
 	})
 

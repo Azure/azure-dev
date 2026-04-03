@@ -26,12 +26,12 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
-	"github.com/google/uuid"
-	azdoGit "github.com/microsoft/azure-devops-go-api/azuredevops/v7/git"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
+	"github.com/google/uuid"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/build"
+	azdoGit "github.com/microsoft/azure-devops-go-api/azuredevops/v7/git"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -43,12 +43,22 @@ import (
 
 type mockScmProvider struct {
 	requiredToolsFn     func(ctx context.Context) ([]tools.ExternalTool, error)
-	preConfigureCheckFn func(ctx context.Context, args PipelineManagerArgs, opts provisioning.Options, path string) (bool, error)
-	nameFn              func() string
-	gitRepoDetailsFn    func(ctx context.Context, remoteUrl string) (*gitRepositoryDetails, error)
-	configureGitRemoteFn func(ctx context.Context, repoPath string, remoteName string) (string, error)
-	preventGitPushFn    func(ctx context.Context, gitRepo *gitRepositoryDetails, remoteName string, branchName string) (bool, error)
-	gitPushFn           func(ctx context.Context, gitRepo *gitRepositoryDetails, remoteName string, branchName string) error
+	preConfigureCheckFn func(
+		ctx context.Context, args PipelineManagerArgs, opts provisioning.Options, path string,
+	) (bool, error)
+	nameFn               func() string
+	gitRepoDetailsFn     func(ctx context.Context, remoteUrl string) (*gitRepositoryDetails, error)
+	configureGitRemoteFn func(
+		ctx context.Context, repoPath string, remoteName string,
+	) (string, error)
+	preventGitPushFn func(
+		ctx context.Context, gitRepo *gitRepositoryDetails,
+		remoteName string, branchName string,
+	) (bool, error)
+	gitPushFn func(
+		ctx context.Context, gitRepo *gitRepositoryDetails,
+		remoteName string, branchName string,
+	) error
 }
 
 func (m *mockScmProvider) requiredTools(ctx context.Context) ([]tools.ExternalTool, error) {
@@ -58,7 +68,9 @@ func (m *mockScmProvider) requiredTools(ctx context.Context) ([]tools.ExternalTo
 	return []tools.ExternalTool{}, nil
 }
 
-func (m *mockScmProvider) preConfigureCheck(ctx context.Context, args PipelineManagerArgs, opts provisioning.Options, path string) (bool, error) {
+func (m *mockScmProvider) preConfigureCheck(
+	ctx context.Context, args PipelineManagerArgs, opts provisioning.Options, path string,
+) (bool, error) {
 	if m.preConfigureCheckFn != nil {
 		return m.preConfigureCheckFn(ctx, args, opts, path)
 	}
@@ -91,14 +103,20 @@ func (m *mockScmProvider) configureGitRemote(ctx context.Context, repoPath strin
 	return "https://example.com/test-owner/test-repo.git", nil
 }
 
-func (m *mockScmProvider) preventGitPush(ctx context.Context, gitRepo *gitRepositoryDetails, remoteName string, branchName string) (bool, error) {
+func (m *mockScmProvider) preventGitPush(
+	ctx context.Context, gitRepo *gitRepositoryDetails,
+	remoteName string, branchName string,
+) (bool, error) {
 	if m.preventGitPushFn != nil {
 		return m.preventGitPushFn(ctx, gitRepo, remoteName, branchName)
 	}
 	return false, nil
 }
 
-func (m *mockScmProvider) GitPush(ctx context.Context, gitRepo *gitRepositoryDetails, remoteName string, branchName string) error {
+func (m *mockScmProvider) GitPush(
+	ctx context.Context, gitRepo *gitRepositoryDetails,
+	remoteName string, branchName string,
+) error {
 	if m.gitPushFn != nil {
 		return m.gitPushFn(ctx, gitRepo, remoteName, branchName)
 	}
@@ -106,12 +124,26 @@ func (m *mockScmProvider) GitPush(ctx context.Context, gitRepo *gitRepositoryDet
 }
 
 type mockCiProvider struct {
-	requiredToolsFn        func(ctx context.Context) ([]tools.ExternalTool, error)
-	preConfigureCheckFn    func(ctx context.Context, args PipelineManagerArgs, opts provisioning.Options, path string) (bool, error)
-	nameFn                 func() string
-	configurePipelineFn    func(ctx context.Context, repoDetails *gitRepositoryDetails, options *configurePipelineOptions) (CiPipeline, error)
-	configureConnectionFn  func(ctx context.Context, gitRepo *gitRepositoryDetails, opts provisioning.Options, authConfig *authConfiguration, credOpts *CredentialOptions) error
-	credentialOptionsFn    func(ctx context.Context, repoDetails *gitRepositoryDetails, infraOptions provisioning.Options, authType PipelineAuthType, credentials *entraid.AzureCredentials) (*CredentialOptions, error)
+	requiredToolsFn     func(ctx context.Context) ([]tools.ExternalTool, error)
+	preConfigureCheckFn func(
+		ctx context.Context, args PipelineManagerArgs,
+		opts provisioning.Options, path string,
+	) (bool, error)
+	nameFn              func() string
+	configurePipelineFn func(
+		ctx context.Context, repoDetails *gitRepositoryDetails,
+		options *configurePipelineOptions,
+	) (CiPipeline, error)
+	configureConnectionFn func(
+		ctx context.Context, gitRepo *gitRepositoryDetails,
+		opts provisioning.Options, authConfig *authConfiguration,
+		credOpts *CredentialOptions,
+	) error
+	credentialOptionsFn func(
+		ctx context.Context, repoDetails *gitRepositoryDetails,
+		infraOptions provisioning.Options, authType PipelineAuthType,
+		credentials *entraid.AzureCredentials,
+	) (*CredentialOptions, error)
 }
 
 func (m *mockCiProvider) requiredTools(ctx context.Context) ([]tools.ExternalTool, error) {
@@ -121,7 +153,10 @@ func (m *mockCiProvider) requiredTools(ctx context.Context) ([]tools.ExternalToo
 	return []tools.ExternalTool{}, nil
 }
 
-func (m *mockCiProvider) preConfigureCheck(ctx context.Context, args PipelineManagerArgs, opts provisioning.Options, path string) (bool, error) {
+func (m *mockCiProvider) preConfigureCheck(
+	ctx context.Context, args PipelineManagerArgs,
+	opts provisioning.Options, path string,
+) (bool, error) {
 	if m.preConfigureCheckFn != nil {
 		return m.preConfigureCheckFn(ctx, args, opts, path)
 	}
@@ -135,21 +170,32 @@ func (m *mockCiProvider) Name() string {
 	return "mock-ci"
 }
 
-func (m *mockCiProvider) configurePipeline(ctx context.Context, repoDetails *gitRepositoryDetails, options *configurePipelineOptions) (CiPipeline, error) {
+func (m *mockCiProvider) configurePipeline(
+	ctx context.Context, repoDetails *gitRepositoryDetails,
+	options *configurePipelineOptions,
+) (CiPipeline, error) {
 	if m.configurePipelineFn != nil {
 		return m.configurePipelineFn(ctx, repoDetails, options)
 	}
 	return &workflow{repoDetails: repoDetails}, nil
 }
 
-func (m *mockCiProvider) configureConnection(ctx context.Context, gitRepo *gitRepositoryDetails, opts provisioning.Options, authConfig *authConfiguration, credOpts *CredentialOptions) error {
+func (m *mockCiProvider) configureConnection(
+	ctx context.Context, gitRepo *gitRepositoryDetails,
+	opts provisioning.Options, authConfig *authConfiguration,
+	credOpts *CredentialOptions,
+) error {
 	if m.configureConnectionFn != nil {
 		return m.configureConnectionFn(ctx, gitRepo, opts, authConfig, credOpts)
 	}
 	return nil
 }
 
-func (m *mockCiProvider) credentialOptions(ctx context.Context, repoDetails *gitRepositoryDetails, infraOptions provisioning.Options, authType PipelineAuthType, credentials *entraid.AzureCredentials) (*CredentialOptions, error) {
+func (m *mockCiProvider) credentialOptions(
+	ctx context.Context, repoDetails *gitRepositoryDetails,
+	infraOptions provisioning.Options, authType PipelineAuthType,
+	credentials *entraid.AzureCredentials,
+) (*CredentialOptions, error) {
 	if m.credentialOptionsFn != nil {
 		return m.credentialOptionsFn(ctx, repoDetails, infraOptions, authType, credentials)
 	}
@@ -227,8 +273,8 @@ type mockExternalTool struct {
 }
 
 func (m *mockExternalTool) CheckInstalled(_ context.Context) error { return nil }
-func (m *mockExternalTool) InstallUrl() string                    { return "" }
-func (m *mockExternalTool) Name() string                          { return m.name }
+func (m *mockExternalTool) InstallUrl() string                     { return "" }
+func (m *mockExternalTool) Name() string                           { return m.name }
 
 // =====================================================================
 // PipelineManager.preConfigureCheck
@@ -304,10 +350,13 @@ func Test_PipelineManager_preConfigureCheck_cov3(t *testing.T) {
 		t.Parallel()
 
 		pm := &PipelineManager{
-			args: &PipelineManagerArgs{},
+			args:        &PipelineManagerArgs{},
 			scmProvider: &mockScmProvider{},
 			ciProvider: &mockCiProvider{
-				preConfigureCheckFn: func(_ context.Context, _ PipelineManagerArgs, _ provisioning.Options, _ string) (bool, error) {
+				preConfigureCheckFn: func(
+					_ context.Context, _ PipelineManagerArgs,
+					_ provisioning.Options, _ string,
+				) (bool, error) {
 					return false, errors.New("ci-check failed")
 				},
 				nameFn: func() string { return "test-ci" },
@@ -326,7 +375,10 @@ func Test_PipelineManager_preConfigureCheck_cov3(t *testing.T) {
 		pm := &PipelineManager{
 			args: &PipelineManagerArgs{},
 			scmProvider: &mockScmProvider{
-				preConfigureCheckFn: func(_ context.Context, _ PipelineManagerArgs, _ provisioning.Options, _ string) (bool, error) {
+				preConfigureCheckFn: func(
+					_ context.Context, _ PipelineManagerArgs,
+					_ provisioning.Options, _ string,
+				) (bool, error) {
 					return false, errors.New("scm-check failed")
 				},
 				nameFn: func() string { return "test-scm" },
@@ -346,7 +398,10 @@ func Test_PipelineManager_preConfigureCheck_cov3(t *testing.T) {
 		pm := &PipelineManager{
 			args: &PipelineManagerArgs{},
 			scmProvider: &mockScmProvider{
-				preConfigureCheckFn: func(_ context.Context, _ PipelineManagerArgs, _ provisioning.Options, _ string) (bool, error) {
+				preConfigureCheckFn: func(
+					_ context.Context, _ PipelineManagerArgs,
+					_ provisioning.Options, _ string,
+				) (bool, error) {
 					return true, nil
 				},
 			},
@@ -911,10 +966,10 @@ func Test_PipelineManager_initialize(t *testing.T) {
 		container.MustRegisterNamedSingleton("github-ci", func() CiProvider { return ciProvider })
 
 		pm := &PipelineManager{
-			azdCtx:     azdCtx,
-			env:        env,
-			envManager: envManager,
-			gitCli:     git.NewCli(mockContext.CommandRunner),
+			azdCtx:         azdCtx,
+			env:            env,
+			envManager:     envManager,
+			gitCli:         git.NewCli(mockContext.CommandRunner),
 			serviceLocator: container,
 		}
 
@@ -1410,8 +1465,8 @@ func Test_generatePipelineDefinition_azdoTemplates(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name      string
-		props     projectProperties
+		name       string
+		props      projectProperties
 		wantSubstr []string
 	}{
 		{
@@ -1790,13 +1845,13 @@ func Test_AzdoCiProvider_preConfigureCheck_clientCredentials(t *testing.T) {
 		env := environment.NewWithValues(
 			"test-env",
 			map[string]string{
-				"AZURE_DEVOPS_EXT_PAT":             "testPAT12345",
-				"AZURE_DEVOPS_ORG_NAME":            "fake_org",
-				"AZURE_DEVOPS_PROJECT_NAME":        "project1",
-				"AZURE_DEVOPS_PROJECT_ID":          "12345",
-				"AZURE_DEVOPS_REPOSITORY_NAME":     "repo1",
-				"AZURE_DEVOPS_REPOSITORY_ID":       "9876",
-				"AZURE_DEVOPS_REPOSITORY_WEB_URL":  "https://repo",
+				"AZURE_DEVOPS_EXT_PAT":            "testPAT12345",
+				"AZURE_DEVOPS_ORG_NAME":           "fake_org",
+				"AZURE_DEVOPS_PROJECT_NAME":       "project1",
+				"AZURE_DEVOPS_PROJECT_ID":         "12345",
+				"AZURE_DEVOPS_REPOSITORY_NAME":    "repo1",
+				"AZURE_DEVOPS_REPOSITORY_ID":      "9876",
+				"AZURE_DEVOPS_REPOSITORY_WEB_URL": "https://repo",
 			},
 		)
 
@@ -2166,7 +2221,9 @@ func Test_getRemoteUrlFromPrompt_cov3(t *testing.T) {
 
 	t.Run("valid github url", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		mockContext.Console.WhenPrompt(func(options input.ConsoleOptions) bool { return true }).Respond("https://github.com/testowner/testrepo")
+		mockContext.Console.WhenPrompt(func(options input.ConsoleOptions) bool {
+			return true
+		}).Respond("https://github.com/testowner/testrepo")
 
 		url, err := getRemoteUrlFromPrompt(*mockContext.Context, "origin", mockContext.Console)
 		require.NoError(t, err)
@@ -3011,7 +3068,10 @@ func Test_pushGitRepo_cov3(t *testing.T) {
 		gitPushCalled := false
 		scm := &mockScmProvider{
 			nameFn: func() string { return "GitHub" },
-			gitPushFn: func(ctx context.Context, repoDetails *gitRepositoryDetails, remoteName string, branchName string) error {
+			gitPushFn: func(
+				ctx context.Context, repoDetails *gitRepositoryDetails,
+				remoteName string, branchName string,
+			) error {
 				gitPushCalled = true
 				return nil
 			},
@@ -3267,8 +3327,8 @@ func Test_servicePrincipal_lookupById_cov3(t *testing.T) {
 
 	result, err := servicePrincipal(
 		context.Background(),
-		"",          // envClientId
-		"sub-123",   // subscriptionId
+		"",        // envClientId
+		"sub-123", // subscriptionId
 		&PipelineManagerArgs{PipelineServicePrincipalId: "lookup-id"},
 		entraIdSvc,
 	)
@@ -3501,11 +3561,16 @@ func Test_ensureGitHubLogin_notLoggedIn_declines_cov3(t *testing.T) {
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "auth") && strings.Contains(command, "status")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-		return exec.NewRunResult(1, "", "You are not logged into any GitHub hosts. Run gh auth login to authenticate."), fmt.Errorf("exit status 1")
+		return exec.NewRunResult(1, "",
+			"You are not logged into any GitHub hosts. "+
+				"Run gh auth login to authenticate.",
+		), fmt.Errorf("exit status 1")
 	})
 
 	// Decline login
-	mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool { return true }).Respond(false)
+	mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
+		return true
+	}).Respond(false)
 
 	ghCli := github.NewGitHubCli(mockContext.Console, mockContext.CommandRunner)
 	gitCli := git.NewCli(mockContext.CommandRunner)
@@ -3543,11 +3608,16 @@ func Test_ensureGitHubLogin_loginSuccess_cov3(t *testing.T) {
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "auth") && strings.Contains(command, "status")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-		return exec.NewRunResult(1, "", "You are not logged into any GitHub hosts. Run gh auth login to authenticate."), fmt.Errorf("exit status 1")
+		return exec.NewRunResult(1, "",
+			"You are not logged into any GitHub hosts. "+
+				"Run gh auth login to authenticate.",
+		), fmt.Errorf("exit status 1")
 	})
 
 	// Accept login
-	mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool { return true }).Respond(true)
+	mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
+		return true
+	}).Respond(true)
 
 	// Mock GetGitProtocolType
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -3584,8 +3654,10 @@ func Test_getRemoteUrlFromExisting_success_cov3(t *testing.T) {
 		return strings.Contains(command, "repo") && strings.Contains(command, "list")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		return exec.NewRunResult(0,
-			`[{"nameWithOwner":"user/repo1","url":"https://github.com/user/repo1","sshUrl":"git@github.com:user/repo1.git"},`+
-				`{"nameWithOwner":"user/repo2","url":"https://github.com/user/repo2","sshUrl":"git@github.com:user/repo2.git"}]`,
+			`[{"nameWithOwner":"user/repo1","url":"https://github.com/user/repo1",`+
+				`"sshUrl":"git@github.com:user/repo1.git"},`+
+				`{"nameWithOwner":"user/repo2","url":"https://github.com/user/repo2",`+
+				`"sshUrl":"git@github.com:user/repo2.git"}]`,
 			""), nil
 	})
 
@@ -3659,7 +3731,9 @@ func Test_getRemoteUrlFromNewRepository_success_cov3(t *testing.T) {
 		return strings.Contains(command, "repo") && strings.Contains(command, "view")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		return exec.NewRunResult(0,
-			`{"nameWithOwner":"user/my-repo","url":"https://github.com/user/my-repo","sshUrl":"git@github.com:user/my-repo.git"}`,
+			`{"nameWithOwner":"user/my-repo",`+
+				`"url":"https://github.com/user/my-repo",`+
+				`"sshUrl":"git@github.com:user/my-repo.git"}`,
 			""), nil
 	})
 
@@ -3713,7 +3787,9 @@ func Test_GitHubScmProvider_configureGitRemote_selectExisting_cov3(t *testing.T)
 		return strings.Contains(command, "repo") && strings.Contains(command, "list")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		return exec.NewRunResult(0,
-			`[{"nameWithOwner":"org/project","url":"https://github.com/org/project","sshUrl":"git@github.com:org/project.git"}]`,
+			`[{"nameWithOwner":"org/project",`+
+				`"url":"https://github.com/org/project",`+
+				`"sshUrl":"git@github.com:org/project.git"}]`,
 			""), nil
 	})
 
@@ -3765,7 +3841,9 @@ func Test_GitHubScmProvider_configureGitRemote_createNew_cov3(t *testing.T) {
 		return strings.Contains(command, "repo") && strings.Contains(command, "view")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		return exec.NewRunResult(0,
-			`{"nameWithOwner":"user/new-repo","url":"https://github.com/user/new-repo","sshUrl":"git@github.com:user/new-repo.git"}`,
+			`{"nameWithOwner":"user/new-repo",`+
+				`"url":"https://github.com/user/new-repo",`+
+				`"sshUrl":"git@github.com:user/new-repo.git"}`,
 			""), nil
 	})
 
@@ -3798,7 +3876,9 @@ func Test_GitHubScmProvider_configureGitRemote_enterUrl_cov3(t *testing.T) {
 	}).Respond(2)
 
 	// Prompt for URL
-	mockContext.Console.WhenPrompt(func(options input.ConsoleOptions) bool { return true }).Respond("https://github.com/user/entered-repo")
+	mockContext.Console.WhenPrompt(func(options input.ConsoleOptions) bool {
+		return true
+	}).Respond("https://github.com/user/entered-repo")
 
 	provider := &GitHubScmProvider{
 		console: mockContext.Console,
@@ -4292,10 +4372,10 @@ func Test_AzdoScmProvider_gitRepoDetails_httpsUrl_cov3(t *testing.T) {
 		env: environment.NewWithValues("test-env", map[string]string{
 			azdo.AzDoEnvironmentProjectIdName: "proj-id-123",
 			azdo.AzDoEnvironmentRepoIdName:    "repo-id-456",
-			azdo.AzDoEnvironmentOrgName:        "myorg",
-			azdo.AzDoEnvironmentProjectName:    "myproject",
-			azdo.AzDoEnvironmentRepoName:       "myrepo",
-			azdo.AzDoEnvironmentRepoWebUrl:     "https://dev.azure.com/myorg/myproject/_git/myrepo",
+			azdo.AzDoEnvironmentOrgName:       "myorg",
+			azdo.AzDoEnvironmentProjectName:   "myproject",
+			azdo.AzDoEnvironmentRepoName:      "myrepo",
+			azdo.AzDoEnvironmentRepoWebUrl:    "https://dev.azure.com/myorg/myproject/_git/myrepo",
 		}),
 	}
 	details, err := provider.gitRepoDetails(
@@ -4314,9 +4394,9 @@ func Test_AzdoScmProvider_gitRepoDetails_sshUrl_cov3(t *testing.T) {
 		env: environment.NewWithValues("test-env", map[string]string{
 			azdo.AzDoEnvironmentProjectIdName: "proj-id-123",
 			azdo.AzDoEnvironmentRepoIdName:    "repo-id-456",
-			azdo.AzDoEnvironmentOrgName:        "myorg",
-			azdo.AzDoEnvironmentProjectName:    "myproject",
-			azdo.AzDoEnvironmentRepoName:       "myrepo",
+			azdo.AzDoEnvironmentOrgName:       "myorg",
+			azdo.AzDoEnvironmentProjectName:   "myproject",
+			azdo.AzDoEnvironmentRepoName:      "myrepo",
 		}),
 	}
 	details, err := provider.gitRepoDetails(

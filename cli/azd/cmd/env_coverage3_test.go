@@ -17,8 +17,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -564,7 +564,10 @@ func Test_EnvGetValuesAction_Constructor(t *testing.T) {
 	mockCtx := mocks.NewMockContext(context.Background())
 	azdCtx := newTestAzdContext(t)
 	mgr := newTestEnvManager()
-	action := newEnvGetValuesAction(azdCtx, mgr, mockCtx.Console, &output.JsonFormatter{}, &bytes.Buffer{}, &envGetValuesFlags{})
+	action := newEnvGetValuesAction(
+		azdCtx, mgr, mockCtx.Console, &output.JsonFormatter{},
+		&bytes.Buffer{}, &envGetValuesFlags{},
+	)
 	require.NotNil(t, action)
 }
 

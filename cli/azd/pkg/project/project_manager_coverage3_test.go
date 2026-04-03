@@ -1,3 +1,4 @@
+// Copyright (c) Microsoft Corporation. Licensed under the MIT License.
 package project
 
 import (
@@ -16,13 +17,13 @@ import (
 
 // ---------- fake ServiceManager ----------
 type fakeServiceManager_Cov3 struct {
-	frameworkSvc       FrameworkService
-	serviceTarget      ServiceTarget
-	requiredTools      []tools.ExternalTool
+	frameworkSvc        FrameworkService
+	serviceTarget       ServiceTarget
+	requiredTools       []tools.ExternalTool
 	getRequiredToolsErr error
-	getFrameworkErr    error
-	getTargetErr       error
-	initErr            error
+	getFrameworkErr     error
+	getTargetErr        error
+	initErr             error
 }
 
 func (f *fakeServiceManager_Cov3) GetRequiredTools(

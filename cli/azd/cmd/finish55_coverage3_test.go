@@ -869,7 +869,9 @@ func Test_EnvSelectAction_SelectError_Finish(t *testing.T) {
 	)
 
 	console := mockinput.NewMockConsole()
-	console.WhenSelect(func(options input.ConsoleOptions) bool { return true }).RespondFn(func(_ input.ConsoleOptions) (any, error) {
+	console.WhenSelect(func(options input.ConsoleOptions) bool {
+		return true
+	}).RespondFn(func(_ input.ConsoleOptions) (any, error) {
 		return 0, errors.New("select cancelled")
 	})
 

@@ -29,19 +29,19 @@ func Test_AzureClient_GetAiModels_Coverage3(t *testing.T) {
 				Value: []*armcognitiveservices.Model{
 					{
 						Model: &armcognitiveservices.AccountModel{
-							Name:    to.Ptr("gpt-4"),
-							Format:  to.Ptr("OpenAI"),
-							Version: to.Ptr("0613"),
+							Name:    new("gpt-4"),
+							Format:  new("OpenAI"),
+							Version: new("0613"),
 						},
-						Kind: to.Ptr("OpenAI"),
+						Kind: new("OpenAI"),
 					},
 					{
 						Model: &armcognitiveservices.AccountModel{
-							Name:    to.Ptr("gpt-35-turbo"),
-							Format:  to.Ptr("OpenAI"),
-							Version: to.Ptr("0301"),
+							Name:    new("gpt-35-turbo"),
+							Format:  new("OpenAI"),
+							Version: new("0301"),
 						},
-						Kind: to.Ptr("OpenAI"),
+						Kind: new("OpenAI"),
 					},
 				},
 			})
@@ -66,7 +66,7 @@ func Test_AzureClient_GetAiUsages_Coverage3(t *testing.T) {
 			armcognitiveservices.UsageListResult{
 				Value: []*armcognitiveservices.Usage{
 					{
-						Name:         &armcognitiveservices.MetricName{Value: to.Ptr("tokens")},
+						Name:         &armcognitiveservices.MetricName{Value: new("tokens")},
 						CurrentValue: to.Ptr[float64](1000),
 						Limit:        to.Ptr[float64](10000),
 					},
@@ -93,25 +93,25 @@ func Test_AzureClient_GetResourceSkuLocations_Coverage3(t *testing.T) {
 				armcognitiveservices.ResourceSKUListResult{
 					Value: []*armcognitiveservices.ResourceSKU{
 						{
-							Kind:         to.Ptr("OpenAI"),
-							Name:         to.Ptr("S0"),
-							Tier:         to.Ptr("Standard"),
-							ResourceType: to.Ptr("accounts"),
-							Locations:    []*string{to.Ptr("EastUS"), to.Ptr("WestUS")},
+							Kind:         new("OpenAI"),
+							Name:         new("S0"),
+							Tier:         new("Standard"),
+							ResourceType: new("accounts"),
+							Locations:    []*string{new("EastUS"), new("WestUS")},
 						},
 						{
-							Kind:         to.Ptr("OpenAI"),
-							Name:         to.Ptr("S0"),
-							Tier:         to.Ptr("Standard"),
-							ResourceType: to.Ptr("accounts"),
-							Locations:    []*string{to.Ptr("EastUS")}, // duplicate
+							Kind:         new("OpenAI"),
+							Name:         new("S0"),
+							Tier:         new("Standard"),
+							ResourceType: new("accounts"),
+							Locations:    []*string{new("EastUS")}, // duplicate
 						},
 						{
-							Kind:         to.Ptr("SpeechServices"),
-							Name:         to.Ptr("F0"),
-							Tier:         to.Ptr("Free"),
-							ResourceType: to.Ptr("accounts"),
-							Locations:    []*string{to.Ptr("NorthEurope")},
+							Kind:         new("SpeechServices"),
+							Name:         new("F0"),
+							Tier:         new("Free"),
+							ResourceType: new("accounts"),
+							Locations:    []*string{new("NorthEurope")},
 						},
 					},
 				})

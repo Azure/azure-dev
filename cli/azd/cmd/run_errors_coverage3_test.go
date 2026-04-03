@@ -50,18 +50,18 @@ func Test_ExtensionShowItem_Display_Minimal(t *testing.T) {
 func Test_ExtensionShowItem_Display_AllFields(t *testing.T) {
 	t.Parallel()
 	item := &extensionShowItem{
-		Id:               "full.ext",
-		Name:             "Full Extension",
-		Description:      "Full desc",
-		Source:           "custom-src",
-		Namespace:        "full",
-		Website:          "https://example.com",
-		LatestVersion:    "2.0.0",
-		InstalledVersion: "1.0.0",
+		Id:                "full.ext",
+		Name:              "Full Extension",
+		Description:       "Full desc",
+		Source:            "custom-src",
+		Namespace:         "full",
+		Website:           "https://example.com",
+		LatestVersion:     "2.0.0",
+		InstalledVersion:  "1.0.0",
 		AvailableVersions: []string{"1.0.0", "1.5.0", "2.0.0"},
-		Tags:             []string{"tool", "testing"},
-		Usage:            "azd full do-thing",
-		Capabilities:     []extensions.CapabilityType{"mcp"},
+		Tags:              []string{"tool", "testing"},
+		Usage:             "azd full do-thing",
+		Capabilities:      []extensions.CapabilityType{"mcp"},
 		Providers: []extensions.Provider{
 			{Name: "prov1", Type: "host", Description: "Provider 1"},
 		},
@@ -131,7 +131,10 @@ func Test_PromptForExtensionChoice_Empty(t *testing.T) {
 func Test_PromptForExtensionChoice_Single(t *testing.T) {
 	t.Parallel()
 	ext := &extensions.ExtensionMetadata{Id: "my.ext", DisplayName: "My Ext"}
-	result, err := promptForExtensionChoice(context.Background(), mockinput.NewMockConsole(), []*extensions.ExtensionMetadata{ext})
+	result, err := promptForExtensionChoice(
+		context.Background(), mockinput.NewMockConsole(),
+		[]*extensions.ExtensionMetadata{ext},
+	)
 	require.NoError(t, err)
 	assert.Equal(t, "my.ext", result.Id)
 }
@@ -682,15 +685,8 @@ func Test_SelectDistinctExtension_NoPrompt(t *testing.T) {
 
 func Test_CheckForMatchingExtensions_EmptyRegistry(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
-
-	type mockSource struct {
-		extensions.Source
-	}
-
-	// The function takes a Source slice, but we need real ones with ListExtensions.
-	// Since we can't easily mock this without a Source interface impl, skip.
-	_ = ctx
+	// Cannot easily mock Source interface for checkForMatchingExtensions
+	// without a real implementation. Test is a placeholder.
 }
 
 // ---------------------------------------------------------------------------

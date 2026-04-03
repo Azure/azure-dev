@@ -1,3 +1,4 @@
+// Copyright (c) Microsoft Corporation. Licensed under the MIT License.
 package project
 
 import (
@@ -32,7 +33,10 @@ func Test_appServiceTarget_Package_Coverage3(t *testing.T) {
 
 		st := &appServiceTarget{}
 		progress := async.NewProgress[ServiceProgress]()
-		go func() { for range progress.Progress() {} }()
+		go func() {
+			for range progress.Progress() {
+			}
+		}()
 
 		result, err := st.Package(t.Context(), sc, sctx, progress)
 		progress.Done()
@@ -57,7 +61,10 @@ func Test_appServiceTarget_Package_Coverage3(t *testing.T) {
 		sctx := NewServiceContext()
 		st := &appServiceTarget{}
 		progress := async.NewProgress[ServiceProgress]()
-		go func() { for range progress.Progress() {} }()
+		go func() {
+			for range progress.Progress() {
+			}
+		}()
 
 		_, err := st.Package(t.Context(), sc, sctx, progress)
 		progress.Done()

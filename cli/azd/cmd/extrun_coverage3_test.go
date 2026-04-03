@@ -1,3 +1,4 @@
+// Copyright (c) Microsoft Corporation. Licensed under the MIT License.
 package cmd
 
 import (
@@ -8,6 +9,7 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/spf13/cobra"
@@ -281,9 +283,9 @@ func Test_ExtensionListItem_Fields(t *testing.T) {
 // =======================================================
 
 func Test_Since_ReturnsNonNegative(t *testing.T) {
-	t.Parallel()
-	// since() subtracts interaction time from elapsed time
-	// We just verify it returns without panic
+	// Reset interact time for clean test
+	tracing.InteractTimeMs.Store(0)
+	t.Cleanup(func() { tracing.InteractTimeMs.Store(0) })
 	import_time := since(time.Now())
 	assert.GreaterOrEqual(t, import_time.Nanoseconds(), int64(0))
 }

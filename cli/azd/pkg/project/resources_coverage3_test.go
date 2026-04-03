@@ -14,7 +14,7 @@ import (
 func Test_AllResourceTypes_Coverage3(t *testing.T) {
 	all := AllResourceTypes()
 	require.NotEmpty(t, all)
-	// Verify exact count of resource types
+	// Verify minimum count of resource types
 	assert.GreaterOrEqual(t, len(all), 14, "should have at least 14 resource types")
 	// Check completeness
 	seen := map[ResourceType]bool{}

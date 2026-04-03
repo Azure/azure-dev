@@ -1,0 +1,38 @@
+{
+  "version": "${EXT_VERSION}",
+  "requiredAzdVersion": "${REQUIRED_AZD_VERSION}",
+  "capabilities": [],
+  "usage": "${USAGE}",
+  "artifacts": {
+    "darwin/amd64": {
+      "checksum": { "algorithm": "sha256", "value": "${CHECKSUM_DARWIN_AMD64}" },
+      "entryPoint": "${SANITIZED_ID}-darwin-amd64",
+      "url": "${STORAGE_BASE_URL}/${SANITIZED_ID}-darwin-amd64.zip"
+    },
+    "darwin/arm64": {
+      "checksum": { "algorithm": "sha256", "value": "${CHECKSUM_DARWIN_ARM64}" },
+      "entryPoint": "${SANITIZED_ID}-darwin-arm64",
+      "url": "${STORAGE_BASE_URL}/${SANITIZED_ID}-darwin-arm64.zip"
+    },
+    "linux/amd64": {
+      "checksum": { "algorithm": "sha256", "value": "${CHECKSUM_LINUX_AMD64}" },
+      "entryPoint": "${SANITIZED_ID}-linux-amd64",
+      "url": "${STORAGE_BASE_URL}/${SANITIZED_ID}-linux-amd64.tar.gz"
+    },
+    "linux/arm64": {
+      "checksum": { "algorithm": "sha256", "value": "${CHECKSUM_LINUX_ARM64}" },
+      "entryPoint": "${SANITIZED_ID}-linux-arm64",
+      "url": "${STORAGE_BASE_URL}/${SANITIZED_ID}-linux-arm64.tar.gz"
+    },
+    "windows/amd64": {
+      "checksum": { "algorithm": "sha256", "value": "${CHECKSUM_WINDOWS_AMD64}" },
+      "entryPoint": "${SANITIZED_ID}-windows-amd64.exe",
+      "url": "${STORAGE_BASE_URL}/${SANITIZED_ID}-windows-amd64.zip"
+    },
+    "windows/arm64": {
+      "checksum": { "algorithm": "sha256", "value": "${CHECKSUM_WINDOWS_ARM64}" },
+      "entryPoint": "${SANITIZED_ID}-windows-arm64.exe",
+      "url": "${STORAGE_BASE_URL}/${SANITIZED_ID}-windows-arm64.zip"
+    }
+  }
+}

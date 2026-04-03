@@ -895,7 +895,11 @@ func (t *aksTarget) getK8sNamespace(serviceConfig *ServiceConfig) string {
 	return namespace
 }
 
-func (t *aksTarget) setK8sContext(ctx context.Context, serviceConfig *ServiceConfig, eventName ext.Event) error {
+func (t *aksTarget) setK8sContext(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	eventName ext.Event,
+) error {
 	t.kubectl.SetEnv(t.env.Dotenv())
 	hasCustomKubeConfig := false
 
@@ -906,28 +910,70 @@ func (t *aksTarget) setK8sContext(ctx context.Context, serviceConfig *ServiceCon
 		hasCustomKubeConfig = true
 	}
 
-	targetResource, err := t.resourceManager.GetTargetResource(ctx, t.env.GetSubscriptionId(), serviceConfig)
+	targetResource, err := t.resourceManager.GetTargetResource(
+		ctx, t.env.GetSubscriptionId(), serviceConfig)
 	if err != nil {
+		if eventName == "postprovision" {
+			return t.skipPostprovisionK8sSetup(ctx, err)
+		}
 		return err
 	}
 
+	// When the AKS cluster hasn't been provisioned yet the target resource
+	// will have an empty resource name (via SupportsDelayedProvisioning).
+	// During postprovision this is expected in multi-phase provisioning
+	// workflows — skip gracefully instead of failing.
+	if targetResource.ResourceName() == "" && eventName == "postprovision" {
+		return t.skipPostprovisionK8sSetup(
+			ctx, fmt.Errorf("AKS cluster resource not yet provisioned"))
+	}
+
 	defaultNamespace := t.getK8sNamespace(serviceConfig)
-	_, err = t.ensureClusterContext(ctx, serviceConfig, targetResource, defaultNamespace)
+	_, err = t.ensureClusterContext(
+		ctx, serviceConfig, targetResource, defaultNamespace)
 	if err != nil {
+		if eventName == "postprovision" {
+			return t.skipPostprovisionK8sSetup(ctx, err)
+		}
 		return err
 	}
 
 	err = t.ensureNamespace(ctx, defaultNamespace)
 	if err != nil {
+		if eventName == "postprovision" {
+			return t.skipPostprovisionK8sSetup(ctx, err)
+		}
 		return err
 	}
 
-	// Display message to the user when we detect they are using a non-default KUBECONFIG configuration
-	// In standard AZD AKS deployment users should not typically need to set a custom KUBECONFIG
+	// Display message to the user when we detect they are using a
+	// non-default KUBECONFIG configuration. In standard AZD AKS deployment
+	// users should not typically need to set a custom KUBECONFIG.
 	if hasCustomKubeConfig && eventName == "predeploy" {
-		t.console.Message(ctx, output.WithWarningFormat("Using KUBECONFIG @ %s\n", kubeConfigPath))
+		t.console.Message(
+			ctx,
+			output.WithWarningFormat(
+				"Using KUBECONFIG @ %s\n", kubeConfigPath))
 	}
 
+	return nil
+}
+
+// skipPostprovisionK8sSetup logs a warning and returns nil so that
+// postprovision continues even when Kubernetes context setup fails.
+// The context will be configured later when a deployment is performed.
+func (t *aksTarget) skipPostprovisionK8sSetup(
+	ctx context.Context,
+	reason error,
+) error {
+	log.Printf(
+		"skipping k8s context setup during postprovision: %s\n",
+		reason.Error())
+	t.console.Message(ctx, output.WithWarningFormat(
+		"AKS cluster not available yet, skipping Kubernetes "+
+			"context setup. It will be configured when the "+
+			"cluster is provisioned and a deployment is "+
+			"performed.\n"))
 	return nil
 }
 

@@ -456,16 +456,18 @@ func newRootCmd(
 			"toolFirstRun",
 			middleware.NewToolFirstRunMiddleware,
 			func(descriptor *actions.ActionDescriptor) bool {
-				name := descriptor.Options.Command.Name()
-				return name != "tool" && name != "version" && name != "config"
+				cmd := descriptor.Options.Command
+				return !strings.HasPrefix(cmd.CommandPath(), "azd tool") &&
+					cmd.Name() != "version" && cmd.Name() != "config"
 			},
 		).
 		UseMiddlewareWhen(
 			"toolUpdateCheck",
 			middleware.NewToolUpdateCheckMiddleware,
 			func(descriptor *actions.ActionDescriptor) bool {
-				name := descriptor.Options.Command.Name()
-				return name != "tool" && name != "version" && name != "config"
+				cmd := descriptor.Options.Command
+				return !strings.HasPrefix(cmd.CommandPath(), "azd tool") &&
+					cmd.Name() != "version" && cmd.Name() != "config"
 			},
 		)
 

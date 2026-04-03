@@ -34,6 +34,13 @@ func (m *mockUserConfigManager) Save(cfg config.Config) error {
 	return nil
 }
 
+// staticDir returns a configDirFn that always yields the given directory.
+// This is a test helper for constructing [UpdateChecker] instances with
+// a known, fixed directory.
+func staticDir(dir string) func() (string, error) {
+	return func() (string, error) { return dir, nil }
+}
+
 // ---------------------------------------------------------------------------
 // ShouldCheck
 // ---------------------------------------------------------------------------
@@ -45,7 +52,7 @@ func TestShouldCheck(t *testing.T) {
 		t.Parallel()
 
 		mgr := newMockUserConfigManager()
-		uc := NewUpdateChecker(mgr, nil, t.TempDir())
+		uc := NewUpdateChecker(mgr, nil, staticDir(t.TempDir()))
 
 		assert.True(t, uc.ShouldCheck(t.Context()))
 	})
@@ -61,7 +68,7 @@ func TestShouldCheck(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		uc := NewUpdateChecker(mgr, nil, t.TempDir())
+		uc := NewUpdateChecker(mgr, nil, staticDir(t.TempDir()))
 		assert.False(t, uc.ShouldCheck(t.Context()))
 	})
 
@@ -76,7 +83,7 @@ func TestShouldCheck(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		uc := NewUpdateChecker(mgr, nil, t.TempDir())
+		uc := NewUpdateChecker(mgr, nil, staticDir(t.TempDir()))
 		assert.True(t, uc.ShouldCheck(t.Context()))
 	})
 
@@ -87,7 +94,7 @@ func TestShouldCheck(t *testing.T) {
 		err := mgr.cfg.Set(configKeyUpdateChecks, "off")
 		require.NoError(t, err)
 
-		uc := NewUpdateChecker(mgr, nil, t.TempDir())
+		uc := NewUpdateChecker(mgr, nil, staticDir(t.TempDir()))
 		assert.False(t, uc.ShouldCheck(t.Context()))
 	})
 
@@ -100,7 +107,7 @@ func TestShouldCheck(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		uc := NewUpdateChecker(mgr, nil, t.TempDir())
+		uc := NewUpdateChecker(mgr, nil, staticDir(t.TempDir()))
 		assert.True(t, uc.ShouldCheck(t.Context()))
 	})
 
@@ -119,7 +126,7 @@ func TestShouldCheck(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		uc := NewUpdateChecker(mgr, nil, t.TempDir())
+		uc := NewUpdateChecker(mgr, nil, staticDir(t.TempDir()))
 		assert.True(t, uc.ShouldCheck(t.Context()))
 	})
 }
@@ -136,7 +143,7 @@ func TestSaveCacheAndGetCachedResults(t *testing.T) {
 
 		tmpDir := t.TempDir()
 		mgr := newMockUserConfigManager()
-		uc := NewUpdateChecker(mgr, nil, tmpDir)
+		uc := NewUpdateChecker(mgr, nil, staticDir(tmpDir))
 
 		now := time.Now().UTC().Truncate(time.Second)
 		cache := &UpdateCheckCache{
@@ -173,7 +180,7 @@ func TestSaveCacheAndGetCachedResults(t *testing.T) {
 
 		tmpDir := t.TempDir()
 		mgr := newMockUserConfigManager()
-		uc := NewUpdateChecker(mgr, nil, tmpDir)
+		uc := NewUpdateChecker(mgr, nil, staticDir(tmpDir))
 
 		cache, err := uc.GetCachedResults()
 		assert.NoError(t, err)
@@ -185,7 +192,7 @@ func TestSaveCacheAndGetCachedResults(t *testing.T) {
 
 		tmpDir := t.TempDir()
 		mgr := newMockUserConfigManager()
-		uc := NewUpdateChecker(mgr, nil, tmpDir)
+		uc := NewUpdateChecker(mgr, nil, staticDir(tmpDir))
 
 		cache := &UpdateCheckCache{
 			CheckedAt: time.Now().UTC(),
@@ -213,7 +220,7 @@ func TestShouldShowNotification(t *testing.T) {
 		t.Parallel()
 
 		mgr := newMockUserConfigManager()
-		uc := NewUpdateChecker(mgr, nil, t.TempDir())
+		uc := NewUpdateChecker(mgr, nil, staticDir(t.TempDir()))
 
 		assert.False(t, uc.ShouldShowNotification(t.Context()))
 	})
@@ -228,7 +235,7 @@ func TestShouldShowNotification(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		uc := NewUpdateChecker(mgr, nil, t.TempDir())
+		uc := NewUpdateChecker(mgr, nil, staticDir(t.TempDir()))
 		assert.True(t, uc.ShouldShowNotification(t.Context()))
 	})
 
@@ -251,7 +258,7 @@ func TestShouldShowNotification(t *testing.T) {
 			)
 			require.NoError(t, err)
 
-			uc := NewUpdateChecker(mgr, nil, t.TempDir())
+			uc := NewUpdateChecker(mgr, nil, staticDir(t.TempDir()))
 			assert.False(t,
 				uc.ShouldShowNotification(t.Context()))
 		},
@@ -276,7 +283,7 @@ func TestShouldShowNotification(t *testing.T) {
 			)
 			require.NoError(t, err)
 
-			uc := NewUpdateChecker(mgr, nil, t.TempDir())
+			uc := NewUpdateChecker(mgr, nil, staticDir(t.TempDir()))
 			assert.True(t,
 				uc.ShouldShowNotification(t.Context()))
 		},
@@ -291,7 +298,7 @@ func TestMarkNotificationShown(t *testing.T) {
 	t.Parallel()
 
 	mgr := newMockUserConfigManager()
-	uc := NewUpdateChecker(mgr, nil, t.TempDir())
+	uc := NewUpdateChecker(mgr, nil, staticDir(t.TempDir()))
 
 	err := uc.MarkNotificationShown(t.Context())
 	require.NoError(t, err)
@@ -389,7 +396,7 @@ func TestCheck(t *testing.T) {
 			},
 		}
 
-		uc := NewUpdateChecker(mgr, det, tmpDir)
+		uc := NewUpdateChecker(mgr, det, staticDir(tmpDir))
 
 		tools := []*ToolDefinition{
 			{Id: "tool-a", Name: "Tool A"},
@@ -439,7 +446,7 @@ func TestCheck(t *testing.T) {
 			},
 		}
 
-		uc := NewUpdateChecker(mgr, det, tmpDir)
+		uc := NewUpdateChecker(mgr, det, staticDir(tmpDir))
 
 		// Seed a cache with a known latest version.
 		seedCache := &UpdateCheckCache{
@@ -478,7 +485,7 @@ func TestHasUpdatesAvailable(t *testing.T) {
 		tmpDir := t.TempDir()
 		mgr := newMockUserConfigManager()
 		det := &mockDetector{}
-		uc := NewUpdateChecker(mgr, det, tmpDir)
+		uc := NewUpdateChecker(mgr, det, staticDir(tmpDir))
 
 		hasUpdates, count, err := uc.HasUpdatesAvailable(t.Context())
 		require.NoError(t, err)
@@ -492,7 +499,7 @@ func TestHasUpdatesAvailable(t *testing.T) {
 		tmpDir := t.TempDir()
 		mgr := newMockUserConfigManager()
 		det := &mockDetector{}
-		uc := NewUpdateChecker(mgr, det, tmpDir)
+		uc := NewUpdateChecker(mgr, det, staticDir(tmpDir))
 
 		cache := &UpdateCheckCache{
 			CheckedAt: time.Now().UTC(),

@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -83,21 +84,40 @@ type UpdateCheckResult struct {
 type UpdateChecker struct {
 	configManager config.UserConfigManager
 	detector      Detector
-	cacheFilePath string
+	configDirFn   func() (string, error)
+
+	cachePathOnce sync.Once
+	cachePath     string
+	cachePathErr  error
 }
 
-// NewUpdateChecker creates an [UpdateChecker] that stores its cache
-// file inside azdConfigDir.
+// NewUpdateChecker creates an [UpdateChecker] that resolves its cache
+// file location lazily via configDirFn.  This avoids blocking I/O
+// (e.g. [config.GetUserConfigDir]) during IoC container registration.
 func NewUpdateChecker(
 	configManager config.UserConfigManager,
 	detector Detector,
-	azdConfigDir string,
+	configDirFn func() (string, error),
 ) *UpdateChecker {
 	return &UpdateChecker{
 		configManager: configManager,
 		detector:      detector,
-		cacheFilePath: filepath.Join(azdConfigDir, toolCheckCacheFileName),
+		configDirFn:   configDirFn,
 	}
+}
+
+// getCacheFilePath returns the resolved path to the on-disk cache file,
+// computing it once on first call.
+func (uc *UpdateChecker) getCacheFilePath() (string, error) {
+	uc.cachePathOnce.Do(func() {
+		dir, err := uc.configDirFn()
+		if err != nil {
+			uc.cachePathErr = fmt.Errorf("resolving config directory: %w", err)
+			return
+		}
+		uc.cachePath = filepath.Join(dir, toolCheckCacheFileName)
+	})
+	return uc.cachePath, uc.cachePathErr
 }
 
 // ShouldCheck returns true when enough time has elapsed since the last
@@ -211,7 +231,12 @@ func (uc *UpdateChecker) Check(
 // GetCachedResults reads and returns the on-disk update check cache.
 // It returns (nil, nil) when the cache file does not yet exist.
 func (uc *UpdateChecker) GetCachedResults() (*UpdateCheckCache, error) {
-	data, err := os.ReadFile(uc.cacheFilePath)
+	cachePath, err := uc.getCacheFilePath()
+	if err != nil {
+		return nil, err
+	}
+
+	data, err := os.ReadFile(cachePath)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, nil
@@ -231,7 +256,12 @@ func (uc *UpdateChecker) GetCachedResults() (*UpdateCheckCache, error) {
 // SaveCache serializes the cache to disk, creating any intermediate
 // directories as needed.
 func (uc *UpdateChecker) SaveCache(cache *UpdateCheckCache) error {
-	dir := filepath.Dir(uc.cacheFilePath)
+	cachePath, err := uc.getCacheFilePath()
+	if err != nil {
+		return err
+	}
+
+	dir := filepath.Dir(cachePath)
 	if err := os.MkdirAll(dir, osutil.PermissionDirectory); err != nil {
 		return fmt.Errorf("creating cache directory: %w", err)
 	}
@@ -242,7 +272,7 @@ func (uc *UpdateChecker) SaveCache(cache *UpdateCheckCache) error {
 	}
 
 	if err := os.WriteFile(
-		uc.cacheFilePath, data, osutil.PermissionFile,
+		cachePath, data, osutil.PermissionFile,
 	); err != nil {
 		return fmt.Errorf("writing tool check cache: %w", err)
 	}

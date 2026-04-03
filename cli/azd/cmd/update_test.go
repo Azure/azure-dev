@@ -101,3 +101,26 @@ func TestPersistNonChannelFlags(t *testing.T) {
 		assert.Equal(t, 12, updateCfg.CheckIntervalHours)
 	})
 }
+
+func TestUpdateErrorCodes(t *testing.T) {
+	t.Parallel()
+
+	// Verify telemetry result codes used in updateAction.Run() are non-empty
+	// and follow the expected "update." prefix convention.
+	codes := []string{
+		update.CodeSuccess,
+		update.CodeAlreadyUpToDate,
+		update.CodeVersionCheckFailed,
+		update.CodeSkippedCI,
+		update.CodePackageManagerFailed,
+		update.CodeChannelSwitchDecline,
+		update.CodeReplaceFailed,
+		update.CodeConfigFailed,
+		update.CodeInvalidInput,
+	}
+
+	for _, code := range codes {
+		assert.NotEmpty(t, code)
+		assert.Contains(t, code, "update.")
+	}
+}

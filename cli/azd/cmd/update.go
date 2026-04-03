@@ -126,6 +126,7 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// Persist non-channel config flags immediately (auto-update, check-interval)
 	configChanged, err := a.persistNonChannelFlags(userConfig)
 	if err != nil {
+		tracing.SetUsageAttributes(fields.UpdateResult.String(update.CodeConfigFailed))
 		return nil, err
 	}
 
@@ -134,6 +135,7 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if switchingChannels {
 		newChannel, err := update.ParseChannel(a.flags.channel)
 		if err != nil {
+			tracing.SetUsageAttributes(fields.UpdateResult.String(update.CodeInvalidInput))
 			return nil, err
 		}
 		_ = update.SaveChannel(userConfig, newChannel)
@@ -141,6 +143,7 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	} else if a.flags.channel != "" {
 		// Same channel explicitly set — just persist it
 		if err := update.SaveChannel(userConfig, update.Channel(a.flags.channel)); err != nil {
+			tracing.SetUsageAttributes(fields.UpdateResult.String(update.CodeConfigFailed))
 			return nil, err
 		}
 		configChanged = true
@@ -190,6 +193,7 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if a.onlyConfigFlagsSet() {
 		if configChanged {
 			if err := a.configManager.Save(userConfig); err != nil {
+				tracing.SetUsageAttributes(fields.UpdateResult.String(update.CodeConfigFailed))
 				return nil, fmt.Errorf("failed to save config: %w", err)
 			}
 		}
@@ -258,6 +262,7 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// Now persist all config changes (including channel) after confirmation
 	if configChanged {
 		if err := a.configManager.Save(userConfig); err != nil {
+			tracing.SetUsageAttributes(fields.UpdateResult.String(update.CodeConfigFailed))
 			return nil, fmt.Errorf("failed to save config: %w", err)
 		}
 	}

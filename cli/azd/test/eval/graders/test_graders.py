@@ -4,6 +4,11 @@ Unit tests for eval graders.
 Tests grade() functions with mocked HTTP responses to verify scoring logic
 without making real Azure API or HTTP calls.
 """
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent))
+
 import json
 from unittest.mock import patch, MagicMock
 from urllib.error import HTTPError, URLError

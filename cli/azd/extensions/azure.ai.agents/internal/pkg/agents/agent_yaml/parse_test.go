@@ -561,3 +561,63 @@ parameters:
 		t.Errorf("Expected kind 'string', got '%s'", p.Kind)
 	}
 }
+
+// TestLoadAndValidateAgentManifest_SecretParameter verifies that
+// secret: true inside the schema block is parsed into Property.Secret.
+func TestLoadAndValidateAgentManifest_SecretParameter(t *testing.T) {
+	yamlContent := []byte(`
+name: test-secret
+template:
+  name: test
+  kind: hosted
+  protocols:
+    - protocol: responses
+resources:
+  - kind: model
+    name: chat
+    id: gpt-5
+parameters:
+  api_key:
+    description: API key for the custom MCP server
+    schema:
+      type: string
+      secret: true
+    required: true
+  display_name:
+    description: A non-secret parameter
+    schema:
+      type: string
+`)
+
+	manifest, err := LoadAndValidateAgentManifest(yamlContent)
+	if err != nil {
+		t.Fatalf("LoadAndValidateAgentManifest failed: %v", err)
+	}
+
+	if len(manifest.Parameters.Properties) != 2 {
+		t.Fatalf("Expected 2 parameters, got %d", len(manifest.Parameters.Properties))
+	}
+
+	paramsByName := map[string]Property{}
+	for _, p := range manifest.Parameters.Properties {
+		paramsByName[p.Name] = p
+	}
+
+	// api_key should be secret
+	apiKey, ok := paramsByName["api_key"]
+	if !ok {
+		t.Fatal("Missing parameter api_key")
+	}
+	if apiKey.Secret == nil || !*apiKey.Secret {
+		t.Error("Expected api_key to have secret=true")
+	}
+
+	// display_name should NOT be secret
+	displayName, ok := paramsByName["display_name"]
+	if !ok {
+		t.Fatal("Missing parameter display_name")
+	}
+	if displayName.Secret != nil {
+		t.Errorf("Expected display_name secret to be nil, got %v", *displayName.Secret)
+	}
+}

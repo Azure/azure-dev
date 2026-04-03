@@ -226,7 +226,15 @@ func resourcesEnvUpdate(ctx context.Context, resources []project.Resource, azdCl
 }
 
 func connectionsEnvUpdate(ctx context.Context, connections []project.ToolConnection, azdClient *azdext.AzdClient, envName string) error {
-	connectionsJson, err := json.Marshal(connections)
+	// Normalize credentials before serializing: CustomKeys authType requires
+	// credentials nested under "keys" for the ARM API.
+	normalized := make([]project.ToolConnection, len(connections))
+	copy(normalized, connections)
+	for i := range normalized {
+		normalized[i].Credentials = normalizeCredentials(normalized[i].AuthType, normalized[i].Credentials)
+	}
+
+	connectionsJson, err := json.Marshal(normalized)
 	if err != nil {
 		return fmt.Errorf("failed to marshal tool connections to JSON: %w", err)
 	}
@@ -238,6 +246,23 @@ func connectionsEnvUpdate(ctx context.Context, connections []project.ToolConnect
 
 	return setEnvVar(ctx, azdClient, envName, "AI_PROJECT_CONNECTIONS", escapedJsonString)
 }
+
+// normalizeCredentials ensures credentials match the expected ARM format.
+// CustomKeys requires credentials nested under "keys": { "keys": { "key": "val" } }.
+// If already wrapped, returns as-is. Other auth types are returned unchanged.
+func normalizeCredentials(authType string, creds map[string]any) map[string]any {
+	if authType != "CustomKeys" || len(creds) == 0 {
+		return creds
+	}
+
+	// Already correctly wrapped
+	if _, hasKeys := creds["keys"]; hasKeys && len(creds) == 1 {
+		return creds
+	}
+
+	return map[string]any{"keys": creds}
+}
+
 func containerAgentHandling(ctx context.Context, azdClient *azdext.AzdClient, project *azdext.ProjectConfig, svc *azdext.ServiceConfig) error {
 	servicePath := svc.RelativePath
 	fullPath := filepath.Join(project.Path, servicePath)

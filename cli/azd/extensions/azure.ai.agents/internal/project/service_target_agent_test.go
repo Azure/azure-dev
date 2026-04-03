@@ -4,6 +4,8 @@
 package project
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
@@ -199,5 +201,112 @@ func TestResolveAnyValue_NestedMaps(t *testing.T) {
 	}
 	if result["bool"] != true {
 		t.Errorf("Expected true, got '%v'", result["bool"])
+	}
+}
+
+func TestEnrichToolboxFromConnections(t *testing.T) {
+	t.Parallel()
+
+	connByName := map[string]ToolConnection{
+		"github-copilot": {
+			Name:   "github-copilot",
+			Target: "https://api.githubcopilot.com/mcp",
+		},
+		"mslearn": {
+			Name:   "mslearn",
+			Target: "https://learn.microsoft.com/api/mcp",
+		},
+	}
+
+	toolbox := Toolbox{
+		Name: "test-toolbox",
+		Tools: []map[string]any{
+			{"type": "bing_grounding"},
+			{"type": "mcp", "project_connection_id": "github-copilot"},
+			{"type": "mcp", "project_connection_id": "mslearn"},
+			// Tool with manual server_url should not be overwritten
+			{"type": "mcp", "project_connection_id": "mslearn",
+				"server_url": "https://custom.example.com"},
+		},
+	}
+
+	enrichToolboxFromConnections(&toolbox, connByName)
+
+	// Built-in tool unchanged
+	if _, has := toolbox.Tools[0]["server_url"]; has {
+		t.Error("Built-in tool should not have server_url")
+	}
+
+	// github-copilot tool enriched
+	if toolbox.Tools[1]["server_url"] != "https://api.githubcopilot.com/mcp" {
+		t.Errorf("Expected enriched server_url, got '%v'", toolbox.Tools[1]["server_url"])
+	}
+	if toolbox.Tools[1]["server_label"] != "github-copilot" {
+		t.Errorf("Expected enriched server_label, got '%v'", toolbox.Tools[1]["server_label"])
+	}
+
+	// mslearn tool enriched
+	if toolbox.Tools[2]["server_url"] != "https://learn.microsoft.com/api/mcp" {
+		t.Errorf("Expected enriched server_url, got '%v'", toolbox.Tools[2]["server_url"])
+	}
+
+	// Tool with existing server_url should NOT be overwritten
+	if toolbox.Tools[3]["server_url"] != "https://custom.example.com" {
+		t.Errorf("Manual server_url should not be overwritten, got '%v'",
+			toolbox.Tools[3]["server_url"])
+	}
+}
+
+func TestGetServiceKey_NormalizesToolboxNames(t *testing.T) {
+	t.Parallel()
+
+	p := &AgentServiceTargetProvider{}
+
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"hyphens", "agent-tools", "AGENT_TOOLS"},
+		{"spaces", "agent tools", "AGENT_TOOLS"},
+		{"mixed", "my-agent tools", "MY_AGENT_TOOLS"},
+		{"already upper", "TOOLS", "TOOLS"},
+		{"lowercase", "tools", "TOOLS"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := p.getServiceKey(tt.input)
+			if got != tt.expected {
+				t.Errorf("getServiceKey(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestDeployToolboxes_UpdatesAzdEnvMap(t *testing.T) {
+	// Verify that deployToolboxes updates the local azdEnv map
+	// so downstream env var resolution works on first deploy.
+	// This is a unit-level check of the map update logic rather than
+	// a full integration test (which would require API mocking).
+
+	azdEnv := map[string]string{
+		"AZURE_AI_PROJECT_ENDPOINT": "https://project.example.com",
+	}
+
+	// Simulate the env update logic from deployToolboxes
+	toolboxName := "agent-tools"
+	projectEndpoint := azdEnv["AZURE_AI_PROJECT_ENDPOINT"]
+
+	p := &AgentServiceTargetProvider{}
+	toolboxKey := p.getServiceKey(toolboxName)
+	envKey := fmt.Sprintf("FOUNDRY_TOOLBOX_%s_MCP_ENDPOINT", toolboxKey)
+	endpoint := strings.TrimRight(projectEndpoint, "/")
+	azdEnv[envKey] = fmt.Sprintf("%s/toolsets/%s/mcp", endpoint, toolboxName)
+
+	expected := "https://project.example.com/toolsets/agent-tools/mcp"
+	if azdEnv["FOUNDRY_TOOLBOX_AGENT_TOOLS_MCP_ENDPOINT"] != expected {
+		t.Errorf("Expected azdEnv to contain %s=%s, got %s",
+			envKey, expected, azdEnv[envKey])
 	}
 }

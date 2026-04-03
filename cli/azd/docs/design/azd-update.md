@@ -13,7 +13,7 @@ Today, when a new version of `azd` is available, users see a warning message wit
 1. **`azd update`** — a command that performs the update for the user
 2. **Channel management** — ability to switch between `stable` and `daily` builds
 
-The feature ships as a command currently in preview. On first use, a preview notice is displayed. The `azd update` command is always available.
+The feature ships as a command currently in Beta. On first use, a notice is displayed. The `azd update` command is always available.
 
 ---
 
@@ -23,7 +23,7 @@ The feature ships as a command currently in preview. On first use, a preview not
 - Preserve user control (channel selection, check interval)
 - Avoid disruption to CI/CD pipelines
 - Respect platform install methods (MSI, Install Scripts, Homebrew, winget, choco)
-- Ship safely as a preview feature while gathering feedback
+- Ship safely as a beta feature while gathering feedback
 
 ---
 
@@ -313,8 +313,6 @@ azd version 1.24.0-beta.1-daily.5935787 (commit abc1234) (daily)
 
 The channel suffix is derived from the running binary's version string (presence of `daily.` pattern), not the configured channel. This means the output always reflects what the binary actually is.
 
-When the feature toggle is off, `azd version` output stays unchanged — no suffix, no channel info.
-
 ### 7. Telemetry
 
 Uses the existing azd telemetry infrastructure (OpenTelemetry). New telemetry fields tracked on every update operation:
@@ -344,15 +342,18 @@ Uses the existing azd telemetry infrastructure (OpenTelemetry). New telemetry fi
 | `update.unsupportedInstallMethod` | Unknown or unsupported install method |
 | `update.channelSwitchDowngrade` | User declined when switching channels |
 | `update.skippedCI` | Skipped due to CI/non-interactive environment |
+| `update.nonStandardInstall` | Non-standard install location detected |
+| `update.configFailed` | Failed to read or persist user config |
+| `update.invalidInput` | Invalid flag value (e.g., unrecognized channel) |
 
 These codes are integrated into azd's `MapError` pipeline, so update failures show up properly in telemetry dashboards alongside other command errors.
 
-### 8. Feature Stage (Preview)
+### 8. Feature Stage (Beta)
 
-The update feature is currently in preview:
+The update command is listed as **Beta** in [`feature-stages.md`](../feature-stages.md).
 
-- `azd update` works without needing any config toggle
-- On first use, when no `updates.*` configuration exists, a preview notice is displayed.
+- `azd update` works without needing any config toggle.
+- On first use, when no `updates.*` configuration exists, a notice is displayed and a default channel is persisted so the notice only appears once.
 
 ### 9. Update Banner Suppression
 

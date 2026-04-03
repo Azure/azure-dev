@@ -109,11 +109,11 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		userConfig = config.NewEmptyConfig()
 	}
 
-	// Show preview notice on first use
+	// Show notice on first use
 	if !update.HasUpdateConfig(userConfig) {
 		a.console.MessageUxItem(ctx, &ux.MessageTitle{
 			Title: fmt.Sprintf(
-				"azd update is currently in preview. "+
+				"azd update is currently in Beta. "+
 					"To learn more about feature stages, visit %s.",
 				output.WithLinkFormat("https://aka.ms/azd-feature-stages")),
 		})

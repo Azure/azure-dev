@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -150,9 +151,12 @@ func (m *ToolUpdateCheckMiddleware) triggerBackgroundCheckIfNeeded(ctx context.C
 			}
 		}()
 
-		// Detach from the parent context so cancellation of the
-		// command does not abort the in-flight update check.
-		checkCtx := context.WithoutCancel(ctx)
+		// Use a bounded timeout so the goroutine always terminates,
+		// even if tool detection hangs.  This prevents goroutine leaks
+		// that cause CI pipelines to time out.
+		checkCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
 		if _, err := m.manager.CheckForUpdates(checkCtx); err != nil {
 			log.Printf("tool-update-check: background check failed: %v", err)
 		}

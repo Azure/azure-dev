@@ -971,8 +971,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		configManager config.UserConfigManager,
 		detector tool.Detector,
 	) *tool.UpdateChecker {
-		azdConfigDir, _ := config.GetUserConfigDir()
-		return tool.NewUpdateChecker(configManager, detector, azdConfigDir)
+		return tool.NewUpdateChecker(configManager, detector, config.GetUserConfigDir)
 	})
 	container.MustRegisterSingleton(func(
 		detector tool.Detector,

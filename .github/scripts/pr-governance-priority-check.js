@@ -1,5 +1,7 @@
 // PR Governance: Check sprint/milestone status of linked issues
 // and post informational comments to help contributors understand prioritization.
+const PROJECT_NUMBER = 182;
+
 module.exports = async ({ github, context, core }) => {
   let issueNumbers;
   try {
@@ -43,7 +45,7 @@ module.exports = async ({ github, context, core }) => {
       // Get current sprint iteration
       const sprintData = await graphqlWithToken(`{
         organization(login: "Azure") {
-          projectV2(number: 182) {
+          projectV2(number: ${PROJECT_NUMBER}) {
             field(name: "Sprint") {
               ... on ProjectV2IterationField {
                 id
@@ -94,7 +96,7 @@ module.exports = async ({ github, context, core }) => {
 
             const projectItems = issueData.repository.issue.projectItems.nodes;
             const match = projectItems.find(item =>
-              item.project.number === 182 && item.fieldValueByName?.title === currentSprint.title
+              item.project.number === PROJECT_NUMBER && item.fieldValueByName?.title === currentSprint.title
             );
             if (match) {
               sprintInfo[issueNum] = match.fieldValueByName.title;

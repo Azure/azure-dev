@@ -12,8 +12,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
-// Creates a new BashScript command runner
-func NewBashScript(commandRunner exec.CommandRunner, cwd string, envVars []string) tools.Script {
+// NewBashScript creates a new ScriptExecutor for bash scripts.
+func NewBashScript(commandRunner exec.CommandRunner, cwd string, envVars []string) tools.ScriptExecutor {
 	return &bashScript{
 		commandRunner: commandRunner,
 		cwd:           cwd,
@@ -27,8 +27,13 @@ type bashScript struct {
 	envVars       []string
 }
 
-// Executes the specified bash script
-// When interactive is true will attach to stdin, stdout & stderr
+// Prepare is a no-op for bash — bash is assumed available on all platforms.
+func (bs *bashScript) Prepare(_ context.Context, _ string) error {
+	return nil
+}
+
+// Execute runs the specified bash script.
+// When interactive is true will attach to stdin, stdout & stderr.
 func (bs *bashScript) Execute(ctx context.Context, path string, options tools.ExecOptions) (exec.RunResult, error) {
 	var runArgs exec.RunArgs
 	// Bash likes all path separators in POSIX format

@@ -74,11 +74,6 @@ func newPythonExecutor(
 	}
 }
 
-// Language returns [ScriptLanguagePython].
-func (e *pythonExecutor) Language() ScriptLanguage {
-	return ScriptLanguagePython
-}
-
 // Prepare verifies that Python is installed and, when a project
 // file is found, creates a virtual environment and installs
 // dependencies. The venv naming convention follows

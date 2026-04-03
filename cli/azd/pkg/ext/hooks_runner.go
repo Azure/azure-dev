@@ -20,9 +20,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/bash"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/language"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/powershell"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/python"
 )
 
@@ -122,26 +120,6 @@ func (h *HooksRunner) RunHooks(
 	return nil
 }
 
-// Gets the script to execute based on the hook configuration values
-// For inline scripts this will also create a temporary script file to execute
-func (h *HooksRunner) GetScript(hookConfig *HookConfig, envVars []string) (tools.Script, error) {
-	if err := hookConfig.validate(); err != nil {
-		return nil, err
-	}
-
-	switch ShellType(strings.Split(string(hookConfig.Shell), " ")[0]) {
-	case ShellTypeBash:
-		return bash.NewBashScript(h.commandRunner, h.cwd, envVars), nil
-	case ShellTypePowershell:
-		return powershell.NewPowershellScript(h.commandRunner, h.cwd, envVars), nil
-	default:
-		return nil, fmt.Errorf(
-			"shell type '%s' is not a valid option. Only 'sh' and 'pwsh' are supported",
-			hookConfig.Shell,
-		)
-	}
-}
-
 func (h *HooksRunner) execHook(
 	ctx context.Context, hookConfig *HookConfig, options *tools.ExecOptions,
 ) error {
@@ -173,31 +151,11 @@ func (h *HooksRunner) execHook(
 		}
 	}
 
-	// validate() resolves the hook's language, path, and shell
-	// type. It must run before the language/shell branch below.
+	// validate() resolves the hook's language, path, and shell type.
 	if err := hookConfig.validate(); err != nil {
 		return err
 	}
 
-	// Language hooks (Python, JS, TS, DotNet) are executed by a
-	// language-specific ScriptExecutor instead of a shell script.
-	if hookConfig.IsLanguageHook() {
-		return h.execLanguageHook(
-			ctx, hookConfig, hookEnv.Environ(), options,
-		)
-	}
-
-	return h.execShellHook(ctx, hookConfig, hookEnv.Environ(), options)
-}
-
-// execLanguageHook prepares and executes a programming-language hook
-// via the [language.ScriptExecutor] pipeline.
-func (h *HooksRunner) execLanguageHook(
-	ctx context.Context,
-	hookConfig *HookConfig,
-	envVars []string,
-	options *tools.ExecOptions,
-) error {
 	// Determine the boundary directory for project file discovery.
 	boundaryDir := h.cwd
 	if hookConfig.cwd != "" {
@@ -213,12 +171,15 @@ func (h *HooksRunner) execLanguageHook(
 			dir = filepath.Join(boundaryDir, dir)
 		}
 		cwd = dir
-	} else if hookConfig.path != "" {
+	} else if hookConfig.path != "" && hookConfig.IsLanguageHook() {
 		cwd = filepath.Dir(
 			filepath.Join(boundaryDir, hookConfig.path),
 		)
 	}
 
+	envVars := hookEnv.Environ()
+
+	// Create executor (unified factory for ALL languages).
 	pythonCli := python.NewCli(h.commandRunner)
 	executor, err := language.GetExecutor(
 		hookConfig.Language,
@@ -232,8 +193,7 @@ func (h *HooksRunner) execLanguageHook(
 		if errors.Is(err, language.ErrUnsupportedLanguage) {
 			return &errorhandler.ErrorWithSuggestion{
 				Err: fmt.Errorf(
-					"getting %s executor for hook '%s': %w",
-					hookConfig.Language,
+					"getting executor for hook '%s': %w",
 					hookConfig.Name,
 					err,
 				),
@@ -243,25 +203,28 @@ func (h *HooksRunner) execLanguageHook(
 					hookConfig.Language,
 					hookConfig.Name,
 				),
-				Suggestion: "Currently only Python hooks are " +
-					"supported. Use a shell script (sh/pwsh)" +
-					" or Python instead.",
+				Suggestion: "Currently only Python, Bash, and " +
+					"PowerShell hooks are supported.",
 			}
 		}
 		return fmt.Errorf(
-			"getting %s executor for hook '%s': %w",
-			hookConfig.Language, hookConfig.Name, err,
+			"getting executor for hook '%s': %w",
+			hookConfig.Name, err,
 		)
 	}
 
+	// Resolve script path. Language hooks need the full path so
+	// Prepare can discover project files; shell hooks keep the
+	// relative path because the executor's CWD handles resolution.
 	scriptPath := hookConfig.path
-	if hookConfig.cwd != "" {
+	if hookConfig.cwd != "" && hookConfig.IsLanguageHook() {
 		scriptPath = filepath.Join(hookConfig.cwd, hookConfig.path)
 	}
 
+	// Prepare (unified — venv/deps for Python, pwsh detection for PS, no-op for bash).
 	log.Printf(
-		"Preparing %s hook '%s' (%s)\n",
-		hookConfig.Language, hookConfig.Name, scriptPath,
+		"Preparing hook '%s' (%s)\n",
+		hookConfig.Name, hookConfig.Language,
 	)
 
 	if err := executor.Prepare(ctx, scriptPath); err != nil {
@@ -278,69 +241,34 @@ func (h *HooksRunner) execLanguageHook(
 				hookConfig.Name,
 			),
 			Suggestion: fmt.Sprintf(
-				"Ensure the %s runtime is installed "+
-					"and the script at '%s' is valid. "+
-					"Check dependency files "+
-					"(requirements.txt / pyproject.toml) "+
-					"for errors.",
+				"Ensure the required runtime for '%s' is installed.",
 				hookConfig.Language,
-				scriptPath,
 			),
 		}
 	}
 
+	// Configure console/previewer.
 	if h.configureExecOptions(ctx, hookConfig, options) {
 		defer h.console.StopPreviewer(ctx, false)
 	}
 
+	// Execute (unified).
 	log.Printf(
-		"Executing %s hook '%s' (%s)\n",
-		hookConfig.Language, hookConfig.Name, scriptPath,
+		"Executing hook '%s' (%s)\n",
+		hookConfig.Name, scriptPath,
 	)
 
 	res, err := executor.Execute(ctx, scriptPath, *options)
 	if err != nil {
-		return h.handleHookError(
-			ctx, hookConfig, res, scriptPath, err,
-		)
-	}
-
-	return nil
-}
-
-// execShellHook runs a hook through the existing bash/powershell
-// shell script pipeline. This preserves the original behavior for
-// shell-based hooks.
-func (h *HooksRunner) execShellHook(
-	ctx context.Context,
-	hookConfig *HookConfig,
-	envVars []string,
-	options *tools.ExecOptions,
-) error {
-	script, err := h.GetScript(hookConfig, envVars)
-	if err != nil {
-		return err
-	}
-
-	if h.configureExecOptions(ctx, hookConfig, options) {
-		defer h.console.StopPreviewer(ctx, false)
-	}
-	options.UserPwsh = string(hookConfig.Shell)
-
-	log.Printf("Executing script '%s'\n", hookConfig.path)
-	res, err := script.Execute(ctx, hookConfig.path, *options)
-	if err != nil {
 		hookErr := h.handleHookError(
-			ctx, hookConfig, res, hookConfig.path, err,
+			ctx, hookConfig, res, scriptPath, err,
 		)
 		if hookErr != nil {
 			return hookErr
 		}
 	}
 
-	// Delete any temporary inline scripts after execution
-	// Removing temp scripts only on success to support better
-	// debugging with failing scripts.
+	// Cleanup inline temp scripts.
 	if hookConfig.location == ScriptLocationInline {
 		defer os.Remove(hookConfig.path)
 	}

@@ -23,6 +23,13 @@ func Test_Bash_Execute(t *testing.T) {
 		"b=banana",
 	}
 
+	t.Run("Prepare", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		bashScript := NewBashScript(mockContext.CommandRunner, workingDir, env)
+		err := bashScript.Prepare(*mockContext.Context, scriptPath)
+		require.NoError(t, err)
+	})
+
 	t.Run("Success", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 

@@ -117,6 +117,16 @@ func TestGetExecutor(t *testing.T) {
 			wantExec: true,
 		},
 		{
+			name:     "BashReturnsExecutor",
+			language: ScriptLanguageBash,
+			wantExec: true,
+		},
+		{
+			name:     "PowerShellReturnsExecutor",
+			language: ScriptLanguagePowerShell,
+			wantExec: true,
+		},
+		{
 			name:     "JavaScriptUnsupported",
 			language: ScriptLanguageJavaScript,
 			wantErr:  ErrUnsupportedLanguage,
@@ -130,16 +140,6 @@ func TestGetExecutor(t *testing.T) {
 			name:     "DotNetUnsupported",
 			language: ScriptLanguageDotNet,
 			wantErr:  ErrUnsupportedLanguage,
-		},
-		{
-			name:     "BashShellLanguage",
-			language: ScriptLanguageBash,
-			wantErr:  ErrShellLanguage,
-		},
-		{
-			name:     "PowerShellShellLanguage",
-			language: ScriptLanguagePowerShell,
-			wantErr:  ErrShellLanguage,
 		},
 		{
 			name:       "UnknownReturnsError",
@@ -182,9 +182,6 @@ func TestGetExecutor(t *testing.T) {
 
 			if tt.wantExec {
 				require.NotNil(t, executor)
-				assert.Equal(
-					t, tt.language, executor.Language(),
-				)
 			}
 		})
 	}

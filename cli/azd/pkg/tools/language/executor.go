@@ -4,14 +4,14 @@
 package language
 
 import (
-	"context"
-	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/bash"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/powershell"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/python"
 )
 
@@ -42,40 +42,12 @@ const (
 )
 
 // ErrUnsupportedLanguage is returned by [GetExecutor] when the
-// requested [ScriptLanguage] is recognized but no [ScriptExecutor]
+// requested [ScriptLanguage] is recognized but no executor
 // implementation exists yet (e.g. JavaScript, TypeScript, DotNet).
-var ErrUnsupportedLanguage = errors.New(
-	"language is not yet supported; supported languages: python. " +
+var ErrUnsupportedLanguage = fmt.Errorf(
+	"language is not yet supported; supported languages: python, sh, pwsh. " +
 		"JavaScript, TypeScript, and .NET support is planned",
 )
-
-// ErrShellLanguage is returned by [GetExecutor] when the caller
-// requests an executor for a shell language (Bash or PowerShell).
-// Shell scripts are handled by the existing shell script runner in
-// [pkg/ext] and do not use the [ScriptExecutor] pipeline.
-var ErrShellLanguage = errors.New(
-	"shell languages (sh, pwsh) are handled by the existing " +
-		"shell script runner, not the language executor pipeline",
-)
-
-// ScriptExecutor defines the interface for language-specific hook
-// script preparation and execution.
-type ScriptExecutor interface {
-	// Language returns the script language this executor handles.
-	Language() ScriptLanguage
-
-	// Prepare performs pre-execution steps such as runtime
-	// validation, dependency installation, or build steps.
-	Prepare(ctx context.Context, scriptPath string) error
-
-	// Execute runs the script at the given path and returns the
-	// result. The signature is compatible with [tools.Script].
-	Execute(
-		ctx context.Context,
-		scriptPath string,
-		options tools.ExecOptions,
-	) (exec.RunResult, error)
-}
 
 // InferLanguageFromPath determines the [ScriptLanguage] from the
 // file extension of the given path. Extension matching is
@@ -110,12 +82,10 @@ func InferLanguageFromPath(path string) ScriptLanguage {
 	}
 }
 
-// GetExecutor returns a [ScriptExecutor] for the given language.
+// GetExecutor returns a [tools.ScriptExecutor] for the given language.
 //
-// Phase 1 supports only Python. JavaScript, TypeScript, and DotNet
-// return [ErrUnsupportedLanguage]. Bash and PowerShell return
-// [ErrShellLanguage] because they are handled by the existing shell
-// script runner.
+// All hook types — bash, PowerShell, and Python — are supported.
+// JavaScript, TypeScript, and DotNet return [ErrUnsupportedLanguage].
 //
 // The boundaryDir limits project file discovery during Prepare; cwd
 // sets the working directory for script execution; envVars are
@@ -127,8 +97,16 @@ func GetExecutor(
 	boundaryDir string,
 	cwd string,
 	envVars []string,
-) (ScriptExecutor, error) {
+) (tools.ScriptExecutor, error) {
 	switch lang {
+	case ScriptLanguageBash:
+		return bash.NewBashScript(
+			commandRunner, cwd, envVars,
+		), nil
+	case ScriptLanguagePowerShell:
+		return powershell.NewPowershellScript(
+			commandRunner, cwd, envVars,
+		), nil
 	case ScriptLanguagePython:
 		return newPythonExecutor(
 			commandRunner, pythonCli,
@@ -139,10 +117,6 @@ func GetExecutor(
 		ScriptLanguageDotNet:
 		return nil, fmt.Errorf(
 			"%w: %s", ErrUnsupportedLanguage, lang,
-		)
-	case ScriptLanguageBash, ScriptLanguagePowerShell:
-		return nil, fmt.Errorf(
-			"%w: %s", ErrShellLanguage, lang,
 		)
 	default:
 		return nil, fmt.Errorf(

@@ -1,0 +1,129 @@
+parameters:
+  - name: SanitizedExtensionId
+    type: string
+  - name: AzdExtensionId
+    type: string
+
+steps:
+  - task: AzurePowerShell@5
+    displayName: Update daily registry
+    inputs:
+      azureSubscription: 'Azure SDK Artifacts'
+      azurePowerShellVersion: LatestVersion
+      pwsh: true
+      ScriptType: InlineScript
+      Inline: |
+        $extId = "${{ parameters.AzdExtensionId }}"
+        $sanitizedId = "${{ parameters.SanitizedExtensionId }}"
+        $version = "$(EXT_VERSION)"
+        $storageHost = "$(publish-storage-static-host)"
+        $registryBlobPath = "$(publish-storage-location)/`$web/azd/extensions/registry-daily.json"
+        $dailyBaseUrl = "$storageHost/azd/extensions/$sanitizedId/daily"
+
+        # Download existing registry or create empty one
+        $registryFile = "registry-daily.json"
+        azcopy copy $registryBlobPath $registryFile 2>$null
+        if ($LASTEXITCODE -ne 0 -or !(Test-Path $registryFile)) {
+          Write-Host "No existing registry found, creating new one"
+          @{ extensions = @() } | ConvertTo-Json -Depth 10 | Set-Content $registryFile
+        }
+
+        $registry = Get-Content $registryFile -Raw | ConvertFrom-Json -Depth 20
+
+        # Read extension.yaml from the release-metadata artifact
+        $extYaml = Get-Content "release-metadata/extension.yaml" -Raw
+        $extMeta = @{}
+        foreach ($line in $extYaml -split "`n") {
+          if ($line -match "^(\w[\w\-]*):\s*(.+)$") {
+            $extMeta[$matches[1]] = $matches[2].Trim()
+          }
+        }
+
+        # Parse list fields from extension.yaml
+        function Get-YamlList($yaml, $field) {
+          $items = @()
+          $inField = $false
+          foreach ($line in $yaml -split "`n") {
+            if ($line -match "^${field}:") { $inField = $true; continue }
+            if ($inField -and $line -match "^\s+-\s+(.+)$") {
+              $items += $matches[1].Trim()
+            } elseif ($inField -and $line -match "^\S") {
+              break
+            }
+          }
+          return $items
+        }
+
+        $capabilities = Get-YamlList $extYaml "capabilities"
+
+        # Compute checksums from the release artifacts
+        $platforms = @(
+          @{ key = "darwin/amd64";  file = "$sanitizedId-darwin-amd64.zip";  entry = "$sanitizedId-darwin-amd64" },
+          @{ key = "darwin/arm64";  file = "$sanitizedId-darwin-arm64.zip";  entry = "$sanitizedId-darwin-arm64" },
+          @{ key = "linux/amd64";   file = "$sanitizedId-linux-amd64.tar.gz"; entry = "$sanitizedId-linux-amd64" },
+          @{ key = "linux/arm64";   file = "$sanitizedId-linux-arm64.tar.gz"; entry = "$sanitizedId-linux-arm64" },
+          @{ key = "windows/amd64"; file = "$sanitizedId-windows-amd64.zip"; entry = "$sanitizedId-windows-amd64.exe" },
+          @{ key = "windows/arm64"; file = "$sanitizedId-windows-arm64.zip"; entry = "$sanitizedId-windows-arm64.exe" }
+        )
+
+        $artifacts = @{}
+        foreach ($p in $platforms) {
+          $filePath = "release/$($p.file)"
+          if (Test-Path $filePath) {
+            $hash = (Get-FileHash -Path $filePath -Algorithm SHA256).Hash.ToLower()
+            $artifacts[$p.key] = @{
+              checksum   = @{ algorithm = "sha256"; value = $hash }
+              entryPoint = $p.entry
+              url        = "$dailyBaseUrl/$($p.file)"
+            }
+          }
+        }
+
+        # Build the version entry
+        $versionEntry = @{
+          version      = $version
+          capabilities = $capabilities
+          artifacts    = $artifacts
+        }
+
+        if ($extMeta["usage"]) { $versionEntry.usage = $extMeta["usage"] }
+        if ($extMeta["requiredAzdVersion"]) {
+          $versionEntry.requiredAzdVersion = $extMeta["requiredAzdVersion"]
+        }
+
+        # Build the extension entry
+        $extEntry = @{
+          id          = $extId
+          namespace   = $extMeta["namespace"]
+          displayName = $extMeta["displayName"]
+          description = $extMeta["description"]
+          versions    = @($versionEntry)
+        }
+
+        # Merge into registry: replace if extension exists, add if new
+        $found = $false
+        for ($i = 0; $i -lt $registry.extensions.Count; $i++) {
+          if ($registry.extensions[$i].id -eq $extId) {
+            $registry.extensions[$i] = $extEntry
+            $found = $true
+            break
+          }
+        }
+        if (-not $found) {
+          $registry.extensions += $extEntry
+        }
+
+        # Write and upload
+        $registry | ConvertTo-Json -Depth 20 | Set-Content $registryFile -Encoding utf8
+        Write-Host "Updated registry for $extId ($version):"
+        Get-Content $registryFile
+
+        azcopy copy $registryFile $registryBlobPath --overwrite=true
+        if ($LASTEXITCODE) {
+          Write-Error "Failed to upload registry"
+          exit 1
+        }
+
+        Write-Host "Registry uploaded to $registryBlobPath"
+    env:
+      AZCOPY_AUTO_LOGIN_TYPE: 'PSCRED'

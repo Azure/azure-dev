@@ -6,63 +6,78 @@ parameters:
     default: '`$web'
   - name: TagPrefix
     type: string
+    default: ''
   - name: TagVersion
     type: string
+    default: ''
+  - name: CreateGitHubRelease
+    type: boolean
+    default: true
 
 steps:
-  # This step must run first because a duplicated tag means we don't need to
-  # continue with any of the subsequent steps.
-  - pwsh: |
-      $tag = "${{ parameters.TagPrefix }}_${{ parameters.TagVersion}}"
-      Write-Host "Release tag: $tag"
+  - ${{ if eq(parameters.CreateGitHubRelease, true) }}:
+    # This step must run first because a duplicated tag means we don't need to
+    # continue with any of the subsequent steps.
+    - pwsh: |
+        $tag = "${{ parameters.TagPrefix }}_${{ parameters.TagVersion}}"
+        Write-Host "Release tag: $tag"
 
-      # Check for tag using gh API
-      $existingTag = gh api /repos/$(Build.Repository.Name)/tags | ConvertFrom-Json | Where-Object { $_.name -eq $tag }
-      if ($existingTag) {
-          Write-Host "Tag $tag already exists. Exiting."
+        # Check for tag using gh API
+        $existingTag = gh api /repos/$(Build.Repository.Name)/tags | ConvertFrom-Json | Where-Object { $_.name -eq $tag }
+        if ($existingTag) {
+            Write-Host "Tag $tag already exists. Exiting."
+            exit 1
+        }
+
+        gh release view $tag --repo $(Build.Repository.Name)
+        if ($LASTEXITCODE -eq 0) {
+          Write-Host "Release ($tag) already exists. Exiting."
           exit 1
-      }
+        }
 
-      gh release view $tag --repo $(Build.Repository.Name)
-      if ($LASTEXITCODE -eq 0) {
-        Write-Host "Release ($tag) already exists. Exiting."
-        exit 1
-      }
+        Write-Host "##vso[task.setvariable variable=GH_RELEASE_TAG;]$tag"
 
-      Write-Host "##vso[task.setvariable variable=GH_RELEASE_TAG;]$tag"
+        # Exit with 0 (otherwise $LASTEXITCODE will not be 0 and the pipeline
+        # will fail)
+        exit 0
+      displayName: Check for existing GitHub release
+      env:
+        GH_TOKEN: $(azuresdk-github-pat)
 
-      # Exit with 0 (otherwise $LASTEXITCODE will not be 0 and the pipeline
-      # will fail)
-      exit 0
-    displayName: Check for existing GitHub release
-    env:
-      GH_TOKEN: $(azuresdk-github-pat)
+    - pwsh: |
+        Remove-Item -Path release/_manifest -Recurse -Force
+        Write-Host "Release:"
+        Get-ChildItem -Recurse release/ | Select-Object -Property Length,FullName 
+      displayName: Remove _manifest folder
 
-  - pwsh: |
-      Remove-Item -Path release/_manifest -Recurse -Force
-      Write-Host "Release:"
-      Get-ChildItem -Recurse release/ | Select-Object -Property Length,FullName 
-    displayName: Remove _manifest folder
+    - pwsh: |
+        $version = "${{ parameters.TagVersion }}"
+        $createArgs = @(
+          "$(GH_RELEASE_TAG)",
+          "--title", "$(GH_RELEASE_TAG)",
+          "--notes-file", "changelog/CHANGELOG.md",
+          "--repo", "$(Build.Repository.Name)"
+        )
 
-  - pwsh: |
-      $version = "${{ parameters.TagVersion }}"
-      $createArgs = @(
-        "$(GH_RELEASE_TAG)",
-        "--title", "$(GH_RELEASE_TAG)",
-        "--notes-file", "changelog/CHANGELOG.md",
-        "--repo", "$(Build.Repository.Name)"
-      )
+        if ($version -match "^0\." -or $version -match "-(alpha|beta|preview)") {
+          $createArgs += "--prerelease"
+        }
 
-      if ($version -match "^0\." -or $version -match "-(alpha|beta|preview)") {
-        $createArgs += "--prerelease"
-      }
+        gh release create @createArgs
 
-      gh release create @createArgs
+        gh release upload $(GH_RELEASE_TAG) release/* --repo $(Build.Repository.Name)
+      displayName: Create GitHub Release and upload artifacts
+      env:
+        GH_TOKEN: $(azuresdk-github-pat)
 
-      gh release upload $(GH_RELEASE_TAG) release/* --repo $(Build.Repository.Name)
-    displayName: Create GitHub Release and upload artifacts
-    env:
-      GH_TOKEN: $(azuresdk-github-pat)
+  - ${{ if eq(parameters.CreateGitHubRelease, false) }}:
+    - pwsh: |
+        if (Test-Path release/_manifest) {
+          Remove-Item -Path release/_manifest -Recurse -Force
+        }
+        Write-Host "Release:"
+        Get-ChildItem -Recurse release/ | Select-Object -Property Length,FullName
+      displayName: Remove _manifest folder
 
   - task: AzurePowerShell@5
     displayName: Upload release to storage account
@@ -77,7 +92,7 @@ steps:
         Get-ChildItem release/
         foreach ($folder in $uploadLocations) {
             Write-Host "Upload to ${{ parameters.StorageContainerName }}/azd/extensions/$folder"
-            azcopy copy "release/*" "$(publish-storage-location)/${{ parameters.StorageContainerName }}/azd/extensions/$folder"
+            azcopy copy "release/*" "$(publish-storage-location)/${{ parameters.StorageContainerName }}/azd/extensions/$folder" --overwrite=true
             if ($LASTEXITCODE) {
               Write-Error "Upload failed"
               exit 1

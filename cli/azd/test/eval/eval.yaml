@@ -33,6 +33,7 @@ executor:
       - azd restore: Restore project dependencies
       - azd build: Build application services
       - azd package: Package application for deployment
+      - azd pipeline: Configure and manage CI/CD pipeline
 
       Common flags:
       - --environment, -e: Specify target environment

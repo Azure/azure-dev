@@ -1320,6 +1320,63 @@ func Test_Predeploy_Still_Fails_When_Cluster_Not_Found(t *testing.T) {
 	require.ErrorContains(t, err, "could not determine AKS cluster")
 }
 
+func Test_Postprovision_Skips_When_Namespace_Fails(t *testing.T) {
+	tempDir := t.TempDir()
+	ostest.Chdir(t, tempDir)
+
+	mockContext := mocks.NewMockContext(t.Context())
+	err := setupMocksForAksTarget(mockContext)
+	require.NoError(t, err)
+
+	// Credentials succeed so ensureClusterContext passes
+	err = setupListClusterUserCredentialsMock(
+		mockContext, http.StatusOK)
+	require.NoError(t, err)
+
+	// Override kubectl create namespace to fail
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "kubectl create namespace")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		return exec.NewRunResult(1, "", "forbidden"), fmt.Errorf(
+			"namespace creation denied")
+	})
+
+	serviceConfig := createTestServiceConfig(
+		tempDir, AksTarget, ServiceLanguageTypeScript)
+	env := createEnv()
+
+	resourceManager := &MockResourceManager{}
+	targetResource := environment.NewTargetResource(
+		"SUBSCRIPTION_ID",
+		"RESOURCE_GROUP",
+		"MY_AKS_CLUSTER",
+		string(azapi.AzureResourceTypeManagedCluster),
+	)
+	resourceManager.
+		On("GetTargetResource",
+			*mockContext.Context,
+			"SUBSCRIPTION_ID",
+			serviceConfig).
+		Return(targetResource, nil)
+
+	serviceTarget := createAksServiceTargetWithResourceManager(
+		mockContext, env, nil, resourceManager)
+
+	err = serviceTarget.Initialize(
+		*mockContext.Context, serviceConfig)
+	require.NoError(t, err)
+
+	// Postprovision should skip gracefully despite namespace failure
+	err = serviceConfig.Project.RaiseEvent(
+		*mockContext.Context,
+		"postprovision",
+		ProjectLifecycleEventArgs{
+			Project: serviceConfig.Project,
+		},
+	)
+	require.NoError(t, err)
+}
+
 func createAksServiceTargetWithResourceManager(
 	mockContext *mocks.MockContext,
 	env *environment.Environment,

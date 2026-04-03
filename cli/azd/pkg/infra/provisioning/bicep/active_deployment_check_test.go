@@ -17,8 +17,7 @@ import (
 )
 
 // activeDeploymentScope is a test helper that implements infra.Scope and lets
-// the caller control what ListDeployments returns on each call. The standalone
-// infra.ListActiveDeployments function filters these results.
+// the caller control what ListDeployments returns on each call.
 type activeDeploymentScope struct {
 	// calls tracks how many times ListDeployments has been invoked.
 	calls atomic.Int32
@@ -64,7 +63,7 @@ func TestWaitForActiveDeployments_NoActive(t *testing.T) {
 	err := p.waitForActiveDeployments(t.Context(), scope, "test-deploy")
 	require.NoError(t, err)
 	require.Equal(t, int32(1), scope.calls.Load(),
-		"should call ListActiveDeployments once")
+		"should call ListDeployments once")
 }
 
 func TestWaitForActiveDeployments_InitialListError_NotFound(t *testing.T) {
@@ -213,4 +212,18 @@ func TestWaitForActiveDeployments_Timeout(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "timed out")
 	require.Contains(t, err.Error(), "stuck-deploy")
+}
+
+func TestWaitForActiveDeployments_DifferentNameNotBlocked(t *testing.T) {
+	running := []*azapi.ResourceDeployment{{
+		Name:              "other-deploy",
+		ProvisioningState: azapi.DeploymentProvisioningStateRunning,
+	}}
+	scope := &activeDeploymentScope{
+		activePerCall: map[int][]*azapi.ResourceDeployment{0: running},
+	}
+	p := newTestProvider()
+	err := p.waitForActiveDeployments(t.Context(), scope, "my-deploy")
+	require.NoError(t, err)
+	require.Equal(t, int32(1), scope.calls.Load())
 }

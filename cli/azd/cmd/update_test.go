@@ -4,14 +4,33 @@
 package cmd
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/update"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// stubUserConfigManager is a minimal UserConfigManager for testing.
+type stubUserConfigManager struct {
+	config config.Config
+	saved  bool
+}
+
+func (m *stubUserConfigManager) Load() (config.Config, error) {
+	return m.config, nil
+}
+
+func (m *stubUserConfigManager) Save(c config.Config) error {
+	m.saved = true
+	m.config = c
+	return nil
+}
 
 func TestOnlyConfigFlagsSet(t *testing.T) {
 	t.Parallel()
@@ -120,9 +139,77 @@ func TestUpdateErrorCodes(t *testing.T) {
 		update.CodeInvalidInput,
 	}
 
+	seen := make(map[string]bool, len(codes))
 	for _, code := range codes {
 		assert.NotEmpty(t, code)
 		assert.True(t, strings.HasPrefix(code, "update."),
 			"code %q should have prefix %q", code, "update.")
+		assert.False(t, seen[code], "duplicate code %q", code)
+		seen[code] = true
 	}
+}
+
+func TestUpdateAction_BetaNoticeFirstUse(t *testing.T) {
+	t.Parallel()
+
+	t.Run("shows notice and persists channel on empty config", func(t *testing.T) {
+		t.Parallel()
+
+		console := mockinput.NewMockConsole()
+		cfg := config.NewEmptyConfig()
+		mgr := &stubUserConfigManager{config: cfg}
+
+		action := &updateAction{
+			flags: &updateFlags{
+				channel:            "",
+				checkIntervalHours: 12, // triggers onlyConfigFlagsSet() → early return
+			},
+			console:       console,
+			formatter:     &output.NoneFormatter{},
+			writer:        &bytes.Buffer{},
+			configManager: mgr,
+		}
+
+		result, err := action.Run(t.Context())
+		require.NoError(t, err)
+		require.NotNil(t, result)
+
+		// Verify beta notice was displayed
+		messages := console.Output()
+		require.True(t, len(messages) > 0, "expected at least one console message")
+		assert.Contains(t, messages[0], "Beta")
+
+		// Verify config was saved (default channel persisted + interval)
+		assert.True(t, mgr.saved, "config should have been saved")
+		assert.True(t, update.HasUpdateConfig(cfg), "config should have update keys after first use")
+	})
+
+	t.Run("skips notice when config already exists", func(t *testing.T) {
+		t.Parallel()
+
+		console := mockinput.NewMockConsole()
+		cfg := config.NewEmptyConfig()
+		_ = update.SaveChannel(cfg, update.ChannelStable)
+		mgr := &stubUserConfigManager{config: cfg}
+
+		action := &updateAction{
+			flags: &updateFlags{
+				channel:            "",
+				checkIntervalHours: 12,
+			},
+			console:       console,
+			formatter:     &output.NoneFormatter{},
+			writer:        &bytes.Buffer{},
+			configManager: mgr,
+		}
+
+		result, err := action.Run(t.Context())
+		require.NoError(t, err)
+		require.NotNil(t, result)
+
+		// No beta notice should appear
+		for _, msg := range console.Output() {
+			assert.NotContains(t, msg, "Beta", "beta notice should not appear when config exists")
+		}
+	})
 }

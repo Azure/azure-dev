@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -56,9 +57,8 @@ func (f *updateFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 
 func newUpdateCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:    "update",
-		Short:  "Updates azd to the latest version.",
-		Hidden: true,
+		Use:   "update",
+		Short: "Updates azd to the latest version.",
 	}
 }
 
@@ -109,6 +109,12 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		userConfig = config.NewEmptyConfig()
 	}
 
+	// Warn about deprecated alpha.update config key
+	if _, hasLegacy := userConfig.Get("alpha.update"); hasLegacy {
+		log.Println("'alpha.update' config key is deprecated and can be removed. " +
+			"Run: azd config unset alpha.update")
+	}
+
 	// Show notice on first use
 	if !update.HasUpdateConfig(userConfig) {
 		a.console.MessageUxItem(ctx, &ux.MessageTitle{
@@ -119,7 +125,11 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		})
 
 		// Write a default channel so HasUpdateConfig returns true next time.
-		_ = update.SaveChannel(userConfig, update.LoadUpdateConfig(userConfig).Channel)
+		if err := update.SaveChannel(userConfig, update.LoadUpdateConfig(userConfig).Channel); err != nil {
+			log.Printf("warning: failed to persist default update channel: %v", err)
+		} else if err := a.configManager.Save(userConfig); err != nil {
+			log.Printf("warning: failed to save config after setting default channel: %v", err)
+		}
 	}
 
 	// Determine current channel BEFORE persisting any flags

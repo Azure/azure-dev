@@ -148,11 +148,15 @@ func SaveCheckIntervalHours(cfg config.Config, hours int) error {
 }
 
 // HasUpdateConfig returns true if the user has any update configuration set.
+// Also returns true for the legacy alpha.update key so that users who previously
+// enabled the alpha feature are treated as having update config (skipping the
+// first-use notice and showing the "azd update" hint).
 func HasUpdateConfig(cfg config.Config) bool {
 	_, hasChannel := cfg.Get(configKeyChannel)
 	_, hasAutoUpdate := cfg.Get(configKeyAutoUpdate)
 	_, hasInterval := cfg.Get(configKeyCheckIntervalHours)
-	return hasChannel || hasAutoUpdate || hasInterval
+	_, hasLegacyAlpha := cfg.Get("alpha.update")
+	return hasChannel || hasAutoUpdate || hasInterval || hasLegacyAlpha
 }
 
 // CacheFile represents the cached version check result.

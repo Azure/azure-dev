@@ -74,7 +74,7 @@ type InvokeFn func() error
 // Hooks are lifecycle scripts that run before or after azd commands.
 // They may be shell scripts (sh/pwsh) executed via the shell runner,
 // or programming-language scripts (Python, JS, TS, DotNet) executed
-// via the [language.ScriptExecutor] pipeline.
+// via the [tools.HookExecutor] pipeline.
 type HookConfig struct {
 	// The location of the script hook (file path or inline)
 	location ScriptLocation
@@ -273,7 +273,7 @@ func (hc *HookConfig) IsUsingDefaultShell() bool {
 // IsLanguageHook returns true when this hook targets a programming
 // language (Python, JavaScript, TypeScript, or DotNet) rather than a
 // shell (Bash or PowerShell). Language hooks are executed through the
-// [language.ScriptExecutor] pipeline instead of the shell runner.
+// [tools.HookExecutor] pipeline instead of the shell runner.
 func (hc *HookConfig) IsLanguageHook() bool {
 	switch hc.Language {
 	case language.ScriptLanguagePython,

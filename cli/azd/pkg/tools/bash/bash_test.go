@@ -25,8 +25,9 @@ func Test_Bash_Execute(t *testing.T) {
 
 	t.Run("Prepare", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		bashScript := NewBashScript(mockContext.CommandRunner, workingDir, env)
-		err := bashScript.Prepare(*mockContext.Context, scriptPath)
+		executor := NewExecutor(mockContext.CommandRunner)
+		execCtx := tools.ExecutionContext{Cwd: workingDir, EnvVars: env}
+		err := executor.Prepare(*mockContext.Context, scriptPath, execCtx)
 		require.NoError(t, err)
 	})
 
@@ -49,11 +50,16 @@ func Test_Bash_Execute(t *testing.T) {
 			return exec.NewRunResult(0, "", ""), nil
 		})
 
-		bashScript := NewBashScript(mockContext.CommandRunner, workingDir, env)
-		runResult, err := bashScript.Execute(
+		executor := NewExecutor(mockContext.CommandRunner)
+		execCtx := tools.ExecutionContext{
+			Cwd:         workingDir,
+			EnvVars:     env,
+			Interactive: new(true),
+		}
+		runResult, err := executor.Execute(
 			*mockContext.Context,
 			scriptPath,
-			tools.ExecOptions{Interactive: new(true)},
+			execCtx,
 		)
 
 		require.NotNil(t, runResult)
@@ -69,11 +75,16 @@ func Test_Bash_Execute(t *testing.T) {
 			return exec.NewRunResult(1, "", "error message"), errors.New("error message")
 		})
 
-		bashScript := NewBashScript(mockContext.CommandRunner, workingDir, env)
-		runResult, err := bashScript.Execute(
+		executor := NewExecutor(mockContext.CommandRunner)
+		execCtx := tools.ExecutionContext{
+			Cwd:         workingDir,
+			EnvVars:     env,
+			Interactive: new(true),
+		}
+		runResult, err := executor.Execute(
 			*mockContext.Context,
 			scriptPath,
-			tools.ExecOptions{Interactive: new(true)},
+			execCtx,
 		)
 
 		require.Equal(t, 1, runResult.ExitCode)
@@ -82,10 +93,14 @@ func Test_Bash_Execute(t *testing.T) {
 
 	tests := []struct {
 		name  string
-		value tools.ExecOptions
+		value tools.ExecutionContext
 	}{
-		{name: "Interactive", value: tools.ExecOptions{Interactive: new(true)}},
-		{name: "NonInteractive", value: tools.ExecOptions{Interactive: new(false)}},
+		{name: "Interactive", value: tools.ExecutionContext{
+			Cwd: workingDir, EnvVars: env, Interactive: new(true),
+		}},
+		{name: "NonInteractive", value: tools.ExecutionContext{
+			Cwd: workingDir, EnvVars: env, Interactive: new(false),
+		}},
 	}
 
 	for _, test := range tests {
@@ -99,8 +114,8 @@ func Test_Bash_Execute(t *testing.T) {
 				return exec.NewRunResult(0, "", ""), nil
 			})
 
-			bashScript := NewBashScript(mockContext.CommandRunner, workingDir, env)
-			runResult, err := bashScript.Execute(*mockContext.Context, scriptPath, test.value)
+			executor := NewExecutor(mockContext.CommandRunner)
+			runResult, err := executor.Execute(*mockContext.Context, scriptPath, test.value)
 
 			require.NotNil(t, runResult)
 			require.NoError(t, err)

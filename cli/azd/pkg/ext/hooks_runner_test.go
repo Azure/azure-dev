@@ -14,12 +14,35 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/bash"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/language"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/powershell"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/python"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
+
+// registerHookExecutors registers all hook executors as named
+// transients in the mock container so that IoC resolution works
+// in tests.
+func registerHookExecutors(mockCtx *mocks.MockContext) {
+	mockCtx.Container.MustRegisterNamedTransient(
+		string(language.ScriptLanguageBash), bash.NewExecutor,
+	)
+	mockCtx.Container.MustRegisterNamedTransient(
+		string(language.ScriptLanguagePowerShell), powershell.NewExecutor,
+	)
+
+	// Register python.Cli (needed by NewPythonExecutor IoC constructor).
+	mockCtx.Container.MustRegisterSingleton(python.NewCli)
+
+	mockCtx.Container.MustRegisterNamedTransient(
+		string(language.ScriptLanguagePython), language.NewPythonExecutor,
+	)
+}
 
 func Test_Hooks_Execute(t *testing.T) {
 	cwd := t.TempDir()
@@ -70,6 +93,7 @@ func Test_Hooks_Execute(t *testing.T) {
 		ranPostHook := false
 
 		mockContext := mocks.NewMockContext(context.Background())
+		registerHookExecutors(mockContext)
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "precommand.sh")
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -105,6 +129,7 @@ func Test_Hooks_Execute(t *testing.T) {
 		ranPostHook := false
 
 		mockContext := mocks.NewMockContext(context.Background())
+		registerHookExecutors(mockContext)
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "postcommand.sh")
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -140,6 +165,7 @@ func Test_Hooks_Execute(t *testing.T) {
 		ranPostHook := false
 
 		mockContext := mocks.NewMockContext(context.Background())
+		registerHookExecutors(mockContext)
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "preinteractive.sh")
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -175,6 +201,7 @@ func Test_Hooks_Execute(t *testing.T) {
 		ranPostHook := false
 
 		mockContext := mocks.NewMockContext(context.Background())
+		registerHookExecutors(mockContext)
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "preinline")
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -209,6 +236,7 @@ func Test_Hooks_Execute(t *testing.T) {
 		hookLog := []string{}
 
 		mockContext := mocks.NewMockContext(context.Background())
+		registerHookExecutors(mockContext)
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "precommand.sh")
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -299,6 +327,7 @@ func Test_Hooks_Validation(t *testing.T) {
 
 		shellRan := false
 		mockContext := mocks.NewMockContext(context.Background())
+		registerHookExecutors(mockContext)
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "script.sh")
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -327,6 +356,7 @@ func Test_Hooks_Validation(t *testing.T) {
 
 		shellRan := false
 		mockContext := mocks.NewMockContext(context.Background())
+		registerHookExecutors(mockContext)
 		mockContext.CommandRunner.MockToolInPath("pwsh", nil)
 
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -359,6 +389,7 @@ func Test_Hooks_Validation(t *testing.T) {
 
 		inlineRan := false
 		mockContext := mocks.NewMockContext(context.Background())
+		registerHookExecutors(mockContext)
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "preinline")
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -386,6 +417,7 @@ func Test_Hooks_Validation(t *testing.T) {
 		}
 
 		mockContext := mocks.NewMockContext(context.Background())
+		registerHookExecutors(mockContext)
 		hooksManager := NewHooksManager(cwd, mockContext.CommandRunner)
 		runner := NewHooksRunner(
 			hooksManager, mockContext.CommandRunner, envManager,
@@ -399,7 +431,7 @@ func Test_Hooks_Validation(t *testing.T) {
 }
 
 // Test_ExecHook_LanguageHooks verifies the integration between
-// [HooksRunner] and [language.ScriptExecutor] for non-shell hooks.
+// [HooksRunner] and [tools.HookExecutor] for non-shell hooks.
 func Test_ExecHook_LanguageHooks(t *testing.T) {
 	t.Run("PythonLanguageHook", func(t *testing.T) {
 		cwd := t.TempDir()
@@ -431,6 +463,7 @@ func Test_ExecHook_LanguageHooks(t *testing.T) {
 		executeRan := false
 
 		mockContext := mocks.NewMockContext(context.Background())
+		registerHookExecutors(mockContext)
 
 		// Mock the Python version check issued by python.Cli.CheckInstalled
 		// via tools.ExecuteCommand → commandRunner.Run.
@@ -493,6 +526,7 @@ func Test_ExecHook_LanguageHooks(t *testing.T) {
 		shellRan := false
 
 		mockContext := mocks.NewMockContext(context.Background())
+		registerHookExecutors(mockContext)
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "predeploy.sh")
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -548,6 +582,7 @@ func Test_ExecHook_LanguageHooks(t *testing.T) {
 		envManager.On("Reload", mock.Anything, env).Return(nil)
 
 		mockContext := mocks.NewMockContext(context.Background())
+		registerHookExecutors(mockContext)
 
 		// Simulate Python not being installed — version check
 		// fails with an error.
@@ -603,6 +638,7 @@ func Test_ExecHook_LanguageHooks(t *testing.T) {
 		envManager.On("Reload", mock.Anything, env).Return(nil)
 
 		mockContext := mocks.NewMockContext(context.Background())
+		registerHookExecutors(mockContext)
 
 		// Prepare succeeds (version check passes).
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -670,6 +706,7 @@ func Test_ExecHook_LanguageHooks(t *testing.T) {
 		var capturedEnv []string
 
 		mockContext := mocks.NewMockContext(context.Background())
+		registerHookExecutors(mockContext)
 
 		// Allow version check to pass.
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {

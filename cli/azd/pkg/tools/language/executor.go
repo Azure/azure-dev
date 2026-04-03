@@ -4,15 +4,8 @@
 package language
 
 import (
-	"fmt"
 	"path/filepath"
 	"strings"
-
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/bash"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/powershell"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/python"
 )
 
 // ScriptLanguage identifies the programming language of a hook script.
@@ -29,24 +22,16 @@ const (
 	// ScriptLanguagePowerShell identifies PowerShell scripts (.ps1 files).
 	ScriptLanguagePowerShell ScriptLanguage = "pwsh"
 	// ScriptLanguageJavaScript identifies JavaScript scripts (.js files).
-	// Not yet supported — returns [ErrUnsupportedLanguage] from [GetExecutor].
+	// Not yet supported — IoC resolution will fail with a descriptive error.
 	ScriptLanguageJavaScript ScriptLanguage = "js"
 	// ScriptLanguageTypeScript identifies TypeScript scripts (.ts files).
-	// Not yet supported — returns [ErrUnsupportedLanguage] from [GetExecutor].
+	// Not yet supported — IoC resolution will fail with a descriptive error.
 	ScriptLanguageTypeScript ScriptLanguage = "ts"
 	// ScriptLanguagePython identifies Python scripts (.py files).
 	ScriptLanguagePython ScriptLanguage = "python"
 	// ScriptLanguageDotNet identifies .NET (C#) scripts (.cs files).
-	// Not yet supported — returns [ErrUnsupportedLanguage] from [GetExecutor].
+	// Not yet supported — IoC resolution will fail with a descriptive error.
 	ScriptLanguageDotNet ScriptLanguage = "dotnet"
-)
-
-// ErrUnsupportedLanguage is returned by [GetExecutor] when the
-// requested [ScriptLanguage] is recognized but no executor
-// implementation exists yet (e.g. JavaScript, TypeScript, DotNet).
-var ErrUnsupportedLanguage = fmt.Errorf(
-	"language is not yet supported; supported languages: python, sh, pwsh. " +
-		"JavaScript, TypeScript, and .NET support is planned",
 )
 
 // InferLanguageFromPath determines the [ScriptLanguage] from the
@@ -79,48 +64,5 @@ func InferLanguageFromPath(path string) ScriptLanguage {
 		return ScriptLanguagePowerShell
 	default:
 		return ScriptLanguageUnknown
-	}
-}
-
-// GetExecutor returns a [tools.ScriptExecutor] for the given language.
-//
-// All hook types — bash, PowerShell, and Python — are supported.
-// JavaScript, TypeScript, and DotNet return [ErrUnsupportedLanguage].
-//
-// The boundaryDir limits project file discovery during Prepare; cwd
-// sets the working directory for script execution; envVars are
-// forwarded to all child processes.
-func GetExecutor(
-	lang ScriptLanguage,
-	commandRunner exec.CommandRunner,
-	pythonCli *python.Cli,
-	boundaryDir string,
-	cwd string,
-	envVars []string,
-) (tools.ScriptExecutor, error) {
-	switch lang {
-	case ScriptLanguageBash:
-		return bash.NewBashScript(
-			commandRunner, cwd, envVars,
-		), nil
-	case ScriptLanguagePowerShell:
-		return powershell.NewPowershellScript(
-			commandRunner, cwd, envVars,
-		), nil
-	case ScriptLanguagePython:
-		return newPythonExecutor(
-			commandRunner, pythonCli,
-			boundaryDir, cwd, envVars,
-		), nil
-	case ScriptLanguageJavaScript,
-		ScriptLanguageTypeScript,
-		ScriptLanguageDotNet:
-		return nil, fmt.Errorf(
-			"%w: %s", ErrUnsupportedLanguage, lang,
-		)
-	default:
-		return nil, fmt.Errorf(
-			"unknown script language: %q", string(lang),
-		)
 	}
 }

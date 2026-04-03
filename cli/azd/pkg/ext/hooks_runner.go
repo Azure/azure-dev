@@ -5,7 +5,6 @@ package ext
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -20,8 +19,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/language"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/python"
 )
 
 // Hooks enable support to invoke integration scripts before & after commands
@@ -94,7 +91,7 @@ func (h *HooksRunner) Invoke(ctx context.Context, commands []string, actionFn In
 func (h *HooksRunner) RunHooks(
 	ctx context.Context,
 	hookType HookType,
-	options *tools.ExecOptions,
+	options *tools.ExecutionContext,
 	commands ...string,
 ) error {
 	hooks, err := h.hooksManager.GetByParams(h.hooks, hookType, commands...)
@@ -121,10 +118,10 @@ func (h *HooksRunner) RunHooks(
 }
 
 func (h *HooksRunner) execHook(
-	ctx context.Context, hookConfig *HookConfig, options *tools.ExecOptions,
+	ctx context.Context, hookConfig *HookConfig, options *tools.ExecutionContext,
 ) error {
 	if options == nil {
-		options = &tools.ExecOptions{}
+		options = &tools.ExecutionContext{}
 	}
 
 	hookEnv := environment.NewWithValues("temp", h.env.Dotenv())
@@ -179,38 +176,36 @@ func (h *HooksRunner) execHook(
 
 	envVars := hookEnv.Environ()
 
-	// Create executor (unified factory for ALL languages).
-	pythonCli := python.NewCli(h.commandRunner)
-	executor, err := language.GetExecutor(
-		hookConfig.Language,
-		h.commandRunner,
-		pythonCli,
-		boundaryDir,
-		cwd,
-		envVars,
-	)
-	if err != nil {
-		if errors.Is(err, language.ErrUnsupportedLanguage) {
-			return &errorhandler.ErrorWithSuggestion{
-				Err: fmt.Errorf(
-					"getting executor for hook '%s': %w",
-					hookConfig.Name,
-					err,
-				),
-				Message: fmt.Sprintf(
-					"The '%s' language is not yet supported "+
-						"for hook '%s'.",
-					hookConfig.Language,
-					hookConfig.Name,
-				),
-				Suggestion: "Currently only Python, Bash, and " +
-					"PowerShell hooks are supported.",
-			}
+	// Build execution context.
+	execCtx := tools.ExecutionContext{
+		Cwd:         cwd,
+		EnvVars:     envVars,
+		BoundaryDir: boundaryDir,
+	}
+
+	// Merge caller-provided overrides (e.g. forced interactive from 'azd hooks run').
+	if options.Interactive != nil {
+		execCtx.Interactive = options.Interactive
+	}
+	if options.StdOut != nil {
+		execCtx.StdOut = options.StdOut
+	}
+
+	// Resolve executor via IoC — hooks runner has NO knowledge of executor internals.
+	var executor tools.HookExecutor
+	if err := h.serviceLocator.ResolveNamed(string(hookConfig.Language), &executor); err != nil {
+		return &errorhandler.ErrorWithSuggestion{
+			Err: fmt.Errorf(
+				"no executor for language '%s': %w",
+				hookConfig.Language, err,
+			),
+			Message: fmt.Sprintf(
+				"The '%s' language is not supported for hook '%s'.",
+				hookConfig.Language,
+				hookConfig.Name,
+			),
+			Suggestion: "Supported hook languages: sh, pwsh, python.",
 		}
-		return fmt.Errorf(
-			"getting executor for hook '%s': %w",
-			hookConfig.Name, err,
-		)
 	}
 
 	// Resolve script path. Language hooks need the full path so
@@ -227,7 +222,7 @@ func (h *HooksRunner) execHook(
 		hookConfig.Name, hookConfig.Language,
 	)
 
-	if err := executor.Prepare(ctx, scriptPath); err != nil {
+	if err := executor.Prepare(ctx, scriptPath, execCtx); err != nil {
 		return &errorhandler.ErrorWithSuggestion{
 			Err: fmt.Errorf(
 				"preparing %s hook '%s': %w",
@@ -248,7 +243,7 @@ func (h *HooksRunner) execHook(
 	}
 
 	// Configure console/previewer.
-	if h.configureExecOptions(ctx, hookConfig, options) {
+	if h.configureExecContext(ctx, hookConfig, &execCtx) {
 		defer h.console.StopPreviewer(ctx, false)
 	}
 
@@ -258,7 +253,7 @@ func (h *HooksRunner) execHook(
 		hookConfig.Name, scriptPath,
 	)
 
-	res, err := executor.Execute(ctx, scriptPath, *options)
+	res, err := executor.Execute(ctx, scriptPath, execCtx)
 	if err != nil {
 		hookErr := h.handleHookError(
 			ctx, hookConfig, res, scriptPath, err,
@@ -276,29 +271,29 @@ func (h *HooksRunner) execHook(
 	return nil
 }
 
-// configureExecOptions resolves interactive mode and sets up the
+// configureExecContext resolves interactive mode and sets up the
 // console previewer for non-interactive hooks that have no custom
 // stdout. This logic is shared by both shell and language hooks.
 // Returns true when a previewer was started; the caller must defer
 // [input.Console.StopPreviewer] in that case.
-func (h *HooksRunner) configureExecOptions(
+func (h *HooksRunner) configureExecContext(
 	ctx context.Context,
 	hookConfig *HookConfig,
-	options *tools.ExecOptions,
+	execCtx *tools.ExecutionContext,
 ) bool {
 	formatter := h.console.GetFormatter()
 	consoleInteractive := (formatter == nil ||
 		formatter.Kind() == output.NoneFormat)
 	scriptInteractive := consoleInteractive && hookConfig.Interactive
 
-	if options.Interactive == nil {
-		options.Interactive = &scriptInteractive
+	if execCtx.Interactive == nil {
+		execCtx.Interactive = &scriptInteractive
 	}
 
 	// When the hook is not configured to run in interactive mode
 	// and no stdout has been configured, show the hook execution
 	// output within the console previewer pane.
-	if !*options.Interactive && options.StdOut == nil {
+	if !*execCtx.Interactive && execCtx.StdOut == nil {
 		previewer := h.console.ShowPreviewer(
 			ctx,
 			&input.ShowPreviewerOptions{
@@ -307,7 +302,7 @@ func (h *HooksRunner) configureExecOptions(
 				MaxLineCount: 8,
 			},
 		)
-		options.StdOut = previewer
+		execCtx.StdOut = previewer
 		return true
 	}
 

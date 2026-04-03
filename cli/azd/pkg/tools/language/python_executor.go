@@ -14,6 +14,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/python"
 )
 
 // pythonTools abstracts the Python CLI operations needed by
@@ -38,39 +39,36 @@ type pythonTools interface {
 	) error
 }
 
-// pythonExecutor implements [ScriptExecutor] for Python scripts.
+// pythonExecutor implements [tools.HookExecutor] for Python scripts.
 // It manages virtual environment creation and dependency
 // installation when a project file (requirements.txt or
 // pyproject.toml) is discovered near the script.
 type pythonExecutor struct {
 	commandRunner exec.CommandRunner
 	pythonCli     pythonTools
-	boundaryDir   string   // project/service root for discovery
-	cwd           string   // working directory for execution
-	envVars       []string // environment variables for execution
 
 	// venvPath is set by Prepare when a project context with a
 	// dependency file is discovered. Empty means system Python.
 	venvPath string
 }
 
-// newPythonExecutor creates a pythonExecutor configured for the
-// given execution context. The boundaryDir limits project file
-// discovery; cwd sets the working directory for script execution;
-// envVars are forwarded to all child processes.
-func newPythonExecutor(
+// NewPythonExecutor creates a Python HookExecutor. Takes only IoC-injectable deps.
+func NewPythonExecutor(
+	commandRunner exec.CommandRunner,
+	pythonCli *python.Cli,
+) tools.HookExecutor {
+	return newPythonExecutorInternal(commandRunner, pythonCli)
+}
+
+// newPythonExecutorInternal creates a pythonExecutor using the
+// pythonTools interface. This allows tests to inject mocks.
+func newPythonExecutorInternal(
 	commandRunner exec.CommandRunner,
 	pythonCli pythonTools,
-	boundaryDir string,
-	cwd string,
-	envVars []string,
 ) *pythonExecutor {
 	return &pythonExecutor{
 		commandRunner: commandRunner,
 		pythonCli:     pythonCli,
-		boundaryDir:   boundaryDir,
-		cwd:           cwd,
-		envVars:       envVars,
 	}
 }
 
@@ -81,6 +79,7 @@ func newPythonExecutor(
 func (e *pythonExecutor) Prepare(
 	ctx context.Context,
 	scriptPath string,
+	execCtx tools.ExecutionContext,
 ) error {
 	// 1. Verify Python is installed.
 	if err := e.pythonCli.CheckInstalled(ctx); err != nil {
@@ -93,7 +92,7 @@ func (e *pythonExecutor) Prepare(
 
 	// 2. Discover project context for dependency installation.
 	projCtx, err := DiscoverProjectFile(
-		scriptPath, e.boundaryDir,
+		scriptPath, execCtx.BoundaryDir,
 	)
 	if err != nil {
 		return fmt.Errorf(
@@ -111,7 +110,7 @@ func (e *pythonExecutor) Prepare(
 	venvPath := filepath.Join(projCtx.ProjectDir, venvName)
 
 	if err := e.ensureVenv(
-		ctx, projCtx.ProjectDir, venvName, venvPath,
+		ctx, projCtx.ProjectDir, venvName, venvPath, execCtx.EnvVars,
 	); err != nil {
 		return err
 	}
@@ -119,7 +118,7 @@ func (e *pythonExecutor) Prepare(
 	// 4. Install dependencies from the discovered file.
 	depFile := filepath.Base(projCtx.DependencyFile)
 	if err := e.installDeps(
-		ctx, projCtx.ProjectDir, venvName, depFile,
+		ctx, projCtx.ProjectDir, venvName, depFile, execCtx.EnvVars,
 	); err != nil {
 		return err
 	}
@@ -135,6 +134,7 @@ func (e *pythonExecutor) Prepare(
 func (e *pythonExecutor) ensureVenv(
 	ctx context.Context,
 	projectDir, venvName, venvPath string,
+	envVars []string,
 ) error {
 	_, statErr := os.Stat(venvPath)
 	if statErr == nil {
@@ -151,7 +151,7 @@ func (e *pythonExecutor) ensureVenv(
 	}
 
 	if err := e.pythonCli.CreateVirtualEnv(
-		ctx, projectDir, venvName, e.envVars,
+		ctx, projectDir, venvName, envVars,
 	); err != nil {
 		return fmt.Errorf(
 			"creating python virtual environment at %q failed. "+
@@ -167,11 +167,12 @@ func (e *pythonExecutor) ensureVenv(
 func (e *pythonExecutor) installDeps(
 	ctx context.Context,
 	projectDir, venvName, depFile string,
+	envVars []string,
 ) error {
 	switch depFile {
 	case "requirements.txt":
 		if err := e.pythonCli.InstallRequirements(
-			ctx, projectDir, venvName, depFile, e.envVars,
+			ctx, projectDir, venvName, depFile, envVars,
 		); err != nil {
 			return fmt.Errorf(
 				"installing python requirements from %s. "+
@@ -181,7 +182,7 @@ func (e *pythonExecutor) installDeps(
 		}
 	case "pyproject.toml":
 		if err := e.pythonCli.InstallProject(
-			ctx, projectDir, venvName, e.envVars,
+			ctx, projectDir, venvName, envVars,
 		); err != nil {
 			return fmt.Errorf(
 				"installing python project from pyproject.toml. "+
@@ -200,28 +201,28 @@ func (e *pythonExecutor) installDeps(
 func (e *pythonExecutor) Execute(
 	ctx context.Context,
 	scriptPath string,
-	options tools.ExecOptions,
+	execCtx tools.ExecutionContext,
 ) (exec.RunResult, error) {
 	pyCmd := e.resolvePythonPath()
 
 	runArgs := exec.
 		NewRunArgs(pyCmd, scriptPath).
-		WithEnv(e.envVars)
+		WithEnv(execCtx.EnvVars)
 
 	// Prefer configured cwd; fall back to script's directory.
-	cwd := e.cwd
+	cwd := execCtx.Cwd
 	if cwd == "" {
 		cwd = filepath.Dir(scriptPath)
 	}
 	runArgs = runArgs.WithCwd(cwd)
 
-	if options.Interactive != nil {
+	if execCtx.Interactive != nil {
 		runArgs = runArgs.WithInteractive(
-			*options.Interactive,
+			*execCtx.Interactive,
 		)
 	}
-	if options.StdOut != nil {
-		runArgs = runArgs.WithStdOut(options.StdOut)
+	if execCtx.StdOut != nil {
+		runArgs = runArgs.WithStdOut(execCtx.StdOut)
 	}
 
 	return e.commandRunner.Run(ctx, runArgs)

@@ -41,6 +41,18 @@ func (c *Client) ListArtifacts(ctx context.Context, jobID string) (*models.Artif
 	return &result, nil
 }
 
+// ListAllArtifacts pages through all artifacts for a job.
+func (c *Client) ListAllArtifacts(ctx context.Context, jobID string) ([]models.Artifact, error) {
+	result, err := c.ListArtifacts(ctx, jobID)
+	if err != nil {
+		return nil, err
+	}
+	if result == nil {
+		return nil, nil
+	}
+	return result.Value, nil
+}
+
 // ListArtifactsInPath lists artifacts under a specific path prefix.
 // GET .../jobs/{id}/artifacts/path?path={prefix}
 func (c *Client) ListArtifactsInPath(
@@ -197,4 +209,18 @@ func (c *Client) GetArtifactSASForPath(
 	}
 
 	return &result, nil
+}
+
+// GetAllArtifactSASForPath pages through all SAS URIs for artifacts under a path prefix.
+func (c *Client) GetAllArtifactSASForPath(
+	ctx context.Context, jobID string, pathPrefix string,
+) ([]models.ArtifactContentInfo, error) {
+	result, err := c.GetArtifactSASForPath(ctx, jobID, pathPrefix)
+	if err != nil {
+		return nil, err
+	}
+	if result == nil {
+		return nil, nil
+	}
+	return result.Value, nil
 }

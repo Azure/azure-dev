@@ -33,3 +33,12 @@ type CommandJob struct {
 	CreatedDateTime      string                `json:"createdDateTime,omitempty"`
 	Services             map[string]interface{} `json:"services,omitempty"`
 }
+
+// TerminalStatuses contains job statuses that indicate the job has finished.
+var TerminalStatuses = map[string]bool{
+	"Completed":     true,
+	"Failed":        true,
+	"Canceled":      true,
+	"NotResponding": true,
+	"Paused":        true,
+}

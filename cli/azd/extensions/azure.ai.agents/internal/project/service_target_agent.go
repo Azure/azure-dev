@@ -659,6 +659,21 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		memory = foundryAgentConfig.Container.Resources.Memory
 	}
 
+	// Auto-inject toolbox MCP endpoint env vars so hosted agents can reach their toolboxes
+	// without requiring users to manually add them to agent.yaml's environment_variables.
+	if foundryAgentConfig != nil {
+		projectEndpoint := strings.TrimRight(azdEnv["AZURE_AI_PROJECT_ENDPOINT"], "/")
+		for _, toolbox := range foundryAgentConfig.Toolboxes {
+			toolboxKey := p.getServiceKey(toolbox.Name)
+			envKey := fmt.Sprintf("FOUNDRY_TOOLBOX_%s_MCP_ENDPOINT", toolboxKey)
+			if _, exists := resolvedEnvVars[envKey]; !exists {
+				resolvedEnvVars[envKey] = fmt.Sprintf(
+					"%s/toolsets/%s/mcp", projectEndpoint, toolbox.Name,
+				)
+			}
+		}
+	}
+
 	// Build options list starting with required options
 	options := []agent_yaml.AgentBuildOption{
 		agent_yaml.WithImageURL(fullImageURL),
@@ -1123,6 +1138,28 @@ func (p *AgentServiceTargetProvider) resolveAnyValue(v any, azdEnv map[string]st
 	}
 }
 
+// enrichToolboxFromConnections fills in server_url and server_label on toolbox
+// tools that reference a connection via project_connection_id. This keeps the
+// azure.yaml toolbox entries minimal while sending complete data to the API.
+func enrichToolboxFromConnections(toolbox *Toolbox, connByName map[string]ToolConnection) {
+	for i, tool := range toolbox.Tools {
+		connID, _ := tool["project_connection_id"].(string)
+		if connID == "" {
+			continue
+		}
+		conn, ok := connByName[connID]
+		if !ok {
+			continue
+		}
+		if _, has := tool["server_url"]; !has && conn.Target != "" {
+			toolbox.Tools[i]["server_url"] = conn.Target
+		}
+		if _, has := tool["server_label"]; !has {
+			toolbox.Tools[i]["server_label"] = conn.Name
+		}
+	}
+}
+
 // deployToolboxes creates or updates Foundry Toolsets for each toolbox in the config.
 // For each toolbox, it calls the Foundry Toolsets API to upsert the toolset, then
 // sets environment variables with the MCP endpoints from the toolset's MCP tools.
@@ -1146,10 +1183,18 @@ func (p *AgentServiceTargetProvider) deployToolboxes(
 
 	toolsetsClient := azure.NewFoundryToolsetsClient(projectEndpoint, p.credential)
 
+	// Build a lookup from connection name to connection config so deploy can
+	// enrich minimal toolbox tool entries with server_url / server_label.
+	connByName := map[string]ToolConnection{}
+	for _, c := range serviceTargetConfig.ToolConnections {
+		connByName[c.Name] = c
+	}
+
 	for _, toolbox := range serviceTargetConfig.Toolboxes {
 		fmt.Fprintf(os.Stderr, "Deploying toolbox: %s\n", toolbox.Name)
 
 		p.resolveToolboxEnvironmentVariables(&toolbox, azdEnv)
+		enrichToolboxFromConnections(&toolbox, connByName)
 
 		_, err := p.upsertToolset(ctx, toolsetsClient, toolbox)
 		if err != nil {
@@ -1162,6 +1207,13 @@ func (p *AgentServiceTargetProvider) deployToolboxes(
 		); err != nil {
 			return err
 		}
+
+		// Update the local azdEnv map so downstream env var resolution
+		// (e.g. ${FOUNDRY_TOOLBOX_...} in agent.yaml) works on first deploy.
+		toolboxKey := p.getServiceKey(toolbox.Name)
+		envKey := fmt.Sprintf("FOUNDRY_TOOLBOX_%s_MCP_ENDPOINT", toolboxKey)
+		endpoint := strings.TrimRight(projectEndpoint, "/")
+		azdEnv[envKey] = fmt.Sprintf("%s/toolsets/%s/mcp", endpoint, toolbox.Name)
 
 		fmt.Fprintf(os.Stderr, "Toolbox '%s' deployed successfully\n", toolbox.Name)
 	}

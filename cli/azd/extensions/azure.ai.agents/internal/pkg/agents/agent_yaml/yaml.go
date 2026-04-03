@@ -258,6 +258,7 @@ type Property struct {
 	Default     *any    `json:"default,omitempty" yaml:"default,omitempty"`
 	Example     *any    `json:"example,omitempty" yaml:"example,omitempty"`
 	EnumValues  *[]any  `json:"enumValues,omitempty" yaml:"enumValues,omitempty"`
+	Secret      *bool   `json:"secret,omitempty" yaml:"secret,omitempty"`
 }
 
 // ArrayProperty Represents an array property.
@@ -412,6 +413,7 @@ type recordSchema struct {
 	Type    string `yaml:"type"`
 	Enum    []any  `yaml:"enum"`
 	Default *any   `yaml:"default"`
+	Secret  bool   `yaml:"secret"`
 }
 
 // decodeRecordProperty converts a record-format parameter entry into a Property.
@@ -438,7 +440,7 @@ func decodeRecordProperty(name string, node *yaml.Node) (Property, error) {
 		prop.EnumValues = entry.EnumValues
 	}
 
-	// Extract kind/default/enum from nested schema if present
+	// Extract kind/default/enum/secret from nested schema if present
 	if entry.Schema != nil {
 		prop.Kind = entry.Schema.Type
 		if entry.Schema.Default != nil && prop.Default == nil {
@@ -446,6 +448,9 @@ func decodeRecordProperty(name string, node *yaml.Node) (Property, error) {
 		}
 		if len(entry.Schema.Enum) > 0 && prop.EnumValues == nil {
 			prop.EnumValues = &entry.Schema.Enum
+		}
+		if entry.Schema.Secret {
+			prop.Secret = new(true)
 		}
 	}
 
@@ -479,6 +484,9 @@ func (ps PropertySchema) MarshalYAML() (any, error) {
 		}
 		if p.EnumValues != nil {
 			schema["enum"] = *p.EnumValues
+		}
+		if p.Secret != nil && *p.Secret {
+			schema["secret"] = true
 		}
 		if len(schema) > 0 {
 			entry["schema"] = schema

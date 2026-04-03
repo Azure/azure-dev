@@ -14,23 +14,23 @@ type JobResource struct {
 
 // CommandJob represents the properties of a Foundry command job.
 type CommandJob struct {
-	JobType              string                `json:"jobType"`
-	DisplayName          string                `json:"displayName,omitempty" table:"DISPLAY NAME"`
-	Description          string                `json:"description,omitempty"`
-	Status               string                `json:"status,omitempty" table:"STATUS"`
-	Command              string                `json:"command,omitempty"`
-	EnvironmentID        string                `json:"environmentId,omitempty"`
-	CodeID               string                `json:"codeId,omitempty"`
-	ComputeID            string                `json:"computeId,omitempty"`
-	Inputs               map[string]JobInput   `json:"inputs,omitempty"`
-	Outputs              map[string]JobOutput  `json:"outputs,omitempty"`
-	Distribution         *Distribution         `json:"distribution,omitempty"`
-	Resources            *ResourceConfig       `json:"resources,omitempty"`
-	Limits               *CommandJobLimits     `json:"limits,omitempty"`
-	EnvironmentVariables map[string]string     `json:"environmentVariables,omitempty"`
-	QueueSettings        *QueueSettings        `json:"queueSettings,omitempty"`
-	IsArchived           bool                  `json:"isArchived,omitempty"`
-	CreatedDateTime      string                `json:"createdDateTime,omitempty"`
+	JobType              string                 `json:"jobType"`
+	DisplayName          string                 `json:"displayName,omitempty" table:"DISPLAY NAME"`
+	Description          string                 `json:"description,omitempty"`
+	Status               string                 `json:"status,omitempty" table:"STATUS"`
+	Command              string                 `json:"command,omitempty"`
+	EnvironmentID        string                 `json:"environmentId,omitempty"`
+	CodeID               string                 `json:"codeId,omitempty"`
+	ComputeID            string                 `json:"computeId,omitempty"`
+	Inputs               map[string]JobInput    `json:"inputs,omitempty"`
+	Outputs              map[string]JobOutput   `json:"outputs,omitempty"`
+	Distribution         *Distribution          `json:"distribution,omitempty"`
+	Resources            *ResourceConfig        `json:"resources,omitempty"`
+	Limits               *CommandJobLimits      `json:"limits,omitempty"`
+	EnvironmentVariables map[string]string      `json:"environmentVariables,omitempty"`
+	QueueSettings        *QueueSettings         `json:"queueSettings,omitempty"`
+	IsArchived           bool                   `json:"isArchived,omitempty"`
+	CreatedDateTime      string                 `json:"createdDateTime,omitempty"`
 	Services             map[string]interface{} `json:"services,omitempty"`
 }
 
@@ -41,4 +41,20 @@ var TerminalStatuses = map[string]bool{
 	"Canceled":      true,
 	"NotResponding": true,
 	"Paused":        true,
+}
+
+// InProgressStatuses contains job statuses where the job is still active.
+var InProgressStatuses = map[string]bool{
+	"NotStarted":   true,
+	"Queued":       true,
+	"Preparing":    true,
+	"Provisioning": true,
+	"Starting":     true,
+	"Running":      true,
+}
+
+// StreamableStatuses returns true if the job status indicates streaming is appropriate.
+// This includes in-progress statuses and the Finalizing transitional state.
+func IsStreamableStatus(status string) bool {
+	return InProgressStatuses[status] || status == "Finalizing"
 }

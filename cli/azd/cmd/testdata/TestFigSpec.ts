@@ -278,11 +278,20 @@ const completionSpec: Fig.Spec = {
 							description: 'Send a message to your agent.',
 							options: [
 								{
-									name: ['--conversation'],
+									name: ['--conversation-id'],
 									description: 'Explicit conversation ID override',
 									args: [
 										{
-											name: 'conversation',
+											name: 'conversation-id',
+										},
+									],
+								},
+								{
+									name: ['--input-file', '-f'],
+									description: 'Path to a file whose contents are sent as the request body',
+									args: [
+										{
+											name: 'input-file',
 										},
 									],
 								},
@@ -308,11 +317,11 @@ const completionSpec: Fig.Spec = {
 									],
 								},
 								{
-									name: ['--session', '-s'],
+									name: ['--session-id', '-s'],
 									description: 'Explicit session ID override',
 									args: [
 										{
-											name: 'session',
+											name: 'session-id',
 										},
 									],
 								},

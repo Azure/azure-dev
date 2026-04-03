@@ -217,6 +217,7 @@ overrides:
       - aistudio
       - apiserver
       - azdevify
+      - Chdir
       - creds
       - Moby
       - upsert

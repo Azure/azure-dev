@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/update"
@@ -151,6 +152,11 @@ func TestUpdateErrorCodes(t *testing.T) {
 
 func TestUpdateAction_BetaNoticeFirstUse(t *testing.T) {
 	t.Parallel()
+
+	// Override version to a production-like string so IsNonProdVersion() returns false.
+	saved := internal.Version
+	internal.Version = "1.0.0 (commit 0000000000000000000000000000000000000000)"
+	t.Cleanup(func() { internal.Version = saved })
 
 	t.Run("shows notice and persists channel on empty config", func(t *testing.T) {
 		t.Parallel()

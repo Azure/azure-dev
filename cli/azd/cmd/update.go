@@ -170,6 +170,22 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		fields.UpdateFromVersion.String(internal.VersionInfo().Version.String()),
 	)
 
+	// If only config flags were set (no channel change, no update needed), just confirm
+	if a.onlyConfigFlagsSet() {
+		if configChanged {
+			if err := a.configManager.Save(userConfig); err != nil {
+				tracing.SetUsageAttributes(fields.UpdateResult.String(update.CodeConfigFailed))
+				return nil, fmt.Errorf("failed to save config: %w", err)
+			}
+		}
+		tracing.SetUsageAttributes(fields.UpdateResult.String(update.CodeSuccess))
+		return &actions.ActionResult{
+			Message: &actions.ResultMessage{
+				Header: "Update preferences saved.",
+			},
+		}, nil
+	}
+
 	mgr := update.NewManager(a.commandRunner, nil)
 
 	// Block update in CI/CD environments
@@ -200,22 +216,6 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 					uninstallCmd),
 			},
 		}
-	}
-
-	// If only config flags were set (no channel change, no update needed), just confirm
-	if a.onlyConfigFlagsSet() {
-		if configChanged {
-			if err := a.configManager.Save(userConfig); err != nil {
-				tracing.SetUsageAttributes(fields.UpdateResult.String(update.CodeConfigFailed))
-				return nil, fmt.Errorf("failed to save config: %w", err)
-			}
-		}
-		tracing.SetUsageAttributes(fields.UpdateResult.String(update.CodeSuccess))
-		return &actions.ActionResult{
-			Message: &actions.ResultMessage{
-				Header: "Update preferences saved.",
-			},
-		}, nil
 	}
 
 	// Check for updates (always fresh for manual invocation)

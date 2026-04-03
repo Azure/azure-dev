@@ -89,11 +89,18 @@ func (p *ExternalProvisioningProvider) State(
 	ctx context.Context,
 	options *provisioning.StateOptions,
 ) (*provisioning.StateResult, error) {
+	var hint string
+	if options != nil {
+		hint = options.Hint()
+	}
+
 	req := &azdext.ProvisioningMessage{
 		RequestId: uuid.NewString(),
 		MessageType: &azdext.ProvisioningMessage_StateRequest{
 			StateRequest: &azdext.ProvisioningStateRequest{
-				Options: &azdext.ProvisioningStateOptions{},
+				Options: &azdext.ProvisioningStateOptions{
+					Hint: hint,
+				},
 			},
 		},
 	}
@@ -124,6 +131,8 @@ func (p *ExternalProvisioningProvider) Deploy(
 		},
 	}
 
+	// TODO: Route extension progress to CLI's interactive progress display.
+	// Currently progress is only logged; built-in providers surface through console formatter.
 	resp, err := p.broker.SendAndWaitWithProgress(ctx, req, func(msg string) {
 		log.Printf("provisioning progress: %s", msg)
 	})
@@ -152,6 +161,7 @@ func (p *ExternalProvisioningProvider) Preview(
 		},
 	}
 
+	// TODO: Route to console progress display
 	resp, err := p.broker.SendAndWaitWithProgress(ctx, req, func(msg string) {
 		log.Printf("provisioning preview progress: %s", msg)
 	})
@@ -186,6 +196,7 @@ func (p *ExternalProvisioningProvider) Destroy(
 		},
 	}
 
+	// TODO: Route to console progress display
 	resp, err := p.broker.SendAndWaitWithProgress(ctx, req, func(msg string) {
 		log.Printf("provisioning destroy progress: %s", msg)
 	})
@@ -250,11 +261,37 @@ func (p *ExternalProvisioningProvider) Parameters(
 	return convertFromProtoParameters(paramsResp.Parameters), nil
 }
 
-// PlannedOutputs returns planned outputs. Not yet supported for external providers.
+// PlannedOutputs returns planned outputs from the extension provider.
 func (p *ExternalProvisioningProvider) PlannedOutputs(
 	ctx context.Context,
 ) ([]provisioning.PlannedOutput, error) {
-	return []provisioning.PlannedOutput{}, nil
+	req := &azdext.ProvisioningMessage{
+		RequestId: uuid.NewString(),
+		MessageType: &azdext.ProvisioningMessage_PlannedOutputsRequest{
+			PlannedOutputsRequest: &azdext.ProvisioningPlannedOutputsRequest{},
+		},
+	}
+
+	resp, err := p.broker.SendAndWait(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"provisioning planned outputs failed: %w", err,
+		)
+	}
+
+	outputsResp := resp.GetPlannedOutputsResponse()
+	if outputsResp == nil {
+		return []provisioning.PlannedOutput{}, nil
+	}
+
+	result := make(
+		[]provisioning.PlannedOutput,
+		len(outputsResp.PlannedOutputs),
+	)
+	for i, o := range outputsResp.PlannedOutputs {
+		result[i] = provisioning.PlannedOutput{Name: o.Name}
+	}
+	return result, nil
 }
 
 // --- Conversion helpers ---
@@ -275,6 +312,7 @@ func convertToProtoOptions(
 		Module:                options.Module,
 		DeploymentStacks:      deploymentStacks,
 		IgnoreDeploymentState: options.IgnoreDeploymentState,
+		Name:                  options.Name,
 	}
 
 	// Convert Config to protobuf Struct if present
@@ -372,6 +410,9 @@ func convertFromProtoPreviewResult(
 		return &provisioning.DeployPreviewResult{}
 	}
 
+	// Resource-level change details (created/modified/deleted) are not yet supported
+	// for extension providers. The proto can be extended with a repeated changes field
+	// when this capability is needed.
 	preview := &provisioning.DeploymentPreview{
 		Status: result.Preview.Summary,
 		Properties: &provisioning.DeploymentPreviewProperties{

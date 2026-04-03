@@ -36,6 +36,8 @@ message ProvisioningMessage {
     ProvisioningParametersRequest parameters_request = 16;
     ProvisioningParametersResponse parameters_response = 17;
     ProvisioningProgressMessage progress_message = 18;
+    ProvisioningPlannedOutputsRequest planned_outputs_request = 19;
+    ProvisioningPlannedOutputsResponse planned_outputs_response = 20;
   }
 }
 
@@ -115,9 +117,12 @@ message ProvisioningOptions {
   map<string, string> deployment_stacks = 4;
   bool ignore_deployment_state = 5;
   google.protobuf.Struct config = 6;
+  string name = 7;  // Layer name for multi-layer deployments
 }
 
-message ProvisioningStateOptions {}
+message ProvisioningStateOptions {
+  string hint = 1;  // Deployment name hint for state lookup
+}
 
 message ProvisioningStateResult {
   ProvisioningState state = 1;
@@ -190,4 +195,16 @@ message ProvisioningProgressMessage {
   string request_id = 1;
   string message = 2;
   int64 timestamp = 3;
+}
+
+// --- PlannedOutputs ---
+
+message ProvisioningPlannedOutputsRequest {}
+
+message ProvisioningPlannedOutputsResponse {
+  repeated ProvisioningPlannedOutput planned_outputs = 1;
+}
+
+message ProvisioningPlannedOutput {
+  string name = 1;
 }

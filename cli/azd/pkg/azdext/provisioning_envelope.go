@@ -79,6 +79,10 @@ func (ops *ProvisioningEnvelope) GetInnerMessage(msg *ProvisioningMessage) any {
 		return m.ParametersRequest
 	case *ProvisioningMessage_ParametersResponse:
 		return m.ParametersResponse
+	case *ProvisioningMessage_PlannedOutputsRequest:
+		return m.PlannedOutputsRequest
+	case *ProvisioningMessage_PlannedOutputsResponse:
+		return m.PlannedOutputsResponse
 	case *ProvisioningMessage_ProgressMessage:
 		return m.ProgressMessage
 	default:

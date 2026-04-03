@@ -27,6 +27,7 @@ type ProvisioningProvider interface {
 	) (*ProvisioningDestroyResult, error)
 	EnsureEnv(ctx context.Context) error
 	Parameters(ctx context.Context) ([]*ProvisioningParameter, error)
+	PlannedOutputs(ctx context.Context) ([]*ProvisioningPlannedOutput, error)
 }
 
 // ProvisioningProviderFactory describes a function that creates a provisioning provider instance.
@@ -122,6 +123,9 @@ func (m *ProvisioningManager) ensureStream(ctx context.Context) error {
 	}
 	if err := m.broker.On(m.onParameters); err != nil {
 		return fmt.Errorf("failed to register parameters handler: %w", err)
+	}
+	if err := m.broker.On(m.onPlannedOutputs); err != nil {
+		return fmt.Errorf("failed to register planned outputs handler: %w", err)
 	}
 
 	return nil
@@ -373,6 +377,30 @@ func (m *ProvisioningManager) onParameters(
 		MessageType: &ProvisioningMessage_ParametersResponse{
 			ParametersResponse: &ProvisioningParametersResponse{
 				Parameters: params,
+			},
+		},
+	}, nil
+}
+
+// onPlannedOutputs handles planned outputs requests
+func (m *ProvisioningManager) onPlannedOutputs(
+	ctx context.Context,
+	req *ProvisioningPlannedOutputsRequest,
+) (*ProvisioningMessage, error) {
+	provider, err := m.getProvider()
+	if err != nil {
+		return nil, err
+	}
+
+	outputs, err := provider.PlannedOutputs(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ProvisioningMessage{
+		MessageType: &ProvisioningMessage_PlannedOutputsResponse{
+			PlannedOutputsResponse: &ProvisioningPlannedOutputsResponse{
+				PlannedOutputs: outputs,
 			},
 		},
 	}, nil

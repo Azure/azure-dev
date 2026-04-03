@@ -50,8 +50,8 @@ func NewEnvRefreshResultFromState(state *State) contracts.EnvRefreshResult {
 	return result
 }
 
-// Parses the specified IaC Provider to ensure whether it is valid or not
-// Defaults to `Bicep` if no provider is specified
+// ParseProvider returns the specified IaC provider unchanged.
+// Defaulting for NotSpecified is handled later during provider creation.
 func ParseProvider(kind ProviderKind) (ProviderKind, error) {
 	return kind, nil
 }

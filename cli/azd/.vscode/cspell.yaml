@@ -367,6 +367,12 @@ overrides:
     words:
       - covdata
       - GOWORK
+  - filename: internal/grpcserver/external_provisioning_provider.go
+    words:
+      - CLI's
+  - filename: pkg/azdext/azd_client.go
+    words:
+      - MITM
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

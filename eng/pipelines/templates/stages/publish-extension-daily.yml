@@ -1,0 +1,60 @@
+parameters:
+  - name: SanitizedExtensionId
+    type: string
+  - name: AzdExtensionId
+    type: string
+
+stages:
+  - stage: PublishDaily
+    dependsOn: Sign
+    condition: >-
+      and(
+        succeeded(),
+        ne(variables['Skip.Release'], 'true'),
+        or(
+          in(variables['BuildReasonOverride'], 'IndividualCI', 'BatchedCI'),
+          and(
+            eq('', variables['BuildReasonOverride']),
+            in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI')
+          )
+        )
+      )
+
+    variables:
+      - template: /eng/pipelines/templates/variables/image.yml
+      - template: /eng/pipelines/templates/variables/globals.yml
+
+    jobs:
+      - deployment: Publish_Daily
+        environment: none
+
+        pool:
+          name: azsdk-pool
+          image: ubuntu-22.04
+          os: linux
+
+        templateContext:
+          type: releaseJob
+          isProduction: false
+          inputs:
+            - input: pipelineArtifact
+              artifactName: release
+              targetPath: release
+
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - template: /eng/pipelines/templates/steps/extension-set-metadata-variables.yml
+                  parameters:
+                    Use1ESArtifactTask: true
+
+                - template: /eng/pipelines/templates/steps/publish-extension.yml
+                  parameters:
+                    PublishUploadLocations: ${{ parameters.SanitizedExtensionId }}/daily;${{ parameters.SanitizedExtensionId }}/daily/archive/$(EXT_VERSION)
+                    CreateGitHubRelease: false
+
+                - template: /eng/pipelines/templates/steps/update-daily-registry.yml
+                  parameters:
+                    SanitizedExtensionId: ${{ parameters.SanitizedExtensionId }}
+                    AzdExtensionId: ${{ parameters.AzdExtensionId }}

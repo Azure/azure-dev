@@ -33,6 +33,7 @@ Commands
     pipeline    	: Manage and configure your deployment pipelines.
     restore     	: Restores the project's dependencies.
     template    	: Find and view template details.
+    update      	: Updates azd to the latest version.
 
   Enabled alpha commands
     copilot     	: Manage GitHub Copilot agent settings. (Preview)

@@ -1,4 +1,5 @@
-// Copyright (c) Microsoft Corporation. Licensed under the MIT License.
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 package project
 
 import (
@@ -16,7 +17,7 @@ func Test_appServiceTarget_Package_Coverage3(t *testing.T) {
 		tmpDir := t.TempDir()
 		pkgDir := filepath.Join(tmpDir, "pkg")
 		require.NoError(t, os.MkdirAll(pkgDir, 0o755))
-		require.NoError(t, os.WriteFile(filepath.Join(pkgDir, "app.py"), []byte("print('hi')"), 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(pkgDir, "app.py"), []byte("print('hi')"), 0o600))
 
 		sc := &ServiceConfig{
 			Name:     "web",

@@ -1,4 +1,5 @@
-// Copyright (c) Microsoft Corporation. Licensed under the MIT License.
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 package project
 
 import (
@@ -40,7 +41,8 @@ func Test_createDeployableZip_AzureDirExcluded_Coverage3(t *testing.T) {
 func Test_createDeployableZip_RemoteBuildFalse_Coverage3(t *testing.T) {
 	tmpDir := t.TempDir()
 	// Create node_modules directory
-	require.NoError(t, os.MkdirAll(filepath.Join(tmpDir, "node_modules", "express"), 0o755))
+	require.NoError(t, os.MkdirAll(
+		filepath.Join(tmpDir, "node_modules", "express"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "node_modules", "express", "index.js"), []byte("module.exports={}"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "index.js"), []byte("require('express')"), 0o600))
 

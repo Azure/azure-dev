@@ -25,7 +25,9 @@ func Test_ManagedClustersService_Get_Coverage3(t *testing.T) {
 	}).RespondFn(func(req *http.Request) (*http.Response, error) {
 		return mocks.CreateHttpResponseWithBody(req, http.StatusOK,
 			armcontainerservice.ManagedCluster{
-				ID:       new("/subscriptions/SUB/resourceGroups/RG/providers/Microsoft.ContainerService/managedClusters/my-aks"),
+				ID: new(
+				"/subscriptions/SUB/resourceGroups/RG/providers/Microsoft.ContainerService/managedClusters/my-aks",
+			),
 				Name:     new("my-aks"),
 				Location: new("eastus"),
 				Properties: &armcontainerservice.ManagedClusterProperties{

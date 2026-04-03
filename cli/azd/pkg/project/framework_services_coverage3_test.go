@@ -1,4 +1,5 @@
-// Copyright (c) Microsoft Corporation. Licensed under the MIT License.
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 // Consolidated tests for framework service Requirements, RequiredExternalTools, and Initialize
 // for python, node, maven, and dotnet framework services.
 package project

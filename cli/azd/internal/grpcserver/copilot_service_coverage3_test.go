@@ -328,13 +328,6 @@ func TestCopilotService_SendMessage_ResumeWithSessionId(t *testing.T) {
 	require.Equal(t, "external-session-id", resp.SessionId)
 }
 
-// Helper
-//
-//go:fix inline
-func ptrStr(s string) *string {
-	return new(s)
-}
-
 // Ensure context is propagated for testing listSessions with empty working directory
 func TestCopilotService_ListSessions_EmptyWorkingDir(t *testing.T) {
 	t.Parallel()

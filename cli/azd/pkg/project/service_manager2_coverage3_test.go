@@ -1,4 +1,5 @@
-// Copyright (c) Microsoft Corporation. Licensed under the MIT License.
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 package project
 
 import (
@@ -191,7 +192,8 @@ func Test_GetTargetResource_Coverage3(t *testing.T) {
 
 	t.Run("DotNetContainerApp_FallbackToEnvVar", func(t *testing.T) {
 		envValues := map[string]string{
-			"AZURE_CONTAINER_APPS_ENVIRONMENT_ID": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.App/managedEnvironments/my-fallback-env",
+			"AZURE_CONTAINER_APPS_ENVIRONMENT_ID": "/subscriptions/sub/resourceGroups/rg" +
+				"/providers/Microsoft.App/managedEnvironments/my-fallback-env",
 		}
 		env := environment.NewWithValues("test", envValues)
 

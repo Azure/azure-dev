@@ -151,7 +151,7 @@ func resolveFilesContext(ctx context.Context, flags *filesFlags) (*filesContext,
 		return nil, err
 	}
 
-	sessionID, err := resolveSessionID(ctx, azdClient, info.AgentName, flags.session, false)
+	sessionID, err := resolveStoredID(ctx, azdClient, info.AgentName, flags.session, false, "sessions", false)
 	if err != nil {
 		return nil, err
 	}

@@ -140,6 +140,14 @@ func IsValidEnvironmentName(name string) bool {
 	return EnvironmentNameRegexp.MatchString(name)
 }
 
+// InvalidEnvironmentNameError returns a standardized error for an invalid environment name.
+func InvalidEnvironmentNameError(name string) error {
+	return fmt.Errorf(
+		"environment name '%s' is invalid (it should contain only alphanumeric characters and hyphens)",
+		name,
+	)
+}
+
 // CleanName returns a version of [name] where all characters not allowed in an environment name have been replaced
 // with hyphens
 func CleanName(name string) string {

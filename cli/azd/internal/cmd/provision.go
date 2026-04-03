@@ -20,8 +20,11 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -132,6 +135,8 @@ type ProvisionAction struct {
 	projectConfig       *project.ProjectConfig
 	writer              io.Writer
 	console             input.Console
+	commandRunner       exec.CommandRunner
+	serviceLocator      ioc.ServiceLocator
 	subManager          *account.SubscriptionsManager
 	importManager       *project.ImportManager
 	alphaFeatureManager *alpha.FeatureManager
@@ -149,6 +154,8 @@ func NewProvisionAction(
 	env *environment.Environment,
 	envManager environment.Manager,
 	console input.Console,
+	commandRunner exec.CommandRunner,
+	serviceLocator ioc.ServiceLocator,
 	formatter output.Formatter,
 	writer io.Writer,
 	subManager *account.SubscriptionsManager,
@@ -167,6 +174,8 @@ func NewProvisionAction(
 		projectConfig:       projectConfig,
 		writer:              writer,
 		console:             console,
+		commandRunner:       commandRunner,
+		serviceLocator:      serviceLocator,
 		subManager:          subManager,
 		importManager:       importManager,
 		alphaFeatureManager: alphaFeatureManager,
@@ -280,6 +289,8 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 
 	allSkipped := true
 	for i, layer := range layers {
+		layerPath := layer.AbsolutePath(p.projectConfig.Path)
+
 		layer.IgnoreDeploymentState = p.flags.ignoreDeploymentState
 		if err := p.provisionManager.Initialize(ctx, p.projectConfig.Path, layer); err != nil {
 			return nil, fmt.Errorf("initializing provisioning manager: %w", err)
@@ -331,20 +342,27 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 
 		projectEventArgs := project.ProjectLifecycleEventArgs{
 			Project: p.projectConfig,
+			Args: map[string]any{
+				"preview": previewMode,
+				"layer":   layer.Name,
+				"path":    layerPath,
+			},
 		}
 
 		if p.alphaFeatureManager.IsEnabled(azapi.FeatureDeploymentStacks) {
 			p.console.WarnForFeature(ctx, azapi.FeatureDeploymentStacks)
 		}
 
-		// Do not raise pre/postprovision events in preview mode
+		// Do not raise pre/postprovision events in preview mode.
 		if previewMode {
 			deployPreviewResult, err = p.provisionManager.Preview(ctx)
 		} else {
-			err = p.projectConfig.Invoke(ctx, project.ProjectEventProvision, projectEventArgs, func() error {
-				var err error
-				deployResult, err = p.provisionManager.Deploy(ctx)
-				return err
+			err = p.runLayerProvisionWithHooks(ctx, layer, layerPath, func() error {
+				return p.projectConfig.Invoke(ctx, project.ProjectEventProvision, projectEventArgs, func() error {
+					var err error
+					deployResult, err = p.provisionManager.Deploy(ctx)
+					return err
+				})
 			})
 		}
 
@@ -505,6 +523,59 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 			),
 		},
 	}, nil
+}
+
+func (p *ProvisionAction) runLayerProvisionWithHooks(
+	ctx context.Context,
+	layer provisioning.Options,
+	layerPath string,
+	actionFn ext.InvokeFn,
+) error {
+	if len(layer.Hooks) == 0 {
+		return actionFn()
+	}
+
+	hooksManager := ext.NewHooksManager(layerPath, p.commandRunner)
+	hooksRunner := ext.NewHooksRunner(
+		hooksManager,
+		p.commandRunner,
+		p.envManager,
+		p.console,
+		layerPath,
+		layer.Hooks,
+		p.env,
+		p.serviceLocator,
+	)
+
+	p.validateAndWarnLayerHooks(ctx, hooksManager, layer.Hooks)
+
+	if err := hooksRunner.Invoke(ctx, []string{string(project.ProjectEventProvision)}, actionFn); err != nil {
+		if layer.Name == "" {
+			return err
+		}
+
+		return fmt.Errorf("layer '%s': %w", layer.Name, err)
+	}
+
+	return nil
+}
+
+func (p *ProvisionAction) validateAndWarnLayerHooks(
+	ctx context.Context,
+	hooksManager *ext.HooksManager,
+	hooks map[string][]*ext.HookConfig,
+) {
+	validationResult := hooksManager.ValidateHooks(ctx, hooks)
+
+	for _, warning := range validationResult.Warnings {
+		p.console.MessageUxItem(ctx, &ux.WarningMessage{
+			Description: warning.Message,
+		})
+		if warning.Suggestion != "" {
+			p.console.Message(ctx, warning.Suggestion)
+		}
+		p.console.Message(ctx, "")
+	}
 }
 
 // deployResultToUx creates the ux element to display from a provision preview

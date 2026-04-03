@@ -46,6 +46,7 @@ type initFlags struct {
 	manifestPointer   string
 	src               string
 	env               string
+	protocols         []string
 }
 
 // AiProjectResourceConfig represents the configuration for an AI project resource
@@ -210,6 +211,46 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 				Timeout: 30 * time.Second,
 			}
 
+			// Auto-detect an existing agent manifest in the target directory
+			// when no --manifest flag was provided.
+			if flags.manifestPointer == "" {
+				checkDir := flags.src
+				if checkDir == "" {
+					checkDir = "."
+				}
+				detected, detectErr := detectLocalManifest(checkDir)
+				if detectErr != nil {
+					return fmt.Errorf("checking for existing manifest: %w", detectErr)
+				}
+				if detected != "" {
+					useExisting := flags.NoPrompt
+					if !flags.NoPrompt {
+						confirmResp, promptErr := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+							Options: &azdext.ConfirmOptions{
+								Message: fmt.Sprintf(
+									"An existing agent manifest was found at %q. Use it?",
+									detected,
+								),
+								DefaultValue: new(true),
+							},
+						})
+						if promptErr != nil {
+							if exterrors.IsCancellation(promptErr) {
+								return exterrors.Cancelled("initialization was cancelled")
+							}
+							return fmt.Errorf("prompting for manifest detection: %w", promptErr)
+						}
+						useExisting = *confirmResp.Value
+					}
+					if useExisting {
+						flags.manifestPointer = detected
+						if flags.src == "" {
+							flags.src = checkDir
+						}
+					}
+				}
+			}
+
 			if flags.manifestPointer != "" {
 				if err := runInitFromManifest(ctx, flags, azdClient, httpClient); err != nil {
 					if exterrors.IsCancellation(err) {
@@ -353,6 +394,9 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 		"Directory to download the agent definition to (defaults to 'src/<agent-id>')")
 
 	cmd.Flags().StringVarP(&flags.env, "environment", "e", "", "The name of the azd environment to use.")
+
+	cmd.Flags().StringSliceVar(&flags.protocols, "protocol", nil,
+		"Protocols supported by the agent (e.g., 'responses', 'invocations'). Can be specified multiple times.")
 
 	return cmd
 }

@@ -227,15 +227,6 @@ const completionSpec: Fig.Spec = {
 							description: 'Initialize a new AI agent project. (Preview)',
 							options: [
 								{
-									name: ['--environment', '-e'],
-									description: 'The name of the azd environment to use.',
-									args: [
-										{
-											name: 'environment',
-										},
-									],
-								},
-								{
 									name: ['--manifest', '-m'],
 									description: 'Path or URI to an agent manifest to add to your azd project',
 									args: [
@@ -287,11 +278,20 @@ const completionSpec: Fig.Spec = {
 							description: 'Send a message to your agent.',
 							options: [
 								{
-									name: ['--conversation'],
+									name: ['--conversation-id'],
 									description: 'Explicit conversation ID override',
 									args: [
 										{
-											name: 'conversation',
+											name: 'conversation-id',
+										},
+									],
+								},
+								{
+									name: ['--input-file', '-f'],
+									description: 'Path to a file whose contents are sent as the request body',
+									args: [
+										{
+											name: 'input-file',
 										},
 									],
 								},
@@ -317,11 +317,11 @@ const completionSpec: Fig.Spec = {
 									],
 								},
 								{
-									name: ['--session', '-s'],
+									name: ['--session-id', '-s'],
 									description: 'Explicit session ID override',
 									args: [
 										{
-											name: 'session',
+											name: 'session-id',
 										},
 									],
 								},
@@ -426,15 +426,6 @@ const completionSpec: Fig.Spec = {
 							name: ['init'],
 							description: 'Initialize a new AI Fine-tuning project. (Preview)',
 							options: [
-								{
-									name: ['--environment', '-n'],
-									description: 'The name of the azd environment to use.',
-									args: [
-										{
-											name: 'environment',
-										},
-									],
-								},
 								{
 									name: ['--from-job', '-j'],
 									description: 'Clone configuration from an existing job ID',
@@ -1149,15 +1140,6 @@ const completionSpec: Fig.Spec = {
 							name: ['init'],
 							description: 'Initialize a new AI models project. (Preview)',
 							options: [
-								{
-									name: ['--environment', '-n'],
-									description: 'The name of the azd environment to use',
-									args: [
-										{
-											name: 'environment',
-										},
-									],
-								},
 								{
 									name: ['--project-endpoint', '-e'],
 									description: 'Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)',
@@ -2267,7 +2249,7 @@ const completionSpec: Fig.Spec = {
 			subcommands: [
 				{
 					name: ['run'],
-					description: 'Runs the specified hook for the project and services',
+					description: 'Runs the specified hook for the project, provisioning layers, and services',
 					options: [
 						{
 							name: ['--environment', '-e'],
@@ -2275,6 +2257,15 @@ const completionSpec: Fig.Spec = {
 							args: [
 								{
 									name: 'environment',
+								},
+							],
+						},
+						{
+							name: ['--layer'],
+							description: 'Only runs hooks for the specified provisioning layer.',
+							args: [
+								{
+									name: 'layer',
 								},
 							],
 						},
@@ -3558,7 +3549,7 @@ const completionSpec: Fig.Spec = {
 					subcommands: [
 						{
 							name: ['run'],
-							description: 'Runs the specified hook for the project and services',
+							description: 'Runs the specified hook for the project, provisioning layers, and services',
 						},
 					],
 				},
@@ -3716,6 +3707,16 @@ const completionSpec: Fig.Spec = {
 			name: ['--debug'],
 			description: 'Enables debugging and diagnostics logging.',
 			isPersistent: true,
+		},
+		{
+			name: ['--environment', '-e'],
+			description: 'The name of the environment to use.',
+			isPersistent: true,
+			args: [
+				{
+					name: 'environment',
+				},
+			],
 		},
 		{
 			name: ['--no-prompt'],

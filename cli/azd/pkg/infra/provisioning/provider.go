@@ -6,11 +6,13 @@ package provisioning
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"dario.cat/mergo"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 )
 
 type ProviderKind string
@@ -39,6 +41,7 @@ type Options struct {
 	Path             string         `yaml:"path,omitempty"`
 	Module           string         `yaml:"module,omitempty"`
 	Name             string         `yaml:"name,omitempty"`
+	Hooks            HooksConfig    `yaml:"hooks,omitempty"`
 	DeploymentStacks map[string]any `yaml:"deploymentStacks,omitempty"`
 	// Provisioning options for each individually defined layer.
 	Layers []Options `yaml:"layers,omitempty"`
@@ -55,6 +58,9 @@ type Options struct {
 	// from previous layers.
 	VirtualEnv map[string]string `yaml:"-"`
 }
+
+// HooksConfig aliases ext.HooksConfig for compatibility with existing provisioning package references.
+type HooksConfig = ext.HooksConfig
 
 // GetWithDefaults merges the provided infra options with the default provisioning options
 func (o Options) GetWithDefaults(other ...Options) (Options, error) {
@@ -78,6 +84,15 @@ func (o Options) GetWithDefaults(other ...Options) (Options, error) {
 	}
 
 	return mergedOptions, nil
+}
+
+// AbsolutePath returns the layer path resolved against the project path when needed.
+func (o Options) AbsolutePath(projectPath string) string {
+	if filepath.IsAbs(o.Path) {
+		return o.Path
+	}
+
+	return filepath.Join(projectPath, o.Path)
 }
 
 // GetLayers return the provisioning layers defined.
@@ -121,26 +136,69 @@ func (o *Options) GetLayer(name string) (Options, error) {
 //
 // This should be called immediately right after Unmarshal() before any defaulting is performed.
 func (o *Options) Validate() error {
-	errWrap := func(err string) error {
-		return fmt.Errorf("validating infra.layers: %s", err)
+	if len(o.Hooks) > 0 {
+		return validateErr("infra", "'hooks' can only be declared under 'infra.layers[]'")
 	}
 
-	anyIncompatibleFieldsSet := func() bool {
-		return o.Name != "" || o.Module != "" || o.Path != "" || o.DeploymentStacks != nil
-	}
-
-	if len(o.Layers) > 0 && anyIncompatibleFieldsSet() {
-		return errWrap(
-			"properties on 'infra' cannot be declared when 'infra.layers' is declared")
-	}
-
-	for _, layer := range o.Layers {
-		if layer.Name == "" {
-			return errWrap("name must be specified for each provisioning layer")
+	if len(o.Layers) > 0 {
+		anyIncompatibleFieldsSet := func() bool {
+			return o.Name != "" || o.Module != "" || o.Path != "" || o.DeploymentStacks != nil
 		}
 
+		if anyIncompatibleFieldsSet() {
+			return validateErr("infra", "properties on 'infra' cannot be declared when 'infra.layers' is declared")
+		}
+
+		if err := o.validateLayers(); err != nil {
+			return wrapValidateErr("infra.layers", err)
+		}
+	}
+
+	return nil
+}
+
+func wrapValidateErr(scope string, err error) error {
+	if err == nil {
+		return nil
+	}
+
+	return fmt.Errorf("validating %s: %w", scope, err)
+}
+
+func validateErr(scope, format string, args ...any) error {
+	return wrapValidateErr(scope, fmt.Errorf(format, args...))
+}
+
+func (o *Options) validateLayers() error {
+	validateHooks := func(scope string, hooks HooksConfig) error {
+		for hookName := range hooks {
+			hookType, eventName := ext.InferHookType(hookName)
+			if hookType == ext.HookTypeNone || eventName != "provision" {
+				return fmt.Errorf("%s: only 'preprovision' and 'postprovision' hooks are supported", scope)
+			}
+		}
+
+		return nil
+	}
+
+	seenLayers := map[string]struct{}{}
+	for _, layer := range o.Layers {
+		if layer.Name == "" {
+			return fmt.Errorf("name must be specified for each provisioning layer")
+		}
+
+		if _, has := seenLayers[layer.Name]; has {
+			return fmt.Errorf("duplicate layer name '%s' is not allowed", layer.Name)
+		}
+
+		seenLayers[layer.Name] = struct{}{}
+
 		if layer.Path == "" {
-			return errWrap(fmt.Sprintf("%s: path must be specified", layer.Name))
+			return fmt.Errorf("%s: path must be specified", layer.Name)
+		}
+
+		if err := validateHooks(layer.Name, layer.Hooks); err != nil {
+			return err
 		}
 	}
 

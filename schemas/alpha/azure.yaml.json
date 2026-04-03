@@ -67,7 +67,6 @@
                     "type": "array",
                     "title": "Provisioning layers.",
                     "description": "Optional. Layers for Azure infrastructure provisioning.",
-                    "additionalProperties": false,
                     "uniqueItems": true,
                     "items": {
                         "type": "object",
@@ -95,7 +94,25 @@
                             },
                              "deploymentStacks": {
                                  "$ref": "#/definitions/deploymentStacksConfig"
-                             }
+                             },
+                            "hooks": {
+                                "type": "object",
+                                "title": "Provisioning layer hooks",
+                                "description": "Hooks should match `provision` event names prefixed with `pre` or `post` depending on when the script should execute. When specifying paths they should be relative to the layer path.",
+                                "additionalProperties": false,
+                                "properties": {
+                                    "preprovision": {
+                                        "title": "pre provision hook",
+                                        "description": "Runs before provisioning the layer",
+                                        "$ref": "#/definitions/hooks"
+                                    },
+                                    "postprovision": {
+                                        "title": "post provision hook",
+                                        "description": "Runs after provisioning the layer",
+                                        "$ref": "#/definitions/hooks"
+                                    }
+                                }
+                            }
                         }
                     },
                     "allOf": [

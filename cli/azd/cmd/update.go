@@ -14,7 +14,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
-	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -64,13 +63,12 @@ func newUpdateCmd() *cobra.Command {
 }
 
 type updateAction struct {
-	flags               *updateFlags
-	console             input.Console
-	formatter           output.Formatter
-	writer              io.Writer
-	configManager       config.UserConfigManager
-	commandRunner       exec.CommandRunner
-	alphaFeatureManager *alpha.FeatureManager
+	flags         *updateFlags
+	console       input.Console
+	formatter     output.Formatter
+	writer        io.Writer
+	configManager config.UserConfigManager
+	commandRunner exec.CommandRunner
 }
 
 func newUpdateAction(
@@ -80,16 +78,14 @@ func newUpdateAction(
 	writer io.Writer,
 	configManager config.UserConfigManager,
 	commandRunner exec.CommandRunner,
-	alphaFeatureManager *alpha.FeatureManager,
 ) actions.Action {
 	return &updateAction{
-		flags:               flags,
-		console:             console,
-		formatter:           formatter,
-		writer:              writer,
-		configManager:       configManager,
-		commandRunner:       commandRunner,
-		alphaFeatureManager: alphaFeatureManager,
+		flags:         flags,
+		console:       console,
+		formatter:     formatter,
+		writer:        writer,
+		configManager: configManager,
+		commandRunner: commandRunner,
 	}
 }
 
@@ -102,27 +98,6 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 	}
 
-	// Auto-enable the alpha feature if not already enabled.
-	// The user's intent is clear by running `azd update` directly.
-	if !a.alphaFeatureManager.IsEnabled(update.FeatureUpdate) {
-		userCfg, err := a.configManager.Load()
-		if err != nil {
-			userCfg = config.NewEmptyConfig()
-		}
-
-		if err := userCfg.Set(fmt.Sprintf("alpha.%s", update.FeatureUpdate), "on"); err != nil {
-			return nil, fmt.Errorf("failed to enable update feature: %w", err)
-		}
-
-		if err := a.configManager.Save(userCfg); err != nil {
-			return nil, fmt.Errorf("failed to save config: %w", err)
-		}
-
-		a.console.MessageUxItem(ctx, &ux.MessageTitle{
-			Title: "azd update is in alpha. Channel-aware version checks are now enabled.\n",
-		})
-	}
-
 	// Track install method for telemetry
 	installedBy := installer.InstalledBy()
 	tracing.SetUsageAttributes(
@@ -132,6 +107,16 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	userConfig, err := a.configManager.Load()
 	if err != nil {
 		userConfig = config.NewEmptyConfig()
+	}
+
+	// Show preview notice on first use
+	if !update.HasUpdateConfig(userConfig) {
+		a.console.MessageUxItem(ctx, &ux.MessageTitle{
+			Title: fmt.Sprintf(
+				"azd update is currently in preview. "+
+					"To learn more about feature stages, visit %s.",
+				output.WithLinkFormat("https://aka.ms/azd-feature-stages")),
+		})
 	}
 
 	// Determine current channel BEFORE persisting any flags

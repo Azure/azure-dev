@@ -13,7 +13,7 @@ Today, when a new version of `azd` is available, users see a warning message wit
 1. **`azd update`** — a command that performs the update for the user
 2. **Channel management** — ability to switch between `stable` and `daily` builds
 
-The feature ships as a hidden command behind an alpha feature toggle (`alpha.update`) for safe rollout. When the toggle is off, there are zero changes to existing behavior — `azd version`, update notifications, everything stays exactly as it is today.
+The feature ships as a command currently in preview. On first use, a preview notice is displayed. The `azd update` command is always available.
 
 ---
 
@@ -23,7 +23,7 @@ The feature ships as a hidden command behind an alpha feature toggle (`alpha.upd
 - Preserve user control (channel selection, check interval)
 - Avoid disruption to CI/CD pipelines
 - Respect platform install methods (MSI, Install Scripts, Homebrew, winget, choco)
-- Ship safely behind an alpha feature flag with zero impact when off
+- Ship safely as a preview feature while gathering feedback
 
 ---
 
@@ -121,8 +121,6 @@ azd config set updates.checkIntervalHours 4
 ```
 
 Channel is set via `azd update --channel <stable|daily>` (which persists the choice to `updates.channel` config). Default channel is `stable`.
-
-These follow the existing convention of `"on"/"off"` for boolean-like config values (consistent with alpha features).
 
 ### 2. Daily Build Version Tracking
 
@@ -349,14 +347,12 @@ Uses the existing azd telemetry infrastructure (OpenTelemetry). New telemetry fi
 
 These codes are integrated into azd's `MapError` pipeline, so update failures show up properly in telemetry dashboards alongside other command errors.
 
-### 8. Feature Toggle (Alpha Gate)
+### 8. Feature Stage (Preview)
 
-The entire update feature ships behind `alpha.update` (default: off). This means:
+The update feature is currently in preview:
 
-- **Toggle off** (default): Zero behavior changes. `azd version` output is the same. Update notification shows the existing platform-specific install instructions. Running `azd update` auto-enables the feature.
-- **Toggle on** (`azd config set alpha.update on`): All update features are active — `azd update` works, `azd version` shows the channel suffix, notifications say "run `azd update`."
-
-This lets us roll out to internal users first, gather feedback, and fix issues before broader availability. Once stable, the toggle can be removed and the feature enabled by default.
+- `azd update` works without needing any config toggle
+- On first use, when no `updates.*` configuration exists, a preview notice is displayed.
 
 ### 9. Update Banner Suppression
 

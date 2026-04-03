@@ -22,7 +22,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
-	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/installer"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
@@ -110,15 +109,14 @@ func main() {
 					currentVersionStr, versionInfo.Channel, latestVersionStr))
 			fmt.Fprintln(os.Stderr)
 
-			// Show "azd update" hint only if the update feature is enabled,
+			// Show "azd update" hint if the user has update config set,
 			// otherwise show the original platform-specific upgrade instructions.
 			configMgr := config.NewUserConfigManager(config.NewFileConfigManager(config.NewManager()))
 			userCfg, cfgErr := configMgr.Load()
 			if cfgErr != nil {
 				userCfg = config.NewEmptyConfig()
 			}
-			featureManager := alpha.NewFeaturesManagerWithConfig(userCfg)
-			if featureManager.IsEnabled(update.FeatureUpdate) {
+			if update.HasUpdateConfig(userCfg) {
 				fmt.Fprintln(
 					os.Stderr,
 					output.WithWarningFormat("To update to the latest version, run: azd update"))

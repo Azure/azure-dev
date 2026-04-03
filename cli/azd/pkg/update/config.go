@@ -16,13 +16,9 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
-
-// FeatureUpdate is the alpha feature key for the azd update command.
-var FeatureUpdate = alpha.MustFeatureKey("update")
 
 // Channel represents the update channel for azd builds.
 type Channel string
@@ -149,6 +145,13 @@ func SaveAutoUpdate(cfg config.Config, enabled bool) error {
 // SaveCheckIntervalHours persists the check interval to user config.
 func SaveCheckIntervalHours(cfg config.Config, hours int) error {
 	return cfg.Set(configKeyCheckIntervalHours, hours)
+}
+
+// HasUpdateConfig returns true if the user has any update configuration set.
+func HasUpdateConfig(cfg config.Config) bool {
+	_, hasChannel := cfg.Get(configKeyChannel)
+	_, hasInterval := cfg.Get(configKeyCheckIntervalHours)
+	return hasChannel || hasInterval
 }
 
 // CacheFile represents the cached version check result.

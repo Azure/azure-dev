@@ -494,7 +494,7 @@ func TestManager_CheckForUpdates(t *testing.T) {
 		},
 	}
 
-	uc := NewUpdateChecker(mgr2, det, tmpDir)
+	uc := NewUpdateChecker(mgr2, det, staticDir(tmpDir))
 	m := NewManager(det, &mockInstaller{}, uc)
 
 	results, err := m.CheckForUpdates(t.Context())
@@ -507,7 +507,7 @@ func TestManager_ShouldCheckForUpdates(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	mgr2 := newMockUserConfigManager()
-	uc := NewUpdateChecker(mgr2, &mockDetector{}, tmpDir)
+	uc := NewUpdateChecker(mgr2, &mockDetector{}, staticDir(tmpDir))
 
 	m := NewManager(&mockDetector{}, &mockInstaller{}, uc)
 
@@ -521,7 +521,7 @@ func TestManager_HasUpdatesAvailable(t *testing.T) {
 	tmpDir := t.TempDir()
 	mgr2 := newMockUserConfigManager()
 	det := &mockDetector{}
-	uc := NewUpdateChecker(mgr2, det, tmpDir)
+	uc := NewUpdateChecker(mgr2, det, staticDir(tmpDir))
 
 	m := NewManager(det, &mockInstaller{}, uc)
 
@@ -536,7 +536,7 @@ func TestManager_MarkUpdateNotificationShown(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	mgr2 := newMockUserConfigManager()
-	uc := NewUpdateChecker(mgr2, &mockDetector{}, tmpDir)
+	uc := NewUpdateChecker(mgr2, &mockDetector{}, staticDir(tmpDir))
 
 	m := NewManager(&mockDetector{}, &mockInstaller{}, uc)
 	err := m.MarkUpdateNotificationShown(t.Context())

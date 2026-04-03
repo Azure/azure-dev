@@ -54,7 +54,7 @@ stages:
                     PublishUploadLocations: ${{ parameters.SanitizedExtensionId }}/daily;${{ parameters.SanitizedExtensionId }}/daily/archive/$(EXT_VERSION)
                     CreateGitHubRelease: false
 
-                - template: /eng/pipelines/templates/steps/update-daily-registry.yml
+                - template: /eng/pipelines/templates/steps/update-extension-daily-registry.yml
                   parameters:
                     SanitizedExtensionId: ${{ parameters.SanitizedExtensionId }}
                     AzdExtensionId: ${{ parameters.AzdExtensionId }}

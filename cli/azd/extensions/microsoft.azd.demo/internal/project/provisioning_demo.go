@@ -250,3 +250,14 @@ func (p *DemoProvisioningProvider) Parameters(
 		},
 	}, nil
 }
+
+// PlannedOutputs returns the list of outputs this provider plans to produce
+func (p *DemoProvisioningProvider) PlannedOutputs(
+	ctx context.Context,
+) ([]*azdext.ProvisioningPlannedOutput, error) {
+	return []*azdext.ProvisioningPlannedOutput{
+		{Name: "DEMO_ENDPOINT"},
+		{Name: "DEMO_RESOURCE_GROUP"},
+		{Name: "DEMO_REGION"},
+	}, nil
+}

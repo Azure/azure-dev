@@ -112,7 +112,7 @@ func newJobDownloadCommand() *cobra.Command {
 			// Step 3: Get SAS URIs for all artifacts using prefix/contentinfo (batch)
 			var allSASItems []models.ArtifactContentInfo
 			for _, prefix := range prefixes {
-				items, err := apiClient.GetAllArtifactSASURIs(ctx, name, prefix)
+				items, err := apiClient.GetAllArtifactSASForPath(ctx, name, prefix)
 				if err != nil {
 					return fmt.Errorf("failed to get SAS URIs for prefix '%s': %w", prefix, err)
 				}

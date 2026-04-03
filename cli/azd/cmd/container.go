@@ -67,14 +67,17 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/state"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/az"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/bash"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/javac"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/kubectl"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/language"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/maven"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/node"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/powershell"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/python"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/swa"
 	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
@@ -810,6 +813,18 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	}
 
 	container.MustRegisterNamedScoped(string(project.ServiceLanguageDocker), project.NewDockerProjectAsFrameworkService)
+
+	// Hook executors registered by language name (transient — fresh per hook invocation).
+	// The HooksRunner resolves these via serviceLocator.ResolveNamed().
+	hookExecutorMap := map[language.ScriptLanguage]any{
+		language.ScriptLanguageBash:       bash.NewExecutor,
+		language.ScriptLanguagePowerShell: powershell.NewExecutor,
+		language.ScriptLanguagePython:     language.NewPythonExecutor,
+	}
+
+	for lang, constructor := range hookExecutorMap {
+		container.MustRegisterNamedTransient(string(lang), constructor)
+	}
 
 	// Pipelines
 	container.MustRegisterScoped(pipeline.NewPipelineManager)

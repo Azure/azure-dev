@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -79,6 +80,39 @@ func (m *mockPythonTools) InstallProject(
 	return m.installProjErr
 }
 
+// mockCommandRunner is a minimal mock of [exec.CommandRunner]
+// used to construct test dependencies without invoking real
+// processes.
+type mockCommandRunner struct {
+	lastRunArgs  exec.RunArgs
+	runResult    exec.RunResult
+	runErr       error
+	toolInPathFn func(name string) error
+}
+
+func (m *mockCommandRunner) Run(
+	_ context.Context,
+	args exec.RunArgs,
+) (exec.RunResult, error) {
+	m.lastRunArgs = args
+	return m.runResult, m.runErr
+}
+
+func (m *mockCommandRunner) RunList(
+	_ context.Context,
+	_ []string,
+	_ exec.RunArgs,
+) (exec.RunResult, error) {
+	return m.runResult, m.runErr
+}
+
+func (m *mockCommandRunner) ToolInPath(name string) error {
+	if m.toolInPathFn != nil {
+		return m.toolInPathFn(name)
+	}
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // Prepare tests
 // ---------------------------------------------------------------------------
@@ -87,11 +121,12 @@ func TestPythonPrepare_PythonNotInstalled(t *testing.T) {
 	cli := &mockPythonTools{
 		checkInstalledErr: errors.New("python not found"),
 	}
-	e := newPythonExecutor(
-		&mockCommandRunner{}, cli, t.TempDir(), "", nil,
+	e := newPythonExecutorInternal(
+		&mockCommandRunner{}, cli,
 	)
 
-	err := e.Prepare(t.Context(), "/any/hook.py")
+	execCtx := tools.ExecutionContext{BoundaryDir: t.TempDir()}
+	err := e.Prepare(t.Context(), "/any/hook.py", execCtx)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "python 3 is required")
@@ -103,12 +138,16 @@ func TestPythonPrepare_PythonNotInstalled(t *testing.T) {
 func TestPythonPrepare_NoProjectFile(t *testing.T) {
 	dir := t.TempDir()
 	cli := &mockPythonTools{}
-	e := newPythonExecutor(
-		&mockCommandRunner{}, cli, dir, dir, nil,
+	e := newPythonExecutorInternal(
+		&mockCommandRunner{}, cli,
 	)
 
+	execCtx := tools.ExecutionContext{
+		BoundaryDir: dir,
+		Cwd:         dir,
+	}
 	scriptPath := filepath.Join(dir, "hook.py")
-	err := e.Prepare(t.Context(), scriptPath)
+	err := e.Prepare(t.Context(), scriptPath, execCtx)
 
 	require.NoError(t, err)
 	assert.False(t, cli.createVenvCalled)
@@ -129,12 +168,13 @@ func TestPythonPrepare_WithRequirementsTxt(t *testing.T) {
 	)
 
 	cli := &mockPythonTools{}
-	e := newPythonExecutor(
-		&mockCommandRunner{}, cli, root, "", nil,
+	e := newPythonExecutorInternal(
+		&mockCommandRunner{}, cli,
 	)
 
+	execCtx := tools.ExecutionContext{BoundaryDir: root}
 	scriptPath := filepath.Join(hooksDir, "deploy.py")
-	err := e.Prepare(t.Context(), scriptPath)
+	err := e.Prepare(t.Context(), scriptPath, execCtx)
 
 	require.NoError(t, err)
 
@@ -168,12 +208,13 @@ func TestPythonPrepare_WithPyprojectToml(t *testing.T) {
 	)
 
 	cli := &mockPythonTools{}
-	e := newPythonExecutor(
-		&mockCommandRunner{}, cli, root, "", nil,
+	e := newPythonExecutorInternal(
+		&mockCommandRunner{}, cli,
 	)
 
+	execCtx := tools.ExecutionContext{BoundaryDir: root}
 	scriptPath := filepath.Join(projectDir, "deploy.py")
-	err := e.Prepare(t.Context(), scriptPath)
+	err := e.Prepare(t.Context(), scriptPath, execCtx)
 
 	require.NoError(t, err)
 
@@ -202,12 +243,13 @@ func TestPythonPrepare_VenvAlreadyExists(t *testing.T) {
 	require.NoError(t, os.MkdirAll(venvDir, 0o700))
 
 	cli := &mockPythonTools{}
-	e := newPythonExecutor(
-		&mockCommandRunner{}, cli, root, "", nil,
+	e := newPythonExecutorInternal(
+		&mockCommandRunner{}, cli,
 	)
 
+	execCtx := tools.ExecutionContext{BoundaryDir: root}
 	scriptPath := filepath.Join(projectDir, "deploy.py")
-	err := e.Prepare(t.Context(), scriptPath)
+	err := e.Prepare(t.Context(), scriptPath, execCtx)
 
 	require.NoError(t, err)
 	assert.False(
@@ -238,15 +280,18 @@ func TestPythonExecute_WithVenv(t *testing.T) {
 
 	cli := &mockPythonTools{}
 	runner := &mockCommandRunner{}
-	e := newPythonExecutor(
-		runner, cli, root, projectDir, nil,
-	)
+	e := newPythonExecutorInternal(runner, cli)
+
+	execCtx := tools.ExecutionContext{
+		BoundaryDir: root,
+		Cwd:         projectDir,
+	}
 
 	scriptPath := filepath.Join(hooksDir, "deploy.py")
-	require.NoError(t, e.Prepare(t.Context(), scriptPath))
+	require.NoError(t, e.Prepare(t.Context(), scriptPath, execCtx))
 
 	_, err := e.Execute(
-		t.Context(), scriptPath, tools.ExecOptions{},
+		t.Context(), scriptPath, execCtx,
 	)
 	require.NoError(t, err)
 
@@ -274,13 +319,12 @@ func TestPythonExecute_WithVenv(t *testing.T) {
 func TestPythonExecute_WithoutVenv(t *testing.T) {
 	dir := t.TempDir()
 	runner := &mockCommandRunner{}
-	e := newPythonExecutor(
-		runner, &mockPythonTools{}, dir, "", nil,
-	)
+	e := newPythonExecutorInternal(runner, &mockPythonTools{})
 
+	execCtx := tools.ExecutionContext{BoundaryDir: dir}
 	scriptPath := filepath.Join(dir, "hook.py")
 	_, err := e.Execute(
-		t.Context(), scriptPath, tools.ExecOptions{},
+		t.Context(), scriptPath, execCtx,
 	)
 	require.NoError(t, err)
 
@@ -296,14 +340,15 @@ func TestPythonExecute_WithoutVenv(t *testing.T) {
 func TestPythonExecute_EnvVarsPassthrough(t *testing.T) {
 	runner := &mockCommandRunner{}
 	envVars := []string{"FOO=bar", "BAZ=qux"}
-	e := newPythonExecutor(
-		runner, &mockPythonTools{},
-		t.TempDir(), "", envVars,
-	)
+	e := newPythonExecutorInternal(runner, &mockPythonTools{})
 
+	execCtx := tools.ExecutionContext{
+		BoundaryDir: t.TempDir(),
+		EnvVars:     envVars,
+	}
 	scriptPath := filepath.Join(t.TempDir(), "hook.py")
 	_, err := e.Execute(
-		t.Context(), scriptPath, tools.ExecOptions{},
+		t.Context(), scriptPath, execCtx,
 	)
 	require.NoError(t, err)
 
@@ -312,15 +357,15 @@ func TestPythonExecute_EnvVarsPassthrough(t *testing.T) {
 
 func TestPythonExecute_InteractiveMode(t *testing.T) {
 	runner := &mockCommandRunner{}
-	e := newPythonExecutor(
-		runner, &mockPythonTools{},
-		t.TempDir(), "", nil,
-	)
+	e := newPythonExecutorInternal(runner, &mockPythonTools{})
 
+	execCtx := tools.ExecutionContext{
+		BoundaryDir: t.TempDir(),
+		Interactive: new(true),
+	}
 	scriptPath := filepath.Join(t.TempDir(), "hook.py")
 	_, err := e.Execute(
-		t.Context(), scriptPath,
-		tools.ExecOptions{Interactive: new(true)},
+		t.Context(), scriptPath, execCtx,
 	)
 	require.NoError(t, err)
 
@@ -333,14 +378,15 @@ func TestPythonExecute_WorkingDirectory(t *testing.T) {
 		require.NoError(t, os.MkdirAll(customCwd, 0o700))
 
 		runner := &mockCommandRunner{}
-		e := newPythonExecutor(
-			runner, &mockPythonTools{},
-			t.TempDir(), customCwd, nil,
-		)
+		e := newPythonExecutorInternal(runner, &mockPythonTools{})
 
+		execCtx := tools.ExecutionContext{
+			BoundaryDir: t.TempDir(),
+			Cwd:         customCwd,
+		}
 		scriptPath := filepath.Join(t.TempDir(), "hook.py")
 		_, err := e.Execute(
-			t.Context(), scriptPath, tools.ExecOptions{},
+			t.Context(), scriptPath, execCtx,
 		)
 		require.NoError(t, err)
 
@@ -349,15 +395,16 @@ func TestPythonExecute_WorkingDirectory(t *testing.T) {
 
 	t.Run("FallbackToScriptDir", func(t *testing.T) {
 		runner := &mockCommandRunner{}
-		e := newPythonExecutor(
-			runner, &mockPythonTools{},
-			t.TempDir(), "", nil, // empty cwd
-		)
+		e := newPythonExecutorInternal(runner, &mockPythonTools{})
 
+		execCtx := tools.ExecutionContext{
+			BoundaryDir: t.TempDir(),
+			// Cwd intentionally empty
+		}
 		scriptDir := filepath.Join(t.TempDir(), "scripts")
 		scriptPath := filepath.Join(scriptDir, "hook.py")
 		_, err := e.Execute(
-			t.Context(), scriptPath, tools.ExecOptions{},
+			t.Context(), scriptPath, execCtx,
 		)
 		require.NoError(t, err)
 

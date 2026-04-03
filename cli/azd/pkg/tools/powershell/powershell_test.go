@@ -18,12 +18,14 @@ import (
 )
 
 func Test_Powershell_Prepare(t *testing.T) {
+	emptyCtx := tools.ExecutionContext{}
+
 	t.Run("PwshAvailable", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		mockContext.CommandRunner.MockToolInPath("pwsh", nil)
 
-		ps := NewPowershellScript(mockContext.CommandRunner, "cwd", nil)
-		err := ps.Prepare(*mockContext.Context, "script.ps1")
+		ps := NewExecutor(mockContext.CommandRunner)
+		err := ps.Prepare(*mockContext.Context, "script.ps1", emptyCtx)
 
 		require.NoError(t, err)
 	})
@@ -39,8 +41,8 @@ func Test_Powershell_Prepare(t *testing.T) {
 		)
 		mockContext.CommandRunner.MockToolInPath("powershell", nil)
 
-		ps := NewPowershellScript(mockContext.CommandRunner, "cwd", nil)
-		err := ps.Prepare(*mockContext.Context, "script.ps1")
+		ps := NewExecutor(mockContext.CommandRunner)
+		err := ps.Prepare(*mockContext.Context, "script.ps1", emptyCtx)
 
 		require.NoError(t, err)
 	})
@@ -54,8 +56,8 @@ func Test_Powershell_Prepare(t *testing.T) {
 			"powershell", errors.New("powershell: command not found"),
 		)
 
-		ps := NewPowershellScript(mockContext.CommandRunner, "cwd", nil)
-		err := ps.Prepare(*mockContext.Context, "script.ps1")
+		ps := NewExecutor(mockContext.CommandRunner)
+		err := ps.Prepare(*mockContext.Context, "script.ps1", emptyCtx)
 
 		require.Error(t, err)
 		if sugErr, ok := errors.AsType[*internal.ErrorWithSuggestion](err); ok {
@@ -87,13 +89,15 @@ func Test_Powershell_Execute(t *testing.T) {
 			return exec.NewRunResult(0, "", ""), nil
 		})
 
-		ps := NewPowershellScript(mockContext.CommandRunner, workingDir, env)
-		require.NoError(t, ps.Prepare(*mockContext.Context, scriptPath))
+		ps := NewExecutor(mockContext.CommandRunner)
+		execCtx := tools.ExecutionContext{Cwd: workingDir, EnvVars: env}
+		require.NoError(t, ps.Prepare(*mockContext.Context, scriptPath, execCtx))
 
+		execCtx.Interactive = new(true)
 		runResult, err := ps.Execute(
 			*mockContext.Context,
 			scriptPath,
-			tools.ExecOptions{Interactive: new(true)},
+			execCtx,
 		)
 
 		require.NotNil(t, runResult)
@@ -110,13 +114,15 @@ func Test_Powershell_Execute(t *testing.T) {
 			return exec.NewRunResult(1, "", "error message"), errors.New("error message")
 		})
 
-		ps := NewPowershellScript(mockContext.CommandRunner, workingDir, env)
-		require.NoError(t, ps.Prepare(*mockContext.Context, scriptPath))
+		ps := NewExecutor(mockContext.CommandRunner)
+		execCtx := tools.ExecutionContext{Cwd: workingDir, EnvVars: env}
+		require.NoError(t, ps.Prepare(*mockContext.Context, scriptPath, execCtx))
 
+		execCtx.Interactive = new(true)
 		runResult, err := ps.Execute(
 			*mockContext.Context,
 			scriptPath,
-			tools.ExecOptions{Interactive: new(true)},
+			execCtx,
 		)
 
 		require.Equal(t, 1, runResult.ExitCode)
@@ -125,10 +131,14 @@ func Test_Powershell_Execute(t *testing.T) {
 
 	tests := []struct {
 		name  string
-		value tools.ExecOptions
+		value tools.ExecutionContext
 	}{
-		{name: "Interactive", value: tools.ExecOptions{Interactive: new(true)}},
-		{name: "NonInteractive", value: tools.ExecOptions{Interactive: new(false)}},
+		{name: "Interactive", value: tools.ExecutionContext{
+			Cwd: workingDir, EnvVars: env, Interactive: new(true),
+		}},
+		{name: "NonInteractive", value: tools.ExecutionContext{
+			Cwd: workingDir, EnvVars: env, Interactive: new(false),
+		}},
 	}
 
 	for _, test := range tests {
@@ -143,8 +153,9 @@ func Test_Powershell_Execute(t *testing.T) {
 				return exec.NewRunResult(0, "", ""), nil
 			})
 
-			ps := NewPowershellScript(mockContext.CommandRunner, workingDir, env)
-			require.NoError(t, ps.Prepare(*mockContext.Context, scriptPath))
+			ps := NewExecutor(mockContext.CommandRunner)
+			execCtx := tools.ExecutionContext{Cwd: workingDir, EnvVars: env}
+			require.NoError(t, ps.Prepare(*mockContext.Context, scriptPath, execCtx))
 
 			runResult, err := ps.Execute(*mockContext.Context, scriptPath, test.value)
 

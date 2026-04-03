@@ -14,37 +14,35 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
-// NewPowershellScript creates a new ScriptExecutor for PowerShell scripts.
-func NewPowershellScript(commandRunner exec.CommandRunner, cwd string, envVars []string) tools.ScriptExecutor {
-	return &powershellScript{
+// NewExecutor creates a PowerShell HookExecutor. Takes only IoC-injectable deps.
+func NewExecutor(commandRunner exec.CommandRunner) tools.HookExecutor {
+	return &powershellExecutor{
 		commandRunner: commandRunner,
-		cwd:           cwd,
-		envVars:       envVars,
 		shellCmd:      "pwsh", // default, resolved in Prepare
 	}
 }
 
-type powershellScript struct {
+type powershellExecutor struct {
 	commandRunner exec.CommandRunner
-	cwd           string
-	envVars       []string
 	shellCmd      string // resolved in Prepare: "pwsh" or "powershell"
 }
 
 // Prepare validates that PowerShell is available. Tries pwsh first,
 // falls back to powershell on Windows. Returns an error with install
 // guidance if neither is found.
-func (ps *powershellScript) Prepare(_ context.Context, _ string) error {
+func (p *powershellExecutor) Prepare(
+	_ context.Context, _ string, _ tools.ExecutionContext,
+) error {
 	// Try pwsh first.
-	if ps.commandRunner.ToolInPath("pwsh") == nil {
-		ps.shellCmd = "pwsh"
+	if p.commandRunner.ToolInPath("pwsh") == nil {
+		p.shellCmd = "pwsh"
 		return nil
 	}
 
 	// On Windows, fall back to powershell (PS5).
 	if runtime.GOOS == "windows" {
-		if ps.commandRunner.ToolInPath("powershell") == nil {
-			ps.shellCmd = "powershell"
+		if p.commandRunner.ToolInPath("powershell") == nil {
+			p.shellCmd = "powershell"
 			return nil
 		}
 		return &internal.ErrorWithSuggestion{
@@ -69,21 +67,21 @@ func (ps *powershellScript) Prepare(_ context.Context, _ string) error {
 }
 
 // Execute runs the PowerShell script using the shell resolved in Prepare.
-func (ps *powershellScript) Execute(
-	ctx context.Context, path string, options tools.ExecOptions,
+func (p *powershellExecutor) Execute(
+	ctx context.Context, path string, execCtx tools.ExecutionContext,
 ) (exec.RunResult, error) {
-	runArgs := exec.NewRunArgs(ps.shellCmd, path).
-		WithCwd(ps.cwd).
-		WithEnv(ps.envVars).
+	runArgs := exec.NewRunArgs(p.shellCmd, path).
+		WithCwd(execCtx.Cwd).
+		WithEnv(execCtx.EnvVars).
 		WithShell(true)
 
-	if options.Interactive != nil {
-		runArgs = runArgs.WithInteractive(*options.Interactive)
+	if execCtx.Interactive != nil {
+		runArgs = runArgs.WithInteractive(*execCtx.Interactive)
 	}
 
-	if options.StdOut != nil {
-		runArgs = runArgs.WithStdOut(options.StdOut)
+	if execCtx.StdOut != nil {
+		runArgs = runArgs.WithStdOut(execCtx.StdOut)
 	}
 
-	return ps.commandRunner.Run(ctx, runArgs)
+	return p.commandRunner.Run(ctx, runArgs)
 }

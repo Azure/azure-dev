@@ -112,7 +112,7 @@ func stubPythonVersionCheck(
 
 // TestPythonHook_AutoDetectFromExtension verifies that a hook with
 // run: script.py (no explicit language:) auto-detects Python and
-// routes through the ScriptExecutor pipeline.
+// routes through the HookExecutor pipeline.
 func TestPythonHook_AutoDetectFromExtension(t *testing.T) {
 	scriptRel := filepath.Join("hooks", "predeploy.py")
 	cwd := newPythonTestFixture(t, scriptRel, false)
@@ -130,6 +130,7 @@ func TestPythonHook_AutoDetectFromExtension(t *testing.T) {
 	}
 
 	mockCtx := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockCtx)
 	stubPythonVersionCheck(mockCtx)
 
 	var executedScript string
@@ -185,6 +186,7 @@ func TestPythonHook_ExplicitLanguage(t *testing.T) {
 	}
 
 	mockCtx := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockCtx)
 	stubPythonVersionCheck(mockCtx)
 
 	executed := false
@@ -233,6 +235,7 @@ func TestPythonHook_EnvVarsPassthrough(t *testing.T) {
 	}
 
 	mockCtx := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockCtx)
 	stubPythonVersionCheck(mockCtx)
 
 	var capturedEnv []string
@@ -282,6 +285,7 @@ func TestPythonHook_WithRequirementsTxt(t *testing.T) {
 	}
 
 	mockCtx := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockCtx)
 	stubPythonVersionCheck(mockCtx)
 
 	callLog := []string{}
@@ -365,6 +369,7 @@ func TestPythonHook_StdoutCapture(t *testing.T) {
 	}
 
 	mockCtx := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockCtx)
 	stubPythonVersionCheck(mockCtx)
 
 	mockCtx.CommandRunner.When(func(
@@ -411,6 +416,7 @@ func TestPythonHook_NonZeroExitCode(t *testing.T) {
 	}
 
 	mockCtx := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockCtx)
 	stubPythonVersionCheck(mockCtx)
 
 	mockCtx.CommandRunner.When(func(
@@ -456,6 +462,7 @@ func TestPythonHook_ContinueOnError(t *testing.T) {
 	}
 
 	mockCtx := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockCtx)
 	stubPythonVersionCheck(mockCtx)
 
 	mockCtx.CommandRunner.When(func(
@@ -499,6 +506,7 @@ func TestPythonHook_ProjectLevel(t *testing.T) {
 	}
 
 	mockCtx := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockCtx)
 	stubPythonVersionCheck(mockCtx)
 
 	executed := false
@@ -549,6 +557,7 @@ func TestPythonHook_ServiceLevel(t *testing.T) {
 	}
 
 	mockCtx := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockCtx)
 	stubPythonVersionCheck(mockCtx)
 
 	var capturedCwd string
@@ -619,6 +628,7 @@ func TestPythonHook_ShellHookUnaffected(t *testing.T) {
 	}
 
 	mockCtx := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockCtx)
 	stubPythonVersionCheck(mockCtx)
 
 	shellRan := false
@@ -753,6 +763,7 @@ func TestPythonHook_ExecutionPipeline(t *testing.T) {
 			mockCtx := mocks.NewMockContext(
 				context.Background(),
 			)
+			registerHookExecutors(mockCtx)
 			stubPythonVersionCheck(mockCtx)
 
 			// Derive the script base name for matching.
@@ -811,6 +822,7 @@ func TestPythonHook_PythonBinaryResolution(t *testing.T) {
 	}
 
 	mockCtx := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockCtx)
 	stubPythonVersionCheck(mockCtx)
 
 	var capturedCmd string
@@ -884,6 +896,7 @@ func TestPythonHook_ExplicitDirOverridesCwd(t *testing.T) {
 	}
 
 	mockCtx := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockCtx)
 	stubPythonVersionCheck(mockCtx)
 
 	var capturedCwd string
@@ -932,6 +945,7 @@ func TestPythonHook_InlineScriptRejected(t *testing.T) {
 	}
 
 	mockCtx := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockCtx)
 
 	runner := buildRunner(
 		t, mockCtx, cwd, hooksMap, env,

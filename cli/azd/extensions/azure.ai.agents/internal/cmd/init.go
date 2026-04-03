@@ -217,7 +217,11 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 				if checkDir == "" {
 					checkDir = "."
 				}
-				if detected := detectLocalManifest(checkDir); detected != "" {
+				detected, detectErr := detectLocalManifest(checkDir)
+				if detectErr != nil {
+					return fmt.Errorf("checking for existing manifest: %w", detectErr)
+				}
+				if detected != "" {
 					useExisting := flags.NoPrompt
 					if !flags.NoPrompt {
 						confirmResp, promptErr := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{

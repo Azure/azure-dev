@@ -317,7 +317,8 @@ template:
 		dir := t.TempDir()
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "main.py"), []byte("print()"), 0600))
 
-		result := detectLocalManifest(dir)
+		result, err := detectLocalManifest(dir)
+		require.NoError(t, err)
 		require.Empty(t, result)
 	})
 
@@ -326,7 +327,8 @@ template:
 		dir := t.TempDir()
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte(validManifest), 0600))
 
-		result := detectLocalManifest(dir)
+		result, err := detectLocalManifest(dir)
+		require.NoError(t, err)
 		require.Equal(t, filepath.Join(dir, "agent.yaml"), result)
 	})
 
@@ -335,7 +337,8 @@ template:
 		dir := t.TempDir()
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.manifest.yaml"), []byte(validManifest), 0600))
 
-		result := detectLocalManifest(dir)
+		result, err := detectLocalManifest(dir)
+		require.NoError(t, err)
 		require.Equal(t, filepath.Join(dir, "agent.manifest.yaml"), result)
 	})
 
@@ -345,7 +348,8 @@ template:
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte(validManifest), 0600))
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.manifest.yaml"), []byte(validManifest), 0600))
 
-		result := detectLocalManifest(dir)
+		result, err := detectLocalManifest(dir)
+		require.NoError(t, err)
 		require.Equal(t, filepath.Join(dir, "agent.manifest.yaml"), result)
 	})
 
@@ -356,7 +360,8 @@ template:
 		require.NoError(t, os.MkdirAll(subDir, 0700))
 		require.NoError(t, os.WriteFile(filepath.Join(subDir, "agent.yaml"), []byte(validManifest), 0600))
 
-		result := detectLocalManifest(dir)
+		result, err := detectLocalManifest(dir)
+		require.NoError(t, err)
 		require.Empty(t, result)
 	})
 
@@ -364,7 +369,8 @@ template:
 		t.Parallel()
 		dir := t.TempDir()
 
-		result := detectLocalManifest(dir)
+		result, err := detectLocalManifest(dir)
+		require.NoError(t, err)
 		require.Empty(t, result)
 	})
 
@@ -373,7 +379,8 @@ template:
 		dir := t.TempDir()
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte("not: valid: yaml: ["), 0600))
 
-		result := detectLocalManifest(dir)
+		result, err := detectLocalManifest(dir)
+		require.NoError(t, err)
 		require.Empty(t, result)
 	})
 
@@ -382,7 +389,8 @@ template:
 		dir := t.TempDir()
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte("foo: bar\n"), 0600))
 
-		result := detectLocalManifest(dir)
+		result, err := detectLocalManifest(dir)
+		require.NoError(t, err)
 		require.Empty(t, result)
 	})
 
@@ -392,7 +400,39 @@ template:
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.manifest.yaml"), []byte("foo: bar\n"), 0600))
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte(validManifest), 0600))
 
-		result := detectLocalManifest(dir)
+		result, err := detectLocalManifest(dir)
+		require.NoError(t, err)
+		require.Equal(t, filepath.Join(dir, "agent.yaml"), result)
+	})
+
+	t.Run("detects agent.yml variant", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.yml"), []byte(validManifest), 0600))
+
+		result, err := detectLocalManifest(dir)
+		require.NoError(t, err)
+		require.Equal(t, filepath.Join(dir, "agent.yml"), result)
+	})
+
+	t.Run("detects agent.manifest.yml variant", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.manifest.yml"), []byte(validManifest), 0600))
+
+		result, err := detectLocalManifest(dir)
+		require.NoError(t, err)
+		require.Equal(t, filepath.Join(dir, "agent.manifest.yml"), result)
+	})
+
+	t.Run("prefers yaml over yml", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte(validManifest), 0600))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.yml"), []byte(validManifest), 0600))
+
+		result, err := detectLocalManifest(dir)
+		require.NoError(t, err)
 		require.Equal(t, filepath.Join(dir, "agent.yaml"), result)
 	})
 }

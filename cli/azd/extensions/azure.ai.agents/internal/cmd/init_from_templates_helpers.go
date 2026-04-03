@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -263,19 +264,31 @@ func findAgentManifest(dir string) (string, error) {
 }
 
 // detectLocalManifest checks only the immediate directory for an agent manifest file.
-// Returns the path to the found manifest, preferring agent.manifest.yaml over agent.yaml,
-// or an empty string if neither exists or none contain valid manifest content.
-func detectLocalManifest(dir string) string {
-	// Prefer agent.manifest.yaml (richer manifest format) over agent.yaml.
-	for _, name := range []string{"agent.manifest.yaml", "agent.yaml"} {
+// Returns the path to the found manifest (preferring agent.manifest.yaml over agent.yaml,
+// then .yml variants), or an empty string if none contain valid manifest content.
+// Returns a non-nil error for unexpected I/O failures (e.g. permission errors).
+func detectLocalManifest(dir string) (string, error) {
+	candidates := []string{
+		"agent.manifest.yaml",
+		"agent.yaml",
+		"agent.manifest.yml",
+		"agent.yml",
+	}
+
+	for _, name := range candidates {
 		candidate := filepath.Join(dir, name)
-		if _, err := os.Stat(candidate); err == nil {
-			if isValidManifestFile(candidate) {
-				return candidate
-			}
+		_, err := os.Stat(candidate)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return "", fmt.Errorf("checking for manifest %s: %w", candidate, err)
+		}
+		if isValidManifestFile(candidate) {
+			return candidate, nil
 		}
 	}
-	return ""
+	return "", nil
 }
 
 // isValidManifestFile reads the file and checks whether it can be loaded as

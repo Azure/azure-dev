@@ -218,7 +218,9 @@ func Test_ProjectInfrastructure_Coverage3(t *testing.T) {
 		infraDir := filepath.Join(tmpDir, "infra")
 		require.NoError(t, os.MkdirAll(infraDir, 0o755))
 		// Create a main.bicep file
-		require.NoError(t, os.WriteFile(filepath.Join(infraDir, "main.bicep"), []byte("targetScope = 'subscription'"), 0o600))
+		require.NoError(t, os.WriteFile(
+			filepath.Join(infraDir, "main.bicep"),
+			[]byte("targetScope = 'subscription'"), 0o600))
 
 		prj := &ProjectConfig{
 			Path:     tmpDir,
@@ -236,7 +238,9 @@ func Test_ProjectInfrastructure_Coverage3(t *testing.T) {
 		tmpDir := t.TempDir()
 		infraDir := filepath.Join(tmpDir, "infra")
 		require.NoError(t, os.MkdirAll(infraDir, 0o755))
-		require.NoError(t, os.WriteFile(filepath.Join(infraDir, "main.tf"), []byte("resource \"azurerm_resource_group\" \"rg\" {}"), 0o600))
+		require.NoError(t, os.WriteFile(
+			filepath.Join(infraDir, "main.tf"),
+			[]byte("resource \"azurerm_resource_group\" \"rg\" {}"), 0o600))
 
 		prj := &ProjectConfig{
 			Path:     tmpDir,

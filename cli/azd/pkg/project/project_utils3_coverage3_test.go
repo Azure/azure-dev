@@ -43,7 +43,9 @@ func Test_createDeployableZip_RemoteBuildFalse_Coverage3(t *testing.T) {
 	// Create node_modules directory
 	require.NoError(t, os.MkdirAll(
 		filepath.Join(tmpDir, "node_modules", "express"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "node_modules", "express", "index.js"), []byte("module.exports={}"), 0o600))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(tmpDir, "node_modules", "express", "index.js"),
+		[]byte("module.exports={}"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "index.js"), []byte("require('express')"), 0o600))
 
 	remoteBuildFalse := false

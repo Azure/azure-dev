@@ -54,7 +54,7 @@ func newHooksRunFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions)
 func newHooksRunCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "run <name>",
-		Short: "Runs the specified hook for the project and services",
+		Short: "Runs the specified hook for the project, provisioning layers, and services",
 		Args:  cobra.ExactArgs(1),
 	}
 }
@@ -62,6 +62,7 @@ func newHooksRunCmd() *cobra.Command {
 type hooksRunFlags struct {
 	internal.EnvFlag
 	global   *internal.GlobalCommandOptions
+	layer    string
 	platform string
 	service  string
 }
@@ -70,6 +71,7 @@ func (f *hooksRunFlags) Bind(local *pflag.FlagSet, global *internal.GlobalComman
 	f.EnvFlag.Bind(local, global)
 	f.global = global
 
+	local.StringVar(&f.layer, "layer", "", "Only runs hooks for the specified provisioning layer.")
 	local.StringVar(&f.platform, "platform", "", "Forces hooks to run for the specified platform.")
 	local.StringVar(&f.service, "service", "", "Only runs hooks for the specified service.")
 }
@@ -114,6 +116,7 @@ type hookContextType string
 
 const (
 	hookContextProject hookContextType = "command"
+	hookContextLayer   hookContextType = "layer"
 	hookContextService hookContextType = "service"
 )
 
@@ -142,8 +145,20 @@ var knownHookNames = map[string]bool{
 func (hra *hooksRunAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	hookName := hra.args[0]
 
+	if hra.flags.service != "" && hra.flags.layer != "" {
+		return nil,
+
+			&internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"--service and --layer cannot be used together: %w", internal.ErrInvalidFlagCombination),
+				Suggestion: "Choose either '--service' to run service hooks or '--layer' to run provisioning layer hooks.",
+			}
+	}
+
 	hookType := "project"
-	if hra.flags.service != "" {
+	if hra.flags.layer != "" {
+		hookType = "layer"
+	} else if hra.flags.service != "" {
 		hookType = "service"
 	}
 
@@ -184,6 +199,12 @@ func (hra *hooksRunAction) Run(ctx context.Context) (*actions.ActionResult, erro
 		}
 	}
 
+	if hra.flags.layer != "" {
+		if _, err := hra.projectConfig.Infra.GetLayer(hra.flags.layer); err != nil {
+			return nil, err
+		}
+	}
+
 	// Project level hooks
 	projectHooks := hra.projectConfig.Hooks[hookName]
 
@@ -204,6 +225,24 @@ func (hra *hooksRunAction) Run(ctx context.Context) (*actions.ActionResult, erro
 		return nil, err
 	}
 
+	for _, layer := range hra.projectConfig.Infra.Layers {
+		layerPath := layer.AbsolutePath(hra.projectConfig.Path)
+
+		skip := hra.flags.layer != "" && layer.Name != hra.flags.layer
+
+		hra.console.Message(ctx, "\n"+output.WithHighLightFormat(fmt.Sprintf("Layer: %s", layer.Name)))
+		if err := hra.processHooks(
+			ctx,
+			layerPath,
+			hookName,
+			layer.Hooks[hookName],
+			hookContextLayer,
+			skip,
+		); err != nil {
+			return nil, err
+		}
+	}
+
 	// Service level hooks
 	for _, service := range stableServices {
 		serviceHooks := service.Hooks[hookName]
@@ -212,7 +251,7 @@ func (hra *hooksRunAction) Run(ctx context.Context) (*actions.ActionResult, erro
 		hra.console.Message(ctx, "\n"+output.WithHighLightFormat(service.Name))
 		if err := hra.processHooks(
 			ctx,
-			service.RelativePath,
+			service.Path(),
 			hookName,
 			serviceHooks,
 			hookContextService,
@@ -246,7 +285,7 @@ func (hra *hooksRunAction) processHooks(
 		// When skipping, show individual skip messages for each hook that would have run
 		for i := range hooks {
 			hra.console.MessageUxItem(ctx, &ux.SkippedMessage{
-				Message: fmt.Sprintf("service hook %d/%d", i+1, len(hooks)),
+				Message: fmt.Sprintf("%s hook %d/%d", contextType, i+1, len(hooks)),
 			})
 		}
 
@@ -312,37 +351,43 @@ func (hra *hooksRunAction) execHook(
 
 // Validates hooks and displays warnings for default shell usage and other issues
 func (hra *hooksRunAction) validateAndWarnHooks(ctx context.Context) error {
-	// Collect all hooks from project and services
-	allHooks := make(map[string][]*ext.HookConfig)
+	warningKeys := map[string]struct{}{}
+	validateAndWarn := func(cwd string, hooks map[string][]*ext.HookConfig) {
+		if len(hooks) == 0 {
+			return
+		}
 
-	// Add project hooks
-	for hookName, hookConfigs := range hra.projectConfig.Hooks {
-		allHooks[hookName] = append(allHooks[hookName], hookConfigs...)
+		hooksManager := ext.NewHooksManager(cwd, hra.commandRunner)
+		validationResult := hooksManager.ValidateHooks(ctx, hooks)
+
+		for _, warning := range validationResult.Warnings {
+			key := warning.Message + "\x00" + warning.Suggestion
+			if _, has := warningKeys[key]; has {
+				continue
+			}
+
+			warningKeys[key] = struct{}{}
+			hra.console.MessageUxItem(ctx, &ux.WarningMessage{
+				Description: warning.Message,
+			})
+			if warning.Suggestion != "" {
+				hra.console.Message(ctx, warning.Suggestion)
+			}
+			hra.console.Message(ctx, "")
+		}
 	}
 
-	// Add service hooks
+	validateAndWarn(hra.projectConfig.Path, hra.projectConfig.Hooks)
+
 	stableServices, err := hra.importManager.ServiceStable(ctx, hra.projectConfig)
 	if err == nil {
 		for _, service := range stableServices {
-			for hookName, hookConfigs := range service.Hooks {
-				allHooks[hookName] = append(allHooks[hookName], hookConfigs...)
-			}
+			validateAndWarn(service.Path(), service.Hooks)
 		}
 	}
 
-	// Create hooks manager and validate
-	hooksManager := ext.NewHooksManager(hra.projectConfig.Path, hra.commandRunner)
-	validationResult := hooksManager.ValidateHooks(ctx, allHooks)
-
-	// Display any warnings
-	for _, warning := range validationResult.Warnings {
-		hra.console.MessageUxItem(ctx, &ux.WarningMessage{
-			Description: warning.Message,
-		})
-		if warning.Suggestion != "" {
-			hra.console.Message(ctx, warning.Suggestion)
-		}
-		hra.console.Message(ctx, "")
+	for _, layer := range hra.projectConfig.Infra.Layers {
+		validateAndWarn(layer.AbsolutePath(hra.projectConfig.Path), layer.Hooks)
 	}
 
 	return nil

@@ -71,6 +71,37 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 		a.flags.src = relPath
 	}
 
+	// Default src to current directory when not specified
+	srcDir := a.flags.src
+	if srcDir == "" {
+		srcDir = "."
+	}
+
+	// Check if agent.yaml already exists before the interactive setup so the user
+	// doesn't complete the full agent configuration only to have it discarded.
+	agentYamlPath := filepath.Join(srcDir, "agent.yaml")
+	if _, statErr := os.Stat(agentYamlPath); statErr == nil {
+		if a.flags.NoPrompt {
+			return exterrors.Cancelled("agent.yaml already exists; overwrite declined in no-prompt mode")
+		}
+
+		confirmResp, err := a.azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+			Options: &azdext.ConfirmOptions{
+				Message:      fmt.Sprintf("An agent.yaml already exists in %q. Overwrite?", srcDir),
+				DefaultValue: new(false),
+			},
+		})
+		if err != nil {
+			if exterrors.IsCancellation(err) {
+				return exterrors.Cancelled("overwrite confirmation was cancelled")
+			}
+			return fmt.Errorf("prompting for overwrite confirmation: %w", err)
+		}
+		if !*confirmResp.Value {
+			return exterrors.Cancelled("agent.yaml already exists; overwrite declined")
+		}
+	}
+
 	// No manifest pointer provided - process local agent code
 	// Create a definition based on user prompts
 	localDefinition, err := a.createDefinitionFromLocalAgent(ctx)
@@ -79,11 +110,6 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 	}
 
 	if localDefinition != nil {
-		// Default src to current directory when not specified
-		srcDir := a.flags.src
-		if srcDir == "" {
-			srcDir = "."
-		}
 
 		// Write the definition to a file in the src directory
 		_, err := a.writeDefinitionToSrcDir(localDefinition, srcDir)

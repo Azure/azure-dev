@@ -962,10 +962,17 @@ func (t *aksTarget) setK8sContext(
 // skipPostprovisionK8sSetup logs a warning and returns nil so that
 // postprovision continues even when Kubernetes context setup fails.
 // The context will be configured later when a deployment is performed.
+// Context cancellation/timeouts are always propagated.
 func (t *aksTarget) skipPostprovisionK8sSetup(
 	ctx context.Context,
 	reason error,
 ) error {
+	// Propagate context cancellation — the user (or system) asked
+	// to stop; swallowing that would be incorrect.
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
 	log.Printf(
 		"skipping k8s context setup during postprovision: %s\n",
 		reason.Error())

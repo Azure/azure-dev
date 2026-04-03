@@ -304,6 +304,7 @@ func Test_ServiceHooks_Registered(t *testing.T) {
 
 func Test_ServiceHooks_ValidationUsesServicePath(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockContext)
 	azdContext := createAzdContext(t)
 
 	envName := "test"

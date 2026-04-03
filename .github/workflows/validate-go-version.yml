@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "**/go.mod"
+      - "**/Dockerfile"
       - "eng/pipelines/templates/steps/setup-go.yml"
       - ".github/workflows/validate-go-version.yml"
     branches: [main]
@@ -25,10 +26,10 @@ jobs:
 
           ERRORS=0
 
-          # Check all go.mod files (skip testdata which may use older versions)
+          # Check all go.mod files
           echo ""
           echo "Checking go.mod files..."
-          for f in $(find cli/azd -name 'go.mod' ! -path '*/testdata/*'); do
+          for f in $(find cli/azd -name 'go.mod'); do
             VERSION=$(grep -m1 '^go ' "$f" | awk '{print $2}')
             if [ "$VERSION" != "$EXPECTED" ]; then
               echo "::error file=$f::Go version mismatch: found '$VERSION', expected '$EXPECTED'"
@@ -51,6 +52,19 @@ jobs:
               echo "  OK: $ADO_FILE ($ADO_VERSION)"
             fi
           fi
+
+          # Check Dockerfiles referencing golang:<version> base images
+          echo ""
+          echo "Checking Dockerfiles..."
+          for f in $(find cli/azd -name 'Dockerfile'); do
+            DOCKER_VERSION=$(grep -oP 'golang:\K[\d.]+' "$f" | head -1)
+            if [ -n "$DOCKER_VERSION" ] && [ "$DOCKER_VERSION" != "$EXPECTED" ]; then
+              echo "::error file=$f::Dockerfile golang version mismatch: found '$DOCKER_VERSION', expected '$EXPECTED'"
+              ERRORS=$((ERRORS + 1))
+            elif [ -n "$DOCKER_VERSION" ]; then
+              echo "  OK: $f (golang:$DOCKER_VERSION)"
+            fi
+          done
 
           echo ""
           if [ "$ERRORS" -gt 0 ]; then

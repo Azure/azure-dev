@@ -11,10 +11,8 @@ $repoRoot = Resolve-Path "$PSScriptRoot/../../"
 # Canonical source of truth
 $coreGoMod = Join-Path $repoRoot 'cli/azd/go.mod'
 
-# All go.mod files that should track the same Go version.
-# Excludes test fixtures (e.g. testdata/) which may pin older versions intentionally.
-$goModFiles = Get-ChildItem -Path (Join-Path $repoRoot 'cli/azd') -Recurse -Filter 'go.mod' |
-    Where-Object { $_.FullName -notmatch 'testdata' }
+# All go.mod files that should track the same Go version (including testdata samples).
+$goModFiles = Get-ChildItem -Path (Join-Path $repoRoot 'cli/azd') -Recurse -Filter 'go.mod'
 
 # ADO pipeline template that pins the Go toolchain version
 $adoSetupGo = Join-Path $repoRoot 'eng/pipelines/templates/steps/setup-go.yml'
@@ -45,6 +43,21 @@ if (Test-Path $adoSetupGo) {
         $updated += $adoSetupGo.Substring($repoRoot.Path.Length)
     } else {
         $skipped += $adoSetupGo.Substring($repoRoot.Path.Length)
+    }
+}
+
+# --- Update Dockerfiles referencing golang:<version> base images ---
+$dockerfiles = Get-ChildItem -Path (Join-Path $repoRoot 'cli/azd') -Recurse -Filter 'Dockerfile'
+foreach ($file in $dockerfiles) {
+    $content = Get-Content $file.FullName -Raw
+    if ($content -match 'golang:\d+\.\d+') {
+        $newContent = $content -replace 'golang:\d+[\d.]*', "golang:$NewVersion"
+        if ($newContent -ne $content) {
+            Set-Content -Path $file.FullName -Value $newContent -NoNewline -Encoding utf8NoBOM
+            $updated += $file.FullName.Substring($repoRoot.Path.Length)
+        } else {
+            $skipped += $file.FullName.Substring($repoRoot.Path.Length)
+        }
     }
 }
 

@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"slices"
@@ -93,6 +94,16 @@ type ContainerAppService interface {
 		envVars map[string]string,
 		options *ContainerAppOptions,
 	) error
+	// GetLogStream returns a streaming reader for Container App console logs.
+	// It discovers the latest revision and replica, obtains an auth token, and
+	// connects to the replica container's log stream endpoint.
+	// The caller is responsible for closing the returned reader.
+	GetLogStream(
+		ctx context.Context,
+		subscriptionId string,
+		resourceGroup string,
+		appName string,
+	) (io.ReadCloser, error)
 }
 
 // NewContainerAppService creates a new ContainerAppService

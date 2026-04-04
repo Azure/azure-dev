@@ -2448,6 +2448,10 @@ const completionSpec: Fig.Spec = {
 					name: ['--overview'],
 					description: 'Open a browser to Application Insights Overview Dashboard.',
 				},
+				{
+					name: ['--tail'],
+					description: 'Stream application logs from a deployed service directly to the terminal.',
+				},
 			],
 		},
 		{

@@ -9,7 +9,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -1263,17 +1265,48 @@ func newEnvGetValuesCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "get-values",
 		Short: "Get all environment values.",
-		Args:  cobra.NoArgs,
+		Long: "Get all environment values.\n\n" +
+			"Use --export to output in shell-ready format.\n" +
+			"Use --shell to select the syntax " +
+			"(bash or pwsh, default: bash).\n\n" +
+			"Bash/zsh/ksh (POSIX):\n\n" +
+			"  eval \"$(azd env get-values --export)\"\n\n" +
+			"PowerShell:\n\n" +
+			"  azd env get-values --export --shell pwsh " +
+			"| Invoke-Expression\n\n" +
+			"POSIX output uses $'...' (ANSI-C) quoting " +
+			"for values containing newlines\n" +
+			"or carriage returns, " +
+			"which requires bash, zsh, or ksh.",
+		Args: cobra.NoArgs,
 	}
 }
 
 type envGetValuesFlags struct {
 	internal.EnvFlag
 	global *internal.GlobalCommandOptions
+	export bool
+	shell  string
 }
 
-func (eg *envGetValuesFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+func (eg *envGetValuesFlags) Bind(
+	local *pflag.FlagSet,
+	global *internal.GlobalCommandOptions,
+) {
 	eg.EnvFlag.Bind(local, global)
+	local.BoolVar(
+		&eg.export,
+		"export",
+		false,
+		"Output in shell-ready format. "+
+			"Use --shell to select the shell syntax (default: bash).",
+	)
+	local.StringVar(
+		&eg.shell,
+		"shell",
+		"bash",
+		"Shell syntax for --export output: bash (POSIX) or pwsh (PowerShell).",
+	)
 	eg.global = global
 }
 
@@ -1305,6 +1338,39 @@ func newEnvGetValuesAction(
 }
 
 func (eg *envGetValuesAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	shell := strings.ToLower(eg.flags.shell)
+	if !eg.flags.export && shell != "bash" {
+		return nil, &internal.ErrorWithSuggestion{
+			Err: fmt.Errorf(
+				"--shell requires --export: %w",
+				internal.ErrInvalidFlagCombination,
+			),
+			Suggestion: "Use '--export --shell pwsh' together, " +
+				"or remove '--shell' when not using '--export'.",
+		}
+	}
+
+	if eg.flags.export && eg.formatter.Kind() != output.EnvVarsFormat {
+		return nil, &internal.ErrorWithSuggestion{
+			Err: fmt.Errorf(
+				"--export and --output are mutually exclusive: %w",
+				internal.ErrInvalidFlagCombination,
+			),
+			Suggestion: "Use '--export' without '--output', " +
+				"or remove '--export' to use '--output json'.",
+		}
+	}
+
+	if eg.flags.export && shell != "bash" && shell != "pwsh" {
+		return nil, &internal.ErrorWithSuggestion{
+			Err: fmt.Errorf(
+				"unsupported shell %q for --export: %w",
+				eg.flags.shell, internal.ErrInvalidFlagCombination,
+			),
+			Suggestion: "Use '--shell bash' (default) or '--shell pwsh'.",
+		}
+	}
+
 	name, err := eg.azdCtx.GetDefaultEnvironmentName()
 	if err != nil {
 		return nil, err
@@ -1338,7 +1404,128 @@ func (eg *envGetValuesAction) Run(ctx context.Context) (*actions.ActionResult, e
 		return nil, fmt.Errorf("ensuring environment exists: %w", err)
 	}
 
+	if eg.flags.export {
+		if shell == "pwsh" {
+			return nil, writePwshExportedEnv(
+				env.Dotenv(), eg.writer, os.Stderr,
+			)
+		}
+		return nil, writeExportedEnv(
+			env.Dotenv(), eg.writer, os.Stderr,
+		)
+	}
+
 	return nil, eg.formatter.Format(env.Dotenv(), eg.writer, nil)
+}
+
+// shellEscaper escapes characters that are special inside double-quoted
+// shell strings: backslashes, double quotes, dollar signs, backticks,
+// and carriage returns. Built once at package level to avoid re-allocation.
+var shellEscaper = strings.NewReplacer(
+	`\`, `\\`,
+	`"`, `\"`,
+	`$`, `\$`,
+	"`", "\\`",
+	"\r", `\r`,
+)
+
+// ansiCEscaper escapes characters for ANSI-C $'...' quoting.
+// In ANSI-C quoting, only backslash and single quote are special;
+// dollar signs and backticks are literal.
+var ansiCEscaper = strings.NewReplacer(
+	`\`, `\\`,
+	`'`, `\'`,
+)
+
+// validShellKey matches valid POSIX shell identifiers:
+// starts with a letter or underscore, followed by alphanumerics or underscores.
+var validShellKey = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
+
+// writeExportedEnv writes environment variables in shell-ready
+// format (export KEY="VALUE") to the given writer. Values are
+// double-quoted with embedded backslashes, double quotes, dollar
+// signs, backticks, and carriage returns escaped. Newlines use
+// ANSI-C quoting ($'...') to ensure correct round-tripping through eval.
+func writeExportedEnv(
+	values map[string]string,
+	writer io.Writer,
+	warnWriter io.Writer,
+) error {
+	keys := slices.Sorted(maps.Keys(values))
+	for _, key := range keys {
+		if !validShellKey.MatchString(key) {
+			fmt.Fprintf(
+				warnWriter,
+				"warning: skipping key %q "+
+					"(not a valid shell identifier)\n",
+				key,
+			)
+			continue
+		}
+
+		val := values[key]
+
+		// Use $'...' quoting for values containing newlines so \n is
+		// interpreted as an actual newline by the shell.
+		var line string
+		if strings.Contains(val, "\n") || strings.Contains(val, "\r") {
+			escaped := ansiCEscaper.Replace(val)
+			escaped = strings.ReplaceAll(escaped, "\n", `\n`)
+			escaped = strings.ReplaceAll(escaped, "\r", `\r`)
+			line = fmt.Sprintf("export %s=$'%s'\n", key, escaped)
+		} else {
+			escaped := shellEscaper.Replace(val)
+			line = fmt.Sprintf("export %s=\"%s\"\n", key, escaped)
+		}
+
+		if _, err := io.WriteString(writer, line); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// pwshEscaper escapes characters that are special inside PowerShell
+// double-quoted strings: backticks, double quotes, dollar signs,
+// newlines, and carriage returns.
+var pwshEscaper = strings.NewReplacer(
+	"`", "``",
+	`"`, "`\"",
+	`$`, "`$",
+	"\n", "`n",
+	"\r", "`r",
+)
+
+// writePwshExportedEnv writes environment variables in PowerShell format
+// ($env:KEY = "VALUE") to the given writer. Values are double-quoted with
+// embedded backticks, double quotes, dollar signs, newlines, and carriage
+// returns escaped using the PowerShell backtick escape character.
+func writePwshExportedEnv(
+	values map[string]string,
+	writer io.Writer,
+	warnWriter io.Writer,
+) error {
+	keys := slices.Sorted(maps.Keys(values))
+	for _, key := range keys {
+		if !validShellKey.MatchString(key) {
+			fmt.Fprintf(
+				warnWriter,
+				"warning: skipping key %q "+
+					"(not a valid shell identifier)\n",
+				key,
+			)
+			continue
+		}
+
+		val := values[key]
+		escaped := pwshEscaper.Replace(val)
+		line := fmt.Sprintf("$env:%s = \"%s\"\n", key, escaped)
+
+		if _, err := io.WriteString(writer, line); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func newEnvGetValueFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *envGetValueFlags {

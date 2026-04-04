@@ -110,6 +110,10 @@ stages:
         steps:
           - checkout: self
 
+          - template: /eng/pipelines/templates/steps/set-extension-version-cd.yml
+            parameters:
+              AzdExtensionDirectory: ${{ parameters.AzdExtensionDirectory }}
+
           - task: PowerShell@2
             displayName: Set extension version variable
             inputs:

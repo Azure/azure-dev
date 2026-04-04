@@ -14,8 +14,8 @@
  #>
 param(
     [Parameter(Mandatory)] [string] $ExtensionDirectory,
-    [string] $BuildReason,
-    [string] $BuildId
+    [Parameter(Mandatory)] [string] $BuildReason,
+    [Parameter(Mandatory)] [string] $BuildId
 )
 
 Write-Host "Build reason: $BuildReason"
@@ -34,7 +34,11 @@ else {
 }
 
 $versionFile = Join-Path $ExtensionDirectory "version.txt"
-$version = Get-Content $versionFile
+$version = (Get-Content $versionFile).Trim()
+if ([string]::IsNullOrWhiteSpace($version)) {
+    Write-Error "version.txt is empty at $versionFile"
+    exit 1
+}
 $newVersion = "$version-$prereleaseCategory.$BuildId"
 
 Set-Content $versionFile -Value $newVersion

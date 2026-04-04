@@ -135,15 +135,19 @@ func (t *aksTarget) RequiredExternalTools(ctx context.Context, serviceConfig *Se
 	return allTools
 }
 
+// postProvisionEvent is the event fired after provisioning completes.
+// Defined as a constant to avoid magic string repetition.
+const postProvisionEvent = ext.Event("post" + string(ProjectEventProvision))
+
 // Initializes the AKS service target
 func (t *aksTarget) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
 	// Ensure that the k8s context has been configured by the time a deploy operation is performed.
 	// We attach to "postprovision" so that any predeploy or postprovision hooks can take advantage of the configuration
 	err := serviceConfig.Project.AddHandler(
 		ctx,
-		"postprovision",
+		postProvisionEvent,
 		func(ctx context.Context, args ProjectLifecycleEventArgs) error {
-			return t.setK8sContext(ctx, serviceConfig, "postprovision")
+			return t.setK8sContext(ctx, serviceConfig, postProvisionEvent)
 		},
 	)
 
@@ -895,7 +899,11 @@ func (t *aksTarget) getK8sNamespace(serviceConfig *ServiceConfig) string {
 	return namespace
 }
 
-func (t *aksTarget) setK8sContext(ctx context.Context, serviceConfig *ServiceConfig, eventName ext.Event) error {
+func (t *aksTarget) setK8sContext(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	eventName ext.Event,
+) error {
 	t.kubectl.SetEnv(t.env.Dotenv())
 	hasCustomKubeConfig := false
 
@@ -906,28 +914,81 @@ func (t *aksTarget) setK8sContext(ctx context.Context, serviceConfig *ServiceCon
 		hasCustomKubeConfig = true
 	}
 
-	targetResource, err := t.resourceManager.GetTargetResource(ctx, t.env.GetSubscriptionId(), serviceConfig)
+	targetResource, err := t.resourceManager.GetTargetResource(
+		ctx, t.env.GetSubscriptionId(), serviceConfig)
 	if err != nil {
-		return err
+		return t.postprovisionK8sError(ctx, eventName, err)
+	}
+
+	// When the AKS cluster hasn't been provisioned yet the target resource
+	// will have an empty resource name (via SupportsDelayedProvisioning).
+	// During postprovision this is expected in multi-phase provisioning
+	// workflows — skip gracefully instead of failing.
+	if targetResource == nil ||
+		(targetResource.ResourceName() == "" && eventName == postProvisionEvent) {
+		return t.skipPostprovisionK8sSetup(
+			ctx, fmt.Errorf("AKS cluster resource not yet provisioned"))
 	}
 
 	defaultNamespace := t.getK8sNamespace(serviceConfig)
-	_, err = t.ensureClusterContext(ctx, serviceConfig, targetResource, defaultNamespace)
+	_, err = t.ensureClusterContext(
+		ctx, serviceConfig, targetResource, defaultNamespace)
 	if err != nil {
-		return err
+		return t.postprovisionK8sError(ctx, eventName, err)
 	}
 
 	err = t.ensureNamespace(ctx, defaultNamespace)
 	if err != nil {
-		return err
+		return t.postprovisionK8sError(ctx, eventName, err)
 	}
 
-	// Display message to the user when we detect they are using a non-default KUBECONFIG configuration
-	// In standard AZD AKS deployment users should not typically need to set a custom KUBECONFIG
+	// Display message to the user when we detect they are using a
+	// non-default KUBECONFIG configuration. In standard AZD AKS deployment
+	// users should not typically need to set a custom KUBECONFIG.
 	if hasCustomKubeConfig && eventName == "predeploy" {
-		t.console.Message(ctx, output.WithWarningFormat("Using KUBECONFIG @ %s\n", kubeConfigPath))
+		t.console.Message(
+			ctx,
+			output.WithWarningFormat(
+				"Using KUBECONFIG @ %s\n", kubeConfigPath))
 	}
 
+	return nil
+}
+
+// postprovisionK8sError skips gracefully during postprovision events
+// and returns the error for all other events (e.g. predeploy).
+func (t *aksTarget) postprovisionK8sError(
+	ctx context.Context,
+	eventName ext.Event,
+	err error,
+) error {
+	if eventName == postProvisionEvent {
+		return t.skipPostprovisionK8sSetup(ctx, err)
+	}
+	return err
+}
+
+// skipPostprovisionK8sSetup logs a warning and returns nil so that
+// postprovision continues even when Kubernetes context setup fails.
+// The context will be configured later when a deployment is performed.
+// Context cancellation/timeouts are always propagated.
+func (t *aksTarget) skipPostprovisionK8sSetup(
+	ctx context.Context,
+	reason error,
+) error {
+	// Propagate context cancellation — the user (or system) asked
+	// to stop; swallowing that would be incorrect.
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	log.Printf(
+		"skipping k8s context setup during postprovision: %v", reason)
+	t.console.Message(ctx, output.WithWarningFormat(
+		"AKS cluster not available yet, skipping Kubernetes "+
+			"context setup. It will be configured when the "+
+			"cluster is provisioned and a deployment is "+
+			"performed.\n"))
 	return nil
 }
 

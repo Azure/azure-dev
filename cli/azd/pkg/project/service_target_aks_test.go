@@ -1150,3 +1150,339 @@ func (m *mockUserConfigManager) Save(config config.Config) error {
 	args := m.Called(config)
 	return args.Error(0)
 }
+
+func Test_Postprovision_GracefulSkip(t *testing.T) {
+	tests := []struct {
+		name             string
+		resourceName     string
+		resourceType     string
+		resourceErr      error
+		credentialCode   int
+		deleteClusterEnv bool
+	}{
+		{
+			name:             "SkipsWhenResourceNotProvisioned",
+			resourceName:     "",
+			resourceType:     "",
+			deleteClusterEnv: true,
+		},
+		{
+			name:        "SkipsWhenGetTargetResourceFails",
+			resourceErr: fmt.Errorf("resource group not found"),
+		},
+		{
+			name:           "SkipsWhenCredentialsFail",
+			resourceName:   "MY_AKS_CLUSTER",
+			resourceType:   string(azapi.AzureResourceTypeManagedCluster),
+			credentialCode: http.StatusUnauthorized,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tempDir := t.TempDir()
+			ostest.Chdir(t, tempDir)
+
+			mockContext := mocks.NewMockContext(t.Context())
+			err := setupMocksForAksTarget(mockContext)
+			require.NoError(t, err)
+
+			if tt.credentialCode != 0 {
+				err = setupListClusterUserCredentialsMock(
+					mockContext, tt.credentialCode)
+				require.NoError(t, err)
+			}
+
+			serviceConfig := createTestServiceConfig(
+				tempDir, AksTarget, ServiceLanguageTypeScript)
+			env := createEnv()
+
+			if tt.deleteClusterEnv {
+				env.DotenvDelete(
+					environment.AksClusterEnvVarName)
+			}
+
+			resourceManager := &MockResourceManager{}
+			if tt.resourceErr != nil {
+				resourceManager.
+					On("GetTargetResource",
+						*mockContext.Context,
+						"SUBSCRIPTION_ID",
+						serviceConfig).
+					Return(
+						(*environment.TargetResource)(nil),
+						tt.resourceErr)
+			} else {
+				targetResource := environment.NewTargetResource(
+					"SUBSCRIPTION_ID",
+					"RESOURCE_GROUP",
+					tt.resourceName,
+					tt.resourceType,
+				)
+				resourceManager.
+					On("GetTargetResource",
+						*mockContext.Context,
+						"SUBSCRIPTION_ID",
+						serviceConfig).
+					Return(targetResource, nil)
+			}
+
+			serviceTarget := createAksServiceTargetWithResourceManager(
+				mockContext, env, nil,
+				resourceManager)
+
+			err = serviceTarget.Initialize(
+				*mockContext.Context, serviceConfig)
+			require.NoError(t, err)
+
+			err = serviceConfig.Project.RaiseEvent(
+				*mockContext.Context,
+				postProvisionEvent,
+				ProjectLifecycleEventArgs{
+					Project: serviceConfig.Project,
+				},
+			)
+			require.NoError(t, err)
+		})
+	}
+}
+
+func Test_Postprovision_Succeeds_When_Cluster_Available(t *testing.T) {
+	tempDir := t.TempDir()
+	ostest.Chdir(t, tempDir)
+
+	mockContext := mocks.NewMockContext(t.Context())
+	err := setupMocksForAksTarget(mockContext)
+	require.NoError(t, err)
+
+	err = setupListClusterUserCredentialsMock(
+		mockContext, http.StatusOK)
+	require.NoError(t, err)
+
+	serviceConfig := createTestServiceConfig(
+		tempDir, AksTarget, ServiceLanguageTypeScript)
+	env := createEnv()
+
+	resourceManager := &MockResourceManager{}
+	targetResource := environment.NewTargetResource(
+		"SUBSCRIPTION_ID",
+		"RESOURCE_GROUP",
+		"MY_AKS_CLUSTER",
+		string(azapi.AzureResourceTypeManagedCluster),
+	)
+	resourceManager.
+		On("GetTargetResource",
+			*mockContext.Context,
+			"SUBSCRIPTION_ID",
+			serviceConfig).
+		Return(targetResource, nil)
+
+	serviceTarget := createAksServiceTargetWithResourceManager(
+		mockContext, env, nil, resourceManager)
+
+	err = serviceTarget.Initialize(
+		*mockContext.Context, serviceConfig)
+	require.NoError(t, err)
+
+	// When cluster IS available, postprovision should succeed
+	// via the normal (non-skip) path.
+	err = serviceConfig.Project.RaiseEvent(
+		*mockContext.Context,
+		postProvisionEvent,
+		ProjectLifecycleEventArgs{
+			Project: serviceConfig.Project,
+		},
+	)
+	require.NoError(t, err)
+}
+
+func Test_Predeploy_Still_Fails_When_Cluster_Not_Found(t *testing.T) {
+	tempDir := t.TempDir()
+	ostest.Chdir(t, tempDir)
+
+	mockContext := mocks.NewMockContext(t.Context())
+	err := setupMocksForAksTarget(mockContext)
+	require.NoError(t, err)
+
+	serviceConfig := createTestServiceConfig(
+		tempDir, AksTarget, ServiceLanguageTypeScript)
+	env := createEnv()
+	env.DotenvDelete(environment.AksClusterEnvVarName)
+	azdCtx := createTestAzdContext(t, env)
+
+	serviceTarget := createAksServiceTarget(
+		mockContext, serviceConfig, env, nil, azdCtx)
+
+	// simulateInitliaze raises predeploy, which should still error
+	err = simulateInitliaze(
+		*mockContext.Context, serviceTarget, serviceConfig)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "could not determine AKS cluster")
+}
+
+func Test_Postprovision_Skips_When_Namespace_Fails(t *testing.T) {
+	tempDir := t.TempDir()
+	ostest.Chdir(t, tempDir)
+
+	mockContext := mocks.NewMockContext(t.Context())
+	err := setupMocksForAksTarget(mockContext)
+	require.NoError(t, err)
+
+	// Credentials succeed so ensureClusterContext passes
+	err = setupListClusterUserCredentialsMock(
+		mockContext, http.StatusOK)
+	require.NoError(t, err)
+
+	// Override kubectl create namespace to fail
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "kubectl create namespace")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		return exec.NewRunResult(1, "", "forbidden"), fmt.Errorf(
+			"namespace creation denied")
+	})
+
+	serviceConfig := createTestServiceConfig(
+		tempDir, AksTarget, ServiceLanguageTypeScript)
+	env := createEnv()
+
+	resourceManager := &MockResourceManager{}
+	targetResource := environment.NewTargetResource(
+		"SUBSCRIPTION_ID",
+		"RESOURCE_GROUP",
+		"MY_AKS_CLUSTER",
+		string(azapi.AzureResourceTypeManagedCluster),
+	)
+	resourceManager.
+		On("GetTargetResource",
+			*mockContext.Context,
+			"SUBSCRIPTION_ID",
+			serviceConfig).
+		Return(targetResource, nil)
+
+	serviceTarget := createAksServiceTargetWithResourceManager(
+		mockContext, env, nil, resourceManager)
+
+	err = serviceTarget.Initialize(
+		*mockContext.Context, serviceConfig)
+	require.NoError(t, err)
+
+	// Postprovision should skip gracefully despite namespace failure
+	err = serviceConfig.Project.RaiseEvent(
+		*mockContext.Context,
+		postProvisionEvent,
+		ProjectLifecycleEventArgs{
+			Project: serviceConfig.Project,
+		},
+	)
+	require.NoError(t, err)
+}
+
+func Test_Postprovision_Propagates_Context_Cancellation(t *testing.T) {
+	tempDir := t.TempDir()
+	ostest.Chdir(t, tempDir)
+
+	mockContext := mocks.NewMockContext(t.Context())
+	err := setupMocksForAksTarget(mockContext)
+	require.NoError(t, err)
+
+	serviceConfig := createTestServiceConfig(
+		tempDir, AksTarget, ServiceLanguageTypeScript)
+	env := createEnv()
+
+	resourceManager := &MockResourceManager{}
+	resourceManager.
+		On("GetTargetResource",
+			mock.Anything,
+			"SUBSCRIPTION_ID",
+			serviceConfig).
+		Return(
+			(*environment.TargetResource)(nil),
+			fmt.Errorf("request cancelled"))
+
+	serviceTarget := createAksServiceTargetWithResourceManager(
+		mockContext, env, nil, resourceManager)
+
+	err = serviceTarget.Initialize(
+		*mockContext.Context, serviceConfig)
+	require.NoError(t, err)
+
+	// Create a cancelled context — the skip helper must propagate
+	// the cancellation instead of returning nil.
+	cancelledCtx, cancel := context.WithCancel(*mockContext.Context)
+	cancel()
+
+	err = serviceConfig.Project.RaiseEvent(
+		cancelledCtx,
+		postProvisionEvent,
+		ProjectLifecycleEventArgs{
+			Project: serviceConfig.Project,
+		},
+	)
+	// The EventDispatcher aggregates handler errors via errors.New,
+	// which breaks the error chain. Assert via message content.
+	require.Error(t, err)
+	require.ErrorContains(t, err, "context canceled")
+}
+
+func createAksServiceTargetWithResourceManager(
+	mockContext *mocks.MockContext,
+	env *environment.Environment,
+	userConfig config.Config,
+	resourceManager ResourceManager,
+) ServiceTarget {
+	kubeCtl := kubectl.NewCli(mockContext.CommandRunner)
+	helmCli := helm.NewCli(mockContext.CommandRunner)
+	kustomizeCli := kustomize.NewCli(mockContext.CommandRunner)
+	dockerCli := docker.NewCli(mockContext.CommandRunner)
+	dotnetCli := dotnet.NewCli(mockContext.CommandRunner)
+	kubeLoginCli := kubelogin.NewCli(mockContext.CommandRunner)
+	credentialProvider := mockaccount.SubscriptionCredentialProviderFunc(
+		func(_ context.Context, _ string) (azcore.TokenCredential, error) {
+			return mockContext.Credentials, nil
+		})
+
+	envManager := &mockenv.MockEnvManager{}
+	envManager.On("Get", mock.Anything, env.Name()).Return(env, nil)
+	envManager.On("Save", *mockContext.Context, env).Return(nil)
+
+	managedClustersService := azapi.NewManagedClustersService(
+		credentialProvider, mockContext.ArmClientOptions)
+	containerRegistryService := azapi.NewContainerRegistryService(
+		credentialProvider,
+		dockerCli,
+		mockContext.ArmClientOptions,
+		mockContext.CoreClientOptions,
+	)
+	remoteBuildManager := containerregistry.NewRemoteBuildManager(
+		credentialProvider,
+		mockContext.ArmClientOptions,
+	)
+	containerHelper := NewContainerHelper(
+		clock.NewMock(),
+		containerRegistryService,
+		remoteBuildManager,
+		nil,
+		dockerCli,
+		dotnetCli,
+		mockContext.Console,
+		cloud.AzurePublic(),
+	)
+
+	if userConfig == nil {
+		userConfig = config.NewConfig(nil)
+	}
+
+	return NewAksTarget(
+		env,
+		envManager,
+		mockContext.Console,
+		managedClustersService,
+		resourceManager,
+		kubeCtl,
+		kubeLoginCli,
+		helmCli,
+		kustomizeCli,
+		containerHelper,
+		alpha.NewFeaturesManagerWithConfig(userConfig),
+	)
+}

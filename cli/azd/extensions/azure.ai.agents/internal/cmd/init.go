@@ -589,16 +589,44 @@ func (a *InitAction) configureModelChoice(
 	}
 
 	// If the manifest has no model resources, skip the model configuration prompt
-	// but still ensure subscription and location are set for agent creation
+	// but still ensure subscription and location are set for agent creation.
+	// When --project-id is provided, use the existing project to derive location
+	// and configure Foundry env vars (ACR, AppInsights, etc.) instead of prompting.
 	if !manifestHasModelResources(agentManifest) {
-		newCred, err := ensureSubscriptionAndLocation(
-			ctx, a.azdClient, a.azureContext, a.environment.Name,
-			"Select an Azure subscription to provision your agent and Foundry project resources.",
-		)
-		if err != nil {
-			return nil, err
+		if a.flags.projectResourceId != "" {
+			newCred, err := ensureSubscription(
+				ctx, a.azdClient, a.azureContext, a.environment.Name,
+				"Select an Azure subscription to provision your agent and Foundry project resources.",
+			)
+			if err != nil {
+				return nil, err
+			}
+			a.credential = newCred
+
+			selectedProject, err := selectFoundryProject(
+				ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
+				a.azureContext.Scope.SubscriptionId, a.flags.projectResourceId,
+			)
+			if err != nil {
+				return nil, err
+			}
+
+			if selectedProject == nil {
+				if err := ensureLocation(ctx, a.azdClient, a.azureContext, a.environment.Name); err != nil {
+					return nil, err
+				}
+			}
+		} else {
+			newCred, err := ensureSubscriptionAndLocation(
+				ctx, a.azdClient, a.azureContext, a.environment.Name,
+				"Select an Azure subscription to provision your agent and Foundry project resources.",
+			)
+			if err != nil {
+				return nil, err
+			}
+			a.credential = newCred
 		}
-		a.credential = newCred
+
 		return agentManifest, nil
 	}
 

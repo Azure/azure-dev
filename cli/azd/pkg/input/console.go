@@ -139,8 +139,8 @@ type Console interface {
 type AskerConsole struct {
 	asker   Asker
 	handles ConsoleHandles
-	// defaultWriter is the stdout handle, used to detect when the caller has
-	// redirected console output (e.g., to stderr for structured output).
+	// defaultWriter is the original output writer, used to restore after
+	// previewer stops.
 	defaultWriter io.Writer
 	// the writer which output is written to.
 	writer    io.Writer
@@ -337,10 +337,10 @@ func (c *AskerConsole) ShowPreviewer(ctx context.Context, options *ShowPreviewer
 	c.showProgressMu.Lock()
 	defer c.showProgressMu.Unlock()
 
-	// When the caller has redirected console output (e.g., to stderr for
+	// When console output is routed away from stdout (e.g., to stderr for
 	// structured output), skip the visual frame rendering (goterm writes
 	// to stdout directly) and return the redirected writer instead.
-	if c.writer != c.defaultWriter {
+	if c.writer != c.handles.Stdout {
 		return c.writer
 	}
 
@@ -440,10 +440,10 @@ func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format Spi
 	c.showProgressMu.Lock()
 	defer c.showProgressMu.Unlock()
 
-	// When the caller has redirected console output, emit the spinner
+	// When console output is routed away from stdout, emit the spinner
 	// title as plain text to the writer instead of using terminal
 	// animations that write to stdout directly.
-	if c.writer != c.defaultWriter {
+	if c.writer != c.handles.Stdout {
 		fmt.Fprintln(c.writer, title)
 		return
 	}
@@ -519,7 +519,7 @@ func (c *AskerConsole) StopSpinner(
 	lastMessage string,
 	format SpinnerUxType,
 ) {
-	if c.writer != c.defaultWriter {
+	if c.writer != c.handles.Stdout {
 		// When output is redirected, emit the stop message as plain
 		// text to the writer.
 		if lastMessage != "" {
@@ -1061,7 +1061,7 @@ func NewConsole(
 	c := &AskerConsole{
 		asker:         asker,
 		handles:       handles,
-		defaultWriter: handles.Stdout,
+		defaultWriter: writers.Output,
 		writer:        writers.Output,
 		formatter:     formatter,
 		isTerminal:    isTerminal,

@@ -13,18 +13,133 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 )
 
-type ImportManager struct {
-	dotNetImporter *DotNetImporter
+// Importer defines the contract for project importers that can detect projects, extract services,
+// and generate infrastructure from project configurations.
+//
+// Importers can be:
+//   - Built-in (e.g., DotNetImporter for Aspire) — auto-detect projects via CanImport/Services
+//   - Extension-provided — explicitly configured via infra.importer in azure.yaml
+//
+// When configured explicitly via azure.yaml, the infra.importer field specifies the importer name
+// and path. The ImportManager looks up the importer by name and calls ProjectInfrastructure or
+// GenerateAllInfrastructure directly with the configured path.
+type Importer interface {
+	// Name returns the display name of this importer (e.g., "Aspire", "demo-importer").
+	Name() string
+
+	// CanImport returns true if the importer can handle the given service.
+	// Used for auto-detection of importable projects (e.g., Aspire AppHost detection).
+	// Importers should check service properties (e.g., language) before performing
+	// expensive detection operations.
+	CanImport(ctx context.Context, svcConfig *ServiceConfig) (bool, error)
+
+	// Services extracts individual service configurations from the project.
+	// Used for auto-detection mode where the importer expands a single service into multiple.
+	// The returned map is keyed by service name.
+	Services(
+		ctx context.Context,
+		projectConfig *ProjectConfig,
+		svcConfig *ServiceConfig,
+	) (map[string]*ServiceConfig, error)
+
+	// ProjectInfrastructure generates temporary infrastructure for provisioning.
+	// Returns an Infra pointing to a temp directory with generated IaC files.
+	// The projectPath is the root path of the azd project.
+	// The importerConfig contains the extension-owned options from azure.yaml.
+	ProjectInfrastructure(
+		ctx context.Context,
+		projectPath string,
+		importerConfig provisioning.ImporterConfig,
+	) (*Infra, error)
+
+	// GenerateAllInfrastructure generates the complete infrastructure filesystem for `azd infra gen`.
+	// Returns an in-memory FS rooted at the project directory with all generated files.
+	// The projectPath is the root path of the azd project.
+	// The importerConfig contains the extension-owned options from azure.yaml.
+	GenerateAllInfrastructure(
+		ctx context.Context,
+		projectPath string,
+		importerConfig provisioning.ImporterConfig,
+	) (fs.FS, error)
 }
 
-func NewImportManager(dotNetImporter *DotNetImporter) *ImportManager {
+// ImporterRegistry holds external importers registered by extensions at runtime.
+// It is a singleton shared between the gRPC server (which adds importers) and
+// ImportManager instances (which query them).
+type ImporterRegistry struct {
+	importers []Importer
+	mu        sync.RWMutex
+}
+
+// NewImporterRegistry creates a new empty registry.
+func NewImporterRegistry() *ImporterRegistry {
+	return &ImporterRegistry{}
+}
+
+// Add registers an external importer.
+func (r *ImporterRegistry) Add(importer Importer) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.importers = append(r.importers, importer)
+}
+
+// All returns a snapshot of all registered external importers.
+func (r *ImporterRegistry) All() []Importer {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return slices.Clone(r.importers)
+}
+
+// ImportManager manages the orchestration of project importers that detect services and generate infrastructure.
+type ImportManager struct {
+	importers        []Importer
+	importerRegistry *ImporterRegistry
+}
+
+// NewImportManager creates a new ImportManager with the given built-in importers.
+// The importerRegistry provides access to extension-registered importers added at runtime.
+func NewImportManager(importers []Importer, importerRegistry *ImporterRegistry) *ImportManager {
 	return &ImportManager{
-		dotNetImporter: dotNetImporter,
+		importers:        importers,
+		importerRegistry: importerRegistry,
 	}
+}
+
+// allImporters returns the combined list of built-in and extension-registered importers.
+// Built-in importers come first to maintain backward compatibility.
+func (im *ImportManager) allImporters() []Importer {
+	if im.importerRegistry == nil {
+		return im.importers
+	}
+	external := im.importerRegistry.All()
+	if len(external) == 0 {
+		return im.importers
+	}
+	return append(slices.Clone(im.importers), external...)
+}
+
+// findImporter looks up an importer by name from all available importers.
+func (im *ImportManager) findImporter(name string) (Importer, error) {
+	for _, importer := range im.allImporters() {
+		if importer.Name() == name {
+			return importer, nil
+		}
+	}
+	return nil, fmt.Errorf(
+		"importer '%s' is not available. Make sure the extension providing it is installed", name)
+}
+
+// servicePath returns the resolved path for a service config, handling nil Project gracefully.
+func servicePath(svcConfig *ServiceConfig) string {
+	if svcConfig.Project != nil {
+		return svcConfig.Path()
+	}
+	return svcConfig.RelativePath
 }
 
 func (im *ImportManager) HasService(ctx context.Context, projectConfig *ProjectConfig, name string) (bool, error) {
@@ -42,47 +157,54 @@ func (im *ImportManager) HasService(ctx context.Context, projectConfig *ProjectC
 	return false, nil
 }
 
-var (
-	errNoMultipleServicesWithAppHost = fmt.Errorf(
-		"a project may only contain a single Aspire service and no other services at this time.")
-
-	errAppHostMustTargetContainerApp = fmt.Errorf(
-		"Aspire services must be configured to target the container app host at this time.")
-)
-
 // Retrieves the list of services in the project, in a stable ordering that is deterministic.
 func (im *ImportManager) ServiceStable(ctx context.Context, projectConfig *ProjectConfig) ([]*ServiceConfig, error) {
 	allServices := make(map[string]*ServiceConfig)
 
 	for name, svcConfig := range projectConfig.Services {
-		if svcConfig.Language == ServiceLanguageDotNet {
-			if canImport, err := im.dotNetImporter.CanImport(ctx, svcConfig.Path()); canImport {
+		imported := false
+
+		// Only attempt import if the service config has a valid path
+
+		for _, importer := range im.allImporters() {
+			canImport, err := importer.CanImport(ctx, svcConfig)
+			if err != nil {
+				log.Printf(
+					"error checking if %s can be imported by %s: %v",
+					servicePath(svcConfig), importer.Name(), err,
+				)
+				continue
+			}
+
+			if canImport {
 				if len(projectConfig.Services) != 1 {
-					return nil, errNoMultipleServicesWithAppHost
+					return nil, fmt.Errorf(
+						"a project may only contain a single %s service and no other services at this time",
+						importer.Name(),
+					)
 				}
 
 				if svcConfig.Host != ContainerAppTarget {
-					return nil, errAppHostMustTargetContainerApp
+					return nil, fmt.Errorf(
+						"%s services must be configured to target the container app host at this time",
+						importer.Name(),
+					)
 				}
 
-				services, err := im.dotNetImporter.Services(ctx, projectConfig, svcConfig)
+				services, err := importer.Services(ctx, projectConfig, svcConfig)
 				if err != nil {
 					return nil, fmt.Errorf("importing services: %w", err)
 				}
 
-				// TODO(ellismg): We should consider if we should prefix these services so the are of the form
-				// "app:frontend" instead of just "frontend". Perhaps both as the key here and and as the .Name
-				// property on the ServiceConfig.  This does have implications for things like service specific
-				// property names that translate to environment variables.
 				maps.Copy(allServices, services)
-
-				continue
-			} else if err != nil {
-				log.Printf("error checking if %s is an app host project: %v", svcConfig.Path(), err)
+				imported = true
+				break
 			}
 		}
 
-		allServices[name] = svcConfig
+		if !imported {
+			allServices[name] = svcConfig
+		}
 	}
 
 	// Collect all the services and then sort the resulting list by name. This provides a stable ordering of services.
@@ -264,18 +386,30 @@ func (im *ImportManager) validateServiceDependencies(services []*ServiceConfig, 
 	return nil
 }
 
-// HasAppHost returns true when there is one AppHost (Aspire) in the project.
-func (im *ImportManager) HasAppHost(ctx context.Context, projectConfig *ProjectConfig) bool {
+// HasImporter returns true when there is a service in the project that can be handled by an importer.
+func (im *ImportManager) HasImporter(ctx context.Context, projectConfig *ProjectConfig) bool {
 	for _, svcConfig := range projectConfig.Services {
-		if svcConfig.Language == ServiceLanguageDotNet {
-			if canImport, err := im.dotNetImporter.CanImport(ctx, svcConfig.Path()); canImport {
+		for _, importer := range im.allImporters() {
+			canImport, err := importer.CanImport(ctx, svcConfig)
+			if err != nil {
+				log.Printf(
+					"error checking if %s can be imported by %s: %v",
+					servicePath(svcConfig), importer.Name(), err,
+				)
+				continue
+			}
+			if canImport {
 				return true
-			} else if err != nil {
-				log.Printf("error checking if %s is an app host project: %v", svcConfig.Path(), err)
 			}
 		}
 	}
 	return false
+}
+
+// HasAppHost returns true when there is one AppHost (Aspire) in the project.
+// Deprecated: Use HasImporter instead.
+func (im *ImportManager) HasAppHost(ctx context.Context, projectConfig *ProjectConfig) bool {
+	return im.HasImporter(ctx, projectConfig)
 }
 
 var (
@@ -327,21 +461,45 @@ func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfi
 		}, nil
 	}
 
-	// Temp infra from AppHost
+	// Infra from explicitly configured importer (infra.importer in azure.yaml)
+	if !infraOptions.Importer.Empty() {
+		importer, err := im.findImporter(infraOptions.Importer.Name)
+		if err != nil {
+			return nil, err
+		}
+
+		log.Printf("using importer '%s'", importer.Name())
+		return importer.ProjectInfrastructure(ctx, projectConfig.Path, infraOptions.Importer)
+	}
+
+	// Temp infra from auto-detected importer (backward compatibility with Aspire)
 	for _, svcConfig := range projectConfig.Services {
-		if svcConfig.Language == ServiceLanguageDotNet {
-			if canImport, err := im.dotNetImporter.CanImport(ctx, svcConfig.Path()); canImport {
+		for _, importer := range im.allImporters() {
+			canImport, err := importer.CanImport(ctx, svcConfig)
+			if err != nil {
+				log.Printf(
+					"error checking if %s can be imported by %s: %v",
+					servicePath(svcConfig), importer.Name(), err,
+				)
+				continue
+			}
+
+			if canImport {
 				if len(projectConfig.Services) != 1 {
-					return nil, errNoMultipleServicesWithAppHost
+					return nil, fmt.Errorf(
+						"a project may only contain a single %s service and no other services at this time",
+						importer.Name(),
+					)
 				}
 
 				if svcConfig.Host != ContainerAppTarget {
-					return nil, errAppHostMustTargetContainerApp
+					return nil, fmt.Errorf(
+						"%s services must be configured to target the container app host at this time",
+						importer.Name(),
+					)
 				}
 
-				return im.dotNetImporter.ProjectInfrastructure(ctx, svcConfig)
-			} else if err != nil {
-				log.Printf("error checking if %s is an app host project: %v", svcConfig.Path(), err)
+				return importer.ProjectInfrastructure(ctx, svcConfig.Path(), provisioning.ImporterConfig{})
 			}
 		}
 	}
@@ -424,22 +582,48 @@ func pathHasModule(path, module string) (bool, error) {
 // GenerateAllInfrastructure returns a file system containing all infrastructure for the project,
 // rooted at the project directory.
 func (im *ImportManager) GenerateAllInfrastructure(ctx context.Context, projectConfig *ProjectConfig) (fs.FS, error) {
+	// Check for explicitly configured importer (infra.importer in azure.yaml)
+	if !projectConfig.Infra.Importer.Empty() {
+		importerCfg := projectConfig.Infra.Importer
+		importer, err := im.findImporter(importerCfg.Name)
+		if err != nil {
+			return nil, err
+		}
+
+		log.Printf("GenerateAllInfrastructure: using configured importer '%s'", importer.Name())
+		return importer.GenerateAllInfrastructure(ctx, projectConfig.Path, importerCfg)
+	}
+
+	// Auto-detect importer from services (backward compatibility with Aspire)
+	allImporters := im.allImporters()
 	for _, svcConfig := range projectConfig.Services {
-		if svcConfig.Language == ServiceLanguageDotNet {
-			if canImport, err := im.dotNetImporter.CanImport(ctx, svcConfig.Path()); canImport {
+		for _, importer := range allImporters {
+			canImport, err := importer.CanImport(ctx, svcConfig)
+			if err != nil {
+				log.Printf(
+					"error checking if %s can be imported by %s: %v",
+					servicePath(svcConfig), importer.Name(), err,
+				)
+				continue
+			}
+
+			if canImport {
 				if len(projectConfig.Services) != 1 {
-					return nil, errNoMultipleServicesWithAppHost
+					return nil, fmt.Errorf(
+						"a project may only contain a single %s service and no other services at this time",
+						importer.Name(),
+					)
 				}
 
 				if svcConfig.Host != ContainerAppTarget {
-					return nil, errAppHostMustTargetContainerApp
+					return nil, fmt.Errorf(
+						"%s services must be configured to target the container app host at this time",
+						importer.Name(),
+					)
 				}
 
-				return im.dotNetImporter.GenerateAllInfrastructure(ctx, projectConfig, svcConfig)
-			} else if err != nil {
-				log.Printf("error checking if %s is an app host project: %v", svcConfig.Path(), err)
+				return importer.GenerateAllInfrastructure(ctx, svcConfig.Path(), provisioning.ImporterConfig{})
 			}
-
 		}
 	}
 

@@ -35,6 +35,33 @@ const (
 	ModeDestroy Mode = "destroy"
 )
 
+// ImporterConfig defines the configuration for a project importer within the infra block.
+// Importers generate infrastructure from project-specific definitions (e.g., markdown resource files).
+// The importer implementation is provided by an extension identified by the Name field.
+type ImporterConfig struct {
+	// Name is the identifier of the importer (must match an extension-registered importer).
+	Name string `yaml:"name"`
+	// Options is an extension-owned map of settings specific to the importer.
+	// Each extension defines what options it expects (e.g., path, format, etc.).
+	// This gives extensions full control over their configuration schema.
+	Options map[string]any `yaml:"options,omitempty"`
+}
+
+// Empty returns true if no importer is configured.
+func (ic ImporterConfig) Empty() bool {
+	return ic.Name == ""
+}
+
+// GetOption returns the string value of an option, or the default if not set.
+func (ic ImporterConfig) GetOption(key string, defaultValue string) string {
+	if v, ok := ic.Options[key]; ok {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	return defaultValue
+}
+
 // Options for a provisioning provider.
 type Options struct {
 	Provider         ProviderKind   `yaml:"provider,omitempty"`
@@ -43,6 +70,8 @@ type Options struct {
 	Name             string         `yaml:"name,omitempty"`
 	Hooks            HooksConfig    `yaml:"hooks,omitempty"`
 	DeploymentStacks map[string]any `yaml:"deploymentStacks,omitempty"`
+	// Importer configures an extension-provided importer that generates infrastructure.
+	Importer ImporterConfig `yaml:"importer,omitempty"`
 	// Provisioning options for each individually defined layer.
 	Layers []Options `yaml:"layers,omitempty"`
 

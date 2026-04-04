@@ -572,7 +572,19 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterScoped(project.NewProjectManager)
 	// Currently caches manifest across command executions
 	container.MustRegisterSingleton(project.NewDotNetImporter)
-	container.MustRegisterScoped(project.NewImportManager)
+	// ImporterRegistry is a singleton shared between gRPC service (adds importers) and ImportManager (queries them)
+	container.MustRegisterSingleton(project.NewImporterRegistry)
+	container.MustRegisterScoped(func(
+		dotNetImporter *project.DotNetImporter,
+		importerRegistry *project.ImporterRegistry,
+	) *project.ImportManager {
+		// Build the list of importers with built-in ones first.
+		// Extensions add more importers at runtime via the ImporterRegistry.
+		importers := []project.Importer{
+			dotNetImporter,
+		}
+		return project.NewImportManager(importers, importerRegistry)
+	})
 	container.MustRegisterScoped(project.NewServiceManager)
 
 	// Even though the service manager is scoped based on its use of environment we can still
@@ -953,6 +965,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(grpcserver.NewServiceTargetService)
 	container.MustRegisterSingleton(grpcserver.NewFrameworkService)
 	container.MustRegisterSingleton(grpcserver.NewAiModelService)
+	container.MustRegisterSingleton(grpcserver.NewImporterGrpcService)
 	container.MustRegisterScoped(grpcserver.NewCopilotService)
 
 	// Required for nested actions called from composite actions like 'up'

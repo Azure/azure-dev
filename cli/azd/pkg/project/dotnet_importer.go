@@ -32,6 +32,9 @@ type hostCheckResult struct {
 	err error
 }
 
+// Verify DotNetImporter implements Importer at compile time.
+var _ Importer = (*DotNetImporter)(nil)
+
 // DotNetImporter is an importer that is able to import projects and infrastructure from a manifest produced by a .NET App.
 type DotNetImporter struct {
 	dotnetCli           *dotnet.Cli
@@ -76,9 +79,24 @@ func NewDotNetImporter(
 	}
 }
 
-// CanImport returns true when the given project can be imported by this importer. Only some .NET Apps are able
-// to produce the manifest that importer expects.
-func (ai *DotNetImporter) CanImport(ctx context.Context, projectPath string) (bool, error) {
+// Name returns the display name of this importer.
+func (ai *DotNetImporter) Name() string {
+	return "Aspire"
+}
+
+// CanImport returns true when the given service can be imported by this importer. Only .NET Aspire AppHost projects
+// are able to produce the manifest that this importer expects.
+func (ai *DotNetImporter) CanImport(ctx context.Context, svcConfig *ServiceConfig) (bool, error) {
+	// Only .NET services can be Aspire AppHosts
+	if svcConfig.Language != ServiceLanguageDotNet {
+		return false, nil
+	}
+
+	projectPath := svcConfig.RelativePath
+	if svcConfig.Project != nil {
+		projectPath = svcConfig.Path()
+	}
+
 	ai.hostCheckMu.Lock()
 	defer ai.hostCheckMu.Unlock()
 
@@ -104,7 +122,27 @@ func (ai *DotNetImporter) CanImport(ctx context.Context, projectPath string) (bo
 	return isAppHost, nil
 }
 
-func (ai *DotNetImporter) ProjectInfrastructure(ctx context.Context, svcConfig *ServiceConfig) (*Infra, error) {
+// ProjectInfrastructure implements the Importer interface.
+// For DotNetImporter, the projectPath combined with options determines the AppHost project location.
+func (ai *DotNetImporter) ProjectInfrastructure(
+	ctx context.Context,
+	projectPath string,
+	importerConfig provisioning.ImporterConfig,
+) (*Infra, error) {
+	// Use absolute path so ServiceConfig.Path() works without Project reference
+	absPath, err := filepath.Abs(projectPath)
+	if err != nil {
+		absPath = projectPath
+	}
+	svcConfig := &ServiceConfig{
+		RelativePath: absPath,
+	}
+	return ai.projectInfrastructureFromConfig(ctx, svcConfig)
+}
+
+func (ai *DotNetImporter) projectInfrastructureFromConfig(
+	ctx context.Context, svcConfig *ServiceConfig,
+) (*Infra, error) {
 	manifest, err := ai.ReadManifest(ctx, svcConfig)
 	if err != nil {
 		return nil, fmt.Errorf("generating app host manifest: %w", err)
@@ -573,7 +611,25 @@ func evaluateSingleBuildArg(
 	return fmt.Sprintf("{%s%s}", infraParametersKey, finalParamName), nil
 }
 
-func (ai *DotNetImporter) GenerateAllInfrastructure(ctx context.Context, p *ProjectConfig, svcConfig *ServiceConfig,
+// GenerateAllInfrastructure implements the Importer interface.
+// For DotNetImporter, the projectPath combined with options determines the AppHost project location.
+func (ai *DotNetImporter) GenerateAllInfrastructure(
+	ctx context.Context,
+	projectPath string,
+	importerConfig provisioning.ImporterConfig,
+) (fs.FS, error) {
+	absPath, err := filepath.Abs(projectPath)
+	if err != nil {
+		absPath = projectPath
+	}
+	svcConfig := &ServiceConfig{
+		RelativePath: absPath,
+	}
+	return ai.generateAllInfrastructureFromConfig(ctx, nil, svcConfig)
+}
+
+func (ai *DotNetImporter) generateAllInfrastructureFromConfig(
+	ctx context.Context, p *ProjectConfig, svcConfig *ServiceConfig,
 ) (fs.FS, error) {
 	manifest, err := ai.ReadManifest(ctx, svcConfig)
 	if err != nil {

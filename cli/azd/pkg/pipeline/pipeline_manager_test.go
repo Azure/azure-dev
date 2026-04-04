@@ -907,7 +907,10 @@ func createPipelineManager(
 		mockContext.Console,
 		args,
 		mockContext.Container,
-		project.NewImportManager(project.NewDotNetImporter(nil, nil, nil, nil, mockContext.AlphaFeaturesManager)),
+		project.NewImportManager(
+			[]project.Importer{project.NewDotNetImporter(nil, nil, nil, nil, mockContext.AlphaFeaturesManager)},
+			nil,
+		),
 		&mockUserConfigManager{},
 		nil,
 		armmsi.ArmMsiService{},

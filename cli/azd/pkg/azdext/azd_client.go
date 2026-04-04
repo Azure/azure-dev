@@ -198,6 +198,12 @@ func (c *AzdClient) FrameworkService() FrameworkServiceClient {
 	return NewFrameworkServiceClient(c.connection)
 }
 
+// Importer returns the importer service client.
+func (c *AzdClient) Importer() ImporterServiceClient {
+	// Create importer service client directly as it's not yet added to the client struct
+	return NewImporterServiceClient(c.connection)
+}
+
 // Container returns the container service client.
 func (c *AzdClient) Container() ContainerServiceClient {
 	if c.containerClient == nil {

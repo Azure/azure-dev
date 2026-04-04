@@ -33,6 +33,12 @@ type frameworkServiceRegistrar interface {
 	Close() error
 }
 
+type importerRegistrar interface {
+	serviceReceiver
+	Register(ctx context.Context, factory ImporterFactory, name string) error
+	Close() error
+}
+
 type extensionEventManager interface {
 	serviceReceiver
 	AddProjectEventHandler(ctx context.Context, eventName string, handler ProjectEventHandler) error
@@ -52,6 +58,12 @@ type ServiceTargetRegistration struct {
 type FrameworkServiceRegistration struct {
 	Language string
 	Factory  func() FrameworkServiceProvider
+}
+
+// ImporterRegistration describes an importer provider to register with azd core.
+type ImporterRegistration struct {
+	Name    string
+	Factory func() ImporterProvider
 }
 
 // ProjectEventRegistration describes a project-level event handler to register.
@@ -82,11 +94,13 @@ type ExtensionHost struct {
 
 	serviceTargets    []ServiceTargetRegistration
 	frameworkServices []FrameworkServiceRegistration
+	importers         []ImporterRegistration
 	projectHandlers   []ProjectEventRegistration
 	serviceHandlers   []ServiceEventRegistration
 
 	serviceTargetManager    serviceTargetRegistrar
 	frameworkServiceManager frameworkServiceRegistrar
+	importerManager         importerRegistrar
 	eventManager            extensionEventManager
 }
 
@@ -117,6 +131,9 @@ func (er *ExtensionHost) initManagers(extensionId string, brokerLogger *log.Logg
 	if er.frameworkServiceManager == nil {
 		er.frameworkServiceManager = NewFrameworkServiceManager(extensionId, er.client, brokerLogger)
 	}
+	if er.importerManager == nil {
+		er.importerManager = NewImporterManager(extensionId, er.client, brokerLogger)
+	}
 	if er.eventManager == nil {
 		er.eventManager = NewEventManager(extensionId, er.client, brokerLogger)
 	}
@@ -131,6 +148,12 @@ func (er *ExtensionHost) WithServiceTarget(host string, factory ServiceTargetFac
 // WithFrameworkService registers a framework service provider to be wired when Run is invoked.
 func (er *ExtensionHost) WithFrameworkService(language string, factory FrameworkServiceFactory) *ExtensionHost {
 	er.frameworkServices = append(er.frameworkServices, FrameworkServiceRegistration{Language: language, Factory: factory})
+	return er
+}
+
+// WithImporter registers an importer provider to be wired when Run is invoked.
+func (er *ExtensionHost) WithImporter(name string, factory ImporterFactory) *ExtensionHost {
+	er.importers = append(er.importers, ImporterRegistration{Name: name, Factory: factory})
 	return er
 }
 
@@ -181,6 +204,7 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 	// Determine which managers will be active
 	hasServiceTargets := len(er.serviceTargets) > 0
 	hasFrameworkServices := len(er.frameworkServices) > 0
+	hasImporters := len(er.importers) > 0
 	hasEventHandlers := len(er.projectHandlers) > 0 || len(er.serviceHandlers) > 0
 
 	// Set up defer for cleanup
@@ -190,6 +214,9 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 		}
 		if hasFrameworkServices {
 			_ = er.frameworkServiceManager.Close()
+		}
+		if hasImporters {
+			_ = er.importerManager.Close()
 		}
 		if hasEventHandlers {
 			_ = er.eventManager.Close()
@@ -204,6 +231,9 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 	}
 	if hasFrameworkServices {
 		receivers = append(receivers, er.frameworkServiceManager)
+	}
+	if hasImporters {
+		receivers = append(receivers, er.importerManager)
 	}
 	if hasEventHandlers {
 		receivers = append(receivers, er.eventManager)
@@ -239,9 +269,10 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 	// Now that receivers are running, perform registrations
 	// The broker.Run() in each Receive() will process the registration responses
 
-	// Register all registrations in parallel - service targets, framework services, and event handlers
+	// Register all registrations in parallel - service targets, framework services, importers, and event handlers
 	var registrationsWaitGroup sync.WaitGroup
-	totalCount := len(er.serviceTargets) + len(er.frameworkServices) + len(er.projectHandlers) + len(er.serviceHandlers)
+	totalCount := len(er.serviceTargets) + len(er.frameworkServices) + len(er.importers) +
+		len(er.projectHandlers) + len(er.serviceHandlers)
 	registrationErrChan := make(chan error, totalCount)
 
 	// Register service targets in parallel
@@ -268,6 +299,20 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 		registrationsWaitGroup.Go(func() {
 			if err := er.frameworkServiceManager.Register(ctx, r.Factory, r.Language); err != nil {
 				registrationErrChan <- fmt.Errorf("failed to register framework service '%s': %w", r.Language, err)
+			}
+		})
+	}
+
+	// Register importers in parallel
+	for _, reg := range er.importers {
+		if reg.Factory == nil {
+			return fmt.Errorf("importer provider for '%s' is nil", reg.Name)
+		}
+
+		r := reg
+		registrationsWaitGroup.Go(func() {
+			if err := er.importerManager.Register(ctx, r.Factory, r.Name); err != nil {
+				registrationErrChan <- fmt.Errorf("failed to register importer '%s': %w", r.Name, err)
 			}
 		})
 	}

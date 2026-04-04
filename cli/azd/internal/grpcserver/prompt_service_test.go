@@ -601,6 +601,7 @@ func setupTestServer(t *testing.T, promptSvc azdext.PromptServiceServer) (
 		azdext.UnimplementedAccountServiceServer{},
 		azdext.UnimplementedAiModelServiceServer{},
 		azdext.UnimplementedCopilotServiceServer{},
+		azdext.UnimplementedProvisioningServiceServer{},
 	)
 
 	serverInfo, err := server.Start()

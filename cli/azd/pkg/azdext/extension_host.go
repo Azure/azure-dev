@@ -42,6 +42,13 @@ type extensionEventManager interface {
 	Close() error
 }
 
+type provisioningRegistrar interface {
+	Register(ctx context.Context, factory ProvisioningProviderFactory, providerName string) error
+	Receive(ctx context.Context) error
+	Ready(ctx context.Context) error
+	Close() error
+}
+
 // ServiceTargetRegistration describes a service target provider to register with azd core.
 type ServiceTargetRegistration struct {
 	Host    string
@@ -67,6 +74,12 @@ type ServiceEventRegistration struct {
 	Options   *ServiceEventOptions
 }
 
+// ProvisioningProviderRegistration describes a provisioning provider to register with azd core.
+type ProvisioningProviderRegistration struct {
+	Name    string
+	Factory ProvisioningProviderFactory
+}
+
 // ProviderFactory describes a function that creates a provider instance
 type ProviderFactory[T any] func() T
 
@@ -80,14 +93,16 @@ type FrameworkServiceFactory ProviderFactory[FrameworkServiceProvider]
 type ExtensionHost struct {
 	client *AzdClient
 
-	serviceTargets    []ServiceTargetRegistration
-	frameworkServices []FrameworkServiceRegistration
-	projectHandlers   []ProjectEventRegistration
-	serviceHandlers   []ServiceEventRegistration
+	serviceTargets        []ServiceTargetRegistration
+	frameworkServices     []FrameworkServiceRegistration
+	projectHandlers       []ProjectEventRegistration
+	serviceHandlers       []ServiceEventRegistration
+	provisioningProviders []ProvisioningProviderRegistration
 
 	serviceTargetManager    serviceTargetRegistrar
 	frameworkServiceManager frameworkServiceRegistrar
 	eventManager            extensionEventManager
+	provisioningManager     provisioningRegistrar
 }
 
 // NewExtensionHost creates a new ExtensionHost for the supplied azd client.
@@ -119,6 +134,9 @@ func (er *ExtensionHost) initManagers(extensionId string, brokerLogger *log.Logg
 	}
 	if er.eventManager == nil {
 		er.eventManager = NewEventManager(extensionId, er.client, brokerLogger)
+	}
+	if er.provisioningManager == nil {
+		er.provisioningManager = NewProvisioningManager(extensionId, er.client, brokerLogger)
 	}
 }
 
@@ -154,6 +172,18 @@ func (er *ExtensionHost) WithServiceEventHandler(
 	return er
 }
 
+// WithProvisioningProvider registers a provisioning provider to be wired when Run is invoked.
+func (er *ExtensionHost) WithProvisioningProvider(
+	name string,
+	factory ProvisioningProviderFactory,
+) *ExtensionHost {
+	er.provisioningProviders = append(
+		er.provisioningProviders,
+		ProvisioningProviderRegistration{Name: name, Factory: factory},
+	)
+	return er
+}
+
 // Run wires the configured service targets and event handlers, signals readiness, and blocks until shutdown.
 func (er *ExtensionHost) Run(ctx context.Context) error {
 	extensionId := getExtensionId(ctx)
@@ -182,6 +212,7 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 	hasServiceTargets := len(er.serviceTargets) > 0
 	hasFrameworkServices := len(er.frameworkServices) > 0
 	hasEventHandlers := len(er.projectHandlers) > 0 || len(er.serviceHandlers) > 0
+	hasProvisioningProviders := len(er.provisioningProviders) > 0
 
 	// Set up defer for cleanup
 	defer func() {
@@ -193,6 +224,9 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 		}
 		if hasEventHandlers {
 			_ = er.eventManager.Close()
+		}
+		if hasProvisioningProviders {
+			_ = er.provisioningManager.Close()
 		}
 	}()
 
@@ -207,6 +241,9 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 	}
 	if hasEventHandlers {
 		receivers = append(receivers, er.eventManager)
+	}
+	if hasProvisioningProviders {
+		receivers = append(receivers, er.provisioningManager)
 	}
 
 	// Start receiving messages from active managers in separate goroutines
@@ -239,9 +276,10 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 	// Now that receivers are running, perform registrations
 	// The broker.Run() in each Receive() will process the registration responses
 
-	// Register all registrations in parallel - service targets, framework services, and event handlers
+	// Register all registrations in parallel - service targets, framework services, event handlers, and provisioning
 	var registrationsWaitGroup sync.WaitGroup
-	totalCount := len(er.serviceTargets) + len(er.frameworkServices) + len(er.projectHandlers) + len(er.serviceHandlers)
+	totalCount := len(er.serviceTargets) + len(er.frameworkServices) +
+		len(er.projectHandlers) + len(er.serviceHandlers) + len(er.provisioningProviders)
 	registrationErrChan := make(chan error, totalCount)
 
 	// Register service targets in parallel
@@ -296,6 +334,22 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 		registrationsWaitGroup.Go(func() {
 			if err := er.eventManager.AddServiceEventHandler(ctx, r.EventName, r.Handler, r.Options); err != nil {
 				registrationErrChan <- fmt.Errorf("failed to add service event handler '%s': %w", r.EventName, err)
+			}
+		})
+	}
+
+	// Register provisioning providers in parallel
+	for _, reg := range er.provisioningProviders {
+		if reg.Factory == nil {
+			return fmt.Errorf("provisioning provider for '%s' is nil", reg.Name)
+		}
+
+		r := reg
+		registrationsWaitGroup.Go(func() {
+			if err := er.provisioningManager.Register(ctx, r.Factory, r.Name); err != nil {
+				registrationErrChan <- fmt.Errorf(
+					"failed to register provisioning provider '%s': %w", r.Name, err,
+				)
 			}
 		})
 	}

@@ -654,7 +654,8 @@ func TestListenCapabilities_ContainsExpectedValues(t *testing.T) {
 	require.Contains(t, listenCapabilities, extensions.LifecycleEventsCapability)
 	require.Contains(t, listenCapabilities, extensions.ServiceTargetProviderCapability)
 	require.Contains(t, listenCapabilities, extensions.FrameworkServiceProviderCapability)
-	require.Len(t, listenCapabilities, 3)
+	require.Contains(t, listenCapabilities, extensions.ProvisioningProviderCapability)
+	require.Len(t, listenCapabilities, 4)
 }
 
 // ---------------------------------------------------------------------------

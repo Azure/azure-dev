@@ -52,6 +52,14 @@ func (s *promptService) Confirm(ctx context.Context, req *azdext.ConfirmRequest)
 		return nil, status.Error(codes.InvalidArgument, "request and options are required")
 	}
 
+	if s.globalOptions.FailOnPrompt {
+		return nil, fmt.Errorf(
+			"interactive prompt not allowed in strict mode: %q"+
+				" (provide the value via command-line flags or environment variables)",
+			req.Options.Message,
+		)
+	}
+
 	if s.globalOptions.NoPrompt {
 		if req.Options.DefaultValue == nil {
 			return nil, fmt.Errorf("no default response for prompt '%s'", req.Options.Message)
@@ -87,6 +95,20 @@ func (s *promptService) Confirm(ctx context.Context, req *azdext.ConfirmRequest)
 func (s *promptService) Select(ctx context.Context, req *azdext.SelectRequest) (*azdext.SelectResponse, error) {
 	if req == nil || req.Options == nil {
 		return nil, status.Error(codes.InvalidArgument, "request and options are required")
+	}
+
+	if s.globalOptions.FailOnPrompt {
+		choiceLabels := make([]string, len(req.Options.Choices))
+		for i, c := range req.Options.Choices {
+			choiceLabels[i] = c.Label
+		}
+		return nil, fmt.Errorf(
+			"interactive prompt not allowed in strict mode: %q"+
+				" (available options: %s -- specify via"+
+				" command-line flags or environment variables)",
+			req.Options.Message,
+			strings.Join(choiceLabels, ", "),
+		)
 	}
 
 	if s.globalOptions.NoPrompt {
@@ -137,6 +159,20 @@ func (s *promptService) MultiSelect(
 ) (*azdext.MultiSelectResponse, error) {
 	if req == nil || req.Options == nil {
 		return nil, status.Error(codes.InvalidArgument, "request and options are required")
+	}
+
+	if s.globalOptions.FailOnPrompt {
+		choiceLabels := make([]string, len(req.Options.Choices))
+		for i, c := range req.Options.Choices {
+			choiceLabels[i] = c.Label
+		}
+		return nil, fmt.Errorf(
+			"interactive prompt not allowed in strict mode: %q"+
+				" (available options: %s -- specify via"+
+				" command-line flags or environment variables)",
+			req.Options.Message,
+			strings.Join(choiceLabels, ", "),
+		)
 	}
 
 	if s.globalOptions.NoPrompt {
@@ -194,6 +230,14 @@ func (s *promptService) MultiSelect(
 }
 
 func (s *promptService) Prompt(ctx context.Context, req *azdext.PromptRequest) (*azdext.PromptResponse, error) {
+	if s.globalOptions.FailOnPrompt {
+		return nil, fmt.Errorf(
+			"interactive prompt not allowed in strict mode: %q"+
+				" (provide the value via command-line flags or environment variables)",
+			req.Options.Message,
+		)
+	}
+
 	if s.globalOptions.NoPrompt {
 		if req.Options.Required && req.Options.DefaultValue == "" {
 			return nil, fmt.Errorf("no default response for prompt '%s'", req.Options.Message)

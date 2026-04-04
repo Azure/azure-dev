@@ -399,3 +399,130 @@ func TestPromptLocation_NoPrompt_IgnoresEmptyAllowedValues(t *testing.T) {
 	require.Equal(t, "westus3", location.Name)
 	subscriptionManager.AssertExpectations(t)
 }
+
+func TestPromptSubscription_FailOnPrompt(t *testing.T) {
+	ucm := newInMemoryUserConfigManager(nil)
+	authManager := &mockauth.MockAuthManager{}
+	subscriptionManager := &mockaccount.MockSubscriptionManager{}
+	resourceService := &mockazapi.MockResourceService{}
+	mockConsole := mockinput.NewMockConsole()
+
+	ps := NewPromptService(
+		authManager,
+		mockConsole,
+		ucm,
+		subscriptionManager,
+		resourceService,
+		&internal.GlobalCommandOptions{FailOnPrompt: true},
+	)
+
+	result, err := ps.PromptSubscription(t.Context(), nil)
+	require.Nil(t, result)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "interactive prompt not allowed in strict mode")
+	require.Contains(t, err.Error(), "subscription selection")
+}
+
+func TestPromptLocation_FailOnPrompt(t *testing.T) {
+	ucm := newInMemoryUserConfigManager(nil)
+	authManager := &mockauth.MockAuthManager{}
+	subscriptionManager := &mockaccount.MockSubscriptionManager{}
+	resourceService := &mockazapi.MockResourceService{}
+	mockConsole := mockinput.NewMockConsole()
+
+	ps := NewPromptService(
+		authManager,
+		mockConsole,
+		ucm,
+		subscriptionManager,
+		resourceService,
+		&internal.GlobalCommandOptions{FailOnPrompt: true},
+	)
+
+	result, err := ps.PromptLocation(t.Context(), &AzureContext{
+		Scope: AzureScope{SubscriptionId: "sub-123"},
+	}, nil)
+	require.Nil(t, result)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "interactive prompt not allowed in strict mode")
+	require.Contains(t, err.Error(), "location selection")
+}
+
+func TestPromptResourceGroup_FailOnPrompt(t *testing.T) {
+	ucm := newInMemoryUserConfigManager(nil)
+	authManager := &mockauth.MockAuthManager{}
+	subscriptionManager := &mockaccount.MockSubscriptionManager{}
+	resourceService := &mockazapi.MockResourceService{}
+	mockConsole := mockinput.NewMockConsole()
+
+	ps := NewPromptService(
+		authManager,
+		mockConsole,
+		ucm,
+		subscriptionManager,
+		resourceService,
+		&internal.GlobalCommandOptions{FailOnPrompt: true},
+	)
+
+	result, err := ps.PromptResourceGroup(t.Context(), &AzureContext{
+		Scope: AzureScope{SubscriptionId: "sub-123"},
+	}, nil)
+	require.Nil(t, result)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "interactive prompt not allowed in strict mode")
+	require.Contains(t, err.Error(), "resource group selection")
+}
+
+func TestPromptSubscriptionResource_FailOnPrompt(t *testing.T) {
+	ucm := newInMemoryUserConfigManager(nil)
+	authManager := &mockauth.MockAuthManager{}
+	subscriptionManager := &mockaccount.MockSubscriptionManager{}
+	resourceService := &mockazapi.MockResourceService{}
+	mockConsole := mockinput.NewMockConsole()
+
+	ps := NewPromptService(
+		authManager,
+		mockConsole,
+		ucm,
+		subscriptionManager,
+		resourceService,
+		&internal.GlobalCommandOptions{FailOnPrompt: true},
+	)
+
+	result, err := ps.PromptSubscriptionResource(t.Context(), &AzureContext{
+		Scope: AzureScope{SubscriptionId: "sub-123"},
+	}, ResourceOptions{
+		ResourceTypeDisplayName: "test resource",
+	})
+	require.Nil(t, result)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "interactive prompt not allowed in strict mode")
+	require.Contains(t, err.Error(), "test resource selection")
+}
+
+func TestPromptResourceGroupResource_FailOnPrompt(t *testing.T) {
+	ucm := newInMemoryUserConfigManager(nil)
+	authManager := &mockauth.MockAuthManager{}
+	subscriptionManager := &mockaccount.MockSubscriptionManager{}
+	resourceService := &mockazapi.MockResourceService{}
+	mockConsole := mockinput.NewMockConsole()
+
+	ps := NewPromptService(
+		authManager,
+		mockConsole,
+		ucm,
+		subscriptionManager,
+		resourceService,
+		&internal.GlobalCommandOptions{FailOnPrompt: true},
+	)
+
+	result, err := ps.PromptResourceGroupResource(t.Context(), &AzureContext{
+		Scope: AzureScope{SubscriptionId: "sub-123", ResourceGroup: "rg-1"},
+	}, ResourceOptions{
+		ResourceTypeDisplayName: "test resource",
+	})
+	require.Nil(t, result)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "interactive prompt not allowed in strict mode")
+	require.Contains(t, err.Error(), "test resource selection")
+}

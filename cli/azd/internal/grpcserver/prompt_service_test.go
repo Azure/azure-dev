@@ -158,6 +158,80 @@ func Test_PromptService_Prompt_NoPromptNotRequiredWithoutDefault(t *testing.T) {
 	require.Equal(t, "", resp.Value)
 }
 
+func Test_PromptService_Confirm_FailOnPrompt(t *testing.T) {
+	globalOptions := &internal.GlobalCommandOptions{FailOnPrompt: true}
+	service := NewPromptService(nil, nil, nil, globalOptions)
+
+	_, err := service.Confirm(t.Context(), &azdext.ConfirmRequest{
+		Options: &azdext.ConfirmOptions{
+			Message:      "Continue?",
+			DefaultValue: new(true),
+		},
+	})
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "interactive prompt not allowed in strict mode")
+	require.Contains(t, err.Error(), "Continue?")
+}
+
+func Test_PromptService_Select_FailOnPrompt(t *testing.T) {
+	globalOptions := &internal.GlobalCommandOptions{FailOnPrompt: true}
+	service := NewPromptService(nil, nil, nil, globalOptions)
+
+	_, err := service.Select(t.Context(), &azdext.SelectRequest{
+		Options: &azdext.SelectOptions{
+			Message: "Choose option:",
+			Choices: []*azdext.SelectChoice{
+				{Value: "a", Label: "Option A"},
+				{Value: "b", Label: "Option B"},
+			},
+		},
+	})
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "interactive prompt not allowed in strict mode")
+	require.Contains(t, err.Error(), "Choose option:")
+	require.Contains(t, err.Error(), "Option A")
+	require.Contains(t, err.Error(), "Option B")
+}
+
+func Test_PromptService_MultiSelect_FailOnPrompt(t *testing.T) {
+	globalOptions := &internal.GlobalCommandOptions{FailOnPrompt: true}
+	service := NewPromptService(nil, nil, nil, globalOptions)
+
+	_, err := service.MultiSelect(t.Context(), &azdext.MultiSelectRequest{
+		Options: &azdext.MultiSelectOptions{
+			Message: "Select items:",
+			Choices: []*azdext.MultiSelectChoice{
+				{Value: "x", Label: "Item X"},
+				{Value: "y", Label: "Item Y"},
+			},
+		},
+	})
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "interactive prompt not allowed in strict mode")
+	require.Contains(t, err.Error(), "Select items:")
+	require.Contains(t, err.Error(), "Item X")
+}
+
+func Test_PromptService_Prompt_FailOnPrompt(t *testing.T) {
+	globalOptions := &internal.GlobalCommandOptions{FailOnPrompt: true}
+	service := NewPromptService(nil, nil, nil, globalOptions)
+
+	_, err := service.Prompt(t.Context(), &azdext.PromptRequest{
+		Options: &azdext.PromptOptions{
+			Message:      "Enter name:",
+			DefaultValue: "default-name",
+			Required:     true,
+		},
+	})
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "interactive prompt not allowed in strict mode")
+	require.Contains(t, err.Error(), "Enter name:")
+}
+
 func Test_PromptService_PromptSubscription(t *testing.T) {
 	mockPrompter := &mockprompt.MockPromptService{}
 	globalOptions := &internal.GlobalCommandOptions{NoPrompt: false}

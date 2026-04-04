@@ -25,6 +25,7 @@ func newTestConsole(
 	c := NewConsole(
 		noPrompt,
 		false,
+		false,
 		Writers{Output: buf},
 		ConsoleHandles{
 			Stderr: os.Stderr,
@@ -188,6 +189,7 @@ func TestSupportsPromptDialog(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := NewConsole(
+				false,
 				false,
 				false,
 				Writers{Output: &bytes.Buffer{}},

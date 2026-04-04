@@ -16,14 +16,37 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/bash"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/language"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/powershell"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/python"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
+// registerHookExecutors registers all hook executors as named
+// transients in the mock container so that IoC resolution works
+// in tests.
+func registerHookExecutors(mockCtx *mocks.MockContext) {
+	mockCtx.Container.MustRegisterNamedTransient(
+		string(language.ScriptLanguageBash), bash.NewExecutor,
+	)
+	mockCtx.Container.MustRegisterNamedTransient(
+		string(language.ScriptLanguagePowerShell),
+		powershell.NewExecutor,
+	)
+	mockCtx.Container.MustRegisterSingleton(python.NewCli)
+	mockCtx.Container.MustRegisterNamedTransient(
+		string(language.ScriptLanguagePython),
+		language.NewPythonExecutor,
+	)
+}
+
 func Test_HooksRunAction_RunsLayerHooks(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockContext)
 	env := environment.NewWithValues("test", nil)
 	envManager := &mockenv.MockEnvManager{}
 	envManager.On("Reload", mock.Anything, mock.Anything).Return(nil)
@@ -92,6 +115,7 @@ func Test_HooksRunAction_RunsLayerHooks(t *testing.T) {
 
 func Test_HooksRunAction_FiltersLayerHooks(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockContext)
 	env := environment.NewWithValues("test", nil)
 	envManager := &mockenv.MockEnvManager{}
 	envManager.On("Reload", mock.Anything, mock.Anything).Return(nil)
@@ -158,6 +182,7 @@ func Test_HooksRunAction_FiltersLayerHooks(t *testing.T) {
 
 func Test_HooksRunAction_SetsTelemetryTypeForLayer(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockContext)
 	env := environment.NewWithValues("test", nil)
 	envManager := &mockenv.MockEnvManager{}
 	envManager.On("Reload", mock.Anything, mock.Anything).Return(nil)
@@ -272,5 +297,6 @@ func Test_HooksRunAction_ValidatesLayerHooksRelativeToLayerPath(t *testing.T) {
 	err := action.validateAndWarnHooks(*mockContext.Context)
 	require.NoError(t, err)
 	require.False(t, layerHook.IsUsingDefaultShell())
-	require.Equal(t, ext.ScriptTypeUnknown, layerHook.Shell)
+	// validate() infers shell type from the .sh file extension
+	require.Equal(t, ext.ShellTypeBash, layerHook.Shell)
 }

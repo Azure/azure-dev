@@ -462,6 +462,43 @@ rules:
     suggestion: "Run 'azd auth login' to refresh your credentials, then retry."
 
   # ============================================================================
+  # Python Hook Failures
+  # Language hooks (Phase 1: Python) — dependency and runtime errors
+  # ============================================================================
+
+  - patterns:
+      - "python 3 is required to run this hook"
+      - "python is not installed"
+    message: "Python 3 is required to run a language hook but was not found."
+    suggestion: "Install Python 3 from https://www.python.org/downloads/ and ensure it is on your PATH."
+    links:
+      - url: "https://www.python.org/downloads/"
+        title: "Python Downloads"
+
+  - patterns:
+      - "creating python virtual environment"
+      - "venv module"
+    message: "Failed to create a Python virtual environment for a hook script."
+    suggestion: >-
+      Ensure Python 3.3+ is installed with the venv module. On Debian/Ubuntu,
+      you may need to install it separately with 'sudo apt install python3-venv'.
+
+  - patterns:
+      - "installing python requirements"
+      - "installing python project"
+    message: "Failed to install Python dependencies for a hook script."
+    suggestion: >-
+      Check that your requirements.txt or pyproject.toml is valid and all packages
+      are available. Run 'pip install -r requirements.txt' manually to diagnose the issue.
+
+  - patterns:
+      - "inline scripts are not supported for"
+    message: "Inline scripts are only supported for shell hooks (sh, pwsh)."
+    suggestion: >-
+      Write your script to a file and set 'run' to the file path
+      (e.g. run: ./hooks/my-script.py). Language hooks require a file path.
+
+  # ============================================================================
   # Subscription Errors
   # ============================================================================
 

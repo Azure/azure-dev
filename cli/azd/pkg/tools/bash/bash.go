@@ -12,24 +12,25 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
-// Creates a new BashScript command runner
-func NewBashScript(commandRunner exec.CommandRunner, cwd string, envVars []string) tools.Script {
-	return &bashScript{
-		commandRunner: commandRunner,
-		cwd:           cwd,
-		envVars:       envVars,
-	}
+// NewExecutor creates a bash HookExecutor. Takes only IoC-injectable deps.
+func NewExecutor(commandRunner exec.CommandRunner) tools.HookExecutor {
+	return &bashExecutor{commandRunner: commandRunner}
 }
 
-type bashScript struct {
+type bashExecutor struct {
 	commandRunner exec.CommandRunner
-	cwd           string
-	envVars       []string
 }
 
-// Executes the specified bash script
-// When interactive is true will attach to stdin, stdout & stderr
-func (bs *bashScript) Execute(ctx context.Context, path string, options tools.ExecOptions) (exec.RunResult, error) {
+// Prepare is a no-op for bash — bash is assumed available on all platforms.
+func (b *bashExecutor) Prepare(_ context.Context, _ string, _ tools.ExecutionContext) error {
+	return nil
+}
+
+// Execute runs the specified bash script.
+// When interactive is true will attach to stdin, stdout & stderr.
+func (b *bashExecutor) Execute(
+	ctx context.Context, path string, execCtx tools.ExecutionContext,
+) (exec.RunResult, error) {
 	var runArgs exec.RunArgs
 	// Bash likes all path separators in POSIX format
 	path = strings.ReplaceAll(path, "\\", "/")
@@ -41,17 +42,17 @@ func (bs *bashScript) Execute(ctx context.Context, path string, options tools.Ex
 	}
 
 	runArgs = runArgs.
-		WithCwd(bs.cwd).
-		WithEnv(bs.envVars).
+		WithCwd(execCtx.Cwd).
+		WithEnv(execCtx.EnvVars).
 		WithShell(true)
 
-	if options.Interactive != nil {
-		runArgs = runArgs.WithInteractive(*options.Interactive)
+	if execCtx.Interactive != nil {
+		runArgs = runArgs.WithInteractive(*execCtx.Interactive)
 	}
 
-	if options.StdOut != nil {
-		runArgs = runArgs.WithStdOut(options.StdOut)
+	if execCtx.StdOut != nil {
+		runArgs = runArgs.WithStdOut(execCtx.StdOut)
 	}
 
-	return bs.commandRunner.Run(ctx, runArgs)
+	return b.commandRunner.Run(ctx, runArgs)
 }

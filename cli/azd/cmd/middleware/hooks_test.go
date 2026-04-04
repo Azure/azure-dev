@@ -19,6 +19,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/bash"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/language"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/powershell"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/python"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
@@ -28,6 +32,7 @@ import (
 
 func Test_CommandHooks_Middleware_WithValidProjectAndMatchingCommand(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockContext)
 	azdContext := createAzdContext(t)
 
 	envName := "test"
@@ -62,6 +67,7 @@ func Test_CommandHooks_Middleware_WithValidProjectAndMatchingCommand(t *testing.
 
 func Test_CommandHooks_Middleware_ValidProjectWithDifferentCommand(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockContext)
 	azdContext := createAzdContext(t)
 
 	envName := "test"
@@ -96,6 +102,7 @@ func Test_CommandHooks_Middleware_ValidProjectWithDifferentCommand(t *testing.T)
 
 func Test_CommandHooks_Middleware_ValidProjectWithNoHooks(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockContext)
 	azdContext := createAzdContext(t)
 
 	envName := "test"
@@ -122,6 +129,7 @@ func Test_CommandHooks_Middleware_ValidProjectWithNoHooks(t *testing.T) {
 
 func Test_CommandHooks_Middleware_PreHookWithError(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockContext)
 	azdContext := createAzdContext(t)
 
 	envName := "test"
@@ -159,6 +167,7 @@ func Test_CommandHooks_Middleware_PreHookWithError(t *testing.T) {
 
 func Test_CommandHooks_Middleware_PreHookWithErrorAndContinue(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockContext)
 	azdContext := createAzdContext(t)
 
 	envName := "test"
@@ -197,6 +206,7 @@ func Test_CommandHooks_Middleware_PreHookWithErrorAndContinue(t *testing.T) {
 
 func Test_CommandHooks_Middleware_WithCmdAlias(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockContext)
 	azdContext := createAzdContext(t)
 
 	envName := "test"
@@ -231,6 +241,7 @@ func Test_CommandHooks_Middleware_WithCmdAlias(t *testing.T) {
 
 func Test_ServiceHooks_Registered(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockContext)
 	azdContext := createAzdContext(t)
 
 	envName := "test"
@@ -293,6 +304,7 @@ func Test_ServiceHooks_Registered(t *testing.T) {
 
 func Test_ServiceHooks_ValidationUsesServicePath(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockContext)
 	azdContext := createAzdContext(t)
 
 	envName := "test"
@@ -492,6 +504,7 @@ func ensureAzdProject(ctx context.Context, azdContext *azdcontext.AzdContext, pr
 
 func Test_PowerShellWarning_WithPowerShellHooks(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockContext)
 	azdContext := createAzdContext(t)
 
 	envName := "test"
@@ -540,6 +553,7 @@ func Test_PowerShellWarning_WithPowerShellHooks(t *testing.T) {
 
 func Test_PowerShellWarning_WithPs1FileHook(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockContext)
 	azdContext := createAzdContext(t)
 
 	envName := "test"
@@ -586,6 +600,7 @@ func Test_PowerShellWarning_WithPs1FileHook(t *testing.T) {
 
 func Test_PowerShellWarning_WithoutPowerShellHooks(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockContext)
 	azdContext := createAzdContext(t)
 
 	envName := "test"
@@ -664,6 +679,7 @@ func Test_CommandHooks_ChildAction_HooksStillFire(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockContext := mocks.NewMockContext(context.Background())
+			registerHookExecutors(mockContext)
 			azdContext := createAzdContext(t)
 
 			envName := "test"
@@ -706,6 +722,7 @@ func Test_CommandHooks_ChildAction_HooksStillFire(t *testing.T) {
 // guard in HooksMiddleware.Run() only affects validation, not hook execution itself.
 func Test_CommandHooks_ChildAction_SkipsValidationOnly(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockContext)
 	azdContext := createAzdContext(t)
 
 	envName := "test"
@@ -762,6 +779,7 @@ func Test_CommandHooks_ChildAction_SkipsValidationOnly(t *testing.T) {
 // command execution).
 func Test_CommandHooks_ChildAction_PreHookError_StopsAction(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockContext)
 	azdContext := createAzdContext(t)
 
 	envName := "test"
@@ -799,6 +817,7 @@ func Test_CommandHooks_ChildAction_PreHookError_StopsAction(t *testing.T) {
 
 func Test_PowerShellWarning_WithPwshAvailable(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockContext)
 	azdContext := createAzdContext(t)
 
 	envName := "test"
@@ -845,6 +864,7 @@ func Test_PowerShellWarning_WithPwshAvailable(t *testing.T) {
 
 func Test_PowerShellWarning_WithNoPowerShellInstalled(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockContext)
 	azdContext := createAzdContext(t)
 
 	envName := "test"
@@ -889,4 +909,20 @@ func Test_PowerShellWarning_WithNoPowerShellInstalled(t *testing.T) {
 		}
 	}
 	require.True(t, foundWarning, "Expected 'No PowerShell installation detected' warning to be displayed")
+}
+
+// registerHookExecutors registers all hook executors as named
+// transients in the mock container so that IoC resolution works
+// in tests.
+func registerHookExecutors(mockCtx *mocks.MockContext) {
+	mockCtx.Container.MustRegisterNamedTransient(
+		string(language.ScriptLanguageBash), bash.NewExecutor,
+	)
+	mockCtx.Container.MustRegisterNamedTransient(
+		string(language.ScriptLanguagePowerShell), powershell.NewExecutor,
+	)
+	mockCtx.Container.MustRegisterSingleton(python.NewCli)
+	mockCtx.Container.MustRegisterNamedTransient(
+		string(language.ScriptLanguagePython), language.NewPythonExecutor,
+	)
 }

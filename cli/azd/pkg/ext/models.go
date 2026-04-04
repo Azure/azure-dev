@@ -12,12 +12,22 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/language"
 )
 
-// The type of hooks. Supported values are 'pre' and 'post'
+// HookType represents the execution timing of a hook relative to the
+// associated command. Supported values are 'pre' and 'post'.
 type HookType string
+
+// HookPlatformType identifies the operating system platform for
+// platform-specific hook overrides.
 type HookPlatformType string
+
+// ShellType identifies the shell used to execute hook scripts.
 type ShellType string
+
+// ScriptLocation indicates whether a hook script is defined inline
+// in azure.yaml or references an external file path.
 type ScriptLocation string
 
 const (
@@ -37,17 +47,34 @@ const (
 )
 
 var (
+	// ErrScriptTypeUnknown indicates the shell type could not be inferred from
+	// the script path and was not explicitly configured.
 	ErrScriptTypeUnknown error = errors.New(
-		"unable to determine script type. Ensure 'Shell' parameter is set in configuration options",
+		"unable to determine script type. " +
+			"Ensure 'shell' is set to 'sh' or 'pwsh' in your hook configuration, " +
+			"or use a file with a .sh or .ps1 extension",
 	)
-	ErrRunRequired           error = errors.New("run is always required")
-	ErrUnsupportedScriptType error = errors.New("script type is not valid. Only '.sh' and '.ps1' are supported")
+	// ErrRunRequired indicates the hook configuration is missing the mandatory 'run' field.
+	ErrRunRequired error = errors.New(
+		"'run' is required for every hook configuration. " +
+			"Set 'run' to an inline script or a relative file path",
+	)
+	// ErrUnsupportedScriptType indicates the script file has an extension that is not
+	// a recognized shell type (.sh or .ps1) and no explicit language or shell was set.
+	ErrUnsupportedScriptType error = errors.New(
+		"script type is not valid. Only '.sh' and '.ps1' are supported for shell hooks. " +
+			"For other languages, set the 'language' field (e.g. language: python)",
+	)
 )
 
 // Generic action function that may return an error
 type InvokeFn func() error
 
-// Azd hook configuration
+// HookConfig defines the configuration for a single hook in azure.yaml.
+// Hooks are lifecycle scripts that run before or after azd commands.
+// They may be shell scripts (sh/pwsh) executed via the shell runner,
+// or programming-language scripts (Python, JS, TS, DotNet) executed
+// via the [tools.HookExecutor] pipeline.
 type HookConfig struct {
 	// The location of the script hook (file path or inline)
 	location ScriptLocation
@@ -66,6 +93,20 @@ type HookConfig struct {
 	Name string `yaml:",omitempty"`
 	// The type of script hook (bash or powershell)
 	Shell ShellType `yaml:"shell,omitempty"`
+	// Language specifies the programming language of the hook script.
+	// Allowed values: "sh", "pwsh", "js", "ts", "python", "dotnet".
+	// When empty, the language is auto-detected from the file extension
+	// of the run path (e.g. .py → python, .ps1 → pwsh). If both
+	// Language and Shell are empty and run references a file, the
+	// extension is used. For inline scripts, Shell or Language must be
+	// set explicitly.
+	Language language.ScriptLanguage `yaml:"language,omitempty" json:"language,omitempty"`
+	// Dir specifies the working directory for language hook execution,
+	// used as the project context for dependency installation and builds.
+	// When empty, defaults to the directory containing the script
+	// referenced by the run field. Only set this when the project root
+	// differs from the script's directory.
+	Dir string `yaml:"dir,omitempty" json:"dir,omitempty"`
 	// The inline script to execute or path to existing file
 	Run string `yaml:"run,omitempty"`
 	// When set to true will not halt command execution even when a script error occurs.
@@ -81,7 +122,11 @@ type HookConfig struct {
 	Secrets map[string]string `yaml:"secrets,omitempty"`
 }
 
-// Validates and normalizes the hook configuration
+// validate normalizes and validates the hook configuration. It resolves
+// the script location (inline vs. file path), infers the Language from
+// the Shell or file extension when not explicitly set, and rejects
+// invalid combinations (e.g. inline scripts for non-shell languages).
+// After a successful call, the hook is ready for execution.
 func (hc *HookConfig) validate() error {
 	if hc.validated {
 		return nil
@@ -105,6 +150,52 @@ func (hc *HookConfig) validate() error {
 		hc.location = ScriptLocationInline
 		hc.script = hc.Run
 	}
+
+	// Language resolution — priority:
+	// 1. explicit Language  2. explicit Shell  3. file extension
+	if hc.Language == language.ScriptLanguageUnknown {
+		switch {
+		case hc.Shell != ScriptTypeUnknown:
+			hc.Language = shellToLanguage(hc.Shell)
+		case hc.location == ScriptLocationPath:
+			hc.Language = language.InferLanguageFromPath(hc.Run)
+		}
+	}
+
+	// Reject inline scripts for non-shell (language) hooks.
+	if hc.location == ScriptLocationInline && hc.IsLanguageHook() {
+		return fmt.Errorf(
+			"inline scripts are not supported for %s hooks. "+
+				"Write your script to a file and set 'run' to the file path "+
+				"(e.g. run: ./hooks/my-script.py)",
+			hc.Language,
+		)
+	}
+
+	// Language hooks are executed by a language-specific executor;
+	// no shell type resolution or temp script is needed.
+	if hc.IsLanguageHook() {
+		// Auto-infer Dir from the script's directory when not
+		// explicitly set by the user.
+		if hc.Dir == "" && hc.location == ScriptLocationPath {
+			hc.Dir = filepath.Dir(hc.path)
+		}
+		hc.validated = true
+		return nil
+	}
+
+	// If Language resolved to a shell variant but Shell is unset,
+	// derive Shell so the existing shell execution path works.
+	if hc.Shell == ScriptTypeUnknown {
+		switch hc.Language {
+		case language.ScriptLanguageBash:
+			hc.Shell = ShellTypeBash
+		case language.ScriptLanguagePowerShell:
+			hc.Shell = ShellTypePowershell
+		}
+	}
+
+	// --- existing shell behavior (unchanged) ---
 
 	// If shell is not specified and it's an inline script, use OS default
 	if hc.Shell == ScriptTypeUnknown && hc.path == "" {
@@ -136,6 +227,11 @@ func (hc *HookConfig) validate() error {
 		}
 
 		hc.Shell = scriptType
+	}
+
+	// Backfill Language from resolved Shell for shell-based hooks.
+	if hc.Language == language.ScriptLanguageUnknown {
+		hc.Language = shellToLanguage(hc.Shell)
 	}
 
 	hc.validated = true
@@ -174,6 +270,25 @@ func (hc *HookConfig) IsUsingDefaultShell() bool {
 	return hc.usingDefaultShell
 }
 
+// IsLanguageHook returns true when this hook targets a programming
+// language (Python, JavaScript, TypeScript, or DotNet) rather than a
+// shell (Bash or PowerShell). Language hooks are executed through the
+// [tools.HookExecutor] pipeline instead of the shell runner.
+func (hc *HookConfig) IsLanguageHook() bool {
+	switch hc.Language {
+	case language.ScriptLanguagePython,
+		language.ScriptLanguageJavaScript,
+		language.ScriptLanguageTypeScript,
+		language.ScriptLanguageDotNet:
+		return true
+	default:
+		return false
+	}
+}
+
+// InferHookType extracts the hook timing prefix ("pre" or "post")
+// from a hook name and returns the remaining command name. For
+// example, "preprovision" → (HookTypePre, "provision").
 func InferHookType(name string) (HookType, string) {
 	// Validate name length so go doesn't PANIC for string slicing below
 	if len(name) < 4 {
@@ -195,6 +310,23 @@ func getDefaultShellForOS() ShellType {
 	return ShellTypeBash
 }
 
+// shellToLanguage maps a [ShellType] to the corresponding
+// [language.ScriptLanguage]. Returns [language.ScriptLanguageUnknown]
+// for unrecognized shell types.
+func shellToLanguage(shell ShellType) language.ScriptLanguage {
+	switch shell {
+	case ShellTypeBash:
+		return language.ScriptLanguageBash
+	case ShellTypePowershell:
+		return language.ScriptLanguagePowerShell
+	default:
+		return language.ScriptLanguageUnknown
+	}
+}
+
+// inferScriptTypeFromFilePath returns the [ShellType] for a file
+// based on its extension. Only .sh and .ps1 are valid shell types;
+// other extensions return [ErrUnsupportedScriptType].
 func inferScriptTypeFromFilePath(path string) (ShellType, error) {
 	fileExtension := filepath.Ext(path)
 	switch fileExtension {

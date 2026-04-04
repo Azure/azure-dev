@@ -30,6 +30,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -53,8 +54,14 @@ func newInitFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *in
 
 func newInitCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "init",
+		Use:   "init [directory]",
 		Short: "Initialize a new application.",
+		Long: `Initialize a new application.
+
+When used with --template, a new directory is created (named after the template)
+and the project is initialized inside it — similar to git clone.
+Pass "." as the directory to initialize in the current directory instead.`,
+		Args: cobra.MaximumNArgs(1),
 	}
 }
 
@@ -134,6 +141,7 @@ type initAction struct {
 	cmdRun            exec.CommandRunner
 	gitCli            *git.Cli
 	flags             *initFlags
+	args              []string
 	repoInitializer   *repository.Initializer
 	templateManager   *templates.TemplateManager
 	featuresManager   *alpha.FeatureManager
@@ -151,6 +159,7 @@ func newInitAction(
 	console input.Console,
 	gitCli *git.Cli,
 	flags *initFlags,
+	args []string,
 	repoInitializer *repository.Initializer,
 	templateManager *templates.TemplateManager,
 	featuresManager *alpha.FeatureManager,
@@ -167,6 +176,7 @@ func newInitAction(
 		cmdRun:            cmdRun,
 		gitCli:            gitCli,
 		flags:             flags,
+		args:              args,
 		repoInitializer:   repoInitializer,
 		templateManager:   templateManager,
 		featuresManager:   featuresManager,
@@ -184,15 +194,88 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, fmt.Errorf("getting cwd: %w", err)
 	}
 
-	azdCtx := azdcontext.NewAzdContextWithDirectory(wd)
-	i.lazyAzdCtx.SetValue(azdCtx)
-
 	if i.flags.templateBranch != "" && i.flags.templatePath == "" {
 		return nil, &internal.ErrorWithSuggestion{
 			Err:        internal.ErrBranchRequiresTemplate,
 			Suggestion: "Add '--template <repo-url>' when using '--branch'.",
 		}
 	}
+
+	// Validate init-mode combinations before any filesystem side effects.
+	isTemplateInit := i.flags.templatePath != "" || len(i.flags.templateTags) > 0
+	initModeCount := 0
+	if isTemplateInit {
+		initModeCount++
+	}
+	if i.flags.fromCode {
+		initModeCount++
+	}
+	if i.flags.minimal {
+		initModeCount++
+	}
+	if initModeCount > 1 {
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        internal.ErrMultipleInitModes,
+			Suggestion: "Choose one: 'azd init --template <url>', 'azd init --from-code', or 'azd init --minimal'.",
+		}
+	}
+
+	// The positional [directory] argument is only valid with --template.
+	if len(i.args) > 0 && !isTemplateInit {
+		return nil, &internal.ErrorWithSuggestion{
+			Err: fmt.Errorf(
+				"positional [directory] argument requires --template: %w",
+				internal.ErrInvalidFlagCombination,
+			),
+			Suggestion: "Use 'azd init --template <url> [directory]' to initialize " +
+				"a template into a new directory.",
+		}
+	}
+
+	// Resolve local template paths to absolute before any chdir so that
+	// relative paths like ../my-template resolve against the original CWD.
+	if i.flags.templatePath != "" && templates.LooksLikeLocalPath(i.flags.templatePath) {
+		absPath, err := filepath.Abs(i.flags.templatePath)
+		if err == nil {
+			i.flags.templatePath = absPath
+		}
+	}
+
+	// When a template is specified, auto-create a project directory (like git clone).
+	// The user can pass a positional [directory] argument to override the folder name,
+	// or pass "." to use the current directory (preserving existing behavior).
+	createdProjectDir := ""
+	originalWd := wd
+
+	if isTemplateInit {
+		targetDir, err := i.resolveTargetDirectory(wd)
+		if err != nil {
+			return nil, err
+		}
+
+		if targetDir != wd {
+			// Check if target already exists and is non-empty
+			if err := i.validateTargetDirectory(ctx, targetDir); err != nil {
+				return nil, err
+			}
+
+			if err := os.MkdirAll(targetDir, osutil.PermissionDirectory); err != nil {
+				return nil, fmt.Errorf("creating project directory '%s': %w",
+					filepath.Base(targetDir), err)
+			}
+
+			if err := os.Chdir(targetDir); err != nil {
+				return nil, fmt.Errorf("changing to project directory '%s': %w",
+					filepath.Base(targetDir), err)
+			}
+
+			wd = targetDir
+			createdProjectDir = targetDir
+		}
+	}
+
+	azdCtx := azdcontext.NewAzdContextWithDirectory(wd)
+	i.lazyAzdCtx.SetValue(azdCtx)
 
 	// ensure that git is available
 	if err := tools.EnsureInstalled(ctx, []tools.ExternalTool{i.gitCli}...); err != nil {
@@ -238,25 +321,10 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	var initTypeSelect initType = initUnknown
-	initTypeCount := 0
-	if i.flags.templatePath != "" || len(i.flags.templateTags) > 0 {
-		initTypeCount++
+	if isTemplateInit {
 		initTypeSelect = initAppTemplate
-	}
-	if i.flags.fromCode {
-		initTypeCount++
+	} else if i.flags.fromCode || i.flags.minimal {
 		initTypeSelect = initFromApp
-	}
-	if i.flags.minimal {
-		initTypeCount++
-		initTypeSelect = initFromApp // Minimal now also uses initFromApp path
-	}
-
-	if initTypeCount > 1 {
-		return nil, &internal.ErrorWithSuggestion{
-			Err:        internal.ErrMultipleInitModes,
-			Suggestion: "Choose one: 'azd init --template <url>', 'azd init --from-code', or 'azd init --minimal'.",
-		}
 	}
 
 	if initTypeSelect == initUnknown {
@@ -280,6 +348,21 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	Learn more about running 3rd party code on our DevHub: %s`,
 		output.WithLinkFormat("%s", wd),
 		output.WithLinkFormat("%s", "https://aka.ms/azd-third-party-code-notice"))
+
+	if createdProjectDir != "" {
+		// Compute a user-friendly cd path relative to where they started
+		cdPath, relErr := filepath.Rel(originalWd, createdProjectDir)
+		if relErr != nil {
+			cdPath = createdProjectDir // Fall back to absolute path
+		}
+		// Quote the path when it contains whitespace so the hint is copy/paste-safe
+		cdPathDisplay := cdPath
+		if strings.ContainsAny(cdPath, " \t") {
+			cdPathDisplay = fmt.Sprintf("%q", cdPath)
+		}
+		followUp += fmt.Sprintf("\n\nChange to the project directory:\n  %s",
+			output.WithHighLightFormat("cd %s", cdPathDisplay))
+	}
 
 	if i.featuresManager.IsEnabled(agentcopilot.FeatureCopilot) {
 		followUp += fmt.Sprintf("\n\n%s Run %s to deploy project to the cloud.",
@@ -813,12 +896,20 @@ func (i *initAction) initializeExtensions(ctx context.Context, azdCtx *azdcontex
 }
 
 func getCmdInitHelpDescription(*cobra.Command) string {
-	return generateCmdHelpDescription("Initialize a new application in your current directory.",
+	return generateCmdHelpDescription(
+		"Initialize a new application. When using --template, creates a project directory automatically.",
 		[]string{
 			formatHelpNote(
 				fmt.Sprintf("Running %s without flags specified will prompt "+
 					"you to initialize using your existing code, or from a template.",
 					output.WithHighLightFormat("init"),
+				)),
+			formatHelpNote(
+				fmt.Sprintf("When using %s, a new directory is created "+
+					"(named after the template) and the project is initialized inside it. "+
+					"Pass %s as the directory to use the current directory instead.",
+					output.WithHighLightFormat("--template"),
+					output.WithHighLightFormat("."),
 				)),
 			formatHelpNote(
 				"To view all available sample templates, including those submitted by the azd community, visit: " +
@@ -828,11 +919,16 @@ func getCmdInitHelpDescription(*cobra.Command) string {
 
 func getCmdInitHelpFooter(*cobra.Command) string {
 	return generateCmdHelpSamplesBlock(map[string]string{
-		"Initialize a template to your current local directory from a GitHub repo.": fmt.Sprintf("%s %s",
+		"Initialize a template into a new project directory.": fmt.Sprintf("%s %s",
 			output.WithHighLightFormat("azd init --template"),
 			output.WithWarningFormat("[GitHub repo URL]"),
 		),
-		"Initialize a template to your current local directory from a branch other than main.": fmt.Sprintf("%s %s %s %s",
+		"Initialize a template into the current directory.": fmt.Sprintf("%s %s %s",
+			output.WithHighLightFormat("azd init --template"),
+			output.WithWarningFormat("[GitHub repo URL]"),
+			output.WithHighLightFormat("."),
+		),
+		"Initialize a template from a branch other than main.": fmt.Sprintf("%s %s %s %s",
 			output.WithHighLightFormat("azd init --template"),
 			output.WithWarningFormat("[GitHub repo URL]"),
 			output.WithHighLightFormat("--branch"),
@@ -909,4 +1005,75 @@ type initModeRequiredErrorOptions struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	Command     string `json:"command"`
+}
+
+// resolveTargetDirectory determines the target directory for template initialization.
+// It returns the current working directory when "." is passed or no template is specified,
+// otherwise it derives or uses the explicit directory name.
+func (i *initAction) resolveTargetDirectory(wd string) (string, error) {
+	if len(i.args) > 0 {
+		dirArg := i.args[0]
+		if dirArg == "." {
+			return wd, nil
+		}
+
+		if filepath.IsAbs(dirArg) {
+			return dirArg, nil
+		}
+
+		return filepath.Join(wd, dirArg), nil
+	}
+
+	// No positional arg: auto-derive from template path
+	if i.flags.templatePath != "" {
+		dirName := templates.DeriveDirectoryName(i.flags.templatePath)
+		return filepath.Join(wd, dirName), nil
+	}
+
+	// Template selected via --filter tags (interactive selection) — use CWD
+	return wd, nil
+}
+
+// validateTargetDirectory checks that the target directory is safe to use.
+// If it already exists and is non-empty, it prompts the user for confirmation
+// or returns an error in non-interactive mode.
+func (i *initAction) validateTargetDirectory(ctx context.Context, targetDir string) error {
+	f, err := os.Open(targetDir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil // Directory doesn't exist yet — will be created
+	}
+	if err != nil {
+		return fmt.Errorf("reading directory '%s': %w", filepath.Base(targetDir), err)
+	}
+
+	// Read a single entry to check emptiness without loading the full listing.
+	names, _ := f.Readdirnames(1)
+	f.Close()
+
+	if len(names) == 0 {
+		return nil // Empty directory is fine
+	}
+
+	dirName := filepath.Base(targetDir)
+
+	if i.console.IsNoPromptMode() {
+		return fmt.Errorf(
+			"directory '%s' already exists and is not empty; "+
+				"use '.' to initialize in the current directory instead", dirName)
+	}
+
+	proceed, err := i.console.Confirm(ctx, input.ConsoleOptions{
+		Message: fmt.Sprintf(
+			"Directory '%s' already exists and is not empty. Initialize here anyway?", dirName),
+		DefaultValue: false,
+	})
+	if err != nil {
+		return fmt.Errorf("prompting for directory confirmation: %w", err)
+	}
+
+	if !proceed {
+		return errors.New("initialization cancelled")
+	}
+
+	return nil
 }

@@ -17,6 +17,10 @@ This guide provides design guidelines and best practices for developing extensio
 - Reuse established parameter patterns across new commands
 - Maintain consistent naming conventions (e.g., `--subscription`, `--name`, `--type`)
 - Provide sensible defaults to reduce cognitive load
+- Choose the right authoring model for your extension — see
+  [Extension Authoring Models](extension-authoring-models.md) for a comparison
+  of the **SDK-Managed** and **Self-Managed** approaches, including flag
+  handling, language support, and best practices for each
 
 ### 3. **Help and Discoverability**
 

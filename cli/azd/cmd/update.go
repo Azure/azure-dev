@@ -109,12 +109,6 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		userConfig = config.NewEmptyConfig()
 	}
 
-	// Warn about deprecated alpha.update config key
-	if _, hasLegacy := userConfig.Get("alpha.update"); hasLegacy {
-		log.Println("'alpha.update' config key is deprecated and can be removed. " +
-			"Run: azd config unset alpha.update")
-	}
-
 	// Show notice on first use
 	if !update.HasUpdateConfig(userConfig) {
 		a.console.MessageUxItem(ctx, &ux.MessageTitle{

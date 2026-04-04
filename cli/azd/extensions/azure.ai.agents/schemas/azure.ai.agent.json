@@ -24,6 +24,16 @@
       "description": "List of external resources for agent execution.",
       "items": { "$ref": "#/definitions/Resource" }
     },
+    "toolConnections": {
+      "type": "array",
+      "description": "List of tool connections to external services (MCP tools, A2A, custom APIs) created during provisioning.",
+      "items": { "$ref": "#/definitions/ToolConnection" }
+    },
+    "toolboxes": {
+      "type": "array",
+      "description": "List of toolboxes (Foundry Toolsets) to deploy.",
+      "items": { "$ref": "#/definitions/Toolbox" }
+    },
     "startupCommand": {
       "type": "string",
       "description": "Command to start the agent server (e.g., 'python main.py'). Used by 'azd ai agent run' for local development."
@@ -118,6 +128,46 @@
         "connectionName": { "type": "string", "description": "Connection name for the resource." }
       },
       "required": ["resource", "connectionName"],
+      "additionalProperties": false
+    },
+    "ToolConnection": {
+      "type": "object",
+      "description": "A connection to an external service (MCP tool, A2A, custom API) created via Bicep during provisioning.",
+      "properties": {
+        "name": { "type": "string", "description": "Connection name used as project_connection_id in toolbox tools." },
+        "category": { "type": "string", "description": "Connection category (e.g., 'RemoteTool')." },
+        "target": { "type": "string", "description": "Target endpoint URL for the connection." },
+        "authType": {
+          "type": "string",
+          "description": "Authentication type for the connection.",
+          "enum": ["AAD", "AccessKey", "AccountKey", "ApiKey", "CustomKeys", "ManagedIdentity", "None", "OAuth2", "PAT", "ServicePrincipal", "UsernamePassword"]
+        },
+        "credentials": {
+          "type": "object",
+          "description": "Credentials for the connection. Values may contain ${ENV_VAR} references resolved at provision time."
+        },
+        "metadata": {
+          "type": "object",
+          "description": "Additional metadata for the connection.",
+          "additionalProperties": { "type": "string" }
+        }
+      },
+      "required": ["name", "category", "target", "authType"],
+      "additionalProperties": false
+    },
+    "Toolbox": {
+      "type": "object",
+      "description": "A reusable collection of tools deployed as a Foundry Toolset.",
+      "properties": {
+        "name": { "type": "string", "description": "Name of the toolbox." },
+        "description": { "type": "string", "description": "Description of the toolbox." },
+        "tools": {
+          "type": "array",
+          "description": "List of tools in the toolbox. Each tool is an object with properties passed to the Foundry Toolsets API.",
+          "items": { "type": "object" }
+        }
+      },
+      "required": ["name", "tools"],
       "additionalProperties": false
     }
   }

@@ -449,6 +449,18 @@ func (a *InitAction) Run(ctx context.Context) error {
 			return fmt.Errorf("configuring model choice: %w", err)
 		}
 
+		// Prompt for manifest parameters (e.g. tool credentials) after project selection
+		agentManifest, err = registry_api.ProcessManifestParameters(
+			ctx, agentManifest, a.azdClient, a.flags.NoPrompt,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to process manifest parameters: %w", err)
+		}
+
+		// Inject toolbox MCP endpoint env vars into hosted agent definitions
+		// so agent.yaml is self-documenting about what env vars will be set.
+		injectToolboxEnvVarsIntoDefinition(agentManifest)
+
 		// Write the final agent.yaml to disk (after deployment names have been injected)
 		if err := writeAgentDefinitionFile(targetDir, agentManifest); err != nil {
 			return fmt.Errorf("writing agent definition: %w", err)
@@ -1026,11 +1038,6 @@ func (a *InitAction) downloadAgentYaml(
 		}
 	}
 
-	agentManifest, err = registry_api.ProcessManifestParameters(ctx, agentManifest, a.azdClient, a.flags.NoPrompt)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to process manifest parameters: %w", err)
-	}
-
 	_, isPromptAgent := agentManifest.Template.(agent_yaml.PromptAgent)
 	if isPromptAgent {
 		agentManifest, err = agent_yaml.ProcessPromptAgentToolsConnections(ctx, agentManifest, a.azdClient)
@@ -1184,6 +1191,26 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 
 	agentConfig.Deployments = a.deploymentDetails
 	agentConfig.Resources = resourceDetails
+
+	// Process toolbox resources from the manifest
+	toolboxes, toolConnections, credEnvVars, err := extractToolboxAndConnectionConfigs(agentManifest)
+	if err != nil {
+		return err
+	}
+	agentConfig.Toolboxes = toolboxes
+	agentConfig.ToolConnections = toolConnections
+
+	// Persist credential values as azd environment variables so they are
+	// resolved at provision/deploy time instead of stored in azure.yaml.
+	for envKey, envVal := range credEnvVars {
+		if _, setErr := a.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+			EnvName: a.environment.Name,
+			Key:     envKey,
+			Value:   envVal,
+		}); setErr != nil {
+			return fmt.Errorf("storing credential env var %s: %w", envKey, setErr)
+		}
+	}
 
 	// Detect startup command from the project source directory
 	startupCmd, err := resolveStartupCommandForInit(ctx, a.azdClient, a.projectConfig.Path, targetDir, a.flags.NoPrompt)
@@ -1592,4 +1619,208 @@ func downloadDirectoryContentsWithoutGhCli(
 	}
 
 	return nil
+}
+
+// extractToolboxAndConnectionConfigs extracts toolbox resource definitions from the agent manifest
+// and converts them into project.Toolbox config entries and project.ToolConnection entries.
+// Toolbox resources with typed Tools (ToolboxToolDefinition) produce toolbox tool entries.
+// Tools with a target/authType also produce connection entries for Bicep provisioning.
+// Built-in tools (bing_grounding, azure_ai_search, etc.) produce toolbox tools but no connections.
+// Toolbox resources with only Options["tools"] are treated as raw tool definitions (existing behavior).
+func extractToolboxAndConnectionConfigs(
+	manifest *agent_yaml.AgentManifest,
+) ([]project.Toolbox, []project.ToolConnection, map[string]string, error) {
+	if manifest == nil || manifest.Resources == nil {
+		return nil, nil, nil, nil
+	}
+
+	var toolboxes []project.Toolbox
+	var connections []project.ToolConnection
+	// credentialEnvVars maps generated env var names to their raw values so
+	// the caller can persist them in the azd environment.
+	credentialEnvVars := map[string]string{}
+
+	for _, resource := range manifest.Resources {
+		tbResource, ok := resource.(agent_yaml.ToolboxResource)
+		if !ok {
+			continue
+		}
+
+		// Description can come from the resource-level field (schema) or Options (legacy)
+		description := tbResource.Description
+		if description == "" {
+			description, _ = tbResource.Options["description"].(string)
+		}
+
+		// If typed tool definitions exist, extract connections and build toolbox tools
+		if len(tbResource.Tools) > 0 {
+			var tools []map[string]any
+			for _, toolDef := range tbResource.Tools {
+				// Built-in tools (no target) just become toolbox tools — no connection needed
+				if toolDef.Target == "" {
+					tool := map[string]any{
+						"type": toolDef.Id,
+					}
+					tools = append(tools, tool)
+					continue
+				}
+
+				// External tools with target/authType need a connection
+				connName := deriveConnectionName(tbResource.Name, toolDef)
+
+				conn := project.ToolConnection{
+					Name:     connName,
+					Category: "RemoteTool",
+					Target:   toolDef.Target,
+					AuthType: toolDef.AuthType,
+				}
+
+				// Extract credentials, storing raw values as env vars and
+				// replacing them with ${VAR} references in the config.
+				if len(toolDef.Options) > 0 {
+					creds := make(map[string]any, len(toolDef.Options))
+					for k, v := range toolDef.Options {
+						envVar := credentialEnvVarName(connName, k)
+						credentialEnvVars[envVar] = fmt.Sprintf("%v", v)
+						creds[k] = fmt.Sprintf("${%s}", envVar)
+					}
+
+					// CustomKeys ARM type requires credentials nested under "keys"
+					if toolDef.AuthType == "CustomKeys" {
+						conn.Credentials = map[string]any{"keys": creds}
+					} else {
+						conn.Credentials = creds
+					}
+				}
+
+				connections = append(connections, conn)
+
+				// Toolbox tool entry is minimal — deploy enriches from connection
+				tool := map[string]any{
+					"type":                  toolDef.Id,
+					"project_connection_id": connName,
+				}
+				tools = append(tools, tool)
+			}
+
+			toolboxes = append(toolboxes, project.Toolbox{
+				Name:        tbResource.Name,
+				Description: description,
+				Tools:       tools,
+			})
+			continue
+		}
+
+		// Fallback: raw tools from Options (existing behavior)
+		rawTools, ok := tbResource.Options["tools"]
+		if !ok {
+			return nil, nil, nil, fmt.Errorf(
+				"toolbox resource '%s' is missing required 'tools' in options or typed Tools",
+				tbResource.Name,
+			)
+		}
+
+		toolsList, ok := rawTools.([]any)
+		if !ok {
+			return nil, nil, nil, fmt.Errorf(
+				"toolbox resource '%s' has invalid 'tools' format: expected array",
+				tbResource.Name,
+			)
+		}
+
+		tools := make([]map[string]any, 0, len(toolsList))
+		for _, rawTool := range toolsList {
+			toolMap, ok := rawTool.(map[string]any)
+			if !ok {
+				return nil, nil, nil, fmt.Errorf(
+					"toolbox resource '%s' has invalid tool entry: expected object",
+					tbResource.Name,
+				)
+			}
+			tools = append(tools, toolMap)
+		}
+
+		toolboxes = append(toolboxes, project.Toolbox{
+			Name:        tbResource.Name,
+			Description: description,
+			Tools:       tools,
+		})
+	}
+
+	return toolboxes, connections, credentialEnvVars, nil
+}
+
+// deriveConnectionName builds a deterministic connection name from a toolbox name
+// and tool definition. Uses the tool's Name field when present, otherwise falls
+// back to toolboxName-id.
+func deriveConnectionName(toolboxName string, toolDef agent_yaml.ToolboxToolDefinition) string {
+	if toolDef.Name != "" {
+		return toolDef.Name
+	}
+	return toolboxName + "-" + toolDef.Id
+}
+
+// credentialEnvVarName builds a deterministic env var name for a connection
+// credential key, e.g. ("github-copilot", "clientSecret") → "FOUNDRY_TOOL_GITHUB_COPILOT_CLIENTSECRET".
+func credentialEnvVarName(connName, key string) string {
+	s := "FOUNDRY_TOOL_" + strings.ToUpper(connName) + "_" + strings.ToUpper(key)
+	return strings.ReplaceAll(s, "-", "_")
+}
+
+// injectToolboxEnvVarsIntoDefinition adds FOUNDRY_TOOLBOX_{NAME}_MCP_ENDPOINT entries
+// to the environment_variables section of a hosted agent definition for each toolbox
+// resource in the manifest. Entries already present in the definition are not overwritten.
+func injectToolboxEnvVarsIntoDefinition(manifest *agent_yaml.AgentManifest) {
+	if manifest == nil || manifest.Resources == nil {
+		return
+	}
+
+	containerAgent, ok := manifest.Template.(agent_yaml.ContainerAgent)
+	if !ok {
+		return
+	}
+
+	// Collect toolbox resource names
+	var toolboxNames []string
+	for _, resource := range manifest.Resources {
+		if tbResource, ok := resource.(agent_yaml.ToolboxResource); ok {
+			toolboxNames = append(toolboxNames, tbResource.Name)
+		}
+	}
+	if len(toolboxNames) == 0 {
+		return
+	}
+
+	if containerAgent.EnvironmentVariables == nil {
+		envVars := []agent_yaml.EnvironmentVariable{}
+		containerAgent.EnvironmentVariables = &envVars
+	}
+
+	existingNames := make(map[string]bool, len(*containerAgent.EnvironmentVariables))
+	for _, ev := range *containerAgent.EnvironmentVariables {
+		existingNames[ev.Name] = true
+	}
+
+	for _, tbName := range toolboxNames {
+		envKey := toolboxMCPEndpointEnvKey(tbName)
+		if !existingNames[envKey] {
+			*containerAgent.EnvironmentVariables = append(
+				*containerAgent.EnvironmentVariables,
+				agent_yaml.EnvironmentVariable{
+					Name:  envKey,
+					Value: fmt.Sprintf("${%s}", envKey),
+				},
+			)
+		}
+	}
+
+	manifest.Template = containerAgent
+}
+
+// toolboxMCPEndpointEnvKey returns the environment variable name for a toolbox's MCP
+// endpoint, matching the convention in registerToolboxEnvironmentVariables.
+func toolboxMCPEndpointEnvKey(toolboxName string) string {
+	key := strings.ReplaceAll(toolboxName, " ", "_")
+	key = strings.ReplaceAll(key, "-", "_")
+	return fmt.Sprintf("FOUNDRY_TOOLBOX_%s_MCP_ENDPOINT", strings.ToUpper(key))
 }

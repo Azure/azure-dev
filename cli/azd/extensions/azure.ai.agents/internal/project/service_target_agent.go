@@ -6,8 +6,10 @@ package project
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"math"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -19,6 +21,7 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/azure"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
@@ -433,6 +436,11 @@ func (p *AgentServiceTargetProvider) Deploy(
 		fmt.Println("Loaded custom service target configuration")
 	}
 
+	// Deploy toolboxes before agent creation
+	if err := p.deployToolboxes(ctx, serviceTargetConfig, azdEnv); err != nil {
+		return nil, err
+	}
+
 	// Load and validate the agent manifest
 	data, err := os.ReadFile(p.agentDefinitionPath)
 	if err != nil {
@@ -649,6 +657,21 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 	if foundryAgentConfig.Container != nil && foundryAgentConfig.Container.Resources != nil {
 		cpu = foundryAgentConfig.Container.Resources.Cpu
 		memory = foundryAgentConfig.Container.Resources.Memory
+	}
+
+	// Auto-inject toolbox MCP endpoint env vars so hosted agents can reach their toolboxes
+	// without requiring users to manually add them to agent.yaml's environment_variables.
+	if foundryAgentConfig != nil {
+		projectEndpoint := strings.TrimRight(azdEnv["AZURE_AI_PROJECT_ENDPOINT"], "/")
+		for _, toolbox := range foundryAgentConfig.Toolboxes {
+			toolboxKey := p.getServiceKey(toolbox.Name)
+			envKey := fmt.Sprintf("FOUNDRY_TOOLBOX_%s_MCP_ENDPOINT", toolboxKey)
+			if _, exists := resolvedEnvVars[envKey]; !exists {
+				resolvedEnvVars[envKey] = fmt.Sprintf(
+					"%s/toolsets/%s/mcp", projectEndpoint, toolbox.Name,
+				)
+			}
+		}
 	}
 
 	// Build options list starting with required options
@@ -1073,6 +1096,200 @@ func (p *AgentServiceTargetProvider) resolveEnvironmentVariables(value string, a
 		return value
 	}
 	return resolved
+}
+
+// resolveToolboxEnvironmentVariables resolves ${ENV_VAR} references in all toolbox properties.
+func (p *AgentServiceTargetProvider) resolveToolboxEnvironmentVariables(
+	toolbox *Toolbox, azdEnv map[string]string,
+) {
+	toolbox.Name = p.resolveEnvironmentVariables(toolbox.Name, azdEnv)
+	toolbox.Description = p.resolveEnvironmentVariables(toolbox.Description, azdEnv)
+	for i, tool := range toolbox.Tools {
+		toolbox.Tools[i] = p.resolveMapValues(tool, azdEnv)
+	}
+}
+
+// resolveMapValues recursively resolves ${ENV_VAR} references in all string values of a map.
+func (p *AgentServiceTargetProvider) resolveMapValues(
+	m map[string]any, azdEnv map[string]string,
+) map[string]any {
+	resolved := make(map[string]any, len(m))
+	for k, v := range m {
+		resolved[k] = p.resolveAnyValue(v, azdEnv)
+	}
+	return resolved
+}
+
+// resolveAnyValue resolves ${ENV_VAR} references in a value of any type.
+func (p *AgentServiceTargetProvider) resolveAnyValue(v any, azdEnv map[string]string) any {
+	switch val := v.(type) {
+	case string:
+		return p.resolveEnvironmentVariables(val, azdEnv)
+	case map[string]any:
+		return p.resolveMapValues(val, azdEnv)
+	case []any:
+		resolved := make([]any, len(val))
+		for i, item := range val {
+			resolved[i] = p.resolveAnyValue(item, azdEnv)
+		}
+		return resolved
+	default:
+		return v
+	}
+}
+
+// enrichToolboxFromConnections fills in server_url and server_label on toolbox
+// tools that reference a connection via project_connection_id. This keeps the
+// azure.yaml toolbox entries minimal while sending complete data to the API.
+func enrichToolboxFromConnections(toolbox *Toolbox, connByName map[string]ToolConnection) {
+	for i, tool := range toolbox.Tools {
+		connID, _ := tool["project_connection_id"].(string)
+		if connID == "" {
+			continue
+		}
+		conn, ok := connByName[connID]
+		if !ok {
+			continue
+		}
+		if _, has := tool["server_url"]; !has && conn.Target != "" {
+			toolbox.Tools[i]["server_url"] = conn.Target
+		}
+		if _, has := tool["server_label"]; !has {
+			toolbox.Tools[i]["server_label"] = conn.Name
+		}
+	}
+}
+
+// deployToolboxes creates or updates Foundry Toolsets for each toolbox in the config.
+// For each toolbox, it calls the Foundry Toolsets API to upsert the toolset, then
+// sets environment variables with the MCP endpoints from the toolset's MCP tools.
+func (p *AgentServiceTargetProvider) deployToolboxes(
+	ctx context.Context,
+	serviceTargetConfig *ServiceTargetAgentConfig,
+	azdEnv map[string]string,
+) error {
+	if serviceTargetConfig == nil || len(serviceTargetConfig.Toolboxes) == 0 {
+		return nil
+	}
+
+	projectEndpoint := azdEnv["AZURE_AI_PROJECT_ENDPOINT"]
+	if projectEndpoint == "" {
+		return exterrors.Dependency(
+			exterrors.CodeMissingAiProjectEndpoint,
+			"AZURE_AI_PROJECT_ENDPOINT is required for toolbox deployment",
+			"run 'azd provision' or connect to an existing project",
+		)
+	}
+
+	toolsetsClient := azure.NewFoundryToolsetsClient(projectEndpoint, p.credential)
+
+	// Build a lookup from connection name to connection config so deploy can
+	// enrich minimal toolbox tool entries with server_url / server_label.
+	connByName := map[string]ToolConnection{}
+	for _, c := range serviceTargetConfig.ToolConnections {
+		connByName[c.Name] = c
+	}
+
+	for _, toolbox := range serviceTargetConfig.Toolboxes {
+		fmt.Fprintf(os.Stderr, "Deploying toolbox: %s\n", toolbox.Name)
+
+		p.resolveToolboxEnvironmentVariables(&toolbox, azdEnv)
+		enrichToolboxFromConnections(&toolbox, connByName)
+
+		_, err := p.upsertToolset(ctx, toolsetsClient, toolbox)
+		if err != nil {
+			return err
+		}
+
+		// Set the MCP endpoint env var now that the toolbox is confirmed to exist
+		if err := p.registerToolboxEnvironmentVariables(
+			ctx, projectEndpoint, toolbox.Name,
+		); err != nil {
+			return err
+		}
+
+		// Update the local azdEnv map so downstream env var resolution
+		// (e.g. ${FOUNDRY_TOOLBOX_...} in agent.yaml) works on first deploy.
+		toolboxKey := p.getServiceKey(toolbox.Name)
+		envKey := fmt.Sprintf("FOUNDRY_TOOLBOX_%s_MCP_ENDPOINT", toolboxKey)
+		endpoint := strings.TrimRight(projectEndpoint, "/")
+		azdEnv[envKey] = fmt.Sprintf("%s/toolsets/%s/mcp", endpoint, toolbox.Name)
+
+		fmt.Fprintf(os.Stderr, "Toolbox '%s' deployed successfully\n", toolbox.Name)
+	}
+
+	return nil
+}
+
+// upsertToolset creates a toolset, or updates it if it already exists.
+// A 409 Conflict on create means the toolset already exists, which is treated as success.
+func (p *AgentServiceTargetProvider) upsertToolset(
+	ctx context.Context,
+	client *azure.FoundryToolsetsClient,
+	toolbox Toolbox,
+) (*azure.ToolsetObject, error) {
+	createReq := &azure.CreateToolsetRequest{
+		Name:        toolbox.Name,
+		Description: toolbox.Description,
+		Tools:       toolbox.Tools,
+	}
+
+	toolset, err := client.CreateToolset(ctx, createReq)
+	if err == nil {
+		return toolset, nil
+	}
+
+	// 409 Conflict means the toolset already exists — update it
+	var respErr *azcore.ResponseError
+	if errors.As(err, &respErr) && respErr.StatusCode == http.StatusConflict {
+		fmt.Fprintf(os.Stderr, "  Toolset '%s' already exists, updating...\n", toolbox.Name)
+		updateReq := &azure.UpdateToolsetRequest{
+			Description: toolbox.Description,
+			Tools:       toolbox.Tools,
+		}
+		toolset, updateErr := client.UpdateToolset(ctx, toolbox.Name, updateReq)
+		if updateErr != nil {
+			return nil, exterrors.Internal(
+				exterrors.CodeCreateToolsetFailed,
+				fmt.Sprintf("failed to update toolset '%s': %s", toolbox.Name, updateErr),
+			)
+		}
+		return toolset, nil
+	}
+
+	return nil, exterrors.Internal(
+		exterrors.CodeCreateToolsetFailed,
+		fmt.Sprintf("failed to create toolset '%s': %s", toolbox.Name, err),
+	)
+}
+
+// registerToolboxEnvironmentVariables sets the FOUNDRY_TOOLBOX_{NAME}_MCP_ENDPOINT env var
+// with the constructed MCP endpoint URL: {projectEndpoint}/toolsets/{toolboxName}/mcp
+func (p *AgentServiceTargetProvider) registerToolboxEnvironmentVariables(
+	ctx context.Context,
+	projectEndpoint string,
+	toolboxName string,
+) error {
+	toolboxKey := p.getServiceKey(toolboxName)
+	envKey := fmt.Sprintf("FOUNDRY_TOOLBOX_%s_MCP_ENDPOINT", toolboxKey)
+
+	endpoint := strings.TrimRight(projectEndpoint, "/")
+	mcpEndpoint := fmt.Sprintf("%s/toolsets/%s/mcp", endpoint, toolboxName)
+
+	_, err := p.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+		EnvName: p.env.Name,
+		Key:     envKey,
+		Value:   mcpEndpoint,
+	})
+	if err != nil {
+		return fmt.Errorf(
+			"failed to set environment variable %s: %w",
+			envKey, err,
+		)
+	}
+
+	fmt.Fprintf(os.Stderr, "  Set %s=%s\n", envKey, mcpEndpoint)
+	return nil
 }
 
 // ensureFoundryProject ensures the Foundry project resource ID is parsed and stored.

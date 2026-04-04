@@ -147,6 +147,12 @@ func envUpdate(ctx context.Context, azdClient *azdext.AzdClient, azdProject *azd
 		}
 	}
 
+	if len(foundryAgentConfig.ToolConnections) > 0 {
+		if err := connectionsEnvUpdate(ctx, foundryAgentConfig.ToolConnections, azdClient, currentEnvResponse.Environment.Name); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -225,6 +231,73 @@ func resourcesEnvUpdate(ctx context.Context, resources []project.Resource, azdCl
 	escapedJsonString = strings.ReplaceAll(escapedJsonString, "\"", "\\\"")
 
 	return setEnvVar(ctx, azdClient, envName, "AI_PROJECT_DEPENDENT_RESOURCES", escapedJsonString)
+}
+
+func connectionsEnvUpdate(ctx context.Context, connections []project.ToolConnection, azdClient *azdext.AzdClient, envName string) error {
+	// Normalize credentials before serializing: CustomKeys authType requires
+	// credentials nested under "keys" for the ARM API.
+	normalized := make([]project.ToolConnection, len(connections))
+	copy(normalized, connections)
+	for i := range normalized {
+		normalized[i].Credentials = normalizeCredentials(normalized[i].AuthType, normalized[i].Credentials)
+	}
+
+	connectionsJson, err := json.Marshal(normalized)
+	if err != nil {
+		return fmt.Errorf("failed to marshal tool connections to JSON: %w", err)
+	}
+
+	// Escape backslashes and double quotes for environment variable
+	jsonString := string(connectionsJson)
+	escapedJsonString := strings.ReplaceAll(jsonString, "\\", "\\\\")
+	escapedJsonString = strings.ReplaceAll(escapedJsonString, "\"", "\\\"")
+
+	return setEnvVar(ctx, azdClient, envName, "AI_PROJECT_CONNECTIONS", escapedJsonString)
+}
+
+// normalizeCredentials ensures credentials match the expected ARM format.
+// CustomKeys requires credentials nested under "keys": { "keys": { "key": "val" } }.
+// If already wrapped, returns as-is. Other auth types are returned unchanged.
+func normalizeCredentials(authType string, creds map[string]any) map[string]any {
+	if authType != "CustomKeys" || len(creds) == 0 {
+		return creds
+	}
+
+	// Already correctly wrapped
+	if _, hasKeys := creds["keys"]; hasKeys && len(creds) == 1 {
+		return creds
+	}
+
+	return map[string]any{"keys": creds}
+}
+
+func containerAgentHandling(ctx context.Context, azdClient *azdext.AzdClient, project *azdext.ProjectConfig, svc *azdext.ServiceConfig) error {
+	servicePath := svc.RelativePath
+	fullPath := filepath.Join(project.Path, servicePath)
+	agentYamlPath := filepath.Join(fullPath, "agent.yaml")
+
+	//nolint:gosec // agentYamlPath is resolved from project/service paths in current workspace
+	data, err := os.ReadFile(agentYamlPath)
+	if err != nil {
+		return nil
+	}
+
+	var agentDef agent_yaml.AgentDefinition
+	if err := yaml.Unmarshal(data, &agentDef); err != nil {
+		return fmt.Errorf("YAML content is not valid: %w", err)
+	}
+
+	// If there is an agent.yaml in the project, and it can be properly parsed into an agent definition, add the env var to enable container agents
+	currentEnvResponse, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return err
+	}
+
+	if err := setEnvVar(ctx, azdClient, currentEnvResponse.Environment.Name, "ENABLE_CONTAINER_AGENTS", "true"); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func setEnvVar(ctx context.Context, azdClient *azdext.AzdClient, envName string, key string, value string) error {

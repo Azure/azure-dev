@@ -44,11 +44,13 @@ var ResourceTiers = []ResourceTier{
 
 // ServiceTargetAgentConfig provides custom configuration for the Azure AI Service target
 type ServiceTargetAgentConfig struct {
-	Environment    map[string]string  `json:"env,omitempty"`
-	Container      *ContainerSettings `json:"container,omitempty"`
-	Deployments    []Deployment       `json:"deployments,omitempty"`
-	Resources      []Resource         `json:"resources,omitempty"`
-	StartupCommand string             `json:"startupCommand,omitempty"`
+	Environment     map[string]string  `json:"env,omitempty"`
+	Container       *ContainerSettings `json:"container,omitempty"`
+	Deployments     []Deployment       `json:"deployments,omitempty"`
+	Resources       []Resource         `json:"resources,omitempty"`
+	ToolConnections []ToolConnection   `json:"toolConnections,omitempty"`
+	Toolboxes       []Toolbox          `json:"toolboxes,omitempty"`
+	StartupCommand  string             `json:"startupCommand,omitempty"`
 }
 
 // ContainerSettings provides container configuration for the Azure AI Service target
@@ -106,6 +108,24 @@ type DeploymentSku struct {
 type Resource struct {
 	Resource       string `json:"resource"`
 	ConnectionName string `json:"connectionName"`
+}
+
+// Toolbox represents a reusable collection of tools deployed as a Foundry Toolset
+type Toolbox struct {
+	Name        string           `json:"name"`
+	Description string           `json:"description,omitempty"`
+	Tools       []map[string]any `json:"tools"`
+}
+
+// ToolConnection represents a connection to an external service (MCP tool, A2A, custom API)
+// that must be created in the Foundry project during provisioning via Bicep.
+type ToolConnection struct {
+	Name        string            `json:"name"`
+	Category    string            `json:"category"`
+	Target      string            `json:"target"`
+	AuthType    string            `json:"authType"`
+	Credentials map[string]any    `json:"credentials,omitempty"`
+	Metadata    map[string]string `json:"metadata,omitempty"`
 }
 
 // UnmarshalStruct converts a structpb.Struct to a Go struct of type T

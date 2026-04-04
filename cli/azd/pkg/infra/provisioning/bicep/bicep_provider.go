@@ -95,6 +95,12 @@ type BicepProvider struct {
 	// Internal state
 	// compileBicepResult is cached to avoid recompiling the same bicep file multiple times in the same azd run.
 	compileBicepMemoryCache *compileBicepResult
+
+	// activeDeployPollInterval and activeDeployTimeout override the defaults
+	// for the active-deployment wait loop. Zero means use the default. These
+	// are only set in tests.
+	activeDeployPollInterval time.Duration
+	activeDeployTimeout      time.Duration
 }
 
 // Name gets the name of the infra provider
@@ -611,6 +617,104 @@ func logDS(msg string, v ...any) {
 	log.Printf("%s : %s", "deployment-state: ", fmt.Sprintf(msg, v...))
 }
 
+const (
+	// defaultActiveDeploymentPollInterval is how often we re-check for active deployments.
+	defaultActiveDeploymentPollInterval = 30 * time.Second
+	// defaultActiveDeploymentTimeout caps the total wait time for active deployments.
+	defaultActiveDeploymentTimeout = 30 * time.Minute
+)
+
+// waitForActiveDeployments checks for deployments that are already in progress
+// at the target scope. If any are found it logs a warning and polls until they
+// finish or the timeout is reached.
+func (p *BicepProvider) waitForActiveDeployments(
+	ctx context.Context,
+	scope infra.Scope,
+	deploymentName string,
+) error {
+	active, err := infra.ListActiveDeploymentsByName(ctx, scope, deploymentName)
+	if err != nil {
+		// If the resource group doesn't exist yet, there are no active
+		// deployments — proceed normally.
+		if errors.Is(err, infra.ErrDeploymentsNotFound) {
+			return nil
+		}
+		// For other errors (auth, throttling, transient, unrecorded test
+		// responses), log and proceed. The active deployment check is a
+		// best-effort optimization — failing to list shouldn't block the deploy.
+		log.Printf(
+			"active-deployment-check: unable to list deployments, skipping: %v", err)
+		return nil
+	}
+
+	if len(active) == 0 {
+		return nil
+	}
+
+	names := make([]string, len(active))
+	for i, d := range active {
+		names[i] = d.Name
+	}
+	p.console.MessageUxItem(ctx, &ux.WarningMessage{
+		Description: fmt.Sprintf(
+			"Waiting for %d active deployment(s) to complete: %s",
+			len(active), strings.Join(names, ", ")),
+	})
+
+	p.console.ShowSpinner(ctx,
+		"Waiting for active deployment(s) to complete", input.Step)
+	spinnerResult := input.StepFailed
+	defer func() { p.console.StopSpinner(ctx, "", spinnerResult) }()
+
+	pollInterval := p.activeDeployPollInterval
+	if pollInterval == 0 {
+		pollInterval = defaultActiveDeploymentPollInterval
+	}
+	timeout := p.activeDeployTimeout
+	if timeout == 0 {
+		timeout = defaultActiveDeploymentTimeout
+	}
+
+	deadlineTimer := time.NewTimer(timeout)
+	defer deadlineTimer.Stop()
+	ticker := time.NewTicker(pollInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-deadlineTimer.C:
+			// Refresh names from latest poll for an accurate timeout message
+			currentNames := make([]string, len(active))
+			for i, d := range active {
+				currentNames[i] = d.Name
+			}
+			return fmt.Errorf(
+				"timed out after %s waiting for active "+
+					"deployment(s) to complete: %s",
+				timeout, strings.Join(currentNames, ", "))
+		case <-ticker.C:
+			active, err = infra.ListActiveDeploymentsByName(ctx, scope, deploymentName)
+			if err != nil {
+				if errors.Is(err, infra.ErrDeploymentsNotFound) {
+					spinnerResult = input.StepDone
+					return nil
+				}
+				// Transient poll error — treat as cleared and proceed
+				log.Printf(
+					"active-deployment-check: poll error, assuming cleared: %v", err)
+				spinnerResult = input.StepDone
+				return nil
+			}
+			if len(active) == 0 {
+				spinnerResult = input.StepDone
+				return nil
+			}
+		}
+	}
+}
+
 // Provisioning the infrastructure within the specified template
 func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult, error) {
 	if p.ignoreDeploymentState {
@@ -720,6 +824,17 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 			return &provisioning.DeployResult{SkippedReason: provisioning.PreflightAbortedSkipped}, nil
 		}
 		p.console.StopSpinner(ctx, "", input.StepDone)
+	}
+
+	// Check for active deployments at the target scope and wait if any are in progress.
+	// Use scopeForTemplate to get the raw scope — deployment.Scope may have a nil
+	// inner scope in test mocks.
+	if activeScope, err := p.scopeForTemplate(planned.Template); err == nil {
+		if err := p.waitForActiveDeployments(ctx, activeScope, deployment.Name()); err != nil {
+			return nil, err
+		}
+	} else {
+		log.Printf("active-deployment-check: skipping, unable to determine scope: %v", err)
 	}
 
 	progressCtx, cancelProgress := context.WithCancel(ctx)

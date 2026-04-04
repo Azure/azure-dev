@@ -24,6 +24,29 @@ type Scope interface {
 	Deployment(deploymentName string) Deployment
 }
 
+// ListActiveDeploymentsByName lists deployments at the given scope and returns
+// only those matching the specified name with an active provisioning state.
+// This allows parallel deployments with different names to proceed without
+// blocking each other, while still detecting same-name conflicts.
+func ListActiveDeploymentsByName(
+	ctx context.Context,
+	scope Scope,
+	deploymentName string,
+) ([]*azapi.ResourceDeployment, error) {
+	all, err := scope.ListDeployments(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var active []*azapi.ResourceDeployment
+	for _, d := range all {
+		if d.Name == deploymentName && azapi.IsActiveDeploymentState(d.ProvisioningState) {
+			active = append(active, d)
+		}
+	}
+	return active, nil
+}
+
 type Deployment interface {
 	Scope
 	// Name is the name of this deployment.

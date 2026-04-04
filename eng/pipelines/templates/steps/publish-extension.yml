@@ -15,7 +15,7 @@ parameters:
     default: true
 
 steps:
-  - ${{ if eq(parameters.CreateGitHubRelease, true) }}:
+  - ${{ if and(eq(parameters.CreateGitHubRelease, true), ne(parameters.TagPrefix, ''), ne(parameters.TagVersion, '')) }}:
     # This step must run first because a duplicated tag means we don't need to
     # continue with any of the subsequent steps.
     - pwsh: |

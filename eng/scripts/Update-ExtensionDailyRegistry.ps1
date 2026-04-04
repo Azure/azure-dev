@@ -73,9 +73,14 @@ $artifactFiles = @(
 foreach ($artifact in $artifactFiles) {
     $filePath = Join-Path $ReleasePath $artifact.file
     if (Test-Path $filePath) {
-        $hash = (Get-FileHash -Path $filePath -Algorithm SHA256).Hash.ToLower()
-        $checksums[$artifact.key] = $hash
-        Write-Host "Checksum $($artifact.key): $hash"
+        try {
+            $hash = (Get-FileHash -Path $filePath -Algorithm SHA256).Hash.ToLower()
+            $checksums[$artifact.key] = $hash
+            Write-Host "Checksum $($artifact.key): $hash"
+        } catch {
+            Write-Error "Failed to compute checksum for ${filePath}: $_"
+            exit 1
+        }
     } else {
         $missingArtifacts += $artifact.file
     }
@@ -125,6 +130,22 @@ foreach ($line in $extYaml -split "`n") {
     }
 }
 if ($currentProvider) { $providers += $currentProvider }
+
+# Validate required fields were parsed
+$requiredFields = @('namespace', 'displayName', 'description')
+foreach ($field in $requiredFields) {
+    if (-not $extMeta[$field] -or $extMeta[$field] -eq '') {
+        Write-Error "Required field '$field' missing or empty in extension.yaml"
+        exit 1
+    }
+}
+
+Write-Host "Parsed extension metadata:"
+Write-Host "  namespace: $($extMeta.namespace)"
+Write-Host "  displayName: $($extMeta.displayName)"
+Write-Host "  description: $($extMeta.description)"
+Write-Host "  capabilities: $($capabilities -join ', ')"
+Write-Host "  providers: $($providers.Count)"
 
 # Load template and replace placeholders
 $template = Get-Content $TemplatePath -Raw
@@ -217,7 +238,6 @@ Write-Host "Registry contents:"
 Get-Content $registryFile
 
 # Upload to storage
-$ErrorActionPreference = 'Continue'
 azcopy copy $registryFile $RegistryBlobPath --overwrite=true
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Failed to upload registry to $RegistryBlobPath (exit code $LASTEXITCODE)"

@@ -20,9 +20,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// symlinkAvailable reports whether the OS supports creating symlinks in the
-// given directory. On Windows without Developer Mode, os.Symlink fails with
-// a privilege error.
+// symlinkAvailable reports whether the OS supports creating symlinks.
+// On Windows without Developer Mode, os.Symlink fails with a privilege error.
 func symlinkAvailable(t *testing.T) bool {
 	t.Helper()
 	tmp := t.TempDir()

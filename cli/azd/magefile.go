@@ -113,7 +113,8 @@ func (Dev) Uninstall() error {
 }
 
 // Preflight runs all pre-commit quality checks: formatting, copyright headers, linting,
-// spell checking, compilation, and unit tests. Reports a summary of all results at the end.
+// spell checking, compilation, unit tests, and playback functional tests.
+// Reports a summary of all results at the end.
 //
 // Usage: mage preflight
 func Preflight() error {
@@ -128,12 +129,16 @@ func Preflight() error {
 	}
 	azdDir := filepath.Join(repoRoot, "cli", "azd")
 
-	// Pin GOTOOLCHAIN to the version declared in go.mod. When the system
-	// Go is older (e.g. 1.25) and go.mod says 1.26, parallel compilations
-	// can race the auto-download, producing "compile: version X does not
-	// match go tool version Y" errors. Pinning upfront avoids this.
-	if ver, err := goModVersion(azdDir); err == nil && ver != "" {
-		defer setEnvScoped("GOTOOLCHAIN", "go"+ver)()
+	// Pin GOTOOLCHAIN to the version declared in go.mod when it isn't already
+	// set. When the system Go is older (e.g. 1.25) and go.mod says 1.26,
+	// parallel compilations can race the auto-download, producing "compile:
+	// version X does not match go tool version Y" errors. Pinning upfront
+	// avoids this. We skip the override when GOTOOLCHAIN is already set so
+	// that a user's explicit choice (or a newer Go) is respected.
+	if _, hasToolchain := os.LookupEnv("GOTOOLCHAIN"); !hasToolchain {
+		if ver, err := goModVersion(azdDir); err == nil && ver != "" {
+			defer setEnvScoped("GOTOOLCHAIN", "go"+ver)()
+		}
 	}
 
 	type result struct {
@@ -279,8 +284,10 @@ func PlaybackTests() error {
 	azdDir := filepath.Join(repoRoot, "cli", "azd")
 
 	// Pin GOTOOLCHAIN (see Preflight for rationale).
-	if ver, err := goModVersion(azdDir); err == nil && ver != "" {
-		defer setEnvScoped("GOTOOLCHAIN", "go"+ver)()
+	if _, hasToolchain := os.LookupEnv("GOTOOLCHAIN"); !hasToolchain {
+		if ver, err := goModVersion(azdDir); err == nil && ver != "" {
+			defer setEnvScoped("GOTOOLCHAIN", "go"+ver)()
+		}
 	}
 
 	return runPlaybackTests(azdDir)
@@ -305,7 +312,7 @@ func runPlaybackTests(azdDir string) error {
 	for i, name := range names {
 		escaped[i] = regexp.QuoteMeta(name)
 	}
-	pattern := "^(" + strings.Join(escaped, "|") + ")$"
+	pattern := "^(" + strings.Join(escaped, "|") + ")(/|$)"
 	fmt.Printf("Running %d tests in playback mode...\n", len(names))
 
 	return runStreamingWithEnv(

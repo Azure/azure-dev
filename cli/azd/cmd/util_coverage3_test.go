@@ -41,7 +41,7 @@ func Test_OpenWithDefaultBrowser_Override(t *testing.T) {
 	t.Parallel()
 
 	var capturedURL string
-	ctx := WithBrowserOverride(context.Background(), func(ctx context.Context, console input.Console, url string) {
+	ctx := WithBrowserOverride(t.Context(), func(ctx context.Context, console input.Console, url string) {
 		capturedURL = url
 	})
 
@@ -53,7 +53,7 @@ func Test_OpenWithDefaultBrowser_Override(t *testing.T) {
 func Test_OpenWithDefaultBrowser_NoOverride(t *testing.T) {
 	mockConsole := mockinput.NewMockConsole()
 	// Use a no-op browser override to prevent real browser launch
-	ctx := WithBrowserOverride(context.Background(), func(_ context.Context, _ input.Console, _ string) {})
+	ctx := WithBrowserOverride(t.Context(), func(_ context.Context, _ input.Console, _ string) {})
 	openWithDefaultBrowser(ctx, mockConsole, "https://example.com")
 }
 
@@ -120,7 +120,7 @@ func (m *mockProjectManager) EnsureRestoreTools(
 func Test_GetTargetServiceName(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
+	ctx := t.Context()
 	pc := &project.ProjectConfig{}
 
 	t.Run("AllAndServiceConflict", func(t *testing.T) {
@@ -181,7 +181,7 @@ func Test_WithBrowserOverride_ContextPropagation(t *testing.T) {
 	t.Parallel()
 
 	// Base context without override
-	ctx := context.Background()
+	ctx := t.Context()
 	val, ok := ctx.Value(browserOverrideKey{}).(browseUrl)
 	assert.False(t, ok)
 	assert.Nil(t, val)
@@ -235,6 +235,6 @@ func Test_ReferenceDocumentationUrl(t *testing.T) {
 
 // Use a helper from mocks for full integration test of serviceNameWarningCheck
 func Test_ServiceNameWarningCheck_Integration(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	serviceNameWarningCheck(mockContext.Console, "api", "restore")
 }

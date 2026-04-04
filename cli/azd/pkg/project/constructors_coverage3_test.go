@@ -3,7 +3,6 @@
 package project
 
 import (
-	"context"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
@@ -51,7 +50,7 @@ func Test_externalTool_Methods_Coverage3(t *testing.T) {
 	tool := &externalTool{name: "my-tool", installUrl: "https://example.com/install"}
 
 	t.Run("CheckInstalled_ReturnsNil", func(t *testing.T) {
-		err := tool.CheckInstalled(context.Background())
+		err := tool.CheckInstalled(t.Context())
 		assert.NoError(t, err)
 	})
 
@@ -98,7 +97,7 @@ func Test_validateTargetResource_Coverage3(t *testing.T) {
 
 func Test_appServiceTarget_Publish_Coverage3(t *testing.T) {
 	target := &appServiceTarget{}
-	result, err := target.Publish(context.Background(), nil, nil, nil, nil, nil)
+	result, err := target.Publish(t.Context(), nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 }

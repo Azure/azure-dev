@@ -4,7 +4,6 @@
 package azapi
 
 import (
-	"context"
 	"net/http"
 	"strings"
 	"testing"
@@ -25,7 +24,7 @@ func mustParseArmResourceID(t *testing.T, id string) arm.ResourceID {
 
 func Test_ResourceService_CheckExistenceByID_Coverage3(t *testing.T) {
 	t.Run("Exists", func(t *testing.T) {
-		mockCtx := mocks.NewMockContext(context.Background())
+		mockCtx := mocks.NewMockContext(t.Context())
 		rs := NewResourceService(mockCtx.SubscriptionCredentialProvider, mockCtx.ArmClientOptions)
 		mockCtx.HttpClient.When(func(req *http.Request) bool {
 			return req.Method == http.MethodHead
@@ -41,7 +40,7 @@ func Test_ResourceService_CheckExistenceByID_Coverage3(t *testing.T) {
 	})
 
 	t.Run("NotExists", func(t *testing.T) {
-		mockCtx := mocks.NewMockContext(context.Background())
+		mockCtx := mocks.NewMockContext(t.Context())
 		rs := NewResourceService(mockCtx.SubscriptionCredentialProvider, mockCtx.ArmClientOptions)
 		mockCtx.HttpClient.When(func(req *http.Request) bool {
 			return req.Method == http.MethodHead
@@ -59,7 +58,7 @@ func Test_ResourceService_CheckExistenceByID_Coverage3(t *testing.T) {
 
 func Test_ResourceService_GetRawResource_Coverage3(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
-		mockCtx := mocks.NewMockContext(context.Background())
+		mockCtx := mocks.NewMockContext(t.Context())
 		rs := NewResourceService(mockCtx.SubscriptionCredentialProvider, mockCtx.ArmClientOptions)
 		mockCtx.HttpClient.When(func(req *http.Request) bool {
 			return req.Method == http.MethodGet
@@ -78,7 +77,7 @@ func Test_ResourceService_GetRawResource_Coverage3(t *testing.T) {
 	})
 
 	t.Run("NotFound", func(t *testing.T) {
-		mockCtx := mocks.NewMockContext(context.Background())
+		mockCtx := mocks.NewMockContext(t.Context())
 		rs := NewResourceService(mockCtx.SubscriptionCredentialProvider, mockCtx.ArmClientOptions)
 		mockCtx.HttpClient.When(func(req *http.Request) bool {
 			return req.Method == http.MethodGet
@@ -96,7 +95,7 @@ func Test_ResourceService_GetRawResource_Coverage3(t *testing.T) {
 
 func Test_ResourceService_ListResourceGroupResources_Coverage3(t *testing.T) {
 	t.Run("WithFilter", func(t *testing.T) {
-		mockCtx := mocks.NewMockContext(context.Background())
+		mockCtx := mocks.NewMockContext(t.Context())
 		rs := NewResourceService(mockCtx.SubscriptionCredentialProvider, mockCtx.ArmClientOptions)
 		mockCtx.HttpClient.When(func(req *http.Request) bool {
 			return req.Method == http.MethodGet &&
@@ -125,7 +124,7 @@ func Test_ResourceService_ListResourceGroupResources_Coverage3(t *testing.T) {
 	})
 
 	t.Run("NilOptions", func(t *testing.T) {
-		mockCtx := mocks.NewMockContext(context.Background())
+		mockCtx := mocks.NewMockContext(t.Context())
 		rs := NewResourceService(mockCtx.SubscriptionCredentialProvider, mockCtx.ArmClientOptions)
 		mockCtx.HttpClient.When(func(req *http.Request) bool {
 			return req.Method == http.MethodGet
@@ -142,7 +141,7 @@ func Test_ResourceService_ListResourceGroupResources_Coverage3(t *testing.T) {
 
 func Test_ResourceService_ListResourceGroup_Coverage3(t *testing.T) {
 	t.Run("WithTagFilter", func(t *testing.T) {
-		mockCtx := mocks.NewMockContext(context.Background())
+		mockCtx := mocks.NewMockContext(t.Context())
 		rs := NewResourceService(mockCtx.SubscriptionCredentialProvider, mockCtx.ArmClientOptions)
 		mockCtx.HttpClient.When(func(req *http.Request) bool {
 			return req.Method == http.MethodGet && strings.Contains(req.URL.Path, "/resourcegroups")
@@ -169,7 +168,7 @@ func Test_ResourceService_ListResourceGroup_Coverage3(t *testing.T) {
 	})
 
 	t.Run("WithFilter", func(t *testing.T) {
-		mockCtx := mocks.NewMockContext(context.Background())
+		mockCtx := mocks.NewMockContext(t.Context())
 		rs := NewResourceService(mockCtx.SubscriptionCredentialProvider, mockCtx.ArmClientOptions)
 		mockCtx.HttpClient.When(func(req *http.Request) bool {
 			return req.Method == http.MethodGet
@@ -186,7 +185,7 @@ func Test_ResourceService_ListResourceGroup_Coverage3(t *testing.T) {
 	})
 
 	t.Run("NilOptions", func(t *testing.T) {
-		mockCtx := mocks.NewMockContext(context.Background())
+		mockCtx := mocks.NewMockContext(t.Context())
 		rs := NewResourceService(mockCtx.SubscriptionCredentialProvider, mockCtx.ArmClientOptions)
 		mockCtx.HttpClient.When(func(req *http.Request) bool {
 			return req.Method == http.MethodGet
@@ -211,7 +210,7 @@ func Test_ResourceService_ListResourceGroup_Coverage3(t *testing.T) {
 
 func Test_ResourceService_ListSubscriptionResources_Coverage3(t *testing.T) {
 	t.Run("WithFilter", func(t *testing.T) {
-		mockCtx := mocks.NewMockContext(context.Background())
+		mockCtx := mocks.NewMockContext(t.Context())
 		rs := NewResourceService(mockCtx.SubscriptionCredentialProvider, mockCtx.ArmClientOptions)
 		mockCtx.HttpClient.When(func(req *http.Request) bool {
 			return req.Method == http.MethodGet
@@ -238,7 +237,7 @@ func Test_ResourceService_ListSubscriptionResources_Coverage3(t *testing.T) {
 	})
 
 	t.Run("NilOptions", func(t *testing.T) {
-		mockCtx := mocks.NewMockContext(context.Background())
+		mockCtx := mocks.NewMockContext(t.Context())
 		rs := NewResourceService(mockCtx.SubscriptionCredentialProvider, mockCtx.ArmClientOptions)
 		mockCtx.HttpClient.When(func(req *http.Request) bool {
 			return req.Method == http.MethodGet
@@ -255,7 +254,7 @@ func Test_ResourceService_ListSubscriptionResources_Coverage3(t *testing.T) {
 
 func Test_ResourceService_CreateOrUpdateResourceGroup_Coverage3(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
-		mockCtx := mocks.NewMockContext(context.Background())
+		mockCtx := mocks.NewMockContext(t.Context())
 		rs := NewResourceService(mockCtx.SubscriptionCredentialProvider, mockCtx.ArmClientOptions)
 		mockCtx.HttpClient.When(func(req *http.Request) bool {
 			return req.Method == http.MethodPut
@@ -274,7 +273,7 @@ func Test_ResourceService_CreateOrUpdateResourceGroup_Coverage3(t *testing.T) {
 	})
 
 	t.Run("Error", func(t *testing.T) {
-		mockCtx := mocks.NewMockContext(context.Background())
+		mockCtx := mocks.NewMockContext(t.Context())
 		rs := NewResourceService(mockCtx.SubscriptionCredentialProvider, mockCtx.ArmClientOptions)
 		mockCtx.HttpClient.When(func(req *http.Request) bool {
 			return req.Method == http.MethodPut
@@ -290,7 +289,7 @@ func Test_ResourceService_CreateOrUpdateResourceGroup_Coverage3(t *testing.T) {
 
 func Test_ResourceService_DeleteResourceGroup_Coverage3(t *testing.T) {
 	t.Run("AlreadyDeleted", func(t *testing.T) {
-		mockCtx := mocks.NewMockContext(context.Background())
+		mockCtx := mocks.NewMockContext(t.Context())
 		rs := NewResourceService(mockCtx.SubscriptionCredentialProvider, mockCtx.ArmClientOptions)
 		mockCtx.HttpClient.When(func(req *http.Request) bool {
 			return req.Method == http.MethodDelete
@@ -303,7 +302,7 @@ func Test_ResourceService_DeleteResourceGroup_Coverage3(t *testing.T) {
 	})
 
 	t.Run("Success", func(t *testing.T) {
-		mockCtx := mocks.NewMockContext(context.Background())
+		mockCtx := mocks.NewMockContext(t.Context())
 		rs := NewResourceService(mockCtx.SubscriptionCredentialProvider, mockCtx.ArmClientOptions)
 		mockCtx.HttpClient.When(func(req *http.Request) bool {
 			return req.Method == http.MethodDelete

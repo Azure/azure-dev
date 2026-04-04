@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"io"
 	"os"
@@ -39,7 +38,7 @@ func Test_ConfigListAlpha_HappyPath_Finish(t *testing.T) {
 	fm := alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig())
 	console := mockinput.NewMockConsole()
 	action := newConfigListAlphaAction(fm, console, nil)
-	result, err := action.Run(context.Background())
+	result, err := action.Run(t.Context())
 	require.NoError(t, err)
 	_ = result
 }
@@ -70,7 +69,7 @@ func Test_ConfigOptions_TableFormat_MapValue_Finish(t *testing.T) {
 	buf := &bytes.Buffer{}
 	formatter := &output.TableFormatter{}
 	action := newConfigOptionsAction(console, formatter, buf, mgr, nil)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 }
 
@@ -86,7 +85,7 @@ func Test_ConfigOptions_TableFormat_ArrayValue_Finish(t *testing.T) {
 	buf := &bytes.Buffer{}
 	formatter := &output.TableFormatter{}
 	action := newConfigOptionsAction(console, formatter, buf, mgr, nil)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 }
 
@@ -103,7 +102,7 @@ func Test_ConfigOptions_TableFormat_IntValue_Finish(t *testing.T) {
 	buf := &bytes.Buffer{}
 	formatter := &output.TableFormatter{}
 	action := newConfigOptionsAction(console, formatter, buf, mgr, nil)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 }
 
@@ -124,7 +123,7 @@ func Test_ConfigOptions_DefaultFormat_MapValue_Finish(t *testing.T) {
 	buf := &bytes.Buffer{}
 	formatter := &output.NoneFormatter{}
 	action := newConfigOptionsAction(console, formatter, buf, mgr, nil)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 }
 
@@ -140,7 +139,7 @@ func Test_ConfigOptions_DefaultFormat_ArrayValue_Finish(t *testing.T) {
 	buf := &bytes.Buffer{}
 	formatter := &output.NoneFormatter{}
 	action := newConfigOptionsAction(console, formatter, buf, mgr, nil)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 }
 
@@ -156,7 +155,7 @@ func Test_ConfigOptions_DefaultFormat_IntValue_Finish(t *testing.T) {
 	buf := &bytes.Buffer{}
 	formatter := &output.NoneFormatter{}
 	action := newConfigOptionsAction(console, formatter, buf, mgr, nil)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 }
 
@@ -177,7 +176,7 @@ func Test_EnvGetValueAction_WriterError_Finish(t *testing.T) {
 	w := &errWriter{}
 
 	action := newEnvGetValueAction(azdCtx, mgr, console, w, &envGetValueFlags{}, []string{"MY_KEY"})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "writing key value")
 }
@@ -197,7 +196,7 @@ func Test_EnvGetValueAction_EnvNotFound_Finish(t *testing.T) {
 	console := mockinput.NewMockConsole()
 	buf := &bytes.Buffer{}
 	action := newEnvGetValueAction(azdCtx, mgr, console, buf, &envGetValueFlags{}, []string{"KEY"})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "does not exist")
 }
@@ -217,7 +216,7 @@ func Test_EnvGetValueAction_GenericError_Finish(t *testing.T) {
 	console := mockinput.NewMockConsole()
 	buf := &bytes.Buffer{}
 	action := newEnvGetValueAction(azdCtx, mgr, console, buf, &envGetValueFlags{}, []string{"KEY"})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "ensuring environment exists")
 }
@@ -238,7 +237,7 @@ func Test_EnvGetValueAction_KeyNotFound_Finish(t *testing.T) {
 	console := mockinput.NewMockConsole()
 	buf := &bytes.Buffer{}
 	action := newEnvGetValueAction(azdCtx, mgr, console, buf, &envGetValueFlags{}, []string{"NONEXISTENT"})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 }
 
@@ -261,7 +260,7 @@ func Test_EnvGetValueAction_EnvFlagOverride_Finish(t *testing.T) {
 	flags := &envGetValueFlags{}
 	flags.EnvironmentName = "other-env"
 	action := newEnvGetValueAction(azdCtx, mgr, console, buf, flags, []string{"KEY"})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 	require.Contains(t, buf.String(), "value")
 }
@@ -283,7 +282,7 @@ func Test_EnvGetValuesAction_EnvNotFound_Finish(t *testing.T) {
 	formatter := &output.JsonFormatter{}
 	flags := &envGetValuesFlags{}
 	action := newEnvGetValuesAction(azdCtx, mgr, console, formatter, buf, flags)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "does not exist")
 }
@@ -305,7 +304,7 @@ func Test_EnvGetValuesAction_GenericError_Finish(t *testing.T) {
 	formatter := &output.JsonFormatter{}
 	flags := &envGetValuesFlags{}
 	action := newEnvGetValuesAction(azdCtx, mgr, console, formatter, buf, flags)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "ensuring environment exists")
 }
@@ -329,7 +328,7 @@ func Test_EnvGetValuesAction_EnvFlagOverride_Finish(t *testing.T) {
 	flags := &envGetValuesFlags{}
 	flags.EnvironmentName = "other"
 	action := newEnvGetValuesAction(azdCtx, mgr, console, formatter, buf, flags)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 }
 
@@ -345,7 +344,7 @@ func Test_ConfigShowAction_FormatError_Finish(t *testing.T) {
 	w := &errWriter{}
 	formatter := &output.JsonFormatter{}
 	action := newConfigShowAction(mgr, formatter, w)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	// JsonFormatter writing to errWriter should error
 	require.Error(t, err)
 }
@@ -361,7 +360,7 @@ func Test_ConfigGetAction_FormatError_Finish(t *testing.T) {
 	w := &errWriter{}
 	formatter := &output.JsonFormatter{}
 	action := newConfigGetAction(mgr, formatter, w, []string{"mykey"})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 }
 
@@ -380,7 +379,7 @@ func Test_ConfigSetAction_LoadError_Finish(t *testing.T) {
 	t.Parallel()
 	mgr := &finishFailLoadConfigMgr{}
 	action := newConfigSetAction(mgr, nil)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 }
 
@@ -392,7 +391,7 @@ func Test_ConfigUnsetAction_LoadError_Finish(t *testing.T) {
 	t.Parallel()
 	mgr := &finishFailLoadConfigMgr{}
 	action := newConfigUnsetAction(mgr, nil)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 }
 
@@ -408,7 +407,7 @@ func Test_ConfigOptions_LoadWarning_Finish(t *testing.T) {
 	buf := &bytes.Buffer{}
 	formatter := &output.NoneFormatter{}
 	action := newConfigOptionsAction(console, formatter, buf, mgr, nil)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.NoError(t, err) // should still work, just log warning
 }
 
@@ -424,7 +423,7 @@ func Test_ConfigOptions_JsonFormatError_Finish(t *testing.T) {
 	w := &errWriter{}
 	formatter := &output.JsonFormatter{}
 	action := newConfigOptionsAction(console, formatter, w, mgr, nil)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "failed formatting config options")
 }
@@ -441,7 +440,7 @@ func Test_ConfigOptions_TableFormatError_Finish(t *testing.T) {
 	w := &errWriter{}
 	formatter := &output.TableFormatter{}
 	action := newConfigOptionsAction(console, formatter, w, mgr, nil)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "failed formatting config options")
 }
@@ -464,7 +463,7 @@ func Test_EnvSetAction_KeyCaseConflict_Finish(t *testing.T) {
 
 	flags := &envSetFlags{}
 	action := newEnvSetAction(azdCtx, env, mgr, console, flags, []string{"my_key", "new"})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 }
 
@@ -483,7 +482,7 @@ func Test_EnvConfigSetAction_JsonObjectValue_Finish(t *testing.T) {
 	mgr.On("Save", mock.Anything, mock.Anything).Return(nil)
 
 	action := newEnvConfigSetAction(azdCtx, mgr, &envConfigSetFlags{}, []string{"mypath", `{"key":"val"}`})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 }
 
@@ -498,7 +497,7 @@ func Test_EnvConfigSetAction_JsonArrayValue_Finish(t *testing.T) {
 	mgr.On("Save", mock.Anything, mock.Anything).Return(nil)
 
 	action := newEnvConfigSetAction(azdCtx, mgr, &envConfigSetFlags{}, []string{"mypath", `["a","b"]`})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 }
 
@@ -513,7 +512,7 @@ func Test_EnvConfigSetAction_BoolValue_Finish(t *testing.T) {
 	mgr.On("Save", mock.Anything, mock.Anything).Return(nil)
 
 	action := newEnvConfigSetAction(azdCtx, mgr, &envConfigSetFlags{}, []string{"mypath", "true"})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 }
 
@@ -528,7 +527,7 @@ func Test_EnvConfigSetAction_IntValue_Finish(t *testing.T) {
 	mgr.On("Save", mock.Anything, mock.Anything).Return(nil)
 
 	action := newEnvConfigSetAction(azdCtx, mgr, &envConfigSetFlags{}, []string{"mypath", "42"})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 }
 
@@ -549,7 +548,7 @@ func Test_ConfigGetAction_LoadError_Finish(t *testing.T) {
 	buf := &bytes.Buffer{}
 	formatter := &output.JsonFormatter{}
 	action := newConfigGetAction(mgr, formatter, buf, []string{"any"})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 }
 
@@ -560,7 +559,7 @@ func Test_ConfigSetAction_SetError_Finish(t *testing.T) {
 	cfg := config.NewConfig(map[string]any{"a": "scalar"})
 	mgr := &finishConfigMgr{cfg: cfg}
 	action := newConfigSetAction(mgr, []string{"a.b", "value"})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "failed setting configuration")
 }
@@ -571,7 +570,7 @@ func Test_ConfigUnsetAction_UnsetError_Finish(t *testing.T) {
 	cfg := config.NewConfig(map[string]any{"a": "scalar"})
 	mgr := &finishConfigMgr{cfg: cfg}
 	action := newConfigUnsetAction(mgr, []string{"a.b"})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "failed removing configuration")
 }
@@ -591,7 +590,7 @@ func Test_EnvConfigGetAction_FormatError_Finish(t *testing.T) {
 	w := &errWriter{}
 	formatter := &output.JsonFormatter{}
 	action := newEnvConfigGetAction(azdCtx, mgr, formatter, w, &envConfigGetFlags{}, []string{"mykey"})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "failing formatting config values")
 }
@@ -608,7 +607,7 @@ func Test_EnvConfigGetAction_EnvNotFound_Finish(t *testing.T) {
 	buf := &bytes.Buffer{}
 	formatter := &output.JsonFormatter{}
 	action := newEnvConfigGetAction(azdCtx, mgr, formatter, buf, &envConfigGetFlags{}, []string{"key"})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "does not exist")
 }
@@ -625,7 +624,7 @@ func Test_EnvConfigGetAction_GenericError_Finish(t *testing.T) {
 	buf := &bytes.Buffer{}
 	formatter := &output.JsonFormatter{}
 	action := newEnvConfigGetAction(azdCtx, mgr, formatter, buf, &envConfigGetFlags{}, []string{"key"})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "getting environment")
 }
@@ -643,7 +642,7 @@ func Test_EnvConfigGetAction_KeyNotFound_Finish(t *testing.T) {
 	buf := &bytes.Buffer{}
 	formatter := &output.JsonFormatter{}
 	action := newEnvConfigGetAction(azdCtx, mgr, formatter, buf, &envConfigGetFlags{}, []string{"nonexistent"})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "no value at path")
 }
@@ -665,7 +664,7 @@ func Test_EnvConfigGetAction_EnvFlagOverride_Finish(t *testing.T) {
 	flags := &envConfigGetFlags{}
 	flags.EnvironmentName = "override-env"
 	action := newEnvConfigGetAction(azdCtx, mgr, formatter, buf, flags, []string{"thekey"})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 }
 
@@ -683,7 +682,7 @@ func Test_EnvConfigUnsetAction_SaveError_Finish(t *testing.T) {
 	mgr.On("Save", mock.Anything, mock.Anything).Return(errors.New("save fail"))
 
 	action := newEnvConfigUnsetAction(azdCtx, mgr, &envConfigUnsetFlags{}, []string{"mykey"})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "saving environment")
 }
@@ -702,7 +701,7 @@ func Test_EnvConfigSetAction_SetError_Finish(t *testing.T) {
 	mgr.On("Get", mock.Anything, mock.Anything).Return(env, nil)
 
 	action := newEnvConfigSetAction(azdCtx, mgr, &envConfigSetFlags{}, []string{"a.b", "value"})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "failed setting configuration")
 }
@@ -720,7 +719,7 @@ func Test_EnvConfigUnsetAction_UnsetError_Finish(t *testing.T) {
 	mgr.On("Get", mock.Anything, mock.Anything).Return(env, nil)
 
 	action := newEnvConfigUnsetAction(azdCtx, mgr, &envConfigUnsetFlags{}, []string{"a.b"})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "failed removing configuration")
 }
@@ -737,7 +736,7 @@ func Test_EnvConfigSetAction_SaveError_Finish(t *testing.T) {
 	mgr.On("Save", mock.Anything, mock.Anything).Return(errors.New("save fail"))
 
 	action := newEnvConfigSetAction(azdCtx, mgr, &envConfigSetFlags{}, []string{"mykey", "myval"})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "saving environment")
 }
@@ -768,7 +767,7 @@ func Test_EnvGetValueAction_BadConfig_Finish(t *testing.T) {
 	console := mockinput.NewMockConsole()
 	buf := &bytes.Buffer{}
 	action := newEnvGetValueAction(azdCtx, mgr, console, buf, &envGetValueFlags{}, []string{"KEY"})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "deserializing config file")
 }
@@ -781,7 +780,7 @@ func Test_EnvConfigGetAction_BadConfig_Finish(t *testing.T) {
 	buf := &bytes.Buffer{}
 	formatter := &output.JsonFormatter{}
 	action := newEnvConfigGetAction(azdCtx, mgr, formatter, buf, &envConfigGetFlags{}, []string{"KEY"})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "deserializing config file")
 }
@@ -792,7 +791,7 @@ func Test_EnvConfigSetAction_BadConfig_Finish(t *testing.T) {
 	azdCtx := newBadConfigAzdContext(t)
 	mgr := newTestEnvManager()
 	action := newEnvConfigSetAction(azdCtx, mgr, &envConfigSetFlags{}, []string{"key", "val"})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "deserializing config file")
 }
@@ -803,7 +802,7 @@ func Test_EnvConfigUnsetAction_BadConfig_Finish(t *testing.T) {
 	azdCtx := newBadConfigAzdContext(t)
 	mgr := newTestEnvManager()
 	action := newEnvConfigUnsetAction(azdCtx, mgr, &envConfigUnsetFlags{}, []string{"key"})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "deserializing config file")
 }
@@ -817,7 +816,7 @@ func Test_EnvGetValuesAction_BadConfig_Finish(t *testing.T) {
 	buf := &bytes.Buffer{}
 	formatter := &output.JsonFormatter{}
 	action := newEnvGetValuesAction(azdCtx, mgr, console, formatter, buf, &envGetValuesFlags{})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "deserializing config file")
 }
@@ -836,7 +835,7 @@ func Test_EnvSetAction_FileParseError_Finish(t *testing.T) {
 	require.NoError(t, os.WriteFile(badFile, []byte("'unterminated\n"), 0600))
 	flags := &envSetFlags{file: badFile}
 	action := newEnvSetAction(azdCtx, env, mgr, mockinput.NewMockConsole(), flags, nil)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "failed to parse file")
 }
@@ -853,7 +852,7 @@ func Test_EnvSetAction_EmptyFile_Finish(t *testing.T) {
 	require.NoError(t, os.WriteFile(emptyFile, []byte("\n\n# comment only\n\n"), 0600))
 	flags := &envSetFlags{file: emptyFile}
 	action := newEnvSetAction(azdCtx, env, mgr, mockinput.NewMockConsole(), flags, nil)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "no environment values")
 }
@@ -876,7 +875,7 @@ func Test_EnvSelectAction_SelectError_Finish(t *testing.T) {
 	})
 
 	action := newEnvSelectAction(azdCtx, mgr, console, nil) // nil args → prompts
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "selecting environment")
 }
@@ -898,7 +897,7 @@ func Test_EnvSelectAction_SetProjectStateError_Finish(t *testing.T) {
 
 	console := mockinput.NewMockConsole()
 	action := newEnvSelectAction(azdCtx, mgr, console, []string{"env1"})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "setting default environment")
 }

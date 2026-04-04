@@ -621,7 +621,7 @@ func Test_UpdateAction_Run_NonProdVersion(t *testing.T) {
 		fm,
 	)
 
-	_, err := a.(*updateAction).Run(context.Background())
+	_, err := a.(*updateAction).Run(t.Context())
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, internal.ErrUnsupportedOperation))
 }
@@ -634,7 +634,7 @@ func Test_ConfigShowAction_Run(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
 	a := newConfigShowAction(&testConfigMgr{}, &output.JsonFormatter{}, &buf)
-	_, err := a.(*configShowAction).Run(context.Background())
+	_, err := a.(*configShowAction).Run(t.Context())
 	require.NoError(t, err)
 }
 
@@ -646,7 +646,7 @@ func Test_ConfigGetAction_Run_ValidPath(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
 	a := newConfigGetAction(&testConfigMgr{}, &output.JsonFormatter{}, &buf, []string{"defaults"})
-	_, err := a.(*configGetAction).Run(context.Background())
+	_, err := a.(*configGetAction).Run(t.Context())
 	// "defaults" path doesn't exist in empty config, so this returns an error
 	require.Error(t, err)
 }
@@ -658,7 +658,7 @@ func Test_ConfigGetAction_Run_ValidPath(t *testing.T) {
 func Test_ConfigSetAction_Run_Success(t *testing.T) {
 	t.Parallel()
 	a := newConfigSetAction(&testConfigMgr{}, []string{"defaults.subscription", "abc-123"})
-	_, err := a.(*configSetAction).Run(context.Background())
+	_, err := a.(*configSetAction).Run(t.Context())
 	require.NoError(t, err)
 }
 
@@ -669,7 +669,7 @@ func Test_ConfigSetAction_Run_Success(t *testing.T) {
 func Test_ConfigUnsetAction_Run_Success(t *testing.T) {
 	t.Parallel()
 	a := newConfigUnsetAction(&testConfigMgr{}, []string{"defaults.subscription"})
-	_, err := a.(*configUnsetAction).Run(context.Background())
+	_, err := a.(*configUnsetAction).Run(t.Context())
 	require.NoError(t, err)
 }
 
@@ -684,7 +684,7 @@ func Test_ConfigResetAction_Run_ForceReset(t *testing.T) {
 		&configResetActionFlags{force: true},
 		[]string{},
 	)
-	_, err := a.(*configResetAction).Run(context.Background())
+	_, err := a.(*configResetAction).Run(t.Context())
 	require.NoError(t, err)
 }
 
@@ -695,7 +695,7 @@ func Test_ConfigResetAction_Run_WithPathArg(t *testing.T) {
 		&configResetActionFlags{force: true},
 		[]string{"defaults.subscription"},
 	)
-	_, err := a.(*configResetAction).Run(context.Background())
+	_, err := a.(*configResetAction).Run(t.Context())
 	require.NoError(t, err)
 }
 
@@ -713,7 +713,7 @@ func Test_ConfigResetAction_Run_UserDeclines(t *testing.T) {
 		&configResetActionFlags{force: false},
 		[]string{},
 	)
-	_, err := a.(*configResetAction).Run(context.Background())
+	_, err := a.(*configResetAction).Run(t.Context())
 	require.NoError(t, err)
 }
 
@@ -731,7 +731,7 @@ func Test_ConfigResetAction_Run_UserConfirms(t *testing.T) {
 		&configResetActionFlags{force: false},
 		[]string{},
 	)
-	_, err := a.(*configResetAction).Run(context.Background())
+	_, err := a.(*configResetAction).Run(t.Context())
 	require.NoError(t, err)
 }
 
@@ -744,7 +744,7 @@ func Test_ConfigListAlphaAction_Run(t *testing.T) {
 	console := mockinput.NewMockConsole()
 	fm := alpha.NewFeaturesManager(&testConfigMgr{})
 	a := newConfigListAlphaAction(fm, console, []string{})
-	_, err := a.(*configListAlphaAction).Run(context.Background())
+	_, err := a.(*configListAlphaAction).Run(t.Context())
 	require.NoError(t, err)
 }
 
@@ -753,7 +753,7 @@ func Test_ConfigListAlphaAction_Run_WithArg(t *testing.T) {
 	console := mockinput.NewMockConsole()
 	fm := alpha.NewFeaturesManager(&testConfigMgr{})
 	a := newConfigListAlphaAction(fm, console, []string{"some-feature"})
-	_, err := a.(*configListAlphaAction).Run(context.Background())
+	_, err := a.(*configListAlphaAction).Run(t.Context())
 	// Toggling an unknown feature may succeed or fail
 	_ = err
 }
@@ -767,7 +767,7 @@ func Test_ConfigOptionsAction_Run(t *testing.T) {
 	console := mockinput.NewMockConsole()
 	var buf bytes.Buffer
 	a := newConfigOptionsAction(console, &output.JsonFormatter{}, &buf, &testConfigMgr{}, []string{})
-	_, err := a.(*configOptionsAction).Run(context.Background())
+	_, err := a.(*configOptionsAction).Run(t.Context())
 	require.NoError(t, err)
 }
 
@@ -791,7 +791,7 @@ func Test_SelectKeyVaultSecret_Success(t *testing.T) {
 		kvService: kvSvc,
 	}
 
-	secret, err := action.selectKeyVaultSecret(context.Background(), "sub-id", "my-vault")
+	secret, err := action.selectKeyVaultSecret(t.Context(), "sub-id", "my-vault")
 	require.NoError(t, err)
 	assert.Equal(t, "secret-one", secret)
 }
@@ -805,7 +805,7 @@ func Test_SelectKeyVaultSecret_ListError(t *testing.T) {
 		kvService: kvSvc,
 	}
 
-	_, err := action.selectKeyVaultSecret(context.Background(), "sub-id", "my-vault")
+	_, err := action.selectKeyVaultSecret(t.Context(), "sub-id", "my-vault")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "listing Key Vault secrets")
 }
@@ -819,7 +819,7 @@ func Test_SelectKeyVaultSecret_EmptySecrets(t *testing.T) {
 		kvService: kvSvc,
 	}
 
-	_, err := action.selectKeyVaultSecret(context.Background(), "sub-id", "my-vault")
+	_, err := action.selectKeyVaultSecret(t.Context(), "sub-id", "my-vault")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no Key Vault secrets were found")
 }
@@ -839,7 +839,7 @@ func Test_SelectKeyVaultSecret_SelectError(t *testing.T) {
 		kvService: kvSvc,
 	}
 
-	_, err := action.selectKeyVaultSecret(context.Background(), "sub-id", "vault")
+	_, err := action.selectKeyVaultSecret(t.Context(), "sub-id", "vault")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "selecting Key Vault secret")
 }
@@ -859,7 +859,7 @@ func Test_SelectKeyVaultSecret_SecondItem(t *testing.T) {
 		kvService: kvSvc,
 	}
 
-	secret, err := action.selectKeyVaultSecret(context.Background(), "sub", "vault")
+	secret, err := action.selectKeyVaultSecret(t.Context(), "sub", "vault")
 	require.NoError(t, err)
 	assert.Equal(t, "second", secret)
 }
@@ -918,7 +918,7 @@ func Test_VersionAction_Run(t *testing.T) {
 	fm := alpha.NewFeaturesManager(&testConfigMgr{})
 	console := mockinput.NewMockConsole()
 	a := newVersionAction(&versionFlags{}, &output.JsonFormatter{}, &buf, console, fm)
-	_, err := a.(*versionAction).Run(context.Background())
+	_, err := a.(*versionAction).Run(t.Context())
 	require.NoError(t, err)
 }
 
@@ -930,7 +930,7 @@ func Test_CompletionBashAction_Run(t *testing.T) {
 	t.Parallel()
 	rootCmd := &cobra.Command{Use: "azd"}
 	a := newCompletionBashAction(rootCmd)
-	_, err := a.(*completionAction).Run(context.Background())
+	_, err := a.(*completionAction).Run(t.Context())
 	require.NoError(t, err)
 }
 
@@ -938,7 +938,7 @@ func Test_CompletionZshAction_Run(t *testing.T) {
 	t.Parallel()
 	rootCmd := &cobra.Command{Use: "azd"}
 	a := newCompletionZshAction(rootCmd)
-	_, err := a.(*completionAction).Run(context.Background())
+	_, err := a.(*completionAction).Run(t.Context())
 	require.NoError(t, err)
 }
 
@@ -946,7 +946,7 @@ func Test_CompletionFishAction_Run(t *testing.T) {
 	t.Parallel()
 	rootCmd := &cobra.Command{Use: "azd"}
 	a := newCompletionFishAction(rootCmd)
-	_, err := a.(*completionAction).Run(context.Background())
+	_, err := a.(*completionAction).Run(t.Context())
 	require.NoError(t, err)
 }
 
@@ -954,6 +954,6 @@ func Test_CompletionPowerShellAction_Run(t *testing.T) {
 	t.Parallel()
 	rootCmd := &cobra.Command{Use: "azd"}
 	a := newCompletionPowerShellAction(rootCmd)
-	_, err := a.(*completionAction).Run(context.Background())
+	_, err := a.(*completionAction).Run(t.Context())
 	require.NoError(t, err)
 }

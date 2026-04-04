@@ -4,7 +4,6 @@
 package azapi
 
 import (
-	"context"
 	"net/http"
 	"strings"
 	"testing"
@@ -16,7 +15,7 @@ import (
 )
 
 func Test_ManagedClustersService_Get_Coverage3(t *testing.T) {
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	svc := NewManagedClustersService(mockCtx.SubscriptionCredentialProvider, mockCtx.ArmClientOptions)
 
 	mockCtx.HttpClient.When(func(req *http.Request) bool {
@@ -45,7 +44,7 @@ func Test_ManagedClustersService_Get_Coverage3(t *testing.T) {
 }
 
 func Test_ManagedClustersService_GetUserCredentials_Coverage3(t *testing.T) {
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	svc := NewManagedClustersService(mockCtx.SubscriptionCredentialProvider, mockCtx.ArmClientOptions)
 
 	mockCtx.HttpClient.When(func(req *http.Request) bool {

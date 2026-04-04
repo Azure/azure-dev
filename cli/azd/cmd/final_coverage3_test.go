@@ -99,6 +99,24 @@ func setProdVersion(t *testing.T) {
 	t.Cleanup(func() { internal.Version = orig })
 }
 
+// clearCIEnv unsets CI-related environment variables so resource.IsRunningOnCI() returns false.
+// The CI env var is in ciVarSetRules (existence-based), so t.Setenv("CI","false") still triggers detection.
+func clearCIEnv(t *testing.T) {
+	t.Helper()
+	ciVars := []string{
+		"CI", "BUILD_ID", "GITHUB_ACTIONS", "TF_BUILD",
+		"CODEBUILD_BUILD_ID", "JENKINS_URL", "TEAMCITY_VERSION",
+		"APPVEYOR", "TRAVIS", "CIRCLECI", "GITLAB_CI",
+		"JB_SPACE_API_URL", "bamboo.buildKey", "BITBUCKET_BUILD_NUMBER",
+	}
+	for _, key := range ciVars {
+		if val, ok := os.LookupEnv(key); ok {
+			os.Unsetenv(key)
+			t.Cleanup(func() { os.Setenv(key, val) })
+		}
+	}
+}
+
 func newTestUpdateAction(
 	flags *updateFlags,
 	console input.Console,
@@ -121,8 +139,9 @@ func newTestUpdateAction(
 
 func Test_UpdateAction_Run_OnlyConfigFlags_AlphaNotEnabled(t *testing.T) {
 	// Tests the path: IsNonProdVersion()=false -> alpha not enabled -> auto-enable ->
-	// This will hit either the onlyConfigFlagsSet path (no CI) or the CI-blocked path
+	// onlyConfigFlagsSet path saves config preferences.
 	setProdVersion(t)
+	clearCIEnv(t)
 
 	cfgMgr := &simpleConfigMgr{}
 	alphaMgr := alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig())
@@ -135,19 +154,16 @@ func Test_UpdateAction_Run_OnlyConfigFlags_AlphaNotEnabled(t *testing.T) {
 	}
 
 	action := newTestUpdateAction(flags, console, &output.JsonFormatter{}, &buf, cfgMgr, &noopCommandRunner{}, alphaMgr)
-	result, err := action.Run(context.Background())
-	// Depending on CI env, this either returns the config-saved result or CI-blocked error
-	if err != nil {
-		require.Contains(t, err.Error(), "CI/CD")
-	} else {
-		require.NotNil(t, result)
-		require.Contains(t, result.Message.Header, "Update preferences saved")
-	}
+	result, err := action.Run(t.Context())
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Contains(t, result.Message.Header, "Update preferences saved")
 }
 
 func Test_UpdateAction_Run_OnlyConfigFlags_AlphaEnabled(t *testing.T) {
 	// Tests path when alpha IS already enabled and only config flags set
 	setProdVersion(t)
+	clearCIEnv(t)
 
 	// Pre-enable the update alpha feature
 	cfg := config.NewEmptyConfig()
@@ -163,18 +179,16 @@ func Test_UpdateAction_Run_OnlyConfigFlags_AlphaEnabled(t *testing.T) {
 	}
 
 	action := newTestUpdateAction(flags, console, &output.JsonFormatter{}, &buf, cfgMgr, &noopCommandRunner{}, alphaMgr)
-	result, err := action.Run(context.Background())
-	if err != nil {
-		require.Contains(t, err.Error(), "CI/CD")
-	} else {
-		require.NotNil(t, result)
-		require.Contains(t, result.Message.Header, "Update preferences saved")
-	}
+	result, err := action.Run(t.Context())
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Contains(t, result.Message.Header, "Update preferences saved")
 }
 
 func Test_UpdateAction_Run_SaveConfigError(t *testing.T) {
 	// Tests the config save failure path when auto-enabling alpha
 	setProdVersion(t)
+	clearCIEnv(t)
 
 	cfgMgr := &failSaveConfigMgr{}
 	alphaMgr := alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig())
@@ -187,9 +201,9 @@ func Test_UpdateAction_Run_SaveConfigError(t *testing.T) {
 	}
 
 	action := newTestUpdateAction(flags, console, &output.JsonFormatter{}, &buf, cfgMgr, &noopCommandRunner{}, alphaMgr)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
-	// Either config save error or CI-blocked error depending on environment
+	require.Contains(t, err.Error(), "save failed")
 }
 
 func Test_UpdateAction_Run_CI_Blocked(t *testing.T) {
@@ -209,7 +223,7 @@ func Test_UpdateAction_Run_CI_Blocked(t *testing.T) {
 	flags := &updateFlags{}
 
 	action := newTestUpdateAction(flags, console, &output.JsonFormatter{}, &buf, cfgMgr, &noopCommandRunner{}, alphaMgr)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "CI/CD")
 }
@@ -234,7 +248,7 @@ func Test_UpdateAction_Run_SwitchChannel_CheckForUpdateError(t *testing.T) {
 	}
 
 	action := newTestUpdateAction(flags, console, &output.JsonFormatter{}, &buf, cfgMgr, &noopCommandRunner{}, alphaMgr)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	// This will either fail at CI check, package manager check, or CheckForUpdate
 	require.Error(t, err)
 }
@@ -254,7 +268,7 @@ func Test_UpdateAction_Run_NoChannelNoConfigFlags(t *testing.T) {
 	flags := &updateFlags{}
 
 	action := newTestUpdateAction(flags, console, &output.JsonFormatter{}, &buf, cfgMgr, &noopCommandRunner{}, alphaMgr)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	// Will fail at CI check or CheckForUpdate since noopCommandRunner returns error
 	require.Error(t, err)
 }
@@ -406,7 +420,7 @@ func Test_EnvConfigSetAction_GenericError(t *testing.T) {
 		Return((*environment.Environment)(nil), errors.New("connection error"))
 
 	action := newEnvConfigSetAction(azdCtx, mgr, &envConfigSetFlags{}, []string{"k", "v"})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "getting environment")
 }
@@ -422,7 +436,7 @@ func Test_EnvConfigSetAction_SaveError(t *testing.T) {
 	mgr.On("Save", mock.Anything, mock.Anything).Return(errors.New("save failed"))
 
 	action := newEnvConfigSetAction(azdCtx, mgr, &envConfigSetFlags{}, []string{"k", "v"})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "saving environment")
 }
@@ -441,7 +455,7 @@ func Test_EnvConfigUnsetAction_GenericError(t *testing.T) {
 		Return((*environment.Environment)(nil), errors.New("connection error"))
 
 	action := newEnvConfigUnsetAction(azdCtx, mgr, &envConfigUnsetFlags{}, []string{"k"})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "getting environment")
 }
@@ -458,7 +472,7 @@ func Test_EnvConfigUnsetAction_SaveError(t *testing.T) {
 	mgr.On("Save", mock.Anything, mock.Anything).Return(errors.New("save failed"))
 
 	action := newEnvConfigUnsetAction(azdCtx, mgr, &envConfigUnsetFlags{}, []string{"x"})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "saving environment")
 }
@@ -480,7 +494,7 @@ func Test_EnvConfigGetAction_GenericError(t *testing.T) {
 		azdCtx, mgr, &output.JsonFormatter{}, &bytes.Buffer{},
 		&envConfigGetFlags{}, []string{"k"},
 	)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "getting environment")
 }
@@ -501,7 +515,7 @@ func Test_EnvGetValuesAction_GenericGetError(t *testing.T) {
 	action := newEnvGetValuesAction(
 		azdCtx, mgr, mockinput.NewMockConsole(), &output.JsonFormatter{}, &bytes.Buffer{}, &envGetValuesFlags{},
 	)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "ensuring environment exists")
 }
@@ -518,7 +532,7 @@ func Test_EnvGetValuesAction_EnvNotFound(t *testing.T) {
 	action := newEnvGetValuesAction(
 		azdCtx, mgr, mockinput.NewMockConsole(), &output.JsonFormatter{}, &bytes.Buffer{}, &envGetValuesFlags{},
 	)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "does not exist")
 }
@@ -539,7 +553,7 @@ func Test_EnvGetValueAction_GenericError(t *testing.T) {
 	action := newEnvGetValueAction(
 		azdCtx, mgr, mockinput.NewMockConsole(), &bytes.Buffer{}, &envGetValueFlags{}, []string{"KEY"},
 	)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "ensuring environment exists")
 }
@@ -556,7 +570,7 @@ func Test_EnvGetValueAction_EnvNotFound_Final(t *testing.T) {
 	action := newEnvGetValueAction(
 		azdCtx, mgr, mockinput.NewMockConsole(), &bytes.Buffer{}, &envGetValueFlags{}, []string{"KEY"},
 	)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "does not exist")
 }
@@ -576,7 +590,7 @@ func Test_EnvSetAction_SaveError_Final(t *testing.T) {
 	mgr.On("Save", mock.Anything, mock.Anything).Return(errors.New("disk full"))
 
 	action := newEnvSetAction(azdCtx, env, mgr, mockinput.NewMockConsole(), &envSetFlags{}, []string{"KEY=VALUE"})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "saving environment")
 }
@@ -591,7 +605,7 @@ func Test_EnvSetAction_Success_Final(t *testing.T) {
 	mgr.On("Save", mock.Anything, mock.Anything).Return(nil)
 
 	action := newEnvSetAction(azdCtx, env, mgr, mockinput.NewMockConsole(), &envSetFlags{}, []string{"KEY=VALUE"})
-	result, err := action.Run(context.Background())
+	result, err := action.Run(t.Context())
 	require.NoError(t, err)
 	require.Nil(t, result)
 }
@@ -616,7 +630,7 @@ func Test_EnvNewAction_SaveError(t *testing.T) {
 		azdCtx, mgr,
 		&envNewFlags{}, []string{"newenv"}, mockinput.NewMockConsole(),
 	)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	// After Create + List with 1 env, it will SetProjectState (succeeds),
 	// then console.Message (no error), then return success with the env name.
 	// The save error path might not be hit through env new — save is on envSetAction.
@@ -638,7 +652,7 @@ func Test_EnvSelectAction_SaveError(t *testing.T) {
 	mgr.On("Get", mock.Anything, "myenv").Return(env, nil)
 
 	action := newEnvSelectAction(azdCtx, mgr, mockinput.NewMockConsole(), []string{"myenv"})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	// SetProjectState will try to save to the temp dir. If it succeeds, check for format error.
 	// If it fails, that's also an acceptable test path.
 	_ = err
@@ -658,7 +672,7 @@ func Test_EnvRemoveAction_NoDefault_Error(t *testing.T) {
 	console := mockinput.NewMockConsole()
 
 	action := newEnvRemoveAction(azdCtx, mgr, console, &output.JsonFormatter{}, &bytes.Buffer{}, &envRemoveFlags{}, nil)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	// Without a default environment and no args, this should error
 	require.Error(t, err)
 }
@@ -679,7 +693,7 @@ func Test_CreateNewKeyVaultSecret_PromptError(t *testing.T) {
 	action := &envSetSecretAction{
 		console: console,
 	}
-	_, err := action.createNewKeyVaultSecret(context.Background(), "secret1", "sub1", "vault1")
+	_, err := action.createNewKeyVaultSecret(t.Context(), "secret1", "sub1", "vault1")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "prompting for Key Vault secret name")
 }
@@ -714,7 +728,7 @@ func Test_CreateNewKeyVaultSecret_InvalidNameThenValid(t *testing.T) {
 		console:   console,
 		kvService: kvSvc,
 	}
-	name, err := action.createNewKeyVaultSecret(context.Background(), "MY_SECRET", "sub1", "vault1")
+	name, err := action.createNewKeyVaultSecret(t.Context(), "MY_SECRET", "sub1", "vault1")
 	require.NoError(t, err)
 	require.Equal(t, "valid-secret-name", name)
 }
@@ -817,7 +831,7 @@ func Test_EnvSetSecretAction_AzureResourceVaultID_CreateNew(t *testing.T) {
 		kvService:  kvSvc,
 	}
 
-	result, err := action.Run(context.Background())
+	result, err := action.Run(t.Context())
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Contains(t, result.Message.Header, "saved in the environment")
@@ -866,7 +880,7 @@ func Test_EnvSetSecretAction_AzureResourceVaultID_SelectExisting(t *testing.T) {
 		kvService:  kvSvc,
 	}
 
-	result, err := action.Run(context.Background())
+	result, err := action.Run(t.Context())
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Contains(t, result.Message.Header, "saved in the environment")
@@ -918,7 +932,7 @@ func Test_EnvSetSecretAction_VaultDefinedButNotProvisioned(t *testing.T) {
 		projectConfig: pc,
 	}
 
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "cancelled")
 }
@@ -937,7 +951,7 @@ func Test_EnvListAction_FormatError(t *testing.T) {
 
 	// NoneFormatter always returns error on Format()
 	action := newEnvListAction(mgr, azdCtx, &output.NoneFormatter{}, &bytes.Buffer{})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 }
 
@@ -956,7 +970,7 @@ func Test_EnvSetAction_EnvNotFound(t *testing.T) {
 	mgr.On("Save", mock.Anything, mock.Anything).Return(environment.ErrNotFound)
 
 	action := newEnvSetAction(azdCtx, env, mgr, mockinput.NewMockConsole(), &envSetFlags{}, []string{"KEY=VALUE"})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "saving environment")
 }
@@ -975,7 +989,7 @@ func Test_EnvSetAction_MultipleKVPairs(t *testing.T) {
 		&envSetFlags{},
 		[]string{"KEY1=val1", "KEY2=val2", "KEY3=val3"},
 	)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 }
 
@@ -1041,7 +1055,7 @@ func Test_ProcessHooks_SkipWithHooks(t *testing.T) {
 		{Run: "echo world"},
 	}
 
-	err := hra.processHooks(context.Background(), "/tmp", "prebuild", hooks, hookContextService, true)
+	err := hra.processHooks(t.Context(), "/tmp", "prebuild", hooks, hookContextService, true)
 	require.NoError(t, err)
 }
 
@@ -1053,7 +1067,7 @@ func Test_ProcessHooks_EmptyHooks(t *testing.T) {
 		console: console,
 	}
 
-	err := hra.processHooks(context.Background(), "/tmp", "prebuild", nil, hookContextProject, false)
+	err := hra.processHooks(t.Context(), "/tmp", "prebuild", nil, hookContextProject, false)
 	require.NoError(t, err)
 }
 
@@ -1179,7 +1193,7 @@ func Test_DetermineDuplicates_AllDuplicates(t *testing.T) {
 func Test_SelectDistinctExtension_ZeroMatches(t *testing.T) {
 	t.Parallel()
 	_, err := selectDistinctExtension(
-		context.Background(), mockinput.NewMockConsole(),
+		t.Context(), mockinput.NewMockConsole(),
 		"test-ext", []*extensions.ExtensionMetadata{},
 		&internal.GlobalCommandOptions{},
 	)
@@ -1191,7 +1205,7 @@ func Test_SelectDistinctExtension_OneMatch(t *testing.T) {
 	t.Parallel()
 	ext := &extensions.ExtensionMetadata{Source: "default"}
 	result, err := selectDistinctExtension(
-		context.Background(), mockinput.NewMockConsole(),
+		t.Context(), mockinput.NewMockConsole(),
 		"test-ext", []*extensions.ExtensionMetadata{ext},
 		&internal.GlobalCommandOptions{},
 	)
@@ -1206,7 +1220,7 @@ func Test_SelectDistinctExtension_MultiMatch_NoPrompt(t *testing.T) {
 		{Source: "source2"},
 	}
 	_, err := selectDistinctExtension(
-		context.Background(), mockinput.NewMockConsole(),
+		t.Context(), mockinput.NewMockConsole(),
 		"test-ext", exts,
 		&internal.GlobalCommandOptions{NoPrompt: true},
 	)
@@ -1227,7 +1241,7 @@ func Test_VersionAction_Run_FormatPath(t *testing.T) {
 		writer:              &buf,
 		alphaFeatureManager: alphaMgr,
 	}
-	_, err := v.Run(context.Background())
+	_, err := v.Run(t.Context())
 	require.NoError(t, err)
 	require.NotEmpty(t, buf.String())
 }
@@ -1335,7 +1349,7 @@ func Test_ConfigShowAction_FormatError(t *testing.T) {
 		formatter:     &output.JsonFormatter{},
 		writer:        &bytes.Buffer{},
 	}
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 }
 
@@ -1355,7 +1369,7 @@ func Test_ConfigListAction_Delegation(t *testing.T) {
 		configShow: showAction,
 		console:    mockinput.NewMockConsole(),
 	}
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	// configShowAction.Run with failing load will error
 	require.Error(t, err)
 }

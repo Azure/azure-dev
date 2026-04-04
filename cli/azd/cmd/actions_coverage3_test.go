@@ -13,273 +13,177 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/stretchr/testify/require"
 )
 
-// These constructor smoke tests verify that action constructors assign all fields
-// correctly without panicking. Each call exercises all field assignment statements
-// in the corresponding constructor function.
-//
-// Interface parameters use mock implementations; pointer-to-struct parameters use nil
-// (which is safe since we don't call Run).
+// Constructor tests verify that action constructors correctly assign
+// all fields. Each test type-asserts to the concrete struct and checks
+// key field assignments after construction.
 
-// --- createClock ---
-
-func Test_CreateClock(t *testing.T) {
+func Test_NewUploadAction_Constructor(t *testing.T) {
 	t.Parallel()
-	c := createClock()
-	require.NotNil(t, c)
+	opts := &internal.GlobalCommandOptions{NoPrompt: true}
+	a := newUploadAction(opts)
+	ua := a.(*uploadAction)
+	require.Same(t, opts, ua.rootOptions)
 }
-
-// --- newUploadAction ---
-
-func Test_NewUploadAction(t *testing.T) {
-	t.Parallel()
-	a := newUploadAction(&internal.GlobalCommandOptions{})
-	require.NotNil(t, a)
-}
-
-// --- newBuildAction ---
 
 func Test_NewBuildAction_Constructor(t *testing.T) {
 	t.Parallel()
+	flags := &buildFlags{}
+	args := []string{"svc"}
+	console := mockinput.NewMockConsole()
+	formatter := &output.JsonFormatter{}
 	a := newBuildAction(
-		&buildFlags{},
-		[]string{"svc"},
-		nil, // *project.ProjectConfig
-		nil, // project.ProjectManager (interface)
-		nil, // *project.ImportManager
-		nil, // project.ServiceManager (interface)
-		mockinput.NewMockConsole(),
-		&output.JsonFormatter{},
-		io.Discard,
-		nil, // *workflow.Runner
+		flags, args, nil, nil, nil, nil, console, formatter, io.Discard, nil,
 	)
-	require.NotNil(t, a)
+	ba := a.(*buildAction)
+	require.Same(t, flags, ba.flags)
+	require.Equal(t, args, ba.args)
 }
-
-// --- newRestoreAction ---
 
 func Test_NewRestoreAction_Constructor(t *testing.T) {
 	t.Parallel()
+	flags := &restoreFlags{}
+	console := mockinput.NewMockConsole()
+	formatter := &output.JsonFormatter{}
 	a := newRestoreAction(
-		&restoreFlags{},
-		nil, // args
-		mockinput.NewMockConsole(),
-		&output.JsonFormatter{},
-		io.Discard,
-		nil, // *azdcontext.AzdContext
-		nil, // *environment.Environment
-		nil, // *project.ProjectConfig
-		nil, // project.ProjectManager (interface)
-		nil, // project.ServiceManager (interface)
-		nil, // exec.CommandRunner (interface)
-		nil, // *project.ImportManager
+		flags, nil, console, formatter, io.Discard,
+		nil, nil, nil, nil, nil, nil, nil,
 	)
-	require.NotNil(t, a)
+	ra := a.(*restoreAction)
+	require.Same(t, flags, ra.flags)
 }
-
-// --- newPackageAction ---
 
 func Test_NewPackageAction_Constructor(t *testing.T) {
 	t.Parallel()
+	flags := &packageFlags{}
+	console := mockinput.NewMockConsole()
+	formatter := &output.JsonFormatter{}
 	a := newPackageAction(
-		&packageFlags{},
-		nil, // args
-		nil, // *project.ProjectConfig
-		nil, // project.ProjectManager (interface)
-		nil, // project.ServiceManager (interface)
-		mockinput.NewMockConsole(),
-		&output.JsonFormatter{},
-		io.Discard,
-		nil, // *project.ImportManager
+		flags, nil, nil, nil, nil, console, formatter, io.Discard, nil,
 	)
-	require.NotNil(t, a)
+	pa := a.(*packageAction)
+	require.Same(t, flags, pa.flags)
 }
-
-// --- newUpAction ---
 
 func Test_NewUpAction_Constructor(t *testing.T) {
 	t.Parallel()
-	a := newUpAction(
-		&upFlags{},
-		mockinput.NewMockConsole(),
-		nil, // *environment.Environment
-		nil, // *project.ProjectConfig
-		nil, // *provisioning.Manager
-		nil, // environment.Manager (interface)
-		nil, // prompt.Prompter (interface)
-		nil, // *project.ImportManager
-		nil, // *workflow.Runner
-	)
-	require.NotNil(t, a)
+	flags := &upFlags{}
+	console := mockinput.NewMockConsole()
+	a := newUpAction(flags, console, nil, nil, nil, nil, nil, nil, nil)
+	ua := a.(*upAction)
+	require.Same(t, flags, ua.flags)
 }
-
-// --- newDownAction ---
 
 func Test_NewDownAction_Constructor(t *testing.T) {
 	t.Parallel()
-	a := newDownAction(
-		nil, // args
-		&downFlags{},
-		nil, // *provisioning.Manager
-		nil, // *environment.Environment
-		nil, // environment.Manager (interface)
-		nil, // *project.ProjectConfig
-		mockinput.NewMockConsole(),
-		nil, // *alpha.FeatureManager
-		nil, // *project.ImportManager
-	)
-	require.NotNil(t, a)
+	flags := &downFlags{}
+	console := mockinput.NewMockConsole()
+	a := newDownAction(nil, flags, nil, nil, nil, nil, console, nil, nil)
+	da := a.(*downAction)
+	require.Same(t, flags, da.flags)
 }
-
-// --- newMonitorAction ---
 
 func Test_NewMonitorAction_Constructor(t *testing.T) {
 	t.Parallel()
-	a := newMonitorAction(
-		nil, // *azdcontext.AzdContext
-		nil, // *environment.Environment
-		nil, // account.SubscriptionTenantResolver (interface)
-		nil, // infra.ResourceManager (interface)
-		nil, // *azapi.ResourceService
-		mockinput.NewMockConsole(),
-		&monitorFlags{},
-		&cloud.Cloud{},
-		nil, // *alpha.FeatureManager
-	)
-	require.NotNil(t, a)
+	flags := &monitorFlags{}
+	console := mockinput.NewMockConsole()
+	c := &cloud.Cloud{PortalUrlBase: "https://portal.azure.com"}
+	a := newMonitorAction(nil, nil, nil, nil, nil, console, flags, c, nil)
+	ma := a.(*monitorAction)
+	require.Same(t, flags, ma.flags)
+	require.Equal(t, "https://portal.azure.com", ma.portalUrlBase)
 }
-
-// --- newAuthLoginAction ---
 
 func Test_NewAuthLoginAction_Constructor(t *testing.T) {
 	t.Parallel()
+	formatter := &output.JsonFormatter{}
+	console := mockinput.NewMockConsole()
+	annotations := CmdAnnotations{"key": "value"}
 	a := newAuthLoginAction(
-		&output.JsonFormatter{},
-		io.Discard,
-		nil, // *auth.Manager
-		nil, // *account.SubscriptionsManager
-		&authLoginFlags{},
-		mockinput.NewMockConsole(),
-		CmdAnnotations{},
-		nil, // exec.CommandRunner (interface)
+		formatter, io.Discard, nil, nil,
+		&authLoginFlags{}, console, annotations, nil,
 	)
-	require.NotNil(t, a)
+	la := a.(*loginAction)
+	require.NotNil(t, la.flags)
+	require.Equal(t, annotations, la.annotations)
 }
-
-// --- newAuthStatusAction ---
 
 func Test_NewAuthStatusAction_Constructor(t *testing.T) {
 	t.Parallel()
-	a := newAuthStatusAction(
-		&output.JsonFormatter{},
-		io.Discard,
-		nil, // *auth.Manager
-		&authStatusFlags{},
-		mockinput.NewMockConsole(),
-	)
-	require.NotNil(t, a)
+	flags := &authStatusFlags{}
+	formatter := &output.JsonFormatter{}
+	console := mockinput.NewMockConsole()
+	a := newAuthStatusAction(formatter, io.Discard, nil, flags, console)
+	sa := a.(*authStatusAction)
+	require.Same(t, flags, sa.flags)
+	require.Same(t, formatter, sa.formatter)
 }
-
-// --- newTemplateListAction ---
 
 func Test_NewTemplateListAction_Constructor(t *testing.T) {
 	t.Parallel()
-	a := newTemplateListAction(
-		&templateListFlags{},
-		&output.JsonFormatter{},
-		io.Discard,
-		nil, // *templates.TemplateManager
-	)
-	require.NotNil(t, a)
+	flags := &templateListFlags{}
+	formatter := &output.JsonFormatter{}
+	a := newTemplateListAction(flags, formatter, io.Discard, nil)
+	ta := a.(*templateListAction)
+	require.Same(t, flags, ta.flags)
+	require.Same(t, formatter, ta.formatter)
 }
-
-// --- newUpdateAction ---
 
 func Test_NewUpdateAction_Constructor(t *testing.T) {
 	t.Parallel()
-	a := newUpdateAction(
-		&updateFlags{},
-		mockinput.NewMockConsole(),
-		&output.JsonFormatter{},
-		io.Discard,
-		nil, // config.UserConfigManager (interface)
-		nil, // exec.CommandRunner (interface)
-		nil, // *alpha.FeatureManager
-	)
-	require.NotNil(t, a)
+	flags := &updateFlags{}
+	console := mockinput.NewMockConsole()
+	formatter := &output.JsonFormatter{}
+	a := newUpdateAction(flags, console, formatter, io.Discard, nil, nil, nil)
+	ua := a.(*updateAction)
+	require.Same(t, flags, ua.flags)
 }
-
-// --- newInfraGenerateAction ---
 
 func Test_NewInfraGenerateAction_Constructor(t *testing.T) {
 	t.Parallel()
-	a := newInfraGenerateAction(
-		nil, // *project.ProjectConfig
-		nil, // *project.ImportManager
-		&infraGenerateFlags{},
-		mockinput.NewMockConsole(),
-		nil, // *azdcontext.AzdContext
-		nil, // *alpha.FeatureManager
-		CmdCalledAs(""),
-	)
-	require.NotNil(t, a)
+	flags := &infraGenerateFlags{}
+	console := mockinput.NewMockConsole()
+	calledAs := CmdCalledAs("infra generate")
+	a := newInfraGenerateAction(nil, nil, flags, console, nil, nil, calledAs)
+	ia := a.(*infraGenerateAction)
+	require.Same(t, flags, ia.flags)
+	require.Equal(t, calledAs, ia.calledAs)
 }
-
-// --- newHooksRunAction ---
 
 func Test_NewHooksRunAction_Constructor(t *testing.T) {
 	t.Parallel()
-	a := newHooksRunAction(
-		nil, // *project.ProjectConfig
-		nil, // *project.ImportManager
-		nil, // *environment.Environment
-		nil, // environment.Manager (interface)
-		nil, // exec.CommandRunner (interface)
-		mockinput.NewMockConsole(),
-		&hooksRunFlags{},
-		nil, // args
-		nil, // ioc.ServiceLocator (interface)
-	)
-	require.NotNil(t, a)
+	flags := &hooksRunFlags{}
+	console := mockinput.NewMockConsole()
+	args := []string{"pre-build"}
+	a := newHooksRunAction(nil, nil, nil, nil, nil, console, flags, args, nil)
+	ha := a.(*hooksRunAction)
+	require.Same(t, flags, ha.flags)
+	require.Equal(t, args, ha.args)
 }
-
-// --- newPipelineConfigAction ---
 
 func Test_NewPipelineConfigAction_Constructor(t *testing.T) {
 	t.Parallel()
-	a := newPipelineConfigAction(
-		nil, // *environment.Environment
-		mockinput.NewMockConsole(),
-		&pipelineConfigFlags{},
-		nil, // *alpha.FeatureManager
-		nil, // prompt.Prompter (interface)
-		nil, // *pipeline.PipelineManager
-		nil, // *provisioning.Manager
-		nil, // *project.ImportManager
-		nil, // *project.ProjectConfig
-	)
-	require.NotNil(t, a)
+	flags := &pipelineConfigFlags{}
+	console := mockinput.NewMockConsole()
+	a := newPipelineConfigAction(nil, console, flags, nil, nil, nil, nil, nil, nil)
+	pa := a.(*pipelineConfigAction)
+	require.Same(t, flags, pa.flags)
 }
 
-// --- Additional targeted tests for commonly uncovered patterns ---
+// --- Utility constructor tests ---
 
-// These verify uncovered utility constructors and simple function paths.
-
-// Verify alpha feature manager construction smoke test
 func Test_AlphaFeatureManager_WithConfig(t *testing.T) {
 	t.Parallel()
-	fm := alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig())
+	cfg := config.NewEmptyConfig()
+	fm := alpha.NewFeaturesManagerWithConfig(cfg)
 	require.NotNil(t, fm)
 }
 
-// Verify environment.NewWithValues used across tests
 func Test_EnvironmentNewWithValues(t *testing.T) {
 	t.Parallel()
 	env := environment.NewWithValues("testenv", map[string]string{"K": "V"})
@@ -287,100 +191,22 @@ func Test_EnvironmentNewWithValues(t *testing.T) {
 	require.Equal(t, "V", env.Getenv("K"))
 }
 
-// Verify AzdContext construction for coverage
-func Test_AzdContext_ProjectPath(t *testing.T) {
-	t.Parallel()
-	azdCtx := newTestAzdContext(t) // from env_coverage3_test.go
-	require.NotNil(t, azdCtx)
-	require.NotEmpty(t, azdCtx.ProjectDirectory())
-}
-
-// Verify project.ProjectConfig basic creation
 func Test_ProjectConfig_Basic(t *testing.T) {
 	t.Parallel()
-	cfg := &project.ProjectConfig{
-		Name: "test",
-	}
+	cfg := &project.ProjectConfig{Name: "test"}
 	require.Equal(t, "test", cfg.Name)
 }
 
-// Verify output formatters used in tests
 func Test_OutputFormatters(t *testing.T) {
 	t.Parallel()
 	buf := &bytes.Buffer{}
 
 	jsonFmt := &output.JsonFormatter{}
-	require.NotNil(t, jsonFmt)
 	err := jsonFmt.Format(map[string]string{"k": "v"}, buf, nil)
 	require.NoError(t, err)
 	require.Contains(t, buf.String(), "k")
 
 	noneFmt := &output.NoneFormatter{}
-	require.NotNil(t, noneFmt)
-}
-
-// Verify exec.CommandRunner is an interface (nil is valid)
-func Test_CommandRunnerInterface(t *testing.T) {
-	t.Parallel()
-	var cr exec.CommandRunner
-	require.Nil(t, cr)
-}
-
-// Verify azdcontext constructor
-func Test_AzdContextWithDirectory(t *testing.T) {
-	t.Parallel()
-	ctx := newTestAzdContext(t)
-	require.NotEmpty(t, ctx.ProjectDirectory())
-}
-
-// Verify environment.Manager interface
-func Test_EnvironmentManagerInterface(t *testing.T) {
-	t.Parallel()
-	var em environment.Manager
-	require.Nil(t, em)
-}
-
-// Verify CmdAnnotations type
-func Test_CmdAnnotations_Type(t *testing.T) {
-	t.Parallel()
-	ann := CmdAnnotations{"key": "value"}
-	require.Equal(t, "value", ann["key"])
-}
-
-// Verify CmdCalledAs type
-func Test_CmdCalledAs_Type(t *testing.T) {
-	t.Parallel()
-	ca := CmdCalledAs("infra generate")
-	require.Equal(t, CmdCalledAs("infra generate"), ca)
-}
-
-// Verify GlobalCommandOptions construction
-func Test_GlobalCommandOptions(t *testing.T) {
-	t.Parallel()
-	opts := &internal.GlobalCommandOptions{
-		NoPrompt: true,
-	}
-	require.True(t, opts.NoPrompt)
-}
-
-// Verify cloud.Cloud with PortalUrlBase
-func Test_CloudPortalUrlBase(t *testing.T) {
-	t.Parallel()
-	c := &cloud.Cloud{
-		PortalUrlBase: "https://portal.azure.com",
-	}
-	require.Equal(t, "https://portal.azure.com", c.PortalUrlBase)
-}
-
-// Verify config.NewEmptyConfig
-func Test_ConfigNewEmptyConfig(t *testing.T) {
-	t.Parallel()
-	cfg := config.NewEmptyConfig()
-	require.NotNil(t, cfg)
-}
-
-// Verify azdcontext.ProjectFileName constant is accessible
-func Test_AzdContextProjectFileName(t *testing.T) {
-	t.Parallel()
-	require.NotEmpty(t, azdcontext.ProjectFileName)
+	err = noneFmt.Format("data", buf, nil)
+	require.Error(t, err)
 }

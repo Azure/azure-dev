@@ -4,7 +4,6 @@
 package azapi
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -51,7 +50,7 @@ func makeDeploymentExtended(name string, state armresources.ProvisioningState) a
 }
 
 func Test_StdDeployments_CalculateTemplateHash_Coverage3(t *testing.T) {
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	sd := newStdDeployments(mockCtx)
 
 	mockCtx.HttpClient.When(func(req *http.Request) bool {
@@ -71,7 +70,7 @@ func Test_StdDeployments_CalculateTemplateHash_Coverage3(t *testing.T) {
 }
 
 func Test_StdDeployments_ListSubscriptionDeployments_Coverage3(t *testing.T) {
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	sd := newStdDeployments(mockCtx)
 
 	mockCtx.HttpClient.When(func(req *http.Request) bool {
@@ -92,7 +91,7 @@ func Test_StdDeployments_ListSubscriptionDeployments_Coverage3(t *testing.T) {
 
 func Test_StdDeployments_GetSubscriptionDeployment_Coverage3(t *testing.T) {
 	t.Run("Found", func(t *testing.T) {
-		mockCtx := mocks.NewMockContext(context.Background())
+		mockCtx := mocks.NewMockContext(t.Context())
 		sd := newStdDeployments(mockCtx)
 
 		mockCtx.HttpClient.When(func(req *http.Request) bool {
@@ -111,7 +110,7 @@ func Test_StdDeployments_GetSubscriptionDeployment_Coverage3(t *testing.T) {
 	})
 
 	t.Run("NotFound", func(t *testing.T) {
-		mockCtx := mocks.NewMockContext(context.Background())
+		mockCtx := mocks.NewMockContext(t.Context())
 		sd := newStdDeployments(mockCtx)
 
 		mockCtx.HttpClient.When(func(req *http.Request) bool {
@@ -127,7 +126,7 @@ func Test_StdDeployments_GetSubscriptionDeployment_Coverage3(t *testing.T) {
 }
 
 func Test_StdDeployments_ListResourceGroupDeployments_Coverage3(t *testing.T) {
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	sd := newStdDeployments(mockCtx)
 
 	mockCtx.HttpClient.When(func(req *http.Request) bool {
@@ -149,7 +148,7 @@ func Test_StdDeployments_ListResourceGroupDeployments_Coverage3(t *testing.T) {
 
 func Test_StdDeployments_GetResourceGroupDeployment_Coverage3(t *testing.T) {
 	t.Run("Found", func(t *testing.T) {
-		mockCtx := mocks.NewMockContext(context.Background())
+		mockCtx := mocks.NewMockContext(t.Context())
 		sd := newStdDeployments(mockCtx)
 
 		mockCtx.HttpClient.When(func(req *http.Request) bool {
@@ -166,7 +165,7 @@ func Test_StdDeployments_GetResourceGroupDeployment_Coverage3(t *testing.T) {
 	})
 
 	t.Run("NotFound", func(t *testing.T) {
-		mockCtx := mocks.NewMockContext(context.Background())
+		mockCtx := mocks.NewMockContext(t.Context())
 		sd := newStdDeployments(mockCtx)
 
 		mockCtx.HttpClient.When(func(req *http.Request) bool {
@@ -182,7 +181,7 @@ func Test_StdDeployments_GetResourceGroupDeployment_Coverage3(t *testing.T) {
 }
 
 func Test_StdDeployments_ListSubscriptionDeploymentOperations_Coverage3(t *testing.T) {
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	sd := newStdDeployments(mockCtx)
 
 	mockCtx.HttpClient.When(func(req *http.Request) bool {
@@ -210,7 +209,7 @@ func Test_StdDeployments_ListSubscriptionDeploymentOperations_Coverage3(t *testi
 }
 
 func Test_StdDeployments_ListResourceGroupDeploymentOperations_Coverage3(t *testing.T) {
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	sd := newStdDeployments(mockCtx)
 
 	mockCtx.HttpClient.When(func(req *http.Request) bool {
@@ -238,7 +237,7 @@ func Test_StdDeployments_ListResourceGroupDeploymentOperations_Coverage3(t *test
 }
 
 func Test_StdDeployments_DeployToSubscription_Coverage3(t *testing.T) {
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	sd := newStdDeployments(mockCtx)
 
 	mockCtx.HttpClient.When(func(req *http.Request) bool {
@@ -261,7 +260,7 @@ func Test_StdDeployments_DeployToSubscription_Coverage3(t *testing.T) {
 }
 
 func Test_StdDeployments_DeployToResourceGroup_Coverage3(t *testing.T) {
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	sd := newStdDeployments(mockCtx)
 
 	mockCtx.HttpClient.When(func(req *http.Request) bool {
@@ -283,7 +282,7 @@ func Test_StdDeployments_DeployToResourceGroup_Coverage3(t *testing.T) {
 }
 
 func Test_StdDeployments_WhatIfDeployToSubscription_Coverage3(t *testing.T) {
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	sd := newStdDeployments(mockCtx)
 
 	mockCtx.HttpClient.When(func(req *http.Request) bool {
@@ -304,7 +303,7 @@ func Test_StdDeployments_WhatIfDeployToSubscription_Coverage3(t *testing.T) {
 }
 
 func Test_StdDeployments_WhatIfDeployToResourceGroup_Coverage3(t *testing.T) {
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	sd := newStdDeployments(mockCtx)
 
 	mockCtx.HttpClient.When(func(req *http.Request) bool {
@@ -325,7 +324,7 @@ func Test_StdDeployments_WhatIfDeployToResourceGroup_Coverage3(t *testing.T) {
 }
 
 func Test_StdDeployments_ValidatePreflightToSubscription_Coverage3(t *testing.T) {
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	sd := newStdDeployments(mockCtx)
 
 	mockCtx.HttpClient.When(func(req *http.Request) bool {
@@ -347,7 +346,7 @@ func Test_StdDeployments_ValidatePreflightToSubscription_Coverage3(t *testing.T)
 }
 
 func Test_StdDeployments_ValidatePreflightToResourceGroup_Coverage3(t *testing.T) {
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	sd := newStdDeployments(mockCtx)
 
 	mockCtx.HttpClient.When(func(req *http.Request) bool {
@@ -389,7 +388,7 @@ func Test_ConvertFromStandardProvisioningState_AllStates_Coverage3(t *testing.T)
 
 	for _, tc := range states {
 		t.Run(string(tc.arm), func(t *testing.T) {
-			mockCtx := mocks.NewMockContext(context.Background())
+			mockCtx := mocks.NewMockContext(t.Context())
 			sd := newStdDeployments(mockCtx)
 
 			mockCtx.HttpClient.When(func(req *http.Request) bool {
@@ -407,7 +406,7 @@ func Test_ConvertFromStandardProvisioningState_AllStates_Coverage3(t *testing.T)
 
 	// Test unknown state
 	t.Run("Unknown", func(t *testing.T) {
-		mockCtx := mocks.NewMockContext(context.Background())
+		mockCtx := mocks.NewMockContext(t.Context())
 		sd := newStdDeployments(mockCtx)
 
 		mockCtx.HttpClient.When(func(req *http.Request) bool {

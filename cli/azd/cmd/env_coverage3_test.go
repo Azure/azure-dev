@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -47,7 +46,7 @@ func Test_EnvSetAction_EmptyArgs(t *testing.T) {
 	mgr := newTestEnvManager()
 
 	action := newEnvSetAction(azdCtx, env, mgr, mockinput.NewMockConsole(), &envSetFlags{}, nil)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no environment values provided")
 }
@@ -60,7 +59,7 @@ func Test_EnvSetAction_KeyValueFromArgs(t *testing.T) {
 	mgr.On("Save", mock.Anything, mock.Anything).Return(nil)
 
 	action := newEnvSetAction(azdCtx, env, mgr, mockinput.NewMockConsole(), &envSetFlags{}, []string{"MY_KEY", "my_value"})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, "my_value", env.Getenv("MY_KEY"))
 }
@@ -73,7 +72,7 @@ func Test_EnvSetAction_KeyEqualsValue(t *testing.T) {
 	mgr.On("Save", mock.Anything, mock.Anything).Return(nil)
 
 	action := newEnvSetAction(azdCtx, env, mgr, mockinput.NewMockConsole(), &envSetFlags{}, []string{"MY_KEY=my_value"})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, "my_value", env.Getenv("MY_KEY"))
 }
@@ -93,7 +92,7 @@ func Test_EnvSetAction_FromFile(t *testing.T) {
 	mgr.On("Save", mock.Anything, mock.Anything).Return(nil)
 
 	action := newEnvSetAction(azdCtx, env, mgr, mockinput.NewMockConsole(), &envSetFlags{file: envFile}, nil)
-	_, err = action.Run(context.Background())
+	_, err = action.Run(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, "file_value", env.Getenv("FILE_KEY"))
 	assert.Equal(t, "file_value2", env.Getenv("FILE_KEY2"))
@@ -106,7 +105,7 @@ func Test_EnvSetAction_FileNotFound(t *testing.T) {
 	mgr := newTestEnvManager()
 
 	action := newEnvSetAction(azdCtx, env, mgr, mockinput.NewMockConsole(), &envSetFlags{file: "/nonexistent"}, nil)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 }
 
@@ -120,7 +119,7 @@ func Test_EnvSetAction_CaseConflictWarning(t *testing.T) {
 
 	// Setting my_key (different case) - should trigger warning but still succeed
 	action := newEnvSetAction(azdCtx, env, mgr, mockinput.NewMockConsole(), &envSetFlags{}, []string{"my_key=new_value"})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 	// The value should still be set
 	assert.Equal(t, "new_value", env.Getenv("my_key"))
@@ -141,7 +140,7 @@ func Test_EnvListAction_JsonFormat(t *testing.T) {
 
 	buf := &bytes.Buffer{}
 	action := newEnvListAction(mgr, azdCtx, &output.JsonFormatter{}, buf)
-	result, err := action.Run(context.Background())
+	result, err := action.Run(t.Context())
 	require.NoError(t, err)
 	assert.Nil(t, result)
 	assert.Contains(t, buf.String(), "env1")
@@ -156,9 +155,9 @@ func Test_EnvListAction_NoneFormat(t *testing.T) {
 
 	buf := &bytes.Buffer{}
 	action := newEnvListAction(mgr, azdCtx, &output.NoneFormatter{}, buf)
-	// NoneFormatter returns error when data is present, but this covers the code path
-	_, _ = action.Run(context.Background())
-	_ = azdCtx // used in constructor
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "attempted to output formatted data")
 }
 
 func Test_EnvListAction_ListError(t *testing.T) {
@@ -169,7 +168,7 @@ func Test_EnvListAction_ListError(t *testing.T) {
 
 	buf := &bytes.Buffer{}
 	action := newEnvListAction(mgr, azdCtx, &output.JsonFormatter{}, buf)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 }
 
@@ -177,7 +176,7 @@ func Test_EnvListAction_ListError(t *testing.T) {
 
 func Test_EnvGetValuesAction_Success(t *testing.T) {
 	t.Parallel()
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	azdCtx := newTestAzdContext(t)
 
 	// Set default environment so Run can find it
@@ -194,7 +193,7 @@ func Test_EnvGetValuesAction_Success(t *testing.T) {
 		&output.JsonFormatter{}, buf,
 		&envGetValuesFlags{},
 	)
-	result, err := action.Run(context.Background())
+	result, err := action.Run(t.Context())
 	require.NoError(t, err)
 	assert.Nil(t, result)
 	assert.Contains(t, buf.String(), "KEY1")
@@ -204,7 +203,7 @@ func Test_EnvGetValuesAction_Success(t *testing.T) {
 
 func Test_EnvGetValueAction_NoArgs(t *testing.T) {
 	t.Parallel()
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	azdCtx := newTestAzdContext(t)
 	mgr := newTestEnvManager()
 
@@ -212,13 +211,13 @@ func Test_EnvGetValueAction_NoArgs(t *testing.T) {
 		azdCtx, mgr, mockCtx.Console,
 		&bytes.Buffer{}, &envGetValueFlags{}, nil,
 	)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 }
 
 func Test_EnvGetValueAction_Success(t *testing.T) {
 	t.Parallel()
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	azdCtx := newTestAzdContext(t)
 
 	// Set default environment
@@ -234,7 +233,7 @@ func Test_EnvGetValueAction_Success(t *testing.T) {
 		azdCtx, mgr, mockCtx.Console,
 		buf, &envGetValueFlags{}, []string{"MYKEY"},
 	)
-	result, err := action.Run(context.Background())
+	result, err := action.Run(t.Context())
 	require.NoError(t, err)
 	assert.Nil(t, result)
 	assert.Contains(t, buf.String(), "myval")
@@ -264,7 +263,7 @@ func Test_EnvRemoveAction_Confirmed(t *testing.T) {
 		&output.NoneFormatter{}, buf,
 		&envRemoveFlags{}, nil,
 	)
-	result, err := action.Run(context.Background())
+	result, err := action.Run(t.Context())
 	require.NoError(t, err)
 	require.NotNil(t, result)
 }
@@ -288,7 +287,7 @@ func Test_EnvRemoveAction_Force(t *testing.T) {
 		&output.NoneFormatter{}, buf,
 		&envRemoveFlags{force: true}, nil,
 	)
-	result, err := action.Run(context.Background())
+	result, err := action.Run(t.Context())
 	require.NoError(t, err)
 	require.NotNil(t, result)
 }
@@ -310,7 +309,7 @@ func Test_EnvRemoveAction_EnvNotFound(t *testing.T) {
 		&output.NoneFormatter{}, buf,
 		&envRemoveFlags{force: true}, nil,
 	)
-	_, err = action.Run(context.Background())
+	_, err = action.Run(t.Context())
 	require.Error(t, err)
 }
 
@@ -330,7 +329,7 @@ func Test_EnvNewAction_OnlyEnv(t *testing.T) {
 	}, nil)
 
 	action := newEnvNewAction(azdCtx, mgr, &envNewFlags{}, []string{"newenv"}, mockinput.NewMockConsole())
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 
 	// Verify it was set as default
@@ -347,7 +346,7 @@ func Test_EnvNewAction_CreateError(t *testing.T) {
 		Return((*environment.Environment)(nil), fmt.Errorf("creation failed"))
 
 	action := newEnvNewAction(azdCtx, mgr, &envNewFlags{}, []string{"newenv"}, mockinput.NewMockConsole())
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "creating new environment")
 }
@@ -367,7 +366,7 @@ func Test_EnvNewAction_MultipleEnvs_NoPromptMode(t *testing.T) {
 	}, nil)
 
 	action := newEnvNewAction(azdCtx, mgr, &envNewFlags{}, []string{"env2"}, mc)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 
 	defaultName, err := azdCtx.GetDefaultEnvironmentName()
@@ -390,7 +389,7 @@ func Test_EnvNewAction_MultipleEnvs_UserConfirms(t *testing.T) {
 	}, nil)
 
 	action := newEnvNewAction(azdCtx, mgr, &envNewFlags{}, []string{"env2"}, mc)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 
 	defaultName, err := azdCtx.GetDefaultEnvironmentName()
@@ -417,7 +416,7 @@ func Test_EnvNewAction_MultipleEnvs_UserDeclines(t *testing.T) {
 	}, nil)
 
 	action := newEnvNewAction(azdCtx, mgr, &envNewFlags{}, []string{"env2"}, mc)
-	_, err = action.Run(context.Background())
+	_, err = action.Run(t.Context())
 	require.NoError(t, err)
 
 	// Default should still be env1
@@ -438,7 +437,7 @@ func Test_EnvSelectAction_WithArgs(t *testing.T) {
 	mgr.On("Get", mock.Anything, "target-env").Return(env, nil)
 
 	action := newEnvSelectAction(azdCtx, mgr, mockinput.NewMockConsole(), []string{"target-env"})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 
 	defaultName, err := azdCtx.GetDefaultEnvironmentName()
@@ -454,7 +453,7 @@ func Test_EnvSelectAction_NotFound(t *testing.T) {
 		Return((*environment.Environment)(nil), environment.ErrNotFound)
 
 	action := newEnvSelectAction(azdCtx, mgr, mockinput.NewMockConsole(), []string{"no-such-env"})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "does not exist")
 }
@@ -466,7 +465,7 @@ func Test_EnvSelectAction_EmptyList(t *testing.T) {
 	mgr.On("List", mock.Anything).Return([]*environment.Description{}, nil)
 
 	action := newEnvSelectAction(azdCtx, mgr, mockinput.NewMockConsole(), nil)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 }
 
@@ -486,7 +485,7 @@ func Test_EnvSelectAction_PromptSelection(t *testing.T) {
 	mgr.On("Get", mock.Anything, "env2").Return(env, nil)
 
 	action := newEnvSelectAction(azdCtx, mgr, mc, nil)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 
 	defaultName, err := azdCtx.GetDefaultEnvironmentName()
@@ -509,7 +508,7 @@ func Test_EnvListAction_TableFormat(t *testing.T) {
 
 	buf := &bytes.Buffer{}
 	action := newEnvListAction(mgr, azdCtx, &output.TableFormatter{}, buf)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 	require.Contains(t, buf.String(), "env1")
 }
@@ -522,7 +521,7 @@ func Test_EnvListAction_Empty(t *testing.T) {
 
 	buf := &bytes.Buffer{}
 	action := newEnvListAction(mgr, azdCtx, &output.JsonFormatter{}, buf)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 }
 
@@ -561,7 +560,7 @@ func Test_EnvSetAction_Constructor(t *testing.T) {
 
 func Test_EnvGetValuesAction_Constructor(t *testing.T) {
 	t.Parallel()
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	azdCtx := newTestAzdContext(t)
 	mgr := newTestEnvManager()
 	action := newEnvGetValuesAction(
@@ -575,7 +574,7 @@ func Test_EnvGetValuesAction_Constructor(t *testing.T) {
 
 func Test_EnvGetValueAction_Constructor(t *testing.T) {
 	t.Parallel()
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	azdCtx := newTestAzdContext(t)
 	mgr := newTestEnvManager()
 	action := newEnvGetValueAction(azdCtx, mgr, mockCtx.Console, &bytes.Buffer{}, &envGetValueFlags{}, nil)
@@ -586,7 +585,7 @@ func Test_EnvGetValueAction_Constructor(t *testing.T) {
 
 func Test_NewUserConfigManagerFromMock(t *testing.T) {
 	t.Parallel()
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	ucm := config.NewUserConfigManager(mockCtx.ConfigManager)
 	require.NotNil(t, ucm)
 	cfg, err := ucm.Load()
@@ -615,7 +614,7 @@ func Test_EnvConfigGetAction_Success(t *testing.T) {
 		&output.JsonFormatter{}, buf,
 		&envConfigGetFlags{}, []string{"mykey"},
 	)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 	require.Contains(t, buf.String(), "myval")
 }
@@ -635,7 +634,7 @@ func Test_EnvConfigGetAction_KeyNotFound(t *testing.T) {
 		&output.JsonFormatter{}, buf,
 		&envConfigGetFlags{}, []string{"no-such-key"},
 	)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "no value at path")
 }
@@ -655,7 +654,7 @@ func Test_EnvConfigGetAction_EnvNotFound(t *testing.T) {
 		&output.JsonFormatter{}, buf,
 		&envConfigGetFlags{}, []string{"somekey"},
 	)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "does not exist")
 }
@@ -674,7 +673,7 @@ func Test_EnvConfigGetAction_WithFlagOverride(t *testing.T) {
 	flags := &envConfigGetFlags{}
 	flags.EnvironmentName = "other"
 	action := newEnvConfigGetAction(azdCtx, mgr, &output.JsonFormatter{}, buf, flags, []string{"a.b"})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 	require.Contains(t, buf.String(), "nested")
 }
@@ -694,7 +693,7 @@ func Test_EnvConfigSetAction_Success(t *testing.T) {
 	mgr.On("Save", mock.Anything, mock.Anything).Return(nil)
 
 	action := newEnvConfigSetAction(azdCtx, mgr, &envConfigSetFlags{}, []string{"path.key", "value1"})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 
 	val, ok := env.Config.Get("path.key")
@@ -712,7 +711,7 @@ func Test_EnvConfigSetAction_EnvNotFound(t *testing.T) {
 		Return((*environment.Environment)(nil), environment.ErrNotFound)
 
 	action := newEnvConfigSetAction(azdCtx, mgr, &envConfigSetFlags{}, []string{"k", "v"})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "does not exist")
 }
@@ -728,7 +727,7 @@ func Test_EnvConfigSetAction_JsonValue(t *testing.T) {
 	mgr.On("Save", mock.Anything, mock.Anything).Return(nil)
 
 	action := newEnvConfigSetAction(azdCtx, mgr, &envConfigSetFlags{}, []string{"num", "42"})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 
 	val, ok := env.Config.Get("num")
@@ -749,7 +748,7 @@ func Test_EnvConfigSetAction_WithFlagOverride(t *testing.T) {
 	flags := &envConfigSetFlags{}
 	flags.EnvironmentName = "other"
 	action := newEnvConfigSetAction(azdCtx, mgr, flags, []string{"k", "v"})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 }
 
@@ -769,7 +768,7 @@ func Test_EnvConfigUnsetAction_Success(t *testing.T) {
 	mgr.On("Save", mock.Anything, mock.Anything).Return(nil)
 
 	action := newEnvConfigUnsetAction(azdCtx, mgr, &envConfigUnsetFlags{}, []string{"remove.me"})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 
 	_, ok := env.Config.Get("remove.me")
@@ -786,7 +785,7 @@ func Test_EnvConfigUnsetAction_EnvNotFound(t *testing.T) {
 		Return((*environment.Environment)(nil), environment.ErrNotFound)
 
 	action := newEnvConfigUnsetAction(azdCtx, mgr, &envConfigUnsetFlags{}, []string{"k"})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "does not exist")
 }
@@ -805,7 +804,7 @@ func Test_EnvConfigUnsetAction_WithFlagOverride(t *testing.T) {
 	flags := &envConfigUnsetFlags{}
 	flags.EnvironmentName = "other"
 	action := newEnvConfigUnsetAction(azdCtx, mgr, flags, []string{"x"})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 }
 
@@ -828,7 +827,7 @@ func Test_EnvGetValuesAction_SuccessJson(t *testing.T) {
 		&output.JsonFormatter{}, buf,
 		&envGetValuesFlags{},
 	)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 	require.Contains(t, buf.String(), "KEY1")
 }
@@ -846,7 +845,7 @@ func Test_EnvGetValuesAction_WithFlagOverride(t *testing.T) {
 	flags := &envGetValuesFlags{}
 	flags.EnvironmentName = "other"
 	action := newEnvGetValuesAction(azdCtx, mgr, mockinput.NewMockConsole(), &output.JsonFormatter{}, buf, flags)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 	require.Contains(t, buf.String(), "A")
 }
@@ -866,7 +865,7 @@ func Test_EnvGetValuesAction_NotFound(t *testing.T) {
 		&output.JsonFormatter{}, buf,
 		&envGetValuesFlags{},
 	)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 }
 
@@ -887,7 +886,7 @@ func Test_EnvGetValueAction_WithFlagOverride(t *testing.T) {
 	flags := &envGetValueFlags{}
 	flags.EnvironmentName = "other"
 	action := newEnvGetValueAction(azdCtx, mgr, mockinput.NewMockConsole(), buf, flags, []string{"MY_KEY"})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 	require.Contains(t, buf.String(), "val123")
 }
@@ -906,7 +905,7 @@ func Test_EnvGetValueAction_EnvNotFound(t *testing.T) {
 		azdCtx, mgr, mockinput.NewMockConsole(), buf,
 		&envGetValueFlags{}, []string{"somekey"},
 	)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "does not exist")
 }
@@ -925,7 +924,7 @@ func Test_EnvGetValueAction_KeyNotFound(t *testing.T) {
 		azdCtx, mgr, mockinput.NewMockConsole(), buf,
 		&envGetValueFlags{}, []string{"NO_SUCH_KEY"},
 	)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "NO_SUCH_KEY")
 }
@@ -942,7 +941,7 @@ func Test_EnvListAction_ListError_DetailedMessage(t *testing.T) {
 
 	buf := &bytes.Buffer{}
 	action := newEnvListAction(mgr, azdCtx, &output.JsonFormatter{}, buf)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "listing environments")
 }
@@ -960,7 +959,7 @@ func Test_EnvNewAction_ListError(t *testing.T) {
 	mgr.On("List", mock.Anything).Return(([]*environment.Description)(nil), fmt.Errorf("list error"))
 
 	action := newEnvNewAction(azdCtx, mgr, &envNewFlags{}, []string{"env1"}, mockinput.NewMockConsole())
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "listing environments")
 }
@@ -976,7 +975,7 @@ func Test_EnvSelectAction_ListError(t *testing.T) {
 	mgr.On("List", mock.Anything).Return(([]*environment.Description)(nil), fmt.Errorf("fail"))
 
 	action := newEnvSelectAction(azdCtx, mgr, mockinput.NewMockConsole(), nil)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "listing environments")
 }
@@ -989,7 +988,7 @@ func Test_EnvSelectAction_GetError(t *testing.T) {
 		Return((*environment.Environment)(nil), fmt.Errorf("unexpected error"))
 
 	action := newEnvSelectAction(azdCtx, mgr, mockinput.NewMockConsole(), []string{"env1"})
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "ensuring environment exists")
 }

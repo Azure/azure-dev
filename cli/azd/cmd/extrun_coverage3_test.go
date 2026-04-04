@@ -4,7 +4,6 @@ package cmd
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -29,7 +28,7 @@ func Test_ExtensionShowAction_Run_NoArgs(t *testing.T) {
 		flags:   &extensionShowFlags{global: &internal.GlobalCommandOptions{}},
 		console: mockinput.NewMockConsole(),
 	}
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	var suggestion *internal.ErrorWithSuggestion
 	require.ErrorAs(t, err, &suggestion)
@@ -43,7 +42,7 @@ func Test_ExtensionShowAction_Run_TooManyArgs(t *testing.T) {
 		flags:   &extensionShowFlags{global: &internal.GlobalCommandOptions{}},
 		console: mockinput.NewMockConsole(),
 	}
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	var suggestion *internal.ErrorWithSuggestion
 	require.ErrorAs(t, err, &suggestion)
@@ -61,7 +60,7 @@ func Test_ExtensionInstallAction_Run_NoArgs(t *testing.T) {
 		flags:   &extensionInstallFlags{global: &internal.GlobalCommandOptions{}},
 		console: mockinput.NewMockConsole(),
 	}
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	var suggestion *internal.ErrorWithSuggestion
 	require.ErrorAs(t, err, &suggestion)
@@ -75,7 +74,7 @@ func Test_ExtensionInstallAction_Run_VersionWithMultipleArgs(t *testing.T) {
 		flags:   &extensionInstallFlags{version: "1.0.0", global: &internal.GlobalCommandOptions{}},
 		console: mockinput.NewMockConsole(),
 	}
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	var suggestion *internal.ErrorWithSuggestion
 	require.ErrorAs(t, err, &suggestion)
@@ -93,7 +92,7 @@ func Test_ExtensionUninstallAction_Run_ArgsWithAllFlag(t *testing.T) {
 		flags:   &extensionUninstallFlags{all: true},
 		console: mockinput.NewMockConsole(),
 	}
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	var suggestion *internal.ErrorWithSuggestion
 	require.ErrorAs(t, err, &suggestion)
@@ -107,7 +106,7 @@ func Test_ExtensionUninstallAction_Run_NoArgsNoAll(t *testing.T) {
 		flags:   &extensionUninstallFlags{all: false},
 		console: mockinput.NewMockConsole(),
 	}
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	var suggestion *internal.ErrorWithSuggestion
 	require.ErrorAs(t, err, &suggestion)
@@ -125,7 +124,7 @@ func Test_ExtensionUpgradeAction_Run_ArgsWithAllFlag(t *testing.T) {
 		flags:   &extensionUpgradeFlags{all: true, global: &internal.GlobalCommandOptions{}},
 		console: mockinput.NewMockConsole(),
 	}
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	var suggestion *internal.ErrorWithSuggestion
 	require.ErrorAs(t, err, &suggestion)
@@ -139,7 +138,7 @@ func Test_ExtensionUpgradeAction_Run_VersionWithMultipleArgs(t *testing.T) {
 		flags:   &extensionUpgradeFlags{version: "1.0.0", global: &internal.GlobalCommandOptions{}},
 		console: mockinput.NewMockConsole(),
 	}
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	var suggestion *internal.ErrorWithSuggestion
 	require.ErrorAs(t, err, &suggestion)
@@ -153,7 +152,7 @@ func Test_ExtensionUpgradeAction_Run_NoArgsNoAll(t *testing.T) {
 		flags:   &extensionUpgradeFlags{all: false, global: &internal.GlobalCommandOptions{}},
 		console: mockinput.NewMockConsole(),
 	}
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	var suggestion *internal.ErrorWithSuggestion
 	require.ErrorAs(t, err, &suggestion)
@@ -171,7 +170,7 @@ func Test_ExtensionSourceValidateAction_Run_NoArgs_Guard(t *testing.T) {
 		flags:   &extensionSourceValidateFlags{},
 		console: mockinput.NewMockConsole(),
 	}
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	var suggestion *internal.ErrorWithSuggestion
 	require.ErrorAs(t, err, &suggestion)
@@ -185,7 +184,7 @@ func Test_ExtensionSourceValidateAction_Run_TooManyArgs_Guard(t *testing.T) {
 		flags:   &extensionSourceValidateFlags{},
 		console: mockinput.NewMockConsole(),
 	}
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	var suggestion *internal.ErrorWithSuggestion
 	require.ErrorAs(t, err, &suggestion)
@@ -198,7 +197,7 @@ func Test_ExtensionSourceValidateAction_Run_TooManyArgs_Guard(t *testing.T) {
 
 func Test_GetTargetServiceName_AllAndService_Conflict(t *testing.T) {
 	t.Parallel()
-	_, err := getTargetServiceName(context.Background(), nil, nil, nil, "build", "myservice", true)
+	_, err := getTargetServiceName(t.Context(), nil, nil, nil, "build", "myservice", true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "cannot specify both --all and <service>")
 }

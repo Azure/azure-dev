@@ -4,7 +4,6 @@
 package azapi
 
 import (
-	"context"
 	"net/http"
 	"strings"
 	"testing"
@@ -17,7 +16,7 @@ import (
 )
 
 func Test_AzureClient_GetAiModels_Coverage3(t *testing.T) {
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	client := newAzureClientFromMockContext(mockCtx)
 
 	mockCtx.HttpClient.When(func(req *http.Request) bool {
@@ -55,7 +54,7 @@ func Test_AzureClient_GetAiModels_Coverage3(t *testing.T) {
 }
 
 func Test_AzureClient_GetAiUsages_Coverage3(t *testing.T) {
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	client := newAzureClientFromMockContext(mockCtx)
 
 	mockCtx.HttpClient.When(func(req *http.Request) bool {
@@ -82,7 +81,7 @@ func Test_AzureClient_GetAiUsages_Coverage3(t *testing.T) {
 
 func Test_AzureClient_GetResourceSkuLocations_Coverage3(t *testing.T) {
 	t.Run("Found", func(t *testing.T) {
-		mockCtx := mocks.NewMockContext(context.Background())
+		mockCtx := mocks.NewMockContext(t.Context())
 		client := newAzureClientFromMockContext(mockCtx)
 
 		mockCtx.HttpClient.When(func(req *http.Request) bool {
@@ -127,7 +126,7 @@ func Test_AzureClient_GetResourceSkuLocations_Coverage3(t *testing.T) {
 	})
 
 	t.Run("NotFound", func(t *testing.T) {
-		mockCtx := mocks.NewMockContext(context.Background())
+		mockCtx := mocks.NewMockContext(t.Context())
 		client := newAzureClientFromMockContext(mockCtx)
 
 		mockCtx.HttpClient.When(func(req *http.Request) bool {

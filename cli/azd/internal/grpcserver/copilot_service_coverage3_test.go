@@ -4,7 +4,6 @@
 package grpcserver
 
 import (
-	"context"
 	"errors"
 	"testing"
 
@@ -460,7 +459,7 @@ func TestCopilotService_resolveOrCreateAgent_NewSession(t *testing.T) {
 	}
 
 	a, isNew, isResume, err := svc.resolveOrCreateAgent(
-		context.Background(),
+		t.Context(),
 		&azdext.SendCopilotMessageRequest{Prompt: "test", Headless: true},
 	)
 	require.NoError(t, err)

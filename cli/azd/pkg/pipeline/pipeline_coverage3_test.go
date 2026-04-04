@@ -541,7 +541,7 @@ func Test_PipelineManager_ensureRemote(t *testing.T) {
 	t.Run("success path", func(t *testing.T) {
 		t.Parallel()
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		tmpDir := t.TempDir()
 		azdCtx := azdcontext.NewAzdContextWithDirectory(tmpDir)
 
@@ -583,7 +583,7 @@ func Test_PipelineManager_ensureRemote(t *testing.T) {
 	t.Run("git remote url error propagates", func(t *testing.T) {
 		t.Parallel()
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		tmpDir := t.TempDir()
 		azdCtx := azdcontext.NewAzdContextWithDirectory(tmpDir)
 
@@ -607,7 +607,7 @@ func Test_PipelineManager_ensureRemote(t *testing.T) {
 	t.Run("git branch error propagates", func(t *testing.T) {
 		t.Parallel()
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		tmpDir := t.TempDir()
 		azdCtx := azdcontext.NewAzdContextWithDirectory(tmpDir)
 
@@ -637,7 +637,7 @@ func Test_PipelineManager_ensureRemote(t *testing.T) {
 	t.Run("scm provider gitRepoDetails error propagates", func(t *testing.T) {
 		t.Parallel()
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		tmpDir := t.TempDir()
 		azdCtx := azdcontext.NewAzdContextWithDirectory(tmpDir)
 
@@ -940,7 +940,7 @@ func Test_PipelineManager_initialize(t *testing.T) {
 	t.Run("override with github resolves providers", func(t *testing.T) {
 		t.Parallel()
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		tmpDir := t.TempDir()
 		azdCtx := azdcontext.NewAzdContextWithDirectory(tmpDir)
 
@@ -983,7 +983,7 @@ func Test_PipelineManager_initialize(t *testing.T) {
 	t.Run("override with azdo resolves providers", func(t *testing.T) {
 		t.Parallel()
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		tmpDir := t.TempDir()
 		azdCtx := azdcontext.NewAzdContextWithDirectory(tmpDir)
 
@@ -1022,7 +1022,7 @@ func Test_PipelineManager_initialize(t *testing.T) {
 	t.Run("invalid override returns error", func(t *testing.T) {
 		t.Parallel()
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		tmpDir := t.TempDir()
 		azdCtx := azdcontext.NewAzdContextWithDirectory(tmpDir)
 
@@ -1148,7 +1148,7 @@ func Test_GitHubScmProvider_GitPush(t *testing.T) {
 	t.Run("calls git push upstream", func(t *testing.T) {
 		t.Parallel()
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		pushed := false
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "push")
@@ -1203,7 +1203,7 @@ func Test_GitHubScmProvider_configureGitRemote(t *testing.T) {
 func Test_ensureGitHubLogin_alreadyLoggedIn(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	// Mock gh --version
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -1237,7 +1237,7 @@ func Test_GitHubScmProvider_preConfigureCheck(t *testing.T) {
 	t.Run("success when already logged in", func(t *testing.T) {
 		t.Parallel()
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		setupGithubCliMocksForCov3(mockContext)
 
 		provider := &GitHubScmProvider{
@@ -2004,7 +2004,7 @@ func Test_GitHubCiProvider_credentialOptions_branchSpecialChars(t *testing.T) {
 func Test_GitHubCiProvider_requiredTools_cov3(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	provider := &GitHubCiProvider{
 		ghCli: github.NewGitHubCli(mockContext.Console, mockContext.CommandRunner),
 	}
@@ -2021,7 +2021,7 @@ func Test_GitHubCiProvider_requiredTools_cov3(t *testing.T) {
 func Test_GitHubScmProvider_requiredTools_cov3(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	provider := &GitHubScmProvider{
 		ghCli: github.NewGitHubCli(mockContext.Console, mockContext.CommandRunner),
 	}
@@ -2172,7 +2172,7 @@ func Test_selectRemoteUrl_cov3(t *testing.T) {
 	}
 
 	t.Run("https protocol", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "git_protocol")
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -2186,7 +2186,7 @@ func Test_selectRemoteUrl_cov3(t *testing.T) {
 	})
 
 	t.Run("ssh protocol", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "git_protocol")
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -2200,7 +2200,7 @@ func Test_selectRemoteUrl_cov3(t *testing.T) {
 	})
 
 	t.Run("error getting protocol", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "git_protocol")
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -2220,7 +2220,7 @@ func Test_getRemoteUrlFromPrompt_cov3(t *testing.T) {
 	t.Parallel()
 
 	t.Run("valid github url", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.Console.WhenPrompt(func(options input.ConsoleOptions) bool {
 			return true
 		}).Respond("https://github.com/testowner/testrepo")
@@ -2231,7 +2231,7 @@ func Test_getRemoteUrlFromPrompt_cov3(t *testing.T) {
 	})
 
 	t.Run("error from prompt", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.Console.WhenPrompt(func(options input.ConsoleOptions) bool { return true }).RespondFn(
 			func(options input.ConsoleOptions) (any, error) {
 				return "", errors.New("user cancelled")
@@ -2268,7 +2268,7 @@ func Test_azdoPat_cov3(t *testing.T) {
 	t.Parallel()
 
 	t.Run("pat from env", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		env := environment.NewWithValues("test-env", map[string]string{
 			azdo.AzDoPatName:            "stored-pat-value",
 			azdo.AzDoEnvironmentOrgName: "myorg",
@@ -2286,7 +2286,7 @@ func Test_getCurrentGitBranch_cov3(t *testing.T) {
 	t.Parallel()
 
 	t.Run("success", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "branch") && strings.Contains(command, "--show-current")
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -2303,7 +2303,7 @@ func Test_getCurrentGitBranch_cov3(t *testing.T) {
 	})
 
 	t.Run("error", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "branch")
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -2356,7 +2356,7 @@ func Test_promptForServiceTreeId_cov3(t *testing.T) {
 	t.Parallel()
 
 	t.Run("valid uuid first attempt", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		validUUID := "12345678-1234-1234-1234-123456789abc"
 		mockContext.Console.WhenPrompt(func(options input.ConsoleOptions) bool { return true }).Respond(validUUID)
 
@@ -2367,7 +2367,7 @@ func Test_promptForServiceTreeId_cov3(t *testing.T) {
 	})
 
 	t.Run("with previous invalid shows message", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		validUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 		mockContext.Console.WhenPrompt(func(options input.ConsoleOptions) bool { return true }).Respond(validUUID)
 
@@ -2380,7 +2380,7 @@ func Test_promptForServiceTreeId_cov3(t *testing.T) {
 	})
 
 	t.Run("prompt error", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.Console.WhenPrompt(func(options input.ConsoleOptions) bool { return true }).RespondFn(
 			func(options input.ConsoleOptions) (any, error) {
 				return "", errors.New("cancelled")
@@ -2405,7 +2405,7 @@ func Test_determineProvider_cov3(t *testing.T) {
 		require.NoError(t, os.MkdirAll(ghDir, os.ModePerm))
 		require.NoError(t, os.WriteFile(filepath.Join(ghDir, "azure-dev.yml"), []byte("on: push"), 0600))
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		pm := &PipelineManager{console: mockContext.Console}
 		provider, err := pm.determineProvider(*mockContext.Context, dir)
 		require.NoError(t, err)
@@ -2418,7 +2418,7 @@ func Test_determineProvider_cov3(t *testing.T) {
 		require.NoError(t, os.MkdirAll(azdoDir, os.ModePerm))
 		require.NoError(t, os.WriteFile(filepath.Join(azdoDir, "azure-dev.yml"), []byte("trigger:"), 0600))
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		pm := &PipelineManager{console: mockContext.Console}
 		provider, err := pm.determineProvider(*mockContext.Context, dir)
 		require.NoError(t, err)
@@ -2427,7 +2427,7 @@ func Test_determineProvider_cov3(t *testing.T) {
 
 	t.Run("neither yaml prompts user for github", func(t *testing.T) {
 		dir := t.TempDir()
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		// select index 0 = GitHub Actions
 		mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool { return true }).Respond(0)
 
@@ -2446,7 +2446,7 @@ func Test_determineProvider_cov3(t *testing.T) {
 		require.NoError(t, os.MkdirAll(azdoDir, os.ModePerm))
 		require.NoError(t, os.WriteFile(filepath.Join(azdoDir, "azure-dev.yml"), []byte("trigger:"), 0600))
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		// select index 1 = Azure DevOps
 		mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool { return true }).Respond(1)
 
@@ -2464,7 +2464,7 @@ func Test_promptForProvider_cov3(t *testing.T) {
 	t.Parallel()
 
 	t.Run("select github", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool { return true }).Respond(0)
 
 		pm := &PipelineManager{console: mockContext.Console}
@@ -2474,7 +2474,7 @@ func Test_promptForProvider_cov3(t *testing.T) {
 	})
 
 	t.Run("select azdo", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool { return true }).Respond(1)
 
 		pm := &PipelineManager{console: mockContext.Console}
@@ -2484,7 +2484,7 @@ func Test_promptForProvider_cov3(t *testing.T) {
 	})
 
 	t.Run("prompt error", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool { return true }).RespondFn(
 			func(options input.ConsoleOptions) (any, error) {
 				return 0, errors.New("interrupted")
@@ -2504,7 +2504,7 @@ func Test_StoreRepoDetails_cov3(t *testing.T) {
 	t.Parallel()
 
 	t.Run("success", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		env := environment.NewWithValues("test-env", map[string]string{})
 		envManager := &mockenv.MockEnvManager{}
 		envManager.On("Save", mock.Anything, mock.Anything).Return(nil)
@@ -2534,7 +2534,7 @@ func Test_StoreRepoDetails_cov3(t *testing.T) {
 	})
 
 	t.Run("save error on first call", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		env := environment.NewWithValues("test-env", map[string]string{})
 		envManager := &mockenv.MockEnvManager{}
 		envManager.On("Save", mock.Anything, mock.Anything).Return(errors.New("disk full"))
@@ -2571,7 +2571,7 @@ func Test_setPipelineVariables_cov3(t *testing.T) {
 	t.Parallel()
 
 	t.Run("basic bicep variables", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		// Accept all gh variable set and secret set commands
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "variable") && strings.Contains(command, "set")
@@ -2600,7 +2600,7 @@ func Test_setPipelineVariables_cov3(t *testing.T) {
 	})
 
 	t.Run("bicep with resource group", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "variable") && strings.Contains(command, "set")
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -2629,7 +2629,7 @@ func Test_setPipelineVariables_cov3(t *testing.T) {
 	})
 
 	t.Run("terraform variables", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "variable") && strings.Contains(command, "set")
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -2660,7 +2660,7 @@ func Test_setPipelineVariables_cov3(t *testing.T) {
 	})
 
 	t.Run("terraform missing RS variable", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "variable") && strings.Contains(command, "set")
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -2690,7 +2690,7 @@ func Test_setPipelineVariables_cov3(t *testing.T) {
 	})
 
 	t.Run("set variable error", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "variable") && strings.Contains(command, "set")
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -2726,7 +2726,7 @@ func Test_configureClientCredentialsAuth_cov3(t *testing.T) {
 	t.Parallel()
 
 	t.Run("bicep basic", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "secret") && strings.Contains(command, "set")
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -2756,7 +2756,7 @@ func Test_configureClientCredentialsAuth_cov3(t *testing.T) {
 	})
 
 	t.Run("terraform sets extra vars and secrets", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		// Accept both secrets and variables
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return (strings.Contains(command, "secret") || strings.Contains(command, "variable")) &&
@@ -2788,7 +2788,7 @@ func Test_configureClientCredentialsAuth_cov3(t *testing.T) {
 	})
 
 	t.Run("set secret error", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "secret") && strings.Contains(command, "set")
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -2826,7 +2826,7 @@ func Test_configureConnection_cov3(t *testing.T) {
 	t.Parallel()
 
 	t.Run("federated only", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "variable") && strings.Contains(command, "set")
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -2861,7 +2861,7 @@ func Test_configureConnection_cov3(t *testing.T) {
 	})
 
 	t.Run("with client credentials", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return (strings.Contains(command, "variable") || strings.Contains(command, "secret")) &&
 				strings.Contains(command, "set")
@@ -2906,7 +2906,7 @@ func Test_notifyWhenGitHubActionsAreDisabled_cov3(t *testing.T) {
 	t.Parallel()
 
 	t.Run("actions already enabled upstream", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "actions/workflows")
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -2927,7 +2927,7 @@ func Test_notifyWhenGitHubActionsAreDisabled_cov3(t *testing.T) {
 	})
 
 	t.Run("no upstream actions and no local workflows", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "actions/workflows")
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -2952,7 +2952,7 @@ func Test_notifyWhenGitHubActionsAreDisabled_cov3(t *testing.T) {
 	})
 
 	t.Run("no upstream actions with local tracked workflow user continues", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "actions/workflows")
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -2987,7 +2987,7 @@ func Test_notifyWhenGitHubActionsAreDisabled_cov3(t *testing.T) {
 	})
 
 	t.Run("no upstream actions with local tracked workflow user cancels", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "actions/workflows")
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -3021,7 +3021,7 @@ func Test_notifyWhenGitHubActionsAreDisabled_cov3(t *testing.T) {
 	})
 
 	t.Run("gh api error", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "actions/workflows")
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -3048,7 +3048,7 @@ func Test_pushGitRepo_cov3(t *testing.T) {
 	t.Parallel()
 
 	t.Run("success", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		tempDir := t.TempDir()
 		azdCtx := azdcontext.NewAzdContextWithDirectory(tempDir)
 
@@ -3095,7 +3095,7 @@ func Test_pushGitRepo_cov3(t *testing.T) {
 	})
 
 	t.Run("add file error", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		tempDir := t.TempDir()
 		azdCtx := azdcontext.NewAzdContextWithDirectory(tempDir)
 
@@ -3125,7 +3125,7 @@ func Test_promptForCiFiles_cov3(t *testing.T) {
 	t.Parallel()
 
 	t.Run("user confirms file creation", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool { return true }).Respond(true)
 
 		dir := t.TempDir()
@@ -3145,7 +3145,7 @@ func Test_promptForCiFiles_cov3(t *testing.T) {
 	})
 
 	t.Run("user declines file creation", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool { return true }).Respond(false)
 
 		dir := t.TempDir()
@@ -3165,7 +3165,7 @@ func Test_promptForCiFiles_cov3(t *testing.T) {
 	})
 
 	t.Run("confirm error", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool { return true }).RespondFn(
 			func(options input.ConsoleOptions) (any, error) {
 				return false, errors.New("input error")
@@ -3198,7 +3198,7 @@ func fileExists(path string) bool {
 func Test_getGitRepoDetails_successPath_cov3(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	tempDir := t.TempDir()
 	azdCtx := azdcontext.NewAzdContextWithDirectory(tempDir)
 
@@ -3326,7 +3326,7 @@ func Test_servicePrincipal_lookupById_cov3(t *testing.T) {
 	}
 
 	result, err := servicePrincipal(
-		context.Background(),
+		t.Context(),
 		"",        // envClientId
 		"sub-123", // subscriptionId
 		&PipelineManagerArgs{PipelineServicePrincipalId: "lookup-id"},
@@ -3346,7 +3346,7 @@ func Test_servicePrincipal_lookupByName_notFound_cov3(t *testing.T) {
 	}
 
 	result, err := servicePrincipal(
-		context.Background(),
+		t.Context(),
 		"",
 		"sub-123",
 		&PipelineManagerArgs{PipelineServicePrincipalName: "my-sp-name"},
@@ -3366,7 +3366,7 @@ func Test_servicePrincipal_lookupById_notFound_cov3(t *testing.T) {
 	}
 
 	_, err := servicePrincipal(
-		context.Background(),
+		t.Context(),
 		"",
 		"sub-123",
 		&PipelineManagerArgs{PipelineServicePrincipalId: "missing-id"},
@@ -3385,7 +3385,7 @@ func Test_servicePrincipal_envClientId_notFound_cov3(t *testing.T) {
 	}
 
 	_, err := servicePrincipal(
-		context.Background(),
+		t.Context(),
 		"env-client-id",
 		"sub-123",
 		&PipelineManagerArgs{},
@@ -3401,7 +3401,7 @@ func Test_servicePrincipal_noIdentifiers_fallback_cov3(t *testing.T) {
 	entraIdSvc := &mockEntraIdService3{}
 
 	result, err := servicePrincipal(
-		context.Background(),
+		t.Context(),
 		"",
 		"sub-123",
 		&PipelineManagerArgs{},
@@ -3428,7 +3428,7 @@ func Test_savePipelineProviderToEnv_cov3(t *testing.T) {
 			envManager: envManager,
 		}
 
-		err := pm.savePipelineProviderToEnv(context.Background(), ciProviderGitHubActions, env)
+		err := pm.savePipelineProviderToEnv(t.Context(), ciProviderGitHubActions, env)
 		require.NoError(t, err)
 
 		val, found := env.LookupEnv(envPersistedKey)
@@ -3446,7 +3446,7 @@ func Test_savePipelineProviderToEnv_cov3(t *testing.T) {
 			envManager: envManager,
 		}
 
-		err := pm.savePipelineProviderToEnv(context.Background(), ciProviderAzureDevOps, env)
+		err := pm.savePipelineProviderToEnv(t.Context(), ciProviderAzureDevOps, env)
 		require.Error(t, err)
 	})
 }
@@ -3493,7 +3493,7 @@ func Test_checkAndPromptForProviderFiles_cov3(t *testing.T) {
 	t.Parallel()
 
 	t.Run("files already exist", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		dir := t.TempDir()
 		ghDir := filepath.Join(dir, ".github", "workflows")
 		require.NoError(t, os.MkdirAll(ghDir, os.ModePerm))
@@ -3511,7 +3511,7 @@ func Test_checkAndPromptForProviderFiles_cov3(t *testing.T) {
 	})
 
 	t.Run("files missing user creates", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool { return true }).Respond(true)
 
 		dir := t.TempDir()
@@ -3535,7 +3535,7 @@ func Test_checkAndPromptForProviderFiles_cov3(t *testing.T) {
 // =====================================================================
 func Test_ensureGitHubLogin_alreadyLoggedIn_cov3(t *testing.T) {
 	t.Parallel()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	// Mock GetAuthStatus → success (logged in)
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -3555,7 +3555,7 @@ func Test_ensureGitHubLogin_alreadyLoggedIn_cov3(t *testing.T) {
 
 func Test_ensureGitHubLogin_notLoggedIn_declines_cov3(t *testing.T) {
 	t.Parallel()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	// Mock GetAuthStatus → not logged in (stderr matches regex)
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -3583,7 +3583,7 @@ func Test_ensureGitHubLogin_notLoggedIn_declines_cov3(t *testing.T) {
 
 func Test_ensureGitHubLogin_authStatusError_cov3(t *testing.T) {
 	t.Parallel()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	// Mock GetAuthStatus → unexpected error
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -3602,7 +3602,7 @@ func Test_ensureGitHubLogin_authStatusError_cov3(t *testing.T) {
 
 func Test_ensureGitHubLogin_loginSuccess_cov3(t *testing.T) {
 	t.Parallel()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	// Mock GetAuthStatus → not logged in (stderr matches regex)
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -3647,7 +3647,7 @@ func Test_ensureGitHubLogin_loginSuccess_cov3(t *testing.T) {
 // =====================================================================
 func Test_getRemoteUrlFromExisting_success_cov3(t *testing.T) {
 	t.Parallel()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	// Mock ListRepositories
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -3679,7 +3679,7 @@ func Test_getRemoteUrlFromExisting_success_cov3(t *testing.T) {
 
 func Test_getRemoteUrlFromExisting_listError_cov3(t *testing.T) {
 	t.Parallel()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "repo") && strings.Contains(command, "list")
@@ -3695,7 +3695,7 @@ func Test_getRemoteUrlFromExisting_listError_cov3(t *testing.T) {
 
 func Test_getRemoteUrlFromExisting_noRepos_cov3(t *testing.T) {
 	t.Parallel()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "repo") && strings.Contains(command, "list")
@@ -3714,7 +3714,7 @@ func Test_getRemoteUrlFromExisting_noRepos_cov3(t *testing.T) {
 // =====================================================================
 func Test_getRemoteUrlFromNewRepository_success_cov3(t *testing.T) {
 	t.Parallel()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	// Prompt for repo name
 	mockContext.Console.WhenPrompt(func(options input.ConsoleOptions) bool { return true }).Respond("my-repo")
@@ -3752,7 +3752,7 @@ func Test_getRemoteUrlFromNewRepository_success_cov3(t *testing.T) {
 
 func Test_getRemoteUrlFromNewRepository_createError_cov3(t *testing.T) {
 	t.Parallel()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	// Prompt for repo name
 	mockContext.Console.WhenPrompt(func(options input.ConsoleOptions) bool { return true }).Respond("my-repo")
@@ -3775,7 +3775,7 @@ func Test_getRemoteUrlFromNewRepository_createError_cov3(t *testing.T) {
 // =====================================================================
 func Test_GitHubScmProvider_configureGitRemote_selectExisting_cov3(t *testing.T) {
 	t.Parallel()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	// User selects "Select an existing GitHub project" (index 0)
 	mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
@@ -3819,7 +3819,7 @@ func Test_GitHubScmProvider_configureGitRemote_selectExisting_cov3(t *testing.T)
 
 func Test_GitHubScmProvider_configureGitRemote_createNew_cov3(t *testing.T) {
 	t.Parallel()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	// User selects "Create a new private GitHub repository" (index 1)
 	mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
@@ -3868,7 +3868,7 @@ func Test_GitHubScmProvider_configureGitRemote_createNew_cov3(t *testing.T) {
 
 func Test_GitHubScmProvider_configureGitRemote_enterUrl_cov3(t *testing.T) {
 	t.Parallel()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	// User selects "Enter a remote URL directly" (index 2)
 	mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
@@ -3894,7 +3894,7 @@ func Test_GitHubScmProvider_configureGitRemote_enterUrl_cov3(t *testing.T) {
 
 func Test_GitHubScmProvider_configureGitRemote_selectError_cov3(t *testing.T) {
 	t.Parallel()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	// User cancels select
 	mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool { return true }).RespondFn(
@@ -3919,7 +3919,7 @@ func Test_GitHubScmProvider_configureGitRemote_selectError_cov3(t *testing.T) {
 // =====================================================================
 func Test_GitHubScmProvider_preventGitPush_newRepoCreated_cov3(t *testing.T) {
 	t.Parallel()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	provider := &GitHubScmProvider{
 		console:              mockContext.Console,
@@ -3941,7 +3941,7 @@ func Test_GitHubScmProvider_preventGitPush_newRepoCreated_cov3(t *testing.T) {
 
 func Test_GitHubScmProvider_preventGitPush_existingRepo_actionsEnabled_cov3(t *testing.T) {
 	t.Parallel()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	// Mock GitHubActionsExists → actions already enabled upstream
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -3978,7 +3978,7 @@ func Test_AzdoCiProvider_credentialOptions_clientCredentials_cov3(t *testing.T) 
 	provider := &AzdoCiProvider{}
 
 	opts, err := provider.credentialOptions(
-		context.Background(),
+		t.Context(),
 		&gitRepositoryDetails{},
 		provisioning.Options{},
 		AuthTypeClientCredentials,
@@ -3995,7 +3995,7 @@ func Test_AzdoCiProvider_credentialOptions_unknownType_cov3(t *testing.T) {
 	provider := &AzdoCiProvider{}
 
 	opts, err := provider.credentialOptions(
-		context.Background(),
+		t.Context(),
 		&gitRepositoryDetails{},
 		provisioning.Options{},
 		PipelineAuthType("unknown-type"),
@@ -4011,7 +4011,7 @@ func Test_AzdoCiProvider_credentialOptions_unknownType_cov3(t *testing.T) {
 // =====================================================================
 func Test_getGitRepoDetails_noRepo_initDeclined_cov3(t *testing.T) {
 	t.Parallel()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	azdCtx := azdcontext.NewAzdContextWithDirectory(t.TempDir())
 
 	// Mock GetRemoteUrl → ErrNotRepository
@@ -4045,7 +4045,7 @@ func Test_getGitRepoDetails_noRepo_initDeclined_cov3(t *testing.T) {
 
 func Test_getGitRepoDetails_noRemote_configureGitRemote_cov3(t *testing.T) {
 	t.Parallel()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	azdCtx := azdcontext.NewAzdContextWithDirectory(t.TempDir())
 
 	callCount := 0
@@ -4110,7 +4110,7 @@ func Test_getGitRepoDetails_noRemote_configureGitRemote_cov3(t *testing.T) {
 // =====================================================================
 func Test_GitHubScmProvider_GitPush_cov3(t *testing.T) {
 	t.Parallel()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	// Mock git push
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -4133,7 +4133,7 @@ func Test_GitHubScmProvider_GitPush_cov3(t *testing.T) {
 
 func Test_GitHubScmProvider_GitPush_error_cov3(t *testing.T) {
 	t.Parallel()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	// Mock git push → error
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -4321,7 +4321,7 @@ func Test_parseAzDoRemote_invalid_cov3(t *testing.T) {
 // =====================================================================
 func Test_PipelineManager_ensureRemote_success_cov3(t *testing.T) {
 	t.Parallel()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	dir := t.TempDir()
 	azdCtx := azdcontext.NewAzdContextWithDirectory(dir)
 
@@ -4379,7 +4379,7 @@ func Test_AzdoScmProvider_gitRepoDetails_httpsUrl_cov3(t *testing.T) {
 		}),
 	}
 	details, err := provider.gitRepoDetails(
-		context.Background(),
+		t.Context(),
 		"https://dev.azure.com/myorg/myproject/_git/myrepo",
 	)
 	require.NoError(t, err)
@@ -4400,7 +4400,7 @@ func Test_AzdoScmProvider_gitRepoDetails_sshUrl_cov3(t *testing.T) {
 		}),
 	}
 	details, err := provider.gitRepoDetails(
-		context.Background(),
+		t.Context(),
 		"git@ssh.dev.azure.com:v3/myorg/myproject/myrepo",
 	)
 	require.NoError(t, err)
@@ -4415,7 +4415,7 @@ func Test_AzdoScmProvider_gitRepoDetails_invalidUrl_cov3(t *testing.T) {
 		env: environment.NewWithValues("test-env", map[string]string{}),
 	}
 	_, err := provider.gitRepoDetails(
-		context.Background(),
+		t.Context(),
 		"https://github.com/some/repo",
 	)
 	require.Error(t, err)
@@ -4467,7 +4467,7 @@ func Test_mockScmProvider_configureGitRemote_cov3(t *testing.T) {
 		},
 	}
 
-	url, err := scm.configureGitRemote(context.Background(), "/path", "origin")
+	url, err := scm.configureGitRemote(t.Context(), "/path", "origin")
 	require.NoError(t, err)
 	assert.Equal(t, "https://github.com/owner/repo.git", url)
 }
@@ -4520,7 +4520,7 @@ func Test_pipeline_nameAndUrl_cov3(t *testing.T) {
 // =====================================================================
 func Test_GitHubCiProvider_configurePipeline_noVarsNoSecrets_cov3(t *testing.T) {
 	t.Parallel()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	ghCli := github.NewGitHubCli(mockContext.Console, mockContext.CommandRunner)
 	gitCli := git.NewCli(mockContext.CommandRunner)
@@ -4555,7 +4555,7 @@ func Test_GitHubCiProvider_configurePipeline_noVarsNoSecrets_cov3(t *testing.T) 
 
 func Test_GitHubCiProvider_configurePipeline_withSecretsAndVars_cov3(t *testing.T) {
 	t.Parallel()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	// Mock ListSecrets → empty
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -4619,7 +4619,7 @@ func Test_GitHubCiProvider_configurePipeline_withSecretsAndVars_cov3(t *testing.
 
 func Test_GitHubCiProvider_configurePipeline_listSecretsError_cov3(t *testing.T) {
 	t.Parallel()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	// Mock ListSecrets → error
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -4658,7 +4658,7 @@ func Test_GitHubCiProvider_configurePipeline_listSecretsError_cov3(t *testing.T)
 
 func Test_GitHubCiProvider_configurePipeline_setSecretError_cov3(t *testing.T) {
 	t.Parallel()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	// Mock SetSecret → error
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -4696,7 +4696,7 @@ func Test_GitHubCiProvider_configurePipeline_setSecretError_cov3(t *testing.T) {
 
 func Test_GitHubCiProvider_configurePipeline_existingSecretsUpdateAll_cov3(t *testing.T) {
 	t.Parallel()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	// Mock ListSecrets → has OLD_SEC
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -4753,7 +4753,7 @@ func Test_GitHubCiProvider_configurePipeline_existingSecretsUpdateAll_cov3(t *te
 
 func Test_GitHubCiProvider_configurePipeline_existingVarsUpdateAll_cov3(t *testing.T) {
 	t.Parallel()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	// Mock ListSecrets → empty
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -4815,7 +4815,7 @@ func Test_AzdoCiProvider_configureConnection_federated_cov3(t *testing.T) {
 
 	provider := &AzdoCiProvider{}
 	err := provider.configureConnection(
-		context.Background(),
+		t.Context(),
 		&gitRepositoryDetails{},
 		provisioning.Options{},
 		&authConfiguration{},
@@ -4931,7 +4931,7 @@ func Test_mergeProjectVariablesAndSecrets_singleMappingWithValue_cov3(t *testing
 // =====================================================================
 func Test_PipelineManager_Configure_requiredToolsError_cov3(t *testing.T) {
 	t.Parallel()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	pm := &PipelineManager{
 		scmProvider: &mockScmProvider{
@@ -4972,7 +4972,7 @@ func Test_workflow_nameAndUrl_cov3(t *testing.T) {
 // =====================================================================
 func Test_getGitRepoDetails_remoteUrlEmpty_configureGitRemote_error_cov3(t *testing.T) {
 	t.Parallel()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	dir := t.TempDir()
 
@@ -5026,7 +5026,7 @@ func Test_getGitRepoDetails_remoteUrlEmpty_configureGitRemote_error_cov3(t *test
 // =====================================================================
 func Test_PipelineManager_ensureRemote_gitRepoDetailsError_cov3(t *testing.T) {
 	t.Parallel()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	dir := t.TempDir()
 	azdCtx := azdcontext.NewAzdContextWithDirectory(dir)
@@ -5069,7 +5069,7 @@ func Test_PipelineManager_ensureRemote_gitRepoDetailsError_cov3(t *testing.T) {
 // =====================================================================
 func Test_GitHubCiProvider_configurePipeline_existingSecrets_updateAll_cov3(t *testing.T) {
 	t.Parallel()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	// Mock ListSecrets → returns 2 existing secrets that are also in toBeSetSecrets
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -5140,7 +5140,7 @@ func Test_GitHubCiProvider_configurePipeline_existingSecrets_updateAll_cov3(t *t
 // =====================================================================
 func Test_GitHubCiProvider_configurePipeline_existingVarUnchanged_cov3(t *testing.T) {
 	t.Parallel()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	// Mock ListSecrets → empty
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -5290,7 +5290,7 @@ func Test_mergeProjectVariablesAndSecrets_projectOverrideFromEnv_cov3(t *testing
 // =====================================================================
 func Test_PipelineManager_ensureRemote_getCurrentBranchError_cov3(t *testing.T) {
 	t.Parallel()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	dir := t.TempDir()
 	azdCtx := azdcontext.NewAzdContextWithDirectory(dir)
@@ -5327,7 +5327,7 @@ func Test_PipelineManager_ensureRemote_getCurrentBranchError_cov3(t *testing.T) 
 // =====================================================================
 func Test_AzdoCiProvider_credentialOptions_unknownAuth_cov3(t *testing.T) {
 	t.Parallel()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	provider := &AzdoCiProvider{
 		console: mockContext.Console,
@@ -5350,7 +5350,7 @@ func Test_AzdoCiProvider_credentialOptions_unknownAuth_cov3(t *testing.T) {
 // =====================================================================
 func Test_GitHubCiProvider_configurePipeline_existingVarDiffValue_updateAll_cov3(t *testing.T) {
 	t.Parallel()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	// Mock ListSecrets → empty
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -5420,7 +5420,7 @@ func Test_GitHubCiProvider_configurePipeline_existingVarDiffValue_updateAll_cov3
 // =====================================================================
 func Test_GitHubCiProvider_configurePipeline_unusedSecret_deleteAll_cov3(t *testing.T) {
 	t.Parallel()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	// Mock ListSecrets → 2 existing secrets (UNUSED_SEC_A and UNUSED_SEC_B)
 	// that are in variablesAndSecretsMap (via projectVariables) but NOT in toBeSetSecrets

@@ -3,7 +3,6 @@
 package project
 
 import (
-	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -36,7 +35,7 @@ func Test_HasAppHost_Extended_Coverage3(t *testing.T) {
 				},
 			},
 		}
-		result := im.HasAppHost(context.Background(), prj)
+		result := im.HasAppHost(t.Context(), prj)
 		assert.True(t, result)
 	})
 
@@ -58,7 +57,7 @@ func Test_HasAppHost_Extended_Coverage3(t *testing.T) {
 			},
 		}
 		// Should return false and log the error
-		result := im.HasAppHost(context.Background(), prj)
+		result := im.HasAppHost(t.Context(), prj)
 		assert.False(t, result)
 	})
 
@@ -79,7 +78,7 @@ func Test_HasAppHost_Extended_Coverage3(t *testing.T) {
 				},
 			},
 		}
-		result := im.HasAppHost(context.Background(), prj)
+		result := im.HasAppHost(t.Context(), prj)
 		assert.False(t, result)
 	})
 }
@@ -109,7 +108,7 @@ func Test_functionAppTarget_Package_Coverage3(t *testing.T) {
 			}
 		}()
 
-		result, err := target.Package(context.Background(), svcConfig, svcCtx, progress)
+		result, err := target.Package(t.Context(), svcConfig, svcCtx, progress)
 		progress.Done()
 		require.NoError(t, err)
 		require.NotNil(t, result)
@@ -137,7 +136,7 @@ func Test_functionAppTarget_Package_Coverage3(t *testing.T) {
 			}
 		}()
 
-		result, err := target.Package(context.Background(), nil, svcCtx, progress)
+		result, err := target.Package(t.Context(), nil, svcCtx, progress)
 		progress.Done()
 		require.NoError(t, err)
 		require.NotNil(t, result)
@@ -154,7 +153,7 @@ func Test_functionAppTarget_Package_Coverage3(t *testing.T) {
 			}
 		}()
 
-		_, err := target.Package(context.Background(), nil, svcCtx, progress)
+		_, err := target.Package(t.Context(), nil, svcCtx, progress)
 		progress.Done()
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "no build result")

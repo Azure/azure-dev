@@ -706,7 +706,7 @@ func Test_OverriddenEndpoints_ValidJSON_Coverage3(t *testing.T) {
 	})
 	svcConfig := &ServiceConfig{Name: "myapp"}
 
-	endpoints := OverriddenEndpoints(context.Background(), svcConfig, env)
+	endpoints := OverriddenEndpoints(t.Context(), svcConfig, env)
 	assert.Equal(t, []string{"http://a.com", "http://b.com"}, endpoints)
 }
 
@@ -716,7 +716,7 @@ func Test_OverriddenEndpoints_InvalidJSON_Coverage3(t *testing.T) {
 	})
 	svcConfig := &ServiceConfig{Name: "myapp"}
 
-	endpoints := OverriddenEndpoints(context.Background(), svcConfig, env)
+	endpoints := OverriddenEndpoints(t.Context(), svcConfig, env)
 	assert.Nil(t, endpoints)
 }
 
@@ -724,7 +724,7 @@ func Test_OverriddenEndpoints_Empty_Coverage3(t *testing.T) {
 	env := environment.NewWithValues("test", map[string]string{})
 	svcConfig := &ServiceConfig{Name: "myapp"}
 
-	endpoints := OverriddenEndpoints(context.Background(), svcConfig, env)
+	endpoints := OverriddenEndpoints(t.Context(), svcConfig, env)
 	assert.Nil(t, endpoints)
 }
 

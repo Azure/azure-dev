@@ -4,7 +4,6 @@
 package azapi
 
 import (
-	"context"
 	"net/http"
 	"strings"
 	"testing"
@@ -23,7 +22,7 @@ import (
 // --- APIM ---
 
 func Test_AzureClient_GetApim_Coverage3(t *testing.T) {
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	client := newAzureClientFromMockContext(mockCtx)
 
 	mockCtx.HttpClient.When(func(req *http.Request) bool {
@@ -45,7 +44,7 @@ func Test_AzureClient_GetApim_Coverage3(t *testing.T) {
 }
 
 func Test_AzureClient_PurgeApim_Coverage3(t *testing.T) {
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	client := newAzureClientFromMockContext(mockCtx)
 
 	mockCtx.HttpClient.When(func(req *http.Request) bool {
@@ -62,7 +61,7 @@ func Test_AzureClient_PurgeApim_Coverage3(t *testing.T) {
 // --- AppConfig ---
 
 func Test_AzureClient_GetAppConfig_Coverage3(t *testing.T) {
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	client := newAzureClientFromMockContext(mockCtx)
 
 	mockCtx.HttpClient.When(func(req *http.Request) bool {
@@ -90,7 +89,7 @@ func Test_AzureClient_GetAppConfig_Coverage3(t *testing.T) {
 }
 
 func Test_AzureClient_PurgeAppConfig_Coverage3(t *testing.T) {
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	client := newAzureClientFromMockContext(mockCtx)
 
 	mockCtx.HttpClient.When(func(req *http.Request) bool {
@@ -107,7 +106,7 @@ func Test_AzureClient_PurgeAppConfig_Coverage3(t *testing.T) {
 // --- Log Analytics ---
 
 func Test_AzureClient_GetLogAnalyticsWorkspace_Coverage3(t *testing.T) {
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	client := newAzureClientFromMockContext(mockCtx)
 
 	mockCtx.HttpClient.When(func(req *http.Request) bool {
@@ -132,7 +131,7 @@ func Test_AzureClient_GetLogAnalyticsWorkspace_Coverage3(t *testing.T) {
 }
 
 func Test_AzureClient_PurgeLogAnalyticsWorkspace_Coverage3(t *testing.T) {
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	client := newAzureClientFromMockContext(mockCtx)
 
 	mockCtx.HttpClient.When(func(req *http.Request) bool {
@@ -149,7 +148,7 @@ func Test_AzureClient_PurgeLogAnalyticsWorkspace_Coverage3(t *testing.T) {
 // --- Managed HSM ---
 
 func Test_AzureClient_GetManagedHSM_Coverage3(t *testing.T) {
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	client := newAzureClientFromMockContext(mockCtx)
 
 	mockCtx.HttpClient.When(func(req *http.Request) bool {
@@ -175,7 +174,7 @@ func Test_AzureClient_GetManagedHSM_Coverage3(t *testing.T) {
 }
 
 func Test_AzureClient_PurgeManagedHSM_Coverage3(t *testing.T) {
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	client := newAzureClientFromMockContext(mockCtx)
 
 	pollURL := "https://management.azure.com/subscriptions/SUB/" +
@@ -209,7 +208,7 @@ func Test_AzureClient_PurgeManagedHSM_Coverage3(t *testing.T) {
 // --- WebApp ---
 
 func Test_AzureClient_GetAppServiceProperties_Coverage3(t *testing.T) {
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	client := newAzureClientFromMockContext(mockCtx)
 
 	mockCtx.HttpClient.When(func(req *http.Request) bool {
@@ -240,7 +239,7 @@ func Test_AzureClient_GetAppServiceProperties_Coverage3(t *testing.T) {
 }
 
 func Test_AzureClient_GetAppServiceSlotProperties_Coverage3(t *testing.T) {
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	client := newAzureClientFromMockContext(mockCtx)
 
 	mockCtx.HttpClient.When(func(req *http.Request) bool {

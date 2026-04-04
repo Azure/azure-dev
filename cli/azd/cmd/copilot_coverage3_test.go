@@ -60,7 +60,7 @@ func (m *mockConsentManager) IsProjectScopeAvailable(ctx context.Context) bool {
 
 func testUserConfigManager(t *testing.T) config.UserConfigManager {
 	t.Helper()
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	return config.NewUserConfigManager(mockCtx.ConfigManager)
 }
 
@@ -75,7 +75,7 @@ func Test_CopilotConsentListAction_NoRules(t *testing.T) {
 		mockinput.NewMockConsole(), testUserConfigManager(t),
 		&mockConsentManager{rules: nil},
 	)
-	result, err := action.Run(context.Background())
+	result, err := action.Run(t.Context())
 	require.NoError(t, err)
 	assert.Nil(t, result)
 	assert.Contains(t, buf.String(), "No consent rules found")
@@ -90,7 +90,7 @@ func Test_CopilotConsentListAction_NoRulesWithFilter(t *testing.T) {
 		mockinput.NewMockConsole(), testUserConfigManager(t),
 		&mockConsentManager{rules: nil},
 	)
-	result, err := action.Run(context.Background())
+	result, err := action.Run(t.Context())
 	require.NoError(t, err)
 	assert.Nil(t, result)
 	assert.Contains(t, buf.String(), "No consent rules found matching filters")
@@ -111,7 +111,7 @@ func Test_CopilotConsentListAction_WithRulesJson(t *testing.T) {
 		&output.JsonFormatter{}, buf,
 		mockinput.NewMockConsole(), testUserConfigManager(t), cm,
 	)
-	result, err := action.Run(context.Background())
+	result, err := action.Run(t.Context())
 	require.NoError(t, err)
 	assert.Nil(t, result)
 	assert.Contains(t, buf.String(), "global")
@@ -124,7 +124,7 @@ func Test_CopilotConsentListAction_InvalidScope(t *testing.T) {
 		&output.JsonFormatter{}, &bytes.Buffer{},
 		mockinput.NewMockConsole(), testUserConfigManager(t), &mockConsentManager{},
 	)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 }
 
@@ -135,7 +135,7 @@ func Test_CopilotConsentListAction_InvalidOperation(t *testing.T) {
 		&output.JsonFormatter{}, &bytes.Buffer{},
 		mockinput.NewMockConsole(), testUserConfigManager(t), &mockConsentManager{},
 	)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 }
 
@@ -146,7 +146,7 @@ func Test_CopilotConsentListAction_InvalidAction(t *testing.T) {
 		&output.JsonFormatter{}, &bytes.Buffer{},
 		mockinput.NewMockConsole(), testUserConfigManager(t), &mockConsentManager{},
 	)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 }
 
@@ -157,7 +157,7 @@ func Test_CopilotConsentListAction_InvalidPermission(t *testing.T) {
 		&output.JsonFormatter{}, &bytes.Buffer{},
 		mockinput.NewMockConsole(), testUserConfigManager(t), &mockConsentManager{},
 	)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 }
 
@@ -169,7 +169,7 @@ func Test_CopilotConsentListAction_ListError(t *testing.T) {
 		mockinput.NewMockConsole(), testUserConfigManager(t),
 		&mockConsentManager{listErr: assert.AnError},
 	)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to list consent rules")
 }
@@ -183,7 +183,7 @@ func Test_CopilotConsentListAction_WithTargetFilter(t *testing.T) {
 		mockinput.NewMockConsole(), testUserConfigManager(t),
 		&mockConsentManager{rules: nil},
 	)
-	result, err := action.Run(context.Background())
+	result, err := action.Run(t.Context())
 	require.NoError(t, err)
 	assert.Nil(t, result)
 	assert.Contains(t, buf.String(), "No consent rules found matching filters")
@@ -203,7 +203,7 @@ func Test_CopilotConsentListAction_TableFormat(t *testing.T) {
 		&output.TableFormatter{}, &bytes.Buffer{},
 		mockinput.NewMockConsole(), testUserConfigManager(t), cm,
 	)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 }
 
@@ -223,7 +223,7 @@ func Test_CopilotConsentListAction_NoneFormat(t *testing.T) {
 		&output.NoneFormatter{}, &bytes.Buffer{},
 		mockinput.NewMockConsole(), testUserConfigManager(t), cm,
 	)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "none")
 }
@@ -238,7 +238,7 @@ func Test_CopilotConsentGrantAction_ToolWithoutServer(t *testing.T) {
 		},
 		mockinput.NewMockConsole(), testUserConfigManager(t), &mockConsentManager{},
 	)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	assert.ErrorIs(t, err, internal.ErrInvalidFlagCombination)
 }
@@ -252,7 +252,7 @@ func Test_CopilotConsentGrantAction_GlobalWithServer(t *testing.T) {
 		},
 		mockinput.NewMockConsole(), testUserConfigManager(t), &mockConsentManager{},
 	)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	assert.ErrorIs(t, err, internal.ErrInvalidFlagCombination)
 }
@@ -265,7 +265,7 @@ func Test_CopilotConsentGrantAction_NeitherGlobalNorServer(t *testing.T) {
 		},
 		mockinput.NewMockConsole(), testUserConfigManager(t), &mockConsentManager{},
 	)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	assert.ErrorIs(t, err, internal.ErrInvalidFlagCombination)
 }
@@ -278,7 +278,7 @@ func Test_CopilotConsentGrantAction_InvalidAction(t *testing.T) {
 		},
 		mockinput.NewMockConsole(), testUserConfigManager(t), &mockConsentManager{},
 	)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 }
 
@@ -290,7 +290,7 @@ func Test_CopilotConsentGrantAction_InvalidOperation(t *testing.T) {
 		},
 		mockinput.NewMockConsole(), testUserConfigManager(t), &mockConsentManager{},
 	)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 }
 
@@ -302,7 +302,7 @@ func Test_CopilotConsentGrantAction_InvalidPermission(t *testing.T) {
 		},
 		mockinput.NewMockConsole(), testUserConfigManager(t), &mockConsentManager{},
 	)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 }
 
@@ -314,7 +314,7 @@ func Test_CopilotConsentGrantAction_InvalidScope(t *testing.T) {
 		},
 		mockinput.NewMockConsole(), testUserConfigManager(t), &mockConsentManager{},
 	)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 }
 
@@ -327,7 +327,7 @@ func Test_CopilotConsentGrantAction_SamplingWithTool(t *testing.T) {
 		},
 		mockinput.NewMockConsole(), testUserConfigManager(t), &mockConsentManager{},
 	)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	assert.ErrorIs(t, err, internal.ErrInvalidFlagCombination)
 }
@@ -340,7 +340,7 @@ func Test_CopilotConsentGrantAction_Success_Global(t *testing.T) {
 		},
 		mockinput.NewMockConsole(), testUserConfigManager(t), &mockConsentManager{},
 	)
-	result, err := action.Run(context.Background())
+	result, err := action.Run(t.Context())
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.Contains(t, result.Message.Header, "granted successfully")
@@ -354,7 +354,7 @@ func Test_CopilotConsentGrantAction_Success_ServerTarget(t *testing.T) {
 		},
 		mockinput.NewMockConsole(), testUserConfigManager(t), &mockConsentManager{},
 	)
-	result, err := action.Run(context.Background())
+	result, err := action.Run(t.Context())
 	require.NoError(t, err)
 	require.NotNil(t, result)
 }
@@ -368,7 +368,7 @@ func Test_CopilotConsentGrantAction_Success_ToolTarget(t *testing.T) {
 		},
 		mockinput.NewMockConsole(), testUserConfigManager(t), &mockConsentManager{},
 	)
-	result, err := action.Run(context.Background())
+	result, err := action.Run(t.Context())
 	require.NoError(t, err)
 	require.NotNil(t, result)
 }
@@ -382,7 +382,7 @@ func Test_CopilotConsentGrantAction_GrantError(t *testing.T) {
 		mockinput.NewMockConsole(), testUserConfigManager(t),
 		&mockConsentManager{grantErr: assert.AnError},
 	)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to grant consent")
 }
@@ -396,7 +396,7 @@ func Test_CopilotConsentRevokeAction_Confirmed(t *testing.T) {
 	action := newCopilotConsentRevokeAction(
 		&copilotConsentRevokeFlags{}, mc, testUserConfigManager(t), &mockConsentManager{},
 	)
-	result, err := action.Run(context.Background())
+	result, err := action.Run(t.Context())
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.Contains(t, result.Message.Header, "revoked successfully")
@@ -409,7 +409,7 @@ func Test_CopilotConsentRevokeAction_Cancelled(t *testing.T) {
 	action := newCopilotConsentRevokeAction(
 		&copilotConsentRevokeFlags{}, mc, testUserConfigManager(t), &mockConsentManager{},
 	)
-	result, err := action.Run(context.Background())
+	result, err := action.Run(t.Context())
 	require.NoError(t, err)
 	assert.Nil(t, result)
 }
@@ -423,7 +423,7 @@ func Test_CopilotConsentRevokeAction_WithFilters(t *testing.T) {
 			scope: "global", operation: "tool", target: "my-server", action: "all", permission: "allow",
 		}, mc, testUserConfigManager(t), &mockConsentManager{},
 	)
-	result, err := action.Run(context.Background())
+	result, err := action.Run(t.Context())
 	require.NoError(t, err)
 	require.NotNil(t, result)
 }
@@ -434,7 +434,7 @@ func Test_CopilotConsentRevokeAction_InvalidScope(t *testing.T) {
 		&copilotConsentRevokeFlags{scope: "bad-scope"},
 		mockinput.NewMockConsole(), testUserConfigManager(t), &mockConsentManager{},
 	)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 }
 
@@ -444,7 +444,7 @@ func Test_CopilotConsentRevokeAction_InvalidOperation(t *testing.T) {
 		&copilotConsentRevokeFlags{operation: "bad-op"},
 		mockinput.NewMockConsole(), testUserConfigManager(t), &mockConsentManager{},
 	)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 }
 
@@ -454,7 +454,7 @@ func Test_CopilotConsentRevokeAction_InvalidAction(t *testing.T) {
 		&copilotConsentRevokeFlags{action: "bad-action"},
 		mockinput.NewMockConsole(), testUserConfigManager(t), &mockConsentManager{},
 	)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 }
 
@@ -464,7 +464,7 @@ func Test_CopilotConsentRevokeAction_InvalidPermission(t *testing.T) {
 		&copilotConsentRevokeFlags{permission: "bad-perm"},
 		mockinput.NewMockConsole(), testUserConfigManager(t), &mockConsentManager{},
 	)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 }
 
@@ -476,7 +476,7 @@ func Test_CopilotConsentRevokeAction_ClearError(t *testing.T) {
 		&copilotConsentRevokeFlags{}, mc, testUserConfigManager(t),
 		&mockConsentManager{clearErr: assert.AnError},
 	)
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to clear consent rules")
 }

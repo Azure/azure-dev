@@ -21,90 +21,111 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// --- convertToInt32 / convertToInt tests ---
+// --- convertToInt32 tests (table-driven) ---
 
-func TestConvertToInt32_Nil(t *testing.T) {
+func TestConvertToInt32(t *testing.T) {
 	t.Parallel()
-	require.Nil(t, convertToInt32(nil))
-}
-
-func TestConvertToInt32_Value(t *testing.T) {
-	t.Parallel()
-	val := 42
-	result := convertToInt32(&val)
-	require.NotNil(t, result)
-	require.Equal(t, int32(42), *result)
-}
-
-func TestConvertToInt32_Zero(t *testing.T) {
-	t.Parallel()
-	val := 0
-	result := convertToInt32(&val)
-	require.NotNil(t, result)
-	require.Equal(t, int32(0), *result)
-}
-
-func TestConvertToInt32_Negative(t *testing.T) {
-	t.Parallel()
-	val := -7
-	result := convertToInt32(&val)
-	require.NotNil(t, result)
-	require.Equal(t, int32(-7), *result)
-}
-
-func TestConvertToInt_Nil(t *testing.T) {
-	t.Parallel()
-	require.Nil(t, convertToInt(nil))
-}
-
-func TestConvertToInt_Value(t *testing.T) {
-	t.Parallel()
-	val := int32(99)
-	result := convertToInt(&val)
-	require.NotNil(t, result)
-	require.Equal(t, 99, *result)
-}
-
-func TestConvertToInt_Zero(t *testing.T) {
-	t.Parallel()
-	val := int32(0)
-	result := convertToInt(&val)
-	require.NotNil(t, result)
-	require.Equal(t, 0, *result)
-}
-
-// --- requirePromptSubscriptionID tests ---
-
-func TestRequirePromptSubscriptionID_NilContext(t *testing.T) {
-	t.Parallel()
-	_, err := requirePromptSubscriptionID(nil)
-	require.Error(t, err)
-	st, ok := status.FromError(err)
-	require.True(t, ok)
-	require.Equal(t, codes.InvalidArgument, st.Code())
-}
-
-func TestRequirePromptSubscriptionID_NilScope(t *testing.T) {
-	t.Parallel()
-	_, err := requirePromptSubscriptionID(&azdext.AzureContext{})
-	require.Error(t, err)
-}
-
-func TestRequirePromptSubscriptionID_EmptySubscriptionID(t *testing.T) {
-	t.Parallel()
-	_, err := requirePromptSubscriptionID(&azdext.AzureContext{
-		Scope: &azdext.AzureScope{SubscriptionId: ""},
+	t.Run("nil", func(t *testing.T) {
+		t.Parallel()
+		require.Nil(t, convertToInt32(nil))
 	})
-	require.Error(t, err)
+	for _, tc := range []struct {
+		name     string
+		input    int
+		expected int32
+	}{
+		{"positive", 42, 42},
+		{"zero", 0, 0},
+		{"negative", -7, -7},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			result := convertToInt32(&tc.input)
+			require.NotNil(t, result)
+			require.Equal(t, tc.expected, *result)
+		})
+	}
 }
 
-func TestRequirePromptSubscriptionID_Valid(t *testing.T) {
+// --- convertToInt tests (table-driven) ---
+
+func TestConvertToInt(t *testing.T) {
 	t.Parallel()
-	subId, err := requirePromptSubscriptionID(&azdext.AzureContext{
-		Scope: &azdext.AzureScope{SubscriptionId: "sub-123"},
+	t.Run("nil", func(t *testing.T) {
+		t.Parallel()
+		require.Nil(t, convertToInt(nil))
 	})
-	require.NoError(t, err)
-	require.Equal(t, "sub-123", subId)
+	for _, tc := range []struct {
+		name     string
+		input    int32
+		expected int
+	}{
+		{"positive", 99, 99},
+		{"zero", 0, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			result := convertToInt(&tc.input)
+			require.NotNil(t, result)
+			require.Equal(t, tc.expected, *result)
+		})
+	}
+}
+
+// --- requirePromptSubscriptionID tests (table-driven) ---
+
+func TestRequirePromptSubscriptionID(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		ctx       *azdext.AzureContext
+		wantSubID string
+		wantErr   bool
+		wantCode  codes.Code
+	}{
+		{
+			name:     "nil context",
+			ctx:      nil,
+			wantErr:  true,
+			wantCode: codes.InvalidArgument,
+		},
+		{
+			name:    "nil scope",
+			ctx:     &azdext.AzureContext{},
+			wantErr: true,
+		},
+		{
+			name: "empty subscription ID",
+			ctx: &azdext.AzureContext{
+				Scope: &azdext.AzureScope{SubscriptionId: ""},
+			},
+			wantErr: true,
+		},
+		{
+			name: "valid",
+			ctx: &azdext.AzureContext{
+				Scope: &azdext.AzureScope{SubscriptionId: "sub-123"},
+			},
+			wantSubID: "sub-123",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			subID, err := requirePromptSubscriptionID(tt.ctx)
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.wantCode != 0 {
+					st, ok := status.FromError(err)
+					require.True(t, ok)
+					require.Equal(t, tt.wantCode, st.Code())
+				}
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, tt.wantSubID, subID)
+			}
+		})
+	}
 }
 
 // --- requireSubscriptionID tests (ai_model_service helpers) ---

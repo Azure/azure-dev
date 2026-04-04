@@ -71,7 +71,7 @@ func Test_TemplateSourceListAction_Success(t *testing.T) {
 	formatter := &output.JsonFormatter{}
 	action := newTemplateSourceListAction(formatter, &buf, srcMgr)
 
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 	assert.Contains(t, buf.String(), "default")
 	srcMgr.AssertCalled(t, "List", mock.Anything)
@@ -86,7 +86,7 @@ func Test_TemplateSourceListAction_ListError(t *testing.T) {
 	formatter := &output.NoneFormatter{}
 	action := newTemplateSourceListAction(formatter, &buf, srcMgr)
 
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to list template sources")
 }
@@ -100,7 +100,7 @@ func Test_TemplateSourceListAction_EmptyList(t *testing.T) {
 	formatter := &output.JsonFormatter{}
 	action := newTemplateSourceListAction(formatter, &buf, srcMgr)
 
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 }
 
@@ -115,7 +115,7 @@ func Test_TemplateSourceListAction_JsonFormat(t *testing.T) {
 	formatter := &output.JsonFormatter{}
 	action := newTemplateSourceListAction(formatter, &buf, srcMgr)
 
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 	assert.Contains(t, buf.String(), "default")
 }
@@ -132,7 +132,7 @@ func Test_TemplateSourceRemoveAction_Success(t *testing.T) {
 	console := mockinput.NewMockConsole()
 	action := newTemplateSourceRemoveAction(srcMgr, console, []string{"my-source"})
 
-	result, err := action.Run(context.Background())
+	result, err := action.Run(t.Context())
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.Contains(t, result.Message.Header, "Removed azd template source my-source")
@@ -146,7 +146,7 @@ func Test_TemplateSourceRemoveAction_Error(t *testing.T) {
 	console := mockinput.NewMockConsole()
 	action := newTemplateSourceRemoveAction(srcMgr, console, []string{"bad-source"})
 
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed removing template source")
 }
@@ -159,7 +159,7 @@ func Test_TemplateSourceRemoveAction_CaseInsensitive(t *testing.T) {
 	console := mockinput.NewMockConsole()
 	action := newTemplateSourceRemoveAction(srcMgr, console, []string{"MY-SOURCE"})
 
-	result, err := action.Run(context.Background())
+	result, err := action.Run(t.Context())
 	require.NoError(t, err)
 	require.NotNil(t, result)
 }
@@ -177,7 +177,7 @@ func Test_TemplateSourceAddAction_WellKnownSourceType(t *testing.T) {
 	flags := &templateSourceAddFlags{kind: "default"}
 	action := newTemplateSourceAddAction(flags, console, srcMgr, []string{"my-key"})
 
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "known source type")
 }
@@ -192,7 +192,7 @@ func Test_TemplateSourceAddAction_CustomSource_Success(t *testing.T) {
 	flags := &templateSourceAddFlags{kind: "url", location: "https://example.com/templates.json", name: "My Custom"}
 	action := newTemplateSourceAddAction(flags, console, srcMgr, []string{"my-custom"})
 
-	result, err := action.Run(context.Background())
+	result, err := action.Run(t.Context())
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.Contains(t, result.Message.Header, "Added azd template source my-custom")
@@ -208,7 +208,7 @@ func Test_TemplateSourceAddAction_InvalidSourceType(t *testing.T) {
 	flags := &templateSourceAddFlags{kind: "invalid-type", location: "x"}
 	action := newTemplateSourceAddAction(flags, console, srcMgr, []string{"my-key"})
 
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not supported")
 }
@@ -223,7 +223,7 @@ func Test_TemplateSourceAddAction_CreateSourceError(t *testing.T) {
 	flags := &templateSourceAddFlags{kind: "url", location: "https://bad.com"}
 	action := newTemplateSourceAddAction(flags, console, srcMgr, []string{"my-key"})
 
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "template source validation failed")
 }
@@ -238,7 +238,7 @@ func Test_TemplateSourceAddAction_AddError(t *testing.T) {
 	flags := &templateSourceAddFlags{kind: "url", location: "https://example.com"}
 	action := newTemplateSourceAddAction(flags, console, srcMgr, []string{"my-key"})
 
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed adding template source")
 }
@@ -253,7 +253,7 @@ func Test_TemplateSourceAddAction_WellKnownKey(t *testing.T) {
 	flags := &templateSourceAddFlags{}
 	action := newTemplateSourceAddAction(flags, console, srcMgr, []string{"default"})
 
-	result, err := action.Run(context.Background())
+	result, err := action.Run(t.Context())
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	srcMgr.AssertNotCalled(t, "CreateSource", mock.Anything, mock.Anything)
@@ -275,7 +275,7 @@ func Test_TemplateSourceListAction_TableFormat(t *testing.T) {
 	formatter := &output.TableFormatter{}
 	action := newTemplateSourceListAction(formatter, &buf, srcMgr)
 
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 	assert.Contains(t, buf.String(), "default")
 }
@@ -297,7 +297,7 @@ func Test_TemplateSourceListAction_SingleItem(t *testing.T) {
 	formatter := &output.JsonFormatter{}
 	action := newTemplateSourceListAction(formatter, &buf, srcMgr)
 
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 	assert.Contains(t, buf.String(), "only-one")
 }

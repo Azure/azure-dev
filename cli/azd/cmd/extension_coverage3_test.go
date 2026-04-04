@@ -4,7 +4,6 @@
 package cmd
 
 import (
-	"context"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -54,7 +53,7 @@ func Test_CurrentAzdSemver_PrereleaseStripped(t *testing.T) {
 func Test_SelectDistinctExtension_NoMatches(t *testing.T) {
 	t.Parallel()
 	_, err := selectDistinctExtension(
-		context.Background(),
+		t.Context(),
 		mockinput.NewMockConsole(),
 		"test-ext",
 		[]*extensions.ExtensionMetadata{},
@@ -68,7 +67,7 @@ func Test_SelectDistinctExtension_SingleMatch(t *testing.T) {
 	t.Parallel()
 	meta := &extensions.ExtensionMetadata{Source: "registry"}
 	result, err := selectDistinctExtension(
-		context.Background(),
+		t.Context(),
 		mockinput.NewMockConsole(),
 		"test-ext",
 		[]*extensions.ExtensionMetadata{meta},
@@ -83,7 +82,7 @@ func Test_SelectDistinctExtension_MultipleNoPrompt(t *testing.T) {
 	meta1 := &extensions.ExtensionMetadata{Source: "registry1"}
 	meta2 := &extensions.ExtensionMetadata{Source: "registry2"}
 	_, err := selectDistinctExtension(
-		context.Background(),
+		t.Context(),
 		mockinput.NewMockConsole(),
 		"test-ext",
 		[]*extensions.ExtensionMetadata{meta1, meta2},

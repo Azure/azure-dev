@@ -4,7 +4,6 @@ package project
 
 import (
 	"bytes"
-	"context"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -359,7 +358,7 @@ func (f *fakeLocator_r9) Invoke(_ any) error {
 // ---------- ExternalServiceTarget.RequiredExternalTools: trivial empty ----------
 func Test_ExternalServiceTarget_RequiredExternalTools_Coverage3(t *testing.T) {
 	est := &ExternalServiceTarget{}
-	tools := est.RequiredExternalTools(context.Background(), &ServiceConfig{})
+	tools := est.RequiredExternalTools(t.Context(), &ServiceConfig{})
 	assert.Empty(t, tools)
 }
 

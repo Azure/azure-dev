@@ -123,7 +123,7 @@ func Test_ExtensionShowItem_Display_EmptyCapabilities(t *testing.T) {
 
 func Test_PromptForExtensionChoice_Empty(t *testing.T) {
 	t.Parallel()
-	_, err := promptForExtensionChoice(context.Background(), mockinput.NewMockConsole(), nil)
+	_, err := promptForExtensionChoice(t.Context(), mockinput.NewMockConsole(), nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no extensions")
 }
@@ -132,7 +132,7 @@ func Test_PromptForExtensionChoice_Single(t *testing.T) {
 	t.Parallel()
 	ext := &extensions.ExtensionMetadata{Id: "my.ext", DisplayName: "My Ext"}
 	result, err := promptForExtensionChoice(
-		context.Background(), mockinput.NewMockConsole(),
+		t.Context(), mockinput.NewMockConsole(),
 		[]*extensions.ExtensionMetadata{ext},
 	)
 	require.NoError(t, err)
@@ -147,7 +147,7 @@ func Test_PromptForExtensionChoice_Multiple_SelectFirst(t *testing.T) {
 	}
 	console := mockinput.NewMockConsole()
 	console.WhenSelect(func(options input.ConsoleOptions) bool { return true }).Respond(0)
-	result, err := promptForExtensionChoice(context.Background(), console, exts)
+	result, err := promptForExtensionChoice(t.Context(), console, exts)
 	require.NoError(t, err)
 	assert.Equal(t, "ext.a", result.Id)
 }
@@ -160,7 +160,7 @@ func Test_PromptForExtensionChoice_Multiple_SelectSecond(t *testing.T) {
 	}
 	console := mockinput.NewMockConsole()
 	console.WhenSelect(func(options input.ConsoleOptions) bool { return true }).Respond(1)
-	result, err := promptForExtensionChoice(context.Background(), console, exts)
+	result, err := promptForExtensionChoice(t.Context(), console, exts)
 	require.NoError(t, err)
 	assert.Equal(t, "ext.b", result.Id)
 }
@@ -174,7 +174,7 @@ func Test_PromptForExtensionChoice_Multiple_Error(t *testing.T) {
 	console := mockinput.NewMockConsole()
 	console.WhenSelect(func(options input.ConsoleOptions) bool { return true }).
 		RespondFn(func(_ input.ConsoleOptions) (any, error) { return 0, fmt.Errorf("cancelled") })
-	_, err := promptForExtensionChoice(context.Background(), console, exts)
+	_, err := promptForExtensionChoice(t.Context(), console, exts)
 	require.Error(t, err)
 }
 
@@ -247,7 +247,7 @@ func Test_PrepareHook_InvalidPlatform(t *testing.T) {
 func Test_EnvSetSecretAction_NoArgs(t *testing.T) {
 	t.Parallel()
 	action := &envSetSecretAction{args: []string{}}
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	assert.ErrorIs(t, err, internal.ErrNoArgsProvided)
 }
@@ -261,7 +261,7 @@ func Test_EnvSetSecretAction_WithArgs_SelectError(t *testing.T) {
 		args:    []string{"MY_SECRET"},
 		console: console,
 	}
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "selecting secret setting strategy")
 }
@@ -273,7 +273,7 @@ func Test_EnvSetSecretAction_WithArgs_SelectError(t *testing.T) {
 func Test_ExtensionSourceRemoveAction_NoArgs(t *testing.T) {
 	t.Parallel()
 	action := &extensionSourceRemoveAction{args: []string{}}
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	assert.ErrorIs(t, err, internal.ErrNoArgsProvided)
 }
@@ -281,7 +281,7 @@ func Test_ExtensionSourceRemoveAction_NoArgs(t *testing.T) {
 func Test_ExtensionSourceRemoveAction_TooManyArgs(t *testing.T) {
 	t.Parallel()
 	action := &extensionSourceRemoveAction{args: []string{"a", "b"}}
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	assert.ErrorIs(t, err, internal.ErrInvalidFlagCombination)
 }
@@ -293,7 +293,7 @@ func Test_ExtensionSourceRemoveAction_TooManyArgs(t *testing.T) {
 func Test_ExtensionSourceValidateAction_NoArgs(t *testing.T) {
 	t.Parallel()
 	action := &extensionSourceValidateAction{args: []string{}}
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	assert.ErrorIs(t, err, internal.ErrNoArgsProvided)
 }
@@ -301,7 +301,7 @@ func Test_ExtensionSourceValidateAction_NoArgs(t *testing.T) {
 func Test_ExtensionSourceValidateAction_TooManyArgs(t *testing.T) {
 	t.Parallel()
 	action := &extensionSourceValidateAction{args: []string{"a", "b"}}
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	assert.ErrorIs(t, err, internal.ErrInvalidFlagCombination)
 }
@@ -314,7 +314,7 @@ func Test_ExtensionAction_MissingAnnotation(t *testing.T) {
 	t.Parallel()
 	cmd := &cobra.Command{Use: "test"}
 	action := &extensionAction{cmd: cmd}
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	assert.ErrorIs(t, err, internal.ErrExtensionNotFound)
 }
@@ -363,7 +363,7 @@ func Test_ExtensionSourceListAction_Success(t *testing.T) {
 		formatter:     &output.JsonFormatter{},
 		writer:        buf,
 	}
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 	assert.Contains(t, buf.String(), "mysource")
 }
@@ -378,7 +378,7 @@ func Test_ExtensionSourceListAction_LoadError(t *testing.T) {
 		formatter:     &output.JsonFormatter{},
 		writer:        &bytes.Buffer{},
 	}
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "config broken")
 }
@@ -400,7 +400,7 @@ func Test_ExtensionSourceListAction_TableFormat(t *testing.T) {
 		formatter:     &output.TableFormatter{},
 		writer:        buf,
 	}
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 	assert.Contains(t, buf.String(), "test")
 }
@@ -427,7 +427,7 @@ func Test_ExtensionSourceRemoveAction_Success(t *testing.T) {
 		console:       console,
 		args:          []string{"mysource"},
 	}
-	result, err := action.Run(context.Background())
+	result, err := action.Run(t.Context())
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.Contains(t, result.Message.Header, "mysource")
@@ -451,7 +451,7 @@ func Test_ExtensionSourceRemoveAction_RemoveError(t *testing.T) {
 		console:       console,
 		args:          []string{"nonexistent"},
 	}
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 }
 
@@ -470,7 +470,7 @@ func Test_ExtensionSourceAddAction_InvalidSourceType(t *testing.T) {
 		console:       console,
 		flags:         &extensionSourceAddFlags{name: "bad", location: "somewhere", kind: "badkind"},
 	}
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 }
 
@@ -489,7 +489,7 @@ func Test_ExtensionSourceAddAction_EmptyNameError(t *testing.T) {
 		console:       console,
 		flags:         &extensionSourceAddFlags{name: "", location: "", kind: "file"},
 	}
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 }
 
@@ -501,7 +501,7 @@ func Test_TryAutoInstall_NoAnnotation(t *testing.T) {
 	t.Parallel()
 	cmd := &cobra.Command{Use: "root"}
 	container := ioc.NewNestedContainer(nil)
-	result := tryAutoInstallForPartialNamespace(context.Background(), container, cmd, nil)
+	result := tryAutoInstallForPartialNamespace(t.Context(), container, cmd, nil)
 	assert.False(t, result)
 }
 
@@ -512,7 +512,7 @@ func Test_TryAutoInstall_HasSubcommand(t *testing.T) {
 	root.AddCommand(child)
 	container := ioc.NewNestedContainer(nil)
 	// The "deploy" command already exists as sub-command, so partial namespace shouldn't trigger
-	result := tryAutoInstallForPartialNamespace(context.Background(), container, root, []string{"deploy"})
+	result := tryAutoInstallForPartialNamespace(t.Context(), container, root, []string{"deploy"})
 	assert.False(t, result)
 }
 
@@ -522,7 +522,7 @@ func Test_TryAutoInstall_HasSubcommand(t *testing.T) {
 
 func Test_ProcessHooks_Empty(t *testing.T) {
 	t.Parallel()
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	action := &hooksRunAction{
 		console: mockCtx.Console,
 		flags:   &hooksRunFlags{},
@@ -533,7 +533,7 @@ func Test_ProcessHooks_Empty(t *testing.T) {
 
 func Test_ProcessHooks_EmptySlice(t *testing.T) {
 	t.Parallel()
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	action := &hooksRunAction{
 		console: mockCtx.Console,
 		flags:   &hooksRunFlags{},
@@ -551,7 +551,7 @@ func Test_PromptInitType_FromApp(t *testing.T) {
 	console := mockinput.NewMockConsole()
 	console.WhenSelect(func(options input.ConsoleOptions) bool { return true }).Respond(0)
 
-	result, err := promptInitType(console, context.Background(), nil, nil)
+	result, err := promptInitType(console, t.Context(), nil, nil)
 	require.NoError(t, err)
 	assert.Equal(t, initType(initFromApp), result)
 }
@@ -561,7 +561,7 @@ func Test_PromptInitType_Template(t *testing.T) {
 	console := mockinput.NewMockConsole()
 	console.WhenSelect(func(options input.ConsoleOptions) bool { return true }).Respond(1)
 
-	result, err := promptInitType(console, context.Background(), nil, nil)
+	result, err := promptInitType(console, t.Context(), nil, nil)
 	require.NoError(t, err)
 	assert.Equal(t, initType(initAppTemplate), result)
 }
@@ -572,7 +572,7 @@ func Test_PromptInitType_SelectError(t *testing.T) {
 	console.WhenSelect(func(options input.ConsoleOptions) bool { return true }).
 		RespondFn(func(_ input.ConsoleOptions) (any, error) { return 0, fmt.Errorf("cancelled") })
 
-	_, err := promptInitType(console, context.Background(), nil, nil)
+	_, err := promptInitType(console, t.Context(), nil, nil)
 	require.Error(t, err)
 }
 
@@ -582,7 +582,7 @@ func Test_PromptInitType_SelectError(t *testing.T) {
 
 func Test_ProcessHooks_PrepareError(t *testing.T) {
 	t.Parallel()
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	hooks := []*ext.HookConfig{
 		{Run: "echo hello"},
 	}
@@ -613,7 +613,7 @@ func Test_ExtensionSourceListAction_DefaultSource(t *testing.T) {
 		formatter:     &output.JsonFormatter{},
 		writer:        buf,
 	}
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 	// Default source "azd" should appear
 	assert.Contains(t, buf.String(), "azd")
@@ -638,7 +638,7 @@ func Test_ExtensionSourceAddAction_FileNotFound(t *testing.T) {
 			kind:     "file",
 		},
 	}
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 }
 
@@ -653,7 +653,7 @@ func Test_SelectDistinctExtension_Single(t *testing.T) {
 	}
 	console := mockinput.NewMockConsole()
 	globalOpts := &internal.GlobalCommandOptions{}
-	result, err := selectDistinctExtension(context.Background(), console, "ext.one", exts, globalOpts)
+	result, err := selectDistinctExtension(t.Context(), console, "ext.one", exts, globalOpts)
 	require.NoError(t, err)
 	assert.Equal(t, "ext.one", result.Id)
 }
@@ -662,7 +662,7 @@ func Test_SelectDistinctExtension_Empty(t *testing.T) {
 	t.Parallel()
 	console := mockinput.NewMockConsole()
 	globalOpts := &internal.GlobalCommandOptions{}
-	_, err := selectDistinctExtension(context.Background(), console, "ext.missing", nil, globalOpts)
+	_, err := selectDistinctExtension(t.Context(), console, "ext.missing", nil, globalOpts)
 	require.Error(t, err)
 }
 
@@ -674,7 +674,7 @@ func Test_SelectDistinctExtension_NoPrompt(t *testing.T) {
 	}
 	console := mockinput.NewMockConsole()
 	globalOpts := &internal.GlobalCommandOptions{NoPrompt: true}
-	_, err := selectDistinctExtension(context.Background(), console, "test.ext", exts, globalOpts)
+	_, err := selectDistinctExtension(t.Context(), console, "test.ext", exts, globalOpts)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "found in multiple sources")
 }

@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"testing"
 
@@ -42,7 +41,7 @@ func setDefaultEnv(t *testing.T, azdCtx *azdcontext.AzdContext, name string) {
 func Test_EnvRemoveAction_NoEnvName(t *testing.T) {
 	t.Parallel()
 	azdCtx := newEnvRemoveTestContext(t)
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	envMgr := &mockenv.MockEnvManager{}
 	console := mockinput.NewMockConsole()
 
@@ -64,7 +63,7 @@ func Test_EnvRemoveAction_EnvNotFound_InList(t *testing.T) {
 	flags := &envRemoveFlags{global: &internal.GlobalCommandOptions{}}
 	action := newEnvRemoveAction(azdCtx, envMgr, console, &output.NoneFormatter{}, &bytes.Buffer{}, flags, nil)
 
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "does not exist")
 }
@@ -83,7 +82,7 @@ func Test_EnvRemoveAction_ForceDelete(t *testing.T) {
 	flags := &envRemoveFlags{global: &internal.GlobalCommandOptions{}, force: true}
 	action := newEnvRemoveAction(azdCtx, envMgr, console, &output.NoneFormatter{}, &bytes.Buffer{}, flags, nil)
 
-	result, err := action.Run(context.Background())
+	result, err := action.Run(t.Context())
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.Contains(t, result.Message.Header, "was removed")
@@ -103,7 +102,7 @@ func Test_EnvRemoveAction_DeleteError(t *testing.T) {
 	flags := &envRemoveFlags{global: &internal.GlobalCommandOptions{}, force: true}
 	action := newEnvRemoveAction(azdCtx, envMgr, console, &output.NoneFormatter{}, &bytes.Buffer{}, flags, nil)
 
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "io error")
 }
@@ -122,7 +121,7 @@ func Test_EnvRemoveAction_WithFlagOverride(t *testing.T) {
 	flags.EnvironmentName = "flag-env"
 	action := newEnvRemoveAction(azdCtx, envMgr, console, &output.NoneFormatter{}, &bytes.Buffer{}, flags, nil)
 
-	result, err := action.Run(context.Background())
+	result, err := action.Run(t.Context())
 	require.NoError(t, err)
 	assert.Contains(t, result.Message.Header, "flag-env")
 }
@@ -142,7 +141,7 @@ func Test_EnvRemoveAction_ConfirmDenied(t *testing.T) {
 	flags := &envRemoveFlags{global: &internal.GlobalCommandOptions{}, force: false}
 	action := newEnvRemoveAction(azdCtx, envMgr, console, &output.NoneFormatter{}, &bytes.Buffer{}, flags, nil)
 
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	// When user declines, the return is (nil, nil)
 	require.NoError(t, err)
 }
@@ -158,7 +157,7 @@ func Test_EnvRemoveAction_ListError(t *testing.T) {
 	flags := &envRemoveFlags{global: &internal.GlobalCommandOptions{}}
 	action := newEnvRemoveAction(azdCtx, envMgr, console, &output.NoneFormatter{}, &bytes.Buffer{}, flags, nil)
 
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "db error")
 }
@@ -169,7 +168,7 @@ func Test_EnvRemoveAction_ListError(t *testing.T) {
 
 func Test_ProcessHooks_SkipTrue(t *testing.T) {
 	t.Parallel()
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	hooks := []*ext.HookConfig{
 		{Run: "echo hello"},
 	}
@@ -184,7 +183,7 @@ func Test_ProcessHooks_SkipTrue(t *testing.T) {
 
 func Test_ProcessHooks_NilHooks(t *testing.T) {
 	t.Parallel()
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	action := &hooksRunAction{
 		console: mockCtx.Console,
 		flags:   &hooksRunFlags{},

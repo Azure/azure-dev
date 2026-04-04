@@ -179,7 +179,7 @@ func Test_EnvSetSecretAction_NoArgs_Deeper(t *testing.T) {
 	env := environment.NewWithValues("test", map[string]string{})
 	action := newTestEnvSetSecretAction(console, env, nil, []string{}, nil, nil, nil, nil)
 
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "required arguments not provided")
 }
@@ -196,7 +196,7 @@ func Test_EnvSetSecretAction_SelectStrategyError(t *testing.T) {
 	env := environment.NewWithValues("test", map[string]string{})
 	action := newTestEnvSetSecretAction(console, env, nil, []string{"mySecret"}, nil, nil, nil, nil)
 
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "selecting secret setting strategy")
 }
@@ -214,7 +214,7 @@ func Test_EnvSetSecretAction_InvalidVaultId(t *testing.T) {
 	})
 	action := newTestEnvSetSecretAction(console, env, nil, []string{"mySecret"}, nil, nil, nil, nil)
 
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "parsing key vault resource id")
 }
@@ -239,7 +239,7 @@ func Test_EnvSetSecretAction_ProjectKV_SelectError(t *testing.T) {
 	})
 	action := newTestEnvSetSecretAction(console, env, nil, []string{"mySecret"}, nil, nil, nil, nil)
 
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "selecting key vault option")
 }
@@ -267,7 +267,7 @@ func Test_EnvSetSecretAction_ProjectKV_UseExisting_PromptSubError(t *testing.T) 
 
 	action := newTestEnvSetSecretAction(console, env, nil, []string{"mySecret"}, nil, nil, prompter, nil)
 
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "prompting for subscription")
 }
@@ -292,7 +292,7 @@ func Test_EnvSetSecretAction_VaultNotProvisioned_Cancel(t *testing.T) {
 	}
 	action := newTestEnvSetSecretAction(console, env, nil, []string{"mySecret"}, projCfg, nil, nil, nil)
 
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "operation cancelled by user")
 }
@@ -317,7 +317,7 @@ func Test_EnvSetSecretAction_VaultNotProvisioned_SelectError(t *testing.T) {
 	}
 	action := newTestEnvSetSecretAction(console, env, nil, []string{"mySecret"}, projCfg, nil, nil, nil)
 
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "selecting key vault option")
 }
@@ -345,7 +345,7 @@ func Test_EnvSetSecretAction_VaultNotProvisioned_UseDifferent_PromptSubError(t *
 
 	action := newTestEnvSetSecretAction(console, env, nil, []string{"mySecret"}, projCfg, nil, prompter, nil)
 
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "prompting for subscription")
 }
@@ -366,7 +366,7 @@ func Test_EnvSetSecretAction_NoProject_PromptSubError(t *testing.T) {
 
 	action := newTestEnvSetSecretAction(console, env, nil, []string{"mySecret"}, nil, nil, prompter, nil)
 
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "prompting for subscription")
 }
@@ -390,7 +390,7 @@ func Test_EnvSetSecretAction_LookupTenantError(t *testing.T) {
 
 	action := newTestEnvSetSecretAction(console, env, nil, []string{"mySecret"}, nil, nil, prompter, resolver)
 
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "looking up tenant for subscription")
 }
@@ -418,7 +418,7 @@ func Test_EnvSetSecretAction_ListVaultsError(t *testing.T) {
 
 	action := newTestEnvSetSecretAction(console, env, nil, []string{"mySecret"}, nil, kvSvc, prompter, resolver)
 
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "getting the list of Key Vaults")
 }
@@ -454,7 +454,7 @@ func Test_EnvSetSecretAction_SelectExisting_NoVaults(t *testing.T) {
 
 	action := newTestEnvSetSecretAction(console, env, nil, []string{"mySecret"}, nil, kvSvc, prompter, resolver)
 
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	// The error could be from Select or from a subsequent step
 }
@@ -489,7 +489,7 @@ func Test_EnvSetSecretAction_SelectKVError(t *testing.T) {
 
 	action := newTestEnvSetSecretAction(console, env, nil, []string{"mySecret"}, nil, kvSvc, prompter, resolver)
 
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "selecting Key Vault")
 }
@@ -524,7 +524,7 @@ func Test_EnvSetSecretAction_CreateNewKV_LocationError(t *testing.T) {
 
 	action := newTestEnvSetSecretAction(console, env, nil, []string{"mySecret"}, nil, kvSvc, prompter, resolver)
 
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "prompting for Key Vault location")
 }
@@ -555,7 +555,7 @@ func Test_EnvSetSecretAction_ProjectKV_UseExisting_CreateNewSecret(t *testing.T)
 
 	action := newTestEnvSetSecretAction(console, env, envMgr, []string{"mySecret"}, nil, kvSvc, nil, nil)
 
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "list secrets error")
 }
@@ -581,7 +581,7 @@ func Test_EnvGetValuesAction_WithFlagOverride_Deeper(t *testing.T) {
 		&envGetValuesFlags{EnvFlag: internal.EnvFlag{EnvironmentName: "override-env"}},
 	)
 
-	_, err := action.(*envGetValuesAction).Run(context.Background())
+	_, err := action.(*envGetValuesAction).Run(t.Context())
 	require.NoError(t, err)
 	assert.Contains(t, buf.String(), "KEY1")
 }
@@ -601,7 +601,7 @@ func Test_EnvGetValuesAction_EnvNotFound_Deeper(t *testing.T) {
 		&envGetValuesFlags{},
 	)
 
-	_, err := action.(*envGetValuesAction).Run(context.Background())
+	_, err := action.(*envGetValuesAction).Run(t.Context())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "environment does not exist")
 }
@@ -621,7 +621,7 @@ func Test_EnvGetValuesAction_EnvGetError_Deeper(t *testing.T) {
 		&envGetValuesFlags{},
 	)
 
-	_, err := action.(*envGetValuesAction).Run(context.Background())
+	_, err := action.(*envGetValuesAction).Run(t.Context())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "ensuring environment exists")
 }
@@ -646,7 +646,7 @@ func Test_EnvGetValuesAction_Success_Deeper(t *testing.T) {
 		&envGetValuesFlags{},
 	)
 
-	_, err := action.(*envGetValuesAction).Run(context.Background())
+	_, err := action.(*envGetValuesAction).Run(t.Context())
 	require.NoError(t, err)
 	assert.Contains(t, buf.String(), "MY_VAR")
 }
@@ -698,7 +698,7 @@ func Test_ConfigSetAction_SaveError(t *testing.T) {
 		configManager: cfgMgr,
 		args:          []string{"key1", "value1"},
 	}
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "save failed")
 }
@@ -715,7 +715,7 @@ func Test_ConfigShowAction_JsonFormat(t *testing.T) {
 		formatter:     &output.JsonFormatter{},
 		writer:        &buf,
 	}
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 	assert.Contains(t, buf.String(), "foo")
 }
@@ -731,7 +731,7 @@ func Test_ConfigShowAction_NoneFormat(t *testing.T) {
 		formatter:     &output.NoneFormatter{},
 		writer:        &buf,
 	}
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 }
 
@@ -751,7 +751,7 @@ func Test_ConfigListAction_DelegateToShow(t *testing.T) {
 		console:    console,
 		configShow: showAction,
 	}
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.NoError(t, err)
 }
 
@@ -812,7 +812,7 @@ func Test_EnvSetSecretAction_SelectExisting_VaultListError(t *testing.T) {
 
 	action := newTestEnvSetSecretAction(console, env, nil, []string{"mySecret"}, nil, kvSvc, prompter, resolver)
 
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "getting the list of Key Vaults")
 }
@@ -854,7 +854,7 @@ func Test_EnvSetSecretAction_CreateNew_ExistingVault_ListSecretsError(t *testing
 
 	action := newTestEnvSetSecretAction(console, env, nil, []string{"mySecret"}, nil, kvSvc, prompter, resolver)
 
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 }
 

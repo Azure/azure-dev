@@ -58,7 +58,7 @@ func (f *fakeCompositeFramework_Cov3) SetSource(source FrameworkService) {
 
 func Test_GetFrameworkService_Coverage3(t *testing.T) {
 	t.Run("LanguageNone_WithImage_SetsDocker", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.Container.MustRegisterNamedTransient(string(ServiceLanguageDocker), func() FrameworkService {
 			return &noOpProject{}
 		})
@@ -78,7 +78,7 @@ func Test_GetFrameworkService_Coverage3(t *testing.T) {
 			Project:  &ProjectConfig{Path: t.TempDir()},
 		}
 
-		result, err := sm.GetFrameworkService(context.Background(), svcConfig)
+		result, err := sm.GetFrameworkService(t.Context(), svcConfig)
 		require.NoError(t, err)
 		require.NotNil(t, result)
 		// Language should have been changed to Docker
@@ -86,7 +86,7 @@ func Test_GetFrameworkService_Coverage3(t *testing.T) {
 	})
 
 	t.Run("ResolveSuccess_SimpleLanguage", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.Container.MustRegisterNamedTransient(string(ServiceLanguagePython), func() FrameworkService {
 			return &noOpProject{}
 		})
@@ -105,13 +105,13 @@ func Test_GetFrameworkService_Coverage3(t *testing.T) {
 			Project:  &ProjectConfig{Path: t.TempDir()},
 		}
 
-		result, err := sm.GetFrameworkService(context.Background(), svcConfig)
+		result, err := sm.GetFrameworkService(t.Context(), svcConfig)
 		require.NoError(t, err)
 		require.NotNil(t, result)
 	})
 
 	t.Run("ResolveFailure_UnsupportedLanguage", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		// Don't register anything for "unknown-lang"
 
 		env := environment.NewWithValues("test", map[string]string{})
@@ -128,12 +128,12 @@ func Test_GetFrameworkService_Coverage3(t *testing.T) {
 			Project:  &ProjectConfig{Path: t.TempDir()},
 		}
 
-		_, err := sm.GetFrameworkService(context.Background(), svcConfig)
+		_, err := sm.GetFrameworkService(t.Context(), svcConfig)
 		require.Error(t, err)
 	})
 
 	t.Run("RequiresContainer_WrapsWithComposite", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.Container.MustRegisterNamedTransient(string(ServiceLanguagePython), func() FrameworkService {
 			return &noOpProject{}
 		})
@@ -155,7 +155,7 @@ func Test_GetFrameworkService_Coverage3(t *testing.T) {
 			Project:  &ProjectConfig{Path: t.TempDir()},
 		}
 
-		result, err := sm.GetFrameworkService(context.Background(), svcConfig)
+		result, err := sm.GetFrameworkService(t.Context(), svcConfig)
 		require.NoError(t, err)
 		require.NotNil(t, result)
 	})
@@ -183,7 +183,7 @@ func Test_GetTargetResource_Coverage3(t *testing.T) {
 			Project: &ProjectConfig{},
 		}
 
-		result, err := sm.GetTargetResource(context.Background(), svcConfig, nil)
+		result, err := sm.GetTargetResource(t.Context(), svcConfig, nil)
 		require.NoError(t, err)
 		require.NotNil(t, result)
 		assert.Equal(t, "my-env", result.ResourceName())
@@ -212,7 +212,7 @@ func Test_GetTargetResource_Coverage3(t *testing.T) {
 			Project: &ProjectConfig{},
 		}
 
-		result, err := sm.GetTargetResource(context.Background(), svcConfig, nil)
+		result, err := sm.GetTargetResource(t.Context(), svcConfig, nil)
 		require.NoError(t, err)
 		require.NotNil(t, result)
 		// Should extract last segment from ID
@@ -233,7 +233,7 @@ func Test_GetTargetResource_Coverage3(t *testing.T) {
 			Project: &ProjectConfig{},
 		}
 
-		_, err := sm.GetTargetResource(context.Background(), svcConfig, nil)
+		_, err := sm.GetTargetResource(t.Context(), svcConfig, nil)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "could not determine container app environment")
 	})
@@ -256,7 +256,7 @@ func Test_GetTargetResource_Coverage3(t *testing.T) {
 			Project: &ProjectConfig{},
 		}
 
-		result, err := sm.GetTargetResource(context.Background(), svcConfig, nil)
+		result, err := sm.GetTargetResource(t.Context(), svcConfig, nil)
 		require.NoError(t, err)
 		assert.Equal(t, expected, result)
 	})
@@ -283,7 +283,7 @@ func Test_GetTargetResource_Coverage3(t *testing.T) {
 			Project:           &ProjectConfig{},
 		}
 
-		result, err := sm.GetTargetResource(context.Background(), svcConfig, nil)
+		result, err := sm.GetTargetResource(t.Context(), svcConfig, nil)
 		require.NoError(t, err)
 		require.NotNil(t, result)
 		assert.Equal(t, "env-name", result.ResourceName())
@@ -309,7 +309,7 @@ func Test_GetTargetResource_Coverage3(t *testing.T) {
 			Project:            &ProjectConfig{},
 		}
 
-		result, err := sm.GetTargetResource(context.Background(), svcConfig, nil)
+		result, err := sm.GetTargetResource(t.Context(), svcConfig, nil)
 		require.NoError(t, err)
 		require.NotNil(t, result)
 		// containerEnvName is "" but no error since DotNetContainerApp != nil
@@ -318,7 +318,7 @@ func Test_GetTargetResource_Coverage3(t *testing.T) {
 }
 
 func Test_GetFrameworkService_DockerLanguage_Coverage3(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.Container.MustRegisterNamedTransient(string(ServiceLanguageDocker), func() FrameworkService {
 		return &noOpProject{}
 	})
@@ -334,7 +334,7 @@ func Test_GetFrameworkService_DockerLanguage_Coverage3(t *testing.T) {
 		Project:  &ProjectConfig{Path: t.TempDir()},
 	}
 
-	result, err := sm.GetFrameworkService(context.Background(), svcConfig)
+	result, err := sm.GetFrameworkService(t.Context(), svcConfig)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 }

@@ -1,0 +1,26 @@
+id: negative-general-coding-003
+description: >
+  User asks a general coding question about building a REST API in Express.js.
+  The LLM should provide code, NOT suggest azd commands.
+inputs:
+  prompt: "Write a REST API endpoint in Express.js that returns a list of users."
+graders:
+  - type: text
+    weight: 0.5
+    config:
+      must_not_match:
+        - "azd "
+        - "azd init"
+        - "azd provision"
+        - "azd deploy"
+        - "azd up"
+        - "azure\\.yaml"
+  - type: text
+    weight: 0.3
+    config:
+      must_match:
+        - "(app\\.get|router\\.get|express\\(\\)|req, res)"
+  - type: behavior
+    weight: 0.2
+    config:
+      max_tool_calls: 0

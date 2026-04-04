@@ -1,0 +1,53 @@
+name: "Eval: Waza Runs"
+
+on:
+  schedule:
+    # 5am, 12pm, 8pm UTC, Tuesday through Saturday
+    - cron: "0 5,12,20 * * 2-6"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  waza-run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: "cli/azd/go.mod"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Build azd
+        working-directory: cli/azd
+        run: go build -o ./azd .
+
+      - name: Add azd to PATH
+        run: echo "${{ github.workspace }}/cli/azd" >> "$GITHUB_PATH"
+
+      - name: Install Waza CLI
+        run: npm install -g waza
+
+      - name: Install eval dependencies
+        working-directory: cli/azd/test/eval
+        run: npm ci
+
+      - name: Run Waza evaluations
+        timeout-minutes: 30
+        working-directory: cli/azd/test/eval
+        env:
+          COPILOT_CLI_TOKEN: ${{ secrets.COPILOT_CLI_TOKEN }}
+        run: waza run --executor copilot-sdk
+
+      - name: Upload Waza results
+        if: always()  # Upload results even when evals fail
+        uses: actions/upload-artifact@v4
+        with:
+          name: waza-results-${{ github.run_id }}
+          path: cli/azd/test/eval/reports/
+          retention-days: 30

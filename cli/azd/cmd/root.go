@@ -217,6 +217,9 @@ func newRootCmd(
 		ActionResolver: newUpdateAction,
 		OutputFormats:  []output.Format{output.NoneFormat},
 		DefaultFormat:  output.NoneFormat,
+		GroupingOptions: actions.CommandGroupOptions{
+			RootLevelHelp: actions.CmdGroupBeta,
+		},
 	})
 
 	root.Add("vs-server", &actions.ActionDescriptorOptions{

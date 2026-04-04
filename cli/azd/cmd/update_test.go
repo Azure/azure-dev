@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -100,4 +101,31 @@ func TestPersistNonChannelFlags(t *testing.T) {
 		updateCfg := update.LoadUpdateConfig(cfg)
 		assert.Equal(t, 12, updateCfg.CheckIntervalHours)
 	})
+}
+
+func TestUpdateErrorCodes(t *testing.T) {
+	t.Parallel()
+
+	// Verify telemetry result codes used in updateAction.Run() are non-empty
+	// and follow the expected "update." prefix convention.
+	codes := []string{
+		update.CodeSuccess,
+		update.CodeAlreadyUpToDate,
+		update.CodeVersionCheckFailed,
+		update.CodeSkippedCI,
+		update.CodePackageManagerFailed,
+		update.CodeChannelSwitchDecline,
+		update.CodeReplaceFailed,
+		update.CodeConfigFailed,
+		update.CodeInvalidInput,
+	}
+
+	seen := make(map[string]bool, len(codes))
+	for _, code := range codes {
+		assert.NotEmpty(t, code)
+		assert.True(t, strings.HasPrefix(code, "update."),
+			"code %q should have prefix %q", code, "update.")
+		assert.False(t, seen[code], "duplicate code %q", code)
+		seen[code] = true
+	}
 }

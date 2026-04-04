@@ -26,6 +26,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/pack"
+	"github.com/azure/azure-dev/cli/azd/pkg/update"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/blang/semver/v4"
 	"github.com/stretchr/testify/require"
@@ -397,6 +398,19 @@ func Test_ShouldSkipErrorAnalysis(t *testing.T) {
 	t.Run("Wrapped ErrAbortedByUser is skipped", func(t *testing.T) {
 		t.Parallel()
 		wrapped := fmt.Errorf("preflight declined: %w", internal.ErrAbortedByUser)
+		require.True(t, shouldSkipErrorAnalysis(wrapped))
+	})
+
+	t.Run("UpdateError is skipped", func(t *testing.T) {
+		t.Parallel()
+		err := &update.UpdateError{Code: update.CodeDownloadFailed, Err: errors.New("download failed")}
+		require.True(t, shouldSkipErrorAnalysis(err))
+	})
+
+	t.Run("Wrapped UpdateError is skipped", func(t *testing.T) {
+		t.Parallel()
+		inner := &update.UpdateError{Code: update.CodeReplaceFailed, Err: errors.New("replace failed")}
+		wrapped := fmt.Errorf("update error: %w", inner)
 		require.True(t, shouldSkipErrorAnalysis(wrapped))
 	})
 }

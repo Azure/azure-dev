@@ -34,6 +34,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/pack"
+	"github.com/azure/azure-dev/cli/azd/pkg/update"
 	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"go.opentelemetry.io/otel/codes"
 )
@@ -120,8 +121,16 @@ func shouldSkipErrorAnalysis(err error) bool {
 	}
 
 	// Environment was already initialized
-	_, ok := errors.AsType[*environment.EnvironmentInitError](err)
-	return ok
+	if _, ok := errors.AsType[*environment.EnvironmentInitError](err); ok {
+		return true
+	}
+
+	// Update errors have their own user-facing messages and suggestions
+	if _, ok := errors.AsType[*update.UpdateError](err); ok {
+		return true
+	}
+
+	return false
 }
 
 func NewErrorMiddleware(

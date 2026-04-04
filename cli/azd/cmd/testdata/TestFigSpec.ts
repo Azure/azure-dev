@@ -2829,6 +2829,30 @@ const completionSpec: Fig.Spec = {
 			],
 		},
 		{
+			name: ['update'],
+			description: 'Updates azd to the latest version.',
+			options: [
+				{
+					name: ['--channel'],
+					description: 'Update channel: stable or daily.',
+					args: [
+						{
+							name: 'channel',
+						},
+					],
+				},
+				{
+					name: ['--check-interval-hours'],
+					description: 'Override the update check interval in hours.',
+					args: [
+						{
+							name: 'check-interval-hours',
+						},
+					],
+				},
+			],
+		},
+		{
 			name: ['version'],
 			description: 'Print the version number of Azure Developer CLI.',
 		},
@@ -3622,6 +3646,10 @@ const completionSpec: Fig.Spec = {
 				{
 					name: ['up'],
 					description: 'Provision and deploy your project to Azure with a single command.',
+				},
+				{
+					name: ['update'],
+					description: 'Updates azd to the latest version.',
 				},
 				{
 					name: ['version'],

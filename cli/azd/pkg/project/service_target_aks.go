@@ -135,15 +135,19 @@ func (t *aksTarget) RequiredExternalTools(ctx context.Context, serviceConfig *Se
 	return allTools
 }
 
+// postProvisionEvent is the event fired after provisioning completes.
+// Defined as a constant to avoid magic string repetition.
+const postProvisionEvent = ext.Event("post" + string(ProjectEventProvision))
+
 // Initializes the AKS service target
 func (t *aksTarget) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
 	// Ensure that the k8s context has been configured by the time a deploy operation is performed.
 	// We attach to "postprovision" so that any predeploy or postprovision hooks can take advantage of the configuration
 	err := serviceConfig.Project.AddHandler(
 		ctx,
-		"postprovision",
+		postProvisionEvent,
 		func(ctx context.Context, args ProjectLifecycleEventArgs) error {
-			return t.setK8sContext(ctx, serviceConfig, "postprovision")
+			return t.setK8sContext(ctx, serviceConfig, postProvisionEvent)
 		},
 	)
 
@@ -913,17 +917,15 @@ func (t *aksTarget) setK8sContext(
 	targetResource, err := t.resourceManager.GetTargetResource(
 		ctx, t.env.GetSubscriptionId(), serviceConfig)
 	if err != nil {
-		if eventName == "postprovision" {
-			return t.skipPostprovisionK8sSetup(ctx, err)
-		}
-		return err
+		return t.postprovisionK8sError(ctx, eventName, err)
 	}
 
 	// When the AKS cluster hasn't been provisioned yet the target resource
 	// will have an empty resource name (via SupportsDelayedProvisioning).
 	// During postprovision this is expected in multi-phase provisioning
 	// workflows — skip gracefully instead of failing.
-	if targetResource.ResourceName() == "" && eventName == "postprovision" {
+	if targetResource == nil ||
+		(targetResource.ResourceName() == "" && eventName == postProvisionEvent) {
 		return t.skipPostprovisionK8sSetup(
 			ctx, fmt.Errorf("AKS cluster resource not yet provisioned"))
 	}
@@ -932,18 +934,12 @@ func (t *aksTarget) setK8sContext(
 	_, err = t.ensureClusterContext(
 		ctx, serviceConfig, targetResource, defaultNamespace)
 	if err != nil {
-		if eventName == "postprovision" {
-			return t.skipPostprovisionK8sSetup(ctx, err)
-		}
-		return err
+		return t.postprovisionK8sError(ctx, eventName, err)
 	}
 
 	err = t.ensureNamespace(ctx, defaultNamespace)
 	if err != nil {
-		if eventName == "postprovision" {
-			return t.skipPostprovisionK8sSetup(ctx, err)
-		}
-		return err
+		return t.postprovisionK8sError(ctx, eventName, err)
 	}
 
 	// Display message to the user when we detect they are using a
@@ -957,6 +953,19 @@ func (t *aksTarget) setK8sContext(
 	}
 
 	return nil
+}
+
+// postprovisionK8sError skips gracefully during postprovision events
+// and returns the error for all other events (e.g. predeploy).
+func (t *aksTarget) postprovisionK8sError(
+	ctx context.Context,
+	eventName ext.Event,
+	err error,
+) error {
+	if eventName == postProvisionEvent {
+		return t.skipPostprovisionK8sSetup(ctx, err)
+	}
+	return err
 }
 
 // skipPostprovisionK8sSetup logs a warning and returns nil so that
@@ -974,8 +983,7 @@ func (t *aksTarget) skipPostprovisionK8sSetup(
 	}
 
 	log.Printf(
-		"skipping k8s context setup during postprovision: %s\n",
-		reason.Error())
+		"skipping k8s context setup during postprovision: %v", reason)
 	t.console.Message(ctx, output.WithWarningFormat(
 		"AKS cluster not available yet, skipping Kubernetes "+
 			"context setup. It will be configured when the "+

@@ -1237,7 +1237,7 @@ func Test_Postprovision_GracefulSkip(t *testing.T) {
 
 			err = serviceConfig.Project.RaiseEvent(
 				*mockContext.Context,
-				"postprovision",
+				postProvisionEvent,
 				ProjectLifecycleEventArgs{
 					Project: serviceConfig.Project,
 				},
@@ -1288,7 +1288,7 @@ func Test_Postprovision_Succeeds_When_Cluster_Available(t *testing.T) {
 	// via the normal (non-skip) path.
 	err = serviceConfig.Project.RaiseEvent(
 		*mockContext.Context,
-		"postprovision",
+		postProvisionEvent,
 		ProjectLifecycleEventArgs{
 			Project: serviceConfig.Project,
 		},
@@ -1369,12 +1369,59 @@ func Test_Postprovision_Skips_When_Namespace_Fails(t *testing.T) {
 	// Postprovision should skip gracefully despite namespace failure
 	err = serviceConfig.Project.RaiseEvent(
 		*mockContext.Context,
-		"postprovision",
+		postProvisionEvent,
 		ProjectLifecycleEventArgs{
 			Project: serviceConfig.Project,
 		},
 	)
 	require.NoError(t, err)
+}
+
+func Test_Postprovision_Propagates_Context_Cancellation(t *testing.T) {
+	tempDir := t.TempDir()
+	ostest.Chdir(t, tempDir)
+
+	mockContext := mocks.NewMockContext(t.Context())
+	err := setupMocksForAksTarget(mockContext)
+	require.NoError(t, err)
+
+	serviceConfig := createTestServiceConfig(
+		tempDir, AksTarget, ServiceLanguageTypeScript)
+	env := createEnv()
+
+	resourceManager := &MockResourceManager{}
+	resourceManager.
+		On("GetTargetResource",
+			mock.Anything,
+			"SUBSCRIPTION_ID",
+			serviceConfig).
+		Return(
+			(*environment.TargetResource)(nil),
+			fmt.Errorf("request cancelled"))
+
+	serviceTarget := createAksServiceTargetWithResourceManager(
+		mockContext, env, nil, resourceManager)
+
+	err = serviceTarget.Initialize(
+		*mockContext.Context, serviceConfig)
+	require.NoError(t, err)
+
+	// Create a cancelled context — the skip helper must propagate
+	// the cancellation instead of returning nil.
+	cancelledCtx, cancel := context.WithCancel(*mockContext.Context)
+	cancel()
+
+	err = serviceConfig.Project.RaiseEvent(
+		cancelledCtx,
+		postProvisionEvent,
+		ProjectLifecycleEventArgs{
+			Project: serviceConfig.Project,
+		},
+	)
+	// The EventDispatcher aggregates handler errors via errors.New,
+	// which breaks the error chain. Assert via message content.
+	require.Error(t, err)
+	require.ErrorContains(t, err, "context canceled")
 }
 
 func createAksServiceTargetWithResourceManager(

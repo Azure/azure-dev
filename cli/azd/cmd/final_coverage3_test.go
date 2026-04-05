@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -124,16 +123,14 @@ func newTestUpdateAction(
 	writer *bytes.Buffer,
 	cfgMgr config.UserConfigManager,
 	cmdRunner exec.CommandRunner,
-	alphaMgr *alpha.FeatureManager,
 ) *updateAction {
 	return &updateAction{
-		flags:               flags,
-		console:             console,
-		formatter:           formatter,
-		writer:              writer,
-		configManager:       cfgMgr,
-		commandRunner:       cmdRunner,
-		alphaFeatureManager: alphaMgr,
+		flags:         flags,
+		console:       console,
+		formatter:     formatter,
+		writer:        writer,
+		configManager: cfgMgr,
+		commandRunner: cmdRunner,
 	}
 }
 
@@ -144,7 +141,6 @@ func Test_UpdateAction_Run_OnlyConfigFlags_AlphaNotEnabled(t *testing.T) {
 	clearCIEnv(t)
 
 	cfgMgr := &simpleConfigMgr{}
-	alphaMgr := alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig())
 	console := mockinput.NewMockConsole()
 	var buf bytes.Buffer
 
@@ -153,7 +149,7 @@ func Test_UpdateAction_Run_OnlyConfigFlags_AlphaNotEnabled(t *testing.T) {
 		checkIntervalHours: 12,
 	}
 
-	action := newTestUpdateAction(flags, console, &output.JsonFormatter{}, &buf, cfgMgr, &noopCommandRunner{}, alphaMgr)
+	action := newTestUpdateAction(flags, console, &output.JsonFormatter{}, &buf, cfgMgr, &noopCommandRunner{})
 	result, err := action.Run(t.Context())
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -169,7 +165,6 @@ func Test_UpdateAction_Run_OnlyConfigFlags_AlphaEnabled(t *testing.T) {
 	cfg := config.NewEmptyConfig()
 	_ = cfg.Set("alpha.update", "on")
 	cfgMgr := &simpleConfigMgr{cfg: cfg}
-	alphaMgr := alpha.NewFeaturesManagerWithConfig(cfg)
 	console := mockinput.NewMockConsole()
 	var buf bytes.Buffer
 
@@ -178,7 +173,7 @@ func Test_UpdateAction_Run_OnlyConfigFlags_AlphaEnabled(t *testing.T) {
 		checkIntervalHours: 24,
 	}
 
-	action := newTestUpdateAction(flags, console, &output.JsonFormatter{}, &buf, cfgMgr, &noopCommandRunner{}, alphaMgr)
+	action := newTestUpdateAction(flags, console, &output.JsonFormatter{}, &buf, cfgMgr, &noopCommandRunner{})
 	result, err := action.Run(t.Context())
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -191,7 +186,6 @@ func Test_UpdateAction_Run_SaveConfigError(t *testing.T) {
 	clearCIEnv(t)
 
 	cfgMgr := &failSaveConfigMgr{}
-	alphaMgr := alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig())
 	console := mockinput.NewMockConsole()
 	var buf bytes.Buffer
 
@@ -200,7 +194,7 @@ func Test_UpdateAction_Run_SaveConfigError(t *testing.T) {
 		checkIntervalHours: 12,
 	}
 
-	action := newTestUpdateAction(flags, console, &output.JsonFormatter{}, &buf, cfgMgr, &noopCommandRunner{}, alphaMgr)
+	action := newTestUpdateAction(flags, console, &output.JsonFormatter{}, &buf, cfgMgr, &noopCommandRunner{})
 	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "save failed")
@@ -216,13 +210,12 @@ func Test_UpdateAction_Run_CI_Blocked(t *testing.T) {
 	cfg := config.NewEmptyConfig()
 	_ = cfg.Set("alpha.update", "on")
 	cfgMgr := &simpleConfigMgr{cfg: cfg}
-	alphaMgr := alpha.NewFeaturesManagerWithConfig(cfg)
 	console := mockinput.NewMockConsole()
 	var buf bytes.Buffer
 
 	flags := &updateFlags{}
 
-	action := newTestUpdateAction(flags, console, &output.JsonFormatter{}, &buf, cfgMgr, &noopCommandRunner{}, alphaMgr)
+	action := newTestUpdateAction(flags, console, &output.JsonFormatter{}, &buf, cfgMgr, &noopCommandRunner{})
 	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "CI/CD")
@@ -235,7 +228,6 @@ func Test_UpdateAction_Run_SwitchChannel_CheckForUpdateError(t *testing.T) {
 	cfg := config.NewEmptyConfig()
 	_ = cfg.Set("alpha.update", "on")
 	cfgMgr := &simpleConfigMgr{cfg: cfg}
-	alphaMgr := alpha.NewFeaturesManagerWithConfig(cfg)
 	console := mockinput.NewMockConsole()
 	// Handle any Confirm prompts (like "Switch from stable to daily?")
 	console.WhenConfirm(func(options input.ConsoleOptions) bool {
@@ -247,7 +239,7 @@ func Test_UpdateAction_Run_SwitchChannel_CheckForUpdateError(t *testing.T) {
 		channel: "daily",
 	}
 
-	action := newTestUpdateAction(flags, console, &output.JsonFormatter{}, &buf, cfgMgr, &noopCommandRunner{}, alphaMgr)
+	action := newTestUpdateAction(flags, console, &output.JsonFormatter{}, &buf, cfgMgr, &noopCommandRunner{})
 	_, err := action.Run(t.Context())
 	// This will either fail at CI check, package manager check, or CheckForUpdate
 	require.Error(t, err)
@@ -260,14 +252,13 @@ func Test_UpdateAction_Run_NoChannelNoConfigFlags(t *testing.T) {
 	cfg := config.NewEmptyConfig()
 	_ = cfg.Set("alpha.update", "on")
 	cfgMgr := &simpleConfigMgr{cfg: cfg}
-	alphaMgr := alpha.NewFeaturesManagerWithConfig(cfg)
 	console := mockinput.NewMockConsole()
 	var buf bytes.Buffer
 
 	// No channel, no checkIntervalHours => onlyConfigFlagsSet() == false
 	flags := &updateFlags{}
 
-	action := newTestUpdateAction(flags, console, &output.JsonFormatter{}, &buf, cfgMgr, &noopCommandRunner{}, alphaMgr)
+	action := newTestUpdateAction(flags, console, &output.JsonFormatter{}, &buf, cfgMgr, &noopCommandRunner{})
 	_, err := action.Run(t.Context())
 	// Will fail at CI check or CheckForUpdate since noopCommandRunner returns error
 	require.Error(t, err)
@@ -378,18 +369,14 @@ func Test_GenerateCertificate_Success(t *testing.T) {
 
 func Test_ChannelSuffix_FeatureDisabled(t *testing.T) {
 	t.Parallel()
-	alphaMgr := alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig())
-	v := &versionAction{alphaFeatureManager: alphaMgr}
-	require.Equal(t, "", v.channelSuffix())
+	v := &versionAction{}
+	require.Equal(t, " (stable)", v.channelSuffix())
 }
 
 func Test_ChannelSuffix_FeatureEnabled_StableBuild(t *testing.T) {
 	// Enable alpha feature and set Version to stable
 	setProdVersion(t)
-	cfg := config.NewEmptyConfig()
-	_ = cfg.Set("alpha.update", "on")
-	alphaMgr := alpha.NewFeaturesManagerWithConfig(cfg)
-	v := &versionAction{alphaFeatureManager: alphaMgr}
+	v := &versionAction{}
 	require.Equal(t, " (stable)", v.channelSuffix())
 }
 
@@ -399,10 +386,7 @@ func Test_ChannelSuffix_FeatureEnabled_DailyBuild(t *testing.T) {
 	internal.Version = "1.0.0-daily.12345 (commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa)"
 	t.Cleanup(func() { internal.Version = orig })
 
-	cfg := config.NewEmptyConfig()
-	_ = cfg.Set("alpha.update", "on")
-	alphaMgr := alpha.NewFeaturesManagerWithConfig(cfg)
-	v := &versionAction{alphaFeatureManager: alphaMgr}
+	v := &versionAction{}
 	require.Equal(t, " (daily)", v.channelSuffix())
 }
 
@@ -1235,11 +1219,9 @@ func Test_SelectDistinctExtension_MultiMatch_NoPrompt(t *testing.T) {
 func Test_VersionAction_Run_FormatPath(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
-	alphaMgr := alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig())
 	v := &versionAction{
-		formatter:           &output.JsonFormatter{},
-		writer:              &buf,
-		alphaFeatureManager: alphaMgr,
+		formatter: &output.JsonFormatter{},
+		writer:    &buf,
 	}
 	_, err := v.Run(t.Context())
 	require.NoError(t, err)

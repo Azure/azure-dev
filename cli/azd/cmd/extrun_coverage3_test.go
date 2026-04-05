@@ -300,7 +300,7 @@ func Test_NewUpdateAction_Fields(t *testing.T) {
 	formatter := &output.NoneFormatter{}
 	writer := &bytes.Buffer{}
 	flags := &updateFlags{}
-	action := newUpdateAction(flags, console, formatter, writer, nil, nil, nil)
+	action := newUpdateAction(flags, console, formatter, writer, nil, nil)
 	require.NotNil(t, action)
 }
 

@@ -139,7 +139,7 @@ func Test_NewUpdateAction_Constructor(t *testing.T) {
 	flags := &updateFlags{}
 	console := mockinput.NewMockConsole()
 	formatter := &output.JsonFormatter{}
-	a := newUpdateAction(flags, console, formatter, io.Discard, nil, nil, nil)
+	a := newUpdateAction(flags, console, formatter, io.Discard, nil, nil)
 	ua := a.(*updateAction)
 	require.Same(t, flags, ua.flags)
 }

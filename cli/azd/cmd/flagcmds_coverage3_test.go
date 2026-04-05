@@ -569,9 +569,8 @@ func Test_NewConfigOptionsAction(t *testing.T) {
 
 func Test_NewVersionAction(t *testing.T) {
 	t.Parallel()
-	fm := alpha.NewFeaturesManager(&testConfigMgr{})
 	console := mockinput.NewMockConsole()
-	a := newVersionAction(&versionFlags{}, &output.JsonFormatter{}, &bytes.Buffer{}, console, fm)
+	a := newVersionAction(&versionFlags{}, &output.JsonFormatter{}, &bytes.Buffer{}, console)
 	require.NotNil(t, a)
 }
 
@@ -610,7 +609,6 @@ func Test_NewCompletionPowerShellAction(t *testing.T) {
 func Test_UpdateAction_Run_NonProdVersion(t *testing.T) {
 	// In test builds, IsNonProdVersion() returns true, so Run exits immediately.
 	console := mockinput.NewMockConsole()
-	fm := alpha.NewFeaturesManager(&testConfigMgr{})
 	a := newUpdateAction(
 		&updateFlags{},
 		console,
@@ -618,7 +616,6 @@ func Test_UpdateAction_Run_NonProdVersion(t *testing.T) {
 		&bytes.Buffer{},
 		&testConfigMgr{},
 		nil, // commandRunner not needed – early exit
-		fm,
 	)
 
 	_, err := a.(*updateAction).Run(t.Context())
@@ -915,9 +912,8 @@ func (m *mockKvSvcForSelect) SecretFromKeyVaultReference(ctx context.Context, re
 func Test_VersionAction_Run(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
-	fm := alpha.NewFeaturesManager(&testConfigMgr{})
 	console := mockinput.NewMockConsole()
-	a := newVersionAction(&versionFlags{}, &output.JsonFormatter{}, &buf, console, fm)
+	a := newVersionAction(&versionFlags{}, &output.JsonFormatter{}, &buf, console)
 	_, err := a.(*versionAction).Run(t.Context())
 	require.NoError(t, err)
 }

@@ -243,7 +243,6 @@ func Test_NewUpdateAction(t *testing.T) {
 		&bytes.Buffer{},
 		nil, // configManager
 		nil, // commandRunner
-		nil, // alphaFeatureManager
 	)
 	require.NotNil(t, action)
 }

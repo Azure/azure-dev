@@ -802,6 +802,7 @@ func createLocalTemplateDir(t *testing.T, sourceTestData string) string {
 		if err != nil {
 			return err
 		}
+		//nolint:gosec // G703: test paths are controlled
 		return os.WriteFile(filepath.Join(dir, relTarget), content, 0600)
 	})
 	require.NoError(t, err)

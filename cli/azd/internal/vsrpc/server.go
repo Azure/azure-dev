@@ -90,7 +90,7 @@ func (s *Server) Serve(l net.Listener) error {
 	}
 
 	// Run upload periodically in the background while the server is running.
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.Background()) //nolint:gosec // G118: cancel stored in s.cancelTelemetryUpload
 	ts := telemetry.GetTelemetrySystem()
 	backgroundTelemetry := func() {
 		ticker := time.NewTicker(5 * time.Second)
@@ -213,6 +213,7 @@ func serveRpc(w http.ResponseWriter, r *http.Request, handlers map[string]Handle
 			call, isCall := req.(*jsonrpc2.Call)
 			if isCall {
 				span.SetAttributes(fields.JsonRpcId.String(fmt.Sprint(call.ID())))
+				//nolint:gosec // G118: cancel stored in cancelers map and called on completion
 				ctx, cancel := context.WithCancel(ctx)
 				childCtx = ctx
 				cancelersMu.Lock()

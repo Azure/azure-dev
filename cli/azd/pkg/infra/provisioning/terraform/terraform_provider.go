@@ -748,6 +748,7 @@ func (t *TerraformProvider) createInputParametersFile(
 	}
 
 	log.Printf("Writing parameters file to: %s", inputFilePath)
+	//nolint:gosec // G703: path derived from infra config, not user input
 	err = os.WriteFile(inputFilePath, []byte(replaced), 0600)
 	if err != nil {
 		return fmt.Errorf("writing parameter file: %w", err)

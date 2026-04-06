@@ -158,7 +158,7 @@ func Preflight() error {
 
 	// Check required tools are installed before running anything.
 	if err := requireTool("golangci-lint",
-		"go install github.com/golangci/golangci-lint/cmd/golangci-lint@v2.10.1"); err != nil {
+		"go install github.com/golangci/golangci-lint/cmd/golangci-lint@v2.11.4"); err != nil {
 		return err
 	}
 	if err := requireTool("cspell", "npm install -g cspell@8.13.1"); err != nil {

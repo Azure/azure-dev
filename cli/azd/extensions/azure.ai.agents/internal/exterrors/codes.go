@@ -108,4 +108,8 @@ const (
 	OpCreateAgent           = "create_agent"
 	OpStartContainer        = "start_container"
 	OpGetContainerOperation = "get_container_operation"
+	OpCreateSession         = "create_session"
+	OpGetSession            = "get_session"
+	OpDeleteSession         = "delete_session"
+	OpListSessions          = "list_sessions"
 )

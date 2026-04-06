@@ -1270,3 +1270,216 @@ func (c *AgentClient) StatSessionFile(
 
 	return &fileInfo, nil
 }
+
+// ---------------------------------------------------------------------------
+// Session Lifecycle Operations
+// ---------------------------------------------------------------------------
+
+// CreateSession creates a new session for an agent endpoint.
+func (c *AgentClient) CreateSession(
+	ctx context.Context,
+	agentName, isolationKey string,
+	request *CreateAgentSessionRequest,
+	apiVersion string,
+) (*AgentSessionResource, error) {
+	u, err := url.Parse(c.endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("invalid endpoint URL: %w", err)
+	}
+
+	u.Path += fmt.Sprintf("/agents/%s/endpoint/sessions", agentName)
+
+	query := u.Query()
+	query.Set("api-version", apiVersion)
+	u.RawQuery = query.Encode()
+
+	payload, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := runtime.NewRequest(ctx, http.MethodPost, u.String())
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	if err := req.SetBody(
+		streaming.NopCloser(bytes.NewReader(payload)),
+		"application/json",
+	); err != nil {
+		return nil, fmt.Errorf("failed to set request body: %w", err)
+	}
+
+	req.Raw().Header.Set("Foundry-Features", "AgentEndpoints=V1Preview")
+	if isolationKey != "" {
+		req.Raw().Header.Set("x-session-isolation-key", isolationKey)
+	}
+
+	resp, err := c.pipeline.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if !runtime.HasStatusCode(resp, http.StatusOK) {
+		return nil, runtime.NewResponseError(resp)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	var session AgentSessionResource
+	if err := json.Unmarshal(body, &session); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &session, nil
+}
+
+// GetSession retrieves a session by ID.
+func (c *AgentClient) GetSession(
+	ctx context.Context,
+	agentName, sessionID, apiVersion string,
+) (*AgentSessionResource, error) {
+	u, err := url.Parse(c.endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("invalid endpoint URL: %w", err)
+	}
+
+	u.Path += fmt.Sprintf(
+		"/agents/%s/endpoint/sessions/%s",
+		agentName, sessionID,
+	)
+
+	query := u.Query()
+	query.Set("api-version", apiVersion)
+	u.RawQuery = query.Encode()
+
+	req, err := runtime.NewRequest(ctx, http.MethodGet, u.String())
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Raw().Header.Set("Foundry-Features", "AgentEndpoints=V1Preview")
+
+	resp, err := c.pipeline.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if !runtime.HasStatusCode(resp, http.StatusOK) {
+		return nil, runtime.NewResponseError(resp)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	var session AgentSessionResource
+	if err := json.Unmarshal(body, &session); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &session, nil
+}
+
+// DeleteSession deletes a session synchronously.
+func (c *AgentClient) DeleteSession(
+	ctx context.Context,
+	agentName, sessionID, isolationKey, apiVersion string,
+) error {
+	u, err := url.Parse(c.endpoint)
+	if err != nil {
+		return fmt.Errorf("invalid endpoint URL: %w", err)
+	}
+
+	u.Path += fmt.Sprintf(
+		"/agents/%s/endpoint/sessions/%s",
+		agentName, sessionID,
+	)
+
+	query := u.Query()
+	query.Set("api-version", apiVersion)
+	u.RawQuery = query.Encode()
+
+	req, err := runtime.NewRequest(ctx, http.MethodDelete, u.String())
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Raw().Header.Set("Foundry-Features", "AgentEndpoints=V1Preview")
+	if isolationKey != "" {
+		req.Raw().Header.Set("x-session-isolation-key", isolationKey)
+	}
+
+	resp, err := c.pipeline.Do(req)
+	if err != nil {
+		return fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if !runtime.HasStatusCode(resp, http.StatusNoContent) {
+		return runtime.NewResponseError(resp)
+	}
+
+	return nil
+}
+
+// ListSessions returns a list of sessions for the specified agent.
+func (c *AgentClient) ListSessions(
+	ctx context.Context,
+	agentName string,
+	limit *int32,
+	paginationToken *string,
+	apiVersion string,
+) (*SessionListResult, error) {
+	u, err := url.Parse(c.endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("invalid endpoint URL: %w", err)
+	}
+
+	u.Path += fmt.Sprintf("/agents/%s/endpoint/sessions", agentName)
+
+	query := u.Query()
+	query.Set("api-version", apiVersion)
+	if limit != nil {
+		query.Set("limit", strconv.Itoa(int(*limit)))
+	}
+	if paginationToken != nil && *paginationToken != "" {
+		query.Set("pagination_token", *paginationToken)
+	}
+	u.RawQuery = query.Encode()
+
+	req, err := runtime.NewRequest(ctx, http.MethodGet, u.String())
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Raw().Header.Set("Foundry-Features", "AgentEndpoints=V1Preview")
+
+	resp, err := c.pipeline.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if !runtime.HasStatusCode(resp, http.StatusOK) {
+		return nil, runtime.NewResponseError(resp)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	var result SessionListResult
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &result, nil
+}

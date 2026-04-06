@@ -19,18 +19,14 @@ import (
 )
 
 type fakeSubscriptionResolver struct {
-	subscription         *account.Subscription
-	lookupTenantCalls    int
-	getSubscriptionCalls int
+	subscription *account.Subscription
+	getCalls     int
 }
 
-func (f *fakeSubscriptionResolver) LookupTenant(ctx context.Context, subscriptionId string) (string, error) {
-	f.lookupTenantCalls++
-	return "home-tenant", nil
-}
-
-func (f *fakeSubscriptionResolver) GetSubscription(ctx context.Context, subscriptionId string) (*account.Subscription, error) {
-	f.getSubscriptionCalls++
+func (f *fakeSubscriptionResolver) GetSubscription(
+	ctx context.Context, subscriptionId string,
+) (*account.Subscription, error) {
+	f.getCalls++
 	return f.subscription, nil
 }
 
@@ -78,6 +74,5 @@ func TestPrincipalIDProvider_CurrentPrincipalIdUsesSubscriptionTenant(t *testing
 	principalId, err := provider.CurrentPrincipalId(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, "this-is-a-test", principalId)
-	require.Equal(t, 1, resolver.getSubscriptionCalls)
-	require.Zero(t, resolver.lookupTenantCalls)
+	require.Equal(t, 1, resolver.getCalls)
 }

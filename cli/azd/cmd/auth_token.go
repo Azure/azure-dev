@@ -59,7 +59,7 @@ type authTokenAction struct {
 	formatter          output.Formatter
 	writer             io.Writer
 	envResolver        environment.EnvironmentResolver
-	subResolver        account.SubscriptionTenantResolver
+	subResolver        account.SubscriptionResolver
 	flags              *authTokenFlags
 	cloud              *cloud.Cloud
 }
@@ -70,7 +70,7 @@ func newAuthTokenAction(
 	writer io.Writer,
 	flags *authTokenFlags,
 	envResolver environment.EnvironmentResolver,
-	subResolver account.SubscriptionTenantResolver,
+	subResolver account.SubscriptionResolver,
 	cloud *cloud.Cloud,
 ) actions.Action {
 	return &authTokenAction{
@@ -87,7 +87,7 @@ func newAuthTokenAction(
 func getTenantIdFromAzdEnv(
 	ctx context.Context,
 	envResolver environment.EnvironmentResolver,
-	subResolver account.SubscriptionTenantResolver) (tenantId string, err error) {
+	subResolver account.SubscriptionResolver) (tenantId string, err error) {
 	azdEnv, err := envResolver(ctx)
 	if err != nil {
 		// No azd env, return empty tenantId
@@ -100,20 +100,21 @@ func getTenantIdFromAzdEnv(
 		return tenantId, nil
 	}
 
-	tenantId, err = subResolver.LookupTenant(ctx, subIdAtAzdEnv)
+	subscription, err := subResolver.GetSubscription(ctx, subIdAtAzdEnv)
 	if err != nil {
 		return tenantId, fmt.Errorf(
-			"resolving the Azure Directory from azd environment (%s): %w",
+			"getting the subscription from azd environment (%s): %w",
 			azdEnv.Name(),
 			err)
 	}
+	tenantId = subscription.UserAccessTenantId
 
 	return tenantId, nil
 }
 
 func getTenantIdFromEnv(
 	ctx context.Context,
-	subResolver account.SubscriptionTenantResolver) (tenantId string, err error) {
+	subResolver account.SubscriptionResolver) (tenantId string, err error) {
 
 	subIdAtSysEnv, found := os.LookupEnv(environment.SubscriptionIdEnvVarName)
 	if !found {
@@ -121,11 +122,12 @@ func getTenantIdFromEnv(
 		return tenantId, nil
 	}
 
-	tenantId, err = subResolver.LookupTenant(ctx, subIdAtSysEnv)
+	subscription, err := subResolver.GetSubscription(ctx, subIdAtSysEnv)
 	if err != nil {
 		return tenantId, fmt.Errorf(
-			"resolving the Azure Directory from system environment (%s): %w", environment.SubscriptionIdEnvVarName, err)
+			"getting the subscription from system environment (%s): %w", environment.SubscriptionIdEnvVarName, err)
 	}
+	tenantId = subscription.UserAccessTenantId
 
 	return tenantId, nil
 }

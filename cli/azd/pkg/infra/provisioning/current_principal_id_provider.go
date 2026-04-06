@@ -44,12 +44,12 @@ type principalIDProvider struct {
 
 func (p *principalIDProvider) CurrentPrincipalId(ctx context.Context) (string, error) {
 	subscriptionId := p.env.GetSubscriptionId()
-	sub, err := p.subResolver.GetSubscription(ctx, subscriptionId)
+	subscription, err := p.subResolver.GetSubscription(ctx, subscriptionId)
 	if err != nil {
 		return "", fmt.Errorf("getting subscription %s: %w", subscriptionId, err)
 	}
 
-	principalId, err := azureutil.GetCurrentPrincipalId(ctx, p.userProfileService, sub.TenantId)
+	principalId, err := azureutil.GetCurrentPrincipalId(ctx, p.userProfileService, subscription.TenantId)
 	if err != nil {
 		return "", fmt.Errorf("fetching current user information: %w", err)
 	}

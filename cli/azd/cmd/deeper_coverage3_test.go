@@ -146,7 +146,9 @@ func (m *mockSubTenantResolver) LookupTenant(ctx context.Context, subscriptionId
 	return args.String(0), args.Error(1)
 }
 
-func (m *mockSubTenantResolver) GetSubscription(ctx context.Context, subscriptionId string) (*account.Subscription, error) {
+func (m *mockSubTenantResolver) GetSubscription(
+	ctx context.Context, subscriptionId string,
+) (*account.Subscription, error) {
 	tenantId, err := m.LookupTenant(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
@@ -163,11 +165,9 @@ type staticSubscriptionResolver struct {
 	subscription *account.Subscription
 }
 
-func (s *staticSubscriptionResolver) LookupTenant(ctx context.Context, subscriptionId string) (string, error) {
-	return s.subscription.UserAccessTenantId, nil
-}
-
-func (s *staticSubscriptionResolver) GetSubscription(ctx context.Context, subscriptionId string) (*account.Subscription, error) {
+func (s *staticSubscriptionResolver) GetSubscription(
+	ctx context.Context, subscriptionId string,
+) (*account.Subscription, error) {
 	return s.subscription, nil
 }
 
@@ -443,7 +443,7 @@ func Test_EnvSetSecretAction_LookupTenantError(t *testing.T) {
 
 	_, err := action.Run(t.Context())
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "looking up tenant for subscription")
+	assert.Contains(t, err.Error(), "getting subscription")
 }
 
 func Test_EnvSetSecretAction_ListVaultsError(t *testing.T) {

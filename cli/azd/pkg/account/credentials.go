@@ -20,19 +20,18 @@ var (
 )
 
 // SubscriptionCredentialProvider provides an [azcore.TokenCredential] configured
-// to use the tenant id that corresponds to the tenant the given subscription
-// is located in.
+// to use the access tenant required by the current account for the given subscription.
 type SubscriptionCredentialProvider interface {
 	CredentialForSubscription(ctx context.Context, subscriptionId string) (azcore.TokenCredential, error)
 }
 
 type subscriptionCredentialProvider struct {
 	credProvider auth.MultiTenantCredentialProvider
-	subResolver  SubscriptionTenantResolver
+	subResolver  SubscriptionResolver
 }
 
 func NewSubscriptionCredentialProvider(
-	subResolver SubscriptionTenantResolver,
+	subResolver SubscriptionResolver,
 	credProvider auth.MultiTenantCredentialProvider,
 ) SubscriptionCredentialProvider {
 	return &subscriptionCredentialProvider{
@@ -45,9 +44,9 @@ func (p *subscriptionCredentialProvider) CredentialForSubscription(
 	ctx context.Context,
 	subscriptionId string,
 ) (azcore.TokenCredential, error) {
-	tenantId, err := p.subResolver.LookupTenant(ctx, subscriptionId)
+	subscription, err := p.subResolver.GetSubscription(ctx, subscriptionId)
 	if err != nil {
-		// If we can't resolve the tenant for this subscription, it might be because:
+		// If we can't resolve the subscription for this ID, it might be because:
 		// 1. User manually set AZURE_SUBSCRIPTION_ID in .env
 		// 2. User called `azd env set AZURE_SUBSCRIPTION_ID` instead of selecting from azd's cache
 		// In these cases, suggest they also set AZURE_TENANT_ID
@@ -60,6 +59,7 @@ func (p *subscriptionCredentialProvider) CredentialForSubscription(
 			err,
 		)
 	}
+	tenantId := subscription.UserAccessTenantId
 
 	cred, err := p.credProvider.GetTokenCredential(ctx, tenantId)
 	if err != nil {

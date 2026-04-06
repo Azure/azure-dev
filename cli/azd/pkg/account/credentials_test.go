@@ -35,12 +35,15 @@ func TestSubscriptionCredentialProvider(t *testing.T) {
 	}
 
 	provider := NewSubscriptionCredentialProvider(
-		subscriptionTenantResolverFunc(func(ctx context.Context, subscriptionId string) (string, error) {
+		subscriptionResolverFunc(func(ctx context.Context, subscriptionId string) (*Subscription, error) {
 			if tenantId, has := subToTenant[subscriptionId]; has {
-				return tenantId, nil
-			} else {
-				return "", errors.New("unknown subscription")
+				return &Subscription{
+					Id:                 subscriptionId,
+					TenantId:           "resource-" + tenantId,
+					UserAccessTenantId: tenantId,
+				}, nil
 			}
+			return nil, errors.New("unknown subscription")
 		}),
 		multiTenantCredentialProviderFunc(func(ctx context.Context, tenantId string) (azcore.TokenCredential, error) {
 			if credential, has := tenantToCred[tenantId]; has {
@@ -75,8 +78,12 @@ func TestSubscriptionCredentialProvider_AADSTSErrors(t *testing.T) {
 
 	t.Run("AADSTS70043_WithoutExistingSuggestion", func(t *testing.T) {
 		provider := NewSubscriptionCredentialProvider(
-			subscriptionTenantResolverFunc(func(ctx context.Context, subId string) (string, error) {
-				return tenantId, nil
+			subscriptionResolverFunc(func(ctx context.Context, subId string) (*Subscription, error) {
+				return &Subscription{
+					Id:                 subId,
+					TenantId:           "resource-" + tenantId,
+					UserAccessTenantId: tenantId,
+				}, nil
 			}),
 			multiTenantCredentialProviderFunc(func(ctx context.Context, tid string) (azcore.TokenCredential, error) {
 				return nil, errors.New("AADSTS70043: The refresh token has expired")
@@ -100,8 +107,12 @@ func TestSubscriptionCredentialProvider_AADSTSErrors(t *testing.T) {
 
 	t.Run("AADSTS700082_RefreshTokenExpired", func(t *testing.T) {
 		provider := NewSubscriptionCredentialProvider(
-			subscriptionTenantResolverFunc(func(ctx context.Context, subId string) (string, error) {
-				return tenantId, nil
+			subscriptionResolverFunc(func(ctx context.Context, subId string) (*Subscription, error) {
+				return &Subscription{
+					Id:                 subId,
+					TenantId:           "resource-" + tenantId,
+					UserAccessTenantId: tenantId,
+				}, nil
 			}),
 			multiTenantCredentialProviderFunc(func(ctx context.Context, tid string) (azcore.TokenCredential, error) {
 				return nil, errors.New("AADSTS700082: The refresh token has expired")
@@ -125,8 +136,8 @@ func TestSubscriptionCredentialProvider_AADSTSErrors(t *testing.T) {
 
 	t.Run("TenantLookupFailure_EnhancedError", func(t *testing.T) {
 		provider := NewSubscriptionCredentialProvider(
-			subscriptionTenantResolverFunc(func(ctx context.Context, subId string) (string, error) {
-				return "", errors.New("failed to resolve tenant")
+			subscriptionResolverFunc(func(ctx context.Context, subId string) (*Subscription, error) {
+				return nil, errors.New("failed to resolve tenant")
 			}),
 			multiTenantCredentialProviderFunc(func(ctx context.Context, tid string) (azcore.TokenCredential, error) {
 				return &dummyCredential{}, nil
@@ -140,10 +151,12 @@ func TestSubscriptionCredentialProvider_AADSTSErrors(t *testing.T) {
 	})
 }
 
-// subscriptionTenantResolverFunc implements [SubscriptionTenantResolver] using a provided function.
-type subscriptionTenantResolverFunc func(ctx context.Context, subscriptionId string) (string, error)
+// subscriptionResolverFunc implements [SubscriptionResolver] using a provided function.
+type subscriptionResolverFunc func(ctx context.Context, subscriptionId string) (*Subscription, error)
 
-func (r subscriptionTenantResolverFunc) LookupTenant(ctx context.Context, subscriptionId string) (string, error) {
+func (r subscriptionResolverFunc) GetSubscription(
+	ctx context.Context, subscriptionId string,
+) (*Subscription, error) {
 	return r(ctx, subscriptionId)
 }
 

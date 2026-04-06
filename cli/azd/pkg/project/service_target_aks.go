@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -139,6 +141,9 @@ func (t *aksTarget) RequiredExternalTools(ctx context.Context, serviceConfig *Se
 // Defined as a constant to avoid magic string repetition.
 const postProvisionEvent = ext.Event("post" + string(ProjectEventProvision))
 
+// preDeployEvent is the service-level event fired before deployment.
+const preDeployEvent = ext.Event("pre" + string(ServiceEventDeploy))
+
 // Initializes the AKS service target
 func (t *aksTarget) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
 	// Ensure that the k8s context has been configured by the time a deploy operation is performed.
@@ -157,8 +162,8 @@ func (t *aksTarget) Initialize(ctx context.Context, serviceConfig *ServiceConfig
 
 	// Ensure that the k8s context has been configured by the time a deploy operation is performed.
 	// We attach to "predeploy" so that any predeploy hooks can take advantage of the configuration
-	err = serviceConfig.AddHandler(ctx, "predeploy", func(ctx context.Context, args ServiceLifecycleEventArgs) error {
-		return t.setK8sContext(ctx, serviceConfig, "predeploy")
+	err = serviceConfig.AddHandler(ctx, preDeployEvent, func(ctx context.Context, args ServiceLifecycleEventArgs) error {
+		return t.setK8sContext(ctx, serviceConfig, preDeployEvent)
 	})
 
 	if err != nil {
@@ -924,8 +929,12 @@ func (t *aksTarget) setK8sContext(
 	// will have an empty resource name (via SupportsDelayedProvisioning).
 	// During postprovision this is expected in multi-phase provisioning
 	// workflows — skip gracefully instead of failing.
-	if targetResource == nil ||
-		(targetResource.ResourceName() == "" && eventName == postProvisionEvent) {
+	if targetResource == nil {
+		return t.postprovisionK8sError(ctx, eventName,
+			fmt.Errorf("AKS cluster target resource is nil"))
+	}
+
+	if targetResource.ResourceName() == "" && eventName == postProvisionEvent {
 		return t.skipPostprovisionK8sSetup(
 			ctx, fmt.Errorf("AKS cluster resource not yet provisioned"))
 	}
@@ -945,7 +954,7 @@ func (t *aksTarget) setK8sContext(
 	// Display message to the user when we detect they are using a
 	// non-default KUBECONFIG configuration. In standard AZD AKS deployment
 	// users should not typically need to set a custom KUBECONFIG.
-	if hasCustomKubeConfig && eventName == "predeploy" {
+	if hasCustomKubeConfig && eventName == preDeployEvent {
 		t.console.Message(
 			ctx,
 			output.WithWarningFormat(
@@ -981,6 +990,9 @@ func (t *aksTarget) skipPostprovisionK8sSetup(
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
+
+	_, span := tracing.Start(ctx, events.AksPostprovisionSkipEvent)
+	span.EndWithStatus(reason)
 
 	log.Printf(
 		"skipping k8s context setup during postprovision: %v", reason)

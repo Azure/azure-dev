@@ -13,6 +13,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tool"
@@ -104,6 +105,11 @@ func (m *ToolUpdateCheckMiddleware) shouldSkipNotification() bool {
 		return true
 	}
 
+	// CI/CD environment — no notifications.
+	if resource.IsRunningOnCI() {
+		return true
+	}
+
 	// Machine-readable output (JSON, table, etc.) — keep stdout clean.
 	if !m.console.IsUnformatted() {
 		return true
@@ -137,6 +143,11 @@ func (m *ToolUpdateCheckMiddleware) isToolCommand() bool {
 func (m *ToolUpdateCheckMiddleware) triggerBackgroundCheckIfNeeded(ctx context.Context) {
 	// Honour the same opt-out signal used by the first-run experience.
 	if skip, _ := strconv.ParseBool(os.Getenv(envKeySkipFirstRun)); skip {
+		return
+	}
+
+	// CI/CD environment — skip background checks.
+	if resource.IsRunningOnCI() {
 		return
 	}
 

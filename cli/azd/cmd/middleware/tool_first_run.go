@@ -14,6 +14,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -92,12 +93,17 @@ func (m *ToolFirstRunMiddleware) shouldSkip(ctx context.Context) bool {
 		return true
 	}
 
-	// 3. Non-interactive terminal (piped stdin/stdout).
+	// 3. CI/CD environment — never prompt in CI.
+	if resource.IsRunningOnCI() {
+		return true
+	}
+
+	// 4. Non-interactive terminal (piped stdin/stdout).
 	if m.console.IsNoPromptMode() {
 		return true
 	}
 
-	// 4. Already completed.
+	// 5. Already completed.
 	cfg, err := m.configManager.Load()
 	if err != nil {
 		log.Printf("tool first-run: failed to load user config: %v", err)

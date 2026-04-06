@@ -29,8 +29,9 @@ func TestGetCurrentPrincipalId_PrefersOidFromAccessToken(t *testing.T) {
 				"resource-tenant": {
 					GetTokenFn: func(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
 						return azcore.AccessToken{
-							// cspell:disable-next-line
-							Token:     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvaWQiOiJ0aGlzLWlzLWEtdGVzdCJ9.vrKZx2J7-hsydI4rzdFVHqU1S6lHqLT95VSPx2RfQ04",
+							Token: mocks.CreateJwtToken(t, map[string]string{
+								"oid": "this-is-a-test",
+							}),
 							ExpiresOn: time.Now().Add(time.Hour),
 						}, nil
 					},
@@ -66,8 +67,9 @@ func TestGetCurrentPrincipalId_FallsBackToGraphWhenOidMissing(t *testing.T) {
 				"resource-tenant": {
 					GetTokenFn: func(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
 						return azcore.AccessToken{
-							// cspell:disable-next-line
-							Token:     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0ZXN0IjoiZmFpbCJ9.0Stzv5ZHG96ss-0_AnANqZfVLoULCtivJCE8AVWFZi8",
+							Token: mocks.CreateJwtToken(t, map[string]string{
+								"test": "fail",
+							}),
 							ExpiresOn: time.Now().Add(time.Hour),
 						}, nil
 					},

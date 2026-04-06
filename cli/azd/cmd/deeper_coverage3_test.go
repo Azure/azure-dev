@@ -1011,8 +1011,9 @@ func Test_EnvSetSecretAction_UsesResourceTenantForKeyVaultAndPrincipalId(t *test
 				"resource-tenant": {
 					GetTokenFn: func(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
 						return azcore.AccessToken{
-							// cspell:disable-next-line
-							Token:     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvaWQiOiJ0aGlzLWlzLWEtdGVzdCJ9.vrKZx2J7-hsydI4rzdFVHqU1S6lHqLT95VSPx2RfQ04",
+							Token: mocks.CreateJwtToken(t, map[string]string{
+								"oid": "this-is-a-test",
+							}),
 							ExpiresOn: time.Now().Add(time.Hour),
 						}, nil
 					},

@@ -152,7 +152,6 @@ func (a *MonitorAction) Run(ctx context.Context) error {
 		body, err = agentClient.GetAgentSessionLogStream(
 			ctx,
 			a.Name,
-			a.Version,
 			a.flags.sessionID,
 			DefaultVNextAgentAPIVersion,
 			a.flags.logType,

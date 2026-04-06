@@ -15,6 +15,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/stretchr/testify/require"
 )
 
@@ -316,17 +317,17 @@ func TestAskerConsole_Message_JsonQueryFilter(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			buf := &strings.Builder{}
+			stderrBuf := &strings.Builder{}
 			formatter := &output.JsonFormatter{Query: tc.query}
 
 			c := NewConsole(
 				true,
 				false,
-				Writers{Output: writerAdapter{buf}},
+				Writers{Output: writerAdapter{stderrBuf}},
 				ConsoleHandles{
-					Stderr: os.Stderr,
+					Stderr: writerAdapter{stderrBuf},
 					Stdin:  os.Stdin,
-					Stdout: writerAdapter{buf},
+					Stdout: writerAdapter{&strings.Builder{}},
 				},
 				formatter,
 				nil,
@@ -334,23 +335,23 @@ func TestAskerConsole_Message_JsonQueryFilter(t *testing.T) {
 
 			c.Message(context.Background(), "hello world")
 
-			tc.assert(t, buf.String())
+			tc.assert(t, stderrBuf.String())
 		})
 	}
 }
 
 func TestAskerConsole_Message_InvalidQuery_FallsBack(t *testing.T) {
-	buf := &strings.Builder{}
+	stderrBuf := &strings.Builder{}
 	formatter := &output.JsonFormatter{Query: "[invalid"}
 
 	c := NewConsole(
 		true,
 		false,
-		Writers{Output: writerAdapter{buf}},
+		Writers{Output: writerAdapter{stderrBuf}},
 		ConsoleHandles{
-			Stderr: os.Stderr,
+			Stderr: writerAdapter{stderrBuf},
 			Stdin:  os.Stdin,
-			Stdout: writerAdapter{buf},
+			Stdout: writerAdapter{&strings.Builder{}},
 		},
 		formatter,
 		nil,
@@ -359,9 +360,233 @@ func TestAskerConsole_Message_InvalidQuery_FallsBack(t *testing.T) {
 	// Should not panic; falls back to unfiltered output
 	c.Message(context.Background(), "hello world")
 
-	got := buf.String()
+	got := stderrBuf.String()
 	require.Contains(t, got, `"consoleMessage"`,
 		"invalid query should fall back to full envelope")
+}
+
+func TestAskerConsole_RedirectedOutput_Routing(t *testing.T) {
+	tests := []struct {
+		name           string
+		format         string
+		redirectOutput bool
+		action         func(ctx context.Context, c Console)
+		wantOnStderr   string
+		wantStdout     bool
+	}{
+		{
+			name:           "Redirected_Message_GoesToWriter",
+			format:         string(output.JsonFormat),
+			redirectOutput: true,
+			action: func(ctx context.Context, c Console) {
+				c.Message(ctx, "deploying resources")
+			},
+			wantOnStderr: "deploying resources",
+			wantStdout:   false,
+		},
+		{
+			name:           "Redirected_ShowSpinner_GoesToWriter",
+			format:         string(output.JsonFormat),
+			redirectOutput: true,
+			action: func(ctx context.Context, c Console) {
+				c.ShowSpinner(ctx, "Provisioning...", Step)
+			},
+			wantOnStderr: "Provisioning...",
+			wantStdout:   false,
+		},
+		{
+			name:           "Redirected_StopSpinner_GoesToWriter",
+			format:         string(output.JsonFormat),
+			redirectOutput: true,
+			action: func(
+				ctx context.Context, c Console,
+			) {
+				c.StopSpinner(ctx, "Done", StepDone)
+			},
+			wantOnStderr: "Done",
+			wantStdout:   false,
+		},
+		{
+			name:   "TableMode_Message_GoesToWriter",
+			format: string(output.TableFormat),
+			action: func(ctx context.Context, c Console) {
+				c.Message(ctx, "deploying resources")
+			},
+			wantOnStderr: "",
+			wantStdout:   true,
+		},
+		{
+			name:           "Redirected_MessageUxItem_GoesToWriter",
+			format:         string(output.JsonFormat),
+			redirectOutput: true,
+			action: func(ctx context.Context, c Console) {
+				c.MessageUxItem(
+					ctx,
+					&ux.DoneMessage{Message: "deployed"},
+				)
+			},
+			wantOnStderr: "deployed",
+			wantStdout:   false,
+		},
+		{
+			name:   "NoneMode_Spinner_GoesToWriter",
+			format: string(output.NoneFormat),
+			action: func(ctx context.Context, c Console) {
+				c.ShowSpinner(ctx, "Working...", Step)
+				c.StopSpinner(ctx, "Complete", StepDone)
+			},
+			wantOnStderr: "",
+			wantStdout:   true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			stdoutBuf := &strings.Builder{}
+			stderrBuf := &strings.Builder{}
+			formatter, err := output.NewFormatter(tc.format)
+			require.NoError(t, err)
+
+			// When redirectOutput is true, simulate what container.go
+			// does for JSON mode: set Writers.Output to stderr so that
+			// c.writer != c.defaultWriter triggers the redirect path.
+			outputWriter := writerAdapter{stdoutBuf}
+			if tc.redirectOutput {
+				outputWriter = writerAdapter{stderrBuf}
+			}
+
+			c := NewConsole(
+				true,
+				false,
+				Writers{
+					Output: outputWriter,
+				},
+				ConsoleHandles{
+					Stderr: writerAdapter{stderrBuf},
+					Stdin:  os.Stdin,
+					Stdout: writerAdapter{stdoutBuf},
+				},
+				formatter,
+				nil,
+			)
+
+			ctx := t.Context()
+			tc.action(ctx, c)
+
+			if tc.wantOnStderr != "" {
+				require.Contains(
+					t,
+					stderrBuf.String(),
+					tc.wantOnStderr,
+					"expected message on redirected writer",
+				)
+				require.Empty(
+					t,
+					stdoutBuf.String(),
+					"stdout should be empty when output is redirected",
+				)
+			}
+
+			if tc.wantStdout {
+				require.NotEmpty(
+					t,
+					stdoutBuf.String(),
+					"expected output on stdout/writer",
+				)
+				require.Empty(
+					t,
+					stderrBuf.String(),
+					"stderr should be empty when output is not redirected",
+				)
+			}
+		})
+	}
+}
+
+func TestAskerConsole_RedirectedOutput_EnsureBlankLine(t *testing.T) {
+	stdoutBuf := &strings.Builder{}
+	stderrBuf := &strings.Builder{}
+	formatter := &output.JsonFormatter{}
+
+	c := NewConsole(
+		true,
+		false,
+		Writers{Output: writerAdapter{stderrBuf}},
+		ConsoleHandles{
+			Stderr: writerAdapter{stderrBuf},
+			Stdin:  os.Stdin,
+			Stdout: writerAdapter{stdoutBuf},
+		},
+		formatter,
+		nil,
+	)
+
+	ctx := t.Context()
+	// Call EnsureBlankLine directly without a preceding Message call.
+	// EnsureBlankLine internally calls Message, so the redirected writer gets output.
+	c.EnsureBlankLine(ctx)
+
+	require.Empty(t, stdoutBuf.String(),
+		"stdout should be empty when output is redirected")
+	require.NotEmpty(t, stderrBuf.String(),
+		"EnsureBlankLine output should go to redirected writer")
+}
+
+func TestAskerConsole_RedirectedOutput_ShowPreviewer_ReturnsWriter(
+	t *testing.T,
+) {
+	stderrBuf := &strings.Builder{}
+	stdoutBuf := &strings.Builder{}
+	formatter := &output.JsonFormatter{}
+
+	c := NewConsole(
+		true,
+		false,
+		Writers{Output: writerAdapter{stderrBuf}},
+		ConsoleHandles{
+			Stderr: writerAdapter{stderrBuf},
+			Stdin:  os.Stdin,
+			Stdout: writerAdapter{stdoutBuf},
+		},
+		formatter,
+		nil,
+	)
+
+	ctx := t.Context()
+	w := c.ShowPreviewer(ctx, nil)
+	require.NotNil(t, w)
+
+	_, err := w.Write([]byte("preview line"))
+	require.NoError(t, err)
+	require.Contains(t, stderrBuf.String(), "preview line")
+	require.Empty(t, stdoutBuf.String())
+}
+
+func TestAskerConsole_RedirectedOutput_StopPreviewer_NoOp(t *testing.T) {
+	stdoutBuf := &strings.Builder{}
+	stderrBuf := &strings.Builder{}
+	formatter := &output.JsonFormatter{}
+
+	c := NewConsole(
+		true,
+		false,
+		Writers{Output: writerAdapter{stderrBuf}},
+		ConsoleHandles{
+			Stderr: writerAdapter{stderrBuf},
+			Stdin:  os.Stdin,
+			Stdout: writerAdapter{stdoutBuf},
+		},
+		formatter,
+		nil,
+	)
+
+	ctx := t.Context()
+	// StopPreviewer without ShowPreviewer should not panic
+	require.NotPanics(t, func() {
+		c.StopPreviewer(ctx, false)
+	})
+	require.Empty(t, stdoutBuf.String(), "StopPreviewer no-op should not write to stdout")
+	require.Empty(t, stderrBuf.String(), "StopPreviewer no-op should not write to stderr")
 }
 
 // writerAdapter wraps *strings.Builder to satisfy io.Writer for test purposes.

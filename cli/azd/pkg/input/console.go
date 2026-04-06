@@ -139,7 +139,8 @@ type Console interface {
 type AskerConsole struct {
 	asker   Asker
 	handles ConsoleHandles
-	// the writer the console was constructed with, and what we reset to when SetWriter(nil) is called.
+	// defaultWriter is the original output writer, used to restore after
+	// previewer stops.
 	defaultWriter io.Writer
 	// the writer which output is written to.
 	writer    io.Writer
@@ -213,6 +214,13 @@ func (c *AskerConsole) IsUnformatted() bool {
 	return c.formatter == nil || c.formatter.Kind() == output.NoneFormat
 }
 
+// messageWriter returns the writer for human-readable messages.
+// The caller (e.g., container.go) is responsible for setting c.writer
+// to the appropriate destination (e.g., stderr for structured output).
+func (c *AskerConsole) messageWriter() io.Writer {
+	return c.writer
+}
+
 // Prints out a message to the underlying console write
 func (c *AskerConsole) Message(ctx context.Context, message string) {
 	// Disable output when formatting is enabled
@@ -231,7 +239,7 @@ func (c *AskerConsole) Message(ctx context.Context, message string) {
 		if err != nil {
 			panic(fmt.Sprintf("Message: unexpected error during marshaling for a valid object: %v", err))
 		}
-		fmt.Fprintln(c.writer, string(jsonMessage))
+		fmt.Fprintln(c.messageWriter(), string(jsonMessage))
 	} else if c.formatter != nil {
 		c.println(ctx, message)
 	} else {
@@ -297,7 +305,7 @@ func (c *AskerConsole) MessageUxItem(ctx context.Context, item ux.UxItem) {
 		if err != nil {
 			panic(err)
 		}
-		fmt.Fprintln(c.writer, string(jsonBytes))
+		fmt.Fprintln(c.messageWriter(), string(jsonBytes))
 		return
 	}
 
@@ -308,13 +316,14 @@ func (c *AskerConsole) MessageUxItem(ctx context.Context, item ux.UxItem) {
 }
 
 func (c *AskerConsole) println(ctx context.Context, msg string) {
-	if c.IsSpinnerInteractive() && c.spinner.Status() == yacspin.SpinnerRunning {
+	w := c.messageWriter()
+	if c.IsSpinnerInteractive() &&
+		c.spinner.Status() == yacspin.SpinnerRunning {
 		c.StopSpinner(ctx, "", Step)
-		// default non-format
-		fmt.Fprintln(c.writer, msg)
+		fmt.Fprintln(w, msg)
 		_ = c.spinner.Start()
 	} else {
-		fmt.Fprintln(c.writer, msg)
+		fmt.Fprintln(w, msg)
 	}
 }
 
@@ -327,6 +336,13 @@ func defaultShowPreviewerOptions() *ShowPreviewerOptions {
 func (c *AskerConsole) ShowPreviewer(ctx context.Context, options *ShowPreviewerOptions) io.Writer {
 	c.showProgressMu.Lock()
 	defer c.showProgressMu.Unlock()
+
+	// When console output is routed away from stdout (e.g., to stderr for
+	// structured output), skip the visual frame rendering (goterm writes
+	// to stdout directly) and return the redirected writer instead.
+	if c.writer != c.handles.Stdout {
+		return c.writer
+	}
 
 	// Pause any active spinner
 	currentMsg := c.spinnerCurrentTitle
@@ -356,6 +372,12 @@ func (c *AskerConsole) ShowPreviewer(ctx context.Context, options *ShowPreviewer
 }
 
 func (c *AskerConsole) StopPreviewer(ctx context.Context, keepLogs bool) {
+	// If the previewer was never started (e.g., output was redirected),
+	// there's nothing to stop.
+	if c.previewer == nil {
+		return
+	}
+
 	c.previewer.Stop(keepLogs)
 	c.previewer = nil
 	c.writer = c.defaultWriter
@@ -418,8 +440,11 @@ func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format Spi
 	c.showProgressMu.Lock()
 	defer c.showProgressMu.Unlock()
 
-	if c.formatter != nil && c.formatter.Kind() == output.JsonFormat {
-		// Spinner is disabled when using json format.
+	// When console output is routed away from stdout, emit the spinner
+	// title as plain text to the writer instead of using terminal
+	// animations that write to stdout directly.
+	if c.writer != c.handles.Stdout {
+		fmt.Fprintln(c.writer, title)
 		return
 	}
 
@@ -489,9 +514,18 @@ func (c *AskerConsole) getIndent() string {
 	return c.currentIndent.Load()
 }
 
-func (c *AskerConsole) StopSpinner(ctx context.Context, lastMessage string, format SpinnerUxType) {
-	if c.formatter != nil && c.formatter.Kind() == output.JsonFormat {
-		// Spinner is disabled when using json format.
+func (c *AskerConsole) StopSpinner(
+	ctx context.Context,
+	lastMessage string,
+	format SpinnerUxType,
+) {
+	if c.writer != c.handles.Stdout {
+		// When output is redirected, emit the stop message as plain
+		// text to the writer.
+		if lastMessage != "" {
+			msg := c.getStopChar(format) + " " + lastMessage
+			fmt.Fprintln(c.writer, msg)
+		}
 		return
 	}
 
@@ -502,15 +536,13 @@ func (c *AskerConsole) StopSpinner(ctx context.Context, lastMessage string, form
 
 	c.spinnerLineMu.Lock()
 	c.spinnerCurrentTitle = ""
-	// Update style according to MessageUxType
 	if lastMessage != "" {
 		lastMessage = c.getStopChar(format) + " " + lastMessage
 	}
 
 	_ = c.spinner.Stop()
 	if lastMessage != "" {
-		// Avoid using StopMessage() as it may result in an extra Message line print in non-tty scenarios
-		fmt.Fprintln(c.writer, lastMessage)
+		fmt.Fprintln(c.messageWriter(), lastMessage)
 	}
 
 	c.spinnerLineMu.Unlock()

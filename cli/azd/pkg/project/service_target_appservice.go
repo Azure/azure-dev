@@ -6,7 +6,9 @@ package project
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
@@ -245,6 +247,25 @@ func (st *appServiceTarget) determineDeploymentTargets(
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 ) ([]deploymentTarget, error) {
+	// Check if slot deployment is explicitly disabled for this service
+	ignoreSlotsEnvVar := ignoreSlotsEnvVarNameForService(serviceConfig.Name)
+	if ignoreSlots, err := strconv.ParseBool(
+		st.env.Getenv(ignoreSlotsEnvVar),
+	); err == nil && ignoreSlots {
+		// Warn if SLOT_NAME env var is also set, since it will be ignored
+		slotEnvVar := slotEnvVarNameForService(serviceConfig.Name)
+		if slotName := st.env.Getenv(slotEnvVar); slotName != "" {
+			log.Printf(
+				"WARNING: %s is set but will be ignored because %s is enabled",
+				slotEnvVar, ignoreSlotsEnvVar,
+			)
+		}
+
+		progress.SetProgress(NewServiceProgress(
+			"Skipping slot deployment (deploying to main app)"))
+		return []deploymentTarget{{SlotName: ""}}, nil
+	}
+
 	progress.SetProgress(NewServiceProgress("Checking deployment history"))
 
 	// Check if there are previous deployments
@@ -337,6 +358,16 @@ func (st *appServiceTarget) determineDeploymentTargets(
 func slotEnvVarNameForService(serviceName string) string {
 	normalizedName := strings.ToUpper(strings.ReplaceAll(serviceName, "-", "_"))
 	return fmt.Sprintf("AZD_DEPLOY_%s_SLOT_NAME", normalizedName)
+}
+
+// ignoreSlotsEnvVarNameForService returns the environment variable name for opting out of
+// automatic slot deployment for a given service. The format is AZD_DEPLOY_{SERVICE_NAME}_IGNORE_SLOTS
+// where the service name is uppercase and any hyphens are replaced with underscores.
+// When set to a truthy boolean value, azd deploys directly to the main app, ignoring any
+// configured deployment slots.
+func ignoreSlotsEnvVarNameForService(serviceName string) string {
+	normalizedName := strings.ToUpper(strings.ReplaceAll(serviceName, "-", "_"))
+	return fmt.Sprintf("AZD_DEPLOY_%s_IGNORE_SLOTS", normalizedName)
 }
 
 // Gets the exposed endpoints for the App Service, including any deployment slots

@@ -170,7 +170,7 @@ func fetchOIDCToken(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	//nolint:gosec // G704: URL is constructed from a trusted OIDC endpoint
+	//nolint:gosec // G704: url comes from Azure DevOps OIDC endpoint environment variables.
 	tokenReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, nil)
 	if err != nil {
 		return "", err

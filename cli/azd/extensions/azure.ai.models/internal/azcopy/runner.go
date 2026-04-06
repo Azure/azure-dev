@@ -127,7 +127,7 @@ func (r *Runner) Copy(ctx context.Context, source string, sasURI string) error {
 		return fmt.Errorf("failed to start azcopy: %w", err)
 	}
 
-	// Parse NDJSON lines from stdout
+	// Parse newline-delimited JSON lines from stdout.
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 

@@ -715,7 +715,9 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 			return nil, err
 		}
-		if compatResult != nil && compatResult.HasNewerIncompatible && compatResult.LatestOverall != nil {
+		if compatResult != nil &&
+			compatResult.HasNewerIncompatible &&
+			compatResult.LatestOverall != nil {
 			a.console.StopSpinner(ctx, stepMessage, input.Step)
 			displayVersionCompatibilityWarning(ctx, a.console,
 				compatResult.LatestOverall, compatResult.LatestCompatible, azdVersion,
@@ -1059,7 +1061,9 @@ func (a *extensionUpgradeAction) Run(ctx context.Context) (*actions.ActionResult
 			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 			return nil, err
 		}
-		if compatResult != nil && compatResult.HasNewerIncompatible && compatResult.LatestOverall != nil {
+		if compatResult != nil &&
+			compatResult.HasNewerIncompatible &&
+			compatResult.LatestOverall != nil {
 			a.console.StopSpinner(ctx, stepMessage, input.Step)
 			displayVersionCompatibilityWarning(ctx, a.console,
 				compatResult.LatestOverall, compatResult.LatestCompatible, azdVersion,
@@ -1495,9 +1499,9 @@ func resolveCompatibleExtension(
 	}
 
 	if len(compatResult.Compatible) < len(selectedExtension.Versions) {
-		compatCopy := *selectedExtension
-		compatCopy.Versions = compatResult.Compatible
-		return &compatCopy, compatResult, nil
+		compatibilityCopy := *selectedExtension
+		compatibilityCopy.Versions = compatResult.Compatible
+		return &compatibilityCopy, compatResult, nil
 	}
 
 	return selectedExtension, compatResult, nil

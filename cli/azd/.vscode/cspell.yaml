@@ -115,6 +115,10 @@ words:
   - secretversion
   - TTLs
   - vaultname
+  - NSJson
+  - googleapis
+  - GOWORK
+  - covdata
 languageSettings:
   - languageId: go
     ignoreRegExpList:
@@ -131,6 +135,9 @@ overrides:
   - filename: cmd/mcp.go
     words:
       - internalcmd
+  - filename: cmd/extension.go
+    words:
+      - compatResult
   - filename: pkg/azdext/config_helper.go
     words:
       - myext
@@ -364,10 +371,9 @@ overrides:
   - filename: pkg/infra/provisioning/bicep/local_preflight.go
     words:
       - actioned
-  - filename: docs/code-coverage-guide.md
+  - filename: magefile.go
     words:
-      - covdata
-      - GOWORK
+      - GOTOOLCHAIN
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

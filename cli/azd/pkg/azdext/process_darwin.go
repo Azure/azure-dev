@@ -27,9 +27,11 @@ func isProcessRunningOS(pid int) bool {
 // getProcessInfoOS retrieves process info on macOS using ps(1).
 func getProcessInfoOS(pid int) ProcessInfo {
 	info := ProcessInfo{PID: pid}
+	pidArg := strconv.Itoa(pid)
 
 	// Use ps to get process name and executable path.
-	cmd := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "comm=")
+	//nolint:gosec // G204: pidArg is derived from an integer process ID, not shell input.
+	cmd := exec.Command("ps", "-p", pidArg, "-o", "comm=")
 	output, err := cmd.Output()
 	if err != nil {
 		return info // Process does not exist or is inaccessible.
@@ -39,7 +41,8 @@ func getProcessInfoOS(pid int) ProcessInfo {
 	info.Running = true
 
 	// Get full command path.
-	cmd = exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "args=")
+	//nolint:gosec // G204: pidArg is derived from an integer process ID, not shell input.
+	cmd = exec.Command("ps", "-p", pidArg, "-o", "args=")
 	output, err = cmd.Output()
 	if err == nil {
 		args := strings.TrimSpace(string(output))

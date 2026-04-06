@@ -21,7 +21,7 @@ import (
 	"github.com/fatih/color"
 )
 
-const agentTemplatesURL = "https://raw.githubusercontent.com/therealjohn/awesome-azd/refs/heads/agent-tooling-templates/website/static/agent-templates.json"
+const agentTemplatesURL = "https://aka.ms/foundry-agents"
 
 // Template type constants
 const (

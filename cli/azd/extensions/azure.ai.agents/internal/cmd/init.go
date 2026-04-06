@@ -568,9 +568,7 @@ func (a *InitAction) configureModelChoice(
 			}
 
 			if selectedProject == nil {
-				if err := ensureLocation(ctx, a.azdClient, a.azureContext, a.environment.Name); err != nil {
-					return nil, err
-				}
+				return nil, fmt.Errorf("foundry project not found: %s", a.flags.projectResourceId)
 			}
 		} else {
 			newCred, err := ensureSubscriptionAndLocation(

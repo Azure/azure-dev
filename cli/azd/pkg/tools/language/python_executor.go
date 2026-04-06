@@ -228,6 +228,12 @@ func (e *pythonExecutor) Execute(
 	return e.commandRunner.Run(ctx, runArgs)
 }
 
+// Cleanup is a no-op for the Python executor — no temporary
+// resources are created during Prepare.
+func (e *pythonExecutor) Cleanup(_ context.Context) error {
+	return nil
+}
+
 // resolvePythonPath returns the path to the Python executable.
 // When a virtual environment was configured by [Prepare], it
 // returns the venv's Python binary; otherwise it falls back to

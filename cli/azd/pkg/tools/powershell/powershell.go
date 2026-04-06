@@ -6,10 +6,12 @@ package powershell
 import (
 	"context"
 	"fmt"
+	"os"
 	"runtime"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
@@ -25,14 +27,53 @@ func NewExecutor(commandRunner exec.CommandRunner) tools.HookExecutor {
 type powershellExecutor struct {
 	commandRunner exec.CommandRunner
 	shellCmd      string // resolved in Prepare: "pwsh" or "powershell"
+	tempFile      string // temp script created from inline content
 }
 
 // Prepare validates that PowerShell is available. Tries pwsh first,
 // falls back to powershell on Windows. Returns an error with install
-// guidance if neither is found.
+// guidance if neither is found. When the execution context carries
+// inline script content, a temp .ps1 file is created.
 func (p *powershellExecutor) Prepare(
-	_ context.Context, _ string, _ tools.ExecutionContext,
+	_ context.Context, _ string, execCtx tools.ExecutionContext,
 ) error {
+	// Resolve PowerShell binary.
+	if err := p.resolvePowerShell(); err != nil {
+		return err
+	}
+
+	// Create temp file for inline scripts.
+	if execCtx.InlineScript != "" {
+		tmpFile, err := os.CreateTemp(
+			"", fmt.Sprintf("azd-%s-*.ps1", execCtx.HookName),
+		)
+		if err != nil {
+			return fmt.Errorf("creating temp script: %w", err)
+		}
+
+		content := "$ErrorActionPreference = 'Stop'\n\n" +
+			"# Auto generated file from Azure Developer CLI\n" +
+			execCtx.InlineScript + "\n" +
+			"if ((Test-Path -LiteralPath variable:\\LASTEXITCODE)) " +
+			"{ exit $LASTEXITCODE }\n"
+
+		if err := os.WriteFile(
+			tmpFile.Name(), []byte(content), osutil.PermissionExecutableFile,
+		); err != nil {
+			tmpFile.Close()
+			os.Remove(tmpFile.Name())
+			return fmt.Errorf("writing temp script: %w", err)
+		}
+
+		tmpFile.Close()
+		p.tempFile = tmpFile.Name()
+	}
+
+	return nil
+}
+
+// resolvePowerShell locates pwsh or powershell in PATH.
+func (p *powershellExecutor) resolvePowerShell() error {
 	// Try pwsh first.
 	if p.commandRunner.ToolInPath("pwsh") == nil {
 		p.shellCmd = "pwsh"
@@ -66,10 +107,16 @@ func (p *powershellExecutor) Prepare(
 	}
 }
 
-// Execute runs the PowerShell script using the shell resolved in Prepare.
+// Execute runs the PowerShell script using the shell resolved in
+// Prepare. When a temp file was created during Prepare it is used
+// instead of the provided path.
 func (p *powershellExecutor) Execute(
 	ctx context.Context, path string, execCtx tools.ExecutionContext,
 ) (exec.RunResult, error) {
+	if p.tempFile != "" {
+		path = p.tempFile
+	}
+
 	runArgs := exec.NewRunArgs(p.shellCmd, path).
 		WithCwd(execCtx.Cwd).
 		WithEnv(execCtx.EnvVars).
@@ -84,4 +131,14 @@ func (p *powershellExecutor) Execute(
 	}
 
 	return p.commandRunner.Run(ctx, runArgs)
+}
+
+// Cleanup removes any temporary script file created during Prepare.
+func (p *powershellExecutor) Cleanup(_ context.Context) error {
+	if p.tempFile != "" {
+		err := os.Remove(p.tempFile)
+		p.tempFile = ""
+		return err
+	}
+	return nil
 }

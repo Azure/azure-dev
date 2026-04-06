@@ -11,7 +11,6 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/language"
 )
 
@@ -211,16 +210,7 @@ func (hc *HookConfig) validate() error {
 		}
 	}
 
-	if hc.location == ScriptLocationInline {
-		tempScript, err := createTempScript(hc)
-		if err != nil {
-			return err
-		}
-
-		hc.path = tempScript
-	}
-
-	if hc.Shell == ScriptTypeUnknown {
+	if hc.location != ScriptLocationInline && hc.Shell == ScriptTypeUnknown {
 		scriptType, err := inferScriptTypeFromFilePath(hc.path)
 		if err != nil {
 			return err
@@ -341,62 +331,4 @@ func inferScriptTypeFromFilePath(path string) (ShellType, error) {
 			ErrUnsupportedScriptType,
 		)
 	}
-}
-
-func createTempScript(hookConfig *HookConfig) (string, error) {
-	var ext string
-	scriptHeader := []string{}
-	scriptFooter := []string{}
-
-	switch ShellType(strings.Split(string(hookConfig.Shell), " ")[0]) {
-	case ShellTypeBash:
-		ext = "sh"
-		scriptHeader = []string{
-			"#!/bin/sh",
-			"set -e",
-		}
-	case ShellTypePowershell:
-		ext = "ps1"
-		scriptHeader = []string{
-			"$ErrorActionPreference = 'Stop'",
-		}
-		scriptFooter = []string{
-			"if ((Test-Path -LiteralPath variable:\\LASTEXITCODE)) { exit $LASTEXITCODE }",
-		}
-	}
-
-	// Write the temporary script file to OS temp dir
-	file, err := os.CreateTemp(os.TempDir(), fmt.Sprintf("azd-%s-*.%s", hookConfig.Name, ext))
-	if err != nil {
-		return "", fmt.Errorf("failed creating hook file: %w", err)
-	}
-
-	defer file.Close()
-
-	scriptBuilder := strings.Builder{}
-	for _, line := range scriptHeader {
-		scriptBuilder.WriteString(fmt.Sprintf("%s\n", line))
-	}
-
-	scriptBuilder.WriteString("\n")
-	scriptBuilder.WriteString("# Auto generated file from Azure Developer CLI\n")
-	scriptBuilder.WriteString(hookConfig.script)
-	scriptBuilder.WriteString("\n")
-
-	for _, line := range scriptFooter {
-		scriptBuilder.WriteString(fmt.Sprintf("%s\n", line))
-	}
-
-	// Temp generated files are cleaned up automatically after script execution has completed.
-	_, err = file.WriteString(scriptBuilder.String())
-	if err != nil {
-		return "", fmt.Errorf("failed writing hook file, %w", err)
-	}
-
-	// Update file permissions to grant exec permissions
-	if err := file.Chmod(osutil.PermissionExecutableFile); err != nil {
-		return "", fmt.Errorf("failed setting executable file permissions, %w", err)
-	}
-
-	return file.Name(), nil
 }

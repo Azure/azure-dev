@@ -178,9 +178,11 @@ func (h *HooksRunner) execHook(
 
 	// Build execution context.
 	execCtx := tools.ExecutionContext{
-		Cwd:         cwd,
-		EnvVars:     envVars,
-		BoundaryDir: boundaryDir,
+		Cwd:          cwd,
+		EnvVars:      envVars,
+		BoundaryDir:  boundaryDir,
+		InlineScript: hookConfig.script,
+		HookName:     hookConfig.Name,
 	}
 
 	// Merge caller-provided overrides (e.g. forced interactive from 'azd hooks run').
@@ -216,7 +218,8 @@ func (h *HooksRunner) execHook(
 		scriptPath = filepath.Join(hookConfig.cwd, hookConfig.path)
 	}
 
-	// Prepare (unified — venv/deps for Python, pwsh detection for PS, no-op for bash).
+	// Prepare (unified — venv/deps for Python, pwsh detection for PS,
+	// inline temp file creation for shell hooks).
 	log.Printf(
 		"Preparing hook '%s' (%s)\n",
 		hookConfig.Name, hookConfig.Language,
@@ -242,6 +245,10 @@ func (h *HooksRunner) execHook(
 		}
 	}
 
+	// Cleanup temp resources created during Prepare (e.g. inline
+	// script temp files). Runs after Execute regardless of outcome.
+	defer executor.Cleanup(ctx)
+
 	// Configure console/previewer.
 	if h.configureExecContext(ctx, hookConfig, &execCtx) {
 		defer h.console.StopPreviewer(ctx, false)
@@ -261,11 +268,6 @@ func (h *HooksRunner) execHook(
 		if hookErr != nil {
 			return hookErr
 		}
-	}
-
-	// Cleanup inline temp scripts.
-	if hookConfig.location == ScriptLocationInline {
-		defer os.Remove(hookConfig.path)
 	}
 
 	return nil

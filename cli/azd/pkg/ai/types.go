@@ -22,7 +22,7 @@ type AiModel struct {
 	Name string
 	// Format is the model format, e.g. "OpenAI".
 	Format string
-	// LifecycleStatus is the model lifecycle status, e.g. "preview", "stable".
+	// Deprecated: Use AiModelVersion.LifecycleStatus instead. Always empty ("").
 	LifecycleStatus string
 	// Capabilities lists the model's capabilities, e.g. ["chat", "embeddings"].
 	Capabilities []string
@@ -38,6 +38,8 @@ type AiModelVersion struct {
 	Version string
 	// IsDefault indicates whether this is the default version.
 	IsDefault bool
+	// LifecycleStatus is the lifecycle status for this specific version.
+	LifecycleStatus string
 	// Skus lists the available SKUs for this version.
 	Skus []AiModelSku
 }
@@ -132,7 +134,8 @@ type FilterOptions struct {
 	Capabilities []string
 	// Formats filters by model format, e.g. ["OpenAI"].
 	Formats []string
-	// Statuses filters by lifecycle status, e.g. ["preview", "stable"].
+	// Statuses filters by version lifecycle status. Models are included only if
+	// at least one version matches. Model-level status is recomputed from survivors.
 	Statuses []string
 	// ExcludeModelNames excludes models by name (for multi-model selection flows).
 	ExcludeModelNames []string

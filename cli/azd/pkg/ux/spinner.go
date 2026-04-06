@@ -76,7 +76,7 @@ func (s *Spinner) Start(ctx context.Context) error {
 	}
 
 	// Use a context to determine when to stop the spinner
-	cancelCtx, cancel := context.WithCancel(ctx)
+	cancelCtx, cancel := context.WithCancel(ctx) //nolint:gosec // G118: cancel stored in s.cancel and called in Stop()
 	s.cancel = cancel
 
 	s.clear = false

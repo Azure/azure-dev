@@ -16,7 +16,7 @@ on:
         description: "GolangCI-Lint version to use"
         required: false
         type: string
-        default: "v2.10.1"
+        default: "v2.11.4"
 
 permissions:
   contents: read

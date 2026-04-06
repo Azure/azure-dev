@@ -1,0 +1,29 @@
+parameters:
+  - name: SanitizedExtensionId
+    type: string
+  - name: AzdExtensionId
+    type: string
+
+steps:
+  - task: AzurePowerShell@5
+    displayName: Update daily registry
+    inputs:
+      azureSubscription: 'Azure SDK Artifacts'
+      azurePowerShellVersion: LatestVersion
+      pwsh: true
+      ScriptType: InlineScript
+      Inline: |
+        $storageHost = "$(publish-storage-static-host)"
+        $dailyBaseUrl = "$storageHost/azd/extensions/${{ parameters.SanitizedExtensionId }}/daily"
+        $registryBlobPath = "$(publish-storage-location)/`$web/azd/extensions/registry-daily.json"
+        $templatePath = "$(Build.SourcesDirectory)/eng/pipelines/templates/json/extension-registry-daily-template.json"
+
+        & "$(Build.SourcesDirectory)/eng/scripts/Update-ExtensionDailyRegistry.ps1" `
+          -SanitizedExtensionId "${{ parameters.SanitizedExtensionId }}" `
+          -AzdExtensionId "${{ parameters.AzdExtensionId }}" `
+          -Version "$(EXT_VERSION)" `
+          -StorageBaseUrl $dailyBaseUrl `
+          -RegistryBlobPath $registryBlobPath `
+          -TemplatePath $templatePath
+    env:
+      AZCOPY_AUTO_LOGIN_TYPE: 'PSCRED'

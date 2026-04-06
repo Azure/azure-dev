@@ -84,3 +84,14 @@ stages:
     - template: /eng/pipelines/templates/stages/publish-extension.yml
       parameters:
         SanitizedExtensionId: ${{ parameters.SanitizedExtensionId }}
+
+  # Publish daily builds to storage on CI (push to main)
+  - ${{ if and(eq(variables['System.TeamProject'], 'internal'), in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI')) }}:
+    - template: /eng/pipelines/templates/stages/sign-extension.yml
+      parameters:
+        SanitizedExtensionId: ${{ parameters.SanitizedExtensionId }}
+
+    - template: /eng/pipelines/templates/stages/publish-extension-daily.yml
+      parameters:
+        SanitizedExtensionId: ${{ parameters.SanitizedExtensionId }}
+        AzdExtensionId: ${{ parameters.AzdExtensionId }}

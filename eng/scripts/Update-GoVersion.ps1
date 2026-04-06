@@ -61,6 +61,19 @@ foreach ($file in $dockerfiles) {
     }
 }
 
+# --- Update devcontainer.json Go feature version ---
+$devcontainer = Join-Path $repoRoot '.devcontainer/devcontainer.json'
+if (Test-Path $devcontainer) {
+    $content = Get-Content $devcontainer -Raw
+    $newContent = $content -replace '("ghcr\.io/devcontainers/features/go:\d+":\s*\{\s*"version":\s*")[\d.]+(")', "`${1}$NewVersion`${2}"
+    if ($newContent -ne $content) {
+        Set-Content -Path $devcontainer -Value $newContent -NoNewline -Encoding utf8NoBOM
+        $updated += $devcontainer.Substring($repoRoot.Path.Length)
+    } else {
+        $skipped += $devcontainer.Substring($repoRoot.Path.Length)
+    }
+}
+
 # --- Report ---
 Write-Host ""
 if ($updated.Count -gt 0) {

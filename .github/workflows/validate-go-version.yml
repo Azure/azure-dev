@@ -5,6 +5,7 @@ on:
     paths:
       - "**/go.mod"
       - "**/Dockerfile"
+      - ".devcontainer/devcontainer.json"
       - "eng/pipelines/templates/steps/setup-go.yml"
       - ".github/workflows/validate-go-version.yml"
     branches: [main]
@@ -65,6 +66,20 @@ jobs:
               echo "  OK: $f (golang:$DOCKER_VERSION)"
             fi
           done
+
+          # Check devcontainer.json Go feature version
+          echo ""
+          echo "Checking devcontainer.json..."
+          DEVCONTAINER=".devcontainer/devcontainer.json"
+          if [ -f "$DEVCONTAINER" ]; then
+            DC_VERSION=$(grep -A1 'devcontainers/features/go' "$DEVCONTAINER" | grep -oP '"version":\s*"\K[\d.]+')
+            if [ -n "$DC_VERSION" ] && [ "$DC_VERSION" != "$EXPECTED" ]; then
+              echo "::error file=$DEVCONTAINER::devcontainer Go version mismatch: found '$DC_VERSION', expected '$EXPECTED'"
+              ERRORS=$((ERRORS + 1))
+            elif [ -n "$DC_VERSION" ]; then
+              echo "  OK: $DEVCONTAINER ($DC_VERSION)"
+            fi
+          fi
 
           echo ""
           if [ "$ERRORS" -gt 0 ]; then

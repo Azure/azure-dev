@@ -375,8 +375,10 @@ overrides:
     words:
       - covdata
       - GOWORK
-  - filename: extensions/microsoft.azd.exec/**/*.go
+  - filename: extensions/microsoft.azd.exec/**
     words:
+      - azvs
+      - notwindows
       - shellutil
 ignorePaths:
   - "**/*_test.go"

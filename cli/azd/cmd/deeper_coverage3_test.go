@@ -9,10 +9,17 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -20,6 +27,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
+	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/stretchr/testify/assert"
@@ -136,6 +144,49 @@ type mockSubTenantResolver struct {
 func (m *mockSubTenantResolver) LookupTenant(ctx context.Context, subscriptionId string) (string, error) {
 	args := m.Called(ctx, subscriptionId)
 	return args.String(0), args.Error(1)
+}
+
+func (m *mockSubTenantResolver) GetSubscription(ctx context.Context, subscriptionId string) (*account.Subscription, error) {
+	tenantId, err := m.LookupTenant(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	return &account.Subscription{
+		Id:                 subscriptionId,
+		TenantId:           tenantId,
+		UserAccessTenantId: tenantId,
+	}, nil
+}
+
+type staticSubscriptionResolver struct {
+	subscription *account.Subscription
+}
+
+func (s *staticSubscriptionResolver) LookupTenant(ctx context.Context, subscriptionId string) (string, error) {
+	return s.subscription.UserAccessTenantId, nil
+}
+
+func (s *staticSubscriptionResolver) GetSubscription(ctx context.Context, subscriptionId string) (*account.Subscription, error) {
+	return s.subscription, nil
+}
+
+type mockEnvSetSecretEntraIdService struct {
+	entraid.EntraIdService
+	subscriptionId string
+	scope          string
+	roleId         string
+	principalId    string
+}
+
+func (m *mockEnvSetSecretEntraIdService) CreateRbac(
+	ctx context.Context, subscriptionId string, scope, roleId, principalId string,
+) error {
+	m.subscriptionId = subscriptionId
+	m.scope = scope
+	m.roleId = roleId
+	m.principalId = principalId
+	return nil
 }
 
 // ==================== envSetSecretAction Tests ====================
@@ -872,6 +923,137 @@ func Test_EnvSetSecretConstructor(t *testing.T) {
 		nil, nil, nil, nil, nil, fm, projCfg,
 	)
 	require.NotNil(t, action)
+}
+
+func Test_EnvSetSecretAction_UsesResourceTenantForKeyVaultAndPrincipalId(t *testing.T) {
+	t.Parallel()
+
+	console := mockinput.NewMockConsole()
+	selectCount := 0
+	console.WhenSelect(func(options input.ConsoleOptions) bool {
+		return true
+	}).RespondFn(func(options input.ConsoleOptions) (any, error) {
+		selectCount++
+		if selectCount > 2 {
+			return nil, fmt.Errorf("unexpected select: %s", options.Message)
+		}
+		return 0, nil
+	})
+
+	promptCount := 0
+	console.WhenPrompt(func(options input.ConsoleOptions) bool {
+		return true
+	}).RespondFn(func(options input.ConsoleOptions) (any, error) {
+		promptCount++
+		switch promptCount {
+		case 1:
+			return "kv-name", nil
+		case 2:
+			return "my-secret-kv", nil
+		case 3:
+			return "secret-value", nil
+		default:
+			return nil, fmt.Errorf("unexpected prompt: %s", options.Message)
+		}
+	})
+
+	env := environment.NewWithValues("test", map[string]string{})
+	envManager := &mockenv.MockEnvManager{}
+	envManager.On("Save", mock.Anything, env).Return(nil)
+
+	prompter := &mockPrompter{}
+	prompter.On("PromptSubscription",
+		mock.Anything,
+		"Select the subscription where you want to create the Key Vault secret",
+	).Return("sub-123", nil)
+	prompter.On("PromptLocation",
+		mock.Anything,
+		"sub-123",
+		"Select the location to create the Key Vault",
+		mock.Anything,
+		mock.Anything,
+	).Return("westus", nil)
+	prompter.On("PromptResourceGroupFrom",
+		mock.Anything,
+		"sub-123",
+		"westus",
+		prompt.PromptResourceGroupFromOptions{
+			DefaultName:          "rg-for-my-key-vault",
+			NewResourceGroupHelp: "The name of the new resource group where the Key Vault will be created.",
+		},
+	).Return("rg-name", nil)
+
+	kvSvc := &mockKeyVaultService{}
+	kvSvc.On("ListSubscriptionVaults", mock.Anything, "sub-123").Return([]keyvault.Vault{}, nil)
+	kvSvc.On("CreateVault",
+		mock.Anything,
+		"resource-tenant",
+		"sub-123",
+		"rg-name",
+		"westus",
+		"kv-name",
+	).Return(keyvault.Vault{
+		Id:   "/subscriptions/sub-123/resourceGroups/rg-name/providers/Microsoft.KeyVault/vaults/kv-name",
+		Name: "kv-name",
+	}, nil)
+	kvSvc.On("CreateKeyVaultSecret",
+		mock.Anything,
+		"sub-123",
+		"kv-name",
+		"my-secret-kv",
+		"secret-value",
+	).Return(nil)
+
+	mockContext := mocks.NewMockContext(context.Background())
+	userProfileService := azapi.NewUserProfileService(
+		&mocks.MockMultiTenantCredentialProvider{
+			TokenMap: map[string]mocks.MockCredentials{
+				"resource-tenant": {
+					GetTokenFn: func(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
+						return azcore.AccessToken{
+							// cspell:disable-next-line
+							Token:     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvaWQiOiJ0aGlzLWlzLWEtdGVzdCJ9.vrKZx2J7-hsydI4rzdFVHqU1S6lHqLT95VSPx2RfQ04",
+							ExpiresOn: time.Now().Add(time.Hour),
+						}, nil
+					},
+				},
+			},
+		},
+		&azcore.ClientOptions{
+			Transport: mockContext.HttpClient,
+		},
+		cloud.AzurePublic(),
+	)
+
+	entraIdService := &mockEnvSetSecretEntraIdService{}
+	action := &envSetSecretAction{
+		console:        console,
+		env:            env,
+		envManager:     envManager,
+		flags:          &envSetFlags{},
+		args:           []string{"MY_SECRET"},
+		prompter:       prompter,
+		kvService:      kvSvc,
+		entraIdService: entraIdService,
+		subResolver: &staticSubscriptionResolver{
+			subscription: &account.Subscription{
+				Id:                 "sub-123",
+				TenantId:           "resource-tenant",
+				UserAccessTenantId: "home-tenant",
+			},
+		},
+		userProfileService:  userProfileService,
+		alphaFeatureManager: alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
+		projectConfig: &project.ProjectConfig{
+			Resources: map[string]*project.ResourceConfig{},
+		},
+	}
+
+	_, err := action.Run(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, "sub-123", entraIdService.subscriptionId)
+	require.Equal(t, keyvault.RoleIdKeyVaultAdministrator, entraIdService.roleId)
+	require.Equal(t, "this-is-a-test", entraIdService.principalId)
 }
 
 // ==================== Suppressed errors.Is / errors.AsType coverage ====================

@@ -703,6 +703,9 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(func(subManager *account.SubscriptionsManager) account.SubscriptionTenantResolver {
 		return subManager
 	})
+	container.MustRegisterSingleton(func(subManager *account.SubscriptionsManager) account.SubscriptionResolver {
+		return subManager
+	})
 
 	// Tools
 	container.MustRegisterSingleton(azapi.NewAzureClient)

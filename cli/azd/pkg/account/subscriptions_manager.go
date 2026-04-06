@@ -28,6 +28,12 @@ type SubscriptionTenantResolver interface {
 	LookupTenant(ctx context.Context, subscriptionId string) (tenantId string, err error)
 }
 
+// SubscriptionResolver allows resolving both the access tenant and subscription details.
+type SubscriptionResolver interface {
+	SubscriptionTenantResolver
+	GetSubscription(ctx context.Context, subscriptionId string) (*Subscription, error)
+}
+
 // Typically auth.Manager
 type principalInfoProvider interface {
 	GetLoggedInServicePrincipalTenantID(ctx context.Context) (*string, error)

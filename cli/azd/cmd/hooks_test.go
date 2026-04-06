@@ -16,32 +16,17 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/bash"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/language"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/powershell"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/python"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mocktools"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
-// registerHookExecutors registers all hook executors as named
-// transients in the mock container so that IoC resolution works
-// in tests.
+// registerHookExecutors delegates to the shared test helper in test/mocks/mocktools.
 func registerHookExecutors(mockCtx *mocks.MockContext) {
-	mockCtx.Container.MustRegisterNamedTransient(
-		string(language.ScriptLanguageBash), bash.NewExecutor,
-	)
-	mockCtx.Container.MustRegisterNamedTransient(
-		string(language.ScriptLanguagePowerShell),
-		powershell.NewExecutor,
-	)
-	mockCtx.Container.MustRegisterSingleton(python.NewCli)
-	mockCtx.Container.MustRegisterNamedTransient(
-		string(language.ScriptLanguagePython),
-		language.NewPythonExecutor,
-	)
+	mocktools.RegisterHookExecutors(mockCtx)
 }
 
 func Test_HooksRunAction_RunsLayerHooks(t *testing.T) {

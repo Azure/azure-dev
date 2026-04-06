@@ -137,6 +137,7 @@ type HookValidationResult struct {
 type HookWarning struct {
 	Message    string
 	Suggestion string
+	URL        string
 }
 
 // ValidateHooks validates hook configurations and returns any warnings
@@ -334,6 +335,7 @@ func (h *HooksManager) validateRuntimes(
 						"Python Downloads",
 					),
 				),
+				URL: pythonCli.InstallUrl(),
 			})
 		}
 	}
@@ -364,7 +366,7 @@ func (h *HooksManager) ValidateRuntimesErr(
 	links := make([]errorhandler.ErrorLink, 0, len(warnings))
 	for _, w := range warnings {
 		links = append(links, errorhandler.ErrorLink{
-			URL:   extractURL(w.Suggestion),
+			URL:   w.URL,
 			Title: w.Message,
 		})
 	}
@@ -378,17 +380,4 @@ func (h *HooksManager) ValidateRuntimesErr(
 		Suggestion: first.Suggestion,
 		Links:      links,
 	}
-}
-
-// extractURL returns the first https:// URL found in s, or s itself
-// if none is found. Used to pull install URLs out of formatted
-// suggestion strings.
-func extractURL(s string) string {
-	for part := range strings.FieldsSeq(s) {
-		if strings.HasPrefix(part, "https://") ||
-			strings.HasPrefix(part, "http://") {
-			return strings.TrimRight(part, ")")
-		}
-	}
-	return s
 }

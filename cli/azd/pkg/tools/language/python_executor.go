@@ -136,8 +136,14 @@ func (e *pythonExecutor) ensureVenv(
 	projectDir, venvName, venvPath string,
 	envVars []string,
 ) error {
-	_, statErr := os.Stat(venvPath)
+	info, statErr := os.Stat(venvPath)
 	if statErr == nil {
+		if !info.IsDir() {
+			return fmt.Errorf(
+				"venv path %q exists but is not a directory",
+				venvPath,
+			)
+		}
 		// Venv directory already exists — skip creation.
 		return nil
 	}

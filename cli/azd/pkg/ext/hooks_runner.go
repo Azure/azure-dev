@@ -17,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
@@ -174,6 +175,26 @@ func (h *HooksRunner) execHook(
 		)
 	}
 
+	// Validate that cwd is contained within boundaryDir to
+	// prevent path traversal via ".." in the dir config field.
+	absDir, err := filepath.Abs(cwd)
+	if err != nil {
+		return fmt.Errorf("resolving hook directory: %w", err)
+	}
+	absBoundary, err := filepath.Abs(boundaryDir)
+	if err != nil {
+		return fmt.Errorf(
+			"resolving boundary directory: %w", err,
+		)
+	}
+	if !osutil.IsPathContained(absBoundary, absDir) {
+		return fmt.Errorf(
+			"hook directory %q escapes project root %q",
+			cwd, boundaryDir,
+		)
+	}
+	cwd = absDir
+
 	envVars := hookEnv.Environ()
 
 	// Build execution context.
@@ -225,23 +246,7 @@ func (h *HooksRunner) execHook(
 	)
 
 	if err := executor.Prepare(ctx, scriptPath, execCtx); err != nil {
-		return &errorhandler.ErrorWithSuggestion{
-			Err: fmt.Errorf(
-				"preparing %s hook '%s': %w",
-				hookConfig.Language,
-				hookConfig.Name,
-				err,
-			),
-			Message: fmt.Sprintf(
-				"Failed to prepare %s hook '%s'.",
-				hookConfig.Language,
-				hookConfig.Name,
-			),
-			Suggestion: fmt.Sprintf(
-				"Ensure the required runtime for '%s' is installed.",
-				hookConfig.Language,
-			),
-		}
+		return fmt.Errorf("preparing hook '%s': %w", hookConfig.Name, err)
 	}
 
 	// Cleanup temp resources created during Prepare (e.g. inline

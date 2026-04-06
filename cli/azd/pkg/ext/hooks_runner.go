@@ -21,8 +21,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
-// Hooks enable support to invoke integration scripts before & after commands
-// Scripts can be invoked at the project or service level or
+// HooksRunner enables support to invoke lifecycle hooks before & after
+// commands. Hooks can be invoked at the project or service level.
 type HooksRunner struct {
 	hooksManager   *HooksManager
 	commandRunner  exec.CommandRunner
@@ -168,7 +168,7 @@ func (h *HooksRunner) execHook(
 			dir = filepath.Join(boundaryDir, dir)
 		}
 		cwd = dir
-	} else if hookConfig.path != "" && hookConfig.IsLanguageHook() {
+	} else if hookConfig.path != "" {
 		cwd = filepath.Dir(
 			filepath.Join(boundaryDir, hookConfig.path),
 		)
@@ -210,16 +210,15 @@ func (h *HooksRunner) execHook(
 		}
 	}
 
-	// Resolve script path. Language hooks need the full path so
-	// Prepare can discover project files; shell hooks keep the
-	// relative path because the executor's CWD handles resolution.
+	// Resolve script path to absolute so every executor receives a
+	// consistent, fully-qualified path regardless of hook language.
 	scriptPath := hookConfig.path
-	if hookConfig.cwd != "" && hookConfig.IsLanguageHook() {
-		scriptPath = filepath.Join(hookConfig.cwd, hookConfig.path)
+	if hookConfig.path != "" {
+		scriptPath = filepath.Join(boundaryDir, hookConfig.path)
 	}
 
-	// Prepare (unified — venv/deps for Python, pwsh detection for PS,
-	// inline temp file creation for shell hooks).
+	// Prepare (unified — venv/deps for Python, pwsh detection for
+	// PowerShell, inline temp file creation for Bash/PowerShell hooks).
 	log.Printf(
 		"Preparing hook '%s' (%s)\n",
 		hookConfig.Name, hookConfig.Language,
@@ -275,9 +274,8 @@ func (h *HooksRunner) execHook(
 
 // configureExecContext resolves interactive mode and sets up the
 // console previewer for non-interactive hooks that have no custom
-// stdout. This logic is shared by both shell and language hooks.
-// Returns true when a previewer was started; the caller must defer
-// [input.Console.StopPreviewer] in that case.
+// stdout. Returns true when a previewer was started; the caller must
+// defer [input.Console.StopPreviewer] in that case.
 func (h *HooksRunner) configureExecContext(
 	ctx context.Context,
 	hookConfig *HookConfig,

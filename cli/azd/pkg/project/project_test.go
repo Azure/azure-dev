@@ -15,7 +15,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -390,7 +389,7 @@ postbuild:
 		expectedHooks := HooksConfig{
 			"prebuild": {{
 				Name:            "",
-				Shell:           ext.ShellTypeBash,
+				Shell:           "sh",
 				Run:             "./pre-build.sh",
 				ContinueOnError: false,
 				Interactive:     false,
@@ -399,7 +398,7 @@ postbuild:
 			}},
 			"postbuild": {{
 				Name:            "",
-				Shell:           ext.ShellTypePowershell,
+				Shell:           "pwsh",
 				Run:             "./post-build.ps1",
 				ContinueOnError: false,
 				Interactive:     false,
@@ -419,7 +418,7 @@ postbuild:
 			Services: map[string]*ServiceConfig{},
 			Hooks: HooksConfig{
 				"prebuild": {{
-					Shell: ext.ShellTypeBash,
+					Shell: "sh",
 					Run:   "./pre-build.sh",
 				}},
 			},
@@ -455,7 +454,7 @@ postbuild:
 		expectedHooks := HooksConfig{
 			"prebuild": {{
 				Name:            "",
-				Shell:           ext.ShellTypeBash,
+				Shell:           "sh",
 				Run:             "./pre-build.sh",
 				ContinueOnError: false,
 				Interactive:     false,
@@ -463,7 +462,7 @@ postbuild:
 				Posix:           nil,
 			}, {
 				Name:            "",
-				Shell:           ext.ShellTypeBash,
+				Shell:           "sh",
 				Run:             "./pre-build-external.sh",
 				ContinueOnError: false,
 				Interactive:     false,
@@ -472,7 +471,7 @@ postbuild:
 			}},
 			"postbuild": {{
 				Name:            "",
-				Shell:           ext.ShellTypePowershell,
+				Shell:           "pwsh",
 				Run:             "./post-build.ps1",
 				ContinueOnError: false,
 				Interactive:     false,

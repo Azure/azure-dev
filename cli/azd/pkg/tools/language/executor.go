@@ -34,6 +34,16 @@ const (
 	ScriptLanguageDotNet ScriptLanguage = "dotnet"
 )
 
+// IsShellLanguage reports whether lang is one of the built-in shell
+// languages (Bash or PowerShell). Shell hooks support inline scripts
+// and are executed directly by the OS shell. Non-shell languages
+// (Python, JS, TS, DotNet) require a file on disk and are executed
+// through dedicated [tools.HookExecutor] implementations.
+func (lang ScriptLanguage) IsShellLanguage() bool {
+	return lang == ScriptLanguageBash ||
+		lang == ScriptLanguagePowerShell
+}
+
 // InferLanguageFromPath determines the [ScriptLanguage] from the
 // file extension of the given path. Extension matching is
 // case-insensitive. The following extensions are recognized:

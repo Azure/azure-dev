@@ -45,7 +45,7 @@ func Test_CommandHooks_Middleware_WithValidProjectAndMatchingCommand(t *testing.
 			"precommand": {
 				{
 					Run:   "echo 'hello'",
-					Shell: ext.ShellTypeBash,
+					Shell: "sh",
 				},
 			},
 		},
@@ -80,7 +80,7 @@ func Test_CommandHooks_Middleware_ValidProjectWithDifferentCommand(t *testing.T)
 			"precommand": {
 				{
 					Run:   "echo 'hello'",
-					Shell: ext.ShellTypeBash,
+					Shell: "sh",
 				},
 			},
 		},
@@ -142,7 +142,7 @@ func Test_CommandHooks_Middleware_PreHookWithError(t *testing.T) {
 			"precommand": {
 				{
 					Run:   "exit 1",
-					Shell: ext.ShellTypeBash,
+					Shell: "sh",
 				},
 			},
 		},
@@ -180,7 +180,7 @@ func Test_CommandHooks_Middleware_PreHookWithErrorAndContinue(t *testing.T) {
 			"precommand": {
 				{
 					Run:             "exit 1",
-					Shell:           ext.ShellTypeBash,
+					Shell:           "sh",
 					ContinueOnError: true,
 				},
 			},
@@ -219,7 +219,7 @@ func Test_CommandHooks_Middleware_WithCmdAlias(t *testing.T) {
 			"prealias": {
 				{
 					Run:   "echo 'hello'",
-					Shell: ext.ShellTypeBash,
+					Shell: "sh",
 				},
 			},
 		},
@@ -261,7 +261,7 @@ func Test_ServiceHooks_Registered(t *testing.T) {
 		Hooks: map[string][]*ext.HookConfig{
 			"predeploy": {
 				{
-					Shell: ext.ShellTypeBash,
+					Shell: "sh",
 					Run:   "echo 'Hello'",
 				},
 			},
@@ -538,7 +538,7 @@ func Test_PowerShellWarning_WithPowerShellHooks(t *testing.T) {
 			"preprovision": {
 				{
 					Run:   "Write-Host 'hello'",
-					Shell: ext.ShellTypePowershell,
+					Shell: "pwsh",
 				},
 			},
 		},
@@ -586,8 +586,8 @@ func Test_PowerShellWarning_WithPs1FileHook(t *testing.T) {
 		Hooks: map[string][]*ext.HookConfig{
 			"preprovision": {
 				{
-					Run:   "script.ps1",            // PowerShell file extension
-					Shell: ext.ShellTypePowershell, // Explicitly specify shell to avoid detection issues
+					Run:   "script.ps1", // PowerShell file extension
+					Shell: "pwsh",       // Explicitly specify shell to avoid detection issues
 				},
 			},
 		},
@@ -634,7 +634,7 @@ func Test_PowerShellWarning_WithoutPowerShellHooks(t *testing.T) {
 			"precommand": {
 				{
 					Run:   "echo 'hello'",
-					Shell: ext.ShellTypeBash,
+					Shell: "sh",
 				},
 			},
 		},
@@ -713,7 +713,7 @@ func Test_CommandHooks_ChildAction_HooksStillFire(t *testing.T) {
 					tt.hookName: {
 						{
 							Run:   "echo 'hook running'",
-							Shell: ext.ShellTypeBash,
+							Shell: "sh",
 						},
 					},
 				},
@@ -874,13 +874,13 @@ func Test_CommandHooks_ChildAction_SkipsValidationOnly(t *testing.T) {
 			"preprovision": {
 				{
 					Run:   "echo 'preprovision hook'",
-					Shell: ext.ShellTypeBash,
+					Shell: "sh",
 				},
 			},
 			"postprovision": {
 				{
 					Run:   "echo 'postprovision hook'",
-					Shell: ext.ShellTypeBash,
+					Shell: "sh",
 				},
 			},
 		},
@@ -931,7 +931,7 @@ func Test_CommandHooks_ChildAction_PreHookError_StopsAction(t *testing.T) {
 			"preprovision": {
 				{
 					Run:   "exit 1",
-					Shell: ext.ShellTypeBash,
+					Shell: "sh",
 				},
 			},
 		},
@@ -969,7 +969,7 @@ func Test_PowerShellWarning_WithPwshAvailable(t *testing.T) {
 			"precommand": {
 				{
 					Run:   "Write-Host 'hello'",
-					Shell: ext.ShellTypePowershell,
+					Shell: "pwsh",
 				},
 			},
 		},
@@ -1016,7 +1016,7 @@ func Test_PowerShellWarning_WithNoPowerShellInstalled(t *testing.T) {
 			"preprovision": {
 				{
 					Run:   "Write-Host 'hello'",
-					Shell: ext.ShellTypePowershell,
+					Shell: "pwsh",
 				},
 			},
 		},

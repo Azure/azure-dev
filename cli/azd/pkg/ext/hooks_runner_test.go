@@ -47,6 +47,7 @@ func registerHookExecutors(mockCtx *mocks.MockContext) {
 func Test_Hooks_Execute(t *testing.T) {
 	cwd := t.TempDir()
 	ostest.Chdir(t, cwd)
+	scriptsDir := filepath.Join(cwd, "scripts")
 
 	env := environment.NewWithValues(
 		"test",
@@ -59,24 +60,24 @@ func Test_Hooks_Execute(t *testing.T) {
 	hooksMap := map[string][]*HookConfig{
 		"preinline": {
 			{
-				Shell: ShellTypeBash,
+				Shell: "sh",
 				Run:   "echo 'Hello'",
 			},
 		},
 		"precommand": {
 			{
-				Shell: ShellTypeBash,
+				Shell: "sh",
 				Run:   "scripts/precommand.sh",
 			},
 		},
 		"postcommand": {{
-			Shell: ShellTypeBash,
+			Shell: "sh",
 			Run:   "scripts/postcommand.sh",
 		},
 		},
 		"preinteractive": {
 			{
-				Shell:       ShellTypeBash,
+				Shell:       "sh",
 				Run:         "scripts/preinteractive.sh",
 				Interactive: true,
 			},
@@ -98,8 +99,10 @@ func Test_Hooks_Execute(t *testing.T) {
 			return strings.Contains(command, "precommand.sh")
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 			ranPreHook = true
-			require.Equal(t, "scripts/precommand.sh", args.Args[0])
-			require.Equal(t, cwd, args.Cwd)
+			require.Equal(t, filepath.ToSlash(
+				filepath.Join(scriptsDir, "precommand.sh"),
+			), args.Args[0])
+			require.Equal(t, scriptsDir, args.Cwd)
 			require.ElementsMatch(t, env.Environ(), args.Env)
 			require.Equal(t, false, args.Interactive)
 
@@ -134,8 +137,10 @@ func Test_Hooks_Execute(t *testing.T) {
 			return strings.Contains(command, "postcommand.sh")
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 			ranPostHook = true
-			require.Equal(t, "scripts/postcommand.sh", args.Args[0])
-			require.Equal(t, cwd, args.Cwd)
+			require.Equal(t, filepath.ToSlash(
+				filepath.Join(scriptsDir, "postcommand.sh"),
+			), args.Args[0])
+			require.Equal(t, scriptsDir, args.Cwd)
 			require.ElementsMatch(t, env.Environ(), args.Env)
 			require.Equal(t, false, args.Interactive)
 
@@ -170,8 +175,10 @@ func Test_Hooks_Execute(t *testing.T) {
 			return strings.Contains(command, "preinteractive.sh")
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 			ranPostHook = true
-			require.Equal(t, "scripts/preinteractive.sh", args.Args[0])
-			require.Equal(t, cwd, args.Cwd)
+			require.Equal(t, filepath.ToSlash(
+				filepath.Join(scriptsDir, "preinteractive.sh"),
+			), args.Args[0])
+			require.Equal(t, scriptsDir, args.Cwd)
 			require.ElementsMatch(t, env.Environ(), args.Env)
 			require.Equal(t, true, args.Interactive)
 
@@ -242,7 +249,9 @@ func Test_Hooks_Execute(t *testing.T) {
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 			ranPreHook = true
 			hookLog = append(hookLog, "pre")
-			require.Equal(t, "scripts/precommand.sh", args.Args[0])
+			require.Equal(t, filepath.ToSlash(
+				filepath.Join(scriptsDir, "precommand.sh"),
+			), args.Args[0])
 
 			return exec.NewRunResult(0, "", ""), nil
 		})
@@ -252,7 +261,9 @@ func Test_Hooks_Execute(t *testing.T) {
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 			ranPostHook = true
 			hookLog = append(hookLog, "post")
-			require.Equal(t, "scripts/postcommand.sh", args.Args[0])
+			require.Equal(t, filepath.ToSlash(
+				filepath.Join(scriptsDir, "postcommand.sh"),
+			), args.Args[0])
 
 			return exec.NewRunResult(0, "", ""), nil
 		})
@@ -320,7 +331,7 @@ func Test_Hooks_Validation(t *testing.T) {
 		hooksMap := map[string][]*HookConfig{
 			"predeploy": {{
 				Name:  "predeploy",
-				Shell: ShellTypeBash,
+				Shell: "sh",
 				Run:   "scripts/script.sh",
 			}},
 		}
@@ -382,7 +393,7 @@ func Test_Hooks_Validation(t *testing.T) {
 		hooksMap := map[string][]*HookConfig{
 			"preinline": {{
 				Name:  "preinline",
-				Shell: ShellTypeBash,
+				Shell: "sh",
 				Run:   "echo 'Hello'",
 			}},
 		}
@@ -412,7 +423,7 @@ func Test_Hooks_Validation(t *testing.T) {
 		hooksMap := map[string][]*HookConfig{
 			"predeploy": {{
 				Name:  "predeploy",
-				Shell: ShellTypeBash,
+				Shell: "sh",
 			}},
 		}
 
@@ -503,7 +514,7 @@ func Test_ExecHook_LanguageHooks(t *testing.T) {
 		require.True(t, executeRan, "Execute should have run the .py script")
 	})
 
-	t.Run("ShellHookUnchanged", func(t *testing.T) {
+	t.Run("ShellHookAbsolutePath", func(t *testing.T) {
 		cwd := t.TempDir()
 		ostest.Chdir(t, cwd)
 
@@ -513,7 +524,7 @@ func Test_ExecHook_LanguageHooks(t *testing.T) {
 			"predeploy": {
 				{
 					Name:  "predeploy",
-					Shell: ShellTypeBash,
+					Shell: "sh",
 					Run:   "scripts/predeploy.sh",
 				},
 			},
@@ -531,8 +542,10 @@ func Test_ExecHook_LanguageHooks(t *testing.T) {
 			return strings.Contains(command, "predeploy.sh")
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 			shellRan = true
-			require.Equal(t, "scripts/predeploy.sh", args.Args[0])
-			require.Equal(t, cwd, args.Cwd)
+			require.Equal(t, filepath.ToSlash(
+				filepath.Join(cwd, "scripts", "predeploy.sh"),
+			), args.Args[0])
+			require.Equal(t, filepath.Join(cwd, "scripts"), args.Cwd)
 			return exec.NewRunResult(0, "", ""), nil
 		})
 
@@ -553,7 +566,7 @@ func Test_ExecHook_LanguageHooks(t *testing.T) {
 		)
 
 		require.NoError(t, err)
-		require.True(t, shellRan, "Shell script path should be used for .sh hooks")
+		require.True(t, shellRan, "Bash executor should use absolute path for .sh hooks")
 	})
 
 	t.Run("LanguageHookPrepareFailure", func(t *testing.T) {
@@ -743,7 +756,7 @@ func Test_ExecHook_LanguageHooks(t *testing.T) {
 		require.NotEmpty(t, capturedEnv)
 
 		// The environment variables from the hook's env should
-		// be forwarded to the language executor.
+		// be forwarded to the executor.
 		envMap := envSliceToMap(capturedEnv)
 		require.Equal(t, "my_value", envMap["MY_VAR"])
 		require.Equal(t, "other_value", envMap["OTHER_VAR"])

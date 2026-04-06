@@ -23,8 +23,8 @@ import (
 
 type HookFilterPredicateFn func(scriptName string, hookConfig *HookConfig) bool
 
-// Hooks enable support to invoke integration scripts before & after commands
-// Scripts can be invoked at the project or service level or
+// HooksManager enables support to invoke lifecycle hooks before & after
+// commands. Hooks can be invoked at the project or service level.
 type HooksManager struct {
 	cwd           string
 	commandRunner exec.CommandRunner
@@ -175,13 +175,12 @@ func (h *HooksManager) ValidateHooks(ctx context.Context, allHooks map[string][]
 				_, err := os.Stat(fullCheckPath)
 				isInlineScript := err != nil // File doesn't exist, so it's inline
 
-				// If shell is not specified and it's an inline script, set default for warning
-				if hookConfig.Shell == ScriptTypeUnknown && isInlineScript {
-					if runtime.GOOS == "windows" {
-						hookConfig.Shell = ShellTypePowershell
-					} else {
-						hookConfig.Shell = ShellTypeBash
-					}
+				// If no language/shell and it's an inline script, set
+				// OS default Language for warning purposes.
+				if hookConfig.Shell == "" &&
+					hookConfig.Language == language.ScriptLanguageUnknown &&
+					isInlineScript {
+					hookConfig.Language = defaultLanguageForOS()
 					hookConfig.usingDefaultShell = true
 				}
 			}
@@ -249,21 +248,21 @@ func (h *HooksManager) ValidateHooks(ctx context.Context, allHooks map[string][]
 		log.Println(warningMessage)
 	}
 
-	// Check language runtime availability for language hooks.
-	langWarnings := h.validateLanguageRuntimes(ctx, allHooks)
+	// Check runtime availability for hooks that require external runtimes.
+	langWarnings := h.validateRuntimes(ctx, allHooks)
 	result.Warnings = append(result.Warnings, langWarnings...)
 
 	return result
 }
 
-// validateLanguageRuntimes inspects all hook configurations and
-// verifies that required language runtimes are installed. It returns
-// warnings for each missing runtime, following the same pattern used
-// for the PowerShell 7 validation above.
+// validateRuntimes inspects all hook configurations and verifies that
+// required runtimes are installed. It returns warnings for each missing
+// runtime, following the same pattern used for the PowerShell 7
+// validation above.
 //
 // Currently only Python hooks are validated (Phase 1). JavaScript,
 // TypeScript, and DotNet hooks are deferred to later phases.
-func (h *HooksManager) validateLanguageRuntimes(
+func (h *HooksManager) validateRuntimes(
 	ctx context.Context,
 	allHooks map[string][]*HookConfig,
 ) []HookWarning {
@@ -307,7 +306,10 @@ func (h *HooksManager) validateLanguageRuntimes(
 				continue
 			}
 
-			if cfg.IsLanguageHook() {
+			// Non-shell hooks need runtime validation
+			// (e.g. Python must be installed). Bash and
+			// PowerShell hooks are validated separately above.
+			if !cfg.Language.IsShellLanguage() {
 				if _, seen := requiredLangs[cfg.Language]; !seen {
 					requiredLangs[cfg.Language] = hookName
 				}
@@ -342,16 +344,16 @@ func (h *HooksManager) validateLanguageRuntimes(
 	return warnings
 }
 
-// ValidateLanguageRuntimesErr is a convenience wrapper around
-// ValidateHooks that returns an [errorhandler.ErrorWithSuggestion]
-// when any language runtime is missing. Callers that need a hard
-// early failure (e.g. before starting a long deployment) should use
-// this instead of inspecting warnings manually.
-func (h *HooksManager) ValidateLanguageRuntimesErr(
+// ValidateRuntimesErr is a convenience wrapper around ValidateHooks
+// that returns an [errorhandler.ErrorWithSuggestion] when any required
+// runtime is missing. Callers that need a hard early failure (e.g.
+// before starting a long deployment) should use this instead of
+// inspecting warnings manually.
+func (h *HooksManager) ValidateRuntimesErr(
 	ctx context.Context,
 	allHooks map[string][]*HookConfig,
 ) error {
-	warnings := h.validateLanguageRuntimes(ctx, allHooks)
+	warnings := h.validateRuntimes(ctx, allHooks)
 	if len(warnings) == 0 {
 		return nil
 	}
@@ -369,7 +371,7 @@ func (h *HooksManager) ValidateLanguageRuntimesErr(
 
 	return &errorhandler.ErrorWithSuggestion{
 		Err: fmt.Errorf(
-			"missing required language runtime: %s",
+			"missing required runtime: %s",
 			first.Message,
 		),
 		Message:    first.Message,

@@ -476,7 +476,7 @@ func Test_Hooks_Config_Yaml_Marshalling(t *testing.T) {
 			Hooks: HooksConfig{
 				"postprovision": {
 					{
-						Shell: ext.ShellTypeBash,
+						Shell: "sh",
 						Run:   "scripts/postprovision.sh",
 					},
 				},
@@ -489,7 +489,7 @@ func Test_Hooks_Config_Yaml_Marshalling(t *testing.T) {
 					Hooks: HooksConfig{
 						"postprovision": {
 							{
-								Shell: ext.ShellTypeBash,
+								Shell: "sh",
 								Run:   "scripts/postprovision.sh",
 							},
 						},
@@ -514,11 +514,11 @@ func Test_Hooks_Config_Yaml_Marshalling(t *testing.T) {
 			Hooks: map[string][]*ext.HookConfig{
 				"postprovision": {
 					{
-						Shell: ext.ShellTypeBash,
+						Shell: "sh",
 						Run:   "scripts/postprovision1.sh",
 					},
 					{
-						Shell: ext.ShellTypeBash,
+						Shell: "sh",
 						Run:   "scripts/postprovision2.sh",
 					},
 				},
@@ -531,11 +531,11 @@ func Test_Hooks_Config_Yaml_Marshalling(t *testing.T) {
 					Hooks: HooksConfig{
 						"postprovision": {
 							{
-								Shell: ext.ShellTypeBash,
+								Shell: "sh",
 								Run:   "scripts/postprovision1.sh",
 							},
 							{
-								Shell: ext.ShellTypeBash,
+								Shell: "sh",
 								Run:   "scripts/postprovision2.sh",
 							},
 						},

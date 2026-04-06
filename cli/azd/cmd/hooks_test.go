@@ -65,7 +65,7 @@ func Test_HooksRunAction_RunsLayerHooks(t *testing.T) {
 					Path: "infra/core",
 					Hooks: provisioning.HooksConfig{
 						"preprovision": {{
-							Shell: ext.ShellTypeBash,
+							Shell: "sh",
 							Run:   "echo core",
 						}},
 					},
@@ -75,7 +75,7 @@ func Test_HooksRunAction_RunsLayerHooks(t *testing.T) {
 					Path: absoluteLayerPath,
 					Hooks: provisioning.HooksConfig{
 						"preprovision": {{
-							Shell: ext.ShellTypeBash,
+							Shell: "sh",
 							Run:   "echo shared",
 						}},
 					},
@@ -133,7 +133,7 @@ func Test_HooksRunAction_FiltersLayerHooks(t *testing.T) {
 					Path: "infra/core",
 					Hooks: provisioning.HooksConfig{
 						"preprovision": {{
-							Shell: ext.ShellTypeBash,
+							Shell: "sh",
 							Run:   "echo core",
 						}},
 					},
@@ -143,7 +143,7 @@ func Test_HooksRunAction_FiltersLayerHooks(t *testing.T) {
 					Path: "infra/shared",
 					Hooks: provisioning.HooksConfig{
 						"preprovision": {{
-							Shell: ext.ShellTypeBash,
+							Shell: "sh",
 							Run:   "echo shared",
 						}},
 					},
@@ -203,7 +203,7 @@ func Test_HooksRunAction_SetsTelemetryTypeForLayer(t *testing.T) {
 					Path: "infra/core",
 					Hooks: provisioning.HooksConfig{
 						"preprovision": {{
-							Shell: ext.ShellTypeBash,
+							Shell: "sh",
 							Run:   "echo core",
 						}},
 					},
@@ -297,6 +297,6 @@ func Test_HooksRunAction_ValidatesLayerHooksRelativeToLayerPath(t *testing.T) {
 	err := action.validateAndWarnHooks(*mockContext.Context)
 	require.NoError(t, err)
 	require.False(t, layerHook.IsUsingDefaultShell())
-	// validate() infers shell type from the .sh file extension
-	require.Equal(t, ext.ShellTypeBash, layerHook.Shell)
+	// validate() infers language from the .sh file extension
+	require.Equal(t, language.ScriptLanguageBash, layerHook.Language)
 }

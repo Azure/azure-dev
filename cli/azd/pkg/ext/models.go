@@ -22,20 +22,7 @@ type HookType string
 // platform-specific hook overrides.
 type HookPlatformType string
 
-// ShellType identifies the shell used to execute hook scripts.
-type ShellType string
-
-// ScriptLocation indicates whether a hook script is defined inline
-// in azure.yaml or references an external file path.
-type ScriptLocation string
-
 const (
-	ShellTypeBash         ShellType      = "sh"
-	ShellTypePowershell   ShellType      = "pwsh"
-	ScriptTypeUnknown     ShellType      = ""
-	ScriptLocationInline  ScriptLocation = "inline"
-	ScriptLocationPath    ScriptLocation = "path"
-	ScriptLocationUnknown ScriptLocation = ""
 	// Executes pre hooks
 	HookTypePre HookType = "pre"
 	// Execute post hooks
@@ -46,23 +33,26 @@ const (
 )
 
 var (
-	// ErrScriptTypeUnknown indicates the shell type could not be inferred from
-	// the script path and was not explicitly configured.
+	// ErrScriptTypeUnknown indicates the language could not be inferred
+	// from the script path and was not explicitly configured.
 	ErrScriptTypeUnknown error = errors.New(
-		"unable to determine script type. " +
-			"Ensure 'shell' is set to 'sh' or 'pwsh' in your hook configuration, " +
-			"or use a file with a .sh or .ps1 extension",
+		"unable to determine hook language. " +
+			"Ensure 'shell' or 'language' is set in your hook configuration, " +
+			"or use a file with a recognized extension " +
+			"(.sh, .ps1, .py, .js, .ts, .cs)",
 	)
 	// ErrRunRequired indicates the hook configuration is missing the mandatory 'run' field.
 	ErrRunRequired error = errors.New(
 		"'run' is required for every hook configuration. " +
 			"Set 'run' to an inline script or a relative file path",
 	)
-	// ErrUnsupportedScriptType indicates the script file has an extension that is not
-	// a recognized shell type (.sh or .ps1) and no explicit language or shell was set.
+	// ErrUnsupportedScriptType indicates the script file has an extension
+	// that is not recognized and no explicit language or shell was set.
 	ErrUnsupportedScriptType error = errors.New(
-		"script type is not valid. Only '.sh' and '.ps1' are supported for shell hooks. " +
-			"For other languages, set the 'language' field (e.g. language: python)",
+		"script type is not valid. " +
+			"Supported extensions: .sh, .ps1, .py, .js, .ts, .cs. " +
+			"Alternatively, set 'language' (e.g. language: python) " +
+			"or 'shell' (e.g. shell: sh)",
 	)
 )
 
@@ -71,27 +61,27 @@ type InvokeFn func() error
 
 // HookConfig defines the configuration for a single hook in azure.yaml.
 // Hooks are lifecycle scripts that run before or after azd commands.
-// They may be shell scripts (sh/pwsh) executed via the shell runner,
-// or programming-language scripts (Python, JS, TS, DotNet) executed
-// via the [tools.HookExecutor] pipeline.
+// Every hook is executed through a [tools.HookExecutor] resolved via IoC
+// based on the hook's Language — including Bash, PowerShell, Python,
+// and future executor types (JS, TS, DotNet).
 type HookConfig struct {
-	// The location of the script hook (file path or inline)
-	location ScriptLocation
-	// When location is `path` a file path must be specified relative to the project or service
+	// When set, contains the resolved file path relative to the project or service
 	path string
 	// Stores a value whether or not this hook config has been previously validated
 	validated bool
 	// Stores the working directory set for this hook config
 	cwd string
-	// When location is `inline` a script must be defined inline
+	// When set, contains the inline script content to execute
 	script string
 	// Indicates if the shell was automatically detected based on OS (used for warnings)
 	usingDefaultShell bool
 
 	// Internal name of the hook running for a given command
 	Name string `yaml:",omitempty"`
-	// The type of script hook (bash or powershell)
-	Shell ShellType `yaml:"shell,omitempty"`
+	// The type of script hook (bash or powershell).
+	// Retained as a string for backwards-compatible YAML
+	// deserialization. After validate(), only Language is used.
+	Shell string `yaml:"shell,omitempty"`
 	// Language specifies the programming language of the hook script.
 	// Allowed values: "sh", "pwsh", "js", "ts", "python", "dotnet".
 	// When empty, the language is auto-detected from the file extension
@@ -122,10 +112,17 @@ type HookConfig struct {
 }
 
 // validate normalizes and validates the hook configuration. It resolves
-// the script location (inline vs. file path), infers the Language from
-// the Shell or file extension when not explicitly set, and rejects
-// invalid combinations (e.g. inline scripts for non-shell languages).
-// After a successful call, the hook is ready for execution.
+// the script location (inline vs. file path) and ensures that Language
+// is always resolved to a concrete [language.ScriptLanguage] value.
+//
+// Language resolution priority:
+//  1. Explicit Language field
+//  2. Explicit Shell field (mapped to Language)
+//  3. File extension via [language.InferLanguageFromPath]
+//  4. OS default (Bash on Unix, PowerShell on Windows) for inline scripts
+//
+// After a successful call, Language is the single source of truth for
+// executor selection and the hook is ready for execution.
 func (hc *HookConfig) validate() error {
 	if hc.validated {
 		return nil
@@ -135,7 +132,9 @@ func (hc *HookConfig) validate() error {
 		return ErrRunRequired
 	}
 
-	relativeCheckPath := strings.ReplaceAll(hc.Run, "/", string(os.PathSeparator))
+	relativeCheckPath := strings.ReplaceAll(
+		hc.Run, "/", string(os.PathSeparator),
+	)
 	fullCheckPath := relativeCheckPath
 	if hc.cwd != "" {
 		fullCheckPath = filepath.Join(hc.cwd, hc.Run)
@@ -143,85 +142,69 @@ func (hc *HookConfig) validate() error {
 
 	stats, err := os.Stat(fullCheckPath)
 	if err == nil && !stats.IsDir() {
-		hc.location = ScriptLocationPath
 		hc.path = relativeCheckPath
 	} else {
-		hc.location = ScriptLocationInline
 		hc.script = hc.Run
 	}
 
 	// Language resolution — priority:
 	// 1. explicit Language  2. explicit Shell  3. file extension
+	// 4. OS default for inline scripts
 	if hc.Language == language.ScriptLanguageUnknown {
 		switch {
-		case hc.Shell != ScriptTypeUnknown:
+		case hc.Shell != "":
 			hc.Language = shellToLanguage(hc.Shell)
-		case hc.location == ScriptLocationPath:
-			hc.Language = language.InferLanguageFromPath(hc.Run)
+		case hc.path != "":
+			hc.Language = language.InferLanguageFromPath(
+				hc.Run,
+			)
 		}
 	}
 
-	// Reject inline scripts for non-shell (language) hooks.
-	if hc.location == ScriptLocationInline && hc.IsLanguageHook() {
+	// Reject inline scripts for non-shell executors. Only Bash and
+	// PowerShell executors support inline script content; other
+	// executors require a file on disk.
+	if hc.script != "" &&
+		hc.Language != language.ScriptLanguageUnknown &&
+		!hc.Language.IsShellLanguage() {
 		return fmt.Errorf(
 			"inline scripts are not supported for %s hooks. "+
-				"Write your script to a file and set 'run' to the file path "+
+				"Write your script to a file and set 'run' "+
+				"to the file path "+
 				"(e.g. run: ./hooks/my-script.py)",
 			hc.Language,
 		)
 	}
 
-	// Language hooks are executed by a language-specific executor;
-	// no shell type resolution or temp script is needed.
-	if hc.IsLanguageHook() {
+	// Non-shell executors handle their own runtime and dependency
+	// setup; no shell type resolution or temp script is needed.
+	if hc.Language != language.ScriptLanguageUnknown &&
+		!hc.Language.IsShellLanguage() {
 		// Auto-infer Dir from the script's directory when not
 		// explicitly set by the user.
-		if hc.Dir == "" && hc.location == ScriptLocationPath {
+		if hc.Dir == "" && hc.path != "" {
 			hc.Dir = filepath.Dir(hc.path)
 		}
 		hc.validated = true
 		return nil
 	}
 
-	// If Language resolved to a shell variant but Shell is unset,
-	// derive Shell so the existing shell execution path works.
-	if hc.Shell == ScriptTypeUnknown {
-		switch hc.Language {
-		case language.ScriptLanguageBash:
-			hc.Shell = ShellTypeBash
-		case language.ScriptLanguagePowerShell:
-			hc.Shell = ShellTypePowershell
-		}
-	}
-
-	// --- existing shell behavior (unchanged) ---
-
-	// If shell is not specified and it's an inline script, use OS default
-	if hc.Shell == ScriptTypeUnknown && hc.path == "" {
-		hc.Shell = getDefaultShellForOS()
+	// For inline scripts with no resolved language, default to the
+	// OS-appropriate shell language.
+	if hc.Language == language.ScriptLanguageUnknown &&
+		hc.script != "" {
+		hc.Language = defaultLanguageForOS()
 		hc.usingDefaultShell = true
 	}
 
-	if hc.location == ScriptLocationUnknown {
-		if hc.path != "" {
-			hc.location = ScriptLocationPath
-		} else if hc.script != "" {
-			hc.location = ScriptLocationInline
-		}
-	}
-
-	if hc.location != ScriptLocationInline && hc.Shell == ScriptTypeUnknown {
-		scriptType, err := inferScriptTypeFromFilePath(hc.path)
-		if err != nil {
-			return err
-		}
-
-		hc.Shell = scriptType
-	}
-
-	// Backfill Language from resolved Shell for shell-based hooks.
+	// For file-based hooks with an unrecognized extension, error.
 	if hc.Language == language.ScriptLanguageUnknown {
-		hc.Language = shellToLanguage(hc.Shell)
+		return fmt.Errorf(
+			"script with file extension '%s' is not valid. "+
+				"%w.",
+			filepath.Ext(hc.path),
+			ErrUnsupportedScriptType,
+		)
 	}
 
 	hc.validated = true
@@ -229,16 +212,22 @@ func (hc *HookConfig) validate() error {
 	return nil
 }
 
-// IsPowerShellHook determines if a hook configuration uses PowerShell
+// IsPowerShellHook determines if a hook configuration uses PowerShell.
+// It checks the resolved Language first, then falls back to the raw
+// Shell field and file extension for hooks that have not yet been
+// validated.
 func (hc *HookConfig) IsPowerShellHook() bool {
-	// Check if shell is explicitly set to pwsh
-	if hc.Shell == ShellTypePowershell {
+	if hc.Language == language.ScriptLanguagePowerShell {
 		return true
 	}
 
-	// Check if shell is unknown but the hook file has .ps1 extension
-	if hc.Shell == ScriptTypeUnknown && hc.Run != "" {
-		// For file-based hooks, check the extension
+	// Check raw Shell field (pre-validation).
+	if hc.Shell == "pwsh" {
+		return true
+	}
+
+	// Check file extension for unvalidated hooks.
+	if hc.Run != "" {
 		if strings.HasSuffix(strings.ToLower(hc.Run), ".ps1") {
 			return true
 		}
@@ -247,7 +236,8 @@ func (hc *HookConfig) IsPowerShellHook() bool {
 	// Check OS-specific hook configurations
 	if runtime.GOOS == "windows" && hc.Windows != nil {
 		return hc.Windows.IsPowerShellHook()
-	} else if (runtime.GOOS == "linux" || runtime.GOOS == "darwin") && hc.Posix != nil {
+	} else if (runtime.GOOS == "linux" ||
+		runtime.GOOS == "darwin") && hc.Posix != nil {
 		return hc.Posix.IsPowerShellHook()
 	}
 
@@ -258,22 +248,6 @@ func (hc *HookConfig) IsPowerShellHook() bool {
 // because no shell was explicitly configured
 func (hc *HookConfig) IsUsingDefaultShell() bool {
 	return hc.usingDefaultShell
-}
-
-// IsLanguageHook returns true when this hook targets a programming
-// language (Python, JavaScript, TypeScript, or DotNet) rather than a
-// shell (Bash or PowerShell). Language hooks are executed through the
-// [tools.HookExecutor] pipeline instead of the shell runner.
-func (hc *HookConfig) IsLanguageHook() bool {
-	switch hc.Language {
-	case language.ScriptLanguagePython,
-		language.ScriptLanguageJavaScript,
-		language.ScriptLanguageTypeScript,
-		language.ScriptLanguageDotNet:
-		return true
-	default:
-		return false
-	}
 }
 
 // InferHookType extracts the hook timing prefix ("pre" or "post")
@@ -292,43 +266,25 @@ func InferHookType(name string) (HookType, string) {
 	return HookTypeNone, name
 }
 
-// getDefaultShellForOS returns the default shell type based on the operating system
-func getDefaultShellForOS() ShellType {
+// defaultLanguageForOS returns the default shell language for the
+// current operating system: PowerShell on Windows, Bash elsewhere.
+func defaultLanguageForOS() language.ScriptLanguage {
 	if runtime.GOOS == "windows" {
-		return ShellTypePowershell
+		return language.ScriptLanguagePowerShell
 	}
-	return ShellTypeBash
+	return language.ScriptLanguageBash
 }
 
-// shellToLanguage maps a [ShellType] to the corresponding
-// [language.ScriptLanguage]. Returns [language.ScriptLanguageUnknown]
-// for unrecognized shell types.
-func shellToLanguage(shell ShellType) language.ScriptLanguage {
+// shellToLanguage maps a raw shell string (from the YAML "shell"
+// field) to the corresponding [language.ScriptLanguage]. Returns
+// [language.ScriptLanguageUnknown] for unrecognized values.
+func shellToLanguage(shell string) language.ScriptLanguage {
 	switch shell {
-	case ShellTypeBash:
+	case "sh":
 		return language.ScriptLanguageBash
-	case ShellTypePowershell:
+	case "pwsh":
 		return language.ScriptLanguagePowerShell
 	default:
 		return language.ScriptLanguageUnknown
-	}
-}
-
-// inferScriptTypeFromFilePath returns the [ShellType] for a file
-// based on its extension. Only .sh and .ps1 are valid shell types;
-// other extensions return [ErrUnsupportedScriptType].
-func inferScriptTypeFromFilePath(path string) (ShellType, error) {
-	fileExtension := filepath.Ext(path)
-	switch fileExtension {
-	case ".sh":
-		return ShellTypeBash, nil
-	case ".ps1":
-		return ShellTypePowershell, nil
-	default:
-		return "", fmt.Errorf(
-			"script with file extension '%s' is not valid. %w.",
-			fileExtension,
-			ErrUnsupportedScriptType,
-		)
 	}
 }

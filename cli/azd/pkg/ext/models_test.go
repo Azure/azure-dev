@@ -92,7 +92,7 @@ func TestHookConfig_LanguageField(t *testing.T) {
 func TestHookConfig_LanguageRoundTrip(t *testing.T) {
 	original := HookConfig{
 		Run:      "hooks/deploy.py",
-		Shell:    ShellTypeBash,
+		Shell:    "sh",
 		Language: language.ScriptLanguagePython,
 		Dir:      "hooks",
 	}
@@ -138,7 +138,7 @@ func TestHookConfig_ValidateLanguageResolution(t *testing.T) {
 		config           HookConfig
 		createFile       string // relative path to create under cwd
 		expectedLanguage language.ScriptLanguage
-		isLanguageHook   bool
+		isShellLanguage  bool
 		expectError      string
 	}{
 		{
@@ -150,7 +150,7 @@ func TestHookConfig_ValidateLanguageResolution(t *testing.T) {
 			},
 			createFile:       "script.py",
 			expectedLanguage: language.ScriptLanguagePython,
-			isLanguageHook:   true,
+			isShellLanguage:  false,
 		},
 		{
 			name: "ExplicitLanguageOverridesExtension",
@@ -161,17 +161,17 @@ func TestHookConfig_ValidateLanguageResolution(t *testing.T) {
 			},
 			createFile:       "script.js",
 			expectedLanguage: language.ScriptLanguagePython,
-			isLanguageHook:   true,
+			isShellLanguage:  false,
 		},
 		{
 			name: "ShellBashMapsToLanguage",
 			config: HookConfig{
 				Name:  "test",
-				Shell: ShellTypeBash,
+				Shell: "sh",
 				Run:   "echo hello",
 			},
 			expectedLanguage: language.ScriptLanguageBash,
-			isLanguageHook:   false,
+			isShellLanguage:  true,
 		},
 		{
 			name: "InferPythonFromExtension",
@@ -181,7 +181,7 @@ func TestHookConfig_ValidateLanguageResolution(t *testing.T) {
 			},
 			createFile:       "hooks/seed.py",
 			expectedLanguage: language.ScriptLanguagePython,
-			isLanguageHook:   true,
+			isShellLanguage:  false,
 		},
 		{
 			name: "InferJavaScriptFromExtension",
@@ -191,7 +191,7 @@ func TestHookConfig_ValidateLanguageResolution(t *testing.T) {
 			},
 			createFile:       "hooks/setup.js",
 			expectedLanguage: language.ScriptLanguageJavaScript,
-			isLanguageHook:   true,
+			isShellLanguage:  false,
 		},
 		{
 			name: "InferTypeScriptFromExtension",
@@ -201,7 +201,7 @@ func TestHookConfig_ValidateLanguageResolution(t *testing.T) {
 			},
 			createFile:       "hooks/test.ts",
 			expectedLanguage: language.ScriptLanguageTypeScript,
-			isLanguageHook:   true,
+			isShellLanguage:  false,
 		},
 		{
 			name: "InferDotNetFromExtension",
@@ -211,7 +211,7 @@ func TestHookConfig_ValidateLanguageResolution(t *testing.T) {
 			},
 			createFile:       "hooks/run.cs",
 			expectedLanguage: language.ScriptLanguageDotNet,
-			isLanguageHook:   true,
+			isShellLanguage:  false,
 		},
 		{
 			name: "InferBashFromExtension",
@@ -221,7 +221,7 @@ func TestHookConfig_ValidateLanguageResolution(t *testing.T) {
 			},
 			createFile:       "hooks/deploy.sh",
 			expectedLanguage: language.ScriptLanguageBash,
-			isLanguageHook:   false,
+			isShellLanguage:  true,
 		},
 		{
 			name: "InferPowerShellFromExtension",
@@ -231,7 +231,7 @@ func TestHookConfig_ValidateLanguageResolution(t *testing.T) {
 			},
 			createFile:       "hooks/deploy.ps1",
 			expectedLanguage: language.ScriptLanguagePowerShell,
-			isLanguageHook:   false,
+			isShellLanguage:  true,
 		},
 		{
 			name: "InlineScriptDefaultsToOSShell",
@@ -239,10 +239,8 @@ func TestHookConfig_ValidateLanguageResolution(t *testing.T) {
 				Name: "test",
 				Run:  "echo hello",
 			},
-			expectedLanguage: shellToLanguage(
-				getDefaultShellForOS(),
-			),
-			isLanguageHook: false,
+			expectedLanguage: defaultLanguageForOS(),
+			isShellLanguage:  true,
 		},
 		{
 			name: "InlineScriptWithLanguagePythonErrors",
@@ -258,11 +256,11 @@ func TestHookConfig_ValidateLanguageResolution(t *testing.T) {
 			name: "InlineScriptWithShellBashIsOK",
 			config: HookConfig{
 				Name:  "test",
-				Shell: ShellTypeBash,
+				Shell: "sh",
 				Run:   "echo hello",
 			},
 			expectedLanguage: language.ScriptLanguageBash,
-			isLanguageHook:   false,
+			isShellLanguage:  true,
 		},
 	}
 
@@ -293,7 +291,8 @@ func TestHookConfig_ValidateLanguageResolution(t *testing.T) {
 				t, tt.expectedLanguage, config.Language,
 			)
 			require.Equal(
-				t, tt.isLanguageHook, config.IsLanguageHook(),
+				t, tt.isShellLanguage,
+				config.Language.IsShellLanguage(),
 			)
 		})
 	}
@@ -347,7 +346,7 @@ func TestHookConfig_ValidateDirInference(t *testing.T) {
 			name: "ShellHookDirUnchanged",
 			config: HookConfig{
 				Name:  "test",
-				Shell: ShellTypeBash,
+				Shell: "sh",
 				Run:   filepath.Join("hooks", "setup.sh"),
 			},
 			createFile:  filepath.Join("hooks", "setup.sh"),
@@ -357,7 +356,7 @@ func TestHookConfig_ValidateDirInference(t *testing.T) {
 			name: "InlineScriptDirUnchanged",
 			config: HookConfig{
 				Name:  "test",
-				Shell: ShellTypeBash,
+				Shell: "sh",
 				Run:   "echo hello",
 			},
 			expectedDir: "",
@@ -385,25 +384,27 @@ func TestHookConfig_ValidateDirInference(t *testing.T) {
 	}
 }
 
-func TestHookConfig_IsLanguageHook(t *testing.T) {
+func TestScriptLanguage_IsShellLanguage(t *testing.T) {
 	tests := []struct {
 		name     string
 		lang     language.ScriptLanguage
 		expected bool
 	}{
-		{"Python", language.ScriptLanguagePython, true},
-		{"JavaScript", language.ScriptLanguageJavaScript, true},
-		{"TypeScript", language.ScriptLanguageTypeScript, true},
-		{"DotNet", language.ScriptLanguageDotNet, true},
-		{"Bash", language.ScriptLanguageBash, false},
-		{"PowerShell", language.ScriptLanguagePowerShell, false},
+		{"Python", language.ScriptLanguagePython, false},
+		{"JavaScript", language.ScriptLanguageJavaScript, false},
+		{"TypeScript", language.ScriptLanguageTypeScript, false},
+		{"DotNet", language.ScriptLanguageDotNet, false},
+		{"Bash", language.ScriptLanguageBash, true},
+		{"PowerShell", language.ScriptLanguagePowerShell, true},
 		{"Unknown", language.ScriptLanguageUnknown, false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			config := &HookConfig{Language: tt.lang}
-			require.Equal(t, tt.expected, config.IsLanguageHook())
+			require.Equal(
+				t, tt.expected,
+				tt.lang.IsShellLanguage(),
+			)
 		})
 	}
 }

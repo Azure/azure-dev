@@ -13,6 +13,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/language"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockexec"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/stretchr/testify/require"
@@ -51,13 +52,13 @@ func Test_GetAllHookConfigs(t *testing.T) {
 		hooksMap := map[string][]*HookConfig{
 			"preinit": {
 				{
-					Shell: ShellTypeBash,
+					Shell: "sh",
 					// Run is missing - this should cause an error
 				},
 			},
 			"postinit": {
 				{
-					Shell: ShellTypeBash,
+					Shell: "sh",
 					// Run is missing - this should cause an error
 				},
 			},
@@ -123,13 +124,13 @@ func Test_GetByParams(t *testing.T) {
 		hooksMap := map[string][]*HookConfig{
 			"preinit": {
 				{
-					Shell: ShellTypeBash,
+					Shell: "sh",
 					// Run is missing - this should cause an error
 				},
 			},
 			"postinit": {
 				{
-					Shell: ShellTypeBash,
+					Shell: "sh",
 					// Run is missing - this should cause an error
 				},
 			},
@@ -150,7 +151,7 @@ func Test_HookConfig_DefaultShell(t *testing.T) {
 	tests := []struct {
 		name             string
 		hookConfig       *HookConfig
-		expectedShell    ShellType
+		expectedLanguage language.ScriptLanguage
 		expectingDefault bool
 	}{
 		{
@@ -159,17 +160,17 @@ func Test_HookConfig_DefaultShell(t *testing.T) {
 				Name: "test",
 				Run:  "echo 'hello'",
 			},
-			expectedShell:    getDefaultShellForOS(),
+			expectedLanguage: defaultLanguageForOS(),
 			expectingDefault: true,
 		},
 		{
 			name: "Shell explicitly specified - should not use default",
 			hookConfig: &HookConfig{
 				Name:  "test",
-				Shell: ShellTypeBash,
+				Shell: "sh",
 				Run:   "echo 'hello'",
 			},
-			expectedShell:    ShellTypeBash,
+			expectedLanguage: language.ScriptLanguageBash,
 			expectingDefault: false,
 		},
 	}
@@ -183,7 +184,7 @@ func Test_HookConfig_DefaultShell(t *testing.T) {
 			err := config.validate()
 			require.NoError(t, err)
 
-			require.Equal(t, tt.expectedShell, config.Shell)
+			require.Equal(t, tt.expectedLanguage, config.Language)
 			require.Equal(t, tt.expectingDefault, config.IsUsingDefaultShell())
 		})
 	}
@@ -222,7 +223,7 @@ func Test_ValidateHooks_PythonInstalled(t *testing.T) {
 	mgr := NewHooksManager(tempDir, mockRunner)
 	result := mgr.ValidateHooks(t.Context(), hooksMap)
 
-	// No language-runtime warnings should be present.
+	// No runtime warnings should be present.
 	for _, w := range result.Warnings {
 		require.NotContains(t, w.Message, "Python",
 			"expected no Python warning when runtime is installed")
@@ -230,7 +231,7 @@ func Test_ValidateHooks_PythonInstalled(t *testing.T) {
 
 	// Also verify the error-returning variant.
 	require.NoError(t,
-		mgr.ValidateLanguageRuntimesErr(t.Context(), hooksMap))
+		mgr.ValidateRuntimesErr(t.Context(), hooksMap))
 }
 
 func Test_ValidateHooks_PythonNotInstalled(t *testing.T) {
@@ -279,7 +280,7 @@ func Test_ValidateHooks_PythonNotInstalled(t *testing.T) {
 
 	// Verify the error-returning variant surfaces an
 	// ErrorWithSuggestion.
-	err := mgr.ValidateLanguageRuntimesErr(t.Context(), hooksMap)
+	err := mgr.ValidateRuntimesErr(t.Context(), hooksMap)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "Python")
 }
@@ -288,7 +289,7 @@ func Test_ValidateHooks_ShellHookNoValidation(t *testing.T) {
 	tempDir := t.TempDir()
 	ostest.Chdir(t, tempDir)
 
-	// Create shell scripts only — no language hooks.
+	// Create Bash scripts only — no non-shell hooks.
 	scriptDir := filepath.Join(tempDir, "scripts")
 	require.NoError(t, os.MkdirAll(scriptDir, osutil.PermissionDirectory))
 	require.NoError(t,
@@ -320,14 +321,14 @@ func Test_ValidateHooks_ShellHookNoValidation(t *testing.T) {
 	mgr := NewHooksManager(tempDir, mockRunner)
 	result := mgr.ValidateHooks(t.Context(), hooksMap)
 
-	// No language-runtime warnings for shell hooks.
+	// No runtime warnings for Bash/PowerShell hooks.
 	for _, w := range result.Warnings {
 		require.NotContains(t, w.Message, "Python",
-			"shell-only hooks must not trigger language warnings")
+			"shell-only hooks must not trigger runtime warnings")
 	}
 
 	require.NoError(t,
-		mgr.ValidateLanguageRuntimesErr(t.Context(), hooksMap))
+		mgr.ValidateRuntimesErr(t.Context(), hooksMap))
 }
 
 func Test_ValidateHooks_MixedHooks(t *testing.T) {
@@ -383,7 +384,7 @@ func Test_ValidateHooks_MixedHooks(t *testing.T) {
 	require.Equal(t, 1, pythonWarnings,
 		"expected exactly one Python warning for mixed hooks")
 
-	err := mgr.ValidateLanguageRuntimesErr(t.Context(), hooksMap)
+	err := mgr.ValidateRuntimesErr(t.Context(), hooksMap)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "Python")
 }

@@ -23,7 +23,7 @@ type ExecutionContext struct {
 	EnvVars []string
 
 	// BoundaryDir is the project or service root directory.
-	// Language executors walk upward from the script to BoundaryDir
+	// Executors may walk upward from the script to BoundaryDir
 	// to discover dependency files (requirements.txt, package.json).
 	BoundaryDir string
 

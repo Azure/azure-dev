@@ -26,7 +26,7 @@ preprovision:
 		require.Equal(t, HooksConfig{
 			"preprovision": {
 				{
-					Shell: ShellTypeBash,
+					Shell: "sh",
 					Run:   "scripts/preprovision.sh",
 				},
 			},
@@ -49,11 +49,11 @@ preprovision:
 		require.Equal(t, HooksConfig{
 			"preprovision": {
 				{
-					Shell: ShellTypeBash,
+					Shell: "sh",
 					Run:   "scripts/preprovision-1.sh",
 				},
 				{
-					Shell: ShellTypeBash,
+					Shell: "sh",
 					Run:   "scripts/preprovision-2.sh",
 				},
 			},
@@ -66,7 +66,7 @@ func TestHooksConfig_MarshalYAML(t *testing.T) {
 		hooks := HooksConfig{
 			"preprovision": {
 				{
-					Shell: ShellTypeBash,
+					Shell: "sh",
 					Run:   "scripts/preprovision.sh",
 				},
 			},
@@ -86,11 +86,11 @@ preprovision:
 		hooks := HooksConfig{
 			"preprovision": {
 				{
-					Shell: ShellTypeBash,
+					Shell: "sh",
 					Run:   "scripts/preprovision-1.sh",
 				},
 				{
-					Shell: ShellTypeBash,
+					Shell: "sh",
 					Run:   "scripts/preprovision-2.sh",
 				},
 			},

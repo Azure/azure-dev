@@ -158,12 +158,12 @@ func TestPythonHook_AutoDetectFromExtension(t *testing.T) {
 		"auto-detected Python hook should execute the .py script",
 	)
 
-	// Verify the config was resolved as a language hook.
+	// Verify the config was resolved as a non-shell language hook.
 	hookCfg := hooksMap["predeploy"][0]
 	assert.Equal(
 		t, language.ScriptLanguagePython, hookCfg.Language,
 	)
-	assert.True(t, hookCfg.IsLanguageHook())
+	assert.False(t, hookCfg.Language.IsShellLanguage())
 }
 
 // TestPythonHook_ExplicitLanguage verifies that language: python
@@ -489,7 +489,7 @@ func TestPythonHook_ContinueOnError(t *testing.T) {
 
 // TestPythonHook_ProjectLevel verifies a Python hook registered
 // at the project level (pre<command>) executes through the
-// language executor pipeline.
+// hook executor pipeline.
 func TestPythonHook_ProjectLevel(t *testing.T) {
 	scriptRel := filepath.Join("hooks", "preprovision.py")
 	cwd := newPythonTestFixture(t, scriptRel, false)
@@ -534,7 +534,7 @@ func TestPythonHook_ProjectLevel(t *testing.T) {
 
 // TestPythonHook_ServiceLevel verifies a Python hook registered
 // at the service level (postdeploy for a service) executes through
-// the language executor pipeline with the correct working dir.
+// the hook executor pipeline with the correct working dir.
 func TestPythonHook_ServiceLevel(t *testing.T) {
 	// Service hooks use a service-specific cwd, simulated here.
 	serviceDir := filepath.Join("src", "api")
@@ -588,8 +588,8 @@ func TestPythonHook_ServiceLevel(t *testing.T) {
 	assert.Equal(t, expectedCwd, capturedCwd)
 }
 
-// TestPythonHook_ShellHookUnaffected verifies that a shell (.sh)
-// hook runs through the shell script executor even when Python
+// TestPythonHook_ShellHookUnaffected verifies that a Bash (.sh)
+// hook runs through the Bash executor even when Python
 // hooks are present in the same configuration.
 func TestPythonHook_ShellHookUnaffected(t *testing.T) {
 	cwd := t.TempDir()
@@ -614,7 +614,7 @@ func TestPythonHook_ShellHookUnaffected(t *testing.T) {
 	hooksMap := map[string][]*HookConfig{
 		"prebuild": {{
 			Name:  "prebuild",
-			Shell: ShellTypeBash,
+			Shell: "sh",
 			Run: filepath.Join(
 				"hooks", "prebuild.sh",
 			),
@@ -643,7 +643,7 @@ func TestPythonHook_ShellHookUnaffected(t *testing.T) {
 		args exec.RunArgs,
 	) (exec.RunResult, error) {
 		shellRan = true
-		// Shell hooks pass the script as the first arg.
+		// Bash hooks pass the script as the first arg.
 		// The shell executor may use forward slashes, so
 		// compare with forward slashes for portability.
 		require.Contains(
@@ -927,7 +927,7 @@ func TestPythonHook_ExplicitDirOverridesCwd(t *testing.T) {
 
 // TestPythonHook_InlineScriptRejected verifies that inline
 // Python scripts (no file path) are rejected with a clear error
-// since language hooks require file-based scripts.
+// since non-shell hooks require file-based scripts.
 func TestPythonHook_InlineScriptRejected(t *testing.T) {
 	cwd := t.TempDir()
 	ostest.Chdir(t, cwd)

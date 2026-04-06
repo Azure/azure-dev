@@ -371,6 +371,13 @@ overrides:
   - filename: pkg/infra/provisioning/bicep/local_preflight.go
     words:
       - actioned
+  - filename: docs/code-coverage-guide.md
+    words:
+      - covdata
+      - GOWORK
+  - filename: extensions/microsoft.azd.exec/**/*.go
+    words:
+      - shellutil
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

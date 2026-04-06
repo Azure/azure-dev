@@ -137,28 +137,28 @@ func (m *mockPrompter) PromptResourceGroupFrom(
 	return args.String(0), args.Error(1)
 }
 
-type mockSubTenantResolver struct {
+type mockEnvSetSecretSubscriptionResolver struct {
 	mock.Mock
 }
 
-func (m *mockSubTenantResolver) LookupTenant(ctx context.Context, subscriptionId string) (string, error) {
-	args := m.Called(ctx, subscriptionId)
-	return args.String(0), args.Error(1)
-}
-
-func (m *mockSubTenantResolver) GetSubscription(
+func (m *mockEnvSetSecretSubscriptionResolver) GetSubscription(
 	ctx context.Context, subscriptionId string,
 ) (*account.Subscription, error) {
-	tenantId, err := m.LookupTenant(ctx, subscriptionId)
-	if err != nil {
-		return nil, err
+	args := m.Called(ctx, subscriptionId)
+
+	if subscription, ok := args.Get(0).(*account.Subscription); ok {
+		return subscription, args.Error(1)
 	}
 
-	return &account.Subscription{
-		Id:                 subscriptionId,
-		TenantId:           tenantId,
-		UserAccessTenantId: tenantId,
-	}, nil
+	if tenantId, ok := args.Get(0).(string); ok {
+		return &account.Subscription{
+			Id:                 subscriptionId,
+			TenantId:           tenantId,
+			UserAccessTenantId: tenantId,
+		}, args.Error(1)
+	}
+
+	return nil, args.Error(1)
 }
 
 type staticSubscriptionResolver struct {
@@ -199,7 +199,7 @@ func newTestEnvSetSecretAction(
 	projectConfig *project.ProjectConfig,
 	kvService keyvault.KeyVaultService,
 	prompter *mockPrompter,
-	subResolver *mockSubTenantResolver,
+	subResolver *mockEnvSetSecretSubscriptionResolver,
 ) *envSetSecretAction {
 	if projectConfig == nil {
 		projectConfig = &project.ProjectConfig{
@@ -435,8 +435,8 @@ func Test_EnvSetSecretAction_LookupTenantError(t *testing.T) {
 	prompter.On("PromptSubscription", mock.Anything, mock.Anything).
 		Return("sub-123", nil)
 
-	resolver := &mockSubTenantResolver{}
-	resolver.On("LookupTenant", mock.Anything, "sub-123").
+	resolver := &mockEnvSetSecretSubscriptionResolver{}
+	resolver.On("GetSubscription", mock.Anything, "sub-123").
 		Return("", fmt.Errorf("tenant not found"))
 
 	action := newTestEnvSetSecretAction(console, env, nil, []string{"mySecret"}, nil, nil, prompter, resolver)
@@ -459,8 +459,8 @@ func Test_EnvSetSecretAction_ListVaultsError(t *testing.T) {
 	prompter.On("PromptSubscription", mock.Anything, mock.Anything).
 		Return("sub-123", nil)
 
-	resolver := &mockSubTenantResolver{}
-	resolver.On("LookupTenant", mock.Anything, "sub-123").
+	resolver := &mockEnvSetSecretSubscriptionResolver{}
+	resolver.On("GetSubscription", mock.Anything, "sub-123").
 		Return("tenant-123", nil)
 
 	kvSvc := &mockKeyVaultService{}
@@ -495,8 +495,8 @@ func Test_EnvSetSecretAction_SelectExisting_NoVaults(t *testing.T) {
 	prompter.On("PromptSubscription", mock.Anything, mock.Anything).
 		Return("sub-123", nil)
 
-	resolver := &mockSubTenantResolver{}
-	resolver.On("LookupTenant", mock.Anything, "sub-123").
+	resolver := &mockEnvSetSecretSubscriptionResolver{}
+	resolver.On("GetSubscription", mock.Anything, "sub-123").
 		Return("tenant-123", nil)
 
 	kvSvc := &mockKeyVaultService{}
@@ -530,8 +530,8 @@ func Test_EnvSetSecretAction_SelectKVError(t *testing.T) {
 	prompter.On("PromptSubscription", mock.Anything, mock.Anything).
 		Return("sub-123", nil)
 
-	resolver := &mockSubTenantResolver{}
-	resolver.On("LookupTenant", mock.Anything, "sub-123").
+	resolver := &mockEnvSetSecretSubscriptionResolver{}
+	resolver.On("GetSubscription", mock.Anything, "sub-123").
 		Return("tenant-123", nil)
 
 	kvSvc := &mockKeyVaultService{}
@@ -565,8 +565,8 @@ func Test_EnvSetSecretAction_CreateNewKV_LocationError(t *testing.T) {
 	prompter.On("PromptLocation", mock.Anything, "sub-123", mock.Anything, mock.Anything, mock.Anything).
 		Return("", fmt.Errorf("location error"))
 
-	resolver := &mockSubTenantResolver{}
-	resolver.On("LookupTenant", mock.Anything, "sub-123").
+	resolver := &mockEnvSetSecretSubscriptionResolver{}
+	resolver.On("GetSubscription", mock.Anything, "sub-123").
 		Return("tenant-123", nil)
 
 	kvSvc := &mockKeyVaultService{}
@@ -853,8 +853,8 @@ func Test_EnvSetSecretAction_SelectExisting_VaultListError(t *testing.T) {
 	prompter.On("PromptSubscription", mock.Anything, mock.Anything).
 		Return("sub-123", nil)
 
-	resolver := &mockSubTenantResolver{}
-	resolver.On("LookupTenant", mock.Anything, "sub-123").
+	resolver := &mockEnvSetSecretSubscriptionResolver{}
+	resolver.On("GetSubscription", mock.Anything, "sub-123").
 		Return("tenant-123", nil)
 
 	kvSvc := &mockKeyVaultService{}
@@ -888,8 +888,8 @@ func Test_EnvSetSecretAction_CreateNew_ExistingVault_ListSecretsError(t *testing
 	prompter.On("PromptSubscription", mock.Anything, mock.Anything).
 		Return("sub-123", nil)
 
-	resolver := &mockSubTenantResolver{}
-	resolver.On("LookupTenant", mock.Anything, "sub-123").
+	resolver := &mockEnvSetSecretSubscriptionResolver{}
+	resolver.On("GetSubscription", mock.Anything, "sub-123").
 		Return("tenant-123", nil)
 
 	kvSvc := &mockKeyVaultService{}

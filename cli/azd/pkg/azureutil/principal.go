@@ -13,8 +13,8 @@ import (
 )
 
 // GetCurrentPrincipalId returns the object ID of the current principal authenticated with the CLI.
-// It prefers the oid claim from an ARM access token, falling back to Graph /me when the token does
-// not include a usable oid.
+// It prefers the oid claim from an ARM access token, falling back to Graph /me when acquiring the
+// token fails or when the token does not include a usable oid.
 func GetCurrentPrincipalId(ctx context.Context, userProfile *azapi.UserProfileService, tenantId string) (string, error) {
 	token, err := userProfile.GetAccessToken(ctx, tenantId)
 	if err == nil {

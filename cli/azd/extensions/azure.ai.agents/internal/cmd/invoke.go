@@ -702,9 +702,6 @@ func handleInvocationSSE(body io.Reader, agentName string) error {
 				} `json:"error"`
 			}
 			if json.Unmarshal([]byte(data), &errEnvelope) == nil && errEnvelope.Error.Message != "" {
-				if printed {
-					fmt.Println()
-				}
 				label := errEnvelope.Error.Code
 				if label == "" {
 					label = errEnvelope.Error.Type
@@ -715,12 +712,12 @@ func handleInvocationSSE(body io.Reader, agentName string) error {
 				return fmt.Errorf("agent error: %s", errEnvelope.Error.Message)
 			}
 
-			// Print data as-is
+			// Print data as-is, one line per SSE data object
 			if !printed {
 				fmt.Printf("[%s] ", agentName)
 				printed = true
 			}
-			fmt.Print(data)
+			fmt.Println(data)
 		}
 	}
 
@@ -728,9 +725,6 @@ func handleInvocationSSE(body io.Reader, agentName string) error {
 		return fmt.Errorf("error reading response stream: %w", err)
 	}
 
-	if printed {
-		fmt.Println()
-	}
 	return nil
 }
 

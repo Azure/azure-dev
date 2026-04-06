@@ -4,8 +4,12 @@
 package project
 
 import (
+	"errors"
+	"fmt"
+	"net/http"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -197,4 +201,55 @@ func TestConstants(t *testing.T) {
 	assert.Equal(t, "53ca6127-db72-4b80-b1b0-d745d6d5456d", roleAzureAIUser)
 	assert.Equal(t, "5e0bd9bd-7b93-4f28-af87-19fc36ad61bd", roleCognitiveServicesOpenAIUser)
 	assert.Equal(t, "3913510d-42f4-4e42-8a64-420c390055eb", roleMonitoringMetricsPublisher)
+}
+
+func TestIsCredentialAuthError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "nil error",
+			err:  nil,
+			want: false,
+		},
+		{
+			name: "unrelated error",
+			err:  fmt.Errorf("network timeout"),
+			want: false,
+		},
+		{
+			name: "typed AuthenticationFailedError",
+			err: &azidentity.AuthenticationFailedError{
+				RawResponse: &http.Response{StatusCode: 401},
+			},
+			want: true,
+		},
+		{
+			name: "wrapped AuthenticationFailedError",
+			err: fmt.Errorf("graph query failed: %w",
+				&azidentity.AuthenticationFailedError{
+					RawResponse: &http.Response{StatusCode: 401},
+				}),
+			want: true,
+		},
+		{
+			name: "AADSTS error code fallback",
+			err:  fmt.Errorf("AADSTS70043: The refresh token has expired"),
+			want: true,
+		},
+		{
+			name: "string-only error without AADSTS not matched",
+			err:  errors.New("AzureDeveloperCLICredential: please run azd auth login"),
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isCredentialAuthError(tt.err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
 }

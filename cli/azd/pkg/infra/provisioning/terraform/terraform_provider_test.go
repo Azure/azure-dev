@@ -304,7 +304,8 @@ func TestIsRemoteBackendConfig(t *testing.T) {
 			testContent, err := os.ReadFile(testDataPath)
 			require.NoError(t, err)
 
-			//nolint:gosec // G306,G703: infraDir is a test temp directory and readable permissions are intentional.
+			// #nosec G306 -- test file permissions are intentionally readable
+			//nolint:gosec // G703: test paths are controlled
 			err = os.WriteFile(filepath.Join(infraDir, "main.tf"), testContent, 0644)
 			require.NoError(t, err)
 

@@ -778,16 +778,8 @@ func mockGitClone(t *testing.T, mockContext *mocks.MockContext, templatePath str
 func createLocalTemplateDir(t *testing.T, sourceTestData string) string {
 	t.Helper()
 	dir := t.TempDir()
-	sourceRoot, err := os.OpenRoot(sourceTestData)
-	require.NoError(t, err)
-	destRoot, err := os.OpenRoot(dir)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		_ = sourceRoot.Close()
-		_ = destRoot.Close()
-	})
 
-	err = filepath.WalkDir(sourceTestData, func(path string, d fs.DirEntry, err error) error {
+	err := filepath.WalkDir(sourceTestData, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -806,11 +798,12 @@ func createLocalTemplateDir(t *testing.T, sourceTestData string) string {
 		// Remove the .txt suffix used in testdata
 		relTarget := strings.TrimSuffix(rel, ".txt")
 
-		content, err := sourceRoot.ReadFile(rel)
+		content, err := os.ReadFile(path)
 		if err != nil {
 			return err
 		}
-		return destRoot.WriteFile(relTarget, content, 0600)
+		//nolint:gosec // G703: test paths are controlled
+		return os.WriteFile(filepath.Join(dir, relTarget), content, 0600)
 	})
 	require.NoError(t, err)
 

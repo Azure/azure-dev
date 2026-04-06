@@ -7,11 +7,11 @@ on:
         description: "Path to the Go module directory to lint"
         required: true
         type: string
-      go-version:
-        description: "Go version to use"
+      go-version-file:
+        description: "Path to go.mod to read Go version from"
         required: false
         type: string
-        default: "^1.26"
+        default: "cli/azd/go.mod"
       golangci-lint-version:
         description: "GolangCI-Lint version to use"
         required: false
@@ -29,10 +29,10 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-go@v6
         with:
-          go-version: ${{ inputs.go-version }}
-      - uses: actions/checkout@v4
+          go-version-file: ${{ inputs.go-version-file }}
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v8
         with:
@@ -43,10 +43,10 @@ jobs:
   go-fix:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-go@v6
         with:
-          go-version: ${{ inputs.go-version }}
-      - uses: actions/checkout@v4
+          go-version-file: ${{ inputs.go-version-file }}
       - name: Check for go fix suggestions
         working-directory: ${{ inputs.working-directory }}
         run: |

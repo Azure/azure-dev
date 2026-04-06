@@ -24,17 +24,6 @@ for each environment.
 | `AZURE_APP_SERVICE_DASHBOARD_URI` | The URI for the .NET Aspire dashboard hosted on Azure App Service. |
 | `AZURE_AKS_CLUSTER_NAME` | The name of the Azure Kubernetes Service cluster. |
 
-### App Service Slot Deployments
-
-These variables control deployment slot behavior for Azure App Service targets. In all variable names,
-`{SERVICE}` is the uppercase service name from `azure.yaml` with hyphens replaced by underscores
-(e.g., service `my-api` → `MY_API`).
-
-| Variable | Description |
-| --- | --- |
-| `AZD_DEPLOY_{SERVICE}_SLOT_NAME` | When multiple deployment slots exist, auto-selects the named slot instead of prompting. The value must match an existing slot name. |
-| `AZD_DEPLOY_{SERVICE}_IGNORE_SLOTS` | If true, bypasses all slot detection logic and deploys directly to the main app, even when deployment slots exist. Takes precedence over `AZD_DEPLOY_{SERVICE}_SLOT_NAME`. |
-
 ## Dev Center Variables
 
 Variables for [Azure Dev Center](https://learn.microsoft.com/azure/dev-box/overview-what-is-microsoft-dev-box)
@@ -62,6 +51,17 @@ integration.
 | `AZD_ALLOW_NON_EMPTY_FOLDER` | If set, allows `azd init` to run in a non-empty directory without prompting. |
 | `AZD_BUILDER_IMAGE` | The builder docker image used to perform Dockerfile-less builds. |
 | `AZD_DEPLOY_TIMEOUT` | Timeout for deployment operations, parsed as an integer number of seconds (for example, `1200`). Defaults to `1200` seconds (20 minutes). |
+
+### App Service Slot Deployments
+
+These variables control deployment slot behavior for Azure App Service targets. In all variable names,
+`{SERVICE}` is the uppercase service name from `azure.yaml` with hyphens replaced by underscores
+(e.g., service `my-api` → `MY_API`).
+
+| Variable | Description |
+| --- | --- |
+| `AZD_DEPLOY_{SERVICE}_SLOT_NAME` | When multiple deployment slots exist, auto-selects the named slot instead of prompting. The value must match an existing slot name. |
+| `AZD_DEPLOY_{SERVICE}_IGNORE_SLOTS` | If true, bypasses all slot detection logic and deploys directly to the main app, even when deployment slots exist. Takes precedence over `AZD_DEPLOY_{SERVICE}_SLOT_NAME`. |
 
 ## Extension Variables
 

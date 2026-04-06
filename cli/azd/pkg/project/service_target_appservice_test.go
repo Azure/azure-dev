@@ -189,6 +189,12 @@ func TestDetermineDeploymentTargets_IgnoreSlots(t *testing.T) {
 			slots:          []string{"staging"},
 			expectedSlots:  []string{""},
 		},
+		"IgnoreSlots_InvalidValue_FallsBackToSlotLogic": {
+			envVars:        map[string]string{"AZD_DEPLOY_API_IGNORE_SLOTS": "notabool"},
+			hasDeployments: true,
+			slots:          []string{"staging"},
+			expectedSlots:  []string{"staging"},
+		},
 	}
 
 	for name, tc := range tests {

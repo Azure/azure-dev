@@ -6,7 +6,6 @@ package project
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -16,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
@@ -249,21 +249,29 @@ func (st *appServiceTarget) determineDeploymentTargets(
 ) ([]deploymentTarget, error) {
 	// Check if slot deployment is explicitly disabled for this service
 	ignoreSlotsEnvVar := ignoreSlotsEnvVarNameForService(serviceConfig.Name)
-	if ignoreSlots, err := strconv.ParseBool(
-		st.env.Getenv(ignoreSlotsEnvVar),
-	); err == nil && ignoreSlots {
-		// Warn if SLOT_NAME env var is also set, since it will be ignored
-		slotEnvVar := slotEnvVarNameForService(serviceConfig.Name)
-		if slotName := st.env.Getenv(slotEnvVar); slotName != "" {
-			log.Printf(
-				"WARNING: %s is set but will be ignored because %s is enabled",
-				slotEnvVar, ignoreSlotsEnvVar,
-			)
-		}
+	if ignoreSlotsValue, hasIgnoreSlots := st.env.LookupEnv(ignoreSlotsEnvVar); hasIgnoreSlots {
+		ignoreSlots, err := strconv.ParseBool(ignoreSlotsValue)
+		if err != nil {
+			st.console.MessageUxItem(ctx, &ux.WarningMessage{
+				Description: fmt.Sprintf(
+					"Ignoring invalid value %q for %s; expected a boolean value",
+					ignoreSlotsValue, ignoreSlotsEnvVar),
+			})
+		} else if ignoreSlots {
+			// Warn if SLOT_NAME env var is also set, since it will be ignored
+			slotEnvVar := slotEnvVarNameForService(serviceConfig.Name)
+			if slotName := st.env.Getenv(slotEnvVar); slotName != "" {
+				st.console.MessageUxItem(ctx, &ux.WarningMessage{
+					Description: fmt.Sprintf(
+						"%s is set but will be ignored because %s is enabled",
+						slotEnvVar, ignoreSlotsEnvVar),
+				})
+			}
 
-		progress.SetProgress(NewServiceProgress(
-			"Skipping slot deployment (deploying to main app)"))
-		return []deploymentTarget{{SlotName: ""}}, nil
+			progress.SetProgress(NewServiceProgress(
+				"Skipping slot deployment (deploying to main app)"))
+			return []deploymentTarget{{SlotName: ""}}, nil
+		}
 	}
 
 	progress.SetProgress(NewServiceProgress("Checking deployment history"))
@@ -356,8 +364,7 @@ func (st *appServiceTarget) determineDeploymentTargets(
 // for a given service. The format is AZD_DEPLOY_{SERVICE_NAME}_SLOT_NAME where the service name
 // is uppercase and any hyphens are replaced with underscores.
 func slotEnvVarNameForService(serviceName string) string {
-	normalizedName := strings.ToUpper(strings.ReplaceAll(serviceName, "-", "_"))
-	return fmt.Sprintf("AZD_DEPLOY_%s_SLOT_NAME", normalizedName)
+	return fmt.Sprintf("AZD_DEPLOY_%s_SLOT_NAME", environment.Key(serviceName))
 }
 
 // ignoreSlotsEnvVarNameForService returns the environment variable name for opting out of
@@ -366,8 +373,7 @@ func slotEnvVarNameForService(serviceName string) string {
 // When set to a truthy boolean value, azd deploys directly to the main app, ignoring any
 // configured deployment slots.
 func ignoreSlotsEnvVarNameForService(serviceName string) string {
-	normalizedName := strings.ToUpper(strings.ReplaceAll(serviceName, "-", "_"))
-	return fmt.Sprintf("AZD_DEPLOY_%s_IGNORE_SLOTS", normalizedName)
+	return fmt.Sprintf("AZD_DEPLOY_%s_IGNORE_SLOTS", environment.Key(serviceName))
 }
 
 // Gets the exposed endpoints for the App Service, including any deployment slots

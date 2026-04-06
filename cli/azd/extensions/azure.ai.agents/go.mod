@@ -10,7 +10,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry v1.2.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources v1.2.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions v1.3.0
-	github.com/azure/azure-dev/cli/azd v1.23.13
+	github.com/azure/azure-dev/cli/azd v1.23.14
 	github.com/braydonk/yaml v0.9.0
 	github.com/drone/envsubst v1.0.3
 	github.com/fatih/color v1.18.0
@@ -25,8 +25,6 @@ require (
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v3 v3.0.1
 )
-
-replace github.com/azure/azure-dev/cli/azd => ../..
 
 require (
 	dario.cat/mergo v1.0.2 // indirect

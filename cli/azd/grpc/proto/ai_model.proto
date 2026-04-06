@@ -40,7 +40,7 @@ service AiModelService {
 message AiModel {
   string name = 1;                                // e.g. "gpt-4o"
   string format = 2;                              // e.g. "OpenAI"
-  string lifecycle_status = 3 [deprecated = true]; // derived from the default surviving version; prefer AiModelVersion.lifecycle_status
+  string lifecycle_status = 3 [deprecated = true]; // deprecated; always empty; use AiModelVersion.lifecycle_status
   repeated string capabilities = 4;               // e.g. ["chat", "embeddings"]
   repeated AiModelVersion versions = 5;
   repeated string locations = 6;                  // canonical locations where available

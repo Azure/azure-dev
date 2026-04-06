@@ -14,32 +14,29 @@ import (
 func TestFilterModels(t *testing.T) {
 	models := []AiModel{
 		{
-			Name:            "gpt-4o",
-			Format:          "OpenAI",
-			LifecycleStatus: "stable",
-			Capabilities:    []string{"chat", "completion"},
-			Locations:       []string{"eastus", "westus"},
+			Name:         "gpt-4o",
+			Format:       "OpenAI",
+			Capabilities: []string{"chat", "completion"},
+			Locations:    []string{"eastus", "westus"},
 			Versions: []AiModelVersion{
 				{Version: "2024-05-13", LifecycleStatus: "stable"},
 				{Version: "2024-11-20", IsDefault: true, LifecycleStatus: "stable"},
 			},
 		},
 		{
-			Name:            "gpt-4o-mini",
-			Format:          "OpenAI",
-			LifecycleStatus: "preview",
-			Capabilities:    []string{"chat"},
-			Locations:       []string{"eastus"},
+			Name:         "gpt-4o-mini",
+			Format:       "OpenAI",
+			Capabilities: []string{"chat"},
+			Locations:    []string{"eastus"},
 			Versions: []AiModelVersion{
 				{Version: "2024-07-18", IsDefault: true, LifecycleStatus: "preview"},
 			},
 		},
 		{
-			Name:            "text-embedding-ada-002",
-			Format:          "OpenAI",
-			LifecycleStatus: "stable",
-			Capabilities:    []string{"embeddings"},
-			Locations:       []string{"westus"},
+			Name:         "text-embedding-ada-002",
+			Format:       "OpenAI",
+			Capabilities: []string{"embeddings"},
+			Locations:    []string{"westus"},
 			Versions: []AiModelVersion{
 				{Version: "2", IsDefault: true, LifecycleStatus: "stable"},
 			},
@@ -120,10 +117,9 @@ func TestFilterModels_FiltersVersionsByStatus(t *testing.T) {
 
 	models := []AiModel{
 		{
-			Name:            "gpt-4o",
-			Format:          "OpenAI",
-			LifecycleStatus: "GenerallyAvailable",
-			Locations:       []string{"eastus", "westus"},
+			Name:      "gpt-4o",
+			Format:    "OpenAI",
+			Locations: []string{"eastus", "westus"},
 			Versions: []AiModelVersion{
 				{Version: "2024-08-06", LifecycleStatus: "Deprecating"},
 				{Version: "2024-11-20", IsDefault: true, LifecycleStatus: "GenerallyAvailable"},

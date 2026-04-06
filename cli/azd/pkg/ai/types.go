@@ -135,7 +135,7 @@ type FilterOptions struct {
 	// Formats filters by model format, e.g. ["OpenAI"].
 	Formats []string
 	// Statuses filters by version lifecycle status. Models are included only if
-	// at least one version matches. Model-level status is recomputed from survivors.
+	// at least one version matches.
 	Statuses []string
 	// ExcludeModelNames excludes models by name (for multi-model selection flows).
 	ExcludeModelNames []string

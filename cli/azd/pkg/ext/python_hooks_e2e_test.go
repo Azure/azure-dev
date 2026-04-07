@@ -161,9 +161,9 @@ func TestPythonHook_AutoDetectFromExtension(t *testing.T) {
 	// Verify the config was resolved as a non-shell language hook.
 	hookCfg := hooksMap["predeploy"][0]
 	assert.Equal(
-		t, language.ScriptLanguagePython, hookCfg.Language,
+		t, language.HookKindPython, hookCfg.Kind,
 	)
-	assert.False(t, hookCfg.Language.IsShellLanguage())
+	assert.False(t, hookCfg.Kind.IsShell())
 }
 
 // TestPythonHook_ExplicitLanguage verifies that language: python
@@ -179,9 +179,9 @@ func TestPythonHook_ExplicitLanguage(t *testing.T) {
 
 	hooksMap := map[string][]*HookConfig{
 		"predeploy": {{
-			Name:     "predeploy",
-			Language: language.ScriptLanguagePython,
-			Run:      scriptRel,
+			Name: "predeploy",
+			Kind: language.HookKindPython,
+			Run:  scriptRel,
 		}},
 	}
 
@@ -614,7 +614,7 @@ func TestPythonHook_ShellHookUnaffected(t *testing.T) {
 	hooksMap := map[string][]*HookConfig{
 		"prebuild": {{
 			Name:  "prebuild",
-			Shell: string(language.ScriptLanguageBash),
+			Shell: string(language.HookKindBash),
 			Run: filepath.Join(
 				"hooks", "prebuild.sh",
 			),
@@ -699,7 +699,7 @@ func TestPythonHook_ExecutionPipeline(t *testing.T) {
 	tests := []struct {
 		name            string
 		scriptRel       string
-		language        language.ScriptLanguage
+		kind            language.HookKind
 		continueOnError bool
 		exitCode        int
 		execErr         error
@@ -715,7 +715,7 @@ func TestPythonHook_ExecutionPipeline(t *testing.T) {
 		{
 			name:      "SuccessExplicitLanguage",
 			scriptRel: filepath.Join("hooks", "run"),
-			language:  language.ScriptLanguagePython,
+			kind:      language.HookKindPython,
 			exitCode:  0,
 			wantErr:   false,
 		},
@@ -752,8 +752,8 @@ func TestPythonHook_ExecutionPipeline(t *testing.T) {
 				Run:             tt.scriptRel,
 				ContinueOnError: tt.continueOnError,
 			}
-			if tt.language != language.ScriptLanguageUnknown {
-				hookCfg.Language = tt.language
+			if tt.kind != language.HookKindUnknown {
+				hookCfg.Kind = tt.kind
 			}
 
 			hooksMap := map[string][]*HookConfig{
@@ -938,9 +938,9 @@ func TestPythonHook_InlineScriptRejected(t *testing.T) {
 
 	hooksMap := map[string][]*HookConfig{
 		"predeploy": {{
-			Name:     "predeploy",
-			Language: language.ScriptLanguagePython,
-			Run:      "print('hello')",
+			Name: "predeploy",
+			Kind: language.HookKindPython,
+			Run:  "print('hello')",
 		}},
 	}
 

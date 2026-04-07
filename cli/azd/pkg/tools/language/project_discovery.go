@@ -21,15 +21,15 @@ type ProjectContext struct {
 	// DependencyFile is the absolute path to the dependency file
 	// (e.g. requirements.txt, package.json, *.csproj).
 	DependencyFile string
-	// Language is the language inferred from the project file.
-	Language ScriptLanguage
+	// Language is the hook kind inferred from the project file.
+	Language HookKind
 }
 
 // projectFileEntry maps a filename or glob pattern to a language.
 type projectFileEntry struct {
-	Name     string         // exact filename or glob pattern
-	Language ScriptLanguage // inferred language
-	IsGlob   bool           // true for patterns like "*.*proj"
+	Name     string   // exact filename or glob pattern
+	Language HookKind // inferred hook kind
+	IsGlob   bool     // true for patterns like "*.*proj"
 }
 
 // knownProjectFiles defines project files to search for, in priority order.
@@ -43,10 +43,10 @@ type projectFileEntry struct {
 // DOWN a tree to detect service projects. Hook discovery walks UP from a
 // script to find the nearest project context.
 var knownProjectFiles = []projectFileEntry{
-	{Name: "pyproject.toml", Language: ScriptLanguagePython},
-	{Name: "requirements.txt", Language: ScriptLanguagePython},
-	{Name: "package.json", Language: ScriptLanguageJavaScript},
-	{Name: "*.*proj", Language: ScriptLanguageDotNet, IsGlob: true},
+	{Name: "pyproject.toml", Language: HookKindPython},
+	{Name: "requirements.txt", Language: HookKindPython},
+	{Name: "package.json", Language: HookKindJavaScript},
+	{Name: "*.*proj", Language: HookKindDotNet, IsGlob: true},
 }
 
 // DiscoverProjectFile walks up the directory tree from the directory

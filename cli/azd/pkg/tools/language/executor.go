@@ -8,71 +8,71 @@ import (
 	"strings"
 )
 
-// ScriptLanguage identifies the programming language of a hook script.
-// The string value matches the token users write in the "language" field
+// HookKind identifies the executor type of a hook script.
+// The string value matches the token users write in the "kind" field
 // of azure.yaml hook configurations.
-type ScriptLanguage string
+type HookKind string
 
 const (
-	// ScriptLanguageUnknown indicates the language could not be
+	// HookKindUnknown indicates the kind could not be
 	// determined from the file extension or explicit configuration.
-	ScriptLanguageUnknown ScriptLanguage = ""
-	// ScriptLanguageBash identifies Bash shell scripts (.sh files).
-	ScriptLanguageBash ScriptLanguage = "sh"
-	// ScriptLanguagePowerShell identifies PowerShell scripts (.ps1 files).
-	ScriptLanguagePowerShell ScriptLanguage = "pwsh"
-	// ScriptLanguageJavaScript identifies JavaScript scripts (.js files).
+	HookKindUnknown HookKind = ""
+	// HookKindBash identifies Bash shell scripts (.sh files).
+	HookKindBash HookKind = "sh"
+	// HookKindPowerShell identifies PowerShell scripts (.ps1 files).
+	HookKindPowerShell HookKind = "pwsh"
+	// HookKindJavaScript identifies JavaScript scripts (.js files).
 	// Not yet supported — IoC resolution will fail with a descriptive error.
-	ScriptLanguageJavaScript ScriptLanguage = "js"
-	// ScriptLanguageTypeScript identifies TypeScript scripts (.ts files).
+	HookKindJavaScript HookKind = "js"
+	// HookKindTypeScript identifies TypeScript scripts (.ts files).
 	// Not yet supported — IoC resolution will fail with a descriptive error.
-	ScriptLanguageTypeScript ScriptLanguage = "ts"
-	// ScriptLanguagePython identifies Python scripts (.py files).
-	ScriptLanguagePython ScriptLanguage = "python"
-	// ScriptLanguageDotNet identifies .NET (C#) scripts (.cs files).
+	HookKindTypeScript HookKind = "ts"
+	// HookKindPython identifies Python scripts (.py files).
+	HookKindPython HookKind = "python"
+	// HookKindDotNet identifies .NET (C#) scripts (.cs files).
 	// Not yet supported — IoC resolution will fail with a descriptive error.
-	ScriptLanguageDotNet ScriptLanguage = "dotnet"
+	HookKindDotNet HookKind = "dotnet"
 )
 
-// IsShellLanguage reports whether lang is one of the built-in shell
-// languages (Bash or PowerShell). Shell hooks support inline scripts
-// and are executed directly by the OS shell. Non-shell languages
+// IsShell reports whether k is one of the built-in shell
+// kinds (Bash or PowerShell). Shell hooks support inline scripts
+// and are executed directly by the OS shell. Non-shell kinds
 // (Python, JS, TS, DotNet) require a file on disk and are executed
 // through dedicated [tools.HookExecutor] implementations.
-func (lang ScriptLanguage) IsShellLanguage() bool {
-	return lang == ScriptLanguageBash ||
-		lang == ScriptLanguagePowerShell
+func (k HookKind) IsShell() bool {
+	return k == HookKindBash ||
+		k == HookKindPowerShell
 }
 
-// InferLanguageFromPath determines the [ScriptLanguage] from the
+// InferKindFromPath determines the [HookKind] from the
 // file extension of the given path. Extension matching is
 // case-insensitive. The following extensions are recognized:
 //
-//   - .py  → [ScriptLanguagePython]
-//   - .js  → [ScriptLanguageJavaScript]
-//   - .ts  → [ScriptLanguageTypeScript]
-//   - .cs  → [ScriptLanguageDotNet]
-//   - .sh  → [ScriptLanguageBash]
-//   - .ps1 → [ScriptLanguagePowerShell]
+//   - .py  → [HookKindPython]
+//   - .js  → [HookKindJavaScript]
+//   - .ts  → [HookKindTypeScript]
+//   - .cs  → [HookKindDotNet]
+//   - .sh  → [HookKindBash]
+//   - .ps1 → [HookKindPowerShell]
 //
-// Returns [ScriptLanguageUnknown] for unrecognized extensions.
-func InferLanguageFromPath(path string) ScriptLanguage {
+// Returns [HookKindUnknown] for unrecognized extensions.
+func InferKindFromPath(path string) HookKind {
 	ext := strings.ToLower(filepath.Ext(path))
 
 	switch ext {
 	case ".py":
-		return ScriptLanguagePython
+		return HookKindPython
 	case ".js":
-		return ScriptLanguageJavaScript
+		return HookKindJavaScript
 	case ".ts":
-		return ScriptLanguageTypeScript
+		return HookKindTypeScript
 	case ".cs":
-		return ScriptLanguageDotNet
+		return HookKindDotNet
 	case ".sh":
-		return ScriptLanguageBash
+		return HookKindBash
 	case ".ps1":
-		return ScriptLanguagePowerShell
+		return HookKindPowerShell
 	default:
-		return ScriptLanguageUnknown
+		return HookKindUnknown
 	}
 }

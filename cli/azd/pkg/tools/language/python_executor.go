@@ -120,7 +120,7 @@ func (e *pythonExecutor) Prepare(
 		// exists and the venv lives inside projectDir (so
 		// the python CLI can locate the activation script).
 		if projCtx != nil &&
-			projCtx.Language == ScriptLanguagePython {
+			projCtx.Language == HookKindPython {
 			if name, ok := relativeVenvName(
 				projCtx.ProjectDir, existing,
 			); ok {
@@ -147,7 +147,7 @@ func (e *pythonExecutor) Prepare(
 	// Skip venv setup if the discovered project is not
 	// Python (e.g. a package.json for JS living near the
 	// Python script).
-	if projCtx.Language != ScriptLanguagePython {
+	if projCtx.Language != HookKindPython {
 		return nil
 	}
 

@@ -169,7 +169,7 @@ func (h *HooksRunner) execHook(
 			dir = filepath.Join(boundaryDir, dir)
 		}
 		cwd = dir
-	} else if hookConfig.path != "" && !hookConfig.Language.IsShellLanguage() {
+	} else if hookConfig.path != "" && !hookConfig.Kind.IsShell() {
 		// Non-shell languages (Python, JS/TS, .NET) derive cwd from
 		// the script's directory so that project-relative tooling
 		// (venvs, node_modules) resolves correctly. Shell hooks
@@ -220,18 +220,18 @@ func (h *HooksRunner) execHook(
 
 	// Resolve executor via IoC — hooks runner has NO knowledge of executor internals.
 	var executor tools.HookExecutor
-	if err := h.serviceLocator.ResolveNamed(string(hookConfig.Language), &executor); err != nil {
+	if err := h.serviceLocator.ResolveNamed(string(hookConfig.Kind), &executor); err != nil {
 		return &errorhandler.ErrorWithSuggestion{
 			Err: fmt.Errorf(
-				"no executor for language '%s': %w",
-				hookConfig.Language, err,
+				"no executor for kind '%s': %w",
+				hookConfig.Kind, err,
 			),
 			Message: fmt.Sprintf(
-				"The '%s' language is not supported for hook '%s'.",
-				hookConfig.Language,
+				"The '%s' kind is not supported for hook '%s'.",
+				hookConfig.Kind,
 				hookConfig.Name,
 			),
-			Suggestion: "Supported hook languages: sh, pwsh, python.",
+			Suggestion: "Supported hook kinds: sh, pwsh, python.",
 			Links: []errorhandler.ErrorLink{
 				{
 					Title: "Hook documentation",
@@ -252,7 +252,7 @@ func (h *HooksRunner) execHook(
 	// PowerShell, inline temp file creation for Bash/PowerShell hooks).
 	log.Printf(
 		"Preparing hook '%s' (%s)\n",
-		hookConfig.Name, hookConfig.Language,
+		hookConfig.Name, hookConfig.Kind,
 	)
 
 	if err := executor.Prepare(ctx, scriptPath, execCtx); err != nil {

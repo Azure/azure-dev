@@ -50,7 +50,7 @@ func Test_HooksRunAction_RunsLayerHooks(t *testing.T) {
 					Path: "infra/core",
 					Hooks: provisioning.HooksConfig{
 						"preprovision": {{
-							Shell: string(language.ScriptLanguageBash),
+							Shell: string(language.HookKindBash),
 							Run:   "echo core",
 						}},
 					},
@@ -60,7 +60,7 @@ func Test_HooksRunAction_RunsLayerHooks(t *testing.T) {
 					Path: absoluteLayerPath,
 					Hooks: provisioning.HooksConfig{
 						"preprovision": {{
-							Shell: string(language.ScriptLanguageBash),
+							Shell: string(language.HookKindBash),
 							Run:   "echo shared",
 						}},
 					},
@@ -118,7 +118,7 @@ func Test_HooksRunAction_FiltersLayerHooks(t *testing.T) {
 					Path: "infra/core",
 					Hooks: provisioning.HooksConfig{
 						"preprovision": {{
-							Shell: string(language.ScriptLanguageBash),
+							Shell: string(language.HookKindBash),
 							Run:   "echo core",
 						}},
 					},
@@ -128,7 +128,7 @@ func Test_HooksRunAction_FiltersLayerHooks(t *testing.T) {
 					Path: "infra/shared",
 					Hooks: provisioning.HooksConfig{
 						"preprovision": {{
-							Shell: string(language.ScriptLanguageBash),
+							Shell: string(language.HookKindBash),
 							Run:   "echo shared",
 						}},
 					},
@@ -188,7 +188,7 @@ func Test_HooksRunAction_SetsTelemetryTypeForLayer(t *testing.T) {
 					Path: "infra/core",
 					Hooks: provisioning.HooksConfig{
 						"preprovision": {{
-							Shell: string(language.ScriptLanguageBash),
+							Shell: string(language.HookKindBash),
 							Run:   "echo core",
 						}},
 					},
@@ -283,5 +283,5 @@ func Test_HooksRunAction_ValidatesLayerHooksRelativeToLayerPath(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, layerHook.IsUsingDefaultShell())
 	// validate() infers language from the .sh file extension
-	require.Equal(t, language.ScriptLanguageBash, layerHook.Language)
+	require.Equal(t, language.HookKindBash, layerHook.Kind)
 }

@@ -52,13 +52,13 @@ func Test_GetAllHookConfigs(t *testing.T) {
 		hooksMap := map[string][]*HookConfig{
 			"preinit": {
 				{
-					Shell: string(language.ScriptLanguageBash),
+					Shell: string(language.HookKindBash),
 					// Run is missing - this should cause an error
 				},
 			},
 			"postinit": {
 				{
-					Shell: string(language.ScriptLanguageBash),
+					Shell: string(language.HookKindBash),
 					// Run is missing - this should cause an error
 				},
 			},
@@ -124,13 +124,13 @@ func Test_GetByParams(t *testing.T) {
 		hooksMap := map[string][]*HookConfig{
 			"preinit": {
 				{
-					Shell: string(language.ScriptLanguageBash),
+					Shell: string(language.HookKindBash),
 					// Run is missing - this should cause an error
 				},
 			},
 			"postinit": {
 				{
-					Shell: string(language.ScriptLanguageBash),
+					Shell: string(language.HookKindBash),
 					// Run is missing - this should cause an error
 				},
 			},
@@ -151,7 +151,7 @@ func Test_HookConfig_DefaultShell(t *testing.T) {
 	tests := []struct {
 		name             string
 		hookConfig       *HookConfig
-		expectedLanguage language.ScriptLanguage
+		expectedKind     language.HookKind
 		expectingDefault bool
 	}{
 		{
@@ -160,17 +160,17 @@ func Test_HookConfig_DefaultShell(t *testing.T) {
 				Name: "test",
 				Run:  "echo 'hello'",
 			},
-			expectedLanguage: defaultLanguageForOS(),
+			expectedKind:     defaultKindForOS(),
 			expectingDefault: true,
 		},
 		{
 			name: "Shell explicitly specified - should not use default",
 			hookConfig: &HookConfig{
 				Name:  "test",
-				Shell: string(language.ScriptLanguageBash),
+				Shell: string(language.HookKindBash),
 				Run:   "echo 'hello'",
 			},
-			expectedLanguage: language.ScriptLanguageBash,
+			expectedKind:     language.HookKindBash,
 			expectingDefault: false,
 		},
 	}
@@ -184,7 +184,7 @@ func Test_HookConfig_DefaultShell(t *testing.T) {
 			err := config.validate()
 			require.NoError(t, err)
 
-			require.Equal(t, tt.expectedLanguage, config.Language)
+			require.Equal(t, tt.expectedKind, config.Kind)
 			require.Equal(t, tt.expectingDefault, config.IsUsingDefaultShell())
 		})
 	}

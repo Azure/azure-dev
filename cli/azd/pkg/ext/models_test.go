@@ -13,67 +13,73 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func TestHookConfig_LanguageField(t *testing.T) {
+func TestHookConfig_KindField(t *testing.T) {
 	tests := []struct {
-		name             string
-		yamlInput        string
-		expectedLanguage language.ScriptLanguage
-		expectedDir      string
+		name         string
+		yamlInput    string
+		expectedKind language.HookKind
+		expectedDir  string
 	}{
 		{
-			name:             "OmittedLanguageDefaultsToUnknown",
-			yamlInput:        "run: scripts/hook.sh\n",
-			expectedLanguage: language.ScriptLanguageUnknown,
-			expectedDir:      "",
+			name:         "OmittedKindDefaultsToUnknown",
+			yamlInput:    "run: scripts/hook.sh\n",
+			expectedKind: language.HookKindUnknown,
+			expectedDir:  "",
 		},
 		{
-			name:             "OmittedDirDefaultsToEmpty",
-			yamlInput:        "run: scripts/hook.py\nlanguage: python\n",
-			expectedLanguage: language.ScriptLanguagePython,
-			expectedDir:      "",
+			name:         "OmittedDirDefaultsToEmpty",
+			yamlInput:    "run: scripts/hook.py\nkind: python\n",
+			expectedKind: language.HookKindPython,
+			expectedDir:  "",
 		},
 		{
-			name:             "LanguagePython",
-			yamlInput:        "run: scripts/hook.py\nlanguage: python\ndir: src/myapp\n",
-			expectedLanguage: language.ScriptLanguagePython,
-			expectedDir:      "src/myapp",
+			name:         "KindPython",
+			yamlInput:    "run: scripts/hook.py\nkind: python\ndir: src/myapp\n",
+			expectedKind: language.HookKindPython,
+			expectedDir:  "src/myapp",
 		},
 		{
-			name:             "LanguageJavaScript",
-			yamlInput:        "run: hooks/prebuild.js\nlanguage: js\ndir: hooks\n",
-			expectedLanguage: language.ScriptLanguageJavaScript,
-			expectedDir:      "hooks",
+			name:         "KindJavaScript",
+			yamlInput:    "run: hooks/prebuild.js\nkind: js\ndir: hooks\n",
+			expectedKind: language.HookKindJavaScript,
+			expectedDir:  "hooks",
 		},
 		{
-			name:             "LanguageTypeScript",
-			yamlInput:        "run: hooks/deploy.ts\nlanguage: ts\n",
-			expectedLanguage: language.ScriptLanguageTypeScript,
-			expectedDir:      "",
+			name:         "KindTypeScript",
+			yamlInput:    "run: hooks/deploy.ts\nkind: ts\n",
+			expectedKind: language.HookKindTypeScript,
+			expectedDir:  "",
 		},
 		{
-			name:             "LanguageDotNet",
-			yamlInput:        "run: hooks/validate.csx\nlanguage: dotnet\ndir: hooks/dotnet\n",
-			expectedLanguage: language.ScriptLanguageDotNet,
-			expectedDir:      "hooks/dotnet",
+			name:         "KindDotNet",
+			yamlInput:    "run: hooks/validate.csx\nkind: dotnet\ndir: hooks/dotnet\n",
+			expectedKind: language.HookKindDotNet,
+			expectedDir:  "hooks/dotnet",
 		},
 		{
-			name:             "LanguageBash",
-			yamlInput:        "run: scripts/setup.sh\nlanguage: sh\n",
-			expectedLanguage: language.ScriptLanguageBash,
-			expectedDir:      "",
+			name:         "KindBash",
+			yamlInput:    "run: scripts/setup.sh\nkind: sh\n",
+			expectedKind: language.HookKindBash,
+			expectedDir:  "",
 		},
 		{
-			name:             "LanguagePowerShell",
-			yamlInput:        "run: scripts/setup.ps1\nlanguage: pwsh\n",
-			expectedLanguage: language.ScriptLanguagePowerShell,
-			expectedDir:      "",
+			name:         "KindPowerShell",
+			yamlInput:    "run: scripts/setup.ps1\nkind: pwsh\n",
+			expectedKind: language.HookKindPowerShell,
+			expectedDir:  "",
 		},
 		{
 			name: "AllFieldsTogether",
 			yamlInput: "run: src/hooks/predeploy.py\nshell: sh\n" +
-				"language: python\ndir: src/hooks\ncontinueOnError: true\n",
-			expectedLanguage: language.ScriptLanguagePython,
-			expectedDir:      "src/hooks",
+				"kind: python\ndir: src/hooks\ncontinueOnError: true\n",
+			expectedKind: language.HookKindPython,
+			expectedDir:  "src/hooks",
+		},
+		{
+			name:         "LanguageAliasMapsPython",
+			yamlInput:    "run: scripts/hook.py\nlanguage: python\n",
+			expectedKind: language.HookKindUnknown, // alias only resolved at validate()
+			expectedDir:  "",
 		},
 	}
 
@@ -83,18 +89,17 @@ func TestHookConfig_LanguageField(t *testing.T) {
 			err := yaml.Unmarshal([]byte(tt.yamlInput), &config)
 			require.NoError(t, err)
 
-			require.Equal(t, tt.expectedLanguage, config.Language)
+			require.Equal(t, tt.expectedKind, config.Kind)
 			require.Equal(t, tt.expectedDir, config.Dir)
 		})
 	}
 }
 
-func TestHookConfig_LanguageRoundTrip(t *testing.T) {
+func TestHookConfig_KindRoundTrip(t *testing.T) {
 	original := HookConfig{
-		Run:      "hooks/deploy.py",
-		Shell:    string(language.ScriptLanguageBash),
-		Language: language.ScriptLanguagePython,
-		Dir:      "hooks",
+		Run:  "hooks/deploy.py",
+		Kind: language.HookKindPython,
+		Dir:  "hooks",
 	}
 
 	data, err := yaml.Marshal(&original)
@@ -104,74 +109,84 @@ func TestHookConfig_LanguageRoundTrip(t *testing.T) {
 	err = yaml.Unmarshal(data, &decoded)
 	require.NoError(t, err)
 
-	require.Equal(t, original.Language, decoded.Language)
+	require.Equal(t, original.Kind, decoded.Kind)
 	require.Equal(t, original.Dir, decoded.Dir)
 	require.Equal(t, original.Run, decoded.Run)
-	require.Equal(t, original.Shell, decoded.Shell)
 }
 
-func TestScriptLanguage_Constants(t *testing.T) {
+func TestHookKind_Constants(t *testing.T) {
 	tests := []struct {
 		name     string
-		lang     language.ScriptLanguage
+		kind     language.HookKind
 		expected string
 	}{
-		{"Unknown", language.ScriptLanguageUnknown, ""},
-		{"Bash", language.ScriptLanguageBash, "sh"},
-		{"PowerShell", language.ScriptLanguagePowerShell, "pwsh"},
-		{"JavaScript", language.ScriptLanguageJavaScript, "js"},
-		{"TypeScript", language.ScriptLanguageTypeScript, "ts"},
-		{"Python", language.ScriptLanguagePython, "python"},
-		{"DotNet", language.ScriptLanguageDotNet, "dotnet"},
+		{"Unknown", language.HookKindUnknown, ""},
+		{"Bash", language.HookKindBash, "sh"},
+		{"PowerShell", language.HookKindPowerShell, "pwsh"},
+		{"JavaScript", language.HookKindJavaScript, "js"},
+		{"TypeScript", language.HookKindTypeScript, "ts"},
+		{"Python", language.HookKindPython, "python"},
+		{"DotNet", language.HookKindDotNet, "dotnet"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.expected, string(tt.lang))
+			require.Equal(t, tt.expected, string(tt.kind))
 		})
 	}
 }
 
-func TestHookConfig_ValidateLanguageResolution(t *testing.T) {
+func TestHookConfig_ValidateKindResolution(t *testing.T) {
 	tests := []struct {
-		name             string
-		config           HookConfig
-		createFile       string // relative path to create under cwd
-		expectedLanguage language.ScriptLanguage
-		isShellLanguage  bool
-		expectError      string
+		name         string
+		config       HookConfig
+		createFile   string // relative path to create under cwd
+		expectedKind language.HookKind
+		isShell      bool
+		expectError  string
 	}{
 		{
-			name: "ExplicitLanguagePythonFromFile",
+			name: "ExplicitKindPythonFromFile",
+			config: HookConfig{
+				Name: "test",
+				Kind: language.HookKindPython,
+				Run:  "script.py",
+			},
+			createFile:   "script.py",
+			expectedKind: language.HookKindPython,
+			isShell:      false,
+		},
+		{
+			name: "ExplicitKindOverridesExtension",
+			config: HookConfig{
+				Name: "test",
+				Kind: language.HookKindPython,
+				Run:  "script.js",
+			},
+			createFile:   "script.js",
+			expectedKind: language.HookKindPython,
+			isShell:      false,
+		},
+		{
+			name: "LanguageAliasMapsToKind",
 			config: HookConfig{
 				Name:     "test",
-				Language: language.ScriptLanguagePython,
+				Language: string(language.HookKindPython),
 				Run:      "script.py",
 			},
-			createFile:       "script.py",
-			expectedLanguage: language.ScriptLanguagePython,
-			isShellLanguage:  false,
+			createFile:   "script.py",
+			expectedKind: language.HookKindPython,
+			isShell:      false,
 		},
 		{
-			name: "ExplicitLanguageOverridesExtension",
-			config: HookConfig{
-				Name:     "test",
-				Language: language.ScriptLanguagePython,
-				Run:      "script.js",
-			},
-			createFile:       "script.js",
-			expectedLanguage: language.ScriptLanguagePython,
-			isShellLanguage:  false,
-		},
-		{
-			name: "ShellBashMapsToLanguage",
+			name: "ShellAliasBashMapsToKind",
 			config: HookConfig{
 				Name:  "test",
-				Shell: string(language.ScriptLanguageBash),
+				Shell: string(language.HookKindBash),
 				Run:   "echo hello",
 			},
-			expectedLanguage: language.ScriptLanguageBash,
-			isShellLanguage:  true,
+			expectedKind: language.HookKindBash,
+			isShell:      true,
 		},
 		{
 			name: "InferPythonFromExtension",
@@ -179,9 +194,9 @@ func TestHookConfig_ValidateLanguageResolution(t *testing.T) {
 				Name: "test",
 				Run:  "hooks/seed.py",
 			},
-			createFile:       "hooks/seed.py",
-			expectedLanguage: language.ScriptLanguagePython,
-			isShellLanguage:  false,
+			createFile:   "hooks/seed.py",
+			expectedKind: language.HookKindPython,
+			isShell:      false,
 		},
 		{
 			name: "InferJavaScriptFromExtension",
@@ -189,9 +204,9 @@ func TestHookConfig_ValidateLanguageResolution(t *testing.T) {
 				Name: "test",
 				Run:  "hooks/setup.js",
 			},
-			createFile:       "hooks/setup.js",
-			expectedLanguage: language.ScriptLanguageJavaScript,
-			isShellLanguage:  false,
+			createFile:   "hooks/setup.js",
+			expectedKind: language.HookKindJavaScript,
+			isShell:      false,
 		},
 		{
 			name: "InferTypeScriptFromExtension",
@@ -199,9 +214,9 @@ func TestHookConfig_ValidateLanguageResolution(t *testing.T) {
 				Name: "test",
 				Run:  "hooks/test.ts",
 			},
-			createFile:       "hooks/test.ts",
-			expectedLanguage: language.ScriptLanguageTypeScript,
-			isShellLanguage:  false,
+			createFile:   "hooks/test.ts",
+			expectedKind: language.HookKindTypeScript,
+			isShell:      false,
 		},
 		{
 			name: "InferDotNetFromExtension",
@@ -209,9 +224,9 @@ func TestHookConfig_ValidateLanguageResolution(t *testing.T) {
 				Name: "test",
 				Run:  "hooks/run.cs",
 			},
-			createFile:       "hooks/run.cs",
-			expectedLanguage: language.ScriptLanguageDotNet,
-			isShellLanguage:  false,
+			createFile:   "hooks/run.cs",
+			expectedKind: language.HookKindDotNet,
+			isShell:      false,
 		},
 		{
 			name: "InferBashFromExtension",
@@ -219,9 +234,9 @@ func TestHookConfig_ValidateLanguageResolution(t *testing.T) {
 				Name: "test",
 				Run:  "hooks/deploy.sh",
 			},
-			createFile:       "hooks/deploy.sh",
-			expectedLanguage: language.ScriptLanguageBash,
-			isShellLanguage:  true,
+			createFile:   "hooks/deploy.sh",
+			expectedKind: language.HookKindBash,
+			isShell:      true,
 		},
 		{
 			name: "InferPowerShellFromExtension",
@@ -229,9 +244,9 @@ func TestHookConfig_ValidateLanguageResolution(t *testing.T) {
 				Name: "test",
 				Run:  "hooks/deploy.ps1",
 			},
-			createFile:       "hooks/deploy.ps1",
-			expectedLanguage: language.ScriptLanguagePowerShell,
-			isShellLanguage:  true,
+			createFile:   "hooks/deploy.ps1",
+			expectedKind: language.HookKindPowerShell,
+			isShell:      true,
 		},
 		{
 			name: "InlineScriptDefaultsToOSShell",
@@ -239,15 +254,15 @@ func TestHookConfig_ValidateLanguageResolution(t *testing.T) {
 				Name: "test",
 				Run:  "echo hello",
 			},
-			expectedLanguage: defaultLanguageForOS(),
-			isShellLanguage:  true,
+			expectedKind: defaultKindForOS(),
+			isShell:      true,
 		},
 		{
-			name: "InlineScriptWithLanguagePythonErrors",
+			name: "InlineScriptWithKindPythonErrors",
 			config: HookConfig{
-				Name:     "test",
-				Language: language.ScriptLanguagePython,
-				Run:      "print('hello')",
+				Name: "test",
+				Kind: language.HookKindPython,
+				Run:  "print('hello')",
 			},
 			expectError: "inline scripts are not supported " +
 				"for python hooks",
@@ -256,11 +271,11 @@ func TestHookConfig_ValidateLanguageResolution(t *testing.T) {
 			name: "InlineScriptWithShellBashIsOK",
 			config: HookConfig{
 				Name:  "test",
-				Shell: string(language.ScriptLanguageBash),
+				Shell: string(language.HookKindBash),
 				Run:   "echo hello",
 			},
-			expectedLanguage: language.ScriptLanguageBash,
-			isShellLanguage:  true,
+			expectedKind: language.HookKindBash,
+			isShell:      true,
 		},
 	}
 
@@ -288,11 +303,11 @@ func TestHookConfig_ValidateLanguageResolution(t *testing.T) {
 
 			require.NoError(t, err)
 			require.Equal(
-				t, tt.expectedLanguage, config.Language,
+				t, tt.expectedKind, config.Kind,
 			)
 			require.Equal(
-				t, tt.isShellLanguage,
-				config.Language.IsShellLanguage(),
+				t, tt.isShell,
+				config.Kind.IsShell(),
 			)
 		})
 	}
@@ -346,7 +361,7 @@ func TestHookConfig_ValidateDirInference(t *testing.T) {
 			name: "ShellHookDirUnchanged",
 			config: HookConfig{
 				Name:  "test",
-				Shell: string(language.ScriptLanguageBash),
+				Shell: string(language.HookKindBash),
 				Run:   filepath.Join("hooks", "setup.sh"),
 			},
 			createFile:  filepath.Join("hooks", "setup.sh"),
@@ -356,7 +371,7 @@ func TestHookConfig_ValidateDirInference(t *testing.T) {
 			name: "InlineScriptDirUnchanged",
 			config: HookConfig{
 				Name:  "test",
-				Shell: string(language.ScriptLanguageBash),
+				Shell: string(language.HookKindBash),
 				Run:   "echo hello",
 			},
 			expectedDir: "",
@@ -384,26 +399,26 @@ func TestHookConfig_ValidateDirInference(t *testing.T) {
 	}
 }
 
-func TestScriptLanguage_IsShellLanguage(t *testing.T) {
+func TestHookKind_IsShell(t *testing.T) {
 	tests := []struct {
 		name     string
-		lang     language.ScriptLanguage
+		kind     language.HookKind
 		expected bool
 	}{
-		{"Python", language.ScriptLanguagePython, false},
-		{"JavaScript", language.ScriptLanguageJavaScript, false},
-		{"TypeScript", language.ScriptLanguageTypeScript, false},
-		{"DotNet", language.ScriptLanguageDotNet, false},
-		{"Bash", language.ScriptLanguageBash, true},
-		{"PowerShell", language.ScriptLanguagePowerShell, true},
-		{"Unknown", language.ScriptLanguageUnknown, false},
+		{"Python", language.HookKindPython, false},
+		{"JavaScript", language.HookKindJavaScript, false},
+		{"TypeScript", language.HookKindTypeScript, false},
+		{"DotNet", language.HookKindDotNet, false},
+		{"Bash", language.HookKindBash, true},
+		{"PowerShell", language.HookKindPowerShell, true},
+		{"Unknown", language.HookKindUnknown, false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			require.Equal(
 				t, tt.expected,
-				tt.lang.IsShellLanguage(),
+				tt.kind.IsShell(),
 			)
 		})
 	}

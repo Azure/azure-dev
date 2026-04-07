@@ -25,7 +25,7 @@ func TestDiscoverProjectFile_Python(t *testing.T) {
 	require.NotNil(t, result)
 	assert.Equal(t, dir, result.ProjectDir)
 	assert.Equal(t, projectFile, result.DependencyFile)
-	assert.Equal(t, ScriptLanguagePython, result.Language)
+	assert.Equal(t, HookKindPython, result.Language)
 }
 
 func TestDiscoverProjectFile_PythonPyproject(t *testing.T) {
@@ -41,7 +41,7 @@ func TestDiscoverProjectFile_PythonPyproject(t *testing.T) {
 	require.NotNil(t, result)
 	assert.Equal(t, dir, result.ProjectDir)
 	assert.Equal(t, projectFile, result.DependencyFile)
-	assert.Equal(t, ScriptLanguagePython, result.Language)
+	assert.Equal(t, HookKindPython, result.Language)
 }
 
 func TestDiscoverProjectFile_JavaScript(t *testing.T) {
@@ -57,7 +57,7 @@ func TestDiscoverProjectFile_JavaScript(t *testing.T) {
 	require.NotNil(t, result)
 	assert.Equal(t, dir, result.ProjectDir)
 	assert.Equal(t, projectFile, result.DependencyFile)
-	assert.Equal(t, ScriptLanguageJavaScript, result.Language)
+	assert.Equal(t, HookKindJavaScript, result.Language)
 }
 
 func TestDiscoverProjectFile_DotNet(t *testing.T) {
@@ -73,7 +73,7 @@ func TestDiscoverProjectFile_DotNet(t *testing.T) {
 	require.NotNil(t, result)
 	assert.Equal(t, dir, result.ProjectDir)
 	assert.Equal(t, projectFile, result.DependencyFile)
-	assert.Equal(t, ScriptLanguageDotNet, result.Language)
+	assert.Equal(t, HookKindDotNet, result.Language)
 }
 
 func TestDiscoverProjectFile_DotNetFsProj(t *testing.T) {
@@ -89,7 +89,7 @@ func TestDiscoverProjectFile_DotNetFsProj(t *testing.T) {
 	require.NotNil(t, result)
 	assert.Equal(t, dir, result.ProjectDir)
 	assert.Equal(t, projectFile, result.DependencyFile)
-	assert.Equal(t, ScriptLanguageDotNet, result.Language)
+	assert.Equal(t, HookKindDotNet, result.Language)
 }
 
 func TestDiscoverProjectFile_WalkUp(t *testing.T) {
@@ -114,7 +114,7 @@ func TestDiscoverProjectFile_WalkUp(t *testing.T) {
 	require.NotNil(t, result)
 	assert.Equal(t, dir, result.ProjectDir)
 	assert.Equal(t, projectFile, result.DependencyFile)
-	assert.Equal(t, ScriptLanguagePython, result.Language)
+	assert.Equal(t, HookKindPython, result.Language)
 }
 
 func TestDiscoverProjectFile_BoundaryRespected(t *testing.T) {
@@ -165,7 +165,7 @@ func TestDiscoverProjectFile_Priority(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	assert.Equal(t, ScriptLanguagePython, result.Language,
+	assert.Equal(t, HookKindPython, result.Language,
 		"requirements.txt has higher priority than package.json")
 	assert.Equal(t, reqFile, result.DependencyFile)
 }
@@ -185,7 +185,7 @@ func TestDiscoverProjectFile_PyprojectOverRequirements(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	assert.Equal(t, ScriptLanguagePython, result.Language)
+	assert.Equal(t, HookKindPython, result.Language)
 	assert.Equal(t, pyprojectFile, result.DependencyFile,
 		"pyproject.toml should win over requirements.txt (PEP 621)")
 }
@@ -213,7 +213,7 @@ func TestDiscoverProjectFile_WalkUpMultipleLevels(t *testing.T) {
 	require.NotNil(t, result)
 	assert.Equal(t, root, result.ProjectDir)
 	assert.Equal(t, projectFile, result.DependencyFile)
-	assert.Equal(t, ScriptLanguageJavaScript, result.Language)
+	assert.Equal(t, HookKindJavaScript, result.Language)
 }
 
 func TestDiscoverProjectFile_ClosestWins(t *testing.T) {
@@ -240,7 +240,7 @@ func TestDiscoverProjectFile_ClosestWins(t *testing.T) {
 	require.NotNil(t, result)
 	assert.Equal(t, child, result.ProjectDir)
 	assert.Equal(t, closerFile, result.DependencyFile)
-	assert.Equal(t, ScriptLanguageJavaScript, result.Language,
+	assert.Equal(t, HookKindJavaScript, result.Language,
 		"closer package.json should win over farther requirements.txt")
 }
 

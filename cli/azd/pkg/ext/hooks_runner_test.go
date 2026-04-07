@@ -44,24 +44,24 @@ func Test_Hooks_Execute(t *testing.T) {
 	hooksMap := map[string][]*HookConfig{
 		"preinline": {
 			{
-				Shell: string(language.ScriptLanguageBash),
+				Shell: string(language.HookKindBash),
 				Run:   "echo 'Hello'",
 			},
 		},
 		"precommand": {
 			{
-				Shell: string(language.ScriptLanguageBash),
+				Shell: string(language.HookKindBash),
 				Run:   "scripts/precommand.sh",
 			},
 		},
 		"postcommand": {{
-			Shell: string(language.ScriptLanguageBash),
+			Shell: string(language.HookKindBash),
 			Run:   "scripts/postcommand.sh",
 		},
 		},
 		"preinteractive": {
 			{
-				Shell:       string(language.ScriptLanguageBash),
+				Shell:       string(language.HookKindBash),
 				Run:         "scripts/preinteractive.sh",
 				Interactive: true,
 			},
@@ -315,7 +315,7 @@ func Test_Hooks_Validation(t *testing.T) {
 		hooksMap := map[string][]*HookConfig{
 			"predeploy": {{
 				Name:  "predeploy",
-				Shell: string(language.ScriptLanguageBash),
+				Shell: string(language.HookKindBash),
 				Run:   "scripts/script.sh",
 			}},
 		}
@@ -377,7 +377,7 @@ func Test_Hooks_Validation(t *testing.T) {
 		hooksMap := map[string][]*HookConfig{
 			"preinline": {{
 				Name:  "preinline",
-				Shell: string(language.ScriptLanguageBash),
+				Shell: string(language.HookKindBash),
 				Run:   "echo 'Hello'",
 			}},
 		}
@@ -407,7 +407,7 @@ func Test_Hooks_Validation(t *testing.T) {
 		hooksMap := map[string][]*HookConfig{
 			"predeploy": {{
 				Name:  "predeploy",
-				Shell: string(language.ScriptLanguageBash),
+				Shell: string(language.HookKindBash),
 			}},
 		}
 
@@ -508,7 +508,7 @@ func Test_ExecHook_LanguageHooks(t *testing.T) {
 			"predeploy": {
 				{
 					Name:  "predeploy",
-					Shell: string(language.ScriptLanguageBash),
+					Shell: string(language.HookKindBash),
 					Run:   "scripts/predeploy.sh",
 				},
 			},

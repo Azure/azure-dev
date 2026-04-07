@@ -16,13 +16,13 @@ import (
 // in tests.
 func RegisterHookExecutors(mockCtx *mocks.MockContext) {
 	mockCtx.Container.MustRegisterNamedTransient(
-		string(language.ScriptLanguageBash), bash.NewExecutor,
+		string(language.HookKindBash), bash.NewExecutor,
 	)
 	mockCtx.Container.MustRegisterNamedTransient(
-		string(language.ScriptLanguagePowerShell), powershell.NewExecutor,
+		string(language.HookKindPowerShell), powershell.NewExecutor,
 	)
 	mockCtx.Container.MustRegisterSingleton(python.NewCli)
 	mockCtx.Container.MustRegisterNamedTransient(
-		string(language.ScriptLanguagePython), language.NewPythonExecutor,
+		string(language.HookKindPython), language.NewPythonExecutor,
 	)
 }

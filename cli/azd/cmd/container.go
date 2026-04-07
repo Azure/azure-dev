@@ -816,14 +816,14 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	// Hook executors registered by language name (transient — fresh per hook invocation).
 	// The HooksRunner resolves these via serviceLocator.ResolveNamed().
-	hookExecutorMap := map[language.ScriptLanguage]any{
-		language.ScriptLanguageBash:       bash.NewExecutor,
-		language.ScriptLanguagePowerShell: powershell.NewExecutor,
-		language.ScriptLanguagePython:     language.NewPythonExecutor,
+	hookExecutorMap := map[language.HookKind]any{
+		language.HookKindBash:       bash.NewExecutor,
+		language.HookKindPowerShell: powershell.NewExecutor,
+		language.HookKindPython:     language.NewPythonExecutor,
 	}
 
-	for lang, constructor := range hookExecutorMap {
-		container.MustRegisterNamedTransient(string(lang), constructor)
+	for kind, constructor := range hookExecutorMap {
+		container.MustRegisterNamedTransient(string(kind), constructor)
 	}
 
 	// Pipelines

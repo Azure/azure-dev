@@ -176,12 +176,13 @@ func (h *HooksManager) ValidateHooks(ctx context.Context, allHooks map[string][]
 				_, err := os.Stat(fullCheckPath)
 				isInlineScript := err != nil // File doesn't exist, so it's inline
 
-				// If no language/shell and it's an inline script, set
-				// OS default Language for warning purposes.
+				// If no kind/language/shell and it's an inline script, set
+				// OS default Kind for warning purposes.
 				if hookConfig.Shell == "" &&
-					hookConfig.Language == language.ScriptLanguageUnknown &&
+					hookConfig.Language == "" &&
+					hookConfig.Kind == language.HookKindUnknown &&
 					isInlineScript {
-					hookConfig.Language = defaultLanguageForOS()
+					hookConfig.Kind = defaultKindForOS()
 					hookConfig.usingDefaultShell = true
 				}
 			}
@@ -271,7 +272,7 @@ func (h *HooksManager) validateRuntimes(
 
 	// Collect unique language runtimes required across all hooks.
 	// Track the first hook name per language for actionable messages.
-	requiredLangs := map[language.ScriptLanguage]string{}
+	requiredLangs := map[language.HookKind]string{}
 
 	for hookName, hookConfigs := range allHooks {
 		for _, hookConfig := range hookConfigs {
@@ -310,16 +311,16 @@ func (h *HooksManager) validateRuntimes(
 			// Non-shell hooks need runtime validation
 			// (e.g. Python must be installed). Bash and
 			// PowerShell hooks are validated separately above.
-			if !cfg.Language.IsShellLanguage() {
-				if _, seen := requiredLangs[cfg.Language]; !seen {
-					requiredLangs[cfg.Language] = hookName
+			if !cfg.Kind.IsShell() {
+				if _, seen := requiredLangs[cfg.Kind]; !seen {
+					requiredLangs[cfg.Kind] = hookName
 				}
 			}
 		}
 	}
 
 	// Phase 1: validate Python runtime.
-	if hookName, ok := requiredLangs[language.ScriptLanguagePython]; ok {
+	if hookName, ok := requiredLangs[language.HookKindPython]; ok {
 		pythonCli := python.NewCli(h.commandRunner)
 		if err := pythonCli.CheckInstalled(ctx); err != nil {
 			warnings = append(warnings, HookWarning{

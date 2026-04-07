@@ -1,6 +1,28 @@
 words:
-  - aiservices
+  # Azure region names
+  - australiaeast
+  - brazilsouth
+  - canadacentral
+  - canadaeast
+  - francecentral
+  - germanywestcentral
+  - italynorth
+  - japaneast
+  - koreacentral
+  - northcentralus
+  - norwayeast
+  - polandcentral
+  - southafricanorth
+  - southcentralus
+  - southeastasia
+  - southindia
+  - spaincentral
+  - switzerlandnorth
+  - uaenorth
+  - uksouth
+  # Project terms
   - agentserver
+  - aiservices
   - anonymousconnection
   - aoai
   - azdaiagent

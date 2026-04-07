@@ -134,6 +134,7 @@ function Read-CoverageProfile {
     $packages = @{}
     $totalStatements = 0
     $totalCovered = 0
+    $skippedLines = 0
 
     for ($i = 1; $i -lt $lines.Count; $i++) {
         $line = $lines[$i]
@@ -141,6 +142,7 @@ function Read-CoverageProfile {
 
         # Match: filepath:startLine.startCol,endLine.endCol numStatements hitCount
         if ($line -notmatch '^(.+?):(\d+\.\d+),(\d+\.\d+)\s+(\d+)\s+(\d+)$') {
+            $skippedLines++
             continue
         }
 
@@ -172,6 +174,11 @@ function Read-CoverageProfile {
         if ($hits -gt 0) {
             $totalCovered += $stmts
         }
+    }
+
+
+    if ($skippedLines -gt 0) {
+        Write-Warning "${FilePath}: skipped $skippedLines line(s) that did not match the expected coverprofile format."
     }
 
     return @{
@@ -242,16 +249,16 @@ foreach ($pkg in $allPackages) {
             BaselinePercent = $bPct
             CurrentPercent  = $cPct
             Delta           = $delta
-            CurrentStmts    = $cStmts
+            ImpactStmts     = [math]::Max($bStmts, $cStmts)
         })
     }
 }
 
 # Impact summary uses all changed packages; table shows top N
 $changedPackageCount = $allDiffs.Count
-$changedStmts = ($allDiffs | Measure-Object -Property CurrentStmts -Sum).Sum
+$changedStmts = ($allDiffs | Measure-Object -Property ImpactStmts -Sum).Sum
 if ($null -eq $changedStmts) { $changedStmts = 0 }
-$totalStmts = $current.TotalStatements
+$totalStmts = [math]::Max($baseline.TotalStatements, $current.TotalStatements)
 $changedPct = if ($totalStmts -gt 0) {
     [math]::Round(($changedStmts / $totalStmts) * 100, 1)
 } else { 0.0 }

@@ -133,13 +133,26 @@ stages:
             $adoOrg = '$(System.CollectionUri)'.TrimEnd('/')
             $adoProject = '$(System.TeamProjectId)'
             $pipelineId = '$(System.DefinitionId)'
+
+            if ([string]::IsNullOrWhiteSpace($env:SYSTEM_ACCESSTOKEN)) {
+                Write-Warning "SYSTEM_ACCESSTOKEN is not available. Skipping coverage diff."
+                exit 0
+            }
+
             $headers = @{ Authorization = "Bearer $env:SYSTEM_ACCESSTOKEN" }
 
             Write-Host "Finding latest successful main build for baseline..."
             $buildsUrl = "$adoOrg/$adoProject/_apis/build/builds?" +
                 "definitions=$pipelineId&branchName=refs/heads/main" +
                 "&resultFilter=succeeded&`$top=1&api-version=7.1"
-            $buildsResp = Invoke-RestMethod -Uri $buildsUrl -Headers $headers -Method Get
+
+            try {
+                $buildsResp = Invoke-RestMethod -Uri $buildsUrl -Headers $headers -Method Get
+            }
+            catch {
+                Write-Warning "Failed to query main build baseline. Skipping coverage diff. $($_.Exception.Message)"
+                exit 0
+            }
 
             if ($buildsResp.count -eq 0) {
                 Write-Warning "No successful main builds found. Skipping coverage diff."

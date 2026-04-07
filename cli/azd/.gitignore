@@ -13,3 +13,4 @@ azd.sln
 cover-local.out
 cover-ci-combined.out
 coverage.html
+coverage-diff.md

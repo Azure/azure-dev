@@ -209,7 +209,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 	if err != nil {
 		span.SetStatus(codes.Error, "agent.creation.failed")
 		return actionResult, fmt.Errorf(
-			"%w \n\nAgent error: %s", originalError, err.Error())
+			"%w\n\nAgent error: %w", originalError, err)
 	}
 
 	defer azdAgent.Stop()
@@ -246,7 +246,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		if err != nil {
 			span.SetStatus(codes.Error, "agent.category.failed")
 			return actionResult, fmt.Errorf(
-				"%w \n\nPrompted for troubleshoot category: %w", originalError, err)
+				"%w\n\nPrompted for troubleshoot category: %w", originalError, err)
 		}
 
 		if category == categorySkip {
@@ -265,7 +265,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		if err != nil {
 			span.SetStatus(codes.Error, "agent.send_message.failed")
 			return actionResult, fmt.Errorf(
-				"%w \n\nAgent error: %w", originalError, err)
+				"%w\n\nAgent error: %w", originalError, err)
 		}
 
 		span.SetStatus(codes.Ok, fmt.Sprintf("agent.%s.completed", category))
@@ -279,7 +279,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			if err != nil {
 				span.SetStatus(codes.Error, "agent.prompt.failed")
 				return actionResult, fmt.Errorf(
-					"%w \n\nPrompted for next action: %w", originalError, err)
+					"%w\n\nPrompted for next action: %w", originalError, err)
 			}
 
 			if action == actionExit {
@@ -292,7 +292,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			if err != nil {
 				span.SetStatus(codes.Error, "agent.fix.template_failed")
 				return actionResult, fmt.Errorf(
-					"%w \n\nFailed to build fix prompt: %w", originalError, err)
+					"%w\n\nFailed to build fix prompt: %w", originalError, err)
 			}
 			e.console.Message(ctx, output.WithHintFormat(
 				"Preparing %s to fix error...", agentcopilot.DisplayTitle))
@@ -303,7 +303,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			if err != nil {
 				span.SetStatus(codes.Error, "agent.fix.failed")
 				return actionResult, fmt.Errorf(
-					"%w \n\nAgent error: %w", originalError, err)
+					"%w\n\nAgent error: %w", originalError, err)
 			}
 
 			span.SetStatus(codes.Ok, "agent.fix.completed")
@@ -313,10 +313,13 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			if action == actionFixOnly {
 				return actionResult, originalError
 			}
+			// actionFixAndRetry: user explicitly chose to retry, so fall
+			// through to re-run the command without an extra confirmation prompt.
 		} else {
-			// Fix-and-retry: fall through to re-run command
 			// Category "fix" already applied the fix in step 2.
-			// Ask if user wants to retry.
+			// Unlike the explain/guidance path (which auto-retries when the user
+			// explicitly chose actionFixAndRetry), the category-fix path asks for
+			// retry confirmation because the user only chose "fix" — not "fix and retry".
 			shouldRetry, err := e.promptRetryAfterFix(ctx)
 			if err != nil || !shouldRetry {
 				return actionResult, originalError

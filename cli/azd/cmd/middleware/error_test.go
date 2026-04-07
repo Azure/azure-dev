@@ -699,3 +699,20 @@ func Test_ErrorMiddleware_MaxRetry_FirstIterationSkipsCounter(t *testing.T) {
 	require.Equal(t, 1, callCount)
 	require.NotNil(t, result)
 }
+
+func Test_PromptNextAction_SavedAllow_ReturnsFixOnly(t *testing.T) {
+	t.Parallel()
+
+	cfg := configWithKeys(agentcopilot.ConfigKeyErrorHandlingFix, "allow")
+	ucm := &mockUserConfigManager{cfg: cfg}
+
+	m := &ErrorMiddleware{
+		console:           mockinput.NewMockConsole(),
+		userConfigManager: ucm,
+	}
+
+	action, err := m.promptNextAction(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, actionFixOnly, action,
+		"saved 'allow' preference should return actionFixOnly, not actionFixAndRetry")
+}

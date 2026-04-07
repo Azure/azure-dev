@@ -13,7 +13,6 @@ import (
 	"azure.ai.customtraining/internal/utils"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/fatih/color"
 )
 
 // sanitizeEnvironmentName converts a project name to a valid azd environment name.
@@ -72,8 +71,14 @@ func validateOrInitEnvironment(ctx context.Context, subscriptionId, projectEndpo
 	}
 	defer azdClient.Close()
 
+	// If user explicitly provided -e and -s flags, always use them (re-initialize environment)
+	if projectEndpoint != "" && subscriptionId != "" {
+		return implicitInit(ctx, azdClient, subscriptionId, projectEndpoint)
+	}
+
+	// No flags provided — check if environment is already configured
 	envValues, _ := utils.GetEnvironmentValues(ctx, azdClient)
-	required := []string{utils.EnvAzureTenantID, utils.EnvAzureSubscriptionID, utils.EnvAzureLocation, utils.EnvAzureAccountName}
+	required := []string{utils.EnvAzureTenantID, utils.EnvAzureSubscriptionID, utils.EnvAzureAccountName, utils.EnvAzureProjectName}
 
 	allConfigured := true
 	for _, varName := range required {
@@ -84,19 +89,14 @@ func validateOrInitEnvironment(ctx context.Context, subscriptionId, projectEndpo
 	}
 
 	if allConfigured {
-		if subscriptionId != "" || projectEndpoint != "" {
-			color.Yellow("Warning: Environment is already configured. The --subscription and --project-endpoint flags are being ignored.")
-			color.Yellow("To reconfigure, run 'azd ai training init' with the new values.\n")
-		}
 		return nil
 	}
 
-	if projectEndpoint == "" || subscriptionId == "" {
-		return fmt.Errorf("required environment variables not set. Either run 'azd ai training init' or provide both --subscription (-s) and --project-endpoint (-e) flags")
-	}
+	return fmt.Errorf("required environment variables not set. Either run 'azd ai training init' or provide both --subscription (-s) and --project-endpoint (-e) flags")
+}
 
-	fmt.Println("Environment not configured. Running implicit initialization...")
-
+// implicitInit performs a lightweight initialization using the provided subscription and project endpoint flags.
+func implicitInit(ctx context.Context, azdClient *azdext.AzdClient, subscriptionId, projectEndpoint string) error {
 	accountName, projectName, err := parseProjectEndpoint(projectEndpoint)
 	if err != nil {
 		return fmt.Errorf("failed to parse project endpoint: %w", err)
@@ -125,8 +125,6 @@ func validateOrInitEnvironment(ctx context.Context, subscriptionId, projectEndpo
 		return fmt.Errorf("implicit initialization failed: %w", err)
 	}
 
-	// For implicit init, set env values from parsed URL directly.
-	// Full ARM resolution (resource group, location) is deferred to explicit 'init' command.
 	if err := setEnvValues(ctx, azdClient, env.Name, map[string]string{
 		utils.EnvAzureTenantID:       azureContext.Scope.TenantId,
 		utils.EnvAzureSubscriptionID: subscriptionId,
@@ -136,6 +134,5 @@ func validateOrInitEnvironment(ctx context.Context, subscriptionId, projectEndpo
 		return fmt.Errorf("implicit initialization failed: failed to set environment values: %w", err)
 	}
 
-	fmt.Println("Environment configured successfully.")
 	return nil
 }

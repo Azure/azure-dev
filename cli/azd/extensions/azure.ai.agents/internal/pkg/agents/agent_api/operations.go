@@ -1321,7 +1321,7 @@ func (c *AgentClient) CreateSession(
 	}
 	defer resp.Body.Close()
 
-	if !runtime.HasStatusCode(resp, http.StatusOK) {
+	if !runtime.HasStatusCode(resp, http.StatusOK, http.StatusCreated) {
 		return nil, runtime.NewResponseError(resp)
 	}
 

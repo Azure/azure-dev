@@ -90,9 +90,10 @@ func addSessionFlags(cmd *cobra.Command, flags *sessionFlags) {
 type sessionContext struct {
 	endpoint  string
 	agentName string
+	version   string // from AGENT_{SERVICE}_VERSION env var
 }
 
-// resolveSessionContext resolves the agent name and project endpoint.
+// resolveSessionContext resolves the agent name, version, and project endpoint.
 func resolveSessionContext(
 	ctx context.Context, agentName string,
 ) (*sessionContext, error) {
@@ -103,6 +104,7 @@ func resolveSessionContext(
 	defer azdClient.Close()
 
 	name := agentName
+	var version string
 
 	if info, err := resolveAgentServiceFromProject(
 		ctx, azdClient, name, rootFlags.NoPrompt,
@@ -110,12 +112,17 @@ func resolveSessionContext(
 		if name == "" && info.AgentName != "" {
 			name = info.AgentName
 		}
+		if info.Version != "" {
+			version = info.Version
+		}
 	}
 
 	if name == "" {
-		return nil, fmt.Errorf(
-			"agent name is required; provide --agent-name or " +
-				"define an azure.ai.agent service in azure.yaml",
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidAgentName,
+			"agent name is required but could not be resolved",
+			"provide --agent-name or define an azure.ai.agent "+
+				"service in azure.yaml and run 'azd up'",
 		)
 	}
 
@@ -127,6 +134,7 @@ func resolveSessionContext(
 	return &sessionContext{
 		endpoint:  endpoint,
 		agentName: name,
+		version:   version,
 	}, nil
 }
 
@@ -153,7 +161,8 @@ Provisions an ADC sandbox micro-VM with a persistent filesystem. The session
 is ready for invocations once the command completes.
 
 The agent name is auto-detected when only one azure.ai.agent service exists
-in azure.yaml. The version defaults to the latest agent version when omitted.
+in azure.yaml. The version defaults to the deployed agent version from the
+azd environment (AGENT_{SERVICE}_VERSION) when omitted.
 The isolation key is derived from the Entra token by default.
 
 Positional arguments can be used instead of flags:
@@ -200,6 +209,22 @@ Positional arguments can be used instead of flags:
 				return err
 			}
 
+			// Resolve version: flag > env var > error
+			version := flags.version
+			if version == "" {
+				version = sc.version
+			}
+			if version == "" {
+				return exterrors.Validation(
+					exterrors.CodeInvalidAgentVersion,
+					"agent version is required to create a session "+
+						"but could not be resolved",
+					"provide --version, pass the version as a "+
+						"positional argument, or deploy the agent "+
+						"with 'azd up' to set it automatically",
+				)
+			}
+
 			credential, err := newAgentCredential()
 			if err != nil {
 				return err
@@ -209,12 +234,11 @@ Positional arguments can be used instead of flags:
 				sc.endpoint, credential,
 			)
 
-			request := &agent_api.CreateAgentSessionRequest{}
-			if flags.version != "" {
-				request.VersionIndicator = &agent_api.VersionIndicator{
+			request := &agent_api.CreateAgentSessionRequest{
+				VersionIndicator: &agent_api.VersionIndicator{
 					Type:         "version_ref",
-					AgentVersion: flags.version,
-				}
+					AgentVersion: version,
+				},
 			}
 			if flags.sessionID != "" {
 				request.AgentSessionID = &flags.sessionID
@@ -249,7 +273,7 @@ Positional arguments can be used instead of flags:
 	cmd.Flags().StringVar(
 		&flags.version, "version", "",
 		"Agent version to back the session "+
-			"(defaults to latest)",
+			"(auto-resolved from azd environment if omitted)",
 	)
 	cmd.Flags().StringVar(
 		&flags.isolationKey, "isolation-key", "",

@@ -20,6 +20,8 @@ const (
 	CodeInvalidAiProjectId        = "invalid_ai_project_id"
 	CodeInvalidServiceConfig      = "invalid_service_config"
 	CodeInvalidAgentRequest       = "invalid_agent_request"
+	CodeInvalidAgentName          = "invalid_agent_name"
+	CodeInvalidAgentVersion       = "invalid_agent_version"
 	CodeInvalidSessionId          = "invalid_session_id"
 	CodeInvalidParameter          = "invalid_parameter"
 	CodeUnsupportedHost           = "unsupported_host"

@@ -72,7 +72,7 @@ func newJobValidateCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&filePath, "file", "", "Path to YAML job definition file (required)")
+	cmd.Flags().StringVarP(&filePath, "file", "f", "", "Path to YAML job definition file (required)")
 
 	return cmd
 }

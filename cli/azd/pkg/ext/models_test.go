@@ -603,3 +603,181 @@ func TestHookKind_IsShell(t *testing.T) {
 		})
 	}
 }
+
+// TestHookConfig_ResolvedPaths verifies that validate() populates
+// resolvedScriptPath and resolvedDir correctly for various
+// combinations of Dir, run path, and hook kind.
+func TestHookConfig_ResolvedPaths(t *testing.T) {
+	tests := []struct {
+		name               string
+		config             HookConfig
+		createFiles        []string
+		expectedDir        string // suffix of resolvedDir (checked via HasSuffix)
+		expectedScriptPath string // suffix of resolvedScriptPath
+	}{
+		{
+			name: "PythonWithExplicitDir",
+			config: HookConfig{
+				Name: "test",
+				Kind: language.HookKindPython,
+				Run:  "main.py",
+				Dir:  filepath.Join("hooks", "preprovision"),
+			},
+			createFiles: []string{
+				filepath.Join(
+					"hooks", "preprovision", "main.py",
+				),
+			},
+			expectedDir: filepath.Join(
+				"hooks", "preprovision",
+			),
+			expectedScriptPath: filepath.Join(
+				"hooks", "preprovision", "main.py",
+			),
+		},
+		{
+			name: "PythonWithInferredDir",
+			config: HookConfig{
+				Name: "test",
+				Kind: language.HookKindPython,
+				Run: filepath.Join(
+					"hooks", "preprovision", "main.py",
+				),
+			},
+			createFiles: []string{
+				filepath.Join(
+					"hooks", "preprovision", "main.py",
+				),
+			},
+			expectedDir: filepath.Join(
+				"hooks", "preprovision",
+			),
+			expectedScriptPath: filepath.Join(
+				"hooks", "preprovision", "main.py",
+			),
+		},
+		{
+			name: "ShellHookWithDir",
+			config: HookConfig{
+				Name:  "test",
+				Shell: string(language.HookKindBash),
+				Run:   "deploy.sh",
+				Dir:   "scripts",
+			},
+			createFiles: []string{
+				filepath.Join("scripts", "deploy.sh"),
+			},
+			expectedDir: "scripts",
+			expectedScriptPath: filepath.Join(
+				"scripts", "deploy.sh",
+			),
+		},
+		{
+			name: "ShellHookNoDirUsesProjectRoot",
+			config: HookConfig{
+				Name:  "test",
+				Shell: string(language.HookKindBash),
+				Run:   filepath.Join("scripts", "deploy.sh"),
+			},
+			createFiles: []string{
+				filepath.Join("scripts", "deploy.sh"),
+			},
+			expectedDir: "", // resolvedDir == cwd
+			expectedScriptPath: filepath.Join(
+				"scripts", "deploy.sh",
+			),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := tt.config
+			cwd := t.TempDir()
+			config.cwd = cwd
+
+			for _, f := range tt.createFiles {
+				fp := filepath.Join(cwd, f)
+				require.NoError(
+					t,
+					os.MkdirAll(
+						filepath.Dir(fp), 0o755,
+					),
+				)
+				require.NoError(
+					t,
+					os.WriteFile(fp, nil, 0o600),
+				)
+			}
+
+			err := config.validate()
+			require.NoError(t, err)
+
+			// resolvedDir should be an absolute path
+			// ending with the expected suffix.
+			require.True(
+				t,
+				filepath.IsAbs(config.resolvedDir),
+				"resolvedDir should be absolute: %s",
+				config.resolvedDir,
+			)
+
+			if tt.expectedDir == "" {
+				// Should resolve to cwd itself.
+				absCwd, _ := filepath.Abs(cwd)
+				require.Equal(
+					t, absCwd, config.resolvedDir,
+				)
+			} else {
+				expectedFull := filepath.Join(
+					cwd, tt.expectedDir,
+				)
+				absExpected, _ := filepath.Abs(
+					expectedFull,
+				)
+				require.Equal(
+					t, absExpected, config.resolvedDir,
+				)
+			}
+
+			// resolvedScriptPath should be absolute and
+			// end with the expected suffix.
+			if tt.expectedScriptPath != "" {
+				require.True(
+					t,
+					filepath.IsAbs(
+						config.resolvedScriptPath,
+					),
+					"resolvedScriptPath should be "+
+						"absolute: %s",
+					config.resolvedScriptPath,
+				)
+				expectedFull := filepath.Join(
+					cwd, tt.expectedScriptPath,
+				)
+				require.Equal(
+					t,
+					expectedFull,
+					config.resolvedScriptPath,
+				)
+			}
+		})
+	}
+}
+
+// TestHookConfig_ValidatePathTraversal verifies that validate()
+// rejects Dir values that escape the project root via "..".
+func TestHookConfig_ValidatePathTraversal(t *testing.T) {
+	cwd := t.TempDir()
+
+	config := HookConfig{
+		Name:  "test",
+		Shell: string(language.HookKindBash),
+		Run:   "echo hello",
+		Dir:   filepath.Join("..", "..", "escape"),
+		cwd:   cwd,
+	}
+
+	err := config.validate()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "escapes project root")
+}

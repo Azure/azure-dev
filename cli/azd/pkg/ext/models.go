@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/language"
 )
 
@@ -76,9 +77,12 @@ type HookConfig struct {
 	script string
 	// Indicates if the shell was automatically detected based on OS (used for warnings)
 	usingDefaultShell bool
-	// dirExplicit is true when the user explicitly set Dir in the
-	// YAML configuration (not auto-inferred from the run path).
-	dirExplicit bool
+	// resolvedScriptPath is the absolute path to the script file,
+	// computed during validate(). Empty for inline scripts.
+	resolvedScriptPath string
+	// resolvedDir is the absolute working directory for hook
+	// execution, computed during validate().
+	resolvedDir string
 
 	// Internal name of the hook running for a given command
 	Name string `yaml:",omitempty"`
@@ -141,9 +145,9 @@ func (hc *HookConfig) validate() error {
 		return ErrRunRequired
 	}
 
-	// Record whether Dir was explicitly set by the user before
-	// any auto-inference fills it in.
-	hc.dirExplicit = hc.Dir != ""
+	// Record whether Dir was explicitly provided by the user
+	// before any auto-inference fills it in.
+	dirExplicit := hc.Dir != ""
 
 	relativeCheckPath := strings.ReplaceAll(
 		hc.Run, "/", string(os.PathSeparator),
@@ -158,11 +162,8 @@ func (hc *HookConfig) validate() error {
 	foundViaDir := false
 	if hc.cwd != "" {
 		if filepath.IsAbs(relativeCheckPath) {
-			// Absolute run paths are used as-is — Dir and
-			// cwd are not prepended.
 			fullCheckPath = relativeCheckPath
-		} else if hc.dirExplicit {
-			// First try: resolve relative to Dir.
+		} else if dirExplicit {
 			dir := hc.Dir
 			if !filepath.IsAbs(dir) {
 				dir = filepath.Join(hc.cwd, dir)
@@ -175,7 +176,6 @@ func (hc *HookConfig) validate() error {
 				fullCheckPath = dirPath
 				foundViaDir = true
 			} else {
-				// Fall back: resolve relative to cwd.
 				fullCheckPath = filepath.Join(
 					hc.cwd, relativeCheckPath,
 				)
@@ -191,16 +191,11 @@ func (hc *HookConfig) validate() error {
 	if err == nil && !stats.IsDir() {
 		hc.path = relativeCheckPath
 		if foundViaDir {
-			hc.dirExplicit = true
+			dirExplicit = true
 		}
 	} else {
 		hc.script = hc.Run
-		// If Dir was set but the file was not found via Dir,
-		// clear dirExplicit so execHook does not try to join
-		// Dir + path.
-		if hc.dirExplicit {
-			hc.dirExplicit = false
-		}
+		dirExplicit = false
 	}
 
 	// Kind resolution — priority:
@@ -240,27 +235,95 @@ func (hc *HookConfig) validate() error {
 		if hc.Dir == "" && hc.path != "" {
 			hc.Dir = filepath.Dir(hc.path)
 		}
-		hc.validated = true
-		return nil
+	} else {
+		// For inline scripts with no resolved kind, default to
+		// the OS-appropriate shell kind.
+		if hc.Kind == language.HookKindUnknown &&
+			hc.script != "" {
+			hc.Kind = defaultKindForOS()
+			hc.usingDefaultShell = true
+		}
+
+		// For file-based hooks with an unrecognized extension.
+		if hc.Kind == language.HookKindUnknown {
+			return fmt.Errorf(
+				"script with file extension '%s' is not "+
+					"valid. %w.",
+				filepath.Ext(hc.path),
+				ErrUnsupportedScriptType,
+			)
+		}
 	}
 
-	// For inline scripts with no resolved kind, default to the
-	// OS-appropriate shell kind.
-	if hc.Kind == language.HookKindUnknown &&
-		hc.script != "" {
-		hc.Kind = defaultKindForOS()
-		hc.usingDefaultShell = true
+	// ── Resolve absolute paths ──────────────────────────────
+	// After this point, resolvedDir and resolvedScriptPath are
+	// the single source of truth for hook execution paths.
+	// execHook() should read these directly.
+
+	boundaryDir := hc.cwd
+	if boundaryDir == "" {
+		boundaryDir, _ = os.Getwd()
 	}
 
-	// For file-based hooks with an unrecognized extension, error.
-	if hc.Kind == language.HookKindUnknown {
+	// Resolve working directory.
+	if hc.Dir != "" {
+		dir := hc.Dir
+		if !filepath.IsAbs(dir) {
+			dir = filepath.Join(boundaryDir, dir)
+		}
+		hc.resolvedDir = dir
+	} else if hc.path != "" && !hc.Kind.IsShell() {
+		// Non-shell hooks: derive cwd from script directory so
+		// project-relative tooling (venvs, node_modules) works.
+		hc.resolvedDir = filepath.Dir(
+			filepath.Join(boundaryDir, hc.path),
+		)
+	} else {
+		hc.resolvedDir = boundaryDir
+	}
+
+	// Resolve script path to absolute.
+	if hc.path != "" {
+		if dirExplicit && !filepath.IsAbs(hc.path) {
+			// Dir was explicitly set — run path is relative
+			// to Dir, not boundaryDir alone.
+			dir := hc.Dir
+			if !filepath.IsAbs(dir) {
+				dir = filepath.Join(boundaryDir, dir)
+			}
+			hc.resolvedScriptPath = filepath.Join(
+				dir, hc.path,
+			)
+		} else if !filepath.IsAbs(hc.path) {
+			hc.resolvedScriptPath = filepath.Join(
+				boundaryDir, hc.path,
+			)
+		} else {
+			hc.resolvedScriptPath = hc.path
+		}
+	}
+
+	// Validate that resolvedDir stays within the project root
+	// to prevent path traversal via ".." in Dir.
+	absDir, absErr := filepath.Abs(hc.resolvedDir)
+	if absErr != nil {
 		return fmt.Errorf(
-			"script with file extension '%s' is not valid. "+
-				"%w.",
-			filepath.Ext(hc.path),
-			ErrUnsupportedScriptType,
+			"resolving hook directory: %w", absErr,
 		)
 	}
+	absBoundary, absErr := filepath.Abs(boundaryDir)
+	if absErr != nil {
+		return fmt.Errorf(
+			"resolving boundary directory: %w", absErr,
+		)
+	}
+	if !osutil.IsPathContained(absBoundary, absDir) {
+		return fmt.Errorf(
+			"hook directory %q escapes project root %q",
+			hc.Dir, boundaryDir,
+		)
+	}
+	hc.resolvedDir = absDir
 
 	hc.validated = true
 

@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -17,7 +16,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
@@ -149,55 +147,24 @@ func (h *HooksRunner) execHook(
 		}
 	}
 
-	// validate() resolves the hook's language, path, and shell type.
+	// validate() resolves the hook's language, path, shell type,
+	// and computes resolvedDir / resolvedScriptPath.
 	if err := hookConfig.validate(); err != nil {
 		return err
 	}
 
-	// Determine the boundary directory for project file discovery.
-	boundaryDir := h.cwd
-	if hookConfig.cwd != "" {
-		boundaryDir = hookConfig.cwd
+	// Use pre-resolved paths from validate().
+	cwd := hookConfig.resolvedDir
+	if cwd == "" {
+		cwd = h.cwd // fallback (shouldn't happen after validate)
 	}
 
-	// Determine working directory from Dir (set explicitly or
-	// auto-inferred from the run path by validate).
-	cwd := h.cwd
-	if hookConfig.Dir != "" {
-		dir := hookConfig.Dir
-		if !filepath.IsAbs(dir) {
-			dir = filepath.Join(boundaryDir, dir)
-		}
-		cwd = dir
-	} else if hookConfig.path != "" && !hookConfig.Kind.IsShell() {
-		// Non-shell languages (Python, JS/TS, .NET) derive cwd from
-		// the script's directory so that project-relative tooling
-		// (venvs, node_modules) resolves correctly. Shell hooks
-		// retain the original behavior: cwd = project root.
-		cwd = filepath.Dir(
-			filepath.Join(boundaryDir, hookConfig.path),
-		)
+	boundaryDir := hookConfig.cwd
+	if boundaryDir == "" {
+		boundaryDir = h.cwd
 	}
 
-	// Validate that cwd is contained within boundaryDir to
-	// prevent path traversal via ".." in the dir config field.
-	absDir, err := filepath.Abs(cwd)
-	if err != nil {
-		return fmt.Errorf("resolving hook directory: %w", err)
-	}
-	absBoundary, err := filepath.Abs(boundaryDir)
-	if err != nil {
-		return fmt.Errorf(
-			"resolving boundary directory: %w", err,
-		)
-	}
-	if !osutil.IsPathContained(absBoundary, absDir) {
-		return fmt.Errorf(
-			"hook directory %q escapes project root %q",
-			cwd, boundaryDir,
-		)
-	}
-	cwd = absDir
+	scriptPath := hookConfig.resolvedScriptPath
 
 	envVars := hookEnv.Environ()
 
@@ -238,29 +205,6 @@ func (h *HooksRunner) execHook(
 					URL:   "https://learn.microsoft.com/azure/developer/azure-developer-cli/azd-extensibility",
 				},
 			},
-		}
-	}
-
-	// Resolve script path to absolute so every executor receives a
-	// consistent, fully-qualified path regardless of hook language.
-	scriptPath := hookConfig.path
-	if hookConfig.path != "" {
-		if hookConfig.dirExplicit &&
-			!filepath.IsAbs(hookConfig.path) {
-			// When Dir was explicitly set by the user, the
-			// run path is relative to Dir — resolve through
-			// Dir, not boundaryDir alone.
-			dir := hookConfig.Dir
-			if !filepath.IsAbs(dir) {
-				dir = filepath.Join(boundaryDir, dir)
-			}
-			scriptPath = filepath.Join(
-				dir, hookConfig.path,
-			)
-		} else {
-			scriptPath = filepath.Join(
-				boundaryDir, hookConfig.path,
-			)
 		}
 	}
 

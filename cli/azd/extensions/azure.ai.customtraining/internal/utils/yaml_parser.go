@@ -96,7 +96,9 @@ func IsRemoteURI(s string) bool {
 	lower := strings.ToLower(s)
 	return strings.HasPrefix(lower, "azureml://") ||
 		strings.HasPrefix(lower, "https://") ||
-		strings.HasPrefix(lower, "http://")
+		strings.HasPrefix(lower, "http://") ||
+		strings.HasPrefix(lower, "git://") ||
+        strings.HasPrefix(lower, "git+")
 }
 
 // ValidateJobDefinition checks that required fields are present.

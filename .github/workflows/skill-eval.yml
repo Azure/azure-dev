@@ -25,23 +25,33 @@ jobs:
 
       - name: Check skill compliance
         run: |
+          compliance_failed=0
           for skill_dir in .github/skills/*/; do
             skill_name=$(basename "$skill_dir")
             echo "::group::Checking $skill_name"
-            waza check "$skill_dir" || true
+            if ! waza check "$skill_dir"; then
+              compliance_failed=1
+            fi
             echo "::endgroup::"
           done
+          if [ "$compliance_failed" -ne 0 ]; then
+            echo "One or more skills failed compliance checks."
+            exit 1
+          fi
 
       - name: Run eval suites
         run: |
           any_found=false
+          eval_failed=0
           for skill_dir in .github/skills/*/; do
             skill_name=$(basename "$skill_dir")
             eval_file="$skill_dir/evals/eval.yaml"
             if [ -f "$eval_file" ]; then
               any_found=true
               echo "::group::Running evals for $skill_name"
-              waza run "$eval_file" -v || true
+              if ! waza run "$eval_file" -v; then
+                eval_failed=1
+              fi
               echo "::endgroup::"
             else
               echo "⚠ $skill_name has no eval suite at $eval_file"
@@ -49,4 +59,8 @@ jobs:
           done
           if [ "$any_found" = false ]; then
             echo "No eval suites found"
+          fi
+          if [ "$eval_failed" -ne 0 ]; then
+            echo "One or more eval suites failed."
+            exit 1
           fi

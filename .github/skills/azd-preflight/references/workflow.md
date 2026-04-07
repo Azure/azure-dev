@@ -2,17 +2,22 @@
 
 ### Step 1 — Verify Prerequisites
 
-1. Confirm cwd is in `azure-dev` by checking for `cli/azd/magefile.go`.
+1. Locate the repo root by checking for `cli/azd/magefile.go` relative to cwd.
+   If cwd is already `cli/azd/` (contains `magefile.go`), use cwd directly.
+   If cwd is the repo root, use `cli/azd/` as the working directory.
 2. Verify tools: `mage`, `go`, `golangci-lint`, `cspell`.
 3. If any tool is missing, offer to install via `ask_user` (see preflight-checks.md § Prerequisites).
    If the user declines, stop.
 
 ### Step 2 — Run Preflight
 
-Change to the `cli/azd/` directory and run:
+Run from the `cli/azd/` directory (adjust based on cwd detected in Step 1):
 
 ```bash
+# If at repo root:
 cd cli/azd && mage preflight
+# If already in cli/azd/:
+mage preflight
 ```
 
 **Important**: This command can take 10+ minutes (unit tests alone can take up to 10 minutes).

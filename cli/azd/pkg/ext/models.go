@@ -76,6 +76,9 @@ type HookConfig struct {
 	script string
 	// Indicates if the shell was automatically detected based on OS (used for warnings)
 	usingDefaultShell bool
+	// dirExplicit is true when the user explicitly set Dir in the
+	// YAML configuration (not auto-inferred from the run path).
+	dirExplicit bool
 
 	// Internal name of the hook running for a given command
 	Name string `yaml:",omitempty"`
@@ -138,19 +141,66 @@ func (hc *HookConfig) validate() error {
 		return ErrRunRequired
 	}
 
+	// Record whether Dir was explicitly set by the user before
+	// any auto-inference fills it in.
+	hc.dirExplicit = hc.Dir != ""
+
 	relativeCheckPath := strings.ReplaceAll(
 		hc.Run, "/", string(os.PathSeparator),
 	)
+
+	// Resolve the full path for the os.Stat check. When Dir is
+	// explicitly set and run is relative, we try Dir first and
+	// fall back to cwd (project root). This supports both:
+	//   run: main.py        + dir: hooks/preprovision
+	//   run: hooks/deploy.py + dir: custom_workdir
 	fullCheckPath := relativeCheckPath
+	foundViaDir := false
 	if hc.cwd != "" {
-		fullCheckPath = filepath.Join(hc.cwd, relativeCheckPath)
+		if filepath.IsAbs(relativeCheckPath) {
+			// Absolute run paths are used as-is — Dir and
+			// cwd are not prepended.
+			fullCheckPath = relativeCheckPath
+		} else if hc.dirExplicit {
+			// First try: resolve relative to Dir.
+			dir := hc.Dir
+			if !filepath.IsAbs(dir) {
+				dir = filepath.Join(hc.cwd, dir)
+			}
+			dirPath := filepath.Join(
+				dir, relativeCheckPath,
+			)
+			info, dirErr := os.Stat(dirPath)
+			if dirErr == nil && !info.IsDir() {
+				fullCheckPath = dirPath
+				foundViaDir = true
+			} else {
+				// Fall back: resolve relative to cwd.
+				fullCheckPath = filepath.Join(
+					hc.cwd, relativeCheckPath,
+				)
+			}
+		} else {
+			fullCheckPath = filepath.Join(
+				hc.cwd, relativeCheckPath,
+			)
+		}
 	}
 
 	stats, err := os.Stat(fullCheckPath)
 	if err == nil && !stats.IsDir() {
 		hc.path = relativeCheckPath
+		if foundViaDir {
+			hc.dirExplicit = true
+		}
 	} else {
 		hc.script = hc.Run
+		// If Dir was set but the file was not found via Dir,
+		// clear dirExplicit so execHook does not try to join
+		// Dir + path.
+		if hc.dirExplicit {
+			hc.dirExplicit = false
+		}
 	}
 
 	// Kind resolution — priority:

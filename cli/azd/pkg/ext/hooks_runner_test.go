@@ -758,3 +758,300 @@ func envSliceToMap(envVars []string) map[string]string {
 	}
 	return m
 }
+
+// Test_ExecHook_DirRunResolution verifies that when Dir is set, the
+// script path passed to executors is resolved through Dir.
+func Test_ExecHook_DirRunResolution(t *testing.T) {
+	t.Run("PythonHookWithDir", func(t *testing.T) {
+		cwd := t.TempDir()
+		ostest.Chdir(t, cwd)
+
+		env := environment.NewWithValues("test", map[string]string{})
+
+		// Create hooks/preprovision/main.py (no requirements.txt
+		// to avoid triggering venv setup in the executor).
+		hookDir := filepath.Join(
+			cwd, "hooks", "preprovision",
+		)
+		require.NoError(
+			t,
+			os.MkdirAll(hookDir, osutil.PermissionDirectory),
+		)
+		require.NoError(t, os.WriteFile(
+			filepath.Join(hookDir, "main.py"),
+			nil, osutil.PermissionExecutableFile,
+		))
+
+		hooksMap := map[string][]*HookConfig{
+			"preprovision": {
+				{
+					Name: "preprovision",
+					Kind: language.HookKindPython,
+					Run:  "main.py",
+					Dir:  filepath.Join("hooks", "preprovision"),
+				},
+			},
+		}
+
+		envManager := &mockenv.MockEnvManager{}
+		envManager.On("Reload", mock.Anything, env).Return(nil)
+
+		var capturedScriptPath string
+		var capturedCwd string
+
+		mockContext := mocks.NewMockContext(context.Background())
+		registerHookExecutors(mockContext)
+
+		// Mock Python version check.
+		mockContext.CommandRunner.When(
+			func(args exec.RunArgs, command string) bool {
+				return strings.Contains(command, "--version")
+			},
+		).RespondFn(
+			func(args exec.RunArgs) (exec.RunResult, error) {
+				return exec.NewRunResult(
+					0, "Python 3.11.0", "",
+				), nil
+			},
+		)
+
+		// Mock the actual script execution and capture paths.
+		mockContext.CommandRunner.When(
+			func(args exec.RunArgs, command string) bool {
+				return strings.Contains(command, "main.py")
+			},
+		).RespondFn(
+			func(args exec.RunArgs) (exec.RunResult, error) {
+				capturedCwd = args.Cwd
+				// The script path is the last argument
+				// passed to the python command.
+				for _, arg := range args.Args {
+					if strings.Contains(arg, "main.py") {
+						capturedScriptPath = arg
+					}
+				}
+				return exec.NewRunResult(0, "", ""), nil
+			},
+		)
+
+		hooksManager := NewHooksManager(
+			cwd, mockContext.CommandRunner,
+		)
+		runner := NewHooksRunner(
+			hooksManager,
+			mockContext.CommandRunner,
+			envManager,
+			mockContext.Console,
+			cwd,
+			hooksMap,
+			env,
+			mockContext.Container,
+		)
+
+		err := runner.RunHooks(
+			*mockContext.Context, HookTypePre, nil,
+			"provision",
+		)
+
+		require.NoError(t, err)
+
+		// The script path should be resolved through Dir.
+		expectedScript := filepath.Join(
+			cwd, "hooks", "preprovision", "main.py",
+		)
+		require.Equal(
+			t, expectedScript, capturedScriptPath,
+			"script path should resolve through Dir",
+		)
+
+		// The cwd should be the Dir directory.
+		expectedCwd := filepath.Join(
+			cwd, "hooks", "preprovision",
+		)
+		require.Equal(
+			t, expectedCwd, capturedCwd,
+			"cwd should be the Dir directory",
+		)
+	})
+
+	t.Run("ShellHookWithDir", func(t *testing.T) {
+		cwd := t.TempDir()
+		ostest.Chdir(t, cwd)
+
+		env := environment.NewWithValues("test", map[string]string{})
+
+		// Create scripts/deploy.sh.
+		scriptDir := filepath.Join(cwd, "scripts")
+		require.NoError(
+			t,
+			os.MkdirAll(scriptDir, osutil.PermissionDirectory),
+		)
+		require.NoError(t, os.WriteFile(
+			filepath.Join(scriptDir, "deploy.sh"),
+			nil, osutil.PermissionExecutableFile,
+		))
+
+		hooksMap := map[string][]*HookConfig{
+			"predeploy": {
+				{
+					Name:  "predeploy",
+					Shell: string(language.HookKindBash),
+					Run:   "deploy.sh",
+					Dir:   "scripts",
+				},
+			},
+		}
+
+		envManager := &mockenv.MockEnvManager{}
+		envManager.On("Reload", mock.Anything, env).Return(nil)
+
+		var capturedScriptArg string
+		shellRan := false
+
+		mockContext := mocks.NewMockContext(context.Background())
+		registerHookExecutors(mockContext)
+
+		mockContext.CommandRunner.When(
+			func(args exec.RunArgs, command string) bool {
+				return strings.Contains(command, "deploy.sh")
+			},
+		).RespondFn(
+			func(args exec.RunArgs) (exec.RunResult, error) {
+				shellRan = true
+				if len(args.Args) > 0 {
+					capturedScriptArg = args.Args[0]
+				}
+				return exec.NewRunResult(0, "", ""), nil
+			},
+		)
+
+		hooksManager := NewHooksManager(
+			cwd, mockContext.CommandRunner,
+		)
+		runner := NewHooksRunner(
+			hooksManager,
+			mockContext.CommandRunner,
+			envManager,
+			mockContext.Console,
+			cwd,
+			hooksMap,
+			env,
+			mockContext.Container,
+		)
+
+		err := runner.RunHooks(
+			*mockContext.Context, HookTypePre, nil, "deploy",
+		)
+
+		require.NoError(t, err)
+		require.True(t, shellRan)
+
+		// The script path should resolve through Dir.
+		expectedScript := filepath.Join(
+			cwd, "scripts", "deploy.sh",
+		)
+		require.Equal(
+			t,
+			filepath.ToSlash(expectedScript),
+			capturedScriptArg,
+			"shell script path should resolve through Dir",
+		)
+	})
+
+	t.Run("NoDirResolvesFromRoot", func(t *testing.T) {
+		cwd := t.TempDir()
+		ostest.Chdir(t, cwd)
+
+		env := environment.NewWithValues("test", map[string]string{})
+
+		// Create hooks/preprovision/main.py at the root.
+		hookDir := filepath.Join(
+			cwd, "hooks", "preprovision",
+		)
+		require.NoError(
+			t,
+			os.MkdirAll(hookDir, osutil.PermissionDirectory),
+		)
+		require.NoError(t, os.WriteFile(
+			filepath.Join(hookDir, "main.py"),
+			nil, osutil.PermissionExecutableFile,
+		))
+
+		hooksMap := map[string][]*HookConfig{
+			"preprovision": {
+				{
+					Name: "preprovision",
+					Kind: language.HookKindPython,
+					Run: filepath.Join(
+						"hooks", "preprovision", "main.py",
+					),
+				},
+			},
+		}
+
+		envManager := &mockenv.MockEnvManager{}
+		envManager.On("Reload", mock.Anything, env).Return(nil)
+
+		var capturedScriptPath string
+
+		mockContext := mocks.NewMockContext(context.Background())
+		registerHookExecutors(mockContext)
+
+		mockContext.CommandRunner.When(
+			func(args exec.RunArgs, command string) bool {
+				return strings.Contains(command, "--version")
+			},
+		).RespondFn(
+			func(args exec.RunArgs) (exec.RunResult, error) {
+				return exec.NewRunResult(
+					0, "Python 3.11.0", "",
+				), nil
+			},
+		)
+
+		mockContext.CommandRunner.When(
+			func(args exec.RunArgs, command string) bool {
+				return strings.Contains(command, "main.py")
+			},
+		).RespondFn(
+			func(args exec.RunArgs) (exec.RunResult, error) {
+				for _, arg := range args.Args {
+					if strings.Contains(arg, "main.py") {
+						capturedScriptPath = arg
+					}
+				}
+				return exec.NewRunResult(0, "", ""), nil
+			},
+		)
+
+		hooksManager := NewHooksManager(
+			cwd, mockContext.CommandRunner,
+		)
+		runner := NewHooksRunner(
+			hooksManager,
+			mockContext.CommandRunner,
+			envManager,
+			mockContext.Console,
+			cwd,
+			hooksMap,
+			env,
+			mockContext.Container,
+		)
+
+		err := runner.RunHooks(
+			*mockContext.Context, HookTypePre, nil,
+			"provision",
+		)
+
+		require.NoError(t, err)
+
+		// Without Dir, the full relative path is joined to cwd.
+		expectedScript := filepath.Join(
+			cwd, "hooks", "preprovision", "main.py",
+		)
+		require.Equal(
+			t, expectedScript, capturedScriptPath,
+			"without Dir, path resolves from project root",
+		)
+	})
+}

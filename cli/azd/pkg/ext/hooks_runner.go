@@ -245,7 +245,23 @@ func (h *HooksRunner) execHook(
 	// consistent, fully-qualified path regardless of hook language.
 	scriptPath := hookConfig.path
 	if hookConfig.path != "" {
-		scriptPath = filepath.Join(boundaryDir, hookConfig.path)
+		if hookConfig.dirExplicit &&
+			!filepath.IsAbs(hookConfig.path) {
+			// When Dir was explicitly set by the user, the
+			// run path is relative to Dir — resolve through
+			// Dir, not boundaryDir alone.
+			dir := hookConfig.Dir
+			if !filepath.IsAbs(dir) {
+				dir = filepath.Join(boundaryDir, dir)
+			}
+			scriptPath = filepath.Join(
+				dir, hookConfig.path,
+			)
+		} else {
+			scriptPath = filepath.Join(
+				boundaryDir, hookConfig.path,
+			)
+		}
 	}
 
 	// Prepare (unified — venv/deps for Python, pwsh detection for

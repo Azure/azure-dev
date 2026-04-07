@@ -399,6 +399,186 @@ func TestHookConfig_ValidateDirInference(t *testing.T) {
 	}
 }
 
+// TestHookConfig_ValidateDirRunResolution verifies that when Dir is
+// explicitly set, the run path is resolved relative to Dir (not the
+// project root) for file existence checks.
+func TestHookConfig_ValidateDirRunResolution(t *testing.T) {
+	tests := []struct {
+		name         string
+		config       HookConfig
+		createFiles  []string // paths relative to cwd
+		expectPath   string   // expected hc.path (empty = inline)
+		expectScript string   // expected hc.script (empty = file)
+		expectError  string
+	}{
+		{
+			name: "DirWithRunResolvesRelativeToDir",
+			config: HookConfig{
+				Name: "preprovision",
+				Kind: language.HookKindPython,
+				Run:  "main.py",
+				Dir:  filepath.Join("hooks", "preprovision"),
+			},
+			createFiles: []string{
+				filepath.Join(
+					"hooks", "preprovision", "main.py",
+				),
+			},
+			expectPath:   "main.py",
+			expectScript: "",
+		},
+		{
+			name: "DirWithSubdirInRun",
+			config: HookConfig{
+				Name: "prebuild",
+				Kind: language.HookKindPython,
+				Run:  filepath.Join("src", "main.py"),
+				Dir:  filepath.Join("hooks", "preprovision"),
+			},
+			createFiles: []string{
+				filepath.Join(
+					"hooks", "preprovision",
+					"src", "main.py",
+				),
+			},
+			expectPath:   filepath.Join("src", "main.py"),
+			expectScript: "",
+		},
+		{
+			name: "NoDirRunFullPathFromRoot",
+			config: HookConfig{
+				Name: "predeploy",
+				Kind: language.HookKindPython,
+				Run: filepath.Join(
+					"hooks", "preprovision", "main.py",
+				),
+			},
+			createFiles: []string{
+				filepath.Join(
+					"hooks", "preprovision", "main.py",
+				),
+			},
+			expectPath: filepath.Join(
+				"hooks", "preprovision", "main.py",
+			),
+			expectScript: "",
+		},
+		{
+			name: "DirSetFileDoesNotExistNonShell",
+			config: HookConfig{
+				Name: "preprovision",
+				Kind: language.HookKindPython,
+				Run:  "nonexistent.py",
+				Dir:  filepath.Join("hooks", "preprovision"),
+			},
+			createFiles: []string{}, // no files
+			expectError: "inline scripts are not supported " +
+				"for python hooks",
+		},
+		{
+			name: "ShellHookWithDir",
+			config: HookConfig{
+				Name:  "predeploy",
+				Shell: string(language.HookKindBash),
+				Run:   "deploy.sh",
+				Dir:   "scripts",
+			},
+			createFiles: []string{
+				filepath.Join("scripts", "deploy.sh"),
+			},
+			expectPath:   "deploy.sh",
+			expectScript: "",
+		},
+		{
+			name: "AbsoluteRunIgnoresDir",
+			config: HookConfig{
+				Name: "test",
+				Kind: language.HookKindPython,
+				Run:  "main.py",
+				Dir:  filepath.Join("hooks", "preprovision"),
+			},
+			// Put file in dir but also at root — the
+			// absolute path case is tested next; here we
+			// verify the dir path is used.
+			createFiles: []string{
+				filepath.Join(
+					"hooks", "preprovision", "main.py",
+				),
+			},
+			expectPath:   "main.py",
+			expectScript: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := tt.config
+			cwd := t.TempDir()
+			config.cwd = cwd
+
+			for _, f := range tt.createFiles {
+				fp := filepath.Join(cwd, f)
+				err := os.MkdirAll(
+					filepath.Dir(fp), 0o755,
+				)
+				require.NoError(t, err)
+				err = os.WriteFile(fp, nil, 0o600)
+				require.NoError(t, err)
+			}
+
+			err := config.validate()
+
+			if tt.expectError != "" {
+				require.Error(t, err)
+				require.Contains(
+					t, err.Error(), tt.expectError,
+				)
+				return
+			}
+
+			require.NoError(t, err)
+			require.Equal(
+				t, tt.expectPath, config.path,
+				"path mismatch",
+			)
+			require.Equal(
+				t, tt.expectScript, config.script,
+				"script mismatch",
+			)
+		})
+	}
+}
+
+// TestHookConfig_ValidateDirRunAbsolutePath verifies that an
+// absolute run path is not joined with Dir.
+func TestHookConfig_ValidateDirRunAbsolutePath(t *testing.T) {
+	cwd := t.TempDir()
+
+	// Create an "absolute" script inside a temp location.
+	absScript := filepath.Join(cwd, "abs-scripts", "run.py")
+	require.NoError(
+		t,
+		os.MkdirAll(filepath.Dir(absScript), 0o755),
+	)
+	require.NoError(
+		t, os.WriteFile(absScript, nil, 0o600),
+	)
+
+	config := HookConfig{
+		Name: "test",
+		Kind: language.HookKindPython,
+		Run:  absScript,
+		Dir:  filepath.Join("hooks", "preprovision"),
+		cwd:  cwd,
+	}
+
+	err := config.validate()
+	require.NoError(t, err)
+	// Absolute run paths are resolved without Dir prefix.
+	require.Equal(t, absScript, config.path)
+	require.Equal(t, "", config.script)
+}
+
 func TestHookKind_IsShell(t *testing.T) {
 	tests := []struct {
 		name     string

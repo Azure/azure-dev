@@ -46,6 +46,10 @@ type GitHubCli interface {
 	CreatePrivateRepository(ctx context.Context, name string) error
 	GetGitProtocolType(ctx context.Context) (string, error)
 	GitHubActionsExists(ctx context.Context, repoSlug string) (bool, error)
+	// GetOIDCSubjectForRepo returns the OIDC subject claim format for a repo by querying
+	// the GitHub OIDC customization API. If the org/repo uses a custom subject template,
+	// the returned OIDCSubjectConfig will have UseDefault=false and IncludeClaimKeys set.
+	GetOIDCSubjectForRepo(ctx context.Context, repoSlug string) (*OIDCSubjectConfig, error)
 }
 
 func NewGitHubCli(ctx context.Context, console input.Console, commandRunner exec.CommandRunner) (GitHubCli, error) {
@@ -309,6 +313,103 @@ func (cli *ghCli) GitHubActionsExists(ctx context.Context, repoSlug string) (boo
 		return false, nil
 	}
 	return true, nil
+}
+
+// OIDCSubjectConfig represents the OIDC subject claim customization for a GitHub repository or org.
+type OIDCSubjectConfig struct {
+	UseDefault       bool     `json:"use_default"`
+	IncludeClaimKeys []string `json:"include_claim_keys"`
+}
+
+// gitHubRepoInfo holds GitHub API repo metadata needed for OIDC subject construction.
+type gitHubRepoInfo struct {
+	ID    int `json:"id"`
+	Owner struct {
+		ID int `json:"id"`
+	} `json:"owner"`
+}
+
+// BuildOIDCSubject constructs the correct OIDC subject claim for a federated identity credential.
+// If the org/repo uses custom claim keys (e.g. repository_owner_id, repository_id), this function
+// queries the GitHub API for the numeric IDs and builds the subject accordingly.
+// The suffix is the trailing part of the subject, e.g. "ref:refs/heads/main" or "pull_request".
+func BuildOIDCSubject(
+	ctx context.Context, cli GitHubCli, repoSlug string, oidcConfig *OIDCSubjectConfig, suffix string,
+) (string, error) {
+	if oidcConfig == nil || oidcConfig.UseDefault {
+		return fmt.Sprintf("repo:%s:%s", repoSlug, suffix), nil
+	}
+
+	// For custom claim templates, we need the repo and owner numeric IDs
+	ghCliImpl, ok := cli.(*ghCli)
+	if !ok {
+		// Fallback to default if we can't access the underlying CLI
+		return fmt.Sprintf("repo:%s:%s", repoSlug, suffix), nil
+	}
+	runArgs := ghCliImpl.newRunArgs("api", "/repos/"+repoSlug, "--jq", "{id: .id, owner: {id: .owner.id}}")
+	res, err := ghCliImpl.run(ctx, runArgs)
+	if err != nil {
+		return "", fmt.Errorf("failed to get repository info for %s: %w", repoSlug, err)
+	}
+	var repoInfo gitHubRepoInfo
+	if err := json.Unmarshal([]byte(res.Stdout), &repoInfo); err != nil {
+		return "", fmt.Errorf("failed to parse repository info for %s: %w", repoSlug, err)
+	}
+
+	// Build subject from claim keys
+	// The claim keys define the parts before the context (ref/pull_request).
+	// Example: include_claim_keys=["repository_owner_id", "repository_id"] produces
+	// "repository_owner_id:123:repository_id:456:ref:refs/heads/main"
+	var parts []string
+	for _, key := range oidcConfig.IncludeClaimKeys {
+		switch key {
+		case "repository_owner_id":
+			parts = append(parts, fmt.Sprintf("repository_owner_id:%d", repoInfo.Owner.ID))
+		case "repository_id":
+			parts = append(parts, fmt.Sprintf("repository_id:%d", repoInfo.ID))
+		case "repository_owner":
+			owner := strings.SplitN(repoSlug, "/", 2)
+			parts = append(parts, fmt.Sprintf("repository_owner:%s", owner[0]))
+		case "repository":
+			parts = append(parts, fmt.Sprintf("repository:%s", repoSlug))
+		default:
+			// Unknown claim key — include it literally for forward compatibility
+			parts = append(parts, key)
+		}
+	}
+	parts = append(parts, suffix)
+	return strings.Join(parts, ":"), nil
+}
+
+// GetOIDCSubjectForRepo queries the GitHub OIDC customization API for a repository.
+// It first checks the repo-level customization, then falls back to the org-level customization.
+// If no customization is found (or the API returns 404), it returns a config with UseDefault=true.
+func (cli *ghCli) GetOIDCSubjectForRepo(ctx context.Context, repoSlug string) (*OIDCSubjectConfig, error) {
+	// Try repo-level first
+	runArgs := cli.newRunArgs("api", "/repos/"+repoSlug+"/actions/oidc/customization/sub")
+	res, err := cli.run(ctx, runArgs)
+	if err == nil {
+		var config OIDCSubjectConfig
+		if jsonErr := json.Unmarshal([]byte(res.Stdout), &config); jsonErr == nil && !config.UseDefault {
+			return &config, nil
+		}
+	}
+
+	// Fall back to org-level
+	parts := strings.SplitN(repoSlug, "/", 2)
+	if len(parts) == 2 {
+		orgRunArgs := cli.newRunArgs("api", "/orgs/"+parts[0]+"/actions/oidc/customization/sub")
+		orgRes, orgErr := cli.run(ctx, orgRunArgs)
+		if orgErr == nil {
+			var config OIDCSubjectConfig
+			if jsonErr := json.Unmarshal([]byte(orgRes.Stdout), &config); jsonErr == nil && !config.UseDefault {
+				return &config, nil
+			}
+		}
+	}
+
+	// Default: no customization
+	return &OIDCSubjectConfig{UseDefault: true}, nil
 }
 
 func (cli *ghCli) ForceConfigureAuth(authMode AuthTokenSource) {

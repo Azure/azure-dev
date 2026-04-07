@@ -609,7 +609,7 @@ func (p *GitHubCiProvider) configureFederatedAuth(
 		return fmt.Errorf("failed unmarshalling azure credentials: %w", err)
 	}
 
-	err = applyFederatedCredentials(ctx, repoSlug, &azureCredentials, p.console, credential)
+	err = applyFederatedCredentials(ctx, repoSlug, &azureCredentials, p.console, credential, ghCli)
 	if err != nil {
 		return err
 	}
@@ -645,6 +645,7 @@ func applyFederatedCredentials(
 	azureCredentials *azcli.AzureCredentials,
 	console input.Console,
 	credential azcore.TokenCredential,
+	ghCli github.GitHubCli,
 ) error {
 	graphClient, err := createGraphClient(ctx, credential)
 	if err != nil {
@@ -670,19 +671,36 @@ func applyFederatedCredentials(
 		return fmt.Errorf("failed retrieving federated credentials: %w", err)
 	}
 
+	// Query GitHub OIDC subject claim customization for the repo/org
+	oidcConfig, err := ghCli.GetOIDCSubjectForRepo(ctx, repoSlug)
+	if err != nil {
+		log.Printf("Warning: failed to query OIDC subject claim config, using default format: %v", err)
+		oidcConfig = &github.OIDCSubjectConfig{UseDefault: true}
+	}
+
+	mainSubject, err := github.BuildOIDCSubject(ctx, ghCli, repoSlug, oidcConfig, "ref:refs/heads/main")
+	if err != nil {
+		return fmt.Errorf("failed to build OIDC subject for main branch: %w", err)
+	}
+
+	prSubject, err := github.BuildOIDCSubject(ctx, ghCli, repoSlug, oidcConfig, "pull_request")
+	if err != nil {
+		return fmt.Errorf("failed to build OIDC subject for pull requests: %w", err)
+	}
+
 	// List of desired federated credentials
 	federatedCredentials := []graphsdk.FederatedIdentityCredential{
 		{
 			Name:        "main",
 			Issuer:      federatedIdentityIssuer,
-			Subject:     fmt.Sprintf("repo:%s:ref:refs/heads/main", repoSlug),
+			Subject:     mainSubject,
 			Description: convert.RefOf("Created by Azure Developer CLI"),
 			Audiences:   []string{federatedIdentityAudience},
 		},
 		{
 			Name:        "pull_request",
 			Issuer:      federatedIdentityIssuer,
-			Subject:     fmt.Sprintf("repo:%s:pull_request", repoSlug),
+			Subject:     prSubject,
 			Description: convert.RefOf("Created by Azure Developer CLI"),
 			Audiences:   []string{federatedIdentityAudience},
 		},

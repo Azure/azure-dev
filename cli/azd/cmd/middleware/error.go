@@ -28,6 +28,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/pipeline"
@@ -72,10 +73,13 @@ func fixableError(err error) bool {
 	// --- Machine context: typed errors ---
 	_, extRunErr := errors.AsType[*extensions.ExtensionRunError](err)
 	_, packStatusErr := errors.AsType[*pack.StatusCodeError](err)
+	_, missingInputsErr := errors.AsType[*bicep.MissingInputsError](err)
+	_, configValidErr := errors.AsType[*project.ConfigValidationError](err)
 
-	if extRunErr || packStatusErr {
+	if extRunErr || packStatusErr || missingInputsErr || configValidErr {
 		return false
 	}
+
 	if errors.Is(err, environment.ErrNotFound) ||
 		errors.Is(err, environment.ErrNameNotSpecified) ||
 		errors.Is(err, environment.ErrDefaultEnvironmentNotFound) ||
@@ -111,6 +115,7 @@ const (
 // be sent to AI analysis
 func shouldSkipErrorAnalysis(err error) bool {
 	if errors.Is(err, context.Canceled) ||
+		errors.Is(err, context.DeadlineExceeded) ||
 		errors.Is(err, surveyterm.InterruptErr) ||
 		errors.Is(err, azdcontext.ErrNoProject) ||
 		errors.Is(err, consent.ErrToolExecutionDenied) ||

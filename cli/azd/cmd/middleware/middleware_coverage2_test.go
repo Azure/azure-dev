@@ -423,10 +423,10 @@ func TestTelemetryMiddleware_setInstalledExtensionsAttributes_Sorted(t *testing.
 }
 
 // ---------------------------------------------------------------------------
-// shouldSkipErrorAnalysis — consent and azdcontext errors
+// shouldSkipAgentHandling — consent and azdcontext errors
 // ---------------------------------------------------------------------------
 
-func TestShouldSkipErrorAnalysis_ConsentErrors(t *testing.T) {
+func TestShouldSkipAgentHandling_ConsentErrors(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name string
@@ -443,66 +443,66 @@ func TestShouldSkipErrorAnalysis_ConsentErrors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			require.True(t, shouldSkipErrorAnalysis(tt.err))
+			require.True(t, shouldSkipAgentHandling(tt.err))
 		})
 	}
 }
 
-func TestShouldSkipErrorAnalysis_AzdContextErrNoProject(t *testing.T) {
+func TestShouldSkipAgentHandling_AzdContextErrNoProject(t *testing.T) {
 	t.Parallel()
-	require.True(t, shouldSkipErrorAnalysis(azdcontext.ErrNoProject))
+	require.True(t, shouldSkipAgentHandling(azdcontext.ErrNoProject))
 }
 
-func TestShouldSkipErrorAnalysis_WrappedErrNoProject(t *testing.T) {
+func TestShouldSkipAgentHandling_WrappedErrNoProject(t *testing.T) {
 	t.Parallel()
 	err := fmt.Errorf("init failed: %w", azdcontext.ErrNoProject)
-	require.True(t, shouldSkipErrorAnalysis(err))
+	require.True(t, shouldSkipAgentHandling(err))
 }
 
-func TestShouldSkipErrorAnalysis_EnvironmentInitError(t *testing.T) {
+func TestShouldSkipAgentHandling_EnvironmentInitError(t *testing.T) {
 	t.Parallel()
 	err := &environment.EnvironmentInitError{Name: "test-env"}
-	require.True(t, shouldSkipErrorAnalysis(err))
+	require.True(t, shouldSkipAgentHandling(err))
 }
 
-func TestShouldSkipErrorAnalysis_WrappedEnvironmentInitError(t *testing.T) {
+func TestShouldSkipAgentHandling_WrappedEnvironmentInitError(t *testing.T) {
 	t.Parallel()
 	inner := &environment.EnvironmentInitError{Name: "test-env"}
 	err := fmt.Errorf("env error: %w", inner)
-	require.True(t, shouldSkipErrorAnalysis(err))
+	require.True(t, shouldSkipAgentHandling(err))
 }
 
 // ---------------------------------------------------------------------------
-// fixableError — determines if an error is eligible for agentic fix
+// shouldSkipAgentHandling — non-fixable error types
 // ---------------------------------------------------------------------------
 
-func TestFixableError_ExtensionRunError(t *testing.T) {
+func TestShouldSkipAgentHandling_ExtensionRunError(t *testing.T) {
 	t.Parallel()
 	err := &extensions.ExtensionRunError{ExtensionId: "test-ext", Err: fmt.Errorf("failed")}
-	require.False(t, fixableError(err), "ExtensionRunError should not be fixable")
+	require.True(t, shouldSkipAgentHandling(err), "ExtensionRunError should be skipped")
 }
 
-func TestFixableError_WrappedExtensionRunError(t *testing.T) {
+func TestShouldSkipAgentHandling_WrappedExtensionRunError(t *testing.T) {
 	t.Parallel()
 	inner := &extensions.ExtensionRunError{ExtensionId: "test-ext", Err: fmt.Errorf("failed")}
 	err := fmt.Errorf("ext failed: %w", inner)
-	require.False(t, fixableError(err), "wrapped ExtensionRunError should not be fixable")
+	require.True(t, shouldSkipAgentHandling(err), "wrapped ExtensionRunError should be skipped")
 }
 
-func TestFixableError_EnvironmentNotFound(t *testing.T) {
+func TestShouldSkipAgentHandling_EnvironmentNotFound(t *testing.T) {
 	t.Parallel()
-	require.False(t, fixableError(environment.ErrNotFound), "ErrNotFound should not be fixable")
+	require.True(t, shouldSkipAgentHandling(environment.ErrNotFound), "ErrNotFound should be skipped")
 }
 
-func TestFixableError_PipelineAuthNotSupported(t *testing.T) {
+func TestShouldSkipAgentHandling_PipelineAuthNotSupported(t *testing.T) {
 	t.Parallel()
-	require.False(t, fixableError(pipeline.ErrAuthNotSupported), "ErrAuthNotSupported should not be fixable")
+	require.True(t, shouldSkipAgentHandling(pipeline.ErrAuthNotSupported), "ErrAuthNotSupported should be skipped")
 }
 
-func TestFixableError_GenericError(t *testing.T) {
+func TestShouldSkipAgentHandling_GenericError(t *testing.T) {
 	t.Parallel()
 	err := fmt.Errorf("some azure error")
-	require.True(t, fixableError(err), "generic error should be fixable")
+	require.False(t, shouldSkipAgentHandling(err), "generic error should not be skipped")
 }
 
 // ---------------------------------------------------------------------------
@@ -1103,18 +1103,18 @@ func TestErrorMiddleware_Run_NullResultFromNext_NoError(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// fixableError — constant-style regression checks
+// shouldSkipAgentHandling — constant-style regression checks
 // ---------------------------------------------------------------------------
 
-func TestFixableError_ProjectErrNoDefaultService(t *testing.T) {
+func TestShouldSkipAgentHandling_ProjectErrNoDefaultService(t *testing.T) {
 	t.Parallel()
-	require.False(t, fixableError(project.ErrNoDefaultService))
+	require.True(t, shouldSkipAgentHandling(project.ErrNoDefaultService))
 }
 
-func TestFixableError_WrappedGenericError(t *testing.T) {
+func TestShouldSkipAgentHandling_WrappedGenericError(t *testing.T) {
 	t.Parallel()
 	err := fmt.Errorf("deploy failed: %w", fmt.Errorf("timeout"))
-	require.True(t, fixableError(err))
+	require.False(t, shouldSkipAgentHandling(err))
 }
 
 // ---------------------------------------------------------------------------

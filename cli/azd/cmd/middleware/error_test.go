@@ -268,28 +268,28 @@ func Test_ErrorMiddleware_NoPatternMatch(t *testing.T) {
 	require.Equal(t, unknownError, err)
 }
 
-func Test_FixableError(t *testing.T) {
+func Test_ShouldSkipAgentHandling_FixableErrors(t *testing.T) {
 	t.Parallel()
-	t.Run("MissingToolErrors is fixable", func(t *testing.T) {
+	t.Run("MissingToolErrors is not skipped", func(t *testing.T) {
 		t.Parallel()
 		err := &tools.MissingToolErrors{
 			Errs:      []error{errors.New("docker not found")},
 			ToolNames: []string{"docker"},
 		}
-		require.True(t, fixableError(err))
+		require.False(t, shouldSkipAgentHandling(err))
 	})
 
-	t.Run("Wrapped MissingToolErrors is fixable", func(t *testing.T) {
+	t.Run("Wrapped MissingToolErrors is not skipped", func(t *testing.T) {
 		t.Parallel()
 		inner := &tools.MissingToolErrors{
 			Errs:      []error{errors.New("node not found")},
 			ToolNames: []string{"node"},
 		}
 		wrapped := fmt.Errorf("setup failed: %w", inner)
-		require.True(t, fixableError(wrapped))
+		require.False(t, shouldSkipAgentHandling(wrapped))
 	})
 
-	t.Run("ErrSemver is fixable", func(t *testing.T) {
+	t.Run("ErrSemver is not skipped", func(t *testing.T) {
 		t.Parallel()
 		err := &tools.ErrSemver{
 			ToolName: "node",
@@ -298,124 +298,124 @@ func Test_FixableError(t *testing.T) {
 				UpdateCommand:  "nvm install",
 			},
 		}
-		require.True(t, fixableError(err))
+		require.False(t, shouldSkipAgentHandling(err))
 	})
 
-	t.Run("ExtensionRunError is not fixable", func(t *testing.T) {
+	t.Run("ExtensionRunError is skipped", func(t *testing.T) {
 		t.Parallel()
 		err := &extensions.ExtensionRunError{
 			ExtensionId: "my-extension",
 			Err:         errors.New("extension crashed"),
 		}
-		require.False(t, fixableError(err))
+		require.True(t, shouldSkipAgentHandling(err))
 	})
 
-	t.Run("StatusCodeError is not fixable", func(t *testing.T) {
+	t.Run("StatusCodeError is skipped", func(t *testing.T) {
 		t.Parallel()
 		err := &pack.StatusCodeError{
 			Code: 1,
 			Err:  errors.New("pack build failed"),
 		}
-		require.False(t, fixableError(err))
+		require.True(t, shouldSkipAgentHandling(err))
 	})
 
-	t.Run("ReLoginRequiredError is fixable", func(t *testing.T) {
+	t.Run("ReLoginRequiredError is not skipped", func(t *testing.T) {
 		t.Parallel()
 		err := &auth.ReLoginRequiredError{}
-		require.True(t, fixableError(err))
+		require.False(t, shouldSkipAgentHandling(err))
 	})
 
-	t.Run("AuthFailedError is fixable", func(t *testing.T) {
+	t.Run("AuthFailedError is not skipped", func(t *testing.T) {
 		t.Parallel()
 		err := &auth.AuthFailedError{}
-		require.True(t, fixableError(err))
+		require.False(t, shouldSkipAgentHandling(err))
 	})
 
 	sentinels := []struct {
 		name    string
 		err     error
-		fixable bool
+		skipped bool
 	}{
-		{"auth.ErrNoCurrentUser", auth.ErrNoCurrentUser, true},
-		{"azapi.ErrAzCliNotLoggedIn", azapi.ErrAzCliNotLoggedIn, true},
+		{"auth.ErrNoCurrentUser", auth.ErrNoCurrentUser, false},
+		{"azapi.ErrAzCliNotLoggedIn", azapi.ErrAzCliNotLoggedIn, false},
 		{"azapi.ErrAzCliRefreshTokenExpired",
-			azapi.ErrAzCliRefreshTokenExpired, true},
+			azapi.ErrAzCliRefreshTokenExpired, false},
 		{"github.ErrGitHubCliNotLoggedIn",
-			github.ErrGitHubCliNotLoggedIn, true},
-		{"github.ErrUserNotAuthorized", github.ErrUserNotAuthorized, true},
-		{"github.ErrRepositoryNameInUse", github.ErrRepositoryNameInUse, true},
+			github.ErrGitHubCliNotLoggedIn, false},
+		{"github.ErrUserNotAuthorized", github.ErrUserNotAuthorized, false},
+		{"github.ErrRepositoryNameInUse", github.ErrRepositoryNameInUse, false},
 		// environment
-		{"environment.ErrNotFound", environment.ErrNotFound, false},
-		{"environment.ErrNameNotSpecified", environment.ErrNameNotSpecified, false},
+		{"environment.ErrNotFound", environment.ErrNotFound, true},
+		{"environment.ErrNameNotSpecified", environment.ErrNameNotSpecified, true},
 		{"environment.ErrDefaultEnvironmentNotFound",
-			environment.ErrDefaultEnvironmentNotFound, false},
-		{"environment.ErrAccessDenied", environment.ErrAccessDenied, false},
+			environment.ErrDefaultEnvironmentNotFound, true},
+		{"environment.ErrAccessDenied", environment.ErrAccessDenied, true},
 		// pipeline
-		{"pipeline.ErrAuthNotSupported", pipeline.ErrAuthNotSupported, false},
-		{"pipeline.ErrRemoteHostIsNotAzDo", pipeline.ErrRemoteHostIsNotAzDo, false},
-		{"pipeline.ErrSSHNotSupported", pipeline.ErrSSHNotSupported, false},
-		{"pipeline.ErrRemoteHostIsNotGitHub", pipeline.ErrRemoteHostIsNotGitHub, false},
+		{"pipeline.ErrAuthNotSupported", pipeline.ErrAuthNotSupported, true},
+		{"pipeline.ErrRemoteHostIsNotAzDo", pipeline.ErrRemoteHostIsNotAzDo, true},
+		{"pipeline.ErrSSHNotSupported", pipeline.ErrSSHNotSupported, true},
+		{"pipeline.ErrRemoteHostIsNotGitHub", pipeline.ErrRemoteHostIsNotGitHub, true},
 		// project
-		{"project.ErrNoDefaultService", project.ErrNoDefaultService, false},
+		{"project.ErrNoDefaultService", project.ErrNoDefaultService, true},
 	}
 
 	for _, tc := range sentinels {
-		t.Run(tc.name+" fixableError", func(t *testing.T) {
+		t.Run(tc.name+" shouldSkipAgentHandling", func(t *testing.T) {
 			t.Parallel()
-			require.Equal(t, tc.fixable, fixableError(tc.err))
+			require.Equal(t, tc.skipped, shouldSkipAgentHandling(tc.err))
 		})
 
-		t.Run("Wrapped "+tc.name+" fixableError", func(t *testing.T) {
+		t.Run("Wrapped "+tc.name+" shouldSkipAgentHandling", func(t *testing.T) {
 			t.Parallel()
 			wrapped := fmt.Errorf("operation failed: %w", tc.err)
-			require.Equal(t, tc.fixable, fixableError(wrapped))
+			require.Equal(t, tc.skipped, shouldSkipAgentHandling(wrapped))
 		})
 	}
 
 	// --- Azure context: defaults ---
-	t.Run("Generic error defaults to AzureContext", func(t *testing.T) {
+	t.Run("Generic error defaults to not skipped", func(t *testing.T) {
 		t.Parallel()
 		err := errors.New("deploying to Azure: InternalServerError")
-		require.True(t, fixableError(err))
+		require.False(t, shouldSkipAgentHandling(err))
 	})
 }
 
-func Test_ShouldSkipErrorAnalysis(t *testing.T) {
+func Test_ShouldSkipAgentHandling_ControlFlow(t *testing.T) {
 	t.Parallel()
 	t.Run("Wrapped context.Canceled is skipped", func(t *testing.T) {
 		t.Parallel()
 		wrapped := fmt.Errorf("operation aborted: %w", context.Canceled)
-		require.True(t, shouldSkipErrorAnalysis(wrapped))
+		require.True(t, shouldSkipAgentHandling(wrapped))
 	})
 
 	t.Run("Wrapped InterruptErr is skipped", func(t *testing.T) {
 		t.Parallel()
 		wrapped := fmt.Errorf("prompt failed: %w", surveyterm.InterruptErr)
-		require.True(t, shouldSkipErrorAnalysis(wrapped))
+		require.True(t, shouldSkipAgentHandling(wrapped))
 	})
 
 	t.Run("ErrAbortedByUser is skipped", func(t *testing.T) {
 		t.Parallel()
-		require.True(t, shouldSkipErrorAnalysis(internal.ErrAbortedByUser))
+		require.True(t, shouldSkipAgentHandling(internal.ErrAbortedByUser))
 	})
 
 	t.Run("Wrapped ErrAbortedByUser is skipped", func(t *testing.T) {
 		t.Parallel()
 		wrapped := fmt.Errorf("preflight declined: %w", internal.ErrAbortedByUser)
-		require.True(t, shouldSkipErrorAnalysis(wrapped))
+		require.True(t, shouldSkipAgentHandling(wrapped))
 	})
 
 	t.Run("UpdateError is skipped", func(t *testing.T) {
 		t.Parallel()
 		err := &update.UpdateError{Code: update.CodeDownloadFailed, Err: errors.New("download failed")}
-		require.True(t, shouldSkipErrorAnalysis(err))
+		require.True(t, shouldSkipAgentHandling(err))
 	})
 
 	t.Run("Wrapped UpdateError is skipped", func(t *testing.T) {
 		t.Parallel()
 		inner := &update.UpdateError{Code: update.CodeReplaceFailed, Err: errors.New("replace failed")}
 		wrapped := fmt.Errorf("update error: %w", inner)
-		require.True(t, shouldSkipErrorAnalysis(wrapped))
+		require.True(t, shouldSkipAgentHandling(wrapped))
 	})
 }
 
@@ -500,29 +500,28 @@ func Test_ConfigKeyErrorHandlingCategory(t *testing.T) {
 	require.Equal(t, "copilot.errorHandling.category", agentcopilot.ConfigKeyErrorHandlingCategory)
 }
 
-
-func Test_ShouldSkipErrorAnalysis_DeadlineExceeded(t *testing.T) {
+func Test_ShouldSkipAgentHandling_DeadlineExceeded(t *testing.T) {
 	t.Parallel()
-	require.True(t, shouldSkipErrorAnalysis(context.DeadlineExceeded))
+	require.True(t, shouldSkipAgentHandling(context.DeadlineExceeded))
 }
 
-func Test_ShouldSkipErrorAnalysis_WrappedDeadlineExceeded(t *testing.T) {
+func Test_ShouldSkipAgentHandling_WrappedDeadlineExceeded(t *testing.T) {
 	t.Parallel()
 	wrapped := fmt.Errorf("timed out: %w", context.DeadlineExceeded)
-	require.True(t, shouldSkipErrorAnalysis(wrapped))
+	require.True(t, shouldSkipAgentHandling(wrapped))
 }
 
-func Test_FixableError_MissingInputsError(t *testing.T) {
+func Test_ShouldSkipAgentHandling_MissingInputsError(t *testing.T) {
 	t.Parallel()
 	err := &bicep.MissingInputsError{
 		Inputs: []bicep.MissingInput{
 			{Name: "location"},
 		},
 	}
-	require.False(t, fixableError(err))
+	require.True(t, shouldSkipAgentHandling(err))
 }
 
-func Test_FixableError_WrappedMissingInputsError(t *testing.T) {
+func Test_ShouldSkipAgentHandling_WrappedMissingInputsError(t *testing.T) {
 	t.Parallel()
 	inner := &bicep.MissingInputsError{
 		Inputs: []bicep.MissingInput{
@@ -530,24 +529,24 @@ func Test_FixableError_WrappedMissingInputsError(t *testing.T) {
 		},
 	}
 	wrapped := fmt.Errorf("provision failed: %w", inner)
-	require.False(t, fixableError(wrapped))
+	require.True(t, shouldSkipAgentHandling(wrapped))
 }
 
-func Test_FixableError_ConfigValidationError(t *testing.T) {
+func Test_ShouldSkipAgentHandling_ConfigValidationError(t *testing.T) {
 	t.Parallel()
 	err := &project.ConfigValidationError{
 		Issues: []string{"service 'web' has nil definition"},
 	}
-	require.False(t, fixableError(err))
+	require.True(t, shouldSkipAgentHandling(err))
 }
 
-func Test_FixableError_WrappedConfigValidationError(t *testing.T) {
+func Test_ShouldSkipAgentHandling_WrappedConfigValidationError(t *testing.T) {
 	t.Parallel()
 	inner := &project.ConfigValidationError{
 		Issues: []string{"hook 'preprovision' is nil"},
 	}
 	wrapped := fmt.Errorf("config load: %w", inner)
-	require.False(t, fixableError(wrapped))
+	require.True(t, shouldSkipAgentHandling(wrapped))
 }
 
 func Test_ErrorMiddleware_NonFixableError_SkipsAgentCreation(t *testing.T) {
@@ -651,7 +650,6 @@ func Test_ErrorMiddleware_ExplainAndFixCalls(t *testing.T) {
 	require.Equal(t, 2, fakeAg.callIdx,
 		"agent should be called twice: explain + fix")
 }
-
 
 func Test_ErrorMiddleware_MaxRetry_FirstIterationSkipsCounter(t *testing.T) {
 	t.Parallel()

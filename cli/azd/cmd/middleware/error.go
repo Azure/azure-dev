@@ -73,18 +73,20 @@ type ErrorMiddleware struct {
 	errorPipeline     *errorhandler.ErrorHandlerPipeline
 }
 
-func fixableError(err error) bool {
-	// --- Machine context: typed errors ---
-	_, extRunErr := errors.AsType[*extensions.ExtensionRunError](err)
-	_, packStatusErr := errors.AsType[*pack.StatusCodeError](err)
-	_, missingInputsErr := errors.AsType[*bicep.MissingInputsError](err)
-	_, configValidErr := errors.AsType[*project.ConfigValidationError](err)
+// shouldSkipAgentHandling returns true for errors that should not be processed
+// by the AI agent — either because they are normal control-flow signals or
+// because they belong to error types the agent cannot fix.
+func shouldSkipAgentHandling(err error) bool {
+	if errors.Is(err, context.Canceled) ||
+		errors.Is(err, context.DeadlineExceeded) ||
+		errors.Is(err, surveyterm.InterruptErr) ||
+		errors.Is(err, azdcontext.ErrNoProject) ||
+		errors.Is(err, consent.ErrToolExecutionDenied) ||
+		errors.Is(err, consent.ErrElicitationDenied) ||
+		errors.Is(err, consent.ErrSamplingDenied) ||
+		errors.Is(err, internal.ErrAbortedByUser) ||
 
-	if extRunErr || packStatusErr || missingInputsErr || configValidErr {
-		return false
-	}
-
-	if errors.Is(err, environment.ErrNotFound) ||
+		errors.Is(err, environment.ErrNotFound) ||
 		errors.Is(err, environment.ErrNameNotSpecified) ||
 		errors.Is(err, environment.ErrDefaultEnvironmentNotFound) ||
 		errors.Is(err, environment.ErrAccessDenied) ||
@@ -93,10 +95,21 @@ func fixableError(err error) bool {
 		errors.Is(err, pipeline.ErrSSHNotSupported) ||
 		errors.Is(err, pipeline.ErrRemoteHostIsNotGitHub) ||
 		errors.Is(err, project.ErrNoDefaultService) {
-		return false
+		return true
 	}
 
-	return true
+	_, extRunErr := errors.AsType[*extensions.ExtensionRunError](err)
+	_, envErr := errors.AsType[*environment.EnvironmentInitError](err)
+	_, updateErr := errors.AsType[*update.UpdateError](err)
+	_, packStatusErr := errors.AsType[*pack.StatusCodeError](err)
+	_, missingInputsErr := errors.AsType[*bicep.MissingInputsError](err)
+	_, configValidErr := errors.AsType[*project.ConfigValidationError](err)
+
+	if extRunErr || packStatusErr || missingInputsErr || configValidErr || updateErr || envErr {
+		return true
+	}
+
+	return false
 }
 
 // troubleshootCategory represents the user's chosen troubleshooting scope.
@@ -126,33 +139,6 @@ const (
 	// actionExit exits without fixing.
 	actionExit nextAction = "exit"
 )
-
-// shouldSkipErrorAnalysis returns true for control-flow errors that should not
-// be sent to AI analysis
-func shouldSkipErrorAnalysis(err error) bool {
-	if errors.Is(err, context.Canceled) ||
-		errors.Is(err, context.DeadlineExceeded) ||
-		errors.Is(err, surveyterm.InterruptErr) ||
-		errors.Is(err, azdcontext.ErrNoProject) ||
-		errors.Is(err, consent.ErrToolExecutionDenied) ||
-		errors.Is(err, consent.ErrElicitationDenied) ||
-		errors.Is(err, consent.ErrSamplingDenied) ||
-		errors.Is(err, internal.ErrAbortedByUser) {
-		return true
-	}
-
-	// Environment was already initialized
-	if _, ok := errors.AsType[*environment.EnvironmentInitError](err); ok {
-		return true
-	}
-
-	// Update errors have their own user-facing messages and suggestions
-	if _, ok := errors.AsType[*update.UpdateError](err); ok {
-		return true
-	}
-
-	return false
-}
 
 func NewErrorMiddleware(
 	options *Options, console input.Console,
@@ -198,17 +184,8 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 	// - LLM feature is disabled
 	// - User specified --no-prompt (non-interactive mode)
 	// - Running in CI/CD environment where user interaction is not possible
-	if !e.featuresManager.IsEnabled(agentcopilot.FeatureCopilot) || e.global.NoPrompt || resource.IsRunningOnCI() {
-		return actionResult, err
-	}
-
-	// Skip control-flow errors that don't benefit from AI analysis
-	if shouldSkipErrorAnalysis(err) {
-		return actionResult, err
-	}
-
-	// Skip non-fixable errors before agent creation to avoid unnecessary SDK init
-	if !fixableError(err) {
+	// - Error that don't benefit from agent handling (e.g. config validation errors, missing inputs, or errors from other tools)
+	if !e.featuresManager.IsEnabled(agentcopilot.FeatureCopilot) || e.global.NoPrompt || resource.IsRunningOnCI() || shouldSkipAgentHandling(err) {
 		return actionResult, err
 	}
 
@@ -257,11 +234,6 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 
 		if errorWithTraceId, ok := errors.AsType[*internal.ErrorWithTraceId](originalError); ok {
 			e.console.Message(ctx, output.WithErrorFormat("TraceID: %s", errorWithTraceId.TraceId))
-		}
-
-		// Re-check fix-ability on retries (error type may have changed after fix)
-		if !fixableError(originalError) {
-			return actionResult, originalError
 		}
 
 		// Step 1: Category selection — user chooses the troubleshooting scope
@@ -346,7 +318,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		actionResult, err = next(ctx)
 		originalError = err
 
-		if shouldSkipErrorAnalysis(err) {
+		if shouldSkipAgentHandling(err) {
 			return actionResult, err
 		}
 	}

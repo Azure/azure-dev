@@ -103,7 +103,7 @@ func ValidateJobOffline(job *JobDefinition, yamlDir string) *ValidationResult {
 			result.Findings = append(result.Findings, ValidationFinding{
 				Field:    "code",
 				Severity: SeverityError,
-				Message:  fmt.Sprintf("git paths are not supported for 'code': '%s'. Use a local path instead", job.Code),
+				Message:  fmt.Sprintf("git paths are not supported"),
 			})
 		}
 	}

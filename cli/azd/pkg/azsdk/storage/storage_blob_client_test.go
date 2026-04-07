@@ -38,25 +38,24 @@ type mockSubscriptionResolver struct {
 
 var _ account.SubscriptionResolver = (*mockSubscriptionResolver)(nil)
 
-func (m *mockSubscriptionResolver) LookupTenant(
-	ctx context.Context, subscriptionId string) (string, error) {
-	args := m.Called(ctx, subscriptionId)
-	return args.String(0), args.Error(1)
-}
-
 func (m *mockSubscriptionResolver) GetSubscription(
 	ctx context.Context, subscriptionId string,
 ) (*account.Subscription, error) {
-	tenantId, err := m.LookupTenant(ctx, subscriptionId)
-	if err != nil {
-		return nil, err
+	args := m.Called(ctx, subscriptionId)
+
+	if subscription, ok := args.Get(0).(*account.Subscription); ok {
+		return subscription, args.Error(1)
 	}
 
-	return &account.Subscription{
-		Id:                 subscriptionId,
-		TenantId:           "resource-" + tenantId,
-		UserAccessTenantId: tenantId,
-	}, nil
+	if tenantId, ok := args.Get(0).(string); ok {
+		return &account.Subscription{
+			Id:                 subscriptionId,
+			TenantId:           "resource-" + tenantId,
+			UserAccessTenantId: tenantId,
+		}, args.Error(1)
+	}
+
+	return nil, args.Error(1)
 }
 
 // mockTokenCredential is a minimal mock implementation for testing
@@ -123,8 +122,8 @@ func Test_NewBlobSdkClient_UsesHomeTenantWhenNoSubscriptionId(t *testing.T) {
 	require.NotNil(t, client)
 	mockCredProvider.AssertExpectations(t)
 
-	// TenantResolver should NOT be called when no subscription ID is provided
-	mockTenantResolver.AssertNotCalled(t, "LookupTenant", mock.Anything, mock.Anything)
+	// GetSubscription should NOT be called when no subscription ID is provided.
+	mockTenantResolver.AssertNotCalled(t, "GetSubscription", mock.Anything, mock.Anything)
 }
 
 func Test_NewBlobSdkClient_ResolvesTenantWhenSubscriptionIdProvided(t *testing.T) {
@@ -144,8 +143,13 @@ func Test_NewBlobSdkClient_ResolvesTenantWhenSubscriptionIdProvided(t *testing.T
 
 	coreClientOptions := &azcore.ClientOptions{}
 
-	// Expect tenant resolver to be called with the subscription ID
-	mockTenantResolver.On("LookupTenant", mock.Anything, testSubscriptionId).Return(testTenantId, nil)
+	// Expect the subscription resolver to be called with the subscription ID.
+	mockTenantResolver.On("GetSubscription", mock.Anything, testSubscriptionId).
+		Return(&account.Subscription{
+			Id:                 testSubscriptionId,
+			TenantId:           "resource-" + testTenantId,
+			UserAccessTenantId: testTenantId,
+		}, nil)
 
 	// Expect credential provider to be called with resolved tenant ID
 	mockCredProvider.On("GetTokenCredential", mock.Anything, testTenantId).Return(mockCred, nil)
@@ -183,9 +187,9 @@ func Test_NewBlobSdkClient_ReturnsErrorWhenTenantResolutionFails(t *testing.T) {
 
 	coreClientOptions := &azcore.ClientOptions{}
 
-	// Simulate tenant resolution failure
-	mockTenantResolver.On("LookupTenant", mock.Anything, testSubscriptionId).
-		Return("", errors.New("subscription not found"))
+	// Simulate subscription resolution failure.
+	mockTenantResolver.On("GetSubscription", mock.Anything, testSubscriptionId).
+		Return((*account.Subscription)(nil), errors.New("subscription not found"))
 
 	client, err := NewBlobSdkClient(
 		mockCredProvider,
@@ -227,8 +231,13 @@ func Test_NewBlobSdkClient_FallsBackToDefaultSubscriptionFromUserConfig(t *testi
 	})
 	mockConfigMgr.On("Load").Return(userCfg, nil)
 
-	// Expect tenant resolver to be called with the default subscription
-	mockTenantResolver.On("LookupTenant", mock.Anything, defaultSubscriptionId).Return(resolvedTenantId, nil)
+	// Expect the subscription resolver to be called with the default subscription.
+	mockTenantResolver.On("GetSubscription", mock.Anything, defaultSubscriptionId).
+		Return(&account.Subscription{
+			Id:                 defaultSubscriptionId,
+			TenantId:           "resource-" + resolvedTenantId,
+			UserAccessTenantId: resolvedTenantId,
+		}, nil)
 
 	// Expect credential provider to be called with resolved tenant ID
 	mockCredProvider.On("GetTokenCredential", mock.Anything, resolvedTenantId).Return(mockCred, nil)
@@ -280,5 +289,5 @@ func Test_NewBlobSdkClient_UsesHomeTenantWhenUserConfigLoadFails(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, client)
 	mockCredProvider.AssertExpectations(t)
-	mockTenantResolver.AssertNotCalled(t, "LookupTenant", mock.Anything, mock.Anything)
+	mockTenantResolver.AssertNotCalled(t, "GetSubscription", mock.Anything, mock.Anything)
 }

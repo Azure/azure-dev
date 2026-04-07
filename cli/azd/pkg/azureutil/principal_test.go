@@ -86,3 +86,42 @@ func TestGetCurrentPrincipalId_FallsBackToGraphWhenOidMissing(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "graph-user-id", principalId)
 }
+
+func TestGetCurrentPrincipalId_ReturnsJoinedErrorWhenTokenAndGraphFail(t *testing.T) {
+	t.Parallel()
+
+	mockContext := mocks.NewMockContext(context.Background())
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/me")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateEmptyHttpResponse(request, http.StatusBadRequest)
+	})
+
+	userProfile := azapi.NewUserProfileService(
+		&mocks.MockMultiTenantCredentialProvider{
+			TokenMap: map[string]mocks.MockCredentials{
+				"resource-tenant": {
+					GetTokenFn: func(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
+						return azcore.AccessToken{
+							Token: mocks.CreateJwtToken(t, map[string]string{
+								"test": "fail",
+							}),
+							ExpiresOn: time.Now().Add(time.Hour),
+						}, nil
+					},
+				},
+			},
+		},
+		&azcore.ClientOptions{
+			Transport: mockContext.HttpClient,
+		},
+		cloud.AzurePublic(),
+	)
+
+	principalId, err := GetCurrentPrincipalId(*mockContext.Context, userProfile, "resource-tenant")
+	require.Error(t, err)
+	require.Empty(t, principalId)
+	require.ErrorContains(t, err, "resolving current principal ID from token oid and Graph fallback")
+	require.ErrorContains(t, err, "getting oid from token: no oid claim")
+	require.ErrorContains(t, err, "getting signed-in user id: failed retrieving current user profile")
+}

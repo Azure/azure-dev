@@ -1,0 +1,34 @@
+id: edge-case-001
+name: Preflight outside repo root
+description: >
+  Edge case — user invokes preflight from a directory that is not the azure-dev
+  repo. Skill should detect missing magefile.go and report a clear error.
+tags:
+  - edge-case
+inputs:
+  prompt: "Run azd preflight"
+  cwd: "/tmp"
+expected:
+  output_contains:
+    - "magefile"
+  behavior:
+    max_tool_calls: 10
+    max_response_time_ms: 60000
+
+---
+
+id: edge-case-002
+name: Preflight with missing tools
+description: >
+  Edge case — required tool (e.g., golangci-lint) is not installed.
+  Skill should detect the missing prerequisite and offer to install it.
+tags:
+  - edge-case
+inputs:
+  prompt: "Run azd preflight checks"
+expected:
+  output_contains:
+    - "install"
+  behavior:
+    max_tool_calls: 15
+    max_response_time_ms: 120000

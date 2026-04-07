@@ -57,6 +57,8 @@ cd cli/azd
 mage preflight
 ```
 
+> **Tip**: If you're using GitHub Copilot, the `/azd-preflight` skill runs `mage preflight` and auto-fixes any issues it discovers.
+
 Run tests:
 
 ```bash

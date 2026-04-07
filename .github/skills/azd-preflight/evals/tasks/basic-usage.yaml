@@ -1,0 +1,56 @@
+id: basic-usage-001
+name: Run azd preflight checks
+description: >
+  Happy path — user asks to run preflight. Skill should invoke mage preflight
+  from the cli/azd directory, parse the 8-check summary, and report results.
+tags:
+  - basic
+  - happy-path
+inputs:
+  prompt: "Run azd preflight checks"
+expected:
+  output_contains:
+    - "preflight"
+    - "mage"
+  behavior:
+    max_tool_calls: 30
+    max_response_time_ms: 900000
+
+---
+
+id: basic-usage-002
+name: Run preflight with natural language
+description: >
+  User asks for preflight using informal language. Skill should still trigger
+  and run the full mage preflight suite.
+tags:
+  - basic
+  - happy-path
+inputs:
+  prompt: "Check if my azd code is ready to submit"
+expected:
+  output_contains:
+    - "preflight"
+  behavior:
+    max_tool_calls: 30
+    max_response_time_ms: 900000
+
+---
+
+id: basic-usage-003
+name: Run preflight and fix issues
+description: >
+  User asks to run preflight and fix any issues. Skill should run mage preflight,
+  detect failures, and attempt auto-fixes before re-running.
+tags:
+  - basic
+  - happy-path
+inputs:
+  prompt: "Run mage preflight and fix any failures"
+expected:
+  output_contains:
+    - "preflight"
+    - "fix"
+  behavior:
+    max_tool_calls: 50
+    max_response_time_ms: 900000

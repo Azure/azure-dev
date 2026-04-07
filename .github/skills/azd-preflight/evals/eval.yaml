@@ -1,0 +1,66 @@
+name: azd-preflight-eval
+description: >-
+  Evaluation suite for azd-preflight skill — validates that the skill
+  correctly runs mage preflight from cli/azd, parses the 8-check summary,
+  and applies appropriate fixes for failures.
+skill: azd-preflight
+version: "1.0"
+
+config:
+  trials_per_task: 1
+  timeout_seconds: 900
+  parallel: false
+  executor: copilot-sdk
+  model: claude-sonnet-4.6
+
+graders:
+  - type: skill_invocation
+    name: skill_was_invoked
+    config:
+      required_skills:
+        - azd-preflight
+      mode: any_order
+      allow_extra: true
+  - type: keyword
+    name: covers_preflight_checks
+    config:
+      keywords:
+        - preflight
+        - mage
+        - gofmt
+        - golangci-lint
+        - cspell
+        - build
+        - test
+      min_matches: 3
+  - type: regex
+    name: has_check_awareness
+    config:
+      must_match:
+        - "(?i)(gofmt|go fix|copyright|lint|cspell|go build|unit test|playback)"
+  - type: regex
+    name: has_fix_loop_awareness
+    config:
+      must_match:
+        - "(?i)(fix|resolve|auto.?fix|re.?run|iterate)"
+  - type: keyword
+    name: has_cli_azd_context
+    config:
+      keywords:
+        - cli/azd
+        - magefile
+        - preflight
+      min_matches: 2
+  - type: prompt
+    name: preflight_quality_judge
+    config:
+      prompt: |
+        Evaluate whether the preflight execution follows the azd-preflight
+        skill workflow: runs mage preflight from cli/azd, parses the 8-check
+        summary, applies fixes for failures in order, and re-runs until clean.
+        Call set_waza_grade_pass if the workflow is followed correctly,
+        set_waza_grade_fail if checks are skipped or fixes are not attempted.
+      model: claude-sonnet-4.6
+
+tasks:
+  - "tasks/*.yaml"

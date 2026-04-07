@@ -1,0 +1,52 @@
+name: Skill Eval CI
+
+on:
+  pull_request:
+    paths:
+      - ".github/skills/**"
+      - ".github/workflows/skill-eval.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  skill-check:
+    name: Validate Skills
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+
+      - name: Install waza
+        run: go install github.com/microsoft/waza/cmd/waza@latest
+
+      - name: Check skill compliance
+        run: |
+          for skill_dir in .github/skills/*/; do
+            skill_name=$(basename "$skill_dir")
+            echo "::group::Checking $skill_name"
+            waza check "$skill_dir" || true
+            echo "::endgroup::"
+          done
+
+      - name: Run eval suites
+        run: |
+          any_found=false
+          for skill_dir in .github/skills/*/; do
+            skill_name=$(basename "$skill_dir")
+            eval_file="$skill_dir/evals/eval.yaml"
+            if [ -f "$eval_file" ]; then
+              any_found=true
+              echo "::group::Running evals for $skill_name"
+              waza run "$eval_file" -v || true
+              echo "::endgroup::"
+            else
+              echo "⚠ $skill_name has no eval suite at $eval_file"
+            fi
+          done
+          if [ "$any_found" = false ]; then
+            echo "No eval suites found"
+          fi

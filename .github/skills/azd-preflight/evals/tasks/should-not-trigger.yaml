@@ -1,0 +1,49 @@
+id: should-not-trigger-001
+name: Should not trigger for azd deploy
+description: >
+  Anti-trigger — an azd deploy request should NOT activate the preflight
+  skill. Deployment is handled by azure-deploy.
+tags:
+  - anti-trigger
+  - negative-test
+inputs:
+  prompt: "Deploy my app to Azure using azd up"
+expected:
+  output_excludes:
+    - "mage preflight"
+    - "preflight checks"
+    - "magefile"
+
+---
+
+id: should-not-trigger-002
+name: Should not trigger for changelog generation
+description: >
+  Anti-trigger — a changelog request should NOT activate preflight.
+  Changelog is handled by changelog-generation skill.
+tags:
+  - anti-trigger
+  - negative-test
+inputs:
+  prompt: "Generate the changelog for the latest azd release"
+expected:
+  output_excludes:
+    - "mage preflight"
+    - "preflight checks"
+
+---
+
+id: should-not-trigger-003
+name: Should not trigger for generic Go test
+description: >
+  Anti-trigger — asking to run a single Go test should NOT activate the
+  full preflight skill. Users may want targeted test runs.
+tags:
+  - anti-trigger
+  - negative-test
+inputs:
+  prompt: "Run the TestProjectConfig test in pkg/project"
+expected:
+  output_excludes:
+    - "mage preflight"
+    - "preflight suite"

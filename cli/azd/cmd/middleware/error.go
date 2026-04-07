@@ -115,6 +115,18 @@ const (
 	categorySkip troubleshootCategory = "skip"
 )
 
+// nextAction represents what the user wants after an explanation/guidance.
+type nextAction string
+
+const (
+	// actionFixAndRetry fixes the error and retries the command.
+	actionFixAndRetry nextAction = "fix_and_retry"
+	// actionFixOnly fixes the error but does not retry.
+	actionFixOnly nextAction = "fix_only"
+	// actionExit exits without fixing.
+	actionExit nextAction = "exit"
+)
+
 // shouldSkipErrorAnalysis returns true for control-flow errors that should not
 // be sent to AI analysis
 func shouldSkipErrorAnalysis(err error) bool {
@@ -284,15 +296,12 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		previousError = originalError
 
 		if category != categoryFix {
-			// Step 3: Ask if user wants the agent to fix the error
-			// (only if they didn't already choose the fix category)
-			wantFix, err := e.promptForFix(ctx)
-			if err != nil {
-				return nil, fmt.Errorf("prompting for fix: %w", err)
-			}
-
-			if !wantFix {
-				span.SetStatus(codes.Ok, "agent.fix.declined")
+			// Step 3: Ask user how to proceed after analysis
+			action, err := e.promptNextAction(ctx)
+			if err != nil || action == actionExit {
+				if action == actionExit {
+					span.SetStatus(codes.Ok, "agent.fix.declined")
+				}
 				return actionResult, originalError
 			}
 
@@ -317,12 +326,19 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 
 			span.SetStatus(codes.Ok, "agent.fix.completed")
 			e.displayUsageMetrics(ctx, fixResult)
-		}
 
-		// Step 5: Ask user if they want to retry the command
-		shouldRetry, err := e.promptRetryAfterFix(ctx)
-		if err != nil || !shouldRetry {
-			return actionResult, originalError
+			// Fix-only: skip retry
+			if action == actionFixOnly {
+				return actionResult, originalError
+			}
+		} else {
+			// Fix-and-retry: fall through to re-run command
+			// Category "fix" already applied the fix in step 2.
+			// Ask if user wants to retry.
+			shouldRetry, err := e.promptRetryAfterFix(ctx)
+			if err != nil || !shouldRetry {
+				return actionResult, originalError
+			}
 		}
 
 		// Re-run the original command to check if the fix worked
@@ -519,6 +535,70 @@ func (e *ErrorMiddleware) promptForFix(ctx context.Context) (bool, error) {
 	}
 
 	return choices[*choiceIndex].Value == "yes", nil
+}
+
+// promptNextAction asks the user how to proceed after an explanation or guidance.
+// Offers fix-and-retry, fix-only, or exit. Checks saved fix preference for auto-approval.
+func (e *ErrorMiddleware) promptNextAction(
+	ctx context.Context,
+) (nextAction, error) {
+	userConfig, err := e.userConfigManager.Load()
+	if err != nil {
+		return actionExit, fmt.Errorf(
+			"failed to load user config: %w", err)
+	}
+
+	// Saved "always fix" preference → auto-approve fix and retry
+	if val, ok := userConfig.GetString(
+		agentcopilot.ConfigKeyErrorHandlingFix); ok && val == "allow" {
+		e.console.Message(ctx, output.WithWarningFormat(
+			"\n%s auto-fix is enabled. To change, run %s.",
+			agentcopilot.DisplayTitle,
+			output.WithHighLightFormat(
+				fmt.Sprintf("azd config unset %s",
+					agentcopilot.ConfigKeyErrorHandlingFix)),
+		))
+		return actionFixAndRetry, nil
+	}
+
+	choices := []*uxlib.SelectChoice{
+		{Value: string(actionFixAndRetry),
+			Label: fmt.Sprintf(
+				"Fix with %s and retry command",
+				agentcopilot.DisplayTitle)},
+		{Value: string(actionFixOnly),
+			Label: fmt.Sprintf(
+				"Fix with %s",
+				agentcopilot.DisplayTitle)},
+		{Value: string(actionExit),
+			Label: "Exit"},
+	}
+
+	selector := uxlib.NewSelect(&uxlib.SelectOptions{
+		Message: "How would you like to proceed?",
+		HelpMessage: fmt.Sprintf(
+			"To always allow fixes, run %s.",
+			output.WithHighLightFormat(
+				fmt.Sprintf("azd config set %s allow",
+					agentcopilot.ConfigKeyErrorHandlingFix))),
+		Choices:         choices,
+		EnableFiltering: new(false),
+		DisplayCount:    len(choices),
+	})
+
+	e.console.Message(ctx, "")
+	choiceIndex, err := selector.Ask(ctx)
+	if err != nil {
+		return actionExit, err
+	}
+
+	if choiceIndex == nil ||
+		*choiceIndex < 0 ||
+		*choiceIndex >= len(choices) {
+		return actionExit, fmt.Errorf("invalid choice selected")
+	}
+
+	return nextAction(choices[*choiceIndex].Value), nil
 }
 
 // promptRetryAfterFix asks the user if the agent applied a fix and they want to retry the command.

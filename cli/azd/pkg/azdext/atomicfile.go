@@ -20,7 +20,7 @@ import (
 // WriteFileAtomic writes data to the named file atomically. It writes to a
 // temporary file in the same directory as path and renames it into place. This
 // ensures that readers never see a partially-written file and that the
-// operation is crash-safe on filesystems that support atomic rename (ext4,
+// operation is crash-safe on file systems that support atomic rename (ext4,
 // APFS, NTFS).
 //
 // Platform behavior:

@@ -134,6 +134,10 @@ overrides:
   - filename: cmd/mcp.go
     words:
       - internalcmd
+  - filename: cmd/extension.go
+    words:
+      - compatResult
+      - compatCopy
   - filename: pkg/azdext/config_helper.go
     words:
       - myext
@@ -367,10 +371,6 @@ overrides:
   - filename: pkg/infra/provisioning/bicep/local_preflight.go
     words:
       - actioned
-  - filename: docs/code-coverage-guide.md
-    words:
-      - covdata
-      - GOWORK
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

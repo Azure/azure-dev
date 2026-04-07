@@ -163,7 +163,8 @@ func (cli *Cli) PublishAppHostManifest(
 			)
 		}
 
-		return os.WriteFile(manifestPath, m, osutil.PermissionFile) //nolint:gosec // G703: path from known project structure
+		//nolint:gosec // G703: manifestPath is the azd-managed output path for the generated manifest.
+		return os.WriteFile(manifestPath, m, osutil.PermissionFile)
 	}
 
 	// For single-file apphost, we need to use the .cs file directly

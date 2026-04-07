@@ -75,16 +75,17 @@ func (s *Spinner) Start(ctx context.Context) error {
 		s.canvas = NewCanvas(s).WithWriter(s.options.Writer)
 	}
 
-	// Use a context to determine when to stop the spinner
-	cancelCtx, cancel := context.WithCancel(ctx) //nolint:gosec // G118: cancel stored in s.cancel and called in Stop()
-	s.cancel = cancel
-
 	s.clear = false
 	s.cursor.HideCursor()
 
 	if err := s.canvas.Run(); err != nil {
 		return err
 	}
+
+	// Use a context to determine when to stop the spinner updates.
+	//nolint:gosec // G118: s.cancel is stored and invoked later by Stop.
+	cancelCtx, cancel := context.WithCancel(ctx)
+	s.cancel = cancel
 
 	// Periodic update goroutine
 	go func(ctx context.Context) {

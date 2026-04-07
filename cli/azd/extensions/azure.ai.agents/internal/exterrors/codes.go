@@ -62,6 +62,7 @@ const (
 	CodeNotLoggedIn              = "not_logged_in"
 	CodeLoginExpired             = "login_expired"
 	CodeAuthFailed               = "auth_failed"
+	CodeRbacAuthFailed           = "rbac_auth_failed"
 )
 
 // Error codes for compatibility errors.

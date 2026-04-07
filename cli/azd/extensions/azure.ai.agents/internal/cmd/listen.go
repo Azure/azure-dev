@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -112,6 +113,16 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 	// Ensure agent identity RBAC is configured when vnext is enabled.
 	// Runs post-deploy because the platform provisions the identity during agent deployment.
 	if err := project.EnsureAgentIdentityRBAC(ctx, azdClient); err != nil {
+		// If the error is already structured, return it unchanged so gRPC
+		// serialization preserves the message, code, and suggestion.
+		var localErr *azdext.LocalError
+		if errors.As(err, &localErr) {
+			return err
+		}
+		var svcErr *azdext.ServiceError
+		if errors.As(err, &svcErr) {
+			return err
+		}
 		return fmt.Errorf("agent identity RBAC setup failed: %w", err)
 	}
 

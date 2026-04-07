@@ -171,6 +171,11 @@ func (h *HooksRunner) execHook(ctx context.Context, hookConfig *HookConfig, opti
 		return err
 	}
 
+	scriptPath, cleanup, err := hookConfig.PrepareExecutionPath()
+	if err != nil {
+		return err
+	}
+
 	formatter := h.console.GetFormatter()
 	consoleInteractive := (formatter == nil || formatter.Kind() == output.NoneFormat)
 	scriptInteractive := consoleInteractive && hookConfig.Interactive
@@ -192,14 +197,14 @@ func (h *HooksRunner) execHook(ctx context.Context, hookConfig *HookConfig, opti
 	}
 	options.UserPwsh = string(hookConfig.Shell)
 
-	log.Printf("Executing script '%s'\n", hookConfig.path)
-	res, err := script.Execute(ctx, hookConfig.path, *options)
+	log.Printf("Executing script '%s'\n", scriptPath)
+	res, err := script.Execute(ctx, scriptPath, *options)
 	if err != nil {
 		execErr := fmt.Errorf(
 			"'%s' hook failed with exit code: '%d', Path: '%s'. : %w",
 			hookConfig.Name,
 			res.ExitCode,
-			hookConfig.path,
+			scriptPath,
 			err,
 		)
 
@@ -216,10 +221,10 @@ func (h *HooksRunner) execHook(ctx context.Context, hookConfig *HookConfig, opti
 		}
 	}
 
-	// Delete any temporary inline scripts after execution
+	// Delete any temporary inline scripts after execution.
 	// Removing temp scripts only on success to support better debugging with failing scripts.
-	if hookConfig.location == ScriptLocationInline {
-		defer os.Remove(hookConfig.path)
+	if cleanup != nil {
+		defer cleanup()
 	}
 
 	return nil

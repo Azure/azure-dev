@@ -279,17 +279,3 @@ func defaultKindForOS() language.HookKind {
 	}
 	return language.HookKindBash
 }
-
-// shellToKind maps a raw shell string (from the YAML "shell"
-// field) to the corresponding [language.HookKind]. Returns
-// [language.HookKindUnknown] for unrecognized values.
-func shellToKind(shell string) language.HookKind {
-	switch shell {
-	case "sh":
-		return language.HookKindBash
-	case "pwsh":
-		return language.HookKindPowerShell
-	default:
-		return language.HookKindUnknown
-	}
-}

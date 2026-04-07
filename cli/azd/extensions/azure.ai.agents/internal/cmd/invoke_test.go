@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"bytes"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -319,42 +320,62 @@ func TestHandleInvocationSSE(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name    string
-		input   string
-		wantErr bool
-		errMsg  string
+		name       string
+		input      string
+		agentName  string
+		wantErr    bool
+		errMsg     string
+		wantOutput string
 	}{
 		{
-			name:    "simple data lines",
-			input:   "data: Hello \ndata: world!\n\n",
-			wantErr: false,
+			name:       "simple data lines produce separate output lines with prefix",
+			input:      "data: Hello \ndata: world!\n\n",
+			agentName:  "test-agent",
+			wantOutput: "[test-agent] Hello \nworld!\n",
 		},
 		{
-			name:    "DONE signal ends stream",
-			input:   "data: Hello\ndata: [DONE]\ndata: ignored\n\n",
-			wantErr: false,
+			name:       "single data line gets prefix and newline",
+			input:      "data: only-one\n\n",
+			agentName:  "my-bot",
+			wantOutput: "[my-bot] only-one\n",
 		},
 		{
-			name:    "error envelope in data",
-			input:   `data: {"error": {"code": "rate_limit", "message": "too many requests"}}` + "\n\n",
-			wantErr: true,
-			errMsg:  "agent error (rate_limit): too many requests",
+			name:       "DONE signal ends stream, only preceding data printed",
+			input:      "data: Hello\ndata: [DONE]\ndata: ignored\n\n",
+			agentName:  "test-agent",
+			wantOutput: "[test-agent] Hello\n",
 		},
 		{
-			name:    "error envelope with type only",
-			input:   `data: {"error": {"type": "server_error", "message": "crash"}}` + "\n\n",
-			wantErr: true,
-			errMsg:  "agent error (server_error): crash",
+			name:      "error envelope in data",
+			input:     `data: {"error": {"code": "rate_limit", "message": "too many requests"}}` + "\n\n",
+			agentName: "test-agent",
+			wantErr:   true,
+			errMsg:    "agent error (rate_limit): too many requests",
 		},
 		{
-			name:    "empty stream",
-			input:   "",
-			wantErr: false,
+			name:      "error envelope with type only",
+			input:     `data: {"error": {"type": "server_error", "message": "crash"}}` + "\n\n",
+			agentName: "test-agent",
+			wantErr:   true,
+			errMsg:    "agent error (server_error): crash",
 		},
 		{
-			name:    "non-data lines ignored",
-			input:   "event: custom\nid: 123\ndata: content\n\n",
-			wantErr: false,
+			name:       "empty stream produces no output",
+			input:      "",
+			agentName:  "test-agent",
+			wantOutput: "",
+		},
+		{
+			name:       "non-data lines ignored",
+			input:      "event: custom\nid: 123\ndata: content\n\n",
+			agentName:  "test-agent",
+			wantOutput: "[test-agent] content\n",
+		},
+		{
+			name:       "three data lines produce three output lines",
+			input:      "data: line1\ndata: line2\ndata: line3\n\n",
+			agentName:  "agent",
+			wantOutput: "[agent] line1\nline2\nline3\n",
 		},
 	}
 
@@ -362,8 +383,9 @@ func TestHandleInvocationSSE(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
+			var buf bytes.Buffer
 			reader := strings.NewReader(tt.input)
-			err := handleInvocationSSE(reader, "test-agent")
+			err := handleInvocationSSE(&buf, reader, tt.agentName)
 
 			if tt.wantErr {
 				if err == nil {
@@ -372,8 +394,13 @@ func TestHandleInvocationSSE(t *testing.T) {
 				if tt.errMsg != "" && err.Error() != tt.errMsg {
 					t.Errorf("error = %q, want %q", err.Error(), tt.errMsg)
 				}
-			} else if err != nil {
-				t.Fatalf("unexpected error: %v", err)
+			} else {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if got := buf.String(); got != tt.wantOutput {
+					t.Errorf("output mismatch\ngot:  %q\nwant: %q", got, tt.wantOutput)
+				}
 			}
 		})
 	}

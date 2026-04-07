@@ -633,7 +633,7 @@ func handleInvocationResponse(
 
 	contentType := resp.Header.Get("Content-Type")
 	if strings.HasPrefix(contentType, "text/event-stream") {
-		return handleInvocationSSE(resp.Body, agentName)
+		return handleInvocationSSE(os.Stdout, resp.Body, agentName)
 	}
 
 	return handleInvocationSync(resp.Body, agentName)
@@ -679,7 +679,7 @@ func handleInvocationSync(body io.Reader, agentName string) error {
 
 // handleInvocationSSE handles a streaming (200 OK, text/event-stream) invocations response.
 // The invocations protocol has a developer-defined SSE format, so we print data lines as they arrive.
-func handleInvocationSSE(body io.Reader, agentName string) error {
+func handleInvocationSSE(w io.Writer, body io.Reader, agentName string) error {
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
@@ -714,10 +714,10 @@ func handleInvocationSSE(body io.Reader, agentName string) error {
 
 			// Print data as-is, one line per SSE data object
 			if !printed {
-				fmt.Printf("[%s] ", agentName)
+				fmt.Fprintf(w, "[%s] ", agentName)
 				printed = true
 			}
-			fmt.Println(data)
+			fmt.Fprintln(w, data)
 		}
 	}
 

@@ -567,47 +567,6 @@ func TestPromptTroubleshootCategory_InvalidSavedValue(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// promptForFix — saved preference paths
-// ---------------------------------------------------------------------------
-
-func TestPromptForFix_SavedAllow(t *testing.T) {
-	t.Parallel()
-	mockCtx := mocks.NewMockContext(t.Context())
-	userConfigManager := config.NewUserConfigManager(mockCtx.ConfigManager)
-	cfg, err := userConfigManager.Load()
-	require.NoError(t, err)
-	err = cfg.Set(agentcopilot.ConfigKeyErrorHandlingFix, "allow")
-	require.NoError(t, err)
-
-	e := &ErrorMiddleware{
-		options:           &Options{CommandPath: "azd provision"},
-		console:           mockinput.NewMockConsole(),
-		userConfigManager: userConfigManager,
-	}
-
-	wantFix, err := e.promptForFix(t.Context())
-	require.NoError(t, err)
-	require.True(t, wantFix, "saved 'allow' preference should return true")
-}
-
-func TestPromptForFix_SavedNonAllow(t *testing.T) {
-	t.Parallel()
-	// If the saved value is not "allow", it should fall through to the
-	// interactive prompt. We can't mock uxlib.Select.Ask, so we test that
-	// the "allow" path works and that non-"allow" values don't auto-approve.
-	mockCtx := mocks.NewMockContext(t.Context())
-	userConfigManager := config.NewUserConfigManager(mockCtx.ConfigManager)
-	cfg, err := userConfigManager.Load()
-	require.NoError(t, err)
-	err = cfg.Set(agentcopilot.ConfigKeyErrorHandlingFix, "deny")
-	require.NoError(t, err)
-
-	// We verify the saved path is NOT taken by checking that "deny" doesn't
-	// auto-approve. The function will fall through to Ask(), which can't be
-	// tested without interactive input. This is a design limitation.
-}
-
-// ---------------------------------------------------------------------------
 // UxMiddleware.Run — azdext error with suggestion
 // ---------------------------------------------------------------------------
 
@@ -1491,7 +1450,7 @@ func TestErrorMiddleware_Run_FixSendMessageError(t *testing.T) {
 		return nil, errors.New("unexpected widget failure")
 	})
 
-	// The code should go through: category explain → SendMessage success → promptForFix "allow" →
+	// The code should go through: category explain → SendMessage success → promptNextAction "allow" →
 	// fix SendMessage error. Verify we get the fix error.
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "agent fix failed")
@@ -1579,26 +1538,6 @@ func TestPromptTroubleshootCategory_ConfigLoadError(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "disk read error")
 	require.Equal(t, categorySkip, cat)
-}
-
-// ---------------------------------------------------------------------------
-// promptForFix — config load error
-// ---------------------------------------------------------------------------
-
-func TestPromptForFix_ConfigLoadError(t *testing.T) {
-	t.Parallel()
-	console := mockinput.NewMockConsole()
-	ucm := &mockUserConfigManager{cfg: nil, err: errors.New("io error")}
-
-	m := &ErrorMiddleware{
-		console:           console,
-		userConfigManager: ucm,
-	}
-
-	fix, err := m.promptForFix(t.Context())
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "io error")
-	require.False(t, fix)
 }
 
 // ---------------------------------------------------------------------------
@@ -1821,27 +1760,6 @@ func TestPromptTroubleshootCategory_AllSavedCategories(t *testing.T) {
 			require.Equal(t, troubleshootCategory(cat), got)
 		})
 	}
-}
-
-// ---------------------------------------------------------------------------
-// promptForFix — saved "allow" exercises lines 474-481
-// ---------------------------------------------------------------------------
-
-func TestPromptForFix_SavedAllow_MessageContent(t *testing.T) {
-	t.Parallel()
-	console := mockinput.NewMockConsole()
-
-	cfg := configWithKeys(agentcopilot.ConfigKeyErrorHandlingFix, "allow")
-	ucm := &mockUserConfigManager{cfg: cfg}
-
-	m := &ErrorMiddleware{
-		console:           console,
-		userConfigManager: ucm,
-	}
-
-	wantFix, err := m.promptForFix(t.Context())
-	require.NoError(t, err)
-	require.True(t, wantFix)
 }
 
 // ---------------------------------------------------------------------------

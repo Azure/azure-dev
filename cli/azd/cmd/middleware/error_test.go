@@ -551,11 +551,6 @@ func Test_ShouldSkipAgentHandling_WrappedConfigValidationError(t *testing.T) {
 
 func Test_ErrorMiddleware_NonFixableError_SkipsAgentCreation(t *testing.T) {
 	t.Parallel()
-	if os.Getenv("TF_BUILD") != "" ||
-		os.Getenv("GITHUB_ACTIONS") != "" ||
-		os.Getenv("CI") != "" {
-		t.Skip("Skipping test in CI/CD environment")
-	}
 
 	mockContext := mocks.NewMockContext(context.Background())
 	cfg := config.NewConfig(map[string]any{
@@ -595,11 +590,6 @@ func Test_ErrorMiddleware_NonFixableError_SkipsAgentCreation(t *testing.T) {
 
 func Test_ErrorMiddleware_ExplainAndFixCalls(t *testing.T) {
 	t.Parallel()
-	if os.Getenv("TF_BUILD") != "" ||
-		os.Getenv("GITHUB_ACTIONS") != "" ||
-		os.Getenv("CI") != "" {
-		t.Skip("Skipping test in CI/CD environment")
-	}
 
 	explainResult := &agent.AgentResult{
 		Usage: agent.UsageMetrics{
@@ -653,11 +643,6 @@ func Test_ErrorMiddleware_ExplainAndFixCalls(t *testing.T) {
 
 func Test_ErrorMiddleware_MaxRetry_FirstIterationSkipsCounter(t *testing.T) {
 	t.Parallel()
-	if os.Getenv("TF_BUILD") != "" ||
-		os.Getenv("GITHUB_ACTIONS") != "" ||
-		os.Getenv("CI") != "" {
-		t.Skip("Skipping test in CI/CD environment")
-	}
 
 	// Agent fails on fix — exits before the TTY retry prompt.
 	// This still proves the counter was skipped (agent WAS called).
@@ -706,7 +691,8 @@ func Test_ErrorMiddleware_MaxRetry_FirstIterationSkipsCounter(t *testing.T) {
 		"fix it manually",
 		"should NOT reach max attempts on first iteration")
 
-	// Agent was called once (fix succeeded on first attempt)
+	// Agent was called once; the fix attempt failed, which still proves
+	// the counter was skipped on the first iteration.
 	require.Equal(t, 1, fakeAg.callIdx)
 
 	// next was called once (no retry without TTY prompt)

@@ -195,7 +195,7 @@ func Test_ValidateHooks_PythonInstalled(t *testing.T) {
 	ostest.Chdir(t, tempDir)
 
 	// Create a Python script file so validate() resolves it
-	// as a language hook.
+	// as a non-shell hook.
 	scriptDir := filepath.Join(tempDir, "hooks")
 	require.NoError(t, os.MkdirAll(scriptDir, osutil.PermissionDirectory))
 	require.NoError(t,
@@ -373,7 +373,7 @@ func Test_ValidateHooks_MixedHooks(t *testing.T) {
 	mgr := NewHooksManager(tempDir, mockRunner)
 	result := mgr.ValidateHooks(t.Context(), hooksMap)
 
-	// Exactly one language warning (Python), no shell warnings.
+	// Exactly one runtime warning (Python), no shell warnings.
 	pythonWarnings := 0
 	for _, w := range result.Warnings {
 		if strings.Contains(w.Message, "Python") {

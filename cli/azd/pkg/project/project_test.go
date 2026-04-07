@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/language"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazapi"
@@ -389,7 +390,7 @@ postbuild:
 		expectedHooks := HooksConfig{
 			"prebuild": {{
 				Name:            "",
-				Shell:           "sh",
+				Shell:           string(language.HookKindBash),
 				Run:             "./pre-build.sh",
 				ContinueOnError: false,
 				Interactive:     false,
@@ -398,7 +399,7 @@ postbuild:
 			}},
 			"postbuild": {{
 				Name:            "",
-				Shell:           "pwsh",
+				Shell:           string(language.HookKindPowerShell),
 				Run:             "./post-build.ps1",
 				ContinueOnError: false,
 				Interactive:     false,
@@ -418,7 +419,7 @@ postbuild:
 			Services: map[string]*ServiceConfig{},
 			Hooks: HooksConfig{
 				"prebuild": {{
-					Shell: "sh",
+					Shell: string(language.HookKindBash),
 					Run:   "./pre-build.sh",
 				}},
 			},
@@ -454,7 +455,7 @@ postbuild:
 		expectedHooks := HooksConfig{
 			"prebuild": {{
 				Name:            "",
-				Shell:           "sh",
+				Shell:           string(language.HookKindBash),
 				Run:             "./pre-build.sh",
 				ContinueOnError: false,
 				Interactive:     false,
@@ -462,7 +463,7 @@ postbuild:
 				Posix:           nil,
 			}, {
 				Name:            "",
-				Shell:           "sh",
+				Shell:           string(language.HookKindBash),
 				Run:             "./pre-build-external.sh",
 				ContinueOnError: false,
 				Interactive:     false,
@@ -471,7 +472,7 @@ postbuild:
 			}},
 			"postbuild": {{
 				Name:            "",
-				Shell:           "pwsh",
+				Shell:           string(language.HookKindPowerShell),
 				Run:             "./post-build.ps1",
 				ContinueOnError: false,
 				Interactive:     false,

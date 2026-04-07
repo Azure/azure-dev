@@ -111,7 +111,7 @@ func stubPythonVersionCheck(
 // ---------------------------------------------------------------------------
 
 // TestPythonHook_AutoDetectFromExtension verifies that a hook with
-// run: script.py (no explicit language:) auto-detects Python and
+// run: script.py (no explicit kind:) auto-detects Python and
 // routes through the HookExecutor pipeline.
 func TestPythonHook_AutoDetectFromExtension(t *testing.T) {
 	scriptRel := filepath.Join("hooks", "predeploy.py")
@@ -125,7 +125,7 @@ func TestPythonHook_AutoDetectFromExtension(t *testing.T) {
 		"predeploy": {{
 			Name: "predeploy",
 			Run:  scriptRel,
-			// Language intentionally omitted.
+			// Kind intentionally omitted.
 		}},
 	}
 
@@ -158,7 +158,7 @@ func TestPythonHook_AutoDetectFromExtension(t *testing.T) {
 		"auto-detected Python hook should execute the .py script",
 	)
 
-	// Verify the config was resolved as a non-shell language hook.
+	// Verify the config was resolved as a non-shell hook.
 	hookCfg := hooksMap["predeploy"][0]
 	assert.Equal(
 		t, language.HookKindPython, hookCfg.Kind,
@@ -166,10 +166,10 @@ func TestPythonHook_AutoDetectFromExtension(t *testing.T) {
 	assert.False(t, hookCfg.Kind.IsShell())
 }
 
-// TestPythonHook_ExplicitLanguage verifies that language: python
+// TestPythonHook_ExplicitKind verifies that kind: python
 // in the config uses the Python executor even when the script has
 // no .py extension.
-func TestPythonHook_ExplicitLanguage(t *testing.T) {
+func TestPythonHook_ExplicitKind(t *testing.T) {
 	scriptRel := filepath.Join("hooks", "myscript")
 	cwd := newPythonTestFixture(t, scriptRel, false)
 
@@ -211,7 +211,7 @@ func TestPythonHook_ExplicitLanguage(t *testing.T) {
 	require.NoError(t, err)
 	require.True(
 		t, executed,
-		"explicit language: python should use Python executor",
+		"explicit kind: python should use Python executor",
 	)
 }
 
@@ -685,7 +685,7 @@ func TestPythonHook_ShellHookUnaffected(t *testing.T) {
 	require.NoError(t, err)
 	require.True(
 		t, pythonRan,
-		"Python hook should execute via language pipeline",
+		"Python hook should execute via non-shell pipeline",
 	)
 }
 
@@ -713,7 +713,7 @@ func TestPythonHook_ExecutionPipeline(t *testing.T) {
 			wantErr:   false,
 		},
 		{
-			name:      "SuccessExplicitLanguage",
+			name:      "SuccessExplicitKind",
 			scriptRel: filepath.Join("hooks", "run"),
 			kind:      language.HookKindPython,
 			exitCode:  0,
@@ -863,7 +863,7 @@ func TestPythonHook_PythonBinaryResolution(t *testing.T) {
 
 // TestPythonHook_ExplicitDirOverridesCwd verifies that
 // the Dir field in HookConfig overrides the default working
-// directory for language hook execution.
+// directory for hook execution.
 func TestPythonHook_ExplicitDirOverridesCwd(t *testing.T) {
 	cwd := t.TempDir()
 	ostest.Chdir(t, cwd)

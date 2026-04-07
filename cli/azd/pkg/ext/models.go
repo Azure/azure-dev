@@ -38,7 +38,7 @@ var (
 	// from the script path and was not explicitly configured.
 	ErrScriptTypeUnknown error = errors.New(
 		"unable to determine hook kind. " +
-			"Ensure 'kind', 'language', or 'shell' is set in your hook configuration, " +
+			"Ensure 'kind' or 'shell' is set in your hook configuration, " +
 			"or use a file with a recognized extension " +
 			"(.sh, .ps1, .py, .js, .ts, .cs)",
 	)
@@ -48,12 +48,11 @@ var (
 			"Set 'run' to an inline script or a relative file path",
 	)
 	// ErrUnsupportedScriptType indicates the script file has an extension
-	// that is not recognized and no explicit kind, language, or shell was set.
+	// that is not recognized and no explicit kind or shell was set.
 	ErrUnsupportedScriptType error = errors.New(
 		"script type is not valid. " +
 			"Supported extensions: .sh, .ps1, .py, .js, .ts, .cs. " +
-			"Alternatively, set 'kind' (e.g. kind: python), " +
-			"'language' (e.g. language: python), " +
+			"Alternatively, set 'kind' (e.g. kind: python) " +
 			"or 'shell' (e.g. shell: sh)",
 	)
 )
@@ -89,20 +88,16 @@ type HookConfig struct {
 	// Kind specifies the executor type of the hook script.
 	// Allowed values: "sh", "pwsh", "js", "ts", "python", "dotnet".
 	// When empty, the kind is auto-detected from the file extension
-	// of the run path (e.g. .py → python, .ps1 → pwsh). If Kind,
-	// Language, and Shell are all empty and run references a file,
-	// the extension is used. For inline scripts, Kind, Shell, or
-	// Language must be set explicitly.
+	// of the run path (e.g. .py → python, .ps1 → pwsh). If Kind
+	// and Shell are both empty and run references a file,
+	// the extension is used. For inline scripts, Kind or Shell
+	// must be set explicitly.
 	Kind language.HookKind `yaml:"kind,omitempty" json:"kind,omitempty"`
-	// Language is a deprecated alias for Kind. When set in YAML
-	// (language: python) it is mapped to Kind during validate().
-	// Retained for backwards compatibility.
-	Language string `yaml:"language,omitempty" json:"-"`
 	// Shell is a deprecated alias for Kind. When set in YAML
 	// (shell: sh) it is mapped to Kind during validate().
 	// Retained for backwards compatibility with legacy configs.
 	Shell string `yaml:"shell,omitempty" json:"-"`
-	// Dir specifies the working directory for language hook execution,
+	// Dir specifies the working directory for hook execution,
 	// used as the project context for dependency installation and builds.
 	// When empty, defaults to the directory containing the script
 	// referenced by the run field. Only set this when the project root
@@ -129,10 +124,9 @@ type HookConfig struct {
 //
 // Kind resolution priority:
 //  1. Explicit Kind field
-//  2. Explicit Language field (deprecated alias, mapped to Kind)
-//  3. Explicit Shell field (deprecated alias, mapped to Kind)
-//  4. File extension via [language.InferKindFromPath]
-//  5. OS default (Bash on Unix, PowerShell on Windows) for inline scripts
+//  2. Explicit Shell field (deprecated alias, mapped to Kind)
+//  3. File extension via [language.InferKindFromPath]
+//  4. OS default (Bash on Unix, PowerShell on Windows) for inline scripts
 //
 // After a successful call, Kind is the single source of truth for
 // executor selection and the hook is ready for execution.
@@ -199,11 +193,8 @@ func (hc *HookConfig) validate() error {
 	}
 
 	// Kind resolution — priority:
-	// 1. explicit Kind  2. Language alias  3. Shell alias
-	// 4. file extension  5. OS default for inline scripts
-	if hc.Kind == language.HookKindUnknown && hc.Language != "" {
-		hc.Kind = language.HookKind(hc.Language)
-	}
+	// 1. explicit Kind  2. Shell alias
+	// 3. file extension  4. OS default for inline scripts
 	if hc.Kind == language.HookKindUnknown && hc.Shell != "" {
 		hc.Kind = language.HookKind(hc.Shell)
 	}

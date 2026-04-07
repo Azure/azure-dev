@@ -6,21 +6,21 @@ unified lifecycle regardless of its executor: **Prepare → Execute → Cleanup*
 
 ## Supported Executor Types
 
-| Executor   | `language` value | File extension | Status       |
-|------------|-----------------|----------------|--------------|
-| Bash       | `sh`            | `.sh`          | ✅ Stable     |
-| PowerShell | `pwsh`          | `.ps1`         | ✅ Stable     |
-| Python     | `python`        | `.py`          | ✅ Phase 1    |
-| JavaScript | `js`            | `.js`          | 🔜 Planned   |
-| TypeScript | `ts`            | `.ts`          | 🔜 Planned   |
-| .NET (C#)  | `dotnet`        | `.cs`          | 🔜 Planned   |
+| Executor   | `kind` value | File extension | Status       |
+|------------|-------------|----------------|--------------|
+| Bash       | `sh`        | `.sh`          | ✅ Stable     |
+| PowerShell | `pwsh`      | `.ps1`         | ✅ Stable     |
+| Python     | `python`    | `.py`          | ✅ Phase 1    |
+| JavaScript | `js`        | `.js`          | 🔜 Planned   |
+| TypeScript | `ts`        | `.ts`          | 🔜 Planned   |
+| .NET (C#)  | `dotnet`    | `.cs`          | 🔜 Planned   |
 
 ## Configuration
 
 Hooks are configured in `azure.yaml` under the `hooks` section at the
 project or service level. Two optional fields are available:
 
-### `language` (string, optional)
+### `kind` (string, optional)
 
 Specifies the executor type for the hook. Allowed values:
 `sh`, `pwsh`, `js`, `ts`, `python`, `dotnet`.
@@ -70,16 +70,16 @@ hooks:
     # dir is auto-inferred as hooks/preprovision/
 ```
 
-### Python hook — explicit language
+### Python hook — explicit kind
 
 When auto-detection is not desired or the file extension is ambiguous, set
-the `language` field explicitly to select the Python executor:
+the `kind` field explicitly to select the Python executor:
 
 ```yaml
 hooks:
   postprovision:
     run: ./hooks/setup.py
-    language: python
+    kind: python
 ```
 
 ### Python hook with working directory override
@@ -107,7 +107,7 @@ hooks:
       shell: pwsh
     posix:
       run: ./hooks/setup.py
-      language: python
+      kind: python
 ```
 
 ### Python hook with secrets
@@ -125,7 +125,7 @@ hooks:
 
 ### Bash hook (existing behavior, unchanged)
 
-Bash hooks continue to work exactly as before. The `language` field is
+Bash hooks continue to work exactly as before. The `kind` field is
 optional and defaults to the appropriate shell type:
 
 ```yaml
@@ -141,7 +141,7 @@ Every hook follows the unified **Prepare → Execute → Cleanup** lifecycle:
 
 1. **Prepare** — The executor validates prerequisites and performs any
    setup. This includes:
-   - **Language detection** from the explicit `language` field, the
+   - **Kind detection** from the explicit `kind` field, the
      `shell` field, or the file extension of the `run` path.
    - **Runtime validation** — verifying the required runtime is
      installed (e.g. Python 3 for `.py` hooks, pwsh for `.ps1`).

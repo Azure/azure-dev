@@ -147,7 +147,7 @@ func (h *HooksRunner) execHook(
 		}
 	}
 
-	// validate() resolves the hook's language, path, shell type,
+	// validate() resolves the hook's kind, path, shell type,
 	// and computes resolvedDir / resolvedScriptPath.
 	if err := hookConfig.validate(); err != nil {
 		return err

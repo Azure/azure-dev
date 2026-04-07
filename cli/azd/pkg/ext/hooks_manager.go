@@ -176,10 +176,9 @@ func (h *HooksManager) ValidateHooks(ctx context.Context, allHooks map[string][]
 				_, err := os.Stat(fullCheckPath)
 				isInlineScript := err != nil // File doesn't exist, so it's inline
 
-				// If no kind/language/shell and it's an inline script, set
+				// If no kind/shell and it's an inline script, set
 				// OS default Kind for warning purposes.
 				if hookConfig.Shell == "" &&
-					hookConfig.Language == "" &&
 					hookConfig.Kind == language.HookKindUnknown &&
 					isInlineScript {
 					hookConfig.Kind = defaultKindForOS()
@@ -270,8 +269,8 @@ func (h *HooksManager) validateRuntimes(
 ) []HookWarning {
 	var warnings []HookWarning
 
-	// Collect unique language runtimes required across all hooks.
-	// Track the first hook name per language for actionable messages.
+	// Collect unique non-shell hook kinds required across all hooks.
+	// Track the first hook name per kind for actionable messages.
 	requiredLangs := map[language.HookKind]string{}
 
 	for hookName, hookConfigs := range allHooks {
@@ -300,7 +299,7 @@ func (h *HooksManager) validateRuntimes(
 				cfg.Name = hookName
 			}
 
-			// Run validate to resolve the Language field from
+			// Run validate to resolve the Kind field from
 			// file extension / explicit config.
 			if err := cfg.validate(); err != nil {
 				// Validation errors are surfaced by GetAll /

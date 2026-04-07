@@ -75,12 +75,6 @@ func TestHookConfig_KindField(t *testing.T) {
 			expectedKind: language.HookKindPython,
 			expectedDir:  "src/hooks",
 		},
-		{
-			name:         "LanguageAliasMapsPython",
-			yamlInput:    "run: scripts/hook.py\nlanguage: python\n",
-			expectedKind: language.HookKindUnknown, // alias only resolved at validate()
-			expectedDir:  "",
-		},
 	}
 
 	for _, tt := range tests {
@@ -164,17 +158,6 @@ func TestHookConfig_ValidateKindResolution(t *testing.T) {
 				Run:  "script.js",
 			},
 			createFile:   "script.js",
-			expectedKind: language.HookKindPython,
-			isShell:      false,
-		},
-		{
-			name: "LanguageAliasMapsToKind",
-			config: HookConfig{
-				Name:     "test",
-				Language: string(language.HookKindPython),
-				Run:      "script.py",
-			},
-			createFile:   "script.py",
 			expectedKind: language.HookKindPython,
 			isShell:      false,
 		},

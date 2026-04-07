@@ -425,10 +425,10 @@ func Test_Hooks_Validation(t *testing.T) {
 	})
 }
 
-// Test_ExecHook_LanguageHooks verifies the integration between
+// Test_ExecHook_NonShellHooks verifies the integration between
 // [HooksRunner] and [tools.HookExecutor] for non-shell hooks.
-func Test_ExecHook_LanguageHooks(t *testing.T) {
-	t.Run("PythonLanguageHook", func(t *testing.T) {
+func Test_ExecHook_NonShellHooks(t *testing.T) {
+	t.Run("PythonHook", func(t *testing.T) {
 		cwd := t.TempDir()
 		ostest.Chdir(t, cwd)
 
@@ -553,7 +553,7 @@ func Test_ExecHook_LanguageHooks(t *testing.T) {
 		require.True(t, shellRan, "Bash executor should use absolute path for .sh hooks")
 	})
 
-	t.Run("LanguageHookPrepareFailure", func(t *testing.T) {
+	t.Run("NonShellHookPrepareFailure", func(t *testing.T) {
 		cwd := t.TempDir()
 		ostest.Chdir(t, cwd)
 
@@ -609,7 +609,7 @@ func Test_ExecHook_LanguageHooks(t *testing.T) {
 		require.Contains(t, err.Error(), "preparing hook")
 	})
 
-	t.Run("LanguageHookExecuteFailure", func(t *testing.T) {
+	t.Run("NonShellHookExecuteFailure", func(t *testing.T) {
 		cwd := t.TempDir()
 		ostest.Chdir(t, cwd)
 
@@ -672,7 +672,7 @@ func Test_ExecHook_LanguageHooks(t *testing.T) {
 		require.Contains(t, err.Error(), "exit code: '1'")
 	})
 
-	t.Run("LanguageHookEnvVars", func(t *testing.T) {
+	t.Run("NonShellHookEnvVars", func(t *testing.T) {
 		cwd := t.TempDir()
 		ostest.Chdir(t, cwd)
 

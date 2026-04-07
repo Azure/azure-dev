@@ -1979,10 +1979,14 @@ Returns available AI models for a subscription.
     - `locations` (repeated string)
     - `capabilities` (repeated string)
     - `formats` (repeated string)
-    - `statuses` (repeated string)
+    - `statuses` (repeated string, applied to version lifecycle status before aggregation)
     - `exclude_model_names` (repeated string)
 - **Response:** _ListModelsResponse_
   - `models` (repeated _AiModel_)
+
+`filter.statuses` matches version-level lifecycle status before aggregation. Returned models
+only contain versions (and locations) that matched. `AiModel.lifecycle_status` is deprecated
+and always empty; use `AiModelVersion.lifecycle_status` for lifecycle state.
 
 If `filter.locations` is empty, models are listed across all subscription locations.
 When `filter.locations` is provided, it limits which models are returned, but each returned model still contains canonical

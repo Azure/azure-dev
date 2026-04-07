@@ -5,32 +5,41 @@ package ai
 
 import (
 	"testing"
+	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/stretchr/testify/require"
 )
 
 func TestFilterModels(t *testing.T) {
 	models := []AiModel{
 		{
-			Name:            "gpt-4o",
-			Format:          "OpenAI",
-			LifecycleStatus: "stable",
-			Capabilities:    []string{"chat", "completion"},
-			Locations:       []string{"eastus", "westus"},
+			Name:         "gpt-4o",
+			Format:       "OpenAI",
+			Capabilities: []string{"chat", "completion"},
+			Locations:    []string{"eastus", "westus"},
+			Versions: []AiModelVersion{
+				{Version: "2024-05-13", LifecycleStatus: "stable"},
+				{Version: "2024-11-20", IsDefault: true, LifecycleStatus: "stable"},
+			},
 		},
 		{
-			Name:            "gpt-4o-mini",
-			Format:          "OpenAI",
-			LifecycleStatus: "preview",
-			Capabilities:    []string{"chat"},
-			Locations:       []string{"eastus"},
+			Name:         "gpt-4o-mini",
+			Format:       "OpenAI",
+			Capabilities: []string{"chat"},
+			Locations:    []string{"eastus"},
+			Versions: []AiModelVersion{
+				{Version: "2024-07-18", IsDefault: true, LifecycleStatus: "preview"},
+			},
 		},
 		{
-			Name:            "text-embedding-ada-002",
-			Format:          "OpenAI",
-			LifecycleStatus: "stable",
-			Capabilities:    []string{"embeddings"},
-			Locations:       []string{"westus"},
+			Name:         "text-embedding-ada-002",
+			Format:       "OpenAI",
+			Capabilities: []string{"embeddings"},
+			Locations:    []string{"westus"},
+			Versions: []AiModelVersion{
+				{Version: "2", IsDefault: true, LifecycleStatus: "stable"},
+			},
 		},
 	}
 
@@ -101,6 +110,280 @@ func TestFilterModels(t *testing.T) {
 			require.Equal(t, tt.expected, names)
 		})
 	}
+}
+
+func TestFilterModels_FiltersVersionsByStatus(t *testing.T) {
+	t.Parallel()
+
+	models := []AiModel{
+		{
+			Name:      "gpt-4o",
+			Format:    "OpenAI",
+			Locations: []string{"eastus", "westus"},
+			Versions: []AiModelVersion{
+				{Version: "2024-08-06", LifecycleStatus: "Deprecating"},
+				{Version: "2024-11-20", IsDefault: true, LifecycleStatus: "GenerallyAvailable"},
+			},
+		},
+	}
+
+	filtered := FilterModels(models, &FilterOptions{Statuses: []string{"Deprecating"}})
+	require.Len(t, filtered, 1)
+	require.Len(t, filtered[0].Versions, 1)
+	require.Equal(t, "2024-08-06", filtered[0].Versions[0].Version)
+	require.Equal(t, "Deprecating", filtered[0].Versions[0].LifecycleStatus)
+}
+
+func TestConvertToAiModels_FiltersDeprecatedVersionsAndSkus(t *testing.T) {
+	t.Parallel()
+
+	svc := NewAiModelService(nil, nil)
+	now := time.Date(2026, 4, 6, 0, 0, 0, 0, time.UTC)
+
+	rawModels := map[string][]*armcognitiveservices.Model{
+		"northcentralus": {
+			{
+				Model: &armcognitiveservices.AccountModel{
+					Name:            new("gpt-35-turbo"),
+					Version:         new("0613"),
+					LifecycleStatus: new(armcognitiveservices.ModelLifecycleStatus("Deprecated")),
+					Deprecation: &armcognitiveservices.ModelDeprecationInfo{
+						Inference: new("2025-04-30T00:00:00Z"),
+					},
+					SKUs: []*armcognitiveservices.ModelSKU{
+						{
+							Name:            new("Standard"),
+							UsageName:       new("OpenAI.Standard.gpt-35-turbo"),
+							DeprecationDate: new(time.Date(2025, 2, 13, 0, 0, 0, 0, time.UTC)),
+						},
+					},
+				},
+			},
+			{
+				Model: &armcognitiveservices.AccountModel{
+					Name:            new("gpt-4o"),
+					Version:         new("2024-08-06"),
+					LifecycleStatus: new(armcognitiveservices.ModelLifecycleStatus("Deprecating")),
+					Deprecation: &armcognitiveservices.ModelDeprecationInfo{
+						Inference: new("2026-10-01T00:00:00Z"),
+					},
+					SKUs: []*armcognitiveservices.ModelSKU{
+						{
+							Name:            new("Standard"),
+							UsageName:       new("OpenAI.Standard.gpt-4o"),
+							DeprecationDate: new(time.Date(2026, 3, 31, 0, 0, 0, 0, time.UTC)),
+						},
+						{
+							Name:            new("GlobalStandard"),
+							UsageName:       new("OpenAI.GlobalStandard.gpt-4o"),
+							DeprecationDate: new(time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)),
+						},
+					},
+				},
+			},
+			{
+				Model: &armcognitiveservices.AccountModel{
+					Name:            new("all-expired"),
+					Version:         new("1"),
+					LifecycleStatus: new(armcognitiveservices.ModelLifecycleStatus("GenerallyAvailable")),
+					SKUs: []*armcognitiveservices.ModelSKU{
+						{
+							Name:            new("Standard"),
+							UsageName:       new("Custom.Standard.all-expired"),
+							DeprecationDate: new(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)),
+						},
+					},
+				},
+			},
+			{
+				Model: &armcognitiveservices.AccountModel{
+					Name:            new("gpt-4.1-mini"),
+					Version:         new("2025-04-14"),
+					LifecycleStatus: new(armcognitiveservices.ModelLifecycleStatus("GenerallyAvailable")),
+					SKUs: []*armcognitiveservices.ModelSKU{
+						{
+							Name:            new("GlobalStandard"),
+							UsageName:       new("OpenAI.GlobalStandard.gpt-4.1-mini"),
+							DeprecationDate: new(time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	models := svc.convertToAiModelsAt(rawModels, now, nil)
+	require.Len(t, models, 2)
+
+	require.Equal(t, "gpt-4.1-mini", models[0].Name)
+	require.Equal(t, "gpt-4o", models[1].Name)
+
+	require.Len(t, models[1].Versions, 1)
+	require.Equal(t, "2024-08-06", models[1].Versions[0].Version)
+	require.Equal(t, "Deprecating", models[1].Versions[0].LifecycleStatus)
+	require.Len(t, models[1].Versions[0].Skus, 1)
+	require.Equal(t, "GlobalStandard", models[1].Versions[0].Skus[0].Name)
+	require.Equal(t, "OpenAI.GlobalStandard.gpt-4o", models[1].Versions[0].Skus[0].UsageName)
+}
+
+func TestConvertToAiModels_PreservesVersionLifecycleStatus(t *testing.T) {
+	t.Parallel()
+
+	svc := NewAiModelService(nil, nil)
+	now := time.Date(2026, 4, 6, 0, 0, 0, 0, time.UTC)
+
+	rawModels := map[string][]*armcognitiveservices.Model{
+		"northcentralus": {
+			{
+				Model: &armcognitiveservices.AccountModel{
+					Name:            new("gpt-4o"),
+					Version:         new("2024-08-06"),
+					LifecycleStatus: new(armcognitiveservices.ModelLifecycleStatus("Deprecating")),
+					SKUs: []*armcognitiveservices.ModelSKU{
+						{
+							Name:            new("GlobalStandard"),
+							UsageName:       new("OpenAI.GlobalStandard.gpt-4o"),
+							DeprecationDate: new(time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)),
+						},
+					},
+				},
+			},
+			{
+				Model: &armcognitiveservices.AccountModel{
+					Name:             new("gpt-4o"),
+					Version:          new("2024-11-20"),
+					IsDefaultVersion: new(true),
+					LifecycleStatus:  new(armcognitiveservices.ModelLifecycleStatus("GenerallyAvailable")),
+					SKUs: []*armcognitiveservices.ModelSKU{
+						{
+							Name:            new("GlobalStandard"),
+							UsageName:       new("OpenAI.GlobalStandard.gpt-4o"),
+							DeprecationDate: new(time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	models := svc.convertToAiModelsAt(rawModels, now, nil)
+	require.Len(t, models, 1)
+	require.Equal(t, "gpt-4o", models[0].Name)
+	require.Empty(t, models[0].LifecycleStatus)
+	require.Len(t, models[0].Versions, 2)
+
+	versionStatuses := map[string]string{}
+	for _, version := range models[0].Versions {
+		versionStatuses[version.Version] = version.LifecycleStatus
+	}
+
+	require.Equal(t, map[string]string{
+		"2024-08-06": "Deprecating",
+		"2024-11-20": "GenerallyAvailable",
+	}, versionStatuses)
+}
+
+func TestConvertToAiModels_FiltersStatusesBeforeAggregation(t *testing.T) {
+	t.Parallel()
+
+	svc := NewAiModelService(nil, nil)
+	now := time.Date(2026, 4, 6, 0, 0, 0, 0, time.UTC)
+
+	rawModels := map[string][]*armcognitiveservices.Model{
+		"eastus": {
+			{
+				Model: &armcognitiveservices.AccountModel{
+					Name:            new("gpt-4o"),
+					Version:         new("2024-08-06"),
+					LifecycleStatus: new(armcognitiveservices.ModelLifecycleStatus("Deprecating")),
+					SKUs: []*armcognitiveservices.ModelSKU{
+						{
+							Name:            new("GlobalStandard"),
+							UsageName:       new("OpenAI.GlobalStandard.gpt-4o"),
+							DeprecationDate: new(time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)),
+						},
+					},
+				},
+			},
+		},
+		"westus": {
+			{
+				Model: &armcognitiveservices.AccountModel{
+					Name:             new("gpt-4o"),
+					Version:          new("2024-11-20"),
+					IsDefaultVersion: new(true),
+					LifecycleStatus:  new(armcognitiveservices.ModelLifecycleStatus("GenerallyAvailable")),
+					SKUs: []*armcognitiveservices.ModelSKU{
+						{
+							Name:            new("GlobalStandard"),
+							UsageName:       new("OpenAI.GlobalStandard.gpt-4o"),
+							DeprecationDate: new(time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	models := svc.convertToAiModelsAt(rawModels, now, []string{"GenerallyAvailable"})
+	require.Len(t, models, 1)
+	require.Equal(t, "gpt-4o", models[0].Name)
+	require.Empty(t, models[0].LifecycleStatus)
+	require.Equal(t, []string{"westus"}, models[0].Locations)
+	require.Len(t, models[0].Versions, 1)
+	require.Equal(t, "2024-11-20", models[0].Versions[0].Version)
+	require.Equal(t, "GenerallyAvailable", models[0].Versions[0].LifecycleStatus)
+}
+
+func TestConvertToAiModels_ExcludesLocationsWithOnlyDeprecatedEntries(t *testing.T) {
+	t.Parallel()
+
+	svc := NewAiModelService(nil, nil)
+	now := time.Date(2026, 4, 6, 0, 0, 0, 0, time.UTC)
+
+	rawModels := map[string][]*armcognitiveservices.Model{
+		"eastus": {
+			{
+				Model: &armcognitiveservices.AccountModel{
+					Name:            new("gpt-4o"),
+					Version:         new("2024-08-06"),
+					LifecycleStatus: new(armcognitiveservices.ModelLifecycleStatus("GenerallyAvailable")),
+					SKUs: []*armcognitiveservices.ModelSKU{
+						{
+							Name:            new("GlobalStandard"),
+							UsageName:       new("OpenAI.GlobalStandard.gpt-4o"),
+							DeprecationDate: new(time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)),
+						},
+					},
+				},
+			},
+		},
+		"westus": {
+			{
+				Model: &armcognitiveservices.AccountModel{
+					Name:            new("gpt-4o"),
+					Version:         new("2024-08-06"),
+					LifecycleStatus: new(armcognitiveservices.ModelLifecycleStatus("GenerallyAvailable")),
+					SKUs: []*armcognitiveservices.ModelSKU{
+						{
+							Name:            new("GlobalStandard"),
+							UsageName:       new("OpenAI.GlobalStandard.gpt-4o"),
+							DeprecationDate: new(time.Date(2026, 3, 31, 0, 0, 0, 0, time.UTC)),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	models := svc.convertToAiModelsAt(rawModels, now, nil)
+	require.Len(t, models, 1)
+	require.Equal(t, "gpt-4o", models[0].Name)
+	require.Empty(t, models[0].LifecycleStatus)
+	require.Equal(t, []string{"eastus"}, models[0].Locations)
+	require.Len(t, models[0].Versions, 1)
+	require.Equal(t, "GenerallyAvailable", models[0].Versions[0].LifecycleStatus)
+	require.Len(t, models[0].Versions[0].Skus, 1)
 }
 
 func TestFilterModelsByQuota(t *testing.T) {

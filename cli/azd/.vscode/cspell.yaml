@@ -374,13 +374,12 @@ overrides:
   - filename: pkg/ext/models.go
     words:
       - unvalidated
+      - venvs
+      - workdir
   - filename: docs/code-coverage-guide.md
     words:
       - covdata
       - GOWORK
-  - filename: pkg/ext/hooks_runner.go
-    words:
-      - venvs
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

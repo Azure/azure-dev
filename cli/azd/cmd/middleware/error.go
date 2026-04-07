@@ -191,6 +191,11 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		return actionResult, err
 	}
 
+	// Skip non-fixable errors before agent creation to avoid unnecessary SDK init
+	if !fixableError(err) {
+		return actionResult, err
+	}
+
 	// Warn user that this is an alpha feature
 	e.console.WarnForFeature(ctx, agentcopilot.FeatureCopilot)
 
@@ -237,7 +242,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			e.console.Message(ctx, output.WithErrorFormat("TraceID: %s", errorWithTraceId.TraceId))
 		}
 
-		// Skip agent troubleshooting for errors that are not classified as fixable
+		// Re-check fixability on retries (error type may have changed after fix)
 		if !fixableError(originalError) {
 			return actionResult, originalError
 		}

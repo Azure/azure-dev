@@ -117,8 +117,10 @@ func ValidateJobOffline(job *JobDefinition, yamlDir string) *ValidationResult {
 	}
 
 	// 6. Validate ${{inputs.xxx}} and ${{outputs.xxx}} placeholders in command
+	var optionalInputs map[string]bool
 	if job.Command != "" {
-		validatePlaceholders(result, job)
+		optionalInputs = optionalInputKeys(job.Command)
+		validatePlaceholders(result, job, optionalInputs)
 	}
 
 	// 7. Warn on single-brace {inputs.xxx} or {outputs.xxx} usage in command
@@ -128,7 +130,7 @@ func ValidateJobOffline(job *JobDefinition, yamlDir string) *ValidationResult {
 
 	// 8. Inputs/outputs with nil/empty definitions referenced in command
 	if job.Command != "" {
-		validateInputOutputDefinitions(result, job)
+		validateInputOutputDefinitions(result, job, optionalInputs)
 	}
 
 	return result
@@ -178,19 +180,22 @@ var (
 	singleBraceRegex = regexp.MustCompile(`\{(inputs|outputs)\.(\w[\w.-]*)}}?`)
 )
 
+// optionalInputKeys returns the set of input keys that appear inside [...] optional blocks.
+func optionalInputKeys(command string) map[string]bool {
+	result := make(map[string]bool)
+	for _, block := range optionalBlockRegex.FindAllString(command, -1) {
+		for _, match := range inputPlaceholderRegex.FindAllStringSubmatch(block, -1) {
+			result[match[1]] = true
+		}
+	}
+	return result
+}
+
 // validatePlaceholders checks that ${{inputs.xxx}} references in command exist in job.Inputs
 // and ${{outputs.xxx}} references exist in job.Outputs.
 // References inside [...] optional blocks are skipped for inputs.
-func validatePlaceholders(result *ValidationResult, job *JobDefinition) {
+func validatePlaceholders(result *ValidationResult, job *JobDefinition, optionalInputs map[string]bool) {
 	command := job.Command
-
-	// Build set of optional input keys (those inside [...] blocks)
-	optionalInputs := make(map[string]bool)
-	for _, block := range optionalBlockRegex.FindAllString(command, -1) {
-		for _, match := range inputPlaceholderRegex.FindAllStringSubmatch(block, -1) {
-			optionalInputs[match[1]] = true
-		}
-	}
 
 	// Find all ${{inputs.xxx}} and ${{outputs.xxx}} references
 	for _, match := range placeholderRegex.FindAllStringSubmatch(command, -1) {
@@ -243,7 +248,8 @@ func validateSingleBracePlaceholders(result *ValidationResult, command string) {
 // validateInputOutputDefinitions checks that inputs/outputs referenced in command
 // are not empty/nil definitions (all fields zero-valued).
 // Empty inputs are errors; empty outputs are warnings (backend uses defaults).
-func validateInputOutputDefinitions(result *ValidationResult, job *JobDefinition) {
+// Inputs inside [...] optional blocks are skipped — empty definitions are valid for optional inputs.
+func validateInputOutputDefinitions(result *ValidationResult, job *JobDefinition, optionalInputs map[string]bool) {
 	command := job.Command
 
 	for _, match := range placeholderRegex.FindAllStringSubmatch(command, -1) {
@@ -251,6 +257,9 @@ func validateInputOutputDefinitions(result *ValidationResult, job *JobDefinition
 		key := match[2]
 
 		if kind == "inputs" && job.Inputs != nil {
+			if optionalInputs[key] {
+				continue
+			}
 			if input, exists := job.Inputs[key]; exists {
 				if (input == InputDefinition{}) {
 					result.Findings = append(result.Findings, ValidationFinding{

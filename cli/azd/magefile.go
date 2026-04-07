@@ -679,6 +679,8 @@ func addToPathUnix(dir string) error {
 //	mage coverage:ci      — download latest CI combined coverage
 //	mage coverage:html    — generate and open an HTML report
 //	mage coverage:check   — enforce minimum coverage threshold
+//	mage coverage:diff    — compare current branch vs main baseline
+//	mage coverage:pr      — diff + post as PR comment
 //
 // See cli/azd/docs/code-coverage-guide.md for prerequisites and details.
 type Coverage mg.Namespace
@@ -776,6 +778,157 @@ func (Coverage) Check() error {
 		min = v
 	}
 	return runLocalCoverage("-UnitOnly", "-MinCoverage", min)
+}
+
+// Diff generates a coverage diff between the current branch and the main branch baseline.
+// Uses cover-local.out as the current profile (run coverage:unit first) and downloads
+// the main baseline from CI when needed.
+//
+// To avoid the CI download (which requires 'az login'), run coverage on main first
+// and point to it:
+//
+//	COVERAGE_BASELINE=path/to/main-cover.out mage coverage:diff
+//
+// Environment variables (optional):
+//
+//	COVERAGE_BASELINE — path to baseline coverage profile (default: cover-ci-combined.out or download from CI)
+//	COVERAGE_CURRENT  — path to current coverage profile (default: cover-local.out)
+//
+// Usage: mage coverage:diff
+func (Coverage) Diff() error {
+	repoRoot, err := findRepoRoot()
+	if err != nil {
+		return err
+	}
+	azdDir := filepath.Join(repoRoot, "cli", "azd")
+
+	currentFile, err := resolveCoverageFile(
+		os.Getenv("COVERAGE_CURRENT"),
+		filepath.Join(azdDir, "cover-local.out"),
+	)
+	if err != nil {
+		return fmt.Errorf("no current coverage profile: %w\nRun 'mage coverage:unit' first", err)
+	}
+
+	baselineFile, err := resolveBaselineFile(azdDir)
+	if err != nil {
+		return err
+	}
+
+	diffScript := filepath.Join(repoRoot, "eng", "scripts", "Get-CoverageDiff.ps1")
+	return runPwshScript(azdDir, diffScript,
+		"-BaselineFile", baselineFile,
+		"-CurrentFile", currentFile,
+	)
+}
+
+// PR generates a coverage diff and posts it as a comment on the current pull request.
+// Requires: gh CLI authenticated, current branch must have an open PR.
+//
+// Re-running replaces the previous coverage comment (uses a tag for replacement).
+//
+// Environment variables (optional):
+//
+//	COVERAGE_BASELINE — path to baseline coverage profile (default: cover-ci-combined.out or download from CI)
+//	COVERAGE_CURRENT  — path to current coverage profile (default: cover-local.out)
+//
+// Usage: mage coverage:pr
+func (Coverage) PR() error {
+	repoRoot, err := findRepoRoot()
+	if err != nil {
+		return err
+	}
+	azdDir := filepath.Join(repoRoot, "cli", "azd")
+
+	currentFile, err := resolveCoverageFile(
+		os.Getenv("COVERAGE_CURRENT"),
+		filepath.Join(azdDir, "cover-local.out"),
+	)
+	if err != nil {
+		return fmt.Errorf("no current coverage profile: %w\nRun 'mage coverage:unit' first", err)
+	}
+
+	baselineFile, err := resolveBaselineFile(azdDir)
+	if err != nil {
+		return err
+	}
+
+	// Generate diff markdown to a file
+	diffFile := filepath.Join(azdDir, "coverage-diff.md")
+	diffScript := filepath.Join(repoRoot, "eng", "scripts", "Get-CoverageDiff.ps1")
+	if err := runPwshScript(azdDir, diffScript,
+		"-BaselineFile", baselineFile,
+		"-CurrentFile", currentFile,
+		"-OutputFile", diffFile,
+	); err != nil {
+		return err
+	}
+
+	// Determine PR number from current branch
+	prNumRaw, err := runCapture(azdDir, "gh", "pr", "view", "--json", "number", "--jq", ".number")
+	if err != nil {
+		return fmt.Errorf("no open PR for current branch (is 'gh' authenticated?): %w", err)
+	}
+	prNum := strings.TrimSpace(prNumRaw)
+
+	// Determine repository slug (owner/repo)
+	repoRaw, err := runCapture(azdDir, "gh", "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner")
+	if err != nil {
+		return fmt.Errorf("cannot determine repository: %w", err)
+	}
+	repo := strings.TrimSpace(repoRaw)
+
+	// Post coverage diff as a PR comment (replaces previous tagged comment)
+	fmt.Printf("Posting coverage diff to %s#%s...\n", repo, prNum)
+	updateScript := filepath.Join(repoRoot, "eng", "scripts", "Update-PRComment.ps1")
+	return runPwshScript(azdDir, updateScript,
+		"-Repo", repo,
+		"-PRNumber", prNum,
+		"-BodyFile", diffFile,
+		"-Tag", "<!-- coverage-diff -->",
+	)
+}
+
+// resolveCoverageFile returns envOverride if non-empty and existing,
+// otherwise returns defaultPath if it exists.
+func resolveCoverageFile(envOverride, defaultPath string) (string, error) {
+	if envOverride != "" {
+		if _, err := os.Stat(envOverride); err != nil {
+			return "", fmt.Errorf("file not found: %s", envOverride)
+		}
+		return envOverride, nil
+	}
+	if _, err := os.Stat(defaultPath); err != nil {
+		return "", fmt.Errorf("file not found: %s", defaultPath)
+	}
+	return defaultPath, nil
+}
+
+// resolveBaselineFile returns the baseline coverage profile path.
+// Checks COVERAGE_BASELINE env var first, then cover-ci-combined.out,
+// and downloads from CI as a last resort.
+func resolveBaselineFile(azdDir string) (string, error) {
+	if env := os.Getenv("COVERAGE_BASELINE"); env != "" {
+		if _, err := os.Stat(env); err != nil {
+			return "", fmt.Errorf("baseline file not found: %s", env)
+		}
+		return env, nil
+	}
+
+	defaultBaseline := filepath.Join(azdDir, "cover-ci-combined.out")
+	if _, err := os.Stat(defaultBaseline); err == nil {
+		return defaultBaseline, nil
+	}
+
+	fmt.Println("No baseline profile found. Downloading from CI main branch...")
+	fmt.Println("(requires 'az login'; or set COVERAGE_BASELINE to skip download)")
+	if err := runCICoverage(); err != nil {
+		return "", fmt.Errorf("failed to download baseline: %w\nRun 'az login' or set COVERAGE_BASELINE env var", err)
+	}
+	if _, err := os.Stat(defaultBaseline); err != nil {
+		return "", fmt.Errorf("CI download succeeded but baseline file not found at %s", defaultBaseline)
+	}
+	return defaultBaseline, nil
 }
 
 // findPwsh locates PowerShell (pwsh or powershell) on the system PATH.

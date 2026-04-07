@@ -3,6 +3,9 @@ words:
   - agentcopilot
   - agentdetect
   - Authenticode
+  - gofmt
+  - golangci
+  - toplevel
   - azcloud
   - azdext
   - azurefd

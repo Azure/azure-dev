@@ -143,7 +143,7 @@ func (hc *HookConfig) validate() error {
 	)
 	fullCheckPath := relativeCheckPath
 	if hc.cwd != "" {
-		fullCheckPath = filepath.Join(hc.cwd, hc.Run)
+		fullCheckPath = filepath.Join(hc.cwd, relativeCheckPath)
 	}
 
 	stats, err := os.Stat(fullCheckPath)

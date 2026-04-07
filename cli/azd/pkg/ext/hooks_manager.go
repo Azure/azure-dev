@@ -170,7 +170,7 @@ func (h *HooksManager) ValidateHooks(ctx context.Context, allHooks map[string][]
 				relativeCheckPath := strings.ReplaceAll(hookConfig.Run, "/", string(os.PathSeparator))
 				fullCheckPath := relativeCheckPath
 				if hookConfig.cwd != "" {
-					fullCheckPath = filepath.Join(hookConfig.cwd, hookConfig.Run)
+					fullCheckPath = filepath.Join(hookConfig.cwd, relativeCheckPath)
 				}
 
 				_, err := os.Stat(fullCheckPath)

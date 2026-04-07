@@ -610,6 +610,10 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 
 // CreateGlobalFlagSet creates a new flag set with all global flags defined.
 // This is the single source of truth for global flag definitions.
+//
+// When adding or modifying flags here, also update the reserved flag registry
+// in internal/reserved_flags.go. The SDK package (pkg/azdext) derives its
+// reserved flag indexes from that registry automatically.
 func CreateGlobalFlagSet() *pflag.FlagSet {
 	globalFlags := pflag.NewFlagSet("global", pflag.ContinueOnError)
 

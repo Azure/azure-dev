@@ -8,35 +8,16 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
 
-// reservedFlag describes a global flag owned by azd that extensions must not reuse
-// for a different purpose.
-type reservedFlag struct {
-	Long  string
-	Short string
-}
-
-// reservedGlobalFlags is the canonical list of global flags that extensions must not reuse.
-// Keep this in sync with internal.ReservedFlags and CreateGlobalFlagSet (auto_install.go).
-var reservedGlobalFlags = []reservedFlag{
-	{Long: "environment", Short: "e"},
-	{Long: "cwd", Short: "C"},
-	{Long: "debug", Short: ""},
-	{Long: "no-prompt", Short: ""},
-	{Long: "output", Short: "o"},
-	{Long: "help", Short: "h"},
-	{Long: "docs", Short: ""},
-	{Long: "trace-log-file", Short: ""},
-	{Long: "trace-log-url", Short: ""},
-}
-
-// reservedShorts is an index of short flag names built once at initialization time.
+// reservedShorts is an index of short flag names derived from the canonical
+// reserved flag list in internal.ReservedFlags(). Built once at initialization time.
 var reservedShorts = func() map[string]string {
-	m := make(map[string]string, len(reservedGlobalFlags))
-	for _, f := range reservedGlobalFlags {
+	m := make(map[string]string)
+	for _, f := range internal.ReservedFlags() {
 		if f.Short != "" {
 			m[f.Short] = f.Long
 		}
@@ -44,10 +25,11 @@ var reservedShorts = func() map[string]string {
 	return m
 }()
 
-// reservedLongs is an index of long flag names built once at initialization time.
+// reservedLongs is an index of long flag names derived from the canonical
+// reserved flag list in internal.ReservedFlags(). Built once at initialization time.
 var reservedLongs = func() map[string]bool {
-	m := make(map[string]bool, len(reservedGlobalFlags))
-	for _, f := range reservedGlobalFlags {
+	m := make(map[string]bool)
+	for _, f := range internal.ReservedFlags() {
 		m[f.Long] = true
 	}
 	return m
@@ -56,8 +38,9 @@ var reservedLongs = func() map[string]bool {
 // ReservedFlagNames returns the long names of all reserved global flags.
 // This is intended for documentation and error messages.
 func ReservedFlagNames() []string {
-	names := make([]string, len(reservedGlobalFlags))
-	for i, f := range reservedGlobalFlags {
+	flags := internal.ReservedFlags()
+	names := make([]string, len(flags))
+	for i, f := range flags {
 		names[i] = f.Long
 	}
 	return names

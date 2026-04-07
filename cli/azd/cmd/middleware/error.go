@@ -210,7 +210,8 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 	)
 	if err != nil {
 		span.SetStatus(codes.Error, "agent.creation.failed")
-		return nil, err
+		return actionResult, fmt.Errorf(
+			"%w \n\nAgent error: %v", originalError, err)
 	}
 
 	defer azdAgent.Stop()
@@ -242,7 +243,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			e.console.Message(ctx, output.WithErrorFormat("TraceID: %s", errorWithTraceId.TraceId))
 		}
 
-		// Re-check fixability on retries (error type may have changed after fix)
+		// Re-check fix-ability on retries (error type may have changed after fix)
 		if !fixableError(originalError) {
 			return actionResult, originalError
 		}
@@ -266,7 +267,8 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		agentResult, err := azdAgent.SendMessageWithRetry(ctx, categoryPrompt)
 		if err != nil {
 			span.SetStatus(codes.Error, "agent.send_message.failed")
-			return nil, err
+			return actionResult, fmt.Errorf(
+				"%w \n\nAgent error: %v", originalError, err)
 		}
 
 		span.SetStatus(codes.Ok, fmt.Sprintf("agent.%s.completed", category))
@@ -294,7 +296,8 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			fixResult, err := azdAgent.SendMessageWithRetry(ctx, fixPrompt)
 			if err != nil {
 				span.SetStatus(codes.Error, "agent.fix.failed")
-				return nil, err
+				return actionResult, fmt.Errorf(
+					"%w \n\nAgent error: %v", originalError, err)
 			}
 
 			span.SetStatus(codes.Ok, "agent.fix.completed")

@@ -74,7 +74,7 @@ func ValidateJobOffline(job *JobDefinition, yamlDir string) *ValidationResult {
 		result.Findings = append(result.Findings, ValidationFinding{
 			Field:    "command",
 			Severity: SeverityError,
-			Message:  "'command' is required",
+			Message:  "required field is missing",
 		})
 	}
 
@@ -83,7 +83,7 @@ func ValidateJobOffline(job *JobDefinition, yamlDir string) *ValidationResult {
 		result.Findings = append(result.Findings, ValidationFinding{
 			Field:    "environment",
 			Severity: SeverityError,
-			Message:  "'environment' is required",
+			Message:  "required field is missing",
 		})
 	}
 
@@ -92,7 +92,7 @@ func ValidateJobOffline(job *JobDefinition, yamlDir string) *ValidationResult {
 		result.Findings = append(result.Findings, ValidationFinding{
 			Field:    "compute",
 			Severity: SeverityError,
-			Message:  "'compute' is required",
+			Message:  "required field is missing",
 		})
 	}
 

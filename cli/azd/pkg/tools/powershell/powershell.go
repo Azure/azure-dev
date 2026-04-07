@@ -66,6 +66,17 @@ func (p *powershellExecutor) Prepare(
 			return fmt.Errorf("writing temp script: %w", err)
 		}
 
+		// os.WriteFile only applies perm when *creating* a new file.
+		// The file already exists from CreateTemp (mode 0600), so we
+		// must explicitly chmod to add execute permission for Unix.
+		if err := os.Chmod(
+			tmpFile.Name(), osutil.PermissionExecutableFile,
+		); err != nil {
+			tmpFile.Close()
+			os.Remove(tmpFile.Name())
+			return fmt.Errorf("setting temp script permissions: %w", err)
+		}
+
 		tmpFile.Close()
 		p.tempFile = tmpFile.Name()
 	}

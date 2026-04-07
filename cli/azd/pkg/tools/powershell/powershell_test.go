@@ -7,11 +7,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"runtime"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
@@ -63,6 +65,48 @@ func Test_Powershell_Prepare(t *testing.T) {
 		if sugErr, ok := errors.AsType[*internal.ErrorWithSuggestion](err); ok {
 			require.Contains(t, sugErr.Suggestion, "powershell/scripting/install")
 		}
+	})
+
+	t.Run("PrepareInlineScript", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		mockContext.CommandRunner.MockToolInPath("pwsh", nil)
+
+		execCtx := tools.ExecutionContext{
+			HookName:     "predeploy",
+			InlineScript: "Write-Host 'hello'",
+		}
+		ps := NewExecutor(mockContext.CommandRunner)
+		err := ps.Prepare(*mockContext.Context, "script.ps1", execCtx)
+		require.NoError(t, err)
+
+		// Verify temp file was created with correct content.
+		pe := ps.(*powershellExecutor)
+		require.NotEmpty(t, pe.tempFile)
+		content, err := os.ReadFile(pe.tempFile)
+		require.NoError(t, err)
+		require.Contains(
+			t, string(content), "ErrorActionPreference",
+		)
+		require.Contains(
+			t, string(content), "Write-Host 'hello'",
+		)
+
+		// Verify execute permission is set (Unix only;
+		// Windows does not enforce the execute bit).
+		if runtime.GOOS != "windows" {
+			info, err := os.Stat(pe.tempFile)
+			require.NoError(t, err)
+			require.Equal(
+				t,
+				osutil.PermissionExecutableFile,
+				info.Mode().Perm(),
+			)
+		}
+
+		// Cleanup should remove the file.
+		require.NoError(t, ps.Cleanup(*mockContext.Context))
+		_, err = os.Stat(pe.tempFile)
+		require.True(t, os.IsNotExist(err))
 	})
 }
 

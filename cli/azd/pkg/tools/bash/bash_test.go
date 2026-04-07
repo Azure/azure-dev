@@ -6,10 +6,13 @@ package bash
 import (
 	"context"
 	"errors"
+	"os"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
@@ -29,6 +32,50 @@ func Test_Bash_Execute(t *testing.T) {
 		execCtx := tools.ExecutionContext{Cwd: workingDir, EnvVars: env}
 		err := executor.Prepare(*mockContext.Context, scriptPath, execCtx)
 		require.NoError(t, err)
+	})
+
+	t.Run("PrepareInlineScript", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		executor := NewExecutor(mockContext.CommandRunner)
+
+		execCtx := tools.ExecutionContext{
+			Cwd:          workingDir,
+			EnvVars:      env,
+			HookName:     "predeploy",
+			InlineScript: "echo hello",
+		}
+		err := executor.Prepare(
+			*mockContext.Context, scriptPath, execCtx,
+		)
+		require.NoError(t, err)
+
+		// Verify temp file was created with correct content.
+		be := executor.(*bashExecutor)
+		require.NotEmpty(t, be.tempFile)
+		content, err := os.ReadFile(be.tempFile)
+		require.NoError(t, err)
+		require.True(
+			t,
+			strings.HasPrefix(string(content), "#!/bin/sh"),
+		)
+		require.Contains(t, string(content), "echo hello")
+
+		// Verify execute permission is set (Unix only;
+		// Windows does not enforce the execute bit).
+		if runtime.GOOS != "windows" {
+			info, err := os.Stat(be.tempFile)
+			require.NoError(t, err)
+			require.Equal(
+				t,
+				osutil.PermissionExecutableFile,
+				info.Mode().Perm(),
+			)
+		}
+
+		// Cleanup should remove the file.
+		require.NoError(t, executor.Cleanup(*mockContext.Context))
+		_, err = os.Stat(be.tempFile)
+		require.True(t, os.IsNotExist(err))
 	})
 
 	t.Run("Success", func(t *testing.T) {

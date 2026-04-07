@@ -16,11 +16,15 @@ type ReservedFlag struct {
 	Description string
 }
 
-// reservedFlags is the canonical list of global flags that extensions must not reuse.
-// It is derived from CreateGlobalFlagSet (auto_install.go), the root command's
-// persistent flags, and the extension SDK's built-in flag set (extension_command.go).
+// reservedFlags is the canonical, single-source-of-truth list of global flags that
+// extensions must not reuse. It is derived from CreateGlobalFlagSet (auto_install.go),
+// the root command's persistent flags, and the extension SDK's built-in flag set
+// (extension_command.go).
 //
-// Keep this list in sync whenever a new global flag is added to azd.
+// The SDK package (pkg/azdext) imports this list via ReservedFlags() rather than
+// maintaining its own copy.
+//
+// When adding a new global flag to azd, add it here and in CreateGlobalFlagSet.
 var reservedFlags = []ReservedFlag{
 	{Long: "environment", Short: "e", Description: "The name of the environment to use."},
 	{Long: "cwd", Short: "C", Description: "Sets the current working directory."},

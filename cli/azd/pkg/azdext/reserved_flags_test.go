@@ -6,7 +6,6 @@ package azdext
 import (
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )
@@ -128,46 +127,6 @@ func TestReservedFlagNames(t *testing.T) {
 	require.Contains(t, names, "debug")
 	require.Contains(t, names, "output")
 	require.Contains(t, names, "help")
-}
-
-func TestReservedFlagsInSyncWithInternal(t *testing.T) {
-	// Verify the SDK reserved flag list stays in sync with the internal registry.
-	// If this test fails, you added a flag to one list but not the other.
-	sdkFlags := reservedGlobalFlags
-	internalFlags := internal.ReservedFlags()
-
-	// Build maps of long name -> short name for both sides.
-	sdkMap := make(map[string]string, len(sdkFlags))
-	for _, f := range sdkFlags {
-		sdkMap[f.Long] = f.Short
-	}
-
-	internalMap := make(map[string]string, len(internalFlags))
-	for _, f := range internalFlags {
-		internalMap[f.Long] = f.Short
-	}
-
-	// Check every SDK flag exists in internal with matching short name.
-	for long, short := range sdkMap {
-		internalShort, ok := internalMap[long]
-		require.True(t, ok,
-			"azdext reserved_flags.go has %q but internal.ReservedFlags() does not — add it to internal/reserved_flags.go",
-			long)
-		require.Equal(t, internalShort, short,
-			"short name mismatch for %q: internal has %q, SDK has %q",
-			long, internalShort, short)
-	}
-
-	// Check every internal flag exists in SDK with matching short name.
-	for long, short := range internalMap {
-		sdkShort, ok := sdkMap[long]
-		require.True(t, ok,
-			"internal.ReservedFlags() has %q but azdext reserved_flags.go does not — add it to pkg/azdext/reserved_flags.go",
-			long)
-		require.Equal(t, sdkShort, short,
-			"short name mismatch for %q: SDK has %q, internal has %q",
-			long, sdkShort, short)
-	}
 }
 
 func TestValidateNoReservedFlagConflicts_NonSDKRootPersistentFlag(t *testing.T) {

@@ -63,7 +63,6 @@ func newJobValidateCommand() *cobra.Command {
 			fmt.Printf("  Errors: %d, Warnings: %d\n", result.ErrorCount(), result.WarningCount())
 
 			if result.HasErrors() {
-				fmt.Printf("\n✗ Validation failed.\n")
 				return fmt.Errorf("validation failed with %d error(s)", result.ErrorCount())
 			}
 

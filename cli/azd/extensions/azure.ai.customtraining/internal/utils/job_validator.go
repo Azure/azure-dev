@@ -229,9 +229,6 @@ func validateSingleBracePlaceholders(result *ValidationResult, command string) {
 		if start >= 2 && command[start-2:start] == "${" {
 			continue
 		}
-		if start >= 1 && command[start-1:start] == "$" {
-			continue
-		}
 
 		kind := command[match[2]:match[3]]
 		key := command[match[4]:match[5]]

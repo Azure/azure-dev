@@ -10,6 +10,7 @@ import (
 
 	"azure.ai.customtraining/internal/utils"
 
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -45,7 +46,7 @@ func newJobValidateCommand() *cobra.Command {
 
 			// Print findings
 			if len(result.Findings) == 0 {
-				fmt.Printf("✓ Validation passed: %s\n", filePath)
+				color.Green("✓ Validation passed: %s\n", filePath)
 				return nil
 			}
 
@@ -66,7 +67,7 @@ func newJobValidateCommand() *cobra.Command {
 				return fmt.Errorf("validation failed with %d error(s)", result.ErrorCount())
 			}
 
-			fmt.Printf("\n✓ Validation passed with warnings.\n")
+			color.Green("\n✓ Validation passed with warnings.\n")
 			return nil
 		},
 	}

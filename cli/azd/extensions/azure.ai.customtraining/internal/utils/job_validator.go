@@ -240,7 +240,7 @@ func validateSingleBracePlaceholders(result *ValidationResult, command string) {
 		result.Findings = append(result.Findings, ValidationFinding{
 			Field:    "command",
 			Severity: SeverityError,
-			Message:  fmt.Sprintf("command uses single-brace '{%s.%s}' — use '${{%s.%s}}' instead", kind, key, kind, key),
+			Message:  fmt.Sprintf("Incorrect placeholder format — use '${{%s.%s}}' instead", kind, key),
 		})
 	}
 }

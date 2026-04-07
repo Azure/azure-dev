@@ -17,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
+	"go.opentelemetry.io/otel/attribute"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -992,7 +993,8 @@ func (t *aksTarget) skipPostprovisionK8sSetup(
 	}
 
 	_, span := tracing.Start(ctx, events.AksPostprovisionSkipEvent)
-	span.EndWithStatus(reason)
+	span.SetAttributes(attribute.String("skip.reason", reason.Error()))
+	span.End()
 
 	log.Printf(
 		"skipping k8s context setup during postprovision: %v", reason)

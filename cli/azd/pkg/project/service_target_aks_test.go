@@ -1175,19 +1175,7 @@ func Test_Postprovision_GracefulSkip(t *testing.T) {
 			)
 			require.NoError(t, err)
 
-			// Verify the skip path actually fired by checking
-			// the user-facing warning was emitted.
-			consoleOutput := mockContext.Console.Output()
-			found := false
-			for _, msg := range consoleOutput {
-				if strings.Contains(msg, "skipping Kubernetes context setup") {
-					found = true
-					break
-				}
-			}
-			require.True(t, found,
-				"expected skip warning in console output, got: %v",
-				consoleOutput)
+			assertSkipWarningEmitted(t, mockContext)
 		})
 	}
 }
@@ -1314,6 +1302,7 @@ func Test_Predeploy_Fails_When_Credentials_Fail(t *testing.T) {
 		},
 	)
 	require.Error(t, err)
+	require.ErrorContains(t, err, "failed retrieving cluster user credentials")
 }
 
 func Test_Predeploy_Fails_When_Namespace_Fails(t *testing.T) {
@@ -1432,18 +1421,7 @@ func Test_Postprovision_Skips_When_Namespace_Fails(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	// Verify the skip path fired by checking console output.
-	consoleOutput := mockContext.Console.Output()
-	found := false
-	for _, msg := range consoleOutput {
-		if strings.Contains(msg, "skipping Kubernetes context setup") {
-			found = true
-			break
-		}
-	}
-	require.True(t, found,
-		"expected skip warning in console output, got: %v",
-		consoleOutput)
+	assertSkipWarningEmitted(t, mockContext)
 }
 
 func Test_Postprovision_Propagates_Context_Cancellation(t *testing.T) {
@@ -1491,6 +1469,23 @@ func Test_Postprovision_Propagates_Context_Cancellation(t *testing.T) {
 	// which breaks the error chain. Assert via message content.
 	require.Error(t, err)
 	require.ErrorContains(t, err, "context canceled")
+}
+
+// assertSkipWarningEmitted verifies the user-facing skip warning was
+// emitted to the console during a graceful postprovision skip.
+func assertSkipWarningEmitted(t *testing.T, mockContext *mocks.MockContext) {
+	t.Helper()
+	consoleOutput := mockContext.Console.Output()
+	found := false
+	for _, msg := range consoleOutput {
+		if strings.Contains(msg, "skipping Kubernetes context setup") {
+			found = true
+			break
+		}
+	}
+	require.True(t, found,
+		"expected skip warning in console output, got: %v",
+		consoleOutput)
 }
 
 func createAksServiceTargetWithResourceManager(

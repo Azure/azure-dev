@@ -230,6 +230,10 @@ type deploymentTarget struct {
 // based on deployment history and available slots.
 //
 // Deployment Strategy:
+//   - Override — AZD_DEPLOY_{SERVICE_NAME}_IGNORE_SLOTS (highest precedence):
+//     When set to a truthy boolean value, bypasses all slot detection and deploys directly
+//     to the main app. If AZD_DEPLOY_{SERVICE_NAME}_SLOT_NAME is also set, it is ignored
+//     and a warning is emitted.
 //   - First deployment (no history):
 //     Deploy to main app AND all slots to ensure consistency across all environments.
 //     This prevents configuration drift and ensures all slots start with the same baseline.

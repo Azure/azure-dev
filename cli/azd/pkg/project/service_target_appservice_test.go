@@ -115,10 +115,11 @@ func TestDetermineDeploymentTargets_IgnoreSlots(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
-		envVars        map[string]string
-		hasDeployments bool
-		slots          []string
-		expectedSlots  []string // empty string = main app
+		envVars         map[string]string
+		hasDeployments  bool
+		slots           []string
+		expectedSlots   []string // empty string = main app
+		expectedWarning string   // substring expected in console output, empty = no warning
 	}{
 		"IgnoreSlots_True_NoSlots": {
 			envVars:        map[string]string{"AZD_DEPLOY_API_IGNORE_SLOTS": "true"},
@@ -149,9 +150,10 @@ func TestDetermineDeploymentTargets_IgnoreSlots(t *testing.T) {
 				"AZD_DEPLOY_API_IGNORE_SLOTS": "true",
 				"AZD_DEPLOY_API_SLOT_NAME":    "staging",
 			},
-			hasDeployments: true,
-			slots:          []string{"staging", "preview"},
-			expectedSlots:  []string{""},
+			hasDeployments:  true,
+			slots:           []string{"staging", "preview"},
+			expectedSlots:   []string{""},
+			expectedWarning: "AZD_DEPLOY_API_SLOT_NAME is set but will be ignored",
 		},
 		"IgnoreSlots_False_OneSlot_SubsequentDeploy": {
 			envVars:        map[string]string{"AZD_DEPLOY_API_IGNORE_SLOTS": "false"},
@@ -190,10 +192,11 @@ func TestDetermineDeploymentTargets_IgnoreSlots(t *testing.T) {
 			expectedSlots:  []string{""},
 		},
 		"IgnoreSlots_InvalidValue_FallsBackToSlotLogic": {
-			envVars:        map[string]string{"AZD_DEPLOY_API_IGNORE_SLOTS": "notabool"},
-			hasDeployments: true,
-			slots:          []string{"staging"},
-			expectedSlots:  []string{"staging"},
+			envVars:         map[string]string{"AZD_DEPLOY_API_IGNORE_SLOTS": "notabool"},
+			hasDeployments:  true,
+			slots:           []string{"staging"},
+			expectedSlots:   []string{"staging"},
+			expectedWarning: "Ignoring invalid value",
 		},
 	}
 
@@ -275,6 +278,15 @@ func TestDetermineDeploymentTargets_IgnoreSlots(t *testing.T) {
 			require.Len(t, targets, len(tc.expectedSlots))
 			for i, expected := range tc.expectedSlots {
 				require.Equal(t, expected, targets[i].SlotName)
+			}
+
+			// Verify warning messages when expected
+			consoleOutput := strings.Join(mockContext.Console.Output(), "\n")
+			if tc.expectedWarning != "" {
+				require.Contains(t, consoleOutput, tc.expectedWarning)
+			} else {
+				require.Empty(t, mockContext.Console.Output(),
+					"unexpected warning in console output: %s", consoleOutput)
 			}
 		})
 	}

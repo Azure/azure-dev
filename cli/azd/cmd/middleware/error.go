@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log"
 	"text/template"
+	"time"
 
 	surveyterm "github.com/AlecAivazis/survey/v2/terminal"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -51,6 +52,9 @@ var troubleshootManualTmpl string
 
 //go:embed templates/fix.tmpl
 var fixTmpl string
+
+// agentCallTimeout is the maximum time to wait for a single LLM agent call.
+const agentCallTimeout = 5 * time.Minute
 
 var (
 	explainTemplate            = template.Must(template.New("explain").Parse(explainTmpl))
@@ -264,7 +268,10 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		categoryPrompt := e.buildPromptForCategory(category, originalError)
 		e.console.Message(ctx, output.WithHintFormat(
 			"Preparing %s to %s error...", agentcopilot.DisplayTitle, category))
-		agentResult, err := azdAgent.SendMessageWithRetry(ctx, categoryPrompt)
+
+		callCtx, callCancel := context.WithTimeout(ctx, agentCallTimeout)
+		agentResult, err := azdAgent.SendMessageWithRetry(callCtx, categoryPrompt)
+		callCancel()
 		if err != nil {
 			span.SetStatus(codes.Error, "agent.send_message.failed")
 			return actionResult, fmt.Errorf(
@@ -298,7 +305,10 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			}
 			e.console.Message(ctx, output.WithHintFormat(
 				"Preparing %s to fix error...", agentcopilot.DisplayTitle))
-			fixResult, err := azdAgent.SendMessageWithRetry(ctx, fixPrompt)
+
+			fixCtx, fixCancel := context.WithTimeout(ctx, agentCallTimeout)
+			fixResult, err := azdAgent.SendMessageWithRetry(fixCtx, fixPrompt)
+			fixCancel()
 			if err != nil {
 				span.SetStatus(codes.Error, "agent.fix.failed")
 				return actionResult, fmt.Errorf(

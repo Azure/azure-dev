@@ -1639,7 +1639,8 @@ func TestBuildFixPrompt(t *testing.T) {
 	}
 
 	testErr := errors.New("resource group not found")
-	prompt := m.buildFixPrompt(testErr)
+	prompt, err := m.buildFixPrompt(testErr)
+	require.NoError(t, err)
 	require.NotEmpty(t, prompt)
 	require.Contains(t, prompt, "resource group not found")
 }

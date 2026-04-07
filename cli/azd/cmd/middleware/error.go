@@ -290,7 +290,12 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			}
 
 			// Step 4: Agent applies the fix
-			fixPrompt := e.buildFixPrompt(originalError)
+			fixPrompt, err := e.buildFixPrompt(originalError)
+			if err != nil {
+				span.SetStatus(codes.Error, "agent.fix.template_failed")
+				return actionResult, fmt.Errorf(
+					"%w \n\nAgent error: %v", originalError, err)
+			}
 			e.console.Message(ctx, output.WithHintFormat(
 				"Preparing %s to fix error...", agentcopilot.DisplayTitle))
 			fixResult, err := azdAgent.SendMessageWithRetry(ctx, fixPrompt)
@@ -361,7 +366,7 @@ func (e *ErrorMiddleware) buildPromptForCategory(category troubleshootCategory, 
 }
 
 // buildFixPrompt renders the fix prompt template.
-func (e *ErrorMiddleware) buildFixPrompt(err error) string {
+func (e *ErrorMiddleware) buildFixPrompt(err error) (string, error) {
 	data := errorPromptData{
 		Command:      e.options.CommandPath,
 		ErrorMessage: err.Error(),
@@ -369,12 +374,11 @@ func (e *ErrorMiddleware) buildFixPrompt(err error) string {
 
 	var buf bytes.Buffer
 	if execErr := fixTemplate.Execute(&buf, data); execErr != nil {
-		log.Printf("[copilot] Failed to execute fix template: %v", execErr)
-		return fmt.Sprintf("An error occurred while fixing `%s`: %v\n",
-			data.ErrorMessage, execErr)
+		return "", fmt.Errorf(
+			"executing fix template: %w", execErr)
 	}
 
-	return buf.String()
+	return buf.String(), nil
 }
 
 // displayUsageMetrics shows token usage metrics after an agent interaction.

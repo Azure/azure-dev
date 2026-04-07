@@ -482,7 +482,8 @@ func Test_BuildFixPrompt(t *testing.T) {
 	}
 	testErr := errors.New("resource group not found")
 
-	prompt := middleware.buildFixPrompt(testErr)
+	prompt, err := middleware.buildFixPrompt(testErr)
+	require.NoError(t, err)
 	require.Contains(t, prompt, "azd up")
 	require.Contains(t, prompt, "resource group not found")
 	require.Contains(t, prompt, "FIX")

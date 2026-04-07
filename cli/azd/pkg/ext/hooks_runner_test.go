@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/language"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mocktools"
@@ -43,24 +44,24 @@ func Test_Hooks_Execute(t *testing.T) {
 	hooksMap := map[string][]*HookConfig{
 		"preinline": {
 			{
-				Shell: "sh",
+				Shell: string(language.ScriptLanguageBash),
 				Run:   "echo 'Hello'",
 			},
 		},
 		"precommand": {
 			{
-				Shell: "sh",
+				Shell: string(language.ScriptLanguageBash),
 				Run:   "scripts/precommand.sh",
 			},
 		},
 		"postcommand": {{
-			Shell: "sh",
+			Shell: string(language.ScriptLanguageBash),
 			Run:   "scripts/postcommand.sh",
 		},
 		},
 		"preinteractive": {
 			{
-				Shell:       "sh",
+				Shell:       string(language.ScriptLanguageBash),
 				Run:         "scripts/preinteractive.sh",
 				Interactive: true,
 			},
@@ -85,7 +86,7 @@ func Test_Hooks_Execute(t *testing.T) {
 			require.Equal(t, filepath.ToSlash(
 				filepath.Join(scriptsDir, "precommand.sh"),
 			), args.Args[0])
-			require.Equal(t, scriptsDir, args.Cwd)
+			require.Equal(t, cwd, args.Cwd)
 			require.ElementsMatch(t, env.Environ(), args.Env)
 			require.Equal(t, false, args.Interactive)
 
@@ -123,7 +124,7 @@ func Test_Hooks_Execute(t *testing.T) {
 			require.Equal(t, filepath.ToSlash(
 				filepath.Join(scriptsDir, "postcommand.sh"),
 			), args.Args[0])
-			require.Equal(t, scriptsDir, args.Cwd)
+			require.Equal(t, cwd, args.Cwd)
 			require.ElementsMatch(t, env.Environ(), args.Env)
 			require.Equal(t, false, args.Interactive)
 
@@ -161,7 +162,7 @@ func Test_Hooks_Execute(t *testing.T) {
 			require.Equal(t, filepath.ToSlash(
 				filepath.Join(scriptsDir, "preinteractive.sh"),
 			), args.Args[0])
-			require.Equal(t, scriptsDir, args.Cwd)
+			require.Equal(t, cwd, args.Cwd)
 			require.ElementsMatch(t, env.Environ(), args.Env)
 			require.Equal(t, true, args.Interactive)
 
@@ -314,7 +315,7 @@ func Test_Hooks_Validation(t *testing.T) {
 		hooksMap := map[string][]*HookConfig{
 			"predeploy": {{
 				Name:  "predeploy",
-				Shell: "sh",
+				Shell: string(language.ScriptLanguageBash),
 				Run:   "scripts/script.sh",
 			}},
 		}
@@ -376,7 +377,7 @@ func Test_Hooks_Validation(t *testing.T) {
 		hooksMap := map[string][]*HookConfig{
 			"preinline": {{
 				Name:  "preinline",
-				Shell: "sh",
+				Shell: string(language.ScriptLanguageBash),
 				Run:   "echo 'Hello'",
 			}},
 		}
@@ -406,7 +407,7 @@ func Test_Hooks_Validation(t *testing.T) {
 		hooksMap := map[string][]*HookConfig{
 			"predeploy": {{
 				Name:  "predeploy",
-				Shell: "sh",
+				Shell: string(language.ScriptLanguageBash),
 			}},
 		}
 
@@ -507,7 +508,7 @@ func Test_ExecHook_LanguageHooks(t *testing.T) {
 			"predeploy": {
 				{
 					Name:  "predeploy",
-					Shell: "sh",
+					Shell: string(language.ScriptLanguageBash),
 					Run:   "scripts/predeploy.sh",
 				},
 			},
@@ -528,7 +529,7 @@ func Test_ExecHook_LanguageHooks(t *testing.T) {
 			require.Equal(t, filepath.ToSlash(
 				filepath.Join(cwd, "scripts", "predeploy.sh"),
 			), args.Args[0])
-			require.Equal(t, filepath.Join(cwd, "scripts"), args.Cwd)
+			require.Equal(t, cwd, args.Cwd)
 			return exec.NewRunResult(0, "", ""), nil
 		})
 

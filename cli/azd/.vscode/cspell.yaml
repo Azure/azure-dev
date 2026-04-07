@@ -354,6 +354,13 @@ overrides:
   - filename: pkg/project/project.go
     words:
       - copylocks
+  - filename: pkg/ext/models.go
+    words:
+      - unvalidated
+  - filename: docs/code-coverage-guide.md
+    words:
+      - covdata
+      - GOWORK
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

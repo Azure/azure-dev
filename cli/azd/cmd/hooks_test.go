@@ -50,7 +50,7 @@ func Test_HooksRunAction_RunsLayerHooks(t *testing.T) {
 					Path: "infra/core",
 					Hooks: provisioning.HooksConfig{
 						"preprovision": {{
-							Shell: "sh",
+							Shell: string(language.ScriptLanguageBash),
 							Run:   "echo core",
 						}},
 					},
@@ -60,7 +60,7 @@ func Test_HooksRunAction_RunsLayerHooks(t *testing.T) {
 					Path: absoluteLayerPath,
 					Hooks: provisioning.HooksConfig{
 						"preprovision": {{
-							Shell: "sh",
+							Shell: string(language.ScriptLanguageBash),
 							Run:   "echo shared",
 						}},
 					},
@@ -118,7 +118,7 @@ func Test_HooksRunAction_FiltersLayerHooks(t *testing.T) {
 					Path: "infra/core",
 					Hooks: provisioning.HooksConfig{
 						"preprovision": {{
-							Shell: "sh",
+							Shell: string(language.ScriptLanguageBash),
 							Run:   "echo core",
 						}},
 					},
@@ -128,7 +128,7 @@ func Test_HooksRunAction_FiltersLayerHooks(t *testing.T) {
 					Path: "infra/shared",
 					Hooks: provisioning.HooksConfig{
 						"preprovision": {{
-							Shell: "sh",
+							Shell: string(language.ScriptLanguageBash),
 							Run:   "echo shared",
 						}},
 					},
@@ -188,7 +188,7 @@ func Test_HooksRunAction_SetsTelemetryTypeForLayer(t *testing.T) {
 					Path: "infra/core",
 					Hooks: provisioning.HooksConfig{
 						"preprovision": {{
-							Shell: "sh",
+							Shell: string(language.ScriptLanguageBash),
 							Run:   "echo core",
 						}},
 					},

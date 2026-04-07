@@ -29,17 +29,17 @@ When omitted, the executor is **auto-detected** from the file extension of the
 `run` path. For example, `run: ./hooks/seed.py` automatically selects the
 Python executor.
 
-### `dir` (string, optional)
+### `dir` (string, optional) — working directory
 
-Specifies the working directory for hook execution, used as the project
-context for dependency installation (e.g. `pip install` from `requirements.txt`)
-and builds.
+The working directory (`cwd`) for hook execution. Used as the project context
+for dependency installation (e.g. `pip install` from `requirements.txt`) and
+builds.
 
-When omitted, **automatically inferred** from the directory containing the script
-referenced by `run`. For example, `run: hooks/preprovision/main.py` sets the
-working directory to `hooks/preprovision/`. Only set `dir` when the project root
-differs from the script's directory (e.g. when the entry point lives in a `src/`
-subdirectory).
+**Automatically inferred** from the directory containing the script referenced
+by `run`. For example, `run: hooks/preprovision/main.py` infers the working
+directory as `hooks/preprovision/`. Only set `dir` as an override when the
+project root differs from the script's directory (e.g. the entry point lives
+in a `src/` subdirectory but `requirements.txt` is in the parent).
 
 Relative paths are resolved from the project or service root.
 
@@ -82,18 +82,17 @@ hooks:
     language: python
 ```
 
-### Python hook with project directory override
+### Python hook with working directory override
 
-When the script's project root differs from the script's directory (e.g. the
-entry point is in a `src/` subdirectory but dependencies are at the project
-level), use `dir` to override the auto-inferred value:
+When the script lives in a subdirectory but dependencies (`requirements.txt`)
+are at the parent level, use `dir` to override the auto-inferred working
+directory:
 
 ```yaml
 hooks:
   postprovision:
-    run: ./hooks/data-tool/src/main.py
-    language: python
-    dir: ./hooks/data-tool    # override: project root differs from script location
+    run: ./tools/scripts/seed.py
+    dir: ./tools    # override: requirements.txt is in ./tools, not ./tools/scripts
 ```
 
 ### Python hook with platform overrides

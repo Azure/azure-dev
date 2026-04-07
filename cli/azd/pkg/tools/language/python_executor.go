@@ -76,6 +76,13 @@ func newPythonExecutorInternal(
 // file is found, creates a virtual environment and installs
 // dependencies. The venv naming convention follows
 // [framework_service_python.go]: {projectDirName}_env.
+//
+// Before creating a new venv, Prepare checks for an existing
+// virtual environment — either via the VIRTUAL_ENV environment
+// variable or well-known directory names (.venv, venv) in the
+// project path. When an existing venv is detected, creation is
+// skipped but dependency installation still runs when a Python
+// project file is present and the venv is inside the project.
 func (e *pythonExecutor) Prepare(
 	ctx context.Context,
 	scriptPath string,
@@ -84,8 +91,10 @@ func (e *pythonExecutor) Prepare(
 	// 1. Verify Python is installed.
 	if err := e.pythonCli.CheckInstalled(ctx); err != nil {
 		return fmt.Errorf(
-			"python 3 is required to run this hook but was not found on PATH. "+
-				"Install Python from https://www.python.org/downloads/ : %w",
+			"python 3 is required to run this hook "+
+				"but was not found on PATH. Install "+
+				"Python from https://www.python.org"+
+				"/downloads/ : %w",
 			err,
 		)
 	}
@@ -100,25 +109,66 @@ func (e *pythonExecutor) Prepare(
 		)
 	}
 
+	// 3. Detect existing virtual environment (VIRTUAL_ENV
+	//    env var or well-known directories).
+	if existing := detectExistingVenv(
+		execCtx, projCtx,
+	); existing != "" {
+		e.venvPath = existing
+
+		// Still install deps when a Python project file
+		// exists and the venv lives inside projectDir (so
+		// the python CLI can locate the activation script).
+		if projCtx != nil &&
+			projCtx.Language == ScriptLanguagePython {
+			if name, ok := relativeVenvName(
+				projCtx.ProjectDir, existing,
+			); ok {
+				depFile := filepath.Base(
+					projCtx.DependencyFile,
+				)
+				if err := e.installDeps(
+					ctx, projCtx.ProjectDir,
+					name, depFile,
+					execCtx.EnvVars,
+				); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
+
 	// No project file — run with system Python directly.
 	if projCtx == nil {
 		return nil
 	}
 
-	// 3. Set up virtual environment.
+	// Skip venv setup if the discovered project is not
+	// Python (e.g. a package.json for JS living near the
+	// Python script).
+	if projCtx.Language != ScriptLanguagePython {
+		return nil
+	}
+
+	// 4. Set up virtual environment.
 	venvName := venvNameForDir(projCtx.ProjectDir)
-	venvPath := filepath.Join(projCtx.ProjectDir, venvName)
+	venvPath := filepath.Join(
+		projCtx.ProjectDir, venvName,
+	)
 
 	if err := e.ensureVenv(
-		ctx, projCtx.ProjectDir, venvName, venvPath, execCtx.EnvVars,
+		ctx, projCtx.ProjectDir,
+		venvName, venvPath, execCtx.EnvVars,
 	); err != nil {
 		return err
 	}
 
-	// 4. Install dependencies from the discovered file.
+	// 5. Install dependencies from the discovered file.
 	depFile := filepath.Base(projCtx.DependencyFile)
 	if err := e.installDeps(
-		ctx, projCtx.ProjectDir, venvName, depFile, execCtx.EnvVars,
+		ctx, projCtx.ProjectDir,
+		venvName, depFile, execCtx.EnvVars,
 	); err != nil {
 		return err
 	}
@@ -279,6 +329,77 @@ func resolvePythonCmd(
 	}
 	// Fallback — Prepare() will catch missing Python.
 	return "python3"
+}
+
+// detectExistingVenv checks for an active or pre-existing virtual
+// environment. It inspects the VIRTUAL_ENV environment variable
+// first, then looks for well-known venv directory names (.venv,
+// venv) inside the project directory. Returns the venv directory
+// path or empty string when none is found.
+func detectExistingVenv(
+	execCtx tools.ExecutionContext,
+	projCtx *ProjectContext,
+) string {
+	// 1. VIRTUAL_ENV from the process environment.
+	if venv := envVarValue(
+		execCtx.EnvVars, "VIRTUAL_ENV",
+	); venv != "" {
+		info, err := os.Stat(venv)
+		if err == nil && info.IsDir() {
+			return venv
+		}
+	}
+
+	// 2. Well-known venv directories in the project path.
+	if projCtx == nil {
+		return ""
+	}
+	for _, name := range []string{".venv", "venv"} {
+		candidate := filepath.Join(
+			projCtx.ProjectDir, name,
+		)
+		if hasPyvenvCfg(candidate) {
+			return candidate
+		}
+	}
+	return ""
+}
+
+// hasPyvenvCfg returns true when dir contains a pyvenv.cfg file,
+// indicating it is a Python virtual environment.
+func hasPyvenvCfg(dir string) bool {
+	info, err := os.Stat(
+		filepath.Join(dir, "pyvenv.cfg"),
+	)
+	return err == nil && !info.IsDir()
+}
+
+// envVarValue extracts the value of a KEY=value pair from a
+// slice of environment strings. Returns empty string if not
+// found.
+func envVarValue(envVars []string, key string) string {
+	prefix := key + "="
+	for _, v := range envVars {
+		if strings.HasPrefix(v, prefix) {
+			return v[len(prefix):]
+		}
+	}
+	return ""
+}
+
+// relativeVenvName computes the relative directory name of
+// venvPath within projectDir. Returns the name and true when
+// the venv is a direct child of projectDir; returns ("", false)
+// when the venv is outside projectDir or at the root itself.
+func relativeVenvName(
+	projectDir, venvPath string,
+) (string, bool) {
+	rel, err := filepath.Rel(projectDir, venvPath)
+	if err != nil ||
+		strings.HasPrefix(rel, "..") || rel == "." {
+		return "", false
+	}
+	return rel, true
 }
 
 // venvNameForDir computes a virtual environment directory name

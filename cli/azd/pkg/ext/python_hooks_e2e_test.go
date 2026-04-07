@@ -614,7 +614,7 @@ func TestPythonHook_ShellHookUnaffected(t *testing.T) {
 	hooksMap := map[string][]*HookConfig{
 		"prebuild": {{
 			Name:  "prebuild",
-			Shell: "sh",
+			Shell: string(language.ScriptLanguageBash),
 			Run: filepath.Join(
 				"hooks", "prebuild.sh",
 			),

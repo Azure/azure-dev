@@ -28,6 +28,7 @@ type powershellExecutor struct {
 	commandRunner exec.CommandRunner
 	shellCmd      string // resolved in Prepare: "pwsh" or "powershell"
 	tempFile      string // temp script created from inline content
+	usingFallback bool   // true when PS5 "powershell" is used instead of "pwsh"
 }
 
 // Prepare validates that PowerShell is available. Tries pwsh first,
@@ -84,6 +85,7 @@ func (p *powershellExecutor) resolvePowerShell() error {
 	if runtime.GOOS == "windows" {
 		if p.commandRunner.ToolInPath("powershell") == nil {
 			p.shellCmd = "powershell"
+			p.usingFallback = true
 			return nil
 		}
 		return &internal.ErrorWithSuggestion{
@@ -130,7 +132,19 @@ func (p *powershellExecutor) Execute(
 		runArgs = runArgs.WithStdOut(execCtx.StdOut)
 	}
 
-	return p.commandRunner.Run(ctx, runArgs)
+	res, err := p.commandRunner.Run(ctx, runArgs)
+	if err != nil && p.usingFallback {
+		return res, fmt.Errorf(
+			"%w\n\nNote: pwsh was not found on PATH and "+
+				"powershell (Windows PowerShell 5) was "+
+				"automatically used instead. Consider "+
+				"installing PowerShell 7+ (pwsh) from "+
+				"https://learn.microsoft.com/powershell/"+
+				"scripting/install/installing-powershell",
+			err,
+		)
+	}
+	return res, err
 }
 
 // Cleanup removes any temporary script file created during Prepare.

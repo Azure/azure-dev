@@ -52,13 +52,13 @@ func Test_GetAllHookConfigs(t *testing.T) {
 		hooksMap := map[string][]*HookConfig{
 			"preinit": {
 				{
-					Shell: "sh",
+					Shell: string(language.ScriptLanguageBash),
 					// Run is missing - this should cause an error
 				},
 			},
 			"postinit": {
 				{
-					Shell: "sh",
+					Shell: string(language.ScriptLanguageBash),
 					// Run is missing - this should cause an error
 				},
 			},
@@ -124,13 +124,13 @@ func Test_GetByParams(t *testing.T) {
 		hooksMap := map[string][]*HookConfig{
 			"preinit": {
 				{
-					Shell: "sh",
+					Shell: string(language.ScriptLanguageBash),
 					// Run is missing - this should cause an error
 				},
 			},
 			"postinit": {
 				{
-					Shell: "sh",
+					Shell: string(language.ScriptLanguageBash),
 					// Run is missing - this should cause an error
 				},
 			},
@@ -167,7 +167,7 @@ func Test_HookConfig_DefaultShell(t *testing.T) {
 			name: "Shell explicitly specified - should not use default",
 			hookConfig: &HookConfig{
 				Name:  "test",
-				Shell: "sh",
+				Shell: string(language.ScriptLanguageBash),
 				Run:   "echo 'hello'",
 			},
 			expectedLanguage: language.ScriptLanguageBash,

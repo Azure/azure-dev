@@ -411,3 +411,268 @@ func TestPythonExecute_WorkingDirectory(t *testing.T) {
 		assert.Equal(t, scriptDir, runner.lastRunArgs.Cwd)
 	})
 }
+
+// ---------------------------------------------------------------------------
+// Existing venv detection tests
+// ---------------------------------------------------------------------------
+
+func TestPythonPrepare_VirtualEnvEnvVar(t *testing.T) {
+	root := t.TempDir()
+	projectDir := filepath.Join(root, "myproject")
+	require.NoError(t, os.MkdirAll(projectDir, 0o700))
+	writeFile(
+		t,
+		filepath.Join(projectDir, "requirements.txt"),
+		"flask\n",
+	)
+
+	// Create a venv outside the project tree and add
+	// pyvenv.cfg so it looks like a real venv.
+	externalVenv := filepath.Join(root, "shared-venv")
+	require.NoError(t, os.MkdirAll(externalVenv, 0o700))
+	writeFile(
+		t,
+		filepath.Join(externalVenv, "pyvenv.cfg"),
+		"home = /usr/bin\n",
+	)
+
+	cli := &mockPythonTools{}
+	e := newPythonExecutorInternal(
+		&mockCommandRunner{}, cli,
+	)
+
+	execCtx := tools.ExecutionContext{
+		BoundaryDir: root,
+		EnvVars: []string{
+			"VIRTUAL_ENV=" + externalVenv,
+		},
+	}
+	scriptPath := filepath.Join(projectDir, "hook.py")
+	err := e.Prepare(t.Context(), scriptPath, execCtx)
+
+	require.NoError(t, err)
+	assert.Equal(t, externalVenv, e.venvPath,
+		"should use VIRTUAL_ENV path")
+	assert.False(t, cli.createVenvCalled,
+		"should skip venv creation")
+	// External venv → dep installation is skipped because
+	// the venv is outside the project directory.
+	assert.False(t, cli.installReqCalled,
+		"should skip dep install for external venv")
+}
+
+func TestPythonPrepare_VirtualEnvInsideProject(t *testing.T) {
+	root := t.TempDir()
+	projectDir := filepath.Join(root, "myproject")
+	require.NoError(t, os.MkdirAll(projectDir, 0o700))
+	writeFile(
+		t,
+		filepath.Join(projectDir, "requirements.txt"),
+		"flask\n",
+	)
+
+	// Create a venv inside the project.
+	localVenv := filepath.Join(projectDir, "my_env")
+	require.NoError(t, os.MkdirAll(localVenv, 0o700))
+	writeFile(
+		t,
+		filepath.Join(localVenv, "pyvenv.cfg"),
+		"home = /usr/bin\n",
+	)
+
+	cli := &mockPythonTools{}
+	e := newPythonExecutorInternal(
+		&mockCommandRunner{}, cli,
+	)
+
+	execCtx := tools.ExecutionContext{
+		BoundaryDir: root,
+		EnvVars: []string{
+			"VIRTUAL_ENV=" + localVenv,
+		},
+	}
+	scriptPath := filepath.Join(projectDir, "hook.py")
+	err := e.Prepare(t.Context(), scriptPath, execCtx)
+
+	require.NoError(t, err)
+	assert.Equal(t, localVenv, e.venvPath)
+	assert.False(t, cli.createVenvCalled,
+		"should skip venv creation")
+	assert.True(t, cli.installReqCalled,
+		"should install deps for local venv")
+	assert.Equal(t, "my_env", cli.reqVenv,
+		"should pass relative venv name")
+}
+
+func TestPythonPrepare_DotVenvDirectory(t *testing.T) {
+	root := t.TempDir()
+	projectDir := filepath.Join(root, "myproject")
+	require.NoError(t, os.MkdirAll(projectDir, 0o700))
+	writeFile(
+		t,
+		filepath.Join(projectDir, "requirements.txt"),
+		"flask\n",
+	)
+
+	// Create a .venv directory with pyvenv.cfg.
+	dotVenv := filepath.Join(projectDir, ".venv")
+	require.NoError(t, os.MkdirAll(dotVenv, 0o700))
+	writeFile(
+		t,
+		filepath.Join(dotVenv, "pyvenv.cfg"),
+		"home = /usr/bin\n",
+	)
+
+	cli := &mockPythonTools{}
+	e := newPythonExecutorInternal(
+		&mockCommandRunner{}, cli,
+	)
+
+	execCtx := tools.ExecutionContext{BoundaryDir: root}
+	scriptPath := filepath.Join(projectDir, "hook.py")
+	err := e.Prepare(t.Context(), scriptPath, execCtx)
+
+	require.NoError(t, err)
+	assert.Equal(t, dotVenv, e.venvPath,
+		"should detect .venv directory")
+	assert.False(t, cli.createVenvCalled,
+		"should skip venv creation")
+	assert.True(t, cli.installReqCalled,
+		"should still install requirements")
+	assert.Equal(t, ".venv", cli.reqVenv,
+		"should use .venv as venv name")
+}
+
+func TestPythonPrepare_VenvDirWithoutPyvenvCfg(t *testing.T) {
+	root := t.TempDir()
+	projectDir := filepath.Join(root, "myproject")
+	require.NoError(t, os.MkdirAll(projectDir, 0o700))
+	writeFile(
+		t,
+		filepath.Join(projectDir, "requirements.txt"),
+		"flask\n",
+	)
+
+	// Create a .venv directory WITHOUT pyvenv.cfg — should
+	// not be detected as an existing venv.
+	dotVenv := filepath.Join(projectDir, ".venv")
+	require.NoError(t, os.MkdirAll(dotVenv, 0o700))
+
+	cli := &mockPythonTools{}
+	e := newPythonExecutorInternal(
+		&mockCommandRunner{}, cli,
+	)
+
+	execCtx := tools.ExecutionContext{BoundaryDir: root}
+	scriptPath := filepath.Join(projectDir, "hook.py")
+	err := e.Prepare(t.Context(), scriptPath, execCtx)
+
+	require.NoError(t, err)
+	// Falls through to normal venv creation flow.
+	assert.True(t, cli.createVenvCalled,
+		"should create venv when .venv has no pyvenv.cfg")
+	assert.Equal(t, "myproject_env", cli.venvName)
+}
+
+func TestPythonPrepare_VirtualEnvInvalid(t *testing.T) {
+	root := t.TempDir()
+	projectDir := filepath.Join(root, "myproject")
+	require.NoError(t, os.MkdirAll(projectDir, 0o700))
+	writeFile(
+		t,
+		filepath.Join(projectDir, "requirements.txt"),
+		"flask\n",
+	)
+
+	cli := &mockPythonTools{}
+	e := newPythonExecutorInternal(
+		&mockCommandRunner{}, cli,
+	)
+
+	// VIRTUAL_ENV points to a non-existent directory.
+	execCtx := tools.ExecutionContext{
+		BoundaryDir: root,
+		EnvVars: []string{
+			"VIRTUAL_ENV=/nonexistent/path",
+		},
+	}
+	scriptPath := filepath.Join(projectDir, "hook.py")
+	err := e.Prepare(t.Context(), scriptPath, execCtx)
+
+	require.NoError(t, err)
+	// Should fall through to normal venv creation.
+	assert.True(t, cli.createVenvCalled,
+		"should create venv when VIRTUAL_ENV is invalid")
+}
+
+func TestPythonPrepare_VirtualEnvNoProjectFile(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create a venv directory.
+	venvDir := filepath.Join(dir, "myvenv")
+	require.NoError(t, os.MkdirAll(venvDir, 0o700))
+	writeFile(
+		t,
+		filepath.Join(venvDir, "pyvenv.cfg"),
+		"home = /usr/bin\n",
+	)
+
+	cli := &mockPythonTools{}
+	e := newPythonExecutorInternal(
+		&mockCommandRunner{}, cli,
+	)
+
+	execCtx := tools.ExecutionContext{
+		BoundaryDir: dir,
+		EnvVars: []string{
+			"VIRTUAL_ENV=" + venvDir,
+		},
+	}
+	scriptPath := filepath.Join(dir, "hook.py")
+	err := e.Prepare(t.Context(), scriptPath, execCtx)
+
+	require.NoError(t, err)
+	assert.Equal(t, venvDir, e.venvPath,
+		"should use VIRTUAL_ENV even without project file")
+	assert.False(t, cli.createVenvCalled)
+	assert.False(t, cli.installReqCalled)
+}
+
+func TestPythonPrepare_VenvDirVenv(t *testing.T) {
+	root := t.TempDir()
+	projectDir := filepath.Join(root, "myproject")
+	require.NoError(t, os.MkdirAll(projectDir, 0o700))
+	writeFile(
+		t,
+		filepath.Join(projectDir, "pyproject.toml"),
+		"[project]\nname = \"demo\"\n",
+	)
+
+	// Create "venv" directory (not ".venv") with pyvenv.cfg.
+	venvDir := filepath.Join(projectDir, "venv")
+	require.NoError(t, os.MkdirAll(venvDir, 0o700))
+	writeFile(
+		t,
+		filepath.Join(venvDir, "pyvenv.cfg"),
+		"home = /usr/bin\n",
+	)
+
+	cli := &mockPythonTools{}
+	e := newPythonExecutorInternal(
+		&mockCommandRunner{}, cli,
+	)
+
+	execCtx := tools.ExecutionContext{BoundaryDir: root}
+	scriptPath := filepath.Join(
+		projectDir, "hook.py",
+	)
+	err := e.Prepare(t.Context(), scriptPath, execCtx)
+
+	require.NoError(t, err)
+	assert.Equal(t, venvDir, e.venvPath,
+		"should detect venv directory")
+	assert.False(t, cli.createVenvCalled)
+	assert.True(t, cli.installProjCalled,
+		"should install project deps")
+	assert.Equal(t, "venv", cli.projVenv)
+}

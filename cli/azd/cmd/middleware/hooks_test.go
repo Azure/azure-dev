@@ -20,6 +20,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/language"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mocktools"
@@ -42,7 +43,7 @@ func Test_CommandHooks_Middleware_WithValidProjectAndMatchingCommand(t *testing.
 			"precommand": {
 				{
 					Run:   "echo 'hello'",
-					Shell: "sh",
+					Shell: string(language.ScriptLanguageBash),
 				},
 			},
 		},
@@ -77,7 +78,7 @@ func Test_CommandHooks_Middleware_ValidProjectWithDifferentCommand(t *testing.T)
 			"precommand": {
 				{
 					Run:   "echo 'hello'",
-					Shell: "sh",
+					Shell: string(language.ScriptLanguageBash),
 				},
 			},
 		},
@@ -139,7 +140,7 @@ func Test_CommandHooks_Middleware_PreHookWithError(t *testing.T) {
 			"precommand": {
 				{
 					Run:   "exit 1",
-					Shell: "sh",
+					Shell: string(language.ScriptLanguageBash),
 				},
 			},
 		},
@@ -177,7 +178,7 @@ func Test_CommandHooks_Middleware_PreHookWithErrorAndContinue(t *testing.T) {
 			"precommand": {
 				{
 					Run:             "exit 1",
-					Shell:           "sh",
+					Shell:           string(language.ScriptLanguageBash),
 					ContinueOnError: true,
 				},
 			},
@@ -216,7 +217,7 @@ func Test_CommandHooks_Middleware_WithCmdAlias(t *testing.T) {
 			"prealias": {
 				{
 					Run:   "echo 'hello'",
-					Shell: "sh",
+					Shell: string(language.ScriptLanguageBash),
 				},
 			},
 		},
@@ -258,7 +259,7 @@ func Test_ServiceHooks_Registered(t *testing.T) {
 		Hooks: map[string][]*ext.HookConfig{
 			"predeploy": {
 				{
-					Shell: "sh",
+					Shell: string(language.ScriptLanguageBash),
 					Run:   "echo 'Hello'",
 				},
 			},
@@ -535,7 +536,7 @@ func Test_PowerShellWarning_WithPowerShellHooks(t *testing.T) {
 			"preprovision": {
 				{
 					Run:   "Write-Host 'hello'",
-					Shell: "pwsh",
+					Shell: string(language.ScriptLanguagePowerShell),
 				},
 			},
 		},
@@ -583,8 +584,8 @@ func Test_PowerShellWarning_WithPs1FileHook(t *testing.T) {
 		Hooks: map[string][]*ext.HookConfig{
 			"preprovision": {
 				{
-					Run:   "script.ps1", // PowerShell file extension
-					Shell: "pwsh",       // Explicitly specify shell to avoid detection issues
+					Run:   "script.ps1",                              // PowerShell file extension
+					Shell: string(language.ScriptLanguagePowerShell), // Explicitly specify shell to avoid detection issues
 				},
 			},
 		},
@@ -631,7 +632,7 @@ func Test_PowerShellWarning_WithoutPowerShellHooks(t *testing.T) {
 			"precommand": {
 				{
 					Run:   "echo 'hello'",
-					Shell: "sh",
+					Shell: string(language.ScriptLanguageBash),
 				},
 			},
 		},
@@ -710,7 +711,7 @@ func Test_CommandHooks_ChildAction_HooksStillFire(t *testing.T) {
 					tt.hookName: {
 						{
 							Run:   "echo 'hook running'",
-							Shell: "sh",
+							Shell: string(language.ScriptLanguageBash),
 						},
 					},
 				},
@@ -871,13 +872,13 @@ func Test_CommandHooks_ChildAction_SkipsValidationOnly(t *testing.T) {
 			"preprovision": {
 				{
 					Run:   "echo 'preprovision hook'",
-					Shell: "sh",
+					Shell: string(language.ScriptLanguageBash),
 				},
 			},
 			"postprovision": {
 				{
 					Run:   "echo 'postprovision hook'",
-					Shell: "sh",
+					Shell: string(language.ScriptLanguageBash),
 				},
 			},
 		},
@@ -928,7 +929,7 @@ func Test_CommandHooks_ChildAction_PreHookError_StopsAction(t *testing.T) {
 			"preprovision": {
 				{
 					Run:   "exit 1",
-					Shell: "sh",
+					Shell: string(language.ScriptLanguageBash),
 				},
 			},
 		},
@@ -966,7 +967,7 @@ func Test_PowerShellWarning_WithPwshAvailable(t *testing.T) {
 			"precommand": {
 				{
 					Run:   "Write-Host 'hello'",
-					Shell: "pwsh",
+					Shell: string(language.ScriptLanguagePowerShell),
 				},
 			},
 		},
@@ -1013,7 +1014,7 @@ func Test_PowerShellWarning_WithNoPowerShellInstalled(t *testing.T) {
 			"preprovision": {
 				{
 					Run:   "Write-Host 'hello'",
-					Shell: "pwsh",
+					Shell: string(language.ScriptLanguagePowerShell),
 				},
 			},
 		},
@@ -1047,7 +1048,6 @@ func Test_PowerShellWarning_WithNoPowerShellInstalled(t *testing.T) {
 	}
 	require.True(t, foundWarning, "Expected 'No PowerShell installation detected' warning to be displayed")
 }
-
 
 // registerHookExecutors delegates to the shared test helper in test/mocks/mocktools.
 func registerHookExecutors(mockCtx *mocks.MockContext) {

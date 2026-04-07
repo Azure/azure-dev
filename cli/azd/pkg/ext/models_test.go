@@ -92,7 +92,7 @@ func TestHookConfig_LanguageField(t *testing.T) {
 func TestHookConfig_LanguageRoundTrip(t *testing.T) {
 	original := HookConfig{
 		Run:      "hooks/deploy.py",
-		Shell:    "sh",
+		Shell:    string(language.ScriptLanguageBash),
 		Language: language.ScriptLanguagePython,
 		Dir:      "hooks",
 	}
@@ -167,7 +167,7 @@ func TestHookConfig_ValidateLanguageResolution(t *testing.T) {
 			name: "ShellBashMapsToLanguage",
 			config: HookConfig{
 				Name:  "test",
-				Shell: "sh",
+				Shell: string(language.ScriptLanguageBash),
 				Run:   "echo hello",
 			},
 			expectedLanguage: language.ScriptLanguageBash,
@@ -256,7 +256,7 @@ func TestHookConfig_ValidateLanguageResolution(t *testing.T) {
 			name: "InlineScriptWithShellBashIsOK",
 			config: HookConfig{
 				Name:  "test",
-				Shell: "sh",
+				Shell: string(language.ScriptLanguageBash),
 				Run:   "echo hello",
 			},
 			expectedLanguage: language.ScriptLanguageBash,
@@ -346,7 +346,7 @@ func TestHookConfig_ValidateDirInference(t *testing.T) {
 			name: "ShellHookDirUnchanged",
 			config: HookConfig{
 				Name:  "test",
-				Shell: "sh",
+				Shell: string(language.ScriptLanguageBash),
 				Run:   filepath.Join("hooks", "setup.sh"),
 			},
 			createFile:  filepath.Join("hooks", "setup.sh"),
@@ -356,7 +356,7 @@ func TestHookConfig_ValidateDirInference(t *testing.T) {
 			name: "InlineScriptDirUnchanged",
 			config: HookConfig{
 				Name:  "test",
-				Shell: "sh",
+				Shell: string(language.ScriptLanguageBash),
 				Run:   "echo hello",
 			},
 			expectedDir: "",

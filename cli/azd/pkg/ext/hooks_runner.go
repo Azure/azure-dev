@@ -169,7 +169,11 @@ func (h *HooksRunner) execHook(
 			dir = filepath.Join(boundaryDir, dir)
 		}
 		cwd = dir
-	} else if hookConfig.path != "" {
+	} else if hookConfig.path != "" && !hookConfig.Language.IsShellLanguage() {
+		// Non-shell languages (Python, JS/TS, .NET) derive cwd from
+		// the script's directory so that project-relative tooling
+		// (venvs, node_modules) resolves correctly. Shell hooks
+		// retain the original behavior: cwd = project root.
 		cwd = filepath.Dir(
 			filepath.Join(boundaryDir, hookConfig.path),
 		)
@@ -228,6 +232,12 @@ func (h *HooksRunner) execHook(
 				hookConfig.Name,
 			),
 			Suggestion: "Supported hook languages: sh, pwsh, python.",
+			Links: []errorhandler.ErrorLink{
+				{
+					Title: "Hook documentation",
+					URL:   "https://learn.microsoft.com/azure/developer/azure-developer-cli/azd-extensibility",
+				},
+			},
 		}
 	}
 

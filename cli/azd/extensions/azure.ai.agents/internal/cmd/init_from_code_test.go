@@ -415,8 +415,6 @@ func TestWriteDefinitionToSrcDir(t *testing.T) {
 				{Protocol: "responses", Version: "v1"},
 			},
 			EnvironmentVariables: &[]agent_yaml.EnvironmentVariable{
-				{Name: "AZURE_OPENAI_ENDPOINT", Value: "${AZURE_OPENAI_ENDPOINT}"},
-				{Name: "AZURE_AI_PROJECT_ENDPOINT", Value: "${AZURE_AI_PROJECT_ENDPOINT}"},
 				{Name: "AZURE_AI_MODEL_DEPLOYMENT_NAME", Value: "${AZURE_AI_MODEL_DEPLOYMENT_NAME}"},
 			},
 		}
@@ -440,8 +438,13 @@ func TestWriteDefinitionToSrcDir(t *testing.T) {
 
 		contentStr := string(content)
 		// Verify key content is present in the YAML
-		if !containsAll(contentStr, "name: test-agent", "kind: hosted", "responses", "AZURE_OPENAI_ENDPOINT") {
+		if !containsAll(contentStr, "name: test-agent", "kind: hosted", "responses", "AZURE_AI_MODEL_DEPLOYMENT_NAME") {
 			t.Errorf("written content missing expected fields:\n%s", contentStr)
+		}
+		// AZURE_OPENAI_ENDPOINT and AZURE_AI_PROJECT_ENDPOINT should NOT be in agent.yaml
+		// (they are auto-injected as FOUNDRY_PROJECT_ENDPOINT by the hosted agent platform)
+		if strings.Contains(contentStr, "AZURE_OPENAI_ENDPOINT") || strings.Contains(contentStr, "AZURE_AI_PROJECT_ENDPOINT") {
+			t.Errorf("agent.yaml should not contain AZURE_OPENAI_ENDPOINT or AZURE_AI_PROJECT_ENDPOINT:\n%s", contentStr)
 		}
 	})
 

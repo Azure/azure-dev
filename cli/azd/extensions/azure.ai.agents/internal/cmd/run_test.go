@@ -197,3 +197,69 @@ func createVenv(t *testing.T, projectDir string) string {
 
 	return venvDir
 }
+
+func TestAppendFoundryEnvVars(t *testing.T) {
+	t.Parallel()
+
+	t.Run("maps AZURE_AI_PROJECT_ENDPOINT to FOUNDRY_PROJECT_ENDPOINT", func(t *testing.T) {
+		t.Parallel()
+		azdEnv := map[string]string{
+			"AZURE_AI_PROJECT_ENDPOINT": "https://myaccount.services.ai.azure.com/api/projects/myproject",
+		}
+		env := appendFoundryEnvVars(nil, azdEnv, "")
+		expected := "FOUNDRY_PROJECT_ENDPOINT=https://myaccount.services.ai.azure.com/api/projects/myproject"
+		if !slices.Contains(env, expected) {
+			t.Errorf("expected %q in env, got %v", expected, env)
+		}
+	})
+
+	t.Run("maps AZURE_AI_PROJECT_ID to FOUNDRY_PROJECT_ARM_ID", func(t *testing.T) {
+		t.Parallel()
+		azdEnv := map[string]string{
+			"AZURE_AI_PROJECT_ID": "/subscriptions/sub1/resourceGroups/rg1/providers/Microsoft.CognitiveServices/accounts/acct1/projects/proj1",
+		}
+		env := appendFoundryEnvVars(nil, azdEnv, "")
+		expected := "FOUNDRY_PROJECT_ARM_ID=/subscriptions/sub1/resourceGroups/rg1/providers/Microsoft.CognitiveServices/accounts/acct1/projects/proj1"
+		if !slices.Contains(env, expected) {
+			t.Errorf("expected %q in env, got %v", expected, env)
+		}
+	})
+
+	t.Run("maps service-specific agent vars to FOUNDRY_AGENT_*", func(t *testing.T) {
+		t.Parallel()
+		azdEnv := map[string]string{
+			"AGENT_MY_SVC_NAME":    "my-agent",
+			"AGENT_MY_SVC_VERSION": "v3",
+		}
+		env := appendFoundryEnvVars(nil, azdEnv, "my-svc")
+		if !slices.Contains(env, "FOUNDRY_AGENT_NAME=my-agent") {
+			t.Errorf("expected FOUNDRY_AGENT_NAME=my-agent in env, got %v", env)
+		}
+		if !slices.Contains(env, "FOUNDRY_AGENT_VERSION=v3") {
+			t.Errorf("expected FOUNDRY_AGENT_VERSION=v3 in env, got %v", env)
+		}
+	})
+
+	t.Run("skips missing values", func(t *testing.T) {
+		t.Parallel()
+		azdEnv := map[string]string{}
+		env := appendFoundryEnvVars(nil, azdEnv, "my-svc")
+		if len(env) != 0 {
+			t.Errorf("expected empty env, got %v", env)
+		}
+	})
+
+	t.Run("includes all mappings together", func(t *testing.T) {
+		t.Parallel()
+		azdEnv := map[string]string{
+			"AZURE_AI_PROJECT_ENDPOINT": "https://acct.services.ai.azure.com/api/projects/proj",
+			"AZURE_AI_PROJECT_ID":       "/subscriptions/sub/rg/rg/acct/proj",
+			"AGENT_AGENT1_NAME":         "agent1",
+			"AGENT_AGENT1_VERSION":      "v1",
+		}
+		env := appendFoundryEnvVars(nil, azdEnv, "agent1")
+		if len(env) != 4 {
+			t.Errorf("expected 4 env vars, got %d: %v", len(env), env)
+		}
+	})
+}

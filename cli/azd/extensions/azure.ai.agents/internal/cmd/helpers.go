@@ -533,6 +533,7 @@ func resolveAgentServiceFromProject(ctx context.Context, azdClient *azdext.AzdCl
 
 // ServiceRunContext holds the resolved context needed for local development.
 type ServiceRunContext struct {
+	ServiceName    string // the resolved service name (from azure.yaml)
 	ProjectDir     string // absolute path to the service source directory
 	StartupCommand string // startupCommand from AdditionalProperties (may be empty)
 }
@@ -556,6 +557,7 @@ func resolveServiceRunContext(ctx context.Context, azdClient *azdext.AzdClient, 
 	}
 
 	return &ServiceRunContext{
+		ServiceName:    svc.Name,
 		ProjectDir:     projectDir,
 		StartupCommand: startupCmd,
 	}, nil

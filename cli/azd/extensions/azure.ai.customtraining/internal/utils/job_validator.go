@@ -153,6 +153,12 @@ func validateLocalPath(result *ValidationResult, field string, path string, yaml
 			Severity: SeverityError,
 			Message:  fmt.Sprintf("local path does not exist: '%s'", path),
 		})
+	} else if err != nil {
+		result.Findings = append(result.Findings, ValidationFinding{
+			Field:    field,
+			Severity: SeverityWarning,
+			Message:  fmt.Sprintf("could not verify path exists: '%s': %v", path, err),
+		})
 	}
 }
 

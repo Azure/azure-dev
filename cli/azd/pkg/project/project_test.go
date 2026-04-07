@@ -293,11 +293,11 @@ func TestMinimalYaml(t *testing.T) {
 
 	tests := []struct {
 		name          string
-		serviceConfig ServiceConfig
+		serviceConfig *ServiceConfig
 	}{
 		{
 			"minimal-service",
-			ServiceConfig{
+			&ServiceConfig{
 				Name:         "ignored",
 				Language:     ServiceLanguagePython,
 				Host:         AppServiceTarget,
@@ -306,7 +306,7 @@ func TestMinimalYaml(t *testing.T) {
 		},
 		{
 			"minimal-docker",
-			ServiceConfig{
+			&ServiceConfig{
 				Name:     "ignored",
 				Language: ServiceLanguageDotNet,
 				Host:     ContainerAppTarget,
@@ -317,10 +317,10 @@ func TestMinimalYaml(t *testing.T) {
 			},
 		},
 	}
-	for i, tt := range tests {
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			prj.Services = map[string]*ServiceConfig{
-				tt.name: &tests[i].serviceConfig,
+				tt.name: tt.serviceConfig,
 			}
 
 			contents, err := yaml.Marshal(prj)

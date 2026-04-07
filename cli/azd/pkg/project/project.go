@@ -284,7 +284,7 @@ func Save(ctx context.Context, projectConfig *ProjectConfig, projectFilePath str
 	copy.Services = make(map[string]*ServiceConfig, len(projectConfig.Services))
 
 	for name, svc := range projectConfig.Services {
-		svcCopy := *svc
+		svcCopy := *svc //nolint:govet // copylocks: ephemeral copy for YAML serialization only
 		svcCopy.Project = &copy
 		svcCopy.Infra.Path = filepath.ToSlash(svc.Infra.Path)
 		svcCopy.RelativePath = filepath.ToSlash(svc.RelativePath)

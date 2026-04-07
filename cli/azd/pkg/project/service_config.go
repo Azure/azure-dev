@@ -159,6 +159,7 @@ func (sc *ServiceConfig) EnsureHooksRegistered(
 		sc.configuredHookRegistration.cancel()
 	}
 
+	//nolint:gosec // G118 - cancel is stored and called by Reset/Rollback
 	registrationCtx, cancel := context.WithCancel(parentCtx)
 	sc.configuredHookRegistration = &configuredHookRegistration{
 		signature: signature,
@@ -206,5 +207,11 @@ func (sc *ServiceConfig) CopyRuntimeStateTo(target *ServiceConfig) {
 		target.EventDispatcher = sc.EventDispatcher
 	}
 
-	target.configuredHookRegistration = sc.configuredHookRegistration
+	sc.configuredHookRegistrationMu.Lock()
+	registration := sc.configuredHookRegistration
+	sc.configuredHookRegistrationMu.Unlock()
+
+	target.configuredHookRegistrationMu.Lock()
+	target.configuredHookRegistration = registration
+	target.configuredHookRegistrationMu.Unlock()
 }

@@ -425,21 +425,27 @@ func (e *ErrorMiddleware) promptTroubleshootCategory(ctx context.Context) (troub
 		// Invalid saved value — fall through to prompt
 	}
 
+	defaultIdx := 1 // default to "Fix this error"
 	choices := []*uxlib.SelectChoice{
-		{Value: string(categoryExplain), Label: "Explain this error"},
-		{Value: string(categoryGuidance), Label: "Show fix guidance"},
-		{Value: string(categoryTroubleshoot), Label: "Troubleshoot with explanation and guidance"},
+		{Value: string(categoryTroubleshoot), Label: "Diagnose and guide"},
 		{Value: string(categoryFix), Label: "Fix this error"},
 		{Value: string(categorySkip), Label: "Skip"},
+		{Value: string(categoryExplain), Label: "Explain this error"},
+		{Value: string(categoryGuidance), Label: "Show fix guidance"},
 	}
 	selector := uxlib.NewSelect(&uxlib.SelectOptions{
-		Message: fmt.Sprintf("How would you like %s to help?", agentcopilot.DisplayTitle),
+		Message: fmt.Sprintf(
+			"How would you like %s to help?",
+			agentcopilot.DisplayTitle),
 		HelpMessage: fmt.Sprintf(
 			"Choose the level of assistance. "+
 				"To always use a specific choice, run %s.",
 			output.WithHighLightFormat(
-				fmt.Sprintf("azd config set %s <category>", agentcopilot.ConfigKeyErrorHandlingCategory))),
+				fmt.Sprintf(
+					"azd config set %s <category>",
+					agentcopilot.ConfigKeyErrorHandlingCategory))),
 		Choices:         choices,
+		SelectedIndex:   &defaultIdx,
 		EnableFiltering: new(false),
 		DisplayCount:    len(choices),
 	})

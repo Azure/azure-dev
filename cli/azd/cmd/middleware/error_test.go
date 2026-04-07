@@ -13,6 +13,7 @@ import (
 	surveyterm "github.com/AlecAivazis/survey/v2/terminal"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/agent"
 	agentcopilot "github.com/azure/azure-dev/cli/azd/internal/agent/copilot"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
@@ -21,6 +22,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/pipeline"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -28,7 +30,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/pack"
 	"github.com/azure/azure-dev/cli/azd/pkg/update"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/blang/semver/v4"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -494,4 +498,220 @@ func Test_ConfigKeyErrorHandlingCategory(t *testing.T) {
 	t.Parallel()
 	// Verify the config key is properly namespaced
 	require.Equal(t, "copilot.errorHandling.category", agentcopilot.ConfigKeyErrorHandlingCategory)
+}
+
+
+func Test_ShouldSkipErrorAnalysis_DeadlineExceeded(t *testing.T) {
+	t.Parallel()
+	require.True(t, shouldSkipErrorAnalysis(context.DeadlineExceeded))
+}
+
+func Test_ShouldSkipErrorAnalysis_WrappedDeadlineExceeded(t *testing.T) {
+	t.Parallel()
+	wrapped := fmt.Errorf("timed out: %w", context.DeadlineExceeded)
+	require.True(t, shouldSkipErrorAnalysis(wrapped))
+}
+
+func Test_FixableError_MissingInputsError(t *testing.T) {
+	t.Parallel()
+	err := &bicep.MissingInputsError{
+		Inputs: []bicep.MissingInput{
+			{Name: "location"},
+		},
+	}
+	require.False(t, fixableError(err))
+}
+
+func Test_FixableError_WrappedMissingInputsError(t *testing.T) {
+	t.Parallel()
+	inner := &bicep.MissingInputsError{
+		Inputs: []bicep.MissingInput{
+			{Name: "location"},
+		},
+	}
+	wrapped := fmt.Errorf("provision failed: %w", inner)
+	require.False(t, fixableError(wrapped))
+}
+
+func Test_FixableError_ConfigValidationError(t *testing.T) {
+	t.Parallel()
+	err := &project.ConfigValidationError{
+		Issues: []string{"service 'web' has nil definition"},
+	}
+	require.False(t, fixableError(err))
+}
+
+func Test_FixableError_WrappedConfigValidationError(t *testing.T) {
+	t.Parallel()
+	inner := &project.ConfigValidationError{
+		Issues: []string{"hook 'preprovision' is nil"},
+	}
+	wrapped := fmt.Errorf("config load: %w", inner)
+	require.False(t, fixableError(wrapped))
+}
+
+func Test_ErrorMiddleware_NonFixableError_SkipsAgentCreation(t *testing.T) {
+	t.Parallel()
+	if os.Getenv("TF_BUILD") != "" ||
+		os.Getenv("GITHUB_ACTIONS") != "" ||
+		os.Getenv("CI") != "" {
+		t.Skip("Skipping test in CI/CD environment")
+	}
+
+	mockContext := mocks.NewMockContext(context.Background())
+	cfg := config.NewConfig(map[string]any{
+		"alpha": map[string]any{
+			string(agentcopilot.FeatureCopilot): "on",
+		},
+	})
+	featureManager := alpha.NewFeaturesManagerWithConfig(cfg)
+	global := &internal.GlobalCommandOptions{NoPrompt: false}
+	userConfigManager := config.NewUserConfigManager(
+		mockContext.ConfigManager)
+	errorPipeline := errorhandler.NewErrorHandlerPipeline(nil)
+
+	// agentFactory is nil — if code tries to call Create, it panics
+	middleware := NewErrorMiddleware(
+		&Options{Name: "test"},
+		mockContext.Console,
+		nil,
+		global,
+		featureManager,
+		userConfigManager,
+		errorPipeline,
+	)
+
+	// environment.ErrNotFound is non-fixable
+	nextFn := func(ctx context.Context) (*actions.ActionResult, error) {
+		return &actions.ActionResult{}, environment.ErrNotFound
+	}
+
+	result, err := middleware.Run(*mockContext.Context, nextFn)
+
+	// Should return error without ever touching the agent factory
+	require.Error(t, err)
+	require.ErrorIs(t, err, environment.ErrNotFound)
+	require.NotNil(t, result)
+}
+
+func Test_ErrorMiddleware_ExplainAndFixCalls(t *testing.T) {
+	t.Parallel()
+	if os.Getenv("TF_BUILD") != "" ||
+		os.Getenv("GITHUB_ACTIONS") != "" ||
+		os.Getenv("CI") != "" {
+		t.Skip("Skipping test in CI/CD environment")
+	}
+
+	explainResult := &agent.AgentResult{
+		Usage: agent.UsageMetrics{
+			InputTokens:  500,
+			OutputTokens: 200,
+		},
+	}
+
+	// Explain succeeds, fix fails — proves both calls are made
+	fakeAg := &fakeSequenceAgent{
+		results: []*agent.AgentResult{explainResult, nil},
+		errors:  []error{nil, errors.New("fix attempt failed")},
+	}
+
+	factory := &mockAgentFactory{}
+	factory.On("Create", mock.Anything, mock.Anything).
+		Return(fakeAg, nil)
+
+	ucm := &mockUserConfigManager{
+		cfg: configWithKeys(
+			agentcopilot.ConfigKeyErrorHandlingCategory, "explain",
+			agentcopilot.ConfigKeyErrorHandlingFix, "allow",
+		),
+	}
+	fm := copilotEnabledFeatureManager()
+	global := &internal.GlobalCommandOptions{}
+
+	m := newErrorMiddlewareForTest(
+		mockinput.NewMockConsole(), factory, fm, ucm, global)
+
+	originalErr := errors.New(
+		"unexpected widget provisioning failure")
+	result, err := m.Run(t.Context(), func(
+		_ context.Context,
+	) (*actions.ActionResult, error) {
+		return nil, originalErr
+	})
+
+	// Explain succeeded, fix failed — original error returned
+	// wrapped with agent context
+	require.Error(t, err)
+	require.ErrorIs(t, err, originalErr)
+
+	// Result may be nil since nextFn returned nil actionResult
+	_ = result
+
+	// Verify both calls were made: explain (1st) + fix (2nd)
+	require.Equal(t, 2, fakeAg.callIdx,
+		"agent should be called twice: explain + fix")
+}
+
+
+func Test_ErrorMiddleware_MaxRetry_FirstIterationSkipsCounter(t *testing.T) {
+	t.Parallel()
+	if os.Getenv("TF_BUILD") != "" ||
+		os.Getenv("GITHUB_ACTIONS") != "" ||
+		os.Getenv("CI") != "" {
+		t.Skip("Skipping test in CI/CD environment")
+	}
+
+	// Agent fails on fix — exits before the TTY retry prompt.
+	// This still proves the counter was skipped (agent WAS called).
+	fakeAg := &fakeSequenceAgent{
+		results: []*agent.AgentResult{nil},
+		errors:  []error{errors.New("agent fix attempt failed")},
+	}
+
+	factory := &mockAgentFactory{}
+	factory.On("Create", mock.Anything, mock.Anything).
+		Return(fakeAg, nil)
+
+	ucm := &mockUserConfigManager{
+		cfg: configWithKeys(
+			agentcopilot.ConfigKeyErrorHandlingCategory, "fix"),
+	}
+	fm := copilotEnabledFeatureManager()
+	global := &internal.GlobalCommandOptions{}
+
+	m := newErrorMiddlewareForTest(
+		mockinput.NewMockConsole(), factory, fm, ucm, global)
+
+	sameError := errors.New("same error every time")
+	callCount := 0
+	result, err := m.Run(t.Context(), func(
+		_ context.Context,
+	) (*actions.ActionResult, error) {
+		callCount++
+		return &actions.ActionResult{}, sameError
+	})
+
+	// First iteration: previousError is nil, counter is skipped,
+	// agent fix is called (and fails). The middleware returns original
+	// error wrapped with agent context. This proves the counter
+	// did NOT trigger on first iteration — if it had, the agent
+	// would never have been called.
+	//
+	// The "fix it manually" bail-out (attempt >= 3) requires 3+
+	// same-error loop iterations, each needing promptRetryAfterFix
+	// to return retry=true (requires raw TTY). That path requires
+	// integration testing.
+	require.Error(t, err)
+	require.ErrorIs(t, err, sameError,
+		"original error should be preserved")
+	require.NotContains(t, err.Error(),
+		"fix it manually",
+		"should NOT reach max attempts on first iteration")
+
+	// Agent was called once (fix succeeded on first attempt)
+	require.Equal(t, 1, fakeAg.callIdx)
+
+	// next was called once (no retry without TTY prompt)
+	require.Equal(t, 1, callCount)
+	require.NotNil(t, result)
 }

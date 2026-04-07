@@ -1,13 +1,17 @@
 <#
 .SYNOPSIS
-  Updates registry-daily.json on Azure Storage with the current extension's daily build entry.
+  Writes a per-extension daily registry entry to Azure Storage.
 
 .DESCRIPTION
   1. Computes checksums from signed release artifacts
   2. Reads extension.yaml for metadata (id, namespace, displayName, etc.)
   3. Loads the JSON template, replaces placeholders with actual values
-  4. Downloads existing registry-daily.json from storage (or creates empty)
-  5. Merges the new entry and uploads back
+  4. Uploads the entry as a standalone per-extension JSON blob
+
+  Each extension writes its own file to avoid race conditions when multiple
+  extension pipelines run concurrently. A separate unification script
+  (Build-UnifiedDailyRegistry.ps1) combines all per-extension entries into
+  the final registry-daily.json.
 
 .PARAMETER SanitizedExtensionId
   Hyphenated extension id (e.g. azure-ai-agents)
@@ -21,8 +25,9 @@
 .PARAMETER StorageBaseUrl
   Static storage host URL for daily artifacts
 
-.PARAMETER RegistryBlobPath
-  Full blob path for registry-daily.json
+.PARAMETER RegistryEntryBlobPath
+  Full blob path for the per-extension entry JSON
+  (e.g. .../azd/extensions/daily-registry-entries/azure.ai.agents.json)
 
 .PARAMETER ReleasePath
   Path to the signed release artifacts
@@ -39,7 +44,7 @@ param(
     [Parameter(Mandatory)] [string] $AzdExtensionId,
     [Parameter(Mandatory)] [string] $Version,
     [Parameter(Mandatory)] [string] $StorageBaseUrl,
-    [Parameter(Mandatory)] [string] $RegistryBlobPath,
+    [Parameter(Mandatory)] [string] $RegistryEntryBlobPath,
     [Parameter(Mandatory)] [string] $TemplatePath,
     [string] $ReleasePath = "release",
     [string] $MetadataPath = "release-metadata"
@@ -91,9 +96,12 @@ if ($missingArtifacts.Count -gt 0) {
     exit 1
 }
 
-# Read extension.yaml for metadata
-# Simple line-by-line parsing for top-level scalar fields, capabilities list,
-# and providers list. Sufficient for the known extension.yaml schema.
+# Read extension.yaml for metadata.
+# Uses simple line-by-line regex parsing — handles top-level scalar fields,
+# capabilities list, and providers list. This is intentionally not a full YAML
+# parser. It works for the known extension.yaml schema where all values are
+# single-line scalars or simple lists. If extension.yaml grows multi-line
+# values or complex nesting, switch to powershell-yaml.
 $extYaml = Get-Content $extYamlPath -Raw
 $extMeta = @{}
 foreach ($line in $extYaml -split "`n") {
@@ -132,7 +140,7 @@ foreach ($line in $extYaml -split "`n") {
 if ($currentProvider) { $providers += $currentProvider }
 
 # Validate required fields were parsed
-$requiredFields = @('namespace', 'displayName', 'description')
+$requiredFields = @('namespace', 'displayName', 'description', 'usage')
 foreach ($field in $requiredFields) {
     if (-not $extMeta[$field] -or $extMeta[$field] -eq '') {
         Write-Error "Required field '$field' missing or empty in extension.yaml"
@@ -144,6 +152,7 @@ Write-Host "Parsed extension metadata:"
 Write-Host "  namespace: $($extMeta.namespace)"
 Write-Host "  displayName: $($extMeta.displayName)"
 Write-Host "  description: $($extMeta.description)"
+Write-Host "  usage: $($extMeta.usage)"
 Write-Host "  capabilities: $($capabilities -join ', ')"
 Write-Host "  providers: $($providers.Count)"
 
@@ -152,7 +161,7 @@ $template = Get-Content $TemplatePath -Raw
 $replacements = @{
     '${EXT_VERSION}'            = $Version
     '${REQUIRED_AZD_VERSION}'   = if ($extMeta.requiredAzdVersion) { $extMeta.requiredAzdVersion } else { "" }
-    '${USAGE}'                  = if ($extMeta.usage) { $extMeta.usage } else { "" }
+    '${USAGE}'                  = $extMeta.usage
     '${SANITIZED_ID}'           = $SanitizedExtensionId
     '${STORAGE_BASE_URL}'       = $StorageBaseUrl
     '${CHECKSUM_DARWIN_AMD64}'  = $checksums["DARWIN_AMD64"]
@@ -175,7 +184,7 @@ if ($providers.Count -gt 0) {
     $versionEntry | Add-Member -NotePropertyName "providers" -NotePropertyValue $providers
 }
 
-# Build the full extension entry
+# Build the per-extension entry
 $extEntry = [ordered]@{
     id          = $AzdExtensionId
     namespace   = $extMeta.namespace
@@ -184,64 +193,25 @@ $extEntry = [ordered]@{
     versions    = @($versionEntry)
 }
 
-# Download existing registry or create empty
-# Use ErrorActionPreference Continue for azcopy since "not found" is expected on first run
-$registryFile = "registry-daily.json"
-$prevErrorPref = $ErrorActionPreference
-$ErrorActionPreference = 'Continue'
-$azcopyOutput = azcopy copy $RegistryBlobPath $registryFile 2>&1
-$azcopyExitCode = $LASTEXITCODE
-$ErrorActionPreference = $prevErrorPref
+# Write per-extension entry and validate JSON
+$entryFile = "$AzdExtensionId.json"
+$extEntry | ConvertTo-Json -Depth 20 | Set-Content $entryFile -Encoding utf8
 
-if ($azcopyExitCode -ne 0) {
-    # Check if this is a "not found" (expected) vs an actual error
-    $outputStr = $azcopyOutput | Out-String
-    if ($outputStr -match "BlobNotFound|404|does not exist") {
-        Write-Host "No existing registry found, creating new one"
-    } else {
-        Write-Warning "azcopy download failed (exit code $azcopyExitCode), creating new registry"
-        Write-Warning $outputStr
-    }
-    [ordered]@{ extensions = @() } | ConvertTo-Json -Depth 10 | Set-Content $registryFile
-}
-
-$registry = Get-Content $registryFile -Raw | ConvertFrom-Json -Depth 20
-
-# Merge: replace existing extension entry or add new
-$found = $false
-for ($i = 0; $i -lt $registry.extensions.Count; $i++) {
-    if ($registry.extensions[$i].id -eq $AzdExtensionId) {
-        $registry.extensions[$i] = $extEntry
-        $found = $true
-        Write-Host "Updated existing entry for $AzdExtensionId"
-        break
-    }
-}
-if (-not $found) {
-    $registry.extensions += $extEntry
-    Write-Host "Added new entry for $AzdExtensionId"
-}
-
-# Write registry and validate JSON round-trip before uploading
-$registryJson = $registry | ConvertTo-Json -Depth 20
-$registryJson | Set-Content $registryFile -Encoding utf8
-
-# Validate the output is valid JSON
 try {
-    $null = Get-Content $registryFile -Raw | ConvertFrom-Json -Depth 20
+    $null = Get-Content $entryFile -Raw | ConvertFrom-Json -Depth 20
 } catch {
-    Write-Error "Generated registry JSON is invalid: $_"
+    Write-Error "Generated entry JSON is invalid: $_"
     exit 1
 }
 
-Write-Host "Registry contents:"
-Get-Content $registryFile
+Write-Host "Extension entry:"
+Get-Content $entryFile
 
-# Upload to storage
-azcopy copy $registryFile $RegistryBlobPath --overwrite=true
+# Upload per-extension entry to storage
+azcopy copy $entryFile $RegistryEntryBlobPath --overwrite=true
 if ($LASTEXITCODE -ne 0) {
-    Write-Error "Failed to upload registry to $RegistryBlobPath (exit code $LASTEXITCODE)"
+    Write-Error "Failed to upload entry to $RegistryEntryBlobPath (exit code $LASTEXITCODE)"
     exit 1
 }
 
-Write-Host "Registry uploaded to $RegistryBlobPath"
+Write-Host "Entry uploaded to $RegistryEntryBlobPath"

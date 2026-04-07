@@ -6,7 +6,7 @@ parameters:
 
 steps:
   - task: AzurePowerShell@5
-    displayName: Update daily registry
+    displayName: Upload per-extension daily registry entry
     inputs:
       azureSubscription: 'Azure SDK Artifacts'
       azurePowerShellVersion: LatestVersion
@@ -15,7 +15,7 @@ steps:
       Inline: |
         $storageHost = "$(publish-storage-static-host)"
         $dailyBaseUrl = "$storageHost/azd/extensions/${{ parameters.SanitizedExtensionId }}/daily"
-        $registryBlobPath = "$(publish-storage-location)/`$web/azd/extensions/registry-daily.json"
+        $entryBlobPath = "$(publish-storage-location)/`$web/azd/extensions/daily-registry-entries/${{ parameters.AzdExtensionId }}.json"
         $templatePath = "$(Build.SourcesDirectory)/eng/pipelines/templates/json/extension-registry-daily-template.json"
 
         & "$(Build.SourcesDirectory)/eng/scripts/Update-ExtensionDailyRegistry.ps1" `
@@ -23,7 +23,7 @@ steps:
           -AzdExtensionId "${{ parameters.AzdExtensionId }}" `
           -Version "$(EXT_VERSION)" `
           -StorageBaseUrl $dailyBaseUrl `
-          -RegistryBlobPath $registryBlobPath `
+          -RegistryEntryBlobPath $entryBlobPath `
           -TemplatePath $templatePath
     env:
       AZCOPY_AUTO_LOGIN_TYPE: 'PSCRED'

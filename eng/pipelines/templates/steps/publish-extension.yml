@@ -15,6 +15,15 @@ parameters:
     default: true
 
 steps:
+  # Remove _manifest folder unconditionally before upload/release
+  - pwsh: |
+      if (Test-Path release/_manifest) {
+        Remove-Item -Path release/_manifest -Recurse -Force
+      }
+      Write-Host "Release:"
+      Get-ChildItem -Recurse release/ | Select-Object -Property Length,FullName
+    displayName: Remove _manifest folder
+
   - ${{ if and(eq(parameters.CreateGitHubRelease, true), ne(parameters.TagPrefix, ''), ne(parameters.TagVersion, '')) }}:
     # This step must run first because a duplicated tag means we don't need to
     # continue with any of the subsequent steps.
@@ -45,12 +54,6 @@ steps:
         GH_TOKEN: $(azuresdk-github-pat)
 
     - pwsh: |
-        Remove-Item -Path release/_manifest -Recurse -Force
-        Write-Host "Release:"
-        Get-ChildItem -Recurse release/ | Select-Object -Property Length,FullName 
-      displayName: Remove _manifest folder
-
-    - pwsh: |
         $version = "${{ parameters.TagVersion }}"
         $createArgs = @(
           "$(GH_RELEASE_TAG)",
@@ -69,15 +72,6 @@ steps:
       displayName: Create GitHub Release and upload artifacts
       env:
         GH_TOKEN: $(azuresdk-github-pat)
-
-  - ${{ if eq(parameters.CreateGitHubRelease, false) }}:
-    - pwsh: |
-        if (Test-Path release/_manifest) {
-          Remove-Item -Path release/_manifest -Recurse -Force
-        }
-        Write-Host "Release:"
-        Get-ChildItem -Recurse release/ | Select-Object -Property Length,FullName
-      displayName: Remove _manifest folder
 
   - task: AzurePowerShell@5
     displayName: Upload release to storage account

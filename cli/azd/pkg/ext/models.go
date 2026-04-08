@@ -4,11 +4,16 @@
 package ext
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -81,7 +86,8 @@ type HookConfig struct {
 	Secrets map[string]string `yaml:"secrets,omitempty"`
 }
 
-// Validates and normalizes the hook configuration
+// Validates and normalizes the hook configuration.
+// For inline hooks this only resolves metadata; the executable temp script is generated per execution.
 func (hc *HookConfig) validate() error {
 	if hc.validated {
 		return nil
@@ -106,41 +112,44 @@ func (hc *HookConfig) validate() error {
 		hc.script = hc.Run
 	}
 
-	// If shell is not specified and it's an inline script, use OS default
-	if hc.Shell == ScriptTypeUnknown && hc.path == "" {
-		hc.Shell = getDefaultShellForOS()
-		hc.usingDefaultShell = true
-	}
-
-	if hc.location == ScriptLocationUnknown {
-		if hc.path != "" {
-			hc.location = ScriptLocationPath
-		} else if hc.script != "" {
-			hc.location = ScriptLocationInline
-		}
-	}
-
-	if hc.location == ScriptLocationInline {
-		tempScript, err := createTempScript(hc)
-		if err != nil {
-			return err
-		}
-
-		hc.path = tempScript
-	}
-
 	if hc.Shell == ScriptTypeUnknown {
-		scriptType, err := inferScriptTypeFromFilePath(hc.path)
-		if err != nil {
-			return err
-		}
+		if hc.location == ScriptLocationInline {
+			hc.Shell = getDefaultShellForOS()
+			hc.usingDefaultShell = true
+		} else {
+			scriptType, err := inferScriptTypeFromFilePath(hc.path)
+			if err != nil {
+				return err
+			}
 
-		hc.Shell = scriptType
+			hc.Shell = scriptType
+		}
 	}
 
 	hc.validated = true
 
 	return nil
+}
+
+// PrepareExecutionPath returns the executable script path for the hook.
+// Inline hooks get a fresh temp file per execution, while file hooks reuse their configured path.
+func (hc *HookConfig) PrepareExecutionPath() (string, func(), error) {
+	if err := hc.validate(); err != nil {
+		return "", nil, err
+	}
+
+	if hc.location != ScriptLocationInline {
+		return hc.path, nil, nil
+	}
+
+	tempScript, err := createTempScript(hc)
+	if err != nil {
+		return "", nil, err
+	}
+
+	return tempScript, func() {
+		_ = os.Remove(tempScript)
+	}, nil
 }
 
 // IsPowerShellHook determines if a hook configuration uses PowerShell
@@ -185,6 +194,56 @@ func InferHookType(name string) (HookType, string) {
 	}
 
 	return HookTypeNone, name
+}
+
+// HooksConfigSignature returns a stable signature for a set of hook configurations.
+// The signature ignores runtime-only state and changes whenever the effective hook config changes.
+func HooksConfigSignature(hooks map[string][]*HookConfig) string {
+	if len(hooks) == 0 {
+		return ""
+	}
+
+	var builder strings.Builder
+
+	for _, hookName := range slices.Sorted(maps.Keys(hooks)) {
+		builder.WriteString(hookName)
+		builder.WriteByte('\x00')
+
+		for index, hookConfig := range hooks[hookName] {
+			builder.WriteString(strconv.Itoa(index))
+			builder.WriteByte('\x00')
+			appendHookConfigSignature(&builder, hookConfig)
+		}
+	}
+
+	sum := sha256.Sum256([]byte(builder.String()))
+	return hex.EncodeToString(sum[:])
+}
+
+func appendHookConfigSignature(builder *strings.Builder, hookConfig *HookConfig) {
+	if hookConfig == nil {
+		builder.WriteString("<nil>\x00")
+		return
+	}
+
+	builder.WriteString(string(hookConfig.Shell))
+	builder.WriteByte('\x00')
+	builder.WriteString(hookConfig.Run)
+	builder.WriteByte('\x00')
+	builder.WriteString(strconv.FormatBool(hookConfig.ContinueOnError))
+	builder.WriteByte('\x00')
+	builder.WriteString(strconv.FormatBool(hookConfig.Interactive))
+	builder.WriteByte('\x00')
+
+	for _, secretName := range slices.Sorted(maps.Keys(hookConfig.Secrets)) {
+		builder.WriteString(secretName)
+		builder.WriteByte('=')
+		builder.WriteString(hookConfig.Secrets[secretName])
+		builder.WriteByte('\x00')
+	}
+
+	appendHookConfigSignature(builder, hookConfig.Windows)
+	appendHookConfigSignature(builder, hookConfig.Posix)
 }
 
 // getDefaultShellForOS returns the default shell type based on the operating system

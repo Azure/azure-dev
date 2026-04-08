@@ -6,6 +6,7 @@ package middleware
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	osexec "os/exec"
 	"path/filepath"
@@ -490,6 +491,27 @@ func ensureAzdProject(ctx context.Context, azdContext *azdcontext.AzdContext, pr
 	return nil
 }
 
+func createServiceHookProjectConfig(t *testing.T, hookName string) *project.ProjectConfig {
+	t.Helper()
+
+	projectConfig, err := project.Parse(t.Context(), fmt.Sprintf(`
+name: test
+services:
+  api:
+    project: src/api
+    language: js
+    host: appservice
+    hooks:
+      %s:
+        shell: sh
+        run: echo 'hook running'
+`, hookName))
+	require.NoError(t, err)
+
+	projectConfig.Path = t.TempDir()
+	return projectConfig
+}
+
 func Test_PowerShellWarning_WithPowerShellHooks(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	azdContext := createAzdContext(t)
@@ -699,6 +721,124 @@ func Test_CommandHooks_ChildAction_HooksStillFire(t *testing.T) {
 			require.True(t, *actionRan, "Action should run for child action")
 		})
 	}
+}
+
+func Test_CommandHooks_ServiceHooks_DoNotDuplicateAcrossParentAndChildRuns(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	projectConfig := createServiceHookProjectConfig(t, "predeploy")
+	runOptions := Options{CommandPath: "azd deploy"}
+
+	hookCount := 0
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return true
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		hookCount++
+		return exec.NewRunResult(0, "", ""), nil
+	})
+
+	nextFn, actionRan := createNextFn()
+
+	result, err := runMiddlewareWithContext(*mockContext.Context, mockContext, "test", projectConfig, &runOptions, nextFn)
+	require.NotNil(t, result)
+	require.NoError(t, err)
+	require.True(t, *actionRan)
+
+	childCtx := WithChildAction(*mockContext.Context)
+	result, err = runMiddlewareWithContext(childCtx, mockContext, "test", projectConfig, &runOptions, nextFn)
+	require.NotNil(t, result)
+	require.NoError(t, err)
+
+	serviceConfig := projectConfig.Services["api"]
+	err = serviceConfig.Invoke(*mockContext.Context, project.ServiceEventDeploy, project.ServiceLifecycleEventArgs{
+		Project:        projectConfig,
+		Service:        serviceConfig,
+		ServiceContext: project.NewServiceContext(),
+	}, func() error {
+		return nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, hookCount, "predeploy hook should be registered once across parent and child runs")
+}
+
+func Test_CommandHooks_ServiceHooks_DoNotDuplicateAcrossRetries(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	projectConfig := createServiceHookProjectConfig(t, "predeploy")
+	runOptions := Options{CommandPath: "azd deploy"}
+
+	hookCount := 0
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return true
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		hookCount++
+		return exec.NewRunResult(0, "", ""), nil
+	})
+
+	nextFn, _ := createNextFn()
+
+	_, err := runMiddlewareWithContext(*mockContext.Context, mockContext, "test", projectConfig, &runOptions, nextFn)
+	require.NoError(t, err)
+	_, err = runMiddlewareWithContext(*mockContext.Context, mockContext, "test", projectConfig, &runOptions, nextFn)
+	require.NoError(t, err)
+
+	serviceConfig := projectConfig.Services["api"]
+	err = serviceConfig.Invoke(*mockContext.Context, project.ServiceEventDeploy, project.ServiceLifecycleEventArgs{
+		Project:        projectConfig,
+		Service:        serviceConfig,
+		ServiceContext: project.NewServiceContext(),
+	}, func() error {
+		return nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, hookCount, "predeploy hook should be registered once across retries")
+}
+
+func Test_CommandHooks_ServiceHooks_RegisterForChildOnlyWorkflowRuns(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	projectConfig := createServiceHookProjectConfig(t, "predeploy")
+	runOptions := Options{CommandPath: "azd deploy"}
+
+	hookCount := 0
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return true
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		hookCount++
+		return exec.NewRunResult(0, "", ""), nil
+	})
+
+	nextFn, _ := createNextFn()
+	serviceConfig := projectConfig.Services["api"]
+
+	step1Ctx, cancelStep1 := context.WithCancel(WithChildAction(*mockContext.Context))
+	t.Cleanup(cancelStep1)
+
+	_, err := runMiddlewareWithContext(step1Ctx, mockContext, "test", projectConfig, &runOptions, nextFn)
+	require.NoError(t, err)
+	err = serviceConfig.Invoke(step1Ctx, project.ServiceEventDeploy, project.ServiceLifecycleEventArgs{
+		Project:        projectConfig,
+		Service:        serviceConfig,
+		ServiceContext: project.NewServiceContext(),
+	}, func() error {
+		return nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, hookCount)
+
+	cancelStep1()
+
+	step2Ctx, cancelStep2 := context.WithCancel(WithChildAction(*mockContext.Context))
+	t.Cleanup(cancelStep2)
+
+	_, err = runMiddlewareWithContext(step2Ctx, mockContext, "test", projectConfig, &runOptions, nextFn)
+	require.NoError(t, err)
+	err = serviceConfig.Invoke(step2Ctx, project.ServiceEventDeploy, project.ServiceLifecycleEventArgs{
+		Project:        projectConfig,
+		Service:        serviceConfig,
+		ServiceContext: project.NewServiceContext(),
+	}, func() error {
+		return nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, 2, hookCount, "child-only workflow steps should re-register service hooks once per step")
 }
 
 // Test_CommandHooks_ChildAction_SkipsValidationOnly verifies that when running as a child action,

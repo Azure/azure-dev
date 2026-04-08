@@ -447,7 +447,7 @@ func TestServiceFromDetect(t *testing.T) {
 		svcName string
 		prj     appdetect.Project
 		svcKind project.ServiceTargetKind
-		check   func(t *testing.T, svc project.ServiceConfig)
+		check   func(t *testing.T, svc *project.ServiceConfig)
 		wantErr string
 	}{
 		{
@@ -459,7 +459,7 @@ func TestServiceFromDetect(t *testing.T) {
 				Language: appdetect.Python,
 			},
 			svcKind: project.ContainerAppTarget,
-			check: func(t *testing.T, svc project.ServiceConfig) {
+			check: func(t *testing.T, svc *project.ServiceConfig) {
 				assert.Equal(t, "my-api", svc.Name)
 				assert.Equal(
 					t,
@@ -483,7 +483,7 @@ func TestServiceFromDetect(t *testing.T) {
 				Language: appdetect.JavaScript,
 			},
 			svcKind: project.ContainerAppTarget,
-			check: func(t *testing.T, svc project.ServiceConfig) {
+			check: func(t *testing.T, svc *project.ServiceConfig) {
 				assert.Equal(t, "my-service", svc.Name)
 				assert.Equal(
 					t,
@@ -512,7 +512,7 @@ func TestServiceFromDetect(t *testing.T) {
 				Language: appdetect.DotNet,
 			},
 			svcKind: project.AppServiceTarget,
-			check: func(t *testing.T, svc project.ServiceConfig) {
+			check: func(t *testing.T, svc *project.ServiceConfig) {
 				assert.Equal(
 					t,
 					project.ServiceLanguageDotNet,
@@ -551,7 +551,7 @@ func TestServiceFromDetect(t *testing.T) {
 				},
 			},
 			svcKind: project.ContainerAppTarget,
-			check: func(t *testing.T, svc project.ServiceConfig) {
+			check: func(t *testing.T, svc *project.ServiceConfig) {
 				assert.Equal(t, "dist", svc.OutputPath)
 			},
 		},
@@ -567,7 +567,7 @@ func TestServiceFromDetect(t *testing.T) {
 				},
 			},
 			svcKind: project.ContainerAppTarget,
-			check: func(t *testing.T, svc project.ServiceConfig) {
+			check: func(t *testing.T, svc *project.ServiceConfig) {
 				assert.Equal(t, "", svc.OutputPath)
 			},
 		},
@@ -583,7 +583,7 @@ func TestServiceFromDetect(t *testing.T) {
 				},
 			},
 			svcKind: project.ContainerAppTarget,
-			check: func(t *testing.T, svc project.ServiceConfig) {
+			check: func(t *testing.T, svc *project.ServiceConfig) {
 				assert.Equal(t, "build", svc.OutputPath)
 			},
 		},

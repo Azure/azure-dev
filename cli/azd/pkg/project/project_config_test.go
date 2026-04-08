@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -187,34 +188,26 @@ func TestProjectConfigRemoveHandler(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	project := getProjectConfig()
 	handler1Called := false
-	handler2Called := false
 
 	handler1 := func(ctx context.Context, args ProjectLifecycleEventArgs) error {
 		handler1Called = true
 		return nil
 	}
 
-	handler2 := func(ctx context.Context, args ProjectLifecycleEventArgs) error {
-		handler2Called = true
-		return nil
-	}
-
-	// Only handler 1 was registered
-	err := project.AddHandler(*mockContext.Context, ServiceEventDeploy, handler1)
+	// Register handler with a cancellable context
+	ctx, cancel := context.WithCancel(*mockContext.Context)
+	err := project.AddHandler(ctx, ServiceEventDeploy, handler1)
 	require.Nil(t, err)
 
-	err = project.RemoveHandler(*mockContext.Context, ServiceEventDeploy, handler1)
-	require.Nil(t, err)
+	// Cancel context to trigger removal
+	cancel()
 
-	// Handler 2 wasn't registered so should error on remove
-	err = project.RemoveHandler(*mockContext.Context, ServiceEventDeploy, handler2)
-	require.NotNil(t, err)
-
-	// No events are registered at the time event was raised
-	err = project.RaiseEvent(*mockContext.Context, ServiceEventDeploy, ProjectLifecycleEventArgs{Project: project})
-	require.Nil(t, err)
-	require.False(t, handler1Called)
-	require.False(t, handler2Called)
+	require.Eventually(t, func() bool {
+		// Handler should not be called after context cancellation
+		handler1Called = false
+		err = project.RaiseEvent(*mockContext.Context, ServiceEventDeploy, ProjectLifecycleEventArgs{Project: project})
+		return err == nil && !handler1Called
+	}, time.Second, 10*time.Millisecond, "Handler should not fire after context cancellation")
 }
 
 func TestProjectConfigWithMultipleEventHandlers(t *testing.T) {

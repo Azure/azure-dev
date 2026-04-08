@@ -200,6 +200,50 @@ func Test_Hooks_Execute(t *testing.T) {
 		require.NoError(t, err)
 	})
 
+	t.Run("Inline Hook Can Run Twice", func(t *testing.T) {
+		var executedPaths []string
+
+		mockContext := mocks.NewMockContext(context.Background())
+		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+			return len(args.Args) == 1 && strings.Contains(args.Args[0], "azd-preinline-")
+		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+			executedPaths = append(executedPaths, args.Args[0])
+			_, err := os.Stat(args.Args[0])
+			require.NoError(t, err)
+
+			return exec.NewRunResult(0, "", ""), nil
+		})
+
+		hooksManager := NewHooksManager(cwd, mockContext.CommandRunner)
+		runner := NewHooksRunner(
+			hooksManager,
+			mockContext.CommandRunner,
+			envManager,
+			mockContext.Console,
+			cwd,
+			hooksMap,
+			env,
+			mockContext.Container,
+		)
+
+		err := runner.RunHooks(*mockContext.Context, HookTypePre, nil, "inline")
+		require.NoError(t, err)
+		require.Len(t, executedPaths, 1)
+
+		_, err = os.Stat(executedPaths[0])
+		require.Error(t, err)
+		require.True(t, os.IsNotExist(err))
+
+		err = runner.RunHooks(*mockContext.Context, HookTypePre, nil, "inline")
+		require.NoError(t, err)
+		require.Len(t, executedPaths, 2)
+		require.NotEqual(t, executedPaths[0], executedPaths[1])
+
+		_, err = os.Stat(executedPaths[1])
+		require.Error(t, err)
+		require.True(t, os.IsNotExist(err))
+	})
+
 	t.Run("InvokeAction", func(t *testing.T) {
 		ranPreHook := false
 		ranPostHook := false
@@ -370,12 +414,8 @@ func Test_Hooks_GetScript(t *testing.T) {
 		require.Equal(t, "*bash.bashScript", reflect.TypeOf(script).String())
 		require.Equal(t, ScriptLocationInline, hookConfig.location)
 		require.Equal(t, ShellTypeBash, hookConfig.Shell)
-		require.Contains(t, hookConfig.path, os.TempDir())
-		require.Contains(t, hookConfig.path, ".sh")
-		require.NoError(t, err)
-
-		fileInfo, err := os.Stat(hookConfig.path)
-		require.NotNil(t, fileInfo)
+		require.Equal(t, "echo 'hello'", hookConfig.script)
+		require.Empty(t, hookConfig.path)
 		require.NoError(t, err)
 	})
 
@@ -407,12 +447,7 @@ func Test_Hooks_GetScript(t *testing.T) {
 			hookConfig.script,
 			"Invoke-WebRequest -Uri \"https://sample.com/sample.json\" -OutFile \"out.json\"",
 		)
-		require.Contains(t, hookConfig.path, os.TempDir())
-		require.Contains(t, hookConfig.path, ".ps1")
-		require.NoError(t, err)
-
-		fileInfo, err := os.Stat(hookConfig.path)
-		require.NotNil(t, fileInfo)
+		require.Empty(t, hookConfig.path)
 		require.NoError(t, err)
 	})
 

@@ -977,7 +977,12 @@ type workflowCmdAdapter struct {
 // so that persistent flags (e.g., --trace-log-file) are properly parsed and visible
 // to telemetry middleware on the fresh command tree.
 func (w *workflowCmdAdapter) ExecuteContext(ctx context.Context, args []string) error {
-	childCtx := middleware.WithChildAction(ctx)
+	// Cancel the child context when the step completes so that any event handlers
+	// registered during this step (e.g. by service target Initialize methods) are
+	// marked as expired and cleaned up on the next RaiseEvent call.
+	childCtx, cancel := context.WithCancel(middleware.WithChildAction(ctx))
+	defer cancel()
+
 	rootCmd := w.newCommand()
 	// Always set args explicitly to prevent Cobra from falling back to os.Args[1:].
 	// Cobra uses os.Args when cmd.args is nil (but not when it's an empty slice).

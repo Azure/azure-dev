@@ -316,7 +316,7 @@ func (i *Initializer) prjConfigFromDetect(
 			return config, err
 		}
 
-		config.Services[svc.Name] = &svc
+		config.Services[svc.Name] = svc
 		svcMapping[prj.Path] = svc.Name
 	}
 

@@ -214,6 +214,7 @@ These variables are used by the Terraform provider integration to authenticate w
 | `AZD_DEBUG` | If true, enables debug mode. |
 | `AZD_DEBUG_LOG` | If true, enables debug-level logging. |
 | `AZD_DEBUG_TELEMETRY` | If true, enables debug-level telemetry output. |
+| `AZD_DEBUG_MSAL_CACHE` | If true, logs MSAL cache metadata before and after login and around the first silent token acquisitions, including account identifiers and usernames, while hashing cache keys and token secrets. |
 | `AZD_DEBUG_LOGIN_FORCE_SUBSCRIPTION_REFRESH` | If true, forces a refresh of the subscription list on login. |
 | `AZD_DEBUG_SYNTHETIC_SUBSCRIPTION` | If set, provides a synthetic subscription for testing. |
 | `AZD_DEBUG_NO_ALPHA_WARNINGS` | If true, suppresses alpha feature warnings. |

@@ -83,8 +83,9 @@ func (e *ReLoginRequiredError) init(response *AadErrorResponse, scopes []string,
 		}
 	}
 
-	// The refresh token has expired or is invalid due to sign-in frequency checks by Conditional Access.
-	if slices.Contains(response.ErrorCodes, 70043) {
+	// The refresh token has expired, either due to inactivity (700082) or due to
+	// sign-in frequency checks enforced by Conditional Access (70043).
+	if slices.Contains(response.ErrorCodes, 70043) || slices.Contains(response.ErrorCodes, 700082) {
 		e.scenario = "login expired"
 	}
 

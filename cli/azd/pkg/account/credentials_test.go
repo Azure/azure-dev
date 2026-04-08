@@ -100,6 +100,7 @@ func TestSubscriptionCredentialProvider_AADSTSErrors(t *testing.T) {
 		// Check that the suggestion includes tenant-specific guidance
 		assert.Contains(t, errWithSuggestion.Suggestion, tenantId)
 		assert.Contains(t, errWithSuggestion.Suggestion, "azd auth login --tenant-id")
+		assert.Contains(t, errWithSuggestion.Message, tenantId)
 
 		// The underlying error should contain AADSTS70043
 		assert.Contains(t, errWithSuggestion.Error(), "AADSTS70043")
@@ -129,9 +130,34 @@ func TestSubscriptionCredentialProvider_AADSTSErrors(t *testing.T) {
 		// Check that the suggestion includes tenant-specific guidance
 		assert.Contains(t, errWithSuggestion.Suggestion, tenantId)
 		assert.Contains(t, errWithSuggestion.Suggestion, "azd auth login --tenant-id")
+		assert.Contains(t, errWithSuggestion.Message, tenantId)
 
 		// The underlying error should contain AADSTS700082
 		assert.Contains(t, errWithSuggestion.Error(), "AADSTS700082")
+	})
+
+	t.Run("AADSTS700082_WithExistingSuggestion_PreservesWrappedFields", func(t *testing.T) {
+		provider := NewSubscriptionCredentialProvider(
+			subscriptionTenantResolverFunc(func(ctx context.Context, subId string) (string, error) {
+				return tenantId, nil
+			}),
+			multiTenantCredentialProviderFunc(func(ctx context.Context, tid string) (azcore.TokenCredential, error) {
+				return nil, &internal.ErrorWithSuggestion{
+					Err:        errors.New("AADSTS700082: The refresh token has expired"),
+					Message:    "Login expired for the current account.",
+					Suggestion: "Run `azd auth login` to acquire a new token.",
+				}
+			}),
+		)
+
+		_, err := provider.CredentialForSubscription(context.Background(), subscriptionId)
+		assert.Error(t, err)
+
+		var errWithSuggestion *internal.ErrorWithSuggestion
+		assert.True(t, errors.As(err, &errWithSuggestion), "error should be wrapped in ErrorWithSuggestion")
+		assert.Equal(t, "Login expired for the current account.", errWithSuggestion.Message)
+		assert.Contains(t, errWithSuggestion.Suggestion, "Run `azd auth login` to acquire a new token.")
+		assert.Contains(t, errWithSuggestion.Suggestion, tenantId)
 	})
 
 	t.Run("TenantLookupFailure_EnhancedError", func(t *testing.T) {

@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -271,6 +272,7 @@ func TestMemoryCache_ReadAndSet(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, []byte("inner-val"), val)
 	})
+
 }
 
 // ---------- fixedMarshaller ----------
@@ -483,6 +485,22 @@ func TestNewReLoginRequiredError(t *testing.T) {
 			resp, nil, cloud.AzurePublic())
 		assert.True(t, ok)
 		require.Error(t, err)
+	})
+
+	t.Run("error_code_700082_sets_login_expired", func(t *testing.T) {
+		t.Parallel()
+		resp := &AadErrorResponse{
+			Error:            "invalid_grant",
+			ErrorDescription: "AADSTS700082: expired",
+			ErrorCodes:       []int{700082},
+		}
+		err, ok := newReLoginRequiredError(resp, nil, cloud.AzurePublic())
+		assert.True(t, ok)
+		require.Error(t, err)
+
+		var errWithSuggestion *internal.ErrorWithSuggestion
+		require.True(t, errors.As(err, &errWithSuggestion))
+		assert.Contains(t, errWithSuggestion.Suggestion, "login expired")
 	})
 
 	t.Run("error_code_50005_adds_device_code_flag", func(t *testing.T) {

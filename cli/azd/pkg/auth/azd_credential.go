@@ -16,23 +16,29 @@ import (
 )
 
 type azdCredential struct {
-	client   publicClient
-	account  *public.Account
-	cloud    *cloud.Cloud
-	tenantID string
+	client      publicClient
+	account     *public.Account
+	cloud       *cloud.Cloud
+	tenantID    string
+	cacheTracer *msalCacheTracer
 }
 
 // newAzdCredential creates a credential that acquires tokens via MSAL's public client.
 // tenantID, when non-empty, is forwarded to AcquireTokenSilent so MSAL issues tokens
 // for that specific tenant instead of defaulting to the account's home tenant.
 func newAzdCredential(
-	client publicClient, account *public.Account, cloud *cloud.Cloud, tenantID string,
+	client publicClient,
+	account *public.Account,
+	cloud *cloud.Cloud,
+	tenantID string,
+	cacheTracer *msalCacheTracer,
 ) *azdCredential {
 	return &azdCredential{
-		client:   client,
-		account:  account,
-		cloud:    cloud,
-		tenantID: tenantID,
+		client:      client,
+		account:     account,
+		cloud:       cloud,
+		tenantID:    tenantID,
+		cacheTracer: cacheTracer,
 	}
 }
 
@@ -57,9 +63,17 @@ func (c *azdCredential) GetToken(ctx context.Context, options policy.TokenReques
 		silentOpts = append(silentOpts, public.WithTenantID(tenantID))
 	}
 
-	res, err := c.client.AcquireTokenSilent(ctx, options.Scopes, silentOpts...)
+	phase := "after-first-acquire-token-silent"
+	failurePhase := "after-first-acquire-token-silent-failure"
+	if tenantID != "" {
+		phase = "after-first-tenant-acquire-token-silent"
+		failurePhase = "after-first-tenant-acquire-token-silent-failure"
+	}
 
+	res, err := c.client.AcquireTokenSilent(ctx, options.Scopes, silentOpts...)
 	if err != nil {
+		c.cacheTracer.LogSnapshotOnce(failurePhase)
+
 		if authFailed, ok := errors.AsType[*AuthFailedError](err); ok {
 			if loginErr, ok := newReLoginRequiredError(authFailed.Parsed, options.Scopes, c.cloud); ok {
 				log.Println(authFailed.httpErrorDetails())
@@ -78,6 +92,8 @@ func (c *azdCredential) GetToken(ctx context.Context, options policy.TokenReques
 
 		return azcore.AccessToken{}, err
 	}
+
+	c.cacheTracer.LogSnapshotOnce(phase)
 
 	return azcore.AccessToken{
 		Token:     res.AccessToken,

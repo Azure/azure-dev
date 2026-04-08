@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"text/tabwriter"
+	"time"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
 
@@ -24,7 +25,8 @@ type showFlags struct {
 // ShowAction handles the execution of the show command.
 type ShowAction struct {
 	*AgentContext
-	flags *showFlags
+	flags     *showFlags
+	azdClient *azdext.AzdClient
 }
 
 func newShowCommand() *cobra.Command {
@@ -32,11 +34,8 @@ func newShowCommand() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "show [name]",
-		Short: "Show the status of a hosted agent deployment.",
-		Long: `Show the status of a hosted agent deployment.
-
-Retrieves the runtime status of a hosted agent container, including its current state,
-replica configuration, and any error messages.
+		Short: "Show the status of a hosted agent.",
+		Long: `Show the status of a hosted agent.
 
 The agent name and version are resolved automatically from the azure.yaml service
 configuration and the current azd environment. Optionally specify the service name
@@ -91,6 +90,7 @@ configuration and the current azd environment. Optionally specify the service na
 			action := &ShowAction{
 				AgentContext: agentContext,
 				flags:        flags,
+				azdClient:    azdClient,
 			}
 
 			return action.Run(ctx)
@@ -107,6 +107,22 @@ func (a *ShowAction) Run(ctx context.Context) error {
 	agentClient, err := a.NewClient()
 	if err != nil {
 		return err
+	}
+
+	if isVNextEnabled(ctx, a.azdClient) {
+		version, err := agentClient.GetAgentVersion(
+			ctx, a.Name, a.Version, DefaultAgentAPIVersion,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to get agent version: %w", err)
+		}
+
+		switch a.flags.output {
+		case "table":
+			return printAgentVersionTable(version)
+		default:
+			return printAgentVersionJSON(version)
+		}
 	}
 
 	container, err := agentClient.GetAgentContainer(ctx, a.Name, a.Version, DefaultAgentAPIVersion)
@@ -163,6 +179,37 @@ func printStatusTable(container *agent_api.AgentContainerObject) error {
 				fmt.Fprintf(w, "Replica %d Container State\t%s\n", i+1, r.ContainerState)
 			}
 		}
+	}
+
+	return w.Flush()
+}
+
+func printAgentVersionJSON(version *agent_api.AgentVersionObject) error {
+	jsonBytes, err := json.MarshalIndent(version, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal agent version to JSON: %w", err)
+	}
+	fmt.Println(string(jsonBytes))
+	return nil
+}
+
+func printAgentVersionTable(version *agent_api.AgentVersionObject) error {
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "FIELD\tVALUE")
+	fmt.Fprintln(w, "-----\t-----")
+
+	fmt.Fprintf(w, "ID\t%s\n", version.ID)
+	fmt.Fprintf(w, "Name\t%s\n", version.Name)
+	fmt.Fprintf(w, "Version\t%s\n", version.Version)
+	if version.Description != nil {
+		fmt.Fprintf(w, "Description\t%s\n", *version.Description)
+	}
+	if version.CreatedAt != 0 {
+		ts := time.Unix(version.CreatedAt, 0).UTC().Format(time.RFC3339)
+		fmt.Fprintf(w, "Created At\t%s\n", ts)
+	}
+	for k, v := range version.Metadata {
+		fmt.Fprintf(w, "Metadata[%s]\t%s\n", k, v)
 	}
 
 	return w.Flush()

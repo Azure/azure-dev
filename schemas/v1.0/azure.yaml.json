@@ -787,10 +787,10 @@
                     ],
                     "default": "sh"
                 },
-                "language": {
+                "kind": {
                     "type": "string",
-                    "title": "Programming language of the hook script",
-                    "description": "Optional. Specifies the programming language used to execute the hook script. When omitted, the language is auto-detected from the file extension of the 'run' path (e.g. .py → python, .ps1 → pwsh). Shell languages (sh, pwsh) use the existing shell runner; other languages use a language-specific executor that handles dependency installation and runtime management.",
+                    "title": "Executor kind for the hook script",
+                    "description": "Optional. Specifies the executor kind used to run the hook script. When omitted, the kind is auto-detected from the file extension of the 'run' path (e.g. .py → python, .ps1 → pwsh). Shell kinds (sh, pwsh) use the existing shell runner; other kinds use a language-specific executor that handles dependency installation and runtime management.",
                     "enum": [
                         "sh",
                         "pwsh",
@@ -802,8 +802,8 @@
                 },
                 "dir": {
                     "type": "string",
-                    "title": "Working directory for language hook execution",
-                    "description": "Optional. Specifies the working directory for language hook execution. Used as the project root for dependency installation (e.g. pip install from requirements.txt) and as the working directory when running the script. Relative paths are resolved from the project or service root. When omitted, defaults to the directory containing the script file."
+                    "title": "Working directory for hook execution",
+                    "description": "Optional. Specifies the working directory for hook execution. Used as the project root for dependency installation (e.g. pip install from requirements.txt) and as the working directory when running the script. Relative paths are resolved from the project or service root. When omitted, defaults to the directory containing the script file."
                 },
                 "run": {
                     "type": "string",
@@ -868,7 +868,7 @@
                         "properties": {
                             "run": false,
                             "shell": false,
-                            "language": false,
+                            "kind": false,
                             "dir": false,
                             "interactive": false,
                             "continueOnError": false,
@@ -901,7 +901,7 @@
                             },
                             {
                                 "required": [
-                                    "language"
+                                    "kind"
                                 ]
                             },
                             {

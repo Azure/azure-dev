@@ -5,13 +5,11 @@ package bash
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"runtime"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
@@ -34,38 +32,17 @@ func (b *bashExecutor) Prepare(
 		return nil
 	}
 
-	tmpFile, err := os.CreateTemp(
-		"", fmt.Sprintf("azd-%s-*.sh", execCtx.HookName),
-	)
-	if err != nil {
-		return fmt.Errorf("creating temp script: %w", err)
-	}
-
 	content := "#!/bin/sh\nset -e\n\n" +
 		"# Auto generated file from Azure Developer CLI\n" +
 		execCtx.InlineScript + "\n"
 
-	if err := os.WriteFile(
-		tmpFile.Name(), []byte(content), osutil.PermissionExecutableFile,
-	); err != nil {
-		tmpFile.Close()
-		os.Remove(tmpFile.Name())
-		return fmt.Errorf("writing temp script: %w", err)
+	path, err := tools.CreateInlineTempScript(
+		execCtx.HookName, ".sh", content,
+	)
+	if err != nil {
+		return err
 	}
-
-	// os.WriteFile only applies perm when *creating* a new file.
-	// The file already exists from CreateTemp (mode 0600), so we
-	// must explicitly chmod to add execute permission for Unix.
-	if err := os.Chmod(
-		tmpFile.Name(), osutil.PermissionExecutableFile,
-	); err != nil {
-		tmpFile.Close()
-		os.Remove(tmpFile.Name())
-		return fmt.Errorf("setting temp script permissions: %w", err)
-	}
-
-	tmpFile.Close()
-	b.tempFile = tmpFile.Name()
+	b.tempFile = path
 
 	return nil
 }

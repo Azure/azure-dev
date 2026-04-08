@@ -4,11 +4,16 @@
 package ext
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -316,6 +321,30 @@ func (hc *HookConfig) validate() error {
 	}
 	hc.resolvedDir = absDir
 
+	// Validate that resolvedScriptPath stays within the project
+	// root to prevent path traversal via ".." in Run.
+	if hc.resolvedScriptPath != "" {
+		absScript, scriptErr := filepath.Abs(
+			hc.resolvedScriptPath,
+		)
+		if scriptErr != nil {
+			return fmt.Errorf(
+				"resolving hook script path: %w",
+				scriptErr,
+			)
+		}
+		if !osutil.IsPathContained(
+			absBoundary, absScript,
+		) {
+			return fmt.Errorf(
+				"hook script path %q escapes "+
+					"project root %q",
+				hc.Run, boundaryDir,
+			)
+		}
+		hc.resolvedScriptPath = absScript
+	}
+
 	hc.validated = true
 
 	return nil
@@ -373,6 +402,60 @@ func InferHookType(name string) (HookType, string) {
 	}
 
 	return HookTypeNone, name
+}
+
+// HooksConfigSignature returns a stable signature for a set of hook configurations.
+// The signature ignores runtime-only state and changes whenever the effective hook config changes.
+func HooksConfigSignature(hooks map[string][]*HookConfig) string {
+	if len(hooks) == 0 {
+		return ""
+	}
+
+	var builder strings.Builder
+
+	for _, hookName := range slices.Sorted(maps.Keys(hooks)) {
+		builder.WriteString(hookName)
+		builder.WriteByte('\x00')
+
+		for index, hookConfig := range hooks[hookName] {
+			builder.WriteString(strconv.Itoa(index))
+			builder.WriteByte('\x00')
+			appendHookConfigSignature(&builder, hookConfig)
+		}
+	}
+
+	sum := sha256.Sum256([]byte(builder.String()))
+	return hex.EncodeToString(sum[:])
+}
+
+func appendHookConfigSignature(builder *strings.Builder, hookConfig *HookConfig) {
+	if hookConfig == nil {
+		builder.WriteString("<nil>\x00")
+		return
+	}
+
+	builder.WriteString(string(hookConfig.Kind))
+	builder.WriteByte('\x00')
+	builder.WriteString(hookConfig.Shell)
+	builder.WriteByte('\x00')
+	builder.WriteString(hookConfig.Run)
+	builder.WriteByte('\x00')
+	builder.WriteString(hookConfig.Dir)
+	builder.WriteByte('\x00')
+	builder.WriteString(strconv.FormatBool(hookConfig.ContinueOnError))
+	builder.WriteByte('\x00')
+	builder.WriteString(strconv.FormatBool(hookConfig.Interactive))
+	builder.WriteByte('\x00')
+
+	for _, secretName := range slices.Sorted(maps.Keys(hookConfig.Secrets)) {
+		builder.WriteString(secretName)
+		builder.WriteByte('=')
+		builder.WriteString(hookConfig.Secrets[secretName])
+		builder.WriteByte('\x00')
+	}
+
+	appendHookConfigSignature(builder, hookConfig.Windows)
+	appendHookConfigSignature(builder, hookConfig.Posix)
 }
 
 // defaultKindForOS returns the default shell kind for the

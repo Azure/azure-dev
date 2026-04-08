@@ -739,6 +739,7 @@ func Test_CommandHooks_ChildAction_HooksStillFire(t *testing.T) {
 
 func Test_CommandHooks_ServiceHooks_DoNotDuplicateAcrossParentAndChildRuns(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockContext)
 	projectConfig := createServiceHookProjectConfig(t, "predeploy")
 	runOptions := Options{CommandPath: "azd deploy"}
 
@@ -776,6 +777,7 @@ func Test_CommandHooks_ServiceHooks_DoNotDuplicateAcrossParentAndChildRuns(t *te
 
 func Test_CommandHooks_ServiceHooks_DoNotDuplicateAcrossRetries(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockContext)
 	projectConfig := createServiceHookProjectConfig(t, "predeploy")
 	runOptions := Options{CommandPath: "azd deploy"}
 
@@ -808,6 +810,7 @@ func Test_CommandHooks_ServiceHooks_DoNotDuplicateAcrossRetries(t *testing.T) {
 
 func Test_CommandHooks_ServiceHooks_RegisterForChildOnlyWorkflowRuns(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockContext)
 	projectConfig := createServiceHookProjectConfig(t, "predeploy")
 	runOptions := Options{CommandPath: "azd deploy"}
 

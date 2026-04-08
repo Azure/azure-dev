@@ -11,7 +11,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
@@ -45,40 +44,19 @@ func (p *powershellExecutor) Prepare(
 
 	// Create temp file for inline scripts.
 	if execCtx.InlineScript != "" {
-		tmpFile, err := os.CreateTemp(
-			"", fmt.Sprintf("azd-%s-*.ps1", execCtx.HookName),
-		)
-		if err != nil {
-			return fmt.Errorf("creating temp script: %w", err)
-		}
-
 		content := "$ErrorActionPreference = 'Stop'\n\n" +
 			"# Auto generated file from Azure Developer CLI\n" +
 			execCtx.InlineScript + "\n" +
 			"if ((Test-Path -LiteralPath variable:\\LASTEXITCODE)) " +
 			"{ exit $LASTEXITCODE }\n"
 
-		if err := os.WriteFile(
-			tmpFile.Name(), []byte(content), osutil.PermissionExecutableFile,
-		); err != nil {
-			tmpFile.Close()
-			os.Remove(tmpFile.Name())
-			return fmt.Errorf("writing temp script: %w", err)
+		path, err := tools.CreateInlineTempScript(
+			execCtx.HookName, ".ps1", content,
+		)
+		if err != nil {
+			return err
 		}
-
-		// os.WriteFile only applies perm when *creating* a new file.
-		// The file already exists from CreateTemp (mode 0600), so we
-		// must explicitly chmod to add execute permission for Unix.
-		if err := os.Chmod(
-			tmpFile.Name(), osutil.PermissionExecutableFile,
-		); err != nil {
-			tmpFile.Close()
-			os.Remove(tmpFile.Name())
-			return fmt.Errorf("setting temp script permissions: %w", err)
-		}
-
-		tmpFile.Close()
-		p.tempFile = tmpFile.Name()
+		p.tempFile = path
 	}
 
 	return nil

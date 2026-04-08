@@ -5,9 +5,12 @@ package tools
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"os"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
 // ExecutionContext provides the per-invocation execution environment
@@ -65,4 +68,44 @@ type HookExecutor interface {
 	// of success or failure. Implementations must be safe to call
 	// even when Prepare was not called or created no resources.
 	Cleanup(ctx context.Context) error
+}
+
+// CreateInlineTempScript creates a temp file for an inline hook
+// script with executable permissions. The caller is responsible
+// for cleaning up the returned file.
+func CreateInlineTempScript(
+	hookName, ext, content string,
+) (string, error) {
+	file, err := os.CreateTemp(
+		"", fmt.Sprintf("azd-%s-*%s", hookName, ext),
+	)
+	if err != nil {
+		return "", fmt.Errorf(
+			"failed creating temp file: %w", err,
+		)
+	}
+	filePath := file.Name()
+	file.Close()
+
+	if err := os.WriteFile(
+		filePath, []byte(content),
+		osutil.PermissionExecutableFile,
+	); err != nil {
+		os.Remove(filePath)
+		return "", fmt.Errorf(
+			"failed writing temp script: %w", err,
+		)
+	}
+
+	if err := os.Chmod(
+		filePath, osutil.PermissionExecutableFile,
+	); err != nil {
+		os.Remove(filePath)
+		return "", fmt.Errorf(
+			"failed setting executable permission: %w",
+			err,
+		)
+	}
+
+	return filePath, nil
 }

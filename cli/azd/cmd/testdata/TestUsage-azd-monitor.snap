@@ -9,6 +9,7 @@ Flags
         --live               	: Open a browser to Application Insights Live Metrics. Live Metrics is currently not supported for Python apps.
         --logs               	: Open a browser to Application Insights Logs.
         --overview           	: Open a browser to Application Insights Overview Dashboard.
+        --tail               	: Stream application logs from a deployed service directly to the terminal.
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.
@@ -26,5 +27,8 @@ Examples
 
   Open Application Insights Overview Dashboard.
     azd monitor --overview
+
+  Stream application logs directly to the terminal
+    azd monitor --tail
 
 

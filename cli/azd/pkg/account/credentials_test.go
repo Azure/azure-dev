@@ -55,17 +55,17 @@ func TestSubscriptionCredentialProvider(t *testing.T) {
 	)
 
 	t.Run("Success", func(t *testing.T) {
-		cred1, err := provider.CredentialForSubscription(context.Background(), sub1)
+		cred1, err := provider.CredentialForSubscription(t.Context(), sub1)
 		assert.NoError(t, err)
 		assert.Equal(t, tenantToCred[tenant1], cred1)
 
-		cred2, err := provider.CredentialForSubscription(context.Background(), sub2)
+		cred2, err := provider.CredentialForSubscription(t.Context(), sub2)
 		assert.NoError(t, err)
 		assert.Equal(t, tenantToCred[tenant2], cred2)
 	})
 
 	t.Run("Failure", func(t *testing.T) {
-		_, err := provider.CredentialForSubscription(context.Background(), "11111111-1111-1111-1111-111111111111")
+		_, err := provider.CredentialForSubscription(t.Context(), "11111111-1111-1111-1111-111111111111")
 		assert.Error(t, err)
 	})
 }
@@ -90,7 +90,7 @@ func TestSubscriptionCredentialProvider_AADSTSErrors(t *testing.T) {
 			}),
 		)
 
-		_, err := provider.CredentialForSubscription(context.Background(), subscriptionId)
+		_, err := provider.CredentialForSubscription(t.Context(), subscriptionId)
 		assert.Error(t, err)
 
 		// The error should be wrapped in an ErrorWithSuggestion
@@ -120,7 +120,7 @@ func TestSubscriptionCredentialProvider_AADSTSErrors(t *testing.T) {
 			}),
 		)
 
-		_, err := provider.CredentialForSubscription(context.Background(), subscriptionId)
+		_, err := provider.CredentialForSubscription(t.Context(), subscriptionId)
 		assert.Error(t, err)
 
 		// The error should be wrapped in an ErrorWithSuggestion
@@ -150,7 +150,7 @@ func TestSubscriptionCredentialProvider_AADSTSErrors(t *testing.T) {
 			}),
 		)
 
-		_, err := provider.CredentialForSubscription(context.Background(), subscriptionId)
+		_, err := provider.CredentialForSubscription(t.Context(), subscriptionId)
 		assert.Error(t, err)
 
 		var errWithSuggestion *internal.ErrorWithSuggestion
@@ -170,7 +170,7 @@ func TestSubscriptionCredentialProvider_AADSTSErrors(t *testing.T) {
 			}),
 		)
 
-		_, err := provider.CredentialForSubscription(context.Background(), subscriptionId)
+		_, err := provider.CredentialForSubscription(t.Context(), subscriptionId)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "AZURE_TENANT_ID")
 		assert.Contains(t, err.Error(), "manually set the subscription ID")

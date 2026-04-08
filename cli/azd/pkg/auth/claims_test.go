@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -271,6 +272,35 @@ func TestMemoryCache_ReadAndSet(t *testing.T) {
 		val, err := mc.Read("from-inner")
 		require.NoError(t, err)
 		assert.Equal(t, []byte("inner-val"), val)
+	})
+
+	t.Run("concurrent_read_and_set", func(t *testing.T) {
+		// Use an inner cache to exercise the full Set path (read old → inner.Set → map write).
+		inner := &memoryCache{cache: map[string][]byte{}}
+		mc := &memoryCache{cache: map[string][]byte{}, inner: inner}
+
+		var wg sync.WaitGroup
+		for i := range 8 {
+			writerID := i
+			wg.Go(func() {
+				for j := range 200 {
+					value := []byte(fmt.Sprintf("value-%d-%d", writerID, j))
+					_ = mc.Set("shared-key", value)
+					_, _ = mc.Read("shared-key")
+				}
+			})
+		}
+
+		wg.Wait()
+
+		// Both the in-memory map and the inner cache must agree.
+		val, err := mc.Read("shared-key")
+		require.NoError(t, err)
+		assert.NotEmpty(t, val)
+
+		innerVal, err := inner.Read("shared-key")
+		require.NoError(t, err)
+		assert.Equal(t, val, innerVal)
 	})
 
 }

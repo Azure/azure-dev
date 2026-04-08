@@ -657,7 +657,7 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		projectEndpoint := strings.TrimRight(azdEnv["AZURE_AI_PROJECT_ENDPOINT"], "/")
 		for _, toolbox := range foundryAgentConfig.Toolboxes {
 			toolboxKey := p.getServiceKey(toolbox.Name)
-			envKey := fmt.Sprintf("FOUNDRY_TOOLBOX_%s_MCP_ENDPOINT", toolboxKey)
+			envKey := fmt.Sprintf("TOOLBOX_%s_MCP_ENDPOINT", toolboxKey)
 			if _, exists := resolvedEnvVars[envKey]; !exists {
 				resolvedEnvVars[envKey] = fmt.Sprintf(
 					"%s/toolsets/%s/mcp", projectEndpoint, toolbox.Name,

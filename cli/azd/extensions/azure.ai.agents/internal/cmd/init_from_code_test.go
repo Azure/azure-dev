@@ -412,7 +412,7 @@ func TestWriteDefinitionToSrcDir(t *testing.T) {
 				Kind: agent_yaml.AgentKindHosted,
 			},
 			Protocols: []agent_yaml.ProtocolVersionRecord{
-				{Protocol: "responses", Version: "v1"},
+				{Protocol: "responses", Version: "1.0.0"},
 			},
 			EnvironmentVariables: &[]agent_yaml.EnvironmentVariable{
 				{Name: "AZURE_OPENAI_ENDPOINT", Value: "${AZURE_OPENAI_ENDPOINT}"},
@@ -601,22 +601,22 @@ func TestPromptProtocols_FlagValues(t *testing.T) {
 			name:          "responses only",
 			flagProtocols: []string{"responses"},
 			wantProtocols: []agent_yaml.ProtocolVersionRecord{
-				{Protocol: "responses", Version: "v1"},
+				{Protocol: "responses", Version: "1.0.0"},
 			},
 		},
 		{
 			name:          "invocations only",
 			flagProtocols: []string{"invocations"},
 			wantProtocols: []agent_yaml.ProtocolVersionRecord{
-				{Protocol: "invocations", Version: "v0.0.1"},
+				{Protocol: "invocations", Version: "1.0.0"},
 			},
 		},
 		{
 			name:          "both protocols",
 			flagProtocols: []string{"responses", "invocations"},
 			wantProtocols: []agent_yaml.ProtocolVersionRecord{
-				{Protocol: "responses", Version: "v1"},
-				{Protocol: "invocations", Version: "v0.0.1"},
+				{Protocol: "responses", Version: "1.0.0"},
+				{Protocol: "invocations", Version: "1.0.0"},
 			},
 		},
 		{
@@ -629,8 +629,8 @@ func TestPromptProtocols_FlagValues(t *testing.T) {
 			name:          "duplicates are removed",
 			flagProtocols: []string{"responses", "responses", "invocations"},
 			wantProtocols: []agent_yaml.ProtocolVersionRecord{
-				{Protocol: "responses", Version: "v1"},
-				{Protocol: "invocations", Version: "v0.0.1"},
+				{Protocol: "responses", Version: "1.0.0"},
+				{Protocol: "invocations", Version: "1.0.0"},
 			},
 		},
 	}
@@ -680,8 +680,8 @@ func TestPromptProtocols_NoPromptDefault(t *testing.T) {
 	if got[0].Protocol != "responses" {
 		t.Errorf("protocol = %q, want %q", got[0].Protocol, "responses")
 	}
-	if got[0].Version != "v1" {
-		t.Errorf("version = %q, want %q", got[0].Version, "v1")
+	if got[0].Version != "1.0.0" {
+		t.Errorf("version = %q, want %q", got[0].Version, "1.0.0")
 	}
 }
 
@@ -736,8 +736,8 @@ func TestPromptProtocols_Interactive(t *testing.T) {
 				}, nil
 			},
 			wantProtocols: []agent_yaml.ProtocolVersionRecord{
-				{Protocol: "responses", Version: "v1"},
-				{Protocol: "invocations", Version: "v0.0.1"},
+				{Protocol: "responses", Version: "1.0.0"},
+				{Protocol: "invocations", Version: "1.0.0"},
 			},
 		},
 		{
@@ -751,7 +751,7 @@ func TestPromptProtocols_Interactive(t *testing.T) {
 				}, nil
 			},
 			wantProtocols: []agent_yaml.ProtocolVersionRecord{
-				{Protocol: "responses", Version: "v1"},
+				{Protocol: "responses", Version: "1.0.0"},
 			},
 		},
 		{

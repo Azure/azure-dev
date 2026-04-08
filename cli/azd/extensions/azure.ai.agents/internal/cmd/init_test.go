@@ -453,21 +453,21 @@ func TestExtractToolboxAndConnectionConfigs_TypedTools(t *testing.T) {
 	}
 
 	// Credentials should be ${VAR} references, not raw values
-	if conn.Credentials["clientId"] != "${FOUNDRY_TOOL_GITHUB_COPILOT_CLIENTID}" {
+	if conn.Credentials["clientId"] != "${TOOL_GITHUB_COPILOT_CLIENTID}" {
 		t.Errorf("Expected env var ref for clientId, got '%v'", conn.Credentials["clientId"])
 	}
-	if conn.Credentials["clientSecret"] != "${FOUNDRY_TOOL_GITHUB_COPILOT_CLIENTSECRET}" {
+	if conn.Credentials["clientSecret"] != "${TOOL_GITHUB_COPILOT_CLIENTSECRET}" {
 		t.Errorf("Expected env var ref for clientSecret, got '%v'", conn.Credentials["clientSecret"])
 	}
 
 	// Raw values should be in the credEnvVars map
-	if credEnvVars["FOUNDRY_TOOL_GITHUB_COPILOT_CLIENTID"] != "my-client-id" {
+	if credEnvVars["TOOL_GITHUB_COPILOT_CLIENTID"] != "my-client-id" {
 		t.Errorf("Expected env var value 'my-client-id', got '%s'",
-			credEnvVars["FOUNDRY_TOOL_GITHUB_COPILOT_CLIENTID"])
+			credEnvVars["TOOL_GITHUB_COPILOT_CLIENTID"])
 	}
-	if credEnvVars["FOUNDRY_TOOL_GITHUB_COPILOT_CLIENTSECRET"] != "my-secret" {
+	if credEnvVars["TOOL_GITHUB_COPILOT_CLIENTSECRET"] != "my-secret" {
 		t.Errorf("Expected env var value 'my-secret', got '%s'",
-			credEnvVars["FOUNDRY_TOOL_GITHUB_COPILOT_CLIENTSECRET"])
+			credEnvVars["TOOL_GITHUB_COPILOT_CLIENTSECRET"])
 	}
 
 	// Verify toolbox has both tools
@@ -620,7 +620,7 @@ func TestExtractToolboxAndConnectionConfigs_CustomKeysCredentials(t *testing.T) 
 	if !ok {
 		t.Fatalf("Expected 'keys' to be map[string]any, got %T", keysRaw)
 	}
-	if keys["key"] != "${FOUNDRY_TOOL_CUSTOM_API_KEY}" {
+	if keys["key"] != "${TOOL_CUSTOM_API_KEY}" {
 		t.Errorf("Expected env var ref for key, got '%v'", keys["key"])
 	}
 
@@ -629,7 +629,7 @@ func TestExtractToolboxAndConnectionConfigs_CustomKeysCredentials(t *testing.T) 
 	if _, hasKeys := oauthConn.Credentials["keys"]; hasKeys {
 		t.Error("OAuth2 connection should not have 'keys' wrapper")
 	}
-	if oauthConn.Credentials["clientId"] != "${FOUNDRY_TOOL_OAUTH_TOOL_CLIENTID}" {
+	if oauthConn.Credentials["clientId"] != "${TOOL_OAUTH_TOOL_CLIENTID}" {
 		t.Errorf("Expected flat clientId ref, got '%v'", oauthConn.Credentials["clientId"])
 	}
 }
@@ -644,7 +644,7 @@ func TestInjectToolboxEnvVarsIntoDefinition_AddsEnvVars(t *testing.T) {
 				Name: "my-agent",
 			},
 			Protocols: []agent_yaml.ProtocolVersionRecord{
-				{Protocol: "responses", Version: "v1"},
+				{Protocol: "responses", Version: "1.0.0"},
 			},
 			EnvironmentVariables: &[]agent_yaml.EnvironmentVariable{
 				{Name: "AZURE_OPENAI_ENDPOINT", Value: "${AZURE_OPENAI_ENDPOINT}"},
@@ -678,10 +678,10 @@ func TestInjectToolboxEnvVarsIntoDefinition_AddsEnvVars(t *testing.T) {
 	}
 
 	// Toolbox env var is injected
-	if envVars[1].Name != "FOUNDRY_TOOLBOX_AGENT_TOOLS_MCP_ENDPOINT" {
+	if envVars[1].Name != "TOOLBOX_AGENT_TOOLS_MCP_ENDPOINT" {
 		t.Errorf("Expected injected env var name, got %s", envVars[1].Name)
 	}
-	if envVars[1].Value != "${FOUNDRY_TOOLBOX_AGENT_TOOLS_MCP_ENDPOINT}" {
+	if envVars[1].Value != "${TOOLBOX_AGENT_TOOLS_MCP_ENDPOINT}" {
 		t.Errorf("Expected env var reference value, got %s", envVars[1].Value)
 	}
 }
@@ -696,10 +696,10 @@ func TestInjectToolboxEnvVarsIntoDefinition_SkipsExisting(t *testing.T) {
 				Name: "my-agent",
 			},
 			Protocols: []agent_yaml.ProtocolVersionRecord{
-				{Protocol: "responses", Version: "v1"},
+				{Protocol: "responses", Version: "1.0.0"},
 			},
 			EnvironmentVariables: &[]agent_yaml.EnvironmentVariable{
-				{Name: "FOUNDRY_TOOLBOX_MY_TOOLS_MCP_ENDPOINT", Value: "custom-value"},
+				{Name: "TOOLBOX_MY_TOOLS_MCP_ENDPOINT", Value: "custom-value"},
 			},
 		},
 		Resources: []any{
@@ -739,7 +739,7 @@ func TestInjectToolboxEnvVarsIntoDefinition_MultipleToolboxes(t *testing.T) {
 				Name: "my-agent",
 			},
 			Protocols: []agent_yaml.ProtocolVersionRecord{
-				{Protocol: "responses", Version: "v1"},
+				{Protocol: "responses", Version: "1.0.0"},
 			},
 		},
 		Resources: []any{
@@ -762,10 +762,10 @@ func TestInjectToolboxEnvVarsIntoDefinition_MultipleToolboxes(t *testing.T) {
 	if len(envVars) != 2 {
 		t.Fatalf("Expected 2 env vars, got %d", len(envVars))
 	}
-	if envVars[0].Name != "FOUNDRY_TOOLBOX_SEARCH_TOOLS_MCP_ENDPOINT" {
+	if envVars[0].Name != "TOOLBOX_SEARCH_TOOLS_MCP_ENDPOINT" {
 		t.Errorf("Expected first toolbox env var, got %s", envVars[0].Name)
 	}
-	if envVars[1].Name != "FOUNDRY_TOOLBOX_GITHUB_TOOLS_MCP_ENDPOINT" {
+	if envVars[1].Name != "TOOLBOX_GITHUB_TOOLS_MCP_ENDPOINT" {
 		t.Errorf("Expected second toolbox env var, got %s", envVars[1].Name)
 	}
 }
@@ -835,10 +835,10 @@ func TestToolboxMCPEndpointEnvKey(t *testing.T) {
 		input    string
 		expected string
 	}{
-		{"simple", "my-tools", "FOUNDRY_TOOLBOX_MY_TOOLS_MCP_ENDPOINT"},
-		{"spaces", "my tools", "FOUNDRY_TOOLBOX_MY_TOOLS_MCP_ENDPOINT"},
-		{"mixed", "agent-tools v2", "FOUNDRY_TOOLBOX_AGENT_TOOLS_V2_MCP_ENDPOINT"},
-		{"already upper", "TOOLS", "FOUNDRY_TOOLBOX_TOOLS_MCP_ENDPOINT"},
+		{"simple", "my-tools", "TOOLBOX_MY_TOOLS_MCP_ENDPOINT"},
+		{"spaces", "my tools", "TOOLBOX_MY_TOOLS_MCP_ENDPOINT"},
+		{"mixed", "agent-tools v2", "TOOLBOX_AGENT_TOOLS_V2_MCP_ENDPOINT"},
+		{"already upper", "TOOLS", "TOOLBOX_TOOLS_MCP_ENDPOINT"},
 	}
 
 	for _, tt := range tests {

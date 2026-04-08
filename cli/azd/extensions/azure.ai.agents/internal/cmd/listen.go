@@ -282,7 +282,49 @@ func connectionsEnvUpdate(
 	azdClient *azdext.AzdClient,
 	envName string,
 ) error {
-	return marshalAndSetEnvVar(ctx, azdClient, envName, "AI_PROJECT_CONNECTIONS", connections)
+	// Strip credentials from the connections env var — Bicep's ConnectionConfig
+	// type doesn't include credentials (they're a separate @secure param).
+	// Including them causes "unable to deserialize request body" errors.
+	stripped := make([]project.Connection, len(connections))
+	copy(stripped, connections)
+	for i := range stripped {
+		stripped[i].Credentials = nil
+	}
+
+	if err := marshalAndSetEnvVar(ctx, azdClient, envName, "AI_PROJECT_CONNECTIONS", stripped); err != nil {
+		return err
+	}
+
+	return connectionCredentialsEnvUpdate(ctx, connections, azdClient, envName)
+}
+
+// connectionCredentialsEnvUpdate builds a dictionary of connection name → credentials
+// and serializes it to AI_PROJECT_CONNECTION_CREDENTIALS.
+func connectionCredentialsEnvUpdate(
+	ctx context.Context,
+	connections []project.Connection,
+	azdClient *azdext.AzdClient,
+	envName string,
+) error {
+	credMap := buildConnectionCredentials(connections)
+	if len(credMap) == 0 {
+		return nil
+	}
+
+	return marshalAndSetEnvVar(ctx, azdClient, envName, "AI_PROJECT_CONNECTION_CREDENTIALS", credMap)
+}
+
+// buildConnectionCredentials returns a map of connection name → credentials object
+// for all connections that have non-empty credentials.
+func buildConnectionCredentials(connections []project.Connection) map[string]map[string]any {
+	result := map[string]map[string]any{}
+	for _, conn := range connections {
+		if len(conn.Credentials) > 0 {
+			result[conn.Name] = conn.Credentials
+		}
+	}
+
+	return result
 }
 
 // toolConnectionsEnvUpdate serializes tool connections to AI_PROJECT_TOOL_CONNECTIONS env var.
@@ -596,7 +638,7 @@ func upsertToolset(
 	)
 }
 
-// registerToolboxEnvVars sets FOUNDRY_TOOLBOX_{NAME}_MCP_ENDPOINT.
+// registerToolboxEnvVars sets TOOLBOX_{NAME}_MCP_ENDPOINT.
 func registerToolboxEnvVars(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -616,11 +658,11 @@ func registerToolboxEnvVars(
 	)
 }
 
-// toolboxMCPEndpointEnvKey builds the FOUNDRY_TOOLBOX_{NAME}_MCP_ENDPOINT env var key.
+// toolboxMCPEndpointEnvKey builds the TOOLBOX_{NAME}_MCP_ENDPOINT env var key.
 func toolboxMCPEndpointEnvKey(toolboxName string) string {
 	key := strings.ReplaceAll(toolboxName, " ", "_")
 	key = strings.ReplaceAll(key, "-", "_")
-	return fmt.Sprintf("FOUNDRY_TOOLBOX_%s_MCP_ENDPOINT", strings.ToUpper(key))
+	return fmt.Sprintf("TOOLBOX_%s_MCP_ENDPOINT", strings.ToUpper(key))
 }
 
 // resolveToolboxEnvVars resolves ${VAR} references in toolbox name, description,
@@ -698,10 +740,20 @@ func resolveToolboxConnectionIDs(
 		if connName == "" {
 			continue
 		}
+		connName = resolveTemplateRef(connName)
 		if armID, ok := connIDs[connName]; ok {
 			toolbox.Tools[i]["project_connection_id"] = armID
 		}
 	}
+}
+
+// resolveTemplateRef strips {{ }} template wrapping and trims whitespace.
+// "{{ my_conn }}" → "my_conn", "my_conn" → "my_conn" (unchanged).
+func resolveTemplateRef(s string) string {
+	if strings.HasPrefix(s, "{{") && strings.HasSuffix(s, "}}") {
+		return strings.TrimSpace(s[2 : len(s)-2])
+	}
+	return s
 }
 
 // resolveEnvValue resolves ${VAR} references in a string using envsubst.

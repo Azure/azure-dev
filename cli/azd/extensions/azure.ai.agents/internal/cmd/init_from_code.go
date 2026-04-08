@@ -848,13 +848,13 @@ type protocolInfo struct {
 
 // knownProtocols lists the protocols offered during init, in display order.
 var knownProtocols = []protocolInfo{
-	{Name: "responses", Version: "v1"},
-	{Name: "invocations", Version: "v0.0.1"},
+	{Name: "responses", Version: "1.0.0"},
+	{Name: "invocations", Version: "1.0.0"},
 }
 
 // promptProtocols asks the user which protocols their agent supports.
 // When flagProtocols is non-empty the prompt is skipped and those values are used directly.
-// When noPrompt is true and no flag values are provided, defaults to [responses/v1].
+// When noPrompt is true and no flag values are provided, defaults to [responses/1.0.0].
 func promptProtocols(
 	ctx context.Context,
 	promptClient azdext.PromptServiceClient,
@@ -897,7 +897,7 @@ func promptProtocols(
 	// Non-interactive mode: default to responses.
 	if noPrompt {
 		return []agent_yaml.ProtocolVersionRecord{
-			{Protocol: "responses", Version: "v1"},
+			{Protocol: "responses", Version: "1.0.0"},
 		}, nil
 	}
 

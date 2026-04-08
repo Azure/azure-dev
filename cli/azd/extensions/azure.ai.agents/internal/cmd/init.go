@@ -1798,13 +1798,13 @@ func extractToolboxAndConnectionConfigs(
 }
 
 // credentialEnvVarName builds a deterministic env var name for a connection
-// credential key, e.g. ("github-copilot", "clientSecret") → "FOUNDRY_TOOL_GITHUB_COPILOT_CLIENTSECRET".
+// credential key, e.g. ("github-copilot", "clientSecret") → "TOOL_GITHUB_COPILOT_CLIENTSECRET".
 func credentialEnvVarName(connName, key string) string {
-	s := "FOUNDRY_TOOL_" + strings.ToUpper(connName) + "_" + strings.ToUpper(key)
+	s := "TOOL_" + strings.ToUpper(connName) + "_" + strings.ToUpper(key)
 	return strings.ReplaceAll(s, "-", "_")
 }
 
-// injectToolboxEnvVarsIntoDefinition adds FOUNDRY_TOOLBOX_{NAME}_MCP_ENDPOINT entries
+// injectToolboxEnvVarsIntoDefinition adds TOOLBOX_{NAME}_MCP_ENDPOINT entries
 // to the environment_variables section of a hosted agent definition for each toolbox
 // resource in the manifest. Entries already present in the definition are not overwritten.
 func injectToolboxEnvVarsIntoDefinition(manifest *agent_yaml.AgentManifest) {

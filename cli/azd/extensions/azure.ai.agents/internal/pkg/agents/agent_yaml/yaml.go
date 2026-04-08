@@ -69,23 +69,6 @@ const (
 	AuthTypePAT        AuthType = "PAT"
 )
 
-// ValidAuthTypes returns a slice of all supported AuthType values.
-func ValidAuthTypes() []AuthType {
-	return []AuthType{
-		AuthTypeAAD,
-		AuthTypeApiKey,
-		AuthTypeCustomKeys,
-		AuthTypeNone,
-		AuthTypeOAuth2,
-		AuthTypePAT,
-	}
-}
-
-// IsValidAuthType checks if the provided AuthType is valid.
-func IsValidAuthType(authType AuthType) bool {
-	return slices.Contains(ValidAuthTypes(), authType)
-}
-
 // CategoryKind represents the category of a connection resource.
 type CategoryKind string
 
@@ -628,35 +611,6 @@ type ConnectionResource struct {
 
 	// UseWorkspaceManagedIdentity indicates whether to use workspace managed identity.
 	UseWorkspaceManagedIdentity *bool `json:"useWorkspaceManagedIdentity,omitempty" yaml:"useWorkspaceManagedIdentity,omitempty"` //nolint:lll
-}
-
-// ValidateConnectionResource checks that required fields are present and valid.
-func ValidateConnectionResource(c *ConnectionResource) error {
-	if c.Name == "" {
-		return fmt.Errorf("connection resource is missing required 'name'")
-	}
-	if c.Category == "" {
-		return fmt.Errorf(
-			"connection resource '%s': category is required", c.Name,
-		)
-	}
-	if c.Target == "" {
-		return fmt.Errorf(
-			"connection resource '%s': target is required", c.Name,
-		)
-	}
-	if c.AuthType == "" {
-		return fmt.Errorf(
-			"connection resource '%s': authType is required", c.Name,
-		)
-	}
-	if !IsValidAuthType(c.AuthType) {
-		return fmt.Errorf(
-			"connection resource '%s': authType must be one of %v, got '%s'",
-			c.Name, ValidAuthTypes(), c.AuthType,
-		)
-	}
-	return nil
 }
 
 // Template Template model for defining prompt templates.

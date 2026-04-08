@@ -1806,6 +1806,15 @@ func extractConnectionConfigs(manifest *agent_yaml.AgentManifest) ([]project.Con
 			Error:                       connResource.Error,
 		}
 
+		// Surface credentials.type to top-level authType when not explicitly set.
+		// The API expects authType at the connection level, not nested in credentials.
+		if conn.AuthType == "" {
+			if credType, ok := conn.Credentials["type"].(string); ok && credType != "" {
+				conn.AuthType = credType
+				delete(conn.Credentials, "type")
+			}
+		}
+
 		connections = append(connections, conn)
 	}
 

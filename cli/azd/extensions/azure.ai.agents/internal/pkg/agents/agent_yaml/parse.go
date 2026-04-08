@@ -181,9 +181,6 @@ func ExtractResourceDefinitions(manifestYamlContent []byte) ([]any, error) {
 			if err := yaml.Unmarshal(resourceBytes, &connDef); err != nil {
 				return nil, fmt.Errorf("failed to unmarshal to ConnectionResource: %w", err)
 			}
-			if err := ValidateConnectionResource(&connDef); err != nil {
-				return nil, err
-			}
 			resourceDefs = append(resourceDefs, connDef)
 		default:
 			return nil, fmt.Errorf("unrecognized resource kind: %s", resourceDef.Kind)

@@ -523,6 +523,9 @@ func provisionToolboxes(
 		return fmt.Errorf("failed to load environment variables: %w", err)
 	}
 
+	// Build connection ID lookup from bicep outputs (name → ARM resource ID)
+	connIDMap := parseConnectionIDs(azdEnv["AI_PROJECT_CONNECTION_IDS_JSON"])
+
 	// Build connection lookup for enriching tool entries with server_url/server_label
 	connByName := map[string]project.ToolConnection{}
 	for _, c := range config.ToolConnections {
@@ -539,6 +542,9 @@ func provisionToolboxes(
 
 		// Fill in server_url/server_label from connection data
 		enrichToolboxFromConnections(&toolbox, connByName)
+
+		// Replace project_connection_id friendly names with ARM resource IDs
+		resolveToolboxConnectionIDs(&toolbox, connIDMap)
 
 		if err := upsertToolset(
 			ctx, toolsetsClient, toolbox,
@@ -667,6 +673,52 @@ func enrichToolboxFromConnections(
 		}
 		if _, has := tool["server_label"]; !has {
 			toolbox.Tools[i]["server_label"] = conn.Name
+		}
+	}
+}
+
+// parseConnectionIDs parses the AI_PROJECT_CONNECTION_IDS_JSON env var
+// (a JSON array of {name, id} objects) into a map of name → ARM resource ID.
+func parseConnectionIDs(jsonStr string) map[string]string {
+	result := map[string]string{}
+	if jsonStr == "" {
+		return result
+	}
+
+	var entries []struct {
+		Name string `json:"name"`
+		ID   string `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(jsonStr), &entries); err != nil {
+		fmt.Fprintf(os.Stderr,
+			"Warning: failed to parse AI_PROJECT_CONNECTION_IDS_JSON: %s\n", err)
+		return result
+	}
+
+	for _, e := range entries {
+		if e.Name != "" && e.ID != "" {
+			result[e.Name] = e.ID
+		}
+	}
+	return result
+}
+
+// resolveToolboxConnectionIDs replaces project_connection_id friendly names
+// with their actual ARM resource IDs from bicep provisioning outputs.
+func resolveToolboxConnectionIDs(
+	toolbox *project.Toolbox,
+	connIDs map[string]string,
+) {
+	if len(connIDs) == 0 {
+		return
+	}
+	for i, tool := range toolbox.Tools {
+		connName, _ := tool["project_connection_id"].(string)
+		if connName == "" {
+			continue
+		}
+		if armID, ok := connIDs[connName]; ok {
+			toolbox.Tools[i]["project_connection_id"] = armID
 		}
 	}
 }

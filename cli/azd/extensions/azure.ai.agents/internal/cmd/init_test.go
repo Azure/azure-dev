@@ -850,3 +850,93 @@ func TestToolboxMCPEndpointEnvKey(t *testing.T) {
 		})
 	}
 }
+
+func TestExtractConnectionConfigs_SurfacesCredentialsType(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name             string
+		connResource     agent_yaml.ConnectionResource
+		wantAuthType     string
+		wantCredHasType  bool
+		wantCredKeyCount int
+	}{
+		{
+			name: "surfaces credentials.type to authType when authType is empty",
+			connResource: agent_yaml.ConnectionResource{
+				Resource: agent_yaml.Resource{
+					Name: "my-conn",
+					Kind: agent_yaml.ResourceKindConnection,
+				},
+				Target: "https://example.com",
+				Credentials: map[string]any{
+					"type": "CustomKeys",
+					"key":  "secret-value",
+				},
+			},
+			wantAuthType:     "CustomKeys",
+			wantCredHasType:  false,
+			wantCredKeyCount: 1,
+		},
+		{
+			name: "preserves explicit authType even if credentials.type differs",
+			connResource: agent_yaml.ConnectionResource{
+				Resource: agent_yaml.Resource{
+					Name: "my-conn",
+					Kind: agent_yaml.ResourceKindConnection,
+				},
+				Target:   "https://example.com",
+				AuthType: agent_yaml.AuthTypeAAD,
+				Credentials: map[string]any{
+					"type": "CustomKeys",
+					"key":  "val",
+				},
+			},
+			wantAuthType:     string(agent_yaml.AuthTypeAAD),
+			wantCredHasType:  true,
+			wantCredKeyCount: 2,
+		},
+		{
+			name: "no credentials.type and no authType stays empty",
+			connResource: agent_yaml.ConnectionResource{
+				Resource: agent_yaml.Resource{
+					Name: "my-conn",
+					Kind: agent_yaml.ResourceKindConnection,
+				},
+				Target:      "https://example.com",
+				Credentials: map[string]any{"key": "val"},
+			},
+			wantAuthType:     "",
+			wantCredHasType:  false,
+			wantCredKeyCount: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			manifest := &agent_yaml.AgentManifest{
+				Resources: []any{tt.connResource},
+			}
+			conns, err := extractConnectionConfigs(manifest)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(conns) != 1 {
+				t.Fatalf("expected 1 connection, got %d", len(conns))
+			}
+			conn := conns[0]
+			if conn.AuthType != tt.wantAuthType {
+				t.Errorf("AuthType = %q, want %q", conn.AuthType, tt.wantAuthType)
+			}
+			_, hasType := conn.Credentials["type"]
+			if hasType != tt.wantCredHasType {
+				t.Errorf("credentials has 'type' = %v, want %v",
+					hasType, tt.wantCredHasType)
+			}
+			if len(conn.Credentials) != tt.wantCredKeyCount {
+				t.Errorf("credentials key count = %d, want %d",
+					len(conn.Credentials), tt.wantCredKeyCount)
+			}
+		})
+	}
+}

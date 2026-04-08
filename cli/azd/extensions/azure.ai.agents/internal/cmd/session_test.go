@@ -5,10 +5,16 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
 	"testing"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -375,4 +381,63 @@ func TestSessionListResultJSON_NoPaginationToken(t *testing.T) {
 
 	_, hasToken := decoded["pagination_token"]
 	assert.False(t, hasToken, "pagination_token should be omitted when nil")
+}
+
+// ---------------------------------------------------------------------------
+// Error classification tests — mirrors logic from session show / delete
+// ---------------------------------------------------------------------------
+
+// classifyGetSessionError reproduces the error handling from newSessionShowCommand
+// so we can test the classification without an end-to-end context.
+func classifyGetSessionError(err error, sessionID string) error {
+	if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok &&
+		respErr.StatusCode == http.StatusNotFound {
+		return exterrors.Validation(
+			exterrors.CodeSessionNotFound,
+			fmt.Sprintf(
+				"session %q not found or has been deleted",
+				sessionID,
+			),
+			"use 'azd ai agent sessions list' to see "+
+				"available sessions",
+		)
+	}
+	return exterrors.ServiceFromAzure(err, exterrors.OpGetSession)
+}
+
+func TestGetSession_404_ProducesValidationError(t *testing.T) {
+	azErr := &azcore.ResponseError{
+		StatusCode: http.StatusNotFound,
+		ErrorCode:  "session_not_found",
+	}
+
+	result := classifyGetSessionError(azErr, "my-session-id")
+	require.Error(t, result)
+
+	// Should produce a LocalError (validation), not a ServiceError.
+	var localErr *azdext.LocalError
+	require.True(
+		t, errors.As(result, &localErr),
+		"404 should produce a LocalError, got: %T", result,
+	)
+	assert.Equal(t, exterrors.CodeSessionNotFound, localErr.Code)
+	assert.Contains(t, localErr.Message, "my-session-id")
+	assert.Contains(t, localErr.Message, "not found")
+}
+
+func TestGetSession_500_ProducesServiceError(t *testing.T) {
+	azErr := &azcore.ResponseError{
+		StatusCode: http.StatusInternalServerError,
+		ErrorCode:  "internal_error",
+	}
+
+	result := classifyGetSessionError(azErr, "sess-1")
+	require.Error(t, result)
+
+	// Non-404 errors remain as ServiceError.
+	var svcErr *azdext.ServiceError
+	require.True(
+		t, errors.As(result, &svcErr),
+		"500 should produce a ServiceError, got: %T", result,
+	)
 }

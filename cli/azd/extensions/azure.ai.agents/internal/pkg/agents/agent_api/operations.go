@@ -1422,7 +1422,9 @@ func (c *AgentClient) DeleteSession(
 	}
 	defer resp.Body.Close()
 
-	if !runtime.HasStatusCode(resp, http.StatusNoContent) {
+	if !runtime.HasStatusCode(
+		resp, http.StatusOK, http.StatusNoContent,
+	) {
 		return runtime.NewResponseError(resp)
 	}
 

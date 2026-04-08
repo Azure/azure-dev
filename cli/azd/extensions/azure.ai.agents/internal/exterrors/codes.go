@@ -82,6 +82,11 @@ const (
 	CodeModelResolutionFailed = "model_resolution_failed"
 )
 
+// Error codes for session errors.
+const (
+	CodeSessionNotFound = "session_not_found"
+)
+
 // Error codes for file operation errors.
 const (
 	CodeFileNotFound     = "file_not_found"

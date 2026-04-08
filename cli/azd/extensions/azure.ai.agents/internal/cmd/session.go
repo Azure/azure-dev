@@ -6,7 +6,9 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"text/tabwriter"
 	"time"
@@ -14,6 +16,7 @@ import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
@@ -335,6 +338,18 @@ specified session.`,
 				DefaultVNextAgentAPIVersion,
 			)
 			if err != nil {
+				if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok &&
+					respErr.StatusCode == http.StatusNotFound {
+					return exterrors.Validation(
+						exterrors.CodeSessionNotFound,
+						fmt.Sprintf(
+							"session %q not found or has been deleted",
+							sessionID,
+						),
+						"use 'azd ai agent sessions list' to see "+
+							"available sessions",
+					)
+				}
 				return exterrors.ServiceFromAzure(
 					err, exterrors.OpGetSession,
 				)

@@ -76,7 +76,7 @@ of a hosted agent. This is useful for debugging, seeding data, and agent setup.
 Agent details (name, endpoint) are automatically resolved from the
 azd environment. Use --agent-name to select a specific agent when the project
 has multiple azure.ai.agent services. The session ID is automatically resolved
-from the last invoke session, or can be overridden with --session.`,
+from the last invoke session, or can be overridden with --session-id.`,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			// Chain with root's PersistentPreRunE (root sets NoPrompt).
 			// Note: cmd.Parent() would return the "files" command itself when

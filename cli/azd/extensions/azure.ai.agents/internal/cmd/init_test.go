@@ -5,11 +5,13 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"azureaiagent/internal/exterrors"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
@@ -435,10 +437,25 @@ func TestCheckNotDirectory_ErrorForDirectoryWithManifest(t *testing.T) {
 		t.Fatal("expected error for directory containing agent.manifest.yaml")
 	}
 
-	// The suggestion should include the resolved manifest path.
-	errMsg := err.Error()
-	if !strings.Contains(errMsg, "directory") {
-		t.Errorf("error should mention 'directory', got: %s", errMsg)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	if !ok {
+		t.Fatalf("expected *azdext.LocalError, got %T", err)
+	}
+
+	if localErr.Code != exterrors.CodeInvalidManifestPointer {
+		t.Errorf("expected code %q, got %q", exterrors.CodeInvalidManifestPointer, localErr.Code)
+	}
+
+	if !strings.Contains(localErr.Message, "directory") {
+		t.Errorf("message should mention 'directory', got: %s", localErr.Message)
+	}
+
+	if !strings.Contains(localErr.Suggestion, "-m") {
+		t.Errorf("suggestion should include '-m' flag, got: %s", localErr.Suggestion)
+	}
+
+	if !strings.Contains(localErr.Suggestion, "agent.manifest.yaml") {
+		t.Errorf("suggestion should include candidate path, got: %s", localErr.Suggestion)
 	}
 }
 

@@ -762,7 +762,7 @@ func (a *InitAction) isLocalFilePath(path string) bool {
 // checkNotDirectory returns a validation error when path is a directory
 // instead of a manifest file. If an AgentManifest (a YAML file with a
 // top-level "template" field) is found inside the directory, the suggestion
-// includes the resolved file path.
+// includes the candidate manifest file path.
 func checkNotDirectory(path string) error {
 	info, err := os.Stat(path)
 	if err != nil || !info.IsDir() {
@@ -783,7 +783,7 @@ func checkNotDirectory(path string) error {
 					path,
 				),
 				fmt.Sprintf(
-					"the --manifest flag must point to a manifest file, not a directory. Did you mean:\n  -m %s",
+					"the --manifest flag must point to a manifest file, not a directory. Did you mean:\n  -m %q",
 					candidate,
 				),
 			)

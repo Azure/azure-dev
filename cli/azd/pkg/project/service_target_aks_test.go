@@ -1083,72 +1083,50 @@ func (m *MockResourceManager) GetTargetResource(
 }
 
 func Test_Postprovision_GracefulSkip(t *testing.T) {
-	tests := []struct {
-		name             string
-		resourceName     string
-		resourceType     string
-		deleteClusterEnv bool
-	}{
-		{
-			name:             "SkipsWhenResourceNotProvisioned",
-			resourceName:     "",
-			resourceType:     "",
-			deleteClusterEnv: true,
+	tempDir := t.TempDir()
+	ostest.Chdir(t, tempDir)
+
+	mockContext := mocks.NewMockContext(t.Context())
+	err := setupMocksForAksTarget(mockContext)
+	require.NoError(t, err)
+
+	serviceConfig := createTestServiceConfig(
+		tempDir, AksTarget, ServiceLanguageTypeScript)
+	env := createEnv()
+	env.DotenvDelete(environment.AksClusterEnvVarName)
+
+	resourceManager := &MockResourceManager{}
+	targetResource := environment.NewTargetResource(
+		"SUBSCRIPTION_ID",
+		"RESOURCE_GROUP",
+		"",
+		"",
+	)
+	resourceManager.
+		On("GetTargetResource",
+			*mockContext.Context,
+			"SUBSCRIPTION_ID",
+			serviceConfig).
+		Return(targetResource, nil)
+
+	serviceTarget := createAksServiceTargetWithResourceManager(
+		mockContext, env, nil,
+		resourceManager)
+
+	err = serviceTarget.Initialize(
+		*mockContext.Context, serviceConfig)
+	require.NoError(t, err)
+
+	err = serviceConfig.Project.RaiseEvent(
+		*mockContext.Context,
+		postProvisionEvent,
+		ProjectLifecycleEventArgs{
+			Project: serviceConfig.Project,
 		},
-	}
+	)
+	require.NoError(t, err)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			tempDir := t.TempDir()
-			ostest.Chdir(t, tempDir)
-
-			mockContext := mocks.NewMockContext(t.Context())
-			err := setupMocksForAksTarget(mockContext)
-			require.NoError(t, err)
-
-			serviceConfig := createTestServiceConfig(
-				tempDir, AksTarget, ServiceLanguageTypeScript)
-			env := createEnv()
-
-			if tt.deleteClusterEnv {
-				env.DotenvDelete(
-					environment.AksClusterEnvVarName)
-			}
-
-			resourceManager := &MockResourceManager{}
-			targetResource := environment.NewTargetResource(
-				"SUBSCRIPTION_ID",
-				"RESOURCE_GROUP",
-				tt.resourceName,
-				tt.resourceType,
-			)
-			resourceManager.
-				On("GetTargetResource",
-					*mockContext.Context,
-					"SUBSCRIPTION_ID",
-					serviceConfig).
-				Return(targetResource, nil)
-
-			serviceTarget := createAksServiceTargetWithResourceManager(
-				mockContext, env, nil,
-				resourceManager)
-
-			err = serviceTarget.Initialize(
-				*mockContext.Context, serviceConfig)
-			require.NoError(t, err)
-
-			err = serviceConfig.Project.RaiseEvent(
-				*mockContext.Context,
-				postProvisionEvent,
-				ProjectLifecycleEventArgs{
-					Project: serviceConfig.Project,
-				},
-			)
-			require.NoError(t, err)
-
-			assertSkipWarningEmitted(t, mockContext)
-		})
-	}
+	assertSkipWarningEmitted(t, mockContext)
 }
 
 func Test_Postprovision_Fails_When_GetTargetResource_Errors(t *testing.T) {

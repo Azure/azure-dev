@@ -59,15 +59,40 @@ type InitAction struct {
 	//azureClient       *azure.AzureClient
 	azureContext *azdext.AzureContext
 	//composedResources []*azdext.ComposedResource
-	console              input.Console
-	credential           azcore.TokenCredential
+	console       input.Console
+	credential    azcore.TokenCredential
+	projectConfig *azdext.ProjectConfig
+	environment   *azdext.Environment
+	flags         *initFlags
+	models        *modelSelector
+
+	deploymentDetails []project.Deployment
+	httpClient        *http.Client
+}
+
+// modelSelector encapsulates the dependencies needed for model selection and
+// deployment resolution during init. It avoids constructing partial InitAction
+// structs when only the model-selection call chain is needed.
+type modelSelector struct {
+	azdClient    *azdext.AzdClient
+	azureContext *azdext.AzureContext
+	environment  *azdext.Environment
+	flags        *initFlags
+
 	modelCatalog         map[string]*azdext.AiModel
 	locationWarningShown bool
-	projectConfig        *azdext.ProjectConfig
-	environment          *azdext.Environment
-	flags                *initFlags
-	deploymentDetails    []project.Deployment
-	httpClient           *http.Client
+}
+
+func (a *InitAction) getModelSelector() *modelSelector {
+	if a.models == nil {
+		a.models = &modelSelector{
+			azdClient:    a.azdClient,
+			azureContext: a.azureContext,
+			environment:  a.environment,
+			flags:        a.flags,
+		}
+	}
+	return a.models
 }
 
 // GitHubUrlInfo holds parsed information from a GitHub URL
@@ -79,6 +104,7 @@ type GitHubUrlInfo struct {
 }
 
 const AiAgentHost = "azure.ai.agent"
+const agentsV2ModelCapability = "agentsV2"
 
 // checkAiModelServiceAvailable is a temporary check to ensure the azd host supports
 // required gRPC services. Remove once azd core enforces requiredAzdVersion.
@@ -589,16 +615,42 @@ func (a *InitAction) configureModelChoice(
 	}
 
 	// If the manifest has no model resources, skip the model configuration prompt
-	// but still ensure subscription and location are set for agent creation
+	// but still ensure subscription and location are set for agent creation.
+	// When --project-id is provided, use the existing project to derive location
+	// and configure Foundry env vars (ACR, AppInsights, etc.) instead of prompting.
 	if !manifestHasModelResources(agentManifest) {
-		newCred, err := ensureSubscriptionAndLocation(
-			ctx, a.azdClient, a.azureContext, a.environment.Name,
-			"Select an Azure subscription to provision your agent and Foundry project resources.",
-		)
-		if err != nil {
-			return nil, err
+		if a.flags.projectResourceId != "" {
+			newCred, err := ensureSubscription(
+				ctx, a.azdClient, a.azureContext, a.environment.Name,
+				"Select an Azure subscription to provision your agent and Foundry project resources.",
+			)
+			if err != nil {
+				return nil, err
+			}
+			a.credential = newCred
+
+			selectedProject, err := selectFoundryProject(
+				ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
+				a.azureContext.Scope.SubscriptionId, a.flags.projectResourceId,
+			)
+			if err != nil {
+				return nil, err
+			}
+
+			if selectedProject == nil {
+				return nil, fmt.Errorf("foundry project not found: %s", a.flags.projectResourceId)
+			}
+		} else {
+			newCred, err := ensureSubscriptionAndLocation(
+				ctx, a.azdClient, a.azureContext, a.environment.Name,
+				"Select an Azure subscription to provision your agent and Foundry project resources.",
+			)
+			if err != nil {
+				return nil, err
+			}
+			a.credential = newCred
 		}
-		a.credential = newCred
+
 		return agentManifest, nil
 	}
 

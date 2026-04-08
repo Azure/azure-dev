@@ -192,6 +192,8 @@ All modes are also available as `mage` targets (from `cli/azd/`):
 | `mage coverage:ci` | CI baseline report | `az login` |
 | `mage coverage:html` | HTML report (unit only by default) | Go 1.26 |
 | `mage coverage:check` | Enforce 50% threshold (unit only; CI gate is 55% combined) | Go 1.26 |
+| `mage coverage:diff` | Compare current branch coverage vs main baseline | Go 1.26 |
+| `mage coverage:pr` | Diff + post results as a PR comment | Go 1.26, `gh` CLI |
 
 Environment variables for optional overrides:
 

@@ -15,6 +15,8 @@ Errorf
 Frontends
 GOARCH
 GOCOVERDIR
+GOTOOLCHAIN
+GOWORK
 Ghostty
 LASTEXITCODE
 MCPJSON
@@ -110,6 +112,7 @@ containerapps
 containerd
 containerizable
 contoso
+covdata
 createdby
 csharpapp
 csharpapptest
@@ -153,6 +156,7 @@ go-imath
 godotenv
 gofmt
 golangci
+googleapis
 gosec
 goterm
 gotest
@@ -199,6 +203,7 @@ mysqladmin
 mysqlclient
 mysqldb
 nazd
+ndjson
 nobanner
 nodeapp
 nolint

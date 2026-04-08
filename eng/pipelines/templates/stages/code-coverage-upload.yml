@@ -122,6 +122,139 @@ stages:
           pwsh @timingArgs
         displayName: Analyze test timing
         condition: succeededOrFailed()
+
+      - ${{ if eq(variables['Build.Reason'], 'PullRequest') }}:
+        - pwsh: |
+            $ErrorActionPreference = 'Stop'
+
+            # ---------------------------------------------------------------
+            # Download main branch baseline coverage for comparison
+            # ---------------------------------------------------------------
+            $adoOrg = '$(System.CollectionUri)'.TrimEnd('/')
+            $adoProject = '$(System.TeamProjectId)'
+            $pipelineId = '$(System.DefinitionId)'
+
+            if ([string]::IsNullOrWhiteSpace($env:SYSTEM_ACCESSTOKEN)) {
+                Write-Warning "SYSTEM_ACCESSTOKEN is not available. Skipping coverage diff."
+                exit 0
+            }
+
+            $headers = @{ Authorization = "Bearer $env:SYSTEM_ACCESSTOKEN" }
+
+            Write-Host "Finding latest successful main build for baseline..."
+            $buildsUrl = "$adoOrg/$adoProject/_apis/build/builds?" +
+                "definitions=$pipelineId&branchName=refs/heads/main" +
+                "&resultFilter=succeeded&`$top=1&api-version=7.1"
+
+            try {
+                $buildsResp = Invoke-RestMethod -Uri $buildsUrl -Headers $headers -Method Get
+            }
+            catch {
+                Write-Warning "Failed to query main build baseline. Skipping coverage diff. $($_.Exception.Message)"
+                exit 0
+            }
+
+            if ($buildsResp.count -eq 0) {
+                Write-Warning "No successful main builds found. Skipping coverage diff."
+                exit 0
+            }
+
+            $mainBuildId = $buildsResp.value[0].id
+            $mainBuildNum = $buildsResp.value[0].buildNumber
+            Write-Host "Using main build $mainBuildId ($mainBuildNum) for baseline"
+
+            # Download and merge main build coverage artifacts
+            New-Item -ItemType Directory -Force -Path baseline-tmp | Out-Null
+
+            foreach ($artifactName in @('cover-unit', 'cover-int')) {
+                $url = "$adoOrg/$adoProject/_apis/build/builds/$mainBuildId/artifacts?artifactName=$artifactName&api-version=7.1"
+                try {
+                    $resp = Invoke-RestMethod -Uri $url -Headers $headers -Method Get
+                } catch {
+                    Write-Warning "Failed to download $artifactName from main build: $_"
+                    exit 0
+                }
+                $dlUrl = $resp.resource.downloadUrl
+                Invoke-WebRequest -Uri $dlUrl -Headers $headers -OutFile "baseline-tmp/$artifactName.zip"
+                Expand-Archive -Path "baseline-tmp/$artifactName.zip" -DestinationPath "baseline-tmp/$artifactName" -Force
+                Remove-Item "baseline-tmp/$artifactName.zip"
+            }
+
+            # Resolve nested artifact paths (pipeline artifacts nest under artifact name)
+            $unitPath = "baseline-tmp/cover-unit/cover-unit"
+            $intPath = "baseline-tmp/cover-int/cover-int"
+            if (-not (Test-Path $unitPath)) { $unitPath = "baseline-tmp/cover-unit" }
+            if (-not (Test-Path $intPath)) { $intPath = "baseline-tmp/cover-int" }
+
+            New-Item -ItemType Directory -Force -Path baseline-merged | Out-Null
+            go tool covdata merge -i="$unitPath,$intPath" -o baseline-merged
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warning "Failed to merge baseline coverage. Skipping diff."
+                exit 0
+            }
+
+            go tool covdata textfmt -i=baseline-merged -o cover-baseline.out
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warning "Failed to convert baseline coverage. Skipping diff."
+                exit 0
+            }
+
+            # Filter generated code from baseline (same as current)
+            $filterScript = "$(Build.SourcesDirectory)/eng/scripts/Filter-GeneratedCoverage.ps1"
+            if (Test-Path $filterScript) {
+                pwsh -NoProfile -NonInteractive -File $filterScript -CoverageFile cover-baseline.out
+            }
+
+            # ---------------------------------------------------------------
+            # Generate coverage diff report
+            # ---------------------------------------------------------------
+            pwsh -NoProfile -NonInteractive -File "$(Build.SourcesDirectory)/eng/scripts/Get-CoverageDiff.ps1" `
+                -BaselineFile cover-baseline.out `
+                -CurrentFile cover.out `
+                -OutputFile coverage-diff.md
+
+            if (-not (Test-Path coverage-diff.md)) {
+                Write-Warning "Coverage diff report was not generated."
+                exit 0
+            }
+
+            # ---------------------------------------------------------------
+            # Post as PR comment (requires GH_TOKEN)
+            # ---------------------------------------------------------------
+            if (-not $env:GH_TOKEN) {
+                Write-Host "GH_TOKEN not configured - printing diff to log instead:"
+                Get-Content coverage-diff.md
+                exit 0
+            }
+
+            $prNumber = '$(System.PullRequest.PullRequestNumber)'
+            if (-not $prNumber -or $prNumber -eq '$(System.PullRequest.PullRequestNumber)') {
+                Write-Warning "Cannot determine PR number. Printing diff to log:"
+                Get-Content coverage-diff.md
+                exit 0
+            }
+
+            # Derive owner/repo from git remote
+            $repoSlug = git config --get remote.origin.url 2>$null
+            if ($repoSlug -match 'github\.com[:/](.+?)(?:\.git)?$') {
+                $repoSlug = $Matches[1]
+            } else {
+                Write-Warning "Cannot determine GitHub repo slug. Printing diff to log:"
+                Get-Content coverage-diff.md
+                exit 0
+            }
+
+            Write-Host "Posting coverage diff to $repoSlug#$prNumber..."
+            pwsh -NoProfile -NonInteractive -File "$(Build.SourcesDirectory)/eng/scripts/Update-PRComment.ps1" `
+                -Repo $repoSlug `
+                -PRNumber $prNumber `
+                -BodyFile coverage-diff.md `
+                -Tag '<!-- coverage-diff -->'
+          displayName: Post coverage diff to PR
+          condition: succeededOrFailed()
+          env:
+            SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+            GH_TOKEN: $(GitHubToken)
     
     templateContext: 
       outputs: 

@@ -880,7 +880,7 @@ func (r *cancelOnCloseReader) Close() error {
 // follow controls whether to stream indefinitely (true) or fetch and exit (false).
 func (c *AgentClient) GetAgentSessionLogStream(
 	ctx context.Context,
-	agentName, agentVersion, sessionID, apiVersion string,
+	agentName, sessionID, apiVersion string,
 	kind string,
 	tail int,
 	follow bool,
@@ -890,7 +890,7 @@ func (c *AgentClient) GetAgentSessionLogStream(
 		return nil, fmt.Errorf("invalid endpoint URL: %w", err)
 	}
 
-	u.Path += fmt.Sprintf("/agents/%s/versions/%s/sessions/%s:logstream", agentName, agentVersion, sessionID)
+	u.Path += fmt.Sprintf("/agents/%s/sessions/%s:logstream", agentName, sessionID)
 
 	query := u.Query()
 	query.Set("api-version", apiVersion)
@@ -987,7 +987,7 @@ func (c *AgentClient) GetAgentContainerOperation(ctx context.Context, agentName,
 // body is the file content to upload.
 func (c *AgentClient) UploadSessionFile(
 	ctx context.Context,
-	agentName, agentVersion, sessionID, remotePath, apiVersion string,
+	agentName, sessionID, remotePath, apiVersion string,
 	body io.ReadSeeker,
 ) error {
 	u, err := url.Parse(c.endpoint)
@@ -996,8 +996,8 @@ func (c *AgentClient) UploadSessionFile(
 	}
 
 	u.Path += fmt.Sprintf(
-		"/agents/%s/versions/%s/sessions/%s/files",
-		agentName, agentVersion, sessionID,
+		"/agents/%s/endpoint/sessions/%s/files",
+		agentName, sessionID,
 	)
 
 	query := u.Query()
@@ -1034,7 +1034,7 @@ func (c *AgentClient) UploadSessionFile(
 // Returns an io.ReadCloser with the file content; the caller must close it.
 func (c *AgentClient) DownloadSessionFile(
 	ctx context.Context,
-	agentName, agentVersion, sessionID, remotePath, apiVersion string,
+	agentName, sessionID, remotePath, apiVersion string,
 ) (io.ReadCloser, error) {
 	u, err := url.Parse(c.endpoint)
 	if err != nil {
@@ -1042,8 +1042,8 @@ func (c *AgentClient) DownloadSessionFile(
 	}
 
 	u.Path += fmt.Sprintf(
-		"/agents/%s/versions/%s/sessions/%s/files",
-		agentName, agentVersion, sessionID,
+		"/agents/%s/endpoint/sessions/%s/files",
+		agentName, sessionID,
 	)
 
 	query := u.Query()
@@ -1077,7 +1077,7 @@ func (c *AgentClient) DownloadSessionFile(
 // remotePath is the directory path to list (empty string for root).
 func (c *AgentClient) ListSessionFiles(
 	ctx context.Context,
-	agentName, agentVersion, sessionID, remotePath, apiVersion string,
+	agentName, sessionID, remotePath, apiVersion string,
 ) (*SessionFileList, error) {
 	u, err := url.Parse(c.endpoint)
 	if err != nil {
@@ -1085,8 +1085,8 @@ func (c *AgentClient) ListSessionFiles(
 	}
 
 	u.Path += fmt.Sprintf(
-		"/agents/%s/versions/%s/sessions/%s/files/list",
-		agentName, agentVersion, sessionID,
+		"/agents/%s/endpoint/sessions/%s/files",
+		agentName, sessionID,
 	)
 
 	query := u.Query()
@@ -1131,7 +1131,7 @@ func (c *AgentClient) ListSessionFiles(
 // recursive controls whether to recursively remove directories.
 func (c *AgentClient) RemoveSessionFile(
 	ctx context.Context,
-	agentName, agentVersion, sessionID, remotePath string,
+	agentName, sessionID, remotePath string,
 	recursive bool,
 	apiVersion string,
 ) error {
@@ -1141,8 +1141,8 @@ func (c *AgentClient) RemoveSessionFile(
 	}
 
 	u.Path += fmt.Sprintf(
-		"/agents/%s/versions/%s/sessions/%s/files",
-		agentName, agentVersion, sessionID,
+		"/agents/%s/endpoint/sessions/%s/files",
+		agentName, sessionID,
 	)
 
 	query := u.Query()
@@ -1174,7 +1174,7 @@ func (c *AgentClient) RemoveSessionFile(
 // MkdirSessionFile creates a directory in a session's filesystem.
 func (c *AgentClient) MkdirSessionFile(
 	ctx context.Context,
-	agentName, agentVersion, sessionID, remotePath string,
+	agentName, sessionID, remotePath string,
 	apiVersion string,
 ) error {
 	u, err := url.Parse(c.endpoint)
@@ -1183,8 +1183,8 @@ func (c *AgentClient) MkdirSessionFile(
 	}
 
 	u.Path += fmt.Sprintf(
-		"/agents/%s/versions/%s/sessions/%s/files/mkdir",
-		agentName, agentVersion, sessionID,
+		"/agents/%s/endpoint/sessions/%s/files/mkdir",
+		agentName, sessionID,
 	)
 
 	query := u.Query()
@@ -1224,7 +1224,7 @@ func (c *AgentClient) MkdirSessionFile(
 // StatSessionFile returns file/directory metadata from a session's filesystem.
 func (c *AgentClient) StatSessionFile(
 	ctx context.Context,
-	agentName, agentVersion, sessionID, remotePath, apiVersion string,
+	agentName, sessionID, remotePath, apiVersion string,
 ) (*SessionFileInfo, error) {
 	u, err := url.Parse(c.endpoint)
 	if err != nil {
@@ -1232,8 +1232,8 @@ func (c *AgentClient) StatSessionFile(
 	}
 
 	u.Path += fmt.Sprintf(
-		"/agents/%s/versions/%s/sessions/%s/files/stat",
-		agentName, agentVersion, sessionID,
+		"/agents/%s/endpoint/sessions/%s/files/stat",
+		agentName, sessionID,
 	)
 
 	query := u.Query()

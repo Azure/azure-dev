@@ -224,11 +224,23 @@ func (i *Initializer) copyLocalTemplate(source, destination string) error {
 	}
 	var matchers []gitignoreMatcher
 
+	sourceRoot, err := os.OpenRoot(source)
+	if err != nil {
+		return fmt.Errorf("opening local template root: %w", err)
+	}
+	defer sourceRoot.Close()
+
 	_ = filepath.WalkDir(source, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || d.Name() != ".gitignore" {
 			return err
 		}
-		data, readErr := os.ReadFile(path)
+
+		rel, relErr := filepath.Rel(source, path)
+		if relErr != nil {
+			return relErr
+		}
+
+		data, readErr := sourceRoot.ReadFile(rel)
 		if readErr != nil {
 			return nil // skip unreadable gitignore files
 		}

@@ -41,6 +41,12 @@ jobs:
 
       - name: Run eval suites
         run: |
+          if ! command -v copilot &> /dev/null; then
+            echo "⚠ copilot CLI not available — skipping eval suite execution"
+            echo "  Eval suites require the GitHub Copilot CLI to run."
+            echo "  Install it to run evals locally: https://docs.github.com/copilot/github-copilot-in-the-cli"
+            exit 0
+          fi
           any_found=false
           eval_failed=0
           for skill_dir in .github/skills/*/; do

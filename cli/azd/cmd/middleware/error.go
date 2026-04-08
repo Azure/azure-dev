@@ -184,7 +184,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 	// - LLM feature is disabled
 	// - User specified --no-prompt (non-interactive mode)
 	// - Running in CI/CD environment where user interaction is not possible
-	// - Error that don't benefit from agent handling
+	// - Errors that don't benefit from agent handling
 	if !e.featuresManager.IsEnabled(agentcopilot.FeatureCopilot) ||
 		e.global.NoPrompt ||
 		resource.IsRunningOnCI() ||

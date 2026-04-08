@@ -588,8 +588,26 @@ func Test_ErrorMiddleware_NonFixableError_SkipsAgentCreation(t *testing.T) {
 	require.NotNil(t, result)
 }
 
+// clearTestEnvVars clears environment variables that affect terminal detection.
+//
+//	Uses the same t.Setenv + os.Unsetenv pattern as terminal_test.go.
+func clearCIEnvVarsForTest(t *testing.T) {
+	t.Helper()
+	ciVars := []string{"AZD_FORCE_TTY",
+		// CI env vars
+		"CI", "TF_BUILD", "GITHUB_ACTIONS",
+	}
+
+	for _, v := range ciVars {
+		if _, exists := os.LookupEnv(v); exists {
+			t.Setenv(v, "")
+			os.Unsetenv(v)
+		}
+	}
+}
+
 func Test_ErrorMiddleware_ExplainAndFixCalls(t *testing.T) {
-	t.Parallel()
+	clearCIEnvVarsForTest(t)
 
 	explainResult := &agent.AgentResult{
 		Usage: agent.UsageMetrics{
@@ -642,7 +660,7 @@ func Test_ErrorMiddleware_ExplainAndFixCalls(t *testing.T) {
 }
 
 func Test_ErrorMiddleware_MaxRetry_FirstIterationSkipsCounter(t *testing.T) {
-	t.Parallel()
+	clearCIEnvVarsForTest(t)
 
 	// Agent fails on fix — exits before the TTY retry prompt.
 	// This still proves the counter was skipped (agent WAS called).
@@ -715,4 +733,20 @@ func Test_PromptNextAction_SavedAllow_ReturnsFixOnly(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, actionFixOnly, action,
 		"saved 'allow' preference should return actionFixOnly, not actionFixAndRetry")
+}
+
+func Test_PromptNextAction_ConfigLoadError(t *testing.T) {
+	t.Parallel()
+
+	ucm := &mockUserConfigManager{cfg: nil, err: errors.New("io error")}
+
+	m := &ErrorMiddleware{
+		console:           mockinput.NewMockConsole(),
+		userConfigManager: ucm,
+	}
+
+	action, err := m.promptNextAction(t.Context())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "io error")
+	require.Equal(t, actionExit, action)
 }

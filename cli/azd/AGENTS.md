@@ -73,6 +73,8 @@ When writing tests, prefer table-driven tests. Use testify/mock for mocking.
 
 ### Pre-Commit Checklist
 
+> **Tip**: The `/azd-preflight` Copilot skill runs all these checks and auto-fixes issues. See `.github/skills/azd-preflight/`.
+
 ```bash
 gofmt -s -w .
 go fix ./...

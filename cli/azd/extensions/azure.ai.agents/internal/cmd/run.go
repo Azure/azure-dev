@@ -389,7 +389,9 @@ func appendFoundryEnvVars(env []string, azdEnv map[string]string, serviceName st
 
 	for _, m := range staticMappings {
 		if v := azdEnv[m.azdKey]; v != "" {
-			env = append(env, fmt.Sprintf("%s=%s", m.foundryKey, v))
+			if _, exists := azdEnv[m.foundryKey]; !exists {
+				env = append(env, fmt.Sprintf("%s=%s", m.foundryKey, v))
+			}
 		}
 	}
 
@@ -407,7 +409,9 @@ func appendFoundryEnvVars(env []string, azdEnv map[string]string, serviceName st
 		for _, m := range agentMappings {
 			azdKey := fmt.Sprintf(m.azdKeyFmt, serviceKey)
 			if v := azdEnv[azdKey]; v != "" {
-				env = append(env, fmt.Sprintf("%s=%s", m.foundryKey, v))
+				if _, exists := azdEnv[m.foundryKey]; !exists {
+					env = append(env, fmt.Sprintf("%s=%s", m.foundryKey, v))
+				}
 			}
 		}
 	}

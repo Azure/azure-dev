@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -260,6 +261,33 @@ func TestAppendFoundryEnvVars(t *testing.T) {
 		env := appendFoundryEnvVars(nil, azdEnv, "agent1")
 		if len(env) != 4 {
 			t.Errorf("expected 4 env vars, got %d: %v", len(env), env)
+		}
+	})
+
+	t.Run("skips foundry key when already set in azd env", func(t *testing.T) {
+		t.Parallel()
+		azdEnv := map[string]string{
+			"AZURE_AI_PROJECT_ENDPOINT": "https://from-azd.services.ai.azure.com",
+			"FOUNDRY_PROJECT_ENDPOINT":  "https://explicit.services.ai.azure.com",
+			"AGENT_MY_SVC_NAME":         "my-agent",
+			"FOUNDRY_AGENT_NAME":        "explicit-agent",
+		}
+		env := appendFoundryEnvVars(nil, azdEnv, "my-svc")
+
+		// Neither FOUNDRY_PROJECT_ENDPOINT nor FOUNDRY_AGENT_NAME should be
+		// appended because they already exist in azdEnv (and were thus already
+		// added to the env slice by the caller's loop over azdEnv).
+		for _, entry := range env {
+			if strings.HasPrefix(entry, "FOUNDRY_PROJECT_ENDPOINT=") ||
+				strings.HasPrefix(entry, "FOUNDRY_AGENT_NAME=") {
+				t.Errorf("should not translate when foundry key already in azdEnv, got %q", entry)
+			}
+		}
+
+		// AZURE_AI_PROJECT_ID has no explicit FOUNDRY_PROJECT_ARM_ID, so it should still be skipped
+		// (it's not in azdEnv either, so appendFoundryEnvVars skips it because the source key is empty)
+		if len(env) != 0 {
+			t.Errorf("expected no translated env vars, got %v", env)
 		}
 	})
 }

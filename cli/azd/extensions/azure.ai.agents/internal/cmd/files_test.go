@@ -59,7 +59,7 @@ func TestFilesUploadCommand_MissingFile(t *testing.T) {
 func TestFilesUploadCommand_HasFlags(t *testing.T) {
 	cmd := newFilesUploadCommand()
 
-	for _, name := range []string{"file", "target-path", "agent-name", "session"} {
+	for _, name := range []string{"file", "target-path", "agent-name", "session-id"} {
 		f := cmd.Flags().Lookup(name)
 		require.NotNil(t, f, "expected flag %q", name)
 		assert.Equal(t, "", f.DefValue)
@@ -79,7 +79,7 @@ func TestFilesDownloadCommand_MissingFile(t *testing.T) {
 func TestFilesDownloadCommand_HasFlags(t *testing.T) {
 	cmd := newFilesDownloadCommand()
 
-	for _, name := range []string{"file", "target-path", "agent-name", "session"} {
+	for _, name := range []string{"file", "target-path", "agent-name", "session-id"} {
 		f := cmd.Flags().Lookup(name)
 		require.NotNil(t, f, "expected flag %q", name)
 		assert.Equal(t, "", f.DefValue)
@@ -113,7 +113,7 @@ func TestFilesDeleteCommand_MissingFile(t *testing.T) {
 func TestFilesDeleteCommand_HasFlags(t *testing.T) {
 	cmd := newFilesRemoveCommand()
 
-	for _, name := range []string{"file", "recursive", "agent-name", "session"} {
+	for _, name := range []string{"file", "recursive", "agent-name", "session-id"} {
 		f := cmd.Flags().Lookup(name)
 		require.NotNil(t, f, "expected flag %q", name)
 	}
@@ -135,7 +135,7 @@ func TestFilesMkdirCommand_MissingDir(t *testing.T) {
 func TestFilesMkdirCommand_HasFlags(t *testing.T) {
 	cmd := newFilesMkdirCommand()
 
-	for _, name := range []string{"dir", "agent-name", "session"} {
+	for _, name := range []string{"dir", "agent-name", "session-id"} {
 		f := cmd.Flags().Lookup(name)
 		require.NotNil(t, f, "expected flag %q", name)
 		assert.Equal(t, "", f.DefValue)

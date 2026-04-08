@@ -123,7 +123,7 @@ configuration and the current azd environment. Optionally specify the service na
 		},
 	}
 
-	cmd.Flags().StringVarP(&flags.sessionID, "session", "s", "", "Session ID to stream logs for")
+	cmd.Flags().StringVarP(&flags.sessionID, "session-id", "s", "", "Session ID to stream logs for")
 	cmd.Flags().BoolVarP(&flags.follow, "follow", "f", false, "Stream logs in real-time")
 	cmd.Flags().IntVarP(&flags.tail, "tail", "l", 50, "Number of trailing log lines to fetch (1-300)")
 	cmd.Flags().StringVarP(&flags.logType, "type", "t", "console",

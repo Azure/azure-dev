@@ -111,7 +111,7 @@ from the last invoke session, or can be overridden with --session.`,
 // addFilesFlags registers the common flags on a cobra command.
 func addFilesFlags(cmd *cobra.Command, flags *filesFlags) {
 	cmd.Flags().StringVarP(&flags.agentName, "agent-name", "n", "", "Agent name (matches azure.yaml service name; auto-detected when only one exists)")
-	cmd.Flags().StringVarP(&flags.session, "session", "s", "", "Session ID override (defaults to last invoke session)")
+	cmd.Flags().StringVarP(&flags.session, "session-id", "s", "", "Session ID override (defaults to last invoke session)")
 }
 
 // filesContext holds the resolved agent context and session for file operations.

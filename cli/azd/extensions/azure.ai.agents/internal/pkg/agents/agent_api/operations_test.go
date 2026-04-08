@@ -4,7 +4,6 @@
 package agent_api
 
 import (
-	"context"
 	"net/http"
 	"testing"
 
@@ -83,7 +82,7 @@ func TestGetSession_404ReturnsError(t *testing.T) {
 	)
 
 	_, err := client.GetSession(
-		context.Background(), "my-agent", "sess-1", "2025-11-15-preview",
+		t.Context(), "my-agent", "sess-1", "2025-11-15-preview",
 	)
 	require.Error(t, err, "404 should be an error from GetSession")
 }

@@ -284,7 +284,7 @@ func TestMemoryCache_ReadAndSet(t *testing.T) {
 			writerID := i
 			wg.Go(func() {
 				for j := range 200 {
-					value := []byte(fmt.Sprintf("value-%d-%d", writerID, j))
+					value := fmt.Appendf(nil, "value-%d-%d", writerID, j)
 					_ = mc.Set("shared-key", value)
 					_, _ = mc.Read("shared-key")
 				}

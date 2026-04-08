@@ -588,7 +588,7 @@ func Test_ErrorMiddleware_NonFixableError_SkipsAgentCreation(t *testing.T) {
 	require.NotNil(t, result)
 }
 
-// clearTestEnvVars clears environment variables that affect terminal detection.
+// clearCIEnvVarsForTest clears environment variables that affect terminal detection.
 //
 //	Uses the same t.Setenv + os.Unsetenv pattern as terminal_test.go.
 func clearCIEnvVarsForTest(t *testing.T) {

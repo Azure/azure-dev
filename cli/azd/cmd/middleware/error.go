@@ -321,7 +321,12 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			// explicitly chose actionFixAndRetry), the category-fix path asks for
 			// retry confirmation because the user only chose "fix" — not "fix and retry".
 			shouldRetry, err := e.promptRetryAfterFix(ctx)
-			if err != nil || !shouldRetry {
+			if err != nil {
+				span.SetStatus(codes.Error, "agent.retry.failed")
+				return actionResult, fmt.Errorf(
+					"%w\n\nRetry prompt failed: %s", originalError, err.Error())
+			}
+			if !shouldRetry {
 				return actionResult, originalError
 			}
 		}

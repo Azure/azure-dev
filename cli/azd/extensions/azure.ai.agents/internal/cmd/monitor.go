@@ -93,13 +93,6 @@ configuration and the current azd environment. Optionally specify the service na
 					info.ServiceName,
 				)
 			}
-			if info.Version == "" {
-				return fmt.Errorf(
-					"agent version could not be resolved from azd environment for service '%s'\n\n"+
-						"Run 'azd deploy' first to deploy the agent, or check your azd environment values",
-					info.ServiceName,
-				)
-			}
 
 			agentContext, err := newAgentContext(ctx, "", "", info.AgentName, info.Version)
 			if err != nil {
@@ -152,7 +145,6 @@ func (a *MonitorAction) Run(ctx context.Context) error {
 		body, err = agentClient.GetAgentSessionLogStream(
 			ctx,
 			a.Name,
-			a.Version,
 			a.flags.sessionID,
 			DefaultVNextAgentAPIVersion,
 			a.flags.logType,
@@ -160,6 +152,12 @@ func (a *MonitorAction) Run(ctx context.Context) error {
 			a.flags.follow,
 		)
 	} else {
+		if a.Version == "" {
+			return fmt.Errorf(
+				"agent version is required for container log streaming\n\n" +
+					"Run 'azd deploy' first to deploy the agent, or check your azd environment values",
+			)
+		}
 		body, err = agentClient.GetAgentContainerLogStream(
 			ctx,
 			a.Name,

@@ -161,6 +161,18 @@ stages:
               Copy-Item NOTICE.txt release-metadata/NOTICE.txt
             displayName: Copy NOTICE.txt to release-metadata
 
+          - pwsh: |
+              Copy-Item eng/templates/extensions-registry-daily.json.template release-metadata/extensions-registry-daily.json.template
+            displayName: Copy registry template to release-metadata
+
+          - pwsh: |
+              Copy-Item eng/scripts/Update-ExtensionDailyRegistry.ps1 release-metadata/Update-ExtensionDailyRegistry.ps1
+            displayName: Copy Update-ExtensionDailyRegistry.ps1 to release-metadata
+
+          - pwsh: |
+              Copy-Item eng/common/scripts/Helpers/PSModule-Helpers.ps1 release-metadata/PSModule-Helpers.ps1
+            displayName: Copy PSModule-Helpers.ps1 to release-metadata
+
         templateContext:
           outputs:
             - output: pipelineArtifact

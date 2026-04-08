@@ -34,11 +34,22 @@ else {
 }
 
 $versionFile = Join-Path $ExtensionDirectory "version.txt"
+if (!(Test-Path $versionFile)) {
+    Write-Error "version.txt not found at $versionFile"
+    exit 1
+}
 $version = (Get-Content $versionFile).Trim()
 if ([string]::IsNullOrWhiteSpace($version)) {
     Write-Error "version.txt is empty at $versionFile"
     exit 1
 }
+
+# Guard against pipeline retries — skip if suffix already applied
+if ($version -match "-${prereleaseCategory}\.\d+$") {
+    Write-Host "Version '$version' already has $prereleaseCategory suffix, skipping."
+    exit 0
+}
+
 $newVersion = "$version-$prereleaseCategory.$BuildId"
 
 Set-Content $versionFile -Value $newVersion

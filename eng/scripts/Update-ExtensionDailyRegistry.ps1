@@ -9,9 +9,8 @@
   4. Uploads the entry as a standalone per-extension JSON blob
 
   Each extension writes its own file to avoid race conditions when multiple
-  extension pipelines run concurrently. A separate unification script
-  (Build-UnifiedDailyRegistry.ps1) combines all per-extension entries into
-  the final registry-daily.json.
+  extension pipelines run concurrently. The azd CLI reads each per-extension
+  entry directly via the registry source URL.
 
 .PARAMETER SanitizedExtensionId
   Hyphenated extension id (e.g. azure-ai-agents)
@@ -96,48 +95,43 @@ if ($missingArtifacts.Count -gt 0) {
     exit 1
 }
 
-# Read extension.yaml for metadata.
-# Uses simple line-by-line regex parsing — handles top-level scalar fields,
-# capabilities list, and providers list. This is intentionally not a full YAML
-# parser. It works for the known extension.yaml schema where all values are
-# single-line scalars or simple lists. If extension.yaml grows multi-line
-# values or complex nesting, switch to powershell-yaml.
-$extYaml = Get-Content $extYamlPath -Raw
+# Install powershell-yaml for proper YAML parsing
+$psModuleHelpers = Join-Path $PSScriptRoot "PSModule-Helpers.ps1"
+if (!(Test-Path $psModuleHelpers)) {
+    # Fallback to repo location when running from source checkout
+    $psModuleHelpers = Join-Path $PSScriptRoot "../common/scripts/Helpers/PSModule-Helpers.ps1"
+}
+if (!(Test-Path $psModuleHelpers)) {
+    Write-Error "PSModule-Helpers.ps1 not found at $PSScriptRoot or repo fallback path"
+    exit 1
+}
+. $psModuleHelpers
+Install-ModuleIfNotInstalled "powershell-yaml" "0.4.7" | Import-Module
+
+# Parse extension.yaml
+$extData = ConvertFrom-Yaml (Get-Content $extYamlPath -Raw)
+if ($null -eq $extData) {
+    Write-Error "Failed to parse extension.yaml at $extYamlPath — file may be empty or malformed"
+    exit 1
+}
+
 $extMeta = @{}
-foreach ($line in $extYaml -split "`n") {
-    if ($line -match "^(\w[\w\-]*):\s*(.+)$") {
-        $extMeta[$matches[1]] = $matches[2].Trim().Trim('"')
+foreach ($key in @('namespace', 'displayName', 'description', 'usage', 'requiredAzdVersion')) {
+    if ($extData.ContainsKey($key)) {
+        $extMeta[$key] = $extData[$key]
     }
 }
 
-# Parse capabilities list
-$capabilities = @()
-$inCapabilities = $false
-foreach ($line in $extYaml -split "`n") {
-    if ($line -match "^capabilities:") { $inCapabilities = $true; continue }
-    if ($inCapabilities -and $line -match "^\s+-\s+(.+)$") {
-        $capabilities += $matches[1].Trim()
-    } elseif ($inCapabilities -and $line -match "^\S") {
-        break
-    }
-}
+$capabilities = if ($extData.ContainsKey('capabilities')) { @($extData['capabilities']) } else { @() }
 
-# Parse providers list
 $providers = @()
-$inProviders = $false
-$currentProvider = $null
-foreach ($line in $extYaml -split "`n") {
-    if ($line -match "^providers:") { $inProviders = $true; continue }
-    if ($inProviders -and $line -match "^\s+-\s+name:\s*(.+)$") {
-        if ($currentProvider) { $providers += $currentProvider }
-        $currentProvider = [ordered]@{ name = $matches[1].Trim() }
-    } elseif ($inProviders -and $currentProvider -and $line -match "^\s+(\w+):\s*(.+)$") {
-        $currentProvider[$matches[1].Trim()] = $matches[2].Trim()
-    } elseif ($inProviders -and $line -match "^\S") {
-        break
+if ($extData.ContainsKey('providers')) {
+    foreach ($p in $extData['providers']) {
+        $provider = [ordered]@{}
+        foreach ($k in $p.Keys) { $provider[$k] = $p[$k] }
+        $providers += $provider
     }
 }
-if ($currentProvider) { $providers += $currentProvider }
 
 # Validate required fields were parsed
 $requiredFields = @('namespace', 'displayName', 'description', 'usage')
@@ -176,6 +170,12 @@ foreach ($placeholder in $replacements.Keys) {
     $template = $template.Replace($placeholder, $replacements[$placeholder])
 }
 
+# Verify all placeholders were replaced
+if ($template -match '\$\{[A-Za-z0-9_]+\}') {
+    Write-Error "Unreplaced placeholder found: $($matches[0])"
+    exit 1
+}
+
 $versionEntry = $template | ConvertFrom-Json
 
 # Add capabilities and providers (can't template arrays/objects easily)
@@ -184,7 +184,8 @@ if ($providers.Count -gt 0) {
     $versionEntry | Add-Member -NotePropertyName "providers" -NotePropertyValue $providers
 }
 
-# Build the per-extension entry
+# Build the per-extension entry wrapped in registry format
+# azd ext source add -t url expects { "extensions": [...] }
 $extEntry = [ordered]@{
     id          = $AzdExtensionId
     namespace   = $extMeta.namespace
@@ -193,9 +194,11 @@ $extEntry = [ordered]@{
     versions    = @($versionEntry)
 }
 
-# Write per-extension entry and validate JSON
+$registry = [ordered]@{ extensions = @($extEntry) }
+
+# Write registry entry and validate JSON
 $entryFile = "$AzdExtensionId.json"
-$extEntry | ConvertTo-Json -Depth 20 | Set-Content $entryFile -Encoding utf8
+$registry | ConvertTo-Json -Depth 20 | Set-Content $entryFile -Encoding utf8
 
 try {
     $null = Get-Content $entryFile -Raw | ConvertFrom-Json -Depth 20

@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=../extension.schema.json
+id: azure.foundry
+displayName: Azure Foundry Extension (Preview)
+description: >-
+  Installs all Azure AI Foundry extensions for azd, including agents,
+  custom models, and fine-tuning.
+version: 0.1.0-preview
+capabilities: []
+dependencies:
+  - id: azure.ai.agents
+    version: latest
+  - id: azure.ai.models
+    version: latest
+  - id: azure.ai.finetune
+    version: latest

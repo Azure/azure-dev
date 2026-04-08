@@ -33,6 +33,10 @@ Skips verification of the downloaded file.
 .PARAMETER InstallShScriptUrl
 (Mac/Linux only) URL to the install-azd.sh script. Default is https://aka.ms/install-azd.sh
 
+.PARAMETER InstallExtensions
+Comma-separated list of azd extensions to install after azd is set up.
+For example: --InstallExtensions "azure.foundry" or "azure.ai.agents,azure.ai.models"
+
 .EXAMPLE
 powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression"
 
@@ -67,7 +71,8 @@ param(
     [switch] $SkipVerify,
     [int] $DownloadTimeoutSeconds = 120,
     [switch] $NoTelemetry,
-    [string] $InstallShScriptUrl = "https://aka.ms/install-azd.sh"
+    [string] $InstallShScriptUrl = "https://aka.ms/install-azd.sh",
+    [string] $InstallExtensions = ""
 )
 
 function isLinuxOrMac {
@@ -297,7 +302,47 @@ if (isLinuxOrMac) {
     $bashParameters = $params -join ' '
     Write-Verbose "Running: curl -fsSL $InstallShScriptUrl | bash -s -- $bashParameters" -Verbose:$Verbose
     bash -c "curl -fsSL $InstallShScriptUrl | bash -s -- $bashParameters"
-    exit $LASTEXITCODE
+
+    if ($LASTEXITCODE -ne 0) {
+        exit $LASTEXITCODE
+    }
+
+    # Handle extension install on Linux/Mac after bash script completes
+    if ($InstallExtensions) {
+        Write-Host ""
+        Write-Host "Installing requested extensions..."
+
+        $azdCmd = Get-Command azd -ErrorAction SilentlyContinue
+        if ($azdCmd) {
+            $azdBin = $azdCmd.Source
+        } else {
+            Write-Warning "Could not locate azd after install. Extensions were not installed."
+            Write-Warning "Open a new terminal and run: azd extension install <extension-id>"
+            exit 0
+        }
+
+        $installExtFailed = $false
+        $extensions = $InstallExtensions -split ','
+        foreach ($extId in $extensions) {
+            $extId = $extId.Trim()
+            if ($extId) {
+                Write-Host "Installing extension: $extId"
+                & $azdBin extension install $extId
+                if ($LASTEXITCODE -ne 0) {
+                    Write-Warning "Failed to install extension: $extId. You can retry later with: azd extension install $extId"
+                    $installExtFailed = $true
+                } else {
+                    Write-Host "Extension $extId installed successfully"
+                }
+            }
+        }
+
+        if ($installExtFailed) {
+            exit 1
+        }
+    }
+
+    exit 0
 }
 
 try {
@@ -387,6 +432,58 @@ try {
     Write-Host "You can opt-out of telemetry by setting the AZURE_DEV_COLLECT_TELEMETRY environment variable to 'no' in the shell you use."
     Write-Host ""
     Write-Host "Read more about Azure Developer CLI telemetry: https://github.com/Azure/azure-dev#data-collection"
+
+    # Install extensions if requested (Windows path)
+    if ($InstallExtensions) {
+        Write-Host ""
+        Write-Host "Installing requested extensions..."
+
+        # Resolve azd binary path
+        # If user specified InstallFolder, use that directly.
+        # Otherwise, the MSI updates PATH so use Get-Command to find it.
+        if ($InstallFolder) {
+            $azdBin = Join-Path $InstallFolder "azd.exe"
+        } else {
+            # Refresh PATH from registry since MSI updated it
+            $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+            $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+            $env:Path = "$machinePath;$userPath"
+
+            $azdCmd = Get-Command azd -ErrorAction SilentlyContinue
+            if ($azdCmd) {
+                $azdBin = $azdCmd.Source
+            } else {
+                Write-Warning "Could not locate azd after install. Extensions were not installed."
+                Write-Warning "Open a new terminal and run: azd extension install <extension-id>"
+                exit 0
+            }
+        }
+
+        $installExtFailed = $false
+        $extensions = $InstallExtensions -split ','
+        foreach ($extId in $extensions) {
+            $extId = $extId.Trim()
+            if ($extId) {
+                Write-Host "Installing extension: $extId"
+                try {
+                    & $azdBin extension install $extId
+                    if ($LASTEXITCODE -ne 0) {
+                        Write-Warning "Failed to install extension: $extId. You can retry later with: azd extension install $extId"
+                        $installExtFailed = $true
+                    } else {
+                        Write-Host "Extension $extId installed successfully"
+                    }
+                } catch {
+                    Write-Warning "Failed to install extension: $extId. You can retry later with: azd extension install $extId"
+                    $installExtFailed = $true
+                }
+            }
+        }
+
+        if ($installExtFailed) {
+            exit 1
+        }
+    }
 
     exit 0
 } catch {

@@ -16,14 +16,16 @@ steps:
         $storageHost = "$(publish-storage-static-host)"
         $dailyBaseUrl = "$storageHost/azd/extensions/${{ parameters.SanitizedExtensionId }}/daily"
         $entryBlobPath = "$(publish-storage-location)/`$web/azd/extensions/daily-registry-entries/${{ parameters.AzdExtensionId }}.json"
-        $templatePath = "$(Build.SourcesDirectory)/eng/pipelines/templates/json/extension-registry-daily-template.json"
+        $templatePath = "release-metadata/extensions-registry-daily.json.template"
 
-        & "$(Build.SourcesDirectory)/eng/scripts/Update-ExtensionDailyRegistry.ps1" `
+        & "release-metadata/Update-ExtensionDailyRegistry.ps1" `
           -SanitizedExtensionId "${{ parameters.SanitizedExtensionId }}" `
           -AzdExtensionId "${{ parameters.AzdExtensionId }}" `
           -Version "$(EXT_VERSION)" `
           -StorageBaseUrl $dailyBaseUrl `
           -RegistryEntryBlobPath $entryBlobPath `
-          -TemplatePath $templatePath
+          -TemplatePath $templatePath `
+          -ReleasePath "release" `
+          -MetadataPath "release-metadata"
     env:
       AZCOPY_AUTO_LOGIN_TYPE: 'PSCRED'

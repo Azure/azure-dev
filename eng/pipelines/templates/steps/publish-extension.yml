@@ -12,7 +12,7 @@ parameters:
     default: ''
   - name: CreateGitHubRelease
     type: boolean
-    default: true
+    default: false
 
 steps:
   # Remove _manifest folder unconditionally before upload/release

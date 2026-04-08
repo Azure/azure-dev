@@ -40,6 +40,9 @@ stages:
             - input: pipelineArtifact
               artifactName: release
               targetPath: release
+            - input: pipelineArtifact
+              artifactName: release-metadata
+              targetPath: release-metadata
 
         strategy:
           runOnce:

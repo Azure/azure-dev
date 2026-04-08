@@ -67,5 +67,6 @@ stages:
                 - template: /eng/pipelines/templates/steps/publish-extension.yml
                   parameters:
                     PublishUploadLocations: $(StorageUploadLocations)
+                    CreateGitHubRelease: true
                     TagPrefix: azd-ext-${{ parameters.SanitizedExtensionId }}
                     TagVersion: $(EXT_VERSION)

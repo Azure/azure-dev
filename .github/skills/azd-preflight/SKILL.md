@@ -3,10 +3,11 @@ name: azd-preflight
 license: MIT
 metadata:
   version: "1.0"
+  # Bump major on breaking prompt/trigger changes; bump minor on new references or fix strategies.
 description: >-
   **WORKFLOW SKILL** — Runs `mage preflight` from `cli/azd/` and auto-fixes failures.
-  Covers gofmt, go fix, copyright headers, golangci-lint, cspell, go build, unit tests,
-  and playback tests. Iterates fix-then-rerun cycles until all 8 checks pass.
+  Covers linting, formatting, copyright, spelling, build, and tests.
+  Iterates fix-then-rerun cycles until all checks pass.
 
   INVOKES: mage CLI, go CLI, golangci-lint, cspell, bash/sh, ask_user.
 

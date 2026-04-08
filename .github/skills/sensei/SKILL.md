@@ -3,8 +3,9 @@ name: sensei
 license: MIT
 metadata:
   version: "1.0"
+  # Bump major on breaking prompt/trigger changes; bump minor on new references or improvements.
 description: >-
-  **WORKFLOW SKILL** — Evaluates and improves agent skill quality using waza.
+  **WORKFLOW SKILL** — Evaluates and improves agent skill quality in `.github/skills/` using waza.
   Scores skill compliance (frontmatter, triggers, anti-triggers, eval coverage),
   suggests improvements, runs eval suites, and iterates until target quality is reached.
 

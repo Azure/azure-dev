@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"maps"
 	"slices"
 	"strconv"
 	"sync"
@@ -120,7 +121,7 @@ func (t *msalCacheTracer) logSnapshot(phase string) {
 		len(contract.Account),
 	)
 
-	for _, key := range sortedContractKeys(contract.RefreshToken) {
+	for _, key := range slices.Sorted(maps.Keys(contract.RefreshToken)) {
 		rt := contract.RefreshToken[key]
 		log.Printf(
 			"msal-cache[%s]: refresh_token key_sha256=%s home_account_id=%s "+
@@ -135,7 +136,7 @@ func (t *msalCacheTracer) logSnapshot(phase string) {
 		)
 	}
 
-	for _, key := range sortedContractKeys(contract.AccessToken) {
+	for _, key := range slices.Sorted(maps.Keys(contract.AccessToken)) {
 		at := contract.AccessToken[key]
 		log.Printf(
 			"msal-cache[%s]: access_token key_sha256=%s home_account_id=%s realm=%s cached_at=%s expires_on=%s",
@@ -148,7 +149,7 @@ func (t *msalCacheTracer) logSnapshot(phase string) {
 		)
 	}
 
-	for _, key := range sortedContractKeys(contract.Account) {
+	for _, key := range slices.Sorted(maps.Keys(contract.Account)) {
 		account := contract.Account[key]
 		log.Printf(
 			"msal-cache[%s]: account key_sha256=%s home_account_id=%s realm=%s username=%s",
@@ -161,15 +162,7 @@ func (t *msalCacheTracer) logSnapshot(phase string) {
 	}
 }
 
-func sortedContractKeys[T any](m map[string]T) []string {
-	keys := make([]string, 0, len(m))
-	for key := range m {
-		keys = append(keys, key)
-	}
-	slices.Sort(keys)
-	return keys
-}
-
+// shortDigest returns the first 8 hex characters of the SHA-256 digest of s.
 func shortDigest(value string) string {
 	sum := sha256.Sum256([]byte(value))
 	return hex.EncodeToString(sum[:6])

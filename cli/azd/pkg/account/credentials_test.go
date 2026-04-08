@@ -153,8 +153,8 @@ func TestSubscriptionCredentialProvider_AADSTSErrors(t *testing.T) {
 		_, err := provider.CredentialForSubscription(t.Context(), subscriptionId)
 		assert.Error(t, err)
 
-		var errWithSuggestion *internal.ErrorWithSuggestion
-		assert.True(t, errors.As(err, &errWithSuggestion), "error should be wrapped in ErrorWithSuggestion")
+		errWithSuggestion, ok := errors.AsType[*internal.ErrorWithSuggestion](err)
+		assert.True(t, ok, "error should be wrapped in ErrorWithSuggestion")
 		assert.Equal(t, "Login expired for the current account.", errWithSuggestion.Message)
 		assert.Contains(t, errWithSuggestion.Suggestion, "Run `azd auth login` to acquire a new token.")
 		assert.Contains(t, errWithSuggestion.Suggestion, tenantId)

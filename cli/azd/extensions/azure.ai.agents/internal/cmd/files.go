@@ -73,7 +73,7 @@ func newFilesCommand() *cobra.Command {
 Upload, download, list, and remove files in the session-scoped filesystem
 of a hosted agent. This is useful for debugging, seeding data, and agent setup.
 
-Agent details (name, version, endpoint) are automatically resolved from the
+Agent details (name, endpoint) are automatically resolved from the
 azd environment. Use --agent-name to select a specific agent when the project
 has multiple azure.ai.agent services. The session ID is automatically resolved
 from the last invoke session, or can be overridden with --session.`,
@@ -155,7 +155,6 @@ func resolveFilesContext(ctx context.Context, flags *filesFlags) (*filesContext,
 		AgentContext: &AgentContext{
 			ProjectEndpoint: endpoint,
 			Name:            info.AgentName,
-			Version:         info.Version,
 		},
 		sessionID: sessionID,
 	}, nil

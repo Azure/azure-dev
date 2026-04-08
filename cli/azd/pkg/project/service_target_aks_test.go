@@ -1087,8 +1087,6 @@ func Test_Postprovision_GracefulSkip(t *testing.T) {
 		name             string
 		resourceName     string
 		resourceType     string
-		resourceErr      error
-		credentialCode   int
 		deleteClusterEnv bool
 	}{
 		{
@@ -1096,16 +1094,6 @@ func Test_Postprovision_GracefulSkip(t *testing.T) {
 			resourceName:     "",
 			resourceType:     "",
 			deleteClusterEnv: true,
-		},
-		{
-			name:        "SkipsWhenGetTargetResourceFails",
-			resourceErr: fmt.Errorf("resource group not found"),
-		},
-		{
-			name:           "SkipsWhenCredentialsFail",
-			resourceName:   "MY_AKS_CLUSTER",
-			resourceType:   string(azapi.AzureResourceTypeManagedCluster),
-			credentialCode: http.StatusUnauthorized,
 		},
 	}
 
@@ -1118,12 +1106,6 @@ func Test_Postprovision_GracefulSkip(t *testing.T) {
 			err := setupMocksForAksTarget(mockContext)
 			require.NoError(t, err)
 
-			if tt.credentialCode != 0 {
-				err = setupListClusterUserCredentialsMock(
-					mockContext, tt.credentialCode)
-				require.NoError(t, err)
-			}
-
 			serviceConfig := createTestServiceConfig(
 				tempDir, AksTarget, ServiceLanguageTypeScript)
 			env := createEnv()
@@ -1134,29 +1116,18 @@ func Test_Postprovision_GracefulSkip(t *testing.T) {
 			}
 
 			resourceManager := &MockResourceManager{}
-			if tt.resourceErr != nil {
-				resourceManager.
-					On("GetTargetResource",
-						*mockContext.Context,
-						"SUBSCRIPTION_ID",
-						serviceConfig).
-					Return(
-						(*environment.TargetResource)(nil),
-						tt.resourceErr)
-			} else {
-				targetResource := environment.NewTargetResource(
+			targetResource := environment.NewTargetResource(
+				"SUBSCRIPTION_ID",
+				"RESOURCE_GROUP",
+				tt.resourceName,
+				tt.resourceType,
+			)
+			resourceManager.
+				On("GetTargetResource",
+					*mockContext.Context,
 					"SUBSCRIPTION_ID",
-					"RESOURCE_GROUP",
-					tt.resourceName,
-					tt.resourceType,
-				)
-				resourceManager.
-					On("GetTargetResource",
-						*mockContext.Context,
-						"SUBSCRIPTION_ID",
-						serviceConfig).
-					Return(targetResource, nil)
-			}
+					serviceConfig).
+				Return(targetResource, nil)
 
 			serviceTarget := createAksServiceTargetWithResourceManager(
 				mockContext, env, nil,
@@ -1178,6 +1149,98 @@ func Test_Postprovision_GracefulSkip(t *testing.T) {
 			assertSkipWarningEmitted(t, mockContext)
 		})
 	}
+}
+
+func Test_Postprovision_Fails_When_GetTargetResource_Errors(t *testing.T) {
+	tempDir := t.TempDir()
+	ostest.Chdir(t, tempDir)
+
+	mockContext := mocks.NewMockContext(t.Context())
+	err := setupMocksForAksTarget(mockContext)
+	require.NoError(t, err)
+
+	serviceConfig := createTestServiceConfig(
+		tempDir, AksTarget, ServiceLanguageTypeScript)
+	env := createEnv()
+
+	resourceManager := &MockResourceManager{}
+	resourceManager.
+		On("GetTargetResource",
+			*mockContext.Context,
+			"SUBSCRIPTION_ID",
+			serviceConfig).
+		Return(
+			(*environment.TargetResource)(nil),
+			fmt.Errorf("resource group not found"))
+
+	serviceTarget := createAksServiceTargetWithResourceManager(
+		mockContext, env, nil, resourceManager)
+
+	err = serviceTarget.Initialize(
+		*mockContext.Context, serviceConfig)
+	require.NoError(t, err)
+
+	// GetTargetResource errors are real failures — they must propagate
+	// even during postprovision.
+	err = serviceConfig.Project.RaiseEvent(
+		*mockContext.Context,
+		postProvisionEvent,
+		ProjectLifecycleEventArgs{
+			Project: serviceConfig.Project,
+		},
+	)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "resource group not found")
+}
+
+func Test_Postprovision_Fails_When_Credentials_Fail(t *testing.T) {
+	tempDir := t.TempDir()
+	ostest.Chdir(t, tempDir)
+
+	mockContext := mocks.NewMockContext(t.Context())
+	err := setupMocksForAksTarget(mockContext)
+	require.NoError(t, err)
+
+	err = setupListClusterUserCredentialsMock(
+		mockContext, http.StatusUnauthorized)
+	require.NoError(t, err)
+
+	serviceConfig := createTestServiceConfig(
+		tempDir, AksTarget, ServiceLanguageTypeScript)
+	env := createEnv()
+
+	resourceManager := &MockResourceManager{}
+	targetResource := environment.NewTargetResource(
+		"SUBSCRIPTION_ID",
+		"RESOURCE_GROUP",
+		"MY_AKS_CLUSTER",
+		string(azapi.AzureResourceTypeManagedCluster),
+	)
+	resourceManager.
+		On("GetTargetResource",
+			*mockContext.Context,
+			"SUBSCRIPTION_ID",
+			serviceConfig).
+		Return(targetResource, nil)
+
+	serviceTarget := createAksServiceTargetWithResourceManager(
+		mockContext, env, nil, resourceManager)
+
+	err = serviceTarget.Initialize(
+		*mockContext.Context, serviceConfig)
+	require.NoError(t, err)
+
+	// Credential/RBAC failures during postprovision are real errors
+	// that must not be silently swallowed.
+	err = serviceConfig.Project.RaiseEvent(
+		*mockContext.Context,
+		postProvisionEvent,
+		ProjectLifecycleEventArgs{
+			Project: serviceConfig.Project,
+		},
+	)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "failed retrieving cluster user credentials")
 }
 
 func Test_Postprovision_Succeeds_When_Cluster_Available(t *testing.T) {
@@ -1365,7 +1428,7 @@ func Test_Predeploy_Fails_When_Namespace_Fails(t *testing.T) {
 	require.ErrorContains(t, err, "namespace creation denied")
 }
 
-func Test_Postprovision_Skips_When_Namespace_Fails(t *testing.T) {
+func Test_Postprovision_Fails_When_Namespace_Fails(t *testing.T) {
 	tempDir := t.TempDir()
 	ostest.Chdir(t, tempDir)
 
@@ -1411,7 +1474,8 @@ func Test_Postprovision_Skips_When_Namespace_Fails(t *testing.T) {
 		*mockContext.Context, serviceConfig)
 	require.NoError(t, err)
 
-	// Postprovision should skip gracefully despite namespace failure
+	// Postprovision must now propagate namespace errors — real failures
+	// should not be masked even during postprovision.
 	err = serviceConfig.Project.RaiseEvent(
 		*mockContext.Context,
 		postProvisionEvent,
@@ -1419,9 +1483,8 @@ func Test_Postprovision_Skips_When_Namespace_Fails(t *testing.T) {
 			Project: serviceConfig.Project,
 		},
 	)
-	require.NoError(t, err)
-
-	assertSkipWarningEmitted(t, mockContext)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "namespace creation denied")
 }
 
 func Test_Postprovision_Propagates_Context_Cancellation(t *testing.T) {
@@ -1435,16 +1498,23 @@ func Test_Postprovision_Propagates_Context_Cancellation(t *testing.T) {
 	serviceConfig := createTestServiceConfig(
 		tempDir, AksTarget, ServiceLanguageTypeScript)
 	env := createEnv()
+	env.DotenvDelete(environment.AksClusterEnvVarName)
 
+	// Return an empty-name resource (the valid delayed-provisioning signal)
+	// so we exercise the skipPostprovisionK8sSetup path.
 	resourceManager := &MockResourceManager{}
+	targetResource := environment.NewTargetResource(
+		"SUBSCRIPTION_ID",
+		"RESOURCE_GROUP",
+		"",
+		"",
+	)
 	resourceManager.
 		On("GetTargetResource",
 			mock.Anything,
 			"SUBSCRIPTION_ID",
 			serviceConfig).
-		Return(
-			(*environment.TargetResource)(nil),
-			fmt.Errorf("request cancelled"))
+		Return(targetResource, nil)
 
 	serviceTarget := createAksServiceTargetWithResourceManager(
 		mockContext, env, nil, resourceManager)

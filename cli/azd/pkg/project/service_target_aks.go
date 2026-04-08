@@ -17,7 +17,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
-	"go.opentelemetry.io/otel/attribute"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -33,6 +32,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/kubectl"
 	"github.com/sethvargo/go-retry"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 const (
@@ -923,18 +923,19 @@ func (t *aksTarget) setK8sContext(
 	targetResource, err := t.resourceManager.GetTargetResource(
 		ctx, t.env.GetSubscriptionId(), serviceConfig)
 	if err != nil {
-		return t.postprovisionK8sError(ctx, eventName, err)
+		return err
+	}
+
+	if targetResource == nil {
+		return fmt.Errorf("AKS cluster target resource is nil")
 	}
 
 	// When the AKS cluster hasn't been provisioned yet the target resource
 	// will have an empty resource name (via SupportsDelayedProvisioning).
 	// During postprovision this is expected in multi-phase provisioning
-	// workflows — skip gracefully instead of failing.
-	if targetResource == nil {
-		return t.postprovisionK8sError(ctx, eventName,
-			fmt.Errorf("AKS cluster target resource is nil"))
-	}
-
+	// workflows — skip gracefully instead of failing. All other errors
+	// (credentials, RBAC, namespace) are real failures that should surface
+	// even during postprovision.
 	if targetResource.ResourceName() == "" && eventName == postProvisionEvent {
 		return t.skipPostprovisionK8sSetup(
 			ctx, fmt.Errorf("AKS cluster resource not yet provisioned"))
@@ -944,12 +945,12 @@ func (t *aksTarget) setK8sContext(
 	_, err = t.ensureClusterContext(
 		ctx, serviceConfig, targetResource, defaultNamespace)
 	if err != nil {
-		return t.postprovisionK8sError(ctx, eventName, err)
+		return err
 	}
 
 	err = t.ensureNamespace(ctx, defaultNamespace)
 	if err != nil {
-		return t.postprovisionK8sError(ctx, eventName, err)
+		return err
 	}
 
 	// Display message to the user when we detect they are using a
@@ -963,19 +964,6 @@ func (t *aksTarget) setK8sContext(
 	}
 
 	return nil
-}
-
-// postprovisionK8sError skips gracefully during postprovision events
-// and returns the error for all other events (e.g. predeploy).
-func (t *aksTarget) postprovisionK8sError(
-	ctx context.Context,
-	eventName ext.Event,
-	err error,
-) error {
-	if eventName == postProvisionEvent {
-		return t.skipPostprovisionK8sSetup(ctx, err)
-	}
-	return err
 }
 
 // skipPostprovisionK8sSetup logs a warning and returns nil so that

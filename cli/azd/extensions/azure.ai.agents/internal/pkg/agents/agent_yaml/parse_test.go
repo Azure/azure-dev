@@ -604,13 +604,13 @@ resources:
 	}
 }
 
-// TestExtractToolsDefinitions_AzureAiSearch tests parsing an azureAiSearch tool
+// TestExtractToolsDefinitions_AzureAiSearch tests parsing an azure_ai_search tool
 func TestExtractToolsDefinitions_AzureAiSearch(t *testing.T) {
 	template := map[string]any{
 		"tools": []any{
 			map[string]any{
 				"name": "my-search",
-				"kind": "azureAiSearch",
+				"kind": "azure_ai_search",
 				"indexes": []any{
 					map[string]any{
 						"project_connection_id": "search-conn",
@@ -637,7 +637,7 @@ func TestExtractToolsDefinitions_AzureAiSearch(t *testing.T) {
 		t.Fatalf("Expected AzureAISearchTool, got %T", tools[0])
 	}
 	if searchTool.Kind != ToolKindAzureAiSearch {
-		t.Errorf("Expected kind 'azureAiSearch', got '%s'", searchTool.Kind)
+		t.Errorf("Expected kind 'azure_ai_search', got '%s'", searchTool.Kind)
 	}
 	if len(searchTool.Indexes) != 1 {
 		t.Fatalf("Expected 1 index, got %d", len(searchTool.Indexes))
@@ -647,13 +647,13 @@ func TestExtractToolsDefinitions_AzureAiSearch(t *testing.T) {
 	}
 }
 
-// TestExtractToolsDefinitions_A2APreview tests parsing an a2aPreview tool
+// TestExtractToolsDefinitions_A2APreview tests parsing an a2a_preview tool
 func TestExtractToolsDefinitions_A2APreview(t *testing.T) {
 	template := map[string]any{
 		"tools": []any{
 			map[string]any{
 				"name":                "a2a-delegate",
-				"kind":                "a2aPreview",
+				"kind":                "a2a_preview",
 				"baseUrl":             "https://remote-agent.example.com",
 				"agentCardPath":       "/.well-known/agent.json",
 				"projectConnectionId": "remote-conn",
@@ -675,12 +675,309 @@ func TestExtractToolsDefinitions_A2APreview(t *testing.T) {
 		t.Fatalf("Expected A2APreviewTool, got %T", tools[0])
 	}
 	if a2aTool.Kind != ToolKindA2APreview {
-		t.Errorf("Expected kind 'a2aPreview', got '%s'", a2aTool.Kind)
+		t.Errorf("Expected kind 'a2a_preview', got '%s'", a2aTool.Kind)
 	}
 	if a2aTool.BaseUrl != "https://remote-agent.example.com" {
 		t.Errorf("Expected baseUrl, got '%s'", a2aTool.BaseUrl)
 	}
 	if a2aTool.ProjectConnectionId != "remote-conn" {
 		t.Errorf("Expected projectConnectionId 'remote-conn', got '%s'", a2aTool.ProjectConnectionId)
+	}
+}
+
+// TestExtractResourceDefinitions_ToolboxResourceWithTypedTools tests parsing a toolbox
+// resource that has tool entries in the Tools []any field,
+// matching the AgentSchema ToolboxResource/ToolboxTool format.
+func TestExtractResourceDefinitions_ToolboxResourceWithTypedTools(t *testing.T) {
+	yamlContent := []byte(`
+name: test-manifest
+template:
+  kind: prompt
+  name: test-agent
+  model:
+    id: gpt-4.1-mini
+resources:
+  - kind: toolbox
+    name: platform-tools
+    description: Platform tools with typed definitions
+    tools:
+      - id: bing_grounding
+      - id: mcp
+        name: github-copilot
+        target: https://api.githubcopilot.com/mcp
+        authType: OAuth2
+        credentials:
+          clientId: my-client-id
+          clientSecret: my-client-secret
+      - id: mcp
+        name: custom-api
+        target: https://my-api.example.com/sse
+        authType: CustomKeys
+        credentials:
+          key: my-api-key
+`)
+
+	resources, err := ExtractResourceDefinitions(yamlContent)
+	if err != nil {
+		t.Fatalf("ExtractResourceDefinitions failed: %v", err)
+	}
+
+	if len(resources) != 1 {
+		t.Fatalf("Expected 1 resource, got %d", len(resources))
+	}
+
+	toolboxRes, ok := resources[0].(ToolboxResource)
+	if !ok {
+		t.Fatalf("Expected ToolboxResource, got %T", resources[0])
+	}
+
+	if toolboxRes.Name != "platform-tools" {
+		t.Errorf("Expected name 'platform-tools', got '%s'", toolboxRes.Name)
+	}
+
+	if toolboxRes.Description != "Platform tools with typed definitions" {
+		t.Errorf("Expected description, got '%s'", toolboxRes.Description)
+	}
+
+	if len(toolboxRes.Tools) != 3 {
+		t.Fatalf("Expected 3 typed tools, got %d", len(toolboxRes.Tools))
+	}
+
+	// Helper to get tool as map
+	tool := func(i int) map[string]any {
+		m, ok := toolboxRes.Tools[i].(map[string]any)
+		if !ok {
+			t.Fatalf("Expected tool[%d] to be map[string]any, got %T", i, toolboxRes.Tools[i])
+		}
+		return m
+	}
+
+	// Check built-in tool (no target/authType/name)
+	if tool(0)["id"] != "bing_grounding" {
+		t.Errorf("Expected first tool id 'bing_grounding', got '%v'", tool(0)["id"])
+	}
+	if tool(0)["target"] != nil {
+		t.Errorf("Expected no target for built-in tool, got '%v'", tool(0)["target"])
+	}
+
+	// Check MCP tool with name and OAuth2
+	if tool(1)["id"] != "mcp" {
+		t.Errorf("Expected second tool id 'mcp', got '%v'", tool(1)["id"])
+	}
+	if tool(1)["name"] != "github-copilot" {
+		t.Errorf("Expected second tool name 'github-copilot', got '%v'", tool(1)["name"])
+	}
+	if tool(1)["target"] != "https://api.githubcopilot.com/mcp" {
+		t.Errorf("Expected second tool target, got '%v'", tool(1)["target"])
+	}
+	if tool(1)["authType"] != "OAuth2" {
+		t.Errorf("Expected second tool authType 'OAuth2', got '%v'", tool(1)["authType"])
+	}
+	creds1, _ := tool(1)["credentials"].(map[string]any)
+	if creds1["clientId"] != "my-client-id" {
+		t.Errorf("Expected second tool clientId, got '%v'", creds1["clientId"])
+	}
+
+	// Check MCP tool with CustomKeys
+	if tool(2)["id"] != "mcp" {
+		t.Errorf("Expected third tool id 'mcp', got '%v'", tool(2)["id"])
+	}
+	if tool(2)["name"] != "custom-api" {
+		t.Errorf("Expected third tool name 'custom-api', got '%v'", tool(2)["name"])
+	}
+	if tool(2)["authType"] != "CustomKeys" {
+		t.Errorf("Expected third tool authType 'CustomKeys', got '%v'", tool(2)["authType"])
+	}
+}
+
+// TestLoadAndValidateAgentManifest_RecordFormatParameters verifies that the
+// record/map format for parameters (canonical agent manifest schema) is parsed
+// correctly into PropertySchema.Properties.
+func TestLoadAndValidateAgentManifest_RecordFormatParameters(t *testing.T) {
+	yamlContent := []byte(`
+name: test-params
+template:
+  name: test
+  kind: hosted
+  protocols:
+    - protocol: responses
+resources:
+  - kind: model
+    name: chat
+    id: gpt-5
+  - kind: toolbox
+    name: tools
+    tools:
+      - id: mcp
+        name: github
+        target: https://api.githubcopilot.com/mcp
+        authType: OAuth2
+        credentials:
+          clientId: "{{ github_client_id }}"
+          clientSecret: "{{ github_client_secret }}"
+parameters:
+  github_client_id:
+    schema:
+      type: string
+    description: OAuth client ID
+    required: true
+  github_client_secret:
+    schema:
+      type: string
+    description: OAuth client secret
+    required: true
+  model_name:
+    schema:
+      type: string
+      enum:
+        - gpt-4o
+        - gpt-4o-mini
+      default: gpt-4o
+    required: true
+`)
+
+	manifest, err := LoadAndValidateAgentManifest(yamlContent)
+	if err != nil {
+		t.Fatalf("LoadAndValidateAgentManifest failed: %v", err)
+	}
+
+	if len(manifest.Parameters.Properties) != 3 {
+		t.Fatalf("Expected 3 parameters, got %d", len(manifest.Parameters.Properties))
+	}
+
+	// Find parameters by name (map order is not guaranteed)
+	paramsByName := map[string]Property{}
+	for _, p := range manifest.Parameters.Properties {
+		paramsByName[p.Name] = p
+	}
+
+	// Check github_client_id
+	p, ok := paramsByName["github_client_id"]
+	if !ok {
+		t.Fatal("Missing parameter github_client_id")
+	}
+	if p.Kind != "string" {
+		t.Errorf("Expected kind 'string', got '%s'", p.Kind)
+	}
+	if p.Description == nil || *p.Description != "OAuth client ID" {
+		t.Errorf("Unexpected description: %v", p.Description)
+	}
+	if p.Required == nil || !*p.Required {
+		t.Error("Expected required=true")
+	}
+
+	// Check model_name with enum and default
+	p, ok = paramsByName["model_name"]
+	if !ok {
+		t.Fatal("Missing parameter model_name")
+	}
+	if p.EnumValues == nil || len(*p.EnumValues) != 2 {
+		t.Fatalf("Expected 2 enum values, got %v", p.EnumValues)
+	}
+	if p.Default == nil {
+		t.Fatal("Expected default value")
+	}
+	if defaultStr, ok := (*p.Default).(string); !ok || defaultStr != "gpt-4o" {
+		t.Errorf("Expected default 'gpt-4o', got %v", *p.Default)
+	}
+}
+
+// TestLoadAndValidateAgentManifest_ArrayFormatParameters verifies that the
+// traditional array format for parameters still works after the UnmarshalYAML change.
+func TestLoadAndValidateAgentManifest_ArrayFormatParameters(t *testing.T) {
+	yamlContent := []byte(`
+name: test-array-params
+template:
+  name: test
+  kind: hosted
+  protocols:
+    - protocol: responses
+resources:
+  - kind: model
+    name: chat
+    id: gpt-5
+parameters:
+  properties:
+    - name: my_param
+      kind: string
+      description: A test parameter
+      required: true
+`)
+
+	manifest, err := LoadAndValidateAgentManifest(yamlContent)
+	if err != nil {
+		t.Fatalf("LoadAndValidateAgentManifest failed: %v", err)
+	}
+
+	if len(manifest.Parameters.Properties) != 1 {
+		t.Fatalf("Expected 1 parameter, got %d", len(manifest.Parameters.Properties))
+	}
+
+	p := manifest.Parameters.Properties[0]
+	if p.Name != "my_param" {
+		t.Errorf("Expected name 'my_param', got '%s'", p.Name)
+	}
+	if p.Kind != "string" {
+		t.Errorf("Expected kind 'string', got '%s'", p.Kind)
+	}
+}
+
+// TestLoadAndValidateAgentManifest_SecretParameter verifies that
+// secret: true inside the schema block is parsed into Property.Secret.
+func TestLoadAndValidateAgentManifest_SecretParameter(t *testing.T) {
+	yamlContent := []byte(`
+name: test-secret
+template:
+  name: test
+  kind: hosted
+  protocols:
+    - protocol: responses
+resources:
+  - kind: model
+    name: chat
+    id: gpt-5
+parameters:
+  api_key:
+    description: API key for the custom MCP server
+    schema:
+      type: string
+      secret: true
+    required: true
+  display_name:
+    description: A non-secret parameter
+    schema:
+      type: string
+`)
+
+	manifest, err := LoadAndValidateAgentManifest(yamlContent)
+	if err != nil {
+		t.Fatalf("LoadAndValidateAgentManifest failed: %v", err)
+	}
+
+	if len(manifest.Parameters.Properties) != 2 {
+		t.Fatalf("Expected 2 parameters, got %d", len(manifest.Parameters.Properties))
+	}
+
+	paramsByName := map[string]Property{}
+	for _, p := range manifest.Parameters.Properties {
+		paramsByName[p.Name] = p
+	}
+
+	// api_key should be secret
+	apiKey, ok := paramsByName["api_key"]
+	if !ok {
+		t.Fatal("Missing parameter api_key")
+	}
+	if apiKey.Secret == nil || !*apiKey.Secret {
+		t.Error("Expected api_key to have secret=true")
+	}
+
+	// display_name should NOT be secret
+	displayName, ok := paramsByName["display_name"]
+	if !ok {
+		t.Fatal("Missing parameter display_name")
+	}
+	if displayName.Secret != nil {
+		t.Errorf("Expected display_name secret to be nil, got %v", *displayName.Secret)
 	}
 }

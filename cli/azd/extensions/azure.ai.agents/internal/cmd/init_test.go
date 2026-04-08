@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"azureaiagent/internal/pkg/agents/agent_yaml"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
@@ -390,6 +392,460 @@ func TestParseGitHubUrlNaive(t *testing.T) {
 			}
 			if result.Hostname != tt.expected.Hostname {
 				t.Errorf("Hostname = %q, want %q", result.Hostname, tt.expected.Hostname)
+			}
+		})
+	}
+}
+
+func TestExtractToolboxAndConnectionConfigs_TypedTools(t *testing.T) {
+	t.Parallel()
+
+	manifest := &agent_yaml.AgentManifest{
+		Resources: []any{
+			agent_yaml.ToolboxResource{
+				Resource: agent_yaml.Resource{
+					Name: "platform-tools",
+					Kind: agent_yaml.ResourceKindToolbox,
+				},
+				Description: "Platform tools",
+				Tools: []any{
+					map[string]any{
+						// Built-in tool — no connection
+						"id": "bing_grounding",
+					},
+					map[string]any{
+						// External tool with name — connection name from Name field
+						"id":       "mcp",
+						"name":     "github-copilot",
+						"target":   "https://api.githubcopilot.com/mcp",
+						"authType": "OAuth2",
+						"credentials": map[string]any{
+							"clientId":     "my-client-id",
+							"clientSecret": "my-secret",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	toolboxes, connections, credEnvVars, err := extractToolboxAndConnectionConfigs(manifest)
+	if err != nil {
+		t.Fatalf("extractToolboxAndConnectionConfigs failed: %v", err)
+	}
+
+	// Only the external tool creates a connection (not bing_grounding)
+	if len(connections) != 1 {
+		t.Fatalf("Expected 1 connection, got %d", len(connections))
+	}
+	conn := connections[0]
+	if conn.Name != "github-copilot" {
+		t.Errorf("Expected connection name 'github-copilot', got '%s'", conn.Name)
+	}
+	if conn.Category != "RemoteTool" {
+		t.Errorf("Expected category 'RemoteTool', got '%s'", conn.Category)
+	}
+	if conn.Target != "https://api.githubcopilot.com/mcp" {
+		t.Errorf("Expected target, got '%s'", conn.Target)
+	}
+	if conn.AuthType != "OAuth2" {
+		t.Errorf("Expected authType 'OAuth2', got '%s'", conn.AuthType)
+	}
+
+	// Credentials should be ${VAR} references, not raw values
+	if conn.Credentials["clientId"] != "${FOUNDRY_TOOL_GITHUB_COPILOT_CLIENTID}" {
+		t.Errorf("Expected env var ref for clientId, got '%v'", conn.Credentials["clientId"])
+	}
+	if conn.Credentials["clientSecret"] != "${FOUNDRY_TOOL_GITHUB_COPILOT_CLIENTSECRET}" {
+		t.Errorf("Expected env var ref for clientSecret, got '%v'", conn.Credentials["clientSecret"])
+	}
+
+	// Raw values should be in the credEnvVars map
+	if credEnvVars["FOUNDRY_TOOL_GITHUB_COPILOT_CLIENTID"] != "my-client-id" {
+		t.Errorf("Expected env var value 'my-client-id', got '%s'",
+			credEnvVars["FOUNDRY_TOOL_GITHUB_COPILOT_CLIENTID"])
+	}
+	if credEnvVars["FOUNDRY_TOOL_GITHUB_COPILOT_CLIENTSECRET"] != "my-secret" {
+		t.Errorf("Expected env var value 'my-secret', got '%s'",
+			credEnvVars["FOUNDRY_TOOL_GITHUB_COPILOT_CLIENTSECRET"])
+	}
+
+	// Verify toolbox has both tools
+	if len(toolboxes) != 1 {
+		t.Fatalf("Expected 1 toolbox, got %d", len(toolboxes))
+	}
+	tb := toolboxes[0]
+	if tb.Name != "platform-tools" {
+		t.Errorf("Expected toolbox name 'platform-tools', got '%s'", tb.Name)
+	}
+	if tb.Description != "Platform tools" {
+		t.Errorf("Expected description 'Platform tools', got '%s'", tb.Description)
+	}
+	if len(tb.Tools) != 2 {
+		t.Fatalf("Expected 2 tools, got %d", len(tb.Tools))
+	}
+
+	// First tool: built-in (no project_connection_id)
+	if tb.Tools[0]["type"] != "bing_grounding" {
+		t.Errorf("Expected tool[0] type 'bing_grounding', got '%v'", tb.Tools[0]["type"])
+	}
+	if _, hasConn := tb.Tools[0]["project_connection_id"]; hasConn {
+		t.Errorf("Built-in tool should not have project_connection_id")
+	}
+
+	// Second tool: minimal (type + project_connection_id only)
+	if tb.Tools[1]["project_connection_id"] != "github-copilot" {
+		t.Errorf("Expected project_connection_id 'github-copilot', got '%v'",
+			tb.Tools[1]["project_connection_id"])
+	}
+	if tb.Tools[1]["type"] != "mcp" {
+		t.Errorf("Expected tool type 'mcp', got '%v'", tb.Tools[1]["type"])
+	}
+	// No server_url or server_label in init output — deploy enriches from connections
+	if _, has := tb.Tools[1]["server_url"]; has {
+		t.Errorf("Toolbox tool should not have server_url (deploy enriches it)")
+	}
+	if _, has := tb.Tools[1]["server_label"]; has {
+		t.Errorf("Toolbox tool should not have server_label (deploy enriches it)")
+	}
+}
+
+func TestExtractToolboxAndConnectionConfigs_RawToolsFallback(t *testing.T) {
+	t.Parallel()
+
+	manifest := &agent_yaml.AgentManifest{
+		Resources: []any{
+			agent_yaml.ToolboxResource{
+				Resource: agent_yaml.Resource{
+					Name: "raw-toolbox",
+					Kind: agent_yaml.ResourceKindToolbox,
+				},
+				Description: "Raw tools",
+				Tools: []any{
+					map[string]any{
+						"id":                    "mcp",
+						"name":                  "existing",
+						"project_connection_id": "existing-conn",
+					},
+				},
+			},
+		},
+	}
+
+	toolboxes, connections, credEnvVars, err := extractToolboxAndConnectionConfigs(manifest)
+	if err != nil {
+		t.Fatalf("extractToolboxAndConnectionConfigs failed: %v", err)
+	}
+
+	// No connections or env vars extracted from raw tools
+	if len(connections) != 0 {
+		t.Errorf("Expected 0 connections, got %d", len(connections))
+	}
+	if len(credEnvVars) != 0 {
+		t.Errorf("Expected 0 env vars, got %d", len(credEnvVars))
+	}
+
+	if len(toolboxes) != 1 {
+		t.Fatalf("Expected 1 toolbox, got %d", len(toolboxes))
+	}
+	if toolboxes[0].Tools[0]["project_connection_id"] != "existing-conn" {
+		t.Errorf("Expected 'existing-conn', got '%v'", toolboxes[0].Tools[0]["project_connection_id"])
+	}
+}
+
+func TestExtractToolboxAndConnectionConfigs_NilManifest(t *testing.T) {
+	t.Parallel()
+
+	toolboxes, connections, credEnvVars, err := extractToolboxAndConnectionConfigs(nil)
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+	if toolboxes != nil {
+		t.Errorf("Expected nil toolboxes, got %v", toolboxes)
+	}
+	if connections != nil {
+		t.Errorf("Expected nil connections, got %v", connections)
+	}
+	if credEnvVars != nil {
+		t.Errorf("Expected nil env vars, got %v", credEnvVars)
+	}
+}
+
+func TestExtractToolboxAndConnectionConfigs_CustomKeysCredentials(t *testing.T) {
+	t.Parallel()
+
+	manifest := &agent_yaml.AgentManifest{
+		Resources: []any{
+			agent_yaml.ToolboxResource{
+				Resource: agent_yaml.Resource{
+					Name: "my-tools",
+					Kind: agent_yaml.ResourceKindToolbox,
+				},
+				Tools: []any{
+					map[string]any{
+						"id":          "mcp",
+						"name":        "custom-api",
+						"target":      "https://example.com/mcp",
+						"authType":    "CustomKeys",
+						"credentials": map[string]any{"key": "my-api-key"},
+					},
+					map[string]any{
+						"id":          "mcp",
+						"name":        "oauth-tool",
+						"target":      "https://example.com/oauth",
+						"authType":    "OAuth2",
+						"credentials": map[string]any{"clientId": "id", "clientSecret": "secret"},
+					},
+				},
+			},
+		},
+	}
+
+	_, connections, _, err := extractToolboxAndConnectionConfigs(manifest)
+	if err != nil {
+		t.Fatalf("extractToolboxAndConnectionConfigs failed: %v", err)
+	}
+
+	if len(connections) != 2 {
+		t.Fatalf("Expected 2 connections, got %d", len(connections))
+	}
+
+	// CustomKeys: credentials must be nested under "keys"
+	customConn := connections[0]
+	keysRaw, ok := customConn.Credentials["keys"]
+	if !ok {
+		t.Fatal("CustomKeys connection missing 'keys' wrapper in credentials")
+	}
+	keys, ok := keysRaw.(map[string]any)
+	if !ok {
+		t.Fatalf("Expected 'keys' to be map[string]any, got %T", keysRaw)
+	}
+	if keys["key"] != "${FOUNDRY_TOOL_CUSTOM_API_KEY}" {
+		t.Errorf("Expected env var ref for key, got '%v'", keys["key"])
+	}
+
+	// OAuth2: credentials should be flat (no "keys" wrapper)
+	oauthConn := connections[1]
+	if _, hasKeys := oauthConn.Credentials["keys"]; hasKeys {
+		t.Error("OAuth2 connection should not have 'keys' wrapper")
+	}
+	if oauthConn.Credentials["clientId"] != "${FOUNDRY_TOOL_OAUTH_TOOL_CLIENTID}" {
+		t.Errorf("Expected flat clientId ref, got '%v'", oauthConn.Credentials["clientId"])
+	}
+}
+
+func TestInjectToolboxEnvVarsIntoDefinition_AddsEnvVars(t *testing.T) {
+	t.Parallel()
+
+	manifest := &agent_yaml.AgentManifest{
+		Template: agent_yaml.ContainerAgent{
+			AgentDefinition: agent_yaml.AgentDefinition{
+				Kind: agent_yaml.AgentKindHosted,
+				Name: "my-agent",
+			},
+			Protocols: []agent_yaml.ProtocolVersionRecord{
+				{Protocol: "responses", Version: "v1"},
+			},
+			EnvironmentVariables: &[]agent_yaml.EnvironmentVariable{
+				{Name: "AZURE_OPENAI_ENDPOINT", Value: "${AZURE_OPENAI_ENDPOINT}"},
+			},
+		},
+		Resources: []any{
+			agent_yaml.ToolboxResource{
+				Resource: agent_yaml.Resource{
+					Name: "agent-tools",
+					Kind: agent_yaml.ResourceKindToolbox,
+				},
+				Tools: []any{
+					map[string]any{"id": "bing_grounding"},
+				},
+			},
+		},
+	}
+
+	injectToolboxEnvVarsIntoDefinition(manifest)
+
+	containerAgent := manifest.Template.(agent_yaml.ContainerAgent)
+	envVars := *containerAgent.EnvironmentVariables
+
+	if len(envVars) != 2 {
+		t.Fatalf("Expected 2 env vars, got %d", len(envVars))
+	}
+
+	// Original env var is preserved
+	if envVars[0].Name != "AZURE_OPENAI_ENDPOINT" {
+		t.Errorf("Expected first env var to be AZURE_OPENAI_ENDPOINT, got %s", envVars[0].Name)
+	}
+
+	// Toolbox env var is injected
+	if envVars[1].Name != "FOUNDRY_TOOLBOX_AGENT_TOOLS_MCP_ENDPOINT" {
+		t.Errorf("Expected injected env var name, got %s", envVars[1].Name)
+	}
+	if envVars[1].Value != "${FOUNDRY_TOOLBOX_AGENT_TOOLS_MCP_ENDPOINT}" {
+		t.Errorf("Expected env var reference value, got %s", envVars[1].Value)
+	}
+}
+
+func TestInjectToolboxEnvVarsIntoDefinition_SkipsExisting(t *testing.T) {
+	t.Parallel()
+
+	manifest := &agent_yaml.AgentManifest{
+		Template: agent_yaml.ContainerAgent{
+			AgentDefinition: agent_yaml.AgentDefinition{
+				Kind: agent_yaml.AgentKindHosted,
+				Name: "my-agent",
+			},
+			Protocols: []agent_yaml.ProtocolVersionRecord{
+				{Protocol: "responses", Version: "v1"},
+			},
+			EnvironmentVariables: &[]agent_yaml.EnvironmentVariable{
+				{Name: "FOUNDRY_TOOLBOX_MY_TOOLS_MCP_ENDPOINT", Value: "custom-value"},
+			},
+		},
+		Resources: []any{
+			agent_yaml.ToolboxResource{
+				Resource: agent_yaml.Resource{
+					Name: "my-tools",
+					Kind: agent_yaml.ResourceKindToolbox,
+				},
+				Tools: []any{
+					map[string]any{"id": "bing_grounding"},
+				},
+			},
+		},
+	}
+
+	injectToolboxEnvVarsIntoDefinition(manifest)
+
+	containerAgent := manifest.Template.(agent_yaml.ContainerAgent)
+	envVars := *containerAgent.EnvironmentVariables
+
+	// Should not add a duplicate — user's value is preserved
+	if len(envVars) != 1 {
+		t.Fatalf("Expected 1 env var (no duplicate), got %d", len(envVars))
+	}
+	if envVars[0].Value != "custom-value" {
+		t.Errorf("Expected user value preserved, got %s", envVars[0].Value)
+	}
+}
+
+func TestInjectToolboxEnvVarsIntoDefinition_MultipleToolboxes(t *testing.T) {
+	t.Parallel()
+
+	manifest := &agent_yaml.AgentManifest{
+		Template: agent_yaml.ContainerAgent{
+			AgentDefinition: agent_yaml.AgentDefinition{
+				Kind: agent_yaml.AgentKindHosted,
+				Name: "my-agent",
+			},
+			Protocols: []agent_yaml.ProtocolVersionRecord{
+				{Protocol: "responses", Version: "v1"},
+			},
+		},
+		Resources: []any{
+			agent_yaml.ToolboxResource{
+				Resource: agent_yaml.Resource{Name: "search-tools", Kind: agent_yaml.ResourceKindToolbox},
+				Tools:    []any{map[string]any{"id": "bing_grounding"}},
+			},
+			agent_yaml.ToolboxResource{
+				Resource: agent_yaml.Resource{Name: "github-tools", Kind: agent_yaml.ResourceKindToolbox},
+				Tools:    []any{map[string]any{"id": "mcp", "target": "https://example.com"}},
+			},
+		},
+	}
+
+	injectToolboxEnvVarsIntoDefinition(manifest)
+
+	containerAgent := manifest.Template.(agent_yaml.ContainerAgent)
+	envVars := *containerAgent.EnvironmentVariables
+
+	if len(envVars) != 2 {
+		t.Fatalf("Expected 2 env vars, got %d", len(envVars))
+	}
+	if envVars[0].Name != "FOUNDRY_TOOLBOX_SEARCH_TOOLS_MCP_ENDPOINT" {
+		t.Errorf("Expected first toolbox env var, got %s", envVars[0].Name)
+	}
+	if envVars[1].Name != "FOUNDRY_TOOLBOX_GITHUB_TOOLS_MCP_ENDPOINT" {
+		t.Errorf("Expected second toolbox env var, got %s", envVars[1].Name)
+	}
+}
+
+func TestInjectToolboxEnvVarsIntoDefinition_NoopForNilManifest(t *testing.T) {
+	t.Parallel()
+
+	// Should not panic
+	injectToolboxEnvVarsIntoDefinition(nil)
+}
+
+func TestInjectToolboxEnvVarsIntoDefinition_NoopForPromptAgent(t *testing.T) {
+	t.Parallel()
+
+	manifest := &agent_yaml.AgentManifest{
+		Template: agent_yaml.PromptAgent{
+			AgentDefinition: agent_yaml.AgentDefinition{
+				Kind: agent_yaml.AgentKindPrompt,
+				Name: "prompt-agent",
+			},
+		},
+		Resources: []any{
+			agent_yaml.ToolboxResource{
+				Resource: agent_yaml.Resource{Name: "tools", Kind: agent_yaml.ResourceKindToolbox},
+				Tools:    []any{map[string]any{"id": "bing_grounding"}},
+			},
+		},
+	}
+
+	injectToolboxEnvVarsIntoDefinition(manifest)
+
+	// Template should be unchanged (still a PromptAgent, no EnvironmentVariables field)
+	if _, ok := manifest.Template.(agent_yaml.PromptAgent); !ok {
+		t.Error("Expected template to remain a PromptAgent")
+	}
+}
+
+func TestInjectToolboxEnvVarsIntoDefinition_NoopWithoutToolboxes(t *testing.T) {
+	t.Parallel()
+
+	manifest := &agent_yaml.AgentManifest{
+		Template: agent_yaml.ContainerAgent{
+			AgentDefinition: agent_yaml.AgentDefinition{
+				Kind: agent_yaml.AgentKindHosted,
+				Name: "my-agent",
+			},
+			EnvironmentVariables: &[]agent_yaml.EnvironmentVariable{
+				{Name: "AZURE_OPENAI_ENDPOINT", Value: "${AZURE_OPENAI_ENDPOINT}"},
+			},
+		},
+		Resources: []any{},
+	}
+
+	injectToolboxEnvVarsIntoDefinition(manifest)
+
+	containerAgent := manifest.Template.(agent_yaml.ContainerAgent)
+	if len(*containerAgent.EnvironmentVariables) != 1 {
+		t.Errorf("Expected env vars unchanged, got %d", len(*containerAgent.EnvironmentVariables))
+	}
+}
+
+func TestToolboxMCPEndpointEnvKey(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"simple", "my-tools", "FOUNDRY_TOOLBOX_MY_TOOLS_MCP_ENDPOINT"},
+		{"spaces", "my tools", "FOUNDRY_TOOLBOX_MY_TOOLS_MCP_ENDPOINT"},
+		{"mixed", "agent-tools v2", "FOUNDRY_TOOLBOX_AGENT_TOOLS_V2_MCP_ENDPOINT"},
+		{"already upper", "TOOLS", "FOUNDRY_TOOLBOX_TOOLS_MCP_ENDPOINT"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := toolboxMCPEndpointEnvKey(tt.input)
+			if got != tt.expected {
+				t.Errorf("toolboxMCPEndpointEnvKey(%q) = %q, want %q", tt.input, got, tt.expected)
 			}
 		})
 	}

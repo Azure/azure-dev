@@ -44,13 +44,14 @@ var ResourceTiers = []ResourceTier{
 
 // ServiceTargetAgentConfig provides custom configuration for the Azure AI Service target
 type ServiceTargetAgentConfig struct {
-	Environment    map[string]string  `json:"env,omitempty"`
-	Container      *ContainerSettings `json:"container,omitempty"`
-	Deployments    []Deployment       `json:"deployments,omitempty"`
-	Resources      []Resource         `json:"resources,omitempty"`
-	Toolboxes      []Toolbox          `json:"toolboxes,omitempty"`
-	Connections    []Connection       `json:"connections,omitempty"`
-	StartupCommand string             `json:"startupCommand,omitempty"`
+	Environment     map[string]string  `json:"env,omitempty"`
+	Container       *ContainerSettings `json:"container,omitempty"`
+	Deployments     []Deployment       `json:"deployments,omitempty"`
+	Resources       []Resource         `json:"resources,omitempty"`
+	ToolConnections []ToolConnection   `json:"toolConnections,omitempty"`
+	Toolboxes       []Toolbox          `json:"toolboxes,omitempty"`
+	Connections     []Connection       `json:"connections,omitempty"`
+	StartupCommand  string             `json:"startupCommand,omitempty"`
 }
 
 // ContainerSettings provides container configuration for the Azure AI Service target
@@ -132,6 +133,17 @@ type Connection struct {
 	PeStatus                    string            `json:"peStatus,omitempty"`
 	UseWorkspaceManagedIdentity *bool             `json:"useWorkspaceManagedIdentity,omitempty"`
 	Error                       string            `json:"error,omitempty"`
+}
+
+// ToolConnection represents a connection to an external service (MCP tool, A2A, custom API)
+// that must be created in the Foundry project during provisioning via Bicep.
+type ToolConnection struct {
+	Name        string            `json:"name"`
+	Category    string            `json:"category"`
+	Target      string            `json:"target"`
+	AuthType    string            `json:"authType"`
+	Credentials map[string]any    `json:"credentials,omitempty"`
+	Metadata    map[string]string `json:"metadata,omitempty"`
 }
 
 // UnmarshalStruct converts a structpb.Struct to a Go struct of type T

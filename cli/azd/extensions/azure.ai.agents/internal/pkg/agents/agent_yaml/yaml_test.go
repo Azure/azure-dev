@@ -24,62 +24,6 @@ func TestArrayProperty_BasicSerialization(t *testing.T) {
 	}
 }
 
-// TestToolKindToAPIType tests camelCase to snake_case tool kind conversion
-func TestToolKindToAPIType(t *testing.T) {
-	tests := []struct {
-		input    ToolKind
-		expected string
-	}{
-		{ToolKindFunction, "function"},
-		{ToolKindCustom, "custom"},
-		{ToolKindWebSearch, "web_search"},
-		{ToolKindBingGrounding, "bing_grounding"},
-		{ToolKindFileSearch, "file_search"},
-		{ToolKindMcp, "mcp"},
-		{ToolKindOpenApi, "openapi"},
-		{ToolKindCodeInterpreter, "code_interpreter"},
-		{ToolKindAzureAiSearch, "azure_ai_search"},
-		{ToolKindA2APreview, "a2a_preview"},
-		{ToolKind("unknown"), "unknown"},
-	}
-
-	for _, tc := range tests {
-		t.Run(string(tc.input), func(t *testing.T) {
-			result := ToolKindToAPIType(tc.input)
-			if result != tc.expected {
-				t.Errorf("ToolKindToAPIType(%s) = %s, want %s", tc.input, result, tc.expected)
-			}
-		})
-	}
-}
-
-// TestAPITypeToToolKind tests snake_case to camelCase tool kind conversion
-func TestAPITypeToToolKind(t *testing.T) {
-	tests := []struct {
-		input    string
-		expected ToolKind
-	}{
-		{"web_search", ToolKindWebSearch},
-		{"bing_grounding", ToolKindBingGrounding},
-		{"file_search", ToolKindFileSearch},
-		{"mcp", ToolKindMcp},
-		{"openapi", ToolKindOpenApi},
-		{"code_interpreter", ToolKindCodeInterpreter},
-		{"azure_ai_search", ToolKindAzureAiSearch},
-		{"a2a_preview", ToolKindA2APreview},
-		{"unknown", ToolKind("unknown")},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.input, func(t *testing.T) {
-			result := APITypeToToolKind(tc.input)
-			if result != tc.expected {
-				t.Errorf("APITypeToToolKind(%s) = %s, want %s", tc.input, result, tc.expected)
-			}
-		})
-	}
-}
-
 // TestIsValidAuthType tests auth type validation
 func TestIsValidAuthType(t *testing.T) {
 	validTypes := []AuthType{AuthTypeAAD, AuthTypeApiKey, AuthTypeCustomKeys, AuthTypeNone, AuthTypeOAuth2, AuthTypePAT}
@@ -212,7 +156,7 @@ func TestAzureAISearchToolSerialization(t *testing.T) {
 	}
 
 	if tool2.Kind != ToolKindAzureAiSearch {
-		t.Errorf("Expected kind 'azureAiSearch', got '%s'", tool2.Kind)
+		t.Errorf("Expected kind 'azure_ai_search', got '%s'", tool2.Kind)
 	}
 	if len(tool2.Indexes) != 1 {
 		t.Fatalf("Expected 1 index, got %d", len(tool2.Indexes))
@@ -246,7 +190,7 @@ func TestA2APreviewToolSerialization(t *testing.T) {
 	}
 
 	if tool2.Kind != ToolKindA2APreview {
-		t.Errorf("Expected kind 'a2aPreview', got '%s'", tool2.Kind)
+		t.Errorf("Expected kind 'a2a_preview', got '%s'", tool2.Kind)
 	}
 	if tool2.BaseUrl != "https://agent.example.com" {
 		t.Errorf("Expected baseUrl 'https://agent.example.com', got '%s'", tool2.BaseUrl)

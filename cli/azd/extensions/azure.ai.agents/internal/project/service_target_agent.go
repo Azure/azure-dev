@@ -6,10 +6,8 @@ package project
 import (
 	"context"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"math"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -21,7 +19,6 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/azure"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
@@ -654,6 +651,21 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		memory = foundryAgentConfig.Container.Resources.Memory
 	}
 
+	// Auto-inject toolbox MCP endpoint env vars so hosted agents can reach their toolboxes
+	// without requiring users to manually add them to agent.yaml's environment_variables.
+	if foundryAgentConfig != nil {
+		projectEndpoint := strings.TrimRight(azdEnv["AZURE_AI_PROJECT_ENDPOINT"], "/")
+		for _, toolbox := range foundryAgentConfig.Toolboxes {
+			toolboxKey := p.getServiceKey(toolbox.Name)
+			envKey := fmt.Sprintf("FOUNDRY_TOOLBOX_%s_MCP_ENDPOINT", toolboxKey)
+			if _, exists := resolvedEnvVars[envKey]; !exists {
+				resolvedEnvVars[envKey] = fmt.Sprintf(
+					"%s/toolsets/%s/mcp", projectEndpoint, toolbox.Name,
+				)
+			}
+		}
+	}
+
 	// Build options list starting with required options
 	options := []agent_yaml.AgentBuildOption{
 		agent_yaml.WithImageURL(fullImageURL),
@@ -1076,110 +1088,6 @@ func (p *AgentServiceTargetProvider) resolveEnvironmentVariables(value string, a
 		return value
 	}
 	return resolved
-}
-
-// deployToolboxes creates or updates Foundry Toolsets for each toolbox in the config.
-// For each toolbox, it calls the Foundry Toolsets API to upsert the toolset, then
-// sets environment variables with the MCP endpoints from the toolset's MCP tools.
-func (p *AgentServiceTargetProvider) deployToolboxes(
-	ctx context.Context,
-	serviceTargetConfig *ServiceTargetAgentConfig,
-	azdEnv map[string]string,
-) error {
-	if serviceTargetConfig == nil || len(serviceTargetConfig.Toolboxes) == 0 {
-		return nil
-	}
-
-	projectEndpoint := azdEnv["AZURE_AI_PROJECT_ENDPOINT"]
-	if projectEndpoint == "" {
-		return exterrors.Dependency(
-			exterrors.CodeMissingAiProjectEndpoint,
-			"AZURE_AI_PROJECT_ENDPOINT is required for toolbox deployment",
-			"run 'azd provision' or connect to an existing project",
-		)
-	}
-
-	toolsetsClient := azure.NewFoundryToolsetsClient(projectEndpoint, p.credential)
-
-	for _, toolbox := range serviceTargetConfig.Toolboxes {
-		fmt.Fprintf(os.Stderr, "Deploying toolbox: %s\n", toolbox.Name)
-
-		_, err := p.upsertToolset(ctx, toolsetsClient, toolbox)
-		if err != nil {
-			return err
-		}
-
-		// Set the MCP endpoint env var now that the toolbox is confirmed to exist
-		if err := p.registerToolboxEnvironmentVariables(
-			ctx, projectEndpoint, toolbox.Name,
-		); err != nil {
-			return err
-		}
-
-		fmt.Fprintf(os.Stderr, "Toolbox '%s' deployed successfully\n", toolbox.Name)
-	}
-
-	return nil
-}
-
-// upsertToolset creates a toolset, or updates it if it already exists.
-// A 409 Conflict on create means the toolset already exists, which is treated as success.
-func (p *AgentServiceTargetProvider) upsertToolset(
-	ctx context.Context,
-	client *azure.FoundryToolsetsClient,
-	toolbox Toolbox,
-) (*azure.ToolsetObject, error) {
-	createReq := &azure.CreateToolsetRequest{
-		Name:        toolbox.Name,
-		Description: toolbox.Description,
-		Tools:       toolbox.Tools,
-	}
-
-	toolset, err := client.CreateToolset(ctx, createReq)
-	if err == nil {
-		return toolset, nil
-	}
-
-	// 409 Conflict means the toolset already exists — treat as success
-	var respErr *azcore.ResponseError
-	if errors.As(err, &respErr) && respErr.StatusCode == http.StatusConflict {
-		fmt.Fprintf(os.Stderr, "  Toolset '%s' already exists, skipping update\n", toolbox.Name)
-		return nil, nil
-	}
-
-	return nil, exterrors.Internal(
-		exterrors.CodeCreateToolsetFailed,
-		fmt.Sprintf("failed to create toolset '%s': %s", toolbox.Name, err),
-	)
-}
-
-// registerToolboxEnvironmentVariables sets the FOUNDRY_TOOLBOX_{NAME}_MCP_ENDPOINT env var
-// with the constructed MCP endpoint URL: {projectEndpoint}/toolsets/{toolboxName}/mcp
-func (p *AgentServiceTargetProvider) registerToolboxEnvironmentVariables(
-	ctx context.Context,
-	projectEndpoint string,
-	toolboxName string,
-) error {
-	toolboxKey := p.getServiceKey(toolboxName)
-	envKey := fmt.Sprintf("FOUNDRY_TOOLBOX_%s_MCP_ENDPOINT", toolboxKey)
-
-	endpoint := strings.TrimRight(projectEndpoint, "/")
-	mcpEndpoint := fmt.Sprintf("%s/toolsets/%s/mcp", endpoint, toolboxName)
-
-	_, err := p.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
-		EnvName: p.env.Name,
-		Key:     envKey,
-		Value:   mcpEndpoint,
-	})
-	if err != nil {
-		return fmt.Errorf(
-			"failed to set environment variable %s: %w",
-			envKey, err,
-		)
-	}
-
-	fmt.Fprintf(os.Stderr, "  Set %s=%s\n", envKey, mcpEndpoint)
-	return nil
 }
 
 // ensureFoundryProject ensures the Foundry project resource ID is parsed and stored.

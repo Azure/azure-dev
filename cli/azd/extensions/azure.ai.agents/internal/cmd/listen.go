@@ -22,6 +22,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/braydonk/yaml"
+	"github.com/drone/envsubst"
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/types/known/structpb"
 )
@@ -191,6 +192,15 @@ func envUpdate(ctx context.Context, azdClient *azdext.AzdClient, azdProject *azd
 		}
 	}
 
+	if len(foundryAgentConfig.ToolConnections) > 0 {
+		if err := toolConnectionsEnvUpdate(
+			ctx, foundryAgentConfig.ToolConnections,
+			azdClient, currentEnvResponse.Environment.Name,
+		); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -264,17 +274,62 @@ func connectionsEnvUpdate(
 	azdClient *azdext.AzdClient,
 	envName string,
 ) error {
-	connectionsJson, err := json.Marshal(connections)
-	if err != nil {
-		return fmt.Errorf("failed to marshal connection details to JSON: %w", err)
+	return marshalAndSetEnvVar(ctx, azdClient, envName, "AI_PROJECT_CONNECTIONS", connections)
+}
+
+// toolConnectionsEnvUpdate serializes tool connections to AI_PROJECT_TOOL_CONNECTIONS env var.
+func toolConnectionsEnvUpdate(
+	ctx context.Context,
+	connections []project.ToolConnection,
+	azdClient *azdext.AzdClient,
+	envName string,
+) error {
+	// Normalize credentials before serializing: CustomKeys authType requires
+	// credentials nested under "keys" for the ARM API.
+	normalized := make([]project.ToolConnection, len(connections))
+	copy(normalized, connections)
+	for i := range normalized {
+		normalized[i].Credentials = normalizeCredentials(normalized[i].AuthType, normalized[i].Credentials)
 	}
 
-	// Escape backslashes and double quotes for environment variable
-	jsonString := string(connectionsJson)
-	escapedJsonString := strings.ReplaceAll(jsonString, "\\", "\\\\")
-	escapedJsonString = strings.ReplaceAll(escapedJsonString, "\"", "\\\"")
+	return marshalAndSetEnvVar(ctx, azdClient, envName, "AI_PROJECT_TOOL_CONNECTIONS", normalized)
+}
 
-	return setEnvVar(ctx, azdClient, envName, "AI_PROJECT_CONNECTIONS", escapedJsonString)
+// marshalAndSetEnvVar serializes a value to JSON, escapes it for safe storage
+// in an azd environment variable, and persists it.
+func marshalAndSetEnvVar(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	envName string,
+	key string,
+	value any,
+) error {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Errorf("failed to marshal %s to JSON: %w", key, err)
+	}
+
+	jsonString := string(data)
+	escaped := strings.ReplaceAll(jsonString, "\\", "\\\\")
+	escaped = strings.ReplaceAll(escaped, "\"", "\\\"")
+
+	return setEnvVar(ctx, azdClient, envName, key, escaped)
+}
+
+// normalizeCredentials ensures credentials match the expected ARM format.
+// CustomKeys requires credentials nested under "keys": { "keys": { "key": "val" } }.
+// If already wrapped, returns as-is. Other auth types are returned unchanged.
+func normalizeCredentials(authType string, creds map[string]any) map[string]any {
+	if authType != "CustomKeys" || len(creds) == 0 {
+		return creds
+	}
+
+	// Already correctly wrapped
+	if _, hasKeys := creds["keys"]; hasKeys && len(creds) == 1 {
+		return creds
+	}
+
+	return map[string]any{"keys": creds}
 }
 
 func containerAgentHandling(ctx context.Context, azdClient *azdext.AzdClient, project *azdext.ProjectConfig, svc *azdext.ServiceConfig) error {
@@ -462,10 +517,28 @@ func provisionToolboxes(
 		projectEndpoint, cred,
 	)
 
+	// Build azd env lookup for resolving ${VAR} references in tool entries
+	azdEnv, err := getAllEnvVars(ctx, azdClient, currentEnv.Environment.Name)
+	if err != nil {
+		return fmt.Errorf("failed to load environment variables: %w", err)
+	}
+
+	// Build connection lookup for enriching tool entries with server_url/server_label
+	connByName := map[string]project.ToolConnection{}
+	for _, c := range config.ToolConnections {
+		connByName[c.Name] = c
+	}
+
 	for _, toolbox := range config.Toolboxes {
 		fmt.Fprintf(
 			os.Stderr, "Provisioning toolbox: %s\n", toolbox.Name,
 		)
+
+		// Resolve ${VAR} references in tool map values before sending to API
+		resolveToolboxEnvVars(&toolbox, azdEnv)
+
+		// Fill in server_url/server_label from connection data
+		enrichToolboxFromConnections(&toolbox, connByName)
 
 		if err := upsertToolset(
 			ctx, toolsetsClient, toolbox,
@@ -489,7 +562,7 @@ func provisionToolboxes(
 	return nil
 }
 
-// upsertToolset creates a toolset, or skips if it already exists.
+// upsertToolset creates a toolset, or updates it if it already exists.
 func upsertToolset(
 	ctx context.Context,
 	client *azure.FoundryToolsetsClient,
@@ -506,14 +579,24 @@ func upsertToolset(
 		return nil
 	}
 
-	// 409 Conflict means the toolset already exists
+	// 409 Conflict means the toolset already exists — update it
 	var respErr *azcore.ResponseError
 	if errors.As(err, &respErr) && respErr.StatusCode == http.StatusConflict {
 		fmt.Fprintf(
 			os.Stderr,
-			"  Toolset '%s' already exists, skipping\n",
+			"  Toolset '%s' already exists, updating...\n",
 			toolbox.Name,
 		)
+		updateReq := &azure.UpdateToolsetRequest{
+			Description: toolbox.Description,
+			Tools:       toolbox.Tools,
+		}
+		if _, updateErr := client.UpdateToolset(ctx, toolbox.Name, updateReq); updateErr != nil {
+			return exterrors.Internal(
+				exterrors.CodeCreateToolsetFailed,
+				fmt.Sprintf("failed to update toolset '%s': %s", toolbox.Name, updateErr),
+			)
+		}
 		return nil
 	}
 
@@ -526,7 +609,7 @@ func upsertToolset(
 	)
 }
 
-// registerToolboxEnvVars sets TOOLBOX_{NAME}_MCP_ENDPOINT.
+// registerToolboxEnvVars sets FOUNDRY_TOOLBOX_{NAME}_MCP_ENDPOINT.
 func registerToolboxEnvVars(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -534,12 +617,7 @@ func registerToolboxEnvVars(
 	projectEndpoint string,
 	toolboxName string,
 ) error {
-	key := strings.ToUpper(
-		strings.ReplaceAll(toolboxName, "-", "_"),
-	)
-	envKey := fmt.Sprintf(
-		"TOOLBOX_%s_MCP_ENDPOINT", key,
-	)
+	envKey := toolboxMCPEndpointEnvKey(toolboxName)
 
 	endpoint := strings.TrimRight(projectEndpoint, "/")
 	mcpEndpoint := fmt.Sprintf(
@@ -549,4 +627,104 @@ func registerToolboxEnvVars(
 	return setEnvVar(
 		ctx, azdClient, envName, envKey, mcpEndpoint,
 	)
+}
+
+// toolboxMCPEndpointEnvKey builds the FOUNDRY_TOOLBOX_{NAME}_MCP_ENDPOINT env var key.
+func toolboxMCPEndpointEnvKey(toolboxName string) string {
+	key := strings.ReplaceAll(toolboxName, " ", "_")
+	key = strings.ReplaceAll(key, "-", "_")
+	return fmt.Sprintf("FOUNDRY_TOOLBOX_%s_MCP_ENDPOINT", strings.ToUpper(key))
+}
+
+// resolveToolboxEnvVars resolves ${VAR} references in toolbox name, description,
+// and all tool map values using the provided azd environment variables.
+func resolveToolboxEnvVars(toolbox *project.Toolbox, azdEnv map[string]string) {
+	toolbox.Name = resolveEnvValue(toolbox.Name, azdEnv)
+	toolbox.Description = resolveEnvValue(toolbox.Description, azdEnv)
+	for i, tool := range toolbox.Tools {
+		toolbox.Tools[i] = resolveMapValues(tool, azdEnv)
+	}
+}
+
+// enrichToolboxFromConnections fills in server_url and server_label on toolbox
+// tools that reference a connection via project_connection_id. This keeps the
+// azure.yaml toolbox entries minimal while sending complete data to the API.
+func enrichToolboxFromConnections(
+	toolbox *project.Toolbox,
+	connByName map[string]project.ToolConnection,
+) {
+	for i, tool := range toolbox.Tools {
+		connID, _ := tool["project_connection_id"].(string)
+		if connID == "" {
+			continue
+		}
+		conn, ok := connByName[connID]
+		if !ok {
+			continue
+		}
+		if _, has := tool["server_url"]; !has && conn.Target != "" {
+			toolbox.Tools[i]["server_url"] = conn.Target
+		}
+		if _, has := tool["server_label"]; !has {
+			toolbox.Tools[i]["server_label"] = conn.Name
+		}
+	}
+}
+
+// resolveEnvValue resolves ${VAR} references in a string using envsubst.
+func resolveEnvValue(value string, azdEnv map[string]string) string {
+	resolved, err := envsubst.Eval(value, func(varName string) string {
+		return azdEnv[varName]
+	})
+	if err != nil {
+		return value
+	}
+	return resolved
+}
+
+// resolveMapValues recursively resolves ${VAR} references in all string values of a map.
+func resolveMapValues(m map[string]any, azdEnv map[string]string) map[string]any {
+	resolved := make(map[string]any, len(m))
+	for k, v := range m {
+		resolved[k] = resolveAnyValue(v, azdEnv)
+	}
+	return resolved
+}
+
+// resolveAnyValue resolves ${VAR} references in a value of any type.
+func resolveAnyValue(v any, azdEnv map[string]string) any {
+	switch val := v.(type) {
+	case string:
+		return resolveEnvValue(val, azdEnv)
+	case map[string]any:
+		return resolveMapValues(val, azdEnv)
+	case []any:
+		resolved := make([]any, len(val))
+		for i, item := range val {
+			resolved[i] = resolveAnyValue(item, azdEnv)
+		}
+		return resolved
+	default:
+		return v
+	}
+}
+
+// getAllEnvVars loads all environment variables from the azd environment.
+func getAllEnvVars(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	envName string,
+) (map[string]string, error) {
+	resp, err := azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{
+		Name: envName,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	envMap := make(map[string]string, len(resp.KeyValues))
+	for _, kv := range resp.KeyValues {
+		envMap[kv.Key] = kv.Value
+	}
+	return envMap, nil
 }

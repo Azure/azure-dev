@@ -43,7 +43,7 @@ func TestFilesCommand_HasSubcommands(t *testing.T) {
 	assert.Contains(t, names, "upload")
 	assert.Contains(t, names, "download")
 	assert.Contains(t, names, "list")
-	assert.Contains(t, names, "remove")
+	assert.Contains(t, names, "delete")
 }
 
 func TestFilesUploadCommand_MissingFile(t *testing.T) {
@@ -100,7 +100,7 @@ func TestFilesListCommand_OptionalRemotePath(t *testing.T) {
 	assert.NotNil(t, cmd.Args)
 }
 
-func TestFilesRemoveCommand_MissingFile(t *testing.T) {
+func TestFilesDeleteCommand_MissingFile(t *testing.T) {
 	cmd := newFilesRemoveCommand()
 
 	// Missing required --file flag
@@ -110,7 +110,7 @@ func TestFilesRemoveCommand_MissingFile(t *testing.T) {
 	assert.Contains(t, err.Error(), "file")
 }
 
-func TestFilesRemoveCommand_HasFlags(t *testing.T) {
+func TestFilesDeleteCommand_HasFlags(t *testing.T) {
 	cmd := newFilesRemoveCommand()
 
 	for _, name := range []string{"file", "recursive", "agent-name", "session"} {

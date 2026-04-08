@@ -70,7 +70,7 @@ func newFilesCommand() *cobra.Command {
 		Hidden: !isVNextEnabled(context.Background()),
 		Long: `Manage files in a hosted agent session.
 
-Upload, download, list, and remove files in the session-scoped filesystem
+Upload, download, list, and delete files in the session-scoped filesystem
 of a hosted agent. This is useful for debugging, seeding data, and agent setup.
 
 Agent details (name, endpoint) are automatically resolved from the
@@ -505,22 +505,23 @@ func newFilesRemoveCommand() *cobra.Command {
 	var filePath string
 
 	cmd := &cobra.Command{
-		Use:   "remove",
-		Short: "Remove a file or directory from a hosted agent session.",
-		Long: `Remove a file or directory from a hosted agent session.
+		Use:     "delete",
+		Aliases: []string{"remove"},
+		Short:   "Delete a file or directory from a hosted agent session.",
+		Long: `Delete a file or directory from a hosted agent session.
 
-Removes the specified file or directory from the session's filesystem.
-Use --recursive to remove directories and their contents.
+Deletes the specified file or directory from the session's filesystem.
+Use --recursive to delete directories and their contents.
 
 Agent details are automatically resolved from the azd environment.`,
-		Example: `  # Remove a file (agent auto-detected)
-  azd ai agent files remove --file /data/old-file.csv
+		Example: `  # Delete a file (agent auto-detected)
+  azd ai agent files delete --file /data/old-file.csv
 
-  # Remove a directory recursively
-  azd ai agent files remove --file /data/temp --recursive
+  # Delete a directory recursively
+  azd ai agent files delete --file /data/temp --recursive
 
-  # Remove with explicit session
-  azd ai agent files remove --file /data/old-file.csv --session <session-id>`,
+  # Delete with explicit session
+  azd ai agent files delete --file /data/old-file.csv --session <session-id>`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 			setupDebugLogging(cmd.Flags())
@@ -542,9 +543,9 @@ Agent details are automatically resolved from the azd environment.`,
 	}
 
 	addFilesFlags(cmd, &flags.filesFlags)
-	cmd.Flags().StringVarP(&filePath, "file", "f", "", "Remote file or directory path to remove")
+	cmd.Flags().StringVarP(&filePath, "file", "f", "", "Remote file or directory path to delete")
 	_ = cmd.MarkFlagRequired("file")
-	cmd.Flags().BoolVar(&flags.recursive, "recursive", false, "Recursively remove directories and their contents")
+	cmd.Flags().BoolVar(&flags.recursive, "recursive", false, "Recursively delete directories and their contents")
 
 	return cmd
 }

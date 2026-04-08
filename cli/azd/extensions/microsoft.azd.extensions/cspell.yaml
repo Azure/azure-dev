@@ -1,0 +1,8 @@
+import: ../../.vscode/cspell.yaml
+overrides:
+  - filename: internal/resources/languages/**/.gitignore
+    words:
+      - rsuser
+      - userosscache
+      - docstates
+      - dylib

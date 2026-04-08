@@ -12,6 +12,8 @@ import (
 	"testing"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents/agent_yaml"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
@@ -495,5 +497,115 @@ func TestCheckNotDirectory_ErrorForDirectoryWithoutManifest(t *testing.T) {
 	errMsg := err.Error()
 	if !strings.Contains(errMsg, "directory") {
 		t.Errorf("error should mention 'directory', got: %s", errMsg)
+	}
+}
+
+func TestManifestHasModelResources(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		manifest *agent_yaml.AgentManifest
+		expected bool
+	}{
+		{
+			name: "prompt agent always has model resources",
+			manifest: &agent_yaml.AgentManifest{
+				Name:     "test-prompt",
+				Template: agent_yaml.PromptAgent{},
+			},
+			expected: true,
+		},
+		{
+			name: "hosted agent with model resource",
+			manifest: &agent_yaml.AgentManifest{
+				Name:     "test-hosted",
+				Template: agent_yaml.ContainerAgent{},
+				Resources: []any{
+					agent_yaml.ModelResource{
+						Resource: agent_yaml.Resource{
+							Name: "my-model",
+							Kind: agent_yaml.ResourceKindModel,
+						},
+						Id: "gpt-4o",
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "hosted agent with only tool resources",
+			manifest: &agent_yaml.AgentManifest{
+				Name:     "test-hosted-tools",
+				Template: agent_yaml.ContainerAgent{},
+				Resources: []any{
+					agent_yaml.ToolResource{
+						Resource: agent_yaml.Resource{
+							Name: "my-tool",
+							Kind: agent_yaml.ResourceKindTool,
+						},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "hosted agent with no resources",
+			manifest: &agent_yaml.AgentManifest{
+				Name:     "test-hosted-empty",
+				Template: agent_yaml.ContainerAgent{},
+			},
+			expected: false,
+		},
+		{
+			name: "hosted agent with nil resources",
+			manifest: &agent_yaml.AgentManifest{
+				Name:      "test-hosted-nil",
+				Template:  agent_yaml.ContainerAgent{},
+				Resources: nil,
+			},
+			expected: false,
+		},
+		{
+			name: "hosted agent with empty resources slice",
+			manifest: &agent_yaml.AgentManifest{
+				Name:      "test-hosted-empty-slice",
+				Template:  agent_yaml.ContainerAgent{},
+				Resources: []any{},
+			},
+			expected: false,
+		},
+		{
+			name: "hosted agent with mixed model and tool resources",
+			manifest: &agent_yaml.AgentManifest{
+				Name:     "test-hosted-mixed",
+				Template: agent_yaml.ContainerAgent{},
+				Resources: []any{
+					agent_yaml.ToolResource{
+						Resource: agent_yaml.Resource{
+							Name: "my-tool",
+							Kind: agent_yaml.ResourceKindTool,
+						},
+					},
+					agent_yaml.ModelResource{
+						Resource: agent_yaml.Resource{
+							Name: "my-model",
+							Kind: agent_yaml.ResourceKindModel,
+						},
+						Id: "gpt-4o",
+					},
+				},
+			},
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := manifestHasModelResources(tt.manifest)
+			if result != tt.expected {
+				t.Errorf("manifestHasModelResources() = %v, want %v", result, tt.expected)
+			}
+		})
 	}
 }

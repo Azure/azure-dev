@@ -5,6 +5,8 @@ package cmd
 
 import (
 	"fmt"
+	"io"
+	"log"
 	"os"
 	"regexp"
 	"strconv"
@@ -16,7 +18,11 @@ import (
 
 var connectionStringJSONRegex = regexp.MustCompile(`("[\w]*(?:CONNECTION_STRING|ConnectionString)":\s*)"[^"]*"`)
 
-// setupDebugLogging configures the Azure SDK logger if debug mode is enabled.
+// setupDebugLogging configures debug logging for the extension.
+// By default Go's standard log package writes to stderr, which causes internal
+// messages (e.g. from the command runner and GitHub CLI wrapper) to appear as
+// noisy user-facing output. This function silences those logs unless debug mode
+// is enabled, and additionally configures the Azure SDK logger when debugging.
 func setupDebugLogging(flags *pflag.FlagSet) {
 	if isDebug(flags) {
 		currentDate := time.Now().Format("2006-01-02")
@@ -27,10 +33,15 @@ func setupDebugLogging(flags *pflag.FlagSet) {
 		if err != nil {
 			logFile = os.Stderr
 		}
+
+		log.SetOutput(logFile)
+
 		azcorelog.SetListener(func(event azcorelog.Event, msg string) {
 			msg = connectionStringJSONRegex.ReplaceAllString(msg, `${1}"REDACTED"`)
 			fmt.Fprintf(logFile, "[%s] %s: %s\n", time.Now().Format(time.RFC3339), event, msg)
 		})
+	} else {
+		log.SetOutput(io.Discard)
 	}
 }
 

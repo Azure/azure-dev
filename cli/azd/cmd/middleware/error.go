@@ -209,7 +209,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 	if err != nil {
 		span.SetStatus(codes.Error, "agent.creation.failed")
 		return actionResult, fmt.Errorf(
-			"%w\n\nAgent error: %w", originalError, err)
+			"%w\n\nAgent error: %s", originalError, err.Error())
 	}
 
 	defer azdAgent.Stop()
@@ -246,7 +246,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		if err != nil {
 			span.SetStatus(codes.Error, "agent.category.failed")
 			return actionResult, fmt.Errorf(
-				"%w\n\nPrompted for troubleshoot category: %w", originalError, err)
+				"%w\n\nPrompted for troubleshoot category: %s", originalError, err.Error())
 		}
 
 		if category == categorySkip {
@@ -265,7 +265,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		if err != nil {
 			span.SetStatus(codes.Error, "agent.send_message.failed")
 			return actionResult, fmt.Errorf(
-				"%w\n\nAgent error: %w", originalError, err)
+				"%w\n\nAgent error: %s", originalError, err.Error())
 		}
 
 		span.SetStatus(codes.Ok, fmt.Sprintf("agent.%s.completed", category))
@@ -279,7 +279,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			if err != nil {
 				span.SetStatus(codes.Error, "agent.prompt.failed")
 				return actionResult, fmt.Errorf(
-					"%w\n\nPrompted for next action: %w", originalError, err)
+					"%w\n\nPrompted for next action: %s", originalError, err.Error())
 			}
 
 			if action == actionExit {
@@ -292,7 +292,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			if err != nil {
 				span.SetStatus(codes.Error, "agent.fix.template_failed")
 				return actionResult, fmt.Errorf(
-					"%w\n\nFailed to build fix prompt: %w", originalError, err)
+					"%w\n\nFailed to build fix prompt: %s", originalError, err.Error())
 			}
 			e.console.Message(ctx, output.WithHintFormat(
 				"Preparing %s to fix error...", agentcopilot.DisplayTitle))
@@ -303,7 +303,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			if err != nil {
 				span.SetStatus(codes.Error, "agent.fix.failed")
 				return actionResult, fmt.Errorf(
-					"%w\n\nAgent error: %w", originalError, err)
+					"%w\n\nAgent error: %s", originalError, err.Error())
 			}
 
 			span.SetStatus(codes.Ok, "agent.fix.completed")

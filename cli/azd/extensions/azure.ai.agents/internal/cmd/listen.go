@@ -75,11 +75,7 @@ func newListenCommand() *cobra.Command {
 	}
 }
 
-func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, projectParser *project.FoundryParser, args *azdext.ProjectEventArgs) error {
-	if err := projectParser.SetIdentity(ctx, args); err != nil {
-		return fmt.Errorf("failed to set identity: %w", err)
-	}
-
+func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
 	for _, svc := range args.Project.Services {
 		switch svc.Host {
 		case AiAgentHost:
@@ -110,26 +106,6 @@ func postprovisionHandler(
 				"failed to provision toolboxes for service %q: %w",
 				svc.Name, err,
 			)
-		}
-	}
-
-	return nil
-}
-
-func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, projectParser *project.FoundryParser, args *azdext.ProjectEventArgs) error {
-	if err := projectParser.SetIdentity(ctx, args); err != nil {
-		return fmt.Errorf("failed to set identity: %w", err)
-	}
-
-	for _, svc := range args.Project.Services {
-		switch svc.Host {
-		case AiAgentHost:
-			if err := populateContainerSettings(ctx, azdClient, svc); err != nil {
-				return fmt.Errorf("failed to populate container settings for service %q: %w", svc.Name, err)
-			}
-			if err := envUpdate(ctx, azdClient, args.Project, svc); err != nil {
-				return fmt.Errorf("failed to update environment for service %q: %w", svc.Name, err)
-			}
 		}
 	}
 

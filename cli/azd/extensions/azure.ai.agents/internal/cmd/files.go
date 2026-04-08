@@ -188,7 +188,7 @@ in the session's filesystem. If --target-path is not provided,
 the remote path defaults to the local file path.
 
 Agent details are automatically resolved from the azd environment.`,
-		Example: `  # Upload a file (remote path defaults to local path)
+		Example: `  # Upload a file (remote path defaults to filename in home directory)
   azd ai agent files upload --file ./data/input.csv
 
   # Upload to a specific remote path
@@ -217,7 +217,7 @@ Agent details are automatically resolved from the azd environment.`,
 
 	addFilesFlags(cmd, &flags.filesFlags)
 	cmd.Flags().StringVarP(&flags.file, "file", "f", "", "Local file path to upload (required)")
-	cmd.Flags().StringVarP(&flags.targetPath, "target-path", "t", "", "Remote destination path (defaults to local file path)")
+	cmd.Flags().StringVarP(&flags.targetPath, "target-path", "t", "", "Remote destination path (defaults to local filename)")
 	_ = cmd.MarkFlagRequired("file")
 
 	return cmd
@@ -227,7 +227,7 @@ Agent details are automatically resolved from the azd environment.`,
 func (a *FilesUploadAction) Run(ctx context.Context) error {
 	remotePath := a.flags.targetPath
 	if remotePath == "" {
-		remotePath = a.flags.file
+		remotePath = filepath.Base(a.flags.file)
 	}
 
 	//nolint:gosec // G304: file path is provided by the user via CLI flag
@@ -254,7 +254,7 @@ func (a *FilesUploadAction) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to upload file: %w", err)
 	}
 
-	fmt.Printf("Uploaded %s → %s\n", a.flags.file, remotePath)
+	fmt.Printf("Uploaded %s -> %s\n", a.flags.file, remotePath)
 	return nil
 }
 
@@ -356,7 +356,7 @@ func (a *FilesDownloadAction) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to write file: %w", err)
 	}
 
-	fmt.Printf("Downloaded %s → %s\n", a.flags.file, targetPath)
+	fmt.Printf("Downloaded %s -> %s\n", a.flags.file, targetPath)
 	return nil
 }
 

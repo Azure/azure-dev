@@ -26,14 +26,14 @@ type sessionFlags struct {
 
 func newSessionCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:    "session",
+		Use:    "sessions",
 		Short:  "Manage sessions for a hosted agent endpoint.",
 		Hidden: !isVNextEnabled(context.Background()),
 		Long: `Manage sessions for a hosted agent endpoint.
 
-Create, inspect, list, and delete sessions backed by ADC sandbox micro-VMs.
-Sessions are first-class data plane resources that provide persistent compute
-and filesystem state for hosted agent invocations.
+Create, show, list, and delete hosted agent sessions.
+Sessions provide persistent compute and filesystem state for 
+hosted agent invocations.
 
 Agent details are automatically resolved from the azd environment.
 Use --agent-name to select a specific agent when the project has
@@ -42,7 +42,7 @@ multiple azure.ai.agent services.`,
 
 	// PersistentPreRunE is set outside the struct literal so the closure
 	// captures the outer cmd variable. When a subcommand runs (e.g.
-	// "session create"), Cobra passes the leaf command as the function
+	// "sessions create"), Cobra passes the leaf command as the function
 	// parameter. Using cmd.Parent() here reaches the root command;
 	// using the parameter's Parent() would return this session command
 	// itself, causing infinite recursion.
@@ -157,7 +157,7 @@ func newSessionCreateCommand() *cobra.Command {
 		Short: "Create a new session for a hosted agent.",
 		Long: `Create a new session for a hosted agent endpoint.
 
-Provisions an ADC sandbox micro-VM with a persistent filesystem. The session
+Provisions a drddopm with a persistent filesystem. The session
 is ready for invocations once the command completes.
 
 The agent name is auto-detected when only one azure.ai.agent service exists
@@ -166,21 +166,21 @@ azd environment (AGENT_{SERVICE}_VERSION) when omitted.
 The isolation key is derived from the Entra token by default.
 
 Positional arguments can be used instead of flags:
-  azd ai agent session create [agent-name] [version] [isolation-key]`,
+  azd ai agent sessions create [agent-name] [version] [isolation-key]`,
 		Example: `  # Create a session (auto-detect agent, latest version)
-  azd ai agent session create
+  azd ai agent sessions create
 
   # Create a session for a specific agent
-  azd ai agent session create my-agent
+  azd ai agent sessions create my-agent
 
   # Create a session backed by agent version 3
-  azd ai agent session create my-agent 3
+  azd ai agent sessions create my-agent 3
 
   # Create with flags
-  azd ai agent session create --agent-name my-agent --version 3
+  azd ai agent sessions create --agent-name my-agent --version 3
 
   # Create with a specific session ID
-  azd ai agent session create --session-id my-session`,
+  azd ai agent sessions create --session-id my-session`,
 		Args: cobra.MaximumNArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
@@ -303,10 +303,10 @@ func newSessionShowCommand() *cobra.Command {
 Retrieves the current status, version indicator, and timestamps for the
 specified session.`,
 		Example: `  # Show session details
-  azd ai agent session show my-session
+  azd ai agent sessions show my-session
 
   # Show in table format
-  azd ai agent session show my-session --output table`,
+  azd ai agent sessions show my-session --output table`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
@@ -366,15 +366,15 @@ func newSessionDeleteCommand() *cobra.Command {
 		Short: "Delete a session.",
 		Long: `Delete a hosted agent session synchronously.
 
-Terminates the ADC sandbox micro-VM and deletes the persistent filesystem
+Terminates the hosted agent session and deletes the persistent filesystem
 volume. Returns once cleanup is complete.
 
 The isolation key is derived from the Entra token by default.`,
 		Example: `  # Delete a session
-  azd ai agent session delete my-session
+  azd ai agent sessions delete my-session
 
   # Delete with an explicit isolation key
-  azd ai agent session delete my-session --isolation-key sk-abc123`,
+  azd ai agent sessions delete my-session --isolation-key sk-abc123`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
@@ -444,13 +444,13 @@ func newSessionListCommand() *cobra.Command {
 
 Returns a paged list of sessions with their status, version, and timestamps.`,
 		Example: `  # List all sessions
-  azd ai agent session list
+  azd ai agent sessions list
 
   # List with a page size limit
-  azd ai agent session list --limit 10
+  azd ai agent sessions list --limit 10
 
   # List in table format
-  azd ai agent session list --output table`,
+  azd ai agent sessions list --output table`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 			setupDebugLogging(cmd.Flags())

@@ -477,6 +477,7 @@ func (ch *ContainerHelper) Build(
 		resolvedBuildArgs,
 		dockerOptions.BuildSecrets,
 		dockerEnv,
+		dockerOptions.Network,
 		previewerWriter,
 	)
 	ch.console.StopPreviewer(ctx, false)

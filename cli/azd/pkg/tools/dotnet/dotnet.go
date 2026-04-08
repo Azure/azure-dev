@@ -163,6 +163,7 @@ func (cli *Cli) PublishAppHostManifest(
 			)
 		}
 
+		//nolint:gosec // G703: manifestPath is the azd-managed output path for the generated manifest.
 		return os.WriteFile(manifestPath, m, osutil.PermissionFile)
 	}
 

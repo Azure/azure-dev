@@ -13,12 +13,15 @@ import (
 )
 
 func TestExtensionReportedError(t *testing.T) {
+	t.Parallel()
 	t.Run("NoErrorReported", func(t *testing.T) {
+		t.Parallel()
 		ext := &extensions.Extension{Id: "test.ext"}
 		require.Nil(t, ext.GetReportedError())
 	})
 
 	t.Run("LocalErrorReported", func(t *testing.T) {
+		t.Parallel()
 		ext := &extensions.Extension{Id: "test.ext"}
 		localErr := &azdext.LocalError{
 			Message:    "invalid config",
@@ -39,6 +42,7 @@ func TestExtensionReportedError(t *testing.T) {
 	})
 
 	t.Run("ServiceErrorReported", func(t *testing.T) {
+		t.Parallel()
 		ext := &extensions.Extension{Id: "test.ext"}
 		svcErr := &azdext.ServiceError{
 			Message:     "not found",

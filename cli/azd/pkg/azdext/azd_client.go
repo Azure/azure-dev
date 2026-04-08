@@ -44,7 +44,7 @@ func WithAddress(address string) AzdClientOption {
 		if isLocalhostAddress(address) {
 			opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		} else {
-			// For non-localhost connections, require TLS to prevent MITM attacks
+			// For non-localhost connections, require TLS to prevent man-in-the-middle attacks.
 			opts = append(opts, grpc.WithTransportCredentials(credentials.NewTLS(nil)))
 		}
 

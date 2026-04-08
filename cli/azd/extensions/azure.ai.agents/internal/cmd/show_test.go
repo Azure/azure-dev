@@ -175,3 +175,72 @@ func TestShowCommand_DefaultOutputFlag(t *testing.T) {
 	output, _ := cmd.Flags().GetString("output")
 	assert.Equal(t, "json", output)
 }
+
+func TestPrintAgentVersionJSON(t *testing.T) {
+	version := &agent_api.AgentVersionObject{
+		Object:    "agent.version",
+		ID:        "ver-123",
+		Name:      "my-agent",
+		Version:   "1",
+		CreatedAt: 1735689600, // 2025-01-01T00:00:00Z
+	}
+
+	err := printAgentVersionJSON(version)
+	require.NoError(t, err)
+}
+
+func TestPrintAgentVersionJSON_Format(t *testing.T) {
+	desc := "A test agent"
+	version := &agent_api.AgentVersionObject{
+		Object:      "agent.version",
+		ID:          "ver-456",
+		Name:        "test-agent",
+		Version:     "2",
+		Description: &desc,
+		Metadata:    map[string]string{"env": "prod"},
+		CreatedAt:   1735689600,
+	}
+
+	jsonBytes, err := json.MarshalIndent(version, "", "  ")
+	require.NoError(t, err)
+
+	var result map[string]any
+	err = json.Unmarshal(jsonBytes, &result)
+	require.NoError(t, err)
+
+	assert.Equal(t, "agent.version", result["object"])
+	assert.Equal(t, "ver-456", result["id"])
+	assert.Equal(t, "test-agent", result["name"])
+	assert.Equal(t, "2", result["version"])
+	assert.Equal(t, "A test agent", result["description"])
+	metadata := result["metadata"].(map[string]any)
+	assert.Equal(t, "prod", metadata["env"])
+}
+
+func TestPrintAgentVersionTable(t *testing.T) {
+	desc := "A test agent"
+	version := &agent_api.AgentVersionObject{
+		Object:      "agent.version",
+		ID:          "ver-789",
+		Name:        "my-agent",
+		Version:     "3",
+		Description: &desc,
+		Metadata:    map[string]string{"env": "staging"},
+		CreatedAt:   1735689600,
+	}
+
+	err := printAgentVersionTable(version)
+	require.NoError(t, err)
+}
+
+func TestPrintAgentVersionTable_MinimalFields(t *testing.T) {
+	version := &agent_api.AgentVersionObject{
+		Object:  "agent.version",
+		ID:      "ver-min",
+		Name:    "minimal-agent",
+		Version: "1",
+	}
+
+	err := printAgentVersionTable(version)
+	require.NoError(t, err)
+}

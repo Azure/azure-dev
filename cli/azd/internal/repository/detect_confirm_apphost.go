@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/fatih/color"
 )
 
 // detectConfirmAppHost handles prompting for confirming the detected project with an app host.
@@ -83,13 +84,12 @@ func (d *detectConfirmAppHost) render(ctx context.Context) error {
 	d.console.Message(ctx, "  "+output.WithHighLightFormat(projectDisplayName(d.AppHost)))
 	d.console.Message(ctx, "  "+"Detected in: "+output.WithHighLightFormat(relSafe(d.root, d.AppHost.Path)))
 	d.console.Message(ctx, "")
-
-	if d.warningMessage != "" {
-		d.console.Message(ctx, d.warningMessage)
-		d.console.Message(ctx, "")
-	}
-
-	d.console.Message(ctx, "azd will generate the files necessary to host your app on Azure.")
+	d.console.Message(
+		ctx,
+		"azd will generate the files necessary to host your app on Azure using "+color.MagentaString(
+			"Azure Container Apps",
+		)+".\n",
+	)
 
 	return nil
 }

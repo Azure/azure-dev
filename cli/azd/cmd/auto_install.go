@@ -11,11 +11,13 @@ import (
 	"log"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/runcontext/agentdetect"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
@@ -421,17 +423,18 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 		// Known command, proceed with normal execution
 		err := rootCmd.ExecuteContext(ctx)
 
+		// Only attempt service-host auto-install when the command failed with that specific error.
+		// Other command errors (for example, unsupported output formats) should be returned directly.
+		unsupportedErr, ok := errors.AsType[*project.UnsupportedServiceHostError](err)
+		if !ok {
+			return err
+		}
+
 		if err := rootContainer.Resolve(&extensionManager); err != nil {
 			log.Panic("failed to resolve extension manager for auto-install:", err)
 		}
 		if err := rootContainer.Resolve(&console); err != nil {
 			log.Panic("failed to resolve console for unknown flags error:", err)
-		}
-
-		// auto-install for target service
-		unsupportedErr, ok := errors.AsType[*project.UnsupportedServiceHostError](err)
-		if !ok {
-			return err
 		}
 
 		requiredHost := unsupportedErr.Host
@@ -616,6 +619,12 @@ func CreateGlobalFlagSet() *pflag.FlagSet {
 		"no-prompt",
 		false,
 		"Accepts the default value instead of prompting, or it fails if there is no default.")
+	globalFlags.Bool(
+		"non-interactive",
+		false,
+		"Alias for --no-prompt.")
+	_ = globalFlags.MarkHidden("non-interactive")
+	globalFlags.StringP(internal.EnvironmentNameFlagName, "e", "", "The name of the environment to use.")
 
 	// The telemetry system is responsible for reading these flags value and using it to configure the telemetry
 	// system, but we still need to add it to our flag set so that when we parse the command line with Cobra we
@@ -665,15 +674,60 @@ func ParseGlobalFlags(args []string, opts *internal.GlobalCommandOptions) error 
 		opts.EnableDebugLogging = boolVal
 	}
 
-	if boolVal, err := globalFlagSet.GetBool("no-prompt"); err == nil {
-		opts.NoPrompt = boolVal
+	// --non-interactive is an alias for --no-prompt; either flag sets NoPrompt.
+	// When both are present, true wins (either flag opting in is sufficient).
+	noPromptVal, _ := globalFlagSet.GetBool("no-prompt")
+	nonInteractiveVal, _ := globalFlagSet.GetBool("non-interactive")
+	opts.NoPrompt = noPromptVal || nonInteractiveVal
+
+	// Check if either flag was explicitly provided on the command line
+	noPromptFlag := globalFlagSet.Lookup("no-prompt")
+	nonInteractiveFlag := globalFlagSet.Lookup("non-interactive")
+	flagExplicitlySet := (noPromptFlag != nil && noPromptFlag.Changed) ||
+		(nonInteractiveFlag != nil && nonInteractiveFlag.Changed)
+
+	// Environment variable: AZD_NON_INTERACTIVE enables no-prompt mode when set to a
+	// truthy value (parsed via strconv.ParseBool: "true", "1", "TRUE", etc.).
+	// Explicit flags take precedence over this env var.
+	// When this env var is present (regardless of value), it also suppresses
+	// agent auto-detection since the user has made an explicit choice.
+	envVarPresent := false
+	if !flagExplicitlySet {
+		if envVal, ok := os.LookupEnv("AZD_NON_INTERACTIVE"); ok {
+			envVarPresent = true
+			if parsed, err := strconv.ParseBool(envVal); err == nil && parsed {
+				opts.NoPrompt = true
+			} else if err != nil {
+				log.Printf(
+					"warning: AZD_NON_INTERACTIVE=%q is not a valid boolean"+
+						" (expected true/false/1/0), ignoring",
+					envVal,
+				)
+			}
+		}
 	}
 
-	// Agent Detection: If --no-prompt was not explicitly set and we detect an AI coding agent
-	// as the caller, automatically enable no-prompt mode for non-interactive execution.
-	noPromptFlag := globalFlagSet.Lookup("no-prompt")
-	noPromptExplicitlySet := noPromptFlag != nil && noPromptFlag.Changed
-	if !noPromptExplicitlySet && agentdetect.IsRunningInAgent() {
+	// Parse -e/--environment with lenient validation.
+	// Only accept values that look like valid environment names (alphanumeric, hyphens, dots,
+	// underscores). Values that don't match (e.g., URLs from extensions reusing -e for
+	// --project-endpoint) are silently ignored — the extension still receives the raw args
+	// and can parse -e itself. This avoids breaking third-party extensions that use -e
+	// for their own flags while still fixing the environment leak for valid env names.
+	if strVal, err := globalFlagSet.GetString(internal.EnvironmentNameFlagName); err == nil && strVal != "" {
+		if environment.IsValidEnvironmentName(strVal) {
+			opts.EnvironmentName = strVal
+		} else if opts.EnableDebugLogging {
+			log.Printf(
+				"debug: ignoring invalid environment name %q from -e/--environment flag"+
+					" (does not match %s pattern)",
+				strVal, environment.EnvironmentNameRegexp,
+			)
+		}
+	}
+
+	// Agent Detection: If no explicit flag or env var was set and we detect an AI coding
+	// agent as the caller, automatically enable no-prompt mode for non-interactive execution.
+	if !flagExplicitlySet && !envVarPresent && agentdetect.IsRunningInAgent() {
 		opts.NoPrompt = true
 	}
 

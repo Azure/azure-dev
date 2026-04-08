@@ -27,19 +27,27 @@ type filesFlags struct {
 
 // isVNextEnabled checks whether hosted agent vnext is enabled
 // by looking at both the OS environment and the azd environment.
-func isVNextEnabled(ctx context.Context) bool {
+// An optional AzdClient can be passed to avoid creating a new connection;
+// if nil, the function creates one internally.
+func isVNextEnabled(ctx context.Context, client ...*azdext.AzdClient) bool {
 	if v := os.Getenv("enableHostedAgentVNext"); v != "" {
 		if enabled, err := strconv.ParseBool(v); err == nil && enabled {
 			return true
 		}
 	}
 
-	// Best-effort check of azd environment
-	azdClient, err := azdext.NewAzdClient()
-	if err != nil {
-		return false
+	// Use provided client or create one for best-effort azd env check
+	var azdClient *azdext.AzdClient
+	if len(client) > 0 && client[0] != nil {
+		azdClient = client[0]
+	} else {
+		var err error
+		azdClient, err = azdext.NewAzdClient()
+		if err != nil {
+			return false
+		}
+		defer azdClient.Close()
 	}
-	defer azdClient.Close()
 
 	azdEnv, err := loadAzdEnvironment(ctx, azdClient)
 	if err != nil {
@@ -65,14 +73,16 @@ func newFilesCommand() *cobra.Command {
 Upload, download, list, and remove files in the session-scoped filesystem
 of a hosted agent. This is useful for debugging, seeding data, and agent setup.
 
-Agent details (name, version, endpoint) are automatically resolved from the
+Agent details (name, endpoint) are automatically resolved from the
 azd environment. Use --agent-name to select a specific agent when the project
 has multiple azure.ai.agent services. The session ID is automatically resolved
 from the last invoke session, or can be overridden with --session.`,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-			// Chain with parent's PersistentPreRunE (root sets NoPrompt)
-			if parent := cmd.Parent(); parent != nil && parent.PersistentPreRunE != nil {
-				if err := parent.PersistentPreRunE(cmd, args); err != nil {
+			// Chain with root's PersistentPreRunE (root sets NoPrompt).
+			// Note: cmd.Parent() would return the "files" command itself when
+			// a subcommand runs, causing infinite recursion.
+			if root := cmd.Root(); root != nil && root.PersistentPreRunE != nil {
+				if err := root.PersistentPreRunE(cmd, args); err != nil {
 					return err
 				}
 			}
@@ -130,20 +140,13 @@ func resolveFilesContext(ctx context.Context, flags *filesFlags) (*filesContext,
 			info.ServiceName,
 		)
 	}
-	if info.Version == "" {
-		return nil, fmt.Errorf(
-			"agent version not found in azd environment for service %q\n\n"+
-				"Run 'azd deploy' to deploy the agent, or check that the service is configured in azure.yaml",
-			info.ServiceName,
-		)
-	}
 
 	endpoint, err := resolveAgentEndpoint(ctx, "", "")
 	if err != nil {
 		return nil, err
 	}
 
-	sessionID, err := resolveSessionID(ctx, azdClient, info.AgentName, flags.session, false)
+	sessionID, err := resolveStoredID(ctx, azdClient, info.AgentName, flags.session, false, "sessions", false)
 	if err != nil {
 		return nil, err
 	}
@@ -152,7 +155,6 @@ func resolveFilesContext(ctx context.Context, flags *filesFlags) (*filesContext,
 		AgentContext: &AgentContext{
 			ProjectEndpoint: endpoint,
 			Name:            info.AgentName,
-			Version:         info.Version,
 		},
 		sessionID: sessionID,
 	}, nil
@@ -243,7 +245,6 @@ func (a *FilesUploadAction) Run(ctx context.Context) error {
 	err = agentClient.UploadSessionFile(
 		ctx,
 		a.Name,
-		a.Version,
 		a.sessionID,
 		remotePath,
 		DefaultVNextAgentAPIVersion,
@@ -330,7 +331,6 @@ func (a *FilesDownloadAction) Run(ctx context.Context) error {
 	body, err := agentClient.DownloadSessionFile(
 		ctx,
 		a.Name,
-		a.Version,
 		a.sessionID,
 		a.flags.file,
 		DefaultVNextAgentAPIVersion,
@@ -440,7 +440,6 @@ func (a *FilesListAction) Run(ctx context.Context) error {
 	fileList, err := agentClient.ListSessionFiles(
 		ctx,
 		a.Name,
-		a.Version,
 		a.sessionID,
 		a.remotePath,
 		DefaultVNextAgentAPIVersion,
@@ -560,7 +559,6 @@ func (a *FilesRemoveAction) Run(ctx context.Context) error {
 	err = agentClient.RemoveSessionFile(
 		ctx,
 		a.Name,
-		a.Version,
 		a.sessionID,
 		a.remotePath,
 		a.flags.recursive,
@@ -637,7 +635,6 @@ func (a *FilesMkdirAction) Run(ctx context.Context) error {
 	err = agentClient.MkdirSessionFile(
 		ctx,
 		a.Name,
-		a.Version,
 		a.sessionID,
 		a.remotePath,
 		DefaultVNextAgentAPIVersion,
@@ -721,7 +718,6 @@ func (a *FilesStatAction) Run(ctx context.Context) error {
 	fileInfo, err := agentClient.StatSessionFile(
 		ctx,
 		a.Name,
-		a.Version,
 		a.sessionID,
 		a.remotePath,
 		DefaultVNextAgentAPIVersion,

@@ -45,8 +45,8 @@ type initFlags struct {
 	model             string
 	manifestPointer   string
 	src               string
-	host              string
 	env               string
+	protocols         []string
 }
 
 // AiProjectResourceConfig represents the configuration for an AI project resource
@@ -59,15 +59,40 @@ type InitAction struct {
 	//azureClient       *azure.AzureClient
 	azureContext *azdext.AzureContext
 	//composedResources []*azdext.ComposedResource
-	console              input.Console
-	credential           azcore.TokenCredential
+	console       input.Console
+	credential    azcore.TokenCredential
+	projectConfig *azdext.ProjectConfig
+	environment   *azdext.Environment
+	flags         *initFlags
+	models        *modelSelector
+
+	deploymentDetails []project.Deployment
+	httpClient        *http.Client
+}
+
+// modelSelector encapsulates the dependencies needed for model selection and
+// deployment resolution during init. It avoids constructing partial InitAction
+// structs when only the model-selection call chain is needed.
+type modelSelector struct {
+	azdClient    *azdext.AzdClient
+	azureContext *azdext.AzureContext
+	environment  *azdext.Environment
+	flags        *initFlags
+
 	modelCatalog         map[string]*azdext.AiModel
 	locationWarningShown bool
-	projectConfig        *azdext.ProjectConfig
-	environment          *azdext.Environment
-	flags                *initFlags
-	deploymentDetails    []project.Deployment
-	httpClient           *http.Client
+}
+
+func (a *InitAction) getModelSelector() *modelSelector {
+	if a.models == nil {
+		a.models = &modelSelector{
+			azdClient:    a.azdClient,
+			azureContext: a.azureContext,
+			environment:  a.environment,
+			flags:        a.flags,
+		}
+	}
+	return a.models
 }
 
 // GitHubUrlInfo holds parsed information from a GitHub URL
@@ -79,7 +104,7 @@ type GitHubUrlInfo struct {
 }
 
 const AiAgentHost = "azure.ai.agent"
-const ContainerAppHost = "containerapp"
+const agentsV2ModelCapability = "agentsV2"
 
 // checkAiModelServiceAvailable is a temporary check to ensure the azd host supports
 // required gRPC services. Remove once azd core enforces requiredAzdVersion.
@@ -117,7 +142,7 @@ func runInitFromManifest(
 	}
 
 	// Get or create environment
-	env := getExistingEnvironment(ctx, flags, azdClient)
+	env := getExistingEnvironment(ctx, flags.env, azdClient)
 	if env == nil {
 		fmt.Println("Lets create a new default azd environment for your project.")
 		env, err = createNewEnvironment(ctx, azdClient, flags.env)
@@ -210,6 +235,46 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 
 			var httpClient = &http.Client{
 				Timeout: 30 * time.Second,
+			}
+
+			// Auto-detect an existing agent manifest in the target directory
+			// when no --manifest flag was provided.
+			if flags.manifestPointer == "" {
+				checkDir := flags.src
+				if checkDir == "" {
+					checkDir = "."
+				}
+				detected, detectErr := detectLocalManifest(checkDir)
+				if detectErr != nil {
+					return fmt.Errorf("checking for existing manifest: %w", detectErr)
+				}
+				if detected != "" {
+					useExisting := flags.NoPrompt
+					if !flags.NoPrompt {
+						confirmResp, promptErr := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+							Options: &azdext.ConfirmOptions{
+								Message: fmt.Sprintf(
+									"An existing agent manifest was found at %q. Use it?",
+									detected,
+								),
+								DefaultValue: new(true),
+							},
+						})
+						if promptErr != nil {
+							if exterrors.IsCancellation(promptErr) {
+								return exterrors.Cancelled("initialization was cancelled")
+							}
+							return fmt.Errorf("prompting for manifest detection: %w", promptErr)
+						}
+						useExisting = *confirmResp.Value
+					}
+					if useExisting {
+						flags.manifestPointer = detected
+						if flags.src == "" {
+							flags.src = checkDir
+						}
+					}
+				}
 			}
 
 			if flags.manifestPointer != "" {
@@ -354,10 +419,10 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 	cmd.Flags().StringVarP(&flags.src, "src", "s", "",
 		"Directory to download the agent definition to (defaults to 'src/<agent-id>')")
 
-	cmd.Flags().StringVarP(&flags.host, "host", "", "",
-		"For container based agents, can override the default host to target a container app instead. Accepted values: 'containerapp'")
-
 	cmd.Flags().StringVarP(&flags.env, "environment", "e", "", "The name of the azd environment to use.")
+
+	cmd.Flags().StringSliceVar(&flags.protocols, "protocol", nil,
+		"Protocols supported by the agent (e.g., 'responses', 'invocations'). Can be specified multiple times.")
 
 	return cmd
 }
@@ -383,14 +448,6 @@ func (a *InitAction) Run(ctx context.Context) error {
 		// Validate that the manifest pointer is either a valid URL or existing file path
 		isValidURL := false
 		isValidFile := false
-
-		if a.flags.host != "" && a.flags.host != "containerapp" {
-			return exterrors.Validation(
-				exterrors.CodeUnsupportedHost,
-				fmt.Sprintf("unsupported host value: '%s' is not supported", a.flags.host),
-				"use '--host containerapp' or omit '--host'",
-			)
-		}
 
 		if _, err := url.ParseRequestURI(a.flags.manifestPointer); err == nil {
 			isValidURL = true
@@ -436,7 +493,7 @@ func (a *InitAction) Run(ctx context.Context) error {
 		}
 
 		// Add the agent to the azd project (azure.yaml) services
-		if err := a.addToProject(ctx, targetDir, agentManifest, a.flags.host); err != nil {
+		if err := a.addToProject(ctx, targetDir, agentManifest); err != nil {
 			return fmt.Errorf("failed to add agent to azure.yaml: %w", err)
 		}
 
@@ -510,15 +567,15 @@ func ensureProject(ctx context.Context, flags *initFlags, azdClient *azdext.AzdC
 	return projectResponse.Project, nil
 }
 
-func getExistingEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.AzdClient) *azdext.Environment {
+func getExistingEnvironment(ctx context.Context, envName string, azdClient *azdext.AzdClient) *azdext.Environment {
 	var env *azdext.Environment
-	if flags.env == "" {
+	if envName == "" {
 		if envResponse, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{}); err == nil {
 			env = envResponse.Environment
 		}
 	} else {
 		if envResponse, err := azdClient.Environment().Get(ctx, &azdext.GetEnvironmentRequest{
-			Name: flags.env,
+			Name: envName,
 		}); err == nil {
 			env = envResponse.Environment
 		}
@@ -570,16 +627,42 @@ func (a *InitAction) configureModelChoice(
 	}
 
 	// If the manifest has no model resources, skip the model configuration prompt
-	// but still ensure subscription and location are set for agent creation
+	// but still ensure subscription and location are set for agent creation.
+	// When --project-id is provided, use the existing project to derive location
+	// and configure Foundry env vars (ACR, AppInsights, etc.) instead of prompting.
 	if !manifestHasModelResources(agentManifest) {
-		newCred, err := ensureSubscriptionAndLocation(
-			ctx, a.azdClient, a.azureContext, a.environment.Name,
-			"Select an Azure subscription to provision your agent and Foundry project resources.",
-		)
-		if err != nil {
-			return nil, err
+		if a.flags.projectResourceId != "" {
+			newCred, err := ensureSubscription(
+				ctx, a.azdClient, a.azureContext, a.environment.Name,
+				"Select an Azure subscription to provision your agent and Foundry project resources.",
+			)
+			if err != nil {
+				return nil, err
+			}
+			a.credential = newCred
+
+			selectedProject, err := selectFoundryProject(
+				ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
+				a.azureContext.Scope.SubscriptionId, a.flags.projectResourceId,
+			)
+			if err != nil {
+				return nil, err
+			}
+
+			if selectedProject == nil {
+				return nil, fmt.Errorf("foundry project not found: %s", a.flags.projectResourceId)
+			}
+		} else {
+			newCred, err := ensureSubscriptionAndLocation(
+				ctx, a.azdClient, a.azureContext, a.environment.Name,
+				"Select an Azure subscription to provision your agent and Foundry project resources.",
+			)
+			if err != nil {
+				return nil, err
+			}
+			a.credential = newCred
 		}
-		a.credential = newCred
+
 		return agentManifest, nil
 	}
 
@@ -1090,7 +1173,7 @@ func writeAgentDefinitionFile(targetDir string, agentManifest *agent_yaml.AgentM
 	return nil
 }
 
-func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentManifest *agent_yaml.AgentManifest, host string) error {
+func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentManifest *agent_yaml.AgentManifest) error {
 	// Convert the template to bytes
 	templateBytes, err := json.Marshal(agentManifest.Template)
 	if err != nil {
@@ -1113,15 +1196,6 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	var agentDef agent_yaml.AgentDefinition
 	if err := json.Unmarshal(dictJsonBytes, &agentDef); err != nil {
 		return fmt.Errorf("failed to unmarshal JSON to AgentDefinition: %w", err)
-	}
-
-	var serviceHost string
-
-	switch host {
-	case "containerapp":
-		serviceHost = ContainerAppHost
-	default:
-		serviceHost = AiAgentHost
 	}
 
 	var agentConfig = project.ServiceTargetAgentConfig{}
@@ -1212,7 +1286,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	serviceConfig := &azdext.ServiceConfig{
 		Name:         strings.ReplaceAll(agentDef.Name, " ", ""),
 		RelativePath: targetDir,
-		Host:         serviceHost,
+		Host:         AiAgentHost,
 		Language:     "docker",
 		Config:       agentConfigStruct,
 	}
@@ -1265,16 +1339,21 @@ func (a *InitAction) populateContainerSettings(ctx context.Context) (*project.Co
 
 	selected := project.ResourceTiers[*resp.Value]
 
-	return &project.ContainerSettings{
+	containerSettings := &project.ContainerSettings{
 		Resources: &project.ResourceSettings{
 			Memory: selected.Memory,
 			Cpu:    selected.Cpu,
 		},
-		Scale: &project.ScaleSettings{
+	}
+
+	if !isVNextEnabled(ctx, a.azdClient) {
+		containerSettings.Scale = &project.ScaleSettings{
 			MinReplicas: project.DefaultMinReplicas,
 			MaxReplicas: project.DefaultMaxReplicas,
-		},
-	}, nil
+		}
+	}
+
+	return containerSettings, nil
 }
 
 func downloadGithubManifest(

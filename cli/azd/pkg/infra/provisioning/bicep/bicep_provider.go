@@ -25,6 +25,11 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/drone/envsubst"
+
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/ai"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
@@ -46,7 +51,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/password"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
-	"github.com/drone/envsubst"
 )
 
 type bicepFileMode int
@@ -1721,16 +1725,25 @@ type loadParametersResult struct {
 	locationParams []string
 	// envMapping is a map of parameter name to environment variable names
 	// holds information about which parameters are mapped to which env vars for
-	// cases like "param": "${env:AZURE_FOO}-${env:AZURE_BAR}", envMapping will
+	// cases like "param": "${AZURE_FOO}-${AZURE_BAR}", envMapping will
 	// contain {"param": ["AZURE_FOO", "AZURE_BAR"]}
+	//
 	// This information is useful for setting a CI/CD automatically. Each env var
 	// will be set to the value of the parameter as variable or secret.
 	envMapping map[string][]string
+
+	// parameters that should be considered virtual, i.e. their values are only
+	// known at runtime.
+	//
+	// These parameters should not be prompted and treated as resolved values,
+	// with other potential unmapped environment variables stored in envMapping.
+	virtualMapping map[string]struct{}
 }
 
 // envSubstResult contains the results of environment variable substitution
 type envSubstResult struct {
 	hasUnsetEnvVar                  bool
+	hasVirtualEnvVar                bool
 	mappedEnvVars                   []string
 	parametersMappedToAzureLocation []string
 }
@@ -1743,6 +1756,7 @@ func evalParamEnvSubst(
 	principalType string,
 	paramName string,
 	env *environment.Environment,
+	virtualEnv map[string]string,
 ) (string, envSubstResult, error) {
 	result := envSubstResult{}
 
@@ -1756,13 +1770,23 @@ func evalParamEnvSubst(
 		if name == environment.LocationEnvVarName {
 			result.parametersMappedToAzureLocation = append(result.parametersMappedToAzureLocation, paramName)
 		}
-		// principalId and locations are intentionally excluded from the mapped env vars as
-		// they are global env vars
+
+		if virtualEnv != nil {
+			if value, has := virtualEnv[name]; has {
+				result.hasVirtualEnvVar = true
+				return value
+			}
+		}
+
+		// principalId and principalType are intentionally excluded from the mapped env vars
+		// as they are global env vars.
 		result.mappedEnvVars = append(result.mappedEnvVars, name)
-		if _, isDefined := env.LookupEnv(name); !isDefined {
+
+		value, isDefined := env.LookupEnv(name)
+		if !isDefined {
 			result.hasUnsetEnvVar = true
 		}
-		return env.Getenv(name)
+		return value
 	})
 	return replaced, result, err
 }
@@ -1816,6 +1840,7 @@ func (p *BicepProvider) loadParameters(ctx context.Context, template *azure.ArmT
 	parametersMappedToAzureLocation := []string{}
 	resolvedParams := map[string]azure.ArmParameter{}
 	envMapping := map[string][]string{}
+	virtualMapping := map[string]struct{}{}
 
 	// resolving each parameter to keep track of the name during the resolution.
 	// We used to resolve all the file before, supporting env var substitution at any part of the file.
@@ -1843,6 +1868,7 @@ func (p *BicepProvider) loadParameters(ctx context.Context, template *azure.ArmT
 					string(principalType),
 					paramName,
 					p.env,
+					p.options.VirtualEnv,
 				)
 				if err != nil {
 					return loadParametersResult{}, err
@@ -1851,6 +1877,12 @@ func (p *BicepProvider) loadParameters(ctx context.Context, template *azure.ArmT
 				envMapping[paramName] = substResult.mappedEnvVars
 				parametersMappedToAzureLocation = append(
 					parametersMappedToAzureLocation, substResult.parametersMappedToAzureLocation...)
+
+				if substResult.hasVirtualEnvVar {
+					// Record the parameter as virtual, skip further processing
+					virtualMapping[paramName] = struct{}{}
+					continue
+				}
 
 				// Omit unset parameters
 				if replaced == "" && substResult.hasUnsetEnvVar {
@@ -1897,6 +1929,7 @@ func (p *BicepProvider) loadParameters(ctx context.Context, template *azure.ArmT
 			string(principalType),
 			paramName,
 			p.env,
+			p.options.VirtualEnv,
 		)
 		if err != nil {
 			return loadParametersResult{}, fmt.Errorf("substituting environment variables for %s: %w", paramName, err)
@@ -1906,12 +1939,17 @@ func (p *BicepProvider) loadParameters(ctx context.Context, template *azure.ArmT
 		parametersMappedToAzureLocation = append(
 			parametersMappedToAzureLocation, substResult.parametersMappedToAzureLocation...)
 
+		if substResult.hasVirtualEnvVar {
+			// Record the parameter as virtual, skip further processing
+			virtualMapping[paramName] = struct{}{}
+			continue
+		}
+
 		// resolve command substitutions like `secretOrRandomPassword`
 		replaced, err = p.evalCommandSubstitution(ctx, replaced)
 		if err != nil {
 			return loadParametersResult{}, err
 		}
-
 		var resolvedParam azure.ArmParameter
 		if err := json.Unmarshal([]byte(replaced), &resolvedParam); err != nil {
 			return loadParametersResult{}, fmt.Errorf("error unmarshalling Bicep template parameters: %w", err)
@@ -1948,6 +1986,7 @@ func (p *BicepProvider) loadParameters(ctx context.Context, template *azure.ArmT
 		parameters:     resolvedParams,
 		locationParams: parametersMappedToAzureLocation,
 		envMapping:     envMapping,
+		virtualMapping: virtualMapping,
 	}, nil
 }
 
@@ -2133,6 +2172,16 @@ func (p *BicepProvider) convertToDeployment(bicepTemplate azure.ArmTemplate) pro
 	return result
 }
 
+// Preflight validation outcome constants for telemetry.
+const (
+	preflightOutcomePassed           = "passed"
+	preflightOutcomeWarningsAccepted = "warnings_accepted"
+	preflightOutcomeAbortedByErrors  = "aborted_by_errors"
+	preflightOutcomeAbortedByUser    = "aborted_by_user"
+	preflightOutcomeSkipped          = "skipped"
+	preflightOutcomeError            = "error"
+)
+
 // validatePreflight runs client-side preflight validation on the ARM template.
 // It returns (abort, err) where:
 //   - abort=true, err=nil: checks detected issues and the deployment should be skipped (exit code 0).
@@ -2146,7 +2195,12 @@ func (p *BicepProvider) validatePreflight(
 	armParameters azure.ArmParameters,
 	tags map[string]*string,
 	options map[string]any,
-) (bool, error) {
+) (abort bool, err error) {
+	ctx, span := tracing.Start(ctx, events.PreflightValidationEvent)
+	defer func() {
+		span.EndWithStatus(err)
+	}()
+
 	// Run local preflight validation before sending to Azure.
 	// Local validation catches common issues without requiring a network round-trip.
 	localPreflight := newLocalArmPreflight(modulePath, p.bicepCli, target)
@@ -2155,20 +2209,57 @@ func (p *BicepProvider) validatePreflight(
 	// local preflight pipeline. The check inspects whether the template contains
 	// Microsoft.Authorization/roleAssignments and, if so, verifies the current
 	// principal has the required write permission.
-	localPreflight.AddCheck(p.checkRoleAssignmentPermissions)
+	localPreflight.AddCheck(PreflightCheck{
+		RuleID: "role_assignment_permissions",
+		Fn:     p.checkRoleAssignmentPermissions,
+	})
 
 	results, err := localPreflight.validate(ctx, p.console, armTemplate, armParameters)
 	if err != nil {
+		p.setPreflightOutcome(span, preflightOutcomeError, nil)
 		return false, fmt.Errorf("local preflight validation failed: %w", err)
 	}
+
+	// Record the rule IDs that actually executed. This is done after validate()
+	// because validate() may skip checks entirely (e.g. when the bicep snapshot
+	// is unavailable). A nil result with nil error means checks were skipped.
+	if results == nil {
+		p.setPreflightOutcome(span, preflightOutcomeSkipped, nil)
+		// No rules actually executed; record an empty slice for telemetry.
+		span.SetAttributes(fields.PreflightRulesKey.StringSlice([]string{}))
+	} else {
+		ruleIDs := make([]string, len(localPreflight.checks))
+		for i, check := range localPreflight.checks {
+			ruleIDs[i] = check.RuleID
+		}
+		span.SetAttributes(fields.PreflightRulesKey.StringSlice(ruleIDs))
+	}
+
+	// Compute telemetry metrics from the results.
+	var diagnosticIDs []string
+	var warningCount, errorCount int
+	for _, result := range results {
+		if result.DiagnosticID != "" {
+			diagnosticIDs = append(diagnosticIDs, result.DiagnosticID)
+		}
+		if result.Severity == PreflightCheckError {
+			errorCount++
+		} else {
+			warningCount++
+		}
+	}
+	span.SetAttributes(fields.PreflightDiagnosticsKey.StringSlice(diagnosticIDs))
+	span.SetAttributes(fields.PreflightWarningCountKey.Int(warningCount))
+	span.SetAttributes(fields.PreflightErrorCountKey.Int(errorCount))
 
 	// Build a UX report from the preflight results and display it.
 	if len(results) > 0 {
 		report := &ux.PreflightReport{}
 		for _, result := range results {
 			report.Items = append(report.Items, ux.PreflightReportItem{
-				IsError: result.Severity == PreflightCheckError,
-				Message: result.Message,
+				IsError:      result.Severity == PreflightCheckError,
+				DiagnosticID: result.DiagnosticID,
+				Message:      result.Message,
 			})
 		}
 		p.console.MessageUxItem(ctx, report)
@@ -2178,26 +2269,55 @@ func (p *BicepProvider) validatePreflight(
 			// successfully detected problems and the deployment is intentionally aborted.
 			// This is not an internal failure, so no error is returned (exit code 0).
 			p.console.Message(ctx, "Preflight validation detected errors, deployment aborted.")
+			p.setPreflightOutcome(span, preflightOutcomeAbortedByErrors, diagnosticIDs)
 			return true, nil
 		}
 
 		if report.HasWarnings() {
 			continueDeployment, promptErr := p.console.Confirm(ctx, input.ConsoleOptions{
-				Message: "Preflight validation found warnings that may cause the deployment to fail. " +
-					"Do you want to continue?",
+				Message: "Preflight validation found warnings that may cause the " +
+					"deployment to fail. Do you want to continue?",
 				DefaultValue: true,
 			})
 			if promptErr != nil {
-				return false, fmt.Errorf("prompting for preflight confirmation: %w", promptErr)
+				p.setPreflightOutcome(
+					span, preflightOutcomeError, diagnosticIDs,
+				)
+				return false, fmt.Errorf(
+					"prompting for preflight confirmation: %w", promptErr,
+				)
 			}
 			if !continueDeployment {
 				// User chose not to continue — this is an intentional abort, not a failure.
+				p.setPreflightOutcome(span, preflightOutcomeAbortedByUser, diagnosticIDs)
 				return true, nil
 			}
+			p.setPreflightOutcome(span, preflightOutcomeWarningsAccepted, diagnosticIDs)
 		}
+	} else if results != nil {
+		p.setPreflightOutcome(span, preflightOutcomePassed, nil)
 	}
 
 	return false, target.ValidatePreflight(ctx, armTemplate, armParameters, tags, options)
+}
+
+// setPreflightOutcome records the preflight outcome on both the span and as a usage-level
+// attribute so it can be correlated with the overall deployment result.
+func (p *BicepProvider) setPreflightOutcome(
+	span tracing.Span,
+	outcome string,
+	diagnosticIDs []string,
+) {
+	span.SetAttributes(fields.PreflightOutcomeKey.String(outcome))
+
+	// Set usage-level attributes so the parent command span (cmd.provision / cmd.up) can
+	// correlate preflight outcome with the final deployment result. This enables tracking
+	// false positives (warnings_accepted + deploy succeeds) and true positives
+	// (warnings_accepted + deploy fails).
+	tracing.SetUsageAttributes(
+		fields.PreflightOutcomeKey.String(outcome),
+		fields.PreflightDiagnosticsKey.StringSlice(diagnosticIDs),
+	)
 }
 
 // checkRoleAssignmentPermissions is a PreflightCheckFn that verifies the current principal
@@ -2251,7 +2371,8 @@ func (p *BicepProvider) checkRoleAssignmentPermissions(
 
 	if !hasPermission.HasPermission {
 		return &PreflightCheckResult{
-			Severity: PreflightCheckWarning,
+			Severity:     PreflightCheckWarning,
+			DiagnosticID: "role_assignment_missing",
 			Message: fmt.Sprintf(
 				"the current principal (%s) does not have permission to create role assignments "+
 					"(Microsoft.Authorization/roleAssignments/write) on subscription %s. "+
@@ -2267,7 +2388,8 @@ func (p *BicepProvider) checkRoleAssignmentPermissions(
 
 	if hasPermission.Conditional {
 		return &PreflightCheckResult{
-			Severity: PreflightCheckWarning,
+			Severity:     PreflightCheckWarning,
+			DiagnosticID: "role_assignment_conditional",
 			Message: fmt.Sprintf(
 				"the current principal (%s) has conditional permission to create role "+
 					"assignments (Microsoft.Authorization/roleAssignments/write) on "+
@@ -2403,6 +2525,7 @@ func (p *BicepProvider) ensureParameters(
 	}
 	parameters := parametersResult.parameters
 	locationParameters := parametersResult.locationParams
+	virtualParameters := parametersResult.virtualMapping
 
 	if len(template.Parameters) == 0 {
 		return azure.ArmParameters{}, nil
@@ -2455,6 +2578,11 @@ func (p *BicepProvider) ensureParameters(
 		param := template.Parameters[key]
 		parameterType := provisioning.ParameterTypeFromArmType(param.Type)
 		azdMetadata, hasMetadata := param.AzdMetadata()
+
+		// If a value is marked virtual, we skip configuration entirely
+		if _, has := virtualParameters[key]; has {
+			continue
+		}
 
 		// If a value is explicitly configured via a parameters file, use it.
 		if v, has := parameters[key]; has {
@@ -2765,10 +2893,24 @@ func (p *BicepProvider) Parameters(ctx context.Context) ([]provisioning.Paramete
 
 	provisionParameters := []provisioning.Parameter{}
 	for key, param := range templateParameters {
+		_, isVirtual := parametersInfo.virtualMapping[key]
+		if isVirtual {
+			// For virtual parameters, we pass through remaining env var mappings
+			provisionParameters = append(provisionParameters, provisioning.Parameter{
+				Name:               key,
+				Secret:             param.Secure(),
+				EnvVarMapping:      parametersInfo.envMapping[key],
+				LocalPrompt:        false,
+				UsingEnvVarMapping: true,
+			})
+			continue
+		}
+
 		if _, usingParam := resolvedParams[key]; !usingParam {
 			// No resolved param for this parameter definition.
 			continue
 		}
+
 		_, isPrompt := p.env.Config.Get(fmt.Sprintf("infra.parameters.%s", key))
 		singleMapping := len(parametersInfo.envMapping[key]) == 1
 		usingEnvVarMapping := false
@@ -2790,4 +2932,24 @@ func (p *BicepProvider) Parameters(ctx context.Context) ([]provisioning.Paramete
 	}
 
 	return provisionParameters, nil
+}
+
+func (p *BicepProvider) PlannedOutputs(ctx context.Context) ([]provisioning.PlannedOutput, error) {
+	compileResult, err := p.compileBicep(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("creating template: %w", err)
+	}
+
+	var outputs []provisioning.PlannedOutput
+	for key, output := range compileResult.Template.Outputs {
+		if azure.IsSecuredARMType(output.Type) {
+			continue
+		}
+
+		outputs = append(outputs, provisioning.PlannedOutput{
+			Name: key,
+		})
+	}
+
+	return outputs, nil
 }

@@ -305,6 +305,7 @@ func TestIsRemoteBackendConfig(t *testing.T) {
 			require.NoError(t, err)
 
 			// #nosec G306 -- test file permissions are intentionally readable
+			//nolint:gosec // G703: test paths are controlled
 			err = os.WriteFile(filepath.Join(infraDir, "main.tf"), testContent, 0644)
 			require.NoError(t, err)
 

@@ -1,6 +1,8 @@
 {
     "$schema": "https://json-schema.org/draft/2019-09/schema",
     "$id": "https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json",
+    "title": "Azure Developer CLI configuration",
+    "description": "Configuration file for the Azure Developer CLI (azd)",
     "type": "object",
     "required": [
         "name"
@@ -57,8 +59,79 @@
                     "type": "string",
                     "title": "Name of the default module within the Azure provisioning templates",
                     "description": "Optional. The name of the Azure provisioning module used when provisioning resources. (Default: main)"
+                },
+                "layers": {
+                    "type": "array",
+                    "title": "Provisioning layers.",
+                    "description": "Optional. Layers for Azure infrastructure provisioning.",
+                    "uniqueItems": true,
+                    "items": {
+                        "type": "object",
+                        "title": "A provisioning layer.",
+                        "additionalProperties": false,
+                        "required": [
+                            "name",
+                            "path"
+                        ],
+                        "properties": {
+                            "name": {
+                                "type": "string",
+                                "title": "The name of the provisioning layer",
+                                "description": "The name of the provisioning layer"
+                            },
+                            "path": {
+                                "type": "string",
+                                "title": "Path to the location that contains Azure provisioning templates",
+                                "description": "The relative folder path to the Azure provisioning templates for the specified provider."
+                            },
+                            "module": {
+                                "type": "string",
+                                "title": "Name of the default module within the Azure provisioning templates",
+                                "description": "Optional. The name of the Azure provisioning module used when provisioning resources. (Default: main)"
+                            },
+                            "hooks": {
+                                "type": "object",
+                                "title": "Provisioning layer hooks",
+                                "description": "Hooks should match `provision` event names prefixed with `pre` or `post` depending on when the script should execute. When specifying paths they should be relative to the layer path.",
+                                "additionalProperties": false,
+                                "properties": {
+                                    "preprovision": {
+                                        "title": "pre provision hook",
+                                        "description": "Runs before provisioning the layer",
+                                        "$ref": "#/definitions/hooks"
+                                    },
+                                    "postprovision": {
+                                        "title": "post provision hook",
+                                        "description": "Runs after provisioning the layer",
+                                        "$ref": "#/definitions/hooks"
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
-            }
+            },
+            "allOf": [
+                {
+                    "if": {
+                        "required": [
+                            "layers"
+                        ],
+                        "properties": {
+                            "layers": {
+                                "type": "array",
+                                "minItems": 1
+                            }
+                        }
+                    },
+                    "then": {
+                        "properties": {
+                            "path": false,
+                            "module": false
+                        }
+                    }
+                }
+            ]
         },
         "services": {
             "type": "object",
@@ -860,6 +933,11 @@
                     "items": {
                         "type": "string"
                     }
+                },
+                "network": {
+                    "type": "string",
+                    "title": "Optional. The networking mode for RUN instructions during docker build",
+                    "description": "Sets the networking mode for RUN instructions during build. Passed as --network to docker build. For example, use 'host' to allow the build container to access the host network."
                 },
                 "remoteBuild": {
                     "type": "boolean",

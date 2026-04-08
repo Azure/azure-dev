@@ -371,7 +371,8 @@ func requireIsDefault(t *testing.T, list []contracts.EnvListEnvironment, envName
 		}
 	}
 
-	require.Fail(t, "%#v does not contain env with name %#v", list, envName)
+	require.Failf(t, "environment not found",
+		"%#v does not contain env with name %#v", list, envName)
 }
 
 func envNew(ctx context.Context, t *testing.T, cli *azdcli.CLI, envName string, usePrompt bool, args ...string) {

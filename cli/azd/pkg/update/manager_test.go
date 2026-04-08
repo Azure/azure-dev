@@ -641,7 +641,10 @@ type urlRewriteTransport struct {
 func (t *urlRewriteTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	// Rewrite the request URL to the test server, preserving path
 	newURL := t.targetURL + req.URL.Path
-	newReq, err := http.NewRequestWithContext(req.Context(), req.Method, newURL, req.Body)
+	//nolint:gosec // G704: URL from test server, not user input
+	newReq, err := http.NewRequestWithContext(
+		req.Context(), req.Method, newURL, req.Body,
+	)
 	if err != nil {
 		return nil, err
 	}

@@ -189,8 +189,12 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		return writer
 	})
 
-	container.MustRegisterScoped(func(ctx context.Context, cmd *cobra.Command) internal.EnvFlag {
-		// The env flag `-e, --environment` is available on most azd commands but not all
+	container.MustRegisterScoped(func(
+		ctx context.Context,
+		cmd *cobra.Command,
+		globalOptions *internal.GlobalCommandOptions,
+	) internal.EnvFlag {
+		// The env flag `-e, --environment` is available on most azd commands but not all.
 		// This is typically used to override the default environment and is used for bootstrapping other components
 		// such as the azd environment.
 		// If the flag is not available, don't panic, just return an empty string which will then allow for our default
@@ -199,6 +203,13 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		if err != nil {
 			log.Printf("'%s' command did not include --environment so using default environment instead.", cmd.CommandPath())
 			envValue = ""
+		}
+
+		// For extension commands (DisableFlagParsing=true), cobra never parses -e so
+		// cmd.Flags().GetString always returns "". Fall back to the value that was
+		// pre-parsed in ParseGlobalFlags before the command tree was built.
+		if envValue == "" && globalOptions.EnvironmentName != "" {
+			envValue = globalOptions.EnvironmentName
 		}
 
 		if envValue == "" {
@@ -981,6 +992,11 @@ func (w *workflowCmdAdapter) ExecuteContext(ctx context.Context, args []string) 
 // extractGlobalArgs extracts global flag arguments from the process command line.
 // It parses os.Args against the global flag set and returns only the flags that were
 // explicitly set by the user, formatted as command-line arguments.
+//
+// The "environment" flag is intentionally excluded: workflow steps may define their own
+// -e/--environment (e.g. `azd: env set KEY VALUE -e env1`), and appending the parent's
+// --environment would override the step-level value. Environment propagation to workflow
+// steps is handled by the globalOptions DI fallback in the EnvFlag resolver instead.
 func extractGlobalArgs() []string {
 	globalFlagSet := CreateGlobalFlagSet()
 	globalFlagSet.SetOutput(io.Discard)
@@ -989,7 +1005,7 @@ func extractGlobalArgs() []string {
 
 	var result []string
 	globalFlagSet.VisitAll(func(f *pflag.Flag) {
-		if f.Changed {
+		if f.Changed && f.Name != internal.EnvironmentNameFlagName {
 			// Use --flag=value syntax to avoid ambiguity. The two-arg form (--flag value)
 			// doesn't work for boolean flags, where the value is treated as a positional arg.
 			result = append(result, fmt.Sprintf("--%s=%s", f.Name, f.Value.String()))

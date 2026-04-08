@@ -46,6 +46,7 @@ type testCase struct {
 }
 
 func Test_Initializer_Initialize(t *testing.T) {
+	t.Parallel()
 	tests := []testCase{
 		{"RegularTemplate", "template", []string{"script/test.sh"}},
 		{"MinimalTemplate", "template-minimal", []string{}},
@@ -81,6 +82,7 @@ func Test_Initializer_Initialize(t *testing.T) {
 }
 
 func Test_Initializer_DevCenter(t *testing.T) {
+	t.Parallel()
 	projectDir := t.TempDir()
 	azdCtx := azdcontext.NewAzdContextWithDirectory(projectDir)
 	mockContext := mocks.NewMockContext(context.Background())
@@ -124,6 +126,7 @@ func Test_Initializer_DevCenter(t *testing.T) {
 }
 
 func Test_Initializer_InitializeWithOverwritePrompt(t *testing.T) {
+	t.Parallel()
 	templateDir := "template"
 	tests := []struct {
 		name      string
@@ -325,6 +328,7 @@ func verifyExecutableFilePermissions(t *testing.T,
 }
 
 func Test_Initializer_WriteCoreAssets(t *testing.T) {
+	t.Parallel()
 	type setup struct {
 		projectFile   string
 		gitignoreFile string
@@ -454,6 +458,7 @@ func verifyProjectFile(t *testing.T, azdCtx *azdcontext.AzdContext, content stri
 }
 
 func Test_determineDuplicates(t *testing.T) {
+	t.Parallel()
 	type args struct {
 		sourceFiles []string
 		targetFiles []string
@@ -511,6 +516,7 @@ func createFiles(t *testing.T, dir string, files []string) {
 }
 
 func Test_parseExecutableFiles(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name              string
 		stagedFilesOutput string
@@ -567,6 +573,7 @@ func Test_parseExecutableFiles(t *testing.T) {
 }
 
 func TestInitializer_PromptIfNonEmpty(t *testing.T) {
+	t.Parallel()
 	type dirSetup struct {
 		// whether the directory is a git repository
 		isGitRepo bool
@@ -655,6 +662,7 @@ func TestInitializer_PromptIfNonEmpty(t *testing.T) {
 }
 
 func TestInitializer_writeFileSafe(t *testing.T) {
+	t.Parallel()
 	const nameNoExt = "test"
 	const ext = ".txt"
 	const name = nameNoExt + ext
@@ -794,6 +802,7 @@ func createLocalTemplateDir(t *testing.T, sourceTestData string) string {
 		if err != nil {
 			return err
 		}
+		//nolint:gosec // G703: test paths are controlled
 		return os.WriteFile(filepath.Join(dir, relTarget), content, 0600)
 	})
 	require.NoError(t, err)
@@ -802,6 +811,7 @@ func createLocalTemplateDir(t *testing.T, sourceTestData string) string {
 }
 
 func Test_Initializer_Initialize_LocalTemplate(t *testing.T) {
+	t.Parallel()
 	// Create a local template directory (NOT a git repo) with real files
 	localTemplateDir := createLocalTemplateDir(t, testDataPath("template"))
 
@@ -858,6 +868,7 @@ func Test_Initializer_Initialize_LocalTemplate(t *testing.T) {
 }
 
 func Test_Initializer_Initialize_LocalTemplateWithGitDir(t *testing.T) {
+	t.Parallel()
 	// Create a local template that also has a .git directory
 	localTemplateDir := createLocalTemplateDir(t, testDataPath("template-minimal"))
 
@@ -899,6 +910,7 @@ func Test_Initializer_Initialize_LocalTemplateWithGitDir(t *testing.T) {
 }
 
 func Test_Initializer_Initialize_LocalTemplateRespectsGitignore(t *testing.T) {
+	t.Parallel()
 	// Create a local template directory with a .gitignore that excludes certain files
 	localTemplateDir := createLocalTemplateDir(t, testDataPath("template"))
 
@@ -978,6 +990,7 @@ func Test_Initializer_Initialize_LocalTemplateRespectsGitignore(t *testing.T) {
 }
 
 func Test_Initializer_Initialize_LocalTemplateGitignoreNegation(t *testing.T) {
+	t.Parallel()
 	// Verify that .gitignore negation patterns (e.g., !important.log) are respected
 	localTemplateDir := createLocalTemplateDir(t, testDataPath("template"))
 
@@ -1030,6 +1043,7 @@ func Test_Initializer_Initialize_LocalTemplateGitignoreNegation(t *testing.T) {
 }
 
 func Test_Initializer_Initialize_LocalTemplateGitFile(t *testing.T) {
+	t.Parallel()
 	// In git worktrees and submodules, .git is a file (not a directory)
 	// pointing to an external gitdir. It must be excluded just like a .git directory.
 	localTemplateDir := createLocalTemplateDir(t, testDataPath("template-minimal"))
@@ -1070,6 +1084,7 @@ func Test_Initializer_Initialize_LocalTemplateGitFile(t *testing.T) {
 }
 
 func Test_Initializer_Initialize_LocalTemplateNestedGitignore(t *testing.T) {
+	t.Parallel()
 	// Nested .gitignore files in subdirectories should be respected,
 	// not just the root .gitignore.
 	localTemplateDir := createLocalTemplateDir(t, testDataPath("template"))
@@ -1129,6 +1144,7 @@ func Test_Initializer_Initialize_LocalTemplateNestedGitignore(t *testing.T) {
 }
 
 func Test_Initializer_Initialize_LocalTemplateOverlapRejected(t *testing.T) {
+	t.Parallel()
 	// "azd init -t ." (same directory) and "azd init -t .." (destination inside source)
 	// must be rejected with a clear error.
 	localTemplateDir := createLocalTemplateDir(t, testDataPath("template"))

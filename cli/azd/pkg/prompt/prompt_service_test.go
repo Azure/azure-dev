@@ -243,3 +243,159 @@ func TestPromptSubscription_NoPrompt_DefaultNotFound_DemoModeRedactsId(t *testin
 	require.ErrorContains(t, err, "default subscription not found")
 	require.False(t, strings.Contains(err.Error(), "sub-secret"))
 }
+
+func TestPromptLocation_NoPrompt_FiltersAllowedValues(t *testing.T) {
+	cfg := config.NewEmptyConfig()
+	err := cfg.Set("defaults.location", "westus3")
+	require.NoError(t, err)
+
+	ucm := newInMemoryUserConfigManager(cfg)
+	authManager := &mockauth.MockAuthManager{}
+	subscriptionManager := &mockaccount.MockSubscriptionManager{}
+	resourceService := &mockazapi.MockResourceService{}
+	mockConsole := mockinput.NewMockConsole()
+	mockConsole.SetNoPromptMode(true)
+
+	subscriptionManager.
+		On("GetLocations", mock.Anything, "sub-123").
+		Return([]account.Location{
+			{Name: "eastus2", DisplayName: "East US 2", RegionalDisplayName: "(US) East US 2"},
+			{Name: "westus3", DisplayName: "West US 3", RegionalDisplayName: "(US) West US 3"},
+		}, nil)
+
+	ps := NewPromptService(
+		authManager,
+		mockConsole,
+		ucm,
+		subscriptionManager,
+		resourceService,
+		&internal.GlobalCommandOptions{NoPrompt: true},
+	)
+
+	location, err := ps.PromptLocation(context.Background(), &AzureContext{
+		Scope: AzureScope{SubscriptionId: "sub-123"},
+	}, &SelectOptions{
+		AllowedValues: []string{"westus3"},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "westus3", location.Name)
+	subscriptionManager.AssertExpectations(t)
+}
+
+func TestPromptLocation_NoPrompt_FiltersAllowedValuesCaseInsensitive(t *testing.T) {
+	cfg := config.NewEmptyConfig()
+	err := cfg.Set("defaults.location", "WESTUS3")
+	require.NoError(t, err)
+
+	ucm := newInMemoryUserConfigManager(cfg)
+	authManager := &mockauth.MockAuthManager{}
+	subscriptionManager := &mockaccount.MockSubscriptionManager{}
+	resourceService := &mockazapi.MockResourceService{}
+	mockConsole := mockinput.NewMockConsole()
+	mockConsole.SetNoPromptMode(true)
+
+	subscriptionManager.
+		On("GetLocations", mock.Anything, "sub-123").
+		Return([]account.Location{
+			{Name: "eastus2", DisplayName: "East US 2", RegionalDisplayName: "(US) East US 2"},
+			{Name: "westus3", DisplayName: "West US 3", RegionalDisplayName: "(US) West US 3"},
+		}, nil)
+
+	ps := NewPromptService(
+		authManager,
+		mockConsole,
+		ucm,
+		subscriptionManager,
+		resourceService,
+		&internal.GlobalCommandOptions{NoPrompt: true},
+	)
+
+	location, err := ps.PromptLocation(context.Background(), &AzureContext{
+		Scope: AzureScope{SubscriptionId: "sub-123"},
+	}, &SelectOptions{
+		AllowedValues: []string{"WestUS3"},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "westus3", location.Name)
+	subscriptionManager.AssertExpectations(t)
+}
+
+func TestPromptLocation_NoPrompt_DefaultFilteredOut(t *testing.T) {
+	cfg := config.NewEmptyConfig()
+	err := cfg.Set("defaults.location", "westus3")
+	require.NoError(t, err)
+
+	ucm := newInMemoryUserConfigManager(cfg)
+	authManager := &mockauth.MockAuthManager{}
+	subscriptionManager := &mockaccount.MockSubscriptionManager{}
+	resourceService := &mockazapi.MockResourceService{}
+	mockConsole := mockinput.NewMockConsole()
+	mockConsole.SetNoPromptMode(true)
+
+	subscriptionManager.
+		On("GetLocations", mock.Anything, "sub-123").
+		Return([]account.Location{
+			{Name: "eastus2", DisplayName: "East US 2", RegionalDisplayName: "(US) East US 2"},
+			{Name: "westus3", DisplayName: "West US 3", RegionalDisplayName: "(US) West US 3"},
+		}, nil)
+
+	ps := NewPromptService(
+		authManager,
+		mockConsole,
+		ucm,
+		subscriptionManager,
+		resourceService,
+		&internal.GlobalCommandOptions{NoPrompt: true},
+	)
+
+	_, err = ps.PromptLocation(context.Background(), &AzureContext{
+		Scope: AzureScope{SubscriptionId: "sub-123"},
+	}, &SelectOptions{
+		AllowedValues: []string{"eastus2"},
+	})
+
+	require.Error(t, err)
+	require.ErrorContains(t, err, "default location 'westus3' not found in the available location options")
+	subscriptionManager.AssertExpectations(t)
+}
+
+func TestPromptLocation_NoPrompt_IgnoresEmptyAllowedValues(t *testing.T) {
+	cfg := config.NewEmptyConfig()
+	err := cfg.Set("defaults.location", "westus3")
+	require.NoError(t, err)
+
+	ucm := newInMemoryUserConfigManager(cfg)
+	authManager := &mockauth.MockAuthManager{}
+	subscriptionManager := &mockaccount.MockSubscriptionManager{}
+	resourceService := &mockazapi.MockResourceService{}
+	mockConsole := mockinput.NewMockConsole()
+	mockConsole.SetNoPromptMode(true)
+
+	subscriptionManager.
+		On("GetLocations", mock.Anything, "sub-123").
+		Return([]account.Location{
+			{Name: "eastus2", DisplayName: "East US 2", RegionalDisplayName: "(US) East US 2"},
+			{Name: "westus3", DisplayName: "West US 3", RegionalDisplayName: "(US) West US 3"},
+		}, nil)
+
+	ps := NewPromptService(
+		authManager,
+		mockConsole,
+		ucm,
+		subscriptionManager,
+		resourceService,
+		&internal.GlobalCommandOptions{NoPrompt: true},
+	)
+
+	location, err := ps.PromptLocation(context.Background(), &AzureContext{
+		Scope: AzureScope{SubscriptionId: "sub-123"},
+	}, &SelectOptions{
+		AllowedValues: []string{" ", ""},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "westus3", location.Name)
+	subscriptionManager.AssertExpectations(t)
+}

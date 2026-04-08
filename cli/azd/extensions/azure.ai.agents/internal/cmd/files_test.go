@@ -8,9 +8,28 @@ import (
 
 	"azureaiagent/internal/pkg/agents/agent_api"
 
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestFilesCommand_PersistentPreRunE_NoRecursion(t *testing.T) {
+	// Regression: PersistentPreRunE previously used cmd.Parent() which returned
+	// the "files" command itself when a subcommand ran, causing infinite recursion
+	// (stack overflow). The fix uses cmd.Root() to chain to the root command.
+	root := NewRootCommand()
+
+	// Override the list subcommand's RunE so it doesn't need a real environment.
+	filesCmd, _, _ := root.Find([]string{"files"})
+	require.NotNil(t, filesCmd)
+	for _, sub := range filesCmd.Commands() {
+		sub.RunE = func(cmd *cobra.Command, args []string) error { return nil }
+	}
+
+	root.SetArgs([]string{"files", "list"})
+	// If the bug is present this will stack-overflow instead of returning.
+	_ = root.Execute()
+}
 
 func TestFilesCommand_HasSubcommands(t *testing.T) {
 	cmd := newFilesCommand()

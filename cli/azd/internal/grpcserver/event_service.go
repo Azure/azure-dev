@@ -106,13 +106,22 @@ func (s *eventService) onSubscribeProjectEvent(
 	subscribeMsg *azdext.SubscribeProjectEvent,
 	broker *grpcbroker.MessageBroker[azdext.EventMessage],
 ) error {
+	if subscribeMsg == nil || len(subscribeMsg.EventNames) == 0 {
+		return status.Error(codes.InvalidArgument, "event names are required")
+	}
+
 	projectConfig, err := s.lazyProject.GetValue()
 	if err != nil {
 		return err
 	}
 
-	for i := 0; i < len(subscribeMsg.EventNames); i++ {
-		eventName := subscribeMsg.EventNames[i]
+	for i, eventName := range subscribeMsg.EventNames {
+		if eventName == "" {
+			return status.Errorf(
+				codes.InvalidArgument,
+				"event name at index %d cannot be empty", i,
+			)
+		}
 
 		evt := ext.Event(eventName)
 		// Pass the stream context (ctx) which has extension claims
@@ -191,13 +200,23 @@ func (s *eventService) onSubscribeServiceEvent(
 	subscribeMsg *azdext.SubscribeServiceEvent,
 	broker *grpcbroker.MessageBroker[azdext.EventMessage],
 ) error {
+	if subscribeMsg == nil || len(subscribeMsg.EventNames) == 0 {
+		return status.Error(codes.InvalidArgument, "event names are required")
+	}
+
 	projectConfig, err := s.lazyProject.GetValue()
 	if err != nil {
 		return err
 	}
 
-	for i := 0; i < len(subscribeMsg.EventNames); i++ {
-		eventName := subscribeMsg.EventNames[i]
+	for i, eventName := range subscribeMsg.EventNames {
+		if eventName == "" {
+			return status.Errorf(
+				codes.InvalidArgument,
+				"event name at index %d cannot be empty", i,
+			)
+		}
+
 		evt := ext.Event(eventName)
 		for _, serviceConfig := range projectConfig.Services {
 			if subscribeMsg.Language != "" && string(serviceConfig.Language) != subscribeMsg.Language {

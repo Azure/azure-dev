@@ -6,7 +6,10 @@ package middleware
 import (
 	"context"
 	"errors"
+	"os"
 	osexec "os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -286,6 +289,81 @@ func Test_ServiceHooks_Registered(t *testing.T) {
 	require.NotNil(t, result)
 	require.NoError(t, err)
 	require.Equal(t, 1, preDeployCount)
+}
+
+func Test_ServiceHooks_ValidationUsesServicePath(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	azdContext := createAzdContext(t)
+
+	envName := "test"
+	runOptions := Options{CommandPath: "deploy"}
+
+	projectConfig := project.ProjectConfig{
+		Name:     envName,
+		Services: map[string]*project.ServiceConfig{},
+	}
+
+	hookPath := filepath.Join("scripts", "predeploy.ps1")
+	expectedShell := "pwsh"
+	scriptContents := "Write-Host 'Hello'\n"
+	if runtime.GOOS == "windows" {
+		hookPath = filepath.Join("scripts", "predeploy.sh")
+		expectedShell = "bash"
+		scriptContents = "echo hello\n"
+	}
+
+	serviceConfig := &project.ServiceConfig{
+		EventDispatcher: ext.NewEventDispatcher[project.ServiceLifecycleEventArgs](project.ServiceEvents...),
+		Language:        "ts",
+		RelativePath:    "./src/api",
+		Host:            "appservice",
+		Hooks: map[string][]*ext.HookConfig{
+			"predeploy": {
+				{
+					Run: hookPath,
+				},
+			},
+		},
+	}
+
+	projectConfig.Services["api"] = serviceConfig
+
+	err := ensureAzdValid(mockContext, azdContext, envName, &projectConfig)
+	require.NoError(t, err)
+
+	projectConfig.Services["api"].Project = &projectConfig
+
+	serviceHookPath := filepath.Join(serviceConfig.Path(), hookPath)
+	require.NoError(t, os.MkdirAll(filepath.Dir(serviceHookPath), 0o755))
+	require.NoError(t, os.WriteFile(serviceHookPath, []byte(scriptContents), 0o600))
+
+	mockContext.CommandRunner.MockToolInPath("pwsh", nil)
+
+	var executedShell string
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return true
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		executedShell = args.Cmd
+		return exec.NewRunResult(0, "", ""), nil
+	})
+
+	nextFn := func(ctx context.Context) (*actions.ActionResult, error) {
+		err := serviceConfig.Invoke(ctx, project.ServiceEventDeploy, project.ServiceLifecycleEventArgs{
+			Project:        &projectConfig,
+			Service:        serviceConfig,
+			ServiceContext: project.NewServiceContext(),
+		}, func() error {
+			return nil
+		})
+
+		return &actions.ActionResult{}, err
+	}
+
+	result, err := runMiddleware(mockContext, envName, &projectConfig, &runOptions, nextFn)
+
+	require.NotNil(t, result)
+	require.NoError(t, err)
+	require.Equal(t, expectedShell, executedShell)
 }
 
 func createAzdContext(t *testing.T) *azdcontext.AzdContext {

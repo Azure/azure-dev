@@ -15,6 +15,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// NOTE: Automated testing of updateViaMSI invoking PowerShell with the correct
+// arguments and isStandardMSIInstall succeeding on a standard path are limited
+// because go test compiles to temp directories that never match the expected MSI
+// install path (Programs\Azure Dev CLI), and backupCurrentExe cannot rename the
+// running test binary. We rely on manual testing on actual per-user MSI installs
+// to validate these code paths.
+
 func TestExpectedPerUserInstallDir(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -42,31 +49,16 @@ func TestExpectedPerUserInstallDir(t *testing.T) {
 	}
 }
 
-func TestVersionFlag(t *testing.T) {
-	tests := []struct {
-		name    string
-		channel Channel
-		want    string
-	}{
-		{"stable channel", ChannelStable, "stable"},
-		{"daily channel", ChannelDaily, "daily"},
-		{"unknown defaults to stable", Channel("nightly"), "stable"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := versionFlag(tt.channel)
-			require.Equal(t, tt.want, got)
-		})
-	}
-}
-
 func TestBuildInstallScriptArgs(t *testing.T) {
+	t.Setenv("LOCALAPPDATA", `C:\Users\testuser\AppData\Local`)
+	expectedDir := expectedPerUserInstallDir()
+
 	tests := []struct {
 		name    string
 		channel Channel
 		// We check that certain substrings appear in the constructed args
-		wantContains []string
+		wantContains    []string
+		wantNotContains []string
 	}{
 		{
 			name:    "stable",
@@ -77,6 +69,10 @@ func TestBuildInstallScriptArgs(t *testing.T) {
 				"-Command",
 				installScriptURL,
 				"-Version 'stable'",
+				"Remove-Item",
+			},
+			wantNotContains: []string{
+				"-InstallFolder",
 				"-SkipVerify",
 			},
 		},
@@ -89,6 +85,11 @@ func TestBuildInstallScriptArgs(t *testing.T) {
 				"-Command",
 				installScriptURL,
 				"-Version 'daily'",
+				"-InstallFolder",
+				expectedDir,
+				"Remove-Item",
+			},
+			wantNotContains: []string{
 				"-SkipVerify",
 			},
 		},
@@ -105,52 +106,74 @@ func TestBuildInstallScriptArgs(t *testing.T) {
 			for _, s := range tt.wantContains {
 				require.Contains(t, joined, s, "expected args to contain %q", s)
 			}
+			for _, s := range tt.wantNotContains {
+				require.NotContains(t, joined, s, "expected args NOT to contain %q", s)
+			}
 		})
 	}
 }
 
+func TestEscapeForPSSingleQuote(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"no quotes", `C:\Users\testuser`, `C:\Users\testuser`},
+		{"single apostrophe", `C:\Users\O'Connor`, `C:\Users\O''Connor`},
+		{"multiple apostrophes", `C:\it's\a'path`, `C:\it''s\a''path`},
+		{"empty string", "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, escapeForPSSingleQuote(tt.input))
+		})
+	}
+}
+
+func TestBuildInstallScriptArgs_ApostropheInPath(t *testing.T) {
+	t.Setenv("LOCALAPPDATA", `C:\Users\O'Connor\AppData\Local`)
+
+	args := buildInstallScriptArgs(ChannelDaily)
+	script := args[4]
+
+	// The apostrophe must be doubled for a valid PowerShell single-quoted string.
+	require.Contains(t, script, `O''Connor`)
+	// Must NOT contain unescaped apostrophe inside the -InstallFolder value.
+	require.NotContains(t, script, `-InstallFolder 'C:\Users\O'Connor`)
+}
+
 func TestBuildInstallScriptArgs_Structure(t *testing.T) {
+	t.Setenv("LOCALAPPDATA", `C:\Users\testuser\AppData\Local`)
+	expectedDir := expectedPerUserInstallDir()
+
 	args := buildInstallScriptArgs(ChannelStable)
 
-	// The args should be: ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", <script>]
 	require.Equal(t, 5, len(args), "expected exactly 5 args")
 	require.Equal(t, "-NoProfile", args[0])
 	require.Equal(t, "-ExecutionPolicy", args[1])
 	require.Equal(t, "Bypass", args[2])
 	require.Equal(t, "-Command", args[3])
 
-	// The script (args[4]) should be a single string containing the full PowerShell pipeline
+	// Stable downloads to temp file — passes -Version 'stable' explicitly
 	script := args[4]
 	require.Contains(t, script, "Invoke-RestMethod")
 	require.Contains(t, script, installScriptURL)
-	require.Contains(t, script, "-SkipVerify")
 	require.Contains(t, script, "Remove-Item")
-}
+	require.Contains(t, script, "-Version 'stable'")
+	require.NotContains(t, script, "-InstallFolder")
 
-func TestIsStandardMSIInstall_StandardPath(t *testing.T) {
-	// Get the actual exe path and set LOCALAPPDATA so that
-	// expectedPerUserInstallDir() == filepath.Dir(exePath).
-	// expectedPerUserInstallDir = LOCALAPPDATA + \Programs\Azure Dev CLI
-	// So we need LOCALAPPDATA = filepath.Dir(exePath) stripped of "\Programs\Azure Dev CLI".
-	exePath, err := os.Executable()
-	require.NoError(t, err)
-	exePath, err = filepath.EvalSymlinks(exePath)
-	require.NoError(t, err)
-
-	actualDir := filepath.Dir(exePath)
-	suffix := filepath.Join("Programs", "Azure Dev CLI")
-	if !strings.HasSuffix(strings.ToLower(filepath.Clean(actualDir)), strings.ToLower(suffix)) {
-		// The test binary isn't in the expected suffix path (typical in CI/dev).
-		// Skip this test since we can't synthetically set LOCALAPPDATA to match.
-		t.Skipf("test binary dir %q does not end with %q; skipping standard-path test", actualDir, suffix)
-	}
-
-	localAppData := strings.TrimSuffix(filepath.Clean(actualDir), filepath.Clean(suffix))
-	localAppData = strings.TrimRight(localAppData, string(filepath.Separator))
-	t.Setenv("LOCALAPPDATA", localAppData)
-
-	err = isStandardMSIInstall()
-	require.NoError(t, err)
+	// Daily downloads to temp file with -Version 'daily'
+	argsDaily := buildInstallScriptArgs(ChannelDaily)
+	require.Equal(t, 5, len(argsDaily))
+	require.Equal(t, "Bypass", argsDaily[2])
+	scriptDaily := argsDaily[4]
+	require.Contains(t, scriptDaily, "Invoke-RestMethod")
+	require.Contains(t, scriptDaily, installScriptURL)
+	require.Contains(t, scriptDaily, "-Version 'daily'")
+	require.Contains(t, scriptDaily, "-InstallFolder")
+	require.Contains(t, scriptDaily, expectedDir)
+	require.Contains(t, scriptDaily, "Remove-Item")
 }
 
 func TestIsStandardMSIInstall_NonStandardPath(t *testing.T) {
@@ -163,7 +186,8 @@ func TestIsStandardMSIInstall_NonStandardPath(t *testing.T) {
 	var updateErr *UpdateError
 	require.ErrorAs(t, err, &updateErr)
 	require.Equal(t, CodeNonStandardInstall, updateErr.Code)
-	require.Contains(t, err.Error(), "non-standard location")
+	require.Contains(t, err.Error(), "managed by an administrator")
+	require.Contains(t, err.Error(), "AZD_SKIP_UPDATE_CHECK=1")
 }
 
 func TestIsStandardMSIInstall_MissingLocalAppData(t *testing.T) {

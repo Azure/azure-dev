@@ -11,6 +11,7 @@ import (
 )
 
 func TestIsBuiltInCommand(t *testing.T) {
+	t.Parallel()
 	// Create a mock root command with some subcommands
 	rootCmd := &cobra.Command{
 		Use: "azd",
@@ -77,6 +78,7 @@ func TestIsBuiltInCommand(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			result := isBuiltInCommand(rootCmd, tt.commandName)
 			if result != tt.expected {
 				t.Errorf("isBuiltInCommand(%q) = %v, expected %v", tt.commandName, result, tt.expected)
@@ -86,6 +88,7 @@ func TestIsBuiltInCommand(t *testing.T) {
 }
 
 func TestHasSubcommand(t *testing.T) {
+	t.Parallel()
 	// Create a command with subcommands
 	parentCmd := &cobra.Command{Use: "parent"}
 
@@ -137,6 +140,7 @@ func TestHasSubcommand(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			result := hasSubcommand(parentCmd, tt.cmdName)
 			assert.Equal(t, tt.expected, result)
 		})
@@ -144,6 +148,7 @@ func TestHasSubcommand(t *testing.T) {
 }
 
 func TestGetCommandPath(t *testing.T) {
+	t.Parallel()
 	// Build a command hierarchy: root -> ai -> agent
 	rootCmd := &cobra.Command{Use: "azd"}
 	aiCmd := &cobra.Command{Use: "ai"}
@@ -176,6 +181,7 @@ func TestGetCommandPath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			result := getCommandPath(tt.cmd)
 			assert.Equal(t, tt.expected, result)
 		})
@@ -183,6 +189,7 @@ func TestGetCommandPath(t *testing.T) {
 }
 
 func TestBuildNamespaceArgs(t *testing.T) {
+	t.Parallel()
 	// Build a command hierarchy: root -> ai
 	rootCmd := &cobra.Command{Use: "azd"}
 	aiCmd := &cobra.Command{Use: "ai"}
@@ -228,6 +235,7 @@ func TestBuildNamespaceArgs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			result := buildNamespaceArgs(tt.cmd, tt.remainingArgs)
 			assert.Equal(t, tt.expected, result)
 		})
@@ -235,6 +243,7 @@ func TestBuildNamespaceArgs(t *testing.T) {
 }
 
 func TestPartialNamespaceDetection(t *testing.T) {
+	t.Parallel()
 	// This test verifies the logic for detecting when auto-install should trigger
 	// for partial namespace matches vs when an extension command should handle args.
 
@@ -300,6 +309,7 @@ func TestPartialNamespaceDetection(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			foundCmd, remaining, err := rootCmd.Find(tt.args)
 			assert.NoError(t, err)
 			assert.Equal(t, tt.expectRemainingArgs, remaining)

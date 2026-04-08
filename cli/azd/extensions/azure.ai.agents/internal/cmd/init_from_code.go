@@ -71,6 +71,37 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 		a.flags.src = relPath
 	}
 
+	// Default src to current directory when not specified
+	srcDir := a.flags.src
+	if srcDir == "" {
+		srcDir = "."
+	}
+
+	// Check if agent.yaml already exists before the interactive setup so the user
+	// doesn't complete the full agent configuration only to have it discarded.
+	agentYamlPath := filepath.Join(srcDir, "agent.yaml")
+	if _, statErr := os.Stat(agentYamlPath); statErr == nil {
+		if a.flags.NoPrompt {
+			return exterrors.Cancelled("agent.yaml already exists; overwrite declined in no-prompt mode")
+		}
+
+		confirmResp, err := a.azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+			Options: &azdext.ConfirmOptions{
+				Message:      fmt.Sprintf("An agent.yaml already exists in %q. Overwrite?", srcDir),
+				DefaultValue: new(false),
+			},
+		})
+		if err != nil {
+			if exterrors.IsCancellation(err) {
+				return exterrors.Cancelled("overwrite confirmation was cancelled")
+			}
+			return fmt.Errorf("prompting for overwrite confirmation: %w", err)
+		}
+		if !*confirmResp.Value {
+			return exterrors.Cancelled("agent.yaml already exists; overwrite declined")
+		}
+	}
+
 	// No manifest pointer provided - process local agent code
 	// Create a definition based on user prompts
 	localDefinition, err := a.createDefinitionFromLocalAgent(ctx)
@@ -79,11 +110,6 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 	}
 
 	if localDefinition != nil {
-		// Default src to current directory when not specified
-		srcDir := a.flags.src
-		if srcDir == "" {
-			srcDir = "."
-		}
 
 		// Write the definition to a file in the src directory
 		_, err := a.writeDefinitionToSrcDir(localDefinition, srcDir)
@@ -442,6 +468,12 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 	// TODO: Prompt user for agent kind
 	agentKind := agent_yaml.AgentKindHosted
 
+	// Prompt user for supported protocols
+	protocols, err := promptProtocols(ctx, a.azdClient.Prompt(), a.flags.NoPrompt, a.flags.protocols)
+	if err != nil {
+		return nil, err
+	}
+
 	// Ask user how they want to configure a model
 	modelConfigChoices := []*azdext.SelectChoice{
 		{Label: "Deploy a new model from the catalog", Value: "new"},
@@ -551,12 +583,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 			Name: agentName,
 			Kind: agentKind,
 		},
-		Protocols: []agent_yaml.ProtocolVersionRecord{
-			{
-				Protocol: "responses",
-				Version:  "v1",
-			},
-		},
+		Protocols: protocols,
 		EnvironmentVariables: &[]agent_yaml.EnvironmentVariable{
 			{
 				Name:  "AZURE_OPENAI_ENDPOINT",
@@ -594,7 +621,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 			return nil, fmt.Errorf("failed to set AZURE_AI_MODEL_DEPLOYMENT_NAME: %w", err)
 		}
 	} else if selectedModel != nil {
-		modelDetails, err := resolveModelDeployment(ctx, a.azdClient, a.azureContext, selectedModel, a.azureContext.Scope.Location)
+		modelDetails, err := a.resolveSelectedModelDeployment(ctx, selectedModel)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get model deployment details: %w", err)
 		}
@@ -623,6 +650,31 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 	}
 
 	return definition, nil
+}
+
+func (a *InitFromCodeAction) resolveSelectedModelDeployment(
+	ctx context.Context,
+	model *azdext.AiModel,
+) (*azdext.AiModelDeployment, error) {
+	deployments, err := resolveModelDeployments(ctx, a.azdClient, a.azureContext, model, a.azureContext.Scope.Location)
+	if err == nil {
+		if candidate := selectBestModelDeploymentCandidate(model, deployments); candidate != nil {
+			return candidate, nil
+		}
+	}
+
+	if err != nil && !isRecoverableDeploymentSelectionError(err) {
+		return nil, exterrors.FromAiService(err, exterrors.CodeModelResolutionFailed)
+	}
+
+	selector := &modelSelector{
+		azdClient:    a.azdClient,
+		azureContext: a.azureContext,
+		environment:  a.environment,
+		flags:        a.flags,
+	}
+
+	return selector.getModelDetails(ctx, model.Name)
 }
 
 // sanitizeAgentName converts a string into a valid agent name:
@@ -742,10 +794,13 @@ func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string,
 			Memory: project.DefaultMemory,
 			Cpu:    project.DefaultCpu,
 		},
-		Scale: &project.ScaleSettings{
+	}
+
+	if !isVNextEnabled(ctx, a.azdClient) {
+		agentConfig.Container.Scale = &project.ScaleSettings{
 			MinReplicas: project.DefaultMinReplicas,
 			MaxReplicas: project.DefaultMaxReplicas,
-		},
+		}
 	}
 
 	agentConfig.Deployments = a.deploymentDetails
@@ -783,4 +838,127 @@ func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string,
 
 	fmt.Printf("\nAdded your agent as a service entry named '%s' under the file azure.yaml.\n", agentName)
 	return nil
+}
+
+// protocolInfo pairs a protocol name with the default version used when generating agent.yaml.
+type protocolInfo struct {
+	Name    string
+	Version string
+}
+
+// knownProtocols lists the protocols offered during init, in display order.
+var knownProtocols = []protocolInfo{
+	{Name: "responses", Version: "v1"},
+	{Name: "invocations", Version: "v0.0.1"},
+}
+
+// promptProtocols asks the user which protocols their agent supports.
+// When flagProtocols is non-empty the prompt is skipped and those values are used directly.
+// When noPrompt is true and no flag values are provided, defaults to [responses/v1].
+func promptProtocols(
+	ctx context.Context,
+	promptClient azdext.PromptServiceClient,
+	noPrompt bool,
+	flagProtocols []string,
+) ([]agent_yaml.ProtocolVersionRecord, error) {
+	// Build a lookup from protocol name → version for known protocols.
+	versionOf := make(map[string]string, len(knownProtocols))
+	for _, p := range knownProtocols {
+		versionOf[p.Name] = p.Version
+	}
+
+	// If explicit flag values were provided, use them directly (with dedup).
+	if len(flagProtocols) > 0 {
+		seen := make(map[string]bool, len(flagProtocols))
+		records := make([]agent_yaml.ProtocolVersionRecord, 0, len(flagProtocols))
+		for _, name := range flagProtocols {
+			if seen[name] {
+				continue
+			}
+			seen[name] = true
+
+			version, ok := versionOf[name]
+			if !ok {
+				return nil, exterrors.Validation(
+					exterrors.CodeInvalidAgentManifest,
+					fmt.Sprintf("unknown protocol %q; supported values: %s",
+						name, knownProtocolNames()),
+					fmt.Sprintf("Use one of the supported protocol values: %s", knownProtocolNames()),
+				)
+			}
+			records = append(records, agent_yaml.ProtocolVersionRecord{
+				Protocol: name,
+				Version:  version,
+			})
+		}
+		return records, nil
+	}
+
+	// Non-interactive mode: default to responses.
+	if noPrompt {
+		return []agent_yaml.ProtocolVersionRecord{
+			{Protocol: "responses", Version: "v1"},
+		}, nil
+	}
+
+	// Build multi-select choices; "responses" is pre-selected.
+	choices := make([]*azdext.MultiSelectChoice, 0, len(knownProtocols))
+	for _, p := range knownProtocols {
+		choices = append(choices, &azdext.MultiSelectChoice{
+			Value:    p.Name,
+			Label:    p.Name,
+			Selected: p.Name == "responses",
+		})
+	}
+
+	resp, err := promptClient.MultiSelect(ctx, &azdext.MultiSelectRequest{
+		Options: &azdext.MultiSelectOptions{
+			Message:     "Which protocols does your agent support?",
+			Choices:     choices,
+			HelpMessage: "Use arrow keys to move, space to toggle, enter to confirm",
+		},
+	})
+	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return nil, exterrors.Cancelled("protocol selection was cancelled")
+		}
+		return nil, fmt.Errorf("failed to prompt for protocols: %w", err)
+	}
+
+	// Collect selected protocols.
+	var records []agent_yaml.ProtocolVersionRecord
+	for _, choice := range resp.Values {
+		if choice.Selected {
+			version, ok := versionOf[choice.Value]
+			if !ok {
+				return nil, exterrors.Internal(
+					"prompt_protocols",
+					fmt.Sprintf("unexpected protocol %q returned from prompt", choice.Value),
+				)
+			}
+			records = append(records, agent_yaml.ProtocolVersionRecord{
+				Protocol: choice.Value,
+				Version:  version,
+			})
+		}
+	}
+
+	if len(records) == 0 {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			"at least one protocol must be selected",
+			"Select at least one protocol for your agent.",
+		)
+	}
+
+	return records, nil
+}
+
+// knownProtocolNames returns a comma-separated list of known protocol names.
+func knownProtocolNames() string {
+	names := make([]string, 0, len(knownProtocols))
+	for _, p := range knownProtocols {
+		names = append(names, p.Name)
+	}
+	return strings.Join(names, ", ")
 }

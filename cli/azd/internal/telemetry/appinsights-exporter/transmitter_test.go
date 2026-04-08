@@ -91,12 +91,14 @@ func newTestTlsClientServer() (Transmitter, *testServer) {
 }
 
 func TestBasicTransitTls(t *testing.T) {
+	t.Parallel()
 	client, server := newTestTlsClientServer()
 
 	doBasicTransmit(client, server, t)
 }
 
 func TestBasicTransmit(t *testing.T) {
+	t.Parallel()
 	client, server := newTestClientServer()
 
 	doBasicTransmit(client, server, t)
@@ -178,6 +180,7 @@ func doBasicTransmit(client Transmitter, server *testServer, t *testing.T) {
 }
 
 func TestFailedTransmit(t *testing.T) {
+	t.Parallel()
 	client, server := newTestClientServer()
 	defer server.Close()
 
@@ -231,6 +234,7 @@ func TestFailedTransmit(t *testing.T) {
 }
 
 func TestThrottledTransmit(t *testing.T) {
+	t.Parallel()
 	client, server := newTestClientServer()
 	defer server.Close()
 
@@ -318,6 +322,7 @@ func checkTransmitResult(t *testing.T, result *TransmissionResult, expected *res
 }
 
 func TestTransmitResults(t *testing.T) {
+	t.Parallel()
 	retryAfter := time.Unix(1502322237, 0)
 	partialNoRetries := &BackendResponse{
 		ItemsAccepted: 3,
@@ -388,6 +393,7 @@ func TestTransmitResults(t *testing.T) {
 }
 
 func TestGetRetryItems(t *testing.T) {
+	t.Parallel()
 	// Keep a pristine copy.
 	originalPayload, originalItems := makePayload()
 

@@ -260,6 +260,13 @@ func Test_Invalid_Project_File(t *testing.T) {
 				template: test-proj-template
 			services:
 		`,
+		"NilService":  "name: test-proj\nservices:\n  web:\n    # placeholder\n",
+		"NilResource": "name: test-proj\nresources:\n  mydb:\n    # placeholder\n",
+		"NilServiceAndResource": "name: test-proj\nservices:\n  web:\n" +
+			"    # placeholder\nresources:\n  mydb:\n    # placeholder\n",
+		"NilProjectHook": "name: test-proj\nhooks:\n  preprovision:\n",
+		"NilServiceHook": "name: test-proj\nservices:\n  web:\n" +
+			"    language: python\n    host: appservice\n    hooks:\n      predeploy:\n",
 	}
 
 	for name, test := range tests {

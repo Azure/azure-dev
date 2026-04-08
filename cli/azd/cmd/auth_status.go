@@ -96,10 +96,13 @@ func (a *authStatusAction) Run(ctx context.Context) (*actions.ActionResult, erro
 		res.Status = contracts.AuthStatusUnauthenticated
 	} else {
 		res.Status = contracts.AuthStatusAuthenticated
-		_, err := a.verifyLoggedIn(ctx, scopes)
+		token, err := a.verifyLoggedIn(ctx, scopes)
 		if err != nil {
 			res.Status = contracts.AuthStatusUnauthenticated
 			log.Printf("error: verifying logged in status: %v", err)
+		} else if token != nil {
+			expiresOn := contracts.RFC3339Time(token.ExpiresOn)
+			res.ExpiresOn = &expiresOn
 		}
 
 		switch details.LoginType {

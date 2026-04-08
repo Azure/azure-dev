@@ -23,6 +23,16 @@ Table of Contents
     - [Workflow Service](#workflow-service)
     - [Copilot Service](#copilot-service)
 
+### Related Guides
+
+| Guide | Description |
+|-------|-------------|
+| [Extension SDK Reference](./extension-sdk-reference.md) | Complete API reference for `azdext` SDK helpers (command scaffolding, MCP builder, security policy, service-target base). |
+| [Extension Migration Guide](./extension-migration-guide.md) | Before/after cookbook for migrating from pre-#6856 patterns to SDK helpers. |
+| [Extension End-to-End Walkthrough](./extension-e2e-walkthrough.md) | Build a complete extension from scratch with root command, MCP server, lifecycle events, and security. |
+| [Extension Framework Services](./extension-framework-services.md) | Custom language/framework support via `FrameworkServiceProvider`. |
+| [Extension Style Guide](./extensions-style-guide.md) | Design guidelines for command integration, flags, and discoverability. |
+
 ## Getting Started
 
 `azd` extensions are currently a beta feature (Public Preview) within `azd`.
@@ -474,17 +484,19 @@ The build process automatically creates binaries for multiple platforms and arch
 
 `azd` uses OpenTelemetry and W3C Trace Context for distributed tracing. `azd` sets `TRACEPARENT` in the environment when it launches the extension process.
 
-Use `azdext.NewContext()` to hydrate the root context with trace context:
+The recommended approach is to use `azdext.Run`, which automatically creates a trace-aware context, injects the access token, reports structured errors, and handles `os.Exit`:
 
 ```go
 func main() {
-  ctx := azdext.NewContext()
-  rootCmd := cmd.NewRootCommand()
-  if err := rootCmd.ExecuteContext(ctx); err != nil {
-    // Handle error
-  }
+  azdext.Run(cmd.NewRootCommand())
 }
 ```
+
+For lifecycle-listener extensions, `azdext.NewListenCommand` sets up trace context and access token automatically within its handler.
+
+> **Note:** `azdext.NewContext()` is deprecated. Use `azdext.Run` for custom-command extensions
+> or `azdext.NewListenCommand`/`azdext.NewExtensionRootCommand` for lifecycle listeners.
+> `NewContext` remains available for backward compatibility but new extensions should not use it.
 
 To correlate Azure SDK calls with the parent trace, add the correlation policy to your client options:
 
@@ -1147,11 +1159,12 @@ func main() {
 }
 ```
 
-Alternatively, you can use `azdext.ReportError` directly for lower-level control:
+Alternatively, you can use `azdext.ReportError` directly for lower-level control
+(note: `NewContext` is deprecated — prefer `Run` for new extensions):
 
 ```go
 func main() {
-  ctx := azdext.NewContext()
+  ctx := azdext.NewContext()  // Deprecated: prefer azdext.Run
   ctx = azdext.WithAccessToken(ctx)
   rootCmd := cmd.NewRootCommand()
 
@@ -1966,10 +1979,14 @@ Returns available AI models for a subscription.
     - `locations` (repeated string)
     - `capabilities` (repeated string)
     - `formats` (repeated string)
-    - `statuses` (repeated string)
+    - `statuses` (repeated string, applied to version lifecycle status before aggregation)
     - `exclude_model_names` (repeated string)
 - **Response:** _ListModelsResponse_
   - `models` (repeated _AiModel_)
+
+`filter.statuses` matches version-level lifecycle status before aggregation. Returned models
+only contain versions (and locations) that matched. `AiModel.lifecycle_status` is deprecated
+and always empty; use `AiModelVersion.lifecycle_status` for lifecycle state.
 
 If `filter.locations` is empty, models are listed across all subscription locations.
 When `filter.locations` is provided, it limits which models are returned, but each returned model still contains canonical

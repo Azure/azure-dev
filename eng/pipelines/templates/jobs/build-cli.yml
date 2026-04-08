@@ -137,6 +137,8 @@ jobs:
           scriptArguments: >-
             -UnitTestCoverageDir './cover-$(AZURE_DEV_CI_OS)/unit'
             -IntegrationTestCoverageDir './cover-$(AZURE_DEV_CI_OS)/int'
+            -UnitTestTimingFile './cover-$(AZURE_DEV_CI_OS)/test-timing-unit.json'
+            -IntegrationTestTimingFile './cover-$(AZURE_DEV_CI_OS)/test-timing-int.json'
         displayName: Test Go Binary
         env:
           # AZD integration test setup variables

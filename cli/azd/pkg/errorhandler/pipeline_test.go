@@ -532,7 +532,7 @@ func TestPipeline_RBACErrors(t *testing.T) {
 		{
 			name:        "RoleAssignmentExists",
 			code:        "RoleAssignmentExists",
-			wantMessage: "A role assignment with this configuration already exists.",
+			wantMessage: "A role assignment already exists for this identity.",
 		},
 		{
 			name:        "PrincipalNotFound",
@@ -581,6 +581,83 @@ func TestPipeline_NoSubscriptionsFound(t *testing.T) {
 	assert.Equal(t, "No Azure subscriptions were found for your account.", result.Message)
 	assert.Contains(t, result.Suggestion, "azd auth login --tenant-id")
 	assert.NotEmpty(t, result.Links, "Should include documentation links")
+}
+
+func TestPipeline_InvalidTemplateDeployment_ContainerApp(t *testing.T) {
+	pipeline := NewErrorHandlerPipeline(nil)
+
+	// Should match: InvalidTemplateDeployment with "container app" in message
+	err := &testDeploymentError{
+		Details: &testErrorDetails{
+			Code: "InvalidTemplateDeployment",
+		},
+		Title: "container app configuration is invalid",
+	}
+
+	result := pipeline.ProcessWithRules(
+		context.Background(),
+		err,
+		[]ErrorSuggestionRule{
+			{
+				ErrorType:  "testDeploymentError",
+				Properties: map[string]string{"Details.Code": "InvalidTemplateDeployment"},
+				Patterns:   []string{"container app", "containerapp"},
+				Message:    "The Container Apps deployment template is invalid.",
+				Suggestion: "Check your Bicep/ARM template.",
+			},
+		},
+	)
+	require.NotNil(t, result)
+	assert.Equal(t, "The Container Apps deployment template is invalid.", result.Message)
+
+	// Should NOT match: InvalidTemplateDeployment without CA keywords
+	errNonCA := &testDeploymentError{
+		Details: &testErrorDetails{
+			Code: "InvalidTemplateDeployment",
+		},
+		Title: "storage account configuration error",
+	}
+
+	resultNonCA := pipeline.ProcessWithRules(
+		context.Background(),
+		errNonCA,
+		[]ErrorSuggestionRule{
+			{
+				ErrorType:  "testDeploymentError",
+				Properties: map[string]string{"Details.Code": "InvalidTemplateDeployment"},
+				Patterns:   []string{"container app", "containerapp"},
+				Message:    "The Container Apps deployment template is invalid.",
+				Suggestion: "Check your Bicep/ARM template.",
+			},
+		},
+	)
+	assert.Nil(t, resultNonCA, "Should not match without container app keywords")
+}
+
+func TestPipeline_InvalidResourceGroupLocation(t *testing.T) {
+	pipeline := NewErrorHandlerPipeline(nil)
+
+	err := &testDeploymentError{
+		Details: &testErrorDetails{
+			Code: "InvalidResourceGroupLocation",
+		},
+		Title: "resource group location not supported",
+	}
+
+	result := pipeline.ProcessWithRules(
+		context.Background(),
+		err,
+		[]ErrorSuggestionRule{
+			{
+				ErrorType:  "testDeploymentError",
+				Properties: map[string]string{"Details.Code": "InvalidResourceGroupLocation"},
+				Message:    "The resource group location conflicts with the deployment.",
+				Suggestion: "Use the existing resource group's region or create a new one.",
+			},
+		},
+	)
+	require.NotNil(t, result)
+	assert.Equal(t, "The resource group location conflicts with the deployment.", result.Message)
 }
 
 func TestErrorSuggestionsYaml_IsValid(t *testing.T) {

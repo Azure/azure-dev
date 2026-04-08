@@ -54,6 +54,10 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 		)
 	}
 
+	if err := validateParsedConfig(&projectConfig); err != nil {
+		return nil, err
+	}
+
 	projectConfig.EventDispatcher = ext.NewEventDispatcher[ProjectLifecycleEventArgs]()
 
 	if projectConfig.RequiredVersions != nil && projectConfig.RequiredVersions.Azd != nil {
@@ -189,6 +193,12 @@ func Load(ctx context.Context, projectFilePath string) (*ProjectConfig, error) {
 			continue
 		}
 		projectConfig.Hooks[hookName] = externalHookList
+	}
+
+	// Validate hooks after merging infra-module definitions so that nil entries
+	// from *.hooks.yaml files are caught before they can cause nil-pointer panics.
+	if infraHookProblems := validateHooks(projectConfig.Hooks, "infra hooks"); len(infraHookProblems) > 0 {
+		return nil, &ConfigValidationError{Issues: infraHookProblems}
 	}
 
 	if projectConfig.Metadata != nil && projectConfig.Metadata.Template != "" {

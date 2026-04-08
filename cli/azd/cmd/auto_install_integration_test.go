@@ -4,12 +4,14 @@
 package cmd
 
 import (
+	"io"
 	"os"
 	"slices"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/runcontext/agentdetect"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -75,6 +77,53 @@ func TestExecuteWithAutoInstallIntegration(t *testing.T) {
 
 	// Restore original args
 	os.Args = originalArgs
+}
+
+func TestExecuteWithAutoInstall_ReturnsCommandErrorWithoutPanicForOutputFlags(t *testing.T) {
+	originalArgs := os.Args
+	defer func() {
+		os.Args = originalArgs
+	}()
+
+	clearAgentEnvVarsForTest(t)
+	agentdetect.ResetDetection()
+	defer agentdetect.ResetDetection()
+
+	os.Args = []string{
+		"azd",
+		"auth",
+		"token",
+		"--scope",
+		"https://graph.microsoft.com/.default",
+		"--tenant-id",
+		"00000000-0000-0000-0000-000000000000",
+		"--output",
+		"unknown",
+	}
+
+	rootContainer := ioc.NewNestedContainer(nil)
+	stderrReader, stderrWriter, err := os.Pipe()
+	require.NoError(t, err)
+
+	originalStderr := os.Stderr
+	os.Stderr = stderrWriter
+	defer func() {
+		os.Stderr = originalStderr
+	}()
+
+	var execErr error
+	require.NotPanics(t, func() {
+		execErr = ExecuteWithAutoInstall(t.Context(), rootContainer)
+	})
+
+	require.NoError(t, stderrWriter.Close())
+
+	stderrBytes, err := io.ReadAll(stderrReader)
+	require.NoError(t, err)
+
+	require.ErrorContains(t, execErr, "unsupported format 'unknown'")
+	require.NotContains(t, string(stderrBytes), "panic:")
+	require.Contains(t, string(stderrBytes), "Error: unsupported format 'unknown'")
 }
 
 // TestAgentDetectionIntegration tests the full agent detection integration flow.
@@ -198,6 +247,8 @@ func clearAgentEnvVarsForTest(t *testing.T) {
 		"GEMINI_CLI", "GEMINI_CLI_NO_RELAUNCH",
 		// OpenCode
 		"OPENCODE",
+		// Non-interactive env var
+		"AZD_NON_INTERACTIVE",
 		// User agent
 		internal.AzdUserAgentEnvVar,
 	}

@@ -14,13 +14,14 @@ In general, to make contributions a smooth and easy experience, we encourage the
 - Check existing issues for [bugs][bug issues] or [enhancements][enhancement issues].
 - Open an issue if things aren't working as expected, or if an enhancement is being proposed.
 - Start a conversation on the issue if you are thinking of submitting a pull request.
-- Submit a pull request. The `azd` team will work with you to review the changes and provide feedback. Once the pull request is accepted, a member will merge the changes. Thank you for taking time out of your day to help improve our community!
+- Submit a pull request **linked to the issue** (e.g., add `Fixes #123` to the PR description). PRs without a linked issue will be flagged by our automated checks. Issues in the current milestone get priority review — if yours isn't prioritized yet, tag **@rajeshkamal5050** or **@kristenwomack** and we'll help get it sorted.
+- The `azd` team will work with you to review the changes and provide feedback. Once the pull request is accepted, a member will merge the changes. Thank you for taking time out of your day to help improve our community!
 
 ## Building `azd`
 
 Prerequisites:
 
-- [Go](https://go.dev/dl/) 1.26
+- [Go](https://go.dev/dl/) 1.26.1
 
 Build:
 
@@ -88,6 +89,28 @@ go fix -diff ./...
 
 If `go fix -diff` reports any changes, apply them with `go fix ./...` and commit the result.
 CI enforces this check — PRs with pending `go fix` suggestions will fail the lint workflow.
+
+### Code Coverage
+
+azd collects coverage from both unit tests and integration/functional tests. Several modes are available depending on your needs.
+
+> **Working directory**: Run all coverage commands from the **repository root** (not `cli/azd/`). The scripts handle `cd cli/azd` internally.
+
+| Mode | Command | Mage Target | Prerequisites | Speed |
+|------|---------|-------------|--------------|-------|
+| **Unit only** (recommended) | `./eng/scripts/Get-LocalCoverageReport.ps1 -ShowReport -UnitOnly` | `mage coverage:unit` | None | ~5-10 min |
+| **Hybrid** (local unit + CI integration) | `./eng/scripts/Get-LocalCoverageReport.ps1 -ShowReport -MergeWithCI` | `mage coverage:hybrid` | `az login` | ~6-11 min |
+| **Full local** (unit + integration) | `./eng/scripts/Get-LocalCoverageReport.ps1 -ShowReport` | `mage coverage:full` | Azure subscription + service principal | ~30-60 min |
+| **CI baseline** (latest main) | `./eng/scripts/Get-CICoverageReport.ps1 -ShowReport` | `mage coverage:ci` | `az login` | ~1 min |
+
+Additional mage targets: `mage coverage:html` (HTML report), `mage coverage:check` (enforce 50% unit-only threshold; CI gate is 55% combined).
+Override the threshold with: `COVERAGE_MIN=55 mage coverage:check`.
+
+**Typical workflow**: Use *Unit only* during development for fast feedback. After pushing a PR, use *Hybrid* or check your PR's CI coverage with `Get-CICoverageReport.ps1 -PullRequestId <N> -ShowReport`.
+
+For HTML reports: add `-Html` to any local command. For threshold checks: add `-MinCoverage <N>`.
+
+See [Code Coverage Guide](./docs/code-coverage-guide.md) for architecture details, prerequisites, and troubleshooting.
 
 > Note: On Windows you may need to add `C:\Program Files\Git\usr\bin` to `%PATH%`
 

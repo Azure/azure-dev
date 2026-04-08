@@ -23,3 +23,235 @@ func TestArrayProperty_BasicSerialization(t *testing.T) {
 		t.Fatalf("Failed to unmarshal ArrayProperty: %v", err)
 	}
 }
+
+// TestToolKindToAPIType tests camelCase to snake_case tool kind conversion
+func TestToolKindToAPIType(t *testing.T) {
+	tests := []struct {
+		input    ToolKind
+		expected string
+	}{
+		{ToolKindFunction, "function"},
+		{ToolKindCustom, "custom"},
+		{ToolKindWebSearch, "web_search"},
+		{ToolKindBingGrounding, "bing_grounding"},
+		{ToolKindFileSearch, "file_search"},
+		{ToolKindMcp, "mcp"},
+		{ToolKindOpenApi, "openapi"},
+		{ToolKindCodeInterpreter, "code_interpreter"},
+		{ToolKindAzureAiSearch, "azure_ai_search"},
+		{ToolKindA2APreview, "a2a_preview"},
+		{ToolKind("unknown"), "unknown"},
+	}
+
+	for _, tc := range tests {
+		t.Run(string(tc.input), func(t *testing.T) {
+			result := ToolKindToAPIType(tc.input)
+			if result != tc.expected {
+				t.Errorf("ToolKindToAPIType(%s) = %s, want %s", tc.input, result, tc.expected)
+			}
+		})
+	}
+}
+
+// TestAPITypeToToolKind tests snake_case to camelCase tool kind conversion
+func TestAPITypeToToolKind(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected ToolKind
+	}{
+		{"web_search", ToolKindWebSearch},
+		{"bing_grounding", ToolKindBingGrounding},
+		{"file_search", ToolKindFileSearch},
+		{"mcp", ToolKindMcp},
+		{"openapi", ToolKindOpenApi},
+		{"code_interpreter", ToolKindCodeInterpreter},
+		{"azure_ai_search", ToolKindAzureAiSearch},
+		{"a2a_preview", ToolKindA2APreview},
+		{"unknown", ToolKind("unknown")},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.input, func(t *testing.T) {
+			result := APITypeToToolKind(tc.input)
+			if result != tc.expected {
+				t.Errorf("APITypeToToolKind(%s) = %s, want %s", tc.input, result, tc.expected)
+			}
+		})
+	}
+}
+
+// TestIsValidAuthType tests auth type validation
+func TestIsValidAuthType(t *testing.T) {
+	validTypes := []AuthType{AuthTypeAAD, AuthTypeApiKey, AuthTypeCustomKeys, AuthTypeNone, AuthTypeOAuth2, AuthTypePAT}
+	for _, at := range validTypes {
+		if !IsValidAuthType(at) {
+			t.Errorf("IsValidAuthType(%s) should be true", at)
+		}
+	}
+
+	if IsValidAuthType("InvalidType") {
+		t.Error("IsValidAuthType(InvalidType) should be false")
+	}
+}
+
+// TestValidateConnectionResource tests connection resource validation
+func TestValidateConnectionResource(t *testing.T) {
+	tests := []struct {
+		name    string
+		conn    ConnectionResource
+		wantErr bool
+	}{
+		{
+			name: "valid connection",
+			conn: ConnectionResource{
+				Resource: Resource{Name: "test", Kind: ResourceKindConnection},
+				Category: CategoryCustomKeys,
+				Target:   "https://example.com",
+				AuthType: AuthTypeCustomKeys,
+			},
+			wantErr: false,
+		},
+		{
+			name: "missing name",
+			conn: ConnectionResource{
+				Category: CategoryCustomKeys,
+				Target:   "https://example.com",
+				AuthType: AuthTypeCustomKeys,
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing category",
+			conn: ConnectionResource{
+				Resource: Resource{Name: "test", Kind: ResourceKindConnection},
+				Target:   "https://example.com",
+				AuthType: AuthTypeCustomKeys,
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid auth type",
+			conn: ConnectionResource{
+				Resource: Resource{Name: "test", Kind: ResourceKindConnection},
+				Category: CategoryCustomKeys,
+				Target:   "https://example.com",
+				AuthType: "BadAuth",
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateConnectionResource(&tc.conn)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("ValidateConnectionResource() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+// TestConnectionResourceSerialization tests JSON round-trip for ConnectionResource
+func TestConnectionResourceSerialization(t *testing.T) {
+	conn := ConnectionResource{
+		Resource:      Resource{Name: "test-conn", Kind: ResourceKindConnection},
+		Category:      CategoryCustomKeys,
+		Target:        "https://example.com",
+		AuthType:      AuthTypeCustomKeys,
+		Credentials:   map[string]any{"key": "secret"},
+		Metadata:      map[string]string{"env": "test"},
+		ExpiryTime:    "2025-12-31",
+		IsSharedToAll: new(true),
+	}
+
+	data, err := json.Marshal(conn)
+	if err != nil {
+		t.Fatalf("Failed to marshal ConnectionResource: %v", err)
+	}
+
+	var conn2 ConnectionResource
+	if err := json.Unmarshal(data, &conn2); err != nil {
+		t.Fatalf("Failed to unmarshal ConnectionResource: %v", err)
+	}
+
+	if conn2.Name != "test-conn" {
+		t.Errorf("Expected name 'test-conn', got '%s'", conn2.Name)
+	}
+	if conn2.AuthType != AuthTypeCustomKeys {
+		t.Errorf("Expected authType 'CustomKeys', got '%s'", conn2.AuthType)
+	}
+	if conn2.IsSharedToAll == nil || !*conn2.IsSharedToAll {
+		t.Error("Expected isSharedToAll to be true")
+	}
+}
+
+// TestAzureAISearchToolSerialization tests JSON round-trip for AzureAISearchTool
+func TestAzureAISearchToolSerialization(t *testing.T) {
+	tool := AzureAISearchTool{
+		Tool: Tool{
+			Name: "search-tool",
+			Kind: ToolKindAzureAiSearch,
+		},
+		Indexes: []AzureAISearchIndex{
+			{
+				ProjectConnectionId: "my-conn",
+				IndexName:           "my-index",
+				TopK:                new(5),
+			},
+		},
+	}
+
+	data, err := json.Marshal(tool)
+	if err != nil {
+		t.Fatalf("Failed to marshal AzureAISearchTool: %v", err)
+	}
+
+	var tool2 AzureAISearchTool
+	if err := json.Unmarshal(data, &tool2); err != nil {
+		t.Fatalf("Failed to unmarshal AzureAISearchTool: %v", err)
+	}
+
+	if tool2.Kind != ToolKindAzureAiSearch {
+		t.Errorf("Expected kind 'azureAiSearch', got '%s'", tool2.Kind)
+	}
+	if len(tool2.Indexes) != 1 {
+		t.Fatalf("Expected 1 index, got %d", len(tool2.Indexes))
+	}
+	if tool2.Indexes[0].IndexName != "my-index" {
+		t.Errorf("Expected index_name 'my-index', got '%s'", tool2.Indexes[0].IndexName)
+	}
+}
+
+// TestA2APreviewToolSerialization tests JSON round-trip for A2APreviewTool
+func TestA2APreviewToolSerialization(t *testing.T) {
+	agentCardPath := "/.well-known/agent-card.json"
+	tool := A2APreviewTool{
+		Tool: Tool{
+			Name: "a2a-tool",
+			Kind: ToolKindA2APreview,
+		},
+		BaseUrl:             "https://agent.example.com",
+		AgentCardPath:       &agentCardPath,
+		ProjectConnectionId: "my-conn",
+	}
+
+	data, err := json.Marshal(tool)
+	if err != nil {
+		t.Fatalf("Failed to marshal A2APreviewTool: %v", err)
+	}
+
+	var tool2 A2APreviewTool
+	if err := json.Unmarshal(data, &tool2); err != nil {
+		t.Fatalf("Failed to unmarshal A2APreviewTool: %v", err)
+	}
+
+	if tool2.Kind != ToolKindA2APreview {
+		t.Errorf("Expected kind 'a2aPreview', got '%s'", tool2.Kind)
+	}
+	if tool2.BaseUrl != "https://agent.example.com" {
+		t.Errorf("Expected baseUrl 'https://agent.example.com', got '%s'", tool2.BaseUrl)
+	}
+	if tool2.AgentCardPath == nil || *tool2.AgentCardPath != agentCardPath {
+		t.Errorf("Expected agentCardPath '%s'", agentCardPath)
+	}
+}

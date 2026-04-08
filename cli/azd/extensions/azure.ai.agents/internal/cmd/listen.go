@@ -6,14 +6,20 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/pkg/azure"
 	"azureaiagent/internal/project"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/braydonk/yaml"
 	"github.com/spf13/cobra"
@@ -46,6 +52,9 @@ func newListenCommand() *cobra.Command {
 				}).
 				WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 					return preprovisionHandler(ctx, azdClient, projectParser, args)
+				}).
+				WithProjectEventHandler("postprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+					return postprovisionHandler(ctx, azdClient, args)
 				}).
 				WithProjectEventHandler("predeploy", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 					return predeployHandler(ctx, azdClient, projectParser, args)
@@ -83,6 +92,27 @@ func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, proje
 			if err := containerAgentHandling(ctx, azdClient, args.Project, svc); err != nil {
 				return fmt.Errorf("failed to handle container agent for service %q: %w", svc.Name, err)
 			}
+		}
+	}
+
+	return nil
+}
+
+func postprovisionHandler(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	args *azdext.ProjectEventArgs,
+) error {
+	for _, svc := range args.Project.Services {
+		if svc.Host != AiAgentHost {
+			continue
+		}
+
+		if err := provisionToolboxes(ctx, azdClient, svc); err != nil {
+			return fmt.Errorf(
+				"failed to provision toolboxes for service %q: %w",
+				svc.Name, err,
+			)
 		}
 	}
 
@@ -152,6 +182,15 @@ func envUpdate(ctx context.Context, azdClient *azdext.AzdClient, azdProject *azd
 		}
 	}
 
+	if len(foundryAgentConfig.Connections) > 0 {
+		if err := connectionsEnvUpdate(
+			ctx, foundryAgentConfig.Connections,
+			azdClient, currentEnvResponse.Environment.Name,
+		); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -217,6 +256,25 @@ func resourcesEnvUpdate(ctx context.Context, resources []project.Resource, azdCl
 	escapedJsonString = strings.ReplaceAll(escapedJsonString, "\"", "\\\"")
 
 	return setEnvVar(ctx, azdClient, envName, "AI_PROJECT_DEPENDENT_RESOURCES", escapedJsonString)
+}
+
+func connectionsEnvUpdate(
+	ctx context.Context,
+	connections []project.Connection,
+	azdClient *azdext.AzdClient,
+	envName string,
+) error {
+	connectionsJson, err := json.Marshal(connections)
+	if err != nil {
+		return fmt.Errorf("failed to marshal connection details to JSON: %w", err)
+	}
+
+	// Escape backslashes and double quotes for environment variable
+	jsonString := string(connectionsJson)
+	escapedJsonString := strings.ReplaceAll(jsonString, "\\", "\\\\")
+	escapedJsonString = strings.ReplaceAll(escapedJsonString, "\"", "\\\"")
+
+	return setEnvVar(ctx, azdClient, envName, "AI_PROJECT_CONNECTIONS", escapedJsonString)
 }
 
 func containerAgentHandling(ctx context.Context, azdClient *azdext.AzdClient, project *azdext.ProjectConfig, svc *azdext.ServiceConfig) error {
@@ -334,4 +392,161 @@ func populateContainerSettings(ctx context.Context, azdClient *azdext.AzdClient,
 	}
 
 	return nil
+}
+
+// provisionToolboxes creates or updates Foundry Toolsets for each toolbox
+// in the service config. Called during post-provision after the project
+// endpoint has been created by Bicep.
+func provisionToolboxes(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	svc *azdext.ServiceConfig,
+) error {
+	var config *project.ServiceTargetAgentConfig
+	if err := project.UnmarshalStruct(svc.Config, &config); err != nil {
+		return fmt.Errorf("failed to parse service config: %w", err)
+	}
+
+	if config == nil || len(config.Toolboxes) == 0 {
+		return nil
+	}
+
+	currentEnv, err := azdClient.Environment().GetCurrent(
+		ctx, &azdext.EmptyRequest{},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to get current environment: %w", err)
+	}
+
+	envValue, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: currentEnv.Environment.Name,
+		Key:     "AZURE_AI_PROJECT_ENDPOINT",
+	})
+	if err != nil || envValue.Value == "" {
+		return exterrors.Dependency(
+			exterrors.CodeMissingAiProjectEndpoint,
+			"AZURE_AI_PROJECT_ENDPOINT is required for toolbox provisioning",
+			"run 'azd provision' to create the AI project first",
+		)
+	}
+	projectEndpoint := envValue.Value
+
+	envValue, err = azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: currentEnv.Environment.Name,
+		Key:     "AZURE_TENANT_ID",
+	})
+	if err != nil || envValue.Value == "" {
+		return exterrors.Dependency(
+			exterrors.CodeMissingAzureTenantId,
+			"AZURE_TENANT_ID is required for toolbox provisioning",
+			"run 'azd auth login' to authenticate",
+		)
+	}
+	tenantId := envValue.Value
+
+	cred, err := azidentity.NewAzureDeveloperCLICredential(
+		&azidentity.AzureDeveloperCLICredentialOptions{
+			TenantID:                   tenantId,
+			AdditionallyAllowedTenants: []string{"*"},
+		},
+	)
+	if err != nil {
+		return exterrors.Auth(
+			exterrors.CodeCredentialCreationFailed,
+			fmt.Sprintf("failed to create credential: %s", err),
+			"run 'azd auth login' to authenticate",
+		)
+	}
+
+	toolsetsClient := azure.NewFoundryToolsetsClient(
+		projectEndpoint, cred,
+	)
+
+	for _, toolbox := range config.Toolboxes {
+		fmt.Fprintf(
+			os.Stderr, "Provisioning toolbox: %s\n", toolbox.Name,
+		)
+
+		if err := upsertToolset(
+			ctx, toolsetsClient, toolbox,
+		); err != nil {
+			return err
+		}
+
+		if err := registerToolboxEnvVars(
+			ctx, azdClient,
+			currentEnv.Environment.Name,
+			projectEndpoint, toolbox.Name,
+		); err != nil {
+			return err
+		}
+
+		fmt.Fprintf(
+			os.Stderr, "Toolbox '%s' provisioned\n", toolbox.Name,
+		)
+	}
+
+	return nil
+}
+
+// upsertToolset creates a toolset, or skips if it already exists.
+func upsertToolset(
+	ctx context.Context,
+	client *azure.FoundryToolsetsClient,
+	toolbox project.Toolbox,
+) error {
+	createReq := &azure.CreateToolsetRequest{
+		Name:        toolbox.Name,
+		Description: toolbox.Description,
+		Tools:       toolbox.Tools,
+	}
+
+	_, err := client.CreateToolset(ctx, createReq)
+	if err == nil {
+		return nil
+	}
+
+	// 409 Conflict means the toolset already exists
+	var respErr *azcore.ResponseError
+	if errors.As(err, &respErr) && respErr.StatusCode == http.StatusConflict {
+		fmt.Fprintf(
+			os.Stderr,
+			"  Toolset '%s' already exists, skipping\n",
+			toolbox.Name,
+		)
+		return nil
+	}
+
+	return exterrors.Internal(
+		exterrors.CodeCreateToolsetFailed,
+		fmt.Sprintf(
+			"failed to create toolset '%s': %s",
+			toolbox.Name, err,
+		),
+	)
+}
+
+// registerToolboxEnvVars sets TOOLBOX_{NAME}_MCP_ENDPOINT.
+func registerToolboxEnvVars(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	envName string,
+	projectEndpoint string,
+	toolboxName string,
+) error {
+	key := strings.ToUpper(
+		strings.ReplaceAll(toolboxName, "-", "_"),
+	)
+	envKey := fmt.Sprintf(
+		"TOOLBOX_%s_MCP_ENDPOINT", key,
+	)
+
+	endpoint := strings.TrimRight(projectEndpoint, "/")
+	mcpEndpoint := fmt.Sprintf(
+		"%s/toolsets/%s/mcp", endpoint, toolboxName,
+	)
+
+	return setEnvVar(
+		ctx, azdClient, envName, envKey, mcpEndpoint,
+	)
 }

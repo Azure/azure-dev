@@ -49,6 +49,7 @@ type ServiceTargetAgentConfig struct {
 	Deployments    []Deployment       `json:"deployments,omitempty"`
 	Resources      []Resource         `json:"resources,omitempty"`
 	Toolboxes      []Toolbox          `json:"toolboxes,omitempty"`
+	Connections    []Connection       `json:"connections,omitempty"`
 	StartupCommand string             `json:"startupCommand,omitempty"`
 }
 
@@ -114,6 +115,23 @@ type Toolbox struct {
 	Name        string           `json:"name"`
 	Description string           `json:"description,omitempty"`
 	Tools       []map[string]any `json:"tools"`
+}
+
+// Connection represents a project connection matching the Bicep ConnectionPropertiesV2 spec.
+type Connection struct {
+	Name                        string            `json:"name"`
+	Category                    string            `json:"category"`
+	Target                      string            `json:"target"`
+	AuthType                    string            `json:"authType"`
+	Credentials                 map[string]any    `json:"credentials,omitempty"`
+	Metadata                    map[string]string `json:"metadata,omitempty"`
+	ExpiryTime                  string            `json:"expiryTime,omitempty"`
+	IsSharedToAll               *bool             `json:"isSharedToAll,omitempty"`
+	SharedUserList              []string          `json:"sharedUserList,omitempty"`
+	PeRequirement               string            `json:"peRequirement,omitempty"`
+	PeStatus                    string            `json:"peStatus,omitempty"`
+	UseWorkspaceManagedIdentity *bool             `json:"useWorkspaceManagedIdentity,omitempty"`
+	Error                       string            `json:"error,omitempty"`
 }
 
 // UnmarshalStruct converts a structpb.Struct to a Go struct of type T

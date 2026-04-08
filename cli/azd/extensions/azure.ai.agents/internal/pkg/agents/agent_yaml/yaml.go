@@ -3,7 +3,9 @@
 
 package agent_yaml
 
-import "slices"
+import (
+	"slices"
+)
 
 // AgentKind represents the type of agent
 type AgentKind string
@@ -31,9 +33,10 @@ func ValidAgentKinds() []AgentKind {
 type ResourceKind string
 
 const (
-	ResourceKindModel   ResourceKind = "model"
-	ResourceKindTool    ResourceKind = "tool"
-	ResourceKindToolbox ResourceKind = "toolbox"
+	ResourceKindModel      ResourceKind = "model"
+	ResourceKindTool       ResourceKind = "tool"
+	ResourceKindToolbox    ResourceKind = "toolbox"
+	ResourceKindConnection ResourceKind = "connection"
 )
 
 type ToolKind string
@@ -47,6 +50,100 @@ const (
 	ToolKindMcp             ToolKind = "mcp"
 	ToolKindOpenApi         ToolKind = "openApi"
 	ToolKindCodeInterpreter ToolKind = "codeInterpreter"
+	ToolKindAzureAiSearch   ToolKind = "azureAiSearch"
+	ToolKindA2APreview      ToolKind = "a2aPreview"
+)
+
+// toolKindAPITypeMap maps camelCase ToolKind values to snake_case API type values.
+var toolKindAPITypeMap = map[ToolKind]string{
+	ToolKindFunction:        "function",
+	ToolKindCustom:          "custom",
+	ToolKindWebSearch:       "web_search",
+	ToolKindBingGrounding:   "bing_grounding",
+	ToolKindFileSearch:      "file_search",
+	ToolKindMcp:             "mcp",
+	ToolKindOpenApi:         "openapi",
+	ToolKindCodeInterpreter: "code_interpreter",
+	ToolKindAzureAiSearch:   "azure_ai_search",
+	ToolKindA2APreview:      "a2a_preview",
+}
+
+// ToolKindToAPIType converts a camelCase ToolKind to its snake_case API type.
+// Returns the input as-is if no mapping is found.
+func ToolKindToAPIType(kind ToolKind) string {
+	if apiType, ok := toolKindAPITypeMap[kind]; ok {
+		return apiType
+	}
+	return string(kind)
+}
+
+// APITypeToToolKind converts a snake_case API type to its camelCase ToolKind.
+// Returns the input as a ToolKind if no mapping is found.
+func APITypeToToolKind(apiType string) ToolKind {
+	for kind, mapped := range toolKindAPITypeMap {
+		if mapped == apiType {
+			return kind
+		}
+	}
+	return ToolKind(apiType)
+}
+
+// AuthType represents the authentication type for a connection.
+type AuthType string
+
+const (
+	AuthTypeAAD        AuthType = "AAD"
+	AuthTypeApiKey     AuthType = "ApiKey"
+	AuthTypeCustomKeys AuthType = "CustomKeys"
+	AuthTypeNone       AuthType = "None"
+	AuthTypeOAuth2     AuthType = "OAuth2"
+	AuthTypePAT        AuthType = "PAT"
+)
+
+// ValidAuthTypes returns a slice of all supported AuthType values.
+func ValidAuthTypes() []AuthType {
+	return []AuthType{
+		AuthTypeAAD,
+		AuthTypeApiKey,
+		AuthTypeCustomKeys,
+		AuthTypeNone,
+		AuthTypeOAuth2,
+		AuthTypePAT,
+	}
+}
+
+// IsValidAuthType checks if the provided AuthType is valid.
+func IsValidAuthType(authType AuthType) bool {
+	return slices.Contains(ValidAuthTypes(), authType)
+}
+
+// CategoryKind represents the category of a connection resource.
+type CategoryKind string
+
+const (
+	CategoryAzureOpenAI           CategoryKind = "AzureOpenAI"
+	CategoryCognitiveSearch       CategoryKind = "CognitiveSearch"
+	CategoryCognitiveService      CategoryKind = "CognitiveService"
+	CategoryCustomKeys            CategoryKind = "CustomKeys"
+	CategoryServerlessEndpoint    CategoryKind = "Serverless"
+	CategoryContainerRegistry     CategoryKind = "ContainerRegistry"
+	CategoryApiKey                CategoryKind = "ApiKey"
+	CategoryAzureBlob             CategoryKind = "AzureBlob"
+	CategoryGit                   CategoryKind = "Git"
+	CategoryRedis                 CategoryKind = "Redis"
+	CategoryS3                    CategoryKind = "S3"
+	CategorySnowflake             CategoryKind = "Snowflake"
+	CategoryAzureSqlDb            CategoryKind = "AzureSqlDb"
+	CategoryAzureSynapseAnalytics CategoryKind = "AzureSynapseAnalytics"
+	CategoryAzureMySqlDb          CategoryKind = "AzureMySqlDb"
+	CategoryAzurePostgresDb       CategoryKind = "AzurePostgresDb"
+	CategoryADLSGen2              CategoryKind = "ADLSGen2"
+	CategoryAzureDataExplorer     CategoryKind = "AzureDataExplorer"
+	CategoryBingLLMSearch         CategoryKind = "BingLLMSearch"
+	CategoryMicrosoftOneLake      CategoryKind = "MicrosoftOneLake"
+	CategoryElasticSearch         CategoryKind = "Elasticsearch"
+	CategoryPinecone              CategoryKind = "Pinecone"
+	CategoryQdrant                CategoryKind = "Qdrant"
 )
 
 type ConnectionKind string
@@ -309,9 +406,29 @@ type ToolResource struct {
 // ToolboxResource Represents a toolbox resource required by the agent.
 // A toolbox is a reusable collection of tools that can be deployed as a Foundry Toolset.
 type ToolboxResource struct {
-	Resource `json:",inline" yaml:",inline"`
-	Id       string         `json:"id" yaml:"id"`
-	Options  map[string]any `json:"options" yaml:"options"`
+	Resource    `json:",inline" yaml:",inline"`
+	Description string `json:"description,omitempty" yaml:"description,omitempty"`
+	Tools       []any  `json:"tools" yaml:"tools"`
+}
+
+// ConnectionResource Represents a connection resource required by the agent.
+// Maps to the Bicep ConnectionPropertiesV2 spec for creating project connections.
+type ConnectionResource struct {
+	Resource       `json:",inline" yaml:",inline"`
+	Category       CategoryKind      `json:"category" yaml:"category"`
+	Target         string            `json:"target" yaml:"target"`
+	AuthType       AuthType          `json:"authType" yaml:"authType"`
+	Credentials    map[string]any    `json:"credentials,omitempty" yaml:"credentials,omitempty"`
+	Metadata       map[string]string `json:"metadata,omitempty" yaml:"metadata,omitempty"`
+	ExpiryTime     string            `json:"expiryTime,omitempty" yaml:"expiryTime,omitempty"`
+	IsSharedToAll  *bool             `json:"isSharedToAll,omitempty" yaml:"isSharedToAll,omitempty"`
+	SharedUserList []string          `json:"sharedUserList,omitempty" yaml:"sharedUserList,omitempty"`
+	PeRequirement  string            `json:"peRequirement,omitempty" yaml:"peRequirement,omitempty"`
+	PeStatus       string            `json:"peStatus,omitempty" yaml:"peStatus,omitempty"`
+	Error          string            `json:"error,omitempty" yaml:"error,omitempty"`
+
+	// UseWorkspaceManagedIdentity indicates whether to use workspace managed identity.
+	UseWorkspaceManagedIdentity *bool `json:"useWorkspaceManagedIdentity,omitempty" yaml:"useWorkspaceManagedIdentity,omitempty"` //nolint:lll
 }
 
 // Template Template model for defining prompt templates.
@@ -404,4 +521,58 @@ type CodeInterpreterTool struct {
 	Tool    `json:",inline" yaml:",inline"`
 	FileIds []string       `json:"fileIds" yaml:"fileIds"`
 	Options map[string]any `json:"options" yaml:"options"`
+}
+
+// AzureAISearchIndex represents a single index configuration within an AzureAISearchTool.
+type AzureAISearchIndex struct {
+	ProjectConnectionId string  `json:"project_connection_id" yaml:"project_connection_id"`
+	IndexName           string  `json:"index_name" yaml:"index_name"`
+	QueryType           *string `json:"query_type,omitempty" yaml:"query_type,omitempty"`
+	TopK                *int    `json:"top_k,omitempty" yaml:"top_k,omitempty"`
+	Filter              *string `json:"filter,omitempty" yaml:"filter,omitempty"`
+}
+
+// AzureAISearchTool The Azure AI Search tool for grounding agent responses with search index data.
+type AzureAISearchTool struct {
+	Tool    `json:",inline" yaml:",inline"`
+	Indexes []AzureAISearchIndex `json:"indexes" yaml:"indexes"`
+}
+
+// A2APreviewTool The A2A (Agent-to-Agent) preview tool for delegating tasks to other agents.
+type A2APreviewTool struct {
+	Tool                `json:",inline" yaml:",inline"`
+	BaseUrl             string  `json:"baseUrl" yaml:"baseUrl"`
+	AgentCardPath       *string `json:"agentCardPath,omitempty" yaml:"agentCardPath,omitempty"`
+	ProjectConnectionId string  `json:"projectConnectionId" yaml:"projectConnectionId"`
+}
+
+// Credential type structs for typed access to connection credentials.
+// The ConnectionResource.Credentials field is map[string]any for flexibility,
+// but these structs can be used when code needs structured access.
+
+// ApiKeyCredentials holds credentials for ApiKey auth type.
+type ApiKeyCredentials struct {
+	Key string `json:"key" yaml:"key"`
+}
+
+// CustomKeysCredentials holds credentials for CustomKeys auth type.
+type CustomKeysCredentials struct {
+	Keys map[string]string `json:"keys" yaml:"keys"`
+}
+
+// OAuth2Credentials holds credentials for OAuth2 auth type.
+type OAuth2Credentials struct {
+	AuthUrl        string `json:"authUrl,omitempty" yaml:"authUrl,omitempty"`
+	ClientId       string `json:"clientId" yaml:"clientId"`
+	ClientSecret   string `json:"clientSecret,omitempty" yaml:"clientSecret,omitempty"`
+	DeveloperToken string `json:"developerToken,omitempty" yaml:"developerToken,omitempty"`
+	Password       string `json:"password,omitempty" yaml:"password,omitempty"`
+	RefreshToken   string `json:"refreshToken,omitempty" yaml:"refreshToken,omitempty"`
+	TenantId       string `json:"tenantId,omitempty" yaml:"tenantId,omitempty"`
+	Username       string `json:"username,omitempty" yaml:"username,omitempty"`
+}
+
+// PATCredentials holds credentials for PAT (Personal Access Token) auth type.
+type PATCredentials struct {
+	Pat string `json:"pat" yaml:"pat"`
 }

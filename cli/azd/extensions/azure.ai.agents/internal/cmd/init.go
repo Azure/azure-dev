@@ -1170,6 +1170,13 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	}
 	agentConfig.Toolboxes = toolboxes
 
+	// Process connection resources from the manifest
+	connections, err := extractConnectionConfigs(agentManifest)
+	if err != nil {
+		return err
+	}
+	agentConfig.Connections = connections
+
 	// Detect startup command from the project source directory
 	startupCmd, err := resolveStartupCommandForInit(ctx, a.azdClient, a.projectConfig.Path, targetDir, a.flags.NoPrompt)
 	if err != nil {
@@ -1576,7 +1583,6 @@ func downloadDirectoryContentsWithoutGhCli(
 
 // extractToolboxConfigs extracts toolbox resource definitions from the agent manifest
 // and converts them into project.Toolbox config entries.
-// Each toolbox resource's options must contain a "tools" array with tool definitions.
 func extractToolboxConfigs(manifest *agent_yaml.AgentManifest) ([]project.Toolbox, error) {
 	if manifest == nil || manifest.Resources == nil {
 		return nil, nil
@@ -1590,26 +1596,15 @@ func extractToolboxConfigs(manifest *agent_yaml.AgentManifest) ([]project.Toolbo
 			continue
 		}
 
-		description, _ := tbResource.Options["description"].(string)
-
-		rawTools, ok := tbResource.Options["tools"]
-		if !ok {
+		if len(tbResource.Tools) == 0 {
 			return nil, fmt.Errorf(
-				"toolbox resource '%s' is missing required 'tools' in options",
+				"toolbox resource '%s' is missing required 'tools'",
 				tbResource.Name,
 			)
 		}
 
-		toolsList, ok := rawTools.([]any)
-		if !ok {
-			return nil, fmt.Errorf(
-				"toolbox resource '%s' has invalid 'tools' format: expected array",
-				tbResource.Name,
-			)
-		}
-
-		tools := make([]map[string]any, 0, len(toolsList))
-		for _, rawTool := range toolsList {
+		tools := make([]map[string]any, 0, len(tbResource.Tools))
+		for _, rawTool := range tbResource.Tools {
 			toolMap, ok := rawTool.(map[string]any)
 			if !ok {
 				return nil, fmt.Errorf(
@@ -1622,10 +1617,47 @@ func extractToolboxConfigs(manifest *agent_yaml.AgentManifest) ([]project.Toolbo
 
 		toolboxes = append(toolboxes, project.Toolbox{
 			Name:        tbResource.Name,
-			Description: description,
+			Description: tbResource.Description,
 			Tools:       tools,
 		})
 	}
 
 	return toolboxes, nil
+}
+
+// extractConnectionConfigs extracts connection resource definitions from the agent manifest
+// and converts them into project.Connection config entries.
+func extractConnectionConfigs(manifest *agent_yaml.AgentManifest) ([]project.Connection, error) {
+	if manifest == nil || manifest.Resources == nil {
+		return nil, nil
+	}
+
+	var connections []project.Connection
+
+	for _, resource := range manifest.Resources {
+		connResource, ok := resource.(agent_yaml.ConnectionResource)
+		if !ok {
+			continue
+		}
+
+		conn := project.Connection{
+			Name:                        connResource.Name,
+			Category:                    string(connResource.Category),
+			Target:                      connResource.Target,
+			AuthType:                    string(connResource.AuthType),
+			Credentials:                 connResource.Credentials,
+			Metadata:                    connResource.Metadata,
+			ExpiryTime:                  connResource.ExpiryTime,
+			IsSharedToAll:               connResource.IsSharedToAll,
+			SharedUserList:              connResource.SharedUserList,
+			PeRequirement:               connResource.PeRequirement,
+			PeStatus:                    connResource.PeStatus,
+			UseWorkspaceManagedIdentity: connResource.UseWorkspaceManagedIdentity,
+			Error:                       connResource.Error,
+		}
+
+		connections = append(connections, conn)
+	}
+
+	return connections, nil
 }

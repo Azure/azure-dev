@@ -231,14 +231,12 @@ template:
 resources:
   - kind: toolbox
     name: echo-toolbox
-    id: echo-toolbox
-    options:
-      description: A sample toolbox
-      tools:
-        - type: mcp
-          server_label: github
-          server_url: https://api.example.com/mcp
-          project_connection_id: TestKey
+    description: A sample toolbox
+    tools:
+      - type: mcp
+        server_label: github
+        server_url: https://api.example.com/mcp
+        project_connection_id: TestKey
 `)
 
 	resources, err := ExtractResourceDefinitions(yamlContent)
@@ -263,28 +261,12 @@ resources:
 		t.Errorf("Expected kind 'toolbox', got '%s'", toolboxRes.Kind)
 	}
 
-	if toolboxRes.Id != "echo-toolbox" {
-		t.Errorf("Expected id 'echo-toolbox', got '%s'", toolboxRes.Id)
+	if toolboxRes.Description != "A sample toolbox" {
+		t.Errorf("Expected description 'A sample toolbox', got '%s'", toolboxRes.Description)
 	}
 
-	desc, ok := toolboxRes.Options["description"]
-	if !ok {
-		t.Fatal("Expected 'description' in options")
-	}
-	if desc != "A sample toolbox" {
-		t.Errorf("Expected description 'A sample toolbox', got '%v'", desc)
-	}
-
-	toolsVal, ok := toolboxRes.Options["tools"]
-	if !ok {
-		t.Fatal("Expected 'tools' in options")
-	}
-	toolsSlice, ok := toolsVal.([]any)
-	if !ok {
-		t.Fatalf("Expected tools to be a slice, got %T", toolsVal)
-	}
-	if len(toolsSlice) != 1 {
-		t.Fatalf("Expected 1 tool in options, got %d", len(toolsSlice))
+	if len(toolboxRes.Tools) != 1 {
+		t.Fatalf("Expected 1 tool, got %d", len(toolboxRes.Tools))
 	}
 }
 
@@ -303,9 +285,9 @@ resources:
     id: gpt-4.1-mini
   - kind: toolbox
     name: my-toolbox
-    id: my-toolbox
-    options:
-      description: My toolbox
+    description: My toolbox
+    tools:
+      - type: web_search
 `)
 
 	resources, err := ExtractResourceDefinitions(yamlContent)
@@ -330,7 +312,375 @@ resources:
 		t.Errorf("Expected name 'my-toolbox', got '%s'", toolboxRes.Name)
 	}
 
-	if toolboxRes.Id != "my-toolbox" {
-		t.Errorf("Expected id 'my-toolbox', got '%s'", toolboxRes.Id)
+	if toolboxRes.Description != "My toolbox" {
+		t.Errorf("Expected description 'My toolbox', got '%s'", toolboxRes.Description)
+	}
+}
+
+// TestExtractResourceDefinitions_ConnectionResource tests parsing connection resources
+func TestExtractResourceDefinitions_ConnectionResource(t *testing.T) {
+	yamlContent := []byte(`
+name: test-manifest
+template:
+  kind: prompt
+  name: test-agent
+  model:
+    id: gpt-4.1-mini
+resources:
+  - kind: connection
+    name: context7
+    category: CustomKeys
+    target: https://mcp.context7.com/mcp
+    authType: CustomKeys
+    credentials:
+      key: my-api-key
+    metadata:
+      source: context7
+`)
+
+	resources, err := ExtractResourceDefinitions(yamlContent)
+	if err != nil {
+		t.Fatalf("ExtractResourceDefinitions failed: %v", err)
+	}
+
+	if len(resources) != 1 {
+		t.Fatalf("Expected 1 resource, got %d", len(resources))
+	}
+
+	connRes, ok := resources[0].(ConnectionResource)
+	if !ok {
+		t.Fatalf("Expected ConnectionResource, got %T", resources[0])
+	}
+
+	if connRes.Name != "context7" {
+		t.Errorf("Expected name 'context7', got '%s'", connRes.Name)
+	}
+	if connRes.Kind != ResourceKindConnection {
+		t.Errorf("Expected kind 'connection', got '%s'", connRes.Kind)
+	}
+	if connRes.Category != CategoryCustomKeys {
+		t.Errorf("Expected category 'CustomKeys', got '%s'", connRes.Category)
+	}
+	if connRes.Target != "https://mcp.context7.com/mcp" {
+		t.Errorf("Expected target 'https://mcp.context7.com/mcp', got '%s'", connRes.Target)
+	}
+	if connRes.AuthType != AuthTypeCustomKeys {
+		t.Errorf("Expected authType 'CustomKeys', got '%s'", connRes.AuthType)
+	}
+	if connRes.Credentials["key"] != "my-api-key" {
+		t.Errorf("Expected credentials.key 'my-api-key', got '%v'", connRes.Credentials["key"])
+	}
+	if connRes.Metadata["source"] != "context7" {
+		t.Errorf("Expected metadata.source 'context7', got '%s'", connRes.Metadata["source"])
+	}
+}
+
+// TestExtractResourceDefinitions_ConnectionMissingRequired tests that missing required fields fail validation
+func TestExtractResourceDefinitions_ConnectionMissingRequired(t *testing.T) {
+	testCases := []struct {
+		name     string
+		yaml     string
+		errMatch string
+	}{
+		{
+			name: "missing category",
+			yaml: `
+name: test-manifest
+template:
+  kind: prompt
+  name: test-agent
+  model:
+    id: gpt-4.1-mini
+resources:
+  - kind: connection
+    name: my-conn
+    target: https://example.com
+    authType: None
+`,
+			errMatch: "category is required",
+		},
+		{
+			name: "missing target",
+			yaml: `
+name: test-manifest
+template:
+  kind: prompt
+  name: test-agent
+  model:
+    id: gpt-4.1-mini
+resources:
+  - kind: connection
+    name: my-conn
+    category: CustomKeys
+    authType: None
+`,
+			errMatch: "target is required",
+		},
+		{
+			name: "missing authType",
+			yaml: `
+name: test-manifest
+template:
+  kind: prompt
+  name: test-agent
+  model:
+    id: gpt-4.1-mini
+resources:
+  - kind: connection
+    name: my-conn
+    category: CustomKeys
+    target: https://example.com
+`,
+			errMatch: "authType is required",
+		},
+		{
+			name: "invalid authType",
+			yaml: `
+name: test-manifest
+template:
+  kind: prompt
+  name: test-agent
+  model:
+    id: gpt-4.1-mini
+resources:
+  - kind: connection
+    name: my-conn
+    category: CustomKeys
+    target: https://example.com
+    authType: InvalidAuth
+`,
+			errMatch: "authType must be one of",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := ExtractResourceDefinitions([]byte(tc.yaml))
+			if err == nil {
+				t.Fatal("Expected validation error, got nil")
+			}
+			if !strings.Contains(err.Error(), tc.errMatch) {
+				t.Errorf("Expected error to contain '%s', got '%s'", tc.errMatch, err.Error())
+			}
+		})
+	}
+}
+
+// TestExtractResourceDefinitions_AllResourceKinds tests model + toolbox + connection together
+func TestExtractResourceDefinitions_AllResourceKinds(t *testing.T) {
+	yamlContent := []byte(`
+name: test-manifest
+template:
+  kind: prompt
+  name: test-agent
+  model:
+    id: gpt-4.1-mini
+resources:
+  - kind: model
+    name: chat
+    id: gpt-4.1-mini
+  - kind: connection
+    name: context7
+    category: CustomKeys
+    target: https://mcp.context7.com/mcp
+    authType: CustomKeys
+    credentials:
+      key: test-key
+  - kind: toolbox
+    name: agent-tools
+    description: MCP tools for documentation search
+    tools:
+      - id: web_search
+      - id: mcp
+        project_connection_id: context7
+`)
+
+	resources, err := ExtractResourceDefinitions(yamlContent)
+	if err != nil {
+		t.Fatalf("ExtractResourceDefinitions failed: %v", err)
+	}
+
+	if len(resources) != 3 {
+		t.Fatalf("Expected 3 resources, got %d", len(resources))
+	}
+
+	if _, ok := resources[0].(ModelResource); !ok {
+		t.Errorf("Expected first resource to be ModelResource, got %T", resources[0])
+	}
+	if _, ok := resources[1].(ConnectionResource); !ok {
+		t.Errorf("Expected second resource to be ConnectionResource, got %T", resources[1])
+	}
+	if _, ok := resources[2].(ToolboxResource); !ok {
+		t.Errorf("Expected third resource to be ToolboxResource, got %T", resources[2])
+	}
+}
+
+// TestExtractResourceDefinitions_ConnectionAllAuthTypes tests all supported auth types
+func TestExtractResourceDefinitions_ConnectionAllAuthTypes(t *testing.T) {
+	authTypes := []AuthType{
+		AuthTypeAAD,
+		AuthTypeApiKey,
+		AuthTypeCustomKeys,
+		AuthTypeNone,
+		AuthTypeOAuth2,
+		AuthTypePAT,
+	}
+
+	for _, authType := range authTypes {
+		t.Run(string(authType), func(t *testing.T) {
+			yamlContent := []byte(`
+name: test-manifest
+template:
+  kind: prompt
+  name: test-agent
+  model:
+    id: gpt-4.1-mini
+resources:
+  - kind: connection
+    name: test-conn
+    category: CustomKeys
+    target: https://example.com
+    authType: ` + string(authType) + `
+`)
+			resources, err := ExtractResourceDefinitions(yamlContent)
+			if err != nil {
+				t.Fatalf("Failed for authType %s: %v", authType, err)
+			}
+
+			connRes := resources[0].(ConnectionResource)
+			if connRes.AuthType != authType {
+				t.Errorf("Expected authType '%s', got '%s'", authType, connRes.AuthType)
+			}
+		})
+	}
+}
+
+// TestExtractResourceDefinitions_ConnectionOptionalFields tests optional fields are preserved
+func TestExtractResourceDefinitions_ConnectionOptionalFields(t *testing.T) {
+	yamlContent := []byte(`
+name: test-manifest
+template:
+  kind: prompt
+  name: test-agent
+  model:
+    id: gpt-4.1-mini
+resources:
+  - kind: connection
+    name: full-conn
+    category: AzureOpenAI
+    target: https://myendpoint.openai.azure.com
+    authType: AAD
+    expiryTime: "2025-12-31T00:00:00Z"
+    isSharedToAll: true
+    sharedUserList:
+      - user1@contoso.com
+      - user2@contoso.com
+    metadata:
+      env: production
+    useWorkspaceManagedIdentity: false
+`)
+
+	resources, err := ExtractResourceDefinitions(yamlContent)
+	if err != nil {
+		t.Fatalf("ExtractResourceDefinitions failed: %v", err)
+	}
+
+	connRes := resources[0].(ConnectionResource)
+
+	if connRes.ExpiryTime != "2025-12-31T00:00:00Z" {
+		t.Errorf("Expected expiryTime, got '%s'", connRes.ExpiryTime)
+	}
+	if connRes.IsSharedToAll == nil || *connRes.IsSharedToAll != true {
+		t.Error("Expected isSharedToAll to be true")
+	}
+	if len(connRes.SharedUserList) != 2 {
+		t.Errorf("Expected 2 shared users, got %d", len(connRes.SharedUserList))
+	}
+	if connRes.Metadata["env"] != "production" {
+		t.Errorf("Expected metadata.env 'production', got '%s'", connRes.Metadata["env"])
+	}
+	if connRes.UseWorkspaceManagedIdentity == nil || *connRes.UseWorkspaceManagedIdentity != false {
+		t.Error("Expected useWorkspaceManagedIdentity to be false")
+	}
+}
+
+// TestExtractToolsDefinitions_AzureAiSearch tests parsing an azureAiSearch tool
+func TestExtractToolsDefinitions_AzureAiSearch(t *testing.T) {
+	template := map[string]any{
+		"tools": []any{
+			map[string]any{
+				"name": "my-search",
+				"kind": "azureAiSearch",
+				"indexes": []any{
+					map[string]any{
+						"project_connection_id": "search-conn",
+						"index_name":            "docs-index",
+						"query_type":            "semantic",
+						"top_k":                 10,
+					},
+				},
+			},
+		},
+	}
+
+	tools, err := ExtractToolsDefinitions(template)
+	if err != nil {
+		t.Fatalf("ExtractToolsDefinitions failed: %v", err)
+	}
+
+	if len(tools) != 1 {
+		t.Fatalf("Expected 1 tool, got %d", len(tools))
+	}
+
+	searchTool, ok := tools[0].(AzureAISearchTool)
+	if !ok {
+		t.Fatalf("Expected AzureAISearchTool, got %T", tools[0])
+	}
+	if searchTool.Kind != ToolKindAzureAiSearch {
+		t.Errorf("Expected kind 'azureAiSearch', got '%s'", searchTool.Kind)
+	}
+	if len(searchTool.Indexes) != 1 {
+		t.Fatalf("Expected 1 index, got %d", len(searchTool.Indexes))
+	}
+	if searchTool.Indexes[0].IndexName != "docs-index" {
+		t.Errorf("Expected index_name 'docs-index', got '%s'", searchTool.Indexes[0].IndexName)
+	}
+}
+
+// TestExtractToolsDefinitions_A2APreview tests parsing an a2aPreview tool
+func TestExtractToolsDefinitions_A2APreview(t *testing.T) {
+	template := map[string]any{
+		"tools": []any{
+			map[string]any{
+				"name":                "a2a-delegate",
+				"kind":                "a2aPreview",
+				"baseUrl":             "https://remote-agent.example.com",
+				"agentCardPath":       "/.well-known/agent.json",
+				"projectConnectionId": "remote-conn",
+			},
+		},
+	}
+
+	tools, err := ExtractToolsDefinitions(template)
+	if err != nil {
+		t.Fatalf("ExtractToolsDefinitions failed: %v", err)
+	}
+
+	if len(tools) != 1 {
+		t.Fatalf("Expected 1 tool, got %d", len(tools))
+	}
+
+	a2aTool, ok := tools[0].(A2APreviewTool)
+	if !ok {
+		t.Fatalf("Expected A2APreviewTool, got %T", tools[0])
+	}
+	if a2aTool.Kind != ToolKindA2APreview {
+		t.Errorf("Expected kind 'a2aPreview', got '%s'", a2aTool.Kind)
+	}
+	if a2aTool.BaseUrl != "https://remote-agent.example.com" {
+		t.Errorf("Expected baseUrl, got '%s'", a2aTool.BaseUrl)
+	}
+	if a2aTool.ProjectConnectionId != "remote-conn" {
+		t.Errorf("Expected projectConnectionId 'remote-conn', got '%s'", a2aTool.ProjectConnectionId)
 	}
 }

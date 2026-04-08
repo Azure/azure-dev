@@ -29,6 +29,11 @@
       "description": "List of toolboxes (Foundry Toolsets) to deploy.",
       "items": { "$ref": "#/definitions/Toolbox" }
     },
+    "connections": {
+      "type": "array",
+      "description": "List of project connections to create via Bicep provisioning.",
+      "items": { "$ref": "#/definitions/Connection" }
+    },
     "startupCommand": {
       "type": "string",
       "description": "Command to start the agent server (e.g., 'python main.py'). Used by 'azd ai agent run' for local development."
@@ -138,6 +143,42 @@
         }
       },
       "required": ["name", "tools"],
+      "additionalProperties": false
+    },
+    "Connection": {
+      "type": "object",
+      "description": "A project connection matching the Bicep ConnectionPropertiesV2 spec.",
+      "properties": {
+        "name": { "type": "string", "description": "Connection name.", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{2,32}$" },
+        "category": { "type": "string", "description": "Connection category (e.g., 'CustomKeys', 'AzureOpenAI', 'CognitiveSearch')." },
+        "target": { "type": "string", "description": "Target endpoint URL for the connection." },
+        "authType": {
+          "type": "string",
+          "description": "Authentication type.",
+          "enum": ["AAD", "ApiKey", "CustomKeys", "None", "OAuth2", "PAT"]
+        },
+        "credentials": {
+          "type": "object",
+          "description": "Authentication credentials. Structure depends on authType."
+        },
+        "metadata": {
+          "type": "object",
+          "description": "Additional metadata as key-value pairs.",
+          "additionalProperties": { "type": "string" }
+        },
+        "expiryTime": { "type": "string", "description": "Connection expiry time." },
+        "isSharedToAll": { "type": "boolean", "description": "Whether the connection is shared to all users." },
+        "sharedUserList": {
+          "type": "array",
+          "description": "List of users the connection is shared with.",
+          "items": { "type": "string" }
+        },
+        "peRequirement": { "type": "string", "description": "Private endpoint requirement." },
+        "peStatus": { "type": "string", "description": "Private endpoint status." },
+        "useWorkspaceManagedIdentity": { "type": "boolean", "description": "Whether to use workspace managed identity." },
+        "error": { "type": "string", "description": "Error information." }
+      },
+      "required": ["name", "category", "target", "authType"],
       "additionalProperties": false
     }
   }

@@ -436,11 +436,6 @@ func (p *AgentServiceTargetProvider) Deploy(
 		fmt.Println("Loaded custom service target configuration")
 	}
 
-	// Deploy toolboxes before agent creation
-	if err := p.deployToolboxes(ctx, serviceTargetConfig, azdEnv); err != nil {
-		return nil, err
-	}
-
 	// Load and validate the agent manifest
 	data, err := os.ReadFile(p.agentDefinitionPath)
 	if err != nil {

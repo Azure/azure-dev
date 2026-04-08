@@ -185,7 +185,7 @@ func newFilesUploadCommand() *cobra.Command {
 
 Reads a local file and uploads it to the specified remote path
 in the session's filesystem. If --target-path is not provided,
-the remote path defaults to the local file path.
+the remote path defaults to the local filename.
 
 Agent details are automatically resolved from the azd environment.`,
 		Example: `  # Upload a file (remote path defaults to filename)
@@ -303,7 +303,7 @@ Agent details are automatically resolved from the azd environment.`,
   azd ai agent files download /data/output.csv --target-path ./output.csv
 
   # Download with flags
-  azd ai agent files download --file /data/output.csv --session <session-id>`,
+  azd ai agent files download --file /data/output.csv --session-id <session-id>`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
@@ -417,7 +417,7 @@ Agent details are automatically resolved from the azd environment.`,
   azd ai agent files list /data --output table
 
   # List with explicit session
-  azd ai agent files list --session <session-id>`,
+  azd ai agent files list --session-id <session-id>`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
@@ -541,7 +541,7 @@ Agent details are automatically resolved from the azd environment.`,
   azd ai agent files delete /data/temp --recursive
 
   # Delete with flags
-  azd ai agent files delete --file /data/old-file.csv --session <session-id>`,
+  azd ai agent files delete --file /data/old-file.csv --session-id <session-id>`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
@@ -629,7 +629,7 @@ Agent details are automatically resolved from the azd environment.`,
   azd ai agent files mkdir /data/output
 
   # Create with flags
-  azd ai agent files mkdir --dir /data/output --session <session-id>`,
+  azd ai agent files mkdir --dir /data/output --session-id <session-id>`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
@@ -721,7 +721,7 @@ Agent details are automatically resolved from the azd environment.`,
   azd ai agent files stat /data/output.csv --output table
 
   # Get metadata with explicit session
-  azd ai agent files stat /data/output.csv --session <session-id>`,
+  azd ai agent files stat /data/output.csv --session-id <session-id>`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())

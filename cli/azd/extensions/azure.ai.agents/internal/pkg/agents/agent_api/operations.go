@@ -1293,6 +1293,10 @@ func (c *AgentClient) CreateSession(
 	query.Set("api-version", apiVersion)
 	u.RawQuery = query.Encode()
 
+	if request == nil {
+		request = &CreateAgentSessionRequest{}
+	}
+
 	payload, err := json.Marshal(request)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)

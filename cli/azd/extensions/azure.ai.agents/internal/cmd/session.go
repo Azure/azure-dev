@@ -160,7 +160,7 @@ func newSessionCreateCommand() *cobra.Command {
 		Short: "Create a new session for a hosted agent.",
 		Long: `Create a new session for a hosted agent endpoint.
 
-Provisions a drddopm with a persistent filesystem. The session
+Provisions a session with a persistent filesystem. The session
 is ready for invocations once the command completes.
 
 The agent name is auto-detected when only one azure.ai.agent service exists
@@ -189,7 +189,7 @@ Positional arguments can be used instead of flags:
 			ctx := azdext.WithAccessToken(cmd.Context())
 			setupDebugLogging(cmd.Flags())
 
-			// Positional args override flags: [agent-name] [version] [isolation-key]
+			// Positional args fill in missing flags: [agent-name] [version] [isolation-key]
 			switch len(args) {
 			case 3:
 				if flags.isolationKey == "" {

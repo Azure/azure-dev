@@ -996,7 +996,7 @@ func (c *AgentClient) UploadSessionFile(
 	}
 
 	u.Path += fmt.Sprintf(
-		"/agents/%s/endpoint/sessions/%s/files",
+		"/agents/%s/endpoint/sessions/%s/files/content",
 		agentName, sessionID,
 	)
 
@@ -1042,7 +1042,7 @@ func (c *AgentClient) DownloadSessionFile(
 	}
 
 	u.Path += fmt.Sprintf(
-		"/agents/%s/endpoint/sessions/%s/files",
+		"/agents/%s/endpoint/sessions/%s/files/content",
 		agentName, sessionID,
 	)
 

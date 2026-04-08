@@ -295,6 +295,136 @@ func TestFoundryProjectInfoFromResource(t *testing.T) {
 	}
 }
 
+func TestAgentModelFilter(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name              string
+		locations         []string
+		excludeModelNames []string
+		wantLocations     []string
+		wantExclude       []string
+	}{
+		{
+			name:              "AllPopulated",
+			locations:         []string{"eastus2"},
+			excludeModelNames: []string{"gpt-4.1-mini"},
+			wantLocations:     []string{"eastus2"},
+			wantExclude:       []string{"gpt-4.1-mini"},
+		},
+		{
+			name:              "BothNil",
+			locations:         nil,
+			excludeModelNames: nil,
+			wantLocations:     nil,
+			wantExclude:       nil,
+		},
+		{
+			name:              "EmptySlices",
+			locations:         []string{},
+			excludeModelNames: []string{},
+			wantLocations:     nil,
+			wantExclude:       nil,
+		},
+		{
+			name:              "OnlyLocations",
+			locations:         []string{"westus", "eastus"},
+			excludeModelNames: nil,
+			wantLocations:     []string{"westus", "eastus"},
+			wantExclude:       nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			filter := agentModelFilter(tt.locations, tt.excludeModelNames)
+
+			require.Equal(t, []string{agentsV2ModelCapability}, filter.Capabilities)
+			require.Equal(t, tt.wantLocations, filter.Locations)
+			require.Equal(t, tt.wantExclude, filter.ExcludeModelNames)
+		})
+	}
+}
+
+func TestLocationAllowed(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name             string
+		location         string
+		allowedLocations []string
+		want             bool
+	}{
+		{
+			name:             "EmptyAllowedMeansAllowAll",
+			location:         "anyregion",
+			allowedLocations: nil,
+			want:             true,
+		},
+		{
+			name:             "EmptySliceAllowsAll",
+			location:         "anyregion",
+			allowedLocations: []string{},
+			want:             true,
+		},
+		{
+			name:             "ExactMatch",
+			location:         "eastus",
+			allowedLocations: []string{"eastus", "westus"},
+			want:             true,
+		},
+		{
+			name:             "CaseInsensitiveMatch",
+			location:         "EastUS",
+			allowedLocations: []string{"eastus", "westus"},
+			want:             true,
+		},
+		{
+			name:             "WhitespaceHandled",
+			location:         "  eastus  ",
+			allowedLocations: []string{"eastus"},
+			want:             true,
+		},
+		{
+			name:             "NotInList",
+			location:         "northeurope",
+			allowedLocations: []string{"eastus", "westus"},
+			want:             false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tt.want, locationAllowed(tt.location, tt.allowedLocations))
+		})
+	}
+}
+
+func TestNormalizeLocationName(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"EastUS", "eastus"},
+		{"  westus  ", "westus"},
+		{"NORTHEUROPE", "northeurope"},
+		{"eastus2", "eastus2"},
+		{"", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tt.want, normalizeLocationName(tt.input))
+		})
+	}
+}
+
 func TestUpdateFoundryProjectInfo(t *testing.T) {
 	t.Parallel()
 

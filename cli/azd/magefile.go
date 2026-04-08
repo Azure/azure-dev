@@ -7,11 +7,16 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"io/fs"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 
@@ -108,28 +113,33 @@ func (Dev) Uninstall() error {
 }
 
 // Preflight runs all pre-commit quality checks: formatting, copyright headers, linting,
-// spell checking, compilation, and unit tests. Reports a summary of all results at the end.
+// spell checking, compilation, unit tests, and playback functional tests.
+// Reports a summary of all results at the end.
 //
 // Usage: mage preflight
 func Preflight() error {
 	// Disable Go workspace mode so preflight mirrors CI, which has no go.work file.
 	// Without this, a local go.work can silently resolve different module versions
 	// than go.mod alone, masking build failures that only appear in CI.
-	origGowork, hadGowork := os.LookupEnv("GOWORK")
-	os.Setenv("GOWORK", "off")
-	defer func() {
-		if hadGowork {
-			os.Setenv("GOWORK", origGowork)
-		} else {
-			os.Unsetenv("GOWORK")
-		}
-	}()
+	defer setEnvScoped("GOWORK", "off")()
 
 	repoRoot, err := findRepoRoot()
 	if err != nil {
 		return err
 	}
 	azdDir := filepath.Join(repoRoot, "cli", "azd")
+
+	// Pin GOTOOLCHAIN to the version declared in go.mod when it isn't already
+	// set. When the system Go is older (e.g. 1.25) and go.mod says 1.26,
+	// parallel compilations can race the auto-download, producing "compile:
+	// version X does not match go tool version Y" errors. Pinning upfront
+	// avoids this. We skip the override when GOTOOLCHAIN is already set so
+	// that a user's explicit choice (or a newer Go) is respected.
+	if _, hasToolchain := os.LookupEnv("GOTOOLCHAIN"); !hasToolchain {
+		if ver, err := goModVersion(azdDir); err == nil && ver != "" {
+			defer setEnvScoped("GOTOOLCHAIN", "go"+ver)()
+		}
+	}
 
 	type result struct {
 		name   string
@@ -148,7 +158,7 @@ func Preflight() error {
 
 	// Check required tools are installed before running anything.
 	if err := requireTool("golangci-lint",
-		"go install github.com/golangci/golangci-lint/cmd/golangci-lint@v2.10.1"); err != nil {
+		"go install github.com/golangci/golangci-lint/cmd/golangci-lint@v2.11.4"); err != nil {
 		return err
 	}
 	if err := requireTool("cspell", "npm install -g cspell@8.13.1"); err != nil {
@@ -231,6 +241,14 @@ func Preflight() error {
 		record("test", "pass", "")
 	}
 
+	// 8. Functional tests in playback mode (no Azure credentials needed).
+	fmt.Println("══ Playback tests (functional) ══")
+	if err := runPlaybackTests(azdDir); err != nil {
+		record("playback tests", "fail", err.Error())
+	} else {
+		record("playback tests", "pass", "")
+	}
+
 	// Summary
 	fmt.Println("\n══════════════════════════")
 	fmt.Println("  Preflight Summary")
@@ -251,6 +269,129 @@ func Preflight() error {
 	return nil
 }
 
+// PlaybackTests runs functional tests that have recordings in playback mode.
+// No Azure credentials are required — tests replay from recorded HTTP
+// interactions stored in test/functional/testdata/recordings.
+//
+// Usage: mage playbackTests
+func PlaybackTests() error {
+	defer setEnvScoped("GOWORK", "off")()
+
+	repoRoot, err := findRepoRoot()
+	if err != nil {
+		return err
+	}
+	azdDir := filepath.Join(repoRoot, "cli", "azd")
+
+	// Pin GOTOOLCHAIN (see Preflight for rationale).
+	if _, hasToolchain := os.LookupEnv("GOTOOLCHAIN"); !hasToolchain {
+		if ver, err := goModVersion(azdDir); err == nil && ver != "" {
+			defer setEnvScoped("GOTOOLCHAIN", "go"+ver)()
+		}
+	}
+
+	return runPlaybackTests(azdDir)
+}
+
+// runPlaybackTests discovers test recordings and runs matching functional
+// tests in playback mode (AZURE_RECORD_MODE=playback).
+func runPlaybackTests(azdDir string) error {
+	recordingsDir := filepath.Join(
+		azdDir, "test", "functional", "testdata", "recordings",
+	)
+	names, err := discoverPlaybackTests(recordingsDir)
+	if err != nil {
+		return err
+	}
+	if len(names) == 0 {
+		fmt.Println("No recording files found — skipping playback tests.")
+		return nil
+	}
+
+	escaped := make([]string, len(names))
+	for i, name := range names {
+		escaped[i] = regexp.QuoteMeta(name)
+	}
+	pattern := "^(" + strings.Join(escaped, "|") + ")(/|$)"
+	fmt.Printf("Running %d tests in playback mode...\n", len(names))
+
+	return runStreamingWithEnv(
+		azdDir,
+		[]string{"AZURE_RECORD_MODE=playback"},
+		"go", "test", "-run", pattern,
+		"./test/functional", "-timeout", "30m", "-count=1",
+	)
+}
+
+// excludedPlaybackTests lists tests whose recordings are known to be stale.
+// These are excluded from automatic playback so they don't block preflight.
+// Re-record the test to remove it from this list.
+var excludedPlaybackTests = map[string]string{
+	"Test_CLI_Deploy_SlotDeployment": "stale recording - re-record to include",
+}
+
+// discoverPlaybackTests scans the recordings directory for .yaml files and
+// subdirectories, returning unique top-level Go test function names.
+func discoverPlaybackTests(recordingsDir string) ([]string, error) {
+	entries, err := os.ReadDir(recordingsDir)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("reading recordings directory: %w", err)
+	}
+
+	seen := map[string]bool{}
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() {
+			// Only include directories named like Go test functions.
+			if strings.HasPrefix(name, "Test") {
+				seen[name] = true
+			}
+			continue
+		}
+		if !strings.HasSuffix(name, ".yaml") {
+			continue
+		}
+		// Strip .yaml, then take everything before the first "."
+		// to get the top-level test function name.
+		// Example: Test_CLI_Aspire_Deploy.dotnet.yaml
+		//        → Test_CLI_Aspire_Deploy
+		cassette := strings.TrimSuffix(name, ".yaml")
+		if idx := strings.Index(cassette, "."); idx >= 0 {
+			cassette = cassette[:idx]
+		}
+		seen[cassette] = true
+	}
+
+	// Remove tests with known stale recordings.
+	for name := range excludedPlaybackTests {
+		delete(seen, name)
+	}
+
+	if len(seen) == 0 {
+		return nil, nil
+	}
+
+	return slices.Sorted(maps.Keys(seen)), nil
+}
+
+// goModVersion reads the "go X.Y.Z" directive from go.mod in the given dir.
+func goModVersion(dir string) (string, error) {
+	data, err := os.ReadFile(filepath.Join(dir, "go.mod"))
+	if err != nil {
+		return "", err
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "go ") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "go ")), nil
+		}
+	}
+	return "", nil
+}
+
 // runCapture runs a command and returns its combined stdout/stderr.
 func runCapture(dir string, name string, args ...string) (string, error) {
 	cmd := exec.Command(name, args...)
@@ -264,8 +405,19 @@ func runCapture(dir string, name string, args ...string) (string, error) {
 
 // runStreaming runs a command with stdout/stderr connected to the terminal.
 func runStreaming(dir string, name string, args ...string) error {
+	return runStreamingWithEnv(dir, nil, name, args...)
+}
+
+// runStreamingWithEnv runs a command with stdout/stderr connected to the
+// terminal and additional environment variables set.
+func runStreamingWithEnv(
+	dir string, env []string, name string, args ...string,
+) error {
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
+	if len(env) > 0 {
+		cmd.Env = append(os.Environ(), env...)
+	}
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
@@ -334,6 +486,22 @@ func requireTool(name, installCmd string) error {
 		return fmt.Errorf("%s is required but not installed.\n  Install: %s", name, installCmd)
 	}
 	return nil
+}
+
+// setEnvScoped sets an environment variable and returns a function that restores
+// the original value. Use with defer: defer setEnvScoped("KEY", "value")()
+// NOTE: os.Setenv is process-global and not goroutine-safe. This is safe
+// because mage targets run sequentially (no parallel deps).
+func setEnvScoped(key, value string) func() {
+	orig, had := os.LookupEnv(key)
+	os.Setenv(key, value)
+	return func() {
+		if had {
+			os.Setenv(key, orig)
+		} else {
+			os.Unsetenv(key)
+		}
+	}
 }
 
 // shellQuote wraps s in single quotes and escapes embedded single quotes for POSIX shells.
@@ -511,6 +679,8 @@ func addToPathUnix(dir string) error {
 //	mage coverage:ci      — download latest CI combined coverage
 //	mage coverage:html    — generate and open an HTML report
 //	mage coverage:check   — enforce minimum coverage threshold
+//	mage coverage:diff    — compare current branch vs main baseline
+//	mage coverage:pr      — diff + post as PR comment
 //
 // See cli/azd/docs/code-coverage-guide.md for prerequisites and details.
 type Coverage mg.Namespace
@@ -610,6 +780,157 @@ func (Coverage) Check() error {
 	return runLocalCoverage("-UnitOnly", "-MinCoverage", min)
 }
 
+// Diff generates a coverage diff between the current branch and the main branch baseline.
+// Uses cover-local.out as the current profile (run coverage:unit first) and downloads
+// the main baseline from CI when needed.
+//
+// To avoid the CI download (which requires 'az login'), run coverage on main first
+// and point to it:
+//
+//	COVERAGE_BASELINE=path/to/main-cover.out mage coverage:diff
+//
+// Environment variables (optional):
+//
+//	COVERAGE_BASELINE — path to baseline coverage profile (default: cover-ci-combined.out or download from CI)
+//	COVERAGE_CURRENT  — path to current coverage profile (default: cover-local.out)
+//
+// Usage: mage coverage:diff
+func (Coverage) Diff() error {
+	repoRoot, err := findRepoRoot()
+	if err != nil {
+		return err
+	}
+	azdDir := filepath.Join(repoRoot, "cli", "azd")
+
+	currentFile, err := resolveCoverageFile(
+		os.Getenv("COVERAGE_CURRENT"),
+		filepath.Join(azdDir, "cover-local.out"),
+	)
+	if err != nil {
+		return fmt.Errorf("no current coverage profile: %w\nRun 'mage coverage:unit' first", err)
+	}
+
+	baselineFile, err := resolveBaselineFile(azdDir)
+	if err != nil {
+		return err
+	}
+
+	diffScript := filepath.Join(repoRoot, "eng", "scripts", "Get-CoverageDiff.ps1")
+	return runPwshScript(azdDir, diffScript,
+		"-BaselineFile", baselineFile,
+		"-CurrentFile", currentFile,
+	)
+}
+
+// PR generates a coverage diff and posts it as a comment on the current pull request.
+// Requires: gh CLI authenticated, current branch must have an open PR.
+//
+// Re-running replaces the previous coverage comment (uses a tag for replacement).
+//
+// Environment variables (optional):
+//
+//	COVERAGE_BASELINE — path to baseline coverage profile (default: cover-ci-combined.out or download from CI)
+//	COVERAGE_CURRENT  — path to current coverage profile (default: cover-local.out)
+//
+// Usage: mage coverage:pr
+func (Coverage) PR() error {
+	repoRoot, err := findRepoRoot()
+	if err != nil {
+		return err
+	}
+	azdDir := filepath.Join(repoRoot, "cli", "azd")
+
+	currentFile, err := resolveCoverageFile(
+		os.Getenv("COVERAGE_CURRENT"),
+		filepath.Join(azdDir, "cover-local.out"),
+	)
+	if err != nil {
+		return fmt.Errorf("no current coverage profile: %w\nRun 'mage coverage:unit' first", err)
+	}
+
+	baselineFile, err := resolveBaselineFile(azdDir)
+	if err != nil {
+		return err
+	}
+
+	// Generate diff markdown to a file
+	diffFile := filepath.Join(azdDir, "coverage-diff.md")
+	diffScript := filepath.Join(repoRoot, "eng", "scripts", "Get-CoverageDiff.ps1")
+	if err := runPwshScript(azdDir, diffScript,
+		"-BaselineFile", baselineFile,
+		"-CurrentFile", currentFile,
+		"-OutputFile", diffFile,
+	); err != nil {
+		return err
+	}
+
+	// Determine PR number from current branch
+	prNumRaw, err := runCapture(azdDir, "gh", "pr", "view", "--json", "number", "--jq", ".number")
+	if err != nil {
+		return fmt.Errorf("no open PR for current branch (is 'gh' authenticated?): %w", err)
+	}
+	prNum := strings.TrimSpace(prNumRaw)
+
+	// Determine repository slug (owner/repo)
+	repoRaw, err := runCapture(azdDir, "gh", "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner")
+	if err != nil {
+		return fmt.Errorf("cannot determine repository: %w", err)
+	}
+	repo := strings.TrimSpace(repoRaw)
+
+	// Post coverage diff as a PR comment (replaces previous tagged comment)
+	fmt.Printf("Posting coverage diff to %s#%s...\n", repo, prNum)
+	updateScript := filepath.Join(repoRoot, "eng", "scripts", "Update-PRComment.ps1")
+	return runPwshScript(azdDir, updateScript,
+		"-Repo", repo,
+		"-PRNumber", prNum,
+		"-BodyFile", diffFile,
+		"-Tag", "<!-- coverage-diff -->",
+	)
+}
+
+// resolveCoverageFile returns envOverride if non-empty and existing,
+// otherwise returns defaultPath if it exists.
+func resolveCoverageFile(envOverride, defaultPath string) (string, error) {
+	if envOverride != "" {
+		if _, err := os.Stat(envOverride); err != nil {
+			return "", fmt.Errorf("file not found: %s", envOverride)
+		}
+		return envOverride, nil
+	}
+	if _, err := os.Stat(defaultPath); err != nil {
+		return "", fmt.Errorf("file not found: %s", defaultPath)
+	}
+	return defaultPath, nil
+}
+
+// resolveBaselineFile returns the baseline coverage profile path.
+// Checks COVERAGE_BASELINE env var first, then cover-ci-combined.out,
+// and downloads from CI as a last resort.
+func resolveBaselineFile(azdDir string) (string, error) {
+	if env := os.Getenv("COVERAGE_BASELINE"); env != "" {
+		if _, err := os.Stat(env); err != nil {
+			return "", fmt.Errorf("baseline file not found: %s", env)
+		}
+		return env, nil
+	}
+
+	defaultBaseline := filepath.Join(azdDir, "cover-ci-combined.out")
+	if _, err := os.Stat(defaultBaseline); err == nil {
+		return defaultBaseline, nil
+	}
+
+	fmt.Println("No baseline profile found. Downloading from CI main branch...")
+	fmt.Println("(requires 'az login'; or set COVERAGE_BASELINE to skip download)")
+	if err := runCICoverage(); err != nil {
+		return "", fmt.Errorf("failed to download baseline: %w\nRun 'az login' or set COVERAGE_BASELINE env var", err)
+	}
+	if _, err := os.Stat(defaultBaseline); err != nil {
+		return "", fmt.Errorf("CI download succeeded but baseline file not found at %s", defaultBaseline)
+	}
+	return defaultBaseline, nil
+}
+
 // findPwsh locates PowerShell (pwsh or powershell) on the system PATH.
 func findPwsh() (string, error) {
 	if p, err := exec.LookPath("pwsh"); err == nil {
@@ -631,15 +952,7 @@ func runPwshScript(dir, script string, args ...string) error {
 		return err
 	}
 
-	origGowork, hadGowork := os.LookupEnv("GOWORK")
-	os.Setenv("GOWORK", "off")
-	defer func() {
-		if hadGowork {
-			os.Setenv("GOWORK", origGowork)
-		} else {
-			os.Unsetenv("GOWORK")
-		}
-	}()
+	defer setEnvScoped("GOWORK", "off")()
 
 	cmdArgs := append(
 		[]string{"-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script},

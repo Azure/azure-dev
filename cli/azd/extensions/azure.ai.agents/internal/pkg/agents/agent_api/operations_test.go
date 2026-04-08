@@ -16,14 +16,13 @@ import (
 // fakeTransport is a test HTTP transport that returns a canned response.
 type fakeTransport struct {
 	statusCode int
-	body       string
 }
 
 func (f *fakeTransport) Do(req *http.Request) (*http.Response, error) {
 	return &http.Response{
 		StatusCode: f.statusCode,
 		Header:     http.Header{"Content-Type": {"application/json"}},
-		Body: http.NoBody,
+		Body:       http.NoBody,
 		Request:    req,
 	}, nil
 }

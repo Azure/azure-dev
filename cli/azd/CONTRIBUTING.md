@@ -75,7 +75,9 @@ Run cspell (install [cspell](https://cspell.org/)):
 cspell lint "**/*.go" --relative --config ./.vscode/cspell.yaml
 
 # Docs and misc files (from repo root)
+cd ../..
 cspell lint "**/*" --relative --config ./.vscode/cspell.misc.yaml
+cd cli/azd
 ```
 
 Run linter (install [golangci-lint](https://golangci-lint.run/welcome/install/#local-installation)):

@@ -79,8 +79,11 @@ go fix ./...
 golangci-lint run ./...
 cspell lint "**/*.go" --relative --config ./.vscode/cspell.yaml --no-progress
 ../../eng/scripts/copyright-check.sh . --fix
+
 # From repo root — spell check docs/misc files (mirrors CI cspell-misc.yml)
+cd ../..
 cspell lint "**/*" --relative --config ./.vscode/cspell.misc.yaml --no-progress
+cd cli/azd
 ```
 
 - **Line length**: 125 chars max for Go (enforced by `lll` linter); no limit for Markdown

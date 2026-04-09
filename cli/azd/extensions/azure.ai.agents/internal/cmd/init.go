@@ -66,8 +66,9 @@ type InitAction struct {
 	flags         *initFlags
 	models        *modelSelector
 
-	deploymentDetails []project.Deployment
-	httpClient        *http.Client
+	deploymentDetails  []project.Deployment
+	containerSettings  *project.ContainerSettings
+	httpClient         *http.Client
 }
 
 // modelSelector encapsulates the dependencies needed for model selection and
@@ -473,6 +474,23 @@ func (a *InitAction) Run(ctx context.Context) error {
 		agentManifest, err = a.configureModelChoice(ctx, agentManifest)
 		if err != nil {
 			return fmt.Errorf("configuring model choice: %w", err)
+		}
+
+		// For hosted agents, prompt for container resources before writing agent.yaml
+		// so the selected values are persisted into the definition file.
+		if hostedAgent, ok := agentManifest.Template.(agent_yaml.ContainerAgent); ok {
+			containerSettings, err := a.populateContainerSettings(ctx, hostedAgent.Resources)
+			if err != nil {
+				return fmt.Errorf("failed to populate container settings: %w", err)
+			}
+			a.containerSettings = containerSettings
+
+			// Update the agent definition with the selected resources
+			hostedAgent.Resources = &agent_yaml.ContainerResources{
+				Cpu:    containerSettings.Resources.Cpu,
+				Memory: containerSettings.Resources.Memory,
+			}
+			agentManifest.Template = hostedAgent
 		}
 
 		// Write the final agent.yaml to disk (after deployment names have been injected)
@@ -1226,12 +1244,8 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 			}
 		}
 
-		// Prompt user for container settings
-		containerSettings, err := a.populateContainerSettings(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to populate container settings: %w", err)
-		}
-		agentConfig.Container = containerSettings
+		// Use container settings that were already populated before writing agent.yaml
+		agentConfig.Container = a.containerSettings
 	}
 
 	agentConfig.Deployments = a.deploymentDetails
@@ -1282,7 +1296,10 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	return nil
 }
 
-func (a *InitAction) populateContainerSettings(ctx context.Context) (*project.ContainerSettings, error) {
+func (a *InitAction) populateContainerSettings(
+	ctx context.Context,
+	manifestResources *agent_yaml.ContainerResources,
+) (*project.ContainerSettings, error) {
 	choices := make([]*azdext.SelectChoice, len(project.ResourceTiers))
 	for i, t := range project.ResourceTiers {
 		choices[i] = &azdext.SelectChoice{
@@ -1292,6 +1309,15 @@ func (a *InitAction) populateContainerSettings(ctx context.Context) (*project.Co
 	}
 
 	defaultIndex := int32(0)
+	if manifestResources != nil {
+		for i, t := range project.ResourceTiers {
+			if t.Cpu == manifestResources.Cpu && t.Memory == manifestResources.Memory {
+				defaultIndex = int32(i)
+				break
+			}
+		}
+	}
+
 	resp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
 			Message:       "Select container resource allocation (CPU and Memory) for your agent. You can adjust these settings later in the azure.yaml file if needed.",

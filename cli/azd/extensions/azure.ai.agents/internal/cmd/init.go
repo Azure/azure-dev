@@ -673,14 +673,62 @@ func (a *InitAction) configureModelChoice(
 				return nil, fmt.Errorf("foundry project not found: %s", a.flags.projectResourceId)
 			}
 		} else {
-			newCred, err := ensureSubscriptionAndLocation(
-				ctx, a.azdClient, a.azureContext, a.environment.Name,
-				"Select an Azure subscription to provision your agent and Foundry project resources.",
-			)
-			if err != nil {
-				return nil, err
+			// Prompt user to pick an existing Foundry project or create new resources
+			projectChoices := []*azdext.SelectChoice{
+				{Label: "Use an existing Foundry project", Value: "existing"},
+				{Label: "Create a new Foundry project", Value: "new"},
 			}
-			a.credential = newCred
+
+			defaultIdx := int32(0)
+			projectResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+				Options: &azdext.SelectOptions{
+					Message:       "Select a Foundry project to host your agent and any models or tools it uses.",
+					Choices:       projectChoices,
+					SelectedIndex: &defaultIdx,
+				},
+			})
+			if err != nil {
+				return nil, exterrors.FromPrompt(err, "failed to prompt for Foundry project configuration choice")
+			}
+
+			switch projectChoices[*projectResp.Value].Value {
+			case "existing":
+				newCred, err := ensureSubscription(
+					ctx, a.azdClient, a.azureContext, a.environment.Name,
+					"Select an Azure subscription to find existing Foundry projects.",
+				)
+				if err != nil {
+					return nil, err
+				}
+				a.credential = newCred
+
+				selectedProject, err := selectFoundryProject(
+					ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
+					a.azureContext.Scope.SubscriptionId, "",
+				)
+				if err != nil {
+					return nil, err
+				}
+
+				if selectedProject == nil {
+					// No existing project selected → fall back to "create new" path
+					_, _ = color.New(color.Faint).Println(
+						"No existing Foundry project was selected. Falling back to creating new resources.",
+					)
+					if err := ensureLocation(ctx, a.azdClient, a.azureContext, a.environment.Name); err != nil {
+						return nil, err
+					}
+				}
+			default:
+				newCred, err := ensureSubscriptionAndLocation(
+					ctx, a.azdClient, a.azureContext, a.environment.Name,
+					"Select an Azure subscription to provision your agent and Foundry project resources.",
+				)
+				if err != nil {
+					return nil, err
+				}
+				a.credential = newCred
+			}
 		}
 
 		return agentManifest, nil

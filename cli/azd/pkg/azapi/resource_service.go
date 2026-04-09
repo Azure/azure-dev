@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -61,6 +62,13 @@ type ListResourceGroupResourcesOptions struct {
 type ResourceService struct {
 	credentialProvider account.SubscriptionCredentialProvider
 	armClientOptions   *arm.ClientOptions
+
+	// resourcesClients caches armresources.Client instances per subscription ID.
+	// Azure SDK ARM clients are safe for concurrent use.
+	resourcesClients sync.Map // map[string]*armresources.Client
+
+	// resourceGroupClients caches ResourceGroupsClient instances per subscription ID.
+	resourceGroupClients sync.Map // map[string]*armresources.ResourceGroupsClient
 }
 
 func NewResourceService(
@@ -344,6 +352,10 @@ func (rs *ResourceService) GetResourceGroup(
 }
 
 func (rs *ResourceService) createResourcesClient(ctx context.Context, subscriptionId string) (*armresources.Client, error) {
+	if cached, ok := rs.resourcesClients.Load(subscriptionId); ok {
+		return cached.(*armresources.Client), nil
+	}
+
 	credential, err := rs.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
@@ -354,13 +366,19 @@ func (rs *ResourceService) createResourcesClient(ctx context.Context, subscripti
 		return nil, fmt.Errorf("creating Resource client: %w", err)
 	}
 
-	return client, nil
+	// Benign race: concurrent miss creates an extra client; LoadOrStore ensures one winner.
+	actual, _ := rs.resourcesClients.LoadOrStore(subscriptionId, client)
+	return actual.(*armresources.Client), nil
 }
 
 func (rs *ResourceService) createResourceGroupClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*armresources.ResourceGroupsClient, error) {
+	if cached, ok := rs.resourceGroupClients.Load(subscriptionId); ok {
+		return cached.(*armresources.ResourceGroupsClient), nil
+	}
+
 	credential, err := rs.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
@@ -371,7 +389,9 @@ func (rs *ResourceService) createResourceGroupClient(
 		return nil, fmt.Errorf("creating ResourceGroup client: %w", err)
 	}
 
-	return client, nil
+	// Benign race: concurrent miss creates an extra client; LoadOrStore ensures one winner.
+	actual, _ := rs.resourceGroupClients.LoadOrStore(subscriptionId, client)
+	return actual.(*armresources.ResourceGroupsClient), nil
 }
 
 // GroupByResourceGroup creates a map of resources group by their resource group name.

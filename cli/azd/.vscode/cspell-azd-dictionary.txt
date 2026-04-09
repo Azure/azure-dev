@@ -47,6 +47,7 @@ appinsightsexporter
 appinsightsstorage
 appplatform
 appservice
+appsettings
 appuser
 arget
 armapimanagement
@@ -175,6 +176,7 @@ jmespath
 jongio
 jquery
 keychain
+keepalives
 kubelogin
 langchain
 langchaingo
@@ -205,6 +207,7 @@ mysqlclient
 mysqldb
 nazd
 ndjson
+nilerr
 nobanner
 nodeapp
 nolint
@@ -249,9 +252,11 @@ rabbitmq
 reauthentication
 relogin
 remarshal
+remotebuild
 repourl
 requirepass
 resourcegraph
+resourcegroup
 restoreapp
 retriable
 runtimes
@@ -304,6 +309,7 @@ vuejs
 webappignore
 webfrontend
 westus2
+whatif
 wireinject
 yacspin
 yamlnode

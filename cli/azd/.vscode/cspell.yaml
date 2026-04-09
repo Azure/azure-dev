@@ -376,7 +376,6 @@ overrides:
   - filename: pkg/project/project.go
     words:
       - copylocks
-<<<<<<< HEAD
   - filename: pkg/ext/models.go
     words:
       - unvalidated
@@ -386,13 +385,9 @@ overrides:
     words:
       - covdata
       - GOWORK
-=======
-      - covdata
-      - GOWORK
   - filename: pkg/tool/manifest.go
     words:
       - azureresourcegroups
->>>>>>> e9bd2e2c4 (fix: resolve cspell-lint failures in pkg/tool)
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

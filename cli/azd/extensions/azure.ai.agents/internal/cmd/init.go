@@ -655,7 +655,7 @@ func (a *InitAction) configureModelChoice(
 			// Prompt user to pick an existing Foundry project or create new resources
 			projectChoices := []*azdext.SelectChoice{
 				{Label: "Use an existing Foundry project", Value: "existing"},
-				{Label: "Create a new Foundry Project", Value: "new"},
+				{Label: "Create a new Foundry project", Value: "new"},
 			}
 
 			defaultIdx := int32(0)

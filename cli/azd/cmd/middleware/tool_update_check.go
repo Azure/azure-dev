@@ -155,6 +155,7 @@ func (m *ToolUpdateCheckMiddleware) triggerBackgroundCheckIfNeeded(ctx context.C
 		return
 	}
 
+	//nolint:gosec // G118 – intentional: goroutine outlives request; parent ctx is cancelled on return.
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {

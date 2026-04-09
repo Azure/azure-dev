@@ -424,7 +424,10 @@ The isolation key is derived from the Entra token by default.`,
 				)
 			}
 
-			fmt.Printf("Session %q deleted.\n", sessionID)
+			fmt.Printf(
+				"Session %q deleted from agent %q.\n",
+				sessionID, sc.agentName,
+			)
 			return nil
 		},
 	}

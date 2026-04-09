@@ -805,34 +805,34 @@ func TestAssignmentEndpoint_IsNotEmpty(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// shouldSkipErrorAnalysis — additional error types
+// shouldSkipAgentHandling — control-flow and non-fixable error types
 // ---------------------------------------------------------------------------
 
-func TestShouldSkipErrorAnalysis_ContextCanceled(t *testing.T) {
+func TestShouldSkipAgentHandling_ContextCanceled(t *testing.T) {
 	t.Parallel()
-	require.True(t, shouldSkipErrorAnalysis(context.Canceled))
+	require.True(t, shouldSkipAgentHandling(context.Canceled))
 }
 
-func TestShouldSkipErrorAnalysis_AbortedByUser(t *testing.T) {
+func TestShouldSkipAgentHandling_AbortedByUser(t *testing.T) {
 	t.Parallel()
-	require.True(t, shouldSkipErrorAnalysis(internal.ErrAbortedByUser))
+	require.True(t, shouldSkipAgentHandling(internal.ErrAbortedByUser))
 }
 
-func TestShouldSkipErrorAnalysis_RegularError(t *testing.T) {
+func TestShouldSkipAgentHandling_RegularError(t *testing.T) {
 	t.Parallel()
-	require.False(t, shouldSkipErrorAnalysis(errors.New("some regular error")))
+	require.False(t, shouldSkipAgentHandling(errors.New("some regular error")))
 }
 
-func TestShouldSkipErrorAnalysis_WrappedCanceled(t *testing.T) {
+func TestShouldSkipAgentHandling_WrappedCanceled(t *testing.T) {
 	t.Parallel()
 	err := fmt.Errorf("operation failed: %w", context.Canceled)
-	require.True(t, shouldSkipErrorAnalysis(err))
+	require.True(t, shouldSkipAgentHandling(err))
 }
 
-func TestShouldSkipErrorAnalysis_NilError(t *testing.T) {
+func TestShouldSkipAgentHandling_NilError(t *testing.T) {
 	t.Parallel()
 	// nil error should not be skipped — though callers check nil before calling
-	require.False(t, shouldSkipErrorAnalysis(nil))
+	require.False(t, shouldSkipAgentHandling(nil))
 }
 
 // ---------------------------------------------------------------------------
@@ -946,7 +946,7 @@ func TestErrorMiddleware_Run_ChildAction_PassesError(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// ErrorMiddleware.Run — error with shouldSkipErrorAnalysis
+// ErrorMiddleware.Run — error with shouldSkipAgentHandling
 // ---------------------------------------------------------------------------
 
 func TestErrorMiddleware_Run_SkippableError_NoPrompt(t *testing.T) {
@@ -999,20 +999,19 @@ func TestErrorMiddleware_Run_ErrorWithSuggestion(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// fixableError — additional coverage
+// shouldSkipAgentHandling — non-fixable error types
 // ---------------------------------------------------------------------------
 
-func TestFixableError_RegularError(t *testing.T) {
+func TestShouldSkipAgentHandling_RegularError_NotSkipped(t *testing.T) {
 	t.Parallel()
-	result := fixableError(errors.New("some unknown error"))
-	require.True(t, result)
+	result := shouldSkipAgentHandling(errors.New("some unknown error"))
+	require.False(t, result)
 }
 
-func TestFixableError_ContextCanceled(t *testing.T) {
+func TestShouldSkipAgentHandling_ContextCanceled_Skipped(t *testing.T) {
 	t.Parallel()
-	// context.Canceled is not a typed auth/tool error, so it falls through to
-	// the default fixable path.
-	result := fixableError(context.Canceled)
+	// context.Canceled is a control-flow error that should be skipped.
+	result := shouldSkipAgentHandling(context.Canceled)
 	require.True(t, result)
 }
 
@@ -1096,7 +1095,7 @@ func TestErrorMiddleware_Run_OnCI_ShortCircuits(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// ErrorMiddleware.Run — shouldSkipErrorAnalysis path
+// ErrorMiddleware.Run — shouldSkipAgentHandling path
 // ---------------------------------------------------------------------------
 
 func TestErrorMiddleware_Run_SkippableError_CancelledInNonPrompt(t *testing.T) {

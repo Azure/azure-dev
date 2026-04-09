@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -246,6 +247,11 @@ func (e *pythonExecutor) installDeps(
 				err,
 			)
 		}
+	default:
+		log.Printf(
+			"unsupported dependency file %q - skipping install",
+			depFile,
+		)
 	}
 	return nil
 }

@@ -4,8 +4,10 @@
 package language
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -261,6 +263,40 @@ func TestPythonPrepare_VenvAlreadyExists(t *testing.T) {
 		"should still install requirements",
 	)
 	assert.NotEmpty(t, e.venvPath)
+}
+
+func TestPythonInstallDeps_UnrecognizedFile(t *testing.T) {
+	cli := &mockPythonTools{}
+	e := newPythonExecutorInternal(
+		&mockCommandRunner{}, cli,
+	)
+
+	// Capture log output to verify the default-case message.
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	defer log.SetOutput(os.Stderr)
+
+	err := e.installDeps(
+		t.Context(), t.TempDir(),
+		"some_env", "unknown.cfg", nil,
+	)
+
+	require.NoError(t, err,
+		"unrecognized dep file should not return an error",
+	)
+	assert.False(t, cli.installReqCalled,
+		"should not call InstallRequirements",
+	)
+	assert.False(t, cli.installProjCalled,
+		"should not call InstallProject",
+	)
+	assert.Contains(t, buf.String(),
+		"unsupported dependency file",
+		"should log a skip message for unrecognized files",
+	)
+	assert.Contains(t, buf.String(), "unknown.cfg",
+		"log message should include the file name",
+	)
 }
 
 // ---------------------------------------------------------------------------

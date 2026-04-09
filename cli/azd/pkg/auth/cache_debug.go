@@ -165,5 +165,5 @@ func (t *msalCacheTracer) logSnapshot(phase string) {
 // shortDigest returns the first 8 hex characters of the SHA-256 digest of s.
 func shortDigest(value string) string {
 	sum := sha256.Sum256([]byte(value))
-	return hex.EncodeToString(sum[:6])
+	return hex.EncodeToString(sum[:4])
 }

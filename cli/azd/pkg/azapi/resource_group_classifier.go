@@ -44,6 +44,11 @@ type ClassifyOptions struct {
 	Interactive bool   // Whether to prompt for unknown RGs
 	EnvName     string // Current azd environment name for tag matching
 
+	// ExpectedProvisionParamHash is the expected value of the azd-provision-param-hash tag.
+	// When set, Tier 2 verifies the tag value matches (not just presence).
+	// When empty, Tier 2 only checks that the tag is non-empty.
+	ExpectedProvisionParamHash string
+
 	// GetResourceGroupTags returns the tags on a resource group (nil map if 404).
 	GetResourceGroupTags func(ctx context.Context, rgName string) (map[string]*string, error)
 	// ListResourceGroupResources returns all resources in a resource group.
@@ -66,6 +71,10 @@ const (
 	cTier4Parallelism    = 5
 )
 
+// TagKeyProvisionParamHash is the exported constant for the provision parameter hash tag key.
+// Used by callers (e.g. bicep_destroy.go) to extract the expected hash from deployment tags.
+const TagKeyProvisionParamHash = cAzdProvisionHashTag
+
 // tier1Result is the outcome of Tier 1 classification for a single RG.
 type tier1Result int
 
@@ -74,6 +83,12 @@ const (
 	tier1Owned                // Create operation found
 	tier1External             // Read / EvaluateDeploymentOutput operation found
 )
+
+// tier1Info holds the classification result and the operation that caused it.
+type tier1Info struct {
+	result    tier1Result
+	operation string // the provisioning operation that classified this RG (for external)
+}
 
 // ClassifyResourceGroups determines which resource groups from a deployment are
 // safe to delete (owned by azd) vs which should be skipped (external/unknown/vetoed).
@@ -155,16 +170,31 @@ func ClassifyResourceGroups(
 	sem := make(chan struct{}, cTier4Parallelism)
 	var wg sync.WaitGroup
 	for _, rg := range owned {
+		// Context-aware semaphore: bail out if context is cancelled while waiting.
+		select {
+		case sem <- struct{}{}:
+		case <-ctx.Done():
+			vetoCh <- veto{
+				rg:     rg,
+				reason: "error during safety check: " + ctx.Err().Error(),
+			}
+			continue
+		}
 		wg.Add(1)
-		sem <- struct{}{}
 		go func() {
 			defer wg.Done()
 			defer func() { <-sem }()
 			reason, vetoed, needsPrompt, err := classifyTier4(ctx, rg, opts)
 			if err != nil {
 				// Fail safe: treat errors as vetoes to avoid accidental deletion.
-				log.Printf("ERROR: classify rg=%s tier=4: safety check failed: %v (treating as veto)", rg, err)
-				vetoCh <- veto{rg: rg, reason: fmt.Sprintf("error during safety check: %s", err.Error())}
+				log.Printf(
+					"ERROR: classify rg=%s tier=4: safety check failed: %v (treating as veto)",
+					rg, err,
+				)
+				vetoCh <- veto{
+					rg:     rg,
+					reason: fmt.Sprintf("error during safety check: %s", err.Error()),
+				}
 				return
 			}
 			if needsPrompt {
@@ -220,20 +250,20 @@ func classifyTier1(
 	rgNames []string,
 	result *ClassifyResult,
 ) (owned, unknown []string) {
-	tier1 := make(map[string]tier1Result, len(rgNames))
+	tier1 := make(map[string]tier1Info, len(rgNames))
 	for _, rg := range rgNames {
-		tier1[rg] = tier1Unknown
+		tier1[rg] = tier1Info{result: tier1Unknown}
 	}
 	for _, op := range operations {
 		if name, ok := operationTargetsRG(op, cProvisionOpCreate); ok {
 			if _, tracked := tier1[name]; tracked {
-				tier1[name] = tier1Owned
+				tier1[name] = tier1Info{result: tier1Owned}
 				continue
 			}
 			// normalize case for map lookup
 			for _, rg := range rgNames {
 				if strings.EqualFold(rg, name) {
-					tier1[rg] = tier1Owned
+					tier1[rg] = tier1Info{result: tier1Owned}
 					break
 				}
 			}
@@ -241,8 +271,10 @@ func classifyTier1(
 		}
 		if name, ok := operationTargetsRG(op, cProvisionOpRead); ok {
 			for _, rg := range rgNames {
-				if strings.EqualFold(rg, name) && tier1[rg] != tier1Owned {
-					tier1[rg] = tier1External
+				if strings.EqualFold(rg, name) && tier1[rg].result != tier1Owned {
+					tier1[rg] = tier1Info{
+						result: tier1External, operation: cProvisionOpRead,
+					}
 					break
 				}
 			}
@@ -250,8 +282,10 @@ func classifyTier1(
 		}
 		if name, ok := operationTargetsRG(op, cProvisionOpEvalOut); ok {
 			for _, rg := range rgNames {
-				if strings.EqualFold(rg, name) && tier1[rg] != tier1Owned {
-					tier1[rg] = tier1External
+				if strings.EqualFold(rg, name) && tier1[rg].result != tier1Owned {
+					tier1[rg] = tier1Info{
+						result: tier1External, operation: cProvisionOpEvalOut,
+					}
 					break
 				}
 			}
@@ -259,13 +293,16 @@ func classifyTier1(
 	}
 
 	for _, rg := range rgNames {
-		switch tier1[rg] {
+		info := tier1[rg]
+		switch info.result {
 		case tier1Owned:
 			owned = append(owned, rg)
 		case tier1External:
 			result.Skipped = append(result.Skipped, ClassifiedSkip{
-				Name:   rg,
-				Reason: "external (Tier 1: Read operation found)",
+				Name: rg,
+				Reason: fmt.Sprintf(
+					"external (Tier 1: %s operation found)", info.operation,
+				),
 			})
 		default:
 			unknown = append(unknown, rg)
@@ -300,6 +337,13 @@ func classifyTier2(ctx context.Context, rgName string, opts ClassifyOptions) (*C
 	envTag := tagValue(tags, cAzdEnvNameTag)
 	hashTag := tagValue(tags, cAzdProvisionHashTag)
 	if envTag != "" && hashTag != "" && strings.EqualFold(envTag, opts.EnvName) {
+		// If an expected hash is provided, verify it matches.
+		// If not provided, presence of both tags is sufficient (backward compat).
+		if opts.ExpectedProvisionParamHash != "" &&
+			hashTag != opts.ExpectedProvisionParamHash {
+			// Hash mismatch — fall through to Tier 3.
+			return nil, false, nil
+		}
 		return nil, true, nil
 	}
 	return nil, false, nil
@@ -323,11 +367,25 @@ func classifyTier4(ctx context.Context, rgName string, opts ClassifyOptions) (st
 
 	// Extra-resource check.
 	if opts.ListResourceGroupResources != nil {
+		// When EnvName is empty, foreign-resource detection cannot distinguish owned from
+		// untagged resources. Veto to be safe rather than silently allowing deletion.
+		if opts.EnvName == "" {
+			return "vetoed (Tier 4: cannot verify resource ownership" +
+				" without environment name)", true, false, nil
+		}
+
 		resources, err := opts.ListResourceGroupResources(ctx, rgName)
 		if err != nil {
 			if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
-				if respErr.StatusCode == 403 || respErr.StatusCode == 404 {
+				switch respErr.StatusCode {
+				case 404:
+					// RG already deleted — no veto needed.
 					return "", false, false, nil
+				case 403:
+					// Cannot enumerate resources due to auth failure — veto to be safe.
+					reason := "vetoed (Tier 4: unable to enumerate resource group" +
+						" resources due to authorization failure)"
+					return reason, true, false, nil
 				}
 			}
 			return "", false, false, fmt.Errorf("classify rg=%s tier=4 resources: %w", rgName, err)

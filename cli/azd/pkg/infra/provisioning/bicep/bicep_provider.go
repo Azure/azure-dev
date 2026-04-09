@@ -1011,8 +1011,9 @@ func (p *BicepProvider) Destroy(
 	// by creating a new empty deployment that becomes the last successful deployment.
 	if len(groupedResources) == 0 {
 		p.console.StopSpinner(ctx, "", input.StepDone)
-		// Call deployment.Delete to void the state even though there are no resources to delete
-		if err := p.destroyDeployment(ctx, deploymentToDelete); err != nil {
+		// No resources found — void the deployment state directly without calling destroyDeployment,
+		// which would re-discover and unconditionally delete all RGs.
+		if err := p.voidDeploymentState(ctx, deploymentToDelete); err != nil {
 			return nil, fmt.Errorf("voiding deployment state: %w", err)
 		}
 	} else {
@@ -1034,7 +1035,7 @@ func (p *BicepProvider) Destroy(
 			}
 		}
 
-		// Void deployment state after successful classification (regardless of how many RGs were deleted).
+		// Void deployment state after successful classification and deletion (classifyErr covers both).
 		// This ensures subsequent azd provision works correctly even if all RGs were skipped.
 		// This MUST run before purge-list fetching to avoid early returns leaving stale state.
 		if classifyErr == nil {

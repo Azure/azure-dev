@@ -190,7 +190,8 @@ azd down
   │    │    │    ├─ In interactive mode: prompt user per-RG with warning (default: No)
   │    │    │    │    "azd did not create resource group 'X'. Delete it? (y/N)"
   │    │    │    ├─ User accepts → merged into owned list for Tier 4 veto checks
-  │    │    │    └─ Non-interactive/--force: classify as "external" (NEVER deleted)
+  │    │    │    └─ Non-interactive (no --force): classify as "external" (NEVER deleted)
+  │    │    │       --force: classification is bypassed entirely (all RGs deleted)
   │    │    │
   │    │    └─ [Tier 4: Always-On Safeguards] ─── runs on ALL deletion candidates
   │    │         ├─ Has CanNotDelete/ReadOnly lock? → SKIP (veto, best-effort)
@@ -500,22 +501,22 @@ mid-operation — potentially after other RGs have already been deleted.
 **Fix**: Before entering the deletion loop, query locks for each candidate RG
 via the ARM management locks API. Skip locked RGs proactively.
 
-### ⚠️ Gap: --force Bypasses All Safety (High)
+### ⚠️ Gap: --force Bypasses All Safety (High) — RESOLVED
 
-**Current state** (`bicep_provider.go:1238`):
+**Current state** (`bicep_destroy.go`):
 ```go
 if options.Force() {
-    return nil
+    // bypass classification, delete all RGs
 }
 ```
 
-**Fix**: `--force` should only skip the interactive confirmation prompt for
-RGs classified as `owned`. It should NOT skip the ownership classification,
-and it should NOT allow deletion of external/unknown RGs. The classification
-pipeline runs regardless of `--force`. For `external` or `unknown` resources
-in `--force` mode, the RG is unconditionally skipped (never deleted). In
-interactive mode without `--force`, the user is prompted per-RG with a
-default of No.
+**Resolution**: `--force` bypasses the entire 4-tier classification pipeline
+and deletes ALL resource groups from the deployment, preserving original
+`azd down --force` semantics for CI/CD pipelines. Classification only runs
+when `--force` is not set. This matches Decision 4 (see below) and avoids
+breaking existing CI/CD workflows that depend on the current `--force`
+behavior. A future enhancement could add a free Tier 1 check under
+`--force`, but this is deferred.
 
 ### ⚠️ Gap: No Extra-Resource Detection (Medium)
 
@@ -551,9 +552,10 @@ would be unavailable.
 
 **Mitigation**: Fall through to Tier 2 (tag check). For deployments created
 before this change, both Tier 1 and Tier 2 may be degraded. In that case,
-Tier 3 (interactive confirmation) activates. For `--force` mode with old
-deployments, RGs with unknown provenance are skipped with a logged warning
-recommending re-provisioning (`azd provision`) to establish ownership signals.
+Tier 3 (interactive confirmation) activates. In `--force` mode,
+classification is bypassed entirely and all RGs are deleted (preserving
+original semantics). Without `--force`, RGs with unknown provenance are
+skipped in non-interactive mode, or prompted in interactive mode.
 
 ### Risk 2: Performance Impact of Additional API Calls
 
@@ -578,11 +580,10 @@ azd-created RG as `unknown` or `external` if: (a) deployment operations
 are purged, (b) tags were removed by another process, (c) the RG was
 recreated outside azd after initial provisioning.
 
-**Mitigation**: In interactive mode, `external` and `unknown` both trigger a
-per-RG prompt — the user can explicitly approve deletion with a conscious
-decision (default is No). In `--force` mode, the warning log tells users to
-run `azd provision` first to re-establish ownership signals. There is no
-bulk override flag — each external RG must be individually approved.
+**Mitigation**: In interactive mode (without `--force`), `unknown` RGs
+trigger a per-RG prompt - the user can explicitly approve deletion with a
+conscious decision (default is No). In `--force` mode, classification is
+bypassed entirely (all RGs deleted), so false negatives don't apply.
 
 ### Risk 4: Backward Compatibility with Existing Deployments
 
@@ -623,16 +624,19 @@ groups. azd will NEVER delete a resource group it didn't create unless the user
 explicitly approves each one individually in an interactive session.
 
 **Flag behavior**:
-- `--force` — Skips confirmation prompts for azd-CREATED resource groups only.
-  Has zero effect on external/unknown RGs.
+- `--force` — Bypasses the 4-tier classification pipeline entirely and deletes
+  ALL resource groups from the deployment. This preserves original semantics
+  for CI/CD pipelines (see Decision 4).
 - `--purge` — Unchanged (soft-delete purging only).
 - No new flags are added.
 
 **Behavior by mode**:
-- **Interactive**: Per-RG prompt with explicit warning and default No:
-  `"azd did not create resource group 'rg-shared-db'. Delete it? (y/N)"`
-- **Non-interactive (CI/CD, --force)**: External/unknown RGs are NEVER deleted.
-  Logged as skipped with classification reason.
+- **Interactive (no --force)**: Classification runs. Owned RGs are confirmed
+  with an overall prompt. Unknown RGs get per-RG prompts with default No.
+  External RGs are never deleted.
+- **Non-interactive (CI/CD, no --force)**: Classification runs. Only owned
+  RGs are deleted. External/unknown RGs are skipped with logged reason.
+- **--force**: Classification bypassed. All RGs deleted.
 
 ### D2: Structured Telemetry for Classification Decisions
 
@@ -682,8 +686,10 @@ Provisioning Support" section for detailed scenario analysis.
 interactive mode (no `--force`), the extra-resource veto is a **soft veto**:
 the user is shown the foreign resources and asked for explicit per-RG
 confirmation (default No). This handles the common case where users manually
-add experimental resources to azd-managed RGs. In `--force`/CI mode, the
-veto remains **hard** — foreign resources unconditionally block deletion.
+add experimental resources to azd-managed RGs. In non-interactive mode
+(no `--force`), the veto remains **hard** - foreign resources unconditionally
+block deletion. Note: `--force` bypasses classification entirely per
+Decision 4, so the veto check doesn't apply.
 
 ## Affected Files
 
@@ -863,11 +869,11 @@ Tier 1 evidence for retry. The implementer should:
 `options.Force()` is true. If any safety logic is placed in or after the
 prompt path, `--force` bypasses it entirely.
 
-**Resolution**: Classification MUST run unconditionally — before any
-prompt logic. The `--force` flag only controls whether the interactive
-confirmation prompt is shown for owned RGs. The classification pipeline
-(Tiers 4/1/2) runs regardless of `--force`. Tier 3 only activates
-in interactive mode.
+**Resolution**: Classification is separated from prompting in a dedicated
+`classifyAndDeleteResourceGroups()` function. The `--force` flag bypasses
+classification entirely (per Decision 4), deleting all RGs to preserve
+CI/CD semantics. When `--force` is not set, classification runs in full.
+This eliminates the original risk of prompt-path bypass.
 
 ### MR-010 [MEDIUM] — Tier 4 Absolute Veto Blocks Interactive User Override
 **Models**: [Opus]
@@ -1098,26 +1104,22 @@ Test matrix:
 - Partial deletion: RG1 succeeds, RG2 fails, void NOT called
 ```
 
-### Tip 7: `--force` Must NOT Short-Circuit Classification
+### Tip 7: `--force` Bypasses Classification (Decision 4)
 
-The existing pattern `if options.Force() { return nil }` in
-`promptDeletion()` MUST be changed. Classification runs unconditionally.
-`--force` only affects:
-1. Skipping the interactive confirmation for owned RGs
-2. Converting Tier 3 unknown → external (never deleted)
+Per Decision 4, `--force` bypasses the entire classification pipeline and
+deletes all discovered RGs. This preserves original CI/CD semantics.
+Classification only runs when `--force` is not set.
 
 ```go
-// WRONG (existing pattern):
-if options.Force() { return nil }
-
-// RIGHT (new pattern):
-classified := classifier.Classify(ctx, rgNames, deployment)
-// classification always runs, regardless of --force
-if !options.Force() {
-    // show classified preview and prompt for owned RGs
-    // prompt per-RG for unknown RGs (soft Tier 4 veto)
+// --force: bypass classification, delete all RGs
+if options.Force() {
+    deleted, err = deleteRGList(ctx, subId, rgNames, ...)
+    return deleted, nil, err
 }
-// delete only owned (+ user-approved in interactive mode)
+
+// No --force: run full classification pipeline
+classified := ClassifyResourceGroups(ctx, ops, rgNames, opts)
+// prompt for owned RGs, skip external/unknown
 ```
 
 ### Tip 8: Void State Only After Full Success

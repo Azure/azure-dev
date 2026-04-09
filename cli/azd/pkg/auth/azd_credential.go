@@ -75,7 +75,7 @@ func (c *azdCredential) GetToken(ctx context.Context, options policy.TokenReques
 		c.cacheTracer.LogSnapshotOnce(failurePhase)
 
 		if authFailed, ok := errors.AsType[*AuthFailedError](err); ok {
-			if loginErr, ok := newReLoginRequiredError(authFailed.Parsed, options.Scopes, c.cloud); ok {
+			if loginErr, ok := newReLoginRequiredError(authFailed.Parsed, options.Scopes, c.cloud, tenantID); ok {
 				log.Println(authFailed.httpErrorDetails())
 
 				if options.Claims != "" {

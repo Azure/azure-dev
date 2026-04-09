@@ -70,31 +70,41 @@ func (p *subscriptionCredentialProvider) CredentialForSubscription(
 				"Access to tenant '%s' requires re-authentication before azd can use this subscription.",
 				tenantId,
 			)
-			tenantSpecificSuggestion := fmt.Sprintf(
-				"Run `azd auth login --tenant-id %s` to re-authenticate to this tenant.",
-				tenantId,
-			)
 
 			// Check if the error already has a suggestion (ErrorWithSuggestion from auth layer)
 			if errWithSuggestion, ok := errors.AsType[*internal.ErrorWithSuggestion](err); ok {
-				// Enhance the existing suggestion with tenant-specific guidance
-				enhancedSuggestion := tenantSpecificSuggestion
-				if suggestion := strings.TrimSpace(errWithSuggestion.Suggestion); suggestion != "" {
-					enhancedSuggestion = fmt.Sprintf("%s %s", suggestion, tenantSpecificSuggestion)
-				}
 				if errWithSuggestion.Message != "" {
 					message = errWithSuggestion.Message
+				}
+
+				suggestion := strings.TrimSpace(errWithSuggestion.Suggestion)
+				// If the auth layer's suggestion doesn't already include --tenant-id,
+				// append tenant-specific login guidance.
+				if !strings.Contains(suggestion, "--tenant-id") {
+					tenantHint := fmt.Sprintf(
+						"Run `azd auth login --tenant-id %s` to re-authenticate to this tenant.",
+						tenantId,
+					)
+					if suggestion != "" {
+						suggestion = fmt.Sprintf("%s %s", suggestion, tenantHint)
+					} else {
+						suggestion = tenantHint
+					}
 				}
 
 				return nil, &internal.ErrorWithSuggestion{
 					Err:        errWithSuggestion.Err,
 					Message:    message,
-					Suggestion: enhancedSuggestion,
+					Suggestion: suggestion,
 					Links:      errWithSuggestion.Links,
 				}
 			}
 
 			// If it's not wrapped yet, create a new ErrorWithSuggestion
+			tenantSpecificSuggestion := fmt.Sprintf(
+				"Run `azd auth login --tenant-id %s` to re-authenticate to this tenant.",
+				tenantId,
+			)
 			return nil, &internal.ErrorWithSuggestion{
 				Err:        err,
 				Message:    message,

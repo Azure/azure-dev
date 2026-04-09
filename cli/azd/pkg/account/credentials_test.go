@@ -6,6 +6,8 @@ package account
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,6 +15,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSubscriptionCredentialProvider(t *testing.T) {
@@ -158,6 +161,30 @@ func TestSubscriptionCredentialProvider_AADSTSErrors(t *testing.T) {
 		assert.Equal(t, "Login expired for the current account.", errWithSuggestion.Message)
 		assert.Contains(t, errWithSuggestion.Suggestion, "Run `azd auth login` to acquire a new token.")
 		assert.Contains(t, errWithSuggestion.Suggestion, tenantId)
+	})
+
+	t.Run("AADSTS700082_SuggestionAlreadyHasTenantID_NoRedundantAppend", func(t *testing.T) {
+		provider := NewSubscriptionCredentialProvider(
+			subscriptionTenantResolverFunc(func(ctx context.Context, subId string) (string, error) {
+				return tenantId, nil
+			}),
+			multiTenantCredentialProviderFunc(func(ctx context.Context, tid string) (azcore.TokenCredential, error) {
+				return nil, &internal.ErrorWithSuggestion{
+					Err:     errors.New("AADSTS700082: The refresh token has expired"),
+					Message: "Login expired for the current account.",
+					Suggestion: fmt.Sprintf(
+						"login expired, run `azd auth login --tenant-id %s` to acquire a new token.", tenantId),
+				}
+			}),
+		)
+
+		_, err := provider.CredentialForSubscription(t.Context(), subscriptionId)
+		assert.Error(t, err)
+
+		errWithSuggestion, ok := errors.AsType[*internal.ErrorWithSuggestion](err)
+		require.True(t, ok)
+		// Should NOT duplicate the --tenant-id guidance
+		assert.Equal(t, 1, strings.Count(errWithSuggestion.Suggestion, "--tenant-id"))
 	})
 
 	t.Run("TenantLookupFailure_EnhancedError", func(t *testing.T) {

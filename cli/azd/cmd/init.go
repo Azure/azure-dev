@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -188,7 +189,7 @@ func newInitAction(
 	}
 }
 
-func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+func (i *initAction) Run(ctx context.Context) (_ *actions.ActionResult, retErr error) {
 	wd, err := os.Getwd()
 	if err != nil {
 		return nil, fmt.Errorf("getting cwd: %w", err)
@@ -271,6 +272,15 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 			wd = targetDir
 			createdProjectDir = targetDir
+
+			// Clean up the created directory and restore the original CWD
+			// if any downstream step fails, matching git clone's behavior.
+			defer func() {
+				if retErr != nil {
+					_ = os.Chdir(originalWd)
+					_ = os.RemoveAll(createdProjectDir)
+				}
+			}()
 		}
 	}
 
@@ -1047,8 +1057,13 @@ func (i *initAction) validateTargetDirectory(ctx context.Context, targetDir stri
 	}
 
 	// Read a single entry to check emptiness without loading the full listing.
-	names, _ := f.Readdirnames(1)
+	names, readErr := f.Readdirnames(1)
 	f.Close()
+
+	if readErr != nil && !errors.Is(readErr, io.EOF) {
+		return fmt.Errorf("checking directory contents of '%s': %w",
+			filepath.Base(targetDir), readErr)
+	}
 
 	if len(names) == 0 {
 		return nil // Empty directory is fine

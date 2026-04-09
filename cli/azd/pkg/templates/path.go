@@ -174,6 +174,7 @@ func DeriveDirectoryName(templatePath string) string {
 	// Final safety: if the name is still empty or unsafe after sanitization,
 	// use a generic fallback
 	if name == "" || name == "." || name == ".." {
+		log.Printf("DeriveDirectoryName: input %q fell back to default %q", templatePath, "new-project")
 		name = "new-project"
 	}
 

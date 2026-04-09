@@ -1171,13 +1171,22 @@ func (p *BicepProvider) Destroy(
 			p.console.Message(ctx, fmt.Sprintf("  Skipped: %s (%s)", skip.Name, skip.Reason))
 		}
 
+		// Step 4: Purge soft-deleted resources.
+		// Always attempt purge even after partial deletion failure — some RGs
+		// may have been deleted successfully, and their soft-deleted resources
+		// (Key Vaults, Managed HSMs, etc.) need purging to avoid name collisions
+		// on reprovisioning. On retry, deleted RGs will be classified as
+		// "already deleted" (Tier 2: 404) and their purge targets would be lost.
+		purgeErr := p.purgeItems(ctx, purgeItem, options)
+
+		// Report deletion errors first — they're the primary failure.
+		// Purge errors after partial deletion are expected (resources in
+		// non-deleted RGs are still live and cannot be purged yet).
 		if deleteErr != nil {
 			return nil, fmt.Errorf("deleting resource groups: %w", deleteErr)
 		}
-
-		// Step 4: Purge soft-deleted resources.
-		if err := p.purgeItems(ctx, purgeItem, options); err != nil {
-			return nil, fmt.Errorf("purging resources: %w", err)
+		if purgeErr != nil {
+			return nil, fmt.Errorf("purging resources: %w", purgeErr)
 		}
 	}
 

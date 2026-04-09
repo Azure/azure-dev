@@ -66,9 +66,9 @@ type InitAction struct {
 	flags         *initFlags
 	models        *modelSelector
 
-	deploymentDetails  []project.Deployment
-	containerSettings  *project.ContainerSettings
-	httpClient         *http.Client
+	deploymentDetails []project.Deployment
+	containerSettings *project.ContainerSettings
+	httpClient        *http.Client
 }
 
 // modelSelector encapsulates the dependencies needed for model selection and

@@ -1088,20 +1088,10 @@ func (p *BicepProvider) Destroy(
 		return nil, fmt.Errorf("mapping resources to resource groups: %w", err)
 	}
 
-	// If no resources found, we still need to void the deployment state.
-	// This can happen when resources have been manually deleted before running azd down.
-	// Voiding the state ensures that subsequent azd provision commands work correctly
-	// by creating a new empty deployment that becomes the last successful deployment.
-	if len(groupedResources) == 0 {
-		p.console.StopSpinner(ctx, "", input.StepDone)
-		// No resources found — void the deployment state directly without calling destroyDeployment,
-		// which would re-discover and unconditionally delete all RGs.
-		if err := p.voidDeploymentState(ctx, deploymentToDelete); err != nil {
-			return nil, fmt.Errorf("voiding deployment state: %w", err)
-		}
-	} else if p.isDeploymentStacksEnabled() {
-		// Deployment stacks manage their own resource lifecycle — the stack's Delete()
-		// cascades to managed resources. Classification doesn't apply here.
+	// Deployment stacks must be checked FIRST, even when groupedResources is empty.
+	// A stack can have zero ARM-visible resources after manual cleanup, but the stack
+	// itself still needs to be deleted via deployment.Delete() to remove deny assignments.
+	if p.isDeploymentStacksEnabled() {
 		p.console.StopSpinner(ctx, "", input.StepDone)
 
 		if err := p.destroyViaDeploymentDelete(ctx, deploymentToDelete, groupedResources, options); err != nil {
@@ -1117,6 +1107,15 @@ func (p *BicepProvider) Destroy(
 
 		if err := p.purgeItems(ctx, purgeItem, options); err != nil {
 			return nil, fmt.Errorf("purging resources: %w", err)
+		}
+	} else if len(groupedResources) == 0 {
+		// No resources found — void the deployment state directly.
+		// This can happen when resources have been manually deleted before running azd down.
+		// Voiding the state ensures that subsequent azd provision commands work correctly
+		// by creating a new empty deployment that becomes the last successful deployment.
+		p.console.StopSpinner(ctx, "", input.StepDone)
+		if err := p.voidDeploymentState(ctx, deploymentToDelete); err != nil {
+			return nil, fmt.Errorf("voiding deployment state: %w", err)
 		}
 	} else {
 		p.console.StopSpinner(ctx, "", input.StepDone)
@@ -1135,6 +1134,15 @@ func (p *BicepProvider) Destroy(
 			if resources, ok := groupedResources[rgName]; ok {
 				ownedGroupedResources[rgName] = resources
 			}
+		}
+
+		// If user cancelled the confirmation prompt, show skipped RGs and return without
+		// voiding deployment state or invalidating env keys.
+		if errors.Is(classifyErr, errUserCancelled) {
+			for _, skip := range skipped {
+				p.console.Message(ctx, fmt.Sprintf("  Skipped: %s (%s)", skip.Name, skip.Reason))
+			}
+			return &provisioning.DestroyResult{}, nil
 		}
 
 		// Void deployment state after successful classification and deletion (classifyErr covers both).

@@ -24,6 +24,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
+// errUserCancelled is returned when the user declines the resource group deletion confirmation.
+// The caller uses this to distinguish user cancellation from successful completion.
+var errUserCancelled = errors.New("user cancelled resource group deletion")
+
 // forceDeleteLogAnalyticsIfPurge force-deletes Log Analytics Workspaces in the given resource
 // groups when purge is enabled. This must happen while the workspaces still exist — force-delete
 // is not possible after the containing resource group is deleted.
@@ -156,7 +160,7 @@ func (p *BicepProvider) classifyAndDeleteResourceGroups(
 			return nil, result.Skipped, fmt.Errorf("confirming resource group deletion: %w", confirmErr)
 		}
 		if !confirmed {
-			return nil, result.Skipped, nil
+			return nil, result.Skipped, errUserCancelled
 		}
 	}
 

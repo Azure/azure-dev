@@ -55,6 +55,7 @@ words:
   - structpb
   - syncmap
   - syscall
+  - reprovisioning
   - tsx
   - Retryable
   - runcontext

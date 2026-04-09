@@ -293,10 +293,18 @@ func (d *detector) detectCommandBased(
 		// any captured output.
 	}
 
-	status.Installed = true
-	status.InstalledVersion = matchVersion(
+	version := matchVersion(
 		result.Stdout+result.Stderr, tool.VersionRegex,
 	)
+
+	if version != "" {
+		status.Installed = true
+		status.InstalledVersion = version
+	} else if tool.VersionRegex == "" {
+		// No regex configured — the command ran successfully,
+		// so treat the binary as installed.
+		status.Installed = true
+	}
 
 	return status
 }

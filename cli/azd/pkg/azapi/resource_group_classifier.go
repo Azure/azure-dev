@@ -186,9 +186,7 @@ func ClassifyResourceGroups(
 			}
 			continue
 		}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			defer func() { <-sem }()
 			reason, vetoed, needsPrompt, err := classifyTier4(ctx, rg, opts)
 			if err != nil {
@@ -210,7 +208,7 @@ func ClassifyResourceGroups(
 			if vetoed {
 				vetoCh <- veto{rg: rg, reason: reason}
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	close(vetoCh)

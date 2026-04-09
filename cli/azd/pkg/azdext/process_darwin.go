@@ -66,7 +66,7 @@ func findProcessByNameOS(name string) []ProcessInfo {
 	nameLower := strings.ToLower(name)
 	var results []ProcessInfo
 
-	for line := range strings.SplitSeq(string(output), "\n") {
+	for _, line := range strings.Split(string(output), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue

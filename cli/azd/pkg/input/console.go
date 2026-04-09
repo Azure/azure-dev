@@ -584,9 +584,7 @@ func (c *AskerConsole) SupportsPromptDialog() bool {
 // values.
 func (c *AskerConsole) PromptDialog(ctx context.Context, dialog PromptDialog) (map[string]any, error) {
 	if c.failOnPrompt {
-		return nil, fmt.Errorf(
-			"interactive prompt not allowed in strict mode (--fail-on-prompt): %q"+
-				" -- specify via command-line flags or environment variables", dialog.Title)
+		return nil, FailOnPromptError(dialog.Title)
 	}
 
 	request := externalPromptDialogRequest{
@@ -629,9 +627,7 @@ func (c *AskerConsole) Prompt(ctx context.Context, options ConsoleOptions) (stri
 	var response string
 
 	if c.failOnPrompt && c.promptClient != nil {
-		return "", fmt.Errorf(
-			"interactive prompt not allowed in strict mode (--fail-on-prompt): %q"+
-				" -- specify via command-line flags or environment variables", options.Message)
+		return "", FailOnPromptError(options.Message)
 	}
 
 	if c.promptClient != nil {
@@ -693,9 +689,7 @@ func choicesFromOptions(options ConsoleOptions) []promptChoice {
 // Prompts the user to select from a set of values
 func (c *AskerConsole) Select(ctx context.Context, options ConsoleOptions) (int, error) {
 	if c.failOnPrompt && c.promptClient != nil {
-		return -1, fmt.Errorf(
-			"interactive prompt not allowed in strict mode (--fail-on-prompt): %q"+
-				" -- specify via command-line flags or environment variables", options.Message)
+		return -1, FailOnPromptError(options.Message)
 	}
 
 	if c.promptClient != nil {
@@ -779,9 +773,7 @@ func (c *AskerConsole) MultiSelect(ctx context.Context, options ConsoleOptions) 
 	var response []string
 
 	if c.failOnPrompt && c.promptClient != nil {
-		return nil, fmt.Errorf(
-			"interactive prompt not allowed in strict mode (--fail-on-prompt): %q"+
-				" -- specify via command-line flags or environment variables", options.Message)
+		return nil, FailOnPromptError(options.Message)
 	}
 
 	if c.promptClient != nil {
@@ -853,9 +845,7 @@ func (c *AskerConsole) MultiSelect(ctx context.Context, options ConsoleOptions) 
 // Prompts the user to confirm an operation
 func (c *AskerConsole) Confirm(ctx context.Context, options ConsoleOptions) (bool, error) {
 	if c.failOnPrompt && c.promptClient != nil {
-		return false, fmt.Errorf(
-			"interactive prompt not allowed in strict mode (--fail-on-prompt): %q"+
-				" -- specify via command-line flags or environment variables", options.Message)
+		return false, FailOnPromptError(options.Message)
 	}
 
 	if c.promptClient != nil {

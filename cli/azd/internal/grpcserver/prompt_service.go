@@ -16,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ai"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
@@ -53,11 +54,7 @@ func (s *promptService) Confirm(ctx context.Context, req *azdext.ConfirmRequest)
 	}
 
 	if s.globalOptions.FailOnPrompt {
-		return nil, fmt.Errorf(
-			"interactive prompt not allowed in strict mode: %q"+
-				" (provide the value via command-line flags or environment variables)",
-			req.Options.Message,
-		)
+		return nil, input.FailOnPromptError(req.Options.Message)
 	}
 
 	if s.globalOptions.NoPrompt {
@@ -102,13 +99,7 @@ func (s *promptService) Select(ctx context.Context, req *azdext.SelectRequest) (
 		for i, c := range req.Options.Choices {
 			choiceLabels[i] = c.Label
 		}
-		return nil, fmt.Errorf(
-			"interactive prompt not allowed in strict mode: %q"+
-				" (available options: %s -- specify via"+
-				" command-line flags or environment variables)",
-			req.Options.Message,
-			strings.Join(choiceLabels, ", "),
-		)
+		return nil, input.FailOnPromptSelectError(req.Options.Message, choiceLabels)
 	}
 
 	if s.globalOptions.NoPrompt {
@@ -166,13 +157,7 @@ func (s *promptService) MultiSelect(
 		for i, c := range req.Options.Choices {
 			choiceLabels[i] = c.Label
 		}
-		return nil, fmt.Errorf(
-			"interactive prompt not allowed in strict mode: %q"+
-				" (available options: %s -- specify via"+
-				" command-line flags or environment variables)",
-			req.Options.Message,
-			strings.Join(choiceLabels, ", "),
-		)
+		return nil, input.FailOnPromptSelectError(req.Options.Message, choiceLabels)
 	}
 
 	if s.globalOptions.NoPrompt {
@@ -231,11 +216,7 @@ func (s *promptService) MultiSelect(
 
 func (s *promptService) Prompt(ctx context.Context, req *azdext.PromptRequest) (*azdext.PromptResponse, error) {
 	if s.globalOptions.FailOnPrompt {
-		return nil, fmt.Errorf(
-			"interactive prompt not allowed in strict mode: %q"+
-				" (provide the value via command-line flags or environment variables)",
-			req.Options.Message,
-		)
+		return nil, input.FailOnPromptError(req.Options.Message)
 	}
 
 	if s.globalOptions.NoPrompt {

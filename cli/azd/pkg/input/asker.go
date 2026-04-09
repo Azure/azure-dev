@@ -37,48 +37,17 @@ func NewAsker(noPrompt bool, failOnPrompt bool, isTerminal bool, w io.Writer, r 
 func askOneFailOnPrompt(p survey.Prompt, _ any) error {
 	switch v := p.(type) {
 	case *survey.Input:
-		return fmt.Errorf(
-			"interactive prompt not allowed in strict mode: %q"+
-				" (provide the value via command-line flags"+
-				" or environment variables)",
-			v.Message,
-		)
+		return FailOnPromptError(v.Message)
 	case *survey.Select:
-		return fmt.Errorf(
-			"interactive prompt not allowed in strict mode: %q"+
-				" (available options: %s -- specify via"+
-				" command-line flags or environment variables)",
-			v.Message,
-			strings.Join(v.Options, ", "),
-		)
+		return FailOnPromptSelectError(v.Message, v.Options)
 	case *survey.Confirm:
-		return fmt.Errorf(
-			"interactive prompt not allowed in strict mode: %q"+
-				" (provide the value via command-line flags"+
-				" or environment variables)",
-			v.Message,
-		)
+		return FailOnPromptError(v.Message)
 	case *survey.MultiSelect:
-		return fmt.Errorf(
-			"interactive prompt not allowed in strict mode: %q"+
-				" (available options: %s -- specify via"+
-				" command-line flags or environment variables)",
-			v.Message,
-			strings.Join(v.Options, ", "),
-		)
+		return FailOnPromptSelectError(v.Message, v.Options)
 	case *survey.Password:
-		return fmt.Errorf(
-			"interactive prompt not allowed in strict mode: %q"+
-				" (provide the value via command-line flags"+
-				" or environment variables)",
-			v.Message,
-		)
+		return FailOnPromptError(v.Message)
 	default:
-		return fmt.Errorf(
-			"interactive prompt not allowed in strict mode" +
-				" (provide the value via command-line flags" +
-				" or environment variables)",
-		)
+		return FailOnPromptError("")
 	}
 }
 

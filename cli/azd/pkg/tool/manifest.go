@@ -243,13 +243,13 @@ func azureMCPServer() *ToolDefinition {
 		Category:      ToolCategoryServer,
 		Priority:      ToolPriorityOptional,
 		Website:       "https://github.com/Azure/azure-mcp",
-		DetectCommand: "npx",
-		VersionArgs:   []string{"@azure/mcp@latest", "--version"},
-		VersionRegex:  `(\d+\.\d+\.\d+)`,
+		DetectCommand: "npm",
+		VersionArgs:   []string{"list", "-g", "@azure/mcp", "--json"},
+		VersionRegex:  `"@azure/mcp":\s*\{\s*"version":\s*"(\d+\.\d+\.\d+)"`,
 		InstallStrategies: allPlatforms(InstallStrategy{
 			PackageManager: "npm",
 			PackageId:      "@azure/mcp",
-			InstallCommand: "npx @azure/mcp@latest",
+			InstallCommand: "npm install -g @azure/mcp",
 		}),
 	}
 }

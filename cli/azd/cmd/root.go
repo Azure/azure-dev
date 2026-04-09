@@ -282,6 +282,9 @@ func newRootCmd(
 			ActionResolver: newBuildAction,
 			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 			DefaultFormat:  output.NoneFormat,
+			GroupingOptions: actions.CommandGroupOptions{
+				RootLevelHelp: actions.CmdGroupBeta,
+			},
 		}).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware).
 		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
@@ -547,27 +550,25 @@ func newRootCmd(
 // command where a first-run tool check adds value.  Utility commands
 // (auth, config, env, show, etc.) are excluded so they are never
 // blocked by the first-run experience or update notifications.
+//
+// Instead of maintaining a hard-coded allowlist, we rely on the
+// RootLevelHelpOption group annotation so that any new command added
+// to a workflow group is automatically covered.
 func isWorkflowCommand(descriptor *actions.ActionDescriptor) bool {
-	workflowCommands := map[string]bool{
-		"init":      true,
-		"up":        true,
-		"deploy":    true,
-		"provision": true,
-		"build":     true,
-		"package":   true,
-		"restore":   true,
-		"publish":   true,
-		"down":      true,
-		"monitor":   true,
-		"add":       true,
+	// Walk up to the root-level subcommand (first segment after "azd").
+	current := descriptor
+	for current.Parent() != nil && current.Parent().Parent() != nil {
+		current = current.Parent()
 	}
 
-	// Walk up to the root-level subcommand (first segment after "azd").
-	cmd := descriptor.Options.Command
-	for cmd.Parent() != nil && cmd.Parent().Parent() != nil {
-		cmd = cmd.Parent()
+	if current.Options == nil {
+		return false
 	}
-	return workflowCommands[cmd.Name()]
+
+	group := current.Options.GroupingOptions.RootLevelHelp
+	return group == actions.CmdGroupStart ||
+		group == actions.CmdGroupAzure ||
+		group == actions.CmdGroupBeta
 }
 
 func getCmdRootHelpFooter(cmd *cobra.Command) string {

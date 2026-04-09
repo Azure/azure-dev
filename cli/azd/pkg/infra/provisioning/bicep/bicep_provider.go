@@ -32,7 +32,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/ai"
-	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
@@ -1192,40 +1191,9 @@ func getDeploymentOptions(deployments []*azapi.ResourceDeployment) []string {
 	return promptValues
 }
 
-// NOTE: generateResourcesToDelete and promptDeletion were removed —
-// the new classifyAndDeleteResourceGroups flow prompts per-RG via Tier 3 classification.
-
-// destroyDeployment deletes the azure resources within the deployment and voids the deployment state.
-func (p *BicepProvider) destroyDeployment(
-	ctx context.Context,
-	deployment infra.Deployment,
-) error {
-	err := async.RunWithProgressE(func(progressMessage azapi.DeleteDeploymentProgress) {
-		switch progressMessage.State {
-		case azapi.DeleteResourceStateInProgress:
-			p.console.ShowSpinner(ctx, progressMessage.Message, input.Step)
-		case azapi.DeleteResourceStateSucceeded:
-			p.console.StopSpinner(ctx, progressMessage.Message, input.StepDone)
-		case azapi.DeleteResourceStateFailed:
-			p.console.StopSpinner(ctx, progressMessage.Message, input.StepFailed)
-		}
-	}, func(progress *async.Progress[azapi.DeleteDeploymentProgress]) error {
-		optionsMap, err := convert.ToMap(p.options)
-		if err != nil {
-			return err
-		}
-
-		return deployment.Delete(ctx, optionsMap, progress)
-	})
-
-	if err != nil {
-		return err
-	}
-
-	p.console.Message(ctx, "")
-
-	return nil
-}
+// NOTE: generateResourcesToDelete, promptDeletion, and destroyDeployment were removed —
+// the new classifyAndDeleteResourceGroups flow (bicep_destroy.go) handles classification,
+// prompting per-RG via Tier 3, and deletion.
 
 func itemsCountAsText(items []itemToPurge) string {
 	count := len(items)

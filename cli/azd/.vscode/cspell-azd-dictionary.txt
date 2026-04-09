@@ -54,6 +54,7 @@ armappplatform
 armcognitiveservices
 armcosmos
 armdeploymentstacks
+armlocks
 armmachinelearning
 armmsi
 armoperationalinsights

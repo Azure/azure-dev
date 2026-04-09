@@ -356,8 +356,8 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	}
 
 	// Session ID — routes to the same microVM container instance.
-	// When empty, let the server assign one.
-	sid, err := resolveStoredID(ctx, azdClient, name, a.flags.session, a.flags.newSession, "sessions", false)
+	// Generated client-side (UUID) so it is always persisted locally, even if the request fails.
+	sid, err := resolveStoredID(ctx, azdClient, name, a.flags.session, a.flags.newSession, "sessions", true)
 	if err != nil {
 		return err
 	}
@@ -542,8 +542,9 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 		return err
 	}
 
-	// Session ID — routes to the same container instance
-	sid, err := resolveStoredID(ctx, azdClient, name, a.flags.session, a.flags.newSession, "sessions", false)
+	// Session ID — routes to the same container instance.
+	// Generated client-side (UUID) so it is always persisted locally, even if the request fails.
+	sid, err := resolveStoredID(ctx, azdClient, name, a.flags.session, a.flags.newSession, "sessions", true)
 	if err != nil {
 		return err
 	}

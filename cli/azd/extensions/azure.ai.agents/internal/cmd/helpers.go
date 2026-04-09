@@ -199,16 +199,12 @@ func contextMap(agentCtx *AgentLocalContext, field string) map[string]string {
 // printSessionStatus prints the session line for the invoke banner.
 // label is the formatted prefix (e.g. "Session:  " or "Session:      ").
 func printSessionStatus(label, sid string) {
-	if sid != "" {
-		fmt.Printf("%s%s\n", label, sid)
-	} else {
-		fmt.Printf("%s(new — server will assign)\n", label)
-	}
+	fmt.Printf("%s%s\n", label, sid)
 }
 
 // captureResponseSession reads the x-agent-session-id header from a response
-// and saves it when the caller had no pre-existing session (sid == "").
-// label is the formatted prefix for printing (e.g. "Session:  ").
+// and updates the persisted session when the server returns a different ID
+// than what the client sent (or assigns one when none was sent).
 func captureResponseSession(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -217,12 +213,19 @@ func captureResponseSession(
 	resp *http.Response,
 	label string,
 ) {
-	if sid != "" || azdClient == nil {
+	if azdClient == nil {
 		return
 	}
-	if newSid := resp.Header.Get("x-agent-session-id"); newSid != "" {
-		saveContextValue(ctx, azdClient, agentName, newSid, "sessions")
+	newSid := resp.Header.Get("x-agent-session-id")
+	if newSid == "" || newSid == sid {
+		return
+	}
+	// Server assigned or reassigned a session ID — update persisted value.
+	saveContextValue(ctx, azdClient, agentName, newSid, "sessions")
+	if sid == "" {
 		fmt.Printf("%s%s (assigned by server)\n", label, newSid)
+	} else {
+		fmt.Printf("%s%s (reassigned by server)\n", label, newSid)
 	}
 }
 

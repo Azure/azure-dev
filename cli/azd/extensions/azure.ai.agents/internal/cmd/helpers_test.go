@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
@@ -174,6 +175,134 @@ func TestToServiceKey(t *testing.T) {
 			got := toServiceKey(tt.input)
 			if got != tt.want {
 				t.Errorf("toServiceKey(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCaptureResponseSession_NilClient(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		sid       string
+		headerVal string
+	}{
+		{name: "no header", sid: "", headerVal: ""},
+		{name: "header present but nil client", sid: "", headerVal: "server-session-abc"},
+		{name: "client sid set with header", sid: "existing-session", headerVal: "server-session-abc"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			resp := &http.Response{Header: http.Header{}}
+			if tt.headerVal != "" {
+				resp.Header.Set("x-agent-session-id", tt.headerVal)
+			}
+
+			// Must not panic with nil azdClient.
+			captureResponseSession(t.Context(), nil, "test-agent", tt.sid, resp, "Session: ")
+		})
+	}
+}
+
+func TestLoadSaveLocalContext(t *testing.T) {
+	t.Parallel()
+
+	t.Run("round trip", func(t *testing.T) {
+		t.Parallel()
+
+		dir := t.TempDir()
+		configPath := filepath.Join(dir, ConfigFile)
+
+		agentCtx := &AgentLocalContext{
+			AgentName: "my-agent",
+			Sessions:  map[string]string{"agent1": "sess-123"},
+		}
+
+		if err := saveLocalContext(agentCtx, configPath); err != nil {
+			t.Fatalf("saveLocalContext failed: %v", err)
+		}
+
+		loaded := loadLocalContext(configPath)
+		if loaded.AgentName != "my-agent" {
+			t.Errorf("AgentName = %q, want %q", loaded.AgentName, "my-agent")
+		}
+		if loaded.Sessions["agent1"] != "sess-123" {
+			t.Errorf("Sessions[agent1] = %q, want %q", loaded.Sessions["agent1"], "sess-123")
+		}
+	})
+
+	t.Run("missing file returns empty context", func(t *testing.T) {
+		t.Parallel()
+
+		loaded := loadLocalContext(filepath.Join(t.TempDir(), "nonexistent.json"))
+		if loaded.Sessions != nil {
+			t.Errorf("expected nil Sessions for missing file, got %v", loaded.Sessions)
+		}
+	})
+
+	t.Run("corrupt file returns empty context", func(t *testing.T) {
+		t.Parallel()
+
+		dir := t.TempDir()
+		configPath := filepath.Join(dir, ConfigFile)
+		if err := os.WriteFile(configPath, []byte("{bad json"), 0600); err != nil {
+			t.Fatalf("failed to write corrupt file: %v", err)
+		}
+
+		loaded := loadLocalContext(configPath)
+		if loaded.Sessions != nil {
+			t.Errorf("expected nil Sessions for corrupt file, got %v", loaded.Sessions)
+		}
+	})
+}
+
+func TestContextMap(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		field string
+	}{
+		{name: "sessions", field: "sessions"},
+		{name: "conversations", field: "conversations"},
+		{name: "invocations", field: "invocations"},
+		{name: "unknown", field: "unknown"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			agentCtx := &AgentLocalContext{}
+			m := contextMap(agentCtx, tt.field)
+			if m == nil {
+				t.Fatal("expected non-nil map")
+			}
+			m["key"] = "value"
+
+			// For known fields, the map should be stored on the struct.
+			switch tt.field {
+			case "sessions":
+				if agentCtx.Sessions["key"] != "value" {
+					t.Error("sessions map not stored on struct")
+				}
+			case "conversations":
+				if agentCtx.Conversations["key"] != "value" {
+					t.Error("conversations map not stored on struct")
+				}
+			case "invocations":
+				if agentCtx.Invocations["key"] != "value" {
+					t.Error("invocations map not stored on struct")
+				}
+			case "unknown":
+				// Detached map — verify it doesn't affect any struct field.
+				if agentCtx.Sessions != nil || agentCtx.Conversations != nil || agentCtx.Invocations != nil {
+					t.Error("unknown field should not initialize struct maps")
+				}
 			}
 		})
 	}

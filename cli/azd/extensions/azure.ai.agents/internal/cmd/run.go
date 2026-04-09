@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"syscall"
 
@@ -389,7 +390,7 @@ func appendFoundryEnvVars(env []string, azdEnv map[string]string, serviceName st
 
 	for _, m := range staticMappings {
 		if v := azdEnv[m.azdKey]; v != "" {
-			if _, exists := azdEnv[m.foundryKey]; !exists {
+			if _, exists := azdEnv[m.foundryKey]; !exists && !envSliceHasKey(env, m.foundryKey) {
 				env = append(env, fmt.Sprintf("%s=%s", m.foundryKey, v))
 			}
 		}
@@ -409,7 +410,7 @@ func appendFoundryEnvVars(env []string, azdEnv map[string]string, serviceName st
 		for _, m := range agentMappings {
 			azdKey := fmt.Sprintf(m.azdKeyFmt, serviceKey)
 			if v := azdEnv[azdKey]; v != "" {
-				if _, exists := azdEnv[m.foundryKey]; !exists {
+				if _, exists := azdEnv[m.foundryKey]; !exists && !envSliceHasKey(env, m.foundryKey) {
 					env = append(env, fmt.Sprintf("%s=%s", m.foundryKey, v))
 				}
 			}
@@ -417,6 +418,14 @@ func appendFoundryEnvVars(env []string, azdEnv map[string]string, serviceName st
 	}
 
 	return env
+}
+
+// envSliceHasKey reports whether the env slice already contains an entry for the given key.
+func envSliceHasKey(env []string, key string) bool {
+	prefix := key + "="
+	return slices.ContainsFunc(env, func(entry string) bool {
+		return strings.HasPrefix(entry, prefix)
+	})
 }
 
 // loadAzdEnvironment reads all key-value pairs from the current azd environment.

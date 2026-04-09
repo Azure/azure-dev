@@ -290,4 +290,49 @@ func TestAppendFoundryEnvVars(t *testing.T) {
 			t.Errorf("expected no translated env vars, got %v", env)
 		}
 	})
+
+	t.Run("skips foundry key when already set in process env slice", func(t *testing.T) {
+		t.Parallel()
+		// Simulate os.Environ() already containing FOUNDRY_* vars set by the user's shell
+		existingEnv := []string{
+			"HOME=/home/user",
+			"FOUNDRY_PROJECT_ENDPOINT=https://user-shell.services.ai.azure.com",
+			"FOUNDRY_AGENT_NAME=shell-agent",
+		}
+		azdEnv := map[string]string{
+			"AZURE_AI_PROJECT_ENDPOINT": "https://from-azd.services.ai.azure.com",
+			"AZURE_AI_PROJECT_ID":       "/subscriptions/sub/rg/rg/acct/proj",
+			"AGENT_MY_SVC_NAME":         "my-agent",
+			"AGENT_MY_SVC_VERSION":      "v2",
+		}
+		env := appendFoundryEnvVars(existingEnv, azdEnv, "my-svc")
+
+		// FOUNDRY_PROJECT_ENDPOINT and FOUNDRY_AGENT_NAME should NOT be appended
+		// because they already exist in the process env slice.
+		foundryEndpointCount := 0
+		foundryAgentNameCount := 0
+		for _, entry := range env {
+			if strings.HasPrefix(entry, "FOUNDRY_PROJECT_ENDPOINT=") {
+				foundryEndpointCount++
+			}
+			if strings.HasPrefix(entry, "FOUNDRY_AGENT_NAME=") {
+				foundryAgentNameCount++
+			}
+		}
+		if foundryEndpointCount != 1 {
+			t.Errorf("expected exactly 1 FOUNDRY_PROJECT_ENDPOINT entry (from shell), got %d in %v", foundryEndpointCount, env)
+		}
+		if foundryAgentNameCount != 1 {
+			t.Errorf("expected exactly 1 FOUNDRY_AGENT_NAME entry (from shell), got %d in %v", foundryAgentNameCount, env)
+		}
+
+		// FOUNDRY_PROJECT_ARM_ID and FOUNDRY_AGENT_VERSION should still be translated
+		// since they are NOT already present in the env slice.
+		if !slices.Contains(env, "FOUNDRY_PROJECT_ARM_ID=/subscriptions/sub/rg/rg/acct/proj") {
+			t.Errorf("expected FOUNDRY_PROJECT_ARM_ID to be translated, got %v", env)
+		}
+		if !slices.Contains(env, "FOUNDRY_AGENT_VERSION=v2") {
+			t.Errorf("expected FOUNDRY_AGENT_VERSION to be translated, got %v", env)
+		}
+	})
 }

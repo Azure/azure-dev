@@ -565,7 +565,7 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 						return uxlib.Error, r.Error
 					}
 					if !r.Success {
-						return uxlib.Warning, fmt.Errorf("upgrade did not succeed")
+						return uxlib.Warning, fmt.Errorf("upgrade did not succeed: %w", internal.ErrToolUpgradeFailed)
 					}
 					if r.InstalledVersion != "" {
 						setProgress(r.InstalledVersion)

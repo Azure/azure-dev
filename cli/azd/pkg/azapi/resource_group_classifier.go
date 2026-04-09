@@ -214,7 +214,7 @@ func ClassifyResourceGroups(
 	close(vetoCh)
 	close(promptCh)
 
-	vetoedSet := make(map[string]string)
+	vetoedSet := make(map[string]string, len(owned))
 	for v := range vetoCh {
 		vetoedSet[v.rg] = v.reason
 	}

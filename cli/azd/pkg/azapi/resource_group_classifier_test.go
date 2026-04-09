@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sync/atomic"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -858,14 +859,14 @@ func TestClassifyResourceGroups(t *testing.T) {
 			ops[i] = makeOperation("Create", rgOp, manyRGs[i])
 		}
 
-		callCount := 0
+		callCount := atomic.Int32{}
 		opts := ClassifyOptions{
 			EnvName: envName,
 			ListResourceGroupLocks: func(
 				_ context.Context, _ string,
 			) ([]*ManagementLock, error) {
-				callCount++
-				if callCount >= 2 {
+				callCount.Add(1)
+				if callCount.Load() >= 2 {
 					cancel() // cancel after 2 lock checks
 				}
 				return nil, nil
@@ -966,5 +967,37 @@ func TestClassifyResourceGroups(t *testing.T) {
 		require.Len(t, res.Skipped, 1)
 		assert.Contains(t, res.Skipped[0].Reason, "Tier 3",
 			"nil tag value should fall through to Tier 3")
+	})
+
+	t.Run("Tier4 500 on resource listing treated as veto (fail-safe)", func(t *testing.T) {
+		t.Parallel()
+		opts := ClassifyOptions{
+			EnvName: envName,
+			ListResourceGroupResources: func(_ context.Context, _ string) ([]*ResourceWithTags, error) {
+				return nil, &azcore.ResponseError{StatusCode: http.StatusInternalServerError}
+			},
+		}
+		ops := []*armresources.DeploymentOperation{makeOperation("Create", rgOp, rgA)}
+		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgA}, opts)
+		require.NoError(t, err)
+		assert.Empty(t, res.Owned, "500 from resource listing should veto")
+		require.Len(t, res.Skipped, 1)
+		assert.Contains(t, res.Skipped[0].Reason, "error during safety check")
+	})
+
+	t.Run("Tier4 non-azcore network error on locks treated as veto (fail-safe)", func(t *testing.T) {
+		t.Parallel()
+		opts := ClassifyOptions{
+			EnvName: envName,
+			ListResourceGroupLocks: func(_ context.Context, _ string) ([]*ManagementLock, error) {
+				return nil, fmt.Errorf("dial tcp: connection refused")
+			},
+		}
+		ops := []*armresources.DeploymentOperation{makeOperation("Create", rgOp, rgA)}
+		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgA}, opts)
+		require.NoError(t, err)
+		assert.Empty(t, res.Owned, "non-azcore error on locks should veto")
+		require.Len(t, res.Skipped, 1)
+		assert.Contains(t, res.Skipped[0].Reason, "error during safety check")
 	})
 }

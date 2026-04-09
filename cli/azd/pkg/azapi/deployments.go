@@ -226,6 +226,14 @@ type DeploymentService interface {
 		options map[string]any,
 		progress *async.Progress[DeleteDeploymentProgress],
 	) error
+	// VoidSubscriptionDeploymentState deploys an empty template to void the deployment state
+	// without deleting any resource groups. Used after classification-aware deletion.
+	VoidSubscriptionDeploymentState(
+		ctx context.Context,
+		subscriptionId string,
+		deploymentName string,
+		options map[string]any,
+	) error
 }
 
 type DeleteResourceState string

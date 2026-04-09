@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -181,16 +182,11 @@ func TestBicepDestroy(t *testing.T) {
 		prepareStateMocks(mockContext)
 		prepareDestroyMocks(mockContext)
 
-		// Setup console mocks
+		// With empty operations (Tier 1 falls through) and no credential provider in the test
+		// context (Tier 2 returns nil tags), classification falls to Tier 3, which prompts
+		// once per unknown resource group.
 		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
-			return strings.Contains(options.Message, "are you sure you want to continue")
-		}).Respond(true)
-
-		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
-			return strings.Contains(
-				options.Message,
-				"Would you like to permanently delete these resources instead",
-			)
+			return strings.Contains(options.Message, "Delete resource group 'RESOURCE_GROUP'?")
 		}).Respond(true)
 
 		infraProvider := createBicepProvider(t, mockContext)
@@ -201,9 +197,10 @@ func TestBicepDestroy(t *testing.T) {
 		require.Nil(t, err)
 		require.NotNil(t, destroyResult)
 
-		// Verify console prompts
+		// Verify the classification prompt fired (1 Confirm logged).
 		consoleOutput := mockContext.Console.Output()
-		require.Len(t, consoleOutput, 4)
+		require.Len(t, consoleOutput, 1)
+		require.Contains(t, consoleOutput[0], "Delete resource group 'RESOURCE_GROUP'?")
 	})
 
 	t.Run("InteractiveForceAndPurge", func(t *testing.T) {
@@ -220,11 +217,9 @@ func TestBicepDestroy(t *testing.T) {
 		require.Nil(t, err)
 		require.NotNil(t, destroyResult)
 
-		// Verify console prompts
+		// Verify console prompts — force+purge bypasses classification prompt and purge prompt.
 		consoleOutput := mockContext.Console.Output()
-		require.Len(t, consoleOutput, 2)
-		require.Contains(t, consoleOutput[0], "Deleting your resources can take some time")
-		require.Contains(t, consoleOutput[1], "")
+		require.Len(t, consoleOutput, 0)
 	})
 }
 
@@ -244,9 +239,183 @@ func TestBicepDestroyLogAnalyticsWorkspace(t *testing.T) {
 		require.NotNil(t, destroyResult)
 
 		consoleOutput := mockContext.Console.Output()
-		require.Len(t, consoleOutput, 2)
-		require.Contains(t, consoleOutput[0], "Deleting your resources can take some time")
-		require.Contains(t, consoleOutput[1], "")
+		require.Len(t, consoleOutput, 0)
+	})
+}
+
+// TestBicepDestroyClassifyAndDelete tests the classifyAndDeleteResourceGroups orchestrator,
+// including force-bypass, Tier 1 classification, void-state lifecycle, and purge scoping.
+func TestBicepDestroyClassifyAndDelete(t *testing.T) {
+	// Helper: create a deployment operation targeting a resource group.
+	makeRGOp := func(
+		rgName string, opType armresources.ProvisioningOperation,
+	) *armresources.DeploymentOperation {
+		return &armresources.DeploymentOperation{
+			OperationID: new("op-" + rgName),
+			Properties: &armresources.DeploymentOperationProperties{
+				ProvisioningOperation: new(opType),
+				TargetResource: &armresources.TargetResource{
+					ResourceType: new("Microsoft.Resources/resourceGroups"),
+					ResourceName: new(rgName),
+				},
+			},
+		}
+	}
+
+	t.Run("ForceBypassesClassification", func(t *testing.T) {
+		// When --force is set, classification is skipped entirely.
+		// Both RGs should be deleted directly, and no operations should be fetched.
+		mockContext := mocks.NewMockContext(context.Background())
+		prepareBicepMocks(mockContext)
+
+		tracker := prepareClassifyDestroyMocks(mockContext, classifyMockCfg{
+			rgNames: []string{"rg-created", "rg-existing"},
+			operations: []*armresources.DeploymentOperation{
+				makeRGOp("rg-created", armresources.ProvisioningOperationCreate),
+				makeRGOp("rg-existing", armresources.ProvisioningOperationRead),
+			},
+		})
+
+		infraProvider := createBicepProvider(t, mockContext)
+
+		destroyOptions := provisioning.NewDestroyOptions(true, false) // force=true, purge=false
+		result, err := infraProvider.Destroy(*mockContext.Context, destroyOptions)
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+
+		// Both RGs deleted — force bypasses classification entirely.
+		assert.Equal(t, int32(1), tracker.rgDeletes["rg-created"].Load(),
+			"rg-created should be deleted when force=true")
+		assert.Equal(t, int32(1), tracker.rgDeletes["rg-existing"].Load(),
+			"rg-existing should be deleted when force=true")
+
+		// Deployment operations NOT fetched (force short-circuits before calling Operations()).
+		assert.Equal(t, int32(0), tracker.operationsGETs.Load(),
+			"operations should not be fetched when force=true")
+	})
+
+	t.Run("ClassificationFiltersDeletion", func(t *testing.T) {
+		// Tier 1 classification: Create op -> owned (delete), Read op -> external (skip).
+		mockContext := mocks.NewMockContext(context.Background())
+		prepareBicepMocks(mockContext)
+
+		tracker := prepareClassifyDestroyMocks(mockContext, classifyMockCfg{
+			rgNames: []string{"rg-created", "rg-existing"},
+			operations: []*armresources.DeploymentOperation{
+				makeRGOp("rg-created", armresources.ProvisioningOperationCreate),
+				makeRGOp("rg-existing", armresources.ProvisioningOperationRead),
+			},
+		})
+
+		infraProvider := createBicepProvider(t, mockContext)
+
+		destroyOptions := provisioning.NewDestroyOptions(false, false)
+		result, err := infraProvider.Destroy(*mockContext.Context, destroyOptions)
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+
+		// Only the Created RG should be deleted.
+		assert.Equal(t, int32(1), tracker.rgDeletes["rg-created"].Load(),
+			"rg-created (Create op) should be deleted")
+		// Read RG should be skipped.
+		assert.Equal(t, int32(0), tracker.rgDeletes["rg-existing"].Load(),
+			"rg-existing (Read op) should be skipped")
+
+		// Operations were fetched for classification.
+		assert.Equal(t, int32(1), tracker.operationsGETs.Load())
+	})
+
+	t.Run("VoidStateCalledOnSuccess", func(t *testing.T) {
+		// After successful classification + deletion, voidDeploymentState must be called.
+		mockContext := mocks.NewMockContext(context.Background())
+		prepareBicepMocks(mockContext)
+
+		tracker := prepareClassifyDestroyMocks(mockContext, classifyMockCfg{
+			rgNames: []string{"rg-created"},
+			operations: []*armresources.DeploymentOperation{
+				makeRGOp("rg-created", armresources.ProvisioningOperationCreate),
+			},
+		})
+
+		infraProvider := createBicepProvider(t, mockContext)
+
+		destroyOptions := provisioning.NewDestroyOptions(false, false)
+		result, err := infraProvider.Destroy(*mockContext.Context, destroyOptions)
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+
+		// Void state should be called exactly once after successful deletion.
+		assert.Equal(t, int32(1), tracker.voidStatePUTs.Load(),
+			"voidDeploymentState should be called after successful classification")
+	})
+
+	t.Run("VoidStateCalledWhenAllRGsSkipped", func(t *testing.T) {
+		// Even when all RGs are classified as external (all skipped),
+		// voidDeploymentState must still be called to maintain deployment state.
+		// This was a bug: if zero owned RGs remained, void state was skipped.
+		mockContext := mocks.NewMockContext(context.Background())
+		prepareBicepMocks(mockContext)
+
+		tracker := prepareClassifyDestroyMocks(mockContext, classifyMockCfg{
+			rgNames: []string{"rg-ext-1", "rg-ext-2"},
+			operations: []*armresources.DeploymentOperation{
+				makeRGOp("rg-ext-1", armresources.ProvisioningOperationRead),
+				makeRGOp("rg-ext-2", armresources.ProvisioningOperationRead),
+			},
+		})
+
+		infraProvider := createBicepProvider(t, mockContext)
+
+		destroyOptions := provisioning.NewDestroyOptions(false, false)
+		result, err := infraProvider.Destroy(*mockContext.Context, destroyOptions)
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+
+		// Zero RGs deleted (all external).
+		assert.Equal(t, int32(0), tracker.rgDeletes["rg-ext-1"].Load())
+		assert.Equal(t, int32(0), tracker.rgDeletes["rg-ext-2"].Load())
+
+		// Void state STILL called even though no RGs were deleted.
+		assert.Equal(t, int32(1), tracker.voidStatePUTs.Load(),
+			"voidDeploymentState should be called even when all RGs are skipped")
+	})
+
+	t.Run("PurgeTargetsScopedToOwnedRGs", func(t *testing.T) {
+		// Purge targets (KeyVaults, etc.) should only be collected from
+		// owned (deleted) RGs, not from skipped (external) RGs.
+		// kv-ext is intentionally NOT mocked — if the code incorrectly
+		// includes it in the purge set, the mock framework panics.
+		mockContext := mocks.NewMockContext(context.Background())
+		prepareBicepMocks(mockContext)
+
+		tracker := prepareClassifyDestroyMocks(mockContext, classifyMockCfg{
+			rgNames: []string{"rg-created", "rg-existing"},
+			operations: []*armresources.DeploymentOperation{
+				makeRGOp("rg-created", armresources.ProvisioningOperationCreate),
+				makeRGOp("rg-existing", armresources.ProvisioningOperationRead),
+			},
+			withPurgeResources: true, // adds a KeyVault to each RG
+		})
+
+		infraProvider := createBicepProvider(t, mockContext)
+
+		destroyOptions := provisioning.NewDestroyOptions(false, true) // purge=true
+		result, err := infraProvider.Destroy(*mockContext.Context, destroyOptions)
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+
+		// Only the owned RG's KeyVault should be inspected for purge properties.
+		assert.Equal(t, int32(1), tracker.kvGETs["kv-owned"].Load(),
+			"owned RG's KeyVault should be inspected for purge properties")
+
+		// Owned RG's KeyVault should be purged (soft-delete enabled, purge protection off).
+		assert.Equal(t, int32(1), tracker.kvPurges["kv-owned"].Load(),
+			"owned RG's KeyVault should be purged")
 	})
 }
 
@@ -686,6 +855,21 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 				strings.HasSuffix(request.URL.Path, "deletedservices/apim2-123"))
 	}).RespondFn(httpRespondFn)
 
+	// List deployment operations — empty list so Tier 1 falls through to Tier 3 prompt
+	// (used only for the non-force Interactive test; force mode bypasses classification).
+	operationsResult := armresources.DeploymentOperationsListResult{
+		Value: []*armresources.DeploymentOperation{},
+	}
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet &&
+			strings.HasSuffix(
+				request.URL.Path,
+				"/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/test-env/operations",
+			)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, operationsResult)
+	})
+
 	// Delete deployment
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodDelete &&
@@ -923,6 +1107,31 @@ func prepareLogAnalyticsDestroyMocks(mockContext *mocks.MockContext) {
 		return mocks.CreateEmptyHttpResponse(request, 204)
 	})
 
+	// List deployment operations (Tier 1 classification data).
+	operationsResultLA := armresources.DeploymentOperationsListResult{
+		Value: []*armresources.DeploymentOperation{
+			{
+				OperationID: new("op-rg-create"),
+				Properties: &armresources.DeploymentOperationProperties{
+					ProvisioningOperation: to.Ptr(armresources.ProvisioningOperationCreate),
+					TargetResource: &armresources.TargetResource{
+						ResourceType: new("Microsoft.Resources/resourceGroups"),
+						ResourceName: new("RESOURCE_GROUP"),
+					},
+				},
+			},
+		},
+	}
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet &&
+			strings.HasSuffix(
+				request.URL.Path,
+				"/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/test-env/operations",
+			)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, operationsResultLA)
+	})
+
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodPut &&
 			strings.Contains(request.URL.Path, "/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/")
@@ -954,6 +1163,241 @@ func httpRespondFn(request *http.Request) (*http.Response, error) {
 		StatusCode: http.StatusOK,
 		Body:       http.NoBody,
 	}, nil
+}
+
+// --- Multi-RG classification destroy test helpers ---
+
+// classifyMockCfg configures a multi-RG destroy test scenario.
+type classifyMockCfg struct {
+	rgNames            []string                            // RG names referenced in the deployment
+	operations         []*armresources.DeploymentOperation // Tier 1 classification operations
+	withPurgeResources bool                                // adds a KeyVault to each RG for purge testing
+}
+
+// classifyCallTracker tracks HTTP calls made during classification integration tests.
+type classifyCallTracker struct {
+	rgDeletes      map[string]*atomic.Int32 // per-RG DELETE call counts
+	voidStatePUTs  atomic.Int32             // void state PUT calls
+	operationsGETs atomic.Int32             // deployment operations GET calls
+	kvGETs         map[string]*atomic.Int32 // per-KeyVault GET calls (purge property inspection)
+	kvPurges       map[string]*atomic.Int32 // per-KeyVault purge POST calls
+}
+
+// prepareClassifyDestroyMocks sets up HTTP mocks for multi-RG destroy + classification tests.
+// It registers deployment state, per-RG resource listing, deployment operations, RG deletion,
+// void state, and optionally KeyVault purge mocks. Returns a tracker for asserting call counts.
+func prepareClassifyDestroyMocks(
+	mockContext *mocks.MockContext,
+	cfg classifyMockCfg,
+) *classifyCallTracker {
+	tracker := &classifyCallTracker{
+		rgDeletes: make(map[string]*atomic.Int32, len(cfg.rgNames)),
+		kvGETs:    make(map[string]*atomic.Int32),
+		kvPurges:  make(map[string]*atomic.Int32),
+	}
+	for _, rg := range cfg.rgNames {
+		tracker.rgDeletes[rg] = &atomic.Int32{}
+	}
+
+	// --- Build multi-RG deployment with OutputResources referencing each RG ---
+	outputResources := make([]*armresources.ResourceReference, len(cfg.rgNames))
+	for i, rg := range cfg.rgNames {
+		id := fmt.Sprintf("/subscriptions/SUBSCRIPTION_ID/resourceGroups/%s", rg)
+		outputResources[i] = &armresources.ResourceReference{ID: &id}
+	}
+
+	deployment := armresources.DeploymentExtended{
+		ID:       new("DEPLOYMENT_ID"),
+		Name:     new("test-env"),
+		Location: new("eastus2"),
+		Tags:     map[string]*string{"azd-env-name": new("test-env")},
+		Type:     new("Microsoft.Resources/deployments"),
+		Properties: &armresources.DeploymentPropertiesExtended{
+			Outputs: map[string]any{
+				"WEBSITE_URL": map[string]any{"value": "http://myapp.azurewebsites.net", "type": "string"},
+			},
+			OutputResources:   outputResources,
+			ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
+			Timestamp:         new(time.Now()),
+		},
+	}
+
+	deployResultBytes, _ := json.Marshal(deployment)
+
+	// GET single deployment (used by Resources(), VoidState(), and Get())
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && strings.HasSuffix(
+			request.URL.Path,
+			"/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/test-env",
+		)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBuffer(deployResultBytes)),
+		}, nil
+	})
+
+	// GET list deployments (used by CompletedDeployments)
+	deploymentsPage := &armresources.DeploymentListResult{
+		Value: []*armresources.DeploymentExtended{&deployment},
+	}
+	deploymentsPageBytes, _ := json.Marshal(deploymentsPage)
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && strings.HasSuffix(
+			request.URL.Path,
+			"/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/",
+		)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBuffer(deploymentsPageBytes)),
+		}, nil
+	})
+
+	// --- Per-RG resource listing ---
+	// When withPurgeResources is true, the first RG gets "kv-owned" and the second gets "kv-ext".
+	kvMapping := map[string]string{} // rgName -> kvName
+	if cfg.withPurgeResources && len(cfg.rgNames) >= 2 {
+		kvMapping[cfg.rgNames[0]] = "kv-owned"
+		kvMapping[cfg.rgNames[1]] = "kv-ext"
+	}
+
+	for _, rgName := range cfg.rgNames {
+		resources := []*armresources.GenericResourceExpanded{}
+
+		if kvName, ok := kvMapping[rgName]; ok {
+			kvID := fmt.Sprintf(
+				"/subscriptions/SUBSCRIPTION_ID/resourceGroups/%s/providers/%s/%s",
+				rgName, string(azapi.AzureResourceTypeKeyVault), kvName,
+			)
+			resources = append(resources, &armresources.GenericResourceExpanded{
+				ID:       &kvID,
+				Name:     new(kvName),
+				Type:     new(string(azapi.AzureResourceTypeKeyVault)),
+				Location: new("eastus2"),
+			})
+		}
+
+		resList := armresources.ResourceListResult{Value: resources}
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.Method == http.MethodGet &&
+				strings.Contains(request.URL.Path, fmt.Sprintf("resourceGroups/%s/resources", rgName))
+		}).RespondFn(func(request *http.Request) (*http.Response, error) {
+			return mocks.CreateHttpResponseWithBody(request, http.StatusOK, resList)
+		})
+	}
+
+	// --- Deployment operations (Tier 1 classification data) ---
+	operationsResult := armresources.DeploymentOperationsListResult{
+		Value: cfg.operations,
+	}
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet &&
+			strings.HasSuffix(
+				request.URL.Path,
+				"/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/test-env/operations",
+			)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		tracker.operationsGETs.Add(1)
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, operationsResult)
+	})
+
+	// --- Per-RG deletion mocks (tracked) ---
+	for _, rgName := range cfg.rgNames {
+		counter := tracker.rgDeletes[rgName]
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.Method == http.MethodDelete &&
+				strings.HasSuffix(
+					request.URL.Path,
+					fmt.Sprintf("subscriptions/SUBSCRIPTION_ID/resourcegroups/%s", rgName),
+				)
+		}).RespondFn(func(request *http.Request) (*http.Response, error) {
+			counter.Add(1)
+			return httpRespondFn(request)
+		})
+	}
+
+	// --- LRO polling endpoint ---
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet &&
+			strings.Contains(request.URL.String(), "url-to-poll.net")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateEmptyHttpResponse(request, 204)
+	})
+
+	// --- Void state: PUT empty deployment (tracked) ---
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodPut &&
+			strings.Contains(
+				request.URL.Path,
+				"/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/",
+			)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		tracker.voidStatePUTs.Add(1)
+		result := &armresources.DeploymentsClientCreateOrUpdateAtSubscriptionScopeResponse{
+			DeploymentExtended: armresources.DeploymentExtended{
+				ID:       new("DEPLOYMENT_ID"),
+				Name:     new("test-env"),
+				Location: new("eastus2"),
+				Tags:     map[string]*string{"azd-env-name": new("test-env")},
+				Type:     new("Microsoft.Resources/deployments"),
+				Properties: &armresources.DeploymentPropertiesExtended{
+					ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
+					Timestamp:         new(time.Now()),
+				},
+			},
+		}
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, result)
+	})
+
+	// --- KeyVault mocks (for purge scoping test) ---
+	if cfg.withPurgeResources {
+		// Only mock the owned RG's KeyVault (kv-owned).
+		// kv-ext is intentionally NOT mocked — if the code incorrectly includes it
+		// in the purge set, the mock framework panics (which fails the test).
+		kvOwnedGetCounter := &atomic.Int32{}
+		tracker.kvGETs["kv-owned"] = kvOwnedGetCounter
+
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.Method == http.MethodGet &&
+				strings.HasSuffix(request.URL.Path, "/vaults/kv-owned")
+		}).RespondFn(func(request *http.Request) (*http.Response, error) {
+			kvOwnedGetCounter.Add(1)
+			kvResponse := armkeyvault.VaultsClientGetResponse{
+				Vault: armkeyvault.Vault{
+					ID: new(fmt.Sprintf(
+						"/subscriptions/SUBSCRIPTION_ID/resourceGroups/%s/providers/%s/kv-owned",
+						cfg.rgNames[0], string(azapi.AzureResourceTypeKeyVault),
+					)),
+					Name:     new("kv-owned"),
+					Location: new("eastus2"),
+					Properties: &armkeyvault.VaultProperties{
+						EnableSoftDelete:      new(true),
+						EnablePurgeProtection: new(false),
+					},
+				},
+			}
+			kvBytes, _ := json.Marshal(kvResponse)
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(bytes.NewBuffer(kvBytes)),
+			}, nil
+		})
+
+		// Purge mock for kv-owned (tracked)
+		kvPurgeCounter := &atomic.Int32{}
+		tracker.kvPurges["kv-owned"] = kvPurgeCounter
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.Method == http.MethodPost &&
+				strings.HasSuffix(request.URL.Path, "deletedVaults/kv-owned/purge")
+		}).RespondFn(func(request *http.Request) (*http.Response, error) {
+			kvPurgeCounter.Add(1)
+			return httpRespondFn(request)
+		})
+	}
+
+	return tracker
 }
 
 // From a mocked list of deployments where there are multiple deployments with the matching tag, expect to pick the most

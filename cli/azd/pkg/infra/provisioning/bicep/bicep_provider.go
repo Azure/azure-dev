@@ -1016,55 +1016,65 @@ func (p *BicepProvider) Destroy(
 			return nil, fmt.Errorf("voiding deployment state: %w", err)
 		}
 	} else {
-		keyVaults, err := p.getKeyVaultsToPurge(ctx, groupedResources)
+		p.console.StopSpinner(ctx, "", input.StepDone)
+
+		// Classify resource groups before deletion.
+		// Log Analytics Workspaces in owned RGs are force-deleted inside classifyAndDeleteResourceGroups
+		// (before each owned RG deletion) when purge is enabled.
+		deleted, skipped, classifyErr := p.classifyAndDeleteResourceGroups(
+			ctx, deploymentToDelete, groupedResources, options,
+		)
+
+		// Only collect purge targets from OWNED (deleted) resource groups.
+		// Note: these API calls run after RG deletion; soft-deleted resources are eligible for purge.
+		ownedGroupedResources := make(map[string][]*azapi.Resource, len(deleted))
+		for _, rgName := range deleted {
+			if resources, ok := groupedResources[rgName]; ok {
+				ownedGroupedResources[rgName] = resources
+			}
+		}
+
+		// Void deployment state after successful classification (regardless of how many RGs were deleted).
+		// This ensures subsequent azd provision works correctly even if all RGs were skipped.
+		// This MUST run before purge-list fetching to avoid early returns leaving stale state.
+		if classifyErr == nil {
+			if err := p.voidDeploymentState(ctx, deploymentToDelete); err != nil {
+				return nil, fmt.Errorf("voiding deployment state: %w", err)
+			}
+		}
+
+		// Show skipped resource groups.
+		for _, skip := range skipped {
+			p.console.Message(ctx, fmt.Sprintf("  Skipped: %s (%s)", skip.Name, skip.Reason))
+		}
+
+		if classifyErr != nil {
+			return nil, fmt.Errorf("deleting resource groups: %w", classifyErr)
+		}
+
+		keyVaults, err := p.getKeyVaultsToPurge(ctx, ownedGroupedResources)
 		if err != nil {
 			return nil, fmt.Errorf("getting key vaults to purge: %w", err)
 		}
 
-		managedHSMs, err := p.getManagedHSMsToPurge(ctx, groupedResources)
+		managedHSMs, err := p.getManagedHSMsToPurge(ctx, ownedGroupedResources)
 		if err != nil {
 			return nil, fmt.Errorf("getting managed hsms to purge: %w", err)
 		}
 
-		appConfigs, err := p.getAppConfigsToPurge(ctx, groupedResources)
+		appConfigs, err := p.getAppConfigsToPurge(ctx, ownedGroupedResources)
 		if err != nil {
 			return nil, fmt.Errorf("getting app configurations to purge: %w", err)
 		}
 
-		apiManagements, err := p.getApiManagementsToPurge(ctx, groupedResources)
+		apiManagements, err := p.getApiManagementsToPurge(ctx, ownedGroupedResources)
 		if err != nil {
 			return nil, fmt.Errorf("getting API managements to purge: %w", err)
 		}
 
-		cognitiveAccounts, err := p.getCognitiveAccountsToPurge(ctx, groupedResources)
+		cognitiveAccounts, err := p.getCognitiveAccountsToPurge(ctx, ownedGroupedResources)
 		if err != nil {
 			return nil, fmt.Errorf("getting cognitive accounts to purge: %w", err)
-		}
-
-		logAnalyticsWorkspaces, err := p.getLogAnalyticsWorkspacesToPurge(ctx, groupedResources)
-		if err != nil {
-			return nil, fmt.Errorf("getting log analytics workspaces to purge: %w", err)
-		}
-
-		p.console.StopSpinner(ctx, "", input.StepDone)
-
-		// Prompt for confirmation before deleting resources
-		if err := p.promptDeletion(ctx, options, groupedResources, len(resourcesToDelete)); err != nil {
-			return nil, err
-		}
-
-		p.console.Message(ctx, output.WithGrayFormat("Deleting your resources can take some time.\n"))
-
-		// Force delete Log Analytics Workspaces first if purge is enabled
-		// This must happen before deleting resource groups since force delete requires the workspace to exist
-		if options.Purge() && len(logAnalyticsWorkspaces) > 0 {
-			if err := p.forceDeleteLogAnalyticsWorkspaces(ctx, logAnalyticsWorkspaces); err != nil {
-				return nil, fmt.Errorf("force deleting log analytics workspaces: %w", err)
-			}
-		}
-
-		if err := p.destroyDeployment(ctx, deploymentToDelete); err != nil {
-			return nil, fmt.Errorf("deleting resource groups: %w", err)
 		}
 
 		keyVaultsPurge := itemToPurge{
@@ -1181,86 +1191,8 @@ func getDeploymentOptions(deployments []*azapi.ResourceDeployment) []string {
 	return promptValues
 }
 
-func (p *BicepProvider) generateResourcesToDelete(
-	ctx context.Context,
-	groupedResources map[string][]*azapi.Resource,
-) []string {
-	lines := []string{"Resource(s) to be deleted:"}
-
-	for resourceGroupName, resources := range groupedResources {
-		lines = append(lines, "")
-
-		// Resource Group
-		resourceGroupLink := fmt.Sprintf("%s/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
-			p.portalUrlBase,
-			p.env.GetSubscriptionId(),
-			resourceGroupName,
-		)
-
-		lines = append(lines,
-			fmt.Sprintf("%s %s",
-				output.WithHighLightFormat("Resource Group:"),
-				output.WithHyperlink(resourceGroupLink, resourceGroupName),
-			),
-		)
-
-		// Resources in each group
-		for _, resource := range resources {
-			resourceTypeName, err := p.resourceManager.GetResourceTypeDisplayName(
-				ctx,
-				p.env.GetSubscriptionId(),
-				resource.Id,
-				azapi.AzureResourceType(resource.Type),
-			)
-			if err != nil {
-				// Fall back to static lookup if dynamic lookup fails
-				resourceTypeName = azapi.GetResourceTypeDisplayName(azapi.AzureResourceType(resource.Type))
-			}
-			if resourceTypeName == "" {
-				continue
-			}
-
-			lines = append(lines, fmt.Sprintf("  • %s: %s", resourceTypeName, resource.Name))
-		}
-	}
-
-	return append(lines, "\n")
-}
-
-// promptDeletion prompts the user for confirmation before deleting resources.
-// Returns nil if the user confirms, or an error if they deny or an error occurs.
-func (p *BicepProvider) promptDeletion(
-	ctx context.Context,
-	options provisioning.DestroyOptions,
-	groupedResources map[string][]*azapi.Resource,
-	resourceCount int,
-) error {
-	if options.Force() {
-		return nil
-	}
-
-	p.console.MessageUxItem(ctx, &ux.MultilineMessage{
-		Lines: p.generateResourcesToDelete(ctx, groupedResources)},
-	)
-	confirmDestroy, err := p.console.Confirm(ctx, input.ConsoleOptions{
-		Message: fmt.Sprintf(
-			"Total resources to %s: %d, are you sure you want to continue?",
-			output.WithErrorFormat("delete"),
-			resourceCount,
-		),
-		DefaultValue: false,
-	})
-
-	if err != nil {
-		return fmt.Errorf("prompting for delete confirmation: %w", err)
-	}
-
-	if !confirmDestroy {
-		return errors.New("user denied delete confirmation")
-	}
-
-	return nil
-}
+// NOTE: generateResourcesToDelete and promptDeletion were removed —
+// the new classifyAndDeleteResourceGroups flow prompts per-RG via Tier 3 classification.
 
 // destroyDeployment deletes the azure resources within the deployment and voids the deployment state.
 func (p *BicepProvider) destroyDeployment(

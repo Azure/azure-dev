@@ -660,6 +660,17 @@ func (d *StackDeployments) CalculateTemplateHash(
 	return d.standardDeployments.CalculateTemplateHash(ctx, subscriptionId, template)
 }
 
+// VoidSubscriptionDeploymentState is a no-op for deployment stacks.
+// Deployment stacks manage their own state; voiding is not applicable.
+func (d *StackDeployments) VoidSubscriptionDeploymentState(
+	_ context.Context,
+	_ string,
+	_ string,
+	_ map[string]any,
+) error {
+	return nil
+}
+
 func (d *StackDeployments) createClient(ctx context.Context, subscriptionId string) (*armdeploymentstacks.Client, error) {
 	credential, err := d.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
 	if err != nil {

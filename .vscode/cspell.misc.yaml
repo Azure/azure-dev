@@ -36,6 +36,21 @@ overrides:
           - Entra
           - CODEOWNERS
           - weikanglim
+    - filename: ./docs/azd-down-resource-group-safety/**
+      words:
+          - azapi
+          - TOCTOU
+          - goroutines
+          - Footgun
+          - Errorf
+          - vhvb
+          - nicklhw
+          - Breza
+          - wbreza
+          - armlocks
+          - hemarina
+          - underspecified
+          - Stringly
     - filename: ./README.md
       words:
           - VSIX

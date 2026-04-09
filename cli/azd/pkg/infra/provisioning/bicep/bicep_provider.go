@@ -923,6 +923,90 @@ type itemToPurge struct {
 	cognitiveAccounts []cognitiveAccount
 }
 
+// collectPurgeItems gathers soft-deleted resources from the given resource groups and
+// returns them as a list of itemToPurge entries ready for purgeItems. Used by both the
+// deployment-stacks path (all RGs) and the classification path (owned RGs only).
+func (p *BicepProvider) collectPurgeItems(
+	ctx context.Context,
+	resources map[string][]*azapi.Resource,
+) ([]itemToPurge, error) {
+	keyVaults, err := p.getKeyVaultsToPurge(ctx, resources)
+	if err != nil {
+		return nil, fmt.Errorf("getting key vaults to purge: %w", err)
+	}
+
+	managedHSMs, err := p.getManagedHSMsToPurge(ctx, resources)
+	if err != nil {
+		return nil, fmt.Errorf("getting managed hsms to purge: %w", err)
+	}
+
+	appConfigs, err := p.getAppConfigsToPurge(ctx, resources)
+	if err != nil {
+		return nil, fmt.Errorf("getting app configurations to purge: %w", err)
+	}
+
+	apiManagements, err := p.getApiManagementsToPurge(ctx, resources)
+	if err != nil {
+		return nil, fmt.Errorf("getting API managements to purge: %w", err)
+	}
+
+	cognitiveAccounts, err := p.getCognitiveAccountsToPurge(ctx, resources)
+	if err != nil {
+		return nil, fmt.Errorf("getting cognitive accounts to purge: %w", err)
+	}
+
+	var items []itemToPurge
+	for _, item := range []itemToPurge{
+		{
+			resourceType: "Key Vault",
+			count:        len(keyVaults),
+			purge: func(skipPurge bool, self *itemToPurge) error {
+				return p.purgeKeyVaults(ctx, keyVaults, skipPurge)
+			},
+		},
+		{
+			resourceType: "Managed HSM",
+			count:        len(managedHSMs),
+			purge: func(skipPurge bool, self *itemToPurge) error {
+				return p.purgeManagedHSMs(ctx, managedHSMs, skipPurge)
+			},
+		},
+		{
+			resourceType: "App Configuration",
+			count:        len(appConfigs),
+			purge: func(skipPurge bool, self *itemToPurge) error {
+				return p.purgeAppConfigs(ctx, appConfigs, skipPurge)
+			},
+		},
+		{
+			resourceType: "API Management",
+			count:        len(apiManagements),
+			purge: func(skipPurge bool, self *itemToPurge) error {
+				return p.purgeAPIManagement(ctx, apiManagements, skipPurge)
+			},
+		},
+	} {
+		if item.count > 0 {
+			items = append(items, item)
+		}
+	}
+
+	groupByKind := cognitiveAccountsByKind(cognitiveAccounts)
+	for name, cogAccounts := range groupByKind {
+		_ = cogAccounts // used via groupByKind[name] to preserve per-kind identity
+		items = append(items, itemToPurge{
+			resourceType:      name,
+			count:             len(groupByKind[name]),
+			cognitiveAccounts: groupByKind[name],
+			purge: func(skipPurge bool, self *itemToPurge) error {
+				return p.purgeCognitiveAccounts(ctx, self.cognitiveAccounts, skipPurge)
+			},
+		})
+	}
+
+	return items, nil
+}
+
 func (p *BicepProvider) scopeForTemplate(t azure.ArmTemplate) (infra.Scope, error) {
 	deploymentScope, err := t.TargetScope()
 	if err != nil {
@@ -1026,78 +1110,9 @@ func (p *BicepProvider) Destroy(
 
 		// For deployment stacks, collect purge targets from ALL resource groups
 		// (the stack deletes everything it manages).
-		keyVaults, err := p.getKeyVaultsToPurge(ctx, groupedResources)
+		purgeItem, err := p.collectPurgeItems(ctx, groupedResources)
 		if err != nil {
-			return nil, fmt.Errorf("getting key vaults to purge: %w", err)
-		}
-
-		managedHSMs, err := p.getManagedHSMsToPurge(ctx, groupedResources)
-		if err != nil {
-			return nil, fmt.Errorf("getting managed hsms to purge: %w", err)
-		}
-
-		appConfigs, err := p.getAppConfigsToPurge(ctx, groupedResources)
-		if err != nil {
-			return nil, fmt.Errorf("getting app configurations to purge: %w", err)
-		}
-
-		apiManagements, err := p.getApiManagementsToPurge(ctx, groupedResources)
-		if err != nil {
-			return nil, fmt.Errorf("getting API managements to purge: %w", err)
-		}
-
-		cognitiveAccounts, err := p.getCognitiveAccountsToPurge(ctx, groupedResources)
-		if err != nil {
-			return nil, fmt.Errorf("getting cognitive accounts to purge: %w", err)
-		}
-
-		keyVaultsPurge := itemToPurge{
-			resourceType: "Key Vault",
-			count:        len(keyVaults),
-			purge: func(skipPurge bool, self *itemToPurge) error {
-				return p.purgeKeyVaults(ctx, keyVaults, skipPurge)
-			},
-		}
-		managedHSMsPurge := itemToPurge{
-			resourceType: "Managed HSM",
-			count:        len(managedHSMs),
-			purge: func(skipPurge bool, self *itemToPurge) error {
-				return p.purgeManagedHSMs(ctx, managedHSMs, skipPurge)
-			},
-		}
-		appConfigsPurge := itemToPurge{
-			resourceType: "App Configuration",
-			count:        len(appConfigs),
-			purge: func(skipPurge bool, self *itemToPurge) error {
-				return p.purgeAppConfigs(ctx, appConfigs, skipPurge)
-			},
-		}
-		aPIManagement := itemToPurge{
-			resourceType: "API Management",
-			count:        len(apiManagements),
-			purge: func(skipPurge bool, self *itemToPurge) error {
-				return p.purgeAPIManagement(ctx, apiManagements, skipPurge)
-			},
-		}
-
-		var purgeItem []itemToPurge
-		for _, item := range []itemToPurge{keyVaultsPurge, managedHSMsPurge, appConfigsPurge, aPIManagement} {
-			if item.count > 0 {
-				purgeItem = append(purgeItem, item)
-			}
-		}
-
-		groupByKind := cognitiveAccountsByKind(cognitiveAccounts)
-		for name, cogAccounts := range groupByKind {
-			addPurgeItem := itemToPurge{
-				resourceType: name,
-				count:        len(cogAccounts),
-				purge: func(skipPurge bool, self *itemToPurge) error {
-					return p.purgeCognitiveAccounts(ctx, self.cognitiveAccounts, skipPurge)
-				},
-				cognitiveAccounts: groupByKind[name],
-			}
-			purgeItem = append(purgeItem, addPurgeItem)
+			return nil, fmt.Errorf("collecting purge targets: %w", err)
 		}
 
 		if err := p.purgeItems(ctx, purgeItem, options); err != nil {
@@ -1140,79 +1155,9 @@ func (p *BicepProvider) Destroy(
 			return nil, fmt.Errorf("deleting resource groups: %w", classifyErr)
 		}
 
-		keyVaults, err := p.getKeyVaultsToPurge(ctx, ownedGroupedResources)
+		purgeItem, err := p.collectPurgeItems(ctx, ownedGroupedResources)
 		if err != nil {
-			return nil, fmt.Errorf("getting key vaults to purge: %w", err)
-		}
-
-		managedHSMs, err := p.getManagedHSMsToPurge(ctx, ownedGroupedResources)
-		if err != nil {
-			return nil, fmt.Errorf("getting managed hsms to purge: %w", err)
-		}
-
-		appConfigs, err := p.getAppConfigsToPurge(ctx, ownedGroupedResources)
-		if err != nil {
-			return nil, fmt.Errorf("getting app configurations to purge: %w", err)
-		}
-
-		apiManagements, err := p.getApiManagementsToPurge(ctx, ownedGroupedResources)
-		if err != nil {
-			return nil, fmt.Errorf("getting API managements to purge: %w", err)
-		}
-
-		cognitiveAccounts, err := p.getCognitiveAccountsToPurge(ctx, ownedGroupedResources)
-		if err != nil {
-			return nil, fmt.Errorf("getting cognitive accounts to purge: %w", err)
-		}
-
-		keyVaultsPurge := itemToPurge{
-			resourceType: "Key Vault",
-			count:        len(keyVaults),
-			purge: func(skipPurge bool, self *itemToPurge) error {
-				return p.purgeKeyVaults(ctx, keyVaults, skipPurge)
-			},
-		}
-		managedHSMsPurge := itemToPurge{
-			resourceType: "Managed HSM",
-			count:        len(managedHSMs),
-			purge: func(skipPurge bool, self *itemToPurge) error {
-				return p.purgeManagedHSMs(ctx, managedHSMs, skipPurge)
-			},
-		}
-		appConfigsPurge := itemToPurge{
-			resourceType: "App Configuration",
-			count:        len(appConfigs),
-			purge: func(skipPurge bool, self *itemToPurge) error {
-				return p.purgeAppConfigs(ctx, appConfigs, skipPurge)
-			},
-		}
-		aPIManagement := itemToPurge{
-			resourceType: "API Management",
-			count:        len(apiManagements),
-			purge: func(skipPurge bool, self *itemToPurge) error {
-				return p.purgeAPIManagement(ctx, apiManagements, skipPurge)
-			},
-		}
-
-		var purgeItem []itemToPurge
-		for _, item := range []itemToPurge{keyVaultsPurge, managedHSMsPurge, appConfigsPurge, aPIManagement} {
-			if item.count > 0 {
-				purgeItem = append(purgeItem, item)
-			}
-		}
-
-		// cognitive services are grouped by resource group because the name of the resource group is required to purge
-		groupByKind := cognitiveAccountsByKind(cognitiveAccounts)
-		for name, cogAccounts := range groupByKind {
-			addPurgeItem := itemToPurge{
-				resourceType: name,
-				count:        len(cogAccounts),
-				purge: func(skipPurge bool, self *itemToPurge) error {
-					return p.purgeCognitiveAccounts(ctx, self.cognitiveAccounts, skipPurge)
-				},
-				cognitiveAccounts: groupByKind[name],
-			}
-			purgeItem = append(purgeItem, addPurgeItem)
+			return nil, fmt.Errorf("collecting purge targets: %w", err)
 		}
 
 		if err := p.purgeItems(ctx, purgeItem, options); err != nil {
@@ -1278,10 +1223,6 @@ func getDeploymentOptions(deployments []*azapi.ResourceDeployment) []string {
 
 	return promptValues
 }
-
-// NOTE: generateResourcesToDelete, promptDeletion, and destroyDeployment were removed —
-// the new classifyAndDeleteResourceGroups flow (bicep_destroy.go) handles classification,
-// prompting per-RG via Tier 3, and deletion.
 
 func itemsCountAsText(items []itemToPurge) string {
 	count := len(items)

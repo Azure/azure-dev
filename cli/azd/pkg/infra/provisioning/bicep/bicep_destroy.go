@@ -24,6 +24,29 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
+// forceDeleteLogAnalyticsIfPurge force-deletes Log Analytics Workspaces in the given resource
+// groups when purge is enabled. This must happen while the workspaces still exist — force-delete
+// is not possible after the containing resource group is deleted.
+func (p *BicepProvider) forceDeleteLogAnalyticsIfPurge(
+	ctx context.Context,
+	resources map[string][]*azapi.Resource,
+	options provisioning.DestroyOptions,
+) {
+	if !options.Purge() {
+		return
+	}
+	workspaces, err := p.getLogAnalyticsWorkspacesToPurge(ctx, resources)
+	if err != nil {
+		log.Printf("WARNING: could not list log analytics workspaces: %v", err)
+		return
+	}
+	if len(workspaces) > 0 {
+		if err := p.forceDeleteLogAnalyticsWorkspaces(ctx, workspaces); err != nil {
+			log.Printf("WARNING: force-deleting log analytics workspaces: %v", err)
+		}
+	}
+}
+
 // classifyAndDeleteResourceGroups classifies each resource group as owned/external/unknown
 // using the 4-tier pipeline, then only deletes owned RGs.
 //
@@ -153,18 +176,8 @@ func (p *BicepProvider) deleteRGList(
 	var deleteErrors []error
 	for _, rgName := range rgNames {
 		// Force-delete Log Analytics Workspaces in this RG before deleting the RG.
-		// This must happen while the workspace still exists; force-delete is not possible after.
-		if options.Purge() {
-			rgResources := map[string][]*azapi.Resource{rgName: groupedResources[rgName]}
-			workspaces, wsErr := p.getLogAnalyticsWorkspacesToPurge(ctx, rgResources)
-			if wsErr != nil {
-				log.Printf("WARNING: could not list log analytics workspaces for rg=%s: %v", rgName, wsErr)
-			} else if len(workspaces) > 0 {
-				if fdErr := p.forceDeleteLogAnalyticsWorkspaces(ctx, workspaces); fdErr != nil {
-					log.Printf("WARNING: force-deleting log analytics workspaces in rg=%s: %v", rgName, fdErr)
-				}
-			}
-		}
+		rgResources := map[string][]*azapi.Resource{rgName: groupedResources[rgName]}
+		p.forceDeleteLogAnalyticsIfPurge(ctx, rgResources, options)
 
 		p.console.ShowSpinner(
 			ctx,
@@ -406,16 +419,7 @@ func (p *BicepProvider) destroyViaDeploymentDelete(
 ) error {
 	// Force-delete Log Analytics Workspaces before deleting the deployment/stack,
 	// since force-delete requires the workspace to still exist.
-	if options.Purge() {
-		workspaces, err := p.getLogAnalyticsWorkspacesToPurge(ctx, groupedResources)
-		if err != nil {
-			log.Printf("WARNING: could not list log analytics workspaces: %v", err)
-		} else if len(workspaces) > 0 {
-			if err := p.forceDeleteLogAnalyticsWorkspaces(ctx, workspaces); err != nil {
-				log.Printf("WARNING: force-deleting log analytics workspaces: %v", err)
-			}
-		}
-	}
+	p.forceDeleteLogAnalyticsIfPurge(ctx, groupedResources, options)
 
 	// Delete via the deployment service (standard: deletes RGs; stacks: deletes the stack).
 	err := async.RunWithProgressE(func(progressMessage azapi.DeleteDeploymentProgress) {

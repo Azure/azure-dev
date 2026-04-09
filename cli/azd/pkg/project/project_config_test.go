@@ -15,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/language"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/snapshot"
 	"github.com/braydonk/yaml"
@@ -476,7 +477,7 @@ func Test_Hooks_Config_Yaml_Marshalling(t *testing.T) {
 			Hooks: HooksConfig{
 				"postprovision": {
 					{
-						Shell: ext.ShellTypeBash,
+						Shell: string(language.HookKindBash),
 						Run:   "scripts/postprovision.sh",
 					},
 				},
@@ -489,7 +490,7 @@ func Test_Hooks_Config_Yaml_Marshalling(t *testing.T) {
 					Hooks: HooksConfig{
 						"postprovision": {
 							{
-								Shell: ext.ShellTypeBash,
+								Shell: string(language.HookKindBash),
 								Run:   "scripts/postprovision.sh",
 							},
 						},
@@ -514,11 +515,11 @@ func Test_Hooks_Config_Yaml_Marshalling(t *testing.T) {
 			Hooks: map[string][]*ext.HookConfig{
 				"postprovision": {
 					{
-						Shell: ext.ShellTypeBash,
+						Shell: string(language.HookKindBash),
 						Run:   "scripts/postprovision1.sh",
 					},
 					{
-						Shell: ext.ShellTypeBash,
+						Shell: string(language.HookKindBash),
 						Run:   "scripts/postprovision2.sh",
 					},
 				},
@@ -531,11 +532,11 @@ func Test_Hooks_Config_Yaml_Marshalling(t *testing.T) {
 					Hooks: HooksConfig{
 						"postprovision": {
 							{
-								Shell: ext.ShellTypeBash,
+								Shell: string(language.HookKindBash),
 								Run:   "scripts/postprovision1.sh",
 							},
 							{
-								Shell: ext.ShellTypeBash,
+								Shell: string(language.HookKindBash),
 								Run:   "scripts/postprovision2.sh",
 							},
 						},

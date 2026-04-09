@@ -6,6 +6,7 @@ package ext
 import (
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/language"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
@@ -26,7 +27,7 @@ preprovision:
 		require.Equal(t, HooksConfig{
 			"preprovision": {
 				{
-					Shell: ShellTypeBash,
+					Shell: string(language.HookKindBash),
 					Run:   "scripts/preprovision.sh",
 				},
 			},
@@ -49,11 +50,11 @@ preprovision:
 		require.Equal(t, HooksConfig{
 			"preprovision": {
 				{
-					Shell: ShellTypeBash,
+					Shell: string(language.HookKindBash),
 					Run:   "scripts/preprovision-1.sh",
 				},
 				{
-					Shell: ShellTypeBash,
+					Shell: string(language.HookKindBash),
 					Run:   "scripts/preprovision-2.sh",
 				},
 			},
@@ -66,7 +67,7 @@ func TestHooksConfig_MarshalYAML(t *testing.T) {
 		hooks := HooksConfig{
 			"preprovision": {
 				{
-					Shell: ShellTypeBash,
+					Shell: string(language.HookKindBash),
 					Run:   "scripts/preprovision.sh",
 				},
 			},
@@ -86,11 +87,11 @@ preprovision:
 		hooks := HooksConfig{
 			"preprovision": {
 				{
-					Shell: ShellTypeBash,
+					Shell: string(language.HookKindBash),
 					Run:   "scripts/preprovision-1.sh",
 				},
 				{
-					Shell: ShellTypeBash,
+					Shell: string(language.HookKindBash),
 					Run:   "scripts/preprovision-2.sh",
 				},
 			},

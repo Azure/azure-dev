@@ -262,6 +262,11 @@ overrides:
       - println
       - myext
       - Fatalf
+  - filename: extensions/microsoft.azd.ai.builder/internal/cmd/start.go
+    words:
+      - dall
+      - datasource
+      - vectorizing
   - filename: pkg/project/dockerfile_builder.go
     words:
       - WORKDIR
@@ -307,6 +312,12 @@ overrides:
   - filename: pkg/extensions/manager.go
     words:
       - myext
+  - filename: extensions/microsoft.azd.extensions/internal/resources/languages/**/.gitignore
+    words:
+      - rsuser
+      - userosscache
+      - docstates
+      - dylib
   - filename: docs/recording-functional-tests-guide.md
     words:
       - httptest
@@ -342,18 +353,36 @@ overrides:
     words:
       - WORKDIR
       - workdir
+  - filename: extensions/microsoft.azd.demo/internal/cmd/metadata.go
+    words:
+      - invopop
+  - filename: extensions/microsoft.azd.concurx/internal/cmd/prompt_model.go
+    words:
+      - textinput
   - filename: pkg/azdext/scope_detector.go
     words:
       - fakeazure
   - filename: "{pkg/azapi/permissions.go,pkg/infra/provisioning/bicep/bicep_provider.go}"
     words:
       - ABAC
+  - filename: extensions/azure.ai.models/internal/cmd/custom_create.go
+    words:
+      - Qwen
   - filename: pkg/infra/provisioning/bicep/local_preflight.go
     words:
       - actioned
   - filename: pkg/project/project.go
     words:
       - copylocks
+  - filename: pkg/ext/models.go
+    words:
+      - unvalidated
+      - venvs
+      - workdir
+  - filename: docs/code-coverage-guide.md
+    words:
+      - covdata
+      - GOWORK
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

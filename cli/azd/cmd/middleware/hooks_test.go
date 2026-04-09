@@ -20,8 +20,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/language"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mocktools"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -29,6 +31,7 @@ import (
 
 func Test_CommandHooks_Middleware_WithValidProjectAndMatchingCommand(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockContext)
 	azdContext := createAzdContext(t)
 
 	envName := "test"
@@ -40,7 +43,7 @@ func Test_CommandHooks_Middleware_WithValidProjectAndMatchingCommand(t *testing.
 			"precommand": {
 				{
 					Run:   "echo 'hello'",
-					Shell: ext.ShellTypeBash,
+					Shell: string(language.HookKindBash),
 				},
 			},
 		},
@@ -63,6 +66,7 @@ func Test_CommandHooks_Middleware_WithValidProjectAndMatchingCommand(t *testing.
 
 func Test_CommandHooks_Middleware_ValidProjectWithDifferentCommand(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockContext)
 	azdContext := createAzdContext(t)
 
 	envName := "test"
@@ -74,7 +78,7 @@ func Test_CommandHooks_Middleware_ValidProjectWithDifferentCommand(t *testing.T)
 			"precommand": {
 				{
 					Run:   "echo 'hello'",
-					Shell: ext.ShellTypeBash,
+					Shell: string(language.HookKindBash),
 				},
 			},
 		},
@@ -97,6 +101,7 @@ func Test_CommandHooks_Middleware_ValidProjectWithDifferentCommand(t *testing.T)
 
 func Test_CommandHooks_Middleware_ValidProjectWithNoHooks(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockContext)
 	azdContext := createAzdContext(t)
 
 	envName := "test"
@@ -123,6 +128,7 @@ func Test_CommandHooks_Middleware_ValidProjectWithNoHooks(t *testing.T) {
 
 func Test_CommandHooks_Middleware_PreHookWithError(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockContext)
 	azdContext := createAzdContext(t)
 
 	envName := "test"
@@ -134,7 +140,7 @@ func Test_CommandHooks_Middleware_PreHookWithError(t *testing.T) {
 			"precommand": {
 				{
 					Run:   "exit 1",
-					Shell: ext.ShellTypeBash,
+					Shell: string(language.HookKindBash),
 				},
 			},
 		},
@@ -160,6 +166,7 @@ func Test_CommandHooks_Middleware_PreHookWithError(t *testing.T) {
 
 func Test_CommandHooks_Middleware_PreHookWithErrorAndContinue(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockContext)
 	azdContext := createAzdContext(t)
 
 	envName := "test"
@@ -171,7 +178,7 @@ func Test_CommandHooks_Middleware_PreHookWithErrorAndContinue(t *testing.T) {
 			"precommand": {
 				{
 					Run:             "exit 1",
-					Shell:           ext.ShellTypeBash,
+					Shell:           string(language.HookKindBash),
 					ContinueOnError: true,
 				},
 			},
@@ -198,6 +205,7 @@ func Test_CommandHooks_Middleware_PreHookWithErrorAndContinue(t *testing.T) {
 
 func Test_CommandHooks_Middleware_WithCmdAlias(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockContext)
 	azdContext := createAzdContext(t)
 
 	envName := "test"
@@ -209,7 +217,7 @@ func Test_CommandHooks_Middleware_WithCmdAlias(t *testing.T) {
 			"prealias": {
 				{
 					Run:   "echo 'hello'",
-					Shell: ext.ShellTypeBash,
+					Shell: string(language.HookKindBash),
 				},
 			},
 		},
@@ -232,6 +240,7 @@ func Test_CommandHooks_Middleware_WithCmdAlias(t *testing.T) {
 
 func Test_ServiceHooks_Registered(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockContext)
 	azdContext := createAzdContext(t)
 
 	envName := "test"
@@ -250,7 +259,7 @@ func Test_ServiceHooks_Registered(t *testing.T) {
 		Hooks: map[string][]*ext.HookConfig{
 			"predeploy": {
 				{
-					Shell: ext.ShellTypeBash,
+					Shell: string(language.HookKindBash),
 					Run:   "echo 'Hello'",
 				},
 			},
@@ -294,6 +303,7 @@ func Test_ServiceHooks_Registered(t *testing.T) {
 
 func Test_ServiceHooks_ValidationUsesServicePath(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockContext)
 	azdContext := createAzdContext(t)
 
 	envName := "test"
@@ -514,6 +524,7 @@ services:
 
 func Test_PowerShellWarning_WithPowerShellHooks(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockContext)
 	azdContext := createAzdContext(t)
 
 	envName := "test"
@@ -525,7 +536,7 @@ func Test_PowerShellWarning_WithPowerShellHooks(t *testing.T) {
 			"preprovision": {
 				{
 					Run:   "Write-Host 'hello'",
-					Shell: ext.ShellTypePowershell,
+					Shell: string(language.HookKindPowerShell),
 				},
 			},
 		},
@@ -562,6 +573,7 @@ func Test_PowerShellWarning_WithPowerShellHooks(t *testing.T) {
 
 func Test_PowerShellWarning_WithPs1FileHook(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockContext)
 	azdContext := createAzdContext(t)
 
 	envName := "test"
@@ -572,8 +584,8 @@ func Test_PowerShellWarning_WithPs1FileHook(t *testing.T) {
 		Hooks: map[string][]*ext.HookConfig{
 			"preprovision": {
 				{
-					Run:   "script.ps1",            // PowerShell file extension
-					Shell: ext.ShellTypePowershell, // Explicitly specify shell to avoid detection issues
+					Run:   "script.ps1",                        // PowerShell file extension
+					Shell: string(language.HookKindPowerShell), // Explicitly specify shell to avoid detection issues
 				},
 			},
 		},
@@ -608,6 +620,7 @@ func Test_PowerShellWarning_WithPs1FileHook(t *testing.T) {
 
 func Test_PowerShellWarning_WithoutPowerShellHooks(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockContext)
 	azdContext := createAzdContext(t)
 
 	envName := "test"
@@ -619,7 +632,7 @@ func Test_PowerShellWarning_WithoutPowerShellHooks(t *testing.T) {
 			"precommand": {
 				{
 					Run:   "echo 'hello'",
-					Shell: ext.ShellTypeBash,
+					Shell: string(language.HookKindBash),
 				},
 			},
 		},
@@ -686,6 +699,7 @@ func Test_CommandHooks_ChildAction_HooksStillFire(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockContext := mocks.NewMockContext(context.Background())
+			registerHookExecutors(mockContext)
 			azdContext := createAzdContext(t)
 
 			envName := "test"
@@ -697,7 +711,7 @@ func Test_CommandHooks_ChildAction_HooksStillFire(t *testing.T) {
 					tt.hookName: {
 						{
 							Run:   "echo 'hook running'",
-							Shell: ext.ShellTypeBash,
+							Shell: string(language.HookKindBash),
 						},
 					},
 				},
@@ -725,6 +739,7 @@ func Test_CommandHooks_ChildAction_HooksStillFire(t *testing.T) {
 
 func Test_CommandHooks_ServiceHooks_DoNotDuplicateAcrossParentAndChildRuns(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockContext)
 	projectConfig := createServiceHookProjectConfig(t, "predeploy")
 	runOptions := Options{CommandPath: "azd deploy"}
 
@@ -762,6 +777,7 @@ func Test_CommandHooks_ServiceHooks_DoNotDuplicateAcrossParentAndChildRuns(t *te
 
 func Test_CommandHooks_ServiceHooks_DoNotDuplicateAcrossRetries(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockContext)
 	projectConfig := createServiceHookProjectConfig(t, "predeploy")
 	runOptions := Options{CommandPath: "azd deploy"}
 
@@ -794,6 +810,7 @@ func Test_CommandHooks_ServiceHooks_DoNotDuplicateAcrossRetries(t *testing.T) {
 
 func Test_CommandHooks_ServiceHooks_RegisterForChildOnlyWorkflowRuns(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockContext)
 	projectConfig := createServiceHookProjectConfig(t, "predeploy")
 	runOptions := Options{CommandPath: "azd deploy"}
 
@@ -846,6 +863,7 @@ func Test_CommandHooks_ServiceHooks_RegisterForChildOnlyWorkflowRuns(t *testing.
 // guard in HooksMiddleware.Run() only affects validation, not hook execution itself.
 func Test_CommandHooks_ChildAction_SkipsValidationOnly(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockContext)
 	azdContext := createAzdContext(t)
 
 	envName := "test"
@@ -857,13 +875,13 @@ func Test_CommandHooks_ChildAction_SkipsValidationOnly(t *testing.T) {
 			"preprovision": {
 				{
 					Run:   "echo 'preprovision hook'",
-					Shell: ext.ShellTypeBash,
+					Shell: string(language.HookKindBash),
 				},
 			},
 			"postprovision": {
 				{
 					Run:   "echo 'postprovision hook'",
-					Shell: ext.ShellTypeBash,
+					Shell: string(language.HookKindBash),
 				},
 			},
 		},
@@ -902,6 +920,7 @@ func Test_CommandHooks_ChildAction_SkipsValidationOnly(t *testing.T) {
 // command execution).
 func Test_CommandHooks_ChildAction_PreHookError_StopsAction(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockContext)
 	azdContext := createAzdContext(t)
 
 	envName := "test"
@@ -913,7 +932,7 @@ func Test_CommandHooks_ChildAction_PreHookError_StopsAction(t *testing.T) {
 			"preprovision": {
 				{
 					Run:   "exit 1",
-					Shell: ext.ShellTypeBash,
+					Shell: string(language.HookKindBash),
 				},
 			},
 		},
@@ -939,6 +958,7 @@ func Test_CommandHooks_ChildAction_PreHookError_StopsAction(t *testing.T) {
 
 func Test_PowerShellWarning_WithPwshAvailable(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockContext)
 	azdContext := createAzdContext(t)
 
 	envName := "test"
@@ -950,7 +970,7 @@ func Test_PowerShellWarning_WithPwshAvailable(t *testing.T) {
 			"precommand": {
 				{
 					Run:   "Write-Host 'hello'",
-					Shell: ext.ShellTypePowershell,
+					Shell: string(language.HookKindPowerShell),
 				},
 			},
 		},
@@ -985,6 +1005,7 @@ func Test_PowerShellWarning_WithPwshAvailable(t *testing.T) {
 
 func Test_PowerShellWarning_WithNoPowerShellInstalled(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockContext)
 	azdContext := createAzdContext(t)
 
 	envName := "test"
@@ -996,7 +1017,7 @@ func Test_PowerShellWarning_WithNoPowerShellInstalled(t *testing.T) {
 			"preprovision": {
 				{
 					Run:   "Write-Host 'hello'",
-					Shell: ext.ShellTypePowershell,
+					Shell: string(language.HookKindPowerShell),
 				},
 			},
 		},
@@ -1029,4 +1050,9 @@ func Test_PowerShellWarning_WithNoPowerShellInstalled(t *testing.T) {
 		}
 	}
 	require.True(t, foundWarning, "Expected 'No PowerShell installation detected' warning to be displayed")
+}
+
+// registerHookExecutors delegates to the shared test helper in test/mocks/mocktools.
+func registerHookExecutors(mockCtx *mocks.MockContext) {
+	mocktools.RegisterHookExecutors(mockCtx)
 }

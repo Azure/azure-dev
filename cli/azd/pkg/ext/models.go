@@ -17,21 +17,18 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/language"
 )
 
-// The type of hooks. Supported values are 'pre' and 'post'
+// HookType represents the execution timing of a hook relative to the
+// associated command. Supported values are 'pre' and 'post'.
 type HookType string
+
+// HookPlatformType identifies the operating system platform for
+// platform-specific hook overrides.
 type HookPlatformType string
-type ShellType string
-type ScriptLocation string
 
 const (
-	ShellTypeBash         ShellType      = "sh"
-	ShellTypePowershell   ShellType      = "pwsh"
-	ScriptTypeUnknown     ShellType      = ""
-	ScriptLocationInline  ScriptLocation = "inline"
-	ScriptLocationPath    ScriptLocation = "path"
-	ScriptLocationUnknown ScriptLocation = ""
 	// Executes pre hooks
 	HookTypePre HookType = "pre"
 	// Execute post hooks
@@ -42,35 +39,75 @@ const (
 )
 
 var (
+	// ErrScriptTypeUnknown indicates the hook kind could not be inferred
+	// from the script path and was not explicitly configured.
 	ErrScriptTypeUnknown error = errors.New(
-		"unable to determine script type. Ensure 'Shell' parameter is set in configuration options",
+		"unable to determine hook kind. " +
+			"Ensure 'kind' or 'shell' is set in your hook configuration, " +
+			"or use a file with a recognized extension " +
+			"(.sh, .ps1, .py, .js, .ts, .cs)",
 	)
-	ErrRunRequired           error = errors.New("run is always required")
-	ErrUnsupportedScriptType error = errors.New("script type is not valid. Only '.sh' and '.ps1' are supported")
+	// ErrRunRequired indicates the hook configuration is missing the mandatory 'run' field.
+	ErrRunRequired error = errors.New(
+		"'run' is required for every hook configuration. " +
+			"Set 'run' to an inline script or a relative file path",
+	)
+	// ErrUnsupportedScriptType indicates the script file has an extension
+	// that is not recognized and no explicit kind or shell was set.
+	ErrUnsupportedScriptType error = errors.New(
+		"script type is not valid. " +
+			"Supported extensions: .sh, .ps1, .py, .js, .ts, .cs. " +
+			"Alternatively, set 'kind' (e.g. kind: python) " +
+			"or 'shell' (e.g. shell: sh)",
+	)
 )
 
 // Generic action function that may return an error
 type InvokeFn func() error
 
-// Azd hook configuration
+// HookConfig defines the configuration for a single hook in azure.yaml.
+// Hooks are lifecycle scripts that run before or after azd commands.
+// Every hook is executed through a [tools.HookExecutor] resolved via IoC
+// based on the hook's Kind — including Bash, PowerShell, Python,
+// and future executor types (JS, TS, DotNet).
 type HookConfig struct {
-	// The location of the script hook (file path or inline)
-	location ScriptLocation
-	// When location is `path` a file path must be specified relative to the project or service
+	// When set, contains the resolved file path relative to the project or service
 	path string
 	// Stores a value whether or not this hook config has been previously validated
 	validated bool
 	// Stores the working directory set for this hook config
 	cwd string
-	// When location is `inline` a script must be defined inline
+	// When set, contains the inline script content to execute
 	script string
 	// Indicates if the shell was automatically detected based on OS (used for warnings)
 	usingDefaultShell bool
+	// resolvedScriptPath is the absolute path to the script file,
+	// computed during validate(). Empty for inline scripts.
+	resolvedScriptPath string
+	// resolvedDir is the absolute working directory for hook
+	// execution, computed during validate().
+	resolvedDir string
 
 	// Internal name of the hook running for a given command
 	Name string `yaml:",omitempty"`
-	// The type of script hook (bash or powershell)
-	Shell ShellType `yaml:"shell,omitempty"`
+	// Kind specifies the executor type of the hook script.
+	// Allowed values: "sh", "pwsh", "js", "ts", "python", "dotnet".
+	// When empty, the kind is auto-detected from the file extension
+	// of the run path (e.g. .py → python, .ps1 → pwsh). If Kind
+	// and Shell are both empty and run references a file,
+	// the extension is used. For inline scripts, Kind or Shell
+	// must be set explicitly.
+	Kind language.HookKind `yaml:"kind,omitempty" json:"kind,omitempty"`
+	// Shell is a deprecated alias for Kind. When set in YAML
+	// (shell: sh) it is mapped to Kind during validate().
+	// Retained for backwards compatibility with legacy configs.
+	Shell string `yaml:"shell,omitempty" json:"-"`
+	// Dir specifies the working directory for hook execution,
+	// used as the project context for dependency installation and builds.
+	// When empty, defaults to the directory containing the script
+	// referenced by the run field. Only set this when the project root
+	// differs from the script's directory.
+	Dir string `yaml:"dir,omitempty" json:"dir,omitempty"`
 	// The inline script to execute or path to existing file
 	Run string `yaml:"run,omitempty"`
 	// When set to true will not halt command execution even when a script error occurs.
@@ -86,8 +123,18 @@ type HookConfig struct {
 	Secrets map[string]string `yaml:"secrets,omitempty"`
 }
 
-// Validates and normalizes the hook configuration.
-// For inline hooks this only resolves metadata; the executable temp script is generated per execution.
+// validate normalizes and validates the hook configuration. It resolves
+// the script location (inline vs. file path) and ensures that Kind
+// is always resolved to a concrete [language.HookKind] value.
+//
+// Kind resolution priority:
+//  1. Explicit Kind field
+//  2. Explicit Shell field (deprecated alias, mapped to Kind)
+//  3. File extension via [language.InferKindFromPath]
+//  4. OS default (Bash on Unix, PowerShell on Windows) for inline scripts
+//
+// After a successful call, Kind is the single source of truth for
+// executor selection and the hook is ready for execution.
 func (hc *HookConfig) validate() error {
 	if hc.validated {
 		return nil
@@ -97,33 +144,205 @@ func (hc *HookConfig) validate() error {
 		return ErrRunRequired
 	}
 
-	relativeCheckPath := strings.ReplaceAll(hc.Run, "/", string(os.PathSeparator))
+	// Record whether Dir was explicitly provided by the user
+	// before any auto-inference fills it in.
+	dirExplicit := hc.Dir != ""
+
+	relativeCheckPath := strings.ReplaceAll(
+		hc.Run, "/", string(os.PathSeparator),
+	)
+
+	// Resolve the full path for the os.Stat check. When Dir is
+	// explicitly set and run is relative, we try Dir first and
+	// fall back to cwd (project root). This supports both:
+	//   run: main.py        + dir: hooks/preprovision
+	//   run: hooks/deploy.py + dir: custom_workdir
 	fullCheckPath := relativeCheckPath
+	foundViaDir := false
 	if hc.cwd != "" {
-		fullCheckPath = filepath.Join(hc.cwd, hc.Run)
+		if filepath.IsAbs(relativeCheckPath) {
+			fullCheckPath = relativeCheckPath
+		} else if dirExplicit {
+			dir := hc.Dir
+			if !filepath.IsAbs(dir) {
+				dir = filepath.Join(hc.cwd, dir)
+			}
+			dirPath := filepath.Join(
+				dir, relativeCheckPath,
+			)
+			info, dirErr := os.Stat(dirPath)
+			if dirErr == nil && !info.IsDir() {
+				fullCheckPath = dirPath
+				foundViaDir = true
+			} else {
+				fullCheckPath = filepath.Join(
+					hc.cwd, relativeCheckPath,
+				)
+			}
+		} else {
+			fullCheckPath = filepath.Join(
+				hc.cwd, relativeCheckPath,
+			)
+		}
 	}
 
 	stats, err := os.Stat(fullCheckPath)
 	if err == nil && !stats.IsDir() {
-		hc.location = ScriptLocationPath
 		hc.path = relativeCheckPath
+		if foundViaDir {
+			dirExplicit = true
+		}
 	} else {
-		hc.location = ScriptLocationInline
 		hc.script = hc.Run
+		dirExplicit = false
 	}
 
-	if hc.Shell == ScriptTypeUnknown {
-		if hc.location == ScriptLocationInline {
-			hc.Shell = getDefaultShellForOS()
-			hc.usingDefaultShell = true
-		} else {
-			scriptType, err := inferScriptTypeFromFilePath(hc.path)
-			if err != nil {
-				return err
-			}
+	// Kind resolution — priority:
+	// 1. explicit Kind  2. Shell alias
+	// 3. file extension  4. OS default for inline scripts
+	if hc.Kind == language.HookKindUnknown && hc.Shell != "" {
+		hc.Kind = language.HookKind(hc.Shell)
+	}
+	if hc.Kind == language.HookKindUnknown && hc.path != "" {
+		hc.Kind = language.InferKindFromPath(hc.Run)
+	}
 
-			hc.Shell = scriptType
+	// Reject inline scripts for non-shell executors. Only Bash and
+	// PowerShell executors support inline script content; other
+	// executors require a file on disk.
+	if hc.script != "" &&
+		hc.Kind != language.HookKindUnknown &&
+		!hc.Kind.IsShell() {
+		return fmt.Errorf(
+			"inline scripts are not supported for %s hooks. "+
+				"Write your script to a file and set 'run' "+
+				"to the file path "+
+				"(e.g. run: ./hooks/my-script.py)",
+			hc.Kind,
+		)
+	}
+
+	// Non-shell executors handle their own runtime and dependency
+	// setup; no shell type resolution or temp script is needed.
+	if hc.Kind != language.HookKindUnknown &&
+		!hc.Kind.IsShell() {
+		// Auto-infer Dir from the script's directory when not
+		// explicitly set by the user.
+		if hc.Dir == "" && hc.path != "" {
+			hc.Dir = filepath.Dir(hc.path)
 		}
+	} else {
+		// For inline scripts with no resolved kind, default to
+		// the OS-appropriate shell kind.
+		if hc.Kind == language.HookKindUnknown &&
+			hc.script != "" {
+			hc.Kind = defaultKindForOS()
+			hc.usingDefaultShell = true
+		}
+
+		// For file-based hooks with an unrecognized extension.
+		if hc.Kind == language.HookKindUnknown {
+			return fmt.Errorf(
+				"script with file extension '%s' is not "+
+					"valid. %w.",
+				filepath.Ext(hc.path),
+				ErrUnsupportedScriptType,
+			)
+		}
+	}
+
+	// ── Resolve absolute paths ──────────────────────────────
+	// After this point, resolvedDir and resolvedScriptPath are
+	// the single source of truth for hook execution paths.
+	// execHook() should read these directly.
+
+	boundaryDir := hc.cwd
+	if boundaryDir == "" {
+		boundaryDir, _ = os.Getwd()
+	}
+
+	// Resolve working directory.
+	if hc.Dir != "" {
+		dir := hc.Dir
+		if !filepath.IsAbs(dir) {
+			dir = filepath.Join(boundaryDir, dir)
+		}
+		hc.resolvedDir = dir
+	} else if hc.path != "" && !hc.Kind.IsShell() {
+		// Non-shell hooks: derive cwd from script directory so
+		// project-relative tooling (venvs, node_modules) works.
+		hc.resolvedDir = filepath.Dir(
+			filepath.Join(boundaryDir, hc.path),
+		)
+	} else {
+		hc.resolvedDir = boundaryDir
+	}
+
+	// Resolve script path to absolute.
+	if hc.path != "" {
+		if dirExplicit && !filepath.IsAbs(hc.path) {
+			// Dir was explicitly set — run path is relative
+			// to Dir, not boundaryDir alone.
+			dir := hc.Dir
+			if !filepath.IsAbs(dir) {
+				dir = filepath.Join(boundaryDir, dir)
+			}
+			hc.resolvedScriptPath = filepath.Join(
+				dir, hc.path,
+			)
+		} else if !filepath.IsAbs(hc.path) {
+			hc.resolvedScriptPath = filepath.Join(
+				boundaryDir, hc.path,
+			)
+		} else {
+			hc.resolvedScriptPath = hc.path
+		}
+	}
+
+	// Validate that resolvedDir stays within the project root
+	// to prevent path traversal via ".." in Dir.
+	absDir, absErr := filepath.Abs(hc.resolvedDir)
+	if absErr != nil {
+		return fmt.Errorf(
+			"resolving hook directory: %w", absErr,
+		)
+	}
+	absBoundary, absErr := filepath.Abs(boundaryDir)
+	if absErr != nil {
+		return fmt.Errorf(
+			"resolving boundary directory: %w", absErr,
+		)
+	}
+	if !osutil.IsPathContained(absBoundary, absDir) {
+		return fmt.Errorf(
+			"hook directory %q escapes project root %q",
+			hc.Dir, boundaryDir,
+		)
+	}
+	hc.resolvedDir = absDir
+
+	// Validate that resolvedScriptPath stays within the project
+	// root to prevent path traversal via ".." in Run.
+	if hc.resolvedScriptPath != "" {
+		absScript, scriptErr := filepath.Abs(
+			hc.resolvedScriptPath,
+		)
+		if scriptErr != nil {
+			return fmt.Errorf(
+				"resolving hook script path: %w",
+				scriptErr,
+			)
+		}
+		if !osutil.IsPathContained(
+			absBoundary, absScript,
+		) {
+			return fmt.Errorf(
+				"hook script path %q escapes "+
+					"project root %q",
+				hc.Run, boundaryDir,
+			)
+		}
+		hc.resolvedScriptPath = absScript
 	}
 
 	hc.validated = true
@@ -131,37 +350,22 @@ func (hc *HookConfig) validate() error {
 	return nil
 }
 
-// PrepareExecutionPath returns the executable script path for the hook.
-// Inline hooks get a fresh temp file per execution, while file hooks reuse their configured path.
-func (hc *HookConfig) PrepareExecutionPath() (string, func(), error) {
-	if err := hc.validate(); err != nil {
-		return "", nil, err
-	}
-
-	if hc.location != ScriptLocationInline {
-		return hc.path, nil, nil
-	}
-
-	tempScript, err := createTempScript(hc)
-	if err != nil {
-		return "", nil, err
-	}
-
-	return tempScript, func() {
-		_ = os.Remove(tempScript)
-	}, nil
-}
-
-// IsPowerShellHook determines if a hook configuration uses PowerShell
+// IsPowerShellHook determines if a hook configuration uses PowerShell.
+// It checks the resolved Kind first, then falls back to the raw
+// Shell field and file extension for hooks that have not yet been
+// validated.
 func (hc *HookConfig) IsPowerShellHook() bool {
-	// Check if shell is explicitly set to pwsh
-	if hc.Shell == ShellTypePowershell {
+	if hc.Kind == language.HookKindPowerShell {
 		return true
 	}
 
-	// Check if shell is unknown but the hook file has .ps1 extension
-	if hc.Shell == ScriptTypeUnknown && hc.Run != "" {
-		// For file-based hooks, check the extension
+	// Check raw Shell field (pre-validation).
+	if hc.Shell == "pwsh" {
+		return true
+	}
+
+	// Check file extension for unvalidated hooks.
+	if hc.Run != "" {
 		if strings.HasSuffix(strings.ToLower(hc.Run), ".ps1") {
 			return true
 		}
@@ -170,7 +374,8 @@ func (hc *HookConfig) IsPowerShellHook() bool {
 	// Check OS-specific hook configurations
 	if runtime.GOOS == "windows" && hc.Windows != nil {
 		return hc.Windows.IsPowerShellHook()
-	} else if (runtime.GOOS == "linux" || runtime.GOOS == "darwin") && hc.Posix != nil {
+	} else if (runtime.GOOS == "linux" ||
+		runtime.GOOS == "darwin") && hc.Posix != nil {
 		return hc.Posix.IsPowerShellHook()
 	}
 
@@ -183,6 +388,9 @@ func (hc *HookConfig) IsUsingDefaultShell() bool {
 	return hc.usingDefaultShell
 }
 
+// InferHookType extracts the hook timing prefix ("pre" or "post")
+// from a hook name and returns the remaining command name. For
+// example, "preprovision" → (HookTypePre, "provision").
 func InferHookType(name string) (HookType, string) {
 	// Validate name length so go doesn't PANIC for string slicing below
 	if len(name) < 4 {
@@ -226,9 +434,13 @@ func appendHookConfigSignature(builder *strings.Builder, hookConfig *HookConfig)
 		return
 	}
 
-	builder.WriteString(string(hookConfig.Shell))
+	builder.WriteString(string(hookConfig.Kind))
+	builder.WriteByte('\x00')
+	builder.WriteString(hookConfig.Shell)
 	builder.WriteByte('\x00')
 	builder.WriteString(hookConfig.Run)
+	builder.WriteByte('\x00')
+	builder.WriteString(hookConfig.Dir)
 	builder.WriteByte('\x00')
 	builder.WriteString(strconv.FormatBool(hookConfig.ContinueOnError))
 	builder.WriteByte('\x00')
@@ -246,84 +458,11 @@ func appendHookConfigSignature(builder *strings.Builder, hookConfig *HookConfig)
 	appendHookConfigSignature(builder, hookConfig.Posix)
 }
 
-// getDefaultShellForOS returns the default shell type based on the operating system
-func getDefaultShellForOS() ShellType {
+// defaultKindForOS returns the default shell kind for the
+// current operating system: PowerShell on Windows, Bash elsewhere.
+func defaultKindForOS() language.HookKind {
 	if runtime.GOOS == "windows" {
-		return ShellTypePowershell
+		return language.HookKindPowerShell
 	}
-	return ShellTypeBash
-}
-
-func inferScriptTypeFromFilePath(path string) (ShellType, error) {
-	fileExtension := filepath.Ext(path)
-	switch fileExtension {
-	case ".sh":
-		return ShellTypeBash, nil
-	case ".ps1":
-		return ShellTypePowershell, nil
-	default:
-		return "", fmt.Errorf(
-			"script with file extension '%s' is not valid. %w.",
-			fileExtension,
-			ErrUnsupportedScriptType,
-		)
-	}
-}
-
-func createTempScript(hookConfig *HookConfig) (string, error) {
-	var ext string
-	scriptHeader := []string{}
-	scriptFooter := []string{}
-
-	switch ShellType(strings.Split(string(hookConfig.Shell), " ")[0]) {
-	case ShellTypeBash:
-		ext = "sh"
-		scriptHeader = []string{
-			"#!/bin/sh",
-			"set -e",
-		}
-	case ShellTypePowershell:
-		ext = "ps1"
-		scriptHeader = []string{
-			"$ErrorActionPreference = 'Stop'",
-		}
-		scriptFooter = []string{
-			"if ((Test-Path -LiteralPath variable:\\LASTEXITCODE)) { exit $LASTEXITCODE }",
-		}
-	}
-
-	// Write the temporary script file to OS temp dir
-	file, err := os.CreateTemp(os.TempDir(), fmt.Sprintf("azd-%s-*.%s", hookConfig.Name, ext))
-	if err != nil {
-		return "", fmt.Errorf("failed creating hook file: %w", err)
-	}
-
-	defer file.Close()
-
-	scriptBuilder := strings.Builder{}
-	for _, line := range scriptHeader {
-		scriptBuilder.WriteString(fmt.Sprintf("%s\n", line))
-	}
-
-	scriptBuilder.WriteString("\n")
-	scriptBuilder.WriteString("# Auto generated file from Azure Developer CLI\n")
-	scriptBuilder.WriteString(hookConfig.script)
-	scriptBuilder.WriteString("\n")
-
-	for _, line := range scriptFooter {
-		scriptBuilder.WriteString(fmt.Sprintf("%s\n", line))
-	}
-
-	// Temp generated files are cleaned up automatically after script execution has completed.
-	_, err = file.WriteString(scriptBuilder.String())
-	if err != nil {
-		return "", fmt.Errorf("failed writing hook file, %w", err)
-	}
-
-	// Update file permissions to grant exec permissions
-	if err := file.Chmod(osutil.PermissionExecutableFile); err != nil {
-		return "", fmt.Errorf("failed setting executable file permissions, %w", err)
-	}
-
-	return file.Name(), nil
+	return language.HookKindBash
 }

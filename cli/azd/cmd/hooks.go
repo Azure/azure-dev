@@ -337,7 +337,7 @@ func (hra *hooksRunAction) execHook(
 		hooksManager, hra.commandRunner, hra.envManager, hra.console, cwd, hooksMap, hra.env, hra.serviceLocator)
 
 	// Always run in interactive mode for 'azd hooks run', to help with testing/debugging
-	runOptions := &tools.ExecOptions{
+	runOptions := &tools.ExecutionContext{
 		Interactive: new(true),
 	}
 

@@ -371,6 +371,9 @@ overrides:
   - filename: pkg/infra/provisioning/bicep/local_preflight.go
     words:
       - actioned
+  - filename: pkg/project/project.go
+    words:
+      - copylocks
   - filename: pkg/ext/models.go
     words:
       - unvalidated

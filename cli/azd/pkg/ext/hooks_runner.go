@@ -212,7 +212,11 @@ func (h *HooksRunner) execHook(
 	// script temp files). Deferred before Prepare so cleanup runs
 	// even if Prepare fails partway through. Cleanup is safe to
 	// call when Prepare was not called or created no resources.
-	defer executor.Cleanup(ctx)
+	defer func() {
+		if cErr := executor.Cleanup(ctx); cErr != nil {
+			log.Printf("warning: cleanup failed for hook '%s': %v\n", hookConfig.Name, cErr)
+		}
+	}()
 
 	// Prepare (unified — venv/deps for Python, pwsh detection for
 	// PowerShell, inline temp file creation for Bash/PowerShell hooks).

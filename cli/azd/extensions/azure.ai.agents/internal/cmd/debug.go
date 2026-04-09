@@ -25,34 +25,39 @@ var connectionStringJSONRegex = regexp.MustCompile(`("[\w]*(?:CONNECTION_STRING|
 // is enabled, and additionally configures the Azure SDK logger when debugging.
 // Returns a cleanup function that should be deferred by the caller.
 func setupDebugLogging(flags *pflag.FlagSet) func() {
-	if isDebug(flags) {
-		currentDate := time.Now().Format("2006-01-02")
-		logFileName := fmt.Sprintf("azd-ai-agents-%s.log", currentDate)
-
-		//nolint:gosec // log file name is generated locally from date and not user-controlled
-		logFile, err := os.OpenFile(logFileName, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
-		if err != nil {
-			log.SetOutput(os.Stderr)
-			return func() {}
-		}
-
-		log.SetOutput(logFile)
-
-		azcorelog.SetListener(func(event azcorelog.Event, msg string) {
-			msg = connectionStringJSONRegex.ReplaceAllString(msg, `${1}"REDACTED"`)
-			fmt.Fprintf(logFile, "[%s] %s: %s\n", time.Now().Format(time.RFC3339), event, msg)
-		})
-
-		return func() {
-			log.SetOutput(io.Discard)
-			azcorelog.SetListener(nil)
-			logFile.Close() //nolint:gosec // best-effort cleanup of debug log file
-		}
+	if !isDebug(flags) {
+		log.SetOutput(io.Discard)
+		azcorelog.SetListener(nil)
+		return func() {}
 	}
 
-	log.SetOutput(io.Discard)
-	azcorelog.SetListener(nil)
-	return func() {}
+	currentDate := time.Now().Format("2006-01-02")
+	logFileName := fmt.Sprintf("azd-ai-agents-%s.log", currentDate)
+
+	//nolint:gosec // log file name is generated locally from date and not user-controlled
+	logFile, err := os.OpenFile(logFileName, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+
+	var w io.Writer
+	var closeFile func()
+	if err != nil {
+		w = os.Stderr
+		closeFile = func() {}
+	} else {
+		w = logFile
+		closeFile = func() { logFile.Close() } //nolint:gosec // best-effort cleanup of debug log file
+	}
+
+	log.SetOutput(w)
+	azcorelog.SetListener(func(event azcorelog.Event, msg string) {
+		msg = connectionStringJSONRegex.ReplaceAllString(msg, `${1}"REDACTED"`)
+		fmt.Fprintf(w, "[%s] %s: %s\n", time.Now().Format(time.RFC3339), event, msg)
+	})
+
+	return func() {
+		log.SetOutput(io.Discard)
+		azcorelog.SetListener(nil)
+		closeFile()
+	}
 }
 
 // isDebug checks if debug mode is enabled via --debug flag or AZD_EXT_DEBUG environment variable

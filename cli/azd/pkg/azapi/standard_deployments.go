@@ -11,11 +11,15 @@ import (
 	"maps"
 	"net/url"
 	"slices"
+	"sync"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
@@ -23,6 +27,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/benbjohnson/clock"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 // cArmDeploymentNameLengthMax is the maximum length of the name of a deployment in ARM.
@@ -30,6 +35,17 @@ const (
 	cArmDeploymentNameLengthMax = 64
 	cPortalUrlFragment          = "#view/HubsExtension/DeploymentDetailsBlade/~/overview/id"
 	cOutputsUrlFragment         = "#view/HubsExtension/DeploymentDetailsBlade/~/outputs/id"
+
+	// deployPollFrequency is the polling interval for ARM deploy/delete operations.
+	// Deployments complete in variable time, so polling faster than the 30s SDK default
+	// reduces tail latency. 5s balances responsiveness against the ARM read-rate limit
+	// (1200 reads/5min/subscription) when many LROs run in parallel.
+	deployPollFrequency = 5 * time.Second
+
+	// slowPollFrequency is the polling interval for ARM WhatIf and Validate operations.
+	// These are consistently slow (30-90s), so aggressive polling provides no benefit and
+	// risks hitting the ARM read rate limit (1200 reads/5min) during large parallel deployments.
+	slowPollFrequency = 15 * time.Second
 )
 
 type StandardDeployments struct {
@@ -38,6 +54,14 @@ type StandardDeployments struct {
 	resourceService    *ResourceService
 	cloud              *cloud.Cloud
 	clock              clock.Clock
+
+	// deploymentsClients caches DeploymentsClient instances per subscription ID.
+	// Azure SDK ARM clients are safe for concurrent use and hold no per-request state,
+	// so reusing them avoids redundant pipeline construction on every API call.
+	deploymentsClients sync.Map // map[string]*armresources.DeploymentsClient
+
+	// deploymentsOpsClients caches DeploymentOperationsClient instances per subscription ID.
+	deploymentsOpsClients sync.Map // map[string]*armresources.DeploymentOperationsClient
 }
 
 func NewStandardDeployments(
@@ -186,6 +210,10 @@ func (ds *StandardDeployments) createDeploymentsClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*armresources.DeploymentsClient, error) {
+	if cached, ok := ds.deploymentsClients.Load(subscriptionId); ok {
+		return cached.(*armresources.DeploymentsClient), nil
+	}
+
 	credential, err := ds.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
@@ -196,7 +224,9 @@ func (ds *StandardDeployments) createDeploymentsClient(
 		return nil, fmt.Errorf("creating deployments client: %w", err)
 	}
 
-	return client, nil
+	// Benign race: concurrent miss creates an extra client; LoadOrStore ensures one winner.
+	actual, _ := ds.deploymentsClients.LoadOrStore(subscriptionId, client)
+	return actual.(*armresources.DeploymentsClient), nil
 }
 
 func (ds *StandardDeployments) DeployToSubscription(
@@ -208,7 +238,14 @@ func (ds *StandardDeployments) DeployToSubscription(
 	parameters azure.ArmParameters,
 	tags map[string]*string,
 	options map[string]any,
-) (*ResourceDeployment, error) {
+) (_ *ResourceDeployment, err error) {
+	ctx, span := tracing.Start(ctx, "arm.deploy.subscription")
+	defer func() { span.EndWithStatus(err) }()
+	span.SetAttributes(
+		attribute.String("arm.subscription", subscriptionId),
+		attribute.String("arm.deployment", deploymentName),
+	)
+
 	deploymentClient, err := ds.createDeploymentsClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, fmt.Errorf("creating deployments client: %w", err)
@@ -230,7 +267,9 @@ func (ds *StandardDeployments) DeployToSubscription(
 	}
 
 	// wait for deployment creation
-	deployResult, err := createFromTemplateOperation.PollUntilDone(ctx, nil)
+	deployResult, err := createFromTemplateOperation.PollUntilDone(ctx, &runtime.PollUntilDoneOptions{
+		Frequency: deployPollFrequency,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("deploying to subscription: %w", createDeploymentError(err, DeploymentOperationDeploy))
 	}
@@ -245,7 +284,15 @@ func (ds *StandardDeployments) DeployToResourceGroup(
 	parameters azure.ArmParameters,
 	tags map[string]*string,
 	options map[string]any,
-) (*ResourceDeployment, error) {
+) (_ *ResourceDeployment, err error) {
+	ctx, span := tracing.Start(ctx, "arm.deploy.resourcegroup")
+	defer func() { span.EndWithStatus(err) }()
+	span.SetAttributes(
+		attribute.String("arm.subscription", subscriptionId),
+		attribute.String("arm.resourcegroup", resourceGroup),
+		attribute.String("arm.deployment", deploymentName),
+	)
+
 	deploymentClient, err := ds.createDeploymentsClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, fmt.Errorf("creating deployments client: %w", err)
@@ -266,7 +313,9 @@ func (ds *StandardDeployments) DeployToResourceGroup(
 	}
 
 	// wait for deployment creation
-	deployResult, err := createFromTemplateOperation.PollUntilDone(ctx, nil)
+	deployResult, err := createFromTemplateOperation.PollUntilDone(ctx, &runtime.PollUntilDoneOptions{
+		Frequency: deployPollFrequency,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("deploying to resource group: %w", createDeploymentError(err, DeploymentOperationDeploy))
 	}
@@ -558,7 +607,14 @@ func (ds *StandardDeployments) WhatIfDeployToSubscription(
 	deploymentName string,
 	armTemplate azure.RawArmTemplate,
 	parameters azure.ArmParameters,
-) (*armresources.WhatIfOperationResult, error) {
+) (_ *armresources.WhatIfOperationResult, err error) {
+	ctx, span := tracing.Start(ctx, "arm.whatif.subscription")
+	defer func() { span.EndWithStatus(err) }()
+	span.SetAttributes(
+		attribute.String("arm.subscription", subscriptionId),
+		attribute.String("arm.deployment", deploymentName),
+	)
+
 	deploymentClient, err := ds.createDeploymentsClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, fmt.Errorf("creating deployments client: %w", err)
@@ -580,7 +636,9 @@ func (ds *StandardDeployments) WhatIfDeployToSubscription(
 	}
 
 	// wait for deployment creation
-	deployResult, err := createFromTemplateOperation.PollUntilDone(ctx, nil)
+	deployResult, err := createFromTemplateOperation.PollUntilDone(ctx, &runtime.PollUntilDoneOptions{
+		Frequency: slowPollFrequency,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("deploying to subscription: %w", createDeploymentError(err, DeploymentOperationPreview))
 	}
@@ -593,7 +651,15 @@ func (ds *StandardDeployments) WhatIfDeployToResourceGroup(
 	subscriptionId, resourceGroup, deploymentName string,
 	armTemplate azure.RawArmTemplate,
 	parameters azure.ArmParameters,
-) (*armresources.WhatIfOperationResult, error) {
+) (_ *armresources.WhatIfOperationResult, err error) {
+	ctx, span := tracing.Start(ctx, "arm.whatif.resourcegroup")
+	defer func() { span.EndWithStatus(err) }()
+	span.SetAttributes(
+		attribute.String("arm.subscription", subscriptionId),
+		attribute.String("arm.resourcegroup", resourceGroup),
+		attribute.String("arm.deployment", deploymentName),
+	)
+
 	deploymentClient, err := ds.createDeploymentsClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, fmt.Errorf("creating deployments client: %w", err)
@@ -613,7 +679,9 @@ func (ds *StandardDeployments) WhatIfDeployToResourceGroup(
 	}
 
 	// wait for deployment creation
-	deployResult, err := createFromTemplateOperation.PollUntilDone(ctx, nil)
+	deployResult, err := createFromTemplateOperation.PollUntilDone(ctx, &runtime.PollUntilDoneOptions{
+		Frequency: slowPollFrequency,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("deploying to resource group: %w", createDeploymentError(err, DeploymentOperationPreview))
 	}
@@ -625,6 +693,10 @@ func (ds *StandardDeployments) createDeploymentsOperationsClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*armresources.DeploymentOperationsClient, error) {
+	if cached, ok := ds.deploymentsOpsClients.Load(subscriptionId); ok {
+		return cached.(*armresources.DeploymentOperationsClient), nil
+	}
+
 	credential, err := ds.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
@@ -635,7 +707,9 @@ func (ds *StandardDeployments) createDeploymentsOperationsClient(
 		return nil, fmt.Errorf("creating deployments client: %w", err)
 	}
 
-	return client, nil
+	// Benign race: concurrent miss creates an extra client; LoadOrStore ensures one winner.
+	actual, _ := ds.deploymentsOpsClients.LoadOrStore(subscriptionId, client)
+	return actual.(*armresources.DeploymentOperationsClient), nil
 }
 
 // Converts from an ARM Extended Deployment to Azd Generic deployment
@@ -714,7 +788,14 @@ func (ds *StandardDeployments) ValidatePreflightToSubscription(
 	parameters azure.ArmParameters,
 	tags map[string]*string,
 	options map[string]any,
-) error {
+) (err error) {
+	ctx, span := tracing.Start(ctx, "arm.validate.subscription")
+	defer func() { span.EndWithStatus(err) }()
+	span.SetAttributes(
+		attribute.String("arm.subscription", subscriptionId),
+		attribute.String("arm.deployment", deploymentName),
+	)
+
 	deploymentClient, err := ds.createDeploymentsClient(ctx, subscriptionId)
 	if err != nil {
 		return fmt.Errorf("creating deployments client: %w", err)
@@ -737,7 +818,9 @@ func (ds *StandardDeployments) ValidatePreflightToSubscription(
 			createDeploymentError(err, DeploymentOperationValidate),
 		)
 	}
-	_, err = validateResult.PollUntilDone(ctx, nil)
+	_, err = validateResult.PollUntilDone(ctx, &runtime.PollUntilDoneOptions{
+		Frequency: slowPollFrequency,
+	})
 	if err != nil {
 		return fmt.Errorf(
 			"validating deployment to subscription: %w",
@@ -757,7 +840,15 @@ func (ds *StandardDeployments) ValidatePreflightToResourceGroup(
 	parameters azure.ArmParameters,
 	tags map[string]*string,
 	options map[string]any,
-) error {
+) (err error) {
+	ctx, span := tracing.Start(ctx, "arm.validate.resourcegroup")
+	defer func() { span.EndWithStatus(err) }()
+	span.SetAttributes(
+		attribute.String("arm.subscription", subscriptionId),
+		attribute.String("arm.resourcegroup", resourceGroup),
+		attribute.String("arm.deployment", deploymentName),
+	)
+
 	deploymentClient, err := ds.createDeploymentsClient(ctx, subscriptionId)
 	if err != nil {
 		return fmt.Errorf("creating deployments client: %w", err)
@@ -778,7 +869,9 @@ func (ds *StandardDeployments) ValidatePreflightToResourceGroup(
 			createDeploymentError(err, DeploymentOperationValidate),
 		)
 	}
-	_, err = validateResult.PollUntilDone(ctx, nil)
+	_, err = validateResult.PollUntilDone(ctx, &runtime.PollUntilDoneOptions{
+		Frequency: slowPollFrequency,
+	})
 	if err != nil {
 		return fmt.Errorf(
 			"validating deployment to resource group: %w",

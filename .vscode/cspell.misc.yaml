@@ -39,6 +39,26 @@ overrides:
     - filename: ./README.md
       words:
           - VSIX
+    - filename: ./docs/specs/perf-foundations/**
+      words:
+          - Alives
+          - appsettings
+          - appservice
+          - armdeploymentstacks
+          - azapi
+          - azsdk
+          - containerapps
+          - golangci
+          - goroutines
+          - httputil
+          - keepalives
+          - nilerr
+          - nolint
+          - remotebuild
+          - resourcegroup
+          - singleflight
+          - stdlib
+          - whatif
     - filename: schemas/**/azure.yaml.json
       words:
           - prodapi

@@ -128,7 +128,7 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 			fmt.Printf("  %s  %s\n", color.GreenString("+"), color.GreenString("%s/agent.yaml", srcDir))
 		}
 
-		fmt.Println("\nYou can customize environment variables, cpu, memory, and replica settings in the agent.yaml.")
+		fmt.Println("\nYou can customize environment variables and other settings in the agent.yaml.")
 		if projectID, _ := a.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 			EnvName: a.environment.Name,
 			Key:     "AZURE_AI_PROJECT_ID",

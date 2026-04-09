@@ -283,7 +283,7 @@ func TestBicepDestroyLogAnalyticsWorkspace(t *testing.T) {
 	})
 }
 
-// TestBicepDestroyClassifyAndDelete tests the classifyAndDeleteResourceGroups orchestrator,
+// TestBicepDestroyClassifyAndDelete tests the classifyResourceGroups + deleteRGList orchestration,
 // including force-bypass, Tier 1 classification, void-state lifecycle, and purge scoping.
 func TestBicepDestroyClassifyAndDelete(t *testing.T) {
 	// Helper: create a deployment operation targeting a resource group.
@@ -3473,7 +3473,7 @@ func TestBicepDestroyCredentialResolutionFailure(t *testing.T) {
 	result, err := infraProvider.Destroy(*mockContext.Context, destroyOptions)
 
 	// Tier 4 listResourceGroupLocks fails on credential resolution.
-	// fail-safe behavior vetoes all RGs → classifyAndDeleteResourceGroups reports
+	// fail-safe behavior vetoes all RGs → classifyResourceGroups reports
 	// classification error because all RGs are vetoed with no owned RGs to delete.
 	// The exact error depends on whether the veto causes an empty "owned" list
 	// (which results in skipping deletion) or propagates as a classify error.
@@ -3481,7 +3481,7 @@ func TestBicepDestroyCredentialResolutionFailure(t *testing.T) {
 	// In either case, the credential failure path in listResourceGroupLocks IS exercised,
 	// covering the gap at lines 261-267 and 275-278 of bicep_destroy.go.
 	// The actual behavior: listResourceGroupLocks error → fail-safe veto → RG not deleted.
-	// Since ALL RGs are vetoed, classifyAndDeleteResourceGroups returns (nil, skipped, nil).
+	// Since ALL RGs are vetoed, classifyResourceGroups returns (nil, skipped, nil).
 	// Then voidDeploymentState runs (no classify error), so Destroy succeeds.
 	require.NoError(t, err)
 	require.NotNil(t, result)

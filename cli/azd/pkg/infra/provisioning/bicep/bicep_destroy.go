@@ -53,21 +53,24 @@ func (p *BicepProvider) forceDeleteLogAnalyticsIfPurge(
 	return nil
 }
 
-// classifyAndDeleteResourceGroups classifies each resource group as owned/external/unknown
-// using the 4-tier pipeline, then only deletes owned RGs.
+// classifyResourceGroups classifies each resource group as owned/external/unknown
+// using the 4-tier pipeline. Returns owned RG names and skipped RGs.
 //
-// When force is true, classification is bypassed and all RGs are deleted directly,
+// When force is true, classification is bypassed and all RGs are returned as owned,
 // preserving the original `--force` semantics.
+//
+// This function does NOT delete any resource groups — the caller is responsible
+// for deletion after collecting purge targets (which require the RGs to still exist).
 //
 // Log Analytics Workspaces in owned RGs are force-deleted before the RG if purge is enabled,
 // since force-delete requires the workspace to still exist.
-// Returns the list of deleted RG names and any skipped RG info.
-func (p *BicepProvider) classifyAndDeleteResourceGroups(
+// Returns the list of owned RG names and any skipped RG info.
+func (p *BicepProvider) classifyResourceGroups(
 	ctx context.Context,
 	deployment infra.Deployment,
 	groupedResources map[string][]*azapi.Resource,
 	options provisioning.DestroyOptions,
-) (deleted []string, skipped []azapi.ClassifiedSkip, err error) {
+) (owned []string, skipped []azapi.ClassifiedSkip, err error) {
 	// Extract RG names from the grouped resources map.
 	rgNames := make([]string, 0, len(groupedResources))
 	for rgName := range groupedResources {
@@ -81,8 +84,7 @@ func (p *BicepProvider) classifyAndDeleteResourceGroups(
 			"WARNING: --force flag set — bypassing resource group classification. All %d RGs will be deleted.",
 			len(rgNames),
 		)
-		deleted, err = p.deleteRGList(ctx, deployment.SubscriptionId(), rgNames, groupedResources, options)
-		return deleted, nil, err
+		return rgNames, nil, nil
 	}
 
 	// Get deployment info for classification (used for logging).
@@ -166,8 +168,7 @@ func (p *BicepProvider) classifyAndDeleteResourceGroups(
 		}
 	}
 
-	deleted, err = p.deleteRGList(ctx, subscriptionId, result.Owned, groupedResources, options)
-	return deleted, result.Skipped, err
+	return result.Owned, result.Skipped, nil
 }
 
 // deleteRGList deletes a list of resource groups, force-deleting Log Analytics Workspaces first
@@ -355,13 +356,9 @@ func (p *BicepProvider) listResourceGroupResourcesWithTags(
 		)
 	}
 
-	// Use $expand=tags to include resource tags in the response.
-	expand := "tags"
+	// Tags are included by default in GenericResourceExpanded — no $expand needed.
 	var resources []*azapi.ResourceWithTags
-	pager := client.NewListByResourceGroupPager(
-		rgName,
-		&armresources.ClientListByResourceGroupOptions{Expand: &expand},
-	)
+	pager := client.NewListByResourceGroupPager(rgName, nil)
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
@@ -412,7 +409,7 @@ func (p *BicepProvider) voidDeploymentState(ctx context.Context, deployment infr
 
 // isDeploymentStacksEnabled checks if the deployment stacks alpha feature is enabled.
 // Used to determine whether to use the stack-based delete path (deployment.Delete) or
-// the standard classification-based path (classifyAndDeleteResourceGroups).
+// the standard classification-based path (classifyResourceGroups + deleteRGList).
 func (p *BicepProvider) isDeploymentStacksEnabled() bool {
 	var featureManager *alpha.FeatureManager
 	if err := p.serviceLocator.Resolve(&featureManager); err != nil {

@@ -1094,15 +1094,15 @@ func (p *BicepProvider) Destroy(
 	if p.isDeploymentStacksEnabled() {
 		p.console.StopSpinner(ctx, "", input.StepDone)
 
-		if err := p.destroyViaDeploymentDelete(ctx, deploymentToDelete, groupedResources, options); err != nil {
-			return nil, fmt.Errorf("error deleting Azure resources: %w", err)
-		}
-
-		// For deployment stacks, collect purge targets from ALL resource groups
-		// (the stack deletes everything it manages).
+		// Collect purge targets BEFORE stack deletion while RGs still exist.
+		// getKeyVaults, getManagedHSMs, etc. query live resources via ARM.
 		purgeItem, err := p.collectPurgeItems(ctx, groupedResources)
 		if err != nil {
 			return nil, fmt.Errorf("collecting purge targets: %w", err)
+		}
+
+		if err := p.destroyViaDeploymentDelete(ctx, deploymentToDelete, groupedResources, options); err != nil {
+			return nil, fmt.Errorf("error deleting Azure resources: %w", err)
 		}
 
 		if err := p.purgeItems(ctx, purgeItem, options); err != nil {
@@ -1120,21 +1120,10 @@ func (p *BicepProvider) Destroy(
 	} else {
 		p.console.StopSpinner(ctx, "", input.StepDone)
 
-		// Classify resource groups before deletion.
-		// Log Analytics Workspaces in owned RGs are force-deleted inside classifyAndDeleteResourceGroups
-		// (before each owned RG deletion) when purge is enabled.
-		deleted, skipped, classifyErr := p.classifyAndDeleteResourceGroups(
+		// Step 1: Classify resource groups (no deletion yet).
+		owned, skipped, classifyErr := p.classifyResourceGroups(
 			ctx, deploymentToDelete, groupedResources, options,
 		)
-
-		// Only collect purge targets from OWNED (deleted) resource groups.
-		// Note: these API calls run after RG deletion; soft-deleted resources are eligible for purge.
-		ownedGroupedResources := make(map[string][]*azapi.Resource, len(deleted))
-		for _, rgName := range deleted {
-			if resources, ok := groupedResources[rgName]; ok {
-				ownedGroupedResources[rgName] = resources
-			}
-		}
 
 		// If user cancelled the confirmation prompt, show skipped RGs and return without
 		// voiding deployment state or invalidating env keys.
@@ -1144,11 +1133,34 @@ func (p *BicepProvider) Destroy(
 			}
 			return &provisioning.DestroyResult{}, errUserCancelled
 		}
+		if classifyErr != nil {
+			return nil, fmt.Errorf("classifying resource groups: %w", classifyErr)
+		}
 
-		// Void deployment state after successful classification and deletion (classifyErr covers both).
+		// Step 2: Collect purge targets from owned RGs while they still exist.
+		// Must happen BEFORE deletion because getKeyVaults, getManagedHSMs, etc.
+		// query live resources via ARM which requires the RG to exist.
+		ownedGroupedResources := make(map[string][]*azapi.Resource, len(owned))
+		for _, rgName := range owned {
+			if resources, ok := groupedResources[rgName]; ok {
+				ownedGroupedResources[rgName] = resources
+			}
+		}
+		purgeItem, err := p.collectPurgeItems(ctx, ownedGroupedResources)
+		if err != nil {
+			return nil, fmt.Errorf("collecting purge targets: %w", err)
+		}
+
+		// Step 3: Delete owned RGs.
+		// Log Analytics Workspaces are force-deleted inside deleteRGList
+		// (before each owned RG deletion) when purge is enabled.
+		_, deleteErr := p.deleteRGList(
+			ctx, deploymentToDelete.SubscriptionId(), owned, groupedResources, options,
+		)
+
+		// Void deployment state after successful deletion.
 		// This ensures subsequent azd provision works correctly even if all RGs were skipped.
-		// This MUST run before purge-list fetching to avoid early returns leaving stale state.
-		if classifyErr == nil {
+		if deleteErr == nil {
 			if err := p.voidDeploymentState(ctx, deploymentToDelete); err != nil {
 				return nil, fmt.Errorf("voiding deployment state: %w", err)
 			}
@@ -1159,15 +1171,11 @@ func (p *BicepProvider) Destroy(
 			p.console.Message(ctx, fmt.Sprintf("  Skipped: %s (%s)", skip.Name, skip.Reason))
 		}
 
-		if classifyErr != nil {
-			return nil, fmt.Errorf("deleting resource groups: %w", classifyErr)
+		if deleteErr != nil {
+			return nil, fmt.Errorf("deleting resource groups: %w", deleteErr)
 		}
 
-		purgeItem, err := p.collectPurgeItems(ctx, ownedGroupedResources)
-		if err != nil {
-			return nil, fmt.Errorf("collecting purge targets: %w", err)
-		}
-
+		// Step 4: Purge soft-deleted resources.
 		if err := p.purgeItems(ctx, purgeItem, options); err != nil {
 			return nil, fmt.Errorf("purging resources: %w", err)
 		}

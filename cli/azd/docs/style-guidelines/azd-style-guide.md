@@ -16,6 +16,8 @@ Run these commands from `cli/azd/` and ensure all files include the copyright he
 gofmt -s -w .
 golangci-lint run ./...
 cspell lint "**/*.go" --relative --config ./.vscode/cspell.yaml --no-progress
+# From repo root — spell check docs/misc files (mirrors CI cspell-misc.yml)
+cspell lint "**/*" --relative --config ./.vscode/cspell.misc.yaml --no-progress
 ```
 
 ```go

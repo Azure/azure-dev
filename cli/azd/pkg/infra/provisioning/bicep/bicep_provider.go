@@ -1177,6 +1177,14 @@ func (p *BicepProvider) Destroy(
 		// (Key Vaults, Managed HSMs, etc.) need purging to avoid name collisions
 		// on reprovisioning. On retry, deleted RGs will be classified as
 		// "already deleted" (Tier 2: 404) and their purge targets would be lost.
+		//
+		// Known limitation: purge items are collected from ALL owned RGs before
+		// deletion. On partial failure, purge attempts may fail for resources in
+		// non-deleted RGs (still live, not soft-deleted). Since purge functions
+		// abort on first error, iteration order may prevent some deleted-RG
+		// resources from being purged. This is strictly better than the previous
+		// behavior (no purge at all on partial failure). A future improvement
+		// could collect purge items per-RG and filter by the deleted set.
 		purgeErr := p.purgeItems(ctx, purgeItem, options)
 
 		// Report deletion errors first — they're the primary failure.

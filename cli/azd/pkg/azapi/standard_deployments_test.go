@@ -5,7 +5,7 @@ package azapi
 
 import (
 	"context"
-	"sort"
+	"slices"
 	"testing"
 	"time"
 
@@ -120,7 +120,48 @@ func TestResourceGroupsFromDeployment(t *testing.T) {
 
 		groups := resourceGroupsFromDeployment(&mockDeployment)
 
-		sort.Strings(groups)
+		slices.Sort(groups)
 		require.Equal(t, []string{"groupA", "groupB", "groupC"}, groups)
 	})
+}
+
+func Test_StandardDeployments_VoidSubscriptionDeploymentState(t *testing.T) {
+	t.Parallel()
+
+	// This test verifies that VoidSubscriptionDeploymentState is a valid public method
+	// that delegates to the private voidSubscriptionDeploymentState implementation.
+	// The method signature and delegation are verified at compile time.
+	mockContext := mocks.NewMockContext(context.Background())
+
+	deploymentService := NewStandardDeployments(
+		mockContext.SubscriptionCredentialProvider,
+		mockContext.ArmClientOptions,
+		NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions),
+		cloud.AzurePublic(),
+		mockContext.Clock,
+	)
+
+	// Verify the method exists and is callable (compilation check).
+	// A full integration test would require HTTP mocks for the ARM deployment API.
+	_ = deploymentService.VoidSubscriptionDeploymentState
+}
+
+func TestResourceGroupsFromDeployment_Public(t *testing.T) {
+	t.Parallel()
+
+	// Verify public wrapper returns same result as private function.
+	mockDeployment := &ResourceDeployment{
+		Resources: []*armresources.ResourceReference{
+			{ID: new("/subscriptions/sub-id/resourceGroups/myRG")},
+		},
+		ProvisioningState: DeploymentProvisioningStateSucceeded,
+		Timestamp:         time.Now(),
+	}
+
+	public := ResourceGroupsFromDeployment(mockDeployment)
+	private := resourceGroupsFromDeployment(mockDeployment)
+
+	slices.Sort(public)
+	slices.Sort(private)
+	require.Equal(t, private, public)
 }

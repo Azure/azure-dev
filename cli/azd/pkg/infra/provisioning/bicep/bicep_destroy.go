@@ -14,6 +14,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armlocks"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -377,5 +379,66 @@ func (p *BicepProvider) voidDeploymentState(ctx context.Context, deployment infr
 	}
 
 	p.console.StopSpinner(ctx, "Deployment state voided", input.StepDone)
+	return nil
+}
+
+// isDeploymentStacksEnabled checks if the deployment stacks alpha feature is enabled.
+// Used to determine whether to use the stack-based delete path (deployment.Delete) or
+// the standard classification-based path (classifyAndDeleteResourceGroups).
+func (p *BicepProvider) isDeploymentStacksEnabled() bool {
+	var featureManager *alpha.FeatureManager
+	if err := p.serviceLocator.Resolve(&featureManager); err != nil {
+		return false
+	}
+	return featureManager.IsEnabled(azapi.FeatureDeploymentStacks)
+}
+
+// destroyViaDeploymentDelete deletes resources using deployment.Delete(), which routes
+// through the deployment service (standard or stacks). For deployment stacks, this deletes
+// the stack object which cascades to managed resources. This path does NOT perform
+// resource group classification — it is the pre-existing behavior preserved for
+// deployment stacks where the stack manages resource lifecycle.
+func (p *BicepProvider) destroyViaDeploymentDelete(
+	ctx context.Context,
+	deployment infra.Deployment,
+	groupedResources map[string][]*azapi.Resource,
+	options provisioning.DestroyOptions,
+) error {
+	// Force-delete Log Analytics Workspaces before deleting the deployment/stack,
+	// since force-delete requires the workspace to still exist.
+	if options.Purge() {
+		workspaces, err := p.getLogAnalyticsWorkspacesToPurge(ctx, groupedResources)
+		if err != nil {
+			log.Printf("WARNING: could not list log analytics workspaces: %v", err)
+		} else if len(workspaces) > 0 {
+			if err := p.forceDeleteLogAnalyticsWorkspaces(ctx, workspaces); err != nil {
+				log.Printf("WARNING: force-deleting log analytics workspaces: %v", err)
+			}
+		}
+	}
+
+	// Delete via the deployment service (standard: deletes RGs; stacks: deletes the stack).
+	err := async.RunWithProgressE(func(progressMessage azapi.DeleteDeploymentProgress) {
+		switch progressMessage.State {
+		case azapi.DeleteResourceStateInProgress:
+			p.console.ShowSpinner(ctx, progressMessage.Message, input.Step)
+		case azapi.DeleteResourceStateSucceeded:
+			p.console.StopSpinner(ctx, progressMessage.Message, input.StepDone)
+		case azapi.DeleteResourceStateFailed:
+			p.console.StopSpinner(ctx, progressMessage.Message, input.StepFailed)
+		}
+	}, func(progress *async.Progress[azapi.DeleteDeploymentProgress]) error {
+		optionsMap, err := convert.ToMap(p.options)
+		if err != nil {
+			return err
+		}
+		return deployment.Delete(ctx, optionsMap, progress)
+	})
+
+	if err != nil {
+		return err
+	}
+
+	p.console.Message(ctx, "")
 	return nil
 }

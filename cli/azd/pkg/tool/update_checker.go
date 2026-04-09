@@ -229,25 +229,29 @@ func (uc *UpdateChecker) Check(
 }
 
 // GetCachedResults reads and returns the on-disk update check cache.
-// It returns (nil, nil) when the cache file does not yet exist.
+// It returns (nil, nil) when the cache file does not yet exist or
+// cannot be read. Corrupt cache files are removed so they can be
+// regenerated on the next check cycle.
 func (uc *UpdateChecker) GetCachedResults() (*UpdateCheckCache, error) {
-	cachePath, err := uc.getCacheFilePath()
+	cacheFile, err := uc.getCacheFilePath()
 	if err != nil {
-		return nil, err
+		return nil, nil // no config dir — expected in some envs
 	}
 
-	data, err := os.ReadFile(cachePath)
+	data, err := os.ReadFile(cacheFile)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return nil, nil
+			return nil, nil // no cache yet — expected
 		}
-
-		return nil, fmt.Errorf("reading tool check cache: %w", err)
+		log.Printf("update-checker: failed to read cache file: %v", err)
+		return nil, nil // non-fatal, will regenerate
 	}
 
 	var cache UpdateCheckCache
 	if err := json.Unmarshal(data, &cache); err != nil {
-		return nil, fmt.Errorf("unmarshalling tool check cache: %w", err)
+		log.Printf("update-checker: corrupt cache file, removing: %v", err)
+		_ = os.Remove(cacheFile) // clean up corrupt file
+		return nil, nil          // will regenerate on next check
 	}
 
 	return &cache, nil

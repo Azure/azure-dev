@@ -138,9 +138,8 @@ func (m *ToolFirstRunMiddleware) runFirstRunExperience(ctx context.Context) erro
 	})
 	runCheck, err := confirm.Ask(ctx)
 	if err != nil {
-		// Confirm can fail on interrupt/cancel — mark completed so
-		// we don't pester the user again.
-		m.markCompleted()
+		// Confirm can fail on interrupt/cancel — don't mark completed
+		// so the user gets another chance on next invocation.
 		if errors.Is(err, uxlib.ErrCancelled) {
 			return nil
 		}
@@ -167,7 +166,8 @@ func (m *ToolFirstRunMiddleware) runFirstRunExperience(ctx context.Context) erro
 		statuses, detectErr = m.manager.DetectAll(ctx)
 		return detectErr
 	}); err != nil {
-		m.markCompleted()
+		// Detection failed — don't mark completed, let user retry next time.
+		log.Printf("tool first-run: detection failed: %v", err)
 		return fmt.Errorf("detecting tools: %w", err)
 	}
 

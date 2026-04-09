@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
@@ -56,7 +57,9 @@ type installer struct {
 	commandRunner    exec.CommandRunner
 	platformDetector *PlatformDetector
 	detector         Detector
+	platformOnce     sync.Once
 	platform         *Platform // lazily populated by ensurePlatform
+	platformErr      error
 }
 
 // NewInstaller creates an [Installer] backed by the provided
@@ -186,22 +189,22 @@ func (i *installer) run(
 	return result, nil
 }
 
-// ensurePlatform lazily detects the current platform and caches the
-// result for subsequent calls.
+// ensurePlatform lazily detects the current platform using sync.Once
+// to guarantee thread-safe initialization. The first context passed
+// wins, which is acceptable since platform detection is OS-level and
+// does not depend on request-scoped context.
 func (i *installer) ensurePlatform(
 	ctx context.Context,
 ) (*Platform, error) {
-	if i.platform != nil {
-		return i.platform, nil
-	}
-
-	p, err := i.platformDetector.Detect(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("platform detection: %w", err)
-	}
-
-	i.platform = p
-	return p, nil
+	i.platformOnce.Do(func() {
+		p, err := i.platformDetector.Detect(ctx)
+		if err != nil {
+			i.platformErr = fmt.Errorf("platform detection: %w", err)
+			return
+		}
+		i.platform = p
+	})
+	return i.platform, i.platformErr
 }
 
 // executeStrategy runs the command described by the given strategy.

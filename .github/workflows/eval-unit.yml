@@ -38,14 +38,8 @@ jobs:
         working-directory: cli/azd/test/eval
         run: npm run test:unit -- --ci
 
-      - name: Validate Waza task YAML
-        working-directory: cli/azd/test/eval
-        run: |
-          if command -v waza &>/dev/null; then
-            npm run waza:validate
-          else
-            echo "waza CLI not installed, skipping YAML validation"
-          fi
+      # Waza YAML validation is local-only (run `npm run waza:validate` locally).
+      # waza CLI is not available in CI.
 
       - uses: actions/setup-python@v5
         with:

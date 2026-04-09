@@ -298,9 +298,10 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header: fmt.Sprintf(
-				"Updated to v%s! Run `azd --version` to confirm.",
+				"Updated azd to version %s!",
 				versionInfo.Version,
 			),
+			FollowUp: "Run `azd --version` to confirm.",
 		},
 	}, nil
 }

@@ -2801,4 +2801,618 @@ func TestPlannedOutputsSkipsSecureOutputs(t *testing.T) {
 		{Name: "publicUrl"},
 		{Name: "config"},
 	}, outputs)
+
+// ---------------------------------------------------------------------------
+// Coverage-gap tests for destroyViaDeploymentDelete, isDeploymentStacksEnabled,
+// deleteRGList error accumulation, and ARM-wiring credential failures.
+// ---------------------------------------------------------------------------
+
+// enableDeploymentStacks enables the deployment.stacks alpha feature via environment
+// variable for the duration of the test. Uses t.Setenv for automatic cleanup.
+func enableDeploymentStacks(t *testing.T) {
+	t.Setenv("AZD_ALPHA_ENABLE_DEPLOYMENT_STACKS", "true")
+}
+
+// TestBicepDestroyViaDeploymentStacks tests the deployment-stacks branch of
+// Destroy(), covering destroyViaDeploymentDelete (previously 0%) and the
+// isDeploymentStacksEnabled true-path (previously 75%).
+func TestBicepDestroyViaDeploymentStacks(t *testing.T) {
+	t.Run("SuccessNoPurge", func(t *testing.T) {
+		// With deployment stacks enabled and no purge resources, the destroy flow
+		// should call deployment.Delete() (which deletes each RG), void state,
+		// and skip purge entirely.
+		enableDeploymentStacks(t)
+		mockContext := mocks.NewMockContext(context.Background())
+		prepareBicepMocks(mockContext)
+
+		tracker := prepareClassifyDestroyMocks(mockContext, classifyMockCfg{
+			rgNames: []string{"rg-alpha", "rg-beta"},
+			// Operations are NOT used in the deployment-stacks path (no classification),
+			// but prepareClassifyDestroyMocks requires them for the mock setup.
+			operations:         []*armresources.DeploymentOperation{},
+			withPurgeResources: false,
+		})
+
+		infraProvider := createBicepProvider(t, mockContext)
+		destroyOptions := provisioning.NewDestroyOptions(false, false) // force=false, purge=false
+		result, err := infraProvider.Destroy(*mockContext.Context, destroyOptions)
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+
+		// Both RGs deleted via deployment.Delete → DeleteSubscriptionDeployment.
+		assert.Equal(t, int32(1), tracker.rgDeletes["rg-alpha"].Load(),
+			"rg-alpha should be deleted via deployment.Delete")
+		assert.Equal(t, int32(1), tracker.rgDeletes["rg-beta"].Load(),
+			"rg-beta should be deleted via deployment.Delete")
+
+		// Classification operations NOT fetched (deployment stacks bypasses classification).
+		assert.Equal(t, int32(0), tracker.operationsGETs.Load(),
+			"operations should not be fetched in deployment-stacks path")
+
+		// Void state called once (inside DeleteSubscriptionDeployment).
+		assert.Equal(t, int32(1), tracker.voidStatePUTs.Load(),
+			"void state should be called once inside DeleteSubscriptionDeployment")
+	})
+
+	t.Run("SuccessWithPurge", func(t *testing.T) {
+		// With deployment stacks enabled AND purge, the deployment-stacks path
+		// deletes RGs, then collects and purges soft-delete resources from ALL RGs.
+		enableDeploymentStacks(t)
+		mockContext := mocks.NewMockContext(context.Background())
+		prepareBicepMocks(mockContext)
+
+		tracker := prepareClassifyDestroyMocks(mockContext, classifyMockCfg{
+			rgNames:            []string{"rg-alpha", "rg-beta"},
+			operations:         []*armresources.DeploymentOperation{},
+			withPurgeResources: true,
+		})
+
+		// In the deployment-stacks path, ALL RGs are purged (not just owned ones).
+		// prepareClassifyDestroyMocks intentionally omits the kv-ext mock (to catch
+		// incorrect inclusion in the classification path). Add it here for stacks path.
+		kvExtGetCounter := &atomic.Int32{}
+		tracker.kvGETs["kv-ext"] = kvExtGetCounter
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.Method == http.MethodGet &&
+				strings.HasSuffix(request.URL.Path, "/vaults/kv-ext")
+		}).RespondFn(func(request *http.Request) (*http.Response, error) {
+			kvExtGetCounter.Add(1)
+			kvResponse := armkeyvault.VaultsClientGetResponse{
+				Vault: armkeyvault.Vault{
+					ID: new(fmt.Sprintf(
+						"/subscriptions/SUBSCRIPTION_ID/resourceGroups/rg-beta/providers/%s/kv-ext",
+						string(azapi.AzureResourceTypeKeyVault),
+					)),
+					Name:     new("kv-ext"),
+					Location: new("eastus2"),
+					Properties: &armkeyvault.VaultProperties{
+						EnableSoftDelete:      new(true),
+						EnablePurgeProtection: new(false),
+					},
+				},
+			}
+			kvBytes, _ := json.Marshal(kvResponse)
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(bytes.NewBuffer(kvBytes)),
+			}, nil
+		})
+
+		kvExtPurgeCounter := &atomic.Int32{}
+		tracker.kvPurges["kv-ext"] = kvExtPurgeCounter
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.Method == http.MethodPost &&
+				strings.HasSuffix(request.URL.Path, "deletedVaults/kv-ext/purge")
+		}).RespondFn(func(request *http.Request) (*http.Response, error) {
+			kvExtPurgeCounter.Add(1)
+			return httpRespondFn(request)
+		})
+
+		// The purge prompt: "Would you like to permanently delete these resources instead?"
+		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
+			return strings.Contains(options.Message, "permanently delete")
+		}).Respond(true)
+
+		infraProvider := createBicepProvider(t, mockContext)
+		destroyOptions := provisioning.NewDestroyOptions(false, true) // force=false, purge=true
+		result, err := infraProvider.Destroy(*mockContext.Context, destroyOptions)
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+
+		// Both RGs deleted.
+		assert.Equal(t, int32(1), tracker.rgDeletes["rg-alpha"].Load())
+		assert.Equal(t, int32(1), tracker.rgDeletes["rg-beta"].Load())
+
+		// Both KeyVaults inspected and purged (deployment stacks purges ALL RGs).
+		assert.Equal(t, int32(1), tracker.kvGETs["kv-owned"].Load(),
+			"kv-owned should be inspected for purge in deployment-stacks path")
+		assert.Equal(t, int32(1), tracker.kvPurges["kv-owned"].Load(),
+			"kv-owned should be purged in deployment-stacks path")
+		assert.Equal(t, int32(1), tracker.kvGETs["kv-ext"].Load(),
+			"kv-ext should be inspected for purge in deployment-stacks path (ALL RGs)")
+		assert.Equal(t, int32(1), tracker.kvPurges["kv-ext"].Load(),
+			"kv-ext should be purged in deployment-stacks path (ALL RGs)")
+	})
+
+	t.Run("DeploymentDeleteFailure", func(t *testing.T) {
+		// When deployment.Delete() fails (e.g., RG deletion returns HTTP 500),
+		// destroyViaDeploymentDelete propagates the error and Destroy returns it.
+		enableDeploymentStacks(t)
+		mockContext := mocks.NewMockContext(context.Background())
+		prepareBicepMocks(mockContext)
+
+		// Register credential/ARM providers that prepareClassifyDestroyMocks normally sets up.
+		mockContext.Container.MustRegisterSingleton(
+			func() account.SubscriptionCredentialProvider {
+				return mockaccount.SubscriptionCredentialProviderFunc(
+					func(_ context.Context, _ string) (azcore.TokenCredential, error) {
+						return mockContext.Credentials, nil
+					},
+				)
+			},
+		)
+		mockContext.Container.MustRegisterSingleton(
+			func() *arm.ClientOptions {
+				return mockContext.ArmClientOptions
+			},
+		)
+
+		// Build deployment referencing a single RG.
+		rgName := "rg-fail"
+		rgID := fmt.Sprintf("/subscriptions/SUBSCRIPTION_ID/resourceGroups/%s", rgName)
+		deployment := armresources.DeploymentExtended{
+			ID:       new("DEPLOYMENT_ID"),
+			Name:     new("test-env"),
+			Location: new("eastus2"),
+			Tags:     map[string]*string{"azd-env-name": new("test-env")},
+			Type:     new("Microsoft.Resources/deployments"),
+			Properties: &armresources.DeploymentPropertiesExtended{
+				Outputs: map[string]any{
+					"WEBSITE_URL": map[string]any{"value": "http://myapp.azurewebsites.net", "type": "string"},
+				},
+				OutputResources:   []*armresources.ResourceReference{{ID: &rgID}},
+				ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
+				Timestamp:         new(time.Now()),
+			},
+		}
+		deployResultBytes, _ := json.Marshal(deployment)
+
+		// GET single deployment
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.Method == http.MethodGet && strings.HasSuffix(
+				request.URL.Path,
+				"/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/test-env",
+			)
+		}).RespondFn(func(request *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(bytes.NewBuffer(deployResultBytes)),
+			}, nil
+		})
+
+		// GET list deployments
+		deploymentsPage := &armresources.DeploymentListResult{
+			Value: []*armresources.DeploymentExtended{&deployment},
+		}
+		deploymentsPageBytes, _ := json.Marshal(deploymentsPage)
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.Method == http.MethodGet && strings.HasSuffix(
+				request.URL.Path,
+				"/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/",
+			)
+		}).RespondFn(func(request *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(bytes.NewBuffer(deploymentsPageBytes)),
+			}, nil
+		})
+
+		// Per-RG resource listing: empty
+		resList := armresources.ResourceListResult{Value: []*armresources.GenericResourceExpanded{}}
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.Method == http.MethodGet &&
+				strings.Contains(request.URL.Path, fmt.Sprintf("resourceGroups/%s/resources", rgName))
+		}).RespondFn(func(request *http.Request) (*http.Response, error) {
+			return mocks.CreateHttpResponseWithBody(request, http.StatusOK, resList)
+		})
+
+		// DELETE RG returns 500 Internal Server Error.
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.Method == http.MethodDelete &&
+				strings.HasSuffix(
+					request.URL.Path,
+					fmt.Sprintf("subscriptions/SUBSCRIPTION_ID/resourcegroups/%s", rgName),
+				)
+		}).RespondFn(func(request *http.Request) (*http.Response, error) {
+			// Use 409 Conflict (non-retryable) to avoid SDK retry delays.
+			return &http.Response{
+				Request:    request,
+				Header:     http.Header{},
+				StatusCode: http.StatusConflict,
+				Body:       io.NopCloser(strings.NewReader(`{"error":{"code":"Conflict","message":"simulated failure"}}`)),
+			}, nil
+		})
+
+		// LRO polling endpoint (needed for mock framework).
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.Method == http.MethodGet &&
+				strings.Contains(request.URL.String(), "url-to-poll.net")
+		}).RespondFn(func(request *http.Request) (*http.Response, error) {
+			return mocks.CreateEmptyHttpResponse(request, 204)
+		})
+
+		infraProvider := createBicepProvider(t, mockContext)
+		destroyOptions := provisioning.NewDestroyOptions(false, false)
+		result, err := infraProvider.Destroy(*mockContext.Context, destroyOptions)
+
+		require.Error(t, err)
+		require.Nil(t, result)
+		assert.Contains(t, err.Error(), "error deleting Azure resources")
+	})
+}
+
+// TestBicepDestroyDeleteRGListPartialFailure tests that deleteRGList continues
+// attempting remaining RGs when one delete fails, and returns a joined error
+// containing all individual failures. This covers the error-accumulation loop
+// at deleteRGList lines 175-183 (previously 65% coverage).
+func TestBicepDestroyDeleteRGListPartialFailure(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	prepareBicepMocks(mockContext)
+
+	// Register credential/ARM providers.
+	mockContext.Container.MustRegisterSingleton(
+		func() account.SubscriptionCredentialProvider {
+			return mockaccount.SubscriptionCredentialProviderFunc(
+				func(_ context.Context, _ string) (azcore.TokenCredential, error) {
+					return mockContext.Credentials, nil
+				},
+			)
+		},
+	)
+	mockContext.Container.MustRegisterSingleton(
+		func() *arm.ClientOptions {
+			return mockContext.ArmClientOptions
+		},
+	)
+
+	rgNames := []string{"rg-ok", "rg-fail", "rg-ok2"}
+
+	// Build deployment referencing three RGs.
+	outputResources := make([]*armresources.ResourceReference, len(rgNames))
+	for i, rg := range rgNames {
+		id := fmt.Sprintf("/subscriptions/SUBSCRIPTION_ID/resourceGroups/%s", rg)
+		outputResources[i] = &armresources.ResourceReference{ID: &id}
+	}
+
+	deployment := armresources.DeploymentExtended{
+		ID:       new("DEPLOYMENT_ID"),
+		Name:     new("test-env"),
+		Location: new("eastus2"),
+		Tags:     map[string]*string{"azd-env-name": new("test-env")},
+		Type:     new("Microsoft.Resources/deployments"),
+		Properties: &armresources.DeploymentPropertiesExtended{
+			Outputs: map[string]any{
+				"WEBSITE_URL": map[string]any{"value": "http://myapp.azurewebsites.net", "type": "string"},
+			},
+			OutputResources:   outputResources,
+			ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
+			Timestamp:         new(time.Now()),
+		},
+	}
+	deployResultBytes, _ := json.Marshal(deployment)
+
+	// GET single deployment
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && strings.HasSuffix(
+			request.URL.Path,
+			"/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/test-env",
+		)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBuffer(deployResultBytes)),
+		}, nil
+	})
+
+	// GET list deployments
+	deploymentsPage := &armresources.DeploymentListResult{
+		Value: []*armresources.DeploymentExtended{&deployment},
+	}
+	deploymentsPageBytes, _ := json.Marshal(deploymentsPage)
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && strings.HasSuffix(
+			request.URL.Path,
+			"/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/",
+		)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBuffer(deploymentsPageBytes)),
+		}, nil
+	})
+
+	// Per-RG resource listing: empty
+	for _, rgName := range rgNames {
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.Method == http.MethodGet &&
+				strings.Contains(request.URL.Path, fmt.Sprintf("resourceGroups/%s/resources", rgName))
+		}).RespondFn(func(request *http.Request) (*http.Response, error) {
+			resList := armresources.ResourceListResult{Value: []*armresources.GenericResourceExpanded{}}
+			return mocks.CreateHttpResponseWithBody(request, http.StatusOK, resList)
+		})
+	}
+
+	// Deployment operations: all Create (so Tier 1 classifies all as owned).
+	ops := make([]*armresources.DeploymentOperation, len(rgNames))
+	for i, rg := range rgNames {
+		ops[i] = &armresources.DeploymentOperation{
+			OperationID: new("op-" + rg),
+			Properties: &armresources.DeploymentOperationProperties{
+				ProvisioningOperation: new(armresources.ProvisioningOperationCreate),
+				TargetResource: &armresources.TargetResource{
+					ResourceType: new("Microsoft.Resources/resourceGroups"),
+					ResourceName: new(rg),
+				},
+			},
+		}
+	}
+	operationsResult := armresources.DeploymentOperationsListResult{Value: ops}
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet &&
+			strings.HasSuffix(
+				request.URL.Path,
+				"/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/test-env/operations",
+			)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, operationsResult)
+	})
+
+	// Tier 4 lock listing: no locks for each RG.
+	for _, rgName := range rgNames {
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.Method == http.MethodGet &&
+				strings.Contains(
+					request.URL.Path,
+					fmt.Sprintf("resourceGroups/%s/providers/Microsoft.Authorization/locks", rgName),
+				)
+		}).RespondFn(func(request *http.Request) (*http.Response, error) {
+			emptyLocks := armlocks.ManagementLockListResult{Value: []*armlocks.ManagementLockObject{}}
+			return mocks.CreateHttpResponseWithBody(request, http.StatusOK, emptyLocks)
+		})
+	}
+
+	// DELETE mocks: rg-ok and rg-ok2 succeed, rg-fail returns HTTP 500.
+	rgDeleteCounts := map[string]*atomic.Int32{
+		"rg-ok":   {},
+		"rg-fail": {},
+		"rg-ok2":  {},
+	}
+
+	for _, rg := range rgNames {
+		counter := rgDeleteCounts[rg]
+		failRG := rg == "rg-fail"
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.Method == http.MethodDelete &&
+				strings.HasSuffix(
+					request.URL.Path,
+					fmt.Sprintf("subscriptions/SUBSCRIPTION_ID/resourcegroups/%s", rg),
+				)
+		}).RespondFn(func(request *http.Request) (*http.Response, error) {
+			counter.Add(1)
+			if failRG {
+				// Use 409 Conflict (non-retryable) to avoid SDK retry noise.
+				return &http.Response{
+					Request:    request,
+					Header:     http.Header{},
+					StatusCode: http.StatusConflict,
+					Body: io.NopCloser(strings.NewReader(
+						`{"error":{"code":"Conflict","message":"simulated RG delete failure"}}`,
+					)),
+				}, nil
+			}
+			return httpRespondFn(request)
+		})
+	}
+
+	// LRO polling endpoint.
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet &&
+			strings.Contains(request.URL.String(), "url-to-poll.net")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateEmptyHttpResponse(request, 204)
+	})
+
+	// Void state PUT.
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodPut &&
+			strings.Contains(
+				request.URL.Path,
+				"/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/",
+			)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		voidResult := &armresources.DeploymentsClientCreateOrUpdateAtSubscriptionScopeResponse{
+			DeploymentExtended: armresources.DeploymentExtended{
+				ID:       new("DEPLOYMENT_ID"),
+				Name:     new("test-env"),
+				Location: new("eastus2"),
+				Tags:     map[string]*string{"azd-env-name": new("test-env")},
+				Type:     new("Microsoft.Resources/deployments"),
+				Properties: &armresources.DeploymentPropertiesExtended{
+					ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
+					Timestamp:         new(time.Now()),
+				},
+			},
+		}
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, voidResult)
+	})
+
+	// Overall confirmation prompt for classification (force=true bypasses this,
+	// but we use force=true here to bypass prompt).
+	infraProvider := createBicepProvider(t, mockContext)
+	destroyOptions := provisioning.NewDestroyOptions(true, false) // force=true, purge=false
+	result, err := infraProvider.Destroy(*mockContext.Context, destroyOptions)
+
+	// The partial failure in deleteRGList should propagate as an error.
+	require.Error(t, err)
+	require.Nil(t, result)
+	assert.Contains(t, err.Error(), "rg-fail",
+		"error should mention the failed resource group")
+
+	// Verify ALL RGs were attempted (deleteRGList doesn't stop on first failure).
+	assert.Equal(t, int32(1), rgDeleteCounts["rg-ok"].Load(),
+		"rg-ok should be attempted")
+	assert.Equal(t, int32(1), rgDeleteCounts["rg-fail"].Load(),
+		"rg-fail should be attempted")
+	assert.Equal(t, int32(1), rgDeleteCounts["rg-ok2"].Load(),
+		"rg-ok2 should still be attempted after rg-fail fails")
+}
+
+// TestBicepDestroyCredentialResolutionFailure tests that when the credential
+// provider is NOT registered in the container, the ARM wiring fails gracefully
+// for getResourceGroupTags (returns nil,nil → Tier 2 falls through) and
+// listResourceGroupLocks (returns error → fail-safe veto).
+// This covers the credential-failure branches in getResourceGroupTags (61%)
+// and listResourceGroupLocks (48%).
+func TestBicepDestroyCredentialResolutionFailure(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	prepareBicepMocks(mockContext)
+
+	// Intentionally do NOT register SubscriptionCredentialProvider or arm.ClientOptions.
+	// This causes getResourceGroupTags and listResourceGroupLocks to fail on credential resolution.
+
+	rgNames := []string{"rg-alpha"}
+
+	// Build deployment referencing one RG.
+	rgID := fmt.Sprintf("/subscriptions/SUBSCRIPTION_ID/resourceGroups/%s", rgNames[0])
+	deployment := armresources.DeploymentExtended{
+		ID:       new("DEPLOYMENT_ID"),
+		Name:     new("test-env"),
+		Location: new("eastus2"),
+		Tags:     map[string]*string{"azd-env-name": new("test-env")},
+		Type:     new("Microsoft.Resources/deployments"),
+		Properties: &armresources.DeploymentPropertiesExtended{
+			Outputs: map[string]any{
+				"WEBSITE_URL": map[string]any{"value": "http://myapp.azurewebsites.net", "type": "string"},
+			},
+			OutputResources:   []*armresources.ResourceReference{{ID: &rgID}},
+			ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
+			Timestamp:         new(time.Now()),
+		},
+	}
+	deployResultBytes, _ := json.Marshal(deployment)
+
+	// GET single deployment
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && strings.HasSuffix(
+			request.URL.Path,
+			"/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/test-env",
+		)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBuffer(deployResultBytes)),
+		}, nil
+	})
+
+	// GET list deployments
+	deploymentsPage := &armresources.DeploymentListResult{
+		Value: []*armresources.DeploymentExtended{&deployment},
+	}
+	deploymentsPageBytes, _ := json.Marshal(deploymentsPage)
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && strings.HasSuffix(
+			request.URL.Path,
+			"/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/",
+		)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBuffer(deploymentsPageBytes)),
+		}, nil
+	})
+
+	// Per-RG resource listing: empty
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet &&
+			strings.Contains(request.URL.Path, fmt.Sprintf("resourceGroups/%s/resources", rgNames[0]))
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		resList := armresources.ResourceListResult{Value: []*armresources.GenericResourceExpanded{}}
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, resList)
+	})
+
+	// Deployment operations: Create (so Tier 1 classifies as owned).
+	ops := []*armresources.DeploymentOperation{
+		{
+			OperationID: new("op-rg-alpha"),
+			Properties: &armresources.DeploymentOperationProperties{
+				ProvisioningOperation: new(armresources.ProvisioningOperationCreate),
+				TargetResource: &armresources.TargetResource{
+					ResourceType: new("Microsoft.Resources/resourceGroups"),
+					ResourceName: new(rgNames[0]),
+				},
+			},
+		},
+	}
+	operationsResult := armresources.DeploymentOperationsListResult{Value: ops}
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet &&
+			strings.HasSuffix(
+				request.URL.Path,
+				"/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/test-env/operations",
+			)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, operationsResult)
+	})
+
+	// LRO polling endpoint.
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet &&
+			strings.Contains(request.URL.String(), "url-to-poll.net")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateEmptyHttpResponse(request, 204)
+	})
+
+	// Void state PUT (after classification completes with all RGs skipped).
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodPut &&
+			strings.Contains(
+				request.URL.Path,
+				"/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/",
+			)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		voidResult := &armresources.DeploymentsClientCreateOrUpdateAtSubscriptionScopeResponse{
+			DeploymentExtended: armresources.DeploymentExtended{
+				ID:       new("DEPLOYMENT_ID"),
+				Name:     new("test-env"),
+				Location: new("eastus2"),
+				Tags:     map[string]*string{"azd-env-name": new("test-env")},
+				Type:     new("Microsoft.Resources/deployments"),
+				Properties: &armresources.DeploymentPropertiesExtended{
+					ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
+					Timestamp:         new(time.Now()),
+				},
+			},
+		}
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, voidResult)
+	})
+
+	infraProvider := createBicepProvider(t, mockContext)
+	destroyOptions := provisioning.NewDestroyOptions(false, false) // force=false, purge=false
+	result, err := infraProvider.Destroy(*mockContext.Context, destroyOptions)
+
+	// Tier 4 listResourceGroupLocks fails on credential resolution.
+	// fail-safe behavior vetoes all RGs → classifyAndDeleteResourceGroups reports
+	// classification error because all RGs are vetoed with no owned RGs to delete.
+	// The exact error depends on whether the veto causes an empty "owned" list
+	// (which results in skipping deletion) or propagates as a classify error.
+	//
+	// In either case, the credential failure path in listResourceGroupLocks IS exercised,
+	// covering the gap at lines 261-267 and 275-278 of bicep_destroy.go.
+	// The actual behavior: listResourceGroupLocks error → fail-safe veto → RG not deleted.
+	// Since ALL RGs are vetoed, classifyAndDeleteResourceGroups returns (nil, skipped, nil).
+	// Then voidDeploymentState runs (no classify error), so Destroy succeeds.
+	require.NoError(t, err)
+	require.NotNil(t, result)
 }

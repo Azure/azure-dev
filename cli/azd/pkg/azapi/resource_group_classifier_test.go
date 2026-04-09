@@ -912,4 +912,59 @@ func TestClassifyResourceGroups(t *testing.T) {
 		require.Len(t, res.Skipped, 1)
 		assert.Contains(t, res.Skipped[0].Reason, "unknown")
 	})
+
+	// --- Coverage gap tests ---
+
+	t.Run("operationTargetsRG ResourceName nil with non-nil ResourceType", func(t *testing.T) {
+		t.Parallel()
+		// Cover the || second operand: ResourceType is non-nil but ResourceName is nil.
+		po := armresources.ProvisioningOperation("Create")
+		rt := "Microsoft.Resources/resourceGroups"
+		_, ok := operationTargetsRG(&armresources.DeploymentOperation{
+			Properties: &armresources.DeploymentOperationProperties{
+				ProvisioningOperation: &po,
+				TargetResource: &armresources.TargetResource{
+					ResourceType: &rt,
+					ResourceName: nil,
+				},
+			},
+		}, "Create")
+		assert.False(t, ok, "should return false when ResourceName is nil")
+	})
+
+	t.Run("operationTargetsRG non-matching resource type ignored", func(t *testing.T) {
+		t.Parallel()
+		// Operation targets a non-RG resource (e.g., a storage account) — should not match.
+		ops := []*armresources.DeploymentOperation{
+			makeOperation("Create", "Microsoft.Storage/storageAccounts", "mystorage"),
+		}
+		// RG "mystorage" should fall to unknown since the op is not an RG op.
+		res, err := ClassifyResourceGroups(
+			t.Context(), ops, []string{"mystorage"}, noopOpts(envName),
+		)
+		require.NoError(t, err)
+		assert.Empty(t, res.Owned, "non-RG resource type should not classify as owned")
+	})
+
+	t.Run("tagValue with nil value pointer returns empty string", func(t *testing.T) {
+		t.Parallel()
+		// Tier 2 tag check where tag key exists but value pointer is nil.
+		// This should not be treated as "both tags present" because the value is empty.
+		opts := ClassifyOptions{
+			EnvName:     envName,
+			Interactive: false,
+			GetResourceGroupTags: func(_ context.Context, _ string) (map[string]*string, error) {
+				return map[string]*string{
+					cAzdEnvNameTag:       strPtr(envName),
+					cAzdProvisionHashTag: nil, // key present, value nil → treated as empty → not dual-tagged
+				}, nil
+			},
+		}
+		res, err := ClassifyResourceGroups(t.Context(), nil, []string{rgA}, opts)
+		require.NoError(t, err)
+		assert.Empty(t, res.Owned, "nil tag value should not satisfy dual-tag check")
+		require.Len(t, res.Skipped, 1)
+		assert.Contains(t, res.Skipped[0].Reason, "Tier 3",
+			"nil tag value should fall through to Tier 3")
+	})
 }

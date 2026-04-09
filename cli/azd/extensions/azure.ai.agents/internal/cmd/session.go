@@ -418,23 +418,23 @@ The isolation key is derived from the Entra token by default.`,
 				flags.isolationKey,
 				DefaultVNextAgentAPIVersion,
 			)
-if err != nil {
-if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok &&
-respErr.StatusCode == http.StatusNotFound {
-return exterrors.Validation(
-exterrors.CodeSessionNotFound,
-fmt.Sprintf(
-"session %q not found or has already been deleted",
-sessionID,
-),
-"use 'azd ai agent sessions list' to see "+
-"available sessions",
-)
-}
-return exterrors.ServiceFromAzure(
-err, exterrors.OpDeleteSession,
-)
-}
+			if err != nil {
+				if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok &&
+					respErr.StatusCode == http.StatusNotFound {
+					return exterrors.Validation(
+						exterrors.CodeSessionNotFound,
+						fmt.Sprintf(
+							"session %q not found or has already been deleted",
+							sessionID,
+						),
+						"use 'azd ai agent sessions list' to see "+
+							"available sessions",
+					)
+				}
+				return exterrors.ServiceFromAzure(
+					err, exterrors.OpDeleteSession,
+				)
+			}
 
 			fmt.Printf(
 				"Session %q deleted from agent %q.\n",

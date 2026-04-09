@@ -441,3 +441,58 @@ func TestGetSession_500_ProducesServiceError(t *testing.T) {
 		"500 should produce a ServiceError, got: %T", result,
 	)
 }
+
+// classifyDeleteSessionError reproduces the error handling from newSessionDeleteCommand
+// so we can test the classification without an end-to-end context.
+func classifyDeleteSessionError(err error, sessionID string) error {
+	if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok &&
+		respErr.StatusCode == http.StatusNotFound {
+		return exterrors.Validation(
+			exterrors.CodeSessionNotFound,
+			fmt.Sprintf(
+				"session %q not found or has already been deleted",
+				sessionID,
+			),
+			"use 'azd ai agent sessions list' to see "+
+				"available sessions",
+		)
+	}
+	return exterrors.ServiceFromAzure(err, exterrors.OpDeleteSession)
+}
+
+func TestDeleteSession_404_ProducesValidationError(t *testing.T) {
+	azErr := &azcore.ResponseError{
+		StatusCode: http.StatusNotFound,
+		ErrorCode:  "session_not_found",
+	}
+
+	result := classifyDeleteSessionError(azErr, "my-session-id")
+	require.Error(t, result)
+
+	// Should produce a LocalError (validation), not a ServiceError.
+	var localErr *azdext.LocalError
+	require.True(
+		t, errors.As(result, &localErr),
+		"404 should produce a LocalError, got: %T", result,
+	)
+	assert.Equal(t, exterrors.CodeSessionNotFound, localErr.Code)
+	assert.Contains(t, localErr.Message, "my-session-id")
+	assert.Contains(t, localErr.Message, "not found")
+}
+
+func TestDeleteSession_500_ProducesServiceError(t *testing.T) {
+	azErr := &azcore.ResponseError{
+		StatusCode: http.StatusInternalServerError,
+		ErrorCode:  "internal_error",
+	}
+
+	result := classifyDeleteSessionError(azErr, "sess-1")
+	require.Error(t, result)
+
+	// Non-404 errors remain as ServiceError.
+	var svcErr *azdext.ServiceError
+	require.True(
+		t, errors.As(result, &svcErr),
+		"500 should produce a ServiceError, got: %T", result,
+	)
+}

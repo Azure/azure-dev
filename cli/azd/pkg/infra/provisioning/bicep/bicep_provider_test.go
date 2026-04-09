@@ -497,7 +497,8 @@ func TestBicepDestroyClassifyAndDelete(t *testing.T) {
 		destroyOptions := provisioning.NewDestroyOptions(false, false)
 		result, err := infraProvider.Destroy(*mockContext.Context, destroyOptions)
 
-		require.NoError(t, err)
+		require.Error(t, err, "user cancellation should return an error")
+		require.ErrorIs(t, err, errUserCancelled)
 		require.NotNil(t, result)
 
 		// No RGs should be deleted — user cancelled.

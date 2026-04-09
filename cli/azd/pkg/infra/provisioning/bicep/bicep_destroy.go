@@ -35,20 +35,22 @@ func (p *BicepProvider) forceDeleteLogAnalyticsIfPurge(
 	ctx context.Context,
 	resources map[string][]*azapi.Resource,
 	options provisioning.DestroyOptions,
-) {
+) error {
 	if !options.Purge() {
-		return
+		return nil
 	}
 	workspaces, err := p.getLogAnalyticsWorkspacesToPurge(ctx, resources)
 	if err != nil {
-		log.Printf("WARNING: could not list log analytics workspaces: %v", err)
-		return
+		return fmt.Errorf("getting log analytics workspaces to purge: %w", err)
 	}
 	if len(workspaces) > 0 {
 		if err := p.forceDeleteLogAnalyticsWorkspaces(ctx, workspaces); err != nil {
-			log.Printf("WARNING: force-deleting log analytics workspaces: %v", err)
+			return fmt.Errorf(
+				"force deleting log analytics workspaces: %w", err,
+			)
 		}
 	}
+	return nil
 }
 
 // classifyAndDeleteResourceGroups classifies each resource group as owned/external/unknown
@@ -181,7 +183,11 @@ func (p *BicepProvider) deleteRGList(
 	for _, rgName := range rgNames {
 		// Force-delete Log Analytics Workspaces in this RG before deleting the RG.
 		rgResources := map[string][]*azapi.Resource{rgName: groupedResources[rgName]}
-		p.forceDeleteLogAnalyticsIfPurge(ctx, rgResources, options)
+		if laErr := p.forceDeleteLogAnalyticsIfPurge(ctx, rgResources, options); laErr != nil {
+			deleteErrors = append(deleteErrors,
+				fmt.Errorf("log analytics purge for %s: %w", rgName, laErr))
+			continue
+		}
 
 		p.console.ShowSpinner(
 			ctx,
@@ -369,8 +375,13 @@ func (p *BicepProvider) listResourceGroupResourcesWithTags(
 			if res.Name != nil {
 				name = *res.Name
 			}
+			resType := ""
+			if res.Type != nil {
+				resType = *res.Type
+			}
 			resources = append(resources, &azapi.ResourceWithTags{
 				Name: name,
+				Type: resType,
 				Tags: res.Tags,
 			})
 		}
@@ -423,7 +434,9 @@ func (p *BicepProvider) destroyViaDeploymentDelete(
 ) error {
 	// Force-delete Log Analytics Workspaces before deleting the deployment/stack,
 	// since force-delete requires the workspace to still exist.
-	p.forceDeleteLogAnalyticsIfPurge(ctx, groupedResources, options)
+	if err := p.forceDeleteLogAnalyticsIfPurge(ctx, groupedResources, options); err != nil {
+		return fmt.Errorf("log analytics purge before deployment delete: %w", err)
+	}
 
 	// Delete via the deployment service (standard: deletes RGs; stacks: deletes the stack).
 	err := async.RunWithProgressE(func(progressMessage azapi.DeleteDeploymentProgress) {

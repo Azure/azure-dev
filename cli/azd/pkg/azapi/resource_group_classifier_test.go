@@ -1000,4 +1000,160 @@ func TestClassifyResourceGroups(t *testing.T) {
 		require.Len(t, res.Skipped, 1)
 		assert.Contains(t, res.Skipped[0].Reason, "error during safety check")
 	})
+
+	t.Run("Tier4 extension resource types skipped in foreign check", func(t *testing.T) {
+		t.Parallel()
+		opts := ClassifyOptions{
+			EnvName: envName,
+			ListResourceGroupResources: func(
+				_ context.Context, _ string,
+			) ([]*ResourceWithTags, error) {
+				return []*ResourceWithTags{
+					{
+						Name: "my-vm",
+						Type: "Microsoft.Compute/virtualMachines",
+						Tags: map[string]*string{
+							cAzdEnvNameTag: strPtr(envName),
+						},
+					},
+					{
+						Name: "role-assignment",
+						Type: "Microsoft.Authorization/roleAssignments",
+						Tags: nil, // no tags — extension resource
+					},
+					{
+						Name: "diag-setting",
+						Type: "Microsoft.Insights/diagnosticSettings",
+						Tags: nil,
+					},
+					{
+						Name: "res-link",
+						Type: "Microsoft.Resources/links",
+						Tags: nil,
+					},
+				}, nil
+			},
+		}
+		ops := []*armresources.DeploymentOperation{
+			makeOperation("Create", rgOp, rgA),
+		}
+		res, err := ClassifyResourceGroups(
+			t.Context(), ops, []string{rgA}, opts,
+		)
+		require.NoError(t, err)
+		assert.Contains(t, res.Owned, rgA,
+			"extension resources should not trigger foreign veto")
+		assert.Empty(t, res.Skipped)
+	})
+
+	t.Run("Tier4 mixed extension and real foreign resources", func(t *testing.T) {
+		t.Parallel()
+		opts := ClassifyOptions{
+			EnvName:     envName,
+			Interactive: false,
+			ListResourceGroupResources: func(
+				_ context.Context, _ string,
+			) ([]*ResourceWithTags, error) {
+				return []*ResourceWithTags{
+					{
+						Name: "role-assignment",
+						Type: "Microsoft.Authorization/roleAssignments",
+						Tags: nil,
+					},
+					{
+						Name: "foreign-vm",
+						Type: "Microsoft.Compute/virtualMachines",
+						Tags: map[string]*string{
+							cAzdEnvNameTag: strPtr("other-env"),
+						},
+					},
+				}, nil
+			},
+		}
+		ops := []*armresources.DeploymentOperation{
+			makeOperation("Create", rgOp, rgA),
+		}
+		res, err := ClassifyResourceGroups(
+			t.Context(), ops, []string{rgA}, opts,
+		)
+		require.NoError(t, err)
+		assert.Empty(t, res.Owned,
+			"real foreign resource should still trigger veto")
+		require.Len(t, res.Skipped, 1)
+		assert.Contains(t, res.Skipped[0].Reason, "foreign resource")
+	})
+}
+
+func TestIsExtensionResourceType(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		resourceType string
+		expected     bool
+	}{
+		{
+			name:         "Authorization roleAssignment",
+			resourceType: "Microsoft.Authorization/roleAssignments",
+			expected:     true,
+		},
+		{
+			name:         "Authorization roleDefinitions",
+			resourceType: "Microsoft.Authorization/roleDefinitions",
+			expected:     true,
+		},
+		{
+			name:         "Authorization locks",
+			resourceType: "Microsoft.Authorization/locks",
+			expected:     true,
+		},
+		{
+			name:         "Authorization policyAssignments",
+			resourceType: "Microsoft.Authorization/policyAssignments",
+			expected:     true,
+		},
+		{
+			name:         "Insights diagnosticSettings",
+			resourceType: "Microsoft.Insights/diagnosticSettings",
+			expected:     true,
+		},
+		{
+			name:         "Resources links",
+			resourceType: "Microsoft.Resources/links",
+			expected:     true,
+		},
+		{
+			name:         "case insensitive match",
+			resourceType: "microsoft.authorization/roleassignments",
+			expected:     true,
+		},
+		{
+			name:         "Compute VM is not extension",
+			resourceType: "Microsoft.Compute/virtualMachines",
+			expected:     false,
+		},
+		{
+			name:         "Storage account is not extension",
+			resourceType: "Microsoft.Storage/storageAccounts",
+			expected:     false,
+		},
+		{
+			name:         "Insights components is not extension",
+			resourceType: "Microsoft.Insights/components",
+			expected:     false,
+		},
+		{
+			name:         "empty string",
+			resourceType: "",
+			expected:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := isExtensionResourceType(tt.resourceType)
+			assert.Equal(t, tt.expected, got)
+		})
+	}
 }

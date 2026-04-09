@@ -30,6 +30,7 @@ type ClassifiedSkip struct {
 // ResourceWithTags is a resource with its ARM tags, used for extra-resource checks.
 type ResourceWithTags struct {
 	Name string
+	Type string // ARM resource type, e.g. "Microsoft.Compute/virtualMachines"
 	Tags map[string]*string
 }
 
@@ -396,6 +397,12 @@ func classifyTier4(ctx context.Context, rgName string, opts ClassifyOptions) (st
 		}
 		var foreign []string
 		for _, res := range resources {
+			// Skip known extension resource types that don't support tags
+			// (e.g. roleAssignments, diagnosticSettings). These are commonly
+			// created by azd scaffold templates and never carry azd-env-name.
+			if isExtensionResourceType(res.Type) {
+				continue
+			}
 			tv := tagValue(res.Tags, cAzdEnvNameTag)
 			if !strings.EqualFold(tv, opts.EnvName) {
 				foreign = append(foreign, res.Name)
@@ -477,4 +484,26 @@ func tagValue(tags map[string]*string, key string) string {
 		}
 	}
 	return ""
+}
+
+// extensionResourceTypePrefixes lists ARM resource type prefixes for extension
+// resources that don't support tags. These are skipped during Tier 4
+// foreign-resource detection to avoid false-positive vetoes on resources
+// commonly created by azd scaffold templates.
+var extensionResourceTypePrefixes = []string{
+	"Microsoft.Authorization/",
+	"Microsoft.Insights/diagnosticSettings",
+	"Microsoft.Resources/links",
+}
+
+// isExtensionResourceType returns true if the given ARM resource type is a
+// known extension resource that does not support tags.
+func isExtensionResourceType(resourceType string) bool {
+	lower := strings.ToLower(resourceType)
+	for _, prefix := range extensionResourceTypePrefixes {
+		if strings.HasPrefix(lower, strings.ToLower(prefix)) {
+			return true
+		}
+	}
+	return false
 }

@@ -472,6 +472,46 @@ func TestBicepDestroyClassifyAndDelete(t *testing.T) {
 		assert.Equal(t, int32(1), tracker.kvPurges["kv-owned"].Load(),
 			"owned RG's KeyVault should be purged")
 	})
+
+	t.Run("UserCancelPreservesDeploymentState", func(t *testing.T) {
+		// When user declines the "Delete N resource group(s)?" confirmation,
+		// voidDeploymentState must NOT be called and env keys must NOT be invalidated.
+		// Regression test for: cancel returned nil error, causing state mutation on abort.
+		mockContext := mocks.NewMockContext(context.Background())
+		prepareBicepMocks(mockContext)
+
+		tracker := prepareClassifyDestroyMocks(mockContext, classifyMockCfg{
+			rgNames: []string{"rg-created"},
+			operations: []*armresources.DeploymentOperation{
+				makeRGOp("rg-created", armresources.ProvisioningOperationCreate),
+			},
+		})
+
+		// User declines the overall confirmation prompt.
+		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
+			return strings.Contains(options.Message, "Delete 1 resource group(s)")
+		}).Respond(false)
+
+		infraProvider := createBicepProvider(t, mockContext)
+
+		destroyOptions := provisioning.NewDestroyOptions(false, false)
+		result, err := infraProvider.Destroy(*mockContext.Context, destroyOptions)
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+
+		// No RGs should be deleted — user cancelled.
+		assert.Equal(t, int32(0), tracker.rgDeletes["rg-created"].Load(),
+			"rg-created should NOT be deleted when user cancels")
+
+		// Void state should NOT be called — user cancelled.
+		assert.Equal(t, int32(0), tracker.voidStatePUTs.Load(),
+			"voidDeploymentState should NOT be called when user cancels confirmation")
+
+		// Env keys should not be invalidated — DestroyResult should be empty.
+		assert.Empty(t, result.InvalidatedEnvKeys,
+			"env keys should NOT be invalidated when user cancels")
+	})
 }
 
 func TestDeploymentForResourceGroup(t *testing.T) {
@@ -2801,6 +2841,7 @@ func TestPlannedOutputsSkipsSecureOutputs(t *testing.T) {
 		{Name: "publicUrl"},
 		{Name: "config"},
 	}, outputs)
+}
 
 // ---------------------------------------------------------------------------
 // Coverage-gap tests for destroyViaDeploymentDelete, isDeploymentStacksEnabled,
@@ -3050,6 +3091,34 @@ func TestBicepDestroyViaDeploymentStacks(t *testing.T) {
 		require.Error(t, err)
 		require.Nil(t, result)
 		assert.Contains(t, err.Error(), "error deleting Azure resources")
+	})
+
+	t.Run("ZeroResourcesStillDeletesStack", func(t *testing.T) {
+		// When deployment stacks are enabled and zero resources are found
+		// (e.g., after manual cleanup), the stack itself must still be deleted
+		// via deployment.Delete(). Regression: previously the zero-resources
+		// fast-path ran before the stacks check, causing a no-op VoidState
+		// and leaving the stack/deny-assignments behind.
+		enableDeploymentStacks(t)
+		mockContext := mocks.NewMockContext(context.Background())
+		prepareBicepMocks(mockContext)
+
+		tracker := prepareClassifyDestroyMocks(mockContext, classifyMockCfg{
+			rgNames:            []string{}, // zero resource groups
+			operations:         []*armresources.DeploymentOperation{},
+			withPurgeResources: false,
+		})
+
+		infraProvider := createBicepProvider(t, mockContext)
+		destroyOptions := provisioning.NewDestroyOptions(false, false)
+		result, err := infraProvider.Destroy(*mockContext.Context, destroyOptions)
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+
+		// Void state called via deployment.Delete (inside DeleteSubscriptionDeployment).
+		assert.Equal(t, int32(1), tracker.voidStatePUTs.Load(),
+			"void state should be called via deployment.Delete even with zero resources")
 	})
 }
 

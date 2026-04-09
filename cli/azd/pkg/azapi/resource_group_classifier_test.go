@@ -1157,3 +1157,111 @@ func TestIsExtensionResourceType(t *testing.T) {
 		})
 	}
 }
+
+func TestClassifyResourceGroups_ForceMode(t *testing.T) {
+	t.Parallel()
+
+	const (
+		rgOwned    = "rg-owned"
+		rgExternal = "rg-external"
+		rgUnknown  = "rg-unknown"
+		envName    = "myenv"
+	)
+
+	rgOp := "Microsoft.Resources/resourceGroups"
+
+	t.Run("ForceMode protects Tier1 external RGs", func(t *testing.T) {
+		t.Parallel()
+		ops := []*armresources.DeploymentOperation{
+			makeOperation("Create", rgOp, rgOwned),
+			makeOperation("Read", rgOp, rgExternal),
+		}
+		opts := ClassifyOptions{
+			ForceMode: true,
+			EnvName:   envName,
+		}
+		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgOwned, rgExternal}, opts)
+		require.NoError(t, err)
+		assert.Equal(t, []string{rgOwned}, res.Owned)
+		require.Len(t, res.Skipped, 1)
+		assert.Equal(t, rgExternal, res.Skipped[0].Name)
+		assert.Contains(t, res.Skipped[0].Reason, "Tier 1")
+	})
+
+	t.Run("ForceMode treats unknowns as owned", func(t *testing.T) {
+		t.Parallel()
+		ops := []*armresources.DeploymentOperation{
+			makeOperation("Create", rgOp, rgOwned),
+		}
+		opts := ClassifyOptions{
+			ForceMode: true,
+			EnvName:   envName,
+		}
+		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgOwned, rgUnknown}, opts)
+		require.NoError(t, err)
+		assert.Contains(t, res.Owned, rgOwned)
+		assert.Contains(t, res.Owned, rgUnknown)
+		assert.Empty(t, res.Skipped)
+	})
+
+	t.Run("ForceMode with nil operations treats all as owned", func(t *testing.T) {
+		t.Parallel()
+		opts := ClassifyOptions{
+			ForceMode: true,
+			EnvName:   envName,
+		}
+		res, err := ClassifyResourceGroups(t.Context(), nil, []string{rgOwned, rgExternal}, opts)
+		require.NoError(t, err)
+		assert.Len(t, res.Owned, 2)
+		assert.Empty(t, res.Skipped)
+	})
+
+	t.Run("ForceMode skips Tier2/3/4 callbacks", func(t *testing.T) {
+		t.Parallel()
+		ops := []*armresources.DeploymentOperation{
+			makeOperation("Create", rgOp, rgOwned),
+		}
+		callbackCalled := false
+		opts := ClassifyOptions{
+			ForceMode: true,
+			EnvName:   envName,
+			GetResourceGroupTags: func(_ context.Context, _ string) (map[string]*string, error) {
+				callbackCalled = true
+				return nil, nil
+			},
+			ListResourceGroupLocks: func(_ context.Context, _ string) ([]*ManagementLock, error) {
+				callbackCalled = true
+				return nil, nil
+			},
+			ListResourceGroupResources: func(_ context.Context, _ string) ([]*ResourceWithTags, error) {
+				callbackCalled = true
+				return nil, nil
+			},
+			Prompter: func(_, _ string) (bool, error) {
+				callbackCalled = true
+				return false, nil
+			},
+		}
+		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgOwned, rgUnknown}, opts)
+		require.NoError(t, err)
+		assert.False(t, callbackCalled, "Tier 2/3/4 callbacks should not be invoked in ForceMode")
+		assert.Len(t, res.Owned, 2)
+	})
+
+	t.Run("ForceMode with EvaluateDeploymentOutput external", func(t *testing.T) {
+		t.Parallel()
+		ops := []*armresources.DeploymentOperation{
+			makeOperation("Create", rgOp, rgOwned),
+			makeOperation("EvaluateDeploymentOutput", rgOp, rgExternal),
+		}
+		opts := ClassifyOptions{
+			ForceMode: true,
+			EnvName:   envName,
+		}
+		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgOwned, rgExternal}, opts)
+		require.NoError(t, err)
+		assert.Equal(t, []string{rgOwned}, res.Owned)
+		require.Len(t, res.Skipped, 1)
+		assert.Equal(t, rgExternal, res.Skipped[0].Name)
+	})
+}

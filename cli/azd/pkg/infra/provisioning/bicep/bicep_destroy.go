@@ -56,8 +56,11 @@ func (p *BicepProvider) forceDeleteLogAnalyticsIfPurge(
 // classifyResourceGroups classifies each resource group as owned/external/unknown
 // using the 4-tier pipeline. Returns owned RG names and skipped RGs.
 //
-// When force is true, classification is bypassed and all RGs are returned as owned,
-// preserving the original `--force` semantics.
+// When force is true, only Tier 1 (zero extra API calls) runs. External RGs identified
+// by deployment operations (Read/EvaluateDeploymentOutput) are still protected. Unknown
+// RGs (no operation data) are treated as owned. This provides free safety while preserving
+// --force semantics (no prompts, no extra API calls). If operations are unavailable,
+// all RGs are returned as owned for backward compatibility.
 //
 // This function does NOT delete any resource groups — the caller is responsible
 // for deletion after collecting purge targets (which require the RGs to still exist).
@@ -77,27 +80,26 @@ func (p *BicepProvider) classifyResourceGroups(
 		rgNames = append(rgNames, rgName)
 	}
 
-	// When --force is set, bypass classification and delete all RGs immediately.
-	// WARNING: This skips ALL safety checks (Tier 1-4). All referenced RGs will be deleted.
-	if options.Force() {
-		log.Printf(
-			"WARNING: --force flag set — bypassing resource group classification. All %d RGs will be deleted.",
-			len(rgNames),
-		)
-		return rgNames, nil, nil
-	}
-
-	// Get deployment info for classification (used for logging).
+	// Get deployment info for classification (used for logging and hash derivation).
 	deploymentInfo, deployInfoErr := deployment.Get(ctx)
 	if deployInfoErr == nil {
 		log.Printf("classifying resource groups for deployment: %s", deploymentInfo.Name)
 	}
 
 	// Get deployment operations (Tier 1 data — single API call).
+	// Fetched even with --force: Tier 1 is free and protects external RGs.
 	var operations []*armresources.DeploymentOperation
 	operations, err = deployment.Operations(ctx)
 	if err != nil {
-		// Operations unavailable — classification will fall to Tier 2/3.
+		if options.Force() {
+			// --force with unavailable operations: delete all (backward compat).
+			log.Printf(
+				"WARNING: --force with unavailable deployment operations — all %d RGs will be deleted.",
+				len(rgNames),
+			)
+			return rgNames, nil, nil
+		}
+		// Normal mode: operations unavailable — classification will fall to Tier 2/3.
 		log.Printf("WARNING: could not fetch deployment operations for classification: %v", err)
 		operations = nil
 	}
@@ -114,25 +116,30 @@ func (p *BicepProvider) classifyResourceGroups(
 	subscriptionId := deployment.SubscriptionId()
 	classifyOpts := azapi.ClassifyOptions{
 		Interactive:                !p.console.IsNoPromptMode(),
+		ForceMode:                 options.Force(),
 		EnvName:                    p.env.Name(),
 		ExpectedProvisionParamHash: expectedHash,
-		GetResourceGroupTags: func(ctx context.Context, rgName string) (map[string]*string, error) {
+	}
+
+	// Only wire Tier 2/3/4 callbacks when not --force (they won't be invoked in ForceMode).
+	if !options.Force() {
+		classifyOpts.GetResourceGroupTags = func(ctx context.Context, rgName string) (map[string]*string, error) {
 			return p.getResourceGroupTags(ctx, subscriptionId, rgName)
-		},
-		ListResourceGroupLocks: func(ctx context.Context, rgName string) ([]*azapi.ManagementLock, error) {
+		}
+		classifyOpts.ListResourceGroupLocks = func(ctx context.Context, rgName string) ([]*azapi.ManagementLock, error) {
 			return p.listResourceGroupLocks(ctx, subscriptionId, rgName)
-		},
-		ListResourceGroupResources: func(
+		}
+		classifyOpts.ListResourceGroupResources = func(
 			ctx context.Context, rgName string,
 		) ([]*azapi.ResourceWithTags, error) {
 			return p.listResourceGroupResourcesWithTags(ctx, subscriptionId, rgName)
-		},
-		Prompter: func(rgName, reason string) (bool, error) {
+		}
+		classifyOpts.Prompter = func(rgName, reason string) (bool, error) {
 			return p.console.Confirm(ctx, input.ConsoleOptions{
 				Message:      fmt.Sprintf("Delete resource group '%s'? (%s)", rgName, reason),
 				DefaultValue: false,
 			})
-		},
+		}
 	}
 
 	// Run classification.

@@ -655,13 +655,13 @@ func (a *InitAction) configureModelChoice(
 			// Prompt user to pick an existing Foundry project or create new resources
 			projectChoices := []*azdext.SelectChoice{
 				{Label: "Use an existing Foundry project", Value: "existing"},
-				{Label: "Create new resources", Value: "new"},
+				{Label: "Create a new Foundry Project", Value: "new"},
 			}
 
 			defaultIdx := int32(0)
 			projectResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 				Options: &azdext.SelectOptions{
-					Message:       "How would you like to configure your Foundry project?",
+					Message:       "Select a Foundry project to host your agent and any models or tools it uses.",
 					Choices:       projectChoices,
 					SelectedIndex: &defaultIdx,
 				},

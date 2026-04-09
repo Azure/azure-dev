@@ -191,7 +191,7 @@ azd down
   │    │    │    │    "azd did not create resource group 'X'. Delete it? (y/N)"
   │    │    │    ├─ User accepts → merged into owned list for Tier 4 veto checks
   │    │    │    └─ Non-interactive (no --force): classify as "external" (NEVER deleted)
-  │    │    │       --force: classification is bypassed entirely (all RGs deleted)
+  │    │    │       --force: only Tier 1 runs (zero API calls), external RGs still protected
   │    │    │
   │    │    └─ [Tier 4: Always-On Safeguards] ─── runs on ALL deletion candidates
   │    │         ├─ Has CanNotDelete/ReadOnly lock? → SKIP (veto, best-effort)
@@ -217,6 +217,71 @@ azd down
   │    │
   │
   └─ Void deployment state (existing behavior)
+```
+
+### Classification Flow Diagram
+
+```mermaid
+flowchart TD
+    Start([azd down]) --> Force{--force?}
+
+    Force -->|Yes| FetchOps1[Fetch deployment operations]
+    FetchOps1 --> OpsAvail1{Operations<br/>available?}
+    OpsAvail1 -->|No| DeleteAll[Delete ALL RGs<br/>backward compat]
+    OpsAvail1 -->|Yes| Tier1Force[Tier 1: Parse operations]
+    Tier1Force --> ForceClassify{Operation type?}
+    ForceClassify -->|Create| ForceOwned[Owned → DELETE]
+    ForceClassify -->|Read / EvalOutput| ForceSkip[External → SKIP ✓]
+    ForceClassify -->|No operation| ForceUnknown[Unknown → DELETE<br/>treated as owned]
+
+    Force -->|No| FetchOps2[Fetch deployment operations]
+    FetchOps2 --> Tier1[Tier 1: Parse operations]
+    Tier1 --> T1Result{Operation type?}
+    T1Result -->|Create| T1Owned[Owned]
+    T1Result -->|Read / EvalOutput| T1Skip[External → SKIP ✓]
+    T1Result -->|No operation / error| T1Unknown[Unknown]
+
+    T1Unknown --> Tier2[Tier 2: Dual-tag check]
+    Tier2 --> T2Result{Both azd tags<br/>match?}
+    T2Result -->|Yes + hash match| T2Owned[Owned]
+    T2Result -->|No| T2Unknown[Unknown]
+
+    T2Unknown --> Tier3{Interactive?}
+    Tier3 -->|Yes| Prompt[Prompt user<br/>default: No]
+    Prompt -->|Accept| T3Owned[Owned]
+    Prompt -->|Decline| T3Skip[SKIP ✓]
+    Tier3 -->|No| T3SkipAuto[SKIP ✓<br/>non-interactive]
+
+    T1Owned --> Tier4
+    T2Owned --> Tier4
+    T3Owned --> Tier4
+    Tier4[Tier 4: Veto checks<br/>locks + foreign resources]
+    Tier4 --> T4Result{Vetoed?}
+    T4Result -->|Lock found| T4Skip[SKIP ✓<br/>lock veto]
+    T4Result -->|Foreign resources| T4Prompt{Interactive?}
+    T4Prompt -->|Yes| T4UserPrompt[Prompt user]
+    T4UserPrompt -->|Accept| T4Delete[DELETE]
+    T4UserPrompt -->|Decline| T4SkipUser[SKIP ✓]
+    T4Prompt -->|No| T4SkipHard[SKIP ✓<br/>hard veto]
+    T4Result -->|Error| T4SkipErr[SKIP ✓<br/>fail-safe]
+    T4Result -->|Clean| T4Delete
+
+    T4Delete --> Confirm{Overall<br/>confirmation}
+    Confirm -->|Yes| Delete[Delete owned RGs]
+    Confirm -->|No| Cancel[Cancel → no deletion]
+
+    style ForceSkip fill:#2d6,stroke:#333,color:#000
+    style T1Skip fill:#2d6,stroke:#333,color:#000
+    style T3Skip fill:#2d6,stroke:#333,color:#000
+    style T3SkipAuto fill:#2d6,stroke:#333,color:#000
+    style T4Skip fill:#2d6,stroke:#333,color:#000
+    style T4SkipUser fill:#2d6,stroke:#333,color:#000
+    style T4SkipHard fill:#2d6,stroke:#333,color:#000
+    style T4SkipErr fill:#2d6,stroke:#333,color:#000
+    style ForceOwned fill:#f66,stroke:#333,color:#000
+    style ForceUnknown fill:#f66,stroke:#333,color:#000
+    style Delete fill:#f66,stroke:#333,color:#000
+    style DeleteAll fill:#f96,stroke:#333,color:#000
 ```
 
 ## Patterns & Decisions
@@ -299,21 +364,25 @@ activates when Tier 1 is unavailable (deployment operations API returns error
 or empty). Tags are a necessary-but-not-sufficient signal, strengthened by
 requiring two matching tags rather than one.
 
-### Decision 4: --force Bypasses Classification Entirely
+### Decision 4: --force Runs Tier 1 Only (Zero-Cost Safety)
 
-**Pattern**: Explicit override for CI/CD and automation
+**Pattern**: Minimal-overhead safety even in CI/CD automation
 
-**Why**: `--force` is used in CI/CD pipelines and scripts where operators accept
-full responsibility for teardown. In the new design, `--force` bypasses the
-entire 4-tier classification pipeline and deletes ALL resource groups from
-the deployment, matching the original behavior. Classification only runs in
-interactive mode (without `--force`). In non-interactive mode
-(`--force`, CI/CD), ALL referenced RGs are deleted — the operator is expected
-to manage scope via their Bicep templates.
+**Why**: `--force` is used in CI/CD pipelines and scripts where operators want
+teardown without prompts. However, deleting resource groups that azd didn't
+create (external RGs referenced via Bicep `existing` keyword) contradicts the
+core safety goal of this feature. Tier 1 classification (parsing deployment
+operations) is free — zero extra API calls — and can identify external RGs
+with high confidence.
 
-**Note**: A future enhancement could make `--force` run the free Tier 1 check
-(zero API calls) and still skip external RGs, but this is deferred to avoid
-breaking existing CI/CD workflows that depend on the current behavior.
+**Behavior**: When `--force` is set, only Tier 1 runs. External RGs identified
+by Read or EvaluateDeploymentOutput operations are still protected (skipped).
+Unknown RGs (no matching operation) are treated as owned and deleted. Tiers
+2/3/4 are skipped entirely (no tag lookups, no prompts, no lock checks).
+
+**Degradation**: If deployment operations are unavailable (ARM transient error),
+`--force` falls back to deleting all RGs for backward compatibility. This is
+logged as a WARNING.
 
 No `--delete-resource-groups` or similar bulk override flag exists. This is
 a deliberate design choice: azd will never delete a resource group it didn't
@@ -503,20 +572,20 @@ via the ARM management locks API. Skip locked RGs proactively.
 
 ### ⚠️ Gap: --force Bypasses All Safety (High) — RESOLVED
 
-**Current state** (`bicep_destroy.go`):
+**Current state**: `--force` now runs Tier 1 classification (zero extra API
+calls) before deleting. External RGs identified by deployment operations
+(Read/EvaluateDeploymentOutput) are still protected even with `--force`.
+
 ```go
-if options.Force() {
-    // bypass classification, delete all RGs
-}
+// --force: Tier 1 only. External RGs protected, unknowns treated as owned.
+// If operations unavailable: backward compat (all deleted).
+classifyOpts.ForceMode = true
 ```
 
-**Resolution**: `--force` bypasses the entire 4-tier classification pipeline
-and deletes ALL resource groups from the deployment, preserving original
-`azd down --force` semantics for CI/CD pipelines. Classification only runs
-when `--force` is not set. This matches Decision 4 (see below) and avoids
-breaking existing CI/CD workflows that depend on the current `--force`
-behavior. A future enhancement could add a free Tier 1 check under
-`--force`, but this is deferred.
+**Resolution**: Tier 1 is free (parses already-fetched deployment operations).
+Running it with `--force` provides zero-cost protection for external RGs while
+preserving CI/CD semantics (no prompts, no extra API calls). Tiers 2/3/4 are
+skipped entirely in force mode. See Decision 4.
 
 ### ⚠️ Gap: No Extra-Resource Detection (Medium)
 
@@ -552,9 +621,9 @@ would be unavailable.
 
 **Mitigation**: Fall through to Tier 2 (tag check). For deployments created
 before this change, both Tier 1 and Tier 2 may be degraded. In that case,
-Tier 3 (interactive confirmation) activates. In `--force` mode,
-classification is bypassed entirely and all RGs are deleted (preserving
-original semantics). Without `--force`, RGs with unknown provenance are
+Tier 3 (interactive confirmation) activates. In `--force` mode, only Tier 1
+runs; if operations are also unavailable, all RGs are deleted (backward
+compatibility). Without `--force`, RGs with unknown provenance are
 skipped in non-interactive mode, or prompted in interactive mode.
 
 ### Risk 2: Performance Impact of Additional API Calls
@@ -582,8 +651,9 @@ recreated outside azd after initial provisioning.
 
 **Mitigation**: In interactive mode (without `--force`), `unknown` RGs
 trigger a per-RG prompt - the user can explicitly approve deletion with a
-conscious decision (default is No). In `--force` mode, classification is
-bypassed entirely (all RGs deleted), so false negatives don't apply.
+conscious decision (default is No). In `--force` mode, only Tier 1 runs —
+unknown RGs (no operation data) are treated as owned and deleted, so false
+negatives from Tier 2/3 don't apply.
 
 ### Risk 4: Backward Compatibility with Existing Deployments
 
@@ -624,9 +694,11 @@ groups. azd will NEVER delete a resource group it didn't create unless the user
 explicitly approves each one individually in an interactive session.
 
 **Flag behavior**:
-- `--force` — Bypasses the 4-tier classification pipeline entirely and deletes
-  ALL resource groups from the deployment. This preserves original semantics
-  for CI/CD pipelines (see Decision 4).
+- `--force` — Runs Tier 1 only (zero extra API calls). External RGs identified
+  by deployment operations are still protected. Unknown RGs are treated as owned.
+  Tiers 2/3/4 are skipped (no prompts, no extra API calls). If deployment
+  operations are unavailable, falls back to deleting all RGs (backward compat).
+  See Decision 4.
 - `--purge` — Unchanged (soft-delete purging only).
 - No new flags are added.
 
@@ -636,7 +708,8 @@ explicitly approves each one individually in an interactive session.
   External RGs are never deleted.
 - **Non-interactive (CI/CD, no --force)**: Classification runs. Only owned
   RGs are deleted. External/unknown RGs are skipped with logged reason.
-- **--force**: Classification bypassed. All RGs deleted.
+- **--force**: Tier 1 only. External RGs protected; unknown RGs deleted.
+  No prompts, no extra API calls. Operations unavailable → all deleted.
 
 ### D2: Structured Telemetry for Classification Decisions
 

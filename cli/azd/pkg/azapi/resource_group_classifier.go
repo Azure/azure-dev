@@ -42,6 +42,10 @@ type ManagementLock struct {
 
 // ClassifyOptions configures the classification pipeline.
 type ClassifyOptions struct {
+	// ForceMode runs only Tier 1 (zero API calls). External RGs identified by
+	// deployment operations are still protected; unknown RGs are treated as owned.
+	// Tier 2/3/4 callbacks are not invoked.
+	ForceMode   bool
 	Interactive bool   // Whether to prompt for unknown RGs
 	EnvName     string // Current azd environment name for tag matching
 
@@ -116,6 +120,13 @@ func ClassifyResourceGroups(
 
 	// --- Tier 1: classify all RGs from deployment operations (zero extra API calls) ---
 	owned, unknown := classifyTier1(operations, rgNames, result)
+
+	// ForceMode: Tier 1 external RGs are still protected; unknowns become owned.
+	// Skip Tier 2/3/4 (no API calls, no prompts).
+	if opts.ForceMode {
+		result.Owned = append(owned, unknown...)
+		return result, nil
+	}
 
 	// --- Tier 2: dual-tag check for unknowns ---
 	var tier2Owned, tier3Candidates []string

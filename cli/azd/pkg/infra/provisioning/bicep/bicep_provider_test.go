@@ -302,9 +302,9 @@ func TestBicepDestroyClassifyAndDelete(t *testing.T) {
 		}
 	}
 
-	t.Run("ForceBypassesClassification", func(t *testing.T) {
-		// When --force is set, classification is skipped entirely.
-		// Both RGs should be deleted directly, and no operations should be fetched.
+	t.Run("ForceProtectsExternalRGs", func(t *testing.T) {
+		// When --force is set, Tier 1 still runs (zero API calls).
+		// Created RGs are owned (deleted), Read RGs are external (skipped).
 		mockContext := mocks.NewMockContext(context.Background())
 		prepareBicepMocks(mockContext)
 
@@ -324,15 +324,16 @@ func TestBicepDestroyClassifyAndDelete(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, result)
 
-		// Both RGs deleted — force bypasses classification entirely.
+		// Created RG is deleted (Tier 1 owned).
 		assert.Equal(t, int32(1), tracker.rgDeletes["rg-created"].Load(),
-			"rg-created should be deleted when force=true")
-		assert.Equal(t, int32(1), tracker.rgDeletes["rg-existing"].Load(),
-			"rg-existing should be deleted when force=true")
+			"rg-created should be deleted when force=true (Tier 1 owned)")
+		// External RG is protected even with --force (Tier 1 external).
+		assert.Equal(t, int32(0), tracker.rgDeletes["rg-existing"].Load(),
+			"rg-existing should be SKIPPED when force=true (Tier 1 external)")
 
-		// Deployment operations NOT fetched (force short-circuits before calling Operations()).
-		assert.Equal(t, int32(0), tracker.operationsGETs.Load(),
-			"operations should not be fetched when force=true")
+		// Operations ARE fetched — Tier 1 needs them even with --force.
+		assert.Equal(t, int32(1), tracker.operationsGETs.Load(),
+			"operations should be fetched even when force=true for Tier 1 safety")
 	})
 
 	t.Run("ClassificationFiltersDeletion", func(t *testing.T) {
@@ -512,6 +513,82 @@ func TestBicepDestroyClassifyAndDelete(t *testing.T) {
 		// Env keys should not be invalidated — DestroyResult should be empty.
 		assert.Empty(t, result.InvalidatedEnvKeys,
 			"env keys should NOT be invalidated when user cancels")
+	})
+
+	t.Run("Tier4LockVetoPreventsDeletion", func(t *testing.T) {
+		// A RG with a CanNotDelete lock is vetoed by Tier 4, even though Tier 1 says owned.
+		mockContext := mocks.NewMockContext(context.Background())
+		prepareBicepMocks(mockContext)
+
+		tracker := prepareClassifyDestroyMocks(mockContext, classifyMockCfg{
+			rgNames: []string{"rg-unlocked", "rg-locked"},
+			operations: []*armresources.DeploymentOperation{
+				makeRGOp("rg-unlocked", armresources.ProvisioningOperationCreate),
+				makeRGOp("rg-locked", armresources.ProvisioningOperationCreate),
+			},
+			rgLocks: map[string][]*armlocks.ManagementLockObject{
+				"rg-locked": {
+					{
+						Name: new("no-delete"),
+						Properties: &armlocks.ManagementLockProperties{
+							Level: to.Ptr(armlocks.LockLevelCanNotDelete),
+						},
+					},
+				},
+			},
+		})
+
+		// Confirmation prompt for owned RGs (only rg-unlocked should reach confirmation).
+		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
+			return strings.Contains(options.Message, "Delete")
+		}).Respond(true)
+
+		infraProvider := createBicepProvider(t, mockContext)
+
+		destroyOptions := provisioning.NewDestroyOptions(false, false)
+		result, err := infraProvider.Destroy(*mockContext.Context, destroyOptions)
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+
+		// Unlocked RG should be deleted.
+		assert.Equal(t, int32(1), tracker.rgDeletes["rg-unlocked"].Load(),
+			"rg-unlocked should be deleted (no lock)")
+		// Locked RG should NOT be deleted (Tier 4 veto).
+		assert.Equal(t, int32(0), tracker.rgDeletes["rg-locked"].Load(),
+			"rg-locked should NOT be deleted (Tier 4 CanNotDelete lock veto)")
+	})
+
+	t.Run("MixedOwnedExternalOnlyOwnedDeleted", func(t *testing.T) {
+		// End-to-end: 3 RGs — 1 Created (owned), 1 Read (external), 1 unknown (non-interactive skip).
+		// Only the owned RG should be deleted.
+		mockContext := mocks.NewMockContext(context.Background())
+		prepareBicepMocks(mockContext)
+		mockContext.Console.SetNoPromptMode(true) // non-interactive: Tier 3 skips unknowns
+
+		tracker := prepareClassifyDestroyMocks(mockContext, classifyMockCfg{
+			rgNames: []string{"rg-mine", "rg-shared", "rg-mystery"},
+			operations: []*armresources.DeploymentOperation{
+				makeRGOp("rg-mine", armresources.ProvisioningOperationCreate),
+				makeRGOp("rg-shared", armresources.ProvisioningOperationRead),
+				// rg-mystery has no operation → unknown → Tier 3 skip (non-interactive)
+			},
+		})
+
+		infraProvider := createBicepProvider(t, mockContext)
+
+		destroyOptions := provisioning.NewDestroyOptions(false, false)
+		result, err := infraProvider.Destroy(*mockContext.Context, destroyOptions)
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+
+		assert.Equal(t, int32(1), tracker.rgDeletes["rg-mine"].Load(),
+			"rg-mine (Created) should be deleted")
+		assert.Equal(t, int32(0), tracker.rgDeletes["rg-shared"].Load(),
+			"rg-shared (Read/external) should be skipped")
+		assert.Equal(t, int32(0), tracker.rgDeletes["rg-mystery"].Load(),
+			"rg-mystery (unknown, non-interactive) should be skipped")
 	})
 }
 
@@ -1288,6 +1365,7 @@ type classifyMockCfg struct {
 	rgNames            []string                            // RG names referenced in the deployment
 	operations         []*armresources.DeploymentOperation // Tier 1 classification operations
 	withPurgeResources bool                                // adds a KeyVault to each RG for purge testing
+	rgLocks            map[string][]*armlocks.ManagementLockObject // per-RG locks (nil key = empty locks)
 }
 
 // classifyCallTracker tracks HTTP calls made during classification integration tests.
@@ -1425,6 +1503,25 @@ func prepareClassifyDestroyMocks(
 		})
 	}
 
+	// --- Per-RG tag fetching mocks (Tier 2 uses ResourceGroupsClient.Get) ---
+	for _, rgName := range cfg.rgNames {
+		rgResponse := armresources.ResourceGroup{
+			ID:       new(fmt.Sprintf("/subscriptions/SUBSCRIPTION_ID/resourceGroups/%s", rgName)),
+			Name:     new(rgName),
+			Location: new("eastus2"),
+			Tags:     map[string]*string{}, // empty tags — won't match Tier 2 dual-tag check
+		}
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.Method == http.MethodGet &&
+				strings.HasSuffix(
+					request.URL.Path,
+					fmt.Sprintf("subscriptions/SUBSCRIPTION_ID/resourcegroups/%s", rgName),
+				)
+		}).RespondFn(func(request *http.Request) (*http.Response, error) {
+			return mocks.CreateHttpResponseWithBody(request, http.StatusOK, rgResponse)
+		})
+	}
+
 	// --- Deployment operations (Tier 1 classification data) ---
 	operationsResult := armresources.DeploymentOperationsListResult{
 		Value: cfg.operations,
@@ -1455,8 +1552,10 @@ func prepareClassifyDestroyMocks(
 		})
 	}
 
-	// --- Tier 4 lock listing mocks (return empty locks for each RG) ---
+	// --- Tier 4 lock listing mocks (return configured locks or empty for each RG) ---
 	for _, rgName := range cfg.rgNames {
+		locks := cfg.rgLocks[rgName] // nil = empty locks
+		lockResult := armlocks.ManagementLockListResult{Value: locks}
 		mockContext.HttpClient.When(func(request *http.Request) bool {
 			return request.Method == http.MethodGet &&
 				strings.Contains(
@@ -1467,8 +1566,7 @@ func prepareClassifyDestroyMocks(
 					),
 				)
 		}).RespondFn(func(request *http.Request) (*http.Response, error) {
-			emptyLocks := armlocks.ManagementLockListResult{Value: []*armlocks.ManagementLockObject{}}
-			return mocks.CreateHttpResponseWithBody(request, http.StatusOK, emptyLocks)
+			return mocks.CreateHttpResponseWithBody(request, http.StatusOK, lockResult)
 		})
 	}
 

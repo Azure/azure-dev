@@ -64,4 +64,8 @@ func TestMsalCacheTracer_LogSnapshotOnce_HashesTokenSecrets(t *testing.T) {
 	assert.Contains(t, output, shortDigest("super-secret-refresh-token"))
 	assert.NotContains(t, output, "super-secret-refresh-token")
 	assert.Equal(t, 1, strings.Count(output, "msal-cache[test-phase]: refresh_tokens=1 access_tokens=1 accounts=1"))
+
+	// PII warning banner should appear exactly once
+	assert.Contains(t, output, "WARNING: MSAL cache tracing enabled")
+	assert.Equal(t, 1, strings.Count(output, "WARNING: MSAL cache tracing enabled"))
 }

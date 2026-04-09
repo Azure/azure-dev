@@ -141,8 +141,12 @@ func TestSubscriptionCredentialProvider_AADSTSErrors(t *testing.T) {
 
 	t.Run("AADSTS700082_WithExistingSuggestion_PreservesWrappedFields", func(t *testing.T) {
 		provider := NewSubscriptionCredentialProvider(
-			subscriptionTenantResolverFunc(func(ctx context.Context, subId string) (string, error) {
-				return tenantId, nil
+			subscriptionResolverFunc(func(ctx context.Context, subId string) (*Subscription, error) {
+				return &Subscription{
+					Id:                 subId,
+					TenantId:           "resource-" + tenantId,
+					UserAccessTenantId: tenantId,
+				}, nil
 			}),
 			multiTenantCredentialProviderFunc(func(ctx context.Context, tid string) (azcore.TokenCredential, error) {
 				return nil, &internal.ErrorWithSuggestion{
@@ -165,8 +169,12 @@ func TestSubscriptionCredentialProvider_AADSTSErrors(t *testing.T) {
 
 	t.Run("AADSTS700082_SuggestionAlreadyHasTenantID_NoRedundantAppend", func(t *testing.T) {
 		provider := NewSubscriptionCredentialProvider(
-			subscriptionTenantResolverFunc(func(ctx context.Context, subId string) (string, error) {
-				return tenantId, nil
+			subscriptionResolverFunc(func(ctx context.Context, subId string) (*Subscription, error) {
+				return &Subscription{
+					Id:                 subId,
+					TenantId:           "resource-" + tenantId,
+					UserAccessTenantId: tenantId,
+				}, nil
 			}),
 			multiTenantCredentialProviderFunc(func(ctx context.Context, tid string) (azcore.TokenCredential, error) {
 				return nil, &internal.ErrorWithSuggestion{

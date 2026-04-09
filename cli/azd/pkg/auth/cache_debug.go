@@ -72,11 +72,27 @@ func isMsalCacheTraceEnabled() bool {
 	return err == nil && enabled
 }
 
+const msalCachePIIWarning = "msal-cache: WARNING: MSAL cache tracing enabled — " +
+	"output contains account identifiers (e.g. email, home account ID). Do not share without redaction."
+
+func (t *msalCacheTracer) logPIIWarningOnce() {
+	const key = "_pii_warning"
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if t.logged[key] {
+		return
+	}
+	t.logged[key] = true
+	log.Println(msalCachePIIWarning)
+}
+
 func (t *msalCacheTracer) LogSnapshot(phase string) {
 	if t == nil || !t.enabled || phase == "" || t.cache == nil {
 		return
 	}
 
+	t.logPIIWarningOnce()
 	t.logSnapshot(phase)
 }
 
@@ -84,6 +100,8 @@ func (t *msalCacheTracer) LogSnapshotOnce(phase string) {
 	if t == nil || !t.enabled || phase == "" || t.cache == nil {
 		return
 	}
+
+	t.logPIIWarningOnce()
 
 	t.mu.Lock()
 	if t.logged[phase] {

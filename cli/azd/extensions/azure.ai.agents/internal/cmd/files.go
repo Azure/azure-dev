@@ -198,7 +198,8 @@ Agent details are automatically resolved from the azd environment.`,
   azd ai agent files upload --file ./input.csv --agent-name my-agent --session <session-id>`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
-			setupDebugLogging(cmd.Flags())
+			logCleanup := setupDebugLogging(cmd.Flags())
+			defer logCleanup()
 
 			fc, err := resolveFilesContext(ctx, &flags.filesFlags)
 			if err != nil {
@@ -296,7 +297,8 @@ Agent details are automatically resolved from the azd environment.`,
   azd ai agent files download --file /data/output.csv --session <session-id>`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
-			setupDebugLogging(cmd.Flags())
+			logCleanup := setupDebugLogging(cmd.Flags())
+			defer logCleanup()
 
 			fc, err := resolveFilesContext(ctx, &flags.filesFlags)
 			if err != nil {
@@ -401,7 +403,8 @@ Agent details are automatically resolved from the azd environment.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
-			setupDebugLogging(cmd.Flags())
+			logCleanup := setupDebugLogging(cmd.Flags())
+			defer logCleanup()
 
 			fc, err := resolveFilesContext(ctx, &flags.filesFlags)
 			if err != nil {
@@ -523,7 +526,8 @@ Agent details are automatically resolved from the azd environment.`,
   azd ai agent files remove --file /data/old-file.csv --session <session-id>`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
-			setupDebugLogging(cmd.Flags())
+			logCleanup := setupDebugLogging(cmd.Flags())
+			defer logCleanup()
 
 			fc, err := resolveFilesContext(ctx, &flags.filesFlags)
 			if err != nil {
@@ -601,7 +605,8 @@ Agent details are automatically resolved from the azd environment.`,
   azd ai agent files mkdir --dir /data/output --session <session-id>`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
-			setupDebugLogging(cmd.Flags())
+			logCleanup := setupDebugLogging(cmd.Flags())
+			defer logCleanup()
 
 			fc, err := resolveFilesContext(ctx, flags)
 			if err != nil {
@@ -684,7 +689,8 @@ Agent details are automatically resolved from the azd environment.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
-			setupDebugLogging(cmd.Flags())
+			logCleanup := setupDebugLogging(cmd.Flags())
+			defer logCleanup()
 
 			fc, err := resolveFilesContext(ctx, &flags.filesFlags)
 			if err != nil {

@@ -215,7 +215,8 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 
 			ctx := azdext.WithAccessToken(cmd.Context())
 
-			setupDebugLogging(cmd.Flags())
+			logCleanup := setupDebugLogging(cmd.Flags())
+			defer logCleanup()
 
 			azdClient, err := azdext.NewAzdClient()
 			if err != nil {
@@ -1456,11 +1457,11 @@ func downloadParentDirectory(
 
 	// Download directory contents
 	if useGhCli {
-		if err := downloadDirectoryContents(ctx, urlInfo.Hostname, urlInfo.RepoSlug, parentDirPath, urlInfo.Branch, targetDir, ghCli, console); err != nil {
+		if err := downloadDirectoryContents(ctx, urlInfo.Hostname, urlInfo.RepoSlug, parentDirPath, parentDirPath, urlInfo.Branch, targetDir, ghCli, console); err != nil {
 			return fmt.Errorf("failed to download directory contents with GH CLI: %w", err)
 		}
 	} else {
-		if err := downloadDirectoryContentsWithoutGhCli(ctx, urlInfo.RepoSlug, parentDirPath, urlInfo.Branch, targetDir, httpClient); err != nil {
+		if err := downloadDirectoryContentsWithoutGhCli(ctx, urlInfo.RepoSlug, parentDirPath, parentDirPath, urlInfo.Branch, targetDir, httpClient); err != nil {
 			return fmt.Errorf("failed to download directory contents without GH CLI: %w", err)
 		}
 	}
@@ -1471,7 +1472,7 @@ func downloadParentDirectory(
 }
 
 func downloadDirectoryContents(
-	ctx context.Context, hostname string, repoSlug string, dirPath string, branch string, localPath string, ghCli *github.Cli, console input.Console) error {
+	ctx context.Context, hostname string, repoSlug string, dirPath string, rootDirPath string, branch string, localPath string, ghCli *github.Cli, console input.Console) error {
 
 	// Get directory contents using GitHub API
 	apiPath := fmt.Sprintf("/repos/%s/contents/%s", repoSlug, dirPath)
@@ -1507,7 +1508,8 @@ func downloadDirectoryContents(
 
 		if itemType == "file" {
 			// Download file
-			fmt.Println(output.WithGrayFormat("  %s", name))
+			relativePath := strings.TrimPrefix(itemPath, rootDirPath+"/")
+			fmt.Println(output.WithGrayFormat("  %s", relativePath))
 			log.Printf("Downloading file: %s", itemPath)
 			fileApiPath := fmt.Sprintf("/repos/%s/contents/%s", repoSlug, itemPath)
 			if branch != "" {
@@ -1527,7 +1529,6 @@ func downloadDirectoryContents(
 			}
 		} else if itemType == "dir" {
 			// Recursively download subdirectory
-			fmt.Println(output.WithGrayFormat("  %s/", name))
 			log.Printf("Downloading directory: %s", itemPath)
 			//nolint:gosec // scaffolded directories are intended to be readable/traversable
 			if err := os.MkdirAll(itemLocalPath, 0755); err != nil {
@@ -1535,7 +1536,7 @@ func downloadDirectoryContents(
 			}
 
 			// Recursively download directory contents
-			if err := downloadDirectoryContents(ctx, hostname, repoSlug, itemPath, branch, itemLocalPath, ghCli, console); err != nil {
+			if err := downloadDirectoryContents(ctx, hostname, repoSlug, itemPath, rootDirPath, branch, itemLocalPath, ghCli, console); err != nil {
 				return fmt.Errorf("failed to download subdirectory %s: %w", itemPath, err)
 			}
 		}
@@ -1545,7 +1546,7 @@ func downloadDirectoryContents(
 }
 
 func downloadDirectoryContentsWithoutGhCli(
-	ctx context.Context, repoSlug string, dirPath string, branch string, localPath string, httpClient *http.Client) error {
+	ctx context.Context, repoSlug string, dirPath string, rootDirPath string, branch string, localPath string, httpClient *http.Client) error {
 
 	// Get directory contents using GitHub API directly
 	apiUrl := fmt.Sprintf("https://api.github.com/repos/%s/contents/%s", repoSlug, dirPath)
@@ -1598,7 +1599,8 @@ func downloadDirectoryContentsWithoutGhCli(
 
 		if itemType == "file" {
 			// Download file using GitHub Contents API with raw accept header
-			fmt.Println(output.WithGrayFormat("  %s", name))
+			relativePath := strings.TrimPrefix(itemPath, rootDirPath+"/")
+			fmt.Println(output.WithGrayFormat("  %s", relativePath))
 			log.Printf("Downloading file: %s", itemPath)
 			fileURL := &url.URL{
 				Scheme: "https",
@@ -1639,7 +1641,6 @@ func downloadDirectoryContentsWithoutGhCli(
 			}
 		} else if itemType == "dir" {
 			// Recursively download subdirectory
-			fmt.Println(output.WithGrayFormat("  %s/", name))
 			log.Printf("Downloading directory: %s", itemPath)
 			//nolint:gosec // scaffolded directories are intended to be readable/traversable
 			if err := os.MkdirAll(itemLocalPath, 0755); err != nil {
@@ -1647,7 +1648,7 @@ func downloadDirectoryContentsWithoutGhCli(
 			}
 
 			// Recursively download directory contents
-			if err := downloadDirectoryContentsWithoutGhCli(ctx, repoSlug, itemPath, branch, itemLocalPath, httpClient); err != nil {
+			if err := downloadDirectoryContentsWithoutGhCli(ctx, repoSlug, itemPath, rootDirPath, branch, itemLocalPath, httpClient); err != nil {
 				return fmt.Errorf("failed to download subdirectory %s: %w", itemPath, err)
 			}
 		}

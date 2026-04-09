@@ -126,7 +126,7 @@ func (f *copilotConsentListFlags) Bind(local *pflag.FlagSet, global *internal.Gl
 	)
 	local.StringVar(&f.target, "target", "", "Specific target to operate on (server/tool format)")
 	local.StringVar(&f.operation, "operation", "", "Operation to filter by (tool, sampling)")
-	local.StringVar(&f.action, "action", "", "Action type to filter by (readonly, any)")
+	local.StringVar(&f.action, "action", "", "Action type to filter by (all, readonly)")
 	local.StringVar(&f.permission, "permission", "", "Permission to filter by (allow, deny, prompt)")
 }
 
@@ -185,7 +185,7 @@ func (f *copilotConsentRevokeFlags) Bind(local *pflag.FlagSet, global *internal.
 	)
 	local.StringVar(&f.target, "target", "", "Specific target to operate on (server/tool format)")
 	local.StringVar(&f.operation, "operation", "", "Operation to filter by (tool, sampling)")
-	local.StringVar(&f.action, "action", "", "Action type to filter by (readonly, any)")
+	local.StringVar(&f.action, "action", "", "Action type to filter by (all, readonly)")
 	local.StringVar(&f.permission, "permission", "", "Permission to filter by (allow, deny, prompt)")
 }
 

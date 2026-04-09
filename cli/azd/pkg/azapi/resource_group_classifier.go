@@ -180,6 +180,17 @@ func ClassifyResourceGroups(
 		// Context-aware semaphore: bail out if context is cancelled while waiting.
 		select {
 		case sem <- struct{}{}:
+			// Re-check cancellation after acquiring the semaphore.
+			// Go's select is non-deterministic when both cases are ready,
+			// so ctx.Done may have fired but the semaphore case was chosen.
+			if ctx.Err() != nil {
+				<-sem
+				vetoCh <- veto{
+					rg:     rg,
+					reason: "error during safety check: " + ctx.Err().Error(),
+				}
+				continue
+			}
 		case <-ctx.Done():
 			vetoCh <- veto{
 				rg:     rg,

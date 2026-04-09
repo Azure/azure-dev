@@ -1142,7 +1142,7 @@ func (p *BicepProvider) Destroy(
 			for _, skip := range skipped {
 				p.console.Message(ctx, fmt.Sprintf("  Skipped: %s (%s)", skip.Name, skip.Reason))
 			}
-			return &provisioning.DestroyResult{}, nil
+			return &provisioning.DestroyResult{}, errUserCancelled
 		}
 
 		// Void deployment state after successful classification and deletion (classifyErr covers both).

@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -28,6 +29,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/fatih/color"
@@ -213,7 +215,8 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 
 			ctx := azdext.WithAccessToken(cmd.Context())
 
-			setupDebugLogging(cmd.Flags())
+			logCleanup := setupDebugLogging(cmd.Flags())
+			defer logCleanup()
 
 			azdClient, err := azdext.NewAzdClient()
 			if err != nil {
@@ -716,9 +719,9 @@ func (a *InitAction) configureModelChoice(
 
 		if selectedProject == nil {
 			// No existing project selected (no projects found or user chose "Create new") → fall back to "deploy new" path
-			_, _ = color.New(color.Faint).Println(
+			fmt.Println(output.WithGrayFormat(
 				"No existing Foundry project was selected. Falling back to deploying a new model.",
-			)
+			))
 			if err := ensureLocation(ctx, a.azdClient, a.azureContext, a.environment.Name); err != nil {
 				return nil, err
 			}
@@ -917,7 +920,7 @@ func (a *InitAction) downloadAgentYaml(
 		}
 
 		// Handle local file path
-		fmt.Printf("Reading agent.yaml from local file: %s\n", manifestPointer)
+		log.Printf("Reading agent.yaml from local file: %s", manifestPointer)
 		//nolint:gosec // manifest path is an explicit user-provided local path
 		content, err = os.ReadFile(manifestPointer)
 		if err != nil {
@@ -983,7 +986,8 @@ func (a *InitAction) downloadAgentYaml(
 		//  - https://api.<hostname>/repos/<owner>/<repo>/contents/<path>/<file>.json
 		//    - This url comes from users familiar with the GitHub API. Usually for programmatic registration of templates.
 
-		fmt.Printf("Downloading agent.yaml from GitHub: %s\n", manifestPointer)
+		fmt.Println(output.WithGrayFormat("Downloading manifest from GitHub..."))
+		log.Printf("Downloading manifest from GitHub: %s", manifestPointer)
 		isGitHubUrl = true
 
 		// Create a simple console and command runner for GitHub CLI
@@ -1025,7 +1029,7 @@ func (a *InitAction) downloadAgentYaml(
 				escapedBranch := url.QueryEscape(urlInfo.Branch)
 				fileApiUrl += fmt.Sprintf("?ref=%s", escapedBranch)
 			}
-			fmt.Printf("Attempting to download manifest from '%s' in repository '%s', branch '%s'\n", urlInfo.FilePath, urlInfo.RepoSlug, urlInfo.Branch)
+			log.Printf("Attempting to download manifest from '%s' in repository '%s', branch '%s'", urlInfo.FilePath, urlInfo.RepoSlug, urlInfo.Branch)
 
 			req, err := http.NewRequestWithContext(ctx, http.MethodGet, fileApiUrl, nil)
 			if err == nil {
@@ -1038,14 +1042,14 @@ func (a *InitAction) downloadAgentYaml(
 						bodyBytes, readErr := io.ReadAll(resp.Body)
 						if readErr == nil {
 							contentStr = string(bodyBytes)
-							fmt.Printf("Downloaded manifest from branch: %s\n", urlInfo.Branch)
+							log.Printf("Downloaded manifest from branch: %s", urlInfo.Branch)
 						}
 					}
 				}
 			}
 			if contentStr == "" {
-				fmt.Printf("Warning: naive GitHub URL parsing failed to download manifest\n")
-				fmt.Println("Proceeding with full parsing and download logic...")
+				log.Print("Naive GitHub URL parsing failed to download manifest")
+				log.Print("Proceeding with full parsing and download logic...")
 			}
 		}
 
@@ -1059,7 +1063,7 @@ func (a *InitAction) downloadAgentYaml(
 
 			apiPath := fmt.Sprintf("/repos/%s/contents/%s", urlInfo.RepoSlug, urlInfo.FilePath)
 			if urlInfo.Branch != "" {
-				fmt.Printf("Downloaded manifest from branch: %s\n", urlInfo.Branch)
+				log.Printf("Downloaded manifest from branch: %s", urlInfo.Branch)
 				apiPath += fmt.Sprintf("?ref=%s", urlInfo.Branch)
 			}
 
@@ -1081,7 +1085,7 @@ func (a *InitAction) downloadAgentYaml(
 		var versionResult *registry_api.Manifest
 		if registryManifest.manifestVersion == "" {
 			// No version specified, get latest version from GetAllLatest
-			fmt.Printf("No version provided for manifest '%s', retrieving latest version\n", registryManifest.manifestName)
+			log.Printf("No version provided for manifest '%s', retrieving latest version", registryManifest.manifestName)
 
 			allManifests, err := manifestClient.GetAllLatest(ctx)
 			if err != nil {
@@ -1101,7 +1105,8 @@ func (a *InitAction) downloadAgentYaml(
 			}
 		} else {
 			// Specific version requested
-			fmt.Printf("Downloading agent.yaml from registry: %s\n", manifestPointer)
+			fmt.Println(output.WithGrayFormat("Downloading manifest from registry..."))
+			log.Printf("Downloading manifest from registry: %s", manifestPointer)
 
 			manifest, err := manifestClient.GetManifest(ctx, registryManifest.manifestName, registryManifest.manifestVersion)
 			if err != nil {
@@ -1116,7 +1121,7 @@ func (a *InitAction) downloadAgentYaml(
 			return nil, "", fmt.Errorf("processing manifest with parameters: %w", err)
 		}
 
-		fmt.Println("Retrieved and processed manifest from registry")
+		log.Print("Retrieved and processed manifest from registry")
 
 		// Convert to YAML bytes for the content variable
 		manifestBytes, err := yaml.Marshal(processedManifest)
@@ -1139,7 +1144,7 @@ func (a *InitAction) downloadAgentYaml(
 		return nil, "", err
 	}
 
-	fmt.Println("✓ YAML content successfully validated against AgentManifest format")
+	fmt.Println(output.WithGrayFormat("✓ Manifest validated successfully"))
 
 	agentId := agentManifest.Name
 
@@ -1193,7 +1198,7 @@ func (a *InitAction) downloadAgentYaml(
 				return nil, "", fmt.Errorf("resolving target directory %s: %w", targetDir, err)
 			}
 			if !isSamePath(srcAbs, dstAbs) {
-				fmt.Println("Copying full directory for container agent")
+				log.Print("Copying full directory for container agent")
 				err := copyDirectory(manifestDir, targetDir)
 				if err != nil {
 					return nil, "", fmt.Errorf("copying parent directory: %w", err)
@@ -1206,7 +1211,7 @@ func (a *InitAction) downloadAgentYaml(
 
 		if isHostedContainer {
 			// For container agents, download the entire parent directory
-			fmt.Println("Downloading full directory for container agent")
+			log.Print("Downloading full directory for container agent")
 			err := downloadParentDirectory(ctx, urlInfo, targetDir, ghCli, console, useGhCli, a.httpClient)
 			if err != nil {
 				return nil, "", exterrors.Dependency(
@@ -1241,7 +1246,7 @@ func writeAgentDefinitionFile(targetDir string, agentManifest *agent_yaml.AgentM
 		return fmt.Errorf("saving file to %s: %w", filePath, err)
 	}
 
-	fmt.Printf("Processed agent.yaml at %s\n", filePath)
+	fmt.Println(output.WithGrayFormat("Processed agent.yaml at %s", filePath))
 	return nil
 }
 
@@ -1521,30 +1526,32 @@ func downloadParentDirectory(
 	// Get parent directory by removing the filename from the file path
 	pathParts := strings.Split(urlInfo.FilePath, "/")
 	if len(pathParts) <= 1 {
-		fmt.Println("The file agent.yaml is at repository root, no parent directory to download")
+		log.Print("The file agent.yaml is at repository root, no parent directory to download")
 		return nil
 	}
 
 	parentDirPath := strings.Join(pathParts[:len(pathParts)-1], "/")
-	fmt.Printf("Downloading parent directory '%s' from repository '%s', branch '%s'\n", parentDirPath, urlInfo.RepoSlug, urlInfo.Branch)
+	log.Printf("Downloading parent directory '%s' from repository '%s', branch '%s'", parentDirPath, urlInfo.RepoSlug, urlInfo.Branch)
+	fmt.Println(output.WithGrayFormat("Downloading files..."))
 
 	// Download directory contents
 	if useGhCli {
-		if err := downloadDirectoryContents(ctx, urlInfo.Hostname, urlInfo.RepoSlug, parentDirPath, urlInfo.Branch, targetDir, ghCli, console); err != nil {
+		if err := downloadDirectoryContents(ctx, urlInfo.Hostname, urlInfo.RepoSlug, parentDirPath, parentDirPath, urlInfo.Branch, targetDir, ghCli, console); err != nil {
 			return fmt.Errorf("failed to download directory contents with GH CLI: %w", err)
 		}
 	} else {
-		if err := downloadDirectoryContentsWithoutGhCli(ctx, urlInfo.RepoSlug, parentDirPath, urlInfo.Branch, targetDir, httpClient); err != nil {
+		if err := downloadDirectoryContentsWithoutGhCli(ctx, urlInfo.RepoSlug, parentDirPath, parentDirPath, urlInfo.Branch, targetDir, httpClient); err != nil {
 			return fmt.Errorf("failed to download directory contents without GH CLI: %w", err)
 		}
 	}
 
-	fmt.Printf("Successfully downloaded parent directory to: %s\n", targetDir)
+	fmt.Println(output.WithGrayFormat("Downloaded to: %s", targetDir))
+	fmt.Println()
 	return nil
 }
 
 func downloadDirectoryContents(
-	ctx context.Context, hostname string, repoSlug string, dirPath string, branch string, localPath string, ghCli *github.Cli, console input.Console) error {
+	ctx context.Context, hostname string, repoSlug string, dirPath string, rootDirPath string, branch string, localPath string, ghCli *github.Cli, console input.Console) error {
 
 	// Get directory contents using GitHub API
 	apiPath := fmt.Sprintf("/repos/%s/contents/%s", repoSlug, dirPath)
@@ -1580,7 +1587,9 @@ func downloadDirectoryContents(
 
 		if itemType == "file" {
 			// Download file
-			fmt.Printf("%s\n", color.New(color.Faint).Sprintf("Downloading file: %s", itemPath))
+			relativePath := strings.TrimPrefix(itemPath, rootDirPath+"/")
+			fmt.Println(output.WithGrayFormat("  %s", relativePath))
+			log.Printf("Downloading file: %s", itemPath)
 			fileApiPath := fmt.Sprintf("/repos/%s/contents/%s", repoSlug, itemPath)
 			if branch != "" {
 				fileApiPath += fmt.Sprintf("?ref=%s", branch)
@@ -1599,14 +1608,14 @@ func downloadDirectoryContents(
 			}
 		} else if itemType == "dir" {
 			// Recursively download subdirectory
-			fmt.Printf("Downloading directory: %s\n", itemPath)
+			log.Printf("Downloading directory: %s", itemPath)
 			//nolint:gosec // scaffolded directories are intended to be readable/traversable
 			if err := os.MkdirAll(itemLocalPath, 0755); err != nil {
 				return fmt.Errorf("failed to create directory %s: %w", itemLocalPath, err)
 			}
 
 			// Recursively download directory contents
-			if err := downloadDirectoryContents(ctx, hostname, repoSlug, itemPath, branch, itemLocalPath, ghCli, console); err != nil {
+			if err := downloadDirectoryContents(ctx, hostname, repoSlug, itemPath, rootDirPath, branch, itemLocalPath, ghCli, console); err != nil {
 				return fmt.Errorf("failed to download subdirectory %s: %w", itemPath, err)
 			}
 		}
@@ -1616,7 +1625,7 @@ func downloadDirectoryContents(
 }
 
 func downloadDirectoryContentsWithoutGhCli(
-	ctx context.Context, repoSlug string, dirPath string, branch string, localPath string, httpClient *http.Client) error {
+	ctx context.Context, repoSlug string, dirPath string, rootDirPath string, branch string, localPath string, httpClient *http.Client) error {
 
 	// Get directory contents using GitHub API directly
 	apiUrl := fmt.Sprintf("https://api.github.com/repos/%s/contents/%s", repoSlug, dirPath)
@@ -1669,7 +1678,9 @@ func downloadDirectoryContentsWithoutGhCli(
 
 		if itemType == "file" {
 			// Download file using GitHub Contents API with raw accept header
-			fmt.Printf("%s\n", color.New(color.Faint).Sprintf("Downloading file: %s", itemPath))
+			relativePath := strings.TrimPrefix(itemPath, rootDirPath+"/")
+			fmt.Println(output.WithGrayFormat("  %s", relativePath))
+			log.Printf("Downloading file: %s", itemPath)
 			fileURL := &url.URL{
 				Scheme: "https",
 				Host:   "api.github.com",
@@ -1709,14 +1720,14 @@ func downloadDirectoryContentsWithoutGhCli(
 			}
 		} else if itemType == "dir" {
 			// Recursively download subdirectory
-			fmt.Printf("Downloading directory: %s\n", itemPath)
+			log.Printf("Downloading directory: %s", itemPath)
 			//nolint:gosec // scaffolded directories are intended to be readable/traversable
 			if err := os.MkdirAll(itemLocalPath, 0755); err != nil {
 				return fmt.Errorf("failed to create directory %s: %w", itemLocalPath, err)
 			}
 
 			// Recursively download directory contents
-			if err := downloadDirectoryContentsWithoutGhCli(ctx, repoSlug, itemPath, branch, itemLocalPath, httpClient); err != nil {
+			if err := downloadDirectoryContentsWithoutGhCli(ctx, repoSlug, itemPath, rootDirPath, branch, itemLocalPath, httpClient); err != nil {
 				return fmt.Errorf("failed to download subdirectory %s: %w", itemPath, err)
 			}
 		}

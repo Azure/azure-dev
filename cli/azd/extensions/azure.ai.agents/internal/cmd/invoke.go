@@ -84,7 +84,8 @@ session automatically. Pass --new-session to force a reset.`,
 		Args: cobra.RangeArgs(0, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
-			setupDebugLogging(cmd.Flags())
+			logCleanup := setupDebugLogging(cmd.Flags())
+			defer logCleanup()
 
 			switch len(args) {
 			case 2:

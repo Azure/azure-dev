@@ -30,7 +30,8 @@ func newListenCommand() *cobra.Command {
 			// Create a new context that includes the AZD access token.
 			ctx := azdext.WithAccessToken(cmd.Context())
 
-			setupDebugLogging(cmd.Flags())
+			logCleanup := setupDebugLogging(cmd.Flags())
+			defer logCleanup()
 
 			// Create a new AZD client.
 			azdClient, err := azdext.NewAzdClient()

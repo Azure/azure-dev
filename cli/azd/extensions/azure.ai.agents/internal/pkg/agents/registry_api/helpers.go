@@ -6,6 +6,7 @@ package registry_api
 import (
 	"context"
 	"fmt"
+	"log"
 	"reflect"
 	"strconv"
 	"strings"
@@ -279,7 +280,7 @@ func ProcessManifestParameters(
 	noPrompt bool) (*agent_yaml.AgentManifest, error) {
 	// If no parameters are defined, return the manifest as-is
 	if len(manifest.Parameters.Properties) == 0 {
-		fmt.Println("The manifest does not contain parameters that need to be configured.")
+		log.Print("The manifest does not contain parameters that need to be configured.")
 		return manifest, nil
 	}
 

@@ -5,6 +5,7 @@ package language
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"slices"
@@ -30,7 +31,7 @@ type nodeTools interface {
 // prepareNodeProject handles the shared Prepare phase for
 // Node.js-based executors (JavaScript and TypeScript):
 //  1. Verify Node.js is installed.
-//  2. Discover package.json via [DiscoverProjectFile].
+//  2. Discover package.json via [DiscoverNodeProject].
 //  3. If found, run the package manager's install command.
 //
 // Returns the project context (may be nil for standalone
@@ -43,42 +44,43 @@ func prepareNodeProject(
 ) (*ProjectContext, error) {
 	// 1. Verify Node.js is installed.
 	if err := nodeCli.CheckInstalled(ctx); err != nil {
+		// If the error already carries rich context (e.g.
+		// from the error-handling pipeline), pass it through
+		// rather than wrapping with a generic message.
+		if sugErr, ok := errors.AsType[*errorhandler.ErrorWithSuggestion](err); ok {
+			return nil, sugErr
+		}
+
+		// For other errors (missing from PATH, version
+		// mismatch, etc.), provide install guidance.
 		return nil, &errorhandler.ErrorWithSuggestion{
-			Err: fmt.Errorf(
-				"Node.js is required to run this hook "+
-					"but was not found on PATH: %w",
-				err,
-			),
-			Message: "Node.js is required to run this hook " +
-				"but was not found.",
-			Suggestion: "Install Node.js 18+ from " +
-				"https://nodejs.org/",
+			Err: err,
+			Message: "Node.js is required to run " +
+				"JavaScript/TypeScript hooks.",
+			Suggestion: "Install Node.js 18.0.0 or " +
+				"later from https://nodejs.org/",
 			Links: []errorhandler.ErrorLink{{
 				Title: "Download Node.js",
-				URL:   "https://nodejs.org/",
+				URL:   "https://nodejs.org/en/download/",
 			}},
 		}
 	}
 
-	// 2. Discover project context for dependency installation.
-	projCtx, err := DiscoverProjectFile(
+	// 2. Discover Node.js project context (package.json only).
+	// Uses DiscoverNodeProject instead of the generic
+	// DiscoverProjectFile to avoid Python/DotNet project files
+	// shadowing package.json in mixed-language directories.
+	projCtx, err := DiscoverNodeProject(
 		scriptPath, execCtx.BoundaryDir,
 	)
 	if err != nil {
 		return nil, fmt.Errorf(
-			"discovering project file: %w", err,
+			"discovering Node.js project file: %w", err,
 		)
 	}
 
 	// No package.json found — standalone script.
 	if projCtx == nil {
-		return nil, nil
-	}
-
-	// Only install when the discovered project file is a
-	// package.json (Language == HookKindJavaScript). Skip
-	// if a Python or .NET project file was found instead.
-	if projCtx.Language != HookKindJavaScript {
 		return nil, nil
 	}
 

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/stretchr/testify/assert"
@@ -135,7 +136,10 @@ func TestJsPrepare_NodeMissing(t *testing.T) {
 		t.Context(), "/any/hook.js", execCtx,
 	)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "Node.js is required")
+
+	var sugErr *errorhandler.ErrorWithSuggestion
+	require.ErrorAs(t, err, &sugErr)
+	assert.Contains(t, sugErr.Message, "Node.js is required")
 }
 
 func TestJsCleanup_NoOp(t *testing.T) {

@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/language"
@@ -394,7 +395,10 @@ func TestTsHook_NodeMissing(t *testing.T) {
 	)
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "Node.js is required")
+
+	var sugErr *errorhandler.ErrorWithSuggestion
+	require.ErrorAs(t, err, &sugErr)
+	assert.Contains(t, sugErr.Message, "Node.js is required")
 }
 
 func TestTsHook_EnvVarsPassthrough(t *testing.T) {

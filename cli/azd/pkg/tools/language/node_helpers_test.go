@@ -79,6 +79,41 @@ func TestNodePrepare_NodeNotInstalled(t *testing.T) {
 	assert.False(t, mock.installCalled)
 }
 
+func TestNodePrepare_CheckInstalledSuggestionPassthrough(
+	t *testing.T,
+) {
+	// When CheckInstalled already returns an ErrorWithSuggestion
+	// (e.g. from middleware), prepareNodeProject must pass it
+	// through without re-wrapping.
+	origErr := &errorhandler.ErrorWithSuggestion{
+		Err:        errors.New("Node.js 16.3.0 is too old"),
+		Message:    "Node.js version is too old.",
+		Suggestion: "Upgrade to Node.js 18.0.0 or later.",
+		Links: []errorhandler.ErrorLink{{
+			Title: "Download Node.js",
+			URL:   "https://nodejs.org/en/download/",
+		}},
+	}
+	mock := &mockNodeTools{checkInstalledErr: origErr}
+
+	execCtx := tools.ExecutionContext{
+		BoundaryDir: t.TempDir(),
+	}
+
+	projCtx, err := prepareNodeProject(
+		t.Context(), mock, "/any/hook.js", execCtx,
+	)
+
+	require.Error(t, err)
+	assert.Nil(t, projCtx)
+
+	// The returned error should be the SAME instance,
+	// not a new wrapper.
+	assert.Same(t, origErr, err,
+		"ErrorWithSuggestion should be passed through")
+	assert.False(t, mock.installCalled)
+}
+
 func TestNodePrepare_WithPackageJSON(t *testing.T) {
 	root := t.TempDir()
 	projectDir := filepath.Join(root, "myproject")
@@ -159,7 +194,7 @@ func TestNodePrepare_InstallFails(t *testing.T) {
 }
 
 func TestNodePrepare_PythonProjectIgnored(t *testing.T) {
-	// When a requirements.txt is found instead of package.json,
+	// When only requirements.txt is present (no package.json),
 	// the Node executor should not try to install anything.
 	root := t.TempDir()
 	projectDir := filepath.Join(root, "myproject")
@@ -182,9 +217,51 @@ func TestNodePrepare_PythonProjectIgnored(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Nil(t, projCtx,
-		"should not return a project context for non-JS projects")
+		"should not return a project context when only "+
+			"Python files exist")
 	assert.False(t, mock.installCalled,
-		"should not install deps for non-JS projects")
+		"should not install deps when only Python files exist")
+}
+
+func TestNodePrepare_MixedLanguageFindsPackageJSON(
+	t *testing.T,
+) {
+	// When both requirements.txt and package.json exist in the
+	// same directory, the Node executor should find and install
+	// from package.json (not be shadowed by Python priority).
+	root := t.TempDir()
+	projectDir := filepath.Join(root, "myproject")
+	require.NoError(t, os.MkdirAll(projectDir, 0o700))
+	writeFile(
+		t,
+		filepath.Join(projectDir, "requirements.txt"),
+		"flask\n",
+	)
+	writeFile(
+		t,
+		filepath.Join(projectDir, "package.json"),
+		`{"name": "test"}`,
+	)
+
+	mock := &mockNodeTools{}
+	envVars := []string{"FOO=bar"}
+	execCtx := tools.ExecutionContext{
+		BoundaryDir: root,
+		EnvVars:     envVars,
+	}
+	scriptPath := filepath.Join(projectDir, "hook.js")
+
+	projCtx, err := prepareNodeProject(
+		t.Context(), mock, scriptPath, execCtx,
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, projCtx,
+		"should find package.json alongside Python files")
+	assert.Equal(t, projectDir, projCtx.ProjectDir)
+	assert.True(t, mock.installCalled,
+		"should install Node.js deps in mixed-language dir")
+	assert.Equal(t, projectDir, mock.installDir)
 }
 
 // ---------------------------------------------------------------------------

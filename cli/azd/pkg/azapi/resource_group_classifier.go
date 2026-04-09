@@ -75,6 +75,12 @@ const (
 // Used by callers (e.g. bicep_destroy.go) to extract the expected hash from deployment tags.
 const TagKeyProvisionParamHash = cAzdProvisionHashTag
 
+// LockLevelCanNotDelete and LockLevelReadOnly are the ARM lock levels that block deletion.
+const (
+	LockLevelCanNotDelete = cLockCanNotDelete
+	LockLevelReadOnly     = cLockReadOnly
+)
+
 // tier1Result is the outcome of Tier 1 classification for a single RG.
 type tier1Result int
 

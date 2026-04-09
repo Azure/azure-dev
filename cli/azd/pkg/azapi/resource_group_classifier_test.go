@@ -876,4 +876,40 @@ func TestClassifyResourceGroups(t *testing.T) {
 		// Some RGs should be vetoed due to context cancellation.
 		assert.NotEmpty(t, res.Skipped, "cancelled context should veto remaining RGs")
 	})
+
+	t.Run("Tier2 nil TagReader falls through to Tier3", func(t *testing.T) {
+		t.Parallel()
+		// No operations → Tier 1 classifies RG as "unknown", Tier 2 has nil
+		// GetResourceGroupTags → falls through, Tier 3 interactive prompt decides.
+		opts := ClassifyOptions{
+			EnvName:              envName,
+			Interactive:          true,
+			GetResourceGroupTags: nil,
+			Prompter: func(rgName, _ string) (bool, error) {
+				return true, nil
+			},
+		}
+		res, err := ClassifyResourceGroups(
+			t.Context(), nil, []string{rgA}, opts,
+		)
+		require.NoError(t, err)
+		assert.Equal(t, []string{rgA}, res.Owned)
+	})
+
+	t.Run("Tier3 nil Prompter skips unknown RGs", func(t *testing.T) {
+		t.Parallel()
+		// Unknown RG, interactive mode, but nil prompter → skip (no crash).
+		opts := ClassifyOptions{
+			EnvName:     envName,
+			Interactive: true,
+			Prompter:    nil,
+		}
+		res, err := ClassifyResourceGroups(
+			t.Context(), nil, []string{rgA}, opts,
+		)
+		require.NoError(t, err)
+		assert.Empty(t, res.Owned, "nil prompter should not classify as owned")
+		require.Len(t, res.Skipped, 1)
+		assert.Contains(t, res.Skipped[0].Reason, "unknown")
+	})
 }

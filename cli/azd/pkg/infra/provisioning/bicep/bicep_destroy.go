@@ -287,8 +287,8 @@ func (p *BicepProvider) listResourceGroupLocks(
 			ml := &azapi.ManagementLock{Name: name, LockType: lockType}
 			locks = append(locks, ml)
 			// Short-circuit: one blocking lock is enough to veto.
-			if strings.EqualFold(lockType, "CanNotDelete") ||
-				strings.EqualFold(lockType, "ReadOnly") {
+			if strings.EqualFold(lockType, azapi.LockLevelCanNotDelete) ||
+				strings.EqualFold(lockType, azapi.LockLevelReadOnly) {
 				return locks, nil
 			}
 		}

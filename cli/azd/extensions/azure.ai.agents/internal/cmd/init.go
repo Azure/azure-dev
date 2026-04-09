@@ -667,10 +667,7 @@ func (a *InitAction) configureModelChoice(
 				},
 			})
 			if err != nil {
-				if exterrors.IsCancellation(err) {
-					return nil, exterrors.Cancelled("Foundry project configuration choice was cancelled")
-				}
-				return nil, fmt.Errorf("failed to prompt for Foundry project configuration choice: %w", err)
+				return nil, exterrors.FromPrompt(err, "failed to prompt for Foundry project configuration choice")
 			}
 
 			switch projectChoices[*projectResp.Value].Value {

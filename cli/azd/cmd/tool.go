@@ -7,6 +7,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"maps"
+	"slices"
 	"strings"
 	"text/tabwriter"
 
@@ -815,7 +817,8 @@ func (a *toolShowAction) displayToolDetails(
 	// Install Strategies
 	if len(toolDef.InstallStrategies) > 0 {
 		var strategyRows [][]string
-		for platform, strategy := range toolDef.InstallStrategies {
+		for _, platform := range slices.Sorted(maps.Keys(toolDef.InstallStrategies)) {
+			strategy := toolDef.InstallStrategies[platform]
 			label := strategy.PackageManager
 			if label == "" {
 				label = "command"

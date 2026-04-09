@@ -8,8 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armlocks"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -67,20 +69,30 @@ func (p *BicepProvider) classifyAndDeleteResourceGroups(
 		operations = nil
 	}
 
+	// Derive expected provision param hash from deployment tags for Tier 2 verification.
+	var expectedHash string
+	if deployInfoErr == nil && deploymentInfo.Tags != nil {
+		if h := deploymentInfo.Tags[azapi.TagKeyProvisionParamHash]; h != nil {
+			expectedHash = *h
+		}
+	}
+
 	// Build classification options.
-	// Note: ListResourceGroupResources is not wired up because the current ResourceExtended
-	// type does not carry resource tags. Tier 4 foreign-resource veto requires tags to work
-	// correctly; omitting it avoids false vetoes until the API is updated.
 	subscriptionId := deployment.SubscriptionId()
 	classifyOpts := azapi.ClassifyOptions{
-		Interactive: !p.console.IsNoPromptMode(),
-		EnvName:     p.env.Name(),
+		Interactive:              !p.console.IsNoPromptMode(),
+		EnvName:                  p.env.Name(),
+		ExpectedProvisionParamHash: expectedHash,
 		GetResourceGroupTags: func(ctx context.Context, rgName string) (map[string]*string, error) {
 			return p.getResourceGroupTags(ctx, subscriptionId, rgName)
 		},
 		ListResourceGroupLocks: func(ctx context.Context, rgName string) ([]*azapi.ManagementLock, error) {
-			// Lock checking requires ManagementLockClient; wired up in a follow-up.
-			return nil, nil
+			return p.listResourceGroupLocks(ctx, subscriptionId, rgName)
+		},
+		ListResourceGroupResources: func(
+			ctx context.Context, rgName string,
+		) ([]*azapi.ResourceWithTags, error) {
+			return p.listResourceGroupResourcesWithTags(ctx, subscriptionId, rgName)
 		},
 		Prompter: func(rgName, reason string) (bool, error) {
 			return p.console.Confirm(ctx, input.ConsoleOptions{
@@ -102,6 +114,25 @@ func (p *BicepProvider) classifyAndDeleteResourceGroups(
 	}
 	for _, owned := range result.Owned {
 		log.Printf("classify rg=%s decision=owned", owned)
+	}
+
+	// Overall confirmation prompt for owned RGs (interactive only, not --force).
+	if len(result.Owned) > 0 && !options.Force() && !p.console.IsNoPromptMode() {
+		confirmMsg := fmt.Sprintf(
+			"Delete %d resource group(s): %s?",
+			len(result.Owned),
+			strings.Join(result.Owned, ", "),
+		)
+		confirmed, confirmErr := p.console.Confirm(ctx, input.ConsoleOptions{
+			Message:      confirmMsg,
+			DefaultValue: false,
+		})
+		if confirmErr != nil {
+			return nil, result.Skipped, fmt.Errorf("confirming resource group deletion: %w", confirmErr)
+		}
+		if !confirmed {
+			return nil, result.Skipped, nil
+		}
 	}
 
 	deleted, err = p.deleteRGList(ctx, subscriptionId, result.Owned, groupedResources, options)
@@ -199,6 +230,133 @@ func (p *BicepProvider) getResourceGroupTags(
 	}
 
 	return resp.Tags, nil
+}
+
+// listResourceGroupLocks retrieves management locks on a resource group using the ARM API.
+// Returns an error if dependencies cannot be resolved — the classifier treats
+// errors as vetoes (fail-safe) to avoid deleting locked resources without verification.
+func (p *BicepProvider) listResourceGroupLocks(
+	ctx context.Context,
+	subscriptionId string,
+	rgName string,
+) ([]*azapi.ManagementLock, error) {
+	var credProvider account.SubscriptionCredentialProvider
+	if err := p.serviceLocator.Resolve(&credProvider); err != nil {
+		return nil, fmt.Errorf(
+			"classify locks: credential provider unavailable for rg=%s: %w",
+			rgName, err,
+		)
+	}
+
+	var armOpts *arm.ClientOptions
+	_ = p.serviceLocator.Resolve(&armOpts) // optional; nil is a valid default
+
+	credential, err := credProvider.CredentialForSubscription(ctx, subscriptionId)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"classify locks: credential error for rg=%s: %w", rgName, err,
+		)
+	}
+
+	client, err := armlocks.NewManagementLocksClient(subscriptionId, credential, armOpts)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"classify locks: ARM client error for rg=%s: %w", rgName, err,
+		)
+	}
+
+	var locks []*azapi.ManagementLock
+	pager := client.NewListAtResourceGroupLevelPager(rgName, nil)
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, err // propagate so caller can handle 404/403
+		}
+		for _, lock := range page.Value {
+			if lock == nil || lock.Properties == nil {
+				continue
+			}
+			name := ""
+			if lock.Name != nil {
+				name = *lock.Name
+			}
+			lockType := ""
+			if lock.Properties.Level != nil {
+				lockType = string(*lock.Properties.Level)
+			}
+			ml := &azapi.ManagementLock{Name: name, LockType: lockType}
+			locks = append(locks, ml)
+			// Short-circuit: one blocking lock is enough to veto.
+			if strings.EqualFold(lockType, "CanNotDelete") ||
+				strings.EqualFold(lockType, "ReadOnly") {
+				return locks, nil
+			}
+		}
+	}
+	return locks, nil
+}
+
+// listResourceGroupResourcesWithTags retrieves all resources in a resource group
+// with their tags, used for Tier 4 foreign-resource detection.
+// Returns an error if dependencies cannot be resolved — the classifier treats
+// errors as vetoes (fail-safe) to avoid deleting resources without verification.
+func (p *BicepProvider) listResourceGroupResourcesWithTags(
+	ctx context.Context,
+	subscriptionId string,
+	rgName string,
+) ([]*azapi.ResourceWithTags, error) {
+	var credProvider account.SubscriptionCredentialProvider
+	if err := p.serviceLocator.Resolve(&credProvider); err != nil {
+		return nil, fmt.Errorf(
+			"classify resources: credential provider unavailable for rg=%s: %w",
+			rgName, err,
+		)
+	}
+
+	var armOpts *arm.ClientOptions
+	_ = p.serviceLocator.Resolve(&armOpts) // optional; nil is a valid default
+
+	credential, err := credProvider.CredentialForSubscription(ctx, subscriptionId)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"classify resources: credential error for rg=%s: %w", rgName, err,
+		)
+	}
+
+	client, err := armresources.NewClient(subscriptionId, credential, armOpts)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"classify resources: ARM client error for rg=%s: %w", rgName, err,
+		)
+	}
+
+	// Use $expand=tags to include resource tags in the response.
+	expand := "tags"
+	var resources []*azapi.ResourceWithTags
+	pager := client.NewListByResourceGroupPager(
+		rgName,
+		&armresources.ClientListByResourceGroupOptions{Expand: &expand},
+	)
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, err // propagate so caller can handle 404/403
+		}
+		for _, res := range page.Value {
+			if res == nil {
+				continue
+			}
+			name := ""
+			if res.Name != nil {
+				name = *res.Name
+			}
+			resources = append(resources, &azapi.ResourceWithTags{
+				Name: name,
+				Tags: res.Tags,
+			})
+		}
+	}
+	return resources, nil
 }
 
 // voidDeploymentState voids the deployment state by deploying an empty template.

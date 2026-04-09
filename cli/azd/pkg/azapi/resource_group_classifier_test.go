@@ -620,6 +620,82 @@ func TestClassifyResourceGroups(t *testing.T) {
 		assert.Contains(t, res.Skipped[0].Reason, "error during safety check")
 	})
 
+	t.Run("Tier1 external reason includes operation name — Read", func(t *testing.T) {
+		t.Parallel()
+		ops := []*armresources.DeploymentOperation{
+			makeOperation("Read", rgOp, rgA),
+		}
+		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgA}, noopOpts(envName))
+		require.NoError(t, err)
+		require.Len(t, res.Skipped, 1)
+		assert.Contains(t, res.Skipped[0].Reason, "Read operation found")
+	})
+
+	t.Run("Tier1 external reason includes operation name — EvaluateDeploymentOutput", func(t *testing.T) {
+		t.Parallel()
+		ops := []*armresources.DeploymentOperation{
+			makeOperation("EvaluateDeploymentOutput", rgOp, rgA),
+		}
+		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgA}, noopOpts(envName))
+		require.NoError(t, err)
+		require.Len(t, res.Skipped, 1)
+		assert.Contains(t, res.Skipped[0].Reason, "EvaluateDeploymentOutput operation found")
+	})
+
+	t.Run("Tier2 hash match — owned when ExpectedProvisionParamHash matches", func(t *testing.T) {
+		t.Parallel()
+		opts := ClassifyOptions{
+			EnvName:                    envName,
+			ExpectedProvisionParamHash: "abc123",
+			GetResourceGroupTags: func(_ context.Context, _ string) (map[string]*string, error) {
+				return map[string]*string{
+					cAzdEnvNameTag:       strPtr(envName),
+					cAzdProvisionHashTag: strPtr("abc123"),
+				}, nil
+			},
+		}
+		res, err := ClassifyResourceGroups(t.Context(), nil, []string{rgA}, opts)
+		require.NoError(t, err)
+		assert.Contains(t, res.Owned, rgA)
+	})
+
+	t.Run("Tier2 hash mismatch — falls to Tier3 non-interactive skip", func(t *testing.T) {
+		t.Parallel()
+		opts := ClassifyOptions{
+			EnvName:                    envName,
+			Interactive:                false,
+			ExpectedProvisionParamHash: "expected-hash",
+			GetResourceGroupTags: func(_ context.Context, _ string) (map[string]*string, error) {
+				return map[string]*string{
+					cAzdEnvNameTag:       strPtr(envName),
+					cAzdProvisionHashTag: strPtr("different-hash"),
+				}, nil
+			},
+		}
+		res, err := ClassifyResourceGroups(t.Context(), nil, []string{rgA}, opts)
+		require.NoError(t, err)
+		assert.Empty(t, res.Owned)
+		require.Len(t, res.Skipped, 1)
+		assert.Contains(t, res.Skipped[0].Reason, "Tier 3",
+			"hash mismatch should fall through to Tier 3")
+	})
+
+	t.Run("Tier4 resource listing 403 — veto (cannot enumerate)", func(t *testing.T) {
+		t.Parallel()
+		opts := ClassifyOptions{
+			EnvName: envName,
+			ListResourceGroupResources: func(_ context.Context, _ string) ([]*ResourceWithTags, error) {
+				return nil, makeResponseError(http.StatusForbidden)
+			},
+		}
+		ops := []*armresources.DeploymentOperation{makeOperation("Create", rgOp, rgA)}
+		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgA}, opts)
+		require.NoError(t, err)
+		assert.Empty(t, res.Owned, "RG should be vetoed when resource listing returns 403")
+		require.Len(t, res.Skipped, 1)
+		assert.Contains(t, res.Skipped[0].Reason, "authorization failure")
+	})
+
 	t.Run("Context cancellation returns error", func(t *testing.T) {
 		t.Parallel()
 		ctx, cancel := context.WithCancel(t.Context())
@@ -635,5 +711,169 @@ func TestClassifyResourceGroups(t *testing.T) {
 		ops := []*armresources.DeploymentOperation{}
 		_, err := ClassifyResourceGroups(ctx, ops, []string{rgA}, opts)
 		require.Error(t, err, "context cancellation should propagate as an error")
+	})
+
+	t.Run("Tier1 Create overrides preceding Read for same RG", func(t *testing.T) {
+		t.Parallel()
+		ops := []*armresources.DeploymentOperation{
+			makeOperation("Read", rgOp, rgA),
+			makeOperation("Create", rgOp, rgA),
+		}
+		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgA}, noopOpts(envName))
+		require.NoError(t, err)
+		assert.Equal(t, []string{rgA}, res.Owned)
+		assert.Empty(t, res.Skipped)
+	})
+
+	t.Run("Tier1 Create overrides following Read for same RG", func(t *testing.T) {
+		t.Parallel()
+		ops := []*armresources.DeploymentOperation{
+			makeOperation("Create", rgOp, rgA),
+			makeOperation("Read", rgOp, rgA),
+		}
+		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgA}, noopOpts(envName))
+		require.NoError(t, err)
+		assert.Equal(t, []string{rgA}, res.Owned)
+		assert.Empty(t, res.Skipped)
+	})
+
+	t.Run("Tier1 RG name match is case-insensitive — Create", func(t *testing.T) {
+		t.Parallel()
+		ops := []*armresources.DeploymentOperation{
+			makeOperation("Create", rgOp, "RG-ALPHA"),
+		}
+		res, err := ClassifyResourceGroups(
+			t.Context(), ops, []string{"rg-alpha"}, noopOpts(envName),
+		)
+		require.NoError(t, err)
+		assert.Equal(t, []string{"rg-alpha"}, res.Owned)
+		assert.Empty(t, res.Skipped)
+	})
+
+	t.Run("Tier1 RG name match is case-insensitive — Read", func(t *testing.T) {
+		t.Parallel()
+		ops := []*armresources.DeploymentOperation{
+			makeOperation("Read", rgOp, "RG-Alpha"),
+		}
+		res, err := ClassifyResourceGroups(
+			t.Context(), ops, []string{"rg-alpha"}, noopOpts(envName),
+		)
+		require.NoError(t, err)
+		assert.Empty(t, res.Owned)
+		require.Len(t, res.Skipped, 1)
+		assert.Equal(t, "rg-alpha", res.Skipped[0].Name)
+		assert.Contains(t, res.Skipped[0].Reason, "Read")
+	})
+
+	t.Run("Tier4 empty EnvName vetoes deletion", func(t *testing.T) {
+		t.Parallel()
+		ops := []*armresources.DeploymentOperation{
+			makeOperation("Create", rgOp, rgA),
+		}
+		opts := ClassifyOptions{
+			EnvName: "", // empty env name
+			ListResourceGroupResources: func(
+				_ context.Context, _ string,
+			) ([]*ResourceWithTags, error) {
+				t.Fatal("should not be called when EnvName is empty")
+				return nil, nil
+			},
+		}
+		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgA}, opts)
+		require.NoError(t, err)
+		assert.Empty(t, res.Owned, "empty EnvName should veto all owned RGs")
+		require.Len(t, res.Skipped, 1)
+		assert.Contains(t, res.Skipped[0].Reason, "without environment name")
+	})
+
+	t.Run("Tier3 prompter error propagated", func(t *testing.T) {
+		t.Parallel()
+		ops := []*armresources.DeploymentOperation{} // no ops → Tier 2
+		opts := ClassifyOptions{
+			EnvName:     envName,
+			Interactive: true,
+			Prompter: func(_, _ string) (bool, error) {
+				return false, fmt.Errorf("prompt failure")
+			},
+		}
+		_, err := ClassifyResourceGroups(t.Context(), ops, []string{rgA}, opts)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "tier=3 prompt")
+		assert.Contains(t, err.Error(), "prompt failure")
+	})
+
+	t.Run("Tier4 prompter error propagated", func(t *testing.T) {
+		t.Parallel()
+		ops := []*armresources.DeploymentOperation{
+			makeOperation("Create", rgOp, rgA),
+		}
+		opts := ClassifyOptions{
+			EnvName:     envName,
+			Interactive: true,
+			ListResourceGroupResources: func(
+				_ context.Context, _ string,
+			) ([]*ResourceWithTags, error) {
+				return []*ResourceWithTags{
+					{Name: "foreign-res", Tags: nil},
+				}, nil
+			},
+			Prompter: func(_, _ string) (bool, error) {
+				return false, fmt.Errorf("tier4 prompt failure")
+			},
+		}
+		_, err := ClassifyResourceGroups(t.Context(), ops, []string{rgA}, opts)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "tier=4 prompt")
+		assert.Contains(t, err.Error(), "tier4 prompt failure")
+	})
+
+	t.Run("Tier4 resource listing 404 — no veto", func(t *testing.T) {
+		t.Parallel()
+		ops := []*armresources.DeploymentOperation{
+			makeOperation("Create", rgOp, rgA),
+		}
+		opts := ClassifyOptions{
+			EnvName: envName,
+			ListResourceGroupResources: func(
+				_ context.Context, _ string,
+			) ([]*ResourceWithTags, error) {
+				return nil, makeResponseError(404)
+			},
+		}
+		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgA}, opts)
+		require.NoError(t, err)
+		assert.Equal(t, []string{rgA}, res.Owned, "404 in Tier 4 should not veto")
+		assert.Empty(t, res.Skipped)
+	})
+
+	t.Run("Tier4 semaphore respects context cancellation", func(t *testing.T) {
+		t.Parallel()
+		ctx, cancel := context.WithCancel(t.Context())
+
+		// Create more RGs than semaphore capacity to exercise the select.
+		manyRGs := make([]string, cTier4Parallelism+3)
+		ops := make([]*armresources.DeploymentOperation, len(manyRGs))
+		for i := range manyRGs {
+			manyRGs[i] = fmt.Sprintf("rg-%d", i)
+			ops[i] = makeOperation("Create", rgOp, manyRGs[i])
+		}
+
+		callCount := 0
+		opts := ClassifyOptions{
+			EnvName: envName,
+			ListResourceGroupLocks: func(
+				_ context.Context, _ string,
+			) ([]*ManagementLock, error) {
+				callCount++
+				if callCount >= 2 {
+					cancel() // cancel after 2 lock checks
+				}
+				return nil, nil
+			},
+		}
+		res, err := ClassifyResourceGroups(ctx, ops, manyRGs, opts)
+		require.NoError(t, err)
+		// Some RGs should be vetoed due to context cancellation.
+		assert.NotEmpty(t, res.Skipped, "cancelled context should veto remaining RGs")
 	})
 }

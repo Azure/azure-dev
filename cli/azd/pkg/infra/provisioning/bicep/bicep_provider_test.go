@@ -20,10 +20,12 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/apimanagement/armapimanagement"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appconfiguration/armappconfiguration"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armlocks"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
@@ -182,11 +184,48 @@ func TestBicepDestroy(t *testing.T) {
 		prepareStateMocks(mockContext)
 		prepareDestroyMocks(mockContext)
 
-		// With empty operations (Tier 1 falls through) and no credential provider in the test
-		// context (Tier 2 returns nil tags), classification falls to Tier 3, which prompts
-		// once per unknown resource group.
+		// Register credential provider so Tier 4 lock/resource checks work.
+		mockContext.Container.MustRegisterSingleton(
+			func() account.SubscriptionCredentialProvider {
+				return mockaccount.SubscriptionCredentialProviderFunc(
+					func(_ context.Context, _ string) (azcore.TokenCredential, error) {
+						return mockContext.Credentials, nil
+					},
+				)
+			},
+		)
+
+		// Register ARM client options so Tier 4 helpers use mock HTTP transport.
+		mockContext.Container.MustRegisterSingleton(
+			func() *arm.ClientOptions {
+				return mockContext.ArmClientOptions
+			},
+		)
+
+		// Tier 4 lock check: no locks on the RG.
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.Method == http.MethodGet &&
+				strings.Contains(request.URL.Path, "providers/Microsoft.Authorization/locks")
+		}).RespondFn(func(request *http.Request) (*http.Response, error) {
+			emptyLocks := armlocks.ManagementLockListResult{
+				Value: []*armlocks.ManagementLockObject{},
+			}
+			return mocks.CreateHttpResponseWithBody(
+				request, http.StatusOK, emptyLocks,
+			)
+		})
+
+		// Tier 1 returns empty operations, Tier 2 falls through (no provision-param-hash
+		// tag on the RG), so Tier 3 prompts the user per unknown resource group.
 		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
-			return strings.Contains(options.Message, "Delete resource group 'RESOURCE_GROUP'?")
+			return strings.Contains(
+				options.Message, "Delete resource group 'RESOURCE_GROUP'?",
+			)
+		}).Respond(true)
+
+		// After classification, an overall confirmation prompt fires for all owned RGs.
+		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
+			return strings.Contains(options.Message, "Delete 1 resource group(s)")
 		}).Respond(true)
 
 		infraProvider := createBicepProvider(t, mockContext)
@@ -197,10 +236,11 @@ func TestBicepDestroy(t *testing.T) {
 		require.Nil(t, err)
 		require.NotNil(t, destroyResult)
 
-		// Verify the classification prompt fired (1 Confirm logged).
+		// Verify both prompts fired: Tier 3 per-RG + overall confirmation.
 		consoleOutput := mockContext.Console.Output()
-		require.Len(t, consoleOutput, 1)
+		require.Len(t, consoleOutput, 2)
 		require.Contains(t, consoleOutput[0], "Delete resource group 'RESOURCE_GROUP'?")
+		require.Contains(t, consoleOutput[1], "Delete 1 resource group(s)")
 	})
 
 	t.Run("InteractiveForceAndPurge", func(t *testing.T) {
@@ -308,6 +348,11 @@ func TestBicepDestroyClassifyAndDelete(t *testing.T) {
 			},
 		})
 
+		// Overall confirmation prompt fires for owned RGs.
+		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
+			return strings.Contains(options.Message, "Delete 1 resource group(s)")
+		}).Respond(true)
+
 		infraProvider := createBicepProvider(t, mockContext)
 
 		destroyOptions := provisioning.NewDestroyOptions(false, false)
@@ -338,6 +383,11 @@ func TestBicepDestroyClassifyAndDelete(t *testing.T) {
 				makeRGOp("rg-created", armresources.ProvisioningOperationCreate),
 			},
 		})
+
+		// Overall confirmation prompt fires for owned RGs.
+		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
+			return strings.Contains(options.Message, "Delete 1 resource group(s)")
+		}).Respond(true)
 
 		infraProvider := createBicepProvider(t, mockContext)
 
@@ -400,6 +450,11 @@ func TestBicepDestroyClassifyAndDelete(t *testing.T) {
 			},
 			withPurgeResources: true, // adds a KeyVault to each RG
 		})
+
+		// Overall confirmation prompt fires for owned RGs.
+		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
+			return strings.Contains(options.Message, "Delete 1 resource group(s)")
+		}).Respond(true)
 
 		infraProvider := createBicepProvider(t, mockContext)
 
@@ -744,6 +799,7 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 			Name:     new(resourceName),
 			Type:     new(string(resourceType)),
 			Location: new("eastus2"),
+			Tags:     map[string]*string{"azd-env-name": new("test-env")},
 		}
 	}
 
@@ -784,11 +840,30 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, result)
 	})
 
+	// Tier 2 tag check: GET individual resource group by name.
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet &&
+			strings.HasSuffix(request.URL.Path, "subscriptions/SUBSCRIPTION_ID/resourcegroups/RESOURCE_GROUP")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, *resourceGroup)
+	})
+
 	// Get list of resources to delete
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/resources")
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, resourceList)
+	})
+
+	// Tier 4 lock check: no management locks on the RG.
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet &&
+			strings.Contains(request.URL.Path, "providers/Microsoft.Authorization/locks")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		emptyLocks := armlocks.ManagementLockListResult{
+			Value: []*armlocks.ManagementLockObject{},
+		}
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, emptyLocks)
 	})
 
 	// Get Key Vault
@@ -1190,6 +1265,26 @@ func prepareClassifyDestroyMocks(
 	mockContext *mocks.MockContext,
 	cfg classifyMockCfg,
 ) *classifyCallTracker {
+	// Register SubscriptionCredentialProvider in the mock container so Tier 4
+	// helpers (listResourceGroupLocks, listResourceGroupResourcesWithTags) can
+	// resolve credentials. Without this, the fail-safe error handling vetoes all RGs.
+	mockContext.Container.MustRegisterSingleton(
+		func() account.SubscriptionCredentialProvider {
+			return mockaccount.SubscriptionCredentialProviderFunc(
+				func(_ context.Context, _ string) (azcore.TokenCredential, error) {
+					return mockContext.Credentials, nil
+				},
+			)
+		},
+	)
+
+	// Register ARM client options so Tier 4 helpers use the mock HTTP transport.
+	mockContext.Container.MustRegisterSingleton(
+		func() *arm.ClientOptions {
+			return mockContext.ArmClientOptions
+		},
+	)
+
 	tracker := &classifyCallTracker{
 		rgDeletes: make(map[string]*atomic.Int32, len(cfg.rgNames)),
 		kvGETs:    make(map[string]*atomic.Int32),
@@ -1276,6 +1371,7 @@ func prepareClassifyDestroyMocks(
 				Name:     new(kvName),
 				Type:     new(string(azapi.AzureResourceTypeKeyVault)),
 				Location: new("eastus2"),
+				Tags:     map[string]*string{"azd-env-name": new("test-env")},
 			})
 		}
 
@@ -1315,6 +1411,23 @@ func prepareClassifyDestroyMocks(
 		}).RespondFn(func(request *http.Request) (*http.Response, error) {
 			counter.Add(1)
 			return httpRespondFn(request)
+		})
+	}
+
+	// --- Tier 4 lock listing mocks (return empty locks for each RG) ---
+	for _, rgName := range cfg.rgNames {
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.Method == http.MethodGet &&
+				strings.Contains(
+					request.URL.Path,
+					fmt.Sprintf(
+						"resourceGroups/%s/providers/Microsoft.Authorization/locks",
+						rgName,
+					),
+				)
+		}).RespondFn(func(request *http.Request) (*http.Response, error) {
+			emptyLocks := armlocks.ManagementLockListResult{Value: []*armlocks.ManagementLockObject{}}
+			return mocks.CreateHttpResponseWithBody(request, http.StatusOK, emptyLocks)
 		})
 	}
 

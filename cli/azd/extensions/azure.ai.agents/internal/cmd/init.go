@@ -674,7 +674,7 @@ func (a *InitAction) configureModelChoice(
 			case "existing":
 				newCred, err := ensureSubscription(
 					ctx, a.azdClient, a.azureContext, a.environment.Name,
-					"Select an Azure subscription to provision your agent and Foundry project resources.",
+					"Select an Azure subscription to find existing Foundry projects.",
 				)
 				if err != nil {
 					return nil, err

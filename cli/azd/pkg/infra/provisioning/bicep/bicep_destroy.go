@@ -80,8 +80,8 @@ func (p *BicepProvider) classifyAndDeleteResourceGroups(
 	// Build classification options.
 	subscriptionId := deployment.SubscriptionId()
 	classifyOpts := azapi.ClassifyOptions{
-		Interactive:              !p.console.IsNoPromptMode(),
-		EnvName:                  p.env.Name(),
+		Interactive:                !p.console.IsNoPromptMode(),
+		EnvName:                    p.env.Name(),
 		ExpectedProvisionParamHash: expectedHash,
 		GetResourceGroupTags: func(ctx context.Context, rgName string) (map[string]*string, error) {
 			return p.getResourceGroupTags(ctx, subscriptionId, rgName)

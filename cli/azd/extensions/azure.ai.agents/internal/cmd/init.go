@@ -129,6 +129,27 @@ func checkAiModelServiceAvailable(ctx context.Context, azdClient *azdext.AzdClie
 	return nil
 }
 
+// ensureLoggedIn verifies that the user is authenticated before any file-modifying
+// operations take place. It calls ListSubscriptions as a lightweight auth probe;
+// only gRPC Unauthenticated errors are treated as failures. Other errors (e.g.
+// network issues) are ignored so they don't block init for unrelated reasons.
+func ensureLoggedIn(ctx context.Context, azdClient *azdext.AzdClient) error {
+	_, err := azdClient.Account().ListSubscriptions(ctx, &azdext.ListSubscriptionsRequest{})
+	if err == nil {
+		return nil
+	}
+
+	if st, ok := status.FromError(err); ok && st.Code() == codes.Unauthenticated {
+		return exterrors.Auth(
+			exterrors.CodeNotLoggedIn,
+			"not logged in",
+			"run `azd auth login` to authenticate before running init",
+		)
+	}
+
+	return nil
+}
+
 // runInitFromManifest sets up Azure context, credentials, console, and runs the
 // InitAction for a given manifest pointer. This is the shared code path used when
 // initializing from a manifest URL/path (the -m flag, agent template, or azd template
@@ -234,6 +255,10 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 			defer azdClient.Close()
 
 			if err := checkAiModelServiceAvailable(ctx, azdClient); err != nil {
+				return err
+			}
+
+			if err := ensureLoggedIn(ctx, azdClient); err != nil {
 				return err
 			}
 

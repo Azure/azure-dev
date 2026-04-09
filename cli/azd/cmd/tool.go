@@ -516,20 +516,32 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 		TitleNote: "Upgrades installed tools to their latest versions",
 	})
 
-	var results []*tool.InstallResult
-	var err error
+	// Determine which tools to upgrade — resolve tool definitions
+	// up front but defer the actual upgrade work to each task callback
+	// so that the spinner reflects real-time progress.
+	var toolsToUpgrade []*tool.ToolDefinition
 
 	if len(a.args) > 0 {
-		results, err = a.manager.UpgradeTools(ctx, a.args)
+		for _, id := range a.args {
+			toolDef, findErr := a.manager.FindTool(id)
+			if findErr != nil {
+				return nil, findErr
+			}
+			toolsToUpgrade = append(toolsToUpgrade, toolDef)
+		}
 	} else {
-		results, err = a.manager.UpgradeAll(ctx)
+		statuses, detectErr := a.manager.DetectAll(ctx)
+		if detectErr != nil {
+			return nil, fmt.Errorf("detecting installed tools: %w", detectErr)
+		}
+		for _, s := range statuses {
+			if s.Installed {
+				toolsToUpgrade = append(toolsToUpgrade, s.Tool)
+			}
+		}
 	}
 
-	if err != nil {
-		return nil, fmt.Errorf("upgrading tools: %w", err)
-	}
-
-	if len(results) == 0 {
+	if len(toolsToUpgrade) == 0 {
 		a.console.Message(ctx, output.WithGrayFormat("No installed tools to upgrade."))
 		return nil, nil
 	}
@@ -538,19 +550,26 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 		&uxlib.TaskListOptions{ContinueOnError: true},
 	)
 
-	for _, r := range results {
-		capturedResult := r
+	for _, t := range toolsToUpgrade {
+		capturedTool := t
 		taskList.AddTask(uxlib.TaskOptions{
-			Title: fmt.Sprintf("Upgrading %s", capturedResult.Tool.Name),
+			Title: fmt.Sprintf("Upgrading %s", capturedTool.Name),
 			Action: func(setProgress uxlib.SetProgressFunc) (uxlib.TaskState, error) {
-				if capturedResult.Error != nil {
-					return uxlib.Error, capturedResult.Error
+				results, upgradeErr := a.manager.UpgradeTools(ctx, []string{capturedTool.Id})
+				if upgradeErr != nil {
+					return uxlib.Error, upgradeErr
 				}
-				if !capturedResult.Success {
-					return uxlib.Warning, fmt.Errorf("upgrade did not succeed")
-				}
-				if capturedResult.InstalledVersion != "" {
-					setProgress(capturedResult.InstalledVersion)
+				if len(results) > 0 {
+					r := results[0]
+					if r.Error != nil {
+						return uxlib.Error, r.Error
+					}
+					if !r.Success {
+						return uxlib.Warning, fmt.Errorf("upgrade did not succeed")
+					}
+					if r.InstalledVersion != "" {
+						setProgress(r.InstalledVersion)
+					}
 				}
 				return uxlib.Success, nil
 			},

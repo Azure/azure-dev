@@ -6,6 +6,7 @@ package tool
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"strings"
 	"time"
 
@@ -205,12 +206,22 @@ func (i *installer) ensurePlatform(
 
 // executeStrategy runs the command described by the given strategy.
 // When upgrade is true the upgrade variant of the command is used
-// where applicable.
+// where applicable. Commands containing shell operators (pipes,
+// redirects, etc.) are executed through the system shell.
 func (i *installer) executeStrategy(
 	ctx context.Context,
 	strategy *InstallStrategy,
 	upgrade bool,
 ) error {
+	// When the strategy has an explicit InstallCommand that uses
+	// shell operators, delegate to the system shell directly so
+	// that pipes and redirects work correctly (e.g.
+	// "curl -sL ... | sudo bash").
+	if strategy.InstallCommand != "" &&
+		containsShellOperators(strategy.InstallCommand) {
+		return i.executeShellCommand(ctx, strategy.InstallCommand)
+	}
+
 	cmd, args := i.buildCommand(strategy, upgrade)
 	if cmd == "" {
 		return fmt.Errorf("strategy produced an empty command")
@@ -392,4 +403,34 @@ func splitCommand(command string) (string, []string) {
 		return "", nil
 	}
 	return parts[0], parts[1:]
+}
+
+// containsShellOperators reports whether the command string contains
+// shell metacharacters (pipes, redirects, background operators, or
+// command chaining) that require execution through a system shell.
+func containsShellOperators(cmd string) bool {
+	return strings.ContainsAny(cmd, "|><&;")
+}
+
+// executeShellCommand runs a command string through the system shell
+// so that shell operators such as pipes and redirects are
+// interpreted correctly.
+func (i *installer) executeShellCommand(
+	ctx context.Context,
+	command string,
+) error {
+	var shell string
+	var args []string
+
+	if runtime.GOOS == "windows" {
+		shell = "cmd"
+		args = []string{"/C", command}
+	} else {
+		shell = "sh"
+		args = []string{"-c", command}
+	}
+
+	runArgs := exec.NewRunArgs(shell, args...)
+	_, err := i.commandRunner.Run(ctx, runArgs)
+	return err
 }

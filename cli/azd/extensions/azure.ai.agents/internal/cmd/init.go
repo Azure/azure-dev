@@ -278,6 +278,12 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 			}
 
 			if flags.manifestPointer != "" {
+				// Fail fast when the user accidentally passes a directory
+				// instead of a manifest file — before downloading templates.
+				if err := checkNotDirectory(flags.manifestPointer); err != nil {
+					return err
+				}
+
 				if err := runInitFromManifest(ctx, flags, azdClient, httpClient); err != nil {
 					if exterrors.IsCancellation(err) {
 						return exterrors.Cancelled("initialization was cancelled")
@@ -461,6 +467,11 @@ func (a *InitAction) Run(ctx context.Context) error {
 				fmt.Sprintf("agent manifest pointer is invalid: '%s' is neither a valid URI nor an existing file path", a.flags.manifestPointer),
 				"provide a valid URL or an existing local agent.yaml/agent.yml path",
 			)
+		}
+
+		// Catch the common mistake of passing a directory instead of a file
+		if err := checkNotDirectory(a.flags.manifestPointer); err != nil {
+			return err
 		}
 
 		// Download/read agent.yaml file from the provided URI or file path
@@ -746,6 +757,68 @@ func (a *InitAction) isLocalFilePath(path string) bool {
 	return false
 }
 
+// checkNotDirectory returns a validation error when path is a directory
+// instead of a manifest file. If an AgentManifest (a YAML file with a
+// top-level "template" field) is found inside the directory, the suggestion
+// includes the candidate manifest file path.
+func checkNotDirectory(path string) error {
+	info, err := os.Stat(path)
+	if err != nil || !info.IsDir() {
+		return nil
+	}
+
+	// Look for a manifest file inside the directory.  We check several
+	// common names and only suggest a candidate when it actually looks like
+	// an AgentManifest (has a top-level "template" key) rather than an
+	// AgentDefinition that happens to share the same file name.
+	for _, name := range []string{"agent.manifest.yaml", "agent.manifest.yml", "agent.yaml", "agent.yml"} {
+		candidate := filepath.Join(path, name)
+		if looksLikeManifest(candidate) {
+			return exterrors.Validation(
+				exterrors.CodeInvalidManifestPointer,
+				fmt.Sprintf(
+					"'%s' is a directory, not a manifest file",
+					path,
+				),
+				fmt.Sprintf(
+					"the --manifest flag must point to a manifest file, not a directory. Did you mean:\n  -m %q",
+					candidate,
+				),
+			)
+		}
+	}
+
+	return exterrors.Validation(
+		exterrors.CodeInvalidManifestPointer,
+		fmt.Sprintf("'%s' is a directory, not a manifest file", path),
+		"the --manifest flag must point to a manifest file (e.g. agent.manifest.yaml), not a directory",
+	)
+}
+
+// looksLikeManifest returns true when path is a regular file whose YAML
+// content contains a top-level "template" key — the hallmark of an
+// AgentManifest as opposed to an AgentDefinition.
+func looksLikeManifest(path string) bool {
+	fi, err := os.Stat(path)
+	if err != nil || fi.IsDir() {
+		return false
+	}
+
+	//nolint:gosec // candidate path comes from a user-provided directory + known file names
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+
+	var top map[string]any
+	if err := yaml.Unmarshal(data, &top); err != nil {
+		return false
+	}
+
+	_, hasTemplate := top["template"]
+	return hasTemplate
+}
+
 func (a *InitAction) isGitHubUrl(manifestPointer string) bool {
 	// Check if it's a GitHub URL based on the patterns from downloadGithubManifest
 	parsedURL, err := url.Parse(manifestPointer)
@@ -837,6 +910,12 @@ func (a *InitAction) downloadAgentYaml(
 
 	// Check if manifestPointer is a local file path or a URI
 	if a.isLocalFilePath(manifestPointer) {
+		// Guard against directories (defense in depth — the caller should
+		// have caught this already, but check here for safety).
+		if err := checkNotDirectory(manifestPointer); err != nil {
+			return nil, "", err
+		}
+
 		// Handle local file path
 		fmt.Printf("Reading agent.yaml from local file: %s\n", manifestPointer)
 		//nolint:gosec // manifest path is an explicit user-provided local path

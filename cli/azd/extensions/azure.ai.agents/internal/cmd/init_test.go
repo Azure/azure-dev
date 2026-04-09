@@ -5,10 +5,13 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"azureaiagent/internal/exterrors"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
@@ -392,5 +395,105 @@ func TestParseGitHubUrlNaive(t *testing.T) {
 				t.Errorf("Hostname = %q, want %q", result.Hostname, tt.expected.Hostname)
 			}
 		})
+	}
+}
+
+func TestCheckNotDirectory_ReturnsNilForFile(t *testing.T) {
+	t.Parallel()
+
+	file := filepath.Join(t.TempDir(), "agent.yaml")
+	//nolint:gosec // test fixture file permissions are intentional
+	if err := os.WriteFile(file, []byte("name: test"), 0644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	if err := checkNotDirectory(file); err != nil {
+		t.Fatalf("expected nil for a regular file, got: %v", err)
+	}
+}
+
+func TestCheckNotDirectory_ReturnsNilForNonexistentPath(t *testing.T) {
+	t.Parallel()
+
+	if err := checkNotDirectory(filepath.Join(t.TempDir(), "nope")); err != nil {
+		t.Fatalf("expected nil for nonexistent path, got: %v", err)
+	}
+}
+
+func TestCheckNotDirectory_ErrorForDirectoryWithManifest(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	manifest := filepath.Join(dir, "agent.manifest.yaml")
+	// Must include a "template" key so looksLikeManifest recognises it as a manifest.
+	content := "name: test\ntemplate:\n  kind: hosted\n"
+	//nolint:gosec // test fixture file permissions are intentional
+	if err := os.WriteFile(manifest, []byte(content), 0644); err != nil {
+		t.Fatalf("write agent.manifest.yaml: %v", err)
+	}
+
+	err := checkNotDirectory(dir)
+	if err == nil {
+		t.Fatal("expected error for directory containing agent.manifest.yaml")
+	}
+
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	if !ok {
+		t.Fatalf("expected *azdext.LocalError, got %T", err)
+	}
+
+	if localErr.Code != exterrors.CodeInvalidManifestPointer {
+		t.Errorf("expected code %q, got %q", exterrors.CodeInvalidManifestPointer, localErr.Code)
+	}
+
+	if !strings.Contains(localErr.Message, "directory") {
+		t.Errorf("message should mention 'directory', got: %s", localErr.Message)
+	}
+
+	if !strings.Contains(localErr.Suggestion, "-m") {
+		t.Errorf("suggestion should include '-m' flag, got: %s", localErr.Suggestion)
+	}
+
+	if !strings.Contains(localErr.Suggestion, "agent.manifest.yaml") {
+		t.Errorf("suggestion should include candidate path, got: %s", localErr.Suggestion)
+	}
+}
+
+func TestCheckNotDirectory_NoSuggestionForAgentDefinition(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	// An AgentDefinition has "kind" at root but no "template" — should NOT
+	// be suggested as a manifest file.
+	defContent := "kind: hosted\nname: my-agent\n"
+	//nolint:gosec // test fixture file permissions are intentional
+	if err := os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte(defContent), 0644); err != nil {
+		t.Fatalf("write agent.yaml: %v", err)
+	}
+
+	err := checkNotDirectory(dir)
+	if err == nil {
+		t.Fatal("expected error for directory")
+	}
+
+	// The error should NOT suggest the agent.yaml since it's a definition, not a manifest.
+	errMsg := err.Error()
+	if strings.Contains(errMsg, "agent.yaml") {
+		t.Errorf("should not suggest AgentDefinition file, got: %s", errMsg)
+	}
+}
+
+func TestCheckNotDirectory_ErrorForDirectoryWithoutManifest(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	err := checkNotDirectory(dir)
+	if err == nil {
+		t.Fatal("expected error for empty directory")
+	}
+
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, "directory") {
+		t.Errorf("error should mention 'directory', got: %s", errMsg)
 	}
 }

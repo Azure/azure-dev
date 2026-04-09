@@ -3339,6 +3339,280 @@ func TestBicepDestroyDeleteRGListPartialFailure(t *testing.T) {
 		"rg-ok2 should still be attempted after rg-fail fails")
 }
 
+// TestBicepDestroyPartialDeleteAttemptsPurge verifies that when deleteRGList
+// partially fails (some RGs deleted, some not), purgeItems still runs and
+// purges soft-deleted resources from successfully-deleted RGs.
+// Regression test for: purge was skipped entirely when deleteErr != nil,
+// causing soft-deleted resources (Key Vaults, etc.) to become unreachable
+// on retry (deleted RGs classify as Tier 2: 404, losing their purge targets).
+func TestBicepDestroyPartialDeleteAttemptsPurge(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	prepareBicepMocks(mockContext)
+
+	// Register credential/ARM providers.
+	mockContext.Container.MustRegisterSingleton(
+		func() account.SubscriptionCredentialProvider {
+			return mockaccount.SubscriptionCredentialProviderFunc(
+				func(_ context.Context, _ string) (azcore.TokenCredential, error) {
+					return mockContext.Credentials, nil
+				},
+			)
+		},
+	)
+	mockContext.Container.MustRegisterSingleton(
+		func() *arm.ClientOptions {
+			return mockContext.ArmClientOptions
+		},
+	)
+
+	rgNames := []string{"rg-ok", "rg-fail"}
+
+	// Build deployment referencing two RGs (both owned via Create ops).
+	outputResources := make([]*armresources.ResourceReference, len(rgNames))
+	for i, rg := range rgNames {
+		id := fmt.Sprintf("/subscriptions/SUBSCRIPTION_ID/resourceGroups/%s", rg)
+		outputResources[i] = &armresources.ResourceReference{ID: &id}
+	}
+
+	deployment := armresources.DeploymentExtended{
+		ID:       new("DEPLOYMENT_ID"),
+		Name:     new("test-env"),
+		Location: new("eastus2"),
+		Tags:     map[string]*string{"azd-env-name": new("test-env")},
+		Type:     new("Microsoft.Resources/deployments"),
+		Properties: &armresources.DeploymentPropertiesExtended{
+			Outputs: map[string]any{
+				"WEBSITE_URL": map[string]any{"value": "http://myapp.azurewebsites.net", "type": "string"},
+			},
+			OutputResources:   outputResources,
+			ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
+			Timestamp:         new(time.Now()),
+		},
+	}
+	deployResultBytes, _ := json.Marshal(deployment)
+
+	// GET single deployment
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && strings.HasSuffix(
+			request.URL.Path,
+			"/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/test-env",
+		)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBuffer(deployResultBytes)),
+		}, nil
+	})
+
+	// GET list deployments
+	deploymentsPage := &armresources.DeploymentListResult{
+		Value: []*armresources.DeploymentExtended{&deployment},
+	}
+	deploymentsPageBytes, _ := json.Marshal(deploymentsPage)
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && strings.HasSuffix(
+			request.URL.Path,
+			"/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/",
+		)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBuffer(deploymentsPageBytes)),
+		}, nil
+	})
+
+	// Per-RG resource listing: rg-ok has a KeyVault, rg-fail is empty.
+	kvID := fmt.Sprintf(
+		"/subscriptions/SUBSCRIPTION_ID/resourceGroups/rg-ok/providers/%s/kv-ok",
+		string(azapi.AzureResourceTypeKeyVault),
+	)
+	rgResources := map[string][]*armresources.GenericResourceExpanded{
+		"rg-ok": {
+			{
+				ID:       &kvID,
+				Name:     new("kv-ok"),
+				Type:     new(string(azapi.AzureResourceTypeKeyVault)),
+				Location: new("eastus2"),
+				Tags:     map[string]*string{"azd-env-name": new("test-env")},
+			},
+		},
+		"rg-fail": {},
+	}
+
+	for _, rgName := range rgNames {
+		resources := rgResources[rgName]
+		resList := armresources.ResourceListResult{Value: resources}
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.Method == http.MethodGet &&
+				strings.Contains(request.URL.Path, fmt.Sprintf("resourceGroups/%s/resources", rgName))
+		}).RespondFn(func(request *http.Request) (*http.Response, error) {
+			return mocks.CreateHttpResponseWithBody(request, http.StatusOK, resList)
+		})
+	}
+
+	// Deployment operations: both RGs created (owned).
+	ops := []*armresources.DeploymentOperation{
+		{
+			OperationID: new("op-rg-ok"),
+			Properties: &armresources.DeploymentOperationProperties{
+				ProvisioningOperation: new(armresources.ProvisioningOperationCreate),
+				TargetResource: &armresources.TargetResource{
+					ResourceType: new("Microsoft.Resources/resourceGroups"),
+					ResourceName: new("rg-ok"),
+				},
+			},
+		},
+		{
+			OperationID: new("op-rg-fail"),
+			Properties: &armresources.DeploymentOperationProperties{
+				ProvisioningOperation: new(armresources.ProvisioningOperationCreate),
+				TargetResource: &armresources.TargetResource{
+					ResourceType: new("Microsoft.Resources/resourceGroups"),
+					ResourceName: new("rg-fail"),
+				},
+			},
+		},
+	}
+	operationsResult := armresources.DeploymentOperationsListResult{Value: ops}
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet &&
+			strings.HasSuffix(
+				request.URL.Path,
+				"/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/test-env/operations",
+			)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, operationsResult)
+	})
+
+	// Tier 4 lock listing: no locks.
+	for _, rgName := range rgNames {
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.Method == http.MethodGet &&
+				strings.Contains(
+					request.URL.Path,
+					fmt.Sprintf("resourceGroups/%s/providers/Microsoft.Authorization/locks", rgName),
+				)
+		}).RespondFn(func(request *http.Request) (*http.Response, error) {
+			emptyLocks := armlocks.ManagementLockListResult{Value: []*armlocks.ManagementLockObject{}}
+			return mocks.CreateHttpResponseWithBody(request, http.StatusOK, emptyLocks)
+		})
+	}
+
+	// DELETE mocks: rg-ok succeeds, rg-fail returns 409 Conflict.
+	for _, rg := range rgNames {
+		failRG := rg == "rg-fail"
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.Method == http.MethodDelete &&
+				strings.HasSuffix(
+					request.URL.Path,
+					fmt.Sprintf("subscriptions/SUBSCRIPTION_ID/resourcegroups/%s", rg),
+				)
+		}).RespondFn(func(request *http.Request) (*http.Response, error) {
+			if failRG {
+				return &http.Response{
+					Request:    request,
+					Header:     http.Header{},
+					StatusCode: http.StatusConflict,
+					Body: io.NopCloser(strings.NewReader(
+						`{"error":{"code":"Conflict","message":"simulated RG delete failure"}}`,
+					)),
+				}, nil
+			}
+			return httpRespondFn(request)
+		})
+	}
+
+	// LRO polling endpoint.
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet &&
+			strings.Contains(request.URL.String(), "url-to-poll.net")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateEmptyHttpResponse(request, 204)
+	})
+
+	// Void state PUT (should NOT be called — partial deletion skips void state).
+	voidStateCalls := atomic.Int32{}
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodPut &&
+			strings.Contains(
+				request.URL.Path,
+				"/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/",
+			)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		voidStateCalls.Add(1)
+		result := &armresources.DeploymentsClientCreateOrUpdateAtSubscriptionScopeResponse{
+			DeploymentExtended: armresources.DeploymentExtended{
+				ID:       new("DEPLOYMENT_ID"),
+				Name:     new("test-env"),
+				Location: new("eastus2"),
+				Tags:     map[string]*string{"azd-env-name": new("test-env")},
+				Type:     new("Microsoft.Resources/deployments"),
+				Properties: &armresources.DeploymentPropertiesExtended{
+					ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
+					Timestamp:         new(time.Now()),
+				},
+			},
+		}
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, result)
+	})
+
+	// KeyVault GET mock (for collectPurgeItems — inspects soft-delete properties).
+	kvGetCalls := atomic.Int32{}
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet &&
+			strings.HasSuffix(request.URL.Path, "/vaults/kv-ok")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		kvGetCalls.Add(1)
+		kvResponse := armkeyvault.VaultsClientGetResponse{
+			Vault: armkeyvault.Vault{
+				ID:       &kvID,
+				Name:     new("kv-ok"),
+				Location: new("eastus2"),
+				Properties: &armkeyvault.VaultProperties{
+					EnableSoftDelete:      new(true),
+					EnablePurgeProtection: new(false),
+				},
+			},
+		}
+		kvBytes, _ := json.Marshal(kvResponse)
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBuffer(kvBytes)),
+		}, nil
+	})
+
+	// KeyVault purge mock (the critical assertion: this MUST be called even after partial delete).
+	kvPurgeCalls := atomic.Int32{}
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodPost &&
+			strings.HasSuffix(request.URL.Path, "deletedVaults/kv-ok/purge")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		kvPurgeCalls.Add(1)
+		return httpRespondFn(request)
+	})
+
+	infraProvider := createBicepProvider(t, mockContext)
+	destroyOptions := provisioning.NewDestroyOptions(true, true) // force=true, purge=true
+	result, err := infraProvider.Destroy(*mockContext.Context, destroyOptions)
+
+	// Partial failure should propagate as an error.
+	require.Error(t, err)
+	require.Nil(t, result)
+	assert.Contains(t, err.Error(), "rg-fail",
+		"error should mention the failed resource group")
+
+	// Key assertion: purge was attempted despite partial deletion failure.
+	// This verifies the fix: purgeItems runs BEFORE checking deleteErr.
+	assert.Equal(t, int32(1), kvGetCalls.Load(),
+		"kv-ok should be inspected for purge properties (collectPurgeItems runs before deletion)")
+	assert.Equal(t, int32(1), kvPurgeCalls.Load(),
+		"kv-ok should be purged even after partial RG deletion failure")
+
+	// Void state should NOT be called when deletion partially failed.
+	assert.Equal(t, int32(0), voidStateCalls.Load(),
+		"voidDeploymentState should be skipped when deletion partially fails")
+}
+
 // TestBicepDestroyCredentialResolutionFailure tests that when the credential
 // provider is NOT registered in the container, the ARM wiring fails gracefully
 // for getResourceGroupTags (returns nil,nil → Tier 2 falls through) and

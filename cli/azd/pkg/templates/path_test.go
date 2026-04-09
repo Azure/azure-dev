@@ -309,6 +309,11 @@ func Test_DeriveDirectoryName(t *testing.T) {
 			input:    ".",
 			expected: "new-project",
 		},
+		{
+			name:     "EmptyString",
+			input:    "",
+			expected: "new-project",
+		},
 	}
 
 	for _, tt := range tests {

@@ -24,6 +24,7 @@ type monitorFlags struct {
 	follow    bool
 	tail      int
 	logType   string
+	raw       bool
 }
 
 // MonitorAction handles the execution of the monitor command.
@@ -128,6 +129,7 @@ configuration and the current azd environment. Optionally specify the service na
 	cmd.Flags().IntVarP(&flags.tail, "tail", "l", 50, "Number of trailing log lines to fetch (1-300)")
 	cmd.Flags().StringVarP(&flags.logType, "type", "t", "console",
 		"Type of logs: 'console' (stdout/stderr) or 'system' (container events)")
+	cmd.Flags().BoolVarP(&flags.raw, "raw", "r", false, "Print raw SSE output without formatting")
 
 	return cmd
 }
@@ -178,8 +180,17 @@ func (a *MonitorAction) Run(ctx context.Context) error {
 	defer body.Close()
 
 	scanner := bufio.NewScanner(body)
-	for scanner.Scan() {
-		fmt.Println(scanner.Text())
+	if a.flags.raw {
+		for scanner.Scan() {
+			fmt.Println(scanner.Text())
+		}
+	} else {
+		formatter := newLogFormatter()
+		for scanner.Scan() {
+			if output := formatter.formatLine(scanner.Text()); output != "" {
+				fmt.Println(output)
+			}
+		}
 	}
 
 	if err := scanner.Err(); err != nil {

@@ -87,6 +87,15 @@ func TestValidateMonitorFlags_InvalidType(t *testing.T) {
 	assert.Contains(t, err.Error(), "--type must be 'console' or 'system'")
 }
 
+func TestMonitorCommand_RawFlagRegistered(t *testing.T) {
+	cmd := newMonitorCommand()
+
+	f := cmd.Flags().Lookup("raw")
+	require.NotNil(t, f, "--raw flag should be registered")
+	assert.Equal(t, "r", f.Shorthand)
+	assert.Equal(t, "false", f.DefValue)
+}
+
 func TestMonitorCommand_DefaultValues(t *testing.T) {
 	cmd := newMonitorCommand()
 
@@ -99,6 +108,9 @@ func TestMonitorCommand_DefaultValues(t *testing.T) {
 
 	follow, _ := cmd.Flags().GetBool("follow")
 	assert.Equal(t, false, follow)
+
+	raw, _ := cmd.Flags().GetBool("raw")
+	assert.Equal(t, false, raw)
 
 	session, _ := cmd.Flags().GetString("session")
 	assert.Equal(t, "", session)

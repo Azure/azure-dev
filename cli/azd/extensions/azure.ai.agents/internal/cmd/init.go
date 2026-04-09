@@ -470,10 +470,8 @@ func (a *InitAction) Run(ctx context.Context) error {
 		}
 
 		// Catch the common mistake of passing a directory instead of a file
-		if isValidFile {
-			if err := checkNotDirectory(a.flags.manifestPointer); err != nil {
-				return err
-			}
+		if err := checkNotDirectory(a.flags.manifestPointer); err != nil {
+			return err
 		}
 
 		// Download/read agent.yaml file from the provided URI or file path

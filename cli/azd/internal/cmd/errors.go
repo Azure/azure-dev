@@ -290,6 +290,8 @@ func classifySentinel(err error) string {
 		return "update.elevationRequired"
 	case errors.Is(err, pipeline.ErrRemoteHostIsNotAzDo):
 		return "internal.remote_not_azdo"
+	case errors.Is(err, internal.ErrToolUpgradeFailed):
+		return "internal.tool_upgrade_failed"
 	default:
 		return ""
 	}

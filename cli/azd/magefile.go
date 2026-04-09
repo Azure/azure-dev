@@ -216,13 +216,22 @@ func Preflight() error {
 		record("lint", "pass", "")
 	}
 
-	// 5. Spell check (cspell)
+	// 5a. Spell check (cspell — Go source)
 	fmt.Println("══ Spell check (cspell) ══")
 	if err := runStreaming(azdDir, "cspell", "lint", "**/*.go",
 		"--relative", "--config", "./.vscode/cspell.yaml", "--no-progress"); err != nil {
 		record("cspell", "fail", err.Error())
 	} else {
 		record("cspell", "pass", "")
+	}
+
+	// 5b. Spell check (cspell — misc/docs files, mirrors CI cspell-misc.yml)
+	fmt.Println("══ Spell check (cspell-misc) ══")
+	if err := runStreaming(repoRoot, "cspell", "lint", "**/*",
+		"--relative", "--config", "./.vscode/cspell.misc.yaml", "--no-progress"); err != nil {
+		record("cspell-misc", "fail", err.Error())
+	} else {
+		record("cspell-misc", "pass", "")
 	}
 
 	// 6. Compile check

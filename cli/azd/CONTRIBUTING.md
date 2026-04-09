@@ -50,7 +50,7 @@ automatically adds that directory to your PATH if it isn't already there.
 
 ### Preflight (all quality checks)
 
-Run all pre-commit checks (formatting, copyright headers, linting, spell check, build, unit tests) in one command:
+Run all pre-commit checks (formatting, copyright headers, linting, spell check for Go and docs/misc files, build, unit tests) in one command:
 
 ```bash
 cd cli/azd
@@ -74,7 +74,13 @@ go test ./...
 Run cspell (install [cspell](https://cspell.org/)):
 
 ```bash
+# Go source (from cli/azd/)
 cspell lint "**/*.go" --relative --config ./.vscode/cspell.yaml
+
+# Docs and misc files (from repo root)
+cd ../..
+cspell lint "**/*" --relative --config ./.vscode/cspell.misc.yaml
+cd cli/azd
 ```
 
 Run linter (install [golangci-lint](https://golangci-lint.run/welcome/install/#local-installation)):

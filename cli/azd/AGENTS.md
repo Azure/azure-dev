@@ -81,10 +81,16 @@ go fix ./...
 golangci-lint run ./...
 cspell lint "**/*.go" --relative --config ./.vscode/cspell.yaml --no-progress
 ../../eng/scripts/copyright-check.sh . --fix
+
+# From repo root — spell check docs/misc files (mirrors CI cspell-misc.yml)
+cd ../..
+cspell lint "**/*" --relative --config ./.vscode/cspell.misc.yaml --no-progress
+cd cli/azd
 ```
 
 - **Line length**: 125 chars max for Go (enforced by `lll` linter); no limit for Markdown
-- **Spelling**: Add technical terms to `cli/azd/.vscode/cspell.yaml` overrides
+- **Spelling (Go)**: Add technical terms to `cli/azd/.vscode/cspell.yaml` overrides
+- **Spelling (docs/misc)**: Add terms to `.vscode/cspell.misc.yaml` overrides or `.vscode/cspell.global.yaml`
   - Use file-scoped `overrides` entries (not the global `words` list) for terms specific to one file
 - **Copyright**: All Go files need the Microsoft header (handled by copyright-check.sh)
 - **Code modernization**: `go fix ./...` applies automatic modernizations (e.g. `interface{}` → `any`,

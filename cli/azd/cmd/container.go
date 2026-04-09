@@ -700,7 +700,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		})
 	})
 
-	container.MustRegisterSingleton(func(subManager *account.SubscriptionsManager) account.SubscriptionTenantResolver {
+	container.MustRegisterSingleton(func(subManager *account.SubscriptionsManager) account.SubscriptionResolver {
 		return subManager
 	})
 

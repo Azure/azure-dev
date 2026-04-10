@@ -21,7 +21,7 @@ handshake to ARM costs 1-2 round trips (50-150ms per handshake depending on regi
 - `MaxIdleConns`: 100 -> 200 (total idle pool across all hosts)
 - `MaxConnsPerHost`: 0 (unlimited) -> 50 (bounded but generous)
 - `MaxIdleConnsPerHost`: 2 -> 50 (matches MaxConnsPerHost so idle connections aren't evicted)
-- `IdleConnTimeout`: 90s -> 30s (reclaim unused connections faster)
+- `IdleConnTimeout`: 90s (kept explicit for documentation; matches Go default)
 - `DisableKeepAlives`: false (explicit; HTTP/1.1 keep-alive per RFC 7230 Section 6.3)
 
 **Evidence:** Go stdlib defaults are documented in `net/http/transport.go`. The per-host idle limit of 2

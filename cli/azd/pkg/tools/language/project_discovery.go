@@ -234,12 +234,21 @@ func DiscoverDotNetProject(
 				"*.*proj", current, err,
 			)
 		}
-		if len(matches) > 0 {
+		if len(matches) == 1 {
 			return &ProjectContext{
 				ProjectDir:     current,
 				DependencyFile: matches[0],
 				Language:       HookKindDotNet,
 			}, nil
+		}
+		if len(matches) > 1 {
+			return nil, fmt.Errorf(
+				"found %d .NET project files in %q; "+
+					"set the hook 'dir' field to the "+
+					"directory containing the intended "+
+					"project file",
+				len(matches), current,
+			)
 		}
 
 		// Stop when we've reached the boundary directory.

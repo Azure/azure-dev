@@ -186,10 +186,12 @@ func (e *dotnetExecutor) Execute(
 	var runArgs exec.RunArgs
 
 	if e.projectPath != "" {
-		// Project mode.
+		// Project mode — skip restore/build since Prepare
+		// already ran them.
 		runArgs = exec.NewRunArgs(
 			"dotnet", "run",
 			"--project", e.projectPath,
+			"--no-build",
 		)
 	} else {
 		// Single-file mode.

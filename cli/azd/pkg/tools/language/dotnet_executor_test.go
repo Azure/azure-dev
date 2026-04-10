@@ -263,6 +263,36 @@ func TestDotNetPrepare_SingleFile_VersionDetectFails(
 		"detecting .NET SDK version")
 }
 
+func TestDotNetPrepare_AmbiguousProjectFiles(t *testing.T) {
+	root := t.TempDir()
+	projectDir := filepath.Join(root, "myproject")
+	require.NoError(t, os.MkdirAll(projectDir, 0o700))
+	writeFile(t,
+		filepath.Join(projectDir, "App.csproj"),
+		"<Project />",
+	)
+	writeFile(t,
+		filepath.Join(projectDir, "Tests.csproj"),
+		"<Project />",
+	)
+
+	cli := &mockDotNetTools{}
+	e := newDotNetExecutorInternal(
+		&mockCommandRunner{}, cli,
+	)
+
+	execCtx := tools.ExecutionContext{BoundaryDir: root}
+	scriptPath := filepath.Join(projectDir, "hook.cs")
+	err := e.Prepare(t.Context(), scriptPath, execCtx)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(),
+		"found 2 .NET project files")
+	assert.Contains(t, err.Error(), "dir")
+	assert.False(t, cli.restoreCalled,
+		"should not restore when ambiguous")
+}
+
 // ---------------------------------------------------------------------------
 // Execute tests
 // ---------------------------------------------------------------------------
@@ -299,6 +329,8 @@ func TestDotNetExecute_ProjectMode(t *testing.T) {
 	assert.Equal(t, "dotnet", runner.lastRunArgs.Cmd)
 	assert.Contains(t, runner.lastRunArgs.Args, "run")
 	assert.Contains(t, runner.lastRunArgs.Args, "--project")
+	assert.Contains(t, runner.lastRunArgs.Args, "--no-build",
+		"should skip rebuild since Prepare already built")
 	assert.Equal(t, projectDir, runner.lastRunArgs.Cwd)
 }
 

@@ -166,6 +166,17 @@ func TestExecuteWithAutoInstall_LightspeedDetection(t *testing.T) {
 			rootContainer := ioc.NewNestedContainer(nil)
 			result := ExecuteWithAutoInstall(t.Context(), rootContainer)
 			require.Equal(t, tt.expectLightspeed, result.IsLightspeed)
+
+			if tt.expectLightspeed {
+				// Lightspeed commands must NOT start the update check goroutine.
+				require.Nil(t, result.LatestVersion,
+					"lightspeed commands should not start the update check")
+			} else {
+				// Non-lightspeed commands should always start the update check
+				// (even when AZD_SKIP_UPDATE_CHECK short-circuits it).
+				require.NotNil(t, result.LatestVersion,
+					"non-lightspeed commands should start the update check")
+			}
 		})
 	}
 }

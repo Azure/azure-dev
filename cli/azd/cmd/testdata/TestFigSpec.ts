@@ -2605,6 +2605,49 @@ const completionSpec: Fig.Spec = {
 			],
 		},
 		{
+			name: ['tool'],
+			description: 'Manage Azure development tools.',
+			subcommands: [
+				{
+					name: ['check'],
+					description: 'Check for tool updates.',
+				},
+				{
+					name: ['install'],
+					description: 'Install specified tools.',
+					options: [
+						{
+							name: ['--all'],
+							description: 'Install all recommended tools',
+						},
+					],
+					args: {
+						name: 'tool-name...',
+						isOptional: true,
+					},
+				},
+				{
+					name: ['list'],
+					description: 'List all tools with status.',
+				},
+				{
+					name: ['show'],
+					description: 'Show details for a specific tool.',
+					args: {
+						name: 'tool-name',
+					},
+				},
+				{
+					name: ['upgrade'],
+					description: 'Upgrade installed tools.',
+					args: {
+						name: 'tool-name...',
+						isOptional: true,
+					},
+				},
+			],
+		},
+		{
 			name: ['up'],
 			description: 'Provision and deploy your project to Azure with a single command.',
 			options: [
@@ -3440,6 +3483,32 @@ const completionSpec: Fig.Spec = {
 									description: 'Removes the specified azd template source (Beta)',
 								},
 							],
+						},
+					],
+				},
+				{
+					name: ['tool'],
+					description: 'Manage Azure development tools.',
+					subcommands: [
+						{
+							name: ['check'],
+							description: 'Check for tool updates.',
+						},
+						{
+							name: ['install'],
+							description: 'Install specified tools.',
+						},
+						{
+							name: ['list'],
+							description: 'List all tools with status.',
+						},
+						{
+							name: ['show'],
+							description: 'Show details for a specific tool.',
+						},
+						{
+							name: ['upgrade'],
+							description: 'Upgrade installed tools.',
 						},
 					],
 				},

@@ -29,6 +29,8 @@ words:
   # CDN host name
   - gfgac2cmf7b8cuay
   - Getenv
+  - GOWORK
+  - Gowork
   - goversioninfo
   - OPENCODE
   - opencode
@@ -385,6 +387,9 @@ overrides:
     words:
       - covdata
       - GOWORK
+  - filename: pkg/tool/manifest.go
+    words:
+      - azureresourcegroups
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

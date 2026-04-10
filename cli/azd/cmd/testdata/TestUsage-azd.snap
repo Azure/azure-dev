@@ -21,10 +21,12 @@ Commands
     config      	: Manage azd configurations (ex: default Azure subscription, location).
     env         	: Manage environments (ex: default environment, environment variables).
     show        	: Display information about your project and its resources.
+    tool        	: Manage Azure development tools.
     version     	: Print the version number of Azure Developer CLI.
 
   Beta commands
     add         	: Add a component to your project.
+    build       	: Builds the application's code.
     extension   	: Manage azd extensions.
     hooks       	: Develop, test and run hooks for a project.
     infra       	: Manage your Infrastructure as Code (IaC).

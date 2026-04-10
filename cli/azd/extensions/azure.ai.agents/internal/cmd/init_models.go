@@ -791,6 +791,17 @@ func (a *InitAction) ProcessModels(ctx context.Context, manifest *agent_yaml.Age
 		return nil, nil, fmt.Errorf("failed to inject deployment names into manifest: %w", err)
 	}
 
+	// Persist the first deployment name so templates and agent code can reference it
+	// via the AZURE_AI_MODEL_DEPLOYMENT_NAME environment variable.
+	if len(deploymentDetails) > 0 {
+		if err := setEnvValue(
+			ctx, a.azdClient, a.environment.Name,
+			"AZURE_AI_MODEL_DEPLOYMENT_NAME", deploymentDetails[0].Name,
+		); err != nil {
+			return nil, nil, fmt.Errorf("failed to set AZURE_AI_MODEL_DEPLOYMENT_NAME: %w", err)
+		}
+	}
+
 	fmt.Println("Model deployment details processed and injected into agent definition. Deployment details can also be found in the JSON formatted AI_PROJECT_DEPLOYMENTS environment variable.")
 
 	return updatedManifest, deploymentDetails, nil

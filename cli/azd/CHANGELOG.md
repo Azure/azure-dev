@@ -10,6 +10,29 @@
 
 ### Other Changes
 
+## 1.23.15 (2026-04-10)
+
+### Features Added
+
+- [[#7451]](https://github.com/Azure/azure-dev/pull/7451) Add Python hook support in `azure.yaml`; hooks pointing to a `.py` script are auto-detected, automatically create a virtual environment, install dependencies from `requirements.txt` or `pyproject.toml`, and execute the script.
+
+### Breaking Changes
+
+### Bugs Fixed
+
+- [[#7578]](https://github.com/Azure/azure-dev/pull/7578) Fix tenant-specific re-authentication guidance for `AADSTS70043` and `AADSTS700082` errors; azd now returns guidance targeting the correct subscription tenant when a credential fails due to a stale refresh token.
+- [[#7549]](https://github.com/Azure/azure-dev/pull/7549) Fix `AZURE_PRINCIPAL_ID` resolution for guest and B2B users by resolving the principal identity in the subscription's resource tenant, and prefer the ARM token `oid` claim over a Microsoft Graph call to avoid incorrect RBAC assignments.
+- [[#7562]](https://github.com/Azure/azure-dev/pull/7562) Fix extension lifecycle event handlers being silently dropped when multiple extensions subscribe to the same lifecycle event.
+- [[#7501]](https://github.com/Azure/azure-dev/pull/7501) Fix AKS service target `postprovision` hook to skip gracefully when the AKS cluster has not been provisioned yet in a multi-phase workflow, instead of failing fatally.
+- [[#7555]](https://github.com/Azure/azure-dev/pull/7555) Fix Copilot error troubleshooting to skip AI analysis for timeout errors, mark Bicep missing-input and `azure.yaml` config validation errors as non-fixable, and apply a 5-minute guard timeout to AI analysis requests.
+
+### Other Changes
+
+- [[#7557]](https://github.com/Azure/azure-dev/pull/7557) Update bundled Bicep CLI to v0.42.1.
+- [[#7591]](https://github.com/Azure/azure-dev/pull/7591) Update `azd update` success message to a shorter, more actionable format.
+- [[#7536]](https://github.com/Azure/azure-dev/pull/7536) Filter deprecated AI model versions and retired SKUs from model selection prompts in the AI model service.
+- [[#7588]](https://github.com/Azure/azure-dev/pull/7588) Fix `copilot consent list` and `copilot consent revoke` `--action` flag to display correct valid values (`all`, `readonly`) in shell completion suggestions.
+
 ## 1.23.14 (2026-04-03)
 
 ### Features Added

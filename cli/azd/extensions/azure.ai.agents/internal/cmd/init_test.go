@@ -15,6 +15,7 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/spf13/cobra"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -607,5 +608,163 @@ func TestManifestHasModelResources(t *testing.T) {
 				t.Errorf("manifestHasModelResources() = %v, want %v", result, tt.expected)
 			}
 		})
+	}
+}
+
+func TestResolvePositionalArg(t *testing.T) {
+	t.Parallel()
+
+	// Create a temp directory with a manifest file for testing
+	tmpDir := t.TempDir()
+	manifestPath := filepath.Join(tmpDir, "agent.yaml")
+	if err := os.WriteFile(manifestPath, []byte("name: test\n"), 0600); err != nil {
+		t.Fatalf("failed to create test manifest: %v", err)
+	}
+
+	tests := []struct {
+		name       string
+		arg        string
+		isManifest bool
+		isSrc      bool
+		wantErr    bool
+	}{
+		{
+			name:       "https URL is manifest",
+			arg:        "https://github.com/org/repo/blob/main/agent.yaml",
+			isManifest: true,
+		},
+		{
+			name:       "http URL is manifest",
+			arg:        "http://example.com/agent.yaml",
+			isManifest: true,
+		},
+		{
+			name:       "existing file is manifest",
+			arg:        manifestPath,
+			isManifest: true,
+		},
+		{
+			name:  "existing directory is src",
+			arg:   tmpDir,
+			isSrc: true,
+		},
+		{
+			name:    "non-existent path is error",
+			arg:     filepath.Join(tmpDir, "does-not-exist"),
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			isManifest, isSrc, err := resolvePositionalArg(tt.arg)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected error, got nil")
+				}
+				// Verify it's an exterrors.Validation error
+				if !strings.Contains(err.Error(), "not a recognized URL, file, or directory") {
+					t.Fatalf("expected validation error message, got: %s", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if isManifest != tt.isManifest {
+				t.Errorf("isManifest = %v, want %v", isManifest, tt.isManifest)
+			}
+			if isSrc != tt.isSrc {
+				t.Errorf("isSrc = %v, want %v", isSrc, tt.isSrc)
+			}
+		})
+	}
+}
+
+func TestApplyPositionalArg_ConflictWithManifestFlag(t *testing.T) {
+	t.Parallel()
+
+	manifestPath := filepath.Join(t.TempDir(), "agent.yaml")
+	if err := os.WriteFile(manifestPath, []byte("name: test\n"), 0600); err != nil {
+		t.Fatalf("failed to create test manifest: %v", err)
+	}
+
+	flags := &initFlags{rootFlagsDefinition: &rootFlagsDefinition{}}
+	cmd := &cobra.Command{}
+	cmd.Flags().StringVarP(&flags.manifestPointer, "manifest", "m", "", "")
+	// Simulate the user having set --manifest explicitly
+	if err := cmd.Flags().Set("manifest", "other.yaml"); err != nil {
+		t.Fatalf("failed to set flag: %v", err)
+	}
+
+	err := applyPositionalArg(manifestPath, flags, cmd)
+	if err == nil {
+		t.Fatal("expected error for conflicting positional arg and --manifest flag")
+	}
+	if !strings.Contains(err.Error(), "cannot pass both") {
+		t.Fatalf("expected conflict error message, got: %s", err)
+	}
+}
+
+func TestApplyPositionalArg_ConflictWithSrcFlag(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+
+	flags := &initFlags{rootFlagsDefinition: &rootFlagsDefinition{}}
+	cmd := &cobra.Command{}
+	cmd.Flags().StringVarP(&flags.src, "src", "s", "", "")
+	cmd.Flags().StringVarP(&flags.manifestPointer, "manifest", "m", "", "")
+	// Simulate the user having set --src explicitly
+	if err := cmd.Flags().Set("src", "other-dir"); err != nil {
+		t.Fatalf("failed to set flag: %v", err)
+	}
+
+	err := applyPositionalArg(tmpDir, flags, cmd)
+	if err == nil {
+		t.Fatal("expected error for conflicting positional arg and --src flag")
+	}
+	if !strings.Contains(err.Error(), "cannot pass both") {
+		t.Fatalf("expected conflict error message, got: %s", err)
+	}
+}
+
+func TestApplyPositionalArg_SetsManifestPointer(t *testing.T) {
+	t.Parallel()
+
+	manifestPath := filepath.Join(t.TempDir(), "agent.yaml")
+	if err := os.WriteFile(manifestPath, []byte("name: test\n"), 0600); err != nil {
+		t.Fatalf("failed to create test manifest: %v", err)
+	}
+
+	flags := &initFlags{rootFlagsDefinition: &rootFlagsDefinition{}}
+	cmd := &cobra.Command{}
+	cmd.Flags().StringVarP(&flags.manifestPointer, "manifest", "m", "", "")
+	cmd.Flags().StringVarP(&flags.src, "src", "s", "", "")
+
+	if err := applyPositionalArg(manifestPath, flags, cmd); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if flags.manifestPointer != manifestPath {
+		t.Errorf("manifestPointer = %q, want %q", flags.manifestPointer, manifestPath)
+	}
+}
+
+func TestApplyPositionalArg_SetsSrcDir(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+
+	flags := &initFlags{rootFlagsDefinition: &rootFlagsDefinition{}}
+	cmd := &cobra.Command{}
+	cmd.Flags().StringVarP(&flags.manifestPointer, "manifest", "m", "", "")
+	cmd.Flags().StringVarP(&flags.src, "src", "s", "", "")
+
+	if err := applyPositionalArg(tmpDir, flags, cmd); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if flags.src != tmpDir {
+		t.Errorf("src = %q, want %q", flags.src, tmpDir)
 	}
 }

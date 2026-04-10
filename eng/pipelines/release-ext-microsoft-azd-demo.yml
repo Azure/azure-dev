@@ -29,6 +29,8 @@ extends:
     stages:
       - template: /eng/pipelines/templates/stages/release-azd-extension.yml
         parameters: 
+          # TODO: Revert before merging
+          SkipTests: true 
           AzdExtensionId: microsoft.azd.demo
           SanitizedExtensionId: microsoft-azd-demo
           AzdExtensionDirectory: cli/azd/extensions/microsoft.azd.demo

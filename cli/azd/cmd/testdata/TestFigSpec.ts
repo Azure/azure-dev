@@ -263,6 +263,16 @@ const completionSpec: Fig.Spec = {
 									],
 								},
 								{
+									name: ['--protocol'],
+									description: 'Protocols supported by the agent (e.g., \'responses\', \'invocations\'). Can be specified multiple times.',
+									isRepeatable: true,
+									args: [
+										{
+											name: 'protocol',
+										},
+									],
+								},
+								{
 									name: ['--src', '-s'],
 									description: 'Directory to download the agent definition to (defaults to \'src/<agent-id>\')',
 									args: [
@@ -399,7 +409,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['show'],
-							description: 'Show the status of a hosted agent deployment.',
+							description: 'Show the status of a hosted agent.',
 							options: [
 								{
 									name: ['--output', '-o'],
@@ -2917,7 +2927,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['show'],
-									description: 'Show the status of a hosted agent deployment.',
+									description: 'Show the status of a hosted agent.',
 								},
 								{
 									name: ['version'],

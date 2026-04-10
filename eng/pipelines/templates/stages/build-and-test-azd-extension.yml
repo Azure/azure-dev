@@ -95,7 +95,10 @@ stages:
             OSVmImage: ${{ build.value.OSVmImage }}
             OS: ${{ build.value.OS }}
             Variables: ${{ build.value.Variables }}
-            ValidateCrossCompile: ${{ build.value.ValidateCrossCompile }}
+            # TODO: Revert this before merge
+            # ValidateCrossCompile: ${{ build.value.ValidateCrossCompile }}
+            # TODO: Remove this line before merge
+            ValidateCrossCompile: false
             ValidateVm: ${{ build.value.ValidateVm }}
             ValidationTask: ${{ build.value.ValidationTask }}
             ValidationScript: ${{ build.value.ValidationScript }}

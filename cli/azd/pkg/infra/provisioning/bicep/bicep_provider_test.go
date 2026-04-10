@@ -21,7 +21,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/apimanagement/armapimanagement"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appconfiguration/armappconfiguration"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault"
@@ -531,7 +530,7 @@ func TestBicepDestroyClassifyAndDelete(t *testing.T) {
 					{
 						Name: new("no-delete"),
 						Properties: &armlocks.ManagementLockProperties{
-							Level: to.Ptr(armlocks.LockLevelCanNotDelete),
+							Level: new(armlocks.LockLevelCanNotDelete),
 						},
 					},
 				},
@@ -865,7 +864,7 @@ var testEnvDeployment armresources.DeploymentExtended = armresources.DeploymentE
 				ID: new("/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP"),
 			},
 		},
-		ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
+		ProvisioningState: new(armresources.ProvisioningStateSucceeded),
 		Timestamp:         new(time.Now()),
 	},
 }
@@ -939,7 +938,7 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 		ID:       new(azure.ResourceGroupRID("SUBSCRIPTION_ID", "RESOURCE_GROUP")),
 		Location: new("eastus2"),
 		Name:     new("RESOURCE_GROUP"),
-		Type:     to.Ptr(string(azapi.AzureResourceTypeResourceGroup)),
+		Type:     new(string(azapi.AzureResourceTypeResourceGroup)),
 		Tags: map[string]*string{
 			"azd-env-name": new("test-env"),
 		},
@@ -1088,7 +1087,7 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 				},
 				Type: new("Microsoft.Resources/deployments"),
 				Properties: &armresources.DeploymentPropertiesExtended{
-					ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
+					ProvisioningState: new(armresources.ProvisioningStateSucceeded),
 					Timestamp:         new(time.Now()),
 				},
 			},
@@ -1246,7 +1245,7 @@ func prepareLogAnalyticsDestroyMocks(mockContext *mocks.MockContext) {
 		ID:       new(azure.ResourceGroupRID("SUBSCRIPTION_ID", "RESOURCE_GROUP")),
 		Location: new("eastus2"),
 		Name:     new("RESOURCE_GROUP"),
-		Type:     to.Ptr(string(azapi.AzureResourceTypeResourceGroup)),
+		Type:     new(string(azapi.AzureResourceTypeResourceGroup)),
 		Tags: map[string]*string{
 			"azd-env-name": new("test-env"),
 		},
@@ -1306,7 +1305,7 @@ func prepareLogAnalyticsDestroyMocks(mockContext *mocks.MockContext) {
 			{
 				OperationID: new("op-rg-create"),
 				Properties: &armresources.DeploymentOperationProperties{
-					ProvisioningOperation: to.Ptr(armresources.ProvisioningOperationCreate),
+					ProvisioningOperation: new(armresources.ProvisioningOperationCreate),
 					TargetResource: &armresources.TargetResource{
 						ResourceType: new("Microsoft.Resources/resourceGroups"),
 						ResourceName: new("RESOURCE_GROUP"),
@@ -1339,7 +1338,7 @@ func prepareLogAnalyticsDestroyMocks(mockContext *mocks.MockContext) {
 				},
 				Type: new("Microsoft.Resources/deployments"),
 				Properties: &armresources.DeploymentPropertiesExtended{
-					ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
+					ProvisioningState: new(armresources.ProvisioningStateSucceeded),
 					Timestamp:         new(time.Now()),
 				},
 			},
@@ -1431,7 +1430,7 @@ func prepareClassifyDestroyMocks(
 				"WEBSITE_URL": map[string]any{"value": "http://myapp.azurewebsites.net", "type": "string"},
 			},
 			OutputResources:   outputResources,
-			ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
+			ProvisioningState: new(armresources.ProvisioningStateSucceeded),
 			Timestamp:         new(time.Now()),
 		},
 	}
@@ -1595,7 +1594,7 @@ func prepareClassifyDestroyMocks(
 				Tags:     map[string]*string{"azd-env-name": new("test-env")},
 				Type:     new("Microsoft.Resources/deployments"),
 				Properties: &armresources.DeploymentPropertiesExtended{
-					ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
+					ProvisioningState: new(armresources.ProvisioningStateSucceeded),
 					Timestamp:         new(time.Now()),
 				},
 			},
@@ -2288,7 +2287,7 @@ func TestPreviewWithNilResourceState(t *testing.T) {
 				Changes: []*armresources.WhatIfChange{
 					// Create scenario: Before is nil, After has value
 					{
-						ChangeType: to.Ptr(armresources.ChangeTypeCreate),
+						ChangeType: new(armresources.ChangeTypeCreate),
 						ResourceID: new("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Web/sites/app1"),
 						Before:     nil,
 						After: map[string]any{
@@ -2298,7 +2297,7 @@ func TestPreviewWithNilResourceState(t *testing.T) {
 					},
 					// Delete scenario: After is nil, Before has value
 					{
-						ChangeType: to.Ptr(armresources.ChangeTypeDelete),
+						ChangeType: new(armresources.ChangeTypeDelete),
 						ResourceID: new("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Web/sites/app2"),
 						Before: map[string]any{
 							"type": "Microsoft.Web/sites",
@@ -2308,7 +2307,7 @@ func TestPreviewWithNilResourceState(t *testing.T) {
 					},
 					// Modify scenario: Both Before and After have values
 					{
-						ChangeType: to.Ptr(armresources.ChangeTypeModify),
+						ChangeType: new(armresources.ChangeTypeModify),
 						ResourceID: new("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Web/sites/app3"),
 						Before: map[string]any{
 							"type": "Microsoft.Web/sites",
@@ -2321,7 +2320,7 @@ func TestPreviewWithNilResourceState(t *testing.T) {
 					},
 					// Edge case: Both Before and After are nil (should be skipped)
 					{
-						ChangeType: to.Ptr(armresources.ChangeTypeUnsupported),
+						ChangeType: new(armresources.ChangeTypeUnsupported),
 						ResourceID: new("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Unknown/unknown"),
 						Before:     nil,
 						After:      nil,
@@ -3113,7 +3112,7 @@ func TestBicepDestroyViaDeploymentStacks(t *testing.T) {
 					"WEBSITE_URL": map[string]any{"value": "http://myapp.azurewebsites.net", "type": "string"},
 				},
 				OutputResources:   []*armresources.ResourceReference{{ID: &rgID}},
-				ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
+				ProvisioningState: new(armresources.ProvisioningStateSucceeded),
 				Timestamp:         new(time.Now()),
 			},
 		}
@@ -3265,7 +3264,7 @@ func TestBicepDestroyDeleteRGListPartialFailure(t *testing.T) {
 				"WEBSITE_URL": map[string]any{"value": "http://myapp.azurewebsites.net", "type": "string"},
 			},
 			OutputResources:   outputResources,
-			ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
+			ProvisioningState: new(armresources.ProvisioningStateSucceeded),
 			Timestamp:         new(time.Now()),
 		},
 	}
@@ -3408,7 +3407,7 @@ func TestBicepDestroyDeleteRGListPartialFailure(t *testing.T) {
 				Tags:     map[string]*string{"azd-env-name": new("test-env")},
 				Type:     new("Microsoft.Resources/deployments"),
 				Properties: &armresources.DeploymentPropertiesExtended{
-					ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
+					ProvisioningState: new(armresources.ProvisioningStateSucceeded),
 					Timestamp:         new(time.Now()),
 				},
 			},
@@ -3483,7 +3482,7 @@ func TestBicepDestroyPartialDeleteAttemptsPurge(t *testing.T) {
 				"WEBSITE_URL": map[string]any{"value": "http://myapp.azurewebsites.net", "type": "string"},
 			},
 			OutputResources:   outputResources,
-			ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
+			ProvisioningState: new(armresources.ProvisioningStateSucceeded),
 			Timestamp:         new(time.Now()),
 		},
 	}
@@ -3646,7 +3645,7 @@ func TestBicepDestroyPartialDeleteAttemptsPurge(t *testing.T) {
 				Tags:     map[string]*string{"azd-env-name": new("test-env")},
 				Type:     new("Microsoft.Resources/deployments"),
 				Properties: &armresources.DeploymentPropertiesExtended{
-					ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
+					ProvisioningState: new(armresources.ProvisioningStateSucceeded),
 					Timestamp:         new(time.Now()),
 				},
 			},
@@ -3739,7 +3738,7 @@ func TestBicepDestroyCredentialResolutionFailure(t *testing.T) {
 				"WEBSITE_URL": map[string]any{"value": "http://myapp.azurewebsites.net", "type": "string"},
 			},
 			OutputResources:   []*armresources.ResourceReference{{ID: &rgID}},
-			ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
+			ProvisioningState: new(armresources.ProvisioningStateSucceeded),
 			Timestamp:         new(time.Now()),
 		},
 	}
@@ -3832,7 +3831,7 @@ func TestBicepDestroyCredentialResolutionFailure(t *testing.T) {
 				Tags:     map[string]*string{"azd-env-name": new("test-env")},
 				Type:     new("Microsoft.Resources/deployments"),
 				Properties: &armresources.DeploymentPropertiesExtended{
-					ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
+					ProvisioningState: new(armresources.ProvisioningStateSucceeded),
 					Timestamp:         new(time.Now()),
 				},
 			},

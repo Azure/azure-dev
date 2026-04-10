@@ -97,6 +97,12 @@ func (i *Input) ReadInput(ctx context.Context, config *InputConfig, handler KeyP
 			errChan <- err
 			return
 		}
+		// On Windows, clear ENABLE_VIRTUAL_TERMINAL_INPUT so the console
+		// delivers native virtual key codes instead of ANSI escape sequences.
+		// survey's RestoreTermMode will restore the original console state.
+		if err := disableVirtualTerminalInput(os.Stdin); err != nil {
+			log.Printf("Warning: could not disable virtual terminal input: %v\n", err)
+		}
 		defer func() {
 			if err := rr.RestoreTermMode(); err != nil {
 				log.Printf("Error restoring terminal mode: %v\n", err)

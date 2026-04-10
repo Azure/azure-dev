@@ -15,9 +15,16 @@
 ### Features Added
 
 - [[#7451]](https://github.com/Azure/azure-dev/pull/7451) Add Python hook support in `azure.yaml`; hooks pointing to a `.py` script are auto-detected, automatically create a virtual environment, install dependencies from `requirements.txt` or `pyproject.toml`, and execute the script.
+- [[#7626]](https://github.com/Azure/azure-dev/pull/7626) Add JavaScript and TypeScript hook support in `azure.yaml`; hooks pointing to `.js` or `.ts` scripts are auto-detected, with automatic `npm install` from `package.json` when present. TypeScript scripts execute via `npx tsx` with no compile step required.
+
+### Breaking Changes
+
+- [[#7630]](https://github.com/Azure/azure-dev/pull/7630) Replace App Service slot auto-selection heuristics with explicit slot targeting: use `AZD_DEPLOY_{SERVICE}_SLOT_NAME=production` to deploy to the main app, or `AZD_DEPLOY_{SERVICE}_SLOT_NAME=<name>` for a specific slot. The previous auto-pick behavior (single slot present, no `SLOT_NAME` set, `--no-prompt`) and first-deploy push-to-all-slots behavior have been removed; `azd deploy` will now prompt interactively or error in non-interactive mode when slots are present and `SLOT_NAME` is not set.
 
 ### Bugs Fixed
 
+- [[#7618]](https://github.com/Azure/azure-dev/pull/7618) Fix `azure.yaml` hook parsing failure when mixing single-hook (map) and multi-hook (list) formats in the same `hooks:` block.
+- [[#7629]](https://github.com/Azure/azure-dev/pull/7629) Fix `azd auth token` being killed by the background update check when invoked as a subprocess by extension credential providers; `azd auth token` and other fast-exit commands now skip the update check entirely.
 - [[#7578]](https://github.com/Azure/azure-dev/pull/7578) Fix tenant-specific re-authentication guidance for `AADSTS70043` and `AADSTS700082` errors; azd now returns guidance targeting the correct subscription tenant when a credential fails due to a stale refresh token.
 - [[#7549]](https://github.com/Azure/azure-dev/pull/7549) Fix `AZURE_PRINCIPAL_ID` resolution for guest and B2B users by resolving the principal identity in the subscription's resource tenant, and prefer the ARM token `oid` claim over a Microsoft Graph call to avoid incorrect RBAC assignments.
 - [[#7562]](https://github.com/Azure/azure-dev/pull/7562) Fix extension lifecycle event handlers being silently dropped when multiple extensions subscribe to the same lifecycle event.

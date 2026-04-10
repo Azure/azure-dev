@@ -53,6 +53,36 @@ integration.
 | `AZD_DEPLOY_TIMEOUT` | Timeout for deployment operations, parsed as an integer number of seconds (for example, `1200`). Defaults to `1200` seconds (20 minutes). |
 | `AZD_DEPLOY_{SERVICE}_SLOT_NAME` | Sets the App Service deployment slot target for a service. Replace `{SERVICE}` with the uppercase service name (hyphens become underscores). Set to `production` to deploy to the main app, or a slot name (e.g., `staging`). When slots exist and this is not set, `--no-prompt` mode fails with an error listing available targets. |
 
+## azd exec
+
+The `azd exec` command runs commands and scripts with the active azd environment loaded into the child
+process. All environment variables from the `.env` file (including provisioning outputs) are injected
+automatically. Key Vault secret references (`akvs://` and `@Microsoft.KeyVault(SecretUri=...)`) are
+resolved transparently before injection.
+
+### Execution Modes
+
+`azd exec` selects an execution mode based on the arguments provided:
+
+| Mode | Trigger | Example |
+| --- | --- | --- |
+| **Script file** | First argument is an existing file | `azd exec ./setup.sh` |
+| **Direct exec** | Multiple arguments, no `--shell` flag | `azd exec python script.py` |
+| **Shell inline** | Single argument, or `--shell` specified | `azd exec 'echo $AZURE_ENV_NAME'` |
+
+**Direct exec** passes the exact argument vector to the child process without shell wrapping, which
+avoids quoting and escaping issues. **Shell inline** wraps the argument with the detected (or
+specified) shell's `-c` flag. **Script file** detects the shell from the file extension (`.sh` →
+bash, `.ps1` → pwsh, `.cmd`/`.bat` → cmd).
+
+### Flags
+
+| Flag | Description |
+| --- | --- |
+| `--shell`, `-s` | Shell to use (`bash`, `sh`, `zsh`, `pwsh`, `powershell`, `cmd`). Auto-detected if not specified. |
+| `--interactive`, `-i` | Run in interactive mode (connects stdin to the child process). |
+| `--environment`, `-e` | The azd environment to load. |
+
 ## Extension Variables
 
 These variables are set and consumed by azd extension hosts (for example, IDE/editor integrations)

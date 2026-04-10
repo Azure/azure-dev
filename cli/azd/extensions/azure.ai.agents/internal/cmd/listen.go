@@ -566,16 +566,17 @@ func provisionToolboxes(
 		// Replace project_connection_id friendly names with ARM resource IDs
 		resolveToolboxConnectionIDs(&toolbox, connIDMap)
 
-		if err := createToolboxVersion(
+		version, err := createToolboxVersion(
 			ctx, toolboxClient, toolbox,
-		); err != nil {
+		)
+		if err != nil {
 			return err
 		}
 
 		if err := registerToolboxEnvVars(
 			ctx, azdClient,
 			currentEnv.Environment.Name,
-			projectEndpoint, toolbox.Name,
+			projectEndpoint, toolbox.Name, version,
 		); err != nil {
 			return err
 		}
@@ -590,39 +591,43 @@ func provisionToolboxes(
 
 // createToolboxVersion creates a new version of a toolbox.
 // If the toolbox does not exist, it will be created automatically.
+// Returns the version identifier of the newly created version.
 func createToolboxVersion(
 	ctx context.Context,
 	client *azure.FoundryToolboxClient,
 	toolbox project.Toolbox,
-) error {
+) (string, error) {
 	req := &azure.CreateToolboxVersionRequest{
 		Description: toolbox.Description,
 		Tools:       toolbox.Tools,
 	}
 
-	if _, err := client.CreateToolboxVersion(ctx, toolbox.Name, req); err != nil {
-		return exterrors.Internal(
+	result, err := client.CreateToolboxVersion(ctx, toolbox.Name, req)
+	if err != nil {
+		return "", exterrors.Internal(
 			exterrors.CodeCreateToolboxVersionFailed,
 			fmt.Sprintf("failed to create toolbox version '%s': %s", toolbox.Name, err),
 		)
 	}
 
-	return nil
+	return result.Version, nil
 }
 
-// registerToolboxEnvVars sets TOOLBOX_{NAME}_MCP_ENDPOINT.
+// registerToolboxEnvVars sets TOOLBOX_{NAME}_MCP_ENDPOINT with the versioned URL.
 func registerToolboxEnvVars(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	envName string,
 	projectEndpoint string,
 	toolboxName string,
+	toolboxVersion string,
 ) error {
 	envKey := toolboxMCPEndpointEnvKey(toolboxName)
 
 	endpoint := strings.TrimRight(projectEndpoint, "/")
 	mcpEndpoint := fmt.Sprintf(
-		"%s/toolboxes/%s/mcp?api-version=v1", endpoint, toolboxName,
+		"%s/toolboxes/%s/versions/%s/mcp?api-version=v1",
+		endpoint, toolboxName, toolboxVersion,
 	)
 
 	return setEnvVar(

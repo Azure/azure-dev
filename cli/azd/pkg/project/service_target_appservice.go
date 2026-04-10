@@ -303,13 +303,13 @@ func (st *appServiceTarget) determineDeploymentTargets(
 
 	// Slots exist + --no-prompt — fail with clear error
 	if st.console.IsNoPromptMode() {
-		availableTargets := []string{fmt.Sprintf("%s (main app)", productionSlotName)}
+		availableTargets := []string{productionSlotName}
 		for _, slot := range slots {
 			availableTargets = append(availableTargets, slot.Name)
 		}
 		return nil, fmt.Errorf(
 			"deployment slots detected but no target specified. "+
-				"Set %s to one of: [%s]",
+				"Set %s to one of: [%s] ('production' = main app)",
 			slotEnvVarName, strings.Join(availableTargets, ", "))
 	}
 

@@ -206,6 +206,11 @@ func runSwap(ctx context.Context, flags *swapFlags, rootFlags rootFlagsDefinitio
 		return fmt.Errorf("swap operation requires a service with at least one deployment slot")
 	}
 
+	// Warn once if @main is used (deprecated in favor of "production")
+	if strings.EqualFold(flags.src, "@main") || strings.EqualFold(flags.dst, "@main") {
+		color.Yellow("WARNING: @main is deprecated. Use 'production' instead to refer to the main app.")
+	}
+
 	// Normalize src and dst flags
 	srcSlot := normalizeSlotName(flags.src)
 	dstSlot := normalizeSlotName(flags.dst)
@@ -365,9 +370,8 @@ func normalizeSlotName(slot string) string {
 		return ""
 	}
 
-	// "@main" is deprecated — use "production" instead.
+	// "@main" maps to the main app but is deprecated.
 	if strings.EqualFold(slot, "@main") {
-		fmt.Println("WARNING: @main is deprecated. Use 'production' instead to refer to the main app.")
 		return ""
 	}
 	return slot

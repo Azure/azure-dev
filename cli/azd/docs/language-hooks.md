@@ -13,7 +13,7 @@ unified lifecycle regardless of its executor: **Prepare → Execute → Cleanup*
 | Python     | `python`    | `.py`          | ✅ Phase 1    |
 | JavaScript | `js`        | `.js`          | ✅ Phase 2    |
 | TypeScript | `ts`        | `.ts`          | ✅ Phase 3    |
-| .NET (C#)  | `dotnet`    | `.cs`          | 🔜 Planned   |
+| .NET (C#)  | `dotnet`    | `.cs`          | ✅ Phase 4    |
 
 ## Configuration
 
@@ -224,6 +224,49 @@ hooks:
     shell: sh
 ```
 
+### .NET hook with project — auto-detected from .cs extension
+
+When a `.csproj` (or `.fsproj`/`.vbproj`) is found near the script, azd
+automatically runs `dotnet restore` and `dotnet build` during preparation,
+then executes via `dotnet run --project`.
+
+```yaml
+hooks:
+  postprovision:
+    run: ./hooks/seed-database.cs
+    # .csproj in ./hooks/ → restore + build run automatically
+```
+
+### .NET single-file hook (.NET 10+)
+
+On .NET 10 or later, single `.cs` files can run without a project file.
+azd detects the SDK version and runs `dotnet run script.cs` directly.
+
+```yaml
+hooks:
+  postprovision:
+    run: ./hooks/seed-database.cs
+    # No .csproj nearby + .NET 10+ SDK → single-file execution
+```
+
+### .NET hook — explicit kind
+
+```yaml
+hooks:
+  postprovision:
+    run: ./hooks/setup
+    kind: dotnet
+```
+
+### .NET hook with working directory override
+
+```yaml
+hooks:
+  postprovision:
+    run: ./tools/scripts/seed.cs
+    dir: ./tools    # .csproj is in ./tools, not ./tools/scripts
+```
+
 ## How It Works
 
 Every hook follows the unified **Prepare → Execute → Cleanup** lifecycle:
@@ -254,11 +297,14 @@ Every hook follows the unified **Prepare → Execute → Cleanup** lifecycle:
 - **Inline scripts** are only supported for Bash and PowerShell hooks.
   All other executor types must reference a file path.
 - **Phase 1** supports Python as a non-shell executor.
-  **Phase 2** adds JavaScript and **Phase 3** adds TypeScript.
-  .NET support is planned for a future phase.
+  **Phase 2** adds JavaScript, **Phase 3** adds TypeScript,
+  and **Phase 4** adds .NET (C#).
 - **Virtual environments** (Python) are created in the project directory alongside
   the dependency file, following the naming convention `{dirName}_env`.
 - **TypeScript** hooks require Node.js 18+ and use `npx tsx` for execution.
   If `tsx` is not installed locally, `npx` will download it automatically.
 - **Package manager** for JS/TS hooks currently uses npm for dependency
   installation. Support for pnpm and yarn may be added in a future release.
+- **.NET single-file** execution (`.cs` without a `.csproj`) requires .NET SDK
+  10.0.0 or later. On older SDKs, create a `.csproj` project file alongside
+  the script.

@@ -822,6 +822,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		language.HookKindPython:     language.NewPythonExecutor,
 		language.HookKindJavaScript: language.NewJavaScriptExecutor,
 		language.HookKindTypeScript: language.NewTypeScriptExecutor,
+		language.HookKindDotNet:     language.NewDotNetExecutor,
 	}
 
 	for kind, constructor := range hookExecutorMap {

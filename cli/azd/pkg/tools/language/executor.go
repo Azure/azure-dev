@@ -28,7 +28,6 @@ const (
 	// HookKindPython identifies Python scripts (.py files).
 	HookKindPython HookKind = "python"
 	// HookKindDotNet identifies .NET (C#) scripts (.cs files).
-	// Not yet supported — IoC resolution will fail with a descriptive error.
 	HookKindDotNet HookKind = "dotnet"
 )
 

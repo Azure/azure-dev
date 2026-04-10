@@ -32,7 +32,8 @@ func disableVirtualTerminalInput(f *os.File) error {
 	handle := f.Fd()
 
 	var mode uint32
-	r, _, err := getConsoleMode.Call(uintptr(handle), uintptr(unsafe.Pointer(&mode))) //nolint:gosec // Win32 API requires unsafe pointer
+	//nolint:gosec // Win32 API requires unsafe pointer
+	r, _, err := getConsoleMode.Call(uintptr(handle), uintptr(unsafe.Pointer(&mode)))
 	if r == 0 {
 		return err
 	}

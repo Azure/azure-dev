@@ -38,15 +38,15 @@ func newSwapCommand(rootFlags rootFlagsDefinition) *cobra.Command {
 This command allows you to swap the content between two deployment slots,
 or between a slot and the production environment.
 
-Use @main to refer to the production slot.`,
+Use "production" to refer to the main app (production slot).`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSwap(cmd.Context(), flags, rootFlags)
 		},
 	}
 
 	cmd.Flags().StringVar(&flags.service, "service", "", "The name of the service to swap slots for.")
-	cmd.Flags().StringVar(&flags.src, "src", "", "The source slot name. Use @main for production.")
-	cmd.Flags().StringVar(&flags.dst, "dst", "", "The destination slot name. Use @main for production.")
+	cmd.Flags().StringVar(&flags.src, "src", "", "The source slot name. Use 'production' for main app.")
+	cmd.Flags().StringVar(&flags.dst, "dst", "", "The destination slot name. Use 'production' for main app.")
 
 	return cmd
 }
@@ -252,7 +252,7 @@ func runSwap(ctx context.Context, flags *swapFlags, rootFlags rootFlagsDefinitio
 		if !srcProvided || !dstProvided {
 			// Prompt for source slot
 			if !srcProvided {
-				srcChoices := []*azdext.SelectChoice{{Value: "", Label: "@main (production)"}}
+				srcChoices := []*azdext.SelectChoice{{Value: "", Label: "production (main app)"}}
 				for _, slot := range slots {
 					srcChoices = append(srcChoices, &azdext.SelectChoice{Value: slot, Label: slot})
 				}
@@ -278,7 +278,7 @@ func runSwap(ctx context.Context, flags *swapFlags, rootFlags rootFlagsDefinitio
 			if !dstProvided {
 				dstChoices := []*azdext.SelectChoice{}
 				if srcSlot != "" {
-					dstChoices = append(dstChoices, &azdext.SelectChoice{Value: "", Label: "@main (production)"})
+					dstChoices = append(dstChoices, &azdext.SelectChoice{Value: "", Label: "production (main app)"})
 				}
 				for _, slot := range slots {
 					if slot != srcSlot {
@@ -321,11 +321,11 @@ func runSwap(ctx context.Context, flags *swapFlags, rootFlags rootFlagsDefinitio
 	// Get display names for confirmation
 	srcDisplay := srcSlot
 	if srcDisplay == "" {
-		srcDisplay = "@main (production)"
+		srcDisplay = "production (main app)"
 	}
 	dstDisplay := dstSlot
 	if dstDisplay == "" {
-		dstDisplay = "@main (production)"
+		dstDisplay = "production (main app)"
 	}
 
 	// Confirm the swap unless --no-prompt is set
@@ -358,8 +358,16 @@ func runSwap(ctx context.Context, flags *swapFlags, rootFlags rootFlagsDefinitio
 }
 
 func normalizeSlotName(slot string) string {
-	// Normalize "@main" to empty string (internal representation for main app/production slot)
+	// "production" and "@production" both map to the main app (empty string).
+	// This aligns with the Azure platform convention where "production" is the
+	// reserved name for the main app slot.
+	if strings.EqualFold(slot, "production") || strings.EqualFold(slot, "@production") {
+		return ""
+	}
+
+	// "@main" is deprecated — use "production" instead.
 	if strings.EqualFold(slot, "@main") {
+		fmt.Println("WARNING: @main is deprecated. Use 'production' instead to refer to the main app.")
 		return ""
 	}
 	return slot

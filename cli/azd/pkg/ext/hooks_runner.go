@@ -198,7 +198,7 @@ func (h *HooksRunner) execHook(
 				hookConfig.Kind,
 				hookConfig.Name,
 			),
-			Suggestion: "Supported hook kinds: sh, pwsh, python.",
+			Suggestion: "Supported hook kinds: sh, pwsh, python, js, ts.",
 			Links: []errorhandler.ErrorLink{
 				{
 					Title: "Hook documentation",

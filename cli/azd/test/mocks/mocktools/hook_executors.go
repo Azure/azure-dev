@@ -6,6 +6,7 @@ package mocktools
 import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bash"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/language"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/node"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/powershell"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/python"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -24,5 +25,14 @@ func RegisterHookExecutors(mockCtx *mocks.MockContext) {
 	mockCtx.Container.MustRegisterSingleton(python.NewCli)
 	mockCtx.Container.MustRegisterNamedTransient(
 		string(language.HookKindPython), language.NewPythonExecutor,
+	)
+	mockCtx.Container.MustRegisterSingleton(node.NewCli)
+	mockCtx.Container.MustRegisterNamedTransient(
+		string(language.HookKindJavaScript),
+		language.NewJavaScriptExecutor,
+	)
+	mockCtx.Container.MustRegisterNamedTransient(
+		string(language.HookKindTypeScript),
+		language.NewTypeScriptExecutor,
 	)
 }

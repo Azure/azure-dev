@@ -76,18 +76,12 @@ stages:
               AZURE_DEV_CI_OS: mac-arm64
 
   # Only sign and release on manual builds from internal
-  - ${{ if and(eq(variables['System.TeamProject'], 'internal'), eq(variables['Build.Reason'], 'Manual')) }}:
+  - ${{ if and(eq(variables['System.TeamProject'], 'internal'), in(variables['Build.Reason'], 'Manual', 'IndividualCI', 'BatchedCI')) }}:
     - template: /eng/pipelines/templates/stages/sign-extension.yml
       parameters:
         SanitizedExtensionId: ${{ parameters.SanitizedExtensionId }}
 
     - template: /eng/pipelines/templates/stages/publish-extension.yml
-      parameters:
-        SanitizedExtensionId: ${{ parameters.SanitizedExtensionId }}
-
-  # Publish daily builds to storage on CI (push to main)
-  - ${{ if and(eq(variables['System.TeamProject'], 'internal'), in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI')) }}:
-    - template: /eng/pipelines/templates/stages/sign-extension.yml
       parameters:
         SanitizedExtensionId: ${{ parameters.SanitizedExtensionId }}
 

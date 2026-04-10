@@ -95,3 +95,14 @@ stages:
       parameters:
         SanitizedExtensionId: ${{ parameters.SanitizedExtensionId }}
         AzdExtensionId: ${{ parameters.AzdExtensionId }}
+
+  # Publish PR builds to storage and post install instructions as PR comment
+  - ${{ if and(eq(variables['System.TeamProject'], 'internal'), eq(variables['Build.Reason'], 'PullRequest')) }}:
+    - template: /eng/pipelines/templates/stages/sign-extension.yml
+      parameters:
+        SanitizedExtensionId: ${{ parameters.SanitizedExtensionId }}
+
+    - template: /eng/pipelines/templates/stages/publish-extension-pr.yml
+      parameters:
+        SanitizedExtensionId: ${{ parameters.SanitizedExtensionId }}
+        AzdExtensionId: ${{ parameters.AzdExtensionId }}

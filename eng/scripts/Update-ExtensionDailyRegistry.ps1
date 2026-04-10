@@ -151,13 +151,21 @@ Write-Host "  capabilities: $($capabilities -join ', ')"
 Write-Host "  providers: $($providers.Count)"
 
 # Load template and replace placeholders
+# JSON-escape string values that are inserted into JSON string literals.
+# This prevents characters like " \ and control chars from producing invalid JSON.
+function ConvertTo-JsonSafeString([string]$value) {
+    # Use ConvertTo-Json to get a properly escaped JSON string, then strip the surrounding quotes
+    $escaped = $value | ConvertTo-Json
+    return $escaped.Substring(1, $escaped.Length - 2)
+}
+
 $template = Get-Content $TemplatePath -Raw
 $replacements = @{
-    '${EXT_VERSION}'            = $Version
-    '${REQUIRED_AZD_VERSION}'   = if ($extMeta.requiredAzdVersion) { $extMeta.requiredAzdVersion } else { "" }
-    '${USAGE}'                  = $extMeta.usage
-    '${SANITIZED_ID}'           = $SanitizedExtensionId
-    '${STORAGE_BASE_URL}'       = $StorageBaseUrl
+    '${EXT_VERSION}'            = ConvertTo-JsonSafeString $Version
+    '${REQUIRED_AZD_VERSION}'   = ConvertTo-JsonSafeString ($(if ($extMeta.requiredAzdVersion) { $extMeta.requiredAzdVersion } else { "" }))
+    '${USAGE}'                  = ConvertTo-JsonSafeString $extMeta.usage
+    '${SANITIZED_ID}'           = ConvertTo-JsonSafeString $SanitizedExtensionId
+    '${STORAGE_BASE_URL}'       = ConvertTo-JsonSafeString $StorageBaseUrl
     '${CHECKSUM_DARWIN_AMD64}'  = $checksums["DARWIN_AMD64"]
     '${CHECKSUM_DARWIN_ARM64}'  = $checksums["DARWIN_ARM64"]
     '${CHECKSUM_LINUX_AMD64}'   = $checksums["LINUX_AMD64"]

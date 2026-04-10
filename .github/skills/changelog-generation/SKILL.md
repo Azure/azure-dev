@@ -45,12 +45,12 @@ Auto-detect scope from the current working directory:
 
 ### Step 2 — Determine Version & Update Files
 
-**Files to update (core):** `cli/azd/CHANGELOG.md`, `cli/version.txt`
+**Files to update (core):** `cli/azd/CHANGELOG.md`, `cli/version.txt`, `cli/azd/pkg/azdext/version.go`
 **Files to update (extension):** `<extension>/CHANGELOG.md`, `<extension>/version.txt`, `<extension>/extension.yaml`
 
 For version derivation rules, see [references/scope-rules.md](references/scope-rules.md) § Version Files.
 
-- **Core**: derive version from the existing unreleased header (strip `-beta.*` and `(Unreleased)`), use today's date. Update `cli/version.txt` to the released version.
+- **Core**: derive version from the existing unreleased header (strip `-beta.*` and `(Unreleased)`), use today's date. Update `cli/version.txt` and `cli/azd/pkg/azdext/version.go` (`Version` constant) to the released version.
 - **Extension**: ask the user for the new version number via `ask_user`. Update both `version.txt` and `extension.yaml` — they must match exactly.
 
 Present the version and date to the user for confirmation before writing any files.

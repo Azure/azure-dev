@@ -5,6 +5,7 @@ words:
   - Authenticode
   - gofmt
   - golangci
+  - lightspeed
   - toplevel
   - azcloud
   - azdext

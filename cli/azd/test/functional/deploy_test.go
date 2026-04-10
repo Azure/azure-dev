@@ -101,8 +101,8 @@ func Test_CLI_DeployInvalidFlags(t *testing.T) {
 }
 
 // Test_CLI_Deploy_SlotDeployment tests the deployment slot feature where:
-// - First deployment (via `azd up`) deploys to both main app and slot
-// - Subsequent deployments (via `azd deploy`) deploy only to the slot when using env var
+// - Initial deployment (via `azd up`) deploys to main app using SLOT_NAME=production
+// - Subsequent deployment (via `azd deploy`) deploys only to the staging slot using env var
 // - The main app retains the original version while slot gets the update
 func Test_CLI_Deploy_SlotDeployment(t *testing.T) {
 	t.Parallel()
@@ -114,6 +114,12 @@ func Test_CLI_Deploy_SlotDeployment(t *testing.T) {
 
 	session := recording.Start(t)
 
+	// Recording needs to be re-recorded after slot targeting behavior change.
+	// Skip in playback mode until recording is refreshed.
+	if session != nil && session.Playback {
+		t.Skip("Recording needs re-recording after slot targeting changes")
+	}
+
 	envName := randomOrStoredEnvName(session)
 	t.Logf("AZURE_ENV_NAME: %s", envName)
 
@@ -121,6 +127,9 @@ func Test_CLI_Deploy_SlotDeployment(t *testing.T) {
 	cli.WorkingDirectory = dir
 	cli.Env = append(cli.Env, os.Environ()...)
 	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
+
+	// Deploy to main app on initial `azd up` — explicit targeting required when slots exist
+	cli.Env = append(cli.Env, "AZD_DEPLOY_API_SLOT_NAME=production")
 
 	// Defer cleanup to delete resource group regardless of test outcome
 	// The resource group name follows the pattern: rg-{envName}
@@ -134,8 +143,8 @@ func Test_CLI_Deploy_SlotDeployment(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
 	require.NoError(t, err)
 
-	// Run azd up - this will provision and deploy to both main app and slot
-	t.Logf("Running azd up (provision + initial deploy)\n")
+	// Run azd up - provision and deploy to main app (SLOT_NAME=production)
+	t.Logf("Running azd up (provision + deploy to main app)\n")
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "up")
 	require.NoError(t, err)
 
@@ -172,14 +181,10 @@ func Test_CLI_Deploy_SlotDeployment(t *testing.T) {
 	// Create service health prober with session-aware retry delay
 	prober := newServiceHealthProber(httpClient, session)
 
-	// Verify both main app and slot return the original response after first deployment
+	// Verify main app returns the original response after initial deployment
 	t.Logf("Verifying main app returns original response\n")
 	err = prober.probe(t, ctx, websiteURL, originalResponse)
 	require.NoError(t, err, "main app should return original response after azd up")
-
-	t.Logf("Verifying slot returns original response\n")
-	err = prober.probe(t, ctx, slotURL, originalResponse)
-	require.NoError(t, err, "slot should return original response after azd up")
 
 	// Update the data.json file with new content
 	t.Logf("Updating data.json with new content\n")
@@ -187,8 +192,7 @@ func Test_CLI_Deploy_SlotDeployment(t *testing.T) {
 	err = os.WriteFile(dataJSONPath, []byte(updatedResponse), osutil.PermissionFile)
 	require.NoError(t, err, "failed to update data.json")
 
-	// Run azd deploy with the slot environment variable set
-	// This should deploy only to the staging slot
+	// Switch to deploying to the staging slot
 	t.Logf("Running azd deploy with AZD_DEPLOY_API_SLOT_NAME=staging\n")
 	cli.Env = append(cli.Env, "AZD_DEPLOY_API_SLOT_NAME=staging")
 	_, err = cli.RunCommand(ctx, "deploy", "--cwd", dir)

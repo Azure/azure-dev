@@ -43,6 +43,7 @@ func newReLoginRequiredError(
 	response *AadErrorResponse,
 	scopes []string,
 	cloud *cloud.Cloud,
+	tenantID string,
 ) (error, bool) {
 	if response == nil {
 		return nil, false
@@ -54,7 +55,7 @@ func newReLoginRequiredError(
 	case "invalid_grant",
 		"interaction_required":
 		err := ReLoginRequiredError{}
-		err.init(response, scopes, cloud)
+		err.init(response, scopes, cloud, tenantID)
 		// Note: Do not prefix with "Suggestion:" here — the UX renderer
 		// (ErrorWithSuggestion.ToString) already adds that prefix when displaying.
 		suggestion := fmt.Sprintf("%s, run `%s` to acquire a new token.", err.scenario, err.loginCmd)
@@ -70,10 +71,19 @@ func newReLoginRequiredError(
 	return nil, false
 }
 
-func (e *ReLoginRequiredError) init(response *AadErrorResponse, scopes []string, cloud *cloud.Cloud) {
+func (e *ReLoginRequiredError) init(
+	response *AadErrorResponse,
+	scopes []string,
+	cloud *cloud.Cloud,
+	tenantID string,
+) {
 	e.errText = response.ErrorDescription
 	e.scenario = "reauthentication required"
 	e.loginCmd = "azd auth login"
+
+	if tenantID != "" {
+		e.loginCmd += fmt.Sprintf(" --tenant-id %s", tenantID)
+	}
 
 	loginScopes := LoginScopesFull(cloud)
 	for _, scope := range scopes {
@@ -83,8 +93,9 @@ func (e *ReLoginRequiredError) init(response *AadErrorResponse, scopes []string,
 		}
 	}
 
-	// The refresh token has expired or is invalid due to sign-in frequency checks by Conditional Access.
-	if slices.Contains(response.ErrorCodes, 70043) {
+	// The refresh token has expired, either due to inactivity (700082) or due to
+	// sign-in frequency checks enforced by Conditional Access (70043).
+	if slices.Contains(response.ErrorCodes, 70043) || slices.Contains(response.ErrorCodes, 700082) {
 		e.scenario = "login expired"
 	}
 

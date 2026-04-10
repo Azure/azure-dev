@@ -208,11 +208,18 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 	}
 
 	cmd := &cobra.Command{
-		Use:   "init [-m <manifest pointer>] [--src <source directory>]",
+		Use:   "init [<path>] [-m <manifest pointer>] [--src <source directory>]",
 		Short: fmt.Sprintf("Initialize a new AI agent project. %s", color.YellowString("(Preview)")),
-		Args:  cobra.NoArgs,
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			printBanner(cmd.OutOrStdout())
+
+			// Resolve optional positional argument into --manifest or --src
+			if len(args) == 1 {
+				if err := applyPositionalArg(args[0], flags, cmd); err != nil {
+					return err
+				}
+			}
 
 			ctx := azdext.WithAccessToken(cmd.Context())
 
@@ -886,6 +893,77 @@ func looksLikeManifest(path string) bool {
 
 	_, hasTemplate := top["template"]
 	return hasTemplate
+}
+
+// resolvePositionalArg classifies a positional argument as either a manifest
+// pointer (explicit URI or existing file) or a source directory (existing
+// directory). It returns (isManifest=true, isSrc=false) for explicit URIs and
+// files, (isManifest=false, isSrc=true) for directories, or an error for
+// unrecognized inputs.
+//
+// For non-existent paths, a heuristic is applied: .yaml/.yml extensions are
+// treated as manifest pointers, while all other paths are treated as source
+// directories (the downstream init flow creates them via MkdirAll).
+func resolvePositionalArg(arg string) (isManifest bool, isSrc bool, err error) {
+	// Check for an explicit URI form first. Requiring "://" avoids
+	// misclassifying Windows drive paths such as C:\...
+	if strings.Contains(arg, "://") {
+		if parsed, parseErr := url.Parse(arg); parseErr == nil && parsed.Scheme != "" {
+			return true, false, nil
+		}
+	}
+
+	info, statErr := os.Stat(arg)
+	if statErr == nil {
+		if info.IsDir() {
+			return false, true, nil
+		}
+		return true, false, nil
+	}
+
+	// Path does not exist — use file extension heuristic.
+	ext := strings.ToLower(filepath.Ext(arg))
+	if ext == ".yaml" || ext == ".yml" {
+		return true, false, nil
+	}
+
+	// Default to source directory; the downstream flow will create it via MkdirAll.
+	return false, true, nil
+}
+
+// applyPositionalArg resolves a positional argument and maps it to the
+// appropriate flag, returning an error if the flag was already set explicitly.
+func applyPositionalArg(arg string, flags *initFlags, cmd *cobra.Command) error {
+	isManifest, isSrc, err := resolvePositionalArg(arg)
+	if err != nil {
+		return err
+	}
+
+	if isManifest {
+		if cmd.Flags().Changed("manifest") {
+			return exterrors.Validation(
+				exterrors.CodeConflictingArguments,
+				"cannot pass both a positional argument and --manifest",
+				"use either 'azd ai agent init <path>' or "+
+					"'azd ai agent init -m <manifest>', not both",
+			)
+		}
+		flags.manifestPointer = arg
+	}
+
+	if isSrc {
+		if cmd.Flags().Changed("src") {
+			return exterrors.Validation(
+				exterrors.CodeConflictingArguments,
+				"cannot pass both a positional directory argument and --src",
+				"use either 'azd ai agent init <dir>' or "+
+					"'azd ai agent init --src <dir>', not both",
+			)
+		}
+		flags.src = arg
+	}
+
+	return nil
 }
 
 func (a *InitAction) isGitHubUrl(manifestPointer string) bool {

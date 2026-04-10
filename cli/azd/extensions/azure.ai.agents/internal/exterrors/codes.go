@@ -31,6 +31,8 @@ const (
 	CodeTenantMismatch            = "tenant_mismatch"
 	CodeMissingPublishedContainer = "missing_published_container_artifact"
 	CodeModelDeploymentNotFound   = "model_deployment_not_found"
+	CodeConflictingArguments      = "conflicting_arguments"
+	CodeInvalidPositionalArg      = "invalid_positional_arg"
 )
 
 // Error codes commonly used for dependency errors.

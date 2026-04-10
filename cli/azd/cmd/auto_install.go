@@ -444,7 +444,9 @@ type ExecuteResult struct {
 	// for lightspeed commands so the process can exit quickly.
 	IsLightspeed bool
 	// LatestVersion receives the result of the background update check.
-	// Nil when the update check was skipped (lightspeed commands, AZD_SKIP_UPDATE_CHECK).
+	// Nil when the update check was not started (lightspeed commands).
+	// When the check is skipped via AZD_SKIP_UPDATE_CHECK, the returned channel
+	// is closed without a value.
 	LatestVersion <-chan *update.VersionInfo
 }
 

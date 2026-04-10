@@ -83,6 +83,7 @@ func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, args 
 }
 
 func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
+	hasHostedAgent := false
 	for _, svc := range args.Project.Services {
 		switch svc.Host {
 		case AiAgentHost:
@@ -92,27 +93,74 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 			if err := envUpdate(ctx, azdClient, args.Project, svc); err != nil {
 				return fmt.Errorf("failed to update environment for service %q: %w", svc.Name, err)
 			}
+			if isHostedAgentService(svc, args.Project) {
+				hasHostedAgent = true
+			}
+		}
+	}
+
+	// Run developer RBAC pre-flight checks for hosted agent deployments.
+	if hasHostedAgent {
+		if err := project.CheckDeveloperRBAC(ctx, azdClient); err != nil {
+			return err
 		}
 	}
 
 	return nil
 }
 
-func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
-	hasAgent := false
-	for _, svc := range args.Project.Services {
-		if svc.Host == AiAgentHost {
-			hasAgent = true
-			break
-		}
+// isHostedAgentService checks if a service is a hosted (container) agent by reading
+// the agent.yaml kind from the service directory.
+func isHostedAgentService(svc *azdext.ServiceConfig, proj *azdext.ProjectConfig) bool {
+	agentYamlPath := filepath.Join(proj.Path, svc.RelativePath, "agent.yaml")
+	data, err := os.ReadFile(agentYamlPath) //nolint:gosec // path from azd project config
+	if err != nil {
+		return false
 	}
-	if !hasAgent {
+	var generic map[string]any
+	if err := yaml.Unmarshal(data, &generic); err != nil {
+		return false
+	}
+	kind, ok := generic["kind"].(string)
+	return ok && kind == string(agent_yaml.AgentKindHosted)
+}
+
+func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
+	// Collect agent names from hosted agent services that were deployed.
+	// After deploy, each hosted agent's name is stored as AGENT_{SERVICE_KEY}_NAME.
+	// Only hosted agents get platform-created per-agent identities; prompt agents do not.
+	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return fmt.Errorf("failed to get current environment for agent identity RBAC: %w", err)
+	}
+
+	var agentNames []string
+	for _, svc := range args.Project.Services {
+		if svc.Host != AiAgentHost || !isHostedAgentService(svc, args.Project) {
+			continue
+		}
+		nameKey := fmt.Sprintf("AGENT_%s_NAME", toServiceKey(svc.Name))
+
+		valResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+			EnvName: envResp.Environment.Name,
+			Key:     nameKey,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to read %s from environment: %w", nameKey, err)
+		}
+		if valResp.Value == "" {
+			continue
+		}
+		agentNames = append(agentNames, valResp.Value)
+	}
+
+	if len(agentNames) == 0 {
 		return nil
 	}
 
-	// Ensure agent identity RBAC is configured when vnext is enabled.
+	// Ensure per-agent identity RBAC is configured when vnext is enabled.
 	// Runs post-deploy because the platform provisions the identity during agent deployment.
-	if err := project.EnsureAgentIdentityRBAC(ctx, azdClient); err != nil {
+	if err := project.EnsureAgentIdentityRBAC(ctx, azdClient, agentNames); err != nil {
 		return fmt.Errorf("agent identity RBAC setup failed: %w", err)
 	}
 

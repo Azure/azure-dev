@@ -364,6 +364,71 @@ func TestValidateMonitorFlags_ErrorMessages(t *testing.T) {
 	assert.Contains(t, err.Error(), "badtype")
 }
 
+func TestExplicitSessionID_PersistedAndReusable(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, ConfigFile)
+
+	agentName := "my-agent"
+	explicitSID := "user-provided-session-id"
+
+	// Before: no sessions stored
+	agentCtx := loadLocalContext(configPath)
+	assert.Empty(t, agentCtx.Sessions)
+
+	// Call resolveStoredIDFromPath with an explicit ID — this is the code path
+	// that resolveStoredID follows when the user passes --session-id.
+	got, err := resolveStoredIDFromPath(configPath, agentName, explicitSID, false, "sessions", false)
+	require.NoError(t, err)
+	assert.Equal(t, explicitSID, got)
+
+	// Verify the ID was persisted (as monitor's resolveMonitorSession would load it)
+	loaded := loadLocalContext(configPath)
+	require.NotNil(t, loaded.Sessions)
+	assert.Equal(t, explicitSID, loaded.Sessions[agentName])
+}
+
+func TestExplicitConversationID_PersistedAndReusable(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, ConfigFile)
+
+	agentName := "my-agent"
+	explicitConvID := "user-provided-conv-id"
+
+	got, err := resolveStoredIDFromPath(configPath, agentName, explicitConvID, false, "conversations", false)
+	require.NoError(t, err)
+	assert.Equal(t, explicitConvID, got)
+
+	loaded := loadLocalContext(configPath)
+	require.NotNil(t, loaded.Conversations)
+	assert.Equal(t, explicitConvID, loaded.Conversations[agentName])
+}
+
+func TestExplicitID_OverwritesPreviousValue(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, ConfigFile)
+
+	agentName := "my-agent"
+
+	// Persist an initial session ID via resolveStoredIDFromPath
+	got, err := resolveStoredIDFromPath(configPath, agentName, "old-session-id", false, "sessions", false)
+	require.NoError(t, err)
+	assert.Equal(t, "old-session-id", got)
+
+	// Persist a different explicit session ID — should overwrite the previous one
+	got, err = resolveStoredIDFromPath(configPath, agentName, "new-session-id", false, "sessions", false)
+	require.NoError(t, err)
+	assert.Equal(t, "new-session-id", got)
+
+	loaded := loadLocalContext(configPath)
+	assert.Equal(t, "new-session-id", loaded.Sessions[agentName])
+}
+
 func TestValidateMonitorFlags_SessionDoesNotAffectValidation(t *testing.T) {
 	t.Parallel()
 

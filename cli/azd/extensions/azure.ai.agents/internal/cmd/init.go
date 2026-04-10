@@ -174,7 +174,6 @@ func runInitFromManifest(
 
 	console := input.NewConsole(
 		false, // noPrompt
-		false, // failOnPrompt
 		true,  // isTerminal
 		input.Writers{Output: os.Stdout},
 		input.ConsoleHandles{
@@ -995,7 +994,6 @@ func (a *InitAction) downloadAgentYaml(
 
 		console = input.NewConsole(
 			false, // noPrompt
-			false, // failOnPrompt
 			true,  // isTerminal
 			input.Writers{Output: os.Stdout},
 			input.ConsoleHandles{

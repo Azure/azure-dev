@@ -428,7 +428,7 @@ func newCommandRunner(showOutput bool) (azd_exec.CommandRunner, input.Console) {
 		})
 	}
 
-	console := input.NewConsole(true, false, true, input.Writers{
+	console := input.NewConsole(true, true, input.Writers{
 		Output:  os.Stdout,
 		Spinner: os.Stdout,
 	}, input.ConsoleHandles{

@@ -108,7 +108,6 @@ func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
 
 			console := input.NewConsole(
 				false, // noPrompt
-				false, // failOnPrompt
 				true,  // isTerminal
 				input.Writers{Output: os.Stdout},
 				input.ConsoleHandles{
@@ -811,7 +810,6 @@ method:
 
 			console = input.NewConsole(
 				false, // noPrompt
-				false, // failOnPrompt
 				true,  // isTerminal
 				input.Writers{Output: os.Stdout},
 				input.ConsoleHandles{

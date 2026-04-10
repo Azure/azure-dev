@@ -896,15 +896,21 @@ func looksLikeManifest(path string) bool {
 }
 
 // resolvePositionalArg classifies a positional argument as either a manifest
-// pointer (URL or existing file) or a source directory (existing directory).
-// It returns (isManifest=true, isSrc=false) for URLs and files,
-// (isManifest=false, isSrc=true) for directories, or an error for
+// pointer (explicit URI or existing file) or a source directory (existing
+// directory). It returns (isManifest=true, isSrc=false) for explicit URIs and
+// files, (isManifest=false, isSrc=true) for directories, or an error for
 // unrecognized inputs.
+//
+// For non-existent paths, a heuristic is applied: .yaml/.yml extensions are
+// treated as manifest pointers, while all other paths are treated as source
+// directories (the downstream init flow creates them via MkdirAll).
 func resolvePositionalArg(arg string) (isManifest bool, isSrc bool, err error) {
-	// Check for URL first (http/https schemes)
-	if parsed, parseErr := url.Parse(arg); parseErr == nil &&
-		(parsed.Scheme == "http" || parsed.Scheme == "https") {
-		return true, false, nil
+	// Check for an explicit URI form first. Requiring "://" avoids
+	// misclassifying Windows drive paths such as C:\...
+	if strings.Contains(arg, "://") {
+		if parsed, parseErr := url.Parse(arg); parseErr == nil && parsed.Scheme != "" {
+			return true, false, nil
+		}
 	}
 
 	info, statErr := os.Stat(arg)
@@ -915,15 +921,14 @@ func resolvePositionalArg(arg string) (isManifest bool, isSrc bool, err error) {
 		return true, false, nil
 	}
 
-	return false, false, exterrors.Validation(
-		exterrors.CodeInvalidPositionalArg,
-		fmt.Sprintf(
-			"'%s' is not a recognized URL, file, or directory",
-			arg,
-		),
-		"provide a valid URL, an existing manifest file path, or an existing directory.\n"+
-			"You can also use explicit flags: --manifest (-m) for a manifest pointer, or --src (-s) for a directory",
-	)
+	// Path does not exist — use file extension heuristic.
+	ext := strings.ToLower(filepath.Ext(arg))
+	if ext == ".yaml" || ext == ".yml" {
+		return true, false, nil
+	}
+
+	// Default to source directory; the downstream flow will create it via MkdirAll.
+	return false, true, nil
 }
 
 // applyPositionalArg resolves a positional argument and maps it to the

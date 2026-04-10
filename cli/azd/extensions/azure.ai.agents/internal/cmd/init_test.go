@@ -626,7 +626,6 @@ func TestResolvePositionalArg(t *testing.T) {
 		arg        string
 		isManifest bool
 		isSrc      bool
-		wantErr    bool
 	}{
 		{
 			name:       "https URL is manifest",
@@ -636,6 +635,16 @@ func TestResolvePositionalArg(t *testing.T) {
 		{
 			name:       "http URL is manifest",
 			arg:        "http://example.com/agent.yaml",
+			isManifest: true,
+		},
+		{
+			name:       "azureml registry URL is manifest",
+			arg:        "azureml://registries/myReg/agentmanifests/myManifest",
+			isManifest: true,
+		},
+		{
+			name:       "custom scheme URL is manifest",
+			arg:        "custom://some/resource",
 			isManifest: true,
 		},
 		{
@@ -649,9 +658,19 @@ func TestResolvePositionalArg(t *testing.T) {
 			isSrc: true,
 		},
 		{
-			name:    "non-existent path is error",
-			arg:     filepath.Join(tmpDir, "does-not-exist"),
-			wantErr: true,
+			name:       "non-existent yaml path is manifest",
+			arg:        filepath.Join(tmpDir, "does-not-exist.yaml"),
+			isManifest: true,
+		},
+		{
+			name:       "non-existent yml path is manifest",
+			arg:        filepath.Join(tmpDir, "does-not-exist.yml"),
+			isManifest: true,
+		},
+		{
+			name:  "non-existent path without extension is src",
+			arg:   filepath.Join(tmpDir, "new-project-dir"),
+			isSrc: true,
 		},
 	}
 
@@ -659,16 +678,6 @@ func TestResolvePositionalArg(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			isManifest, isSrc, err := resolvePositionalArg(tt.arg)
-			if tt.wantErr {
-				if err == nil {
-					t.Fatalf("expected error, got nil")
-				}
-				// Verify it's an exterrors.Validation error
-				if !strings.Contains(err.Error(), "not a recognized URL, file, or directory") {
-					t.Fatalf("expected validation error message, got: %s", err)
-				}
-				return
-			}
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -702,8 +711,16 @@ func TestApplyPositionalArg_ConflictWithManifestFlag(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for conflicting positional arg and --manifest flag")
 	}
-	if !strings.Contains(err.Error(), "cannot pass both") {
-		t.Fatalf("expected conflict error message, got: %s", err)
+
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	if !ok {
+		t.Fatalf("expected *azdext.LocalError, got %T", err)
+	}
+	if localErr.Code != exterrors.CodeConflictingArguments {
+		t.Errorf("code = %q, want %q", localErr.Code, exterrors.CodeConflictingArguments)
+	}
+	if !strings.Contains(localErr.Suggestion, "azd ai agent init") {
+		t.Errorf("suggestion should include usage example, got: %s", localErr.Suggestion)
 	}
 }
 
@@ -725,8 +742,16 @@ func TestApplyPositionalArg_ConflictWithSrcFlag(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for conflicting positional arg and --src flag")
 	}
-	if !strings.Contains(err.Error(), "cannot pass both") {
-		t.Fatalf("expected conflict error message, got: %s", err)
+
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	if !ok {
+		t.Fatalf("expected *azdext.LocalError, got %T", err)
+	}
+	if localErr.Code != exterrors.CodeConflictingArguments {
+		t.Errorf("code = %q, want %q", localErr.Code, exterrors.CodeConflictingArguments)
+	}
+	if !strings.Contains(localErr.Suggestion, "azd ai agent init") {
+		t.Errorf("suggestion should include usage example, got: %s", localErr.Suggestion)
 	}
 }
 
@@ -766,5 +791,41 @@ func TestApplyPositionalArg_SetsSrcDir(t *testing.T) {
 	}
 	if flags.src != tmpDir {
 		t.Errorf("src = %q, want %q", flags.src, tmpDir)
+	}
+}
+
+func TestApplyPositionalArg_NonExistentDirSetsSrc(t *testing.T) {
+	t.Parallel()
+
+	newDir := filepath.Join(t.TempDir(), "new-project")
+
+	flags := &initFlags{rootFlagsDefinition: &rootFlagsDefinition{}}
+	cmd := &cobra.Command{}
+	cmd.Flags().StringVarP(&flags.manifestPointer, "manifest", "m", "", "")
+	cmd.Flags().StringVarP(&flags.src, "src", "s", "", "")
+
+	if err := applyPositionalArg(newDir, flags, cmd); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if flags.src != newDir {
+		t.Errorf("src = %q, want %q", flags.src, newDir)
+	}
+}
+
+func TestApplyPositionalArg_NonExistentYamlSetsManifest(t *testing.T) {
+	t.Parallel()
+
+	yamlPath := filepath.Join(t.TempDir(), "agent.yaml")
+
+	flags := &initFlags{rootFlagsDefinition: &rootFlagsDefinition{}}
+	cmd := &cobra.Command{}
+	cmd.Flags().StringVarP(&flags.manifestPointer, "manifest", "m", "", "")
+	cmd.Flags().StringVarP(&flags.src, "src", "s", "", "")
+
+	if err := applyPositionalArg(yamlPath, flags, cmd); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if flags.manifestPointer != yamlPath {
+		t.Errorf("manifestPointer = %q, want %q", flags.manifestPointer, yamlPath)
 	}
 }

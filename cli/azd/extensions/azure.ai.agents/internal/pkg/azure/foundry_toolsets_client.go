@@ -21,26 +21,26 @@ import (
 )
 
 const (
-	toolsetsApiVersion    = "v1"
-	toolsetsFeatureHeader = "Toolsets=V1Preview"
+	toolboxesApiVersion    = "v1"
+	toolboxesFeatureHeader = "Toolsets=V1Preview"
 )
 
-// FoundryToolsetsClient provides methods for interacting with the Foundry Toolsets API
-type FoundryToolsetsClient struct {
+// FoundryToolboxClient provides methods for interacting with the Foundry Toolboxes API.
+type FoundryToolboxClient struct {
 	endpoint string
 	pipeline runtime.Pipeline
 }
 
-// NewFoundryToolsetsClient creates a new FoundryToolsetsClient
-func NewFoundryToolsetsClient(
+// NewFoundryToolboxClient creates a new FoundryToolboxClient.
+func NewFoundryToolboxClient(
 	endpoint string,
 	cred azcore.TokenCredential,
-) *FoundryToolsetsClient {
+) *FoundryToolboxClient {
 	userAgent := fmt.Sprintf("azd-ext-azure-ai-agents/%s", version.Version)
 
 	clientOptions := &policy.ClientOptions{
 		Logging: policy.LogOptions{
-			AllowedHeaders: []string{azsdk.MsCorrelationIdHeader},
+			AllowedHeaders: []string{azsdk.MsCorrelationIdHeader, "X-Request-Id"},
 			IncludeBody:    true,
 		},
 		PerCallPolicies: []policy.Policy{
@@ -57,54 +57,48 @@ func NewFoundryToolsetsClient(
 		clientOptions,
 	)
 
-	return &FoundryToolsetsClient{
+	return &FoundryToolboxClient{
 		endpoint: endpoint,
 		pipeline: pipeline,
 	}
 }
 
-// CreateToolsetRequest is the request body for creating a toolset
-type CreateToolsetRequest struct {
-	Name        string            `json:"name"`
+// CreateToolboxVersionRequest is the request body for creating a new toolbox version.
+// The toolbox name is provided in the URL path, not in the body.
+type CreateToolboxVersionRequest struct {
 	Description string            `json:"description,omitempty"`
 	Metadata    map[string]string `json:"metadata,omitempty"`
 	Tools       []map[string]any  `json:"tools"`
 }
 
-// UpdateToolsetRequest is the request body for updating a toolset
-type UpdateToolsetRequest struct {
-	Description string            `json:"description,omitempty"`
-	Metadata    map[string]string `json:"metadata,omitempty"`
-	Tools       []map[string]any  `json:"tools"`
+// ToolboxObject is the lightweight response for a toolbox (no tools list).
+type ToolboxObject struct {
+	Id             string `json:"id"`
+	Name           string `json:"name"`
+	DefaultVersion string `json:"default_version"`
 }
 
-// ToolsetObject is the response object for a toolset
-type ToolsetObject struct {
-	Object      string            `json:"object"`
+// ToolboxVersionObject is the response for a specific toolbox version.
+type ToolboxVersionObject struct {
 	Id          string            `json:"id"`
-	CreatedAt   int64             `json:"created_at"`
-	UpdatedAt   int64             `json:"updated_at"`
 	Name        string            `json:"name"`
+	Version     string            `json:"version"`
 	Description string            `json:"description,omitempty"`
+	CreatedAt   int64             `json:"created_at"`
 	Metadata    map[string]string `json:"metadata,omitempty"`
 	Tools       []map[string]any  `json:"tools"`
 }
 
-// DeleteToolsetResponse is the response for deleting a toolset
-type DeleteToolsetResponse struct {
-	Object  string `json:"object"`
-	Name    string `json:"name"`
-	Deleted bool   `json:"deleted"`
-}
-
-// CreateToolset creates a new toolset
-func (c *FoundryToolsetsClient) CreateToolset(
+// CreateToolboxVersion creates a new version of a toolbox.
+// If the toolbox does not exist, it will be created automatically.
+func (c *FoundryToolboxClient) CreateToolboxVersion(
 	ctx context.Context,
-	request *CreateToolsetRequest,
-) (*ToolsetObject, error) {
+	toolboxName string,
+	request *CreateToolboxVersionRequest,
+) (*ToolboxVersionObject, error) {
 	targetUrl := fmt.Sprintf(
-		"%s/toolsets?api-version=%s",
-		c.endpoint, toolsetsApiVersion,
+		"%s/toolboxes/%s/versions?api-version=%s",
+		c.endpoint, url.PathEscape(toolboxName), toolboxesApiVersion,
 	)
 
 	payload, err := json.Marshal(request)
@@ -117,7 +111,7 @@ func (c *FoundryToolsetsClient) CreateToolset(
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Raw().Header.Set("Foundry-Features", toolsetsFeatureHeader)
+	req.Raw().Header.Set("Foundry-Features", toolboxesFeatureHeader)
 
 	if err := req.SetBody(
 		streaming.NopCloser(bytes.NewReader(payload)),
@@ -141,75 +135,22 @@ func (c *FoundryToolsetsClient) CreateToolset(
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	var toolset ToolsetObject
-	if err := json.Unmarshal(body, &toolset); err != nil {
+	var result ToolboxVersionObject
+	if err := json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	return &toolset, nil
+	return &result, nil
 }
 
-// UpdateToolset updates an existing toolset
-func (c *FoundryToolsetsClient) UpdateToolset(
+// GetToolbox retrieves a toolbox by name.
+func (c *FoundryToolboxClient) GetToolbox(
 	ctx context.Context,
-	toolsetName string,
-	request *UpdateToolsetRequest,
-) (*ToolsetObject, error) {
+	toolboxName string,
+) (*ToolboxObject, error) {
 	targetUrl := fmt.Sprintf(
-		"%s/toolsets/%s?api-version=%s",
-		c.endpoint, url.PathEscape(toolsetName), toolsetsApiVersion,
-	)
-
-	payload, err := json.Marshal(request)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	req, err := runtime.NewRequest(ctx, http.MethodPost, targetUrl)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Raw().Header.Set("Foundry-Features", toolsetsFeatureHeader)
-
-	if err := req.SetBody(
-		streaming.NopCloser(bytes.NewReader(payload)),
-		"application/json",
-	); err != nil {
-		return nil, fmt.Errorf("failed to set request body: %w", err)
-	}
-
-	resp, err := c.pipeline.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if !runtime.HasStatusCode(resp, http.StatusOK) {
-		return nil, runtime.NewResponseError(resp)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	var toolset ToolsetObject
-	if err := json.Unmarshal(body, &toolset); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	return &toolset, nil
-}
-
-// GetToolset retrieves a toolset by name
-func (c *FoundryToolsetsClient) GetToolset(
-	ctx context.Context,
-	toolsetName string,
-) (*ToolsetObject, error) {
-	targetUrl := fmt.Sprintf(
-		"%s/toolsets/%s?api-version=%s",
-		c.endpoint, url.PathEscape(toolsetName), toolsetsApiVersion,
+		"%s/toolboxes/%s?api-version=%s",
+		c.endpoint, url.PathEscape(toolboxName), toolboxesApiVersion,
 	)
 
 	req, err := runtime.NewRequest(ctx, http.MethodGet, targetUrl)
@@ -217,7 +158,7 @@ func (c *FoundryToolsetsClient) GetToolset(
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Raw().Header.Set("Foundry-Features", toolsetsFeatureHeader)
+	req.Raw().Header.Set("Foundry-Features", toolboxesFeatureHeader)
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
@@ -234,10 +175,40 @@ func (c *FoundryToolsetsClient) GetToolset(
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	var toolset ToolsetObject
-	if err := json.Unmarshal(body, &toolset); err != nil {
+	var result ToolboxObject
+	if err := json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	return &toolset, nil
+	return &result, nil
+}
+
+// DeleteToolbox deletes a toolbox and all its versions.
+func (c *FoundryToolboxClient) DeleteToolbox(
+	ctx context.Context,
+	toolboxName string,
+) error {
+	targetUrl := fmt.Sprintf(
+		"%s/toolboxes/%s?api-version=%s",
+		c.endpoint, url.PathEscape(toolboxName), toolboxesApiVersion,
+	)
+
+	req, err := runtime.NewRequest(ctx, http.MethodDelete, targetUrl)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Raw().Header.Set("Foundry-Features", toolboxesFeatureHeader)
+
+	resp, err := c.pipeline.Do(req)
+	if err != nil {
+		return fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if !runtime.HasStatusCode(resp, http.StatusOK, http.StatusNoContent) {
+		return runtime.NewResponseError(resp)
+	}
+
+	return nil
 }

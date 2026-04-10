@@ -88,11 +88,10 @@ const (
 	CodeInvalidFilePath  = "invalid_file_path"
 )
 
-// Error codes for toolbox/toolset operations.
+// Error codes for toolbox operations.
 const (
-	CodeInvalidToolbox      = "invalid_toolbox"
-	CodeCreateToolsetFailed = "create_toolset_failed"
-	CodeUpdateToolsetFailed = "update_toolset_failed"
+	CodeInvalidToolbox             = "invalid_toolbox"
+	CodeCreateToolboxVersionFailed = "create_toolbox_version_failed"
 )
 
 // Error codes for connection operations.
@@ -123,7 +122,6 @@ const (
 	OpCreateAgent           = "create_agent"
 	OpStartContainer        = "start_container"
 	OpGetContainerOperation = "get_container_operation"
-	OpCreateToolset         = "create_toolset"
-	OpUpdateToolset         = "update_toolset"
-	OpGetToolset            = "get_toolset"
+	OpCreateToolboxVersion  = "create_toolbox_version"
+	OpGetToolbox            = "get_toolbox"
 )

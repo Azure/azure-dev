@@ -6,9 +6,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -19,7 +17,6 @@ import (
 	"azureaiagent/internal/pkg/azure"
 	"azureaiagent/internal/project"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/braydonk/yaml"
@@ -536,7 +533,7 @@ func provisionToolboxes(
 		)
 	}
 
-	toolsetsClient := azure.NewFoundryToolsetsClient(
+	toolboxClient := azure.NewFoundryToolboxClient(
 		projectEndpoint, cred,
 	)
 
@@ -569,8 +566,8 @@ func provisionToolboxes(
 		// Replace project_connection_id friendly names with ARM resource IDs
 		resolveToolboxConnectionIDs(&toolbox, connIDMap)
 
-		if err := upsertToolset(
-			ctx, toolsetsClient, toolbox,
+		if err := createToolboxVersion(
+			ctx, toolboxClient, toolbox,
 		); err != nil {
 			return err
 		}
@@ -591,51 +588,26 @@ func provisionToolboxes(
 	return nil
 }
 
-// upsertToolset creates a toolset, or updates it if it already exists.
-func upsertToolset(
+// createToolboxVersion creates a new version of a toolbox.
+// If the toolbox does not exist, it will be created automatically.
+func createToolboxVersion(
 	ctx context.Context,
-	client *azure.FoundryToolsetsClient,
+	client *azure.FoundryToolboxClient,
 	toolbox project.Toolbox,
 ) error {
-	createReq := &azure.CreateToolsetRequest{
-		Name:        toolbox.Name,
+	req := &azure.CreateToolboxVersionRequest{
 		Description: toolbox.Description,
 		Tools:       toolbox.Tools,
 	}
 
-	_, err := client.CreateToolset(ctx, createReq)
-	if err == nil {
-		return nil
-	}
-
-	// 409 Conflict means the toolset already exists — update it
-	var respErr *azcore.ResponseError
-	if errors.As(err, &respErr) && respErr.StatusCode == http.StatusConflict {
-		fmt.Fprintf(
-			os.Stderr,
-			"  Toolset '%s' already exists, updating...\n",
-			toolbox.Name,
+	if _, err := client.CreateToolboxVersion(ctx, toolbox.Name, req); err != nil {
+		return exterrors.Internal(
+			exterrors.CodeCreateToolboxVersionFailed,
+			fmt.Sprintf("failed to create toolbox version '%s': %s", toolbox.Name, err),
 		)
-		updateReq := &azure.UpdateToolsetRequest{
-			Description: toolbox.Description,
-			Tools:       toolbox.Tools,
-		}
-		if _, updateErr := client.UpdateToolset(ctx, toolbox.Name, updateReq); updateErr != nil {
-			return exterrors.Internal(
-				exterrors.CodeCreateToolsetFailed,
-				fmt.Sprintf("failed to update toolset '%s': %s", toolbox.Name, updateErr),
-			)
-		}
-		return nil
 	}
 
-	return exterrors.Internal(
-		exterrors.CodeCreateToolsetFailed,
-		fmt.Sprintf(
-			"failed to create toolset '%s': %s",
-			toolbox.Name, err,
-		),
-	)
+	return nil
 }
 
 // registerToolboxEnvVars sets TOOLBOX_{NAME}_MCP_ENDPOINT.
@@ -650,7 +622,7 @@ func registerToolboxEnvVars(
 
 	endpoint := strings.TrimRight(projectEndpoint, "/")
 	mcpEndpoint := fmt.Sprintf(
-		"%s/toolsets/%s/mcp", endpoint, toolboxName,
+		"%s/toolboxes/%s/mcp?api-version=v1", endpoint, toolboxName,
 	)
 
 	return setEnvVar(

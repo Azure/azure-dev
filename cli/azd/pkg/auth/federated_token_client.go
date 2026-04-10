@@ -32,9 +32,9 @@ func (c *FederatedTokenClient) TokenForAudience(ctx context.Context, audience st
 	if err != nil {
 		return "", fmt.Errorf("sending request: %w", err)
 	}
+	defer res.Body.Close()
 
 	if !runtime.HasStatusCode(res, http.StatusOK) {
-		defer res.Body.Close()
 		return "", fmt.Errorf("expected 200 response, got: %d", res.StatusCode)
 	}
 

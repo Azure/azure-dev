@@ -322,8 +322,7 @@ func (ch *ContainerHelper) Credentials(
 				// during DNS propagation after ACR creation). Only retry
 				// genuinely transient errors, not permanent URL/TLS failures.
 				if _, ok := errors.AsType[*url.Error](err); ok {
-					var netErr net.Error
-					if errors.As(err, &netErr) && netErr.Timeout() {
+					if netErr, ok := errors.AsType[net.Error](err); ok && netErr.Timeout() {
 						return retry.RetryableError(err)
 					}
 					msg := err.Error()

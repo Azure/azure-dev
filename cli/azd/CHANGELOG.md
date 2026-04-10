@@ -14,7 +14,7 @@
 
 ### Features Added
 
-- [[#7451]](https://github.com/Azure/azure-dev/pull/7451) Add Python hook support in `azure.yaml`; hooks pointing to a `.py` script are auto-detected, automatically create a virtual environment, install dependencies from `requirements.txt` or `pyproject.toml`, and execute the script.
+- [[#7451]](https://github.com/Azure/azure-dev/pull/7451) Add Python hook support in `azure.yaml`; hooks pointing to a `.py` script are auto-detected and executed. When `requirements.txt` or `pyproject.toml` is present, a virtual environment is created and dependencies are installed automatically.
 - [[#7626]](https://github.com/Azure/azure-dev/pull/7626) Add JavaScript and TypeScript hook support in `azure.yaml`; hooks pointing to `.js` or `.ts` scripts are auto-detected, with automatic `npm install` from `package.json` when present. TypeScript scripts execute via `npx tsx` with no compile step required.
 
 ### Breaking Changes

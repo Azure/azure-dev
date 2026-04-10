@@ -81,7 +81,7 @@ Per [references/pr-processing.md](references/pr-processing.md):
 
 ### Step 5 — Assemble & Review
 
-1. Remove any empty category sections from the new release entry.
+1. **Remove empty category sections** — scan the new release entry and delete any `### <Category>` heading that has no bullet entries beneath it (i.e., the next line is blank followed by another `###` heading or `##` heading or end of section). This is mandatory — never leave empty `### Breaking Changes`, `### Features Added`, `### Bugs Fixed`, or `### Other Changes` sections in the final output.
 2. For extensions using flat bullet lists (no category headings), match the existing style.
 3. Present the **complete changelog entry** to the user for review via `ask_user`.
 

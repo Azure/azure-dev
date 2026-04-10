@@ -16,8 +16,6 @@
 
 - [[#7451]](https://github.com/Azure/azure-dev/pull/7451) Add Python hook support in `azure.yaml`; hooks pointing to a `.py` script are auto-detected, automatically create a virtual environment, install dependencies from `requirements.txt` or `pyproject.toml`, and execute the script.
 
-### Breaking Changes
-
 ### Bugs Fixed
 
 - [[#7578]](https://github.com/Azure/azure-dev/pull/7578) Fix tenant-specific re-authentication guidance for `AADSTS70043` and `AADSTS700082` errors; azd now returns guidance targeting the correct subscription tenant when a credential fails due to a stale refresh token.

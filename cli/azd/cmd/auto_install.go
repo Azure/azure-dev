@@ -391,7 +391,7 @@ func tryAutoInstallExtension(
 // startUpdateCheck launches a background goroutine that checks for a newer
 // version of azd and returns a channel that will receive the result.
 // The caller should read from the returned channel after command execution.
-func startUpdateCheck() <-chan *update.VersionInfo {
+func startUpdateCheck(ctx context.Context) <-chan *update.VersionInfo {
 	ch := make(chan *update.VersionInfo, 1)
 
 	// Allow the user to skip the update check by setting AZD_SKIP_UPDATE_CHECK.
@@ -400,10 +400,13 @@ func startUpdateCheck() <-chan *update.VersionInfo {
 			log.Print("skipping update check since AZD_SKIP_UPDATE_CHECK is true")
 			close(ch)
 			return ch
+		} else if err != nil {
+			log.Printf("could not parse value for AZD_SKIP_UPDATE_CHECK as a boolean "+
+				"(it was: %s), proceeding with update check", value)
 		}
 	}
 
-	bgCtx, bgCancel := context.WithTimeout(context.Background(), 60*time.Second)
+	bgCtx, bgCancel := context.WithTimeout(ctx, 60*time.Second)
 
 	go func() {
 		defer close(ch)
@@ -483,7 +486,7 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 		// AzureDeveloperCLICredential 10-second subprocess timeout from being
 		// hit when the update check is slow (laptop wake, DNS stalls, etc.).
 		if !result.IsLightspeed {
-			result.LatestVersion = startUpdateCheck()
+			result.LatestVersion = startUpdateCheck(ctx)
 		}
 
 		// Check for partial namespace match (e.g., "ai" found but "ai.agent" not installed)
@@ -573,7 +576,7 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 	}
 
 	// Unknown command path — always start the update check since these aren't lightspeed.
-	result.LatestVersion = startUpdateCheck()
+	result.LatestVersion = startUpdateCheck(ctx)
 
 	// Extract flags that take values from the root command
 	flagsWithValues := extractFlagsWithValues(rootCmd)

@@ -158,6 +158,8 @@ func TestExecuteWithAutoInstall_LightspeedDetection(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Prevent non-lightspeed commands from making real HTTP update check calls.
+			t.Setenv("AZD_SKIP_UPDATE_CHECK", "true")
 			os.Args = tt.args
 			rootContainer := ioc.NewNestedContainer(nil)
 			result := ExecuteWithAutoInstall(t.Context(), rootContainer)

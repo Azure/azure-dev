@@ -12,8 +12,6 @@ import (
 )
 
 // ptr is a generic helper that returns a pointer to the given value.
-func ptr[T any](v T) *T { return &v }
-
 // ---------------------------------------------------------------------------
 // ConvertToolToYaml
 // ---------------------------------------------------------------------------
@@ -45,9 +43,9 @@ func TestConvertToolToYaml(t *testing.T) {
 			input: agent_api.FunctionTool{
 				Tool:        agent_api.Tool{Type: "function"},
 				Name:        "my_func",
-				Description: ptr("a helper function"),
+				Description: new("a helper function"),
 				Parameters:  nil,
-				Strict:      ptr(true),
+				Strict:      new(true),
 			},
 			validate: func(t *testing.T, got any) {
 				ft, ok := got.(agent_yaml.FunctionTool)
@@ -73,7 +71,7 @@ func TestConvertToolToYaml(t *testing.T) {
 			input: agent_api.WebSearchPreviewTool{
 				Tool:              agent_api.Tool{Type: "web_search_preview"},
 				UserLocation:      &agent_api.Location{Type: "approximate"},
-				SearchContextSize: ptr("medium"),
+				SearchContextSize: new("medium"),
 			},
 			validate: func(t *testing.T, got any) {
 				ws, ok := got.(agent_yaml.WebSearchTool)
@@ -149,10 +147,10 @@ func TestConvertToolToYaml(t *testing.T) {
 			input: agent_api.FileSearchTool{
 				Tool:           agent_api.Tool{Type: "file_search"},
 				VectorStoreIds: []string{"vs-1", "vs-2"},
-				MaxNumResults:  ptr(int32(10)),
+				MaxNumResults:  new(int32(10)),
 				RankingOptions: &agent_api.RankingOptions{
-					Ranker:         ptr("auto"),
-					ScoreThreshold: ptr(float32(0.5)),
+					Ranker:         new("auto"),
+					ScoreThreshold: new(float32(0.5)),
 				},
 			},
 			validate: func(t *testing.T, got any) {
@@ -206,7 +204,7 @@ func TestConvertToolToYaml(t *testing.T) {
 				ServerLabel:         "my-server",
 				ServerURL:           "https://example.com",
 				Headers:             map[string]string{"x-key": "val"},
-				ProjectConnectionID: ptr("conn-1"),
+				ProjectConnectionID: new("conn-1"),
 			},
 			validate: func(t *testing.T, got any) {
 				mcp, ok := got.(agent_yaml.McpTool)
@@ -266,7 +264,7 @@ func TestConvertToolToYaml(t *testing.T) {
 				Tool: agent_api.Tool{Type: "openapi"},
 				OpenAPI: agent_api.OpenApiFunctionDefinition{
 					Name:        "weather-api",
-					Description: ptr("Weather lookup"),
+					Description: new("Weather lookup"),
 				},
 			},
 			validate: func(t *testing.T, got any) {
@@ -359,7 +357,7 @@ func TestConvertAgentDefinition(t *testing.T) {
 		t.Parallel()
 		def := agent_api.PromptAgentDefinition{
 			Model:        "gpt-4o",
-			Instructions: ptr("Be helpful"),
+			Instructions: new("Be helpful"),
 		}
 
 		got, err := ConvertAgentDefinition(def)
@@ -387,7 +385,7 @@ func TestConvertAgentDefinition(t *testing.T) {
 		t.Parallel()
 		def := agent_api.PromptAgentDefinition{
 			Model:        "gpt-4o-mini",
-			Instructions: ptr("Do things"),
+			Instructions: new("Do things"),
 			Tools: []any{
 				agent_api.FunctionTool{
 					Tool: agent_api.Tool{Type: "function"},

@@ -10,15 +10,13 @@ import (
 )
 
 // ptr is a generic helper that returns a pointer to the given value.
-func ptr[T any](v T) *T { return &v }
-
 func TestCreateAgentRequest_RoundTrip(t *testing.T) {
 	t.Parallel()
 
 	original := CreateAgentRequest{
 		Name: "test-agent",
 		CreateAgentVersionRequest: CreateAgentVersionRequest{
-			Description: ptr("A test agent"),
+			Description: new("A test agent"),
 			Metadata:    map[string]string{"env": "test"},
 			Definition: PromptAgentDefinition{
 				AgentDefinition: AgentDefinition{
@@ -26,9 +24,9 @@ func TestCreateAgentRequest_RoundTrip(t *testing.T) {
 					RaiConfig: &RaiConfig{RaiPolicyName: "default"},
 				},
 				Model:        "gpt-4o",
-				Instructions: ptr("You are helpful"),
-				Temperature:  ptr(float32(0.7)),
-				TopP:         ptr(float32(0.9)),
+				Instructions: new("You are helpful"),
+				Temperature:  new(float32(0.7)),
+				TopP:         new(float32(0.9)),
 			},
 		},
 	}
@@ -77,7 +75,7 @@ func TestAgentObject_RoundTrip(t *testing.T) {
 				ID:          "ver-1",
 				Name:        "my-agent",
 				Version:     "1",
-				Description: ptr("version one"),
+				Description: new("version one"),
 				Metadata:    map[string]string{"release": "stable"},
 				CreatedAt:   1700000000,
 			},
@@ -119,9 +117,9 @@ func TestAgentContainerObject_RoundTrip(t *testing.T) {
 		Object:       "container",
 		ID:           "ctr-1",
 		Status:       AgentContainerStatusRunning,
-		MaxReplicas:  ptr(int32(3)),
-		MinReplicas:  ptr(int32(1)),
-		ErrorMessage: ptr("partial failure"),
+		MaxReplicas:  new(int32(3)),
+		MinReplicas:  new(int32(1)),
+		ErrorMessage: new("partial failure"),
 		CreatedAt:    "2024-01-01T00:00:00Z",
 		UpdatedAt:    "2024-06-01T00:00:00Z",
 		Container: &AgentContainerDetails{
@@ -182,15 +180,15 @@ func TestPromptAgentDefinition_RoundTrip(t *testing.T) {
 			RaiConfig: &RaiConfig{RaiPolicyName: "strict"},
 		},
 		Model:        "gpt-4o",
-		Instructions: ptr("Be concise"),
-		Temperature:  ptr(float32(0.5)),
-		TopP:         ptr(float32(0.95)),
+		Instructions: new("Be concise"),
+		Temperature:  new(float32(0.5)),
+		TopP:         new(float32(0.95)),
 		Reasoning:    &Reasoning{Effort: "high"},
 		Text:         &ResponseTextFormatConfiguration{Type: "text"},
 		StructuredInputs: map[string]StructuredInputDefinition{
 			"query": {
-				Description: ptr("user query"),
-				Required:    ptr(true),
+				Description: new("user query"),
+				Required:    new(true),
 			},
 		},
 	}
@@ -325,7 +323,7 @@ func TestAgentVersionObject_RoundTrip(t *testing.T) {
 		ID:          "ver-abc",
 		Name:        "my-agent",
 		Version:     "3",
-		Description: ptr("third version"),
+		Description: new("third version"),
 		Metadata:    map[string]string{"stage": "prod"},
 		CreatedAt:   1710000000,
 	}
@@ -500,9 +498,9 @@ func TestFunctionTool_RoundTrip(t *testing.T) {
 	original := FunctionTool{
 		Tool:        Tool{Type: ToolTypeFunction},
 		Name:        "get_weather",
-		Description: ptr("Gets weather data"),
+		Description: new("Gets weather data"),
 		Parameters:  map[string]any{"type": "object"},
-		Strict:      ptr(true),
+		Strict:      new(true),
 	}
 
 	data, err := json.Marshal(original)
@@ -541,7 +539,7 @@ func TestMCPTool_RoundTrip(t *testing.T) {
 		ServerLabel:         "my-server",
 		ServerURL:           "https://mcp.example.com",
 		Headers:             map[string]string{"Authorization": "Bearer tok"},
-		ProjectConnectionID: ptr("conn-abc"),
+		ProjectConnectionID: new("conn-abc"),
 	}
 
 	data, err := json.Marshal(original)
@@ -578,10 +576,10 @@ func TestFileSearchTool_RoundTrip(t *testing.T) {
 	original := FileSearchTool{
 		Tool:           Tool{Type: ToolTypeFileSearch},
 		VectorStoreIds: []string{"vs-1", "vs-2"},
-		MaxNumResults:  ptr(int32(10)),
+		MaxNumResults:  new(int32(10)),
 		RankingOptions: &RankingOptions{
-			Ranker:         ptr("auto"),
-			ScoreThreshold: ptr(float32(0.8)),
+			Ranker:         new("auto"),
+			ScoreThreshold: new(float32(0.8)),
 		},
 	}
 
@@ -621,7 +619,7 @@ func TestWebSearchPreviewTool_RoundTrip(t *testing.T) {
 
 	original := WebSearchPreviewTool{
 		Tool:              Tool{Type: ToolTypeWebSearchPreview},
-		SearchContextSize: ptr("medium"),
+		SearchContextSize: new("medium"),
 	}
 
 	data, err := json.Marshal(original)
@@ -691,7 +689,7 @@ func TestBingGroundingAgentTool_RoundTrip(t *testing.T) {
 			SearchConfigurations: []BingGroundingSearchConfiguration{
 				{
 					ProjectConnectionID: "conn-1",
-					Market:              ptr("en-US"),
+					Market:              new("en-US"),
 				},
 			},
 		},
@@ -730,7 +728,7 @@ func TestOpenApiAgentTool_RoundTrip(t *testing.T) {
 		Tool: Tool{Type: ToolTypeOpenAPI},
 		OpenAPI: OpenApiFunctionDefinition{
 			Name:        "petstore",
-			Description: ptr("Pet store API"),
+			Description: new("Pet store API"),
 			Spec:        map[string]any{"openapi": "3.0.0"},
 			Auth: OpenApiAuthDetails{
 				Type: OpenApiAuthTypeAnonymous,
@@ -739,7 +737,7 @@ func TestOpenApiAgentTool_RoundTrip(t *testing.T) {
 			Functions: []OpenApiFunction{
 				{
 					Name:        "listPets",
-					Description: ptr("List all pets"),
+					Description: new("List all pets"),
 					Parameters:  map[string]any{"type": "object"},
 				},
 			},
@@ -781,7 +779,7 @@ func TestSessionFileInfo_RoundTrip(t *testing.T) {
 		IsDirectory:  false,
 		Size:         2048,
 		Mode:         0644,
-		LastModified: ptr("2024-06-15T10:30:00Z"),
+		LastModified: new("2024-06-15T10:30:00Z"),
 	}
 
 	data, err := json.Marshal(original)
@@ -860,7 +858,7 @@ func TestEvalsDestination_RoundTrip(t *testing.T) {
 			Type: AgentEventHandlerDestinationTypeEvals,
 		},
 		EvalID:        "eval-123",
-		MaxHourlyRuns: ptr(int32(10)),
+		MaxHourlyRuns: new(int32(10)),
 	}
 
 	data, err := json.Marshal(original)

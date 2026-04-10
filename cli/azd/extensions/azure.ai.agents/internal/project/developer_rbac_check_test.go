@@ -4,20 +4,16 @@
 package project
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
 
-func TestResolveACRResourceID_NormalizesLoginServer(t *testing.T) {
-	// Test that the login server normalization handles various input formats.
-	// We can't test the full resolution without a live Azure connection,
-	// but we can verify the normalization logic.
+func TestNormalizeLoginServer(t *testing.T) {
 	tests := []struct {
 		name  string
 		input string
-		want  string // expected normalized form
+		want  string
 	}{
 		{"plain login server", "crfoo.azurecr.io", "crfoo.azurecr.io"},
 		{"with https prefix", "https://crfoo.azurecr.io", "crfoo.azurecr.io"},
@@ -30,11 +26,8 @@ func TestResolveACRResourceID_NormalizesLoginServer(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// We test the normalization by checking that various inputs
-			// produce consistent lowercase, no-prefix, no-suffix forms.
-			// The actual resolution requires live Azure and is tested via integration tests.
-			normalized := normalizeLoginServer(tt.input)
-			assert.Equal(t, tt.want, normalized)
+			got := normalizeLoginServer(tt.input)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
@@ -65,16 +58,4 @@ func TestSufficientRoleLists(t *testing.T) {
 	assert.Contains(t, sufficientAIUserRoles, roleContributor)
 	assert.Contains(t, sufficientAIUserRoles, roleAzureAIUser)
 	assert.Contains(t, sufficientAIUserRoles, roleAzureAIDeveloper)
-}
-
-// normalizeLoginServer is extracted for testability.
-func normalizeLoginServer(loginServer string) string {
-	s := loginServer
-	for _, prefix := range []string{"https://", "http://"} {
-		if len(s) > len(prefix) && strings.EqualFold(s[:len(prefix)], prefix) {
-			s = s[len(prefix):]
-		}
-	}
-	s = strings.TrimSuffix(s, "/")
-	return strings.ToLower(s)
 }

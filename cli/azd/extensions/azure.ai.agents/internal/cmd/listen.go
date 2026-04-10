@@ -128,6 +128,7 @@ func isHostedAgentService(svc *azdext.ServiceConfig, proj *azdext.ProjectConfig)
 func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
 	// Collect agent names from hosted agent services that were deployed.
 	// After deploy, each hosted agent's name is stored as AGENT_{SERVICE_KEY}_NAME.
+	// Only hosted agents get platform-created per-agent identities; prompt agents do not.
 	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
 	if err != nil {
 		return nil // No environment — nothing to check.
@@ -135,13 +136,10 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 
 	var agentNames []string
 	for _, svc := range args.Project.Services {
-		if svc.Host != AiAgentHost {
+		if svc.Host != AiAgentHost || !isHostedAgentService(svc, args.Project) {
 			continue
 		}
-		serviceKey := strings.ReplaceAll(svc.Name, " ", "_")
-		serviceKey = strings.ReplaceAll(serviceKey, "-", "_")
-		serviceKey = strings.ToUpper(serviceKey)
-		nameKey := fmt.Sprintf("AGENT_%s_NAME", serviceKey)
+		nameKey := fmt.Sprintf("AGENT_%s_NAME", toServiceKey(svc.Name))
 
 		valResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 			EnvName: envResp.Environment.Name,

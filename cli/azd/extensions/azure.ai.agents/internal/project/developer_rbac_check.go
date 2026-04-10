@@ -158,10 +158,14 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient) error 
 		return nil
 	}
 
-	acrResourceID, err := resolveACRResourceID(ctx, cred, info.SubscriptionID, acrEndpoint)
-	if err != nil {
-		fmt.Printf("  ⚠ Could not resolve ACR resource ID: %s — skipping ACR role check\n", err)
-		return nil
+	// Prefer the persisted ARM resource ID (set during init); fall back to listing registries.
+	acrResourceID := azdEnv["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]
+	if acrResourceID == "" {
+		acrResourceID, err = resolveACRResourceID(ctx, cred, info.SubscriptionID, acrEndpoint)
+		if err != nil {
+			fmt.Printf("  ⚠ Could not resolve ACR resource ID: %s — skipping ACR role check\n", err)
+			return nil
+		}
 	}
 
 	hasACRAccess, err := hasAnyRoleAssignment(ctx, cred, principalID, sufficientACRRoles, acrResourceID)
@@ -171,7 +175,7 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient) error 
 	}
 
 	if !hasACRAccess {
-		acrName := strings.TrimSuffix(acrEndpoint, ".azurecr.io")
+		acrName := strings.TrimSuffix(normalizeLoginServer(acrEndpoint), ".azurecr.io")
 		return exterrors.Auth(
 			exterrors.CodeDeveloperMissingACRRole,
 			fmt.Sprintf(
@@ -182,9 +186,11 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient) error 
 			fmt.Sprintf(
 				"ask a subscription Owner or User Access Administrator to assign one of these roles "+
 					"to your identity on the Container Registry scope:\n"+
-					"  • Container Registry Tasks Contributor (for remote build)\n"+
-					"  • Container Registry Repository Contributor (for image push)\n\n"+
-					"  az role assignment create --assignee %s --role \"Container Registry Tasks Contributor\" --scope %q",
+					"  • Owner or Contributor (broad access)\n"+
+					"  • AcrPush (push and pull images)\n"+
+					"  • Container Registry Tasks Contributor (remote build)\n"+
+					"  • Container Registry Repository Contributor (repository operations)\n\n"+
+					"  az role assignment create --assignee %s --role \"AcrPush\" --scope %q",
 				principalID, acrResourceID,
 			),
 		)
@@ -197,8 +203,7 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient) error 
 
 // hasAnyRoleAssignment checks whether the given principal has any of the specified roles
 // at the given scope (including inherited assignments from parent scopes).
-// This performs a single pass over all role assignments instead of making separate API
-// calls per role, which is both faster and avoids redundant network requests.
+// Uses server-side filtering by principal to reduce API load on large subscriptions.
 func hasAnyRoleAssignment(
 	ctx context.Context,
 	cred *azidentity.AzureDeveloperCLICredential,
@@ -222,19 +227,18 @@ func hasAnyRoleAssignment(
 		suffixes[fmt.Sprintf("/roleDefinitions/%s", id)] = true
 	}
 
-	pager := client.NewListForScopePager(scope, nil)
+	// Use server-side assignedTo filter to only return assignments for this principal.
+	filter := fmt.Sprintf("assignedTo('%s')", principalID)
+	pager := client.NewListForScopePager(scope, &armauthorization.RoleAssignmentsClientListForScopeOptions{
+		Filter: &filter,
+	})
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
 			return false, fmt.Errorf("failed to list role assignments: %w", err)
 		}
 		for _, assignment := range page.Value {
-			if assignment.Properties == nil ||
-				assignment.Properties.PrincipalID == nil ||
-				assignment.Properties.RoleDefinitionID == nil {
-				continue
-			}
-			if *assignment.Properties.PrincipalID != principalID {
+			if assignment.Properties == nil || assignment.Properties.RoleDefinitionID == nil {
 				continue
 			}
 			roleDefID := *assignment.Properties.RoleDefinitionID
@@ -249,6 +253,19 @@ func hasAnyRoleAssignment(
 	return false, nil
 }
 
+// normalizeLoginServer strips protocol prefixes, trailing slashes, and lowercases
+// an ACR login server endpoint for consistent comparison.
+func normalizeLoginServer(loginServer string) string {
+	s := loginServer
+	for _, prefix := range []string{"https://", "http://"} {
+		if len(s) > len(prefix) && strings.EqualFold(s[:len(prefix)], prefix) {
+			s = s[len(prefix):]
+			break
+		}
+	}
+	return strings.ToLower(strings.TrimSuffix(s, "/"))
+}
+
 // resolveACRResourceID finds the ARM resource ID for an Azure Container Registry
 // given its login server endpoint (e.g., "myregistry.azurecr.io").
 func resolveACRResourceID(
@@ -257,15 +274,7 @@ func resolveACRResourceID(
 	subscriptionID string,
 	loginServer string,
 ) (string, error) {
-	// Normalize: ensure no protocol prefix and lowercase comparison.
-	// Use case-insensitive prefix removal since endpoints may arrive as "HTTPS://...".
-	for _, prefix := range []string{"https://", "http://"} {
-		if len(loginServer) > len(prefix) && strings.EqualFold(loginServer[:len(prefix)], prefix) {
-			loginServer = loginServer[len(prefix):]
-			break
-		}
-	}
-	loginServer = strings.ToLower(strings.TrimSuffix(loginServer, "/"))
+	loginServer = normalizeLoginServer(loginServer)
 
 	client, err := armcontainerregistry.NewRegistriesClient(subscriptionID, cred, nil)
 	if err != nil {

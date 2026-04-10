@@ -19,7 +19,7 @@ func (e *Executor) buildCommand(
 
 	shellLower := strings.ToLower(shell)
 	shellBin := shell
-	if ValidShells[shellLower] {
+	if IsSupportedShell(shellLower) {
 		shellBin = shellLower
 	}
 

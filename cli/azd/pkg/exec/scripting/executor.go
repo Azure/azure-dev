@@ -157,7 +157,7 @@ func (e *Executor) logDebugInfo(
 	if isInline {
 		fmt.Fprintf(os.Stderr, "Executing inline: %s\n", shell)
 		fmt.Fprintf(os.Stderr, "Script length: %d chars\n", len(scriptOrPath))
-	} else {
+	} else if len(cmdArgs) > 0 {
 		quotedArgs := make([]string, len(cmdArgs)-1)
 		for i, a := range cmdArgs[1:] {
 			quotedArgs[i] = fmt.Sprintf("%q", a)

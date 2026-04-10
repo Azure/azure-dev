@@ -70,7 +70,6 @@ extends:
 
               - bash: waza run --executor copilot-sdk --filter "tasks/lifecycle/"
                 workingDirectory: cli/azd/test/eval
-                continueOnError: true
                 timeoutInMinutes: 40
                 displayName: Run lifecycle evaluations
                 env:

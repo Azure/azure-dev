@@ -466,7 +466,7 @@ func TestCheckNotDirectory_NoSuggestionForAgentDefinition(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	// An AgentDefinition has "kind" at root but no "template" — should NOT
+	// An AgentDefinition has "kind" at root but no "template" ΓÇö should NOT
 	// be suggested as a manifest file.
 	defContent := "kind: hosted\nname: my-agent\n"
 	//nolint:gosec // test fixture file permissions are intentional
@@ -827,5 +827,380 @@ func TestApplyPositionalArg_NonExistentYamlSetsManifest(t *testing.T) {
 	}
 	if flags.manifestPointer != yamlPath {
 		t.Errorf("manifestPointer = %q, want %q", flags.manifestPointer, yamlPath)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// validateRenameInput (covers PR review ΓÇö input validation for user-provided
+// rename names in resolveCollisions)
+// ---------------------------------------------------------------------------
+
+func TestValidateRenameInput(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		input      string
+		wantDir    string
+		wantSvc    string
+		wantErr    bool
+		errContain string
+	}{
+		{
+			name:    "simple valid name",
+			input:   "my-agent",
+			wantDir: filepath.Join("src", "my-agent"),
+			wantSvc: "my-agent",
+		},
+		{
+			name:    "name with spaces produces valid svc",
+			input:   "my agent",
+			wantDir: filepath.Join("src", "my agent"),
+			wantSvc: "myagent",
+		},
+		{
+			name:       "path separator forward slash rejected",
+			input:      "../escape",
+			wantErr:    true,
+			errContain: "path separators or dot segments",
+		},
+		{
+			name:       "path separator backslash rejected",
+			input:      `sub\dir`,
+			wantErr:    true,
+			errContain: "path separators or dot segments",
+		},
+		{
+			name:       "single dot rejected",
+			input:      ".",
+			wantErr:    true,
+			errContain: "path separators or dot segments",
+		},
+		{
+			name:       "double dot rejected",
+			input:      "..",
+			wantErr:    true,
+			errContain: "path separators or dot segments",
+		},
+		{
+			name:       "absolute path rejected",
+			input:      "/etc/passwd",
+			wantErr:    true,
+			errContain: "path separators or dot segments",
+		},
+		{
+			name:       "empty name fails service validation",
+			input:      "",
+			wantErr:    true,
+			errContain: "invalid service name",
+		},
+		{
+			name:       "invalid characters fail service validation",
+			input:      "agent@name!",
+			wantErr:    true,
+			errContain: "invalid service name",
+		},
+		{
+			name:    "name with dots and hyphens is valid",
+			input:   "agent.v2-beta",
+			wantDir: filepath.Join("src", "agent.v2-beta"),
+			wantSvc: "agent.v2-beta",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			gotDir, gotSvc, err := validateRenameInput(tt.input)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected error, got nil")
+				}
+				if tt.errContain != "" &&
+					!strings.Contains(err.Error(), tt.errContain) {
+					t.Errorf("error = %q, want containing %q",
+						err.Error(), tt.errContain)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if gotDir != tt.wantDir {
+				t.Errorf("dir = %q, want %q", gotDir, tt.wantDir)
+			}
+			if gotSvc != tt.wantSvc {
+				t.Errorf("svc = %q, want %q", gotSvc, tt.wantSvc)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// buildCollisionMessage (covers PR review ΓÇö tailored collision messages)
+// ---------------------------------------------------------------------------
+
+func TestBuildCollisionMessage(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		dirExists      bool
+		serviceExists  bool
+		targetDir      string
+		serviceName    string
+		wantContain    string
+		wantNotContain string
+	}{
+		{
+			name:          "both collisions mentions service and directory",
+			dirExists:     true,
+			serviceExists: true,
+			targetDir:     "src/agent",
+			serviceName:   "agent",
+			wantContain:   "src/agent",
+		},
+		{
+			name:          "service-only collision mentions azure.yaml",
+			dirExists:     false,
+			serviceExists: true,
+			targetDir:     "src/agent",
+			serviceName:   "agent",
+			wantContain:   "azure.yaml",
+		},
+		{
+			name:           "dir-only collision does not mention azure.yaml",
+			dirExists:      true,
+			serviceExists:  false,
+			targetDir:      "src/agent",
+			serviceName:    "agent",
+			wantContain:    "src/agent",
+			wantNotContain: "azure.yaml",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			msg := buildCollisionMessage(
+				tt.dirExists, tt.serviceExists,
+				tt.targetDir, tt.serviceName,
+			)
+			if !strings.Contains(msg, tt.wantContain) {
+				t.Errorf("message = %q, want containing %q",
+					msg, tt.wantContain)
+			}
+			if tt.wantNotContain != "" &&
+				strings.Contains(msg, tt.wantNotContain) {
+				t.Errorf("message = %q, should NOT contain %q",
+					msg, tt.wantNotContain)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// nextAvailableName (covers PR review ΓÇö collision-resolution naming logic)
+// ---------------------------------------------------------------------------
+
+func TestNextAvailableName(t *testing.T) {
+	tests := []struct {
+		name          string
+		agentId       string
+		existingDirs  []string // dirs to create under src/
+		existingSvcs  []string // service names in projectConfig
+		wantCandidate string
+		wantDir       string
+		wantSvc       string
+		wantErr       bool
+	}{
+		{
+			name:          "no collisions picks -2",
+			agentId:       "my-agent",
+			wantCandidate: "my-agent-2",
+			wantDir:       filepath.Join("src", "my-agent-2"),
+			wantSvc:       "my-agent-2",
+		},
+		{
+			name:          "dir collision skips to -3",
+			agentId:       "my-agent",
+			existingDirs:  []string{"my-agent-2"},
+			wantCandidate: "my-agent-3",
+			wantDir:       filepath.Join("src", "my-agent-3"),
+			wantSvc:       "my-agent-3",
+		},
+		{
+			name:          "service collision skips to -3",
+			agentId:       "my-agent",
+			existingSvcs:  []string{"my-agent-2"},
+			wantCandidate: "my-agent-3",
+			wantDir:       filepath.Join("src", "my-agent-3"),
+			wantSvc:       "my-agent-3",
+		},
+		{
+			name:          "both dir and svc collisions skip",
+			agentId:       "my-agent",
+			existingDirs:  []string{"my-agent-2"},
+			existingSvcs:  []string{"my-agent-3"},
+			wantCandidate: "my-agent-4",
+			wantDir:       filepath.Join("src", "my-agent-4"),
+			wantSvc:       "my-agent-4",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			t.Chdir(tmpDir)
+
+			for _, d := range tt.existingDirs {
+				dirPath := filepath.Join("src", d)
+				//nolint:gosec // test fixture directory permissions are intentional
+				if err := os.MkdirAll(dirPath, 0o755); err != nil {
+					t.Fatalf("setup: MkdirAll(%q): %v", dirPath, err)
+				}
+			}
+
+			var projectCfg *azdext.ProjectConfig
+			if len(tt.existingSvcs) > 0 {
+				svcs := make(map[string]*azdext.ServiceConfig, len(tt.existingSvcs))
+				for _, svcName := range tt.existingSvcs {
+					svcs[svcName] = &azdext.ServiceConfig{Name: svcName}
+				}
+				projectCfg = &azdext.ProjectConfig{Services: svcs}
+			}
+
+			action := &InitAction{projectConfig: projectCfg}
+			candidate, dir, svc, err := action.nextAvailableName(tt.agentId)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if candidate != tt.wantCandidate {
+				t.Errorf("candidate = %q, want %q",
+					candidate, tt.wantCandidate)
+			}
+			if dir != tt.wantDir {
+				t.Errorf("dir = %q, want %q", dir, tt.wantDir)
+			}
+			if svc != tt.wantSvc {
+				t.Errorf("svc = %q, want %q", svc, tt.wantSvc)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// resolveCollisions ΓÇö no collision / no-prompt paths
+// (covers PR review ΓÇö collision resolution unit tests)
+// ---------------------------------------------------------------------------
+
+func TestResolveCollisions_NoCollision(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Chdir(tmpDir)
+
+	action := &InitAction{
+		flags: &initFlags{rootFlagsDefinition: &rootFlagsDefinition{}},
+	}
+
+	dir, svc, err := action.resolveCollisions(
+		t.Context(), "agent",
+		filepath.Join("src", "agent"), "agent",
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if dir != filepath.Join("src", "agent") {
+		t.Errorf("dir = %q, want %q",
+			dir, filepath.Join("src", "agent"))
+	}
+	if svc != "agent" {
+		t.Errorf("svc = %q, want %q", svc, "agent")
+	}
+}
+
+func TestResolveCollisions_NoPrompt(t *testing.T) {
+	tests := []struct {
+		name         string
+		agentId      string
+		existingDirs []string
+		existingSvcs []string
+		wantDir      string
+		wantSvc      string
+	}{
+		{
+			name:         "dir-only collision auto-suffixes",
+			agentId:      "agent",
+			existingDirs: []string{"agent"},
+			wantDir:      filepath.Join("src", "agent-2"),
+			wantSvc:      "agent-2",
+		},
+		{
+			name:         "service-only collision auto-suffixes",
+			agentId:      "agent",
+			existingSvcs: []string{"agent"},
+			wantDir:      filepath.Join("src", "agent-2"),
+			wantSvc:      "agent-2",
+		},
+		{
+			name:         "both collisions auto-suffix",
+			agentId:      "agent",
+			existingDirs: []string{"agent"},
+			existingSvcs: []string{"agent"},
+			wantDir:      filepath.Join("src", "agent-2"),
+			wantSvc:      "agent-2",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			t.Chdir(tmpDir)
+
+			for _, d := range tt.existingDirs {
+				dirPath := filepath.Join("src", d)
+				//nolint:gosec // test fixture directory permissions are intentional
+				if err := os.MkdirAll(dirPath, 0o755); err != nil {
+					t.Fatalf("setup: MkdirAll(%q): %v", dirPath, err)
+				}
+			}
+
+			var projectCfg *azdext.ProjectConfig
+			svcs := make(map[string]*azdext.ServiceConfig, len(tt.existingSvcs))
+			for _, svcName := range tt.existingSvcs {
+				svcs[svcName] = &azdext.ServiceConfig{Name: svcName}
+			}
+			if len(svcs) > 0 {
+				projectCfg = &azdext.ProjectConfig{Services: svcs}
+			}
+
+			action := &InitAction{
+				projectConfig: projectCfg,
+				flags: &initFlags{
+					rootFlagsDefinition: &rootFlagsDefinition{
+						NoPrompt: true,
+					},
+				},
+			}
+
+			targetDir := filepath.Join("src", tt.agentId)
+			dir, svc, err := action.resolveCollisions(
+				t.Context(), tt.agentId, targetDir, tt.agentId,
+			)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if dir != tt.wantDir {
+				t.Errorf("dir = %q, want %q", dir, tt.wantDir)
+			}
+			if svc != tt.wantSvc {
+				t.Errorf("svc = %q, want %q", svc, tt.wantSvc)
+			}
+		})
 	}
 }

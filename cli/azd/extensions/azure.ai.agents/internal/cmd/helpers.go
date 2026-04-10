@@ -441,7 +441,7 @@ func detectStartupCommand(projectDir string) string {
 }
 
 func fileExists(path string) bool {
-	_, err := os.Stat(path)
+	_, err := os.Stat(path) //nolint:gosec // path is derived from controlled inputs (agent ID + "src/" prefix)
 	return err == nil
 }
 

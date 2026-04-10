@@ -1604,6 +1604,11 @@ func (a *InitAction) resolveCollisions(
 		return suggestionDir, suggestionSvc, nil
 	}
 
+	// Build a collision message tailored to what actually collided.
+	collisionMsg := buildCollisionMessage(
+		dirExists, serviceExists, targetDir, serviceName,
+	)
+
 	// Interactive mode: let the user choose.
 	choices := []*azdext.SelectChoice{
 		{
@@ -1619,11 +1624,7 @@ func (a *InitAction) resolveCollisions(
 	defaultIdx := int32(1)
 	resp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
-			Message: fmt.Sprintf(
-				"An agent named '%s' already exists in your azure.yaml."+
-					" Overwrite it or use a different name?",
-				serviceName,
-			),
+			Message:       collisionMsg,
 			Choices:       choices,
 			SelectedIndex: &defaultIdx,
 		},
@@ -1667,9 +1668,65 @@ func (a *InitAction) resolveCollisions(
 		newName = suggestion
 	}
 
-	newDir := filepath.Join("src", newName)
-	newSvc := strings.ReplaceAll(newName, " ", "")
+	newDir, newSvc, err := validateRenameInput(newName)
+	if err != nil {
+		return "", "", err
+	}
 	return newDir, newSvc, nil
+}
+
+// validateRenameInput validates a user-provided rename input and returns
+// the target directory and sanitized service name. It rejects names with
+// path separators, dot segments, or invalid service-name characters.
+func validateRenameInput(newName string) (string, string, error) {
+	if filepath.IsAbs(newName) ||
+		strings.ContainsAny(newName, `/\`) ||
+		newName == "." ||
+		newName == ".." {
+		return "", "", fmt.Errorf(
+			"invalid service name %q: name must be a single directory"+
+				" name without path separators or dot segments",
+			newName,
+		)
+	}
+
+	newSvc := strings.ReplaceAll(newName, " ", "")
+	if err := azdext.ValidateServiceName(newSvc); err != nil {
+		return "", "", fmt.Errorf(
+			"invalid service name %q: %w", newName, err,
+		)
+	}
+
+	newDir := filepath.Join("src", newName)
+	return newDir, newSvc, nil
+}
+
+// buildCollisionMessage returns a user-facing prompt string tailored to the
+// type of collision detected (directory, service name, or both).
+func buildCollisionMessage(
+	dirExists, serviceExists bool,
+	targetDir, serviceName string,
+) string {
+	switch {
+	case dirExists && serviceExists:
+		return fmt.Sprintf(
+			"A service named '%s' and its directory '%s' already exist."+
+				" Overwrite or use a different name?",
+			serviceName, targetDir,
+		)
+	case serviceExists:
+		return fmt.Sprintf(
+			"A service named '%s' already exists in your azure.yaml."+
+				" Overwrite it or use a different name?",
+			serviceName,
+		)
+	default: // dirExists only
+		return fmt.Sprintf(
+			"The directory '%s' already exists."+
+				" Overwrite it or use a different name?",
+			targetDir,
+		)
+	}
 }
 
 // nextAvailableName finds the next unused name by appending -2, -3, etc.

@@ -9,7 +9,6 @@ import (
 	"testing"
 )
 
-// ptr is a generic helper that returns a pointer to the given value.
 func TestCreateAgentRequest_RoundTrip(t *testing.T) {
 	t.Parallel()
 

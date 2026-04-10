@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/runcontext/agentdetect"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
@@ -480,7 +481,7 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 	foundCmd, originalArgs, err := rootCmd.Find(os.Args[1:])
 	if err == nil {
 		// Detect lightspeed commands from the cobra annotation set by CobraBuilder.
-		result.IsLightspeed = foundCmd.Annotations["lightspeed"] == "true"
+		result.IsLightspeed = foundCmd.Annotations[actions.AnnotationLightspeed] == "true"
 
 		// Start the background update check AFTER command identification.
 		// Lightspeed commands (e.g., auth token) skip the update check entirely

@@ -303,7 +303,7 @@ func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.Acti
 		if cmd.Annotations == nil {
 			cmd.Annotations = make(map[string]string)
 		}
-		cmd.Annotations["lightspeed"] = "true"
+		cmd.Annotations[actions.AnnotationLightspeed] = "true"
 	}
 
 	// `generateCmdHelp` sets a default help section when `descriptor.Options.HelpOptions` is nil.

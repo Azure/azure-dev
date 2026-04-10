@@ -412,10 +412,10 @@ func Test_LightspeedAnnotation(t *testing.T) {
 	// Verify lightspeed annotation is set on the fast command
 	fastCmd, _, err := rootCmd.Find([]string{"fast"})
 	require.NoError(t, err)
-	require.Equal(t, "true", fastCmd.Annotations["lightspeed"])
+	require.Equal(t, "true", fastCmd.Annotations[actions.AnnotationLightspeed])
 
 	// Verify lightspeed annotation is NOT set on the normal command
 	normalCmd, _, err := rootCmd.Find([]string{"normal"})
 	require.NoError(t, err)
-	require.NotEqual(t, "true", normalCmd.Annotations["lightspeed"])
+	require.NotEqual(t, "true", normalCmd.Annotations[actions.AnnotationLightspeed])
 }

@@ -159,6 +159,12 @@ type commandGroupAnnotationKey string
 const (
 	// cmdGrouperKey is an annotation key that is added as part of a cobra annotations for assigning commands to a group.
 	cmdGrouperKey commandGroupAnnotationKey = "commandGrouper"
+
+	// AnnotationLightspeed is a cobra annotation key that marks a command as lightspeed.
+	// Lightspeed commands skip non-essential background work (update checks) so the
+	// process can exit as fast as possible. Set automatically by CobraBuilder when
+	// ActionDescriptorOptions.Lightspeed is true.
+	AnnotationLightspeed = "azd.lightspeed"
 )
 
 // GetGroupCommandAnnotation check if there is a grouping annotation for the command. Returns the annotation value as an

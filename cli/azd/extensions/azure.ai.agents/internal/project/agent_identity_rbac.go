@@ -116,7 +116,7 @@ func agentIdentityDisplayName(accountName, projectName, agentName string) string
 	return fmt.Sprintf("%s-%s-%s-%s", accountName, projectName, agentName, agentIdentitySuffix)
 }
 
-// EnsureAgentIdentityRBAC looks up the per-agent identity service principals in Azure AD
+// EnsureAgentIdentityRBAC looks up the per-agent identity service principals in Entra ID
 // and assigns the required RBAC roles. This is designed to be called from the postdeploy
 // handler when the vnext experience is enabled.
 //
@@ -227,7 +227,7 @@ func ensureSingleAgentRBAC(
 	displayName := agentIdentityDisplayName(info.AccountName, info.ProjectName, agentName)
 
 	// Poll for the identity — the platform provisions it asynchronously during agent deployment,
-	// so it may not be visible in Azure AD immediately after deploy completes.
+	// so it may not be visible in Entra ID immediately after deploy completes.
 	var agentIdentities []graphsdk.ServicePrincipal
 	var err error
 	for attempt := range identityLookupMaxAttempts {
@@ -239,7 +239,7 @@ func ensureSingleAgentRBAC(
 			break
 		}
 		if attempt < identityLookupMaxAttempts-1 {
-			fmt.Printf("  Identity not yet visible in Azure AD, retrying in %s (%d/%d)...\n",
+			fmt.Printf("  Identity not ready yet in Entra ID, retrying in %s (%d/%d)...\n",
 				identityLookupPollInterval, attempt+1, identityLookupMaxAttempts)
 			time.Sleep(identityLookupPollInterval)
 		}
@@ -247,11 +247,11 @@ func ensureSingleAgentRBAC(
 
 	if len(agentIdentities) == 0 {
 		return fmt.Errorf(
-			"agent identity '%s' not found in Azure AD — "+
+			"agent identity '%s' not found in Entra ID — "+
 				"the platform may not have provisioned it yet, wait a few minutes and re-run: azd deploy",
 			displayName)
 	}
-	fmt.Println("  ✓ Agent identity found in Azure AD")
+	fmt.Println("  ✓ Agent identity found in Entra ID")
 
 	// Assign Azure AI User role scoped to the Foundry Project
 	for _, sp := range agentIdentities {
@@ -287,7 +287,7 @@ func ensureSingleAgentRBAC(
 	return nil
 }
 
-// discoverAgentIdentity searches Azure AD for service principals matching the given display name.
+// discoverAgentIdentity searches Entra ID for service principals matching the given display name.
 func discoverAgentIdentity(
 	ctx context.Context,
 	graphClient *graphsdk.GraphClient,

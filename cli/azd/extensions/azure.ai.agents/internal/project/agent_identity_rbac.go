@@ -50,6 +50,20 @@ func isVnextEnabled(azdEnv map[string]string) bool {
 	return false
 }
 
+// isRoleAssignmentsSkipped checks if AZD_AGENT_SKIP_ROLE_ASSIGNMENTS is set to a truthy value
+// in the azd environment or OS environment. When true, both developer RBAC pre-flight checks
+// and per-agent identity RBAC assignments are skipped.
+func isRoleAssignmentsSkipped(azdEnv map[string]string) bool {
+	value := azdEnv["AZD_AGENT_SKIP_ROLE_ASSIGNMENTS"]
+	if value == "" {
+		value = os.Getenv("AZD_AGENT_SKIP_ROLE_ASSIGNMENTS")
+	}
+	if skip, err := strconv.ParseBool(value); err == nil && skip {
+		return true
+	}
+	return false
+}
+
 // parseAgentIdentityInfo extracts account name, project name, subscription, resource group,
 // and the AI account scope from the full project resource ID.
 //
@@ -131,6 +145,11 @@ func EnsureAgentIdentityRBAC(ctx context.Context, azdClient *azdext.AzdClient, a
 	}
 
 	if !isVnextEnabled(azdEnv) {
+		return nil
+	}
+
+	if isRoleAssignmentsSkipped(azdEnv) {
+		fmt.Println("  (-) Skipping agent identity RBAC (AZD_AGENT_SKIP_ROLE_ASSIGNMENTS is set)")
 		return nil
 	}
 

@@ -79,6 +79,11 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient) error 
 		return nil
 	}
 
+	if isRoleAssignmentsSkipped(azdEnv) {
+		fmt.Println("  (-) Skipping developer RBAC pre-flight check (AZD_AGENT_SKIP_ROLE_ASSIGNMENTS is set)")
+		return nil
+	}
+
 	projectResourceID := azdEnv["AZURE_AI_PROJECT_ID"]
 	if projectResourceID == "" {
 		// Can't check RBAC without the project ID; deployment will fail later with a clearer message.

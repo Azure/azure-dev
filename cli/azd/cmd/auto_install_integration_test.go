@@ -145,8 +145,10 @@ func TestExecuteWithAutoInstall_LightspeedDetection(t *testing.T) {
 		expectLightspeed bool
 	}{
 		{
-			name:             "auth_token_is_lightspeed",
-			args:             []string{"azd", "auth", "token", "--output", "json"},
+			name: "auth_token_is_lightspeed",
+			// Use --output unknown to fail before touching the credential stack.
+			// We only care about IsLightspeed detection, not actual token acquisition.
+			args:             []string{"azd", "auth", "token", "--output", "unknown"},
 			expectLightspeed: true,
 		},
 		{

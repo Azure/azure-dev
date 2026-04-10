@@ -68,9 +68,10 @@ type InitAction struct {
 	flags         *initFlags
 	models        *modelSelector
 
-	deploymentDetails []project.Deployment
-	containerSettings *project.ContainerSettings
-	httpClient        *http.Client
+	deploymentDetails   []project.Deployment
+	containerSettings   *project.ContainerSettings
+	httpClient          *http.Client
+	serviceNameOverride string // when set, addToProject uses this instead of the manifest name
 }
 
 // modelSelector encapsulates the dependencies needed for model selection and
@@ -581,6 +582,22 @@ func ensureProject(ctx context.Context, flags *initFlags, azdClient *azdext.AzdC
 		}
 
 		fmt.Println()
+	} else if projectResponse.Project != nil {
+		// An existing azd project was found — tell the user so the skipped template
+		// download isn't a mystery. Also warn if the project lacks an infra/ directory,
+		// since deployment may require infrastructure scaffolding.
+		fmt.Println(output.WithGrayFormat(
+			"Found existing azd project at %q. Adding agent to it.", projectResponse.Project.Path,
+		))
+
+		infraDir := filepath.Join(projectResponse.Project.Path, "infra")
+		if _, statErr := os.Stat(infraDir); os.IsNotExist(statErr) {
+			fmt.Printf("%s", output.WithWarningFormat(
+				"No infra/ directory found in the project. If you need Azure infrastructure "+
+					"for deployment, run 'azd init -t Azure-Samples/azd-ai-starter-basic' in an empty "+
+					"directory first, then re-run this command from there.\n",
+			))
+		}
 	}
 
 	if projectResponse.Project == nil {
@@ -637,8 +654,25 @@ func manifestHasModelResources(manifest *agent_yaml.AgentManifest) bool {
 func (a *InitAction) configureModelChoice(
 	ctx context.Context, agentManifest *agent_yaml.AgentManifest,
 ) (*agent_yaml.AgentManifest, error) {
-	// If --project-id is provided, validate the ARM format and extract the subscription ID
-	// so ensureSubscription can skip the prompt and just resolve the tenant
+	// When no --project-id flag was given, check whether the azd environment already
+	// has a Foundry project configured from a previous init. If so, reuse it so the
+	// user isn't prompted to select a project they already chose.
+	if a.flags.projectResourceId == "" {
+		if existing, err := a.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+			EnvName: a.environment.Name,
+			Key:     "AZURE_AI_PROJECT_ID",
+		}); err == nil && existing.Value != "" {
+			a.flags.projectResourceId = existing.Value
+			log.Printf("Reusing existing Foundry project from environment: %s", existing.Value)
+			fmt.Println(output.WithGrayFormat(
+				"Using Foundry project from environment: %s", existing.Value,
+			))
+		}
+	}
+
+	// If --project-id is provided (or reused from environment), validate the ARM
+	// format and extract the subscription ID so ensureSubscription can skip the
+	// prompt and just resolve the tenant.
 	if a.flags.projectResourceId != "" {
 		projectDetails, err := extractProjectDetails(a.flags.projectResourceId)
 		if err != nil {
@@ -1291,11 +1325,27 @@ func (a *InitAction) downloadAgentYaml(
 	fmt.Println(output.WithGrayFormat("✓ Manifest validated successfully"))
 
 	agentId := agentManifest.Name
+	serviceName := strings.ReplaceAll(agentId, " ", "")
 
 	// Use targetDir if provided, otherwise default to "src/{agentId}"
-	if targetDir == "" {
+	autoDir := targetDir == ""
+	if autoDir {
 		targetDir = filepath.Join("src", agentId)
 	}
+
+	// When the target directory was auto-computed (no --src flag), check for
+	// collisions with an existing directory or an existing azure.yaml service.
+	// If a collision is found, prompt for a new service name (or auto-suffix
+	// in no-prompt mode).
+	if autoDir {
+		targetDir, serviceName, err = a.resolveCollisions(
+			ctx, agentId, targetDir, serviceName,
+		)
+		if err != nil {
+			return nil, "", err
+		}
+	}
+	a.serviceNameOverride = serviceName
 
 	// Safety checks for local container-based agents should happen before prompting for model SKU, etc.
 	if a.isLocalFilePath(manifestPointer) {
@@ -1474,7 +1524,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	}
 
 	serviceConfig := &azdext.ServiceConfig{
-		Name:         strings.ReplaceAll(agentDef.Name, " ", ""),
+		Name:         a.serviceNameOverride,
 		RelativePath: targetDir,
 		Host:         AiAgentHost,
 		Language:     "docker",
@@ -1494,16 +1544,227 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		return fmt.Errorf("adding agent service to project: %w", err)
 	}
 
-	fmt.Printf("\nAdded your agent as a service entry named '%s' under the file azure.yaml.\n", agentDef.Name)
+	fmt.Printf(
+		"\nAdded your agent as a service entry named '%s' under the file azure.yaml.\n",
+		a.serviceNameOverride,
+	)
 	if projectID, _ := a.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 		EnvName: a.environment.Name,
 		Key:     "AZURE_AI_PROJECT_ID",
 	}); projectID != nil && projectID.Value != "" {
-		fmt.Printf("To deploy your agent, use %s.\n", color.HiBlueString("azd deploy %s", agentDef.Name))
+		fmt.Printf("To deploy your agent, use %s.\n",
+			color.HiBlueString("azd deploy %s", a.serviceNameOverride))
 	} else {
-		fmt.Printf("To provision and deploy the whole solution, use %s.\n", color.HiBlueString("azd up"))
+		fmt.Printf(
+			"To provision and deploy the whole solution, use %s.\n",
+			color.HiBlueString("azd up"),
+		)
 	}
 	return nil
+}
+
+// resolveCollisions checks whether the auto-computed target directory or
+// service name already exist. When a collision is detected, the user is
+// prompted for a new name (or a numeric suffix is appended in no-prompt
+// mode). Returns the (possibly adjusted) targetDir and serviceName.
+func (a *InitAction) resolveCollisions(
+	ctx context.Context,
+	agentId string,
+	targetDir string,
+	serviceName string,
+) (string, string, error) {
+	dirExists := fileExists(targetDir)
+
+	serviceExists := false
+	if a.projectConfig != nil {
+		for _, svc := range a.projectConfig.Services {
+			if svc.Name == serviceName {
+				serviceExists = true
+				break
+			}
+		}
+	}
+
+	if !dirExists && !serviceExists {
+		return targetDir, serviceName, nil
+	}
+
+	// Find the next available name for use as the default suggestion
+	// (interactive) or the final answer (no-prompt).
+	suggestion, suggestionDir, suggestionSvc, err :=
+		a.nextAvailableName(agentId)
+	if err != nil {
+		return "", "", err
+	}
+
+	if a.flags.NoPrompt {
+		log.Printf(
+			"Collision on %q; using %q", agentId, suggestion,
+		)
+		return suggestionDir, suggestionSvc, nil
+	}
+
+	// Build a collision message tailored to what actually collided.
+	collisionMsg := buildCollisionMessage(
+		dirExists, serviceExists, targetDir, serviceName,
+	)
+
+	// Interactive mode: let the user choose.
+	choices := []*azdext.SelectChoice{
+		{
+			Label: "Overwrite existing",
+			Value: "overwrite",
+		},
+		{
+			Label: "Use a different service name",
+			Value: "rename",
+		},
+	}
+
+	defaultIdx := int32(1)
+	resp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+		Options: &azdext.SelectOptions{
+			Message:       collisionMsg,
+			Choices:       choices,
+			SelectedIndex: &defaultIdx,
+		},
+	})
+	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return "", "", exterrors.Cancelled(
+				"initialization was cancelled",
+			)
+		}
+		return "", "", fmt.Errorf(
+			"prompting for collision resolution: %w", err,
+		)
+	}
+
+	if choices[*resp.Value].Value == "overwrite" {
+		return targetDir, serviceName, nil
+	}
+
+	// Prompt for a new name — default to the next available suffix.
+	nameResp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+		Options: &azdext.PromptOptions{
+			Message:        "Enter a new service name for this agent",
+			DefaultValue:   suggestion,
+			IgnoreHintKeys: true,
+		},
+	})
+	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return "", "", exterrors.Cancelled(
+				"initialization was cancelled",
+			)
+		}
+		return "", "", fmt.Errorf(
+			"prompting for new service name: %w", err,
+		)
+	}
+
+	newName := strings.TrimSpace(nameResp.Value)
+	if newName == "" {
+		newName = suggestion
+	}
+
+	newDir, newSvc, err := validateRenameInput(newName)
+	if err != nil {
+		return "", "", err
+	}
+	return newDir, newSvc, nil
+}
+
+// validateRenameInput validates a user-provided rename input and returns
+// the target directory and sanitized service name. It rejects names with
+// path separators, dot segments, or invalid service-name characters.
+func validateRenameInput(newName string) (string, string, error) {
+	if filepath.IsAbs(newName) ||
+		strings.ContainsAny(newName, `/\`) ||
+		newName == "." ||
+		newName == ".." {
+		return "", "", fmt.Errorf(
+			"invalid service name %q: name must be a single directory"+
+				" name without path separators or dot segments",
+			newName,
+		)
+	}
+
+	newSvc := strings.ReplaceAll(newName, " ", "")
+	if err := azdext.ValidateServiceName(newSvc); err != nil {
+		return "", "", fmt.Errorf(
+			"invalid service name %q: %w", newName, err,
+		)
+	}
+
+	newDir := filepath.Join("src", newName)
+	return newDir, newSvc, nil
+}
+
+// buildCollisionMessage returns a user-facing prompt string tailored to the
+// type of collision detected (directory, service name, or both).
+func buildCollisionMessage(
+	dirExists, serviceExists bool,
+	targetDir, serviceName string,
+) string {
+	switch {
+	case dirExists && serviceExists:
+		return fmt.Sprintf(
+			"A service named '%s' and its directory '%s' already exist."+
+				" Overwrite or use a different name?",
+			serviceName, targetDir,
+		)
+	case serviceExists:
+		return fmt.Sprintf(
+			"A service named '%s' already exists in your azure.yaml."+
+				" Overwrite it or use a different name?",
+			serviceName,
+		)
+	default: // dirExists only
+		return fmt.Sprintf(
+			"The directory '%s' already exists."+
+				" Overwrite it or use a different name?",
+			targetDir,
+		)
+	}
+}
+
+// nextAvailableName finds the next unused name by appending -2, -3, etc.
+// Returns the candidate name, directory, and service name.
+func (a *InitAction) nextAvailableName(
+	agentId string,
+) (string, string, string, error) {
+	const maxAttempts = 100
+	for i := 2; i <= maxAttempts; i++ {
+		candidate := fmt.Sprintf("%s-%d", agentId, i)
+		candidateDir := filepath.Join("src", candidate)
+		candidateSvc := strings.ReplaceAll(candidate, " ", "")
+
+		if fileExists(candidateDir) {
+			continue
+		}
+
+		svcTaken := false
+		if a.projectConfig != nil {
+			for _, svc := range a.projectConfig.Services {
+				if svc.Name == candidateSvc {
+					svcTaken = true
+					break
+				}
+			}
+		}
+		if svcTaken {
+			continue
+		}
+
+		return candidate, candidateDir, candidateSvc, nil
+	}
+
+	return "", "", "", fmt.Errorf(
+		"could not find a unique name after %d attempts "+
+			"(tried %s-2 through %s-%d)",
+		maxAttempts-1, agentId, agentId, maxAttempts,
+	)
 }
 
 func (a *InitAction) populateContainerSettings(

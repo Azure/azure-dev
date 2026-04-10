@@ -1,0 +1,95 @@
+# Eval: E2E Lifecycle
+# Runs end-to-end lifecycle evaluations against live Azure resources.
+# Scheduled weekly on Monday.
+#
+# Required variables (set in ADO pipeline variable group):
+#   COPILOT_CLI_TOKEN      - Copilot CLI authentication token
+#   AZURE_SUBSCRIPTION_ID  - Target Azure subscription for provisioning
+#   AZURE_TENANT_ID        - AAD tenant ID
+#   AZURE_CLIENT_ID        - Service principal client ID (for Azure login)
+
+trigger: none
+pr: none
+
+schedules:
+  # 6am UTC Monday
+  - cron: "0 6 * * 1"
+    displayName: Weekly E2E Eval
+    branches:
+      include:
+        - main
+    always: true
+
+extends:
+  template: /eng/pipelines/templates/stages/1es-redirect.yml
+  parameters:
+    stages:
+      - stage: E2EEval
+        displayName: E2E Lifecycle Evaluations
+        variables:
+          - template: /eng/pipelines/templates/variables/image.yml
+        jobs:
+          - job: E2ELifecycle
+            displayName: E2E Lifecycle
+            pool:
+              name: $(LINUXPOOL)
+              image: $(LINUXVMIMAGE)
+              os: linux
+            timeoutInMinutes: 60
+            steps:
+              - checkout: self
+
+              - template: /eng/pipelines/templates/steps/setup-go.yml
+
+              - task: NodeTool@0
+                inputs:
+                  versionSpec: "22.x"
+                displayName: Setup Node.js
+
+              - pwsh: go build -o ./azd .
+                workingDirectory: cli/azd
+                displayName: Build azd
+
+              - bash: echo "$(Build.SourcesDirectory)/cli/azd" >> $GITHUB_PATH
+                displayName: Add azd to PATH
+
+              - task: AzureCLI@2
+                displayName: Azure Login
+                inputs:
+                  azureSubscription: azure-sdk-tests
+                  scriptType: bash
+                  scriptLocation: inlineScript
+                  inlineScript: echo "Logged in to Azure"
+
+              - bash: npm install -g waza
+                displayName: Install Waza CLI
+
+              - bash: npm ci
+                workingDirectory: cli/azd/test/eval
+                displayName: Install eval dependencies
+
+              - bash: waza run --executor copilot-sdk --filter "tasks/lifecycle/"
+                workingDirectory: cli/azd/test/eval
+                continueOnError: true
+                timeoutInMinutes: 40
+                displayName: Run lifecycle evaluations
+                env:
+                  COPILOT_CLI_TOKEN: $(COPILOT_CLI_TOKEN)
+                  AZURE_SUBSCRIPTION_ID: $(AZURE_SUBSCRIPTION_ID)
+                  AZURE_ENV_NAME: eval-e2e-$(Build.BuildId)
+
+              - task: PublishPipelineArtifact@1
+                condition: always()
+                inputs:
+                  targetPath: cli/azd/test/eval/reports/
+                  artifactName: e2e-results-$(Build.BuildId)
+                displayName: Upload E2E results
+
+              - bash: |
+                  # Clean up Azure resources created during E2E runs
+                  for group in $(az group list --query "[?starts_with(name, 'rg-eval-')].name" -o tsv); do
+                    az group delete --name "$group" --yes --no-wait 2>/dev/null || true
+                  done
+                condition: always()
+                continueOnError: true
+                displayName: Cleanup Azure resources

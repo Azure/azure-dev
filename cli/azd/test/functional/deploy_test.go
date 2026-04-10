@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -114,10 +115,11 @@ func Test_CLI_Deploy_SlotDeployment(t *testing.T) {
 
 	session := recording.Start(t)
 
-	// Recording needs to be re-recorded after slot targeting behavior change.
-	// Skip in playback mode until recording is refreshed.
+	// Recording needs re-recording after slot targeting behavior change.
+	// The old recording contains HasAppServiceDeployments calls and deploy-to-all logic
+	// that no longer exists. Skip in playback until re-recorded in CI.
 	if session != nil && session.Playback {
-		t.Skip("Recording needs re-recording after slot targeting changes")
+		t.Skip("recording is stale — needs re-recording after slot targeting changes")
 	}
 
 	envName := randomOrStoredEnvName(session)
@@ -192,9 +194,14 @@ func Test_CLI_Deploy_SlotDeployment(t *testing.T) {
 	err = os.WriteFile(dataJSONPath, []byte(updatedResponse), osutil.PermissionFile)
 	require.NoError(t, err, "failed to update data.json")
 
-	// Switch to deploying to the staging slot
+	// Switch to deploying to the staging slot by replacing the env var value
 	t.Logf("Running azd deploy with AZD_DEPLOY_API_SLOT_NAME=staging\n")
-	cli.Env = append(cli.Env, "AZD_DEPLOY_API_SLOT_NAME=staging")
+	for i, e := range cli.Env {
+		if strings.HasPrefix(e, "AZD_DEPLOY_API_SLOT_NAME=") {
+			cli.Env[i] = "AZD_DEPLOY_API_SLOT_NAME=staging"
+			break
+		}
+	}
 	_, err = cli.RunCommand(ctx, "deploy", "--cwd", dir)
 	require.NoError(t, err)
 

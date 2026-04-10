@@ -12,14 +12,15 @@ import (
 
 func TestParseAgentIdentityInfo(t *testing.T) {
 	tests := []struct {
-		name        string
-		resourceID  string
-		wantAccount string
-		wantProject string
-		wantSubID   string
-		wantRG      string
-		wantScope   string
-		wantErr     bool
+		name          string
+		resourceID    string
+		wantAccount   string
+		wantProject   string
+		wantSubID     string
+		wantRG        string
+		wantScope     string
+		wantProjScope string
+		wantErr       bool
 	}{
 		{
 			name: "valid resource ID",
@@ -31,6 +32,8 @@ func TestParseAgentIdentityInfo(t *testing.T) {
 			wantRG:      "rg-test",
 			wantScope: "/subscriptions/sub-123/resourceGroups/rg-test/providers/" +
 				"Microsoft.CognitiveServices/accounts/my-account",
+			wantProjScope: "/subscriptions/sub-123/resourceGroups/rg-test/providers/" +
+				"Microsoft.CognitiveServices/accounts/my-account/projects/my-project",
 			wantErr: false,
 		},
 		{
@@ -43,6 +46,8 @@ func TestParseAgentIdentityInfo(t *testing.T) {
 			wantRG:      "my-rg",
 			wantScope: "/subscriptions/aaaa-bbbb/resourceGroups/my-rg/providers/" +
 				"Microsoft.CognitiveServices/accounts/acct-name",
+			wantProjScope: "/subscriptions/aaaa-bbbb/resourceGroups/my-rg/providers/" +
+				"Microsoft.CognitiveServices/accounts/acct-name/projects/proj-name/extraSegment/value",
 			wantErr: false,
 		},
 		{
@@ -77,24 +82,26 @@ func TestParseAgentIdentityInfo(t *testing.T) {
 			assert.Equal(t, tt.wantSubID, info.SubscriptionID)
 			assert.Equal(t, tt.wantRG, info.ResourceGroup)
 			assert.Equal(t, tt.wantScope, info.AccountScope)
+			assert.Equal(t, tt.wantProjScope, info.ProjectScope)
 		})
 	}
 }
 
 func TestAgentIdentityDisplayName(t *testing.T) {
 	tests := []struct {
-		account string
-		project string
-		want    string
+		account   string
+		project   string
+		agentName string
+		want      string
 	}{
-		{"my-account", "my-project", "my-account-my-project-AgentIdentity"},
-		{"acct", "proj", "acct-proj-AgentIdentity"},
-		{"a-b-c", "x-y-z", "a-b-c-x-y-z-AgentIdentity"},
+		{"my-account", "my-project", "my-agent", "my-account-my-project-my-agent-AgentIdentity"},
+		{"acct", "proj", "agent1", "acct-proj-agent1-AgentIdentity"},
+		{"a-b-c", "x-y-z", "test-agent", "a-b-c-x-y-z-test-agent-AgentIdentity"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.want, func(t *testing.T) {
-			got := agentIdentityDisplayName(tt.account, tt.project)
+			got := agentIdentityDisplayName(tt.account, tt.project, tt.agentName)
 			assert.Equal(t, tt.want, got)
 		})
 	}
@@ -195,6 +202,4 @@ func TestIsVnextEnabled(t *testing.T) {
 
 func TestConstants(t *testing.T) {
 	assert.Equal(t, "53ca6127-db72-4b80-b1b0-d745d6d5456d", roleAzureAIUser)
-	assert.Equal(t, "5e0bd9bd-7b93-4f28-af87-19fc36ad61bd", roleCognitiveServicesOpenAIUser)
-	assert.Equal(t, "3913510d-42f4-4e42-8a64-420c390055eb", roleMonitoringMetricsPublisher)
 }

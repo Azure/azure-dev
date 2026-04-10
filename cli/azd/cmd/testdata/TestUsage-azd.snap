@@ -20,6 +20,7 @@ Commands
     completion  	: Generate shell completion scripts.
     config      	: Manage azd configurations (ex: default Azure subscription, location).
     env         	: Manage environments (ex: default environment, environment variables).
+    exec        	: Execute commands and scripts with azd environment context.
     show        	: Display information about your project and its resources.
     version     	: Print the version number of Azure Developer CLI.
 

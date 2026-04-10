@@ -1945,6 +1945,38 @@ const completionSpec: Fig.Spec = {
 			],
 		},
 		{
+			name: ['exec'],
+			description: 'Execute commands and scripts with azd environment context.',
+			options: [
+				{
+					name: ['--interactive', '-i'],
+					description: 'Run in interactive mode (connect stdin)',
+				},
+				{
+					name: ['--shell', '-s'],
+					description: 'Shell to use (bash, sh, zsh, pwsh, powershell, cmd). Auto-detected if not specified.',
+					args: [
+						{
+							name: 'shell',
+						},
+					],
+				},
+			],
+			args: [
+				{
+					name: 'command',
+					isOptional: true,
+				},
+				{
+					name: 'args...',
+					isOptional: true,
+				},
+				{
+					name: 'script-args...',
+				},
+			],
+		},
+		{
 			name: ['extension', 'ext'],
 			description: 'Manage azd extensions.',
 			subcommands: [
@@ -3294,6 +3326,10 @@ const completionSpec: Fig.Spec = {
 							description: 'Set a name as a reference to a Key Vault secret in the environment.',
 						},
 					],
+				},
+				{
+					name: ['exec'],
+					description: 'Execute commands and scripts with azd environment context.',
 				},
 				{
 					name: ['extension', 'ext'],

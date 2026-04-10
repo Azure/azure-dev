@@ -367,9 +367,6 @@ func TestValidateMonitorFlags_ErrorMessages(t *testing.T) {
 func TestExplicitSessionID_PersistedAndReusable(t *testing.T) {
 	t.Parallel()
 
-	// Simulate the persistence that resolveStoredID now performs when an explicit
-	// session ID is provided. This verifies the round-trip: save an explicit ID,
-	// then load it back (as monitor's resolveMonitorSession would).
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, ConfigFile)
 
@@ -380,12 +377,13 @@ func TestExplicitSessionID_PersistedAndReusable(t *testing.T) {
 	agentCtx := loadLocalContext(configPath)
 	assert.Empty(t, agentCtx.Sessions)
 
-	// Simulate what resolveStoredID now does: persist the explicit ID
-	store := contextMap(agentCtx, "sessions")
-	store[agentName] = explicitSID
-	require.NoError(t, saveLocalContext(agentCtx, configPath))
+	// Call resolveStoredIDFromPath with an explicit ID — this is the code path
+	// that resolveStoredID follows when the user passes --session-id.
+	got, err := resolveStoredIDFromPath(configPath, agentName, explicitSID, false, "sessions", false)
+	require.NoError(t, err)
+	assert.Equal(t, explicitSID, got)
 
-	// Reload (as monitor or a subsequent invoke would)
+	// Verify the ID was persisted (as monitor's resolveMonitorSession would load it)
 	loaded := loadLocalContext(configPath)
 	require.NotNil(t, loaded.Sessions)
 	assert.Equal(t, explicitSID, loaded.Sessions[agentName])
@@ -400,10 +398,9 @@ func TestExplicitConversationID_PersistedAndReusable(t *testing.T) {
 	agentName := "my-agent"
 	explicitConvID := "user-provided-conv-id"
 
-	agentCtx := loadLocalContext(configPath)
-	store := contextMap(agentCtx, "conversations")
-	store[agentName] = explicitConvID
-	require.NoError(t, saveLocalContext(agentCtx, configPath))
+	got, err := resolveStoredIDFromPath(configPath, agentName, explicitConvID, false, "conversations", false)
+	require.NoError(t, err)
+	assert.Equal(t, explicitConvID, got)
 
 	loaded := loadLocalContext(configPath)
 	require.NotNil(t, loaded.Conversations)
@@ -418,17 +415,15 @@ func TestExplicitID_OverwritesPreviousValue(t *testing.T) {
 
 	agentName := "my-agent"
 
-	// Save an initial session ID
-	agentCtx := loadLocalContext(configPath)
-	store := contextMap(agentCtx, "sessions")
-	store[agentName] = "old-session-id"
-	require.NoError(t, saveLocalContext(agentCtx, configPath))
+	// Persist an initial session ID via resolveStoredIDFromPath
+	got, err := resolveStoredIDFromPath(configPath, agentName, "old-session-id", false, "sessions", false)
+	require.NoError(t, err)
+	assert.Equal(t, "old-session-id", got)
 
-	// Simulate a second invoke with a different explicit session ID
-	agentCtx = loadLocalContext(configPath)
-	store = contextMap(agentCtx, "sessions")
-	store[agentName] = "new-session-id"
-	require.NoError(t, saveLocalContext(agentCtx, configPath))
+	// Persist a different explicit session ID — should overwrite the previous one
+	got, err = resolveStoredIDFromPath(configPath, agentName, "new-session-id", false, "sessions", false)
+	require.NoError(t, err)
+	assert.Equal(t, "new-session-id", got)
 
 	loaded := loadLocalContext(configPath)
 	assert.Equal(t, "new-session-id", loaded.Sessions[agentName])

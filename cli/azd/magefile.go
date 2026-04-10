@@ -335,9 +335,7 @@ func runPlaybackTests(azdDir string) error {
 // excludedPlaybackTests lists tests whose recordings are known to be stale.
 // These are excluded from automatic playback so they don't block preflight.
 // Re-record the test to remove it from this list.
-var excludedPlaybackTests = map[string]string{
-	"Test_CLI_Deploy_SlotDeployment": "stale recording - re-record to include",
-}
+var excludedPlaybackTests = map[string]string{}
 
 // discoverPlaybackTests scans the recordings directory for .yaml files and
 // subdirectories, returning unique top-level Go test function names.

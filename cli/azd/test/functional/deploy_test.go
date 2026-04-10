@@ -115,13 +115,6 @@ func Test_CLI_Deploy_SlotDeployment(t *testing.T) {
 
 	session := recording.Start(t)
 
-	// Recording needs re-recording after slot targeting behavior change.
-	// The old recording contains HasAppServiceDeployments calls and deploy-to-all logic
-	// that no longer exists. Skip in playback until re-recorded in CI.
-	if session != nil && session.Playback {
-		t.Skip("recording is stale — needs re-recording after slot targeting changes")
-	}
-
 	envName := randomOrStoredEnvName(session)
 	t.Logf("AZURE_ENV_NAME: %s", envName)
 

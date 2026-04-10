@@ -122,6 +122,16 @@ localPreflight.AddCheck(func(ctx context.Context, valCtx *validationContext) (*P
 |---|---|---|
 | Role assignment permissions | Detects `Microsoft.Authorization/roleAssignments` in the snapshot and verifies the current principal has `roleAssignments/write` permission on the subscription. | Warning |
 
+### Investigated Checks (Not Implemented)
+
+The following checks were investigated but not shipped due to technical
+limitations. Each link leads to a detailed writeup of the investigation,
+including the approaches tried and why they were not viable.
+
+| Check | Goal | Reason Not Implemented |
+|---|---|---|
+| [Storage account policy check](storage-account-policy-check.md) | Warn when Azure Policy denies storage accounts with local authentication enabled (`allowSharedKeyAccess: true`). | Client-side policy parsing produces false positives (cannot evaluate ARM expressions in policy conditions); server-side `checkPolicyRestrictions` API does not evaluate management-group-inherited policies. |
+
 ## UX Presentation
 
 Results are displayed using the `PreflightReport` UX component (`pkg/output/ux/preflight_report.go`), which implements the standard `UxItem` interface. The report groups and orders findings: all warnings appear first, followed by all errors. Each entry is prefixed with the standard azd status icons.

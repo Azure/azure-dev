@@ -30,6 +30,7 @@ var ValidCapabilities = []CapabilityType{
 	ServiceTargetProviderCapability,
 	FrameworkServiceProviderCapability,
 	MetadataCapability,
+	ProvisioningProviderCapability,
 }
 
 // validChecksumAlgorithms defines the supported checksum algorithms.

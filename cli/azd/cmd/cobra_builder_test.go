@@ -381,3 +381,41 @@ func (m *testMiddlewareB) Run(ctx context.Context, nextFn middleware.NextFn) (*a
 
 	return nextFn(ctx)
 }
+
+func Test_LightspeedAnnotation(t *testing.T) {
+	t.Parallel()
+
+	container := ioc.NewNestedContainer(nil)
+	ioc.RegisterInstance(container, &internal.GlobalCommandOptions{})
+	builder := NewCobraBuilder(container)
+
+	root := actions.NewActionDescriptor("root", &actions.ActionDescriptorOptions{
+		Command: &cobra.Command{Use: "root"},
+	})
+
+	// Add a lightspeed child command
+	root.Add("fast", &actions.ActionDescriptorOptions{
+		Command:        &cobra.Command{Use: "fast"},
+		ActionResolver: newTestAction,
+		Lightspeed:     true,
+	})
+
+	// Add a normal child command
+	root.Add("normal", &actions.ActionDescriptorOptions{
+		Command:        &cobra.Command{Use: "normal"},
+		ActionResolver: newTestAction,
+	})
+
+	rootCmd, err := builder.BuildCommand(root)
+	require.NoError(t, err)
+
+	// Verify lightspeed annotation is set on the fast command
+	fastCmd, _, err := rootCmd.Find([]string{"fast"})
+	require.NoError(t, err)
+	require.Equal(t, "true", fastCmd.Annotations["lightspeed"])
+
+	// Verify lightspeed annotation is NOT set on the normal command
+	normalCmd, _, err := rootCmd.Find([]string{"normal"})
+	require.NoError(t, err)
+	require.NotEqual(t, "true", normalCmd.Annotations["lightspeed"])
+}

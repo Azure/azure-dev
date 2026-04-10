@@ -297,6 +297,15 @@ func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.Acti
 		actions.SetGroupCommandAnnotation(cmd, descriptor.Options.GroupingOptions.RootLevelHelp)
 	}
 
+	// Propagate lightspeed flag to cobra annotations so it can be detected
+	// after rootCmd.Find() without needing access to the ActionDescriptor.
+	if descriptor.Options != nil && descriptor.Options.Lightspeed {
+		if cmd.Annotations == nil {
+			cmd.Annotations = make(map[string]string)
+		}
+		cmd.Annotations["lightspeed"] = "true"
+	}
+
 	// `generateCmdHelp` sets a default help section when `descriptor.Options.HelpOptions` is nil.
 	// This call ensures all commands gets the same help formatting.
 	cmd.SetHelpTemplate(generateCmdHelp(cmd, generateCmdHelpOptions{

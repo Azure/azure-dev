@@ -195,6 +195,11 @@ type ActionDescriptorOptions struct {
 	GroupingOptions CommandGroupOptions
 	// Whether or not the command requires a principal login
 	RequireLogin bool
+	// Whether the command should execute as fast as possible, skipping
+	// non-essential background work like update checks.
+	// Use for programmatic/hidden commands (e.g., auth token) where
+	// blocking process exit is unacceptable.
+	Lightspeed bool
 }
 
 // Completion function used for cobra command flag completion

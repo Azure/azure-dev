@@ -60,10 +60,6 @@ func main() {
 
 	showedElevationWarning := false
 
-	latest := make(chan *update.VersionInfo)
-	bgCtx, bgCancel := context.WithTimeout(context.Background(), 60*time.Second)
-	go fetchLatestVersion(bgCtx, latest)
-
 	rootContainer := ioc.NewNestedContainer(nil)
 
 	ctx = context.WithoutCancel(ctx)
@@ -72,8 +68,11 @@ func main() {
 	// Register the context for singleton resolution
 	ioc.RegisterInstance(rootContainer, ctx)
 
-	// Execute command with auto-installation support for extensions
-	cmdErr := cmd.ExecuteWithAutoInstall(ctx, rootContainer)
+	// Execute command with auto-installation support for extensions.
+	// The update check goroutine is started inside ExecuteWithAutoInstall,
+	// after the command is identified — lightspeed commands skip it entirely.
+	execResult := cmd.ExecuteWithAutoInstall(ctx, rootContainer)
+	cmdErr := execResult.Err
 
 	oneauth.Shutdown()
 
@@ -83,8 +82,15 @@ func main() {
 		}
 	}
 
-	versionInfo, ok := <-latest
-	bgCancel()
+	// Wait for the background update check if one was started.
+	// For lightspeed commands, LatestVersion is nil (no goroutine was started).
+	var versionInfo *update.VersionInfo
+	if execResult.LatestVersion != nil {
+		v, ok := <-execResult.LatestVersion
+		if ok {
+			versionInfo = v
+		}
+	}
 
 	// If we were able to fetch a latest version, check to see if we are up to date and
 	// print a warning if we are not. Non-production builds (dev builds via `go install` and
@@ -92,7 +98,7 @@ func main() {
 	//
 	// Don't write this message when JSON output is enabled, since in that case we use stderr to return structured
 	// information about command progress.
-	if !isJsonOutput() && ok && !suppressUpdateBanner() && !showedElevationWarning {
+	if versionInfo != nil && !isJsonOutput() && !suppressUpdateBanner() && !showedElevationWarning {
 		if internal.IsNonProdVersion() {
 			log.Printf("eliding update message for non-production build")
 		} else if versionInfo.HasUpdate {
@@ -146,43 +152,6 @@ func main() {
 	if cmdErr != nil {
 		os.Exit(1)
 	}
-}
-
-// fetchLatestVersion checks for a newer version of the CLI using the user's
-// configured channel and sends the result across the channel, which it then closes.
-// If the latest version can not be determined, the channel is closed without writing a value.
-func fetchLatestVersion(ctx context.Context, result chan<- *update.VersionInfo) {
-	defer close(result)
-
-	// Allow the user to skip the update check if they wish, by setting AZD_SKIP_UPDATE_CHECK to
-	// a truthy value.
-	if value, has := os.LookupEnv("AZD_SKIP_UPDATE_CHECK"); has {
-		if setting, err := strconv.ParseBool(value); err == nil && setting {
-			log.Print("skipping update check since AZD_SKIP_UPDATE_CHECK is true")
-			return
-		} else if err != nil {
-			log.Printf("could not parse value for AZD_SKIP_UPDATE_CHECK a boolean "+
-				"(it was: %s), proceeding with update check", value)
-		}
-	}
-
-	// Load user config to determine channel
-	configMgr := config.NewUserConfigManager(config.NewFileConfigManager(config.NewManager()))
-	userConfig, err := configMgr.Load()
-	if err != nil {
-		userConfig = config.NewEmptyConfig()
-	}
-
-	cfg := update.LoadUpdateConfig(userConfig)
-
-	mgr := update.NewManager(nil, nil)
-	versionInfo, err := mgr.CheckForUpdate(ctx, cfg, false)
-	if err != nil {
-		log.Printf("failed to check for updates: %v, skipping update check", err)
-		return
-	}
-
-	result <- versionInfo
 }
 
 // isDebugEnabled checks to see if `--debug` was passed with a truthy

@@ -111,9 +111,9 @@ func TestExecuteWithAutoInstall_ReturnsCommandErrorWithoutPanicForOutputFlags(t 
 		os.Stderr = originalStderr
 	}()
 
-	var execErr error
+	var execResult *ExecuteResult
 	require.NotPanics(t, func() {
-		execErr = ExecuteWithAutoInstall(t.Context(), rootContainer)
+		execResult = ExecuteWithAutoInstall(t.Context(), rootContainer)
 	})
 
 	require.NoError(t, stderrWriter.Close())
@@ -121,9 +121,49 @@ func TestExecuteWithAutoInstall_ReturnsCommandErrorWithoutPanicForOutputFlags(t 
 	stderrBytes, err := io.ReadAll(stderrReader)
 	require.NoError(t, err)
 
-	require.ErrorContains(t, execErr, "unsupported format 'unknown'")
+	require.ErrorContains(t, execResult.Err, "unsupported format 'unknown'")
 	require.NotContains(t, string(stderrBytes), "panic:")
 	require.Contains(t, string(stderrBytes), "Error: unsupported format 'unknown'")
+
+	// auth token is a lightspeed command — verify the flag is set even when the command fails
+	require.True(t, execResult.IsLightspeed, "auth token should be detected as a lightspeed command")
+}
+
+func TestExecuteWithAutoInstall_LightspeedDetection(t *testing.T) {
+	originalArgs := os.Args
+	defer func() {
+		os.Args = originalArgs
+	}()
+
+	clearAgentEnvVarsForTest(t)
+	agentdetect.ResetDetection()
+	defer agentdetect.ResetDetection()
+
+	tests := []struct {
+		name             string
+		args             []string
+		expectLightspeed bool
+	}{
+		{
+			name:             "auth_token_is_lightspeed",
+			args:             []string{"azd", "auth", "token", "--output", "json"},
+			expectLightspeed: true,
+		},
+		{
+			name:             "version_is_not_lightspeed",
+			args:             []string{"azd", "version"},
+			expectLightspeed: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			os.Args = tt.args
+			rootContainer := ioc.NewNestedContainer(nil)
+			result := ExecuteWithAutoInstall(t.Context(), rootContainer)
+			require.Equal(t, tt.expectLightspeed, result.IsLightspeed)
+		})
+	}
 }
 
 // TestAgentDetectionIntegration tests the full agent detection integration flow.

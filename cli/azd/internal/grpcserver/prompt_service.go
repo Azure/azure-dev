@@ -215,6 +215,10 @@ func (s *promptService) MultiSelect(
 }
 
 func (s *promptService) Prompt(ctx context.Context, req *azdext.PromptRequest) (*azdext.PromptResponse, error) {
+	if req == nil || req.Options == nil {
+		return nil, status.Error(codes.InvalidArgument, "request and options are required")
+	}
+
 	if s.globalOptions.FailOnPrompt {
 		return nil, input.FailOnPromptError(req.Options.Message)
 	}

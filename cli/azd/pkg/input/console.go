@@ -689,7 +689,9 @@ func choicesFromOptions(options ConsoleOptions) []promptChoice {
 // Prompts the user to select from a set of values
 func (c *AskerConsole) Select(ctx context.Context, options ConsoleOptions) (int, error) {
 	if c.failOnPrompt && c.promptClient != nil {
-		return -1, FailOnPromptError(options.Message)
+		choiceLabels := make([]string, len(options.Options))
+		copy(choiceLabels, options.Options)
+		return -1, FailOnPromptSelectError(options.Message, choiceLabels)
 	}
 
 	if c.promptClient != nil {
@@ -773,7 +775,9 @@ func (c *AskerConsole) MultiSelect(ctx context.Context, options ConsoleOptions) 
 	var response []string
 
 	if c.failOnPrompt && c.promptClient != nil {
-		return nil, FailOnPromptError(options.Message)
+		choiceLabels := make([]string, len(options.Options))
+		copy(choiceLabels, options.Options)
+		return nil, FailOnPromptSelectError(options.Message, choiceLabels)
 	}
 
 	if c.promptClient != nil {

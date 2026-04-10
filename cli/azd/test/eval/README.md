@@ -318,12 +318,17 @@ cli/azd/test/eval/
 
 ## CI/CD
 
-| Workflow | Trigger | What it does |
-|----------|---------|-------------|
-| `eval-unit.yml` | On PR | Jest unit tests + `waza validate` |
-| `eval-waza.yml` | 3x daily (Tue-Sat) | Waza evals via Copilot SDK |
-| `eval-e2e.yml` | Weekly | Waza E2E with Azure resource validation |
-| `eval-report.yml` | Weekly | Aggregates results from Waza + E2E runs |
+Unit tests run in GitHub Actions (no secrets needed). Workflows that require
+Azure credentials or the Copilot CLI token run in internal ADO pipelines,
+following the team convention for authenticated workloads.
+
+| Pipeline | Location | Trigger | What it does |
+|----------|----------|---------|-------------|
+| `eval-unit.yml` | `.github/workflows/` | On PR | Jest unit tests + Python grader tests |
+| `eval-unit.yml` | `eng/pipelines/` | On PR | Same, ADO mirror |
+| `eval-waza.yml` | `eng/pipelines/` | 3x daily (Tue-Sat) | Waza evals via Copilot SDK |
+| `eval-e2e.yml` | `eng/pipelines/` | Weekly | Waza E2E with Azure resource validation |
+| `eval-report.yml` | `eng/pipelines/` | Weekly | Aggregates results from Waza + E2E runs |
 
 ## Authentication & Secrets
 
@@ -335,7 +340,7 @@ cli/azd/test/eval/
 | Human tests | `npm run test:human` | ❌ None | ❌ None | Never |
 | Mock LLM eval | `npm run waza:run:mock` | ❌ None | ❌ None | Never |
 | LLM eval | `npm run waza:run` | ❌ None | ✅ Required | Never |
-| E2E lifecycle | `eval-e2e.yml` | ✅ Required | ✅ Required | Never (OIDC) |
+| E2E lifecycle | `eng/pipelines/eval-e2e.yml` | ✅ Required | ✅ Required | Never (ADO service connection) |
 
 > **No test should ever open a browser.** Unit and human tests use `--no-prompt` and only test help text / error messages — they never call Azure APIs. E2E workflows use OIDC service principal auth (headless).
 
@@ -367,39 +372,22 @@ export AZURE_SUBSCRIPTION_ID=<your-subscription-id>
 azd config set defaults.subscription <your-subscription-id>
 ```
 
-### CI/CD setup (GitHub Actions)
+### CI/CD setup (Azure DevOps)
 
-Configure these repository secrets (**Settings → Secrets and variables → Actions**):
+Waza, E2E, and report pipelines run in internal ADO. Configure these
+variables in the pipeline's variable group:
 
-| Secret | Used By | Purpose | How to Obtain |
-|--------|---------|---------|---------------|
-| `AZURE_CLIENT_ID` | `eval-e2e.yml` | OIDC Azure Login (no browser) | Create a service principal in Microsoft Entra ID with [federated credential](https://learn.microsoft.com/en-us/entra/workload-id/workload-identity-federation-create-trust) for GitHub Actions |
-| `AZURE_TENANT_ID` | `eval-e2e.yml` | OIDC Azure Login | Microsoft Entra ID → Overview → Tenant ID |
-| `AZURE_SUBSCRIPTION_ID` | `eval-e2e.yml`, graders | Target subscription for E2E deployments | Azure Portal → Subscriptions |
-| `COPILOT_CLI_TOKEN` | `eval-waza.yml`, `eval-e2e.yml` | Authenticate Waza Copilot SDK executor | Copilot CLI API token |
-| `GITHUB_TOKEN` | `eval-report.yml` | Create regression issues from reports | Auto-provided by GitHub Actions (no setup needed) |
+| Variable | Pipelines | Purpose |
+|----------|-----------|---------|
+| `COPILOT_CLI_TOKEN` | `eval-waza`, `eval-e2e` | Authenticate Waza Copilot SDK executor |
+| `AZURE_SUBSCRIPTION_ID` | `eval-e2e` | Target subscription for E2E deployments |
+| `AZURE_TENANT_ID` | `eval-e2e` | AAD tenant ID |
+| `AZURE_CLIENT_ID` | `eval-e2e` | Service principal client ID |
 
-**Setting up the service principal for CI:**
-
-```bash
-# 1. Create the service principal
-az ad sp create-for-rbac --name "azd-eval-ci" --role Contributor \
-  --scopes /subscriptions/<SUBSCRIPTION_ID>
-
-# 2. Add OIDC federated credential for GitHub Actions
-az ad app federated-credential create \
-  --id <APP_OBJECT_ID> \
-  --parameters '{
-    "name": "azd-eval-github",
-    "issuer": "https://token.actions.githubusercontent.com",
-    "subject": "repo:Azure/azure-dev:ref:refs/heads/main",
-    "audiences": ["api://AzureADTokenExchange"]
-  }'
-
-# 3. Add the 3 secrets to the repo (AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID)
-```
-
-> **Note:** OIDC federated credentials mean no client secret is stored anywhere. The service principal needs `Contributor` role on the target subscription. Graders obtain Azure access tokens at runtime via `az account get-access-token`.
+The E2E pipeline uses the `azure-sdk-tests` service connection (same as
+other functional test pipelines). No additional service principal setup
+is needed if the existing connection has `Contributor` on the target
+subscription.
 
 ## Reports
 

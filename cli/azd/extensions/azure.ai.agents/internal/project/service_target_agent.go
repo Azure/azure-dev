@@ -651,21 +651,6 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		memory = foundryAgentConfig.Container.Resources.Memory
 	}
 
-	// Auto-inject toolbox MCP endpoint env vars so hosted agents can reach their toolboxes
-	// without requiring users to manually add them to agent.yaml's environment_variables.
-	if foundryAgentConfig != nil {
-		projectEndpoint := strings.TrimRight(azdEnv["AZURE_AI_PROJECT_ENDPOINT"], "/")
-		for _, toolbox := range foundryAgentConfig.Toolboxes {
-			toolboxKey := p.getServiceKey(toolbox.Name)
-			envKey := fmt.Sprintf("TOOLBOX_%s_MCP_ENDPOINT", toolboxKey)
-			if _, exists := resolvedEnvVars[envKey]; !exists {
-				resolvedEnvVars[envKey] = fmt.Sprintf(
-					"%s/toolsets/%s/mcp", projectEndpoint, toolbox.Name,
-				)
-			}
-		}
-	}
-
 	// Build options list starting with required options
 	options := []agent_yaml.AgentBuildOption{
 		agent_yaml.WithImageURL(fullImageURL),

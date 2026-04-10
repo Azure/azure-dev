@@ -411,11 +411,11 @@ func TestExtractToolboxAndConnectionConfigs_TypedTools(t *testing.T) {
 				Tools: []any{
 					map[string]any{
 						// Built-in tool — no connection
-						"id": "bing_grounding",
+						"type": "bing_grounding",
 					},
 					map[string]any{
 						// External tool with name — connection name from Name field
-						"id":       "mcp",
+						"type": "mcp",
 						"name":     "github-copilot",
 						"target":   "https://api.githubcopilot.com/mcp",
 						"authType": "OAuth2",
@@ -523,7 +523,7 @@ func TestExtractToolboxAndConnectionConfigs_RawToolsFallback(t *testing.T) {
 				Description: "Raw tools",
 				Tools: []any{
 					map[string]any{
-						"id":                    "mcp",
+						"type": "mcp",
 						"name":                  "existing",
 						"project_connection_id": "existing-conn",
 					},
@@ -583,14 +583,14 @@ func TestExtractToolboxAndConnectionConfigs_CustomKeysCredentials(t *testing.T) 
 				},
 				Tools: []any{
 					map[string]any{
-						"id":          "mcp",
+						"type": "mcp",
 						"name":        "custom-api",
 						"target":      "https://example.com/mcp",
 						"authType":    "CustomKeys",
 						"credentials": map[string]any{"key": "my-api-key"},
 					},
 					map[string]any{
-						"id":          "mcp",
+						"type": "mcp",
 						"name":        "oauth-tool",
 						"target":      "https://example.com/oauth",
 						"authType":    "OAuth2",
@@ -657,7 +657,7 @@ func TestInjectToolboxEnvVarsIntoDefinition_AddsEnvVars(t *testing.T) {
 					Kind: agent_yaml.ResourceKindToolbox,
 				},
 				Tools: []any{
-					map[string]any{"id": "bing_grounding"},
+					map[string]any{"type": "bing_grounding"},
 				},
 			},
 		},
@@ -709,7 +709,7 @@ func TestInjectToolboxEnvVarsIntoDefinition_SkipsExisting(t *testing.T) {
 					Kind: agent_yaml.ResourceKindToolbox,
 				},
 				Tools: []any{
-					map[string]any{"id": "bing_grounding"},
+					map[string]any{"type": "bing_grounding"},
 				},
 			},
 		},
@@ -745,11 +745,11 @@ func TestInjectToolboxEnvVarsIntoDefinition_MultipleToolboxes(t *testing.T) {
 		Resources: []any{
 			agent_yaml.ToolboxResource{
 				Resource: agent_yaml.Resource{Name: "search-tools", Kind: agent_yaml.ResourceKindToolbox},
-				Tools:    []any{map[string]any{"id": "bing_grounding"}},
+				Tools:    []any{map[string]any{"type": "bing_grounding"}},
 			},
 			agent_yaml.ToolboxResource{
 				Resource: agent_yaml.Resource{Name: "github-tools", Kind: agent_yaml.ResourceKindToolbox},
-				Tools:    []any{map[string]any{"id": "mcp", "target": "https://example.com"}},
+				Tools:    []any{map[string]any{"type": "mcp", "target": "https://example.com"}},
 			},
 		},
 	}
@@ -790,7 +790,7 @@ func TestInjectToolboxEnvVarsIntoDefinition_NoopForPromptAgent(t *testing.T) {
 		Resources: []any{
 			agent_yaml.ToolboxResource{
 				Resource: agent_yaml.Resource{Name: "tools", Kind: agent_yaml.ResourceKindToolbox},
-				Tools:    []any{map[string]any{"id": "bing_grounding"}},
+				Tools:    []any{map[string]any{"type": "bing_grounding"}},
 			},
 		},
 	}

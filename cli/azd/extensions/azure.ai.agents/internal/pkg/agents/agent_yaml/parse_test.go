@@ -399,8 +399,8 @@ resources:
     name: agent-tools
     description: MCP tools for documentation search
     tools:
-      - id: web_search
-      - id: mcp
+      - type: web_search
+      - type: mcp
         project_connection_id: context7
 `)
 
@@ -610,15 +610,15 @@ resources:
     name: platform-tools
     description: Platform tools with typed definitions
     tools:
-      - id: bing_grounding
-      - id: mcp
+      - type: bing_grounding
+      - type: mcp
         name: github-copilot
         target: https://api.githubcopilot.com/mcp
         authType: OAuth2
         credentials:
           clientId: my-client-id
           clientSecret: my-client-secret
-      - id: mcp
+      - type: mcp
         name: custom-api
         target: https://my-api.example.com/sse
         authType: CustomKeys
@@ -662,16 +662,16 @@ resources:
 	}
 
 	// Check built-in tool (no target/authType/name)
-	if tool(0)["id"] != "bing_grounding" {
-		t.Errorf("Expected first tool id 'bing_grounding', got '%v'", tool(0)["id"])
+	if tool(0)["type"] != "bing_grounding" {
+		t.Errorf("Expected first tool type 'bing_grounding', got '%v'", tool(0)["type"])
 	}
 	if tool(0)["target"] != nil {
 		t.Errorf("Expected no target for built-in tool, got '%v'", tool(0)["target"])
 	}
 
 	// Check MCP tool with name and OAuth2
-	if tool(1)["id"] != "mcp" {
-		t.Errorf("Expected second tool id 'mcp', got '%v'", tool(1)["id"])
+	if tool(1)["type"] != "mcp" {
+		t.Errorf("Expected second tool type 'mcp', got '%v'", tool(1)["type"])
 	}
 	if tool(1)["name"] != "github-copilot" {
 		t.Errorf("Expected second tool name 'github-copilot', got '%v'", tool(1)["name"])
@@ -688,8 +688,8 @@ resources:
 	}
 
 	// Check MCP tool with CustomKeys
-	if tool(2)["id"] != "mcp" {
-		t.Errorf("Expected third tool id 'mcp', got '%v'", tool(2)["id"])
+	if tool(2)["type"] != "mcp" {
+		t.Errorf("Expected third tool type 'mcp', got '%v'", tool(2)["type"])
 	}
 	if tool(2)["name"] != "custom-api" {
 		t.Errorf("Expected third tool name 'custom-api', got '%v'", tool(2)["name"])
@@ -717,7 +717,7 @@ resources:
   - kind: toolbox
     name: tools
     tools:
-      - id: mcp
+      - type: mcp
         name: github
         target: https://api.githubcopilot.com/mcp
         authType: OAuth2

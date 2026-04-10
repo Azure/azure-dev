@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -1722,21 +1723,16 @@ func extractToolboxAndConnectionConfigs(
 				)
 			}
 
-			// Manifest uses "id" for tool kind; API uses "type"
-			toolId, _ := toolMap["id"].(string)
+			// Manifest and API both use "type" for tool kind
+			toolType, _ := toolMap["type"].(string)
 
 			target, _ := toolMap["target"].(string)
 			if target == "" {
 				// No target — either a built-in tool or a pre-configured tool
-				// that already has project_connection_id. Convert "id" → "type"
-				// and pass through all existing fields.
+				// that already has project_connection_id. Pass through as-is.
 				result := make(map[string]any, len(toolMap))
 				for k, v := range toolMap {
 					result[k] = v
-				}
-				if _, hasType := result["type"]; !hasType {
-					result["type"] = toolId
-					delete(result, "id")
 				}
 				tools = append(tools, result)
 				continue
@@ -1749,7 +1745,7 @@ func extractToolboxAndConnectionConfigs(
 
 			connName := toolName
 			if connName == "" {
-				connName = tbResource.Name + "-" + toolId
+				connName = tbResource.Name + "-" + toolType
 			}
 
 			conn := project.ToolConnection{
@@ -1781,7 +1777,7 @@ func extractToolboxAndConnectionConfigs(
 
 			// Toolbox tool entry is minimal — deploy enriches from connection
 			tool := map[string]any{
-				"type":                  toolId,
+				"type":                  toolType,
 				"project_connection_id": connName,
 			}
 			tools = append(tools, tool)
@@ -1799,9 +1795,13 @@ func extractToolboxAndConnectionConfigs(
 
 // credentialEnvVarName builds a deterministic env var name for a connection
 // credential key, e.g. ("github-copilot", "clientSecret") → "TOOL_GITHUB_COPILOT_CLIENTSECRET".
+// All non-alphanumeric characters are replaced with underscores and consecutive
+// underscores are collapsed to produce a valid [A-Z0-9_]+ environment variable name.
+var nonAlphanumRe = regexp.MustCompile(`[^A-Z0-9]+`)
+
 func credentialEnvVarName(connName, key string) string {
 	s := "TOOL_" + strings.ToUpper(connName) + "_" + strings.ToUpper(key)
-	return strings.ReplaceAll(s, "-", "_")
+	return nonAlphanumRe.ReplaceAllString(s, "_")
 }
 
 // injectToolboxEnvVarsIntoDefinition adds TOOLBOX_{NAME}_MCP_ENDPOINT entries

@@ -5,6 +5,7 @@ package internal
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 )
@@ -116,3 +117,23 @@ var (
 var (
 	ErrMcpToolsLoadFailed = errors.New("failed to load MCP host tools")
 )
+
+// ExitCodeError wraps an error with a specific process exit code.
+// When returned from an action, main.go uses the exit code instead of the
+// default exit code 1. This is used by `azd exec` to propagate the child
+// process exit code without calling os.Exit inside the middleware chain.
+type ExitCodeError struct {
+	ExitCode int
+	Err      error
+}
+
+func (e *ExitCodeError) Error() string {
+	if e.Err != nil {
+		return e.Err.Error()
+	}
+	return fmt.Sprintf("exit code %d", e.ExitCode)
+}
+
+func (e *ExitCodeError) Unwrap() error {
+	return e.Err
+}

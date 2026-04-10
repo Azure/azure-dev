@@ -7,6 +7,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -150,7 +151,11 @@ func main() {
 	}
 
 	if cmdErr != nil {
-		os.Exit(1)
+		exitCode := 1
+		if exitCodeErr, ok := errors.AsType[*internal.ExitCodeError](cmdErr); ok {
+			exitCode = exitCodeErr.ExitCode
+		}
+		os.Exit(exitCode)
 	}
 }
 

@@ -13,8 +13,8 @@ import (
 
 const osWindows = "windows"
 
-// ValidShells is the canonical set of supported shell names (lowercase).
-var ValidShells = map[string]bool{
+// validShells is the canonical set of supported shell names (lowercase).
+var validShells = map[string]bool{
 	"bash":       true,
 	"sh":         true,
 	"zsh":        true,
@@ -23,13 +23,18 @@ var ValidShells = map[string]bool{
 	"cmd":        true,
 }
 
+// IsSupportedShell returns whether the given shell name is a supported shell.
+func IsSupportedShell(shell string) bool {
+	return validShells[strings.ToLower(shell)]
+}
+
 // ValidateShell checks whether shell is a known, supported shell name.
 // An empty string is considered valid (auto-detect).
 func ValidateShell(shell string) error {
 	if shell == "" {
 		return nil
 	}
-	if !ValidShells[strings.ToLower(shell)] {
+	if !IsSupportedShell(shell) {
 		return fmt.Errorf("invalid shell %q: must be one of bash, sh, zsh, pwsh, powershell, cmd", shell)
 	}
 	return nil

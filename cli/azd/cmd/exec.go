@@ -152,7 +152,10 @@ func (a *execAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 		if err != nil {
 			if execErr, ok := errors.AsType[*scripting.ExecutionError](err); ok {
-				os.Exit(execErr.ExitCode)
+				return nil, &internal.ExitCodeError{
+					ExitCode: execErr.ExitCode,
+					Err:      err,
+				}
 			}
 			return nil, err
 		}

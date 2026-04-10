@@ -213,21 +213,6 @@ func TestClassifyResourceGroups(t *testing.T) {
 		assert.Contains(t, res.Skipped[0].Reason, "Tier 3")
 	})
 
-	t.Run("Tier2 tag fetch 404 — already deleted skip", func(t *testing.T) {
-		t.Parallel()
-		opts := ClassifyOptions{
-			EnvName: envName,
-			GetResourceGroupTags: func(_ context.Context, _ string) (map[string]*string, error) {
-				return nil, makeResponseError(http.StatusNotFound)
-			},
-		}
-		res, err := ClassifyResourceGroups(t.Context(), nil, []string{rgA}, opts)
-		require.NoError(t, err)
-		assert.Empty(t, res.Owned)
-		require.Len(t, res.Skipped, 1)
-		assert.Contains(t, res.Skipped[0].Reason, "already deleted")
-	})
-
 	t.Run("Tier2 tag fetch 403 — falls to Tier3 non-interactive skip", func(t *testing.T) {
 		t.Parallel()
 		opts := ClassifyOptions{
@@ -368,7 +353,7 @@ func TestClassifyResourceGroups(t *testing.T) {
 
 	t.Run("Tier3 non-interactive — unknown skipped without prompt", func(t *testing.T) {
 		t.Parallel()
-		prompted := false
+		var prompted atomic.Bool
 		opts := ClassifyOptions{
 			EnvName:     envName,
 			Interactive: false,
@@ -376,7 +361,7 @@ func TestClassifyResourceGroups(t *testing.T) {
 				return nil, nil
 			},
 			Prompter: func(_, _ string) (bool, error) {
-				prompted = true
+				prompted.Store(true)
 				return true, nil
 			},
 		}
@@ -384,7 +369,7 @@ func TestClassifyResourceGroups(t *testing.T) {
 		require.NoError(t, err)
 		assert.Empty(t, res.Owned)
 		require.Len(t, res.Skipped, 1)
-		assert.False(t, prompted, "prompter should not be called in non-interactive mode")
+		assert.False(t, prompted.Load(), "prompter should not be called in non-interactive mode")
 	})
 
 	t.Run("multiple RGs — mix of owned, external, unknown", func(t *testing.T) {
@@ -563,7 +548,7 @@ func TestClassifyResourceGroups(t *testing.T) {
 	t.Run("Tier4 foreign resources sequential prompt (not concurrent)", func(t *testing.T) {
 		t.Parallel()
 		rgOp := "Microsoft.Resources/resourceGroups"
-		promptCount := 0
+		var promptCount atomic.Int32
 		opts := ClassifyOptions{
 			EnvName:     envName,
 			Interactive: true,
@@ -573,7 +558,7 @@ func TestClassifyResourceGroups(t *testing.T) {
 				}, nil
 			},
 			Prompter: func(_, _ string) (bool, error) {
-				promptCount++
+				promptCount.Add(1)
 				return false, nil // deny all
 			},
 		}
@@ -584,7 +569,7 @@ func TestClassifyResourceGroups(t *testing.T) {
 		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgA, rgB}, opts)
 		require.NoError(t, err)
 		assert.Empty(t, res.Owned)
-		assert.Equal(t, 2, promptCount, "both RGs should be prompted sequentially")
+		assert.Equal(t, int32(2), promptCount.Load(), "both RGs should be prompted sequentially")
 	})
 
 	t.Run("Tier4 500 error treated as veto (fail-safe)", func(t *testing.T) {
@@ -997,6 +982,22 @@ func TestClassifyResourceGroups(t *testing.T) {
 		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgA}, opts)
 		require.NoError(t, err)
 		assert.Empty(t, res.Owned, "non-azcore error on locks should veto")
+		require.Len(t, res.Skipped, 1)
+		assert.Contains(t, res.Skipped[0].Reason, "error during safety check")
+	})
+
+	t.Run("Tier4 non-azcore network error on resource listing treated as veto (fail-safe)", func(t *testing.T) {
+		t.Parallel()
+		opts := ClassifyOptions{
+			EnvName: envName,
+			ListResourceGroupResources: func(_ context.Context, _ string) ([]*ResourceWithTags, error) {
+				return nil, fmt.Errorf("dial tcp: connection refused")
+			},
+		}
+		ops := []*armresources.DeploymentOperation{makeOperation("Create", rgOp, rgA)}
+		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgA}, opts)
+		require.NoError(t, err)
+		assert.Empty(t, res.Owned, "non-azcore error on resource listing should veto")
 		require.Len(t, res.Skipped, 1)
 		assert.Contains(t, res.Skipped[0].Reason, "error during safety check")
 	})

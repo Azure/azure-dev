@@ -23,6 +23,7 @@ words:
   - cooldown
   - customtype
   - devcontainers
+  - diagnosticsettings
   - errgroup
   - errorhandler
   - extendee

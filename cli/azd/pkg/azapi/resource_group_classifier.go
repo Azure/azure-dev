@@ -45,8 +45,10 @@ type ClassifyOptions struct {
 	// ForceMode runs only Tier 1 (zero API calls). External RGs identified by
 	// deployment operations are still protected; unknown RGs are treated as owned.
 	// Tier 2/3/4 callbacks are not invoked.
-	ForceMode   bool
-	Interactive bool   // Whether to prompt for unknown RGs
+	ForceMode bool
+	// Interactive enables per-RG prompts for unknown and foreign-resource RGs.
+	// When false, unknown/unverified RGs are always skipped without deletion.
+	Interactive bool
 	EnvName     string // Current azd environment name for tag matching
 
 	// ExpectedProvisionParamHash is the expected value of the azd-provision-param-hash tag.
@@ -183,6 +185,10 @@ func ClassifyResourceGroups(
 		rg     string
 		reason string
 	}
+	// Tier 4 goroutine invariant: every RG either (a) enters wg.Go — which
+	// sends at most once to vetoCh or promptCh (clean RGs send to neither) —
+	// or (b) sends to vetoCh directly (cancelled context). Both channels
+	// are buffered to len(owned) so sends never block and goroutines never leak.
 	vetoCh := make(chan veto, len(owned))
 	promptCh := make(chan pendingPrompt, len(owned))
 	sem := make(chan struct{}, cTier4Parallelism)
@@ -282,6 +288,9 @@ func classifyTier1(
 		tier1[rg] = tier1Info{result: tier1Unknown}
 	}
 	for _, op := range operations {
+		// TRUST ASSUMPTION: ARM ProvisioningOperation=Create is only emitted for RGs
+		// that were actually created by this deployment, never for `existing` references.
+		// Tier 4 (locks + foreign resources) provides defense-in-depth for all owned RGs.
 		if name, ok := operationTargetsRG(op, cProvisionOpCreate); ok {
 			if _, tracked := tier1[name]; tracked {
 				tier1[name] = tier1Info{result: tier1Owned}
@@ -365,6 +374,8 @@ func classifyTier2(ctx context.Context, rgName string, opts ClassifyOptions) (*C
 	hashTag := tagValue(tags, cAzdProvisionHashTag)
 	if envTag != "" && hashTag != "" && strings.EqualFold(envTag, opts.EnvName) {
 		// If an expected hash is provided, verify it matches.
+		// Case-sensitive comparison is intentional — hash values must match exactly.
+		// Mismatch falls safely to Tier 3 (more scrutiny, not less).
 		// If not provided, presence of both tags is sufficient (backward compat).
 		if opts.ExpectedProvisionParamHash != "" &&
 			hashTag != opts.ExpectedProvisionParamHash {
@@ -434,6 +445,7 @@ func classifyTier4(ctx context.Context, rgName string, opts ClassifyOptions) (st
 			reason := fmt.Sprintf(
 				"vetoed (Tier 4: %d foreign resource(s) without azd-env-name=%q)", len(foreign), opts.EnvName,
 			)
+			log.Printf("classify rg=%s tier=4: foreign resources: %v", rgName, foreign)
 			return reason, true, true, nil
 		}
 	}
@@ -512,10 +524,11 @@ func tagValue(tags map[string]*string, key string) string {
 // resources that don't support tags. These are skipped during Tier 4
 // foreign-resource detection to avoid false-positive vetoes on resources
 // commonly created by azd scaffold templates.
+// All values are pre-lowercased for efficient case-insensitive comparison.
 var extensionResourceTypePrefixes = []string{
-	"Microsoft.Authorization/",
-	"Microsoft.Insights/diagnosticSettings",
-	"Microsoft.Resources/links",
+	"microsoft.authorization/",
+	"microsoft.insights/diagnosticsettings",
+	"microsoft.resources/links",
 }
 
 // isExtensionResourceType returns true if the given ARM resource type is a
@@ -523,7 +536,7 @@ var extensionResourceTypePrefixes = []string{
 func isExtensionResourceType(resourceType string) bool {
 	lower := strings.ToLower(resourceType)
 	for _, prefix := range extensionResourceTypePrefixes {
-		if strings.HasPrefix(lower, strings.ToLower(prefix)) {
+		if strings.HasPrefix(lower, prefix) {
 			return true
 		}
 	}

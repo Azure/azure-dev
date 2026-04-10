@@ -304,10 +304,10 @@ By layering signals, the system tolerates any single signal being unavailable
 or compromised. The key insight is that each tier's failure mode is "skip"
 (safe) not "delete" (unsafe).
 
-**Evaluation order**: Tier 4 (always-on vetoes) runs first because it can
-immediately exclude RGs regardless of what other tiers say. Then Tier 1
-(highest confidence) through Tier 3 (lowest confidence) run in sequence,
-stopping at the first tier that produces a definitive answer.
+**Evaluation order**: Tier 1 (highest confidence, zero API calls) through Tier 3
+(lowest confidence) run in sequence, stopping at the first tier that produces a
+definitive answer. Tier 4 (always-on vetoes) then runs on ALL deletion candidates
+to apply lock and foreign-resource checks regardless of which tier classified them.
 
 ### Decision 2: Deployment Operations as Primary Signal (Tier 1)
 

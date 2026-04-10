@@ -1362,9 +1362,9 @@ func httpRespondFn(request *http.Request) (*http.Response, error) {
 
 // classifyMockCfg configures a multi-RG destroy test scenario.
 type classifyMockCfg struct {
-	rgNames            []string                            // RG names referenced in the deployment
-	operations         []*armresources.DeploymentOperation // Tier 1 classification operations
-	withPurgeResources bool                                // adds a KeyVault to each RG for purge testing
+	rgNames            []string                                    // RG names referenced in the deployment
+	operations         []*armresources.DeploymentOperation         // Tier 1 classification operations
+	withPurgeResources bool                                        // adds a KeyVault to each RG for purge testing
 	rgLocks            map[string][]*armlocks.ManagementLockObject // per-RG locks (nil key = empty locks)
 }
 

@@ -139,6 +139,9 @@ func resolveStoredID(
 	generateIfMissing bool,
 ) (string, error) {
 	if explicit != "" {
+		// Persist the explicit ID so that subsequent commands (e.g. monitor, invoke)
+		// can find it without the user passing it again.
+		saveContextValue(ctx, azdClient, agentKey, explicit, storeField)
 		return explicit, nil
 	}
 	if forceNew && !generateIfMissing {

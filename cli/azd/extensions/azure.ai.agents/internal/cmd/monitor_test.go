@@ -364,6 +364,76 @@ func TestValidateMonitorFlags_ErrorMessages(t *testing.T) {
 	assert.Contains(t, err.Error(), "badtype")
 }
 
+func TestExplicitSessionID_PersistedAndReusable(t *testing.T) {
+	t.Parallel()
+
+	// Simulate the persistence that resolveStoredID now performs when an explicit
+	// session ID is provided. This verifies the round-trip: save an explicit ID,
+	// then load it back (as monitor's resolveMonitorSession would).
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, ConfigFile)
+
+	agentName := "my-agent"
+	explicitSID := "user-provided-session-id"
+
+	// Before: no sessions stored
+	agentCtx := loadLocalContext(configPath)
+	assert.Empty(t, agentCtx.Sessions)
+
+	// Simulate what resolveStoredID now does: persist the explicit ID
+	store := contextMap(agentCtx, "sessions")
+	store[agentName] = explicitSID
+	require.NoError(t, saveLocalContext(agentCtx, configPath))
+
+	// Reload (as monitor or a subsequent invoke would)
+	loaded := loadLocalContext(configPath)
+	require.NotNil(t, loaded.Sessions)
+	assert.Equal(t, explicitSID, loaded.Sessions[agentName])
+}
+
+func TestExplicitConversationID_PersistedAndReusable(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, ConfigFile)
+
+	agentName := "my-agent"
+	explicitConvID := "user-provided-conv-id"
+
+	agentCtx := loadLocalContext(configPath)
+	store := contextMap(agentCtx, "conversations")
+	store[agentName] = explicitConvID
+	require.NoError(t, saveLocalContext(agentCtx, configPath))
+
+	loaded := loadLocalContext(configPath)
+	require.NotNil(t, loaded.Conversations)
+	assert.Equal(t, explicitConvID, loaded.Conversations[agentName])
+}
+
+func TestExplicitID_OverwritesPreviousValue(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, ConfigFile)
+
+	agentName := "my-agent"
+
+	// Save an initial session ID
+	agentCtx := loadLocalContext(configPath)
+	store := contextMap(agentCtx, "sessions")
+	store[agentName] = "old-session-id"
+	require.NoError(t, saveLocalContext(agentCtx, configPath))
+
+	// Simulate a second invoke with a different explicit session ID
+	agentCtx = loadLocalContext(configPath)
+	store = contextMap(agentCtx, "sessions")
+	store[agentName] = "new-session-id"
+	require.NoError(t, saveLocalContext(agentCtx, configPath))
+
+	loaded := loadLocalContext(configPath)
+	assert.Equal(t, "new-session-id", loaded.Sessions[agentName])
+}
+
 func TestValidateMonitorFlags_SessionDoesNotAffectValidation(t *testing.T) {
 	t.Parallel()
 

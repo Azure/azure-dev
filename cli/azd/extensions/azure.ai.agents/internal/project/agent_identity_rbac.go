@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -185,6 +186,7 @@ func EnsureAgentIdentityRBAC(ctx context.Context, azdClient *azdext.AzdClient, a
 // ensureAgentIdentityRBACWithCred performs the core per-agent identity RBAC logic using
 // the provided credential. For each agent name, it looks up the per-agent identity
 // and assigns Azure AI User scoped to the Foundry Project.
+// Agents are processed in parallel since each has an independent identity.
 func ensureAgentIdentityRBACWithCred(
 	ctx context.Context,
 	cred *azidentity.AzureDeveloperCLICredential,
@@ -202,12 +204,33 @@ func ensureAgentIdentityRBACWithCred(
 		return fmt.Errorf("failed to create Graph client: %w", err)
 	}
 
-	for i, agentName := range agentNames {
-		fmt.Println()
-		fmt.Printf("[%d/%d] Processing agent: %s\n", i+1, len(agentNames), agentName)
+	// Process agents in parallel — each has an independent identity and the
+	// identity lookup polling (up to ~3 min per agent) dominates wall-clock time.
+	type agentResult struct {
+		name string
+		err  error
+	}
 
-		if err := ensureSingleAgentRBAC(ctx, cred, graphClient, info, agentName); err != nil {
-			return err
+	results := make([]agentResult, len(agentNames))
+	var wg sync.WaitGroup
+
+	for i, agentName := range agentNames {
+		wg.Add(1)
+		go func(i int, name string) {
+			defer wg.Done()
+			results[i] = agentResult{
+				name: name,
+				err:  ensureSingleAgentRBAC(ctx, cred, graphClient, info, name),
+			}
+		}(i, agentName)
+	}
+
+	wg.Wait()
+
+	// Report results in order and return first error.
+	for _, r := range results {
+		if r.err != nil {
+			return fmt.Errorf("agent identity RBAC failed for %q: %w", r.name, r.err)
 		}
 	}
 

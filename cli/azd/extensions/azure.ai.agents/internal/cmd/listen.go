@@ -131,7 +131,7 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 	// Only hosted agents get platform-created per-agent identities; prompt agents do not.
 	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
 	if err != nil {
-		return nil // No environment — nothing to check.
+		return fmt.Errorf("failed to get current environment for agent identity RBAC: %w", err)
 	}
 
 	var agentNames []string
@@ -145,7 +145,10 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 			EnvName: envResp.Environment.Name,
 			Key:     nameKey,
 		})
-		if err != nil || valResp.Value == "" {
+		if err != nil {
+			return fmt.Errorf("failed to read %s from environment: %w", nameKey, err)
+		}
+		if valResp.Value == "" {
 			continue
 		}
 		agentNames = append(agentNames, valResp.Value)

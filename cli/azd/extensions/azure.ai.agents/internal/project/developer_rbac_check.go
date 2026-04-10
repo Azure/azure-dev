@@ -258,8 +258,13 @@ func resolveACRResourceID(
 	loginServer string,
 ) (string, error) {
 	// Normalize: ensure no protocol prefix and lowercase comparison.
-	loginServer = strings.TrimPrefix(loginServer, "https://")
-	loginServer = strings.TrimPrefix(loginServer, "http://")
+	// Use case-insensitive prefix removal since endpoints may arrive as "HTTPS://...".
+	for _, prefix := range []string{"https://", "http://"} {
+		if len(loginServer) > len(prefix) && strings.EqualFold(loginServer[:len(prefix)], prefix) {
+			loginServer = loginServer[len(prefix):]
+			break
+		}
+	}
 	loginServer = strings.ToLower(strings.TrimSuffix(loginServer, "/"))
 
 	client, err := armcontainerregistry.NewRegistriesClient(subscriptionID, cred, nil)

@@ -23,7 +23,9 @@ func TestResolveACRResourceID_NormalizesLoginServer(t *testing.T) {
 		{"with https prefix", "https://crfoo.azurecr.io", "crfoo.azurecr.io"},
 		{"with http prefix", "http://crfoo.azurecr.io", "crfoo.azurecr.io"},
 		{"with trailing slash", "crfoo.azurecr.io/", "crfoo.azurecr.io"},
-		{"uppercase", "CrFoo.AzureCR.io", "crfoo.azurecr.io"},
+		{"uppercase domain", "CrFoo.AzureCR.io", "crfoo.azurecr.io"},
+		{"uppercase HTTPS prefix", "HTTPS://crfoo.azurecr.io", "crfoo.azurecr.io"},
+		{"mixed case prefix and domain", "Https://CrFoo.AzureCR.io/", "crfoo.azurecr.io"},
 	}
 
 	for _, tt := range tests {

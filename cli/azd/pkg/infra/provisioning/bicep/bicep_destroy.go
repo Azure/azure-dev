@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -75,10 +77,7 @@ func (p *BicepProvider) classifyResourceGroups(
 	options provisioning.DestroyOptions,
 ) (owned []string, skipped []azapi.ClassifiedSkip, err error) {
 	// Extract RG names from the grouped resources map.
-	rgNames := make([]string, 0, len(groupedResources))
-	for rgName := range groupedResources {
-		rgNames = append(rgNames, rgName)
-	}
+	rgNames := slices.Collect(maps.Keys(groupedResources))
 
 	// Get deployment info for classification (used for logging and hash derivation).
 	deploymentInfo, deployInfoErr := deployment.Get(ctx)
@@ -116,7 +115,7 @@ func (p *BicepProvider) classifyResourceGroups(
 	subscriptionId := deployment.SubscriptionId()
 	classifyOpts := azapi.ClassifyOptions{
 		Interactive:                !p.console.IsNoPromptMode(),
-		ForceMode:                 options.Force(),
+		ForceMode:                  options.Force(),
 		EnvName:                    p.env.Name(),
 		ExpectedProvisionParamHash: expectedHash,
 	}
@@ -230,7 +229,10 @@ func (p *BicepProvider) deleteRGList(
 // getResourceGroupTags retrieves the tags for a resource group using the ARM API.
 // It uses the service locator to resolve the credential provider and ARM client options.
 // Returns nil tags (no error) as a graceful fallback if dependencies cannot be resolved,
-// which causes the classifier to fall back to Tier 2/3.
+// which causes the classifier to fall to Tier 3 (more scrutiny — safe direction).
+// This differs from listResourceGroupLocks/listResourceGroupResourcesWithTags which
+// return errors → fail-safe veto. The asymmetry is intentional: missing tags means
+// "try harder to verify," while missing lock/resource data means "don't delete."
 func (p *BicepProvider) getResourceGroupTags(
 	ctx context.Context,
 	subscriptionId string,

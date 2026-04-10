@@ -508,7 +508,7 @@ func (ds *StandardDeployments) voidSubscriptionDeploymentState(
 	}
 
 	envName, has := deployment.Tags[azure.TagKeyAzdEnvName]
-	if has {
+	if has && envName != nil && *envName != "" {
 		var emptyTemplate json.RawMessage = []byte(emptySubscriptionArmTemplate)
 		emptyDeploymentName := ds.GenerateDeploymentName(*envName)
 		tags := map[string]*string{

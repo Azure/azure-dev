@@ -1,5 +1,16 @@
 # Release History
 
+## 0.1.22-preview (2026-04-10)
+
+- [[#7633]](https://github.com/Azure/azure-dev/pull/7633) Fix `azd ai agent init` to correctly set `AZURE_AI_MODEL_DEPLOYMENT_NAME` when initializing from a manifest, template, or `--model`/`--model-deployment` flags.
+- [[#7635]](https://github.com/Azure/azure-dev/pull/7635) Fix `azd ai agent invoke` to persist an explicitly passed `--session-id` so that subsequent `azd ai agent monitor` calls can reuse the session without error.
+- [[#7636]](https://github.com/Azure/azure-dev/pull/7636) Add positional argument support to `azd ai agent init`; passing a URL, manifest path, or source directory is now auto-disambiguated and equivalent to using `--manifest` or `--src`.
+- [[#7645]](https://github.com/Azure/azure-dev/pull/7645) Fix `azd ai agent init -m` when adding to an existing azd project: reuse the Foundry project from the environment, show a message when an existing azd project is detected, and prompt to resolve service name collisions.
+
+### Breaking Changes
+
+- [[#7651]](https://github.com/Azure/azure-dev/pull/7651) Switch agent identity RBAC from a shared project-level identity to per-agent identities (`{account}-{project}-{agentName}-AgentIdentity`), add developer RBAC pre-flight checks before deploy, and remove Cognitive Services OpenAI User and Monitoring Metrics Publisher role assignments; set `AZD_AGENT_SKIP_ROLE_ASSIGNMENTS=true` to skip all role assignments in CI/CD environments.
+
 ## 0.1.21-preview (2026-04-09)
 
 - [[#7484]](https://github.com/Azure/azure-dev/pull/7484) Detect an `agent.manifest.yaml` in the current directory and prompt to use it when running `azd ai agent init`.

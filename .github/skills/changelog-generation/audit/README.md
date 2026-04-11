@@ -1,14 +1,14 @@
 # Changelog Audit Tool
 
 Retroactively applies the updated changelog generation rules to past releases
-and produces a side-by-side comparison report showing the live changelog entries
-vs issues the new rules would have caught.
+and produces per-release comparison files showing the published changelog
+vs the corrected version under the new rules.
 
 ## Usage
 
 ```bash
 cd .github/skills/changelog-generation/audit
-go run . -n 20 -output report.md
+go run .
 ```
 
 ### Flags
@@ -19,7 +19,49 @@ go run . -n 20 -output report.md
 | `-changelog` | auto-detected | Path to `CHANGELOG.md` |
 | `-tag-prefix` | `azure-dev-cli_` | Git tag prefix |
 | `-repo-root` | auto-detected | Git repository root |
-| `-output` | stdout | Output file path |
+| `-output` | `findings.md` | Findings report path |
+
+## Output
+
+The tool generates three outputs:
+
+### `findings.md` — Audit findings report
+
+Summary table, per-rule aggregates, and per-release findings with context.
+No embedded diffs — just clean, readable findings.
+
+### `published/<version>.md` — Verbatim changelog sections
+
+Each file contains the exact changelog section as published for that release.
+These are extracted verbatim from `CHANGELOG.md`.
+
+### `corrected/<version>.md` — Deterministic corrections
+
+Each file contains the same changelog section with **only deterministic
+corrections** applied:
+
+| Rule | Correction | Deterministic? |
+|------|-----------|----------------|
+| F1 | Swap wrong PR number with canonical (last) PR | Yes |
+| F2b | Change `/issues/` to `/pull/` in link URL | Yes |
+| F3 | Remove cross-release duplicate entry | Yes |
+| F6 | Remove phantom entry (PR not in commit range) | Yes |
+| F6b | Fix link text to match URL number | Yes |
+| F2 | Missing PR link — **reported only, not corrected** | No |
+| F5 | Borderline excluded commit — **reported only** | No |
+
+### Comparing published vs corrected
+
+```bash
+# Diff a single release
+diff -u published/1.23.12.md corrected/1.23.12.md
+
+# Diff all releases with corrections
+diff -ru published/ corrected/
+
+# On Windows (PowerShell)
+Compare-Object (Get-Content published\1.23.12.md) (Get-Content corrected\1.23.12.md)
+```
 
 ## What It Checks
 
@@ -34,11 +76,3 @@ go run . -n 20 -output report.md
 | F5 | Excluded commit matches borderline user-facing keywords | warning |
 | F6 | Changelog entry references PR not in the commit range | warning |
 | F6b | Link text `[[#N]]` doesn't match URL number | error |
-
-## Output
-
-The tool generates a markdown report with:
-
-- **Summary table** — per-release error/warning/info counts
-- **Findings by rule** — aggregate counts across all releases
-- **Per-release detail** — specific findings with context and recommended changes

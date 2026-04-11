@@ -499,7 +499,7 @@ func TestBicepDestroyClassifyAndDelete(t *testing.T) {
 
 		require.Error(t, err, "user cancellation should return an error")
 		require.ErrorIs(t, err, errUserCancelled)
-		require.NotNil(t, result)
+		require.Nil(t, result, "result should be nil on user cancellation")
 
 		// No RGs should be deleted — user cancelled.
 		assert.Equal(t, int32(0), tracker.rgDeletes["rg-created"].Load(),
@@ -508,10 +508,6 @@ func TestBicepDestroyClassifyAndDelete(t *testing.T) {
 		// Void state should NOT be called — user cancelled.
 		assert.Equal(t, int32(0), tracker.voidStatePUTs.Load(),
 			"voidDeploymentState should NOT be called when user cancels confirmation")
-
-		// Env keys should not be invalidated — DestroyResult should be empty.
-		assert.Empty(t, result.InvalidatedEnvKeys,
-			"env keys should NOT be invalidated when user cancels")
 	})
 
 	t.Run("Tier4LockVetoPreventsDeletion", func(t *testing.T) {

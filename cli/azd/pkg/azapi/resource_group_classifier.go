@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"slices"
 	"strings"
 	"sync"
 
@@ -30,8 +31,8 @@ type ClassifiedSkip struct {
 // ResourceWithTags is a resource with its ARM tags, used for extra-resource checks.
 type ResourceWithTags struct {
 	Name string
-	Type string // ARM resource type, e.g. "Microsoft.Compute/virtualMachines"
-	Tags map[string]*string
+	Type string             // ARM resource type, e.g. "Microsoft.Compute/virtualMachines"
+	Tags map[string]*string // ARM tags on the resource; nil if none are set
 }
 
 // ManagementLock represents an ARM management lock on a resource.
@@ -197,105 +198,7 @@ func ClassifyResourceGroups(
 
 	// --- Tier 4: veto checks on all deletion candidates (parallel, capacity 5) ---
 	// This includes Tier 1 owned, Tier 2 owned, AND Tier 3 user-accepted RGs.
-	// Tier 4 foreign-resource prompts are collected and executed sequentially below
-	// to avoid concurrent terminal output from parallel goroutines.
-	type veto struct {
-		rg     string
-		reason string
-	}
-	type pendingPrompt struct {
-		rg     string
-		reason string
-	}
-	// Tier 4 goroutine invariant: every RG either (a) enters wg.Go — which
-	// sends at most once to vetoCh or promptCh (clean RGs send to neither) —
-	// or (b) sends to vetoCh directly (cancelled context). Both channels
-	// are buffered to len(owned) so sends never block and goroutines never leak.
-	vetoCh := make(chan veto, len(owned))
-	promptCh := make(chan pendingPrompt, len(owned))
-	sem := make(chan struct{}, cTier4Parallelism)
-	var wg sync.WaitGroup
-	for _, rg := range owned {
-		// Context-aware semaphore: bail out if context is cancelled while waiting.
-		select {
-		case sem <- struct{}{}:
-			// Re-check cancellation after acquiring the semaphore.
-			// Go's select is non-deterministic when both cases are ready,
-			// so ctx.Done may have fired but the semaphore case was chosen.
-			if ctx.Err() != nil {
-				<-sem
-				vetoCh <- veto{
-					rg:     rg,
-					reason: "error during safety check: " + ctx.Err().Error(),
-				}
-				continue
-			}
-		case <-ctx.Done():
-			vetoCh <- veto{
-				rg:     rg,
-				reason: "error during safety check: " + ctx.Err().Error(),
-			}
-			continue
-		}
-		wg.Go(func() {
-			defer func() { <-sem }()
-			reason, vetoed, needsPrompt, err := classifyTier4(ctx, rg, opts)
-			if err != nil {
-				// Fail safe: treat errors as vetoes to avoid accidental deletion.
-				log.Printf(
-					"ERROR: classify rg=%s tier=4: safety check failed: %v (treating as veto)",
-					rg, err,
-				)
-				vetoCh <- veto{
-					rg:     rg,
-					reason: fmt.Sprintf("error during safety check: %s", err.Error()),
-				}
-				return
-			}
-			if needsPrompt {
-				promptCh <- pendingPrompt{rg: rg, reason: reason}
-				return
-			}
-			if vetoed {
-				vetoCh <- veto{rg: rg, reason: reason}
-			}
-		})
-	}
-	wg.Wait()
-	close(vetoCh)
-	close(promptCh)
-
-	vetoedSet := make(map[string]string, len(owned))
-	for v := range vetoCh {
-		vetoedSet[v.rg] = v.reason
-	}
-
-	// Process foreign-resource prompts sequentially on the main goroutine
-	// to avoid concurrent terminal output.
-	for p := range promptCh {
-		if opts.Interactive && opts.Prompter != nil {
-			accept, err := opts.Prompter(p.rg, p.reason)
-			if err != nil {
-				return nil, fmt.Errorf("classify rg=%s tier=4 prompt: %w", p.rg, err)
-			}
-			if !accept {
-				vetoedSet[p.rg] = p.reason
-			}
-		} else {
-			// Non-interactive: foreign resources are a hard veto.
-			vetoedSet[p.rg] = p.reason
-		}
-	}
-
-	for _, rg := range owned {
-		if reason, vetoed := vetoedSet[rg]; vetoed {
-			result.Skipped = append(result.Skipped, ClassifiedSkip{Name: rg, Reason: reason})
-		} else {
-			result.Owned = append(result.Owned, rg)
-		}
-	}
-
-	return result, nil
+	return runTier4Vetoes(ctx, owned, opts, result)
 }
 
 // classifyFromSnapshot uses the Bicep snapshot predictedResources to classify RGs.
@@ -329,33 +232,59 @@ func classifyFromSnapshot(
 	}
 
 	// --- Tier 4: veto checks on all snapshot-owned candidates (defense-in-depth) ---
-	// Same logic as the tier pipeline path. Even if the snapshot says "owned," a
-	// management lock or foreign resources should still prevent deletion.
-	type veto struct {
-		rg     string
-		reason string
-	}
-	type pendingPrompt struct {
-		rg     string
-		reason string
-	}
-	vetoCh := make(chan veto, len(owned))
-	promptCh := make(chan pendingPrompt, len(owned))
+	// Even if the snapshot says "owned," a management lock or foreign resources
+	// should still prevent deletion.
+	return runTier4Vetoes(ctx, owned, opts, result)
+}
+
+// tier4Veto represents a resource group vetoed by a Tier 4 safety check.
+type tier4Veto struct {
+	rg     string
+	reason string
+}
+
+// tier4PendingPrompt represents a Tier 4 foreign-resource finding that needs
+// interactive confirmation (or becomes a hard veto in non-interactive mode).
+type tier4PendingPrompt struct {
+	rg     string
+	reason string
+}
+
+// runTier4Vetoes runs lock + foreign-resource veto checks on all owned candidates
+// in parallel (capped by cTier4Parallelism). Foreign-resource prompts are collected
+// and executed sequentially on the caller's goroutine to avoid concurrent terminal
+// output. Returns the final ClassifyResult with vetoed RGs moved to Skipped.
+func runTier4Vetoes(
+	ctx context.Context,
+	owned []string,
+	opts ClassifyOptions,
+	result *ClassifyResult,
+) (*ClassifyResult, error) {
+	// Goroutine invariant: every RG either (a) enters wg.Go — which sends at
+	// most once to vetoCh or promptCh (clean RGs send to neither) — or (b) sends
+	// to vetoCh directly (cancelled context). Both channels are buffered to
+	// len(owned) so sends never block and goroutines never leak.
+	vetoCh := make(chan tier4Veto, len(owned))
+	promptCh := make(chan tier4PendingPrompt, len(owned))
 	sem := make(chan struct{}, cTier4Parallelism)
 	var wg sync.WaitGroup
 	for _, rg := range owned {
+		// Context-aware semaphore: bail out if context is cancelled while waiting.
 		select {
 		case sem <- struct{}{}:
+			// Re-check cancellation after acquiring the semaphore.
+			// Go's select is non-deterministic when both cases are ready,
+			// so ctx.Done may have fired but the semaphore case was chosen.
 			if ctx.Err() != nil {
 				<-sem
-				vetoCh <- veto{
+				vetoCh <- tier4Veto{
 					rg:     rg,
 					reason: "error during safety check: " + ctx.Err().Error(),
 				}
 				continue
 			}
 		case <-ctx.Done():
-			vetoCh <- veto{
+			vetoCh <- tier4Veto{
 				rg:     rg,
 				reason: "error during safety check: " + ctx.Err().Error(),
 			}
@@ -365,22 +294,24 @@ func classifyFromSnapshot(
 			defer func() { <-sem }()
 			reason, vetoed, needsPrompt, err := classifyTier4(ctx, rg, opts)
 			if err != nil {
+				// Fail safe: treat errors as vetoes to avoid accidental deletion.
 				log.Printf(
-					"ERROR: classify rg=%s tier=4: safety check failed: %v (treating as veto)",
-					rg, err,
+					"ERROR: classify rg=%s tier=4: safety check failed: %v "+
+						"(treating as veto)", rg, err,
 				)
-				vetoCh <- veto{
-					rg:     rg,
-					reason: fmt.Sprintf("error during safety check: %s", err.Error()),
+				vetoCh <- tier4Veto{
+					rg: rg,
+					reason: fmt.Sprintf(
+						"error during safety check: %s", err.Error()),
 				}
 				return
 			}
 			if needsPrompt {
-				promptCh <- pendingPrompt{rg: rg, reason: reason}
+				promptCh <- tier4PendingPrompt{rg: rg, reason: reason}
 				return
 			}
 			if vetoed {
-				vetoCh <- veto{rg: rg, reason: reason}
+				vetoCh <- tier4Veto{rg: rg, reason: reason}
 			}
 		})
 	}
@@ -393,23 +324,33 @@ func classifyFromSnapshot(
 		vetoedSet[v.rg] = v.reason
 	}
 
+	// Process foreign-resource prompts sequentially on the main goroutine
+	// to avoid concurrent terminal output.
 	for p := range promptCh {
 		if opts.Interactive && opts.Prompter != nil {
 			accept, err := opts.Prompter(p.rg, p.reason)
 			if err != nil {
-				return nil, fmt.Errorf("classify rg=%s tier=4 prompt: %w", p.rg, err)
+				return nil, fmt.Errorf(
+					"classify rg=%s tier=4 prompt: %w", p.rg, err)
 			}
 			if !accept {
 				vetoedSet[p.rg] = p.reason
 			}
 		} else {
+			// Non-interactive: foreign resources are a hard veto.
+			log.Printf(
+				"classify rg=%s tier=4: non-interactive veto: %s",
+				p.rg, p.reason,
+			)
 			vetoedSet[p.rg] = p.reason
 		}
 	}
 
 	for _, rg := range owned {
 		if reason, vetoed := vetoedSet[rg]; vetoed {
-			result.Skipped = append(result.Skipped, ClassifiedSkip{Name: rg, Reason: reason})
+			result.Skipped = append(result.Skipped, ClassifiedSkip{
+				Name: rg, Reason: reason,
+			})
 		} else {
 			result.Owned = append(result.Owned, rg)
 		}
@@ -677,10 +618,7 @@ var extensionResourceTypePrefixes = []string{
 // known extension resource that does not support tags.
 func isExtensionResourceType(resourceType string) bool {
 	lower := strings.ToLower(resourceType)
-	for _, prefix := range extensionResourceTypePrefixes {
-		if strings.HasPrefix(lower, prefix) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(extensionResourceTypePrefixes, func(prefix string) bool {
+		return strings.HasPrefix(lower, prefix)
+	})
 }

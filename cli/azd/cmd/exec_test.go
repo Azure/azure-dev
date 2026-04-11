@@ -281,3 +281,52 @@ func TestExecAction_ExitCodePropagation(t *testing.T) {
 	// If the shell doesn't support 'exit 42' inline (e.g. on Windows without bash),
 	// the error may be of a different type — that's acceptable for this test.
 }
+
+func TestLooksLikeFilePath(t *testing.T) {
+	tests := []struct {
+		input string
+		want  bool
+	}{
+		{"echo hello", false},
+		{"go version", false},
+		{"npm", false},
+		{"./script.sh", true},
+		{"scripts/deploy.sh", true},
+		{"C:\\scripts\\deploy.ps1", true},
+		{"deploy.sh", true},
+		{"build.ps1", true},
+		{"run.cmd", true},
+		{"setup.bat", true},
+		{"app.py", true},
+		{"tool.rb", true},
+		{"deploy.bash", true},
+		{"config.zsh", true},
+		{"mycommand", false},
+		{"echo $HOME", false},
+		{"ls -la", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			assert.Equal(t, tt.want, looksLikeFilePath(tt.input))
+		})
+	}
+}
+
+func TestExecAction_FileNotFoundNoInlineFallback(t *testing.T) {
+	env := environment.NewWithValues("test", nil)
+	kvMock := &mockExecKeyVaultService{}
+
+	// A non-existent file with a script extension should NOT fall through
+	// to inline execution — it should return ScriptNotFoundError.
+	action := &execAction{
+		env:             env,
+		keyvaultService: kvMock,
+		flags:           &execFlags{global: &internal.GlobalCommandOptions{}},
+		args:            []string{"nonexistent.sh"},
+	}
+
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not found")
+}

@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -156,6 +158,12 @@ func (a *execAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// Try file execution first; fall back based on argument shape.
 	if err := exec.Execute(ctx, scriptInput); err != nil {
 		if _, ok := errors.AsType[*scripting.ScriptNotFoundError](err); ok {
+			// Guard: if the input looks like a file path (has path separators
+			// or a known script extension), don't fall through to inline/direct
+			// execution — the user intended to run a file that doesn't exist.
+			if looksLikeFilePath(scriptInput) {
+				return nil, err
+			}
 			if len(scriptArgs) > 0 && a.flags.shell == "" {
 				err = exec.ExecuteDirect(ctx, scriptInput, scriptArgs)
 			} else {
@@ -174,4 +182,23 @@ func (a *execAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	return nil, nil
+}
+
+// scriptExtensions lists file extensions that indicate a script file,
+// used by looksLikeFilePath to prevent unsafe inline fallback.
+var scriptExtensions = map[string]bool{
+	".sh": true, ".bash": true, ".zsh": true,
+	".ps1": true, ".cmd": true, ".bat": true,
+	".py": true, ".rb": true, ".pl": true,
+}
+
+// looksLikeFilePath reports whether input appears to be a file path rather
+// than a bare command or inline script. Used to prevent falling through to
+// inline execution when a user typos a script name (F15 security fix).
+func looksLikeFilePath(input string) bool {
+	if strings.ContainsAny(input, "/\\") {
+		return true
+	}
+	ext := strings.ToLower(filepath.Ext(input))
+	return ext != "" && scriptExtensions[ext]
 }

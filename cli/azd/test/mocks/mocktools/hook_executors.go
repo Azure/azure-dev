@@ -5,6 +5,7 @@ package mocktools
 
 import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bash"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/language"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/node"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/powershell"
@@ -34,5 +35,10 @@ func RegisterHookExecutors(mockCtx *mocks.MockContext) {
 	mockCtx.Container.MustRegisterNamedTransient(
 		string(language.HookKindTypeScript),
 		language.NewTypeScriptExecutor,
+	)
+	mockCtx.Container.MustRegisterSingleton(dotnet.NewCli)
+	mockCtx.Container.MustRegisterNamedTransient(
+		string(language.HookKindDotNet),
+		language.NewDotNetExecutor,
 	)
 }

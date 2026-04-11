@@ -400,15 +400,16 @@ func TestGetSnapshotPredictedRGs(t *testing.T) {
 		})
 }
 
-// TestForceWithOperationsFetchFailure verifies that when --force is
-// set and deployment.Operations() returns an error, all resource groups
-// are treated as owned (backward compatibility). This is the
-// integration path in BicepProvider.classifyResourceGroups.
-func TestForceWithOperationsFetchFailure(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
-	prepareBicepMocks(mockContext)
-
-	rgNames := []string{"rg-one", "rg-two"}
+// prepareForceModeDestroyMocks registers all HTTP mocks needed for
+// force-mode destroy tests: deployment GET/list, per-RG resources/tags,
+// operations (500), RG deletion tracking, locks, LRO polling, and void
+// state PUT. Returns a map of per-RG delete counters.
+func prepareForceModeDestroyMocks(
+	t *testing.T,
+	mockContext *mocks.MockContext,
+	rgNames []string,
+) map[string]*atomic.Int32 {
+	t.Helper()
 
 	// Register SubscriptionCredentialProvider + ARM client options
 	// so Tier 4 helpers can resolve credentials.
@@ -429,15 +430,15 @@ func TestForceWithOperationsFetchFailure(t *testing.T) {
 		},
 	)
 
-	// Build a deployment referencing both RGs.
+	// Build a deployment referencing all RGs.
 	outputResources := make(
 		[]*armresources.ResourceReference, len(rgNames),
 	)
 	for i, rg := range rgNames {
 		outputResources[i] = &armresources.ResourceReference{
 			ID: new(fmt.Sprintf(
-				"/subscriptions/SUBSCRIPTION_ID/resourceGroups/%s",
-				rg,
+				"/subscriptions/SUBSCRIPTION_ID/"+
+					"resourceGroups/%s", rg,
 			)),
 		}
 	}
@@ -457,9 +458,11 @@ func TestForceWithOperationsFetchFailure(t *testing.T) {
 					"type":  "string",
 				},
 			},
-			OutputResources:   outputResources,
-			ProvisioningState: new(armresources.ProvisioningStateSucceeded),
-			Timestamp:         new(time.Now()),
+			OutputResources: outputResources,
+			ProvisioningState: new(
+				armresources.ProvisioningStateSucceeded,
+			),
+			Timestamp: new(time.Now()),
 		},
 	}
 	deployBytes, _ := json.Marshal(deployment)
@@ -474,7 +477,9 @@ func TestForceWithOperationsFetchFailure(t *testing.T) {
 	}).RespondFn(func(r *http.Request) (*http.Response, error) {
 		return &http.Response{
 			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(bytes.NewBuffer(deployBytes)),
+			Body: io.NopCloser(
+				bytes.NewBuffer(deployBytes),
+			),
 		}, nil
 	})
 
@@ -524,8 +529,8 @@ func TestForceWithOperationsFetchFailure(t *testing.T) {
 	for _, rgName := range rgNames {
 		rgResp := armresources.ResourceGroup{
 			ID: new(fmt.Sprintf(
-				"/subscriptions/SUBSCRIPTION_ID/resourceGroups/%s",
-				rgName,
+				"/subscriptions/SUBSCRIPTION_ID/"+
+					"resourceGroups/%s", rgName,
 			)),
 			Name:     new(rgName),
 			Location: new("eastus2"),
@@ -559,9 +564,9 @@ func TestForceWithOperationsFetchFailure(t *testing.T) {
 		return &http.Response{
 			Request:    r,
 			StatusCode: http.StatusInternalServerError,
-			Body: io.NopCloser(
-				bytes.NewBufferString(`{"error":{"code":"InternalServerError"}}`),
-			),
+			Body: io.NopCloser(bytes.NewBufferString(
+				`{"error":{"code":"InternalServerError"}}`,
+			)),
 		}, nil
 	})
 
@@ -610,7 +615,9 @@ func TestForceWithOperationsFetchFailure(t *testing.T) {
 	// LRO polling endpoint.
 	mockContext.HttpClient.When(func(r *http.Request) bool {
 		return r.Method == http.MethodGet &&
-			strings.Contains(r.URL.String(), "url-to-poll.net")
+			strings.Contains(
+				r.URL.String(), "url-to-poll.net",
+			)
 	}).RespondFn(func(r *http.Request) (*http.Response, error) {
 		return mocks.CreateEmptyHttpResponse(r, 204)
 	})
@@ -632,7 +639,9 @@ func TestForceWithOperationsFetchFailure(t *testing.T) {
 				Tags: map[string]*string{
 					"azd-env-name": new("test-env"),
 				},
-				Type: new("Microsoft.Resources/deployments"),
+				Type: new(
+					"Microsoft.Resources/deployments",
+				),
 				Properties: &armresources.DeploymentPropertiesExtended{
 					ProvisioningState: new(
 						armresources.ProvisioningStateSucceeded,
@@ -645,6 +654,22 @@ func TestForceWithOperationsFetchFailure(t *testing.T) {
 			r, http.StatusOK, result,
 		)
 	})
+
+	return deleteCounters
+}
+
+// TestForceWithOperationsFetchFailure verifies that when --force is
+// set and deployment.Operations() returns an error, all resource groups
+// are treated as owned (backward compatibility). This is the
+// integration path in BicepProvider.classifyResourceGroups.
+func TestForceWithOperationsFetchFailure(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+	prepareBicepMocks(mockContext)
+
+	rgNames := []string{"rg-one", "rg-two"}
+	deleteCounters := prepareForceModeDestroyMocks(
+		t, mockContext, rgNames,
+	)
 
 	infraProvider := createBicepProvider(t, mockContext)
 	destroyOptions := provisioning.NewDestroyOptions(true, false)

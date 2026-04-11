@@ -575,7 +575,6 @@ func TestClassifyResourceGroups(t *testing.T) {
 
 	t.Run("Tier4 foreign resources sequential prompt (not concurrent)", func(t *testing.T) {
 		t.Parallel()
-		rgOp := "Microsoft.Resources/resourceGroups"
 		var promptCount atomic.Int32
 		opts := ClassifyOptions{
 			EnvName:     envName,
@@ -602,7 +601,6 @@ func TestClassifyResourceGroups(t *testing.T) {
 
 	t.Run("Tier4 500 error treated as veto (fail-safe)", func(t *testing.T) {
 		t.Parallel()
-		rgOp := "Microsoft.Resources/resourceGroups"
 		opts := ClassifyOptions{
 			EnvName: envName,
 			ListResourceGroupLocks: func(_ context.Context, _ string) ([]*ManagementLock, error) {
@@ -619,7 +617,6 @@ func TestClassifyResourceGroups(t *testing.T) {
 
 	t.Run("Tier4 429 throttling error treated as veto (fail-safe)", func(t *testing.T) {
 		t.Parallel()
-		rgOp := "Microsoft.Resources/resourceGroups"
 		opts := ClassifyOptions{
 			EnvName: envName,
 			ListResourceGroupResources: func(_ context.Context, _ string) ([]*ResourceWithTags, error) {
@@ -636,7 +633,6 @@ func TestClassifyResourceGroups(t *testing.T) {
 
 	t.Run("Tier4 lock API 429 throttling treated as veto (fail-safe)", func(t *testing.T) {
 		t.Parallel()
-		rgOp := "Microsoft.Resources/resourceGroups"
 		opts := ClassifyOptions{
 			EnvName: envName,
 			ListResourceGroupLocks: func(_ context.Context, _ string) ([]*ManagementLock, error) {
@@ -997,13 +993,11 @@ func TestClassifyResourceGroups(t *testing.T) {
 	t.Run("operationTargetsRG ResourceName nil with non-nil ResourceType", func(t *testing.T) {
 		t.Parallel()
 		// Cover the || second operand: ResourceType is non-nil but ResourceName is nil.
-		po := armresources.ProvisioningOperation("Create")
-		rt := "Microsoft.Resources/resourceGroups"
 		_, ok := operationTargetsRG(&armresources.DeploymentOperation{
 			Properties: &armresources.DeploymentOperationProperties{
-				ProvisioningOperation: &po,
+				ProvisioningOperation: new(armresources.ProvisioningOperation("Create")),
 				TargetResource: &armresources.TargetResource{
-					ResourceType: &rt,
+					ResourceType: new("Microsoft.Resources/resourceGroups"),
 					ResourceName: nil,
 				},
 			},

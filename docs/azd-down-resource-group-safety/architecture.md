@@ -816,7 +816,7 @@ Decision 4, so the veto check doesn't apply.
 |------|---------|
 | `cli/azd/pkg/azapi/standard_deployments_test.go` | Add tests for classification-aware deletion. |
 | `cli/azd/pkg/azapi/resource_group_classifier_test.go` | Unit tests for each tier and their combinations, including cross-layer scenarios. |
-| `cli/azd/pkg/infra/provisioning/bicep/bicep_provider_test.go` | Add tests for enhanced prompt and destroy flow, including layered provisioning. |
+| `cli/azd/pkg/infra/provisioning/bicep/bicep_destroy_test.go` | Add tests for enhanced prompt and destroy flow, including layered provisioning. |
 
 ## Multi-Model Review Findings
 

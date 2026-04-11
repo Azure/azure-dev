@@ -54,7 +54,7 @@ func TestQuoteCmdArg(t *testing.T) {
 		{"Ctrl-Z stripped", "a\x1Ab", "ab"},
 		{"ESC stripped", "a\x1Bb", "ab"},
 		{"newline with metachar", "a\n&b", `"a&b"`},
-		{"tab character", "a\tb", "\"a\tb\""},
+		{"tab character", "a\tb", "ab"},
 	}
 
 	for _, tt := range tests {

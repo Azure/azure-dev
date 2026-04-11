@@ -152,7 +152,7 @@ func main() {
 
 	if cmdErr != nil {
 		exitCode := 1
-		if exitCodeErr, ok := errors.AsType[*internal.ExitCodeError](cmdErr); ok {
+		if exitCodeErr, ok := errors.AsType[*internal.ExitCodeError](cmdErr); ok && exitCodeErr.ExitCode != 0 {
 			exitCode = exitCodeErr.ExitCode
 		}
 		os.Exit(exitCode)

@@ -46,7 +46,8 @@ func (e *Executor) buildCommand(
 			cmdArgs = []string{shellBin, "/c", scriptOrPath}
 			cmdWrapOuter = false
 		} else {
-			cmdArgs = []string{shellBin, "/c", `"` + scriptOrPath + `"`}
+			escaped := strings.ReplaceAll(scriptOrPath, `"`, `""`)
+			cmdArgs = []string{shellBin, "/c", `"` + escaped + `"`}
 			cmdWrapOuter = true
 		}
 	default:
@@ -74,18 +75,24 @@ func (e *Executor) buildCommand(
 	return cmd
 }
 
-var controlCharReplacer = strings.NewReplacer(
-	"\n", "", "\r", "", "\x00", "",
-	"\x0B", "", "\x0C", "",
-	"\x1A", "", "\x1B", "",
-)
+// stripControlChars removes all ASCII control characters (0x00–0x1F, 0x7F)
+// from s. Tab (0x09) is included because cmd.exe treats it as whitespace
+// that can break argument boundaries.
+func stripControlChars(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7F {
+			return -1
+		}
+		return r
+	}, s)
+}
 
 // quoteCmdArg quotes a single argument for cmd.exe.
 func quoteCmdArg(arg string) string {
 	if arg == "" {
 		return `""`
 	}
-	cleaned := controlCharReplacer.Replace(arg)
+	cleaned := stripControlChars(arg)
 	escaped := strings.ReplaceAll(cleaned, `"`, `""`)
 	if strings.ContainsAny(escaped, " \t&|<>^%\"") {
 		return `"` + escaped + `"`

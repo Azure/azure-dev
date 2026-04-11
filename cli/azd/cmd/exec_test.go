@@ -6,7 +6,7 @@ package cmd
 import (
 	"context"
 	"errors"
-	"os"
+	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -15,6 +15,17 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// envSliceToMap converts an env slice ([]string{"KEY=VALUE", ...}) to a map.
+// When duplicate keys exist, the last value wins (matching exec.Cmd behavior).
+func envSliceToMap(env []string) map[string]string {
+	m := make(map[string]string, len(env))
+	for _, entry := range env {
+		k, v, _ := strings.Cut(entry, "=")
+		m[k] = v
+	}
+	return m
+}
 
 // mockExecKeyVaultService implements keyvault.KeyVaultService for testing.
 // Only SecretFromKeyVaultReference is wired; other methods panic if called.
@@ -75,11 +86,6 @@ func TestExecAction_SetsEnvironmentVariables(t *testing.T) {
 	const key1 = "AZD_TEST_EXEC_VAR1"
 	const key2 = "AZD_TEST_EXEC_VAR2"
 
-	t.Cleanup(func() {
-		os.Unsetenv(key1)
-		os.Unsetenv(key2)
-	})
-
 	env := environment.NewWithValues("test", map[string]string{
 		key1: "value1",
 		key2: "value2",
@@ -98,19 +104,16 @@ func TestExecAction_SetsEnvironmentVariables(t *testing.T) {
 		args:            []string{"go", "version"},
 	}
 
-	_, err := action.Run(t.Context())
+	childEnv, err := action.buildChildEnv(t.Context())
 	require.NoError(t, err)
 
-	assert.Equal(t, "value1", os.Getenv(key1))
-	assert.Equal(t, "value2", os.Getenv(key2))
+	envMap := envSliceToMap(childEnv)
+	assert.Equal(t, "value1", envMap[key1])
+	assert.Equal(t, "value2", envMap[key2])
 }
 
 func TestExecAction_ResolvesSecretReferences(t *testing.T) {
 	const secretKey = "AZD_TEST_EXEC_SECRET"
-
-	t.Cleanup(func() {
-		os.Unsetenv(secretKey)
-	})
 
 	secretRef := "akvs://sub-id/vault-name/secret-name"
 	env := environment.NewWithValues("test", map[string]string{
@@ -131,18 +134,15 @@ func TestExecAction_ResolvesSecretReferences(t *testing.T) {
 		args:            []string{"go", "version"},
 	}
 
-	_, err := action.Run(t.Context())
+	childEnv, err := action.buildChildEnv(t.Context())
 	require.NoError(t, err)
 
-	assert.Equal(t, "resolved-secret-value", os.Getenv(secretKey))
+	envMap := envSliceToMap(childEnv)
+	assert.Equal(t, "resolved-secret-value", envMap[secretKey])
 }
 
 func TestExecAction_SecretResolutionFailure(t *testing.T) {
 	const secretKey = "AZD_TEST_EXEC_SECRET_FAIL"
-
-	t.Cleanup(func() {
-		os.Unsetenv(secretKey)
-	})
 
 	env := environment.NewWithValues("test", map[string]string{
 		secretKey: "akvs://sub-id/vault-name/secret-name",
@@ -161,7 +161,7 @@ func TestExecAction_SecretResolutionFailure(t *testing.T) {
 		args:            []string{"go", "version"},
 	}
 
-	_, err := action.Run(t.Context())
+	_, err := action.buildChildEnv(t.Context())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "resolving secret")
 }
@@ -226,10 +226,6 @@ func TestNewExecCmd(t *testing.T) {
 func TestExecAction_ResolvesKeyVaultReferenceFormat(t *testing.T) {
 	const secretKey = "AZD_TEST_EXEC_KVREF"
 
-	t.Cleanup(func() {
-		os.Unsetenv(secretKey)
-	})
-
 	// @Microsoft.KeyVault reference format (used in Azure App Service settings).
 	secretRef := "@Microsoft.KeyVault(SecretUri=https://myvault.vault.azure.net/secrets/mysecret)"
 	env := environment.NewWithValues("test", map[string]string{
@@ -250,9 +246,11 @@ func TestExecAction_ResolvesKeyVaultReferenceFormat(t *testing.T) {
 		args:            []string{"go", "version"},
 	}
 
-	_, err := action.Run(t.Context())
+	childEnv, err := action.buildChildEnv(t.Context())
 	require.NoError(t, err)
-	assert.Equal(t, "kv-resolved-value", os.Getenv(secretKey))
+
+	envMap := envSliceToMap(childEnv)
+	assert.Equal(t, "kv-resolved-value", envMap[secretKey])
 }
 
 func TestExecAction_ExitCodePropagation(t *testing.T) {

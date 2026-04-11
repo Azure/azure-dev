@@ -18,6 +18,10 @@ type Config struct {
 	Shell       string
 	Interactive bool
 	Args        []string
+	// Env overrides the child process environment. When set, the child process
+	// receives exactly these variables instead of inheriting os.Environ().
+	// This prevents secrets from leaking into the parent process via os.Setenv.
+	Env []string
 }
 
 // Validate checks if the Config has valid values.
@@ -92,7 +96,7 @@ func (e *Executor) ExecuteDirect(ctx context.Context, command string, args []str
 
 	cmd := exec.CommandContext(ctx, command, args...) //nolint:gosec
 	cmd.Dir = workingDir
-	cmd.Env = os.Environ()
+	cmd.Env = e.childEnv()
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -112,9 +116,9 @@ func (e *Executor) ExecuteDirect(ctx context.Context, command string, args []str
 
 // ExecuteInline runs an inline script command.
 func (e *Executor) ExecuteInline(ctx context.Context, scriptContent string) error {
-	if strings.TrimSpace(scriptContent) == "" {
+	if strings.TrimSpace(scriptContent) == "" || !containsPrintable(scriptContent) {
 		return &ValidationError{
-			Field: "scriptContent", Reason: "cannot be empty or whitespace",
+			Field: "scriptContent", Reason: "must contain printable characters",
 		}
 	}
 
@@ -136,7 +140,7 @@ func (e *Executor) executeCommand(
 ) error {
 	cmd := e.buildCommand(ctx, shell, scriptOrPath, isInline)
 	cmd.Dir = workingDir
-	cmd.Env = os.Environ()
+	cmd.Env = e.childEnv()
 
 	if e.config.Interactive {
 		cmd.Stdin = os.Stdin
@@ -166,6 +170,26 @@ func (e *Executor) logDebugInfo(
 			"Executing: %s %s\n", shell, strings.Join(quotedArgs, " "))
 	}
 	fmt.Fprintf(os.Stderr, "Working directory: %q\n", workingDir)
+}
+
+// childEnv returns the environment for the child process. If Config.Env is
+// set, it is used directly; otherwise os.Environ() is used as a fallback.
+func (e *Executor) childEnv() []string {
+	if len(e.config.Env) > 0 {
+		return e.config.Env
+	}
+	return os.Environ()
+}
+
+// containsPrintable reports whether s contains at least one printable character
+// (Unicode graphic or space). This rejects NUL-only and control-char-only input.
+func containsPrintable(s string) bool {
+	for _, r := range s {
+		if r >= ' ' && r != 0x7F {
+			return true
+		}
+	}
+	return false
 }
 
 func (e *Executor) runCommand(

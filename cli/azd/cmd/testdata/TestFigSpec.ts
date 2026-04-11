@@ -1197,7 +1197,7 @@ const completionSpec: Fig.Spec = {
 					options: [
 						{
 							name: ['--dst'],
-							description: 'The destination slot name. Use @main for production.',
+							description: 'The destination slot name. Use \'production\' for main app.',
 							args: [
 								{
 									name: 'dst',
@@ -1215,7 +1215,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['--src'],
-							description: 'The source slot name. Use @main for production.',
+							description: 'The source slot name. Use \'production\' for main app.',
 							args: [
 								{
 									name: 'src',

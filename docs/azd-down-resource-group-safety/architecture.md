@@ -101,9 +101,20 @@ func ClassifyResourceGroups(
 ) (*ClassifyResult, error)
 ```
 
-This classifier runs the 4-tier evaluation pipeline for each resource group
-discovered in the deployment, producing a verdict that the deletion logic uses
-to decide whether to proceed.
+This classifier supports two classification modes:
+
+1. **Snapshot-primary mode** (when `SnapshotPredictedRGs` is non-nil): Uses
+   `bicep snapshot` → `predictedResources` as a deterministic, offline source.
+   RGs in the predicted set are owned; RGs absent are external. Tier 4
+   (locks/foreign resources) still runs as defense-in-depth.
+
+2. **Tier pipeline mode** (fallback when snapshot unavailable): Runs the full
+   Tier 1→2→3→4 pipeline as described below.
+
+The snapshot approach is strictly better than Tier 1-3 because it reflects the
+template's _current intent_ rather than historical deployment operations. Resources
+declared with the Bicep `existing` keyword are excluded from `predictedResources`
+by design, providing a direct signal of ownership.
 
 #### 2. Enhanced DeleteSubscriptionDeployment
 
@@ -173,9 +184,19 @@ azd down
   │    │
   │    ├─ GroupByResourceGroup() ─── group resources by RG name
   │    │
+  │    ├─ *** NEW: getSnapshotPredictedRGs() ***
+  │    │    ├─ Invoke `bicep snapshot` on current template
+  │    │    ├─ Extract RGs from predictedResources (excludes `existing` keyword)
+  │    │    └─ Return lowercased RG name set (nil on any error → triggers fallback)
+  │    │
   │    ├─ *** NEW: ClassifyResourceGroups() ***
   │    │    │
-  │    │    ├─ [Tier 1: Deployment Operations] ─── highest confidence (zero API calls)
+  │    │    ├─ [Snapshot Path] ─── when SnapshotPredictedRGs is non-nil
+  │    │    │    ├─ RG in predicted set? → classified "owned"
+  │    │    │    ├─ RG NOT in predicted set? → classified "external" → SKIP
+  │    │    │    └─ Tier 4 runs on owned candidates (defense-in-depth)
+  │    │    │
+  │    │    ├─ [Tier 1: Deployment Operations] ─── fallback, highest confidence
   │    │    │    ├─ Scan deployment.Operations()
   │    │    │    ├─ Create op on RG? → classified "owned"
   │    │    │    ├─ Read/EvaluateDeploymentOutput op? → classified "external" → SKIP

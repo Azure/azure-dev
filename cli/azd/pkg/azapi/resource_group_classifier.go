@@ -42,9 +42,25 @@ type ManagementLock struct {
 
 // ClassifyOptions configures the classification pipeline.
 type ClassifyOptions struct {
+	// SnapshotPredictedRGs is the set of resource group names (lowercased) that the
+	// Bicep template declares as created resources (not 'existing' references).
+	// Populated from `bicep snapshot` → predictedResources filtered by RG type.
+	//
+	// When non-nil, snapshot-based classification replaces Tiers 1-3:
+	//   - RG in set → owned (template creates it)
+	//   - RG not in set → external (template references it as existing)
+	//   - Tier 4 still runs on all owned candidates (defense-in-depth)
+	//
+	// When nil, the full Tier 1-4 pipeline runs as fallback (older Bicep CLI,
+	// non-bicepparam mode, or snapshot failure).
+	SnapshotPredictedRGs map[string]bool
+
 	// ForceMode runs only Tier 1 (zero API calls). External RGs identified by
 	// deployment operations are still protected; unknown RGs are treated as owned.
 	// Tier 2/3/4 callbacks are not invoked.
+	//
+	// When combined with SnapshotPredictedRGs, snapshot classification is used
+	// (deterministic, zero API calls) and Tier 4 is skipped.
 	ForceMode bool
 	// Interactive enables per-RG prompts for unknown and foreign-resource RGs.
 	// When false, unknown/unverified RGs are always skipped without deletion.
@@ -119,6 +135,12 @@ func ClassifyResourceGroups(
 	}
 
 	result := &ClassifyResult{}
+
+	// --- Snapshot path: when predictedResources are available, use them as primary signal ---
+	// This replaces Tiers 1-3 with a deterministic, offline classification from bicep snapshot.
+	if opts.SnapshotPredictedRGs != nil {
+		return classifyFromSnapshot(ctx, rgNames, opts, result)
+	}
 
 	// --- Tier 1: classify all RGs from deployment operations (zero extra API calls) ---
 	owned, unknown := classifyTier1(operations, rgNames, result)
@@ -261,6 +283,126 @@ func ClassifyResourceGroups(
 			}
 		} else {
 			// Non-interactive: foreign resources are a hard veto.
+			vetoedSet[p.rg] = p.reason
+		}
+	}
+
+	for _, rg := range owned {
+		if reason, vetoed := vetoedSet[rg]; vetoed {
+			result.Skipped = append(result.Skipped, ClassifiedSkip{Name: rg, Reason: reason})
+		} else {
+			result.Owned = append(result.Owned, rg)
+		}
+	}
+
+	return result, nil
+}
+
+// classifyFromSnapshot uses the Bicep snapshot predictedResources to classify RGs.
+// RGs whose names appear in the predicted set are owned (the template creates them).
+// RGs not in the predicted set are external (referenced via the `existing` keyword).
+//
+// Tier 4 (lock + foreign-resource veto) still runs on owned candidates unless ForceMode
+// is active, providing defense-in-depth even when snapshot says "owned."
+func classifyFromSnapshot(
+	ctx context.Context,
+	rgNames []string,
+	opts ClassifyOptions,
+	result *ClassifyResult,
+) (*ClassifyResult, error) {
+	var owned []string
+	for _, rg := range rgNames {
+		if opts.SnapshotPredictedRGs[strings.ToLower(rg)] {
+			owned = append(owned, rg)
+		} else {
+			result.Skipped = append(result.Skipped, ClassifiedSkip{
+				Name:   rg,
+				Reason: "external (snapshot: not in predictedResources)",
+			})
+		}
+	}
+
+	// ForceMode + snapshot: deterministic classification, zero API calls, no Tier 4.
+	if opts.ForceMode {
+		result.Owned = owned
+		return result, nil
+	}
+
+	// --- Tier 4: veto checks on all snapshot-owned candidates (defense-in-depth) ---
+	// Same logic as the tier pipeline path. Even if the snapshot says "owned," a
+	// management lock or foreign resources should still prevent deletion.
+	type veto struct {
+		rg     string
+		reason string
+	}
+	type pendingPrompt struct {
+		rg     string
+		reason string
+	}
+	vetoCh := make(chan veto, len(owned))
+	promptCh := make(chan pendingPrompt, len(owned))
+	sem := make(chan struct{}, cTier4Parallelism)
+	var wg sync.WaitGroup
+	for _, rg := range owned {
+		select {
+		case sem <- struct{}{}:
+			if ctx.Err() != nil {
+				<-sem
+				vetoCh <- veto{
+					rg:     rg,
+					reason: "error during safety check: " + ctx.Err().Error(),
+				}
+				continue
+			}
+		case <-ctx.Done():
+			vetoCh <- veto{
+				rg:     rg,
+				reason: "error during safety check: " + ctx.Err().Error(),
+			}
+			continue
+		}
+		wg.Go(func() {
+			defer func() { <-sem }()
+			reason, vetoed, needsPrompt, err := classifyTier4(ctx, rg, opts)
+			if err != nil {
+				log.Printf(
+					"ERROR: classify rg=%s tier=4: safety check failed: %v (treating as veto)",
+					rg, err,
+				)
+				vetoCh <- veto{
+					rg:     rg,
+					reason: fmt.Sprintf("error during safety check: %s", err.Error()),
+				}
+				return
+			}
+			if needsPrompt {
+				promptCh <- pendingPrompt{rg: rg, reason: reason}
+				return
+			}
+			if vetoed {
+				vetoCh <- veto{rg: rg, reason: reason}
+			}
+		})
+	}
+	wg.Wait()
+	close(vetoCh)
+	close(promptCh)
+
+	vetoedSet := make(map[string]string, len(owned))
+	for v := range vetoCh {
+		vetoedSet[v.rg] = v.reason
+	}
+
+	for p := range promptCh {
+		if opts.Interactive && opts.Prompter != nil {
+			accept, err := opts.Prompter(p.rg, p.reason)
+			if err != nil {
+				return nil, fmt.Errorf("classify rg=%s tier=4 prompt: %w", p.rg, err)
+			}
+			if !accept {
+				vetoedSet[p.rg] = p.reason
+			}
+		} else {
 			vetoedSet[p.rg] = p.reason
 		}
 	}

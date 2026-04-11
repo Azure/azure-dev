@@ -108,10 +108,13 @@ func newExecAction(
 	}
 }
 
-func (a *execAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	// Overlay azd environment variables onto the current process so the
-	// child process inherits them. Key Vault references (akvs:// and
-	// @Microsoft.KeyVault(SecretUri=...)) are resolved transparently.
+// buildChildEnv creates a scoped environment for the child process.
+// It starts from the current process env, then overlays azd environment
+// variables. Key Vault references (akvs:// and @Microsoft.KeyVault(SecretUri=...))
+// are resolved transparently. We never call os.Setenv — secrets stay out of
+// the parent process.
+func (a *execAction) buildChildEnv(ctx context.Context) ([]string, error) {
+	childEnv := os.Environ()
 	subscriptionId := a.env.GetSubscriptionId()
 	for key, value := range a.env.Dotenv() {
 		resolved := value
@@ -123,7 +126,15 @@ func (a *execAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			}
 			resolved = secret
 		}
-		os.Setenv(key, resolved)
+		childEnv = append(childEnv, key+"="+resolved)
+	}
+	return childEnv, nil
+}
+
+func (a *execAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	childEnv, err := a.buildChildEnv(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	scriptInput := a.args[0]
@@ -136,6 +147,7 @@ func (a *execAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		Shell:       a.flags.shell,
 		Interactive: a.flags.interactive,
 		Args:        scriptArgs,
+		Env:         childEnv,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("invalid configuration: %w", err)

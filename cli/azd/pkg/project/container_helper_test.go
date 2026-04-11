@@ -683,7 +683,7 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 				mockContainerRegistryService.AssertCalled(
 					t,
 					"Login",
-					*mockContext.Context,
+					mock.Anything,
 					env.GetSubscriptionId(),
 					registryName,
 				)
@@ -921,7 +921,7 @@ func Test_ContainerHelper_Credential_Retry(t *testing.T) {
 func setupContainerRegistryMocks(mockContext *mocks.MockContext, mockContainerRegistryService *mock.Mock) {
 	mockContainerRegistryService.On(
 		"Login",
-		*mockContext.Context,
+		mock.Anything,
 		mock.AnythingOfType("string"),
 		mock.AnythingOfType("string")).
 		Return(nil)
@@ -1250,7 +1250,7 @@ func Test_ContainerHelper_Publish(t *testing.T) {
 				mockContainerRegistryService.AssertCalled(
 					t,
 					"Login",
-					*mockContext.Context,
+					mock.Anything,
 					env.GetSubscriptionId(),
 					registryName,
 				)

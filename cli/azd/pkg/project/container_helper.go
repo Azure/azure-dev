@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -39,6 +41,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/pack"
 	"github.com/benbjohnson/clock"
 	"github.com/sethvargo/go-retry"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -281,14 +284,17 @@ func (ch *ContainerHelper) Login(
 	return registryName, nil
 }
 
-var defaultCredentialsRetryDelay = 20 * time.Second
+var defaultCredentialsRetryDelay = 2 * time.Second
 
 func (ch *ContainerHelper) Credentials(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
 	env *environment.Environment,
-) (*azapi.DockerCredentials, error) {
+) (_ *azapi.DockerCredentials, err error) {
+	ctx, span := tracing.Start(ctx, "container.credentials")
+	defer func() { span.EndWithStatus(err) }()
+
 	loginServer, err := ch.RegistryName(ctx, serviceConfig, env)
 	if err != nil {
 		return nil, err
@@ -297,15 +303,31 @@ func (ch *ContainerHelper) Credentials(
 	var credential *azapi.DockerCredentials
 	credentialsError := retry.Do(
 		ctx,
-		// will retry just once after 1 minute based on:
-		// https://learn.microsoft.com/en-us/azure/dns/dns-faq#how-long-does-it-take-for-dns-changes-to-take-effect-
-		retry.WithMaxRetries(3, retry.NewConstant(defaultCredentialsRetryDelay)),
+		// Use exponential backoff (2s → 4s → 8s → 16s → 32s = 62s worst case) instead of
+		// constant 20s delay. ACR credentials are typically available within seconds after
+		// resource creation, so aggressive early retries resolve most 404s quickly while
+		// preserving roughly the same total retry window for slow DNS propagation.
+		retry.WithMaxRetries(5, retry.NewExponential(defaultCredentialsRetryDelay)),
 		func(ctx context.Context) error {
 			cred, err := ch.containerRegistryService.Credentials(ctx, targetResource.SubscriptionId(), loginServer)
 			if err != nil {
 				if httpErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
-					if httpErr.StatusCode == 404 {
-						// Retry if the registry is not found while logging in
+					if httpErr.StatusCode == 404 ||
+						httpErr.StatusCode == 429 ||
+						httpErr.StatusCode >= 500 {
+						return retry.RetryableError(err)
+					}
+				}
+				// Retry transient network/DNS errors (e.g. "no such host"
+				// during DNS propagation after ACR creation). Only retry
+				// genuinely transient errors, not permanent URL/TLS failures.
+				if _, ok := errors.AsType[*url.Error](err); ok {
+					if netErr, ok := errors.AsType[net.Error](err); ok && netErr.Timeout() {
+						return retry.RetryableError(err)
+					}
+					msg := err.Error()
+					if strings.Contains(msg, "no such host") ||
+						strings.Contains(msg, "connection refused") {
 						return retry.RetryableError(err)
 					}
 				}
@@ -330,6 +352,7 @@ func (ch *ContainerHelper) Build(
 	}
 
 	dockerOptions := getDockerOptionsWithDefaults(serviceConfig.Docker)
+	resolveDockerPaths(serviceConfig, &dockerOptions)
 
 	resolveParameters := func(source []string) ([]string, error) {
 		result := make([]string, len(source))
@@ -401,10 +424,8 @@ func (ch *ContainerHelper) Build(
 		strings.ToLower(serviceConfig.Name),
 	)
 
+	// dockerOptions.Path is already resolved to absolute by resolveDockerPaths
 	dockerfilePath := dockerOptions.Path
-	if !filepath.IsAbs(dockerfilePath) {
-		dockerfilePath = filepath.Join(serviceConfig.Path(), dockerfilePath)
-	}
 
 	_, err = os.Stat(dockerfilePath)
 	if errors.Is(err, os.ErrNotExist) && serviceConfig.Docker.Path == "" {
@@ -452,7 +473,7 @@ func (ch *ContainerHelper) Build(
 			return nil, fmt.Errorf("writing dockerfile for service %s: %w", serviceConfig.Name, err)
 		}
 		dockerFilePath = dockerfilePath
-		if dockerOptions.Context == "" || dockerOptions.Context == "." {
+		if serviceConfig.Docker.Context == "" || serviceConfig.Docker.Context == "." {
 			dockerOptions.Context = tempDir
 		}
 
@@ -588,9 +609,14 @@ func (ch *ContainerHelper) Publish(
 	env *environment.Environment,
 	progress *async.Progress[ServiceProgress],
 	options *PublishOptions,
-) (*ServicePublishResult, error) {
+) (_ *ServicePublishResult, err error) {
+	ctx, span := tracing.Start(ctx, "container.publish")
+	defer func() { span.EndWithStatus(err) }()
+	span.SetAttributes(
+		attribute.Bool("container.remotebuild", serviceConfig.Docker.RemoteBuild),
+	)
+
 	var remoteImage string
-	var err error
 
 	// Parse PublishOptions into ImageOverride
 	imageOverride, err := parseImageOverride(options)
@@ -773,16 +799,12 @@ func (ch *ContainerHelper) runRemoteBuild(
 	env *environment.Environment,
 	progress *async.Progress[ServiceProgress],
 	imageOverride *imageOverride,
-) (string, error) {
+) (_ string, err error) {
+	ctx, span := tracing.Start(ctx, "container.remotebuild")
+	defer func() { span.EndWithStatus(err) }()
+
 	dockerOptions := getDockerOptionsWithDefaults(serviceConfig.Docker)
-
-	if !filepath.IsAbs(dockerOptions.Path) {
-		dockerOptions.Path = filepath.Join(serviceConfig.Path(), dockerOptions.Path)
-	}
-
-	if !filepath.IsAbs(dockerOptions.Context) {
-		dockerOptions.Context = filepath.Join(serviceConfig.Path(), dockerOptions.Context)
-	}
+	resolveDockerPaths(serviceConfig, &dockerOptions)
 
 	if dockerOptions.Platform != "linux/amd64" {
 		return "", fmt.Errorf("remote build only supports the linux/amd64 platform")
@@ -1128,4 +1150,32 @@ func getDockerOptionsWithDefaults(options DockerProjectOptions) DockerProjectOpt
 	}
 
 	return options
+}
+
+// resolveServiceDir returns the directory for the service. ServiceConfig.Path()
+// may return a file path (e.g., .csproj for Aspire/project.v1), so we check
+// whether the path is a directory and fall back to filepath.Dir if it is not.
+func resolveServiceDir(serviceConfig *ServiceConfig) string {
+	servicePath := serviceConfig.Path()
+	if info, err := os.Stat(servicePath); err == nil && info.IsDir() {
+		return servicePath
+	}
+	return filepath.Dir(servicePath)
+}
+
+// resolveDockerPaths resolves docker.path and docker.context to absolute paths.
+// Both user-specified and default paths are resolved relative to the service
+// directory to preserve backward compatibility.
+func resolveDockerPaths(serviceConfig *ServiceConfig, opts *DockerProjectOptions) {
+	serviceDir := resolveServiceDir(serviceConfig)
+	if !filepath.IsAbs(opts.Path) {
+		opts.Path = filepath.Join(serviceDir, opts.Path)
+	}
+	if !filepath.IsAbs(opts.Context) {
+		opts.Context = filepath.Join(serviceDir, opts.Context)
+	}
+	// Clean resolved paths to eliminate ".." components and normalize separators,
+	// preventing path traversal outside the expected directory tree.
+	opts.Path = filepath.Clean(opts.Path)
+	opts.Context = filepath.Clean(opts.Context)
 }

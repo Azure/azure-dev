@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"os"
-	"path/filepath"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
@@ -171,21 +170,10 @@ func useDotnetPublishForDockerBuild(serviceConfig *ServiceConfig) bool {
 	serviceConfig.useDotNetPublishForDockerBuild = new(false)
 
 	if serviceConfig.Language.IsDotNet() {
-		projectPath := serviceConfig.Path()
-
 		dockerOptions := getDockerOptionsWithDefaults(serviceConfig.Docker)
+		resolveDockerPaths(serviceConfig, &dockerOptions)
 
-		dockerfilePath := dockerOptions.Path
-		if !filepath.IsAbs(dockerfilePath) {
-			s, err := os.Stat(projectPath)
-			if err == nil && s.IsDir() {
-				dockerfilePath = filepath.Join(projectPath, dockerfilePath)
-			} else {
-				dockerfilePath = filepath.Join(filepath.Dir(projectPath), dockerfilePath)
-			}
-		}
-
-		if _, err := os.Stat(dockerfilePath); errors.Is(err, os.ErrNotExist) {
+		if _, err := os.Stat(dockerOptions.Path); errors.Is(err, os.ErrNotExist) {
 			serviceConfig.useDotNetPublishForDockerBuild = new(true)
 		}
 	}

@@ -432,3 +432,36 @@ func (h *deployPollingHandler) Result(ctx context.Context, out **DeployResponse)
 
 	return nil
 }
+
+// IsScmReady pings the SCM /api/deployments endpoint to check if the Kudu
+// service is responsive. Returns true when the endpoint responds with HTTP 200,
+// false for transient errors (503, connection refused, etc.), or an error for
+// unexpected failures. This is used to detect SCM container restarts that occur
+// when ARM applies site configuration changes after provisioning.
+func (c *ZipDeployClient) IsScmReady(ctx context.Context) (bool, error) {
+	endpoint := fmt.Sprintf("https://%s/api/deployments", c.hostName)
+	req, err := runtime.NewRequest(ctx, http.MethodGet, endpoint)
+	if err != nil {
+		return false, fmt.Errorf("creating SCM readiness request: %w", err)
+	}
+
+	resp, err := c.pipeline.Do(req)
+	if err != nil {
+		// Propagate context cancellation / deadline so callers (and Ctrl+C) react immediately.
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || ctx.Err() != nil {
+			return false, err
+		}
+		// Connection and other transport errors mean SCM is still restarting.
+		return false, nil //nolint:nilerr
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return true, nil
+	case http.StatusBadGateway, http.StatusServiceUnavailable:
+		return false, nil
+	default:
+		return false, runtime.NewResponseError(resp)
+	}
+}

@@ -78,3 +78,10 @@ cli/azd/extensions/microsoft.azd.concurx/concurx.exe
 cli/azd/extensions/azure.appservice/azureappservice
 cli/azd/extensions/azure.appservice/azureappservice.exe
 .squad/
+
+# Session artifacts
+cli/azd/cover-*
+cli/azd/cover_*
+review-*.diff
+
+.playwright-mcp/

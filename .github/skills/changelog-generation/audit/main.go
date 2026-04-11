@@ -369,10 +369,16 @@ func parseEntry(line string, lineNum int) Entry {
 		LineNumber: lineNum,
 	}
 
-	if m := prLinkRe.FindStringSubmatch(line); m != nil {
+	matches := prLinkRe.FindAllStringSubmatch(line, -1)
+	if len(matches) > 0 {
 		e.HasLink = true
-		e.PRNumber = atoi(m[1])
-		e.IsIssueRef = m[2] == "issues"
+		e.PRNumber = atoi(matches[0][1])
+		e.IsIssueRef = matches[0][2] == "issues"
+
+		if len(matches) > 1 {
+			log.Printf("warning: changelog entry on line %d contains %d PR/issue links; only the first (%d) is tracked: %s",
+				lineNum, len(matches), e.PRNumber, truncate(line, 120))
+		}
 	}
 
 	return e

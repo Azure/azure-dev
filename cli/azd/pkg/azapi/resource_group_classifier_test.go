@@ -1637,3 +1637,125 @@ func TestClassifyResourceGroups_Snapshot(t *testing.T) {
 		assert.Contains(t, res.Skipped[0].Reason, "foreign")
 	})
 }
+
+// TestClassifyResourceGroups_TagKeyCaseInsensitive verifies that
+// the Tier 2 tag check and Tier 4 foreign-resource check are
+// case-insensitive with respect to tag key names. Azure Resource
+// Manager treats tag keys as case-insensitive, so "AZD-Env-Name"
+// must match "azd-env-name".
+func TestClassifyResourceGroups_TagKeyCaseInsensitive(t *testing.T) {
+	t.Parallel()
+
+	const (
+		rgA     = "rg-alpha"
+		envName = "myenv"
+	)
+
+	t.Run("Tier2 owned with mixed-case tag keys", func(t *testing.T) {
+		t.Parallel()
+		opts := ClassifyOptions{
+			EnvName: envName,
+			GetResourceGroupTags: func(
+				_ context.Context, _ string,
+			) (map[string]*string, error) {
+				return map[string]*string{
+					"AZD-Env-Name":             strPtr(envName),
+					"AZD-Provision-Param-Hash": strPtr("abc123"),
+				}, nil
+			},
+		}
+		res, err := ClassifyResourceGroups(
+			t.Context(), nil, []string{rgA}, opts,
+		)
+		require.NoError(t, err)
+		assert.Contains(t, res.Owned, rgA)
+		assert.Empty(t, res.Skipped)
+	})
+
+	t.Run("Tier2 owned with UPPER-case tag keys", func(t *testing.T) {
+		t.Parallel()
+		opts := ClassifyOptions{
+			EnvName: envName,
+			GetResourceGroupTags: func(
+				_ context.Context, _ string,
+			) (map[string]*string, error) {
+				return map[string]*string{
+					"AZD-ENV-NAME":             strPtr(envName),
+					"AZD-PROVISION-PARAM-HASH": strPtr("hash1"),
+				}, nil
+			},
+		}
+		res, err := ClassifyResourceGroups(
+			t.Context(), nil, []string{rgA}, opts,
+		)
+		require.NoError(t, err)
+		assert.Contains(t, res.Owned, rgA)
+	})
+
+	t.Run("Tier4 foreign resource with mixed-case tag key",
+		func(t *testing.T) {
+			t.Parallel()
+			rgOp := "Microsoft.Resources/resourceGroups"
+			ops := []*armresources.DeploymentOperation{
+				makeOperation("Create", rgOp, rgA),
+			}
+			opts := ClassifyOptions{
+				EnvName:     envName,
+				Interactive: false,
+				ListResourceGroupResources: func(
+					_ context.Context, _ string,
+				) ([]*ResourceWithTags, error) {
+					return []*ResourceWithTags{
+						{
+							Name: "my-vm",
+							Type: "Microsoft.Compute/virtualMachines",
+							Tags: map[string]*string{
+								// Mixed-case key must match.
+								"AZD-Env-Name": strPtr(envName),
+							},
+						},
+					}, nil
+				},
+			}
+			res, err := ClassifyResourceGroups(
+				t.Context(), ops, []string{rgA}, opts,
+			)
+			require.NoError(t, err)
+			// Resource matches → no foreign veto.
+			assert.Contains(t, res.Owned, rgA)
+			assert.Empty(t, res.Skipped)
+		})
+
+	t.Run("Tier4 foreign veto still fires with wrong env value",
+		func(t *testing.T) {
+			t.Parallel()
+			rgOp := "Microsoft.Resources/resourceGroups"
+			ops := []*armresources.DeploymentOperation{
+				makeOperation("Create", rgOp, rgA),
+			}
+			opts := ClassifyOptions{
+				EnvName:     envName,
+				Interactive: false,
+				ListResourceGroupResources: func(
+					_ context.Context, _ string,
+				) ([]*ResourceWithTags, error) {
+					return []*ResourceWithTags{
+						{
+							Name: "other-vm",
+							Type: "Microsoft.Compute/virtualMachines",
+							Tags: map[string]*string{
+								"AZD-Env-Name": strPtr("other-env"),
+							},
+						},
+					}, nil
+				},
+			}
+			res, err := ClassifyResourceGroups(
+				t.Context(), ops, []string{rgA}, opts,
+			)
+			require.NoError(t, err)
+			assert.Empty(t, res.Owned)
+			require.Len(t, res.Skipped, 1)
+			assert.Contains(t, res.Skipped[0].Reason, "foreign")
+		})
+}

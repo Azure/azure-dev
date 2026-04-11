@@ -1265,4 +1265,178 @@ func TestClassifyResourceGroups_ForceMode(t *testing.T) {
 		require.Len(t, res.Skipped, 1)
 		assert.Equal(t, rgExternal, res.Skipped[0].Name)
 	})
+
+}
+
+func TestClassifyResourceGroups_Snapshot(t *testing.T) {
+	t.Parallel()
+
+	const (
+		rgA     = "rg-alpha"
+		rgB     = "rg-beta"
+		rgC     = "rg-gamma"
+		envName = "myenv"
+	)
+
+	rgOp := "Microsoft.Resources/resourceGroups"
+
+	t.Run("owned and external", func(t *testing.T) {
+		t.Parallel()
+		predicted := map[string]bool{
+			"rg-alpha": true,
+			"rg-beta":  true,
+		}
+		opts := ClassifyOptions{
+			EnvName:              envName,
+			SnapshotPredictedRGs: predicted,
+		}
+		// rgC is NOT in the predicted set → external
+		res, err := ClassifyResourceGroups(t.Context(), nil, []string{rgA, rgB, rgC}, opts)
+		require.NoError(t, err)
+		assert.ElementsMatch(t, []string{rgA, rgB}, res.Owned)
+		require.Len(t, res.Skipped, 1)
+		assert.Equal(t, rgC, res.Skipped[0].Name)
+		assert.Contains(t, res.Skipped[0].Reason, "snapshot")
+	})
+
+	t.Run("case insensitive matching", func(t *testing.T) {
+		t.Parallel()
+		predicted := map[string]bool{
+			"rg-alpha": true, // lowercased in the map
+		}
+		opts := ClassifyOptions{
+			EnvName:              envName,
+			SnapshotPredictedRGs: predicted,
+		}
+		// "RG-Alpha" should match "rg-alpha" via ToLower
+		res, err := ClassifyResourceGroups(t.Context(), nil, []string{"RG-Alpha"}, opts)
+		require.NoError(t, err)
+		assert.Equal(t, []string{"RG-Alpha"}, res.Owned)
+		assert.Empty(t, res.Skipped)
+	})
+
+	t.Run("all external", func(t *testing.T) {
+		t.Parallel()
+		predicted := map[string]bool{
+			"rg-unrelated": true, // no overlap with test RGs
+		}
+		opts := ClassifyOptions{
+			EnvName:              envName,
+			SnapshotPredictedRGs: predicted,
+		}
+		res, err := ClassifyResourceGroups(t.Context(), nil, []string{rgA, rgB}, opts)
+		require.NoError(t, err)
+		assert.Empty(t, res.Owned)
+		assert.Len(t, res.Skipped, 2)
+	})
+
+	t.Run("ForceMode skips Tier4", func(t *testing.T) {
+		t.Parallel()
+		predicted := map[string]bool{
+			"rg-alpha": true,
+		}
+		var tier4Called bool
+		opts := ClassifyOptions{
+			EnvName:              envName,
+			ForceMode:            true,
+			SnapshotPredictedRGs: predicted,
+			ListResourceGroupLocks: func(_ context.Context, _ string) ([]*ManagementLock, error) {
+				tier4Called = true
+				return nil, nil
+			},
+		}
+		res, err := ClassifyResourceGroups(t.Context(), nil, []string{rgA, rgB}, opts)
+		require.NoError(t, err)
+		assert.False(t, tier4Called, "Tier 4 should not run when ForceMode + snapshot")
+		assert.Equal(t, []string{rgA}, res.Owned)
+		require.Len(t, res.Skipped, 1)
+		assert.Equal(t, rgB, res.Skipped[0].Name)
+	})
+
+	t.Run("Tier4 lock veto", func(t *testing.T) {
+		t.Parallel()
+		predicted := map[string]bool{
+			"rg-alpha": true,
+			"rg-beta":  true,
+		}
+		opts := ClassifyOptions{
+			EnvName:              envName,
+			SnapshotPredictedRGs: predicted,
+			ListResourceGroupLocks: func(_ context.Context, rgName string) ([]*ManagementLock, error) {
+				if rgName == rgA {
+					return []*ManagementLock{{Name: "mylock", LockType: "CanNotDelete"}}, nil
+				}
+				return nil, nil
+			},
+		}
+		res, err := ClassifyResourceGroups(t.Context(), nil, []string{rgA, rgB}, opts)
+		require.NoError(t, err)
+		// rgA is snapshot-owned but vetoed by lock
+		assert.Equal(t, []string{rgB}, res.Owned)
+		require.Len(t, res.Skipped, 1)
+		assert.Equal(t, rgA, res.Skipped[0].Name)
+		assert.Contains(t, res.Skipped[0].Reason, "lock")
+	})
+
+	t.Run("Tier4 foreign resource veto", func(t *testing.T) {
+		t.Parallel()
+		predicted := map[string]bool{
+			"rg-alpha": true,
+		}
+		opts := ClassifyOptions{
+			EnvName:              envName,
+			Interactive:          false,
+			SnapshotPredictedRGs: predicted,
+			ListResourceGroupResources: func(_ context.Context, _ string) ([]*ResourceWithTags, error) {
+				return []*ResourceWithTags{
+					{Name: "foreign-vm", Type: "Microsoft.Compute/virtualMachines", Tags: map[string]*string{
+						"azd-env-name": strPtr("otherenv"),
+					}},
+				}, nil
+			},
+		}
+		res, err := ClassifyResourceGroups(t.Context(), nil, []string{rgA}, opts)
+		require.NoError(t, err)
+		assert.Empty(t, res.Owned)
+		require.Len(t, res.Skipped, 1)
+		assert.Contains(t, res.Skipped[0].Reason, "foreign")
+	})
+
+	t.Run("nil falls back to tier pipeline", func(t *testing.T) {
+		t.Parallel()
+		// SnapshotPredictedRGs is nil → should use Tier 1 pipeline
+		ops := []*armresources.DeploymentOperation{
+			makeOperation("Create", rgOp, rgA),
+		}
+		opts := ClassifyOptions{
+			EnvName:              envName,
+			SnapshotPredictedRGs: nil, // explicitly nil
+		}
+		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgA, rgB}, opts)
+		require.NoError(t, err)
+		// rgA is owned via Tier 1 Create, rgB is unknown → skipped (no Tier 2/3 callbacks)
+		assert.Equal(t, []string{rgA}, res.Owned)
+		require.Len(t, res.Skipped, 1)
+		assert.Equal(t, rgB, res.Skipped[0].Name)
+	})
+
+	t.Run("overrides deployment operations", func(t *testing.T) {
+		t.Parallel()
+		// Even though operations say rgA is "Read" (external), snapshot says it's owned.
+		// Snapshot should take precedence when available.
+		ops := []*armresources.DeploymentOperation{
+			makeOperation("Read", rgOp, rgA),
+		}
+		predicted := map[string]bool{
+			"rg-alpha": true,
+		}
+		opts := ClassifyOptions{
+			EnvName:              envName,
+			SnapshotPredictedRGs: predicted,
+		}
+		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgA}, opts)
+		require.NoError(t, err)
+		assert.Equal(t, []string{rgA}, res.Owned)
+		assert.Empty(t, res.Skipped)
+	})
 }

@@ -5,10 +5,13 @@ package bicep
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"maps"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -20,10 +23,12 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 )
 
 // errUserCancelled is returned when the user declines the resource group deletion confirmation.
@@ -57,6 +62,14 @@ func (p *BicepProvider) forceDeleteLogAnalyticsIfPurge(
 
 // classifyResourceGroups classifies each resource group as owned/external/unknown
 // using the 4-tier pipeline. Returns owned RG names and skipped RGs.
+//
+// When a Bicep snapshot is available (bicepparam mode), snapshot-based classification
+// is used as the primary mechanism: RGs in predictedResources are owned, others are external.
+// This replaces Tiers 1-3 with a deterministic, offline signal. Tier 4 still runs on owned
+// candidates as defense-in-depth.
+//
+// When snapshot is unavailable (non-bicepparam mode, older Bicep CLI, or snapshot error),
+// the full Tier 1-4 pipeline runs as fallback.
 //
 // When force is true, only Tier 1 (zero extra API calls) runs. External RGs identified
 // by deployment operations (Read/EvaluateDeploymentOutput) are still protected. Unknown
@@ -118,6 +131,7 @@ func (p *BicepProvider) classifyResourceGroups(
 		ForceMode:                  options.Force(),
 		EnvName:                    p.env.Name(),
 		ExpectedProvisionParamHash: expectedHash,
+		SnapshotPredictedRGs:       p.getSnapshotPredictedRGs(ctx),
 	}
 
 	// Only wire Tier 2/3/4 callbacks when not --force (they won't be invoked in ForceMode).
@@ -425,6 +439,124 @@ func (p *BicepProvider) isDeploymentStacksEnabled() bool {
 		return false
 	}
 	return featureManager.IsEnabled(azapi.FeatureDeploymentStacks)
+}
+
+// snapshotPredictedResult is the top-level structure of the Bicep snapshot JSON output,
+// used to extract predictedResources for resource group classification.
+type snapshotPredictedResult struct {
+	PredictedResources []snapshotPredictedResource `json:"predictedResources"`
+}
+
+// snapshotPredictedResource is a minimal representation of a resource from the Bicep snapshot.
+// Only the fields needed for RG classification are included.
+type snapshotPredictedResource struct {
+	Type string `json:"type"`
+	Name string `json:"name"`
+}
+
+// getSnapshotPredictedRGs invokes `bicep snapshot` on the current template and extracts
+// the set of resource group names from predictedResources. Returns a map of lowercased
+// RG names (for case-insensitive lookup), or nil if snapshot is unavailable.
+//
+// Snapshot is only available in bicepparam mode (the modern default) because the Bicep CLI
+// requires a .bicepparam file as input. In non-bicepparam mode with available parameters,
+// a temporary .bicepparam file is generated.
+//
+// On any error (older Bicep CLI, compilation failure, etc.), logs a warning and returns nil,
+// which causes the classifier to fall back to the Tier 1-4 pipeline.
+func (p *BicepProvider) getSnapshotPredictedRGs(ctx context.Context) map[string]bool {
+	compileResult := p.compileBicepMemoryCache
+	if compileResult == nil {
+		log.Printf("snapshot classification: compileBicep cache unavailable, skipping snapshot")
+		return nil
+	}
+
+	// Determine the .bicepparam file to use for the snapshot.
+	var bicepParamFile string
+	var cleanupFn func()
+
+	if p.mode == bicepparamMode {
+		// In bicepparam mode, p.path IS the .bicepparam file — use it directly.
+		bicepParamFile = p.path
+	} else if len(compileResult.Parameters) > 0 {
+		// Non-bicepparam mode with available parameters: generate a temp .bicepparam file.
+		bicepFileName := filepath.Base(p.path)
+		moduleDir := filepath.Dir(p.path)
+
+		bicepParamContent := generateBicepParam(bicepFileName, compileResult.Parameters)
+
+		tmpFile, err := os.CreateTemp(moduleDir, "snapshot-*.bicepparam")
+		if err != nil {
+			log.Printf("snapshot classification: failed to create temp bicepparam: %v", err)
+			return nil
+		}
+		bicepParamFile = tmpFile.Name()
+		cleanupFn = func() {
+			tmpFile.Close()
+			os.Remove(bicepParamFile)
+		}
+
+		if _, err := tmpFile.WriteString(bicepParamContent); err != nil {
+			cleanupFn()
+			log.Printf("snapshot classification: failed to write temp bicepparam: %v", err)
+			return nil
+		}
+		if err := tmpFile.Close(); err != nil {
+			cleanupFn()
+			log.Printf("snapshot classification: failed to close temp bicepparam: %v", err)
+			return nil
+		}
+	} else {
+		// Non-bicepparam mode without parameters: cannot generate .bicepparam for snapshot.
+		log.Printf("snapshot classification: non-bicepparam mode without parameters, skipping snapshot")
+		return nil
+	}
+	if cleanupFn != nil {
+		defer cleanupFn()
+	}
+
+	// Build snapshot options from environment.
+	snapshotOpts := bicep.NewSnapshotOptions().
+		WithSubscriptionID(p.env.GetSubscriptionId())
+
+	if loc := p.env.GetLocation(); loc != "" {
+		snapshotOpts = snapshotOpts.WithLocation(loc)
+	}
+	if rg := p.env.Getenv(environment.ResourceGroupEnvVarName); rg != "" {
+		snapshotOpts = snapshotOpts.WithResourceGroup(rg)
+	}
+
+	// Run the Bicep snapshot command.
+	data, err := p.bicepCli.Snapshot(ctx, bicepParamFile, snapshotOpts)
+	if err != nil {
+		log.Printf("snapshot classification: bicep snapshot unavailable: %v", err)
+		return nil
+	}
+
+	// Parse and extract resource group names.
+	var snapshot snapshotPredictedResult
+	if err := json.Unmarshal(data, &snapshot); err != nil {
+		log.Printf("snapshot classification: failed to parse snapshot: %v", err)
+		return nil
+	}
+
+	predictedRGs := make(map[string]bool)
+	for _, res := range snapshot.PredictedResources {
+		if strings.EqualFold(res.Type, "Microsoft.Resources/resourceGroups") && res.Name != "" {
+			predictedRGs[strings.ToLower(res.Name)] = true
+		}
+	}
+
+	if len(predictedRGs) == 0 {
+		// No RGs in predictedResources — could mean a resource-group-scoped deployment
+		// where RGs aren't declared as resources. Fall back to tier system.
+		log.Printf("snapshot classification: no resource groups found in predictedResources, falling back to tiers")
+		return nil
+	}
+
+	log.Printf("snapshot classification: found %d predicted resource group(s): %v",
+		len(predictedRGs), maps.Keys(predictedRGs))
+	return predictedRGs
 }
 
 // destroyViaDeploymentDelete deletes resources using deployment.Delete(), which routes

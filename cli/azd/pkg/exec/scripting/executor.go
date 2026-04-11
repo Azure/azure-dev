@@ -111,7 +111,7 @@ func (e *Executor) ExecuteDirect(ctx context.Context, command string, args []str
 		fmt.Fprintf(os.Stderr, "Working directory: %q\n", workingDir)
 	}
 
-	return e.runCommand(cmd, command, "", false)
+	return e.runCommand(ctx, cmd, command, "", false)
 }
 
 // ExecuteInline runs an inline script command.
@@ -152,7 +152,7 @@ func (e *Executor) executeCommand(
 		e.logDebugInfo(shell, workingDir, scriptOrPath, isInline, cmd.Args)
 	}
 
-	return e.runCommand(cmd, scriptOrPath, shell, isInline)
+	return e.runCommand(ctx, cmd, scriptOrPath, shell, isInline)
 }
 
 func (e *Executor) logDebugInfo(
@@ -193,9 +193,28 @@ func containsPrintable(s string) bool {
 }
 
 func (e *Executor) runCommand(
-	cmd *exec.Cmd, scriptOrPath, shell string, isInline bool,
+	ctx context.Context, cmd *exec.Cmd, scriptOrPath, shell string, isInline bool,
 ) error {
-	if err := cmd.Run(); err != nil {
+	setupProcessTree(cmd, e.config.Interactive)
+	killTree, err := startProcessTree(cmd)
+	if err != nil {
+		return e.wrapError(err, scriptOrPath, shell, isInline)
+	}
+
+	// Kill entire process tree on context cancellation.
+	done := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			killTree()
+		case <-done:
+		}
+	}()
+
+	err = cmd.Wait()
+	close(done)
+
+	if err != nil {
 		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 			return &ExecutionError{
 				ExitCode: exitErr.ExitCode(),
@@ -203,16 +222,20 @@ func (e *Executor) runCommand(
 				IsInline: isInline,
 			}
 		}
-		if shell == "" {
-			return fmt.Errorf("failed to execute command %q: %w", scriptOrPath, err)
-		}
-		if isInline {
-			return fmt.Errorf(
-				"failed to execute inline script with shell %q: %w", shell, err)
-		}
-		return fmt.Errorf(
-			"failed to execute script %q with shell %q: %w",
-			filepath.Base(scriptOrPath), shell, err)
+		return e.wrapError(err, scriptOrPath, shell, isInline)
 	}
 	return nil
+}
+
+func (e *Executor) wrapError(err error, scriptOrPath, shell string, isInline bool) error {
+	if shell == "" {
+		return fmt.Errorf("failed to execute command %q: %w", scriptOrPath, err)
+	}
+	if isInline {
+		return fmt.Errorf(
+			"failed to execute inline script with shell %q: %w", shell, err)
+	}
+	return fmt.Errorf(
+		"failed to execute script %q with shell %q: %w",
+		filepath.Base(scriptOrPath), shell, err)
 }

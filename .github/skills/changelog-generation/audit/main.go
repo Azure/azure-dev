@@ -102,7 +102,7 @@ func main() {
 	flag.StringVar(&changelogPath, "changelog", "", "path to CHANGELOG.md (auto-detected if empty)")
 	flag.StringVar(&tagPrefix, "tag-prefix", "azure-dev-cli_", "git tag prefix for releases")
 	flag.StringVar(&repoRoot, "repo-root", "", "git repository root (auto-detected if empty)")
-	flag.StringVar(&outputPath, "output", "", "output report path (default: stdout)")
+	flag.StringVar(&outputPath, "output", "findings.md", "output findings report path")
 	flag.Parse()
 
 	if repoRoot == "" {
@@ -196,17 +196,61 @@ func main() {
 		a.Findings = runFindings(a, prReleaseMap)
 	}
 
-	// Step 4: Generate report
-	report := generateReport(audits, repoRoot)
-
-	if outputPath != "" {
-		if err := os.WriteFile(outputPath, []byte(report), 0644); err != nil {
-			log.Fatalf("write output: %v", err)
-		}
-		fmt.Fprintf(os.Stderr, "Report written to %s\n", outputPath)
-	} else {
-		fmt.Print(report)
+	// Step 4: Generate outputs
+	// - findings.md: clean findings report (no embedded diffs)
+	// - published/<version>.md: verbatim changelog section per release
+	// - corrected/<version>.md: deterministic corrections only
+	outDir := filepath.Dir(outputPath)
+	if outDir == "" || outDir == "." {
+		outDir = "."
 	}
+
+	pubDir := filepath.Join(outDir, "published")
+	corDir := filepath.Join(outDir, "corrected")
+	if err := os.MkdirAll(pubDir, 0755); err != nil {
+		log.Fatalf("create published dir: %v", err)
+	}
+	if err := os.MkdirAll(corDir, 0755); err != nil {
+		log.Fatalf("create corrected dir: %v", err)
+	}
+
+	// Write per-release files
+	changedReleases := []string{}
+	for _, a := range audits {
+		fname := a.Release.Version + ".md"
+
+		// Published: verbatim from CHANGELOG.md
+		pubContent := strings.Join(a.Release.RawLines, "\n") + "\n"
+		if err := os.WriteFile(filepath.Join(pubDir, fname), []byte(pubContent), 0644); err != nil {
+			log.Fatalf("write published/%s: %v", fname, err)
+		}
+
+		// Corrected: apply only deterministic fixes
+		corrected, _ := correctRelease(&a)
+		corContent := strings.Join(corrected, "\n") + "\n"
+		if err := os.WriteFile(filepath.Join(corDir, fname), []byte(corContent), 0644); err != nil {
+			log.Fatalf("write corrected/%s: %v", fname, err)
+		}
+
+		if pubContent != corContent {
+			changedReleases = append(changedReleases, a.Release.Version)
+		}
+	}
+
+	// Write findings report
+	report := generateReport(audits, changedReleases)
+	reportPath := outputPath
+	if reportPath == "" {
+		reportPath = filepath.Join(outDir, "findings.md")
+	}
+	if err := os.WriteFile(reportPath, []byte(report), 0644); err != nil {
+		log.Fatalf("write findings: %v", err)
+	}
+
+	fmt.Fprintf(os.Stderr, "Output written:\n")
+	fmt.Fprintf(os.Stderr, "  %s (findings report)\n", reportPath)
+	fmt.Fprintf(os.Stderr, "  %s/ (%d release files)\n", pubDir, len(audits))
+	fmt.Fprintf(os.Stderr, "  %s/ (%d release files, %d with corrections)\n", corDir, len(audits), len(changedReleases))
 }
 
 // --- Changelog parser (stateful, line-oriented) ---
@@ -691,13 +735,8 @@ func correctRelease(a *ReleaseAudit) (corrected []string, annotations map[int]st
 			}
 
 		case "F2":
-			// Add placeholder PR link to linkless entries
-			line := original[relIdx]
-			if strings.HasPrefix(line, "- ") && !strings.Contains(line, "[[#") {
-				desc := strings.TrimPrefix(line, "- ")
-				replacedLines[relIdx] = fmt.Sprintf("- [[#???]](https://github.com/Azure/azure-dev/pull/???) %s", desc)
-				annotations[relIdx] = "F2: add missing PR link"
-			}
+			// Missing PR link — cannot determine correct PR number mechanically.
+			// Report in findings only; do NOT generate placeholder corrections.
 
 		case "F2b":
 			// Change /issues/ to /pull/
@@ -745,126 +784,16 @@ func correctRelease(a *ReleaseAudit) (corrected []string, annotations map[int]st
 		}
 	}
 
-	// Add borderline excluded commits (F5) at the end of the appropriate category
-	var borderlineEntries []string
-	for _, f := range a.Findings {
-		if f.Rule == "F5" {
-			// Generate a placeholder entry
-			prNum := 0
-			for _, c := range a.Commits {
-				if c.Subject == f.EntryText {
-					prNum = c.Canonical
-					break
-				}
-			}
-			if prNum > 0 {
-				// Extract a short description from the commit subject (strip PR ref)
-				desc := commitPRRe.ReplaceAllString(f.EntryText, "")
-				desc = strings.TrimSpace(desc)
-				entry := fmt.Sprintf("- [[#%d]](https://github.com/Azure/azure-dev/pull/%d) %s", prNum, prNum, desc)
-				borderlineEntries = append(borderlineEntries, entry)
-			}
-		}
-	}
-
-	if len(borderlineEntries) > 0 {
-		// Insert before the last blank line or at the end
-		corrected = append(corrected, "")
-		corrected = append(corrected, "<!-- F5: borderline changes that new rules would include -->")
-		corrected = append(corrected, borderlineEntries...)
-	}
+	// F5 (borderline excluded commits) — cannot determine correct placement or
+	// description mechanically. Report in findings only; do NOT generate entries.
 
 	return corrected, annotations
 }
 
-// renderUnifiedDiff generates a GitHub-friendly unified diff showing only changed lines.
-func renderUnifiedDiff(original, corrected []string, annotations map[int]string) string {
-	var sb strings.Builder
-
-	// Use a simple approach: show the full release with +/- markers for changed lines
-	i, j := 0, 0
-	for i < len(original) || j < len(corrected) {
-		if i < len(original) && j < len(corrected) && original[i] == corrected[j] {
-			// Unchanged line — show as context
-			sb.WriteString(fmt.Sprintf("  %s\n", original[i]))
-			i++
-			j++
-		} else {
-			// Find the extent of the change
-			// Check if original line was removed
-			found := false
-			if i < len(original) {
-				// Check if this original line appears later in corrected (just shifted)
-				for k := j; k < len(corrected) && k < j+5; k++ {
-					if original[i] == corrected[k] {
-						// Lines were inserted before this point
-						for j < k {
-							annotation := ""
-							if ann, ok := annotations[findOrigIdx(original, corrected[j])]; ok {
-								annotation = fmt.Sprintf("  ← %s", ann)
-							}
-							sb.WriteString(fmt.Sprintf("+ %s%s\n", corrected[j], annotation))
-							j++
-						}
-						found = true
-						break
-					}
-				}
-			}
-			if !found {
-				// Check if corrected line appears later in original (original line was removed)
-				removedOrigLine := false
-				if j < len(corrected) {
-					for k := i; k < len(original) && k < i+5; k++ {
-						if corrected[j] == original[k] {
-							// Original lines were removed
-							for i < k {
-								annotation := ""
-								if ann, ok := annotations[i]; ok {
-									annotation = fmt.Sprintf("  ← %s", ann)
-								}
-								sb.WriteString(fmt.Sprintf("- %s%s\n", original[i], annotation))
-								i++
-							}
-							removedOrigLine = true
-							break
-						}
-					}
-				}
-				if !removedOrigLine {
-					// Direct replacement
-					if i < len(original) {
-						annotation := ""
-						if ann, ok := annotations[i]; ok {
-							annotation = fmt.Sprintf("  ← %s", ann)
-						}
-						sb.WriteString(fmt.Sprintf("- %s%s\n", original[i], annotation))
-						i++
-					}
-					if j < len(corrected) {
-						sb.WriteString(fmt.Sprintf("+ %s\n", corrected[j]))
-						j++
-					}
-				}
-			}
-		}
-	}
-
-	return sb.String()
-}
-
-func findOrigIdx(original []string, line string) int {
-	for i, l := range original {
-		if l == line {
-			return i
-		}
-	}
-	return -1
-}
 
 // --- Report generation ---
 
-func generateReport(audits []ReleaseAudit, repoRoot string) string {
+func generateReport(audits []ReleaseAudit, changedReleases []string) string {
 	var sb strings.Builder
 
 	// Header
@@ -875,7 +804,32 @@ func generateReport(audits []ReleaseAudit, repoRoot string) string {
 	sb.WriteString(fmt.Sprintf("**Generated**: %s\n", time.Now().UTC().Format("2006-01-02 15:04 UTC")))
 	sb.WriteString(fmt.Sprintf("**Repo SHA**: %s\n", headSHA))
 	sb.WriteString(fmt.Sprintf("**Releases audited**: %d\n", len(audits)))
-	sb.WriteString(fmt.Sprintf("**Rules applied**: F1 (dual PR numbers), F2 (PR link validation), F3 (cross-release dedup), F4 (alpha/beta gating), F5 (borderline inclusion), F6 (phantom entries)\n\n"))
+	sb.WriteString("**Rules applied**: F1 (dual PR numbers), F2 (PR link validation), F3 (cross-release dedup), F4 (alpha/beta gating), F5 (borderline inclusion), F6 (phantom entries)\n\n")
+
+	// How to review
+	sb.WriteString("## How to Review\n\n")
+	sb.WriteString("Each audited release has two files:\n\n")
+	sb.WriteString("- `published/<version>.md` — the changelog section exactly as published\n")
+	sb.WriteString("- `corrected/<version>.md` — the same section with deterministic corrections applied\n\n")
+	sb.WriteString("**Compare them** to see the impact of the new rules:\n\n")
+	sb.WriteString("```bash\n")
+	sb.WriteString("# Diff a single release\n")
+	sb.WriteString("diff -u published/1.23.12.md corrected/1.23.12.md\n\n")
+	sb.WriteString("# Diff all releases at once\n")
+	sb.WriteString("diff -ru published/ corrected/\n")
+	sb.WriteString("```\n\n")
+
+	changedSet := map[string]bool{}
+	for _, v := range changedReleases {
+		changedSet[v] = true
+	}
+	if len(changedReleases) > 0 {
+		sb.WriteString(fmt.Sprintf("**Releases with corrections** (%d of %d): ", len(changedReleases), len(audits)))
+		sb.WriteString(strings.Join(changedReleases, ", "))
+		sb.WriteString("\n\n")
+	} else {
+		sb.WriteString("**No releases required corrections.** All published entries match the new rules.\n\n")
+	}
 
 	// Summary table
 	sb.WriteString("## Summary\n\n")
@@ -930,11 +884,20 @@ func generateReport(audits []ReleaseAudit, repoRoot string) string {
 		errs, warns, infos := countSeverities(a.Findings)
 
 		sb.WriteString(fmt.Sprintf("### %s (%s)\n\n", a.Release.Version, a.Release.Date))
-		sb.WriteString(fmt.Sprintf("**Commit range**: `%s..%s` (%d commits, %d changelog entries)\n",
-			a.PrevTag, a.Tag, len(a.Commits), len(entries)))
+
+		commitRangeDisplay := "(no previous tag in scope)"
+		if a.PrevTag != "" {
+			commitRangeDisplay = fmt.Sprintf("`%s..%s`", a.PrevTag, a.Tag)
+		}
+		sb.WriteString(fmt.Sprintf("**Commit range**: %s (%d commits, %d changelog entries)\n",
+			commitRangeDisplay, len(a.Commits), len(entries)))
+
+		if changedSet[a.Release.Version] {
+			sb.WriteString(fmt.Sprintf("**Diff**: `diff -u published/%s.md corrected/%s.md`\n", a.Release.Version, a.Release.Version))
+		}
 
 		if len(a.Findings) == 0 {
-			sb.WriteString("\n> **No findings** — this release is clean under the new rules.\n\n")
+			sb.WriteString("\n> No findings — this release is clean under the new rules.\n\n")
 			continue
 		}
 
@@ -954,30 +917,14 @@ func generateReport(audits []ReleaseAudit, repoRoot string) string {
 				icon := severityIcon(f.Severity)
 				sb.WriteString(fmt.Sprintf("- %s %s\n", icon, f.Description))
 				if f.EntryText != "" {
-					sb.WriteString(fmt.Sprintf("  > `%s`\n", f.EntryText))
+					// Use indented code block to avoid backtick nesting issues
+					sb.WriteString("  >\n")
+					for _, line := range strings.Split(f.EntryText, "\n") {
+						sb.WriteString(fmt.Sprintf("  >     %s\n", line))
+					}
 				}
 			}
 			sb.WriteString("\n")
-		}
-
-		// Generate side-by-side diff
-		hasActionable := false
-		for _, f := range a.Findings {
-			if f.Severity == "error" || f.Severity == "warning" {
-				hasActionable = true
-				break
-			}
-		}
-
-		if hasActionable {
-			corrected, annotations := correctRelease(&a)
-
-			sb.WriteString("#### Side-by-Side Diff\n\n")
-			sb.WriteString("Shows how this release section would differ under the new rules.\n")
-			sb.WriteString("Lines prefixed with `-` are removed/changed; `+` lines are the corrected version.\n\n")
-			sb.WriteString("```diff\n")
-			sb.WriteString(renderUnifiedDiff(a.Release.RawLines, corrected, annotations))
-			sb.WriteString("```\n\n")
 		}
 	}
 
@@ -1020,13 +967,6 @@ func sortedKeys(m map[string][]Finding) []string {
 	return keys
 }
 
-func extractPRFromDesc(desc string) string {
-	re := regexp.MustCompile(`#(\d+)`)
-	if m := re.FindStringSubmatch(desc); m != nil {
-		return m[1]
-	}
-	return "?"
-}
 
 // --- JSON output for machine consumption ---
 

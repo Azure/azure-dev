@@ -40,6 +40,10 @@ jobs:
 
       - template: /eng/pipelines/templates/steps/setup-go.yml
 
+      - template: /eng/pipelines/templates/steps/set-extension-version-cd.yml
+        parameters:
+          AzdExtensionDirectory: ${{ parameters.AzdExtensionDirectory }}
+
       - task: PowerShell@2
         inputs:
           pwsh: true

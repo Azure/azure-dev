@@ -1,0 +1,15 @@
+parameters:
+  - name: AzdExtensionDirectory
+    type: string
+
+steps:
+  - task: PowerShell@2
+    displayName: Set extension version for CD release
+    inputs:
+      pwsh: true
+      targetType: filePath
+      filePath: eng/scripts/Set-ExtensionVersionInBuild.ps1
+      arguments: >-
+                -ExtensionDirectory ${{ parameters.AzdExtensionDirectory }}
+                -BuildReason ($env:BUILDREASONOVERRIDE ?? '$(Build.Reason)')
+                -BuildId $(Build.BuildId)

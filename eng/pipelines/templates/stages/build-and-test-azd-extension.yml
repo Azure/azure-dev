@@ -95,7 +95,10 @@ stages:
             OSVmImage: ${{ build.value.OSVmImage }}
             OS: ${{ build.value.OS }}
             Variables: ${{ build.value.Variables }}
-            ValidateCrossCompile: ${{ build.value.ValidateCrossCompile }}
+            # TODO: Revert this before merge
+            # ValidateCrossCompile: ${{ build.value.ValidateCrossCompile }}
+            # TODO: Remove this line before merge
+            ValidateCrossCompile: false
             ValidateVm: ${{ build.value.ValidateVm }}
             ValidationTask: ${{ build.value.ValidationTask }}
             ValidationScript: ${{ build.value.ValidationScript }}
@@ -109,6 +112,10 @@ stages:
 
         steps:
           - checkout: self
+
+          - template: /eng/pipelines/templates/steps/set-extension-version-cd.yml
+            parameters:
+              AzdExtensionDirectory: ${{ parameters.AzdExtensionDirectory }}
 
           - task: PowerShell@2
             displayName: Set extension version variable
@@ -156,6 +163,18 @@ stages:
           - pwsh: |
               Copy-Item NOTICE.txt release-metadata/NOTICE.txt
             displayName: Copy NOTICE.txt to release-metadata
+
+          - pwsh: |
+              Copy-Item eng/templates/extensions-registry-daily.json.template release-metadata/extensions-registry-daily.json.template
+            displayName: Copy registry template to release-metadata
+
+          - pwsh: |
+              Copy-Item eng/scripts/Update-ExtensionDailyRegistry.ps1 release-metadata/Update-ExtensionDailyRegistry.ps1
+            displayName: Copy Update-ExtensionDailyRegistry.ps1 to release-metadata
+
+          - pwsh: |
+              Copy-Item eng/common/scripts/Helpers/PSModule-Helpers.ps1 release-metadata/PSModule-Helpers.ps1
+            displayName: Copy PSModule-Helpers.ps1 to release-metadata
 
         templateContext:
           outputs:

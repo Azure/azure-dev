@@ -1,0 +1,120 @@
+parameters:
+  - name: SanitizedExtensionId
+    type: string
+  - name: AzdExtensionId
+    type: string
+
+stages:
+  - stage: PublishForPR
+    dependsOn: Sign
+    condition: >-
+      and(
+        succeeded(),
+        ne(variables['Skip.Release'], 'true'),
+        or(
+          eq('PullRequest', variables['BuildReasonOverride']),
+          and(
+            eq('', variables['BuildReasonOverride']),
+            eq(variables['Build.Reason'], 'PullRequest')
+          )
+        )
+      )
+
+    variables:
+      - template: /eng/pipelines/templates/variables/image.yml
+      - template: /eng/pipelines/templates/variables/globals.yml
+
+    jobs:
+      - deployment: Publish_Extension_For_PR
+        environment: none
+
+        pool:
+          name: azsdk-pool
+          image: ubuntu-22.04
+          os: linux
+
+        templateContext:
+          type: releaseJob
+          isProduction: false
+          inputs:
+            - input: pipelineArtifact
+              artifactName: release
+              targetPath: release
+            - input: pipelineArtifact
+              artifactName: release-metadata
+              targetPath: release-metadata
+
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - pwsh: |
+                    $PRNumber = '$(System.PullRequest.PullRequestNumber)'
+                    if ($env:PRNUMBEROVERRIDE) {
+                      Write-Host "PR Number override: $($env:PRNUMBEROVERRIDE)"
+                      $PRNumber = "$($env:PRNUMBEROVERRIDE)"
+                    }
+                    if (-not $PRNumber -or $PRNumber -match '^\$\(') {
+                      Write-Error "PR number could not be determined. Ensure this runs in a PR build or set PRNUMBEROVERRIDE."
+                      exit 1
+                    }
+                    Write-Host "##vso[task.setvariable variable=PRNumber]$PRNumber"
+                  displayName: Set PR Number Variable
+
+                - template: /eng/pipelines/templates/steps/extension-set-metadata-variables.yml
+                  parameters:
+                    Use1ESArtifactTask: true
+
+                - template: /eng/pipelines/templates/steps/publish-extension.yml
+                  parameters:
+                    PublishUploadLocations: ${{ parameters.SanitizedExtensionId }}/pr/$(PRNumber)
+                    CreateGitHubRelease: false
+
+                - template: /eng/pipelines/templates/steps/update-extension-pr-registry.yml
+                  parameters:
+                    SanitizedExtensionId: ${{ parameters.SanitizedExtensionId }}
+                    AzdExtensionId: ${{ parameters.AzdExtensionId }}
+                    PRNumber: $(PRNumber)
+
+                - pwsh: |
+                    $storageHost = "$(publish-storage-static-host)"
+                    $extId = "${{ parameters.AzdExtensionId }}"
+                    $sanitizedId = "${{ parameters.SanitizedExtensionId }}"
+                    $prNumber = "$(PRNumber)"
+                    $registryUrl = "$storageHost/azd/extensions/pr-registry-entries/$prNumber/$extId.json"
+                    $binaryBase = "$storageHost/azd/extensions/$sanitizedId/pr/$prNumber"
+
+                    $content = @"
+                    <!-- #comment-ext-pr-$extId -->
+                    ## azd Extension Install Instructions — ``$extId``
+
+                    > :warning: **These are unsigned PR builds for testing only.** Do not use in production.
+
+                    ### Install from PR build
+
+                    ``````bash
+                    azd ext source add -n pr-$prNumber -t url -l "$registryUrl"
+                    azd ext install $extId --source pr-$prNumber
+                    ``````
+
+                    ### Standalone Binaries
+
+                    | Platform | Download |
+                    |----------|----------|
+                    | Linux x86_64 | $binaryBase/$sanitizedId-linux-amd64.tar.gz |
+                    | Linux ARM64 | $binaryBase/$sanitizedId-linux-arm64.tar.gz |
+                    | macOS x86_64 | $binaryBase/$sanitizedId-darwin-amd64.zip |
+                    | macOS ARM64 | $binaryBase/$sanitizedId-darwin-arm64.zip |
+                    | Windows x86_64 | $binaryBase/$sanitizedId-windows-amd64.zip |
+                    | Windows ARM64 | $binaryBase/$sanitizedId-windows-arm64.zip |
+                    "@
+                    $file = New-TemporaryFile
+                    Set-Content -Path $file -Value $content
+                    Write-Host "##vso[task.setvariable variable=CommentBodyFile]$file"
+                  displayName: Generate PR comment body
+
+                - template: /eng/pipelines/templates/steps/update-prcomment.yml
+                  parameters:
+                    PrNumber: $(PRNumber)
+                    BodyFile: $(CommentBodyFile)
+                    Tag: '<!-- #comment-ext-pr-${{ parameters.AzdExtensionId }} -->'

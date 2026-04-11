@@ -1,19 +1,21 @@
 parameters:
   - name: SanitizedExtensionId
     type: string
+  - name: AzdExtensionId
+    type: string
 
 stages:
-  - stage: PublishExtension
+  - stage: PublishDaily
     dependsOn: Sign
     condition: >-
       and(
         succeeded(),
         ne(variables['Skip.Release'], 'true'),
         or(
-          eq('Manual', variables['BuildReasonOverride']),
+          in(variables['BuildReasonOverride'], 'IndividualCI', 'BatchedCI'),
           and(
             eq('', variables['BuildReasonOverride']),
-            eq('Manual', variables['Build.Reason'])
+            in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI')
           )
         )
       )
@@ -23,13 +25,8 @@ stages:
       - template: /eng/pipelines/templates/variables/globals.yml
 
     jobs:
-      - deployment: Publish_Release
-        condition: >-
-          and(
-            succeeded(),
-            ne('true', variables['Skip.Publish'])
-          )
-        environment: package-publish
+      - deployment: Publish_Daily
+        environment: none
 
         pool:
           name: azsdk-pool
@@ -38,15 +35,14 @@ stages:
 
         templateContext:
           type: releaseJob
-          isProduction: true
+          isProduction: false
           inputs:
             - input: pipelineArtifact
               artifactName: release
               targetPath: release
-
             - input: pipelineArtifact
-              artifactName: changelog
-              targetPath: changelog
+              artifactName: release-metadata
+              targetPath: release-metadata
 
         strategy:
           runOnce:
@@ -56,17 +52,12 @@ stages:
                   parameters:
                     Use1ESArtifactTask: true
 
-                - pwsh: |
-                    # Initial upload locations
-                    $publishUploadLocations = '${{ parameters.SanitizedExtensionId }}/$(EXT_VERSION)'
-
-                    Write-Host "Setting StorageUploadLocations to $publishUploadLocations"
-                    Write-Host "###vso[task.setvariable variable=StorageUploadLocations]$publishUploadLocations"
-                  displayName: Set StorageUploadLocations
-
                 - template: /eng/pipelines/templates/steps/publish-extension.yml
                   parameters:
-                    PublishUploadLocations: $(StorageUploadLocations)
-                    CreateGitHubRelease: true
-                    TagPrefix: azd-ext-${{ parameters.SanitizedExtensionId }}
-                    TagVersion: $(EXT_VERSION)
+                    PublishUploadLocations: ${{ parameters.SanitizedExtensionId }}/daily;${{ parameters.SanitizedExtensionId }}/daily/archive/$(EXT_VERSION)
+                    CreateGitHubRelease: false
+
+                - template: /eng/pipelines/templates/steps/update-extension-daily-registry.yml
+                  parameters:
+                    SanitizedExtensionId: ${{ parameters.SanitizedExtensionId }}
+                    AzdExtensionId: ${{ parameters.AzdExtensionId }}

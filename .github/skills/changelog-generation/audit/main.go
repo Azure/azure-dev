@@ -62,6 +62,9 @@ type Finding struct {
 	Severity    string // "error", "warning", "info"
 	Description string
 	EntryText   string // optional context
+	LineNumber  int    // changelog line number affected (0 if N/A)
+	OldPR       int    // for F1: wrong PR number used
+	NewPR       int    // for F1: correct (canonical) PR number
 }
 
 type ReleaseAudit struct {
@@ -430,15 +433,25 @@ func runFindings(a *ReleaseAudit, prReleaseMap map[int]string) []Finding {
 	// --- Finding 1: Dual PR numbers ---
 	for _, c := range a.Commits {
 		if len(c.PRNumbers) >= 2 {
-			// Check if changelog references the first (wrong) PR number
 			first := c.PRNumbers[0]
 			last := c.PRNumbers[len(c.PRNumbers)-1]
 			if changelogPRs[first] && !changelogPRs[last] {
+				// Find the entry line that uses the wrong PR
+				ln := 0
+				for _, e := range allEntries {
+					if e.PRNumber == first {
+						ln = e.LineNumber
+						break
+					}
+				}
 				findings = append(findings, Finding{
 					Rule:        "F1",
 					Severity:    "warning",
 					Description: fmt.Sprintf("Dual PR numbers detected: commit references #%d and #%d. Changelog uses #%d but should use #%d (last = canonical).", first, last, first, last),
 					EntryText:   c.Subject,
+					LineNumber:  ln,
+					OldPR:       first,
+					NewPR:       last,
 				})
 			} else if changelogPRs[first] && changelogPRs[last] {
 				findings = append(findings, Finding{
@@ -459,6 +472,7 @@ func runFindings(a *ReleaseAudit, prReleaseMap map[int]string) []Finding {
 				Severity:    "error",
 				Description: "Entry is missing a [[#PR]] link.",
 				EntryText:   truncate(e.RawText, 120),
+				LineNumber:  e.LineNumber,
 			})
 		}
 	}
@@ -471,6 +485,7 @@ func runFindings(a *ReleaseAudit, prReleaseMap map[int]string) []Finding {
 				Severity:    "warning",
 				Description: fmt.Sprintf("Entry uses issue link (#%d) instead of PR link. Use /pull/ not /issues/.", e.PRNumber),
 				EntryText:   truncate(e.RawText, 120),
+				LineNumber:  e.LineNumber,
 			})
 		}
 	}
@@ -484,6 +499,7 @@ func runFindings(a *ReleaseAudit, prReleaseMap map[int]string) []Finding {
 					Severity:    "warning",
 					Description: fmt.Sprintf("PR #%d also appears in release %s (cross-release duplicate).", e.PRNumber, firstVer),
 					EntryText:   truncate(e.RawText, 120),
+					LineNumber:  e.LineNumber,
 				})
 			}
 		}
@@ -576,6 +592,7 @@ func runFindings(a *ReleaseAudit, prReleaseMap map[int]string) []Finding {
 						Severity:    "warning",
 						Description: fmt.Sprintf("PR #%d in changelog but not found in commit range %s..%s (phantom entry).", e.PRNumber, a.PrevTag, a.Tag),
 						EntryText:   truncate(e.RawText, 120),
+						LineNumber:  e.LineNumber,
 					})
 				}
 			}
@@ -633,6 +650,216 @@ func truncate(s string, n int) string {
 		return s[:n-3] + "..."
 	}
 	return s
+}
+
+// --- Correction engine ---
+
+// correctRelease applies mechanical fixes to a release's raw lines and returns
+// the corrected version along with per-line annotations explaining each change.
+func correctRelease(a *ReleaseAudit) (corrected []string, annotations map[int]string) {
+	annotations = map[int]string{}
+	original := a.Release.RawLines
+
+	// Build lookup maps: line number → finding(s)
+	// Line numbers in findings are absolute; convert to relative (0-based index into RawLines)
+	baseLineNum := a.Release.HeaderLine // line 1 of RawLines = this absolute line number
+
+	removedLines := map[int]bool{}   // relative line indices to remove
+	replacedLines := map[int]string{} // relative line index → replacement text
+
+	for _, f := range a.Findings {
+		if f.LineNumber == 0 {
+			continue
+		}
+		relIdx := f.LineNumber - baseLineNum
+
+		if relIdx < 0 || relIdx >= len(original) {
+			continue
+		}
+
+		switch f.Rule {
+		case "F1":
+			// Replace old PR number with new canonical one
+			if f.OldPR > 0 && f.NewPR > 0 {
+				line := original[relIdx]
+				oldRef := fmt.Sprintf("[[#%d]](https://github.com/Azure/azure-dev/pull/%d)", f.OldPR, f.OldPR)
+				newRef := fmt.Sprintf("[[#%d]](https://github.com/Azure/azure-dev/pull/%d)", f.NewPR, f.NewPR)
+				if strings.Contains(line, oldRef) {
+					replacedLines[relIdx] = strings.Replace(line, oldRef, newRef, 1)
+					annotations[relIdx] = fmt.Sprintf("F1: use canonical PR #%d", f.NewPR)
+				}
+			}
+
+		case "F2":
+			// Add placeholder PR link to linkless entries
+			line := original[relIdx]
+			if strings.HasPrefix(line, "- ") && !strings.Contains(line, "[[#") {
+				desc := strings.TrimPrefix(line, "- ")
+				replacedLines[relIdx] = fmt.Sprintf("- [[#???]](https://github.com/Azure/azure-dev/pull/???) %s", desc)
+				annotations[relIdx] = "F2: add missing PR link"
+			}
+
+		case "F2b":
+			// Change /issues/ to /pull/
+			line := original[relIdx]
+			if strings.Contains(line, "/issues/") {
+				replacedLines[relIdx] = strings.Replace(line, "/issues/", "/pull/", 1)
+				annotations[relIdx] = "F2b: use /pull/ not /issues/"
+			}
+
+		case "F3":
+			// Mark cross-release duplicate for removal
+			removedLines[relIdx] = true
+			annotations[relIdx] = "F3: remove cross-release duplicate"
+
+		case "F6":
+			// Mark phantom entry for removal (only if it's an actionable warning)
+			if f.Severity == "warning" {
+				removedLines[relIdx] = true
+				annotations[relIdx] = "F6: remove phantom entry"
+			}
+
+		case "F6b":
+			// Fix link text/URL mismatch
+			line := original[relIdx]
+			linkRe := regexp.MustCompile(`\[\[#(\d+)\]\]\(https://github\.com/Azure/azure-dev/(pull|issues)/(\d+)\)`)
+			if m := linkRe.FindStringSubmatch(line); m != nil {
+				urlNum := m[3]
+				oldLink := m[0]
+				newLink := fmt.Sprintf("[[#%s]](https://github.com/Azure/azure-dev/%s/%s)", urlNum, m[2], urlNum)
+				replacedLines[relIdx] = strings.Replace(line, oldLink, newLink, 1)
+				annotations[relIdx] = "F6b: fix link text/URL mismatch"
+			}
+		}
+	}
+
+	// Build corrected lines
+	for i, line := range original {
+		if removedLines[i] {
+			continue
+		}
+		if replacement, ok := replacedLines[i]; ok {
+			corrected = append(corrected, replacement)
+		} else {
+			corrected = append(corrected, line)
+		}
+	}
+
+	// Add borderline excluded commits (F5) at the end of the appropriate category
+	var borderlineEntries []string
+	for _, f := range a.Findings {
+		if f.Rule == "F5" {
+			// Generate a placeholder entry
+			prNum := 0
+			for _, c := range a.Commits {
+				if c.Subject == f.EntryText {
+					prNum = c.Canonical
+					break
+				}
+			}
+			if prNum > 0 {
+				// Extract a short description from the commit subject (strip PR ref)
+				desc := commitPRRe.ReplaceAllString(f.EntryText, "")
+				desc = strings.TrimSpace(desc)
+				entry := fmt.Sprintf("- [[#%d]](https://github.com/Azure/azure-dev/pull/%d) %s", prNum, prNum, desc)
+				borderlineEntries = append(borderlineEntries, entry)
+			}
+		}
+	}
+
+	if len(borderlineEntries) > 0 {
+		// Insert before the last blank line or at the end
+		corrected = append(corrected, "")
+		corrected = append(corrected, "<!-- F5: borderline changes that new rules would include -->")
+		corrected = append(corrected, borderlineEntries...)
+	}
+
+	return corrected, annotations
+}
+
+// renderUnifiedDiff generates a GitHub-friendly unified diff showing only changed lines.
+func renderUnifiedDiff(original, corrected []string, annotations map[int]string) string {
+	var sb strings.Builder
+
+	// Use a simple approach: show the full release with +/- markers for changed lines
+	i, j := 0, 0
+	for i < len(original) || j < len(corrected) {
+		if i < len(original) && j < len(corrected) && original[i] == corrected[j] {
+			// Unchanged line — show as context
+			sb.WriteString(fmt.Sprintf("  %s\n", original[i]))
+			i++
+			j++
+		} else {
+			// Find the extent of the change
+			// Check if original line was removed
+			found := false
+			if i < len(original) {
+				// Check if this original line appears later in corrected (just shifted)
+				for k := j; k < len(corrected) && k < j+5; k++ {
+					if original[i] == corrected[k] {
+						// Lines were inserted before this point
+						for j < k {
+							annotation := ""
+							if ann, ok := annotations[findOrigIdx(original, corrected[j])]; ok {
+								annotation = fmt.Sprintf("  ← %s", ann)
+							}
+							sb.WriteString(fmt.Sprintf("+ %s%s\n", corrected[j], annotation))
+							j++
+						}
+						found = true
+						break
+					}
+				}
+			}
+			if !found {
+				// Check if corrected line appears later in original (original line was removed)
+				removedOrigLine := false
+				if j < len(corrected) {
+					for k := i; k < len(original) && k < i+5; k++ {
+						if corrected[j] == original[k] {
+							// Original lines were removed
+							for i < k {
+								annotation := ""
+								if ann, ok := annotations[i]; ok {
+									annotation = fmt.Sprintf("  ← %s", ann)
+								}
+								sb.WriteString(fmt.Sprintf("- %s%s\n", original[i], annotation))
+								i++
+							}
+							removedOrigLine = true
+							break
+						}
+					}
+				}
+				if !removedOrigLine {
+					// Direct replacement
+					if i < len(original) {
+						annotation := ""
+						if ann, ok := annotations[i]; ok {
+							annotation = fmt.Sprintf("  ← %s", ann)
+						}
+						sb.WriteString(fmt.Sprintf("- %s%s\n", original[i], annotation))
+						i++
+					}
+					if j < len(corrected) {
+						sb.WriteString(fmt.Sprintf("+ %s\n", corrected[j]))
+						j++
+					}
+				}
+			}
+		}
+	}
+
+	return sb.String()
+}
+
+func findOrigIdx(original []string, line string) int {
+	for i, l := range original {
+		if l == line {
+			return i
+		}
+	}
+	return -1
 }
 
 // --- Report generation ---
@@ -733,42 +960,24 @@ func generateReport(audits []ReleaseAudit, repoRoot string) string {
 			sb.WriteString("\n")
 		}
 
-		// Show recommended changes
-		sb.WriteString("#### Recommended Changes\n\n")
-		hasRecommendation := false
+		// Generate side-by-side diff
+		hasActionable := false
 		for _, f := range a.Findings {
 			if f.Severity == "error" || f.Severity == "warning" {
-				hasRecommendation = true
+				hasActionable = true
 				break
 			}
 		}
-		if !hasRecommendation {
-			sb.WriteString("No actionable changes needed.\n\n")
-		} else {
-			sb.WriteString("If regenerated with the updated rules, this release would differ:\n\n")
-			for _, f := range a.Findings {
-				switch f.Rule {
-				case "F1":
-					if f.Severity == "warning" {
-						sb.WriteString(fmt.Sprintf("- **Use last PR number**: %s\n", f.Description))
-					}
-				case "F2":
-					sb.WriteString(fmt.Sprintf("- **Add PR link**: entry at line would get a `[[#N]]` reference\n"))
-				case "F2b":
-					sb.WriteString(fmt.Sprintf("- **Fix link type**: change `/issues/` to `/pull/` for PR #%s\n", extractPRFromDesc(f.Description)))
-				case "F3":
-					sb.WriteString(fmt.Sprintf("- **Remove duplicate**: %s\n", f.Description))
-				case "F5":
-					sb.WriteString(fmt.Sprintf("- **Include borderline change**: %s\n", f.Description))
-				case "F6":
-					if f.Severity == "warning" {
-						sb.WriteString(fmt.Sprintf("- **Remove phantom**: %s\n", f.Description))
-					}
-				case "F6b":
-					sb.WriteString(fmt.Sprintf("- **Fix link mismatch**: %s\n", f.Description))
-				}
-			}
-			sb.WriteString("\n")
+
+		if hasActionable {
+			corrected, annotations := correctRelease(&a)
+
+			sb.WriteString("#### Side-by-Side Diff\n\n")
+			sb.WriteString("Shows how this release section would differ under the new rules.\n")
+			sb.WriteString("Lines prefixed with `-` are removed/changed; `+` lines are the corrected version.\n\n")
+			sb.WriteString("```diff\n")
+			sb.WriteString(renderUnifiedDiff(a.Release.RawLines, corrected, annotations))
+			sb.WriteString("```\n\n")
 		}
 	}
 

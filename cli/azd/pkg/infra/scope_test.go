@@ -332,3 +332,47 @@ var testArmTemplate string = `{
 	"value": "[reference('Microsoft.Compute/availabilitySets/availabilitySet1')]"
 	}
 }}`
+
+func TestVoidState(t *testing.T) {
+	t.Parallel()
+
+	t.Run("SubscriptionDeploymentVoidStateNotFound", func(t *testing.T) {
+		t.Parallel()
+		// VoidState on SubscriptionDeployment returns an error when the deployment does not exist.
+		// Verifies the method delegates to VoidSubscriptionDeploymentState.
+		mockContext := mocks.NewMockContext(context.Background())
+		deploymentService := mockazapi.NewDeploymentsServiceFromMockContext(mockContext)
+
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.Method == http.MethodGet && strings.Contains(
+				request.URL.Path,
+				"/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/DEPLOYMENT_NAME",
+			)
+		}).RespondFn(func(request *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusNotFound,
+				Body:       io.NopCloser(strings.NewReader(`{"error":{"code":"DeploymentNotFound"}}`)),
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+			}, nil
+		})
+
+		scope := newSubscriptionScope(deploymentService, "SUBSCRIPTION_ID", "eastus2")
+		target := NewSubscriptionDeployment(scope, "DEPLOYMENT_NAME")
+
+		err := target.VoidState(t.Context(), nil)
+		require.Error(t, err)
+	})
+
+	t.Run("ResourceGroupDeploymentVoidStateNoOp", func(t *testing.T) {
+		t.Parallel()
+		// VoidState on ResourceGroupDeployment is a no-op and always returns nil.
+		mockContext := mocks.NewMockContext(context.Background())
+		deploymentService := mockazapi.NewDeploymentsServiceFromMockContext(mockContext)
+
+		scope := newResourceGroupScope(deploymentService, "SUBSCRIPTION_ID", "RESOURCE_GROUP")
+		target := NewResourceGroupDeployment(scope, "DEPLOYMENT_NAME")
+
+		err := target.VoidState(t.Context(), nil)
+		require.NoError(t, err)
+	})
+}

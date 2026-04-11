@@ -54,6 +54,8 @@ type Deployment interface {
 		options map[string]any,
 		progress *async.Progress[azapi.DeleteDeploymentProgress],
 	) error
+	// VoidState deploys an empty template to void the deployment state without deleting resources.
+	VoidState(ctx context.Context, options map[string]any) error
 	// Deploy a given template with a set of parameters.
 	DeployPreview(
 		ctx context.Context,
@@ -112,6 +114,12 @@ func (s *ResourceGroupDeployment) Delete(
 		options,
 		progress,
 	)
+}
+
+// VoidState is a no-op for resource group-scoped deployments.
+// The deployment lives within the resource group itself; voiding state is not applicable.
+func (s *ResourceGroupDeployment) VoidState(_ context.Context, _ map[string]any) error {
+	return nil
 }
 
 func (s *ResourceGroupDeployment) DeployPreview(
@@ -322,6 +330,11 @@ func (s *SubscriptionDeployment) Delete(
 	progress *async.Progress[azapi.DeleteDeploymentProgress],
 ) error {
 	return s.deploymentService.DeleteSubscriptionDeployment(ctx, s.subscriptionId, s.name, options, progress)
+}
+
+// VoidState deploys an empty template to void the deployment state without deleting resources.
+func (s *SubscriptionDeployment) VoidState(ctx context.Context, options map[string]any) error {
+	return s.deploymentService.VoidSubscriptionDeploymentState(ctx, s.subscriptionId, s.name, options)
 }
 
 // Deploy a given template with a set of parameters.

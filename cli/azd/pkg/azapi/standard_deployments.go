@@ -399,6 +399,12 @@ func resourceGroupsFromDeployment(deployment *ResourceDeployment) []string {
 	return slices.Collect(maps.Keys(resourceGroups))
 }
 
+// ResourceGroupsFromDeployment extracts the unique resource group names from a deployment.
+// This is the public version of the internal helper, used by the classification pipeline.
+func ResourceGroupsFromDeployment(deployment *ResourceDeployment) []string {
+	return resourceGroupsFromDeployment(deployment)
+}
+
 func (ds *StandardDeployments) ListResourceGroupDeploymentResources(
 	ctx context.Context,
 	subscriptionId string,
@@ -476,6 +482,17 @@ func (ds *StandardDeployments) DeleteSubscriptionDeployment(
 	return ds.voidSubscriptionDeploymentState(ctx, subscriptionId, deploymentName, options)
 }
 
+// VoidSubscriptionDeploymentState deploys an empty template to void the deployment state
+// without deleting any resource groups. Used after classification-aware deletion.
+func (ds *StandardDeployments) VoidSubscriptionDeploymentState(
+	ctx context.Context,
+	subscriptionId string,
+	deploymentName string,
+	options map[string]any,
+) error {
+	return ds.voidSubscriptionDeploymentState(ctx, subscriptionId, deploymentName, options)
+}
+
 // voidSubscriptionDeploymentState deploys an empty template to void the provision state
 // and keep deployment history instead of deleting previous deployments.
 func (ds *StandardDeployments) voidSubscriptionDeploymentState(
@@ -491,7 +508,7 @@ func (ds *StandardDeployments) voidSubscriptionDeploymentState(
 	}
 
 	envName, has := deployment.Tags[azure.TagKeyAzdEnvName]
-	if has {
+	if has && envName != nil && *envName != "" {
 		var emptyTemplate json.RawMessage = []byte(emptySubscriptionArmTemplate)
 		emptyDeploymentName := ds.GenerateDeploymentName(*envName)
 		tags := map[string]*string{

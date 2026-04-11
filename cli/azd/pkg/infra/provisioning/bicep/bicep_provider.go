@@ -32,7 +32,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/ai"
-	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
@@ -924,6 +923,89 @@ type itemToPurge struct {
 	cognitiveAccounts []cognitiveAccount
 }
 
+// collectPurgeItems gathers soft-deleted resources from the given resource groups and
+// returns them as a list of itemToPurge entries ready for purgeItems. Used by both the
+// deployment-stacks path (all RGs) and the classification path (owned RGs only).
+func (p *BicepProvider) collectPurgeItems(
+	ctx context.Context,
+	resources map[string][]*azapi.Resource,
+) ([]itemToPurge, error) {
+	keyVaults, err := p.getKeyVaultsToPurge(ctx, resources)
+	if err != nil {
+		return nil, fmt.Errorf("getting key vaults to purge: %w", err)
+	}
+
+	managedHSMs, err := p.getManagedHSMsToPurge(ctx, resources)
+	if err != nil {
+		return nil, fmt.Errorf("getting managed hsms to purge: %w", err)
+	}
+
+	appConfigs, err := p.getAppConfigsToPurge(ctx, resources)
+	if err != nil {
+		return nil, fmt.Errorf("getting app configurations to purge: %w", err)
+	}
+
+	apiManagements, err := p.getApiManagementsToPurge(ctx, resources)
+	if err != nil {
+		return nil, fmt.Errorf("getting API managements to purge: %w", err)
+	}
+
+	cognitiveAccounts, err := p.getCognitiveAccountsToPurge(ctx, resources)
+	if err != nil {
+		return nil, fmt.Errorf("getting cognitive accounts to purge: %w", err)
+	}
+
+	var items []itemToPurge
+	for _, item := range []itemToPurge{
+		{
+			resourceType: "Key Vault",
+			count:        len(keyVaults),
+			purge: func(skipPurge bool, self *itemToPurge) error {
+				return p.purgeKeyVaults(ctx, keyVaults, skipPurge)
+			},
+		},
+		{
+			resourceType: "Managed HSM",
+			count:        len(managedHSMs),
+			purge: func(skipPurge bool, self *itemToPurge) error {
+				return p.purgeManagedHSMs(ctx, managedHSMs, skipPurge)
+			},
+		},
+		{
+			resourceType: "App Configuration",
+			count:        len(appConfigs),
+			purge: func(skipPurge bool, self *itemToPurge) error {
+				return p.purgeAppConfigs(ctx, appConfigs, skipPurge)
+			},
+		},
+		{
+			resourceType: "API Management",
+			count:        len(apiManagements),
+			purge: func(skipPurge bool, self *itemToPurge) error {
+				return p.purgeAPIManagement(ctx, apiManagements, skipPurge)
+			},
+		},
+	} {
+		if item.count > 0 {
+			items = append(items, item)
+		}
+	}
+
+	groupByKind := cognitiveAccountsByKind(cognitiveAccounts)
+	for name, cogAccounts := range groupByKind {
+		items = append(items, itemToPurge{
+			resourceType:      name,
+			count:             len(cogAccounts),
+			cognitiveAccounts: cogAccounts,
+			purge: func(skipPurge bool, self *itemToPurge) error {
+				return p.purgeCognitiveAccounts(ctx, self.cognitiveAccounts, skipPurge)
+			},
+		})
+	}
+
+	return items, nil
+}
+
 func (p *BicepProvider) scopeForTemplate(t azure.ArmTemplate) (infra.Scope, error) {
 	deploymentScope, err := t.TargetScope()
 	if err != nil {
@@ -950,7 +1032,10 @@ func (p *BicepProvider) inferScopeFromEnv() (infra.Scope, error) {
 	}
 }
 
-// Destroys the specified deployment by deleting all azure resources, resource groups & deployments that are referenced.
+// Destroy tears down the deployment by classifying each resource group and
+// deleting only those azd created. External and unknown RGs are preserved.
+// When deployment stacks are active, deletion is delegated to deployment.Delete().
+// Void deployment state is applied only after all intended deletions succeed.
 func (p *BicepProvider) Destroy(
 	ctx context.Context,
 	options provisioning.DestroyOptions,
@@ -1005,120 +1090,113 @@ func (p *BicepProvider) Destroy(
 		return nil, fmt.Errorf("mapping resources to resource groups: %w", err)
 	}
 
-	// If no resources found, we still need to void the deployment state.
-	// This can happen when resources have been manually deleted before running azd down.
-	// Voiding the state ensures that subsequent azd provision commands work correctly
-	// by creating a new empty deployment that becomes the last successful deployment.
-	if len(groupedResources) == 0 {
-		p.console.StopSpinner(ctx, "", input.StepDone)
-		// Call deployment.Delete to void the state even though there are no resources to delete
-		if err := p.destroyDeployment(ctx, deploymentToDelete); err != nil {
-			return nil, fmt.Errorf("voiding deployment state: %w", err)
-		}
-	} else {
-		keyVaults, err := p.getKeyVaultsToPurge(ctx, groupedResources)
-		if err != nil {
-			return nil, fmt.Errorf("getting key vaults to purge: %w", err)
-		}
-
-		managedHSMs, err := p.getManagedHSMsToPurge(ctx, groupedResources)
-		if err != nil {
-			return nil, fmt.Errorf("getting managed hsms to purge: %w", err)
-		}
-
-		appConfigs, err := p.getAppConfigsToPurge(ctx, groupedResources)
-		if err != nil {
-			return nil, fmt.Errorf("getting app configurations to purge: %w", err)
-		}
-
-		apiManagements, err := p.getApiManagementsToPurge(ctx, groupedResources)
-		if err != nil {
-			return nil, fmt.Errorf("getting API managements to purge: %w", err)
-		}
-
-		cognitiveAccounts, err := p.getCognitiveAccountsToPurge(ctx, groupedResources)
-		if err != nil {
-			return nil, fmt.Errorf("getting cognitive accounts to purge: %w", err)
-		}
-
-		logAnalyticsWorkspaces, err := p.getLogAnalyticsWorkspacesToPurge(ctx, groupedResources)
-		if err != nil {
-			return nil, fmt.Errorf("getting log analytics workspaces to purge: %w", err)
-		}
-
+	// Deployment stacks must be checked FIRST, even when groupedResources is empty.
+	// A stack can have zero ARM-visible resources after manual cleanup, but the stack
+	// itself still needs to be deleted via deployment.Delete() to remove deny assignments.
+	if p.isDeploymentStacksEnabled() {
 		p.console.StopSpinner(ctx, "", input.StepDone)
 
-		// Prompt for confirmation before deleting resources
-		if err := p.promptDeletion(ctx, options, groupedResources, len(resourcesToDelete)); err != nil {
-			return nil, err
+		// Collect purge targets BEFORE stack deletion while RGs still exist.
+		// getKeyVaults, getManagedHSMs, etc. query live resources via ARM.
+		purgeItem, err := p.collectPurgeItems(ctx, groupedResources)
+		if err != nil {
+			return nil, fmt.Errorf("collecting purge targets: %w", err)
 		}
 
-		p.console.Message(ctx, output.WithGrayFormat("Deleting your resources can take some time.\n"))
-
-		// Force delete Log Analytics Workspaces first if purge is enabled
-		// This must happen before deleting resource groups since force delete requires the workspace to exist
-		if options.Purge() && len(logAnalyticsWorkspaces) > 0 {
-			if err := p.forceDeleteLogAnalyticsWorkspaces(ctx, logAnalyticsWorkspaces); err != nil {
-				return nil, fmt.Errorf("force deleting log analytics workspaces: %w", err)
-			}
-		}
-
-		if err := p.destroyDeployment(ctx, deploymentToDelete); err != nil {
-			return nil, fmt.Errorf("deleting resource groups: %w", err)
-		}
-
-		keyVaultsPurge := itemToPurge{
-			resourceType: "Key Vault",
-			count:        len(keyVaults),
-			purge: func(skipPurge bool, self *itemToPurge) error {
-				return p.purgeKeyVaults(ctx, keyVaults, skipPurge)
-			},
-		}
-		managedHSMsPurge := itemToPurge{
-			resourceType: "Managed HSM",
-			count:        len(managedHSMs),
-			purge: func(skipPurge bool, self *itemToPurge) error {
-				return p.purgeManagedHSMs(ctx, managedHSMs, skipPurge)
-			},
-		}
-		appConfigsPurge := itemToPurge{
-			resourceType: "App Configuration",
-			count:        len(appConfigs),
-			purge: func(skipPurge bool, self *itemToPurge) error {
-				return p.purgeAppConfigs(ctx, appConfigs, skipPurge)
-			},
-		}
-		aPIManagement := itemToPurge{
-			resourceType: "API Management",
-			count:        len(apiManagements),
-			purge: func(skipPurge bool, self *itemToPurge) error {
-				return p.purgeAPIManagement(ctx, apiManagements, skipPurge)
-			},
-		}
-
-		var purgeItem []itemToPurge
-		for _, item := range []itemToPurge{keyVaultsPurge, managedHSMsPurge, appConfigsPurge, aPIManagement} {
-			if item.count > 0 {
-				purgeItem = append(purgeItem, item)
-			}
-		}
-
-		// cognitive services are grouped by resource group because the name of the resource group is required to purge
-		groupByKind := cognitiveAccountsByKind(cognitiveAccounts)
-		for name, cogAccounts := range groupByKind {
-			addPurgeItem := itemToPurge{
-				resourceType: name,
-				count:        len(cogAccounts),
-				purge: func(skipPurge bool, self *itemToPurge) error {
-					return p.purgeCognitiveAccounts(ctx, self.cognitiveAccounts, skipPurge)
-				},
-				cognitiveAccounts: groupByKind[name],
-			}
-			purgeItem = append(purgeItem, addPurgeItem)
+		if err := p.destroyViaDeploymentDelete(ctx, deploymentToDelete, groupedResources, options); err != nil {
+			return nil, fmt.Errorf("error deleting Azure resources: %w", err)
 		}
 
 		if err := p.purgeItems(ctx, purgeItem, options); err != nil {
 			return nil, fmt.Errorf("purging resources: %w", err)
+		}
+	} else if len(groupedResources) == 0 {
+		// No resources found — void the deployment state directly.
+		// This can happen when resources have been manually deleted before running azd down.
+		// Voiding the state ensures that subsequent azd provision commands work correctly
+		// by creating a new empty deployment that becomes the last successful deployment.
+		p.console.StopSpinner(ctx, "", input.StepDone)
+		if err := p.voidDeploymentState(ctx, deploymentToDelete); err != nil {
+			return nil, fmt.Errorf("voiding deployment state: %w", err)
+		}
+	} else {
+		p.console.StopSpinner(ctx, "", input.StepDone)
+
+		// Step 1: Classify resource groups (no deletion yet).
+		owned, skipped, classifyErr := p.classifyResourceGroups(
+			ctx, deploymentToDelete, groupedResources, options,
+		)
+
+		// If user cancelled the confirmation prompt, show skipped RGs and return without
+		// voiding deployment state or invalidating env keys.
+		if errors.Is(classifyErr, errUserCancelled) {
+			for _, skip := range skipped {
+				p.console.Message(ctx, fmt.Sprintf("  Skipped: %s (%s)", skip.Name, skip.Reason))
+			}
+			return nil, errUserCancelled
+		}
+		if classifyErr != nil {
+			return nil, fmt.Errorf("classifying resource groups: %w", classifyErr)
+		}
+
+		// Step 2: Collect purge targets from owned RGs while they still exist.
+		// Must happen BEFORE deletion because getKeyVaults, getManagedHSMs, etc.
+		// query live resources via ARM which requires the RG to exist.
+		ownedGroupedResources := make(map[string][]*azapi.Resource, len(owned))
+		for _, rgName := range owned {
+			if resources, ok := groupedResources[rgName]; ok {
+				ownedGroupedResources[rgName] = resources
+			}
+		}
+		purgeItem, err := p.collectPurgeItems(ctx, ownedGroupedResources)
+		if err != nil {
+			return nil, fmt.Errorf("collecting purge targets: %w", err)
+		}
+
+		// Step 3: Delete owned RGs.
+		// Log Analytics Workspaces are force-deleted inside deleteRGList
+		// (before each owned RG deletion) when purge is enabled.
+		_, deleteErr := p.deleteRGList(
+			ctx, deploymentToDelete.SubscriptionId(), owned, groupedResources, options,
+		)
+
+		// Void deployment state after successful deletion.
+		// This ensures subsequent azd provision works correctly even if all RGs were skipped.
+		if deleteErr == nil {
+			if err := p.voidDeploymentState(ctx, deploymentToDelete); err != nil {
+				return nil, fmt.Errorf("voiding deployment state: %w", err)
+			}
+		}
+
+		// Show skipped resource groups.
+		for _, skip := range skipped {
+			p.console.Message(ctx, fmt.Sprintf("  Skipped: %s (%s)", skip.Name, skip.Reason))
+		}
+
+		// Step 4: Purge soft-deleted resources.
+		// Always attempt purge even after partial deletion failure — some RGs
+		// may have been deleted successfully, and their soft-deleted resources
+		// (Key Vaults, Managed HSMs, etc.) need purging to avoid name collisions
+		// on reprovisioning. On retry, deleted RGs will be classified as
+		// "already deleted" (Tier 2: 404) and their purge targets would be lost.
+		//
+		// Known limitation: purge items are collected from ALL owned RGs before
+		// deletion. On partial failure, purge attempts may fail for resources in
+		// non-deleted RGs (still live, not soft-deleted). Since purge functions
+		// abort on first error, iteration order may prevent some deleted-RG
+		// resources from being purged. This is strictly better than the previous
+		// behavior (no purge at all on partial failure). A future improvement
+		// could collect purge items per-RG and filter by the deleted set.
+		purgeErr := p.purgeItems(ctx, purgeItem, options)
+
+		// Report deletion errors first — they're the primary failure.
+		// Purge errors after partial deletion are expected (resources in
+		// non-deleted RGs are still live and cannot be purged yet).
+		if deleteErr != nil {
+			return nil, fmt.Errorf("deleting resource groups: %w", deleteErr)
+		}
+		if purgeErr != nil {
+			return nil, fmt.Errorf("purging resources: %w", purgeErr)
 		}
 	}
 
@@ -1179,119 +1257,6 @@ func getDeploymentOptions(deployments []*azapi.ResourceDeployment) []string {
 	}
 
 	return promptValues
-}
-
-func (p *BicepProvider) generateResourcesToDelete(
-	ctx context.Context,
-	groupedResources map[string][]*azapi.Resource,
-) []string {
-	lines := []string{"Resource(s) to be deleted:"}
-
-	for resourceGroupName, resources := range groupedResources {
-		lines = append(lines, "")
-
-		// Resource Group
-		resourceGroupLink := fmt.Sprintf("%s/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
-			p.portalUrlBase,
-			p.env.GetSubscriptionId(),
-			resourceGroupName,
-		)
-
-		lines = append(lines,
-			fmt.Sprintf("%s %s",
-				output.WithHighLightFormat("Resource Group:"),
-				output.WithHyperlink(resourceGroupLink, resourceGroupName),
-			),
-		)
-
-		// Resources in each group
-		for _, resource := range resources {
-			resourceTypeName, err := p.resourceManager.GetResourceTypeDisplayName(
-				ctx,
-				p.env.GetSubscriptionId(),
-				resource.Id,
-				azapi.AzureResourceType(resource.Type),
-			)
-			if err != nil {
-				// Fall back to static lookup if dynamic lookup fails
-				resourceTypeName = azapi.GetResourceTypeDisplayName(azapi.AzureResourceType(resource.Type))
-			}
-			if resourceTypeName == "" {
-				continue
-			}
-
-			lines = append(lines, fmt.Sprintf("  • %s: %s", resourceTypeName, resource.Name))
-		}
-	}
-
-	return append(lines, "\n")
-}
-
-// promptDeletion prompts the user for confirmation before deleting resources.
-// Returns nil if the user confirms, or an error if they deny or an error occurs.
-func (p *BicepProvider) promptDeletion(
-	ctx context.Context,
-	options provisioning.DestroyOptions,
-	groupedResources map[string][]*azapi.Resource,
-	resourceCount int,
-) error {
-	if options.Force() {
-		return nil
-	}
-
-	p.console.MessageUxItem(ctx, &ux.MultilineMessage{
-		Lines: p.generateResourcesToDelete(ctx, groupedResources)},
-	)
-	confirmDestroy, err := p.console.Confirm(ctx, input.ConsoleOptions{
-		Message: fmt.Sprintf(
-			"Total resources to %s: %d, are you sure you want to continue?",
-			output.WithErrorFormat("delete"),
-			resourceCount,
-		),
-		DefaultValue: false,
-	})
-
-	if err != nil {
-		return fmt.Errorf("prompting for delete confirmation: %w", err)
-	}
-
-	if !confirmDestroy {
-		return errors.New("user denied delete confirmation")
-	}
-
-	return nil
-}
-
-// destroyDeployment deletes the azure resources within the deployment and voids the deployment state.
-func (p *BicepProvider) destroyDeployment(
-	ctx context.Context,
-	deployment infra.Deployment,
-) error {
-	err := async.RunWithProgressE(func(progressMessage azapi.DeleteDeploymentProgress) {
-		switch progressMessage.State {
-		case azapi.DeleteResourceStateInProgress:
-			p.console.ShowSpinner(ctx, progressMessage.Message, input.Step)
-		case azapi.DeleteResourceStateSucceeded:
-			p.console.StopSpinner(ctx, progressMessage.Message, input.StepDone)
-		case azapi.DeleteResourceStateFailed:
-			p.console.StopSpinner(ctx, progressMessage.Message, input.StepFailed)
-		}
-	}, func(progress *async.Progress[azapi.DeleteDeploymentProgress]) error {
-		optionsMap, err := convert.ToMap(p.options)
-		if err != nil {
-			return err
-		}
-
-		return deployment.Delete(ctx, optionsMap, progress)
-	})
-
-	if err != nil {
-		return err
-	}
-
-	p.console.Message(ctx, "")
-
-	return nil
 }
 
 func itemsCountAsText(items []itemToPurge) string {

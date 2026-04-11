@@ -22,7 +22,7 @@ import (
 
 const (
 	toolboxesApiVersion    = "v1"
-	toolboxesFeatureHeader = "Toolsets=V1Preview"
+	toolboxesFeatureHeader = "Toolboxes=V1Preview"
 )
 
 // FoundryToolboxClient provides methods for interacting with the Foundry Toolboxes API.

@@ -17,6 +17,63 @@ This guide provides design guidelines and best practices for developing extensio
 - Reuse established parameter patterns across new commands
 - Maintain consistent naming conventions (e.g., `--subscription`, `--name`, `--type`)
 - Provide sensible defaults to reduce cognitive load
+- **Do not reuse reserved global flag names** — see section below
+
+### Reserved Global Flags
+
+azd pre-parses a set of global flags from the command line **before** dispatching to extensions.
+The extension SDK (`NewExtensionRootCommand`) also registers these same flags on every
+extension's root command. Because both azd and the extension parse the same `argv`, extensions
+**must not** register flags that collide with these reserved names.
+
+This is not a new restriction — it has been true since the extension system was designed.
+The SDK now enforces it at startup via `ValidateNoReservedFlagConflicts()`.
+
+#### Reserved flag names
+
+| Long Name | Short | Purpose |
+|-----------|-------|---------|
+| `environment` | `e` | Selects the azd environment |
+| `cwd` | `C` | Sets the working directory |
+| `debug` | — | Enables debug logging |
+| `no-prompt` | — | Non-interactive mode |
+| `output` | `o` | Output format (json, table, none) |
+| `help` | `h` | Command help (cobra built-in) |
+| `docs` | — | Opens command documentation |
+| `trace-log-file` | — | Diagnostics trace file |
+| `trace-log-url` | — | OpenTelemetry trace endpoint |
+
+#### What this means for extension authors
+
+**DO:**
+- Use any flag name that is not in the table above
+- Use any single-letter short flag except `e`, `C`, `o`, `h`
+- Access the environment name via `extCtx.Environment` (the SDK provides it automatically)
+- Ignore reserved flags you don't need — the SDK handles them
+
+**DON'T:**
+- Register `--environment` or `-e` on any subcommand (use `--env-name` or `--target-env` if you need a second environment reference)
+- Register `--debug`, `--cwd`, `--output`, `--help`, or their short forms for a different purpose
+- Assume you can "override" a global flag on a subcommand — azd's pre-parser will consume it first
+
+#### What happens if you collide
+
+If your extension uses the azd SDK (`azdext.Run()`), the SDK validates all flags at startup.
+A collision produces a clear error:
+
+```
+extension defines flags that conflict with reserved azd global flags:
+  - command "custom create": flag --endpoint/-e conflicts with reserved global flag --environment
+    (short flag -e is reserved by azd for --environment)
+Remove or rename these flags to avoid conflicts with azd's global flags.
+Reserved flags: environment, cwd, debug, no-prompt, output, help, docs, trace-log-file, trace-log-url
+```
+
+#### Background
+
+For the full technical specification of how flags flow between azd and extensions, including
+the pre-parsing pipeline, environment variable propagation, and enforcement implementation,
+see [Extension Flag Architecture Spec](../design/extension-flag-architecture.md).
 
 ### 3. **Help and Discoverability**
 

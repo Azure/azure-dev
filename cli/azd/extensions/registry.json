@@ -3177,6 +3177,82 @@
               "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.21-preview/azure-ai-agents-windows-arm64.zip"
             }
           }
+        },
+        {
+          "version": "0.1.22-preview",
+          "requiredAzdVersion": "\u003e1.23.13",
+          "capabilities": [
+            "custom-commands",
+            "lifecycle-events",
+            "mcp-server",
+            "service-target-provider",
+            "metadata"
+          ],
+          "providers": [
+            {
+              "name": "azure.ai.agent",
+              "type": "service-target",
+              "description": "Deploys agents to the Foundry Agent Service"
+            }
+          ],
+          "usage": "azd ai agent \u003ccommand\u003e [options]",
+          "examples": [
+            {
+              "name": "init",
+              "description": "Initialize a new AI agent project.",
+              "usage": "azd ai agent init"
+            }
+          ],
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "81b99ea77776b21ec56bf7b3caef1e667873de24b9f63480acb531d3b9b8c7ab"
+              },
+              "entryPoint": "azure-ai-agents-darwin-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.22-preview/azure-ai-agents-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "3c36c0960222417b104ea40824d08442886ed522a949825365a45d627d8bc8c4"
+              },
+              "entryPoint": "azure-ai-agents-darwin-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.22-preview/azure-ai-agents-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "f8b671f04c394d8fd33f50c705e51d1768bd827b0f534ec957277bf1563701a3"
+              },
+              "entryPoint": "azure-ai-agents-linux-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.22-preview/azure-ai-agents-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "29b3d8d9216c7e6111b8dacca4f9fc3f3471e9e68ab2eda98d309556fe273199"
+              },
+              "entryPoint": "azure-ai-agents-linux-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.22-preview/azure-ai-agents-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "94b1ae318bfd8043d3cff63d72d412389585912b38ee2dbca1fe56e4bbfdf009"
+              },
+              "entryPoint": "azure-ai-agents-windows-amd64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.22-preview/azure-ai-agents-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "2ecda818d9aed29aa83cd5682998aefd6a3b4edae4e4393d4e67e01da2775ef6"
+              },
+              "entryPoint": "azure-ai-agents-windows-arm64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.22-preview/azure-ai-agents-windows-arm64.zip"
+            }
+          }
         }
       ]
     },
@@ -4346,6 +4422,71 @@
               },
               "entryPoint": "azure-appservice-windows-arm64.exe",
               "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-appservice_0.1.0/azure-appservice-windows-arm64.zip"
+            }
+          }
+        },
+        {
+          "version": "0.1.1",
+          "capabilities": [
+            "custom-commands",
+            "metadata"
+          ],
+          "usage": "azd appservice \u003ccommand\u003e [options]",
+          "examples": [
+            {
+              "name": "swap",
+              "description": "Swap deployment slots for an App Service.",
+              "usage": "azd appservice swap --service \u003cservice-name\u003e --src \u003csource-slot\u003e --dst \u003cdestination-slot\u003e"
+            }
+          ],
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "5abda3ef17a4fbcd058e46f5ffc6ab602bf9570cd0a572a53d51754f7a29cdc9"
+              },
+              "entryPoint": "azure-appservice-darwin-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-appservice_0.1.1/azure-appservice-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "db9a0dcd0805d30d0338a259335db0b98d3b8ebb7eb67bae214e8f3b83536340"
+              },
+              "entryPoint": "azure-appservice-darwin-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-appservice_0.1.1/azure-appservice-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "46a10b103030b3124e4326f31894ed5872bfca4f95b83a39cd213e019a49d8d8"
+              },
+              "entryPoint": "azure-appservice-linux-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-appservice_0.1.1/azure-appservice-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "e0dcae29dccc5d8fee4c33656ee7959733b5c6b35e6d4514699452b4757423ac"
+              },
+              "entryPoint": "azure-appservice-linux-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-appservice_0.1.1/azure-appservice-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "aeb86c156e482a823d16f347a91b6263b61b74a57720cff79329a76ce044ea86"
+              },
+              "entryPoint": "azure-appservice-windows-amd64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-appservice_0.1.1/azure-appservice-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "3f55c50e17075a1326aa077a37aecd0aa03413239ce277572ebc55d440ed4fa1"
+              },
+              "entryPoint": "azure-appservice-windows-arm64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-appservice_0.1.1/azure-appservice-windows-arm64.zip"
             }
           }
         }

@@ -4,10 +4,10 @@
 
 Extract the PR number from the commit subject using these patterns (in order):
 
-1. **Squash merge**: look for `(#1234)` in the commit subject line.
-2. **Merge commit**: look for `Merge pull request #1234 from user/branch`.
-3. **Dual PR numbers**: if the commit subject contains multiple `(#NNNN)` patterns (e.g., `Fix auth error (#7233) (#7235)`), use the **last** one as the canonical reference — it is typically the merge/backport PR. Record the first as an alias to prevent re-processing.
-4. **Fallback** (if neither pattern matches): query by commit SHA:
+1. **Dual PR numbers** (check first): if the commit subject contains **two or more** `(#NNNN)` patterns (e.g., `Fix auth error (#7233) (#7235)`), use the **last** one as the canonical reference — it is typically the merge/backport PR. Record the first as an alias to prevent re-processing.
+2. **Squash merge** (single match): if exactly one `(#1234)` pattern is found in the commit subject line, use it as the PR number.
+3. **Merge commit**: look for `Merge pull request #1234 from user/branch`.
+4. **Fallback** (if no pattern matches): query by commit SHA:
    ```bash
    gh api repos/Azure/azure-dev/commits/<SHA>/pulls --jq '.[0].number'
    ```

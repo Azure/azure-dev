@@ -1,7 +1,7 @@
 # Changelog Audit Report
 
-**Generated**: 2026-04-11 15:49 UTC
-**Repo SHA**: 6e48d2ba9
+**Generated**: 2026-04-11 16:26 UTC
+**Repo SHA**: ed79e6687
 **Releases audited**: 20
 **Rules applied**: F1 (dual PR numbers), F2 (PR link validation), F3 (cross-release dedup), F4 (alpha/beta gating), F5 (borderline inclusion), F6 (phantom entries)
 

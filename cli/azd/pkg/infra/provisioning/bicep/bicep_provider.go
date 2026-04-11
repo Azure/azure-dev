@@ -993,11 +993,10 @@ func (p *BicepProvider) collectPurgeItems(
 
 	groupByKind := cognitiveAccountsByKind(cognitiveAccounts)
 	for name, cogAccounts := range groupByKind {
-		_ = cogAccounts // used via groupByKind[name] to preserve per-kind identity
 		items = append(items, itemToPurge{
 			resourceType:      name,
-			count:             len(groupByKind[name]),
-			cognitiveAccounts: groupByKind[name],
+			count:             len(cogAccounts),
+			cognitiveAccounts: cogAccounts,
 			purge: func(skipPurge bool, self *itemToPurge) error {
 				return p.purgeCognitiveAccounts(ctx, self.cognitiveAccounts, skipPurge)
 			},
@@ -1033,7 +1032,10 @@ func (p *BicepProvider) inferScopeFromEnv() (infra.Scope, error) {
 	}
 }
 
-// Destroys the specified deployment by deleting all azure resources, resource groups & deployments that are referenced.
+// Destroy tears down the deployment by classifying each resource group and
+// deleting only those azd created. External and unknown RGs are preserved.
+// When deployment stacks are active, deletion is delegated to deployment.Delete().
+// Void deployment state is applied only after all intended deletions succeed.
 func (p *BicepProvider) Destroy(
 	ctx context.Context,
 	options provisioning.DestroyOptions,
@@ -1131,7 +1133,7 @@ func (p *BicepProvider) Destroy(
 			for _, skip := range skipped {
 				p.console.Message(ctx, fmt.Sprintf("  Skipped: %s (%s)", skip.Name, skip.Reason))
 			}
-			return &provisioning.DestroyResult{}, errUserCancelled
+			return nil, errUserCancelled
 		}
 		if classifyErr != nil {
 			return nil, fmt.Errorf("classifying resource groups: %w", classifyErr)

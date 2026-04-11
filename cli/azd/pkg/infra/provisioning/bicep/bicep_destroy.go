@@ -441,19 +441,6 @@ func (p *BicepProvider) isDeploymentStacksEnabled() bool {
 	return featureManager.IsEnabled(azapi.FeatureDeploymentStacks)
 }
 
-// snapshotPredictedResult is the top-level structure of the Bicep snapshot JSON output,
-// used to extract predictedResources for resource group classification.
-type snapshotPredictedResult struct {
-	PredictedResources []snapshotPredictedResource `json:"predictedResources"`
-}
-
-// snapshotPredictedResource is a minimal representation of a resource from the Bicep snapshot.
-// Only the fields needed for RG classification are included.
-type snapshotPredictedResource struct {
-	Type string `json:"type"`
-	Name string `json:"name"`
-}
-
 // getSnapshotPredictedRGs invokes `bicep snapshot` on the current template and extracts
 // the set of resource group names from predictedResources. Returns a map of lowercased
 // RG names (for case-insensitive lookup), or nil if snapshot is unavailable.
@@ -534,7 +521,7 @@ func (p *BicepProvider) getSnapshotPredictedRGs(ctx context.Context) map[string]
 	}
 
 	// Parse and extract resource group names.
-	var snapshot snapshotPredictedResult
+	var snapshot snapshotResult
 	if err := json.Unmarshal(data, &snapshot); err != nil {
 		log.Printf("snapshot classification: failed to parse snapshot: %v", err)
 		return nil

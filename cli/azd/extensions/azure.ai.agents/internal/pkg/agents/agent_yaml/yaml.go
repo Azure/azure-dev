@@ -61,12 +61,20 @@ const (
 type AuthType string
 
 const (
-	AuthTypeAAD        AuthType = "AAD"
-	AuthTypeApiKey     AuthType = "ApiKey"
-	AuthTypeCustomKeys AuthType = "CustomKeys"
-	AuthTypeNone       AuthType = "None"
-	AuthTypeOAuth2     AuthType = "OAuth2"
-	AuthTypePAT        AuthType = "PAT"
+	AuthTypeAAD              AuthType = "AAD"
+	AuthTypeApiKey           AuthType = "ApiKey"
+	AuthTypeCustomKeys       AuthType = "CustomKeys"
+	AuthTypeNone             AuthType = "None"
+	AuthTypeOAuth2           AuthType = "OAuth2"
+	AuthTypePAT              AuthType = "PAT"
+	AuthTypeUserEntraToken   AuthType = "UserEntraToken"
+	AuthTypeAgenticIdentity  AuthType = "AgenticIdentity"
+	AuthTypeManagedIdentity  AuthType = "ManagedIdentity"
+	AuthTypeServicePrincipal AuthType = "ServicePrincipal"
+	AuthTypeUsernamePassword AuthType = "UsernamePassword"
+	AuthTypeAccessKey        AuthType = "AccessKey"
+	AuthTypeAccountKey       AuthType = "AccountKey"
+	AuthTypeSAS              AuthType = "SAS"
 )
 
 // CategoryKind represents the category of a connection resource.
@@ -611,6 +619,24 @@ type ConnectionResource struct {
 
 	// UseWorkspaceManagedIdentity indicates whether to use workspace managed identity.
 	UseWorkspaceManagedIdentity *bool `json:"useWorkspaceManagedIdentity,omitempty" yaml:"useWorkspaceManagedIdentity,omitempty"` //nolint:lll
+
+	// AuthorizationUrl is the OAuth2 authorization endpoint URL (OAuth2 authType).
+	AuthorizationUrl string `json:"authorizationUrl,omitempty" yaml:"authorizationUrl,omitempty"` //nolint:lll
+
+	// TokenUrl is the OAuth2 token endpoint URL (OAuth2 authType).
+	TokenUrl string `json:"tokenUrl,omitempty" yaml:"tokenUrl,omitempty"`
+
+	// RefreshUrl is the OAuth2 token refresh endpoint URL (OAuth2 authType).
+	RefreshUrl string `json:"refreshUrl,omitempty" yaml:"refreshUrl,omitempty"`
+
+	// Scopes is the list of OAuth2 scopes to request (OAuth2 authType).
+	Scopes []string `json:"scopes,omitempty" yaml:"scopes,omitempty"`
+
+	// Audience is the token audience for UserEntraToken / AgenticIdentity auth types.
+	Audience string `json:"audience,omitempty" yaml:"audience,omitempty"`
+
+	// ConnectorName is the managed connector name for OAuth2 managed connectors.
+	ConnectorName string `json:"connectorName,omitempty" yaml:"connectorName,omitempty"`
 }
 
 // Template Template model for defining prompt templates.

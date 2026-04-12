@@ -369,7 +369,7 @@
                             "required": ["project"],
                             "properties": {
                                 "config": {
-                                    "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/refs/heads/main/cli/azd/extensions/azure.ai.agents/schemas/azure.ai.agent.json",
+                                    "$ref": "#/definitions/aiAgentConfig",
                                     "title": "The Azure AI Agent configuration.",
                                     "description": "Optional. Provides additional configuration for Azure AI Agent deployment."
                                 },
@@ -1312,6 +1312,221 @@
             "required": [
                 "deployment"
             ]
+        },
+        "aiAgentConfig": {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "title": "Azure AI Agent Service Target Configuration",
+            "description": "Custom configuration for the Azure AI Agent Service target",
+            "type": "object",
+            "properties": {
+                "env": {
+                    "type": "object",
+                    "description": "Environment variables as key-value pairs",
+                    "additionalProperties": { "type": "string" }
+                },
+                "container": { "$ref": "#/definitions/aiAgentContainerSettings" },
+                "deployments": {
+                    "type": "array",
+                    "description": "List of model deployments.",
+                    "items": { "$ref": "#/definitions/aiAgentDeployment" }
+                },
+                "resources": {
+                    "type": "array",
+                    "description": "List of external resources for agent execution.",
+                    "items": { "$ref": "#/definitions/aiAgentResource" }
+                },
+                "toolConnections": {
+                    "type": "array",
+                    "description": "List of tool connections to external services (MCP tools, A2A, custom APIs) created during provisioning.",
+                    "items": { "$ref": "#/definitions/aiAgentToolConnection" }
+                },
+                "toolboxes": {
+                    "type": "array",
+                    "description": "List of toolboxes (Foundry Toolsets) to deploy.",
+                    "items": { "$ref": "#/definitions/aiAgentToolbox" }
+                },
+                "connections": {
+                    "type": "array",
+                    "description": "List of project connections to create via Bicep provisioning.",
+                    "items": { "$ref": "#/definitions/aiAgentConnection" }
+                },
+                "startupCommand": {
+                    "type": "string",
+                    "description": "Command to start the agent server (e.g., 'python main.py'). Used by 'azd ai agent run' for local development."
+                }
+            },
+            "additionalProperties": false
+        },
+        "aiAgentContainerSettings": {
+            "type": "object",
+            "description": "Container configuration for the Azure AI Agent Service target",
+            "properties": {
+                "resources": { "$ref": "#/definitions/aiAgentResourceSettings" },
+                "scale": { "$ref": "#/definitions/aiAgentScaleSettings" }
+            },
+            "additionalProperties": false
+        },
+        "aiAgentResourceSettings": {
+            "type": "object",
+            "description": "Resource configuration for the Azure AI Agent Service target",
+            "properties": {
+                "memory": {
+                    "type": "string",
+                    "description": "Memory allocation (e.g., '1Gi', '512Mi')",
+                    "pattern": "^[0-9]+(\\.[0-9]+)?(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?$"
+                },
+                "cpu": {
+                    "type": "string",
+                    "description": "CPU allocation (e.g., '1', '500m')",
+                    "pattern": "^[0-9]+(\\.[0-9]+)?m?$"
+                }
+            },
+            "additionalProperties": false
+        },
+        "aiAgentScaleSettings": {
+            "type": "object",
+            "description": "Scaling configuration for the Azure AI Agent Service target",
+            "properties": {
+                "minReplicas": {
+                    "type": "integer",
+                    "description": "Minimum number of replicas",
+                    "minimum": 0
+                },
+                "maxReplicas": {
+                    "type": "integer",
+                    "description": "Maximum number of replicas",
+                    "minimum": 1
+                }
+            },
+            "additionalProperties": false
+        },
+        "aiAgentDeployment": {
+            "type": "object",
+            "description": "A single model deployment.",
+            "properties": {
+                "name": { "type": "string", "description": "Name of the model deployment." },
+                "model": { "$ref": "#/definitions/aiAgentDeploymentModel" },
+                "sku": { "$ref": "#/definitions/aiAgentDeploymentSku" }
+            },
+            "required": ["name", "model", "sku"],
+            "additionalProperties": false
+        },
+        "aiAgentDeploymentModel": {
+            "type": "object",
+            "description": "Model configuration for a model deployment.",
+            "properties": {
+                "name": { "type": "string", "description": "Model name." },
+                "format": { "type": "string", "description": "Model format." },
+                "version": { "type": "string", "description": "Model version." }
+            },
+            "required": ["name", "format", "version"],
+            "additionalProperties": false
+        },
+        "aiAgentDeploymentSku": {
+            "type": "object",
+            "description": "SKU configuration for a deployment.",
+            "properties": {
+                "name": { "type": "string", "description": "SKU name." },
+                "capacity": { "type": "integer", "description": "SKU capacity." }
+            },
+            "required": ["name", "capacity"],
+            "additionalProperties": false
+        },
+        "aiAgentResource": {
+            "type": "object",
+            "description": "External resource for agent execution.",
+            "properties": {
+                "resource": { "type": "string", "description": "Resource identifier." },
+                "connectionName": { "type": "string", "description": "Connection name for the resource." }
+            },
+            "required": ["resource", "connectionName"],
+            "additionalProperties": false
+        },
+        "aiAgentToolConnection": {
+            "type": "object",
+            "description": "A connection to an external service (MCP tool, A2A, custom API) created via Bicep during provisioning.",
+            "properties": {
+                "name": { "type": "string", "description": "Connection name used as project_connection_id in toolbox tools." },
+                "category": { "type": "string", "description": "Connection category (e.g., 'RemoteTool')." },
+                "target": { "type": "string", "description": "Target endpoint URL for the connection." },
+                "authType": {
+                    "type": "string",
+                    "description": "Authentication type for the connection.",
+                    "enum": ["AAD", "AccessKey", "AccountKey", "ApiKey", "CustomKeys", "ManagedIdentity", "None", "OAuth2", "PAT", "ServicePrincipal", "UsernamePassword"]
+                },
+                "credentials": {
+                    "type": "object",
+                    "description": "Credentials for the connection. Values may contain ${ENV_VAR} references resolved at provision time."
+                },
+                "metadata": {
+                    "type": "object",
+                    "description": "Additional metadata for the connection.",
+                    "additionalProperties": { "type": "string" }
+                }
+            },
+            "required": ["name", "category", "target", "authType"],
+            "additionalProperties": false
+        },
+        "aiAgentToolbox": {
+            "type": "object",
+            "description": "A reusable collection of tools deployed as a Foundry Toolset.",
+            "properties": {
+                "name": { "type": "string", "description": "Name of the toolbox." },
+                "description": { "type": "string", "description": "Description of the toolbox." },
+                "tools": {
+                    "type": "array",
+                    "description": "List of tools in the toolbox. Each tool is an object with properties passed to the Foundry Toolsets API.",
+                    "items": { "type": "object" }
+                }
+            },
+            "required": ["name", "tools"],
+            "additionalProperties": false
+        },
+        "aiAgentConnection": {
+            "type": "object",
+            "description": "A project connection matching the Bicep ConnectionPropertiesV2 spec.",
+            "properties": {
+                "name": { "type": "string", "description": "Connection name.", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{2,32}$" },
+                "category": { "type": "string", "description": "Connection category (e.g., 'CustomKeys', 'AzureOpenAI', 'CognitiveSearch', 'RemoteTool')." },
+                "target": { "type": "string", "description": "Target endpoint URL for the connection." },
+                "authType": {
+                    "type": "string",
+                    "description": "Authentication type.",
+                    "enum": ["AAD", "AccessKey", "AccountKey", "AgenticIdentity", "ApiKey", "CustomKeys", "ManagedIdentity", "None", "OAuth2", "PAT", "SAS", "ServicePrincipal", "UsernamePassword", "UserEntraToken"]
+                },
+                "credentials": {
+                    "type": "object",
+                    "description": "Authentication credentials. Structure depends on authType."
+                },
+                "metadata": {
+                    "type": "object",
+                    "description": "Additional metadata as key-value pairs.",
+                    "additionalProperties": { "type": "string" }
+                },
+                "authorizationUrl": { "type": "string", "description": "OAuth2 authorization endpoint URL (required for OAuth2 authType)." },
+                "tokenUrl": { "type": "string", "description": "OAuth2 token endpoint URL (required for OAuth2 authType)." },
+                "refreshUrl": { "type": "string", "description": "OAuth2 token refresh URL (optional for OAuth2 authType)." },
+                "scopes": {
+                    "type": "array",
+                    "description": "OAuth2 scopes to request (optional for OAuth2 authType).",
+                    "items": { "type": "string" }
+                },
+                "audience": { "type": "string", "description": "Token audience for AAD/ManagedIdentity/AgenticIdentity/UserEntraToken auth types." },
+                "connectorName": { "type": "string", "description": "Connector name for AgenticIdentity auth type." },
+                "expiryTime": { "type": "string", "description": "Connection expiry time." },
+                "isSharedToAll": { "type": "boolean", "description": "Whether the connection is shared to all users." },
+                "sharedUserList": {
+                    "type": "array",
+                    "description": "List of users the connection is shared with.",
+                    "items": { "type": "string" }
+                },
+                "peRequirement": { "type": "string", "description": "Private endpoint requirement." },
+                "peStatus": { "type": "string", "description": "Private endpoint status." },
+                "useWorkspaceManagedIdentity": { "type": "boolean", "description": "Whether to use workspace managed identity." },
+                "error": { "type": "string", "description": "Error information." }
+            },
+            "required": ["name", "category", "target", "authType"],
+            "additionalProperties": false
         },
         "appServiceResource": {
             "type": "object",

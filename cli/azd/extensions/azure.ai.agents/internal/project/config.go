@@ -133,6 +133,12 @@ type Connection struct {
 	PeStatus                    string            `json:"peStatus,omitempty"`
 	UseWorkspaceManagedIdentity *bool             `json:"useWorkspaceManagedIdentity,omitempty"`
 	Error                       string            `json:"error,omitempty"`
+	AuthorizationUrl            string            `json:"authorizationUrl,omitempty"`
+	TokenUrl                    string            `json:"tokenUrl,omitempty"`
+	RefreshUrl                  string            `json:"refreshUrl,omitempty"`
+	Scopes                      []string          `json:"scopes,omitempty"`
+	Audience                    string            `json:"audience,omitempty"`
+	ConnectorName               string            `json:"connectorName,omitempty"`
 }
 
 // ToolConnection represents a connection to an external service (MCP tool, A2A, custom API)

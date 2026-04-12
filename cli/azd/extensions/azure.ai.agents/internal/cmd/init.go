@@ -1883,6 +1883,12 @@ func extractConnectionConfigs(manifest *agent_yaml.AgentManifest) ([]project.Con
 			PeStatus:                    connResource.PeStatus,
 			UseWorkspaceManagedIdentity: connResource.UseWorkspaceManagedIdentity,
 			Error:                       connResource.Error,
+			AuthorizationUrl:            connResource.AuthorizationUrl,
+			TokenUrl:                    connResource.TokenUrl,
+			RefreshUrl:                  connResource.RefreshUrl,
+			Scopes:                      connResource.Scopes,
+			Audience:                    connResource.Audience,
+			ConnectorName:               connResource.ConnectorName,
 		}
 
 		// Surface credentials.type to top-level authType when not explicitly set.

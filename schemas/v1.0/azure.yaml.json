@@ -877,7 +877,8 @@
                             "dir": false,
                             "interactive": false,
                             "continueOnError": false,
-                            "secrets": false
+                            "secrets": false,
+                            "config": false
                         }
                     }
                 },
@@ -963,6 +964,21 @@
                         "properties": {
                             "config": {
                                 "$ref": "#/definitions/dotnetHookConfig"
+                            }
+                        }
+                    }
+                },
+                {
+                    "if": {
+                        "properties": {
+                            "kind": { "enum": ["sh", "pwsh"] }
+                        },
+                        "required": ["kind"]
+                    },
+                    "then": {
+                        "properties": {
+                            "config": {
+                                "$ref": "#/definitions/emptyHookConfig"
                             }
                         }
                     }
@@ -1869,6 +1885,12 @@
                     "description": "The target framework moniker for building and running the hook script (e.g., net8.0, net10.0)."
                 }
             }
+        },
+        "emptyHookConfig": {
+            "type": "object",
+            "title": "Shell hook configuration",
+            "description": "Shell executors (sh, pwsh) do not currently support config properties.",
+            "additionalProperties": false
         }
     }
 }

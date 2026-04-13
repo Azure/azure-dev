@@ -40,7 +40,7 @@ func Test_GetAllHookConfigs(t *testing.T) {
 		ensureScriptsExist(t, hooksMap)
 
 		mockCommandRunner := mockexec.NewMockCommandRunner()
-		hooksManager := NewHooksManager(tempDir, tempDir, mockCommandRunner)
+		hooksManager := NewHooksManager(HooksManagerOptions{Cwd: tempDir, ProjectDir: tempDir}, mockCommandRunner)
 		validHooks, err := hooksManager.GetAll(hooksMap)
 
 		require.Len(t, validHooks, len(hooksMap))
@@ -67,7 +67,7 @@ func Test_GetAllHookConfigs(t *testing.T) {
 		ensureScriptsExist(t, hooksMap)
 
 		mockCommandRunner := mockexec.NewMockCommandRunner()
-		hooksManager := NewHooksManager(tempDir, tempDir, mockCommandRunner)
+		hooksManager := NewHooksManager(HooksManagerOptions{Cwd: tempDir, ProjectDir: tempDir}, mockCommandRunner)
 		validHooks, err := hooksManager.GetAll(hooksMap)
 
 		require.Nil(t, validHooks)
@@ -81,7 +81,7 @@ func Test_GetAllHookConfigs(t *testing.T) {
 		}
 
 		mockCommandRunner := mockexec.NewMockCommandRunner()
-		hooksManager := NewHooksManager(tempDir, tempDir, mockCommandRunner)
+		hooksManager := NewHooksManager(HooksManagerOptions{Cwd: tempDir, ProjectDir: tempDir}, mockCommandRunner)
 		validHooks, err := hooksManager.GetAll(hooksMap)
 
 		require.NoError(t, err)
@@ -111,7 +111,7 @@ func Test_GetByParams(t *testing.T) {
 		ensureScriptsExist(t, hooksMap)
 
 		mockCommandRunner := mockexec.NewMockCommandRunner()
-		hooksManager := NewHooksManager(tempDir, tempDir, mockCommandRunner)
+		hooksManager := NewHooksManager(HooksManagerOptions{Cwd: tempDir, ProjectDir: tempDir}, mockCommandRunner)
 		validHooks, err := hooksManager.GetByParams(hooksMap, HookTypePre, "init")
 
 		require.Len(t, validHooks, 1)
@@ -139,7 +139,7 @@ func Test_GetByParams(t *testing.T) {
 		ensureScriptsExist(t, hooksMap)
 
 		mockCommandRunner := mockexec.NewMockCommandRunner()
-		hooksManager := NewHooksManager(tempDir, tempDir, mockCommandRunner)
+		hooksManager := NewHooksManager(HooksManagerOptions{Cwd: tempDir, ProjectDir: tempDir}, mockCommandRunner)
 		validHooks, err := hooksManager.GetByParams(hooksMap, HookTypePre, "init")
 
 		require.Nil(t, validHooks)
@@ -220,7 +220,7 @@ func Test_ValidateHooks_PythonInstalled(t *testing.T) {
 		return strings.Contains(cmd, "--version")
 	}).Respond(exec.RunResult{Stdout: "Python 3.12.0"})
 
-	mgr := NewHooksManager(tempDir, tempDir, mockRunner)
+	mgr := NewHooksManager(HooksManagerOptions{Cwd: tempDir, ProjectDir: tempDir}, mockRunner)
 	result := mgr.ValidateHooks(t.Context(), hooksMap)
 
 	// No runtime warnings should be present.
@@ -260,7 +260,7 @@ func Test_ValidateHooks_PythonNotInstalled(t *testing.T) {
 	mockRunner.MockToolInPath("python", osexec.ErrNotFound)
 	mockRunner.MockToolInPath("python3", osexec.ErrNotFound)
 
-	mgr := NewHooksManager(tempDir, tempDir, mockRunner)
+	mgr := NewHooksManager(HooksManagerOptions{Cwd: tempDir, ProjectDir: tempDir}, mockRunner)
 	result := mgr.ValidateHooks(t.Context(), hooksMap)
 
 	// Expect a warning about missing Python.
@@ -318,7 +318,7 @@ func Test_ValidateHooks_ShellHookNoValidation(t *testing.T) {
 	// pwsh available so PowerShell warning doesn't fire.
 	mockRunner.MockToolInPath("pwsh", nil)
 
-	mgr := NewHooksManager(tempDir, tempDir, mockRunner)
+	mgr := NewHooksManager(HooksManagerOptions{Cwd: tempDir, ProjectDir: tempDir}, mockRunner)
 	result := mgr.ValidateHooks(t.Context(), hooksMap)
 
 	// No runtime warnings for Bash/PowerShell hooks.
@@ -370,7 +370,7 @@ func Test_ValidateHooks_MixedHooks(t *testing.T) {
 	// pwsh available — no PowerShell warning.
 	mockRunner.MockToolInPath("pwsh", nil)
 
-	mgr := NewHooksManager(tempDir, tempDir, mockRunner)
+	mgr := NewHooksManager(HooksManagerOptions{Cwd: tempDir, ProjectDir: tempDir}, mockRunner)
 	result := mgr.ValidateHooks(t.Context(), hooksMap)
 
 	// Exactly one runtime warning (Python), no shell warnings.

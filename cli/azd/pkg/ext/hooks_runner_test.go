@@ -93,7 +93,7 @@ func Test_Hooks_Execute(t *testing.T) {
 			return exec.NewRunResult(0, "", ""), nil
 		})
 
-		hooksManager := NewHooksManager(cwd, cwd, mockContext.CommandRunner)
+		hooksManager := NewHooksManager(HooksManagerOptions{Cwd: cwd, ProjectDir: cwd}, mockContext.CommandRunner)
 		runner := NewHooksRunner(
 			hooksManager,
 			mockContext.CommandRunner,
@@ -131,7 +131,7 @@ func Test_Hooks_Execute(t *testing.T) {
 			return exec.NewRunResult(0, "", ""), nil
 		})
 
-		hooksManager := NewHooksManager(cwd, cwd, mockContext.CommandRunner)
+		hooksManager := NewHooksManager(HooksManagerOptions{Cwd: cwd, ProjectDir: cwd}, mockContext.CommandRunner)
 		runner := NewHooksRunner(
 			hooksManager,
 			mockContext.CommandRunner,
@@ -169,7 +169,7 @@ func Test_Hooks_Execute(t *testing.T) {
 			return exec.NewRunResult(0, "", ""), nil
 		})
 
-		hooksManager := NewHooksManager(cwd, cwd, mockContext.CommandRunner)
+		hooksManager := NewHooksManager(HooksManagerOptions{Cwd: cwd, ProjectDir: cwd}, mockContext.CommandRunner)
 		runner := NewHooksRunner(
 			hooksManager,
 			mockContext.CommandRunner,
@@ -201,7 +201,7 @@ func Test_Hooks_Execute(t *testing.T) {
 			return exec.NewRunResult(0, "", ""), nil
 		})
 
-		hooksManager := NewHooksManager(cwd, cwd, mockContext.CommandRunner)
+		hooksManager := NewHooksManager(HooksManagerOptions{Cwd: cwd, ProjectDir: cwd}, mockContext.CommandRunner)
 		runner := NewHooksRunner(
 			hooksManager,
 			mockContext.CommandRunner,
@@ -252,7 +252,7 @@ func Test_Hooks_Execute(t *testing.T) {
 			return exec.NewRunResult(0, "", ""), nil
 		})
 
-		hooksManager := NewHooksManager(cwd, cwd, mockContext.CommandRunner)
+		hooksManager := NewHooksManager(HooksManagerOptions{Cwd: cwd, ProjectDir: cwd}, mockContext.CommandRunner)
 		runner := NewHooksRunner(
 			hooksManager,
 			mockContext.CommandRunner,
@@ -330,7 +330,7 @@ func Test_Hooks_Validation(t *testing.T) {
 			return exec.NewRunResult(0, "", ""), nil
 		})
 
-		hooksManager := NewHooksManager(cwd, cwd, mockContext.CommandRunner)
+		hooksManager := NewHooksManager(HooksManagerOptions{Cwd: cwd, ProjectDir: cwd}, mockContext.CommandRunner)
 		runner := NewHooksRunner(
 			hooksManager, mockContext.CommandRunner, envManager,
 			mockContext.Console, cwd, hooksMap, env, mockContext.Container,
@@ -362,7 +362,7 @@ func Test_Hooks_Validation(t *testing.T) {
 			return exec.NewRunResult(0, "", ""), nil
 		})
 
-		hooksManager := NewHooksManager(cwd, cwd, mockContext.CommandRunner)
+		hooksManager := NewHooksManager(HooksManagerOptions{Cwd: cwd, ProjectDir: cwd}, mockContext.CommandRunner)
 		runner := NewHooksRunner(
 			hooksManager, mockContext.CommandRunner, envManager,
 			mockContext.Console, cwd, hooksMap, env, mockContext.Container,
@@ -392,7 +392,7 @@ func Test_Hooks_Validation(t *testing.T) {
 			return exec.NewRunResult(0, "", ""), nil
 		})
 
-		hooksManager := NewHooksManager(cwd, cwd, mockContext.CommandRunner)
+		hooksManager := NewHooksManager(HooksManagerOptions{Cwd: cwd, ProjectDir: cwd}, mockContext.CommandRunner)
 		runner := NewHooksRunner(
 			hooksManager, mockContext.CommandRunner, envManager,
 			mockContext.Console, cwd, hooksMap, env, mockContext.Container,
@@ -413,7 +413,7 @@ func Test_Hooks_Validation(t *testing.T) {
 
 		mockContext := mocks.NewMockContext(context.Background())
 		registerHookExecutors(mockContext)
-		hooksManager := NewHooksManager(cwd, cwd, mockContext.CommandRunner)
+		hooksManager := NewHooksManager(HooksManagerOptions{Cwd: cwd, ProjectDir: cwd}, mockContext.CommandRunner)
 		runner := NewHooksRunner(
 			hooksManager, mockContext.CommandRunner, envManager,
 			mockContext.Console, cwd, hooksMap, env, mockContext.Container,
@@ -477,7 +477,7 @@ func Test_ExecHook_NonShellHooks(t *testing.T) {
 			return exec.NewRunResult(0, "", ""), nil
 		})
 
-		hooksManager := NewHooksManager(cwd, cwd, mockContext.CommandRunner)
+		hooksManager := NewHooksManager(HooksManagerOptions{Cwd: cwd, ProjectDir: cwd}, mockContext.CommandRunner)
 		runner := NewHooksRunner(
 			hooksManager,
 			mockContext.CommandRunner,
@@ -533,7 +533,7 @@ func Test_ExecHook_NonShellHooks(t *testing.T) {
 			return exec.NewRunResult(0, "", ""), nil
 		})
 
-		hooksManager := NewHooksManager(cwd, cwd, mockContext.CommandRunner)
+		hooksManager := NewHooksManager(HooksManagerOptions{Cwd: cwd, ProjectDir: cwd}, mockContext.CommandRunner)
 		runner := NewHooksRunner(
 			hooksManager,
 			mockContext.CommandRunner,
@@ -589,7 +589,7 @@ func Test_ExecHook_NonShellHooks(t *testing.T) {
 			return exec.NewRunResult(1, "", ""), fmt.Errorf("python not found")
 		})
 
-		hooksManager := NewHooksManager(cwd, cwd, mockContext.CommandRunner)
+		hooksManager := NewHooksManager(HooksManagerOptions{Cwd: cwd, ProjectDir: cwd}, mockContext.CommandRunner)
 		runner := NewHooksRunner(
 			hooksManager,
 			mockContext.CommandRunner,
@@ -651,7 +651,7 @@ func Test_ExecHook_NonShellHooks(t *testing.T) {
 			return exec.NewRunResult(1, "", "error"), fmt.Errorf("script failed")
 		})
 
-		hooksManager := NewHooksManager(cwd, cwd, mockContext.CommandRunner)
+		hooksManager := NewHooksManager(HooksManagerOptions{Cwd: cwd, ProjectDir: cwd}, mockContext.CommandRunner)
 		runner := NewHooksRunner(
 			hooksManager,
 			mockContext.CommandRunner,
@@ -720,7 +720,7 @@ func Test_ExecHook_NonShellHooks(t *testing.T) {
 			return exec.NewRunResult(0, "", ""), nil
 		})
 
-		hooksManager := NewHooksManager(cwd, cwd, mockContext.CommandRunner)
+		hooksManager := NewHooksManager(HooksManagerOptions{Cwd: cwd, ProjectDir: cwd}, mockContext.CommandRunner)
 		runner := NewHooksRunner(
 			hooksManager,
 			mockContext.CommandRunner,
@@ -834,9 +834,7 @@ func Test_ExecHook_DirRunResolution(t *testing.T) {
 			},
 		)
 
-		hooksManager := NewHooksManager(
-			cwd, cwd, mockContext.CommandRunner,
-		)
+		hooksManager := NewHooksManager(HooksManagerOptions{Cwd: cwd, ProjectDir: cwd}, mockContext.CommandRunner)
 		runner := NewHooksRunner(
 			hooksManager,
 			mockContext.CommandRunner,
@@ -925,9 +923,7 @@ func Test_ExecHook_DirRunResolution(t *testing.T) {
 			},
 		)
 
-		hooksManager := NewHooksManager(
-			cwd, cwd, mockContext.CommandRunner,
-		)
+		hooksManager := NewHooksManager(HooksManagerOptions{Cwd: cwd, ProjectDir: cwd}, mockContext.CommandRunner)
 		runner := NewHooksRunner(
 			hooksManager,
 			mockContext.CommandRunner,
@@ -1024,9 +1020,7 @@ func Test_ExecHook_DirRunResolution(t *testing.T) {
 			},
 		)
 
-		hooksManager := NewHooksManager(
-			cwd, cwd, mockContext.CommandRunner,
-		)
+		hooksManager := NewHooksManager(HooksManagerOptions{Cwd: cwd, ProjectDir: cwd}, mockContext.CommandRunner)
 		runner := NewHooksRunner(
 			hooksManager,
 			mockContext.CommandRunner,

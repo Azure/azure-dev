@@ -23,6 +23,12 @@ import (
 
 type HookFilterPredicateFn func(scriptName string, hookConfig *HookConfig) bool
 
+// HooksManagerOptions configures a new [HooksManager].
+type HooksManagerOptions struct {
+	Cwd        string // Working directory for resolving relative hook paths
+	ProjectDir string // Project root (azure.yaml location) for security boundary
+}
+
 // HooksManager enables support to invoke lifecycle hooks before & after
 // commands. Hooks can be invoked at the project or service level.
 type HooksManager struct {
@@ -32,15 +38,16 @@ type HooksManager struct {
 }
 
 // NewHooksManager creates a new [HooksManager] instance.
-// When `cwd` is empty defaults to current shell working directory.
-// `projectDir` is the project root directory (where azure.yaml
-// lives), used as the security boundary for path containment.
-// When empty, `cwd` is used as the boundary.
+// When [HooksManagerOptions.Cwd] is empty defaults to current shell
+// working directory.
+// [HooksManagerOptions.ProjectDir] is the project root directory
+// (where azure.yaml lives), used as the security boundary for path
+// containment. When empty, Cwd is used as the boundary.
 func NewHooksManager(
-	cwd string,
-	projectDir string,
+	options HooksManagerOptions,
 	commandRunner exec.CommandRunner,
 ) *HooksManager {
+	cwd := options.Cwd
 	if cwd == "" {
 		osWd, err := os.Getwd()
 		if err != nil {
@@ -50,6 +57,7 @@ func NewHooksManager(
 		cwd = osWd
 	}
 
+	projectDir := options.ProjectDir
 	if projectDir == "" {
 		projectDir = cwd
 	}

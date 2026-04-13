@@ -73,7 +73,7 @@ func buildRunner(
 	envManager.On("Reload", mock.Anything, env).Return(nil)
 
 	hooksManager := NewHooksManager(
-		cwd, cwd, mockCtx.CommandRunner,
+		HooksManagerOptions{Cwd: cwd, ProjectDir: cwd}, mockCtx.CommandRunner,
 	)
 
 	return NewHooksRunner(

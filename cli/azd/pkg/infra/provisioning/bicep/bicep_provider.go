@@ -2454,6 +2454,10 @@ func (p *BicepProvider) checkAiModelQuota(
 			loc = fallbackLocation
 		}
 		if loc == "" {
+			log.Printf(
+				"skipping quota check for deployment %q: "+
+					"could not determine location",
+				dep.Name)
 			continue
 		}
 		byLocation[loc] = append(byLocation[loc], dep)
@@ -2598,7 +2602,8 @@ func resolveUsageName(catalogModels []ai.AiModel, dep cognitiveDeploymentInfo) s
 		}
 		for _, version := range model.Versions {
 			// If the template specifies a version, match it; otherwise accept any version.
-			if dep.ModelVersion != "" && version.Version != dep.ModelVersion {
+			if dep.ModelVersion != "" &&
+				!strings.EqualFold(version.Version, dep.ModelVersion) {
 				continue
 			}
 			for _, sku := range version.Skus {

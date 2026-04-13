@@ -315,3 +315,88 @@ func mustArmField[T any](v T) armField[T] {
 	}
 	return f
 }
+
+func TestResolveUsageName_FormatFiltering(t *testing.T) {
+	catalog := []ai.AiModel{
+		{
+			Name:   "gpt-4o",
+			Format: "OpenAI",
+			Versions: []ai.AiModelVersion{
+				{
+					Version: "2024-08-06",
+					Skus: []ai.AiModelSku{
+						{
+							Name:      "Standard",
+							UsageName: "OpenAI.Standard.gpt-4o",
+						},
+					},
+				},
+			},
+		},
+		{
+			Name:   "gpt-4o",
+			Format: "CustomFormat",
+			Versions: []ai.AiModelVersion{
+				{
+					Version: "1.0",
+					Skus: []ai.AiModelSku{
+						{
+							Name:      "Standard",
+							UsageName: "Custom.Standard.gpt-4o",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	tests := []struct {
+		name string
+		dep  cognitiveDeploymentInfo
+		want string
+	}{
+		{
+			name: "filters by format",
+			dep: cognitiveDeploymentInfo{
+				ModelName:   "gpt-4o",
+				ModelFormat: "OpenAI",
+				SkuName:     "Standard",
+			},
+			want: "OpenAI.Standard.gpt-4o",
+		},
+		{
+			name: "different format returns different usage",
+			dep: cognitiveDeploymentInfo{
+				ModelName:   "gpt-4o",
+				ModelFormat: "CustomFormat",
+				SkuName:     "Standard",
+			},
+			want: "Custom.Standard.gpt-4o",
+		},
+		{
+			name: "empty format matches any",
+			dep: cognitiveDeploymentInfo{
+				ModelName: "gpt-4o",
+				SkuName:   "Standard",
+			},
+			want: "OpenAI.Standard.gpt-4o",
+		},
+		{
+			name: "case insensitive version match",
+			dep: cognitiveDeploymentInfo{
+				ModelName:    "gpt-4o",
+				ModelFormat:  "OpenAI",
+				SkuName:      "Standard",
+				ModelVersion: "2024-08-06",
+			},
+			want: "OpenAI.Standard.gpt-4o",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := resolveUsageName(catalog, tt.dep)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}

@@ -145,7 +145,7 @@
         "authType": {
           "type": "string",
           "description": "Authentication type for the connection.",
-          "enum": ["AAD", "AccessKey", "AccountKey", "ApiKey", "CustomKeys", "ProjectManagedIdentity", "None", "OAuth2", "PAT", "ServicePrincipal", "UsernamePassword"]
+          "enum": ["AAD", "AccessKey", "AccountKey", "ApiKey", "CustomKeys", "ManagedIdentity", "None", "OAuth2", "PAT", "ServicePrincipal", "UsernamePassword", "ProjectManagedIdentity", "EntraUserToken",]
         },
         "credentials": {
           "type": "object",
@@ -185,7 +185,7 @@
         "authType": {
           "type": "string",
           "description": "Authentication type.",
-          "enum": ["AAD", "AccessKey", "AccountKey", "AgenticIdentity", "ApiKey", "CustomKeys", "ProjectManagedIdentity", "None", "OAuth2", "PAT", "SAS", "ServicePrincipal", "UsernamePassword", "UserEntraToken"]
+          "enum": ["AAD", "AccessKey", "AccountKey", "AgenticIdentity", "ApiKey", "CustomKeys", "ManagedIdentity", "None", "OAuth2", "PAT", "SAS", "ServicePrincipal", "UsernamePassword", "UserEntraToken", "ProjectManagedIdentity"]
         },
         "credentials": {
           "type": "object",

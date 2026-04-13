@@ -266,7 +266,7 @@ func TestHookConfig_ValidateKindResolution(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			config := tt.config
 			cwd := t.TempDir()
-			config.cwd = cwd
+			config.inputCwd = cwd
 
 			if tt.createFile != "" {
 				filePath := filepath.Join(cwd, tt.createFile)
@@ -365,7 +365,7 @@ func TestHookConfig_ValidateDirInference(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			config := tt.config
 			cwd := t.TempDir()
-			config.cwd = cwd
+			config.inputCwd = cwd
 
 			if tt.createFile != "" {
 				filePath := filepath.Join(cwd, tt.createFile)
@@ -390,8 +390,8 @@ func TestHookConfig_ValidateDirRunResolution(t *testing.T) {
 		name         string
 		config       HookConfig
 		createFiles  []string // paths relative to cwd
-		expectPath   string   // expected hc.path (empty = inline)
-		expectScript string   // expected hc.script (empty = file)
+		expectPath   string   // expected hc.relativeScriptPath (empty = inline)
+		expectScript string   // expected hc.inlineScript (empty = file)
 		expectError  string
 	}{
 		{
@@ -497,7 +497,7 @@ func TestHookConfig_ValidateDirRunResolution(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			config := tt.config
 			cwd := t.TempDir()
-			config.cwd = cwd
+			config.inputCwd = cwd
 
 			for _, f := range tt.createFiles {
 				fp := filepath.Join(cwd, f)
@@ -521,11 +521,11 @@ func TestHookConfig_ValidateDirRunResolution(t *testing.T) {
 
 			require.NoError(t, err)
 			require.Equal(
-				t, tt.expectPath, config.path,
+				t, tt.expectPath, config.relativeScriptPath,
 				"path mismatch",
 			)
 			require.Equal(
-				t, tt.expectScript, config.script,
+				t, tt.expectScript, config.inlineScript,
 				"script mismatch",
 			)
 		})
@@ -548,18 +548,18 @@ func TestHookConfig_ValidateDirRunAbsolutePath(t *testing.T) {
 	)
 
 	config := HookConfig{
-		Name: "test",
-		Kind: language.HookKindPython,
-		Run:  absScript,
-		Dir:  filepath.Join("hooks", "preprovision"),
-		cwd:  cwd,
+		Name:     "test",
+		Kind:     language.HookKindPython,
+		Run:      absScript,
+		Dir:      filepath.Join("hooks", "preprovision"),
+		inputCwd: cwd,
 	}
 
 	err := config.validate()
 	require.NoError(t, err)
 	// Absolute run paths are resolved without Dir prefix.
-	require.Equal(t, absScript, config.path)
-	require.Equal(t, "", config.script)
+	require.Equal(t, absScript, config.relativeScriptPath)
+	require.Equal(t, "", config.inlineScript)
 }
 
 func TestHookKind_IsShell(t *testing.T) {
@@ -676,7 +676,7 @@ func TestHookConfig_ResolvedPaths(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			config := tt.config
 			cwd := t.TempDir()
-			config.cwd = cwd
+			config.inputCwd = cwd
 
 			for _, f := range tt.createFiles {
 				fp := filepath.Join(cwd, f)
@@ -762,10 +762,10 @@ func TestHookConfig_ValidatePathTraversal(t *testing.T) {
 	)
 
 	config := HookConfig{
-		Name:  "test",
-		Shell: string(language.HookKindBash),
-		Run:   scriptPath,
-		cwd:   cwd,
+		Name:     "test",
+		Shell:    string(language.HookKindBash),
+		Run:      scriptPath,
+		inputCwd: cwd,
 	}
 
 	err := config.validate()
@@ -868,7 +868,7 @@ func TestHookConfig_ServiceHookRelativePathWithinProject(
 			config := HookConfig{
 				Name:       "prepackage",
 				Run:        tt.run,
-				cwd:        serviceCwd,
+				inputCwd:   serviceCwd,
 				projectDir: projectRoot,
 			}
 
@@ -905,7 +905,7 @@ func TestHookConfig_ServiceHookEscapesProjectRoot(
 		Name:       "prepackage",
 		Shell:      string(language.HookKindBash),
 		Run:        scriptPath,
-		cwd:        serviceCwd,
+		inputCwd:   serviceCwd,
 		projectDir: projectRoot,
 	}
 
@@ -930,10 +930,10 @@ func TestHookConfig_ProjectDirFallbackToCwd(t *testing.T) {
 	)
 
 	config := HookConfig{
-		Name:  "test",
-		Shell: string(language.HookKindBash),
-		Run:   scriptPath,
-		cwd:   cwd,
+		Name:     "test",
+		Shell:    string(language.HookKindBash),
+		Run:      scriptPath,
+		inputCwd: cwd,
 		// projectDir intentionally empty
 	}
 
@@ -966,7 +966,7 @@ func TestHookConfig_ServiceDirWithinProjectBoundary(
 		Shell:      string(language.HookKindBash),
 		Run:        "deploy.sh",
 		Dir:        filepath.Join("..", "..", "hooks"),
-		cwd:        serviceCwd,
+		inputCwd:   serviceCwd,
 		projectDir: projectRoot,
 	}
 
@@ -1023,7 +1023,7 @@ func TestHookConfig_InlineHookContainmentExempt(t *testing.T) {
 				Shell:      string(language.HookKindBash),
 				Run:        "echo shared",
 				Dir:        tt.dir,
-				cwd:        tt.cwdDir,
+				inputCwd:   tt.cwdDir,
 				projectDir: projectRoot,
 			}
 
@@ -1112,7 +1112,7 @@ func TestHookConfig_FileBasedContainmentEnforced(t *testing.T) {
 				Shell:      string(language.HookKindBash),
 				Run:        tt.run,
 				Dir:        tt.dir,
-				cwd:        tt.cwd,
+				inputCwd:   tt.cwd,
 				projectDir: projectRoot,
 			}
 
@@ -1162,7 +1162,7 @@ func TestHookConfig_AllKindsInsideProject(t *testing.T) {
 				Name:       "prebuild",
 				Run:        k.file,
 				Dir:        "hooks",
-				cwd:        projectRoot,
+				inputCwd:   projectRoot,
 				projectDir: projectRoot,
 			}
 
@@ -1196,7 +1196,7 @@ func TestHookConfig_AllKindsInlineExempt(t *testing.T) {
 				Name:       "preshared",
 				Kind:       k.kind,
 				Run:        "echo layer",
-				cwd:        externalLayer,
+				inputCwd:   externalLayer,
 				projectDir: projectRoot,
 			}
 
@@ -1226,7 +1226,7 @@ func TestHookConfig_InlineDirSetRunNotSet(t *testing.T) {
 		Shell:      string(language.HookKindBash),
 		Run:        "echo build",
 		Dir:        externalDir,
-		cwd:        projectRoot,
+		inputCwd:   projectRoot,
 		projectDir: projectRoot,
 	}
 
@@ -1296,10 +1296,10 @@ func TestHookConfig_DirRunKindInference(t *testing.T) {
 			))
 
 			config := HookConfig{
-				Name: "preprovision",
-				Run:  tt.run,
-				Dir:  filepath.Join("hooks", "pre"),
-				cwd:  cwd,
+				Name:     "preprovision",
+				Run:      tt.run,
+				Dir:      filepath.Join("hooks", "pre"),
+				inputCwd: cwd,
 			}
 
 			err := config.validate()

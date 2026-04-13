@@ -161,7 +161,7 @@ func (h *HooksRunner) execHook(
 
 	boundaryDir := hookConfig.projectDir
 	if boundaryDir == "" {
-		boundaryDir = hookConfig.cwd
+		boundaryDir = hookConfig.inputCwd
 	}
 	if boundaryDir == "" {
 		boundaryDir = h.cwd
@@ -176,7 +176,7 @@ func (h *HooksRunner) execHook(
 		Cwd:          cwd,
 		EnvVars:      envVars,
 		BoundaryDir:  boundaryDir,
-		InlineScript: hookConfig.script,
+		InlineScript: hookConfig.inlineScript,
 		HookName:     hookConfig.Name,
 	}
 

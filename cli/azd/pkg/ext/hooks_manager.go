@@ -125,7 +125,7 @@ func (h *HooksManager) filterConfigs(
 			}
 
 			hook.Name = scriptName
-			hook.cwd = h.cwd
+			hook.inputCwd = h.cwd
 			hook.projectDir = h.projectDir
 
 			if err := hook.validate(); err != nil {
@@ -171,8 +171,8 @@ func (h *HooksManager) ValidateHooks(ctx context.Context, allHooks map[string][]
 	for _, hookConfigs := range allHooks {
 		for _, hookConfig := range hookConfigs {
 			// Set the working directory for validation
-			if hookConfig.cwd == "" {
-				hookConfig.cwd = h.cwd
+			if hookConfig.inputCwd == "" {
+				hookConfig.inputCwd = h.cwd
 			}
 			if hookConfig.projectDir == "" {
 				hookConfig.projectDir = h.projectDir
@@ -183,8 +183,8 @@ func (h *HooksManager) ValidateHooks(ctx context.Context, allHooks map[string][]
 				// Check if it's an inline script (no file exists)
 				relativeCheckPath := strings.ReplaceAll(hookConfig.Run, "/", string(os.PathSeparator))
 				fullCheckPath := relativeCheckPath
-				if hookConfig.cwd != "" {
-					fullCheckPath = filepath.Join(hookConfig.cwd, relativeCheckPath)
+				if hookConfig.inputCwd != "" {
+					fullCheckPath = filepath.Join(hookConfig.inputCwd, relativeCheckPath)
 				}
 
 				_, err := os.Stat(fullCheckPath)
@@ -302,8 +302,8 @@ func (h *HooksManager) validateRuntimes(
 				cfg = cfg.Posix
 			}
 
-			if cfg.cwd == "" {
-				cfg.cwd = h.cwd
+			if cfg.inputCwd == "" {
+				cfg.inputCwd = h.cwd
 			}
 			if cfg.projectDir == "" {
 				cfg.projectDir = h.projectDir

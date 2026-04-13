@@ -179,7 +179,7 @@ func Test_HookConfig_DefaultShell(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Clone the config to avoid modifying the test case
 			config := *tt.hookConfig
-			config.cwd = t.TempDir()
+			config.inputCwd = t.TempDir()
 
 			err := config.validate()
 			require.NoError(t, err)

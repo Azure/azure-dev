@@ -274,6 +274,7 @@ func TestInitializer_prjConfigFromDetect(t *testing.T) {
 				console: input.NewConsole(
 					false,
 					false,
+					false,
 					input.Writers{Output: os.Stdout},
 					input.ConsoleHandles{
 						Stderr: os.Stderr,

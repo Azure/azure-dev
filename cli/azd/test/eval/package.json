@@ -1,0 +1,27 @@
+{
+  "name": "@azure/azd-eval",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Evaluation and testing framework for Azure Developer CLI (azd) with Copilot CLI",
+  "scripts": {
+    "test": "jest",
+    "test:unit": "jest --testPathPattern=tests/unit",
+    "test:human": "jest --testPathPattern=tests/human",
+    "test:ci": "jest --ci --reporters=default --reporters=jest-junit",
+    "waza:validate": "waza validate",
+    "waza:run": "waza run --executor copilot-sdk",
+    "waza:run:mock": "waza run --executor mock"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.0",
+    "@types/node": "^20.0.0",
+    "jest": "^29.7.0",
+    "jest-junit": "^16.0.0",
+    "ts-jest": "^29.1.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

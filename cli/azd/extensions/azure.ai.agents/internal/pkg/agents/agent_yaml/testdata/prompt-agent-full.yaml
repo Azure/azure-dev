@@ -1,0 +1,39 @@
+template:
+  kind: prompt
+  name: full-prompt-agent
+  description: A fully configured prompt agent for testing
+  metadata:
+    authors:
+      - testauthor
+    tags:
+      - testing
+      - full
+  model:
+    id: gpt-4o
+    publisher: azure
+    options:
+      temperature: 0.8
+      maxTokens: 4000
+      topP: 0.95
+  instructions: |
+    You are a helpful testing assistant.
+    Always respond in a structured format.
+  tools:
+    - kind: webSearch
+      name: web-search
+    - kind: function
+      name: get_weather
+      description: Get weather for a location
+      parameters:
+        properties:
+          - name: location
+            kind: string
+            description: The city name
+            required: true
+          - name: unit
+            kind: string
+            description: Temperature unit
+            enumValues:
+              - celsius
+              - fahrenheit
+            default: celsius

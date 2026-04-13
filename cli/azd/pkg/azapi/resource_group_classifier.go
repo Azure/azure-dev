@@ -57,11 +57,14 @@ type ClassifyOptions struct {
 	//   - Otherwise: all RGs skipped (cannot classify without snapshot)
 	SnapshotPredictedRGs map[string]bool
 
-	// ForceMode controls behavior when snapshot is available or unavailable.
-	// When snapshot is available: uses snapshot (deterministic, zero API calls),
-	// skips Tier 4 vetoes.
-	// When snapshot is unavailable: returns all RGs as owned (backward compat,
-	// zero API calls).
+	// ForceMode skips interactive prompts and API-calling safety checks.
+	//
+	// With snapshot available: snapshot classifies RGs (deterministic, offline),
+	// Tier 4 vetoes are skipped (zero API calls, consistent with --force contract).
+	//
+	// Without snapshot: all RGs are treated as owned (backward compat, zero API
+	// calls). This is the only path where an external RG could be deleted — it
+	// requires both snapshot failure AND explicit --force.
 	ForceMode bool
 	// Interactive enables per-RG prompts for unknown and foreign-resource RGs.
 	// When false, unknown/unverified RGs are always skipped without deletion.
@@ -328,7 +331,11 @@ func runTier4Vetoes(
 // When needsPrompt is true, the caller should prompt the user sequentially (not from a goroutine)
 // and veto if the user declines.
 func classifyTier4(ctx context.Context, rgName string, opts ClassifyOptions) (string, bool, bool, error) {
-	// Lock check.
+	// Lock check — best-effort: 403 = no veto.
+	// Rationale: locks are an additive protection layer; inability to read
+	// them does not imply the RG is unsafe to delete. A user who can delete
+	// the RG but cannot read its locks should not be blocked by a permission
+	// gap in a defense-in-depth check. Contrast with resource 403 below.
 	if opts.ListResourceGroupLocks != nil {
 		lockVetoed, lockReason, lockErr := checkTier4Locks(ctx, rgName, opts)
 		if lockErr != nil {
@@ -339,7 +346,12 @@ func classifyTier4(ctx context.Context, rgName string, opts ClassifyOptions) (st
 		}
 	}
 
-	// Extra-resource check.
+	// Extra-resource check — strict: 403 = hard veto.
+	// Rationale: if we cannot enumerate resources in a resource group, we
+	// cannot verify that all resources belong to this azd environment.
+	// Deleting a resource group with unknown contents risks destroying
+	// foreign resources. Unlike lock 403 (where inability to read is
+	// benign), resource 403 means we lack visibility into what we'd delete.
 	if opts.ListResourceGroupResources != nil {
 		// When EnvName is empty, foreign-resource detection cannot distinguish owned from
 		// untagged resources. Veto to be safe rather than silently allowing deletion.

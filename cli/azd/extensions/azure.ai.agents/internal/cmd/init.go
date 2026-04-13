@@ -1772,14 +1772,9 @@ func extractToolboxAndConnectionConfigs(
 			// Extract credentials, storing raw values as env vars and
 			// replacing them with ${VAR} references in the config.
 			if len(credentials) > 0 {
-				creds := make(map[string]any, len(credentials))
-				for k, v := range credentials {
-					envVar := credentialEnvVarName(connName, k)
-					credentialEnvVars[envVar] = fmt.Sprintf("%v", v)
-					creds[k] = fmt.Sprintf("${%s}", envVar)
-				}
-
-				conn.Credentials = creds
+				conn.Credentials = externalizeCredentials(
+					credentials, []string{connName}, credentialEnvVars,
+				)
 			}
 
 			connections = append(connections, conn)
@@ -1809,14 +1804,37 @@ func extractToolboxAndConnectionConfigs(
 }
 
 // credentialEnvVarName builds a deterministic env var name for a connection
-// credential key, e.g. ("github-copilot", "clientSecret") → "TOOL_GITHUB_COPILOT_CLIENTSECRET".
+// credential key, e.g. ("github-copilot", "clientSecret") → "PARAM_GITHUB_COPILOT_CLIENTSECRET".
 // All non-alphanumeric characters are replaced with underscores and consecutive
 // underscores are collapsed to produce a valid [A-Z0-9_]+ environment variable name.
 var nonAlphanumRe = regexp.MustCompile(`[^A-Z0-9]+`)
 
-func credentialEnvVarName(connName, key string) string {
-	s := "TOOL_" + strings.ToUpper(connName) + "_" + strings.ToUpper(key)
+func credentialEnvVarName(parts ...string) string {
+	s := "PARAM_" + strings.ToUpper(strings.Join(parts, "_"))
 	return nonAlphanumRe.ReplaceAllString(s, "_")
+}
+
+// externalizeCredentials recursively walks a credential map. String leaf values
+// are stored as env vars and replaced with ${VAR} references. Nested maps are
+// preserved structurally. keyPath accumulates segments for the env var name.
+func externalizeCredentials(
+	creds map[string]any,
+	keyPath []string,
+	envVars map[string]string,
+) map[string]any {
+	result := make(map[string]any, len(creds))
+	for k, v := range creds {
+		path := append(keyPath, k)
+		switch val := v.(type) {
+		case map[string]any:
+			result[k] = externalizeCredentials(val, path, envVars)
+		default:
+			envName := credentialEnvVarName(path...)
+			envVars[envName] = fmt.Sprintf("%v", val)
+			result[k] = fmt.Sprintf("${%s}", envName)
+		}
+	}
+	return result
 }
 
 // injectToolboxEnvVarsIntoDefinition adds TOOLBOX_{NAME}_MCP_ENDPOINT entries
@@ -1909,13 +1927,9 @@ func extractConnectionConfigs(
 
 		// Externalize credential values to env vars and replace with ${VAR} references.
 		if len(creds) > 0 {
-			externalizedCreds := make(map[string]any, len(creds))
-			for k, v := range creds {
-				envVar := credentialEnvVarName(connResource.Name, k)
-				credentialEnvVars[envVar] = fmt.Sprintf("%v", v)
-				externalizedCreds[k] = fmt.Sprintf("${%s}", envVar)
-			}
-			creds = externalizedCreds
+			creds = externalizeCredentials(
+				creds, []string{connResource.Name}, credentialEnvVars,
+			)
 		}
 
 		conn := project.Connection{

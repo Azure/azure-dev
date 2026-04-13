@@ -454,21 +454,21 @@ func TestExtractToolboxAndConnectionConfigs_TypedTools(t *testing.T) {
 	}
 
 	// Credentials should be ${VAR} references, not raw values
-	if conn.Credentials["clientId"] != "${TOOL_GITHUB_COPILOT_CLIENTID}" {
+	if conn.Credentials["clientId"] != "${PARAM_GITHUB_COPILOT_CLIENTID}" {
 		t.Errorf("Expected env var ref for clientId, got '%v'", conn.Credentials["clientId"])
 	}
-	if conn.Credentials["clientSecret"] != "${TOOL_GITHUB_COPILOT_CLIENTSECRET}" {
+	if conn.Credentials["clientSecret"] != "${PARAM_GITHUB_COPILOT_CLIENTSECRET}" {
 		t.Errorf("Expected env var ref for clientSecret, got '%v'", conn.Credentials["clientSecret"])
 	}
 
 	// Raw values should be in the credEnvVars map
-	if credEnvVars["TOOL_GITHUB_COPILOT_CLIENTID"] != "my-client-id" {
+	if credEnvVars["PARAM_GITHUB_COPILOT_CLIENTID"] != "my-client-id" {
 		t.Errorf("Expected env var value 'my-client-id', got '%s'",
-			credEnvVars["TOOL_GITHUB_COPILOT_CLIENTID"])
+			credEnvVars["PARAM_GITHUB_COPILOT_CLIENTID"])
 	}
-	if credEnvVars["TOOL_GITHUB_COPILOT_CLIENTSECRET"] != "my-secret" {
+	if credEnvVars["PARAM_GITHUB_COPILOT_CLIENTSECRET"] != "my-secret" {
 		t.Errorf("Expected env var value 'my-secret', got '%s'",
-			credEnvVars["TOOL_GITHUB_COPILOT_CLIENTSECRET"])
+			credEnvVars["PARAM_GITHUB_COPILOT_CLIENTSECRET"])
 	}
 
 	// Verify toolbox has both tools
@@ -613,7 +613,7 @@ func TestExtractToolboxAndConnectionConfigs_CustomKeysCredentials(t *testing.T) 
 
 	// CustomKeys: credentials stored as-is (no "keys" wrapper)
 	customConn := connections[0]
-	if customConn.Credentials["key"] != "${TOOL_CUSTOM_API_KEY}" {
+	if customConn.Credentials["key"] != "${PARAM_CUSTOM_API_KEY}" {
 		t.Errorf("Expected env var ref for key, got '%v'", customConn.Credentials["key"])
 	}
 	if _, hasKeys := customConn.Credentials["keys"]; hasKeys {
@@ -625,7 +625,7 @@ func TestExtractToolboxAndConnectionConfigs_CustomKeysCredentials(t *testing.T) 
 	if _, hasKeys := oauthConn.Credentials["keys"]; hasKeys {
 		t.Error("OAuth2 connection should not have 'keys' wrapper")
 	}
-	if oauthConn.Credentials["clientId"] != "${TOOL_OAUTH_TOOL_CLIENTID}" {
+	if oauthConn.Credentials["clientId"] != "${PARAM_OAUTH_TOOL_CLIENTID}" {
 		t.Errorf("Expected flat clientId ref, got '%v'", oauthConn.Credentials["clientId"])
 	}
 }

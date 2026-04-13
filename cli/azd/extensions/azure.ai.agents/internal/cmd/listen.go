@@ -296,7 +296,9 @@ func connectionsEnvUpdate(
 }
 
 // connectionCredentialsEnvUpdate builds a dictionary of connection name → credentials
-// and serializes it to AI_PROJECT_CONNECTION_CREDENTIALS.
+// and serializes it to AI_PROJECT_CONNECTION_CREDENTIALS. Credential values may contain
+// ${VAR} env var references (from externalization during init); these are resolved to
+// their actual values before serialization so Bicep receives real secrets.
 func connectionCredentialsEnvUpdate(
 	ctx context.Context,
 	connections []project.Connection,
@@ -306,6 +308,15 @@ func connectionCredentialsEnvUpdate(
 	credMap := buildConnectionCredentials(connections)
 	if len(credMap) == 0 {
 		return nil
+	}
+
+	// Resolve ${VAR} references in credential values to actual secrets.
+	azdEnv, err := getAllEnvVars(ctx, azdClient, envName)
+	if err != nil {
+		return fmt.Errorf("loading env vars for credential resolution: %w", err)
+	}
+	for connName, creds := range credMap {
+		credMap[connName] = resolveMapValues(creds, azdEnv)
 	}
 
 	return marshalAndSetEnvVar(ctx, azdClient, envName, "AI_PROJECT_CONNECTION_CREDENTIALS", credMap)

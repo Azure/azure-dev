@@ -110,3 +110,167 @@ func TestFileChangeType_Values(t *testing.T) {
 	require.Equal(t, FileChangeType(1), FileModified)
 	require.Equal(t, FileChangeType(2), FileDeleted)
 }
+
+func TestGetFileChanges_AzdxIgnoreFile(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	// Create .azdxignore that excludes *.log files.
+	err := os.WriteFile(filepath.Join(dir, ".azdxignore"), []byte("*.log\n"), 0600)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	watcher, err := NewWatcher(ctx)
+	require.NoError(t, err)
+
+	// Write an ignored file and a tracked file.
+	err = os.WriteFile(filepath.Join(dir, "debug.log"), []byte("log data"), 0600)
+	require.NoError(t, err)
+	err = os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main"), 0600)
+	require.NoError(t, err)
+
+	// The tracked file should appear; the ignored file should not.
+	require.Eventually(t, func() bool {
+		for _, c := range watcher.GetFileChanges() {
+			if filepath.Base(c.Path) == "main.go" && c.ChangeType == FileCreated {
+				return true
+			}
+		}
+		return false
+	}, 2*time.Second, 50*time.Millisecond, "expected created file main.go")
+
+	// Verify the ignored file is not in the changes.
+	for _, c := range watcher.GetFileChanges() {
+		require.NotEqual(t, "debug.log", filepath.Base(c.Path),
+			"debug.log should be ignored by .azdxignore")
+	}
+}
+
+func TestGetFileChanges_AzdxIgnoreDirectory(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	// Create .azdxignore that excludes the vendor/ directory.
+	err := os.WriteFile(filepath.Join(dir, ".azdxignore"), []byte("vendor/\n"), 0600)
+	require.NoError(t, err)
+
+	// Pre-create the ignored directory and a file inside it.
+	err = os.MkdirAll(filepath.Join(dir, "vendor", "pkg"), 0700)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	watcher, err := NewWatcher(ctx)
+	require.NoError(t, err)
+
+	// Write a file inside the ignored directory and a tracked file.
+	err = os.WriteFile(filepath.Join(dir, "vendor", "pkg", "lib.go"), []byte("package pkg"), 0600)
+	require.NoError(t, err)
+	err = os.WriteFile(filepath.Join(dir, "app.go"), []byte("package main"), 0600)
+	require.NoError(t, err)
+
+	// The tracked file should appear.
+	require.Eventually(t, func() bool {
+		for _, c := range watcher.GetFileChanges() {
+			if filepath.Base(c.Path) == "app.go" && c.ChangeType == FileCreated {
+				return true
+			}
+		}
+		return false
+	}, 2*time.Second, 50*time.Millisecond, "expected created file app.go")
+
+	// Verify no file from vendor/ is in the changes.
+	for _, c := range watcher.GetFileChanges() {
+		require.NotContains(t, c.Path, "vendor",
+			"files inside vendor/ should be ignored by .azdxignore")
+	}
+}
+
+func TestGetFileChanges_NoAzdxIgnoreFile(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	// No .azdxignore file — watcher should still start without errors.
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	watcher, err := NewWatcher(ctx)
+	require.NoError(t, err)
+
+	// All files should be tracked when no ignore file exists.
+	err = os.WriteFile(filepath.Join(dir, "tracked.txt"), []byte("hello"), 0600)
+	require.NoError(t, err)
+
+	require.Eventually(t, func() bool {
+		for _, c := range watcher.GetFileChanges() {
+			if filepath.Base(c.Path) == "tracked.txt" && c.ChangeType == FileCreated {
+				return true
+			}
+		}
+		return false
+	}, 2*time.Second, 50*time.Millisecond, "expected created file tracked.txt")
+}
+
+func TestGetFileChanges_GitIgnoreRespected(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	// Create .gitignore that excludes *.tmp files.
+	err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("*.tmp\n"), 0600)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	watcher, err := NewWatcher(ctx)
+	require.NoError(t, err)
+
+	// Write an ignored file and a tracked file.
+	err = os.WriteFile(filepath.Join(dir, "cache.tmp"), []byte("temp"), 0600)
+	require.NoError(t, err)
+	err = os.WriteFile(filepath.Join(dir, "main.txt"), []byte("content"), 0600)
+	require.NoError(t, err)
+
+	// The tracked file should appear.
+	require.Eventually(t, func() bool {
+		for _, c := range watcher.GetFileChanges() {
+			if filepath.Base(c.Path) == "main.txt" && c.ChangeType == FileCreated {
+				return true
+			}
+		}
+		return false
+	}, 2*time.Second, 50*time.Millisecond, "expected created file main.txt")
+
+	// Verify the ignored file is not in the changes.
+	for _, c := range watcher.GetFileChanges() {
+		require.NotEqual(t, "cache.tmp", filepath.Base(c.Path),
+			"cache.tmp should be ignored by .gitignore")
+	}
+}
+
+func TestIsIgnored_MatcherIntegration(t *testing.T) {
+	// Direct test of the ignore matcher as used by the watcher.
+	// This tests the Relative() code path (not Absolute()) and verifies
+	// that the matcher is wired correctly into the fileWatcher.
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	err := os.WriteFile(filepath.Join(dir, ".azdxignore"), []byte("dist/\n*.bak\n"), 0600)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	w, err := NewWatcher(ctx)
+	require.NoError(t, err)
+
+	fw := w.(*fileWatcher)
+
+	// Verify the matcher is loaded and works with relative paths.
+	require.True(t, fw.ignoreMatcher.IsIgnored("dist", true))
+	require.True(t, fw.ignoreMatcher.IsIgnored("file.bak", false))
+	require.False(t, fw.ignoreMatcher.IsIgnored("src/main.go", false))
+}

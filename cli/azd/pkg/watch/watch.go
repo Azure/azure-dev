@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/ignore"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/fatih/color"
@@ -31,6 +32,8 @@ type fileWatcher struct {
 	watcher         *fsnotify.Watcher
 	ignoredFolders  map[string]struct{}
 	globIgnorePaths []string
+	ignoreMatcher   *ignore.Matcher
+	root            string
 	mu              sync.Mutex
 }
 
@@ -52,7 +55,21 @@ func NewWatcher(ctx context.Context) (Watcher, error) {
 		return nil, fmt.Errorf("failed to create watcher: %w", err)
 	}
 
-	// Set up ignore patterns
+	cwd, err := os.Getwd()
+	if err != nil {
+		watcher.Close()
+		return nil, fmt.Errorf("failed to get current working directory: %w", err)
+	}
+
+	// Load ignore patterns from .azdxignore and .gitignore files.
+	ignoreMatcher, err := ignore.NewMatcher(cwd)
+	if err != nil {
+		watcher.Close()
+		return nil, fmt.Errorf("failed to load ignore patterns: %w", err)
+	}
+
+	// Hardcoded folder ignores are kept as a fast-path default — they apply
+	// even when no .azdxignore or .gitignore file exists.
 	ignoredFolders := map[string]struct{}{
 		".git": {},
 	}
@@ -68,6 +85,8 @@ func NewWatcher(ctx context.Context) (Watcher, error) {
 		watcher:         watcher,
 		ignoredFolders:  ignoredFolders,
 		globIgnorePaths: globIgnorePaths,
+		ignoreMatcher:   ignoreMatcher,
+		root:            cwd,
 	}
 
 	go func() {
@@ -76,7 +95,7 @@ func NewWatcher(ctx context.Context) (Watcher, error) {
 		for {
 			select {
 			case event := <-watcher.Events:
-				// Ignore events matching glob patterns
+				// Fast path: ignore events matching hardcoded glob patterns.
 				shouldIgnore := false
 				for _, pattern := range fw.globIgnorePaths {
 					matched, _ := doublestar.PathMatch(pattern, event.Name)
@@ -89,12 +108,26 @@ func NewWatcher(ctx context.Context) (Watcher, error) {
 					continue
 				}
 
-				fw.mu.Lock()
 				name := event.Name
 
-				// Check if this is a file or directory
-				info, err := os.Stat(name)
-				isDir := err == nil && info.IsDir()
+				// Single os.Stat call — reused for both isDir and ignore matching.
+				info, statErr := os.Stat(name)
+				isDir := statErr == nil && info.IsDir()
+
+				// Check user-defined ignore patterns (.azdxignore / .gitignore).
+				if relPath, relErr := filepath.Rel(fw.root, name); relErr == nil {
+					if fw.ignoreMatcher.IsIgnored(relPath, isDir) {
+						continue
+					}
+					// When the path no longer exists (e.g. Remove event), os.Stat fails
+					// and isDir defaults to false. Re-check as a directory so that
+					// directory-only patterns (trailing slash) still filter the event.
+					if statErr != nil && fw.ignoreMatcher.IsIgnored(relPath, true) {
+						continue
+					}
+				}
+
+				fw.mu.Lock()
 
 				switch {
 				case event.Has(fsnotify.Create):
@@ -134,11 +167,6 @@ func NewWatcher(ctx context.Context) (Watcher, error) {
 		}
 	}()
 
-	cwd, err := os.Getwd()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get current working directory: %w", err)
-	}
-
 	if err := fw.watchRecursive(cwd, watcher); err != nil {
 		return nil, fmt.Errorf("watcher failed: %w", err)
 	}
@@ -152,9 +180,16 @@ func (fw *fileWatcher) watchRecursive(root string, watcher *fsnotify.Watcher) er
 			return err
 		}
 		if info.IsDir() {
-			// Check if this directory should be ignored
+			// Check if this directory should be ignored by hardcoded defaults.
 			if _, ignored := fw.ignoredFolders[info.Name()]; ignored {
 				return filepath.SkipDir
+			}
+
+			// Check user-defined ignore patterns (.azdxignore / .gitignore).
+			if relPath, relErr := filepath.Rel(fw.root, path); relErr == nil && relPath != "." {
+				if fw.ignoreMatcher.IsIgnored(relPath, true) {
+					return filepath.SkipDir
+				}
 			}
 
 			err = watcher.Add(path)

@@ -2614,6 +2614,10 @@ func resolveUsageName(catalogModels []ai.AiModel, dep cognitiveDeploymentInfo) s
 // resolveResourceGroupLocation returns the Azure location of the resource group specified
 // in AZURE_RESOURCE_GROUP. Returns empty string if the env var is not set or the lookup fails.
 func (p *BicepProvider) resolveResourceGroupLocation(ctx context.Context, subscriptionId string) string {
+	if subscriptionId == "" {
+		return ""
+	}
+
 	rgName, has := p.env.LookupEnv(environment.ResourceGroupEnvVarName)
 	if !has || rgName == "" {
 		return ""

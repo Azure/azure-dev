@@ -337,9 +337,9 @@ func (rs *ResourceService) GetResourceGroup(
 	}
 
 	return &ResourceGroup{
-		Id:       *resp.ID,
-		Name:     *resp.Name,
-		Location: *resp.Location,
+		Id:       convert.ToValueWithDefault(resp.ID, ""),
+		Name:     convert.ToValueWithDefault(resp.Name, ""),
+		Location: convert.ToValueWithDefault(resp.Location, ""),
 	}, nil
 }
 

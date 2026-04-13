@@ -129,6 +129,53 @@ func checkAiModelServiceAvailable(ctx context.Context, azdClient *azdext.AzdClie
 	return nil
 }
 
+// ensureLoggedIn verifies that the user is authenticated before any file-modifying
+// operations take place. It runs `azd auth status` via the Workflow API as a
+// purpose-built auth probe. Cancellation and deadline errors are propagated;
+// Unauthenticated errors become structured auth errors; other errors (e.g.
+// network issues) are ignored so they don't block init for unrelated reasons.
+func ensureLoggedIn(ctx context.Context, azdClient *azdext.AzdClient) error {
+	_, err := azdClient.Workflow().Run(ctx, &azdext.RunWorkflowRequest{
+		Workflow: &azdext.Workflow{
+			Name: "auth status",
+			Steps: []*azdext.WorkflowStep{
+				{Command: &azdext.WorkflowCommand{Args: []string{"auth", "status"}}},
+			},
+		},
+	})
+	if err == nil {
+		return nil
+	}
+
+	if exterrors.IsCancellation(err) {
+		return err
+	}
+
+	if errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+
+	if st, ok := status.FromError(err); ok {
+		if st.Code() == codes.DeadlineExceeded {
+			return err
+		}
+
+		if st.Code() == codes.Unauthenticated {
+			msg := st.Message()
+			if msg == "" {
+				msg = "not logged in"
+			}
+			return exterrors.Auth(
+				exterrors.CodeNotLoggedIn,
+				msg,
+				"run `azd auth login` to authenticate before running init",
+			)
+		}
+	}
+
+	return nil
+}
+
 // runInitFromManifest sets up Azure context, credentials, console, and runs the
 // InitAction for a given manifest pointer. This is the shared code path used when
 // initializing from a manifest URL/path (the -m flag, agent template, or azd template
@@ -243,6 +290,10 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 					return nil
 				}
 				return fmt.Errorf("failed waiting for debugger: %w", err)
+			}
+
+			if err := ensureLoggedIn(ctx, azdClient); err != nil {
+				return err
 			}
 
 			var httpClient = &http.Client{

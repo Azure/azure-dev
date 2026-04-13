@@ -80,16 +80,11 @@ type ClassifyOptions struct {
 }
 
 const (
-	cAzdEnvNameTag       = "azd-env-name"
-	cAzdProvisionHashTag = "azd-provision-param-hash"
-	cLockCanNotDelete    = "CanNotDelete"
-	cLockReadOnly        = "ReadOnly"
-	cTier4Parallelism    = 5
+	cAzdEnvNameTag    = "azd-env-name"
+	cLockCanNotDelete = "CanNotDelete"
+	cLockReadOnly     = "ReadOnly"
+	cTier4Parallelism = 5
 )
-
-// TagKeyProvisionParamHash is the exported constant for the provision parameter hash tag key.
-// Used by callers (e.g. bicep_destroy.go) to extract the expected hash from deployment tags.
-const TagKeyProvisionParamHash = cAzdProvisionHashTag
 
 // LockLevelCanNotDelete and LockLevelReadOnly are the ARM lock levels that block deletion.
 const (

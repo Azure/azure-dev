@@ -246,6 +246,72 @@ predeploy:
 				"script4.sh", hooks["predeploy"][0].Run,
 			)
 		})
+
+	t.Run("hook with config block", func(t *testing.T) {
+		const doc = `
+postprovision:
+  run: ./hooks/seed-database.cs
+  kind: dotnet
+  config:
+    configuration: Release
+    framework: net10.0
+`
+
+		var hooks HooksConfig
+		err := yaml.Unmarshal([]byte(doc), &hooks)
+		require.NoError(t, err)
+
+		require.Len(t, hooks["postprovision"], 1)
+		hook := hooks["postprovision"][0]
+		assert.Equal(t, "./hooks/seed-database.cs", hook.Run)
+		assert.Equal(t,
+			language.HookKindDotNet, hook.Kind,
+		)
+		require.NotNil(t, hook.Config)
+		assert.Equal(t, "Release", hook.Config["configuration"])
+		assert.Equal(t, "net10.0", hook.Config["framework"])
+	})
+
+	t.Run("multiple hooks with different configs",
+		func(t *testing.T) {
+			const doc = `
+postprovision:
+  - run: ./hooks/seed-database.cs
+    kind: dotnet
+    config:
+      configuration: Release
+  - run: ./hooks/setup.py
+    kind: python
+    config:
+      virtualEnvName: .venv
+`
+
+			var hooks HooksConfig
+			err := yaml.Unmarshal([]byte(doc), &hooks)
+			require.NoError(t, err)
+
+			require.Len(t, hooks["postprovision"], 2)
+
+			dotnetHook := hooks["postprovision"][0]
+			assert.Equal(t,
+				"./hooks/seed-database.cs", dotnetHook.Run,
+			)
+			require.NotNil(t, dotnetHook.Config)
+			assert.Equal(t,
+				"Release",
+				dotnetHook.Config["configuration"],
+			)
+
+			pythonHook := hooks["postprovision"][1]
+			assert.Equal(t,
+				"./hooks/setup.py", pythonHook.Run,
+			)
+			require.NotNil(t, pythonHook.Config)
+			assert.Equal(t,
+				".venv",
+				pythonHook.Config["virtualEnvName"],
+			)
+		})
 }
 
 func TestHooksConfig_MarshalYAML(t *testing.T) {
@@ -364,6 +430,42 @@ preprovision:
 				got["preprovision"][1].Run,
 			)
 		})
+
+	t.Run("roundtrip with config block", func(t *testing.T) {
+		hooks := HooksConfig{
+			"postprovision": {
+				{
+					Run:  "./hooks/seed.cs",
+					Kind: language.HookKindDotNet,
+					Config: map[string]any{
+						"configuration": "Release",
+						"framework":     "net10.0",
+					},
+				},
+			},
+		}
+
+		data, err := yaml.Marshal(hooks)
+		require.NoError(t, err)
+
+		var got HooksConfig
+		err = yaml.Unmarshal(data, &got)
+		require.NoError(t, err)
+
+		require.Len(t, got["postprovision"], 1)
+		hook := got["postprovision"][0]
+		assert.Equal(t, "./hooks/seed.cs", hook.Run)
+		assert.Equal(t,
+			language.HookKindDotNet, hook.Kind,
+		)
+		require.NotNil(t, hook.Config)
+		assert.Equal(t,
+			"Release", hook.Config["configuration"],
+		)
+		assert.Equal(t,
+			"net10.0", hook.Config["framework"],
+		)
+	})
 }
 
 func TestHooksConfig_RoundTrip(t *testing.T) {

@@ -47,6 +47,11 @@ type ExecutionContext struct {
 	// "preprovision"). Used by executors for temp file naming to
 	// aid debuggability.
 	HookName string
+
+	// Config is the executor-specific property bag from HookConfig.
+	// Executors can unmarshal this into a typed struct for their
+	// configuration needs. May be nil if no config was specified.
+	Config map[string]any
 }
 
 // HookExecutor is the unified interface for all hook execution.

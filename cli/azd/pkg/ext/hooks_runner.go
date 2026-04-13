@@ -178,6 +178,7 @@ func (h *HooksRunner) execHook(
 		BoundaryDir:  boundaryDir,
 		InlineScript: hookConfig.inlineScript,
 		HookName:     hookConfig.Name,
+		Config:       hookConfig.Config,
 	}
 
 	// Merge caller-provided overrides (e.g. forced interactive from 'azd hooks run').

@@ -256,7 +256,7 @@ func (a *AddAction) projectAsService(
 		return nil, err
 	}
 
-	return &svc, nil
+	return svc, nil
 }
 
 func addServiceAsResource(
@@ -326,13 +326,13 @@ func ServiceFromDetect(
 	svcName string,
 	prj appdetect.Project,
 	svcKind project.ServiceTargetKind,
-) (project.ServiceConfig, error) {
-	svc := project.ServiceConfig{
+) (*project.ServiceConfig, error) {
+	svc := &project.ServiceConfig{
 		Name: svcName,
 	}
 	rel, err := filepath.Rel(root, prj.Path)
 	if err != nil {
-		return svc, err
+		return nil, err
 	}
 
 	if svc.Name == "" {
@@ -349,18 +349,18 @@ func ServiceFromDetect(
 
 	language, supported := LanguageMap[prj.Language]
 	if !supported {
-		return svc, fmt.Errorf("unsupported language: %s", prj.Language)
+		return nil, fmt.Errorf("unsupported language: %s", prj.Language)
 	}
 
 	svc.Language = language
 
 	if prj.Docker != nil {
 		if svcKind != project.ContainerAppTarget {
-			return svc, fmt.Errorf("unsupported host with Dockerfile: %s", svcKind)
+			return nil, fmt.Errorf("unsupported host with Dockerfile: %s", svcKind)
 		}
 		relDocker, err := filepath.Rel(prj.Path, prj.Docker.Path)
 		if err != nil {
-			return svc, err
+			return nil, err
 		}
 
 		svc.Docker.Path = relDocker
@@ -369,7 +369,7 @@ func ServiceFromDetect(
 	if prj.RootPath != "" {
 		relContext, err := filepath.Rel(prj.Path, prj.RootPath)
 		if err != nil {
-			return svc, err
+			return nil, err
 		}
 
 		svc.Docker.Context = relContext

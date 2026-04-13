@@ -1,5 +1,30 @@
 # Release History
 
+## 0.1.22-preview (2026-04-10)
+
+- [[#7633]](https://github.com/Azure/azure-dev/pull/7633) Fix `azd ai agent init` to correctly set `AZURE_AI_MODEL_DEPLOYMENT_NAME` when initializing from a manifest, template, or `--model`/`--model-deployment` flags.
+- [[#7635]](https://github.com/Azure/azure-dev/pull/7635) Fix `azd ai agent invoke` to persist an explicitly passed `--session-id` so that subsequent `azd ai agent monitor` calls can reuse the session without error.
+- [[#7636]](https://github.com/Azure/azure-dev/pull/7636) Add positional argument support to `azd ai agent init`; passing a URL, manifest path, or source directory is now auto-disambiguated and equivalent to using `--manifest` or `--src`.
+- [[#7645]](https://github.com/Azure/azure-dev/pull/7645) Fix `azd ai agent init -m` when adding to an existing azd project: reuse the Foundry project from the environment, show a message when an existing azd project is detected, and prompt to resolve service name collisions.
+
+### Breaking Changes
+
+- [[#7651]](https://github.com/Azure/azure-dev/pull/7651) Switch agent identity RBAC from a shared project-level identity to per-agent identities (`{account}-{project}-{agentName}-AgentIdentity`), add developer RBAC pre-flight checks before deploy, and remove Cognitive Services OpenAI User and Monitoring Metrics Publisher role assignments; set `AZD_AGENT_SKIP_ROLE_ASSIGNMENTS=true` to skip all role assignments in CI/CD environments.
+
+## 0.1.21-preview (2026-04-09)
+
+- [[#7484]](https://github.com/Azure/azure-dev/pull/7484) Detect an `agent.manifest.yaml` in the current directory and prompt to use it when running `azd ai agent init`.
+- [[#7464]](https://github.com/Azure/azure-dev/pull/7464) Prompt for agent communication protocol (responses or invocations) when using `azd ai agent init` with local code.
+- [[#7415]](https://github.com/Azure/azure-dev/pull/7415) Filter `azd ai agent init` prompts to only show locations and models supported for agent scenarios.
+- [[#7410]](https://github.com/Azure/azure-dev/pull/7410) Fix `azd ai agent init --project-id` when `agent.yaml` does not contain a model resource.
+- [[#7545]](https://github.com/Azure/azure-dev/pull/7545) Update agent endpoint handling to use the latest Foundry agent service endpoints.
+- [[#7538]](https://github.com/Azure/azure-dev/pull/7538) Fix `azd ai agent invoke` streaming output to print each SSE data object on its own line.
+- [[#7576]](https://github.com/Azure/azure-dev/pull/7576) Add validation to `azd ai agent init` to ensure the manifest path points to a file, not a directory.
+- [[#7553]](https://github.com/Azure/azure-dev/pull/7553) Update `azd ai agent init` to stop writing `AZURE_AI_PROJECT_ENDPOINT` and `AZURE_OPENAI_ENDPOINT` to `agent.yaml`; `azd ai agent run` now translates `AZURE_AI_*` env vars to `FOUNDRY_*` equivalents for local agent processes.
+- [[#7596]](https://github.com/Azure/azure-dev/pull/7596) Reduce noisy output during `azd ai agent init` by redirecting internal log statements to the debug log file; verbose details are now only visible when `--debug` is used.
+- [[#7607]](https://github.com/Azure/azure-dev/pull/7607) Fix `azd ai agent init` container resource selection to save the chosen CPU/memory tier into `agent.yaml` and pre-select the existing tier on reruns; remove stale replica mention from post-init message.
+- [[#7589]](https://github.com/Azure/azure-dev/pull/7589) Fix `azd ai agent init` to prompt for an existing Foundry project when the agent manifest contains no model resources.
+
 ## 0.1.20-preview (2026-04-02)
 
 - [[#7422]](https://github.com/Azure/azure-dev/pull/7422) Add `/invocations` API support to `azd ai agent invoke`, enabling agents to accept arbitrary input passed directly to the agent.

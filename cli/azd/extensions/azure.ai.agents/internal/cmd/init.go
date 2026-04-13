@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -28,6 +29,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/fatih/color"
@@ -66,8 +68,10 @@ type InitAction struct {
 	flags         *initFlags
 	models        *modelSelector
 
-	deploymentDetails []project.Deployment
-	httpClient        *http.Client
+	deploymentDetails   []project.Deployment
+	containerSettings   *project.ContainerSettings
+	httpClient          *http.Client
+	serviceNameOverride string // when set, addToProject uses this instead of the manifest name
 }
 
 // modelSelector encapsulates the dependencies needed for model selection and
@@ -205,15 +209,23 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 	}
 
 	cmd := &cobra.Command{
-		Use:   "init [-m <manifest pointer>] [--src <source directory>]",
+		Use:   "init [<path>] [-m <manifest pointer>] [--src <source directory>]",
 		Short: fmt.Sprintf("Initialize a new AI agent project. %s", color.YellowString("(Preview)")),
-		Args:  cobra.NoArgs,
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			printBanner(cmd.OutOrStdout())
 
+			// Resolve optional positional argument into --manifest or --src
+			if len(args) == 1 {
+				if err := applyPositionalArg(args[0], flags, cmd); err != nil {
+					return err
+				}
+			}
+
 			ctx := azdext.WithAccessToken(cmd.Context())
 
-			setupDebugLogging(cmd.Flags())
+			logCleanup := setupDebugLogging(cmd.Flags())
+			defer logCleanup()
 
 			azdClient, err := azdext.NewAzdClient()
 			if err != nil {
@@ -278,6 +290,12 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 			}
 
 			if flags.manifestPointer != "" {
+				// Fail fast when the user accidentally passes a directory
+				// instead of a manifest file — before downloading templates.
+				if err := checkNotDirectory(flags.manifestPointer); err != nil {
+					return err
+				}
+
 				if err := runInitFromManifest(ctx, flags, azdClient, httpClient); err != nil {
 					if exterrors.IsCancellation(err) {
 						return exterrors.Cancelled("initialization was cancelled")
@@ -463,6 +481,11 @@ func (a *InitAction) Run(ctx context.Context) error {
 			)
 		}
 
+		// Catch the common mistake of passing a directory instead of a file
+		if err := checkNotDirectory(a.flags.manifestPointer); err != nil {
+			return err
+		}
+
 		// Download/read agent.yaml file from the provided URI or file path
 		agentManifest, targetDir, err := a.downloadAgentYaml(ctx, a.flags.manifestPointer, a.flags.src)
 		if err != nil {
@@ -475,17 +498,22 @@ func (a *InitAction) Run(ctx context.Context) error {
 			return fmt.Errorf("configuring model choice: %w", err)
 		}
 
-		// Prompt for manifest parameters (e.g. tool credentials) after project selection
-		agentManifest, err = registry_api.ProcessManifestParameters(
-			ctx, agentManifest, a.azdClient, a.flags.NoPrompt,
-		)
-		if err != nil {
-			return fmt.Errorf("failed to process manifest parameters: %w", err)
-		}
+		// For hosted agents, prompt for container resources before writing agent.yaml
+		// so the selected values are persisted into the definition file.
+		if hostedAgent, ok := agentManifest.Template.(agent_yaml.ContainerAgent); ok {
+			containerSettings, err := a.populateContainerSettings(ctx, hostedAgent.Resources)
+			if err != nil {
+				return fmt.Errorf("failed to populate container settings: %w", err)
+			}
+			a.containerSettings = containerSettings
 
-		// Inject toolbox MCP endpoint env vars into hosted agent definitions
-		// so agent.yaml is self-documenting about what env vars will be set.
-		injectToolboxEnvVarsIntoDefinition(agentManifest)
+			// Update the agent definition with the selected resources
+			hostedAgent.Resources = &agent_yaml.ContainerResources{
+				Cpu:    containerSettings.Resources.Cpu,
+				Memory: containerSettings.Resources.Memory,
+			}
+			agentManifest.Template = hostedAgent
+		}
 
 		// Write the final agent.yaml to disk (after deployment names have been injected)
 		if err := writeAgentDefinitionFile(targetDir, agentManifest); err != nil {
@@ -554,6 +582,22 @@ func ensureProject(ctx context.Context, flags *initFlags, azdClient *azdext.AzdC
 		}
 
 		fmt.Println()
+	} else if projectResponse.Project != nil {
+		// An existing azd project was found — tell the user so the skipped template
+		// download isn't a mystery. Also warn if the project lacks an infra/ directory,
+		// since deployment may require infrastructure scaffolding.
+		fmt.Println(output.WithGrayFormat(
+			"Found existing azd project at %q. Adding agent to it.", projectResponse.Project.Path,
+		))
+
+		infraDir := filepath.Join(projectResponse.Project.Path, "infra")
+		if _, statErr := os.Stat(infraDir); os.IsNotExist(statErr) {
+			fmt.Printf("%s", output.WithWarningFormat(
+				"No infra/ directory found in the project. If you need Azure infrastructure "+
+					"for deployment, run 'azd init -t Azure-Samples/azd-ai-starter-basic' in an empty "+
+					"directory first, then re-run this command from there.\n",
+			))
+		}
 	}
 
 	if projectResponse.Project == nil {
@@ -610,8 +654,25 @@ func manifestHasModelResources(manifest *agent_yaml.AgentManifest) bool {
 func (a *InitAction) configureModelChoice(
 	ctx context.Context, agentManifest *agent_yaml.AgentManifest,
 ) (*agent_yaml.AgentManifest, error) {
-	// If --project-id is provided, validate the ARM format and extract the subscription ID
-	// so ensureSubscription can skip the prompt and just resolve the tenant
+	// When no --project-id flag was given, check whether the azd environment already
+	// has a Foundry project configured from a previous init. If so, reuse it so the
+	// user isn't prompted to select a project they already chose.
+	if a.flags.projectResourceId == "" {
+		if existing, err := a.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+			EnvName: a.environment.Name,
+			Key:     "AZURE_AI_PROJECT_ID",
+		}); err == nil && existing.Value != "" {
+			a.flags.projectResourceId = existing.Value
+			log.Printf("Reusing existing Foundry project from environment: %s", existing.Value)
+			fmt.Println(output.WithGrayFormat(
+				"Using Foundry project from environment: %s", existing.Value,
+			))
+		}
+	}
+
+	// If --project-id is provided (or reused from environment), validate the ARM
+	// format and extract the subscription ID so ensureSubscription can skip the
+	// prompt and just resolve the tenant.
 	if a.flags.projectResourceId != "" {
 		projectDetails, err := extractProjectDetails(a.flags.projectResourceId)
 		if err != nil {
@@ -653,14 +714,62 @@ func (a *InitAction) configureModelChoice(
 				return nil, fmt.Errorf("foundry project not found: %s", a.flags.projectResourceId)
 			}
 		} else {
-			newCred, err := ensureSubscriptionAndLocation(
-				ctx, a.azdClient, a.azureContext, a.environment.Name,
-				"Select an Azure subscription to provision your agent and Foundry project resources.",
-			)
-			if err != nil {
-				return nil, err
+			// Prompt user to pick an existing Foundry project or create new resources
+			projectChoices := []*azdext.SelectChoice{
+				{Label: "Use an existing Foundry project", Value: "existing"},
+				{Label: "Create a new Foundry project", Value: "new"},
 			}
-			a.credential = newCred
+
+			defaultIdx := int32(0)
+			projectResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+				Options: &azdext.SelectOptions{
+					Message:       "Select a Foundry project to host your agent and any models or tools it uses.",
+					Choices:       projectChoices,
+					SelectedIndex: &defaultIdx,
+				},
+			})
+			if err != nil {
+				return nil, exterrors.FromPrompt(err, "failed to prompt for Foundry project configuration choice")
+			}
+
+			switch projectChoices[*projectResp.Value].Value {
+			case "existing":
+				newCred, err := ensureSubscription(
+					ctx, a.azdClient, a.azureContext, a.environment.Name,
+					"Select an Azure subscription to find existing Foundry projects.",
+				)
+				if err != nil {
+					return nil, err
+				}
+				a.credential = newCred
+
+				selectedProject, err := selectFoundryProject(
+					ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
+					a.azureContext.Scope.SubscriptionId, "",
+				)
+				if err != nil {
+					return nil, err
+				}
+
+				if selectedProject == nil {
+					// No existing project selected → fall back to "create new" path
+					_, _ = color.New(color.Faint).Println(
+						"No existing Foundry project was selected. Falling back to creating new resources.",
+					)
+					if err := ensureLocation(ctx, a.azdClient, a.azureContext, a.environment.Name); err != nil {
+						return nil, err
+					}
+				}
+			default:
+				newCred, err := ensureSubscriptionAndLocation(
+					ctx, a.azdClient, a.azureContext, a.environment.Name,
+					"Select an Azure subscription to provision your agent and Foundry project resources.",
+				)
+				if err != nil {
+					return nil, err
+				}
+				a.credential = newCred
+			}
 		}
 
 		return agentManifest, nil
@@ -717,9 +826,9 @@ func (a *InitAction) configureModelChoice(
 
 		if selectedProject == nil {
 			// No existing project selected (no projects found or user chose "Create new") → fall back to "deploy new" path
-			_, _ = color.New(color.Faint).Println(
+			fmt.Println(output.WithGrayFormat(
 				"No existing Foundry project was selected. Falling back to deploying a new model.",
-			)
+			))
 			if err := ensureLocation(ctx, a.azdClient, a.azureContext, a.environment.Name); err != nil {
 				return nil, err
 			}
@@ -756,6 +865,139 @@ func (a *InitAction) isLocalFilePath(path string) bool {
 	}
 
 	return false
+}
+
+// checkNotDirectory returns a validation error when path is a directory
+// instead of a manifest file. If an AgentManifest (a YAML file with a
+// top-level "template" field) is found inside the directory, the suggestion
+// includes the candidate manifest file path.
+func checkNotDirectory(path string) error {
+	info, err := os.Stat(path)
+	if err != nil || !info.IsDir() {
+		return nil
+	}
+
+	// Look for a manifest file inside the directory.  We check several
+	// common names and only suggest a candidate when it actually looks like
+	// an AgentManifest (has a top-level "template" key) rather than an
+	// AgentDefinition that happens to share the same file name.
+	for _, name := range []string{"agent.manifest.yaml", "agent.manifest.yml", "agent.yaml", "agent.yml"} {
+		candidate := filepath.Join(path, name)
+		if looksLikeManifest(candidate) {
+			return exterrors.Validation(
+				exterrors.CodeInvalidManifestPointer,
+				fmt.Sprintf(
+					"'%s' is a directory, not a manifest file",
+					path,
+				),
+				fmt.Sprintf(
+					"the --manifest flag must point to a manifest file, not a directory. Did you mean:\n  -m %q",
+					candidate,
+				),
+			)
+		}
+	}
+
+	return exterrors.Validation(
+		exterrors.CodeInvalidManifestPointer,
+		fmt.Sprintf("'%s' is a directory, not a manifest file", path),
+		"the --manifest flag must point to a manifest file (e.g. agent.manifest.yaml), not a directory",
+	)
+}
+
+// looksLikeManifest returns true when path is a regular file whose YAML
+// content contains a top-level "template" key — the hallmark of an
+// AgentManifest as opposed to an AgentDefinition.
+func looksLikeManifest(path string) bool {
+	fi, err := os.Stat(path)
+	if err != nil || fi.IsDir() {
+		return false
+	}
+
+	//nolint:gosec // candidate path comes from a user-provided directory + known file names
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+
+	var top map[string]any
+	if err := yaml.Unmarshal(data, &top); err != nil {
+		return false
+	}
+
+	_, hasTemplate := top["template"]
+	return hasTemplate
+}
+
+// resolvePositionalArg classifies a positional argument as either a manifest
+// pointer (explicit URI or existing file) or a source directory (existing
+// directory). It returns (isManifest=true, isSrc=false) for explicit URIs and
+// files, (isManifest=false, isSrc=true) for directories, or an error for
+// unrecognized inputs.
+//
+// For non-existent paths, a heuristic is applied: .yaml/.yml extensions are
+// treated as manifest pointers, while all other paths are treated as source
+// directories (the downstream init flow creates them via MkdirAll).
+func resolvePositionalArg(arg string) (isManifest bool, isSrc bool, err error) {
+	// Check for an explicit URI form first. Requiring "://" avoids
+	// misclassifying Windows drive paths such as C:\...
+	if strings.Contains(arg, "://") {
+		if parsed, parseErr := url.Parse(arg); parseErr == nil && parsed.Scheme != "" {
+			return true, false, nil
+		}
+	}
+
+	info, statErr := os.Stat(arg)
+	if statErr == nil {
+		if info.IsDir() {
+			return false, true, nil
+		}
+		return true, false, nil
+	}
+
+	// Path does not exist — use file extension heuristic.
+	ext := strings.ToLower(filepath.Ext(arg))
+	if ext == ".yaml" || ext == ".yml" {
+		return true, false, nil
+	}
+
+	// Default to source directory; the downstream flow will create it via MkdirAll.
+	return false, true, nil
+}
+
+// applyPositionalArg resolves a positional argument and maps it to the
+// appropriate flag, returning an error if the flag was already set explicitly.
+func applyPositionalArg(arg string, flags *initFlags, cmd *cobra.Command) error {
+	isManifest, isSrc, err := resolvePositionalArg(arg)
+	if err != nil {
+		return err
+	}
+
+	if isManifest {
+		if cmd.Flags().Changed("manifest") {
+			return exterrors.Validation(
+				exterrors.CodeConflictingArguments,
+				"cannot pass both a positional argument and --manifest",
+				"use either 'azd ai agent init <path>' or "+
+					"'azd ai agent init -m <manifest>', not both",
+			)
+		}
+		flags.manifestPointer = arg
+	}
+
+	if isSrc {
+		if cmd.Flags().Changed("src") {
+			return exterrors.Validation(
+				exterrors.CodeConflictingArguments,
+				"cannot pass both a positional directory argument and --src",
+				"use either 'azd ai agent init <dir>' or "+
+					"'azd ai agent init --src <dir>', not both",
+			)
+		}
+		flags.src = arg
+	}
+
+	return nil
 }
 
 func (a *InitAction) isGitHubUrl(manifestPointer string) bool {
@@ -849,8 +1091,14 @@ func (a *InitAction) downloadAgentYaml(
 
 	// Check if manifestPointer is a local file path or a URI
 	if a.isLocalFilePath(manifestPointer) {
+		// Guard against directories (defense in depth — the caller should
+		// have caught this already, but check here for safety).
+		if err := checkNotDirectory(manifestPointer); err != nil {
+			return nil, "", err
+		}
+
 		// Handle local file path
-		fmt.Printf("Reading agent.yaml from local file: %s\n", manifestPointer)
+		log.Printf("Reading agent.yaml from local file: %s", manifestPointer)
 		//nolint:gosec // manifest path is an explicit user-provided local path
 		content, err = os.ReadFile(manifestPointer)
 		if err != nil {
@@ -916,7 +1164,8 @@ func (a *InitAction) downloadAgentYaml(
 		//  - https://api.<hostname>/repos/<owner>/<repo>/contents/<path>/<file>.json
 		//    - This url comes from users familiar with the GitHub API. Usually for programmatic registration of templates.
 
-		fmt.Printf("Downloading agent.yaml from GitHub: %s\n", manifestPointer)
+		fmt.Println(output.WithGrayFormat("Downloading manifest from GitHub..."))
+		log.Printf("Downloading manifest from GitHub: %s", manifestPointer)
 		isGitHubUrl = true
 
 		// Create a simple console and command runner for GitHub CLI
@@ -958,7 +1207,7 @@ func (a *InitAction) downloadAgentYaml(
 				escapedBranch := url.QueryEscape(urlInfo.Branch)
 				fileApiUrl += fmt.Sprintf("?ref=%s", escapedBranch)
 			}
-			fmt.Printf("Attempting to download manifest from '%s' in repository '%s', branch '%s'\n", urlInfo.FilePath, urlInfo.RepoSlug, urlInfo.Branch)
+			log.Printf("Attempting to download manifest from '%s' in repository '%s', branch '%s'", urlInfo.FilePath, urlInfo.RepoSlug, urlInfo.Branch)
 
 			req, err := http.NewRequestWithContext(ctx, http.MethodGet, fileApiUrl, nil)
 			if err == nil {
@@ -971,14 +1220,14 @@ func (a *InitAction) downloadAgentYaml(
 						bodyBytes, readErr := io.ReadAll(resp.Body)
 						if readErr == nil {
 							contentStr = string(bodyBytes)
-							fmt.Printf("Downloaded manifest from branch: %s\n", urlInfo.Branch)
+							log.Printf("Downloaded manifest from branch: %s", urlInfo.Branch)
 						}
 					}
 				}
 			}
 			if contentStr == "" {
-				fmt.Printf("Warning: naive GitHub URL parsing failed to download manifest\n")
-				fmt.Println("Proceeding with full parsing and download logic...")
+				log.Print("Naive GitHub URL parsing failed to download manifest")
+				log.Print("Proceeding with full parsing and download logic...")
 			}
 		}
 
@@ -992,7 +1241,7 @@ func (a *InitAction) downloadAgentYaml(
 
 			apiPath := fmt.Sprintf("/repos/%s/contents/%s", urlInfo.RepoSlug, urlInfo.FilePath)
 			if urlInfo.Branch != "" {
-				fmt.Printf("Downloaded manifest from branch: %s\n", urlInfo.Branch)
+				log.Printf("Downloaded manifest from branch: %s", urlInfo.Branch)
 				apiPath += fmt.Sprintf("?ref=%s", urlInfo.Branch)
 			}
 
@@ -1014,7 +1263,7 @@ func (a *InitAction) downloadAgentYaml(
 		var versionResult *registry_api.Manifest
 		if registryManifest.manifestVersion == "" {
 			// No version specified, get latest version from GetAllLatest
-			fmt.Printf("No version provided for manifest '%s', retrieving latest version\n", registryManifest.manifestName)
+			log.Printf("No version provided for manifest '%s', retrieving latest version", registryManifest.manifestName)
 
 			allManifests, err := manifestClient.GetAllLatest(ctx)
 			if err != nil {
@@ -1034,7 +1283,8 @@ func (a *InitAction) downloadAgentYaml(
 			}
 		} else {
 			// Specific version requested
-			fmt.Printf("Downloading agent.yaml from registry: %s\n", manifestPointer)
+			fmt.Println(output.WithGrayFormat("Downloading manifest from registry..."))
+			log.Printf("Downloading manifest from registry: %s", manifestPointer)
 
 			manifest, err := manifestClient.GetManifest(ctx, registryManifest.manifestName, registryManifest.manifestVersion)
 			if err != nil {
@@ -1049,7 +1299,7 @@ func (a *InitAction) downloadAgentYaml(
 			return nil, "", fmt.Errorf("processing manifest with parameters: %w", err)
 		}
 
-		fmt.Println("Retrieved and processed manifest from registry")
+		log.Print("Retrieved and processed manifest from registry")
 
 		// Convert to YAML bytes for the content variable
 		manifestBytes, err := yaml.Marshal(processedManifest)
@@ -1072,14 +1322,30 @@ func (a *InitAction) downloadAgentYaml(
 		return nil, "", err
 	}
 
-	fmt.Println("✓ YAML content successfully validated against AgentManifest format")
+	fmt.Println(output.WithGrayFormat("✓ Manifest validated successfully"))
 
 	agentId := agentManifest.Name
+	serviceName := strings.ReplaceAll(agentId, " ", "")
 
 	// Use targetDir if provided, otherwise default to "src/{agentId}"
-	if targetDir == "" {
+	autoDir := targetDir == ""
+	if autoDir {
 		targetDir = filepath.Join("src", agentId)
 	}
+
+	// When the target directory was auto-computed (no --src flag), check for
+	// collisions with an existing directory or an existing azure.yaml service.
+	// If a collision is found, prompt for a new service name (or auto-suffix
+	// in no-prompt mode).
+	if autoDir {
+		targetDir, serviceName, err = a.resolveCollisions(
+			ctx, agentId, targetDir, serviceName,
+		)
+		if err != nil {
+			return nil, "", err
+		}
+	}
+	a.serviceNameOverride = serviceName
 
 	// Safety checks for local container-based agents should happen before prompting for model SKU, etc.
 	if a.isLocalFilePath(manifestPointer) {
@@ -1121,7 +1387,7 @@ func (a *InitAction) downloadAgentYaml(
 				return nil, "", fmt.Errorf("resolving target directory %s: %w", targetDir, err)
 			}
 			if !isSamePath(srcAbs, dstAbs) {
-				fmt.Println("Copying full directory for container agent")
+				log.Print("Copying full directory for container agent")
 				err := copyDirectory(manifestDir, targetDir)
 				if err != nil {
 					return nil, "", fmt.Errorf("copying parent directory: %w", err)
@@ -1134,7 +1400,7 @@ func (a *InitAction) downloadAgentYaml(
 
 		if isHostedContainer {
 			// For container agents, download the entire parent directory
-			fmt.Println("Downloading full directory for container agent")
+			log.Print("Downloading full directory for container agent")
 			err := downloadParentDirectory(ctx, urlInfo, targetDir, ghCli, console, useGhCli, a.httpClient)
 			if err != nil {
 				return nil, "", exterrors.Dependency(
@@ -1169,7 +1435,7 @@ func writeAgentDefinitionFile(targetDir string, agentManifest *agent_yaml.AgentM
 		return fmt.Errorf("saving file to %s: %w", filePath, err)
 	}
 
-	fmt.Printf("Processed agent.yaml at %s\n", filePath)
+	fmt.Println(output.WithGrayFormat("Processed agent.yaml at %s", filePath))
 	return nil
 }
 
@@ -1233,12 +1499,8 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 			}
 		}
 
-		// Prompt user for container settings
-		containerSettings, err := a.populateContainerSettings(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to populate container settings: %w", err)
-		}
-		agentConfig.Container = containerSettings
+		// Use container settings that were already populated before writing agent.yaml
+		agentConfig.Container = a.containerSettings
 	}
 
 	agentConfig.Deployments = a.deploymentDetails
@@ -1284,7 +1546,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	}
 
 	serviceConfig := &azdext.ServiceConfig{
-		Name:         strings.ReplaceAll(agentDef.Name, " ", ""),
+		Name:         a.serviceNameOverride,
 		RelativePath: targetDir,
 		Host:         AiAgentHost,
 		Language:     "docker",
@@ -1304,19 +1566,233 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		return fmt.Errorf("adding agent service to project: %w", err)
 	}
 
-	fmt.Printf("\nAdded your agent as a service entry named '%s' under the file azure.yaml.\n", agentDef.Name)
+	fmt.Printf(
+		"\nAdded your agent as a service entry named '%s' under the file azure.yaml.\n",
+		a.serviceNameOverride,
+	)
 	if projectID, _ := a.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 		EnvName: a.environment.Name,
 		Key:     "AZURE_AI_PROJECT_ID",
 	}); projectID != nil && projectID.Value != "" {
-		fmt.Printf("To deploy your agent, use %s.\n", color.HiBlueString("azd deploy %s", agentDef.Name))
+		fmt.Printf("To deploy your agent, use %s.\n",
+			color.HiBlueString("azd deploy %s", a.serviceNameOverride))
 	} else {
-		fmt.Printf("To provision and deploy the whole solution, use %s.\n", color.HiBlueString("azd up"))
+		fmt.Printf(
+			"To provision and deploy the whole solution, use %s.\n",
+			color.HiBlueString("azd up"),
+		)
 	}
 	return nil
 }
 
-func (a *InitAction) populateContainerSettings(ctx context.Context) (*project.ContainerSettings, error) {
+// resolveCollisions checks whether the auto-computed target directory or
+// service name already exist. When a collision is detected, the user is
+// prompted for a new name (or a numeric suffix is appended in no-prompt
+// mode). Returns the (possibly adjusted) targetDir and serviceName.
+func (a *InitAction) resolveCollisions(
+	ctx context.Context,
+	agentId string,
+	targetDir string,
+	serviceName string,
+) (string, string, error) {
+	dirExists := fileExists(targetDir)
+
+	serviceExists := false
+	if a.projectConfig != nil {
+		for _, svc := range a.projectConfig.Services {
+			if svc.Name == serviceName {
+				serviceExists = true
+				break
+			}
+		}
+	}
+
+	if !dirExists && !serviceExists {
+		return targetDir, serviceName, nil
+	}
+
+	// Find the next available name for use as the default suggestion
+	// (interactive) or the final answer (no-prompt).
+	suggestion, suggestionDir, suggestionSvc, err :=
+		a.nextAvailableName(agentId)
+	if err != nil {
+		return "", "", err
+	}
+
+	if a.flags.NoPrompt {
+		log.Printf(
+			"Collision on %q; using %q", agentId, suggestion,
+		)
+		return suggestionDir, suggestionSvc, nil
+	}
+
+	// Build a collision message tailored to what actually collided.
+	collisionMsg := buildCollisionMessage(
+		dirExists, serviceExists, targetDir, serviceName,
+	)
+
+	// Interactive mode: let the user choose.
+	choices := []*azdext.SelectChoice{
+		{
+			Label: "Overwrite existing",
+			Value: "overwrite",
+		},
+		{
+			Label: "Use a different service name",
+			Value: "rename",
+		},
+	}
+
+	defaultIdx := int32(1)
+	resp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+		Options: &azdext.SelectOptions{
+			Message:       collisionMsg,
+			Choices:       choices,
+			SelectedIndex: &defaultIdx,
+		},
+	})
+	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return "", "", exterrors.Cancelled(
+				"initialization was cancelled",
+			)
+		}
+		return "", "", fmt.Errorf(
+			"prompting for collision resolution: %w", err,
+		)
+	}
+
+	if choices[*resp.Value].Value == "overwrite" {
+		return targetDir, serviceName, nil
+	}
+
+	// Prompt for a new name — default to the next available suffix.
+	nameResp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+		Options: &azdext.PromptOptions{
+			Message:        "Enter a new service name for this agent",
+			DefaultValue:   suggestion,
+			IgnoreHintKeys: true,
+		},
+	})
+	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return "", "", exterrors.Cancelled(
+				"initialization was cancelled",
+			)
+		}
+		return "", "", fmt.Errorf(
+			"prompting for new service name: %w", err,
+		)
+	}
+
+	newName := strings.TrimSpace(nameResp.Value)
+	if newName == "" {
+		newName = suggestion
+	}
+
+	newDir, newSvc, err := validateRenameInput(newName)
+	if err != nil {
+		return "", "", err
+	}
+	return newDir, newSvc, nil
+}
+
+// validateRenameInput validates a user-provided rename input and returns
+// the target directory and sanitized service name. It rejects names with
+// path separators, dot segments, or invalid service-name characters.
+func validateRenameInput(newName string) (string, string, error) {
+	if filepath.IsAbs(newName) ||
+		strings.ContainsAny(newName, `/\`) ||
+		newName == "." ||
+		newName == ".." {
+		return "", "", fmt.Errorf(
+			"invalid service name %q: name must be a single directory"+
+				" name without path separators or dot segments",
+			newName,
+		)
+	}
+
+	newSvc := strings.ReplaceAll(newName, " ", "")
+	if err := azdext.ValidateServiceName(newSvc); err != nil {
+		return "", "", fmt.Errorf(
+			"invalid service name %q: %w", newName, err,
+		)
+	}
+
+	newDir := filepath.Join("src", newName)
+	return newDir, newSvc, nil
+}
+
+// buildCollisionMessage returns a user-facing prompt string tailored to the
+// type of collision detected (directory, service name, or both).
+func buildCollisionMessage(
+	dirExists, serviceExists bool,
+	targetDir, serviceName string,
+) string {
+	switch {
+	case dirExists && serviceExists:
+		return fmt.Sprintf(
+			"A service named '%s' and its directory '%s' already exist."+
+				" Overwrite or use a different name?",
+			serviceName, targetDir,
+		)
+	case serviceExists:
+		return fmt.Sprintf(
+			"A service named '%s' already exists in your azure.yaml."+
+				" Overwrite it or use a different name?",
+			serviceName,
+		)
+	default: // dirExists only
+		return fmt.Sprintf(
+			"The directory '%s' already exists."+
+				" Overwrite it or use a different name?",
+			targetDir,
+		)
+	}
+}
+
+// nextAvailableName finds the next unused name by appending -2, -3, etc.
+// Returns the candidate name, directory, and service name.
+func (a *InitAction) nextAvailableName(
+	agentId string,
+) (string, string, string, error) {
+	const maxAttempts = 100
+	for i := 2; i <= maxAttempts; i++ {
+		candidate := fmt.Sprintf("%s-%d", agentId, i)
+		candidateDir := filepath.Join("src", candidate)
+		candidateSvc := strings.ReplaceAll(candidate, " ", "")
+
+		if fileExists(candidateDir) {
+			continue
+		}
+
+		svcTaken := false
+		if a.projectConfig != nil {
+			for _, svc := range a.projectConfig.Services {
+				if svc.Name == candidateSvc {
+					svcTaken = true
+					break
+				}
+			}
+		}
+		if svcTaken {
+			continue
+		}
+
+		return candidate, candidateDir, candidateSvc, nil
+	}
+
+	return "", "", "", fmt.Errorf(
+		"could not find a unique name after %d attempts "+
+			"(tried %s-2 through %s-%d)",
+		maxAttempts-1, agentId, agentId, maxAttempts,
+	)
+}
+
+func (a *InitAction) populateContainerSettings(
+	ctx context.Context,
+	manifestResources *agent_yaml.ContainerResources,
+) (*project.ContainerSettings, error) {
 	choices := make([]*azdext.SelectChoice, len(project.ResourceTiers))
 	for i, t := range project.ResourceTiers {
 		choices[i] = &azdext.SelectChoice{
@@ -1326,6 +1802,15 @@ func (a *InitAction) populateContainerSettings(ctx context.Context) (*project.Co
 	}
 
 	defaultIndex := int32(0)
+	if manifestResources != nil {
+		for i, t := range project.ResourceTiers {
+			if t.Cpu == manifestResources.Cpu && t.Memory == manifestResources.Memory {
+				defaultIndex = int32(i)
+				break
+			}
+		}
+	}
+
 	resp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
 			Message:       "Select container resource allocation (CPU and Memory) for your agent. You can adjust these settings later in the azure.yaml file if needed.",
@@ -1476,30 +1961,32 @@ func downloadParentDirectory(
 	// Get parent directory by removing the filename from the file path
 	pathParts := strings.Split(urlInfo.FilePath, "/")
 	if len(pathParts) <= 1 {
-		fmt.Println("The file agent.yaml is at repository root, no parent directory to download")
+		log.Print("The file agent.yaml is at repository root, no parent directory to download")
 		return nil
 	}
 
 	parentDirPath := strings.Join(pathParts[:len(pathParts)-1], "/")
-	fmt.Printf("Downloading parent directory '%s' from repository '%s', branch '%s'\n", parentDirPath, urlInfo.RepoSlug, urlInfo.Branch)
+	log.Printf("Downloading parent directory '%s' from repository '%s', branch '%s'", parentDirPath, urlInfo.RepoSlug, urlInfo.Branch)
+	fmt.Println(output.WithGrayFormat("Downloading files..."))
 
 	// Download directory contents
 	if useGhCli {
-		if err := downloadDirectoryContents(ctx, urlInfo.Hostname, urlInfo.RepoSlug, parentDirPath, urlInfo.Branch, targetDir, ghCli, console); err != nil {
+		if err := downloadDirectoryContents(ctx, urlInfo.Hostname, urlInfo.RepoSlug, parentDirPath, parentDirPath, urlInfo.Branch, targetDir, ghCli, console); err != nil {
 			return fmt.Errorf("failed to download directory contents with GH CLI: %w", err)
 		}
 	} else {
-		if err := downloadDirectoryContentsWithoutGhCli(ctx, urlInfo.RepoSlug, parentDirPath, urlInfo.Branch, targetDir, httpClient); err != nil {
+		if err := downloadDirectoryContentsWithoutGhCli(ctx, urlInfo.RepoSlug, parentDirPath, parentDirPath, urlInfo.Branch, targetDir, httpClient); err != nil {
 			return fmt.Errorf("failed to download directory contents without GH CLI: %w", err)
 		}
 	}
 
-	fmt.Printf("Successfully downloaded parent directory to: %s\n", targetDir)
+	fmt.Println(output.WithGrayFormat("Downloaded to: %s", targetDir))
+	fmt.Println()
 	return nil
 }
 
 func downloadDirectoryContents(
-	ctx context.Context, hostname string, repoSlug string, dirPath string, branch string, localPath string, ghCli *github.Cli, console input.Console) error {
+	ctx context.Context, hostname string, repoSlug string, dirPath string, rootDirPath string, branch string, localPath string, ghCli *github.Cli, console input.Console) error {
 
 	// Get directory contents using GitHub API
 	apiPath := fmt.Sprintf("/repos/%s/contents/%s", repoSlug, dirPath)
@@ -1535,7 +2022,9 @@ func downloadDirectoryContents(
 
 		if itemType == "file" {
 			// Download file
-			fmt.Printf("%s\n", color.New(color.Faint).Sprintf("Downloading file: %s", itemPath))
+			relativePath := strings.TrimPrefix(itemPath, rootDirPath+"/")
+			fmt.Println(output.WithGrayFormat("  %s", relativePath))
+			log.Printf("Downloading file: %s", itemPath)
 			fileApiPath := fmt.Sprintf("/repos/%s/contents/%s", repoSlug, itemPath)
 			if branch != "" {
 				fileApiPath += fmt.Sprintf("?ref=%s", branch)
@@ -1554,14 +2043,14 @@ func downloadDirectoryContents(
 			}
 		} else if itemType == "dir" {
 			// Recursively download subdirectory
-			fmt.Printf("Downloading directory: %s\n", itemPath)
+			log.Printf("Downloading directory: %s", itemPath)
 			//nolint:gosec // scaffolded directories are intended to be readable/traversable
 			if err := os.MkdirAll(itemLocalPath, 0755); err != nil {
 				return fmt.Errorf("failed to create directory %s: %w", itemLocalPath, err)
 			}
 
 			// Recursively download directory contents
-			if err := downloadDirectoryContents(ctx, hostname, repoSlug, itemPath, branch, itemLocalPath, ghCli, console); err != nil {
+			if err := downloadDirectoryContents(ctx, hostname, repoSlug, itemPath, rootDirPath, branch, itemLocalPath, ghCli, console); err != nil {
 				return fmt.Errorf("failed to download subdirectory %s: %w", itemPath, err)
 			}
 		}
@@ -1571,7 +2060,7 @@ func downloadDirectoryContents(
 }
 
 func downloadDirectoryContentsWithoutGhCli(
-	ctx context.Context, repoSlug string, dirPath string, branch string, localPath string, httpClient *http.Client) error {
+	ctx context.Context, repoSlug string, dirPath string, rootDirPath string, branch string, localPath string, httpClient *http.Client) error {
 
 	// Get directory contents using GitHub API directly
 	apiUrl := fmt.Sprintf("https://api.github.com/repos/%s/contents/%s", repoSlug, dirPath)
@@ -1624,7 +2113,9 @@ func downloadDirectoryContentsWithoutGhCli(
 
 		if itemType == "file" {
 			// Download file using GitHub Contents API with raw accept header
-			fmt.Printf("%s\n", color.New(color.Faint).Sprintf("Downloading file: %s", itemPath))
+			relativePath := strings.TrimPrefix(itemPath, rootDirPath+"/")
+			fmt.Println(output.WithGrayFormat("  %s", relativePath))
+			log.Printf("Downloading file: %s", itemPath)
 			fileURL := &url.URL{
 				Scheme: "https",
 				Host:   "api.github.com",
@@ -1664,14 +2155,14 @@ func downloadDirectoryContentsWithoutGhCli(
 			}
 		} else if itemType == "dir" {
 			// Recursively download subdirectory
-			fmt.Printf("Downloading directory: %s\n", itemPath)
+			log.Printf("Downloading directory: %s", itemPath)
 			//nolint:gosec // scaffolded directories are intended to be readable/traversable
 			if err := os.MkdirAll(itemLocalPath, 0755); err != nil {
 				return fmt.Errorf("failed to create directory %s: %w", itemLocalPath, err)
 			}
 
 			// Recursively download directory contents
-			if err := downloadDirectoryContentsWithoutGhCli(ctx, repoSlug, itemPath, branch, itemLocalPath, httpClient); err != nil {
+			if err := downloadDirectoryContentsWithoutGhCli(ctx, repoSlug, itemPath, rootDirPath, branch, itemLocalPath, httpClient); err != nil {
 				return fmt.Errorf("failed to download subdirectory %s: %w", itemPath, err)
 			}
 		}

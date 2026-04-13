@@ -5,6 +5,7 @@ words:
   - Authenticode
   - gofmt
   - golangci
+  - lightspeed
   - toplevel
   - azcloud
   - azdext
@@ -35,6 +36,7 @@ words:
   - grpcbroker
   - msiexec
   - nosec
+  - npx
   - oneof
   - idxs
   # Looks like the protogen has a spelling error for panics
@@ -54,6 +56,7 @@ words:
   - structpb
   - syncmap
   - syscall
+  - tsx
   - Retryable
   - runcontext
   - surveyterm
@@ -371,6 +374,18 @@ overrides:
   - filename: pkg/infra/provisioning/bicep/local_preflight.go
     words:
       - actioned
+  - filename: pkg/project/project.go
+    words:
+      - copylocks
+  - filename: pkg/ext/models.go
+    words:
+      - unvalidated
+      - venvs
+      - workdir
+  - filename: docs/code-coverage-guide.md
+    words:
+      - covdata
+      - GOWORK
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

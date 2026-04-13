@@ -5,7 +5,7 @@ Usage
   azd copilot consent list [flags]
 
 Flags
-        --action string     	: Action type to filter by (readonly, any)
+        --action string     	: Action type to filter by (all, readonly)
         --operation string  	: Operation to filter by (tool, sampling)
         --permission string 	: Permission to filter by (allow, deny, prompt)
         --scope string      	: Consent scope to filter by (global, project). If not specified, lists rules from all scopes.

@@ -16,7 +16,7 @@ import (
 
 func Test_NewBlobSdkClient_UsesCustomEndpoint(t *testing.T) {
 	mockCredProvider := &mockMultiTenantCredentialProvider{}
-	mockTenantResolver := &mockSubscriptionTenantResolver{}
+	mockTenantResolver := &mockSubscriptionResolver{}
 	mockCred := &mockTokenCredential{}
 	mockConfigMgr := &mockUserConfigManager{}
 
@@ -51,7 +51,7 @@ func Test_NewBlobSdkClient_UsesCustomEndpoint(t *testing.T) {
 
 func Test_NewBlobSdkClient_DefaultEndpointFromCloud(t *testing.T) {
 	mockCredProvider := &mockMultiTenantCredentialProvider{}
-	mockTenantResolver := &mockSubscriptionTenantResolver{}
+	mockTenantResolver := &mockSubscriptionResolver{}
 	mockCred := &mockTokenCredential{}
 	mockConfigMgr := &mockUserConfigManager{}
 
@@ -86,7 +86,7 @@ func Test_NewBlobSdkClient_DefaultEndpointFromCloud(t *testing.T) {
 
 func Test_NewBlobSdkClient_CredentialProviderError(t *testing.T) {
 	mockCredProvider := &mockMultiTenantCredentialProvider{}
-	mockTenantResolver := &mockSubscriptionTenantResolver{}
+	mockTenantResolver := &mockSubscriptionResolver{}
 	mockConfigMgr := &mockUserConfigManager{}
 
 	accountCfg := &AccountConfig{
@@ -117,7 +117,7 @@ func Test_NewBlobSdkClient_CredentialProviderError(t *testing.T) {
 
 func Test_NewBlobSdkClient_EmptyDefaultSubscriptionIgnored(t *testing.T) {
 	mockCredProvider := &mockMultiTenantCredentialProvider{}
-	mockTenantResolver := &mockSubscriptionTenantResolver{}
+	mockTenantResolver := &mockSubscriptionResolver{}
 	mockCred := &mockTokenCredential{}
 	mockConfigMgr := &mockUserConfigManager{}
 

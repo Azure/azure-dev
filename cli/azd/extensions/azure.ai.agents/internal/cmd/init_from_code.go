@@ -128,7 +128,7 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 			fmt.Printf("  %s  %s\n", color.GreenString("+"), color.GreenString("%s/agent.yaml", srcDir))
 		}
 
-		fmt.Println("\nYou can customize environment variables, cpu, memory, and replica settings in the agent.yaml.")
+		fmt.Println("\nYou can customize environment variables and other settings in the agent.yaml.")
 		if projectID, _ := a.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 			EnvName: a.environment.Name,
 			Key:     "AZURE_AI_PROJECT_ID",
@@ -578,22 +578,16 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 	}
 
 	// Create a minimal Agent Definition
+	// Note: FOUNDRY_PROJECT_ENDPOINT and other FOUNDRY_* env vars are automatically
+	// injected into hosted agent containers by the platform, so we don't need to
+	// add them to agent.yaml. For local development, `azd ai agent run` translates
+	// azd environment values to FOUNDRY_* env vars.
 	definition := &agent_yaml.ContainerAgent{
 		AgentDefinition: agent_yaml.AgentDefinition{
 			Name: agentName,
 			Kind: agentKind,
 		},
 		Protocols: protocols,
-		EnvironmentVariables: &[]agent_yaml.EnvironmentVariable{
-			{
-				Name:  "AZURE_OPENAI_ENDPOINT",
-				Value: "${AZURE_OPENAI_ENDPOINT}",
-			},
-			{
-				Name:  "AZURE_AI_PROJECT_ENDPOINT",
-				Value: "${AZURE_AI_PROJECT_ENDPOINT}",
-			},
-		},
 	}
 
 	// Add model resource if a model was selected
@@ -612,7 +606,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 			},
 		})
 
-		*definition.EnvironmentVariables = append(*definition.EnvironmentVariables, agent_yaml.EnvironmentVariable{
+		definition.EnvironmentVariables = appendEnvVar(definition.EnvironmentVariables, agent_yaml.EnvironmentVariable{
 			Name:  "AZURE_AI_MODEL_DEPLOYMENT_NAME",
 			Value: "${AZURE_AI_MODEL_DEPLOYMENT_NAME}",
 		})
@@ -639,7 +633,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 			},
 		})
 
-		*definition.EnvironmentVariables = append(*definition.EnvironmentVariables, agent_yaml.EnvironmentVariable{
+		definition.EnvironmentVariables = appendEnvVar(definition.EnvironmentVariables, agent_yaml.EnvironmentVariable{
 			Name:  "AZURE_AI_MODEL_DEPLOYMENT_NAME",
 			Value: "${AZURE_AI_MODEL_DEPLOYMENT_NAME}",
 		})
@@ -675,6 +669,19 @@ func (a *InitFromCodeAction) resolveSelectedModelDeployment(
 	}
 
 	return selector.getModelDetails(ctx, model.Name)
+}
+
+// appendEnvVar appends an environment variable to a possibly-nil slice pointer,
+// initializing it if needed.
+func appendEnvVar(
+	envVars *[]agent_yaml.EnvironmentVariable,
+	envVar agent_yaml.EnvironmentVariable,
+) *[]agent_yaml.EnvironmentVariable {
+	if envVars == nil {
+		return &[]agent_yaml.EnvironmentVariable{envVar}
+	}
+	*envVars = append(*envVars, envVar)
+	return envVars
 }
 
 // sanitizeAgentName converts a string into a valid agent name:

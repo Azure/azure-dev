@@ -263,6 +263,16 @@ const completionSpec: Fig.Spec = {
 									],
 								},
 								{
+									name: ['--protocol'],
+									description: 'Protocols supported by the agent (e.g., \'responses\', \'invocations\'). Can be specified multiple times.',
+									isRepeatable: true,
+									args: [
+										{
+											name: 'protocol',
+										},
+									],
+								},
+								{
 									name: ['--src', '-s'],
 									description: 'Directory to download the agent definition to (defaults to \'src/<agent-id>\')',
 									args: [
@@ -399,7 +409,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['show'],
-							description: 'Show the status of a hosted agent deployment.',
+							description: 'Show the status of a hosted agent.',
 							options: [
 								{
 									name: ['--output', '-o'],
@@ -1187,7 +1197,7 @@ const completionSpec: Fig.Spec = {
 					options: [
 						{
 							name: ['--dst'],
-							description: 'The destination slot name. Use @main for production.',
+							description: 'The destination slot name. Use \'production\' for main app.',
 							args: [
 								{
 									name: 'dst',
@@ -1205,7 +1215,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['--src'],
-							description: 'The source slot name. Use @main for production.',
+							description: 'The source slot name. Use \'production\' for main app.',
 							args: [
 								{
 									name: 'src',
@@ -1549,7 +1559,7 @@ const completionSpec: Fig.Spec = {
 							options: [
 								{
 									name: ['--action'],
-									description: 'Action type to filter by (readonly, any)',
+									description: 'Action type to filter by (all, readonly)',
 									args: [
 										{
 											name: 'action',
@@ -1604,7 +1614,7 @@ const completionSpec: Fig.Spec = {
 							options: [
 								{
 									name: ['--action'],
-									description: 'Action type to filter by (readonly, any)',
+									description: 'Action type to filter by (all, readonly)',
 									args: [
 										{
 											name: 'action',
@@ -1728,15 +1738,6 @@ const completionSpec: Fig.Spec = {
 					description: 'Deploys all services that are listed in azure.yaml',
 				},
 				{
-					name: ['--environment', '-e'],
-					description: 'The name of the environment to use.',
-					args: [
-						{
-							name: 'environment',
-						},
-					],
-				},
-				{
 					name: ['--from-package'],
 					description: 'Deploys the packaged service located at the provided path. Supports zipped file packages (file path) or container images (image tag).',
 					args: [
@@ -1765,15 +1766,6 @@ const completionSpec: Fig.Spec = {
 			description: 'Delete your project\'s Azure resources.',
 			options: [
 				{
-					name: ['--environment', '-e'],
-					description: 'The name of the environment to use.',
-					args: [
-						{
-							name: 'environment',
-						},
-					],
-				},
-				{
 					name: ['--force'],
 					description: 'Does not require confirmation before it deletes resources.',
 					isDangerous: true,
@@ -1800,17 +1792,6 @@ const completionSpec: Fig.Spec = {
 						{
 							name: ['get'],
 							description: 'Gets a configuration value from the environment.',
-							options: [
-								{
-									name: ['--environment', '-e'],
-									description: 'The name of the environment to use.',
-									args: [
-										{
-											name: 'environment',
-										},
-									],
-								},
-							],
 							args: {
 								name: 'path',
 							},
@@ -1818,17 +1799,6 @@ const completionSpec: Fig.Spec = {
 						{
 							name: ['set'],
 							description: 'Sets a configuration value in the environment.',
-							options: [
-								{
-									name: ['--environment', '-e'],
-									description: 'The name of the environment to use.',
-									args: [
-										{
-											name: 'environment',
-										},
-									],
-								},
-							],
 							args: [
 								{
 									name: 'path',
@@ -1841,17 +1811,6 @@ const completionSpec: Fig.Spec = {
 						{
 							name: ['unset'],
 							description: 'Unsets a configuration value in the environment.',
-							options: [
-								{
-									name: ['--environment', '-e'],
-									description: 'The name of the environment to use.',
-									args: [
-										{
-											name: 'environment',
-										},
-									],
-								},
-							],
 							args: {
 								name: 'path',
 							},
@@ -1861,17 +1820,6 @@ const completionSpec: Fig.Spec = {
 				{
 					name: ['get-value'],
 					description: 'Get specific environment value.',
-					options: [
-						{
-							name: ['--environment', '-e'],
-							description: 'The name of the environment to use.',
-							args: [
-								{
-									name: 'environment',
-								},
-							],
-						},
-					],
 					args: {
 						name: 'keyName',
 						generators: azdGenerators.listEnvironmentVariables,
@@ -1880,17 +1828,6 @@ const completionSpec: Fig.Spec = {
 				{
 					name: ['get-values'],
 					description: 'Get all environment values.',
-					options: [
-						{
-							name: ['--environment', '-e'],
-							description: 'The name of the environment to use.',
-							args: [
-								{
-									name: 'environment',
-								},
-							],
-						},
-					],
 				},
 				{
 					name: ['list', 'ls'],
@@ -1928,15 +1865,6 @@ const completionSpec: Fig.Spec = {
 					description: 'Refresh environment values by using information from a previous infrastructure provision.',
 					options: [
 						{
-							name: ['--environment', '-e'],
-							description: 'The name of the environment to use.',
-							args: [
-								{
-									name: 'environment',
-								},
-							],
-						},
-						{
 							name: ['--hint'],
 							description: 'Hint to help identify the environment to refresh',
 							args: [
@@ -1964,15 +1892,6 @@ const completionSpec: Fig.Spec = {
 					description: 'Remove an environment.',
 					options: [
 						{
-							name: ['--environment', '-e'],
-							description: 'The name of the environment to use.',
-							args: [
-								{
-									name: 'environment',
-								},
-							],
-						},
-						{
 							name: ['--force'],
 							description: 'Skips confirmation before performing removal.',
 							isDangerous: true,
@@ -1995,15 +1914,6 @@ const completionSpec: Fig.Spec = {
 					name: ['set'],
 					description: 'Set one or more environment values.',
 					options: [
-						{
-							name: ['--environment', '-e'],
-							description: 'The name of the environment to use.',
-							args: [
-								{
-									name: 'environment',
-								},
-							],
-						},
 						{
 							name: ['--file'],
 							description: 'Path to .env formatted file to load environment values from.',
@@ -2028,17 +1938,6 @@ const completionSpec: Fig.Spec = {
 				{
 					name: ['set-secret'],
 					description: 'Set a name as a reference to a Key Vault secret in the environment.',
-					options: [
-						{
-							name: ['--environment', '-e'],
-							description: 'The name of the environment to use.',
-							args: [
-								{
-									name: 'environment',
-								},
-							],
-						},
-					],
 					args: {
 						name: 'name',
 					},
@@ -2252,15 +2151,6 @@ const completionSpec: Fig.Spec = {
 					description: 'Runs the specified hook for the project, provisioning layers, and services',
 					options: [
 						{
-							name: ['--environment', '-e'],
-							description: 'The name of the environment to use.',
-							args: [
-								{
-									name: 'environment',
-								},
-							],
-						},
-						{
 							name: ['--layer'],
 							description: 'Only runs hooks for the specified provisioning layer.',
 							args: [
@@ -2321,15 +2211,6 @@ const completionSpec: Fig.Spec = {
 					description: 'Write IaC for your project to disk, allowing you to manually manage it.',
 					options: [
 						{
-							name: ['--environment', '-e'],
-							description: 'The name of the environment to use.',
-							args: [
-								{
-									name: 'environment',
-								},
-							],
-						},
-						{
 							name: ['--force'],
 							description: 'Overwrite any existing files without prompting',
 							isDangerous: true,
@@ -2348,15 +2229,6 @@ const completionSpec: Fig.Spec = {
 					args: [
 						{
 							name: 'branch',
-						},
-					],
-				},
-				{
-					name: ['--environment', '-e'],
-					description: 'The name of the environment to use.',
-					args: [
-						{
-							name: 'environment',
 						},
 					],
 				},
@@ -2428,15 +2300,6 @@ const completionSpec: Fig.Spec = {
 			description: 'Monitor a deployed project.',
 			options: [
 				{
-					name: ['--environment', '-e'],
-					description: 'The name of the environment to use.',
-					args: [
-						{
-							name: 'environment',
-						},
-					],
-				},
-				{
 					name: ['--live'],
 					description: 'Open a browser to Application Insights Live Metrics. Live Metrics is currently not supported for Python apps.',
 				},
@@ -2457,15 +2320,6 @@ const completionSpec: Fig.Spec = {
 				{
 					name: ['--all'],
 					description: 'Packages all services that are listed in azure.yaml',
-				},
-				{
-					name: ['--environment', '-e'],
-					description: 'The name of the environment to use.',
-					args: [
-						{
-							name: 'environment',
-						},
-					],
 				},
 				{
 					name: ['--output-path'],
@@ -2506,15 +2360,6 @@ const completionSpec: Fig.Spec = {
 								{
 									name: 'auth-type',
 									suggestions: ['federated', 'client-credentials'],
-								},
-							],
-						},
-						{
-							name: ['--environment', '-e'],
-							description: 'The name of the environment to use.',
-							args: [
-								{
-									name: 'environment',
 								},
 							],
 						},
@@ -2574,15 +2419,6 @@ const completionSpec: Fig.Spec = {
 			description: 'Provision Azure resources for your project.',
 			options: [
 				{
-					name: ['--environment', '-e'],
-					description: 'The name of the environment to use.',
-					args: [
-						{
-							name: 'environment',
-						},
-					],
-				},
-				{
 					name: ['--location', '-l'],
 					description: 'Azure location for the new environment',
 					args: [
@@ -2623,15 +2459,6 @@ const completionSpec: Fig.Spec = {
 					description: 'Publishes all services that are listed in azure.yaml',
 				},
 				{
-					name: ['--environment', '-e'],
-					description: 'The name of the environment to use.',
-					args: [
-						{
-							name: 'environment',
-						},
-					],
-				},
-				{
 					name: ['--from-package'],
 					description: 'Publishes the service from a container image (image tag).',
 					args: [
@@ -2663,15 +2490,6 @@ const completionSpec: Fig.Spec = {
 					name: ['--all'],
 					description: 'Restores all services that are listed in azure.yaml',
 				},
-				{
-					name: ['--environment', '-e'],
-					description: 'The name of the environment to use.',
-					args: [
-						{
-							name: 'environment',
-						},
-					],
-				},
 			],
 			args: {
 				name: 'service',
@@ -2682,15 +2500,6 @@ const completionSpec: Fig.Spec = {
 			name: ['show'],
 			description: 'Display information about your project and its resources.',
 			options: [
-				{
-					name: ['--environment', '-e'],
-					description: 'The name of the environment to use.',
-					args: [
-						{
-							name: 'environment',
-						},
-					],
-				},
 				{
 					name: ['--show-secrets'],
 					description: 'Unmask secrets in output.',
@@ -2799,15 +2608,6 @@ const completionSpec: Fig.Spec = {
 			name: ['up'],
 			description: 'Provision and deploy your project to Azure with a single command.',
 			options: [
-				{
-					name: ['--environment', '-e'],
-					description: 'The name of the environment to use.',
-					args: [
-						{
-							name: 'environment',
-						},
-					],
-				},
 				{
 					name: ['--location', '-l'],
 					description: 'Azure location for the new environment',
@@ -3127,7 +2927,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['show'],
-									description: 'Show the status of a hosted agent deployment.',
+									description: 'Show the status of a hosted agent.',
 								},
 								{
 									name: ['version'],

@@ -406,7 +406,7 @@ func configureAcrConnection(
 			"You can:\n" +
 			"  • Use an existing ACR\n" +
 			"  • Or create a new one from the template during 'azd up'\n\n" +
-			"Learn more: aka.ms/azdaiagent/docs")
+			"Learn more: " + output.WithLinkFormat("https://aka.ms/azdaiagent/docs"))
 
 		resp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 			Options: &azdext.PromptOptions{
@@ -489,7 +489,7 @@ func configureAppInsightsConnection(
 			"You can:\n" +
 			"  • Use an existing Application Insights resource\n" +
 			"  • Or create a new one during 'azd up'\n\n" +
-			"Docs: aka.ms/azdaiagent/docs")
+			"Docs: " + output.WithLinkFormat("https://aka.ms/azdaiagent/docs"))
 
 		resourceIdResp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 			Options: &azdext.PromptOptions{

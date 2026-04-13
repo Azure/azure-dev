@@ -14,14 +14,17 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/language"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/python"
 )
 
 type HookFilterPredicateFn func(scriptName string, hookConfig *HookConfig) bool
 
-// Hooks enable support to invoke integration scripts before & after commands
-// Scripts can be invoked at the project or service level or
+// HooksManager enables support to invoke lifecycle hooks before & after
+// commands. Hooks can be invoked at the project or service level.
 type HooksManager struct {
 	cwd           string
 	commandRunner exec.CommandRunner
@@ -134,6 +137,7 @@ type HookValidationResult struct {
 type HookWarning struct {
 	Message    string
 	Suggestion string
+	URL        string
 }
 
 // ValidateHooks validates hook configurations and returns any warnings
@@ -166,19 +170,18 @@ func (h *HooksManager) ValidateHooks(ctx context.Context, allHooks map[string][]
 				relativeCheckPath := strings.ReplaceAll(hookConfig.Run, "/", string(os.PathSeparator))
 				fullCheckPath := relativeCheckPath
 				if hookConfig.cwd != "" {
-					fullCheckPath = filepath.Join(hookConfig.cwd, hookConfig.Run)
+					fullCheckPath = filepath.Join(hookConfig.cwd, relativeCheckPath)
 				}
 
 				_, err := os.Stat(fullCheckPath)
 				isInlineScript := err != nil // File doesn't exist, so it's inline
 
-				// If shell is not specified and it's an inline script, set default for warning
-				if hookConfig.Shell == ScriptTypeUnknown && isInlineScript {
-					if runtime.GOOS == "windows" {
-						hookConfig.Shell = ShellTypePowershell
-					} else {
-						hookConfig.Shell = ShellTypeBash
-					}
+				// If no kind/shell and it's an inline script, set
+				// OS default Kind for warning purposes.
+				if hookConfig.Shell == "" &&
+					hookConfig.Kind == language.HookKindUnknown &&
+					isInlineScript {
+					hookConfig.Kind = defaultKindForOS()
 					hookConfig.usingDefaultShell = true
 				}
 			}
@@ -246,5 +249,135 @@ func (h *HooksManager) ValidateHooks(ctx context.Context, allHooks map[string][]
 		log.Println(warningMessage)
 	}
 
+	// Check runtime availability for hooks that require external runtimes.
+	langWarnings := h.validateRuntimes(ctx, allHooks)
+	result.Warnings = append(result.Warnings, langWarnings...)
+
 	return result
+}
+
+// validateRuntimes inspects all hook configurations and verifies that
+// required runtimes are installed. It returns warnings for each missing
+// runtime, following the same pattern used for the PowerShell 7
+// validation above.
+//
+// Currently only Python hooks are validated (Phase 1). JavaScript,
+// TypeScript, and DotNet hooks are deferred to later phases.
+func (h *HooksManager) validateRuntimes(
+	ctx context.Context,
+	allHooks map[string][]*HookConfig,
+) []HookWarning {
+	var warnings []HookWarning
+
+	// Collect unique non-shell hook kinds required across all hooks.
+	// Track the first hook name per kind for actionable messages.
+	requiredLangs := map[language.HookKind]string{}
+
+	for hookName, hookConfigs := range allHooks {
+		for _, hookConfig := range hookConfigs {
+			if hookConfig == nil {
+				continue
+			}
+
+			// Apply OS-specific override if present.
+			cfg := hookConfig
+			if runtime.GOOS == "windows" && cfg.Windows != nil {
+				cfg = cfg.Windows
+			} else if (runtime.GOOS == "linux" ||
+				runtime.GOOS == "darwin") && cfg.Posix != nil {
+				cfg = cfg.Posix
+			}
+
+			if cfg.cwd == "" {
+				cfg.cwd = h.cwd
+			}
+
+			// Set the hook name so that any temp scripts
+			// created by validate() use the correct name
+			// pattern (e.g. azd-predeploy-*.sh).
+			if cfg.Name == "" {
+				cfg.Name = hookName
+			}
+
+			// Run validate to resolve the Kind field from
+			// file extension / explicit config.
+			if err := cfg.validate(); err != nil {
+				// Validation errors are surfaced by GetAll /
+				// GetByParams; skip the hook here.
+				continue
+			}
+
+			// Non-shell hooks need runtime validation
+			// (e.g. Python must be installed). Bash and
+			// PowerShell hooks are validated separately above.
+			if !cfg.Kind.IsShell() {
+				if _, seen := requiredLangs[cfg.Kind]; !seen {
+					requiredLangs[cfg.Kind] = hookName
+				}
+			}
+		}
+	}
+
+	// Phase 1: validate Python runtime.
+	if hookName, ok := requiredLangs[language.HookKindPython]; ok {
+		pythonCli := python.NewCli(h.commandRunner)
+		if err := pythonCli.CheckInstalled(ctx); err != nil {
+			warnings = append(warnings, HookWarning{
+				Message: fmt.Sprintf(
+					"Python 3 is required to run hook '%s' "+
+						"but is not installed",
+					hookName,
+				),
+				Suggestion: fmt.Sprintf(
+					"Install Python 3 from %s",
+					output.WithHyperlink(
+						pythonCli.InstallUrl(),
+						"Python Downloads",
+					),
+				),
+				URL: pythonCli.InstallUrl(),
+			})
+		}
+	}
+
+	// Phase 2: JS/TS — not yet validated.
+	// Phase 4: DotNet — not yet validated.
+
+	return warnings
+}
+
+// ValidateRuntimesErr is a convenience wrapper around ValidateHooks
+// that returns an [errorhandler.ErrorWithSuggestion] when any required
+// runtime is missing. Callers that need a hard early failure (e.g.
+// before starting a long deployment) should use this instead of
+// inspecting warnings manually.
+func (h *HooksManager) ValidateRuntimesErr(
+	ctx context.Context,
+	allHooks map[string][]*HookConfig,
+) error {
+	warnings := h.validateRuntimes(ctx, allHooks)
+	if len(warnings) == 0 {
+		return nil
+	}
+
+	// Use the first warning for the primary error; additional
+	// warnings are appended as links.
+	first := warnings[0]
+	links := make([]errorhandler.ErrorLink, 0, len(warnings))
+	for _, w := range warnings {
+		links = append(links, errorhandler.ErrorLink{
+			URL:   w.URL,
+			Title: w.Message,
+		})
+	}
+
+	return &errorhandler.ErrorWithSuggestion{
+		Err: fmt.Errorf(
+			"missing required runtime: %s",
+			first.Message,
+		),
+		Message:    first.Message,
+		Suggestion: first.Suggestion,
+		Links:      links,
+	}
 }

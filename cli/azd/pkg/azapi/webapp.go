@@ -226,30 +226,6 @@ func (cli *AzureClient) createZipDeployClient(
 	return client, nil
 }
 
-// HasAppServiceDeployments checks if the web app has at least one previous deployment.
-func (cli *AzureClient) HasAppServiceDeployments(
-	ctx context.Context,
-	subscriptionId string,
-	resourceGroup string,
-	appName string,
-) (bool, error) {
-	client, err := cli.createWebAppsClient(ctx, subscriptionId)
-	if err != nil {
-		return false, err
-	}
-
-	pager := client.NewListDeploymentsPager(resourceGroup, appName, nil)
-	if pager.More() {
-		page, err := pager.NextPage(ctx)
-		if err != nil {
-			return false, fmt.Errorf("listing webapp deployments: %w", err)
-		}
-		return len(page.Value) > 0, nil
-	}
-
-	return false, nil
-}
-
 // AppServiceSlot represents an App Service deployment slot.
 type AppServiceSlot struct {
 	Name string

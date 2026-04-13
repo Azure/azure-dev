@@ -6,10 +6,13 @@ package bash
 import (
 	"context"
 	"errors"
+	"os"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
@@ -22,6 +25,58 @@ func Test_Bash_Execute(t *testing.T) {
 		"a=apple",
 		"b=banana",
 	}
+
+	t.Run("Prepare", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		executor := NewExecutor(mockContext.CommandRunner)
+		execCtx := tools.ExecutionContext{Cwd: workingDir, EnvVars: env}
+		err := executor.Prepare(*mockContext.Context, scriptPath, execCtx)
+		require.NoError(t, err)
+	})
+
+	t.Run("PrepareInlineScript", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		executor := NewExecutor(mockContext.CommandRunner)
+
+		execCtx := tools.ExecutionContext{
+			Cwd:          workingDir,
+			EnvVars:      env,
+			HookName:     "predeploy",
+			InlineScript: "echo hello",
+		}
+		err := executor.Prepare(
+			*mockContext.Context, scriptPath, execCtx,
+		)
+		require.NoError(t, err)
+
+		// Verify temp file was created with correct content.
+		be := executor.(*bashExecutor)
+		require.NotEmpty(t, be.tempFile)
+		content, err := os.ReadFile(be.tempFile)
+		require.NoError(t, err)
+		require.True(
+			t,
+			strings.HasPrefix(string(content), "#!/bin/sh"),
+		)
+		require.Contains(t, string(content), "echo hello")
+
+		// Verify execute permission is set (Unix only;
+		// Windows does not enforce the execute bit).
+		if runtime.GOOS != "windows" {
+			info, err := os.Stat(be.tempFile)
+			require.NoError(t, err)
+			require.Equal(
+				t,
+				osutil.PermissionExecutableFile,
+				info.Mode().Perm(),
+			)
+		}
+
+		// Cleanup should remove the file.
+		require.NoError(t, executor.Cleanup(*mockContext.Context))
+		_, err = os.Stat(be.tempFile)
+		require.True(t, os.IsNotExist(err))
+	})
 
 	t.Run("Success", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
@@ -42,11 +97,16 @@ func Test_Bash_Execute(t *testing.T) {
 			return exec.NewRunResult(0, "", ""), nil
 		})
 
-		bashScript := NewBashScript(mockContext.CommandRunner, workingDir, env)
-		runResult, err := bashScript.Execute(
+		executor := NewExecutor(mockContext.CommandRunner)
+		execCtx := tools.ExecutionContext{
+			Cwd:         workingDir,
+			EnvVars:     env,
+			Interactive: new(true),
+		}
+		runResult, err := executor.Execute(
 			*mockContext.Context,
 			scriptPath,
-			tools.ExecOptions{Interactive: new(true)},
+			execCtx,
 		)
 
 		require.NotNil(t, runResult)
@@ -62,11 +122,16 @@ func Test_Bash_Execute(t *testing.T) {
 			return exec.NewRunResult(1, "", "error message"), errors.New("error message")
 		})
 
-		bashScript := NewBashScript(mockContext.CommandRunner, workingDir, env)
-		runResult, err := bashScript.Execute(
+		executor := NewExecutor(mockContext.CommandRunner)
+		execCtx := tools.ExecutionContext{
+			Cwd:         workingDir,
+			EnvVars:     env,
+			Interactive: new(true),
+		}
+		runResult, err := executor.Execute(
 			*mockContext.Context,
 			scriptPath,
-			tools.ExecOptions{Interactive: new(true)},
+			execCtx,
 		)
 
 		require.Equal(t, 1, runResult.ExitCode)
@@ -75,10 +140,14 @@ func Test_Bash_Execute(t *testing.T) {
 
 	tests := []struct {
 		name  string
-		value tools.ExecOptions
+		value tools.ExecutionContext
 	}{
-		{name: "Interactive", value: tools.ExecOptions{Interactive: new(true)}},
-		{name: "NonInteractive", value: tools.ExecOptions{Interactive: new(false)}},
+		{name: "Interactive", value: tools.ExecutionContext{
+			Cwd: workingDir, EnvVars: env, Interactive: new(true),
+		}},
+		{name: "NonInteractive", value: tools.ExecutionContext{
+			Cwd: workingDir, EnvVars: env, Interactive: new(false),
+		}},
 	}
 
 	for _, test := range tests {
@@ -92,8 +161,8 @@ func Test_Bash_Execute(t *testing.T) {
 				return exec.NewRunResult(0, "", ""), nil
 			})
 
-			bashScript := NewBashScript(mockContext.CommandRunner, workingDir, env)
-			runResult, err := bashScript.Execute(*mockContext.Context, scriptPath, test.value)
+			executor := NewExecutor(mockContext.CommandRunner)
+			runResult, err := executor.Execute(*mockContext.Context, scriptPath, test.value)
 
 			require.NotNil(t, runResult)
 			require.NoError(t, err)

@@ -84,7 +84,8 @@ session automatically. Pass --new-session to force a reset.`,
 		Args: cobra.RangeArgs(0, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
-			setupDebugLogging(cmd.Flags())
+			logCleanup := setupDebugLogging(cmd.Flags())
+			defer logCleanup()
 
 			switch len(args) {
 			case 2:
@@ -633,7 +634,7 @@ func handleInvocationResponse(
 
 	contentType := resp.Header.Get("Content-Type")
 	if strings.HasPrefix(contentType, "text/event-stream") {
-		return handleInvocationSSE(resp.Body, agentName)
+		return handleInvocationSSE(os.Stdout, resp.Body, agentName)
 	}
 
 	return handleInvocationSync(resp.Body, agentName)
@@ -679,7 +680,7 @@ func handleInvocationSync(body io.Reader, agentName string) error {
 
 // handleInvocationSSE handles a streaming (200 OK, text/event-stream) invocations response.
 // The invocations protocol has a developer-defined SSE format, so we print data lines as they arrive.
-func handleInvocationSSE(body io.Reader, agentName string) error {
+func handleInvocationSSE(w io.Writer, body io.Reader, agentName string) error {
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
@@ -702,9 +703,6 @@ func handleInvocationSSE(body io.Reader, agentName string) error {
 				} `json:"error"`
 			}
 			if json.Unmarshal([]byte(data), &errEnvelope) == nil && errEnvelope.Error.Message != "" {
-				if printed {
-					fmt.Println()
-				}
 				label := errEnvelope.Error.Code
 				if label == "" {
 					label = errEnvelope.Error.Type
@@ -715,12 +713,12 @@ func handleInvocationSSE(body io.Reader, agentName string) error {
 				return fmt.Errorf("agent error: %s", errEnvelope.Error.Message)
 			}
 
-			// Print data as-is
+			// Print data as-is, one line per SSE data object
 			if !printed {
-				fmt.Printf("[%s] ", agentName)
+				fmt.Fprintf(w, "[%s] ", agentName)
 				printed = true
 			}
-			fmt.Print(data)
+			fmt.Fprintln(w, data)
 		}
 	}
 
@@ -728,9 +726,6 @@ func handleInvocationSSE(body io.Reader, agentName string) error {
 		return fmt.Errorf("error reading response stream: %w", err)
 	}
 
-	if printed {
-		fmt.Println()
-	}
 	return nil
 }
 

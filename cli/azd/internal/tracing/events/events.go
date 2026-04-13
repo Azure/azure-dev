@@ -45,3 +45,10 @@ const (
 	// and its outcome (passed, warnings accepted, aborted).
 	PreflightValidationEvent = "validation.preflight"
 )
+
+// AKS service target events.
+const (
+	// AksPostprovisionSkipEvent tracks when the AKS postprovision hook
+	// skips Kubernetes context setup because the cluster isn't available yet.
+	AksPostprovisionSkipEvent = "aks.postprovision.skip"
+)

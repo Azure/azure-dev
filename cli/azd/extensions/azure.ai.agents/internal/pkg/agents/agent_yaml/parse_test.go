@@ -6,6 +6,8 @@ package agent_yaml
 import (
 	"strings"
 	"testing"
+
+	"go.yaml.in/yaml/v3"
 )
 
 // TestExtractAgentDefinition_WithTemplateField tests parsing YAML with a template field (manifest format)
@@ -37,6 +39,107 @@ template:
 
 	if containerAgent.Kind != AgentKindHosted {
 		t.Errorf("Expected kind 'hosted', got '%s'", containerAgent.Kind)
+	}
+}
+
+// TestExtractAgentDefinition_WithResources tests that resources (cpu/memory) are parsed and round-tripped
+func TestExtractAgentDefinition_WithResources(t *testing.T) {
+	yamlContent := []byte(`
+name: echo-agent
+template:
+  kind: hosted
+  name: echo-agent
+  description: A simple echo agent
+  protocols:
+    - protocol: invocations
+      version: 1.0.0
+  resources:
+    cpu: "0.25"
+    memory: 0.5Gi
+`)
+
+	agent, err := ExtractAgentDefinition(yamlContent)
+	if err != nil {
+		t.Fatalf("ExtractAgentDefinition failed: %v", err)
+	}
+
+	containerAgent, ok := agent.(ContainerAgent)
+	if !ok {
+		t.Fatalf("Expected ContainerAgent, got %T", agent)
+	}
+
+	if containerAgent.Resources == nil {
+		t.Fatal("Expected Resources to be set, got nil")
+	}
+	if containerAgent.Resources.Cpu != "0.25" {
+		t.Errorf("Expected cpu '0.25', got '%s'", containerAgent.Resources.Cpu)
+	}
+	if containerAgent.Resources.Memory != "0.5Gi" {
+		t.Errorf("Expected memory '0.5Gi', got '%s'", containerAgent.Resources.Memory)
+	}
+
+	// Verify YAML round-trip: marshal the agent and check resources are preserved
+	marshaled, err := yaml.Marshal(containerAgent)
+	if err != nil {
+		t.Fatalf("Failed to marshal ContainerAgent: %v", err)
+	}
+
+	marshaledStr := string(marshaled)
+	if !strings.Contains(marshaledStr, "cpu:") || !strings.Contains(marshaledStr, "memory:") {
+		t.Errorf("Marshaled YAML should contain cpu and memory under resources, got:\n%s", marshaledStr)
+	}
+
+	// Unmarshal back and verify
+	var roundTripped ContainerAgent
+	if err := yaml.Unmarshal(marshaled, &roundTripped); err != nil {
+		t.Fatalf("Failed to unmarshal ContainerAgent: %v", err)
+	}
+
+	if roundTripped.Resources == nil {
+		t.Fatal("Expected Resources after round-trip, got nil")
+	}
+	if roundTripped.Resources.Cpu != "0.25" {
+		t.Errorf("Round-trip cpu: expected '0.25', got '%s'", roundTripped.Resources.Cpu)
+	}
+	if roundTripped.Resources.Memory != "0.5Gi" {
+		t.Errorf("Round-trip memory: expected '0.5Gi', got '%s'", roundTripped.Resources.Memory)
+	}
+}
+
+// TestExtractAgentDefinition_WithoutResources tests that ContainerAgent without resources still parses
+func TestExtractAgentDefinition_WithoutResources(t *testing.T) {
+	yamlContent := []byte(`
+name: test-manifest
+template:
+  kind: hosted
+  name: test-agent
+  protocols:
+    - protocol: responses
+      version: v1
+`)
+
+	agent, err := ExtractAgentDefinition(yamlContent)
+	if err != nil {
+		t.Fatalf("ExtractAgentDefinition failed: %v", err)
+	}
+
+	containerAgent, ok := agent.(ContainerAgent)
+	if !ok {
+		t.Fatalf("Expected ContainerAgent, got %T", agent)
+	}
+
+	if containerAgent.Resources != nil {
+		t.Errorf("Expected Resources to be nil when not specified, got %+v", containerAgent.Resources)
+	}
+
+	// Verify marshaling omits resources when nil
+	marshaled, err := yaml.Marshal(containerAgent)
+	if err != nil {
+		t.Fatalf("Failed to marshal ContainerAgent: %v", err)
+	}
+
+	if strings.Contains(string(marshaled), "resources:") {
+		t.Errorf("Marshaled YAML should not contain resources when nil, got:\n%s", string(marshaled))
 	}
 }
 

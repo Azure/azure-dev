@@ -12,6 +12,20 @@ import (
 )
 
 // ---------------------------------------------------------------------------
+// Test helpers
+// ---------------------------------------------------------------------------
+
+// findProperty returns the first Property whose Name equals name, or nil.
+func findProperty(props []agent_yaml.Property, name string) *agent_yaml.Property {
+	for i := range props {
+		if props[i].Name == name {
+			return &props[i]
+		}
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
 // ConvertToolToYaml
 // ---------------------------------------------------------------------------
 
@@ -495,13 +509,7 @@ func TestConvertParameters(t *testing.T) {
 		if len(got.Properties) != 1 {
 			t.Fatalf("expected 1 property, got %d", len(got.Properties))
 		}
-		var p *agent_yaml.Property
-		for i := range got.Properties {
-			if got.Properties[i].Name == "region" {
-				p = &got.Properties[i]
-				break
-			}
-		}
+		p := findProperty(got.Properties, "region")
 		if p == nil {
 			t.Fatal("expected property named \"region\"")
 		}
@@ -538,13 +546,7 @@ func TestConvertParameters(t *testing.T) {
 		if got == nil {
 			t.Fatal("expected non-nil PropertySchema")
 		}
-		var p *agent_yaml.Property
-		for i := range got.Properties {
-			if got.Properties[i].Name == "name" {
-				p = &got.Properties[i]
-				break
-			}
-		}
+		p := findProperty(got.Properties, "name")
 		if p == nil {
 			t.Fatal("expected property named \"name\"")
 		}
@@ -570,13 +572,7 @@ func TestConvertParameters(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		var p *agent_yaml.Property
-		for i := range got.Properties {
-			if got.Properties[i].Name == "timeout" {
-				p = &got.Properties[i]
-				break
-			}
-		}
+		p := findProperty(got.Properties, "timeout")
 		if p == nil {
 			t.Fatal("expected property named \"timeout\"")
 		}
@@ -614,13 +610,7 @@ func TestConvertParameters(t *testing.T) {
 			t.Fatalf("expected 2 properties, got %d", len(got.Properties))
 		}
 
-		// Build a name→property map so assertions are order-independent.
-		byName := make(map[string]*agent_yaml.Property, len(got.Properties))
-		for i := range got.Properties {
-			byName[got.Properties[i].Name] = &got.Properties[i]
-		}
-
-		region := byName["region"]
+		region := findProperty(got.Properties, "region")
 		if region == nil {
 			t.Fatal("expected property named \"region\"")
 		}
@@ -634,7 +624,7 @@ func TestConvertParameters(t *testing.T) {
 			t.Errorf("region.Kind = %q, want \"string\"", region.Kind)
 		}
 
-		count := byName["count"]
+		count := findProperty(got.Properties, "count")
 		if count == nil {
 			t.Fatal("expected property named \"count\"")
 		}

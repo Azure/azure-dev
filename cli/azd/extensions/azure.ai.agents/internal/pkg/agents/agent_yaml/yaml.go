@@ -57,6 +57,26 @@ const (
 	ToolKindA2APreview      ToolKind = "a2a_preview"
 )
 
+// legacyToolKindAliases maps deprecated camelCase tool kind names to their
+// current snake_case equivalents so that older agent.yaml files continue to parse.
+var legacyToolKindAliases = map[ToolKind]ToolKind{
+	"webSearch":       ToolKindWebSearch,
+	"bingGrounding":   ToolKindBingGrounding,
+	"fileSearch":      ToolKindFileSearch,
+	"codeInterpreter": ToolKindCodeInterpreter,
+	"azureAiSearch":   ToolKindAzureAiSearch,
+	"a2aPreview":      ToolKindA2APreview,
+}
+
+// NormalizeToolKind maps legacy camelCase tool kind values to the current
+// snake_case form. If the kind is already canonical it is returned unchanged.
+func NormalizeToolKind(kind ToolKind) ToolKind {
+	if canonical, ok := legacyToolKindAliases[kind]; ok {
+		return canonical
+	}
+	return kind
+}
+
 // AuthType represents the authentication type for a connection.
 type AuthType string
 

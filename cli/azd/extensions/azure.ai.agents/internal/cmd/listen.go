@@ -331,15 +331,7 @@ func toolConnectionsEnvUpdate(
 	azdClient *azdext.AzdClient,
 	envName string,
 ) error {
-	// Normalize credentials before serializing: CustomKeys authType requires
-	// credentials nested under "keys" for the ARM API.
-	normalized := make([]project.ToolConnection, len(connections))
-	copy(normalized, connections)
-	for i := range normalized {
-		normalized[i].Credentials = normalizeCredentials(normalized[i].AuthType, normalized[i].Credentials)
-	}
-
-	return marshalAndSetEnvVar(ctx, azdClient, envName, "AI_PROJECT_TOOL_CONNECTIONS", normalized)
+	return marshalAndSetEnvVar(ctx, azdClient, envName, "AI_PROJECT_TOOL_CONNECTIONS", connections)
 }
 
 // marshalAndSetEnvVar serializes a value to JSON, escapes it for safe storage
@@ -363,21 +355,6 @@ func marshalAndSetEnvVar(
 	return setEnvVar(ctx, azdClient, envName, key, escaped)
 }
 
-// normalizeCredentials ensures credentials match the expected ARM format.
-// CustomKeys requires credentials nested under "keys": { "keys": { "key": "val" } }.
-// If already wrapped, returns as-is. Other auth types are returned unchanged.
-func normalizeCredentials(authType string, creds map[string]any) map[string]any {
-	if authType != "CustomKeys" || len(creds) == 0 {
-		return creds
-	}
-
-	// Already correctly wrapped
-	if _, hasKeys := creds["keys"]; hasKeys && len(creds) == 1 {
-		return creds
-	}
-
-	return map[string]any{"keys": creds}
-}
 
 func setEnvVar(ctx context.Context, azdClient *azdext.AzdClient, envName string, key string, value string) error {
 	_, err := azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
@@ -544,7 +521,10 @@ func provisionToolboxes(
 	}
 
 	// Build connection ID lookup from bicep outputs (name → ARM resource ID)
-	connIDMap := parseConnectionIDs(azdEnv["AI_PROJECT_CONNECTION_IDS_JSON"])
+	connIDMap, err := parseConnectionIDs(azdEnv["AI_PROJECT_CONNECTION_IDS_JSON"])
+	if err != nil {
+		return fmt.Errorf("loading connection IDs: %w", err)
+	}
 
 	// Build connection lookup for enriching tool entries with server_url/server_label
 	connByName := map[string]project.ToolConnection{}
@@ -679,10 +659,10 @@ func enrichToolboxFromConnections(
 
 // parseConnectionIDs parses the AI_PROJECT_CONNECTION_IDS_JSON env var
 // (a JSON array of {name, id} objects) into a map of name → ARM resource ID.
-func parseConnectionIDs(jsonStr string) map[string]string {
+func parseConnectionIDs(jsonStr string) (map[string]string, error) {
 	result := map[string]string{}
 	if jsonStr == "" {
-		return result
+		return result, nil
 	}
 
 	var entries []struct {
@@ -690,9 +670,7 @@ func parseConnectionIDs(jsonStr string) map[string]string {
 		ID   string `json:"id"`
 	}
 	if err := json.Unmarshal([]byte(jsonStr), &entries); err != nil {
-		fmt.Fprintf(os.Stderr,
-			"Warning: failed to parse AI_PROJECT_CONNECTION_IDS_JSON: %s\n", err)
-		return result
+		return nil, fmt.Errorf("failed to parse AI_PROJECT_CONNECTION_IDS_JSON: %w", err)
 	}
 
 	for _, e := range entries {
@@ -700,7 +678,7 @@ func parseConnectionIDs(jsonStr string) map[string]string {
 			result[e.Name] = e.ID
 		}
 	}
-	return result
+	return result, nil
 }
 
 // resolveToolboxConnectionIDs replaces project_connection_id friendly names
@@ -739,6 +717,8 @@ func resolveEnvValue(value string, azdEnv map[string]string) string {
 		return azdEnv[varName]
 	})
 	if err != nil {
+		fmt.Fprintf(os.Stderr,
+			"Warning: failed to resolve env references in %q: %s\n", value, err)
 		return value
 	}
 	return resolved

@@ -7,6 +7,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
@@ -610,18 +611,13 @@ func TestExtractToolboxAndConnectionConfigs_CustomKeysCredentials(t *testing.T) 
 		t.Fatalf("Expected 2 connections, got %d", len(connections))
 	}
 
-	// CustomKeys: credentials must be nested under "keys"
+	// CustomKeys: credentials stored as-is (no "keys" wrapper)
 	customConn := connections[0]
-	keysRaw, ok := customConn.Credentials["keys"]
-	if !ok {
-		t.Fatal("CustomKeys connection missing 'keys' wrapper in credentials")
+	if customConn.Credentials["key"] != "${TOOL_CUSTOM_API_KEY}" {
+		t.Errorf("Expected env var ref for key, got '%v'", customConn.Credentials["key"])
 	}
-	keys, ok := keysRaw.(map[string]any)
-	if !ok {
-		t.Fatalf("Expected 'keys' to be map[string]any, got %T", keysRaw)
-	}
-	if keys["key"] != "${TOOL_CUSTOM_API_KEY}" {
-		t.Errorf("Expected env var ref for key, got '%v'", keys["key"])
+	if _, hasKeys := customConn.Credentials["keys"]; hasKeys {
+		t.Error("CustomKeys connection should not have 'keys' wrapper")
 	}
 
 	// OAuth2: credentials should be flat (no "keys" wrapper)
@@ -663,7 +659,9 @@ func TestInjectToolboxEnvVarsIntoDefinition_AddsEnvVars(t *testing.T) {
 		},
 	}
 
-	injectToolboxEnvVarsIntoDefinition(manifest)
+	if err := injectToolboxEnvVarsIntoDefinition(manifest); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	containerAgent := manifest.Template.(agent_yaml.ContainerAgent)
 	envVars := *containerAgent.EnvironmentVariables
@@ -715,17 +713,10 @@ func TestInjectToolboxEnvVarsIntoDefinition_SkipsExisting(t *testing.T) {
 		},
 	}
 
-	injectToolboxEnvVarsIntoDefinition(manifest)
+	err := injectToolboxEnvVarsIntoDefinition(manifest)
 
-	containerAgent := manifest.Template.(agent_yaml.ContainerAgent)
-	envVars := *containerAgent.EnvironmentVariables
-
-	// Should not add a duplicate — user's value is preserved
-	if len(envVars) != 1 {
-		t.Fatalf("Expected 1 env var (no duplicate), got %d", len(envVars))
-	}
-	if envVars[0].Value != "custom-value" {
-		t.Errorf("Expected user value preserved, got %s", envVars[0].Value)
+	if err == nil {
+		t.Fatal("expected error for duplicate env var, got nil")
 	}
 }
 
@@ -754,7 +745,9 @@ func TestInjectToolboxEnvVarsIntoDefinition_MultipleToolboxes(t *testing.T) {
 		},
 	}
 
-	injectToolboxEnvVarsIntoDefinition(manifest)
+	if err := injectToolboxEnvVarsIntoDefinition(manifest); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	containerAgent := manifest.Template.(agent_yaml.ContainerAgent)
 	envVars := *containerAgent.EnvironmentVariables
@@ -773,8 +766,10 @@ func TestInjectToolboxEnvVarsIntoDefinition_MultipleToolboxes(t *testing.T) {
 func TestInjectToolboxEnvVarsIntoDefinition_NoopForNilManifest(t *testing.T) {
 	t.Parallel()
 
-	// Should not panic
-	injectToolboxEnvVarsIntoDefinition(nil)
+	// Should not panic or error
+	if err := injectToolboxEnvVarsIntoDefinition(nil); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 }
 
 func TestInjectToolboxEnvVarsIntoDefinition_NoopForPromptAgent(t *testing.T) {
@@ -795,7 +790,9 @@ func TestInjectToolboxEnvVarsIntoDefinition_NoopForPromptAgent(t *testing.T) {
 		},
 	}
 
-	injectToolboxEnvVarsIntoDefinition(manifest)
+	if err := injectToolboxEnvVarsIntoDefinition(manifest); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	// Template should be unchanged (still a PromptAgent, no EnvironmentVariables field)
 	if _, ok := manifest.Template.(agent_yaml.PromptAgent); !ok {
@@ -819,7 +816,9 @@ func TestInjectToolboxEnvVarsIntoDefinition_NoopWithoutToolboxes(t *testing.T) {
 		Resources: []any{},
 	}
 
-	injectToolboxEnvVarsIntoDefinition(manifest)
+	if err := injectToolboxEnvVarsIntoDefinition(manifest); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	containerAgent := manifest.Template.(agent_yaml.ContainerAgent)
 	if len(*containerAgent.EnvironmentVariables) != 1 {
@@ -860,6 +859,7 @@ func TestExtractConnectionConfigs_SurfacesCredentialsType(t *testing.T) {
 		wantAuthType     string
 		wantCredHasType  bool
 		wantCredKeyCount int
+		wantEnvVarCount  int
 	}{
 		{
 			name: "surfaces credentials.type to authType when authType is empty",
@@ -877,6 +877,7 @@ func TestExtractConnectionConfigs_SurfacesCredentialsType(t *testing.T) {
 			wantAuthType:     "CustomKeys",
 			wantCredHasType:  false,
 			wantCredKeyCount: 1,
+			wantEnvVarCount:  1, // only "key" externalized; "type" was lifted out
 		},
 		{
 			name: "preserves explicit authType even if credentials.type differs",
@@ -895,6 +896,7 @@ func TestExtractConnectionConfigs_SurfacesCredentialsType(t *testing.T) {
 			wantAuthType:     string(agent_yaml.AuthTypeAAD),
 			wantCredHasType:  true,
 			wantCredKeyCount: 2,
+			wantEnvVarCount:  2, // both "type" and "key" externalized
 		},
 		{
 			name: "no credentials.type and no authType stays empty",
@@ -909,6 +911,7 @@ func TestExtractConnectionConfigs_SurfacesCredentialsType(t *testing.T) {
 			wantAuthType:     "",
 			wantCredHasType:  false,
 			wantCredKeyCount: 1,
+			wantEnvVarCount:  1,
 		},
 	}
 
@@ -917,7 +920,7 @@ func TestExtractConnectionConfigs_SurfacesCredentialsType(t *testing.T) {
 			manifest := &agent_yaml.AgentManifest{
 				Resources: []any{tt.connResource},
 			}
-			conns, err := extractConnectionConfigs(manifest)
+			conns, envVars, err := extractConnectionConfigs(manifest)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -936,6 +939,17 @@ func TestExtractConnectionConfigs_SurfacesCredentialsType(t *testing.T) {
 			if len(conn.Credentials) != tt.wantCredKeyCount {
 				t.Errorf("credentials key count = %d, want %d",
 					len(conn.Credentials), tt.wantCredKeyCount)
+			}
+			if len(envVars) != tt.wantEnvVarCount {
+				t.Errorf("env var count = %d, want %d",
+					len(envVars), tt.wantEnvVarCount)
+			}
+			// Verify credentials are externalized (contain ${...} references)
+			for k, v := range conn.Credentials {
+				vStr, ok := v.(string)
+				if !ok || !strings.HasPrefix(vStr, "${") {
+					t.Errorf("credential %q should be externalized, got %v", k, v)
+				}
 			}
 		})
 	}

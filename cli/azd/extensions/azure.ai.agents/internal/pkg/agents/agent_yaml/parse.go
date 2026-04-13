@@ -208,6 +208,8 @@ func ExtractToolsDefinitions(template map[string]any) ([]any, error) {
 				return nil, fmt.Errorf("failed to unmarshal to Tool: %w", err)
 			}
 
+			toolDef.Kind = NormalizeToolKind(toolDef.Kind)
+
 			switch toolDef.Kind {
 			case ToolKindFunction:
 				var functionTool FunctionTool

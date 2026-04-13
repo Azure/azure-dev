@@ -152,6 +152,59 @@ func TestTsCleanup_NoOp(t *testing.T) {
 	require.NoError(t, e.Cleanup(t.Context()))
 }
 
+func TestTsPrepare_PackageManagerOverride(t *testing.T) {
+	root := t.TempDir()
+	projectDir := filepath.Join(root, "project")
+	require.NoError(t, os.MkdirAll(projectDir, 0o700))
+	writeFile(t,
+		filepath.Join(projectDir, "package.json"),
+		`{"name": "test"}`,
+	)
+
+	mock := &mockNodeTools{}
+	runner := &mockCommandRunner{
+		runResult: exec.NewRunResult(
+			0, "v20.0.0", "",
+		),
+	}
+	e := newTSExecutorInternal(runner, mock)
+
+	execCtx := tools.ExecutionContext{
+		BoundaryDir: root,
+		Config: map[string]any{
+			"packageManager": "yarn",
+		},
+	}
+	scriptPath := filepath.Join(projectDir, "hook.ts")
+
+	err := e.Prepare(t.Context(), scriptPath, execCtx)
+	require.NoError(t, err)
+
+	// Default mock bypassed — config override used yarn.
+	assert.False(t, mock.installCalled)
+	assert.Equal(t, "yarn", runner.lastRunArgs.Cmd)
+}
+
+func TestTsPrepare_InvalidPackageManager(t *testing.T) {
+	e := newTSExecutorInternal(
+		&mockCommandRunner{}, &mockNodeTools{},
+	)
+
+	execCtx := tools.ExecutionContext{
+		BoundaryDir: t.TempDir(),
+		Config: map[string]any{
+			"packageManager": "bun",
+		},
+	}
+
+	err := e.Prepare(
+		t.Context(), "/any/hook.ts", execCtx,
+	)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(),
+		`invalid packageManager config value "bun"`)
+}
+
 // ---------------------------------------------------------------------------
 // Table-driven comprehensive tests
 // ---------------------------------------------------------------------------

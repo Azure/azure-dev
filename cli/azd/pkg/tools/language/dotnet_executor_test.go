@@ -29,10 +29,11 @@ type mockDotNetTools struct {
 	restoreErr        error
 	buildErr          error
 
-	restoreCalled  bool
-	restoreProject string
-	buildCalled    bool
-	buildProject   string
+	restoreCalled      bool
+	restoreProject     string
+	buildCalled        bool
+	buildProject       string
+	buildConfiguration string
 }
 
 func (m *mockDotNetTools) CheckInstalled(
@@ -59,11 +60,12 @@ func (m *mockDotNetTools) Restore(
 
 func (m *mockDotNetTools) Build(
 	_ context.Context,
-	project string, _ string,
+	project string, configuration string,
 	_ string, _ []string,
 ) error {
 	m.buildCalled = true
 	m.buildProject = project
+	m.buildConfiguration = configuration
 	return m.buildErr
 }
 
@@ -595,4 +597,160 @@ func TestDotNetExecutor_TableDriven(t *testing.T) {
 			}
 		})
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Hook config tests — configuration and framework flags
+// ---------------------------------------------------------------------------
+
+func TestDotNetExecutor_HookConfig(t *testing.T) {
+	tests := []struct {
+		name           string
+		config         map[string]any
+		wantBuildCfg   string
+		wantRunHas     []string // substrings expected in run args
+		wantRunMissing []string // substrings that must NOT appear
+	}{
+		{
+			name:         "ConfigurationRelease",
+			config:       map[string]any{"configuration": "Release"},
+			wantBuildCfg: "Release",
+			wantRunHas:   []string{"-c", "Release"},
+		},
+		{
+			name:         "ConfigurationDebug",
+			config:       map[string]any{"configuration": "Debug"},
+			wantBuildCfg: "Debug",
+			wantRunHas:   []string{"-c", "Debug"},
+		},
+		{
+			name:           "FrameworkOnly",
+			config:         map[string]any{"framework": "net10.0"},
+			wantBuildCfg:   "",
+			wantRunHas:     []string{"--framework", "net10.0"},
+			wantRunMissing: []string{"-c"},
+		},
+		{
+			name: "BothConfigAndFramework",
+			config: map[string]any{
+				"configuration": "Release",
+				"framework":     "net8.0",
+			},
+			wantBuildCfg: "Release",
+			wantRunHas: []string{
+				"-c", "Release",
+				"--framework", "net8.0",
+			},
+		},
+		{
+			name:           "NeitherSet",
+			config:         nil,
+			wantBuildCfg:   "",
+			wantRunMissing: []string{"-c", "--framework"},
+		},
+		{
+			name:           "EmptyConfigMap",
+			config:         map[string]any{},
+			wantBuildCfg:   "",
+			wantRunMissing: []string{"-c", "--framework"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			projectDir := filepath.Join(root, "proj")
+			require.NoError(t,
+				os.MkdirAll(projectDir, 0o700),
+			)
+			writeFile(t,
+				filepath.Join(projectDir, "App.csproj"),
+				"<Project />",
+			)
+
+			cli := &mockDotNetTools{}
+			runner := &mockCommandRunner{}
+			e := newDotNetExecutorInternal(runner, cli)
+
+			execCtx := tools.ExecutionContext{
+				BoundaryDir: root,
+				Cwd:         projectDir,
+				Config:      tt.config,
+			}
+			scriptPath := filepath.Join(
+				projectDir, "hook.cs",
+			)
+
+			require.NoError(t,
+				e.Prepare(t.Context(), scriptPath, execCtx),
+			)
+
+			// Verify Build received the configuration.
+			assert.Equal(t, tt.wantBuildCfg,
+				cli.buildConfiguration,
+				"Build configuration mismatch",
+			)
+
+			_, err := e.Execute(
+				t.Context(), scriptPath, execCtx,
+			)
+			require.NoError(t, err)
+
+			// Verify run args contain expected flags.
+			runArgs := runner.lastRunArgs.Args
+			for _, want := range tt.wantRunHas {
+				assert.Contains(t, runArgs, want,
+					"run args should contain %q", want,
+				)
+			}
+
+			// Verify run args do NOT contain excluded flags.
+			for _, absent := range tt.wantRunMissing {
+				assert.NotContains(t, runArgs, absent,
+					"run args should not contain %q",
+					absent,
+				)
+			}
+
+			// Always verify project-mode invariants.
+			assert.Contains(t, runArgs, "--project")
+			assert.Contains(t, runArgs, "--no-build")
+		})
+	}
+}
+
+func TestDotNetExecutor_SingleFileIgnoresConfig(t *testing.T) {
+	dir := t.TempDir()
+	runner := &mockCommandRunner{}
+	cli := &mockDotNetTools{
+		sdkVersionResult: semver.Version{
+			Major: 10, Minor: 0, Patch: 0,
+		},
+	}
+	e := newDotNetExecutorInternal(runner, cli)
+
+	scriptPath := filepath.Join(dir, "hook.cs")
+	execCtx := tools.ExecutionContext{
+		BoundaryDir: dir,
+		Config: map[string]any{
+			"configuration": "Release",
+			"framework":     "net10.0",
+		},
+	}
+
+	require.NoError(t,
+		e.Prepare(t.Context(), scriptPath, execCtx),
+	)
+
+	_, err := e.Execute(
+		t.Context(), scriptPath, execCtx,
+	)
+	require.NoError(t, err)
+
+	// Single-file mode uses "dotnet run <script>" with no
+	// project-specific flags.
+	assert.Equal(t, []string{"run", scriptPath},
+		runner.lastRunArgs.Args,
+		"single-file mode should not add config flags",
+	)
 }

@@ -383,6 +383,9 @@ overrides:
       - unvalidated
       - venvs
       - workdir
+  - filename: extensions/azure.ai.agents/internal/cmd/init_locations.go
+    words:
+      - swedencentral
   - filename: docs/code-coverage-guide.md
     words:
       - covdata

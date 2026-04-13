@@ -671,3 +671,163 @@ func TestPythonPrepare_VenvDirVenv(t *testing.T) {
 	assert.Equal(t, "venv", cli.depsVenv)
 	assert.Equal(t, "pyproject.toml", cli.depsFile)
 }
+
+// ---------------------------------------------------------------------------
+// virtualEnvName config tests
+// ---------------------------------------------------------------------------
+
+func TestPythonPrepare_VirtualEnvNameConfig(t *testing.T) {
+	tests := []struct {
+		name           string
+		config         map[string]any
+		wantVenvName   string // expected EnsureVirtualEnv name
+		wantErr        string // substring of error, empty = no error
+		wantEnsureSKip bool   // true if EnsureVirtualEnv should NOT be called
+	}{
+		{
+			name:         "DotVenvName",
+			config:       map[string]any{"virtualEnvName": ".venv"},
+			wantVenvName: ".venv",
+		},
+		{
+			name:         "CustomName",
+			config:       map[string]any{"virtualEnvName": "my_env"},
+			wantVenvName: "my_env",
+		},
+		{
+			name:         "NoConfig_FallsBackToAutoDetect",
+			config:       nil,
+			wantVenvName: "myproject_env",
+		},
+		{
+			name:         "EmptyConfig_FallsBackToAutoDetect",
+			config:       map[string]any{},
+			wantVenvName: "myproject_env",
+		},
+		{
+			name:    "EmptyString_Rejected",
+			config:  map[string]any{"virtualEnvName": "   "},
+			wantErr: "virtualEnvName must not be empty",
+		},
+		{
+			name:    "PathTraversal_Rejected",
+			config:  map[string]any{"virtualEnvName": "../evil"},
+			wantErr: "must not contain path separators",
+		},
+		{
+			name:    "ForwardSlash_Rejected",
+			config:  map[string]any{"virtualEnvName": "foo/bar"},
+			wantErr: "must not contain path separators",
+		},
+		{
+			name:    "BackSlash_Rejected",
+			config:  map[string]any{"virtualEnvName": `foo\bar`},
+			wantErr: "must not contain path separators",
+		},
+		{
+			name:    "Dot_Rejected",
+			config:  map[string]any{"virtualEnvName": "."},
+			wantErr: "is not a valid directory name",
+		},
+		{
+			name:    "DotDot_Rejected",
+			config:  map[string]any{"virtualEnvName": ".."},
+			wantErr: "is not a valid directory name",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			projectDir := filepath.Join(
+				root, "myproject",
+			)
+			hooksDir := filepath.Join(
+				projectDir, "hooks",
+			)
+			require.NoError(t,
+				os.MkdirAll(hooksDir, 0o700),
+			)
+			writeFile(t,
+				filepath.Join(
+					projectDir, "requirements.txt",
+				),
+				"flask\n",
+			)
+
+			cli := &mockPythonTools{}
+			e := newPythonExecutorInternal(
+				&mockCommandRunner{}, cli,
+			)
+
+			execCtx := tools.ExecutionContext{
+				BoundaryDir: root,
+				Config:      tt.config,
+			}
+			scriptPath := filepath.Join(
+				hooksDir, "deploy.py",
+			)
+			err := e.Prepare(
+				t.Context(), scriptPath, execCtx,
+			)
+
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+				assert.False(t, cli.ensureVenvCalled,
+					"should not create venv on error",
+				)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.True(t, cli.ensureVenvCalled)
+			assert.Equal(t,
+				tt.wantVenvName, cli.ensureVenvName,
+			)
+			assert.True(t, cli.installDepsCalled)
+			assert.Equal(t,
+				tt.wantVenvName, cli.depsVenv,
+			)
+			assert.Equal(t,
+				"requirements.txt", cli.depsFile,
+			)
+
+			expectedPath := filepath.Join(
+				projectDir, tt.wantVenvName,
+			)
+			assert.Equal(t, expectedPath, e.venvPath)
+		})
+	}
+}
+
+func TestValidateVenvName(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		{"ValidDotVenv", ".venv", false},
+		{"ValidCustom", "my_env", false},
+		{"ValidWithDots", ".my.env", false},
+		{"Empty", "", true},
+		{"Whitespace", "   ", true},
+		{"Dot", ".", true},
+		{"DotDot", "..", true},
+		{"ForwardSlash", "foo/bar", true},
+		{"BackSlash", `foo\bar`, true},
+		{"TrailingSlash", "venv/", true},
+		{"LeadingSlash", "/venv", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateVenvName(tt.input)
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}

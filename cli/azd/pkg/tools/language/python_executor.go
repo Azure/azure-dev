@@ -16,6 +16,15 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/python"
 )
 
+// pythonHookConfig holds the executor-specific configuration
+// deserialized from the hook's "config" property bag.
+type pythonHookConfig struct {
+	// VirtualEnvName overrides the auto-detected virtual
+	// environment directory name (e.g. ".venv", "my_env").
+	// Must be a plain directory name with no path separators.
+	VirtualEnvName string `json:"virtualEnvName"`
+}
+
 // pythonTools abstracts the Python CLI operations needed by
 // pythonExecutor, decoupling it from the concrete [python.Cli]
 // for testability. [python.Cli] satisfies this interface.
@@ -146,8 +155,30 @@ func (e *pythonExecutor) Prepare(
 		return nil
 	}
 
-	// 4. Set up virtual environment.
-	venvName := python.VenvNameForDir(projCtx.ProjectDir)
+	// 4. Resolve virtual environment name. An explicit
+	//    config value takes precedence over auto-detection.
+	cfg, err := tools.UnmarshalHookConfig[pythonHookConfig](
+		execCtx.Config,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"parsing python hook config: %w", err,
+		)
+	}
+
+	var venvName string
+	if cfg.VirtualEnvName != "" {
+		if err := validateVenvName(
+			cfg.VirtualEnvName,
+		); err != nil {
+			return err
+		}
+		venvName = cfg.VirtualEnvName
+	} else {
+		venvName = python.VenvNameForDir(
+			projCtx.ProjectDir,
+		)
+	}
 
 	if err := e.pythonCli.EnsureVirtualEnv(
 		ctx, projCtx.ProjectDir,
@@ -302,4 +333,29 @@ func relativeVenvName(
 		return "", false
 	}
 	return rel, true
+}
+
+// validateVenvName checks that the user-supplied virtual
+// environment name is a plain directory name — no path
+// separators or traversal components are allowed.
+func validateVenvName(name string) error {
+	if strings.TrimSpace(name) == "" {
+		return fmt.Errorf(
+			"virtualEnvName must not be empty",
+		)
+	}
+	if name == "." || name == ".." {
+		return fmt.Errorf(
+			"virtualEnvName %q is not a valid "+
+				"directory name", name,
+		)
+	}
+	if strings.ContainsAny(name, "/\\") ||
+		strings.ContainsRune(name, os.PathSeparator) {
+		return fmt.Errorf(
+			"virtualEnvName %q must not contain "+
+				"path separators", name,
+		)
+	}
+	return nil
 }

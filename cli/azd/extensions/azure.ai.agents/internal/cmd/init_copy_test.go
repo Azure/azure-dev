@@ -18,14 +18,14 @@ func TestCopyDirectory(t *testing.T) {
 		src := t.TempDir()
 
 		// Create a small tree: file.txt, sub/nested.txt
-		if err := os.WriteFile(filepath.Join(src, "file.txt"), []byte("hello"), 0644); err != nil {
+		if err := os.WriteFile(filepath.Join(src, "file.txt"), []byte("hello"), 0600); err != nil {
 			t.Fatal(err)
 		}
 		subDir := filepath.Join(src, "sub")
-		if err := os.MkdirAll(subDir, 0755); err != nil {
+		if err := os.MkdirAll(subDir, 0750); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(subDir, "nested.txt"), []byte("world"), 0644); err != nil {
+		if err := os.WriteFile(filepath.Join(subDir, "nested.txt"), []byte("world"), 0600); err != nil {
 			t.Fatal(err)
 		}
 
@@ -52,7 +52,7 @@ func TestCopyDirectory(t *testing.T) {
 		t.Parallel()
 		src := t.TempDir()
 		dst := filepath.Join(src, "child")
-		if err := os.MkdirAll(dst, 0755); err != nil {
+		if err := os.MkdirAll(dst, 0750); err != nil {
 			t.Fatal(err)
 		}
 
@@ -83,7 +83,7 @@ func TestCopyFile(t *testing.T) {
 	t.Run("happy_path", func(t *testing.T) {
 		t.Parallel()
 		src := filepath.Join(t.TempDir(), "src.txt")
-		if err := os.WriteFile(src, []byte("data"), 0644); err != nil {
+		if err := os.WriteFile(src, []byte("data"), 0600); err != nil {
 			t.Fatal(err)
 		}
 
@@ -108,7 +108,7 @@ func TestCopyFile(t *testing.T) {
 // assertFileContents is a test helper that reads a file and compares its contents.
 func assertFileContents(t *testing.T, path, want string) {
 	t.Helper()
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // G304: path is constructed in test code
 	if err != nil {
 		t.Fatalf("reading %s: %v", path, err)
 	}
@@ -116,4 +116,3 @@ func assertFileContents(t *testing.T, path, want string) {
 		t.Errorf("file %s: got %q, want %q", path, got, want)
 	}
 }
-

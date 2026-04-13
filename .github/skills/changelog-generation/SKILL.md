@@ -77,13 +77,16 @@ Per [references/pr-processing.md](references/pr-processing.md):
 3. Detect external contributors per [references/pr-processing.md](references/pr-processing.md) § External Contributor Detection.
 4. Fetch linked issues from the PR body when relevant to understanding user impact.
 5. Apply exclusion rules per [references/pr-processing.md](references/pr-processing.md) § Exclusion Rules.
-6. Categorize and write the entry per [references/pr-processing.md](references/pr-processing.md) § Category Classification and § Entry Format.
+6. **Cross-release deduplication**: before writing an entry, search all existing sections in CHANGELOG.md for the PR number **and** any linked issue numbers from the PR body. If a match is found in a prior release, skip the entry and log a note. Entries must always use PR numbers (`pull/NNNN`), not issue numbers (`issues/NNNN`), to maintain consistency with the `[[#PR]]` format convention.
+7. Categorize and write the entry per [references/pr-processing.md](references/pr-processing.md) § Category Classification and § Entry Format.
 
 ### Step 5 — Assemble & Review
 
 1. **Remove empty category sections** — scan the new release entry and delete any `### <Category>` heading that has no bullet entries beneath it (i.e., the next line is blank followed by another `###` heading or `##` heading or end of section). This is mandatory — never leave empty `### Breaking Changes`, `### Features Added`, `### Bugs Fixed`, or `### Other Changes` sections in the final output.
 2. For extensions using flat bullet lists (no category headings), match the existing style.
-3. Present the **complete changelog entry** to the user for review via `ask_user`.
+3. **Validate PR links**: verify that every `- ` bullet under a category heading contains a `[[#NNNN]]` link. If any entry is missing a link, flag it and require either adding the PR reference or explicitly justifying the omission. When a single large PR warrants multiple changelog bullets, each must reference the same PR number.
+4. **Cross-reference commit range**: verify every `[[#NNNN]]` PR number against the commit list from Step 3. Flag any PR that does not appear in the commit range — it may be a duplicate from a prior release or an incorrectly attributed entry.
+5. Present the **complete changelog entry** to the user for review via `ask_user`.
 
    Choices:
    - **Approve** — accept and proceed to spell check

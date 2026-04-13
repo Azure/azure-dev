@@ -590,13 +590,17 @@ func TestInitCreatesProjectDirectory(t *testing.T) {
 			lazyAzdCtx: lazy.NewLazy(func() (*azdcontext.AzdContext, error) {
 				return azdcontext.NewAzdContextWithDirectory(tmpDir), nil
 			}),
-			console:         mockContext.Console,
-			cmdRun:          mockContext.CommandRunner,
-			gitCli:          gitCli,
-			flags:           flags,
-			args:            []string{},
-			featuresManager: alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
+			console:          mockContext.Console,
+			cmdRun:           mockContext.CommandRunner,
+			gitCli:           gitCli,
+			flags:            flags,
+			args:             []string{},
+			featuresManager:  alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
+			isRunningInAgent: func() bool { return false },
 		}
+
+		// Simulate interactive terminal so auto-directory creation kicks in.
+		mockContext.Console.SetTerminal(true)
 
 		expectedDir := filepath.Join(tmpDir, "todo-nodejs-mongo")
 		require.NoDirExists(t, expectedDir)
@@ -611,5 +615,74 @@ func TestInitCreatesProjectDirectory(t *testing.T) {
 		currentWd, wdErr := os.Getwd()
 		require.NoError(t, wdErr)
 		require.Equal(t, tmpDir, currentWd)
+	})
+
+	t.Run("FailedInitPreservesPreExistingDirectory", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		flags := &initFlags{
+			templatePath: "Azure-Samples/todo-nodejs-mongo",
+			global:       &internal.GlobalCommandOptions{},
+		}
+
+		tmpDir := t.TempDir()
+		t.Chdir(tmpDir)
+
+		// Pre-create the target directory with a file inside
+		preExistingDir := filepath.Join(tmpDir, "todo-nodejs-mongo")
+		require.NoError(t, os.MkdirAll(preExistingDir, 0o755))
+		require.NoError(t, os.WriteFile(
+			filepath.Join(preExistingDir, "existing.txt"), []byte("keep me"), 0o600))
+
+		// Mock git as NOT installed to trigger failure after dir creation
+		mockContext.CommandRunner.MockToolInPath("git", fmt.Errorf("git not found"))
+		gitCli := git.NewCli(mockContext.CommandRunner)
+
+		action := &initAction{
+			lazyAzdCtx: lazy.NewLazy(func() (*azdcontext.AzdContext, error) {
+				return azdcontext.NewAzdContextWithDirectory(tmpDir), nil
+			}),
+			console:          mockContext.Console,
+			cmdRun:           mockContext.CommandRunner,
+			gitCli:           gitCli,
+			flags:            flags,
+			args:             []string{"todo-nodejs-mongo"},
+			featuresManager:  alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
+			isRunningInAgent: func() bool { return false },
+		}
+
+		_, err := action.Run(*mockContext.Context)
+		require.Error(t, err)
+
+		// The pre-existing directory must NOT be deleted
+		require.DirExists(t, preExistingDir)
+		content, readErr := os.ReadFile(filepath.Join(preExistingDir, "existing.txt"))
+		require.NoError(t, readErr)
+		require.Equal(t, "keep me", string(content))
+	})
+
+	t.Run("LocalTemplateSelfTargetFallsBackToCwd", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		mockContext.Console.SetTerminal(true)
+
+		tmpDir := t.TempDir()
+		// Create a directory that matches what DeriveDirectoryName would produce
+		templateDir := filepath.Join(tmpDir, "my-template")
+		require.NoError(t, os.MkdirAll(templateDir, 0o755))
+		t.Chdir(tmpDir)
+
+		flags := &initFlags{
+			templatePath: "./my-template",
+			global:       &internal.GlobalCommandOptions{},
+		}
+		action := setupInitAction(t, mockContext, flags)
+
+		// resolveTargetDirectory derives "my-template" from "./my-template".
+		// The self-targeting check happens in Run(), not in resolveTargetDirectory.
+		wd, err := os.Getwd()
+		require.NoError(t, err)
+
+		result, err := action.resolveTargetDirectory(wd)
+		require.NoError(t, err)
+		require.Equal(t, filepath.Join(wd, "my-template"), result)
 	})
 }

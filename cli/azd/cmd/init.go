@@ -261,9 +261,29 @@ func (i *initAction) Run(ctx context.Context) (_ *actions.ActionResult, retErr e
 		}
 
 		if targetDir != wd {
+			// Guard against self-targeting: if a local template path resolves to the
+			// same directory we'd create, skip auto-create to avoid conflicts where
+			// the template source and target directory overlap.
+			if i.flags.templatePath != "" && templates.LooksLikeLocalPath(i.flags.templatePath) {
+				absTemplate, absErr := filepath.Abs(i.flags.templatePath)
+				if absErr == nil && filepath.Clean(absTemplate) == filepath.Clean(targetDir) {
+					// Template source is the target directory — fall back to CWD.
+					targetDir = wd
+				}
+			}
+		}
+
+		if targetDir != wd {
 			// Check if target already exists and is non-empty
 			if err := i.validateTargetDirectory(ctx, targetDir); err != nil {
 				return nil, err
+			}
+
+			// Track whether the directory existed before we create it so the
+			// cleanup defer only removes directories we actually created.
+			dirExistedBefore := false
+			if _, statErr := os.Stat(targetDir); statErr == nil {
+				dirExistedBefore = true
 			}
 
 			if err := os.MkdirAll(targetDir, osutil.PermissionDirectory); err != nil {
@@ -281,10 +301,14 @@ func (i *initAction) Run(ctx context.Context) (_ *actions.ActionResult, retErr e
 
 			// Clean up the created directory and restore the original CWD
 			// if any downstream step fails, matching git clone's behavior.
+			// Only remove the directory if we created it — don't delete
+			// pre-existing directories the user pointed at.
 			defer func() {
 				if retErr != nil {
 					_ = os.Chdir(originalWd)
-					_ = os.RemoveAll(createdProjectDir)
+					if !dirExistedBefore {
+						_ = os.RemoveAll(createdProjectDir)
+					}
 				}
 			}()
 		}
@@ -306,6 +330,11 @@ func (i *initAction) Run(ctx context.Context) (_ *actions.ActionResult, retErr e
 	// AZD supports having .env at the root of the project directory as the initial environment file.
 	// godotenv.Load() -> add all the values from the .env file in the process environment
 	// If AZURE_ENV_NAME is set in the .env file, it will be used to name the environment during env initialize.
+	//
+	// Note: When auto-creating a project directory, this runs after chdir into the target
+	// directory. For new directories this is a no-op (no .env exists). For existing directories
+	// passed via positional arg, we intentionally load the target directory's .env — the project
+	// directory's configuration should take precedence over the invocation directory's.
 	if err := godotenv.Overload(); err != nil {
 		// ignore the error if the file does not exist
 		if !os.IsNotExist(err) {

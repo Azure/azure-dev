@@ -297,12 +297,12 @@ type snapshotResult struct {
 // PreflightCheckFn is a function that performs a single preflight validation check.
 // It receives the execution context and a validationContext containing the console,
 // analyzed resource properties, and the deployment snapshot.
-// It returns a result describing the finding (or nil if there is nothing to report)
-// and an error if the check itself failed to execute.
+// It returns zero or more results describing findings (or nil/empty if there is
+// nothing to report) and an error if the check itself failed to execute.
 type PreflightCheckFn func(
 	ctx context.Context,
 	valCtx *validationContext,
-) (*PreflightCheckResult, error)
+) ([]PreflightCheckResult, error)
 
 // PreflightCheck pairs a unique rule identifier with its check function.
 // The RuleID is a stable, unique string used in telemetry to identify which rule
@@ -330,15 +330,27 @@ type localArmPreflight struct {
 	// target is the deployment scope (subscription or resource group) used to derive snapshot options.
 	// It may be nil, in which case snapshot options are left empty.
 	target infra.Deployment
-	checks []PreflightCheck
+	// envLocation is the Azure location from the environment (AZURE_LOCATION). It is used to
+	// provide location context when the deployment target scope doesn't carry its own location
+	// (e.g. resource group deployments), enabling Bicep to resolve resourceGroup().location.
+	envLocation string
+	checks      []PreflightCheck
 }
 
 // newLocalArmPreflight creates a new instance of localArmPreflight.
 // modulePath is the path to the source Bicep module file (e.g. "infra/main.bicep").
 // bicepCli is the Bicep CLI wrapper used to invoke bicep commands.
 // target is the deployment scope used to populate snapshot options; it may be nil.
-func newLocalArmPreflight(modulePath string, bicepCli *bicep.Cli, target infra.Deployment) *localArmPreflight {
-	return &localArmPreflight{modulePath: modulePath, bicepCli: bicepCli, target: target}
+// envLocation is the Azure location from the environment (e.g. AZURE_LOCATION); it may be empty.
+func newLocalArmPreflight(
+	modulePath string, bicepCli *bicep.Cli, target infra.Deployment, envLocation string,
+) *localArmPreflight {
+	return &localArmPreflight{
+		modulePath:  modulePath,
+		bicepCli:    bicepCli,
+		target:      target,
+		envLocation: envLocation,
+	}
 }
 
 // AddCheck registers a preflight check to be executed during validate.
@@ -400,6 +412,12 @@ func (l *localArmPreflight) validate(
 		switch t := l.target.(type) {
 		case *infra.ResourceGroupDeployment:
 			snapshotOpts = snapshotOpts.WithResourceGroup(t.ResourceGroupName())
+			// ResourceGroupScope doesn't carry a location, but the Bicep snapshot needs
+			// one to resolve resourceGroup().location. Use the environment location if
+			// available so resources referencing resourceGroup().location get resolved.
+			if l.envLocation != "" {
+				snapshotOpts = snapshotOpts.WithLocation(l.envLocation)
+			}
 		case *infra.SubscriptionDeployment:
 			snapshotOpts = snapshotOpts.WithLocation(t.Location())
 		}
@@ -432,13 +450,11 @@ func (l *localArmPreflight) validate(
 
 	var results []PreflightCheckResult
 	for _, check := range l.checks {
-		result, err := check.Fn(ctx, valCtx)
+		checkResults, err := check.Fn(ctx, valCtx)
 		if err != nil {
 			return results, fmt.Errorf("preflight check %q failed: %w", check.RuleID, err)
 		}
-		if result != nil {
-			results = append(results, *result)
-		}
+		results = append(results, checkResults...)
 	}
 
 	return results, nil
@@ -562,17 +578,112 @@ type resourcesProperties struct {
 	// HasRoleAssignments indicates whether the deployment includes one or more
 	// Microsoft.Authorization/roleAssignments resources.
 	HasRoleAssignments bool
+	// CognitiveDeployments lists AI model deployments found in the template,
+	// with extracted model, SKU, capacity, and location information.
+	CognitiveDeployments []cognitiveDeploymentInfo
+}
+
+// cognitiveDeploymentInfo holds the extracted properties of a single
+// Microsoft.CognitiveServices/accounts/deployments resource needed for quota validation.
+type cognitiveDeploymentInfo struct {
+	// AccountName is the name of the parent cognitive services account.
+	AccountName string
+	// Name is the name of the model deployment.
+	Name string
+	// ModelName is the AI model name (e.g. "gpt-4o").
+	ModelName string
+	// ModelFormat is the model format (e.g. "OpenAI").
+	ModelFormat string
+	// ModelVersion is the model version string.
+	ModelVersion string
+	// SkuName is the SKU tier name (e.g. "GlobalStandard", "Standard").
+	SkuName string
+	// Capacity is the requested deployment capacity in units.
+	Capacity int
+	// Location is the Azure region for this deployment (inherited from parent account).
+	Location string
+}
+
+// cognitiveDeploymentModelProperties mirrors the ARM template properties.model object
+// for a Microsoft.CognitiveServices/accounts/deployments resource.
+type cognitiveDeploymentModelProperties struct {
+	Model struct {
+		Name    string `json:"name"`
+		Format  string `json:"format"`
+		Version string `json:"version"`
+	} `json:"model"`
 }
 
 // analyzeResources inspects the list of snapshot resources and returns a resourcesProperties
 // summarizing key characteristics of the deployment.
 func analyzeResources(resources []armTemplateResource) resourcesProperties {
 	props := resourcesProperties{}
+
+	// First pass: build a map of account name → location for cognitive services accounts.
+	accountLocations := map[string]string{}
 	for _, r := range resources {
 		if strings.EqualFold(r.Type, "Microsoft.Authorization/roleAssignments") {
 			props.HasRoleAssignments = true
-			break
+		}
+		if strings.EqualFold(r.Type, "Microsoft.CognitiveServices/accounts") {
+			accountLocations[r.Name] = r.Location
 		}
 	}
+
+	// Second pass: extract cognitive deployment info.
+	for _, r := range resources {
+		if !strings.EqualFold(r.Type, "Microsoft.CognitiveServices/accounts/deployments") {
+			continue
+		}
+		info := extractCognitiveDeployment(r, accountLocations)
+		if info.ModelName != "" {
+			props.CognitiveDeployments = append(props.CognitiveDeployments, info)
+		}
+	}
+
 	return props
+}
+
+// extractCognitiveDeployment parses a Microsoft.CognitiveServices/accounts/deployments
+// resource and returns the extracted deployment info. accountLocations maps account names
+// to their deployment locations for inheriting the location.
+func extractCognitiveDeployment(
+	r armTemplateResource, accountLocations map[string]string,
+) cognitiveDeploymentInfo {
+	info := cognitiveDeploymentInfo{
+		Name:     r.Name,
+		Location: r.Location,
+	}
+
+	// Parse the parent account name from the deployment resource name.
+	// In ARM templates, child resource names are formatted as "parentName/childName".
+	if parts := strings.SplitN(r.Name, "/", 2); len(parts) == 2 {
+		info.AccountName = parts[0]
+		info.Name = parts[1]
+	}
+
+	// Inherit location from the parent account if the deployment doesn't have its own.
+	if info.Location == "" && info.AccountName != "" {
+		info.Location = accountLocations[info.AccountName]
+	}
+
+	// Extract model properties from the resource.
+	if len(r.Properties) > 0 {
+		var modelProps cognitiveDeploymentModelProperties
+		if err := json.Unmarshal(r.Properties, &modelProps); err == nil {
+			info.ModelName = modelProps.Model.Name
+			info.ModelFormat = modelProps.Model.Format
+			info.ModelVersion = modelProps.Model.Version
+		}
+	}
+
+	// Extract SKU name and capacity.
+	if sku, ok := r.SKU.Value(); ok {
+		info.SkuName = sku.Name
+		if sku.Capacity != nil {
+			info.Capacity = *sku.Capacity
+		}
+	}
+
+	return info
 }

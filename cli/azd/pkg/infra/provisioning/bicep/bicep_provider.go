@@ -2203,7 +2203,7 @@ func (p *BicepProvider) validatePreflight(
 
 	// Run local preflight validation before sending to Azure.
 	// Local validation catches common issues without requiring a network round-trip.
-	localPreflight := newLocalArmPreflight(modulePath, p.bicepCli, target)
+	localPreflight := newLocalArmPreflight(modulePath, p.bicepCli, target, p.env.GetLocation())
 
 	// Register the role assignment permission check so it runs as part of the
 	// local preflight pipeline. The check inspects whether the template contains
@@ -2212,6 +2212,11 @@ func (p *BicepProvider) validatePreflight(
 	localPreflight.AddCheck(PreflightCheck{
 		RuleID: "role_assignment_permissions",
 		Fn:     p.checkRoleAssignmentPermissions,
+	})
+
+	localPreflight.AddCheck(PreflightCheck{
+		RuleID: "ai_model_quota",
+		Fn:     p.checkAiModelQuota,
 	})
 
 	results, err := localPreflight.validate(ctx, p.console, armTemplate, armParameters)
@@ -2274,6 +2279,7 @@ func (p *BicepProvider) validatePreflight(
 		}
 
 		if report.HasWarnings() {
+			p.console.Message(ctx, "")
 			continueDeployment, promptErr := p.console.Confirm(ctx, input.ConsoleOptions{
 				Message: "Preflight validation found warnings that may cause the " +
 					"deployment to fail. Do you want to continue?",
@@ -2331,7 +2337,7 @@ func (p *BicepProvider) setPreflightOutcome(
 // See https://github.com/Azure/azure-dev/issues/7173 for the broader fix.
 func (p *BicepProvider) checkRoleAssignmentPermissions(
 	ctx context.Context, valCtx *validationContext,
-) (*PreflightCheckResult, error) {
+) ([]PreflightCheckResult, error) {
 	if !valCtx.Props.HasRoleAssignments {
 		return nil, nil
 	}
@@ -2370,7 +2376,7 @@ func (p *BicepProvider) checkRoleAssignmentPermissions(
 	}
 
 	if !hasPermission.HasPermission {
-		return &PreflightCheckResult{
+		return []PreflightCheckResult{{
 			Severity:     PreflightCheckWarning,
 			DiagnosticID: "role_assignment_missing",
 			Message: fmt.Sprintf(
@@ -2383,11 +2389,11 @@ func (p *BicepProvider) checkRoleAssignmentPermissions(
 				principalId,
 				subscriptionId,
 			),
-		}, nil
+		}}, nil
 	}
 
 	if hasPermission.Conditional {
-		return &PreflightCheckResult{
+		return []PreflightCheckResult{{
 			Severity:     PreflightCheckWarning,
 			DiagnosticID: "role_assignment_conditional",
 			Message: fmt.Sprintf(
@@ -2400,16 +2406,187 @@ func (p *BicepProvider) checkRoleAssignmentPermissions(
 				principalId,
 				subscriptionId,
 			),
-		}, nil
+		}}, nil
 	}
 
 	return nil, nil
 }
 
+// checkAiModelQuota inspects the Bicep snapshot for cognitive services model deployments
+// and validates that the subscription has sufficient quota at each deployment location.
+// Returns a warning for each deployment that would exceed the available quota.
+func (p *BicepProvider) checkAiModelQuota(
+	ctx context.Context, valCtx *validationContext,
+) ([]PreflightCheckResult, error) {
+	if len(valCtx.Props.CognitiveDeployments) == 0 {
+		return nil, nil
+	}
+
+	if p.aiModelService == nil {
+		log.Printf("AI model service not configured, skipping quota check")
+		return nil, nil
+	}
+
+	subscriptionId := p.env.GetSubscriptionId()
+	if subscriptionId == "" {
+		log.Printf("no subscription ID set, skipping AI model quota check")
+		return nil, nil
+	}
+
+	// Resolve the fallback location for deployments without an explicit location.
+	// Priority: AZURE_LOCATION env var → resource group location (looked up from Azure).
+	// This handles RG-scoped templates where resourceGroup().location was not resolved
+	// by the snapshot (the snapshot doesn't always have location context for RG deployments).
+	fallbackLocation := strings.ToLower(p.env.GetLocation())
+	if fallbackLocation == "" {
+		fallbackLocation = p.resolveResourceGroupLocation(ctx, subscriptionId)
+	}
+
+	// Group deployments by location to minimize API calls.
+	byLocation := map[string][]cognitiveDeploymentInfo{}
+	for _, dep := range valCtx.Props.CognitiveDeployments {
+		loc := strings.ToLower(dep.Location)
+		if loc == "" {
+			loc = fallbackLocation
+		}
+		if loc == "" {
+			continue
+		}
+		byLocation[loc] = append(byLocation[loc], dep)
+	}
+
+	var results []PreflightCheckResult
+
+	for loc, deps := range byLocation {
+		usages, err := p.aiModelService.ListUsages(ctx, subscriptionId, loc)
+		if err != nil {
+			log.Printf("failed to fetch AI quota for location %s, skipping: %v", loc, err)
+			continue
+		}
+
+		// Build a lookup map from usage name → remaining quota.
+		usageMap := map[string]float64{}
+		for _, u := range usages {
+			usageMap[u.Name] = u.Limit - u.CurrentValue
+		}
+
+		// Fetch the model catalog for this location to resolve usage names.
+		// The usage name (e.g. "OpenAI.GlobalStandard.gpt-4.1-mini") comes from the Azure
+		// model catalog — it cannot be reliably constructed from template data because the
+		// naming convention isn't a simple "{Format}.{SkuName}.{ModelName}" concatenation.
+		catalogModels, catalogErr := p.aiModelService.ListModels(ctx, subscriptionId, []string{loc})
+		if catalogErr != nil {
+			log.Printf("failed to fetch AI model catalog for %s, skipping: %v", loc, catalogErr)
+			continue
+		}
+
+		for _, dep := range deps {
+			usageName := resolveUsageName(catalogModels, dep)
+			if usageName == "" {
+				// Model/SKU/version combo not found in the catalog — warn the user.
+				versionHint := ""
+				if dep.ModelVersion != "" {
+					versionHint = fmt.Sprintf(", version %q", dep.ModelVersion)
+				}
+				results = append(results, PreflightCheckResult{
+					Severity:     PreflightCheckWarning,
+					DiagnosticID: "ai_model_not_found",
+					Message: fmt.Sprintf(
+						"model %q (SKU: %s%s) was not found in the AI model catalog for %s. "+
+							"The deployment may fail if this model is not available. "+
+							"Verify the model name, SKU, and version are correct. "+
+							"See https://learn.microsoft.com/azure/ai-services/openai/concepts/models "+
+							"for supported models and regions.",
+						dep.ModelName,
+						dep.SkuName,
+						versionHint,
+						loc,
+					),
+				})
+				continue
+			}
+
+			remaining, found := usageMap[usageName]
+			if !found {
+				continue
+			}
+
+			requiredCapacity := float64(dep.Capacity)
+			if requiredCapacity <= 0 {
+				requiredCapacity = 1
+			}
+
+			if remaining < requiredCapacity {
+				results = append(results, PreflightCheckResult{
+					Severity:     PreflightCheckWarning,
+					DiagnosticID: "ai_model_quota_exceeded",
+					Message: fmt.Sprintf(
+						"insufficient quota for model %q (SKU: %s) in %s. "+
+							"Requested capacity: %d, remaining quota: %.0f. "+
+							"The deployment may fail. Consider reducing capacity, "+
+							"selecting a different model, or requesting a quota increase.",
+						dep.ModelName,
+						dep.SkuName,
+						loc,
+						dep.Capacity,
+						remaining,
+					),
+				})
+			}
+		}
+	}
+
+	return results, nil
+}
+
+// resolveUsageName looks up the authoritative usage name from the Azure model catalog
+// for a cognitive deployment. The usage name is a quota API identifier (e.g.
+// "OpenAI.GlobalStandard.gpt-4.1-mini") that may differ from a naive concatenation
+// of the template's model format, SKU, and model name.
+func resolveUsageName(catalogModels []ai.AiModel, dep cognitiveDeploymentInfo) string {
+	for _, model := range catalogModels {
+		if !strings.EqualFold(model.Name, dep.ModelName) {
+			continue
+		}
+		for _, version := range model.Versions {
+			// If the template specifies a version, match it; otherwise accept any version.
+			if dep.ModelVersion != "" && version.Version != dep.ModelVersion {
+				continue
+			}
+			for _, sku := range version.Skus {
+				if strings.EqualFold(sku.Name, dep.SkuName) {
+					return sku.UsageName
+				}
+			}
+		}
+	}
+	return ""
+}
+
+// resolveResourceGroupLocation returns the Azure location of the resource group specified
+// in AZURE_RESOURCE_GROUP. Returns empty string if the env var is not set or the lookup fails.
+func (p *BicepProvider) resolveResourceGroupLocation(ctx context.Context, subscriptionId string) string {
+	rgName, has := p.env.LookupEnv(environment.ResourceGroupEnvVarName)
+	if !has || rgName == "" {
+		return ""
+	}
+
+	var resourceService *azapi.ResourceService
+	if err := p.serviceLocator.Resolve(&resourceService); err != nil {
+		log.Printf("could not resolve ResourceService for RG location lookup: %v", err)
+		return ""
+	}
+
+	rg, err := resourceService.GetResourceGroup(ctx, subscriptionId, rgName)
+	if err != nil {
+		log.Printf("could not get resource group %q location: %v", rgName, err)
+		return ""
+	}
+
+	return strings.ToLower(rg.Location)
+}
+
 // resolveResourceTenantPrincipalId returns the current user's object ID as seen in the
-// subscription's resource tenant. This is needed because B2B/guest users have a different
-// object ID in the resource tenant than in their home tenant. Returns an error if the
-// resource tenant principal cannot be resolved; the caller should skip the check rather
 // than fall back to the home-tenant oid (which would produce false positive warnings).
 func (p *BicepProvider) resolveResourceTenantPrincipalId(
 	ctx context.Context, subscriptionId string,

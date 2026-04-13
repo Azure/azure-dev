@@ -958,3 +958,93 @@ func TestHookConfig_ServiceDirWithinProjectBoundary(
 	require.NoError(t, err,
 		"Dir within project root must be accepted")
 }
+
+// TestHookConfig_DirRunKindInference verifies that when both Dir
+// and Run are set without an explicit Kind, validate() correctly
+// infers the hook kind from the file extension and resolves the
+// script path to the actual file on disk.
+func TestHookConfig_DirRunKindInference(t *testing.T) {
+	tests := []struct {
+		name         string
+		run          string
+		expectedKind language.HookKind
+	}{
+		{
+			name:         "Bash",
+			run:          "build.sh",
+			expectedKind: language.HookKindBash,
+		},
+		{
+			name:         "PowerShell",
+			run:          "build.ps1",
+			expectedKind: language.HookKindPowerShell,
+		},
+		{
+			name:         "Python",
+			run:          "main.py",
+			expectedKind: language.HookKindPython,
+		},
+		{
+			name:         "JavaScript",
+			run:          "index.js",
+			expectedKind: language.HookKindJavaScript,
+		},
+		{
+			name:         "TypeScript",
+			run:          "index.ts",
+			expectedKind: language.HookKindTypeScript,
+		},
+		{
+			name:         "DotNet",
+			run:          "Program.cs",
+			expectedKind: language.HookKindDotNet,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cwd := t.TempDir()
+
+			hookDir := filepath.Join(
+				cwd, "hooks", "pre",
+			)
+			require.NoError(
+				t,
+				os.MkdirAll(hookDir, 0o755),
+			)
+			require.NoError(t, os.WriteFile(
+				filepath.Join(hookDir, tt.run),
+				nil, 0o600,
+			))
+
+			config := HookConfig{
+				Name: "preprovision",
+				Run:  tt.run,
+				Dir:  filepath.Join("hooks", "pre"),
+				cwd:  cwd,
+			}
+
+			err := config.validate()
+			require.NoError(t, err)
+
+			require.Equal(
+				t,
+				tt.expectedKind,
+				config.Kind,
+				"Kind should be inferred from "+
+					"file extension",
+			)
+
+			expectedScript := filepath.Join(
+				hookDir, tt.run,
+			)
+			require.Equal(
+				t,
+				expectedScript,
+				config.resolvedScriptPath,
+				"resolvedScriptPath should point "+
+					"to the actual file",
+			)
+		})
+	}
+}

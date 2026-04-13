@@ -208,7 +208,7 @@ func (hc *HookConfig) validate() error {
 		hc.Kind = language.HookKind(hc.Shell)
 	}
 	if hc.Kind == language.HookKindUnknown && hc.path != "" {
-		hc.Kind = language.InferKindFromPath(hc.Run)
+		hc.Kind = language.InferKindFromPath(hc.path)
 	}
 
 	// Reject inline scripts for non-shell executors. Only Bash and

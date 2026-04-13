@@ -48,6 +48,8 @@ stages:
           runOnce:
             deploy:
               steps:
+                - checkout: self
+
                 - pwsh: |
                     $PRNumber = '$(System.PullRequest.PullRequestNumber)'
                     if ($env:PRNUMBEROVERRIDE) {
@@ -70,11 +72,46 @@ stages:
                     PublishUploadLocations: ${{ parameters.SanitizedExtensionId }}/pr/$(PRNumber)
                     CreateGitHubRelease: false
 
-                - template: /eng/pipelines/templates/steps/update-extension-pr-registry.yml
-                  parameters:
-                    SanitizedExtensionId: ${{ parameters.SanitizedExtensionId }}
-                    AzdExtensionId: ${{ parameters.AzdExtensionId }}
-                    PRNumber: $(PRNumber)
+                - task: PowerShell@2
+                  displayName: Generate PR registry entry
+                  inputs:
+                    pwsh: true
+                    targetType: filePath
+                    filePath: eng/scripts/Update-ExtensionDailyRegistry.ps1
+                    arguments: >-
+                      -SanitizedExtensionId "${{ parameters.SanitizedExtensionId }}"
+                      -AzdExtensionId "${{ parameters.AzdExtensionId }}"
+                      -Version "$(EXT_VERSION)"
+                      -StorageBaseUrl "$(publish-storage-static-host)/azd/extensions/${{ parameters.SanitizedExtensionId }}/pr/$(PRNumber)"
+                      -OutputPath "$(Pipeline.Workspace)/registry-entry/${{ parameters.AzdExtensionId }}.json"
+                      -TemplatePath "eng/templates/extensions-registry-daily.json.template"
+                      -ReleasePath "$(Pipeline.Workspace)/release"
+                      -ExtensionYamlPath "$(Pipeline.Workspace)/release-metadata/extension.yaml"
+
+                - task: AzurePowerShell@5
+                  displayName: Upload PR registry entry
+                  inputs:
+                    azureSubscription: 'Azure SDK Artifacts'
+                    azurePowerShellVersion: LatestVersion
+                    pwsh: true
+                    ScriptType: InlineScript
+                    Inline: |
+                      $entryFile = "$(Pipeline.Workspace)/registry-entry/${{ parameters.AzdExtensionId }}.json"
+                      $blobPath = "$(publish-storage-location)/`$web/azd/extensions/pr-registry-entries/$(PRNumber)/${{ parameters.AzdExtensionId }}.json"
+                      $maxRetries = 3
+                      for ($i = 1; $i -le $maxRetries; $i++) {
+                        azcopy copy $entryFile $blobPath --overwrite=true
+                        if ($LASTEXITCODE -eq 0) { break }
+                        if ($i -eq $maxRetries) {
+                          Write-Error "Failed to upload registry entry after $maxRetries attempts (exit code $LASTEXITCODE)"
+                          exit 1
+                        }
+                        Write-Host "Upload attempt $i failed, retrying in $($i * 5)s..."
+                        Start-Sleep -Seconds ($i * 5)
+                      }
+                      Write-Host "Registry entry uploaded to $blobPath"
+                  env:
+                    AZCOPY_AUTO_LOGIN_TYPE: 'PSCRED'
 
                 - pwsh: |
                     $storageHost = "$(publish-storage-static-host)"

@@ -1,16 +1,15 @@
 <#
 .SYNOPSIS
-  Writes a per-extension daily registry entry to Azure Storage.
+  Generates a per-extension registry entry JSON file.
 
 .DESCRIPTION
   1. Computes checksums from signed release artifacts
   2. Reads extension.yaml for metadata (id, namespace, displayName, etc.)
   3. Loads the JSON template, replaces placeholders with actual values
-  4. Uploads the entry as a standalone per-extension JSON blob
+  4. Writes the entry as a JSON file to the specified output path
 
-  Each extension writes its own file to avoid race conditions when multiple
-  extension pipelines run concurrently. The azd CLI reads each per-extension
-  entry directly via the registry source URL.
+  The script only produces the JSON file. Upload to storage is handled
+  separately by the pipeline.
 
 .PARAMETER SanitizedExtensionId
   Hyphenated extension id (e.g. azure-ai-agents)
@@ -24,15 +23,14 @@
 .PARAMETER StorageBaseUrl
   Static storage host URL for daily artifacts
 
-.PARAMETER RegistryEntryBlobPath
-  Full blob path for the per-extension entry JSON
-  (e.g. .../azd/extensions/daily-registry-entries/azure.ai.agents.json)
+.PARAMETER OutputPath
+  Local file path to write the registry entry JSON
 
 .PARAMETER ReleasePath
   Path to the signed release artifacts
 
-.PARAMETER MetadataPath
-  Path to the release-metadata directory containing extension.yaml
+.PARAMETER ExtensionYamlPath
+  Path to the extension.yaml file
 
 .PARAMETER TemplatePath
   Path to the extension-registry-daily-template.json
@@ -43,16 +41,16 @@ param(
     [Parameter(Mandatory)] [string] $AzdExtensionId,
     [Parameter(Mandatory)] [string] $Version,
     [Parameter(Mandatory)] [string] $StorageBaseUrl,
-    [Parameter(Mandatory)] [string] $RegistryEntryBlobPath,
+    [Parameter(Mandatory)] [string] $OutputPath,
     [Parameter(Mandatory)] [string] $TemplatePath,
     [string] $ReleasePath = "release",
-    [string] $MetadataPath = "release-metadata"
+    [Parameter(Mandatory)] [string] $ExtensionYamlPath
 )
 
 $ErrorActionPreference = 'Stop'
 
 # Validate required files exist
-$extYamlPath = Join-Path $MetadataPath "extension.yaml"
+$extYamlPath = $ExtensionYamlPath
 if (!(Test-Path $extYamlPath)) {
     Write-Error "extension.yaml not found at $extYamlPath"
     exit 1
@@ -96,13 +94,12 @@ if ($missingArtifacts.Count -gt 0) {
 }
 
 # Install powershell-yaml for proper YAML parsing
-$psModuleHelpers = Join-Path $PSScriptRoot "PSModule-Helpers.ps1"
+$psModuleHelpers = Join-Path $PSScriptRoot "../common/scripts/Helpers/PSModule-Helpers.ps1"
 if (!(Test-Path $psModuleHelpers)) {
-    # Fallback to repo location when running from source checkout
-    $psModuleHelpers = Join-Path $PSScriptRoot "../common/scripts/Helpers/PSModule-Helpers.ps1"
+    $psModuleHelpers = Join-Path $PSScriptRoot "PSModule-Helpers.ps1"
 }
 if (!(Test-Path $psModuleHelpers)) {
-    Write-Error "PSModule-Helpers.ps1 not found at $PSScriptRoot or repo fallback path"
+    Write-Error "PSModule-Helpers.ps1 not found near $PSScriptRoot"
     exit 1
 }
 . $psModuleHelpers
@@ -205,24 +202,18 @@ $extEntry = [ordered]@{
 $registry = [ordered]@{ extensions = @($extEntry) }
 
 # Write registry entry and validate JSON
-$entryFile = "$AzdExtensionId.json"
-$registry | ConvertTo-Json -Depth 20 | Set-Content $entryFile -Encoding utf8
+$outputDir = Split-Path $OutputPath -Parent
+if ($outputDir -and !(Test-Path $outputDir)) {
+    New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
+}
+$registry | ConvertTo-Json -Depth 20 | Set-Content $OutputPath -Encoding utf8
 
 try {
-    $null = Get-Content $entryFile -Raw | ConvertFrom-Json -Depth 20
+    $null = Get-Content $OutputPath -Raw | ConvertFrom-Json -Depth 20
 } catch {
     Write-Error "Generated entry JSON is invalid: $_"
     exit 1
 }
 
-Write-Host "Extension entry:"
-Get-Content $entryFile
-
-# Upload per-extension entry to storage
-azcopy copy $entryFile $RegistryEntryBlobPath --overwrite=true
-if ($LASTEXITCODE -ne 0) {
-    Write-Error "Failed to upload entry to $RegistryEntryBlobPath (exit code $LASTEXITCODE)"
-    exit 1
-}
-
-Write-Host "Entry uploaded to $RegistryEntryBlobPath"
+Write-Host "Registry entry written to $OutputPath"
+Get-Content $OutputPath

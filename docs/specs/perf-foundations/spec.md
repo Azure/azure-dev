@@ -64,7 +64,7 @@ arrive 30s after the deployment actually finished, adding unnecessary wall-clock
 **Solution:** Two tuned frequencies:
 - `deployPollFrequency = 5s` for deploy and delete operations (variable completion time; 6x faster
   than the 30s default while leaving ample headroom against ARM rate limits)
-- `slowPollFrequency = 5s` for WhatIf and Validate operations (consistently slow at 30-90s; aggressive
+- `slowPollFrequency = 15s` for WhatIf and Validate operations (consistently slow at 30-90s; aggressive
   polling wastes ARM read quota without benefit)
 
 The 5s interval balances latency reduction against ARM rate limits: 1200 reads per 5 minutes per
@@ -136,9 +136,8 @@ default paths (`./Dockerfile`, `.`) are relative to the service directory. The o
 custom `docker.path` pointing to a Dockerfile outside the service directory.
 
 **Solution:** Extracted `resolveDockerPaths()` that resolves docker.path and docker.context
-to absolute paths. User-specified paths (from `azure.yaml`) are resolved relative to the project
-root (where `azure.yaml` lives), while default paths (`./Dockerfile`, `.`) are resolved relative to
-the service directory via `resolveServiceDir()`. This centralizes path resolution that was
+to absolute paths. Both user-specified and default paths are resolved relative to the service
+directory (via `resolveServiceDir()`) to preserve backward compatibility.This centralizes path resolution that was
 previously duplicated across `Build()`, `runRemoteBuild()`, and other call sites.
 
 Called from `Build()`, `runRemoteBuild()`, and `useDotNetPublishForDockerBuild()` (which now calls
@@ -147,15 +146,18 @@ absolute resolved paths, including dynamic resolution in the table-driven `Test_
 test. `filepath.Clean` is applied to both resolved paths to normalize separators and prevent
 path traversal.
 
-### 7. ReadRawResponse Body Close Fix
+### 7. ReadRawResponse Body Ownership
 
 **File:** `pkg/httputil/util.go`
 
-**Problem:** `ReadRawResponse` read `response.Body` via `io.ReadAll` but never closed it. While Go's
-HTTP client reuses connections when the body is fully read and closed, an unclosed body prevents the
-underlying TCP connection from returning to the pool.
+**Problem:** `ReadRawResponse` read `response.Body` via `io.ReadAll` but the body close responsibility
+was unclear. The function is used by both standalone callers (who own the response) and the
+zip-deploy polling handler (where azcore's poller framework owns the response lifecycle).
 
-**Solution:** Added `defer response.Body.Close()` at the top of the function.
+**Solution:** `ReadRawResponse` intentionally does NOT close the body — callers are responsible for
+closing it. This preserves compatibility with azcore's poller framework which manages response
+lifecycle. Standalone callers (e.g., `federated_token_client.go`) use `defer res.Body.Close()`
+before calling `ReadRawResponse`.
 
 ### 8. UpdateAppServiceAppSetting Helper
 

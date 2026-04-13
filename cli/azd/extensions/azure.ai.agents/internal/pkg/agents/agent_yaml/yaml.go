@@ -635,7 +635,7 @@ type ConnectionResource struct {
 	// Audience is the token audience for ManagedIdentity / AgenticIdentity / UserEntraToken auth types.
 	Audience string `json:"audience,omitempty" yaml:"audience,omitempty"`
 
-	// ConnectorName is the connector name for AgenticIdentity auth type.
+	// ConnectorName is the connector name for OAuth2 auth type, where Microsoft provides a managed OAuth2 app
 	ConnectorName string `json:"connectorName,omitempty" yaml:"connectorName,omitempty"`
 }
 

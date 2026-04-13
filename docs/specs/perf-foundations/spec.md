@@ -106,7 +106,7 @@ status. No customer data (app names, resource groups) is included in span attrib
 `IsScmReady()` on `ZipDeployClient` sends a lightweight GET to `/api/deployments`. Known
 transient transport errors (connection refused, DNS lookup failures, net.Error timeouts) return
 `(false, nil)` — the SCM is still restarting, which is the expected state. Other transport errors
-are propagated as `fmt.Errorf("SCM readiness probe: %w", err)` to avoid masking genuine issues.
+are propagated as wrapped errors (`"SCM readiness probe: ..."`) to avoid masking genuine issues.
 Context cancellation is checked via `ctx.Err()` and returns immediately.
 
 ### 5. ACR Credential Exponential Backoff

@@ -886,6 +886,11 @@
                             "WITH_SECRET_VALUE": "ENV_VAR_WITH_SECRET"
                         }
                     ]
+                },
+                "config": {
+                    "type": "object",
+                    "title": "Executor-specific configuration",
+                    "description": "Optional configuration specific to the hook executor kind."
                 }
             },
             "allOf": [
@@ -955,6 +960,51 @@
                         "required": [
                             "run"
                         ]
+                    }
+                },
+                {
+                    "if": {
+                        "properties": {
+                            "kind": { "enum": ["js", "ts"] }
+                        },
+                        "required": ["kind"]
+                    },
+                    "then": {
+                        "properties": {
+                            "config": {
+                                "$ref": "#/definitions/jsHookConfig"
+                            }
+                        }
+                    }
+                },
+                {
+                    "if": {
+                        "properties": {
+                            "kind": { "const": "python" }
+                        },
+                        "required": ["kind"]
+                    },
+                    "then": {
+                        "properties": {
+                            "config": {
+                                "$ref": "#/definitions/pythonHookConfig"
+                            }
+                        }
+                    }
+                },
+                {
+                    "if": {
+                        "properties": {
+                            "kind": { "const": "dotnet" }
+                        },
+                        "required": ["kind"]
+                    },
+                    "then": {
+                        "properties": {
+                            "config": {
+                                "$ref": "#/definitions/dotnetHookConfig"
+                            }
+                        }
                     }
                 }
             ]
@@ -1895,6 +1945,51 @@
                     "title": "An existing resource for referencing purposes",
                     "description": "Optional. When set to true, this resource will not be created and instead be used for referencing purposes. (Default: false)",
                     "default": false
+                }
+            }
+        },
+        "jsHookConfig": {
+            "type": "object",
+            "title": "JavaScript/TypeScript hook configuration",
+            "description": "Configuration options for JS and TS hook executors.",
+            "additionalProperties": false,
+            "properties": {
+                "packageManager": {
+                    "type": "string",
+                    "title": "Package manager",
+                    "description": "The package manager to use for dependency installation. Overrides auto-detection from lock files.",
+                    "enum": ["npm", "pnpm", "yarn"]
+                }
+            }
+        },
+        "pythonHookConfig": {
+            "type": "object",
+            "title": "Python hook configuration",
+            "description": "Configuration options for the Python hook executor.",
+            "additionalProperties": false,
+            "properties": {
+                "virtualEnvName": {
+                    "type": "string",
+                    "title": "Virtual environment name",
+                    "description": "The directory name for the Python virtual environment. Defaults to auto-detection (.venv, venv) or {baseName}_env."
+                }
+            }
+        },
+        "dotnetHookConfig": {
+            "type": "object",
+            "title": ".NET hook configuration",
+            "description": "Configuration options for the .NET hook executor.",
+            "additionalProperties": false,
+            "properties": {
+                "configuration": {
+                    "type": "string",
+                    "title": "Build configuration",
+                    "description": "The MSBuild configuration for building the hook script (e.g., Debug, Release)."
+                },
+                "framework": {
+                    "type": "string",
+                    "title": "Target framework",
+                    "description": "The target framework moniker for building and running the hook script (e.g., net8.0, net10.0)."
                 }
             }
         }

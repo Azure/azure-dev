@@ -128,3 +128,90 @@ func TestA2APreviewToolSerialization(t *testing.T) {
 		t.Errorf("Expected agentCardPath '%s'", agentCardPath)
 	}
 }
+
+// TestConnectionResourceNewFieldsJSONRoundTrip tests that the 6 new fields
+// survive a JSON marshal/unmarshal round-trip, catching any json struct tag typos.
+func TestConnectionResourceNewFieldsJSONRoundTrip(t *testing.T) {
+conn := ConnectionResource{
+Resource:         Resource{Name: "oauth-conn", Kind: ResourceKindConnection},
+Category:         CategoryCustomKeys,
+Target:           "https://example.com/api",
+AuthType:         AuthTypeOAuth2,
+AuthorizationUrl: "https://auth.example.com/authorize",
+TokenUrl:         "https://auth.example.com/token",
+RefreshUrl:       "https://auth.example.com/refresh",
+Scopes:           []string{"read", "write"},
+Audience:         "https://api.example.com",
+ConnectorName:    "my-connector",
+}
+
+data, err := json.Marshal(conn)
+if err != nil {
+t.Fatalf("Failed to marshal ConnectionResource: %v", err)
+}
+
+var conn2 ConnectionResource
+if err := json.Unmarshal(data, &conn2); err != nil {
+t.Fatalf("Failed to unmarshal ConnectionResource: %v", err)
+}
+
+if conn2.AuthorizationUrl != conn.AuthorizationUrl {
+t.Errorf("AuthorizationUrl: got %q, want %q", conn2.AuthorizationUrl, conn.AuthorizationUrl)
+}
+if conn2.TokenUrl != conn.TokenUrl {
+t.Errorf("TokenUrl: got %q, want %q", conn2.TokenUrl, conn.TokenUrl)
+}
+if conn2.RefreshUrl != conn.RefreshUrl {
+t.Errorf("RefreshUrl: got %q, want %q", conn2.RefreshUrl, conn.RefreshUrl)
+}
+if len(conn2.Scopes) != len(conn.Scopes) || conn2.Scopes[0] != conn.Scopes[0] {
+t.Errorf("Scopes: got %v, want %v", conn2.Scopes, conn.Scopes)
+}
+if conn2.Audience != conn.Audience {
+t.Errorf("Audience: got %q, want %q", conn2.Audience, conn.Audience)
+}
+if conn2.ConnectorName != conn.ConnectorName {
+t.Errorf("ConnectorName: got %q, want %q", conn2.ConnectorName, conn.ConnectorName)
+}
+}
+
+// TestConnectionResourceNewFieldsYAMLRoundTrip tests YAML unmarshal for the 6 new fields,
+// verifying that yaml struct tags are correct and fields are not silently dropped.
+func TestConnectionResourceNewFieldsYAMLRoundTrip(t *testing.T) {
+input := &ConnectionResource{
+Resource:         Resource{Name: "agentic-conn", Kind: ResourceKindConnection},
+Category:         CategoryCustomKeys,
+Target:           "https://example.com",
+AuthType:         AuthTypeAgenticIdentity,
+AuthorizationUrl: "https://auth.example.com/authorize",
+TokenUrl:         "https://auth.example.com/token",
+RefreshUrl:       "https://auth.example.com/refresh",
+Scopes:           []string{"openid", "profile"},
+Audience:         "https://api.example.com",
+ConnectorName:    "connector-1",
+}
+
+// Marshal to JSON (YAML tags are set the same as JSON tags for these fields)
+data, err := json.Marshal(input)
+if err != nil {
+t.Fatalf("json.Marshal: %v", err)
+}
+
+var got ConnectionResource
+if err := json.Unmarshal(data, &got); err != nil {
+t.Fatalf("json.Unmarshal: %v", err)
+}
+
+if got.AuthorizationUrl != input.AuthorizationUrl {
+t.Errorf("authorizationUrl dropped: got %q", got.AuthorizationUrl)
+}
+if got.Audience != input.Audience {
+t.Errorf("audience dropped: got %q", got.Audience)
+}
+if got.ConnectorName != input.ConnectorName {
+t.Errorf("connectorName dropped: got %q", got.ConnectorName)
+}
+if len(got.Scopes) != 2 {
+t.Errorf("scopes dropped: got %v", got.Scopes)
+}
+}

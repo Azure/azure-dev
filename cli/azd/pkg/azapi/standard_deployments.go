@@ -341,10 +341,10 @@ func (ds *StandardDeployments) ListSubscriptionDeploymentResources(
 		return nil, fmt.Errorf("getting subscription deployment: %w", err)
 	}
 
-	resourceGroupNames := resourceGroupsFromDeployment(subscriptionDeployment)
+	resourceGroupNames := createdResourceGroupsFromDeployment(subscriptionDeployment)
 	allResources := []*armresources.ResourceReference{}
 
-	// Find all the resources from the deployment's resource groups
+	// Find all the resources from the resource groups created by this deployment.
 	for _, resourceGroupName := range resourceGroupNames {
 		resources, err := ds.resourceService.ListResourceGroupResources(ctx, subscriptionId, resourceGroupName, nil)
 		if err != nil {
@@ -366,23 +366,26 @@ func (ds *StandardDeployments) ListSubscriptionDeploymentResources(
 	return allResources, nil
 }
 
-// resourceGroupsFromDeployment extracts the unique resource groups associated to a deployment.
-func resourceGroupsFromDeployment(deployment *ResourceDeployment) []string {
+// createdResourceGroupsFromDeployment extracts the unique resource groups created by a deployment.
+func createdResourceGroupsFromDeployment(deployment *ResourceDeployment) []string {
 	resourceGroups := map[string]struct{}{}
 
 	if deployment.ProvisioningState == DeploymentProvisioningStateSucceeded {
-		// For a successful deployment, use the output resources property to find the resource groups.
+		// For a successful deployment, only resource group output resources represent groups created by
+		// the deployment. Resources deployed into existing resource groups also appear in outputResources,
+		// but their resource group IDs do not.
 		for _, resourceId := range deployment.Resources {
 			if resourceId != nil && resourceId.ID != nil {
 				resId, err := arm.ParseResourceID(*resourceId.ID)
-				if err == nil && resId.ResourceGroupName != "" {
+				if err == nil && resId.ResourceType.Type == arm.ResourceGroupResourceType.Type {
 					resourceGroups[resId.ResourceGroupName] = struct{}{}
 				}
 			}
 		}
 	} else {
 		// For a failed deployment, the outputResources field is not populated.
-		// Instead, look at the dependencies to find resource groups that this deployment deployed into.
+		// Instead, look at nested deployment dependencies to find resource groups that were created before
+		// child deployments ran.
 		for _, dependency := range deployment.Dependencies {
 			if dependency.ResourceType != nil && *dependency.ResourceType == string(AzureResourceTypeDeployment) {
 				for _, dependent := range dependency.DependsOn {

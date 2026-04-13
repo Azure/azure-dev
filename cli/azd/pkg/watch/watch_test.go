@@ -7,6 +7,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -133,19 +134,18 @@ func TestGetFileChanges_AzdxIgnoreFile(t *testing.T) {
 
 	// The tracked file should appear; the ignored file should not.
 	require.Eventually(t, func() bool {
-		for _, c := range watcher.GetFileChanges() {
+		changes := watcher.GetFileChanges()
+		foundMain := false
+		for _, c := range changes {
+			if filepath.Base(c.Path) == "debug.log" {
+				return false // ignored file appeared — fail fast
+			}
 			if filepath.Base(c.Path) == "main.go" && c.ChangeType == FileCreated {
-				return true
+				foundMain = true
 			}
 		}
-		return false
-	}, 2*time.Second, 50*time.Millisecond, "expected created file main.go")
-
-	// Verify the ignored file is not in the changes.
-	for _, c := range watcher.GetFileChanges() {
-		require.NotEqual(t, "debug.log", filepath.Base(c.Path),
-			"debug.log should be ignored by .azdxignore")
-	}
+		return foundMain
+	}, 2*time.Second, 50*time.Millisecond, "expected main.go created without debug.log")
 }
 
 func TestGetFileChanges_AzdxIgnoreDirectory(t *testing.T) {
@@ -172,21 +172,21 @@ func TestGetFileChanges_AzdxIgnoreDirectory(t *testing.T) {
 	err = os.WriteFile(filepath.Join(dir, "app.go"), []byte("package main"), 0600)
 	require.NoError(t, err)
 
-	// The tracked file should appear.
+	// The tracked file should appear; vendor/ files should not.
 	require.Eventually(t, func() bool {
-		for _, c := range watcher.GetFileChanges() {
+		changes := watcher.GetFileChanges()
+		foundApp := false
+		for _, c := range changes {
+			rel, err := filepath.Rel(dir, c.Path)
+			if err == nil && (rel == "vendor" || strings.HasPrefix(filepath.ToSlash(rel), "vendor/")) {
+				return false // vendor file appeared — fail fast
+			}
 			if filepath.Base(c.Path) == "app.go" && c.ChangeType == FileCreated {
-				return true
+				foundApp = true
 			}
 		}
-		return false
-	}, 2*time.Second, 50*time.Millisecond, "expected created file app.go")
-
-	// Verify no file from vendor/ is in the changes.
-	for _, c := range watcher.GetFileChanges() {
-		require.NotContains(t, c.Path, "vendor",
-			"files inside vendor/ should be ignored by .azdxignore")
-	}
+		return foundApp
+	}, 2*time.Second, 50*time.Millisecond, "expected app.go created without vendor/ files")
 }
 
 func TestGetFileChanges_NoAzdxIgnoreFile(t *testing.T) {
@@ -267,7 +267,8 @@ func TestIsIgnored_MatcherIntegration(t *testing.T) {
 	w, err := NewWatcher(ctx)
 	require.NoError(t, err)
 
-	fw := w.(*fileWatcher)
+	fw, ok := w.(*fileWatcher)
+	require.True(t, ok, "expected NewWatcher to return *fileWatcher")
 
 	// Verify the matcher is loaded and works with relative paths.
 	require.True(t, fw.ignoreMatcher.IsIgnored("dist", true))

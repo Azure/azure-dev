@@ -274,3 +274,42 @@ func TestIsIgnored_MatcherIntegration(t *testing.T) {
 	require.True(t, fw.ignoreMatcher.IsIgnored("file.bak", false))
 	require.False(t, fw.ignoreMatcher.IsIgnored("src/main.go", false))
 }
+
+func TestGetFileChanges_CreateThenDelete(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	watcher, err := NewWatcher(ctx)
+	require.NoError(t, err)
+
+	// Create a file and wait for it to appear in changes.
+	testFile := filepath.Join(dir, "ephemeral.txt")
+	err = os.WriteFile(testFile, []byte("short-lived"), 0600)
+	require.NoError(t, err)
+
+	require.Eventually(t, func() bool {
+		for _, c := range watcher.GetFileChanges() {
+			if filepath.Base(c.Path) == "ephemeral.txt" && c.ChangeType == FileCreated {
+				return true
+			}
+		}
+		return false
+	}, 2*time.Second, 50*time.Millisecond, "expected created file ephemeral.txt")
+
+	// Delete the file — it should be removed from Created, not added to Deleted.
+	err = os.Remove(testFile)
+	require.NoError(t, err)
+
+	require.Eventually(t, func() bool {
+		for _, c := range watcher.GetFileChanges() {
+			if filepath.Base(c.Path) == "ephemeral.txt" {
+				return false // still present — wait
+			}
+		}
+		return true // gone from all change maps
+	}, 2*time.Second, 50*time.Millisecond,
+		"ephemeral.txt should be removed from Created after delete, not moved to Deleted")
+}

@@ -185,13 +185,16 @@ func TestNewMatcher_RelativePaths(t *testing.T) {
 func TestNewMatcher_BackslashPaths(t *testing.T) {
 	dir := t.TempDir()
 
-	writeFile(t, dir, AzdxIgnoreFile, "vendor/\n")
+	writeFile(t, dir, AzdxIgnoreFile, "*.log\nvendor/\n")
 
 	m, err := NewMatcher(dir)
 	require.NoError(t, err)
 
-	// Windows-style backslash paths should still match.
+	// Windows-style backslash paths should still match after ToSlash normalization.
 	require.True(t, m.IsIgnored("vendor", true))
+	require.True(t, m.IsIgnored("sub\\dir\\debug.log", false))
+	require.True(t, m.IsIgnored("deep\\nested\\path\\error.log", false))
+	require.False(t, m.IsIgnored("sub\\dir\\main.go", false))
 }
 
 func TestNewMatcher_UnreadableFile(t *testing.T) {
@@ -221,4 +224,18 @@ func writeFile(t *testing.T, dir, name, content string) {
 	t.Helper()
 	err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0600)
 	require.NoError(t, err)
+}
+
+func TestNewMatcher_BlankAndWhitespaceLines(t *testing.T) {
+	dir := t.TempDir()
+
+	// Ignore file with blank lines and whitespace-only lines interspersed.
+	writeFile(t, dir, AzdxIgnoreFile, "\n  \n*.log\n\n\t\ntemp/\n")
+
+	m, err := NewMatcher(dir)
+	require.NoError(t, err)
+
+	require.True(t, m.IsIgnored("error.log", false))
+	require.True(t, m.IsIgnored("temp", true))
+	require.False(t, m.IsIgnored("main.go", false))
 }

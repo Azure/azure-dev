@@ -48,12 +48,13 @@ func setupInitAction(
 		lazyAzdCtx: lazy.NewLazy(func() (*azdcontext.AzdContext, error) {
 			return azdcontext.NewAzdContextWithDirectory(tmpDir), nil
 		}),
-		console:         mockContext.Console,
-		cmdRun:          mockContext.CommandRunner,
-		gitCli:          gitCli,
-		flags:           flags,
-		args:            args,
-		featuresManager: alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
+		console:          mockContext.Console,
+		cmdRun:           mockContext.CommandRunner,
+		gitCli:           gitCli,
+		flags:            flags,
+		args:             args,
+		featuresManager:  alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
+		isRunningInAgent: func() bool { return false },
 	}
 }
 
@@ -270,6 +271,8 @@ func TestInitResolveTargetDirectory(t *testing.T) {
 
 	t.Run("NoArgDerivesFromTemplatePath", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
+		// Simulate a real terminal — auto-derive only activates in interactive TTY mode.
+		mockContext.Console.SetTerminal(true)
 		flags := &initFlags{
 			templatePath: "Azure-Samples/todo-nodejs-mongo",
 			global:       &internal.GlobalCommandOptions{},
@@ -282,6 +285,24 @@ func TestInitResolveTargetDirectory(t *testing.T) {
 		result, err := action.resolveTargetDirectory(wd)
 		require.NoError(t, err)
 		require.Equal(t, filepath.Join(wd, "todo-nodejs-mongo"), result)
+	})
+
+	t.Run("NonTTYDefaultsToCwd", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		// Non-TTY (default mock) — should fall back to CWD even without --no-prompt,
+		// preventing breakage for CI scripts that pipe stdin.
+		flags := &initFlags{
+			templatePath: "Azure-Samples/todo-nodejs-mongo",
+			global:       &internal.GlobalCommandOptions{},
+		}
+		action := setupInitAction(t, mockContext, flags)
+
+		wd, err := os.Getwd()
+		require.NoError(t, err)
+
+		result, err := action.resolveTargetDirectory(wd)
+		require.NoError(t, err)
+		require.Equal(t, wd, result, "non-TTY should default to CWD")
 	})
 
 	t.Run("NoArgWithFilterTagsUsesCwd", func(t *testing.T) {
@@ -302,6 +323,7 @@ func TestInitResolveTargetDirectory(t *testing.T) {
 
 	t.Run("TemplateWithDotGitSuffix", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
+		mockContext.Console.SetTerminal(true)
 		flags := &initFlags{
 			templatePath: "https://github.com/Azure-Samples/todo-nodejs-mongo.git",
 			global:       &internal.GlobalCommandOptions{},
@@ -330,6 +352,54 @@ func TestInitResolveTargetDirectory(t *testing.T) {
 		_, err = action.resolveTargetDirectory(wd)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "absolute path")
+	})
+
+	t.Run("DotDotTraversalIsRejected", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		flags := &initFlags{
+			templatePath: "owner/repo",
+			global:       &internal.GlobalCommandOptions{},
+		}
+		action := setupInitAction(t, mockContext, flags, "../../etc/evil")
+
+		wd, err := os.Getwd()
+		require.NoError(t, err)
+
+		_, err = action.resolveTargetDirectory(wd)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "escapes the current working directory")
+	})
+
+	t.Run("SingleDotDotIsRejected", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		flags := &initFlags{
+			templatePath: "owner/repo",
+			global:       &internal.GlobalCommandOptions{},
+		}
+		action := setupInitAction(t, mockContext, flags, "..")
+
+		wd, err := os.Getwd()
+		require.NoError(t, err)
+
+		_, err = action.resolveTargetDirectory(wd)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "escapes the current working directory")
+	})
+
+	t.Run("NestedSubdirectoryIsAllowed", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		flags := &initFlags{
+			templatePath: "owner/repo",
+			global:       &internal.GlobalCommandOptions{},
+		}
+		action := setupInitAction(t, mockContext, flags, "sub/dir/project")
+
+		wd, err := os.Getwd()
+		require.NoError(t, err)
+
+		result, err := action.resolveTargetDirectory(wd)
+		require.NoError(t, err)
+		require.Equal(t, filepath.Join(wd, "sub/dir/project"), result)
 	})
 
 	t.Run("NoPromptNoArgDefaultsToCwd", func(t *testing.T) {
@@ -417,6 +487,8 @@ func TestInitValidateTargetDirectory(t *testing.T) {
 func TestInitCreatesProjectDirectory(t *testing.T) {
 	t.Run("TemplateInitCreatesDirectory", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
+		// Simulate interactive terminal so auto-directory creation kicks in.
+		mockContext.Console.SetTerminal(true)
 		// Not using --no-prompt so the auto-directory creation kicks in
 		flags := &initFlags{
 			templatePath: "Azure-Samples/todo-nodejs-mongo",

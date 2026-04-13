@@ -21,6 +21,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
 	agentcopilot "github.com/azure/azure-dev/cli/azd/internal/agent/copilot"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
+	"github.com/azure/azure-dev/cli/azd/internal/runcontext/agentdetect"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
@@ -151,6 +152,9 @@ type initAction struct {
 	agentFactory      agent.AgentFactory
 	consentManager    consent.ConsentManager
 	configManager     config.UserConfigManager
+	// isRunningInAgent reports whether azd was invoked by an AI agent.
+	// Defaults to agentdetect.IsRunningInAgent; overridable in tests.
+	isRunningInAgent func() bool
 }
 
 func newInitAction(
@@ -186,6 +190,7 @@ func newInitAction(
 		agentFactory:      agentFactory,
 		consentManager:    consentManager,
 		configManager:     configManager,
+		isRunningInAgent:  agentdetect.IsRunningInAgent,
 	}
 }
 
@@ -1038,13 +1043,28 @@ func (i *initAction) resolveTargetDirectory(wd string) (string, error) {
 			}
 		}
 
-		return filepath.Join(wd, dirArg), nil
+		// Reject paths that escape the working directory via ".." traversal.
+		// filepath.Join + filepath.Rel gives us a cleaned relative path; if it
+		// starts with ".." the target is outside the working tree.
+		resolved := filepath.Join(wd, dirArg)
+		rel, err := filepath.Rel(wd, resolved)
+		if err != nil || strings.HasPrefix(rel, "..") {
+			return "", &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"directory %q escapes the current working directory", dirArg),
+				Suggestion: "Use a directory name without '..' traversal (e.g., 'my-project').",
+			}
+		}
+
+		return resolved, nil
 	}
 
-	// In non-interactive mode, default to CWD to preserve backward compatibility.
-	// Existing scripts expect `azd init -t <template> --no-prompt` to place files in CWD.
-	// Users can pass an explicit positional arg to opt into the new directory behavior.
-	if i.console.IsNoPromptMode() {
+	// In non-interactive mode, non-TTY environments (CI, piped stdin), or when called by
+	// an AI agent, default to CWD to preserve backward compatibility. Existing scripts,
+	// CI pipelines, and LLM agents expect `azd init -t <template>` to place files in CWD.
+	// The auto-create-directory behavior only activates for interactive terminal users.
+	// Users can still pass an explicit positional arg to opt into the new behavior anywhere.
+	if i.console.IsNoPromptMode() || !i.console.IsSpinnerInteractive() || i.isRunningInAgent() {
 		return wd, nil
 	}
 

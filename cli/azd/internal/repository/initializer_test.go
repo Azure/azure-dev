@@ -32,6 +32,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockexec"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
+	cp "github.com/otiai10/copy"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -1181,4 +1182,776 @@ func Test_Initializer_Initialize_LocalTemplateOverlapRejected(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "overlaps with template source")
 	})
+}
+
+// --- .azdignore tests ---
+
+func Test_removeAzdIgnoredFiles(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		azdIgnore    string // contents of .azdignore; empty means no file
+		files        []string
+		dirs         []string
+		expectFiles  []string // files expected to remain
+		expectAbsent []string // paths expected to be removed
+	}{
+		{
+			name:        "NoAzdIgnore",
+			azdIgnore:   "",
+			files:       []string{"README.md", "src/main.go"},
+			expectFiles: []string{"README.md", "src/main.go"},
+		},
+		{
+			name:      "GlobPatterns",
+			azdIgnore: "*.yml\nCONTRIBUTING.md\n",
+			files:     []string{"README.md", "ci.yml", "deploy.yml", "CONTRIBUTING.md", "src/main.go"},
+			expectFiles: []string{
+				"README.md", "src/main.go",
+			},
+			expectAbsent: []string{"ci.yml", "deploy.yml", "CONTRIBUTING.md"},
+		},
+		{
+			name:      "DirectoryExclusion",
+			azdIgnore: ".github/\n",
+			files:     []string{"README.md", ".github/workflows/ci.yml", ".github/CODEOWNERS"},
+			dirs:      []string{".github/workflows"},
+			expectFiles: []string{
+				"README.md",
+			},
+			expectAbsent: []string{".github"},
+		},
+		{
+			name:      "NegationPattern",
+			azdIgnore: "*.md\n!README.md\n",
+			files:     []string{"README.md", "CONTRIBUTING.md", "CODE_OF_CONDUCT.md", "src/main.go"},
+			expectFiles: []string{
+				"README.md", "src/main.go",
+			},
+			expectAbsent: []string{"CONTRIBUTING.md", "CODE_OF_CONDUCT.md"},
+		},
+		{
+			name:      "NestedFilePattern",
+			azdIgnore: "docs/internal/\n",
+			files:     []string{"docs/public/guide.md", "docs/internal/design.md", "docs/internal/notes.md"},
+			dirs:      []string{"docs/public", "docs/internal"},
+			expectFiles: []string{
+				"docs/public/guide.md",
+			},
+			expectAbsent: []string{"docs/internal"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+
+			// Create directories first
+			for _, d := range tt.dirs {
+				require.NoError(t, os.MkdirAll(filepath.Join(dir, d), 0755))
+			}
+
+			// Create files
+			for _, f := range tt.files {
+				require.NoError(t, os.MkdirAll(filepath.Dir(filepath.Join(dir, f)), 0755))
+				require.NoError(t, os.WriteFile(filepath.Join(dir, f), []byte("content"), 0600))
+			}
+
+			// Create .azdignore if specified
+			if tt.azdIgnore != "" {
+				require.NoError(t, os.WriteFile(
+					filepath.Join(dir, azdIgnoreFileName), []byte(tt.azdIgnore), 0600))
+			}
+
+			err := removeAzdIgnoredFiles(dir)
+			require.NoError(t, err)
+
+			// Verify expected files remain
+			for _, f := range tt.expectFiles {
+				require.FileExists(t, filepath.Join(dir, f), "expected file to remain: %s", f)
+			}
+
+			// Verify removed files are gone
+			for _, f := range tt.expectAbsent {
+				p := filepath.Join(dir, f)
+				require.NoFileExists(t, p, "expected path to be removed: %s", f)
+				require.NoDirExists(t, p, "expected path to be removed: %s", f)
+			}
+
+			// .azdignore itself should always be removed when it existed
+			if tt.azdIgnore != "" {
+				require.NoFileExists(t, filepath.Join(dir, azdIgnoreFileName))
+			}
+		})
+	}
+}
+
+func Test_loadAzdIgnore(t *testing.T) {
+	t.Parallel()
+
+	t.Run("FileExists", func(t *testing.T) {
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(
+			filepath.Join(dir, azdIgnoreFileName), []byte("*.log\n"), 0600))
+
+		ig, err := loadAzdIgnore(dir)
+		require.NoError(t, err)
+		require.NotNil(t, ig)
+
+		// Verify it matches
+		match := ig.Relative("debug.log", false)
+		require.NotNil(t, match)
+		require.True(t, match.Ignore())
+
+		// Verify non-match
+		match = ig.Relative("main.go", false)
+		if match != nil {
+			require.False(t, match.Ignore())
+		}
+	})
+
+	t.Run("FileDoesNotExist", func(t *testing.T) {
+		dir := t.TempDir()
+
+		ig, err := loadAzdIgnore(dir)
+		require.NoError(t, err)
+		require.Nil(t, ig)
+	})
+
+	t.Run("FileWithUTF8BOM", func(t *testing.T) {
+		dir := t.TempDir()
+		// Prepend UTF-8 BOM (0xEF, 0xBB, 0xBF) — Windows editors may add this.
+		// Without stripping, the BOM becomes part of the first pattern and breaks matching.
+		content := append([]byte{0xEF, 0xBB, 0xBF}, []byte("*.log\n")...)
+		require.NoError(t, os.WriteFile(
+			filepath.Join(dir, azdIgnoreFileName), content, 0600))
+
+		ig, err := loadAzdIgnore(dir)
+		require.NoError(t, err)
+		require.NotNil(t, ig)
+
+		// Verify the first pattern still matches despite BOM
+		match := ig.Relative("debug.log", false)
+		require.NotNil(t, match)
+		require.True(t, match.Ignore())
+	})
+}
+
+func Test_filterExistingFiles(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "exists.txt"), []byte("hi"), 0600))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "sub"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "sub", "also.txt"), []byte("hi"), 0600))
+
+	result := filterExistingFiles(dir, []string{"exists.txt", "gone.txt", "sub/also.txt", "sub/nope.txt"})
+	assert.Equal(t, []string{"exists.txt", "sub/also.txt"}, result)
+
+	// Empty input returns empty
+	result = filterExistingFiles(dir, nil)
+	assert.Nil(t, result)
+}
+
+func Test_Initializer_Initialize_AzdIgnoreRemoteTemplate(t *testing.T) {
+	t.Parallel()
+
+	// Build a source template directory that simulates a cloned repo
+	sourceTemplate := t.TempDir()
+
+	// Create normal template files
+	require.NoError(t, os.WriteFile(
+		filepath.Join(sourceTemplate, "azure.yaml"), []byte("name: test\n"), 0600))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(sourceTemplate, "README.md"), []byte("# Test\n"), 0600))
+	require.NoError(t, os.MkdirAll(filepath.Join(sourceTemplate, "src"), 0755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(sourceTemplate, "src", "main.go"), []byte("package main\n"), 0600))
+
+	// Create files that should be excluded by .azdignore
+	require.NoError(t, os.MkdirAll(filepath.Join(sourceTemplate, ".github", "workflows"), 0755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(sourceTemplate, ".github", "workflows", "ci.yml"),
+		[]byte("name: CI\n"),
+		0600))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(sourceTemplate, "CONTRIBUTING.md"),
+		[]byte("# Contributing\n"),
+		0600))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(sourceTemplate, "CODE_OF_CONDUCT.md"),
+		[]byte("# Code of Conduct\n"),
+		0600))
+
+	// Create .azdignore
+	azdIgnoreContent := ".github/\nCONTRIBUTING.md\nCODE_OF_CONDUCT.md\n"
+	require.NoError(t, os.WriteFile(
+		filepath.Join(sourceTemplate, azdIgnoreFileName),
+		[]byte(azdIgnoreContent),
+		0600))
+
+	projectDir := t.TempDir()
+	azdCtx := azdcontext.NewAzdContextWithDirectory(projectDir)
+
+	realRunner := exec.NewCommandRunner(nil)
+	mockRunner := mockexec.NewMockCommandRunner()
+	const repoURL = "https://github.com/Azure-Samples/azdignore-test"
+	mockRunner.When(func(args exec.RunArgs, command string) bool { return true }).
+		RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+			if slices.Contains(args.Args, "clone") && slices.Contains(args.Args, repoURL) {
+				stagingDir := args.Args[len(args.Args)-1]
+
+				// Copy source template to staging (simulating git clone)
+				err := cp.Copy(sourceTemplate, stagingDir)
+				require.NoError(t, err)
+
+				// Create a git repo so fetchCode's post-clone steps succeed
+				_, err = realRunner.Run(t.Context(),
+					exec.NewRunArgs("git", "-C", stagingDir, "init"))
+				require.NoError(t, err)
+				_, err = realRunner.Run(t.Context(),
+					exec.NewRunArgs("git", "-C", stagingDir, "add", "-A"))
+				require.NoError(t, err)
+
+				return exec.NewRunResult(0, "", ""), nil
+			}
+			return realRunner.Run(t.Context(), args)
+		})
+
+	mockEnv := &mockenv.MockEnvManager{}
+	mockEnv.On("Save", mock.Anything, mock.Anything).Return(nil)
+
+	i := NewInitializer(
+		mockinput.NewMockConsole(),
+		git.NewCli(mockRunner),
+		dotnet.NewCli(mockRunner),
+		alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
+		lazy.From[environment.Manager](mockEnv),
+	)
+
+	err := i.Initialize(t.Context(), azdCtx, &templates.Template{
+		RepositoryPath: repoURL,
+	}, "")
+	require.NoError(t, err)
+
+	// Verify included files were copied
+	require.FileExists(t, filepath.Join(projectDir, "README.md"))
+	require.FileExists(t, filepath.Join(projectDir, "src", "main.go"))
+
+	// Verify .azdignore itself was excluded
+	require.NoFileExists(t, filepath.Join(projectDir, azdIgnoreFileName))
+
+	// Verify .azdignore'd files were excluded
+	require.NoDirExists(t, filepath.Join(projectDir, ".github"))
+	require.NoFileExists(t, filepath.Join(projectDir, "CONTRIBUTING.md"))
+	require.NoFileExists(t, filepath.Join(projectDir, "CODE_OF_CONDUCT.md"))
+
+	// Verify standard azd assets
+	require.FileExists(t, filepath.Join(projectDir, ".gitignore"))
+	require.DirExists(t, azdCtx.EnvironmentDirectory())
+}
+
+func Test_Initializer_Initialize_AzdIgnoreLocalTemplate(t *testing.T) {
+	t.Parallel()
+
+	// Create a local template directory
+	localTemplateDir := createLocalTemplateDir(t, testDataPath("template"))
+
+	// Create files that should be excluded by .azdignore
+	require.NoError(t, os.MkdirAll(filepath.Join(localTemplateDir, ".github", "workflows"), 0755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(localTemplateDir, ".github", "workflows", "ci.yml"),
+		[]byte("name: CI\n"),
+		0600))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(localTemplateDir, "CONTRIBUTING.md"),
+		[]byte("# Contributing\n"),
+		0600))
+
+	// Create .azdignore
+	azdIgnoreContent := ".github/\nCONTRIBUTING.md\n"
+	require.NoError(t, os.WriteFile(
+		filepath.Join(localTemplateDir, azdIgnoreFileName),
+		[]byte(azdIgnoreContent),
+		0600))
+
+	projectDir := t.TempDir()
+	azdCtx := azdcontext.NewAzdContextWithDirectory(projectDir)
+
+	realRunner := exec.NewCommandRunner(nil)
+
+	mockEnv := &mockenv.MockEnvManager{}
+	mockEnv.On("Save", mock.Anything, mock.Anything).Return(nil)
+
+	i := NewInitializer(
+		mockinput.NewMockConsole(),
+		git.NewCli(realRunner),
+		dotnet.NewCli(realRunner),
+		alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
+		lazy.From[environment.Manager](mockEnv),
+	)
+
+	err := i.Initialize(t.Context(), azdCtx, &templates.Template{
+		RepositoryPath: localTemplateDir,
+	}, "")
+	require.NoError(t, err)
+
+	// Verify included files were copied
+	require.FileExists(t, filepath.Join(projectDir, "README.md"))
+	require.FileExists(t, filepath.Join(projectDir, "src", "Program.cs"))
+
+	// Verify .azdignore itself was excluded
+	require.NoFileExists(t, filepath.Join(projectDir, azdIgnoreFileName))
+
+	// Verify .azdignore'd files were excluded
+	require.NoDirExists(t, filepath.Join(projectDir, ".github"))
+	require.NoFileExists(t, filepath.Join(projectDir, "CONTRIBUTING.md"))
+
+	// Verify standard azd assets
+	require.FileExists(t, filepath.Join(projectDir, ".gitignore"))
+	require.DirExists(t, azdCtx.EnvironmentDirectory())
+}
+
+func Test_Initializer_Initialize_AzdIgnoreNegation(t *testing.T) {
+	t.Parallel()
+
+	localTemplateDir := createLocalTemplateDir(t, testDataPath("template"))
+
+	// Create .azdignore with negation pattern
+	azdIgnoreContent := "*.md\n!README.md\n"
+	require.NoError(t, os.WriteFile(
+		filepath.Join(localTemplateDir, azdIgnoreFileName),
+		[]byte(azdIgnoreContent),
+		0600))
+
+	// Create extra .md files
+	require.NoError(t, os.WriteFile(
+		filepath.Join(localTemplateDir, "CONTRIBUTING.md"),
+		[]byte("# Contributing\n"),
+		0600))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(localTemplateDir, "CODE_OF_CONDUCT.md"),
+		[]byte("# Code of Conduct\n"),
+		0600))
+
+	projectDir := t.TempDir()
+	azdCtx := azdcontext.NewAzdContextWithDirectory(projectDir)
+
+	realRunner := exec.NewCommandRunner(nil)
+
+	mockEnv := &mockenv.MockEnvManager{}
+	mockEnv.On("Save", mock.Anything, mock.Anything).Return(nil)
+
+	i := NewInitializer(
+		mockinput.NewMockConsole(),
+		git.NewCli(realRunner),
+		dotnet.NewCli(realRunner),
+		alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
+		lazy.From[environment.Manager](mockEnv),
+	)
+
+	err := i.Initialize(t.Context(), azdCtx, &templates.Template{
+		RepositoryPath: localTemplateDir,
+	}, "")
+	require.NoError(t, err)
+
+	// README.md should be kept via negation
+	require.FileExists(t, filepath.Join(projectDir, "README.md"))
+
+	// Other .md files should be excluded
+	require.NoFileExists(t, filepath.Join(projectDir, "CONTRIBUTING.md"))
+	require.NoFileExists(t, filepath.Join(projectDir, "CODE_OF_CONDUCT.md"))
+
+	// .azdignore itself should be excluded
+	require.NoFileExists(t, filepath.Join(projectDir, azdIgnoreFileName))
+}
+
+func Test_Initializer_Initialize_AzdIgnoreWithGitignore(t *testing.T) {
+	t.Parallel()
+
+	// Verify that .azdignore and .gitignore work together in local templates
+	localTemplateDir := createLocalTemplateDir(t, testDataPath("template"))
+
+	// Create .gitignore that excludes build artifacts
+	require.NoError(t, os.WriteFile(
+		filepath.Join(localTemplateDir, ".gitignore"),
+		[]byte("build/\n*.log\n"),
+		0600))
+
+	// Create .azdignore that excludes repo-authoring files
+	require.NoError(t, os.WriteFile(
+		filepath.Join(localTemplateDir, azdIgnoreFileName),
+		[]byte("CONTRIBUTING.md\n"),
+		0600))
+
+	// Create files: some excluded by .gitignore, some by .azdignore, some kept
+	require.NoError(t, os.MkdirAll(filepath.Join(localTemplateDir, "build"), 0755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(localTemplateDir, "build", "out.js"), []byte("compiled"), 0600))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(localTemplateDir, "debug.log"), []byte("log"), 0600))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(localTemplateDir, "CONTRIBUTING.md"), []byte("contrib"), 0600))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(localTemplateDir, "keep.txt"), []byte("keep"), 0600))
+
+	projectDir := t.TempDir()
+	azdCtx := azdcontext.NewAzdContextWithDirectory(projectDir)
+
+	realRunner := exec.NewCommandRunner(nil)
+
+	mockEnv := &mockenv.MockEnvManager{}
+	mockEnv.On("Save", mock.Anything, mock.Anything).Return(nil)
+
+	i := NewInitializer(
+		mockinput.NewMockConsole(),
+		git.NewCli(realRunner),
+		dotnet.NewCli(realRunner),
+		alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
+		lazy.From[environment.Manager](mockEnv),
+	)
+
+	err := i.Initialize(t.Context(), azdCtx, &templates.Template{
+		RepositoryPath: localTemplateDir,
+	}, "")
+	require.NoError(t, err)
+
+	// Kept files
+	require.FileExists(t, filepath.Join(projectDir, "keep.txt"))
+	require.FileExists(t, filepath.Join(projectDir, "README.md"))
+
+	// Excluded by .gitignore
+	require.NoDirExists(t, filepath.Join(projectDir, "build"))
+	require.NoFileExists(t, filepath.Join(projectDir, "debug.log"))
+
+	// Excluded by .azdignore
+	require.NoFileExists(t, filepath.Join(projectDir, "CONTRIBUTING.md"))
+	require.NoFileExists(t, filepath.Join(projectDir, azdIgnoreFileName))
+}
+
+func Test_Initializer_Initialize_AzdIgnoreSurvivesGitignore(t *testing.T) {
+	t.Parallel()
+
+	// Regression test: if the template's .gitignore contains a broad pattern
+	// that matches .azdignore (e.g., ".*"), the .azdignore file must still be
+	// copied to staging so that its rules are applied before it is removed.
+	localTemplateDir := createLocalTemplateDir(t, testDataPath("template"))
+
+	// .gitignore with a broad dot-file pattern that would match .azdignore
+	require.NoError(t, os.WriteFile(
+		filepath.Join(localTemplateDir, ".gitignore"),
+		[]byte(".*\n"),
+		0600))
+
+	// .azdignore should still take effect despite the .gitignore pattern
+	require.NoError(t, os.WriteFile(
+		filepath.Join(localTemplateDir, azdIgnoreFileName),
+		[]byte("CONTRIBUTING.md\n"),
+		0600))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(localTemplateDir, "CONTRIBUTING.md"),
+		[]byte("# Contributing\n"),
+		0600))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(localTemplateDir, "keep.txt"),
+		[]byte("keep"),
+		0600))
+
+	projectDir := t.TempDir()
+	azdCtx := azdcontext.NewAzdContextWithDirectory(projectDir)
+
+	realRunner := exec.NewCommandRunner(nil)
+
+	mockEnv := &mockenv.MockEnvManager{}
+	mockEnv.On("Save", mock.Anything, mock.Anything).Return(nil)
+
+	i := NewInitializer(
+		mockinput.NewMockConsole(),
+		git.NewCli(realRunner),
+		dotnet.NewCli(realRunner),
+		alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
+		lazy.From[environment.Manager](mockEnv),
+	)
+
+	err := i.Initialize(t.Context(), azdCtx, &templates.Template{
+		RepositoryPath: localTemplateDir,
+	}, "")
+	require.NoError(t, err)
+
+	// .azdignore rules must have been applied even though .gitignore matched .*
+	require.NoFileExists(t, filepath.Join(projectDir, "CONTRIBUTING.md"),
+		".azdignore was not applied — likely filtered out by .gitignore")
+	require.NoFileExists(t, filepath.Join(projectDir, azdIgnoreFileName))
+	require.FileExists(t, filepath.Join(projectDir, "keep.txt"))
+}
+
+// --- .azdignore security tests ---
+
+func Test_loadAzdIgnore_RejectsSymlink(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation requires elevated privileges on Windows")
+	}
+
+	dir := t.TempDir()
+	// Create a real file outside the template directory
+	external := filepath.Join(t.TempDir(), "external-ignore")
+	require.NoError(t, os.WriteFile(external, []byte("*.secret\n"), 0600))
+
+	// Symlink .azdignore → external file
+	require.NoError(t, os.Symlink(external, filepath.Join(dir, azdIgnoreFileName)))
+
+	ig, err := loadAzdIgnore(dir)
+	require.Error(t, err, "symlink .azdignore should be rejected")
+	require.Nil(t, ig)
+	require.Contains(t, err.Error(), "regular file")
+}
+
+func Test_removeAzdIgnoredFiles_PathTraversal(t *testing.T) {
+	t.Parallel()
+
+	// A malicious .azdignore containing "../" patterns must not remove files
+	// outside the staging directory. WalkDir only enumerates entries inside
+	// dir, so traversal patterns simply won't match anything — but we verify
+	// explicitly that a sibling file survives.
+	parent := t.TempDir()
+	secretFile := filepath.Join(parent, "secret.txt")
+	require.NoError(t, os.WriteFile(secretFile, []byte("top-secret"), 0600))
+
+	staging := filepath.Join(parent, "staging")
+	require.NoError(t, os.MkdirAll(staging, 0755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(staging, "keep.txt"), []byte("keep"), 0600))
+
+	// .azdignore tries to escape via ../
+	azdIgnore := "../secret.txt\n../\n"
+	require.NoError(t, os.WriteFile(
+		filepath.Join(staging, azdIgnoreFileName), []byte(azdIgnore), 0600))
+
+	err := removeAzdIgnoredFiles(staging)
+	require.NoError(t, err)
+
+	// Sibling file must still exist — no escape happened
+	require.FileExists(t, secretFile, "path traversal: file outside staging was removed")
+	// File inside staging is untouched
+	require.FileExists(t, filepath.Join(staging, "keep.txt"))
+}
+
+func Test_removeAzdIgnoredFiles_EmptyAndCommentOnly(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		azdIgnore string
+	}{
+		{"WhitespaceOnly", "   \n\t\n  \n"},
+		{"CommentsOnly", "# this is a comment\n# another comment\n"},
+		{"BlankLines", "\n\n\n"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			require.NoError(t, os.WriteFile(
+				filepath.Join(dir, "keep.txt"), []byte("keep"), 0600))
+			require.NoError(t, os.MkdirAll(filepath.Join(dir, "sub"), 0755))
+			require.NoError(t, os.WriteFile(
+				filepath.Join(dir, "sub", "also.txt"), []byte("also"), 0600))
+			require.NoError(t, os.WriteFile(
+				filepath.Join(dir, azdIgnoreFileName), []byte(tt.azdIgnore), 0600))
+
+			err := removeAzdIgnoredFiles(dir)
+			require.NoError(t, err)
+
+			// All files should survive — no patterns matched
+			require.FileExists(t, filepath.Join(dir, "keep.txt"))
+			require.FileExists(t, filepath.Join(dir, "sub", "also.txt"))
+			// .azdignore itself is still removed
+			require.NoFileExists(t, filepath.Join(dir, azdIgnoreFileName))
+		})
+	}
+}
+
+func Test_removeAzdIgnoredFiles_MalformedContent(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		azdIgnore []byte
+	}{
+		{"NullBytes", []byte("keep\x00this\n*.log\n")},
+		{"BinaryContent", []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}}, // PNG header
+		{"ControlChars", []byte("\x01\x02\x03\n*.log\n")},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			require.NoError(t, os.WriteFile(
+				filepath.Join(dir, "keep.txt"), []byte("keep"), 0600))
+			require.NoError(t, os.WriteFile(
+				filepath.Join(dir, "debug.log"), []byte("log"), 0600))
+			require.NoError(t, os.WriteFile(
+				filepath.Join(dir, azdIgnoreFileName), tt.azdIgnore, 0600))
+
+			// Must not panic or return error — graceful handling
+			err := removeAzdIgnoredFiles(dir)
+			require.NoError(t, err)
+
+			// keep.txt must survive regardless of parse behaviour
+			require.FileExists(t, filepath.Join(dir, "keep.txt"))
+		})
+	}
+}
+
+func Test_removeAzdIgnoredFiles_OnlyNegationPatterns(t *testing.T) {
+	t.Parallel()
+
+	// An .azdignore with only negation patterns (no positive rules) should
+	// not remove anything — negation only "un-ignores" previously matched paths.
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "a.txt"), []byte("a"), 0600))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "b.txt"), []byte("b"), 0600))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, azdIgnoreFileName), []byte("!a.txt\n!b.txt\n"), 0600))
+
+	err := removeAzdIgnoredFiles(dir)
+	require.NoError(t, err)
+
+	require.FileExists(t, filepath.Join(dir, "a.txt"))
+	require.FileExists(t, filepath.Join(dir, "b.txt"))
+}
+
+func Test_removeAzdIgnoredFiles_UnicodeFilenames(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+
+	// Create files with non-ASCII names
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "日本語.txt"), []byte("jp"), 0600))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "café.txt"), []byte("fr"), 0600))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "normal.txt"), []byte("en"), 0600))
+
+	// .azdignore targets the unicode filename with a glob
+	azdIgnore := "日本語.txt\ncafé.txt\n"
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, azdIgnoreFileName), []byte(azdIgnore), 0600))
+
+	err := removeAzdIgnoredFiles(dir)
+	require.NoError(t, err)
+
+	require.NoFileExists(t, filepath.Join(dir, "日本語.txt"))
+	require.NoFileExists(t, filepath.Join(dir, "café.txt"))
+	require.FileExists(t, filepath.Join(dir, "normal.txt"))
+}
+
+func Test_copyLocalTemplate_SymlinksSkipped(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation requires elevated privileges on Windows")
+	}
+
+	// Create a source template with a symlink pointing outside the template
+	sourceDir := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(sourceDir, "azure.yaml"), []byte("name: test\n"), 0600))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(sourceDir, "real.txt"), []byte("real"), 0600))
+
+	// Create an external file and symlink to it from inside the template
+	externalFile := filepath.Join(t.TempDir(), "external-secret.txt")
+	require.NoError(t, os.WriteFile(externalFile, []byte("secret"), 0600))
+	require.NoError(t, os.Symlink(externalFile, filepath.Join(sourceDir, "link.txt")))
+
+	// Also add .azdignore to confirm the combo works
+	require.NoError(t, os.WriteFile(
+		filepath.Join(sourceDir, azdIgnoreFileName), []byte(""), 0600))
+
+	destDir := t.TempDir()
+
+	realRunner := exec.NewCommandRunner(nil)
+	i := NewInitializer(
+		mockinput.NewMockConsole(),
+		git.NewCli(realRunner),
+		dotnet.NewCli(realRunner),
+		alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
+		lazy.From[environment.Manager](&mockenv.MockEnvManager{}),
+	)
+
+	err := i.copyLocalTemplate(sourceDir, destDir)
+	require.NoError(t, err)
+
+	// Real file should be copied
+	require.FileExists(t, filepath.Join(destDir, "real.txt"))
+	// Symlink should NOT be copied (skipped by OnSymlink handler)
+	require.NoFileExists(t, filepath.Join(destDir, "link.txt"))
+}
+
+func Test_copyLocalTemplate_SourceIsSymlink(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation requires elevated privileges on Windows")
+	}
+
+	// Create a real template dir and a symlink pointing to it
+	realDir := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(realDir, "azure.yaml"), []byte("name: test\n"), 0600))
+
+	symlinkDir := filepath.Join(t.TempDir(), "link-to-template")
+	require.NoError(t, os.Symlink(realDir, symlinkDir))
+
+	destDir := t.TempDir()
+
+	realRunner := exec.NewCommandRunner(nil)
+	i := NewInitializer(
+		mockinput.NewMockConsole(),
+		git.NewCli(realRunner),
+		dotnet.NewCli(realRunner),
+		alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
+		lazy.From[environment.Manager](&mockenv.MockEnvManager{}),
+	)
+
+	// copyLocalTemplate should reject a symlink as source (TOCTOU mitigation)
+	err := i.copyLocalTemplate(symlinkDir, destDir)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "symlink")
+}
+
+func Test_removeAzdIgnoredFiles_LargePatternFile(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+
+	// Create a few real files
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "keep.txt"), []byte("keep"), 0600))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "remove-me.log"), []byte("log"), 0600))
+
+	// Build an .azdignore with 10,000+ patterns — resource exhaustion test.
+	// Most patterns won't match any file; only "*.log" should take effect.
+	var sb strings.Builder
+	for i := range 10000 {
+		fmt.Fprintf(&sb, "nonexistent-pattern-%d.xyz\n", i)
+	}
+	sb.WriteString("*.log\n")
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, azdIgnoreFileName), []byte(sb.String()), 0600))
+
+	err := removeAzdIgnoredFiles(dir)
+	require.NoError(t, err)
+
+	require.FileExists(t, filepath.Join(dir, "keep.txt"))
+	require.NoFileExists(t, filepath.Join(dir, "remove-me.log"))
 }

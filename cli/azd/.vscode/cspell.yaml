@@ -3,6 +3,7 @@ words:
   - agentcopilot
   - agentdetect
   - Authenticode
+  - azdignore
   - gofmt
   - golangci
   - lightspeed

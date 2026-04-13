@@ -6,9 +6,11 @@ package repository
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"maps"
@@ -34,6 +36,10 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/otiai10/copy"
 )
+
+// azdIgnoreFileName is the name of the file template authors can place at the root of a template
+// repository to exclude files from being copied when consumers run azd init. It uses .gitignore syntax.
+const azdIgnoreFileName = ".azdignore"
 
 // Initializer handles the initialization of a local repository.
 type Initializer struct {
@@ -126,6 +132,15 @@ func (i *Initializer) Initialize(
 	if err != nil {
 		return err
 	}
+
+	// Apply .azdignore rules: remove files from staging that template authors
+	// want excluded when consumers init from the template.
+	if err := removeAzdIgnoredFiles(staging); err != nil {
+		return fmt.Errorf("applying %s rules: %w", azdIgnoreFileName, err)
+	}
+	// Executable file paths may reference files removed by .azdignore;
+	// keep only those still present in staging.
+	filesWithExecPerms = filterExistingFiles(staging, filesWithExecPerms)
 
 	skipStagingFiles, err := i.promptForDuplicates(ctx, staging, target)
 	if err != nil {
@@ -262,6 +277,13 @@ func (i *Initializer) copyLocalTemplate(source, destination string) error {
 				return true, nil
 			}
 
+			// Never skip the root .azdignore — it must reach staging so
+			// removeAzdIgnoredFiles can apply its rules and then remove it.
+			if relToSource, relErr := filepath.Rel(source, src); relErr == nil &&
+				filepath.ToSlash(relToSource) == azdIgnoreFileName {
+				return false, nil
+			}
+
 			// Check all applicable .gitignore matchers (a matcher applies when
 			// the file is inside the matcher's base directory).
 			for _, m := range matchers {
@@ -284,6 +306,122 @@ func (i *Initializer) copyLocalTemplate(source, destination string) error {
 		return fmt.Errorf("copying local template: %w", err)
 	}
 	return nil
+}
+
+// azdIgnoreMaxSize is the maximum allowed size for a .azdignore file (1 MB).
+const azdIgnoreMaxSize = 1 << 20
+
+// loadAzdIgnore reads an .azdignore file from the root of dir and returns a
+// gitignore-syntax matcher. Returns nil if no .azdignore file exists.
+// Symlinks are rejected to prevent reading files outside the staging directory.
+func loadAzdIgnore(dir string) (gitignore.GitIgnore, error) {
+	path := filepath.Join(dir, azdIgnoreFileName)
+	info, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("reading %s: %w", azdIgnoreFileName, err)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf(
+			"%s must be a regular file", azdIgnoreFileName)
+	}
+	if info.Size() > azdIgnoreMaxSize {
+		return nil, fmt.Errorf(
+			"%s exceeds maximum size (%d bytes)", azdIgnoreFileName, azdIgnoreMaxSize)
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading %s: %w", azdIgnoreFileName, err)
+	}
+	defer f.Close()
+	// Use LimitReader to enforce the size limit on actual bytes read,
+	// guarding against TOCTOU between Lstat and Open.
+	data, err := io.ReadAll(io.LimitReader(f, azdIgnoreMaxSize+1))
+	if err != nil {
+		return nil, fmt.Errorf("reading %s: %w", azdIgnoreFileName, err)
+	}
+	if int64(len(data)) > azdIgnoreMaxSize {
+		return nil, fmt.Errorf(
+			"%s exceeds maximum size (%d bytes)", azdIgnoreFileName, azdIgnoreMaxSize)
+	}
+	// Strip UTF-8 BOM that Windows editors may prepend. The invisible bytes
+	// would otherwise become part of the first ignore pattern and break matching.
+	data = bytes.TrimPrefix(data, utf8BOM)
+	return gitignore.New(bytes.NewReader(data), dir, nil), nil
+}
+
+// utf8BOM is the byte order mark that some Windows editors prepend to UTF-8 files.
+var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
+
+// removeAzdIgnoredFiles reads an .azdignore file from dir and removes all matching
+// entries. The .azdignore file itself is also removed. This is a no-op when no
+// .azdignore file is present.
+func removeAzdIgnoredFiles(dir string) error {
+	ig, err := loadAzdIgnore(dir)
+	if err != nil {
+		return err
+	}
+	if ig == nil {
+		return nil
+	}
+
+	// Collect paths to remove before modifying the tree.
+	var toRemove []string
+	err = filepath.WalkDir(dir, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+
+		rel, relErr := filepath.Rel(dir, path)
+		if relErr != nil {
+			return relErr
+		}
+		if rel == "." {
+			return nil
+		}
+
+		match := ig.Relative(filepath.ToSlash(rel), d.IsDir())
+		if match != nil && match.Ignore() {
+			toRemove = append(toRemove, path)
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("scanning for %s matches: %w", azdIgnoreFileName, err)
+	}
+
+	for _, p := range toRemove {
+		if err := os.RemoveAll(p); err != nil {
+			return fmt.Errorf("removing %s-ignored path: %w", azdIgnoreFileName, err)
+		}
+	}
+
+	// Always remove .azdignore itself — consumers don't need it.
+	azdIgnorePath := filepath.Join(dir, azdIgnoreFileName)
+	if err := os.Remove(azdIgnorePath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("removing %s file: %w", azdIgnoreFileName, err)
+	}
+
+	return nil
+}
+
+// filterExistingFiles returns only those relative paths that still exist under dir.
+func filterExistingFiles(dir string, paths []string) []string {
+	if len(paths) == 0 {
+		return paths
+	}
+	filtered := make([]string, 0, len(paths))
+	for _, p := range paths {
+		if _, err := os.Stat(filepath.Join(dir, p)); err == nil {
+			filtered = append(filtered, p)
+		}
+	}
+	return filtered
 }
 
 // findExecutableFiles walks root and returns paths (relative to root) of files

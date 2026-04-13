@@ -38,8 +38,9 @@ const (
 
 	// deployPollFrequency is the polling interval for ARM deploy/delete operations.
 	// Deployments complete in variable time, so polling faster than the 30s SDK default
-	// reduces tail latency. 5s balances responsiveness against the ARM read-rate limit
-	// (1200 reads/5min/subscription) when many LROs run in parallel.
+	// reduces tail latency. At 5s intervals each poller consumes ~12 reads/min. With the
+	// ARM read-rate limit of 1200 reads/5min/subscription, this is safe for up to ~20
+	// parallel LROs. If higher concurrency is needed, consider adaptive backoff on HTTP 429.
 	deployPollFrequency = 5 * time.Second
 
 	// slowPollFrequency is the polling interval for ARM WhatIf and Validate operations.

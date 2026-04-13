@@ -10,7 +10,6 @@ import (
 	"log"
 	"os"
 	osexec "os/exec"
-	"path/filepath"
 	"runtime"
 	"strings"
 
@@ -168,86 +167,48 @@ func (h *HooksManager) ValidateHooks(ctx context.Context, allHooks map[string][]
 	hasPowerShellHooks := false
 	hasDefaultShellHooks := false
 
-	// Two-pass validation is required because:
-	// 1. First pass: Set shell defaults and detect inline scripts for each hook configuration
-	// 2. Second pass: Generate warnings only after all hooks have been processed and we know
-	//    the complete state (e.g., whether ANY hook uses PowerShell or default shell)
-	// We cannot merge these loops because warnings depend on global state across all hooks.
-
-	// First pass: perform lightweight validation to set flags like usingDefaultShell
-	// without creating temporary files (which full validation does)
-	for _, hookConfigs := range allHooks {
+	// validate() is the sole authority for Kind assignment.
+	// Run it on every hook first, then read the resolved
+	// state for warning purposes.
+	for hookName, hookConfigs := range allHooks {
 		for _, hookConfig := range hookConfigs {
-			// Set the working directory for validation
-			if hookConfig.inputCwd == "" {
-				hookConfig.inputCwd = h.cwd
-			}
-			if hookConfig.projectDir == "" {
-				hookConfig.projectDir = h.projectDir
+			if hookConfig == nil {
+				continue
 			}
 
-			// Only perform shell detection for warning purposes, not full validation
-			if !hookConfig.validated && hookConfig.Run != "" {
-				// Check if it's an inline script (no file exists).
-				// Mirror the Dir-aware resolution from parseRunTarget
-				// so dir+run combinations are correctly detected as
-				// file-based hooks.
-				relativeCheckPath := strings.ReplaceAll(
-					hookConfig.Run, "/", string(os.PathSeparator),
-				)
-				fullCheckPath := relativeCheckPath
-				if hookConfig.inputCwd != "" {
-					if filepath.IsAbs(relativeCheckPath) {
-						fullCheckPath = relativeCheckPath
-					} else if hookConfig.Dir != "" {
-						dir := hookConfig.Dir
-						if !filepath.IsAbs(dir) {
-							dir = filepath.Join(
-								hookConfig.inputCwd, dir,
-							)
-						}
-						candidate := filepath.Join(
-							dir, relativeCheckPath,
-						)
-						info, sErr := os.Stat(candidate)
-						if sErr == nil && !info.IsDir() {
-							fullCheckPath = candidate
-						} else {
-							fullCheckPath = filepath.Join(
-								hookConfig.inputCwd,
-								relativeCheckPath,
-							)
-						}
-					} else {
-						fullCheckPath = filepath.Join(
-							hookConfig.inputCwd,
-							relativeCheckPath,
-						)
-					}
-				}
-
-				_, err := os.Stat(fullCheckPath)
-				isInlineScript := err != nil
-
-				// If no kind/shell and it's an inline script, set
-				// OS default Kind for warning purposes.
-				if hookConfig.Shell == "" &&
-					hookConfig.Kind == language.HookKindUnknown &&
-					isInlineScript {
-					hookConfig.Kind = defaultKindForOS()
-					hookConfig.usingDefaultShell = true
-				}
+			// Apply OS-specific override if present.
+			cfg := hookConfig
+			if runtime.GOOS == "windows" &&
+				cfg.Windows != nil {
+				cfg = cfg.Windows
+			} else if (runtime.GOOS == "linux" ||
+				runtime.GOOS == "darwin") &&
+				cfg.Posix != nil {
+				cfg = cfg.Posix
 			}
-		}
-	}
 
-	// Second pass: check all hooks for warning conditions using the state set in first pass
-	for _, hookConfigs := range allHooks {
-		for _, hookConfig := range hookConfigs {
-			if hookConfig.IsPowerShellHook() {
+			if cfg.inputCwd == "" {
+				cfg.inputCwd = h.cwd
+			}
+			if cfg.projectDir == "" {
+				cfg.projectDir = h.projectDir
+			}
+			if cfg.Name == "" {
+				cfg.Name = hookName
+			}
+
+			// validate() resolves Kind from file extension,
+			// explicit config, or OS default for inline
+			// scripts. Validation errors are surfaced by
+			// GetAll / GetByParams; skip the hook here.
+			if err := cfg.validate(); err != nil {
+				continue
+			}
+
+			if cfg.IsPowerShellHook() {
 				hasPowerShellHooks = true
 			}
-			if hookConfig.IsUsingDefaultShell() {
+			if cfg.IsUsingDefaultShell() {
 				hasDefaultShellHooks = true
 			}
 		}

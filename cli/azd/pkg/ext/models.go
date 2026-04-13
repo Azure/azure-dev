@@ -264,7 +264,13 @@ func (hc *HookConfig) validate() error {
 	// paths (e.g. the service directory for service hooks).
 	cwdDir := hc.cwd
 	if cwdDir == "" {
-		cwdDir, _ = os.Getwd()
+		var err error
+		cwdDir, err = os.Getwd()
+		if err != nil {
+			return fmt.Errorf(
+				"resolving working directory: %w", err,
+			)
+		}
 	}
 
 	// boundaryDir is the project root used for path
@@ -314,50 +320,70 @@ func (hc *HookConfig) validate() error {
 		}
 	}
 
-	// Validate that resolvedDir stays within the project root
-	// to prevent path traversal via ".." in Dir.
-	absDir, absErr := filepath.Abs(hc.resolvedDir)
-	if absErr != nil {
-		return fmt.Errorf(
-			"resolving hook directory: %w", absErr,
-		)
-	}
-	absBoundary, absErr := filepath.Abs(boundaryDir)
-	if absErr != nil {
-		return fmt.Errorf(
-			"resolving boundary directory: %w", absErr,
-		)
-	}
-	if !osutil.IsPathContained(absBoundary, absDir) {
-		return fmt.Errorf(
-			"hook directory %q escapes project root %q",
-			hc.Dir, boundaryDir,
-		)
-	}
-	hc.resolvedDir = absDir
-
-	// Validate that resolvedScriptPath stays within the project
-	// root to prevent path traversal via ".." in Run.
-	if hc.resolvedScriptPath != "" {
-		absScript, scriptErr := filepath.Abs(
-			hc.resolvedScriptPath,
-		)
-		if scriptErr != nil {
+	// Inline hooks (hc.script != "") are saved to an OS temp
+	// file for execution and may run from external layer paths,
+	// so they are exempt from containment checks. Only
+	// file-based hooks (hc.path != "") are validated against the
+	// project root boundary.
+	if hc.path != "" {
+		// Validate that resolvedDir stays within the project
+		// root to prevent path traversal via ".." in Dir.
+		absDir, absErr := filepath.Abs(hc.resolvedDir)
+		if absErr != nil {
 			return fmt.Errorf(
-				"resolving hook script path: %w",
-				scriptErr,
+				"resolving hook directory: %w", absErr,
 			)
 		}
-		if !osutil.IsPathContained(
-			absBoundary, absScript,
-		) {
+		absBoundary, absErr := filepath.Abs(boundaryDir)
+		if absErr != nil {
 			return fmt.Errorf(
-				"hook script path %q escapes "+
+				"resolving boundary directory: %w",
+				absErr,
+			)
+		}
+		if !osutil.IsPathContained(absBoundary, absDir) {
+			return fmt.Errorf(
+				"hook directory %q escapes "+
 					"project root %q",
-				hc.Run, boundaryDir,
+				hc.Dir, boundaryDir,
 			)
 		}
-		hc.resolvedScriptPath = absScript
+		hc.resolvedDir = absDir
+
+		// Validate that resolvedScriptPath stays within
+		// the project root to prevent path traversal via
+		// ".." in Run.
+		if hc.resolvedScriptPath != "" {
+			absScript, scriptErr := filepath.Abs(
+				hc.resolvedScriptPath,
+			)
+			if scriptErr != nil {
+				return fmt.Errorf(
+					"resolving hook script path: %w",
+					scriptErr,
+				)
+			}
+			if !osutil.IsPathContained(
+				absBoundary, absScript,
+			) {
+				return fmt.Errorf(
+					"hook script path %q escapes "+
+						"project root %q",
+					hc.Run, boundaryDir,
+				)
+			}
+			hc.resolvedScriptPath = absScript
+		}
+	} else {
+		// Inline hooks: resolve to absolute path but skip
+		// containment validation.
+		absDir, absErr := filepath.Abs(hc.resolvedDir)
+		if absErr != nil {
+			return fmt.Errorf(
+				"resolving hook directory: %w", absErr,
+			)
+		}
+		hc.resolvedDir = absDir
 	}
 
 	hc.validated = true

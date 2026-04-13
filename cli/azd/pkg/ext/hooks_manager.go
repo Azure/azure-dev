@@ -31,7 +31,7 @@ type HooksManager struct {
 	commandRunner exec.CommandRunner
 }
 
-// NewHooks creates a new instance of CommandHooks
+// NewHooksManager creates a new [HooksManager] instance.
 // When `cwd` is empty defaults to current shell working directory.
 // `projectDir` is the project root directory (where azure.yaml
 // lives), used as the security boundary for path containment.

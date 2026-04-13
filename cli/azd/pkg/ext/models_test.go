@@ -748,15 +748,23 @@ func TestHookConfig_ResolvedPaths(t *testing.T) {
 }
 
 // TestHookConfig_ValidatePathTraversal verifies that validate()
-// rejects Dir values that escape the project root via "..".
+// rejects Dir values that escape the project root via ".." for
+// file-based hooks, while inline hooks are exempt.
 func TestHookConfig_ValidatePathTraversal(t *testing.T) {
 	cwd := t.TempDir()
+
+	// File-based hook with Dir escaping project root — must fail.
+	escapeDir := filepath.Join(cwd, "..", "..", "escape")
+	require.NoError(t, os.MkdirAll(escapeDir, 0o755))
+	scriptPath := filepath.Join(escapeDir, "evil.sh")
+	require.NoError(
+		t, os.WriteFile(scriptPath, nil, 0o600),
+	)
 
 	config := HookConfig{
 		Name:  "test",
 		Shell: string(language.HookKindBash),
-		Run:   "echo hello",
-		Dir:   filepath.Join("..", "..", "escape"),
+		Run:   scriptPath,
 		cwd:   cwd,
 	}
 
@@ -908,15 +916,23 @@ func TestHookConfig_ServiceHookEscapesProjectRoot(
 
 // TestHookConfig_ProjectDirFallbackToCwd verifies that when
 // projectDir is empty, cwd is used as the boundary (preserving
-// backward compatibility).
+// backward compatibility). Uses a file-based hook so the
+// containment check is actually enforced.
 func TestHookConfig_ProjectDirFallbackToCwd(t *testing.T) {
 	cwd := t.TempDir()
+
+	// Create a script outside cwd to trigger containment.
+	escapeDir := filepath.Join(cwd, "..", "..", "escape")
+	require.NoError(t, os.MkdirAll(escapeDir, 0o755))
+	scriptPath := filepath.Join(escapeDir, "evil.sh")
+	require.NoError(
+		t, os.WriteFile(scriptPath, nil, 0o600),
+	)
 
 	config := HookConfig{
 		Name:  "test",
 		Shell: string(language.HookKindBash),
-		Run:   "echo hello",
-		Dir:   filepath.Join("..", "..", "escape"),
+		Run:   scriptPath,
 		cwd:   cwd,
 		// projectDir intentionally empty
 	}
@@ -957,6 +973,268 @@ func TestHookConfig_ServiceDirWithinProjectBoundary(
 	err := config.validate()
 	require.NoError(t, err,
 		"Dir within project root must be accepted")
+}
+
+// TestHookConfig_InlineHookContainmentExempt verifies that inline
+// hooks (where Run does not resolve to a file on disk) are exempt
+// from both the directory and script path containment checks.
+// This is critical for layer hooks whose cwd is an external temp
+// directory outside the project root.
+func TestHookConfig_InlineHookContainmentExempt(t *testing.T) {
+	projectRoot := t.TempDir()
+
+	tests := []struct {
+		name string
+		// cwd for the hook; may be outside projectRoot
+		cwdDir string
+		// explicit Dir field; may be outside projectRoot
+		dir string
+		// should validate succeed?
+		expectPass bool
+	}{
+		{
+			name:       "InlineCwdInsideProject",
+			cwdDir:     projectRoot,
+			expectPass: true,
+		},
+		{
+			name:       "InlineCwdOutsideProject",
+			cwdDir:     t.TempDir(), // separate temp dir
+			expectPass: true,
+		},
+		{
+			name:       "InlineExplicitDirOutsideProject",
+			cwdDir:     projectRoot,
+			dir:        t.TempDir(), // absolute external dir
+			expectPass: true,
+		},
+		{
+			name:       "InlineBothCwdAndDirOutside",
+			cwdDir:     t.TempDir(),
+			dir:        t.TempDir(),
+			expectPass: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := HookConfig{
+				Name:       "preshared",
+				Shell:      string(language.HookKindBash),
+				Run:        "echo shared",
+				Dir:        tt.dir,
+				cwd:        tt.cwdDir,
+				projectDir: projectRoot,
+			}
+
+			err := config.validate()
+			if tt.expectPass {
+				require.NoError(t, err,
+					"inline hooks must be exempt "+
+						"from containment checks")
+			} else {
+				require.Error(t, err)
+			}
+		})
+	}
+}
+
+// TestHookConfig_FileBasedContainmentEnforced verifies that
+// file-based hooks enforce the project root containment boundary
+// for both the script path and the working directory.
+func TestHookConfig_FileBasedContainmentEnforced(t *testing.T) {
+	projectRoot := t.TempDir()
+	outsideDir := t.TempDir()
+
+	// Create a script inside the project root.
+	hooksDir := filepath.Join(projectRoot, "hooks")
+	require.NoError(t, os.MkdirAll(hooksDir, 0o755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(hooksDir, "deploy.sh"),
+		nil, 0o600,
+	))
+
+	// Create a script outside the project root.
+	require.NoError(t, os.WriteFile(
+		filepath.Join(outsideDir, "evil.sh"),
+		nil, 0o600,
+	))
+
+	// Ensure the nested service dir exists.
+	serviceCwd := filepath.Join(
+		projectRoot, "src", "logicApp",
+	)
+	require.NoError(t, os.MkdirAll(serviceCwd, 0o755))
+
+	tests := []struct {
+		name       string
+		run        string
+		dir        string
+		cwd        string
+		expectErr  string
+		expectPass bool
+	}{
+		{
+			name:       "ScriptInsideProjectRoot",
+			run:        filepath.Join("hooks", "deploy.sh"),
+			cwd:        projectRoot,
+			expectPass: true,
+		},
+		{
+			name: "AbsScriptOutsideProjectRoot",
+			run: filepath.Join(
+				outsideDir, "evil.sh",
+			),
+			cwd:       projectRoot,
+			expectErr: "escapes project root",
+		},
+		{
+			name:      "DirOutsideProjectRoot",
+			run:       "evil.sh",
+			dir:       outsideDir,
+			cwd:       projectRoot,
+			expectErr: "escapes project root",
+		},
+		{
+			name: "RelativePathResolvesWithinProject",
+			run: filepath.Join(
+				"..", "..", "hooks", "deploy.sh",
+			),
+			cwd:        serviceCwd,
+			expectPass: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := HookConfig{
+				Name:       "predeploy",
+				Shell:      string(language.HookKindBash),
+				Run:        tt.run,
+				Dir:        tt.dir,
+				cwd:        tt.cwd,
+				projectDir: projectRoot,
+			}
+
+			err := config.validate()
+			if tt.expectPass {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+				require.Contains(
+					t, err.Error(), tt.expectErr,
+				)
+			}
+		})
+	}
+}
+
+// TestHookConfig_AllKindsInsideProject verifies that all six
+// hook kinds pass validation when the script is inside the
+// project root with Dir + Run set.
+func TestHookConfig_AllKindsInsideProject(t *testing.T) {
+	projectRoot := t.TempDir()
+	hooksDir := filepath.Join(projectRoot, "hooks")
+	require.NoError(t, os.MkdirAll(hooksDir, 0o755))
+
+	kinds := []struct {
+		file string
+		kind language.HookKind
+	}{
+		{"build.sh", language.HookKindBash},
+		{"build.ps1", language.HookKindPowerShell},
+		{"main.py", language.HookKindPython},
+		{"index.js", language.HookKindJavaScript},
+		{"index.ts", language.HookKindTypeScript},
+		{"Program.cs", language.HookKindDotNet},
+	}
+
+	for _, k := range kinds {
+		require.NoError(t, os.WriteFile(
+			filepath.Join(hooksDir, k.file),
+			nil, 0o600,
+		))
+	}
+
+	for _, k := range kinds {
+		t.Run(string(k.kind), func(t *testing.T) {
+			config := HookConfig{
+				Name:       "prebuild",
+				Run:        k.file,
+				Dir:        "hooks",
+				cwd:        projectRoot,
+				projectDir: projectRoot,
+			}
+
+			err := config.validate()
+			require.NoError(t, err)
+			require.Equal(t, k.kind, config.Kind)
+		})
+	}
+}
+
+// TestHookConfig_AllKindsInlineExempt verifies that inline
+// scripts for both shell kinds pass validation even when cwd is
+// outside the project root (layer scenario). Non-shell kinds
+// reject inline scripts (tested elsewhere), so only Bash and
+// PowerShell are exercised here.
+func TestHookConfig_AllKindsInlineExempt(t *testing.T) {
+	projectRoot := t.TempDir()
+	externalLayer := t.TempDir()
+
+	shellKinds := []struct {
+		name string
+		kind language.HookKind
+	}{
+		{"Bash", language.HookKindBash},
+		{"PowerShell", language.HookKindPowerShell},
+	}
+
+	for _, k := range shellKinds {
+		t.Run(k.name, func(t *testing.T) {
+			config := HookConfig{
+				Name:       "preshared",
+				Kind:       k.kind,
+				Run:        "echo layer",
+				cwd:        externalLayer,
+				projectDir: projectRoot,
+			}
+
+			err := config.validate()
+			require.NoError(t, err,
+				"inline %s hook must be exempt "+
+					"from containment", k.kind)
+			require.Equal(t, k.kind, config.Kind)
+			// resolvedDir should be the external layer
+			absLayer, _ := filepath.Abs(externalLayer)
+			require.Equal(
+				t, absLayer, config.resolvedDir,
+			)
+		})
+	}
+}
+
+// TestHookConfig_InlineDirSetRunNotSet verifies that when Dir is
+// set but Run resolves to an inline script, the hook is still
+// exempt from containment checks.
+func TestHookConfig_InlineDirSetRunNotSet(t *testing.T) {
+	projectRoot := t.TempDir()
+	externalDir := t.TempDir()
+
+	config := HookConfig{
+		Name:       "prepackage",
+		Shell:      string(language.HookKindBash),
+		Run:        "echo build",
+		Dir:        externalDir,
+		cwd:        projectRoot,
+		projectDir: projectRoot,
+	}
+
+	err := config.validate()
+	require.NoError(t, err,
+		"inline hook with explicit Dir must be exempt")
+	absDir, _ := filepath.Abs(externalDir)
+	require.Equal(t, absDir, config.resolvedDir)
 }
 
 // TestHookConfig_DirRunKindInference verifies that when both Dir

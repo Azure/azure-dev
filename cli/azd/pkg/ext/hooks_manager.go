@@ -188,15 +188,46 @@ func (h *HooksManager) ValidateHooks(ctx context.Context, allHooks map[string][]
 
 			// Only perform shell detection for warning purposes, not full validation
 			if !hookConfig.validated && hookConfig.Run != "" {
-				// Check if it's an inline script (no file exists)
-				relativeCheckPath := strings.ReplaceAll(hookConfig.Run, "/", string(os.PathSeparator))
+				// Check if it's an inline script (no file exists).
+				// Mirror the Dir-aware resolution from parseRunTarget
+				// so dir+run combinations are correctly detected as
+				// file-based hooks.
+				relativeCheckPath := strings.ReplaceAll(
+					hookConfig.Run, "/", string(os.PathSeparator),
+				)
 				fullCheckPath := relativeCheckPath
 				if hookConfig.inputCwd != "" {
-					fullCheckPath = filepath.Join(hookConfig.inputCwd, relativeCheckPath)
+					if filepath.IsAbs(relativeCheckPath) {
+						fullCheckPath = relativeCheckPath
+					} else if hookConfig.Dir != "" {
+						dir := hookConfig.Dir
+						if !filepath.IsAbs(dir) {
+							dir = filepath.Join(
+								hookConfig.inputCwd, dir,
+							)
+						}
+						candidate := filepath.Join(
+							dir, relativeCheckPath,
+						)
+						info, sErr := os.Stat(candidate)
+						if sErr == nil && !info.IsDir() {
+							fullCheckPath = candidate
+						} else {
+							fullCheckPath = filepath.Join(
+								hookConfig.inputCwd,
+								relativeCheckPath,
+							)
+						}
+					} else {
+						fullCheckPath = filepath.Join(
+							hookConfig.inputCwd,
+							relativeCheckPath,
+						)
+					}
 				}
 
 				_, err := os.Stat(fullCheckPath)
-				isInlineScript := err != nil // File doesn't exist, so it's inline
+				isInlineScript := err != nil
 
 				// If no kind/shell and it's an inline script, set
 				// OS default Kind for warning purposes.

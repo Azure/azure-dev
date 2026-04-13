@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"azureaiagent/internal/pkg/agents/agent_api"
 )
 
 func TestReadSSEStream(t *testing.T) {
@@ -246,6 +248,92 @@ func TestHttpTimeout(t *testing.T) {
 			got := action.httpTimeout()
 			if got != tt.want {
 				t.Errorf("httpTimeout() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestResolveProtocol_ExplicitFlag(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		protocol string
+		want     agent_api.AgentProtocol
+	}{
+		{
+			name:     "explicit invocations",
+			protocol: "invocations",
+			want:     agent_api.AgentProtocolInvocations,
+		},
+		{
+			name:     "explicit responses",
+			protocol: "responses",
+			want:     agent_api.AgentProtocolResponses,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			action := &InvokeAction{
+				flags: &invokeFlags{protocol: tt.protocol},
+			}
+			// resolveProtocol with an explicit flag should return it directly
+			// without trying to read agent.yaml (which would fail in tests).
+			got := action.resolveProtocol(t.Context())
+			if got != tt.want {
+				t.Errorf("resolveProtocol() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestProtocolFlagValidation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr bool
+		errSub  string
+	}{
+		{
+			name:    "valid responses",
+			args:    []string{"--protocol", "responses", "hello"},
+			wantErr: false,
+		},
+		{
+			name:    "valid invocations",
+			args:    []string{"--protocol", "invocations", "hello"},
+			wantErr: false,
+		},
+		{
+			name:    "invalid protocol",
+			args:    []string{"--protocol", "bogus", "hello"},
+			wantErr: true,
+			errSub:  "unsupported protocol",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cmd := newInvokeCommand()
+			cmd.SetArgs(tt.args)
+			err := cmd.Execute()
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if !strings.Contains(err.Error(), tt.errSub) {
+					t.Errorf("error %q should contain %q", err.Error(), tt.errSub)
+				}
+			}
+			// For valid protocols the command will still fail (no azd host),
+			// but the error should NOT be about an invalid protocol.
+			if !tt.wantErr && err != nil && strings.Contains(err.Error(), "unsupported protocol") {
+				t.Errorf("unexpected validation error: %v", err)
 			}
 		})
 	}

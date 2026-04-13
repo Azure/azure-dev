@@ -401,9 +401,9 @@ func TestGetSnapshotPredictedRGs(t *testing.T) {
 }
 
 // prepareForceModeDestroyMocks registers all HTTP mocks needed for
-// force-mode destroy tests: deployment GET/list, per-RG resources/tags,
-// operations (500), RG deletion tracking, locks, LRO polling, and void
-// state PUT. Returns a map of per-RG delete counters.
+// force-mode destroy tests: deployment GET/list, per-RG resources,
+// RG deletion tracking, locks, LRO polling, and void state PUT.
+// Returns a map of per-RG delete counters.
 func prepareForceModeDestroyMocks(
 	t *testing.T,
 	mockContext *mocks.MockContext,
@@ -525,51 +525,6 @@ func prepareForceModeDestroyMocks(
 			})
 	}
 
-	// Per-RG tags (empty tags).
-	for _, rgName := range rgNames {
-		rgResp := armresources.ResourceGroup{
-			ID: new(fmt.Sprintf(
-				"/subscriptions/SUBSCRIPTION_ID/"+
-					"resourceGroups/%s", rgName,
-			)),
-			Name:     new(rgName),
-			Location: new("eastus2"),
-			Tags:     map[string]*string{},
-		}
-		mockContext.HttpClient.When(func(r *http.Request) bool {
-			return r.Method == http.MethodGet &&
-				strings.HasSuffix(
-					r.URL.Path,
-					fmt.Sprintf(
-						"subscriptions/SUBSCRIPTION_ID/"+
-							"resourcegroups/%s", rgName,
-					),
-				)
-		}).RespondFn(
-			func(r *http.Request) (*http.Response, error) {
-				return mocks.CreateHttpResponseWithBody(
-					r, http.StatusOK, rgResp,
-				)
-			})
-	}
-
-	// KEY: Deployment operations return 500 (unavailable).
-	mockContext.HttpClient.When(func(r *http.Request) bool {
-		return r.Method == http.MethodGet &&
-			strings.HasSuffix(
-				r.URL.Path,
-				"/deployments/test-env/operations",
-			)
-	}).RespondFn(func(r *http.Request) (*http.Response, error) {
-		return &http.Response{
-			Request:    r,
-			StatusCode: http.StatusInternalServerError,
-			Body: io.NopCloser(bytes.NewBufferString(
-				`{"error":{"code":"InternalServerError"}}`,
-			)),
-		}, nil
-	})
-
 	// RG deletion mocks (tracked).
 	deleteCounters := map[string]*atomic.Int32{}
 	for _, rgName := range rgNames {
@@ -658,11 +613,11 @@ func prepareForceModeDestroyMocks(
 	return deleteCounters
 }
 
-// TestForceWithOperationsFetchFailure verifies that when --force is
-// set and deployment.Operations() returns an error, all resource groups
-// are treated as owned (backward compatibility). This is the
-// integration path in BicepProvider.classifyResourceGroups.
-func TestForceWithOperationsFetchFailure(t *testing.T) {
+// TestForceWithNoSnapshot verifies that when --force is set and
+// snapshot is unavailable (nil), all resource groups are treated as
+// owned (backward compatibility). This is the integration path in
+// BicepProvider.classifyResourceGroups.
+func TestForceWithNoSnapshot(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
 	prepareBicepMocks(mockContext)
 
@@ -680,9 +635,9 @@ func TestForceWithOperationsFetchFailure(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 
-	// Both RGs deleted — force + operations failure = all owned.
+	// Both RGs deleted — force + no snapshot = all owned.
 	assert.Equal(t, int32(1), deleteCounters["rg-one"].Load(),
-		"rg-one should be deleted (force+ops failure → all owned)")
+		"rg-one should be deleted (force+no snapshot → all owned)")
 	assert.Equal(t, int32(1), deleteCounters["rg-two"].Load(),
-		"rg-two should be deleted (force+ops failure → all owned)")
+		"rg-two should be deleted (force+no snapshot → all owned)")
 }

@@ -13,7 +13,6 @@ import (
 	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 )
 
 // ClassifyResult holds the outcome of resource group classification.
@@ -25,7 +24,7 @@ type ClassifyResult struct {
 // ClassifiedSkip represents a resource group that will NOT be deleted, with the reason.
 type ClassifiedSkip struct {
 	Name   string
-	Reason string // Human-readable, e.g. "external (Tier 1: Read operation found)"
+	Reason string // Human-readable, e.g. "external (snapshot: not in predictedResources)"
 }
 
 // ResourceWithTags is a resource with its ARM tags, used for extra-resource checks.
@@ -47,34 +46,28 @@ type ClassifyOptions struct {
 	// Bicep template declares as created resources (not 'existing' references).
 	// Populated from `bicep snapshot` → predictedResources filtered by RG type.
 	//
-	// When non-nil, snapshot-based classification replaces Tiers 1-3:
+	// When non-nil, snapshot-based classification is used:
 	//   - RG in set → owned (template creates it)
 	//   - RG not in set → external (template references it as existing)
 	//   - Tier 4 still runs on all owned candidates (defense-in-depth)
 	//
-	// When nil, the full Tier 1-4 pipeline runs as fallback (older Bicep CLI,
-	// non-bicepparam mode, or snapshot failure).
+	// When nil, a simplified guard applies:
+	//   - ForceMode: all RGs treated as owned (backward compat, zero API calls)
+	//   - Interactive + Prompter: user prompted for each RG
+	//   - Otherwise: all RGs skipped (cannot classify without snapshot)
 	SnapshotPredictedRGs map[string]bool
 
-	// ForceMode runs only Tier 1 (zero API calls). External RGs identified by
-	// deployment operations are still protected; unknown RGs are treated as owned.
-	// Tier 2/3/4 callbacks are not invoked.
-	//
-	// When combined with SnapshotPredictedRGs, snapshot classification is used
-	// (deterministic, zero API calls) and Tier 4 is skipped.
+	// ForceMode controls behavior when snapshot is available or unavailable.
+	// When snapshot is available: uses snapshot (deterministic, zero API calls),
+	// skips Tier 4 vetoes.
+	// When snapshot is unavailable: returns all RGs as owned (backward compat,
+	// zero API calls).
 	ForceMode bool
 	// Interactive enables per-RG prompts for unknown and foreign-resource RGs.
 	// When false, unknown/unverified RGs are always skipped without deletion.
 	Interactive bool
 	EnvName     string // Current azd environment name for tag matching
 
-	// ExpectedProvisionParamHash is the expected value of the azd-provision-param-hash tag.
-	// When set, Tier 2 verifies the tag value matches (not just presence).
-	// When empty, Tier 2 only checks that the tag is non-empty.
-	ExpectedProvisionParamHash string
-
-	// GetResourceGroupTags returns the tags on a resource group (nil map if 404).
-	GetResourceGroupTags func(ctx context.Context, rgName string) (map[string]*string, error)
 	// ListResourceGroupResources returns all resources in a resource group.
 	ListResourceGroupResources func(ctx context.Context, rgName string) ([]*ResourceWithTags, error)
 	// ListResourceGroupLocks returns management locks on a resource group.
@@ -86,10 +79,6 @@ type ClassifyOptions struct {
 const (
 	cAzdEnvNameTag       = "azd-env-name"
 	cAzdProvisionHashTag = "azd-provision-param-hash"
-	cRGResourceType      = "Microsoft.Resources/resourceGroups"
-	cProvisionOpCreate   = "Create"
-	cProvisionOpRead     = "Read"
-	cProvisionOpEvalOut  = "EvaluateDeploymentOutput"
 	cLockCanNotDelete    = "CanNotDelete"
 	cLockReadOnly        = "ReadOnly"
 	cTier4Parallelism    = 5
@@ -105,29 +94,18 @@ const (
 	LockLevelReadOnly     = cLockReadOnly
 )
 
-// tier1Result is the outcome of Tier 1 classification for a single RG.
-type tier1Result int
-
-const (
-	tier1Unknown  tier1Result = iota
-	tier1Owned                // Create operation found
-	tier1External             // Read / EvaluateDeploymentOutput operation found
-)
-
-// tier1Info holds the classification result and the operation that caused it.
-type tier1Info struct {
-	result    tier1Result
-	operation string // the provisioning operation that classified this RG (for external)
-}
-
 // ClassifyResourceGroups determines which resource groups from a deployment are
 // safe to delete (owned by azd) vs which should be skipped (external/unknown/vetoed).
 //
-// The operations parameter should be the result of deployment.Operations() — a single
-// API call that returns all operations for the deployment.
+// When SnapshotPredictedRGs is set, snapshot-based classification is used as the
+// primary signal, with Tier 4 (locks + foreign resources) as defense-in-depth.
+//
+// When SnapshotPredictedRGs is nil (snapshot unavailable):
+//   - ForceMode: all RGs returned as owned (backward compat, zero API calls)
+//   - Interactive + Prompter: user prompted for each RG
+//   - Otherwise: all RGs skipped with reason "snapshot unavailable"
 func ClassifyResourceGroups(
 	ctx context.Context,
-	operations []*armresources.DeploymentOperation,
 	rgNames []string,
 	opts ClassifyOptions,
 ) (*ClassifyResult, error) {
@@ -137,68 +115,54 @@ func ClassifyResourceGroups(
 
 	result := &ClassifyResult{}
 
-	// --- Snapshot path: when predictedResources are available, use them as primary signal ---
-	// This replaces Tiers 1-3 with a deterministic, offline classification from bicep snapshot.
+	// --- Snapshot path: deterministic classification from bicep snapshot ---
 	if opts.SnapshotPredictedRGs != nil {
 		return classifyFromSnapshot(ctx, rgNames, opts, result)
 	}
 
-	// --- Tier 1: classify all RGs from deployment operations (zero extra API calls) ---
-	owned, unknown := classifyTier1(operations, rgNames, result)
+	// --- Snapshot unavailable: simplified guard ---
 
-	// ForceMode: Tier 1 external RGs are still protected; unknowns become owned.
-	// Skip Tier 2/3/4 (no API calls, no prompts).
+	// ForceMode without snapshot: return all RGs as owned (backward compat).
 	if opts.ForceMode {
-		result.Owned = append(owned, unknown...)
+		result.Owned = slices.Clone(rgNames)
 		return result, nil
 	}
 
-	// --- Tier 2: dual-tag check for unknowns ---
-	var tier2Owned, tier3Candidates []string
-	for _, rg := range unknown {
-		skip, isOwned, err := classifyTier2(ctx, rg, opts)
-		if err != nil {
-			return nil, err
-		}
-		if skip != nil {
-			result.Skipped = append(result.Skipped, *skip)
-			continue
-		}
-		if isOwned {
-			tier2Owned = append(tier2Owned, rg)
-		} else {
-			tier3Candidates = append(tier3Candidates, rg)
-		}
-	}
-
-	// Merge tier-2-owned into owned list for Tier 4 processing.
-	owned = append(owned, tier2Owned...)
-
-	// --- Tier 3: prompt or skip remaining unknowns ---
-	// Tier 3 runs BEFORE Tier 4 so that user-accepted RGs also receive veto checks
-	// (lock check, foreign-resource check). This prevents a user from accidentally
-	// deleting a locked or shared RG they accepted as "unknown."
-	for _, rg := range tier3Candidates {
-		reason := "unknown ownership"
-		if opts.Interactive && opts.Prompter != nil {
-			accept, err := opts.Prompter(rg, reason)
+	// Interactive without snapshot: prompt user for each RG.
+	if opts.Interactive && opts.Prompter != nil {
+		var owned []string
+		for _, rg := range rgNames {
+			accept, err := opts.Prompter(
+				rg,
+				"snapshot unavailable — cannot verify ownership",
+			)
 			if err != nil {
-				return nil, fmt.Errorf("classify rg=%s tier=3 prompt: %w", rg, err)
+				return nil, fmt.Errorf(
+					"classify rg=%s prompt: %w", rg, err)
 			}
 			if accept {
 				owned = append(owned, rg)
-				continue
+			} else {
+				result.Skipped = append(result.Skipped,
+					ClassifiedSkip{
+						Name: rg,
+						Reason: "skipped (snapshot unavailable" +
+							" — user declined)",
+					})
 			}
 		}
-		result.Skipped = append(result.Skipped, ClassifiedSkip{
-			Name:   rg,
-			Reason: fmt.Sprintf("skipped (Tier 3: %s)", reason),
-		})
+		return runTier4Vetoes(ctx, owned, opts, result)
 	}
 
-	// --- Tier 4: veto checks on all deletion candidates (parallel, capacity 5) ---
-	// This includes Tier 1 owned, Tier 2 owned, AND Tier 3 user-accepted RGs.
-	return runTier4Vetoes(ctx, owned, opts, result)
+	// Non-interactive without snapshot: skip all RGs.
+	for _, rg := range rgNames {
+		result.Skipped = append(result.Skipped, ClassifiedSkip{
+			Name: rg,
+			Reason: "skipped (snapshot unavailable" +
+				" — cannot classify without snapshot)",
+		})
+	}
+	return result, nil
 }
 
 // classifyFromSnapshot uses the Bicep snapshot predictedResources to classify RGs.
@@ -359,117 +323,6 @@ func runTier4Vetoes(
 	return result, nil
 }
 
-// classifyTier1 uses deployment operations to classify RGs with zero extra API calls.
-// Returns (owned, unknown) slices. External RGs are appended directly to result.Skipped.
-func classifyTier1(
-	operations []*armresources.DeploymentOperation,
-	rgNames []string,
-	result *ClassifyResult,
-) (owned, unknown []string) {
-	tier1 := make(map[string]tier1Info, len(rgNames))
-	for _, rg := range rgNames {
-		tier1[rg] = tier1Info{result: tier1Unknown}
-	}
-	for _, op := range operations {
-		// TRUST ASSUMPTION: ARM ProvisioningOperation=Create is only emitted for RGs
-		// that were actually created by this deployment, never for `existing` references.
-		// Tier 4 (locks + foreign resources) provides defense-in-depth for all owned RGs.
-		if name, ok := operationTargetsRG(op, cProvisionOpCreate); ok {
-			if _, tracked := tier1[name]; tracked {
-				tier1[name] = tier1Info{result: tier1Owned}
-				continue
-			}
-			// normalize case for map lookup
-			for _, rg := range rgNames {
-				if strings.EqualFold(rg, name) {
-					tier1[rg] = tier1Info{result: tier1Owned}
-					break
-				}
-			}
-			continue
-		}
-		if name, ok := operationTargetsRG(op, cProvisionOpRead); ok {
-			for _, rg := range rgNames {
-				if strings.EqualFold(rg, name) && tier1[rg].result != tier1Owned {
-					tier1[rg] = tier1Info{
-						result: tier1External, operation: cProvisionOpRead,
-					}
-					break
-				}
-			}
-			continue
-		}
-		if name, ok := operationTargetsRG(op, cProvisionOpEvalOut); ok {
-			for _, rg := range rgNames {
-				if strings.EqualFold(rg, name) && tier1[rg].result != tier1Owned {
-					tier1[rg] = tier1Info{
-						result: tier1External, operation: cProvisionOpEvalOut,
-					}
-					break
-				}
-			}
-		}
-	}
-
-	for _, rg := range rgNames {
-		info := tier1[rg]
-		switch info.result {
-		case tier1Owned:
-			owned = append(owned, rg)
-		case tier1External:
-			result.Skipped = append(result.Skipped, ClassifiedSkip{
-				Name: rg,
-				Reason: fmt.Sprintf(
-					"external (Tier 1: %s operation found)", info.operation,
-				),
-			})
-		default:
-			unknown = append(unknown, rg)
-		}
-	}
-	return owned, unknown
-}
-
-// classifyTier2 performs the dual-tag check on a single RG.
-// Returns (skip, isOwned, error):
-//   - skip != nil  → already decided (404 = already deleted, etc.)
-//   - isOwned      → both tags matched
-//   - neither      → fall through to Tier 3
-func classifyTier2(ctx context.Context, rgName string, opts ClassifyOptions) (*ClassifiedSkip, bool, error) {
-	if opts.GetResourceGroupTags == nil {
-		return nil, false, nil
-	}
-	tags, err := opts.GetResourceGroupTags(ctx, rgName)
-	if err != nil {
-		if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
-			switch respErr.StatusCode {
-			case 404:
-				return &ClassifiedSkip{Name: rgName, Reason: "already deleted (Tier 2: 404)"}, false, nil
-			case 403:
-				// Cannot read tags — fall through to Tier 3.
-				return nil, false, nil
-			}
-		}
-		return nil, false, fmt.Errorf("classify rg=%s tier=2: %w", rgName, err)
-	}
-
-	envTag := tagValue(tags, cAzdEnvNameTag)
-	hashTag := tagValue(tags, cAzdProvisionHashTag)
-	if envTag != "" && hashTag != "" && strings.EqualFold(envTag, opts.EnvName) {
-		// If an expected hash is provided, verify it matches.
-		// Case-sensitive comparison is intentional — hash values must match exactly.
-		// Mismatch falls safely to Tier 3 (more scrutiny, not less).
-		// If not provided, presence of both tags is sufficient (backward compat).
-		if opts.ExpectedProvisionParamHash != "" &&
-			hashTag != opts.ExpectedProvisionParamHash {
-			// Hash mismatch — fall through to Tier 3.
-			return nil, false, nil
-		}
-		return nil, true, nil
-	}
-	return nil, false, nil
-}
-
 // classifyTier4 runs lock and extra-resource veto checks on an owned RG.
 // Returns (reason, vetoed, needsPrompt, error).
 // When needsPrompt is true, the caller should prompt the user sequentially (not from a goroutine)
@@ -561,30 +414,6 @@ func checkTier4Locks(
 		}
 	}
 	return false, "", nil
-}
-
-// operationTargetsRG checks if a deployment operation targets a resource group
-// with the given provisioning operation type. All fields are nil-checked.
-func operationTargetsRG(
-	op *armresources.DeploymentOperation, provisioningOp string,
-) (rgName string, matches bool) {
-	if op == nil || op.Properties == nil {
-		return "", false
-	}
-	props := op.Properties
-	if props.ProvisioningOperation == nil || props.TargetResource == nil {
-		return "", false
-	}
-	if props.TargetResource.ResourceType == nil || props.TargetResource.ResourceName == nil {
-		return "", false
-	}
-	if !strings.EqualFold(string(*props.ProvisioningOperation), provisioningOp) {
-		return "", false
-	}
-	if !strings.EqualFold(*props.TargetResource.ResourceType, cRGResourceType) {
-		return "", false
-	}
-	return *props.TargetResource.ResourceName, true
 }
 
 // tagValue returns the dereferenced value of a tag, or "" if the key is absent or nil.

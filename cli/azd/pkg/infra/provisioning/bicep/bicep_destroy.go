@@ -60,22 +60,17 @@ func (p *BicepProvider) forceDeleteLogAnalyticsIfPurge(
 	return nil
 }
 
-// classifyResourceGroups classifies each resource group as owned/external/unknown
-// using the 4-tier pipeline. Returns owned RG names and skipped RGs.
+// classifyResourceGroups classifies each resource group as owned or external
+// using snapshot-based classification with Tier 4 vetoes as defense-in-depth.
 //
 // When a Bicep snapshot is available (bicepparam mode), snapshot-based classification
 // is used as the primary mechanism: RGs in predictedResources are owned, others are external.
-// This replaces Tiers 1-3 with a deterministic, offline signal. Tier 4 still runs on owned
-// candidates as defense-in-depth.
+// Tier 4 (locks + foreign resources) still runs on owned candidates as defense-in-depth.
 //
-// When snapshot is unavailable (non-bicepparam mode, older Bicep CLI, or snapshot error),
-// the full Tier 1-4 pipeline runs as fallback.
-//
-// When force is true, only Tier 1 (zero extra API calls) runs. External RGs identified
-// by deployment operations (Read/EvaluateDeploymentOutput) are still protected. Unknown
-// RGs (no operation data) are treated as owned. This provides free safety while preserving
-// --force semantics (no prompts, no extra API calls). If operations are unavailable,
-// all RGs are returned as owned for backward compatibility.
+// When snapshot is unavailable (non-bicepparam mode, older Bicep CLI, or snapshot error):
+//   - ForceMode: all RGs returned as owned (backward compat, zero API calls)
+//   - Interactive: user prompted for each RG
+//   - Otherwise: all RGs skipped (cannot classify without snapshot)
 //
 // This function does NOT delete any resource groups — the caller is responsible
 // for deletion after collecting purge targets (which require the RGs to still exist).
@@ -98,47 +93,17 @@ func (p *BicepProvider) classifyResourceGroups(
 		log.Printf("classifying resource groups for deployment: %s", deploymentInfo.Name)
 	}
 
-	// Get deployment operations (Tier 1 data — single API call).
-	// Fetched even with --force: Tier 1 is free and protects external RGs.
-	var operations []*armresources.DeploymentOperation
-	operations, err = deployment.Operations(ctx)
-	if err != nil {
-		if options.Force() {
-			// --force with unavailable operations: delete all (backward compat).
-			log.Printf(
-				"WARNING: --force with unavailable deployment operations — all %d RGs will be deleted.",
-				len(rgNames),
-			)
-			return rgNames, nil, nil
-		}
-		// Normal mode: operations unavailable — classification will fall to Tier 2/3.
-		log.Printf("WARNING: could not fetch deployment operations for classification: %v", err)
-		operations = nil
-	}
-
-	// Derive expected provision param hash from deployment tags for Tier 2 verification.
-	var expectedHash string
-	if deployInfoErr == nil && deploymentInfo.Tags != nil {
-		if h := deploymentInfo.Tags[azapi.TagKeyProvisionParamHash]; h != nil {
-			expectedHash = *h
-		}
-	}
-
 	// Build classification options.
 	subscriptionId := deployment.SubscriptionId()
 	classifyOpts := azapi.ClassifyOptions{
-		Interactive:                !p.console.IsNoPromptMode(),
-		ForceMode:                  options.Force(),
-		EnvName:                    p.env.Name(),
-		ExpectedProvisionParamHash: expectedHash,
-		SnapshotPredictedRGs:       p.getSnapshotPredictedRGs(ctx),
+		Interactive:          !p.console.IsNoPromptMode(),
+		ForceMode:            options.Force(),
+		EnvName:              p.env.Name(),
+		SnapshotPredictedRGs: p.getSnapshotPredictedRGs(ctx),
 	}
 
-	// Only wire Tier 2/3/4 callbacks when not --force (they won't be invoked in ForceMode).
+	// Only wire Tier 4 callbacks when not --force (they won't be invoked in ForceMode).
 	if !options.Force() {
-		classifyOpts.GetResourceGroupTags = func(ctx context.Context, rgName string) (map[string]*string, error) {
-			return p.getResourceGroupTags(ctx, subscriptionId, rgName)
-		}
 		classifyOpts.ListResourceGroupLocks = func(ctx context.Context, rgName string) ([]*azapi.ManagementLock, error) {
 			return p.listResourceGroupLocks(ctx, subscriptionId, rgName)
 		}
@@ -156,7 +121,7 @@ func (p *BicepProvider) classifyResourceGroups(
 	}
 
 	// Run classification.
-	result, err := azapi.ClassifyResourceGroups(ctx, operations, rgNames, classifyOpts)
+	result, err := azapi.ClassifyResourceGroups(ctx, rgNames, classifyOpts)
 	if err != nil {
 		return nil, nil, fmt.Errorf("classifying resource groups: %w", err)
 	}
@@ -238,47 +203,6 @@ func (p *BicepProvider) deleteRGList(
 		return deleted, errors.Join(deleteErrors...)
 	}
 	return deleted, nil
-}
-
-// getResourceGroupTags retrieves the tags for a resource group using the ARM API.
-// It uses the service locator to resolve the credential provider and ARM client options.
-// Returns nil tags (no error) as a graceful fallback if dependencies cannot be resolved,
-// which causes the classifier to fall to Tier 3 (more scrutiny — safe direction).
-// This differs from listResourceGroupLocks/listResourceGroupResourcesWithTags which
-// return errors → fail-safe veto. The asymmetry is intentional: missing tags means
-// "try harder to verify," while missing lock/resource data means "don't delete."
-func (p *BicepProvider) getResourceGroupTags(
-	ctx context.Context,
-	subscriptionId string,
-	rgName string,
-) (map[string]*string, error) {
-	var credProvider account.SubscriptionCredentialProvider
-	if err := p.serviceLocator.Resolve(&credProvider); err != nil {
-		log.Printf("classify tags: credential provider unavailable for rg=%s: %v", rgName, err)
-		return nil, nil // graceful fallback: no tags → classifier uses Tier 2/3
-	}
-
-	var armOpts *arm.ClientOptions
-	_ = p.serviceLocator.Resolve(&armOpts) // optional; nil is a valid default
-
-	credential, err := credProvider.CredentialForSubscription(ctx, subscriptionId)
-	if err != nil {
-		log.Printf("classify tags: credential error for rg=%s sub=%s: %v", rgName, subscriptionId, err)
-		return nil, nil // graceful fallback
-	}
-
-	client, err := armresources.NewResourceGroupsClient(subscriptionId, credential, armOpts)
-	if err != nil {
-		log.Printf("classify tags: ARM client error for rg=%s: %v", rgName, err)
-		return nil, nil // graceful fallback
-	}
-
-	resp, err := client.Get(ctx, rgName, nil)
-	if err != nil {
-		return nil, err // propagate so caller can handle 404/403
-	}
-
-	return resp.Tags, nil
 }
 
 // listResourceGroupLocks retrieves management locks on a resource group using the ARM API.
@@ -450,8 +374,11 @@ func (p *BicepProvider) isDeploymentStacksEnabled() bool {
 // a temporary .bicepparam file is generated.
 //
 // On any error (older Bicep CLI, compilation failure, etc.), logs a warning and returns nil,
-// which causes the classifier to fall back to the Tier 1-4 pipeline.
+// which causes the classifier to use the simplified guard (ForceMode, interactive prompt, or skip).
 func (p *BicepProvider) getSnapshotPredictedRGs(ctx context.Context) map[string]bool {
+	if p.snapshotPredictedRGsOverride != nil {
+		return p.snapshotPredictedRGsOverride
+	}
 	compileResult := p.compileBicepMemoryCache
 	if compileResult == nil {
 		log.Printf("snapshot classification: compileBicep cache unavailable, skipping snapshot")
@@ -537,7 +464,7 @@ func (p *BicepProvider) getSnapshotPredictedRGs(ctx context.Context) map[string]
 	if len(predictedRGs) == 0 {
 		// No RGs in predictedResources — could mean a resource-group-scoped deployment
 		// where RGs aren't declared as resources. Fall back to tier system.
-		log.Printf("snapshot classification: no resource groups found in predictedResources, falling back to tiers")
+		log.Printf("snapshot classification: no resource groups found in predictedResources, falling back to guard")
 		return nil
 	}
 

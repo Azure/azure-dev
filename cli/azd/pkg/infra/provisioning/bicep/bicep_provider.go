@@ -94,6 +94,10 @@ type BicepProvider struct {
 	// Internal state
 	// compileBicepResult is cached to avoid recompiling the same bicep file multiple times in the same azd run.
 	compileBicepMemoryCache *compileBicepResult
+
+	// snapshotPredictedRGsOverride, when non-nil, bypasses the bicep CLI
+	// snapshot pipeline in getSnapshotPredictedRGs. Used by tests.
+	snapshotPredictedRGsOverride map[string]bool
 }
 
 // Name gets the name of the infra provider

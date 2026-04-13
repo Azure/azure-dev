@@ -11,23 +11,9 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-// makeOperation builds a minimal DeploymentOperation for testing.
-func makeOperation(provisioningOp, resourceType, resourceName string) *armresources.DeploymentOperation {
-	return &armresources.DeploymentOperation{
-		Properties: &armresources.DeploymentOperationProperties{
-			ProvisioningOperation: new(armresources.ProvisioningOperation(provisioningOp)),
-			TargetResource: &armresources.TargetResource{
-				ResourceType: new(resourceType),
-				ResourceName: new(resourceName),
-			},
-		},
-	}
-}
 
 // makeResponseError builds an *azcore.ResponseError with the given HTTP status code.
 func makeResponseError(statusCode int) error {
@@ -42,6 +28,19 @@ func noopOpts(envName string) ClassifyOptions {
 	return ClassifyOptions{EnvName: envName}
 }
 
+// snapshotOwned returns a ClassifyOptions with SnapshotPredictedRGs set to
+// own the given resource group names (lowercased).
+func snapshotOwned(envName string, rgs ...string) ClassifyOptions {
+	m := make(map[string]bool, len(rgs))
+	for _, rg := range rgs {
+		m[rg] = true
+	}
+	return ClassifyOptions{
+		EnvName:              envName,
+		SnapshotPredictedRGs: m,
+	}
+}
+
 func TestClassifyResourceGroups(t *testing.T) {
 	t.Parallel()
 
@@ -52,1196 +51,547 @@ func TestClassifyResourceGroups(t *testing.T) {
 		envName = "myenv"
 	)
 
-	rgOp := "Microsoft.Resources/resourceGroups"
-
 	t.Run("empty RG list returns empty result", func(t *testing.T) {
 		t.Parallel()
-		res, err := ClassifyResourceGroups(t.Context(), nil, nil, noopOpts(envName))
-		require.NoError(t, err)
-		assert.Empty(t, res.Owned)
-		assert.Empty(t, res.Skipped)
-	})
-
-	t.Run("Tier1 owned — Create operation", func(t *testing.T) {
-		t.Parallel()
-		ops := []*armresources.DeploymentOperation{
-			makeOperation("Create", rgOp, rgA),
-		}
-		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgA}, noopOpts(envName))
-		require.NoError(t, err)
-		assert.Equal(t, []string{rgA}, res.Owned)
-		assert.Empty(t, res.Skipped)
-	})
-
-	t.Run("Tier1 external — Read operation", func(t *testing.T) {
-		t.Parallel()
-		ops := []*armresources.DeploymentOperation{
-			makeOperation("Read", rgOp, rgA),
-		}
-		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgA}, noopOpts(envName))
-		require.NoError(t, err)
-		assert.Empty(t, res.Owned)
-		require.Len(t, res.Skipped, 1)
-		assert.Equal(t, rgA, res.Skipped[0].Name)
-		assert.Contains(t, res.Skipped[0].Reason, "Tier 1")
-	})
-
-	t.Run("Tier1 external — EvaluateDeploymentOutput operation", func(t *testing.T) {
-		t.Parallel()
-		ops := []*armresources.DeploymentOperation{
-			makeOperation("EvaluateDeploymentOutput", rgOp, rgA),
-		}
-		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgA}, noopOpts(envName))
-		require.NoError(t, err)
-		assert.Empty(t, res.Owned)
-		require.Len(t, res.Skipped, 1)
-		assert.Equal(t, rgA, res.Skipped[0].Name)
-	})
-
-	t.Run("Tier1 unknown — no matching operations falls to Tier2 then Tier3 non-interactive skip", func(t *testing.T) {
-		t.Parallel()
-		opts := ClassifyOptions{
-			EnvName:     envName,
-			Interactive: false,
-			GetResourceGroupTags: func(_ context.Context, _ string) (map[string]*string, error) {
-				// Only one tag — not dual-tagged → unknown
-				return map[string]*string{cAzdEnvNameTag: strPtr(envName)}, nil
-			},
-		}
-		res, err := ClassifyResourceGroups(t.Context(), nil, []string{rgA}, opts)
-		require.NoError(t, err)
-		assert.Empty(t, res.Owned)
-		require.Len(t, res.Skipped, 1)
-		assert.Contains(t, res.Skipped[0].Reason, "Tier 3")
-	})
-
-	t.Run("Tier1 nil safety — operations with nil properties ignored", func(t *testing.T) {
-		t.Parallel()
-		ops := []*armresources.DeploymentOperation{
-			nil,
-			{Properties: nil},
-			{Properties: &armresources.DeploymentOperationProperties{
-				ProvisioningOperation: nil,
-			}},
-			{Properties: &armresources.DeploymentOperationProperties{
-				ProvisioningOperation: new(armresources.ProvisioningOperation("Create")),
-				TargetResource:        nil,
-			}},
-			{Properties: &armresources.DeploymentOperationProperties{
-				ProvisioningOperation: new(armresources.ProvisioningOperation("Create")),
-				TargetResource: &armresources.TargetResource{
-					ResourceType: nil,
-					ResourceName: nil,
-				},
-			}},
-			// This one is valid and should be picked up.
-			makeOperation("Create", rgOp, rgA),
-		}
-		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgA}, noopOpts(envName))
-		require.NoError(t, err)
-		assert.Equal(t, []string{rgA}, res.Owned)
-	})
-
-	t.Run("Tier1 case-insensitive provisioning operation", func(t *testing.T) {
-		t.Parallel()
-		for _, op := range []string{"create", "CREATE", "Create", "cReAtE"} {
-			t.Run(op, func(t *testing.T) {
-				t.Parallel()
-				ops := []*armresources.DeploymentOperation{makeOperation(op, rgOp, rgA)}
-				res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgA}, noopOpts(envName))
-				require.NoError(t, err)
-				assert.Equal(t, []string{rgA}, res.Owned)
-			})
-		}
-	})
-
-	t.Run("Tier2 owned — both tags match env name", func(t *testing.T) {
-		t.Parallel()
-		opts := ClassifyOptions{
-			EnvName: envName,
-			GetResourceGroupTags: func(_ context.Context, _ string) (map[string]*string, error) {
-				return map[string]*string{
-					cAzdEnvNameTag:       strPtr(envName),
-					cAzdProvisionHashTag: strPtr("abc123"),
-				}, nil
-			},
-		}
-		res, err := ClassifyResourceGroups(t.Context(), nil, []string{rgA}, opts)
-		require.NoError(t, err)
-		assert.Contains(t, res.Owned, rgA)
-	})
-
-	t.Run("Tier2 unknown — only one tag present", func(t *testing.T) {
-		t.Parallel()
-		opts := ClassifyOptions{
-			EnvName:     envName,
-			Interactive: false,
-			GetResourceGroupTags: func(_ context.Context, _ string) (map[string]*string, error) {
-				return map[string]*string{cAzdEnvNameTag: strPtr(envName)}, nil
-			},
-		}
-		res, err := ClassifyResourceGroups(t.Context(), nil, []string{rgA}, opts)
-		require.NoError(t, err)
-		assert.Empty(t, res.Owned)
-		require.Len(t, res.Skipped, 1)
-		assert.Equal(t, rgA, res.Skipped[0].Name)
-	})
-
-	t.Run("Tier2 unknown — both tags present but wrong env name", func(t *testing.T) {
-		t.Parallel()
-		opts := ClassifyOptions{
-			EnvName:     envName,
-			Interactive: false,
-			GetResourceGroupTags: func(_ context.Context, _ string) (map[string]*string, error) {
-				return map[string]*string{
-					cAzdEnvNameTag:       strPtr("different-env"),
-					cAzdProvisionHashTag: strPtr("abc123"),
-				}, nil
-			},
-		}
-		res, err := ClassifyResourceGroups(t.Context(), nil, []string{rgA}, opts)
-		require.NoError(t, err)
-		assert.Empty(t, res.Owned)
-		require.Len(t, res.Skipped, 1)
-		assert.Contains(t, res.Skipped[0].Reason, "Tier 3")
-	})
-
-	t.Run("Tier2 tag fetch 403 — falls to Tier3 non-interactive skip", func(t *testing.T) {
-		t.Parallel()
-		opts := ClassifyOptions{
-			EnvName:     envName,
-			Interactive: false,
-			GetResourceGroupTags: func(_ context.Context, _ string) (map[string]*string, error) {
-				return nil, makeResponseError(http.StatusForbidden)
-			},
-		}
-		res, err := ClassifyResourceGroups(t.Context(), nil, []string{rgA}, opts)
-		require.NoError(t, err)
-		assert.Empty(t, res.Owned)
-		require.Len(t, res.Skipped, 1)
-		assert.Contains(t, res.Skipped[0].Reason, "Tier 3")
-	})
-
-	t.Run("Tier4 lock veto — CanNotDelete lock", func(t *testing.T) {
-		t.Parallel()
-		opts := ClassifyOptions{
-			EnvName: envName,
-			ListResourceGroupLocks: func(_ context.Context, _ string) ([]*ManagementLock, error) {
-				return []*ManagementLock{{Name: "no-delete", LockType: cLockCanNotDelete}}, nil
-			},
-		}
-		ops := []*armresources.DeploymentOperation{makeOperation("Create", rgOp, rgA)}
-		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgA}, opts)
-		require.NoError(t, err)
-		assert.Empty(t, res.Owned)
-		require.Len(t, res.Skipped, 1)
-		assert.Contains(t, res.Skipped[0].Reason, "management lock")
-	})
-
-	t.Run("Tier4 lock check 403 — no veto, still owned", func(t *testing.T) {
-		t.Parallel()
-		opts := ClassifyOptions{
-			EnvName: envName,
-			ListResourceGroupLocks: func(_ context.Context, _ string) ([]*ManagementLock, error) {
-				return nil, makeResponseError(http.StatusForbidden)
-			},
-		}
-		ops := []*armresources.DeploymentOperation{makeOperation("Create", rgOp, rgA)}
-		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgA}, opts)
-		require.NoError(t, err)
-		assert.Contains(t, res.Owned, rgA)
-	})
-
-	t.Run("Tier4 extra resources hard veto (CI/non-interactive)", func(t *testing.T) {
-		t.Parallel()
-		opts := ClassifyOptions{
-			EnvName:     envName,
-			Interactive: false,
-			ListResourceGroupResources: func(_ context.Context, _ string) ([]*ResourceWithTags, error) {
-				return []*ResourceWithTags{
-					{Name: "foreign-vm", Tags: map[string]*string{
-						cAzdEnvNameTag: strPtr("other-env"),
-					}},
-				}, nil
-			},
-		}
-		ops := []*armresources.DeploymentOperation{makeOperation("Create", rgOp, rgA)}
-		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgA}, opts)
-		require.NoError(t, err)
-		assert.Empty(t, res.Owned)
-		require.Len(t, res.Skipped, 1)
-		assert.Contains(t, res.Skipped[0].Reason, "foreign resource")
-	})
-
-	t.Run("Tier4 extra resources soft veto (interactive, user says no)", func(t *testing.T) {
-		t.Parallel()
-		opts := ClassifyOptions{
-			EnvName:     envName,
-			Interactive: true,
-			ListResourceGroupResources: func(_ context.Context, _ string) ([]*ResourceWithTags, error) {
-				return []*ResourceWithTags{
-					{Name: "shared-sa", Tags: nil},
-				}, nil
-			},
-			Prompter: func(_, _ string) (bool, error) { return false, nil },
-		}
-		ops := []*armresources.DeploymentOperation{makeOperation("Create", rgOp, rgA)}
-		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgA}, opts)
-		require.NoError(t, err)
-		assert.Empty(t, res.Owned)
-		require.Len(t, res.Skipped, 1)
-		assert.Contains(t, res.Skipped[0].Reason, "foreign resource")
-	})
-
-	t.Run("Tier4 no extra resources — owned", func(t *testing.T) {
-		t.Parallel()
-		opts := ClassifyOptions{
-			EnvName: envName,
-			ListResourceGroupResources: func(_ context.Context, _ string) ([]*ResourceWithTags, error) {
-				return []*ResourceWithTags{
-					{Name: "my-vm", Tags: map[string]*string{
-						cAzdEnvNameTag: strPtr(envName),
-					}},
-				}, nil
-			},
-		}
-		ops := []*armresources.DeploymentOperation{makeOperation("Create", rgOp, rgA)}
-		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgA}, opts)
-		require.NoError(t, err)
-		assert.Contains(t, res.Owned, rgA)
-		assert.Empty(t, res.Skipped)
-	})
-
-	t.Run("Tier3 interactive accept — user says yes", func(t *testing.T) {
-		t.Parallel()
-		opts := ClassifyOptions{
-			EnvName:     envName,
-			Interactive: true,
-			GetResourceGroupTags: func(_ context.Context, _ string) (map[string]*string, error) {
-				return nil, nil // no tags → unknown
-			},
-			Prompter: func(_, _ string) (bool, error) { return true, nil },
-		}
-		res, err := ClassifyResourceGroups(t.Context(), nil, []string{rgA}, opts)
-		require.NoError(t, err)
-		assert.Contains(t, res.Owned, rgA)
-	})
-
-	t.Run("Tier3 interactive deny — user says no", func(t *testing.T) {
-		t.Parallel()
-		opts := ClassifyOptions{
-			EnvName:     envName,
-			Interactive: true,
-			GetResourceGroupTags: func(_ context.Context, _ string) (map[string]*string, error) {
-				return nil, nil
-			},
-			Prompter: func(_, _ string) (bool, error) { return false, nil },
-		}
-		res, err := ClassifyResourceGroups(t.Context(), nil, []string{rgA}, opts)
-		require.NoError(t, err)
-		assert.Empty(t, res.Owned)
-		require.Len(t, res.Skipped, 1)
-		assert.Contains(t, res.Skipped[0].Reason, "Tier 3")
-	})
-
-	t.Run("Tier3 non-interactive — unknown skipped without prompt", func(t *testing.T) {
-		t.Parallel()
-		var prompted atomic.Bool
-		opts := ClassifyOptions{
-			EnvName:     envName,
-			Interactive: false,
-			GetResourceGroupTags: func(_ context.Context, _ string) (map[string]*string, error) {
-				return nil, nil
-			},
-			Prompter: func(_, _ string) (bool, error) {
-				prompted.Store(true)
-				return true, nil
-			},
-		}
-		res, err := ClassifyResourceGroups(t.Context(), nil, []string{rgA}, opts)
-		require.NoError(t, err)
-		assert.Empty(t, res.Owned)
-		require.Len(t, res.Skipped, 1)
-		assert.False(t, prompted.Load(), "prompter should not be called in non-interactive mode")
-	})
-
-	t.Run("multiple RGs — mix of owned, external, unknown", func(t *testing.T) {
-		t.Parallel()
-		ops := []*armresources.DeploymentOperation{
-			makeOperation("Create", rgOp, rgA),
-			makeOperation("Read", rgOp, rgB),
-			// rgC has no operation → unknown
-		}
-		opts := ClassifyOptions{
-			EnvName:     envName,
-			Interactive: false,
-			GetResourceGroupTags: func(_ context.Context, rg string) (map[string]*string, error) {
-				if rg == rgC {
-					return nil, nil // no tags → unknown
-				}
-				return nil, nil
-			},
-		}
-		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgA, rgB, rgC}, opts)
-		require.NoError(t, err)
-		assert.Contains(t, res.Owned, rgA)
-		skippedNames := make([]string, len(res.Skipped))
-		for i, s := range res.Skipped {
-			skippedNames[i] = s.Name
-		}
-		assert.Contains(t, skippedNames, rgB)
-		assert.Contains(t, skippedNames, rgC)
-	})
-
-	t.Run("empty operations list — all RGs fall to Tier2", func(t *testing.T) {
-		t.Parallel()
-		opts := ClassifyOptions{
-			EnvName: envName,
-			GetResourceGroupTags: func(_ context.Context, _ string) (map[string]*string, error) {
-				return map[string]*string{
-					cAzdEnvNameTag:       strPtr(envName),
-					cAzdProvisionHashTag: strPtr("hash1"),
-				}, nil
-			},
-		}
-		res, err := ClassifyResourceGroups(t.Context(), []*armresources.DeploymentOperation{}, []string{rgA, rgB}, opts)
-		require.NoError(t, err)
-		assert.Contains(t, res.Owned, rgA)
-		assert.Contains(t, res.Owned, rgB)
-	})
-
-	t.Run("empty operations with no Tier2 callbacks does not auto-delete", func(t *testing.T) {
-		t.Parallel()
 		res, err := ClassifyResourceGroups(
-			t.Context(),
-			[]*armresources.DeploymentOperation{},
-			[]string{rgA, rgB},
-			ClassifyOptions{
-				EnvName:     envName,
-				Interactive: false,
-			},
-		)
+			t.Context(), nil, noopOpts(envName))
 		require.NoError(t, err)
-		assert.Empty(t, res.Owned, "RGs should not be auto-owned when no evidence exists")
+		assert.Empty(t, res.Owned)
+		assert.Empty(t, res.Skipped)
+	})
+
+	// --- Snapshot unavailable guard ---
+
+	t.Run("snapshot unavailable non-interactive skips all", func(t *testing.T) {
+		t.Parallel()
+		opts := ClassifyOptions{
+			EnvName:     envName,
+			Interactive: false,
+		}
+		res, err := ClassifyResourceGroups(
+			t.Context(), []string{rgA, rgB}, opts)
+		require.NoError(t, err)
+		assert.Empty(t, res.Owned)
 		require.Len(t, res.Skipped, 2)
-		assert.ElementsMatch(t, []string{rgA, rgB}, []string{res.Skipped[0].Name, res.Skipped[1].Name})
+		assert.Contains(t, res.Skipped[0].Reason, "snapshot unavailable")
+		assert.Contains(t, res.Skipped[1].Reason, "snapshot unavailable")
 	})
 
-	t.Run("nil operations and nil callbacks are safe (no deletion)", func(t *testing.T) {
+	t.Run("snapshot unavailable interactive prompts user", func(t *testing.T) {
 		t.Parallel()
+		var prompted []string
+		opts := ClassifyOptions{
+			EnvName:     envName,
+			Interactive: true,
+			Prompter: func(rg, reason string) (bool, error) {
+				prompted = append(prompted, rg)
+				return rg == rgA, nil // accept A, decline B
+			},
+		}
 		res, err := ClassifyResourceGroups(
-			t.Context(),
-			nil,
-			[]string{rgA},
-			ClassifyOptions{
-				EnvName:                    envName,
-				Interactive:                true,
-				GetResourceGroupTags:       nil,
-				ListResourceGroupLocks:     nil,
-				ListResourceGroupResources: nil,
-				Prompter:                   nil,
-			},
-		)
+			t.Context(), []string{rgA, rgB}, opts)
 		require.NoError(t, err)
-		assert.Empty(t, res.Owned)
+		assert.Equal(t, []string{rgA}, res.Owned)
 		require.Len(t, res.Skipped, 1)
-		assert.Equal(t, rgA, res.Skipped[0].Name)
+		assert.Equal(t, rgB, res.Skipped[0].Name)
+		assert.Contains(t, res.Skipped[0].Reason, "user declined")
+		assert.Equal(t, []string{rgA, rgB}, prompted)
 	})
 
-	t.Run("already deleted — 404 on tag fetch gracefully skipped", func(t *testing.T) {
-		t.Parallel()
-		opts := ClassifyOptions{
-			EnvName: envName,
-			GetResourceGroupTags: func(_ context.Context, _ string) (map[string]*string, error) {
-				return nil, makeResponseError(http.StatusNotFound)
-			},
-		}
-		res, err := ClassifyResourceGroups(t.Context(), nil, []string{rgA}, opts)
-		require.NoError(t, err)
-		assert.Empty(t, res.Owned)
-		require.Len(t, res.Skipped, 1)
-		assert.Contains(t, res.Skipped[0].Reason, "already deleted")
-		assert.Equal(t, rgA, res.Skipped[0].Name)
-	})
-
-	t.Run("Tier4 ReadOnly lock — veto", func(t *testing.T) {
-		t.Parallel()
-		opts := ClassifyOptions{
-			EnvName: envName,
-			ListResourceGroupLocks: func(_ context.Context, _ string) ([]*ManagementLock, error) {
-				return []*ManagementLock{{Name: "ro-lock", LockType: cLockReadOnly}}, nil
-			},
-		}
-		ops := []*armresources.DeploymentOperation{makeOperation("Create", rgOp, rgA)}
-		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgA}, opts)
-		require.NoError(t, err)
-		assert.Empty(t, res.Owned)
-		require.Len(t, res.Skipped, 1)
-		assert.Contains(t, res.Skipped[0].Reason, "management lock")
-	})
-
-	t.Run("Tier4 extra resources soft veto (interactive, user accepts)", func(t *testing.T) {
+	t.Run("snapshot unavailable interactive prompt error", func(t *testing.T) {
 		t.Parallel()
 		opts := ClassifyOptions{
 			EnvName:     envName,
 			Interactive: true,
-			ListResourceGroupResources: func(_ context.Context, _ string) ([]*ResourceWithTags, error) {
-				return []*ResourceWithTags{
-					{Name: "shared", Tags: nil},
-				}, nil
-			},
-			Prompter: func(_, _ string) (bool, error) { return true, nil },
-		}
-		ops := []*armresources.DeploymentOperation{makeOperation("Create", rgOp, rgA)}
-		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgA}, opts)
-		require.NoError(t, err)
-		assert.Contains(t, res.Owned, rgA)
-	})
-
-	t.Run("operationTargetsRG nil checks", func(t *testing.T) {
-		t.Parallel()
-		_, ok := operationTargetsRG(nil, "Create")
-		assert.False(t, ok)
-
-		_, ok = operationTargetsRG(&armresources.DeploymentOperation{Properties: nil}, "Create")
-		assert.False(t, ok)
-
-		_, ok = operationTargetsRG(&armresources.DeploymentOperation{
-			Properties: &armresources.DeploymentOperationProperties{
-				ProvisioningOperation: nil,
-			},
-		}, "Create")
-		assert.False(t, ok)
-
-		_, ok = operationTargetsRG(&armresources.DeploymentOperation{
-			Properties: &armresources.DeploymentOperationProperties{
-				ProvisioningOperation: new(armresources.ProvisioningOperation("Create")),
-				TargetResource: &armresources.TargetResource{
-					ResourceType: nil,
-					ResourceName: nil,
-				},
-			},
-		}, "Create")
-		assert.False(t, ok)
-	})
-
-	t.Run("Tier4 lock 404 — no veto", func(t *testing.T) {
-		t.Parallel()
-		opts := ClassifyOptions{
-			EnvName: envName,
-			ListResourceGroupLocks: func(_ context.Context, _ string) ([]*ManagementLock, error) {
-				return nil, makeResponseError(http.StatusNotFound)
-			},
-		}
-		ops := []*armresources.DeploymentOperation{makeOperation("Create", rgOp, rgA)}
-		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgA}, opts)
-		require.NoError(t, err)
-		assert.Contains(t, res.Owned, rgA)
-	})
-
-	t.Run("Tier2 tag fetch error (non-403/404) propagated", func(t *testing.T) {
-		t.Parallel()
-		opts := ClassifyOptions{
-			EnvName: envName,
-			GetResourceGroupTags: func(_ context.Context, _ string) (map[string]*string, error) {
-				return nil, fmt.Errorf("unexpected internal error")
-			},
-		}
-		_, err := ClassifyResourceGroups(t.Context(), nil, []string{rgA}, opts)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "classify rg=")
-	})
-
-	t.Run("Tier3 accepted RG goes through Tier4 veto (lock)", func(t *testing.T) {
-		t.Parallel()
-		opts := ClassifyOptions{
-			EnvName:     envName,
-			Interactive: true,
-			GetResourceGroupTags: func(_ context.Context, _ string) (map[string]*string, error) {
-				return nil, nil // no tags → unknown → Tier 3
-			},
-			Prompter: func(_, _ string) (bool, error) { return true, nil }, // user accepts
-			ListResourceGroupLocks: func(_ context.Context, _ string) ([]*ManagementLock, error) {
-				return []*ManagementLock{{Name: "no-delete", LockType: cLockCanNotDelete}}, nil
-			},
-		}
-		res, err := ClassifyResourceGroups(t.Context(), nil, []string{rgA}, opts)
-		require.NoError(t, err)
-		// Even though user accepted at Tier 3, Tier 4 lock veto should prevent deletion.
-		assert.Empty(t, res.Owned)
-		require.Len(t, res.Skipped, 1)
-		assert.Contains(t, res.Skipped[0].Reason, "management lock")
-	})
-
-	t.Run("Tier4 foreign resources sequential prompt (not concurrent)", func(t *testing.T) {
-		t.Parallel()
-		var promptCount atomic.Int32
-		opts := ClassifyOptions{
-			EnvName:     envName,
-			Interactive: true,
-			ListResourceGroupResources: func(_ context.Context, _ string) ([]*ResourceWithTags, error) {
-				return []*ResourceWithTags{
-					{Name: "foreign", Tags: nil},
-				}, nil
-			},
 			Prompter: func(_, _ string) (bool, error) {
-				promptCount.Add(1)
-				return false, nil // deny all
+				return false, fmt.Errorf("terminal closed")
 			},
 		}
-		ops := []*armresources.DeploymentOperation{
-			makeOperation("Create", rgOp, rgA),
-			makeOperation("Create", rgOp, rgB),
+		_, err := ClassifyResourceGroups(
+			t.Context(), []string{rgA}, opts)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "terminal closed")
+	})
+
+	// --- Snapshot-based classification ---
+
+	t.Run("snapshot owned goes through Tier4", func(t *testing.T) {
+		t.Parallel()
+		opts := snapshotOwned(envName, rgA)
+		opts.ListResourceGroupResources = func(
+			_ context.Context, _ string,
+		) ([]*ResourceWithTags, error) {
+			return []*ResourceWithTags{
+				{
+					Name: "vm1",
+					Type: "Microsoft.Compute/virtualMachines",
+					Tags: map[string]*string{
+						cAzdEnvNameTag: strPtr(envName),
+					},
+				},
+			}, nil
 		}
-		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgA, rgB}, opts)
+		opts.ListResourceGroupLocks = func(
+			_ context.Context, _ string,
+		) ([]*ManagementLock, error) {
+			return nil, nil
+		}
+		res, err := ClassifyResourceGroups(
+			t.Context(), []string{rgA}, opts)
 		require.NoError(t, err)
-		assert.Empty(t, res.Owned)
-		assert.Equal(t, int32(2), promptCount.Load(), "both RGs should be prompted sequentially")
+		assert.Equal(t, []string{rgA}, res.Owned)
+		assert.Empty(t, res.Skipped)
 	})
 
-	t.Run("Tier4 500 error treated as veto (fail-safe)", func(t *testing.T) {
+	t.Run("snapshot external skips RG", func(t *testing.T) {
 		t.Parallel()
-		opts := ClassifyOptions{
-			EnvName: envName,
-			ListResourceGroupLocks: func(_ context.Context, _ string) ([]*ManagementLock, error) {
-				return nil, &azcore.ResponseError{StatusCode: http.StatusInternalServerError}
-			},
+		// snapshot contains rgA but not rgB
+		opts := snapshotOwned(envName, rgA)
+		opts.ListResourceGroupResources = func(
+			_ context.Context, _ string,
+		) ([]*ResourceWithTags, error) {
+			return nil, nil
 		}
-		ops := []*armresources.DeploymentOperation{makeOperation("Create", rgOp, rgA)}
-		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgA}, opts)
-		require.NoError(t, err, "500 error should not propagate — treated as veto")
-		assert.Empty(t, res.Owned, "RG should be vetoed on 500 error")
-		require.Len(t, res.Skipped, 1)
-		assert.Contains(t, res.Skipped[0].Reason, "error during safety check")
-	})
-
-	t.Run("Tier4 429 throttling error treated as veto (fail-safe)", func(t *testing.T) {
-		t.Parallel()
-		opts := ClassifyOptions{
-			EnvName: envName,
-			ListResourceGroupResources: func(_ context.Context, _ string) ([]*ResourceWithTags, error) {
-				return nil, &azcore.ResponseError{StatusCode: http.StatusTooManyRequests}
-			},
+		opts.ListResourceGroupLocks = func(
+			_ context.Context, _ string,
+		) ([]*ManagementLock, error) {
+			return nil, nil
 		}
-		ops := []*armresources.DeploymentOperation{makeOperation("Create", rgOp, rgA)}
-		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgA}, opts)
-		require.NoError(t, err, "429 error should not propagate — treated as veto")
-		assert.Empty(t, res.Owned, "RG should be vetoed on 429 throttle")
-		require.Len(t, res.Skipped, 1)
-		assert.Contains(t, res.Skipped[0].Reason, "error during safety check")
-	})
-
-	t.Run("Tier4 lock API 429 throttling treated as veto (fail-safe)", func(t *testing.T) {
-		t.Parallel()
-		opts := ClassifyOptions{
-			EnvName: envName,
-			ListResourceGroupLocks: func(_ context.Context, _ string) ([]*ManagementLock, error) {
-				return nil, &azcore.ResponseError{StatusCode: http.StatusTooManyRequests}
-			},
-		}
-		ops := []*armresources.DeploymentOperation{makeOperation("Create", rgOp, rgA)}
-		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgA}, opts)
-		require.NoError(t, err, "429 error should not propagate — treated as veto")
-		assert.Empty(t, res.Owned, "RG should be vetoed on lock API throttle")
-		require.Len(t, res.Skipped, 1)
-		assert.Contains(t, res.Skipped[0].Reason, "error during safety check")
-	})
-
-	t.Run("Tier1 external reason includes operation name — Read", func(t *testing.T) {
-		t.Parallel()
-		ops := []*armresources.DeploymentOperation{
-			makeOperation("Read", rgOp, rgA),
-		}
-		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgA}, noopOpts(envName))
+		res, err := ClassifyResourceGroups(
+			t.Context(), []string{rgA, rgB}, opts)
 		require.NoError(t, err)
+		assert.Equal(t, []string{rgA}, res.Owned)
 		require.Len(t, res.Skipped, 1)
-		assert.Contains(t, res.Skipped[0].Reason, "Read operation found")
+		assert.Equal(t, rgB, res.Skipped[0].Name)
+		assert.Contains(t, res.Skipped[0].Reason, "snapshot")
 	})
 
-	t.Run("Tier1 external reason includes operation name — EvaluateDeploymentOutput", func(t *testing.T) {
-		t.Parallel()
-		ops := []*armresources.DeploymentOperation{
-			makeOperation("EvaluateDeploymentOutput", rgOp, rgA),
-		}
-		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgA}, noopOpts(envName))
-		require.NoError(t, err)
-		require.Len(t, res.Skipped, 1)
-		assert.Contains(t, res.Skipped[0].Reason, "EvaluateDeploymentOutput operation found")
-	})
+	// --- Tier 4: Lock veto ---
 
-	t.Run("Tier2 hash match — owned when ExpectedProvisionParamHash matches", func(t *testing.T) {
+	t.Run("Tier4 lock CanNotDelete vetoes owned RG", func(t *testing.T) {
 		t.Parallel()
-		opts := ClassifyOptions{
-			EnvName:                    envName,
-			ExpectedProvisionParamHash: "abc123",
-			GetResourceGroupTags: func(_ context.Context, _ string) (map[string]*string, error) {
-				return map[string]*string{
-					cAzdEnvNameTag:       strPtr(envName),
-					cAzdProvisionHashTag: strPtr("abc123"),
-				}, nil
-			},
+		opts := snapshotOwned(envName, rgA)
+		opts.ListResourceGroupLocks = func(
+			_ context.Context, _ string,
+		) ([]*ManagementLock, error) {
+			return []*ManagementLock{
+				{Name: "my-lock", LockType: cLockCanNotDelete},
+			}, nil
 		}
-		res, err := ClassifyResourceGroups(t.Context(), nil, []string{rgA}, opts)
-		require.NoError(t, err)
-		assert.Contains(t, res.Owned, rgA)
-	})
-
-	t.Run("Tier2 hash mismatch — falls to Tier3 non-interactive skip", func(t *testing.T) {
-		t.Parallel()
-		opts := ClassifyOptions{
-			EnvName:                    envName,
-			Interactive:                false,
-			ExpectedProvisionParamHash: "expected-hash",
-			GetResourceGroupTags: func(_ context.Context, _ string) (map[string]*string, error) {
-				return map[string]*string{
-					cAzdEnvNameTag:       strPtr(envName),
-					cAzdProvisionHashTag: strPtr("different-hash"),
-				}, nil
-			},
-		}
-		res, err := ClassifyResourceGroups(t.Context(), nil, []string{rgA}, opts)
+		res, err := ClassifyResourceGroups(
+			t.Context(), []string{rgA}, opts)
 		require.NoError(t, err)
 		assert.Empty(t, res.Owned)
 		require.Len(t, res.Skipped, 1)
-		assert.Contains(t, res.Skipped[0].Reason, "Tier 3",
-			"hash mismatch should fall through to Tier 3")
+		assert.Contains(t, res.Skipped[0].Reason, "lock")
 	})
 
-	t.Run("Tier4 resource listing 403 — veto (cannot enumerate)", func(t *testing.T) {
+	t.Run("Tier4 lock ReadOnly vetoes owned RG", func(t *testing.T) {
 		t.Parallel()
-		opts := ClassifyOptions{
-			EnvName: envName,
-			ListResourceGroupResources: func(_ context.Context, _ string) ([]*ResourceWithTags, error) {
-				return nil, makeResponseError(http.StatusForbidden)
-			},
+		opts := snapshotOwned(envName, rgA)
+		opts.ListResourceGroupLocks = func(
+			_ context.Context, _ string,
+		) ([]*ManagementLock, error) {
+			return []*ManagementLock{
+				{Name: "ro-lock", LockType: cLockReadOnly},
+			}, nil
 		}
-		ops := []*armresources.DeploymentOperation{makeOperation("Create", rgOp, rgA)}
-		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgA}, opts)
+		res, err := ClassifyResourceGroups(
+			t.Context(), []string{rgA}, opts)
 		require.NoError(t, err)
-		assert.Empty(t, res.Owned, "RG should be vetoed when resource listing returns 403")
+		assert.Empty(t, res.Owned)
 		require.Len(t, res.Skipped, 1)
-		assert.Contains(t, res.Skipped[0].Reason, "authorization failure")
+		assert.Contains(t, res.Skipped[0].Reason, "lock")
 	})
 
-	t.Run("Context cancellation returns error", func(t *testing.T) {
+	t.Run("Tier4 lock check 403 does not veto", func(t *testing.T) {
+		t.Parallel()
+		opts := snapshotOwned(envName, rgA)
+		opts.ListResourceGroupLocks = func(
+			_ context.Context, _ string,
+		) ([]*ManagementLock, error) {
+			return nil, makeResponseError(http.StatusForbidden)
+		}
+		opts.ListResourceGroupResources = func(
+			_ context.Context, _ string,
+		) ([]*ResourceWithTags, error) {
+			return nil, nil
+		}
+		res, err := ClassifyResourceGroups(
+			t.Context(), []string{rgA}, opts)
+		require.NoError(t, err)
+		assert.Equal(t, []string{rgA}, res.Owned)
+	})
+
+	t.Run("Tier4 lock check 404 does not veto", func(t *testing.T) {
+		t.Parallel()
+		opts := snapshotOwned(envName, rgA)
+		opts.ListResourceGroupLocks = func(
+			_ context.Context, _ string,
+		) ([]*ManagementLock, error) {
+			return nil, makeResponseError(http.StatusNotFound)
+		}
+		opts.ListResourceGroupResources = func(
+			_ context.Context, _ string,
+		) ([]*ResourceWithTags, error) {
+			return nil, nil
+		}
+		res, err := ClassifyResourceGroups(
+			t.Context(), []string{rgA}, opts)
+		require.NoError(t, err)
+		assert.Equal(t, []string{rgA}, res.Owned)
+	})
+
+	t.Run("Tier4 lock check 500 vetoes as safety", func(t *testing.T) {
+		t.Parallel()
+		opts := snapshotOwned(envName, rgA)
+		opts.ListResourceGroupLocks = func(
+			_ context.Context, _ string,
+		) ([]*ManagementLock, error) {
+			return nil, makeResponseError(http.StatusInternalServerError)
+		}
+		res, err := ClassifyResourceGroups(
+			t.Context(), []string{rgA}, opts)
+		require.NoError(t, err)
+		assert.Empty(t, res.Owned)
+		require.Len(t, res.Skipped, 1)
+		assert.Contains(t, res.Skipped[0].Reason, "error during safety check")
+	})
+
+	// --- Tier 4: Foreign resource veto ---
+
+	t.Run("Tier4 foreign resources vetoes non-interactive", func(t *testing.T) {
+		t.Parallel()
+		opts := snapshotOwned(envName, rgA)
+		opts.Interactive = false
+		opts.ListResourceGroupLocks = func(
+			_ context.Context, _ string,
+		) ([]*ManagementLock, error) {
+			return nil, nil
+		}
+		opts.ListResourceGroupResources = func(
+			_ context.Context, _ string,
+		) ([]*ResourceWithTags, error) {
+			return []*ResourceWithTags{
+				{
+					Name: "alien-vm",
+					Type: "Microsoft.Compute/virtualMachines",
+					Tags: map[string]*string{
+						cAzdEnvNameTag: strPtr("other-env"),
+					},
+				},
+			}, nil
+		}
+		res, err := ClassifyResourceGroups(
+			t.Context(), []string{rgA}, opts)
+		require.NoError(t, err)
+		assert.Empty(t, res.Owned)
+		require.Len(t, res.Skipped, 1)
+		assert.Contains(t, res.Skipped[0].Reason, "foreign")
+	})
+
+	t.Run("Tier4 foreign resources prompts interactive", func(t *testing.T) {
+		t.Parallel()
+		opts := snapshotOwned(envName, rgA)
+		opts.Interactive = true
+		opts.Prompter = func(_, _ string) (bool, error) {
+			return true, nil
+		}
+		opts.ListResourceGroupLocks = func(
+			_ context.Context, _ string,
+		) ([]*ManagementLock, error) {
+			return nil, nil
+		}
+		opts.ListResourceGroupResources = func(
+			_ context.Context, _ string,
+		) ([]*ResourceWithTags, error) {
+			return []*ResourceWithTags{
+				{
+					Name: "alien-vm",
+					Type: "Microsoft.Compute/virtualMachines",
+					Tags: map[string]*string{
+						cAzdEnvNameTag: strPtr("other-env"),
+					},
+				},
+			}, nil
+		}
+		res, err := ClassifyResourceGroups(
+			t.Context(), []string{rgA}, opts)
+		require.NoError(t, err)
+		assert.Equal(t, []string{rgA}, res.Owned)
+		assert.Empty(t, res.Skipped)
+	})
+
+	t.Run(
+		"Tier4 foreign resource prompt declined vetoes",
+		func(t *testing.T) {
+			t.Parallel()
+			opts := snapshotOwned(envName, rgA)
+			opts.Interactive = true
+			opts.Prompter = func(_, _ string) (bool, error) {
+				return false, nil
+			}
+			opts.ListResourceGroupLocks = func(
+				_ context.Context, _ string,
+			) ([]*ManagementLock, error) {
+				return nil, nil
+			}
+			opts.ListResourceGroupResources = func(
+				_ context.Context, _ string,
+			) ([]*ResourceWithTags, error) {
+				return []*ResourceWithTags{
+					{
+						Name: "alien-vm",
+						Type: "Microsoft.Compute/virtualMachines",
+						Tags: map[string]*string{
+							cAzdEnvNameTag: strPtr("other-env"),
+						},
+					},
+				}, nil
+			}
+			res, err := ClassifyResourceGroups(
+				t.Context(), []string{rgA}, opts)
+			require.NoError(t, err)
+			assert.Empty(t, res.Owned)
+			require.Len(t, res.Skipped, 1)
+			assert.Contains(t, res.Skipped[0].Reason, "foreign")
+		},
+	)
+
+	t.Run("Tier4 resource list 404 does not veto", func(t *testing.T) {
+		t.Parallel()
+		opts := snapshotOwned(envName, rgA)
+		opts.ListResourceGroupLocks = func(
+			_ context.Context, _ string,
+		) ([]*ManagementLock, error) {
+			return nil, nil
+		}
+		opts.ListResourceGroupResources = func(
+			_ context.Context, _ string,
+		) ([]*ResourceWithTags, error) {
+			return nil, makeResponseError(http.StatusNotFound)
+		}
+		res, err := ClassifyResourceGroups(
+			t.Context(), []string{rgA}, opts)
+		require.NoError(t, err)
+		assert.Equal(t, []string{rgA}, res.Owned)
+	})
+
+	t.Run("Tier4 resource list 403 vetoes as safety", func(t *testing.T) {
+		t.Parallel()
+		opts := snapshotOwned(envName, rgA)
+		opts.ListResourceGroupLocks = func(
+			_ context.Context, _ string,
+		) ([]*ManagementLock, error) {
+			return nil, nil
+		}
+		opts.ListResourceGroupResources = func(
+			_ context.Context, _ string,
+		) ([]*ResourceWithTags, error) {
+			return nil, makeResponseError(http.StatusForbidden)
+		}
+		res, err := ClassifyResourceGroups(
+			t.Context(), []string{rgA}, opts)
+		require.NoError(t, err)
+		assert.Empty(t, res.Owned)
+		require.Len(t, res.Skipped, 1)
+		assert.Contains(t, res.Skipped[0].Reason, "authorization")
+	})
+
+	t.Run("Tier4 resource list 500 vetoes as safety", func(t *testing.T) {
+		t.Parallel()
+		opts := snapshotOwned(envName, rgA)
+		opts.ListResourceGroupLocks = func(
+			_ context.Context, _ string,
+		) ([]*ManagementLock, error) {
+			return nil, nil
+		}
+		opts.ListResourceGroupResources = func(
+			_ context.Context, _ string,
+		) ([]*ResourceWithTags, error) {
+			return nil, makeResponseError(http.StatusInternalServerError)
+		}
+		res, err := ClassifyResourceGroups(
+			t.Context(), []string{rgA}, opts)
+		require.NoError(t, err)
+		assert.Empty(t, res.Owned)
+		require.Len(t, res.Skipped, 1)
+		assert.Contains(t, res.Skipped[0].Reason, "error during safety check")
+	})
+
+	t.Run("Tier4 empty envName vetoes for safety", func(t *testing.T) {
+		t.Parallel()
+		opts := snapshotOwned("", rgA)
+		opts.ListResourceGroupLocks = func(
+			_ context.Context, _ string,
+		) ([]*ManagementLock, error) {
+			return nil, nil
+		}
+		opts.ListResourceGroupResources = func(
+			_ context.Context, _ string,
+		) ([]*ResourceWithTags, error) {
+			return nil, nil
+		}
+		res, err := ClassifyResourceGroups(
+			t.Context(), []string{rgA}, opts)
+		require.NoError(t, err)
+		assert.Empty(t, res.Owned)
+		require.Len(t, res.Skipped, 1)
+		assert.Contains(t, res.Skipped[0].Reason, "cannot verify")
+	})
+
+	t.Run("Tier4 extension resources are skipped", func(t *testing.T) {
+		t.Parallel()
+		opts := snapshotOwned(envName, rgA)
+		opts.ListResourceGroupLocks = func(
+			_ context.Context, _ string,
+		) ([]*ManagementLock, error) {
+			return nil, nil
+		}
+		opts.ListResourceGroupResources = func(
+			_ context.Context, _ string,
+		) ([]*ResourceWithTags, error) {
+			return []*ResourceWithTags{
+				{
+					Name: "role-assignment",
+					Type: "Microsoft.Authorization/roleAssignments",
+					// No azd-env-name tag — should be skipped, not treated as foreign
+				},
+			}, nil
+		}
+		res, err := ClassifyResourceGroups(
+			t.Context(), []string{rgA}, opts)
+		require.NoError(t, err)
+		assert.Equal(t, []string{rgA}, res.Owned)
+		assert.Empty(t, res.Skipped)
+	})
+
+	// --- Tag case insensitivity ---
+
+	t.Run("tag matching is case insensitive", func(t *testing.T) {
+		t.Parallel()
+		opts := snapshotOwned(envName, rgA)
+		opts.ListResourceGroupLocks = func(
+			_ context.Context, _ string,
+		) ([]*ManagementLock, error) {
+			return nil, nil
+		}
+		opts.ListResourceGroupResources = func(
+			_ context.Context, _ string,
+		) ([]*ResourceWithTags, error) {
+			return []*ResourceWithTags{
+				{
+					Name: "vm1",
+					Type: "Microsoft.Compute/virtualMachines",
+					Tags: map[string]*string{
+						"AZD-ENV-NAME": strPtr("MYENV"),
+					},
+				},
+			}, nil
+		}
+		res, err := ClassifyResourceGroups(
+			t.Context(), []string{rgA}, opts)
+		require.NoError(t, err)
+		assert.Equal(t, []string{rgA}, res.Owned)
+		assert.Empty(t, res.Skipped)
+	})
+
+	// --- Multi-RG parallelism ---
+
+	t.Run("multiple RGs classified in parallel", func(t *testing.T) {
+		t.Parallel()
+		opts := snapshotOwned(envName, rgA, rgB, rgC)
+		var lockCalls atomic.Int32
+		opts.ListResourceGroupLocks = func(
+			_ context.Context, _ string,
+		) ([]*ManagementLock, error) {
+			lockCalls.Add(1)
+			return nil, nil
+		}
+		var resCalls atomic.Int32
+		opts.ListResourceGroupResources = func(
+			_ context.Context, _ string,
+		) ([]*ResourceWithTags, error) {
+			resCalls.Add(1)
+			return []*ResourceWithTags{
+				{
+					Name: "vm",
+					Type: "Microsoft.Compute/virtualMachines",
+					Tags: map[string]*string{
+						cAzdEnvNameTag: strPtr(envName),
+					},
+				},
+			}, nil
+		}
+		res, err := ClassifyResourceGroups(
+			t.Context(), []string{rgA, rgB, rgC}, opts)
+		require.NoError(t, err)
+		assert.Len(t, res.Owned, 3)
+		assert.Empty(t, res.Skipped)
+		assert.Equal(t, int32(3), lockCalls.Load())
+		assert.Equal(t, int32(3), resCalls.Load())
+	})
+
+	t.Run("cancelled context vetoes remaining RGs", func(t *testing.T) {
 		t.Parallel()
 		ctx, cancel := context.WithCancel(t.Context())
 		cancel() // cancel immediately
-
-		opts := ClassifyOptions{
-			EnvName: envName,
-			GetResourceGroupTags: func(ctx context.Context, _ string) (map[string]*string, error) {
-				return nil, ctx.Err()
-			},
-		}
-		// RG with no deployment ops → goes to Tier 2 → calls GetResourceGroupTags → gets ctx.Err()
-		ops := []*armresources.DeploymentOperation{}
-		_, err := ClassifyResourceGroups(ctx, ops, []string{rgA}, opts)
-		require.Error(t, err, "context cancellation should propagate as an error")
-	})
-
-	t.Run("Tier1 Create overrides preceding Read for same RG", func(t *testing.T) {
-		t.Parallel()
-		ops := []*armresources.DeploymentOperation{
-			makeOperation("Read", rgOp, rgA),
-			makeOperation("Create", rgOp, rgA),
-		}
-		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgA}, noopOpts(envName))
-		require.NoError(t, err)
-		assert.Equal(t, []string{rgA}, res.Owned)
-		assert.Empty(t, res.Skipped)
-	})
-
-	t.Run("Tier1 Create overrides following Read for same RG", func(t *testing.T) {
-		t.Parallel()
-		ops := []*armresources.DeploymentOperation{
-			makeOperation("Create", rgOp, rgA),
-			makeOperation("Read", rgOp, rgA),
-		}
-		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgA}, noopOpts(envName))
-		require.NoError(t, err)
-		assert.Equal(t, []string{rgA}, res.Owned)
-		assert.Empty(t, res.Skipped)
-	})
-
-	t.Run("Tier1 RG name match is case-insensitive — Create", func(t *testing.T) {
-		t.Parallel()
-		ops := []*armresources.DeploymentOperation{
-			makeOperation("Create", rgOp, "RG-ALPHA"),
-		}
-		res, err := ClassifyResourceGroups(
-			t.Context(), ops, []string{"rg-alpha"}, noopOpts(envName),
-		)
-		require.NoError(t, err)
-		assert.Equal(t, []string{"rg-alpha"}, res.Owned)
-		assert.Empty(t, res.Skipped)
-	})
-
-	t.Run("Tier1 RG name match is case-insensitive — Read", func(t *testing.T) {
-		t.Parallel()
-		ops := []*armresources.DeploymentOperation{
-			makeOperation("Read", rgOp, "RG-Alpha"),
-		}
-		res, err := ClassifyResourceGroups(
-			t.Context(), ops, []string{"rg-alpha"}, noopOpts(envName),
-		)
+		opts := snapshotOwned(envName, rgA)
+		res, err := ClassifyResourceGroups(ctx, []string{rgA}, opts)
 		require.NoError(t, err)
 		assert.Empty(t, res.Owned)
 		require.Len(t, res.Skipped, 1)
-		assert.Equal(t, "rg-alpha", res.Skipped[0].Name)
-		assert.Contains(t, res.Skipped[0].Reason, "Read")
-	})
-
-	t.Run("Tier4 empty EnvName vetoes deletion", func(t *testing.T) {
-		t.Parallel()
-		ops := []*armresources.DeploymentOperation{
-			makeOperation("Create", rgOp, rgA),
-		}
-		opts := ClassifyOptions{
-			EnvName: "", // empty env name
-			ListResourceGroupResources: func(
-				_ context.Context, _ string,
-			) ([]*ResourceWithTags, error) {
-				t.Fatal("should not be called when EnvName is empty")
-				return nil, nil
-			},
-		}
-		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgA}, opts)
-		require.NoError(t, err)
-		assert.Empty(t, res.Owned, "empty EnvName should veto all owned RGs")
-		require.Len(t, res.Skipped, 1)
-		assert.Contains(t, res.Skipped[0].Reason, "without environment name")
-	})
-
-	t.Run("Tier3 prompter error propagated", func(t *testing.T) {
-		t.Parallel()
-		ops := []*armresources.DeploymentOperation{} // no ops → Tier 2
-		opts := ClassifyOptions{
-			EnvName:     envName,
-			Interactive: true,
-			Prompter: func(_, _ string) (bool, error) {
-				return false, fmt.Errorf("prompt failure")
-			},
-		}
-		_, err := ClassifyResourceGroups(t.Context(), ops, []string{rgA}, opts)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "tier=3 prompt")
-		assert.Contains(t, err.Error(), "prompt failure")
-	})
-
-	t.Run("Tier4 prompter error propagated", func(t *testing.T) {
-		t.Parallel()
-		ops := []*armresources.DeploymentOperation{
-			makeOperation("Create", rgOp, rgA),
-		}
-		opts := ClassifyOptions{
-			EnvName:     envName,
-			Interactive: true,
-			ListResourceGroupResources: func(
-				_ context.Context, _ string,
-			) ([]*ResourceWithTags, error) {
-				return []*ResourceWithTags{
-					{Name: "foreign-res", Tags: nil},
-				}, nil
-			},
-			Prompter: func(_, _ string) (bool, error) {
-				return false, fmt.Errorf("tier4 prompt failure")
-			},
-		}
-		_, err := ClassifyResourceGroups(t.Context(), ops, []string{rgA}, opts)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "tier=4 prompt")
-		assert.Contains(t, err.Error(), "tier4 prompt failure")
-	})
-
-	t.Run("Tier4 resource listing 404 — no veto", func(t *testing.T) {
-		t.Parallel()
-		ops := []*armresources.DeploymentOperation{
-			makeOperation("Create", rgOp, rgA),
-		}
-		opts := ClassifyOptions{
-			EnvName: envName,
-			ListResourceGroupResources: func(
-				_ context.Context, _ string,
-			) ([]*ResourceWithTags, error) {
-				return nil, makeResponseError(404)
-			},
-		}
-		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgA}, opts)
-		require.NoError(t, err)
-		assert.Equal(t, []string{rgA}, res.Owned, "404 in Tier 4 should not veto")
-		assert.Empty(t, res.Skipped)
-	})
-
-	t.Run("Tier4 semaphore respects context cancellation", func(t *testing.T) {
-		t.Parallel()
-		ctx, cancel := context.WithCancel(t.Context())
-
-		// Create more RGs than semaphore capacity to exercise the select.
-		manyRGs := make([]string, cTier4Parallelism+3)
-		ops := make([]*armresources.DeploymentOperation, len(manyRGs))
-		for i := range manyRGs {
-			manyRGs[i] = fmt.Sprintf("rg-%d", i)
-			ops[i] = makeOperation("Create", rgOp, manyRGs[i])
-		}
-
-		callCount := atomic.Int32{}
-		opts := ClassifyOptions{
-			EnvName: envName,
-			ListResourceGroupLocks: func(
-				_ context.Context, _ string,
-			) ([]*ManagementLock, error) {
-				callCount.Add(1)
-				if callCount.Load() >= 2 {
-					cancel() // cancel after 2 lock checks
-				}
-				return nil, nil
-			},
-		}
-		res, err := ClassifyResourceGroups(ctx, ops, manyRGs, opts)
-		require.NoError(t, err)
-		// Some RGs should be vetoed due to context cancellation.
-		assert.NotEmpty(t, res.Skipped, "cancelled context should veto remaining RGs")
-	})
-
-	t.Run("Tier4 handles multiple RGs in parallel with mixed outcomes", func(t *testing.T) {
-		t.Parallel()
-		rgs := []string{"rg-1", "rg-2", "rg-3", "rg-4", "rg-5", "rg-6"}
-		ops := make([]*armresources.DeploymentOperation, 0, len(rgs))
-		for _, rg := range rgs {
-			ops = append(ops, makeOperation("Create", rgOp, rg))
-		}
-
-		var lockCalls atomic.Int32
-		var resourceCalls atomic.Int32
-		opts := ClassifyOptions{
-			EnvName: envName,
-			ListResourceGroupLocks: func(_ context.Context, rgName string) ([]*ManagementLock, error) {
-				lockCalls.Add(1)
-				if rgName == "rg-2" {
-					return []*ManagementLock{{Name: "no-delete", LockType: cLockCanNotDelete}}, nil
-				}
-				return nil, nil
-			},
-			ListResourceGroupResources: func(_ context.Context, rgName string) ([]*ResourceWithTags, error) {
-				resourceCalls.Add(1)
-				if rgName == "rg-3" {
-					return []*ResourceWithTags{
-						{Name: "foreign-vm", Type: "Microsoft.Compute/virtualMachines", Tags: map[string]*string{
-							cAzdEnvNameTag: strPtr("other-env"),
-						}},
-					}, nil
-				}
-				return []*ResourceWithTags{
-					{Name: "owned", Type: "Microsoft.Compute/virtualMachines", Tags: map[string]*string{
-						cAzdEnvNameTag: strPtr(envName),
-					}},
-				}, nil
-			},
-		}
-
-		res, err := ClassifyResourceGroups(t.Context(), ops, rgs, opts)
-		require.NoError(t, err)
-		assert.Equal(t,
-			int32(len(rgs)), lockCalls.Load()) //nolint:gosec
-		assert.Equal(t,
-			int32(len(rgs)-1), resourceCalls.Load(), //nolint:gosec
-			"locked RG should short-circuit resource listing")
-		assert.ElementsMatch(t, []string{"rg-1", "rg-4", "rg-5", "rg-6"}, res.Owned)
-		require.Len(t, res.Skipped, 2)
-		assert.ElementsMatch(t, []string{"rg-2", "rg-3"}, []string{res.Skipped[0].Name, res.Skipped[1].Name})
-	})
-
-	t.Run("Tier2 nil TagReader falls through to Tier3", func(t *testing.T) {
-		t.Parallel()
-		// No operations → Tier 1 classifies RG as "unknown", Tier 2 has nil
-		// GetResourceGroupTags → falls through, Tier 3 interactive prompt decides.
-		opts := ClassifyOptions{
-			EnvName:              envName,
-			Interactive:          true,
-			GetResourceGroupTags: nil,
-			Prompter: func(rgName, _ string) (bool, error) {
-				return true, nil
-			},
-		}
-		res, err := ClassifyResourceGroups(
-			t.Context(), nil, []string{rgA}, opts,
-		)
-		require.NoError(t, err)
-		assert.Equal(t, []string{rgA}, res.Owned)
-	})
-
-	t.Run("Tier3 nil Prompter skips unknown RGs", func(t *testing.T) {
-		t.Parallel()
-		// Unknown RG, interactive mode, but nil prompter → skip (no crash).
-		opts := ClassifyOptions{
-			EnvName:     envName,
-			Interactive: true,
-			Prompter:    nil,
-		}
-		res, err := ClassifyResourceGroups(
-			t.Context(), nil, []string{rgA}, opts,
-		)
-		require.NoError(t, err)
-		assert.Empty(t, res.Owned, "nil prompter should not classify as owned")
-		require.Len(t, res.Skipped, 1)
-		assert.Contains(t, res.Skipped[0].Reason, "unknown")
-	})
-
-	// --- Coverage gap tests ---
-
-	t.Run("operationTargetsRG ResourceName nil with non-nil ResourceType", func(t *testing.T) {
-		t.Parallel()
-		// Cover the || second operand: ResourceType is non-nil but ResourceName is nil.
-		_, ok := operationTargetsRG(&armresources.DeploymentOperation{
-			Properties: &armresources.DeploymentOperationProperties{
-				ProvisioningOperation: new(armresources.ProvisioningOperation("Create")),
-				TargetResource: &armresources.TargetResource{
-					ResourceType: new("Microsoft.Resources/resourceGroups"),
-					ResourceName: nil,
-				},
-			},
-		}, "Create")
-		assert.False(t, ok, "should return false when ResourceName is nil")
-	})
-
-	t.Run("operationTargetsRG non-matching resource type ignored", func(t *testing.T) {
-		t.Parallel()
-		// Operation targets a non-RG resource (e.g., a storage account) — should not match.
-		ops := []*armresources.DeploymentOperation{
-			makeOperation("Create", "Microsoft.Storage/storageAccounts", "mystorage"),
-		}
-		// RG "mystorage" should fall to unknown since the op is not an RG op.
-		res, err := ClassifyResourceGroups(
-			t.Context(), ops, []string{"mystorage"}, noopOpts(envName),
-		)
-		require.NoError(t, err)
-		assert.Empty(t, res.Owned, "non-RG resource type should not classify as owned")
-	})
-
-	t.Run("tagValue with nil value pointer returns empty string", func(t *testing.T) {
-		t.Parallel()
-		// Tier 2 tag check where tag key exists but value pointer is nil.
-		// This should not be treated as "both tags present" because the value is empty.
-		opts := ClassifyOptions{
-			EnvName:     envName,
-			Interactive: false,
-			GetResourceGroupTags: func(_ context.Context, _ string) (map[string]*string, error) {
-				return map[string]*string{
-					cAzdEnvNameTag:       strPtr(envName),
-					cAzdProvisionHashTag: nil, // key present, value nil → treated as empty → not dual-tagged
-				}, nil
-			},
-		}
-		res, err := ClassifyResourceGroups(t.Context(), nil, []string{rgA}, opts)
-		require.NoError(t, err)
-		assert.Empty(t, res.Owned, "nil tag value should not satisfy dual-tag check")
-		require.Len(t, res.Skipped, 1)
-		assert.Contains(t, res.Skipped[0].Reason, "Tier 3",
-			"nil tag value should fall through to Tier 3")
-	})
-
-	t.Run("Tier4 500 on resource listing treated as veto (fail-safe)", func(t *testing.T) {
-		t.Parallel()
-		opts := ClassifyOptions{
-			EnvName: envName,
-			ListResourceGroupResources: func(_ context.Context, _ string) ([]*ResourceWithTags, error) {
-				return nil, &azcore.ResponseError{StatusCode: http.StatusInternalServerError}
-			},
-		}
-		ops := []*armresources.DeploymentOperation{makeOperation("Create", rgOp, rgA)}
-		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgA}, opts)
-		require.NoError(t, err)
-		assert.Empty(t, res.Owned, "500 from resource listing should veto")
-		require.Len(t, res.Skipped, 1)
 		assert.Contains(t, res.Skipped[0].Reason, "error during safety check")
-	})
-
-	t.Run("Tier4 non-azcore network error on locks treated as veto (fail-safe)", func(t *testing.T) {
-		t.Parallel()
-		opts := ClassifyOptions{
-			EnvName: envName,
-			ListResourceGroupLocks: func(_ context.Context, _ string) ([]*ManagementLock, error) {
-				return nil, fmt.Errorf("dial tcp: connection refused")
-			},
-		}
-		ops := []*armresources.DeploymentOperation{makeOperation("Create", rgOp, rgA)}
-		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgA}, opts)
-		require.NoError(t, err)
-		assert.Empty(t, res.Owned, "non-azcore error on locks should veto")
-		require.Len(t, res.Skipped, 1)
-		assert.Contains(t, res.Skipped[0].Reason, "error during safety check")
-	})
-
-	t.Run("Tier4 non-azcore network error on resource listing treated as veto (fail-safe)", func(t *testing.T) {
-		t.Parallel()
-		opts := ClassifyOptions{
-			EnvName: envName,
-			ListResourceGroupResources: func(_ context.Context, _ string) ([]*ResourceWithTags, error) {
-				return nil, fmt.Errorf("dial tcp: connection refused")
-			},
-		}
-		ops := []*armresources.DeploymentOperation{makeOperation("Create", rgOp, rgA)}
-		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgA}, opts)
-		require.NoError(t, err)
-		assert.Empty(t, res.Owned, "non-azcore error on resource listing should veto")
-		require.Len(t, res.Skipped, 1)
-		assert.Contains(t, res.Skipped[0].Reason, "error during safety check")
-	})
-
-	t.Run("Tier4 extension resource types skipped in foreign check", func(t *testing.T) {
-		t.Parallel()
-		opts := ClassifyOptions{
-			EnvName: envName,
-			ListResourceGroupResources: func(
-				_ context.Context, _ string,
-			) ([]*ResourceWithTags, error) {
-				return []*ResourceWithTags{
-					{
-						Name: "my-vm",
-						Type: "Microsoft.Compute/virtualMachines",
-						Tags: map[string]*string{
-							cAzdEnvNameTag: strPtr(envName),
-						},
-					},
-					{
-						Name: "role-assignment",
-						Type: "Microsoft.Authorization/roleAssignments",
-						Tags: nil, // no tags — extension resource
-					},
-					{
-						Name: "diag-setting",
-						Type: "Microsoft.Insights/diagnosticSettings",
-						Tags: nil,
-					},
-					{
-						Name: "res-link",
-						Type: "Microsoft.Resources/links",
-						Tags: nil,
-					},
-				}, nil
-			},
-		}
-		ops := []*armresources.DeploymentOperation{
-			makeOperation("Create", rgOp, rgA),
-		}
-		res, err := ClassifyResourceGroups(
-			t.Context(), ops, []string{rgA}, opts,
-		)
-		require.NoError(t, err)
-		assert.Contains(t, res.Owned, rgA,
-			"extension resources should not trigger foreign veto")
-		assert.Empty(t, res.Skipped)
-	})
-
-	t.Run("Tier4 mixed extension and real foreign resources", func(t *testing.T) {
-		t.Parallel()
-		opts := ClassifyOptions{
-			EnvName:     envName,
-			Interactive: false,
-			ListResourceGroupResources: func(
-				_ context.Context, _ string,
-			) ([]*ResourceWithTags, error) {
-				return []*ResourceWithTags{
-					{
-						Name: "role-assignment",
-						Type: "Microsoft.Authorization/roleAssignments",
-						Tags: nil,
-					},
-					{
-						Name: "foreign-vm",
-						Type: "Microsoft.Compute/virtualMachines",
-						Tags: map[string]*string{
-							cAzdEnvNameTag: strPtr("other-env"),
-						},
-					},
-				}, nil
-			},
-		}
-		ops := []*armresources.DeploymentOperation{
-			makeOperation("Create", rgOp, rgA),
-		}
-		res, err := ClassifyResourceGroups(
-			t.Context(), ops, []string{rgA}, opts,
-		)
-		require.NoError(t, err)
-		assert.Empty(t, res.Owned,
-			"real foreign resource should still trigger veto")
-		require.Len(t, res.Skipped, 1)
-		assert.Contains(t, res.Skipped[0].Reason, "foreign resource")
 	})
 }
 
 func TestIsExtensionResourceType(t *testing.T) {
 	t.Parallel()
-
 	tests := []struct {
-		name         string
-		resourceType string
-		expected     bool
+		name     string
+		resType  string
+		expected bool
 	}{
 		{
-			name:         "Authorization roleAssignment",
-			resourceType: "Microsoft.Authorization/roleAssignments",
-			expected:     true,
+			name:     "role assignment",
+			resType:  "Microsoft.Authorization/roleAssignments",
+			expected: true,
 		},
 		{
-			name:         "Authorization roleDefinitions",
-			resourceType: "Microsoft.Authorization/roleDefinitions",
-			expected:     true,
+			name:     "role definition",
+			resType:  "Microsoft.Authorization/roleDefinitions",
+			expected: true,
 		},
 		{
-			name:         "Authorization locks",
-			resourceType: "Microsoft.Authorization/locks",
-			expected:     true,
+			name:     "diagnostic setting",
+			resType:  "Microsoft.Insights/diagnosticSettings",
+			expected: true,
 		},
 		{
-			name:         "Authorization policyAssignments",
-			resourceType: "Microsoft.Authorization/policyAssignments",
-			expected:     true,
+			name:     "resource link",
+			resType:  "Microsoft.Resources/links",
+			expected: true,
 		},
 		{
-			name:         "Insights diagnosticSettings",
-			resourceType: "Microsoft.Insights/diagnosticSettings",
-			expected:     true,
+			name:     "case insensitive",
+			resType:  "MICROSOFT.AUTHORIZATION/ROLEASSIGNMENTS",
+			expected: true,
 		},
 		{
-			name:         "Resources links",
-			resourceType: "Microsoft.Resources/links",
-			expected:     true,
+			name:     "compute VM is not extension",
+			resType:  "Microsoft.Compute/virtualMachines",
+			expected: false,
 		},
 		{
-			name:         "case insensitive match",
-			resourceType: "microsoft.authorization/roleassignments",
-			expected:     true,
-		},
-		{
-			name:         "Compute VM is not extension",
-			resourceType: "Microsoft.Compute/virtualMachines",
-			expected:     false,
-		},
-		{
-			name:         "Storage account is not extension",
-			resourceType: "Microsoft.Storage/storageAccounts",
-			expected:     false,
-		},
-		{
-			name:         "Insights components is not extension",
-			resourceType: "Microsoft.Insights/components",
-			expected:     false,
-		},
-		{
-			name:         "empty string",
-			resourceType: "",
-			expected:     false,
+			name:     "storage account is not extension",
+			resType:  "Microsoft.Storage/storageAccounts",
+			expected: false,
 		},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := isExtensionResourceType(tt.resourceType)
-			assert.Equal(t, tt.expected, got)
+			assert.Equal(t, tt.expected, isExtensionResourceType(tt.resType))
 		})
 	}
 }
@@ -1250,109 +600,84 @@ func TestClassifyResourceGroups_ForceMode(t *testing.T) {
 	t.Parallel()
 
 	const (
-		rgOwned    = "rg-owned"
-		rgExternal = "rg-external"
-		rgUnknown  = "rg-unknown"
-		envName    = "myenv"
+		rgA     = "rg-alpha"
+		rgB     = "rg-beta"
+		envName = "myenv"
 	)
 
-	rgOp := "Microsoft.Resources/resourceGroups"
-
-	t.Run("ForceMode protects Tier1 external RGs", func(t *testing.T) {
+	t.Run("without snapshot treats all as owned", func(t *testing.T) {
 		t.Parallel()
-		ops := []*armresources.DeploymentOperation{
-			makeOperation("Create", rgOp, rgOwned),
-			makeOperation("Read", rgOp, rgExternal),
-		}
 		opts := ClassifyOptions{
-			ForceMode: true,
 			EnvName:   envName,
-		}
-		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgOwned, rgExternal}, opts)
-		require.NoError(t, err)
-		assert.Equal(t, []string{rgOwned}, res.Owned)
-		require.Len(t, res.Skipped, 1)
-		assert.Equal(t, rgExternal, res.Skipped[0].Name)
-		assert.Contains(t, res.Skipped[0].Reason, "Tier 1")
-	})
-
-	t.Run("ForceMode treats unknowns as owned", func(t *testing.T) {
-		t.Parallel()
-		ops := []*armresources.DeploymentOperation{
-			makeOperation("Create", rgOp, rgOwned),
-		}
-		opts := ClassifyOptions{
 			ForceMode: true,
-			EnvName:   envName,
 		}
-		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgOwned, rgUnknown}, opts)
+		res, err := ClassifyResourceGroups(
+			t.Context(), []string{rgA, rgB}, opts)
 		require.NoError(t, err)
-		assert.Contains(t, res.Owned, rgOwned)
-		assert.Contains(t, res.Owned, rgUnknown)
+		assert.Equal(t, []string{rgA, rgB}, res.Owned)
 		assert.Empty(t, res.Skipped)
 	})
 
-	t.Run("ForceMode with nil operations treats all as owned", func(t *testing.T) {
+	t.Run("without snapshot skips all callbacks", func(t *testing.T) {
 		t.Parallel()
 		opts := ClassifyOptions{
-			ForceMode: true,
 			EnvName:   envName,
+			ForceMode: true,
+			ListResourceGroupLocks: func(
+				_ context.Context, _ string,
+			) ([]*ManagementLock, error) {
+				t.Fatal("should not be called")
+				return nil, nil
+			},
+			ListResourceGroupResources: func(
+				_ context.Context, _ string,
+			) ([]*ResourceWithTags, error) {
+				t.Fatal("should not be called")
+				return nil, nil
+			},
 		}
-		res, err := ClassifyResourceGroups(t.Context(), nil, []string{rgOwned, rgExternal}, opts)
+		res, err := ClassifyResourceGroups(
+			t.Context(), []string{rgA}, opts)
 		require.NoError(t, err)
-		assert.Len(t, res.Owned, 2)
-		assert.Empty(t, res.Skipped)
+		assert.Equal(t, []string{rgA}, res.Owned)
 	})
 
-	t.Run("ForceMode skips Tier2/3/4 callbacks", func(t *testing.T) {
+	t.Run("with snapshot uses deterministic classification", func(t *testing.T) {
 		t.Parallel()
-		ops := []*armresources.DeploymentOperation{
-			makeOperation("Create", rgOp, rgOwned),
-		}
-		callbackCalled := false
-		opts := ClassifyOptions{
-			ForceMode: true,
-			EnvName:   envName,
-			GetResourceGroupTags: func(_ context.Context, _ string) (map[string]*string, error) {
-				callbackCalled = true
-				return nil, nil
-			},
-			ListResourceGroupLocks: func(_ context.Context, _ string) ([]*ManagementLock, error) {
-				callbackCalled = true
-				return nil, nil
-			},
-			ListResourceGroupResources: func(_ context.Context, _ string) ([]*ResourceWithTags, error) {
-				callbackCalled = true
-				return nil, nil
-			},
-			Prompter: func(_, _ string) (bool, error) {
-				callbackCalled = true
-				return false, nil
-			},
-		}
-		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgOwned, rgUnknown}, opts)
+		opts := snapshotOwned(envName, rgA)
+		opts.ForceMode = true
+		res, err := ClassifyResourceGroups(
+			t.Context(), []string{rgA, rgB}, opts)
 		require.NoError(t, err)
-		assert.False(t, callbackCalled, "Tier 2/3/4 callbacks should not be invoked in ForceMode")
-		assert.Len(t, res.Owned, 2)
-	})
-
-	t.Run("ForceMode with EvaluateDeploymentOutput external", func(t *testing.T) {
-		t.Parallel()
-		ops := []*armresources.DeploymentOperation{
-			makeOperation("Create", rgOp, rgOwned),
-			makeOperation("EvaluateDeploymentOutput", rgOp, rgExternal),
-		}
-		opts := ClassifyOptions{
-			ForceMode: true,
-			EnvName:   envName,
-		}
-		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgOwned, rgExternal}, opts)
-		require.NoError(t, err)
-		assert.Equal(t, []string{rgOwned}, res.Owned)
+		assert.Equal(t, []string{rgA}, res.Owned)
 		require.Len(t, res.Skipped, 1)
-		assert.Equal(t, rgExternal, res.Skipped[0].Name)
+		assert.Equal(t, rgB, res.Skipped[0].Name)
 	})
 
+	t.Run(
+		"with snapshot skips Tier4 callbacks",
+		func(t *testing.T) {
+			t.Parallel()
+			opts := snapshotOwned(envName, rgA)
+			opts.ForceMode = true
+			opts.ListResourceGroupLocks = func(
+				_ context.Context, _ string,
+			) ([]*ManagementLock, error) {
+				t.Fatal("should not be called")
+				return nil, nil
+			}
+			opts.ListResourceGroupResources = func(
+				_ context.Context, _ string,
+			) ([]*ResourceWithTags, error) {
+				t.Fatal("should not be called")
+				return nil, nil
+			}
+			res, err := ClassifyResourceGroups(
+				t.Context(), []string{rgA}, opts)
+			require.NoError(t, err)
+			assert.Equal(t, []string{rgA}, res.Owned)
+		},
+	)
 }
 
 func TestClassifyResourceGroups_Snapshot(t *testing.T) {
@@ -1361,395 +686,92 @@ func TestClassifyResourceGroups_Snapshot(t *testing.T) {
 	const (
 		rgA     = "rg-alpha"
 		rgB     = "rg-beta"
-		rgC     = "rg-gamma"
 		envName = "myenv"
 	)
 
-	rgOp := "Microsoft.Resources/resourceGroups"
-
-	t.Run("owned and external", func(t *testing.T) {
+	t.Run("nil snapshot falls back to guard", func(t *testing.T) {
 		t.Parallel()
-		predicted := map[string]bool{
-			"rg-alpha": true,
-			"rg-beta":  true,
-		}
 		opts := ClassifyOptions{
-			EnvName:              envName,
-			SnapshotPredictedRGs: predicted,
+			EnvName:     envName,
+			Interactive: false,
+			// No SnapshotPredictedRGs
 		}
-		// rgC is NOT in the predicted set → external
-		res, err := ClassifyResourceGroups(t.Context(), nil, []string{rgA, rgB, rgC}, opts)
+		res, err := ClassifyResourceGroups(
+			t.Context(), []string{rgA}, opts)
 		require.NoError(t, err)
-		assert.ElementsMatch(t, []string{rgA, rgB}, res.Owned)
+		assert.Empty(t, res.Owned)
 		require.Len(t, res.Skipped, 1)
-		assert.Equal(t, rgC, res.Skipped[0].Name)
-		assert.Contains(t, res.Skipped[0].Reason, "snapshot")
+		assert.Contains(t, res.Skipped[0].Reason, "snapshot unavailable")
 	})
 
-	t.Run("case insensitive matching", func(t *testing.T) {
-		t.Parallel()
-		predicted := map[string]bool{
-			"rg-alpha": true, // lowercased in the map
-		}
-		opts := ClassifyOptions{
-			EnvName:              envName,
-			SnapshotPredictedRGs: predicted,
-		}
-		// "RG-Alpha" should match "rg-alpha" via ToLower
-		res, err := ClassifyResourceGroups(t.Context(), nil, []string{"RG-Alpha"}, opts)
-		require.NoError(t, err)
-		assert.Equal(t, []string{"RG-Alpha"}, res.Owned)
-		assert.Empty(t, res.Skipped)
-	})
-
-	t.Run("empty snapshot map is fail-safe (all skipped)", func(t *testing.T) {
+	t.Run("empty snapshot map classifies all as external", func(t *testing.T) {
 		t.Parallel()
 		opts := ClassifyOptions{
 			EnvName:              envName,
 			SnapshotPredictedRGs: map[string]bool{},
+			ListResourceGroupResources: func(
+				_ context.Context, _ string,
+			) ([]*ResourceWithTags, error) {
+				return nil, nil
+			},
+			ListResourceGroupLocks: func(
+				_ context.Context, _ string,
+			) ([]*ManagementLock, error) {
+				return nil, nil
+			},
 		}
-		res, err := ClassifyResourceGroups(t.Context(), nil, []string{rgA, rgB}, opts)
+		res, err := ClassifyResourceGroups(
+			t.Context(), []string{rgA, rgB}, opts)
 		require.NoError(t, err)
 		assert.Empty(t, res.Owned)
 		require.Len(t, res.Skipped, 2)
-		assert.ElementsMatch(t, []string{rgA, rgB}, []string{res.Skipped[0].Name, res.Skipped[1].Name})
+		assert.Contains(t, res.Skipped[0].Reason, "snapshot")
 	})
 
-	t.Run("all external", func(t *testing.T) {
+	t.Run("snapshot case-insensitive lookup", func(t *testing.T) {
 		t.Parallel()
-		predicted := map[string]bool{
-			"rg-unrelated": true, // no overlap with test RGs
+		// predictedRGs has lowercase "rg-alpha"
+		opts := snapshotOwned(envName, "rg-alpha")
+		opts.ListResourceGroupResources = func(
+			_ context.Context, _ string,
+		) ([]*ResourceWithTags, error) {
+			return nil, nil
 		}
-		opts := ClassifyOptions{
-			EnvName:              envName,
-			SnapshotPredictedRGs: predicted,
+		opts.ListResourceGroupLocks = func(
+			_ context.Context, _ string,
+		) ([]*ManagementLock, error) {
+			return nil, nil
 		}
-		res, err := ClassifyResourceGroups(t.Context(), nil, []string{rgA, rgB}, opts)
-		require.NoError(t, err)
-		assert.Empty(t, res.Owned)
-		assert.Len(t, res.Skipped, 2)
-	})
-
-	t.Run("ForceMode skips Tier4", func(t *testing.T) {
-		t.Parallel()
-		predicted := map[string]bool{
-			"rg-alpha": true,
-		}
-		var tier4Called bool
-		opts := ClassifyOptions{
-			EnvName:              envName,
-			ForceMode:            true,
-			SnapshotPredictedRGs: predicted,
-			ListResourceGroupLocks: func(_ context.Context, _ string) ([]*ManagementLock, error) {
-				tier4Called = true
-				return nil, nil
-			},
-		}
-		res, err := ClassifyResourceGroups(t.Context(), nil, []string{rgA, rgB}, opts)
-		require.NoError(t, err)
-		assert.False(t, tier4Called, "Tier 4 should not run when ForceMode + snapshot")
-		assert.Equal(t, []string{rgA}, res.Owned)
-		require.Len(t, res.Skipped, 1)
-		assert.Equal(t, rgB, res.Skipped[0].Name)
-	})
-
-	t.Run("Tier4 lock veto", func(t *testing.T) {
-		t.Parallel()
-		predicted := map[string]bool{
-			"rg-alpha": true,
-			"rg-beta":  true,
-		}
-		opts := ClassifyOptions{
-			EnvName:              envName,
-			SnapshotPredictedRGs: predicted,
-			ListResourceGroupLocks: func(_ context.Context, rgName string) ([]*ManagementLock, error) {
-				if rgName == rgA {
-					return []*ManagementLock{{Name: "mylock", LockType: "CanNotDelete"}}, nil
-				}
-				return nil, nil
-			},
-		}
-		res, err := ClassifyResourceGroups(t.Context(), nil, []string{rgA, rgB}, opts)
-		require.NoError(t, err)
-		// rgA is snapshot-owned but vetoed by lock
-		assert.Equal(t, []string{rgB}, res.Owned)
-		require.Len(t, res.Skipped, 1)
-		assert.Equal(t, rgA, res.Skipped[0].Name)
-		assert.Contains(t, res.Skipped[0].Reason, "lock")
-	})
-
-	t.Run("snapshot-owned RG with Tier1 external op is still vetoed by Tier4", func(t *testing.T) {
-		t.Parallel()
-		ops := []*armresources.DeploymentOperation{
-			makeOperation("Read", rgOp, rgA), // ignored in snapshot path
-		}
-		predicted := map[string]bool{
-			"rg-alpha": true, // tampered snapshot claims owned
-		}
-		opts := ClassifyOptions{
-			EnvName:              envName,
-			SnapshotPredictedRGs: predicted,
-			ListResourceGroupLocks: func(_ context.Context, _ string) ([]*ManagementLock, error) {
-				return []*ManagementLock{{Name: "no-delete", LockType: cLockCanNotDelete}}, nil
-			},
-		}
-		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgA}, opts)
-		require.NoError(t, err)
-		assert.Empty(t, res.Owned)
-		require.Len(t, res.Skipped, 1)
-		assert.Equal(t, rgA, res.Skipped[0].Name)
-		assert.Contains(t, res.Skipped[0].Reason, "lock")
-	})
-
-	t.Run("Tier4 foreign resource veto", func(t *testing.T) {
-		t.Parallel()
-		predicted := map[string]bool{
-			"rg-alpha": true,
-		}
-		opts := ClassifyOptions{
-			EnvName:              envName,
-			Interactive:          false,
-			SnapshotPredictedRGs: predicted,
-			ListResourceGroupResources: func(_ context.Context, _ string) ([]*ResourceWithTags, error) {
-				return []*ResourceWithTags{
-					{Name: "foreign-vm", Type: "Microsoft.Compute/virtualMachines", Tags: map[string]*string{
-						"azd-env-name": strPtr("otherenv"),
-					}},
-				}, nil
-			},
-		}
-		res, err := ClassifyResourceGroups(t.Context(), nil, []string{rgA}, opts)
-		require.NoError(t, err)
-		assert.Empty(t, res.Owned)
-		require.Len(t, res.Skipped, 1)
-		assert.Contains(t, res.Skipped[0].Reason, "foreign")
-	})
-
-	t.Run("nil falls back to tier pipeline", func(t *testing.T) {
-		t.Parallel()
-		// SnapshotPredictedRGs is nil → should use Tier 1 pipeline
-		ops := []*armresources.DeploymentOperation{
-			makeOperation("Create", rgOp, rgA),
-		}
-		opts := ClassifyOptions{
-			EnvName:              envName,
-			SnapshotPredictedRGs: nil, // explicitly nil
-		}
-		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgA, rgB}, opts)
-		require.NoError(t, err)
-		// rgA is owned via Tier 1 Create, rgB is unknown → skipped (no Tier 2/3 callbacks)
-		assert.Equal(t, []string{rgA}, res.Owned)
-		require.Len(t, res.Skipped, 1)
-		assert.Equal(t, rgB, res.Skipped[0].Name)
-	})
-
-	t.Run("overrides deployment operations", func(t *testing.T) {
-		t.Parallel()
-		// Even though operations say rgA is "Read" (external), snapshot says it's owned.
-		// Snapshot should take precedence when available.
-		ops := []*armresources.DeploymentOperation{
-			makeOperation("Read", rgOp, rgA),
-		}
-		predicted := map[string]bool{
-			"rg-alpha": true,
-		}
-		opts := ClassifyOptions{
-			EnvName:              envName,
-			SnapshotPredictedRGs: predicted,
-		}
-		res, err := ClassifyResourceGroups(t.Context(), ops, []string{rgA}, opts)
-		require.NoError(t, err)
-		assert.Equal(t, []string{rgA}, res.Owned)
-		assert.Empty(t, res.Skipped)
-	})
-
-	t.Run("Tier4 foreign resource interactive accept", func(t *testing.T) {
-		t.Parallel()
-		predicted := map[string]bool{
-			"rg-alpha": true,
-		}
-		opts := ClassifyOptions{
-			EnvName:              envName,
-			Interactive:          true,
-			SnapshotPredictedRGs: predicted,
-			ListResourceGroupResources: func(
-				_ context.Context, _ string,
-			) ([]*ResourceWithTags, error) {
-				return []*ResourceWithTags{
-					{
-						Name: "foreign-vm",
-						Type: "Microsoft.Compute/virtualMachines",
-						Tags: map[string]*string{
-							"azd-env-name": strPtr("otherenv"),
-						},
-					},
-				}, nil
-			},
-			Prompter: func(_ string, _ string) (bool, error) {
-				return true, nil // user accepts
-			},
-		}
+		// Query with "rg-alpha" — should match
 		res, err := ClassifyResourceGroups(
-			t.Context(), nil, []string{rgA}, opts)
+			t.Context(), []string{"rg-alpha"}, opts)
 		require.NoError(t, err)
-		// User accepted the foreign-resource prompt → owned
-		assert.Equal(t, []string{rgA}, res.Owned)
-		assert.Empty(t, res.Skipped)
+		assert.Equal(t, []string{"rg-alpha"}, res.Owned)
 	})
 
-	t.Run("Tier4 foreign resource interactive reject", func(t *testing.T) {
-		t.Parallel()
-		predicted := map[string]bool{
-			"rg-alpha": true,
-		}
-		opts := ClassifyOptions{
-			EnvName:              envName,
-			Interactive:          true,
-			SnapshotPredictedRGs: predicted,
-			ListResourceGroupResources: func(
-				_ context.Context, _ string,
-			) ([]*ResourceWithTags, error) {
-				return []*ResourceWithTags{
-					{
-						Name: "foreign-vm",
-						Type: "Microsoft.Compute/virtualMachines",
-						Tags: map[string]*string{
-							"azd-env-name": strPtr("otherenv"),
-						},
-					},
-				}, nil
-			},
-			Prompter: func(_ string, _ string) (bool, error) {
-				return false, nil // user rejects
-			},
-		}
-		res, err := ClassifyResourceGroups(
-			t.Context(), nil, []string{rgA}, opts)
-		require.NoError(t, err)
-		assert.Empty(t, res.Owned)
-		require.Len(t, res.Skipped, 1)
-		assert.Contains(t, res.Skipped[0].Reason, "foreign")
-	})
-}
-
-// TestClassifyResourceGroups_TagKeyCaseInsensitive verifies that
-// the Tier 2 tag check and Tier 4 foreign-resource check are
-// case-insensitive with respect to tag key names. Azure Resource
-// Manager treats tag keys as case-insensitive, so "AZD-Env-Name"
-// must match "azd-env-name".
-func TestClassifyResourceGroups_TagKeyCaseInsensitive(t *testing.T) {
-	t.Parallel()
-
-	const (
-		rgA     = "rg-alpha"
-		envName = "myenv"
-	)
-
-	t.Run("Tier2 owned with mixed-case tag keys", func(t *testing.T) {
-		t.Parallel()
-		opts := ClassifyOptions{
-			EnvName: envName,
-			GetResourceGroupTags: func(
-				_ context.Context, _ string,
-			) (map[string]*string, error) {
-				return map[string]*string{
-					"AZD-Env-Name":             strPtr(envName),
-					"AZD-Provision-Param-Hash": strPtr("abc123"),
-				}, nil
-			},
-		}
-		res, err := ClassifyResourceGroups(
-			t.Context(), nil, []string{rgA}, opts,
-		)
-		require.NoError(t, err)
-		assert.Contains(t, res.Owned, rgA)
-		assert.Empty(t, res.Skipped)
-	})
-
-	t.Run("Tier2 owned with UPPER-case tag keys", func(t *testing.T) {
-		t.Parallel()
-		opts := ClassifyOptions{
-			EnvName: envName,
-			GetResourceGroupTags: func(
-				_ context.Context, _ string,
-			) (map[string]*string, error) {
-				return map[string]*string{
-					"AZD-ENV-NAME":             strPtr(envName),
-					"AZD-PROVISION-PARAM-HASH": strPtr("hash1"),
-				}, nil
-			},
-		}
-		res, err := ClassifyResourceGroups(
-			t.Context(), nil, []string{rgA}, opts,
-		)
-		require.NoError(t, err)
-		assert.Contains(t, res.Owned, rgA)
-	})
-
-	t.Run("Tier4 foreign resource with mixed-case tag key",
+	t.Run(
+		"snapshot mixed owned and external",
 		func(t *testing.T) {
 			t.Parallel()
-			rgOp := "Microsoft.Resources/resourceGroups"
-			ops := []*armresources.DeploymentOperation{
-				makeOperation("Create", rgOp, rgA),
+			opts := snapshotOwned(envName, rgA) // only rgA is owned
+			opts.ListResourceGroupResources = func(
+				_ context.Context, _ string,
+			) ([]*ResourceWithTags, error) {
+				return nil, nil
 			}
-			opts := ClassifyOptions{
-				EnvName:     envName,
-				Interactive: false,
-				ListResourceGroupResources: func(
-					_ context.Context, _ string,
-				) ([]*ResourceWithTags, error) {
-					return []*ResourceWithTags{
-						{
-							Name: "my-vm",
-							Type: "Microsoft.Compute/virtualMachines",
-							Tags: map[string]*string{
-								// Mixed-case key must match.
-								"AZD-Env-Name": strPtr(envName),
-							},
-						},
-					}, nil
-				},
+			opts.ListResourceGroupLocks = func(
+				_ context.Context, _ string,
+			) ([]*ManagementLock, error) {
+				return nil, nil
 			}
 			res, err := ClassifyResourceGroups(
-				t.Context(), ops, []string{rgA}, opts,
-			)
+				t.Context(), []string{rgA, rgB}, opts)
 			require.NoError(t, err)
-			// Resource matches → no foreign veto.
-			assert.Contains(t, res.Owned, rgA)
-			assert.Empty(t, res.Skipped)
-		})
-
-	t.Run("Tier4 foreign veto still fires with wrong env value",
-		func(t *testing.T) {
-			t.Parallel()
-			rgOp := "Microsoft.Resources/resourceGroups"
-			ops := []*armresources.DeploymentOperation{
-				makeOperation("Create", rgOp, rgA),
-			}
-			opts := ClassifyOptions{
-				EnvName:     envName,
-				Interactive: false,
-				ListResourceGroupResources: func(
-					_ context.Context, _ string,
-				) ([]*ResourceWithTags, error) {
-					return []*ResourceWithTags{
-						{
-							Name: "other-vm",
-							Type: "Microsoft.Compute/virtualMachines",
-							Tags: map[string]*string{
-								"AZD-Env-Name": strPtr("other-env"),
-							},
-						},
-					}, nil
-				},
-			}
-			res, err := ClassifyResourceGroups(
-				t.Context(), ops, []string{rgA}, opts,
-			)
-			require.NoError(t, err)
-			assert.Empty(t, res.Owned)
+			assert.Equal(t, []string{rgA}, res.Owned)
 			require.Len(t, res.Skipped, 1)
-			assert.Contains(t, res.Skipped[0].Reason, "foreign")
-		})
+			assert.Equal(t, rgB, res.Skipped[0].Name)
+			assert.Contains(t, res.Skipped[0].Reason,
+				"not in predictedResources")
+		},
+	)
 }

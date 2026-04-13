@@ -214,8 +214,7 @@ func TestBicepDestroy(t *testing.T) {
 			)
 		})
 
-		// Tier 1 returns empty operations, Tier 2 falls through (no provision-param-hash
-		// tag on the RG), so Tier 3 prompts the user per unknown resource group.
+		// Snapshot unavailable → prompts user for each unknown RG.
 		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
 			return strings.Contains(
 				options.Message, "Delete resource group 'RESOURCE_GROUP'?",
@@ -235,7 +234,7 @@ func TestBicepDestroy(t *testing.T) {
 		require.Nil(t, err)
 		require.NotNil(t, destroyResult)
 
-		// Verify both prompts fired: Tier 3 per-RG + overall confirmation.
+		// Verify both prompts fired: snapshot-unavailable per-RG + overall confirmation.
 		consoleOutput := mockContext.Console.Output()
 		require.Len(t, consoleOutput, 2)
 		require.Contains(t, consoleOutput[0], "Delete resource group 'RESOURCE_GROUP'?")
@@ -283,39 +282,21 @@ func TestBicepDestroyLogAnalyticsWorkspace(t *testing.T) {
 }
 
 // TestBicepDestroyClassifyAndDelete tests the classifyResourceGroups + deleteRGList orchestration,
-// including force-bypass, Tier 1 classification, void-state lifecycle, and purge scoping.
+// including force-bypass, snapshot classification, void-state lifecycle, and purge scoping.
 func TestBicepDestroyClassifyAndDelete(t *testing.T) {
-	// Helper: create a deployment operation targeting a resource group.
-	makeRGOp := func(
-		rgName string, opType armresources.ProvisioningOperation,
-	) *armresources.DeploymentOperation {
-		return &armresources.DeploymentOperation{
-			OperationID: new("op-" + rgName),
-			Properties: &armresources.DeploymentOperationProperties{
-				ProvisioningOperation: new(opType),
-				TargetResource: &armresources.TargetResource{
-					ResourceType: new("Microsoft.Resources/resourceGroups"),
-					ResourceName: new(rgName),
-				},
-			},
-		}
-	}
-
 	t.Run("ForceProtectsExternalRGs", func(t *testing.T) {
-		// When --force is set, Tier 1 still runs (zero API calls).
-		// Created RGs are owned (deleted), Read RGs are external (skipped).
+		// When --force is set with a snapshot, snapshot still protects external RGs.
+		// Owned RGs are deleted, external RGs (not in snapshot) are skipped.
 		mockContext := mocks.NewMockContext(context.Background())
 		prepareBicepMocks(mockContext)
 
-		tracker := prepareClassifyDestroyMocks(mockContext, classifyMockCfg{
-			rgNames: []string{"rg-created", "rg-existing"},
-			operations: []*armresources.DeploymentOperation{
-				makeRGOp("rg-created", armresources.ProvisioningOperationCreate),
-				makeRGOp("rg-existing", armresources.ProvisioningOperationRead),
-			},
+		tracker, snapshot := prepareClassifyDestroyMocks(mockContext, classifyMockCfg{
+			rgNames:  []string{"rg-created", "rg-existing"},
+			ownedRGs: []string{"rg-created"},
 		})
 
 		infraProvider := createBicepProvider(t, mockContext)
+		infraProvider.snapshotPredictedRGsOverride = snapshot
 
 		destroyOptions := provisioning.NewDestroyOptions(true, false) // force=true, purge=false
 		result, err := infraProvider.Destroy(*mockContext.Context, destroyOptions)
@@ -323,29 +304,22 @@ func TestBicepDestroyClassifyAndDelete(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, result)
 
-		// Created RG is deleted (Tier 1 owned).
+		// Created RG is deleted (snapshot owned).
 		assert.Equal(t, int32(1), tracker.rgDeletes["rg-created"].Load(),
-			"rg-created should be deleted when force=true (Tier 1 owned)")
-		// External RG is protected even with --force (Tier 1 external).
+			"rg-created should be deleted when force=true (snapshot owned)")
+		// External RG is protected even with --force (not in snapshot).
 		assert.Equal(t, int32(0), tracker.rgDeletes["rg-existing"].Load(),
-			"rg-existing should be SKIPPED when force=true (Tier 1 external)")
-
-		// Operations ARE fetched — Tier 1 needs them even with --force.
-		assert.Equal(t, int32(1), tracker.operationsGETs.Load(),
-			"operations should be fetched even when force=true for Tier 1 safety")
+			"rg-existing should be SKIPPED when force=true (snapshot external)")
 	})
 
 	t.Run("ClassificationFiltersDeletion", func(t *testing.T) {
-		// Tier 1 classification: Create op -> owned (delete), Read op -> external (skip).
+		// Snapshot classification: owned RG deleted, external RG skipped.
 		mockContext := mocks.NewMockContext(context.Background())
 		prepareBicepMocks(mockContext)
 
-		tracker := prepareClassifyDestroyMocks(mockContext, classifyMockCfg{
-			rgNames: []string{"rg-created", "rg-existing"},
-			operations: []*armresources.DeploymentOperation{
-				makeRGOp("rg-created", armresources.ProvisioningOperationCreate),
-				makeRGOp("rg-existing", armresources.ProvisioningOperationRead),
-			},
+		tracker, snapshot := prepareClassifyDestroyMocks(mockContext, classifyMockCfg{
+			rgNames:  []string{"rg-created", "rg-existing"},
+			ownedRGs: []string{"rg-created"},
 		})
 
 		// Overall confirmation prompt fires for owned RGs.
@@ -354,6 +328,7 @@ func TestBicepDestroyClassifyAndDelete(t *testing.T) {
 		}).Respond(true)
 
 		infraProvider := createBicepProvider(t, mockContext)
+		infraProvider.snapshotPredictedRGsOverride = snapshot
 
 		destroyOptions := provisioning.NewDestroyOptions(false, false)
 		result, err := infraProvider.Destroy(*mockContext.Context, destroyOptions)
@@ -361,15 +336,12 @@ func TestBicepDestroyClassifyAndDelete(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, result)
 
-		// Only the Created RG should be deleted.
+		// Only the owned RG should be deleted.
 		assert.Equal(t, int32(1), tracker.rgDeletes["rg-created"].Load(),
-			"rg-created (Create op) should be deleted")
-		// Read RG should be skipped.
+			"rg-created (snapshot owned) should be deleted")
+		// External RG should be skipped.
 		assert.Equal(t, int32(0), tracker.rgDeletes["rg-existing"].Load(),
-			"rg-existing (Read op) should be skipped")
-
-		// Operations were fetched for classification.
-		assert.Equal(t, int32(1), tracker.operationsGETs.Load())
+			"rg-existing (snapshot external) should be skipped")
 	})
 
 	t.Run("VoidStateCalledOnSuccess", func(t *testing.T) {
@@ -377,11 +349,9 @@ func TestBicepDestroyClassifyAndDelete(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		prepareBicepMocks(mockContext)
 
-		tracker := prepareClassifyDestroyMocks(mockContext, classifyMockCfg{
-			rgNames: []string{"rg-created"},
-			operations: []*armresources.DeploymentOperation{
-				makeRGOp("rg-created", armresources.ProvisioningOperationCreate),
-			},
+		tracker, snapshot := prepareClassifyDestroyMocks(mockContext, classifyMockCfg{
+			rgNames:  []string{"rg-created"},
+			ownedRGs: []string{"rg-created"},
 		})
 
 		// Overall confirmation prompt fires for owned RGs.
@@ -390,6 +360,7 @@ func TestBicepDestroyClassifyAndDelete(t *testing.T) {
 		}).Respond(true)
 
 		infraProvider := createBicepProvider(t, mockContext)
+		infraProvider.snapshotPredictedRGsOverride = snapshot
 
 		destroyOptions := provisioning.NewDestroyOptions(false, false)
 		result, err := infraProvider.Destroy(*mockContext.Context, destroyOptions)
@@ -405,19 +376,16 @@ func TestBicepDestroyClassifyAndDelete(t *testing.T) {
 	t.Run("VoidStateCalledWhenAllRGsSkipped", func(t *testing.T) {
 		// Even when all RGs are classified as external (all skipped),
 		// voidDeploymentState must still be called to maintain deployment state.
-		// This was a bug: if zero owned RGs remained, void state was skipped.
 		mockContext := mocks.NewMockContext(context.Background())
 		prepareBicepMocks(mockContext)
 
-		tracker := prepareClassifyDestroyMocks(mockContext, classifyMockCfg{
-			rgNames: []string{"rg-ext-1", "rg-ext-2"},
-			operations: []*armresources.DeploymentOperation{
-				makeRGOp("rg-ext-1", armresources.ProvisioningOperationRead),
-				makeRGOp("rg-ext-2", armresources.ProvisioningOperationRead),
-			},
+		tracker, snapshot := prepareClassifyDestroyMocks(mockContext, classifyMockCfg{
+			rgNames:  []string{"rg-ext-1", "rg-ext-2"},
+			ownedRGs: []string{}, // all external per snapshot
 		})
 
 		infraProvider := createBicepProvider(t, mockContext)
+		infraProvider.snapshotPredictedRGsOverride = snapshot
 
 		destroyOptions := provisioning.NewDestroyOptions(false, false)
 		result, err := infraProvider.Destroy(*mockContext.Context, destroyOptions)
@@ -442,12 +410,9 @@ func TestBicepDestroyClassifyAndDelete(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		prepareBicepMocks(mockContext)
 
-		tracker := prepareClassifyDestroyMocks(mockContext, classifyMockCfg{
-			rgNames: []string{"rg-created", "rg-existing"},
-			operations: []*armresources.DeploymentOperation{
-				makeRGOp("rg-created", armresources.ProvisioningOperationCreate),
-				makeRGOp("rg-existing", armresources.ProvisioningOperationRead),
-			},
+		tracker, snapshot := prepareClassifyDestroyMocks(mockContext, classifyMockCfg{
+			rgNames:            []string{"rg-created", "rg-existing"},
+			ownedRGs:           []string{"rg-created"},
 			withPurgeResources: true, // adds a KeyVault to each RG
 		})
 
@@ -457,6 +422,7 @@ func TestBicepDestroyClassifyAndDelete(t *testing.T) {
 		}).Respond(true)
 
 		infraProvider := createBicepProvider(t, mockContext)
+		infraProvider.snapshotPredictedRGsOverride = snapshot
 
 		destroyOptions := provisioning.NewDestroyOptions(false, true) // purge=true
 		result, err := infraProvider.Destroy(*mockContext.Context, destroyOptions)
@@ -476,15 +442,12 @@ func TestBicepDestroyClassifyAndDelete(t *testing.T) {
 	t.Run("UserCancelPreservesDeploymentState", func(t *testing.T) {
 		// When user declines the "Delete N resource group(s)?" confirmation,
 		// voidDeploymentState must NOT be called and env keys must NOT be invalidated.
-		// Regression test for: cancel returned nil error, causing state mutation on abort.
 		mockContext := mocks.NewMockContext(context.Background())
 		prepareBicepMocks(mockContext)
 
-		tracker := prepareClassifyDestroyMocks(mockContext, classifyMockCfg{
-			rgNames: []string{"rg-created"},
-			operations: []*armresources.DeploymentOperation{
-				makeRGOp("rg-created", armresources.ProvisioningOperationCreate),
-			},
+		tracker, snapshot := prepareClassifyDestroyMocks(mockContext, classifyMockCfg{
+			rgNames:  []string{"rg-created"},
+			ownedRGs: []string{"rg-created"},
 		})
 
 		// User declines the overall confirmation prompt.
@@ -493,6 +456,7 @@ func TestBicepDestroyClassifyAndDelete(t *testing.T) {
 		}).Respond(false)
 
 		infraProvider := createBicepProvider(t, mockContext)
+		infraProvider.snapshotPredictedRGsOverride = snapshot
 
 		destroyOptions := provisioning.NewDestroyOptions(false, false)
 		result, err := infraProvider.Destroy(*mockContext.Context, destroyOptions)
@@ -511,16 +475,13 @@ func TestBicepDestroyClassifyAndDelete(t *testing.T) {
 	})
 
 	t.Run("Tier4LockVetoPreventsDeletion", func(t *testing.T) {
-		// A RG with a CanNotDelete lock is vetoed by Tier 4, even though Tier 1 says owned.
+		// A RG with a CanNotDelete lock is vetoed by Tier 4, even though snapshot says owned.
 		mockContext := mocks.NewMockContext(context.Background())
 		prepareBicepMocks(mockContext)
 
-		tracker := prepareClassifyDestroyMocks(mockContext, classifyMockCfg{
-			rgNames: []string{"rg-unlocked", "rg-locked"},
-			operations: []*armresources.DeploymentOperation{
-				makeRGOp("rg-unlocked", armresources.ProvisioningOperationCreate),
-				makeRGOp("rg-locked", armresources.ProvisioningOperationCreate),
-			},
+		tracker, snapshot := prepareClassifyDestroyMocks(mockContext, classifyMockCfg{
+			rgNames:  []string{"rg-unlocked", "rg-locked"},
+			ownedRGs: []string{"rg-unlocked", "rg-locked"},
 			rgLocks: map[string][]*armlocks.ManagementLockObject{
 				"rg-locked": {
 					{
@@ -539,6 +500,7 @@ func TestBicepDestroyClassifyAndDelete(t *testing.T) {
 		}).Respond(true)
 
 		infraProvider := createBicepProvider(t, mockContext)
+		infraProvider.snapshotPredictedRGsOverride = snapshot
 
 		destroyOptions := provisioning.NewDestroyOptions(false, false)
 		result, err := infraProvider.Destroy(*mockContext.Context, destroyOptions)
@@ -555,22 +517,19 @@ func TestBicepDestroyClassifyAndDelete(t *testing.T) {
 	})
 
 	t.Run("MixedOwnedExternalOnlyOwnedDeleted", func(t *testing.T) {
-		// End-to-end: 3 RGs — 1 Created (owned), 1 Read (external), 1 unknown (non-interactive skip).
+		// End-to-end: 3 RGs — 1 owned (snapshot), 2 external (not in snapshot).
 		// Only the owned RG should be deleted.
 		mockContext := mocks.NewMockContext(context.Background())
 		prepareBicepMocks(mockContext)
-		mockContext.Console.SetNoPromptMode(true) // non-interactive: Tier 3 skips unknowns
+		mockContext.Console.SetNoPromptMode(true) // non-interactive
 
-		tracker := prepareClassifyDestroyMocks(mockContext, classifyMockCfg{
-			rgNames: []string{"rg-mine", "rg-shared", "rg-mystery"},
-			operations: []*armresources.DeploymentOperation{
-				makeRGOp("rg-mine", armresources.ProvisioningOperationCreate),
-				makeRGOp("rg-shared", armresources.ProvisioningOperationRead),
-				// rg-mystery has no operation → unknown → Tier 3 skip (non-interactive)
-			},
+		tracker, snapshot := prepareClassifyDestroyMocks(mockContext, classifyMockCfg{
+			rgNames:  []string{"rg-mine", "rg-shared", "rg-mystery"},
+			ownedRGs: []string{"rg-mine"},
 		})
 
 		infraProvider := createBicepProvider(t, mockContext)
+		infraProvider.snapshotPredictedRGsOverride = snapshot
 
 		destroyOptions := provisioning.NewDestroyOptions(false, false)
 		result, err := infraProvider.Destroy(*mockContext.Context, destroyOptions)
@@ -579,11 +538,11 @@ func TestBicepDestroyClassifyAndDelete(t *testing.T) {
 		require.NotNil(t, result)
 
 		assert.Equal(t, int32(1), tracker.rgDeletes["rg-mine"].Load(),
-			"rg-mine (Created) should be deleted")
+			"rg-mine (snapshot owned) should be deleted")
 		assert.Equal(t, int32(0), tracker.rgDeletes["rg-shared"].Load(),
-			"rg-shared (Read/external) should be skipped")
+			"rg-shared (snapshot external) should be skipped")
 		assert.Equal(t, int32(0), tracker.rgDeletes["rg-mystery"].Load(),
-			"rg-mystery (unknown, non-interactive) should be skipped")
+			"rg-mystery (snapshot external) should be skipped")
 	})
 }
 
@@ -953,7 +912,7 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, result)
 	})
 
-	// Tier 2 tag check: GET individual resource group by name.
+	// GET individual resource group by name (kept for HTTP mock coverage).
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet &&
 			strings.HasSuffix(request.URL.Path, "subscriptions/SUBSCRIPTION_ID/resourcegroups/RESOURCE_GROUP")
@@ -1042,21 +1001,6 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 			(strings.HasSuffix(request.URL.Path, "deletedservices/apim-123") ||
 				strings.HasSuffix(request.URL.Path, "deletedservices/apim2-123"))
 	}).RespondFn(httpRespondFn)
-
-	// List deployment operations — empty list so Tier 1 falls through to Tier 3 prompt
-	// (used only for the non-force Interactive test; force mode bypasses classification).
-	operationsResult := armresources.DeploymentOperationsListResult{
-		Value: []*armresources.DeploymentOperation{},
-	}
-	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodGet &&
-			strings.HasSuffix(
-				request.URL.Path,
-				"/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/test-env/operations",
-			)
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, operationsResult)
-	})
 
 	// Delete deployment
 	mockContext.HttpClient.When(func(request *http.Request) bool {
@@ -1295,31 +1239,6 @@ func prepareLogAnalyticsDestroyMocks(mockContext *mocks.MockContext) {
 		return mocks.CreateEmptyHttpResponse(request, 204)
 	})
 
-	// List deployment operations (Tier 1 classification data).
-	operationsResultLA := armresources.DeploymentOperationsListResult{
-		Value: []*armresources.DeploymentOperation{
-			{
-				OperationID: new("op-rg-create"),
-				Properties: &armresources.DeploymentOperationProperties{
-					ProvisioningOperation: new(armresources.ProvisioningOperationCreate),
-					TargetResource: &armresources.TargetResource{
-						ResourceType: new("Microsoft.Resources/resourceGroups"),
-						ResourceName: new("RESOURCE_GROUP"),
-					},
-				},
-			},
-		},
-	}
-	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodGet &&
-			strings.HasSuffix(
-				request.URL.Path,
-				"/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/test-env/operations",
-			)
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, operationsResultLA)
-	})
-
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodPut &&
 			strings.Contains(request.URL.Path, "/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/")
@@ -1358,27 +1277,27 @@ func httpRespondFn(request *http.Request) (*http.Response, error) {
 // classifyMockCfg configures a multi-RG destroy test scenario.
 type classifyMockCfg struct {
 	rgNames            []string                                    // RG names referenced in the deployment
-	operations         []*armresources.DeploymentOperation         // Tier 1 classification operations
+	ownedRGs           []string                                    // RG names the snapshot considers owned
 	withPurgeResources bool                                        // adds a KeyVault to each RG for purge testing
 	rgLocks            map[string][]*armlocks.ManagementLockObject // per-RG locks (nil key = empty locks)
 }
 
 // classifyCallTracker tracks HTTP calls made during classification integration tests.
 type classifyCallTracker struct {
-	rgDeletes      map[string]*atomic.Int32 // per-RG DELETE call counts
-	voidStatePUTs  atomic.Int32             // void state PUT calls
-	operationsGETs atomic.Int32             // deployment operations GET calls
-	kvGETs         map[string]*atomic.Int32 // per-KeyVault GET calls (purge property inspection)
-	kvPurges       map[string]*atomic.Int32 // per-KeyVault purge POST calls
+	rgDeletes     map[string]*atomic.Int32 // per-RG DELETE call counts
+	voidStatePUTs atomic.Int32             // void state PUT calls
+	kvGETs        map[string]*atomic.Int32 // per-KeyVault GET calls (purge property inspection)
+	kvPurges      map[string]*atomic.Int32 // per-KeyVault purge POST calls
 }
 
 // prepareClassifyDestroyMocks sets up HTTP mocks for multi-RG destroy + classification tests.
-// It registers deployment state, per-RG resource listing, deployment operations, RG deletion,
-// void state, and optionally KeyVault purge mocks. Returns a tracker for asserting call counts.
+// It registers deployment state, per-RG resource listing, RG deletion,
+// void state, and optionally KeyVault purge mocks. Returns a tracker for asserting call counts
+// and a snapshot map that must be injected into the provider via snapshotPredictedRGsOverride.
 func prepareClassifyDestroyMocks(
 	mockContext *mocks.MockContext,
 	cfg classifyMockCfg,
-) *classifyCallTracker {
+) (*classifyCallTracker, map[string]bool) {
 	// Register SubscriptionCredentialProvider in the mock container so Tier 4
 	// helpers (listResourceGroupLocks, listResourceGroupResourcesWithTags) can
 	// resolve credentials. Without this, the fail-safe error handling vetoes all RGs.
@@ -1498,40 +1417,6 @@ func prepareClassifyDestroyMocks(
 		})
 	}
 
-	// --- Per-RG tag fetching mocks (Tier 2 uses ResourceGroupsClient.Get) ---
-	for _, rgName := range cfg.rgNames {
-		rgResponse := armresources.ResourceGroup{
-			ID:       new(fmt.Sprintf("/subscriptions/SUBSCRIPTION_ID/resourceGroups/%s", rgName)),
-			Name:     new(rgName),
-			Location: new("eastus2"),
-			Tags:     map[string]*string{}, // empty tags — won't match Tier 2 dual-tag check
-		}
-		mockContext.HttpClient.When(func(request *http.Request) bool {
-			return request.Method == http.MethodGet &&
-				strings.HasSuffix(
-					request.URL.Path,
-					fmt.Sprintf("subscriptions/SUBSCRIPTION_ID/resourcegroups/%s", rgName),
-				)
-		}).RespondFn(func(request *http.Request) (*http.Response, error) {
-			return mocks.CreateHttpResponseWithBody(request, http.StatusOK, rgResponse)
-		})
-	}
-
-	// --- Deployment operations (Tier 1 classification data) ---
-	operationsResult := armresources.DeploymentOperationsListResult{
-		Value: cfg.operations,
-	}
-	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodGet &&
-			strings.HasSuffix(
-				request.URL.Path,
-				"/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/test-env/operations",
-			)
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		tracker.operationsGETs.Add(1)
-		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, operationsResult)
-	})
-
 	// --- Per-RG deletion mocks (tracked) ---
 	for _, rgName := range cfg.rgNames {
 		counter := tracker.rgDeletes[rgName]
@@ -1644,7 +1529,13 @@ func prepareClassifyDestroyMocks(
 		})
 	}
 
-	return tracker
+	// Build snapshot map from ownedRGs.
+	snapshotMap := make(map[string]bool, len(cfg.ownedRGs))
+	for _, rg := range cfg.ownedRGs {
+		snapshotMap[strings.ToLower(rg)] = true
+	}
+
+	return tracker, snapshotMap
 }
 
 // From a mocked list of deployments where there are multiple deployments with the matching tag, expect to pick the most
@@ -2960,11 +2851,8 @@ func TestBicepDestroyViaDeploymentStacks(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		prepareBicepMocks(mockContext)
 
-		tracker := prepareClassifyDestroyMocks(mockContext, classifyMockCfg{
-			rgNames: []string{"rg-alpha", "rg-beta"},
-			// Operations are NOT used in the deployment-stacks path (no classification),
-			// but prepareClassifyDestroyMocks requires them for the mock setup.
-			operations:         []*armresources.DeploymentOperation{},
+		tracker, _ := prepareClassifyDestroyMocks(mockContext, classifyMockCfg{
+			rgNames:            []string{"rg-alpha", "rg-beta"},
 			withPurgeResources: false,
 		})
 
@@ -2981,10 +2869,6 @@ func TestBicepDestroyViaDeploymentStacks(t *testing.T) {
 		assert.Equal(t, int32(1), tracker.rgDeletes["rg-beta"].Load(),
 			"rg-beta should be deleted via deployment.Delete")
 
-		// Classification operations NOT fetched (deployment stacks bypasses classification).
-		assert.Equal(t, int32(0), tracker.operationsGETs.Load(),
-			"operations should not be fetched in deployment-stacks path")
-
 		// Void state called once (inside DeleteSubscriptionDeployment).
 		assert.Equal(t, int32(1), tracker.voidStatePUTs.Load(),
 			"void state should be called once inside DeleteSubscriptionDeployment")
@@ -2997,9 +2881,8 @@ func TestBicepDestroyViaDeploymentStacks(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		prepareBicepMocks(mockContext)
 
-		tracker := prepareClassifyDestroyMocks(mockContext, classifyMockCfg{
+		tracker, _ := prepareClassifyDestroyMocks(mockContext, classifyMockCfg{
 			rgNames:            []string{"rg-alpha", "rg-beta"},
-			operations:         []*armresources.DeploymentOperation{},
 			withPurgeResources: true,
 		})
 
@@ -3197,9 +3080,8 @@ func TestBicepDestroyViaDeploymentStacks(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		prepareBicepMocks(mockContext)
 
-		tracker := prepareClassifyDestroyMocks(mockContext, classifyMockCfg{
+		tracker, _ := prepareClassifyDestroyMocks(mockContext, classifyMockCfg{
 			rgNames:            []string{}, // zero resource groups
-			operations:         []*armresources.DeploymentOperation{},
 			withPurgeResources: false,
 		})
 
@@ -3307,30 +3189,7 @@ func TestBicepDestroyDeleteRGListPartialFailure(t *testing.T) {
 		})
 	}
 
-	// Deployment operations: all Create (so Tier 1 classifies all as owned).
-	ops := make([]*armresources.DeploymentOperation, len(rgNames))
-	for i, rg := range rgNames {
-		ops[i] = &armresources.DeploymentOperation{
-			OperationID: new("op-" + rg),
-			Properties: &armresources.DeploymentOperationProperties{
-				ProvisioningOperation: new(armresources.ProvisioningOperationCreate),
-				TargetResource: &armresources.TargetResource{
-					ResourceType: new("Microsoft.Resources/resourceGroups"),
-					ResourceName: new(rg),
-				},
-			},
-		}
-	}
-	operationsResult := armresources.DeploymentOperationsListResult{Value: ops}
-	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodGet &&
-			strings.HasSuffix(
-				request.URL.Path,
-				"/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/test-env/operations",
-			)
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, operationsResult)
-	})
+	// Deployment operations mocks removed — classification now uses snapshot.
 
 	// Tier 4 lock listing: no locks for each RG.
 	for _, rgName := range rgNames {
@@ -3411,9 +3270,11 @@ func TestBicepDestroyDeleteRGListPartialFailure(t *testing.T) {
 		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, voidResult)
 	})
 
-	// Overall confirmation prompt for classification (force=true bypasses this,
-	// but we use force=true here to bypass prompt).
+	// force=true: snapshot injection makes classification deterministic.
 	infraProvider := createBicepProvider(t, mockContext)
+	infraProvider.snapshotPredictedRGsOverride = map[string]bool{
+		"rg-ok": true, "rg-fail": true, "rg-ok2": true,
+	}
 	destroyOptions := provisioning.NewDestroyOptions(true, false) // force=true, purge=false
 	result, err := infraProvider.Destroy(*mockContext.Context, destroyOptions)
 
@@ -3437,7 +3298,7 @@ func TestBicepDestroyDeleteRGListPartialFailure(t *testing.T) {
 // purges soft-deleted resources from successfully-deleted RGs.
 // Regression test for: purge was skipped entirely when deleteErr != nil,
 // causing soft-deleted resources (Key Vaults, etc.) to become unreachable
-// on retry (deleted RGs classify as Tier 2: 404, losing their purge targets).
+// on retry (deleted RGs no longer exist, losing their purge targets).
 func TestBicepDestroyPartialDeleteAttemptsPurge(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	prepareBicepMocks(mockContext)
@@ -3460,7 +3321,7 @@ func TestBicepDestroyPartialDeleteAttemptsPurge(t *testing.T) {
 
 	rgNames := []string{"rg-ok", "rg-fail"}
 
-	// Build deployment referencing two RGs (both owned via Create ops).
+	// Build deployment referencing two RGs (both owned via snapshot).
 	outputResources := make([]*armresources.ResourceReference, len(rgNames))
 	for i, rg := range rgNames {
 		id := fmt.Sprintf("/subscriptions/SUBSCRIPTION_ID/resourceGroups/%s", rg)
@@ -3543,39 +3404,7 @@ func TestBicepDestroyPartialDeleteAttemptsPurge(t *testing.T) {
 		})
 	}
 
-	// Deployment operations: both RGs created (owned).
-	ops := []*armresources.DeploymentOperation{
-		{
-			OperationID: new("op-rg-ok"),
-			Properties: &armresources.DeploymentOperationProperties{
-				ProvisioningOperation: new(armresources.ProvisioningOperationCreate),
-				TargetResource: &armresources.TargetResource{
-					ResourceType: new("Microsoft.Resources/resourceGroups"),
-					ResourceName: new("rg-ok"),
-				},
-			},
-		},
-		{
-			OperationID: new("op-rg-fail"),
-			Properties: &armresources.DeploymentOperationProperties{
-				ProvisioningOperation: new(armresources.ProvisioningOperationCreate),
-				TargetResource: &armresources.TargetResource{
-					ResourceType: new("Microsoft.Resources/resourceGroups"),
-					ResourceName: new("rg-fail"),
-				},
-			},
-		},
-	}
-	operationsResult := armresources.DeploymentOperationsListResult{Value: ops}
-	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodGet &&
-			strings.HasSuffix(
-				request.URL.Path,
-				"/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/test-env/operations",
-			)
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, operationsResult)
-	})
+	// Deployment operations mocks removed — classification now uses snapshot.
 
 	// Tier 4 lock listing: no locks.
 	for _, rgName := range rgNames {
@@ -3685,6 +3514,9 @@ func TestBicepDestroyPartialDeleteAttemptsPurge(t *testing.T) {
 	})
 
 	infraProvider := createBicepProvider(t, mockContext)
+	infraProvider.snapshotPredictedRGsOverride = map[string]bool{
+		"rg-ok": true, "rg-fail": true,
+	}
 	destroyOptions := provisioning.NewDestroyOptions(true, true) // force=true, purge=true
 	result, err := infraProvider.Destroy(*mockContext.Context, destroyOptions)
 
@@ -3708,16 +3540,14 @@ func TestBicepDestroyPartialDeleteAttemptsPurge(t *testing.T) {
 
 // TestBicepDestroyCredentialResolutionFailure tests that when the credential
 // provider is NOT registered in the container, the ARM wiring fails gracefully
-// for getResourceGroupTags (returns nil,nil → Tier 2 falls through) and
-// listResourceGroupLocks (returns error → fail-safe veto).
-// This covers the credential-failure branches in getResourceGroupTags (61%)
-// and listResourceGroupLocks (48%).
+// for listResourceGroupLocks (returns error → fail-safe veto).
+// This covers the credential-failure branches in listResourceGroupLocks.
 func TestBicepDestroyCredentialResolutionFailure(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	prepareBicepMocks(mockContext)
 
 	// Intentionally do NOT register SubscriptionCredentialProvider or arm.ClientOptions.
-	// This causes getResourceGroupTags and listResourceGroupLocks to fail on credential resolution.
+	// This causes listResourceGroupLocks to fail on credential resolution.
 
 	rgNames := []string{"rg-alpha"}
 
@@ -3779,30 +3609,6 @@ func TestBicepDestroyCredentialResolutionFailure(t *testing.T) {
 		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, resList)
 	})
 
-	// Deployment operations: Create (so Tier 1 classifies as owned).
-	ops := []*armresources.DeploymentOperation{
-		{
-			OperationID: new("op-rg-alpha"),
-			Properties: &armresources.DeploymentOperationProperties{
-				ProvisioningOperation: new(armresources.ProvisioningOperationCreate),
-				TargetResource: &armresources.TargetResource{
-					ResourceType: new("Microsoft.Resources/resourceGroups"),
-					ResourceName: new(rgNames[0]),
-				},
-			},
-		},
-	}
-	operationsResult := armresources.DeploymentOperationsListResult{Value: ops}
-	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodGet &&
-			strings.HasSuffix(
-				request.URL.Path,
-				"/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/test-env/operations",
-			)
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, operationsResult)
-	})
-
 	// LRO polling endpoint.
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet &&
@@ -3836,18 +3642,18 @@ func TestBicepDestroyCredentialResolutionFailure(t *testing.T) {
 	})
 
 	infraProvider := createBicepProvider(t, mockContext)
+
+	// Inject snapshot so the RG is classified as owned, triggering Tier 4 checks
+	// where the credential resolution failure will be exercised.
+	infraProvider.snapshotPredictedRGsOverride = map[string]bool{
+		"rg-alpha": true,
+	}
+
 	destroyOptions := provisioning.NewDestroyOptions(false, false) // force=false, purge=false
 	result, err := infraProvider.Destroy(*mockContext.Context, destroyOptions)
 
 	// Tier 4 listResourceGroupLocks fails on credential resolution.
-	// fail-safe behavior vetoes all RGs → classifyResourceGroups reports
-	// classification error because all RGs are vetoed with no owned RGs to delete.
-	// The exact error depends on whether the veto causes an empty "owned" list
-	// (which results in skipping deletion) or propagates as a classify error.
-	//
-	// In either case, the credential failure path in listResourceGroupLocks IS exercised,
-	// covering the gap at lines 261-267 and 275-278 of bicep_destroy.go.
-	// The actual behavior: listResourceGroupLocks error → fail-safe veto → RG not deleted.
+	// fail-safe behavior vetoes all RGs → all RGs skipped, no RGs deleted.
 	// Since ALL RGs are vetoed, classifyResourceGroups returns (nil, skipped, nil).
 	// Then voidDeploymentState runs (no classify error), so Destroy succeeds.
 	require.NoError(t, err)

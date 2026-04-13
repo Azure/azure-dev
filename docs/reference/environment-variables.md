@@ -8,13 +8,6 @@ Environment variables that configure Azure Developer CLI behavior. These can be 
 |---|---|
 | `AZD_ALPHA_ENABLE_<NAME>` | Enable a specific alpha feature (e.g., `AZD_ALPHA_ENABLE_UPDATE=true`) |
 
-## Authentication
-
-| Variable | Description |
-|---|---|
-| `AZD_AUTH_ENDPOINT` | Custom authentication endpoint URL |
-| `AZD_AUTH_KEY` | Authentication key for external auth providers |
-
 ## Configuration
 
 | Variable | Description |
@@ -30,7 +23,7 @@ Environment variables that configure Azure Developer CLI behavior. These can be 
 | `AZD_FORCE_TTY` | Force TTY detection (`true` enables, `false` disables prompting) |
 | `AZD_IN_CLOUDSHELL` | Indicates azd is running in Azure Cloud Shell |
 | `AZD_SKIP_UPDATE_CHECK` | Skip the periodic update availability check |
-| `AZD_DEBUG_DOTENV_OVERRIDES` | Enable debug logging for `.env` file processing |
+| `AZD_DEBUG_LOG` | Enable debug file logging (writes to `azd.log` in the current directory) |
 
 ## Tool Path Overrides
 
@@ -47,6 +40,17 @@ Override the path to external tools that azd invokes:
 | Variable | Description |
 |---|---|
 | `AZD_BUILDER_IMAGE` | Builder image for Dockerfile-less container builds |
+
+## IDE Integration
+
+Set by IDE hosts (VS Code, Visual Studio) when spawning azd as a subprocess. Users do not set these manually.
+
+| Variable | Description |
+|---|---|
+| `AZD_AUTH_ENDPOINT` | Authentication endpoint URL set by IDE hosts for integrated authentication |
+| `AZD_AUTH_KEY` | Authentication key set by IDE hosts for integrated authentication |
+
+For details on the external authentication protocol, see [cli/azd/docs/external-authentication.md](../../cli/azd/docs/external-authentication.md).
 
 ## See Also
 

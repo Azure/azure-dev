@@ -593,6 +593,11 @@ func appendHookConfigSignature(builder *strings.Builder, hookConfig *HookConfig)
 	// Config is a map[string]any — use JSON for deterministic key ordering.
 	if len(hookConfig.Config) > 0 {
 		configJSON, err := json.Marshal(hookConfig.Config)
+		// Config values originate from azure.yaml, which produces
+		// JSON-compatible types (strings, numbers, bools, maps, slices).
+		// Marshal errors are theoretically possible but not in practice,
+		// so we skip the config contribution rather than failing the
+		// signature calculation.
 		if err == nil {
 			builder.Write(configJSON)
 		}

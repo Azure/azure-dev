@@ -1419,16 +1419,32 @@ func TestHookConfig_ConfigRoundTrip(t *testing.T) {
 }
 
 func TestHookConfig_ConfigOmittedWhenEmpty(t *testing.T) {
-	config := HookConfig{
-		Run:  "hooks/deploy.py",
-		Kind: language.HookKindPython,
-	}
+	t.Run("nil config omitted", func(t *testing.T) {
+		config := HookConfig{
+			Run:  "hooks/deploy.py",
+			Kind: language.HookKindPython,
+		}
 
-	data, err := yaml.Marshal(&config)
-	require.NoError(t, err)
+		data, err := yaml.Marshal(&config)
+		require.NoError(t, err)
 
-	yamlStr := string(data)
-	require.NotContains(t, yamlStr, "config")
+		yamlStr := string(data)
+		require.NotContains(t, yamlStr, "config")
+	})
+
+	t.Run("empty map omitted", func(t *testing.T) {
+		config := HookConfig{
+			Run:    "hooks/deploy.py",
+			Kind:   language.HookKindPython,
+			Config: map[string]any{},
+		}
+
+		data, err := yaml.Marshal(&config)
+		require.NoError(t, err)
+
+		yamlStr := string(data)
+		require.NotContains(t, yamlStr, "config")
+	})
 }
 
 func TestHooksConfigSignature_IncludesConfig(t *testing.T) {

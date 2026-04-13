@@ -50,7 +50,9 @@ type ExecutionContext struct {
 
 	// Config is the executor-specific property bag from HookConfig.
 	// Executors can unmarshal this into a typed struct for their
-	// configuration needs. May be nil if no config was specified.
+	// configuration needs. May be nil or empty if no config was
+	// specified. Executors must not mutate this map — it is shared
+	// with the underlying HookConfig.
 	Config map[string]any
 }
 

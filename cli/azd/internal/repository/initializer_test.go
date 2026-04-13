@@ -4,6 +4,7 @@
 package repository
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io/fs"
@@ -1954,4 +1955,19 @@ func Test_removeAzdIgnoredFiles_LargePatternFile(t *testing.T) {
 
 	require.FileExists(t, filepath.Join(dir, "keep.txt"))
 	require.NoFileExists(t, filepath.Join(dir, "remove-me.log"))
+}
+
+func Test_loadAzdIgnore_RejectsOversizedFile(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	// Create an .azdignore file that exceeds the 1 MB limit.
+	data := bytes.Repeat([]byte("x"), azdIgnoreMaxSize+1)
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, azdIgnoreFileName), data, 0600))
+
+	ig, err := loadAzdIgnore(dir)
+	require.Error(t, err)
+	require.Nil(t, ig)
+	require.Contains(t, err.Error(), "exceeds maximum size")
 }

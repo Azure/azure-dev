@@ -130,21 +130,47 @@ func checkAiModelServiceAvailable(ctx context.Context, azdClient *azdext.AzdClie
 }
 
 // ensureLoggedIn verifies that the user is authenticated before any file-modifying
-// operations take place. It calls ListSubscriptions as a lightweight auth probe;
-// only gRPC Unauthenticated errors are treated as failures. Other errors (e.g.
+// operations take place. It runs `azd auth status` via the Workflow API as a
+// purpose-built auth probe. Cancellation and deadline errors are propagated;
+// Unauthenticated errors become structured auth errors; other errors (e.g.
 // network issues) are ignored so they don't block init for unrelated reasons.
 func ensureLoggedIn(ctx context.Context, azdClient *azdext.AzdClient) error {
-	_, err := azdClient.Account().ListSubscriptions(ctx, &azdext.ListSubscriptionsRequest{})
+	_, err := azdClient.Workflow().Run(ctx, &azdext.RunWorkflowRequest{
+		Workflow: &azdext.Workflow{
+			Name: "auth status",
+			Steps: []*azdext.WorkflowStep{
+				{Command: &azdext.WorkflowCommand{Args: []string{"auth", "status"}}},
+			},
+		},
+	})
 	if err == nil {
 		return nil
 	}
 
-	if st, ok := status.FromError(err); ok && st.Code() == codes.Unauthenticated {
-		return exterrors.Auth(
-			exterrors.CodeNotLoggedIn,
-			"not logged in",
-			"run `azd auth login` to authenticate before running init",
-		)
+	if exterrors.IsCancellation(err) {
+		return err
+	}
+
+	if errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+
+	if st, ok := status.FromError(err); ok {
+		if st.Code() == codes.DeadlineExceeded {
+			return err
+		}
+
+		if st.Code() == codes.Unauthenticated {
+			msg := st.Message()
+			if msg == "" {
+				msg = "not logged in"
+			}
+			return exterrors.Auth(
+				exterrors.CodeNotLoggedIn,
+				msg,
+				"run `azd auth login` to authenticate before running init",
+			)
+		}
 	}
 
 	return nil
@@ -258,16 +284,16 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 				return err
 			}
 
-			if err := ensureLoggedIn(ctx, azdClient); err != nil {
-				return err
-			}
-
 			// Wait for debugger if AZD_EXT_DEBUG is set
 			if err := azdext.WaitForDebugger(ctx, azdClient); err != nil {
 				if errors.Is(err, context.Canceled) || errors.Is(err, azdext.ErrDebuggerAborted) {
 					return nil
 				}
 				return fmt.Errorf("failed waiting for debugger: %w", err)
+			}
+
+			if err := ensureLoggedIn(ctx, azdClient); err != nil {
+				return err
 			}
 
 			var httpClient = &http.Client{

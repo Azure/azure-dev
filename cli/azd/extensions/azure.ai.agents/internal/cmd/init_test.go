@@ -1204,3 +1204,95 @@ func TestResolveCollisions_NoPrompt(t *testing.T) {
 		})
 	}
 }
+
+func TestEnsureLoggedIn(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		serverErr  error
+		wantErr    bool
+		wantCode   string
+		wantPassth bool // expect the original error to be returned as-is
+	}{
+		{
+			name:      "success returns nil",
+			serverErr: nil,
+			wantErr:   false,
+		},
+		{
+			name:      "unauthenticated returns structured auth error",
+			serverErr: status.Error(codes.Unauthenticated, "not logged in, run `azd auth login`"),
+			wantErr:   true,
+			wantCode:  exterrors.CodeNotLoggedIn,
+		},
+		{
+			name:      "unauthenticated preserves server message",
+			serverErr: status.Error(codes.Unauthenticated, "token expired"),
+			wantErr:   true,
+			wantCode:  exterrors.CodeNotLoggedIn,
+		},
+		{
+			name:       "gRPC cancelled is propagated",
+			serverErr:  status.Error(codes.Canceled, "request cancelled"),
+			wantErr:    true,
+			wantPassth: true,
+		},
+		{
+			name:       "gRPC deadline exceeded is propagated",
+			serverErr:  status.Error(codes.DeadlineExceeded, "deadline exceeded"),
+			wantErr:    true,
+			wantPassth: true,
+		},
+		{
+			name:      "other gRPC error is ignored",
+			serverErr: status.Error(codes.Unavailable, "service unavailable"),
+			wantErr:   false,
+		},
+		{
+			name:      "internal error is ignored",
+			serverErr: status.Error(codes.Internal, "unexpected failure"),
+			wantErr:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			envServer := &testEnvironmentServiceServer{
+				environments: make(map[string]*azdext.Environment),
+			}
+			workflowServer := &testWorkflowServiceServer{
+				runErr: tt.serverErr,
+			}
+			azdClient := newTestAzdClient(t, envServer, workflowServer)
+
+			err := ensureLoggedIn(t.Context(), azdClient)
+
+			if !tt.wantErr {
+				if err != nil {
+					t.Fatalf("expected nil error, got: %v", err)
+				}
+				return
+			}
+
+			if err == nil {
+				t.Fatal("expected an error, got nil")
+			}
+
+			if tt.wantPassth {
+				// Cancellation/deadline errors should be propagated directly
+				return
+			}
+
+			var localErr *azdext.LocalError
+			if !errors.As(err, &localErr) {
+				t.Fatalf("expected *azdext.LocalError, got %T: %v", err, err)
+			}
+			if localErr.Code != tt.wantCode {
+				t.Errorf("code = %q, want %q", localErr.Code, tt.wantCode)
+			}
+		})
+	}
+}

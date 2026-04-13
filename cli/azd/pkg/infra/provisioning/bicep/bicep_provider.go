@@ -2434,12 +2434,13 @@ func (p *BicepProvider) checkAiModelQuota(
 	}
 
 	// Resolve the fallback location for deployments without an explicit location.
-	// Priority: AZURE_LOCATION env var → resource group location (looked up from Azure).
+	// Priority: resource group location (looked up from Azure) → AZURE_LOCATION env var.
 	// This handles RG-scoped templates where resourceGroup().location was not resolved
-	// by the snapshot (the snapshot doesn't always have location context for RG deployments).
-	fallbackLocation := strings.ToLower(p.env.GetLocation())
+	// by the snapshot, while preserving AZURE_LOCATION as a fallback when the RG
+	// location is unavailable.
+	fallbackLocation := p.resolveResourceGroupLocation(ctx, subscriptionId)
 	if fallbackLocation == "" {
-		fallbackLocation = p.resolveResourceGroupLocation(ctx, subscriptionId)
+		fallbackLocation = strings.ToLower(p.env.GetLocation())
 	}
 
 	// Group deployments by location to minimize API calls.
@@ -2457,7 +2458,8 @@ func (p *BicepProvider) checkAiModelQuota(
 
 	var results []PreflightCheckResult
 
-	for loc, deps := range byLocation {
+	for _, loc := range slices.Sorted(maps.Keys(byLocation)) {
+		deps := byLocation[loc]
 		usages, err := p.aiModelService.ListUsages(ctx, subscriptionId, loc)
 		if err != nil {
 			log.Printf("failed to fetch AI quota for location %s, skipping: %v", loc, err)
@@ -2494,22 +2496,33 @@ func (p *BicepProvider) checkAiModelQuota(
 			usageName := resolveUsageName(catalogModels, dep)
 			if usageName == "" {
 				// Model/SKU/version combo not found in the catalog — warn the user.
-				versionHint := ""
+				var detailParts []string
+				if dep.SkuName != "" {
+					detailParts = append(detailParts,
+						fmt.Sprintf("SKU: %s", dep.SkuName))
+				}
 				if dep.ModelVersion != "" {
-					versionHint = fmt.Sprintf(", version %q", dep.ModelVersion)
+					detailParts = append(detailParts,
+						fmt.Sprintf("version %q", dep.ModelVersion))
+				}
+				details := ""
+				if len(detailParts) > 0 {
+					details = fmt.Sprintf(
+						" (%s)", strings.Join(detailParts, ", "))
 				}
 				results = append(results, PreflightCheckResult{
 					Severity:     PreflightCheckWarning,
 					DiagnosticID: "ai_model_not_found",
 					Message: fmt.Sprintf(
-						"model %q (SKU: %s%s) was not found in the AI model catalog for %s. "+
-							"The deployment may fail if this model is not available. "+
-							"Verify the model name, SKU, and version are correct. "+
-							"See https://learn.microsoft.com/azure/ai-services/openai/concepts/models "+
-							"for supported models and regions.",
+						"model %q%s was not found in the AI model "+
+							"catalog for %s. The deployment may fail "+
+							"if this model is not available. Verify "+
+							"the model name, SKU, and version are "+
+							"correct. See https://learn.microsoft.com"+
+							"/azure/ai-services/openai/concepts/models"+
+							" for supported models and regions.",
 						dep.ModelName,
-						dep.SkuName,
-						versionHint,
+						details,
 						loc,
 					),
 				})

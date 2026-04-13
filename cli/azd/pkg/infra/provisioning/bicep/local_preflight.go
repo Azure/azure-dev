@@ -412,12 +412,11 @@ func (l *localArmPreflight) validate(
 		switch t := l.target.(type) {
 		case *infra.ResourceGroupDeployment:
 			snapshotOpts = snapshotOpts.WithResourceGroup(t.ResourceGroupName())
-			// ResourceGroupScope doesn't carry a location, but the Bicep snapshot needs
-			// one to resolve resourceGroup().location. Use the environment location if
-			// available so resources referencing resourceGroup().location get resolved.
-			if l.envLocation != "" {
-				snapshotOpts = snapshotOpts.WithLocation(l.envLocation)
-			}
+			// Note: We intentionally do NOT pass --location for RG deployments.
+			// If the selected resource group already exists in a different region than
+			// AZURE_LOCATION, passing it here would make resourceGroup().location resolve
+			// incorrectly. The quota check handles unresolved locations via its own
+			// fallback (RG lookup → AZURE_LOCATION).
 		case *infra.SubscriptionDeployment:
 			snapshotOpts = snapshotOpts.WithLocation(t.Location())
 		}

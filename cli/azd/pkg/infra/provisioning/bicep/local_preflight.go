@@ -287,6 +287,10 @@ type validationContext struct {
 	// Each entry represents a resource that would be deployed, with resolved values.
 	// It may be nil if the Bicep CLI was not available.
 	SnapshotResources []armTemplateResource
+	// EnvLocation is the resolved Azure location for the deployment scope. For RG
+	// deployments this is the actual RG location or AZURE_LOCATION fallback. Checks
+	// can use this when resources have unresolved locations.
+	EnvLocation string
 }
 
 // snapshotResult represents the top-level structure of the Bicep snapshot JSON output.
@@ -445,6 +449,7 @@ func (l *localArmPreflight) validate(
 		Props:             props,
 		ResourcesSnapshot: json.RawMessage(data),
 		SnapshotResources: snapshot.PredictedResources,
+		EnvLocation:       l.envLocation,
 	}
 
 	// Initialize to a non-nil empty slice so the caller can distinguish "checks ran

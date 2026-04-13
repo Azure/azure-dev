@@ -2441,15 +2441,10 @@ func (p *BicepProvider) checkAiModelQuota(
 		return nil, nil
 	}
 
-	// Resolve the fallback location for deployments without an explicit location.
-	// Priority: resource group location (looked up from Azure) → AZURE_LOCATION env var.
-	// This handles RG-scoped templates where resourceGroup().location was not resolved
-	// by the snapshot, while preserving AZURE_LOCATION as a fallback when the RG
-	// location is unavailable.
-	fallbackLocation := p.resolveResourceGroupLocation(ctx, subscriptionId)
-	if fallbackLocation == "" {
-		fallbackLocation = strings.ToLower(p.env.GetLocation())
-	}
+	// Use the pre-resolved fallback location from the validation context.
+	// This was already resolved in validatePreflight from the actual RG
+	// location or AZURE_LOCATION, so we avoid a duplicate API call.
+	fallbackLocation := strings.ToLower(valCtx.EnvLocation)
 
 	// Group deployments by location to minimize API calls.
 	byLocation := map[string][]cognitiveDeploymentInfo{}
@@ -2624,15 +2619,12 @@ func (p *BicepProvider) resolveResourceGroupLocation(ctx context.Context, subscr
 		return ""
 	}
 
-	var resourceService *azapi.ResourceService
-	if err := p.serviceLocator.Resolve(&resourceService); err != nil {
-		log.Printf("could not resolve ResourceService for RG location lookup: %v", err)
-		return ""
-	}
-
-	rg, err := resourceService.GetResourceGroup(ctx, subscriptionId, rgName)
+	rg, err := p.resourceService.GetResourceGroup(
+		ctx, subscriptionId, rgName)
 	if err != nil {
-		log.Printf("could not get resource group %q location: %v", rgName, err)
+		log.Printf(
+			"could not get resource group %q location: %v",
+			rgName, err)
 		return ""
 	}
 
@@ -2640,6 +2632,9 @@ func (p *BicepProvider) resolveResourceGroupLocation(ctx context.Context, subscr
 }
 
 // resolveResourceTenantPrincipalId returns the current user's object ID as seen in the
+// subscription's resource tenant. This is needed because B2B/guest users have a different
+// object ID in the resource tenant than in their home tenant. Returns an error if the
+// resource tenant principal cannot be resolved; the caller should skip the check rather
 // than fall back to the home-tenant oid (which would produce false positive warnings).
 func (p *BicepProvider) resolveResourceTenantPrincipalId(
 	ctx context.Context, subscriptionId string,

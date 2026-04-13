@@ -678,11 +678,10 @@ func TestPythonPrepare_VenvDirVenv(t *testing.T) {
 
 func TestPythonPrepare_VirtualEnvNameConfig(t *testing.T) {
 	tests := []struct {
-		name           string
-		config         map[string]any
-		wantVenvName   string // expected EnsureVirtualEnv name
-		wantErr        string // substring of error, empty = no error
-		wantEnsureSKip bool   // true if EnsureVirtualEnv should NOT be called
+		name         string
+		config       map[string]any
+		wantVenvName string // expected EnsureVirtualEnv name
+		wantErr      string // substring of error, empty = no error
 	}{
 		{
 			name:         "DotVenvName",

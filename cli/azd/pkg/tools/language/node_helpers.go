@@ -43,7 +43,7 @@ type nodeHookConfig struct {
 
 // validNodePackageManagers maps user-facing config values to
 // [node.PackageManagerKind] constants. Matches the values
-// accepted by [project.packageManagerFromConfig].
+// accepted by [nodePackageManagerFromConfig].
 var validNodePackageManagers = map[string]node.PackageManagerKind{
 	"npm":  node.PackageManagerNpm,
 	"pnpm": node.PackageManagerPnpm,

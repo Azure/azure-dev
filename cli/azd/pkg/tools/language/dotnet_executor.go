@@ -114,18 +114,7 @@ func (e *dotnetExecutor) Prepare(
 		}
 	}
 
-	// 2. Parse executor-specific config (configuration, framework).
-	cfg, err := tools.UnmarshalHookConfig[dotnetHookConfig](
-		execCtx.Config,
-	)
-	if err != nil {
-		return fmt.Errorf(
-			"parsing .NET hook config: %w", err,
-		)
-	}
-	e.config = cfg
-
-	// 3. Discover .NET project context (.csproj/.fsproj/.vbproj).
+	// 2. Discover .NET project context (.csproj/.fsproj/.vbproj).
 	// Uses DiscoverDotNetProject instead of the generic
 	// DiscoverProjectFile to avoid Python/Node.js project files
 	// shadowing the .NET project file in mixed-language directories.
@@ -138,8 +127,18 @@ func (e *dotnetExecutor) Prepare(
 		)
 	}
 
-	// 4a. Project mode: restore and build.
+	// 3. Project mode: parse config, restore, and build.
 	if projCtx != nil {
+		cfg, err := tools.UnmarshalHookConfig[dotnetHookConfig](
+			execCtx.Config,
+		)
+		if err != nil {
+			return fmt.Errorf(
+				"parsing .NET hook config: %w", err,
+			)
+		}
+		e.config = cfg
+
 		if err := e.dotnetCli.Restore(
 			ctx, projCtx.DependencyFile, execCtx.EnvVars,
 		); err != nil {
@@ -164,7 +163,7 @@ func (e *dotnetExecutor) Prepare(
 		return nil
 	}
 
-	// 4b. Single-file mode: validate SDK version >= 10.
+	// 4. Single-file mode: validate SDK version >= 10.
 	sdkVer, err := e.dotnetCli.SdkVersion(ctx)
 	if err != nil {
 		return fmt.Errorf(

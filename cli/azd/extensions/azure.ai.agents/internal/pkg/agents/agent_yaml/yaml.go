@@ -632,10 +632,10 @@ type ConnectionResource struct {
 	// Scopes is the list of OAuth2 scopes to request (OAuth2 authType).
 	Scopes []string `json:"scopes,omitempty" yaml:"scopes,omitempty"`
 
-	// Audience is the token audience for UserEntraToken / AgenticIdentity auth types.
+	// Audience is the token audience for ManagedIdentity / AgenticIdentity / UserEntraToken auth types.
 	Audience string `json:"audience,omitempty" yaml:"audience,omitempty"`
 
-	// ConnectorName is the managed connector name for OAuth2 managed connectors.
+	// ConnectorName is the connector name for AgenticIdentity auth type.
 	ConnectorName string `json:"connectorName,omitempty" yaml:"connectorName,omitempty"`
 }
 

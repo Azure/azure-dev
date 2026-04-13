@@ -133,7 +133,7 @@ func (s *serverSession) newContainer(rc RequestContext) (*container, error) {
 		stdin := strings.NewReader("")
 		writer := colorable.NewNonColorable(stdout)
 
-		return input.NewConsole(true, false, false, input.Writers{
+		return input.NewConsole(true, false, input.Writers{
 			Output:  writer,
 			Spinner: colorable.NewNonColorable(spinnerWriter)},
 			input.ConsoleHandles{

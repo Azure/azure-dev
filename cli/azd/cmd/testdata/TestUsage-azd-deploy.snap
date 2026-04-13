@@ -15,12 +15,11 @@ Flags
         --timeout int         	: Maximum time in seconds for azd to wait for each service deployment. This stops azd from waiting but does not cancel the Azure-side deployment. (default: 1200)
 
 Global Flags
-    -C, --cwd string     	: Sets the current working directory.
-        --debug          	: Enables debugging and diagnostics logging.
-        --docs           	: Opens the documentation for azd deploy in your web browser.
-        --fail-on-prompt 	: Fails with an actionable error whenever a prompt is encountered, even if a default exists. Implies --no-prompt.
-    -h, --help           	: Gets help for deploy.
-        --no-prompt      	: Accepts the default value instead of prompting, or it fails if there is no default.
+    -C, --cwd string 	: Sets the current working directory.
+        --debug      	: Enables debugging and diagnostics logging.
+        --docs       	: Opens the documentation for azd deploy in your web browser.
+    -h, --help       	: Gets help for deploy.
+        --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
 
 Examples
   Deploy all services in the current project to Azure.

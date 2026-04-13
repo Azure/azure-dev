@@ -251,15 +251,6 @@ func (ps *promptService) PromptSubscription(
 
 	hideId := isDemoModeEnabled()
 
-	// Handle --fail-on-prompt mode: require explicit subscription flag
-	if ps.globalOptions.FailOnPrompt {
-		return nil, fmt.Errorf(
-			"interactive prompt not allowed in strict mode:" +
-				" subscription selection" +
-				" (use --subscription flag or" +
-				" 'azd config set defaults.subscription <id>')")
-	}
-
 	// Handle --no-prompt mode
 	if ps.globalOptions.NoPrompt {
 		// Load subscriptions for both default lookup and auto-selection
@@ -377,17 +368,10 @@ func (ps *promptService) PromptLocation(
 		}
 	}
 
-	// Handle --fail-on-prompt mode: require explicit location flag
-	if ps.globalOptions.FailOnPrompt {
-		return nil, fmt.Errorf(
-			"interactive prompt not allowed in strict mode:" +
-				" location selection" +
-				" (use --location flag or" +
-				" 'azd config set defaults.location <location>')")
-	}
-
 	// Handle --no-prompt mode
 	if ps.globalOptions.NoPrompt {
+		// Default location always exists (fallback to eastus2), so we can use it
+		// Load locations and find the default
 		locationList, err := ps.subscriptionManager.GetLocations(
 			ctx,
 			azureContext.Scope.SubscriptionId,
@@ -522,14 +506,6 @@ func (ps *promptService) PromptResourceGroup(
 		return nil, err
 	}
 
-	// Handle --fail-on-prompt mode
-	if ps.globalOptions.FailOnPrompt {
-		return nil, fmt.Errorf(
-			"interactive prompt not allowed in strict mode:" +
-				" resource group selection" +
-				" (specify via environment configuration)")
-	}
-
 	// Handle --no-prompt mode
 	if ps.globalOptions.NoPrompt {
 		if azureContext.Scope.ResourceGroup == "" {
@@ -660,16 +636,6 @@ func (ps *promptService) PromptSubscriptionResource(
 
 	if err := mergo.Merge(mergedSelectorOptions, defaultSelectorOptions, mergo.WithoutDereference); err != nil {
 		return nil, err
-	}
-
-	// Handle --fail-on-prompt mode
-	if ps.globalOptions.FailOnPrompt {
-		return nil, fmt.Errorf(
-			"interactive prompt not allowed in strict mode:"+
-				" %s selection"+
-				" (specify via environment variable or"+
-				" configuration file)",
-			resourceName)
 	}
 
 	// Handle --no-prompt mode
@@ -816,16 +782,6 @@ func (ps *promptService) PromptResourceGroupResource(
 
 	if err := mergo.Merge(mergedSelectorOptions, defaultSelectorOptions, mergo.WithoutDereference); err != nil {
 		return nil, err
-	}
-
-	// Handle --fail-on-prompt mode
-	if ps.globalOptions.FailOnPrompt {
-		return nil, fmt.Errorf(
-			"interactive prompt not allowed in strict mode:"+
-				" %s selection"+
-				" (specify via environment variable or"+
-				" configuration file)",
-			resourceName)
 	}
 
 	// Handle --no-prompt mode

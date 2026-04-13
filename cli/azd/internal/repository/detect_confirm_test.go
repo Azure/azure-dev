@@ -212,7 +212,6 @@ func Test_detectConfirm_confirm(t *testing.T) {
 				console: input.NewConsole(
 					false,
 					false,
-					false,
 					input.Writers{Output: os.Stdout},
 					input.ConsoleHandles{
 						Stderr: os.Stderr,

@@ -17,37 +17,13 @@ import (
 
 type Asker func(p survey.Prompt, response any) error
 
-// NewAsker returns an Asker configured for the given prompt mode.
-// When failOnPrompt is true, every prompt immediately returns an actionable error.
-// When noPrompt is true, prompts silently use their default values.
-func NewAsker(noPrompt bool, failOnPrompt bool, isTerminal bool, w io.Writer, r io.Reader) Asker {
-	if failOnPrompt {
-		return askOneFailOnPrompt
-	}
-
+func NewAsker(noPrompt bool, isTerminal bool, w io.Writer, r io.Reader) Asker {
 	if noPrompt {
 		return askOneNoPrompt
 	}
 
 	return func(p survey.Prompt, response any) error {
 		return askOnePrompt(p, response, isTerminal, w, r)
-	}
-}
-
-func askOneFailOnPrompt(p survey.Prompt, _ any) error {
-	switch v := p.(type) {
-	case *survey.Input:
-		return FailOnPromptError(v.Message)
-	case *survey.Select:
-		return FailOnPromptSelectError(v.Message, v.Options)
-	case *survey.Confirm:
-		return FailOnPromptError(v.Message)
-	case *survey.MultiSelect:
-		return FailOnPromptSelectError(v.Message, v.Options)
-	case *survey.Password:
-		return FailOnPromptError(v.Message)
-	default:
-		return FailOnPromptError("")
 	}
 }
 

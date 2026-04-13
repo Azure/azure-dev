@@ -53,7 +53,6 @@ func TestAskerConsole_Spinner_NonTty(t *testing.T) {
 	c := NewConsole(
 		false,
 		false,
-		false,
 		Writers{Output: lines},
 		ConsoleHandles{
 			Stderr: os.Stderr,
@@ -100,7 +99,6 @@ func TestAskerConsole_Spinner_NonTty(t *testing.T) {
 func TestAskerConsoleExternalPrompt(t *testing.T) {
 	newConsole := func(externalPromptCfg *ExternalPromptConfiguration) Console {
 		return NewConsole(
-			false,
 			false,
 			false,
 			Writers{
@@ -324,7 +322,6 @@ func TestAskerConsole_Message_JsonQueryFilter(t *testing.T) {
 			c := NewConsole(
 				true,
 				false,
-				false,
 				Writers{Output: writerAdapter{buf}},
 				ConsoleHandles{
 					Stderr: os.Stderr,
@@ -348,7 +345,6 @@ func TestAskerConsole_Message_InvalidQuery_FallsBack(t *testing.T) {
 
 	c := NewConsole(
 		true,
-		false,
 		false,
 		Writers{Output: writerAdapter{buf}},
 		ConsoleHandles{

@@ -340,90 +340,58 @@ func TestCheckForMatchingExtension_Unit(t *testing.T) {
 
 func TestParseGlobalFlags_AgentDetection(t *testing.T) {
 	tests := []struct {
-		name                 string
-		args                 []string
-		envVars              map[string]string
-		expectedNoPrompt     bool
-		expectedFailOnPrompt bool
+		name             string
+		args             []string
+		envVars          map[string]string
+		expectedNoPrompt bool
 	}{
 		{
-			name:                 "no agent detected, no flag",
-			args:                 []string{"up"},
-			envVars:              map[string]string{},
-			expectedNoPrompt:     false,
-			expectedFailOnPrompt: false,
+			name:             "no agent detected, no flag",
+			args:             []string{"up"},
+			envVars:          map[string]string{},
+			expectedNoPrompt: false,
 		},
 		{
-			name:                 "agent detected via env var, no flag",
-			args:                 []string{"up"},
-			envVars:              map[string]string{"CLAUDE_CODE": "1"},
-			expectedNoPrompt:     true,
-			expectedFailOnPrompt: true,
+			name:             "agent detected via env var, no flag",
+			args:             []string{"up"},
+			envVars:          map[string]string{"CLAUDE_CODE": "1"},
+			expectedNoPrompt: true,
 		},
 		{
-			name:                 "agent detected but --no-prompt=false explicitly set",
-			args:                 []string{"--no-prompt=false", "up"},
-			envVars:              map[string]string{"CLAUDE_CODE": "1"},
-			expectedNoPrompt:     false,
-			expectedFailOnPrompt: false,
+			name:             "agent detected but --no-prompt=false explicitly set",
+			args:             []string{"--no-prompt=false", "up"},
+			envVars:          map[string]string{"CLAUDE_CODE": "1"},
+			expectedNoPrompt: false,
 		},
 		{
-			name:                 "agent detected but --no-prompt explicitly set true",
-			args:                 []string{"--no-prompt", "up"},
-			envVars:              map[string]string{"GEMINI_CLI": "1"},
-			expectedNoPrompt:     true,
-			expectedFailOnPrompt: false,
+			name:             "agent detected but --no-prompt explicitly set true",
+			args:             []string{"--no-prompt", "up"},
+			envVars:          map[string]string{"GEMINI_CLI": "1"},
+			expectedNoPrompt: true,
 		},
 		{
-			name:                 "no agent, --no-prompt explicitly set",
-			args:                 []string{"--no-prompt", "deploy"},
-			envVars:              map[string]string{},
-			expectedNoPrompt:     true,
-			expectedFailOnPrompt: false,
+			name:             "no agent, --no-prompt explicitly set",
+			args:             []string{"--no-prompt", "deploy"},
+			envVars:          map[string]string{},
+			expectedNoPrompt: true,
 		},
 		{
-			name:                 "Gemini agent detected",
-			args:                 []string{"init"},
-			envVars:              map[string]string{"GEMINI_CLI": "1"},
-			expectedNoPrompt:     true,
-			expectedFailOnPrompt: true,
+			name:             "Gemini agent detected",
+			args:             []string{"init"},
+			envVars:          map[string]string{"GEMINI_CLI": "1"},
+			expectedNoPrompt: true,
 		},
 		{
-			name:                 "GitHub Copilot CLI agent detected",
-			args:                 []string{"deploy"},
-			envVars:              map[string]string{"GITHUB_COPILOT_CLI": "true"},
-			expectedNoPrompt:     true,
-			expectedFailOnPrompt: true,
+			name:             "GitHub Copilot CLI agent detected",
+			args:             []string{"deploy"},
+			envVars:          map[string]string{"GITHUB_COPILOT_CLI": "true"},
+			expectedNoPrompt: true,
 		},
 		{
-			name:                 "OpenCode agent detected",
-			args:                 []string{"provision"},
-			envVars:              map[string]string{"OPENCODE": "1"},
-			expectedNoPrompt:     true,
-			expectedFailOnPrompt: true,
-		},
-		{
-			name:                 "fail-on-prompt flag implies no-prompt",
-			args:                 []string{"--fail-on-prompt", "up"},
-			envVars:              map[string]string{},
-			expectedNoPrompt:     true,
-			expectedFailOnPrompt: true,
-		},
-		{
-			name:                 "no-prompt alone does not set fail-on-prompt",
-			args:                 []string{"--no-prompt", "up"},
-			envVars:              map[string]string{},
-			expectedNoPrompt:     true,
-			expectedFailOnPrompt: false,
-		},
-		{
-			name: "fail-on-prompt explicit overrides agent detection",
-			args: []string{"--fail-on-prompt", "up"},
-			envVars: map[string]string{
-				"CLAUDE_CODE": "1",
-			},
-			expectedNoPrompt:     true,
-			expectedFailOnPrompt: true,
+			name:             "OpenCode agent detected",
+			args:             []string{"provision"},
+			envVars:          map[string]string{"OPENCODE": "1"},
+			expectedNoPrompt: true,
 		},
 	}
 
@@ -454,8 +422,6 @@ func TestParseGlobalFlags_AgentDetection(t *testing.T) {
 
 			assert.Equal(t, tt.expectedNoPrompt, opts.NoPrompt,
 				"NoPrompt should be %v for test case: %s", tt.expectedNoPrompt, tt.name)
-			assert.Equal(t, tt.expectedFailOnPrompt, opts.FailOnPrompt,
-				"FailOnPrompt should be %v for test case: %s", tt.expectedFailOnPrompt, tt.name)
 
 			// Clean up for next test
 			agentdetect.ResetDetection()

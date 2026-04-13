@@ -3519,11 +3519,6 @@ const completionSpec: Fig.Spec = {
 			],
 		},
 		{
-			name: ['--fail-on-prompt'],
-			description: 'Fails with an actionable error whenever a prompt is encountered, even if a default exists. Implies --no-prompt.',
-			isPersistent: true,
-		},
-		{
 			name: ['--no-prompt'],
 			description: 'Accepts the default value instead of prompting, or it fails if there is no default.',
 			isPersistent: true,

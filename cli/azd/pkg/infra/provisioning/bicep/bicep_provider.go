@@ -2203,7 +2203,7 @@ func (p *BicepProvider) validatePreflight(
 
 	// Run local preflight validation before sending to Azure.
 	// Local validation catches common issues without requiring a network round-trip.
-	localPreflight := newLocalArmPreflight(modulePath, p.bicepCli, target, p.env.GetLocation())
+	localPreflight := newLocalArmPreflight(modulePath, p.bicepCli, target)
 
 	// Register the role assignment permission check so it runs as part of the
 	// local preflight pipeline. The check inspects whether the template contains

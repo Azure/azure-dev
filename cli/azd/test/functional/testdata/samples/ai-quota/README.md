@@ -25,15 +25,14 @@ is controlled by the `location` parameter (mapped to `AZURE_LOCATION`), and an o
 
 ## What the tests cover
 
-| Scenario | Expected diagnostic |
+| Scenario | Expected diagnostic / behavior |
 |---|---|
 | Default parameters (capacity = 99999) | `ai_model_quota_exceeded` — capacity is absurdly high |
 | Invalid model name (e.g. `gpt-nonexistent`) | `ai_model_not_found` — not in catalog |
 | Invalid model version | `ai_model_not_found` — version not found |
-| Valid model but SKU unavailable at location | `ai_model_not_found` — SKU mismatch |
-| RG deployment without explicit location | Location resolved from resource group |
-| Deployment location differs from RG location | Quota checked against deployment location |
-| Subscription-level deployment | Location from `AZURE_LOCATION` parameter |
+| Subscription-scoped deployment with default location | Location resolved from `AZURE_LOCATION` |
+| Subscription-scoped deployment with invalid model | `ai_model_not_found` in the subscription location |
+| Subscription-scoped deployment with different `aiDeploymentsLocation` | Quota checked against the overridden deployment location |
 
 ## Parameter mapping
 

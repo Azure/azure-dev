@@ -330,26 +330,20 @@ type localArmPreflight struct {
 	// target is the deployment scope (subscription or resource group) used to derive snapshot options.
 	// It may be nil, in which case snapshot options are left empty.
 	target infra.Deployment
-	// envLocation is the Azure location from the environment (AZURE_LOCATION). It is used to
-	// provide location context when the deployment target scope doesn't carry its own location
-	// (e.g. resource group deployments), enabling Bicep to resolve resourceGroup().location.
-	envLocation string
-	checks      []PreflightCheck
+	checks []PreflightCheck
 }
 
 // newLocalArmPreflight creates a new instance of localArmPreflight.
 // modulePath is the path to the source Bicep module file (e.g. "infra/main.bicep").
 // bicepCli is the Bicep CLI wrapper used to invoke bicep commands.
 // target is the deployment scope used to populate snapshot options; it may be nil.
-// envLocation is the Azure location from the environment (e.g. AZURE_LOCATION); it may be empty.
 func newLocalArmPreflight(
-	modulePath string, bicepCli *bicep.Cli, target infra.Deployment, envLocation string,
+	modulePath string, bicepCli *bicep.Cli, target infra.Deployment,
 ) *localArmPreflight {
 	return &localArmPreflight{
-		modulePath:  modulePath,
-		bicepCli:    bicepCli,
-		target:      target,
-		envLocation: envLocation,
+		modulePath: modulePath,
+		bicepCli:   bicepCli,
+		target:     target,
 	}
 }
 

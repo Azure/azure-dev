@@ -1242,6 +1242,30 @@ func Test_removeAzdIgnoredFiles(t *testing.T) {
 			},
 			expectAbsent: []string{"docs/internal"},
 		},
+		{
+			name:      "RecursiveDoubleStarPattern",
+			azdIgnore: "**/node_modules\n",
+			files: []string{
+				"README.md",
+				"src/main.go",
+				"node_modules/pkg-a/index.js",
+				"src/node_modules/pkg-b/index.js",
+				"src/sub/node_modules/pkg-c/index.js",
+			},
+			dirs: []string{
+				"node_modules/pkg-a",
+				"src/node_modules/pkg-b",
+				"src/sub/node_modules/pkg-c",
+			},
+			expectFiles: []string{
+				"README.md", "src/main.go",
+			},
+			expectAbsent: []string{
+				"node_modules",
+				"src/node_modules",
+				"src/sub/node_modules",
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -1852,6 +1876,51 @@ func Test_removeAzdIgnoredFiles_UnicodeFilenames(t *testing.T) {
 	require.NoFileExists(t, filepath.Join(dir, "日本語.txt"))
 	require.NoFileExists(t, filepath.Join(dir, "café.txt"))
 	require.FileExists(t, filepath.Join(dir, "normal.txt"))
+}
+
+func Test_removeAzdIgnoredFiles_NestedAzdIgnoreCleanup(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+
+	// Create a directory structure with nested .azdignore files
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "docs"), 0755))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "src", "sub"), 0755))
+
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "README.md"), []byte("readme"), 0600))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "docs", "guide.md"), []byte("guide"), 0600))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "src", "main.go"), []byte("main"), 0600))
+
+	// Root .azdignore excludes a file
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, azdIgnoreFileName), []byte("*.log\n"), 0600))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "debug.log"), []byte("log"), 0600))
+
+	// Nested .azdignore files that should be cleaned up
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "docs", azdIgnoreFileName), []byte("internal/\n"), 0600))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "src", "sub", azdIgnoreFileName), []byte("*.tmp\n"), 0600))
+
+	err := removeAzdIgnoredFiles(dir)
+	require.NoError(t, err)
+
+	// Root .azdignore rules applied
+	require.NoFileExists(t, filepath.Join(dir, "debug.log"))
+
+	// All .azdignore files at every depth must be removed
+	require.NoFileExists(t, filepath.Join(dir, azdIgnoreFileName))
+	require.NoFileExists(t, filepath.Join(dir, "docs", azdIgnoreFileName))
+	require.NoFileExists(t, filepath.Join(dir, "src", "sub", azdIgnoreFileName))
+
+	// Non-ignored content remains
+	require.FileExists(t, filepath.Join(dir, "README.md"))
+	require.FileExists(t, filepath.Join(dir, "docs", "guide.md"))
+	require.FileExists(t, filepath.Join(dir, "src", "main.go"))
 }
 
 func Test_copyLocalTemplate_SymlinksSkipped(t *testing.T) {

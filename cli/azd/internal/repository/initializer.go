@@ -401,10 +401,22 @@ func removeAzdIgnoredFiles(dir string) error {
 		}
 	}
 
-	// Always remove .azdignore itself — consumers don't need it.
-	azdIgnorePath := filepath.Join(dir, azdIgnoreFileName)
-	if err := os.Remove(azdIgnorePath); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("removing %s file: %w", azdIgnoreFileName, err)
+	// Remove all .azdignore files — the root one that was just processed and
+	// any nested ones that templates might contain (e.g., docs/.azdignore).
+	// Consumers should never see .azdignore files in their project.
+	err = filepath.WalkDir(dir, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if !d.IsDir() && d.Name() == azdIgnoreFileName {
+			if removeErr := os.Remove(path); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+				return fmt.Errorf("removing %s file: %w", azdIgnoreFileName, removeErr)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("cleaning nested %s files: %w", azdIgnoreFileName, err)
 	}
 
 	return nil

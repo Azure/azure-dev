@@ -45,8 +45,9 @@ func Test_CLI_PreflightQuota_RG_DefaultCapacity(t *testing.T) {
 		"provision",
 	)
 	require.NoError(t, err)
-	// The user declined the warning, so azd should abort (exit 0 or specific error).
-	// Check that the output contains the quota warning.
+	// The user declined the warning, so azd should stop before provisioning.
+	// In this flow, declining the preflight warning is expected to return successfully,
+	// and the output should contain the quota warning.
 	output := result.Stdout + result.Stderr
 	require.Contains(t, output, "insufficient quota",
 		"expected quota exceeded warning in output")

@@ -2534,7 +2534,9 @@ func (p *BicepProvider) checkAiModelQuota(
 
 			remaining, found := usageMap[r.usageName]
 			if !found {
-				continue
+				// Usage entry not returned by the API — treat as zero remaining
+				// to avoid silently skipping quota validation.
+				remaining = 0
 			}
 
 			totalRequired := requiredByUsage[r.usageName]
@@ -2569,6 +2571,9 @@ func (p *BicepProvider) checkAiModelQuota(
 func resolveUsageName(catalogModels []ai.AiModel, dep cognitiveDeploymentInfo) string {
 	for _, model := range catalogModels {
 		if !strings.EqualFold(model.Name, dep.ModelName) {
+			continue
+		}
+		if dep.ModelFormat != "" && !strings.EqualFold(model.Format, dep.ModelFormat) {
 			continue
 		}
 		for _, version := range model.Versions {

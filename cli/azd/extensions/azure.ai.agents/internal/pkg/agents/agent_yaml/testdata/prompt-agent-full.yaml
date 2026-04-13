@@ -19,7 +19,7 @@ template:
     You are a helpful testing assistant.
     Always respond in a structured format.
   tools:
-    - kind: web_search
+    - kind: webSearch
       name: web-search
     - kind: function
       name: get_weather

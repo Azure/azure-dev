@@ -11,7 +11,6 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 )
 
-// ptr is a generic helper that returns a pointer to the given value.
 // ---------------------------------------------------------------------------
 // ConvertToolToYaml
 // ---------------------------------------------------------------------------
@@ -496,9 +495,15 @@ func TestConvertParameters(t *testing.T) {
 		if len(got.Properties) != 1 {
 			t.Fatalf("expected 1 property, got %d", len(got.Properties))
 		}
-		p := got.Properties[0]
-		if p.Name != "region" {
-			t.Errorf("Name = %q, want %q", p.Name, "region")
+		var p *agent_yaml.Property
+		for i := range got.Properties {
+			if got.Properties[i].Name == "region" {
+				p = &got.Properties[i]
+				break
+			}
+		}
+		if p == nil {
+			t.Fatal("expected property named \"region\"")
 		}
 		if p.Kind != "string" {
 			t.Errorf("Kind = %q, want %q", p.Kind, "string")
@@ -533,7 +538,16 @@ func TestConvertParameters(t *testing.T) {
 		if got == nil {
 			t.Fatal("expected non-nil PropertySchema")
 		}
-		p := got.Properties[0]
+		var p *agent_yaml.Property
+		for i := range got.Properties {
+			if got.Properties[i].Name == "name" {
+				p = &got.Properties[i]
+				break
+			}
+		}
+		if p == nil {
+			t.Fatal("expected property named \"name\"")
+		}
 		if p.Kind != "string" {
 			t.Errorf("Kind = %q, want %q (default)", p.Kind, "string")
 		}
@@ -556,12 +570,82 @@ func TestConvertParameters(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		p := got.Properties[0]
+		var p *agent_yaml.Property
+		for i := range got.Properties {
+			if got.Properties[i].Name == "timeout" {
+				p = &got.Properties[i]
+				break
+			}
+		}
+		if p == nil {
+			t.Fatal("expected property named \"timeout\"")
+		}
 		if p.Default == nil {
 			t.Fatal("expected Default to be set from Example")
 		}
 		if *p.Default != 30 {
 			t.Errorf("Default = %v, want 30", *p.Default)
+		}
+	})
+
+	t.Run("multiple parameters each have correct Description and Required", func(t *testing.T) {
+		t.Parallel()
+		params := map[string]OpenApiParameter{
+			"region": {
+				Description: "Azure region",
+				Required:    true,
+				Schema:      &OpenApiSchema{Type: "string"},
+			},
+			"count": {
+				Description: "Number of results",
+				Required:    false,
+				Schema:      &OpenApiSchema{Type: "integer"},
+			},
+		}
+
+		got, err := ConvertParameters(params)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got == nil {
+			t.Fatal("expected non-nil PropertySchema")
+		}
+		if len(got.Properties) != 2 {
+			t.Fatalf("expected 2 properties, got %d", len(got.Properties))
+		}
+
+		// Build a name→property map so assertions are order-independent.
+		byName := make(map[string]*agent_yaml.Property, len(got.Properties))
+		for i := range got.Properties {
+			byName[got.Properties[i].Name] = &got.Properties[i]
+		}
+
+		region := byName["region"]
+		if region == nil {
+			t.Fatal("expected property named \"region\"")
+		}
+		if region.Description == nil || *region.Description != "Azure region" {
+			t.Errorf("region.Description = %v, want \"Azure region\"", region.Description)
+		}
+		if region.Required == nil || *region.Required != true {
+			t.Errorf("region.Required = %v, want true", region.Required)
+		}
+		if region.Kind != "string" {
+			t.Errorf("region.Kind = %q, want \"string\"", region.Kind)
+		}
+
+		count := byName["count"]
+		if count == nil {
+			t.Fatal("expected property named \"count\"")
+		}
+		if count.Description == nil || *count.Description != "Number of results" {
+			t.Errorf("count.Description = %v, want \"Number of results\"", count.Description)
+		}
+		if count.Required == nil || *count.Required != false {
+			t.Errorf("count.Required = %v, want false", count.Required)
+		}
+		if count.Kind != "integer" {
+			t.Errorf("count.Kind = %q, want \"integer\"", count.Kind)
 		}
 	})
 }

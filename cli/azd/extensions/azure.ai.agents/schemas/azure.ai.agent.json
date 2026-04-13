@@ -145,7 +145,7 @@
         "authType": {
           "type": "string",
           "description": "Authentication type for the connection.",
-          "enum": ["AAD", "AccessKey", "AccountKey", "ApiKey", "CustomKeys", "ManagedIdentity", "None", "OAuth2", "PAT", "ServicePrincipal", "UsernamePassword"]
+          "enum": ["AAD", "AccessKey", "AccountKey", "ApiKey", "CustomKeys", "ProjectManagedIdentity", "None", "OAuth2", "PAT", "ServicePrincipal", "UsernamePassword"]
         },
         "credentials": {
           "type": "object",
@@ -180,12 +180,12 @@
       "description": "A project connection matching the Bicep ConnectionPropertiesV2 spec.",
       "properties": {
         "name": { "type": "string", "description": "Connection name.", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{2,32}$" },
-        "category": { "type": "string", "description": "Connection category (e.g., 'CustomKeys', 'AzureOpenAI', 'CognitiveSearch')." },
+        "category": { "type": "string", "description": "Connection category (e.g., 'CustomKeys', 'AzureOpenAI', 'CognitiveSearch', 'RemoteTool')." },
         "target": { "type": "string", "description": "Target endpoint URL for the connection." },
         "authType": {
           "type": "string",
           "description": "Authentication type.",
-          "enum": ["AAD", "ApiKey", "CustomKeys", "None", "OAuth2", "PAT"]
+          "enum": ["AAD", "AccessKey", "AccountKey", "AgenticIdentity", "ApiKey", "CustomKeys", "ProjectManagedIdentity", "None", "OAuth2", "PAT", "SAS", "ServicePrincipal", "UsernamePassword", "UserEntraToken"]
         },
         "credentials": {
           "type": "object",
@@ -196,6 +196,16 @@
           "description": "Additional metadata as key-value pairs.",
           "additionalProperties": { "type": "string" }
         },
+        "authorizationUrl": { "type": "string", "description": "OAuth2 authorization endpoint URL (required for OAuth2 authType)." },
+        "tokenUrl": { "type": "string", "description": "OAuth2 token endpoint URL (required for OAuth2 authType)." },
+        "refreshUrl": { "type": "string", "description": "OAuth2 token refresh URL (optional for OAuth2 authType)." },
+        "scopes": {
+          "type": "array",
+          "description": "OAuth2 scopes to request (optional for OAuth2 authType).",
+          "items": { "type": "string" }
+        },
+        "audience": { "type": "string", "description": "Token audience for AAD/ProjectManagedIdentity/AgenticIdentity/UserEntraToken auth types." },
+        "connectorName": { "type": "string", "description": "Connector name for Oauth2 auth type." },
         "expiryTime": { "type": "string", "description": "Connection expiry time." },
         "isSharedToAll": { "type": "boolean", "description": "Whether the connection is shared to all users." },
         "sharedUserList": {

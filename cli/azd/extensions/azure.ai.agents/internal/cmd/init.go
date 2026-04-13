@@ -1932,6 +1932,12 @@ func extractConnectionConfigs(
 			PeStatus:                    connResource.PeStatus,
 			UseWorkspaceManagedIdentity: connResource.UseWorkspaceManagedIdentity,
 			Error:                       connResource.Error,
+			AuthorizationUrl:            connResource.AuthorizationUrl,
+			TokenUrl:                    connResource.TokenUrl,
+			RefreshUrl:                  connResource.RefreshUrl,
+			Scopes:                      connResource.Scopes,
+			Audience:                    connResource.Audience,
+			ConnectorName:               connResource.ConnectorName,
 		}
 
 		connections = append(connections, conn)

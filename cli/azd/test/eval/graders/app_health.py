@@ -50,10 +50,14 @@ def check_endpoint(
 
             if status != expected_status:
                 last_error = f"Expected status {expected_status}, got {status}"
+                if attempt < retries - 1:
+                    time.sleep(retry_delay)
                 continue
 
             if expected_body_contains and expected_body_contains not in body:
                 last_error = f"Response body missing expected string '{expected_body_contains}'"
+                if attempt < retries - 1:
+                    time.sleep(retry_delay)
                 continue
 
             return {"passed": True, "reason": f"Status {status} OK"}
@@ -67,6 +71,8 @@ def check_endpoint(
                             f"Status {e.code} matched but body missing "
                             f"'{expected_body_contains}'"
                         )
+                        if attempt < retries - 1:
+                            time.sleep(retry_delay)
                         continue
                 return {"passed": True, "reason": f"Status {e.code} matches expected"}
             last_error = f"HTTP {e.code}: {e.reason}"

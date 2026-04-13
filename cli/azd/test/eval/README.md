@@ -154,20 +154,10 @@ Custom graders validate real Azure resources during E2E evals. They live in `gra
 # graders/my_validator.py
 import json
 import os
-import subprocess
 import sys
 import urllib.request
 
-def get_azure_token():
-    """Get Azure access token via CLI or environment."""
-    try:
-        result = subprocess.run(
-            ["az", "account", "get-access-token", "--query", "accessToken", "-o", "tsv"],
-            capture_output=True, text=True, check=True
-        )
-        return result.stdout.strip()
-    except Exception:
-        return os.environ.get("AZURE_ACCESS_TOKEN")
+from azure_auth import get_access_token
 
 def grade(context: dict) -> dict:
     """
@@ -179,10 +169,11 @@ def grade(context: dict) -> dict:
     params = context.get("params", {})
     subscription_id = params.get("subscription_id", os.environ.get("AZURE_SUBSCRIPTION_ID"))
     resource_group = params.get("resource_group")
-    token = get_azure_token()
 
-    if not token:
-        return {"score": 0.0, "reason": "No Azure credentials available"}
+    try:
+        token = get_access_token()
+    except RuntimeError as e:
+        return {"score": 0.0, "reason": str(e)}
 
     # Make ARM API calls to validate resources...
     url = (

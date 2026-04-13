@@ -47,7 +47,7 @@ extends:
                 workingDirectory: cli/azd
                 displayName: Build azd
 
-              - bash: echo "$(Build.SourcesDirectory)/cli/azd" >> $GITHUB_PATH
+              - bash: echo "##vso[task.prependpath]$(Build.SourcesDirectory)/cli/azd"
                 displayName: Add azd to PATH
 
               - bash: npm install -g waza

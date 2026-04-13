@@ -2522,7 +2522,11 @@ func (p *BicepProvider) checkAiModelQuota(
 			}
 
 			requiredByUsage[usageName] += effectiveCapacity
-			resolved = append(resolved, depWithUsage{dep: dep, usageName: usageName, capacity: effectiveCapacity})
+			resolved = append(resolved, depWithUsage{
+				dep:       dep,
+				usageName: usageName,
+				capacity:  effectiveCapacity,
+			})
 		}
 
 		// Check aggregated capacity against remaining quota.

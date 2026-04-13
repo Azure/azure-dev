@@ -209,42 +209,68 @@ func TestResolveUsageName(t *testing.T) {
 	}{
 		{
 			name: "matches model and sku",
-			dep:  cognitiveDeploymentInfo{ModelName: "gpt-4o", SkuName: "Standard"},
+			dep: cognitiveDeploymentInfo{
+				ModelName: "gpt-4o",
+				SkuName:   "Standard",
+			},
 			want: "OpenAI.Standard.gpt-4o",
 		},
 		{
 			name: "matches global standard sku",
-			dep:  cognitiveDeploymentInfo{ModelName: "gpt-4o", SkuName: "GlobalStandard"},
+			dep: cognitiveDeploymentInfo{
+				ModelName: "gpt-4o",
+				SkuName:   "GlobalStandard",
+			},
 			want: "OpenAI.GlobalStandard.gpt-4o",
 		},
 		{
 			name: "matches with version",
-			dep:  cognitiveDeploymentInfo{ModelName: "gpt-4o", SkuName: "Standard", ModelVersion: "2024-08-06"},
+			dep: cognitiveDeploymentInfo{
+				ModelName:    "gpt-4o",
+				SkuName:      "Standard",
+				ModelVersion: "2024-08-06",
+			},
 			want: "OpenAI.Standard.gpt-4o",
 		},
 		{
 			name: "version mismatch returns empty",
-			dep:  cognitiveDeploymentInfo{ModelName: "gpt-4o", SkuName: "Standard", ModelVersion: "nonexistent"},
+			dep: cognitiveDeploymentInfo{
+				ModelName:    "gpt-4o",
+				SkuName:      "Standard",
+				ModelVersion: "nonexistent",
+			},
 			want: "",
 		},
 		{
 			name: "model not in catalog",
-			dep:  cognitiveDeploymentInfo{ModelName: "unknown-model", SkuName: "Standard"},
+			dep: cognitiveDeploymentInfo{
+				ModelName: "unknown-model",
+				SkuName:   "Standard",
+			},
 			want: "",
 		},
 		{
 			name: "sku not available for model",
-			dep:  cognitiveDeploymentInfo{ModelName: "gpt-4.1-mini", SkuName: "Standard"},
+			dep: cognitiveDeploymentInfo{
+				ModelName: "gpt-4.1-mini",
+				SkuName:   "Standard",
+			},
 			want: "",
 		},
 		{
 			name: "gpt-4.1-mini resolves correctly",
-			dep:  cognitiveDeploymentInfo{ModelName: "gpt-4.1-mini", SkuName: "GlobalStandard"},
+			dep: cognitiveDeploymentInfo{
+				ModelName: "gpt-4.1-mini",
+				SkuName:   "GlobalStandard",
+			},
 			want: "OpenAI.GlobalStandard.gpt-4.1-mini",
 		},
 		{
 			name: "case insensitive model match",
-			dep:  cognitiveDeploymentInfo{ModelName: "GPT-4o", SkuName: "standard"},
+			dep: cognitiveDeploymentInfo{
+				ModelName: "GPT-4o",
+				SkuName:   "standard",
+			},
 			want: "OpenAI.Standard.gpt-4o",
 		},
 	}

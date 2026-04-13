@@ -174,7 +174,14 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 	}
 
 	// Remote: only allow the invocations protocol when vnext is enabled.
-	if isVNextEnabled(ctx) && protocol == agent_api.AgentProtocolInvocations {
+	if protocol == agent_api.AgentProtocolInvocations {
+		if !isVNextEnabled(ctx) {
+			return fmt.Errorf(
+				"remote invocations protocol requires hosted-agent vnext; enable 'enableHostedAgentVNext' or use '--protocol %s'",
+				agent_api.AgentProtocolResponses,
+			)
+		}
+
 		return a.invocationsRemote(ctx)
 	}
 	return a.responsesRemote(ctx)

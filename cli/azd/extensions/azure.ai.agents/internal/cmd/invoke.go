@@ -36,6 +36,7 @@ type invokeFlags struct {
 	newSession      bool
 	conversation    string
 	newConversation bool
+	protocol        string
 }
 
 type InvokeAction struct {
@@ -69,6 +70,9 @@ session automatically. Pass --new-session to force a reset.`,
 
   # Invoke a specific remote agent by name
   azd ai agent invoke my-agent "Hello!"
+
+  # Invoke using a specific protocol
+  azd ai agent invoke --protocol invocations "Hello!"
 
   # Invoke with a file as the request body
   azd ai agent invoke -f request.json
@@ -125,6 +129,20 @@ session automatically. Pass --new-session to force a reset.`,
 				)
 			}
 
+			if flags.protocol != "" {
+				switch agent_api.AgentProtocol(flags.protocol) {
+				case agent_api.AgentProtocolResponses,
+					agent_api.AgentProtocolInvocations:
+					// valid
+				default:
+					return exterrors.Validation(
+						exterrors.CodeInvalidParameter,
+						fmt.Sprintf("unsupported protocol %q", flags.protocol),
+						"supported protocols are: responses, invocations",
+					)
+				}
+			}
+
 			action := &InvokeAction{flags: flags}
 			return action.Run(ctx)
 		},
@@ -132,6 +150,7 @@ session automatically. Pass --new-session to force a reset.`,
 
 	cmd.Flags().BoolVarP(&flags.local, "local", "l", false, "Invoke on localhost instead of Foundry")
 	cmd.Flags().StringVarP(&flags.inputFile, "input-file", "f", "", "Path to a file whose contents are sent as the request body")
+	cmd.Flags().StringVarP(&flags.protocol, "protocol", "p", "", "Protocol to use: responses (default) or invocations")
 	cmd.Flags().IntVar(&flags.port, "port", DefaultPort, "Local server port")
 	cmd.Flags().IntVarP(&flags.timeout, "timeout", "t", 120, "Request timeout in seconds (0 for no timeout)")
 	cmd.Flags().StringVarP(&flags.session, "session-id", "s", "", "Explicit session ID override")
@@ -143,8 +162,9 @@ session automatically. Pass --new-session to force a reset.`,
 }
 
 func (a *InvokeAction) Run(ctx context.Context) error {
+	protocol := a.resolveProtocol(ctx)
+
 	if a.flags.local {
-		protocol := a.resolveLocalProtocol(ctx)
 		switch protocol {
 		case agent_api.AgentProtocolInvocations:
 			return a.invocationsLocal(ctx)
@@ -154,13 +174,24 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 	}
 
 	// Remote: only allow the invocations protocol when vnext is enabled.
-	if isVNextEnabled(ctx) {
-		protocol := a.resolveRemoteProtocol(ctx)
-		if protocol == agent_api.AgentProtocolInvocations {
-			return a.invocationsRemote(ctx)
-		}
+	if isVNextEnabled(ctx) && protocol == agent_api.AgentProtocolInvocations {
+		return a.invocationsRemote(ctx)
 	}
 	return a.responsesRemote(ctx)
+}
+
+// resolveProtocol returns the protocol to use for this invocation.
+// The explicit --protocol flag takes priority; otherwise the protocol
+// is auto-detected from agent.yaml (local or remote).
+func (a *InvokeAction) resolveProtocol(ctx context.Context) agent_api.AgentProtocol {
+	if a.flags.protocol != "" {
+		return agent_api.AgentProtocol(a.flags.protocol)
+	}
+
+	if a.flags.local {
+		return a.resolveLocalProtocol(ctx)
+	}
+	return a.resolveRemoteProtocol(ctx)
 }
 
 // resolveRemoteProtocol determines the protocol for remote invocation from agent.yaml.

@@ -168,7 +168,7 @@ func ensureLoggedIn(ctx context.Context, getAuthStatusJSON func(ctx context.Cont
 				return nil
 			}
 
-			// Unrecognised status value — fall through to best-effort skip.
+			// Unrecognized status value — fall through to best-effort skip.
 		}
 	}
 

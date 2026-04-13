@@ -69,7 +69,7 @@ const (
 	AuthTypePAT              AuthType = "PAT"
 	AuthTypeUserEntraToken   AuthType = "UserEntraToken"
 	AuthTypeAgenticIdentity  AuthType = "AgenticIdentity"
-	AuthTypeManagedIdentity  AuthType = "ManagedIdentity"
+	AuthTypeManagedIdentity  AuthType = "ProjectManagedIdentity"
 	AuthTypeServicePrincipal AuthType = "ServicePrincipal"
 	AuthTypeUsernamePassword AuthType = "UsernamePassword"
 	AuthTypeAccessKey        AuthType = "AccessKey"

@@ -312,6 +312,253 @@ postprovision:
 				pythonHook.Config["virtualEnvName"],
 			)
 		})
+
+	t.Run("nested config maps", func(t *testing.T) {
+		const doc = `
+postprovision:
+  run: ./hooks/setup.py
+  kind: python
+  config:
+    database:
+      host: localhost
+      port: 5432
+    logging:
+      level: debug
+`
+
+		var hooks HooksConfig
+		err := yaml.Unmarshal([]byte(doc), &hooks)
+		require.NoError(t, err)
+
+		require.Len(t, hooks["postprovision"], 1)
+		hook := hooks["postprovision"][0]
+		require.NotNil(t, hook.Config)
+
+		db, ok := hook.Config["database"].(map[string]any)
+		require.True(t, ok,
+			"database should be map[string]any",
+		)
+		assert.Equal(t, "localhost", db["host"])
+		assert.Equal(t, 5432, db["port"])
+
+		logging, ok :=
+			hook.Config["logging"].(map[string]any)
+		require.True(t, ok,
+			"logging should be map[string]any",
+		)
+		assert.Equal(t, "debug", logging["level"])
+	})
+
+	t.Run("config with list values", func(t *testing.T) {
+		const doc = `
+postprovision:
+  run: ./hooks/setup.sh
+  config:
+    paths:
+      - ./src
+      - ./lib
+    flags:
+      - --verbose
+      - --dry-run
+`
+
+		var hooks HooksConfig
+		err := yaml.Unmarshal([]byte(doc), &hooks)
+		require.NoError(t, err)
+
+		require.Len(t, hooks["postprovision"], 1)
+		hook := hooks["postprovision"][0]
+		require.NotNil(t, hook.Config)
+
+		paths, ok := hook.Config["paths"].([]any)
+		require.True(t, ok,
+			"paths should be []any",
+		)
+		require.Len(t, paths, 2)
+		assert.Equal(t, "./src", paths[0])
+		assert.Equal(t, "./lib", paths[1])
+
+		flags, ok := hook.Config["flags"].([]any)
+		require.True(t, ok,
+			"flags should be []any",
+		)
+		require.Len(t, flags, 2)
+		assert.Equal(t, "--verbose", flags[0])
+		assert.Equal(t, "--dry-run", flags[1])
+	})
+
+	t.Run("platform override hooks with config",
+		func(t *testing.T) {
+			const doc = `
+postprovision:
+  run: ./hooks/setup.py
+  kind: python
+  config:
+    virtualEnvName: .venv
+  windows:
+    run: .\hooks\setup.py
+    kind: python
+    config:
+      virtualEnvName: .win-venv
+  posix:
+    run: ./hooks/setup.py
+    kind: python
+    config:
+      virtualEnvName: .posix-venv
+`
+
+			var hooks HooksConfig
+			err := yaml.Unmarshal([]byte(doc), &hooks)
+			require.NoError(t, err)
+
+			require.Len(t, hooks["postprovision"], 1)
+			hook := hooks["postprovision"][0]
+
+			require.NotNil(t, hook.Config)
+			assert.Equal(t,
+				".venv",
+				hook.Config["virtualEnvName"],
+			)
+
+			require.NotNil(t, hook.Windows)
+			require.NotNil(t, hook.Windows.Config)
+			assert.Equal(t,
+				".win-venv",
+				hook.Windows.Config["virtualEnvName"],
+			)
+
+			require.NotNil(t, hook.Posix)
+			require.NotNil(t, hook.Posix.Config)
+			assert.Equal(t,
+				".posix-venv",
+				hook.Posix.Config["virtualEnvName"],
+			)
+		})
+
+	t.Run("config type preservation",
+		func(t *testing.T) {
+			const doc = `
+postprovision:
+  run: ./hooks/setup.sh
+  config:
+    retries: 3
+    verbose: true
+    timeout: 30.5
+    name: my-hook
+`
+
+			var hooks HooksConfig
+			err := yaml.Unmarshal([]byte(doc), &hooks)
+			require.NoError(t, err)
+
+			require.Len(t, hooks["postprovision"], 1)
+			hook := hooks["postprovision"][0]
+			require.NotNil(t, hook.Config)
+
+			assert.IsType(t, 0, hook.Config["retries"])
+			assert.Equal(t, 3, hook.Config["retries"])
+
+			assert.IsType(t,
+				true, hook.Config["verbose"],
+			)
+			assert.Equal(t,
+				true, hook.Config["verbose"],
+			)
+
+			assert.IsType(t,
+				0.0, hook.Config["timeout"],
+			)
+			assert.InDelta(t,
+				30.5, hook.Config["timeout"], 0.001,
+			)
+
+			assert.IsType(t, "", hook.Config["name"])
+			assert.Equal(t,
+				"my-hook", hook.Config["name"],
+			)
+
+			// Roundtrip preserves types.
+			data, err := yaml.Marshal(hooks)
+			require.NoError(t, err)
+
+			var got HooksConfig
+			err = yaml.Unmarshal(data, &got)
+			require.NoError(t, err)
+
+			rtHook := got["postprovision"][0]
+			require.NotNil(t, rtHook.Config)
+			assert.Equal(t, hook.Config, rtHook.Config)
+		})
+
+	t.Run("empty config block", func(t *testing.T) {
+		const doc = `
+postprovision:
+  run: ./hooks/setup.sh
+  config: {}
+`
+
+		var hooks HooksConfig
+		err := yaml.Unmarshal([]byte(doc), &hooks)
+		require.NoError(t, err)
+
+		require.Len(t, hooks["postprovision"], 1)
+		hook := hooks["postprovision"][0]
+
+		require.NotNil(t, hook.Config)
+		assert.Empty(t, hook.Config)
+
+		// Marshal omits empty config via omitempty tag.
+		data, err := yaml.Marshal(hooks)
+		require.NoError(t, err)
+		assert.NotContains(t, string(data), "config")
+	})
+
+	t.Run("config in list-format hooks",
+		func(t *testing.T) {
+			const doc = `
+postprovision:
+  - run: ./hooks/first.py
+    kind: python
+    config:
+      virtualEnvName: .venv
+  - run: ./hooks/second.ts
+    kind: ts
+    config:
+      packageManager: pnpm
+`
+
+			var hooks HooksConfig
+			err := yaml.Unmarshal([]byte(doc), &hooks)
+			require.NoError(t, err)
+
+			require.Len(t, hooks["postprovision"], 2)
+
+			first := hooks["postprovision"][0]
+			assert.Equal(t,
+				"./hooks/first.py", first.Run,
+			)
+			assert.Equal(t,
+				language.HookKindPython, first.Kind,
+			)
+			require.NotNil(t, first.Config)
+			assert.Equal(t,
+				".venv",
+				first.Config["virtualEnvName"],
+			)
+
+			second := hooks["postprovision"][1]
+			assert.Equal(t,
+				"./hooks/second.ts", second.Run,
+			)
+			assert.Equal(t,
+				language.HookKindTypeScript, second.Kind,
+			)
+			require.NotNil(t, second.Config)
+			assert.Equal(t,
+				"pnpm",
+				second.Config["packageManager"],
+			)
+		})
 }
 
 func TestHooksConfig_MarshalYAML(t *testing.T) {

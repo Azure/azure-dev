@@ -145,7 +145,7 @@
         "authType": {
           "type": "string",
           "description": "Authentication type for the connection.",
-          "enum": ["AAD", "AccessKey", "AccountKey", "ApiKey", "CustomKeys", "ManagedIdentity", "None", "OAuth2", "PAT", "ServicePrincipal", "UsernamePassword"]
+          "enum": ["AAD", "AccessKey", "AccountKey", "ApiKey", "CustomKeys", "ProjectManagedIdentity", "None", "OAuth2", "PAT", "ServicePrincipal", "UsernamePassword"]
         },
         "credentials": {
           "type": "object",

@@ -6,7 +6,6 @@ package registry_api
 import (
 	"context"
 	"fmt"
-	"os"
 	"reflect"
 	"strconv"
 	"strings"
@@ -16,7 +15,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/braydonk/yaml"
-	"golang.org/x/term"
 )
 
 // ParameterValues represents the user-provided values for manifest parameters
@@ -352,11 +350,16 @@ func promptForYamlParameterValues(
 		if len(enumValues) > 0 {
 			// Use selection for enum parameters
 			value, err = promptForEnumValue(ctx, property.Name, enumValues, defaultValue, azdClient, noPrompt)
-		} else if isSecret {
-			// Use masked input for secret parameters
-			value, err = promptForSecretValue(property.Name, isRequired)
+		} else if isSecret && noPrompt {
+			return nil, fmt.Errorf(
+				"unable to prompt for secret parameter '%s' in no-prompt mode; "+
+					"provide the value via environment variable",
+				property.Name,
+			)
 		} else {
-			// Use text input for other parameters
+			// TODO: Secret parameters are prompted in plaintext because the azd gRPC PromptOptions
+			// does not support masked input. Add IsSecret to the PromptOptions protobuf in azd core
+			// to enable proper secret masking.
 			value, err = promptForTextValue(ctx, property.Name, defaultValue, isRequired, azdClient)
 		}
 
@@ -484,24 +487,6 @@ func promptForTextValue(
 	}
 
 	return resp.Value, nil
-}
-
-// promptForSecretValue reads a secret value from the terminal with masked input.
-func promptForSecretValue(paramName string, required bool) (any, error) {
-	fmt.Printf("Enter value for parameter '%s': ", paramName)
-
-	secret, err := term.ReadPassword(int(os.Stdin.Fd()))
-	fmt.Println() // newline after masked input
-	if err != nil {
-		return nil, fmt.Errorf("failed to read secret value: %w", err)
-	}
-
-	value := strings.TrimSpace(string(secret))
-	if value == "" && required {
-		return nil, fmt.Errorf("parameter '%s' is required but no value was provided", paramName)
-	}
-
-	return value, nil
 }
 
 // injectParameterValues replaces parameter placeholders in the template with actual values

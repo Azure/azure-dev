@@ -1213,7 +1213,8 @@ func TestEnsureLoggedIn(t *testing.T) {
 		serverErr  error
 		wantErr    bool
 		wantCode   string
-		wantPassth bool // expect the original error to be returned as-is
+		wantMsg    string // substring expected in the error message
+		wantPassth bool   // expect the original error to be returned as-is
 	}{
 		{
 			name:      "success returns nil",
@@ -1225,12 +1226,20 @@ func TestEnsureLoggedIn(t *testing.T) {
 			serverErr: status.Error(codes.Unauthenticated, "not logged in, run `azd auth login`"),
 			wantErr:   true,
 			wantCode:  exterrors.CodeNotLoggedIn,
+			wantMsg:   "not logged in",
 		},
 		{
 			name:      "unauthenticated preserves server message",
 			serverErr: status.Error(codes.Unauthenticated, "token expired"),
 			wantErr:   true,
 			wantCode:  exterrors.CodeNotLoggedIn,
+			wantMsg:   "token expired",
+		},
+		{
+			name:       "context canceled is propagated",
+			serverErr:  context.Canceled,
+			wantErr:    true,
+			wantPassth: true,
 		},
 		{
 			name:       "gRPC cancelled is propagated",
@@ -1292,6 +1301,9 @@ func TestEnsureLoggedIn(t *testing.T) {
 			}
 			if localErr.Code != tt.wantCode {
 				t.Errorf("code = %q, want %q", localErr.Code, tt.wantCode)
+			}
+			if tt.wantMsg != "" && !strings.Contains(localErr.Message, tt.wantMsg) {
+				t.Errorf("message = %q, want it to contain %q", localErr.Message, tt.wantMsg)
 			}
 		})
 	}

@@ -542,7 +542,7 @@ func (p *BicepProvider) getSnapshotPredictedRGs(ctx context.Context) map[string]
 	}
 
 	log.Printf("snapshot classification: found %d predicted resource group(s): %v",
-		len(predictedRGs), maps.Keys(predictedRGs))
+		len(predictedRGs), slices.Collect(maps.Keys(predictedRGs)))
 	return predictedRGs
 }
 

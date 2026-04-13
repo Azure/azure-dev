@@ -2480,6 +2480,16 @@ func (p *BicepProvider) checkAiModelQuota(
 			continue
 		}
 
+		// Aggregate required capacity per usage name so that multiple deployments
+		// sharing the same quota pool are checked against their combined demand.
+		requiredByUsage := map[string]float64{}
+		type depWithUsage struct {
+			dep       cognitiveDeploymentInfo
+			usageName string
+			capacity  float64
+		}
+		var resolved []depWithUsage
+
 		for _, dep := range deps {
 			usageName := resolveUsageName(catalogModels, dep)
 			if usageName == "" {
@@ -2506,29 +2516,42 @@ func (p *BicepProvider) checkAiModelQuota(
 				continue
 			}
 
-			remaining, found := usageMap[usageName]
+			effectiveCapacity := float64(dep.Capacity)
+			if effectiveCapacity <= 0 {
+				effectiveCapacity = 1
+			}
+
+			requiredByUsage[usageName] += effectiveCapacity
+			resolved = append(resolved, depWithUsage{dep: dep, usageName: usageName, capacity: effectiveCapacity})
+		}
+
+		// Check aggregated capacity against remaining quota.
+		reportedUsage := map[string]bool{}
+		for _, r := range resolved {
+			if reportedUsage[r.usageName] {
+				continue // already reported for this usage name
+			}
+
+			remaining, found := usageMap[r.usageName]
 			if !found {
 				continue
 			}
 
-			requiredCapacity := float64(dep.Capacity)
-			if requiredCapacity <= 0 {
-				requiredCapacity = 1
-			}
-
-			if remaining < requiredCapacity {
+			totalRequired := requiredByUsage[r.usageName]
+			if remaining < totalRequired {
+				reportedUsage[r.usageName] = true
 				results = append(results, PreflightCheckResult{
 					Severity:     PreflightCheckWarning,
 					DiagnosticID: "ai_model_quota_exceeded",
 					Message: fmt.Sprintf(
 						"insufficient quota for model %q (SKU: %s) in %s. "+
-							"Requested capacity: %d, remaining quota: %.0f. "+
+							"Requested capacity: %.0f, remaining quota: %.0f. "+
 							"The deployment may fail. Consider reducing capacity, "+
 							"selecting a different model, or requesting a quota increase.",
-						dep.ModelName,
-						dep.SkuName,
+						r.dep.ModelName,
+						r.dep.SkuName,
 						loc,
-						dep.Capacity,
+						totalRequired,
 						remaining,
 					),
 				})

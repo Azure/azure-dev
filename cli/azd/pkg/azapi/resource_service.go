@@ -333,7 +333,7 @@ func (rs *ResourceService) GetResourceGroup(
 
 	resp, err := client.Get(ctx, resourceGroupName, nil)
 	if err != nil {
-		return nil, fmt.Errorf("getting resource group %s: %w", resourceGroupName, err)
+		return nil, fmt.Errorf("getting resource group %q in subscription %q: %w", resourceGroupName, subscriptionId, err)
 	}
 
 	return &ResourceGroup{

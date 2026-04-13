@@ -30,7 +30,7 @@ func TestPreflightCheckFn_SkipsWhenNoRoleAssignments(t *testing.T) {
 		Props: resourcesProperties{HasRoleAssignments: false},
 	}
 
-	result, err := checkFn(context.Background(), valCtx)
+	result, err := checkFn(t.Context(), valCtx)
 	require.NoError(t, err)
 	require.True(t, called)
 	require.Nil(t, result)
@@ -54,7 +54,7 @@ func TestPreflightCheckFn_ReportsErrorWhenRoleAssignments(t *testing.T) {
 		Props: resourcesProperties{HasRoleAssignments: true},
 	}
 
-	results, err := checkFn(context.Background(), valCtx)
+	results, err := checkFn(t.Context(), valCtx)
 	require.NoError(t, err)
 	require.Len(t, results, 1)
 	require.Equal(t, PreflightCheckError, results[0].Severity)

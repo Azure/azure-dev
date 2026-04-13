@@ -448,7 +448,9 @@ func (l *localArmPreflight) validate(
 		SnapshotResources: snapshot.PredictedResources,
 	}
 
-	var results []PreflightCheckResult
+	// Initialize to a non-nil empty slice so the caller can distinguish "checks ran
+	// but found nothing" (empty slice) from "checks were skipped" (nil).
+	results := []PreflightCheckResult{}
 	for _, check := range l.checks {
 		checkResults, err := check.Fn(ctx, valCtx)
 		if err != nil {

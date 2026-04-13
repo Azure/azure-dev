@@ -84,7 +84,7 @@ func (m *HooksMiddleware) registerCommandHooks(
 		return next(ctx)
 	}
 
-	hooksManager := ext.NewHooksManager(m.projectConfig.Path, m.commandRunner)
+	hooksManager := ext.NewHooksManager(m.projectConfig.Path, m.projectConfig.Path, m.commandRunner)
 	hooksRunner := ext.NewHooksRunner(
 		hooksManager,
 		m.commandRunner,
@@ -142,7 +142,7 @@ func (m *HooksMiddleware) registerServiceHooks(ctx context.Context) error {
 			continue
 		}
 
-		serviceHooksManager := ext.NewHooksManager(service.Path(), m.commandRunner)
+		serviceHooksManager := ext.NewHooksManager(service.Path(), m.projectConfig.Path, m.commandRunner)
 		serviceHooksRunner := ext.NewHooksRunner(
 			serviceHooksManager,
 			m.commandRunner,
@@ -206,7 +206,7 @@ func (m *HooksMiddleware) validateHooks(ctx context.Context, projectConfig *proj
 			return
 		}
 
-		hooksManager := ext.NewHooksManager(cwd, m.commandRunner)
+		hooksManager := ext.NewHooksManager(cwd, projectConfig.Path, m.commandRunner)
 		validationResult := hooksManager.ValidateHooks(ctx, hooks)
 
 		for _, warning := range validationResult.Warnings {

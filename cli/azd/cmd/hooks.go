@@ -332,7 +332,7 @@ func (hra *hooksRunAction) execHook(
 		hookName: {hook},
 	}
 
-	hooksManager := ext.NewHooksManager(cwd, hra.commandRunner)
+	hooksManager := ext.NewHooksManager(cwd, hra.projectConfig.Path, hra.commandRunner)
 	hooksRunner := ext.NewHooksRunner(
 		hooksManager, hra.commandRunner, hra.envManager, hra.console, cwd, hooksMap, hra.env, hra.serviceLocator)
 
@@ -357,7 +357,7 @@ func (hra *hooksRunAction) validateAndWarnHooks(ctx context.Context) error {
 			return
 		}
 
-		hooksManager := ext.NewHooksManager(cwd, hra.commandRunner)
+		hooksManager := ext.NewHooksManager(cwd, hra.projectConfig.Path, hra.commandRunner)
 		validationResult := hooksManager.ValidateHooks(ctx, hooks)
 
 		for _, warning := range validationResult.Warnings {

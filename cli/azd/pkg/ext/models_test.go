@@ -764,3 +764,197 @@ func TestHookConfig_ValidatePathTraversal(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "escapes project root")
 }
+
+// TestHookConfig_ServiceHookRelativePathWithinProject verifies that
+// service-level hooks with relative paths that reference parent
+// directories are accepted when they resolve within the project
+// root. This is the regression scenario from issue #7666 where a
+// service in src/logicApp has hooks at ../../hooks/prepackage.ps1.
+func TestHookConfig_ServiceHookRelativePathWithinProject(
+	t *testing.T,
+) {
+	// Structure:
+	//   projectRoot/
+	//     hooks/prepackage.sh
+	//     hooks/prepackage.ps1
+	//     hooks/prepackage.py
+	//     hooks/prepackage.js
+	//     hooks/prepackage.ts
+	//     hooks/prepackage.cs
+	//     src/logicApp/  (service cwd)
+	projectRoot := t.TempDir()
+	serviceCwd := filepath.Join(
+		projectRoot, "src", "logicApp",
+	)
+	hooksDir := filepath.Join(projectRoot, "hooks")
+
+	require.NoError(t, os.MkdirAll(serviceCwd, 0o755))
+	require.NoError(t, os.MkdirAll(hooksDir, 0o755))
+
+	// Create script files for all hook kinds.
+	scripts := []string{
+		"prepackage.sh",
+		"prepackage.ps1",
+		"prepackage.py",
+		"prepackage.js",
+		"prepackage.ts",
+		"prepackage.cs",
+	}
+	for _, s := range scripts {
+		require.NoError(t, os.WriteFile(
+			filepath.Join(hooksDir, s), nil, 0o600,
+		))
+	}
+
+	tests := []struct {
+		name string
+		run  string
+		kind language.HookKind
+	}{
+		{
+			name: "BashHookFromService",
+			run: filepath.Join(
+				"..", "..", "hooks", "prepackage.sh",
+			),
+			kind: language.HookKindBash,
+		},
+		{
+			name: "PowerShellHookFromService",
+			run: filepath.Join(
+				"..", "..", "hooks", "prepackage.ps1",
+			),
+			kind: language.HookKindPowerShell,
+		},
+		{
+			name: "PythonHookFromService",
+			run: filepath.Join(
+				"..", "..", "hooks", "prepackage.py",
+			),
+			kind: language.HookKindPython,
+		},
+		{
+			name: "JavaScriptHookFromService",
+			run: filepath.Join(
+				"..", "..", "hooks", "prepackage.js",
+			),
+			kind: language.HookKindJavaScript,
+		},
+		{
+			name: "TypeScriptHookFromService",
+			run: filepath.Join(
+				"..", "..", "hooks", "prepackage.ts",
+			),
+			kind: language.HookKindTypeScript,
+		},
+		{
+			name: "DotNetHookFromService",
+			run: filepath.Join(
+				"..", "..", "hooks", "prepackage.cs",
+			),
+			kind: language.HookKindDotNet,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := HookConfig{
+				Name:       "prepackage",
+				Run:        tt.run,
+				cwd:        serviceCwd,
+				projectDir: projectRoot,
+			}
+
+			err := config.validate()
+			require.NoError(t, err,
+				"hook within project root must not "+
+					"be rejected")
+			require.Equal(t, tt.kind, config.Kind)
+		})
+	}
+}
+
+// TestHookConfig_ServiceHookEscapesProjectRoot verifies that
+// service-level hooks that escape the project root are still
+// rejected even when projectDir is set separately from cwd.
+func TestHookConfig_ServiceHookEscapesProjectRoot(
+	t *testing.T,
+) {
+	projectRoot := t.TempDir()
+	serviceCwd := filepath.Join(
+		projectRoot, "src", "logicApp",
+	)
+	require.NoError(t, os.MkdirAll(serviceCwd, 0o755))
+
+	// Script file outside the project root — the
+	// boundary check must reject this.
+	outsideDir := t.TempDir()
+	scriptPath := filepath.Join(outsideDir, "evil.sh")
+	require.NoError(t, os.WriteFile(
+		scriptPath, nil, 0o600,
+	))
+
+	config := HookConfig{
+		Name:       "prepackage",
+		Shell:      string(language.HookKindBash),
+		Run:        scriptPath,
+		cwd:        serviceCwd,
+		projectDir: projectRoot,
+	}
+
+	err := config.validate()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "escapes project root")
+}
+
+// TestHookConfig_ProjectDirFallbackToCwd verifies that when
+// projectDir is empty, cwd is used as the boundary (preserving
+// backward compatibility).
+func TestHookConfig_ProjectDirFallbackToCwd(t *testing.T) {
+	cwd := t.TempDir()
+
+	config := HookConfig{
+		Name:  "test",
+		Shell: string(language.HookKindBash),
+		Run:   "echo hello",
+		Dir:   filepath.Join("..", "..", "escape"),
+		cwd:   cwd,
+		// projectDir intentionally empty
+	}
+
+	err := config.validate()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "escapes project root")
+}
+
+// TestHookConfig_ServiceDirWithinProjectBoundary verifies that
+// an explicit Dir field that resolves within the project root is
+// accepted for service-level hooks with a separate projectDir.
+func TestHookConfig_ServiceDirWithinProjectBoundary(
+	t *testing.T,
+) {
+	projectRoot := t.TempDir()
+	serviceCwd := filepath.Join(
+		projectRoot, "src", "logicApp",
+	)
+	require.NoError(t, os.MkdirAll(serviceCwd, 0o755))
+
+	scriptDir := filepath.Join(projectRoot, "hooks")
+	require.NoError(t, os.MkdirAll(scriptDir, 0o755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(scriptDir, "deploy.sh"),
+		nil, 0o600,
+	))
+
+	config := HookConfig{
+		Name:       "predeploy",
+		Shell:      string(language.HookKindBash),
+		Run:        "deploy.sh",
+		Dir:        filepath.Join("..", "..", "hooks"),
+		cwd:        serviceCwd,
+		projectDir: projectRoot,
+	}
+
+	err := config.validate()
+	require.NoError(t, err,
+		"Dir within project root must be accepted")
+}

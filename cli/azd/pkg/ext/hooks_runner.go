@@ -159,7 +159,10 @@ func (h *HooksRunner) execHook(
 		cwd = h.cwd // fallback (shouldn't happen after validate)
 	}
 
-	boundaryDir := hookConfig.cwd
+	boundaryDir := hookConfig.projectDir
+	if boundaryDir == "" {
+		boundaryDir = hookConfig.cwd
+	}
 	if boundaryDir == "" {
 		boundaryDir = h.cwd
 	}

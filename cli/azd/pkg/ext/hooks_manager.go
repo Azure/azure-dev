@@ -27,13 +27,18 @@ type HookFilterPredicateFn func(scriptName string, hookConfig *HookConfig) bool
 // commands. Hooks can be invoked at the project or service level.
 type HooksManager struct {
 	cwd           string
+	projectDir    string
 	commandRunner exec.CommandRunner
 }
 
 // NewHooks creates a new instance of CommandHooks
-// When `cwd` is empty defaults to current shell working directory
+// When `cwd` is empty defaults to current shell working directory.
+// `projectDir` is the project root directory (where azure.yaml
+// lives), used as the security boundary for path containment.
+// When empty, `cwd` is used as the boundary.
 func NewHooksManager(
 	cwd string,
+	projectDir string,
 	commandRunner exec.CommandRunner,
 ) *HooksManager {
 	if cwd == "" {
@@ -45,8 +50,13 @@ func NewHooksManager(
 		cwd = osWd
 	}
 
+	if projectDir == "" {
+		projectDir = cwd
+	}
+
 	return &HooksManager{
 		cwd:           cwd,
+		projectDir:    projectDir,
 		commandRunner: commandRunner,
 	}
 }
@@ -116,6 +126,7 @@ func (h *HooksManager) filterConfigs(
 
 			hook.Name = scriptName
 			hook.cwd = h.cwd
+			hook.projectDir = h.projectDir
 
 			if err := hook.validate(); err != nil {
 				return nil, fmt.Errorf("hook configuration for '%s' is invalid, %w", scriptName, err)
@@ -162,6 +173,9 @@ func (h *HooksManager) ValidateHooks(ctx context.Context, allHooks map[string][]
 			// Set the working directory for validation
 			if hookConfig.cwd == "" {
 				hookConfig.cwd = h.cwd
+			}
+			if hookConfig.projectDir == "" {
+				hookConfig.projectDir = h.projectDir
 			}
 
 			// Only perform shell detection for warning purposes, not full validation
@@ -290,6 +304,9 @@ func (h *HooksManager) validateRuntimes(
 
 			if cfg.cwd == "" {
 				cfg.cwd = h.cwd
+			}
+			if cfg.projectDir == "" {
+				cfg.projectDir = h.projectDir
 			}
 
 			// Set the hook name so that any temp scripts

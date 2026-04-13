@@ -77,6 +77,10 @@ type HookConfig struct {
 	validated bool
 	// Stores the working directory set for this hook config
 	cwd string
+	// projectDir is the project root directory (where azure.yaml
+	// lives). Used as the security boundary for path containment
+	// checks. When empty, cwd is used as the boundary instead.
+	projectDir string
 	// When set, contains the inline script content to execute
 	script string
 	// Indicates if the shell was automatically detected based on OS (used for warnings)
@@ -256,43 +260,54 @@ func (hc *HookConfig) validate() error {
 	// the single source of truth for hook execution paths.
 	// execHook() should read these directly.
 
-	boundaryDir := hc.cwd
+	// cwdDir is the working directory for resolving relative
+	// paths (e.g. the service directory for service hooks).
+	cwdDir := hc.cwd
+	if cwdDir == "" {
+		cwdDir, _ = os.Getwd()
+	}
+
+	// boundaryDir is the project root used for path
+	// containment validation. For service-level hooks this
+	// is the project root (where azure.yaml lives), which
+	// may differ from cwdDir (the service directory).
+	boundaryDir := hc.projectDir
 	if boundaryDir == "" {
-		boundaryDir, _ = os.Getwd()
+		boundaryDir = cwdDir
 	}
 
 	// Resolve working directory.
 	if hc.Dir != "" {
 		dir := hc.Dir
 		if !filepath.IsAbs(dir) {
-			dir = filepath.Join(boundaryDir, dir)
+			dir = filepath.Join(cwdDir, dir)
 		}
 		hc.resolvedDir = dir
 	} else if hc.path != "" && !hc.Kind.IsShell() {
 		// Non-shell hooks: derive cwd from script directory so
 		// project-relative tooling (venvs, node_modules) works.
 		hc.resolvedDir = filepath.Dir(
-			filepath.Join(boundaryDir, hc.path),
+			filepath.Join(cwdDir, hc.path),
 		)
 	} else {
-		hc.resolvedDir = boundaryDir
+		hc.resolvedDir = cwdDir
 	}
 
 	// Resolve script path to absolute.
 	if hc.path != "" {
 		if dirExplicit && !filepath.IsAbs(hc.path) {
 			// Dir was explicitly set — run path is relative
-			// to Dir, not boundaryDir alone.
+			// to Dir, not cwdDir alone.
 			dir := hc.Dir
 			if !filepath.IsAbs(dir) {
-				dir = filepath.Join(boundaryDir, dir)
+				dir = filepath.Join(cwdDir, dir)
 			}
 			hc.resolvedScriptPath = filepath.Join(
 				dir, hc.path,
 			)
 		} else if !filepath.IsAbs(hc.path) {
 			hc.resolvedScriptPath = filepath.Join(
-				boundaryDir, hc.path,
+				cwdDir, hc.path,
 			)
 		} else {
 			hc.resolvedScriptPath = hc.path

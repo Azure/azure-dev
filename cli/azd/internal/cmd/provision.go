@@ -535,7 +535,7 @@ func (p *ProvisionAction) runLayerProvisionWithHooks(
 		return actionFn()
 	}
 
-	hooksManager := ext.NewHooksManager(layerPath, p.commandRunner)
+	hooksManager := ext.NewHooksManager(layerPath, p.projectConfig.Path, p.commandRunner)
 	hooksRunner := ext.NewHooksRunner(
 		hooksManager,
 		p.commandRunner,

@@ -20,6 +20,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
@@ -27,7 +28,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/benbjohnson/clock"
-	"go.opentelemetry.io/otel/attribute"
 )
 
 // cArmDeploymentNameLengthMax is the maximum length of the name of a deployment in ARM.
@@ -240,12 +240,8 @@ func (ds *StandardDeployments) DeployToSubscription(
 	tags map[string]*string,
 	options map[string]any,
 ) (_ *ResourceDeployment, err error) {
-	ctx, span := tracing.Start(ctx, "arm.deploy.subscription")
+	ctx, span := tracing.Start(ctx, events.ArmDeploySubscriptionEvent)
 	defer func() { span.EndWithStatus(err) }()
-	span.SetAttributes(
-		attribute.String("arm.subscription", subscriptionId),
-		attribute.String("arm.deployment", deploymentName),
-	)
 
 	deploymentClient, err := ds.createDeploymentsClient(ctx, subscriptionId)
 	if err != nil {
@@ -286,13 +282,8 @@ func (ds *StandardDeployments) DeployToResourceGroup(
 	tags map[string]*string,
 	options map[string]any,
 ) (_ *ResourceDeployment, err error) {
-	ctx, span := tracing.Start(ctx, "arm.deploy.resourcegroup")
+	ctx, span := tracing.Start(ctx, events.ArmDeployResourceGroupEvent)
 	defer func() { span.EndWithStatus(err) }()
-	span.SetAttributes(
-		attribute.String("arm.subscription", subscriptionId),
-		attribute.String("arm.resourcegroup", resourceGroup),
-		attribute.String("arm.deployment", deploymentName),
-	)
 
 	deploymentClient, err := ds.createDeploymentsClient(ctx, subscriptionId)
 	if err != nil {
@@ -609,12 +600,8 @@ func (ds *StandardDeployments) WhatIfDeployToSubscription(
 	armTemplate azure.RawArmTemplate,
 	parameters azure.ArmParameters,
 ) (_ *armresources.WhatIfOperationResult, err error) {
-	ctx, span := tracing.Start(ctx, "arm.whatif.subscription")
+	ctx, span := tracing.Start(ctx, events.ArmWhatIfSubscriptionEvent)
 	defer func() { span.EndWithStatus(err) }()
-	span.SetAttributes(
-		attribute.String("arm.subscription", subscriptionId),
-		attribute.String("arm.deployment", deploymentName),
-	)
 
 	deploymentClient, err := ds.createDeploymentsClient(ctx, subscriptionId)
 	if err != nil {
@@ -653,13 +640,8 @@ func (ds *StandardDeployments) WhatIfDeployToResourceGroup(
 	armTemplate azure.RawArmTemplate,
 	parameters azure.ArmParameters,
 ) (_ *armresources.WhatIfOperationResult, err error) {
-	ctx, span := tracing.Start(ctx, "arm.whatif.resourcegroup")
+	ctx, span := tracing.Start(ctx, events.ArmWhatIfResourceGroupEvent)
 	defer func() { span.EndWithStatus(err) }()
-	span.SetAttributes(
-		attribute.String("arm.subscription", subscriptionId),
-		attribute.String("arm.resourcegroup", resourceGroup),
-		attribute.String("arm.deployment", deploymentName),
-	)
 
 	deploymentClient, err := ds.createDeploymentsClient(ctx, subscriptionId)
 	if err != nil {
@@ -790,12 +772,8 @@ func (ds *StandardDeployments) ValidatePreflightToSubscription(
 	tags map[string]*string,
 	options map[string]any,
 ) (err error) {
-	ctx, span := tracing.Start(ctx, "arm.validate.subscription")
+	ctx, span := tracing.Start(ctx, events.ArmValidateSubscriptionEvent)
 	defer func() { span.EndWithStatus(err) }()
-	span.SetAttributes(
-		attribute.String("arm.subscription", subscriptionId),
-		attribute.String("arm.deployment", deploymentName),
-	)
 
 	deploymentClient, err := ds.createDeploymentsClient(ctx, subscriptionId)
 	if err != nil {
@@ -842,13 +820,8 @@ func (ds *StandardDeployments) ValidatePreflightToResourceGroup(
 	tags map[string]*string,
 	options map[string]any,
 ) (err error) {
-	ctx, span := tracing.Start(ctx, "arm.validate.resourcegroup")
+	ctx, span := tracing.Start(ctx, events.ArmValidateResourceGroupEvent)
 	defer func() { span.EndWithStatus(err) }()
-	span.SetAttributes(
-		attribute.String("arm.subscription", subscriptionId),
-		attribute.String("arm.resourcegroup", resourceGroup),
-		attribute.String("arm.deployment", deploymentName),
-	)
 
 	deploymentClient, err := ds.createDeploymentsClient(ctx, subscriptionId)
 	if err != nil {

@@ -19,10 +19,13 @@ handshake to ARM costs 1-2 round trips (50-150ms per handshake depending on regi
 
 **Solution:** `TunedTransport()` clones `http.DefaultTransport` and raises:
 - `MaxIdleConns`: 100 -> 200 (total idle pool across all hosts)
-- `MaxConnsPerHost`: 0 (unlimited) -> 50 (bounded but generous)
-- `MaxIdleConnsPerHost`: 2 -> 50 (matches MaxConnsPerHost so idle connections aren't evicted)
+- `MaxIdleConnsPerHost`: 2 -> 16 (conservative increase over Go's default of 2, avoids overly
+  aggressive per-host limits that could stress backend connection tracking)
 - `IdleConnTimeout`: 90s (kept explicit for documentation; matches Go default)
-- `DisableKeepAlives`: false (explicit; HTTP/1.1 keep-alive per RFC 7230 Section 6.3)
+
+`MaxConnsPerHost` is left at 0 (unlimited, Go's default) because the Azure SDK already has built-in
+concurrency controls via retry policies and rate limiting. `DisableKeepAlives` is left at Go's
+default (false) since `http.DefaultTransport` already enables keep-alives.
 
 **Evidence:** Go stdlib defaults are documented in `net/http/transport.go`. The per-host idle limit of 2
 is the primary bottleneck; raising it to match `MaxConnsPerHost` ensures connections created during a
@@ -95,14 +98,16 @@ This is a transient failure specific to the concurrent provisioning + deployment
   fallback `Deploy()` path, since the tracked deploy consumed the reader
 
 **OTel Tracing:** The entire `DeployAppServiceZip` function is wrapped in a tracing span named
-`"deploy.appservice.zip"` with attributes: `deploy.appservice.app` (app name),
-`deploy.appservice.rg` (resource group), `deploy.appservice.linux` (boolean), and
-`deploy.appservice.attempt` (1-indexed attempt number, updated per retry iteration). The span uses
-named return `err` with `span.EndWithStatus(err)` to automatically record failure status.
+`events.DeployAppServiceZipEvent` with system metadata attributes: `deploy.appservice.linux`
+(boolean) and `deploy.appservice.attempt` (1-indexed attempt number, updated per retry iteration).
+The span uses named return `err` with `span.EndWithStatus(err)` to automatically record failure
+status. No customer data (app names, resource groups) is included in span attributes.
 
-`IsScmReady()` on `ZipDeployClient` sends a lightweight GET to `/api/deployments`. Connection errors
-return `(false, nil)` rather than propagating - the SCM is still restarting, which is the expected state.
-The `//nolint:nilerr` directive documents this intentional error suppression for the linter.
+`IsScmReady()` on `ZipDeployClient` sends a lightweight GET to `/api/deployments`. Known
+transient transport errors (connection refused, DNS lookup failures, net.Error timeouts) return
+`(false, nil)` — the SCM is still restarting, which is the expected state. Other transport errors
+are propagated as `fmt.Errorf("SCM readiness probe: %w", err)` to avoid masking genuine issues.
+Context cancellation is checked via `ctx.Err()` and returns immediately.
 
 ### 5. ACR Credential Exponential Backoff
 
@@ -117,6 +122,11 @@ ACR resource is provisioned. The 20s constant delay means even a single retry wa
 vs 60s worst case with the old constant 20s * 3 retries). The exponential curve means most transient
 404s (DNS propagation, eventual consistency) resolve on the first or second retry, while the longer
 tail preserves roughly the same total retry window for slow DNS propagation edge cases.
+
+Retries are limited to HTTP 404 (resource not yet available) and DNS resolution errors. HTTP 429
+(throttling) and 5xx (server errors) are NOT retried by this outer loop because the Azure SDK's
+built-in retry policy already handles them — retrying at both layers would cause retry amplification
+(outer retries × inner retries).
 
 **Evidence:** Azure DNS propagation FAQ confirms changes "typically take effect within 60 seconds" but
 are often faster. The old link in the comment
@@ -137,7 +147,7 @@ custom `docker.path` pointing to a Dockerfile outside the service directory.
 
 **Solution:** Extracted `resolveDockerPaths()` that resolves docker.path and docker.context
 to absolute paths. Both user-specified and default paths are resolved relative to the service
-directory (via `resolveServiceDir()`) to preserve backward compatibility.This centralizes path resolution that was
+directory (via `resolveServiceDir()`). This centralizes path resolution that was
 previously duplicated across `Build()`, `runRemoteBuild()`, and other call sites.
 
 Called from `Build()`, `runRemoteBuild()`, and `useDotNetPublishForDockerBuild()` (which now calls
@@ -159,21 +169,7 @@ closing it. This preserves compatibility with azcore's poller framework which ma
 lifecycle. Standalone callers (e.g., `federated_token_client.go`) use `defer res.Body.Close()`
 before calling `ReadRawResponse`.
 
-### 8. UpdateAppServiceAppSetting Helper
-
-**File:** `pkg/azapi/webapp.go`
-
-**Problem:** No API existed to update a single App Service application setting without replacing the
-entire set. Callers that needed to add or modify one setting had to manually read-modify-write the
-full settings dictionary, duplicating boilerplate.
-
-**Solution:** Added `UpdateAppServiceAppSetting(ctx, subscriptionId, resourceGroup, appName, key,
-value)` that reads existing settings via `ListApplicationSettings`, adds/overwrites the specified
-key-value pair, and writes all settings back via `UpdateApplicationSettings`. This preserves other
-settings that are not being modified. The function handles the nil-properties edge case by
-initializing the map if empty.
-
-### 9. OTel Tracing Spans for Deployment Profiling
+### 8. OTel Tracing Spans for Deployment Profiling
 
 **Files:** `pkg/azapi/standard_deployments.go`, `pkg/azapi/stack_deployments.go`,
 `pkg/project/container_helper.go`, `pkg/project/container_helper_test.go`
@@ -182,10 +178,13 @@ initializing the map if empty.
 WhatIf operations, and container build/publish had no span coverage, making it impossible to
 profile where wall-clock time is spent during parallel deployment.
 
-**Solution:** Added 11 OTel tracing spans to all performance-critical deployment paths using
-the established pattern: `tracing.Start(ctx, spanName)` + named return `err` + `defer func()
-{ span.EndWithStatus(err) }()`. Each span includes `attribute.String` for subscription,
-resource group, and deployment name to enable correlation in trace viewers.
+**Solution:** Added OTel tracing spans to all performance-critical deployment paths using
+the established pattern: `tracing.Start(ctx, events.EventName)` + named return `err` + `defer func()
+{ span.EndWithStatus(err) }()`. All span names are registered as constants in
+`internal/tracing/events/events.go`. No customer data (app names, resource groups, subscription IDs,
+deployment names) is included in span attributes — only system metadata like
+`deploy.appservice.linux` (boolean) and `deploy.appservice.attempt` (retry count), registered in
+`internal/tracing/fields/fields.go`.
 
 **ARM Standard Deployments** (`standard_deployments.go` — 6 spans):
 - `arm.deploy.subscription` — `DeployToSubscription` (ARM deploy at subscription scope)
@@ -216,7 +215,7 @@ deployment: ARM provisioning (30-120s), WhatIf/Validate (30-90s), container buil
 300s), and ACR credential retrieval (2-62s with backoff). Together with the existing
 `deploy.appservice.zip` span, they provide full end-to-end visibility for profiling `azd up`.
 
-### 10. Supporting Changes
+### 9. Supporting Changes
 
 **Files:** `.gitignore`, `cli/azd/.vscode/cspell-azd-dictionary.txt`
 
@@ -225,7 +224,7 @@ deployment: ARM provisioning (30-120s), WhatIf/Validate (30-90s), container buil
 - `cspell-azd-dictionary.txt`: Added `keepalives` (HTTP keep-alive terminology in TunedTransport),
   `nilerr` (golangci-lint nolint directive in `IsScmReady`), `appsettings` (App Service terminology)
 
-### 11. Container App Adaptive Poll Frequency
+### 10. Container App Adaptive Poll Frequency
 
 **File:** `pkg/containerapps/container_app.go`
 
@@ -248,7 +247,7 @@ benchmarks). The same 5s frequency used for ARM deploy operations (§3) balances
 (6x faster than the 30s default) against ARM rate limits. With 8 parallel services, this generates
 ~96 polls/min per operation type — well within the 1200 reads/5min/subscription limit.
 
-### 12. ACR Login Caching per Registry
+### 11. ACR Login Caching per Registry
 
 **File:** `pkg/azapi/container_registry.go`
 
@@ -284,6 +283,6 @@ invocations.
 | Tracing context propagation | `pkg/project/container_helper_test.go` | Mock assertions updated for tracing context wrapping (`mock.Anything`) |
 
 The ARM client caching, TunedTransport wiring, poll frequency (both ARM and Container App),
-SCM retry logic, ACR login caching, `UpdateAppServiceAppSetting`, and OTel tracing spans are
+SCM retry logic, ACR login caching, and OTel tracing spans are
 infrastructure changes that operate through Azure SDK interactions and are validated through
 integration and end-to-end playback tests rather than isolated unit tests.

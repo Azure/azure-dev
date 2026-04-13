@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -448,11 +449,21 @@ func (c *ZipDeployClient) IsScmReady(ctx context.Context) (bool, error) {
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
 		// Propagate context cancellation / deadline so callers (and Ctrl+C) react immediately.
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || ctx.Err() != nil {
-			return false, err
+		if ctx.Err() != nil {
+			return false, ctx.Err()
 		}
-		// Connection and other transport errors mean SCM is still restarting.
-		return false, nil //nolint:nilerr
+		// Only suppress clearly transient transport errors that indicate the SCM
+		// container is still restarting. Propagate unexpected errors (e.g. offline,
+		// TLS failures, bad proxy) so callers can surface meaningful diagnostics.
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "connection refused") ||
+			strings.Contains(errMsg, "no such host") {
+			return false, nil
+		}
+		if netErr, ok := errors.AsType[net.Error](err); ok && netErr.Timeout() {
+			return false, nil
+		}
+		return false, fmt.Errorf("SCM readiness probe: %w", err)
 	}
 	defer resp.Body.Close()
 

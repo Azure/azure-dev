@@ -38,17 +38,17 @@ func ReadRawResponse[T any](response *http.Response) (*T, error) {
 }
 
 // TunedTransport returns an http.Transport cloned from http.DefaultTransport with
-// connection pooling parameters optimized for Azure CLI workloads. The key tunings
-// are MaxConnsPerHost and MaxIdleConnsPerHost (raised from Go defaults) to avoid
-// unnecessary TLS handshakes when making many concurrent requests to ARM endpoints.
-// With parallel execution, 8+ services may hit ARM simultaneously.
+// connection pooling parameters optimized for Azure CLI workloads. The key tuning
+// is MaxIdleConnsPerHost (raised from Go's default of 2) to avoid unnecessary TLS
+// handshakes when making many concurrent requests to ARM endpoints.
+// MaxConnsPerHost is left at 0 (unlimited) — the Go default — to avoid
+// artificial bottlenecks; the pool is bounded by MaxIdleConns instead.
+// Keep-alive must remain enabled (the default) for connection reuse.
 func TunedTransport() *http.Transport {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.MaxIdleConns = 200
-	transport.MaxConnsPerHost = 50
-	transport.MaxIdleConnsPerHost = 50
+	transport.MaxIdleConnsPerHost = 16
 	transport.IdleConnTimeout = 90 * time.Second
-	transport.DisableKeepAlives = false // keep-alive must remain enabled for pooling
 	return transport
 }
 

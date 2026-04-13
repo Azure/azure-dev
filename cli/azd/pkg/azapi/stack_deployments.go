@@ -23,6 +23,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
@@ -33,7 +34,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/benbjohnson/clock"
 	"github.com/sethvargo/go-retry"
-	"go.opentelemetry.io/otel/attribute"
 )
 
 var FeatureDeploymentStacks = alpha.MustFeatureKey("deployment.stacks")
@@ -259,12 +259,8 @@ func (d *StackDeployments) DeployToSubscription(
 	tags map[string]*string,
 	options map[string]any,
 ) (_ *ResourceDeployment, err error) {
-	ctx, span := tracing.Start(ctx, "arm.stack.deploy.subscription")
+	ctx, span := tracing.Start(ctx, events.ArmStackDeploySubscriptionEvent)
 	defer func() { span.EndWithStatus(err) }()
-	span.SetAttributes(
-		attribute.String("arm.subscription", subscriptionId),
-		attribute.String("arm.deployment", deploymentName),
-	)
 
 	client, err := d.createClient(ctx, subscriptionId)
 	if err != nil {
@@ -342,13 +338,8 @@ func (d *StackDeployments) DeployToResourceGroup(
 	tags map[string]*string,
 	options map[string]any,
 ) (_ *ResourceDeployment, err error) {
-	ctx, span := tracing.Start(ctx, "arm.stack.deploy.resourcegroup")
+	ctx, span := tracing.Start(ctx, events.ArmStackDeployResourceGroupEvent)
 	defer func() { span.EndWithStatus(err) }()
-	span.SetAttributes(
-		attribute.String("arm.subscription", subscriptionId),
-		attribute.String("arm.resourcegroup", resourceGroup),
-		attribute.String("arm.deployment", deploymentName),
-	)
 
 	client, err := d.createClient(ctx, subscriptionId)
 	if err != nil {

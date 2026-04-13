@@ -16,8 +16,9 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice/v2"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
-	"go.opentelemetry.io/otel/attribute"
 )
 
 type AzCliAppServiceProperties struct {
@@ -158,13 +159,8 @@ func (cli *AzureClient) DeployAppServiceZip(
 	deployZipFile io.ReadSeeker,
 	progressLog func(string),
 ) (_ *string, err error) {
-	ctx, span := tracing.Start(ctx, "deploy.appservice.zip")
+	ctx, span := tracing.Start(ctx, events.DeployAppServiceZipEvent)
 	defer func() { span.EndWithStatus(err) }()
-
-	span.SetAttributes(
-		attribute.String("deploy.appservice.app", appName),
-		attribute.String("deploy.appservice.rg", resourceGroup),
-	)
 
 	app, err := cli.appService(ctx, subscriptionId, resourceGroup, appName)
 	if err != nil {
@@ -182,18 +178,18 @@ func (cli *AzureClient) DeployAppServiceZip(
 	}
 
 	isLinux := isLinuxWebApp(app)
-	span.SetAttributes(attribute.Bool("deploy.appservice.linux", isLinux))
+	span.SetAttributes(fields.DeployLinuxKey.Key.Bool(isLinux))
 
 	// Deployment Status API only support linux web app for now
 	if isLinux {
 		// Build failures can be caused by an SCM container restart triggered by ARM
 		// applying site config (app settings) shortly after the site is created.
-		// When concurrent provisioning + deployment is used (e.g. `azd up --concurrent`),
-		// the deploy step may start while the SCM container is still restarting.
-		// Retry the entire zip deploy when the build fails, giving the SCM time to stabilize.
+		// Due to eventual consistency in the Azure platform, the SCM container may
+		// still be restarting even after provisioning reports success. Retry the
+		// entire zip deploy when the build fails, giving the SCM time to stabilize.
 		const maxBuildRetries = 2
 		for attempt := range maxBuildRetries + 1 {
-			span.SetAttributes(attribute.Int("deploy.appservice.attempt", attempt+1))
+			span.SetAttributes(fields.DeployAttemptKey.Key.Int(attempt + 1))
 
 			if attempt > 0 {
 				// Reset the zip file reader so the retry re-uploads the full content.
@@ -206,9 +202,9 @@ func (cli *AzureClient) DeployAppServiceZip(
 
 				// Wait for the SCM site to become ready before retrying.
 				if waitErr := waitForScmReady(ctx, client, 5*time.Second, progressLog); waitErr != nil {
-					// Propagate context cancellation (Ctrl+C) or deadline exceeded
-					// immediately — these indicate the user or system requested abort.
-					if errors.Is(waitErr, context.Canceled) || errors.Is(waitErr, context.DeadlineExceeded) {
+					// Only propagate if the caller's own context is cancelled (e.g. Ctrl+C).
+					// Do not propagate context errors from waitForScmReady's internal timeout.
+					if ctx.Err() != nil {
 						return nil, waitErr
 					}
 					log.Printf("SCM readiness check failed (non-fatal): %v", waitErr)
@@ -282,11 +278,11 @@ type scmReadyChecker interface {
 // pollInterval controls the polling frequency; callers pass the production value
 // (typically 5s) while tests can use shorter intervals to avoid wall-time delays.
 func waitForScmReady(
-	ctx context.Context, client scmReadyChecker, pollInterval time.Duration, progressLog func(string),
+	parentCtx context.Context, client scmReadyChecker, pollInterval time.Duration, progressLog func(string),
 ) error {
 	const scmReadyTimeout = 90 * time.Second
 
-	ctx, cancel := context.WithTimeout(ctx, scmReadyTimeout)
+	ctx, cancel := context.WithTimeout(parentCtx, scmReadyTimeout)
 	defer cancel()
 
 	progressLog("Waiting for SCM site to become ready...")
@@ -304,13 +300,17 @@ func waitForScmReady(
 	for {
 		select {
 		case <-ctx.Done():
+			// Distinguish parent cancellation (Ctrl+C) from local timeout expiry.
+			if parentCtx.Err() != nil {
+				return parentCtx.Err()
+			}
 			return fmt.Errorf("SCM site did not become ready within %v: %w", scmReadyTimeout, ctx.Err())
 		case <-ticker.C:
 		}
 
 		ready, err := client.IsScmReady(ctx)
 		if err != nil {
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			if ctx.Err() != nil {
 				return err
 			}
 			log.Printf("SCM readiness probe error: %v", err)
@@ -395,52 +395,6 @@ func (cli *AzureClient) GetAppServiceSlots(
 	}
 
 	return slots, nil
-}
-
-// UpdateAppServiceAppSetting reads the existing application settings, adds or overwrites
-// the specified key-value pair, and writes all settings back. This preserves other settings
-// that are not being modified.
-//
-// Note: This function is not safe for concurrent use. The Azure App Service settings API
-// replaces the full set on write and does not support ETags, so concurrent updates may
-// result in lost writes. Callers should serialize updates to the same app's settings.
-func (cli *AzureClient) UpdateAppServiceAppSetting(
-	ctx context.Context,
-	subscriptionId string,
-	resourceGroup string,
-	appName string,
-	key string,
-	value string,
-) error {
-	client, err := cli.createWebAppsClient(ctx, subscriptionId)
-	if err != nil {
-		return err
-	}
-
-	// Read existing settings so that we preserve them.
-	existing, err := client.ListApplicationSettings(ctx, resourceGroup, appName, nil)
-	if err != nil {
-		return fmt.Errorf("listing existing app settings: %w", err)
-	}
-
-	if existing.Properties == nil {
-		existing.Properties = map[string]*string{}
-	}
-
-	existing.Properties[key] = &value
-
-	// Write all settings back (the API replaces the full set).
-	if _, err := client.UpdateApplicationSettings(
-		ctx,
-		resourceGroup,
-		appName,
-		armappservice.StringDictionary{Properties: existing.Properties},
-		nil,
-	); err != nil {
-		return fmt.Errorf("updating app settings: %w", err)
-	}
-
-	return nil
 }
 
 // DeployAppServiceSlotZip deploys a zip file to a specific deployment slot.

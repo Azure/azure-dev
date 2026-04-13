@@ -25,8 +25,8 @@ func TestTunedTransport(t *testing.T) {
 
 	require.NotNil(t, transport)
 	require.Equal(t, 200, transport.MaxIdleConns)
-	require.Equal(t, 50, transport.MaxConnsPerHost)
-	require.Equal(t, 50, transport.MaxIdleConnsPerHost)
+	require.Equal(t, 0, transport.MaxConnsPerHost)
+	require.Equal(t, 16, transport.MaxIdleConnsPerHost)
 	require.Equal(t, 90*time.Second, transport.IdleConnTimeout)
 	require.False(t, transport.DisableKeepAlives)
 }

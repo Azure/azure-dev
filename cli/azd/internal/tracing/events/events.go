@@ -52,3 +52,27 @@ const (
 	// skips Kubernetes context setup because the cluster isn't available yet.
 	AksPostprovisionSkipEvent = "aks.postprovision.skip"
 )
+
+// ARM deployment events track provisioning, validation, and preview operations.
+const (
+	ArmDeploySubscriptionEvent       = "arm.deploy.subscription"
+	ArmDeployResourceGroupEvent      = "arm.deploy.resourcegroup"
+	ArmStackDeploySubscriptionEvent  = "arm.stack.deploy.subscription"
+	ArmStackDeployResourceGroupEvent = "arm.stack.deploy.resourcegroup"
+	ArmWhatIfSubscriptionEvent       = "arm.whatif.subscription"
+	ArmWhatIfResourceGroupEvent      = "arm.whatif.resourcegroup"
+	ArmValidateSubscriptionEvent     = "arm.validate.subscription"
+	ArmValidateResourceGroupEvent    = "arm.validate.resourcegroup"
+)
+
+// App Service deployment events.
+const (
+	DeployAppServiceZipEvent = "deploy.appservice.zip"
+)
+
+// Container lifecycle events.
+const (
+	ContainerCredentialsEvent = "container.credentials"
+	ContainerPublishEvent     = "container.publish"
+	ContainerRemoteBuildEvent = "container.remotebuild"
+)

@@ -259,6 +259,24 @@ var (
 	}
 )
 
+// Deployment attributes
+var (
+	// DeployAttemptKey tracks the retry attempt number for App Service zip deployments.
+	DeployAttemptKey = AttributeKey{
+		Key:            attribute.Key("deploy.appservice.attempt"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
+	}
+
+	// DeployLinuxKey tracks whether an App Service deployment targets a Linux web app.
+	DeployLinuxKey = AttributeKey{
+		Key:            attribute.Key("deploy.appservice.linux"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+)
+
 // All possible enumerations of ExecutionEnvironmentKey
 //
 // Environments are mutually exclusive. Modifiers can be set additionally to signal different types of usages.

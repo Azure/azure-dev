@@ -292,7 +292,7 @@ func (ch *ContainerHelper) Credentials(
 	targetResource *environment.TargetResource,
 	env *environment.Environment,
 ) (_ *azapi.DockerCredentials, err error) {
-	ctx, span := tracing.Start(ctx, "container.credentials")
+	ctx, span := tracing.Start(ctx, events.ContainerCredentialsEvent)
 	defer func() { span.EndWithStatus(err) }()
 
 	loginServer, err := ch.RegistryName(ctx, serviceConfig, env)
@@ -312,9 +312,11 @@ func (ch *ContainerHelper) Credentials(
 			cred, err := ch.containerRegistryService.Credentials(ctx, targetResource.SubscriptionId(), loginServer)
 			if err != nil {
 				if httpErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
-					if httpErr.StatusCode == 404 ||
-						httpErr.StatusCode == 429 ||
-						httpErr.StatusCode >= 500 {
+					// Only retry 404 — the ACR resource may not have propagated yet.
+					// Do NOT retry 429 or 5xx here: the Azure SDK's built-in retry
+					// policy already handles those, so retrying at this layer would
+					// cause retry amplification (outer × inner).
+					if httpErr.StatusCode == 404 {
 						return retry.RetryableError(err)
 					}
 				}
@@ -610,7 +612,7 @@ func (ch *ContainerHelper) Publish(
 	progress *async.Progress[ServiceProgress],
 	options *PublishOptions,
 ) (_ *ServicePublishResult, err error) {
-	ctx, span := tracing.Start(ctx, "container.publish")
+	ctx, span := tracing.Start(ctx, events.ContainerPublishEvent)
 	defer func() { span.EndWithStatus(err) }()
 	span.SetAttributes(
 		attribute.Bool("container.remotebuild", serviceConfig.Docker.RemoteBuild),
@@ -800,7 +802,7 @@ func (ch *ContainerHelper) runRemoteBuild(
 	progress *async.Progress[ServiceProgress],
 	imageOverride *imageOverride,
 ) (_ string, err error) {
-	ctx, span := tracing.Start(ctx, "container.remotebuild")
+	ctx, span := tracing.Start(ctx, events.ContainerRemoteBuildEvent)
 	defer func() { span.EndWithStatus(err) }()
 
 	dockerOptions := getDockerOptionsWithDefaults(serviceConfig.Docker)

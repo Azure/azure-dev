@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -20,19 +21,18 @@ var (
 )
 
 // SubscriptionCredentialProvider provides an [azcore.TokenCredential] configured
-// to use the tenant id that corresponds to the tenant the given subscription
-// is located in.
+// to use the access tenant required by the current account for the given subscription.
 type SubscriptionCredentialProvider interface {
 	CredentialForSubscription(ctx context.Context, subscriptionId string) (azcore.TokenCredential, error)
 }
 
 type subscriptionCredentialProvider struct {
 	credProvider auth.MultiTenantCredentialProvider
-	subResolver  SubscriptionTenantResolver
+	subResolver  SubscriptionResolver
 }
 
 func NewSubscriptionCredentialProvider(
-	subResolver SubscriptionTenantResolver,
+	subResolver SubscriptionResolver,
 	credProvider auth.MultiTenantCredentialProvider,
 ) SubscriptionCredentialProvider {
 	return &subscriptionCredentialProvider{
@@ -45,9 +45,9 @@ func (p *subscriptionCredentialProvider) CredentialForSubscription(
 	ctx context.Context,
 	subscriptionId string,
 ) (azcore.TokenCredential, error) {
-	tenantId, err := p.subResolver.LookupTenant(ctx, subscriptionId)
+	subscription, err := p.subResolver.GetSubscription(ctx, subscriptionId)
 	if err != nil {
-		// If we can't resolve the tenant for this subscription, it might be because:
+		// If we can't resolve the subscription for this ID, it might be because:
 		// 1. User manually set AZURE_SUBSCRIPTION_ID in .env
 		// 2. User called `azd env set AZURE_SUBSCRIPTION_ID` instead of selecting from azd's cache
 		// In these cases, suggest they also set AZURE_TENANT_ID
@@ -60,34 +60,55 @@ func (p *subscriptionCredentialProvider) CredentialForSubscription(
 			err,
 		)
 	}
+	tenantId := subscription.UserAccessTenantId
 
 	cred, err := p.credProvider.GetTokenCredential(ctx, tenantId)
 	if err != nil {
 		// If this is an AADSTS refresh token error, enhance it with tenant-specific login guidance
 		if aadRefreshTokenExpiredRegex.MatchString(err.Error()) {
+			message := fmt.Sprintf(
+				"Access to tenant '%s' requires re-authentication before azd can use this subscription.",
+				tenantId,
+			)
+
 			// Check if the error already has a suggestion (ErrorWithSuggestion from auth layer)
 			if errWithSuggestion, ok := errors.AsType[*internal.ErrorWithSuggestion](err); ok {
-				// Enhance the existing suggestion with tenant-specific guidance
-				enhancedSuggestion := fmt.Sprintf(
-					"%s To re-authenticate specifically to this tenant, run `azd auth login --tenant-id %s`.",
-					errWithSuggestion.Suggestion,
-					tenantId,
-				)
+				if errWithSuggestion.Message != "" {
+					message = errWithSuggestion.Message
+				}
+
+				suggestion := strings.TrimSpace(errWithSuggestion.Suggestion)
+				// If the auth layer's suggestion doesn't already include --tenant-id,
+				// append tenant-specific login guidance.
+				if !strings.Contains(suggestion, "--tenant-id") {
+					tenantHint := fmt.Sprintf(
+						"Run `azd auth login --tenant-id %s` to re-authenticate to this tenant.",
+						tenantId,
+					)
+					if suggestion != "" {
+						suggestion = fmt.Sprintf("%s %s", suggestion, tenantHint)
+					} else {
+						suggestion = tenantHint
+					}
+				}
+
 				return nil, &internal.ErrorWithSuggestion{
 					Err:        errWithSuggestion.Err,
-					Suggestion: enhancedSuggestion,
+					Message:    message,
+					Suggestion: suggestion,
+					Links:      errWithSuggestion.Links,
 				}
 			}
 
 			// If it's not wrapped yet, create a new ErrorWithSuggestion
+			tenantSpecificSuggestion := fmt.Sprintf(
+				"Run `azd auth login --tenant-id %s` to re-authenticate to this tenant.",
+				tenantId,
+			)
 			return nil, &internal.ErrorWithSuggestion{
-				Err: err,
-				Suggestion: fmt.Sprintf(
-					"Access to tenant '%s' has expired or requires re-authentication. "+
-						"Run `azd auth login --tenant-id %s` to re-authenticate to this tenant.",
-					tenantId,
-					tenantId,
-				),
+				Err:        err,
+				Message:    message,
+				Suggestion: tenantSpecificSuggestion,
 			}
 		}
 		return nil, err

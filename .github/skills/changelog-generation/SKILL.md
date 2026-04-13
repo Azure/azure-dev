@@ -45,12 +45,12 @@ Auto-detect scope from the current working directory:
 
 ### Step 2 — Determine Version & Update Files
 
-**Files to update (core):** `cli/azd/CHANGELOG.md`, `cli/version.txt`
+**Files to update (core):** `cli/azd/CHANGELOG.md`, `cli/version.txt`, `cli/azd/pkg/azdext/version.go`
 **Files to update (extension):** `<extension>/CHANGELOG.md`, `<extension>/version.txt`, `<extension>/extension.yaml`
 
 For version derivation rules, see [references/scope-rules.md](references/scope-rules.md) § Version Files.
 
-- **Core**: derive version from the existing unreleased header (strip `-beta.*` and `(Unreleased)`), use today's date. Update `cli/version.txt` to the released version.
+- **Core**: derive version from the existing unreleased header (strip `-beta.*` and `(Unreleased)`), use today's date. Update `cli/version.txt` and `cli/azd/pkg/azdext/version.go` (`Version` constant) to the released version.
 - **Extension**: ask the user for the new version number via `ask_user`. Update both `version.txt` and `extension.yaml` — they must match exactly.
 
 Present the version and date to the user for confirmation before writing any files.
@@ -81,7 +81,7 @@ Per [references/pr-processing.md](references/pr-processing.md):
 
 ### Step 5 — Assemble & Review
 
-1. Remove any empty category sections from the new release entry.
+1. **Remove empty category sections** — scan the new release entry and delete any `### <Category>` heading that has no bullet entries beneath it (i.e., the next line is blank followed by another `###` heading or `##` heading or end of section). This is mandatory — never leave empty `### Breaking Changes`, `### Features Added`, `### Bugs Fixed`, or `### Other Changes` sections in the final output.
 2. For extensions using flat bullet lists (no category headings), match the existing style.
 3. Present the **complete changelog entry** to the user for review via `ask_user`.
 

@@ -20,7 +20,7 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/fatih/color"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
 const agentTemplatesURL = "https://aka.ms/foundry-agents"
@@ -158,7 +158,7 @@ func promptAgentTemplate(
 		)
 	}
 
-	_, _ = color.New(color.Faint).Println("Retrieving agent templates...")
+	fmt.Println(output.WithGrayFormat("Retrieving agent templates..."))
 
 	templates, err := fetchAgentTemplates(ctx, httpClient)
 	if err != nil {

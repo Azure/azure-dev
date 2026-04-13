@@ -183,8 +183,10 @@ func Test_workflowCmdAdapter_ContextPropagation(t *testing.T) {
 			subCmd := &cobra.Command{
 				Use: "sub",
 				RunE: func(cmd *cobra.Command, args []string) error {
-					// Capture the context that the subcommand receives
-					receivedContexts = append(receivedContexts, cmd.Context())
+					ctx := cmd.Context()
+					// Verify context is valid DURING execution
+					require.NoError(t, ctx.Err(), "Context should be valid during execution")
+					receivedContexts = append(receivedContexts, ctx)
 					return nil
 				},
 			}
@@ -207,13 +209,10 @@ func Test_workflowCmdAdapter_ContextPropagation(t *testing.T) {
 		require.True(t, middleware.IsChildAction(receivedContexts[0]),
 			"Context should be marked as child action")
 
-		// Verify context is not cancelled (since we used WithoutCancel)
-		select {
-		case <-receivedContexts[0].Done():
-			t.Fatal("Context should not be cancelled")
-		default:
-			// Expected: context is still valid
-		}
+		// After ExecuteContext returns, the child context is cancelled so that
+		// event handlers registered during this step are cleaned up.
+		require.Error(t, receivedContexts[0].Err(),
+			"Context should be cancelled after step completes")
 
 		// Execute again - should still work (fresh command tree each time)
 		err = adapter.ExecuteContext(ctx, []string{"sub"})
@@ -242,7 +241,10 @@ func Test_workflowCmdAdapter_ContextPropagation(t *testing.T) {
 			childCmd := &cobra.Command{
 				Use: "child",
 				RunE: func(cmd *cobra.Command, args []string) error {
-					receivedContexts = append(receivedContexts, cmd.Context())
+					ctx := cmd.Context()
+					// Verify context is valid DURING execution
+					require.NoError(t, ctx.Err(), "Context should be valid during execution")
+					receivedContexts = append(receivedContexts, ctx)
 					return nil
 				},
 			}
@@ -269,13 +271,10 @@ func Test_workflowCmdAdapter_ContextPropagation(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, receivedContexts, 2)
 
-		// Verify second execution got a valid context marked as child
-		select {
-		case <-receivedContexts[1].Done():
-			t.Fatal("Nested subcommand should have received a valid context")
-		default:
-			// Expected: context is valid
-		}
+		// Verify second execution got a context marked as child and is cancelled
+		// after step completion (event handler cleanup)
+		require.Error(t, receivedContexts[1].Err(),
+			"Context should be cancelled after step completes")
 
 		require.True(t, middleware.IsChildAction(receivedContexts[1]),
 			"Second nested context should also be marked as child action")

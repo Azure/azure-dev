@@ -67,14 +67,17 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/state"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/az"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/bash"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/javac"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/kubectl"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/language"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/maven"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/node"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/powershell"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/python"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/swa"
 	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
@@ -150,11 +153,16 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			}
 		}
 
-		return input.NewConsole(rootOptions.NoPrompt, isTerminal, input.Writers{Output: writer}, input.ConsoleHandles{
-			Stdin:  cmd.InOrStdin(),
-			Stdout: cmd.OutOrStdout(),
-			Stderr: cmd.ErrOrStderr(),
-		}, formatter, externalPromptCfg)
+		return input.NewConsole(
+			rootOptions.NoPrompt,
+			rootOptions.FailOnPrompt,
+			isTerminal,
+			input.Writers{Output: writer},
+			input.ConsoleHandles{
+				Stdin:  cmd.InOrStdin(),
+				Stdout: cmd.OutOrStdout(),
+				Stderr: cmd.ErrOrStderr(),
+			}, formatter, externalPromptCfg)
 	})
 
 	container.MustRegisterSingleton(
@@ -700,7 +708,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		})
 	})
 
-	container.MustRegisterSingleton(func(subManager *account.SubscriptionsManager) account.SubscriptionTenantResolver {
+	container.MustRegisterSingleton(func(subManager *account.SubscriptionsManager) account.SubscriptionResolver {
 		return subManager
 	})
 
@@ -810,6 +818,21 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	}
 
 	container.MustRegisterNamedScoped(string(project.ServiceLanguageDocker), project.NewDockerProjectAsFrameworkService)
+
+	// Hook executors registered by language name (transient — fresh per hook invocation).
+	// The HooksRunner resolves these via serviceLocator.ResolveNamed().
+	hookExecutorMap := map[language.HookKind]any{
+		language.HookKindBash:       bash.NewExecutor,
+		language.HookKindPowerShell: powershell.NewExecutor,
+		language.HookKindPython:     language.NewPythonExecutor,
+		language.HookKindJavaScript: language.NewJavaScriptExecutor,
+		language.HookKindTypeScript: language.NewTypeScriptExecutor,
+		language.HookKindDotNet:     language.NewDotNetExecutor,
+	}
+
+	for kind, constructor := range hookExecutorMap {
+		container.MustRegisterNamedTransient(string(kind), constructor)
+	}
 
 	// Pipelines
 	container.MustRegisterScoped(pipeline.NewPipelineManager)
@@ -977,7 +1000,12 @@ type workflowCmdAdapter struct {
 // so that persistent flags (e.g., --trace-log-file) are properly parsed and visible
 // to telemetry middleware on the fresh command tree.
 func (w *workflowCmdAdapter) ExecuteContext(ctx context.Context, args []string) error {
-	childCtx := middleware.WithChildAction(ctx)
+	// Cancel the child context when the step completes so that any event handlers
+	// registered during this step (e.g. by service target Initialize methods) are
+	// marked as expired and cleaned up on the next RaiseEvent call.
+	childCtx, cancel := context.WithCancel(middleware.WithChildAction(ctx))
+	defer cancel()
+
 	rootCmd := w.newCommand()
 	// Always set args explicitly to prevent Cobra from falling back to os.Args[1:].
 	// Cobra uses os.Args when cmd.args is nil (but not when it's an empty slice).

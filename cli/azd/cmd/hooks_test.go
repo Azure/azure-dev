@@ -16,14 +16,22 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/language"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mocktools"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
+// registerHookExecutors delegates to the shared test helper in test/mocks/mocktools.
+func registerHookExecutors(mockCtx *mocks.MockContext) {
+	mocktools.RegisterHookExecutors(mockCtx)
+}
+
 func Test_HooksRunAction_RunsLayerHooks(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockContext)
 	env := environment.NewWithValues("test", nil)
 	envManager := &mockenv.MockEnvManager{}
 	envManager.On("Reload", mock.Anything, mock.Anything).Return(nil)
@@ -42,7 +50,7 @@ func Test_HooksRunAction_RunsLayerHooks(t *testing.T) {
 					Path: "infra/core",
 					Hooks: provisioning.HooksConfig{
 						"preprovision": {{
-							Shell: ext.ShellTypeBash,
+							Shell: string(language.HookKindBash),
 							Run:   "echo core",
 						}},
 					},
@@ -52,7 +60,7 @@ func Test_HooksRunAction_RunsLayerHooks(t *testing.T) {
 					Path: absoluteLayerPath,
 					Hooks: provisioning.HooksConfig{
 						"preprovision": {{
-							Shell: ext.ShellTypeBash,
+							Shell: string(language.HookKindBash),
 							Run:   "echo shared",
 						}},
 					},
@@ -92,6 +100,7 @@ func Test_HooksRunAction_RunsLayerHooks(t *testing.T) {
 
 func Test_HooksRunAction_FiltersLayerHooks(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockContext)
 	env := environment.NewWithValues("test", nil)
 	envManager := &mockenv.MockEnvManager{}
 	envManager.On("Reload", mock.Anything, mock.Anything).Return(nil)
@@ -109,7 +118,7 @@ func Test_HooksRunAction_FiltersLayerHooks(t *testing.T) {
 					Path: "infra/core",
 					Hooks: provisioning.HooksConfig{
 						"preprovision": {{
-							Shell: ext.ShellTypeBash,
+							Shell: string(language.HookKindBash),
 							Run:   "echo core",
 						}},
 					},
@@ -119,7 +128,7 @@ func Test_HooksRunAction_FiltersLayerHooks(t *testing.T) {
 					Path: "infra/shared",
 					Hooks: provisioning.HooksConfig{
 						"preprovision": {{
-							Shell: ext.ShellTypeBash,
+							Shell: string(language.HookKindBash),
 							Run:   "echo shared",
 						}},
 					},
@@ -158,6 +167,7 @@ func Test_HooksRunAction_FiltersLayerHooks(t *testing.T) {
 
 func Test_HooksRunAction_SetsTelemetryTypeForLayer(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	registerHookExecutors(mockContext)
 	env := environment.NewWithValues("test", nil)
 	envManager := &mockenv.MockEnvManager{}
 	envManager.On("Reload", mock.Anything, mock.Anything).Return(nil)
@@ -178,7 +188,7 @@ func Test_HooksRunAction_SetsTelemetryTypeForLayer(t *testing.T) {
 					Path: "infra/core",
 					Hooks: provisioning.HooksConfig{
 						"preprovision": {{
-							Shell: ext.ShellTypeBash,
+							Shell: string(language.HookKindBash),
 							Run:   "echo core",
 						}},
 					},
@@ -272,5 +282,6 @@ func Test_HooksRunAction_ValidatesLayerHooksRelativeToLayerPath(t *testing.T) {
 	err := action.validateAndWarnHooks(*mockContext.Context)
 	require.NoError(t, err)
 	require.False(t, layerHook.IsUsingDefaultShell())
-	require.Equal(t, ext.ScriptTypeUnknown, layerHook.Shell)
+	// validate() infers language from the .sh file extension
+	require.Equal(t, language.HookKindBash, layerHook.Kind)
 }

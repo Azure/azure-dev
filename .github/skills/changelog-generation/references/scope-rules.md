@@ -7,6 +7,7 @@
 Files to update:
 - `cli/azd/CHANGELOG.md` — add release entry
 - `cli/version.txt` — set to released version
+- `cli/azd/pkg/azdext/version.go` — update `Version` constant to match `cli/version.txt`
 - `.vscode/cspell-github-user-aliases.txt` — if spell check additions needed
 
 **Version derivation:**
@@ -14,7 +15,8 @@ Files to update:
 2. Strip the `-beta.N` suffix and `(Unreleased)` marker.
 3. Format as: `## X.Y.Z (YYYY-MM-DD)` using today's date.
 4. Set `cli/version.txt` to `X.Y.Z`.
-5. If no unreleased header is found in the changelog, ask the user for the release version number via `ask_user`.
+5. Set the `Version` constant in `cli/azd/pkg/azdext/version.go` to `X.Y.Z`.
+6. If no unreleased header is found in the changelog, ask the user for the release version number via `ask_user`.
 
 **Do NOT** update any extension files.
 

@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"bytes"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"azureaiagent/internal/pkg/agents/agent_api"
 )
 
 func TestReadSSEStream(t *testing.T) {
@@ -250,6 +253,92 @@ func TestHttpTimeout(t *testing.T) {
 	}
 }
 
+func TestResolveProtocol_ExplicitFlag(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		protocol string
+		want     agent_api.AgentProtocol
+	}{
+		{
+			name:     "explicit invocations",
+			protocol: "invocations",
+			want:     agent_api.AgentProtocolInvocations,
+		},
+		{
+			name:     "explicit responses",
+			protocol: "responses",
+			want:     agent_api.AgentProtocolResponses,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			action := &InvokeAction{
+				flags: &invokeFlags{protocol: tt.protocol},
+			}
+			// resolveProtocol with an explicit flag should return it directly
+			// without trying to read agent.yaml (which would fail in tests).
+			got := action.resolveProtocol(t.Context())
+			if got != tt.want {
+				t.Errorf("resolveProtocol() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestProtocolFlagValidation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr bool
+		errSub  string
+	}{
+		{
+			name:    "valid responses",
+			args:    []string{"--protocol", "responses", "hello"},
+			wantErr: false,
+		},
+		{
+			name:    "valid invocations",
+			args:    []string{"--protocol", "invocations", "hello"},
+			wantErr: false,
+		},
+		{
+			name:    "invalid protocol",
+			args:    []string{"--protocol", "bogus", "hello"},
+			wantErr: true,
+			errSub:  "unsupported protocol",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cmd := newInvokeCommand()
+			cmd.SetArgs(tt.args)
+			err := cmd.Execute()
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if !strings.Contains(err.Error(), tt.errSub) {
+					t.Errorf("error %q should contain %q", err.Error(), tt.errSub)
+				}
+			}
+			// For valid protocols the command will still fail (no azd host),
+			// but the error should NOT be about an invalid protocol.
+			if !tt.wantErr && err != nil && strings.Contains(err.Error(), "unsupported protocol") {
+				t.Errorf("unexpected validation error: %v", err)
+			}
+		})
+	}
+}
+
 func TestHandleInvocationSync(t *testing.T) {
 	t.Parallel()
 
@@ -319,42 +408,62 @@ func TestHandleInvocationSSE(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name    string
-		input   string
-		wantErr bool
-		errMsg  string
+		name       string
+		input      string
+		agentName  string
+		wantErr    bool
+		errMsg     string
+		wantOutput string
 	}{
 		{
-			name:    "simple data lines",
-			input:   "data: Hello \ndata: world!\n\n",
-			wantErr: false,
+			name:       "simple data lines produce separate output lines with prefix",
+			input:      "data: Hello \ndata: world!\n\n",
+			agentName:  "test-agent",
+			wantOutput: "[test-agent] Hello \nworld!\n",
 		},
 		{
-			name:    "DONE signal ends stream",
-			input:   "data: Hello\ndata: [DONE]\ndata: ignored\n\n",
-			wantErr: false,
+			name:       "single data line gets prefix and newline",
+			input:      "data: only-one\n\n",
+			agentName:  "my-bot",
+			wantOutput: "[my-bot] only-one\n",
 		},
 		{
-			name:    "error envelope in data",
-			input:   `data: {"error": {"code": "rate_limit", "message": "too many requests"}}` + "\n\n",
-			wantErr: true,
-			errMsg:  "agent error (rate_limit): too many requests",
+			name:       "DONE signal ends stream, only preceding data printed",
+			input:      "data: Hello\ndata: [DONE]\ndata: ignored\n\n",
+			agentName:  "test-agent",
+			wantOutput: "[test-agent] Hello\n",
 		},
 		{
-			name:    "error envelope with type only",
-			input:   `data: {"error": {"type": "server_error", "message": "crash"}}` + "\n\n",
-			wantErr: true,
-			errMsg:  "agent error (server_error): crash",
+			name:      "error envelope in data",
+			input:     `data: {"error": {"code": "rate_limit", "message": "too many requests"}}` + "\n\n",
+			agentName: "test-agent",
+			wantErr:   true,
+			errMsg:    "agent error (rate_limit): too many requests",
 		},
 		{
-			name:    "empty stream",
-			input:   "",
-			wantErr: false,
+			name:      "error envelope with type only",
+			input:     `data: {"error": {"type": "server_error", "message": "crash"}}` + "\n\n",
+			agentName: "test-agent",
+			wantErr:   true,
+			errMsg:    "agent error (server_error): crash",
 		},
 		{
-			name:    "non-data lines ignored",
-			input:   "event: custom\nid: 123\ndata: content\n\n",
-			wantErr: false,
+			name:       "empty stream produces no output",
+			input:      "",
+			agentName:  "test-agent",
+			wantOutput: "",
+		},
+		{
+			name:       "non-data lines ignored",
+			input:      "event: custom\nid: 123\ndata: content\n\n",
+			agentName:  "test-agent",
+			wantOutput: "[test-agent] content\n",
+		},
+		{
+			name:       "three data lines produce three output lines",
+			input:      "data: line1\ndata: line2\ndata: line3\n\n",
+			agentName:  "agent",
+			wantOutput: "[agent] line1\nline2\nline3\n",
 		},
 	}
 
@@ -362,8 +471,9 @@ func TestHandleInvocationSSE(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
+			var buf bytes.Buffer
 			reader := strings.NewReader(tt.input)
-			err := handleInvocationSSE(reader, "test-agent")
+			err := handleInvocationSSE(&buf, reader, tt.agentName)
 
 			if tt.wantErr {
 				if err == nil {
@@ -372,8 +482,13 @@ func TestHandleInvocationSSE(t *testing.T) {
 				if tt.errMsg != "" && err.Error() != tt.errMsg {
 					t.Errorf("error = %q, want %q", err.Error(), tt.errMsg)
 				}
-			} else if err != nil {
-				t.Fatalf("unexpected error: %v", err)
+			} else {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if got := buf.String(); got != tt.wantOutput {
+					t.Errorf("output mismatch\ngot:  %q\nwant: %q", got, tt.wantOutput)
+				}
 			}
 		})
 	}

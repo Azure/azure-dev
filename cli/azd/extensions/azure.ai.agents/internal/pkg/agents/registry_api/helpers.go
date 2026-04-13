@@ -6,6 +6,7 @@ package registry_api
 import (
 	"context"
 	"fmt"
+	"log"
 	"reflect"
 	"strconv"
 	"strings"
@@ -234,11 +235,16 @@ func ConvertParameters(parameters map[string]OpenApiParameter) (*agent_yaml.Prop
 	var properties []agent_yaml.Property
 
 	for paramName, openApiParam := range parameters {
+		// Copy fields into local variables before taking pointers so that each
+		// Property holds an independent pointer (not an alias of the loop variable).
+		desc := openApiParam.Description
+		req := openApiParam.Required
+
 		// Create a basic Property from the OpenApiParameter
 		property := agent_yaml.Property{
 			Name:        paramName,
-			Description: &openApiParam.Description,
-			Required:    &openApiParam.Required,
+			Description: &desc,
+			Required:    &req,
 		}
 
 		// Determine the kind based on schema type
@@ -253,7 +259,8 @@ func ConvertParameters(parameters map[string]OpenApiParameter) (*agent_yaml.Prop
 
 		// Use example as default if available
 		if openApiParam.Example != nil {
-			property.Default = &openApiParam.Example
+			example := openApiParam.Example
+			property.Default = &example
 		}
 
 		// Convert enum values if present
@@ -279,7 +286,7 @@ func ProcessManifestParameters(
 	noPrompt bool) (*agent_yaml.AgentManifest, error) {
 	// If no parameters are defined, return the manifest as-is
 	if len(manifest.Parameters.Properties) == 0 {
-		fmt.Println("The manifest does not contain parameters that need to be configured.")
+		log.Print("The manifest does not contain parameters that need to be configured.")
 		return manifest, nil
 	}
 

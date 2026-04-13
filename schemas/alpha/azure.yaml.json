@@ -827,6 +827,24 @@
                     ],
                     "default": "sh"
                 },
+                "kind": {
+                    "type": "string",
+                    "title": "Executor kind for the hook script",
+                    "description": "Optional. Specifies the executor kind used to run the hook script. When omitted, the kind is auto-detected from the file extension of the 'run' path (e.g. .py → python, .ps1 → pwsh). Shell kinds (sh, pwsh) use the existing shell runner; other kinds use a language-specific executor that handles dependency installation and runtime management.",
+                    "enum": [
+                        "sh",
+                        "pwsh",
+                        "js",
+                        "ts",
+                        "python",
+                        "dotnet"
+                    ]
+                },
+                "dir": {
+                    "type": "string",
+                    "title": "Working directory for hook execution",
+                    "description": "Optional. Specifies the working directory for hook execution. Used as the project root for dependency installation (e.g. pip install from requirements.txt) and as the working directory when running the script. Relative paths are resolved from the project or service root. When omitted, defaults to the directory containing the script file."
+                },
                 "run": {
                     "type": "string",
                     "title": "Required. The inline script or relative path of your scripts from the project or service path",
@@ -890,6 +908,8 @@
                         "properties": {
                             "run": false,
                             "shell": false,
+                            "kind": false,
+                            "dir": false,
                             "interactive": false,
                             "continueOnError": false,
                             "secrets": false
@@ -917,6 +937,16 @@
                             {
                                 "required": [
                                     "shell"
+                                ]
+                            },
+                            {
+                                "required": [
+                                    "kind"
+                                ]
+                            },
+                            {
+                                "required": [
+                                    "dir"
                                 ]
                             }
                         ]

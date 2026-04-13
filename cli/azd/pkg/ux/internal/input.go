@@ -97,6 +97,17 @@ func (i *Input) ReadInput(ctx context.Context, config *InputConfig, handler KeyP
 			errChan <- err
 			return
 		}
+
+		// On Windows, clear ENABLE_VIRTUAL_TERMINAL_INPUT so the
+		// console delivers native virtual-key codes instead of ANSI
+		// escape sequences. The survey library's RuneReader expects
+		// VK codes for arrow key dispatch. RestoreTermMode() will
+		// restore the original console mode when input completes.
+		if err := disableVirtualTerminalInput(os.Stdin); err != nil {
+			// Non-fatal: worst case is the pre-existing ANSI leak.
+			_ = err
+		}
+
 		defer func() {
 			if err := rr.RestoreTermMode(); err != nil {
 				log.Printf("Error restoring terminal mode: %v\n", err)

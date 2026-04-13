@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
@@ -15,7 +14,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
@@ -221,79 +219,73 @@ func (st *appServiceTarget) Deploy(
 	}, nil
 }
 
+// productionSlotName is the reserved platform name for the main app.
+// Azure does not allow creating a deployment slot named "production" —
+// the ARM API rejects it with: "Slot name: 'Production' is reserved."
+// This was verified via: az webapp deployment slot create --slot production
+// Azure CLI, PowerShell, and the Azure Portal all use "production" to refer to the main app.
+const productionSlotName = "production"
+
 // deploymentTarget represents a target for deployment (main app or a slot)
 type deploymentTarget struct {
 	SlotName string // Empty string means main app
 }
 
-// determineDeploymentTargets determines which targets (main app and/or slots) to deploy to
-// based on deployment history and available slots.
+// determineDeploymentTargets determines which targets (main app and/or slots) to deploy to.
 //
-// Deployment Strategy:
-//   - Override — AZD_DEPLOY_{SERVICE_NAME}_IGNORE_SLOTS (highest precedence):
-//     When set to a truthy boolean value, bypasses all slot detection and deploys directly
-//     to the main app. If AZD_DEPLOY_{SERVICE_NAME}_SLOT_NAME is also set, it is ignored
-//     and a warning is emitted.
-//   - First deployment (no history):
-//     Deploy to main app AND all slots to ensure consistency across all environments.
-//     This prevents configuration drift and ensures all slots start with the same baseline.
-//   - Subsequent deployments with no slots:
-//     Deploy to main app only (standard production deployment).
-//   - Subsequent deployments with exactly one slot:
-//     Deploy to that slot only (typical staging workflow before swap to production).
-//   - Subsequent deployments with multiple slots:
-//     Check for AZD_DEPLOY_{SERVICE_NAME}_SLOT_NAME environment variable to auto-select a slot.
-//     If not set, prompt user to select a target, allowing explicit control
-//     over which environment receives the deployment.
+// Deployment target selection:
+//  1. SLOT_NAME takes highest precedence — explicit intent always wins.
+//     "production" means the main app. Any other value must match an existing slot.
+//  2. No slots exist — deploy to main app.
+//  3. Slots exist + interactive — prompt user to select (includes "production" for main app).
+//  4. Slots exist + --no-prompt — fail with error listing available targets.
 func (st *appServiceTarget) determineDeploymentTargets(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 ) ([]deploymentTarget, error) {
-	// Check if slot deployment is explicitly disabled for this service
-	ignoreSlotsEnvVar := ignoreSlotsEnvVarNameForService(serviceConfig.Name)
-	if ignoreSlotsValue, hasIgnoreSlots := st.env.LookupEnv(ignoreSlotsEnvVar); hasIgnoreSlots {
-		ignoreSlots, err := strconv.ParseBool(ignoreSlotsValue)
-		if err != nil {
-			st.console.MessageUxItem(ctx, &ux.WarningMessage{
-				Description: fmt.Sprintf(
-					"Ignoring invalid value %q for %s; expected a boolean value",
-					ignoreSlotsValue, ignoreSlotsEnvVar),
-			})
-		} else if ignoreSlots {
-			// Warn if SLOT_NAME env var is also set, since it will be ignored
-			slotEnvVar := slotEnvVarNameForService(serviceConfig.Name)
-			if slotName := st.env.Getenv(slotEnvVar); slotName != "" {
-				st.console.MessageUxItem(ctx, &ux.WarningMessage{
-					Description: fmt.Sprintf(
-						"%s is set but will be ignored because %s is enabled",
-						slotEnvVar, ignoreSlotsEnvVar),
-				})
-			}
+	slotEnvVarName := slotEnvVarNameForService(serviceConfig.Name)
 
-			progress.SetProgress(NewServiceProgress(
-				"Skipping slot deployment (deploying to main app)"))
+	// Check SLOT_NAME first — explicit intent always wins
+	if slotName := st.env.Getenv(slotEnvVarName); slotName != "" {
+		// "production" is the platform-reserved name for the main app
+		if strings.EqualFold(slotName, productionSlotName) {
+			progress.SetProgress(NewServiceProgress("Deploying to production (main app)"))
 			return []deploymentTarget{{SlotName: ""}}, nil
 		}
+
+		// Validate that the specified slot exists
+		progress.SetProgress(NewServiceProgress("Checking deployment slots"))
+		slots, err := st.cli.GetAppServiceSlots(
+			ctx,
+			targetResource.SubscriptionId(),
+			targetResource.ResourceGroupName(),
+			targetResource.ResourceName(),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("getting deployment slots: %w", err)
+		}
+
+		for _, slot := range slots {
+			if strings.EqualFold(slot.Name, slotName) {
+				return []deploymentTarget{{SlotName: slot.Name}}, nil
+			}
+		}
+
+		availableSlots := make([]string, len(slots))
+		for i, slot := range slots {
+			availableSlots[i] = slot.Name
+		}
+		return nil, fmt.Errorf(
+			"slot '%s' specified in %s not found. Available slots: [%s]. "+
+				"Use '%s=%s' to deploy to the main app",
+			slotName, slotEnvVarName, strings.Join(availableSlots, ", "),
+			slotEnvVarName, productionSlotName)
 	}
 
-	progress.SetProgress(NewServiceProgress("Checking deployment history"))
-
-	// Check if there are previous deployments
-	hasDeployments, err := st.cli.HasAppServiceDeployments(
-		ctx,
-		targetResource.SubscriptionId(),
-		targetResource.ResourceGroupName(),
-		targetResource.ResourceName(),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("checking deployment history: %w", err)
-	}
-
+	// No SLOT_NAME set — check if slots exist
 	progress.SetProgress(NewServiceProgress("Checking deployment slots"))
-
-	// Get available slots
 	slots, err := st.cli.GetAppServiceSlots(
 		ctx,
 		targetResource.SubscriptionId(),
@@ -304,80 +296,53 @@ func (st *appServiceTarget) determineDeploymentTargets(
 		return nil, fmt.Errorf("getting deployment slots: %w", err)
 	}
 
-	// If no previous deployments, always deploy to main app and all slots
-	if !hasDeployments {
-		targets := []deploymentTarget{{SlotName: ""}} // Main app
-		for _, slot := range slots {
-			targets = append(targets, deploymentTarget{SlotName: slot.Name})
-		}
-		return targets, nil
-	}
-
-	// Has previous deployments
+	// No slots — deploy to main app
 	if len(slots) == 0 {
-		// No slots, deploy to main app only
 		return []deploymentTarget{{SlotName: ""}}, nil
 	}
 
-	if len(slots) == 1 {
-		// Exactly one slot, deploy to that slot only
-		return []deploymentTarget{{SlotName: slots[0].Name}}, nil
-	}
-
-	// Multiple slots, prompt user to select
-	slotEnvVarName := slotEnvVarNameForService(serviceConfig.Name)
-
-	// Check if slot name is set via environment variable (checks azd env first, then system env)
-	if slotName := st.env.Getenv(slotEnvVarName); slotName != "" {
-		// Validate that the slot exists
+	// Slots exist + --no-prompt — fail with clear error
+	if st.console.IsNoPromptMode() {
+		availableTargets := []string{productionSlotName}
 		for _, slot := range slots {
-			if slot.Name == slotName {
-				return []deploymentTarget{{SlotName: slotName}}, nil
-			}
-		}
-		// Slot not found, return error with available slots
-		availableSlots := make([]string, len(slots))
-		for i, slot := range slots {
-			availableSlots[i] = slot.Name
+			availableTargets = append(availableTargets, slot.Name)
 		}
 		return nil, fmt.Errorf(
-			"slot '%s' specified in %s not found. Available slots: [%s]. "+
-				"Please update the environment variable with a valid slot name",
-			slotName, slotEnvVarName, strings.Join(availableSlots, ", "))
+			"deployment slots detected but no target specified. "+
+				"Set %s to one of: [%s] ('production' = main app)",
+			slotEnvVarName, strings.Join(availableTargets, ", "))
 	}
 
-	slotOptions := make([]string, len(slots))
-	for i, slot := range slots {
-		slotOptions[i] = slot.Name
+	// Slots exist + interactive — prompt user including main app option
+	slotOptions := []string{fmt.Sprintf("%s (main app)", productionSlotName)}
+	for _, slot := range slots {
+		slotOptions = append(slotOptions, slot.Name)
 	}
 
 	selectedIndex, err := st.console.Select(ctx, input.ConsoleOptions{
 		Message: fmt.Sprintf(
-			"Select a deployment slot\nNote: skip this prompt with '%s=<slotName>'\n",
+			"Select a deployment target\nNote: skip this prompt with '%s=<target>'\n",
 			slotEnvVarName),
 		Options: slotOptions,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("selecting deployment slot: %w", err)
+		return nil, fmt.Errorf("selecting deployment target: %w", err)
 	}
 
-	return []deploymentTarget{{SlotName: slots[selectedIndex].Name}}, nil
+	// Index 0 = production (main app)
+	if selectedIndex == 0 {
+		return []deploymentTarget{{SlotName: ""}}, nil
+	}
+
+	return []deploymentTarget{{SlotName: slots[selectedIndex-1].Name}}, nil
 }
 
 // slotEnvVarNameForService returns the environment variable name for setting the deployment slot
 // for a given service. The format is AZD_DEPLOY_{SERVICE_NAME}_SLOT_NAME where the service name
 // is uppercase and any hyphens are replaced with underscores.
 func slotEnvVarNameForService(serviceName string) string {
-	return fmt.Sprintf("AZD_DEPLOY_%s_SLOT_NAME", environment.Key(serviceName))
-}
-
-// ignoreSlotsEnvVarNameForService returns the environment variable name for opting out of
-// automatic slot deployment for a given service. The format is AZD_DEPLOY_{SERVICE_NAME}_IGNORE_SLOTS
-// where the service name is uppercase and any hyphens are replaced with underscores.
-// When set to a truthy boolean value, azd deploys directly to the main app, ignoring any
-// configured deployment slots.
-func ignoreSlotsEnvVarNameForService(serviceName string) string {
-	return fmt.Sprintf("AZD_DEPLOY_%s_IGNORE_SLOTS", environment.Key(serviceName))
+	normalizedName := strings.ToUpper(strings.ReplaceAll(serviceName, "-", "_"))
+	return fmt.Sprintf("AZD_DEPLOY_%s_SLOT_NAME", normalizedName)
 }
 
 // Gets the exposed endpoints for the App Service, including any deployment slots

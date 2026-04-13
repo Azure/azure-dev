@@ -16,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ai"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
@@ -50,6 +51,10 @@ func NewPromptService(
 func (s *promptService) Confirm(ctx context.Context, req *azdext.ConfirmRequest) (*azdext.ConfirmResponse, error) {
 	if req == nil || req.Options == nil {
 		return nil, status.Error(codes.InvalidArgument, "request and options are required")
+	}
+
+	if s.globalOptions.FailOnPrompt {
+		return nil, input.FailOnPromptError(req.Options.Message)
 	}
 
 	if s.globalOptions.NoPrompt {
@@ -87,6 +92,14 @@ func (s *promptService) Confirm(ctx context.Context, req *azdext.ConfirmRequest)
 func (s *promptService) Select(ctx context.Context, req *azdext.SelectRequest) (*azdext.SelectResponse, error) {
 	if req == nil || req.Options == nil {
 		return nil, status.Error(codes.InvalidArgument, "request and options are required")
+	}
+
+	if s.globalOptions.FailOnPrompt {
+		choiceLabels := make([]string, len(req.Options.Choices))
+		for i, c := range req.Options.Choices {
+			choiceLabels[i] = c.Label
+		}
+		return nil, input.FailOnPromptSelectError(req.Options.Message, choiceLabels)
 	}
 
 	if s.globalOptions.NoPrompt {
@@ -137,6 +150,14 @@ func (s *promptService) MultiSelect(
 ) (*azdext.MultiSelectResponse, error) {
 	if req == nil || req.Options == nil {
 		return nil, status.Error(codes.InvalidArgument, "request and options are required")
+	}
+
+	if s.globalOptions.FailOnPrompt {
+		choiceLabels := make([]string, len(req.Options.Choices))
+		for i, c := range req.Options.Choices {
+			choiceLabels[i] = c.Label
+		}
+		return nil, input.FailOnPromptSelectError(req.Options.Message, choiceLabels)
 	}
 
 	if s.globalOptions.NoPrompt {
@@ -194,6 +215,14 @@ func (s *promptService) MultiSelect(
 }
 
 func (s *promptService) Prompt(ctx context.Context, req *azdext.PromptRequest) (*azdext.PromptResponse, error) {
+	if req == nil || req.Options == nil {
+		return nil, status.Error(codes.InvalidArgument, "request and options are required")
+	}
+
+	if s.globalOptions.FailOnPrompt {
+		return nil, input.FailOnPromptError(req.Options.Message)
+	}
+
 	if s.globalOptions.NoPrompt {
 		if req.Options.Required && req.Options.DefaultValue == "" {
 			return nil, fmt.Errorf("no default response for prompt '%s'", req.Options.Message)

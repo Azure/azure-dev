@@ -31,6 +31,8 @@ const (
 	CodeTenantMismatch            = "tenant_mismatch"
 	CodeMissingPublishedContainer = "missing_published_container_artifact"
 	CodeModelDeploymentNotFound   = "model_deployment_not_found"
+	CodeConflictingArguments      = "conflicting_arguments"
+	CodeInvalidPositionalArg      = "invalid_positional_arg"
 )
 
 // Error codes commonly used for dependency errors.
@@ -99,6 +101,19 @@ const (
 	CodeInvalidConnection      = "invalid_connection"
 	CodeConnectionCreationFail = "connection_creation_failed"
 	CodeMissingConnectionField = "missing_connection_field"
+)
+
+// Error codes for agent identity RBAC operations.
+const (
+	CodeAgentIdentityNotFound   = "agent_identity_not_found"
+	CodeAgentIdentityRBACFailed = "agent_identity_rbac_failed"
+)
+
+// Error codes for developer RBAC pre-flight checks.
+const (
+	CodeDeveloperMissingAIUserRole = "developer_missing_ai_user_role"
+	CodeDeveloperMissingACRRole    = "developer_missing_acr_role"
+	CodeACRResolutionFailed        = "acr_resolution_failed"
 )
 
 // Error codes commonly used for internal errors.

@@ -185,7 +185,7 @@
         "authType": {
           "type": "string",
           "description": "Authentication type.",
-          "enum": ["AAD", "AccessKey", "AccountKey", "AgenticIdentity", "ApiKey", "CustomKeys", "ManagedIdentity", "None", "OAuth2", "PAT", "SAS", "ServicePrincipal", "UsernamePassword", "UserEntraToken"]
+          "enum": ["AAD", "AccessKey", "AccountKey", "AgenticIdentity", "ApiKey", "CustomKeys", "ProjectManagedIdentity", "None", "OAuth2", "PAT", "SAS", "ServicePrincipal", "UsernamePassword", "UserEntraToken"]
         },
         "credentials": {
           "type": "object",
@@ -204,8 +204,8 @@
           "description": "OAuth2 scopes to request (optional for OAuth2 authType).",
           "items": { "type": "string" }
         },
-        "audience": { "type": "string", "description": "Token audience for AAD/ManagedIdentity/AgenticIdentity/UserEntraToken auth types." },
-        "connectorName": { "type": "string", "description": "Connector name for AgenticIdentity auth type." },
+        "audience": { "type": "string", "description": "Token audience for AAD/ProjectManagedIdentity/AgenticIdentity/UserEntraToken auth types." },
+        "connectorName": { "type": "string", "description": "Connector name for Oauth2 auth type." },
         "expiryTime": { "type": "string", "description": "Connection expiry time." },
         "isSharedToAll": { "type": "boolean", "description": "Whether the connection is shared to all users." },
         "sharedUserList": {

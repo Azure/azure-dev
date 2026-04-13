@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	osExec "os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -130,24 +131,74 @@ func checkAiModelServiceAvailable(ctx context.Context, azdClient *azdext.AzdClie
 }
 
 // ensureLoggedIn verifies that the user is authenticated before any file-modifying
-// operations take place. It calls ListSubscriptions as a lightweight auth probe;
-// only gRPC Unauthenticated errors are treated as failures. Other errors (e.g.
-// network issues) are ignored so they don't block init for unrelated reasons.
-func ensureLoggedIn(ctx context.Context, azdClient *azdext.AzdClient) error {
-	_, err := azdClient.Account().ListSubscriptions(ctx, &azdext.ListSubscriptionsRequest{})
-	if err == nil {
-		return nil
+// operations take place.
+//
+// We need to parse the JSON output of `azd auth status --output json` because the
+// Workflow API's Run method returns EmptyResponse and does not expose command output,
+// and `azd auth status` always exits 0 regardless of authentication state — it reports
+// the result in its output, not via its exit code or a gRPC error.
+// If the Workflow API is extended to return structured command results in the future,
+// this subprocess workaround can be replaced with a Workflow API call.
+//
+// getAuthStatusJSON is the function that runs the command and returns stdout. Production
+// callers pass authStatusFromCLI; tests inject a stub.
+func ensureLoggedIn(ctx context.Context, getAuthStatusJSON func(ctx context.Context) ([]byte, error)) error {
+	out, err := getAuthStatusJSON(ctx)
+
+	// Context cancellation / deadline always takes priority.
+	if ctx.Err() != nil {
+		return ctx.Err()
 	}
 
-	if st, ok := status.FromError(err); ok && st.Code() == codes.Unauthenticated {
-		return exterrors.Auth(
-			exterrors.CodeNotLoggedIn,
-			"not logged in",
-			"run `azd auth login` to authenticate before running init",
-		)
+	// Try to parse whatever output we got, even if the command returned a non-zero
+	// exit code (ExitError). azd auth status writes JSON to stdout regardless of
+	// exit code, so the output may still be usable.
+	if len(out) > 0 {
+		authStatus, parseErr := parseAuthStatusJSON(out)
+		if parseErr == nil {
+			if authStatus == "unauthenticated" {
+				return exterrors.Auth(
+					exterrors.CodeNotLoggedIn,
+					"not logged in",
+					"run `azd auth login` to authenticate before running init",
+				)
+			}
+
+			if authStatus == "authenticated" {
+				return nil
+			}
+
+			// Unrecognised status value — fall through to best-effort skip.
+		}
+	}
+
+	// No usable output. If the command itself failed, log and skip so unrelated
+	// issues (azd not in PATH, network blips) don't block init.
+	if err != nil {
+		log.Printf("auth status check skipped: %v", err)
 	}
 
 	return nil
+}
+
+// authStatusFromCLI runs `azd auth status --output json --no-prompt` as a subprocess
+// and returns the raw stdout bytes.
+func authStatusFromCLI(ctx context.Context) ([]byte, error) {
+	return osExec.CommandContext(ctx, "azd", "auth", "status", "--output", "json", "--no-prompt").Output()
+}
+
+// parseAuthStatusJSON extracts the "status" field from `azd auth status --output json`.
+func parseAuthStatusJSON(data []byte) (string, error) {
+	var result struct {
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(data, &result); err != nil {
+		return "", fmt.Errorf("unmarshal auth status: %w", err)
+	}
+	if result.Status == "" {
+		return "", fmt.Errorf("missing \"status\" field in auth status output")
+	}
+	return result.Status, nil
 }
 
 // runInitFromManifest sets up Azure context, credentials, console, and runs the
@@ -258,16 +309,16 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 				return err
 			}
 
-			if err := ensureLoggedIn(ctx, azdClient); err != nil {
-				return err
-			}
-
 			// Wait for debugger if AZD_EXT_DEBUG is set
 			if err := azdext.WaitForDebugger(ctx, azdClient); err != nil {
 				if errors.Is(err, context.Canceled) || errors.Is(err, azdext.ErrDebuggerAborted) {
 					return nil
 				}
 				return fmt.Errorf("failed waiting for debugger: %w", err)
+			}
+
+			if err := ensureLoggedIn(ctx, authStatusFromCLI); err != nil {
+				return err
 			}
 
 			var httpClient = &http.Client{

@@ -1204,3 +1204,170 @@ func TestResolveCollisions_NoPrompt(t *testing.T) {
 		})
 	}
 }
+
+func TestEnsureLoggedIn(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		output   []byte
+		runErr   error
+		wantErr  bool
+		wantCode string
+		wantMsg  string
+	}{
+		{
+			name:    "authenticated returns nil",
+			output:  []byte(`{"status":"authenticated","type":"user","email":"user@example.com"}`),
+			wantErr: false,
+		},
+		{
+			name:     "unauthenticated returns structured auth error",
+			output:   []byte(`{"status":"unauthenticated"}`),
+			wantErr:  true,
+			wantCode: exterrors.CodeNotLoggedIn,
+			wantMsg:  "not logged in",
+		},
+		{
+			name:     "unauthenticated with non-zero exit still detected",
+			output:   []byte(`{"status":"unauthenticated"}`),
+			runErr:   errors.New("exit status 1"),
+			wantErr:  true,
+			wantCode: exterrors.CodeNotLoggedIn,
+			wantMsg:  "not logged in",
+		},
+		{
+			name:    "command failure with no output is skipped",
+			output:  nil,
+			runErr:  errors.New("exec: azd not found"),
+			wantErr: false,
+		},
+		{
+			name:    "malformed JSON is skipped",
+			output:  []byte(`not-json`),
+			wantErr: false,
+		},
+		{
+			name:    "empty status field is skipped",
+			output:  []byte(`{"status":""}`),
+			wantErr: false,
+		},
+		{
+			name:    "missing status field is skipped",
+			output:  []byte(`{"email":"user@example.com"}`),
+			wantErr: false,
+		},
+		{
+			name:    "unrecognised status value is skipped",
+			output:  []byte(`{"status":"unknown-value"}`),
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			stub := func(_ context.Context) ([]byte, error) {
+				return tt.output, tt.runErr
+			}
+
+			err := ensureLoggedIn(t.Context(), stub)
+
+			if !tt.wantErr {
+				if err != nil {
+					t.Fatalf("expected nil error, got: %v", err)
+				}
+				return
+			}
+
+			if err == nil {
+				t.Fatal("expected an error, got nil")
+			}
+
+			var localErr *azdext.LocalError
+			if !errors.As(err, &localErr) {
+				t.Fatalf("expected *azdext.LocalError, got %T: %v", err, err)
+			}
+			if localErr.Code != tt.wantCode {
+				t.Errorf("code = %q, want %q", localErr.Code, tt.wantCode)
+			}
+			if tt.wantMsg != "" && !strings.Contains(localErr.Message, tt.wantMsg) {
+				t.Errorf("message = %q, want it to contain %q", localErr.Message, tt.wantMsg)
+			}
+		})
+	}
+}
+
+func TestEnsureLoggedIn_ContextCancelled(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel() // cancel immediately
+
+	stub := func(_ context.Context) ([]byte, error) {
+		return nil, ctx.Err()
+	}
+
+	err := ensureLoggedIn(ctx, stub)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled, got: %v", err)
+	}
+}
+
+func TestParseAuthStatusJSON(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		data    []byte
+		want    string
+		wantErr bool
+	}{
+		{
+			name: "authenticated",
+			data: []byte(`{"status":"authenticated","type":"user","email":"a@b.com"}`),
+			want: "authenticated",
+		},
+		{
+			name: "unauthenticated",
+			data: []byte(`{"status":"unauthenticated"}`),
+			want: "unauthenticated",
+		},
+		{
+			name:    "invalid JSON",
+			data:    []byte(`not json`),
+			wantErr: true,
+		},
+		{
+			name:    "missing status",
+			data:    []byte(`{"email":"a@b.com"}`),
+			wantErr: true,
+		},
+		{
+			name:    "empty status",
+			data:    []byte(`{"status":""}`),
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := parseAuthStatusJSON(tt.data)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

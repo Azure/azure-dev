@@ -55,7 +55,7 @@ func newInitFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *in
 
 func newInitCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "init [directory]",
+		Use:   "init",
 		Short: "Initialize a new application.",
 		Long: `Initialize a new application.
 
@@ -225,11 +225,12 @@ func (i *initAction) Run(ctx context.Context) (_ *actions.ActionResult, retErr e
 	if len(i.args) > 0 && !isTemplateInit {
 		return nil, &internal.ErrorWithSuggestion{
 			Err: fmt.Errorf(
-				"positional [directory] argument requires --template: %w",
+				"unexpected argument %q: the [directory] option requires --template: %w",
+				i.args[0],
 				internal.ErrInvalidFlagCombination,
 			),
-			Suggestion: "Use 'azd init --template <url> [directory]' to initialize " +
-				"a template into a new directory.",
+			Suggestion: "Run 'azd init' to initialize interactively, or " +
+				"'azd init --template <url> [directory]' to create a project from a template.",
 		}
 	}
 
@@ -1027,11 +1028,24 @@ func (i *initAction) resolveTargetDirectory(wd string) (string, error) {
 			return wd, nil
 		}
 
+		// Reject absolute paths to prevent creating directories outside the working tree.
+		// With cleanup-on-failure, an absolute path could lead to os.RemoveAll on an
+		// unrelated directory.
 		if filepath.IsAbs(dirArg) {
-			return dirArg, nil
+			return "", &internal.ErrorWithSuggestion{
+				Err:        fmt.Errorf("absolute path %q is not allowed as a directory argument", dirArg),
+				Suggestion: "Use a relative directory name (e.g., 'my-project') or '.' for the current directory.",
+			}
 		}
 
 		return filepath.Join(wd, dirArg), nil
+	}
+
+	// In non-interactive mode, default to CWD to preserve backward compatibility.
+	// Existing scripts expect `azd init -t <template> --no-prompt` to place files in CWD.
+	// Users can pass an explicit positional arg to opt into the new directory behavior.
+	if i.console.IsNoPromptMode() {
+		return wd, nil
 	}
 
 	// No positional arg: auto-derive from template path
@@ -1040,7 +1054,9 @@ func (i *initAction) resolveTargetDirectory(wd string) (string, error) {
 		return filepath.Join(wd, dirName), nil
 	}
 
-	// Template selected via --filter tags (interactive selection) — use CWD
+	// Template selected via --filter tags (interactive selection) — use CWD for now.
+	// TODO(#7290): Derive directory name from the selected template after interactive
+	// selection completes, so --filter users also get git-clone-style behavior.
 	return wd, nil
 }
 
@@ -1077,18 +1093,12 @@ func (i *initAction) validateTargetDirectory(ctx context.Context, targetDir stri
 				"use '.' to initialize in the current directory instead", dirName)
 	}
 
-	proceed, err := i.console.Confirm(ctx, input.ConsoleOptions{
-		Message: fmt.Sprintf(
-			"Directory '%s' already exists and is not empty. Initialize here anyway?", dirName),
-		DefaultValue: false,
+	// Warn the user but don't prompt for confirmation here — the downstream
+	// template initialization will prompt when overwriting individual files,
+	// avoiding redundant confirmations.
+	i.console.MessageUxItem(ctx, &ux.WarningMessage{
+		Description: fmt.Sprintf("Directory '%s' already exists and is not empty.", dirName),
 	})
-	if err != nil {
-		return fmt.Errorf("prompting for directory confirmation: %w", err)
-	}
-
-	if !proceed {
-		return errors.New("initialization cancelled")
-	}
 
 	return nil
 }

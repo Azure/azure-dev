@@ -138,6 +138,19 @@ type HookConfig struct {
 // the script location (inline vs. file path) and ensures that Kind
 // is always resolved to a concrete [language.HookKind] value.
 //
+// The pipeline (parseRunTarget → resolveKind → resolvePaths →
+// enforceContainment) is kind-agnostic: all 6 hook kinds are treated
+// uniformly. The only structural distinction is shell vs. non-shell
+// ([language.HookKind.IsShell]):
+//
+//   - Shell hooks support inline scripts and use inputCwd as-is.
+//   - Non-shell hooks require a file on disk and auto-infer Dir
+//     from the script location for project-relative tooling
+//     (venvs, node_modules, etc.).
+//
+// Kind-specific validation (runtime availability, dependency
+// discovery) lives in each executor's Prepare() method, not here.
+//
 // Kind resolution priority:
 //  1. Explicit Kind field
 //  2. Explicit Shell field (deprecated alias, mapped to Kind)
@@ -238,6 +251,19 @@ func (hc *HookConfig) parseRunTarget() (bool, error) {
 // or Shell fields, the file extension, or the OS default shell.
 // It also infers Dir for non-shell file hooks when Dir was not
 // explicitly set by the user.
+//
+// This method is intentionally kind-agnostic: it branches only on
+// [language.HookKind.IsShell] (shell vs. non-shell), never on
+// individual kind values. The shell vs. non-shell distinction maps
+// to structural differences in how hooks execute:
+//
+//   - Shell hooks: support inline scripts, no Dir auto-inference.
+//   - Non-shell hooks: require a file, Dir inferred from script path
+//     so project-relative tooling (venvs, node_modules) resolves
+//     correctly.
+//
+// Kind-specific validation (e.g. checking Python/Node installation)
+// is deferred to each executor's Prepare() method.
 func (hc *HookConfig) resolveKind(dirExplicit bool) error {
 	// Kind resolution — priority:
 	// 1. explicit Kind  2. Shell alias
@@ -303,6 +329,10 @@ func (hc *HookConfig) resolveKind(dirExplicit bool) error {
 // from the hook's Dir, relativeScriptPath, and inputCwd fields.
 // After this method, resolvedDir and resolvedScriptPath are the
 // single source of truth for hook execution paths.
+//
+// Kind-agnostic: the only distinction is shell vs. non-shell — non-
+// shell hooks derive cwd from the script directory when Dir is not
+// explicitly set, so project-relative tooling works correctly.
 func (hc *HookConfig) resolvePaths(dirExplicit bool) error {
 	// cwdDir is the working directory for resolving relative
 	// paths (e.g. the service directory for service hooks).
@@ -363,6 +393,10 @@ func (hc *HookConfig) resolvePaths(dirExplicit bool) error {
 // enforceContainment validates that file-based hooks do not escape
 // the project root via ".." in Dir or Run. Inline hooks are exempt
 // because they are saved to an OS temp file for execution.
+//
+// Kind-agnostic: containment rules apply identically to all 6 hook
+// kinds. The only structural difference is that inline scripts (any
+// shell kind) skip the boundary check.
 func (hc *HookConfig) enforceContainment() error {
 	if hc.relativeScriptPath == "" {
 		// Inline hooks: resolve to absolute path but skip

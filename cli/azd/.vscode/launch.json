@@ -34,14 +34,14 @@
             "program": "${workspaceFolder}",
             "console": "integratedTerminal",
             "args": [
-                "auth", "login"
+                //"auth", "login"
                 //"pipeline", "config", "--principal-name", "foo", "--provider", "github"
                 //"package", "api", "--debug"
-                //"provision"
+                "provision"
                 //"up"
                 //"env", "new"
             ],
-            //"cwd": "~/workspace/cwd/path",
+            "cwd": "/home/vivazqu/workspace/build/debug/metadata-references",
             // "env": {
             //     "INT_TAG_VALUE":"1989"
             // }

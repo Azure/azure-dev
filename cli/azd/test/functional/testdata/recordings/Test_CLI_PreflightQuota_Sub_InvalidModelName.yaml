@@ -24,7 +24,7 @@ interactions:
             User-Agent:
                 - azsdk-go-armsubscriptions/v1.3.0 (go1.26.1; linux),azdev/0.0.0-dev.0 (Go go1.26.1; linux/amd64)
             X-Ms-Correlation-Request-Id:
-                - 1bd360447dbb2b1e9ad8949bbcb12a9d
+                - d69e3836f65cf0b6e2380a89e02ddf07
         url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/locations?api-version=2022-12-01
         method: GET
       response:
@@ -44,7 +44,7 @@ interactions:
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Mon, 13 Apr 2026 06:29:56 GMT
+                - Mon, 13 Apr 2026 18:01:42 GMT
             Expires:
                 - "-1"
             Pragma:
@@ -56,20 +56,20 @@ interactions:
             X-Content-Type-Options:
                 - nosniff
             X-Ms-Correlation-Request-Id:
-                - 1bd360447dbb2b1e9ad8949bbcb12a9d
+                - d69e3836f65cf0b6e2380a89e02ddf07
             X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
                 - "3749"
             X-Ms-Ratelimit-Remaining-Subscription-Reads:
                 - "249"
             X-Ms-Request-Id:
-                - 7be0e4f0-6a36-476c-bc3b-770f67c08772
+                - 4c94f317-82eb-4d6e-8f5a-9f0b8a917607
             X-Ms-Routing-Request-Id:
-                - WESTUS:20260413T062956Z:7be0e4f0-6a36-476c-bc3b-770f67c08772
+                - WESTUS2:20260413T180142Z:4c94f317-82eb-4d6e-8f5a-9f0b8a917607
             X-Msedge-Ref:
-                - 'Ref A: 7F278CF61BE44516AE80A628CCFC6D27 Ref B: CO6AA3150220035 Ref C: 2026-04-13T06:29:54Z'
+                - 'Ref A: 73DCCF70330C4664A850F6714487F5AC Ref B: MWH011020807023 Ref C: 2026-04-13T18:01:40Z'
         status: 200 OK
         code: 200
-        duration: 1.663217316s
+        duration: 1.750077576s
     - id: 1
       request:
         proto: HTTP/1.1
@@ -93,7 +93,7 @@ interactions:
             User-Agent:
                 - azsdk-go-armresources/v1.2.0 (go1.26.1; linux),azdev/0.0.0-dev.0 (Go go1.26.1; linux/amd64)
             X-Ms-Correlation-Request-Id:
-                - 1bd360447dbb2b1e9ad8949bbcb12a9d
+                - d69e3836f65cf0b6e2380a89e02ddf07
         url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/providers/Microsoft.Resources/deployments/?api-version=2021-04-01
         method: GET
       response:
@@ -102,18 +102,18 @@ interactions:
         proto_minor: 0
         transfer_encoding: []
         trailer: {}
-        content_length: 1956360
+        content_length: 1249241
         uncompressed: false
-        body: '{"nextLink":"https://management.azure.com/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/providers/Microsoft.Resources/deployments/?api-version=2021-04-01\u0026%24skiptoken=pZFNa8JAEEB%2fi3tW2DURxJu6U6t1dpvJrKI3ERtMJIE2orvif28iePPUnob5gjfzbmJflfWxPO%2fqY1VyVRzKHzG6idQ6fp%2bCYRovXSpG5fl06goYp9xmN1EervXn7rs%2btmsfBy9GQnWGHYLVLJHQE93HBFWXZ0%2fJYcdAcjF6AUnYzoghMnozsAAe5fatqU0sJFfiIqacvkgZu0zlxWoXGz1XVmcKGSUG9BhcbFNlUtiuuEBv8wUg7yPDe99Eb8e9nrg%2fcft%2f4%2b3Lf%2fImAfONNAFj1NkAp2qyLsjRyriWlzmLiLOQ5JUn3fwiuMjk2Ec9f7AbSy8ErKEV0FzU%2brjffwE%3d","value":[]}'
+        body: '{"nextLink":"https://management.azure.com/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/providers/Microsoft.Resources/deployments/?api-version=2021-04-01\u0026%24skiptoken=pZHLbsJADEW%2fhVmDlAGCKnaBGUJT7CGeB4IdqijKQ4nUBuWB%2bPeSCnZdtVv7XstH58rey6JKisuxSsrClNmp%2bGLzK9PKmvVSoqFgYzWbF5c8HzIZaGP1uA8Up6baHj%2brpO%2b9nVo2Z3zwMiDpwtiTIzb8SVBZP3d8Mh6gjGsUkYy7Q0hGTlDsfSVlC95hdZ8tlIwbMtmUUvogjmqjvVoJO0XxyrELWkhjXwngkJ4nkPDYeE0U81ySW4DhOZL1rUpdCP3t7tyAyFrsbIcpTDHdj5XYj9jtyfFHjNn%2fMYytQYAHaeDDkj%2ffX5MjTQ63zkXijqQNX6xsThE5mEFGFiWFuxyX2vMFZs70KKjoF1E7%2bRDVe7vdvgE%3d","value":[]}'
         headers:
             Cache-Control:
                 - no-cache
             Content-Length:
-                - "1956360"
+                - "1249241"
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Mon, 13 Apr 2026 06:30:03 GMT
+                - Mon, 13 Apr 2026 18:01:47 GMT
             Expires:
                 - "-1"
             Pragma:
@@ -125,20 +125,20 @@ interactions:
             X-Content-Type-Options:
                 - nosniff
             X-Ms-Correlation-Request-Id:
-                - 1bd360447dbb2b1e9ad8949bbcb12a9d
+                - d69e3836f65cf0b6e2380a89e02ddf07
             X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
                 - "3749"
             X-Ms-Ratelimit-Remaining-Subscription-Reads:
                 - "249"
             X-Ms-Request-Id:
-                - 9ba48277-2735-4b41-8058-f23bd4b3b7b0
+                - 04563685-48c4-46c0-85c5-4afa90ba1f64
             X-Ms-Routing-Request-Id:
-                - WESTUS2:20260413T063003Z:9ba48277-2735-4b41-8058-f23bd4b3b7b0
+                - WESTUS:20260413T180147Z:04563685-48c4-46c0-85c5-4afa90ba1f64
             X-Msedge-Ref:
-                - 'Ref A: 463620CD99514824A2878B8A59646A7C Ref B: CO6AA3150220035 Ref C: 2026-04-13T06:29:56Z'
+                - 'Ref A: 49D4EEA7185145379AC8C4AF55DEF0FE Ref B: MWH011020807023 Ref C: 2026-04-13T18:01:42Z'
         status: 200 OK
         code: 200
-        duration: 7.206941265s
+        duration: 4.904794083s
     - id: 2
       request:
         proto: HTTP/1.1
@@ -160,8 +160,8 @@ interactions:
             User-Agent:
                 - azsdk-go-armresources/v1.2.0 (go1.26.1; linux),azdev/0.0.0-dev.0 (Go go1.26.1; linux/amd64)
             X-Ms-Correlation-Request-Id:
-                - 1bd360447dbb2b1e9ad8949bbcb12a9d
-        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/providers/Microsoft.Resources/deployments/?%24skiptoken=pZFNa8JAEEB%2Fi3tW2DURxJu6U6t1dpvJrKI3ERtMJIE2orvif28iePPUnob5gjfzbmJflfWxPO%2FqY1VyVRzKHzG6idQ6fp%2BCYRovXSpG5fl06goYp9xmN1EervXn7rs%2BtmsfBy9GQnWGHYLVLJHQE93HBFWXZ0%2FJYcdAcjF6AUnYzoghMnozsAAe5fatqU0sJFfiIqacvkgZu0zlxWoXGz1XVmcKGSUG9BhcbFNlUtiuuEBv8wUg7yPDe99Eb8e9nrg%2Fcft%2F4%2B3Lf%2FImAfONNAFj1NkAp2qyLsjRyriWlzmLiLOQ5JUn3fwiuMjk2Ec9f7AbSy8ErKEV0FzU%2BrjffwE%3D&api-version=2021-04-01
+                - d69e3836f65cf0b6e2380a89e02ddf07
+        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/providers/Microsoft.Resources/deployments/?%24skiptoken=pZHLbsJADEW%2FhVmDlAGCKnaBGUJT7CGeB4IdqijKQ4nUBuWB%2BPeSCnZdtVv7XstH58rey6JKisuxSsrClNmp%2BGLzK9PKmvVSoqFgYzWbF5c8HzIZaGP1uA8Up6baHj%2BrpO%2B9nVo2Z3zwMiDpwtiTIzb8SVBZP3d8Mh6gjGsUkYy7Q0hGTlDsfSVlC95hdZ8tlIwbMtmUUvogjmqjvVoJO0XxyrELWkhjXwngkJ4nkPDYeE0U81ySW4DhOZL1rUpdCP3t7tyAyFrsbIcpTDHdj5XYj9jtyfFHjNn%2FMYytQYAHaeDDkj%2FfX5MjTQ63zkXijqQNX6xsThE5mEFGFiWFuxyX2vMFZs70KKjoF1E7%2BRDVe7vdvgE%3D&api-version=2021-04-01
         method: GET
       response:
         proto: HTTP/2.0
@@ -169,18 +169,18 @@ interactions:
         proto_minor: 0
         transfer_encoding: []
         trailer: {}
-        content_length: 444527
+        content_length: 828458
         uncompressed: false
         body: '{"value":[]}'
         headers:
             Cache-Control:
                 - no-cache
             Content-Length:
-                - "444527"
+                - "828458"
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Mon, 13 Apr 2026 06:30:06 GMT
+                - Mon, 13 Apr 2026 18:01:52 GMT
             Expires:
                 - "-1"
             Pragma:
@@ -192,20 +192,20 @@ interactions:
             X-Content-Type-Options:
                 - nosniff
             X-Ms-Correlation-Request-Id:
-                - 1bd360447dbb2b1e9ad8949bbcb12a9d
+                - d69e3836f65cf0b6e2380a89e02ddf07
             X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
                 - "3749"
             X-Ms-Ratelimit-Remaining-Subscription-Reads:
                 - "249"
             X-Ms-Request-Id:
-                - feac4255-4a7a-4f79-ae1c-2f04a59b4776
+                - c72f390b-57a3-47cd-a1c4-3b4dafdecd52
             X-Ms-Routing-Request-Id:
-                - WESTUS2:20260413T063006Z:feac4255-4a7a-4f79-ae1c-2f04a59b4776
+                - WESTCENTRALUS:20260413T180152Z:c72f390b-57a3-47cd-a1c4-3b4dafdecd52
             X-Msedge-Ref:
-                - 'Ref A: C7A912390F9E474B9A7806FCC3F4631F Ref B: CO6AA3150220035 Ref C: 2026-04-13T06:30:04Z'
+                - 'Ref A: C03AFF3F92A34405996BB3354C907D6E Ref B: MWH011020807023 Ref C: 2026-04-13T18:01:47Z'
         status: 200 OK
         code: 200
-        duration: 2.372126217s
+        duration: 5.489935044s
     - id: 3
       request:
         proto: HTTP/1.1
@@ -229,7 +229,7 @@ interactions:
             User-Agent:
                 - azsdk-go-armcognitiveservices/v1.8.0 (go1.26.1; linux),azdev/0.0.0-dev.0 (Go go1.26.1; linux/amd64)
             X-Ms-Correlation-Request-Id:
-                - 1bd360447dbb2b1e9ad8949bbcb12a9d
+                - d69e3836f65cf0b6e2380a89e02ddf07
         url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/providers/Microsoft.CognitiveServices/locations/eastus2/usages?api-version=2025-06-01
         method: GET
       response:
@@ -249,7 +249,7 @@ interactions:
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Mon, 13 Apr 2026 06:30:11 GMT
+                - Mon, 13 Apr 2026 18:01:58 GMT
             Expires:
                 - "-1"
             Pragma:
@@ -261,24 +261,24 @@ interactions:
             X-Content-Type-Options:
                 - nosniff
             X-Envoy-Upstream-Service-Time:
-                - "233"
+                - "264"
             X-Ms-Correlation-Request-Id:
-                - 1bd360447dbb2b1e9ad8949bbcb12a9d
+                - d69e3836f65cf0b6e2380a89e02ddf07
             X-Ms-Operation-Identifier:
-                - tenantId=70a036f6-8e4d-4615-bad6-149c02e7720d,objectId=4070b897-9ee6-4cec-ac9f-addac5f3c6e2/centralus/df3dc177-d8c7-48cf-b0cb-0e93b18cbb05
+                - tenantId=70a036f6-8e4d-4615-bad6-149c02e7720d,objectId=4070b897-9ee6-4cec-ac9f-addac5f3c6e2/westus/280100fe-bbf9-4146-8fa6-52a36340e299
             X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
                 - "3749"
             X-Ms-Ratelimit-Remaining-Subscription-Reads:
                 - "249"
             X-Ms-Request-Id:
-                - 5ec9a085-4827-4fcc-8be5-b2eac8d1688c
+                - ac3aadd3-d9a7-42ba-ae58-c7be4bac505f
             X-Ms-Routing-Request-Id:
-                - CENTRALUS:20260413T063011Z:92bf78de-eeab-4643-ac08-b1560df03e66
+                - WESTUS:20260413T180158Z:1a8bedc9-f67e-4d39-8c0b-4df67b42251a
             X-Msedge-Ref:
-                - 'Ref A: 04452038CF274DF3A980771CB3C78315 Ref B: CO6AA3150220035 Ref C: 2026-04-13T06:30:10Z'
+                - 'Ref A: 28CE4CDE39D44B7BAF38B43B2797155F Ref B: MWH011020807023 Ref C: 2026-04-13T18:01:57Z'
         status: 200 OK
         code: 200
-        duration: 486.788383ms
+        duration: 740.608357ms
     - id: 4
       request:
         proto: HTTP/1.1
@@ -302,7 +302,7 @@ interactions:
             User-Agent:
                 - azsdk-go-armcognitiveservices/v1.8.0 (go1.26.1; linux),azdev/0.0.0-dev.0 (Go go1.26.1; linux/amd64)
             X-Ms-Correlation-Request-Id:
-                - 1bd360447dbb2b1e9ad8949bbcb12a9d
+                - d69e3836f65cf0b6e2380a89e02ddf07
         url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/providers/Microsoft.CognitiveServices/locations/eastus2/models?api-version=2025-06-01
         method: GET
       response:
@@ -322,7 +322,7 @@ interactions:
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Mon, 13 Apr 2026 06:30:11 GMT
+                - Mon, 13 Apr 2026 18:01:59 GMT
             Expires:
                 - "-1"
             Pragma:
@@ -334,24 +334,24 @@ interactions:
             X-Content-Type-Options:
                 - nosniff
             X-Envoy-Upstream-Service-Time:
-                - "185"
+                - "204"
             X-Ms-Correlation-Request-Id:
-                - 1bd360447dbb2b1e9ad8949bbcb12a9d
+                - d69e3836f65cf0b6e2380a89e02ddf07
             X-Ms-Operation-Identifier:
-                - tenantId=70a036f6-8e4d-4615-bad6-149c02e7720d,objectId=4070b897-9ee6-4cec-ac9f-addac5f3c6e2/westus2/928ea67f-d67e-4d4e-98cf-18662f084e2b
+                - tenantId=70a036f6-8e4d-4615-bad6-149c02e7720d,objectId=4070b897-9ee6-4cec-ac9f-addac5f3c6e2/westus/c8377b1c-8dc8-4851-b9fb-1aa7fb54b100
             X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
                 - "3749"
             X-Ms-Ratelimit-Remaining-Subscription-Reads:
                 - "249"
             X-Ms-Request-Id:
-                - c67c6a39-ea99-4e1f-bf44-e9f72014795b
+                - 8468aca8-f500-47a9-9bd3-0cdf2fa6a01a
             X-Ms-Routing-Request-Id:
-                - WESTUS2:20260413T063012Z:48c007b5-3e04-4d70-9a70-88e4e9efe596
+                - WESTUS:20260413T180159Z:0ea843b4-7568-4a61-b1e4-563f09031997
             X-Msedge-Ref:
-                - 'Ref A: 8238210FD36648AC886EEE49C84B5592 Ref B: CO6AA3150220035 Ref C: 2026-04-13T06:30:11Z'
+                - 'Ref A: 32B0A437474C43B3B441ECE280EB187F Ref B: MWH011020807023 Ref C: 2026-04-13T18:01:58Z'
         status: 200 OK
         code: 200
-        duration: 783.041989ms
+        duration: 1.032794688s
 ---
-env_name: azdtest-lf10f1c
-time: "1776061788"
+env_name: azdtest-l301dee
+time: "1776103289"

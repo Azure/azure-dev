@@ -330,20 +330,26 @@ type localArmPreflight struct {
 	// target is the deployment scope (subscription or resource group) used to derive snapshot options.
 	// It may be nil, in which case snapshot options are left empty.
 	target infra.Deployment
-	checks []PreflightCheck
+	// envLocation is the Azure location to provide to the Bicep snapshot for resource group
+	// deployments, enabling Bicep to resolve resourceGroup().location. This is looked up from
+	// the actual resource group (when it exists) or falls back to AZURE_LOCATION.
+	envLocation string
+	checks      []PreflightCheck
 }
 
 // newLocalArmPreflight creates a new instance of localArmPreflight.
 // modulePath is the path to the source Bicep module file (e.g. "infra/main.bicep").
 // bicepCli is the Bicep CLI wrapper used to invoke bicep commands.
 // target is the deployment scope used to populate snapshot options; it may be nil.
+// envLocation is the resolved location for RG deployments (from RG lookup or AZURE_LOCATION).
 func newLocalArmPreflight(
-	modulePath string, bicepCli *bicep.Cli, target infra.Deployment,
+	modulePath string, bicepCli *bicep.Cli, target infra.Deployment, envLocation string,
 ) *localArmPreflight {
 	return &localArmPreflight{
-		modulePath: modulePath,
-		bicepCli:   bicepCli,
-		target:     target,
+		modulePath:  modulePath,
+		bicepCli:    bicepCli,
+		target:      target,
+		envLocation: envLocation,
 	}
 }
 
@@ -406,11 +412,11 @@ func (l *localArmPreflight) validate(
 		switch t := l.target.(type) {
 		case *infra.ResourceGroupDeployment:
 			snapshotOpts = snapshotOpts.WithResourceGroup(t.ResourceGroupName())
-			// Note: We intentionally do NOT pass --location for RG deployments.
-			// If the selected resource group already exists in a different region than
-			// AZURE_LOCATION, passing it here would make resourceGroup().location resolve
-			// incorrectly. The quota check handles unresolved locations via its own
-			// fallback (RG lookup → AZURE_LOCATION).
+			// Pass the resolved location so Bicep can evaluate resourceGroup().location.
+			// The caller resolves this from the actual RG (if it exists) or AZURE_LOCATION.
+			if l.envLocation != "" {
+				snapshotOpts = snapshotOpts.WithLocation(l.envLocation)
+			}
 		case *infra.SubscriptionDeployment:
 			snapshotOpts = snapshotOpts.WithLocation(t.Location())
 		}

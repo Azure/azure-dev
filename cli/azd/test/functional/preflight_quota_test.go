@@ -38,6 +38,11 @@ func Test_CLI_PreflightQuota_RG_DefaultCapacity(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
 	require.NoError(t, err)
 
+	// Persist AZURE_LOCATION to the azd environment so the preflight check
+	// can resolve it for RG-scoped deployments where the RG doesn't exist yet.
+	_, err = cli.RunCommand(ctx, "env", "set", "AZURE_LOCATION", "eastus2")
+	require.NoError(t, err)
+
 	// Provision with default params (capacity=99999) — expect quota warning, answer No.
 	result, err := cli.RunCommandWithStdIn(
 		ctx,
@@ -77,6 +82,9 @@ func Test_CLI_PreflightQuota_RG_InvalidModelName(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
 	require.NoError(t, err)
 
+	_, err = cli.RunCommand(ctx, "env", "set", "AZURE_LOCATION", "eastus2")
+	require.NoError(t, err)
+
 	result, err := cli.RunCommandWithStdIn(
 		ctx,
 		stdinForRGProvisionWithPreflightNo(),
@@ -111,6 +119,9 @@ func Test_CLI_PreflightQuota_RG_InvalidVersion(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
+	require.NoError(t, err)
+
+	_, err = cli.RunCommand(ctx, "env", "set", "AZURE_LOCATION", "eastus2")
 	require.NoError(t, err)
 
 	result, err := cli.RunCommandWithStdIn(

@@ -2284,6 +2284,10 @@ const completionSpec: Fig.Spec = {
 					description: 'Provision and deploy to Azure after initializing the project from a template.',
 				},
 			],
+			args: {
+				name: 'directory',
+				isOptional: true,
+			},
 		},
 		{
 			name: ['mcp'],

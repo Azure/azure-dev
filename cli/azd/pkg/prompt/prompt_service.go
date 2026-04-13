@@ -251,8 +251,23 @@ func (ps *promptService) PromptSubscription(
 
 	hideId := isDemoModeEnabled()
 
-	// Handle --fail-on-prompt mode: require explicit subscription flag
+	// Handle --fail-on-prompt mode: resolve configured defaults before failing
 	if ps.globalOptions.FailOnPrompt {
+		// Try to resolve a configured default before failing
+		if defaultSubscriptionId != "" {
+			subscriptionList, err := ps.subscriptionManager.GetSubscriptions(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load subscriptions: %w", err)
+			}
+
+			for _, subscription := range subscriptionList {
+				if strings.EqualFold(subscription.Id, defaultSubscriptionId) {
+					ps.console.Message(ctx, formatAutoSelectedSubscriptionMessage(&subscription, hideId))
+					return &subscription, nil
+				}
+			}
+		}
+
 		return nil, fmt.Errorf(
 			"interactive prompt not allowed in strict mode:" +
 				" subscription selection" +
@@ -527,7 +542,8 @@ func (ps *promptService) PromptResourceGroup(
 		return nil, fmt.Errorf(
 			"interactive prompt not allowed in strict mode:" +
 				" resource group selection" +
-				" (specify via environment configuration)")
+				" (set AZURE_RESOURCE_GROUP in your environment or" +
+				" use 'azd env set AZURE_RESOURCE_GROUP <name>')")
 	}
 
 	// Handle --no-prompt mode
@@ -667,8 +683,8 @@ func (ps *promptService) PromptSubscriptionResource(
 		return nil, fmt.Errorf(
 			"interactive prompt not allowed in strict mode:"+
 				" %s selection"+
-				" (specify via environment variable or"+
-				" configuration file)",
+				" (specify the resource in azure.yaml or"+
+				" set the appropriate environment variable with 'azd env set')",
 			resourceName)
 	}
 
@@ -823,8 +839,8 @@ func (ps *promptService) PromptResourceGroupResource(
 		return nil, fmt.Errorf(
 			"interactive prompt not allowed in strict mode:"+
 				" %s selection"+
-				" (specify via environment variable or"+
-				" configuration file)",
+				" (specify the resource in azure.yaml or"+
+				" set the appropriate environment variable with 'azd env set')",
 			resourceName)
 	}
 

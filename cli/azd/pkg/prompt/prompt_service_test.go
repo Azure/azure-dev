@@ -423,6 +423,39 @@ func TestPromptSubscription_FailOnPrompt(t *testing.T) {
 	require.Contains(t, err.Error(), "subscription selection")
 }
 
+func TestPromptSubscription_FailOnPrompt_WithConfiguredDefault(t *testing.T) {
+	cfg := config.NewEmptyConfig()
+	err := cfg.Set("defaults.subscription", "sub-1")
+	require.NoError(t, err)
+	ucm := newInMemoryUserConfigManager(cfg)
+
+	authManager := &mockauth.MockAuthManager{}
+	subscriptionManager := &mockaccount.MockSubscriptionManager{}
+	resourceService := &mockazapi.MockResourceService{}
+	mockConsole := mockinput.NewMockConsole()
+
+	subscriptionManager.
+		On("GetSubscriptions", mock.Anything).
+		Return([]account.Subscription{
+			{Id: "sub-1", Name: "Subscription 1"},
+			{Id: "sub-2", Name: "Subscription 2"},
+		}, nil)
+
+	ps := NewPromptService(
+		authManager,
+		mockConsole,
+		ucm,
+		subscriptionManager,
+		resourceService,
+		&internal.GlobalCommandOptions{FailOnPrompt: true},
+	)
+
+	result, err := ps.PromptSubscription(t.Context(), nil)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "sub-1", result.Id)
+}
+
 func TestPromptLocation_FailOnPrompt(t *testing.T) {
 	ucm := newInMemoryUserConfigManager(nil)
 	authManager := &mockauth.MockAuthManager{}

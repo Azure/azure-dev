@@ -12,7 +12,7 @@ template:
         endpoint: https://api.githubcopilot.com/mcp/
         name: github-mcp-conn
       url: https://api.githubcopilot.com/mcp/
-    - kind: code_interpreter
+    - kind: codeInterpreter
       name: code-runner
   instructions: |
     You have access to GitHub via MCP and can run code.

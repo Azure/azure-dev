@@ -4,6 +4,7 @@
 package agent_yaml
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -274,12 +275,12 @@ func extractTemplateBytes(manifestYaml []byte) ([]byte, error) {
 
 	templateVal, ok := generic["template"]
 	if !ok || templateVal == nil {
-		return nil, os.ErrNotExist
+		return nil, fmt.Errorf("manifest missing top-level 'template' field")
 	}
 
 	templateMap, ok := templateVal.(map[string]any)
 	if !ok {
-		return nil, os.ErrInvalid
+		return nil, fmt.Errorf("'template' field is not a mapping")
 	}
 
 	return yaml.Marshal(templateMap)

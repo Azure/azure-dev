@@ -940,6 +940,31 @@ func TestCreatePromptAgentAPIRequest_NilToolsSlice(t *testing.T) {
 	}
 }
 
+// TestCreatePromptAgentAPIRequest_NilToolsPanics documents that passing a PromptAgent
+// with a nil Tools pointer causes a panic in the production code (map.go:169
+// dereferences *promptAgent.Tools without a nil guard).
+// TODO: Add a nil check in CreatePromptAgentAPIRequest so this returns an error
+// or treats nil Tools the same as an empty slice.
+func TestCreatePromptAgentAPIRequest_NilToolsPanics(t *testing.T) {
+	t.Parallel()
+	agent := PromptAgent{
+		AgentDefinition: AgentDefinition{
+			Kind: AgentKindPrompt,
+			Name: "nil-tools",
+		},
+		Model: Model{Id: "gpt-4o"},
+		// Tools is nil (not set)
+	}
+
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("expected panic when Tools is nil, but no panic occurred")
+		}
+	}()
+
+	_, _ = CreatePromptAgentAPIRequest(agent, nil)
+}
+
 // ---------------------------------------------------------------------------
 // CreateHostedAgentAPIRequest
 // ---------------------------------------------------------------------------

@@ -30,7 +30,9 @@ type Matcher struct {
 }
 
 // NewMatcher creates a Matcher that loads ignore patterns from the given root directory.
-// It attempts to load both .azdxignore and .gitignore — patterns from both files are additive.
+// It loads both .azdxignore and .gitignore. Patterns are evaluated additively — a path is
+// ignored if it matches ANY pattern in EITHER file. This means .gitignore negation patterns (!)
+// cannot un-ignore paths that are matched by .azdxignore, since each file is parsed independently.
 // Missing files are silently skipped (no error). A non-nil Matcher is always returned
 // even when no ignore files exist (it simply matches nothing).
 func NewMatcher(root string) (*Matcher, error) {
@@ -41,8 +43,9 @@ func NewMatcher(root string) (*Matcher, error) {
 
 	m := &Matcher{root: absRoot}
 
-	// Load .azdxignore first (project-specific rules take precedence in ordering,
-	// though any match from either file results in ignore).
+	// Load .azdxignore first — any match from either file causes the path to be
+	// ignored (union semantics). Negation patterns in one file do not override
+	// matches in the other, because each file is parsed independently.
 	if ig, loadErr := loadIgnoreFile(absRoot, AzdxIgnoreFile); loadErr != nil {
 		return nil, loadErr
 	} else if ig != nil {

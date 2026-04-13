@@ -314,3 +314,43 @@ func TestGetFileChanges_CreateThenDelete(t *testing.T) {
 	}, 2*time.Second, 50*time.Millisecond,
 		"ephemeral.txt should be removed from Created after delete, not moved to Deleted")
 }
+
+func TestGetFileChanges_RenameFile(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	watcher, err := NewWatcher(ctx)
+	require.NoError(t, err)
+
+	oldFile := filepath.Join(dir, "old.txt")
+	err = os.WriteFile(oldFile, []byte("content"), 0600)
+	require.NoError(t, err)
+
+	// Wait for the initial create event.
+	require.Eventually(t, func() bool {
+		for _, c := range watcher.GetFileChanges() {
+			if filepath.Base(c.Path) == "old.txt" {
+				return true
+			}
+		}
+		return false
+	}, 2*time.Second, 50*time.Millisecond, "expected old.txt to appear")
+
+	// Rename the file.
+	newFile := filepath.Join(dir, "new.txt")
+	err = os.Rename(oldFile, newFile)
+	require.NoError(t, err)
+
+	// The new name should appear in changes eventually.
+	require.Eventually(t, func() bool {
+		for _, c := range watcher.GetFileChanges() {
+			if filepath.Base(c.Path) == "new.txt" {
+				return true
+			}
+		}
+		return false
+	}, 2*time.Second, 50*time.Millisecond, "expected new.txt after rename")
+}

@@ -115,7 +115,9 @@ func NewWatcher(ctx context.Context) (Watcher, error) {
 				isDir := statErr == nil && info.IsDir()
 
 				// Check user-defined ignore patterns (.azdxignore / .gitignore).
-				if relPath, relErr := filepath.Rel(fw.root, name); relErr == nil {
+				if relPath, relErr := filepath.Rel(fw.root, name); relErr != nil {
+					log.Printf("debug: failed to compute relative path for %s: %v", name, relErr)
+				} else {
 					if fw.ignoreMatcher.IsIgnored(relPath, isDir) {
 						continue
 					}
@@ -186,7 +188,9 @@ func (fw *fileWatcher) watchRecursive(root string, watcher *fsnotify.Watcher) er
 			}
 
 			// Check user-defined ignore patterns (.azdxignore / .gitignore).
-			if relPath, relErr := filepath.Rel(fw.root, path); relErr == nil && relPath != "." {
+			if relPath, relErr := filepath.Rel(fw.root, path); relErr != nil {
+				log.Printf("debug: failed to compute relative path for %s: %v", path, relErr)
+			} else if relPath != "." {
 				if fw.ignoreMatcher.IsIgnored(relPath, true) {
 					return filepath.SkipDir
 				}

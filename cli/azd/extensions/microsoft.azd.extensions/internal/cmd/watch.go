@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"time"
@@ -72,6 +73,8 @@ func runWatchAction(ctx context.Context, flags *watchFlags) error {
 	}
 	defer watcher.Close()
 
+	// cwd is captured once and used as the immutable root for the entire watch session.
+	// All filepath.Rel calls reference this value so the root cannot drift.
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current working directory: %w", err)
@@ -144,7 +147,9 @@ func runWatchAction(ctx context.Context, flags *watchFlags) error {
 			info, statErr := os.Stat(event.Name)
 			isDir := statErr == nil && info.IsDir()
 
-			if relPath, relErr := filepath.Rel(cwd, event.Name); relErr == nil {
+			if relPath, relErr := filepath.Rel(cwd, event.Name); relErr != nil {
+				log.Printf("debug: failed to compute relative path for %s: %v", event.Name, relErr)
+			} else {
 				if ignoreMatcher.IsIgnored(relPath, isDir) {
 					continue
 				}
@@ -201,7 +206,9 @@ func watchRecursive(
 			}
 
 			// Check user-defined ignore patterns (.azdxignore / .gitignore).
-			if relPath, relErr := filepath.Rel(root, path); relErr == nil && relPath != "." {
+			if relPath, relErr := filepath.Rel(root, path); relErr != nil {
+				log.Printf("debug: failed to compute relative path for %s: %v", path, relErr)
+			} else if relPath != "." {
 				if ignoreMatcher.IsIgnored(relPath, true) {
 					return filepath.SkipDir
 				}

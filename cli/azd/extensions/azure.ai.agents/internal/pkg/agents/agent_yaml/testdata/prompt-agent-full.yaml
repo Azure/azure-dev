@@ -10,10 +10,10 @@ template:
       - full
   model:
     id: gpt-4o
-    publisher: azure
+    provider: azure
     options:
       temperature: 0.8
-      maxTokens: 4000
+      maxOutputTokens: 4000
       topP: 0.95
   instructions: |
     You are a helpful testing assistant.

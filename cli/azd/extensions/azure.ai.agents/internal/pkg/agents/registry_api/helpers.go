@@ -353,11 +353,20 @@ func promptForYamlParameterValues(
 		var value any
 		var err error
 		isRequired := property.Required != nil && *property.Required
+		isSecret := property.Secret != nil && *property.Secret
 		if len(enumValues) > 0 {
 			// Use selection for enum parameters
 			value, err = promptForEnumValue(ctx, property.Name, enumValues, defaultValue, azdClient, noPrompt)
+		} else if isSecret && noPrompt {
+			return nil, fmt.Errorf(
+				"unable to prompt for secret parameter '%s' in no-prompt mode; "+
+					"provide the value via environment variable",
+				property.Name,
+			)
 		} else {
-			// Use text input for other parameters
+			// TODO: Secret parameters are prompted in plaintext because the azd gRPC PromptOptions
+			// does not support masked input. Add IsSecret to the PromptOptions protobuf in azd core
+			// to enable proper secret masking.
 			value, err = promptForTextValue(ctx, property.Name, defaultValue, isRequired, azdClient)
 		}
 
@@ -458,7 +467,7 @@ func promptForTextValue(
 		defaultStr = fmt.Sprintf("%v", defaultValue)
 	}
 
-	message := fmt.Sprintf("Enter value for parameter '%s':", paramName)
+	message := fmt.Sprintf("Enter value for parameter '%s'", paramName)
 	if defaultStr != "" {
 		message += fmt.Sprintf(" (default: %s)", defaultStr)
 	}

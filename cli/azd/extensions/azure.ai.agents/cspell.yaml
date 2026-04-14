@@ -22,11 +22,14 @@ words:
   - uaenorth
   - uksouth
   # Project terms
+  - ADLS
   - agentserver
   - aiservices
+  - Alphanum
   - anonymousconnection
   - aoai
   - azdaiagent
+  - CLIENTSECRET
   - curr
   - dataagent
   - exterrors
@@ -38,9 +41,12 @@ words:
   - mcpservertoolneverrequireapprovalmode
   - mcpservertoolspecifyapprovalmode
   - myregistry
+  - normalises
   - openapitool
   - posixpath
   - projectpkg
   - protocolversionrecord
+  - Qdrant
+  - Toolsets
   - Vnext
   - webp

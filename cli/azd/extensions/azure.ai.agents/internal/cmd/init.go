@@ -11,11 +11,13 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
 	osExec "os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -589,6 +591,20 @@ func (a *InitAction) Run(ctx context.Context) error {
 				Memory: containerSettings.Resources.Memory,
 			}
 			agentManifest.Template = hostedAgent
+		}
+
+		// Prompt for manifest parameters (e.g. tool credentials) after project selection
+		agentManifest, err = registry_api.ProcessManifestParameters(
+			ctx, agentManifest, a.azdClient, a.flags.NoPrompt,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to process manifest parameters: %w", err)
+		}
+
+		// Inject toolbox MCP endpoint env vars into hosted agent definitions
+		// so agent.yaml is self-documenting about what env vars will be set.
+		if err := injectToolboxEnvVarsIntoDefinition(agentManifest); err != nil {
+			return fmt.Errorf("injecting toolbox env vars: %w", err)
 		}
 
 		// Write the final agent.yaml to disk (after deployment names have been injected)
@@ -1432,11 +1448,6 @@ func (a *InitAction) downloadAgentYaml(
 		}
 	}
 
-	agentManifest, err = registry_api.ProcessManifestParameters(ctx, agentManifest, a.azdClient, a.flags.NoPrompt)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to process manifest parameters: %w", err)
-	}
-
 	_, isPromptAgent := agentManifest.Template.(agent_yaml.PromptAgent)
 	if isPromptAgent {
 		agentManifest, err = agent_yaml.ProcessPromptAgentToolsConnections(ctx, agentManifest, a.azdClient)
@@ -1586,6 +1597,44 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 
 	agentConfig.Deployments = a.deploymentDetails
 	agentConfig.Resources = resourceDetails
+
+	// Process toolbox resources from the manifest
+	toolboxes, toolConnections, credEnvVars, err := extractToolboxAndConnectionConfigs(agentManifest)
+	if err != nil {
+		return err
+	}
+	agentConfig.Toolboxes = toolboxes
+	agentConfig.ToolConnections = toolConnections
+
+	// Persist credential values as azd environment variables so they are
+	// resolved at provision/deploy time instead of stored in azure.yaml.
+	for envKey, envVal := range credEnvVars {
+		if _, setErr := a.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+			EnvName: a.environment.Name,
+			Key:     envKey,
+			Value:   envVal,
+		}); setErr != nil {
+			return fmt.Errorf("storing credential env var %s: %w", envKey, setErr)
+		}
+	}
+
+	// Process connection resources from the manifest
+	connections, connCredEnvVars, err := extractConnectionConfigs(agentManifest)
+	if err != nil {
+		return err
+	}
+	agentConfig.Connections = connections
+
+	// Store connection credential env vars alongside toolbox ones
+	for envKey, envVal := range connCredEnvVars {
+		if _, setErr := a.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+			EnvName: a.environment.Name,
+			Key:     envKey,
+			Value:   envVal,
+		}); setErr != nil {
+			return fmt.Errorf("storing credential env var %s: %w", envKey, setErr)
+		}
+	}
 
 	// Detect startup command from the project source directory
 	startupCmd, err := resolveStartupCommandForInit(ctx, a.azdClient, a.projectConfig.Path, targetDir, a.flags.NoPrompt)
@@ -2223,4 +2272,272 @@ func downloadDirectoryContentsWithoutGhCli(
 	}
 
 	return nil
+}
+
+// extractToolboxAndConnectionConfigs extracts toolbox resource definitions from the agent manifest
+// and converts them into project.Toolbox config entries and project.ToolConnection entries.
+// Tools with a target/authType also produce connection entries for Bicep provisioning.
+// Built-in tools (bing_grounding, azure_ai_search, etc.) produce toolbox tools but no connections.
+func extractToolboxAndConnectionConfigs(
+	manifest *agent_yaml.AgentManifest,
+) ([]project.Toolbox, []project.ToolConnection, map[string]string, error) {
+	if manifest == nil || manifest.Resources == nil {
+		return nil, nil, nil, nil
+	}
+
+	var toolboxes []project.Toolbox
+	var connections []project.ToolConnection
+	// credentialEnvVars maps generated env var names to their raw values so
+	// the caller can persist them in the azd environment.
+	credentialEnvVars := map[string]string{}
+
+	for _, resource := range manifest.Resources {
+		tbResource, ok := resource.(agent_yaml.ToolboxResource)
+		if !ok {
+			continue
+		}
+
+		description := tbResource.Description
+
+		if len(tbResource.Tools) == 0 {
+			return nil, nil, nil, fmt.Errorf(
+				"toolbox resource '%s' is missing required 'tools'",
+				tbResource.Name,
+			)
+		}
+
+		var tools []map[string]any
+		for i, rawTool := range tbResource.Tools {
+			toolMap, ok := rawTool.(map[string]any)
+			if !ok {
+				return nil, nil, nil, fmt.Errorf(
+					"toolbox resource '%s' has invalid tool entry: expected object",
+					tbResource.Name,
+				)
+			}
+
+			// Manifest and API both use "type" for tool kind
+			toolType, _ := toolMap["type"].(string)
+
+			target, _ := toolMap["target"].(string)
+			if target == "" {
+				// No target — either a built-in tool or a pre-configured tool
+				// that already has project_connection_id. Pass through as-is.
+				result := make(map[string]any, len(toolMap))
+				maps.Copy(result, toolMap)
+				tools = append(tools, result)
+				continue
+			}
+
+			if toolType == "" {
+				return nil, nil, nil, fmt.Errorf(
+					"toolbox resource '%s': external tool at index %d has a 'target' but no 'type'",
+					tbResource.Name, i,
+				)
+			}
+
+			// External tools with target/authType need a connection
+			toolName, _ := toolMap["name"].(string)
+			authType, _ := toolMap["authType"].(string)
+			credentials, _ := toolMap["credentials"].(map[string]any)
+
+			connName := toolName
+			if connName == "" {
+				connName = fmt.Sprintf("%s-%s-%d", tbResource.Name, toolType, i)
+			}
+
+			conn := project.ToolConnection{
+				Name:     connName,
+				Category: "RemoteTool",
+				Target:   target,
+				AuthType: authType,
+			}
+
+			// Extract credentials, storing raw values as env vars and
+			// replacing them with ${VAR} references in the config.
+			if len(credentials) > 0 {
+				conn.Credentials = externalizeCredentials(
+					credentials, []string{connName}, credentialEnvVars,
+				)
+			}
+
+			connections = append(connections, conn)
+
+			// Preserve all tool fields, replacing consumed connection fields
+			// with the project_connection_id reference.
+			tool := make(map[string]any, len(toolMap))
+			maps.Copy(tool, toolMap)
+			tool["type"] = toolType
+			tool["project_connection_id"] = connName
+			delete(tool, "target")
+			delete(tool, "authType")
+			delete(tool, "credentials")
+			tools = append(tools, tool)
+		}
+
+		toolboxes = append(toolboxes, project.Toolbox{
+			Name:        tbResource.Name,
+			Description: description,
+			Tools:       tools,
+		})
+	}
+
+	return toolboxes, connections, credentialEnvVars, nil
+}
+
+// credentialEnvVarName builds a deterministic env var name for a connection
+// credential key, e.g. ("github-copilot", "clientSecret") → "PARAM_GITHUB_COPILOT_CLIENTSECRET".
+// All non-alphanumeric characters are replaced with underscores and consecutive
+// underscores are collapsed to produce a valid [A-Z0-9_]+ environment variable name.
+var nonAlphanumRe = regexp.MustCompile(`[^A-Z0-9]+`)
+
+func credentialEnvVarName(parts ...string) string {
+	s := "PARAM_" + strings.ToUpper(strings.Join(parts, "_"))
+	return nonAlphanumRe.ReplaceAllString(s, "_")
+}
+
+// externalizeCredentials recursively walks a credential map. String leaf values
+// are stored as env vars and replaced with ${VAR} references. Nested maps are
+// preserved structurally. keyPath accumulates segments for the env var name.
+func externalizeCredentials(
+	creds map[string]any,
+	keyPath []string,
+	envVars map[string]string,
+) map[string]any {
+	result := make(map[string]any, len(creds))
+	for k, v := range creds {
+		path := append(keyPath, k)
+		switch val := v.(type) {
+		case map[string]any:
+			result[k] = externalizeCredentials(val, path, envVars)
+		default:
+			envName := credentialEnvVarName(path...)
+			envVars[envName] = fmt.Sprintf("%v", val)
+			result[k] = fmt.Sprintf("${%s}", envName)
+		}
+	}
+	return result
+}
+
+// injectToolboxEnvVarsIntoDefinition adds TOOLBOX_{NAME}_MCP_ENDPOINT entries
+// to the environment_variables section of a hosted agent definition for each toolbox
+// resource in the manifest. Returns an error if two toolboxes produce the same
+// environment variable name or if the key already exists in the definition.
+func injectToolboxEnvVarsIntoDefinition(manifest *agent_yaml.AgentManifest) error {
+	if manifest == nil || manifest.Resources == nil {
+		return nil
+	}
+
+	containerAgent, ok := manifest.Template.(agent_yaml.ContainerAgent)
+	if !ok {
+		return nil
+	}
+
+	// Collect toolbox resource names
+	var toolboxNames []string
+	for _, resource := range manifest.Resources {
+		if tbResource, ok := resource.(agent_yaml.ToolboxResource); ok {
+			toolboxNames = append(toolboxNames, tbResource.Name)
+		}
+	}
+	if len(toolboxNames) == 0 {
+		return nil
+	}
+
+	if containerAgent.EnvironmentVariables == nil {
+		envVars := []agent_yaml.EnvironmentVariable{}
+		containerAgent.EnvironmentVariables = &envVars
+	}
+
+	existingNames := make(map[string]bool, len(*containerAgent.EnvironmentVariables))
+	for _, ev := range *containerAgent.EnvironmentVariables {
+		existingNames[ev.Name] = true
+	}
+
+	for _, tbName := range toolboxNames {
+		envKey := toolboxMCPEndpointEnvKey(tbName)
+		if existingNames[envKey] {
+			return fmt.Errorf(
+				"duplicate toolbox environment variable %q (from toolbox %q)",
+				envKey, tbName,
+			)
+		}
+		existingNames[envKey] = true
+		*containerAgent.EnvironmentVariables = append(
+			*containerAgent.EnvironmentVariables,
+			agent_yaml.EnvironmentVariable{
+				Name:  envKey,
+				Value: fmt.Sprintf("${%s}", envKey),
+			},
+		)
+	}
+
+	manifest.Template = containerAgent
+	return nil
+}
+
+// extractConnectionConfigs extracts connection resource definitions from the agent manifest
+// and converts them into project.Connection config entries. Credential values are externalized
+// to environment variables and replaced with ${VAR} references in the returned connections.
+func extractConnectionConfigs(
+	manifest *agent_yaml.AgentManifest,
+) ([]project.Connection, map[string]string, error) {
+	if manifest == nil || manifest.Resources == nil {
+		return nil, nil, nil
+	}
+
+	var connections []project.Connection
+	credentialEnvVars := map[string]string{}
+
+	for _, resource := range manifest.Resources {
+		connResource, ok := resource.(agent_yaml.ConnectionResource)
+		if !ok {
+			continue
+		}
+
+		creds := maps.Clone(connResource.Credentials)
+		authType := string(connResource.AuthType)
+
+		// Surface credentials.type to top-level authType when not explicitly set.
+		// This must happen before externalization so we capture the raw value.
+		if authType == "" && len(creds) > 0 {
+			if credType, ok := creds["type"].(string); ok && credType != "" {
+				authType = credType
+				delete(creds, "type")
+			}
+		}
+
+		// Externalize credential values to env vars and replace with ${VAR} references.
+		if len(creds) > 0 {
+			creds = externalizeCredentials(
+				creds, []string{connResource.Name}, credentialEnvVars,
+			)
+		}
+
+		conn := project.Connection{
+			Name:                        connResource.Name,
+			Category:                    string(connResource.Category),
+			Target:                      connResource.Target,
+			AuthType:                    authType,
+			Credentials:                 creds,
+			Metadata:                    connResource.Metadata,
+			ExpiryTime:                  connResource.ExpiryTime,
+			IsSharedToAll:               connResource.IsSharedToAll,
+			SharedUserList:              connResource.SharedUserList,
+			PeRequirement:               connResource.PeRequirement,
+			PeStatus:                    connResource.PeStatus,
+			UseWorkspaceManagedIdentity: connResource.UseWorkspaceManagedIdentity,
+			Error:                       connResource.Error,
+			AuthorizationUrl:            connResource.AuthorizationUrl,
+			TokenUrl:                    connResource.TokenUrl,
+			RefreshUrl:                  connResource.RefreshUrl,
+			Scopes:                      connResource.Scopes,
+			Audience:                    connResource.Audience,
+			ConnectorName:               connResource.ConnectorName,
+		}
+
+		connections = append(connections, conn)
+	}
+
+	return connections, credentialEnvVars, nil
 }

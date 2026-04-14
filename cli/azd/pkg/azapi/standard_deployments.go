@@ -11,7 +11,6 @@ import (
 	"maps"
 	"net/url"
 	"slices"
-	"sync"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -55,14 +54,6 @@ type StandardDeployments struct {
 	resourceService    *ResourceService
 	cloud              *cloud.Cloud
 	clock              clock.Clock
-
-	// deploymentsClients caches DeploymentsClient instances per subscription ID.
-	// Azure SDK ARM clients are safe for concurrent use and hold no per-request state,
-	// so reusing them avoids redundant pipeline construction on every API call.
-	deploymentsClients sync.Map // map[string]*armresources.DeploymentsClient
-
-	// deploymentsOpsClients caches DeploymentOperationsClient instances per subscription ID.
-	deploymentsOpsClients sync.Map // map[string]*armresources.DeploymentOperationsClient
 }
 
 func NewStandardDeployments(
@@ -211,10 +202,6 @@ func (ds *StandardDeployments) createDeploymentsClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*armresources.DeploymentsClient, error) {
-	if cached, ok := ds.deploymentsClients.Load(subscriptionId); ok {
-		return cached.(*armresources.DeploymentsClient), nil
-	}
-
 	credential, err := ds.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
@@ -225,9 +212,7 @@ func (ds *StandardDeployments) createDeploymentsClient(
 		return nil, fmt.Errorf("creating deployments client: %w", err)
 	}
 
-	// Benign race: concurrent miss creates an extra client; LoadOrStore ensures one winner.
-	actual, _ := ds.deploymentsClients.LoadOrStore(subscriptionId, client)
-	return actual.(*armresources.DeploymentsClient), nil
+	return client, nil
 }
 
 func (ds *StandardDeployments) DeployToSubscription(
@@ -676,10 +661,6 @@ func (ds *StandardDeployments) createDeploymentsOperationsClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*armresources.DeploymentOperationsClient, error) {
-	if cached, ok := ds.deploymentsOpsClients.Load(subscriptionId); ok {
-		return cached.(*armresources.DeploymentOperationsClient), nil
-	}
-
 	credential, err := ds.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
@@ -690,9 +671,7 @@ func (ds *StandardDeployments) createDeploymentsOperationsClient(
 		return nil, fmt.Errorf("creating deployments client: %w", err)
 	}
 
-	// Benign race: concurrent miss creates an extra client; LoadOrStore ensures one winner.
-	actual, _ := ds.deploymentsOpsClients.LoadOrStore(subscriptionId, client)
-	return actual.(*armresources.DeploymentOperationsClient), nil
+	return client, nil
 }
 
 // Converts from an ARM Extended Deployment to Azd Generic deployment

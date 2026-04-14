@@ -13,7 +13,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -61,10 +60,6 @@ type StackDeployments struct {
 	armClientOptions    *arm.ClientOptions
 	standardDeployments *StandardDeployments
 	cloud               *cloud.Cloud
-
-	// stackClients caches deployment stacks Client instances per subscription ID.
-	// Azure SDK ARM clients are safe for concurrent use.
-	stackClients sync.Map // map[string]*armdeploymentstacks.Client
 }
 
 type deploymentStackOptions struct {
@@ -683,10 +678,6 @@ func (d *StackDeployments) CalculateTemplateHash(
 }
 
 func (d *StackDeployments) createClient(ctx context.Context, subscriptionId string) (*armdeploymentstacks.Client, error) {
-	if cached, ok := d.stackClients.Load(subscriptionId); ok {
-		return cached.(*armdeploymentstacks.Client), nil
-	}
-
 	credential, err := d.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
@@ -697,9 +688,7 @@ func (d *StackDeployments) createClient(ctx context.Context, subscriptionId stri
 		return nil, fmt.Errorf("creating deployment stacks client: %w", err)
 	}
 
-	// Benign race: concurrent miss creates an extra client; LoadOrStore ensures one winner.
-	actual, _ := d.stackClients.LoadOrStore(subscriptionId, client)
-	return actual.(*armdeploymentstacks.Client), nil
+	return client, nil
 }
 
 // Converts from an ARM Extended Deployment to Azd Generic deployment

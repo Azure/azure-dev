@@ -35,28 +35,7 @@ burst are retained for subsequent requests to the same host. The 30s idle timeou
 **Wiring:** `cmd/deps.go` replaces `http.DefaultClient` with `&http.Client{Transport: TunedTransport()}`
 so all SDK clients created through dependency injection inherit the tuned transport.
 
-### 2. ARM Client Caching (sync.Map)
-
-**Files:** `pkg/azapi/resource_service.go`, `pkg/azapi/standard_deployments.go`,
-`pkg/azapi/stack_deployments.go`
-
-**Problem:** ARM SDK clients (`armresources.Client`, `DeploymentsClient`, `DeploymentOperationsClient`,
-`armdeploymentstacks.Client`) were re-created on every API call. Each construction builds an HTTP
-pipeline (retry policy, logging policy, auth policy). While not as expensive as a TLS handshake, this
-adds unnecessary CPU and allocation overhead when the same subscription is used repeatedly.
-
-**Solution:** Cache clients in `sync.Map` fields keyed by subscription ID. The pattern uses
-`Load` for the fast path and `LoadOrStore` on miss. The "benign race" comment documents that concurrent
-cache misses may create duplicate clients; `LoadOrStore` ensures only one is retained. This is safe
-because Azure SDK ARM clients are stateless and goroutine-safe (they hold only the pipeline
-configuration, not per-request state).
-
-**Evidence:** Azure SDK for Go documentation confirms ARM clients are safe for concurrent use:
-"A client is safe for concurrent use across goroutines" (azure-sdk-for-go design guidelines). `sync.Map`
-is the standard Go pattern for read-heavy caches with infrequent writes, avoiding lock contention on the
-hot path.
-
-### 3. Adaptive Poll Frequency
+### 2. Adaptive Poll Frequency
 
 **Files:** `pkg/azapi/standard_deployments.go`, `pkg/azapi/stack_deployments.go`
 
@@ -78,7 +57,7 @@ leaving substantial headroom for other ARM reads (list operations, status checks
 limits are documented at
 `learn.microsoft.com/en-us/azure/azure-resource-manager/management/request-limits-and-throttling`.
 
-### 4. Zip Deploy Retry with SCM Readiness Probe
+### 3. Zip Deploy Retry with SCM Readiness Probe
 
 **Files:** `pkg/azapi/webapp.go`, `pkg/azsdk/zip_deploy_client.go`
 
@@ -109,7 +88,7 @@ transient transport errors (connection refused, DNS lookup failures, net.Error t
 are propagated as wrapped errors (`"SCM readiness probe: ..."`) to avoid masking genuine issues.
 Context cancellation is checked via `ctx.Err()` and returns immediately.
 
-### 5. ACR Credential Exponential Backoff
+### 4. ACR Credential Exponential Backoff
 
 **File:** `pkg/project/container_helper.go`
 
@@ -133,7 +112,7 @@ are often faster. The old link in the comment
 (`learn.microsoft.com/en-us/azure/dns/dns-faq#how-long-does-it-take-for-dns-changes-to-take-effect-`)
 documents worst-case TTL, not typical latency.
 
-### 6. Docker Path Resolution Fix
+### 5. Docker Path Resolution Fix
 
 **Files:** `pkg/project/container_helper.go`, `pkg/project/framework_service_docker.go`,
 `pkg/project/framework_service_docker_test.go`
@@ -156,7 +135,7 @@ absolute resolved paths, including dynamic resolution in the table-driven `Test_
 test. `filepath.Clean` is applied to both resolved paths to normalize separators and prevent
 path traversal.
 
-### 7. ReadRawResponse Body Ownership
+### 6. ReadRawResponse Body Ownership
 
 **File:** `pkg/httputil/util.go`
 
@@ -169,7 +148,7 @@ closing it. This preserves compatibility with azcore's poller framework which ma
 lifecycle. Standalone callers (e.g., `federated_token_client.go`) use `defer res.Body.Close()`
 before calling `ReadRawResponse`.
 
-### 8. OTel Tracing Spans for Deployment Profiling
+### 7. OTel Tracing Spans for Deployment Profiling
 
 **Files:** `pkg/azapi/standard_deployments.go`, `pkg/azapi/stack_deployments.go`,
 `pkg/project/container_helper.go`, `pkg/project/container_helper_test.go`
@@ -215,7 +194,7 @@ deployment: ARM provisioning (30-120s), WhatIf/Validate (30-90s), container buil
 300s), and ACR credential retrieval (2-62s with backoff). Together with the existing
 `deploy.appservice.zip` span, they provide full end-to-end visibility for profiling `azd up`.
 
-### 9. Supporting Changes
+### 8. Supporting Changes
 
 **Files:** `.gitignore`, `cli/azd/.vscode/cspell-azd-dictionary.txt`
 
@@ -224,7 +203,7 @@ deployment: ARM provisioning (30-120s), WhatIf/Validate (30-90s), container buil
 - `cspell-azd-dictionary.txt`: Added `keepalives` (HTTP keep-alive terminology in TunedTransport),
   `nilerr` (golangci-lint nolint directive in `IsScmReady`), `appsettings` (App Service terminology)
 
-### 10. Container App Adaptive Poll Frequency
+### 9. Container App Adaptive Poll Frequency
 
 **File:** `pkg/containerapps/container_app.go`
 
@@ -247,7 +226,7 @@ benchmarks). The same 5s frequency used for ARM deploy operations (§3) balances
 (6x faster than the 30s default) against ARM rate limits. With 8 parallel services, this generates
 ~96 polls/min per operation type — well within the 1200 reads/5min/subscription limit.
 
-### 11. ACR Login Caching per Registry
+### 10. ACR Login Caching per Registry
 
 **File:** `pkg/azapi/container_registry.go`
 
@@ -282,7 +261,7 @@ invocations.
 | Docker build args | `pkg/project/framework_service_docker_test.go` | Table-driven tests resolve expected paths to match production behavior |
 | Tracing context propagation | `pkg/project/container_helper_test.go` | Mock assertions updated for tracing context wrapping (`mock.Anything`) |
 
-The ARM client caching, TunedTransport wiring, poll frequency (both ARM and Container App),
+The TunedTransport wiring, poll frequency (both ARM and Container App),
 SCM retry logic, ACR login caching, and OTel tracing spans are
 infrastructure changes that operate through Azure SDK interactions and are validated through
 integration and end-to-end playback tests rather than isolated unit tests.

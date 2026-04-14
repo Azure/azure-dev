@@ -419,7 +419,7 @@ func TestExtractToolboxAndConnectionConfigs_TypedTools(t *testing.T) {
 					},
 					map[string]any{
 						// External tool with name -- connection name from Name field
-						"type": "mcp",
+						"type":     "mcp",
 						"name":     "github-copilot",
 						"target":   "https://api.githubcopilot.com/mcp",
 						"authType": "OAuth2",
@@ -527,7 +527,7 @@ func TestExtractToolboxAndConnectionConfigs_RawToolsFallback(t *testing.T) {
 				Description: "Raw tools",
 				Tools: []any{
 					map[string]any{
-						"type": "mcp",
+						"type":                  "mcp",
 						"name":                  "existing",
 						"project_connection_id": "existing-conn",
 					},
@@ -587,14 +587,14 @@ func TestExtractToolboxAndConnectionConfigs_CustomKeysCredentials(t *testing.T) 
 				},
 				Tools: []any{
 					map[string]any{
-						"type": "mcp",
+						"type":        "mcp",
 						"name":        "custom-api",
 						"target":      "https://example.com/mcp",
 						"authType":    "CustomKeys",
 						"credentials": map[string]any{"key": "my-api-key"},
 					},
 					map[string]any{
-						"type": "mcp",
+						"type":        "mcp",
 						"name":        "oauth-tool",
 						"target":      "https://example.com/oauth",
 						"authType":    "OAuth2",

@@ -50,11 +50,11 @@ func newTestToolboxClient(
 
 func TestCreateToolboxVersion_URLConstruction(t *testing.T) {
 	tests := []struct {
-		name         string
-		endpoint     string
-		toolboxName  string
-		wantPath     string
-		wantQuery    string
+		name        string
+		endpoint    string
+		toolboxName string
+		wantPath    string
+		wantQuery   string
 	}{
 		{
 			name:        "simple name",

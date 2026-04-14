@@ -421,7 +421,6 @@ func marshalAndSetEnvVar(
 	return setEnvVar(ctx, azdClient, envName, key, escaped)
 }
 
-
 func setEnvVar(ctx context.Context, azdClient *azdext.AzdClient, envName string, key string, value string) error {
 	_, err := azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
 		EnvName: envName,

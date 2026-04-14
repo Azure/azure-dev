@@ -132,6 +132,7 @@ func TestA2APreviewToolSerialization(t *testing.T) {
 // TestConnectionResourceNewFieldsJSONRoundTrip tests that the 6 new fields
 // survive a JSON marshal/unmarshal round-trip, catching any json struct tag typos.
 func TestConnectionResourceNewFieldsJSONRoundTrip(t *testing.T) {
+	//nolint:gosec // test fixture with fake credential URLs
 	conn := ConnectionResource{
 		Resource:         Resource{Name: "oauth-conn", Kind: ResourceKindConnection},
 		Category:         CategoryCustomKeys,
@@ -178,6 +179,7 @@ func TestConnectionResourceNewFieldsJSONRoundTrip(t *testing.T) {
 // TestConnectionResourceNewFieldsYAMLRoundTrip tests YAML unmarshal for the 6 new fields,
 // verifying that yaml struct tags are correct and fields are not silently dropped.
 func TestConnectionResourceNewFieldsYAMLRoundTrip(t *testing.T) {
+	//nolint:gosec // test fixture with fake credential URLs
 	input := &ConnectionResource{
 		Resource:         Resource{Name: "agentic-conn", Kind: ResourceKindConnection},
 		Category:         CategoryCustomKeys,

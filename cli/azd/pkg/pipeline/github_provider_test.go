@@ -151,7 +151,7 @@ func Test_credentialOptions_withOIDCCustomSubject(t *testing.T) {
 	// (tests run non-interactively so prompts are skipped)
 	setupMock := func(t *testing.T) *mocks.MockContext {
 		t.Helper()
-		mc := mocks.NewMockContext(context.Background())
+		mc := mocks.NewMockContext(t.Context())
 		setupGithubCliMocks(mc)
 		mc.Console.SetNoPromptMode(true)
 		return mc

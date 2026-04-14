@@ -25,14 +25,19 @@ type RepoInfo struct {
 	} `json:"owner"`
 }
 
-// isGitHubNotFoundError returns true if the error indicates a GitHub 404/not-found response.
+// isGitHubNotFoundError returns true if the error indicates a GitHub HTTP 404 response.
 func isGitHubNotFoundError(err error) bool {
 	if err == nil {
 		return false
 	}
 
 	errText := strings.ToLower(err.Error())
-	return strings.Contains(errText, "404") || strings.Contains(errText, "not found")
+
+	// Only treat explicit HTTP 404 signals as GitHub "not found" responses.
+	// Avoid matching generic "not found" text, which can appear in unrelated
+	// failures such as missing executables, network issues, or permission errors.
+	return strings.Contains(errText, "http 404") ||
+		strings.Contains(errText, "404 not found")
 }
 
 // GetOIDCSubjectConfig queries the GitHub OIDC customization API for a repository.

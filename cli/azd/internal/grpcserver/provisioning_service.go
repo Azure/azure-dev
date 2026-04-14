@@ -12,11 +12,9 @@ import (
 	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
-	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -26,7 +24,6 @@ type ProvisioningService struct {
 	azdext.UnimplementedProvisioningServiceServer
 	container        *ioc.NestedContainer
 	extensionManager *extensions.Manager
-	lazyEnv          *lazy.Lazy[*environment.Environment]
 	providerMap      map[string]*grpcbroker.MessageBroker[azdext.ProvisioningMessage]
 	providerMapMu    sync.Mutex
 }
@@ -35,12 +32,10 @@ type ProvisioningService struct {
 func NewProvisioningService(
 	container *ioc.NestedContainer,
 	extensionManager *extensions.Manager,
-	lazyEnv *lazy.Lazy[*environment.Environment],
 ) azdext.ProvisioningServiceServer {
 	return &ProvisioningService{
 		container:        container,
 		extensionManager: extensionManager,
-		lazyEnv:          lazyEnv,
 		providerMap:      make(map[string]*grpcbroker.MessageBroker[azdext.ProvisioningMessage]),
 	}
 }
@@ -135,7 +130,7 @@ func (s *ProvisioningService) onRegisterRequest(
 	err := s.container.RegisterNamedTransient(
 		providerName,
 		NewExternalProvisioningProviderFactory(
-			providerName, extension, broker, s.lazyEnv,
+			providerName, extension, broker,
 		),
 	)
 

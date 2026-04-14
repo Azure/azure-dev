@@ -118,6 +118,8 @@ message ProvisioningOptions {
   bool ignore_deployment_state = 5;
   google.protobuf.Struct config = 6;
   string name = 7;  // Layer name for multi-layer deployments
+  // Plan-time outputs from previous layers for parameter resolution
+  map<string, string> virtual_env = 8;
 }
 
 message ProvisioningStateOptions {
@@ -150,6 +152,7 @@ enum ProvisioningSkippedReason {
 
 message ProvisioningDeploymentPreview {
   string summary = 1;
+  // Reserved for future use — not currently consumed by the core adapter.
   map<string, ProvisioningInputParameter> parameters = 2;
   map<string, ProvisioningOutputParameter> outputs = 3;
 }

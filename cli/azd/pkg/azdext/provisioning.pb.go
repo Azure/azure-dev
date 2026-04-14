@@ -1108,8 +1108,10 @@ type ProvisioningOptions struct {
 	IgnoreDeploymentState bool                   `protobuf:"varint,5,opt,name=ignore_deployment_state,json=ignoreDeploymentState,proto3" json:"ignore_deployment_state,omitempty"`
 	Config                *structpb.Struct       `protobuf:"bytes,6,opt,name=config,proto3" json:"config,omitempty"`
 	Name                  string                 `protobuf:"bytes,7,opt,name=name,proto3" json:"name,omitempty"` // Layer name for multi-layer deployments
-	unknownFields         protoimpl.UnknownFields
-	sizeCache             protoimpl.SizeCache
+	// Plan-time outputs from previous layers for parameter resolution
+	VirtualEnv    map[string]string `protobuf:"bytes,8,rep,name=virtual_env,json=virtualEnv,proto3" json:"virtual_env,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ProvisioningOptions) Reset() {
@@ -1189,6 +1191,13 @@ func (x *ProvisioningOptions) GetName() string {
 		return x.Name
 	}
 	return ""
+}
+
+func (x *ProvisioningOptions) GetVirtualEnv() map[string]string {
+	if x != nil {
+		return x.VirtualEnv
+	}
+	return nil
 }
 
 type ProvisioningStateOptions struct {
@@ -1436,8 +1445,9 @@ func (x *ProvisioningDeployResult) GetSkippedReason() ProvisioningSkippedReason 
 }
 
 type ProvisioningDeploymentPreview struct {
-	state         protoimpl.MessageState                  `protogen:"open.v1"`
-	Summary       string                                  `protobuf:"bytes,1,opt,name=summary,proto3" json:"summary,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Summary string                 `protobuf:"bytes,1,opt,name=summary,proto3" json:"summary,omitempty"`
+	// Reserved for future use — not currently consumed by the core adapter.
 	Parameters    map[string]*ProvisioningInputParameter  `protobuf:"bytes,2,rep,name=parameters,proto3" json:"parameters,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	Outputs       map[string]*ProvisioningOutputParameter `protobuf:"bytes,3,rep,name=outputs,proto3" json:"outputs,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields protoimpl.UnknownFields
@@ -2116,7 +2126,7 @@ const file_provisioning_proto_rawDesc = "" +
 	"\x1eProvisioningParametersResponse\x12=\n" +
 	"\n" +
 	"parameters\x18\x01 \x03(\v2\x1d.azdext.ProvisioningParameterR\n" +
-	"parameters\"\xff\x02\n" +
+	"parameters\"\x8c\x04\n" +
 	"\x13ProvisioningOptions\x12\x1a\n" +
 	"\bprovider\x18\x01 \x01(\tR\bprovider\x12\x12\n" +
 	"\x04path\x18\x02 \x01(\tR\x04path\x12\x16\n" +
@@ -2124,8 +2134,13 @@ const file_provisioning_proto_rawDesc = "" +
 	"\x11deployment_stacks\x18\x04 \x03(\v21.azdext.ProvisioningOptions.DeploymentStacksEntryR\x10deploymentStacks\x126\n" +
 	"\x17ignore_deployment_state\x18\x05 \x01(\bR\x15ignoreDeploymentState\x12/\n" +
 	"\x06config\x18\x06 \x01(\v2\x17.google.protobuf.StructR\x06config\x12\x12\n" +
-	"\x04name\x18\a \x01(\tR\x04name\x1aC\n" +
+	"\x04name\x18\a \x01(\tR\x04name\x12L\n" +
+	"\vvirtual_env\x18\b \x03(\v2+.azdext.ProvisioningOptions.VirtualEnvEntryR\n" +
+	"virtualEnv\x1aC\n" +
 	"\x15DeploymentStacksEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a=\n" +
+	"\x0fVirtualEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\".\n" +
 	"\x18ProvisioningStateOptions\x12\x12\n" +
@@ -2218,7 +2233,7 @@ func file_provisioning_proto_rawDescGZIP() []byte {
 }
 
 var file_provisioning_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_provisioning_proto_msgTypes = make([]protoimpl.MessageInfo, 41)
+var file_provisioning_proto_msgTypes = make([]protoimpl.MessageInfo, 42)
 var file_provisioning_proto_goTypes = []any{
 	(ProvisioningSkippedReason)(0),               // 0: azdext.ProvisioningSkippedReason
 	(*ProvisioningMessage)(nil),                  // 1: azdext.ProvisioningMessage
@@ -2257,16 +2272,17 @@ var file_provisioning_proto_goTypes = []any{
 	(*ProvisioningPlannedOutputsResponse)(nil),   // 34: azdext.ProvisioningPlannedOutputsResponse
 	(*ProvisioningPlannedOutput)(nil),            // 35: azdext.ProvisioningPlannedOutput
 	nil,                                          // 36: azdext.ProvisioningOptions.DeploymentStacksEntry
-	nil,                                          // 37: azdext.ProvisioningState.OutputsEntry
-	nil,                                          // 38: azdext.ProvisioningDeployment.ParametersEntry
-	nil,                                          // 39: azdext.ProvisioningDeployment.OutputsEntry
-	nil,                                          // 40: azdext.ProvisioningDeploymentPreview.ParametersEntry
-	nil,                                          // 41: azdext.ProvisioningDeploymentPreview.OutputsEntry
-	(*ExtensionError)(nil),                       // 42: azdext.ExtensionError
-	(*structpb.Struct)(nil),                      // 43: google.protobuf.Struct
+	nil,                                          // 37: azdext.ProvisioningOptions.VirtualEnvEntry
+	nil,                                          // 38: azdext.ProvisioningState.OutputsEntry
+	nil,                                          // 39: azdext.ProvisioningDeployment.ParametersEntry
+	nil,                                          // 40: azdext.ProvisioningDeployment.OutputsEntry
+	nil,                                          // 41: azdext.ProvisioningDeploymentPreview.ParametersEntry
+	nil,                                          // 42: azdext.ProvisioningDeploymentPreview.OutputsEntry
+	(*ExtensionError)(nil),                       // 43: azdext.ExtensionError
+	(*structpb.Struct)(nil),                      // 44: google.protobuf.Struct
 }
 var file_provisioning_proto_depIdxs = []int32{
-	42, // 0: azdext.ProvisioningMessage.error:type_name -> azdext.ExtensionError
+	43, // 0: azdext.ProvisioningMessage.error:type_name -> azdext.ExtensionError
 	2,  // 1: azdext.ProvisioningMessage.register_provisioning_provider_request:type_name -> azdext.RegisterProvisioningProviderRequest
 	3,  // 2: azdext.ProvisioningMessage.register_provisioning_provider_response:type_name -> azdext.RegisterProvisioningProviderResponse
 	4,  // 3: azdext.ProvisioningMessage.initialize_request:type_name -> azdext.ProvisioningInitializeRequest
@@ -2295,30 +2311,31 @@ var file_provisioning_proto_depIdxs = []int32{
 	27, // 26: azdext.ProvisioningDestroyResponse.result:type_name -> azdext.ProvisioningDestroyResult
 	31, // 27: azdext.ProvisioningParametersResponse.parameters:type_name -> azdext.ProvisioningParameter
 	36, // 28: azdext.ProvisioningOptions.deployment_stacks:type_name -> azdext.ProvisioningOptions.DeploymentStacksEntry
-	43, // 29: azdext.ProvisioningOptions.config:type_name -> google.protobuf.Struct
-	21, // 30: azdext.ProvisioningStateResult.state:type_name -> azdext.ProvisioningState
-	37, // 31: azdext.ProvisioningState.outputs:type_name -> azdext.ProvisioningState.OutputsEntry
-	30, // 32: azdext.ProvisioningState.resources:type_name -> azdext.ProvisioningResource
-	38, // 33: azdext.ProvisioningDeployment.parameters:type_name -> azdext.ProvisioningDeployment.ParametersEntry
-	39, // 34: azdext.ProvisioningDeployment.outputs:type_name -> azdext.ProvisioningDeployment.OutputsEntry
-	22, // 35: azdext.ProvisioningDeployResult.deployment:type_name -> azdext.ProvisioningDeployment
-	0,  // 36: azdext.ProvisioningDeployResult.skipped_reason:type_name -> azdext.ProvisioningSkippedReason
-	40, // 37: azdext.ProvisioningDeploymentPreview.parameters:type_name -> azdext.ProvisioningDeploymentPreview.ParametersEntry
-	41, // 38: azdext.ProvisioningDeploymentPreview.outputs:type_name -> azdext.ProvisioningDeploymentPreview.OutputsEntry
-	24, // 39: azdext.ProvisioningPreviewResult.preview:type_name -> azdext.ProvisioningDeploymentPreview
-	35, // 40: azdext.ProvisioningPlannedOutputsResponse.planned_outputs:type_name -> azdext.ProvisioningPlannedOutput
-	29, // 41: azdext.ProvisioningState.OutputsEntry.value:type_name -> azdext.ProvisioningOutputParameter
-	28, // 42: azdext.ProvisioningDeployment.ParametersEntry.value:type_name -> azdext.ProvisioningInputParameter
-	29, // 43: azdext.ProvisioningDeployment.OutputsEntry.value:type_name -> azdext.ProvisioningOutputParameter
-	28, // 44: azdext.ProvisioningDeploymentPreview.ParametersEntry.value:type_name -> azdext.ProvisioningInputParameter
-	29, // 45: azdext.ProvisioningDeploymentPreview.OutputsEntry.value:type_name -> azdext.ProvisioningOutputParameter
-	1,  // 46: azdext.ProvisioningService.Stream:input_type -> azdext.ProvisioningMessage
-	1,  // 47: azdext.ProvisioningService.Stream:output_type -> azdext.ProvisioningMessage
-	47, // [47:48] is the sub-list for method output_type
-	46, // [46:47] is the sub-list for method input_type
-	46, // [46:46] is the sub-list for extension type_name
-	46, // [46:46] is the sub-list for extension extendee
-	0,  // [0:46] is the sub-list for field type_name
+	44, // 29: azdext.ProvisioningOptions.config:type_name -> google.protobuf.Struct
+	37, // 30: azdext.ProvisioningOptions.virtual_env:type_name -> azdext.ProvisioningOptions.VirtualEnvEntry
+	21, // 31: azdext.ProvisioningStateResult.state:type_name -> azdext.ProvisioningState
+	38, // 32: azdext.ProvisioningState.outputs:type_name -> azdext.ProvisioningState.OutputsEntry
+	30, // 33: azdext.ProvisioningState.resources:type_name -> azdext.ProvisioningResource
+	39, // 34: azdext.ProvisioningDeployment.parameters:type_name -> azdext.ProvisioningDeployment.ParametersEntry
+	40, // 35: azdext.ProvisioningDeployment.outputs:type_name -> azdext.ProvisioningDeployment.OutputsEntry
+	22, // 36: azdext.ProvisioningDeployResult.deployment:type_name -> azdext.ProvisioningDeployment
+	0,  // 37: azdext.ProvisioningDeployResult.skipped_reason:type_name -> azdext.ProvisioningSkippedReason
+	41, // 38: azdext.ProvisioningDeploymentPreview.parameters:type_name -> azdext.ProvisioningDeploymentPreview.ParametersEntry
+	42, // 39: azdext.ProvisioningDeploymentPreview.outputs:type_name -> azdext.ProvisioningDeploymentPreview.OutputsEntry
+	24, // 40: azdext.ProvisioningPreviewResult.preview:type_name -> azdext.ProvisioningDeploymentPreview
+	35, // 41: azdext.ProvisioningPlannedOutputsResponse.planned_outputs:type_name -> azdext.ProvisioningPlannedOutput
+	29, // 42: azdext.ProvisioningState.OutputsEntry.value:type_name -> azdext.ProvisioningOutputParameter
+	28, // 43: azdext.ProvisioningDeployment.ParametersEntry.value:type_name -> azdext.ProvisioningInputParameter
+	29, // 44: azdext.ProvisioningDeployment.OutputsEntry.value:type_name -> azdext.ProvisioningOutputParameter
+	28, // 45: azdext.ProvisioningDeploymentPreview.ParametersEntry.value:type_name -> azdext.ProvisioningInputParameter
+	29, // 46: azdext.ProvisioningDeploymentPreview.OutputsEntry.value:type_name -> azdext.ProvisioningOutputParameter
+	1,  // 47: azdext.ProvisioningService.Stream:input_type -> azdext.ProvisioningMessage
+	1,  // 48: azdext.ProvisioningService.Stream:output_type -> azdext.ProvisioningMessage
+	48, // [48:49] is the sub-list for method output_type
+	47, // [47:48] is the sub-list for method input_type
+	47, // [47:47] is the sub-list for extension type_name
+	47, // [47:47] is the sub-list for extension extendee
+	0,  // [0:47] is the sub-list for field type_name
 }
 
 func init() { file_provisioning_proto_init() }
@@ -2354,7 +2371,7 @@ func file_provisioning_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_provisioning_proto_rawDesc), len(file_provisioning_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   41,
+			NumMessages:   42,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

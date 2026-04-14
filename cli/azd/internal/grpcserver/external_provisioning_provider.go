@@ -9,11 +9,9 @@ import (
 	"log"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
-	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/structpb"
 )
@@ -23,8 +21,6 @@ type ExternalProvisioningProvider struct {
 	providerName string
 	extension    *extensions.Extension
 	broker       *grpcbroker.MessageBroker[azdext.ProvisioningMessage]
-	envManager   environment.Manager
-	env          *environment.Environment
 }
 
 // NewExternalProvisioningProviderFactory returns a DI-compatible factory function.
@@ -32,16 +28,12 @@ func NewExternalProvisioningProviderFactory(
 	providerName string,
 	extension *extensions.Extension,
 	broker *grpcbroker.MessageBroker[azdext.ProvisioningMessage],
-	lazyEnv *lazy.Lazy[*environment.Environment],
-) func(envManager environment.Manager) provisioning.Provider {
-	return func(envManager environment.Manager) provisioning.Provider {
-		env, _ := lazyEnv.GetValue()
+) func() provisioning.Provider {
+	return func() provisioning.Provider {
 		return &ExternalProvisioningProvider{
 			providerName: providerName,
 			extension:    extension,
 			broker:       broker,
-			envManager:   envManager,
-			env:          env,
 		}
 	}
 }
@@ -325,6 +317,10 @@ func convertToProtoOptions(
 			)
 		}
 		protoOptions.Config = s
+	}
+
+	if options.VirtualEnv != nil {
+		protoOptions.VirtualEnv = options.VirtualEnv
 	}
 
 	return protoOptions, nil

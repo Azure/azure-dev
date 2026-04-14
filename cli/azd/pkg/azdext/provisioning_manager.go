@@ -133,6 +133,8 @@ func (m *ProvisioningManager) ensureStream(ctx context.Context) error {
 
 // Register registers the provider with the server, waits for the response,
 // then starts background handling of provisioning requests.
+// Only one provisioning provider per extension is supported; calling Register
+// a second time returns an error.
 func (m *ProvisioningManager) Register(
 	ctx context.Context,
 	factory ProvisioningProviderFactory,
@@ -141,6 +143,18 @@ func (m *ProvisioningManager) Register(
 	if strings.TrimSpace(providerName) == "" {
 		return fmt.Errorf("provisioning provider name cannot be empty")
 	}
+
+	m.mu.Lock()
+	if m.provider != nil {
+		m.mu.Unlock()
+		return fmt.Errorf(
+			"provisioning provider '%s' already registered; "+
+				"only one provisioning provider per extension"+
+				" is supported",
+			m.providerName,
+		)
+	}
+	m.mu.Unlock()
 
 	if err := m.ensureStream(ctx); err != nil {
 		return err
@@ -227,15 +241,17 @@ func (m *ProvisioningManager) onInitialize(
 		return nil, err
 	}
 
-	err = provider.Initialize(
+	if err := provider.Initialize(
 		ctx, req.GetProjectPath(), req.GetOptions(),
-	)
+	); err != nil {
+		return nil, err
+	}
 
 	return &ProvisioningMessage{
 		MessageType: &ProvisioningMessage_InitializeResponse{
 			InitializeResponse: &ProvisioningInitializeResponse{},
 		},
-	}, err
+	}, nil
 }
 
 // onState handles state requests
@@ -349,13 +365,15 @@ func (m *ProvisioningManager) onEnsureEnv(
 		return nil, err
 	}
 
-	err = provider.EnsureEnv(ctx)
+	if err := provider.EnsureEnv(ctx); err != nil {
+		return nil, err
+	}
 
 	return &ProvisioningMessage{
 		MessageType: &ProvisioningMessage_EnsureEnvResponse{
 			EnsureEnvResponse: &ProvisioningEnsureEnvResponse{},
 		},
-	}, err
+	}, nil
 }
 
 // onParameters handles parameters requests

@@ -168,21 +168,11 @@ func (p *DemoProvisioningProvider) Preview(
 
 	return &azdext.ProvisioningPreviewResult{
 		Preview: &azdext.ProvisioningDeploymentPreview{
+			// Note: Resource-level parameters/outputs in preview are
+			// reserved for future use.
+			// Only Summary is currently consumed by the core adapter.
 			Summary: "Demo deployment: 3 resources to create, " +
 				"0 to update, 0 to delete",
-			Parameters: map[string]*azdext.ProvisioningInputParameter{
-				"location": {
-					Type:         "string",
-					DefaultValue: "eastus2",
-					Value:        "eastus2",
-				},
-			},
-			Outputs: map[string]*azdext.ProvisioningOutputParameter{
-				"DEMO_ENDPOINT": {
-					Type:  "string",
-					Value: "https://demo-app.example.com",
-				},
-			},
 		},
 	}, nil
 }

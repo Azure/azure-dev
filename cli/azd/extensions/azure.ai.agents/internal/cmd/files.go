@@ -399,7 +399,8 @@ func newFilesListCommand() *cobra.Command {
 	flags := &filesListFlags{}
 
 	cmd := &cobra.Command{
-		Use:   "list [remote-path]",
+		Use:     "list [remote-path]",
+		Aliases: []string{"ls"},
 		Short: "List files in a hosted agent session.",
 		Long: `List files in a hosted agent session.
 
@@ -526,7 +527,7 @@ func newFilesRemoveCommand() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:     "delete [file]",
-		Aliases: []string{"remove"},
+		Aliases: []string{"remove", "rm"},
 		Short:   "Delete a file or directory from a hosted agent session.",
 		Long: `Delete a file or directory from a hosted agent session.
 

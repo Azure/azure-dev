@@ -101,17 +101,23 @@ func TestCreatedResourceGroupsFromDeployment(t *testing.T) {
 				},
 				{
 					ID: new(
-						"/subscriptions/sub-id/resourceGroups/groupA/Microsoft.Storage/storageAccounts/storageAccount",
+						"/subscriptions/sub-id/resourceGroups/groupA/providers/" +
+							"Microsoft.Storage/storageAccounts/storageAccount",
 					),
 				},
 				{
 					ID: new("/subscriptions/sub-id/resourceGroups/groupB"),
 				},
 				{
-					ID: new("/subscriptions/sub-id/resourceGroups/groupB/Microsoft.web/sites/test"),
+					ID: new(
+						"/subscriptions/sub-id/resourceGroups/groupB/providers/Microsoft.Web/sites/test",
+					),
 				},
 				{
-					ID: new("/subscriptions/sub-id/resourceGroups/groupExisting/Microsoft.Storage/storageAccounts/storageAccount"),
+					ID: new(
+						"/subscriptions/sub-id/resourceGroups/groupExisting/providers/" +
+							"Microsoft.Storage/storageAccounts/storageAccount",
+					),
 				},
 			},
 			ProvisioningState: DeploymentProvisioningStateSucceeded,

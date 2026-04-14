@@ -374,16 +374,16 @@ func createdResourceGroupsFromDeployment(deployment *ResourceDeployment) []strin
 		// For a successful deployment, only resource group output resources represent groups created by
 		// the deployment. Resources deployed into existing resource groups also appear in outputResources,
 		// but their resource group IDs do not.
-		for _, resourceId := range deployment.Resources {
-			if resourceId != nil && resourceId.ID != nil {
-				resId, err := arm.ParseResourceID(*resourceId.ID)
+		for _, resourceRef := range deployment.Resources {
+			if resourceRef != nil && resourceRef.ID != nil {
+				resId, err := arm.ParseResourceID(*resourceRef.ID)
 				if err == nil && resId.ResourceType.Type == arm.ResourceGroupResourceType.Type {
 					resourceGroups[resId.ResourceGroupName] = struct{}{}
 				}
 			}
 		}
 	} else {
-		// For a failed deployment, the outputResources field is not populated.
+		// For a non-succeeded deployment, the outputResources field may not be populated.
 		// Instead, look at nested deployment dependencies to find resource groups that were created before
 		// child deployments ran.
 		for _, dependency := range deployment.Dependencies {

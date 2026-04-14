@@ -476,7 +476,7 @@ func (p *GitHubCiProvider) resolveOIDCSubjects(
 		return subjects, nil
 	}
 
-	return p.promptForSubjects(ctx, repoSlug, oidcConfig, subjects)
+	return p.promptForSubjects(ctx, subjects)
 }
 
 // detectOIDCConfig queries the GitHub OIDC customization API and fetches
@@ -552,11 +552,9 @@ const (
 )
 
 // promptForSubjects shows the detected OIDC subjects and lets the user
-// confirm, override, or skip.
+// use them or override them.
 func (p *GitHubCiProvider) promptForSubjects(
 	ctx context.Context,
-	repoSlug string,
-	oidcConfig *github.OIDCSubjectConfig,
 	detected *oidcSubjects,
 ) (*oidcSubjects, error) {
 	// Display detected subjects
@@ -565,10 +563,11 @@ func (p *GitHubCiProvider) promptForSubjects(
 		ctx,
 		"Detected OIDC subject format for federated credentials:",
 	)
-	for branch, subject := range detected.branches {
+	branchNames := slices.Sorted(maps.Keys(detected.branches))
+	for _, branch := range branchNames {
 		p.console.Message(
 			ctx,
-			fmt.Sprintf("  • Branch %s: %s", branch, subject),
+			fmt.Sprintf("  • Branch %s: %s", branch, detected.branches[branch]),
 		)
 	}
 	p.console.Message(
@@ -606,13 +605,14 @@ func (p *GitHubCiProvider) promptCustomSubjects(
 		branches: make(map[string]string, len(defaults.branches)),
 	}
 
-	for branch, defaultSubject := range defaults.branches {
+	branchNames := slices.Sorted(maps.Keys(defaults.branches))
+	for _, branch := range branchNames {
 		subject, err := p.console.Prompt(ctx, input.ConsoleOptions{
 			Message: fmt.Sprintf(
 				"Enter the OIDC subject for the '%s' branch credential:",
 				branch,
 			),
-			DefaultValue: defaultSubject,
+			DefaultValue: defaults.branches[branch],
 		})
 		if err != nil {
 			return nil, fmt.Errorf(

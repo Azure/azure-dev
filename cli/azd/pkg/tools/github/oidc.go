@@ -19,9 +19,9 @@ type OIDCSubjectConfig struct {
 
 // RepoInfo holds GitHub API repository metadata needed for OIDC subject construction.
 type RepoInfo struct {
-	ID    int `json:"id"`
+	ID    int64 `json:"id"`
 	Owner struct {
-		ID int `json:"id"`
+		ID int64 `json:"id"`
 	} `json:"owner"`
 }
 
@@ -158,10 +158,24 @@ func BuildOIDCSubject(
 	for _, key := range oidcConfig.IncludeClaimKeys {
 		switch key {
 		case "repository_owner_id":
+			if repoInfo == nil {
+				return "", fmt.Errorf(
+					"OIDC config for %s includes claim key %q"+
+						" but repository metadata is required",
+					repoSlug, key,
+				)
+			}
 			parts = append(parts,
 				fmt.Sprintf("repository_owner_id:%d", repoInfo.Owner.ID),
 			)
 		case "repository_id":
+			if repoInfo == nil {
+				return "", fmt.Errorf(
+					"OIDC config for %s includes claim key %q"+
+						" but repository metadata is required",
+					repoSlug, key,
+				)
+			}
 			parts = append(parts,
 				fmt.Sprintf("repository_id:%d", repoInfo.ID),
 			)

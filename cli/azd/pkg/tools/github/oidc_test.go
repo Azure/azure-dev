@@ -4,7 +4,6 @@
 package github
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -237,7 +236,7 @@ func TestGetOIDCSubjectConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockContext := mocks.NewMockContext(context.Background())
+			mockContext := mocks.NewMockContext(t.Context())
 			tt.setup(mockContext)
 
 			cli := NewGitHubCli(
@@ -263,7 +262,7 @@ func TestGetOIDCSubjectConfig(t *testing.T) {
 func TestGetRepoInfo(t *testing.T) {
 	repoSlug := "Azure-Samples/my-repo"
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.CommandRunner.When(func(args exec.RunArgs, cmd string) bool {
 		return strings.Contains(cmd, "/repos/"+repoSlug)
 	}).Respond(exec.NewRunResult(
@@ -277,6 +276,6 @@ func TestGetRepoInfo(t *testing.T) {
 
 	info, err := cli.GetRepoInfo(t.Context(), repoSlug)
 	require.NoError(t, err)
-	require.Equal(t, 599293758, info.ID)
-	require.Equal(t, 1844662, info.Owner.ID)
+	require.Equal(t, int64(599293758), info.ID)
+	require.Equal(t, int64(1844662), info.Owner.ID)
 }

@@ -284,7 +284,7 @@ func goExePath() string {
 
 	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
 		p := filepath.Join(dir, name)
-		if _, err := os.Stat(p); err == nil {
+		if _, err := os.Stat(p); err == nil { //nolint:gosec // G703: test helper, path from PATH env var
 			return p
 		}
 	}

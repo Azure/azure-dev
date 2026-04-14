@@ -1,0 +1,43 @@
+id: troubleshoot-auth-001
+description: >
+  User's azd provision failed with an Azure AD authentication error. They paste
+  the error into Copilot CLI. LLM should diagnose the auth issue and suggest
+  re-authenticating or checking credentials.
+inputs:
+  prompt: |
+    I ran azd provision and got this error:
+    ERROR: failed deploying: deploying to subscription: AADSTS70011: The provided
+    request must include a 'scope' input parameter. The provided value for the
+    input parameter 'scope' is not valid.
+    InteractiveBrowserCredential authentication failed.
+    How do I fix this?
+graders:
+  - type: text
+    weight: 0.3
+    config:
+      must_match:
+        - "(auth|authenticat|credential|login|token)"
+      must_not_match:
+        - "I don't know"
+        - "I'm not sure"
+  - type: text
+    weight: 0.3
+    config:
+      must_match_any:
+        - "azd auth login"
+        - "az login"
+        - "azd auth logout"
+        - "clear (token|cache|credential)"
+  - type: text
+    weight: 0.2
+    config:
+      must_not_match:
+        - "azd down"
+        - "az group delete"
+        - "rm -rf"
+        - "delete (the |your )?(resource|subscription)"
+  - type: behavior
+    weight: 0.2
+    config:
+      max_tool_calls: 5
+      max_tokens: 2000

@@ -280,12 +280,16 @@ type validationContext struct {
 	Console input.Console
 	// Props contains derived properties from analyzing the ARM template resources.
 	Props resourcesProperties
+	// SnapshotAvailable indicates whether the Bicep snapshot was successfully obtained.
+	// When false, ResourcesSnapshot and SnapshotResources are nil, and checks that
+	// require fully-resolved snapshot data should be skipped.
+	SnapshotAvailable bool
 	// ResourcesSnapshot is the raw JSON output from `bicep snapshot`, containing the fully
-	// resolved deployment graph. It may be nil if the Bicep CLI was not available.
+	// resolved deployment graph. It is populated only when SnapshotAvailable is true.
 	ResourcesSnapshot json.RawMessage
 	// SnapshotResources is the parsed list of predicted resources from the Bicep snapshot.
 	// Each entry represents a resource that would be deployed, with resolved values.
-	// It may be nil if the Bicep CLI was not available.
+	// It is populated only when SnapshotAvailable is true.
 	SnapshotResources []armTemplateResource
 }
 
@@ -432,6 +436,7 @@ func (l *localArmPreflight) validate(
 		valCtx = &validationContext{
 			Console:           console,
 			Props:             props,
+			SnapshotAvailable: true,
 			ResourcesSnapshot: json.RawMessage(data),
 			SnapshotResources: snapshot.PredictedResources,
 		}
@@ -625,15 +630,20 @@ func armTemplateHasRoleAssignments(resources armTemplateResources) bool {
 }
 
 // nestedHasRoleAssignments extracts the template.resources array from a nested deployment's
-// properties JSON and checks it for role assignment resources.
+// properties JSON and checks it for role assignment resources. If the nested deployment
+// cannot be inspected (for example, invalid JSON, templateLink, or missing inline resources),
+// it conservatively returns true so permission preflight is not skipped.
 func nestedHasRoleAssignments(properties json.RawMessage) bool {
 	var props struct {
-		Template struct {
-			Resources armTemplateResources `json:"resources"`
+		Template *struct {
+			Resources *armTemplateResources `json:"resources"`
 		} `json:"template"`
 	}
 	if err := json.Unmarshal(properties, &props); err != nil {
-		return false
+		return true
 	}
-	return armTemplateHasRoleAssignments(props.Template.Resources)
+	if props.Template == nil || props.Template.Resources == nil {
+		return true
+	}
+	return armTemplateHasRoleAssignments(*props.Template.Resources)
 }

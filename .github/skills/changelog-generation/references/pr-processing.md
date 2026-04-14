@@ -4,7 +4,7 @@
 
 Extract the PR number from the commit subject using these patterns (in order):
 
-1. **Dual PR numbers** (check first): if the commit subject contains **two or more** `(#NNNN)` patterns (e.g., `Fix auth error (#7233) (#7235)`), use the **last** one as the canonical reference — it is typically the merge/backport PR. Record the first as an alias to prevent re-processing.
+1. **Dual PR numbers** (check first): if the commit subject contains **two or more** `(#NNNN)` patterns (e.g., `Fix auth error (#7233) (#7235)`), use the **rightmost** match in the subject line as the canonical PR number — it is typically the merge/backport PR. Record earlier matches as aliases to prevent re-processing.
 2. **Squash merge** (single match): if exactly one `(#1234)` pattern is found in the commit subject line, use it as the PR number.
 3. **Merge commit**: look for `Merge pull request #1234 from user/branch`.
 4. **Fallback** (if no pattern matches): query by commit SHA:
@@ -28,12 +28,25 @@ Exclude changes that are **primarily**:
 **Core-only additional exclusions:**
 - Extension-only changes under `cli/azd/extensions/` (these belong in the extension's own changelog)
 
+**Multi-scope PRs** (touching both core and extensions): if a PR modifies files in both `cli/azd/` (core) and `cli/azd/extensions/` (extension), include it in the **core** changelog only if there are meaningful core changes. The extension changelog should reference the PR independently when generating the extension's release notes.
+
 **Alpha/beta-gated features**: features that require an alpha feature flag (`pkg/alpha`) at the time of release are excluded from the changelog. Include them in the release where they are promoted to public preview (beta) or GA. When processing a "promote to beta/GA" PR, write the entry as a new feature under `### Features Added` — not as an `### Other Changes` item.
 
 When uncertain whether a change has user impact, **include it** — the user can remove it during the Step 5 review. Specifically, these borderline categories should default to **included**:
 - Bug fixes that change observable CLI behavior (even if the bug was in flag parsing or output formatting)
 - Changes to help text, error messages, or CLI output visible to users
 - UX improvements that reduce noise or improve readability of output
+
+**Quick reference examples:**
+
+| Change | Decision |
+|--------|----------|
+| Improved error message when Docker is not installed | Include |
+| UX improvement to help text or `--help` output | Include |
+| Bug fix in flag parsing that changes CLI behavior | Include |
+| Typo fix in internal developer docs (`*.md` in `eng/`) | Exclude |
+| Refactor with no user-visible change | Exclude |
+| Updated dependency that changes CLI output format | Include |
 
 ## External Contributor Detection
 

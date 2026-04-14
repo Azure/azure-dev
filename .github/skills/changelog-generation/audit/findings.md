@@ -1,7 +1,7 @@
 # Changelog Audit Report
 
-**Generated**: 2026-04-11 16:26 UTC
-**Repo SHA**: ed79e6687
+**Generated**: 2026-04-14 13:49 UTC
+**Repo SHA**: 573de8498
 **Releases audited**: 20
 **Rules applied**: F1 (dual PR numbers), F2 (PR link validation), F3 (cross-release dedup), F4 (alpha/beta gating), F5 (borderline inclusion), F6 (phantom entries)
 
@@ -84,10 +84,10 @@ diff -ru published/ corrected/
 
 #### F6: Phantom entry (PR not in range)
 
-- [WARN] PR #7343 in changelog but not found in commit range azure-dev-cli_1.23.13..azure-dev-cli_1.23.14 (phantom entry).
+- [WARN] PR #7343 in changelog but not found in commit range azure-dev-cli_1.23.13..azure-dev-cli_1.23.14 (phantom entry — likely a backport, cherry-pick, or manual addition).
   >
   >     - [[#7343]](https://github.com/Azure/azure-dev/pull/7343) Fix nil pointer panic when `azure.yaml` contains services, ...
-- [WARN] PR #7299 in changelog but not found in commit range azure-dev-cli_1.23.13..azure-dev-cli_1.23.14 (phantom entry).
+- [WARN] PR #7299 in changelog but not found in commit range azure-dev-cli_1.23.13..azure-dev-cli_1.23.14 (phantom entry — likely a backport, cherry-pick, or manual addition).
   >
   >     - [[#7299]](https://github.com/Azure/azure-dev/pull/7299) Add command-specific telemetry attributes for `auth login`,...
 
@@ -126,10 +126,10 @@ diff -ru published/ corrected/
 
 #### F6: Phantom entry (PR not in range)
 
-- [WARN] PR #2743 in changelog but not found in commit range azure-dev-cli_1.23.12..azure-dev-cli_1.23.13 (phantom entry).
+- [WARN] PR #2743 in changelog but not found in commit range azure-dev-cli_1.23.12..azure-dev-cli_1.23.13 (phantom entry — likely a backport, cherry-pick, or manual addition).
   >
   >     - [[#2743]](https://github.com/Azure/azure-dev/issues/2743) Support deploying Container App Jobs (`Microsoft.App/jobs...
-- [WARN] PR #7330 in changelog but not found in commit range azure-dev-cli_1.23.12..azure-dev-cli_1.23.13 (phantom entry).
+- [WARN] PR #7330 in changelog but not found in commit range azure-dev-cli_1.23.12..azure-dev-cli_1.23.13 (phantom entry — likely a backport, cherry-pick, or manual addition).
   >
   >     - [[#7330]](https://github.com/Azure/azure-dev/pull/7330) Add `azure.yaml` schema metadata to enable automatic schema...
 
@@ -226,7 +226,7 @@ diff -ru published/ corrected/
 
 #### F6: Phantom entry (PR not in range)
 
-- [WARN] PR #6698 in changelog but not found in commit range azure-dev-cli_1.23.3..azure-dev-cli_1.23.4 (phantom entry).
+- [WARN] PR #6698 in changelog but not found in commit range azure-dev-cli_1.23.3..azure-dev-cli_1.23.4 (phantom entry — likely a backport, cherry-pick, or manual addition).
   >
   >     - [[#6698]](https://github.com/Azure/azure-dev/pull/6698) Fix telemetry bundling issues.
 
@@ -287,7 +287,7 @@ diff -ru published/ corrected/
 
 #### F6: Phantom entry (PR not in range)
 
-- [WARN] PR #6444 in changelog but not found in commit range azure-dev-cli_1.22.5..azure-dev-cli_1.23.0 (phantom entry).
+- [WARN] PR #6444 in changelog but not found in commit range azure-dev-cli_1.22.5..azure-dev-cli_1.23.0 (phantom entry — likely a backport, cherry-pick, or manual addition).
   >
   >     - [[#6444]](https://github.com/Azure/azure-dev/pull/6444) Fix AKS deployment schema to allow Helm deployments without...
 

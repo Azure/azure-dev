@@ -640,7 +640,7 @@ func runFindings(a *ReleaseAudit, prReleaseMap map[int]string) []Finding {
 					findings = append(findings, Finding{
 						Rule:        "F6",
 						Severity:    "warning",
-						Description: fmt.Sprintf("PR #%d in changelog but not found in commit range %s..%s (phantom entry).", e.PRNumber, a.PrevTag, a.Tag),
+						Description: fmt.Sprintf("PR #%d in changelog but not found in commit range %s..%s (phantom entry — likely a backport, cherry-pick, or manual addition).", e.PRNumber, a.PrevTag, a.Tag),
 						EntryText:   truncate(e.RawText, 120),
 						LineNumber:  e.LineNumber,
 					})

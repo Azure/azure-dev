@@ -116,20 +116,11 @@ func ValidateJobOffline(job *JobDefinition, yamlDir string) *ValidationResult {
 		}
 	}
 
-	// 6. Validate ${{inputs.xxx}} and ${{outputs.xxx}} placeholders in command
-	var optionalInputs map[string]bool
+	// 6–8. Command-level validation: placeholders, single-brace typos, empty definitions
 	if job.Command != "" {
-		optionalInputs = optionalInputKeys(job.Command)
+		optionalInputs := optionalInputKeys(job.Command)
 		validatePlaceholders(result, job, optionalInputs)
-	}
-
-	// 7. Warn on single-brace {inputs.xxx} or {outputs.xxx} usage in command
-	if job.Command != "" {
 		validateSingleBracePlaceholders(result, job.Command)
-	}
-
-	// 8. Inputs/outputs with nil/empty definitions referenced in command
-	if job.Command != "" {
 		validateInputOutputDefinitions(result, job, optionalInputs)
 	}
 

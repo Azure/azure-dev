@@ -90,6 +90,7 @@ func (p *ExternalProvisioningProvider) State(
 		RequestId: uuid.NewString(),
 		MessageType: &azdext.ProvisioningMessage_StateRequest{
 			StateRequest: &azdext.ProvisioningStateRequest{
+				ProviderName: p.providerName,
 				Options: &azdext.ProvisioningStateOptions{
 					Hint: hint,
 				},
@@ -119,7 +120,9 @@ func (p *ExternalProvisioningProvider) Deploy(
 	req := &azdext.ProvisioningMessage{
 		RequestId: uuid.NewString(),
 		MessageType: &azdext.ProvisioningMessage_DeployRequest{
-			DeployRequest: &azdext.ProvisioningDeployRequest{},
+			DeployRequest: &azdext.ProvisioningDeployRequest{
+				ProviderName: p.providerName,
+			},
 		},
 	}
 
@@ -149,7 +152,9 @@ func (p *ExternalProvisioningProvider) Preview(
 	req := &azdext.ProvisioningMessage{
 		RequestId: uuid.NewString(),
 		MessageType: &azdext.ProvisioningMessage_PreviewRequest{
-			PreviewRequest: &azdext.ProvisioningPreviewRequest{},
+			PreviewRequest: &azdext.ProvisioningPreviewRequest{
+				ProviderName: p.providerName,
+			},
 		},
 	}
 
@@ -180,6 +185,7 @@ func (p *ExternalProvisioningProvider) Destroy(
 		RequestId: uuid.NewString(),
 		MessageType: &azdext.ProvisioningMessage_DestroyRequest{
 			DestroyRequest: &azdext.ProvisioningDestroyRequest{
+				ProviderName: p.providerName,
 				Options: &azdext.ProvisioningDestroyOptions{
 					Force: options.Force(),
 					Purge: options.Purge(),
@@ -213,7 +219,9 @@ func (p *ExternalProvisioningProvider) EnsureEnv(ctx context.Context) error {
 	req := &azdext.ProvisioningMessage{
 		RequestId: uuid.NewString(),
 		MessageType: &azdext.ProvisioningMessage_EnsureEnvRequest{
-			EnsureEnvRequest: &azdext.ProvisioningEnsureEnvRequest{},
+			EnsureEnvRequest: &azdext.ProvisioningEnsureEnvRequest{
+				ProviderName: p.providerName,
+			},
 		},
 	}
 
@@ -234,7 +242,9 @@ func (p *ExternalProvisioningProvider) Parameters(
 	req := &azdext.ProvisioningMessage{
 		RequestId: uuid.NewString(),
 		MessageType: &azdext.ProvisioningMessage_ParametersRequest{
-			ParametersRequest: &azdext.ProvisioningParametersRequest{},
+			ParametersRequest: &azdext.ProvisioningParametersRequest{
+				ProviderName: p.providerName,
+			},
 		},
 	}
 
@@ -260,7 +270,9 @@ func (p *ExternalProvisioningProvider) PlannedOutputs(
 	req := &azdext.ProvisioningMessage{
 		RequestId: uuid.NewString(),
 		MessageType: &azdext.ProvisioningMessage_PlannedOutputsRequest{
-			PlannedOutputsRequest: &azdext.ProvisioningPlannedOutputsRequest{},
+			PlannedOutputsRequest: &azdext.ProvisioningPlannedOutputsRequest{
+				ProviderName: p.providerName,
+			},
 		},
 	}
 

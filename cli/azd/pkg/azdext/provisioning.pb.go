@@ -614,6 +614,7 @@ func (*ProvisioningInitializeResponse) Descriptor() ([]byte, []int) {
 type ProvisioningStateRequest struct {
 	state         protoimpl.MessageState    `protogen:"open.v1"`
 	Options       *ProvisioningStateOptions `protobuf:"bytes,1,opt,name=options,proto3" json:"options,omitempty"`
+	ProviderName  string                    `protobuf:"bytes,2,opt,name=provider_name,json=providerName,proto3" json:"provider_name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -653,6 +654,13 @@ func (x *ProvisioningStateRequest) GetOptions() *ProvisioningStateOptions {
 		return x.Options
 	}
 	return nil
+}
+
+func (x *ProvisioningStateRequest) GetProviderName() string {
+	if x != nil {
+		return x.ProviderName
+	}
+	return ""
 }
 
 type ProvisioningStateResponse struct {
@@ -701,6 +709,7 @@ func (x *ProvisioningStateResponse) GetStateResult() *ProvisioningStateResult {
 
 type ProvisioningDeployRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
+	ProviderName  string                 `protobuf:"bytes,1,opt,name=provider_name,json=providerName,proto3" json:"provider_name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -733,6 +742,13 @@ func (x *ProvisioningDeployRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ProvisioningDeployRequest.ProtoReflect.Descriptor instead.
 func (*ProvisioningDeployRequest) Descriptor() ([]byte, []int) {
 	return file_provisioning_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *ProvisioningDeployRequest) GetProviderName() string {
+	if x != nil {
+		return x.ProviderName
+	}
+	return ""
 }
 
 type ProvisioningDeployResponse struct {
@@ -781,6 +797,7 @@ func (x *ProvisioningDeployResponse) GetResult() *ProvisioningDeployResult {
 
 type ProvisioningPreviewRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
+	ProviderName  string                 `protobuf:"bytes,1,opt,name=provider_name,json=providerName,proto3" json:"provider_name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -813,6 +830,13 @@ func (x *ProvisioningPreviewRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ProvisioningPreviewRequest.ProtoReflect.Descriptor instead.
 func (*ProvisioningPreviewRequest) Descriptor() ([]byte, []int) {
 	return file_provisioning_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ProvisioningPreviewRequest) GetProviderName() string {
+	if x != nil {
+		return x.ProviderName
+	}
+	return ""
 }
 
 type ProvisioningPreviewResponse struct {
@@ -862,6 +886,7 @@ func (x *ProvisioningPreviewResponse) GetResult() *ProvisioningPreviewResult {
 type ProvisioningDestroyRequest struct {
 	state         protoimpl.MessageState      `protogen:"open.v1"`
 	Options       *ProvisioningDestroyOptions `protobuf:"bytes,1,opt,name=options,proto3" json:"options,omitempty"`
+	ProviderName  string                      `protobuf:"bytes,2,opt,name=provider_name,json=providerName,proto3" json:"provider_name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -901,6 +926,13 @@ func (x *ProvisioningDestroyRequest) GetOptions() *ProvisioningDestroyOptions {
 		return x.Options
 	}
 	return nil
+}
+
+func (x *ProvisioningDestroyRequest) GetProviderName() string {
+	if x != nil {
+		return x.ProviderName
+	}
+	return ""
 }
 
 type ProvisioningDestroyResponse struct {
@@ -949,6 +981,7 @@ func (x *ProvisioningDestroyResponse) GetResult() *ProvisioningDestroyResult {
 
 type ProvisioningEnsureEnvRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
+	ProviderName  string                 `protobuf:"bytes,1,opt,name=provider_name,json=providerName,proto3" json:"provider_name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -981,6 +1014,13 @@ func (x *ProvisioningEnsureEnvRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ProvisioningEnsureEnvRequest.ProtoReflect.Descriptor instead.
 func (*ProvisioningEnsureEnvRequest) Descriptor() ([]byte, []int) {
 	return file_provisioning_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *ProvisioningEnsureEnvRequest) GetProviderName() string {
+	if x != nil {
+		return x.ProviderName
+	}
+	return ""
 }
 
 type ProvisioningEnsureEnvResponse struct {
@@ -1021,6 +1061,7 @@ func (*ProvisioningEnsureEnvResponse) Descriptor() ([]byte, []int) {
 
 type ProvisioningParametersRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
+	ProviderName  string                 `protobuf:"bytes,1,opt,name=provider_name,json=providerName,proto3" json:"provider_name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1053,6 +1094,13 @@ func (x *ProvisioningParametersRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ProvisioningParametersRequest.ProtoReflect.Descriptor instead.
 func (*ProvisioningParametersRequest) Descriptor() ([]byte, []int) {
 	return file_provisioning_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *ProvisioningParametersRequest) GetProviderName() string {
+	if x != nil {
+		return x.ProviderName
+	}
+	return ""
 }
 
 type ProvisioningParametersResponse struct {
@@ -1947,6 +1995,7 @@ func (x *ProvisioningProgressMessage) GetTimestamp() int64 {
 
 type ProvisioningPlannedOutputsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
+	ProviderName  string                 `protobuf:"bytes,1,opt,name=provider_name,json=providerName,proto3" json:"provider_name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1979,6 +2028,13 @@ func (x *ProvisioningPlannedOutputsRequest) ProtoReflect() protoreflect.Message 
 // Deprecated: Use ProvisioningPlannedOutputsRequest.ProtoReflect.Descriptor instead.
 func (*ProvisioningPlannedOutputsRequest) Descriptor() ([]byte, []int) {
 	return file_provisioning_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *ProvisioningPlannedOutputsRequest) GetProviderName() string {
+	if x != nil {
+		return x.ProviderName
+	}
+	return ""
 }
 
 type ProvisioningPlannedOutputsResponse struct {
@@ -2105,24 +2161,30 @@ const file_provisioning_proto_rawDesc = "" +
 	"\x1dProvisioningInitializeRequest\x12!\n" +
 	"\fproject_path\x18\x01 \x01(\tR\vprojectPath\x125\n" +
 	"\aoptions\x18\x02 \x01(\v2\x1b.azdext.ProvisioningOptionsR\aoptions\" \n" +
-	"\x1eProvisioningInitializeResponse\"V\n" +
+	"\x1eProvisioningInitializeResponse\"{\n" +
 	"\x18ProvisioningStateRequest\x12:\n" +
-	"\aoptions\x18\x01 \x01(\v2 .azdext.ProvisioningStateOptionsR\aoptions\"_\n" +
+	"\aoptions\x18\x01 \x01(\v2 .azdext.ProvisioningStateOptionsR\aoptions\x12#\n" +
+	"\rprovider_name\x18\x02 \x01(\tR\fproviderName\"_\n" +
 	"\x19ProvisioningStateResponse\x12B\n" +
-	"\fstate_result\x18\x01 \x01(\v2\x1f.azdext.ProvisioningStateResultR\vstateResult\"\x1b\n" +
-	"\x19ProvisioningDeployRequest\"V\n" +
+	"\fstate_result\x18\x01 \x01(\v2\x1f.azdext.ProvisioningStateResultR\vstateResult\"@\n" +
+	"\x19ProvisioningDeployRequest\x12#\n" +
+	"\rprovider_name\x18\x01 \x01(\tR\fproviderName\"V\n" +
 	"\x1aProvisioningDeployResponse\x128\n" +
-	"\x06result\x18\x01 \x01(\v2 .azdext.ProvisioningDeployResultR\x06result\"\x1c\n" +
-	"\x1aProvisioningPreviewRequest\"X\n" +
+	"\x06result\x18\x01 \x01(\v2 .azdext.ProvisioningDeployResultR\x06result\"A\n" +
+	"\x1aProvisioningPreviewRequest\x12#\n" +
+	"\rprovider_name\x18\x01 \x01(\tR\fproviderName\"X\n" +
 	"\x1bProvisioningPreviewResponse\x129\n" +
-	"\x06result\x18\x01 \x01(\v2!.azdext.ProvisioningPreviewResultR\x06result\"Z\n" +
+	"\x06result\x18\x01 \x01(\v2!.azdext.ProvisioningPreviewResultR\x06result\"\x7f\n" +
 	"\x1aProvisioningDestroyRequest\x12<\n" +
-	"\aoptions\x18\x01 \x01(\v2\".azdext.ProvisioningDestroyOptionsR\aoptions\"X\n" +
+	"\aoptions\x18\x01 \x01(\v2\".azdext.ProvisioningDestroyOptionsR\aoptions\x12#\n" +
+	"\rprovider_name\x18\x02 \x01(\tR\fproviderName\"X\n" +
 	"\x1bProvisioningDestroyResponse\x129\n" +
-	"\x06result\x18\x01 \x01(\v2!.azdext.ProvisioningDestroyResultR\x06result\"\x1e\n" +
-	"\x1cProvisioningEnsureEnvRequest\"\x1f\n" +
-	"\x1dProvisioningEnsureEnvResponse\"\x1f\n" +
-	"\x1dProvisioningParametersRequest\"_\n" +
+	"\x06result\x18\x01 \x01(\v2!.azdext.ProvisioningDestroyResultR\x06result\"C\n" +
+	"\x1cProvisioningEnsureEnvRequest\x12#\n" +
+	"\rprovider_name\x18\x01 \x01(\tR\fproviderName\"\x1f\n" +
+	"\x1dProvisioningEnsureEnvResponse\"D\n" +
+	"\x1dProvisioningParametersRequest\x12#\n" +
+	"\rprovider_name\x18\x01 \x01(\tR\fproviderName\"_\n" +
 	"\x1eProvisioningParametersResponse\x12=\n" +
 	"\n" +
 	"parameters\x18\x01 \x03(\v2\x1d.azdext.ProvisioningParameterR\n" +
@@ -2208,8 +2270,9 @@ const file_provisioning_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12\x1c\n" +
-	"\ttimestamp\x18\x03 \x01(\x03R\ttimestamp\"#\n" +
-	"!ProvisioningPlannedOutputsRequest\"p\n" +
+	"\ttimestamp\x18\x03 \x01(\x03R\ttimestamp\"H\n" +
+	"!ProvisioningPlannedOutputsRequest\x12#\n" +
+	"\rprovider_name\x18\x01 \x01(\tR\fproviderName\"p\n" +
 	"\"ProvisioningPlannedOutputsResponse\x12J\n" +
 	"\x0fplanned_outputs\x18\x01 \x03(\v2!.azdext.ProvisioningPlannedOutputR\x0eplannedOutputs\"/\n" +
 	"\x19ProvisioningPlannedOutput\x12\x12\n" +

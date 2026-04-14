@@ -33,14 +33,19 @@ type ProvisioningProvider interface {
 // ProvisioningProviderFactory describes a function that creates a provisioning provider instance.
 type ProvisioningProviderFactory func() ProvisioningProvider
 
-// ProvisioningManager handles registration and provisioning request forwarding for a provider.
+// ProvisioningManager handles registration and provisioning request forwarding for multiple providers.
+// It stores a factory map (providerName → factory) and an instance map (providerName → initialized provider),
+// following the same two-map pattern used by ComponentManager for service targets.
 type ProvisioningManager struct {
 	extensionId  string
 	client       *AzdClient
 	broker       *grpcbroker.MessageBroker[ProvisioningMessage]
-	provider     ProvisioningProvider
-	providerName string
 	brokerLogger *log.Logger
+
+	// factories maps provider names to their factory functions (registered via Register).
+	factories map[string]ProvisioningProviderFactory
+	// instances maps provider names to initialized provider instances (created on Initialize).
+	instances map[string]ProvisioningProvider
 
 	// Synchronization for concurrent access
 	mu sync.RWMutex
@@ -56,6 +61,8 @@ func NewProvisioningManager(
 		extensionId:  extensionId,
 		client:       client,
 		brokerLogger: brokerLogger,
+		factories:    make(map[string]ProvisioningProviderFactory),
+		instances:    make(map[string]ProvisioningProvider),
 	}
 }
 
@@ -69,6 +76,9 @@ func (m *ProvisioningManager) Close() error {
 		m.broker.Close()
 		m.broker = nil
 	}
+
+	// Clear all instances
+	clear(m.instances)
 
 	return nil
 }
@@ -131,10 +141,9 @@ func (m *ProvisioningManager) ensureStream(ctx context.Context) error {
 	return nil
 }
 
-// Register registers the provider with the server, waits for the response,
+// Register registers a provisioning provider factory with the server, waits for the response,
 // then starts background handling of provisioning requests.
-// Only one provisioning provider per extension is supported; calling Register
-// a second time returns an error.
+// Multiple providers can be registered per extension; calling Register with the same name twice returns an error.
 func (m *ProvisioningManager) Register(
 	ctx context.Context,
 	factory ProvisioningProviderFactory,
@@ -144,21 +153,21 @@ func (m *ProvisioningManager) Register(
 		return fmt.Errorf("provisioning provider name cannot be empty")
 	}
 
-	m.mu.Lock()
-	if m.provider != nil {
-		m.mu.Unlock()
-		return fmt.Errorf(
-			"provisioning provider '%s' already registered; "+
-				"only one provisioning provider per extension"+
-				" is supported",
-			m.providerName,
-		)
-	}
-	m.mu.Unlock()
-
 	if err := m.ensureStream(ctx); err != nil {
 		return err
 	}
+
+	// Store factory — reject duplicates
+	m.mu.Lock()
+	if _, exists := m.factories[providerName]; exists {
+		m.mu.Unlock()
+		return fmt.Errorf(
+			"provisioning provider '%s' already registered",
+			providerName,
+		)
+	}
+	m.factories[providerName] = factory
+	m.mu.Unlock()
 
 	registerReq := &ProvisioningMessage{
 		RequestId: uuid.NewString(),
@@ -182,14 +191,6 @@ func (m *ProvisioningManager) Register(
 			resp.GetMessageType(),
 		)
 	}
-
-	// Create provider and store with provider name in a single lock scope
-	provider := factory()
-
-	m.mu.Lock()
-	m.providerName = providerName
-	m.provider = provider
-	m.mu.Unlock()
 
 	return nil
 }
@@ -215,20 +216,68 @@ func (m *ProvisioningManager) Ready(ctx context.Context) error {
 // Handler methods - these are registered with the broker to handle
 // incoming requests
 
-// getProvider returns the provisioning provider, or an error if
-// not initialized.
-func (m *ProvisioningManager) getProvider() (
-	ProvisioningProvider, error,
-) {
+// getOrCreateProvider looks up or creates a provider instance by name.
+// It uses the factory to create a new instance and calls Initialize on it.
+func (m *ProvisioningManager) getOrCreateProvider(
+	ctx context.Context,
+	providerName string,
+	projectPath string,
+	options *ProvisioningOptions,
+) (ProvisioningProvider, error) {
+	// Fast path: check if already initialized
+	m.mu.RLock()
+	if instance, exists := m.instances[providerName]; exists {
+		m.mu.RUnlock()
+		return instance, nil
+	}
+	m.mu.RUnlock()
+
+	// Slow path: create and initialize
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Double-check after acquiring write lock
+	if instance, exists := m.instances[providerName]; exists {
+		return instance, nil
+	}
+
+	factory, exists := m.factories[providerName]
+	if !exists {
+		return nil, fmt.Errorf(
+			"no factory registered for provisioning provider '%s'",
+			providerName,
+		)
+	}
+
+	provider := factory()
+	if err := provider.Initialize(ctx, projectPath, options); err != nil {
+		return nil, fmt.Errorf(
+			"failed to initialize provisioning provider '%s': %w",
+			providerName, err,
+		)
+	}
+
+	m.instances[providerName] = provider
+	return provider, nil
+}
+
+// getProvider retrieves an already-initialized provider by name.
+// Returns an error if the provider has not been initialized yet.
+func (m *ProvisioningManager) getProvider(
+	providerName string,
+) (ProvisioningProvider, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	if m.provider == nil {
+	instance, exists := m.instances[providerName]
+	if !exists {
 		return nil, fmt.Errorf(
-			"provisioning provider not initialized",
+			"provisioning provider '%s' not initialized; "+
+				"Initialize must be called first",
+			providerName,
 		)
 	}
-	return m.provider, nil
+	return instance, nil
 }
 
 // onInitialize handles initialization requests from the server
@@ -236,14 +285,21 @@ func (m *ProvisioningManager) onInitialize(
 	ctx context.Context,
 	req *ProvisioningInitializeRequest,
 ) (*ProvisioningMessage, error) {
-	provider, err := m.getProvider()
-	if err != nil {
-		return nil, err
+	providerName := ""
+	if req.GetOptions() != nil {
+		providerName = req.GetOptions().GetProvider()
+	}
+	if providerName == "" {
+		return nil, fmt.Errorf(
+			"provider name is required in ProvisioningOptions " +
+				"for initialization",
+		)
 	}
 
-	if err := provider.Initialize(
-		ctx, req.GetProjectPath(), req.GetOptions(),
-	); err != nil {
+	_, err := m.getOrCreateProvider(
+		ctx, providerName, req.GetProjectPath(), req.GetOptions(),
+	)
+	if err != nil {
 		return nil, err
 	}
 
@@ -259,7 +315,7 @@ func (m *ProvisioningManager) onState(
 	ctx context.Context,
 	req *ProvisioningStateRequest,
 ) (*ProvisioningMessage, error) {
-	provider, err := m.getProvider()
+	provider, err := m.getProvider(req.GetProviderName())
 	if err != nil {
 		return nil, err
 	}
@@ -284,7 +340,7 @@ func (m *ProvisioningManager) onDeploy(
 	req *ProvisioningDeployRequest,
 	progress grpcbroker.ProgressFunc,
 ) (*ProvisioningMessage, error) {
-	provider, err := m.getProvider()
+	provider, err := m.getProvider(req.GetProviderName())
 	if err != nil {
 		return nil, err
 	}
@@ -309,7 +365,7 @@ func (m *ProvisioningManager) onPreview(
 	req *ProvisioningPreviewRequest,
 	progress grpcbroker.ProgressFunc,
 ) (*ProvisioningMessage, error) {
-	provider, err := m.getProvider()
+	provider, err := m.getProvider(req.GetProviderName())
 	if err != nil {
 		return nil, err
 	}
@@ -334,7 +390,7 @@ func (m *ProvisioningManager) onDestroy(
 	req *ProvisioningDestroyRequest,
 	progress grpcbroker.ProgressFunc,
 ) (*ProvisioningMessage, error) {
-	provider, err := m.getProvider()
+	provider, err := m.getProvider(req.GetProviderName())
 	if err != nil {
 		return nil, err
 	}
@@ -360,7 +416,7 @@ func (m *ProvisioningManager) onEnsureEnv(
 	ctx context.Context,
 	req *ProvisioningEnsureEnvRequest,
 ) (*ProvisioningMessage, error) {
-	provider, err := m.getProvider()
+	provider, err := m.getProvider(req.GetProviderName())
 	if err != nil {
 		return nil, err
 	}
@@ -381,7 +437,7 @@ func (m *ProvisioningManager) onParameters(
 	ctx context.Context,
 	req *ProvisioningParametersRequest,
 ) (*ProvisioningMessage, error) {
-	provider, err := m.getProvider()
+	provider, err := m.getProvider(req.GetProviderName())
 	if err != nil {
 		return nil, err
 	}
@@ -405,7 +461,7 @@ func (m *ProvisioningManager) onPlannedOutputs(
 	ctx context.Context,
 	req *ProvisioningPlannedOutputsRequest,
 ) (*ProvisioningMessage, error) {
-	provider, err := m.getProvider()
+	provider, err := m.getProvider(req.GetProviderName())
 	if err != nil {
 		return nil, err
 	}

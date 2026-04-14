@@ -62,6 +62,7 @@ message ProvisioningInitializeResponse {}
 
 message ProvisioningStateRequest {
   ProvisioningStateOptions options = 1;
+  string provider_name = 2;
 }
 
 message ProvisioningStateResponse {
@@ -70,7 +71,9 @@ message ProvisioningStateResponse {
 
 // --- Deploy ---
 
-message ProvisioningDeployRequest {}
+message ProvisioningDeployRequest {
+  string provider_name = 1;
+}
 
 message ProvisioningDeployResponse {
   ProvisioningDeployResult result = 1;
@@ -78,7 +81,9 @@ message ProvisioningDeployResponse {
 
 // --- Preview ---
 
-message ProvisioningPreviewRequest {}
+message ProvisioningPreviewRequest {
+  string provider_name = 1;
+}
 
 message ProvisioningPreviewResponse {
   ProvisioningPreviewResult result = 1;
@@ -88,6 +93,7 @@ message ProvisioningPreviewResponse {
 
 message ProvisioningDestroyRequest {
   ProvisioningDestroyOptions options = 1;
+  string provider_name = 2;
 }
 
 message ProvisioningDestroyResponse {
@@ -96,13 +102,17 @@ message ProvisioningDestroyResponse {
 
 // --- EnsureEnv ---
 
-message ProvisioningEnsureEnvRequest {}
+message ProvisioningEnsureEnvRequest {
+  string provider_name = 1;
+}
 
 message ProvisioningEnsureEnvResponse {}
 
 // --- Parameters ---
 
-message ProvisioningParametersRequest {}
+message ProvisioningParametersRequest {
+  string provider_name = 1;
+}
 
 message ProvisioningParametersResponse {
   repeated ProvisioningParameter parameters = 1;
@@ -202,7 +212,9 @@ message ProvisioningProgressMessage {
 
 // --- PlannedOutputs ---
 
-message ProvisioningPlannedOutputsRequest {}
+message ProvisioningPlannedOutputsRequest {
+  string provider_name = 1;
+}
 
 message ProvisioningPlannedOutputsResponse {
   repeated ProvisioningPlannedOutput planned_outputs = 1;

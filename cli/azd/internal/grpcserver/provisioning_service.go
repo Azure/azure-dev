@@ -72,8 +72,9 @@ func (s *ProvisioningService) Stream(
 	ops := azdext.NewProvisioningEnvelope()
 	broker := grpcbroker.NewMessageBroker(stream, ops, extension.Id, log.Default())
 
-	// Track the provider name for cleanup when stream closes
-	var registeredProviderName string
+	// Track all provider names for cleanup when stream closes
+	var registeredProviderNames []string
+	var registeredMu sync.Mutex
 
 	// Register handler for RegisterProvisioningProviderRequest
 	err = broker.On(func(
@@ -81,7 +82,7 @@ func (s *ProvisioningService) Stream(
 		req *azdext.RegisterProvisioningProviderRequest,
 	) (*azdext.ProvisioningMessage, error) {
 		return s.onRegisterRequest(
-			ctx, req, extension, broker, &registeredProviderName,
+			ctx, req, extension, broker, &registeredProviderNames, &registeredMu,
 		)
 	})
 
@@ -91,12 +92,15 @@ func (s *ProvisioningService) Stream(
 
 	// Run the broker dispatcher (blocking)
 	if err := broker.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
-		log.Printf("Broker error for provider %s: %v", registeredProviderName, err)
+		log.Printf("Broker error for providers %v: %v", registeredProviderNames, err)
 		return fmt.Errorf("broker error: %w", err)
 	}
 
+	// Clean up all registered providers
 	s.providerMapMu.Lock()
-	delete(s.providerMap, registeredProviderName)
+	for _, name := range registeredProviderNames {
+		delete(s.providerMap, name)
+	}
 	s.providerMapMu.Unlock()
 
 	return nil
@@ -108,7 +112,8 @@ func (s *ProvisioningService) onRegisterRequest(
 	req *azdext.RegisterProvisioningProviderRequest,
 	extension *extensions.Extension,
 	broker *grpcbroker.MessageBroker[azdext.ProvisioningMessage],
-	registeredProviderName *string,
+	registeredProviderNames *[]string,
+	registeredMu *sync.Mutex,
 ) (*azdext.ProvisioningMessage, error) {
 	providerName := req.GetName()
 	if strings.TrimSpace(providerName) == "" {
@@ -143,7 +148,11 @@ func (s *ProvisioningService) onRegisterRequest(
 	}
 
 	s.providerMap[providerName] = broker
-	*registeredProviderName = providerName
+
+	registeredMu.Lock()
+	*registeredProviderNames = append(*registeredProviderNames, providerName)
+	registeredMu.Unlock()
+
 	log.Printf("Registered provisioning provider: %s", providerName)
 
 	// Return response envelope

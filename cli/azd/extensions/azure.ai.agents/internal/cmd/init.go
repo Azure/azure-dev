@@ -2248,9 +2248,7 @@ func extractToolboxAndConnectionConfigs(
 				// No target — either a built-in tool or a pre-configured tool
 				// that already has project_connection_id. Pass through as-is.
 				result := make(map[string]any, len(toolMap))
-				for k, v := range toolMap {
-					result[k] = v
-				}
+				maps.Copy(result, toolMap)
 				tools = append(tools, result)
 				continue
 			}
@@ -2292,9 +2290,7 @@ func extractToolboxAndConnectionConfigs(
 			// Preserve all tool fields, replacing consumed connection fields
 			// with the project_connection_id reference.
 			tool := make(map[string]any, len(toolMap))
-			for k, v := range toolMap {
-				tool[k] = v
-			}
+			maps.Copy(tool, toolMap)
 			tool["type"] = toolType
 			tool["project_connection_id"] = connName
 			delete(tool, "target")

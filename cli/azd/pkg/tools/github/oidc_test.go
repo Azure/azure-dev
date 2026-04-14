@@ -233,6 +233,26 @@ func TestGetOIDCSubjectConfig(t *testing.T) {
 			},
 			wantErr: "failed to query repo-level OIDC config",
 		},
+		{
+			name: "repo 404 then org non-404 error is returned",
+			setup: func(mc *mocks.MockContext) {
+				mc.CommandRunner.When(func(args exec.RunArgs, cmd string) bool {
+					return strings.Contains(cmd, "/repos/"+repoSlug+
+						"/actions/oidc/customization/sub")
+				}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+					return exec.NewRunResult(1, "", "HTTP 404: Not Found"),
+						fmt.Errorf("HTTP 404: Not Found")
+				})
+				mc.CommandRunner.When(func(args exec.RunArgs, cmd string) bool {
+					return strings.Contains(cmd, "/orgs/"+orgName+
+						"/actions/oidc/customization/sub")
+				}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+					return exec.NewRunResult(1, "", "HTTP 403: Forbidden"),
+						fmt.Errorf("HTTP 403: Forbidden")
+				})
+			},
+			wantErr: "failed to query org-level OIDC config",
+		},
 	}
 
 	for _, tt := range tests {
@@ -263,20 +283,59 @@ func TestGetOIDCSubjectConfig(t *testing.T) {
 func TestGetRepoInfo(t *testing.T) {
 	repoSlug := "Azure-Samples/my-repo"
 
-	mockContext := mocks.NewMockContext(t.Context())
-	mockContext.CommandRunner.When(func(args exec.RunArgs, cmd string) bool {
-		return strings.Contains(cmd, "/repos/"+repoSlug)
-	}).Respond(exec.NewRunResult(
-		0, `{"id": 599293758, "owner": {"id": 1844662}}`, "",
-	))
+	t.Run("success", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(t.Context())
+		mockContext.CommandRunner.When(func(args exec.RunArgs, cmd string) bool {
+			return strings.Contains(cmd, "/repos/"+repoSlug)
+		}).Respond(exec.NewRunResult(
+			0, `{"id": 599293758, "owner": {"id": 1844662}}`, "",
+		))
 
-	cli := NewGitHubCli(
-		mockContext.Console, mockContext.CommandRunner,
-	)
-	cli.path = "gh"
+		cli := NewGitHubCli(
+			mockContext.Console, mockContext.CommandRunner,
+		)
+		cli.path = "gh"
 
-	info, err := cli.GetRepoInfo(t.Context(), repoSlug)
-	require.NoError(t, err)
-	require.Equal(t, int64(599293758), info.ID)
-	require.Equal(t, int64(1844662), info.Owner.ID)
+		info, err := cli.GetRepoInfo(t.Context(), repoSlug)
+		require.NoError(t, err)
+		require.Equal(t, int64(599293758), info.ID)
+		require.Equal(t, int64(1844662), info.Owner.ID)
+	})
+
+	t.Run("API error", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(t.Context())
+		mockContext.CommandRunner.When(func(args exec.RunArgs, cmd string) bool {
+			return strings.Contains(cmd, "/repos/"+repoSlug)
+		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+			return exec.NewRunResult(1, "", "HTTP 403: Forbidden"),
+				fmt.Errorf("HTTP 403: Forbidden")
+		})
+
+		cli := NewGitHubCli(
+			mockContext.Console, mockContext.CommandRunner,
+		)
+		cli.path = "gh"
+
+		_, err := cli.GetRepoInfo(t.Context(), repoSlug)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to get repository info")
+	})
+
+	t.Run("malformed JSON", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(t.Context())
+		mockContext.CommandRunner.When(func(args exec.RunArgs, cmd string) bool {
+			return strings.Contains(cmd, "/repos/"+repoSlug)
+		}).Respond(exec.NewRunResult(
+			0, `{not valid json`, "",
+		))
+
+		cli := NewGitHubCli(
+			mockContext.Console, mockContext.CommandRunner,
+		)
+		cli.path = "gh"
+
+		_, err := cli.GetRepoInfo(t.Context(), repoSlug)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to parse repository info")
+	})
 }

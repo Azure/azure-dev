@@ -368,6 +368,34 @@ func TestAskerConsole_Message_InvalidQuery_FallsBack(t *testing.T) {
 		"invalid query should fall back to full envelope")
 }
 
+func TestAskerConsole_Message_EmptySkippedInJson(t *testing.T) {
+	buf := &strings.Builder{}
+	formatter := &output.JsonFormatter{}
+
+	c := NewConsole(
+		true,
+		false,
+		false,
+		Writers{Output: writerAdapter{buf}},
+		ConsoleHandles{
+			Stderr: os.Stderr,
+			Stdin:  os.Stdin,
+			Stdout: writerAdapter{buf},
+		},
+		formatter,
+		nil,
+	)
+
+	// An empty message should produce no JSON output (it's just a visual separator in text mode)
+	c.Message(context.Background(), "")
+	require.Empty(t, buf.String(), "empty message should not emit any JSON output")
+
+	// A non-empty message should still produce JSON output
+	c.Message(context.Background(), "hello")
+	require.NotEmpty(t, buf.String(), "non-empty message should emit JSON output")
+	require.Contains(t, buf.String(), `"consoleMessage"`)
+}
+
 // writerAdapter wraps *strings.Builder to satisfy io.Writer for test purposes.
 type writerAdapter struct {
 	*strings.Builder

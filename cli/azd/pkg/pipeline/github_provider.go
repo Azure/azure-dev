@@ -497,7 +497,7 @@ func (p *GitHubCiProvider) detectOIDCConfig(
 	}
 
 	var repoInfo *github.RepoInfo
-	if !oidcConfig.UseDefault {
+	if !oidcConfig.UseDefault && needsRepoInfo(oidcConfig) {
 		repoInfo, err = p.ghCli.GetRepoInfo(ctx, repoSlug)
 		if err != nil {
 			return nil, nil, fmt.Errorf(
@@ -507,6 +507,13 @@ func (p *GitHubCiProvider) detectOIDCConfig(
 		}
 	}
 	return oidcConfig, repoInfo, nil
+}
+
+// needsRepoInfo returns true if the OIDC config contains claim keys that
+// require numeric repository/owner IDs from the GitHub API.
+func needsRepoInfo(config *github.OIDCSubjectConfig) bool {
+	return slices.Contains(config.IncludeClaimKeys, "repository_owner_id") ||
+		slices.Contains(config.IncludeClaimKeys, "repository_id")
 }
 
 // buildAllSubjects constructs all OIDC subject strings from config.

@@ -29,23 +29,32 @@ func createBuildDefinitionVariable(value string, isSecret bool, allowOverride bo
 
 // selectAgentQueue picks the agent queue to use from the provided list.
 // Auto-selects if only one queue exists, prompts the user if multiple.
+// Queues with nil or empty names are filtered out.
 func selectAgentQueue(
 	ctx context.Context,
 	projectId string,
 	queues []taskagent.TaskAgentQueue,
 	console input.Console,
 ) (*taskagent.TaskAgentQueue, error) {
-	if len(queues) == 0 {
+	// Filter out queues with nil or empty names
+	valid := make([]taskagent.TaskAgentQueue, 0, len(queues))
+	for _, q := range queues {
+		if q.Name != nil && *q.Name != "" {
+			valid = append(valid, q)
+		}
+	}
+
+	if len(valid) == 0 {
 		return nil, fmt.Errorf("no agent queues available in project %s", projectId)
 	}
 
-	if len(queues) == 1 {
-		console.Message(ctx, fmt.Sprintf("Using agent queue: %s", *queues[0].Name))
-		return &queues[0], nil
+	if len(valid) == 1 {
+		console.Message(ctx, fmt.Sprintf("Using agent queue: %s", *valid[0].Name))
+		return &valid[0], nil
 	}
 
-	options := make([]string, 0, len(queues))
-	for _, q := range queues {
+	options := make([]string, 0, len(valid))
+	for _, q := range valid {
 		options = append(options, *q.Name)
 	}
 
@@ -58,11 +67,11 @@ func selectAgentQueue(
 		return nil, fmt.Errorf("selecting agent queue: %w", err)
 	}
 
-	if idx < 0 || idx >= len(queues) {
-		return nil, fmt.Errorf("selecting agent queue: invalid queue index %d for %d queues", idx, len(queues))
+	if idx < 0 || idx >= len(valid) {
+		return nil, fmt.Errorf("selecting agent queue: invalid queue index %d for %d queues", idx, len(valid))
 	}
 
-	return &queues[idx], nil
+	return &valid[idx], nil
 }
 
 // getAgentQueue returns the agent queue to associate with the pipeline.

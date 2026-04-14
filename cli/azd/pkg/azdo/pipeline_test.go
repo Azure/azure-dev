@@ -30,6 +30,34 @@ func Test_selectAgentQueue(t *testing.T) {
 		assert.ErrorContains(t, err, "no agent queues available in project project-1")
 	})
 
+	t.Run("queues with nil names are filtered out", func(t *testing.T) {
+		mockConsole := mockinput.NewMockConsole()
+		queueId := 1
+		queues := []taskagent.TaskAgentQueue{
+			{Id: &queueId, Name: nil},
+		}
+
+		queue, err := selectAgentQueue(t.Context(), "project-1", queues, mockConsole)
+		assert.Nil(t, queue)
+		assert.ErrorContains(t, err, "no agent queues available in project project-1")
+	})
+
+	t.Run("nil name queues filtered leaving one valid", func(t *testing.T) {
+		mockConsole := mockinput.NewMockConsole()
+		id1 := 1
+		id2 := 2
+		validName := "Azure Pipelines"
+		queues := []taskagent.TaskAgentQueue{
+			{Id: &id1, Name: nil},
+			{Id: &id2, Name: &validName},
+		}
+
+		queue, err := selectAgentQueue(t.Context(), "project-1", queues, mockConsole)
+		require.NoError(t, err)
+		require.NotNil(t, queue)
+		assert.Equal(t, "Azure Pipelines", *queue.Name)
+	})
+
 	t.Run("single queue auto-selects", func(t *testing.T) {
 		mockConsole := mockinput.NewMockConsole()
 		queueName := "Azure Pipelines"

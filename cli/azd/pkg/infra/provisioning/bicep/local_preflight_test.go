@@ -391,7 +391,7 @@ func TestAnalyzeArmTemplateResources(t *testing.T) {
 					Properties: json.RawMessage([]byte("{invalid")),
 				},
 			},
-			hasRoleAssignments: false,
+			hasRoleAssignments: true, // conservative: can't inspect → assume role assignments exist
 		},
 		{
 			name: "nested deployment with template link only",
@@ -405,7 +405,7 @@ func TestAnalyzeArmTemplateResources(t *testing.T) {
 					}),
 				},
 			},
-			hasRoleAssignments: false,
+			hasRoleAssignments: true, // conservative: no inline template → assume role assignments exist
 		},
 		{
 			name: "deeply nested deployment",
@@ -462,33 +462,6 @@ func TestAnalyzeArmTemplateResources(t *testing.T) {
 					}),
 				},
 			},
-			hasRoleAssignments: true,
-		},
-		{
-			name: "nested deployment with invalid properties json",
-			resources: armTemplateResources{
-				{
-					Type: "Microsoft.Resources/deployments",
-					// Intentionally invalid JSON to simulate a corrupted or unparseable properties blob.
-					Properties: json.RawMessage([]byte("{invalid")),
-				},
-			},
-			// Cannot inspect the template, so conservatively assume role assignments.
-			hasRoleAssignments: true,
-		},
-		{
-			name: "nested deployment with template link only",
-			resources: armTemplateResources{
-				{
-					Type: "Microsoft.Resources/deployments",
-					Properties: mustMarshal(t, map[string]any{
-						"templateLink": map[string]any{
-							"uri": "https://example.invalid/template.json",
-						},
-					}),
-				},
-			},
-			// No inline template.resources, so conservatively assume role assignments.
 			hasRoleAssignments: true,
 		},
 	}

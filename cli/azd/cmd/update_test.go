@@ -78,9 +78,8 @@ func TestPersistNonChannelFlags(t *testing.T) {
 		}
 
 		cfg := config.NewEmptyConfig()
-		changed, err := action.persistNonChannelFlags(cfg)
+		err := action.persistNonChannelFlags(cfg)
 		require.NoError(t, err)
-		assert.False(t, changed)
 	})
 
 	t.Run("interval_set", func(t *testing.T) {
@@ -90,12 +89,12 @@ func TestPersistNonChannelFlags(t *testing.T) {
 			flags: &updateFlags{
 				checkIntervalHours: 12,
 			},
+			configManager: &simpleConfigMgr{},
 		}
 
 		cfg := config.NewEmptyConfig()
-		changed, err := action.persistNonChannelFlags(cfg)
+		err := action.persistNonChannelFlags(cfg)
 		require.NoError(t, err)
-		assert.True(t, changed)
 
 		// Verify the interval was saved
 		updateCfg := update.LoadUpdateConfig(cfg)

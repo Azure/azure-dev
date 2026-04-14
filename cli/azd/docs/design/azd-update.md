@@ -282,7 +282,7 @@ azd update --channel daily
 ? Switch from daily channel (1.24.0-beta.1-daily.5935787) to stable channel (1.23.6)? [Y/n]
 ```
 
-If the user declines, the command prints "Channel switch cancelled." (no SUCCESS banner) and exits without modifying config or downloading anything. The channel config is only persisted after confirmation.
+If the user declines, the command prints "Channel switch cancelled." (no SUCCESS banner) and exits without modifying config or downloading anything. The channel config is only persisted after a successful update. If the update succeeds but the channel config save fails, a warning is shown with a remediation command (`azd config set updates.channel <channel>`) — the update itself is not rolled back.
 
 #### Cross Install Method
 

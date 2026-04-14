@@ -357,7 +357,7 @@ func (l *localArmPreflight) validate(
 	armTemplate azure.RawArmTemplate,
 	armParameters azure.ArmParameters,
 ) ([]PreflightCheckResult, error) {
-	_, err := l.parseTemplate(armTemplate)
+	tmpl, err := l.parseTemplate(armTemplate)
 	if err != nil {
 		return nil, fmt.Errorf("parsing ARM template: %w", err)
 	}
@@ -408,26 +408,33 @@ func (l *localArmPreflight) validate(
 	// Run the Bicep snapshot command to produce a deployment snapshot from the bicepparam file.
 	// The snapshot contains the fully resolved deployment graph with expressions evaluated,
 	// conditions applied, and copy loops expanded.
-	// If the snapshot fails (e.g., older Bicep binary without snapshot support), skip local
-	// preflight rather than blocking the deployment.
+	// If the snapshot fails (e.g., older Bicep binary without snapshot support, or parameter
+	// combinations that the snapshot engine cannot resolve), fall back to analyzing the
+	// compiled ARM template JSON directly. This preserves checks that only need structural
+	// information (like HasRoleAssignments) even when the snapshot is unavailable.
 	data, err := l.bicepCli.Snapshot(ctx, bicepParamFile, snapshotOpts)
+
+	var valCtx *validationContext
 	if err != nil {
-		log.Printf("local preflight: skipping checks, bicep snapshot unavailable: %v", err)
-		return nil, nil
-	}
+		log.Printf("local preflight: bicep snapshot unavailable, falling back to ARM template analysis: %v", err)
+		props := analyzeArmTemplateResources(tmpl.Resources)
+		valCtx = &validationContext{
+			Console: console,
+			Props:   props,
+		}
+	} else {
+		var snapshot snapshotResult
+		if err := json.Unmarshal(data, &snapshot); err != nil {
+			return nil, fmt.Errorf("parsing bicep snapshot: %w", err)
+		}
 
-	var snapshot snapshotResult
-	if err := json.Unmarshal(data, &snapshot); err != nil {
-		return nil, fmt.Errorf("parsing bicep snapshot: %w", err)
-	}
-
-	props := analyzeResources(snapshot.PredictedResources)
-
-	valCtx := &validationContext{
-		Console:           console,
-		Props:             props,
-		ResourcesSnapshot: json.RawMessage(data),
-		SnapshotResources: snapshot.PredictedResources,
+		props := analyzeResources(snapshot.PredictedResources)
+		valCtx = &validationContext{
+			Console:           console,
+			Props:             props,
+			ResourcesSnapshot: json.RawMessage(data),
+			SnapshotResources: snapshot.PredictedResources,
+		}
 	}
 
 	var results []PreflightCheckResult
@@ -575,4 +582,58 @@ func analyzeResources(resources []armTemplateResource) resourcesProperties {
 		}
 	}
 	return props
+}
+
+// analyzeArmTemplateResources recursively inspects the compiled ARM template resource tree
+// (from bicep build) and returns a resourcesProperties summarizing key characteristics.
+// Unlike analyzeResources (which operates on the flat snapshot list), this function walks
+// the template's nested resource hierarchy, including resources inside
+// Microsoft.Resources/deployments (Bicep modules), to detect role assignments even when
+// the bicep snapshot command is unavailable.
+func analyzeArmTemplateResources(resources armTemplateResources) resourcesProperties {
+	props := resourcesProperties{}
+	props.HasRoleAssignments = armTemplateHasRoleAssignments(resources)
+	return props
+}
+
+// armTemplateHasRoleAssignments recursively checks whether any resource in the ARM template
+// tree is a Microsoft.Authorization/roleAssignments resource. It handles:
+//   - Direct role assignment resources
+//   - Child resources nested inside a parent resource declaration
+//   - Nested deployments (Microsoft.Resources/deployments) whose properties.template.resources
+//     may contain additional role assignments
+func armTemplateHasRoleAssignments(resources armTemplateResources) bool {
+	for _, r := range resources {
+		if strings.EqualFold(r.Type, "Microsoft.Authorization/roleAssignments") {
+			return true
+		}
+
+		// Check child resources nested inside this resource declaration.
+		if len(r.Resources) > 0 && armTemplateHasRoleAssignments(r.Resources) {
+			return true
+		}
+
+		// Check nested deployment templates (Bicep modules compile to
+		// Microsoft.Resources/deployments with an inline template).
+		if strings.EqualFold(r.Type, "Microsoft.Resources/deployments") && len(r.Properties) > 0 {
+			if nestedHasRoleAssignments(r.Properties) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// nestedHasRoleAssignments extracts the template.resources array from a nested deployment's
+// properties JSON and checks it for role assignment resources.
+func nestedHasRoleAssignments(properties json.RawMessage) bool {
+	var props struct {
+		Template struct {
+			Resources armTemplateResources `json:"resources"`
+		} `json:"template"`
+	}
+	if err := json.Unmarshal(properties, &props); err != nil {
+		return false
+	}
+	return armTemplateHasRoleAssignments(props.Template.Resources)
 }

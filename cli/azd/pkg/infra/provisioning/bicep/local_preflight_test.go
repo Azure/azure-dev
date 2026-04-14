@@ -331,3 +331,130 @@ func TestAnalyzeResources(t *testing.T) {
 		})
 	}
 }
+
+func TestAnalyzeArmTemplateResources(t *testing.T) {
+	tests := []struct {
+		name               string
+		resources          armTemplateResources
+		hasRoleAssignments bool
+	}{
+		{
+			name:               "empty resources",
+			resources:          nil,
+			hasRoleAssignments: false,
+		},
+		{
+			name: "no role assignments",
+			resources: armTemplateResources{
+				{Type: "Microsoft.Storage/storageAccounts"},
+			},
+			hasRoleAssignments: false,
+		},
+		{
+			name: "direct role assignment",
+			resources: armTemplateResources{
+				{Type: "Microsoft.Authorization/roleAssignments"},
+			},
+			hasRoleAssignments: true,
+		},
+		{
+			name: "role assignment in child resources",
+			resources: armTemplateResources{
+				{
+					Type: "Microsoft.ManagedIdentity/userAssignedIdentities",
+					Resources: armTemplateResources{
+						{Type: "Microsoft.Authorization/roleAssignments"},
+					},
+				},
+			},
+			hasRoleAssignments: true,
+		},
+		{
+			name: "role assignment in nested deployment",
+			resources: armTemplateResources{
+				{
+					Type: "Microsoft.Resources/deployments",
+					Properties: mustMarshal(t, map[string]any{
+						"template": map[string]any{
+							"resources": []map[string]any{
+								{"type": "Microsoft.Authorization/roleAssignments"},
+							},
+						},
+					}),
+				},
+			},
+			hasRoleAssignments: true,
+		},
+		{
+			name: "deeply nested deployment",
+			resources: armTemplateResources{
+				{
+					Type: "Microsoft.Resources/deployments",
+					Properties: mustMarshal(t, map[string]any{
+						"template": map[string]any{
+							"resources": []map[string]any{
+								{
+									"type": "Microsoft.Resources/deployments",
+									"properties": map[string]any{
+										"template": map[string]any{
+											"resources": []map[string]any{
+												{"type": "Microsoft.Authorization/roleAssignments"},
+											},
+										},
+									},
+								},
+							},
+						},
+					}),
+				},
+			},
+			hasRoleAssignments: true,
+		},
+		{
+			name: "nested deployment without role assignments",
+			resources: armTemplateResources{
+				{
+					Type: "Microsoft.Resources/deployments",
+					Properties: mustMarshal(t, map[string]any{
+						"template": map[string]any{
+							"resources": []map[string]any{
+								{"type": "Microsoft.Storage/storageAccounts"},
+							},
+						},
+					}),
+				},
+			},
+			hasRoleAssignments: false,
+		},
+		{
+			name: "case insensitive in nested deployment",
+			resources: armTemplateResources{
+				{
+					Type: "microsoft.resources/deployments",
+					Properties: mustMarshal(t, map[string]any{
+						"template": map[string]any{
+							"resources": []map[string]any{
+								{"type": "microsoft.authorization/roleassignments"},
+							},
+						},
+					}),
+				},
+			},
+			hasRoleAssignments: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			props := analyzeArmTemplateResources(tt.resources)
+			require.Equal(t, tt.hasRoleAssignments, props.HasRoleAssignments)
+		})
+	}
+}
+
+func mustMarshal(t *testing.T, v any) json.RawMessage {
+	t.Helper()
+	data, err := json.Marshal(v)
+	require.NoError(t, err)
+	return data
+}

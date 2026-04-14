@@ -4,6 +4,8 @@
 package azdo
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -13,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func Test_selectAgentQueue(t *testing.T) {
+func TestSelectAgentQueue(t *testing.T) {
 	t.Run("no queues returns error", func(t *testing.T) {
 		mockConsole := mockinput.NewMockConsole()
 
@@ -35,6 +37,18 @@ func Test_selectAgentQueue(t *testing.T) {
 		queueId := 1
 		queues := []taskagent.TaskAgentQueue{
 			{Id: &queueId, Name: nil},
+		}
+
+		queue, err := selectAgentQueue(t.Context(), "project-1", queues, mockConsole)
+		assert.Nil(t, queue)
+		assert.ErrorContains(t, err, "no agent queues available in project project-1")
+	})
+
+	t.Run("queues with nil id are filtered out", func(t *testing.T) {
+		mockConsole := mockinput.NewMockConsole()
+		name := "Default"
+		queues := []taskagent.TaskAgentQueue{
+			{Id: nil, Name: &name},
 		}
 
 		queue, err := selectAgentQueue(t.Context(), "project-1", queues, mockConsole)
@@ -76,7 +90,7 @@ func Test_selectAgentQueue(t *testing.T) {
 	t.Run("multiple queues prompts user", func(t *testing.T) {
 		mockConsole := mockinput.NewMockConsole()
 		mockConsole.WhenSelect(func(options input.ConsoleOptions) bool {
-			return options.Message == "Choose an agent queue for the pipeline"
+			return strings.Contains(options.Message, "agent queue")
 		}).Respond(1) // select second queue
 
 		name1 := "Default"
@@ -98,7 +112,7 @@ func Test_selectAgentQueue(t *testing.T) {
 	t.Run("multiple queues selects first", func(t *testing.T) {
 		mockConsole := mockinput.NewMockConsole()
 		mockConsole.WhenSelect(func(options input.ConsoleOptions) bool {
-			return options.Message == "Choose an agent queue for the pipeline"
+			return strings.Contains(options.Message, "agent queue")
 		}).Respond(0) // select first queue
 
 		name1 := "Default"
@@ -115,5 +129,28 @@ func Test_selectAgentQueue(t *testing.T) {
 		require.NotNil(t, queue)
 		assert.Equal(t, "Default", *queue.Name)
 		assert.Equal(t, 1, *queue.Id)
+	})
+
+	t.Run("select error is wrapped", func(t *testing.T) {
+		mockConsole := mockinput.NewMockConsole()
+		mockConsole.WhenSelect(func(options input.ConsoleOptions) bool {
+			return strings.Contains(options.Message, "agent queue")
+		}).RespondFn(func(_ input.ConsoleOptions) (any, error) {
+			return 0, fmt.Errorf("user cancelled")
+		})
+
+		name1 := "Default"
+		id1 := 1
+		name2 := "Azure Pipelines"
+		id2 := 2
+		queues := []taskagent.TaskAgentQueue{
+			{Id: &id1, Name: &name1},
+			{Id: &id2, Name: &name2},
+		}
+
+		queue, err := selectAgentQueue(t.Context(), "project-1", queues, mockConsole)
+		assert.Nil(t, queue)
+		assert.ErrorContains(t, err, "selecting agent queue")
+		assert.ErrorContains(t, err, "user cancelled")
 	})
 }

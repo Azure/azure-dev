@@ -29,17 +29,17 @@ func createBuildDefinitionVariable(value string, isSecret bool, allowOverride bo
 
 // selectAgentQueue picks the agent queue to use from the provided list.
 // Auto-selects if only one queue exists, prompts the user if multiple.
-// Queues with nil or empty names are filtered out.
+// Queues with nil IDs or nil/empty names are filtered out.
 func selectAgentQueue(
 	ctx context.Context,
 	projectId string,
 	queues []taskagent.TaskAgentQueue,
 	console input.Console,
 ) (*taskagent.TaskAgentQueue, error) {
-	// Filter out queues with nil or empty names
+	// Filter out queues with nil IDs or nil/empty names
 	valid := make([]taskagent.TaskAgentQueue, 0, len(queues))
 	for _, q := range queues {
-		if q.Name != nil && *q.Name != "" {
+		if q.Id != nil && q.Name != nil && *q.Name != "" {
 			valid = append(valid, q)
 		}
 	}

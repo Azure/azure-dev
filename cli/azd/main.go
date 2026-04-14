@@ -297,7 +297,7 @@ func platformUpgradeText() string {
 	} else if runtime.GOOS == "darwin" {
 		switch installedBy {
 		case installer.InstallTypeBrew:
-			return "run:\nbrew uninstall --cask azure/azd/azd && brew install --cask azure/azd/azd"
+			return "run:\nbrew uninstall azure/azd/azd && brew install azure/azd/azd"
 		case installer.InstallTypeSh:
 			//nolint:lll
 			return "run:\ncurl -fsSL https://aka.ms/install-azd.sh | bash\n\nIf the install script was run with custom parameters, ensure that the same parameters are used for the upgrade. For advanced install instructions, see: https://aka.ms/azd/upgrade/mac"

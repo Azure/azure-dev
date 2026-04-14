@@ -50,11 +50,16 @@ func selectAgentQueue(
 	}
 
 	idx, err := console.Select(ctx, input.ConsoleOptions{
-		Message: "Choose an agent queue for the pipeline",
-		Options: options,
+		Message:      "Choose an agent queue for the pipeline",
+		Options:      options,
+		DefaultValue: options[0],
 	})
 	if err != nil {
 		return nil, fmt.Errorf("selecting agent queue: %w", err)
+	}
+
+	if idx < 0 || idx >= len(queues) {
+		return nil, fmt.Errorf("selecting agent queue: invalid queue index %d for %d queues", idx, len(queues))
 	}
 
 	return &queues[idx], nil

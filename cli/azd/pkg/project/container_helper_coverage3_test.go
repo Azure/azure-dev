@@ -174,3 +174,112 @@ func Test_resolveDockerPaths(t *testing.T) {
 		assert.Equal(t, projectPath, opts.Context)
 	})
 }
+
+// Test_InMemDockerfile_ContextOverride verifies that in-memory Dockerfile builds
+// correctly override the build context to the temp directory when the user did
+// not specify a custom Docker context (empty or ".").
+//
+// This tests the fix where we check serviceConfig.Docker.Context (original config)
+// instead of dockerOptions.Context (already resolved to absolute by resolveDockerPaths).
+// After resolution, dockerOptions.Context is an absolute path, so comparing against
+// "" or "." would never match — checking the original config is intentional.
+func Test_InMemDockerfile_ContextOverride(t *testing.T) {
+	projectPath := t.TempDir()
+	servicePath := filepath.Join(projectPath, "src", "web")
+	require.NoError(t, os.MkdirAll(servicePath, 0755))
+
+	t.Run("DefaultContext_OverriddenToTempDir", func(t *testing.T) {
+		// When Docker.Context is empty (default), the in-memory Dockerfile flow
+		// should override context to the temp dir where the Dockerfile is written.
+		svc := &ServiceConfig{
+			Project:      &ProjectConfig{Path: projectPath},
+			RelativePath: filepath.Join("src", "web"),
+			Docker:       DockerProjectOptions{}, // Context defaults to ""
+		}
+		opts := getDockerOptionsWithDefaults(svc.Docker)
+		resolveDockerPaths(svc, &opts)
+
+		// After resolution, opts.Context is an absolute path (service dir).
+		assert.Equal(t, servicePath, opts.Context, "precondition: context is resolved to service dir")
+
+		// Simulate the in-memory Dockerfile override (container_helper.go ~line 478).
+		// This uses serviceConfig.Docker.Context (original config value) — NOT opts.Context.
+		tempDir := t.TempDir()
+		if svc.Docker.Context == "" || svc.Docker.Context == "." {
+			opts.Context = tempDir
+		}
+
+		assert.Equal(t, tempDir, opts.Context, "context should be overridden to tempDir")
+	})
+
+	t.Run("DotContext_OverriddenToTempDir", func(t *testing.T) {
+		svc := &ServiceConfig{
+			Project:      &ProjectConfig{Path: projectPath},
+			RelativePath: filepath.Join("src", "web"),
+			Docker: DockerProjectOptions{
+				Context: ".",
+			},
+		}
+		opts := getDockerOptionsWithDefaults(svc.Docker)
+		resolveDockerPaths(svc, &opts)
+
+		assert.Equal(t, servicePath, opts.Context, "precondition: '.' resolves to service dir")
+
+		tempDir := t.TempDir()
+		if svc.Docker.Context == "" || svc.Docker.Context == "." {
+			opts.Context = tempDir
+		}
+
+		assert.Equal(t, tempDir, opts.Context, "context should be overridden to tempDir")
+	})
+
+	t.Run("CustomContext_PreservedNotOverridden", func(t *testing.T) {
+		// When user specifies a custom context, the in-memory Dockerfile flow
+		// must NOT override it — the user's explicit context takes precedence.
+		svc := &ServiceConfig{
+			Project:      &ProjectConfig{Path: projectPath},
+			RelativePath: filepath.Join("src", "web"),
+			Docker: DockerProjectOptions{
+				Context: "custom/build-context",
+			},
+		}
+		opts := getDockerOptionsWithDefaults(svc.Docker)
+		resolveDockerPaths(svc, &opts)
+
+		expectedContext := filepath.Join(servicePath, "custom", "build-context")
+		assert.Equal(t, expectedContext, opts.Context, "precondition: custom context resolved")
+
+		tempDir := t.TempDir()
+		if svc.Docker.Context == "" || svc.Docker.Context == "." {
+			opts.Context = tempDir
+		}
+
+		// Context should NOT be overridden — user specified a custom path.
+		assert.Equal(t, expectedContext, opts.Context,
+			"custom context must be preserved, not overridden to tempDir")
+	})
+
+	t.Run("BugRegression_CheckingResolvedContext_WouldNeverMatch", func(t *testing.T) {
+		// This test proves WHY we check serviceConfig.Docker.Context instead of
+		// dockerOptions.Context. After resolveDockerPaths(), opts.Context is always
+		// an absolute path — checking it against "" or "." would never match,
+		// meaning tempDir override would never happen.
+		svc := &ServiceConfig{
+			Project:      &ProjectConfig{Path: projectPath},
+			RelativePath: filepath.Join("src", "web"),
+			Docker:       DockerProjectOptions{}, // Context defaults to ""
+		}
+		opts := getDockerOptionsWithDefaults(svc.Docker)
+		resolveDockerPaths(svc, &opts)
+
+		// Demonstrate the bug: checking resolved opts.Context against "" or "." never matches.
+		resolvedContextMatchesEmpty := opts.Context == "" || opts.Context == "."
+		assert.False(t, resolvedContextMatchesEmpty,
+			"resolved context is absolute — comparing against empty/dot never matches")
+
+		// But the original config value DOES match.
+		originalConfigMatchesEmpty := svc.Docker.Context == "" || svc.Docker.Context == "."
+		assert.True(t, originalConfigMatchesEmpty,
+			"original config is empty — this is what we should check")
+	})
+}

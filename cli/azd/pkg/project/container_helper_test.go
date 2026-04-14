@@ -902,7 +902,7 @@ func Test_ContainerHelper_Credential_Retry(t *testing.T) {
 			MaxRetry: 1,
 		}
 		// no need to delay in tests
-		defaultCredentialsRetryDelay = 1 * time.Millisecond
+		defaultCredentialsRetryInitialDelay = 1 * time.Millisecond
 
 		containerHelper := NewContainerHelper(
 			clock.NewMock(), mockContainerService, nil, nil, nil, nil, nil, cloud.AzurePublic())

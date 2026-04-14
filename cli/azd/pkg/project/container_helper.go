@@ -284,7 +284,7 @@ func (ch *ContainerHelper) Login(
 	return registryName, nil
 }
 
-var defaultCredentialsRetryDelay = 2 * time.Second
+var defaultCredentialsRetryInitialDelay = 2 * time.Second
 
 func (ch *ContainerHelper) Credentials(
 	ctx context.Context,
@@ -307,7 +307,7 @@ func (ch *ContainerHelper) Credentials(
 		// constant 20s delay. ACR credentials are typically available within seconds after
 		// resource creation, so aggressive early retries resolve most 404s quickly while
 		// preserving roughly the same total retry window for slow DNS propagation.
-		retry.WithMaxRetries(5, retry.NewExponential(defaultCredentialsRetryDelay)),
+		retry.WithMaxRetries(5, retry.NewExponential(defaultCredentialsRetryInitialDelay)),
 		func(ctx context.Context) error {
 			cred, err := ch.containerRegistryService.Credentials(ctx, targetResource.SubscriptionId(), loginServer)
 			if err != nil {

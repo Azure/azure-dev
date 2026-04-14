@@ -6,6 +6,7 @@ package cmd
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -174,6 +175,112 @@ func TestToServiceKey(t *testing.T) {
 			got := toServiceKey(tt.input)
 			if got != tt.want {
 				t.Errorf("toServiceKey(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestProtocolFromAgentYaml(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		yaml       string // file contents; empty string means no file
+		noFile     bool   // when true, don't create agent.yaml
+		wantProto  string
+		wantErr    bool
+		errContain string // substring expected in the error message
+	}{
+		{
+			name:      "single protocol responses",
+			yaml:      "protocols:\n  - protocol: responses\n    version: \"1.0\"\n",
+			wantProto: "responses",
+		},
+		{
+			name:      "single protocol invocations",
+			yaml:      "protocols:\n  - protocol: invocations\n    version: \"1.0\"\n",
+			wantProto: "invocations",
+		},
+		{
+			name:       "no file",
+			noFile:     true,
+			wantErr:    true,
+			errContain: "could not read agent.yaml",
+		},
+		{
+			name:       "invalid yaml",
+			yaml:       "protocols: [[[invalid",
+			wantErr:    true,
+			errContain: "could not parse agent.yaml",
+		},
+		{
+			name:       "no protocols field",
+			yaml:       "name: my-agent\n",
+			wantErr:    true,
+			errContain: "does not declare any protocols",
+		},
+		{
+			name:       "empty protocols list",
+			yaml:       "protocols: []\n",
+			wantErr:    true,
+			errContain: "does not declare any protocols",
+		},
+		{
+			name:       "single protocol with empty value",
+			yaml:       "protocols:\n  - protocol: \"\"\n    version: \"1.0\"\n",
+			wantErr:    true,
+			errContain: "protocol field is empty",
+		},
+		{
+			name:       "single protocol whitespace only",
+			yaml:       "protocols:\n  - protocol: \"  \"\n    version: \"1.0\"\n",
+			wantErr:    true,
+			errContain: "protocol field is empty",
+		},
+		{
+			name: "multiple protocols",
+			yaml: "protocols:\n  - protocol: responses\n" +
+				"    version: \"1.0\"\n  - protocol: invocations\n" +
+				"    version: \"1.0\"\n",
+			wantErr:    true,
+			errContain: "declares multiple protocols",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			dir := t.TempDir()
+			yamlPath := filepath.Join(dir, "agent.yaml")
+
+			if !tt.noFile {
+				if err := os.WriteFile(
+					yamlPath, []byte(tt.yaml), 0600,
+				); err != nil {
+					t.Fatalf("failed to write agent.yaml: %v", err)
+				}
+			}
+
+			got, err := protocolFromAgentYaml(yamlPath)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected error containing %q, got nil",
+						tt.errContain)
+				}
+				if !strings.Contains(err.Error(), tt.errContain) {
+					t.Errorf("error = %q, want substring %q",
+						err.Error(), tt.errContain)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if string(got) != tt.wantProto {
+				t.Errorf("protocol = %q, want %q", got, tt.wantProto)
 			}
 		})
 	}

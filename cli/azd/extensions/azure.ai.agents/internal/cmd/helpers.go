@@ -698,6 +698,15 @@ func resolveAgentProtocol(
 	agentYamlPath := filepath.Join(
 		project.Path, svc.RelativePath, "agent.yaml",
 	)
+	return protocolFromAgentYaml(agentYamlPath)
+}
+
+// protocolFromAgentYaml reads and parses the agent.yaml file at the given path
+// and extracts the protocol. Returns an error with a contextual suggestion when
+// the file cannot be read, parsed, or does not declare exactly one protocol.
+func protocolFromAgentYaml(
+	agentYamlPath string,
+) (agent_api.AgentProtocol, error) {
 	data, err := os.ReadFile(agentYamlPath) //nolint:gosec // G304: path constructed from azd project root
 	if err != nil {
 		return "", exterrors.Validation(
@@ -730,9 +739,16 @@ func resolveAgentProtocol(
 			"add a protocols section to agent.yaml",
 		)
 	case 1:
-		return agent_api.AgentProtocol(
-			hosted.Protocols[0].Protocol,
-		), nil
+		p := strings.TrimSpace(hosted.Protocols[0].Protocol)
+		if p == "" {
+			return "", exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"agent.yaml declares a protocol entry, "+
+					"but its protocol field is empty",
+				"set a non-empty protocol value in agent.yaml",
+			)
+		}
+		return agent_api.AgentProtocol(p), nil
 	default:
 		names := make([]string, len(hosted.Protocols))
 		for i, p := range hosted.Protocols {

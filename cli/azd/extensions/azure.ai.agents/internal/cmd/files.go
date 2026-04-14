@@ -401,7 +401,7 @@ func newFilesListCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "list [remote-path]",
 		Aliases: []string{"ls"},
-		Short: "List files in a hosted agent session.",
+		Short:   "List files in a hosted agent session.",
 		Long: `List files in a hosted agent session.
 
 Lists files and directories at the specified path in the session's filesystem.

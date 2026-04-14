@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -333,6 +334,138 @@ func TestAppendFoundryEnvVars(t *testing.T) {
 		}
 		if !slices.Contains(env, "FOUNDRY_AGENT_VERSION=v2") {
 			t.Errorf("expected FOUNDRY_AGENT_VERSION to be translated, got %v", env)
+		}
+	})
+}
+
+func TestDotnetProjectSetsAspnetcoreUrls(t *testing.T) {
+	t.Parallel()
+
+	t.Run("dotnet project includes ASPNETCORE_URLS", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		// Create a .csproj file so detectProjectType returns "dotnet"
+		if err := os.WriteFile(
+			filepath.Join(dir, "MyAgent.csproj"),
+			[]byte("<Project/>"),
+			0600,
+		); err != nil {
+			t.Fatal(err)
+		}
+
+		pt := detectProjectType(dir)
+		if pt.Language != "dotnet" {
+			t.Fatalf("expected dotnet, got %s", pt.Language)
+		}
+
+		port := 8088
+		var env []string
+		env = append(env, fmt.Sprintf("PORT=%d", port))
+		if pt.Language == "dotnet" {
+			env = append(env, fmt.Sprintf("ASPNETCORE_URLS=http://localhost:%d", port))
+		}
+
+		if !slices.Contains(env, "PORT=8088") {
+			t.Errorf("expected PORT=8088 in env, got %v", env)
+		}
+		if !slices.Contains(env, "ASPNETCORE_URLS=http://localhost:8088") {
+			t.Errorf("expected ASPNETCORE_URLS=http://localhost:8088 in env, got %v", env)
+		}
+	})
+
+	t.Run("python project does not include ASPNETCORE_URLS", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		if err := os.WriteFile(
+			filepath.Join(dir, "requirements.txt"),
+			[]byte("flask"),
+			0600,
+		); err != nil {
+			t.Fatal(err)
+		}
+
+		pt := detectProjectType(dir)
+		if pt.Language != "python" {
+			t.Fatalf("expected python, got %s", pt.Language)
+		}
+
+		port := 8088
+		var env []string
+		env = append(env, fmt.Sprintf("PORT=%d", port))
+		if pt.Language == "dotnet" {
+			env = append(env, fmt.Sprintf("ASPNETCORE_URLS=http://localhost:%d", port))
+		}
+
+		if !slices.Contains(env, "PORT=8088") {
+			t.Errorf("expected PORT=8088 in env, got %v", env)
+		}
+		for _, entry := range env {
+			if strings.HasPrefix(entry, "ASPNETCORE_URLS=") {
+				t.Errorf("ASPNETCORE_URLS should not be set for python projects, got %v", env)
+			}
+		}
+	})
+
+	t.Run("node project does not include ASPNETCORE_URLS", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		if err := os.WriteFile(
+			filepath.Join(dir, "package.json"),
+			[]byte("{}"),
+			0600,
+		); err != nil {
+			t.Fatal(err)
+		}
+
+		pt := detectProjectType(dir)
+		if pt.Language != "node" {
+			t.Fatalf("expected node, got %s", pt.Language)
+		}
+
+		port := 9090
+		var env []string
+		env = append(env, fmt.Sprintf("PORT=%d", port))
+		if pt.Language == "dotnet" {
+			env = append(env, fmt.Sprintf("ASPNETCORE_URLS=http://localhost:%d", port))
+		}
+
+		if !slices.Contains(env, "PORT=9090") {
+			t.Errorf("expected PORT=9090 in env, got %v", env)
+		}
+		for _, entry := range env {
+			if strings.HasPrefix(entry, "ASPNETCORE_URLS=") {
+				t.Errorf("ASPNETCORE_URLS should not be set for node projects, got %v", env)
+			}
+		}
+	})
+
+	t.Run("dotnet project respects custom port", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		if err := os.WriteFile(
+			filepath.Join(dir, "MyAgent.csproj"),
+			[]byte("<Project/>"),
+			0600,
+		); err != nil {
+			t.Fatal(err)
+		}
+
+		pt := detectProjectType(dir)
+		port := 3000
+		var env []string
+		env = append(env, fmt.Sprintf("PORT=%d", port))
+		if pt.Language == "dotnet" {
+			env = append(env, fmt.Sprintf("ASPNETCORE_URLS=http://localhost:%d", port))
+		}
+
+		if !slices.Contains(env, "PORT=3000") {
+			t.Errorf("expected PORT=3000 in env, got %v", env)
+		}
+		if !slices.Contains(env, "ASPNETCORE_URLS=http://localhost:3000") {
+			t.Errorf(
+				"expected ASPNETCORE_URLS=http://localhost:3000 in env, got %v",
+				env,
+			)
 		}
 	})
 }

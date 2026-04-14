@@ -89,6 +89,10 @@ func runRun(ctx context.Context, flags *runFlags) error {
 	}
 	projectDir := runCtx.ProjectDir
 
+	// Detect project type early — used for both start-command resolution and
+	// environment setup (e.g., setting ASPNETCORE_URLS for .NET).
+	pt := detectProjectType(projectDir)
+
 	// Resolve start command: --start-command flag > azure.yaml startupCommand > detect
 	startCmd := flags.startCommand
 	if startCmd == "" {
@@ -96,7 +100,6 @@ func runRun(ctx context.Context, flags *runFlags) error {
 	}
 
 	if startCmd == "" {
-		pt := detectProjectType(projectDir)
 		if pt.StartCmd != "" {
 			startCmd = pt.StartCmd
 			fmt.Printf("Detected %s project. Start command: %s\n", pt.Language, startCmd)
@@ -136,6 +139,12 @@ func runRun(ctx context.Context, flags *runFlags) error {
 
 	env := os.Environ()
 	env = append(env, fmt.Sprintf("PORT=%d", flags.port))
+
+	// ASP.NET Core ignores the PORT env var — it uses ASPNETCORE_URLS to configure
+	// Kestrel's listening address. Set it so .NET agents bind to the correct port.
+	if pt.Language == "dotnet" {
+		env = append(env, fmt.Sprintf("ASPNETCORE_URLS=http://localhost:%d", flags.port))
+	}
 
 	// Load azd environment variables (e.g., AZURE_AI_PROJECT_ENDPOINT)
 	// so the agent can reach Azure services during local development.

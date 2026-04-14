@@ -1,6 +1,11 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+// Tests for conversion helper functions. Additional test coverage for
+// ProvisioningService (gRPC registration flow), ProvisioningManager (handler
+// dispatch, multi-provider routing), and ProvisioningEnvelope (message
+// marshaling) is tracked in GitHub issue #7480.
+
 package grpcserver
 
 import (

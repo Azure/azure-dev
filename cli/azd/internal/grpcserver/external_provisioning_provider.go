@@ -44,6 +44,10 @@ func (p *ExternalProvisioningProvider) Name() string {
 }
 
 // Initialize initializes the provider with project path and options.
+// Note: projectPath validation (path traversal, absolute path checks) is not
+// performed here — this matches the existing pattern in service targets and
+// framework services. Path validation should be addressed holistically across
+// all extension provider types.
 func (p *ExternalProvisioningProvider) Initialize(
 	ctx context.Context,
 	projectPath string,
@@ -351,6 +355,9 @@ func convertFromProtoStateResult(
 	}
 
 	for k, v := range result.State.Outputs {
+		if v == nil {
+			continue
+		}
 		state.Outputs[k] = provisioning.OutputParameter{
 			Type:  provisioning.ParameterType(v.Type),
 			Value: v.Value,
@@ -358,6 +365,9 @@ func convertFromProtoStateResult(
 	}
 
 	for _, r := range result.State.Resources {
+		if r == nil {
+			continue
+		}
 		state.Resources = append(state.Resources, provisioning.Resource{Id: r.Id})
 	}
 
@@ -382,6 +392,9 @@ func convertFromProtoDeployResult(
 		}
 
 		for k, v := range result.Deployment.Parameters {
+			if v == nil {
+				continue
+			}
 			param := provisioning.InputParameter{
 				Type:  v.Type,
 				Value: v.Value,
@@ -393,6 +406,9 @@ func convertFromProtoDeployResult(
 		}
 
 		for k, v := range result.Deployment.Outputs {
+			if v == nil {
+				continue
+			}
 			deployment.Outputs[k] = provisioning.OutputParameter{
 				Type:  provisioning.ParameterType(v.Type),
 				Value: v.Value,

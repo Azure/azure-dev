@@ -51,6 +51,10 @@ message RegisterProvisioningProviderResponse {}
 
 // --- Initialize ---
 
+// ProvisioningInitializeRequest does not include a separate provider_name field.
+// provider_name is extracted from ProvisioningOptions.provider because Initialize
+// is the first call and Options always contains the provider identity. This
+// matches how the core Manager.newProvider() resolves by Options.Provider.
 message ProvisioningInitializeRequest {
   string project_path = 1;
   ProvisioningOptions options = 2;

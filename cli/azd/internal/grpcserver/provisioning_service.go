@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"slices"
 	"strings"
 	"sync"
 
@@ -92,7 +93,10 @@ func (s *ProvisioningService) Stream(
 
 	// Run the broker dispatcher (blocking)
 	if err := broker.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
-		log.Printf("Broker error for providers %v: %v", registeredProviderNames, err)
+		registeredMu.Lock()
+		names := slices.Clone(registeredProviderNames)
+		registeredMu.Unlock()
+		log.Printf("Broker error for providers %v: %v", names, err)
 		return fmt.Errorf("broker error: %w", err)
 	}
 

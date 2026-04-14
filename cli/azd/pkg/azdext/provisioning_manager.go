@@ -15,6 +15,11 @@ import (
 )
 
 // ProvisioningProvider defines the interface for provisioning logic on the extension side.
+//
+// Note: Deploy, Preview, and Destroy include a progress callback parameter that the core
+// provisioning.Provider interface does not have. This is intentional — extension providers
+// use in-band progress streaming via the gRPC broker, while core providers report progress
+// through separate channels managed by the provisioning Manager.
 type ProvisioningProvider interface {
 	Initialize(ctx context.Context, projectPath string, options *ProvisioningOptions) error
 	State(ctx context.Context, options *ProvisioningStateOptions) (*ProvisioningStateResult, error)
@@ -30,12 +35,16 @@ type ProvisioningProvider interface {
 	PlannedOutputs(ctx context.Context) ([]*ProvisioningPlannedOutput, error)
 }
 
-// ProvisioningProviderFactory describes a function that creates a provisioning provider instance.
+// ProvisioningProviderFactory creates a new ProvisioningProvider instance.
 type ProvisioningProviderFactory func() ProvisioningProvider
 
-// ProvisioningManager handles registration and provisioning request forwarding for multiple providers.
-// It stores a factory map (providerName → factory) and an instance map (providerName → initialized provider),
-// following the same two-map pattern used by ComponentManager for service targets.
+// ProvisioningManager manages provisioning provider instances using a two-map
+// pattern (factories + instances). Unlike ServiceTargetManager which delegates
+// to ComponentManager[T], ProvisioningManager uses direct maps because
+// ProvisioningProvider.Initialize() has a different signature (projectPath +
+// ProvisioningOptions) than ComponentManager's Provider interface
+// (ServiceConfig). The routing key is provider name (from ProvisioningOptions.Provider)
+// rather than service config host.
 type ProvisioningManager struct {
 	extensionId  string
 	client       *AzdClient
@@ -77,7 +86,7 @@ func (m *ProvisioningManager) Close() error {
 		m.broker = nil
 	}
 
-	// Clear all instances
+	clear(m.factories)
 	clear(m.instances)
 
 	return nil
@@ -112,32 +121,33 @@ func (m *ProvisioningManager) ensureStream(ctx context.Context) error {
 	envelope := &ProvisioningEnvelope{}
 	m.broker = grpcbroker.NewMessageBroker(stream, envelope, m.extensionId, m.brokerLogger)
 
-	// Register handlers for incoming requests
-	if err := m.broker.On(m.onInitialize); err != nil {
-		return fmt.Errorf("failed to register initialize handler: %w", err)
-	}
-	if err := m.broker.On(m.onState); err != nil {
-		return fmt.Errorf("failed to register state handler: %w", err)
-	}
-	if err := m.broker.On(m.onDeploy); err != nil {
-		return fmt.Errorf("failed to register deploy handler: %w", err)
-	}
-	if err := m.broker.On(m.onPreview); err != nil {
-		return fmt.Errorf("failed to register preview handler: %w", err)
-	}
-	if err := m.broker.On(m.onDestroy); err != nil {
-		return fmt.Errorf("failed to register destroy handler: %w", err)
-	}
-	if err := m.broker.On(m.onEnsureEnv); err != nil {
-		return fmt.Errorf("failed to register ensure env handler: %w", err)
-	}
-	if err := m.broker.On(m.onParameters); err != nil {
-		return fmt.Errorf("failed to register parameters handler: %w", err)
-	}
-	if err := m.broker.On(m.onPlannedOutputs); err != nil {
-		return fmt.Errorf("failed to register planned outputs handler: %w", err)
+	// Register handlers for incoming requests; clean up broker on failure
+	if err := m.registerHandlers(); err != nil {
+		m.broker.Close()
+		m.broker = nil
+		return fmt.Errorf("failed to register provisioning handlers: %w", err)
 	}
 
+	return nil
+}
+
+// registerHandlers registers all provisioning message handlers with the broker.
+func (m *ProvisioningManager) registerHandlers() error {
+	handlers := []any{
+		m.onInitialize,
+		m.onState,
+		m.onDeploy,
+		m.onPreview,
+		m.onDestroy,
+		m.onEnsureEnv,
+		m.onParameters,
+		m.onPlannedOutputs,
+	}
+	for _, h := range handlers {
+		if err := m.broker.On(h); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -154,21 +164,21 @@ func (m *ProvisioningManager) Register(
 	}
 
 	if err := m.ensureStream(ctx); err != nil {
-		return err
+		return fmt.Errorf("failed to ensure provisioning stream for registration: %w", err)
 	}
 
-	// Store factory — reject duplicates
-	m.mu.Lock()
+	// Check for duplicate BEFORE sending
+	m.mu.RLock()
 	if _, exists := m.factories[providerName]; exists {
-		m.mu.Unlock()
+		m.mu.RUnlock()
 		return fmt.Errorf(
 			"provisioning provider '%s' already registered",
 			providerName,
 		)
 	}
-	m.factories[providerName] = factory
-	m.mu.Unlock()
+	m.mu.RUnlock()
 
+	// Send registration to server
 	registerReq := &ProvisioningMessage{
 		RequestId: uuid.NewString(),
 		MessageType: &ProvisioningMessage_RegisterProvisioningProviderRequest{
@@ -185,6 +195,10 @@ func (m *ProvisioningManager) Register(
 		)
 	}
 
+	if resp == nil {
+		return fmt.Errorf("provisioning provider registration: received nil response")
+	}
+
 	if resp.GetRegisterProvisioningProviderResponse() == nil {
 		return fmt.Errorf(
 			"expected RegisterProvisioningProviderResponse, got %T",
@@ -192,13 +206,18 @@ func (m *ProvisioningManager) Register(
 		)
 	}
 
+	// Store factory ONLY after successful registration
+	m.mu.Lock()
+	m.factories[providerName] = factory
+	m.mu.Unlock()
+
 	return nil
 }
 
 // Receive starts the broker's message dispatcher and blocks until the stream completes.
 func (m *ProvisioningManager) Receive(ctx context.Context) error {
 	if err := m.ensureStream(ctx); err != nil {
-		return err
+		return fmt.Errorf("failed to ensure provisioning stream for receiving: %w", err)
 	}
 
 	return m.broker.Run(ctx)
@@ -207,7 +226,7 @@ func (m *ProvisioningManager) Receive(ctx context.Context) error {
 // Ready blocks until the message broker starts receiving messages or the context is cancelled.
 func (m *ProvisioningManager) Ready(ctx context.Context) error {
 	if err := m.ensureStream(ctx); err != nil {
-		return err
+		return fmt.Errorf("failed to ensure provisioning stream for readiness check: %w", err)
 	}
 
 	return m.broker.Ready(ctx)
@@ -280,7 +299,11 @@ func (m *ProvisioningManager) getProvider(
 	return instance, nil
 }
 
-// onInitialize handles initialization requests from the server
+// onInitialize handles initialization requests from the server.
+// provider_name is extracted from ProvisioningOptions.provider (not a separate
+// field) because Initialize is the first call and Options always contains the
+// provider identity. This matches how the core Manager.newProvider() resolves
+// by Options.Provider.
 func (m *ProvisioningManager) onInitialize(
 	ctx context.Context,
 	req *ProvisioningInitializeRequest,

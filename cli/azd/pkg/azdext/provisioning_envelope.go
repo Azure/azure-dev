@@ -16,7 +16,7 @@ type ProvisioningEnvelope struct{}
 
 // NewProvisioningEnvelope creates a new ProvisioningEnvelope instance.
 func NewProvisioningEnvelope() *ProvisioningEnvelope {
-	return &ProvisioningEnvelope{}
+	return new(ProvisioningEnvelope)
 }
 
 // Verify interface implementation at compile time

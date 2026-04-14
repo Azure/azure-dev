@@ -92,12 +92,12 @@ func TestRegisteredChecks_RunInOrder(t *testing.T) {
 		Fn: func(
 			ctx context.Context,
 			valCtx *validationContext,
-		) (*PreflightCheckResult, error) {
-			return &PreflightCheckResult{
+		) ([]PreflightCheckResult, error) {
+			return []PreflightCheckResult{{
 				Severity:     PreflightCheckWarning,
 				DiagnosticID: "warning_diag",
 				Message:      "this is a warning",
-			}, nil
+			}}, nil
 		},
 	})
 
@@ -107,7 +107,7 @@ func TestRegisteredChecks_RunInOrder(t *testing.T) {
 		Fn: func(
 			ctx context.Context,
 			valCtx *validationContext,
-		) (*PreflightCheckResult, error) {
+		) ([]PreflightCheckResult, error) {
 			return nil, nil
 		},
 	})
@@ -118,22 +118,20 @@ func TestRegisteredChecks_RunInOrder(t *testing.T) {
 		Fn: func(
 			ctx context.Context,
 			valCtx *validationContext,
-		) (*PreflightCheckResult, error) {
-			return &PreflightCheckResult{
+		) ([]PreflightCheckResult, error) {
+			return []PreflightCheckResult{{
 				Severity:     PreflightCheckError,
 				DiagnosticID: "error_diag",
 				Message:      "this is an error",
-			}, nil
+			}}, nil
 		},
 	})
 
 	var results []PreflightCheckResult
 	for _, check := range checks {
-		result, err := check.Fn(t.Context(), valCtx)
+		checkResults, err := check.Fn(t.Context(), valCtx)
 		require.NoError(t, err)
-		if result != nil {
-			results = append(results, *result)
-		}
+		results = append(results, checkResults...)
 	}
 
 	require.Len(t, results, 2)
@@ -152,19 +150,19 @@ func TestPreflightCheck_DiagnosticIDPropagation(t *testing.T) {
 
 	check := PreflightCheck{
 		RuleID: "test_rule",
-		Fn: func(ctx context.Context, valCtx *validationContext) (*PreflightCheckResult, error) {
-			return &PreflightCheckResult{
+		Fn: func(ctx context.Context, valCtx *validationContext) ([]PreflightCheckResult, error) {
+			return []PreflightCheckResult{{
 				Severity:     PreflightCheckWarning,
 				DiagnosticID: "test_diagnostic_id",
 				Message:      "test message",
-			}, nil
+			}}, nil
 		},
 	}
 
-	result, err := check.Fn(t.Context(), valCtx)
+	results, err := check.Fn(t.Context(), valCtx)
 	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.Equal(t, "test_diagnostic_id", result.DiagnosticID)
+	require.Len(t, results, 1)
+	require.Equal(t, "test_diagnostic_id", results[0].DiagnosticID)
 	require.Equal(t, "test_rule", check.RuleID)
 }
 
@@ -172,7 +170,7 @@ func TestPreflightCheck_AddCheckStoresRuleID(t *testing.T) {
 	preflight := &localArmPreflight{}
 	preflight.AddCheck(PreflightCheck{
 		RuleID: "failing_rule",
-		Fn: func(ctx context.Context, valCtx *validationContext) (*PreflightCheckResult, error) {
+		Fn: func(ctx context.Context, valCtx *validationContext) ([]PreflightCheckResult, error) {
 			return nil, fmt.Errorf("something went wrong")
 		},
 	})

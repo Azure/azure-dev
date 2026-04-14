@@ -282,7 +282,7 @@ azd update --channel daily
 ? Switch from daily channel (1.24.0-beta.1-daily.5935787) to stable channel (1.23.6)? [Y/n]
 ```
 
-If the user declines, the command prints "Channel switch cancelled." (no SUCCESS banner) and exits without modifying config or downloading anything. The channel config is only persisted after confirmation.
+If the user declines, the command prints "Channel switch cancelled." (no SUCCESS banner) and exits without modifying config or downloading anything. The channel config is only persisted after a successful update. If the update succeeds but the channel config save fails, a warning is shown with a remediation command (`azd config set updates.channel <channel>`) — the update itself is not rolled back.
 
 #### Cross Install Method
 
@@ -290,7 +290,7 @@ Switching between a package manager and direct installs is **not supported** via
 
 | Scenario | Guidance |
 |----------|----------|
-| Package manager → daily | Show: "Daily builds aren't available via {brew/winget/choco}. Uninstall with `{uninstall command}`, then install daily with the platform-appropriate daily install command (`install-azd.ps1` on Windows, `install-azd.sh` on Linux/macOS)" |
+| Package manager → daily | Show: "Daily builds aren't available via {winget/choco}. Uninstall with `{uninstall command}`, then install daily with the platform-appropriate daily install command (`install-azd.ps1` on Windows, `install-azd.sh` on Linux/macOS)" |
 | Script/daily → package manager | Show: "To switch to {brew/winget/choco}, first uninstall the current version, then install via your package manager." |
 
 This avoids the silent symlink overwrite problem that exists today with conflicting install methods.

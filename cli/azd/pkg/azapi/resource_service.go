@@ -319,6 +319,30 @@ func (rs *ResourceService) DeleteResourceGroup(ctx context.Context, subscription
 	return nil
 }
 
+// GetResourceGroup retrieves a single resource group by name, returning its metadata
+// including location.
+func (rs *ResourceService) GetResourceGroup(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroupName string,
+) (*ResourceGroup, error) {
+	client, err := rs.createResourceGroupClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.Get(ctx, resourceGroupName, nil)
+	if err != nil {
+		return nil, fmt.Errorf("getting resource group %q in subscription %q: %w", resourceGroupName, subscriptionId, err)
+	}
+
+	return &ResourceGroup{
+		Id:       convert.ToValueWithDefault(resp.ID, ""),
+		Name:     convert.ToValueWithDefault(resp.Name, ""),
+		Location: convert.ToValueWithDefault(resp.Location, ""),
+	}, nil
+}
+
 func (rs *ResourceService) createResourcesClient(ctx context.Context, subscriptionId string) (*armresources.Client, error) {
 	credential, err := rs.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
 	if err != nil {

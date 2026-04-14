@@ -128,13 +128,13 @@ func LoadUpdateConfig(cfg config.Config) *UpdateConfig {
 	return uc
 }
 
-// SaveChannel persists the channel to user config.
-func SaveChannel(cfg config.Config, channel Channel) error {
+// SetChannel persists the channel to user config.
+func SetChannel(cfg config.Config, channel Channel) error {
 	return cfg.Set(configKeyChannel, string(channel))
 }
 
-// SaveAutoUpdate persists the auto-update setting to user config.
-func SaveAutoUpdate(cfg config.Config, enabled bool) error {
+// SetAutoUpdate persists the auto-update setting to user config.
+func SetAutoUpdate(cfg config.Config, enabled bool) error {
 	value := "off"
 	if enabled {
 		value = "on"
@@ -142,8 +142,8 @@ func SaveAutoUpdate(cfg config.Config, enabled bool) error {
 	return cfg.Set(configKeyAutoUpdate, value)
 }
 
-// SaveCheckIntervalHours persists the check interval to user config.
-func SaveCheckIntervalHours(cfg config.Config, hours int) error {
+// SetCheckIntervalHours persists the check interval to user config.
+func SetCheckIntervalHours(cfg config.Config, hours int) error {
 	return cfg.Set(configKeyCheckIntervalHours, hours)
 }
 

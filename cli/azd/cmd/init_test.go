@@ -344,7 +344,9 @@ func TestInitResolveTargetDirectory(t *testing.T) {
 			templatePath: "owner/repo",
 			global:       &internal.GlobalCommandOptions{},
 		}
-		action := setupInitAction(t, mockContext, flags, "/some/absolute/path")
+		// Use a platform-appropriate absolute path so the test works on Windows too.
+		absPath := filepath.Join(os.TempDir(), "some", "absolute", "path")
+		action := setupInitAction(t, mockContext, flags, absPath)
 
 		wd, err := os.Getwd()
 		require.NoError(t, err)

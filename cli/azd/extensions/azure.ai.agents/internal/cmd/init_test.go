@@ -1023,7 +1023,7 @@ func TestCheckNotDirectory_NoSuggestionForAgentDefinition(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	// An AgentDefinition has "kind" at root but no "template" ╬ô├ç├╢ should NOT
+	// An AgentDefinition has "kind" at root but no "template" — should NOT
 	// be suggested as a manifest file.
 	defContent := "kind: hosted\nname: my-agent\n"
 	//nolint:gosec // test fixture file permissions are intentional
@@ -1388,7 +1388,7 @@ func TestApplyPositionalArg_NonExistentYamlSetsManifest(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// validateRenameInput (covers PR review ╬ô├ç├╢ input validation for user-provided
+// validateRenameInput (covers PR review - input validation for user-provided
 // rename names in resolveCollisions)
 // ---------------------------------------------------------------------------
 
@@ -1494,7 +1494,7 @@ func TestValidateRenameInput(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// buildCollisionMessage (covers PR review ╬ô├ç├╢ tailored collision messages)
+// buildCollisionMessage (covers PR review - tailored collision messages)
 // ---------------------------------------------------------------------------
 
 func TestBuildCollisionMessage(t *testing.T) {
@@ -1557,7 +1557,7 @@ func TestBuildCollisionMessage(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// nextAvailableName (covers PR review ╬ô├ç├╢ collision-resolution naming logic)
+// nextAvailableName (covers PR review - collision-resolution naming logic)
 // ---------------------------------------------------------------------------
 
 func TestNextAvailableName(t *testing.T) {
@@ -1653,8 +1653,8 @@ func TestNextAvailableName(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// resolveCollisions ╬ô├ç├╢ no collision / no-prompt paths
-// (covers PR review ╬ô├ç├╢ collision resolution unit tests)
+// resolveCollisions — no collision / no-prompt paths
+// (covers PR review — collision resolution unit tests)
 // ---------------------------------------------------------------------------
 
 func TestResolveCollisions_NoCollision(t *testing.T) {

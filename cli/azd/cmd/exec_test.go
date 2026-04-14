@@ -144,8 +144,9 @@ func TestExecAction_ResolvesSecretReferences(t *testing.T) {
 func TestExecAction_SecretResolutionFailure(t *testing.T) {
 	const secretKey = "AZD_TEST_EXEC_SECRET_FAIL" //nolint:gosec // G101: test constant, not a credential
 
+	secretRef := "akvs://sub-id/vault-name/secret-name" //nolint:gosec // G101: test fixture, not a credential
 	env := environment.NewWithValues("test", map[string]string{
-		secretKey: "akvs://sub-id/vault-name/secret-name", //nolint:gosec // G101: test fixture, not a credential
+		secretKey: secretRef,
 	})
 
 	kvMock := &mockExecKeyVaultService{

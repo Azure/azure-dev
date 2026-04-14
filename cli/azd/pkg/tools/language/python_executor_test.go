@@ -800,6 +800,61 @@ func TestPythonPrepare_VirtualEnvNameConfig(t *testing.T) {
 	}
 }
 
+// TestPythonPrepare_ConfigOverridesDetectedVenv verifies that
+// an explicit virtualEnvName in the hook config takes priority
+// over a pre-existing .venv directory detected on disk.
+func TestPythonPrepare_ConfigOverridesDetectedVenv(t *testing.T) {
+	root := t.TempDir()
+	projectDir := filepath.Join(root, "myproject")
+	hooksDir := filepath.Join(projectDir, "hooks")
+	require.NoError(t, os.MkdirAll(hooksDir, 0o700))
+	writeFile(t,
+		filepath.Join(projectDir, "requirements.txt"),
+		"flask\n",
+	)
+
+	// Create a .venv directory with pyvenv.cfg — this
+	// would normally be auto-detected and used.
+	dotVenv := filepath.Join(projectDir, ".venv")
+	require.NoError(t, os.MkdirAll(dotVenv, 0o700))
+	writeFile(t,
+		filepath.Join(dotVenv, "pyvenv.cfg"),
+		"home = /usr/bin\n",
+	)
+
+	cli := &mockPythonTools{}
+	e := newPythonExecutorInternal(
+		&mockCommandRunner{}, cli,
+	)
+
+	// Config explicitly asks for "custom_env".
+	execCtx := tools.ExecutionContext{
+		BoundaryDir: root,
+		Config: map[string]any{
+			"virtualEnvName": "custom_env",
+		},
+	}
+	scriptPath := filepath.Join(hooksDir, "deploy.py")
+	err := e.Prepare(t.Context(), scriptPath, execCtx)
+
+	require.NoError(t, err)
+
+	// Config should win — EnsureVirtualEnv is called with
+	// the config-specified name, not the detected ".venv".
+	assert.True(t, cli.ensureVenvCalled,
+		"should create/ensure the config-specified venv")
+	assert.Equal(t, "custom_env", cli.ensureVenvName,
+		"should use config virtualEnvName, not detected .venv")
+
+	assert.True(t, cli.installDepsCalled)
+	assert.Equal(t, "custom_env", cli.depsVenv)
+	assert.Equal(t, "requirements.txt", cli.depsFile)
+
+	expectedPath := filepath.Join(projectDir, "custom_env")
+	assert.Equal(t, expectedPath, e.venvPath,
+		"venvPath should reflect the config-specified name")
+}
+
 func TestValidateVenvName(t *testing.T) {
 	tests := []struct {
 		name    string

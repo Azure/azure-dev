@@ -914,6 +914,11 @@
                                 "required": [
                                     "dir"
                                 ]
+                            },
+                            {
+                                "required": [
+                                    "config"
+                                ]
                             }
                         ]
                     },

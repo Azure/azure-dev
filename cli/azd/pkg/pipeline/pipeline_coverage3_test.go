@@ -1974,7 +1974,23 @@ func Test_parseAzDoRemote_nonStandardHost(t *testing.T) {
 func Test_GitHubCiProvider_credentialOptions_branchSpecialChars(t *testing.T) {
 	t.Parallel()
 
-	provider := &GitHubCiProvider{}
+	mockContext := mocks.NewMockContext(t.Context())
+	mockContext.Console.SetNoPromptMode(true)
+	mockContext.CommandRunner.When(
+		func(args exec.RunArgs, cmd string) bool {
+			return strings.Contains(cmd, "oidc/customization/sub")
+		},
+	).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		return exec.NewRunResult(1, "", "HTTP 404: Not Found"),
+			fmt.Errorf("HTTP 404: Not Found")
+	})
+
+	provider := &GitHubCiProvider{
+		ghCli: github.NewGitHubCli(
+			mockContext.Console, mockContext.CommandRunner,
+		),
+		console: mockContext.Console,
+	}
 
 	opts, err := provider.credentialOptions(t.Context(),
 		&gitRepositoryDetails{

@@ -5,14 +5,19 @@ package pipeline
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
+	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/build"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -801,11 +806,34 @@ func Test_servicePrincipal(t *testing.T) {
 // ------------------------------------------------------------------
 
 func Test_GitHubCiProvider_credentialOptions(t *testing.T) {
-	ctx := t.Context()
-	provider := &GitHubCiProvider{}
+	// Helper to create a provider with mocked OIDC API returning default
+	newProvider := func(t *testing.T) *GitHubCiProvider {
+		t.Helper()
+		mockContext := mocks.NewMockContext(t.Context())
+		mockContext.Console.SetNoPromptMode(true)
+
+		// Mock OIDC API to return default config for any repo
+		mockContext.CommandRunner.When(
+			func(args exec.RunArgs, cmd string) bool {
+				return strings.Contains(cmd, "oidc/customization/sub")
+			},
+		).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+			return exec.NewRunResult(1, "", "HTTP 404: Not Found"),
+				fmt.Errorf("HTTP 404: Not Found")
+		})
+
+		return &GitHubCiProvider{
+			ghCli: github.NewGitHubCli(
+				mockContext.Console,
+				mockContext.CommandRunner,
+			),
+			console: mockContext.Console,
+		}
+	}
 
 	t.Run("client-credentials auth", func(t *testing.T) {
-		opts, err := provider.credentialOptions(ctx,
+		provider := newProvider(t)
+		opts, err := provider.credentialOptions(t.Context(),
 			&gitRepositoryDetails{
 				owner:    "Azure",
 				repoName: "azure-dev",
@@ -820,7 +848,8 @@ func Test_GitHubCiProvider_credentialOptions(t *testing.T) {
 	})
 
 	t.Run("federated auth creates credentials", func(t *testing.T) {
-		opts, err := provider.credentialOptions(ctx,
+		provider := newProvider(t)
+		opts, err := provider.credentialOptions(t.Context(),
 			&gitRepositoryDetails{
 				owner:    "Azure",
 				repoName: "azure-dev",
@@ -843,7 +872,8 @@ func Test_GitHubCiProvider_credentialOptions(t *testing.T) {
 	t.Run(
 		"federated on main branch - no duplicate",
 		func(t *testing.T) {
-			opts, err := provider.credentialOptions(ctx,
+			provider := newProvider(t)
+			opts, err := provider.credentialOptions(t.Context(),
 				&gitRepositoryDetails{
 					owner:    "Azure",
 					repoName: "azure-dev",
@@ -859,7 +889,8 @@ func Test_GitHubCiProvider_credentialOptions(t *testing.T) {
 
 	t.Run("empty auth type defaults to federated",
 		func(t *testing.T) {
-			opts, err := provider.credentialOptions(ctx,
+			provider := newProvider(t)
+			opts, err := provider.credentialOptions(t.Context(),
 				&gitRepositoryDetails{
 					owner:    "Azure",
 					repoName: "azure-dev",
@@ -876,7 +907,8 @@ func Test_GitHubCiProvider_credentialOptions(t *testing.T) {
 	t.Run(
 		"unknown auth type returns empty options",
 		func(t *testing.T) {
-			opts, err := provider.credentialOptions(ctx,
+			provider := newProvider(t)
+			opts, err := provider.credentialOptions(t.Context(),
 				&gitRepositoryDetails{
 					owner:    "Azure",
 					repoName: "azure-dev",
@@ -893,7 +925,8 @@ func Test_GitHubCiProvider_credentialOptions(t *testing.T) {
 	t.Run(
 		"federated credential names sanitized",
 		func(t *testing.T) {
-			opts, err := provider.credentialOptions(ctx,
+			provider := newProvider(t)
+			opts, err := provider.credentialOptions(t.Context(),
 				&gitRepositoryDetails{
 					owner:    "my.org",
 					repoName: "my.repo",

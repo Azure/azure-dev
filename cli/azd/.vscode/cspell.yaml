@@ -383,6 +383,9 @@ overrides:
       - unvalidated
       - venvs
       - workdir
+  - filename: pkg/tools/language/python_executor.go
+    words:
+      - venvs
   - filename: extensions/azure.ai.agents/internal/cmd/init_locations.go
     words:
       - swedencentral

@@ -85,8 +85,10 @@ extends:
                 displayName: Upload E2E results
 
               - bash: |
-                  # Clean up Azure resources created during E2E runs
-                  for group in $(az group list --query "[?starts_with(name, 'rg-eval-')].name" -o tsv); do
+                  # Clean up Azure resources created during this E2E run only.
+                  # Scope to the current build ID to avoid deleting resources from
+                  # parallel runs or local dev testing.
+                  for group in $(az group list --query "[?starts_with(name, 'rg-eval-e2e-$(Build.BuildId)')].name" -o tsv); do
                     az group delete --name "$group" --yes --no-wait 2>/dev/null || true
                   done
                 condition: always()

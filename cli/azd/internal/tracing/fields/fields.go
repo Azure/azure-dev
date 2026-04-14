@@ -351,6 +351,12 @@ var (
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
+	// The executor kind used to run the hook (e.g., "sh", "pwsh", "python", "js", "ts", "dotnet").
+	HooksKindKey = AttributeKey{
+		Key:            attribute.Key("hooks.kind"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
 )
 
 // Pipeline command related fields

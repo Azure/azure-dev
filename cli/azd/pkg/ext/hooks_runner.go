@@ -10,6 +10,9 @@ import (
 	"os"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -18,6 +21,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"go.opentelemetry.io/otel/codes"
 )
 
 // HooksRunner enables support to invoke lifecycle hooks before & after
@@ -33,8 +37,8 @@ type HooksRunner struct {
 	serviceLocator ioc.ServiceLocator
 }
 
-// NewHooks creates a new instance of CommandHooks
-// When `cwd` is empty defaults to current shell working directory
+// NewHooksRunner creates a new instance of HooksRunner.
+// When `cwd` is empty defaults to current shell working directory.
 func NewHooksRunner(
 	hooksManager *HooksManager,
 	commandRunner exec.CommandRunner,
@@ -66,9 +70,12 @@ func NewHooksRunner(
 	}
 }
 
-// Invokes an action run runs any registered pre or post script hooks for the specified command.
-func (h *HooksRunner) Invoke(ctx context.Context, commands []string, actionFn InvokeFn) error {
-	err := h.RunHooks(ctx, HookTypePre, nil, commands...)
+// Invoke runs any registered pre and post script hooks around the specified action.
+// The hookType parameter identifies the hook scope for telemetry (project, layer, or service).
+func (h *HooksRunner) Invoke(
+	ctx context.Context, commands []string, hookType string, actionFn InvokeFn,
+) error {
+	err := h.RunHooks(ctx, HookTypePre, hookType, nil, commands...)
 	if err != nil {
 		return fmt.Errorf("failed running pre hooks: %w", err)
 	}
@@ -78,7 +85,7 @@ func (h *HooksRunner) Invoke(ctx context.Context, commands []string, actionFn In
 		return err
 	}
 
-	err = h.RunHooks(ctx, HookTypePost, nil, commands...)
+	err = h.RunHooks(ctx, HookTypePost, hookType, nil, commands...)
 	if err != nil {
 		return fmt.Errorf("failed running post hooks: %w", err)
 	}
@@ -86,14 +93,16 @@ func (h *HooksRunner) Invoke(ctx context.Context, commands []string, actionFn In
 	return nil
 }
 
-// Invokes any registered script hooks for the specified hook type and command.
+// RunHooks invokes any registered script hooks for the specified hook type and command.
+// The hookType parameter identifies the hook scope for telemetry (project, layer, or service).
 func (h *HooksRunner) RunHooks(
 	ctx context.Context,
-	hookType HookType,
+	ht HookType,
+	hookType string,
 	options *tools.ExecutionContext,
 	commands ...string,
 ) error {
-	hooks, err := h.hooksManager.GetByParams(h.hooks, hookType, commands...)
+	hooks, err := h.hooksManager.GetByParams(h.hooks, ht, commands...)
 	if err != nil {
 		return fmt.Errorf("failed running scripts for hooks '%s', %w", strings.Join(commands, ","), err)
 	}
@@ -103,7 +112,7 @@ func (h *HooksRunner) RunHooks(
 			return fmt.Errorf("reloading environment before running hook: %w", err)
 		}
 
-		err := h.execHook(ctx, hookConfig, options)
+		err := h.execHook(ctx, hookConfig, hookType, options)
 		if err != nil {
 			return err
 		}
@@ -117,8 +126,24 @@ func (h *HooksRunner) RunHooks(
 }
 
 func (h *HooksRunner) execHook(
-	ctx context.Context, hookConfig *HookConfig, options *tools.ExecutionContext,
-) error {
+	ctx context.Context, hookConfig *HookConfig, hookType string, options *tools.ExecutionContext,
+) (hookErr error) {
+	// Create a child span for this hook execution so each hook
+	// gets its own correlated set of telemetry attributes.
+	ctx, span := tracing.Start(ctx, events.HooksExecEvent)
+	statusCode := ""
+	defer func() {
+		if hookErr != nil {
+			if statusCode == "" {
+				statusCode = "hook.failed"
+			}
+			span.SetStatus(codes.Error, statusCode)
+		} else {
+			span.SetStatus(codes.Ok, "")
+		}
+		span.End()
+	}()
+
 	if options == nil {
 		options = &tools.ExecutionContext{}
 	}
@@ -143,15 +168,26 @@ func (h *HooksRunner) execHook(
 			return nil
 		})
 		if err != nil {
+			statusCode = "hook.secrets_failed"
 			return err
 		}
 	}
 
+	// Set name and type on span — known before validation.
+	span.SetAttributes(
+		fields.HooksNameKey.String(hookConfig.Name),
+		fields.HooksTypeKey.String(hookType),
+	)
+
 	// validate() resolves the hook's kind, path, shell type,
 	// and computes resolvedDir / resolvedScriptPath.
 	if err := hookConfig.validate(); err != nil {
+		statusCode = "hook.validation_failed"
 		return err
 	}
+
+	span.SetAttributes(
+		fields.HooksKindKey.String(string(hookConfig.Kind)))
 
 	// Use pre-resolved paths from validate().
 	cwd := hookConfig.resolvedDir
@@ -192,6 +228,7 @@ func (h *HooksRunner) execHook(
 	// Resolve executor via IoC — hooks runner has NO knowledge of executor internals.
 	var executor tools.HookExecutor
 	if err := h.serviceLocator.ResolveNamed(string(hookConfig.Kind), &executor); err != nil {
+		statusCode = "hook.executor_not_found"
 		return &errorhandler.ErrorWithSuggestion{
 			Err: fmt.Errorf(
 				"no executor for kind '%s': %w",
@@ -230,6 +267,7 @@ func (h *HooksRunner) execHook(
 	)
 
 	if err := executor.Prepare(ctx, scriptPath, execCtx); err != nil {
+		statusCode = "hook.prepare_failed"
 		return fmt.Errorf("preparing hook '%s': %w", hookConfig.Name, err)
 	}
 
@@ -246,11 +284,12 @@ func (h *HooksRunner) execHook(
 
 	res, err := executor.Execute(ctx, scriptPath, execCtx)
 	if err != nil {
-		hookErr := h.handleHookError(
+		execErr := h.handleHookError(
 			ctx, hookConfig, res, scriptPath, err,
 		)
-		if hookErr != nil {
-			return hookErr
+		if execErr != nil {
+			statusCode = "hook.execution_failed"
+			return execErr
 		}
 	}
 

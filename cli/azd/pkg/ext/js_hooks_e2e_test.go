@@ -137,7 +137,7 @@ func TestJsHook_AutoDetectFromExtension(t *testing.T) {
 		t, mockCtx, cwd, hooksMap, env,
 	)
 	err := runner.RunHooks(
-		*mockCtx.Context, HookTypePre, nil, "deploy",
+		*mockCtx.Context, HookTypePre, "project", nil, "deploy",
 	)
 
 	require.NoError(t, err)
@@ -189,7 +189,7 @@ func TestJsHook_ExplicitKind(t *testing.T) {
 		t, mockCtx, cwd, hooksMap, env,
 	)
 	err := runner.RunHooks(
-		*mockCtx.Context, HookTypePre, nil, "deploy",
+		*mockCtx.Context, HookTypePre, "project", nil, "deploy",
 	)
 
 	require.NoError(t, err)
@@ -236,7 +236,7 @@ func TestJsHook_WithPackageJSON(t *testing.T) {
 		t, mockCtx, cwd, hooksMap, env,
 	)
 	err := runner.RunHooks(
-		*mockCtx.Context, HookTypePre, nil, "deploy",
+		*mockCtx.Context, HookTypePre, "project", nil, "deploy",
 	)
 
 	require.NoError(t, err)
@@ -279,7 +279,7 @@ func TestJsHook_NodeBinaryResolution(t *testing.T) {
 		t, mockCtx, cwd, hooksMap, env,
 	)
 	err := runner.RunHooks(
-		*mockCtx.Context, HookTypePre, nil, "deploy",
+		*mockCtx.Context, HookTypePre, "project", nil, "deploy",
 	)
 
 	require.NoError(t, err)
@@ -321,7 +321,7 @@ func TestJsHook_NonZeroExitCode(t *testing.T) {
 		t, mockCtx, cwd, hooksMap, env,
 	)
 	err := runner.RunHooks(
-		*mockCtx.Context, HookTypePre, nil, "deploy",
+		*mockCtx.Context, HookTypePre, "project", nil, "deploy",
 	)
 
 	require.Error(t, err)
@@ -364,7 +364,7 @@ func TestJsHook_ContinueOnError(t *testing.T) {
 		t, mockCtx, cwd, hooksMap, env,
 	)
 	err := runner.RunHooks(
-		*mockCtx.Context, HookTypePre, nil, "deploy",
+		*mockCtx.Context, HookTypePre, "project", nil, "deploy",
 	)
 
 	require.NoError(t, err)
@@ -408,7 +408,7 @@ func TestJsHook_ServiceLevel(t *testing.T) {
 		t, mockCtx, cwd, hooksMap, env,
 	)
 	err := runner.RunHooks(
-		*mockCtx.Context, HookTypePost, nil, "deploy",
+		*mockCtx.Context, HookTypePost, "project", nil, "deploy",
 	)
 
 	require.NoError(t, err)
@@ -454,7 +454,7 @@ func TestJsHook_EnvVarsPassthrough(t *testing.T) {
 		t, mockCtx, cwd, hooksMap, env,
 	)
 	err := runner.RunHooks(
-		*mockCtx.Context, HookTypePre, nil, "deploy",
+		*mockCtx.Context, HookTypePre, "project", nil, "deploy",
 	)
 
 	require.NoError(t, err)
@@ -519,7 +519,7 @@ func TestJsHook_NodeMissing(t *testing.T) {
 		t, mockCtx, cwd, hooksMap, env,
 	)
 	err := runner.RunHooks(
-		*mockCtx.Context, HookTypePre, nil, "deploy",
+		*mockCtx.Context, HookTypePre, "project", nil, "deploy",
 	)
 
 	require.Error(t, err)
@@ -624,7 +624,7 @@ func TestJsHook_ExecutionPipeline(t *testing.T) {
 			)
 			err := runner.RunHooks(
 				*mockCtx.Context,
-				HookTypePre, nil, "deploy",
+				HookTypePre, "project", nil, "deploy",
 			)
 
 			if tt.wantErr {
@@ -664,7 +664,7 @@ func TestJsHook_InlineScriptRejected(t *testing.T) {
 		t, mockCtx, cwd, hooksMap, env,
 	)
 	err := runner.RunHooks(
-		*mockCtx.Context, HookTypePre, nil, "deploy",
+		*mockCtx.Context, HookTypePre, "project", nil, "deploy",
 	)
 
 	require.Error(t, err)
@@ -711,7 +711,7 @@ func TestJsHook_StdoutCapture(t *testing.T) {
 		t, mockCtx, cwd, hooksMap, env,
 	)
 	err := runner.RunHooks(
-		*mockCtx.Context, HookTypePre, nil, "deploy",
+		*mockCtx.Context, HookTypePre, "project", nil, "deploy",
 	)
 	require.NoError(t, err)
 }
@@ -795,7 +795,7 @@ func TestJsHook_ShellHookUnaffected(t *testing.T) {
 
 	// Run the shell hook.
 	err := runner.RunHooks(
-		*mockCtx.Context, HookTypePre, nil, "build",
+		*mockCtx.Context, HookTypePre, "project", nil, "build",
 	)
 	require.NoError(t, err)
 	require.True(
@@ -805,7 +805,7 @@ func TestJsHook_ShellHookUnaffected(t *testing.T) {
 
 	// Run the JS hook.
 	err = runner.RunHooks(
-		*mockCtx.Context, HookTypePre, nil, "deploy",
+		*mockCtx.Context, HookTypePre, "project", nil, "deploy",
 	)
 	require.NoError(t, err)
 	require.True(
@@ -868,7 +868,7 @@ func TestJsHook_ExplicitDirOverridesCwd(t *testing.T) {
 		t, mockCtx, cwd, hooksMap, env,
 	)
 	err := runner.RunHooks(
-		*mockCtx.Context, HookTypePre, nil, "deploy",
+		*mockCtx.Context, HookTypePre, "project", nil, "deploy",
 	)
 
 	require.NoError(t, err)
@@ -916,7 +916,7 @@ func TestJsHook_ProjectLevel(t *testing.T) {
 		t, mockCtx, cwd, hooksMap, env,
 	)
 	err := runner.RunHooks(
-		*mockCtx.Context, HookTypePre, nil, "provision",
+		*mockCtx.Context, HookTypePre, "project", nil, "provision",
 	)
 
 	require.NoError(t, err)

@@ -551,7 +551,10 @@ func (p *ProvisionAction) runLayerProvisionWithHooks(
 
 	p.validateAndWarnLayerHooks(ctx, hooksManager, layer.Hooks)
 
-	if err := hooksRunner.Invoke(ctx, []string{string(project.ProjectEventProvision)}, actionFn); err != nil {
+	err := hooksRunner.Invoke(
+		ctx, []string{string(project.ProjectEventProvision)}, "layer", actionFn,
+	)
+	if err != nil {
 		if layer.Name == "" {
 			return err
 		}

@@ -115,7 +115,7 @@ func newHooksRunAction(
 type hookContextType string
 
 const (
-	hookContextProject hookContextType = "command"
+	hookContextProject hookContextType = "project"
 	hookContextLayer   hookContextType = "layer"
 	hookContextService hookContextType = "service"
 )
@@ -301,7 +301,7 @@ func (hra *hooksRunAction) processHooks(
 
 		hra.console.Message(ctx, output.WithBold("%s hook %d/%d:", contextType, idx+1, len(hooks)))
 
-		err := hra.execHook(ctx, cwd, hookType, commandName, hook)
+		err := hra.execHook(ctx, cwd, hookType, commandName, hook, contextType)
 		if err != nil {
 			return fmt.Errorf("failed running hook %s, %w", hookName, err)
 		}
@@ -322,11 +322,12 @@ func (hra *hooksRunAction) processHooks(
 func (hra *hooksRunAction) execHook(
 	ctx context.Context,
 	cwd string,
-	hookType ext.HookType,
+	ht ext.HookType,
 	commandName string,
 	hook *ext.HookConfig,
+	contextType hookContextType,
 ) error {
-	hookName := string(hookType) + commandName
+	hookName := string(ht) + commandName
 
 	hooksMap := map[string][]*ext.HookConfig{
 		hookName: {hook},
@@ -338,12 +339,20 @@ func (hra *hooksRunAction) execHook(
 	hooksRunner := ext.NewHooksRunner(
 		hooksManager, hra.commandRunner, hra.envManager, hra.console, cwd, hooksMap, hra.env, hra.serviceLocator)
 
+	hookType := "project"
+	switch contextType {
+	case hookContextLayer:
+		hookType = "layer"
+	case hookContextService:
+		hookType = "service"
+	}
+
 	// Always run in interactive mode for 'azd hooks run', to help with testing/debugging
 	runOptions := &tools.ExecutionContext{
 		Interactive: new(true),
 	}
 
-	err := hooksRunner.RunHooks(ctx, hookType, runOptions, commandName)
+	err := hooksRunner.RunHooks(ctx, ht, hookType, runOptions, commandName)
 	if err != nil {
 		return err
 	}

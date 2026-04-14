@@ -46,6 +46,12 @@ const (
 	PreflightValidationEvent = "validation.preflight"
 )
 
+// Hook execution events.
+const (
+	// HooksExecEvent tracks the execution of a lifecycle hook.
+	HooksExecEvent = "hooks.exec"
+)
+
 // AKS service target events.
 const (
 	// AksPostprovisionSkipEvent tracks when the AKS postprovision hook

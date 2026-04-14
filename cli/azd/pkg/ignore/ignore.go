@@ -6,6 +6,7 @@ package ignore
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -38,7 +39,7 @@ type Matcher struct {
 func NewMatcher(root string) (*Matcher, error) {
 	absRoot, err := filepath.Abs(root)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("resolving root path: %w", err)
 	}
 
 	m := &Matcher{root: absRoot}

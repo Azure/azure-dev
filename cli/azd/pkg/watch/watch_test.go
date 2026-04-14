@@ -354,3 +354,53 @@ func TestGetFileChanges_RenameFile(t *testing.T) {
 		return false
 	}, 2*time.Second, 50*time.Millisecond, "expected new.txt after rename")
 }
+
+func TestGetFileChanges_DeleteIgnoredDirFallback(t *testing.T) {
+	// Tests the os.Stat failure fallback: when a directory matching a dir-only
+	// ignore pattern (trailing /) is deleted, os.Stat fails and isDir defaults
+	// to false. The watcher re-checks with isDir=true so that the Remove event
+	// is still filtered by the directory-only pattern.
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	// .azdxignore uses a dir-only pattern (trailing slash).
+	err := os.WriteFile(filepath.Join(dir, ".azdxignore"), []byte("tmpout/\n"), 0600)
+	require.NoError(t, err)
+
+	// Pre-create the directory so watchRecursive skips it (ignored).
+	err = os.MkdirAll(filepath.Join(dir, "tmpout"), 0700)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	watcher, err := NewWatcher(ctx)
+	require.NoError(t, err)
+
+	// Delete the ignored directory — the parent watcher fires a Remove event.
+	// os.Stat will fail (path gone), so isDir defaults to false.
+	// Without the fallback re-check (isDir=true), this would leak through
+	// as a file deletion since "tmpout/" only matches directories.
+	err = os.RemoveAll(filepath.Join(dir, "tmpout"))
+	require.NoError(t, err)
+
+	// Write a tracked file as a positive signal.
+	err = os.WriteFile(filepath.Join(dir, "tracked.go"), []byte("package main"), 0600)
+	require.NoError(t, err)
+
+	// Verify tracked file appears and no tmpout path leaks through.
+	require.Eventually(t, func() bool {
+		changes := watcher.GetFileChanges()
+		foundTracked := false
+		for _, c := range changes {
+			if filepath.Base(c.Path) == "tmpout" {
+				return false // ignored dir leaked through — fail fast
+			}
+			if filepath.Base(c.Path) == "tracked.go" && c.ChangeType == FileCreated {
+				foundTracked = true
+			}
+		}
+		return foundTracked
+	}, 2*time.Second, 50*time.Millisecond,
+		"expected tracked.go created without tmpout directory delete leaking through")
+}

@@ -30,6 +30,19 @@ func newWatchCommand() *cobra.Command {
 	watchCmd := &cobra.Command{
 		Use:   "watch",
 		Short: "Watches the azd extension project for file changes and rebuilds it.",
+		Long: `Watches the azd extension project for file changes and rebuilds it.
+
+Place a .azdxignore file in your project root to exclude paths from triggering
+rebuilds. It uses standard gitignore syntax (https://git-scm.com/docs/gitignore).
+Patterns from .gitignore are also respected. Both files are additive — a path is
+ignored if it matches either file.
+
+Example .azdxignore:
+  dist/
+  build/
+  *.tmp
+  coverage/
+  !.vscode/launch.json`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			internal.WriteCommandHeader(
 				"Watch and azd extension (azd x watch)",

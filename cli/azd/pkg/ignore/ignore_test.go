@@ -239,3 +239,26 @@ func TestNewMatcher_BlankAndWhitespaceLines(t *testing.T) {
 	require.True(t, m.IsIgnored("temp", true))
 	require.False(t, m.IsIgnored("main.go", false))
 }
+
+func TestNewMatcher_CrossFileNegationCannotOverride(t *testing.T) {
+	dir := t.TempDir()
+
+	// .azdxignore ignores all .log files.
+	writeFile(t, dir, AzdxIgnoreFile, "*.log\n")
+	// .gitignore tries to un-ignore important.log via negation.
+	writeFile(t, dir, GitIgnoreFile, "!important.log\n")
+
+	m, err := NewMatcher(dir)
+	require.NoError(t, err)
+
+	// important.log is STILL ignored — .gitignore negation cannot override
+	// .azdxignore matches because each file is parsed independently (union semantics).
+	require.True(t, m.IsIgnored("important.log", false),
+		".gitignore negation must not un-ignore paths matched by .azdxignore")
+
+	// Regular .log files are also ignored.
+	require.True(t, m.IsIgnored("debug.log", false))
+
+	// Non-log files are unaffected.
+	require.False(t, m.IsIgnored("main.go", false))
+}

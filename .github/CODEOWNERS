@@ -11,7 +11,7 @@
 /cli/installer/                             @jongio @wbreza @danieljurek @vhvb1989 @tg-msft @rajeshkamal5050
 
 # ── CLI extensions (AI) ──────────────────────────────────────────────────────
-/cli/azd/extensions/azure.ai.agents/        @jongio @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA @tg-msft @rajeshkamal5050 @trangevi @trrwilson @therealjohn
+/cli/azd/extensions/azure.ai.agents/        @trangevi @trrwilson @therealjohn @glharper
 /cli/azd/extensions/azure.ai.finetune/      @jongio @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA @tg-msft @rajeshkamal5050 @trangevi @achauhan-scc @kingernupur @rabollin @saanikaguptamicrosoft
 /cli/azd/extensions/azure.ai.models/        @jongio @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA @tg-msft @rajeshkamal5050 @trangevi @achauhan-scc @kingernupur @rabollin @saanikaguptamicrosoft
 

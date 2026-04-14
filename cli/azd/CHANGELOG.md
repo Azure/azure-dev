@@ -10,6 +10,19 @@
 
 ### Other Changes
 
+## 1.23.16 (2026-04-14)
+
+### Features Added
+
+- [[#7652]](https://github.com/Azure/azure-dev/pull/7652) Add C#/.NET hook support in `azure.yaml`; hooks pointing to `.cs` files are auto-detected and executed using `dotnet run`, with automatic project discovery and support for single-file scripts on .NET 10+.
+- [[#7685]](https://github.com/Azure/azure-dev/pull/7685) Add `.azdignore` support for `azd init`; template authors can create a `.azdignore` file in the template root to exclude contributor-only files (e.g., `SECURITY.md`, `.github/`) from being copied to consumer projects.
+- [[#7394]](https://github.com/Azure/azure-dev/pull/7394) Add `--fail-on-prompt` global flag that immediately fails with an actionable error when any interactive prompt is encountered; azd automatically enables this when invoked from an LLM agent (Claude Code, GitHub Copilot, Cursor, etc.). Thanks @spboyer for the contribution!
+
+### Bugs Fixed
+
+- [[#7689]](https://github.com/Azure/azure-dev/pull/7689) Fix service-level hooks referencing shared scripts via relative paths (e.g., `../../hooks/script.ps1`) failing with "hook script path escapes project root"; the containment boundary is now the project root instead of the service directory (regression in 1.23.15).
+- [[#7642]](https://github.com/Azure/azure-dev/pull/7642) Fix arrow keys printing escape sequence characters (`[A`, `[B`, `[C`, `[D`) in the filter text of select and multi-select prompts when running azd in PowerShell.
+
 ## 1.23.15 (2026-04-10)
 
 ### Features Added

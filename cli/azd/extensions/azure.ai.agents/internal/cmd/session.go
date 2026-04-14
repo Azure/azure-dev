@@ -154,6 +154,7 @@ type sessionCreateFlags struct {
 
 func newSessionCreateCommand() *cobra.Command {
 	flags := &sessionCreateFlags{}
+	action := &SessionCreateAction{flags: flags}
 
 	cmd := &cobra.Command{
 		Use:   "create [agent-name] [version] [isolation-key]",
@@ -189,7 +190,7 @@ Positional arguments can be used instead of flags:
 			ctx := azdext.WithAccessToken(cmd.Context())
 			setupDebugLogging(cmd.Flags())
 
-			// Positional args fill in missing flags: [agent-name] [version] [isolation-key]
+			// Positional args fill in missing flags
 			switch len(args) {
 			case 3:
 				if flags.isolationKey == "" {
@@ -207,63 +208,7 @@ Positional arguments can be used instead of flags:
 				}
 			}
 
-			sc, err := resolveSessionContext(ctx, flags.agentName)
-			if err != nil {
-				return err
-			}
-
-			// Resolve version: flag > env var > error
-			version := flags.version
-			if version == "" {
-				version = sc.version
-			}
-			if version == "" {
-				return exterrors.Validation(
-					exterrors.CodeInvalidAgentVersion,
-					"agent version is required to create a session "+
-						"but could not be resolved",
-					"provide --version, pass the version as a "+
-						"positional argument, or deploy the agent "+
-						"with 'azd up' to set it automatically",
-				)
-			}
-
-			credential, err := newAgentCredential()
-			if err != nil {
-				return err
-			}
-
-			client := agent_api.NewAgentClient(
-				sc.endpoint, credential,
-			)
-
-			request := &agent_api.CreateAgentSessionRequest{
-				VersionIndicator: &agent_api.VersionIndicator{
-					Type:         "version_ref",
-					AgentVersion: version,
-				},
-			}
-			if flags.sessionID != "" {
-				request.AgentSessionID = &flags.sessionID
-			}
-
-			session, err := client.CreateSession(
-				ctx,
-				sc.agentName,
-				flags.isolationKey,
-				request,
-				DefaultVNextAgentAPIVersion,
-			)
-			if err != nil {
-				return exterrors.ServiceFromAzure(
-					err, exterrors.OpCreateSession,
-				)
-			}
-
-			// Persist session ID for reuse by invoke
-			persistSessionID(ctx, sc.agentName, session.AgentSessionID)
-
-			return printSession(session, flags.output)
+			return action.Run(ctx)
 		},
 	}
 
@@ -287,6 +232,68 @@ Positional arguments can be used instead of flags:
 	return cmd
 }
 
+// SessionCreateAction implements session creation.
+type SessionCreateAction struct {
+	flags *sessionCreateFlags
+}
+
+func (a *SessionCreateAction) Run(ctx context.Context) error {
+	sc, err := resolveSessionContext(ctx, a.flags.agentName)
+	if err != nil {
+		return err
+	}
+
+	// Resolve version: flag > env var > error
+	version := a.flags.version
+	if version == "" {
+		version = sc.version
+	}
+	if version == "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentVersion,
+			"agent version is required to create a session "+
+				"but could not be resolved",
+			"provide --version, pass the version as a "+
+				"positional argument, or deploy the agent "+
+				"with 'azd up' to set it automatically",
+		)
+	}
+
+	credential, err := newAgentCredential()
+	if err != nil {
+		return err
+	}
+
+	client := agent_api.NewAgentClient(sc.endpoint, credential)
+
+	request := &agent_api.CreateAgentSessionRequest{
+		VersionIndicator: &agent_api.VersionIndicator{
+			Type:         "version_ref",
+			AgentVersion: version,
+		},
+	}
+	if a.flags.sessionID != "" {
+		request.AgentSessionID = &a.flags.sessionID
+	}
+
+	session, err := client.CreateSession(
+		ctx,
+		sc.agentName,
+		a.flags.isolationKey,
+		request,
+		DefaultVNextAgentAPIVersion,
+	)
+	if err != nil {
+		return exterrors.ServiceFromAzure(
+			err, exterrors.OpCreateSession,
+		)
+	}
+
+	persistSessionID(ctx, sc.agentName, session.AgentSessionID)
+
+	return printSession(session, a.flags.output)
+}
+
 // ---------------------------------------------------------------------------
 // session show
 // ---------------------------------------------------------------------------
@@ -297,6 +304,7 @@ type sessionShowFlags struct {
 
 func newSessionShowCommand() *cobra.Command {
 	flags := &sessionShowFlags{}
+	action := &SessionShowAction{flags: flags}
 
 	cmd := &cobra.Command{
 		Use:   "show <session-id>",
@@ -315,53 +323,60 @@ specified session.`,
 			ctx := azdext.WithAccessToken(cmd.Context())
 			setupDebugLogging(cmd.Flags())
 
-			sessionID := args[0]
-
-			sc, err := resolveSessionContext(ctx, flags.agentName)
-			if err != nil {
-				return err
-			}
-
-			credential, err := newAgentCredential()
-			if err != nil {
-				return err
-			}
-
-			client := agent_api.NewAgentClient(
-				sc.endpoint, credential,
-			)
-
-			session, err := client.GetSession(
-				ctx,
-				sc.agentName,
-				sessionID,
-				DefaultVNextAgentAPIVersion,
-			)
-			if err != nil {
-				if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok &&
-					respErr.StatusCode == http.StatusNotFound {
-					return exterrors.Validation(
-						exterrors.CodeSessionNotFound,
-						fmt.Sprintf(
-							"session %q not found or has been deleted",
-							sessionID,
-						),
-						"use 'azd ai agent sessions list' to see "+
-							"available sessions",
-					)
-				}
-				return exterrors.ServiceFromAzure(
-					err, exterrors.OpGetSession,
-				)
-			}
-
-			return printSession(session, flags.output)
+			action.sessionID = args[0]
+			return action.Run(ctx)
 		},
 	}
 
 	addSessionFlags(cmd, &flags.sessionFlags)
 
 	return cmd
+}
+
+// SessionShowAction implements session show.
+type SessionShowAction struct {
+	flags     *sessionShowFlags
+	sessionID string
+}
+
+func (a *SessionShowAction) Run(ctx context.Context) error {
+	sc, err := resolveSessionContext(ctx, a.flags.agentName)
+	if err != nil {
+		return err
+	}
+
+	credential, err := newAgentCredential()
+	if err != nil {
+		return err
+	}
+
+	client := agent_api.NewAgentClient(sc.endpoint, credential)
+
+	session, err := client.GetSession(
+		ctx,
+		sc.agentName,
+		a.sessionID,
+		DefaultVNextAgentAPIVersion,
+	)
+	if err != nil {
+		if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok &&
+			respErr.StatusCode == http.StatusNotFound {
+			return exterrors.Validation(
+				exterrors.CodeSessionNotFound,
+				fmt.Sprintf(
+					"session %q not found or has been deleted",
+					a.sessionID,
+				),
+				"use 'azd ai agent sessions list' to see "+
+					"available sessions",
+			)
+		}
+		return exterrors.ServiceFromAzure(
+			err, exterrors.OpGetSession,
+		)
+	}
+
+	return printSession(session, a.flags.output)
 }
 
 // ---------------------------------------------------------------------------
@@ -375,6 +390,7 @@ type sessionDeleteFlags struct {
 
 func newSessionDeleteCommand() *cobra.Command {
 	flags := &sessionDeleteFlags{}
+	action := &SessionDeleteAction{flags: flags}
 
 	cmd := &cobra.Command{
 		Use:   "delete <session-id>",
@@ -395,56 +411,18 @@ The isolation key is derived from the Entra token by default.`,
 			ctx := azdext.WithAccessToken(cmd.Context())
 			setupDebugLogging(cmd.Flags())
 
-			sessionID := args[0]
-
-			sc, err := resolveSessionContext(ctx, flags.agentName)
-			if err != nil {
-				return err
-			}
-
-			credential, err := newAgentCredential()
-			if err != nil {
-				return err
-			}
-
-			client := agent_api.NewAgentClient(
-				sc.endpoint, credential,
-			)
-
-			err = client.DeleteSession(
-				ctx,
-				sc.agentName,
-				sessionID,
-				flags.isolationKey,
-				DefaultVNextAgentAPIVersion,
-			)
-			if err != nil {
-				if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok &&
-					respErr.StatusCode == http.StatusNotFound {
-					return exterrors.Validation(
-						exterrors.CodeSessionNotFound,
-						fmt.Sprintf(
-							"session %q not found or has already been deleted",
-							sessionID,
-						),
-						"use 'azd ai agent sessions list' to see "+
-							"available sessions",
-					)
-				}
-				return exterrors.ServiceFromAzure(
-					err, exterrors.OpDeleteSession,
-				)
-			}
-
-			fmt.Printf(
-				"Session %q deleted from agent %q.\n",
-				sessionID, sc.agentName,
-			)
-			return nil
+			action.sessionID = args[0]
+			return action.Run(ctx)
 		},
 	}
 
-	addSessionFlags(cmd, &flags.sessionFlags)
+	// Only register --agent-name, not --output (delete has no
+	// formatted output).
+	cmd.Flags().StringVarP(
+		&flags.agentName, "agent-name", "n", "",
+		"Agent name (matches azure.yaml service name; "+
+			"auto-detected when only one exists)",
+	)
 	cmd.Flags().StringVar(
 		&flags.isolationKey, "isolation-key", "",
 		"Isolation key for session ownership "+
@@ -452,6 +430,57 @@ The isolation key is derived from the Entra token by default.`,
 	)
 
 	return cmd
+}
+
+// SessionDeleteAction implements session deletion.
+type SessionDeleteAction struct {
+	flags     *sessionDeleteFlags
+	sessionID string
+}
+
+func (a *SessionDeleteAction) Run(ctx context.Context) error {
+	sc, err := resolveSessionContext(ctx, a.flags.agentName)
+	if err != nil {
+		return err
+	}
+
+	credential, err := newAgentCredential()
+	if err != nil {
+		return err
+	}
+
+	client := agent_api.NewAgentClient(sc.endpoint, credential)
+
+	err = client.DeleteSession(
+		ctx,
+		sc.agentName,
+		a.sessionID,
+		a.flags.isolationKey,
+		DefaultVNextAgentAPIVersion,
+	)
+	if err != nil {
+		if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok &&
+			respErr.StatusCode == http.StatusNotFound {
+			return exterrors.Validation(
+				exterrors.CodeSessionNotFound,
+				fmt.Sprintf(
+					"session %q not found or has already been deleted",
+					a.sessionID,
+				),
+				"use 'azd ai agent sessions list' to see "+
+					"available sessions",
+			)
+		}
+		return exterrors.ServiceFromAzure(
+			err, exterrors.OpDeleteSession,
+		)
+	}
+
+	fmt.Printf(
+		"Session %q deleted from agent %q.\n",
+		a.sessionID, sc.agentName,
+	)
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -466,6 +495,7 @@ type sessionListFlags struct {
 
 func newSessionListCommand() *cobra.Command {
 	flags := &sessionListFlags{}
+	action := &SessionListAction{flags: flags}
 
 	cmd := &cobra.Command{
 		Use:   "list",
@@ -485,44 +515,8 @@ Returns a paged list of sessions with their status, version, and timestamps.`,
 			ctx := azdext.WithAccessToken(cmd.Context())
 			setupDebugLogging(cmd.Flags())
 
-			sc, err := resolveSessionContext(ctx, flags.agentName)
-			if err != nil {
-				return err
-			}
-
-			credential, err := newAgentCredential()
-			if err != nil {
-				return err
-			}
-
-			client := agent_api.NewAgentClient(
-				sc.endpoint, credential,
-			)
-
-			var limit *int32
-			if cmd.Flags().Changed("limit") {
-				limit = &flags.limit
-			}
-
-			var token *string
-			if flags.paginationToken != "" {
-				token = &flags.paginationToken
-			}
-
-			result, err := client.ListSessions(
-				ctx,
-				sc.agentName,
-				limit,
-				token,
-				DefaultVNextAgentAPIVersion,
-			)
-			if err != nil {
-				return exterrors.ServiceFromAzure(
-					err, exterrors.OpListSessions,
-				)
-			}
-
-			return printSessionList(result, flags.output)
+			action.limitChanged = cmd.Flags().Changed("limit")
+			return action.Run(ctx)
 		},
 	}
 
@@ -537,6 +531,51 @@ Returns a paged list of sessions with their status, version, and timestamps.`,
 	)
 
 	return cmd
+}
+
+// SessionListAction implements session listing.
+type SessionListAction struct {
+	flags        *sessionListFlags
+	limitChanged bool
+}
+
+func (a *SessionListAction) Run(ctx context.Context) error {
+	sc, err := resolveSessionContext(ctx, a.flags.agentName)
+	if err != nil {
+		return err
+	}
+
+	credential, err := newAgentCredential()
+	if err != nil {
+		return err
+	}
+
+	client := agent_api.NewAgentClient(sc.endpoint, credential)
+
+	var limit *int32
+	if a.limitChanged {
+		limit = &a.flags.limit
+	}
+
+	var token *string
+	if a.flags.paginationToken != "" {
+		token = &a.flags.paginationToken
+	}
+
+	result, err := client.ListSessions(
+		ctx,
+		sc.agentName,
+		limit,
+		token,
+		DefaultVNextAgentAPIVersion,
+	)
+	if err != nil {
+		return exterrors.ServiceFromAzure(
+			err, exterrors.OpListSessions,
+		)
+	}
+
+	return printSessionList(result, a.flags.output)
 }
 
 // ---------------------------------------------------------------------------

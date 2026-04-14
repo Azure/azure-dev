@@ -35,7 +35,7 @@ See [MSI configuration](#msi-configuration) for advanced install scenarios.
 #### Homebrew (recommended)
 
 ```bash
-brew install azure/azd/azd
+brew install --cask azure/azd/azd
 ```
 
 If using `brew` to upgrade `azd` from a version not installed using `brew`, remove the existing version of `azd` using the uninstall script (if installed to the default location) or by deleting the `azd` binary manually.

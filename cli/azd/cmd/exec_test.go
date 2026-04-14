@@ -145,7 +145,7 @@ func TestExecAction_SecretResolutionFailure(t *testing.T) {
 	const secretKey = "AZD_TEST_EXEC_SECRET_FAIL" //nolint:gosec // G101: test constant, not a credential
 
 	env := environment.NewWithValues("test", map[string]string{
-		secretKey: "akvs://sub-id/vault-name/secret-name",
+		secretKey: "akvs://sub-id/vault-name/secret-name", //nolint:gosec // G101: test fixture, not a credential
 	})
 
 	kvMock := &mockExecKeyVaultService{
@@ -224,7 +224,7 @@ func TestNewExecCmd(t *testing.T) {
 }
 
 func TestExecAction_ResolvesKeyVaultReferenceFormat(t *testing.T) {
-	const secretKey = "AZD_TEST_EXEC_KVREF"
+	const secretKey = "AZD_TEST_EXEC_KVREF" //nolint:gosec // G101: test constant, not a credential
 
 	// @Microsoft.KeyVault reference format (used in Azure App Service settings).
 	secretRef := "@Microsoft.KeyVault(SecretUri=https://myvault.vault.azure.net/secrets/mysecret)"

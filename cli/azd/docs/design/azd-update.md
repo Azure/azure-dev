@@ -290,7 +290,7 @@ Switching between a package manager and direct installs is **not supported** via
 
 | Scenario | Guidance |
 |----------|----------|
-| Package manager → daily | Show: "Daily builds aren't available via {brew/winget/choco}. Uninstall with `{uninstall command}`, then install daily with the platform-appropriate daily install command (`install-azd.ps1` on Windows, `install-azd.sh` on Linux/macOS)" |
+| Package manager → daily | Show: "Daily builds aren't available via {winget/choco}. Uninstall with `{uninstall command}`, then install daily with the platform-appropriate daily install command (`install-azd.ps1` on Windows, `install-azd.sh` on Linux/macOS)" |
 | Script/daily → package manager | Show: "To switch to {brew/winget/choco}, first uninstall the current version, then install via your package manager." |
 
 This avoids the silent symlink overwrite problem that exists today with conflicting install methods.

@@ -266,14 +266,6 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 	}
 
-	// Now persist all config changes (including channel) after confirmation
-	if configChanged {
-		if err := a.configManager.Save(userConfig); err != nil {
-			tracing.SetUsageAttributes(fields.UpdateResult.String(update.CodeConfigFailed))
-			return nil, fmt.Errorf("failed to save config: %w", err)
-		}
-	}
-
 	// Perform the update
 	a.console.MessageUxItem(ctx, &ux.MessageTitle{
 		Title: fmt.Sprintf("Updating azd to %s (%s)", versionInfo.Version, cfg.Channel),
@@ -288,6 +280,14 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			tracing.SetUsageAttributes(fields.UpdateResult.String(update.CodeReplaceFailed))
 		}
 		return nil, err
+	}
+
+	// Persist all config changes (including channel) only after a successful update
+	if configChanged {
+		if err := a.configManager.Save(userConfig); err != nil {
+			tracing.SetUsageAttributes(fields.UpdateResult.String(update.CodeConfigFailed))
+			return nil, fmt.Errorf("failed to save config: %w", err)
+		}
 	}
 
 	tracing.SetUsageAttributes(fields.UpdateResult.String(update.CodeSuccess))

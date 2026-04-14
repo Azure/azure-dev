@@ -6,6 +6,7 @@ package azapi
 import (
 	"context"
 	"sort"
+	"sync"
 	"testing"
 	"time"
 
@@ -47,6 +48,64 @@ func Test_StandardDeployments_GenerateDeploymentName(t *testing.T) {
 		assert.Equal(t, tc.expected, deploymentName)
 		assert.LessOrEqual(t, len(deploymentName), 64)
 	}
+}
+
+func Test_StandardDeployments_ClientCaching(t *testing.T) {
+	t.Parallel()
+
+	mockContext := mocks.NewMockContext(context.Background())
+	ds := NewStandardDeployments(
+		mockContext.SubscriptionCredentialProvider,
+		mockContext.ArmClientOptions,
+		NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions),
+		cloud.AzurePublic(),
+		mockContext.Clock,
+	)
+
+	ctx := *mockContext.Context
+
+	t.Run("cache hit returns same instance", func(t *testing.T) {
+		client1, err := ds.createDeploymentsClient(ctx, "sub-1")
+		require.NoError(t, err)
+
+		client2, err := ds.createDeploymentsClient(ctx, "sub-1")
+		require.NoError(t, err)
+
+		// Same pointer — cache hit
+		assert.Same(t, client1, client2)
+	})
+
+	t.Run("different subscriptions return different clients", func(t *testing.T) {
+		clientA, err := ds.createDeploymentsClient(ctx, "sub-a")
+		require.NoError(t, err)
+
+		clientB, err := ds.createDeploymentsClient(ctx, "sub-b")
+		require.NoError(t, err)
+
+		assert.NotSame(t, clientA, clientB)
+	})
+
+	t.Run("concurrent access returns consistent client", func(t *testing.T) {
+		const goroutines = 10
+		results := make([]*armresources.DeploymentsClient, goroutines)
+		errs := make([]error, goroutines)
+
+		var wg sync.WaitGroup
+		wg.Add(goroutines)
+		for i := range goroutines {
+			go func() {
+				defer wg.Done()
+				results[i], errs[i] = ds.createDeploymentsClient(ctx, "sub-concurrent")
+			}()
+		}
+		wg.Wait()
+
+		for i := range goroutines {
+			require.NoError(t, errs[i])
+			// All goroutines must get the same cached instance
+			assert.Same(t, results[0], results[i], "goroutine %d got a different client", i)
+		}
+	})
 }
 
 func TestResourceGroupsFromDeployment(t *testing.T) {

@@ -192,6 +192,15 @@ func (cli *AzureClient) DeployAppServiceZip(
 			span.SetAttributes(fields.DeployAttemptKey.Key.Int(attempt + 1))
 
 			if attempt > 0 {
+				// Exponential backoff: 5s, 10s between retries to avoid hammering
+				// the SCM endpoint while it stabilizes.
+				retryDelay := time.Duration(attempt) * 5 * time.Second
+				select {
+				case <-time.After(retryDelay):
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
+
 				// Reset the zip file reader so the retry re-uploads the full content.
 				if _, seekErr := deployZipFile.Seek(0, io.SeekStart); seekErr != nil {
 					return nil, fmt.Errorf("resetting zip file for retry: %w", seekErr)

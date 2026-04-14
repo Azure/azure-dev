@@ -143,8 +143,12 @@ func (crs *containerRegistryService) Login(ctx context.Context, subscriptionId s
 		}
 
 		// Use context.WithoutCancel so the shared work isn't tied to a single
-		// caller's context. Add a bounded timeout so the shared login cannot
-		// hang indefinitely if Credentials or docker login gets stuck.
+		// caller's context. The 5-minute timeout is an upper bound that covers:
+		// - AAD token acquisition (~1-5s typical, up to 30s under load)
+		// - ACR token exchange via /oauth2/exchange (~1-3s typical)
+		// - docker login CLI invocation (~1-2s typical)
+		// Most logins complete in under 10s; 5 minutes provides generous headroom
+		// for transient AAD/ACR slowness without hanging indefinitely.
 		const loginTimeout = 5 * time.Minute
 		opCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), loginTimeout)
 		defer cancel()

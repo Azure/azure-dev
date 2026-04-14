@@ -6,6 +6,7 @@ package ext
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -132,6 +133,10 @@ type HookConfig struct {
 	// Environment variables in this list are added to the hook script and if the value is a akvs:// reference
 	// it will be resolved to the secret value
 	Secrets map[string]string `yaml:"secrets,omitempty"`
+	// Config is an optional property bag of executor-specific settings,
+	// discriminated by Kind. Each executor may unmarshal this into a
+	// strongly-typed struct for its own configuration needs.
+	Config map[string]any `yaml:"config,omitempty"`
 }
 
 // validate normalizes and validates the hook configuration. It resolves
@@ -582,6 +587,20 @@ func appendHookConfigSignature(builder *strings.Builder, hookConfig *HookConfig)
 		builder.WriteString(secretName)
 		builder.WriteByte('=')
 		builder.WriteString(hookConfig.Secrets[secretName])
+		builder.WriteByte('\x00')
+	}
+
+	// Config is a map[string]any — use JSON for deterministic key ordering.
+	if len(hookConfig.Config) > 0 {
+		configJSON, err := json.Marshal(hookConfig.Config)
+		// Config values originate from azure.yaml, which produces
+		// JSON-compatible types (strings, numbers, bools, maps, slices).
+		// Marshal errors are theoretically possible but not in practice,
+		// so we skip the config contribution rather than failing the
+		// signature calculation.
+		if err == nil {
+			builder.Write(configJSON)
+		}
 		builder.WriteByte('\x00')
 	}
 

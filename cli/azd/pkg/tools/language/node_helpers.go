@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/node"
 )
 
 // nodeTools abstracts the Node.js CLI operations needed by
@@ -28,20 +29,88 @@ type nodeTools interface {
 	) error
 }
 
+// nodeHookConfig holds the typed configuration for Node.js-
+// based hook executors (JavaScript and TypeScript). Unmarshalled
+// from [tools.ExecutionContext.Config] via
+// [tools.UnmarshalHookConfig].
+type nodeHookConfig struct {
+	// PackageManager overrides the default package manager
+	// (npm) used for dependency installation. Valid values:
+	// "npm", "pnpm", "yarn". When empty, the default CLI
+	// is used.
+	PackageManager string `json:"packageManager"`
+}
+
+// validNodePackageManagers maps user-facing config values to
+// [node.PackageManagerKind] constants. Matches the values
+// accepted by [nodePackageManagerFromConfig].
+var validNodePackageManagers = map[string]node.PackageManagerKind{
+	"npm":  node.PackageManagerNpm,
+	"pnpm": node.PackageManagerPnpm,
+	"yarn": node.PackageManagerYarn,
+}
+
+// nodePackageManagerFromConfig reads and validates the optional
+// "packageManager" override from hook config. Returns empty
+// string when not set. Returns an error for invalid values.
+func nodePackageManagerFromConfig(
+	config map[string]any,
+) (node.PackageManagerKind, error) {
+	cfg, err := tools.UnmarshalHookConfig[nodeHookConfig](
+		config,
+	)
+	if err != nil {
+		return "", fmt.Errorf(
+			"reading node hook config: %w", err,
+		)
+	}
+
+	if cfg.PackageManager == "" {
+		return "", nil
+	}
+
+	pm, ok := validNodePackageManagers[cfg.PackageManager]
+	if !ok {
+		return "", fmt.Errorf(
+			"invalid packageManager config value %q: "+
+				"must be npm, pnpm, or yarn",
+			cfg.PackageManager,
+		)
+	}
+
+	return pm, nil
+}
+
 // prepareNodeProject handles the shared Prepare phase for
 // Node.js-based executors (JavaScript and TypeScript):
 //  1. Verify Node.js is installed.
 //  2. Discover package.json via [DiscoverNodeProject].
 //  3. If found, run the package manager's install command.
 //
-// Returns the project context (may be nil for standalone
-// scripts that have no package.json).
+// When execCtx.Config contains a "packageManager" key, the
+// specified package manager CLI is used instead of the
+// default. Returns the project context (may be nil for
+// standalone scripts that have no package.json).
 func prepareNodeProject(
 	ctx context.Context,
 	nodeCli nodeTools,
+	commandRunner exec.CommandRunner,
 	scriptPath string,
 	execCtx tools.ExecutionContext,
 ) (*ProjectContext, error) {
+	// Check for a packageManager config override. When set,
+	// create a CLI for the specified package manager instead
+	// of using the default (npm) from the IoC container.
+	pm, err := nodePackageManagerFromConfig(execCtx.Config)
+	if err != nil {
+		return nil, err
+	}
+	if pm != "" {
+		nodeCli = node.NewCliWithPackageManager(
+			commandRunner, pm,
+		)
+	}
+
 	// 1. Verify Node.js is installed.
 	if err := nodeCli.CheckInstalled(ctx); err != nil {
 		// If the error already carries rich context (e.g.

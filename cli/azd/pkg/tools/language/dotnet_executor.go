@@ -35,6 +35,20 @@ var minSingleFileVersion = semver.Version{
 	Major: 10, Minor: 0, Patch: 0,
 }
 
+// dotnetHookConfig holds the typed configuration that users can
+// specify in azure.yaml under a .NET hook's config section.
+type dotnetHookConfig struct {
+	// Configuration is the MSBuild configuration (Debug, Release,
+	// or a custom name). Passed as `-c` to dotnet build and
+	// dotnet run. Empty means use the SDK default (Debug).
+	Configuration string `json:"configuration"`
+
+	// Framework is the target framework moniker (e.g. net8.0,
+	// net10.0). Passed as `--framework` to dotnet run so the
+	// correct TFM is selected in multi-target projects.
+	Framework string `json:"framework"`
+}
+
 // dotnetExecutor implements [tools.HookExecutor] for .NET (C#)
 // scripts. It supports two execution modes:
 //   - Project mode: when a .csproj/.fsproj/.vbproj is discovered
@@ -48,6 +62,9 @@ type dotnetExecutor struct {
 	// projectPath is set by Prepare when a .NET project file is
 	// discovered. Empty means single-file mode.
 	projectPath string
+
+	// config holds parsed hook configuration from azure.yaml.
+	config dotnetHookConfig
 }
 
 // NewDotNetExecutor creates a .NET HookExecutor.
@@ -110,8 +127,18 @@ func (e *dotnetExecutor) Prepare(
 		)
 	}
 
-	// 3a. Project mode: restore and build.
+	// 3. Project mode: parse config, restore, and build.
 	if projCtx != nil {
+		cfg, err := tools.UnmarshalHookConfig[dotnetHookConfig](
+			execCtx.Config,
+		)
+		if err != nil {
+			return fmt.Errorf(
+				"parsing .NET hook config: %w", err,
+			)
+		}
+		e.config = cfg
+
 		if err := e.dotnetCli.Restore(
 			ctx, projCtx.DependencyFile, execCtx.EnvVars,
 		); err != nil {
@@ -122,7 +149,8 @@ func (e *dotnetExecutor) Prepare(
 		}
 
 		if err := e.dotnetCli.Build(
-			ctx, projCtx.DependencyFile, "", "",
+			ctx, projCtx.DependencyFile,
+			e.config.Configuration, "",
 			execCtx.EnvVars,
 		); err != nil {
 			return fmt.Errorf(
@@ -135,7 +163,7 @@ func (e *dotnetExecutor) Prepare(
 		return nil
 	}
 
-	// 3b. Single-file mode: validate SDK version >= 10.
+	// 4. Single-file mode: validate SDK version >= 10.
 	sdkVer, err := e.dotnetCli.SdkVersion(ctx)
 	if err != nil {
 		return fmt.Errorf(
@@ -188,11 +216,22 @@ func (e *dotnetExecutor) Execute(
 	if e.projectPath != "" {
 		// Project mode — skip restore/build since Prepare
 		// already ran them.
-		runArgs = exec.NewRunArgs(
-			"dotnet", "run",
+		args := []string{
+			"run",
 			"--project", e.projectPath,
 			"--no-build",
-		)
+		}
+
+		if e.config.Configuration != "" {
+			args = append(args, "-c", e.config.Configuration)
+		}
+		if e.config.Framework != "" {
+			args = append(
+				args, "--framework", e.config.Framework,
+			)
+		}
+
+		runArgs = exec.NewRunArgs("dotnet", args...)
 	} else {
 		// Single-file mode.
 		runArgs = exec.NewRunArgs(

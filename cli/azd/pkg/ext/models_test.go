@@ -480,7 +480,7 @@ func TestHookConfig_ValidateDirRunResolution(t *testing.T) {
 				Run:  "main.py",
 				Dir:  filepath.Join("hooks", "preprovision"),
 			},
-			// Put file in dir but also at root — the
+			// Put file in dir but also at root ΓÇö the
 			// absolute path case is tested next; here we
 			// verify the dir path is used.
 			createFiles: []string{
@@ -753,7 +753,7 @@ func TestHookConfig_ResolvedPaths(t *testing.T) {
 func TestHookConfig_ValidatePathTraversal(t *testing.T) {
 	cwd := t.TempDir()
 
-	// File-based hook with Dir escaping project root — must fail.
+	// File-based hook with Dir escaping project root ΓÇö must fail.
 	escapeDir := filepath.Join(cwd, "..", "..", "escape")
 	require.NoError(t, os.MkdirAll(escapeDir, 0o755))
 	scriptPath := filepath.Join(escapeDir, "evil.sh")
@@ -893,7 +893,7 @@ func TestHookConfig_ServiceHookEscapesProjectRoot(
 	)
 	require.NoError(t, os.MkdirAll(serviceCwd, 0o755))
 
-	// Script file outside the project root — the
+	// Script file outside the project root ΓÇö the
 	// boundary check must reject this.
 	outsideDir := t.TempDir()
 	scriptPath := filepath.Join(outsideDir, "evil.sh")
@@ -1325,4 +1325,171 @@ func TestHookConfig_DirRunKindInference(t *testing.T) {
 			)
 		})
 	}
+}
+
+func TestHookConfig_ConfigField(t *testing.T) {
+	tests := []struct {
+		name           string
+		yamlInput      string
+		expectedConfig map[string]any
+	}{
+		{
+			name: "StringValues",
+			yamlInput: "run: hooks/seed.py\nkind: python\nconfig:\n" +
+				"  framework: net10.0\n  configuration: Release\n",
+			expectedConfig: map[string]any{
+				"framework":     "net10.0",
+				"configuration": "Release",
+			},
+		},
+		{
+			name: "NumericValue",
+			yamlInput: "run: hooks/seed.py\nkind: python\nconfig:\n" +
+				"  retries: 3\n  timeout: 30.5\n",
+			expectedConfig: map[string]any{
+				"retries": 3,
+				"timeout": 30.5,
+			},
+		},
+		{
+			name: "BooleanValue",
+			yamlInput: "run: hooks/seed.py\nkind: python\nconfig:\n" +
+				"  verbose: true\n",
+			expectedConfig: map[string]any{
+				"verbose": true,
+			},
+		},
+		{
+			name: "NestedMap",
+			yamlInput: "run: hooks/seed.py\nkind: python\nconfig:\n" +
+				"  database:\n    host: localhost\n    port: 5432\n",
+			expectedConfig: map[string]any{
+				"database": map[string]any{
+					"host": "localhost",
+					"port": 5432,
+				},
+			},
+		},
+		{
+			name: "ListValue",
+			yamlInput: "run: hooks/seed.py\nkind: python\nconfig:\n" +
+				"  args:\n    - --verbose\n    - --dry-run\n",
+			expectedConfig: map[string]any{
+				"args": []any{"--verbose", "--dry-run"},
+			},
+		},
+		{
+			name:           "NoConfig",
+			yamlInput:      "run: hooks/seed.py\nkind: python\n",
+			expectedConfig: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var config HookConfig
+			err := yaml.Unmarshal([]byte(tt.yamlInput), &config)
+			require.NoError(t, err)
+			require.Equal(t, tt.expectedConfig, config.Config)
+		})
+	}
+}
+
+func TestHookConfig_ConfigRoundTrip(t *testing.T) {
+	original := HookConfig{
+		Run:  "hooks/deploy.py",
+		Kind: language.HookKindPython,
+		Config: map[string]any{
+			"framework":     "net10.0",
+			"configuration": "Release",
+			"nested":        map[string]any{"key": "val"},
+		},
+	}
+
+	data, err := yaml.Marshal(&original)
+	require.NoError(t, err)
+
+	var decoded HookConfig
+	err = yaml.Unmarshal(data, &decoded)
+	require.NoError(t, err)
+
+	require.Equal(t, original.Config, decoded.Config)
+	require.Equal(t, original.Kind, decoded.Kind)
+	require.Equal(t, original.Run, decoded.Run)
+}
+
+func TestHookConfig_ConfigOmittedWhenEmpty(t *testing.T) {
+	t.Run("nil config omitted", func(t *testing.T) {
+		config := HookConfig{
+			Run:  "hooks/deploy.py",
+			Kind: language.HookKindPython,
+		}
+
+		data, err := yaml.Marshal(&config)
+		require.NoError(t, err)
+
+		yamlStr := string(data)
+		require.NotContains(t, yamlStr, "config")
+	})
+
+	t.Run("empty map omitted", func(t *testing.T) {
+		config := HookConfig{
+			Run:    "hooks/deploy.py",
+			Kind:   language.HookKindPython,
+			Config: map[string]any{},
+		}
+
+		data, err := yaml.Marshal(&config)
+		require.NoError(t, err)
+
+		yamlStr := string(data)
+		require.NotContains(t, yamlStr, "config")
+	})
+}
+
+func TestHooksConfigSignature_IncludesConfig(t *testing.T) {
+	base := map[string][]*HookConfig{
+		"predeploy": {
+			{
+				Run:  "hooks/deploy.py",
+				Kind: language.HookKindPython,
+			},
+		},
+	}
+	sigWithout := HooksConfigSignature(base)
+	require.NotEmpty(t, sigWithout)
+
+	withConfig := map[string][]*HookConfig{
+		"predeploy": {
+			{
+				Run:  "hooks/deploy.py",
+				Kind: language.HookKindPython,
+				Config: map[string]any{
+					"framework": "net10.0",
+				},
+			},
+		},
+	}
+	sigWith := HooksConfigSignature(withConfig)
+	require.NotEmpty(t, sigWith)
+	require.NotEqual(t, sigWithout, sigWith,
+		"signature should change when Config is added",
+	)
+
+	// Different Config values should produce different signatures.
+	withDifferentConfig := map[string][]*HookConfig{
+		"predeploy": {
+			{
+				Run:  "hooks/deploy.py",
+				Kind: language.HookKindPython,
+				Config: map[string]any{
+					"framework": "net9.0",
+				},
+			},
+		},
+	}
+	sigDiff := HooksConfigSignature(withDifferentConfig)
+	require.NotEqual(t, sigWith, sigDiff,
+		"signature should differ for different Config values",
+	)
 }

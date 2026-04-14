@@ -51,7 +51,8 @@ func (e *tsExecutor) Prepare(
 	execCtx tools.ExecutionContext,
 ) error {
 	_, err := prepareNodeProject(
-		ctx, e.nodeCli, scriptPath, execCtx,
+		ctx, e.nodeCli, e.commandRunner,
+		scriptPath, execCtx,
 	)
 	return err
 }

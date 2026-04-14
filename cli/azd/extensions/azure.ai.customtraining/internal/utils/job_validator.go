@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
 )
@@ -69,31 +70,20 @@ func (r *ValidationResult) WarningCount() int {
 func ValidateJobOffline(job *JobDefinition, yamlDir string) *ValidationResult {
 	result := &ValidationResult{}
 
-	// 1. command field is required
-	if job.Command == "" {
-		result.Findings = append(result.Findings, ValidationFinding{
-			Field:    "command",
-			Severity: SeverityError,
-			Message:  "required field is missing",
-		})
-	}
-
-	// 2. environment field is required
-	if job.Environment == "" {
-		result.Findings = append(result.Findings, ValidationFinding{
-			Field:    "environment",
-			Severity: SeverityError,
-			Message:  "required field is missing",
-		})
-	}
-
-	// 3. compute field is required
-	if job.Compute == "" {
-		result.Findings = append(result.Findings, ValidationFinding{
-			Field:    "compute",
-			Severity: SeverityError,
-			Message:  "required field is missing",
-		})
+	// 1–3. Check required fields via struct tags
+	v := reflect.ValueOf(*job)
+	t := v.Type()
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		if field.Tag.Get("validate") == "required" {
+			if v.Field(i).String() == "" {
+				result.Findings = append(result.Findings, ValidationFinding{
+					Field:    field.Tag.Get("yaml"),
+					Severity: SeverityError,
+					Message:  "required field is missing",
+				})
+			}
+		}
 	}
 
 	// 4. code must not be a git path

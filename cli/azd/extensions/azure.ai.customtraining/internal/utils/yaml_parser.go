@@ -19,9 +19,9 @@ type JobDefinition struct {
 	Name                 string                      `yaml:"name"`
 	DisplayName          string                      `yaml:"display_name"`
 	Description          string                      `yaml:"description"`
-	Command              string                      `yaml:"command"`
-	Environment          string                      `yaml:"environment"`
-	Compute              string                      `yaml:"compute"`
+	Command              string                      `yaml:"command" validate:"required"`
+	Environment          string                      `yaml:"environment" validate:"required"`
+	Compute              string                      `yaml:"compute" validate:"required"`
 	Code                 string                      `yaml:"code"`
 	Inputs               map[string]InputDefinition  `yaml:"inputs"`
 	Outputs              map[string]OutputDefinition `yaml:"outputs"`

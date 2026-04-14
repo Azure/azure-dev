@@ -220,10 +220,10 @@ func TestValidate_SingleBracePlaceholders(t *testing.T) {
 	job := validJob()
 	job.Command = "python train.py --data {inputs.training_data} --out {outputs.model}"
 	result := ValidateJobOffline(job, ".")
-	if f := findFindingByMessage(result, "single-brace '{inputs.training_data}'"); f == nil || f.Severity != SeverityError {
+	if f := findFindingByMessage(result, "${{inputs.training_data}}"); f == nil || f.Severity != SeverityError {
 		t.Error("expected error for single-brace input placeholder")
 	}
-	if f := findFindingByMessage(result, "single-brace '{outputs.model}'"); f == nil || f.Severity != SeverityError {
+	if f := findFindingByMessage(result, "${{outputs.model}}"); f == nil || f.Severity != SeverityError {
 		t.Error("expected error for single-brace output placeholder")
 	}
 
@@ -233,7 +233,7 @@ func TestValidate_SingleBracePlaceholders(t *testing.T) {
 	job = validJob()
 	job.Command = "python train.py [--data {inputs.optional_data}]"
 	result = ValidateJobOffline(job, ".")
-	if f := findFindingByMessage(result, "single-brace '{inputs.optional_data}'"); f == nil || f.Severity != SeverityError {
+	if f := findFindingByMessage(result, "${{inputs.optional_data}}"); f == nil || f.Severity != SeverityError {
 		t.Error("expected error for single-brace inside optional brackets")
 	}
 
@@ -246,7 +246,7 @@ func TestValidate_SingleBracePlaceholders(t *testing.T) {
 		"training_data": {Type: "uri_folder", Path: "azureml://datastores/blob/data"},
 	}
 	result = ValidateJobOffline(job, ".")
-	if f := findFindingByMessage(result, "single-brace"); f != nil {
+	if f := findFindingByMessage(result, "Incorrect placeholder format"); f != nil {
 		t.Error("did not expect single-brace error for correct ${{...}} syntax")
 	}
 }

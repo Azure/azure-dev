@@ -103,7 +103,7 @@ func ValidateJobOffline(job *JobDefinition, yamlDir string) *ValidationResult {
 			result.Findings = append(result.Findings, ValidationFinding{
 				Field:    "code",
 				Severity: SeverityError,
-				Message:  fmt.Sprintf("git paths are not supported"),
+				Message:  "git paths are not supported",
 			})
 		}
 	}
@@ -196,11 +196,18 @@ func optionalInputKeys(command string) map[string]bool {
 // References inside [...] optional blocks are skipped for inputs.
 func validatePlaceholders(result *ValidationResult, job *JobDefinition, optionalInputs map[string]bool) {
 	command := job.Command
+	seen := make(map[string]bool)
 
 	// Find all ${{inputs.xxx}} and ${{outputs.xxx}} references
 	for _, match := range placeholderRegex.FindAllStringSubmatch(command, -1) {
 		kind := match[1] // "inputs" or "outputs"
 		key := match[2]
+
+		dedupeKey := kind + "." + key
+		if seen[dedupeKey] {
+			continue
+		}
+		seen[dedupeKey] = true
 
 		// Only validate input placeholders — outputs are auto-provisioned by the backend
 		if kind == "inputs" {
@@ -251,10 +258,17 @@ func validateSingleBracePlaceholders(result *ValidationResult, command string) {
 // Inputs inside [...] optional blocks are skipped — empty definitions are valid for optional inputs.
 func validateInputOutputDefinitions(result *ValidationResult, job *JobDefinition, optionalInputs map[string]bool) {
 	command := job.Command
+	seen := make(map[string]bool)
 
 	for _, match := range placeholderRegex.FindAllStringSubmatch(command, -1) {
 		kind := match[1]
 		key := match[2]
+
+		dedupeKey := kind + "." + key
+		if seen[dedupeKey] {
+			continue
+		}
+		seen[dedupeKey] = true
 
 		if kind == "inputs" && job.Inputs != nil {
 			if optionalInputs[key] {

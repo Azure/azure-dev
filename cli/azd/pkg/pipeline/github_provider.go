@@ -626,6 +626,12 @@ func (p *GitHubCiProvider) promptCustomSubjects(
 				"prompting for branch %s OIDC subject: %w", branch, err,
 			)
 		}
+		subject = strings.TrimSpace(subject)
+		if subject == "" {
+			return nil, fmt.Errorf(
+				"OIDC subject for branch %s cannot be empty", branch,
+			)
+		}
 		result.branches[branch] = subject
 	}
 
@@ -636,6 +642,12 @@ func (p *GitHubCiProvider) promptCustomSubjects(
 	if err != nil {
 		return nil, fmt.Errorf(
 			"prompting for pull request OIDC subject: %w", err,
+		)
+	}
+	prSubject = strings.TrimSpace(prSubject)
+	if prSubject == "" {
+		return nil, fmt.Errorf(
+			"OIDC subject for pull request cannot be empty",
 		)
 	}
 	result.pullRequest = prSubject

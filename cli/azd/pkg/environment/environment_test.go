@@ -273,3 +273,42 @@ func createEnvManager(mockContext *mocks.MockContext, root string) (Manager, *az
 
 	return newManagerForTest(azdCtx, mockContext.Console, localDataStore, nil), azdCtx
 }
+
+func TestKey(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"simple", "web", "WEB"},
+		{"withHyphens", "my-web-app", "MY_WEB_APP"},
+		{"withSpaces", "api and frontend", "API_AND_FRONTEND"},
+		{"spacesAndHyphens", "my api-service", "MY_API_SERVICE"},
+		{"uppercase", "MyApp", "MYAPP"},
+		{"multipleSpaces", "my  app", "MY__APP"},
+		{"empty", "", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := Key(tt.input)
+			require.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestServicePropertyRoundTripWithSpaces(t *testing.T) {
+	env := NewWithValues("test-env", nil)
+
+	env.SetServiceProperty("api and frontend", "IMAGE_NAME", "myimage:latest")
+	val := env.GetServiceProperty("api and frontend", "IMAGE_NAME")
+	require.Equal(t, "myimage:latest", val)
+
+	// Verify the env var key uses underscores, not spaces
+	rawVal := env.Getenv("SERVICE_API_AND_FRONTEND_IMAGE_NAME")
+	require.Equal(t, "myimage:latest", rawVal)
+
+	// Verify no space-containing key exists
+	rawBadVal := env.Getenv("SERVICE_API AND FRONTEND_IMAGE_NAME")
+	require.Empty(t, rawBadVal)
+}

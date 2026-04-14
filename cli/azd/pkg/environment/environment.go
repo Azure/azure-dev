@@ -246,8 +246,13 @@ func (e *Environment) SetLocation(location string) {
 }
 
 // Key returns the environment key name for the given name.
+// Spaces and hyphens are replaced with underscores to produce valid
+// environment variable names (e.g., "api and frontend" → "API_AND_FRONTEND").
 func Key(name string) string {
-	return strings.ReplaceAll(strings.ToUpper(name), "-", "_")
+	upper := strings.ToUpper(name)
+	upper = strings.ReplaceAll(upper, " ", "_")
+	upper = strings.ReplaceAll(upper, "-", "_")
+	return upper
 }
 
 // GetServiceProperty is shorthand for Getenv(SERVICE_$SERVICE_NAME_$PROPERTY_NAME)

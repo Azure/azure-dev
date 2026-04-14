@@ -1056,7 +1056,7 @@ func TestCreateHostedAgentAPIRequest_DefaultProtocols(t *testing.T) {
 	if imgDef.ContainerProtocolVersions[0].Protocol != agent_api.AgentProtocolResponses {
 		t.Errorf("default protocol = %q", imgDef.ContainerProtocolVersions[0].Protocol)
 	}
-	if imgDef.ContainerProtocolVersions[0].Version != "v1" {
+	if imgDef.ContainerProtocolVersions[0].Version != "1.0.0" {
 		t.Errorf("default version = %q", imgDef.ContainerProtocolVersions[0].Version)
 	}
 }

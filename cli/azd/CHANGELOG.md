@@ -17,6 +17,7 @@
 - [[#7652]](https://github.com/Azure/azure-dev/pull/7652) Add C#/.NET hook support in `azure.yaml`; hooks pointing to `.cs` files are auto-detected and executed using `dotnet run`, with automatic project discovery and support for single-file scripts on .NET 10+.
 - [[#7685]](https://github.com/Azure/azure-dev/pull/7685) Add `.azdignore` support for `azd init`; template authors can create a `.azdignore` file in the template root to exclude contributor-only files (e.g., `SECURITY.md`, `.github/`) from being copied to consumer projects.
 - [[#7394]](https://github.com/Azure/azure-dev/pull/7394) Add `--fail-on-prompt` global flag that immediately fails with an actionable error when any interactive prompt is encountered; azd automatically enables this when invoked from an AI coding agent. Thanks @spboyer for the contribution!
+- [[#7672]](https://github.com/Azure/azure-dev/pull/7672) Add AI model quota preflight check; `azd provision` now detects Azure Cognitive Services model deployments in the Bicep snapshot and validates quota availability before provisioning, warning on exceeded quota or unrecognized model names.
 
 ### Bugs Fixed
 

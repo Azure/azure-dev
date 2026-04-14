@@ -471,6 +471,8 @@ func ProcessPromptAgentToolsConnections(ctx context.Context, manifest *AgentMani
 				return nil, fmt.Errorf("failed to unmarshal to Tool: %w", err)
 			}
 
+			toolDef.Kind = NormalizeToolKind(toolDef.Kind)
+
 			switch toolDef.Kind {
 			case ToolKindCustom:
 				tool := tool.(CustomTool)

@@ -7,8 +7,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -24,6 +26,10 @@ import (
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/types/known/structpb"
 )
+
+// nonAlphanumEnvKeyRe matches any character that is not an uppercase letter or
+// digit, used to sanitize environment variable key segments.
+var nonAlphanumEnvKeyRe = regexp.MustCompile(`[^A-Z0-9]+`)
 
 func newListenCommand() *cobra.Command {
 	return &cobra.Command{
@@ -423,10 +429,9 @@ func setEnvVar(ctx context.Context, azdClient *azdext.AzdClient, envName string,
 		Value:   value,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to set environment variable %s=%s: %w", key, value, err)
+		return fmt.Errorf("failed to set environment variable %s: %w", key, err)
 	}
 
-	fmt.Printf("Set environment variable: %s=%s\n", key, value)
 	return nil
 }
 
@@ -667,7 +672,7 @@ func registerToolboxEnvVars(
 	endpoint := strings.TrimRight(projectEndpoint, "/")
 	mcpEndpoint := fmt.Sprintf(
 		"%s/toolboxes/%s/versions/%s/mcp?api-version=v1",
-		endpoint, toolboxName, toolboxVersion,
+		endpoint, url.PathEscape(toolboxName), url.PathEscape(toolboxVersion),
 	)
 
 	return setEnvVar(
@@ -676,10 +681,10 @@ func registerToolboxEnvVars(
 }
 
 // toolboxMCPEndpointEnvKey builds the TOOLBOX_{NAME}_MCP_ENDPOINT env var key.
+// Non-alphanumeric characters are replaced with underscores for a valid env key.
 func toolboxMCPEndpointEnvKey(toolboxName string) string {
-	key := strings.ReplaceAll(toolboxName, " ", "_")
-	key = strings.ReplaceAll(key, "-", "_")
-	return fmt.Sprintf("TOOLBOX_%s_MCP_ENDPOINT", strings.ToUpper(key))
+	sanitized := nonAlphanumEnvKeyRe.ReplaceAllString(strings.ToUpper(toolboxName), "_")
+	return fmt.Sprintf("TOOLBOX_%s_MCP_ENDPOINT", sanitized)
 }
 
 // resolveToolboxEnvVars resolves ${VAR} references in toolbox name, description,
@@ -706,6 +711,7 @@ func enrichToolboxFromConnections(
 		}
 		conn, ok := connByName[connID]
 		if !ok {
+			fmt.Fprintf(os.Stderr, "warning: tool references connection %q but no matching connection was found\n", connID)
 			continue
 		}
 		if _, has := tool["server_url"]; !has && conn.Target != "" {

@@ -4,7 +4,6 @@
 package azure
 
 import (
-	"azureaiagent/internal/version"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -12,12 +11,15 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/streaming"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
+
+	"azureaiagent/internal/version"
 )
 
 const (
@@ -58,7 +60,7 @@ func NewFoundryToolboxClient(
 	)
 
 	return &FoundryToolboxClient{
-		endpoint: endpoint,
+		endpoint: strings.TrimRight(endpoint, "/"),
 		pipeline: pipeline,
 	}
 }
@@ -126,7 +128,7 @@ func (c *FoundryToolboxClient) CreateToolboxVersion(
 	}
 	defer resp.Body.Close()
 
-	if !runtime.HasStatusCode(resp, http.StatusOK) {
+	if !runtime.HasStatusCode(resp, http.StatusOK, http.StatusCreated) {
 		return nil, runtime.NewResponseError(resp)
 	}
 

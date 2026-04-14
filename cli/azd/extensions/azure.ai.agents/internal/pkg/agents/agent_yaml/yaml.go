@@ -66,6 +66,7 @@ var legacyToolKindAliases = map[ToolKind]ToolKind{
 	"codeInterpreter": ToolKindCodeInterpreter,
 	"azureAiSearch":   ToolKindAzureAiSearch,
 	"a2aPreview":      ToolKindA2APreview,
+	"openApi":         ToolKindOpenApi,
 }
 
 // NormalizeToolKind maps legacy camelCase tool kind values to the current
@@ -584,8 +585,19 @@ func (ps PropertySchema) MarshalYAML() (any, error) {
 	}
 
 	if len(props) > 0 {
-		// Merge property keys at the top level (record format)
+		// Merge property keys at the top level (record format).
+		// Reject parameter names that collide with reserved schema keys.
+		reservedKeys := map[string]bool{
+			"examples":   true,
+			"strict":     true,
+			"properties": true,
+		}
 		for k, v := range props {
+			if reservedKeys[k] {
+				return nil, fmt.Errorf(
+					"parameter name %q conflicts with reserved PropertySchema key", k,
+				)
+			}
 			out[k] = v
 		}
 	}

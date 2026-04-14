@@ -414,11 +414,11 @@ func TestExtractToolboxAndConnectionConfigs_TypedTools(t *testing.T) {
 				Description: "Platform tools",
 				Tools: []any{
 					map[string]any{
-						// Built-in tool ΓÇö no connection
+						// Built-in tool -- no connection
 						"type": "bing_grounding",
 					},
 					map[string]any{
-						// External tool with name ΓÇö connection name from Name field
+						// External tool with name -- connection name from Name field
 						"type": "mcp",
 						"name":     "github-copilot",
 						"target":   "https://api.githubcopilot.com/mcp",
@@ -505,7 +505,7 @@ func TestExtractToolboxAndConnectionConfigs_TypedTools(t *testing.T) {
 	if tb.Tools[1]["type"] != "mcp" {
 		t.Errorf("Expected tool type 'mcp', got '%v'", tb.Tools[1]["type"])
 	}
-	// No server_url or server_label in init output ΓÇö deploy enriches from connections
+	// No server_url or server_label in init output -- deploy enriches from connections
 	if _, has := tb.Tools[1]["server_url"]; has {
 		t.Errorf("Toolbox tool should not have server_url (deploy enriches it)")
 	}

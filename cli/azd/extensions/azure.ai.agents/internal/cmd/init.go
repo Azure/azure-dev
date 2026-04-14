@@ -2231,7 +2231,7 @@ func extractToolboxAndConnectionConfigs(
 		}
 
 		var tools []map[string]any
-		for _, rawTool := range tbResource.Tools {
+		for i, rawTool := range tbResource.Tools {
 			toolMap, ok := rawTool.(map[string]any)
 			if !ok {
 				return nil, nil, nil, fmt.Errorf(
@@ -2255,6 +2255,13 @@ func extractToolboxAndConnectionConfigs(
 				continue
 			}
 
+			if toolType == "" {
+				return nil, nil, nil, fmt.Errorf(
+					"toolbox resource '%s': external tool at index %d has a 'target' but no 'type'",
+					tbResource.Name, i,
+				)
+			}
+
 			// External tools with target/authType need a connection
 			toolName, _ := toolMap["name"].(string)
 			authType, _ := toolMap["authType"].(string)
@@ -2262,7 +2269,7 @@ func extractToolboxAndConnectionConfigs(
 
 			connName := toolName
 			if connName == "" {
-				connName = tbResource.Name + "-" + toolType
+				connName = fmt.Sprintf("%s-%s-%d", tbResource.Name, toolType, i)
 			}
 
 			conn := project.ToolConnection{

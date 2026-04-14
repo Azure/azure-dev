@@ -384,6 +384,30 @@ func TestAnalyzeArmTemplateResources(t *testing.T) {
 			hasRoleAssignments: true,
 		},
 		{
+			name: "nested deployment with invalid properties json",
+			resources: armTemplateResources{
+				{
+					Type:       "Microsoft.Resources/deployments",
+					Properties: json.RawMessage([]byte("{invalid")),
+				},
+			},
+			hasRoleAssignments: false,
+		},
+		{
+			name: "nested deployment with template link only",
+			resources: armTemplateResources{
+				{
+					Type: "Microsoft.Resources/deployments",
+					Properties: mustMarshal(t, map[string]any{
+						"templateLink": map[string]any{
+							"uri": "https://example.invalid/template.json",
+						},
+					}),
+				},
+			},
+			hasRoleAssignments: false,
+		},
+		{
 			name: "deeply nested deployment",
 			resources: armTemplateResources{
 				{

@@ -188,28 +188,38 @@ func (m *ProvisioningManager) Register(
 		},
 	}
 
+	// Store factory before RPC so the duplicate check works for concurrent calls.
+	m.mu.Lock()
+	m.factories[providerName] = factory
+	m.mu.Unlock()
+
 	resp, err := m.broker.SendAndWait(ctx, registerReq)
 	if err != nil {
+		// Clean up factory so the same name can be retried
+		m.mu.Lock()
+		delete(m.factories, providerName)
+		m.mu.Unlock()
 		return fmt.Errorf(
 			"provisioning provider registration failed: %w", err,
 		)
 	}
 
 	if resp == nil {
+		m.mu.Lock()
+		delete(m.factories, providerName)
+		m.mu.Unlock()
 		return fmt.Errorf("provisioning provider registration: received nil response")
 	}
 
 	if resp.GetRegisterProvisioningProviderResponse() == nil {
+		m.mu.Lock()
+		delete(m.factories, providerName)
+		m.mu.Unlock()
 		return fmt.Errorf(
 			"expected RegisterProvisioningProviderResponse, got %T",
 			resp.GetMessageType(),
 		)
 	}
-
-	// Store factory ONLY after successful registration
-	m.mu.Lock()
-	m.factories[providerName] = factory
-	m.mu.Unlock()
 
 	return nil
 }

@@ -89,6 +89,26 @@ func Test_convertToProtoOptions(t *testing.T) {
 				assert.Nil(t, result.Config)
 			},
 		},
+		{
+			name: "OptionsWithVirtualEnv",
+			options: provisioning.Options{
+				Provider: provisioning.Bicep,
+				Path:     "infra",
+				VirtualEnv: map[string]string{
+					"LAYER1_OUTPUT":   "value1",
+					"LAYER1_ENDPOINT": "https://example.com",
+				},
+			},
+			verify: func(t *testing.T, result *azdext.ProvisioningOptions, err error) {
+				require.NoError(t, err)
+				require.NotNil(t, result)
+				assert.Equal(t, "bicep", result.Provider)
+				assert.Equal(t, "infra", result.Path)
+				require.Len(t, result.VirtualEnv, 2)
+				assert.Equal(t, "value1", result.VirtualEnv["LAYER1_OUTPUT"])
+				assert.Equal(t, "https://example.com", result.VirtualEnv["LAYER1_ENDPOINT"])
+			},
+		},
 	}
 
 	for _, tt := range tests {

@@ -51,7 +51,7 @@ func TestParseProviderConfig_EmptyConfig(t *testing.T) {
 	cfg, err := ParseProviderConfig(nil)
 	require.NoError(t, err)
 
-	err = cfg.Validate("/tmp")
+	err = cfg.Validate(t.TempDir())
 	require.ErrorContains(t, err, "at least one")
 }
 
@@ -175,6 +175,46 @@ func TestValidateScriptConfig_ContinueOnError(t *testing.T) {
 	err := cfg.Validate(dir)
 	require.NoError(t, err)
 	require.True(t, cfg.Provision[0].ContinueOnError)
+}
+
+func TestApplyPlatformOverride_DoesNotResetContinueOnError(t *testing.T) {
+	sc := &ScriptConfig{
+		Kind:            "sh",
+		Run:             "fallback.sh",
+		ContinueOnError: true,
+		Posix: &ScriptConfig{
+			Run: "linux-specific.sh",
+		},
+		Windows: &ScriptConfig{
+			Run: "windows-specific.sh",
+		},
+	}
+
+	applyPlatformOverride(sc)
+
+	// ContinueOnError should NOT be reset to false by a platform override
+	// that doesn't explicitly set it.
+	require.True(t, sc.ContinueOnError, "ContinueOnError should not be reset by platform override")
+}
+
+func TestApplyPlatformOverride_MergesEnvMaps(t *testing.T) {
+	sc := &ScriptConfig{
+		Kind: "sh",
+		Run:  "base.sh",
+		Env:  map[string]string{"A": "base", "B": "base"},
+		Posix: &ScriptConfig{
+			Env: map[string]string{"B": "override", "C": "new"},
+		},
+		Windows: &ScriptConfig{
+			Env: map[string]string{"B": "win-override", "D": "win-new"},
+		},
+	}
+
+	applyPlatformOverride(sc)
+
+	require.Equal(t, "base", sc.Env["A"], "base env preserved")
+	// Depending on platform, B should be overridden
+	require.NotEmpty(t, sc.Env["B"])
 }
 
 func createFile(t *testing.T, base, relPath, content string) {

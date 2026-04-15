@@ -6,6 +6,7 @@ package provisioning
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
@@ -58,17 +59,9 @@ func (p *ScriptProvisioningProvider) State(
 	ctx context.Context,
 	options *azdext.ProvisioningStateOptions,
 ) (*azdext.ProvisioningStateResult, error) {
-	protoOutputs := make(map[string]*azdext.ProvisioningOutputParameter, len(p.outputs))
-	for k, v := range p.outputs {
-		protoOutputs[k] = &azdext.ProvisioningOutputParameter{
-			Type:  v.Type,
-			Value: v.Value,
-		}
-	}
-
 	return &azdext.ProvisioningStateResult{
 		State: &azdext.ProvisioningState{
-			Outputs: protoOutputs,
+			Outputs: toProtoOutputs(p.outputs),
 		},
 	}, nil
 }
@@ -89,17 +82,9 @@ func (p *ScriptProvisioningProvider) Deploy(
 
 	p.outputs = MergeOutputs(p.outputs, outputs)
 
-	protoOutputs := make(map[string]*azdext.ProvisioningOutputParameter, len(p.outputs))
-	for k, v := range p.outputs {
-		protoOutputs[k] = &azdext.ProvisioningOutputParameter{
-			Type:  v.Type,
-			Value: v.Value,
-		}
-	}
-
 	return &azdext.ProvisioningDeployResult{
 		Deployment: &azdext.ProvisioningDeployment{
-			Outputs: protoOutputs,
+			Outputs: toProtoOutputs(p.outputs),
 		},
 	}, nil
 }
@@ -206,11 +191,26 @@ func (p *ScriptProvisioningProvider) runScripts(
 	return allOutputs, nil
 }
 
+// toProtoOutputs converts internal OutputParameter map to the protobuf format.
+func toProtoOutputs(outputs map[string]OutputParameter) map[string]*azdext.ProvisioningOutputParameter {
+	result := make(map[string]*azdext.ProvisioningOutputParameter, len(outputs))
+	for k, v := range outputs {
+		result[k] = &azdext.ProvisioningOutputParameter{Type: v.Type, Value: v.Value}
+	}
+	return result
+}
+
 // getAzdEnv retrieves current azd environment values via the gRPC client.
 func (p *ScriptProvisioningProvider) getAzdEnv(ctx context.Context) (map[string]string, error) {
 	resp, err := p.azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{})
 	if err != nil {
-		// If environment is not available, return empty map
+		// Context cancellation should propagate
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+
+		// Log the error but continue with empty env — environment may not be initialized yet
+		fmt.Fprintf(os.Stderr, "Warning: could not load azd environment: %v\n", err)
 		return make(map[string]string), nil
 	}
 

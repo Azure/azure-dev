@@ -16,8 +16,6 @@ import (
 // ScriptResult holds the outcome of a single script execution.
 type ScriptResult struct {
 	ExitCode int
-	Stdout   string
-	Stderr   string
 }
 
 // ScriptExecutor runs shell scripts with a prepared environment.
@@ -79,13 +77,15 @@ func pwshBinary() string {
 
 func shBinary() string {
 	if runtime.GOOS == "windows" {
-		// Prefer Git Bash on Windows
 		if gitBash, err := exec.LookPath("bash.exe"); err == nil {
 			return gitBash
 		}
 		return "bash.exe"
 	}
-	return "/bin/bash"
+	if bash, err := exec.LookPath("bash"); err == nil {
+		return bash
+	}
+	return "/bin/sh"
 }
 
 // mapToEnvSlice converts a map to the KEY=VALUE slice format expected by exec.Cmd.Env.

@@ -178,7 +178,9 @@ func applyPlatformOverride(sc *ScriptConfig) {
 		}
 		maps.Copy(sc.Secrets, override.Secrets)
 	}
-	sc.ContinueOnError = override.ContinueOnError
+	if override.ContinueOnError {
+		sc.ContinueOnError = override.ContinueOnError
+	}
 }
 
 // normalizeKind resolves the script kind from the Kind, Shell, or file extension.

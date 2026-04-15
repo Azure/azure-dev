@@ -46,7 +46,7 @@ infra:
 | `kind` | string | No | Script type: `sh` or `pwsh` (auto-detected from extension) |
 | `name` | string | No | Display name for progress reporting |
 | `env` | map | No | Environment variables with `${EXPRESSION}` substitution |
-| `secrets` | map | No | Secret references (`akvs://vault/secret`) |
+| `secrets` | map | No | Secret key-value pairs (plain values in alpha; Key Vault resolution planned) |
 | `continueOnError` | bool | No | Continue execution on script failure |
 | `windows` | object | No | Windows-specific overrides |
 | `posix` | object | No | Linux/macOS-specific overrides |

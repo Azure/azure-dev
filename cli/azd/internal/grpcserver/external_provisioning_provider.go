@@ -130,7 +130,7 @@ func (p *ExternalProvisioningProvider) Deploy(
 		},
 	}
 
-	// TODO: Route extension progress to CLI's interactive progress display.
+	// TODO: Route extension progress to the CLI interactive progress display.
 	// Currently progress is only logged; built-in providers surface through console formatter.
 	resp, err := p.broker.SendAndWaitWithProgress(ctx, req, func(msg string) {
 		log.Printf("provisioning progress: %s", msg)

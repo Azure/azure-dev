@@ -15,10 +15,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/language"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazapi"
@@ -293,11 +293,11 @@ func TestMinimalYaml(t *testing.T) {
 
 	tests := []struct {
 		name          string
-		serviceConfig ServiceConfig
+		serviceConfig *ServiceConfig
 	}{
 		{
 			"minimal-service",
-			ServiceConfig{
+			&ServiceConfig{
 				Name:         "ignored",
 				Language:     ServiceLanguagePython,
 				Host:         AppServiceTarget,
@@ -306,7 +306,7 @@ func TestMinimalYaml(t *testing.T) {
 		},
 		{
 			"minimal-docker",
-			ServiceConfig{
+			&ServiceConfig{
 				Name:     "ignored",
 				Language: ServiceLanguageDotNet,
 				Host:     ContainerAppTarget,
@@ -317,10 +317,10 @@ func TestMinimalYaml(t *testing.T) {
 			},
 		},
 	}
-	for i, tt := range tests {
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			prj.Services = map[string]*ServiceConfig{
-				tt.name: &tests[i].serviceConfig,
+				tt.name: tt.serviceConfig,
 			}
 
 			contents, err := yaml.Marshal(prj)
@@ -390,7 +390,7 @@ postbuild:
 		expectedHooks := HooksConfig{
 			"prebuild": {{
 				Name:            "",
-				Shell:           ext.ShellTypeBash,
+				Shell:           string(language.HookKindBash),
 				Run:             "./pre-build.sh",
 				ContinueOnError: false,
 				Interactive:     false,
@@ -399,7 +399,7 @@ postbuild:
 			}},
 			"postbuild": {{
 				Name:            "",
-				Shell:           ext.ShellTypePowershell,
+				Shell:           string(language.HookKindPowerShell),
 				Run:             "./post-build.ps1",
 				ContinueOnError: false,
 				Interactive:     false,
@@ -419,7 +419,7 @@ postbuild:
 			Services: map[string]*ServiceConfig{},
 			Hooks: HooksConfig{
 				"prebuild": {{
-					Shell: ext.ShellTypeBash,
+					Shell: string(language.HookKindBash),
 					Run:   "./pre-build.sh",
 				}},
 			},
@@ -455,7 +455,7 @@ postbuild:
 		expectedHooks := HooksConfig{
 			"prebuild": {{
 				Name:            "",
-				Shell:           ext.ShellTypeBash,
+				Shell:           string(language.HookKindBash),
 				Run:             "./pre-build.sh",
 				ContinueOnError: false,
 				Interactive:     false,
@@ -463,7 +463,7 @@ postbuild:
 				Posix:           nil,
 			}, {
 				Name:            "",
-				Shell:           ext.ShellTypeBash,
+				Shell:           string(language.HookKindBash),
 				Run:             "./pre-build-external.sh",
 				ContinueOnError: false,
 				Interactive:     false,
@@ -472,7 +472,7 @@ postbuild:
 			}},
 			"postbuild": {{
 				Name:            "",
-				Shell:           ext.ShellTypePowershell,
+				Shell:           string(language.HookKindPowerShell),
 				Run:             "./post-build.ps1",
 				ContinueOnError: false,
 				Interactive:     false,

@@ -70,6 +70,7 @@ func TestBuildInstallScriptArgs(t *testing.T) {
 				installScriptURL,
 				"-Version 'stable'",
 				"Remove-Item",
+				"$env:PSModulePath",
 			},
 			wantNotContains: []string{
 				"-InstallFolder",
@@ -88,6 +89,7 @@ func TestBuildInstallScriptArgs(t *testing.T) {
 				"-InstallFolder",
 				expectedDir,
 				"Remove-Item",
+				"$env:PSModulePath",
 			},
 			wantNotContains: []string{
 				"-SkipVerify",
@@ -157,6 +159,7 @@ func TestBuildInstallScriptArgs_Structure(t *testing.T) {
 
 	// Stable downloads to temp file — passes -Version 'stable' explicitly
 	script := args[4]
+	require.True(t, strings.HasPrefix(script, "$env:PSModulePath"), "script should start with PSModulePath reset")
 	require.Contains(t, script, "Invoke-RestMethod")
 	require.Contains(t, script, installScriptURL)
 	require.Contains(t, script, "Remove-Item")
@@ -168,6 +171,7 @@ func TestBuildInstallScriptArgs_Structure(t *testing.T) {
 	require.Equal(t, 5, len(argsDaily))
 	require.Equal(t, "Bypass", argsDaily[2])
 	scriptDaily := argsDaily[4]
+	require.True(t, strings.HasPrefix(scriptDaily, "$env:PSModulePath"), "daily script should start with PSModulePath reset")
 	require.Contains(t, scriptDaily, "Invoke-RestMethod")
 	require.Contains(t, scriptDaily, installScriptURL)
 	require.Contains(t, scriptDaily, "-Version 'daily'")

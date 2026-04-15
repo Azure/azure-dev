@@ -24,6 +24,21 @@
       "description": "List of external resources for agent execution.",
       "items": { "$ref": "#/definitions/Resource" }
     },
+    "toolConnections": {
+      "type": "array",
+      "description": "List of tool connections to external services (MCP tools, A2A, custom APIs) created during provisioning.",
+      "items": { "$ref": "#/definitions/ToolConnection" }
+    },
+    "toolboxes": {
+      "type": "array",
+      "description": "List of toolboxes (Foundry Toolsets) to deploy.",
+      "items": { "$ref": "#/definitions/Toolbox" }
+    },
+    "connections": {
+      "type": "array",
+      "description": "List of project connections to create via Bicep provisioning.",
+      "items": { "$ref": "#/definitions/Connection" }
+    },
     "startupCommand": {
       "type": "string",
       "description": "Command to start the agent server (e.g., 'python main.py'). Used by 'azd ai agent run' for local development."
@@ -118,6 +133,92 @@
         "connectionName": { "type": "string", "description": "Connection name for the resource." }
       },
       "required": ["resource", "connectionName"],
+      "additionalProperties": false
+    },
+    "ToolConnection": {
+      "type": "object",
+      "description": "A connection to an external service (MCP tool, A2A, custom API) created via Bicep during provisioning.",
+      "properties": {
+        "name": { "type": "string", "description": "Connection name used as project_connection_id in toolbox tools." },
+        "category": { "type": "string", "description": "Connection category (e.g., 'RemoteTool')." },
+        "target": { "type": "string", "description": "Target endpoint URL for the connection." },
+        "authType": {
+          "type": "string",
+          "description": "Authentication type for the connection.",
+          "enum": ["AAD", "AccessKey", "AccountKey", "ApiKey", "CustomKeys", "ManagedIdentity", "None", "OAuth2", "PAT", "ServicePrincipal", "UsernamePassword", "ProjectManagedIdentity", "UserEntraToken"]
+        },
+        "credentials": {
+          "type": "object",
+          "description": "Credentials for the connection. Values may contain ${ENV_VAR} references resolved at provision time."
+        },
+        "metadata": {
+          "type": "object",
+          "description": "Additional metadata for the connection.",
+          "additionalProperties": { "type": "string" }
+        }
+      },
+      "required": ["name", "category", "target", "authType"],
+      "additionalProperties": false
+    },
+    "Toolbox": {
+      "type": "object",
+      "description": "A reusable collection of tools deployed as a Foundry Toolset.",
+      "properties": {
+        "name": { "type": "string", "description": "Name of the toolbox." },
+        "description": { "type": "string", "description": "Description of the toolbox." },
+        "tools": {
+          "type": "array",
+          "description": "List of tools in the toolbox. Each tool is an object with properties passed to the Foundry Toolsets API.",
+          "items": { "type": "object" }
+        }
+      },
+      "required": ["name", "tools"],
+      "additionalProperties": false
+    },
+    "Connection": {
+      "type": "object",
+      "description": "A project connection matching the Bicep ConnectionPropertiesV2 spec.",
+      "properties": {
+        "name": { "type": "string", "description": "Connection name.", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{2,32}$" },
+        "category": { "type": "string", "description": "Connection category (e.g., 'CustomKeys', 'AzureOpenAI', 'CognitiveSearch', 'RemoteTool')." },
+        "target": { "type": "string", "description": "Target endpoint URL for the connection." },
+        "authType": {
+          "type": "string",
+          "description": "Authentication type.",
+          "enum": ["AAD", "AccessKey", "AccountKey", "AgenticIdentity", "ApiKey", "CustomKeys", "ManagedIdentity", "None", "OAuth2", "PAT", "SAS", "ServicePrincipal", "UsernamePassword", "UserEntraToken", "ProjectManagedIdentity"]
+        },
+        "credentials": {
+          "type": "object",
+          "description": "Authentication credentials. Structure depends on authType."
+        },
+        "metadata": {
+          "type": "object",
+          "description": "Additional metadata as key-value pairs.",
+          "additionalProperties": { "type": "string" }
+        },
+        "authorizationUrl": { "type": "string", "description": "OAuth2 authorization endpoint URL (required for OAuth2 authType)." },
+        "tokenUrl": { "type": "string", "description": "OAuth2 token endpoint URL (required for OAuth2 authType)." },
+        "refreshUrl": { "type": "string", "description": "OAuth2 token refresh URL (optional for OAuth2 authType)." },
+        "scopes": {
+          "type": "array",
+          "description": "OAuth2 scopes to request (optional for OAuth2 authType).",
+          "items": { "type": "string" }
+        },
+        "audience": { "type": "string", "description": "Token audience for AAD/ProjectManagedIdentity/AgenticIdentity/UserEntraToken auth types." },
+        "connectorName": { "type": "string", "description": "Connector name for Oauth2 auth type." },
+        "expiryTime": { "type": "string", "description": "Connection expiry time." },
+        "isSharedToAll": { "type": "boolean", "description": "Whether the connection is shared to all users." },
+        "sharedUserList": {
+          "type": "array",
+          "description": "List of users the connection is shared with.",
+          "items": { "type": "string" }
+        },
+        "peRequirement": { "type": "string", "description": "Private endpoint requirement." },
+        "peStatus": { "type": "string", "description": "Private endpoint status." },
+        "useWorkspaceManagedIdentity": { "type": "boolean", "description": "Whether to use workspace managed identity." },
+        "error": { "type": "string", "description": "Error information." }
+      },
+      "required": ["name", "category", "target", "authType"],
       "additionalProperties": false
     }
   }

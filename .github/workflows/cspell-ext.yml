@@ -1,0 +1,35 @@
+name: cspell-ext
+
+on:
+  pull_request:
+    paths:
+      - "cli/azd/extensions/**/*.go"
+      - "cli/azd/extensions/**/*.md"
+      - "cli/azd/extensions/**/cspell.yaml"
+      - "cli/azd/.vscode/cspell.yaml"
+      - "cli/azd/.vscode/cspell-azd-dictionary.txt"
+      - ".github/workflows/cspell-ext.yml"
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  cspell-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install -g cspell@8.13.1
+      - name: Spell check for extensions
+        working-directory: cli/azd
+        # Each extension has its own cspell.yaml that imports the main config.
+        # cspell's config cascade auto-discovers per-extension configs for files
+        # under each extension directory, applying extension-specific overrides.
+        run: cspell lint 'extensions/**/*.go' 'extensions/**/*.md' --config ./.vscode/cspell.yaml --no-progress

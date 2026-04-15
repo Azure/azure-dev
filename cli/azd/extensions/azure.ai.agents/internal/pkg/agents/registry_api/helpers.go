@@ -6,6 +6,7 @@ package registry_api
 import (
 	"context"
 	"fmt"
+	"log"
 	"reflect"
 	"strconv"
 	"strings"
@@ -234,11 +235,16 @@ func ConvertParameters(parameters map[string]OpenApiParameter) (*agent_yaml.Prop
 	var properties []agent_yaml.Property
 
 	for paramName, openApiParam := range parameters {
+		// Copy fields into local variables before taking pointers so that each
+		// Property holds an independent pointer (not an alias of the loop variable).
+		desc := openApiParam.Description
+		req := openApiParam.Required
+
 		// Create a basic Property from the OpenApiParameter
 		property := agent_yaml.Property{
 			Name:        paramName,
-			Description: &openApiParam.Description,
-			Required:    &openApiParam.Required,
+			Description: &desc,
+			Required:    &req,
 		}
 
 		// Determine the kind based on schema type
@@ -253,7 +259,8 @@ func ConvertParameters(parameters map[string]OpenApiParameter) (*agent_yaml.Prop
 
 		// Use example as default if available
 		if openApiParam.Example != nil {
-			property.Default = &openApiParam.Example
+			example := openApiParam.Example
+			property.Default = &example
 		}
 
 		// Convert enum values if present
@@ -279,7 +286,7 @@ func ProcessManifestParameters(
 	noPrompt bool) (*agent_yaml.AgentManifest, error) {
 	// If no parameters are defined, return the manifest as-is
 	if len(manifest.Parameters.Properties) == 0 {
-		fmt.Println("The manifest does not contain parameters that need to be configured.")
+		log.Print("The manifest does not contain parameters that need to be configured.")
 		return manifest, nil
 	}
 
@@ -346,11 +353,20 @@ func promptForYamlParameterValues(
 		var value any
 		var err error
 		isRequired := property.Required != nil && *property.Required
+		isSecret := property.Secret != nil && *property.Secret
 		if len(enumValues) > 0 {
 			// Use selection for enum parameters
 			value, err = promptForEnumValue(ctx, property.Name, enumValues, defaultValue, azdClient, noPrompt)
+		} else if isSecret && noPrompt {
+			return nil, fmt.Errorf(
+				"unable to prompt for secret parameter '%s' in no-prompt mode; "+
+					"provide the value via environment variable",
+				property.Name,
+			)
 		} else {
-			// Use text input for other parameters
+			// TODO: Secret parameters are prompted in plaintext because the azd gRPC PromptOptions
+			// does not support masked input. Add IsSecret to the PromptOptions protobuf in azd core
+			// to enable proper secret masking.
 			value, err = promptForTextValue(ctx, property.Name, defaultValue, isRequired, azdClient)
 		}
 
@@ -451,7 +467,7 @@ func promptForTextValue(
 		defaultStr = fmt.Sprintf("%v", defaultValue)
 	}
 
-	message := fmt.Sprintf("Enter value for parameter '%s':", paramName)
+	message := fmt.Sprintf("Enter value for parameter '%s'", paramName)
 	if defaultStr != "" {
 		message += fmt.Sprintf(" (default: %s)", defaultStr)
 	}

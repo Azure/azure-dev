@@ -1,7 +1,8 @@
 
-Initialize a new application in your current directory.
+Initialize a new application. When using --template, creates a project directory automatically.
 
   • Running init without flags specified will prompt you to initialize using your existing code, or from a template.
+  • When using --template, a new directory is created (named after the template) and the project is initialized inside it. Pass . as the directory to use the current directory instead.
   • To view all available sample templates, including those submitted by the azd community, visit: https://azure.github.io/awesome-azd.
 
 Usage
@@ -19,17 +20,21 @@ Flags
         --up                  	: Provision and deploy to Azure after initializing the project from a template.
 
 Global Flags
-    -C, --cwd string 	: Sets the current working directory.
-        --debug      	: Enables debugging and diagnostics logging.
-        --docs       	: Opens the documentation for azd init in your web browser.
-    -h, --help       	: Gets help for init.
-        --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
+    -C, --cwd string     	: Sets the current working directory.
+        --debug          	: Enables debugging and diagnostics logging.
+        --docs           	: Opens the documentation for azd init in your web browser.
+        --fail-on-prompt 	: Fails with an actionable error whenever a prompt is encountered, even if a default exists. Implies --no-prompt.
+    -h, --help           	: Gets help for init.
+        --no-prompt      	: Accepts the default value instead of prompting, or it fails if there is no default.
 
 Examples
-  Initialize a template to your current local directory from a GitHub repo.
+  Initialize a template from a branch other than main.
+    azd init --template [GitHub repo URL] --branch [Branch name]
+
+  Initialize a template into a new project directory.
     azd init --template [GitHub repo URL]
 
-  Initialize a template to your current local directory from a branch other than main.
-    azd init --template [GitHub repo URL] --branch [Branch name]
+  Initialize a template into the current directory.
+    azd init --template [GitHub repo URL] .
 
 

@@ -423,10 +423,10 @@ func TestTelemetryMiddleware_setInstalledExtensionsAttributes_Sorted(t *testing.
 }
 
 // ---------------------------------------------------------------------------
-// shouldSkipErrorAnalysis — consent and azdcontext errors
+// shouldSkipAgentHandling — consent and azdcontext errors
 // ---------------------------------------------------------------------------
 
-func TestShouldSkipErrorAnalysis_ConsentErrors(t *testing.T) {
+func TestShouldSkipAgentHandling_ConsentErrors(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name string
@@ -443,66 +443,66 @@ func TestShouldSkipErrorAnalysis_ConsentErrors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			require.True(t, shouldSkipErrorAnalysis(tt.err))
+			require.True(t, shouldSkipAgentHandling(tt.err))
 		})
 	}
 }
 
-func TestShouldSkipErrorAnalysis_AzdContextErrNoProject(t *testing.T) {
+func TestShouldSkipAgentHandling_AzdContextErrNoProject(t *testing.T) {
 	t.Parallel()
-	require.True(t, shouldSkipErrorAnalysis(azdcontext.ErrNoProject))
+	require.True(t, shouldSkipAgentHandling(azdcontext.ErrNoProject))
 }
 
-func TestShouldSkipErrorAnalysis_WrappedErrNoProject(t *testing.T) {
+func TestShouldSkipAgentHandling_WrappedErrNoProject(t *testing.T) {
 	t.Parallel()
 	err := fmt.Errorf("init failed: %w", azdcontext.ErrNoProject)
-	require.True(t, shouldSkipErrorAnalysis(err))
+	require.True(t, shouldSkipAgentHandling(err))
 }
 
-func TestShouldSkipErrorAnalysis_EnvironmentInitError(t *testing.T) {
+func TestShouldSkipAgentHandling_EnvironmentInitError(t *testing.T) {
 	t.Parallel()
 	err := &environment.EnvironmentInitError{Name: "test-env"}
-	require.True(t, shouldSkipErrorAnalysis(err))
+	require.True(t, shouldSkipAgentHandling(err))
 }
 
-func TestShouldSkipErrorAnalysis_WrappedEnvironmentInitError(t *testing.T) {
+func TestShouldSkipAgentHandling_WrappedEnvironmentInitError(t *testing.T) {
 	t.Parallel()
 	inner := &environment.EnvironmentInitError{Name: "test-env"}
 	err := fmt.Errorf("env error: %w", inner)
-	require.True(t, shouldSkipErrorAnalysis(err))
+	require.True(t, shouldSkipAgentHandling(err))
 }
 
 // ---------------------------------------------------------------------------
-// fixableError — determines if an error is eligible for agentic fix
+// shouldSkipAgentHandling — non-fixable error types
 // ---------------------------------------------------------------------------
 
-func TestFixableError_ExtensionRunError(t *testing.T) {
+func TestShouldSkipAgentHandling_ExtensionRunError(t *testing.T) {
 	t.Parallel()
 	err := &extensions.ExtensionRunError{ExtensionId: "test-ext", Err: fmt.Errorf("failed")}
-	require.False(t, fixableError(err), "ExtensionRunError should not be fixable")
+	require.True(t, shouldSkipAgentHandling(err), "ExtensionRunError should be skipped")
 }
 
-func TestFixableError_WrappedExtensionRunError(t *testing.T) {
+func TestShouldSkipAgentHandling_WrappedExtensionRunError(t *testing.T) {
 	t.Parallel()
 	inner := &extensions.ExtensionRunError{ExtensionId: "test-ext", Err: fmt.Errorf("failed")}
 	err := fmt.Errorf("ext failed: %w", inner)
-	require.False(t, fixableError(err), "wrapped ExtensionRunError should not be fixable")
+	require.True(t, shouldSkipAgentHandling(err), "wrapped ExtensionRunError should be skipped")
 }
 
-func TestFixableError_EnvironmentNotFound(t *testing.T) {
+func TestShouldSkipAgentHandling_EnvironmentNotFound(t *testing.T) {
 	t.Parallel()
-	require.False(t, fixableError(environment.ErrNotFound), "ErrNotFound should not be fixable")
+	require.True(t, shouldSkipAgentHandling(environment.ErrNotFound), "ErrNotFound should be skipped")
 }
 
-func TestFixableError_PipelineAuthNotSupported(t *testing.T) {
+func TestShouldSkipAgentHandling_PipelineAuthNotSupported(t *testing.T) {
 	t.Parallel()
-	require.False(t, fixableError(pipeline.ErrAuthNotSupported), "ErrAuthNotSupported should not be fixable")
+	require.True(t, shouldSkipAgentHandling(pipeline.ErrAuthNotSupported), "ErrAuthNotSupported should be skipped")
 }
 
-func TestFixableError_GenericError(t *testing.T) {
+func TestShouldSkipAgentHandling_GenericError(t *testing.T) {
 	t.Parallel()
 	err := fmt.Errorf("some azure error")
-	require.True(t, fixableError(err), "generic error should be fixable")
+	require.False(t, shouldSkipAgentHandling(err), "generic error should not be skipped")
 }
 
 // ---------------------------------------------------------------------------
@@ -564,47 +564,6 @@ func TestPromptTroubleshootCategory_InvalidSavedValue(t *testing.T) {
 	// We can't test the Ask path without a real console, but we've covered
 	// the saved-preference branch above. The empty-string case exercises
 	// the "val != ''" check.
-}
-
-// ---------------------------------------------------------------------------
-// promptForFix — saved preference paths
-// ---------------------------------------------------------------------------
-
-func TestPromptForFix_SavedAllow(t *testing.T) {
-	t.Parallel()
-	mockCtx := mocks.NewMockContext(t.Context())
-	userConfigManager := config.NewUserConfigManager(mockCtx.ConfigManager)
-	cfg, err := userConfigManager.Load()
-	require.NoError(t, err)
-	err = cfg.Set(agentcopilot.ConfigKeyErrorHandlingFix, "allow")
-	require.NoError(t, err)
-
-	e := &ErrorMiddleware{
-		options:           &Options{CommandPath: "azd provision"},
-		console:           mockinput.NewMockConsole(),
-		userConfigManager: userConfigManager,
-	}
-
-	wantFix, err := e.promptForFix(t.Context())
-	require.NoError(t, err)
-	require.True(t, wantFix, "saved 'allow' preference should return true")
-}
-
-func TestPromptForFix_SavedNonAllow(t *testing.T) {
-	t.Parallel()
-	// If the saved value is not "allow", it should fall through to the
-	// interactive prompt. We can't mock uxlib.Select.Ask, so we test that
-	// the "allow" path works and that non-"allow" values don't auto-approve.
-	mockCtx := mocks.NewMockContext(t.Context())
-	userConfigManager := config.NewUserConfigManager(mockCtx.ConfigManager)
-	cfg, err := userConfigManager.Load()
-	require.NoError(t, err)
-	err = cfg.Set(agentcopilot.ConfigKeyErrorHandlingFix, "deny")
-	require.NoError(t, err)
-
-	// We verify the saved path is NOT taken by checking that "deny" doesn't
-	// auto-approve. The function will fall through to Ask(), which can't be
-	// tested without interactive input. This is a design limitation.
 }
 
 // ---------------------------------------------------------------------------
@@ -1103,18 +1062,18 @@ func TestErrorMiddleware_Run_NullResultFromNext_NoError(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// fixableError — constant-style regression checks
+// shouldSkipAgentHandling — constant-style regression checks
 // ---------------------------------------------------------------------------
 
-func TestFixableError_ProjectErrNoDefaultService(t *testing.T) {
+func TestShouldSkipAgentHandling_ProjectErrNoDefaultService(t *testing.T) {
 	t.Parallel()
-	require.False(t, fixableError(project.ErrNoDefaultService))
+	require.True(t, shouldSkipAgentHandling(project.ErrNoDefaultService))
 }
 
-func TestFixableError_WrappedGenericError(t *testing.T) {
+func TestShouldSkipAgentHandling_WrappedGenericError(t *testing.T) {
 	t.Parallel()
 	err := fmt.Errorf("deploy failed: %w", fmt.Errorf("timeout"))
-	require.True(t, fixableError(err))
+	require.False(t, shouldSkipAgentHandling(err))
 }
 
 // ---------------------------------------------------------------------------
@@ -1491,7 +1450,7 @@ func TestErrorMiddleware_Run_FixSendMessageError(t *testing.T) {
 		return nil, errors.New("unexpected widget failure")
 	})
 
-	// The code should go through: category explain → SendMessage success → promptForFix "allow" →
+	// The code should go through: category explain → SendMessage success → promptNextAction "allow" →
 	// fix SendMessage error. Verify we get the fix error.
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "agent fix failed")
@@ -1582,26 +1541,6 @@ func TestPromptTroubleshootCategory_ConfigLoadError(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// promptForFix — config load error
-// ---------------------------------------------------------------------------
-
-func TestPromptForFix_ConfigLoadError(t *testing.T) {
-	t.Parallel()
-	console := mockinput.NewMockConsole()
-	ucm := &mockUserConfigManager{cfg: nil, err: errors.New("io error")}
-
-	m := &ErrorMiddleware{
-		console:           console,
-		userConfigManager: ucm,
-	}
-
-	fix, err := m.promptForFix(t.Context())
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "io error")
-	require.False(t, fix)
-}
-
-// ---------------------------------------------------------------------------
 // buildPromptForCategory — all categories
 // ---------------------------------------------------------------------------
 
@@ -1639,7 +1578,8 @@ func TestBuildFixPrompt(t *testing.T) {
 	}
 
 	testErr := errors.New("resource group not found")
-	prompt := m.buildFixPrompt(testErr)
+	prompt, err := m.buildFixPrompt(testErr)
+	require.NoError(t, err)
 	require.NotEmpty(t, prompt)
 	require.Contains(t, prompt, "resource group not found")
 }
@@ -1820,27 +1760,6 @@ func TestPromptTroubleshootCategory_AllSavedCategories(t *testing.T) {
 			require.Equal(t, troubleshootCategory(cat), got)
 		})
 	}
-}
-
-// ---------------------------------------------------------------------------
-// promptForFix — saved "allow" exercises lines 474-481
-// ---------------------------------------------------------------------------
-
-func TestPromptForFix_SavedAllow_MessageContent(t *testing.T) {
-	t.Parallel()
-	console := mockinput.NewMockConsole()
-
-	cfg := configWithKeys(agentcopilot.ConfigKeyErrorHandlingFix, "allow")
-	ucm := &mockUserConfigManager{cfg: cfg}
-
-	m := &ErrorMiddleware{
-		console:           console,
-		userConfigManager: ucm,
-	}
-
-	wantFix, err := m.promptForFix(t.Context())
-	require.NoError(t, err)
-	require.True(t, wantFix)
 }
 
 // ---------------------------------------------------------------------------

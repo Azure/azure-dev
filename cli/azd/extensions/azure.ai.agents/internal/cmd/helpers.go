@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -103,12 +104,21 @@ func saveContextValue(
 	}
 	configPath, err := resolveConfigPath(ctx, azdClient)
 	if err != nil {
+		log.Printf("saveContextValue: failed to resolve config path: %v", err)
 		return
 	}
+	if err := saveContextValueToPath(configPath, agentKey, value, storeField); err != nil {
+		log.Printf("saveContextValue: failed to persist %s for %q: %v", storeField, agentKey, err)
+	}
+}
+
+// saveContextValueToPath persists a value into the named field of the local config at configPath.
+// This is the path-based implementation used by saveContextValue and directly in tests.
+func saveContextValueToPath(configPath, agentKey, value, storeField string) error {
 	agentCtx := loadLocalContext(configPath)
 	store := contextMap(agentCtx, storeField)
 	store[agentKey] = value
-	_ = saveLocalContext(agentCtx, configPath)
+	return saveLocalContext(agentCtx, configPath)
 }
 
 // resolveLocalAgentKey builds the storage key for local mode from the azd project config.
@@ -139,6 +149,9 @@ func resolveStoredID(
 	generateIfMissing bool,
 ) (string, error) {
 	if explicit != "" {
+		// Persist the explicit ID so that subsequent commands (e.g. monitor, invoke)
+		// can find it without the user passing it again.
+		persistExplicitID(ctx, azdClient, agentKey, explicit, storeField)
 		return explicit, nil
 	}
 	if forceNew && !generateIfMissing {
@@ -173,7 +186,56 @@ func resolveStoredID(
 	return newID, nil
 }
 
-// contextMap returns the named map from AgentLocalContext, initializing it if nil.
+// persistExplicitID saves a user-provided explicit ID to the local config.
+// Errors are logged for debug visibility but do not block the caller.
+func persistExplicitID(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	agentKey string,
+	value string,
+	storeField string,
+) {
+	saveContextValue(ctx, azdClient, agentKey, value, storeField)
+}
+
+// resolveStoredIDFromPath is a testable variant of resolveStoredID that operates on a
+// config file path directly, removing the need for an azdClient.
+func resolveStoredIDFromPath(
+	configPath string,
+	agentKey string,
+	explicit string,
+	forceNew bool,
+	storeField string,
+	generateIfMissing bool,
+) (string, error) {
+	if explicit != "" {
+		if err := saveContextValueToPath(configPath, agentKey, explicit, storeField); err != nil {
+			log.Printf("resolveStoredIDFromPath: failed to persist explicit %s for %q: %v", storeField, agentKey, err)
+		}
+		return explicit, nil
+	}
+	if forceNew && !generateIfMissing {
+		return "", nil
+	}
+
+	agentCtx := loadLocalContext(configPath)
+	store := contextMap(agentCtx, storeField)
+	if !forceNew {
+		if id, ok := store[agentKey]; ok {
+			return id, nil
+		}
+	}
+
+	if !generateIfMissing {
+		return "", nil
+	}
+
+	newID := uuid.NewString()
+	store[agentKey] = newID
+	_ = saveLocalContext(agentCtx, configPath)
+
+	return newID, nil
+}
 func contextMap(agentCtx *AgentLocalContext, field string) map[string]string {
 	switch field {
 	case "sessions":
@@ -292,7 +354,7 @@ func fetchOpenAPISpec(
 }
 
 // resolveConversationID resolves a Foundry conversation ID.
-// When explicit is provided, it is returned directly.
+// When explicit is provided, it is persisted and returned directly.
 // If no conversation is found (or forceNew is true), it attempts to create one and persist it.
 // Returns empty string when conversation creation fails, allowing invoke to continue without multi-turn memory.
 func resolveConversationID(
@@ -305,6 +367,8 @@ func resolveConversationID(
 	bearerToken string,
 ) (string, error) {
 	if explicit != "" {
+		// Persist the explicit conversation ID so subsequent commands can find it.
+		saveContextValue(ctx, azdClient, agentName, explicit, "conversations")
 		return explicit, nil
 	}
 	configPath, err := resolveConfigPath(ctx, azdClient)
@@ -377,7 +441,7 @@ func detectStartupCommand(projectDir string) string {
 }
 
 func fileExists(path string) bool {
-	_, err := os.Stat(path)
+	_, err := os.Stat(path) //nolint:gosec // path is derived from controlled inputs (agent ID + "src/" prefix)
 	return err == nil
 }
 
@@ -533,6 +597,7 @@ func resolveAgentServiceFromProject(ctx context.Context, azdClient *azdext.AzdCl
 
 // ServiceRunContext holds the resolved context needed for local development.
 type ServiceRunContext struct {
+	ServiceName    string // the resolved service name (from azure.yaml)
 	ProjectDir     string // absolute path to the service source directory
 	StartupCommand string // startupCommand from AdditionalProperties (may be empty)
 }
@@ -556,6 +621,7 @@ func resolveServiceRunContext(ctx context.Context, azdClient *azdext.AzdClient, 
 	}
 
 	return &ServiceRunContext{
+		ServiceName:    svc.Name,
 		ProjectDir:     projectDir,
 		StartupCommand: startupCmd,
 	}, nil
@@ -609,28 +675,92 @@ func resolveStartupCommandForInit(
 
 // resolveAgentProtocol loads the agent.yaml manifest for the service and returns the
 // protocol that the agent implements (e.g. "responses", "invocations").
-// Defaults to "responses" when the manifest cannot be loaded or has no protocols.
+// Returns an error when the protocol cannot be determined, with a contextual
+// suggestion guiding the user to fix the underlying issue.
 func resolveAgentProtocol(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	name string,
 	noPrompt bool,
-) agent_api.AgentProtocol {
+) (agent_api.AgentProtocol, error) {
 	svc, project, err := resolveAgentService(ctx, azdClient, name, noPrompt)
 	if err != nil {
-		return agent_api.AgentProtocolResponses
+		return "", exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf(
+				"could not resolve agent service in azd project: %s", err,
+			),
+			"run from your project directory and ensure "+
+				"azure.yaml contains an azure.ai.agent service",
+		)
 	}
 
-	agentYamlPath := filepath.Join(project.Path, svc.RelativePath, "agent.yaml")
+	agentYamlPath := filepath.Join(
+		project.Path, svc.RelativePath, "agent.yaml",
+	)
+	return protocolFromAgentYaml(agentYamlPath)
+}
+
+// protocolFromAgentYaml reads and parses the agent.yaml file at the given path
+// and extracts the protocol. Returns an error with a contextual suggestion when
+// the file cannot be read, parsed, or does not declare exactly one protocol.
+func protocolFromAgentYaml(
+	agentYamlPath string,
+) (agent_api.AgentProtocol, error) {
 	data, err := os.ReadFile(agentYamlPath) //nolint:gosec // G304: path constructed from azd project root
 	if err != nil {
-		return agent_api.AgentProtocolResponses
+		return "", exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf(
+				"could not read agent.yaml at %s: %s",
+				agentYamlPath, err,
+			),
+			"ensure agent.yaml exists in the azd service directory",
+		)
 	}
 
 	var hosted agent_yaml.ContainerAgent
-	if err := yaml.Unmarshal(data, &hosted); err == nil && len(hosted.Protocols) > 0 {
-		return agent_api.AgentProtocol(hosted.Protocols[0].Protocol)
+	if err := yaml.Unmarshal(data, &hosted); err != nil {
+		return "", exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf(
+				"could not parse agent.yaml at %s: %s",
+				agentYamlPath, err,
+			),
+			"fix the agent.yaml syntax",
+		)
 	}
 
-	return agent_api.AgentProtocolResponses
+	switch len(hosted.Protocols) {
+	case 0:
+		return "", exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"agent.yaml does not declare any protocols",
+			"add a protocols section to agent.yaml",
+		)
+	case 1:
+		p := strings.TrimSpace(hosted.Protocols[0].Protocol)
+		if p == "" {
+			return "", exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"agent.yaml declares a protocol entry, "+
+					"but its protocol field is empty",
+				"set a non-empty protocol value in agent.yaml",
+			)
+		}
+		return agent_api.AgentProtocol(p), nil
+	default:
+		names := make([]string, len(hosted.Protocols))
+		for i, p := range hosted.Protocols {
+			names[i] = p.Protocol
+		}
+		return "", exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf(
+				"agent.yaml declares multiple protocols: %s",
+				strings.Join(names, ", "),
+			),
+			"use --protocol to specify which protocol to use",
+		)
+	}
 }

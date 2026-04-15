@@ -31,18 +31,22 @@ type encryptionType string
 // for more information on these APIs.
 const cryptProtectDataEncryptionType encryptionType = "CryptProtectData"
 
-func newCache(root string) cache.ExportReplace {
-	return &msalCacheAdapter{
-		cache: &memoryCache{
-			cache: make(map[string][]byte),
-			inner: &encryptedCache{
-				inner: &fileCache{
-					prefix: "cache",
-					root:   root,
-					ext:    "bin",
-				},
+func newMsalCacheStore(root string) Cache {
+	return &memoryCache{
+		cache: make(map[string][]byte),
+		inner: &encryptedCache{
+			inner: &fileCache{
+				prefix: "cache",
+				root:   root,
+				ext:    "bin",
 			},
 		},
+	}
+}
+
+func newCache(root string) cache.ExportReplace {
+	return &msalCacheAdapter{
+		cache: newMsalCacheStore(root),
 	}
 }
 

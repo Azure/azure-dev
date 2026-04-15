@@ -21,11 +21,10 @@ import (
 	"go.uber.org/multierr"
 )
 
-// SubscriptionTenantResolver allows resolving the correct tenant ID
-// that allows the current account access to a given subscription.
-type SubscriptionTenantResolver interface {
-	// Resolve the tenant ID required by the current account to access the given subscription.
-	LookupTenant(ctx context.Context, subscriptionId string) (tenantId string, err error)
+// SubscriptionResolver resolves subscription metadata for the current account, including both the resource tenant
+// and the user access tenant.
+type SubscriptionResolver interface {
+	GetSubscription(ctx context.Context, subscriptionId string) (*Subscription, error)
 }
 
 // Typically auth.Manager
@@ -208,6 +207,8 @@ func (m *SubscriptionsManager) getSubscriptions(ctx context.Context) (getSubscri
 	}, nil
 }
 
+// GetSubscription retrieves subscription metadata for the current account, including both the resource tenant
+// and the tenant through which the current user can access it.
 func (m *SubscriptionsManager) GetSubscription(ctx context.Context, subscriptionId string) (*Subscription, error) {
 	subscriptions, err := m.GetSubscriptions(ctx)
 	if err != nil {

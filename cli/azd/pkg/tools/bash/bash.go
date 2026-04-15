@@ -5,6 +5,7 @@ package bash
 
 import (
 	"context"
+	"os"
 	"runtime"
 	"strings"
 
@@ -12,24 +13,50 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
-// Creates a new BashScript command runner
-func NewBashScript(commandRunner exec.CommandRunner, cwd string, envVars []string) tools.Script {
-	return &bashScript{
-		commandRunner: commandRunner,
-		cwd:           cwd,
-		envVars:       envVars,
-	}
+// NewExecutor creates a bash HookExecutor. Takes only IoC-injectable deps.
+func NewExecutor(commandRunner exec.CommandRunner) tools.HookExecutor {
+	return &bashExecutor{commandRunner: commandRunner}
 }
 
-type bashScript struct {
+type bashExecutor struct {
 	commandRunner exec.CommandRunner
-	cwd           string
-	envVars       []string
+	tempFile      string // temp script created from inline content
 }
 
-// Executes the specified bash script
-// When interactive is true will attach to stdin, stdout & stderr
-func (bs *bashScript) Execute(ctx context.Context, path string, options tools.ExecOptions) (exec.RunResult, error) {
+// Prepare creates a temp script file when the execution context
+// carries inline script content. For file-based hooks this is a no-op.
+func (b *bashExecutor) Prepare(
+	_ context.Context, _ string, execCtx tools.ExecutionContext,
+) error {
+	if execCtx.InlineScript == "" {
+		return nil
+	}
+
+	content := "#!/bin/sh\nset -e\n\n" +
+		"# Auto generated file from Azure Developer CLI\n" +
+		execCtx.InlineScript + "\n"
+
+	path, err := tools.CreateInlineTempScript(
+		execCtx.HookName, ".sh", content,
+	)
+	if err != nil {
+		return err
+	}
+	b.tempFile = path
+
+	return nil
+}
+
+// Execute runs the specified bash script. When a temp file was
+// created during Prepare it is used instead of the provided path.
+// When interactive is true will attach to stdin, stdout & stderr.
+func (b *bashExecutor) Execute(
+	ctx context.Context, path string, execCtx tools.ExecutionContext,
+) (exec.RunResult, error) {
+	if b.tempFile != "" {
+		path = b.tempFile
+	}
+
 	var runArgs exec.RunArgs
 	// Bash likes all path separators in POSIX format
 	path = strings.ReplaceAll(path, "\\", "/")
@@ -41,17 +68,27 @@ func (bs *bashScript) Execute(ctx context.Context, path string, options tools.Ex
 	}
 
 	runArgs = runArgs.
-		WithCwd(bs.cwd).
-		WithEnv(bs.envVars).
+		WithCwd(execCtx.Cwd).
+		WithEnv(execCtx.EnvVars).
 		WithShell(true)
 
-	if options.Interactive != nil {
-		runArgs = runArgs.WithInteractive(*options.Interactive)
+	if execCtx.Interactive != nil {
+		runArgs = runArgs.WithInteractive(*execCtx.Interactive)
 	}
 
-	if options.StdOut != nil {
-		runArgs = runArgs.WithStdOut(options.StdOut)
+	if execCtx.StdOut != nil {
+		runArgs = runArgs.WithStdOut(execCtx.StdOut)
 	}
 
-	return bs.commandRunner.Run(ctx, runArgs)
+	return b.commandRunner.Run(ctx, runArgs)
+}
+
+// Cleanup removes any temporary script file created during Prepare.
+func (b *bashExecutor) Cleanup(_ context.Context) error {
+	if b.tempFile != "" {
+		err := os.Remove(b.tempFile)
+		b.tempFile = ""
+		return err
+	}
+	return nil
 }

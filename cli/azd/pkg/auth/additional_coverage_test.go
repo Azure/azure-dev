@@ -30,7 +30,7 @@ func TestAzdCredential_GetToken_Success(t *testing.T) {
 
 	account := public.Account{HomeAccountID: "h1"}
 	cred := newAzdCredential(
-		pc, &account, cloud.AzurePublic(), "",
+		pc, &account, cloud.AzurePublic(), "", nil,
 	)
 
 	tok, err := cred.GetToken(t.Context(), policy.TokenRequestOptions{
@@ -51,7 +51,7 @@ func TestAzdCredential_GetToken_WithTenantID(t *testing.T) {
 
 	account := public.Account{HomeAccountID: "h1"}
 	cred := newAzdCredential(
-		pc, &account, cloud.AzurePublic(), "default-t",
+		pc, &account, cloud.AzurePublic(), "default-t", nil,
 	)
 
 	// Override with request-level tenant
@@ -70,7 +70,7 @@ func TestAzdCredential_GetToken_GenericError(t *testing.T) {
 
 	account := public.Account{HomeAccountID: "h1"}
 	cred := newAzdCredential(
-		pc, &account, cloud.AzurePublic(), "",
+		pc, &account, cloud.AzurePublic(), "", nil,
 	)
 
 	_, err := cred.GetToken(t.Context(), policy.TokenRequestOptions{
@@ -90,7 +90,7 @@ func TestAzdCredential_GetToken_AuthFailedNotReLogin(t *testing.T) {
 
 	account := public.Account{HomeAccountID: "h1"}
 	cred := newAzdCredential(
-		pc, &account, cloud.AzurePublic(), "",
+		pc, &account, cloud.AzurePublic(), "", nil,
 	)
 
 	_, err := cred.GetToken(t.Context(), policy.TokenRequestOptions{

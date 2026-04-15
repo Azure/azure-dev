@@ -4,9 +4,13 @@
 package python
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"log"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -370,4 +374,176 @@ func Test_CreateVirtualEnv_WithEnvVars(t *testing.T) {
 	err := cli.CreateVirtualEnv(*mockContext.Context, tempDir, ".venv", env)
 	require.NoError(t, err)
 	require.Equal(t, env, capturedArgs.Env)
+}
+
+// ---------------------------------------------------------------------------
+// ResolveCommand tests
+// ---------------------------------------------------------------------------
+
+func Test_ResolveCommand_Success(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	pyCmd := mockPythonInPath(mockContext)
+	cli := NewCli(mockContext.CommandRunner)
+
+	cmd, err := cli.ResolveCommand()
+	require.NoError(t, err)
+	require.Equal(t, pyCmd, cmd)
+}
+
+func Test_ResolveCommand_NotInstalled(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	mockPythonNotInPath(mockContext)
+	cli := NewCli(mockContext.CommandRunner)
+
+	_, err := cli.ResolveCommand()
+	require.Error(t, err)
+}
+
+// ---------------------------------------------------------------------------
+// EnsureVirtualEnv tests
+// ---------------------------------------------------------------------------
+
+func Test_EnsureVirtualEnv_CreatesWhenMissing(t *testing.T) {
+	tempDir := t.TempDir()
+	mockContext := mocks.NewMockContext(context.Background())
+	mockPythonInPath(mockContext)
+	cli := NewCli(mockContext.CommandRunner)
+
+	mockContext.CommandRunner.When(
+		func(args exec.RunArgs, command string) bool {
+			return strings.Contains(command, "-m venv")
+		},
+	).Respond(exec.NewRunResult(0, "", ""))
+
+	err := cli.EnsureVirtualEnv(
+		*mockContext.Context, tempDir, ".venv", nil,
+	)
+	require.NoError(t, err)
+}
+
+func Test_EnsureVirtualEnv_SkipsWhenExists(t *testing.T) {
+	tempDir := t.TempDir()
+	venvDir := filepath.Join(tempDir, ".venv")
+	require.NoError(t, os.MkdirAll(venvDir, 0o700))
+
+	mockContext := mocks.NewMockContext(context.Background())
+	cli := NewCli(mockContext.CommandRunner)
+
+	// No mock for CreateVirtualEnv — must not be called.
+	err := cli.EnsureVirtualEnv(
+		*mockContext.Context, tempDir, ".venv", nil,
+	)
+	require.NoError(t, err)
+}
+
+func Test_EnsureVirtualEnv_ErrorWhenFileNotDir(t *testing.T) {
+	tempDir := t.TempDir()
+	venvPath := filepath.Join(tempDir, ".venv")
+	require.NoError(t, os.WriteFile(
+		venvPath, []byte("file"), 0o600,
+	))
+
+	mockContext := mocks.NewMockContext(context.Background())
+	cli := NewCli(mockContext.CommandRunner)
+
+	err := cli.EnsureVirtualEnv(
+		*mockContext.Context, tempDir, ".venv", nil,
+	)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "not a directory")
+}
+
+func Test_EnsureVirtualEnv_CreateFails(t *testing.T) {
+	tempDir := t.TempDir()
+	mockContext := mocks.NewMockContext(context.Background())
+	mockPythonInPath(mockContext)
+	cli := NewCli(mockContext.CommandRunner)
+
+	mockContext.CommandRunner.When(
+		func(args exec.RunArgs, command string) bool {
+			return strings.Contains(command, "-m venv")
+		},
+	).RespondFn(
+		func(args exec.RunArgs) (exec.RunResult, error) {
+			return exec.RunResult{},
+				errors.New("venv module not found")
+		},
+	)
+
+	err := cli.EnsureVirtualEnv(
+		*mockContext.Context, tempDir, "my_env", nil,
+	)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "venv module not found")
+}
+
+// ---------------------------------------------------------------------------
+// InstallDependencies tests
+// ---------------------------------------------------------------------------
+
+func Test_InstallDependencies_Requirements(t *testing.T) {
+	tempDir := t.TempDir()
+	mockContext := mocks.NewMockContext(context.Background())
+	mockPythonInPath(mockContext)
+	cli := NewCli(mockContext.CommandRunner)
+
+	var capturedArgs exec.RunArgs
+	mockContext.CommandRunner.When(
+		func(args exec.RunArgs, command string) bool {
+			capturedArgs = args
+			return strings.Contains(
+				command, "requirements.txt",
+			)
+		},
+	).Respond(exec.NewRunResult(0, "", ""))
+
+	err := cli.InstallDependencies(
+		*mockContext.Context, tempDir, ".venv",
+		"requirements.txt", nil,
+	)
+	require.NoError(t, err)
+	require.NotEmpty(t, capturedArgs.Cwd)
+}
+
+func Test_InstallDependencies_Pyproject(t *testing.T) {
+	tempDir := t.TempDir()
+	mockContext := mocks.NewMockContext(context.Background())
+	mockPythonInPath(mockContext)
+	cli := NewCli(mockContext.CommandRunner)
+
+	mockContext.CommandRunner.When(
+		func(args exec.RunArgs, command string) bool {
+			return strings.Contains(
+				command, "pip install .",
+			)
+		},
+	).Respond(exec.NewRunResult(0, "", ""))
+
+	err := cli.InstallDependencies(
+		*mockContext.Context, tempDir, ".venv",
+		"pyproject.toml", nil,
+	)
+	require.NoError(t, err)
+}
+
+func Test_InstallDependencies_UnknownFile(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	cli := NewCli(mockContext.CommandRunner)
+
+	// Capture log output to verify the default-case message.
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	defer log.SetOutput(os.Stderr)
+
+	err := cli.InstallDependencies(
+		*mockContext.Context, "", "", "setup.cfg", nil,
+	)
+	require.NoError(t, err)
+	require.Contains(t, buf.String(),
+		"unsupported dependency file",
+		"should log a skip message for unrecognized files",
+	)
+	require.Contains(t, buf.String(), "setup.cfg",
+		"log message should include the file name",
+	)
 }

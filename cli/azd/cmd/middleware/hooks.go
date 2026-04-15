@@ -61,6 +61,9 @@ func (m *HooksMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		}
 	}
 
+	// Service hooks must be available for both top-level commands and child workflow steps.
+	// Registration is idempotent per service hook signature, so repeated middleware runs
+	// (retries, azd up steps, workflow service execution) do not append duplicate handlers.
 	if err := m.registerServiceHooks(ctx); err != nil {
 		return nil, fmt.Errorf("failed registering service hooks, %w", err)
 	}
@@ -81,7 +84,9 @@ func (m *HooksMiddleware) registerCommandHooks(
 		return next(ctx)
 	}
 
-	hooksManager := ext.NewHooksManager(m.projectConfig.Path, m.commandRunner)
+	hooksManager := ext.NewHooksManager(ext.HooksManagerOptions{
+		Cwd: m.projectConfig.Path, ProjectDir: m.projectConfig.Path,
+	}, m.commandRunner)
 	hooksRunner := ext.NewHooksRunner(
 		hooksManager,
 		m.commandRunner,
@@ -127,11 +132,21 @@ func (m *HooksMiddleware) registerServiceHooks(ctx context.Context) error {
 		serviceName := service.Name
 		// If the service hasn't configured any hooks we can continue on.
 		if len(service.Hooks) == 0 {
+			service.ResetHookRegistration()
 			log.Printf("service '%s' does not require any command hooks.\n", serviceName)
 			continue
 		}
 
-		serviceHooksManager := ext.NewHooksManager(service.Path(), m.commandRunner)
+		signature := ext.HooksConfigSignature(service.Hooks)
+		registrationCtx, shouldRegister := service.EnsureHooksRegistered(ctx, signature)
+		if !shouldRegister {
+			log.Printf("service '%s' command hooks already registered for current signature.\n", serviceName)
+			continue
+		}
+
+		serviceHooksManager := ext.NewHooksManager(ext.HooksManagerOptions{
+			Cwd: service.Path(), ProjectDir: m.projectConfig.Path,
+		}, m.commandRunner)
 		serviceHooksRunner := ext.NewHooksRunner(
 			serviceHooksManager,
 			m.commandRunner,
@@ -143,25 +158,33 @@ func (m *HooksMiddleware) registerServiceHooks(ctx context.Context) error {
 			m.serviceLocator,
 		)
 
-		for hookName := range service.Hooks {
-			hookType, eventName := ext.InferHookType(hookName)
-			// If not a pre or post hook we can continue on.
-			if hookType == ext.HookTypeNone {
-				continue
-			}
+		if err := m.registerServiceHookHandlers(registrationCtx, service, serviceHooksRunner); err != nil {
+			service.RollbackHookRegistration(signature)
+			return fmt.Errorf("failed registering event handlers for service '%s': %w", serviceName, err)
+		}
+	}
 
-			if err := service.AddHandler(
-				ctx,
-				ext.Event(hookName),
-				m.createServiceEventHandler(hookType, eventName, serviceHooksRunner),
-			); err != nil {
-				return fmt.Errorf(
-					"failed registering event handler for service '%s' and event '%s', %w",
-					serviceName,
-					hookName,
-					err,
-				)
-			}
+	return nil
+}
+
+func (m *HooksMiddleware) registerServiceHookHandlers(
+	ctx context.Context,
+	service *project.ServiceConfig,
+	serviceHooksRunner *ext.HooksRunner,
+) error {
+	for hookName := range service.Hooks {
+		hookType, eventName := ext.InferHookType(hookName)
+		// If not a pre or post hook we can continue on.
+		if hookType == ext.HookTypeNone {
+			continue
+		}
+
+		if err := service.AddHandler(
+			ctx,
+			ext.Event(hookName),
+			m.createServiceEventHandler(hookType, eventName, serviceHooksRunner),
+		); err != nil {
+			return fmt.Errorf("event '%s': %w", hookName, err)
 		}
 	}
 
@@ -187,7 +210,9 @@ func (m *HooksMiddleware) validateHooks(ctx context.Context, projectConfig *proj
 			return
 		}
 
-		hooksManager := ext.NewHooksManager(cwd, m.commandRunner)
+		hooksManager := ext.NewHooksManager(ext.HooksManagerOptions{
+			Cwd: cwd, ProjectDir: projectConfig.Path,
+		}, m.commandRunner)
 		validationResult := hooksManager.ValidateHooks(ctx, hooks)
 
 		for _, warning := range validationResult.Warnings {

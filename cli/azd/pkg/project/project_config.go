@@ -79,3 +79,27 @@ type ProjectMetadata struct {
 
 // HooksConfig aliases ext.HooksConfig for compatibility with existing project package references.
 type HooksConfig = ext.HooksConfig
+
+// CopyRuntimeStateTo preserves in-memory runtime state that should survive config reloads.
+func (pc *ProjectConfig) CopyRuntimeStateTo(target *ProjectConfig) {
+	if pc == nil || target == nil {
+		return
+	}
+
+	if pc.EventDispatcher != nil {
+		target.EventDispatcher = pc.EventDispatcher
+	}
+
+	if pc.Services == nil || target.Services == nil {
+		return
+	}
+
+	for serviceName, sourceService := range pc.Services {
+		targetService, has := target.Services[serviceName]
+		if !has {
+			continue
+		}
+
+		sourceService.CopyRuntimeStateTo(targetService)
+	}
+}

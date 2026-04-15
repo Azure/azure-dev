@@ -1,0 +1,72 @@
+# Eval: Waza Runs
+# Runs Waza LLM evaluations against a freshly built azd binary.
+# Scheduled 3x daily Tue-Sat.
+#
+# Required variables (set in ADO pipeline variable group):
+#   COPILOT_CLI_TOKEN - Copilot CLI authentication token for LLM evaluations
+
+trigger: none
+pr: none
+
+schedules:
+  # 5am, 12pm, 8pm UTC, Tuesday through Saturday
+  - cron: "0 5,12,20 * * 2-6"
+    displayName: Waza Eval Runs
+    branches:
+      include:
+        - main
+    always: true
+
+extends:
+  template: /eng/pipelines/templates/stages/1es-redirect.yml
+  parameters:
+    stages:
+      - stage: WazaEval
+        displayName: Waza Evaluations
+        variables:
+          - template: /eng/pipelines/templates/variables/image.yml
+        jobs:
+          - job: WazaRun
+            displayName: Waza Run
+            pool:
+              name: $(LINUXPOOL)
+              image: $(LINUXVMIMAGE)
+              os: linux
+            timeoutInMinutes: 45
+            steps:
+              - checkout: self
+
+              - template: /eng/pipelines/templates/steps/setup-go.yml
+
+              - task: NodeTool@0
+                inputs:
+                  versionSpec: "22.x"
+                displayName: Setup Node.js
+
+              - pwsh: go build -o ./azd .
+                workingDirectory: cli/azd
+                displayName: Build azd
+
+              - bash: echo "##vso[task.prependpath]$(Build.SourcesDirectory)/cli/azd"
+                displayName: Add azd to PATH
+
+              - bash: npm install -g waza
+                displayName: Install Waza CLI
+
+              - bash: npm ci
+                workingDirectory: cli/azd/test/eval
+                displayName: Install eval dependencies
+
+              - bash: waza run --executor copilot-sdk
+                workingDirectory: cli/azd/test/eval
+                timeoutInMinutes: 30
+                displayName: Run Waza evaluations
+                env:
+                  COPILOT_CLI_TOKEN: $(COPILOT_CLI_TOKEN)
+
+              - task: PublishPipelineArtifact@1
+                condition: always()
+                inputs:
+                  targetPath: cli/azd/test/eval/reports/
+                  artifactName: waza-results-$(Build.BuildId)
+                displayName: Upload Waza results

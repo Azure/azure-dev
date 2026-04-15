@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/language"
 	"github.com/braydonk/yaml"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -88,7 +89,7 @@ func Test_HooksConfig_MarshalYAML_Empty(t *testing.T) {
 func Test_HooksConfig_MarshalYAML_SingleHook(t *testing.T) {
 	hooks := HooksConfig{
 		"preprovision": {
-			{Run: "echo hello", Shell: ext.ShellTypeBash},
+			{Run: "echo hello", Shell: string(language.HookKindBash)},
 		},
 	}
 	result, err := hooks.MarshalYAML()
@@ -104,8 +105,8 @@ func Test_HooksConfig_MarshalYAML_SingleHook(t *testing.T) {
 func Test_HooksConfig_MarshalYAML_MultipleHooks(t *testing.T) {
 	hooks := HooksConfig{
 		"preprovision": {
-			{Run: "echo step1", Shell: ext.ShellTypeBash},
-			{Run: "echo step2", Shell: ext.ShellTypeBash},
+			{Run: "echo step1", Shell: string(language.HookKindBash)},
+			{Run: "echo step2", Shell: string(language.HookKindBash)},
 		},
 	}
 	result, err := hooks.MarshalYAML()
@@ -122,10 +123,10 @@ func Test_HooksConfig_RoundTrip(t *testing.T) {
 	// Test round trip with all single hooks (marshals as map[string]*HookConfig, legacy unmarshal works)
 	original := HooksConfig{
 		"preprovision": {
-			{Run: "echo hello", Shell: ext.ShellTypeBash},
+			{Run: "echo hello", Shell: string(language.HookKindBash)},
 		},
 		"postprovision": {
-			{Run: "echo bye", Shell: ext.ShellTypeBash},
+			{Run: "echo bye", Shell: string(language.HookKindBash)},
 		},
 	}
 

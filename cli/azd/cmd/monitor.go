@@ -62,7 +62,7 @@ func newMonitorCmd() *cobra.Command {
 type monitorAction struct {
 	azdCtx               *azdcontext.AzdContext
 	env                  *environment.Environment
-	subResolver          account.SubscriptionTenantResolver
+	subResolver          account.SubscriptionResolver
 	resourceManager      infra.ResourceManager
 	resourceService      *azapi.ResourceService
 	console              input.Console
@@ -74,7 +74,7 @@ type monitorAction struct {
 func newMonitorAction(
 	azdCtx *azdcontext.AzdContext,
 	env *environment.Environment,
-	subResolver account.SubscriptionTenantResolver,
+	subResolver account.SubscriptionResolver,
 	resourceManager infra.ResourceManager,
 	resourceService *azapi.ResourceService,
 	console input.Console,
@@ -152,10 +152,11 @@ func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		}
 	}
 
-	tenantId, err := m.subResolver.LookupTenant(ctx, m.env.GetSubscriptionId())
+	subscription, err := m.subResolver.GetSubscription(ctx, m.env.GetSubscriptionId())
 	if err != nil {
 		return nil, err
 	}
+	tenantId := subscription.UserAccessTenantId
 
 	for _, insightsResource := range insightsResources {
 		if m.flags.monitorLive {

@@ -281,7 +281,10 @@ func TestResolveProtocol_ExplicitFlag(t *testing.T) {
 			}
 			// resolveProtocol with an explicit flag should return it directly
 			// without trying to read agent.yaml (which would fail in tests).
-			got := action.resolveProtocol(t.Context())
+			got, err := action.resolveProtocol(t.Context())
+			if err != nil {
+				t.Fatalf("resolveProtocol() unexpected error: %v", err)
+			}
 			if got != tt.want {
 				t.Errorf("resolveProtocol() = %q, want %q", got, tt.want)
 			}

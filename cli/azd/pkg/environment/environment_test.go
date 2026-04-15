@@ -286,6 +286,8 @@ func TestKey(t *testing.T) {
 		{"spacesAndHyphens", "my api-service", "MY_API_SERVICE"},
 		{"uppercase", "MyApp", "MYAPP"},
 		{"multipleSpaces", "my  app", "MY__APP"},
+		{"withTab", "api\tfrontend", "API_FRONTEND"},
+		{"withNewline", "api\nfrontend", "API_FRONTEND"},
 		{"empty", "", ""},
 	}
 

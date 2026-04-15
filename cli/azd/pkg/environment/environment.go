@@ -11,6 +11,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"unicode"
 
 	"maps"
 
@@ -246,11 +247,17 @@ func (e *Environment) SetLocation(location string) {
 }
 
 // Key returns the environment key name for the given name.
-// Spaces and hyphens are replaced with underscores to produce valid
-// environment variable names (e.g., "api and frontend" → "API_AND_FRONTEND").
+// The name is uppercased, and whitespace (including tabs and Unicode spaces)
+// and hyphens are replaced with underscores. Other characters (e.g., dots,
+// slashes) are passed through unchanged.
 func Key(name string) string {
 	upper := strings.ToUpper(name)
-	upper = strings.ReplaceAll(upper, " ", "_")
+	upper = strings.Map(func(r rune) rune {
+		if unicode.IsSpace(r) {
+			return '_'
+		}
+		return r
+	}, upper)
 	upper = strings.ReplaceAll(upper, "-", "_")
 	return upper
 }

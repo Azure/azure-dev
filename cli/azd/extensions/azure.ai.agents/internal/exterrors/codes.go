@@ -64,6 +64,7 @@ const (
 	CodeTenantLookupFailed       = "tenant_lookup_failed"
 	CodeNotLoggedIn              = "not_logged_in"
 	CodeLoginExpired             = "login_expired"
+	CodeTokenProtectionBlocked   = "token_protection_blocked"
 	CodeAuthFailed               = "auth_failed"
 )
 

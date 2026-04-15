@@ -2307,6 +2307,13 @@ func (p *BicepProvider) validatePreflight(
 				return true, nil
 			}
 			p.setPreflightOutcome(span, preflightOutcomeWarningsAccepted, diagnosticIDs)
+			// Skip the ARM server-side validation when the user has acknowledged
+			// warnings. The local checks already surfaced the issues and the user
+			// chose to proceed despite them; running the ARM ValidatePreflight
+			// would re-surface the same issues as hard errors (e.g., missing
+			// Microsoft.Authorization/roleAssignments/write returns an
+			// InvalidTemplateDeployment error from the server-side validation).
+			return false, nil
 		}
 	} else if results != nil {
 		p.setPreflightOutcome(span, preflightOutcomePassed, nil)
@@ -2350,14 +2357,14 @@ func (p *BicepProvider) checkRoleAssignmentPermissions(
 		return nil, nil
 	}
 
+	subscriptionId := p.env.GetSubscriptionId()
+
 	var permissionsService *azapi.PermissionsService
 	if err := p.serviceLocator.Resolve(&permissionsService); err != nil {
 		log.Printf(
-			"could not resolve PermissionsService, skipping role assignment permission check: %v", err)
-		return nil, nil
+			"could not resolve PermissionsService for role assignment check: %v", err)
+		return roleAssignmentUnverifiedWarning(subscriptionId, err), nil
 	}
-
-	subscriptionId := p.env.GetSubscriptionId()
 
 	// Resolve the principal ID in the resource tenant context rather than the user-access
 	// (home) tenant. For B2B/guest users, CurrentPrincipalId returns the home-tenant oid,
@@ -2367,8 +2374,8 @@ func (p *BicepProvider) checkRoleAssignmentPermissions(
 	principalId, err := p.resolveResourceTenantPrincipalId(ctx, subscriptionId)
 	if err != nil {
 		log.Printf(
-			"could not determine current principal, skipping role assignment permission check: %v", err)
-		return nil, nil
+			"could not determine current principal for role assignment check: %v", err)
+		return roleAssignmentUnverifiedWarning(subscriptionId, err), nil
 	}
 
 	requiredActions := []string{
@@ -2379,8 +2386,8 @@ func (p *BicepProvider) checkRoleAssignmentPermissions(
 		ctx, subscriptionId, principalId, requiredActions,
 	)
 	if err != nil {
-		log.Printf("error checking role assignment permissions, skipping check: %v", err)
-		return nil, nil
+		log.Printf("error checking role assignment permissions: %v", err)
+		return roleAssignmentUnverifiedWarning(subscriptionId, err), nil
 	}
 
 	if !hasPermission.HasPermission {
@@ -2418,6 +2425,30 @@ func (p *BicepProvider) checkRoleAssignmentPermissions(
 	}
 
 	return nil, nil
+}
+
+// roleAssignmentUnverifiedWarning produces a warning when the template contains role
+// assignments but the permission check could not be completed (e.g., Graph API failure,
+// RBAC API error, or missing service dependency). This ensures the user is informed
+// about the role assignment requirement even when verification fails, rather than
+// silently skipping the check and letting ARM validation produce a hard error.
+func roleAssignmentUnverifiedWarning(subscriptionId string, cause error) []PreflightCheckResult {
+	return []PreflightCheckResult{{
+		Severity:     PreflightCheckWarning,
+		DiagnosticID: "role_assignment_unverified",
+		Message: fmt.Sprintf(
+			"the deployment template includes role assignments "+
+				"(Microsoft.Authorization/roleAssignments) but the permission check could not be "+
+				"completed (reason: %s). If you do not have "+
+				"'Microsoft.Authorization/roleAssignments/write' permission on subscription %s, "+
+				"the deployment will fail. "+
+				"Ensure you have the 'Role Based Access Control Administrator', "+
+				"'User Access Administrator', 'Owner', or a custom role with "+
+				"'Microsoft.Authorization/roleAssignments/write' assigned to your account.",
+			cause,
+			subscriptionId,
+		),
+	}}
 }
 
 // checkAiModelQuota inspects the Bicep snapshot for cognitive services model deployments

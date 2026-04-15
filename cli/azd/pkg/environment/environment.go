@@ -247,7 +247,7 @@ func (e *Environment) SetLocation(location string) {
 }
 
 // Key returns the environment key name for the given name.
-// The name is uppercased, and whitespace (including tabs and Unicode spaces)
+// The name is converted to uppercase, and whitespace (including tabs and Unicode spaces)
 // and hyphens are replaced with underscores. Other characters (e.g., dots,
 // slashes) are passed through unchanged.
 func Key(name string) string {

@@ -9,7 +9,6 @@ Global Flags
         --debug              	: Enables debugging and diagnostics logging.
         --docs               	: Opens the documentation for azd version in your web browser.
     -e, --environment string 	: The name of the environment to use.
-        --fail-on-prompt     	: Fails with an actionable error whenever a prompt is encountered, even if a default exists. Implies --no-prompt.
     -h, --help               	: Gets help for version.
         --no-prompt          	: Accepts the default value instead of prompting, or it fails if there is no default.
 

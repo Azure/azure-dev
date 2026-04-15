@@ -33,11 +33,6 @@ type GlobalCommandOptions struct {
 	// purposes such as URLs).
 	EnvironmentName string
 
-	// FailOnPrompt when true, any interactive prompt fails immediately with an
-	// actionable error, even if a default value exists. This is stricter than
-	// NoPrompt which silently uses defaults.
-	FailOnPrompt bool
-
 	// EnableTelemetry indicates if telemetry should be sent.
 	// The rootCmd will disable this based if the environment variable
 	// AZURE_DEV_COLLECT_TELEMETRY is set to 'no'.

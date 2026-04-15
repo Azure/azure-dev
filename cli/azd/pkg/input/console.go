@@ -151,9 +151,8 @@ type AskerConsole struct {
 	//   - Spinner progress will be written as standard newline messages.
 	//   - Prompting assumes a non-terminal environment, where output written and input received are machine-friendly text,
 	//     stripped of formatting characters.
-	isTerminal   bool
-	noPrompt     bool
-	failOnPrompt bool
+	isTerminal bool
+	noPrompt   bool
 	// when non nil, use this client instead of prompting ourselves on the console.
 	promptClient *externalPromptClient
 	// noPromptDialog when true, disables SupportsPromptDialog() even when promptClient is set.
@@ -589,9 +588,6 @@ func (c *AskerConsole) SupportsPromptDialog() bool {
 // PromptDialog prompts for multiple values using a single dialog. When successful, it returns a map of prompt IDs to their
 // values.
 func (c *AskerConsole) PromptDialog(ctx context.Context, dialog PromptDialog) (map[string]any, error) {
-	if c.failOnPrompt {
-		return nil, FailOnPromptError(dialog.Title)
-	}
 
 	request := externalPromptDialogRequest{
 		Title:       dialog.Title,
@@ -631,10 +627,6 @@ func (c *AskerConsole) PromptDialog(ctx context.Context, dialog PromptDialog) (m
 // Prompts the user for a single value
 func (c *AskerConsole) Prompt(ctx context.Context, options ConsoleOptions) (string, error) {
 	var response string
-
-	if c.failOnPrompt && c.promptClient != nil {
-		return "", FailOnPromptError(options.Message)
-	}
 
 	if c.promptClient != nil {
 		opts := promptOptions{
@@ -694,12 +686,6 @@ func choicesFromOptions(options ConsoleOptions) []promptChoice {
 
 // Prompts the user to select from a set of values
 func (c *AskerConsole) Select(ctx context.Context, options ConsoleOptions) (int, error) {
-	if c.failOnPrompt && c.promptClient != nil {
-		choiceLabels := make([]string, len(options.Options))
-		copy(choiceLabels, options.Options)
-		return -1, FailOnPromptSelectError(options.Message, choiceLabels)
-	}
-
 	if c.promptClient != nil {
 		opts := promptOptions{
 			Type: "select",
@@ -780,12 +766,6 @@ func (c *AskerConsole) Select(ctx context.Context, options ConsoleOptions) (int,
 func (c *AskerConsole) MultiSelect(ctx context.Context, options ConsoleOptions) ([]string, error) {
 	var response []string
 
-	if c.failOnPrompt && c.promptClient != nil {
-		choiceLabels := make([]string, len(options.Options))
-		copy(choiceLabels, options.Options)
-		return nil, FailOnPromptSelectError(options.Message, choiceLabels)
-	}
-
 	if c.promptClient != nil {
 		opts := promptOptions{
 			Type: "multiSelect",
@@ -854,10 +834,6 @@ func (c *AskerConsole) MultiSelect(ctx context.Context, options ConsoleOptions) 
 
 // Prompts the user to confirm an operation
 func (c *AskerConsole) Confirm(ctx context.Context, options ConsoleOptions) (bool, error) {
-	if c.failOnPrompt && c.promptClient != nil {
-		return false, FailOnPromptError(options.Message)
-	}
-
 	if c.promptClient != nil {
 		opts := promptOptions{
 			Type: "confirm",
@@ -935,7 +911,7 @@ func (c *AskerConsole) EnsureBlankLine(ctx context.Context) {
 
 // wait until the next enter
 func (c *AskerConsole) WaitForEnter() {
-	if c.noPrompt || c.failOnPrompt {
+	if c.noPrompt {
 		return
 	}
 
@@ -1049,13 +1025,12 @@ type ExternalPromptConfiguration struct {
 // instead of prompting on the console.
 func NewConsole(
 	noPrompt bool,
-	failOnPrompt bool,
 	isTerminal bool,
 	writers Writers,
 	handles ConsoleHandles,
 	formatter output.Formatter,
 	externalPromptCfg *ExternalPromptConfiguration) Console {
-	asker := NewAsker(noPrompt, failOnPrompt, isTerminal, handles.Stdout, handles.Stdin)
+	asker := NewAsker(noPrompt, isTerminal, handles.Stdout, handles.Stdin)
 
 	c := &AskerConsole{
 		asker:         asker,
@@ -1066,7 +1041,6 @@ func NewConsole(
 		isTerminal:    isTerminal,
 		currentIndent: atomic.NewString(""),
 		noPrompt:      noPrompt,
-		failOnPrompt:  failOnPrompt,
 	}
 
 	if writers.Spinner == nil {

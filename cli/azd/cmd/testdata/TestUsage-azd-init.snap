@@ -20,12 +20,11 @@ Flags
         --up                  	: Provision and deploy to Azure after initializing the project from a template.
 
 Global Flags
-    -C, --cwd string     	: Sets the current working directory.
-        --debug          	: Enables debugging and diagnostics logging.
-        --docs           	: Opens the documentation for azd init in your web browser.
-        --fail-on-prompt 	: Fails with an actionable error whenever a prompt is encountered, even if a default exists. Implies --no-prompt.
-    -h, --help           	: Gets help for init.
-        --no-prompt      	: Accepts the default value instead of prompting, or it fails if there is no default.
+    -C, --cwd string 	: Sets the current working directory.
+        --debug      	: Enables debugging and diagnostics logging.
+        --docs       	: Opens the documentation for azd init in your web browser.
+    -h, --help       	: Gets help for init.
+        --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
 
 Examples
   Initialize a template from a branch other than main.

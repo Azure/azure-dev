@@ -6,6 +6,7 @@ package templates
 import (
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -47,7 +48,7 @@ func Absolute(path string) (string, error) {
 	// reference (./..., ../..., or an absolute path). Bare names like "my-template" or
 	// "owner/repo" always resolve to GitHub URLs, even if a same-named local directory exists,
 	// to avoid silently overriding remote template resolution.
-	if looksLikeLocalPath(path) {
+	if LooksLikeLocalPath(path) {
 		// Use Lstat to reject symlinks consistently with copyLocalTemplate.
 		if info, err := os.Lstat(path); err == nil {
 			if info.Mode()&os.ModeSymlink != 0 {
@@ -97,9 +98,9 @@ func IsLocalPath(resolvedPath string) bool {
 	return !isRemoteURI(resolvedPath)
 }
 
-// looksLikeLocalPath returns true if the path appears to be an explicit local filesystem reference
+// LooksLikeLocalPath returns true if the path appears to be an explicit local filesystem reference
 // (e.g., ".", "..", starts with ./, ../, or is an absolute path).
-func looksLikeLocalPath(path string) bool {
+func LooksLikeLocalPath(path string) bool {
 	return path == "." ||
 		path == ".." ||
 		strings.HasPrefix(path, "./") ||
@@ -107,4 +108,75 @@ func looksLikeLocalPath(path string) bool {
 		strings.HasPrefix(path, `..\`) ||
 		strings.HasPrefix(path, `.\`) ||
 		filepath.IsAbs(path)
+}
+
+// DeriveDirectoryName extracts a directory name from a template path,
+// following git clone conventions. For example:
+//
+//   - "todo-nodejs-mongo" → "todo-nodejs-mongo"
+//   - "Azure-Samples/todo-nodejs-mongo" → "todo-nodejs-mongo"
+//   - "https://github.com/Azure-Samples/todo-nodejs-mongo" → "todo-nodejs-mongo"
+//   - "https://github.com/Azure-Samples/todo-nodejs-mongo.git" → "todo-nodejs-mongo"
+//   - "../my-template" → "my-template"
+func DeriveDirectoryName(templatePath string) string {
+	path := strings.TrimSpace(templatePath)
+	path = strings.TrimRight(path, "/")
+
+	// Strip .git suffix (like git clone does)
+	path = strings.TrimSuffix(path, ".git")
+
+	var name string
+
+	// For remote URIs, extract the last path segment from the URL
+	if isRemoteURI(path) {
+		// Handle git@host:owner/repo format
+		if strings.HasPrefix(path, "git@") {
+			if idx := strings.LastIndex(path, ":"); idx >= 0 {
+				path = path[idx+1:]
+			}
+		}
+
+		// Strip query string and fragment from the URL path so that
+		// "repo?ref=main" or "repo#section" resolve to just "repo".
+		if parsed, err := url.Parse(path); err == nil {
+			path = parsed.Path
+			// url.Parse may leave the path empty for scheme-less remnants;
+			// fall back to the original when that happens.
+			if path == "" {
+				path = parsed.Opaque
+			}
+		}
+
+		// Take the last path segment
+		if idx := strings.LastIndex(path, "/"); idx >= 0 {
+			name = path[idx+1:]
+		} else {
+			name = path
+		}
+	} else {
+		// For local paths and bare names, use the last path component
+		name = filepath.Base(path)
+	}
+
+	// Strip .git suffix from the extracted name (handles cases where the
+	// early TrimSuffix missed it, e.g. "repo.git?ref=main")
+	name = strings.TrimSuffix(name, ".git")
+
+	// Reject unsafe directory names that could cause path traversal
+	if name == "." || name == ".." || name == "" {
+		// Fall back to a sanitized version of the full path
+		name = strings.NewReplacer("/", "-", "\\", "-", ":", "-").Replace(
+			strings.TrimRight(templatePath, "/"))
+		// Trim leading dots and dashes from the sanitized name
+		name = strings.TrimLeft(name, ".-")
+	}
+
+	// Final safety: if the name is still empty or unsafe after sanitization,
+	// use a generic fallback
+	if name == "" || name == "." || name == ".." {
+		log.Printf("DeriveDirectoryName: input %q fell back to default %q", templatePath, "new-project")
+		name = "new-project"
+	}
+
+	return name
 }

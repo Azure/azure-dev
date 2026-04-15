@@ -1,0 +1,30 @@
+id: env-staging-001
+description: >
+  User wants to create a staging environment alongside production.
+  LLM should suggest azd env commands with correct flags.
+inputs:
+  prompt: "I have my app deployed in production. How do I create a staging environment with azd?"
+  context: "User already has an azd project with a 'production' environment."
+graders:
+  - type: text
+    weight: 0.4
+    config:
+      must_match:
+        - "azd env new"
+        - "staging"
+      must_not_match:
+        - "azd down"
+        - "azd init"
+  - type: action_sequence
+    weight: 0.3
+    config:
+      expected_order:
+        - "azd env new"
+        - "azd provision"
+  - type: text
+    weight: 0.3
+    config:
+      must_match_any:
+        - "--environment staging"
+        - "-e staging"
+        - "azd env select"

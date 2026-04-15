@@ -108,3 +108,30 @@ func TestApplyVnextMetadata(t *testing.T) {
 		})
 	}
 }
+
+func TestGetServiceKey_NormalizesToolboxNames(t *testing.T) {
+	t.Parallel()
+
+	p := &AgentServiceTargetProvider{}
+
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"hyphens", "agent-tools", "AGENT_TOOLS"},
+		{"spaces", "agent tools", "AGENT_TOOLS"},
+		{"mixed", "my-agent tools", "MY_AGENT_TOOLS"},
+		{"already upper", "TOOLS", "TOOLS"},
+		{"lowercase", "tools", "TOOLS"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := p.getServiceKey(tt.input)
+			if got != tt.expected {
+				t.Errorf("getServiceKey(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}

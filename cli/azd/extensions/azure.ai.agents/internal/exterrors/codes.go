@@ -46,6 +46,7 @@ const (
 	CodeEnvironmentCreationFailed = "environment_creation_failed"
 	CodeEnvironmentValuesFailed   = "environment_values_failed"
 	CodeMissingAiProjectEndpoint  = "missing_ai_project_endpoint"
+	CodeMissingAzureTenantId      = "missing_azure_tenant_id"
 	CodeMissingAiProjectId        = "missing_ai_project_id"
 	CodeMissingAzureSubscription  = "missing_azure_subscription_id"
 	CodeMissingAgentEnvVars       = "missing_agent_env_vars"
@@ -89,6 +90,19 @@ const (
 	CodeInvalidFilePath  = "invalid_file_path"
 )
 
+// Error codes for toolbox operations.
+const (
+	CodeInvalidToolbox             = "invalid_toolbox"
+	CodeCreateToolboxVersionFailed = "create_toolbox_version_failed"
+)
+
+// Error codes for connection operations.
+const (
+	CodeInvalidConnection      = "invalid_connection"
+	CodeConnectionCreationFail = "connection_creation_failed"
+	CodeMissingConnectionField = "missing_connection_field"
+)
+
 // Error codes for agent identity RBAC operations.
 const (
 	CodeAgentIdentityNotFound   = "agent_identity_not_found"
@@ -123,4 +137,6 @@ const (
 	OpCreateAgent           = "create_agent"
 	OpStartContainer        = "start_container"
 	OpGetContainerOperation = "get_container_operation"
+	OpCreateToolboxVersion  = "create_toolbox_version"
+	OpGetToolbox            = "get_toolbox"
 )

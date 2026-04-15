@@ -418,7 +418,7 @@ func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentB
 	} else {
 		// Set default protocol versions if none specified
 		protocolVersions = []agent_api.ProtocolVersionRecord{
-			{Protocol: agent_api.AgentProtocolResponses, Version: "v1"},
+			{Protocol: agent_api.AgentProtocolResponses, Version: "1.0.0"},
 		}
 	}
 

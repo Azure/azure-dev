@@ -162,7 +162,10 @@ session automatically. Pass --new-session to force a reset.`,
 }
 
 func (a *InvokeAction) Run(ctx context.Context) error {
-	protocol := a.resolveProtocol(ctx)
+	protocol, err := a.resolveProtocol(ctx)
+	if err != nil {
+		return err
+	}
 
 	if a.flags.local {
 		switch protocol {
@@ -190,37 +193,27 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 // resolveProtocol returns the protocol to use for this invocation.
 // The explicit --protocol flag takes priority; otherwise the protocol
 // is auto-detected from agent.yaml (local or remote).
-func (a *InvokeAction) resolveProtocol(ctx context.Context) agent_api.AgentProtocol {
+func (a *InvokeAction) resolveProtocol(
+	ctx context.Context,
+) (agent_api.AgentProtocol, error) {
 	if a.flags.protocol != "" {
-		return agent_api.AgentProtocol(a.flags.protocol)
+		return agent_api.AgentProtocol(a.flags.protocol), nil
 	}
+
+	azdClient, err := azdext.NewAzdClient()
+	if err != nil {
+		return "", fmt.Errorf("failed to create azd client: %w", err)
+	}
+	defer azdClient.Close()
 
 	if a.flags.local {
-		return a.resolveLocalProtocol(ctx)
+		return resolveAgentProtocol(
+			ctx, azdClient, "", rootFlags.NoPrompt,
+		)
 	}
-	return a.resolveRemoteProtocol(ctx)
-}
-
-// resolveRemoteProtocol determines the protocol for remote invocation from agent.yaml.
-func (a *InvokeAction) resolveRemoteProtocol(ctx context.Context) agent_api.AgentProtocol {
-	azdClient, err := azdext.NewAzdClient()
-	if err != nil {
-		return agent_api.AgentProtocolResponses
-	}
-	defer azdClient.Close()
-
-	return resolveAgentProtocol(ctx, azdClient, a.flags.name, rootFlags.NoPrompt)
-}
-
-// resolveLocalProtocol determines the protocol for local invocation from agent.yaml.
-func (a *InvokeAction) resolveLocalProtocol(ctx context.Context) agent_api.AgentProtocol {
-	azdClient, err := azdext.NewAzdClient()
-	if err != nil {
-		return agent_api.AgentProtocolResponses
-	}
-	defer azdClient.Close()
-
-	return resolveAgentProtocol(ctx, azdClient, "", rootFlags.NoPrompt)
+	return resolveAgentProtocol(
+		ctx, azdClient, a.flags.name, rootFlags.NoPrompt,
+	)
 }
 
 func (a *InvokeAction) httpTimeout() time.Duration {

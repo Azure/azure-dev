@@ -675,28 +675,92 @@ func resolveStartupCommandForInit(
 
 // resolveAgentProtocol loads the agent.yaml manifest for the service and returns the
 // protocol that the agent implements (e.g. "responses", "invocations").
-// Defaults to "responses" when the manifest cannot be loaded or has no protocols.
+// Returns an error when the protocol cannot be determined, with a contextual
+// suggestion guiding the user to fix the underlying issue.
 func resolveAgentProtocol(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	name string,
 	noPrompt bool,
-) agent_api.AgentProtocol {
+) (agent_api.AgentProtocol, error) {
 	svc, project, err := resolveAgentService(ctx, azdClient, name, noPrompt)
 	if err != nil {
-		return agent_api.AgentProtocolResponses
+		return "", exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf(
+				"could not resolve agent service in azd project: %s", err,
+			),
+			"run from your project directory and ensure "+
+				"azure.yaml contains an azure.ai.agent service",
+		)
 	}
 
-	agentYamlPath := filepath.Join(project.Path, svc.RelativePath, "agent.yaml")
+	agentYamlPath := filepath.Join(
+		project.Path, svc.RelativePath, "agent.yaml",
+	)
+	return protocolFromAgentYaml(agentYamlPath)
+}
+
+// protocolFromAgentYaml reads and parses the agent.yaml file at the given path
+// and extracts the protocol. Returns an error with a contextual suggestion when
+// the file cannot be read, parsed, or does not declare exactly one protocol.
+func protocolFromAgentYaml(
+	agentYamlPath string,
+) (agent_api.AgentProtocol, error) {
 	data, err := os.ReadFile(agentYamlPath) //nolint:gosec // G304: path constructed from azd project root
 	if err != nil {
-		return agent_api.AgentProtocolResponses
+		return "", exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf(
+				"could not read agent.yaml at %s: %s",
+				agentYamlPath, err,
+			),
+			"ensure agent.yaml exists in the azd service directory",
+		)
 	}
 
 	var hosted agent_yaml.ContainerAgent
-	if err := yaml.Unmarshal(data, &hosted); err == nil && len(hosted.Protocols) > 0 {
-		return agent_api.AgentProtocol(hosted.Protocols[0].Protocol)
+	if err := yaml.Unmarshal(data, &hosted); err != nil {
+		return "", exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf(
+				"could not parse agent.yaml at %s: %s",
+				agentYamlPath, err,
+			),
+			"fix the agent.yaml syntax",
+		)
 	}
 
-	return agent_api.AgentProtocolResponses
+	switch len(hosted.Protocols) {
+	case 0:
+		return "", exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"agent.yaml does not declare any protocols",
+			"add a protocols section to agent.yaml",
+		)
+	case 1:
+		p := strings.TrimSpace(hosted.Protocols[0].Protocol)
+		if p == "" {
+			return "", exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"agent.yaml declares a protocol entry, "+
+					"but its protocol field is empty",
+				"set a non-empty protocol value in agent.yaml",
+			)
+		}
+		return agent_api.AgentProtocol(p), nil
+	default:
+		names := make([]string, len(hosted.Protocols))
+		for i, p := range hosted.Protocols {
+			names[i] = p.Protocol
+		}
+		return "", exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf(
+				"agent.yaml declares multiple protocols: %s",
+				strings.Join(names, ", "),
+			),
+			"use --protocol to specify which protocol to use",
+		)
+	}
 }

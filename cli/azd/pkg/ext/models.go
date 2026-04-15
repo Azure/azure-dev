@@ -6,6 +6,7 @@ package ext
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -71,14 +72,25 @@ type InvokeFn func() error
 // based on the hook's Kind — including Bash, PowerShell, Python,
 // and future executor types (JS, TS, DotNet).
 type HookConfig struct {
-	// When set, contains the resolved file path relative to the project or service
-	path string
+	// relativeScriptPath holds the file path relative to the
+	// project or service directory. Set by parseRunTarget when
+	// Run references an existing file. Empty for inline scripts.
+	relativeScriptPath string
 	// Stores a value whether or not this hook config has been previously validated
 	validated bool
-	// Stores the working directory set for this hook config
-	cwd string
-	// When set, contains the inline script content to execute
-	script string
+	// inputCwd is the working directory injected by the hooks
+	// manager (e.g. the service directory for service hooks).
+	// Distinguished from resolvedDir, which is the final
+	// absolute working directory computed during validate().
+	inputCwd string
+	// projectDir is the project root directory (where azure.yaml
+	// lives). Used as the security boundary for path containment
+	// checks. When empty, inputCwd is used as the boundary.
+	projectDir string
+	// inlineScript holds the inline script content to execute.
+	// Set by parseRunTarget when Run does not reference an
+	// existing file. Empty for file-based hooks.
+	inlineScript string
 	// Indicates if the shell was automatically detected based on OS (used for warnings)
 	usingDefaultShell bool
 	// resolvedScriptPath is the absolute path to the script file,
@@ -121,11 +133,28 @@ type HookConfig struct {
 	// Environment variables in this list are added to the hook script and if the value is a akvs:// reference
 	// it will be resolved to the secret value
 	Secrets map[string]string `yaml:"secrets,omitempty"`
+	// Config is an optional property bag of executor-specific settings,
+	// discriminated by Kind. Each executor may unmarshal this into a
+	// strongly-typed struct for its own configuration needs.
+	Config map[string]any `yaml:"config,omitempty"`
 }
 
 // validate normalizes and validates the hook configuration. It resolves
 // the script location (inline vs. file path) and ensures that Kind
 // is always resolved to a concrete [language.HookKind] value.
+//
+// The pipeline (parseRunTarget → resolveKind → resolvePaths →
+// enforceContainment) is kind-agnostic: all 6 hook kinds are treated
+// uniformly. The only structural distinction is shell vs. non-shell
+// ([language.HookKind.IsShell]):
+//
+//   - Shell hooks support inline scripts and use inputCwd as-is.
+//   - Non-shell hooks require a file on disk and auto-infer Dir
+//     from the script location for project-relative tooling
+//     (venvs, node_modules, etc.).
+//
+// Kind-specific validation (runtime availability, dependency
+// discovery) lives in each executor's Prepare() method, not here.
 //
 // Kind resolution priority:
 //  1. Explicit Kind field
@@ -144,6 +173,29 @@ func (hc *HookConfig) validate() error {
 		return ErrRunRequired
 	}
 
+	dirExplicit, err := hc.parseRunTarget()
+	if err != nil {
+		return err
+	}
+	if err := hc.resolveKind(dirExplicit); err != nil {
+		return err
+	}
+	if err := hc.resolvePaths(dirExplicit); err != nil {
+		return err
+	}
+	if err := hc.enforceContainment(); err != nil {
+		return err
+	}
+
+	hc.validated = true
+	return nil
+}
+
+// parseRunTarget normalizes the Run field and determines whether it
+// references an existing file or an inline script. It sets
+// relativeScriptPath (for file-based hooks) or inlineScript (for
+// inline hooks) and returns whether Dir was explicitly provided.
+func (hc *HookConfig) parseRunTarget() (bool, error) {
 	// Record whether Dir was explicitly provided by the user
 	// before any auto-inference fills it in.
 	dirExplicit := hc.Dir != ""
@@ -154,18 +206,18 @@ func (hc *HookConfig) validate() error {
 
 	// Resolve the full path for the os.Stat check. When Dir is
 	// explicitly set and run is relative, we try Dir first and
-	// fall back to cwd (project root). This supports both:
+	// fall back to inputCwd (project root). This supports both:
 	//   run: main.py        + dir: hooks/preprovision
 	//   run: hooks/deploy.py + dir: custom_workdir
 	fullCheckPath := relativeCheckPath
 	foundViaDir := false
-	if hc.cwd != "" {
+	if hc.inputCwd != "" {
 		if filepath.IsAbs(relativeCheckPath) {
 			fullCheckPath = relativeCheckPath
 		} else if dirExplicit {
 			dir := hc.Dir
 			if !filepath.IsAbs(dir) {
-				dir = filepath.Join(hc.cwd, dir)
+				dir = filepath.Join(hc.inputCwd, dir)
 			}
 			dirPath := filepath.Join(
 				dir, relativeCheckPath,
@@ -176,41 +228,65 @@ func (hc *HookConfig) validate() error {
 				foundViaDir = true
 			} else {
 				fullCheckPath = filepath.Join(
-					hc.cwd, relativeCheckPath,
+					hc.inputCwd, relativeCheckPath,
 				)
 			}
 		} else {
 			fullCheckPath = filepath.Join(
-				hc.cwd, relativeCheckPath,
+				hc.inputCwd, relativeCheckPath,
 			)
 		}
 	}
 
 	stats, err := os.Stat(fullCheckPath)
 	if err == nil && !stats.IsDir() {
-		hc.path = relativeCheckPath
+		hc.relativeScriptPath = relativeCheckPath
 		if foundViaDir {
 			dirExplicit = true
 		}
 	} else {
-		hc.script = hc.Run
+		hc.inlineScript = hc.Run
 		dirExplicit = false
 	}
 
+	return dirExplicit, nil
+}
+
+// resolveKind resolves the hook's Kind field from the explicit Kind
+// or Shell fields, the file extension, or the OS default shell.
+// It also infers Dir for non-shell file hooks when Dir was not
+// explicitly set by the user.
+//
+// This method is intentionally kind-agnostic: it branches only on
+// [language.HookKind.IsShell] (shell vs. non-shell), never on
+// individual kind values. The shell vs. non-shell distinction maps
+// to structural differences in how hooks execute:
+//
+//   - Shell hooks: support inline scripts, no Dir auto-inference.
+//   - Non-shell hooks: require a file, Dir inferred from script path
+//     so project-relative tooling (venvs, node_modules) resolves
+//     correctly.
+//
+// Kind-specific validation (e.g. checking Python/Node installation)
+// is deferred to each executor's Prepare() method.
+func (hc *HookConfig) resolveKind(dirExplicit bool) error {
 	// Kind resolution — priority:
 	// 1. explicit Kind  2. Shell alias
 	// 3. file extension  4. OS default for inline scripts
 	if hc.Kind == language.HookKindUnknown && hc.Shell != "" {
 		hc.Kind = language.HookKind(hc.Shell)
 	}
-	if hc.Kind == language.HookKindUnknown && hc.path != "" {
-		hc.Kind = language.InferKindFromPath(hc.Run)
+	if hc.Kind == language.HookKindUnknown &&
+		hc.relativeScriptPath != "" {
+		hc.Kind = language.InferKindFromPath(
+			hc.relativeScriptPath,
+		)
 	}
 
-	// Reject inline scripts for non-shell executors. Only Bash and
-	// PowerShell executors support inline script content; other
-	// executors require a file on disk.
-	if hc.script != "" &&
+	// Reject inline scripts for non-shell executors. Only Bash
+	// and PowerShell executors support inline script content;
+	// other executors require a file on disk.
+	if hc.inlineScript != "" &&
 		hc.Kind != language.HookKindUnknown &&
 		!hc.Kind.IsShell() {
 		return fmt.Errorf(
@@ -228,14 +304,14 @@ func (hc *HookConfig) validate() error {
 		!hc.Kind.IsShell() {
 		// Auto-infer Dir from the script's directory when not
 		// explicitly set by the user.
-		if hc.Dir == "" && hc.path != "" {
-			hc.Dir = filepath.Dir(hc.path)
+		if !dirExplicit && hc.relativeScriptPath != "" {
+			hc.Dir = filepath.Dir(hc.relativeScriptPath)
 		}
 	} else {
 		// For inline scripts with no resolved kind, default to
 		// the OS-appropriate shell kind.
 		if hc.Kind == language.HookKindUnknown &&
-			hc.script != "" {
+			hc.inlineScript != "" {
 			hc.Kind = defaultKindForOS()
 			hc.usingDefaultShell = true
 		}
@@ -245,62 +321,121 @@ func (hc *HookConfig) validate() error {
 			return fmt.Errorf(
 				"script with file extension '%s' is not "+
 					"valid. %w.",
-				filepath.Ext(hc.path),
+				filepath.Ext(hc.relativeScriptPath),
 				ErrUnsupportedScriptType,
 			)
 		}
 	}
 
-	// ── Resolve absolute paths ──────────────────────────────
-	// After this point, resolvedDir and resolvedScriptPath are
-	// the single source of truth for hook execution paths.
-	// execHook() should read these directly.
+	return nil
+}
 
-	boundaryDir := hc.cwd
-	if boundaryDir == "" {
-		boundaryDir, _ = os.Getwd()
+// resolvePaths computes absolute resolvedDir and resolvedScriptPath
+// from the hook's Dir, relativeScriptPath, and inputCwd fields.
+// After this method, resolvedDir and resolvedScriptPath are the
+// single source of truth for hook execution paths.
+//
+// Kind-agnostic: the only distinction is shell vs. non-shell — non-
+// shell hooks derive cwd from the script directory when Dir is not
+// explicitly set, so project-relative tooling works correctly.
+func (hc *HookConfig) resolvePaths(dirExplicit bool) error {
+	// cwdDir is the working directory for resolving relative
+	// paths (e.g. the service directory for service hooks).
+	cwdDir := hc.inputCwd
+	if cwdDir == "" {
+		var err error
+		cwdDir, err = os.Getwd()
+		if err != nil {
+			return fmt.Errorf(
+				"resolving working directory: %w", err,
+			)
+		}
 	}
 
 	// Resolve working directory.
 	if hc.Dir != "" {
 		dir := hc.Dir
 		if !filepath.IsAbs(dir) {
-			dir = filepath.Join(boundaryDir, dir)
+			dir = filepath.Join(cwdDir, dir)
 		}
 		hc.resolvedDir = dir
-	} else if hc.path != "" && !hc.Kind.IsShell() {
+	} else if hc.relativeScriptPath != "" &&
+		!hc.Kind.IsShell() {
 		// Non-shell hooks: derive cwd from script directory so
 		// project-relative tooling (venvs, node_modules) works.
 		hc.resolvedDir = filepath.Dir(
-			filepath.Join(boundaryDir, hc.path),
+			filepath.Join(cwdDir, hc.relativeScriptPath),
 		)
 	} else {
-		hc.resolvedDir = boundaryDir
+		hc.resolvedDir = cwdDir
 	}
 
 	// Resolve script path to absolute.
-	if hc.path != "" {
-		if dirExplicit && !filepath.IsAbs(hc.path) {
+	if hc.relativeScriptPath != "" {
+		if dirExplicit &&
+			!filepath.IsAbs(hc.relativeScriptPath) {
 			// Dir was explicitly set — run path is relative
-			// to Dir, not boundaryDir alone.
+			// to Dir, not cwdDir alone.
 			dir := hc.Dir
 			if !filepath.IsAbs(dir) {
-				dir = filepath.Join(boundaryDir, dir)
+				dir = filepath.Join(cwdDir, dir)
 			}
 			hc.resolvedScriptPath = filepath.Join(
-				dir, hc.path,
+				dir, hc.relativeScriptPath,
 			)
-		} else if !filepath.IsAbs(hc.path) {
+		} else if !filepath.IsAbs(hc.relativeScriptPath) {
 			hc.resolvedScriptPath = filepath.Join(
-				boundaryDir, hc.path,
+				cwdDir, hc.relativeScriptPath,
 			)
 		} else {
-			hc.resolvedScriptPath = hc.path
+			hc.resolvedScriptPath = hc.relativeScriptPath
 		}
 	}
 
-	// Validate that resolvedDir stays within the project root
-	// to prevent path traversal via ".." in Dir.
+	return nil
+}
+
+// enforceContainment validates that file-based hooks do not escape
+// the project root via ".." in Dir or Run. Inline hooks are exempt
+// because they are saved to an OS temp file for execution.
+//
+// Kind-agnostic: containment rules apply identically to all 6 hook
+// kinds. The only structural difference is that inline scripts (any
+// shell kind) skip the boundary check.
+func (hc *HookConfig) enforceContainment() error {
+	if hc.relativeScriptPath == "" {
+		// Inline hooks: resolve to absolute path but skip
+		// containment validation.
+		absDir, absErr := filepath.Abs(hc.resolvedDir)
+		if absErr != nil {
+			return fmt.Errorf(
+				"resolving hook directory: %w", absErr,
+			)
+		}
+		hc.resolvedDir = absDir
+		return nil
+	}
+
+	// boundaryDir is the project root used for path
+	// containment validation. For service-level hooks this
+	// is the project root (where azure.yaml lives), which
+	// may differ from inputCwd (the service directory).
+	boundaryDir := hc.projectDir
+	if boundaryDir == "" {
+		boundaryDir = hc.inputCwd
+	}
+	if boundaryDir == "" {
+		var err error
+		boundaryDir, err = os.Getwd()
+		if err != nil {
+			return fmt.Errorf(
+				"resolving working directory: %w", err,
+			)
+		}
+	}
+
+	// Validate that resolvedDir stays within the project
+	// root to prevent path traversal via ".." in Dir.
 	absDir, absErr := filepath.Abs(hc.resolvedDir)
 	if absErr != nil {
 		return fmt.Errorf(
@@ -310,19 +445,22 @@ func (hc *HookConfig) validate() error {
 	absBoundary, absErr := filepath.Abs(boundaryDir)
 	if absErr != nil {
 		return fmt.Errorf(
-			"resolving boundary directory: %w", absErr,
+			"resolving boundary directory: %w",
+			absErr,
 		)
 	}
 	if !osutil.IsPathContained(absBoundary, absDir) {
 		return fmt.Errorf(
-			"hook directory %q escapes project root %q",
+			"hook directory %q escapes "+
+				"project root %q",
 			hc.Dir, boundaryDir,
 		)
 	}
 	hc.resolvedDir = absDir
 
-	// Validate that resolvedScriptPath stays within the project
-	// root to prevent path traversal via ".." in Run.
+	// Validate that resolvedScriptPath stays within
+	// the project root to prevent path traversal via
+	// ".." in Run.
 	if hc.resolvedScriptPath != "" {
 		absScript, scriptErr := filepath.Abs(
 			hc.resolvedScriptPath,
@@ -344,8 +482,6 @@ func (hc *HookConfig) validate() error {
 		}
 		hc.resolvedScriptPath = absScript
 	}
-
-	hc.validated = true
 
 	return nil
 }
@@ -451,6 +587,20 @@ func appendHookConfigSignature(builder *strings.Builder, hookConfig *HookConfig)
 		builder.WriteString(secretName)
 		builder.WriteByte('=')
 		builder.WriteString(hookConfig.Secrets[secretName])
+		builder.WriteByte('\x00')
+	}
+
+	// Config is a map[string]any — use JSON for deterministic key ordering.
+	if len(hookConfig.Config) > 0 {
+		configJSON, err := json.Marshal(hookConfig.Config)
+		// Config values originate from azure.yaml, which produces
+		// JSON-compatible types (strings, numbers, bools, maps, slices).
+		// Marshal errors are theoretically possible but not in practice,
+		// so we skip the config contribution rather than failing the
+		// signature calculation.
+		if err == nil {
+			builder.Write(configJSON)
+		}
 		builder.WriteByte('\x00')
 	}
 

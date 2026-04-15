@@ -215,8 +215,14 @@ func (c *AskerConsole) IsUnformatted() bool {
 
 // Prints out a message to the underlying console write
 func (c *AskerConsole) Message(ctx context.Context, message string) {
-	// Disable output when formatting is enabled
+	// In JSON mode, emit structured event output instead of plain text.
 	if c.formatter != nil && c.formatter.Kind() == output.JsonFormat {
+		// Empty messages are visual separators (blank lines) in text mode.
+		// In JSON mode they have no semantic value, so skip them.
+		if message == "" {
+			return
+		}
+
 		// we call json.Marshal directly, because the formatter marshalls using indentation, and we would prefer
 		// these objects be written on a single line.
 		var obj any = output.EventForMessage(message)

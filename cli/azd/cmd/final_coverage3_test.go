@@ -283,18 +283,19 @@ func Test_UpdateAction_PersistNonChannelFlags(t *testing.T) {
 	t.Parallel()
 
 	// Test with positive check interval
-	a := &updateAction{flags: &updateFlags{checkIntervalHours: 24}}
+	a := &updateAction{
+		flags:         &updateFlags{checkIntervalHours: 24},
+		configManager: &simpleConfigMgr{},
+	}
 	cfg := config.NewEmptyConfig()
-	changed, err := a.persistNonChannelFlags(cfg)
+	err := a.persistNonChannelFlags(cfg)
 	require.NoError(t, err)
-	require.True(t, changed)
 
 	// Test with zero check interval
 	a2 := &updateAction{flags: &updateFlags{checkIntervalHours: 0}}
 	cfg2 := config.NewEmptyConfig()
-	changed2, err := a2.persistNonChannelFlags(cfg2)
+	err = a2.persistNonChannelFlags(cfg2)
 	require.NoError(t, err)
-	require.False(t, changed2)
 }
 
 // ===========================================================================

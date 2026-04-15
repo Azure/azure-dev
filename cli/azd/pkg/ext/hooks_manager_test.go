@@ -40,7 +40,7 @@ func Test_GetAllHookConfigs(t *testing.T) {
 		ensureScriptsExist(t, hooksMap)
 
 		mockCommandRunner := mockexec.NewMockCommandRunner()
-		hooksManager := NewHooksManager(tempDir, mockCommandRunner)
+		hooksManager := NewHooksManager(HooksManagerOptions{Cwd: tempDir, ProjectDir: tempDir}, mockCommandRunner)
 		validHooks, err := hooksManager.GetAll(hooksMap)
 
 		require.Len(t, validHooks, len(hooksMap))
@@ -67,7 +67,7 @@ func Test_GetAllHookConfigs(t *testing.T) {
 		ensureScriptsExist(t, hooksMap)
 
 		mockCommandRunner := mockexec.NewMockCommandRunner()
-		hooksManager := NewHooksManager(tempDir, mockCommandRunner)
+		hooksManager := NewHooksManager(HooksManagerOptions{Cwd: tempDir, ProjectDir: tempDir}, mockCommandRunner)
 		validHooks, err := hooksManager.GetAll(hooksMap)
 
 		require.Nil(t, validHooks)
@@ -81,7 +81,7 @@ func Test_GetAllHookConfigs(t *testing.T) {
 		}
 
 		mockCommandRunner := mockexec.NewMockCommandRunner()
-		hooksManager := NewHooksManager(tempDir, mockCommandRunner)
+		hooksManager := NewHooksManager(HooksManagerOptions{Cwd: tempDir, ProjectDir: tempDir}, mockCommandRunner)
 		validHooks, err := hooksManager.GetAll(hooksMap)
 
 		require.NoError(t, err)
@@ -111,7 +111,7 @@ func Test_GetByParams(t *testing.T) {
 		ensureScriptsExist(t, hooksMap)
 
 		mockCommandRunner := mockexec.NewMockCommandRunner()
-		hooksManager := NewHooksManager(tempDir, mockCommandRunner)
+		hooksManager := NewHooksManager(HooksManagerOptions{Cwd: tempDir, ProjectDir: tempDir}, mockCommandRunner)
 		validHooks, err := hooksManager.GetByParams(hooksMap, HookTypePre, "init")
 
 		require.Len(t, validHooks, 1)
@@ -139,7 +139,7 @@ func Test_GetByParams(t *testing.T) {
 		ensureScriptsExist(t, hooksMap)
 
 		mockCommandRunner := mockexec.NewMockCommandRunner()
-		hooksManager := NewHooksManager(tempDir, mockCommandRunner)
+		hooksManager := NewHooksManager(HooksManagerOptions{Cwd: tempDir, ProjectDir: tempDir}, mockCommandRunner)
 		validHooks, err := hooksManager.GetByParams(hooksMap, HookTypePre, "init")
 
 		require.Nil(t, validHooks)
@@ -179,7 +179,7 @@ func Test_HookConfig_DefaultShell(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Clone the config to avoid modifying the test case
 			config := *tt.hookConfig
-			config.cwd = t.TempDir()
+			config.inputCwd = t.TempDir()
 
 			err := config.validate()
 			require.NoError(t, err)
@@ -220,7 +220,7 @@ func Test_ValidateHooks_PythonInstalled(t *testing.T) {
 		return strings.Contains(cmd, "--version")
 	}).Respond(exec.RunResult{Stdout: "Python 3.12.0"})
 
-	mgr := NewHooksManager(tempDir, mockRunner)
+	mgr := NewHooksManager(HooksManagerOptions{Cwd: tempDir, ProjectDir: tempDir}, mockRunner)
 	result := mgr.ValidateHooks(t.Context(), hooksMap)
 
 	// No runtime warnings should be present.
@@ -260,7 +260,7 @@ func Test_ValidateHooks_PythonNotInstalled(t *testing.T) {
 	mockRunner.MockToolInPath("python", osexec.ErrNotFound)
 	mockRunner.MockToolInPath("python3", osexec.ErrNotFound)
 
-	mgr := NewHooksManager(tempDir, mockRunner)
+	mgr := NewHooksManager(HooksManagerOptions{Cwd: tempDir, ProjectDir: tempDir}, mockRunner)
 	result := mgr.ValidateHooks(t.Context(), hooksMap)
 
 	// Expect a warning about missing Python.
@@ -283,6 +283,179 @@ func Test_ValidateHooks_PythonNotInstalled(t *testing.T) {
 	err := mgr.ValidateRuntimesErr(t.Context(), hooksMap)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "Python")
+}
+
+func Test_ValidateHooks_DirRunPython(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Create hooks/pre/main.py so the dir+run combination
+	// is detected as a file-based hook.
+	scriptDir := filepath.Join(tempDir, "hooks", "pre")
+	require.NoError(t,
+		os.MkdirAll(scriptDir, osutil.PermissionDirectory))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(scriptDir, "main.py"),
+		[]byte("print('hello')"),
+		osutil.PermissionExecutableFile,
+	))
+
+	hooksMap := map[string][]*HookConfig{
+		"preprovision": {{
+			Dir: "hooks/pre",
+			Run: "main.py",
+		}},
+	}
+
+	mockRunner := mockexec.NewMockCommandRunner()
+	mockRunner.MockToolInPath("py", nil)
+	mockRunner.When(func(args exec.RunArgs, cmd string) bool {
+		return strings.Contains(cmd, "--version")
+	}).Respond(exec.RunResult{Stdout: "Python 3.12.0"})
+
+	mgr := NewHooksManager(
+		HooksManagerOptions{
+			Cwd:        tempDir,
+			ProjectDir: tempDir,
+		},
+		mockRunner,
+	)
+	result := mgr.ValidateHooks(t.Context(), hooksMap)
+
+	// Kind must be Python — not the OS default shell.
+	hook := hooksMap["preprovision"][0]
+	require.Equal(t, language.HookKindPython, hook.Kind,
+		"dir+run Python file must resolve to HookKindPython")
+	require.False(t, hook.IsUsingDefaultShell(),
+		"file-based hook must not use default shell")
+
+	for _, w := range result.Warnings {
+		require.NotContains(t, w.Message, "PowerShell",
+			"no PowerShell warning for Python hook")
+	}
+}
+
+func Test_ValidateHooks_DirRunJavaScript(t *testing.T) {
+	tempDir := t.TempDir()
+
+	scriptDir := filepath.Join(tempDir, "hooks", "pre")
+	require.NoError(t,
+		os.MkdirAll(scriptDir, osutil.PermissionDirectory))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(scriptDir, "index.js"),
+		[]byte("console.log('hello')"),
+		osutil.PermissionExecutableFile,
+	))
+
+	hooksMap := map[string][]*HookConfig{
+		"preprovision": {{
+			Dir: "hooks/pre",
+			Run: "index.js",
+		}},
+	}
+
+	mockRunner := mockexec.NewMockCommandRunner()
+	mgr := NewHooksManager(
+		HooksManagerOptions{
+			Cwd:        tempDir,
+			ProjectDir: tempDir,
+		},
+		mockRunner,
+	)
+	result := mgr.ValidateHooks(t.Context(), hooksMap)
+
+	hook := hooksMap["preprovision"][0]
+	require.Equal(t, language.HookKindJavaScript, hook.Kind,
+		"dir+run JS file must resolve to HookKindJavaScript")
+	require.False(t, hook.IsUsingDefaultShell(),
+		"file-based hook must not use default shell")
+
+	for _, w := range result.Warnings {
+		require.NotContains(t, w.Message, "PowerShell",
+			"no PowerShell warning for JS hook")
+	}
+	require.Empty(t, result.Warnings,
+		"no warnings expected for JS hook")
+}
+
+func Test_ValidateHooks_DirRunNoFileInline(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Dir exists but the run value is an inline command,
+	// not a file on disk.
+	scriptDir := filepath.Join(tempDir, "hooks", "pre")
+	require.NoError(t,
+		os.MkdirAll(scriptDir, osutil.PermissionDirectory))
+
+	hooksMap := map[string][]*HookConfig{
+		"preprovision": {{
+			Dir: "hooks/pre",
+			Run: "echo hello",
+		}},
+	}
+
+	mockRunner := mockexec.NewMockCommandRunner()
+	mockRunner.MockToolInPath("pwsh", nil)
+
+	mgr := NewHooksManager(
+		HooksManagerOptions{
+			Cwd:        tempDir,
+			ProjectDir: tempDir,
+		},
+		mockRunner,
+	)
+	_ = mgr.ValidateHooks(t.Context(), hooksMap)
+
+	hook := hooksMap["preprovision"][0]
+	require.Equal(t, defaultKindForOS(), hook.Kind,
+		"inline script must use OS default shell")
+	require.True(t, hook.IsUsingDefaultShell(),
+		"inline script must be flagged as default shell")
+}
+
+func Test_ValidateHooks_RunOnlyPython(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Create hooks/pre/main.py referenced directly via run.
+	scriptDir := filepath.Join(tempDir, "hooks", "pre")
+	require.NoError(t,
+		os.MkdirAll(scriptDir, osutil.PermissionDirectory))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(scriptDir, "main.py"),
+		[]byte("print('hello')"),
+		osutil.PermissionExecutableFile,
+	))
+
+	hooksMap := map[string][]*HookConfig{
+		"preprovision": {{
+			Run: "hooks/pre/main.py",
+		}},
+	}
+
+	mockRunner := mockexec.NewMockCommandRunner()
+	mockRunner.MockToolInPath("py", nil)
+	mockRunner.When(func(args exec.RunArgs, cmd string) bool {
+		return strings.Contains(cmd, "--version")
+	}).Respond(exec.RunResult{Stdout: "Python 3.12.0"})
+
+	mgr := NewHooksManager(
+		HooksManagerOptions{
+			Cwd:        tempDir,
+			ProjectDir: tempDir,
+		},
+		mockRunner,
+	)
+	result := mgr.ValidateHooks(t.Context(), hooksMap)
+
+	hook := hooksMap["preprovision"][0]
+	require.Equal(t, language.HookKindPython, hook.Kind,
+		"run-only Python file must resolve to HookKindPython")
+	require.False(t, hook.IsUsingDefaultShell(),
+		"file-based hook must not use default shell")
+
+	for _, w := range result.Warnings {
+		require.NotContains(t, w.Message, "Python",
+			"no Python warning when runtime is available")
+	}
 }
 
 func Test_ValidateHooks_ShellHookNoValidation(t *testing.T) {
@@ -318,7 +491,7 @@ func Test_ValidateHooks_ShellHookNoValidation(t *testing.T) {
 	// pwsh available so PowerShell warning doesn't fire.
 	mockRunner.MockToolInPath("pwsh", nil)
 
-	mgr := NewHooksManager(tempDir, mockRunner)
+	mgr := NewHooksManager(HooksManagerOptions{Cwd: tempDir, ProjectDir: tempDir}, mockRunner)
 	result := mgr.ValidateHooks(t.Context(), hooksMap)
 
 	// No runtime warnings for Bash/PowerShell hooks.
@@ -370,7 +543,7 @@ func Test_ValidateHooks_MixedHooks(t *testing.T) {
 	// pwsh available — no PowerShell warning.
 	mockRunner.MockToolInPath("pwsh", nil)
 
-	mgr := NewHooksManager(tempDir, mockRunner)
+	mgr := NewHooksManager(HooksManagerOptions{Cwd: tempDir, ProjectDir: tempDir}, mockRunner)
 	result := mgr.ValidateHooks(t.Context(), hooksMap)
 
 	// Exactly one runtime warning (Python), no shell warnings.
@@ -387,6 +560,138 @@ func Test_ValidateHooks_MixedHooks(t *testing.T) {
 	err := mgr.ValidateRuntimesErr(t.Context(), hooksMap)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "Python")
+}
+
+// Test_ValidateHooks_KindResolution exercises ValidateHooks with
+// dir+run combinations for all 6 hook kinds plus inline and
+// run-only variants. Each sub-test creates the required file
+// structure, calls ValidateHooks, and verifies the resolved Kind.
+func Test_ValidateHooks_KindResolution(t *testing.T) {
+	tests := []struct {
+		name         string
+		dir          string
+		run          string
+		fileName     string // relative path to create under tempDir
+		expectedKind language.HookKind
+		isDefault    bool
+	}{
+		{
+			name:         "dir+run Python",
+			dir:          "hooks/pre",
+			run:          "main.py",
+			fileName:     "hooks/pre/main.py",
+			expectedKind: language.HookKindPython,
+		},
+		{
+			name:         "dir+run Bash",
+			dir:          "hooks/pre",
+			run:          "deploy.sh",
+			fileName:     "hooks/pre/deploy.sh",
+			expectedKind: language.HookKindBash,
+		},
+		{
+			name:         "dir+run PowerShell",
+			dir:          "hooks/pre",
+			run:          "deploy.ps1",
+			fileName:     "hooks/pre/deploy.ps1",
+			expectedKind: language.HookKindPowerShell,
+		},
+		{
+			name:         "dir+run JavaScript",
+			dir:          "hooks/pre",
+			run:          "index.js",
+			fileName:     "hooks/pre/index.js",
+			expectedKind: language.HookKindJavaScript,
+		},
+		{
+			name:         "dir+run TypeScript",
+			dir:          "hooks/pre",
+			run:          "index.ts",
+			fileName:     "hooks/pre/index.ts",
+			expectedKind: language.HookKindTypeScript,
+		},
+		{
+			name:         "dir+run DotNet",
+			dir:          "hooks/pre",
+			run:          "Program.cs",
+			fileName:     "hooks/pre/Program.cs",
+			expectedKind: language.HookKindDotNet,
+		},
+		{
+			name:         "inline script no dir no file",
+			run:          "echo hello",
+			expectedKind: defaultKindForOS(),
+			isDefault:    true,
+		},
+		{
+			name:         "run-only Python no dir",
+			run:          "hooks/pre/main.py",
+			fileName:     "hooks/pre/main.py",
+			expectedKind: language.HookKindPython,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tempDir := t.TempDir()
+
+			if tt.fileName != "" {
+				fullPath := filepath.Join(
+					tempDir, tt.fileName,
+				)
+				require.NoError(t, os.MkdirAll(
+					filepath.Dir(fullPath),
+					osutil.PermissionDirectory,
+				))
+				require.NoError(t, os.WriteFile(
+					fullPath,
+					[]byte("// placeholder"),
+					osutil.PermissionExecutableFile,
+				))
+			}
+
+			hooksMap := map[string][]*HookConfig{
+				"preprovision": {{
+					Dir: tt.dir,
+					Run: tt.run,
+				}},
+			}
+
+			mockRunner := mockexec.NewMockCommandRunner()
+			// Ensure pwsh check doesn't interfere.
+			mockRunner.MockToolInPath("pwsh", nil)
+			// Mock Python as available so validateRuntimes
+			// doesn't panic for Python hook sub-tests.
+			mockRunner.MockToolInPath("py", nil)
+			mockRunner.When(func(
+				args exec.RunArgs, cmd string,
+			) bool {
+				return strings.Contains(cmd, "--version")
+			}).Respond(exec.RunResult{
+				Stdout: "Python 3.12.0",
+			})
+
+			mgr := NewHooksManager(
+				HooksManagerOptions{
+					Cwd:        tempDir,
+					ProjectDir: tempDir,
+				},
+				mockRunner,
+			)
+			_ = mgr.ValidateHooks(t.Context(), hooksMap)
+
+			hook := hooksMap["preprovision"][0]
+			require.Equal(t,
+				tt.expectedKind, hook.Kind,
+				"Kind mismatch",
+			)
+			require.Equal(t,
+				tt.isDefault,
+				hook.IsUsingDefaultShell(),
+				"IsUsingDefaultShell mismatch",
+			)
+		})
+	}
 }
 
 func ensureScriptsExist(t *testing.T, configs map[string][]*HookConfig) {

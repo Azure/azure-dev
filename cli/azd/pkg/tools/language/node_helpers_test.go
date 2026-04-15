@@ -12,7 +12,9 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/node"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -61,7 +63,8 @@ func TestNodePrepare_NodeNotInstalled(t *testing.T) {
 	}
 
 	projCtx, err := prepareNodeProject(
-		t.Context(), mock, "/any/hook.js", execCtx,
+		t.Context(), mock, &mockCommandRunner{},
+		"/any/hook.js", execCtx,
 	)
 
 	require.Error(t, err)
@@ -101,7 +104,8 @@ func TestNodePrepare_CheckInstalledSuggestionPassthrough(
 	}
 
 	projCtx, err := prepareNodeProject(
-		t.Context(), mock, "/any/hook.js", execCtx,
+		t.Context(), mock, &mockCommandRunner{},
+		"/any/hook.js", execCtx,
 	)
 
 	require.Error(t, err)
@@ -135,7 +139,8 @@ func TestNodePrepare_WithPackageJSON(t *testing.T) {
 	scriptPath := filepath.Join(hooksDir, "deploy.js")
 
 	projCtx, err := prepareNodeProject(
-		t.Context(), mock, scriptPath, execCtx,
+		t.Context(), mock, &mockCommandRunner{},
+		scriptPath, execCtx,
 	)
 
 	require.NoError(t, err)
@@ -156,7 +161,8 @@ func TestNodePrepare_NoPackageJSON(t *testing.T) {
 	scriptPath := filepath.Join(dir, "hook.js")
 
 	projCtx, err := prepareNodeProject(
-		t.Context(), mock, scriptPath, execCtx,
+		t.Context(), mock, &mockCommandRunner{},
+		scriptPath, execCtx,
 	)
 
 	require.NoError(t, err)
@@ -184,7 +190,8 @@ func TestNodePrepare_InstallFails(t *testing.T) {
 	scriptPath := filepath.Join(projectDir, "hook.js")
 
 	projCtx, err := prepareNodeProject(
-		t.Context(), mock, scriptPath, execCtx,
+		t.Context(), mock, &mockCommandRunner{},
+		scriptPath, execCtx,
 	)
 
 	require.Error(t, err)
@@ -212,7 +219,8 @@ func TestNodePrepare_PythonProjectIgnored(t *testing.T) {
 	scriptPath := filepath.Join(projectDir, "hook.js")
 
 	projCtx, err := prepareNodeProject(
-		t.Context(), mock, scriptPath, execCtx,
+		t.Context(), mock, &mockCommandRunner{},
+		scriptPath, execCtx,
 	)
 
 	require.NoError(t, err)
@@ -252,7 +260,8 @@ func TestNodePrepare_MixedLanguageFindsPackageJSON(
 	scriptPath := filepath.Join(projectDir, "hook.js")
 
 	projCtx, err := prepareNodeProject(
-		t.Context(), mock, scriptPath, execCtx,
+		t.Context(), mock, &mockCommandRunner{},
+		scriptPath, execCtx,
 	)
 
 	require.NoError(t, err)
@@ -262,6 +271,169 @@ func TestNodePrepare_MixedLanguageFindsPackageJSON(
 	assert.True(t, mock.installCalled,
 		"should install Node.js deps in mixed-language dir")
 	assert.Equal(t, projectDir, mock.installDir)
+}
+
+// ---------------------------------------------------------------------------
+// nodePackageManagerFromConfig tests
+// ---------------------------------------------------------------------------
+
+func TestNodePackageManagerFromConfig(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  map[string]any
+		wantPM  node.PackageManagerKind
+		wantErr string
+	}{
+		{
+			name:   "NilConfig",
+			config: nil,
+			wantPM: "",
+		},
+		{
+			name:   "EmptyConfig",
+			config: map[string]any{},
+			wantPM: "",
+		},
+		{
+			name: "EmptyString",
+			config: map[string]any{
+				"packageManager": "",
+			},
+			wantPM: "",
+		},
+		{
+			name: "Npm",
+			config: map[string]any{
+				"packageManager": "npm",
+			},
+			wantPM: node.PackageManagerNpm,
+		},
+		{
+			name: "Pnpm",
+			config: map[string]any{
+				"packageManager": "pnpm",
+			},
+			wantPM: node.PackageManagerPnpm,
+		},
+		{
+			name: "Yarn",
+			config: map[string]any{
+				"packageManager": "yarn",
+			},
+			wantPM: node.PackageManagerYarn,
+		},
+		{
+			name: "InvalidValue",
+			config: map[string]any{
+				"packageManager": "bun",
+			},
+			wantErr: "invalid packageManager config " +
+				`value "bun"`,
+		},
+		{
+			name: "WrongType",
+			config: map[string]any{
+				"packageManager": 123,
+			},
+			wantErr: "reading node hook config",
+		},
+		{
+			name: "UnrelatedKeysIgnored",
+			config: map[string]any{
+				"other": "value",
+			},
+			wantPM: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pm, err := nodePackageManagerFromConfig(
+				tt.config,
+			)
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t,
+					err.Error(), tt.wantErr,
+				)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantPM, pm)
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// prepareNodeProject with config override tests
+// ---------------------------------------------------------------------------
+
+func TestNodePrepare_PackageManagerOverride(
+	t *testing.T,
+) {
+	root := t.TempDir()
+	projectDir := filepath.Join(root, "project")
+	require.NoError(t, os.MkdirAll(projectDir, 0o700))
+	writeFile(t,
+		filepath.Join(projectDir, "package.json"),
+		`{"name": "test"}`,
+	)
+
+	defaultMock := &mockNodeTools{}
+	runner := &mockCommandRunner{
+		runResult: exec.NewRunResult(
+			0, "v20.0.0", "",
+		),
+	}
+
+	execCtx := tools.ExecutionContext{
+		BoundaryDir: root,
+		Config: map[string]any{
+			"packageManager": "pnpm",
+		},
+	}
+	scriptPath := filepath.Join(projectDir, "hook.js")
+
+	projCtx, err := prepareNodeProject(
+		t.Context(), defaultMock, runner,
+		scriptPath, execCtx,
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, projCtx)
+	assert.Equal(t, projectDir, projCtx.ProjectDir)
+
+	// Default mock should not have been used — config
+	// override replaced it with a real pnpm CLI.
+	assert.False(t, defaultMock.installCalled,
+		"default CLI should be replaced by config "+
+			"override")
+
+	// Last command should be pnpm install.
+	assert.Equal(t, "pnpm", runner.lastRunArgs.Cmd,
+		"should use pnpm for dependency installation")
+}
+
+func TestNodePrepare_InvalidPackageManager(t *testing.T) {
+	mock := &mockNodeTools{}
+
+	execCtx := tools.ExecutionContext{
+		BoundaryDir: t.TempDir(),
+		Config: map[string]any{
+			"packageManager": "bun",
+		},
+	}
+
+	projCtx, err := prepareNodeProject(
+		t.Context(), mock, &mockCommandRunner{},
+		"/any/hook.js", execCtx,
+	)
+
+	require.Error(t, err)
+	assert.Nil(t, projCtx)
+	assert.Contains(t, err.Error(),
+		`invalid packageManager config value "bun"`)
+	assert.False(t, mock.installCalled)
 }
 
 // ---------------------------------------------------------------------------

@@ -119,7 +119,7 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		})
 
 		// Write a default channel so HasUpdateConfig returns true next time.
-		if err := update.SaveChannel(userConfig, update.LoadUpdateConfig(userConfig).Channel); err != nil {
+		if err := update.SetChannel(userConfig, update.LoadUpdateConfig(userConfig).Channel); err != nil {
 			log.Printf("warning: failed to persist default update channel: %v", err)
 		} else if err := a.configManager.Save(userConfig); err != nil {
 			log.Printf("warning: failed to save config after setting default channel: %v", err)
@@ -131,7 +131,7 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	switchingChannels := a.flags.channel != "" && update.Channel(a.flags.channel) != currentCfg.Channel
 
 	// Persist non-channel config flags immediately (check-interval)
-	configChanged, err := a.persistNonChannelFlags(userConfig)
+	err = a.persistNonChannelFlags(userConfig)
 	if err != nil {
 		tracing.SetUsageAttributes(fields.UpdateResult.String(update.CodeConfigFailed))
 		return nil, err
@@ -139,21 +139,22 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	// If switching channels, persist channel to a temporary config for the version check
 	// but don't save to disk until after confirmation
+	channelChanged := false
 	if switchingChannels {
 		newChannel, err := update.ParseChannel(a.flags.channel)
 		if err != nil {
 			tracing.SetUsageAttributes(fields.UpdateResult.String(update.CodeInvalidInput))
 			return nil, err
 		}
-		_ = update.SaveChannel(userConfig, newChannel)
-		configChanged = true
+		_ = update.SetChannel(userConfig, newChannel)
+		channelChanged = true
 	} else if a.flags.channel != "" {
 		// Same channel explicitly set — just persist it
-		if err := update.SaveChannel(userConfig, update.Channel(a.flags.channel)); err != nil {
+		if err := update.SetChannel(userConfig, update.Channel(a.flags.channel)); err != nil {
 			tracing.SetUsageAttributes(fields.UpdateResult.String(update.CodeConfigFailed))
 			return nil, err
 		}
-		configChanged = true
+		channelChanged = true
 	}
 
 	cfg := update.LoadUpdateConfig(userConfig)
@@ -164,14 +165,9 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		fields.UpdateFromVersion.String(internal.VersionInfo().Version.String()),
 	)
 
-	// If only config flags were set (no channel change, no update needed), just confirm
+	// If only config flags were set (no channel change, no update needed), just confirm.
+	// Non-channel config was already saved to disk inside persistNonChannelFlags.
 	if a.onlyConfigFlagsSet() {
-		if configChanged {
-			if err := a.configManager.Save(userConfig); err != nil {
-				tracing.SetUsageAttributes(fields.UpdateResult.String(update.CodeConfigFailed))
-				return nil, fmt.Errorf("failed to save config: %w", err)
-			}
-		}
 		tracing.SetUsageAttributes(fields.UpdateResult.String(update.CodeSuccess))
 		return &actions.ActionResult{
 			Message: &actions.ResultMessage{
@@ -266,14 +262,6 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 	}
 
-	// Now persist all config changes (including channel) after confirmation
-	if configChanged {
-		if err := a.configManager.Save(userConfig); err != nil {
-			tracing.SetUsageAttributes(fields.UpdateResult.String(update.CodeConfigFailed))
-			return nil, fmt.Errorf("failed to save config: %w", err)
-		}
-	}
-
 	// Perform the update
 	a.console.MessageUxItem(ctx, &ux.MessageTitle{
 		Title: fmt.Sprintf("Updating azd to %s (%s)", versionInfo.Version, cfg.Channel),
@@ -288,6 +276,21 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			tracing.SetUsageAttributes(fields.UpdateResult.String(update.CodeReplaceFailed))
 		}
 		return nil, err
+	}
+
+	// Persist channel config changes only after a successful update.
+	// Non-channel preferences were already saved before the update attempt.
+	// Treat save failures as non-fatal since the binary was already updated successfully.
+	// Guide the user to manually persist the channel if saving fails.
+	if channelChanged {
+		if err := a.configManager.Save(userConfig); err != nil {
+			log.Printf("warning: update succeeded but failed to save channel config: %v", err)
+			a.console.Message(ctx, output.WithWarningFormat(
+				"WARNING: failed to save channel preference. "+
+					"Run 'azd config set updates.channel %s' to persist it.",
+				cfg.Channel,
+			))
+		}
 	}
 
 	tracing.SetUsageAttributes(fields.UpdateResult.String(update.CodeSuccess))
@@ -308,17 +311,19 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 // persistNonChannelFlags saves check-interval flags to config.
 // Channel is handled separately to allow confirmation before persisting.
-func (a *updateAction) persistNonChannelFlags(cfg config.Config) (bool, error) {
-	changed := false
-
+func (a *updateAction) persistNonChannelFlags(cfg config.Config) error {
 	if a.flags.checkIntervalHours > 0 {
-		if err := update.SaveCheckIntervalHours(cfg, a.flags.checkIntervalHours); err != nil {
-			return false, err
+		if err := update.SetCheckIntervalHours(cfg, a.flags.checkIntervalHours); err != nil {
+			return err
 		}
-		changed = true
+
+		if err := a.configManager.Save(cfg); err != nil {
+			tracing.SetUsageAttributes(fields.UpdateResult.String(update.CodeConfigFailed))
+			return fmt.Errorf("failed to save config: %w", err)
+		}
 	}
 
-	return changed, nil
+	return nil
 }
 
 // onlyConfigFlagsSet returns true if only config flags were provided (no channel that requires an update).

@@ -17,7 +17,6 @@ import (
 )
 
 func Test_detectConfirm_confirm(t *testing.T) {
-	t.Parallel()
 	dir := t.TempDir()
 	// avoid symlinked paths as this may result in the final path returned
 	// to be a valid, but aliased path to the absolute entries in the test,
@@ -34,6 +33,8 @@ func Test_detectConfirm_confirm(t *testing.T) {
 	javaDir := filepath.Join(dir, "java-dir")
 	err = os.MkdirAll(javaDir, 0700)
 	require.NoError(t, err)
+
+	t.Chdir(dir)
 
 	tests := []struct {
 		name         string

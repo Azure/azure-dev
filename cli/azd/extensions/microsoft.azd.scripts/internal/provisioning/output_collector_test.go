@@ -60,14 +60,3 @@ func TestMergeOutputs(t *testing.T) {
 	require.Equal(t, "b", merged["X"].Value, "later overrides earlier")
 	require.Equal(t, "c", merged["Y"].Value)
 }
-
-func TestOutputsToEnvMap(t *testing.T) {
-	outputs := map[string]OutputParameter{
-		"KEY1": {Type: "string", Value: "val1"},
-		"KEY2": {Type: "string", Value: "val2"},
-	}
-
-	env := OutputsToEnvMap(outputs)
-	require.Equal(t, "val1", env["KEY1"])
-	require.Equal(t, "val2", env["KEY2"])
-}

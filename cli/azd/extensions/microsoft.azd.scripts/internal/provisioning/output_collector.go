@@ -9,7 +9,6 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 // OutputParameter represents a single output value from a script.
@@ -28,17 +27,32 @@ func NewOutputCollector(projectPath string) *OutputCollector {
 	return &OutputCollector{projectPath: projectPath}
 }
 
+// maxOutputFileSize is the maximum allowed size for an outputs.json file (10 MB).
+const maxOutputFileSize = 10 * 1024 * 1024
+
 // Collect looks for an outputs.json file in the same directory as the script
 // and parses it into a map of output parameters. If no file is found, returns an empty map.
 func (c *OutputCollector) Collect(sc *ScriptConfig) (map[string]OutputParameter, error) {
 	scriptDir := filepath.Dir(filepath.Join(c.projectPath, sc.Run))
 	outputsPath := filepath.Join(scriptDir, "outputs.json")
 
-	data, err := os.ReadFile(outputsPath)
+	fi, err := os.Stat(outputsPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
 		}
+		return nil, fmt.Errorf("checking outputs file %q: %w", outputsPath, err)
+	}
+
+	if fi.Size() > maxOutputFileSize {
+		return nil, fmt.Errorf(
+			"outputs file %q exceeds maximum allowed size of %d bytes (actual: %d bytes)",
+			outputsPath, maxOutputFileSize, fi.Size(),
+		)
+	}
+
+	data, err := os.ReadFile(outputsPath)
+	if err != nil {
 		return nil, fmt.Errorf("reading outputs file %q: %w", outputsPath, err)
 	}
 
@@ -58,24 +72,4 @@ func MergeOutputs(outputs ...map[string]OutputParameter) map[string]OutputParame
 		maps.Copy(merged, m)
 	}
 	return merged
-}
-
-// OutputsToEnvMap converts output parameters to a flat key=value map
-// suitable for storing in the azd environment.
-func OutputsToEnvMap(outputs map[string]OutputParameter) map[string]string {
-	result := make(map[string]string, len(outputs))
-	for k, v := range outputs {
-		result[k] = v.Value
-	}
-	return result
-}
-
-// OutputsToProvisioning converts output parameters to the provisioning output format
-// with uppercase keys following azd conventions.
-func OutputsToProvisioning(outputs map[string]OutputParameter) map[string]OutputParameter {
-	result := make(map[string]OutputParameter, len(outputs))
-	for k, v := range outputs {
-		result[strings.ToUpper(k)] = v
-	}
-	return result
 }

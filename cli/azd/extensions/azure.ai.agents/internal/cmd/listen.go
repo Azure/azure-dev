@@ -161,6 +161,11 @@ func isHostedAgentService(svc *azdext.ServiceConfig, proj *azdext.ProjectConfig)
 }
 
 func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
+	// Agent identity RBAC is only relevant for vnext-enabled projects.
+	if !isVNextEnabled(ctx, azdClient) {
+		return nil
+	}
+
 	// Collect agent identities from hosted agent services that were deployed.
 	// After deploy, each hosted agent's name/version is stored as AGENT_{SERVICE_KEY}_NAME/VERSION.
 	// We fetch the full agent version object from the API to get the instance identity principal ID,
@@ -220,27 +225,33 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 			EnvName: envName,
 			Key:     fmt.Sprintf("AGENT_%s_NAME", serviceKey),
 		})
-		if err != nil || nameResp.Value == "" {
+		if err != nil {
 			return fmt.Errorf(
-				"AGENT_%s_NAME is not set — deployment may not have completed successfully",
-				serviceKey,
+				"failed to read AGENT_%s_NAME from environment: %w",
+				serviceKey, err,
 			)
+		}
+		if nameResp.Value == "" {
+			continue
 		}
 
 		versionResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 			EnvName: envName,
 			Key:     fmt.Sprintf("AGENT_%s_VERSION", serviceKey),
 		})
-		if err != nil || versionResp.Value == "" {
+		if err != nil {
 			return fmt.Errorf(
-				"AGENT_%s_VERSION is not set — deployment may not have completed successfully",
-				serviceKey,
+				"failed to read AGENT_%s_VERSION from environment: %w",
+				serviceKey, err,
 			)
+		}
+		if versionResp.Value == "" {
+			continue
 		}
 
 		// Fetch the agent version to get the instance identity principal ID.
 		versionObj, err := agentClient.GetAgentVersion(
-			ctx, nameResp.Value, versionResp.Value, DefaultAgentAPIVersion,
+			ctx, nameResp.Value, versionResp.Value, DefaultVNextAgentAPIVersion,
 		)
 		if err != nil {
 			return fmt.Errorf(

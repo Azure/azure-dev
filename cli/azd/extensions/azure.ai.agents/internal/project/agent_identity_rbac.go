@@ -6,6 +6,7 @@ package project
 import (
 	"context"
 	"fmt"
+	"log"
 	"maps"
 	"os"
 	"slices"
@@ -148,10 +149,6 @@ func EnsureAgentIdentityRBAC(
 	azdEnv := make(map[string]string, len(envResponse.KeyValues))
 	for _, kv := range envResponse.KeyValues {
 		azdEnv[kv.Key] = kv.Value
-	}
-
-	if !isVnextEnabled(azdEnv) {
-		return nil
 	}
 
 	if isRoleAssignmentsSkipped(azdEnv) {
@@ -299,6 +296,11 @@ func ensureSingleAgentRBAC(
 				displayName)
 		}
 		fmt.Println("  ✓ Agent identity found in Entra ID")
+
+		if len(agentIdentities) > 1 {
+			log.Printf("found %d service principals matching '%s'; using the first",
+				len(agentIdentities), displayName)
+		}
 
 		// Use the first matching identity.
 		if agentIdentities[0].Id != nil {

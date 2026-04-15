@@ -20,6 +20,8 @@ const (
 	CodeInvalidAiProjectId        = "invalid_ai_project_id"
 	CodeInvalidServiceConfig      = "invalid_service_config"
 	CodeInvalidAgentRequest       = "invalid_agent_request"
+	CodeInvalidAgentName          = "invalid_agent_name"
+	CodeInvalidAgentVersion       = "invalid_agent_version"
 	CodeInvalidSessionId          = "invalid_session_id"
 	CodeInvalidParameter          = "invalid_parameter"
 	CodeUnsupportedHost           = "unsupported_host"
@@ -83,6 +85,11 @@ const (
 	CodeModelResolutionFailed = "model_resolution_failed"
 )
 
+// Error codes for session errors.
+const (
+	CodeSessionNotFound = "session_not_found"
+)
+
 // Error codes for file operation errors.
 const (
 	CodeFileNotFound     = "file_not_found"
@@ -137,6 +144,10 @@ const (
 	OpCreateAgent           = "create_agent"
 	OpStartContainer        = "start_container"
 	OpGetContainerOperation = "get_container_operation"
+	OpCreateSession         = "create_session"
+	OpGetSession            = "get_session"
+	OpDeleteSession         = "delete_session"
+	OpListSessions          = "list_sessions"
 	OpCreateToolboxVersion  = "create_toolbox_version"
 	OpGetToolbox            = "get_toolbox"
 )

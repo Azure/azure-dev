@@ -41,7 +41,7 @@ func newMonitorCommand() *cobra.Command {
 		Long: `Monitor logs from a hosted agent.
 
 Streams console output (stdout/stderr) or system events from an agent session or container.
-Use --session to stream logs for a specific session, or omit it to use the container logstream.
+Use --session-id to stream logs for a specific session, or omit it to use the container logstream.
 Use --follow to stream logs in real-time, or omit it to fetch recent logs and exit.
 This is useful for troubleshooting agent startup issues or monitoring agent behavior.
 
@@ -55,10 +55,10 @@ configuration and the current azd environment. Optionally specify the service na
   azd ai agent monitor my-agent
 
   # Stream session logs
-  azd ai agent monitor --session <session-id>
+  azd ai agent monitor --session-id <session-id>
 
   # Stream session logs in real-time
-  azd ai agent monitor --session <session-id> --follow
+  azd ai agent monitor --session-id <session-id> --follow
 
   # Fetch system event logs from container
   azd ai agent monitor --type system`,
@@ -108,7 +108,7 @@ configuration and the current azd environment. Optionally specify the service na
 						return exterrors.Validation(
 							exterrors.CodeInvalidSessionId,
 							"VNext agents are currently enabled and require a session ID for log streaming.",
-							"Specify the session ID using --session, or run `azd ai agent invoke` first to create one",
+							"Specify the session ID using --session-id, or run `azd ai agent invoke` first to create one",
 						)
 					}
 					flags.sessionID = sessionID
@@ -124,7 +124,7 @@ configuration and the current azd environment. Optionally specify the service na
 		},
 	}
 
-	cmd.Flags().StringVarP(&flags.sessionID, "session", "s", "", "Session ID to stream logs for")
+	cmd.Flags().StringVarP(&flags.sessionID, "session-id", "s", "", "Session ID to stream logs for")
 	cmd.Flags().BoolVarP(&flags.follow, "follow", "f", false, "Stream logs in real-time")
 	cmd.Flags().IntVarP(&flags.tail, "tail", "l", 50, "Number of trailing log lines to fetch (1-300)")
 	cmd.Flags().StringVarP(&flags.logType, "type", "t", "console",

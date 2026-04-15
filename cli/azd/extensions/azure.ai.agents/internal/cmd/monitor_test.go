@@ -100,16 +100,16 @@ func TestMonitorCommand_DefaultValues(t *testing.T) {
 	follow, _ := cmd.Flags().GetBool("follow")
 	assert.Equal(t, false, follow)
 
-	session, _ := cmd.Flags().GetString("session")
+	session, _ := cmd.Flags().GetString("session-id")
 	assert.Equal(t, "", session)
 }
 
 func TestMonitorCommand_SessionFlagRegistered(t *testing.T) {
 	cmd := newMonitorCommand()
 
-	// The --session / -s flag must be defined
-	f := cmd.Flags().Lookup("session")
-	require.NotNil(t, f, "--session flag should be registered")
+	// The --session-id / -s flag must be defined
+	f := cmd.Flags().Lookup("session-id")
+	require.NotNil(t, f, "--session-id flag should be registered")
 	assert.Equal(t, "s", f.Shorthand)
 }
 

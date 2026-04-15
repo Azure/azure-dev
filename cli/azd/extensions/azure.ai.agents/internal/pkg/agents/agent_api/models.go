@@ -699,3 +699,49 @@ type SessionFileList struct {
 	Path    string            `json:"path"`
 	Entries []SessionFileInfo `json:"entries"`
 }
+
+// ---------------------------------------------------------------------------
+// Session Lifecycle Models
+// ---------------------------------------------------------------------------
+
+// AgentSessionStatus represents the status of an agent session.
+type AgentSessionStatus string
+
+const (
+	AgentSessionStatusCreating AgentSessionStatus = "creating"
+	AgentSessionStatusActive   AgentSessionStatus = "active"
+	AgentSessionStatusIdle     AgentSessionStatus = "idle"
+	AgentSessionStatusUpdating AgentSessionStatus = "updating"
+	AgentSessionStatusFailed   AgentSessionStatus = "failed"
+	AgentSessionStatusDeleting AgentSessionStatus = "deleting"
+	AgentSessionStatusDeleted  AgentSessionStatus = "deleted"
+	AgentSessionStatusExpired  AgentSessionStatus = "expired"
+)
+
+// VersionIndicator determines which agent version backs a session.
+type VersionIndicator struct {
+	Type         string `json:"type"`
+	AgentVersion string `json:"agent_version,omitempty"`
+}
+
+// AgentSessionResource represents an agent session.
+type AgentSessionResource struct {
+	AgentSessionID   string             `json:"agent_session_id"`
+	VersionIndicator VersionIndicator   `json:"version_indicator"`
+	Status           AgentSessionStatus `json:"status"`
+	CreatedAt        int64              `json:"created_at"`
+	LastAccessedAt   int64              `json:"last_accessed_at"`
+	ExpiresAt        int64              `json:"expires_at"`
+}
+
+// CreateAgentSessionRequest is the request body for creating a session.
+type CreateAgentSessionRequest struct {
+	AgentSessionID   *string           `json:"agent_session_id,omitempty"`
+	VersionIndicator *VersionIndicator `json:"version_indicator,omitempty"`
+}
+
+// SessionListResult is the paged result for session list operations.
+type SessionListResult struct {
+	Data            []AgentSessionResource `json:"data"`
+	PaginationToken *string                `json:"pagination_token,omitempty"`
+}

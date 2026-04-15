@@ -15,6 +15,8 @@ import (
 	"sync"
 	"time"
 
+	"azureaiagent/internal/exterrors"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v3"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -277,6 +279,21 @@ func ensureSingleAgentRBAC(
 		for attempt := range identityLookupMaxAttempts {
 			agentIdentities, err = discoverAgentIdentity(ctx, graphClient, displayName)
 			if err != nil {
+				// Detect Conditional Access token protection blocks (AADSTS530084)
+				// that prevent Graph token acquisition in the fallback discovery path.
+				if isTokenProtectionError(err) {
+					return exterrors.Auth(
+						exterrors.CodeTokenProtectionBlocked,
+						"A Conditional Access token protection policy is blocking "+
+							"Microsoft Graph access required for hosted-agent RBAC setup.\n\n"+
+							"Suggestion: contact your IT administrator or request a policy "+
+							"exception. See https://aka.ms/TBCADocs and "+
+							"https://aka.ms/TokenProtectionFAQ#troubleshooting for more details. "+
+							"To skip RBAC checks when roles are pre-configured, "+
+							"set AZD_AGENT_SKIP_ROLE_ASSIGNMENTS=true.",
+						"",
+					)
+				}
 				return fmt.Errorf("failed to discover agent identity: %w", err)
 			}
 			if len(agentIdentities) > 0 {
@@ -495,4 +512,15 @@ func extractSubscriptionID(resourceID string) string {
 		}
 	}
 	return ""
+}
+
+// isTokenProtectionError checks whether an error is caused by an Entra Conditional Access
+// token protection policy (AADSTS530084) that blocks Graph API token acquisition.
+func isTokenProtectionError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errMsg := err.Error()
+	return strings.Contains(errMsg, "AADSTS530084") ||
+		strings.Contains(errMsg, "token protection policy")
 }

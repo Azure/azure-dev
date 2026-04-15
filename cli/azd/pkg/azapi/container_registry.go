@@ -47,7 +47,9 @@ type acrToken struct {
 
 // ContainerRegistryService provides access to query and login to Azure Container Registries (ACR)
 type ContainerRegistryService interface {
-	// Logs into the specified container registry
+	// Login authenticates to the specified container registry. The call is
+	// idempotent: concurrent callers for the same registry are deduplicated
+	// via singleflight, and subsequent calls return immediately from cache.
 	Login(ctx context.Context, subscriptionId string, loginServer string) error
 	// Gets the credentials that could be used to login to the specified container registry.
 	Credentials(ctx context.Context, subscriptionId string, loginServer string) (*DockerCredentials, error)
@@ -357,6 +359,7 @@ func (crs *containerRegistryService) getAcrToken(
 	if err != nil {
 		return nil, err
 	}
+	defer response.Body.Close()
 
 	if !azruntime.HasStatusCode(response, http.StatusOK) {
 		return nil, azruntime.NewResponseError(response)

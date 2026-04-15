@@ -371,7 +371,6 @@ func TestAskerConsole_Message_EmptySkippedInJson(t *testing.T) {
 	c := NewConsole(
 		true,
 		false,
-		false,
 		Writers{Output: writerAdapter{buf}},
 		ConsoleHandles{
 			Stderr: os.Stderr,

@@ -10,16 +10,6 @@
 
 ### Other Changes
 
-## 1.24.0-beta.1 (Unreleased)
-
-### Features Added
-
-### Breaking Changes
-
-### Bugs Fixed
-
-### Other Changes
-
 ## 1.24.0 (2026-04-14)
 
 ### Features Added

@@ -100,7 +100,7 @@ func TestTsHook_AutoDetectFromExtension(t *testing.T) {
 		t, mockCtx, cwd, hooksMap, env,
 	)
 	err := runner.RunHooks(
-		*mockCtx.Context, HookTypePre, nil, "deploy",
+		*mockCtx.Context, HookTypePre, "project", nil, "deploy",
 	)
 
 	require.NoError(t, err)
@@ -156,7 +156,7 @@ func TestTsHook_ExplicitKind(t *testing.T) {
 		t, mockCtx, cwd, hooksMap, env,
 	)
 	err := runner.RunHooks(
-		*mockCtx.Context, HookTypePre, nil, "deploy",
+		*mockCtx.Context, HookTypePre, "project", nil, "deploy",
 	)
 
 	require.NoError(t, err)
@@ -203,7 +203,7 @@ func TestTsHook_WithPackageJSON(t *testing.T) {
 		t, mockCtx, cwd, hooksMap, env,
 	)
 	err := runner.RunHooks(
-		*mockCtx.Context, HookTypePre, nil, "deploy",
+		*mockCtx.Context, HookTypePre, "project", nil, "deploy",
 	)
 
 	require.NoError(t, err)
@@ -245,7 +245,7 @@ func TestTsHook_NonZeroExitCode(t *testing.T) {
 		t, mockCtx, cwd, hooksMap, env,
 	)
 	err := runner.RunHooks(
-		*mockCtx.Context, HookTypePre, nil, "deploy",
+		*mockCtx.Context, HookTypePre, "project", nil, "deploy",
 	)
 
 	require.Error(t, err)
@@ -288,7 +288,7 @@ func TestTsHook_ContinueOnError(t *testing.T) {
 		t, mockCtx, cwd, hooksMap, env,
 	)
 	err := runner.RunHooks(
-		*mockCtx.Context, HookTypePre, nil, "deploy",
+		*mockCtx.Context, HookTypePre, "project", nil, "deploy",
 	)
 
 	require.NoError(t, err)
@@ -332,7 +332,7 @@ func TestTsHook_ServiceLevel(t *testing.T) {
 		t, mockCtx, cwd, hooksMap, env,
 	)
 	err := runner.RunHooks(
-		*mockCtx.Context, HookTypePost, nil, "deploy",
+		*mockCtx.Context, HookTypePost, "project", nil, "deploy",
 	)
 
 	require.NoError(t, err)
@@ -391,7 +391,7 @@ func TestTsHook_NodeMissing(t *testing.T) {
 		t, mockCtx, cwd, hooksMap, env,
 	)
 	err := runner.RunHooks(
-		*mockCtx.Context, HookTypePre, nil, "deploy",
+		*mockCtx.Context, HookTypePre, "project", nil, "deploy",
 	)
 
 	require.Error(t, err)
@@ -437,7 +437,7 @@ func TestTsHook_EnvVarsPassthrough(t *testing.T) {
 		t, mockCtx, cwd, hooksMap, env,
 	)
 	err := runner.RunHooks(
-		*mockCtx.Context, HookTypePre, nil, "deploy",
+		*mockCtx.Context, HookTypePre, "project", nil, "deploy",
 	)
 
 	require.NoError(t, err)
@@ -543,7 +543,7 @@ func TestTsHook_ExecutionPipeline(t *testing.T) {
 			)
 			err := runner.RunHooks(
 				*mockCtx.Context,
-				HookTypePre, nil, "deploy",
+				HookTypePre, "project", nil, "deploy",
 			)
 
 			if tt.wantErr {
@@ -583,7 +583,7 @@ func TestTsHook_InlineScriptRejected(t *testing.T) {
 		t, mockCtx, cwd, hooksMap, env,
 	)
 	err := runner.RunHooks(
-		*mockCtx.Context, HookTypePre, nil, "deploy",
+		*mockCtx.Context, HookTypePre, "project", nil, "deploy",
 	)
 
 	require.Error(t, err)
@@ -630,7 +630,7 @@ func TestTsHook_StdoutCapture(t *testing.T) {
 		t, mockCtx, cwd, hooksMap, env,
 	)
 	err := runner.RunHooks(
-		*mockCtx.Context, HookTypePre, nil, "deploy",
+		*mockCtx.Context, HookTypePre, "project", nil, "deploy",
 	)
 	require.NoError(t, err)
 }
@@ -714,7 +714,7 @@ func TestTsHook_ShellHookUnaffected(t *testing.T) {
 
 	// Run the shell hook.
 	err := runner.RunHooks(
-		*mockCtx.Context, HookTypePre, nil, "build",
+		*mockCtx.Context, HookTypePre, "project", nil, "build",
 	)
 	require.NoError(t, err)
 	require.True(
@@ -724,7 +724,7 @@ func TestTsHook_ShellHookUnaffected(t *testing.T) {
 
 	// Run the TS hook.
 	err = runner.RunHooks(
-		*mockCtx.Context, HookTypePre, nil, "deploy",
+		*mockCtx.Context, HookTypePre, "project", nil, "deploy",
 	)
 	require.NoError(t, err)
 	require.True(
@@ -787,7 +787,7 @@ func TestTsHook_ExplicitDirOverridesCwd(t *testing.T) {
 		t, mockCtx, cwd, hooksMap, env,
 	)
 	err := runner.RunHooks(
-		*mockCtx.Context, HookTypePre, nil, "deploy",
+		*mockCtx.Context, HookTypePre, "project", nil, "deploy",
 	)
 
 	require.NoError(t, err)
@@ -835,7 +835,7 @@ func TestTsHook_ProjectLevel(t *testing.T) {
 		t, mockCtx, cwd, hooksMap, env,
 	)
 	err := runner.RunHooks(
-		*mockCtx.Context, HookTypePre, nil, "provision",
+		*mockCtx.Context, HookTypePre, "project", nil, "provision",
 	)
 
 	require.NoError(t, err)

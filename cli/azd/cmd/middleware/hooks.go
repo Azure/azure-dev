@@ -103,7 +103,7 @@ func (m *HooksMiddleware) registerCommandHooks(
 	commandNames := []string{m.options.CommandPath}
 	commandNames = append(commandNames, m.options.Aliases...)
 
-	err := hooksRunner.Invoke(ctx, commandNames, func() error {
+	err := hooksRunner.Invoke(ctx, commandNames, "project", func() error {
 		result, err := next(ctx)
 		if err != nil {
 			return err
@@ -198,7 +198,7 @@ func (m *HooksMiddleware) createServiceEventHandler(
 	hooksRunner *ext.HooksRunner,
 ) ext.EventHandlerFn[project.ServiceLifecycleEventArgs] {
 	return func(ctx context.Context, eventArgs project.ServiceLifecycleEventArgs) error {
-		return hooksRunner.RunHooks(ctx, hookType, nil, hookName)
+		return hooksRunner.RunHooks(ctx, hookType, "service", nil, hookName)
 	}
 }
 

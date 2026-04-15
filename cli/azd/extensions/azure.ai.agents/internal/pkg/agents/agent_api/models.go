@@ -193,7 +193,7 @@ type AgentVersionObject struct {
 	Description        *string             `json:"description,omitempty"`
 	Metadata           map[string]string   `json:"metadata,omitempty"`
 	CreatedAt          int64               `json:"created_at"`
-	Definition         any                 `json:"definition"`           // Can be any of the agent definition types
+	Definition         any                 `json:"definition"` // Can be any of the agent definition types
 	Status             string              `json:"status,omitempty"`
 	InstanceIdentity   *AgentIdentityInfo  `json:"instance_identity,omitempty"`
 	Blueprint          *BlueprintInfo      `json:"blueprint,omitempty"`

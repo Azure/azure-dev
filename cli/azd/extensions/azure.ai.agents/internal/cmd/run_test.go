@@ -336,3 +336,78 @@ func TestAppendFoundryEnvVars(t *testing.T) {
 		}
 	})
 }
+
+func TestAppendPortEnvVars(t *testing.T) {
+	t.Parallel()
+
+	t.Run("dotnet project includes ASPNETCORE_URLS", func(t *testing.T) {
+		t.Parallel()
+		pt := ProjectType{Language: "dotnet", StartCmd: "dotnet run"}
+		env := appendPortEnvVars(nil, pt, 8088)
+
+		if !slices.Contains(env, "PORT=8088") {
+			t.Errorf("expected PORT=8088 in env, got %v", env)
+		}
+		if !slices.Contains(env, "ASPNETCORE_URLS=http://localhost:8088") {
+			t.Errorf("expected ASPNETCORE_URLS=http://localhost:8088 in env, got %v", env)
+		}
+	})
+
+	t.Run("python project does not include ASPNETCORE_URLS", func(t *testing.T) {
+		t.Parallel()
+		pt := ProjectType{Language: "python", StartCmd: "python main.py"}
+		env := appendPortEnvVars(nil, pt, 8088)
+
+		if !slices.Contains(env, "PORT=8088") {
+			t.Errorf("expected PORT=8088 in env, got %v", env)
+		}
+		for _, entry := range env {
+			if strings.HasPrefix(entry, "ASPNETCORE_URLS=") {
+				t.Errorf("ASPNETCORE_URLS should not be set for python, got %v", env)
+			}
+		}
+	})
+
+	t.Run("node project does not include ASPNETCORE_URLS", func(t *testing.T) {
+		t.Parallel()
+		pt := ProjectType{Language: "node", StartCmd: "npm start"}
+		env := appendPortEnvVars(nil, pt, 9090)
+
+		if !slices.Contains(env, "PORT=9090") {
+			t.Errorf("expected PORT=9090 in env, got %v", env)
+		}
+		for _, entry := range env {
+			if strings.HasPrefix(entry, "ASPNETCORE_URLS=") {
+				t.Errorf("ASPNETCORE_URLS should not be set for node, got %v", env)
+			}
+		}
+	})
+
+	t.Run("dotnet project respects custom port", func(t *testing.T) {
+		t.Parallel()
+		pt := ProjectType{Language: "dotnet", StartCmd: "dotnet run"}
+		env := appendPortEnvVars(nil, pt, 3000)
+
+		if !slices.Contains(env, "PORT=3000") {
+			t.Errorf("expected PORT=3000 in env, got %v", env)
+		}
+		expected := "ASPNETCORE_URLS=http://localhost:3000"
+		if !slices.Contains(env, expected) {
+			t.Errorf("expected %q in env, got %v", expected, env)
+		}
+	})
+
+	t.Run("preserves existing env entries", func(t *testing.T) {
+		t.Parallel()
+		pt := ProjectType{Language: "dotnet", StartCmd: "dotnet run"}
+		existing := []string{"HOME=/home/user", "PATH=/usr/bin"}
+		env := appendPortEnvVars(existing, pt, 8088)
+
+		if len(env) != 4 {
+			t.Errorf("expected 4 entries (2 existing + PORT + ASPNETCORE_URLS), got %d: %v", len(env), env)
+		}
+		if env[0] != "HOME=/home/user" || env[1] != "PATH=/usr/bin" {
+			t.Errorf("existing entries not preserved, got %v", env)
+		}
+	})
+}

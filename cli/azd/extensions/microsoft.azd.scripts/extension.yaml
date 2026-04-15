@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=../extension.schema.json
+id: microsoft.azd.scripts
+namespace: scripts
+displayName: Script Provisioning Provider
+description: >-
+  Enables shell script-based provisioning and teardown workflows in azd.
+  Configure bash or PowerShell scripts as your infrastructure provisioning
+  provider in azure.yaml.
+usage: azd scripts <command> [options]
+version: 0.1.0-alpha.1
+language: go
+capabilities:
+  - provisioning-provider

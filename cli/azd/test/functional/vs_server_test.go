@@ -211,6 +211,12 @@ func Test_CLI_VsServer(t *testing.T) {
 			tt := tt
 			t.Parallel()
 
+			// Skip LiveDeploy tests — aspire-full sample pinned to 9.x, CI agent has 13.x.
+			// See https://github.com/Azure/azure-dev/issues/7739
+			if strings.HasPrefix(tt.Name, "LiveDeploy") {
+				t.Skip("Skipping: aspire-full sample needs version bump from 9.x to 13.x (#7739)")
+			}
+
 			ctx, cancel := newTestContext(t)
 			defer cancel()
 

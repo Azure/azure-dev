@@ -65,6 +65,54 @@ const (
 	apiVersionResourceGroupExistence = "2025-03-01"
 )
 
+var azureReservedResourceNameExactMatches = map[string]struct{}{
+	"ACCESS":              {},
+	"APP_BROWSERS":        {},
+	"APP_CODE":            {},
+	"APP_DATA":            {},
+	"APP_GLOBALRESOURCES": {},
+	"APP_LOCALRESOURCES":  {},
+	"APP_THEMES":          {},
+	"APP_WEBREFERENCES":   {},
+	"AZURE":               {},
+	"BING":                {},
+	"BIZSPARK":            {},
+	"BIZTALK":             {},
+	"CORTANA":             {},
+	"DIRECTX":             {},
+	"DOTNET":              {},
+	"DYNAMICS":            {},
+	"EXCEL":               {},
+	"EXCHANGE":            {},
+	"FOREFRONT":           {},
+	"GROOVE":              {},
+	"HOLOLENS":            {},
+	"HYPERV":              {},
+	"KINECT":              {},
+	"LYNC":                {},
+	"MSDN":                {},
+	"O365":                {},
+	"OFFICE":              {},
+	"OFFICE365":           {},
+	"ONEDRIVE":            {},
+	"ONENOTE":             {},
+	"OUTLOOK":             {},
+	"POWERPOINT":          {},
+	"SHAREPOINT":          {},
+	"SKYPE":               {},
+	"VISIO":               {},
+	"VISUALSTUDIO":        {},
+	"WEB.CONFIG":          {},
+	"XBOX":                {},
+}
+
+var azureReservedResourceNameContainsMatches = []string{
+	"MICROSOFT",
+	"WINDOWS",
+}
+
+const azureReservedResourceNamePrefixMatch = "LOGIN"
+
 // BicepProvider exposes infrastructure provisioning using Azure Bicep templates
 type BicepProvider struct {
 	// Options that are available after Initialize()
@@ -2227,6 +2275,11 @@ func (p *BicepProvider) validatePreflight(
 		Fn:     p.checkAiModelQuota,
 	})
 
+	localPreflight.AddCheck(PreflightCheck{
+		RuleID: "reserved_resource_names",
+		Fn:     p.checkReservedResourceNames,
+	})
+
 	results, err := localPreflight.validate(ctx, p.console, armTemplate, armParameters)
 	if err != nil {
 		p.setPreflightOutcome(span, preflightOutcomeError, nil)
@@ -2418,6 +2471,38 @@ func (p *BicepProvider) checkRoleAssignmentPermissions(
 	}
 
 	return nil, nil
+}
+
+// checkReservedResourceNames inspects predicted resource names and warns when a
+// resource name segment matches Azure's published reserved-word restrictions.
+func (p *BicepProvider) checkReservedResourceNames(
+	_ context.Context, valCtx *validationContext,
+) ([]PreflightCheckResult, error) {
+	var results []PreflightCheckResult
+
+	for _, resource := range valCtx.SnapshotResources {
+		segment, reservedWord, matchType, found := findReservedResourceNameViolation(resource.Name)
+		if !found {
+			continue
+		}
+
+		results = append(results, PreflightCheckResult{
+			Severity:     PreflightCheckWarning,
+			DiagnosticID: "reserved_resource_name",
+			Message: fmt.Sprintf(
+				"resource %q (%s) has name segment %q that %s the Azure reserved word %q. "+
+					"Azure may reject reserved or trademarked resource names. Choose a different "+
+					"project, environment, or resource name. See https://learn.microsoft.com/azure/azure-resource-manager/templates/error-reserved-resource-name.",
+				resource.Name,
+				resource.Type,
+				segment,
+				matchType,
+				reservedWord,
+			),
+		})
+	}
+
+	return results, nil
 }
 
 // checkAiModelQuota inspects the Bicep snapshot for cognitive services model deployments
@@ -2614,6 +2699,31 @@ func resolveUsageName(catalogModels []ai.AiModel, dep cognitiveDeploymentInfo) s
 		}
 	}
 	return ""
+}
+
+func findReservedResourceNameViolation(resourceName string) (string, string, string, bool) {
+	for _, segment := range strings.Split(resourceName, "/") {
+		if segment == "" {
+			continue
+		}
+
+		normalized := strings.ToUpper(segment)
+		if _, found := azureReservedResourceNameExactMatches[normalized]; found {
+			return segment, normalized, "exactly matches", true
+		}
+
+		if strings.HasPrefix(normalized, azureReservedResourceNamePrefixMatch) {
+			return segment, azureReservedResourceNamePrefixMatch, "starts with", true
+		}
+
+		for _, reservedWord := range azureReservedResourceNameContainsMatches {
+			if strings.Contains(normalized, reservedWord) {
+				return segment, reservedWord, "contains", true
+			}
+		}
+	}
+
+	return "", "", "", false
 }
 
 // resolveResourceGroupLocation returns the Azure location of the resource group specified

@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"azureaiagent/internal/exterrors"
-
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"go.yaml.in/yaml/v3"
+
+	"azureaiagent/internal/exterrors"
 )
 
 // TestExtractAgentDefinition_WithTemplateField tests parsing YAML with a template field (manifest format)
@@ -998,18 +998,24 @@ parameters:
 	}
 }
 
-// TestLoadAndValidateAgentManifest_InvalidYAML verifies that invalid YAML returns
-// a structured validation error with the correct code and a helpful suggestion.
+// TestLoadAndValidateAgentManifest_InvalidYAML verifies that valid YAML with a
+// manifest schema/type mismatch returns a structured validation error with the
+// correct code and a helpful suggestion.
 func TestLoadAndValidateAgentManifest_InvalidYAML(t *testing.T) {
-	invalidYAML := []byte(`{invalid: yaml: [broken`)
+	invalidYAML := []byte(`
+name: test-manifest
+resources:
+  type: model
+  id: not-a-list
+`)
 
 	_, err := LoadAndValidateAgentManifest(invalidYAML)
 	if err == nil {
 		t.Fatal("Expected error for invalid YAML, got nil")
 	}
 
-	var localErr *azdext.LocalError
-	if !errors.As(err, &localErr) {
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	if !ok {
 		t.Fatalf("Expected *azdext.LocalError, got %T: %v", err, err)
 	}
 

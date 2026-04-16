@@ -290,6 +290,7 @@ func ensureSingleAgentRBAC(
 
 		created, err := assignRoleToIdentity(
 			ctx, cred, principalID, roleAzureAIUser, "Azure AI User → Foundry Project", info.ProjectScope,
+			armauthorization.PrincipalTypeServicePrincipal,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to assign Azure AI User role: %w", err)
@@ -327,7 +328,7 @@ func discoverAgentIdentity(
 	return resp.Value, nil
 }
 
-// assignRoleToIdentity assigns a single RBAC role to a service principal at the given scope.
+// assignRoleToIdentity assigns a single RBAC role to a principal at the given scope.
 // It is idempotent: existing assignments are detected and skipped.
 // Returns true if a new assignment was created, false if it already existed.
 func assignRoleToIdentity(
@@ -337,6 +338,7 @@ func assignRoleToIdentity(
 	roleID string,
 	roleName string,
 	scope string,
+	principalType armauthorization.PrincipalType,
 ) (bool, error) {
 	subscriptionID := extractSubscriptionID(scope)
 	if subscriptionID == "" {
@@ -380,11 +382,10 @@ func assignRoleToIdentity(
 		return false, nil
 	}
 
-	// Create assignment with explicit ServicePrincipal type
+	// Create assignment
 	fullRoleDefinitionID := fmt.Sprintf(
 		"%s/providers/Microsoft.Authorization/roleDefinitions/%s", scope, roleID)
 	roleAssignmentName := uuid.New().String()
-	principalType := armauthorization.PrincipalTypeServicePrincipal
 	parameters := armauthorization.RoleAssignmentCreateParameters{
 		Properties: &armauthorization.RoleAssignmentProperties{
 			RoleDefinitionID: new(fullRoleDefinitionID),

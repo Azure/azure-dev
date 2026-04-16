@@ -118,9 +118,10 @@ const (
 
 // Error codes for developer RBAC pre-flight checks.
 const (
-	CodeDeveloperMissingAIUserRole = "developer_missing_ai_user_role"
-	CodeDeveloperMissingACRRole    = "developer_missing_acr_role"
-	CodeACRResolutionFailed        = "acr_resolution_failed"
+	CodeDeveloperMissingAIUserRole          = "developer_missing_ai_user_role"
+	CodeDeveloperMissingRoleAssignWriteRole = "developer_missing_role_assign_write_role"
+	CodeDeveloperMissingACRRole             = "developer_missing_acr_role"
+	CodeACRResolutionFailed                 = "acr_resolution_failed"
 )
 
 // Error codes commonly used for internal errors.

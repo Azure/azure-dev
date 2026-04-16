@@ -4,9 +4,13 @@
 package agent_yaml
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
+	"azureaiagent/internal/exterrors"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -991,5 +995,37 @@ parameters:
 	}
 	if displayName.Secret != nil {
 		t.Errorf("Expected display_name secret to be nil, got %v", *displayName.Secret)
+	}
+}
+
+// TestLoadAndValidateAgentManifest_InvalidYAML verifies that invalid YAML returns
+// a structured validation error with the correct code and a helpful suggestion.
+func TestLoadAndValidateAgentManifest_InvalidYAML(t *testing.T) {
+	invalidYAML := []byte(`{invalid: yaml: [broken`)
+
+	_, err := LoadAndValidateAgentManifest(invalidYAML)
+	if err == nil {
+		t.Fatal("Expected error for invalid YAML, got nil")
+	}
+
+	var localErr *azdext.LocalError
+	if !errors.As(err, &localErr) {
+		t.Fatalf("Expected *azdext.LocalError, got %T: %v", err, err)
+	}
+
+	if localErr.Code != exterrors.CodeInvalidAgentManifest {
+		t.Errorf("Expected code %q, got %q", exterrors.CodeInvalidAgentManifest, localErr.Code)
+	}
+
+	if localErr.Category != azdext.LocalErrorCategoryValidation {
+		t.Errorf("Expected category %q, got %q", azdext.LocalErrorCategoryValidation, localErr.Category)
+	}
+
+	if !strings.Contains(localErr.Message, "YAML content does not conform to AgentManifest format") {
+		t.Errorf("Expected message to mention manifest format, got %q", localErr.Message)
+	}
+
+	if localErr.Suggestion == "" {
+		t.Error("Expected a non-empty suggestion")
 	}
 }

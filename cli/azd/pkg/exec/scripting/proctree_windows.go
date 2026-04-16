@@ -40,6 +40,7 @@ func startProcessTree(cmd *exec.Cmd) (kill func(), _ error) {
 
 	handle, err := windows.CreateJobObject(nil, nil)
 	if err != nil {
+		log.Printf("scripting: Job Object creation failed, falling back to direct kill: %s", err)
 		return fallbackKill, nil
 	}
 
@@ -56,6 +57,7 @@ func startProcessTree(cmd *exec.Cmd) (kill func(), _ error) {
 		uint32(unsafe.Sizeof(info)),
 	)
 	if err != nil {
+		log.Printf("scripting: Job Object configuration failed, falling back to direct kill: %s", err)
 		_ = windows.CloseHandle(handle)
 		return fallbackKill, nil
 	}
@@ -67,11 +69,13 @@ func startProcessTree(cmd *exec.Cmd) (kill func(), _ error) {
 		uint32(cmd.Process.Pid),
 	)
 	if err != nil {
+		log.Printf("scripting: Job Object process open failed, falling back to direct kill: %s", err)
 		_ = windows.CloseHandle(handle)
 		return fallbackKill, nil
 	}
 
 	if err := windows.AssignProcessToJobObject(handle, proc); err != nil {
+		log.Printf("scripting: Job Object process assignment failed, falling back to direct kill: %s", err)
 		_ = windows.CloseHandle(proc)
 		_ = windows.CloseHandle(handle)
 		return fallbackKill, nil

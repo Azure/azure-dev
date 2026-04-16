@@ -61,11 +61,13 @@ The `ActionResult` contains a `Message *ResultMessage` field displayed to the us
 
 ### 5. Output Formatting
 
-When a command supports `--output`, the framework formats the `ActionResult`:
+`OutputFormats` declares which output modes a command supports and wires up flags such as `--output` and `--query`. Structured output is not derived from `ActionResult` — actions that need JSON or table output inject an `output.Formatter` dependency and emit it themselves within `Run()`. `ActionResult` carries only the user-facing UX message.
 
-- **JSON** — Serializes the result data as JSON
-- **Table** — Renders the result data as a formatted table
-- **None** — Displays only the result message
+Supported formats:
+
+- **JSON** — The action writes structured JSON through the formatter
+- **Table** — The action writes tabular output through the formatter
+- **None** — Only the `ActionResult` message is displayed
 
 ## Error Handling
 

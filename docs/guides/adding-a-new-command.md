@@ -21,35 +21,35 @@ Create `cli/azd/cmd/<command_name>.go`:
 package cmd
 
 import (
-    "context"
+	"context"
 
-    "github.com/azure/azure-dev/cli/azd/cmd/actions"
-    "github.com/azure/azure-dev/cli/azd/internal"
-    "github.com/spf13/pflag"
+	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/spf13/pflag"
 )
 
 type myCommandFlags struct {
-    name string
+	name string
 }
 
 func (f *myCommandFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-    local.StringVar(&f.name, "name", "", "Resource name")
+	local.StringVar(&f.name, "name", "", "Resource name")
 }
 
 type myCommandAction struct {
-    flags *myCommandFlags
-    svc   *SomeService
+	flags *myCommandFlags
+	svc   *SomeService
 }
 
 func newMyCommandAction(flags *myCommandFlags, svc *SomeService) actions.Action {
-    return &myCommandAction{flags: flags, svc: svc}
+	return &myCommandAction{flags: flags, svc: svc}
 }
 
 func (a *myCommandAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-    // Command logic here
-    return &actions.ActionResult{
-        Message: &actions.ResultMessage{Header: "Done!"},
-    }, nil
+	// Command logic here
+	return &actions.ActionResult{
+		Message: &actions.ResultMessage{Header: "Done!"},
+	}, nil
 }
 ```
 
@@ -67,16 +67,18 @@ root.Add("mycommand", &actions.ActionDescriptorOptions{
 
 ### 3. Support output formats
 
-If the command produces structured output, add format support:
+If the command produces structured output, add format support in the descriptor and inject `output.Formatter` in your action:
 
 ```go
 root.Add("mycommand", &actions.ActionDescriptorOptions{
-    Command:        newMyCommandCmd(),
-    ActionResolver: newMyCommandAction,
-    FlagsResolver:  newMyCommandFlags,
-    OutputFormats:  []output.Format{output.JsonFormat, output.TableFormat},
+	Command:        newMyCommandCmd(),
+	ActionResolver: newMyCommandAction,
+	FlagsResolver:  newMyCommandFlags,
+	OutputFormats:  []output.Format{output.JsonFormat, output.TableFormat},
 })
 ```
+
+> **Note:** `OutputFormats` only registers the `--output` and `--query` flags. Your action must also inject `output.Formatter` as a dependency and call `formatter.Format()` to emit structured output.
 
 ### 4. Update snapshots
 

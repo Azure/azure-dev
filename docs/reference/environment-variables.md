@@ -20,7 +20,7 @@ Environment variables that configure Azure Developer CLI behavior. These can be 
 | Variable | Description |
 |---|---|
 | `AZD_DEMO_MODE` | When set, hides PII (e.g., subscription IDs) in output |
-| `AZD_FORCE_TTY` | Force TTY detection (`true` enables, `false` disables prompting) |
+| `AZD_FORCE_TTY` | Force terminal detection mode (`true` forces TTY mode, `false` forces non-TTY mode) |
 | `AZD_IN_CLOUDSHELL` | Indicates azd is running in Azure Cloud Shell |
 | `AZD_SKIP_UPDATE_CHECK` | Skip the periodic update availability check |
 | `AZD_DEBUG_LOG` | Enable debug file logging |
@@ -49,6 +49,7 @@ Set by IDE hosts (VS Code, Visual Studio) when spawning azd as a subprocess. Use
 |---|---|
 | `AZD_AUTH_ENDPOINT` | Authentication endpoint URL set by IDE hosts for integrated authentication |
 | `AZD_AUTH_KEY` | Authentication key set by IDE hosts for integrated authentication |
+| `AZD_AUTH_CERT` | Authentication certificate/TLS trust configuration set by IDE hosts |
 
 For details on the external authentication protocol, see [cli/azd/docs/external-authentication.md](../../cli/azd/docs/external-authentication.md).
 

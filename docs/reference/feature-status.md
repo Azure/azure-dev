@@ -80,4 +80,4 @@ Current maturity status of Azure Developer CLI features. See [Feature Stages](..
 
 ---
 
-For the full feature tracking table with graduation criteria, see [cli/azd/docs/feature-stages.md](../../cli/azd/docs/feature-stages.md).
+For the full feature tracking table, see [cli/azd/docs/feature-stages.md](../../cli/azd/docs/feature-stages.md).

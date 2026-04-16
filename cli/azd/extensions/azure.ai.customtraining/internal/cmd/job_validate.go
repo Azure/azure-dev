@@ -21,6 +21,7 @@ func newJobValidateCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "validate",
 		Short: "Validate a job YAML definition file offline without submitting",
+		Long:  "Validate a job YAML definition file offline without submitting.\n\nExample:\n  azd ai training job validate --file job.yaml",
 		// Override parent's PersistentPreRunE — validate is offline and needs no Azure setup.
 		PersistentPreRunE: func(_ *cobra.Command, _ []string) error { return nil },
 		Args: cobra.NoArgs,

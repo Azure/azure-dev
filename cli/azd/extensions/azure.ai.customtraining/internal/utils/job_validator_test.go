@@ -210,6 +210,16 @@ func TestValidate_PlaceholderMapping(t *testing.T) {
 	if f := findFindingByMessage(result, "learning_rate"); f != nil {
 		t.Error("did not expect error for optional learning_rate inside brackets")
 	}
+
+	// YAML — key appears both inside and outside brackets:
+	//   command: python train.py --data ${{inputs.data}} [--extra ${{inputs.data}}]
+	//   (no inputs defined — data appears outside brackets so it's required → error)
+	job = validJob()
+	job.Command = "python train.py --data ${{inputs.data}} [--extra ${{inputs.data}}]"
+	result = ValidateJobOffline(job, ".")
+	if f := findFindingByMessage(result, "no inputs are defined"); f == nil {
+		t.Error("expected error when key appears both inside and outside brackets")
+	}
 }
 
 // Tests single-brace {inputs.xxx} is flagged as error (backend won't resolve it).
@@ -248,6 +258,31 @@ func TestValidate_SingleBracePlaceholders(t *testing.T) {
 	result = ValidateJobOffline(job, ".")
 	if f := findFindingByMessage(result, "Incorrect placeholder format"); f != nil {
 		t.Error("did not expect single-brace error for correct ${{...}} syntax")
+	}
+
+	// YAML (incorrect) — dollar + single brace (regression test):
+	//   command: python train.py --data ${inputs.data}
+	// ${...} is wrong syntax — should be ${{...}} → error
+	job = validJob()
+	job.Command = "python train.py --data ${inputs.data}"
+	result = ValidateJobOffline(job, ".")
+	if f := findFindingByMessage(result, "${{inputs.data}}"); f == nil || f.Severity != SeverityError {
+		t.Error("expected error for dollar-single-brace ${inputs.xxx}")
+	}
+
+	// YAML (incorrect) — duplicate single-brace placeholders should produce only one error:
+	//   command: python train.py --data {inputs.data} --val {inputs.data}
+	job = validJob()
+	job.Command = "python train.py --data {inputs.data} --val {inputs.data}"
+	result = ValidateJobOffline(job, ".")
+	errorCount := 0
+	for _, f := range result.Findings {
+		if strings.Contains(f.Message, "${{inputs.data}}") {
+			errorCount++
+		}
+	}
+	if errorCount != 1 {
+		t.Errorf("expected exactly 1 error for duplicate single-brace placeholder, got %d", errorCount)
 	}
 }
 

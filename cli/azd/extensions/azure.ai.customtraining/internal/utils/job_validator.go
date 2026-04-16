@@ -71,6 +71,8 @@ func ValidateJobOffline(job *JobDefinition, yamlDir string) *ValidationResult {
 	result := &ValidationResult{}
 
 	// 1–3. Check required fields via struct tags
+	// Note: only validates string fields. v.Field(i).String() returns "<T Value>" for non-string types,
+	// so adding validate:"required" to a non-string field will silently pass.
 	v := reflect.ValueOf(*job)
 	t := v.Type()
 	for i := 0; i < t.NumField(); i++ {
@@ -161,7 +163,8 @@ var (
 	singleBraceRegex = regexp.MustCompile(`\{(inputs|outputs)\.(\w[\w.-]*)}}?`)
 )
 
-// optionalInputKeys returns the set of input keys that appear inside [...] optional blocks.
+// optionalInputKeys returns the set of input keys that appear exclusively inside [...] optional blocks.
+// Keys that also appear outside brackets are not considered optional.
 func optionalInputKeys(command string) map[string]bool {
 	result := make(map[string]bool)
 	for _, block := range optionalBlockRegex.FindAllString(command, -1) {
@@ -169,6 +172,13 @@ func optionalInputKeys(command string) map[string]bool {
 			result[match[1]] = true
 		}
 	}
+
+	// Remove keys that also appear outside [...] blocks — those usages are required.
+	stripped := optionalBlockRegex.ReplaceAllString(command, "")
+	for _, match := range inputPlaceholderRegex.FindAllStringSubmatch(stripped, -1) {
+		delete(result, match[1])
+	}
+
 	return result
 }
 
@@ -216,6 +226,7 @@ func validatePlaceholders(result *ValidationResult, job *JobDefinition, optional
 // instead of the correct ${{inputs.xxx}} syntax. This is an error because the backend
 // will not resolve single-brace placeholders.
 func validateSingleBracePlaceholders(result *ValidationResult, command string) {
+	seen := make(map[string]bool)
 	for _, match := range singleBraceRegex.FindAllStringSubmatchIndex(command, -1) {
 		start := match[0]
 		// Skip if this is already part of a ${{...}} (preceded by "${")
@@ -225,6 +236,13 @@ func validateSingleBracePlaceholders(result *ValidationResult, command string) {
 
 		kind := command[match[2]:match[3]]
 		key := command[match[4]:match[5]]
+
+		dedupeKey := kind + "." + key
+		if seen[dedupeKey] {
+			continue
+		}
+		seen[dedupeKey] = true
+
 		result.Findings = append(result.Findings, ValidationFinding{
 			Field:    "command",
 			Severity: SeverityError,

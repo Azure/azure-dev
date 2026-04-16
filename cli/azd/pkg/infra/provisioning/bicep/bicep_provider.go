@@ -65,6 +65,8 @@ const (
 	apiVersionResourceGroupExistence = "2025-03-01"
 )
 
+// Azure reserved resource name words.
+// See https://learn.microsoft.com/azure/azure-resource-manager/templates/error-reserved-resource-name
 var azureReservedResourceNameExactMatches = map[string]struct{}{
 	"ACCESS":              {},
 	"APP_BROWSERS":        {},

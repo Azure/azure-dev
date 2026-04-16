@@ -5,6 +5,8 @@ package input
 
 import (
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -397,6 +399,146 @@ func TestAskerConsole_Message_EmptySkippedInJson(t *testing.T) {
 	c.Message(t.Context(), "hello")
 	require.NotEmpty(t, buf.String(), "non-empty message should emit JSON output")
 	require.Contains(t, buf.String(), `"consoleMessage"`)
+}
+
+// TestAskerConsole_Previewer_ConcurrentRefCount verifies that parallel callers of
+// ShowPreviewer/StopPreviewer don't panic. This reproduces the bug where the execution graph executor
+// runs deploy-web and deploy-api in parallel and the first StopPreviewer nils the shared
+// previewer, causing the second writer to panic on Write.
+func TestAskerConsole_Previewer_ConcurrentRefCount(t *testing.T) {
+	formatter, err := output.NewFormatter(string(output.NoneFormat))
+	require.NoError(t, err)
+
+	lines := &lineCapturer{}
+	c := NewConsole(
+		false,
+		false,
+		Writers{Output: lines},
+		ConsoleHandles{
+			Stderr: os.Stderr,
+			Stdin:  os.Stdin,
+			Stdout: lines,
+		},
+		formatter,
+		nil,
+	)
+
+	ctx := t.Context()
+
+	// Simulate two concurrent graph steps both obtaining a previewer writer
+	writerA := c.ShowPreviewer(ctx, &ShowPreviewerOptions{
+		Prefix:       "  ",
+		MaxLineCount: 8,
+		Title:        "Deploy web",
+	})
+	writerB := c.ShowPreviewer(ctx, &ShowPreviewerOptions{
+		Prefix:       "  ",
+		MaxLineCount: 8,
+		Title:        "Deploy api",
+	})
+
+	// Both writers should be usable
+	_, err = writerA.Write([]byte("web: deploying...\n"))
+	require.NoError(t, err)
+	_, err = writerB.Write([]byte("api: deploying...\n"))
+	require.NoError(t, err)
+
+	// Step A finishes first and stops the previewer.
+	// With ref-counting, the previewer should stay alive for step B.
+	c.StopPreviewer(ctx, false)
+
+	// Step B should still be able to write without panicking.
+	_, err = writerB.Write([]byte("api: still deploying...\n"))
+	require.NoError(t, err)
+
+	// Step B finishes; this should actually tear down the previewer (refcount → 0).
+	c.StopPreviewer(ctx, false)
+
+	// A third StopPreviewer (no active users) should be a safe no-op.
+	c.StopPreviewer(ctx, false)
+}
+
+// TestAskerConsole_Previewer_SingleUser verifies that the single-user path
+// (no concurrency) still works correctly with the ref-counting changes.
+func TestAskerConsole_Previewer_SingleUser(t *testing.T) {
+	formatter, err := output.NewFormatter(string(output.NoneFormat))
+	require.NoError(t, err)
+
+	lines := &lineCapturer{}
+	c := NewConsole(
+		false,
+		false,
+		Writers{Output: lines},
+		ConsoleHandles{
+			Stderr: os.Stderr,
+			Stdin:  os.Stdin,
+			Stdout: lines,
+		},
+		formatter,
+		nil,
+	)
+
+	ctx := t.Context()
+
+	// Single user: show, write, stop — the original non-concurrent path
+	writer := c.ShowPreviewer(ctx, nil)
+	_, err = writer.Write([]byte("building container...\n"))
+	require.NoError(t, err)
+
+	c.StopPreviewer(ctx, false)
+
+	// Writing after stop should not panic; it should be a graceful no-op
+	n, err := writer.Write([]byte("late write\n"))
+	require.NoError(t, err)
+	require.Equal(t, len("late write\n"), n)
+}
+
+// TestAskerConsole_Previewer_ConcurrentWriteStress runs many goroutines writing
+// and stopping concurrently to verify there are no data races.
+func TestAskerConsole_Previewer_ConcurrentWriteStress(t *testing.T) {
+	formatter, err := output.NewFormatter(string(output.NoneFormat))
+	require.NoError(t, err)
+
+	lines := &lineCapturer{}
+	c := NewConsole(
+		false,
+		false,
+		Writers{Output: lines},
+		ConsoleHandles{
+			Stderr: os.Stderr,
+			Stdin:  os.Stdin,
+			Stdout: lines,
+		},
+		formatter,
+		nil,
+	)
+
+	ctx := t.Context()
+	const numWriters = 10
+
+	// All writers obtain their handle
+	writers := make([]io.Writer, numWriters)
+	for i := range numWriters {
+		writers[i] = c.ShowPreviewer(ctx, nil)
+	}
+
+	// All write concurrently
+	var wg sync.WaitGroup
+	for i := range numWriters {
+		wg.Go(func() {
+			for j := range 20 {
+				_, _ = writers[i].Write(
+					fmt.Appendf(nil, "writer %d: msg %d\n", i, j),
+				)
+			}
+		})
+	}
+	wg.Wait()
+
+	// All stop (one at a time, but could also be concurrent)
+	for range numWriters {
+		c.StopPreviewer(ctx, false)
+	}
 }
 
 // writerAdapter wraps *strings.Builder to satisfy io.Writer for test purposes.

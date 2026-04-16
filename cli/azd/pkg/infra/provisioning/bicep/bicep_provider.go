@@ -12,6 +12,7 @@ import (
 	"log"
 	"maps"
 	"math"
+	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -21,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
@@ -51,6 +53,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/password"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
+	"golang.org/x/sync/errgroup"
 )
 
 type bicepFileMode int
@@ -169,6 +172,71 @@ func isReservedNameCheckExempt(resourceType string) bool {
 		if normalized == exemptLower || strings.HasPrefix(normalized, exemptLower+"/") {
 			return true
 		}
+	}
+	return false
+}
+
+// adaptivePoller implements exponential backoff for deployment polling.
+// It starts at a fast interval and backs off when the deployment state is unchanged,
+// resetting to fast polling when new resources complete or fail.
+// It also detects ARM throttling (HTTP 429) and increases polling intervals accordingly.
+type adaptivePoller struct {
+	minInterval          time.Duration
+	maxInterval          time.Duration
+	currentInterval      time.Duration
+	backoffFactor        float64
+	lastResourceCount    int
+	consecutiveThrottles int
+}
+
+func newAdaptivePoller() *adaptivePoller {
+	return &adaptivePoller{
+		minInterval:       1 * time.Second,
+		maxInterval:       10 * time.Second,
+		currentInterval:   1 * time.Second,
+		backoffFactor:     2.0,
+		lastResourceCount: -1,
+	}
+}
+
+// nextInterval returns the next polling interval based on whether the deployment state has changed.
+// When resourceCount changes (new resources completed/failed), the interval resets to the minimum.
+// When unchanged, the interval increases exponentially up to the maximum.
+func (ap *adaptivePoller) nextInterval(resourceCount int) time.Duration {
+	if resourceCount != ap.lastResourceCount {
+		// State changed — reset to fast polling
+		ap.currentInterval = ap.minInterval
+		ap.lastResourceCount = resourceCount
+	} else {
+		// State unchanged — back off
+		next := min(time.Duration(float64(ap.currentInterval)*ap.backoffFactor), ap.maxInterval)
+		ap.currentInterval = next
+	}
+	return ap.currentInterval
+}
+
+// throttleThreshold is the number of consecutive throttle responses after which a visible
+// warning is emitted to the user.
+const throttleThreshold = 5
+
+// recordThrottle records a throttle event and returns true when a visible warning should be
+// emitted (after throttleThreshold consecutive throttles).
+func (ap *adaptivePoller) recordThrottle() bool {
+	ap.consecutiveThrottles++
+	// Force the interval to maximum when throttled.
+	ap.currentInterval = ap.maxInterval
+	return ap.consecutiveThrottles == throttleThreshold
+}
+
+// clearThrottle resets the consecutive throttle counter after a successful response.
+func (ap *adaptivePoller) clearThrottle() {
+	ap.consecutiveThrottles = 0
+}
+
+// isThrottleError checks if an error is an ARM throttling response (HTTP 429).
+func isThrottleError(err error) bool {
+	if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
+		return respErr.StatusCode == http.StatusTooManyRequests
 	}
 	return false
 }
@@ -608,9 +676,37 @@ func (p *BicepProvider) deploymentState(
 	currentParamsHash string,
 ) (*azapi.ResourceDeployment, error) {
 	p.console.ShowSpinner(ctx, "Comparing deployment state", input.Step)
-	prevDeploymentResult, err := p.latestDeploymentResult(ctx, scope)
-	if err != nil {
-		return nil, fmt.Errorf("deployment state error: %w", err)
+
+	// Fetch the latest deployment result and calculate the template hash in parallel.
+	// These are independent ARM API calls, so running them concurrently saves ~3-10s.
+	var prevDeploymentResult *azapi.ResourceDeployment
+	var templateHash string
+
+	g, gCtx := errgroup.WithContext(ctx)
+
+	g.Go(func() error {
+		result, err := p.latestDeploymentResult(gCtx, scope)
+		if err != nil {
+			return fmt.Errorf("deployment state error: %w", err)
+		}
+		prevDeploymentResult = result
+		return nil
+	})
+
+	g.Go(func() error {
+		hash, err := p.deploymentManager.CalculateTemplateHash(
+			gCtx, p.env.GetSubscriptionId(),
+			planned.RawArmTemplate,
+		)
+		if err != nil {
+			return fmt.Errorf("can't get hash from current template: %w", err)
+		}
+		templateHash = hash
+		return nil
+	})
+
+	if err := g.Wait(); err != nil {
+		return nil, err
 	}
 
 	// State is invalid if the last deployment was not succeeded
@@ -618,15 +714,6 @@ func (p *BicepProvider) deploymentState(
 	// relies on findCompletedDeployments which filters to only Failed and Succeeded
 	if prevDeploymentResult.ProvisioningState != azapi.DeploymentProvisioningStateSucceeded {
 		return nil, fmt.Errorf("last deployment failed.")
-	}
-
-	templateHash, err := p.deploymentManager.CalculateTemplateHash(
-		ctx, p.env.GetSubscriptionId(),
-		planned.RawArmTemplate,
-	)
-
-	if err != nil {
-		return nil, fmt.Errorf("can't get hash from current template: %w", err)
 	}
 
 	if !prevDeploymentEqualToCurrent(prevDeploymentResult, templateHash, currentParamsHash) {
@@ -752,19 +839,27 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 			// created by the deployment to validate the deployment state.
 			// This handles the scenario of resource group(s) being deleted outside of azd,
 			// which is quite common.
-			// This check adds ~100ms per resource group to the deployment time.
+			// Resource group checks run in parallel to reduce wall-clock time.
+			rgGroup, rgCtx := errgroup.WithContext(ctx)
 			for _, res := range deploymentState.Resources {
 				if res != nil && res.ID != nil {
 					resId, err := arm.ParseResourceID(*res.ID)
 					if err == nil && resId.ResourceType.Type == arm.ResourceGroupResourceType.Type {
-						exists, err := p.resourceService.CheckExistenceByID(ctx, *resId, apiVersionResourceGroupExistence)
-						if err == nil && !exists {
-							stateErr = fmt.Errorf(
-								"resource group %s no longer exists, invalidating deployment state", resId.ResourceGroupName)
-							break
-						}
+						rgGroup.Go(func() error {
+							exists, err := p.resourceService.CheckExistenceByID(
+								rgCtx, *resId, apiVersionResourceGroupExistence)
+							if err == nil && !exists {
+								return fmt.Errorf(
+									"resource group %s no longer exists, invalidating deployment state",
+									resId.ResourceGroupName)
+							}
+							return nil
+						})
 					}
 				}
+			}
+			if rgErr := rgGroup.Wait(); rgErr != nil {
+				stateErr = rgErr
 			}
 		}
 
@@ -852,9 +947,12 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 
 		// Report incremental progress
 		progressDisplay := p.deploymentManager.ProgressDisplay(deployment)
-		delay := 3 * time.Second
-		timer := time.NewTimer(delay)
 		queryStartTime := time.Now()
+
+		poller := newAdaptivePoller()
+		delay := poller.minInterval
+
+		timer := time.NewTimer(delay)
 
 		for {
 			select {
@@ -862,11 +960,29 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 				timer.Stop()
 				return
 			case <-timer.C:
-				if err := progressDisplay.ReportProgress(progressCtx, &queryStartTime); err != nil {
+				err := progressDisplay.ReportProgress(progressCtx, &queryStartTime)
+				if err != nil {
 					// We don't want to fail the whole deployment if a progress reporting error occurs
 					log.Printf("error while reporting progress: %v", err)
+
+					// Detect ARM throttling (HTTP 429) and adjust polling accordingly.
+					if isThrottleError(err) {
+						if poller.recordThrottle() {
+							log.Printf(
+								"WARNING: ARM API is throttling requests — "+
+									"deployment progress polling slowed to %s intervals",
+								poller.maxInterval)
+						}
+						delay = poller.maxInterval
+						timer.Reset(delay)
+						continue
+					}
 				}
 
+				if err == nil {
+					poller.clearThrottle()
+				}
+				delay = poller.nextInterval(progressDisplay.DisplayedResourceCount())
 				timer.Reset(delay)
 			}
 		}

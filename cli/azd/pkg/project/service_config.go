@@ -15,6 +15,14 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
+// hookRegistrationGuard protects hook registration state with a mutex.
+// It is heap-allocated so that shallow copies of ServiceConfig share the
+// guard by pointer rather than copying the sync.Mutex value.
+type hookRegistrationGuard struct {
+	mu           sync.Mutex
+	registration *configuredHookRegistration
+}
+
 type ServiceConfig struct {
 	// Reference to the parent project configuration
 	Project *ProjectConfig `yaml:"-"`
@@ -70,8 +78,7 @@ type ServiceConfig struct {
 
 	*ext.EventDispatcher[ServiceLifecycleEventArgs] `yaml:"-"`
 
-	configuredHookRegistrationMu sync.Mutex `yaml:"-"`
-	configuredHookRegistration   *configuredHookRegistration
+	hookGuard *hookRegistrationGuard `yaml:"-"`
 
 	// Turns service into a service that is only to be built but not deployed.
 	// This is currently used by Aspire.
@@ -138,6 +145,16 @@ func isConditionTrue(value string) bool {
 	}
 }
 
+// ensureHookGuard lazily initializes the hookRegistrationGuard.
+// This must be called before any concurrent access; in practice, hook
+// registration always starts during single-threaded service setup.
+func (sc *ServiceConfig) ensureHookGuard() *hookRegistrationGuard {
+	if sc.hookGuard == nil {
+		sc.hookGuard = &hookRegistrationGuard{}
+	}
+	return sc.hookGuard
+}
+
 // EnsureHooksRegistered ensures azure.yaml-configured service hooks are registered at most once
 // for the current hook signature and registration context lifetime.
 // Returns the registration context and true if hooks should be registered, or nil and false if
@@ -146,22 +163,23 @@ func (sc *ServiceConfig) EnsureHooksRegistered(
 	parentCtx context.Context,
 	signature string,
 ) (context.Context, bool) {
-	sc.configuredHookRegistrationMu.Lock()
-	defer sc.configuredHookRegistrationMu.Unlock()
+	g := sc.ensureHookGuard()
+	g.mu.Lock()
+	defer g.mu.Unlock()
 
-	if sc.configuredHookRegistration != nil &&
-		sc.configuredHookRegistration.signature == signature &&
-		sc.configuredHookRegistration.ctx.Err() == nil {
+	if g.registration != nil &&
+		g.registration.signature == signature &&
+		g.registration.ctx.Err() == nil {
 		return nil, false
 	}
 
-	if sc.configuredHookRegistration != nil {
-		sc.configuredHookRegistration.cancel()
+	if g.registration != nil {
+		g.registration.cancel()
 	}
 
 	//nolint:gosec // G118 - cancel is stored and called by Reset/Rollback
 	registrationCtx, cancel := context.WithCancel(parentCtx)
-	sc.configuredHookRegistration = &configuredHookRegistration{
+	g.registration = &configuredHookRegistration{
 		signature: signature,
 		ctx:       registrationCtx,
 		cancel:    cancel,
@@ -172,29 +190,31 @@ func (sc *ServiceConfig) EnsureHooksRegistered(
 
 // RollbackHookRegistration clears the current hook registration after a failed install.
 func (sc *ServiceConfig) RollbackHookRegistration(signature string) {
-	sc.configuredHookRegistrationMu.Lock()
-	defer sc.configuredHookRegistrationMu.Unlock()
+	g := sc.ensureHookGuard()
+	g.mu.Lock()
+	defer g.mu.Unlock()
 
-	if sc.configuredHookRegistration == nil || sc.configuredHookRegistration.signature != signature {
+	if g.registration == nil || g.registration.signature != signature {
 		return
 	}
 
-	sc.configuredHookRegistration.cancel()
-	sc.configuredHookRegistration = nil
+	g.registration.cancel()
+	g.registration = nil
 }
 
 // ResetHookRegistration removes any active service-hook registration,
 // allowing hooks to be re-registered on the next middleware pass.
 func (sc *ServiceConfig) ResetHookRegistration() {
-	sc.configuredHookRegistrationMu.Lock()
-	defer sc.configuredHookRegistrationMu.Unlock()
+	g := sc.ensureHookGuard()
+	g.mu.Lock()
+	defer g.mu.Unlock()
 
-	if sc.configuredHookRegistration == nil {
+	if g.registration == nil {
 		return
 	}
 
-	sc.configuredHookRegistration.cancel()
-	sc.configuredHookRegistration = nil
+	g.registration.cancel()
+	g.registration = nil
 }
 
 // CopyRuntimeStateTo preserves in-memory runtime state that should survive config reloads.
@@ -207,11 +227,13 @@ func (sc *ServiceConfig) CopyRuntimeStateTo(target *ServiceConfig) {
 		target.EventDispatcher = sc.EventDispatcher
 	}
 
-	sc.configuredHookRegistrationMu.Lock()
-	registration := sc.configuredHookRegistration
-	sc.configuredHookRegistrationMu.Unlock()
+	srcGuard := sc.ensureHookGuard()
+	srcGuard.mu.Lock()
+	registration := srcGuard.registration
+	srcGuard.mu.Unlock()
 
-	target.configuredHookRegistrationMu.Lock()
-	target.configuredHookRegistration = registration
-	target.configuredHookRegistrationMu.Unlock()
+	dstGuard := target.ensureHookGuard()
+	dstGuard.mu.Lock()
+	dstGuard.registration = registration
+	dstGuard.mu.Unlock()
 }

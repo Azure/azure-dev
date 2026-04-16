@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"strconv"
 	"strings"
@@ -12,7 +13,9 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -232,7 +235,8 @@ func TestDeployActionRunDoesNotTreatInternalDeadlineExceededAsDeployTimeout(t *t
 
 	_, err := action.Run(t.Context())
 	require.ErrorIs(t, err, context.DeadlineExceeded)
-	require.Equal(t, context.DeadlineExceeded, err)
+	// Verify the error is NOT the deploy-timeout message (it's an internal SDK timeout).
+	require.NotContains(t, err.Error(), "timed out after")
 	serviceManager.AssertExpectations(t)
 }
 
@@ -431,13 +435,14 @@ func newDeployTimeoutAction(t *testing.T, flagTimeout *int) *DeployAction {
 	env.SetSubscriptionId("subscription-id")
 
 	return &DeployAction{
-		flags:         flags,
-		projectConfig: projectConfig,
-		env:           env,
-		importManager: project.NewImportManager(nil),
-		console:       mockinput.NewMockConsole(),
-		formatter:     &output.NoneFormatter{},
-		writer:        io.Discard,
+		flags:               flags,
+		projectConfig:       projectConfig,
+		env:                 env,
+		importManager:       project.NewImportManager(nil),
+		console:             mockinput.NewMockConsole(),
+		formatter:           &output.NoneFormatter{},
+		writer:              io.Discard,
+		alphaFeatureManager: alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
 	}
 }
 
@@ -469,4 +474,25 @@ type mockDeployError struct {
 
 func (e *mockDeployError) Error() string {
 	return e.name
+}
+
+func TestDeploymentResultJSON(t *testing.T) {
+	result := DeploymentResult{
+		Timestamp: time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC),
+		Services: map[string]*project.ServiceDeployResult{
+			"api": {},
+			"web": {},
+		},
+	}
+
+	data, err := json.Marshal(result)
+	require.NoError(t, err)
+
+	var parsed map[string]any
+	err = json.Unmarshal(data, &parsed)
+	require.NoError(t, err)
+
+	services, ok := parsed["services"].(map[string]any)
+	require.True(t, ok, "services should be a map")
+	require.Len(t, services, 2)
 }

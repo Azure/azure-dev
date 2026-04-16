@@ -3,21 +3,27 @@
 
 package input
 
-import "log"
+import (
+	"log"
+	syncatomic "sync/atomic"
+)
 
-// ConsolePreviewerWriter implements io.Writer and is used to wrap a progress log
-// and panic if the writer is used after the previewer is stopped.
+// consolePreviewerWriter implements io.Writer and is used to wrap a progress log.
+// Writes are discarded with a log message if the previewer has been stopped (nil).
 type consolePreviewerWriter struct {
-	// holds the address of a previously created progressLog
-	// when the references progressLog becomes nil, this component should write no more.
-	previewer **progressLog
+	// Atomic pointer to the active progressLog. When StopPreviewer nils this out,
+	// concurrent writers observe the change without a data race.
+	previewer *syncatomic.Pointer[progressLog]
 }
 
 func (cp *consolePreviewerWriter) Write(logBytes []byte) (int, error) {
-	writer := *cp.previewer
+	writer := cp.previewer.Load()
 	if writer == nil {
-		//dev-bug - tried to write to a closed console previewer
-		log.Panic("tried to write to a closed console previewer.")
+		// The previewer has been stopped. This can happen if a caller writes after all
+		// concurrent users have called StopPreviewer (e.g. a lagging goroutine).
+		// Gracefully discard the write instead of panicking.
+		log.Println("console previewer writer: write after previewer stopped, discarding")
+		return len(logBytes), nil
 	}
 
 	return writer.Write(logBytes)

@@ -669,6 +669,16 @@ func analyzeResources(resources []armTemplateResource) resourcesProperties {
 // the template's nested resource hierarchy, including resources inside
 // Microsoft.Resources/deployments (Bicep modules), to detect role assignments even when
 // the bicep snapshot command is unavailable.
+//
+// Trade-offs vs. the snapshot path (analyzeResources):
+//   - Only HasRoleAssignments is populated. CognitiveDeployments is intentionally omitted
+//     because it requires resolved parameter values (model name, SKU, capacity) that only
+//     the snapshot can provide. The AI model quota check is skipped in this fallback path.
+//   - The structural walk does not evaluate `condition` expressions or `copy` loops, so
+//     HasRoleAssignments may be reported as true for role assignments guarded by a
+//     condition that evaluates to false. This is an acceptable over-warn: better to
+//     prompt the user about a potentially missing permission than to silently skip the
+//     check and let ARM validation fail later.
 func analyzeArmTemplateResources(resources armTemplateResources) resourcesProperties {
 	props := resourcesProperties{}
 	props.HasRoleAssignments = armTemplateHasRoleAssignments(resources)

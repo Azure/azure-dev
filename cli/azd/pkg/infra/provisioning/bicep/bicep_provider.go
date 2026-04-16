@@ -2307,13 +2307,19 @@ func (p *BicepProvider) validatePreflight(
 				return true, nil
 			}
 			p.setPreflightOutcome(span, preflightOutcomeWarningsAccepted, diagnosticIDs)
-			// Skip the ARM server-side validation when the user has acknowledged
-			// warnings. The local checks already surfaced the issues and the user
-			// chose to proceed despite them; running the ARM ValidatePreflight
-			// would re-surface the same issues as hard errors (e.g., missing
-			// Microsoft.Authorization/roleAssignments/write returns an
-			// InvalidTemplateDeployment error from the server-side validation).
-			return false, nil
+
+			// Skip the ARM server-side validation only when the accepted warnings
+			// are ones that ARM ValidatePreflight would re-surface as hard errors,
+			// defeating the point of the warning-accept flow. Role assignment
+			// permission issues are the canonical case: ARM validation returns
+			// InvalidTemplateDeployment for missing
+			// Microsoft.Authorization/roleAssignments/write, which the user has
+			// already acknowledged. For other warning types (e.g., AI quota),
+			// ARM validation still catches unrelated issues like template syntax
+			// errors or missing resource providers, so we run it.
+			if warningsDuplicateArmErrors(results) {
+				return false, nil
+			}
 		}
 	} else if results != nil {
 		p.setPreflightOutcome(span, preflightOutcomePassed, nil)
@@ -2425,6 +2431,34 @@ func (p *BicepProvider) checkRoleAssignmentPermissions(
 	}
 
 	return nil, nil
+}
+
+// warningsDuplicateArmErrors reports whether every warning in the results is a
+// preflight diagnostic that ARM server-side ValidatePreflight would re-surface
+// as a hard deployment error. When this is true, skipping ARM validation after
+// the user has accepted warnings lets the deployment proceed (or fail later
+// with a more actionable error from the deploy step itself). Warnings outside
+// this set (like AI quota) don't duplicate ARM errors, so ARM validation
+// should still run to catch unrelated issues such as template syntax errors
+// or missing resource providers.
+func warningsDuplicateArmErrors(results []PreflightCheckResult) bool {
+	armDuplicatingDiagnostics := map[string]struct{}{
+		"role_assignment_missing":     {},
+		"role_assignment_conditional": {},
+		"role_assignment_unverified":  {},
+	}
+
+	hasAny := false
+	for _, r := range results {
+		if r.Severity != PreflightCheckWarning {
+			continue
+		}
+		hasAny = true
+		if _, ok := armDuplicatingDiagnostics[r.DiagnosticID]; !ok {
+			return false
+		}
+	}
+	return hasAny
 }
 
 // roleAssignmentUnverifiedWarning produces a warning when the template contains role

@@ -111,3 +111,76 @@ func TestCheckRoleAssignmentPermissions_DIFailure(t *testing.T) {
 	require.Equal(t, "role_assignment_unverified", results[0].DiagnosticID)
 	require.Contains(t, results[0].Message, "sub-456")
 }
+
+func TestWarningsDuplicateArmErrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		results []PreflightCheckResult
+		want    bool
+	}{
+		{
+			name:    "empty results → false (nothing to skip for)",
+			results: nil,
+			want:    false,
+		},
+		{
+			name: "only role_assignment_missing → true",
+			results: []PreflightCheckResult{
+				{Severity: PreflightCheckWarning, DiagnosticID: "role_assignment_missing"},
+			},
+			want: true,
+		},
+		{
+			name: "only role_assignment_unverified → true",
+			results: []PreflightCheckResult{
+				{Severity: PreflightCheckWarning, DiagnosticID: "role_assignment_unverified"},
+			},
+			want: true,
+		},
+		{
+			name: "only role_assignment_conditional → true",
+			results: []PreflightCheckResult{
+				{Severity: PreflightCheckWarning, DiagnosticID: "role_assignment_conditional"},
+			},
+			want: true,
+		},
+		{
+			name: "mixed role assignment diagnostics → true",
+			results: []PreflightCheckResult{
+				{Severity: PreflightCheckWarning, DiagnosticID: "role_assignment_missing"},
+				{Severity: PreflightCheckWarning, DiagnosticID: "role_assignment_conditional"},
+			},
+			want: true,
+		},
+		{
+			name: "ai_model_quota only → false (ARM validation should still run)",
+			results: []PreflightCheckResult{
+				{Severity: PreflightCheckWarning, DiagnosticID: "ai_model_quota_exceeded"},
+			},
+			want: false,
+		},
+		{
+			name: "role assignment + ai quota → false (quota isn't ARM-duplicated)",
+			results: []PreflightCheckResult{
+				{Severity: PreflightCheckWarning, DiagnosticID: "role_assignment_missing"},
+				{Severity: PreflightCheckWarning, DiagnosticID: "ai_model_quota_exceeded"},
+			},
+			want: false,
+		},
+		{
+			name: "errors are ignored (only warnings counted)",
+			results: []PreflightCheckResult{
+				{Severity: PreflightCheckError, DiagnosticID: "something_else"},
+				{Severity: PreflightCheckWarning, DiagnosticID: "role_assignment_missing"},
+			},
+			want: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := warningsDuplicateArmErrors(tc.results)
+			require.Equal(t, tc.want, got)
+		})
+	}
+}

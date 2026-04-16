@@ -43,7 +43,7 @@ services:
 |---|---|---|
 | `project` | string | Relative path to the service source directory |
 | `language` | string | Service language (`dotnet`, `csharp`, `fsharp`, `py`, `js`, `ts`, `java`, `docker`, `custom`) |
-| `host` | string | **Required.** Hosting target (`appservice`, `containerapp`, `function`, `staticwebapp`, `aks`, `ai.endpoint`, `azure.ai.agent`, `springapp`) |
+| `host` | string | **Required.** Hosting target (`appservice`, `containerapp`, `function`, `staticwebapp`, `aks`, etc.) |
 | `module` | string | Bicep module path for the service's infrastructure |
 | `hooks` | map | Service-level lifecycle hooks |
 | `docker` | object | Docker build configuration |

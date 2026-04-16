@@ -148,6 +148,8 @@ func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
 
 	cmd.Flags().StringVarP(&flags.projectEndpoint, "project-endpoint", "e", "",
 		"Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)")
+	cmd.Flags().Lookup("project-endpoint").ShorthandDeprecated =
+		"use --project-endpoint instead; -e will be removed in a future release"
 
 	cmd.Flags().StringVarP(&flags.src, "working-directory", "w", "",
 		"Local path for project output")

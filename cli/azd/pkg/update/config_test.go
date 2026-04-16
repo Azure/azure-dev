@@ -152,14 +152,127 @@ func TestUpdateConfigDefaultCheckInterval(t *testing.T) {
 func TestSaveAndLoadConfig(t *testing.T) {
 	cfg := config.NewConfig(map[string]any{})
 
-	require.NoError(t, SaveChannel(cfg, ChannelDaily))
-	require.NoError(t, SaveAutoUpdate(cfg, true))
-	require.NoError(t, SaveCheckIntervalHours(cfg, 6))
+	require.NoError(t, SetChannel(cfg, ChannelDaily))
+	require.NoError(t, SetAutoUpdate(cfg, true))
+	require.NoError(t, SetCheckIntervalHours(cfg, 6))
 
 	loaded := LoadUpdateConfig(cfg)
 	require.Equal(t, ChannelDaily, loaded.Channel)
 	require.True(t, loaded.AutoUpdate)
 	require.Equal(t, 6, loaded.CheckIntervalHours)
+}
+
+func TestHasUpdateConfig(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		config map[string]any
+		want   bool
+	}{
+		{
+			name:   "empty config",
+			config: map[string]any{},
+			want:   false,
+		},
+		{
+			name: "channel only",
+			config: map[string]any{
+				"updates": map[string]any{
+					"channel": "stable",
+				},
+			},
+			want: true,
+		},
+		{
+			name: "autoUpdate only",
+			config: map[string]any{
+				"updates": map[string]any{
+					"autoUpdate": "on",
+				},
+			},
+			want: true,
+		},
+		{
+			name: "checkIntervalHours only",
+			config: map[string]any{
+				"updates": map[string]any{
+					"checkIntervalHours": float64(12),
+				},
+			},
+			want: true,
+		},
+		{
+			name: "all keys set",
+			config: map[string]any{
+				"updates": map[string]any{
+					"channel":            "daily",
+					"autoUpdate":         "on",
+					"checkIntervalHours": float64(8),
+				},
+			},
+			want: true,
+		},
+		{
+			name: "legacy alpha.update only",
+			config: map[string]any{
+				"alpha": map[string]any{
+					"update": "on",
+				},
+			},
+			want: true,
+		},
+		{
+			name: "unrelated config",
+			config: map[string]any{
+				"some": map[string]any{
+					"other": "value",
+				},
+			},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg := config.NewConfig(tt.config)
+			require.Equal(t, tt.want, HasUpdateConfig(cfg))
+		})
+	}
+}
+
+func TestFirstUsePersistenceLogic(t *testing.T) {
+	t.Parallel()
+
+	t.Run("empty config triggers first-use notice", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := config.NewEmptyConfig()
+		require.False(t, HasUpdateConfig(cfg), "empty config should not have update config")
+
+		// Simulate first-use: persist default channel
+		defaultChannel := LoadUpdateConfig(cfg).Channel
+		require.NoError(t, SetChannel(cfg, defaultChannel))
+
+		// After persisting, HasUpdateConfig should return true
+		require.True(t, HasUpdateConfig(cfg), "config should have update config after SetChannel")
+
+		// Subsequent runs should skip the notice
+		require.True(t, HasUpdateConfig(cfg))
+	})
+
+	t.Run("existing config skips first-use notice", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := config.NewConfig(map[string]any{
+			"updates": map[string]any{
+				"channel": "stable",
+			},
+		})
+		require.True(t, HasUpdateConfig(cfg))
+	})
 }
 
 func TestIsCacheValid(t *testing.T) {

@@ -8,13 +8,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
-	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -28,7 +28,6 @@ import (
 
 type updateFlags struct {
 	channel            string
-	autoUpdate         string
 	checkIntervalHours int
 	global             *internal.GlobalCommandOptions
 }
@@ -48,12 +47,6 @@ func (f *updateFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 		"",
 		"Update channel: stable or daily.",
 	)
-	local.StringVar(
-		&f.autoUpdate,
-		"auto-update",
-		"",
-		"Enable or disable auto-update: on or off.",
-	)
 	local.IntVar(
 		&f.checkIntervalHours,
 		"check-interval-hours",
@@ -64,20 +57,18 @@ func (f *updateFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 
 func newUpdateCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:    "update",
-		Short:  "Updates azd to the latest version.",
-		Hidden: true,
+		Use:   "update",
+		Short: "Updates azd to the latest version.",
 	}
 }
 
 type updateAction struct {
-	flags               *updateFlags
-	console             input.Console
-	formatter           output.Formatter
-	writer              io.Writer
-	configManager       config.UserConfigManager
-	commandRunner       exec.CommandRunner
-	alphaFeatureManager *alpha.FeatureManager
+	flags         *updateFlags
+	console       input.Console
+	formatter     output.Formatter
+	writer        io.Writer
+	configManager config.UserConfigManager
+	commandRunner exec.CommandRunner
 }
 
 func newUpdateAction(
@@ -87,16 +78,14 @@ func newUpdateAction(
 	writer io.Writer,
 	configManager config.UserConfigManager,
 	commandRunner exec.CommandRunner,
-	alphaFeatureManager *alpha.FeatureManager,
 ) actions.Action {
 	return &updateAction{
-		flags:               flags,
-		console:             console,
-		formatter:           formatter,
-		writer:              writer,
-		configManager:       configManager,
-		commandRunner:       commandRunner,
-		alphaFeatureManager: alphaFeatureManager,
+		flags:         flags,
+		console:       console,
+		formatter:     formatter,
+		writer:        writer,
+		configManager: configManager,
+		commandRunner: commandRunner,
 	}
 }
 
@@ -107,27 +96,6 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			Err:        fmt.Errorf("not supported for dev or PR builds: %w", internal.ErrUnsupportedOperation),
 			Suggestion: "Build from source or install a release build to use 'azd update'.",
 		}
-	}
-
-	// Auto-enable the alpha feature if not already enabled.
-	// The user's intent is clear by running `azd update` directly.
-	if !a.alphaFeatureManager.IsEnabled(update.FeatureUpdate) {
-		userCfg, err := a.configManager.Load()
-		if err != nil {
-			userCfg = config.NewEmptyConfig()
-		}
-
-		if err := userCfg.Set(fmt.Sprintf("alpha.%s", update.FeatureUpdate), "on"); err != nil {
-			return nil, fmt.Errorf("failed to enable update feature: %w", err)
-		}
-
-		if err := a.configManager.Save(userCfg); err != nil {
-			return nil, fmt.Errorf("failed to save config: %w", err)
-		}
-
-		a.console.MessageUxItem(ctx, &ux.MessageTitle{
-			Title: "azd update is in alpha. Auto-update and channel-aware version checks are now enabled.\n",
-		})
 	}
 
 	// Track install method for telemetry
@@ -141,31 +109,52 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		userConfig = config.NewEmptyConfig()
 	}
 
+	// Show notice on first use
+	if !update.HasUpdateConfig(userConfig) {
+		a.console.MessageUxItem(ctx, &ux.MessageTitle{
+			Title: fmt.Sprintf(
+				"azd update is currently in Beta. "+
+					"To learn more about feature stages, visit %s.",
+				output.WithLinkFormat("https://aka.ms/azd-feature-stages")),
+		})
+
+		// Write a default channel so HasUpdateConfig returns true next time.
+		if err := update.SetChannel(userConfig, update.LoadUpdateConfig(userConfig).Channel); err != nil {
+			log.Printf("warning: failed to persist default update channel: %v", err)
+		} else if err := a.configManager.Save(userConfig); err != nil {
+			log.Printf("warning: failed to save config after setting default channel: %v", err)
+		}
+	}
+
 	// Determine current channel BEFORE persisting any flags
 	currentCfg := update.LoadUpdateConfig(userConfig)
 	switchingChannels := a.flags.channel != "" && update.Channel(a.flags.channel) != currentCfg.Channel
 
-	// Persist non-channel config flags immediately (auto-update, check-interval)
-	configChanged, err := a.persistNonChannelFlags(userConfig)
+	// Persist non-channel config flags immediately (check-interval)
+	err = a.persistNonChannelFlags(userConfig)
 	if err != nil {
+		tracing.SetUsageAttributes(fields.UpdateResult.String(update.CodeConfigFailed))
 		return nil, err
 	}
 
 	// If switching channels, persist channel to a temporary config for the version check
 	// but don't save to disk until after confirmation
+	channelChanged := false
 	if switchingChannels {
 		newChannel, err := update.ParseChannel(a.flags.channel)
 		if err != nil {
+			tracing.SetUsageAttributes(fields.UpdateResult.String(update.CodeInvalidInput))
 			return nil, err
 		}
-		_ = update.SaveChannel(userConfig, newChannel)
-		configChanged = true
+		_ = update.SetChannel(userConfig, newChannel)
+		channelChanged = true
 	} else if a.flags.channel != "" {
 		// Same channel explicitly set — just persist it
-		if err := update.SaveChannel(userConfig, update.Channel(a.flags.channel)); err != nil {
+		if err := update.SetChannel(userConfig, update.Channel(a.flags.channel)); err != nil {
+			tracing.SetUsageAttributes(fields.UpdateResult.String(update.CodeConfigFailed))
 			return nil, err
 		}
-		configChanged = true
+		channelChanged = true
 	}
 
 	cfg := update.LoadUpdateConfig(userConfig)
@@ -175,6 +164,17 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		fields.UpdateChannel.String(string(cfg.Channel)),
 		fields.UpdateFromVersion.String(internal.VersionInfo().Version.String()),
 	)
+
+	// If only config flags were set (no channel change, no update needed), just confirm.
+	// Non-channel config was already saved to disk inside persistNonChannelFlags.
+	if a.onlyConfigFlagsSet() {
+		tracing.SetUsageAttributes(fields.UpdateResult.String(update.CodeSuccess))
+		return &actions.ActionResult{
+			Message: &actions.ResultMessage{
+				Header: "Update preferences saved.",
+			},
+		}, nil
+	}
 
 	mgr := update.NewManager(a.commandRunner, nil)
 
@@ -201,25 +201,11 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 				Err: fmt.Errorf("daily builds aren't available via %s", installedBy),
 				Suggestion: fmt.Sprintf(
 					"Uninstall first with: %s\nThen install daily with: "+
-						"curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version daily",
+						"powershell -ex AllSigned -c \"Invoke-RestMethod 'https://aka.ms/install-azd.ps1'"+
+						" -OutFile 'install-azd.ps1'; ./install-azd.ps1 -Version 'daily'\"",
 					uninstallCmd),
 			},
 		}
-	}
-
-	// If only config flags were set (no channel change, no update needed), just confirm
-	if a.onlyConfigFlagsSet() {
-		if configChanged {
-			if err := a.configManager.Save(userConfig); err != nil {
-				return nil, fmt.Errorf("failed to save config: %w", err)
-			}
-		}
-		tracing.SetUsageAttributes(fields.UpdateResult.String(update.CodeSuccess))
-		return &actions.ActionResult{
-			Message: &actions.ResultMessage{
-				Header: "Update preferences saved.",
-			},
-		}, nil
 	}
 
 	// Check for updates (always fresh for manual invocation)
@@ -276,13 +262,6 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 	}
 
-	// Now persist all config changes (including channel) after confirmation
-	if configChanged {
-		if err := a.configManager.Save(userConfig); err != nil {
-			return nil, fmt.Errorf("failed to save config: %w", err)
-		}
-	}
-
 	// Perform the update
 	a.console.MessageUxItem(ctx, &ux.MessageTitle{
 		Title: fmt.Sprintf("Updating azd to %s (%s)", versionInfo.Version, cfg.Channel),
@@ -299,6 +278,21 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, err
 	}
 
+	// Persist channel config changes only after a successful update.
+	// Non-channel preferences were already saved before the update attempt.
+	// Treat save failures as non-fatal since the binary was already updated successfully.
+	// Guide the user to manually persist the channel if saving fails.
+	if channelChanged {
+		if err := a.configManager.Save(userConfig); err != nil {
+			log.Printf("warning: update succeeded but failed to save channel config: %v", err)
+			a.console.Message(ctx, output.WithWarningFormat(
+				"WARNING: failed to save channel preference. "+
+					"Run 'azd config set updates.channel %s' to persist it.",
+				cfg.Channel,
+			))
+		}
+	}
+
 	tracing.SetUsageAttributes(fields.UpdateResult.String(update.CodeSuccess))
 
 	// Clean up any staged binary now that a manual update succeeded
@@ -307,41 +301,32 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header: fmt.Sprintf(
-				"Updated azd to version %s. Changes take effect on next invocation.",
+				"Updated azd to version %s! Changes take effect on next invocation.",
 				versionInfo.Version,
 			),
+			FollowUp: "Run `azd --version` to confirm.",
 		},
 	}, nil
 }
 
-// persistNonChannelFlags saves auto-update and check-interval flags to config.
+// persistNonChannelFlags saves check-interval flags to config.
 // Channel is handled separately to allow confirmation before persisting.
-func (a *updateAction) persistNonChannelFlags(cfg config.Config) (bool, error) {
-	changed := false
-
-	if a.flags.autoUpdate != "" {
-		enabled := a.flags.autoUpdate == "on"
-		if a.flags.autoUpdate != "on" && a.flags.autoUpdate != "off" {
-			return false, fmt.Errorf("invalid auto-update value %q, must be \"on\" or \"off\"", a.flags.autoUpdate)
-		}
-		if err := update.SaveAutoUpdate(cfg, enabled); err != nil {
-			return false, err
-		}
-		changed = true
-	}
-
+func (a *updateAction) persistNonChannelFlags(cfg config.Config) error {
 	if a.flags.checkIntervalHours > 0 {
-		if err := update.SaveCheckIntervalHours(cfg, a.flags.checkIntervalHours); err != nil {
-			return false, err
+		if err := update.SetCheckIntervalHours(cfg, a.flags.checkIntervalHours); err != nil {
+			return err
 		}
-		changed = true
+
+		if err := a.configManager.Save(cfg); err != nil {
+			tracing.SetUsageAttributes(fields.UpdateResult.String(update.CodeConfigFailed))
+			return fmt.Errorf("failed to save config: %w", err)
+		}
 	}
 
-	return changed, nil
+	return nil
 }
 
 // onlyConfigFlagsSet returns true if only config flags were provided (no channel that requires an update).
 func (a *updateAction) onlyConfigFlagsSet() bool {
-	return a.flags.channel == "" &&
-		(a.flags.autoUpdate != "" || a.flags.checkIntervalHours > 0)
+	return a.flags.channel == "" && a.flags.checkIntervalHours > 0
 }

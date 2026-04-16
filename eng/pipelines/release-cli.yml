@@ -39,6 +39,7 @@ pr:
       - cli/azd/extensions/**
       - cli/azd/.vscode/cspell.yaml
       - cli/azd/.vscode/cspell-azd-dictionary.txt
+      - cli/azd/AGENTS.md
 
 extends: 
   template: /eng/pipelines/templates/stages/1es-redirect.yml
@@ -125,6 +126,7 @@ extends:
 
     - template: /eng/pipelines/templates/stages/code-coverage-upload.yml
       parameters:
+        MinimumCoveragePercent: 58
         DownloadArtifacts:
           - cover-win
           - cover-lin

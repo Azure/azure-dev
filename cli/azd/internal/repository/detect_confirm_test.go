@@ -13,7 +13,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -35,7 +34,7 @@ func Test_detectConfirm_confirm(t *testing.T) {
 	err = os.MkdirAll(javaDir, 0700)
 	require.NoError(t, err)
 
-	ostest.Chdir(t, dir)
+	t.Chdir(dir)
 
 	tests := []struct {
 		name         string
@@ -49,7 +48,7 @@ func Test_detectConfirm_confirm(t *testing.T) {
 			interactions: []string{
 				"Add an undetected service",
 				fmt.Sprintf("%s\t%s", appdetect.Java.Display(), "[Language]"),
-				"java-dir",
+				javaDir,
 				"Confirm and continue initializing my app",
 			},
 			want: []appdetect.Project{
@@ -89,7 +88,7 @@ func Test_detectConfirm_confirm(t *testing.T) {
 			interactions: []string{
 				"Add an undetected service",
 				fmt.Sprintf("%s\t%s", appdetect.Java.Display(), "[Language]"),
-				"java-dir",
+				javaDir,
 				"Confirm and continue initializing my app",
 			},
 			want: []appdetect.Project{
@@ -115,7 +114,7 @@ func Test_detectConfirm_confirm(t *testing.T) {
 			interactions: []string{
 				"Add an undetected service",
 				fmt.Sprintf("%s\t%s", appdetect.JsReact.Display(), "[Framework]"),
-				"java-dir",
+				javaDir,
 				"Confirm and continue initializing my app",
 			},
 			want: []appdetect.Project{
@@ -145,7 +144,7 @@ func Test_detectConfirm_confirm(t *testing.T) {
 				"y",
 				"Add an undetected service",
 				fmt.Sprintf("%s\t%s", appdetect.Java.Display(), "[Language]"),
-				"java-dir",
+				javaDir,
 				"Confirm and continue initializing my app",
 			},
 			want: []appdetect.Project{

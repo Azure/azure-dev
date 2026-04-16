@@ -67,14 +67,17 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/state"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/az"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/bash"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/javac"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/kubectl"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/language"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/maven"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/node"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/powershell"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/python"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/swa"
 	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
@@ -194,7 +197,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		cmd *cobra.Command,
 		globalOptions *internal.GlobalCommandOptions,
 	) internal.EnvFlag {
-		// The env flag `-e, --environment` is available on most azd commands but not all
+		// The env flag `-e, --environment` is available on most azd commands but not all.
 		// This is typically used to override the default environment and is used for bootstrapping other components
 		// such as the azd environment.
 		// If the flag is not available, don't panic, just return an empty string which will then allow for our default
@@ -205,26 +208,20 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			envValue = ""
 		}
 
+		// For extension commands (DisableFlagParsing=true), cobra never parses -e so
+		// cmd.Flags().GetString always returns "". Fall back to the value that was
+		// pre-parsed in ParseGlobalFlags before the command tree was built.
+		if envValue == "" && globalOptions.EnvironmentName != "" {
+			envValue = globalOptions.EnvironmentName
+		}
+
 		if envValue == "" {
 			// If no explicit environment flag was set, but one was provided
 			// in the context, use that instead.
 			// This is used in workflow execution (in `up`) to influence the environment used.
-			// Context takes precedence over globalOptions because azd up uses
-			// context.WithValue to propagate the environment to sub-commands.
 			if envFlag, ok := ctx.Value(envFlagCtxKey).(internal.EnvFlag); ok {
 				return envFlag
 			}
-		}
-
-		// Fall back to the pre-parsed global options value.
-		// This handles extension commands (DisableFlagParsing: true) where cobra
-		// doesn't parse persistent flags — the value was already parsed in ParseGlobalFlags.
-		if envValue == "" && globalOptions.EnvironmentName != "" {
-			log.Printf(
-				"using pre-parsed environment name '%s' from global options",
-				globalOptions.EnvironmentName,
-			)
-			envValue = globalOptions.EnvironmentName
 		}
 
 		return internal.EnvFlag{EnvironmentName: envValue}
@@ -706,7 +703,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		})
 	})
 
-	container.MustRegisterSingleton(func(subManager *account.SubscriptionsManager) account.SubscriptionTenantResolver {
+	container.MustRegisterSingleton(func(subManager *account.SubscriptionsManager) account.SubscriptionResolver {
 		return subManager
 	})
 
@@ -817,6 +814,21 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	container.MustRegisterNamedScoped(string(project.ServiceLanguageDocker), project.NewDockerProjectAsFrameworkService)
 
+	// Hook executors registered by language name (transient — fresh per hook invocation).
+	// The HooksRunner resolves these via serviceLocator.ResolveNamed().
+	hookExecutorMap := map[language.HookKind]any{
+		language.HookKindBash:       bash.NewExecutor,
+		language.HookKindPowerShell: powershell.NewExecutor,
+		language.HookKindPython:     language.NewPythonExecutor,
+		language.HookKindJavaScript: language.NewJavaScriptExecutor,
+		language.HookKindTypeScript: language.NewTypeScriptExecutor,
+		language.HookKindDotNet:     language.NewDotNetExecutor,
+	}
+
+	for kind, constructor := range hookExecutorMap {
+		container.MustRegisterNamedTransient(string(kind), constructor)
+	}
+
 	// Pipelines
 	container.MustRegisterScoped(pipeline.NewPipelineManager)
 	container.MustRegisterSingleton(func(flags *pipelineConfigFlags) *pipeline.PipelineManagerArgs {
@@ -912,7 +924,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(func() workflow.AzdCommandRunner {
 		return &workflowCmdAdapter{
 			newCommand: func() *cobra.Command {
-				return NewRootCmd(false, nil, container)
+				return newRootCmdWithoutRegistration(container)
 			},
 			globalArgs: extractGlobalArgs(),
 		}
@@ -983,7 +995,12 @@ type workflowCmdAdapter struct {
 // so that persistent flags (e.g., --trace-log-file) are properly parsed and visible
 // to telemetry middleware on the fresh command tree.
 func (w *workflowCmdAdapter) ExecuteContext(ctx context.Context, args []string) error {
-	childCtx := middleware.WithChildAction(ctx)
+	// Cancel the child context when the step completes so that any event handlers
+	// registered during this step (e.g. by service target Initialize methods) are
+	// marked as expired and cleaned up on the next RaiseEvent call.
+	childCtx, cancel := context.WithCancel(middleware.WithChildAction(ctx))
+	defer cancel()
+
 	rootCmd := w.newCommand()
 	// Always set args explicitly to prevent Cobra from falling back to os.Args[1:].
 	// Cobra uses os.Args when cmd.args is nil (but not when it's an empty slice).
@@ -998,6 +1015,11 @@ func (w *workflowCmdAdapter) ExecuteContext(ctx context.Context, args []string) 
 // extractGlobalArgs extracts global flag arguments from the process command line.
 // It parses os.Args against the global flag set and returns only the flags that were
 // explicitly set by the user, formatted as command-line arguments.
+//
+// The "environment" flag is intentionally excluded: workflow steps may define their own
+// -e/--environment (e.g. `azd: env set KEY VALUE -e env1`), and appending the parent's
+// --environment would override the step-level value. Environment propagation to workflow
+// steps is handled by the globalOptions DI fallback in the EnvFlag resolver instead.
 func extractGlobalArgs() []string {
 	globalFlagSet := CreateGlobalFlagSet()
 	globalFlagSet.SetOutput(io.Discard)
@@ -1006,7 +1028,7 @@ func extractGlobalArgs() []string {
 
 	var result []string
 	globalFlagSet.VisitAll(func(f *pflag.Flag) {
-		if f.Changed {
+		if f.Changed && f.Name != internal.EnvironmentNameFlagName {
 			// Use --flag=value syntax to avoid ambiguity. The two-arg form (--flag value)
 			// doesn't work for boolean flags, where the value is treated as a positional arg.
 			result = append(result, fmt.Sprintf("--%s=%s", f.Name, f.Value.String()))

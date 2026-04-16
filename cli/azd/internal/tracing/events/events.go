@@ -38,3 +38,47 @@ const (
 	// CopilotSessionEvent tracks session creation or resumption.
 	CopilotSessionEvent = "copilot.session"
 )
+
+// Preflight validation events.
+const (
+	// PreflightValidationEvent tracks the local preflight validation operation
+	// and its outcome (passed, warnings accepted, aborted).
+	PreflightValidationEvent = "validation.preflight"
+)
+
+// Hook execution events.
+const (
+	// HooksExecEvent tracks the execution of a lifecycle hook.
+	HooksExecEvent = "hooks.exec"
+)
+
+// AKS service target events.
+const (
+	// AksPostprovisionSkipEvent tracks when the AKS postprovision hook
+	// skips Kubernetes context setup because the cluster isn't available yet.
+	AksPostprovisionSkipEvent = "aks.postprovision.skip"
+)
+
+// ARM deployment events track provisioning, validation, and preview operations.
+const (
+	ArmDeploySubscriptionEvent       = "arm.deploy.subscription"
+	ArmDeployResourceGroupEvent      = "arm.deploy.resourcegroup"
+	ArmStackDeploySubscriptionEvent  = "arm.stack.deploy.subscription"
+	ArmStackDeployResourceGroupEvent = "arm.stack.deploy.resourcegroup"
+	ArmWhatIfSubscriptionEvent       = "arm.whatif.subscription"
+	ArmWhatIfResourceGroupEvent      = "arm.whatif.resourcegroup"
+	ArmValidateSubscriptionEvent     = "arm.validate.subscription"
+	ArmValidateResourceGroupEvent    = "arm.validate.resourcegroup"
+)
+
+// App Service deployment events.
+const (
+	DeployAppServiceZipEvent = "deploy.appservice.zip"
+)
+
+// Container lifecycle events.
+const (
+	ContainerCredentialsEvent = "container.credentials"
+	ContainerPublishEvent     = "container.publish"
+	ContainerRemoteBuildEvent = "container.remotebuild"
+)

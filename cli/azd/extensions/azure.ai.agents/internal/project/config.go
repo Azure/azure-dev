@@ -19,13 +19,39 @@ const (
 	DefaultMaxReplicas = 1
 )
 
+// ResourceTier defines a preset CPU and memory allocation for container resources.
+type ResourceTier struct {
+	Cpu    string
+	Memory string
+}
+
+// String returns a human-readable label for the resource tier.
+func (t ResourceTier) String() string {
+	coreUnit := "cores"
+	if t.Cpu == "1" {
+		coreUnit = "core"
+	}
+	return fmt.Sprintf("%s %s, %s memory", t.Cpu, coreUnit, t.Memory)
+}
+
+// ResourceTiers defines the available container resource allocation options.
+var ResourceTiers = []ResourceTier{
+	{Cpu: DefaultCpu, Memory: DefaultMemory},
+	{Cpu: "0.5", Memory: "1Gi"},
+	{Cpu: "1", Memory: "2Gi"},
+	{Cpu: "2", Memory: "4Gi"},
+}
+
 // ServiceTargetAgentConfig provides custom configuration for the Azure AI Service target
 type ServiceTargetAgentConfig struct {
-	Environment    map[string]string  `json:"env,omitempty"`
-	Container      *ContainerSettings `json:"container,omitempty"`
-	Deployments    []Deployment       `json:"deployments,omitempty"`
-	Resources      []Resource         `json:"resources,omitempty"`
-	StartupCommand string             `json:"startupCommand,omitempty"`
+	Environment     map[string]string  `json:"env,omitempty"`
+	Container       *ContainerSettings `json:"container,omitempty"`
+	Deployments     []Deployment       `json:"deployments,omitempty"`
+	Resources       []Resource         `json:"resources,omitempty"`
+	ToolConnections []ToolConnection   `json:"toolConnections,omitempty"`
+	Toolboxes       []Toolbox          `json:"toolboxes,omitempty"`
+	Connections     []Connection       `json:"connections,omitempty"`
+	StartupCommand  string             `json:"startupCommand,omitempty"`
 }
 
 // ContainerSettings provides container configuration for the Azure AI Service target
@@ -83,6 +109,47 @@ type DeploymentSku struct {
 type Resource struct {
 	Resource       string `json:"resource"`
 	ConnectionName string `json:"connectionName"`
+}
+
+// Toolbox represents a reusable collection of tools deployed as a Foundry Toolset
+type Toolbox struct {
+	Name        string           `json:"name"`
+	Description string           `json:"description,omitempty"`
+	Tools       []map[string]any `json:"tools"`
+}
+
+// Connection represents a project connection matching the Bicep ConnectionPropertiesV2 spec.
+type Connection struct {
+	Name                        string            `json:"name"`
+	Category                    string            `json:"category"`
+	Target                      string            `json:"target"`
+	AuthType                    string            `json:"authType"`
+	Credentials                 map[string]any    `json:"credentials,omitempty"`
+	Metadata                    map[string]string `json:"metadata,omitempty"`
+	ExpiryTime                  string            `json:"expiryTime,omitempty"`
+	IsSharedToAll               *bool             `json:"isSharedToAll,omitempty"`
+	SharedUserList              []string          `json:"sharedUserList,omitempty"`
+	PeRequirement               string            `json:"peRequirement,omitempty"`
+	PeStatus                    string            `json:"peStatus,omitempty"`
+	UseWorkspaceManagedIdentity *bool             `json:"useWorkspaceManagedIdentity,omitempty"`
+	Error                       string            `json:"error,omitempty"`
+	AuthorizationUrl            string            `json:"authorizationUrl,omitempty"`
+	TokenUrl                    string            `json:"tokenUrl,omitempty"`
+	RefreshUrl                  string            `json:"refreshUrl,omitempty"`
+	Scopes                      []string          `json:"scopes,omitempty"`
+	Audience                    string            `json:"audience,omitempty"`
+	ConnectorName               string            `json:"connectorName,omitempty"`
+}
+
+// ToolConnection represents a connection to an external service (MCP tool, A2A, custom API)
+// that must be created in the Foundry project during provisioning via Bicep.
+type ToolConnection struct {
+	Name        string            `json:"name"`
+	Category    string            `json:"category"`
+	Target      string            `json:"target"`
+	AuthType    string            `json:"authType"`
+	Credentials map[string]any    `json:"credentials,omitempty"`
+	Metadata    map[string]string `json:"metadata,omitempty"`
 }
 
 // UnmarshalStruct converts a structpb.Struct to a Go struct of type T

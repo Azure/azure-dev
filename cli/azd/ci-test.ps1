@@ -2,7 +2,9 @@ param(
     [switch] $ShortMode,
     [string] $UnitTestCoverageDir = 'cover-unit',
     [string] $IntegrationTestTimeout = '120m',
-    [string] $IntegrationTestCoverageDir = 'cover-int'
+    [string] $IntegrationTestCoverageDir = 'cover-int',
+    [string] $UnitTestTimingFile = 'test-timing-unit.json',
+    [string] $IntegrationTestTimingFile = 'test-timing-int.json'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -37,7 +39,7 @@ Write-Host "Running unit tests..."
 # See https://github.com/golang/go/issues/51430#issuecomment-1344711300
 #
 # As of Go 1.26, it’s still an “under-the-hood” option.
-& $gotestsum -- ./... -short -v -cover -args --test.gocoverdir="$($unitCoverDir.FullName)"
+& $gotestsum --jsonfile $UnitTestTimingFile -- ./... -short -v -cover -args --test.gocoverdir="$($unitCoverDir.FullName)"
 if ($LASTEXITCODE) {
     exit $LASTEXITCODE
 }
@@ -60,7 +62,7 @@ $env:GOCOVERDIR = $intCoverDir.FullName
 $env:GOEXPERIMENT=""
 
 try {
-    & $gotestsum -- ./... -v -timeout $IntegrationTestTimeout
+    & $gotestsum --jsonfile $IntegrationTestTimingFile -- ./... -v -timeout $IntegrationTestTimeout
     if ($LASTEXITCODE) {
         exit $LASTEXITCODE
     }    

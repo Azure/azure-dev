@@ -38,6 +38,7 @@ type MockConsole struct {
 	log         []string
 	spinnerOps  []SpinnerOp
 	noPrompt    bool
+	isTerminal  bool
 }
 
 func NewMockConsole() *MockConsole {
@@ -122,7 +123,12 @@ func (c *MockConsole) IsSpinnerRunning(ctx context.Context) bool {
 }
 
 func (c *MockConsole) IsSpinnerInteractive() bool {
-	return false
+	return c.isTerminal
+}
+
+// SetTerminal configures whether the mock console simulates a real TTY terminal.
+func (c *MockConsole) SetTerminal(isTerminal bool) {
+	c.isTerminal = isTerminal
 }
 
 // Prints a confirmation message to the console for the user to confirm

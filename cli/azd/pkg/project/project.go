@@ -54,6 +54,10 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 		)
 	}
 
+	if err := validateParsedConfig(&projectConfig); err != nil {
+		return nil, err
+	}
+
 	projectConfig.EventDispatcher = ext.NewEventDispatcher[ProjectLifecycleEventArgs]()
 
 	if projectConfig.RequiredVersions != nil && projectConfig.RequiredVersions.Azd != nil {
@@ -191,6 +195,12 @@ func Load(ctx context.Context, projectFilePath string) (*ProjectConfig, error) {
 		projectConfig.Hooks[hookName] = externalHookList
 	}
 
+	// Validate hooks after merging infra-module definitions so that nil entries
+	// from *.hooks.yaml files are caught before they can cause nil-pointer panics.
+	if infraHookProblems := validateHooks(projectConfig.Hooks, "infra hooks"); len(infraHookProblems) > 0 {
+		return nil, &ConfigValidationError{Issues: infraHookProblems}
+	}
+
 	if projectConfig.Metadata != nil && projectConfig.Metadata.Template != "" {
 		template := strings.Split(projectConfig.Metadata.Template, "@")
 		if len(template) == 1 { // no version specifier, just the template ID
@@ -274,7 +284,10 @@ func Save(ctx context.Context, projectConfig *ProjectConfig, projectFilePath str
 	copy.Services = make(map[string]*ServiceConfig, len(projectConfig.Services))
 
 	for name, svc := range projectConfig.Services {
-		svcCopy := *svc
+		// Safe: Save() only runs from synchronous command paths (config set, add, gRPC reload)
+		// that never overlap with hook registration, so the mutex is always zero-valued/unlocked.
+		// The copy is ephemeral — used only for path normalization before YAML marshalling.
+		svcCopy := *svc //nolint:govet // copylocks: see above
 		svcCopy.Project = &copy
 		svcCopy.Infra.Path = filepath.ToSlash(svc.Infra.Path)
 		svcCopy.RelativePath = filepath.ToSlash(svc.RelativePath)

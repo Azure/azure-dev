@@ -9,7 +9,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/runcontext/agentdetect"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
@@ -17,6 +16,7 @@ import (
 )
 
 func TestFindFirstNonFlagArg(t *testing.T) {
+	t.Parallel()
 	// Mock flags that take values for testing
 	flagsWithValues := map[string]bool{
 		"--output":         true,
@@ -122,6 +122,7 @@ func TestFindFirstNonFlagArg(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			result, _ := findFirstNonFlagArg(tt.args, flagsWithValues)
 			assert.Equal(t, tt.expected, result)
 		})
@@ -129,6 +130,7 @@ func TestFindFirstNonFlagArg(t *testing.T) {
 }
 
 func TestFindFirstNonFlagArgWithUnknownFlags(t *testing.T) {
+	t.Parallel()
 	flagsWithValues := map[string]bool{
 		"--output": true,
 		"-o":       true,
@@ -188,6 +190,7 @@ func TestFindFirstNonFlagArgWithUnknownFlags(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			command, unknownFlags := findFirstNonFlagArg(tt.args, flagsWithValues)
 			assert.Equal(t, tt.expectedCommand, command)
 			assert.Equal(t, tt.expectedUnknownFlags, unknownFlags)
@@ -196,6 +199,7 @@ func TestFindFirstNonFlagArgWithUnknownFlags(t *testing.T) {
 }
 
 func TestExtractFlagsWithValues(t *testing.T) {
+	t.Parallel()
 	// Create a test command with various flag types
 	cmd := &cobra.Command{
 		Use: "test",
@@ -235,6 +239,7 @@ func TestExtractFlagsWithValues(t *testing.T) {
 }
 
 func TestCheckForMatchingExtension_Unit(t *testing.T) {
+	t.Parallel()
 	// This is a unit test that tests the logic without external dependencies
 	// We'll create a mock-like test by testing the namespace matching logic directly
 
@@ -310,6 +315,7 @@ func TestCheckForMatchingExtension_Unit(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			// Test the namespace matching logic directly
 			var foundExtension *extensions.ExtensionMetadata
 			for _, ext := range tc.extensions {
@@ -423,113 +429,224 @@ func TestParseGlobalFlags_AgentDetection(t *testing.T) {
 	}
 }
 
-func TestParseGlobalFlags_EnvironmentName(t *testing.T) {
+func TestParseGlobalFlags_NonInteractiveAliasAndEnvVar(t *testing.T) {
 	tests := []struct {
-		name     string
-		args     []string
-		envVar   string
-		expected string
+		name         string
+		args         []string
+		envKey       string
+		envVal       string
+		wantNoPrompt bool
 	}{
 		{
-			name: "short flag -e", args: []string{"-e", "dev", "app", "run"},
-			envVar: "", expected: "dev",
+			name:         "no flags or env",
+			args:         []string{},
+			wantNoPrompt: false,
 		},
 		{
-			name:   "long flag --environment",
-			args:   []string{"--environment", "staging", "app", "run"},
-			envVar: "", expected: "staging",
+			name:         "--no-prompt sets NoPrompt",
+			args:         []string{"--no-prompt"},
+			wantNoPrompt: true,
 		},
 		{
-			name:   "long flag with equals",
-			args:   []string{"--environment=prod", "app", "run"},
-			envVar: "", expected: "prod",
+			name:         "--non-interactive sets NoPrompt",
+			args:         []string{"--non-interactive"},
+			wantNoPrompt: true,
 		},
 		{
-			name: "no env flag", args: []string{"--debug", "app", "run"},
-			envVar: "", expected: "",
+			name:         "--no-prompt=false keeps NoPrompt false",
+			args:         []string{"--no-prompt=false"},
+			wantNoPrompt: false,
 		},
 		{
-			name:   "env flag among other flags",
-			args:   []string{"--debug", "-e", "dev", "--no-prompt"},
-			envVar: "", expected: "dev",
+			name:         "AZD_NON_INTERACTIVE=true sets NoPrompt",
+			args:         []string{},
+			envKey:       "AZD_NON_INTERACTIVE",
+			envVal:       "true",
+			wantNoPrompt: true,
 		},
 		{
-			name:   "env flag with unknown extension flags",
-			args:   []string{"-e", "dev", "--foo", "bar"},
-			envVar: "", expected: "dev",
+			name:         "AZD_NON_INTERACTIVE=1 sets NoPrompt",
+			args:         []string{},
+			envKey:       "AZD_NON_INTERACTIVE",
+			envVal:       "1",
+			wantNoPrompt: true,
 		},
 		{
-			name:   "AZURE_ENV_NAME fallback",
-			args:   []string{"--debug", "app", "run"},
-			envVar: "from-env", expected: "from-env",
+			name:         "AZD_NON_INTERACTIVE=false does not set NoPrompt",
+			args:         []string{},
+			envKey:       "AZD_NON_INTERACTIVE",
+			envVal:       "false",
+			wantNoPrompt: false,
 		},
 		{
-			name:     "-e flag overrides AZURE_ENV_NAME",
-			args:     []string{"-e", "from-flag", "app", "run"},
-			envVar:   "from-env",
-			expected: "from-flag",
+			name:         "AZD_NON_INTERACTIVE=0 does not set NoPrompt",
+			args:         []string{},
+			envKey:       "AZD_NON_INTERACTIVE",
+			envVal:       "0",
+			wantNoPrompt: false,
 		},
 		{
-			name: "empty AZURE_ENV_NAME no effect",
-			args: []string{"app", "run"}, envVar: "", expected: "",
+			name:         "explicit --no-prompt=false overrides env true",
+			args:         []string{"--no-prompt=false"},
+			envKey:       "AZD_NON_INTERACTIVE",
+			envVal:       "true",
+			wantNoPrompt: false,
 		},
 		{
-			name:   "concatenated short flag -edev",
-			args:   []string{"-edev", "app", "run"},
-			envVar: "", expected: "dev",
+			name:         "explicit --no-prompt overrides env false",
+			args:         []string{"--no-prompt"},
+			envKey:       "AZD_NON_INTERACTIVE",
+			envVal:       "false",
+			wantNoPrompt: true,
 		},
 		{
-			name:   "multiple -e flags last wins",
-			args:   []string{"-e", "first", "-e", "second"},
-			envVar: "", expected: "second",
+			name:         "--non-interactive overrides env false",
+			args:         []string{"--non-interactive"},
+			envKey:       "AZD_NON_INTERACTIVE",
+			envVal:       "false",
+			wantNoPrompt: true,
+		},
+		{
+			name:         "AZD_NON_INTERACTIVE=TRUE (uppercase)",
+			args:         []string{},
+			envKey:       "AZD_NON_INTERACTIVE",
+			envVal:       "TRUE",
+			wantNoPrompt: true,
+		},
+		{
+			name:         "both flags coexist",
+			args:         []string{"--no-prompt", "--non-interactive"},
+			wantNoPrompt: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv(environment.EnvNameEnvVarName, tt.envVar)
+			// Clear agent detection and AZD_NON_INTERACTIVE to isolate
+			// from the ambient environment.
+			clearAgentEnvVarsForTest(t)
+			agentdetect.ResetDetection()
+
+			// Skip if we're inside an agent and expect false
+			if !tt.wantNoPrompt && tt.envKey == "" && len(tt.args) == 0 {
+				if agentdetect.GetCallingAgent().Detected {
+					t.Skip("skipping: agent process detected")
+				}
+				agentdetect.ResetDetection()
+			}
+
+			if tt.envKey != "" {
+				t.Setenv(tt.envKey, tt.envVal)
+			}
 
 			opts := &internal.GlobalCommandOptions{}
 			err := ParseGlobalFlags(tt.args, opts)
 			require.NoError(t, err)
-			assert.Equal(t, tt.expected, opts.EnvironmentName)
+			assert.Equal(t, tt.wantNoPrompt, opts.NoPrompt)
+
+			agentdetect.ResetDetection()
 		})
 	}
 
-	// Cross-field assertion: verify -e does not interfere with adjacent flags
-	t.Run("env flag does not interfere with other flags", func(t *testing.T) {
-		t.Setenv(environment.EnvNameEnvVarName, "")
+	// Standalone test: prove that AZD_NON_INTERACTIVE presence suppresses agent detection.
+	// CLAUDE_CODE=1 would normally trigger NoPrompt via agent detection, but
+	// AZD_NON_INTERACTIVE=false should suppress agent detection entirely.
+	t.Run("AZD_NON_INTERACTIVE=false suppresses agent detection with CLAUDE_CODE set", func(t *testing.T) {
+		clearAgentEnvVarsForTest(t)
+		agentdetect.ResetDetection()
+
+		t.Setenv("CLAUDE_CODE", "1")
+		t.Setenv("AZD_NON_INTERACTIVE", "false")
+		agentdetect.ResetDetection()
 
 		opts := &internal.GlobalCommandOptions{}
-		err := ParseGlobalFlags(
-			[]string{"--debug", "-e", "dev", "--no-prompt"},
-			opts,
-		)
+		err := ParseGlobalFlags([]string{}, opts)
 		require.NoError(t, err)
-		assert.Equal(t, "dev", opts.EnvironmentName)
-		assert.True(t, opts.EnableDebugLogging,
-			"--debug should be true alongside -e")
-		assert.True(t, opts.NoPrompt,
-			"--no-prompt should be true alongside -e")
-	})
+		assert.False(t, opts.NoPrompt,
+			"AZD_NON_INTERACTIVE=false should suppress agent detection from setting NoPrompt")
 
-	// Edge case: -e at end of args with no value — pflag returns an error
-	t.Run("-e without value returns error", func(t *testing.T) {
-		t.Setenv(environment.EnvNameEnvVarName, "")
-
-		opts := &internal.GlobalCommandOptions{}
-		err := ParseGlobalFlags([]string{"app", "-e"}, opts)
-		require.Error(t, err)
+		agentdetect.ResetDetection()
 	})
 }
 
+func TestParseGlobalFlags_EnvironmentName(t *testing.T) {
+	tests := []struct {
+		name            string
+		args            []string
+		expectedEnvName string
+	}{
+		{
+			name:            "valid env name with -e",
+			args:            []string{"-e", "dev", "up"},
+			expectedEnvName: "dev",
+		},
+		{
+			name:            "valid env name with --environment",
+			args:            []string{"--environment", "production", "deploy"},
+			expectedEnvName: "production",
+		},
+		{
+			name:            "valid env name with equals syntax",
+			args:            []string{"--environment=staging", "deploy"},
+			expectedEnvName: "staging",
+		},
+		{
+			name:            "env name with dots and hyphens",
+			args:            []string{"-e", "my-env.v2", "up"},
+			expectedEnvName: "my-env.v2",
+		},
+		{
+			name:            "empty value",
+			args:            []string{"up"},
+			expectedEnvName: "",
+		},
+		{
+			name:            "env name alongside other global flags",
+			args:            []string{"--debug", "-e", "myenv", "--no-prompt", "deploy"},
+			expectedEnvName: "myenv",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Clear agent detection to avoid NoPrompt side effects
+			clearAgentEnvVarsForTest(t)
+			agentdetect.ResetDetection()
+
+			opts := &internal.GlobalCommandOptions{}
+			err := ParseGlobalFlags(tt.args, opts)
+			require.NoError(t, err)
+
+			assert.Equal(t, tt.expectedEnvName, opts.EnvironmentName,
+				"EnvironmentName should be %q for test case: %s", tt.expectedEnvName, tt.name)
+
+			agentdetect.ResetDetection()
+		})
+	}
+}
+
 func TestParseGlobalFlags_InvalidEnvironmentName(t *testing.T) {
+	// Invalid environment names are silently ignored (not errors) so that
+	// third-party extensions reusing -e for their own flags (e.g., URLs)
+	// are not broken by azd's global flag parsing.
 	tests := []struct {
 		name string
 		args []string
 	}{
 		{
-			name: "invalid characters",
+			name: "URL value",
+			args: []string{"-e", "https://foo.services.ai.azure.com/api/projects/bar", "model", "custom", "create"},
+		},
+		{
+			name: "value with colons",
+			args: []string{"-e", "host:port", "model", "custom", "create"},
+		},
+		{
+			name: "value with slashes",
+			args: []string{"-e", "path/to/thing", "model", "custom", "create"},
+		},
+		{
+			name: "value with spaces",
 			args: []string{"-e", "env name with spaces"},
 		},
 		{
@@ -540,10 +657,100 @@ func TestParseGlobalFlags_InvalidEnvironmentName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			clearAgentEnvVarsForTest(t)
+			agentdetect.ResetDetection()
+
 			opts := &internal.GlobalCommandOptions{}
 			err := ParseGlobalFlags(tt.args, opts)
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), "invalid environment name")
+			require.NoError(t, err, "invalid env names should be silently ignored, not rejected")
+			assert.Empty(t, opts.EnvironmentName,
+				"EnvironmentName should be empty when -e value is not a valid env name")
+
+			agentdetect.ResetDetection()
+		})
+	}
+}
+
+// TestParseGlobalFlags_ExtensionCompatibility verifies that extensions reusing -e for their
+// own flags (e.g., azure.ai.models uses -e/--project-endpoint) work correctly alongside
+// azd's global -e/--environment flag. This is a regression test for the bug that caused
+// PR #7035 to be reverted (PR #7274): strict validation of -e values rejected URLs passed
+// by extensions, breaking commands like `azd ai models custom create -e https://...`.
+func TestParseGlobalFlags_ExtensionCompatibility(t *testing.T) {
+	tests := []struct {
+		name            string
+		args            []string
+		expectedEnvName string
+		description     string
+	}{
+		{
+			name: "azure.ai.models: -e with project endpoint URL",
+			args: []string{
+				"ai", "models", "custom", "create",
+				"-e", "https://myaccount.services.ai.azure.com/api/projects/myproject",
+			},
+			expectedEnvName: "",
+			description:     "URL must not be captured as env name; extension receives raw args",
+		},
+		{
+			name: "azure.ai.models: --project-endpoint with URL",
+			args: []string{
+				"ai", "models", "custom", "create",
+				"--project-endpoint", "https://myaccount.services.ai.azure.com/api/projects/myproject",
+			},
+			expectedEnvName: "",
+			description:     "--project-endpoint is not a global flag, should be ignored",
+		},
+		{
+			name: "valid env name before extension args",
+			args: []string{
+				"-e", "dev", "ai", "models", "custom", "create",
+				"--project-endpoint", "https://endpoint.com",
+			},
+			expectedEnvName: "dev",
+			description:     "valid -e before extension subcommand should be captured",
+		},
+		{
+			name: "extension -e URL with other global flags",
+			args: []string{
+				"--debug", "ai", "models", "custom", "create",
+				"-e", "https://endpoint.com", "--no-prompt",
+			},
+			expectedEnvName: "",
+			description:     "URL via -e among global flags must not error or capture",
+		},
+		{
+			name: "azure.ai.finetune: -e with endpoint URL",
+			args: []string{
+				"ai", "fine-tuning", "init",
+				"-e", "https://ai-endpoint.azure.com/v1",
+			},
+			expectedEnvName: "",
+			description:     "fine-tuning extension's -e must not be captured",
+		},
+		{
+			name: "both --environment and -e URL: last value wins per pflag",
+			args: []string{
+				"--environment", "staging", "ai", "models", "custom", "create",
+				"-e", "https://endpoint.com",
+			},
+			expectedEnvName: "",
+			description: "pflag takes last -e value (the URL), " +
+				"which is invalid so env name stays empty",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			clearAgentEnvVarsForTest(t)
+			agentdetect.ResetDetection()
+
+			opts := &internal.GlobalCommandOptions{}
+			err := ParseGlobalFlags(tt.args, opts)
+			require.NoError(t, err, "ParseGlobalFlags must not error for extension args: %s", tt.description)
+			assert.Equal(t, tt.expectedEnvName, opts.EnvironmentName, tt.description)
+
+			agentdetect.ResetDetection()
 		})
 	}
 }

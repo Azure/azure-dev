@@ -134,6 +134,11 @@ func (p *TestProvider) Parameters(ctx context.Context) ([]provisioning.Parameter
 	return nil, nil
 }
 
+func (p *TestProvider) PlannedOutputs(ctx context.Context) ([]provisioning.PlannedOutput, error) {
+	// not supported (no-op)
+	return nil, nil
+}
+
 func NewTestProvider(
 	envManager environment.Manager,
 	env *environment.Environment,

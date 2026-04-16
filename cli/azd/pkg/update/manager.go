@@ -8,6 +8,7 @@ import (
 	"archive/zip"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"log"
@@ -33,6 +34,8 @@ const (
 	stableVersionURL = "https://aka.ms/azure-dev/versions/cli/latest"
 	// blobBaseURL is the base URL for Azure Blob Storage where azd binaries are hosted.
 	blobBaseURL = "https://azuresdkartifacts.z5.web.core.windows.net/azd/standalone/release"
+	// installShScriptURL is the shell install script for azd on Linux/macOS.
+	installShScriptURL = "https://aka.ms/install-azd.sh"
 )
 
 // VersionInfo holds the result of a version check.
@@ -271,12 +274,17 @@ func (m *Manager) Update(ctx context.Context, cfg *UpdateConfig, writer io.Write
 
 	switch installedBy {
 	case installer.InstallTypeBrew:
-		return m.updateViaPackageManager(ctx, "brew", []string{"upgrade", "azure/azd/azd"}, writer)
+		return m.updateViaBrew(ctx, cfg, writer)
 	case installer.InstallTypeWinget:
 		return m.updateViaPackageManager(ctx, "winget", []string{"upgrade", "Microsoft.Azd"}, writer)
 	case installer.InstallTypeChoco:
 		return m.updateViaPackageManager(ctx, "choco", []string{"upgrade", "azd"}, writer)
-	case installer.InstallTypePs, installer.InstallTypeSh, installer.InstallTypeDeb,
+	case installer.InstallTypeSh:
+		if runtime.GOOS == "windows" {
+			return m.updateViaMSI(ctx, cfg, writer)
+		}
+		return m.updateViaInstallScript(ctx, cfg, writer)
+	case installer.InstallTypePs, installer.InstallTypeDeb,
 		installer.InstallTypeRpm, installer.InstallTypeUnknown:
 		if runtime.GOOS == "windows" {
 			return m.updateViaMSI(ctx, cfg, writer)
@@ -288,6 +296,144 @@ func (m *Manager) Update(ctx context.Context, cfg *UpdateConfig, writer io.Write
 		}
 		return m.updateViaBinaryDownload(ctx, cfg, writer)
 	}
+}
+
+func (m *Manager) updateViaBrew(ctx context.Context, cfg *UpdateConfig, writer io.Writer) error {
+	fmt.Fprintf(writer, "Checking Homebrew cask installation...\n")
+
+	// Determine which cask is currently installed by checking `brew list --cask`.
+	listArgs := exec.NewRunArgs("brew", "list", "--cask")
+	listResult, err := m.commandRunner.Run(ctx, listArgs)
+	if err != nil {
+		log.Printf("brew list --cask failed: %v", err)
+	}
+
+	caskOutput := ""
+	if err == nil {
+		caskOutput = listResult.Stdout
+	}
+
+	hasAzd := false
+	hasAzdDaily := false
+	for line := range strings.SplitSeq(caskOutput, "\n") {
+		name := strings.TrimSpace(line)
+		if name == "azd@daily" {
+			hasAzdDaily = true
+		} else if name == "azd" {
+			hasAzd = true
+		}
+	}
+
+	targetChannel := cfg.Channel
+
+	if !hasAzd && !hasAzdDaily {
+		// azd is not installed as a cask (formula install or other).
+		// Uninstall the non-cask version and install the correct cask.
+		fmt.Fprintf(writer, "azd is not installed as a Homebrew cask. Reinstalling as cask...\n")
+		if err := m.updateViaPackageManager(ctx, "brew", []string{"uninstall", "azd"}, writer); err != nil {
+			log.Printf("brew uninstall azd failed: %v", err)
+		}
+		switch targetChannel {
+		case ChannelStable:
+			return m.updateViaPackageManager(ctx, "brew", []string{"install", "--cask", "azure/azd/azd"}, writer)
+		case ChannelDaily:
+			return m.updateViaPackageManager(ctx, "brew", []string{"install", "--cask", "azure/azd/azd@daily"}, writer)
+		default:
+			return fmt.Errorf("unsupported channel: %s", targetChannel)
+		}
+	}
+
+	// Determine if the user is switching channels.
+	currentlyDaily := hasAzdDaily
+	currentlyStable := hasAzd
+
+	if currentlyDaily && targetChannel == ChannelStable {
+		// Switching from daily to stable
+		fmt.Fprintf(writer, "Switching from daily to stable channel...\n")
+		if err := m.updateViaPackageManager(ctx, "brew", []string{"uninstall", "--cask", "azd@daily"}, writer); err != nil {
+			return err
+		}
+		return m.updateViaPackageManager(ctx, "brew", []string{"install", "--cask", "azure/azd/azd"}, writer)
+	}
+
+	if currentlyStable && targetChannel == ChannelDaily {
+		// Switching from stable to daily
+		fmt.Fprintf(writer, "Switching from stable to daily channel...\n")
+		if err := m.updateViaPackageManager(ctx, "brew", []string{"uninstall", "--cask", "azd"}, writer); err != nil {
+			return err
+		}
+		return m.updateViaPackageManager(ctx, "brew", []string{"install", "--cask", "azure/azd/azd@daily"}, writer)
+	}
+
+	// Same channel — update in place.
+	switch targetChannel {
+	case ChannelStable:
+		fmt.Fprintf(writer, "Updating azd (stable channel)...\n")
+		return m.updateViaPackageManager(ctx, "brew", []string{"upgrade", "--cask", "azure/azd/azd"}, writer)
+	case ChannelDaily:
+		fmt.Fprintf(writer, "Updating azd (daily channel)...\n")
+		return m.updateViaPackageManager(ctx, "brew", []string{"upgrade", "--cask", "azure/azd/azd@daily"}, writer)
+	default:
+		return fmt.Errorf("unsupported channel: %s", targetChannel)
+	}
+}
+
+func (m *Manager) updateViaInstallScript(ctx context.Context, cfg *UpdateConfig, writer io.Writer) error {
+	fmt.Fprintf(writer, "Updating azd via install script...\n")
+
+	currentPath, err := currentExePath()
+	if err != nil {
+		return newUpdateError(CodeReplaceFailed, fmt.Errorf("failed to determine current path: %w", err))
+	}
+	installFolder := filepath.Dir(currentPath)
+
+	// Download install-azd.sh into a uniquely-created temp directory with restrictive permissions
+	scriptDir, err := os.MkdirTemp("", "azd-update-*")
+	if err != nil {
+		return newUpdateError(CodeDownloadFailed, fmt.Errorf("failed to create temp directory: %w", err))
+	}
+	defer os.RemoveAll(scriptDir)
+
+	// Restrict the temp directory so only the current user can read/write/traverse it.
+	if err := os.Chmod(scriptDir, 0o700); err != nil {
+		return newUpdateError(CodeDownloadFailed, fmt.Errorf("failed to set temp directory permissions: %w", err))
+	}
+
+	scriptPath := filepath.Join(scriptDir, "install-azd.sh")
+
+	if err := m.downloadFile(ctx, installShScriptURL, scriptPath, writer); err != nil {
+		return newUpdateError(CodeDownloadFailed, fmt.Errorf("failed to download install script: %w", err))
+	}
+
+	// Make the script executable
+	if err := os.Chmod(scriptPath, 0o500); err != nil {
+		return newUpdateError(CodeReplaceFailed, fmt.Errorf("failed to set script permissions: %w", err))
+	}
+
+	versionArg := string(cfg.Channel)
+	runArgs := exec.NewRunArgs("bash", scriptPath,
+		"--version", versionArg,
+		"--install-folder", installFolder,
+		"--symlink-folder", "",
+	)
+	runArgs = runArgs.WithStdOut(writer).WithStdErr(writer).WithInteractive(true)
+
+	log.Printf("Running install script: bash %s --version %s --install-folder %s --symlink-folder \"\"",
+		scriptPath, versionArg, installFolder)
+	fmt.Fprintf(writer, "Installing azd %s channel to %s...\n", cfg.Channel, installFolder)
+
+	result, err := m.commandRunner.Run(ctx, runArgs)
+	if err != nil {
+		return newUpdateError(CodeReplaceFailed, fmt.Errorf("install script failed: %w", err))
+	}
+
+	if result.ExitCode != 0 {
+		return newUpdateErrorf(CodeReplaceFailed,
+			"install script failed with exit code %d", result.ExitCode)
+	}
+
+	log.Printf("Install script completed successfully")
+	return nil
 }
 
 func (m *Manager) updateViaPackageManager(
@@ -353,13 +499,12 @@ func (m *Manager) updateViaMSI(ctx context.Context, cfg *UpdateConfig, writer io
 	// safety copy at the original path with the new version.
 	psArgs := buildInstallScriptArgs(cfg.Channel)
 
-	// Snapshot the safety copy's mod time before the install so we can detect
-	// whether the MSI actually replaced the file. A plain os.Stat after install
-	// would always succeed because the safety copy already exists at originalPath.
-	preInfo, statErr := os.Stat(originalPath)
-	if statErr != nil {
+	// Hash the safety copy before install so we can detect whether the MSI
+	// actually replaced the file.
+	preHash, hashErr := hashFile(originalPath)
+	if hashErr != nil {
 		return newUpdateError(CodeReplaceFailed,
-			fmt.Errorf("failed to stat safety copy before install: %w", statErr))
+			fmt.Errorf("failed to hash safety copy before install: %w", hashErr))
 	}
 
 	log.Printf("Running install script: powershell %s", strings.Join(psArgs, " "))
@@ -373,19 +518,19 @@ func (m *Manager) updateViaMSI(ctx context.Context, cfg *UpdateConfig, writer io
 		return newUpdateError(CodeReplaceFailed, fmt.Errorf("install script failed: %w", err))
 	}
 
-	// Verify the MSI actually replaced the binary by comparing mod time and
-	// size against the pre-install safety copy. If both are identical the MSI
-	// did not write a new file (silent failure).
-	postInfo, statErr := os.Stat(originalPath)
-	if statErr != nil {
+	// Verify the MSI actually replaced the binary by comparing the SHA-256
+	// content hash against the pre-install safety copy. If the hashes are
+	// identical the MSI did not write a new file (silent failure).
+	postHash, hashErr := hashFile(originalPath)
+	if hashErr != nil {
 		return newUpdateError(CodeReplaceFailed,
-			fmt.Errorf("install script completed but %s was not found", originalPath))
+			fmt.Errorf("install script completed but %s could not be read: %w", originalPath, hashErr))
 	}
 
-	if postInfo.ModTime().Equal(preInfo.ModTime()) && postInfo.Size() == preInfo.Size() {
+	if preHash == postHash {
 		return newUpdateError(CodeReplaceFailed,
-			fmt.Errorf("install script completed but the binary at %s was not updated "+
-				"(file unchanged); the MSI may have failed silently", originalPath))
+			fmt.Errorf("install script completed but the binary at %s was not updated."+
+				" MSI may have failed silently", originalPath))
 	}
 
 	updateSucceeded = true
@@ -598,15 +743,27 @@ func (m *Manager) replaceBinary(ctx context.Context, newBinaryPath, currentBinar
 	// On unix, try with sudo if permission denied
 	if runtime.GOOS != "windows" {
 		log.Printf("direct replacement failed (%v), trying with sudo", err)
-		runArgs := exec.NewRunArgs("sudo", "cp", newBinaryPath, currentBinaryPath)
-		runArgs = runArgs.WithInteractive(true)
-		result, sudoErr := m.commandRunner.Run(ctx, runArgs)
-		if sudoErr != nil {
-			return newUpdateError(CodeElevationFailed, sudoErr)
+		// Remove the destination first to avoid "Text file busy" (ETXTBSY) errors.
+		rmArgs := exec.NewRunArgs("sudo", "rm", "-f", currentBinaryPath)
+		rmArgs = rmArgs.WithInteractive(true)
+		rmResult, rmErr := m.commandRunner.Run(ctx, rmArgs)
+		if rmErr != nil {
+			return newUpdateError(CodeElevationFailed, fmt.Errorf("sudo rm failed: %w", rmErr))
 		}
-		if result.ExitCode != 0 {
+		if rmResult.ExitCode != 0 {
 			return newUpdateErrorf(CodeElevationFailed,
-				"sudo copy failed with exit code %d", result.ExitCode)
+				"sudo rm failed with exit code %d", rmResult.ExitCode)
+		}
+
+		cpArgs := exec.NewRunArgs("sudo", "cp", newBinaryPath, currentBinaryPath)
+		cpArgs = cpArgs.WithInteractive(true)
+		cpResult, cpErr := m.commandRunner.Run(ctx, cpArgs)
+		if cpErr != nil {
+			return newUpdateError(CodeElevationFailed, fmt.Errorf("sudo cp failed: %w", cpErr))
+		}
+		if cpResult.ExitCode != 0 {
+			return newUpdateErrorf(CodeElevationFailed,
+				"sudo cp failed with exit code %d", cpResult.ExitCode)
 		}
 		return nil
 	}
@@ -625,6 +782,22 @@ func currentExePath() (string, error) {
 		return "", fmt.Errorf("failed to resolve executable path: %w", err)
 	}
 	return resolved, nil
+}
+
+// hashFile returns the hex-encoded SHA-256 digest of the file at path.
+func hashFile(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("%x", h.Sum(nil)), nil
 }
 
 func copyFile(src, dst string) error {
@@ -766,7 +939,7 @@ func extractFromZip(archivePath, binaryName, destPath string) error {
 // IsPackageManagerInstall returns true if azd was installed via a package manager.
 func IsPackageManagerInstall() bool {
 	switch installer.InstalledBy() {
-	case installer.InstallTypeBrew, installer.InstallTypeWinget, installer.InstallTypeChoco:
+	case installer.InstallTypeWinget, installer.InstallTypeChoco:
 		return true
 	default:
 		return false

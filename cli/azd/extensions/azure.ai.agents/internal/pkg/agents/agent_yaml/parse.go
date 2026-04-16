@@ -170,6 +170,18 @@ func ExtractResourceDefinitions(manifestYamlContent []byte) ([]any, error) {
 				return nil, fmt.Errorf("failed to unmarshal to ToolResource: %w", err)
 			}
 			resourceDefs = append(resourceDefs, toolDef)
+		case ResourceKindToolbox:
+			var toolboxDef ToolboxResource
+			if err := yaml.Unmarshal(resourceBytes, &toolboxDef); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal to ToolboxResource: %w", err)
+			}
+			resourceDefs = append(resourceDefs, toolboxDef)
+		case ResourceKindConnection:
+			var connDef ConnectionResource
+			if err := yaml.Unmarshal(resourceBytes, &connDef); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal to ConnectionResource: %w", err)
+			}
+			resourceDefs = append(resourceDefs, connDef)
 		default:
 			return nil, fmt.Errorf("unrecognized resource kind: %s", resourceDef.Kind)
 		}
@@ -195,6 +207,8 @@ func ExtractToolsDefinitions(template map[string]any) ([]any, error) {
 			if err := yaml.Unmarshal(toolBytes, &toolDef); err != nil {
 				return nil, fmt.Errorf("failed to unmarshal to Tool: %w", err)
 			}
+
+			toolDef.Kind = NormalizeToolKind(toolDef.Kind)
 
 			switch toolDef.Kind {
 			case ToolKindFunction:
@@ -296,6 +310,18 @@ func ExtractToolsDefinitions(template map[string]any) ([]any, error) {
 					return nil, fmt.Errorf("failed to unmarshal to CodeInterpreterTool: %w", err)
 				}
 				tools = append(tools, codeInterpreterTool)
+			case ToolKindAzureAiSearch:
+				var azureAiSearchTool AzureAISearchTool
+				if err := yaml.Unmarshal(toolBytes, &azureAiSearchTool); err != nil {
+					return nil, fmt.Errorf("failed to unmarshal to AzureAISearchTool: %w", err)
+				}
+				tools = append(tools, azureAiSearchTool)
+			case ToolKindA2APreview:
+				var a2aTool A2APreviewTool
+				if err := yaml.Unmarshal(toolBytes, &a2aTool); err != nil {
+					return nil, fmt.Errorf("failed to unmarshal to A2APreviewTool: %w", err)
+				}
+				tools = append(tools, a2aTool)
 			default:
 				return nil, fmt.Errorf("unrecognized tool kind: %s", toolDef.Kind)
 			}
@@ -444,6 +470,8 @@ func ProcessPromptAgentToolsConnections(ctx context.Context, manifest *AgentMani
 			if err := yaml.Unmarshal(toolBytes, &toolDef); err != nil {
 				return nil, fmt.Errorf("failed to unmarshal to Tool: %w", err)
 			}
+
+			toolDef.Kind = NormalizeToolKind(toolDef.Kind)
 
 			switch toolDef.Kind {
 			case ToolKindCustom:

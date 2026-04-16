@@ -4,136 +4,434 @@
 package extensions
 
 import (
-	"context"
+	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/stretchr/testify/assert"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockexec"
 	"github.com/stretchr/testify/require"
 )
 
-// mockCommandRunner captures the RunArgs passed to Run().
-type mockCommandRunner struct {
-	capturedArgs exec.RunArgs
-}
+// ---------------------------------------------------------------------------
+// ExtensionRunError
+// ---------------------------------------------------------------------------
 
-func (m *mockCommandRunner) Run(ctx context.Context, args exec.RunArgs) (exec.RunResult, error) {
-	m.capturedArgs = args
-	return exec.RunResult{}, nil
-}
-
-func (m *mockCommandRunner) RunList(ctx context.Context, commands []string, args exec.RunArgs) (exec.RunResult, error) {
-	return exec.RunResult{}, nil
-}
-
-func (m *mockCommandRunner) ToolInPath(name string) error {
-	return nil
-}
-
-// TestRunnerInvoke_GlobalFlagPropagation verifies that InvokeOptions fields
-// (Debug, NoPrompt, Cwd, Environment) are correctly propagated as AZD_*
-// environment variables to the extension child process.
-//
-// This tests the critical mapping path:
-//
-//	globalOptions.EnableDebugLogging → InvokeOptions.Debug    → AZD_DEBUG=true
-//	globalOptions.NoPrompt           → InvokeOptions.NoPrompt → AZD_NO_PROMPT=true
-//	globalOptions.Cwd                → InvokeOptions.Cwd      → AZD_CWD=<value>
-//	globalOptions.EnvironmentName    → InvokeOptions.Environment → AZD_ENVIRONMENT=<value>
-func TestRunnerInvoke_GlobalFlagPropagation(t *testing.T) {
-	// Create a temp file to act as the extension binary
-	tmpDir := t.TempDir()
-	extBin := filepath.Join(tmpDir, "test-ext")
-	require.NoError(t, os.WriteFile(extBin, []byte("#!/bin/sh\n"), 0o600)) //nolint:gosec
-
-	// Point the user config dir to our temp dir so extensionPath resolves
-	t.Setenv("AZD_CONFIG_DIR", tmpDir)
-
-	mock := &mockCommandRunner{}
-	runner := NewRunner(mock)
-
-	ext := &Extension{
-		Id:   "test-ext",
-		Path: "test-ext",
-	}
+func TestExtensionRunError_Error(t *testing.T) {
+	t.Parallel()
 
 	tests := []struct {
-		name       string
-		options    *InvokeOptions
-		expectEnvs map[string]string
-		absentEnvs []string
+		name        string
+		extensionId string
+		inner       error
+		want        string
 	}{
 		{
-			name: "all global flags set",
-			options: &InvokeOptions{
-				Debug:       true,
-				NoPrompt:    true,
-				Cwd:         "/custom/dir",
-				Environment: "dev",
-			},
-			expectEnvs: map[string]string{
-				"AZD_DEBUG":       "true",
-				"AZD_NO_PROMPT":   "true",
-				"AZD_CWD":         "/custom/dir",
-				"AZD_ENVIRONMENT": "dev",
-			},
+			name:        "BasicError",
+			extensionId: "my-ext",
+			inner:       errors.New("exit code 1"),
+			want:        "extension 'my-ext' run failed: exit code 1",
 		},
 		{
-			name: "only environment set",
-			options: &InvokeOptions{
-				Environment: "staging",
-			},
-			expectEnvs: map[string]string{
-				"AZD_ENVIRONMENT": "staging",
-			},
-			absentEnvs: []string{
-				"AZD_DEBUG",
-				"AZD_NO_PROMPT",
-				"AZD_CWD",
-			},
+			name:        "WrappedError",
+			extensionId: "azd.test",
+			inner:       errors.New("signal: killed"),
+			want:        "extension 'azd.test' run failed: signal: killed",
 		},
 		{
-			name:    "no global flags",
-			options: &InvokeOptions{},
-			absentEnvs: []string{
-				"AZD_DEBUG",
-				"AZD_NO_PROMPT",
-				"AZD_CWD",
-				"AZD_ENVIRONMENT",
-			},
+			name:        "EmptyExtensionId",
+			extensionId: "",
+			inner:       errors.New("boom"),
+			want:        "extension '' run failed: boom",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := runner.Invoke(context.Background(), ext, tt.options)
+			t.Parallel()
+
+			e := &ExtensionRunError{ExtensionId: tt.extensionId, Err: tt.inner}
+			require.Equal(t, tt.want, e.Error())
+		})
+	}
+}
+
+func TestExtensionRunError_Unwrap(t *testing.T) {
+	t.Parallel()
+
+	inner := errors.New("root cause")
+	e := &ExtensionRunError{ExtensionId: "test-ext", Err: inner}
+
+	require.ErrorIs(t, e, inner)
+	require.Equal(t, inner, e.Unwrap())
+}
+
+func TestExtensionRunError_NilInner(t *testing.T) {
+	t.Parallel()
+
+	e := &ExtensionRunError{ExtensionId: "ext", Err: nil}
+	require.Contains(t, e.Error(), "ext")
+	require.Nil(t, e.Unwrap())
+}
+
+// ---------------------------------------------------------------------------
+// NewRunner
+// ---------------------------------------------------------------------------
+
+func TestRunner_NewRunner(t *testing.T) {
+	t.Parallel()
+
+	cmdRunner := mockexec.NewMockCommandRunner()
+	runner := NewRunner(cmdRunner)
+	require.NotNil(t, runner)
+}
+
+// ---------------------------------------------------------------------------
+// Runner.Invoke
+// ---------------------------------------------------------------------------
+
+// setupConfigAndExtension creates a temp config dir, sets AZD_CONFIG_DIR, and
+// creates a fake extension binary at the expected path. Returns the config dir
+// and a minimal Extension value whose Path resolves correctly.
+//
+// Tests that call this helper must NOT use t.Parallel() because t.Setenv
+// mutates process-global state.
+func setupConfigAndExtension(t *testing.T) (string, *Extension) {
+	t.Helper()
+
+	configDir := t.TempDir()
+	t.Setenv("AZD_CONFIG_DIR", configDir)
+
+	extRelPath := filepath.Join("extensions", "test-ext", "bin", "test-ext")
+	extFullPath := filepath.Join(configDir, extRelPath)
+
+	require.NoError(t, os.MkdirAll(filepath.Dir(extFullPath), 0o755))
+	require.NoError(t, os.WriteFile(extFullPath, []byte("fake-binary"), 0o600))
+
+	ext := &Extension{
+		Id:   "test-ext",
+		Path: extRelPath,
+	}
+
+	return configDir, ext
+}
+
+func TestRunner_Invoke_Success(t *testing.T) {
+	configDir, ext := setupConfigAndExtension(t)
+	cmdRunner := mockexec.NewMockCommandRunner()
+	runner := NewRunner(cmdRunner)
+
+	expectedPath := filepath.Join(configDir, ext.Path)
+
+	cmdRunner.When(func(args exec.RunArgs, command string) bool {
+		return args.Cmd == expectedPath
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		return exec.RunResult{ExitCode: 0, Stdout: "ok"}, nil
+	})
+
+	result, err := runner.Invoke(t.Context(), ext, &InvokeOptions{
+		Args: []string{"hello", "world"},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 0, result.ExitCode)
+	require.Equal(t, "ok", result.Stdout)
+}
+
+func TestRunner_Invoke_MissingExtensionPath(t *testing.T) {
+	configDir := t.TempDir()
+	t.Setenv("AZD_CONFIG_DIR", configDir)
+
+	ext := &Extension{
+		Id:   "nonexistent",
+		Path: filepath.Join("extensions", "missing", "binary"),
+	}
+
+	cmdRunner := mockexec.NewMockCommandRunner()
+	runner := NewRunner(cmdRunner)
+
+	result, err := runner.Invoke(t.Context(), ext, &InvokeOptions{})
+	require.Nil(t, result)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "extension path")
+	require.Contains(t, err.Error(), "not found")
+}
+
+func TestRunner_Invoke_ArgsPassedThrough(t *testing.T) {
+	configDir, ext := setupConfigAndExtension(t)
+	cmdRunner := mockexec.NewMockCommandRunner()
+	runner := NewRunner(cmdRunner)
+
+	expectedPath := filepath.Join(configDir, ext.Path)
+	wantArgs := []string{"serve", "--port", "8080"}
+
+	var capturedArgs exec.RunArgs
+
+	cmdRunner.When(func(args exec.RunArgs, command string) bool {
+		return args.Cmd == expectedPath
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		capturedArgs = args
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	_, err := runner.Invoke(t.Context(), ext, &InvokeOptions{
+		Args: wantArgs,
+	})
+	require.NoError(t, err)
+	require.Equal(t, wantArgs, capturedArgs.Args)
+}
+
+func TestRunner_Invoke_EnvVariablePropagation(t *testing.T) {
+	tests := []struct {
+		name    string
+		options InvokeOptions
+		wantEnv []string
+	}{
+		{
+			name: "DebugTrue",
+			options: InvokeOptions{
+				Debug: true,
+			},
+			wantEnv: []string{"AZD_DEBUG=true"},
+		},
+		{
+			name: "NoPromptTrue",
+			options: InvokeOptions{
+				NoPrompt: true,
+			},
+			wantEnv: []string{"AZD_NO_PROMPT=true"},
+		},
+		{
+			name: "CwdSet",
+			options: InvokeOptions{
+				Cwd: "/my/project",
+			},
+			wantEnv: []string{"AZD_CWD=/my/project"},
+		},
+		{
+			name: "EnvironmentSet",
+			options: InvokeOptions{
+				Environment: "dev",
+			},
+			wantEnv: []string{"AZD_ENVIRONMENT=dev"},
+		},
+		{
+			name: "AllFlags",
+			options: InvokeOptions{
+				Debug:       true,
+				NoPrompt:    true,
+				Cwd:         "/work",
+				Environment: "staging",
+			},
+			wantEnv: []string{
+				"AZD_DEBUG=true",
+				"AZD_NO_PROMPT=true",
+				"AZD_CWD=/work",
+				"AZD_ENVIRONMENT=staging",
+			},
+		},
+		{
+			name:    "NoFlags",
+			options: InvokeOptions{},
+			wantEnv: nil,
+		},
+		{
+			name: "ExistingEnvPreserved",
+			options: InvokeOptions{
+				Env:   []string{"CUSTOM_VAR=hello"},
+				Debug: true,
+			},
+			wantEnv: []string{"CUSTOM_VAR=hello", "AZD_DEBUG=true"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Each subtest gets its own config dir via setupConfigAndExtension,
+			// which calls t.Setenv - cannot use t.Parallel().
+			_, ext := setupConfigAndExtension(t)
+			cmdRunner := mockexec.NewMockCommandRunner()
+			runner := NewRunner(cmdRunner)
+
+			var capturedArgs exec.RunArgs
+
+			cmdRunner.When(func(args exec.RunArgs, command string) bool {
+				return true
+			}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+				capturedArgs = args
+				return exec.RunResult{ExitCode: 0}, nil
+			})
+
+			// Make a copy so the table entry isn't mutated across iterations.
+			opts := tt.options
+			_, err := runner.Invoke(t.Context(), ext, &opts)
 			require.NoError(t, err)
 
-			envMap := make(map[string]string)
-			for _, e := range mock.capturedArgs.Env {
-				for i := 0; i < len(e); i++ {
-					if e[i] == '=' {
-						envMap[e[:i]] = e[i+1:]
-						break
-					}
+			if tt.wantEnv == nil {
+				require.Empty(t, capturedArgs.Env)
+			} else {
+				for _, expected := range tt.wantEnv {
+					require.True(t,
+						slices.Contains(capturedArgs.Env, expected),
+						"expected env var %q not found in %v", expected, capturedArgs.Env,
+					)
 				}
-			}
-
-			for key, want := range tt.expectEnvs {
-				got, ok := envMap[key]
-				assert.True(t, ok,
-					"expected env var %s to be set", key)
-				assert.Equal(t, want, got,
-					"env var %s", key)
-			}
-
-			for _, key := range tt.absentEnvs {
-				_, ok := envMap[key]
-				assert.False(t, ok,
-					"expected env var %s to NOT be set", key)
+				require.Len(t, capturedArgs.Env, len(tt.wantEnv))
 			}
 		})
 	}
+}
+
+func TestRunner_Invoke_InteractiveMode(t *testing.T) {
+	_, ext := setupConfigAndExtension(t)
+	cmdRunner := mockexec.NewMockCommandRunner()
+	runner := NewRunner(cmdRunner)
+
+	var capturedArgs exec.RunArgs
+
+	cmdRunner.When(func(args exec.RunArgs, command string) bool {
+		return true
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		capturedArgs = args
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	_, err := runner.Invoke(t.Context(), ext, &InvokeOptions{
+		Interactive: true,
+	})
+	require.NoError(t, err)
+	require.True(t, capturedArgs.Interactive)
+	// In interactive mode, custom streams should not be set on RunArgs
+	require.Nil(t, capturedArgs.StdIn)
+	require.Nil(t, capturedArgs.StdOut)
+}
+
+func TestRunner_Invoke_NonInteractiveWithStreams(t *testing.T) {
+	_, ext := setupConfigAndExtension(t)
+	cmdRunner := mockexec.NewMockCommandRunner()
+	runner := NewRunner(cmdRunner)
+
+	var capturedArgs exec.RunArgs
+
+	stdinBuf := strings.NewReader("input data")
+	stdoutBuf := &bytes.Buffer{}
+	stderrBuf := &bytes.Buffer{}
+
+	cmdRunner.When(func(args exec.RunArgs, command string) bool {
+		return true
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		capturedArgs = args
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	_, err := runner.Invoke(t.Context(), ext, &InvokeOptions{
+		Interactive: false,
+		StdIn:       stdinBuf,
+		StdOut:      stdoutBuf,
+		StdErr:      stderrBuf,
+	})
+	require.NoError(t, err)
+	require.False(t, capturedArgs.Interactive)
+	require.Equal(t, stdinBuf, capturedArgs.StdIn)
+	require.Equal(t, stdoutBuf, capturedArgs.StdOut)
+	// RunArgs.Stderr (note: lowercase 'e') maps to WithStdErr
+	require.Equal(t, stderrBuf, capturedArgs.Stderr)
+}
+
+func TestRunner_Invoke_NonInteractiveNilStreams(t *testing.T) {
+	_, ext := setupConfigAndExtension(t)
+	cmdRunner := mockexec.NewMockCommandRunner()
+	runner := NewRunner(cmdRunner)
+
+	var capturedArgs exec.RunArgs
+
+	cmdRunner.When(func(args exec.RunArgs, command string) bool {
+		return true
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		capturedArgs = args
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	_, err := runner.Invoke(t.Context(), ext, &InvokeOptions{
+		Interactive: false,
+		StdIn:       nil,
+		StdOut:      nil,
+		StdErr:      nil,
+	})
+	require.NoError(t, err)
+	require.False(t, capturedArgs.Interactive)
+	require.Nil(t, capturedArgs.StdIn)
+	require.Nil(t, capturedArgs.StdOut)
+	require.Nil(t, capturedArgs.Stderr)
+}
+
+func TestRunner_Invoke_CommandError_WrapsInExtensionRunError(t *testing.T) {
+	_, ext := setupConfigAndExtension(t)
+	cmdRunner := mockexec.NewMockCommandRunner()
+	runner := NewRunner(cmdRunner)
+
+	cmdError := errors.New("exit status 42")
+
+	cmdRunner.When(func(args exec.RunArgs, command string) bool {
+		return true
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		return exec.RunResult{ExitCode: 42, Stderr: "something broke"}, cmdError
+	})
+
+	result, err := runner.Invoke(t.Context(), ext, &InvokeOptions{})
+	require.Error(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 42, result.ExitCode)
+
+	// Verify we get an ExtensionRunError
+	var runErr *ExtensionRunError
+	require.ErrorAs(t, err, &runErr)
+	require.Equal(t, ext.Id, runErr.ExtensionId)
+	require.ErrorIs(t, runErr, cmdError)
+}
+
+func TestRunner_Invoke_ExtensionPathResolution(t *testing.T) {
+	configDir, ext := setupConfigAndExtension(t)
+	cmdRunner := mockexec.NewMockCommandRunner()
+	runner := NewRunner(cmdRunner)
+
+	expectedCmd := filepath.Join(configDir, ext.Path)
+	var capturedCmd string
+
+	cmdRunner.When(func(args exec.RunArgs, command string) bool {
+		return true
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		capturedCmd = args.Cmd
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	_, err := runner.Invoke(t.Context(), ext, &InvokeOptions{})
+	require.NoError(t, err)
+	require.Equal(t, expectedCmd, capturedCmd)
+}
+
+func TestRunner_Invoke_EnsureInit_Called(t *testing.T) {
+	_, ext := setupConfigAndExtension(t)
+	cmdRunner := mockexec.NewMockCommandRunner()
+	runner := NewRunner(cmdRunner)
+
+	// Extension starts uninitialized
+	require.False(t, ext.initialized)
+
+	cmdRunner.When(func(args exec.RunArgs, command string) bool {
+		return true
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	_, err := runner.Invoke(t.Context(), ext, &InvokeOptions{})
+	require.NoError(t, err)
+
+	// After Invoke, extension should be initialized
+	require.True(t, ext.initialized)
 }

@@ -38,15 +38,15 @@ func newSwapCommand(rootFlags rootFlagsDefinition) *cobra.Command {
 This command allows you to swap the content between two deployment slots,
 or between a slot and the production environment.
 
-Use @main to refer to the production slot.`,
+Use "production" to refer to the main app (production slot).`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSwap(cmd.Context(), flags, rootFlags)
 		},
 	}
 
 	cmd.Flags().StringVar(&flags.service, "service", "", "The name of the service to swap slots for.")
-	cmd.Flags().StringVar(&flags.src, "src", "", "The source slot name. Use @main for production.")
-	cmd.Flags().StringVar(&flags.dst, "dst", "", "The destination slot name. Use @main for production.")
+	cmd.Flags().StringVar(&flags.src, "src", "", "The source slot name. Use 'production' for main app.")
+	cmd.Flags().StringVar(&flags.dst, "dst", "", "The destination slot name. Use 'production' for main app.")
 
 	return cmd
 }
@@ -143,7 +143,12 @@ func runSwap(ctx context.Context, flags *swapFlags, rootFlags rootFlagsDefinitio
 		if err != nil {
 			return fmt.Errorf("selecting service: %w", err)
 		}
-		selectedService = appserviceServices[prompt.GetValue()]
+
+		idx := int(prompt.GetValue())
+		if idx < 0 || idx >= len(appserviceServices) {
+			return fmt.Errorf("invalid service selection index: %d", idx)
+		}
+		selectedService = appserviceServices[idx]
 	}
 
 	color.Cyan("Using service: %s", selectedService.Name)
@@ -201,11 +206,28 @@ func runSwap(ctx context.Context, flags *swapFlags, rootFlags rootFlagsDefinitio
 		return fmt.Errorf("swap operation requires a service with at least one deployment slot")
 	}
 
+	// Warn once if @main is used (deprecated in favor of "production")
+	if strings.EqualFold(flags.src, "@main") || strings.EqualFold(flags.dst, "@main") {
+		color.Yellow("WARNING: @main is deprecated. Use 'production' instead to refer to the main app.")
+	}
+
 	// Normalize src and dst flags
 	srcSlot := normalizeSlotName(flags.src)
 	dstSlot := normalizeSlotName(flags.dst)
 	srcProvided := flags.src != ""
 	dstProvided := flags.dst != ""
+
+	// Validate slot name format before any further processing.
+	if srcProvided {
+		if err := validateSlotName(srcSlot); err != nil {
+			return err
+		}
+	}
+	if dstProvided {
+		if err := validateSlotName(dstSlot); err != nil {
+			return err
+		}
+	}
 
 	// Build the list of all slot names (including production as empty string)
 	slotNames := []string{""} // Production is represented as empty string
@@ -235,7 +257,7 @@ func runSwap(ctx context.Context, flags *swapFlags, rootFlags rootFlagsDefinitio
 		if !srcProvided || !dstProvided {
 			// Prompt for source slot
 			if !srcProvided {
-				srcChoices := []*azdext.SelectChoice{{Value: "", Label: "@main (production)"}}
+				srcChoices := []*azdext.SelectChoice{{Value: "", Label: "production (main app)"}}
 				for _, slot := range slots {
 					srcChoices = append(srcChoices, &azdext.SelectChoice{Value: slot, Label: slot})
 				}
@@ -250,14 +272,18 @@ func runSwap(ctx context.Context, flags *swapFlags, rootFlags rootFlagsDefinitio
 					return fmt.Errorf("selecting source slot: %w", err)
 				}
 
-				srcSlot = srcChoices[prompt.GetValue()].Value
+				idx := int(prompt.GetValue())
+				if idx < 0 || idx >= len(srcChoices) {
+					return fmt.Errorf("invalid source slot selection index: %d", idx)
+				}
+				srcSlot = srcChoices[idx].Value
 			}
 
 			// Prompt for destination slot (excluding the selected source)
 			if !dstProvided {
 				dstChoices := []*azdext.SelectChoice{}
 				if srcSlot != "" {
-					dstChoices = append(dstChoices, &azdext.SelectChoice{Value: "", Label: "@main (production)"})
+					dstChoices = append(dstChoices, &azdext.SelectChoice{Value: "", Label: "production (main app)"})
 				}
 				for _, slot := range slots {
 					if slot != srcSlot {
@@ -275,7 +301,11 @@ func runSwap(ctx context.Context, flags *swapFlags, rootFlags rootFlagsDefinitio
 					return fmt.Errorf("selecting destination slot: %w", err)
 				}
 
-				dstSlot = dstChoices[prompt.GetValue()].Value
+				idx := int(prompt.GetValue())
+				if idx < 0 || idx >= len(dstChoices) {
+					return fmt.Errorf("invalid destination slot selection index: %d", idx)
+				}
+				dstSlot = dstChoices[idx].Value
 			}
 		}
 
@@ -296,11 +326,11 @@ func runSwap(ctx context.Context, flags *swapFlags, rootFlags rootFlagsDefinitio
 	// Get display names for confirmation
 	srcDisplay := srcSlot
 	if srcDisplay == "" {
-		srcDisplay = "@main (production)"
+		srcDisplay = "production (main app)"
 	}
 	dstDisplay := dstSlot
 	if dstDisplay == "" {
-		dstDisplay = "@main (production)"
+		dstDisplay = "production (main app)"
 	}
 
 	// Confirm the swap unless --no-prompt is set
@@ -333,11 +363,39 @@ func runSwap(ctx context.Context, flags *swapFlags, rootFlags rootFlagsDefinitio
 }
 
 func normalizeSlotName(slot string) string {
-	// Normalize "@main" to empty string (internal representation for main app/production slot)
+	// "production" and "@production" both map to the main app (empty string).
+	// This aligns with the Azure platform convention where "production" is the
+	// reserved name for the main app slot.
+	if strings.EqualFold(slot, "production") || strings.EqualFold(slot, "@production") {
+		return ""
+	}
+
+	// "@main" maps to the main app but is deprecated.
 	if strings.EqualFold(slot, "@main") {
 		return ""
 	}
 	return slot
+}
+
+// validateSlotName checks that a slot name is safe to use as an Azure App
+// Service deployment slot identifier. Empty string is allowed (represents
+// the production slot). Valid slot names contain only alphanumeric characters,
+// hyphens, and underscores (matching Azure's naming constraints).
+func validateSlotName(name string) error {
+	if name == "" {
+		return nil // empty = production slot
+	}
+	for i, r := range name {
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') || r == '-' || r == '_') {
+			return fmt.Errorf("invalid slot name %q: contains invalid character %q at position %d "+
+				"(only alphanumeric, hyphens, and underscores are allowed)", name, string(r), i)
+		}
+	}
+	if len(name) > 64 {
+		return fmt.Errorf("invalid slot name %q: exceeds 64-character limit", name)
+	}
+	return nil
 }
 
 func isValidSlotName(name string, availableSlots []string) bool {

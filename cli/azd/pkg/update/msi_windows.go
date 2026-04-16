@@ -36,7 +36,7 @@ func expectedPerUserInstallDir() string {
 //     This frees the original path AND keeps the running process alive.
 //  2. Copy the backup back to the original path (azd.exe).
 //     This is an unlocked copy that acts as a safety net: if the process is
-//     killed at any point after this (Ctrl+C, power loss, ect), the user
+//     killed at any point after this (Ctrl+C, power loss, etc.), the user
 //     still has a working azd.exe.
 //  3. The MSI installer later overwrites the unlocked safety copy with the new version.
 //
@@ -138,11 +138,12 @@ func isStandardMSIInstall() error {
 	// Normalize both paths for comparison (case-insensitive on Windows, clean slashes)
 	if !strings.EqualFold(filepath.Clean(actualDir), filepath.Clean(expectedDir)) {
 		return newUpdateError(CodeNonStandardInstall, fmt.Errorf(
-			"azd is installed in a non-standard location: %s\n"+
-				"azd update only supports the default per-user install.\n"+
-				"Please reinstall azd with the default configuration:\n"+
-				"  ALLUSERS=2  INSTALLDIR=\"%s\"\n"+
-				"See https://github.com/Azure/azure-dev/blob/main/cli/installer/README.md#msi-configuration",
+			"azd installation might be managed by an administrator (installed at: %s).\n"+
+				"Contact your administrator to update azd, or reinstall with a "+
+				"user-managed configuration:\n"+
+				"ALLUSERS=2 INSTALLDIR=\"%s\"\n"+
+				"See https://github.com/Azure/azure-dev/blob/main/cli/installer/README.md#msi-configuration\n"+
+				"To suppress update notifications, set AZD_SKIP_UPDATE_CHECK=1",
 			actualDir, expectedDir,
 		))
 	}
@@ -150,35 +151,40 @@ func isStandardMSIInstall() error {
 	return nil
 }
 
-// versionFlag returns the install script parameter value for the given channel.
-func versionFlag(channel Channel) string {
-	switch channel {
-	case ChannelDaily:
-		return "daily"
-	case ChannelStable:
-		return "stable"
-	default:
-		return "stable"
-	}
+func escapeForPSSingleQuote(s string) string {
+	return strings.ReplaceAll(s, "'", "''")
 }
 
-// buildInstallScriptArgs constructs the PowerShell arguments to download and run
-// install-azd.ps1 with the appropriate -Version flag.
-// The -SkipVerify flag is passed because Authenticode verification via
-// Get-AuthenticodeSignature failed.
-// The MSI is already downloaded over HTTPS from a Microsoft-controlled domain,
-// so the transport-level integrity is sufficient.
+// buildInstallScriptArgs constructs the PowerShell arguments to run install-azd.ps1.
+// For all channels, the script is downloaded to a temp directory.
+// For daily channel, an additional parameter (-InstallFolder) is passed
+// to the script. The install folder is escaped for PowerShell single-quoted strings
+// to handle paths containing apostrophes (e.g. O'Connor).
 // Returns the arguments to pass to the "powershell" command.
 func buildInstallScriptArgs(channel Channel) []string {
-	version := versionFlag(channel)
-	// Download the script to a temp file, then invoke it with the appropriate -Version flag.
-	// Using -ExecutionPolicy Bypass ensures the script runs even if the system policy is restrictive.
+	var scriptArgs string
+	switch channel {
+	case ChannelDaily:
+		scriptArgs = fmt.Sprintf(" -Version 'daily' -InstallFolder '%s'",
+			escapeForPSSingleQuote(expectedPerUserInstallDir()))
+	default:
+		scriptArgs = " -Version 'stable'"
+	}
+
+	// Reset PSModulePath to the Windows PowerShell 5.1 system modules directory.
+	// When launched via cmd.exe from a PowerShell 7 parent (e.g. VSCode or Windows Terminal),
+	// PS5.1 inherits PS7's PSModulePath which includes Core-edition modules that fail to load
+	// in the Desktop edition runtime, causing Get-AuthenticodeSignature to fail with
+	// "CouldNotAutoloadMatchingModule".
+	resetPSModulePath := "$env:PSModulePath = Join-Path $PSHOME 'Modules'; "
+
 	script := fmt.Sprintf(
-		`$script = Join-Path $env:TEMP 'install-azd.ps1'; `+
-			`Invoke-RestMethod '%s' -OutFile $script; `+
-			`& $script -Version '%s' -SkipVerify; `+
-			`Remove-Item $script -Force -ErrorAction SilentlyContinue`,
-		installScriptURL, version,
+		resetPSModulePath+
+			"$tmpScript = Join-Path $env:TEMP 'azd-install.ps1'; "+
+			"Invoke-RestMethod '%s' -OutFile $tmpScript; "+
+			"& $tmpScript%s; "+
+			"Remove-Item $tmpScript -Force -ErrorAction SilentlyContinue",
+		installScriptURL, scriptArgs,
 	)
 	return []string{"-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script}
 }

@@ -23,6 +23,7 @@ import (
 )
 
 func TestDeployFlagsTimeoutFlag(t *testing.T) {
+	t.Parallel()
 	cmd := NewDeployCmd()
 	NewDeployFlags(cmd, &internal.GlobalCommandOptions{})
 
@@ -49,6 +50,7 @@ func TestDeployFlagsTimeoutFlag(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			cmd := NewDeployCmd()
 			flags := NewDeployFlags(cmd, &internal.GlobalCommandOptions{})
 
@@ -59,6 +61,7 @@ func TestDeployFlagsTimeoutFlag(t *testing.T) {
 }
 
 func TestDeployActionResolveDeployTimeout(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name        string
 		flagTimeout *int
@@ -88,6 +91,7 @@ func TestDeployActionResolveDeployTimeout(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			action := newDeployTimeoutAction(t, tt.flagTimeout)
 
 			timeout, err := action.resolveDeployTimeout()
@@ -154,6 +158,7 @@ func TestDeployActionResolveDeployTimeoutEnvVar(t *testing.T) {
 }
 
 func TestDeployActionRunAppliesResolvedTimeout(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name        string
 		flagTimeout *int
@@ -172,6 +177,7 @@ func TestDeployActionRunAppliesResolvedTimeout(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			deployErr := mockDeployErr(t.Name())
 			action, serviceManager := newDeployActionForTimeoutTest(t, tt.flagTimeout, deployErr, false)
 			startTime := time.Now()
@@ -187,6 +193,7 @@ func TestDeployActionRunAppliesResolvedTimeout(t *testing.T) {
 }
 
 func TestDeployActionRunTimeoutWarningAndErrorMessage(t *testing.T) {
+	t.Parallel()
 	action, serviceManager := newDeployActionForTimeoutTest(t, new(1), nil, true)
 
 	_, err := action.Run(context.Background())
@@ -220,6 +227,7 @@ func TestDeployActionRunTimeoutWarningAndErrorMessage(t *testing.T) {
 }
 
 func TestDeployActionRunDoesNotTreatInternalDeadlineExceededAsDeployTimeout(t *testing.T) {
+	t.Parallel()
 	action, serviceManager := newDeployActionForTimeoutTest(t, new(30), context.DeadlineExceeded, false)
 
 	_, err := action.Run(context.Background())

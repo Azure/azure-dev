@@ -16,6 +16,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
@@ -50,7 +51,7 @@ func TestAuthToken(t *testing.T) {
 		func(ctx context.Context) (*environment.Environment, error) {
 			return nil, fmt.Errorf("not an azd env directory")
 		},
-		&mockSubscriptionTenantResolver{},
+		&mockSubscriptionResolver{},
 		cloud.AzurePublic(),
 	)
 
@@ -64,6 +65,35 @@ func TestAuthToken(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "ABC123", res.Token)
 	require.Equal(t, time.Unix(1669153000, 0).UTC(), time.Time(res.ExpiresOn))
+}
+
+func TestAuthToken_DefaultUnformattedOutput(t *testing.T) {
+	buf := &bytes.Buffer{}
+
+	token := authTokenFn(func(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
+		require.ElementsMatch(t, []string{managementScope}, options.Scopes)
+
+		return azcore.AccessToken{
+			Token:     "ABC123",
+			ExpiresOn: time.Unix(1669153000, 0).UTC(),
+		}, nil
+	})
+
+	a := newAuthTokenAction(
+		credentialProviderForTokenFn(token),
+		&output.NoneFormatter{},
+		buf,
+		&authTokenFlags{},
+		func(ctx context.Context) (*environment.Environment, error) {
+			return nil, fmt.Errorf("not an azd env directory")
+		},
+		&mockSubscriptionResolver{},
+		cloud.AzurePublic(),
+	)
+
+	_, err := a.Run(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, "ABC123\n", buf.String())
 }
 
 func TestAuthTokenSysEnv(t *testing.T) {
@@ -91,7 +121,7 @@ func TestAuthTokenSysEnv(t *testing.T) {
 		func(ctx context.Context) (*environment.Environment, error) {
 			return nil, fmt.Errorf("not an azd env directory")
 		},
-		&mockSubscriptionTenantResolver{
+		&mockSubscriptionResolver{
 			TenantId: expectedTenant,
 		},
 		cloud.AzurePublic(),
@@ -139,7 +169,7 @@ func TestAuthTokenSysEnvError(t *testing.T) {
 		func(ctx context.Context) (*environment.Environment, error) {
 			return nil, fmt.Errorf("not an azd env directory")
 		},
-		&mockSubscriptionTenantResolver{
+		&mockSubscriptionResolver{
 			Err: errors.New(expectedError),
 		},
 		cloud.AzurePublic(),
@@ -150,7 +180,7 @@ func TestAuthTokenSysEnvError(t *testing.T) {
 		t,
 		err,
 		fmt.Sprintf(
-			"resolving the Azure Directory from system environment (%s): %s",
+			"getting the subscription from system environment (%s): %s",
 			environment.SubscriptionIdEnvVarName,
 			expectedError),
 	)
@@ -183,7 +213,7 @@ func TestAuthTokenAzdEnvError(t *testing.T) {
 				environment.SubscriptionIdEnvVarName: expectedSubId,
 			}), nil
 		},
-		&mockSubscriptionTenantResolver{
+		&mockSubscriptionResolver{
 			Err: errors.New(expectedError),
 		},
 		cloud.AzurePublic(),
@@ -194,7 +224,7 @@ func TestAuthTokenAzdEnvError(t *testing.T) {
 		t,
 		err,
 		fmt.Sprintf(
-			"resolving the Azure Directory from azd environment (%s): %s",
+			"getting the subscription from azd environment (%s): %s",
 			expectedEnvName,
 			expectedError),
 	)
@@ -224,7 +254,7 @@ func TestAuthTokenAzdEnv(t *testing.T) {
 				environment.SubscriptionIdEnvVarName: "sub-id",
 			}), nil
 		},
-		&mockSubscriptionTenantResolver{
+		&mockSubscriptionResolver{
 			TenantId: expectedTenant,
 		},
 		cloud.AzurePublic(),
@@ -265,7 +295,7 @@ func TestAuthTokenAzdEnvWithEmpty(t *testing.T) {
 				environment.SubscriptionIdEnvVarName: "",
 			}), nil
 		},
-		&mockSubscriptionTenantResolver{
+		&mockSubscriptionResolver{
 			TenantId: expectedTenant,
 		},
 		cloud.AzurePublic(),
@@ -304,7 +334,7 @@ func TestAuthTokenCustomScopes(t *testing.T) {
 		func(ctx context.Context) (*environment.Environment, error) {
 			return nil, fmt.Errorf("not an azd env directory")
 		},
-		&mockSubscriptionTenantResolver{},
+		&mockSubscriptionResolver{},
 		cloud.AzurePublic(),
 	)
 
@@ -326,7 +356,7 @@ func TestAuthTokenFailure(t *testing.T) {
 		func(ctx context.Context) (*environment.Environment, error) {
 			return nil, fmt.Errorf("not an azd env directory")
 		},
-		&mockSubscriptionTenantResolver{},
+		&mockSubscriptionResolver{},
 		cloud.AzurePublic(),
 	)
 
@@ -351,16 +381,21 @@ func credentialProviderForTokenFn(
 
 }
 
-type mockSubscriptionTenantResolver struct {
+type mockSubscriptionResolver struct {
 	TenantId string
 	Err      error
 }
 
-func (m *mockSubscriptionTenantResolver) LookupTenant(
-	ctx context.Context, subscriptionId string) (tenantId string, err error) {
+func (m *mockSubscriptionResolver) GetSubscription(
+	ctx context.Context, subscriptionId string,
+) (*account.Subscription, error) {
 	if m.Err != nil {
-		return "", m.Err
+		return nil, m.Err
 	}
 
-	return m.TenantId, nil
+	return &account.Subscription{
+		Id:                 subscriptionId,
+		TenantId:           "resource-" + m.TenantId,
+		UserAccessTenantId: m.TenantId,
+	}, nil
 }

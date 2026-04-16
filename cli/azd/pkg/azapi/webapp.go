@@ -8,11 +8,16 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice/v2"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 )
 
@@ -153,7 +158,10 @@ func (cli *AzureClient) DeployAppServiceZip(
 	appName string,
 	deployZipFile io.ReadSeeker,
 	progressLog func(string),
-) (*string, error) {
+) (_ *string, err error) {
+	ctx, span := tracing.Start(ctx, events.DeployAppServiceZipEvent)
+	defer func() { span.EndWithStatus(err) }()
+
 	app, err := cli.appService(ctx, subscriptionId, resourceGroup, appName)
 	if err != nil {
 		return nil, err
@@ -169,18 +177,70 @@ func (cli *AzureClient) DeployAppServiceZip(
 		return nil, err
 	}
 
+	isLinux := isLinuxWebApp(app)
+	span.SetAttributes(fields.DeployLinuxKey.Key.Bool(isLinux))
+
 	// Deployment Status API only support linux web app for now
-	if isLinuxWebApp(app) {
-		if err := client.DeployTrackStatus(
-			ctx, deployZipFile, subscriptionId, resourceGroup, appName, progressLog); err != nil {
-			if !resumeDeployment(err, progressLog) {
-				return nil, err
+	if isLinux {
+		// Build failures can be caused by an SCM container restart triggered by ARM
+		// applying site config (app settings) shortly after the site is created.
+		// Due to eventual consistency in the Azure platform, the SCM container may
+		// still be restarting even after provisioning reports success. Retry the
+		// entire zip deploy when the build fails, giving the SCM time to stabilize.
+		const maxBuildRetries = 2
+		for attempt := range maxBuildRetries + 1 {
+			span.SetAttributes(fields.DeployAttemptKey.Key.Int(attempt + 1))
+
+			if attempt > 0 {
+				// Exponential backoff: 5s, 10s between retries to avoid hammering
+				// the SCM endpoint while it stabilizes.
+				retryDelay := time.Duration(attempt) * 5 * time.Second
+				select {
+				case <-time.After(retryDelay):
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
+
+				// Reset the zip file reader so the retry re-uploads the full content.
+				if _, seekErr := deployZipFile.Seek(0, io.SeekStart); seekErr != nil {
+					return nil, fmt.Errorf("resetting zip file for retry: %w", seekErr)
+				}
+				progressLog(fmt.Sprintf(
+					"Retrying deployment (attempt %d/%d) — the previous build may have been "+
+						"interrupted by an SCM container restart", attempt+1, maxBuildRetries+1))
+
+				// Wait for the SCM site to become ready before retrying.
+				if waitErr := waitForScmReady(ctx, client, 5*time.Second, progressLog); waitErr != nil {
+					// Only propagate if the caller's own context is cancelled (e.g. Ctrl+C).
+					// Do not propagate context errors from waitForScmReady's internal timeout.
+					if ctx.Err() != nil {
+						return nil, waitErr
+					}
+					log.Printf("SCM readiness check failed (non-fatal): %v", waitErr)
+				}
 			}
-		} else {
-			// Deployment is successful
-			statusText := "OK"
-			return new(statusText), nil
+
+			err = client.DeployTrackStatus(
+				ctx, deployZipFile, subscriptionId, resourceGroup, appName, progressLog)
+			if err != nil {
+				if isBuildFailure(err) && attempt < maxBuildRetries {
+					progressLog("Build process failed — will retry after SCM stabilizes")
+					continue
+				}
+				if !resumeDeployment(err, progressLog) {
+					return nil, err
+				}
+			} else {
+				// Deployment is successful
+				return new("OK"), nil
+			}
+			break
 		}
+	}
+
+	// Rewind the zip file before the fallback deploy — the tracked deploy consumed it.
+	if _, seekErr := deployZipFile.Seek(0, io.SeekStart); seekErr != nil {
+		return nil, fmt.Errorf("resetting zip file for fallback deploy: %w", seekErr)
 	}
 
 	response, err := client.Deploy(ctx, deployZipFile)
@@ -189,6 +249,87 @@ func (cli *AzureClient) DeployAppServiceZip(
 	}
 
 	return &response.StatusText, nil
+}
+
+// isBuildFailure returns true when the deployment error indicates a transient
+// Oryx/Kudu build failure caused by an SCM container restart — not a genuine
+// application build error. We detect the transient case by matching the exact
+// prefix "the build process failed" (which comes from the Kudu deployment API)
+// while excluding messages from the deployment status API that start with
+// "Deployment failed because the build process failed" (genuine build errors).
+//
+// NOTE: This heuristic is tied to exact Azure/Kudu error message wording.
+// If the upstream messages change, detection breaks silently and retries stop
+// occurring (falling back to the non-retry deploy path). The Azure SDK does
+// not surface structured error codes for these build failures.
+func isBuildFailure(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	// Genuine build failures from logWebAppDeploymentStatus start with
+	// "Deployment failed because the build process failed". Transient SCM
+	// failures use the shorter "the build process failed" without that prefix.
+	return strings.Contains(msg, "the build process failed") &&
+		!strings.Contains(msg, "Deployment failed because") &&
+		!strings.Contains(msg, "logs for more info")
+}
+
+// scmReadyChecker abstracts the IsScmReady probe so waitForScmReady can be
+// unit-tested with a mock. *azsdk.ZipDeployClient satisfies this interface.
+type scmReadyChecker interface {
+	IsScmReady(ctx context.Context) (bool, error)
+}
+
+// waitForScmReady pings the SCM /api/deployments endpoint until it responds
+// with 200, indicating the SCM container has finished restarting. This avoids
+// pushing a new zip deploy into a container that is about to restart.
+// pollInterval controls the polling frequency; callers pass the production value
+// (typically 5s) while tests can use shorter intervals to avoid wall-time delays.
+func waitForScmReady(
+	parentCtx context.Context, client scmReadyChecker, pollInterval time.Duration, progressLog func(string),
+) error {
+	const scmReadyTimeout = 90 * time.Second
+
+	ctx, cancel := context.WithTimeout(parentCtx, scmReadyTimeout)
+	defer cancel()
+
+	progressLog("Waiting for SCM site to become ready...")
+
+	// Probe once immediately to avoid a needless pollInterval delay when SCM is already ready.
+	ready, err := client.IsScmReady(ctx)
+	if err == nil && ready {
+		progressLog("SCM site is ready")
+		return nil
+	}
+
+	ticker := time.NewTicker(pollInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			// Distinguish parent cancellation (Ctrl+C) from local timeout expiry.
+			if parentCtx.Err() != nil {
+				return parentCtx.Err()
+			}
+			return fmt.Errorf("SCM site did not become ready within %v: %w", scmReadyTimeout, ctx.Err())
+		case <-ticker.C:
+		}
+
+		ready, err := client.IsScmReady(ctx)
+		if err != nil {
+			if ctx.Err() != nil {
+				return err
+			}
+			log.Printf("SCM readiness probe error: %v", err)
+			continue
+		}
+		if ready {
+			progressLog("SCM site is ready")
+			return nil
+		}
+	}
 }
 
 func (cli *AzureClient) createWebAppsClient(
@@ -224,30 +365,6 @@ func (cli *AzureClient) createZipDeployClient(
 	}
 
 	return client, nil
-}
-
-// HasAppServiceDeployments checks if the web app has at least one previous deployment.
-func (cli *AzureClient) HasAppServiceDeployments(
-	ctx context.Context,
-	subscriptionId string,
-	resourceGroup string,
-	appName string,
-) (bool, error) {
-	client, err := cli.createWebAppsClient(ctx, subscriptionId)
-	if err != nil {
-		return false, err
-	}
-
-	pager := client.NewListDeploymentsPager(resourceGroup, appName, nil)
-	if pager.More() {
-		page, err := pager.NextPage(ctx)
-		if err != nil {
-			return false, fmt.Errorf("listing webapp deployments: %w", err)
-		}
-		return len(page.Value) > 0, nil
-	}
-
-	return false, nil
 }
 
 // AppServiceSlot represents an App Service deployment slot.

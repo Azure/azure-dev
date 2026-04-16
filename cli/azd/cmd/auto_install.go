@@ -11,17 +11,22 @@ import (
 	"log"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
+	"time"
 
+	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/runcontext/agentdetect"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/update"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -384,14 +389,79 @@ func tryAutoInstallExtension(
 	return true, nil
 }
 
+// startUpdateCheck launches a background goroutine that checks for a newer
+// version of azd and returns a channel that will receive the result.
+// The caller should read from the returned channel after command execution.
+func startUpdateCheck(ctx context.Context) <-chan *update.VersionInfo {
+	ch := make(chan *update.VersionInfo, 1)
+
+	// Allow the user to skip the update check by setting AZD_SKIP_UPDATE_CHECK.
+	if value, has := os.LookupEnv("AZD_SKIP_UPDATE_CHECK"); has {
+		if setting, err := strconv.ParseBool(value); err == nil && setting {
+			log.Print("skipping update check since AZD_SKIP_UPDATE_CHECK is true")
+			close(ch)
+			return ch
+		} else if err != nil {
+			log.Printf("could not parse value for AZD_SKIP_UPDATE_CHECK as a boolean "+
+				"(it was: %s), proceeding with update check", value)
+		}
+	}
+
+	bgCtx, bgCancel := context.WithTimeout(ctx, 60*time.Second)
+
+	go func() {
+		defer close(ch)
+		defer bgCancel()
+
+		configMgr := config.NewUserConfigManager(config.NewFileConfigManager(config.NewManager()))
+		userConfig, err := configMgr.Load()
+		if err != nil {
+			userConfig = config.NewEmptyConfig()
+		}
+
+		cfg := update.LoadUpdateConfig(userConfig)
+
+		mgr := update.NewManager(nil, nil)
+		versionInfo, err := mgr.CheckForUpdate(bgCtx, cfg, false)
+		if err != nil {
+			log.Printf("failed to check for updates: %v, skipping update check", err)
+			return
+		}
+
+		ch <- versionInfo
+	}()
+
+	return ch
+}
+
+// ExecuteResult holds the outcome of ExecuteWithAutoInstall, including
+// metadata about the executed command that callers may need for post-execution
+// decisions (e.g., whether to wait for the background update check).
+type ExecuteResult struct {
+	// Err is the error returned by the command execution, if any.
+	Err error
+	// IsLightspeed is true when the executed command was marked as Lightspeed.
+	// Callers should skip non-essential post-execution work (update checks, banners)
+	// for lightspeed commands so the process can exit quickly.
+	IsLightspeed bool
+	// LatestVersion receives the result of the background update check.
+	// Nil when the update check was not started (lightspeed commands).
+	// When the check is skipped via AZD_SKIP_UPDATE_CHECK, the returned channel
+	// is closed without a value.
+	LatestVersion <-chan *update.VersionInfo
+}
+
 // ExecuteWithAutoInstall executes the command and handles auto-installation of extensions for unknown commands.
-func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContainer) error {
+func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContainer) *ExecuteResult {
+	result := &ExecuteResult{}
+
 	// Parse global flags BEFORE creating the command tree.
 	// This allows us to access flag values (like --no-prompt, --debug) early for auto-install logic.
 	// This also enables the global options to be set in the container for support during extension framework callbacks.
 	globalOpts := &internal.GlobalCommandOptions{}
 	if err := ParseGlobalFlags(os.Args[1:], globalOpts); err != nil {
-		return fmt.Errorf("failed to parse global flags: %w", err)
+		result.Err = fmt.Errorf("Warning: failed to parse global flags: %w", err)
+		return result
 	}
 
 	// Register GlobalCommandOptions as a singleton in the container BEFORE building the command tree.
@@ -410,29 +480,44 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 	// This allows us to determine if a subcommand was provided or not or if the command is unknown.
 	foundCmd, originalArgs, err := rootCmd.Find(os.Args[1:])
 	if err == nil {
+		// Detect lightspeed commands from the cobra annotation set by CobraBuilder.
+		result.IsLightspeed = foundCmd.Annotations[actions.AnnotationLightspeed] == "true"
+
+		// Start the background update check AFTER command identification.
+		// Lightspeed commands (e.g., auth token) skip the update check entirely
+		// so the process can exit as fast as possible — this prevents the
+		// AzureDeveloperCLICredential 10-second subprocess timeout from being
+		// hit when the update check is slow (laptop wake, DNS stalls, etc.).
+		if !result.IsLightspeed {
+			result.LatestVersion = startUpdateCheck(ctx)
+		}
+
 		// Check for partial namespace match (e.g., "ai" found but "ai.agent" not installed)
 		if installed := tryAutoInstallForPartialNamespace(
 			ctx, rootContainer, foundCmd, originalArgs,
 		); installed {
 			// Extension was installed, rebuild command tree and execute
 			rootCmd = NewRootCmd(false, nil, rootContainer)
-			return rootCmd.ExecuteContext(ctx)
+			result.Err = rootCmd.ExecuteContext(ctx)
+			return result
 		}
 
 		// Known command, proceed with normal execution
 		err := rootCmd.ExecuteContext(ctx)
+
+		// Only attempt service-host auto-install when the command failed with that specific error.
+		// Other command errors (for example, unsupported output formats) should be returned directly.
+		unsupportedErr, ok := errors.AsType[*project.UnsupportedServiceHostError](err)
+		if !ok {
+			result.Err = err
+			return result
+		}
 
 		if err := rootContainer.Resolve(&extensionManager); err != nil {
 			log.Panic("failed to resolve extension manager for auto-install:", err)
 		}
 		if err := rootContainer.Resolve(&console); err != nil {
 			log.Panic("failed to resolve console for unknown flags error:", err)
-		}
-
-		// auto-install for target service
-		unsupportedErr, ok := errors.AsType[*project.UnsupportedServiceHostError](err)
-		if !ok {
-			return err
 		}
 
 		requiredHost := unsupportedErr.Host
@@ -444,7 +529,7 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 			// Do not fail if we couldn't check for extensions - just proceed to normal execution
 			log.Println("Error: check for extensions. Skipping auto-install:", err)
 			console.Message(ctx, unsupportedErr.ErrorMessage)
-			return nil
+			return result
 		}
 		// Note: We don't need to filter or check which extensions are installed.
 		// If any of these extensions would be installed, the auto-install wouldn't have been triggered because
@@ -452,7 +537,7 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 		if len(availableExtensionsForHost) == 0 {
 			// did not find an extension with the capability, just print the original error message
 			console.Message(ctx, unsupportedErr.ErrorMessage)
-			return nil
+			return result
 		}
 
 		console.Message(ctx,
@@ -468,7 +553,8 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 			chosenExtension, err := promptForExtensionChoice(ctx, console, availableExtensionsForHost)
 			if err != nil {
 				console.Message(ctx, fmt.Sprintf("Error selecting extension: %v", err))
-				return err
+				result.Err = err
+				return result
 			}
 			extensionIdToInstall = *chosenExtension
 		}
@@ -477,17 +563,23 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 		if installErr != nil {
 			// Error needs to be printed here or else it will be hidden b/c the error printing is handled inside runtime
 			console.Message(ctx, installErr.Error())
-			return installErr
+			result.Err = installErr
+			return result
 		}
 
 		if installed {
 			// Extension was installed, build command tree and execute
 			rootCmd := NewRootCmd(false, nil, rootContainer)
-			return rootCmd.ExecuteContext(ctx)
+			result.Err = rootCmd.ExecuteContext(ctx)
+			return result
 		}
 
-		return err
+		result.Err = err
+		return result
 	}
+
+	// Unknown command path — always start the update check since these aren't lightspeed.
+	result.LatestVersion = startUpdateCheck(ctx)
 
 	// Extract flags that take values from the root command
 	flagsWithValues := extractFlagsWithValues(rootCmd)
@@ -500,7 +592,8 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 		// Check if this is a built-in command first (includes core commands and installed extensions)
 		if isBuiltInCommand(rootCmd, unknownCommand) {
 			// This is a built-in command, proceed with normal execution without checking for extensions
-			return rootCmd.ExecuteContext(ctx)
+			result.Err = rootCmd.ExecuteContext(ctx)
+			return result
 		}
 
 		if err := rootContainer.Resolve(&extensionManager); err != nil {
@@ -514,12 +607,14 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 		if unknownCommand == "login" {
 			console.Message(ctx, "Error: The 'azd login' command has been removed.")
 			console.Message(ctx, "Please use 'azd auth login' instead.")
-			return fmt.Errorf("unknown command 'login'")
+			result.Err = fmt.Errorf("unknown command 'login'")
+			return result
 		}
 		if unknownCommand == "logout" {
 			console.Message(ctx, "Error: The 'azd logout' command has been removed.")
 			console.Message(ctx, "Please use 'azd auth logout' instead.")
-			return fmt.Errorf("unknown command 'logout'")
+			result.Err = fmt.Errorf("unknown command 'logout'")
+			return result
 		}
 
 		// If unknown flags were found before a non-built-in command, return an error with helpful guidance
@@ -538,7 +633,8 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 				unknownCommand)
 
 			console.Message(ctx, errorMsg)
-			return fmt.Errorf("unknown flags before command: %s", flagsList)
+			result.Err = fmt.Errorf("unknown flags before command: %s", flagsList)
+			return result
 		}
 
 		// Get all remaining arguments starting from the command for namespace matching
@@ -561,7 +657,8 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 		if err != nil {
 			// Do not fail if we couldn't check for extensions - just proceed to normal execution
 			log.Println("Error: check for extensions. Skipping auto-install:", err)
-			return rootCmd.ExecuteContext(ctx)
+			result.Err = rootCmd.ExecuteContext(ctx)
+			return result
 		}
 
 		if len(extensionMatches) > 0 {
@@ -578,12 +675,14 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 			chosenExtension, err := promptForExtensionChoice(ctx, console, extensionMatches)
 			if err != nil {
 				console.Message(ctx, fmt.Sprintf("Error selecting extension: %v", err))
-				return rootCmd.ExecuteContext(ctx)
+				result.Err = rootCmd.ExecuteContext(ctx)
+				return result
 			}
 
 			if chosenExtension == nil {
 				// User cancelled selection, proceed to normal execution
-				return rootCmd.ExecuteContext(ctx)
+				result.Err = rootCmd.ExecuteContext(ctx)
+				return result
 			}
 
 			// Try to auto-install the chosen extension
@@ -591,23 +690,30 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 			if installErr != nil {
 				// Error needs to be printed here or else it will be hidden b/c the error printing is handled inside runtime
 				console.Message(ctx, installErr.Error())
-				return installErr
+				result.Err = installErr
+				return result
 			}
 
 			if installed {
 				// Extension was installed, build command tree and execute
 				rootCmd := NewRootCmd(false, nil, rootContainer)
-				return rootCmd.ExecuteContext(ctx)
+				result.Err = rootCmd.ExecuteContext(ctx)
+				return result
 			}
 		}
 	}
 
 	// Normal execution path - either no args, no matching extension, or user declined install
-	return rootCmd.ExecuteContext(ctx)
+	result.Err = rootCmd.ExecuteContext(ctx)
+	return result
 }
 
 // CreateGlobalFlagSet creates a new flag set with all global flags defined.
 // This is the single source of truth for global flag definitions.
+//
+// When adding or modifying flags here, also update the reserved flag registry
+// in internal/reserved_flags.go. The SDK package (pkg/azdext) derives its
+// reserved flag indexes from that registry automatically.
 func CreateGlobalFlagSet() *pflag.FlagSet {
 	globalFlags := pflag.NewFlagSet("global", pflag.ContinueOnError)
 
@@ -617,6 +723,12 @@ func CreateGlobalFlagSet() *pflag.FlagSet {
 		"no-prompt",
 		false,
 		"Accepts the default value instead of prompting, or it fails if there is no default.")
+	globalFlags.Bool(
+		"non-interactive",
+		false,
+		"Alias for --no-prompt.")
+	_ = globalFlags.MarkHidden("non-interactive")
+	globalFlags.StringP(internal.EnvironmentNameFlagName, "e", "", "The name of the environment to use.")
 
 	// The telemetry system is responsible for reading these flags value and using it to configure the telemetry
 	// system, but we still need to add it to our flag set so that when we parse the command line with Cobra we
@@ -639,18 +751,6 @@ func CreateGlobalFlagSet() *pflag.FlagSet {
 // GitHub Copilot CLI, Cursor, etc.) is detected as the caller, NoPrompt is automatically enabled.
 func ParseGlobalFlags(args []string, opts *internal.GlobalCommandOptions) error {
 	globalFlagSet := CreateGlobalFlagSet()
-
-	// Add the environment flag for early parsing. This is not in CreateGlobalFlagSet because
-	// it shouldn't be added to cobra's persistent flags (it's already registered per-command
-	// via EnvFlag.Bind). But we parse it here so GlobalCommandOptions.EnvironmentName is
-	// available for extension commands where DisableFlagParsing prevents cobra from parsing it.
-	// Guard against duplicate registration — pflag.StringP panics if the name already exists.
-	if globalFlagSet.Lookup(internal.EnvironmentNameFlagName) == nil {
-		globalFlagSet.StringP(
-			internal.EnvironmentNameFlagName, "e",
-			os.Getenv(environment.EnvNameEnvVarName), "",
-		)
-	}
 
 	// Set output to io.Discard to suppress any error messages from pflag
 	// Cobra will handle all user-facing output
@@ -678,26 +778,60 @@ func ParseGlobalFlags(args []string, opts *internal.GlobalCommandOptions) error 
 		opts.EnableDebugLogging = boolVal
 	}
 
-	if boolVal, err := globalFlagSet.GetBool("no-prompt"); err == nil {
-		opts.NoPrompt = boolVal
+	// --non-interactive is an alias for --no-prompt; either flag sets NoPrompt.
+	// When both are present, true wins (either flag opting in is sufficient).
+	noPromptVal, _ := globalFlagSet.GetBool("no-prompt")
+	nonInteractiveVal, _ := globalFlagSet.GetBool("non-interactive")
+	opts.NoPrompt = noPromptVal || nonInteractiveVal
+
+	// Check if either flag was explicitly provided on the command line
+	noPromptFlag := globalFlagSet.Lookup("no-prompt")
+	nonInteractiveFlag := globalFlagSet.Lookup("non-interactive")
+	flagExplicitlySet := (noPromptFlag != nil && noPromptFlag.Changed) ||
+		(nonInteractiveFlag != nil && nonInteractiveFlag.Changed)
+
+	// Environment variable: AZD_NON_INTERACTIVE enables no-prompt mode when set to a
+	// truthy value (parsed via strconv.ParseBool: "true", "1", "TRUE", etc.).
+	// Explicit flags take precedence over this env var.
+	// When this env var is present (regardless of value), it also suppresses
+	// agent auto-detection since the user has made an explicit choice.
+	envVarPresent := false
+	if !flagExplicitlySet {
+		if envVal, ok := os.LookupEnv("AZD_NON_INTERACTIVE"); ok {
+			envVarPresent = true
+			if parsed, err := strconv.ParseBool(envVal); err == nil && parsed {
+				opts.NoPrompt = true
+			} else if err != nil {
+				log.Printf(
+					"warning: AZD_NON_INTERACTIVE=%q is not a valid boolean"+
+						" (expected true/false/1/0), ignoring",
+					envVal,
+				)
+			}
+		}
 	}
 
-	if strVal, err := globalFlagSet.GetString(internal.EnvironmentNameFlagName); err == nil {
-		if strVal != "" && !environment.IsValidEnvironmentName(strVal) {
-			return fmt.Errorf(
-				"invalid environment name '%s': must match %s",
-				strVal,
-				environment.EnvironmentNameRegexp.String(),
+	// Parse -e/--environment with lenient validation.
+	// Only accept values that look like valid environment names (alphanumeric, hyphens, dots,
+	// underscores). Values that don't match (e.g., URLs from extensions reusing -e for
+	// --project-endpoint) are silently ignored — the extension still receives the raw args
+	// and can parse -e itself. This avoids breaking third-party extensions that use -e
+	// for their own flags while still fixing the environment leak for valid env names.
+	if strVal, err := globalFlagSet.GetString(internal.EnvironmentNameFlagName); err == nil && strVal != "" {
+		if environment.IsValidEnvironmentName(strVal) {
+			opts.EnvironmentName = strVal
+		} else if opts.EnableDebugLogging {
+			log.Printf(
+				"debug: ignoring invalid environment name %q from -e/--environment flag"+
+					" (does not match %s pattern)",
+				strVal, environment.EnvironmentNameRegexp,
 			)
 		}
-		opts.EnvironmentName = strVal
 	}
 
-	// Agent Detection: If --no-prompt was not explicitly set and we detect an AI coding agent
-	// as the caller, automatically enable no-prompt mode for non-interactive execution.
-	noPromptFlag := globalFlagSet.Lookup("no-prompt")
-	noPromptExplicitlySet := noPromptFlag != nil && noPromptFlag.Changed
-	if !noPromptExplicitlySet && agentdetect.IsRunningInAgent() {
+	// Agent Detection: If no explicit flag or env var was set and we detect an AI coding
+	// agent as the caller, automatically enable no-prompt mode for non-interactive execution.
+	if !flagExplicitlySet && !envVarPresent && agentdetect.IsRunningInAgent() {
 		opts.NoPrompt = true
 	}
 

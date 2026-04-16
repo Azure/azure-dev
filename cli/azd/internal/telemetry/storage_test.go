@@ -4,11 +4,13 @@
 package telemetry
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -26,6 +28,7 @@ const fileExtension = ".itm"
 var itemKeptTime = time.Duration(24) * time.Hour
 
 func TestNewStorageQueue(t *testing.T) {
+	t.Parallel()
 	folder := t.TempDir()
 
 	t.Run("CreatesFolder", func(t *testing.T) {
@@ -48,6 +51,7 @@ func TestNewStorageQueue(t *testing.T) {
 }
 
 func TestFifoQueue(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	messages := []string{
 		"Message1",
@@ -55,21 +59,26 @@ func TestFifoQueue(t *testing.T) {
 		"Message3",
 	}
 
+	mockClock := clock.NewMock()
 	storage := setupStorageQueue(t, dir)
+	storage.clock = mockClock
 
-	// Queue 3 items
-	// Milliseconds of sleep is added between each queue attempt to ensure that no item shares the same
-	// file modification time (which is used for ordering) on certain file systems that have granularity of milliseconds.
-	// This is only for determinism in assertions. In practice, the ordering of two messages delivered around the same
-	// millisecond intervals
-	// is not important.
+	// Queue items with distinct timestamps by advancing the mock clock.
+	// This ensures unique timestamp prefixes in filenames. After enqueuing,
+	// we set explicit modification times to guarantee deterministic FIFO
+	// ordering in Peek(), which orders by mtime.
 	enqueueAndAssert(storage, messages[0], t)
-	time.Sleep(time.Millisecond * 10)
+	mockClock.Add(time.Second)
 
 	enqueueAndAssert(storage, messages[1], t)
-	time.Sleep(time.Millisecond * 10)
+	mockClock.Add(time.Second)
 
 	enqueueAndAssert(storage, messages[2], t)
+
+	// Set monotonically increasing mtimes on item files to ensure
+	// deterministic ordering. Some file systems have coarse mtime
+	// granularity, so rapid sequential writes may share the same mtime.
+	ensureFifoModTimes(t, dir)
 
 	// Pop all items sequentially
 	item, err := storage.Peek()
@@ -97,6 +106,7 @@ func TestFifoQueue(t *testing.T) {
 }
 
 func TestEnqueueWithDelay(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	mockClock := clock.NewMock()
 	now := mockClock.Now()
@@ -130,6 +140,7 @@ func TestEnqueueWithDelay(t *testing.T) {
 }
 
 func TestEnqueueWithDelay_ZeroDelay(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	mockClock := clock.NewMock()
 
@@ -154,6 +165,7 @@ func enqueueAndAssert(storage *StorageQueue, message string, t *testing.T) {
 }
 
 func TestPeekWhenNoItemsExist(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	storage := setupStorageQueue(t, dir)
 
@@ -163,6 +175,7 @@ func TestPeekWhenNoItemsExist(t *testing.T) {
 }
 
 func TestRemoveInvalidItem(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	storage := setupStorageQueue(t, dir)
 
@@ -180,7 +193,36 @@ func setupStorageQueue(t *testing.T, tempDir string) *StorageQueue {
 	return storage
 }
 
+// ensureFifoModTimes sets monotonically increasing modification times on
+// item files in the directory, sorted by filename. This guarantees
+// deterministic FIFO ordering in Peek(), which uses file modification time.
+func ensureFifoModTimes(t *testing.T, dir string) {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+
+	// Filter to item files and sort by name (which includes the timestamp)
+	var itemFiles []os.DirEntry
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), fileExtension) {
+			itemFiles = append(itemFiles, e)
+		}
+	}
+	slices.SortFunc(itemFiles, func(a, b os.DirEntry) int {
+		return cmp.Compare(a.Name(), b.Name())
+	})
+
+	// Set distinct, monotonically increasing mtimes
+	baseTime := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	for i, f := range itemFiles {
+		mtime := baseTime.Add(time.Duration(i) * time.Second)
+		path := filepath.Join(dir, f.Name())
+		require.NoError(t, os.Chtimes(path, mtime, mtime))
+	}
+}
+
 func TestStorageQueue_Cleanup(t *testing.T) {
+	t.Parallel()
 	mockClock := clock.NewMock()
 	now := mockClock.Now()
 	nowTimeStr := now.UTC().Format(fsTimeLayout)

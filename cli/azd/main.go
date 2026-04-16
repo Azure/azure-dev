@@ -7,7 +7,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -16,7 +15,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
-	"syscall"
 	"time"
 
 	azcorelog "github.com/Azure/azure-sdk-for-go/sdk/azcore/log"
@@ -24,8 +22,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
-	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
-	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/installer"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
@@ -62,61 +58,7 @@ func main() {
 		ctx = tracing.ContextFromEnv(ctx)
 	}
 
-	// Auto-update: check for applied update marker and display banner
-	if !internal.IsNonProdVersion() {
-		if fromVersion, err := update.ReadAppliedMarker(); err == nil && fromVersion != "" {
-			update.RemoveAppliedMarker()
-			fmt.Fprintln(
-				os.Stderr,
-				output.WithSuccessFormat(
-					"azd has been auto-updated from %s to %s", fromVersion, internal.Version))
-		}
-	}
-
-	// Auto-update: apply staged binary if one exists (before anything else)
 	showedElevationWarning := false
-	if !internal.IsNonProdVersion() && update.HasStagedUpdate() {
-		applyConfigMgr := config.NewUserConfigManager(config.NewFileConfigManager(config.NewManager()))
-		applyCfg, cfgErr := applyConfigMgr.Load()
-		if cfgErr != nil {
-			applyCfg = config.NewEmptyConfig()
-		}
-
-		applyFeatures := alpha.NewFeaturesManagerWithConfig(applyCfg)
-		updateCfg := update.LoadUpdateConfig(applyCfg)
-
-		if applyFeatures.IsEnabled(update.FeatureUpdate) && updateCfg.AutoUpdate {
-			appliedPath, err := update.ApplyStagedUpdate()
-			if errors.Is(err, update.ErrNeedsElevation) {
-				versionStr := "a new version"
-				if cache, cacheErr := update.LoadCache(); cacheErr == nil && cache != nil && cache.Version != "" {
-					versionStr = "version " + cache.Version
-				}
-				fmt.Fprintln(
-					os.Stderr,
-					output.WithWarningFormat(
-						"WARNING: azd %s has been downloaded. "+
-							"Run 'azd update' to apply it.", versionStr))
-				showedElevationWarning = true
-			} else if err != nil {
-				log.Printf("failed to apply staged update: %v", err)
-			} else if appliedPath != "" {
-				log.Printf("applied staged update, re-executing: %s", appliedPath)
-				update.WriteAppliedMarker(internal.Version)
-				if err := reExec(appliedPath); err != nil {
-					log.Printf("re-exec failed: %v, continuing with current binary", err)
-				}
-				// reExec replaces the process; if we get here it failed
-			}
-		} else {
-			// Feature or auto-update was disabled after staging — clean up
-			update.CleanStagedUpdate()
-		}
-	}
-
-	latest := make(chan *update.VersionInfo)
-	bgCtx, bgCancel := context.WithTimeout(context.Background(), 60*time.Second)
-	go fetchLatestVersion(bgCtx, latest)
 
 	rootContainer := ioc.NewNestedContainer(nil)
 
@@ -126,8 +68,11 @@ func main() {
 	// Register the context for singleton resolution
 	ioc.RegisterInstance(rootContainer, ctx)
 
-	// Execute command with auto-installation support for extensions
-	cmdErr := cmd.ExecuteWithAutoInstall(ctx, rootContainer)
+	// Execute command with auto-installation support for extensions.
+	// The update check goroutine is started inside ExecuteWithAutoInstall,
+	// after the command is identified — lightspeed commands skip it entirely.
+	execResult := cmd.ExecuteWithAutoInstall(ctx, rootContainer)
+	cmdErr := execResult.Err
 
 	oneauth.Shutdown()
 
@@ -137,8 +82,15 @@ func main() {
 		}
 	}
 
-	versionInfo, ok := <-latest
-	bgCancel()
+	// Wait for the background update check if one was started.
+	// For lightspeed commands, LatestVersion is nil (no goroutine was started).
+	var versionInfo *update.VersionInfo
+	if execResult.LatestVersion != nil {
+		v, ok := <-execResult.LatestVersion
+		if ok {
+			versionInfo = v
+		}
+	}
 
 	// If we were able to fetch a latest version, check to see if we are up to date and
 	// print a warning if we are not. Non-production builds (dev builds via `go install` and
@@ -146,7 +98,7 @@ func main() {
 	//
 	// Don't write this message when JSON output is enabled, since in that case we use stderr to return structured
 	// information about command progress.
-	if !isJsonOutput() && ok && !suppressUpdateBanner() && !showedElevationWarning {
+	if versionInfo != nil && !isJsonOutput() && !suppressUpdateBanner() && !showedElevationWarning {
 		if internal.IsNonProdVersion() {
 			log.Printf("eliding update message for non-production build")
 		} else if versionInfo.HasUpdate {
@@ -163,15 +115,14 @@ func main() {
 					currentVersionStr, versionInfo.Channel, latestVersionStr))
 			fmt.Fprintln(os.Stderr)
 
-			// Show "azd update" hint only if the update feature is enabled,
+			// Show "azd update" hint if the user has update config set,
 			// otherwise show the original platform-specific upgrade instructions.
 			configMgr := config.NewUserConfigManager(config.NewFileConfigManager(config.NewManager()))
 			userCfg, cfgErr := configMgr.Load()
 			if cfgErr != nil {
 				userCfg = config.NewEmptyConfig()
 			}
-			featureManager := alpha.NewFeaturesManagerWithConfig(userCfg)
-			if featureManager.IsEnabled(update.FeatureUpdate) {
+			if update.HasUpdateConfig(userCfg) {
 				fmt.Fprintln(
 					os.Stderr,
 					output.WithWarningFormat("To update to the latest version, run: azd update"))
@@ -201,56 +152,6 @@ func main() {
 	if cmdErr != nil {
 		os.Exit(1)
 	}
-}
-
-// fetchLatestVersion checks for a newer version of the CLI using the user's
-// configured channel and sends the result across the channel, which it then closes.
-// If the latest version can not be determined, the channel is closed without writing a value.
-func fetchLatestVersion(ctx context.Context, result chan<- *update.VersionInfo) {
-	defer close(result)
-
-	// Allow the user to skip the update check if they wish, by setting AZD_SKIP_UPDATE_CHECK to
-	// a truthy value.
-	if value, has := os.LookupEnv("AZD_SKIP_UPDATE_CHECK"); has {
-		if setting, err := strconv.ParseBool(value); err == nil && setting {
-			log.Print("skipping update check since AZD_SKIP_UPDATE_CHECK is true")
-			return
-		} else if err != nil {
-			log.Printf("could not parse value for AZD_SKIP_UPDATE_CHECK a boolean "+
-				"(it was: %s), proceeding with update check", value)
-		}
-	}
-
-	// Load user config to determine channel
-	configMgr := config.NewUserConfigManager(config.NewFileConfigManager(config.NewManager()))
-	userConfig, err := configMgr.Load()
-	if err != nil {
-		userConfig = config.NewEmptyConfig()
-	}
-
-	cfg := update.LoadUpdateConfig(userConfig)
-
-	mgr := update.NewManager(nil, nil)
-	versionInfo, err := mgr.CheckForUpdate(ctx, cfg, false)
-	if err != nil {
-		log.Printf("failed to check for updates: %v, skipping update check", err)
-		return
-	}
-
-	// Auto-update: if enabled and an update is available, stage the new binary in the background.
-	// Skip in CI environments and package manager installs.
-	if cfg.AutoUpdate && versionInfo.HasUpdate && !update.IsPackageManagerInstall() &&
-		!resource.IsRunningOnCI() {
-		featureManager := alpha.NewFeaturesManagerWithConfig(userConfig)
-		if featureManager.IsEnabled(update.FeatureUpdate) {
-			log.Printf("auto-update: staging update to %s", versionInfo.Version)
-			if stageErr := mgr.StageUpdate(ctx, cfg); stageErr != nil {
-				log.Printf("auto-update: staging failed: %v", stageErr)
-			}
-		}
-	}
-
-	result <- versionInfo
 }
 
 // isDebugEnabled checks to see if `--debug` was passed with a truthy
@@ -396,7 +297,7 @@ func platformUpgradeText() string {
 	} else if runtime.GOOS == "darwin" {
 		switch installedBy {
 		case installer.InstallTypeBrew:
-			return "run:\nbrew uninstall azd && brew install azure/azd/azd"
+			return "run:\nbrew uninstall azd && brew install --cask azure/azd/azd"
 		case installer.InstallTypeSh:
 			//nolint:lll
 			return "run:\ncurl -fsSL https://aka.ms/install-azd.sh | bash\n\nIf the install script was run with custom parameters, ensure that the same parameters are used for the upgrade. For advanced install instructions, see: https://aka.ms/azd/upgrade/mac"
@@ -406,34 +307,6 @@ func platformUpgradeText() string {
 	}
 
 	return "visit https://aka.ms/azd/upgrade"
-}
-
-// reExec replaces the current process with the binary at the given path,
-// passing the same arguments. On Unix, this uses syscall.Exec to replace
-// the process in-place. On Windows, it spawns a new process and exits.
-func reExec(binaryPath string) error {
-	args := os.Args
-	args[0] = binaryPath
-
-	if runtime.GOOS == "windows" {
-		// Windows doesn't support exec-style process replacement.
-		// Spawn the new binary and exit.
-		// #nosec G204 -- binaryPath is the staged azd binary we just verified
-		cmd := exec.Command(binaryPath, args[1:]...) //nolint:gosec
-		cmd.Stdin = os.Stdin
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			var exitErr *exec.ExitError
-			if errors.As(err, &exitErr) {
-				os.Exit(exitErr.ExitCode())
-			}
-			return err
-		}
-		os.Exit(0)
-	}
-
-	return syscall.Exec(binaryPath, args, os.Environ()) //nolint:gosec
 }
 
 func startBackgroundUploadProcess() error {

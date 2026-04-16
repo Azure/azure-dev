@@ -21,12 +21,22 @@ Table of Contents
     - [Service Target Service](#service-target-service)
     - [Compose Service](#compose-service)
     - [Workflow Service](#workflow-service)
+    - [Copilot Service](#copilot-service)
+
+### Related Guides
+
+| Guide | Description |
+|-------|-------------|
+| [Extension SDK Reference](./extension-sdk-reference.md) | Complete API reference for `azdext` SDK helpers (command scaffolding, MCP builder, security policy, service-target base). |
+| [Extension Migration Guide](./extension-migration-guide.md) | Before/after cookbook for migrating from pre-#6856 patterns to SDK helpers. |
+| [Extension End-to-End Walkthrough](./extension-e2e-walkthrough.md) | Build a complete extension from scratch with root command, MCP server, lifecycle events, and security. |
+| [Extension Framework Services](./extension-framework-services.md) | Custom language/framework support via `FrameworkServiceProvider`. |
+| [Extension Style Guide](./extensions-style-guide.md) | Design guidelines for command integration, flags, and discoverability. |
 
 ## Getting Started
 
-`azd` extensions are currently an alpha feature within `azd`.
+`azd` extensions are currently a beta feature (Public Preview) within `azd`.
 
-- Initially official extensions will start shipping at //BUILD 2025.
 - Official extensions must be developed in a fork of the [azure/azure-dev](https://github.com/azure/azure-dev) github repo.
 - Extension binaries are shipped as Github releases to the same repo through our official pipelines.
 
@@ -474,17 +484,19 @@ The build process automatically creates binaries for multiple platforms and arch
 
 `azd` uses OpenTelemetry and W3C Trace Context for distributed tracing. `azd` sets `TRACEPARENT` in the environment when it launches the extension process.
 
-Use `azdext.NewContext()` to hydrate the root context with trace context:
+The recommended approach is to use `azdext.Run`, which automatically creates a trace-aware context, injects the access token, reports structured errors, and handles `os.Exit`:
 
 ```go
 func main() {
-  ctx := azdext.NewContext()
-  rootCmd := cmd.NewRootCommand()
-  if err := rootCmd.ExecuteContext(ctx); err != nil {
-    // Handle error
-  }
+  azdext.Run(cmd.NewRootCommand())
 }
 ```
+
+For lifecycle-listener extensions, `azdext.NewListenCommand` sets up trace context and access token automatically within its handler.
+
+> **Note:** `azdext.NewContext()` is deprecated. Use `azdext.Run` for custom-command extensions
+> or `azdext.NewListenCommand`/`azdext.NewExtensionRootCommand` for lifecycle listeners.
+> `NewContext` remains available for backward compatibility but new extensions should not use it.
 
 To correlate Azure SDK calls with the parent trace, add the correlation policy to your client options:
 
@@ -759,7 +771,7 @@ Common issues you might encounter when developing and publishing extensions:
 
 ### Capabilities
 
-#### Current Capabilities (October 2025)
+#### Current Capabilities
 
 The following lists the current capabilities available to `azd` extensions:
 
@@ -1087,17 +1099,26 @@ examples:
 The following is an example of an [extension manifest](../extensions/microsoft.azd.demo/extension.yaml).
 
 ```yaml
-# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/refs/heads/main/cli/azd/extensions/registry.schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/refs/heads/main/cli/azd/extensions/extension.schema.json
 
 id: microsoft.azd.demo
 namespace: demo
 displayName: Demo Extension
 description: This extension provides examples of the azd extension framework.
 usage: azd demo <command> [options]
-version: 0.1.0
+version: 0.6.0
+language: go
 capabilities:
   - custom-commands
   - lifecycle-events
+  - mcp-server
+  - service-target-provider
+  - framework-service-provider
+  - metadata
+providers:
+  - name: demo
+    type: service-target
+    description: Deploys application components to demo
 examples:
   - name: context
     description: Displays the current `azd` project & environment context.
@@ -1138,11 +1159,12 @@ func main() {
 }
 ```
 
-Alternatively, you can use `azdext.ReportError` directly for lower-level control:
+Alternatively, you can use `azdext.ReportError` directly for lower-level control
+(note: `NewContext` is deprecated — prefer `Run` for new extensions):
 
 ```go
 func main() {
-  ctx := azdext.NewContext()
+  ctx := azdext.NewContext()  // Deprecated: prefer azdext.Run
   ctx = azdext.WithAccessToken(ctx)
   rootCmd := cmd.NewRootCommand()
 
@@ -1358,6 +1380,7 @@ The following are a list of available gRPC services for extension developer to i
 - [Service Target Service](#service-target-service)
 - [Compose Service](#compose-service)
 - [Workflow Service](#workflow-service)
+- [Copilot Service](#copilot-service)
 
 ---
 
@@ -1956,10 +1979,14 @@ Returns available AI models for a subscription.
     - `locations` (repeated string)
     - `capabilities` (repeated string)
     - `formats` (repeated string)
-    - `statuses` (repeated string)
+    - `statuses` (repeated string, applied to version lifecycle status before aggregation)
     - `exclude_model_names` (repeated string)
 - **Response:** _ListModelsResponse_
   - `models` (repeated _AiModel_)
+
+`filter.statuses` matches version-level lifecycle status before aggregation. Returned models
+only contain versions (and locations) that matched. `AiModel.lifecycle_status` is deprecated
+and always empty; use `AiModelVersion.lifecycle_status` for lifecycle state.
 
 If `filter.locations` is empty, models are listed across all subscription locations.
 When `filter.locations` is provided, it limits which models are returned, but each returned model still contains canonical
@@ -2793,3 +2820,192 @@ func getSubscriptionDetails(ctx context.Context, azdClient *azdext.AzdClient, su
 - Handle multi-tenant scenarios where users access subscriptions through different tenants
 - Validate subscription access before performing operations
 - Set up proper authentication context for Azure SDK calls
+
+---
+
+### Copilot Service
+
+This service provides Copilot agent capabilities to extensions. Sessions are created lazily on the first `SendMessage` call and can be reused across multiple calls. Sessions run in headless/autopilot mode by default when invoked via gRPC, suppressing all console output.
+
+> See [copilot.proto](../grpc/proto/copilot.proto) for more details.
+
+#### Initialize
+
+Starts the Copilot client, verifies authentication, and resolves model/reasoning configuration. Call before `SendMessage` to warm up the client and validate settings. This method is idempotent.
+
+- **Request:** _InitializeCopilotRequest_
+  - Contains:
+    - `model` (string): Model to configure (empty = use existing/default)
+    - `reasoning_effort` (string): Reasoning effort level (`low`, `medium`, `high`)
+- **Response:** _InitializeCopilotResponse_
+  - Contains:
+    - `model` (string): Resolved model name
+    - `reasoning_effort` (string): Resolved reasoning effort level
+    - `is_first_run` (bool): True if this was the first configuration
+
+#### ListSessions
+
+Returns available Copilot sessions for a working directory.
+
+- **Request:** _ListCopilotSessionsRequest_
+  - Contains:
+    - `working_directory` (string): Directory to list sessions for (empty = current working directory)
+- **Response:** _ListCopilotSessionsResponse_
+  - Contains a list of **CopilotSessionMetadata**:
+    - `session_id` (string): Unique session identifier
+    - `modified_time` (string): Last modified time (RFC 3339 format)
+    - `summary` (string): Optional session summary
+
+#### SendMessage
+
+Sends a prompt to the Copilot agent. On the first call, a new session is created using the provided configuration. If `session_id` is set, that existing session is resumed instead. Subsequent calls with the returned `session_id` reuse the same session without re-bootstrapping.
+
+- **Request:** _SendCopilotMessageRequest_
+  - Contains:
+    - `prompt` (string): The prompt/message to send
+    - `session_id` (string, optional): Session to reuse or resume
+    - `model` (string, optional): Model override (first call or resume)
+    - `reasoning_effort` (string, optional): Reasoning effort (`low`, `medium`, `high`)
+    - `system_message` (string, optional): Custom system message appended to the default
+    - `mode` (string, optional): Agent mode (`autopilot`, `interactive`, `plan`)
+    - `debug` (bool, optional): Enable debug logging
+    - `headless` (bool, optional): Set to true for headless mode (suppresses console output)
+- **Response:** _SendCopilotMessageResponse_
+  - Contains:
+    - `session_id` (string): Session ID — use in subsequent calls to reuse the session
+    - `usage` (_CopilotUsageMetrics_): Usage metrics for this message turn
+    - `file_changes` (repeated _CopilotFileChange_): Files changed during this message turn
+
+#### GetUsageMetrics
+
+Returns cumulative usage metrics cached for a session.
+
+- **Request:** _GetCopilotUsageMetricsRequest_
+  - Contains:
+    - `session_id` (string): Session to get metrics for
+- **Response:** _GetCopilotUsageMetricsResponse_
+  - Contains **CopilotUsageMetrics**:
+    - `model` (string): Model used
+    - `input_tokens` (double): Total input tokens consumed
+    - `output_tokens` (double): Total output tokens consumed
+    - `total_tokens` (double): Sum of input + output tokens
+    - `billing_rate` (double): Per-request cost multiplier (e.g., 1.0x, 2.0x)
+    - `premium_requests` (double): Number of premium requests used
+    - `duration_ms` (double): Total API duration in milliseconds
+
+#### GetFileChanges
+
+Returns files created, modified, or deleted during a session.
+
+- **Request:** _GetCopilotFileChangesRequest_
+  - Contains:
+    - `session_id` (string): Session to get file changes for
+- **Response:** _GetCopilotFileChangesResponse_
+  - Contains a list of **CopilotFileChange**:
+    - `path` (string): File path (relative to working directory)
+    - `change_type` (_CopilotFileChangeType_): One of `CREATED`, `MODIFIED`, `DELETED`
+
+#### StopSession
+
+Stops and cleans up a Copilot agent session.
+
+- **Request:** _StopCopilotSessionRequest_
+  - Contains:
+    - `session_id` (string): Session to stop
+- **Response:** _EmptyResponse_
+
+#### GetMessages
+
+Returns the session event log from the Copilot SDK. Each event contains a type, timestamp, and dynamic data as a `google.protobuf.Struct`.
+
+- **Request:** _GetCopilotMessagesRequest_
+  - Contains:
+    - `session_id` (string): Session to get messages for
+- **Response:** _GetCopilotMessagesResponse_
+  - Contains a list of **CopilotSessionEvent**:
+    - `type` (string): Event type (e.g., `assistant.message`, `tool.execution_complete`)
+    - `timestamp` (string): ISO 8601 timestamp
+    - `data` (google.protobuf.Struct): Full event data as a dynamic struct
+
+**Example Usage (Go):**
+
+```go
+ctx := azdext.WithAccessToken(cmd.Context())
+azdClient, err := azdext.NewAzdClient()
+if err != nil {
+    return fmt.Errorf("failed to create azd client: %w", err)
+}
+defer azdClient.Close()
+
+copilot := azdClient.Copilot()
+
+// Optional: warm up the client and resolve configuration
+initResp, err := copilot.Initialize(ctx, &azdext.InitializeCopilotRequest{
+    Model:           "gpt-4o",
+    ReasoningEffort: "medium",
+})
+if err != nil {
+    return fmt.Errorf("failed to initialize copilot: %w", err)
+}
+fmt.Printf("Model: %s, Reasoning: %s\n", initResp.Model, initResp.ReasoningEffort)
+
+// Send the first message — creates a new session
+sendResp, err := copilot.SendMessage(ctx, &azdext.SendCopilotMessageRequest{
+    Prompt:          "Add a health check endpoint to the API",
+    Mode:            "autopilot",
+    Headless:        true,
+    SystemMessage:   "You are an expert Go developer.",
+})
+if err != nil {
+    return fmt.Errorf("failed to send message: %w", err)
+}
+
+// Capture the session ID for subsequent calls
+sessionID := sendResp.SessionId
+
+// Send a follow-up message in the same session
+followUp, err := copilot.SendMessage(ctx, &azdext.SendCopilotMessageRequest{
+    Prompt:    "Now add tests for the health check endpoint",
+    SessionId: sessionID,
+})
+if err != nil {
+    return fmt.Errorf("failed to send follow-up: %w", err)
+}
+fmt.Printf("Turn usage: %.0f tokens\n", followUp.Usage.TotalTokens)
+
+// Retrieve cumulative metrics
+metricsResp, err := copilot.GetUsageMetrics(ctx, &azdext.GetCopilotUsageMetricsRequest{
+    SessionId: sessionID,
+})
+if err != nil {
+    return fmt.Errorf("failed to get metrics: %w", err)
+}
+fmt.Printf("Total tokens: %.0f, Premium requests: %.0f\n",
+    metricsResp.Usage.TotalTokens, metricsResp.Usage.PremiumRequests)
+
+// Retrieve file changes
+changesResp, err := copilot.GetFileChanges(ctx, &azdext.GetCopilotFileChangesRequest{
+    SessionId: sessionID,
+})
+if err != nil {
+    return fmt.Errorf("failed to get file changes: %w", err)
+}
+for _, change := range changesResp.FileChanges {
+    fmt.Printf("  %s: %s\n", change.ChangeType, change.Path)
+}
+
+// Clean up the session
+_, err = copilot.StopSession(ctx, &azdext.StopCopilotSessionRequest{
+    SessionId: sessionID,
+})
+if err != nil {
+    return fmt.Errorf("failed to stop session: %w", err)
+}
+```
+
+**Use Cases:**
+
+- Automate code generation or refactoring tasks within an extension workflow
+- Build interactive AI-assisted tools powered by Copilot
+- Track token consumption and file modifications during AI-driven operations
+- Resume previous sessions for iterative, multi-step tasks

@@ -12,13 +12,12 @@ import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/agents/registry_api"
-	"azureaiagent/internal/pkg/azure"
 	"azureaiagent/internal/project"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
+	"github.com/fatih/color"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -27,7 +26,7 @@ import (
 
 var defaultSkuPriority = []string{"GlobalStandard", "DataZoneStandard", "Standard"}
 
-func (a *InitAction) loadAiCatalog(ctx context.Context) error {
+func (a *modelSelector) loadAiCatalog(ctx context.Context) error {
 	if a.modelCatalog != nil {
 		return nil
 	}
@@ -43,6 +42,7 @@ func (a *InitAction) loadAiCatalog(ctx context.Context) error {
 
 	modelResp, err := a.azdClient.Ai().ListModels(ctx, &azdext.ListModelsRequest{
 		AzureContext: a.azureContext,
+		Filter:       agentModelFilter(nil, nil),
 	})
 	stopErr := spinner.Stop(ctx)
 	if err != nil {
@@ -69,14 +69,20 @@ func mapModelsByName(models []*azdext.AiModel) map[string]*azdext.AiModel {
 	return modelMap
 }
 
-func (a *InitAction) updateEnvLocation(ctx context.Context, selectedLocation string) error {
-	envResponse, err := a.azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-	if err != nil {
-		return fmt.Errorf("failed to get current azd environment: %w", err)
+func (a *modelSelector) updateEnvLocation(ctx context.Context, selectedLocation string) error {
+	envName := ""
+	if a.environment != nil {
+		envName = a.environment.Name
+	} else {
+		envResponse, err := a.azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+		if err != nil {
+			return fmt.Errorf("failed to get current azd environment: %w", err)
+		}
+		envName = envResponse.Environment.Name
 	}
 
-	_, err = a.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
-		EnvName: envResponse.Environment.Name,
+	_, err := a.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+		EnvName: envName,
 		Key:     "AZURE_LOCATION",
 		Value:   selectedLocation,
 	})
@@ -162,33 +168,16 @@ func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_
 		resourceGroup := parts[4]
 		accountName := parts[8]
 
-		deploymentsClient, err := armcognitiveservices.NewDeploymentsClient(subscription, a.credential, azure.NewArmClientOptions())
+		allDeployments, err := listProjectDeployments(ctx, a.credential, subscription, resourceGroup, accountName)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create deployments client: %w", err)
+			return nil, fmt.Errorf("failed to list deployments: %w", err)
 		}
 
-		pager := deploymentsClient.NewListPager(resourceGroup, accountName, nil)
-		var deployments []*armcognitiveservices.Deployment
-		for pager.More() {
-			page, err := pager.NextPage(ctx)
-			if err != nil {
-				return nil, fmt.Errorf("failed to list deployments: %w", err)
-			}
-			deployments = append(deployments, page.Value...)
-		}
-
-		matchingDeployments := make(map[string]*armcognitiveservices.Deployment)
-		for _, deployment := range deployments {
-			if deployment.Name == nil ||
-				deployment.Properties == nil || deployment.Properties.Model == nil ||
-				deployment.Properties.Model.Name == nil || deployment.Properties.Model.Format == nil ||
-				deployment.Properties.Model.Version == nil ||
-				deployment.SKU == nil || deployment.SKU.Name == nil || deployment.SKU.Capacity == nil {
-				continue
-			}
-
-			if *deployment.Properties.Model.Name == model.Id {
-				matchingDeployments[*deployment.Name] = deployment
+		matchingDeployments := make(map[string]*FoundryDeploymentInfo)
+		for i := range allDeployments {
+			d := &allDeployments[i]
+			if d.ModelName == model.Id {
+				matchingDeployments[d.Name] = d
 			}
 		}
 
@@ -214,20 +203,91 @@ func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_
 						Name: selection,
 						Model: project.DeploymentModel{
 							Name:    model.Id,
-							Format:  *deployment.Properties.Model.Format,
-							Version: *deployment.Properties.Model.Version,
+							Format:  deployment.ModelFormat,
+							Version: deployment.Version,
 						},
 						Sku: project.DeploymentSku{
-							Name:     *deployment.SKU.Name,
-							Capacity: int(*deployment.SKU.Capacity),
+							Name:     deployment.SkuName,
+							Capacity: deployment.SkuCapacity,
 						},
 					}, nil
 				}
 			}
+		} else {
+			color.Yellow(
+				"No existing deployment for model '%s' specified in the selected agent manifest was found in your Foundry project.\n",
+				model.Id,
+			)
+
+			noMatchChoices := []*azdext.SelectChoice{
+				{
+					Label: fmt.Sprintf("Deploy a new '%s' model to the selected Foundry project", model.Id),
+					Value: "deploy_new",
+				},
+				{
+					Label: "Use a different model already deployed in this project",
+					Value: "use_different",
+				},
+			}
+
+			defaultIdx := int32(0)
+			noMatchResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+				Options: &azdext.SelectOptions{
+					Message:       "How would you like to proceed?",
+					Choices:       noMatchChoices,
+					SelectedIndex: &defaultIdx,
+				},
+			})
+			if err != nil {
+				if exterrors.IsCancellation(err) {
+					return nil, exterrors.Cancelled("model deployment selection was cancelled")
+				}
+				return nil, fmt.Errorf("failed to prompt for no-match choice: %w", err)
+			}
+
+			if noMatchChoices[*noMatchResp.Value].Value == "use_different" {
+				if len(allDeployments) == 0 {
+					fmt.Println("No deployments found in this project. A new deployment will be configured.")
+				} else {
+					// Let user pick from all deployments in the project
+					deploymentOptions := make([]string, 0, len(allDeployments))
+					deploymentMap := make(map[string]*FoundryDeploymentInfo)
+					for i := range allDeployments {
+						d := &allDeployments[i]
+						label := fmt.Sprintf("%s (%s)", d.Name, d.ModelName)
+						deploymentOptions = append(deploymentOptions, label)
+						deploymentMap[label] = d
+					}
+
+					slices.Sort(deploymentOptions)
+
+					selection, err := a.selectFromList(ctx, "deployment", deploymentOptions, deploymentOptions[0])
+					if err != nil {
+						return nil, fmt.Errorf("failed to select deployment: %w", err)
+					}
+
+					if deployment, exists := deploymentMap[selection]; exists {
+						fmt.Printf("Using existing model deployment: %s\n", deployment.Name)
+						return &project.Deployment{
+							Name: deployment.Name,
+							Model: project.DeploymentModel{
+								Name:    deployment.ModelName,
+								Format:  deployment.ModelFormat,
+								Version: deployment.Version,
+							},
+							Sku: project.DeploymentSku{
+								Name:     deployment.SkuName,
+								Capacity: deployment.SkuCapacity,
+							},
+						}, nil
+					}
+				}
+			}
+			// "deploy_new" or no deployments available — fall through to deploy-new logic below
 		}
 	}
 
-	modelDetails, err := a.getModelDetails(ctx, model.Id)
+	modelDetails, err := a.getModelSelector().getModelDetails(ctx, model.Id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get model details: %w", err)
 	}
@@ -261,7 +321,7 @@ func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_
 	}, nil
 }
 
-func (a *InitAction) getModelDetails(ctx context.Context, modelName string) (*azdext.AiModelDeployment, error) {
+func (a *modelSelector) getModelDetails(ctx context.Context, modelName string) (*azdext.AiModelDeployment, error) {
 	if err := a.loadAiCatalog(ctx); err != nil {
 		return nil, err
 	}
@@ -299,7 +359,7 @@ func (a *InitAction) getModelDetails(ctx context.Context, modelName string) (*az
 
 	if a.flags.NoPrompt {
 		fmt.Println("No prompt mode enabled, automatically selecting a model deployment based on availability and quota...")
-		return a.resolveModelDeploymentNoPrompt(ctx, model, currentLocation)
+		return resolveModelDeployment(ctx, a.azdClient, a.azureContext, model, currentLocation)
 	}
 
 	for {
@@ -342,83 +402,6 @@ func (a *InitAction) getModelDetails(ctx context.Context, modelName string) (*az
 		model = resolvedModel
 		currentLocation = resolvedLocation
 	}
-}
-
-func (a *InitAction) resolveModelDeploymentNoPrompt(
-	ctx context.Context,
-	model *azdext.AiModel,
-	location string,
-) (*azdext.AiModelDeployment, error) {
-	resolveResp, err := a.azdClient.Ai().ResolveModelDeployments(ctx, &azdext.ResolveModelDeploymentsRequest{
-		AzureContext: a.azureContext,
-		ModelName:    model.Name,
-		Options: &azdext.AiModelDeploymentOptions{
-			Locations: []string{location},
-		},
-		Quota: &azdext.QuotaCheckOptions{
-			MinRemainingCapacity: 1,
-		},
-	})
-	if err != nil {
-		return nil, exterrors.FromAiService(err, exterrors.CodeModelResolutionFailed)
-	}
-
-	if len(resolveResp.Deployments) == 0 {
-		return nil, exterrors.Dependency(
-			exterrors.CodeModelResolutionFailed,
-			fmt.Sprintf("no deployment candidates found for model '%s' in location '%s'", model.Name, location),
-			"",
-		)
-	}
-
-	orderedCandidates := slices.Clone(resolveResp.Deployments)
-	defaultVersions := make(map[string]struct{}, len(model.Versions))
-	for _, version := range model.Versions {
-		if version.IsDefault {
-			defaultVersions[version.Version] = struct{}{}
-		}
-	}
-
-	slices.SortFunc(orderedCandidates, func(a, b *azdext.AiModelDeployment) int {
-		_, aDefault := defaultVersions[a.Version]
-		_, bDefault := defaultVersions[b.Version]
-		if aDefault != bDefault {
-			if aDefault {
-				return -1
-			}
-			return 1
-		}
-
-		aSkuPriority := skuPriority(a.Sku.Name)
-		bSkuPriority := skuPriority(b.Sku.Name)
-		if aSkuPriority != bSkuPriority {
-			if aSkuPriority < bSkuPriority {
-				return -1
-			}
-			return 1
-		}
-
-		if cmp := strings.Compare(a.Version, b.Version); cmp != 0 {
-			return cmp
-		}
-
-		if cmp := strings.Compare(a.Sku.Name, b.Sku.Name); cmp != 0 {
-			return cmp
-		}
-
-		return strings.Compare(a.Sku.UsageName, b.Sku.UsageName)
-	})
-
-	for _, candidate := range orderedCandidates {
-		capacity, ok := resolveNoPromptCapacity(candidate)
-		if !ok {
-			continue
-		}
-
-		return cloneDeploymentWithCapacity(candidate, capacity), nil
-	}
-
-	return nil, fmt.Errorf("no deployment candidates found for model '%s' with a valid non-interactive capacity", model.Name)
 }
 
 func resolveNoPromptCapacity(candidate *azdext.AiModelDeployment) (int32, bool) {
@@ -517,7 +500,7 @@ const (
 		"2) Create a new Foundry project after changing regions."
 )
 
-func (a *InitAction) promptForAlternativeModel(
+func (a *modelSelector) promptForAlternativeModel(
 	ctx context.Context,
 	originalModelName string,
 ) (*azdext.AiModel, error) {
@@ -563,15 +546,14 @@ func (a *InitAction) promptForAlternativeModel(
 
 	promptReq := &azdext.PromptAiModelRequest{
 		AzureContext: a.azureContext,
+		Filter:       agentModelFilter(nil, nil),
 		SelectOptions: &azdext.SelectOptions{
 			Message: "Select a model",
 		},
 	}
 
 	if regionChoices[*regionResp.Value].Value == "region" {
-		promptReq.Filter = &azdext.AiModelFilterOptions{
-			Locations: []string{a.azureContext.Scope.Location},
-		}
+		promptReq.Filter = agentModelFilter([]string{a.azureContext.Scope.Location}, nil)
 	}
 
 	modelResp, err := a.azdClient.Prompt().PromptAiModel(ctx, promptReq)
@@ -582,7 +564,7 @@ func (a *InitAction) promptForAlternativeModel(
 	return modelResp.Model, nil
 }
 
-func (a *InitAction) promptForModelLocationMismatch(
+func (a *modelSelector) promptForModelLocationMismatch(
 	ctx context.Context,
 	model *azdext.AiModel,
 	currentLocation string,
@@ -643,7 +625,7 @@ func (a *InitAction) promptForModelLocationMismatch(
 				&azdext.PromptAiModelLocationWithQuotaRequest{
 					AzureContext:     a.azureContext,
 					ModelName:        currentModel.Name,
-					AllowedLocations: currentModel.Locations,
+					AllowedLocations: supportedModelLocations(currentModel.Locations),
 					Quota: &azdext.QuotaCheckOptions{
 						MinRemainingCapacity: 1,
 					},
@@ -672,9 +654,7 @@ func (a *InitAction) promptForModelLocationMismatch(
 		if selectedChoice == "model_all_regions" {
 			modelResp, err := a.azdClient.Prompt().PromptAiModel(ctx, &azdext.PromptAiModelRequest{
 				AzureContext: a.azureContext,
-				Filter: &azdext.AiModelFilterOptions{
-					ExcludeModelNames: []string{currentModel.Name},
-				},
+				Filter:       agentModelFilter(nil, []string{currentModel.Name}),
 				Quota: &azdext.QuotaCheckOptions{
 					MinRemainingCapacity: 1,
 				},
@@ -696,7 +676,7 @@ func (a *InitAction) promptForModelLocationMismatch(
 				&azdext.PromptAiModelLocationWithQuotaRequest{
 					AzureContext:     a.azureContext,
 					ModelName:        selectedModel.Name,
-					AllowedLocations: selectedModel.Locations,
+					AllowedLocations: supportedModelLocations(selectedModel.Locations),
 					Quota: &azdext.QuotaCheckOptions{
 						MinRemainingCapacity: 1,
 					},
@@ -725,9 +705,7 @@ func (a *InitAction) promptForModelLocationMismatch(
 
 		promptReq := &azdext.PromptAiModelRequest{
 			AzureContext: a.azureContext,
-			Filter: &azdext.AiModelFilterOptions{
-				Locations: []string{currentLocation},
-			},
+			Filter:       agentModelFilter([]string{currentLocation}, nil),
 			SelectOptions: &azdext.SelectOptions{
 				Message: fmt.Sprintf("Select a model available in '%s'", currentLocation),
 			},
@@ -813,7 +791,32 @@ func (a *InitAction) ProcessModels(ctx context.Context, manifest *agent_yaml.Age
 		return nil, nil, fmt.Errorf("failed to inject deployment names into manifest: %w", err)
 	}
 
+	setEnv := func(ctx context.Context, key, value string) error {
+		return setEnvValue(ctx, a.azdClient, a.environment.Name, key, value)
+	}
+	if err := persistFirstDeploymentName(ctx, setEnv, deploymentDetails); err != nil {
+		return nil, nil, fmt.Errorf("failed to set AZURE_AI_MODEL_DEPLOYMENT_NAME: %w", err)
+	}
+
 	fmt.Println("Model deployment details processed and injected into agent definition. Deployment details can also be found in the JSON formatted AI_PROJECT_DEPLOYMENTS environment variable.")
 
 	return updatedManifest, deploymentDetails, nil
+}
+
+// envValueSetter writes a single key-value pair to the azd environment.
+type envValueSetter func(ctx context.Context, key, value string) error
+
+// persistFirstDeploymentName persists the first deployment's name as
+// AZURE_AI_MODEL_DEPLOYMENT_NAME so templates and agent code can reference it.
+// It is a no-op when the deployments slice is empty.
+func persistFirstDeploymentName(
+	ctx context.Context,
+	setEnv envValueSetter,
+	deployments []project.Deployment,
+) error {
+	if len(deployments) == 0 {
+		return nil
+	}
+
+	return setEnv(ctx, "AZURE_AI_MODEL_DEPLOYMENT_NAME", deployments[0].Name)
 }

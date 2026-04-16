@@ -15,9 +15,12 @@ Errorf
 Frontends
 GOARCH
 GOCOVERDIR
+GOTOOLCHAIN
+GOWORK
 Ghostty
 LASTEXITCODE
 MCPJSON
+PSHOME
 PYTHONDONTWRITEBYTECODE
 PYTHONUNBUFFERED
 RPCJSONRPC
@@ -44,6 +47,7 @@ appinsightsexporter
 appinsightsstorage
 appplatform
 appservice
+appsettings
 appuser
 arget
 armapimanagement
@@ -110,6 +114,7 @@ containerapps
 containerd
 containerizable
 contoso
+covdata
 createdby
 csharpapp
 csharpapptest
@@ -153,6 +158,7 @@ go-imath
 godotenv
 gofmt
 golangci
+googleapis
 gosec
 goterm
 gotest
@@ -170,6 +176,7 @@ jmespath
 jongio
 jquery
 keychain
+keepalives
 kubelogin
 langchain
 langchaingo
@@ -199,6 +206,8 @@ mysqladmin
 mysqlclient
 mysqldb
 nazd
+ndjson
+nilerr
 nobanner
 nodeapp
 nolint
@@ -243,9 +252,11 @@ rabbitmq
 reauthentication
 relogin
 remarshal
+remotebuild
 repourl
 requirepass
 resourcegraph
+resourcegroup
 restoreapp
 retriable
 runtimes
@@ -298,6 +309,7 @@ vuejs
 webappignore
 webfrontend
 westus2
+whatif
 wireinject
 yacspin
 yamlnode

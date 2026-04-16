@@ -14,13 +14,23 @@ type GlobalCommandOptions struct {
 	// launched tools. It's enabled with `--debug`, for any command.
 	EnableDebugLogging bool
 
-	// when true, interactive prompts should behave as if the user selected the default value.
-	// if there is no default value the prompt returns an error.
+	// NoPrompt controls non-interactive mode. When true, interactive prompts should behave as
+	// if the user selected the default value. If there is no default value the prompt returns
+	// an error.
+	//
+	// Can be enabled via:
+	//   - --no-prompt flag
+	//   - --non-interactive flag (alias for --no-prompt)
+	//   - AZD_NON_INTERACTIVE=true environment variable
+	//   - Automatic agent detection (lowest priority)
 	NoPrompt bool
 
-	// EnvironmentName is the name of the environment to use, set via `-e` or `--environment`.
-	// This is parsed early from raw args by ParseGlobalFlags so it is available even for
-	// commands with DisableFlagParsing: true (e.g. extension commands).
+	// EnvironmentName holds the value of `-e/--environment` parsed from the command line
+	// before Cobra command tree construction. For extension commands (which use
+	// DisableFlagParsing), this is the only reliable way to know what `-e` value
+	// the user specified. It is empty when the user did not pass `-e` or when the
+	// value was not a valid environment name (extensions may reuse `-e` for other
+	// purposes such as URLs).
 	EnvironmentName string
 
 	// EnableTelemetry indicates if telemetry should be sent.

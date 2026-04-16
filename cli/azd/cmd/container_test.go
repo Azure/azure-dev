@@ -19,6 +19,7 @@ import (
 )
 
 func Test_Lazy_Project_Config_Resolution(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	container := ioc.NewNestedContainer(nil)
 	ioc.RegisterInstance(container, ctx)
@@ -88,6 +89,7 @@ func Test_Lazy_Project_Config_Resolution(t *testing.T) {
 }
 
 func Test_Lazy_AzdContext_Resolution(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	container := ioc.NewNestedContainer(nil)
 	ioc.RegisterInstance(container, ctx)
@@ -162,12 +164,12 @@ type testConcreteComponent[T comparable] struct {
 	concrete T
 }
 
-// Test_WorkflowCmdAdapter_ContextPropagation validates that the workflowCmdAdapter
+// Test_workflowCmdAdapter_ContextPropagation validates that the workflowCmdAdapter
 // properly marks contexts as child actions when executing subcommands.
 // The main.go entrypoint wraps the root context with context.WithoutCancel,
 // so workflow steps always receive a non-cancellable context.
 // See: https://github.com/Azure/azure-dev/issues/6530
-func Test_WorkflowCmdAdapter_ContextPropagation(t *testing.T) {
+func Test_workflowCmdAdapter_ContextPropagation(t *testing.T) {
 	t.Run("SubcommandReceivesChildActionContext", func(t *testing.T) {
 		// Track which contexts were seen by the subcommand
 		var receivedContexts []context.Context
@@ -181,8 +183,10 @@ func Test_WorkflowCmdAdapter_ContextPropagation(t *testing.T) {
 			subCmd := &cobra.Command{
 				Use: "sub",
 				RunE: func(cmd *cobra.Command, args []string) error {
-					// Capture the context that the subcommand receives
-					receivedContexts = append(receivedContexts, cmd.Context())
+					ctx := cmd.Context()
+					// Verify context is valid DURING execution
+					require.NoError(t, ctx.Err(), "Context should be valid during execution")
+					receivedContexts = append(receivedContexts, ctx)
 					return nil
 				},
 			}
@@ -205,13 +209,10 @@ func Test_WorkflowCmdAdapter_ContextPropagation(t *testing.T) {
 		require.True(t, middleware.IsChildAction(receivedContexts[0]),
 			"Context should be marked as child action")
 
-		// Verify context is not cancelled (since we used WithoutCancel)
-		select {
-		case <-receivedContexts[0].Done():
-			t.Fatal("Context should not be cancelled")
-		default:
-			// Expected: context is still valid
-		}
+		// After ExecuteContext returns, the child context is cancelled so that
+		// event handlers registered during this step are cleaned up.
+		require.Error(t, receivedContexts[0].Err(),
+			"Context should be cancelled after step completes")
 
 		// Execute again - should still work (fresh command tree each time)
 		err = adapter.ExecuteContext(ctx, []string{"sub"})
@@ -240,7 +241,10 @@ func Test_WorkflowCmdAdapter_ContextPropagation(t *testing.T) {
 			childCmd := &cobra.Command{
 				Use: "child",
 				RunE: func(cmd *cobra.Command, args []string) error {
-					receivedContexts = append(receivedContexts, cmd.Context())
+					ctx := cmd.Context()
+					// Verify context is valid DURING execution
+					require.NoError(t, ctx.Err(), "Context should be valid during execution")
+					receivedContexts = append(receivedContexts, ctx)
 					return nil
 				},
 			}
@@ -267,13 +271,10 @@ func Test_WorkflowCmdAdapter_ContextPropagation(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, receivedContexts, 2)
 
-		// Verify second execution got a valid context marked as child
-		select {
-		case <-receivedContexts[1].Done():
-			t.Fatal("Nested subcommand should have received a valid context")
-		default:
-			// Expected: context is valid
-		}
+		// Verify second execution got a context marked as child and is cancelled
+		// after step completion (event handler cleanup)
+		require.Error(t, receivedContexts[1].Err(),
+			"Context should be cancelled after step completes")
 
 		require.True(t, middleware.IsChildAction(receivedContexts[1]),
 			"Second nested context should also be marked as child action")
@@ -409,4 +410,151 @@ func Test_WorkflowCmdAdapter_ContextPropagation(t *testing.T) {
 		require.True(t, foundProvision2, "second tree: provision command should be registered")
 		require.NotSame(t, rootCmd, rootCmd2, "each NewRootCmd call should produce a distinct instance")
 	})
+
+	t.Run("WorkflowAdapterMiddlewareRunsForChildActions", func(t *testing.T) {
+		// Verify that when the workflowCmdAdapter executes a command, the middleware chain
+		// (registered on the command tree) is invoked despite the context being a child action.
+		// This validates that hooks middleware would fire during workflow step execution.
+		var middlewareRan bool
+		var receivedIsChild bool
+
+		newCommand := func() *cobra.Command {
+			rootCmd := &cobra.Command{Use: "root"}
+
+			// Create a child action descriptor-style setup:
+			// The "provision" command wraps its RunE to simulate middleware execution
+			provisionCmd := &cobra.Command{
+				Use: "provision",
+				RunE: func(cmd *cobra.Command, args []string) error {
+					ctx := cmd.Context()
+					middlewareRan = true
+					receivedIsChild = middleware.IsChildAction(ctx)
+					return nil
+				},
+			}
+			rootCmd.AddCommand(provisionCmd)
+			return rootCmd
+		}
+
+		adapter := &workflowCmdAdapter{newCommand: newCommand}
+		ctx := context.WithoutCancel(context.Background())
+
+		// Execute "provision" through the adapter (simulates workflow step)
+		err := adapter.ExecuteContext(ctx, []string{"provision"})
+		require.NoError(t, err)
+		require.True(t, middlewareRan, "Provision command should have been executed")
+		require.True(t, receivedIsChild,
+			"Context should be marked as child action when executed through workflow adapter")
+	})
+
+	t.Run("WorkflowAdapterMiddlewareChainForAllSteps", func(t *testing.T) {
+		// Simulate the full workflow execution path: package → provision → deploy
+		// Verify each step's command runs with the child action context and fresh tree
+		var executedCommands []string
+
+		newCommand := func() *cobra.Command {
+			rootCmd := &cobra.Command{Use: "root"}
+
+			for _, cmdName := range []string{"package", "provision", "deploy"} {
+				name := cmdName // capture for closure
+				cmd := &cobra.Command{
+					Use: name,
+					RunE: func(cmd *cobra.Command, args []string) error {
+						ctx := cmd.Context()
+						require.True(t, middleware.IsChildAction(ctx),
+							"Step %q should have child action context", name)
+						executedCommands = append(executedCommands, name)
+						return nil
+					},
+				}
+				if name == "package" || name == "deploy" {
+					cmd.Flags().Bool("all", false, "")
+				}
+				rootCmd.AddCommand(cmd)
+			}
+			return rootCmd
+		}
+
+		adapter := &workflowCmdAdapter{newCommand: newCommand}
+		ctx := context.WithoutCancel(context.Background())
+
+		// Simulate the default "up" workflow steps
+		steps := [][]string{
+			{"package", "--all"},
+			{"provision"},
+			{"deploy", "--all"},
+		}
+
+		for _, args := range steps {
+			err := adapter.ExecuteContext(ctx, args)
+			require.NoError(t, err, "Step %v should succeed", args)
+		}
+
+		require.Equal(t, []string{"package", "provision", "deploy"}, executedCommands,
+			"All workflow steps should execute in order")
+	})
+}
+
+func Test_NewRootCmd_ReregistrationReplacesProjectConfig(t *testing.T) {
+	// This test proves the regression from PR #7171: when workflowCmdAdapter called
+	// NewRootCmd (with full registration) for each workflow step, registerCommonDependencies
+	// re-registered singletons. The golobby IoC container replaces cached singleton instances
+	// on re-registration, so event handlers registered on ProjectConfig/ServiceConfig (by the
+	// hooks middleware) were silently lost.
+	//
+	// Steps:
+	// 1. Create root command (registers dependencies)
+	// 2. Resolve ProjectConfig, add an event handler
+	// 3. Create another root command (re-registers dependencies)
+	// 4. Resolve ProjectConfig again
+	// 5. Validate the handler is gone (proving the bug)
+	// 6. Use newRootCmdWithoutRegistration instead, validate handler is preserved (proving the fix)
+
+	container := ioc.NewNestedContainer(nil)
+	ctx := context.WithoutCancel(context.Background())
+	ioc.RegisterInstance(container, ctx)
+	ioc.RegisterInstance(container, &internal.GlobalCommandOptions{})
+
+	// Set up a project directory with azure.yaml so ProjectConfig can be resolved
+	dir := t.TempDir()
+	t.Chdir(dir)
+	azdCtx := azdcontext.NewAzdContextWithDirectory(dir)
+	ioc.RegisterInstance(container, azdCtx)
+
+	projectConfig := &project.ProjectConfig{
+		Name: "test-project",
+	}
+	_ = project.Save(ctx, projectConfig, azdCtx.ProjectPath())
+
+	// Step 1: Create root command (registers dependencies including ProjectConfig factory)
+	_ = NewRootCmd(false, nil, container)
+
+	// Step 2: Resolve ProjectConfig and add an event handler (simulates hooks middleware)
+	var pc1 *project.ProjectConfig
+	require.NoError(t, container.Resolve(&pc1))
+
+	// Step 3: Create another root command with full re-registration
+	_ = NewRootCmd(false, nil, container)
+
+	// Step 4: Resolve ProjectConfig again
+	var pc2 *project.ProjectConfig
+	require.NoError(t, container.Resolve(&pc2))
+
+	// Step 5: The re-registration replaced the singleton — it's a different instance
+	require.NotSame(t, pc1, pc2,
+		"BUG PROOF: NewRootCmd re-registration replaces the cached ProjectConfig singleton, "+
+			"losing any event handlers attached to the original instance")
+
+	// Step 6: Now use newRootCmdWithoutRegistration and verify the instance is preserved
+	var pc3 *project.ProjectConfig
+	require.NoError(t, container.Resolve(&pc3))
+
+	_ = newRootCmdWithoutRegistration(container)
+
+	var pc4 *project.ProjectConfig
+	require.NoError(t, container.Resolve(&pc4))
+
+	require.Same(t, pc3, pc4,
+		"FIX PROOF: newRootCmdWithoutRegistration preserves the cached ProjectConfig singleton, "+
+			"keeping event handlers intact")
 }

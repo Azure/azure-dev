@@ -35,7 +35,7 @@ See [MSI configuration](#msi-configuration) for advanced install scenarios.
 #### Homebrew (recommended)
 
 ```bash
-brew install azure/azd/azd
+brew install --cask azure/azd/azd
 ```
 
 If using `brew` to upgrade `azd` from a version not installed using `brew`, remove the existing version of `azd` using the uninstall script (if installed to the default location) or by deleting the `azd` binary manually.
@@ -85,17 +85,7 @@ yum install -y azd-<version>-1.x86_64.rpm
 
 ### Windows
 
-#### Uninstalling 0.5.0-beta.1 and later
-
 The Azure Developer CLI uses MSI to install on Windows. Use the "Add or remove programs" dialog in Windows to remove the "Azure Developer CLI" application. 
-
-#### Uninstalling version 0.4.0-beta.1 and earlier
-
-Use this PowerShell script to uninstall Azure Developer CLI 0.4.0-beta.1 and earlier.
-
-```powershell
-powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/uninstall-azd.ps1' | Invoke-Expression"
-```
 
 ### Linux/MacOS
 
@@ -143,6 +133,8 @@ When installing using the MSI directly (instead of the install script) the MSI b
 | -------- | ----- |
 | `ALLUSERS` | `2`: Default. Install for current user (no privilege elevation required). <br/> `1`: Install for _all_ users (may require privilege elevation). |
 | `INSTALLDIR` | Installation path. <br/> `"%LOCALAPPDATA%\Programs\Azure Dev CLI"`: Default. <br/> `"%PROGRAMFILES%\Azure Dev CLI"`: Default all users. |
+
+> **Note:** Installing per-machine (`ALLUSERS=1`) means the administrator is responsible for managing updates. To suppress update notifications in environments where administrators manage updates, set the `AZD_SKIP_UPDATE_CHECK=1` environment variable.
 
 ### Custom install location 
 
@@ -236,18 +228,13 @@ To download and install the "daily" version of azd (most recent build)
 
 The Azure Developer CLI will write files to `~/.azd/` that are specific to the application's usage. Since this is user data uninstall processes do not alter or remove this data.
 
-### Windows 
- For versions released after `0.5.0-beta.1` use the following procedure to remove `azd`: 
+### Windows
+
+Use the following procedure to remove `azd`:
 
 1. Search for `Add or remove programs` in Windows
-2. Locate `Azure Developer CLI` 
+2. Locate `Azure Developer CLI`
 3. Select `Uninstall`
-
-Uninstall script for version s released before `0.5.0-beta.1` (does not work on versions `0.5.0-beta.1` and later): 
-
-```powershell
-powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/uninstall-azd.ps1' | Invoke-Expression"
-```
 
 ### Linux/MacOS
 

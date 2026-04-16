@@ -33,6 +33,7 @@ Commands
     pipeline    	: Manage and configure your deployment pipelines.
     restore     	: Restores the project's dependencies.
     template    	: Find and view template details.
+    update      	: Updates azd to the latest version.
 
   Enabled alpha commands
     copilot     	: Manage GitHub Copilot agent settings. (Preview)
@@ -47,9 +48,10 @@ Commands
     x           	: This extension provides a set of tools for azd extension developers to test and debug their extensions.
 
 Flags
-    -C, --cwd string 	: Sets the current working directory.
-        --debug      	: Enables debugging and diagnostics logging.
-        --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
+    -C, --cwd string         	: Sets the current working directory.
+        --debug              	: Enables debugging and diagnostics logging.
+    -e, --environment string 	: The name of the environment to use.
+        --no-prompt          	: Accepts the default value instead of prompting, or it fails if there is no default.
 
 Global Flags
         --docs 	: Opens the documentation for azd in your web browser.

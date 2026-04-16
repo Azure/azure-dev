@@ -8,7 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
+	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -205,6 +208,12 @@ func (pm *projectManager) EnsureFrameworkTools(
 	return nil
 }
 
+// svcToolInfo tracks whether a service's target required Docker.
+type svcToolInfo struct {
+	svc         *ServiceConfig
+	needsDocker bool
+}
+
 func (pm *projectManager) EnsureServiceTargetTools(
 	ctx context.Context,
 	projectConfig *ProjectConfig,
@@ -217,6 +226,8 @@ func (pm *projectManager) EnsureServiceTargetTools(
 		return err
 	}
 
+	var svcTools []svcToolInfo
+
 	for _, svc := range servicesStable {
 		if serviceFilterFn != nil && !serviceFilterFn(svc) {
 			continue
@@ -227,15 +238,81 @@ func (pm *projectManager) EnsureServiceTargetTools(
 			return fmt.Errorf("getting service target: %w", err)
 		}
 
-		serviceTargetTools := serviceTarget.RequiredExternalTools(ctx, svc)
-		requiredTools = append(requiredTools, serviceTargetTools...)
+		targetTools := serviceTarget.RequiredExternalTools(ctx, svc)
+		requiredTools = append(requiredTools, targetTools...)
+
+		needsDocker := false
+		for _, tool := range targetTools {
+			if tool.Name() == "Docker" {
+				needsDocker = true
+				break
+			}
+		}
+		svcTools = append(svcTools, svcToolInfo{svc: svc, needsDocker: needsDocker})
 	}
 
 	if err := tools.EnsureInstalled(ctx, tools.Unique(requiredTools)...); err != nil {
+		if toolErr, ok := errors.AsType[*tools.MissingToolErrors](err); ok {
+			if suggestion := suggestRemoteBuild(svcTools, toolErr); suggestion != nil {
+				return suggestion
+			}
+		}
 		return err
 	}
 
 	return nil
+}
+
+// suggestRemoteBuild checks if Docker is in the missing tools list and whether any
+// services that required it could use remote builds instead. Only services whose
+// service target actually listed Docker as required are included in the suggestion.
+func suggestRemoteBuild(
+	svcTools []svcToolInfo,
+	toolErr *tools.MissingToolErrors,
+) *internal.ErrorWithSuggestion {
+	if !slices.Contains(toolErr.ToolNames, "Docker") {
+		return nil
+	}
+
+	// Find services that actually required Docker (per their service target)
+	// and could use remoteBuild instead.
+	var remoteBuildCapable []string
+	for _, info := range svcTools {
+		if !info.needsDocker {
+			continue
+		}
+		remoteBuildCapable = append(remoteBuildCapable, info.svc.Name)
+	}
+
+	if len(remoteBuildCapable) == 0 {
+		return nil
+	}
+
+	// Check whether the container runtime is not installed or just not running
+	errMsg := toolErr.Error()
+	isNotRunning := strings.Contains(errMsg, "is not running")
+
+	serviceList := strings.Join(remoteBuildCapable, ", ")
+	var suggestion string
+	if isNotRunning {
+		suggestion = fmt.Sprintf(
+			"Services [%s] can build on Azure instead of locally.\n"+
+				"Set 'remoteBuild: true' under the 'docker:' section for each service in azure.yaml,\n"+
+				"or start your container runtime (Docker/Podman).",
+			serviceList)
+	} else {
+		suggestion = fmt.Sprintf(
+			"Services [%s] can build on Azure instead of locally.\n"+
+				"Set 'remoteBuild: true' under the 'docker:' section for each service in azure.yaml,\n"+
+				"or install Docker (https://aka.ms/azure-dev/docker-install)\n"+
+				"or Podman (https://aka.ms/azure-dev/podman-install).",
+			serviceList)
+	}
+
+	return &internal.ErrorWithSuggestion{
+		Err:        toolErr,
+		Suggestion: suggestion,
+	}
 }
 
 func (pm *projectManager) EnsureRestoreTools(

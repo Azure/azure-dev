@@ -1,0 +1,61 @@
+name: "Eval: Unit Tests"
+
+on:
+  pull_request:
+    paths:
+      - "cli/azd/test/eval/**"
+      - "cli/azd/internal/mcp/**"
+      - "cli/azd/cmd/mcp.go"
+      - "cli/azd/cmd/root.go"
+
+permissions:
+  contents: read
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: "cli/azd/go.mod"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Build azd
+        working-directory: cli/azd
+        run: go build -o ./azd .
+
+      - name: Install eval dependencies
+        working-directory: cli/azd/test/eval
+        run: npm ci
+
+      - name: Run unit tests
+        working-directory: cli/azd/test/eval
+        run: npm run test:unit -- --ci
+
+      # Waza YAML validation is local-only (run `npm run waza:validate` locally).
+      # waza CLI is not available in CI.
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install grader test dependencies
+        run: pip install pytest
+
+      - name: Run grader tests
+        working-directory: cli/azd/test/eval/graders
+        run: python -m pytest test_graders.py -v
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-unit-results
+          path: cli/azd/test/eval/reports/
+          retention-days: 30

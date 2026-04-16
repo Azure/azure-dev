@@ -8,9 +8,28 @@ import (
 
 	"azureaiagent/internal/pkg/agents/agent_api"
 
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestFilesCommand_PersistentPreRunE_NoRecursion(t *testing.T) {
+	// Regression: PersistentPreRunE previously used cmd.Parent() which returned
+	// the "files" command itself when a subcommand ran, causing infinite recursion
+	// (stack overflow). The fix uses cmd.Root() to chain to the root command.
+	root := NewRootCommand()
+
+	// Override the list subcommand's RunE so it doesn't need a real environment.
+	filesCmd, _, _ := root.Find([]string{"files"})
+	require.NotNil(t, filesCmd)
+	for _, sub := range filesCmd.Commands() {
+		sub.RunE = func(cmd *cobra.Command, args []string) error { return nil }
+	}
+
+	root.SetArgs([]string{"files", "list"})
+	// If the bug is present this will stack-overflow instead of returning.
+	_ = root.Execute()
+}
 
 func TestFilesCommand_HasSubcommands(t *testing.T) {
 	cmd := newFilesCommand()
@@ -24,7 +43,7 @@ func TestFilesCommand_HasSubcommands(t *testing.T) {
 	assert.Contains(t, names, "upload")
 	assert.Contains(t, names, "download")
 	assert.Contains(t, names, "list")
-	assert.Contains(t, names, "remove")
+	assert.Contains(t, names, "delete")
 }
 
 func TestFilesUploadCommand_MissingFile(t *testing.T) {
@@ -40,7 +59,7 @@ func TestFilesUploadCommand_MissingFile(t *testing.T) {
 func TestFilesUploadCommand_HasFlags(t *testing.T) {
 	cmd := newFilesUploadCommand()
 
-	for _, name := range []string{"file", "target-path", "agent-name", "session"} {
+	for _, name := range []string{"file", "target-path", "agent-name", "session-id"} {
 		f := cmd.Flags().Lookup(name)
 		require.NotNil(t, f, "expected flag %q", name)
 		assert.Equal(t, "", f.DefValue)
@@ -60,7 +79,7 @@ func TestFilesDownloadCommand_MissingFile(t *testing.T) {
 func TestFilesDownloadCommand_HasFlags(t *testing.T) {
 	cmd := newFilesDownloadCommand()
 
-	for _, name := range []string{"file", "target-path", "agent-name", "session"} {
+	for _, name := range []string{"file", "target-path", "agent-name", "session-id"} {
 		f := cmd.Flags().Lookup(name)
 		require.NotNil(t, f, "expected flag %q", name)
 		assert.Equal(t, "", f.DefValue)
@@ -81,7 +100,7 @@ func TestFilesListCommand_OptionalRemotePath(t *testing.T) {
 	assert.NotNil(t, cmd.Args)
 }
 
-func TestFilesRemoveCommand_MissingFile(t *testing.T) {
+func TestFilesDeleteCommand_MissingFile(t *testing.T) {
 	cmd := newFilesRemoveCommand()
 
 	// Missing required --file flag
@@ -91,10 +110,10 @@ func TestFilesRemoveCommand_MissingFile(t *testing.T) {
 	assert.Contains(t, err.Error(), "file")
 }
 
-func TestFilesRemoveCommand_HasFlags(t *testing.T) {
+func TestFilesDeleteCommand_HasFlags(t *testing.T) {
 	cmd := newFilesRemoveCommand()
 
-	for _, name := range []string{"file", "recursive", "agent-name", "session"} {
+	for _, name := range []string{"file", "recursive", "agent-name", "session-id"} {
 		f := cmd.Flags().Lookup(name)
 		require.NotNil(t, f, "expected flag %q", name)
 	}
@@ -116,7 +135,7 @@ func TestFilesMkdirCommand_MissingDir(t *testing.T) {
 func TestFilesMkdirCommand_HasFlags(t *testing.T) {
 	cmd := newFilesMkdirCommand()
 
-	for _, name := range []string{"dir", "agent-name", "session"} {
+	for _, name := range []string{"dir", "agent-name", "session-id"} {
 		f := cmd.Flags().Lookup(name)
 		require.NotNil(t, f, "expected flag %q", name)
 		assert.Equal(t, "", f.DefValue)

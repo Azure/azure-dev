@@ -1,0 +1,31 @@
+id: lifecycle-teardown-001
+description: >
+  User wants to tear down an existing deployment. They already have
+  everything deployed and just want to clean up. LLM should suggest
+  azd down with appropriate flags like --purge for complete cleanup.
+inputs:
+  prompt: >
+    I have an Azure app deployed with azd and I'm done with it.
+    How do I completely tear everything down and clean up all resources?
+graders:
+  - type: text
+    weight: 0.3
+    config:
+      must_match:
+        - "azd down"
+      must_not_match:
+        - "azd init"
+        - "azd provision"
+  - type: text
+    weight: 0.3
+    config:
+      must_match_any:
+        - "--force"
+        - "--purge"
+        - "resource group"
+        - "soft.delete"
+  - type: behavior
+    weight: 0.4
+    config:
+      max_tool_calls: 10
+      max_tokens: 3000

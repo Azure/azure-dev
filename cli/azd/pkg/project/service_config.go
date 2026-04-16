@@ -4,8 +4,10 @@
 package project
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
+	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
@@ -68,9 +70,18 @@ type ServiceConfig struct {
 
 	*ext.EventDispatcher[ServiceLifecycleEventArgs] `yaml:"-"`
 
+	configuredHookRegistrationMu sync.Mutex `yaml:"-"`
+	configuredHookRegistration   *configuredHookRegistration
+
 	// Turns service into a service that is only to be built but not deployed.
 	// This is currently used by Aspire.
 	BuildOnly bool `yaml:"-"`
+}
+
+type configuredHookRegistration struct {
+	signature string
+	ctx       context.Context
+	cancel    context.CancelFunc
 }
 
 type DotNetContainerAppOptions struct {
@@ -125,4 +136,82 @@ func isConditionTrue(value string) bool {
 	default:
 		return false
 	}
+}
+
+// EnsureHooksRegistered ensures azure.yaml-configured service hooks are registered at most once
+// for the current hook signature and registration context lifetime.
+// Returns the registration context and true if hooks should be registered, or nil and false if
+// registration should be skipped (already registered with matching signature and active context).
+func (sc *ServiceConfig) EnsureHooksRegistered(
+	parentCtx context.Context,
+	signature string,
+) (context.Context, bool) {
+	sc.configuredHookRegistrationMu.Lock()
+	defer sc.configuredHookRegistrationMu.Unlock()
+
+	if sc.configuredHookRegistration != nil &&
+		sc.configuredHookRegistration.signature == signature &&
+		sc.configuredHookRegistration.ctx.Err() == nil {
+		return nil, false
+	}
+
+	if sc.configuredHookRegistration != nil {
+		sc.configuredHookRegistration.cancel()
+	}
+
+	//nolint:gosec // G118 - cancel is stored and called by Reset/Rollback
+	registrationCtx, cancel := context.WithCancel(parentCtx)
+	sc.configuredHookRegistration = &configuredHookRegistration{
+		signature: signature,
+		ctx:       registrationCtx,
+		cancel:    cancel,
+	}
+
+	return registrationCtx, true
+}
+
+// RollbackHookRegistration clears the current hook registration after a failed install.
+func (sc *ServiceConfig) RollbackHookRegistration(signature string) {
+	sc.configuredHookRegistrationMu.Lock()
+	defer sc.configuredHookRegistrationMu.Unlock()
+
+	if sc.configuredHookRegistration == nil || sc.configuredHookRegistration.signature != signature {
+		return
+	}
+
+	sc.configuredHookRegistration.cancel()
+	sc.configuredHookRegistration = nil
+}
+
+// ResetHookRegistration removes any active service-hook registration,
+// allowing hooks to be re-registered on the next middleware pass.
+func (sc *ServiceConfig) ResetHookRegistration() {
+	sc.configuredHookRegistrationMu.Lock()
+	defer sc.configuredHookRegistrationMu.Unlock()
+
+	if sc.configuredHookRegistration == nil {
+		return
+	}
+
+	sc.configuredHookRegistration.cancel()
+	sc.configuredHookRegistration = nil
+}
+
+// CopyRuntimeStateTo preserves in-memory runtime state that should survive config reloads.
+func (sc *ServiceConfig) CopyRuntimeStateTo(target *ServiceConfig) {
+	if sc == nil || target == nil {
+		return
+	}
+
+	if sc.EventDispatcher != nil {
+		target.EventDispatcher = sc.EventDispatcher
+	}
+
+	sc.configuredHookRegistrationMu.Lock()
+	registration := sc.configuredHookRegistration
+	sc.configuredHookRegistrationMu.Unlock()
+
+	target.configuredHookRegistrationMu.Lock()
+	target.configuredHookRegistration = registration
+	target.configuredHookRegistrationMu.Unlock()
 }

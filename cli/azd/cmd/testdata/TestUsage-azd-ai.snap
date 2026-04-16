@@ -5,16 +5,17 @@ Usage
   azd ai [command]
 
 Available Commands
-  agent     	: Extension for the Foundry Agent Service. (Preview)
+  agent     	: Ship agents with Microsoft Foundry from your terminal. (Preview)
   finetuning	: Extension for Foundry Fine Tuning. (Preview)
   models    	: Extension for managing custom models in Azure AI Foundry. (Preview)
 
 Global Flags
-    -C, --cwd string 	: Sets the current working directory.
-        --debug      	: Enables debugging and diagnostics logging.
-        --docs       	: Opens the documentation for azd ai in your web browser.
-    -h, --help       	: Gets help for ai.
-        --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
+    -C, --cwd string         	: Sets the current working directory.
+        --debug              	: Enables debugging and diagnostics logging.
+        --docs               	: Opens the documentation for azd ai in your web browser.
+    -e, --environment string 	: The name of the environment to use.
+    -h, --help               	: Gets help for ai.
+        --no-prompt          	: Accepts the default value instead of prompting, or it fails if there is no default.
 
 Use azd ai [command] --help to view examples and more information about a specific command.
 

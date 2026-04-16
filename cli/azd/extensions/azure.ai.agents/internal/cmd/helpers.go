@@ -8,16 +8,23 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/pkg/agents/agent_yaml"
 	projectpkg "azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/google/uuid"
+	"go.yaml.in/yaml/v3"
 )
 
 const (
@@ -33,6 +40,7 @@ type AgentLocalContext struct {
 	AgentName     string            `json:"agent_name,omitempty"`
 	Sessions      map[string]string `json:"sessions,omitempty"`
 	Conversations map[string]string `json:"conversations,omitempty"`
+	Invocations   map[string]string `json:"invocations,omitempty"`
 }
 
 // resolveConfigPath returns the full path to the .foundry-agent.json file
@@ -82,35 +90,271 @@ func saveLocalContext(agentCtx *AgentLocalContext, configPath string) error {
 	return os.WriteFile(configPath, append(data, '\n'), 0600)
 }
 
-// resolveSessionID resolves or generates a session ID for invoke.
-// Returns the session ID (existing or newly generated).
-func resolveSessionID(ctx context.Context, azdClient *azdext.AzdClient, agentName string, explicit string, forceNew bool) (string, error) {
-	if explicit != "" {
-		return explicit, nil
+// saveContextValue persists a value into the named field of the local config.
+// storeField selects the map: "sessions", "conversations", or "invocations".
+func saveContextValue(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	agentKey string,
+	value string,
+	storeField string,
+) {
+	if value == "" {
+		return
 	}
 	configPath, err := resolveConfigPath(ctx, azdClient)
 	if err != nil {
+		log.Printf("saveContextValue: failed to resolve config path: %v", err)
+		return
+	}
+	if err := saveContextValueToPath(configPath, agentKey, value, storeField); err != nil {
+		log.Printf("saveContextValue: failed to persist %s for %q: %v", storeField, agentKey, err)
+	}
+}
+
+// saveContextValueToPath persists a value into the named field of the local config at configPath.
+// This is the path-based implementation used by saveContextValue and directly in tests.
+func saveContextValueToPath(configPath, agentKey, value, storeField string) error {
+	agentCtx := loadLocalContext(configPath)
+	store := contextMap(agentCtx, storeField)
+	store[agentKey] = value
+	return saveLocalContext(agentCtx, configPath)
+}
+
+// resolveLocalAgentKey builds the storage key for local mode from the azd project config.
+// Returns "{serviceName}-local" when the service can be resolved, or "local" as fallback.
+func resolveLocalAgentKey(ctx context.Context, azdClient *azdext.AzdClient, name string, noPrompt bool) string {
+	if azdClient == nil {
+		return "local"
+	}
+	info, err := resolveAgentServiceFromProject(ctx, azdClient, name, noPrompt)
+	if err != nil || info.ServiceName == "" {
+		return "local"
+	}
+	return info.ServiceName + "-local"
+}
+
+// resolveStoredID resolves a persisted ID (session, conversation, etc.) from the local config.
+// It checks (in order): explicit flag value, persisted value in the config store, then either
+// returns "" (generateIfMissing=false, for remote mode where the server assigns the ID) or
+// generates and persists a new UUID (generateIfMissing=true, for local mode).
+// storeField selects which map to use: "sessions" or "conversations".
+func resolveStoredID(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	agentKey string,
+	explicit string,
+	forceNew bool,
+	storeField string,
+	generateIfMissing bool,
+) (string, error) {
+	if explicit != "" {
+		// Persist the explicit ID so that subsequent commands (e.g. monitor, invoke)
+		// can find it without the user passing it again.
+		persistExplicitID(ctx, azdClient, agentKey, explicit, storeField)
+		return explicit, nil
+	}
+	if forceNew && !generateIfMissing {
+		return "", nil
+	}
+
+	configPath, err := resolveConfigPath(ctx, azdClient)
+	if err != nil {
+		if generateIfMissing {
+			return uuid.NewString(), nil
+		}
 		return "", err
 	}
+
 	agentCtx := loadLocalContext(configPath)
-	if agentCtx.Sessions == nil {
-		agentCtx.Sessions = make(map[string]string)
-	}
+
+	store := contextMap(agentCtx, storeField)
 	if !forceNew {
-		if sid, ok := agentCtx.Sessions[agentName]; ok {
-			return sid, nil
+		if id, ok := store[agentKey]; ok {
+			return id, nil
 		}
 	}
-	sid := uuid.New().String()
-	agentCtx.Sessions[agentName] = sid
-	if err := saveLocalContext(agentCtx, configPath); err != nil {
-		return sid, fmt.Errorf("failed to save session ID: %w", err)
+
+	if !generateIfMissing {
+		return "", nil
 	}
-	return sid, nil
+
+	newID := uuid.NewString()
+	store[agentKey] = newID
+	_ = saveLocalContext(agentCtx, configPath)
+
+	return newID, nil
+}
+
+// persistExplicitID saves a user-provided explicit ID to the local config.
+// Errors are logged for debug visibility but do not block the caller.
+func persistExplicitID(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	agentKey string,
+	value string,
+	storeField string,
+) {
+	saveContextValue(ctx, azdClient, agentKey, value, storeField)
+}
+
+// resolveStoredIDFromPath is a testable variant of resolveStoredID that operates on a
+// config file path directly, removing the need for an azdClient.
+func resolveStoredIDFromPath(
+	configPath string,
+	agentKey string,
+	explicit string,
+	forceNew bool,
+	storeField string,
+	generateIfMissing bool,
+) (string, error) {
+	if explicit != "" {
+		if err := saveContextValueToPath(configPath, agentKey, explicit, storeField); err != nil {
+			log.Printf("resolveStoredIDFromPath: failed to persist explicit %s for %q: %v", storeField, agentKey, err)
+		}
+		return explicit, nil
+	}
+	if forceNew && !generateIfMissing {
+		return "", nil
+	}
+
+	agentCtx := loadLocalContext(configPath)
+	store := contextMap(agentCtx, storeField)
+	if !forceNew {
+		if id, ok := store[agentKey]; ok {
+			return id, nil
+		}
+	}
+
+	if !generateIfMissing {
+		return "", nil
+	}
+
+	newID := uuid.NewString()
+	store[agentKey] = newID
+	_ = saveLocalContext(agentCtx, configPath)
+
+	return newID, nil
+}
+func contextMap(agentCtx *AgentLocalContext, field string) map[string]string {
+	switch field {
+	case "sessions":
+		if agentCtx.Sessions == nil {
+			agentCtx.Sessions = make(map[string]string)
+		}
+		return agentCtx.Sessions
+	case "conversations":
+		if agentCtx.Conversations == nil {
+			agentCtx.Conversations = make(map[string]string)
+		}
+		return agentCtx.Conversations
+	case "invocations":
+		if agentCtx.Invocations == nil {
+			agentCtx.Invocations = make(map[string]string)
+		}
+		return agentCtx.Invocations
+	default:
+		return make(map[string]string)
+	}
+}
+
+// printSessionStatus prints the session line for the invoke banner.
+// label is the formatted prefix (e.g. "Session:  " or "Session:      ").
+func printSessionStatus(label, sid string) {
+	if sid != "" {
+		fmt.Printf("%s%s\n", label, sid)
+	} else {
+		fmt.Printf("%s(new — server will assign)\n", label)
+	}
+}
+
+// captureResponseSession reads the x-agent-session-id header from a response
+// and saves it when the caller had no pre-existing session (sid == "").
+// label is the formatted prefix for printing (e.g. "Session:  ").
+func captureResponseSession(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	agentName string,
+	sid string,
+	resp *http.Response,
+	label string,
+) {
+	if sid != "" || azdClient == nil {
+		return
+	}
+	if newSid := resp.Header.Get("x-agent-session-id"); newSid != "" {
+		saveContextValue(ctx, azdClient, agentName, newSid, "sessions")
+		fmt.Printf("%s%s (assigned by server)\n", label, newSid)
+	}
+}
+
+// fetchOpenAPISpec fetches the OpenAPI spec from a running agent and caches it on disk.
+// baseURL is the root URL (e.g., "http://localhost:8088" or "{endpoint}/agents/{name}/endpoint/protocols").
+// suffix is "local" or "remote", used in the cached filename.
+// If forceRefresh is false and the file already exists, the fetch is skipped.
+// Failures are non-fatal and silently ignored.
+func fetchOpenAPISpec(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	baseURL string,
+	agentName string,
+	suffix string,
+	bearerToken string,
+	forceRefresh bool,
+) {
+	configPath, err := resolveConfigPath(ctx, azdClient)
+	if err != nil {
+		return
+	}
+	configDir := filepath.Dir(configPath)
+
+	// Sanitize agentName to prevent path traversal in the cached filename.
+	safeName := strings.ReplaceAll(agentName, "..", "_")
+	safeName = strings.ReplaceAll(safeName, "/", "_")
+	safeName = strings.ReplaceAll(safeName, "\\", "_")
+
+	specFile := filepath.Join(configDir, fmt.Sprintf("openapi-%s-%s.json", safeName, suffix))
+
+	if !forceRefresh {
+		if _, err := os.Stat(specFile); err == nil {
+			return // file exists, skip fetch
+		}
+	}
+
+	specURL := baseURL + "/invocations/docs/openapi.json"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, specURL, nil)
+	if err != nil {
+		return
+	}
+	if bearerToken != "" {
+		req.Header.Set("Authorization", "Bearer "+bearerToken)
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req) //nolint:gosec // G704: URL constructed from azd environment or localhost
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return
+	}
+
+	if err := os.WriteFile(specFile, body, 0600); err != nil {
+		return
+	}
+
+	fmt.Printf("OpenAPI spec saved to %s\n", specFile)
 }
 
 // resolveConversationID resolves a Foundry conversation ID.
-// When explicit is provided, it is returned directly.
+// When explicit is provided, it is persisted and returned directly.
 // If no conversation is found (or forceNew is true), it attempts to create one and persist it.
 // Returns empty string when conversation creation fails, allowing invoke to continue without multi-turn memory.
 func resolveConversationID(
@@ -123,6 +367,8 @@ func resolveConversationID(
 	bearerToken string,
 ) (string, error) {
 	if explicit != "" {
+		// Persist the explicit conversation ID so subsequent commands can find it.
+		saveContextValue(ctx, azdClient, agentName, explicit, "conversations")
 		return explicit, nil
 	}
 	configPath, err := resolveConfigPath(ctx, azdClient)
@@ -195,7 +441,7 @@ func detectStartupCommand(projectDir string) string {
 }
 
 func fileExists(path string) bool {
-	_, err := os.Stat(path)
+	_, err := os.Stat(path) //nolint:gosec // path is derived from controlled inputs (agent ID + "src/" prefix)
 	return err == nil
 }
 
@@ -351,6 +597,7 @@ func resolveAgentServiceFromProject(ctx context.Context, azdClient *azdext.AzdCl
 
 // ServiceRunContext holds the resolved context needed for local development.
 type ServiceRunContext struct {
+	ServiceName    string // the resolved service name (from azure.yaml)
 	ProjectDir     string // absolute path to the service source directory
 	StartupCommand string // startupCommand from AdditionalProperties (may be empty)
 }
@@ -374,6 +621,7 @@ func resolveServiceRunContext(ctx context.Context, azdClient *azdext.AzdClient, 
 	}
 
 	return &ServiceRunContext{
+		ServiceName:    svc.Name,
 		ProjectDir:     projectDir,
 		StartupCommand: startupCmd,
 	}, nil
@@ -423,4 +671,96 @@ func resolveStartupCommandForInit(
 	}
 
 	return strings.TrimSpace(resp.Value), nil
+}
+
+// resolveAgentProtocol loads the agent.yaml manifest for the service and returns the
+// protocol that the agent implements (e.g. "responses", "invocations").
+// Returns an error when the protocol cannot be determined, with a contextual
+// suggestion guiding the user to fix the underlying issue.
+func resolveAgentProtocol(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	name string,
+	noPrompt bool,
+) (agent_api.AgentProtocol, error) {
+	svc, project, err := resolveAgentService(ctx, azdClient, name, noPrompt)
+	if err != nil {
+		return "", exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf(
+				"could not resolve agent service in azd project: %s", err,
+			),
+			"run from your project directory and ensure "+
+				"azure.yaml contains an azure.ai.agent service",
+		)
+	}
+
+	agentYamlPath := filepath.Join(
+		project.Path, svc.RelativePath, "agent.yaml",
+	)
+	return protocolFromAgentYaml(agentYamlPath)
+}
+
+// protocolFromAgentYaml reads and parses the agent.yaml file at the given path
+// and extracts the protocol. Returns an error with a contextual suggestion when
+// the file cannot be read, parsed, or does not declare exactly one protocol.
+func protocolFromAgentYaml(
+	agentYamlPath string,
+) (agent_api.AgentProtocol, error) {
+	data, err := os.ReadFile(agentYamlPath) //nolint:gosec // G304: path constructed from azd project root
+	if err != nil {
+		return "", exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf(
+				"could not read agent.yaml at %s: %s",
+				agentYamlPath, err,
+			),
+			"ensure agent.yaml exists in the azd service directory",
+		)
+	}
+
+	var hosted agent_yaml.ContainerAgent
+	if err := yaml.Unmarshal(data, &hosted); err != nil {
+		return "", exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf(
+				"could not parse agent.yaml at %s: %s",
+				agentYamlPath, err,
+			),
+			"fix the agent.yaml syntax",
+		)
+	}
+
+	switch len(hosted.Protocols) {
+	case 0:
+		return "", exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"agent.yaml does not declare any protocols",
+			"add a protocols section to agent.yaml",
+		)
+	case 1:
+		p := strings.TrimSpace(hosted.Protocols[0].Protocol)
+		if p == "" {
+			return "", exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"agent.yaml declares a protocol entry, "+
+					"but its protocol field is empty",
+				"set a non-empty protocol value in agent.yaml",
+			)
+		}
+		return agent_api.AgentProtocol(p), nil
+	default:
+		names := make([]string, len(hosted.Protocols))
+		for i, p := range hosted.Protocols {
+			names[i] = p.Protocol
+		}
+		return "", exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf(
+				"agent.yaml declares multiple protocols: %s",
+				strings.Join(names, ", "),
+			),
+			"use --protocol to specify which protocol to use",
+		)
+	}
 }

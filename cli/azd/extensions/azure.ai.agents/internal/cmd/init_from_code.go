@@ -803,13 +803,6 @@ func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string,
 		},
 	}
 
-	if !isVNextEnabled(ctx, a.azdClient) {
-		agentConfig.Container.Scale = &project.ScaleSettings{
-			MinReplicas: project.DefaultMinReplicas,
-			MaxReplicas: project.DefaultMaxReplicas,
-		}
-	}
-
 	agentConfig.Deployments = a.deploymentDetails
 
 	// Detect startup command from the project source directory

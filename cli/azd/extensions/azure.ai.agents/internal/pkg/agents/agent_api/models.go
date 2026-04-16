@@ -36,30 +36,6 @@ const (
 	AgentEventHandlerDestinationTypeEvals AgentEventHandlerDestinationType = "evals"
 )
 
-// AgentContainerStatus represents the status of an agent container
-type AgentContainerStatus string
-
-const (
-	AgentContainerStatusStarting AgentContainerStatus = "Starting"
-	AgentContainerStatusRunning  AgentContainerStatus = "Running"
-	AgentContainerStatusStopping AgentContainerStatus = "Stopping"
-	AgentContainerStatusStopped  AgentContainerStatus = "Stopped"
-	AgentContainerStatusFailed   AgentContainerStatus = "Failed"
-	AgentContainerStatusDeleting AgentContainerStatus = "Deleting"
-	AgentContainerStatusDeleted  AgentContainerStatus = "Deleted"
-	AgentContainerStatusUpdating AgentContainerStatus = "Updating"
-)
-
-// AgentContainerOperationStatus represents the status of container operations
-type AgentContainerOperationStatus string
-
-const (
-	AgentContainerOperationStatusNotStarted AgentContainerOperationStatus = "NotStarted"
-	AgentContainerOperationStatusInProgress AgentContainerOperationStatus = "InProgress"
-	AgentContainerOperationStatusSucceeded  AgentContainerOperationStatus = "Succeeded"
-	AgentContainerOperationStatusFailed     AgentContainerOperationStatus = "Failed"
-)
-
 // RaiConfig represents configuration for Responsible AI content filtering
 type RaiConfig struct {
 	RaiPolicyName string `json:"rai_policy_name"`
@@ -266,58 +242,6 @@ type DeleteAgentEventHandlerResponse struct {
 	Object  string `json:"object"`
 	Name    string `json:"name"`
 	Deleted bool   `json:"deleted"`
-}
-
-// AgentContainerOperationError represents error details for container operations
-type AgentContainerOperationError struct {
-	Code    string `json:"code"`
-	Type    string `json:"type"`
-	Message string `json:"message"`
-}
-
-// AgentContainerReplicaState represents the state of a single container replica
-type AgentContainerReplicaState struct {
-	Name           string `json:"name"`
-	State          string `json:"state"`
-	ContainerState string `json:"container_state,omitempty"`
-}
-
-// AgentContainerDetails represents the nested container runtime details
-type AgentContainerDetails struct {
-	HealthState       string                       `json:"health_state,omitempty"`
-	ProvisioningState string                       `json:"provisioning_state,omitempty"`
-	State             string                       `json:"state,omitempty"`
-	UpdatedOn         string                       `json:"updated_on,omitempty"`
-	Replicas          []AgentContainerReplicaState `json:"replicas,omitempty"`
-}
-
-// AgentContainerObject represents the details of an agent container
-type AgentContainerObject struct {
-	Object       string                 `json:"object"`
-	ID           string                 `json:"id,omitempty"`
-	Status       AgentContainerStatus   `json:"status"`
-	MaxReplicas  *int32                 `json:"max_replicas,omitempty"`
-	MinReplicas  *int32                 `json:"min_replicas,omitempty"`
-	ErrorMessage *string                `json:"error_message,omitempty"`
-	CreatedAt    string                 `json:"created_at"`
-	UpdatedAt    string                 `json:"updated_at"`
-	Container    *AgentContainerDetails `json:"container,omitempty"`
-}
-
-// AgentContainerOperationObject represents a container operation
-type AgentContainerOperationObject struct {
-	ID             string                        `json:"id"`
-	AgentID        string                        `json:"agent_id"`
-	AgentVersionID string                        `json:"agent_version_id"`
-	Status         AgentContainerOperationStatus `json:"status"`
-	Error          *AgentContainerOperationError `json:"error,omitempty"`
-	Container      *AgentContainerObject         `json:"container,omitempty"`
-}
-
-// AcceptedAgentContainerOperation represents an accepted container operation response
-type AcceptedAgentContainerOperation struct {
-	Location string                        `json:"location"` // From Operation-Location header
-	Body     AgentContainerOperationObject `json:"body"`
 }
 
 // ListAgentQueryParameters represents query parameters for listing agents

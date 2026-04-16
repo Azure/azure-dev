@@ -144,62 +144,6 @@ func TestExtractSubscriptionID(t *testing.T) {
 	}
 }
 
-func TestIsVnextEnabled(t *testing.T) {
-	tests := []struct {
-		name     string
-		azdEnv   map[string]string
-		osEnv    string
-		setOsEnv bool
-		want     bool
-	}{
-		{
-			name:   "enabled via azd env true",
-			azdEnv: map[string]string{"enableHostedAgentVNext": "true"},
-			want:   true,
-		},
-		{
-			name:   "enabled via azd env 1",
-			azdEnv: map[string]string{"enableHostedAgentVNext": "1"},
-			want:   true,
-		},
-		{
-			name:   "disabled via azd env false",
-			azdEnv: map[string]string{"enableHostedAgentVNext": "false"},
-			want:   false,
-		},
-		{
-			name:   "not set in azd env",
-			azdEnv: map[string]string{},
-			want:   false,
-		},
-		{
-			name:     "fallback to os env",
-			azdEnv:   map[string]string{},
-			osEnv:    "true",
-			setOsEnv: true,
-			want:     true,
-		},
-		{
-			name:   "invalid value",
-			azdEnv: map[string]string{"enableHostedAgentVNext": "notabool"},
-			want:   false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if tt.setOsEnv {
-				t.Setenv("enableHostedAgentVNext", tt.osEnv)
-			} else {
-				t.Setenv("enableHostedAgentVNext", "")
-			}
-
-			got := isVnextEnabled(tt.azdEnv)
-			assert.Equal(t, tt.want, got)
-		})
-	}
-}
-
 func TestConstants(t *testing.T) {
 	assert.Equal(t, "53ca6127-db72-4b80-b1b0-d745d6d5456d", roleAzureAIUser)
 }

@@ -75,10 +75,6 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient) error 
 		azdEnv[kv.Key] = kv.Value
 	}
 
-	if !isVnextEnabled(azdEnv) {
-		return nil
-	}
-
 	if isRoleAssignmentsSkipped(azdEnv) {
 		fmt.Println("  (-) Skipping developer RBAC pre-flight check (AZD_AGENT_SKIP_ROLE_ASSIGNMENTS is set)")
 		return nil

@@ -25,8 +25,7 @@ type showFlags struct {
 // ShowAction handles the execution of the show command.
 type ShowAction struct {
 	*AgentContext
-	flags     *showFlags
-	azdClient *azdext.AzdClient
+	flags *showFlags
 }
 
 func newShowCommand() *cobra.Command {
@@ -91,7 +90,6 @@ configuration and the current azd environment. Optionally specify the service na
 			action := &ShowAction{
 				AgentContext: agentContext,
 				flags:        flags,
-				azdClient:    azdClient,
 			}
 
 			return action.Run(ctx)
@@ -110,79 +108,19 @@ func (a *ShowAction) Run(ctx context.Context) error {
 		return err
 	}
 
-	if isVNextEnabled(ctx, a.azdClient) {
-		version, err := agentClient.GetAgentVersion(
-			ctx, a.Name, a.Version, DefaultAgentAPIVersion,
-		)
-		if err != nil {
-			return fmt.Errorf("failed to get agent version: %w", err)
-		}
-
-		switch a.flags.output {
-		case "table":
-			return printAgentVersionTable(version)
-		default:
-			return printAgentVersionJSON(version)
-		}
-	}
-
-	container, err := agentClient.GetAgentContainer(ctx, a.Name, a.Version, DefaultAgentAPIVersion)
+	version, err := agentClient.GetAgentVersion(
+		ctx, a.Name, a.Version, DefaultAgentAPIVersion,
+	)
 	if err != nil {
-		return fmt.Errorf("failed to get agent container status: %w", err)
+		return fmt.Errorf("failed to get agent version: %w", err)
 	}
 
 	switch a.flags.output {
 	case "table":
-		return printStatusTable(container)
+		return printAgentVersionTable(version)
 	default:
-		return printStatusJSON(container)
+		return printAgentVersionJSON(version)
 	}
-}
-
-func printStatusJSON(container *agent_api.AgentContainerObject) error {
-	jsonBytes, err := json.MarshalIndent(container, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal status to JSON: %w", err)
-	}
-	fmt.Println(string(jsonBytes))
-	return nil
-}
-
-func printStatusTable(container *agent_api.AgentContainerObject) error {
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "FIELD\tVALUE")
-	fmt.Fprintln(w, "-----\t-----")
-
-	fmt.Fprintf(w, "ID\t%s\n", container.ID)
-	fmt.Fprintf(w, "Status\t%s\n", container.Status)
-	if container.MinReplicas != nil {
-		fmt.Fprintf(w, "Min Replicas\t%d\n", *container.MinReplicas)
-	}
-	if container.MaxReplicas != nil {
-		fmt.Fprintf(w, "Max Replicas\t%d\n", *container.MaxReplicas)
-	}
-	fmt.Fprintf(w, "Created At\t%s\n", container.CreatedAt)
-	fmt.Fprintf(w, "Updated At\t%s\n", container.UpdatedAt)
-	if container.ErrorMessage != nil {
-		fmt.Fprintf(w, "Error Message\t%s\n", *container.ErrorMessage)
-	}
-
-	if container.Container != nil {
-		c := container.Container
-		fmt.Fprintf(w, "Health State\t%s\n", c.HealthState)
-		fmt.Fprintf(w, "Provisioning State\t%s\n", c.ProvisioningState)
-		fmt.Fprintf(w, "Container State\t%s\n", c.State)
-		fmt.Fprintf(w, "Container Updated On\t%s\n", c.UpdatedOn)
-		for i, r := range c.Replicas {
-			fmt.Fprintf(w, "Replica %d Name\t%s\n", i+1, r.Name)
-			fmt.Fprintf(w, "Replica %d State\t%s\n", i+1, r.State)
-			if r.ContainerState != "" {
-				fmt.Fprintf(w, "Replica %d Container State\t%s\n", i+1, r.ContainerState)
-			}
-		}
-	}
-
-	return w.Flush()
 }
 
 func printAgentVersionJSON(version *agent_api.AgentVersionObject) error {

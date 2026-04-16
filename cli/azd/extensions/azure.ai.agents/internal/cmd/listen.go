@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"azureaiagent/internal/exterrors"
@@ -283,17 +282,8 @@ func kindEnvUpdate(ctx context.Context, azdClient *azdext.AzdClient, project *az
 			return err
 		}
 
-		vnextValue := os.Getenv("enableHostedAgentVNext")
-		if vnextValue == "" {
-			azdEnv, err := loadAzdEnvironment(ctx, azdClient)
-			if err == nil {
-				vnextValue = azdEnv["enableHostedAgentVNext"]
-			}
-		}
-		if enabled, err := strconv.ParseBool(vnextValue); err == nil && enabled {
-			if err := setEnvVar(ctx, azdClient, envName, "ENABLE_CAPABILITY_HOST", "false"); err != nil {
-				return err
-			}
+		if err := setEnvVar(ctx, azdClient, envName, "ENABLE_CAPABILITY_HOST", "false"); err != nil {
+			return err
 		}
 	}
 
@@ -459,14 +449,12 @@ func populateContainerSettings(ctx context.Context, azdClient *azdext.AzdClient,
 		}
 	}
 
-	// Preserve existing Scale settings from azure.yaml, but don't create new defaults for VNext
+	// Preserve existing Scale settings from azure.yaml
 	if containerSettings.Scale != nil {
 		result.Scale = &project.ScaleSettings{
 			MinReplicas: containerSettings.Scale.MinReplicas,
 			MaxReplicas: containerSettings.Scale.MaxReplicas,
 		}
-	} else if !isVNextEnabled(ctx, azdClient) {
-		result.Scale = &project.ScaleSettings{}
 	}
 
 	// Set default values if zero or empty

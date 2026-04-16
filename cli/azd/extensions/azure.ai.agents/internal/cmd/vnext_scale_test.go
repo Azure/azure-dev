@@ -10,130 +10,43 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestIsVNextEnabled(t *testing.T) {
-	tests := []struct {
-		name     string
-		envValue string
-		want     bool
-	}{
-		{name: "enabled with true", envValue: "true", want: true},
-		{name: "enabled with 1", envValue: "1", want: true},
-		{name: "enabled with TRUE", envValue: "TRUE", want: true},
-		{name: "disabled with false", envValue: "false", want: false},
-		{name: "disabled with 0", envValue: "0", want: false},
-		{name: "invalid value falls back", envValue: "notabool", want: false},
-		{name: "unset falls back", envValue: "", want: false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if tt.envValue != "" {
-				t.Setenv("enableHostedAgentVNext", tt.envValue)
-			}
-
-			got := isVNextEnabled(t.Context())
-			assert.Equal(t, tt.want, got)
-		})
-	}
-}
-
-func TestVNextConditionalScale(t *testing.T) {
-	tests := []struct {
-		name      string
-		envValue  string
-		wantScale bool
-	}{
-		{
-			name:      "vnext disabled - scale defaults applied",
-			envValue:  "",
-			wantScale: true,
-		},
-		{
-			name:      "vnext enabled - scale omitted",
-			envValue:  "true",
-			wantScale: false,
+func TestScaleSettings_AlwaysOmitted(t *testing.T) {
+	// Scale settings are never auto-populated with defaults.
+	// This mirrors the pattern used in init.go, init_from_code.go, and listen.go.
+	container := &project.ContainerSettings{
+		Resources: &project.ResourceSettings{
+			Memory: project.DefaultMemory,
+			Cpu:    project.DefaultCpu,
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if tt.envValue != "" {
-				t.Setenv("enableHostedAgentVNext", tt.envValue)
-			}
-
-			// Mirrors the pattern used in init.go, init_from_code.go, and listen.go
-			container := &project.ContainerSettings{
-				Resources: &project.ResourceSettings{
-					Memory: project.DefaultMemory,
-					Cpu:    project.DefaultCpu,
-				},
-			}
-
-			if !isVNextEnabled(t.Context()) {
-				container.Scale = &project.ScaleSettings{
-					MinReplicas: project.DefaultMinReplicas,
-					MaxReplicas: project.DefaultMaxReplicas,
-				}
-			}
-
-			if tt.wantScale {
-				assert.NotNil(t, container.Scale, "Scale should be set when vnext is disabled")
-				assert.Equal(t, project.DefaultMinReplicas, container.Scale.MinReplicas)
-				assert.Equal(t, project.DefaultMaxReplicas, container.Scale.MaxReplicas)
-			} else {
-				assert.Nil(t, container.Scale, "Scale should be nil when vnext is enabled")
-			}
-		})
-	}
+	assert.Nil(t, container.Scale, "Scale should be nil — no defaults applied")
 }
 
-func TestVNextPreservesExistingScale(t *testing.T) {
-	// Mirrors the listen.go pattern: existing scale settings are always preserved,
-	// regardless of vnext status.
+func TestScaleSettings_ExistingPreserved(t *testing.T) {
+	// Mirrors the listen.go pattern: existing scale settings from azure.yaml are preserved.
 	tests := []struct {
 		name          string
-		envValue      string
 		existingScale *project.ScaleSettings
 		wantScale     bool
 		wantMin       int
 		wantMax       int
 	}{
 		{
-			name:      "vnext enabled, no existing scale - omitted",
-			envValue:  "true",
+			name:      "no existing scale - omitted",
 			wantScale: false,
 		},
 		{
-			name:          "vnext enabled, existing scale - preserved",
-			envValue:      "true",
+			name:          "existing scale - preserved",
 			existingScale: &project.ScaleSettings{MinReplicas: 2, MaxReplicas: 5},
 			wantScale:     true,
 			wantMin:       2,
 			wantMax:       5,
 		},
-		{
-			name:      "vnext disabled, no existing scale - defaults applied",
-			envValue:  "",
-			wantScale: true,
-			wantMin:   project.DefaultMinReplicas,
-			wantMax:   project.DefaultMaxReplicas,
-		},
-		{
-			name:          "vnext disabled, existing scale - preserved",
-			envValue:      "",
-			existingScale: &project.ScaleSettings{MinReplicas: 3, MaxReplicas: 10},
-			wantScale:     true,
-			wantMin:       3,
-			wantMax:       10,
-		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.envValue != "" {
-				t.Setenv("enableHostedAgentVNext", tt.envValue)
-			}
-
 			// Simulate listen.go populateContainerSettings logic
 			containerSettings := &project.ContainerSettings{
 				Resources: &project.ResourceSettings{
@@ -154,11 +67,6 @@ func TestVNextPreservesExistingScale(t *testing.T) {
 				result.Scale = &project.ScaleSettings{
 					MinReplicas: containerSettings.Scale.MinReplicas,
 					MaxReplicas: containerSettings.Scale.MaxReplicas,
-				}
-			} else if !isVNextEnabled(t.Context()) {
-				result.Scale = &project.ScaleSettings{
-					MinReplicas: project.DefaultMinReplicas,
-					MaxReplicas: project.DefaultMaxReplicas,
 				}
 			}
 

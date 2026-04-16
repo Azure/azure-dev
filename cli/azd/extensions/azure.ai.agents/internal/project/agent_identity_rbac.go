@@ -39,18 +39,6 @@ type agentIdentityInfo struct {
 	ResourceGroup  string
 }
 
-// isVnextEnabled checks if the enableHostedAgentVNext flag is set in the azd environment or OS env.
-func isVnextEnabled(azdEnv map[string]string) bool {
-	vnextValue := azdEnv["enableHostedAgentVNext"]
-	if vnextValue == "" {
-		vnextValue = os.Getenv("enableHostedAgentVNext")
-	}
-	if enabled, err := strconv.ParseBool(vnextValue); err == nil && enabled {
-		return true
-	}
-	return false
-}
-
 // isRoleAssignmentsSkipped checks if AZD_AGENT_SKIP_ROLE_ASSIGNMENTS is set to a truthy value
 // in the azd environment or OS environment. When true, both developer RBAC pre-flight checks
 // and per-agent identity RBAC assignments are skipped.
@@ -143,10 +131,6 @@ func EnsureAgentIdentityRBAC(ctx context.Context, azdClient *azdext.AzdClient, a
 	azdEnv := make(map[string]string, len(envResponse.KeyValues))
 	for _, kv := range envResponse.KeyValues {
 		azdEnv[kv.Key] = kv.Value
-	}
-
-	if !isVnextEnabled(azdEnv) {
-		return nil
 	}
 
 	if isRoleAssignmentsSkipped(azdEnv) {

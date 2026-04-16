@@ -1,5 +1,16 @@
 # Release History
 
+## 0.1.23-preview (2026-04-16)
+
+- [[#7753]](https://github.com/Azure/azure-dev/pull/7753) Fix `azd ai agent init` to pass the current directory as a positional argument to `azd init`, resolving failures caused by a missing `cwd` assumption in the underlying azd call.
+- [[#7729]](https://github.com/Azure/azure-dev/pull/7729) Fix `azd ai agent run` for .NET agents.
+- [[#7574]](https://github.com/Azure/azure-dev/pull/7574) Add `azd ai agent sessions` command group for listing, creating, and deleting agent sessions; improve `azd ai agent files` commands with positional argument support; rename `--session` flag to `--session-id` across all commands.
+- [[#7725]](https://github.com/Azure/azure-dev/pull/7725) Improve `--protocol` flag handling in `azd ai agent invoke` to correctly resolve the protocol when multiple protocols are configured.
+- [[#7640]](https://github.com/Azure/azure-dev/pull/7640) Add toolbox (MCP) support: provision MCP toolbox connections via `FOUNDRY_TOOLBOX_*` environment variables and add OAuth connection fields (`authorizationUrl`, `tokenUrl`, `refreshUrl`, `scopes`, `audience`, `connectorName`) to connection resources in `azure.yaml`.
+- [[#7614]](https://github.com/Azure/azure-dev/pull/7614) Fail fast on `azd ai agent init` when the user is not logged in, before any file-modifying operations begin.
+- [[#7679]](https://github.com/Azure/azure-dev/pull/7679) Add `--protocol` flag to `azd ai agent invoke` to explicitly select between `responses` and `invocations` protocols when multiple are configured; return a clear error when `invocations` is requested but not enabled.
+- [[#7675]](https://github.com/Azure/azure-dev/pull/7675) Add unit tests and testdata for the extension, covering agent YAML mapping, registry API helpers, API model serialization, and command utilities.
+
 ## 0.1.22-preview (2026-04-10)
 
 - [[#7633]](https://github.com/Azure/azure-dev/pull/7633) Fix `azd ai agent init` to correctly set `AZURE_AI_MODEL_DEPLOYMENT_NAME` when initializing from a manifest, template, or `--model`/`--model-deployment` flags.

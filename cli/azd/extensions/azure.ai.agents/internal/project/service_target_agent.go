@@ -672,7 +672,7 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 	}
 
 	// Set the vnext experience metadata on the request
-	applyVnextMetadata(request, azdEnv)
+	applyVnextMetadata(request)
 
 	// Display agent information
 	p.displayAgentInfo(request)
@@ -958,7 +958,7 @@ func encodeSubscriptionID(subscriptionID string) (string, error) {
 }
 
 // applyVnextMetadata sets the enableVnextExperience metadata on the request.
-func applyVnextMetadata(request *agent_api.CreateAgentRequest, azdEnv map[string]string) {
+func applyVnextMetadata(request *agent_api.CreateAgentRequest) {
 	if request.Metadata == nil {
 		request.Metadata = make(map[string]string)
 	}

@@ -38,27 +38,28 @@ func newMonitorCommand() *cobra.Command {
 		Short: "Monitor logs from a hosted agent.",
 		Long: `Monitor logs from a hosted agent.
 
-Streams console output (stdout/stderr) or system events from an agent session or container.
-Use --session-id to stream logs for a specific session, or omit it to use the container logstream.
+Streams console output (stdout/stderr) or system events from an agent session.
+A session ID is required — it is auto-resolved from the last invocation, or you can
+specify one explicitly with --session-id.
 Use --follow to stream logs in real-time, or omit it to fetch recent logs and exit.
-This is useful for troubleshooting agent startup issues or monitoring agent behavior.
+This is useful for troubleshooting agent issues or monitoring agent behavior.
 
 The agent name and version are resolved automatically from the azure.yaml service
 configuration and the current azd environment. Optionally specify the service name
 (from azure.yaml) as a positional argument when multiple agent services exist.`,
-		Example: `  # Monitor logs (auto-resolves from azure.yaml)
+		Example: `  # Monitor session logs (auto-resolves session from last invocation)
   azd ai agent monitor
 
   # Monitor logs for a specific agent service
   azd ai agent monitor my-agent
 
-  # Stream session logs
+  # Stream logs for a specific session
   azd ai agent monitor --session-id <session-id>
 
   # Stream session logs in real-time
   azd ai agent monitor --session-id <session-id> --follow
 
-  # Fetch system event logs from container
+  # Fetch system event logs
   azd ai agent monitor --type system`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {

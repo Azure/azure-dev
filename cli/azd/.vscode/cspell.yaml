@@ -417,6 +417,22 @@ overrides:
       - badcfg
       - provison
       - notacommand
+  - filename: pkg/infra/provisioning/bicep/bicep_provider.go
+    words:
+      - BIZSPARK
+      - BIZTALK
+      - CORTANA
+      - DIRECTX
+      - GLOBALRESOURCES
+      - HOLOLENS
+      - HYPERV
+      - KINECT
+      - LOCALRESOURCES
+      - LYNC
+      - ONEDRIVE
+      - ONENOTE
+      - VISIO
+      - WEBREFERENCES
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

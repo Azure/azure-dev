@@ -5,6 +5,8 @@ package project
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +15,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
@@ -31,6 +34,33 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 )
 
+// templateHashMu protects concurrent reads/writes to the shared environment map.
+// Environment.DotenvSet and Getenv operate on an unprotected map[string]string,
+// so when parallel deploy is active, all concurrent access to the env map must
+// be serialized.
+//
+// Threading model for concurrent deploys:
+//   - shouldUseDirectRevisionAPI: reads (Getenv) and writes (DotenvSet) template
+//     hash keys — protected by templateHashMu.
+//   - expandServiceEnv: reads (Getenv via Expand callback) arbitrary env keys —
+//     also protected by templateHashMu to prevent races with DotenvSet.
+//
+// This is a package-level RWMutex (rather than instance-level) because all containerAppTarget
+// instances in a single azd run share the same *environment.Environment pointer.
+// A per-instance mutex would not protect against cross-instance races on the shared map.
+//
+// RWMutex allows concurrent reads (expandServiceEnv calls Getenv/Expand) while
+// serializing writes (shouldUseDirectRevisionAPI calls DotenvSet). This prevents
+// the read-only expand path from blocking parallel deploys.
+var templateHashMu sync.RWMutex
+
+// envSaveMu serializes SetServiceProperty + envManager.Save sequences in Publish.
+// When parallel deploy is active, multiple containerAppTarget instances call Publish
+// concurrently. Each reads/writes the shared environment map and persists it to disk.
+// Without serialization, concurrent saves can lose updates (last-writer-wins on the file)
+// and race on the in-memory map.
+var envSaveMu sync.Mutex
+
 type containerAppTarget struct {
 	env                 *environment.Environment
 	envManager          environment.Manager
@@ -42,6 +72,12 @@ type containerAppTarget struct {
 	commandRunner       exec.CommandRunner
 
 	bicepCli func() (*bicep.Cli, error)
+
+	// expandedEnvMu protects expandedEnvCache from concurrent access.
+	expandedEnvMu sync.Mutex
+	// expandedEnvCache caches the result of serviceConfig.Environment.Expand()
+	// keyed by the service name, to avoid redundant env var resolution within the same azd process.
+	expandedEnvCache map[string]map[string]string
 }
 
 // NewContainerAppTarget creates the container app service target.
@@ -67,7 +103,33 @@ func NewContainerAppTarget(
 		armDeployments:      deploymentService,
 		console:             console,
 		commandRunner:       commandRunner,
+		expandedEnvCache:    make(map[string]map[string]string),
 	}
+}
+
+// expandServiceEnv expands environment variables from the service config, caching results
+// to avoid redundant resolution within the same azd process.
+func (at *containerAppTarget) expandServiceEnv(serviceConfig *ServiceConfig) (map[string]string, error) {
+	at.expandedEnvMu.Lock()
+	defer at.expandedEnvMu.Unlock()
+
+	if cached, ok := at.expandedEnvCache[serviceConfig.Name]; ok {
+		return cached, nil
+	}
+
+	// Hold templateHashMu (read lock) while reading from the shared env map via Expand.
+	// The underlying Environment map is not goroutine-safe, and concurrent
+	// shouldUseDirectRevisionAPI calls may write to the same map via DotenvSet.
+	// RLock allows concurrent expand calls across services; only writes take exclusive lock.
+	templateHashMu.RLock()
+	envVars, err := serviceConfig.Environment.Expand(at.env.Getenv)
+	templateHashMu.RUnlock()
+	if err != nil {
+		return nil, err
+	}
+
+	at.expandedEnvCache[serviceConfig.Name] = envVars
+	return envVars, nil
 }
 
 // Gets the required external tools
@@ -153,14 +215,21 @@ func (at *containerAppTarget) Publish(
 	// Save the name of the image we pushed into the environment with a well known key.
 	log.Printf("writing image name to environment")
 
+	// Serialize env mutation + save to prevent lost updates when parallel publishes
+	// write to the same shared environment (see envSaveMu docs).
+	envSaveMu.Lock()
+
 	// Extract remote image from artifacts
 	if remoteContainer, ok := publishResult.Artifacts.FindFirst(WithKind(ArtifactKindContainer)); ok {
 		at.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", remoteContainer.Location)
 	}
 
 	if err := at.envManager.Save(ctx, at.env); err != nil {
+		envSaveMu.Unlock()
 		return nil, fmt.Errorf("saving image name to environment: %w", err)
 	}
+
+	envSaveMu.Unlock()
 
 	return publishResult, nil
 }
@@ -224,6 +293,12 @@ func (at *containerAppTarget) Deploy(
 		}
 	}
 
+	// Smart deploy API: prefer direct revision API for code-only changes when template is unchanged.
+	// This avoids the overhead of full ARM template revalidation when only the container image tag changed.
+	if controlledRevision && at.shouldUseDirectRevisionAPI(serviceConfig, mainPath) {
+		controlledRevision = false
+	}
+
 	if controlledRevision {
 		tracing.AppendUsageAttributeUnique(fields.FeaturesKey.String(fields.FeatRevisionDeployment))
 
@@ -275,7 +350,9 @@ func (at *containerAppTarget) Deploy(
 
 		if len(outputs) > 0 {
 			outputParams := provisioning.OutputParametersFromArmOutputs(template.Outputs, outputs)
+			envSaveMu.Lock()
 			err := provisioning.UpdateEnvironment(ctx, outputParams, at.env, at.envManager)
+			envSaveMu.Unlock()
 			if err != nil {
 				return nil, fmt.Errorf("updating environment: %w", err)
 			}
@@ -299,15 +376,15 @@ func (at *containerAppTarget) Deploy(
 
 		isJob := isJobResource(targetResource)
 
-		// Expand environment variables from service config (common to both jobs and apps)
-		envVars, err := serviceConfig.Environment.Expand(at.env.Getenv)
-		if err != nil {
-			return nil, fmt.Errorf("expanding environment variables: %w", err)
-		}
-
 		if isJob {
 			tracing.AppendUsageAttributeUnique(fields.FeaturesKey.String(fields.FeatJobDeployment))
 			resourceTypeContainer = azapi.AzureResourceTypeContainerAppJob
+
+			// Expand environment variables from service config
+			envVars, err := at.expandServiceEnv(serviceConfig)
+			if err != nil {
+				return nil, fmt.Errorf("expanding environment variables: %w", err)
+			}
 
 			progress.SetProgress(NewServiceProgress("Updating container app job image"))
 			err = at.containerAppService.UpdateContainerAppJobImage(
@@ -323,6 +400,12 @@ func (at *containerAppTarget) Deploy(
 				return nil, fmt.Errorf("updating container app job: %w", err)
 			}
 		} else {
+			// Expand environment variables from service config
+			envVars, err := at.expandServiceEnv(serviceConfig)
+			if err != nil {
+				return nil, fmt.Errorf("expanding environment variables: %w", err)
+			}
+
 			progress.SetProgress(NewServiceProgress("Updating container app revision"))
 			err = at.containerAppService.AddRevision(
 				ctx,
@@ -410,6 +493,42 @@ func (at *containerAppTarget) Endpoints(
 
 		return endpoints, nil
 	}
+}
+
+// shouldUseDirectRevisionAPI checks whether the service's infrastructure template is unchanged
+// since the last deployment, indicating that only the container image tag changed and the
+// cheaper direct revision API can be used instead of a full ARM template deployment.
+// The templateHashMu mutex serializes access to the shared environment map for concurrent deploys.
+func (at *containerAppTarget) shouldUseDirectRevisionAPI(
+	serviceConfig *ServiceConfig,
+	mainPath string,
+) bool {
+	templateContent, readErr := os.ReadFile(mainPath)
+	if readErr != nil {
+		return false
+	}
+
+	currentHash := sha256.Sum256(templateContent)
+	currentHashStr := hex.EncodeToString(currentHash[:])
+	envHashKey := fmt.Sprintf("SERVICE_%s_TEMPLATE_HASH", strings.ToUpper(serviceConfig.Name))
+
+	// Serialize access to the shared Environment map. DotenvSet and Getenv operate
+	// on an unprotected map[string]string, so concurrent calls during parallel
+	// deploy would be a data race.
+	templateHashMu.Lock()
+	previousHash := at.env.Getenv(envHashKey)
+	at.env.DotenvSet(envHashKey, currentHashStr)
+	templateHashMu.Unlock()
+
+	if currentHashStr == previousHash {
+		log.Printf(
+			"template unchanged for %s, using direct revision API",
+			serviceConfig.Name,
+		)
+		return true
+	}
+
+	return false
 }
 
 func (at *containerAppTarget) validateTargetResource(

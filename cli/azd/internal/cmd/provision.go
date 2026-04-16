@@ -7,21 +7,17 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
-	"os"
-	"strconv"
-	"strings"
+	"sync"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
-	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
+	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
@@ -30,7 +26,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	"go.uber.org/multierr"
 )
 
 type ProvisionFlags struct {
@@ -141,6 +136,17 @@ type ProvisionAction struct {
 	importManager       *project.ImportManager
 	alphaFeatureManager *alpha.FeatureManager
 	portalUrlBase       string
+	defaultProvider     provisioning.DefaultProviderResolver
+	fileShareService    storage.FileShareService
+	cloud               *cloud.Cloud
+
+	// Graph-shared state (lazily initialized via graphOnce). Used by the
+	// multi-layer provisioning graph path to share a thread-safe console
+	// wrapper and mutexes across concurrent layer steps.
+	graphOnce        sync.Once
+	graphSyncConsole *syncConsole
+	graphEnvMu       *sync.Mutex
+	graphHookMu      *sync.Mutex
 }
 
 func NewProvisionAction(
@@ -161,6 +167,8 @@ func NewProvisionAction(
 	subManager *account.SubscriptionsManager,
 	alphaFeatureManager *alpha.FeatureManager,
 	cloud *cloud.Cloud,
+	defaultProvider provisioning.DefaultProviderResolver,
+	fileShareService storage.FileShareService,
 ) actions.Action {
 	return &ProvisionAction{
 		args:                args,
@@ -180,6 +188,9 @@ func NewProvisionAction(
 		importManager:       importManager,
 		alphaFeatureManager: alphaFeatureManager,
 		portalUrlBase:       cloud.PortalUrlBase,
+		defaultProvider:     defaultProvider,
+		fileShareService:    fileShareService,
+		cloud:               cloud,
 	}
 }
 
@@ -287,300 +298,12 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		}
 	}
 
-	allSkipped := true
-	for i, layer := range layers {
-		layerPath := layer.AbsolutePath(p.projectConfig.Path)
-
-		layer.IgnoreDeploymentState = p.flags.ignoreDeploymentState
-		if err := p.provisionManager.Initialize(ctx, p.projectConfig.Path, layer); err != nil {
-			return nil, fmt.Errorf("initializing provisioning manager: %w", err)
-		}
-
-		if i == 0 && p.subManager != nil { // only display once
-			// Get Subscription to Display in Command Title Note
-			// Subscription and Location are ONLY displayed when they are available (found from env), otherwise, this message
-			// is not displayed.
-			// This needs to happen after the provisionManager initializes to make sure the env is ready for the provisioning
-			// provider
-			subscription, subErr := p.subManager.GetSubscription(ctx, p.env.GetSubscriptionId())
-			if subErr == nil {
-				location, err := p.subManager.GetLocation(ctx, p.env.GetSubscriptionId(), p.env.GetLocation())
-				var locationDisplay string
-				if err != nil {
-					log.Printf("failed getting location: %v", err)
-				} else {
-					locationDisplay = location.DisplayName
-				}
-
-				var subscriptionDisplay string
-				if v, err := strconv.ParseBool(os.Getenv("AZD_DEMO_MODE")); err == nil && v {
-					subscriptionDisplay = subscription.Name
-				} else {
-					subscriptionDisplay = fmt.Sprintf("%s (%s)", subscription.Name, subscription.Id)
-				}
-
-				p.console.MessageUxItem(ctx, &ux.EnvironmentDetails{
-					Subscription: subscriptionDisplay,
-					Location:     locationDisplay,
-				})
-
-			} else {
-				log.Printf("failed getting subscriptions. Skip displaying sub and location: %v", subErr)
-			}
-		} else {
-			// separation between each layer
-			p.console.Message(ctx, "")
-		}
-
-		if layer.Name != "" {
-			p.console.Message(ctx, fmt.Sprintf("Layer: %s", output.WithHighLightFormat(layer.Name)))
-		}
-		p.console.Message(ctx, "")
-
-		var deployResult *provisioning.DeployResult
-		var deployPreviewResult *provisioning.DeployPreviewResult
-
-		projectEventArgs := project.ProjectLifecycleEventArgs{
-			Project: p.projectConfig,
-			Args: map[string]any{
-				"preview": previewMode,
-				"layer":   layer.Name,
-				"path":    layerPath,
-			},
-		}
-
-		if p.alphaFeatureManager.IsEnabled(azapi.FeatureDeploymentStacks) {
-			p.console.WarnForFeature(ctx, azapi.FeatureDeploymentStacks)
-		}
-
-		// Do not raise pre/postprovision events in preview mode.
-		if previewMode {
-			deployPreviewResult, err = p.provisionManager.Preview(ctx)
-		} else {
-			err = p.runLayerProvisionWithHooks(ctx, layer, layerPath, func() error {
-				return p.projectConfig.Invoke(ctx, project.ProjectEventProvision, projectEventArgs, func() error {
-					var err error
-					deployResult, err = p.provisionManager.Deploy(ctx)
-					return err
-				})
-			})
-		}
-
-		if err != nil {
-			if p.formatter.Kind() == output.JsonFormat {
-				stateResult, err := p.provisionManager.State(ctx, nil)
-				if err != nil {
-					return nil, fmt.Errorf(
-						"deployment failed and the deployment result is unavailable: %w",
-						multierr.Combine(err, err),
-					)
-				}
-
-				if err := p.formatter.Format(
-					provisioning.NewEnvRefreshResultFromState(stateResult.State), p.writer, nil); err != nil {
-					return nil, fmt.Errorf(
-						"deployment failed and the deployment result could not be displayed: %w",
-						multierr.Combine(err, err),
-					)
-				}
-			}
-
-			//if user don't have access to openai
-			errorMsg := err.Error()
-			if strings.Contains(errorMsg, specialFeatureOrQuotaIdRequired) && strings.Contains(errorMsg, "OpenAI") {
-				requestAccessLink := "https://go.microsoft.com/fwlink/?linkid=2259205&clcid=0x409"
-				return nil, &internal.ErrorWithSuggestion{
-					Err: err,
-					Suggestion: "\nSuggested Action: The selected subscription does not have access to" +
-						" Azure OpenAI Services. Please visit " + output.WithLinkFormat("%s", requestAccessLink) +
-						" to request access.",
-				}
-			}
-
-			if strings.Contains(errorMsg, AINotValid) &&
-				strings.Contains(errorMsg, openAIsubscriptionNoQuotaId) {
-				return nil, &internal.ErrorWithSuggestion{
-					Suggestion: "\nSuggested Action: The selected " +
-						"subscription has not been enabled for use of Azure AI service and does not have quota for " +
-						"any pricing tiers. Please visit " + output.WithLinkFormat("%s", p.portalUrlBase) +
-						" and select 'Create' on specific services to request access.",
-					Err: err,
-				}
-			}
-
-			//if user haven't agree to Responsible AI terms
-			if strings.Contains(errorMsg, responsibleAITerms) {
-				return nil, &internal.ErrorWithSuggestion{
-					Suggestion: "\nSuggested Action: Please visit azure portal in " +
-						output.WithLinkFormat("%s", p.portalUrlBase) + ". Create the resource in azure portal " +
-						"to go through Responsible AI terms, and then delete it. " +
-						"After that, run 'azd provision' again",
-					Err: err,
-				}
-			}
-
-			return nil, fmt.Errorf("deployment failed: %w", err)
-		}
-
-		if previewMode {
-			p.console.MessageUxItem(ctx, deployResultToUx(deployPreviewResult))
-
-			return &actions.ActionResult{
-				Message: &actions.ResultMessage{
-					Header: fmt.Sprintf(
-						"Generated provisioning preview in %s.", ux.DurationAsText(since(startTime))),
-					FollowUp: getResourceGroupFollowUp(
-						ctx,
-						p.formatter,
-						p.portalUrlBase,
-						p.projectConfig,
-						p.resourceManager,
-						p.env,
-						true,
-					),
-				},
-			}, nil
-		}
-
-		skipped := deployResult.SkippedReason == provisioning.DeploymentStateSkipped
-		allSkipped = allSkipped && skipped
-		if skipped {
-			// Simply continue here; message is printed in the provider implementation
-			continue
-		}
-
-		if deployResult.SkippedReason == provisioning.PreflightAbortedSkipped {
-			p.console.MessageUxItem(ctx, &ux.ActionResult{
-				SuccessMessage: "Provisioning was cancelled.",
-			})
-			return nil, internal.ErrAbortedByUser
-		}
-
-		servicesStable, err := p.importManager.ServiceStable(ctx, p.projectConfig)
-		if err != nil {
-			return nil, err
-		}
-
-		for _, svc := range servicesStable {
-			eventArgs := project.ServiceLifecycleEventArgs{
-				Project:        p.projectConfig,
-				Service:        svc,
-				ServiceContext: project.NewServiceContext(),
-				Args: map[string]any{
-					"bicepOutput": deployResult.Deployment.Outputs,
-				},
-			}
-
-			if err := svc.RaiseEvent(ctx, project.ServiceEventEnvUpdated, eventArgs); err != nil {
-				return nil, err
-			}
-		}
-
-		if p.formatter.Kind() == output.JsonFormat {
-			stateResult, err := p.provisionManager.State(ctx, nil)
-			if err != nil {
-				return nil, fmt.Errorf(
-					"deployment succeeded but the deployment result is unavailable: %w",
-					multierr.Combine(err, err),
-				)
-			}
-
-			if err := p.formatter.Format(
-				provisioning.NewEnvRefreshResultFromState(stateResult.State), p.writer, nil); err != nil {
-				return nil, fmt.Errorf(
-					"deployment succeeded but the deployment result could not be displayed: %w",
-					multierr.Combine(err, err),
-				)
-			}
-		}
-	}
-
-	if allSkipped {
-		return &actions.ActionResult{
-			Message: &actions.ResultMessage{
-				Header: "There are no changes to provision for your application.",
-			},
-		}, nil
-	}
-
-	// Invalidate cache after successful provisioning so next azd show will refresh
-	if err := p.envManager.InvalidateEnvCache(ctx, p.env.Name()); err != nil {
-		log.Printf("warning: failed to invalidate state cache: %v", err)
-	}
-
-	return &actions.ActionResult{
-		Message: &actions.ResultMessage{
-			Header: fmt.Sprintf(
-				"Your application was provisioned in Azure in %s.", ux.DurationAsText(since(startTime))),
-			FollowUp: getResourceGroupFollowUp(
-				ctx,
-				p.formatter,
-				p.portalUrlBase,
-				p.projectConfig,
-				p.resourceManager,
-				p.env,
-				false,
-			),
-		},
-	}, nil
-}
-
-func (p *ProvisionAction) runLayerProvisionWithHooks(
-	ctx context.Context,
-	layer provisioning.Options,
-	layerPath string,
-	actionFn ext.InvokeFn,
-) error {
-	if len(layer.Hooks) == 0 {
-		return actionFn()
-	}
-
-	hooksManager := ext.NewHooksManager(ext.HooksManagerOptions{
-		Cwd: layerPath, ProjectDir: p.projectConfig.Path,
-	}, p.commandRunner)
-	hooksRunner := ext.NewHooksRunner(
-		hooksManager,
-		p.commandRunner,
-		p.envManager,
-		p.console,
-		layerPath,
-		layer.Hooks,
-		p.env,
-		p.serviceLocator,
-	)
-
-	p.validateAndWarnLayerHooks(ctx, hooksManager, layer.Hooks)
-
-	err := hooksRunner.Invoke(
-		ctx, []string{string(project.ProjectEventProvision)}, "layer", actionFn,
-	)
-	if err != nil {
-		if layer.Name == "" {
-			return err
-		}
-
-		return fmt.Errorf("layer '%s': %w", layer.Name, err)
-	}
-
-	return nil
-}
-
-func (p *ProvisionAction) validateAndWarnLayerHooks(
-	ctx context.Context,
-	hooksManager *ext.HooksManager,
-	hooks map[string][]*ext.HookConfig,
-) {
-	validationResult := hooksManager.ValidateHooks(ctx, hooks)
-
-	for _, warning := range validationResult.Warnings {
-		p.console.MessageUxItem(ctx, &ux.WarningMessage{
-			Description: warning.Message,
-		})
-		if warning.Suggestion != "" {
-			p.console.Message(ctx, warning.Suggestion)
-		}
-		p.console.Message(ctx, "")
-	}
+	// Unified entry point: provisionLayersGraph dispatches to the right
+	// path (zero-layer info message, preview direct call, single-layer
+	// one-node graph, or multi-layer N-node graph) and owns the shared
+	// UX — environment details banner, JSON state dumps, and OpenAI /
+	// Responsible AI error wrappers.
+	return p.provisionLayersGraph(ctx, layers, startTime, previewMode)
 }
 
 // deployResultToUx creates the ux element to display from a provision preview

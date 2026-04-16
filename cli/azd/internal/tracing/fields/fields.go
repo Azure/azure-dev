@@ -454,6 +454,60 @@ var (
 	}
 )
 
+// Execution graph scheduler related fields
+var (
+	// ExeGraphStepCountKey records the total number of steps in the graph.
+	ExeGraphStepCountKey = AttributeKey{
+		Key:            attribute.Key("exegraph.step.count"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
+	}
+
+	// ExeGraphMaxConcurrencyKey records the effective concurrency limit used.
+	ExeGraphMaxConcurrencyKey = AttributeKey{
+		Key:            attribute.Key("exegraph.max_concurrency"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
+
+	// ExeGraphErrorPolicyKey records the error policy (fail_fast or continue_on_error).
+	ExeGraphErrorPolicyKey = AttributeKey{
+		Key:            attribute.Key("exegraph.error_policy"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
+
+	// ExeGraphStepNameKey records the step name within an exegraph.step span.
+	ExeGraphStepNameKey = AttributeKey{
+		Key:            attribute.Key("exegraph.step.name"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
+
+	// ExeGraphStepDepsKey records the dependency list for a step.
+	ExeGraphStepDepsKey = AttributeKey{
+		Key:            attribute.Key("exegraph.step.deps"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
+
+	// ExeGraphStepTagsKey records the tags for a step.
+	ExeGraphStepTagsKey = AttributeKey{
+		Key:            attribute.Key("exegraph.step.tags"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
+
+	// ExeGraphStepTimeoutKey records the per-step timeout if set (in seconds).
+	ExeGraphStepTimeoutKey = AttributeKey{
+		Key:            attribute.Key("exegraph.step.timeout_s"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
+	}
+)
+
 // The value used for ServiceNameKey
 const ServiceNameAzd = "azd"
 

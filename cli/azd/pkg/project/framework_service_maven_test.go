@@ -378,7 +378,7 @@ func Test_MavenProject_FuncApp_Package(t *testing.T) {
 
 	t.Run("uses maven property functionAppName", func(t *testing.T) {
 		mvnFuncAppNameProperty = "my-function-app"
-		svc := *serviceConfig //nolint:govet // copylocks: test-local copy, mutex is zero-valued
+		svc := *serviceConfig
 
 		err = os.RemoveAll(filepath.Join(svc.Path(), "target", "azure-functions"))
 		require.NoError(t, err)
@@ -421,7 +421,7 @@ func Test_MavenProject_FuncApp_Package(t *testing.T) {
 
 	t.Run("uses target/azure-functions when maven property functionAppName not available", func(t *testing.T) {
 		mvnFuncAppNameProperty = ""
-		svc := *serviceConfig //nolint:govet // copylocks: test-local copy, mutex is zero-valued
+		svc := *serviceConfig
 
 		err = os.RemoveAll(filepath.Join(svc.Path(), "target", "azure-functions"))
 		require.NoError(t, err)
@@ -489,7 +489,7 @@ func Test_MavenProject_FuncApp_Package(t *testing.T) {
 
 	t.Run("uses dist specified", func(t *testing.T) {
 		mvnFuncAppNameProperty = ""
-		svc := *serviceConfig //nolint:govet // copylocks: test-local copy, mutex is zero-valued
+		svc := *serviceConfig
 
 		svc.OutputPath = "my-custom-dir"
 		result, err := logProgress(t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {

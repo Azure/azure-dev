@@ -82,3 +82,12 @@ const (
 	ContainerPublishEvent     = "container.publish"
 	ContainerRemoteBuildEvent = "container.remotebuild"
 )
+
+// Execution graph events.
+const (
+	// ExeGraphRunEvent is the root span for executing an entire graph.
+	ExeGraphRunEvent = "exegraph.run"
+
+	// ExeGraphStepEvent is the span for a single step execution within the graph.
+	ExeGraphStepEvent = "exegraph.step"
+)

@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
@@ -153,6 +154,7 @@ type serviceManager struct {
 	operationCache      ServiceOperationCache
 	alphaFeatureManager *alpha.FeatureManager
 	initialized         map[*ServiceConfig]map[any]bool
+	mu                  sync.Mutex
 }
 
 // NewServiceManager creates a new instance of the ServiceManager component
@@ -210,7 +212,9 @@ func (sm *serviceManager) Initialize(ctx context.Context, serviceConfig *Service
 			return err
 		}
 
+		sm.mu.Lock()
 		sm.initialized[serviceConfig][frameworkService] = true
+		sm.mu.Unlock()
 	} else {
 		log.Printf("frameworkService already initialized for service: %s", serviceConfig.Name)
 	}
@@ -220,7 +224,9 @@ func (sm *serviceManager) Initialize(ctx context.Context, serviceConfig *Service
 			return err
 		}
 
+		sm.mu.Lock()
 		sm.initialized[serviceConfig][serviceTarget] = true
+		sm.mu.Unlock()
 	}
 
 	return nil
@@ -364,7 +370,7 @@ func (sm *serviceManager) Package(
 		return nil, fmt.Errorf("getting framework service: %w", err)
 	}
 
-	serviceTarget, err := sm.GetServiceTarget(ctx, serviceConfig)
+	serviceTarget, err := sm.cachedServiceTarget(ctx, serviceConfig)
 	if err != nil {
 		return nil, fmt.Errorf("getting service target: %w", err)
 	}
@@ -499,12 +505,12 @@ func (sm *serviceManager) Publish(
 		}
 	}
 
-	serviceTarget, err := sm.GetServiceTarget(ctx, serviceConfig)
+	serviceTarget, err := sm.cachedServiceTarget(ctx, serviceConfig)
 	if err != nil {
 		return nil, fmt.Errorf("getting service target: %w", err)
 	}
 
-	targetResource, err := sm.GetTargetResource(ctx, serviceConfig, serviceTarget)
+	targetResource, err := sm.cachedTargetResource(ctx, serviceConfig, serviceTarget)
 	if err != nil {
 		return nil, fmt.Errorf("getting target resource: %w", err)
 	}
@@ -571,12 +577,12 @@ func (sm *serviceManager) Deploy(
 		}
 	}
 
-	serviceTarget, err := sm.GetServiceTarget(ctx, serviceConfig)
+	serviceTarget, err := sm.cachedServiceTarget(ctx, serviceConfig)
 	if err != nil {
 		return nil, fmt.Errorf("getting service target: %w", err)
 	}
 
-	targetResource, err := sm.GetTargetResource(ctx, serviceConfig, serviceTarget)
+	targetResource, err := sm.cachedTargetResource(ctx, serviceConfig, serviceTarget)
 	if err != nil {
 		return nil, fmt.Errorf("getting target resource: %w", err)
 	}
@@ -756,6 +762,8 @@ func OverriddenEndpoints(ctx context.Context, serviceConfig *ServiceConfig, env 
 
 // Attempts to retrieve the result of a previous operation from the cache
 func (sm *serviceManager) getOperationResult(serviceConfig *ServiceConfig, eventType ext.Event) (any, bool) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
 	key := fmt.Sprintf("%s:%s:%s", sm.env.Name(), serviceConfig.Name, eventType)
 	value, ok := sm.operationCache[key]
 
@@ -764,12 +772,70 @@ func (sm *serviceManager) getOperationResult(serviceConfig *ServiceConfig, event
 
 // Sets the result of an operation in the cache
 func (sm *serviceManager) setOperationResult(serviceConfig *ServiceConfig, eventType ext.Event, result any) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
 	key := fmt.Sprintf("%s:%s:%s", sm.env.Name(), serviceConfig.Name, eventType)
 	sm.operationCache[key] = result
 }
 
+// cachedServiceTarget returns a cached ServiceTarget for the given service config, or resolves and caches it.
+// ServiceTarget resolution goes through the IoC container; caching avoids repeated lookups within the same lifecycle.
+func (sm *serviceManager) cachedServiceTarget(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+) (ServiceTarget, error) {
+	sm.mu.Lock()
+	cacheKey := fmt.Sprintf("%s:%s:serviceTarget", sm.env.Name(), serviceConfig.Name)
+	if cached, ok := sm.operationCache[cacheKey]; ok {
+		sm.mu.Unlock()
+		return cached.(ServiceTarget), nil
+	}
+	sm.mu.Unlock()
+
+	target, err := sm.GetServiceTarget(ctx, serviceConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	sm.mu.Lock()
+	sm.operationCache[cacheKey] = target
+	sm.mu.Unlock()
+
+	return target, nil
+}
+
+// cachedTargetResource returns a cached TargetResource for the given service config and target, or resolves and caches it.
+// TargetResource resolution requires ARM API calls; caching avoids redundant network round-trips when
+// Package, Publish, and Deploy call it for the same service.
+func (sm *serviceManager) cachedTargetResource(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	serviceTarget ServiceTarget,
+) (*environment.TargetResource, error) {
+	sm.mu.Lock()
+	cacheKey := fmt.Sprintf("%s:%s:targetResource", sm.env.Name(), serviceConfig.Name)
+	if cached, ok := sm.operationCache[cacheKey]; ok {
+		sm.mu.Unlock()
+		return cached.(*environment.TargetResource), nil
+	}
+	sm.mu.Unlock()
+
+	resource, err := sm.GetTargetResource(ctx, serviceConfig, serviceTarget)
+	if err != nil {
+		return nil, err
+	}
+
+	sm.mu.Lock()
+	sm.operationCache[cacheKey] = resource
+	sm.mu.Unlock()
+
+	return resource, nil
+}
+
 // isComponentInitialized Checks if a component has been initialized for a service configuration
 func (sm *serviceManager) isComponentInitialized(serviceConfig *ServiceConfig, component any) bool {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
 	if componentMap, has := sm.initialized[serviceConfig]; has && len(componentMap) > 0 {
 		initialized := false
 		if ok, has := componentMap[component]; has && ok {

@@ -578,6 +578,11 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterScoped(project.NewImportManager)
 	container.MustRegisterScoped(project.NewServiceManager)
 
+	// Unified up action: the exegraph-backed `azd up` entry point that
+	// collapses provision + package + publish + deploy (and project command
+	// hooks) into a single DAG.
+	container.MustRegisterScoped(cmd.NewUpGraphAction)
+
 	// Even though the service manager is scoped based on its use of environment we can still
 	// register its internal cache as a singleton to ensure operation caching is consistent across all instances
 	container.MustRegisterSingleton(func() project.ServiceOperationCache {

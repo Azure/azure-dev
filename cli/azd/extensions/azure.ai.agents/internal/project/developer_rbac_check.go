@@ -5,11 +5,14 @@ package project
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"azureaiagent/internal/exterrors"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v3"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
@@ -35,7 +38,7 @@ const (
 
 	// ABAC repository-scoped role that grants write access.
 	// Required for ABAC-mode registries (roleAssignmentMode == AbacRepositoryPermissions).
-	roleACRRepositoryWriter = "2a1e307c-b015-4ebd-883e-5b7698a07328"
+	roleAcrRepositoryWriter = "2a1e307c-b015-4ebd-883e-5b7698a07328"
 
 	// AI-specific roles that grant agent management access.
 	roleAzureAIDeveloper = "64702f94-c441-49e6-a78b-ef80e0188fee"
@@ -56,7 +59,7 @@ var sufficientACRRoles = []string{
 // Contributor do not grant repository-scoped dataActions on ABAC registries.
 var sufficientACRAbacRoles = []string{
 	roleOwner,
-	roleACRRepositoryWriter,
+	roleAcrRepositoryWriter,
 	roleContainerRegistryRepositoryContributor, // superset of RepositoryWriter
 }
 
@@ -172,20 +175,25 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient) error 
 			"Azure AI User → Foundry Project", info.ProjectScope,
 			armauthorization.PrincipalTypeUser,
 		); assignErr != nil {
-			return exterrors.Auth(
-				exterrors.CodeDeveloperMissingAIUserRole,
-				fmt.Sprintf(
-					"your identity (%s) does not have the 'Azure AI User' role on the Foundry Project %s/%s "+
-						"and auto-assign failed",
-					userProfile.DisplayName, info.AccountName, info.ProjectName,
-				),
-				fmt.Sprintf(
-					"ask a subscription Owner or User Access Administrator to assign the 'Azure AI User' role "+
-						"to your identity on the Foundry Project scope:\n"+
-						"  az role assignment create --assignee %s --role \"Azure AI User\" --scope %q",
-					principalID, info.ProjectScope,
-				),
-			)
+			// Only treat 403 as a hard RBAC failure — transient errors (throttling, network) are non-blocking.
+			if respErr, ok := errors.AsType[*azcore.ResponseError](assignErr); ok &&
+				respErr.StatusCode == http.StatusForbidden {
+				return exterrors.Auth(
+					exterrors.CodeDeveloperMissingAIUserRole,
+					fmt.Sprintf(
+						"your identity (%s) does not have the 'Azure AI User' role on the Foundry Project %s/%s "+
+							"and auto-assign was denied (403)",
+						userProfile.DisplayName, info.AccountName, info.ProjectName,
+					),
+					fmt.Sprintf(
+						"ask a subscription Owner or User Access Administrator to assign the 'Azure AI User' role "+
+							"to your identity on the Foundry Project scope:\n"+
+							"  az role assignment create --assignee %s --role \"Azure AI User\" --scope %q",
+						principalID, info.ProjectScope,
+					),
+				)
+			}
+			fmt.Printf("  ⚠ Azure AI User auto-assign failed (non-auth error): %s — continuing\n", assignErr)
 		}
 		fmt.Println("  ✓ Azure AI User auto-assigned to developer identity")
 	} else {
@@ -292,7 +300,7 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient) error 
 	}
 
 	if isAbac {
-		fmt.Println("  ✓ Container Registry Repository Writer role on ACR (ABAC mode)")
+		fmt.Println("  ✓ Sufficient Container Registry role on ACR (ABAC mode)")
 	} else {
 		fmt.Println("  ✓ Container Registry role on ACR")
 	}

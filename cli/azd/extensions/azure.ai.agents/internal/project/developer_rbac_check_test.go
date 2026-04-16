@@ -37,7 +37,7 @@ func TestDeveloperRBACRoleConstants(t *testing.T) {
 	assert.Equal(t, "fb382eab-e894-4461-af04-94435c366c3f", roleContainerRegistryTasksContributor)
 	assert.Equal(t, "2efddaa5-3f1f-4df3-97df-af3f13818f4c", roleContainerRegistryRepositoryContributor)
 	assert.Equal(t, "8311e382-0749-4cb8-b61a-304f252e45ec", roleAcrPush)
-	assert.Equal(t, "2a1e307c-b015-4ebd-883e-5b7698a07328", roleACRRepositoryWriter)
+	assert.Equal(t, "2a1e307c-b015-4ebd-883e-5b7698a07328", roleAcrRepositoryWriter)
 
 	// Superset roles
 	assert.Equal(t, "8e3af657-a8ff-443c-a75c-2fe8c4bcb635", roleOwner)
@@ -72,7 +72,7 @@ func TestSufficientRoleLists(t *testing.T) {
 
 	// ABAC ACR roles: Owner, RepositoryWriter, RepositoryContributor; AcrPush must NOT be included.
 	assert.Contains(t, sufficientACRAbacRoles, roleOwner)
-	assert.Contains(t, sufficientACRAbacRoles, roleACRRepositoryWriter)
+	assert.Contains(t, sufficientACRAbacRoles, roleAcrRepositoryWriter)
 	assert.Contains(t, sufficientACRAbacRoles, roleContainerRegistryRepositoryContributor)
 	assert.NotContains(t, sufficientACRAbacRoles, roleAcrPush)
 }

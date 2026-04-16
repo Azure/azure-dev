@@ -449,14 +449,6 @@ func populateContainerSettings(ctx context.Context, azdClient *azdext.AzdClient,
 		}
 	}
 
-	// Preserve existing Scale settings from azure.yaml
-	if containerSettings.Scale != nil {
-		result.Scale = &project.ScaleSettings{
-			MinReplicas: containerSettings.Scale.MinReplicas,
-			MaxReplicas: containerSettings.Scale.MaxReplicas,
-		}
-	}
-
 	// Set default values if zero or empty
 	if result.Resources.Memory == "" {
 		result.Resources.Memory = project.DefaultMemory
@@ -464,16 +456,6 @@ func populateContainerSettings(ctx context.Context, azdClient *azdext.AzdClient,
 
 	if result.Resources.Cpu == "" {
 		result.Resources.Cpu = project.DefaultCpu
-	}
-
-	if result.Scale != nil {
-		if result.Scale.MinReplicas == 0 {
-			result.Scale.MinReplicas = project.DefaultMinReplicas
-		}
-
-		if result.Scale.MaxReplicas == 0 {
-			result.Scale.MaxReplicas = project.DefaultMaxReplicas
-		}
 	}
 
 	// Update the container settings in the existing config

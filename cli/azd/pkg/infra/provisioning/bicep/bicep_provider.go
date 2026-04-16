@@ -2491,8 +2491,8 @@ func (p *BicepProvider) checkReservedResourceNames(
 			DiagnosticID: "reserved_resource_name",
 			Message: fmt.Sprintf(
 				"resource %q (%s) has name segment %q that %s the Azure reserved word %q. "+
-					"Azure may reject reserved or trademarked resource names. Choose a different "+
-					"project, environment, or resource name. See https://learn.microsoft.com/azure/azure-resource-manager/templates/error-reserved-resource-name.",
+					"Azure may reject reserved or trademarked resource names. "+
+					"See https://learn.microsoft.com/azure/azure-resource-manager/templates/error-reserved-resource-name.",
 				resource.Name,
 				resource.Type,
 				segment,
@@ -2702,6 +2702,14 @@ func resolveUsageName(catalogModels []ai.AiModel, dep cognitiveDeploymentInfo) s
 }
 
 func findReservedResourceNameViolation(resourceName string) (string, string, string, bool) {
+	// Skip names that are unresolved ARM template expressions (e.g. "[guid(...)]").
+	// These are evaluated at deployment time and the literal text inside the expression
+	// (which often contains provider namespaces like "Microsoft.ContainerRegistry") is
+	// not the actual resource name.
+	if strings.HasPrefix(resourceName, "[") {
+		return "", "", "", false
+	}
+
 	for _, segment := range strings.Split(resourceName, "/") {
 		if segment == "" {
 			continue

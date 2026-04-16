@@ -62,6 +62,10 @@ func TestFindReservedResourceNameViolation(t *testing.T) {
 			wantMatch:    "contains",
 			wantFound:    true,
 		},
+		{
+			name:         "skips unresolved ARM expression containing provider namespaces",
+			resourceName: "[guid('/subscriptions/sub-id/resourceGroups/rg-learn-agent-dev/providers/Microsoft.ContainerRegistry/registries/cr123')]",
+		},
 	}
 
 	for _, tt := range tests {
@@ -91,6 +95,13 @@ func TestCheckReservedResourceNames(t *testing.T) {
 			{
 				Type: "Microsoft.Storage/storageAccounts",
 				Name: "validname",
+			},
+			{
+				// Unresolved ARM expression — should be skipped even though it
+				// contains provider namespaces like "Microsoft.ContainerRegistry".
+				Type: "Microsoft.Authorization/roleAssignments",
+				Name: "[guid('/subscriptions/sub-id/resourceGroups/rg-learn-agent-dev/providers/" +
+					"Microsoft.ContainerRegistry/registries/cr123', principalId, roleDefId)]",
 			},
 		},
 	})

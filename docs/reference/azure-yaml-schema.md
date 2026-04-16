@@ -52,6 +52,11 @@ services:
 | `resourceName` | string | Override the Azure resource name |
 | `k8s` | object | Kubernetes-specific configuration |
 | `config` | object | Service-specific configuration |
+| `resourceGroup` | string | Override the resource group for this service |
+| `apiVersion` | string | API version for the hosting target |
+| `env` | map | Environment variables passed to the service |
+| `uses` | list | Service dependencies |
+| `remoteBuild` | boolean | Enable remote build (e.g., for Azure Functions) |
 
 ## Hooks
 

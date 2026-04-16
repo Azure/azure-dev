@@ -3253,6 +3253,82 @@
               "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.22-preview/azure-ai-agents-windows-arm64.zip"
             }
           }
+        },
+        {
+          "version": "0.1.23-preview",
+          "requiredAzdVersion": "\u003e1.23.13",
+          "capabilities": [
+            "custom-commands",
+            "lifecycle-events",
+            "mcp-server",
+            "service-target-provider",
+            "metadata"
+          ],
+          "providers": [
+            {
+              "name": "azure.ai.agent",
+              "type": "service-target",
+              "description": "Deploys agents to the Foundry Agent Service"
+            }
+          ],
+          "usage": "azd ai agent \u003ccommand\u003e [options]",
+          "examples": [
+            {
+              "name": "init",
+              "description": "Initialize a new AI agent project.",
+              "usage": "azd ai agent init"
+            }
+          ],
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "d4f13a93cf123378a4bce6a5e7c9ae354c5beebbb75cda6df15ddd72e2d05e53"
+              },
+              "entryPoint": "azure-ai-agents-darwin-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.23-preview/azure-ai-agents-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "cc821aaf3d9342c2df7ab18a5298f4bed4eff28c86e07d27b2a549287519d189"
+              },
+              "entryPoint": "azure-ai-agents-darwin-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.23-preview/azure-ai-agents-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "8a30f75c10eecc07aa061faff750e86bcc972a76294cfe3ac8dcb9b6f88c1c8f"
+              },
+              "entryPoint": "azure-ai-agents-linux-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.23-preview/azure-ai-agents-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "c537c9880c2438528d3f3c8bc10e413f9b3805bb853adf446474d1de73e107a1"
+              },
+              "entryPoint": "azure-ai-agents-linux-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.23-preview/azure-ai-agents-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "9a42feb9469927ffbea0815babdb4ca1df167e888e35f481bae4dc4c1f043eef"
+              },
+              "entryPoint": "azure-ai-agents-windows-amd64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.23-preview/azure-ai-agents-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "33e9f8e38dedac75542e32da4fdf282804e014aff5cd08c457f8240f27d75b30"
+              },
+              "entryPoint": "azure-ai-agents-windows-arm64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.23-preview/azure-ai-agents-windows-arm64.zip"
+            }
+          }
         }
       ]
     },

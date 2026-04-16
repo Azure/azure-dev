@@ -327,6 +327,15 @@ const completionSpec: Fig.Spec = {
 									],
 								},
 								{
+									name: ['--protocol', '-p'],
+									description: 'Protocol to use: responses (default) or invocations',
+									args: [
+										{
+											name: 'protocol',
+										},
+									],
+								},
+								{
 									name: ['--session-id', '-s'],
 									description: 'Explicit session ID override',
 									args: [
@@ -355,11 +364,11 @@ const completionSpec: Fig.Spec = {
 									description: 'Stream logs in real-time',
 								},
 								{
-									name: ['--session', '-s'],
+									name: ['--session-id', '-s'],
 									description: 'Session ID to stream logs for',
 									args: [
 										{
-											name: 'session',
+											name: 'session-id',
 										},
 									],
 								},

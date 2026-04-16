@@ -49,11 +49,12 @@ Extensions declare their capabilities in `extension.yaml`:
 
 | Capability | Description |
 |---|---|
-| `event-handler` | React to lifecycle events (pre/post provision, deploy, etc.) |
+| `custom-commands` | Expose new command groups and commands to azd |
+| `lifecycle-events` | Subscribe to azd project and service lifecycle events (pre/post provision, deploy, etc.) |
+| `mcp-server` | Provide Model Context Protocol tools for AI agents |
 | `framework-service-provider` | Add build/restore support for new languages |
 | `service-target-provider` | Add deployment support for new hosting targets |
-| `compose-provider` | Custom orchestration logic |
-| `workflow-provider` | Custom workflow steps |
+| `metadata` | Provide metadata about commands and capabilities |
 
 ## Available gRPC Services
 

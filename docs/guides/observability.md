@@ -11,7 +11,7 @@ All commands automatically create a root command event with a `cmd.` namespace p
 ## Key Concepts
 
 - **Trace** — Represents an entire operation or command (e.g., `azd up`)
-- **Span** (Event) — A single unit of work within an operation (e.g., deploying a resource)
+- **Span** — A single unit of work within an operation (e.g., deploying a resource)
 - **Attribute** — Metadata attached to a span (e.g., environment name, subscription ID)
 
 ## Viewing Traces Locally
@@ -41,6 +41,8 @@ Then pass the endpoint to any command:
 azd provision --trace-log-url http://localhost:4318
 ```
 
+> **Note:** `--trace-log-url localhost` also works as a shorthand — azd automatically expands it to `http://localhost`.
+
 View results at [http://localhost:16686/search](http://localhost:16686/search).
 
 ## Adding New Telemetry
@@ -65,7 +67,7 @@ Attach metadata to an existing span:
 span.SetAttributes(attribute.String("my.attribute", value))
 ```
 
-### Adding an Event (Span)
+### Adding a Span
 
 Create a new span for a unit of work:
 

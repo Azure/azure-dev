@@ -25,12 +25,9 @@ For Bicep, azd can generate a fully resolved deployment snapshot using `bicep sn
 
 Client-side validation that runs after compilation but before deployment:
 
-- **Role assignment permissions** — Checks if the user has required RBAC roles
-- **Resource conflicts** — Detects soft-deleted resources that would conflict
-- **Quota availability** — Validates resource quotas (e.g., AI model capacity)
-- **Location support** — Verifies resource types are available in the target region
+- **Role assignment permissions** — Checks if the user has required RBAC roles for role assignments in the template
 
-Preflight checks are pluggable — new checks can be added via `AddCheck()`.
+The preflight framework is pluggable — new checks can be added via `AddCheck()`. Currently only role assignment permissions is implemented; additional checks (e.g., resource conflicts, quota validation) can be added as needed.
 
 **UX behavior:**
 

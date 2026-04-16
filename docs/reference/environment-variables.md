@@ -6,7 +6,7 @@ Environment variables that configure Azure Developer CLI behavior. These can be 
 
 | Variable | Description |
 |---|---|
-| `AZD_ALPHA_ENABLE_<NAME>` | Enable a specific alpha feature (e.g., `AZD_ALPHA_ENABLE_UPDATE=true`) |
+| `AZD_ALPHA_ENABLE_<NAME>` | Enable a specific alpha feature |
 
 ## Configuration
 
@@ -23,7 +23,7 @@ Environment variables that configure Azure Developer CLI behavior. These can be 
 | `AZD_FORCE_TTY` | Force TTY detection (`true` enables, `false` disables prompting) |
 | `AZD_IN_CLOUDSHELL` | Indicates azd is running in Azure Cloud Shell |
 | `AZD_SKIP_UPDATE_CHECK` | Skip the periodic update availability check |
-| `AZD_DEBUG_LOG` | Enable debug file logging (writes to `azd.log` in the current directory) |
+| `AZD_DEBUG_LOG` | Enable debug file logging |
 
 ## Tool Path Overrides
 

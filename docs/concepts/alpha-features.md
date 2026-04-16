@@ -9,17 +9,23 @@ Alpha features are experimental capabilities under active development. They are 
 ```bash
 azd config set alpha.<featureName> on
 azd config set alpha.<featureName> off
+# or
+azd config unset alpha.<featureName>
 ```
 
 ### All alpha features
 
 ```bash
 azd config set alpha.all on
+# Disable all:
+azd config set alpha.all off
+# or
+azd config unset alpha.all
 ```
 
 ### In CI/CD
 
-Set an environment variable for each feature:
+Set an environment variable for each feature. Both dot notation and underscore notation are supported — dots `.` in feature names can be kept as-is or replaced with underscores `_`:
 
 ```bash
 export AZD_ALPHA_ENABLE_<FEATURE_NAME>=true
@@ -46,6 +52,5 @@ When implementing a new alpha feature:
 1. Register the feature flag in the alpha features configuration
 2. Guard all feature codepaths behind the flag check
 3. Document the feature in `azd config list-alpha` output
-4. Add a note in release changelog under the experiments section
 
 For implementation details, see [cli/azd/docs/alpha-features.md](../../cli/azd/docs/alpha-features.md).

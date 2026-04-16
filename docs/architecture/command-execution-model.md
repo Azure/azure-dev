@@ -19,7 +19,7 @@ root.Add("up", &actions.ActionDescriptorOptions{
     Command:        newUpCmd(),
     ActionResolver: newUpAction,
     FlagsResolver:  newUpFlags,
-    OutputFormats:  []actions.OutputFormat{actions.OutputFormatJson},
+    OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 })
 ```
 
@@ -57,7 +57,7 @@ type Action interface {
 }
 ```
 
-The `ActionResult` contains a `Message` (displayed to the user) and optional structured data used by output formatters (JSON, table). Actions receive dependencies via constructor injection through the IoC container.
+The `ActionResult` contains a `Message *ResultMessage` field displayed to the user. There is no separate structured-data field — output formatting is handled by the middleware and formatter pipeline, not through `ActionResult`. Actions receive dependencies via constructor injection through the IoC container.
 
 ### 5. Output Formatting
 

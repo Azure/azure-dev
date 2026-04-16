@@ -15,7 +15,7 @@ azd uses an **ActionDescriptor** pattern to define commands. Each command consis
 
 ### 1. Create the command file
 
-Create `cli/azd/internal/cmd/<command_name>.go`:
+Create `cli/azd/cmd/<command_name>.go`:
 
 ```go
 package cmd
@@ -24,6 +24,7 @@ import (
     "context"
 
     "github.com/azure/azure-dev/cli/azd/cmd/actions"
+    "github.com/azure/azure-dev/cli/azd/internal"
     "github.com/spf13/pflag"
 )
 
@@ -31,7 +32,7 @@ type myCommandFlags struct {
     name string
 }
 
-func (f *myCommandFlags) Bind(local *pflag.FlagSet, global *pflag.FlagSet) {
+func (f *myCommandFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
     local.StringVar(&f.name, "name", "", "Resource name")
 }
 
@@ -57,7 +58,7 @@ func (a *myCommandAction) Run(ctx context.Context) (*actions.ActionResult, error
 Add to the command tree in `cli/azd/cmd/root.go`:
 
 ```go
-group.Add("mycommand", &actions.ActionDescriptorOptions{
+root.Add("mycommand", &actions.ActionDescriptorOptions{
     Command:        newMyCommandCmd(),
     ActionResolver: newMyCommandAction,
     FlagsResolver:  newMyCommandFlags,
@@ -69,11 +70,11 @@ group.Add("mycommand", &actions.ActionDescriptorOptions{
 If the command produces structured output, add format support:
 
 ```go
-group.Add("mycommand", &actions.ActionDescriptorOptions{
+root.Add("mycommand", &actions.ActionDescriptorOptions{
     Command:        newMyCommandCmd(),
     ActionResolver: newMyCommandAction,
     FlagsResolver:  newMyCommandFlags,
-    OutputFormats:  []actions.OutputFormat{actions.OutputFormatJson, actions.OutputFormatTable},
+    OutputFormats:  []output.Format{output.JsonFormat, output.TableFormat},
 })
 ```
 

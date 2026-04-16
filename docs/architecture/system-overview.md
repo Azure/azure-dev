@@ -52,9 +52,7 @@ See [Command Execution Model](command-execution-model.md) for details.
 All services are registered in `cmd/container.go` using the IoC container (`pkg/ioc`). Services are resolved at runtime — never instantiated directly.
 
 ```go
-ioc.RegisterSingleton(container, func() *MyService {
-    return &MyService{dep: ioc.Get[*Dependency](container)}
-})
+container.MustRegisterTransient(resolveFn any)
 ```
 
 ### Infrastructure Provisioning

@@ -31,17 +31,27 @@ services:
 | `hooks` | map | Project-level lifecycle hooks |
 | `infra` | object | Infrastructure provider configuration |
 | `state` | object | Remote state backend configuration |
+| `resources` | map | Azure resource definitions |
+| `requiredVersions` | object | Version constraints for azd and extensions |
+| `platform` | object | Platform-specific configuration |
+| `workflows` | object | Workflow configuration |
+| `cloud` | object | Cloud environment configuration |
 
 ## Service Properties
 
 | Property | Type | Description |
 |---|---|---|
-| `project` | string | **Required.** Relative path to the service source directory |
-| `language` | string | Service language (`dotnet`, `py`, `js`, `ts`, `java`, `docker`) |
-| `host` | string | Hosting target (`appservice`, `containerapp`, `function`, `staticwebapp`, `aks`, `ai`) |
+| `project` | string | Relative path to the service source directory |
+| `language` | string | Service language (`dotnet`, `csharp`, `fsharp`, `py`, `js`, `ts`, `java`, `docker`, `custom`) |
+| `host` | string | **Required.** Hosting target (`appservice`, `containerapp`, `function`, `staticwebapp`, `aks`, `ai.endpoint`, `azure.ai.agent`, `springapp`) |
 | `module` | string | Bicep module path for the service's infrastructure |
 | `hooks` | map | Service-level lifecycle hooks |
 | `docker` | object | Docker build configuration |
+| `image` | string | Container image (alternative to `project` for pre-built images) |
+| `dist` | string | Path to pre-built distribution directory |
+| `resourceName` | string | Override the Azure resource name |
+| `k8s` | object | Kubernetes-specific configuration |
+| `config` | object | Service-specific configuration |
 
 ## Hooks
 
@@ -57,7 +67,12 @@ hooks:
     run: ./scripts/smoke-test.sh
 ```
 
-Available hook points: `prerestore`, `postrestore`, `preprovision`, `postprovision`, `predeploy`, `postdeploy`, `prepackage`, `postpackage`, `predown`, `postdown`.
+Available hook points (each supports `pre` and `post` prefixes):
+
+- **Command hooks (project-level):** `provision`, `deploy`, `down`, `up`, `restore`, `package`, `publish`
+- **Service lifecycle hooks (service-level):** `restore`, `build`, `package`, `publish`, `deploy`
+
+For example, `preprovision` runs before provisioning, `postdeploy` runs after deployment. Service-level hooks are defined under a service's `hooks` section in `azure.yaml` and apply only to that service.
 
 ## JSON Schema
 

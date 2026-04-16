@@ -7,17 +7,24 @@ Current maturity status of Azure Developer CLI features. See [Feature Stages](..
 | Feature | Stage |
 |---|---|
 | `add` | Beta |
+| `auth` | Stable |
 | `config` | Stable |
 | `deploy` | Stable |
 | `down` | Stable |
 | `env` | Stable |
+| `help` | Stable |
+| `infra generate` | Beta |
+| `init` | Stable |
 | `monitor` | Beta |
 | `package` | Beta |
 | `pipeline` | Beta |
 | `provision` | Stable |
 | `restore` | Beta |
+| `show` | Stable |
 | `template` | Beta |
 | `up` | Stable |
+| `update` | Beta |
+| `version` | Stable |
 
 ## Languages
 
@@ -66,7 +73,7 @@ Current maturity status of Azure Developer CLI features. See [Feature Stages](..
 
 | Feature | Stage |
 |---|---|
-| Resource Group deployments | Beta |
+| Resource Group Deployments | Beta |
 | Layered Provisioning | Beta |
 | Deployment Stacks | Alpha |
 | Extensions | Alpha |

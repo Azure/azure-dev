@@ -27,10 +27,10 @@ azd uses a three-stage lifecycle to graduate features from experimental to fully
 
 ## Graduation Criteria
 
-For a feature to move from alpha → beta:
+For a feature to move from alpha → beta, **all** of the following must be met:
 
-1. Feature is spec'd and approved
-2. Formal PM, engineering, and design review completed
+1. Feature is spec'd and approved by PM and engineering for design
+2. PM and engineering team have completed a formal review meeting to sign off on advancement
 3. Documented on DevHub and in CLI help text
 4. Positive user feedback signal
 

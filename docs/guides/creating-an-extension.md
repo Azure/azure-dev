@@ -6,18 +6,19 @@ This guide covers how to create, build, and publish an extension for the Azure D
 
 azd extensions use a gRPC-based framework to add functionality. Extensions can provide:
 
-- **Event handlers** — React to lifecycle events (pre/post provision, deploy, etc.)
+- **Custom commands** — Expose new command groups and commands to azd
+- **Lifecycle events** — Subscribe to project and service lifecycle events (pre/post provision, deploy, etc.)
+- **MCP server** — Provide Model Context Protocol tools for AI agents
 - **Framework service providers** — Add build/restore support for new languages
 - **Service target providers** — Add deployment support for new Azure hosting targets
-- **Compose providers** — Custom orchestration logic
-- **Workflow providers** — Custom workflow steps
-- **gRPC services** — Project, Environment, User Config, Deployment, Account, Prompt, AI Model, and more
+- **Metadata** — Provide metadata about commands and capabilities
 
 ## Prerequisites
 
 - Go 1.26 or later
 - A fork of the [azure-dev](https://github.com/Azure/azure-dev) repository
-- The `azd` Developer Extension installed (`azd extension install azd.dev`)
+- The `azd` Developer Extension installed (`azd extension install microsoft.azd.extensions`)
+- One of the supported languages: Go (best support), .NET (C#), Python, or JavaScript
 
 ## Getting Started
 
@@ -35,12 +36,12 @@ cd cli/azd/extensions/my.extension
 Create an `extension.yaml` manifest that declares the extension's metadata and capabilities:
 
 ```yaml
-name: my.extension
+id: my.extension
 displayName: My Extension
 description: A brief description of what this extension does
 version: 0.1.0
 capabilities:
-  - event-handler
+  - lifecycle-events
 ```
 
 ### 3. Implement the extension

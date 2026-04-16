@@ -2443,14 +2443,15 @@ func (p *BicepProvider) checkRoleAssignmentPermissions(
 			Severity:     PreflightCheckWarning,
 			DiagnosticID: "role_assignment_missing",
 			Message: fmt.Sprintf(
-				"the current principal (%s) does not have permission to create role assignments "+
-					"(Microsoft.Authorization/roleAssignments/write) on subscription %s. "+
+				"the current principal %s does not have permission to create role assignments "+
+					"%s on subscription %s. "+
 					"The deployment includes role assignments and will fail without this permission. "+
 					"Ensure you have the 'Role Based Access Control Administrator', "+
 					"'User Access Administrator', 'Owner', or a custom role with "+
 					"'Microsoft.Authorization/roleAssignments/write' assigned to your account.",
-				principalId,
-				subscriptionId,
+				output.WithHighLightFormat("(%s)", principalId),
+				output.WithGrayFormat("(Microsoft.Authorization/roleAssignments/write)"),
+				output.WithHighLightFormat(subscriptionId),
 			),
 		}}, nil
 	}
@@ -2460,14 +2461,15 @@ func (p *BicepProvider) checkRoleAssignmentPermissions(
 			Severity:     PreflightCheckWarning,
 			DiagnosticID: "role_assignment_conditional",
 			Message: fmt.Sprintf(
-				"the current principal (%s) has conditional permission to create role "+
-					"assignments (Microsoft.Authorization/roleAssignments/write) on "+
+				"the current principal %s has conditional permission to create role "+
+					"assignments %s on "+
 					"subscription %s. The role assignment that grants this permission "+
 					"has an ABAC condition that may restrict which roles can be assigned. "+
 					"The deployment may fail if the condition does not permit the "+
 					"specific role assignments in the template.",
-				principalId,
-				subscriptionId,
+				output.WithHighLightFormat("(%s)", principalId),
+				output.WithGrayFormat("(Microsoft.Authorization/roleAssignments/write)"),
+				output.WithHighLightFormat(subscriptionId),
 			),
 		}}, nil
 	}
@@ -2477,31 +2479,30 @@ func (p *BicepProvider) checkRoleAssignmentPermissions(
 
 // checkReservedResourceNames inspects predicted resource names and warns when a
 // resource name segment matches Azure's published reserved-word restrictions.
+// All violations are reported so users can resolve them in a single pass
+// instead of rediscovering new violations on each preflight re-run.
 func (p *BicepProvider) checkReservedResourceNames(
 	_ context.Context, valCtx *validationContext,
 ) ([]PreflightCheckResult, error) {
 	var results []PreflightCheckResult
 
-	for _, resource := range valCtx.SnapshotResources {
-		segment, reservedWord, matchType, found := findReservedResourceNameViolation(resource.Name)
-		if !found {
-			continue
-		}
+	const docsLink = "https://learn.microsoft.com/azure/azure-resource-manager/templates/error-reserved-resource-name"
 
-		results = append(results, PreflightCheckResult{
-			Severity:     PreflightCheckWarning,
-			DiagnosticID: "reserved_resource_name",
-			Message: fmt.Sprintf(
-				"resource %q (%s) has name segment %q that %s the Azure reserved word %q. "+
-					"Azure may reject reserved or trademarked resource names. "+
-					"See https://learn.microsoft.com/azure/azure-resource-manager/templates/error-reserved-resource-name.",
-				resource.Name,
-				resource.Type,
-				segment,
-				matchType,
-				reservedWord,
-			),
-		})
+	for _, resource := range valCtx.SnapshotResources {
+		for _, v := range findReservedResourceNameViolations(resource.Name) {
+			resourceName := output.WithHighLightFormat("%q", resource.Name)
+			resourceType := output.WithGrayFormat("(%s)", resource.Type)
+			link := output.WithLinkFormat(docsLink)
+
+			results = append(results, PreflightCheckResult{
+				Severity:     PreflightCheckWarning,
+				DiagnosticID: "reserved_resource_name",
+				Message: fmt.Sprintf(
+					"resource %s %s %s the reserved word %q. See %s.",
+					resourceName, resourceType, v.matchType, v.reservedWord, link,
+				),
+			})
+		}
 	}
 
 	return results, nil
@@ -2608,16 +2609,15 @@ func (p *BicepProvider) checkAiModelQuota(
 					Severity:     PreflightCheckWarning,
 					DiagnosticID: "ai_model_not_found",
 					Message: fmt.Sprintf(
-						"model %q%s was not found in the AI model "+
+						"model %s%s was not found in the AI model "+
 							"catalog for %s. The deployment may fail "+
 							"if this model is not available. Verify "+
 							"the model name, SKU, and version are "+
-							"correct. See https://learn.microsoft.com"+
-							"/azure/ai-services/openai/concepts/models"+
-							" for supported models and regions.",
-						dep.ModelName,
-						details,
-						loc,
+							"correct. See %s for supported models and regions.",
+						output.WithHighLightFormat(fmt.Sprintf("%q", dep.ModelName)),
+						output.WithGrayFormat(details),
+						output.WithHighLightFormat(loc),
+						output.WithLinkFormat("https://learn.microsoft.com/azure/ai-services/openai/concepts/models"),
 					),
 				})
 				continue
@@ -2657,13 +2657,13 @@ func (p *BicepProvider) checkAiModelQuota(
 					Severity:     PreflightCheckWarning,
 					DiagnosticID: "ai_model_quota_exceeded",
 					Message: fmt.Sprintf(
-						"insufficient quota for model %q (SKU: %s) in %s. "+
+						"insufficient quota for model %s %s in %s. "+
 							"Requested capacity: %.0f, remaining quota: %.0f. "+
 							"The deployment may fail. Consider reducing capacity, "+
 							"selecting a different model, or requesting a quota increase.",
-						r.dep.ModelName,
-						r.dep.SkuName,
-						loc,
+						output.WithHighLightFormat("%q", r.dep.ModelName),
+						output.WithGrayFormat("(SKU: %s)", r.dep.SkuName),
+						output.WithHighLightFormat(loc),
 						totalRequired,
 						remaining,
 					),
@@ -2703,37 +2703,66 @@ func resolveUsageName(catalogModels []ai.AiModel, dep cognitiveDeploymentInfo) s
 	return ""
 }
 
-func findReservedResourceNameViolation(resourceName string) (string, string, string, bool) {
+// reservedNameViolation describes a single reserved-word match against a
+// resource name segment.
+type reservedNameViolation struct {
+	segment      string
+	reservedWord string
+	matchType    string
+}
+
+// findReservedResourceNameViolations returns every reserved-word violation found
+// across the `/`-delimited segments of resourceName. A single segment can
+// produce multiple violations (for example "LoginMicrosoftApp" triggers both
+// the LOGIN prefix and the MICROSOFT substring rule), so all matches are
+// returned to avoid fix-rerun cycles during preflight.
+func findReservedResourceNameViolations(resourceName string) []reservedNameViolation {
 	// Skip names that are unresolved ARM template expressions (e.g. "[guid(...)]").
 	// These are evaluated at deployment time and the literal text inside the expression
 	// (which often contains provider namespaces like "Microsoft.ContainerRegistry") is
 	// not the actual resource name.
 	if strings.HasPrefix(resourceName, "[") {
-		return "", "", "", false
+		return nil
 	}
 
-	for _, segment := range strings.Split(resourceName, "/") {
+	var violations []reservedNameViolation
+	for segment := range strings.SplitSeq(resourceName, "/") {
 		if segment == "" {
 			continue
 		}
 
 		normalized := strings.ToUpper(segment)
 		if _, found := azureReservedResourceNameExactMatches[normalized]; found {
-			return segment, normalized, "exactly matches", true
+			// An exact match subsumes any prefix/substring match on the same segment,
+			// so skip the remaining checks to avoid duplicate reports.
+			violations = append(violations, reservedNameViolation{
+				segment:      segment,
+				reservedWord: normalized,
+				matchType:    "exactly matches",
+			})
+			continue
 		}
 
 		if strings.HasPrefix(normalized, azureReservedResourceNamePrefixMatch) {
-			return segment, azureReservedResourceNamePrefixMatch, "starts with", true
+			violations = append(violations, reservedNameViolation{
+				segment:      segment,
+				reservedWord: azureReservedResourceNamePrefixMatch,
+				matchType:    "starts with",
+			})
 		}
 
 		for _, reservedWord := range azureReservedResourceNameContainsMatches {
 			if strings.Contains(normalized, reservedWord) {
-				return segment, reservedWord, "contains", true
+				violations = append(violations, reservedNameViolation{
+					segment:      segment,
+					reservedWord: reservedWord,
+					matchType:    "contains",
+				})
 			}
 		}
 	}
 
-	return "", "", "", false
+	return violations
 }
 
 // resolveResourceGroupLocation returns the Azure location of the resource group specified

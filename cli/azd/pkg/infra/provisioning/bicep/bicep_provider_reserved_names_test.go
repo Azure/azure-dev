@@ -9,72 +9,87 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestFindReservedResourceNameViolation(t *testing.T) {
+func TestFindReservedResourceNameViolations(t *testing.T) {
 	tests := []struct {
 		name         string
 		resourceName string
-		wantSegment  string
-		wantWord     string
-		wantMatch    string
-		wantFound    bool
+		want         []reservedNameViolation
 	}{
 		{
 			name:         "valid resource name",
 			resourceName: "my-resource-name",
 		},
 		{
+			name:         "empty resource name",
+			resourceName: "",
+		},
+		{
+			name:         "empty segments are skipped",
+			resourceName: "/",
+		},
+		{
 			name:         "exact match reserved word",
 			resourceName: "azure",
-			wantSegment:  "azure",
-			wantWord:     "AZURE",
-			wantMatch:    "exactly matches",
-			wantFound:    true,
+			want: []reservedNameViolation{
+				{segment: "azure", reservedWord: "AZURE", matchType: "exactly matches"},
+			},
 		},
 		{
 			name:         "substring reserved word",
 			resourceName: "project-MicrosoftLearnAgent",
-			wantSegment:  "project-MicrosoftLearnAgent",
-			wantWord:     "MICROSOFT",
-			wantMatch:    "contains",
-			wantFound:    true,
+			want: []reservedNameViolation{
+				{segment: "project-MicrosoftLearnAgent", reservedWord: "MICROSOFT", matchType: "contains"},
+			},
 		},
 		{
 			name:         "prefix reserved word",
 			resourceName: "LoginPortal",
-			wantSegment:  "LoginPortal",
-			wantWord:     "LOGIN",
-			wantMatch:    "starts with",
-			wantFound:    true,
+			want: []reservedNameViolation{
+				{segment: "LoginPortal", reservedWord: "LOGIN", matchType: "starts with"},
+			},
 		},
 		{
 			name:         "checks individual resource name segments",
 			resourceName: "ai-account/AZURE",
-			wantSegment:  "AZURE",
-			wantWord:     "AZURE",
-			wantMatch:    "exactly matches",
-			wantFound:    true,
+			want: []reservedNameViolation{
+				{segment: "AZURE", reservedWord: "AZURE", matchType: "exactly matches"},
+			},
 		},
 		{
 			name:         "checks child resource segment",
 			resourceName: "ai-account/project-MicrosoftLearnAgent",
-			wantSegment:  "project-MicrosoftLearnAgent",
-			wantWord:     "MICROSOFT",
-			wantMatch:    "contains",
-			wantFound:    true,
+			want: []reservedNameViolation{
+				{segment: "project-MicrosoftLearnAgent", reservedWord: "MICROSOFT", matchType: "contains"},
+			},
 		},
 		{
-			name:         "skips unresolved ARM expression containing provider namespaces",
-			resourceName: "[guid('/subscriptions/sub-id/resourceGroups/rg-learn-agent-dev/providers/Microsoft.ContainerRegistry/registries/cr123')]",
+			name:         "reports multiple violations in single segment",
+			resourceName: "LoginMicrosoftApp",
+			want: []reservedNameViolation{
+				{segment: "LoginMicrosoftApp", reservedWord: "LOGIN", matchType: "starts with"},
+				{segment: "LoginMicrosoftApp", reservedWord: "MICROSOFT", matchType: "contains"},
+			},
+		},
+		{
+			name:         "reports violations across multiple segments",
+			resourceName: "Azure/LoginPortal",
+			want: []reservedNameViolation{
+				{segment: "Azure", reservedWord: "AZURE", matchType: "exactly matches"},
+				{segment: "LoginPortal", reservedWord: "LOGIN", matchType: "starts with"},
+			},
+		},
+		{
+			name: "skips unresolved ARM expression containing provider namespaces",
+			resourceName: "[guid('/subscriptions/sub-id/resourceGroups/" +
+				"rg-learn-agent-dev/providers/Microsoft.ContainerRegistry/" +
+				"registries/cr123')]",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotSegment, gotWord, gotMatch, gotFound := findReservedResourceNameViolation(tt.resourceName)
-			require.Equal(t, tt.wantFound, gotFound)
-			require.Equal(t, tt.wantSegment, gotSegment)
-			require.Equal(t, tt.wantWord, gotWord)
-			require.Equal(t, tt.wantMatch, gotMatch)
+			got := findReservedResourceNameViolations(tt.resourceName)
+			require.Equal(t, tt.want, got)
 		})
 	}
 }
@@ -93,6 +108,12 @@ func TestCheckReservedResourceNames(t *testing.T) {
 				Name: "LoginPortal",
 			},
 			{
+				// Triggers both LOGIN prefix and MICROSOFT substring rules in
+				// a single segment — both should be reported as separate results.
+				Type: "Microsoft.Web/sites",
+				Name: "LoginMicrosoftApp",
+			},
+			{
 				Type: "Microsoft.Storage/storageAccounts",
 				Name: "validname",
 			},
@@ -107,15 +128,28 @@ func TestCheckReservedResourceNames(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	require.Len(t, results, 2)
+	require.Len(t, results, 4)
 
-	require.Equal(t, PreflightCheckWarning, results[0].Severity)
-	require.Equal(t, "reserved_resource_name", results[0].DiagnosticID)
+	for _, r := range results {
+		require.Equal(t, PreflightCheckWarning, r.Severity)
+		require.Equal(t, "reserved_resource_name", r.DiagnosticID)
+	}
+
+	// Child resource violation.
 	require.Contains(t, results[0].Message, `"ai-account/project-MicrosoftLearnAgent"`)
+	require.Contains(t, results[0].Message, "contains")
 	require.Contains(t, results[0].Message, `"MICROSOFT"`)
 
-	require.Equal(t, PreflightCheckWarning, results[1].Severity)
-	require.Equal(t, "reserved_resource_name", results[1].DiagnosticID)
+	// Top-level resource violation.
 	require.Contains(t, results[1].Message, `"LoginPortal"`)
+	require.Contains(t, results[1].Message, "starts with")
 	require.Contains(t, results[1].Message, `"LOGIN"`)
+
+	// Both violations on LoginMicrosoftApp should be reported as distinct results.
+	require.Contains(t, results[2].Message, `"LoginMicrosoftApp"`)
+	require.Contains(t, results[2].Message, "starts with")
+	require.Contains(t, results[2].Message, `"LOGIN"`)
+	require.Contains(t, results[3].Message, `"LoginMicrosoftApp"`)
+	require.Contains(t, results[3].Message, "contains")
+	require.Contains(t, results[3].Message, `"MICROSOFT"`)
 }

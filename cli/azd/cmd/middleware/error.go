@@ -540,7 +540,18 @@ func (e *ErrorMiddleware) promptNextAction(
 		return actionExit, fmt.Errorf("invalid choice selected")
 	}
 
-	return nextAction(choices[*choiceIndex].Value), nil
+	selected := nextAction(choices[*choiceIndex].Value)
+
+	// Print hint about persisting the choice (only fix_and_retry has a saved equivalent).
+	if selected == actionFixAndRetry {
+		e.console.Message(ctx, output.WithGrayFormat(
+			"Tip: To always auto-fix and retry, run: %s",
+			output.WithHighLightFormat(
+				fmt.Sprintf("azd config set %s allow", agentcopilot.ConfigKeyErrorHandlingFix)),
+		))
+	}
+
+	return selected, nil
 }
 
 // promptRetryAfterFix asks the user if the agent applied a fix and they want to retry the command.
@@ -590,5 +601,16 @@ func (e *ErrorMiddleware) promptRetryAfterFix(ctx context.Context) (bool, error)
 		return false, fmt.Errorf("invalid retry choice selected")
 	}
 
-	return choices[*choiceIndex].Value == "retry", nil
+	shouldRetry := choices[*choiceIndex].Value == "retry"
+
+	// Print hint about persisting the choice (only retry has a saved equivalent).
+	if shouldRetry {
+		e.console.Message(ctx, output.WithGrayFormat(
+			"Tip: To always auto retry after fix, run: %s",
+			output.WithHighLightFormat(
+				fmt.Sprintf("azd config set %s allow", agentcopilot.ConfigKeyErrorHandlingFix)),
+		))
+	}
+
+	return shouldRetry, nil
 }

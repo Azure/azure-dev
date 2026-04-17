@@ -97,7 +97,7 @@ func CreateServiceConnection(
 	connection *azuredevops.Connection,
 	projectId string,
 	projectName string,
-	azdEnvironment environment.Environment,
+	azdEnvironment *environment.Environment,
 	credentials *entraid.AzureCredentials,
 	console input.Console) (*serviceendpoint.ServiceEndpoint, error) {
 

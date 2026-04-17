@@ -104,15 +104,15 @@ func (fs *LocalFileDataStore) Get(ctx context.Context, name string) (*Environmen
 // Reload reloads the environment from the persistent data store
 func (fs *LocalFileDataStore) Reload(ctx context.Context, env *Environment) error {
 	// Reload env values
+	var newDotenv map[string]string
 	if envMap, err := godotenv.Read(fs.EnvPath(env)); errors.Is(err, os.ErrNotExist) {
-		env.dotenv = make(map[string]string)
-		env.deletedKeys = make(map[string]struct{})
+		newDotenv = make(map[string]string)
 	} else if err != nil {
 		return fmt.Errorf("loading .env: %w", err)
 	} else {
-		env.dotenv = envMap
-		env.deletedKeys = make(map[string]struct{})
+		newDotenv = envMap
 	}
+	env.replaceState(newDotenv, make(map[string]struct{}))
 
 	// Reload env config
 	if cfg, err := fs.configManager.Load(fs.ConfigPath(env)); errors.Is(err, os.ErrNotExist) {

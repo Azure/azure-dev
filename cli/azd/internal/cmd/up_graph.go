@@ -435,13 +435,21 @@ func (u *UpGraphAction) Run(
 	log.Printf("up-graph total: %s (%d steps)", result.TotalDuration.Round(time.Millisecond), len(result.Steps))
 
 	if result.Error != nil {
-		return nil, wrapProvisionError(ctx, result.Error, provisionErrorDeps{
-			console:          u.console,
-			formatter:        u.formatter,
-			writer:           u.writer,
-			provisionManager: u.provisionManager,
-			portalUrlBase:    u.portalUrlBase,
-		})
+		// Only apply provision-specific error wrapping (state dump, OpenAI quota
+		// hints, Responsible-AI suggestions) when an actual provision-tagged
+		// step failed. For package/publish/deploy/hook failures, surface the
+		// underlying error verbatim so the message matches the legacy phase
+		// shape (e.g., `azd package` / `azd deploy` errors).
+		if provisionStepFailed(result) {
+			return nil, wrapProvisionError(ctx, result.Error, provisionErrorDeps{
+				console:          u.console,
+				formatter:        u.formatter,
+				writer:           u.writer,
+				provisionManager: u.provisionManager,
+				portalUrlBase:    u.portalUrlBase,
+			})
+		}
+		return nil, result.Error
 	}
 
 	// Display service endpoint artifacts collected during deploy steps.
@@ -596,8 +604,15 @@ func (u *UpGraphAction) runOptions() exegraph.RunOptions {
 		ErrorPolicy: exegraph.FailFast,
 	}
 
-	// Optional concurrency limit from environment.
+	// Optional concurrency limit from environment. AZD_UP_CONCURRENCY is the
+	// canonical name for `azd up`; AZD_DEPLOY_CONCURRENCY is honored as a
+	// fallback so that users who already tuned `azd deploy` parallelism don't
+	// get unlimited concurrency when they switch to `azd up`.
 	if v, ok := os.LookupEnv("AZD_UP_CONCURRENCY"); ok {
+		if n, parseErr := strconv.Atoi(v); parseErr == nil && n > 0 {
+			opts.MaxConcurrency = min(n, 64)
+		}
+	} else if v, ok := os.LookupEnv("AZD_DEPLOY_CONCURRENCY"); ok {
 		if n, parseErr := strconv.Atoi(v); parseErr == nil && n > 0 {
 			opts.MaxConcurrency = min(n, 64)
 		}
@@ -618,4 +633,25 @@ func (u *UpGraphAction) runOptions() exegraph.RunOptions {
 	}
 
 	return opts
+}
+
+// provisionStepFailed reports whether any step tagged "provision" ended in
+// StepFailed. Used to scope provision-specific error wrapping (state dump,
+// OpenAI quota hint, Responsible-AI suggestions) to actual provision
+// failures so a package/publish/deploy/hook failure surfaces verbatim.
+func provisionStepFailed(result *exegraph.RunResult) bool {
+	if result == nil {
+		return false
+	}
+	for _, st := range result.Steps {
+		if st.Status != exegraph.StepFailed {
+			continue
+		}
+		for _, tag := range st.Tags {
+			if tag == "provision" {
+				return true
+			}
+		}
+	}
+	return false
 }

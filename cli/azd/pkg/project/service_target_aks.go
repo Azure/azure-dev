@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
@@ -38,6 +39,13 @@ import (
 const (
 	defaultDeploymentPath = "manifests"
 )
+
+// aksEnvMu serializes SERVICE_<svc>_* writes + envManager.Save sequences
+// across parallel AKS service deploys. The Environment now has internal
+// locking so these calls won't panic, but parallel Save operations can still
+// interleave file I/O against the same .env file. This mirrors the envMu
+// pattern used in service_target_containerapp.go for the same reason.
+var aksEnvMu sync.Mutex
 
 var (
 	featureHelm      alpha.FeatureId = alpha.MustFeatureKey("aks.helm")
@@ -224,11 +232,13 @@ func (t *aksTarget) Publish(
 			remoteImage = artifact.Location
 		}
 		if remoteImage != "" {
+			aksEnvMu.Lock()
 			t.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", remoteImage)
-		}
-
-		if err := t.envManager.Save(ctx, t.env); err != nil {
-			return nil, fmt.Errorf("saving image name to environment: %w", err)
+			saveErr := t.envManager.Save(ctx, t.env)
+			aksEnvMu.Unlock()
+			if saveErr != nil {
+				return nil, fmt.Errorf("saving image name to environment: %w", saveErr)
+			}
 		}
 
 		return publishResult, nil
@@ -301,9 +311,12 @@ func (t *aksTarget) Deploy(
 
 	if len(endpointArtifacts) > 0 {
 		if serviceEndpoint, found := endpointArtifacts.FindLast(WithKind(ArtifactKindEndpoint)); found {
+			aksEnvMu.Lock()
 			t.env.SetServiceProperty(serviceConfig.Name, "ENDPOINT_URL", serviceEndpoint.Location)
-			if err := t.envManager.Save(ctx, t.env); err != nil {
-				return nil, fmt.Errorf("failed updating environment with endpoint url, %w", err)
+			saveErr := t.envManager.Save(ctx, t.env)
+			aksEnvMu.Unlock()
+			if saveErr != nil {
+				return nil, fmt.Errorf("failed updating environment with endpoint url, %w", saveErr)
 			}
 		}
 

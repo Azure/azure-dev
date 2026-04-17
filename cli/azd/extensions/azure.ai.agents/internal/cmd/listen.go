@@ -231,12 +231,12 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 
 		// Fetch the agent version to get the instance identity principal ID.
 		versionObj, err := agentClient.GetAgentVersion(
-			ctx, serviceKey, versionResp.Value, DefaultAgentAPIVersion,
+			ctx, svc.Name, versionResp.Value, DefaultAgentAPIVersion,
 		)
 		if err != nil {
 			return fmt.Errorf(
 				"failed to fetch agent version for %s/%s: %w",
-				serviceKey, versionResp.Value, err,
+				svc.Name, versionResp.Value, err,
 			)
 		}
 
@@ -245,7 +245,7 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 			principalID = versionObj.InstanceIdentity.PrincipalID
 		}
 
-		agentIdentities[serviceKey] = principalID
+		agentIdentities[svc.Name] = principalID
 	}
 
 	if len(agentIdentities) == 0 {

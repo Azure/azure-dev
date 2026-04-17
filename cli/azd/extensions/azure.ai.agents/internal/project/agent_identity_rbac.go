@@ -87,9 +87,10 @@ func parseAgentIdentityInfo(projectResourceID string) (*agentIdentityInfo, error
 // EnsureAgentIdentityRBAC assigns the required RBAC roles to per-agent identity service principals.
 // This is designed to be called from the postdeploy handler after agent deployment.
 //
-// agentIdentities maps agent name → instance identity principal ID. When a principal ID is
-// provided (non-empty), the role is assigned directly without Graph API discovery. When empty,
-// the function falls back to polling Entra ID for the platform-created service principal.
+// EnsureAgentIdentityRBAC assigns Cognitive Services OpenAI Contributor roles to
+// each deployed agent's instance identity. The principal ID is expected to be
+// provided in the agentIdentities map from the deploy response. If a principal ID
+// is empty, the agent is skipped with a warning.
 func EnsureAgentIdentityRBAC(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -106,15 +107,18 @@ func EnsureAgentIdentityRBAC(
 	}
 	envName := envResp.Environment.Name
 
+	skipValue := ""
 	skipResp, err := envClient.GetValue(ctx, &azdext.GetEnvRequest{
 		EnvName: envName,
 		Key:     "AZD_AGENT_SKIP_ROLE_ASSIGNMENTS",
 	})
-	if err == nil && skipResp.Value == "" {
-		// Fall back to OS env if not set in azd environment.
-		skipResp.Value = os.Getenv("AZD_AGENT_SKIP_ROLE_ASSIGNMENTS")
+	if err == nil {
+		skipValue = skipResp.Value
 	}
-	if skip, parseErr := strconv.ParseBool(skipResp.Value); parseErr == nil && skip {
+	if skipValue == "" {
+		skipValue = os.Getenv("AZD_AGENT_SKIP_ROLE_ASSIGNMENTS")
+	}
+	if skip, parseErr := strconv.ParseBool(skipValue); parseErr == nil && skip {
 		fmt.Println("  (-) Skipping agent identity RBAC (AZD_AGENT_SKIP_ROLE_ASSIGNMENTS is set)")
 		return nil
 	}

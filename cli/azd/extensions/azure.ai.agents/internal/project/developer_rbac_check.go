@@ -100,14 +100,18 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient) error 
 	}
 	envName := envResp.Environment.Name
 
+	skipValue := ""
 	skipResp, err := envClient.GetValue(ctx, &azdext.GetEnvRequest{
 		EnvName: envName,
 		Key:     "AZD_AGENT_SKIP_ROLE_ASSIGNMENTS",
 	})
-	if err == nil && skipResp.Value == "" {
-		skipResp.Value = os.Getenv("AZD_AGENT_SKIP_ROLE_ASSIGNMENTS")
+	if err == nil {
+		skipValue = skipResp.Value
 	}
-	if skip, parseErr := strconv.ParseBool(skipResp.Value); parseErr == nil && skip {
+	if skipValue == "" {
+		skipValue = os.Getenv("AZD_AGENT_SKIP_ROLE_ASSIGNMENTS")
+	}
+	if skip, parseErr := strconv.ParseBool(skipValue); parseErr == nil && skip {
 		fmt.Println("  (-) Skipping developer RBAC pre-flight check (AZD_AGENT_SKIP_ROLE_ASSIGNMENTS is set)")
 		return nil
 	}

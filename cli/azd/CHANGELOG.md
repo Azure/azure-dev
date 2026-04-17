@@ -1,6 +1,6 @@
 # Release History
 
-## 1.24.0-beta.1 (Unreleased)
+## 1.25.0-beta.1 (Unreleased)
 
 ### Features Added
 
@@ -9,6 +9,13 @@
 ### Bugs Fixed
 
 ### Other Changes
+
+## 1.24.1 (2026-04-17)
+
+### Features Added
+
+- [[#7697]](https://github.com/Azure/azure-dev/pull/7697) Add `.azdxignore` support for `azd x watch`; create a `.azdxignore` file in the project root to exclude files and directories from the file watcher, preventing excessive rebuilds. Patterns from `.gitignore` are also respected.
+- [[#7746]](https://github.com/Azure/azure-dev/pull/7746) Add local Bicep preflight check for Azure reserved resource names; `azd provision` now warns before provisioning when predicted resource names match Azure's reserved-word restrictions (exact match, substring, or prefix rules).
 
 ## 1.24.0 (2026-04-14)
 

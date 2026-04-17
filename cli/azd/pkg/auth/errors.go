@@ -12,10 +12,12 @@ import (
 	"log"
 	"net/http"
 	"slices"
+	"strings"
 
 	msal "github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
+	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 )
 
 // ErrNoCurrentUser indicates that the current user is not logged in.
@@ -37,6 +39,13 @@ type ReLoginRequiredError struct {
 	helpLink string
 }
 
+// TokenProtectionBlockedError indicates that the token request was blocked by
+// an organization's Conditional Access token protection policy (AADSTS530084)
+// and reauthenticating with azd won't help.
+type TokenProtectionBlockedError struct {
+	errText string
+}
+
 // newReLoginRequiredError returns an error if the response indicates that the user needs to reauthenticate.
 // If it is not a reauthentication error, it returns false.
 func newReLoginRequiredError(
@@ -47,6 +56,10 @@ func newReLoginRequiredError(
 ) (error, bool) {
 	if response == nil {
 		return nil, false
+	}
+
+	if err, ok := newTokenProtectionBlockedError(response, scopes); ok {
+		return err, true
 	}
 
 	//nolint:lll
@@ -69,6 +82,50 @@ func newReLoginRequiredError(
 	}
 
 	return nil, false
+}
+
+const (
+	conditionalAccessDocsLink = "https://aka.ms/TBCADocs"
+	tokenProtectionFAQLink    = "https://aka.ms/TokenProtectionFAQ#troubleshooting"
+)
+
+func newTokenProtectionBlockedError(response *AadErrorResponse, scopes []string) (error, bool) {
+	if response == nil {
+		return nil, false
+	}
+
+	if !slices.Contains(response.ErrorCodes, 530084) {
+		return nil, false
+	}
+
+	message := "A Conditional Access token protection policy blocked this token request."
+	if usesGraphScope(scopes) {
+		message = "A Conditional Access token protection policy blocked this Microsoft Graph token request."
+	}
+
+	return &internal.ErrorWithSuggestion{
+		Err: &TokenProtectionBlockedError{
+			errText: response.ErrorDescription,
+		},
+		Message:    message,
+		Suggestion: "Contact your IT administrator or request a policy exception.",
+		Links: []errorhandler.ErrorLink{
+			{
+				URL:   conditionalAccessDocsLink,
+				Title: "Conditional Access token protection guidance",
+			},
+			{
+				URL:   tokenProtectionFAQLink,
+				Title: "Token protection FAQ",
+			},
+		},
+	}, true
+}
+
+func usesGraphScope(scopes []string) bool {
+	return slices.ContainsFunc(scopes, func(scope string) bool {
+		return strings.HasPrefix(scope, "https://graph.microsoft.com/")
+	})
 }
 
 func (e *ReLoginRequiredError) init(
@@ -111,8 +168,16 @@ func (e *ReLoginRequiredError) Error() string {
 	return e.errText
 }
 
+func (e *TokenProtectionBlockedError) Error() string {
+	return e.errText
+}
+
 // Marker method to indicate this as non-retriable when executed within an armruntime pipeline
 func (e *ReLoginRequiredError) NonRetriable() {
+}
+
+// Marker method to indicate this as non-retriable when executed within an armruntime pipeline
+func (e *TokenProtectionBlockedError) NonRetriable() {
 }
 
 const authFailedPrefix string = "failed to authenticate"

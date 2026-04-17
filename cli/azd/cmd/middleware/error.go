@@ -492,7 +492,7 @@ func (e *ErrorMiddleware) promptNextAction(
 	if val, ok := userConfig.GetString(
 		agentcopilot.ConfigKeyErrorHandlingFix); ok && val == "allow" {
 		e.console.Message(ctx, output.WithWarningFormat(
-			"\n%s auto-fix and rerun is enabled. To change, run %s.",
+			"\n%s auto-fix and retry is enabled. To change, run %s.",
 			agentcopilot.DisplayTitle,
 			output.WithHighLightFormat(
 				fmt.Sprintf("azd config unset %s",
@@ -517,7 +517,7 @@ func (e *ErrorMiddleware) promptNextAction(
 	selector := uxlib.NewSelect(&uxlib.SelectOptions{
 		Message: "How would you like to proceed?",
 		HelpMessage: fmt.Sprintf(
-			"To always allow fixes, run %s.",
+			"To always auto-fix and retry, run %s.",
 			output.WithHighLightFormat(
 				fmt.Sprintf("azd config set %s allow",
 					agentcopilot.ConfigKeyErrorHandlingFix))),

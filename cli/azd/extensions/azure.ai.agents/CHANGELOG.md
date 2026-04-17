@@ -4,7 +4,7 @@
 
 ### Breaking Changes
 
-- Removed `-e` shorthand for `--environment`; use `--environment` instead. This resolves a collision with azd's global `-e/--environment` flag.
+- Removed `-e` shorthand for `--environment`; use `--environment` instead. This resolves a collision with the azd global `-e/--environment` flag.
 
 ## 0.1.23-preview (2026-04-16)
 

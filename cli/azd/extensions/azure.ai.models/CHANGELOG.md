@@ -5,7 +5,7 @@
 
 ### Breaking Changes
 
-- Removed `-e` shorthand for `--project-endpoint`; use `--project-endpoint` instead. This resolves a collision with azd's global `-e/--environment` flag.
+- Removed `-e` shorthand for `--project-endpoint`; use `--project-endpoint` instead. This resolves a collision with the azd global `-e/--environment` flag.
 
 ## 0.0.5-preview (2026-03-24)
 

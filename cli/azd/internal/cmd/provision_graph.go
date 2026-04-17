@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"strconv"
@@ -570,26 +571,55 @@ func (p *ProvisionAction) logProvisionGraphTimings(result *exegraph.RunResult) {
 // (provision.go:382-435): JSON state dump on failure, OpenAI access wrapper,
 // Responsible AI wrapper, and the preflight-aborted translation.
 func (p *ProvisionAction) wrapProvisionError(ctx context.Context, err error) error {
+	return wrapProvisionError(ctx, err, provisionErrorDeps{
+		console:          p.console,
+		formatter:        p.formatter,
+		writer:           p.writer,
+		provisionManager: p.provisionManager,
+		portalUrlBase:    p.portalUrlBase,
+	})
+}
+
+// provisionErrorDeps bundles the dependencies needed by [wrapProvisionError]
+// so the same logic can be reused by both [ProvisionAction] and
+// [UpGraphAction] without duplicating the 4-way error classification.
+type provisionErrorDeps struct {
+	console          input.Console
+	formatter        output.Formatter
+	writer           io.Writer
+	provisionManager *provisioning.Manager
+	portalUrlBase    string
+}
+
+// wrapProvisionError is the package-level implementation shared by the
+// stand-alone `azd provision` path and the unified `azd up` path. Callers
+// must populate [provisionErrorDeps] with a properly-initialized
+// provisionManager (the same one used for the primary layer) so that the
+// JSON state dump on failure has something to render.
+func wrapProvisionError(ctx context.Context, err error, deps provisionErrorDeps) error {
 	// Preflight-aborted → ErrAbortedByUser with success message.
 	if errors.Is(err, errPreflightAbortedByUser) {
-		p.console.MessageUxItem(ctx, &ux.ActionResult{
+		deps.console.MessageUxItem(ctx, &ux.ActionResult{
 			SuccessMessage: "Provisioning was cancelled.",
 		})
 		return internal.ErrAbortedByUser
 	}
 
-	// JSON state dump on failure.
-	if p.formatter.Kind() == output.JsonFormat {
-		stateResult, stateErr := p.provisionManager.State(ctx, nil)
+	// JSON state dump on failure. Only attempted when the formatter is JSON
+	// AND a provisionManager is available (the `azd up` path only populates
+	// the manager when at least one provision layer exists).
+	if deps.formatter != nil && deps.formatter.Kind() == output.JsonFormat &&
+		deps.provisionManager != nil {
+		stateResult, stateErr := deps.provisionManager.State(ctx, nil)
 		if stateErr != nil {
 			return fmt.Errorf(
 				"deployment failed and the deployment result is unavailable: %w",
 				multierr.Combine(stateErr, err),
 			)
 		}
-		if fmtErr := p.formatter.Format(
+		if fmtErr := deps.formatter.Format(
 			provisioning.NewEnvRefreshResultFromState(stateResult.State),
-			p.writer, nil,
+			deps.writer, nil,
 		); fmtErr != nil {
 			return fmt.Errorf(
 				"deployment failed and the deployment result could not be displayed: %w",
@@ -618,7 +648,7 @@ func (p *ProvisionAction) wrapProvisionError(ctx context.Context, err error) err
 		return &internal.ErrorWithSuggestion{
 			Suggestion: "\nSuggested Action: The selected " +
 				"subscription has not been enabled for use of Azure AI service and does not have quota for " +
-				"any pricing tiers. Please visit " + output.WithLinkFormat("%s", p.portalUrlBase) +
+				"any pricing tiers. Please visit " + output.WithLinkFormat("%s", deps.portalUrlBase) +
 				" and select 'Create' on specific services to request access.",
 			Err: err,
 		}
@@ -628,7 +658,7 @@ func (p *ProvisionAction) wrapProvisionError(ctx context.Context, err error) err
 	if strings.Contains(errorMsg, responsibleAITerms) {
 		return &internal.ErrorWithSuggestion{
 			Suggestion: "\nSuggested Action: Please visit azure portal in " +
-				output.WithLinkFormat("%s", p.portalUrlBase) + ". Create the resource in azure portal " +
+				output.WithLinkFormat("%s", deps.portalUrlBase) + ". Create the resource in azure portal " +
 				"to go through Responsible AI terms, and then delete it. " +
 				"After that, run 'azd provision' again",
 			Err: err,

@@ -205,9 +205,11 @@ func TestAnalyzeLayerDependencies_PreExistingEnvVar(t *testing.T) {
 
 	result, err := AnalyzeLayerDependencies(layers, dir, env)
 	require.NoError(t, err)
-	// Both layers run in the same level because the env var is
-	// pre-existing.
-	require.Equal(t, [][]int{{0, 1}}, result.Levels)
+	// Intra-graph producer/consumer edges are preserved even when the env var
+	// pre-exists, to avoid consuming stale values when the producer's template
+	// has changed. Unchanged producers go through the deployment-state-skipped
+	// fast path, so the serial cost is near-zero.
+	require.Equal(t, [][]int{{0}, {1}}, result.Levels)
 }
 
 func TestAnalyzeLayerDependencies_BicepparamFormat(t *testing.T) {

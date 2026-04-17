@@ -823,11 +823,17 @@ func runProvisionSingleLayer(
 	}
 
 	// Project lifecycle event args (matches sequential projectEventArgs).
+	// preview is always false in this code path: the preview flow is
+	// single-layer and goes through provisionPreview() directly. We still
+	// emit the key explicitly so extension handlers that type-assert
+	// args["preview"].(bool) get the expected zero value rather than panic
+	// or behave inconsistently across pre/post handlers.
 	projectEventArgs := project.ProjectLifecycleEventArgs{
 		Project: deps.projectConfig,
 		Args: map[string]any{
-			"layer": layer.Name,
-			"path":  layerPath,
+			"preview": false,
+			"layer":   layer.Name,
+			"path":    layerPath,
 		},
 	}
 	provisionEvent := string(project.ProjectEventProvision)

@@ -297,8 +297,25 @@ func (at *containerAppTarget) Deploy(
 
 	// Smart deploy API: prefer direct revision API for code-only changes when template is unchanged.
 	// This avoids the overhead of full ARM template revalidation when only the container image tag changed.
-	if controlledRevision && at.shouldUseDirectRevisionAPI(ctx, serviceConfig, mainPath) {
-		controlledRevision = false
+	// We compute the current template hash up front; if controlledRevision still holds after the ARM
+	// deploy succeeds, we persist the hash so the next run can take the cheaper direct-revision path.
+	var (
+		templateHashKey      string
+		currentTemplateHash  string
+		templateHashChanged  bool
+		shouldPersistTplHash bool
+	)
+	if controlledRevision {
+		var useDirect bool
+		envMu.Lock()
+		useDirect, currentTemplateHash, templateHashChanged = at.evaluateTemplateHash(serviceConfig, mainPath)
+		envMu.Unlock()
+		if useDirect {
+			controlledRevision = false
+		} else if currentTemplateHash != "" {
+			templateHashKey = fmt.Sprintf("SERVICE_%s_TEMPLATE_HASH", environment.Key(serviceConfig.Name))
+			shouldPersistTplHash = templateHashChanged
+		}
 	}
 
 	if controlledRevision {
@@ -358,6 +375,25 @@ func (at *containerAppTarget) Deploy(
 			if err != nil {
 				return nil, fmt.Errorf("updating environment: %w", err)
 			}
+		}
+
+		// Persist the template hash only after a successful ARM deploy so that
+		// a failed deploy does not leave a stored hash that would cause the
+		// next run to skip the (still-required) full deployment via the
+		// direct-revision optimization path. Done outside the outputs branch
+		// so no-output templates also get the hash recorded.
+		if shouldPersistTplHash {
+			envMu.Lock()
+			if at.env.Getenv(templateHashKey) != currentTemplateHash {
+				at.env.DotenvSet(templateHashKey, currentTemplateHash)
+				if saveErr := at.envManager.Save(ctx, at.env); saveErr != nil {
+					log.Printf(
+						"persisting template hash for %s failed: %v",
+						serviceConfig.Name, saveErr,
+					)
+				}
+			}
+			envMu.Unlock()
 		}
 	} else {
 		if resourceName == "" {
@@ -497,64 +533,52 @@ func (at *containerAppTarget) Endpoints(
 	}
 }
 
-// shouldUseDirectRevisionAPI checks whether the service's infrastructure template is unchanged
-// since the last deployment, indicating that only the container image tag changed and the
-// cheaper direct revision API can be used instead of a full ARM template deployment.
-// The envMu mutex serializes access to the shared environment map for concurrent deploys.
-// The hash is persisted to disk whenever it changes so the optimization survives process
-// exit on revision paths that have no deployment outputs (e.g., no-output template).
-func (at *containerAppTarget) shouldUseDirectRevisionAPI(
-	ctx context.Context,
+// evaluateTemplateHash compares the on-disk infrastructure template's hash
+// against the value previously persisted under SERVICE_<NAME>_TEMPLATE_HASH.
+//
+// It returns:
+//   - useDirectRevision: true when the template is unchanged since the last
+//     successful deployment, indicating the cheaper direct-revision API can
+//     be used instead of a full ARM template deployment.
+//   - currentHash: the SHA-256 hex of the current template (empty if the
+//     template could not be read).
+//   - changed: true when currentHash differs from the persisted value (or no
+//     prior value existed), meaning the caller should persist currentHash
+//     after the ARM deploy succeeds. Persistence is intentionally NOT done
+//     here so a failed deploy does not poison the cache and cause the next
+//     run to skip the (still-required) full deployment via direct-revision.
+//
+// The function reads from the shared Environment map without locking; the
+// caller MUST hold envMu across the call to prevent concurrent writers (from
+// other service deploys) from racing the underlying map[string]string.
+func (at *containerAppTarget) evaluateTemplateHash(
 	serviceConfig *ServiceConfig,
 	mainPath string,
-) bool {
+) (useDirectRevision bool, currentHash string, changed bool) {
 	templateContent, readErr := os.ReadFile(mainPath)
 	if readErr != nil {
-		return false
+		return false, "", false
 	}
 
-	currentHash := sha256.Sum256(templateContent)
-	currentHashStr := hex.EncodeToString(currentHash[:])
+	sum := sha256.Sum256(templateContent)
+	currentHash = hex.EncodeToString(sum[:])
 	envHashKey := fmt.Sprintf("SERVICE_%s_TEMPLATE_HASH", environment.Key(serviceConfig.Name))
 
-	// Serialize access to the shared Environment map. DotenvSet and Getenv operate
-	// on an unprotected map[string]string, so concurrent calls during parallel
-	// deploy would be a data race. Hold the write lock across the read-modify-write
-	// and the subsequent Save so another writer can't observe a torn state.
-	envMu.Lock()
+	// Read-only access to the env map. Concurrent deploys for different
+	// services use distinct keys; concurrent reads of the underlying
+	// map[string]string are safe so long as no writer is active. The caller
+	// holds envMu around the post-deploy write that updates this same key,
+	// preventing torn writes.
 	previousHash := at.env.Getenv(envHashKey)
-	hashChanged := currentHashStr != previousHash
-	if hashChanged {
-		at.env.DotenvSet(envHashKey, currentHashStr)
-	}
-
-	// Persist the updated hash so the next run sees it. The downstream env-save
-	// inside Deploy() only runs when the deployment produced ARM outputs, so a
-	// no-output template (or the direct-revision branch, which skips ARM
-	// deploy entirely) would otherwise lose the hash at process exit and fall
-	// back to a full ARM deployment on the next `azd deploy`.
-	var saveErr error
-	if hashChanged {
-		saveErr = at.envManager.Save(ctx, at.env)
-	}
-	envMu.Unlock()
-
-	if hashChanged && saveErr != nil {
-		log.Printf("persisting template hash for %s failed: %v", serviceConfig.Name, saveErr)
-		// Fall through: the in-memory hash is still set for this run, but
-		// the next run may redo a full deploy. Do not fail the build over
-		// a persistence hiccup.
-	}
-
-	if currentHashStr == previousHash {
+	if currentHash == previousHash {
 		log.Printf(
 			"template unchanged for %s, using direct revision API",
 			serviceConfig.Name,
 		)
-		return true
+		return true, currentHash, false
 	}
 
-	return false
+	return false, currentHash, true
 }
 
 func (at *containerAppTarget) validateTargetResource(

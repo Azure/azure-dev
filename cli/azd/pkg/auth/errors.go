@@ -40,8 +40,8 @@ type ReLoginRequiredError struct {
 }
 
 // TokenProtectionBlockedError indicates that the token request was blocked by
-// an organization's Conditional Access token protection policy (AADSTS530084)
-// and reauthenticating with azd won't help.
+// an organization's Conditional Access token protection policy (AADSTS530084), and until #7704 is addressed,
+// re-authenticating with azd won't help.
 type TokenProtectionBlockedError struct {
 	errText string
 }
@@ -86,7 +86,8 @@ func newReLoginRequiredError(
 
 const (
 	conditionalAccessDocsLink = "https://aka.ms/TBCADocs"
-	tokenProtectionFAQLink    = "https://aka.ms/TokenProtectionFAQ#troubleshooting"
+	// #nosec G101 -- documentation URL, not a credential.
+	tokenProtectionFAQLink = "https://aka.ms/TokenProtectionFAQ#troubleshooting"
 )
 
 func newTokenProtectionBlockedError(response *AadErrorResponse, scopes []string) (error, bool) {

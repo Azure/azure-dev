@@ -59,6 +59,25 @@ mage preflight
 
 > **Tip**: If you're using GitHub Copilot, the `/azd-preflight` skill runs `mage preflight` and auto-fixes any issues it discovers.
 
+### Re-recording functional test cassettes
+
+Re-record stale functional test recordings against a live Azure subscription:
+
+```bash
+cd cli/azd
+mage record                          # re-record all playback tests
+mage record -filter=Test_CLI_Quota   # re-record only matching tests
+```
+
+The test subscription and tenant can be configured once via `azd config`:
+
+```bash
+azd config set defaults.test.subscription <SUBSCRIPTION_ID>
+azd config set defaults.test.tenant <TENANT_ID>
+```
+
+These values are stored in your user-level azd config and persist across sessions. You can also set them via environment variables (`AZD_TEST_AZURE_SUBSCRIPTION_ID`, `AZD_TEST_TENANT_ID`), which take precedence. See the [recording guide](./docs/recording-functional-tests-guide.md) for details.
+
 Run tests:
 
 ```bash

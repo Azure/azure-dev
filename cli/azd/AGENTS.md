@@ -75,6 +75,10 @@ When writing tests, prefer table-driven tests. Use testify/mock for mocking.
 
 > **Tip**: The `/azd-preflight` Copilot skill runs all these checks and auto-fixes issues. See `.github/skills/azd-preflight/`.
 
+Additional mage targets:
+
+- `mage record` — re-record functional test cassettes against a live Azure subscription. Accepts an optional `-filter=TestName` flag to re-record specific tests. Requires `azd auth login` and a configured test subscription (see `docs/recording-functional-tests-guide.md`).
+
 ```bash
 gofmt -s -w .
 go fix ./...

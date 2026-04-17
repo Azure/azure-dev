@@ -276,7 +276,7 @@ func platformUpgradeHint(channel update.Channel) update.UpdateHint {
 			var cmd string
 			if isDaily {
 				//nolint:lll
-				cmd = "powershell -ex AllSigned -c \"Invoke-RestMethod 'https://aka.ms/install-azd.ps1' -OutFile 'install-azd.ps1'; ./install-azd.ps1 -Version 'daily'\""
+				cmd = "powershell -ex AllSigned -c \"& ([scriptblock]::Create((Invoke-RestMethod 'https://aka.ms/install-azd.ps1'))) -Version 'daily'\""
 			} else {
 				//nolint:lll
 				cmd = "powershell -ex AllSigned -c \"Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression\""

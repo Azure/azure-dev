@@ -44,6 +44,10 @@ func PushInterruptHandler(h InterruptHandler) func() {
 		// removing unrelated newer handlers if pop functions are called out
 		// of order.
 		if len(interruptStack) == idx+1 {
+			// Clear the slot first so the GC can reclaim the popped handler
+			// (and anything it captured) even if the underlying array isn't
+			// reallocated for a while.
+			interruptStack[idx] = nil
 			interruptStack = interruptStack[:idx]
 		}
 	}

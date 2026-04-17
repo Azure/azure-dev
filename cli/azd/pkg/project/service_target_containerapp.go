@@ -515,7 +515,7 @@ func (at *containerAppTarget) shouldUseDirectRevisionAPI(
 
 	currentHash := sha256.Sum256(templateContent)
 	currentHashStr := hex.EncodeToString(currentHash[:])
-	envHashKey := fmt.Sprintf("SERVICE_%s_TEMPLATE_HASH", strings.ToUpper(serviceConfig.Name))
+	envHashKey := fmt.Sprintf("SERVICE_%s_TEMPLATE_HASH", environment.Key(serviceConfig.Name))
 
 	// Serialize access to the shared Environment map. DotenvSet and Getenv operate
 	// on an unprotected map[string]string, so concurrent calls during parallel

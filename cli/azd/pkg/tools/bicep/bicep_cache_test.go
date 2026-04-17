@@ -46,7 +46,7 @@ func TestBuildCache_HitReturnsCachedResult(t *testing.T) {
 
 	// Set up the command runner to return a compiled template.
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return len(args.Args) >= 2 && args.Args[0] == "build" && args.Args[2] == "--stdout"
+		return len(args.Args) >= 3 && args.Args[0] == "build" && args.Args[2] == "--stdout"
 	}).Respond(exec.NewRunResult(0, `{"$schema":"arm-template"}`, ""))
 
 	ctx := *mockContext.Context

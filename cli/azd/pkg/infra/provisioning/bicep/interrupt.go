@@ -237,29 +237,18 @@ func (p *BicepProvider) cancelAndAwaitTerminal(
 	p.console.StopSpinner(ctx, "", input.Step)
 	p.console.ShowSpinner(ctx, "Waiting for Azure to confirm cancellation", input.Step)
 
-	// Poll until terminal or until our wait budget elapses.
+	// Poll until terminal or until our wait budget elapses. Wait for the
+	// poll interval BEFORE each Get so that a slow Get cannot push the loop
+	// into back-to-back ARM calls (and trigger throttling).
 	pollCtx, pollDone := context.WithTimeout(
 		context.WithoutCancel(ctx), cancelTerminalTimeout)
 	defer pollDone()
 
-	timer := time.NewTimer(cancelPollInterval)
-	defer timer.Stop()
+	ticker := time.NewTicker(cancelPollInterval)
+	defer ticker.Stop()
 
 	var lastState azapi.DeploymentProvisioningState
 	for {
-		state, err := deployment.Get(pollCtx)
-		if err == nil {
-			lastState = state.ProvisioningState
-			if isTerminalProvisioningState(lastState) {
-				return terminalToOutcome(lastState, portalUrl, p, ctx)
-			}
-		} else {
-			// Don't fail the whole flow on a transient Get error — keep
-			// polling until either we observe a terminal state or the
-			// timeout fires.
-			log.Printf("interrupt handler: poll Get failed (will retry): %v", err)
-		}
-
 		select {
 		case <-pollCtx.Done():
 			p.console.StopSpinner(ctx, "Cancellation still in progress on Azure", input.StepWarning)
@@ -273,8 +262,20 @@ func (p *BicepProvider) cancelAndAwaitTerminal(
 				err:            provisioning.ErrDeploymentCancelTimeout,
 				telemetryValue: "cancel_timed_out",
 			}
-		case <-timer.C:
-			timer.Reset(cancelPollInterval)
+		case <-ticker.C:
+		}
+
+		state, err := deployment.Get(pollCtx)
+		if err == nil {
+			lastState = state.ProvisioningState
+			if isTerminalProvisioningState(lastState) {
+				return terminalToOutcome(lastState, portalUrl, p, ctx)
+			}
+		} else {
+			// Don't fail the whole flow on a transient Get error — keep
+			// polling until either we observe a terminal state or the
+			// timeout fires.
+			log.Printf("interrupt handler: poll Get failed (will retry): %v", err)
 		}
 	}
 }

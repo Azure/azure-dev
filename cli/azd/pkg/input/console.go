@@ -1004,16 +1004,19 @@ func watchTerminalInterrupt(c *AskerConsole) {
 				os.Exit(1)
 			}
 
-			go func(h InterruptHandler) {
-				defer finishInterruptHandler()
-				handled := h()
-				if !handled {
-					// Handler declined to take ownership of shutdown — fall
-					// back to default behavior.
-					_ = c.spinner.Stop()
-					os.Exit(1)
-				}
-			}(handler)
+			// Run the handler inline on the signal goroutine so any "interrupt
+			// started" side-effects (e.g. closing a started channel, cancelling
+			// the deploy context) take effect synchronously after the signal
+			// is received — no scheduling window where the deploy goroutine
+			// could complete naturally and silently drop the Ctrl+C.
+			handled := handler()
+			finishInterruptHandler()
+			if !handled {
+				// Handler declined to take ownership of shutdown — fall back
+				// to default behavior.
+				_ = c.spinner.Stop()
+				os.Exit(1)
+			}
 		}
 	}()
 }

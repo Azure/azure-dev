@@ -4,7 +4,7 @@
 
 ### Breaking Changes
 
-- Removed `-e` shorthand for `--environment`; use `--environment` instead. This resolves a collision with the azd global `-e/--environment` flag.
+- [[#7741]](https://github.com/Azure/azure-dev/pull/7741) Remove `-e` shorthand for `--environment` on `azd ai agent init`; use `--environment` instead to avoid collision with azd global `-e/--environment`.
 
 ## 0.1.23-preview (2026-04-16)
 

@@ -1,6 +1,6 @@
 # Release History
 
-## 0.1.24-preview (Unreleased)
+## 0.1.24-preview (2026-04-17)
 
 ### Breaking Changes
 

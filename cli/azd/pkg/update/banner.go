@@ -110,13 +110,13 @@ func (p BannerParams) releaseNotesLink() releaseNotesLink {
 	// `azure-dev-cli_<semver>` (e.g. azure-dev-cli_1.13.1).
 	if p.Channel == ChannelDaily {
 		return releaseNotesLink{
-			label: "Recent Changes",
+			label: "Recent changes",
 			url:   dailyReleaseNotesURL,
 		}
 	}
 
 	return releaseNotesLink{
-		label: "Release Notes",
+		label: "Release notes",
 		url:   fmt.Sprintf(stableReleaseNotesURL, p.LatestVersion),
 	}
 }

@@ -166,7 +166,7 @@ func TestReleaseNotesLink(t *testing.T) {
 				Channel:       ChannelStable,
 			},
 			expected: releaseNotesLink{
-				label: "Release Notes",
+				label: "Release notes",
 				url:   "https://github.com/Azure/azure-dev/releases/tag/azure-dev-cli_1.13.1",
 			},
 		},
@@ -177,7 +177,7 @@ func TestReleaseNotesLink(t *testing.T) {
 				Channel:       ChannelDaily,
 			},
 			expected: releaseNotesLink{
-				label: "Recent Changes",
+				label: "Recent changes",
 				url:   "https://github.com/Azure/azure-dev/commits/main",
 			},
 		},

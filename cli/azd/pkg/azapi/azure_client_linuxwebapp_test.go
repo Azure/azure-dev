@@ -148,6 +148,77 @@ func Test_DeployTrackLinuxWebAppStatus(t *testing.T) {
 		require.True(t, ran)
 		require.NotNil(t, res)
 	})
+
+	t.Run("StoppedApp", func(t *testing.T) {
+		ran := false
+		mockContext := mocks.NewMockContext(t.Context())
+		azCli := newAzureClientFromMockContext(mockContext)
+
+		// Use stopped app mock instead of running app mock
+		registerIsStoppedLinuxWebAppMocks(mockContext, &ran)
+		// When the app is stopped, DeployTrackStatus is skipped and basic Deploy() is used
+		registerLinuxWebAppBasicZipDeployMocks(mockContext, &ran)
+
+		zipFile := bytes.NewReader([]byte{})
+
+		res, err := azCli.DeployAppServiceZip(
+			*mockContext.Context,
+			"SUBSCRIPTION_ID",
+			"RESOURCE_GROUP_ID",
+			"LINUX_WEB_APP_NAME",
+			zipFile,
+			func(s string) {},
+			false,
+		)
+
+		require.NoError(t, err)
+		require.True(t, ran)
+		require.NotNil(t, res)
+	})
+}
+
+func Test_isAppStopped(t *testing.T) {
+	t.Run("Stopped", func(t *testing.T) {
+		app := &armappservice.WebAppsClientGetResponse{
+			Site: armappservice.Site{
+				Properties: &armappservice.SiteProperties{
+					State: new("Stopped"),
+				},
+			},
+		}
+		require.True(t, isAppStopped(app))
+	})
+
+	t.Run("Running", func(t *testing.T) {
+		app := &armappservice.WebAppsClientGetResponse{
+			Site: armappservice.Site{
+				Properties: &armappservice.SiteProperties{
+					State: new("Running"),
+				},
+			},
+		}
+		require.False(t, isAppStopped(app))
+	})
+
+	t.Run("NilState", func(t *testing.T) {
+		app := &armappservice.WebAppsClientGetResponse{
+			Site: armappservice.Site{
+				Properties: &armappservice.SiteProperties{
+					State: nil,
+				},
+			},
+		}
+		require.False(t, isAppStopped(app))
+	})
+
+	t.Run("NilProperties", func(t *testing.T) {
+		app := &armappservice.WebAppsClientGetResponse{
+			Site: armappservice.Site{
+				Properties: nil,
+			},
+		}
+		require.False(t, isAppStopped(app))
+	})
 }
 
 func registerLinuxWebAppBasicZipDeployMocks(mockContext *mocks.MockContext, ran *bool) {
@@ -202,6 +273,41 @@ func registerIsLinuxWebAppMocks(mockContext *mocks.MockContext, ran *bool) {
 				Name:     new("LINUX_WEB_APP_NAME"),
 				Properties: &armappservice.SiteProperties{
 					DefaultHostName: new("LINUX_WEB_APP_NAME.azurewebsites.net"),
+					SiteConfig: &armappservice.SiteConfig{
+						LinuxFxVersion: new("Python"),
+					},
+					HostNameSSLStates: []*armappservice.HostNameSSLState{
+						{
+							HostType: to.Ptr(armappservice.HostTypeRepository),
+							Name:     new("LINUX_WEB_APP_NAME_SCM_HOST"),
+						},
+					},
+				},
+			},
+		}
+
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, response)
+	})
+}
+
+func registerIsStoppedLinuxWebAppMocks(mockContext *mocks.MockContext, ran *bool) {
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet &&
+			strings.Contains(
+				request.URL.Path,
+				//nolint:lll
+				"/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP_ID/providers/Microsoft.Web/sites/LINUX_WEB_APP_NAME",
+			)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		*ran = true
+		response := armappservice.WebAppsClientGetResponse{
+			Site: armappservice.Site{
+				Location: new("eastus2"),
+				Kind:     new("app,linux"),
+				Name:     new("LINUX_WEB_APP_NAME"),
+				Properties: &armappservice.SiteProperties{
+					DefaultHostName: new("LINUX_WEB_APP_NAME.azurewebsites.net"),
+					State:           new("Stopped"),
 					SiteConfig: &armappservice.SiteConfig{
 						LinuxFxVersion: new("Python"),
 					},

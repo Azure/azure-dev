@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
@@ -130,7 +131,7 @@ func (st *appServiceTarget) Deploy(
 
 	// Check if runtime status tracking should be skipped for this service
 	skipStatusCheckEnvVar := skipStatusCheckEnvVarNameForService(serviceConfig.Name)
-	skipStatusCheck := st.env.Getenv(skipStatusCheckEnvVar) != ""
+	skipStatusCheck, _ := strconv.ParseBool(st.env.Getenv(skipStatusCheckEnvVar))
 
 	// Deploy to each target
 	hasSlots := len(deployTargets) > 1 || (len(deployTargets) == 1 && deployTargets[0].SlotName != "")

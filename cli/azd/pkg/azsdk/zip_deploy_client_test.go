@@ -370,7 +370,6 @@ func TestLogWebAppDeploymentStatus(t *testing.T) {
 
 		result := logWebAppDeploymentStatus(res, "", noop)
 		require.NoError(t, result.err)
-		require.True(t, result.noInstances, "should signal noInstances when total is 0")
 	})
 
 	t.Run("RuntimeStartingWithInstances", func(t *testing.T) {
@@ -387,7 +386,6 @@ func TestLogWebAppDeploymentStatus(t *testing.T) {
 
 		result := logWebAppDeploymentStatus(res, "", noop)
 		require.NoError(t, result.err)
-		require.False(t, result.noInstances, "should NOT signal noInstances when instances exist")
 	})
 
 	t.Run("RuntimeSuccessful", func(t *testing.T) {
@@ -404,7 +402,6 @@ func TestLogWebAppDeploymentStatus(t *testing.T) {
 
 		result := logWebAppDeploymentStatus(res, "", noop)
 		require.NoError(t, result.err)
-		require.False(t, result.noInstances)
 	})
 
 	t.Run("RuntimeFailed", func(t *testing.T) {
@@ -421,7 +418,6 @@ func TestLogWebAppDeploymentStatus(t *testing.T) {
 
 		result := logWebAppDeploymentStatus(res, "", noop)
 		require.Error(t, result.err)
-		require.False(t, result.noInstances)
 	})
 
 	t.Run("EmptyResponse", func(t *testing.T) {
@@ -461,6 +457,5 @@ func TestLogWebAppDeploymentStatus(t *testing.T) {
 
 		result := logWebAppDeploymentStatus(res, "", noop)
 		require.NoError(t, result.err)
-		require.True(t, result.noInstances, "nil counters should be treated as 0")
 	})
 }

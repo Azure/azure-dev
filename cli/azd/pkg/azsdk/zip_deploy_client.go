@@ -26,12 +26,6 @@ import (
 
 const (
 	deployStatusInterval = 10 * time.Second
-
-	// noInstancesThreshold is the number of consecutive polls with 0 total instances
-	// (in progress + successful + failed) during RuntimeStarting before we consider
-	// the deployment successful. This handles the case where the web app is administratively
-	// stopped and will never transition to RuntimeSuccessful.
-	noInstancesThreshold = 3
 )
 
 // ZipDeployClient wraps usage of app service zip deploy used for application deployments
@@ -197,9 +191,6 @@ func (c *ZipDeployClient) BeginDeployTrackStatus(
 type deploymentStatusResult struct {
 	// err is set when the deployment has failed.
 	err error
-	// noInstances is true when the status is RuntimeStarting but there are zero total instances.
-	// This indicates the web app may be administratively stopped.
-	noInstances bool
 }
 
 func logWebAppDeploymentStatus(
@@ -257,11 +248,6 @@ func logWebAppDeploymentStatus(
 		progressLog("Running build process")
 		return deploymentStatusResult{}
 	case armappservice.DeploymentBuildStatusRuntimeStarting:
-		totalNumber := inProgressNumber + successNumber + failNumber
-		if totalNumber == 0 {
-			progressLog("Starting runtime process, 0 total instances detected (app may be stopped)")
-			return deploymentStatusResult{noInstances: true}
-		}
 		progressLog(fmt.Sprintf("Starting runtime process, %d in progress instances, %d successful instances",
 			inProgressNumber, successNumber))
 		return deploymentStatusResult{}
@@ -309,7 +295,6 @@ func (c *ZipDeployClient) DeployTrackStatus(
 
 	delay := 3 * time.Second
 	pollCount := 0
-	noInstancesCount := 0
 	for {
 		var resp *http.Response
 
@@ -350,17 +335,6 @@ func (c *ZipDeployClient) DeployTrackStatus(
 		result := logWebAppDeploymentStatus(response, "", progressLog)
 		if result.err != nil {
 			return result.err
-		}
-
-		if result.noInstances {
-			noInstancesCount++
-			if noInstancesCount >= noInstancesThreshold {
-				progressLog("Web app has no running instances (app may be stopped). " +
-					"Deployment package was uploaded successfully, skipping runtime status check.")
-				return nil
-			}
-		} else {
-			noInstancesCount = 0
 		}
 
 		// Wait longer after a few initial tries

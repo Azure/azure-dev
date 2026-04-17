@@ -126,7 +126,7 @@ func (ed *EventDispatcher[T]) RaiseEvent(ctx context.Context, name Event, eventA
 		}
 	}
 
-	// Build final error string if their are any failures
+	// Build final error string if there are any failures
 	if len(handlerErrors) > 0 {
 		// Single error: preserve the original error type for unwrapping.
 		// This lets structured errors (e.g. LocalError, ErrorWithSuggestion)

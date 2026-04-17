@@ -5,7 +5,6 @@ package azdext
 
 import (
 	"context"
-	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -178,9 +177,16 @@ func TestEventManager_onInvokeProjectHandler_HandlerError(t *testing.T) {
 
 	eventManager := NewEventManager("microsoft.azd.demo", client, nil)
 
-	// Add a test handler that fails
+	// Add a test handler that fails with a structured LocalError so we can verify
+	// the failure response carries the structured error payload, not just a string.
+	handlerErr := &LocalError{
+		Message:    "handler failed",
+		Code:       "handler_failed",
+		Category:   LocalErrorCategoryUser,
+		Suggestion: "Try again with --debug",
+	}
 	handler := func(ctx context.Context, args *ProjectEventArgs) error {
-		return errors.New("handler failed")
+		return handlerErr
 	}
 	eventManager.projectEvents["postbuild"] = handler
 
@@ -202,6 +208,15 @@ func TestEventManager_onInvokeProjectHandler_HandlerError(t *testing.T) {
 	assert.Equal(t, "postbuild", status.EventName)
 	assert.Equal(t, "failed", status.Status)
 	assert.Equal(t, "handler failed", status.Message)
+
+	// Verify the structured ExtensionError is also populated so the host can unwrap
+	// it back into a typed LocalError (preserving the Suggestion and category).
+	require.NotNil(t, status.Error, "expected structured ExtensionError on failed status")
+	assert.Equal(t, "handler failed", status.Error.GetMessage())
+	assert.Equal(t, "Try again with --debug", status.Error.GetSuggestion())
+	require.NotNil(t, status.Error.GetLocalError())
+	assert.Equal(t, "handler_failed", status.Error.GetLocalError().GetCode())
+	assert.Equal(t, string(LocalErrorCategoryUser), status.Error.GetLocalError().GetCategory())
 }
 
 // Test onInvokeProjectHandler with no registered handler
@@ -318,9 +333,16 @@ func TestEventManager_onInvokeServiceHandler_HandlerError(t *testing.T) {
 
 	eventManager := NewEventManager("microsoft.azd.demo", client, nil)
 
-	// Add a test handler that fails
+	// Add a test handler that fails with a structured LocalError so we can verify
+	// the failure response carries the structured error payload, not just a string.
+	handlerErr := &LocalError{
+		Message:    "service handler failed",
+		Code:       "service_handler_failed",
+		Category:   LocalErrorCategoryUser,
+		Suggestion: "Re-run with --debug",
+	}
 	handler := func(ctx context.Context, args *ServiceEventArgs) error {
-		return errors.New("service handler failed")
+		return handlerErr
 	}
 	eventManager.serviceEvents["prepublish"] = handler
 
@@ -345,6 +367,15 @@ func TestEventManager_onInvokeServiceHandler_HandlerError(t *testing.T) {
 	assert.Equal(t, "test-service", status.ServiceName)
 	assert.Equal(t, "failed", status.Status)
 	assert.Equal(t, "service handler failed", status.Message)
+
+	// Verify the structured ExtensionError is also populated so the host can unwrap
+	// it back into a typed LocalError (preserving the Suggestion and category).
+	require.NotNil(t, status.Error, "expected structured ExtensionError on failed status")
+	assert.Equal(t, "service handler failed", status.Error.GetMessage())
+	assert.Equal(t, "Re-run with --debug", status.Error.GetSuggestion())
+	require.NotNil(t, status.Error.GetLocalError())
+	assert.Equal(t, "service_handler_failed", status.Error.GetLocalError().GetCode())
+	assert.Equal(t, string(LocalErrorCategoryUser), status.Error.GetLocalError().GetCategory())
 }
 
 // Test onInvokeServiceHandler with no registered handler

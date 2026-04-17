@@ -10,8 +10,22 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// disableTerminalFormatting disables terminal hyperlink escape sequences
+// (AZD_FORCE_TTY=false) and color codes (NO_COLOR=1) so banner assertions
+// match plain-string substrings regardless of whether `go test` is run in an
+// interactive terminal.
+//
+// t.Setenv is not compatible with t.Parallel(), so tests that call this
+// helper must not be parallelized. Banner tests are sub-millisecond so this
+// is an acceptable trade-off.
+func disableTerminalFormatting(t *testing.T) {
+	t.Helper()
+	t.Setenv("AZD_FORCE_TTY", "false")
+	t.Setenv("NO_COLOR", "1")
+}
+
 func TestRenderUpdateBanner(t *testing.T) {
-	t.Parallel()
+	disableTerminalFormatting(t)
 
 	params := BannerParams{
 		CurrentVersion: "1.11.0",
@@ -27,7 +41,6 @@ func TestRenderUpdateBanner(t *testing.T) {
 		"Update available:",
 		"1.11.0 -> 1.13.1",
 		"To update, run `azd update`",
-		// WithHyperlink falls back to plain URL in non-terminal test environments.
 		"github.com/Azure/azure-dev/releases/tag/azure-dev-cli_1.13.1",
 	} {
 		assert.Contains(t, result, s, "expected banner to contain %q", s)
@@ -39,10 +52,9 @@ func TestRenderUpdateBanner(t *testing.T) {
 }
 
 func TestRenderUpdateBanner_PlatformCommand(t *testing.T) {
-	t.Parallel()
+	disableTerminalFormatting(t)
 
 	t.Run("run_hint_with_details", func(t *testing.T) {
-		t.Parallel()
 		params := BannerParams{
 			CurrentVersion: "1.11.0",
 			LatestVersion:  "1.13.1",
@@ -59,7 +71,6 @@ func TestRenderUpdateBanner_PlatformCommand(t *testing.T) {
 	})
 
 	t.Run("handles_visit_url", func(t *testing.T) {
-		t.Parallel()
 		visitParams := BannerParams{
 			CurrentVersion: "1.11.0",
 			LatestVersion:  "1.13.1",
@@ -72,7 +83,7 @@ func TestRenderUpdateBanner_PlatformCommand(t *testing.T) {
 }
 
 func TestRenderUpdateBanner_DailyChannel(t *testing.T) {
-	t.Parallel()
+	disableTerminalFormatting(t)
 
 	// Daily version strings already embed the build number (e.g.
 	// "1.24.0-daily.6168094"), so no extra formatting is needed.
@@ -92,7 +103,7 @@ func TestRenderUpdateBanner_DailyChannel(t *testing.T) {
 }
 
 func TestFormatUpdateHint(t *testing.T) {
-	t.Parallel()
+	disableTerminalFormatting(t)
 
 	tests := []struct {
 		name     string
@@ -125,8 +136,6 @@ func TestFormatUpdateHint(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
 			got := formatUpdateHint(tt.input)
 			for _, s := range tt.contains {
 				assert.Contains(t, got, s, "expected hint to contain %q", s)
@@ -136,11 +145,13 @@ func TestFormatUpdateHint(t *testing.T) {
 }
 
 func TestFormatUpdateHint_EmptyRendersNothing(t *testing.T) {
-	t.Parallel()
+	disableTerminalFormatting(t)
 	assert.Empty(t, formatUpdateHint(UpdateHint{}))
 }
 
 func TestReleaseNotesLink(t *testing.T) {
+	// Pure string construction — no color/hyperlink output involved, so this
+	// test doesn't need disableTerminalFormatting and can run in parallel.
 	t.Parallel()
 
 	tests := []struct {

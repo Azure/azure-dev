@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -84,7 +85,7 @@ func (p *BicepProvider) installDeploymentInterruptHandler(
 	ch := make(chan interruptOutcome, 1)
 	started := make(chan struct{})
 
-	pop := input.PushInterruptHandler(func() bool {
+	pop := input.PushInterruptHandler(sync.OnceValue(func() bool {
 		// Signal interrupt-in-progress and unblock the ARM deploy call
 		// immediately so Deploy can transition to "wait for outcome" mode
 		// rather than racing against a natural completion.
@@ -104,7 +105,7 @@ func (p *BicepProvider) installDeploymentInterruptHandler(
 		// sentinel error and the action / error middleware translates that
 		// into the user-facing exit message.
 		return true
-	})
+	}))
 
 	cleanup = func() {
 		pop()
@@ -145,6 +146,11 @@ func (p *BicepProvider) runInterruptPrompt(
 		// to the safer "leave running" behavior so the user can decide
 		// manually via the portal.
 		log.Printf("interrupt handler: failed to show prompt, defaulting to leave-running: %v", err)
+		if portalUrl != "" {
+			p.console.Message(ctx,
+				output.WithHighLightFormat("The Azure deployment will continue running. Track it here:\n  %s",
+					portalUrl))
+		}
 		return interruptOutcome{
 			err:            provisioning.ErrDeploymentInterruptedLeaveRunning,
 			telemetryValue: "leave_running",

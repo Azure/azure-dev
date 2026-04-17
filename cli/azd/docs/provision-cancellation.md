@@ -29,8 +29,9 @@ finish, azd will pause and ask what to do instead of exiting immediately.
 | Cancel still pending | Azure does not reach a terminal state within the wait budget. azd warns that cancellation is still in progress and prints the portal URL. |
 | Cancel request failed | The ARM `Cancel` API itself returned an error. azd prints the error and the portal URL. |
 
-In every case the portal URL is printed so the user can follow up
-manually from the browser.
+When the deployment URL is available, azd prints it so the user can follow
+up manually from the browser. The URL is omitted if azd was unable to
+resolve it (for example, when the ARM service is unreachable).
 
 ## Provider scope
 

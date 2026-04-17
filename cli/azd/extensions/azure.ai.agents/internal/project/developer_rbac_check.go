@@ -182,8 +182,8 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient) error 
 					exterrors.CodeDeveloperMissingAIUserRole,
 					fmt.Sprintf(
 						"your identity (%s) does not have the 'Azure AI User' role on the Foundry Project %s/%s "+
-							"and auto-assign was denied (403)",
-						userProfile.DisplayName, info.AccountName, info.ProjectName,
+							"and auto-assign was denied: %s",
+						userProfile.DisplayName, info.AccountName, info.ProjectName, assignErr,
 					),
 					fmt.Sprintf(
 						"ask a subscription Owner or User Access Administrator to assign the 'Azure AI User' role "+
@@ -239,8 +239,17 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient) error 
 		return nil
 	}
 
-	// Always resolve registry info to accurately detect ABAC mode.
-	acrResourceID, isAbac, err := resolveACRInfo(ctx, cred, info.SubscriptionID, acrEndpoint)
+	// When AZURE_CONTAINER_REGISTRY_RESOURCE_ID is set (populated during init), use a targeted
+	// RegistriesClient.Get() call — O(1) instead of paging all registries in the subscription.
+	var (
+		acrResourceID string
+		isAbac        bool
+	)
+	if rid := azdEnv["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]; rid != "" {
+		acrResourceID, isAbac, err = resolveACRInfoByResourceID(ctx, cred, rid)
+	} else {
+		acrResourceID, isAbac, err = resolveACRInfo(ctx, cred, info.SubscriptionID, acrEndpoint)
+	}
 	if err != nil {
 		fmt.Printf("  ⚠ Could not resolve ACR resource info: %s — skipping ACR role check\n", err)
 		return nil
@@ -300,7 +309,7 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient) error 
 	}
 
 	if isAbac {
-		fmt.Println("  ✓ Sufficient Container Registry role on ACR (ABAC mode)")
+		fmt.Println("  ✓ Container Registry role on ACR (ABAC mode)")
 	} else {
 		fmt.Println("  ✓ Container Registry role on ACR")
 	}
@@ -371,6 +380,59 @@ func normalizeLoginServer(loginServer string) string {
 		}
 	}
 	return strings.ToLower(strings.TrimSuffix(s, "/"))
+}
+
+// resolveACRInfoByResourceID fetches ABAC mode and validates the resource ID for a registry
+// using a single targeted ARM Get() call — O(1) vs paging all registries.
+// resourceID must be a full ARM resource ID:
+// /subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.ContainerRegistry/registries/{name}
+func resolveACRInfoByResourceID(
+	ctx context.Context,
+	cred *azidentity.AzureDeveloperCLICredential,
+	resourceID string,
+) (string, bool, error) {
+	// Parse resource group and registry name from the ARM resource ID.
+	parts := strings.Split(resourceID, "/")
+	var resourceGroup, registryName, subscriptionID string
+	for i, p := range parts {
+		switch strings.ToLower(p) {
+		case "subscriptions":
+			if i+1 < len(parts) {
+				subscriptionID = parts[i+1]
+			}
+		case "resourcegroups":
+			if i+1 < len(parts) {
+				resourceGroup = parts[i+1]
+			}
+		case "registries":
+			if i+1 < len(parts) {
+				registryName = parts[i+1]
+			}
+		}
+	}
+	if subscriptionID == "" || resourceGroup == "" || registryName == "" {
+		return "", false, fmt.Errorf("could not parse subscription, resource group, or registry name from resource ID: %s", resourceID)
+	}
+
+	client, err := armcontainerregistry.NewRegistriesClient(subscriptionID, cred, nil)
+	if err != nil {
+		return "", false, fmt.Errorf("failed to create ACR client: %w", err)
+	}
+
+	resp, err := client.Get(ctx, resourceGroup, registryName, nil)
+	if err != nil {
+		return "", false, fmt.Errorf("failed to get container registry: %w", err)
+	}
+
+	if resp.ID == nil {
+		return "", false, fmt.Errorf("registry response missing ID for resource: %s", resourceID)
+	}
+
+	abac := resp.Properties != nil &&
+		resp.Properties.RoleAssignmentMode != nil &&
+		*resp.Properties.RoleAssignmentMode == armcontainerregistry.RoleAssignmentModeAbacRepositoryPermissions
+
+	return *resp.ID, abac, nil
 }
 
 // resolveACRInfo finds the ARM resource ID and ABAC mode for an Azure Container Registry

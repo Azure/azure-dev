@@ -51,7 +51,7 @@ type TokenProtectionBlockedError struct {
 // to know "this is an actionable auth failure" (e.g., gRPC status mapping or
 // suppressing the raw error in `azd auth status` / `--only-check-status` flows)
 // should type-assert against this interface so future variants don't require
-// touching every callsite.
+// touching every call site.
 //
 // The interface is sealed via an unexported marker method; only types declared
 // in this package may implement it.

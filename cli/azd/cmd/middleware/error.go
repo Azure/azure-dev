@@ -488,18 +488,17 @@ func (e *ErrorMiddleware) promptNextAction(
 			"failed to load user config: %w", err)
 	}
 
-	// Saved "always fix" preference → auto-approve fix only (user still
-	// controls retry via the category-fix path or interactive prompt).
+	// Saved "always fix" preference → auto-approve fix and rerun the command.
 	if val, ok := userConfig.GetString(
 		agentcopilot.ConfigKeyErrorHandlingFix); ok && val == "allow" {
 		e.console.Message(ctx, output.WithWarningFormat(
-			"\n%s auto-fix is enabled. To change, run %s.",
+			"\n%s auto-fix and rerun is enabled. To change, run %s.",
 			agentcopilot.DisplayTitle,
 			output.WithHighLightFormat(
 				fmt.Sprintf("azd config unset %s",
 					agentcopilot.ConfigKeyErrorHandlingFix)),
 		))
-		return actionFixOnly, nil
+		return actionFixAndRetry, nil
 	}
 
 	choices := []*uxlib.SelectChoice{

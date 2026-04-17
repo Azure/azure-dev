@@ -718,7 +718,7 @@ func Test_ErrorMiddleware_MaxRetry_FirstIterationSkipsCounter(t *testing.T) {
 	require.NotNil(t, result)
 }
 
-func Test_PromptNextAction_SavedAllow_ReturnsFixOnly(t *testing.T) {
+func Test_PromptNextAction_SavedAllow_ReturnsFixAndRetry(t *testing.T) {
 	t.Parallel()
 
 	cfg := configWithKeys(agentcopilot.ConfigKeyErrorHandlingFix, "allow")
@@ -731,8 +731,8 @@ func Test_PromptNextAction_SavedAllow_ReturnsFixOnly(t *testing.T) {
 
 	action, err := m.promptNextAction(t.Context())
 	require.NoError(t, err)
-	require.Equal(t, actionFixOnly, action,
-		"saved 'allow' preference should return actionFixOnly, not actionFixAndRetry")
+	require.Equal(t, actionFixAndRetry, action,
+		"saved 'allow' preference should return actionFixAndRetry to auto-rerun the command")
 }
 
 func Test_PromptNextAction_ConfigLoadError(t *testing.T) {

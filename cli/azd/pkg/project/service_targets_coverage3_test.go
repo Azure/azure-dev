@@ -53,6 +53,26 @@ func Test_slotEnvVarNameForService_Coverage3(t *testing.T) {
 	}
 }
 
+func Test_skipStatusCheckEnvVarNameForService(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"simple", "web", "AZD_DEPLOY_WEB_SKIP_STATUS_CHECK"},
+		{"withHyphens", "my-web-app", "AZD_DEPLOY_MY_WEB_APP_SKIP_STATUS_CHECK"},
+		{"uppercase", "MyApp", "AZD_DEPLOY_MYAPP_SKIP_STATUS_CHECK"},
+		{"mixed", "my-App-2", "AZD_DEPLOY_MY_APP_2_SKIP_STATUS_CHECK"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := skipStatusCheckEnvVarNameForService(tt.input)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
 func Test_NewStaticWebAppTarget_Coverage3(t *testing.T) {
 	env := environment.NewWithValues("test-env", nil)
 	target := NewStaticWebAppTarget(env, nil, nil)

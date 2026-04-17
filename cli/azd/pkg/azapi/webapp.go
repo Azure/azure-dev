@@ -158,6 +158,7 @@ func (cli *AzureClient) DeployAppServiceZip(
 	appName string,
 	deployZipFile io.ReadSeeker,
 	progressLog func(string),
+	skipStatusCheck bool,
 ) (_ *string, err error) {
 	ctx, span := tracing.Start(ctx, events.DeployAppServiceZipEvent)
 	defer func() { span.EndWithStatus(err) }()
@@ -181,7 +182,7 @@ func (cli *AzureClient) DeployAppServiceZip(
 	span.SetAttributes(fields.DeployLinuxKey.Key.Bool(isLinux))
 
 	// Deployment Status API only support linux web app for now
-	if isLinux {
+	if isLinux && !skipStatusCheck {
 		// Build failures can be caused by an SCM container restart triggered by ARM
 		// applying site config (app settings) shortly after the site is created.
 		// Due to eventual consistency in the Azure platform, the SCM container may

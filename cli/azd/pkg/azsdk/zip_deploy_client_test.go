@@ -15,6 +15,8 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice/v2"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
@@ -349,4 +351,116 @@ func TestIsScmReady(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestLogWebAppDeploymentStatus(t *testing.T) {
+	noop := func(string) {}
+
+	t.Run("RuntimeStartingWithZeroInstances", func(t *testing.T) {
+		res := armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse{
+			CsmDeploymentStatus: armappservice.CsmDeploymentStatus{
+				Properties: &armappservice.CsmDeploymentStatusProperties{
+					Status:                      to.Ptr(armappservice.DeploymentBuildStatusRuntimeStarting),
+					NumberOfInstancesInProgress: new(int32(0)),
+					NumberOfInstancesSuccessful: new(int32(0)),
+					NumberOfInstancesFailed:     new(int32(0)),
+				},
+			},
+		}
+
+		result := logWebAppDeploymentStatus(res, "", noop)
+		require.NoError(t, result.err)
+		require.True(t, result.noInstances, "should signal noInstances when total is 0")
+	})
+
+	t.Run("RuntimeStartingWithInstances", func(t *testing.T) {
+		res := armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse{
+			CsmDeploymentStatus: armappservice.CsmDeploymentStatus{
+				Properties: &armappservice.CsmDeploymentStatusProperties{
+					Status:                      to.Ptr(armappservice.DeploymentBuildStatusRuntimeStarting),
+					NumberOfInstancesInProgress: new(int32(1)),
+					NumberOfInstancesSuccessful: new(int32(0)),
+					NumberOfInstancesFailed:     new(int32(0)),
+				},
+			},
+		}
+
+		result := logWebAppDeploymentStatus(res, "", noop)
+		require.NoError(t, result.err)
+		require.False(t, result.noInstances, "should NOT signal noInstances when instances exist")
+	})
+
+	t.Run("RuntimeSuccessful", func(t *testing.T) {
+		res := armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse{
+			CsmDeploymentStatus: armappservice.CsmDeploymentStatus{
+				Properties: &armappservice.CsmDeploymentStatusProperties{
+					Status:                      to.Ptr(armappservice.DeploymentBuildStatusRuntimeSuccessful),
+					NumberOfInstancesInProgress: new(int32(0)),
+					NumberOfInstancesSuccessful: new(int32(1)),
+					NumberOfInstancesFailed:     new(int32(0)),
+				},
+			},
+		}
+
+		result := logWebAppDeploymentStatus(res, "", noop)
+		require.NoError(t, result.err)
+		require.False(t, result.noInstances)
+	})
+
+	t.Run("RuntimeFailed", func(t *testing.T) {
+		res := armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse{
+			CsmDeploymentStatus: armappservice.CsmDeploymentStatus{
+				Properties: &armappservice.CsmDeploymentStatusProperties{
+					Status:                      to.Ptr(armappservice.DeploymentBuildStatusRuntimeFailed),
+					NumberOfInstancesInProgress: new(int32(0)),
+					NumberOfInstancesSuccessful: new(int32(0)),
+					NumberOfInstancesFailed:     new(int32(1)),
+				},
+			},
+		}
+
+		result := logWebAppDeploymentStatus(res, "", noop)
+		require.Error(t, result.err)
+		require.False(t, result.noInstances)
+	})
+
+	t.Run("EmptyResponse", func(t *testing.T) {
+		res := armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse{}
+
+		result := logWebAppDeploymentStatus(res, "", noop)
+		require.Error(t, result.err)
+		require.Contains(t, result.err.Error(), "response or its properties are empty")
+	})
+
+	t.Run("NilStatus", func(t *testing.T) {
+		res := armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse{
+			CsmDeploymentStatus: armappservice.CsmDeploymentStatus{
+				Properties: &armappservice.CsmDeploymentStatusProperties{
+					Status: nil,
+				},
+			},
+		}
+
+		result := logWebAppDeploymentStatus(res, "", noop)
+		require.Error(t, result.err)
+		require.Contains(t, result.err.Error(), "deployment status is nil")
+	})
+
+	t.Run("NilInstanceCounters", func(t *testing.T) {
+		// When instance counters are nil, should not panic
+		res := armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse{
+			CsmDeploymentStatus: armappservice.CsmDeploymentStatus{
+				Properties: &armappservice.CsmDeploymentStatusProperties{
+					Status:                      to.Ptr(armappservice.DeploymentBuildStatusRuntimeStarting),
+					NumberOfInstancesInProgress: nil,
+					NumberOfInstancesSuccessful: nil,
+					NumberOfInstancesFailed:     nil,
+				},
+			},
+		}
+
+		result := logWebAppDeploymentStatus(res, "", noop)
+		require.NoError(t, result.err)
+		require.True(t, result.noInstances, "nil counters should be treated as 0")
+	})
 }

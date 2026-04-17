@@ -52,6 +52,7 @@ integration.
 | `AZD_BUILDER_IMAGE` | The builder docker image used to perform Dockerfile-less builds. |
 | `AZD_DEPLOY_TIMEOUT` | Timeout for deployment operations, parsed as an integer number of seconds (for example, `1200`). Defaults to `1200` seconds (20 minutes). |
 | `AZD_DEPLOY_{SERVICE}_SLOT_NAME` | Sets the App Service deployment slot target for a service. Replace `{SERVICE}` with the uppercase service name (hyphens become underscores). Set to `production` to deploy to the main app, or a slot name (e.g., `staging`). When slots exist and this is not set, `--no-prompt` mode fails with an error listing available targets. |
+| `AZD_DEPLOY_{SERVICE}_SKIP_STATUS_CHECK` | If set, skips runtime deployment status tracking for the named Linux App Service after zip deploy. Useful when the target web app is intentionally stopped. `{SERVICE}` follows the same naming rules as `AZD_DEPLOY_{SERVICE}_SLOT_NAME`. |
 
 ## Extension Variables
 

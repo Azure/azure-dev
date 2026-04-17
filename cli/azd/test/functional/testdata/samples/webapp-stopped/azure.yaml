@@ -1,0 +1,8 @@
+name: webapp-stopped
+metadata:
+  template: azd-test/webapp-stopped@v1
+services:
+  web:
+    project: src/
+    host: appservice
+    language: py

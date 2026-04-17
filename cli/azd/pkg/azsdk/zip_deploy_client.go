@@ -26,6 +26,12 @@ import (
 
 const (
 	deployStatusInterval = 10 * time.Second
+
+	// noInstancesThreshold is the number of consecutive polls with 0 total instances
+	// (in progress + successful + failed) during RuntimeStarting before we consider
+	// the deployment successful. This handles the case where the web app is administratively
+	// stopped and will never transition to RuntimeSuccessful.
+	noInstancesThreshold = 3
 )
 
 // ZipDeployClient wraps usage of app service zip deploy used for application deployments
@@ -187,20 +193,42 @@ func (c *ZipDeployClient) BeginDeployTrackStatus(
 	return poller, nil
 }
 
+// deploymentStatusResult holds the result of evaluating a deployment status response.
+type deploymentStatusResult struct {
+	// err is set when the deployment has failed.
+	err error
+	// noInstances is true when the status is RuntimeStarting but there are zero total instances.
+	// This indicates the web app may be administratively stopped.
+	noInstances bool
+}
+
 func logWebAppDeploymentStatus(
 	res armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse,
 	traceId string,
 	progressLog func(string),
-) error {
+) deploymentStatusResult {
 	if (res == armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse{} ||
 		res.CsmDeploymentStatus == armappservice.CsmDeploymentStatus{} ||
 		res.CsmDeploymentStatus.Properties == nil) {
-		return fmt.Errorf("response or its properties are empty")
+		return deploymentStatusResult{err: fmt.Errorf("response or its properties are empty")}
 	}
 	properties := res.CsmDeploymentStatus.Properties
-	inProgressNumber := int(*properties.NumberOfInstancesInProgress)
-	successNumber := int(*properties.NumberOfInstancesSuccessful)
-	failNumber := int(*properties.NumberOfInstancesFailed)
+
+	if properties.Status == nil {
+		return deploymentStatusResult{err: fmt.Errorf("deployment status is nil")}
+	}
+
+	var inProgressNumber, successNumber, failNumber int
+	if properties.NumberOfInstancesInProgress != nil {
+		inProgressNumber = int(*properties.NumberOfInstancesInProgress)
+	}
+	if properties.NumberOfInstancesSuccessful != nil {
+		successNumber = int(*properties.NumberOfInstancesSuccessful)
+	}
+	if properties.NumberOfInstancesFailed != nil {
+		failNumber = int(*properties.NumberOfInstancesFailed)
+	}
+
 	errorString := ""
 	logErrorFunction := func(properties *armappservice.CsmDeploymentStatusProperties, message string) {
 		for _, err := range properties.Errors {
@@ -224,16 +252,21 @@ func logWebAppDeploymentStatus(
 	switch status {
 	case armappservice.DeploymentBuildStatusBuildRequestReceived:
 		progressLog("Received build request, starting build process")
-		return nil
+		return deploymentStatusResult{}
 	case armappservice.DeploymentBuildStatusBuildInProgress:
 		progressLog("Running build process")
-		return nil
+		return deploymentStatusResult{}
 	case armappservice.DeploymentBuildStatusRuntimeStarting:
+		totalNumber := inProgressNumber + successNumber + failNumber
+		if totalNumber == 0 {
+			progressLog("Starting runtime process, 0 total instances detected (app may be stopped)")
+			return deploymentStatusResult{noInstances: true}
+		}
 		progressLog(fmt.Sprintf("Starting runtime process, %d in progress instances, %d successful instances",
 			inProgressNumber, successNumber))
-		return nil
+		return deploymentStatusResult{}
 	case armappservice.DeploymentBuildStatusRuntimeSuccessful, armappservice.DeploymentBuildStatusBuildSuccessful:
-		return nil
+		return deploymentStatusResult{}
 	case armappservice.DeploymentBuildStatusRuntimeFailed:
 		totalNumber := inProgressNumber + successNumber + failNumber
 
@@ -246,17 +279,17 @@ func logWebAppDeploymentStatus(
 		}
 
 		logErrorFunction(properties, "runtime ")
-		return errors.New(errorString)
+		return deploymentStatusResult{err: errors.New(errorString)}
 	case armappservice.DeploymentBuildStatusBuildFailed:
 		errorString += "Deployment failed because the build process failed\n"
 		logErrorFunction(properties, "build ")
-		return errors.New(errorString)
+		return deploymentStatusResult{err: errors.New(errorString)}
 	// Progress Log for other states
 	default:
 		if len(status) > 0 {
 			progressLog(fmt.Sprintf("Running deployment status api in stage %s", status))
 		}
-		return nil
+		return deploymentStatusResult{}
 	}
 }
 
@@ -276,6 +309,7 @@ func (c *ZipDeployClient) DeployTrackStatus(
 
 	delay := 3 * time.Second
 	pollCount := 0
+	noInstancesCount := 0
 	for {
 		var resp *http.Response
 
@@ -302,14 +336,27 @@ func (c *ZipDeployClient) DeployTrackStatus(
 			}
 			spanCtx := trace.SpanContextFromContext(ctx)
 			traceId := spanCtx.TraceID().String()
-			if err = logWebAppDeploymentStatus(response, traceId, progressLog); err != nil {
-				return err
+			result := logWebAppDeploymentStatus(response, traceId, progressLog)
+			if result.err != nil {
+				return result.err
 			}
 			break
 		}
 
-		if err = logWebAppDeploymentStatus(response, "", progressLog); err != nil {
-			return err
+		result := logWebAppDeploymentStatus(response, "", progressLog)
+		if result.err != nil {
+			return result.err
+		}
+
+		if result.noInstances {
+			noInstancesCount++
+			if noInstancesCount >= noInstancesThreshold {
+				progressLog("Web app has no running instances (app may be stopped). " +
+					"Deployment package was uploaded successfully, skipping runtime status check.")
+				return nil
+			}
+		} else {
+			noInstancesCount = 0
 		}
 
 		// Wait longer after a few initial tries

@@ -36,6 +36,7 @@ func Test_DeployTrackLinuxWebAppStatus(t *testing.T) {
 			"LINUX_WEB_APP_NAME",
 			zipFile,
 			func(s string) {},
+			false,
 		)
 
 		require.NoError(t, err)
@@ -61,6 +62,7 @@ func Test_DeployTrackLinuxWebAppStatus(t *testing.T) {
 			"LINUX_WEB_APP_NAME",
 			zipFile,
 			func(s string) {},
+			false,
 		)
 
 		require.Nil(t, res)
@@ -86,6 +88,7 @@ func Test_DeployTrackLinuxWebAppStatus(t *testing.T) {
 			"LINUX_WEB_APP_NAME",
 			zipFile,
 			func(s string) {},
+			false,
 		)
 
 		require.NoError(t, err)
@@ -111,11 +114,74 @@ func Test_DeployTrackLinuxWebAppStatus(t *testing.T) {
 			"WINDOWS_LOGIC_APP_NAME",
 			zipFile,
 			func(s string) {},
+			false,
 		)
 
 		require.NoError(t, err)
 		require.True(t, ran)
 		require.NotNil(t, res)
+	})
+
+	t.Run("SkipStatusCheck", func(t *testing.T) {
+		ran := false
+		mockContext := mocks.NewMockContext(context.Background())
+		azCli := newAzureClientFromMockContext(mockContext)
+
+		registerIsLinuxWebAppMocks(mockContext, &ran)
+		// Register basic zip deploy mocks (not status tracking mocks)
+		// When skipStatusCheck=true, it falls through to the basic Deploy() path
+		registerLinuxWebAppBasicZipDeployMocks(mockContext, &ran)
+
+		zipFile := bytes.NewReader([]byte{})
+
+		res, err := azCli.DeployAppServiceZip(
+			*mockContext.Context,
+			"SUBSCRIPTION_ID",
+			"RESOURCE_GROUP_ID",
+			"LINUX_WEB_APP_NAME",
+			zipFile,
+			func(s string) {},
+			true,
+		)
+
+		require.NoError(t, err)
+		require.True(t, ran)
+		require.NotNil(t, res)
+	})
+}
+
+func registerLinuxWebAppBasicZipDeployMocks(mockContext *mocks.MockContext, ran *bool) {
+	// Zip deploy request that returns a Location header (basic deploy path)
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodPost &&
+			request.URL.Host == "LINUX_WEB_APP_NAME_SCM_HOST" &&
+			strings.Contains(request.URL.Path, "/api/zipdeploy")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		*ran = true
+		response, _ := mocks.CreateEmptyHttpResponse(request, http.StatusAccepted)
+		response.Header.Set("Location", "https://LINUX_WEB_APP_NAME_SCM_HOST/deployments/latest")
+		return response, nil
+	})
+
+	// Polling response for basic deploy
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet &&
+			request.URL.Host == "LINUX_WEB_APP_NAME_SCM_HOST" &&
+			strings.Contains(request.URL.Path, "/deployments/latest")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		*ran = true
+		completeStatus := azsdk.DeployStatusResponse{
+			DeployStatus: azsdk.DeployStatus{
+				Id:         "ID",
+				Status:     http.StatusOK,
+				StatusText: "OK",
+				Message:    "Deployment Complete",
+				Complete:   true,
+				Active:     true,
+				SiteName:   "LINUX_WEB_APP_NAME",
+			},
+		}
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, completeStatus)
 	})
 }
 

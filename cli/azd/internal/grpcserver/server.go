@@ -268,15 +268,15 @@ func (s *authenticatedStream) Context() context.Context {
 // This ensures that helpful suggestions (like "run azd auth login") are preserved
 // when errors are transmitted over gRPC, where only the error message string is sent.
 //
-// Auth-related errors (ReLoginRequiredError, ErrNoCurrentUser) are returned with
+// Auth-related errors (any auth.AuthInteractionError, ErrNoCurrentUser) are returned with
 // codes.Unauthenticated so that extensions can detect auth failures via gRPC status code.
 func wrapErrorWithSuggestion(err error) error {
 	if err == nil {
 		return nil
 	}
 
-	_, loginErr := errors.AsType[*auth.ReLoginRequiredError](err)
-	isAuthErr := errors.Is(err, auth.ErrNoCurrentUser) || loginErr
+	_, authInteractionErr := errors.AsType[auth.AuthInteractionError](err)
+	isAuthErr := errors.Is(err, auth.ErrNoCurrentUser) || authInteractionErr
 
 	if suggestionErr, ok := errors.AsType[*internal.ErrorWithSuggestion](err); ok {
 		msg := fmt.Sprintf("%s\n%s", err.Error(), suggestionErr.Suggestion)

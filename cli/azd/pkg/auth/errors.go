@@ -41,18 +41,35 @@ type ReLoginRequiredError struct {
 
 // TokenProtectionBlockedError indicates that the token request was blocked by
 // an organization's Conditional Access token protection policy (AADSTS530084), and until #7704 is addressed,
-// re-authenticating with azd won't help.
+// re-running `azd auth login` won't help.
 type TokenProtectionBlockedError struct {
 	errText string
 }
+
+// AuthInteractionError marks AAD-classified, non-retriable errors that carry
+// user-facing guidance via *internal.ErrorWithSuggestion. Callers that just need
+// to know "this is an actionable auth failure" (e.g., gRPC status mapping or
+// suppressing the raw error in `azd auth status` / `--only-check-status` flows)
+// should type-assert against this interface so future variants don't require
+// touching every callsite.
+//
+// The interface is sealed via an unexported marker method; only types declared
+// in this package may implement it.
+type AuthInteractionError interface {
+	error
+	isAuthInteractionError()
+}
+
+func (*ReLoginRequiredError) isAuthInteractionError()        {}
+func (*TokenProtectionBlockedError) isAuthInteractionError() {}
 
 // newActionableAuthError inspects an AAD error response and, if it matches a known
 // pattern that azd can surface with actionable guidance, returns a wrapped error and true.
 //
 // The returned error may be a *ReLoginRequiredError (the user should rerun `azd auth login`)
 // or a *TokenProtectionBlockedError (Conditional Access token protection blocked the request
-// and re-authenticating will not help). Callers must not assume the result always implies
-// re-authentication — inspect the underlying error type if behavior needs to differ.
+// and re-running `azd auth login` will not help). Callers must not assume the result always
+// implies the user can simply log in again — inspect the underlying error type if behavior needs to differ.
 //
 // If the response does not match a known pattern, it returns (nil, false).
 func newActionableAuthError(

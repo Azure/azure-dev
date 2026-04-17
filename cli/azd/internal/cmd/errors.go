@@ -50,6 +50,9 @@ func MapError(err error, span tracing.Span) {
 	} else if _, ok := errors.AsType[*auth.ReLoginRequiredError](err); ok {
 		errCode = "auth.login_required"
 		errDetails = append(errDetails, fields.ErrCategory.String("auth"))
+	} else if _, ok := errors.AsType[*auth.TokenProtectionBlockedError](err); ok {
+		errCode = "auth.token_protection_blocked"
+		errDetails = append(errDetails, fields.ErrCategory.String("auth"))
 	} else if errWithSuggestion, ok := errors.AsType[*internal.ErrorWithSuggestion](err); ok {
 		errCode = "error.suggestion"
 		span.SetAttributes(fields.ErrType.String(classifySuggestionType(errWithSuggestion.Unwrap())))
@@ -307,6 +310,10 @@ func classifySuggestionType(err error) string {
 
 	if _, ok := errors.AsType[*auth.ReLoginRequiredError](err); ok {
 		return "auth.login_required"
+	}
+
+	if _, ok := errors.AsType[*auth.TokenProtectionBlockedError](err); ok {
+		return "auth.token_protection_blocked"
 	}
 
 	if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok {

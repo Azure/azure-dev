@@ -120,19 +120,23 @@ func AnalyzeLayerDependencies(
 	for i, opts := range resolved {
 		refs := discoverParamEnvRefs(opts, projectPath)
 		for _, ref := range refs {
-			// Skip variables already present in the environment. This is an
-			// intentional optimization: on re-runs where outputs from a previous
-			// deployment already exist in .env, we allow layers to run in parallel
-			// using the cached values instead of forcing them to wait for a fresh
-			// deployment. If the producing layer's template has changed, it will
-			// re-deploy and update the value; if unchanged, it's deployment-state-
-			// skipped and the cached value is correct.
-			if _, found := env.LookupEnv(ref); found {
+			if provider, ok := g.outputProviders[ref]; ok && provider != i {
+				// Always keep intra-graph edges, even when the ref is
+				// already in the environment from a previous run. The
+				// cached value may be stale if the producer's template
+				// has changed; dropping the edge lets the consumer fan
+				// out in parallel with the producer and consume stale
+				// data. Unchanged producers still go through the fast
+				// deployment-state-skipped path, so the serial cost is
+				// near-zero.
+				g.edges[i] = append(g.edges[i], provider)
 				continue
 			}
-			if provider, ok := g.outputProviders[ref]; ok &&
-				provider != i {
-				g.edges[i] = append(g.edges[i], provider)
+			// Only skip for refs with no in-graph producer (externally
+			// supplied env vars). These can't participate in the DAG
+			// regardless.
+			if _, found := env.LookupEnv(ref); found {
+				continue
 			}
 		}
 	}

@@ -5,8 +5,8 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"strconv"
@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
-	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
@@ -27,6 +26,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 )
@@ -71,6 +71,10 @@ type UpGraphAction struct {
 	fileShareService    storage.FileShareService
 	cloud               *cloud.Cloud
 	commandRunner       exec.CommandRunner
+	formatter           output.Formatter
+	writer              io.Writer
+	portalUrlBase       string
+	provisionManager    *provisioning.Manager
 }
 
 // NewUpGraphAction creates a new UpGraphAction. Dependencies are resolved via
@@ -89,6 +93,9 @@ func NewUpGraphAction(
 	fileShareService storage.FileShareService,
 	cloud *cloud.Cloud,
 	commandRunner exec.CommandRunner,
+	formatter output.Formatter,
+	writer io.Writer,
+	provisionManager *provisioning.Manager,
 ) *UpGraphAction {
 	return &UpGraphAction{
 		projectConfig:       projectConfig,
@@ -104,6 +111,10 @@ func NewUpGraphAction(
 		fileShareService:    fileShareService,
 		cloud:               cloud,
 		commandRunner:       commandRunner,
+		formatter:           formatter,
+		writer:              writer,
+		portalUrlBase:       cloud.PortalUrlBase,
+		provisionManager:    provisionManager,
 	}
 }
 
@@ -336,15 +347,13 @@ func (u *UpGraphAction) Run(
 	log.Printf("up-graph total: %s (%d steps)", result.TotalDuration.Round(time.Millisecond), len(result.Steps))
 
 	if result.Error != nil {
-		// Preflight-aborted → ErrAbortedByUser with cancellation UX
-		// (matches the stand-alone `azd provision` path in wrapProvisionError).
-		if errors.Is(result.Error, errPreflightAbortedByUser) {
-			u.console.MessageUxItem(ctx, &ux.ActionResult{
-				SuccessMessage: "Provisioning was cancelled.",
-			})
-			return nil, internal.ErrAbortedByUser
-		}
-		return nil, fmt.Errorf("up failed: %w", result.Error)
+		return nil, wrapProvisionError(ctx, result.Error, provisionErrorDeps{
+			console:          u.console,
+			formatter:        u.formatter,
+			writer:           u.writer,
+			provisionManager: u.provisionManager,
+			portalUrlBase:    u.portalUrlBase,
+		})
 	}
 
 	// Display service endpoint artifacts collected during deploy steps.

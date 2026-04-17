@@ -47,7 +47,9 @@ func (p ErrorPolicy) String() string {
 // RunOptions configures the execution graph scheduler.
 type RunOptions struct {
 	// MaxConcurrency limits the number of steps running simultaneously.
-	// Zero (the default) caps at GOMAXPROCS×2.
+	// Zero (the default) caps at GOMAXPROCS×2; a positive value is honored
+	// as the upper bound (useful to bump or cap for IO-bound workloads).
+	// Negative values are treated as zero.
 	MaxConcurrency int
 
 	// ErrorPolicy determines behavior on step failure.
@@ -149,11 +151,13 @@ func execute(ctx context.Context, g *Graph, opts RunOptions) *RunResult {
 	runCtx, runCancel := context.WithCancel(ctx)
 	defer runCancel()
 
-	// Worker pool size: MaxConcurrency if set, otherwise cap at
-	// GOMAXPROCS*2 to avoid unbounded goroutine creation.
+	// Worker pool size: when MaxConcurrency is explicitly set (>0), honor it
+	// as the upper bound (still clamped by the step count). Otherwise default
+	// to GOMAXPROCS*2 to avoid unbounded goroutine creation for the large
+	// pure-CPU-bound case.
 	numWorkers := min(n, runtime.GOMAXPROCS(0)*2)
-	if opts.MaxConcurrency > 0 && opts.MaxConcurrency < numWorkers {
-		numWorkers = opts.MaxConcurrency
+	if opts.MaxConcurrency > 0 {
+		numWorkers = min(n, opts.MaxConcurrency)
 	}
 
 	type stepCompletion struct {
@@ -161,6 +165,12 @@ func execute(ctx context.Context, g *Graph, opts RunOptions) *RunResult {
 		err   error
 		start time.Time
 		end   time.Time
+		// schedulerCanceled captures whether runCtx was already canceled at
+		// the moment the step finished executing. This is observed by the
+		// worker (not by the event loop) so a subsequent FailFast tear-down
+		// from a *different* step's failure cannot mis-classify this step's
+		// own per-step timeout or genuine failure as a scheduler cancellation.
+		schedulerCanceled bool
 	}
 
 	workQueue := make(chan string, n)
@@ -181,14 +191,26 @@ func execute(ctx context.Context, g *Graph, opts RunOptions) *RunResult {
 					safeNotifyStart(opts, name)
 					safeNotifyDone(opts, name, err)
 					now := time.Now()
-					completions <- stepCompletion{name: name, err: err, start: now, end: now}
+					completions <- stepCompletion{
+						name: name, err: err, start: now, end: now,
+						schedulerCanceled: true,
+					}
 					continue
 				}
 				step := g.steps[name]
 				start := time.Now()
 				err := runStep(runCtx, step, opts)
 				end := time.Now()
-				completions <- stepCompletion{name: name, err: err, start: start, end: end}
+				// Snapshot runCtx state immediately after the step's Action returns.
+				// This is the canonical "was this cancellation from the scheduler?"
+				// signal — doing it later in the event loop risks racing with a
+				// FailFast tear-down triggered by an unrelated step's failure,
+				// which would incorrectly re-classify a genuine per-step timeout
+				// or action failure as a scheduler cancellation.
+				completions <- stepCompletion{
+					name: name, err: err, start: start, end: end,
+					schedulerCanceled: runCtx.Err() != nil,
+				}
 			}
 		})
 	}
@@ -221,11 +243,11 @@ func execute(ctx context.Context, g *Graph, opts RunOptions) *RunResult {
 			case IsStepSkipped(comp.err):
 				status = StepSkipped
 			case (errors.Is(comp.err, context.Canceled) || errors.Is(comp.err, context.DeadlineExceeded)) &&
-				runCtx.Err() != nil:
+				comp.schedulerCanceled:
 				// Parent cancellation or FailFast tear-down from another step's
 				// failure — never ran this Action to completion on its own.
 				// Record as skipped. A per-step timeout (StepTimeout) where
-				// runCtx is NOT canceled is still a real failure.
+				// runCtx was NOT canceled at completion time is still a real failure.
 				status = StepSkipped
 			default:
 				status = StepFailed
@@ -250,7 +272,7 @@ func execute(ctx context.Context, g *Graph, opts RunOptions) *RunResult {
 			// failed. A per-step StepTimeout where runCtx is NOT canceled is
 			// still a genuine failure.
 			isSchedulerCancel := (errors.Is(comp.err, context.Canceled) ||
-				errors.Is(comp.err, context.DeadlineExceeded)) && runCtx.Err() != nil
+				errors.Is(comp.err, context.DeadlineExceeded)) && comp.schedulerCanceled
 			if !isSchedulerCancel {
 				failed[comp.name] = true
 				allErrors = append(allErrors, comp.err)
@@ -266,9 +288,13 @@ func execute(ctx context.Context, g *Graph, opts RunOptions) *RunResult {
 					switch {
 					case r.err == nil:
 						drainStatus = StepDone
-					case errors.Is(r.err, context.Canceled) || errors.Is(r.err, context.DeadlineExceeded):
+					case (errors.Is(r.err, context.Canceled) ||
+						errors.Is(r.err, context.DeadlineExceeded)) && r.schedulerCanceled:
 						// Steps cancelled by the scheduler's own FailFast cancellation
-						// are recorded as skipped, not failed — they never ran their Action.
+						// are recorded as skipped, not failed — they never ran their
+						// Action to completion on their own. A step whose *own*
+						// per-step timeout fired before the scheduler tear-down reached
+						// it (schedulerCanceled=false) is still a genuine StepFailed.
 						drainStatus = StepSkipped
 					default:
 						drainStatus = StepFailed
@@ -358,6 +384,37 @@ func execute(ctx context.Context, g *Graph, opts RunOptions) *RunResult {
 	workerWg.Wait()
 
 	result.TotalDuration = time.Since(runStart)
+
+	// FailFast / parent-cancel completeness: synthesize StepSkipped timings
+	// for any steps that never appeared in result.Steps. Without this, a
+	// FailFast tear-down leaves the post-break unqueued downstream steps
+	// invisible to result.Steps, so consumers iterating timings (e.g. log
+	// lines, dashboards) see an incomplete picture — a step that was
+	// structurally blocked by the failure is indistinguishable from a step
+	// that silently went missing due to a scheduler bug.
+	if runCtx.Err() != nil {
+		seen := make(map[string]bool, len(result.Steps))
+		for _, st := range result.Steps {
+			seen[st.Name] = true
+		}
+		now := time.Now()
+		timingMu.Lock()
+		for _, name := range g.order {
+			if seen[name] {
+				continue
+			}
+			skipErr := &StepSkippedError{StepName: name}
+			result.Steps = append(result.Steps, StepTiming{
+				Name:   name,
+				Status: StepSkipped,
+				Start:  now,
+				End:    now,
+				Tags:   g.steps[name].Tags,
+				Err:    skipErr,
+			})
+		}
+		timingMu.Unlock()
+	}
 
 	// Post-execution completeness check: verify every step was
 	// either executed (completed/failed) or skipped. A corrupted in-degree map

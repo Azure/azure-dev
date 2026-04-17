@@ -21,6 +21,8 @@ github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcogni
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2 v2.0.0/go.mod h1:twcwRey+l1znKBL5TEzYiZMtiVkWfM7Pq8a9vY04xYc=
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry v1.2.0 h1:DWlwvVV5r/Wy1561nZ3wrpI1/vDIBRY/Wd1HWaRBZWA=
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry v1.2.0/go.mod h1:E7ltexgRDmeJ0fJWv0D/HLwY2xbDdN+uv+X2uZtOx3w=
+github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry v1.3.0-beta.3 h1:4qfc7os3wRQcl+ImfeH9z0abWJzuV9IGcN1B9olmPTU=
+github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry v1.3.0-beta.3/go.mod h1:NlNAngH4e++mzPTN0+1EEvyUmwFmR91u/MQUVV230Z4=
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/internal/v2 v2.0.0 h1:PTFGRSlMKCQelWwxUyYVEUqseBJVemLyqWJjvMyt0do=
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/internal/v2 v2.0.0/go.mod h1:LRr2FzBTQlONPPa5HREE5+RjSCTXl7BwOvYOaWTqCaI=
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/internal/v3 v3.1.0 h1:2qsIIvxVT+uE6yrNldntJKlLRgxGbZ85kgtz5SNBhMw=

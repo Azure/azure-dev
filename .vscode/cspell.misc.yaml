@@ -59,6 +59,9 @@ overrides:
           - singleflight
           - stdlib
           - whatif
+    - filename: ./docs/specs/exegraph/**
+      words:
+          - stdlib
     - filename: schemas/**/azure.yaml.json
       words:
           - prodapi

@@ -767,7 +767,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 	// Start the deployment
 	p.console.ShowSpinner(ctx, "Creating/Updating resources", input.Step)
 
-	deployCtx, interruptCh, interruptCleanup := p.installDeploymentInterruptHandler(
+	deployCtx, interruptStarted, interruptCh, interruptCleanup := p.installDeploymentInterruptHandler(
 		ctx, deployment, cancelProgress)
 	cleanupOnce := sync.OnceFunc(interruptCleanup)
 	defer cleanupOnce()
@@ -785,11 +785,13 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 	// over post-processing output.
 	cleanupOnce()
 
-	// Drain the interrupt outcome (if any) before deciding what to return.
-	// We use a non-blocking read so the normal (non-interrupted) path is
-	// unaffected.
+	// If an interrupt was raised at any point during the deploy (even if the
+	// deploy call itself finished naturally before the user picked an
+	// option), block until the handler produces an outcome so the user's
+	// Ctrl+C is never silently dropped. Otherwise take the normal path.
 	select {
-	case outcome := <-interruptCh:
+	case <-interruptStarted:
+		outcome := <-interruptCh
 		tracing.SetUsageAttributes(
 			fields.ProvisionCancellationKey.String(outcome.telemetryValue))
 		return nil, applyInterruptOutcome(outcome, err)

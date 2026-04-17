@@ -53,11 +53,16 @@ type interruptOutcome struct {
 // in-flight ARM deployment. It returns:
 //
 //   - deployCtx: a context derived from ctx that the caller MUST pass to the
-//     ARM deploy call; it will be cancelled when the handler decides how to
-//     respond, which unblocks PollUntilDone and returns control to Deploy.
+//     ARM deploy call; it will be cancelled as soon as the user presses
+//     Ctrl+C, which unblocks PollUntilDone and returns control to Deploy.
+//   - startedCh: closed as soon as the user presses Ctrl+C (before the prompt
+//     is shown). Callers should check it after the deploy call returns to
+//     decide whether to block-wait for an interrupt outcome instead of taking
+//     the normal success path. This is what guarantees that a Ctrl+C arriving
+//     while the deployment happens to finish naturally cannot be silently
+//     dropped.
 //   - outcomeCh: receives the interrupt outcome once the user has chosen.
-//     The channel is buffered (size 1); the caller should non-blocking read
-//     from it after the deploy call returns.
+//     The channel is buffered (size 1).
 //   - cleanup: must be called (via defer) to unregister the interrupt handler
 //     and release the deploy context.
 //
@@ -69,11 +74,23 @@ func (p *BicepProvider) installDeploymentInterruptHandler(
 	ctx context.Context,
 	deployment infra.Deployment,
 	onInterruptStart func(),
-) (deployCtx context.Context, outcomeCh <-chan interruptOutcome, cleanup func()) {
+) (
+	deployCtx context.Context,
+	startedCh <-chan struct{},
+	outcomeCh <-chan interruptOutcome,
+	cleanup func(),
+) {
 	deployCtx, cancelDeploy := context.WithCancel(ctx)
 	ch := make(chan interruptOutcome, 1)
+	started := make(chan struct{})
 
 	pop := input.PushInterruptHandler(func() bool {
+		// Signal interrupt-in-progress and unblock the ARM deploy call
+		// immediately so Deploy can transition to "wait for outcome" mode
+		// rather than racing against a natural completion.
+		close(started)
+		cancelDeploy()
+
 		if onInterruptStart != nil {
 			onInterruptStart()
 		}
@@ -82,8 +99,6 @@ func (p *BicepProvider) installDeploymentInterruptHandler(
 
 		outcome := p.runInterruptPrompt(ctx, deployment)
 		ch <- outcome
-		// Unblock PollUntilDone so the deploy call returns control to Deploy.
-		cancelDeploy()
 		// Returning true tells the runtime that we own the shutdown sequence.
 		// We don't actually os.Exit here — Deploy will return the typed
 		// sentinel error and the action / error middleware translates that
@@ -95,7 +110,7 @@ func (p *BicepProvider) installDeploymentInterruptHandler(
 		pop()
 		cancelDeploy()
 	}
-	return deployCtx, ch, cleanup
+	return deployCtx, started, ch, cleanup
 }
 
 // runInterruptPrompt presents the user with the choice of cancelling the

@@ -22,9 +22,10 @@ flags required.
 | `azd deploy`    | Always — all services run through the service graph regardless of count |
 | `azd up`        | Always, unless the project defines a custom `workflows.up:` in `azure.yaml` |
 
-The unified `up` DAG runs project command hooks (`preprovision`/`postprovision`/`predeploy`/`postdeploy`)
-as synthetic `cmdhook-*` nodes with explicit dependencies, so projects with those hooks no longer fall
-through to a sequential path. Only user-authored `workflows.up:` still runs via `workflow.Runner`.
+The unified `up` DAG runs project command hooks (`prepackage`/`postpackage`/`preprovision`/`postprovision`/`predeploy`/`postdeploy`)
+as synthetic `cmdhook-*` nodes with explicit dependencies, and fires `project.EventPackage` / `project.EventDeploy`
+listeners as synthetic `event-*` nodes. Projects with those hooks/handlers no longer fall through to a sequential
+path. Only user-authored `workflows.up:` still runs via `workflow.Runner`.
 Each sub-command spawned by `workflow.Runner` (`azd package`, `azd provision`, `azd deploy`)
 still runs its own phase-scoped DAG internally — `azd provision` uses the layer graph,
 `azd deploy` uses the service graph — so parallel provisioning and parallel service deploys
@@ -44,7 +45,7 @@ internal/cmd/
   deploy.go            (548)      ← Deploy graph: unified path; package→publish→deploy per service (including N=1)
   deploy_progress.go   (258)      ← Progress table (interactive rewrite / CI line mode)
   service_graph.go     (279)      ← Shared service-step builder used by deploy + up (ecosystem-agnostic; gate policy injected via serviceGraphOptions.buildGateKey)
-  up_graph.go          (469)      ← Unified DAG: cmdhook-preprovision → provision → cmdhook-postprovision → cmdhook-predeploy → event-predeploy → package/publish/deploy → event-postdeploy → cmdhook-postdeploy
+  up_graph.go          (469)      ← Unified DAG: cmdhook-preprovision → provision → cmdhook-postprovision → cmdhook-predeploy → event-predeploy → publish/deploy → event-postdeploy → cmdhook-postdeploy, with a parallel cmdhook-prepackage → event-prepackage → package-<svc> → event-postpackage → cmdhook-postpackage chain that gates event-predeploy
   project_hooks.go      (65)      ← runProjectCommandHook helper for cmdhook-* DAG nodes
   aspire_gate.go        (30)      ← Aspire build-gate policy (aspireBuildGateKey); the only Aspire-specific file in the exegraph call-graph — isolated so it can move with Aspire when Aspire becomes an extension
 
@@ -192,15 +193,24 @@ of `azd up` (the only exception is when the project defines a custom `workflows.
 
 Node layout:
 
-- `cmdhook-preprovision` (optional, only if project defines the hook)
+Provision chain:
+- `cmdhook-preprovision` — fires the `preprovision` project command hook (no-op if not declared)
 - `provision-<layer>` per Bicep layer (dependencies from `layer_deps.go` analysis)
 - `cmdhook-postprovision` (depends on all provision nodes)
 - `cmdhook-predeploy` (depends on postprovision sink)
+
+Package chain (runs concurrently with the provision chain so packaging overlaps with provisioning):
+- `cmdhook-prepackage` — fires the `prepackage` project command hook; **no dependencies**
+- `event-prepackage` — fires `project.EventPackage` Before listeners (depends on `cmdhook-prepackage`)
+- `package-<svc>` per service — depends on `event-prepackage` (via `serviceGraphOptions.packageExtraDeps`)
+- `event-postpackage` — fires `project.EventPackage` After listeners (depends on every `package-<svc>` node)
+- `cmdhook-postpackage` — fires the `postpackage` project command hook (depends on `event-postpackage`)
+
+Deploy chain:
 - `event-predeploy` — fires `project.EventDeploy` Before listeners; depends on
-  `cmdhook-predeploy` **and** every `package-<svc>` node (so predeploy handlers
-  see packaged artifacts)
-- `package-<svc>` per service — **no dependencies**; starts as soon as the graph
-  runs so packaging overlaps with provisioning
+  `cmdhook-predeploy` **and** `cmdhook-postpackage` **and** every `package-<svc>`
+  node (so predeploy handlers see packaged artifacts and the legacy
+  `postpackage`-before-`predeploy` ordering is preserved)
 - `publish-<svc>` depends on `package-<svc>` + `event-predeploy` (and therefore
   transitively on all provisioning via the cmdhook-predeploy gate)
 - `deploy-<svc>` depends on `publish-<svc>` (plus any edge added by
@@ -220,11 +230,15 @@ Deploy timeout honors `--timeout` / `AZD_DEPLOY_TIMEOUT` via the shared
 | `console.go` | `previewerRefCount` + `sync/atomic.Pointer[progressLog]` | Concurrent DAG step previewer output; ref-count ensures previewer stops only when last user finishes |
 | `console_previewer_writer.go` | Atomic pointer nil-check | Write-after-stop returns `len, nil` with a log message instead of panicking |
 | `service_manager.go` | `sync.Mutex` on `operationCache` and `initialized` map | Concurrent service Package/Deploy operations sharing caches |
-| `service_target_containerapp.go` | `templateHashMu` (RWMutex) + `envSaveMu` (Mutex) | Shared `Environment` map reads during template expansion; serialized env saves during Publish |
+| `service_target_containerapp.go` | Caller-supplied `envMu` (the deploy graph's shared env mutex) | Read of `SERVICE_<NAME>_TEMPLATE_HASH` in `evaluateTemplateHash` + post-deploy `DotenvSet`+`Save` of the same key are both held under `envMu` to protect the underlying `map[string]string` from concurrent service deploys |
 
-**Direct revision API shortcut** (`service_target_containerapp.go`): When a Container App
-template hash matches the previously saved hash, the full ARM deployment is skipped and a
-direct revision API call is used instead, avoiding redundant deployments during concurrent runs.
+**Direct revision API shortcut** (`service_target_containerapp.go`): For each service deploy,
+`evaluateTemplateHash` (read-only) compares the on-disk infrastructure template's SHA-256 against
+the value previously stored under `SERVICE_<NAME>_TEMPLATE_HASH`. When the hash matches, the full
+ARM deployment is skipped and a direct revision API call is used instead. When it differs (or no
+prior value exists), the full ARM deploy runs and the caller persists the new hash **only after
+the deploy succeeds** — so a failed deploy does not leave a stored hash that would cause the next
+run to skip the still-required full deployment via the optimization path.
 
 ## Observability
 
@@ -293,14 +307,17 @@ The unified DAG preserves user-observable behavior for `azd provision` and
 for the `azd up` path; they are documented here so they are discoverable during
 code review and triage.
 
-1. **`predeploy` project command hook runs before `package`.**
-   The `cmdhook-predeploy` node depends only on provisioning, and
-   `package-<svc>` nodes have no dependencies. Packaging therefore starts as
-   early as possible — concurrently with the `predeploy` hook. This is
-   intentional (maximum overlap; packaging is a local operation that cannot
-   meaningfully observe predeploy state). The `predeploy` hook still runs
-   before `publish-<svc>` and `deploy-<svc>` because `event-predeploy` gates
-   both.
+1. **`predeploy` project command hook runs concurrently with packaging.**
+   The `cmdhook-predeploy` node depends only on provisioning, and the packaging
+   chain (`cmdhook-prepackage` → `event-prepackage` → `package-<svc>` →
+   `event-postpackage` → `cmdhook-postpackage`) starts in parallel with
+   provisioning. `cmdhook-predeploy` therefore overlaps with the packaging
+   chain. This is intentional (maximum overlap; packaging is a local operation
+   that cannot meaningfully observe predeploy state). The `predeploy` hook
+   still runs before `publish-<svc>` and `deploy-<svc>` because
+   `event-predeploy` gates both, and the legacy `postpackage`-before-`predeploy`
+   ordering is preserved because `event-predeploy` also depends on
+   `cmdhook-postpackage`.
 
 2. **`project.EventDeploy` Before listeners observe packaged artifacts.**
    `event-predeploy` depends on every `package-<svc>` step (in addition to

@@ -447,8 +447,17 @@ func (u *UpGraphAction) addProvisionSteps(
 		// Precise producer→consumer edges: each provision layer depends on the
 		// layers that produce its required inputs. Every layer also depends on
 		// `cmdhook-preprovision` so the shell hook runs before any provision.
+		// Defensive: treat a nil layerDeps as "no inter-layer edges" so a
+		// future caller that forgets to run AnalyzeLayerDependencies cannot
+		// crash with a nil-map panic — the graph still wires preprovision and
+		// the caller gets sequential-by-declaration-order semantics (safe
+		// fallback) rather than a silent edge-less graph.
 		deps := []string{preProvisionHookStep}
-		for _, depIdx := range layerDeps.Edges[i] {
+		var edges []int
+		if layerDeps != nil {
+			edges = layerDeps.Edges[i]
+		}
+		for _, depIdx := range edges {
 			if depIdx < 0 || depIdx >= len(layers) {
 				return nil, fmt.Errorf(
 					"invalid layer dependency index %d for layer %s (max %d)",
@@ -476,9 +485,11 @@ func (u *UpGraphAction) addProvisionSteps(
 
 	// Compute provision sink nodes — steps with no successors.
 	hasSuccessor := make(map[int]bool, len(layers))
-	for _, depIdxs := range layerDeps.Edges {
-		for _, depIdx := range depIdxs {
-			hasSuccessor[depIdx] = true
+	if layerDeps != nil {
+		for _, depIdxs := range layerDeps.Edges {
+			for _, depIdx := range depIdxs {
+				hasSuccessor[depIdx] = true
+			}
 		}
 	}
 	for i := range layers {

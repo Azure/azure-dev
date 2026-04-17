@@ -5,25 +5,23 @@ param apphostinfrastructure_outputs_azure_container_apps_environment_default_dom
 
 param apphostinfrastructure_outputs_azure_container_apps_environment_id string
 
+param apiservice_containerimage string
+
+param apiservice_containerport string
+
 param apphostinfrastructure_outputs_azure_container_registry_endpoint string
 
 param apphostinfrastructure_outputs_azure_container_registry_managed_identity_id string
 
-param webfrontend_containerimage string
-
-param webfrontend_containerport string
-
-param goversion_value string
-
-resource webfrontend 'Microsoft.App/containerApps@2025-02-02-preview' = {
-  name: 'webfrontend'
+resource apiservice 'Microsoft.App/containerApps@2025-02-02-preview' = {
+  name: 'apiservice'
   location: location
   properties: {
     configuration: {
       activeRevisionsMode: 'Single'
       ingress: {
-        external: true
-        targetPort: int(webfrontend_containerport)
+        external: false
+        targetPort: int(apiservice_containerport)
         transport: 'http'
       }
       registries: [
@@ -42,17 +40,9 @@ resource webfrontend 'Microsoft.App/containerApps@2025-02-02-preview' = {
     template: {
       containers: [
         {
-          image: webfrontend_containerimage
-          name: 'webfrontend'
+          image: apiservice_containerimage
+          name: 'apiservice'
           env: [
-            {
-              name: 'OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EXCEPTION_LOG_ATTRIBUTES'
-              value: 'true'
-            }
-            {
-              name: 'OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EVENT_LOG_ATTRIBUTES'
-              value: 'true'
-            }
             {
               name: 'OTEL_DOTNET_EXPERIMENTAL_OTLP_RETRY'
               value: 'in_memory'
@@ -63,19 +53,7 @@ resource webfrontend 'Microsoft.App/containerApps@2025-02-02-preview' = {
             }
             {
               name: 'HTTP_PORTS'
-              value: webfrontend_containerport
-            }
-            {
-              name: 'services__apiservice__http__0'
-              value: 'http://apiservice.internal.${apphostinfrastructure_outputs_azure_container_apps_environment_default_domain}'
-            }
-            {
-              name: 'services__apiservice__https__0'
-              value: 'https://apiservice.internal.${apphostinfrastructure_outputs_azure_container_apps_environment_default_domain}'
-            }
-            {
-              name: 'GOVERSION'
-              value: goversion_value
+              value: apiservice_containerport
             }
           ]
         }

@@ -112,6 +112,11 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	}
 
+	// Disable MSBuild node reuse to prevent parallel dotnet builds from interfering with each other.
+	// Without this, shared MSBuild worker nodes cause "MSB4166: Child node exited prematurely" errors.
+	// CI sets this in the pipeline, but we also set it here for local development.
+	os.Setenv("MSBUILDDISABLENODEREUSE", "1")
+
 	exitVal := m.Run()
 	os.Exit(exitVal)
 }

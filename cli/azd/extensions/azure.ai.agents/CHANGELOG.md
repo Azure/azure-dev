@@ -1,5 +1,9 @@
 # Release History
 
+## 0.1.24-preview (Unreleased)
+
+- [[#7209]](https://github.com/Azure/azure-dev/issues/7209) Improve `azd ai agent monitor` output: render each SSE log event as a single compact, color-coded line (`HH:MM:SS  <stream>  <message>`) with session-metadata events rendered as `session <state> (v<version>, last accessed: ...)`. Add `--utc` flag to display timestamps in UTC instead of local time, and `--raw` flag to preserve the previous raw SSE output.
+
 ## 0.1.23-preview (2026-04-16)
 
 - [[#7753]](https://github.com/Azure/azure-dev/pull/7753) Fix `azd ai agent init` to pass the current directory as a positional argument to `azd init`, resolving failures caused by a missing `cwd` assumption in the underlying azd call.

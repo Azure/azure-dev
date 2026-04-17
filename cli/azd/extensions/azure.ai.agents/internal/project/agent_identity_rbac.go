@@ -6,11 +6,16 @@ package project
 import (
 	"context"
 	"fmt"
+	"log"
+	"maps"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"azureaiagent/internal/exterrors"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v3"
@@ -117,15 +122,18 @@ func agentIdentityDisplayName(accountName, projectName, agentName string) string
 	return fmt.Sprintf("%s-%s-%s-%s", accountName, projectName, agentName, agentIdentitySuffix)
 }
 
-// EnsureAgentIdentityRBAC looks up the per-agent identity service principals in Entra ID
-// and assigns the required RBAC roles. This is designed to be called from the postdeploy
-// handler when the vnext experience is enabled.
+// EnsureAgentIdentityRBAC assigns the required RBAC roles to per-agent identity service principals.
+// This is designed to be called from the postdeploy handler when the vnext experience is enabled.
 //
-// Each deployed hosted agent gets a platform-created Entra service principal named
-// {account}-{project}-{agentName}-AgentIdentity. This function looks up each identity
-// and assigns Azure AI User scoped to the Foundry Project.
-func EnsureAgentIdentityRBAC(ctx context.Context, azdClient *azdext.AzdClient, agentNames []string) error {
-	if len(agentNames) == 0 {
+// agentIdentities maps agent name → instance identity principal ID. When a principal ID is
+// provided (non-empty), the role is assigned directly without Graph API discovery. When empty,
+// the function falls back to polling Entra ID for the platform-created service principal.
+func EnsureAgentIdentityRBAC(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	agentIdentities map[string]string,
+) error {
+	if len(agentIdentities) == 0 {
 		return nil
 	}
 
@@ -143,10 +151,6 @@ func EnsureAgentIdentityRBAC(ctx context.Context, azdClient *azdext.AzdClient, a
 	azdEnv := make(map[string]string, len(envResponse.KeyValues))
 	for _, kv := range envResponse.KeyValues {
 		azdEnv[kv.Key] = kv.Value
-	}
-
-	if !isVnextEnabled(azdEnv) {
-		return nil
 	}
 
 	if isRoleAssignmentsSkipped(azdEnv) {
@@ -180,49 +184,62 @@ func EnsureAgentIdentityRBAC(ctx context.Context, azdClient *azdext.AzdClient, a
 		return fmt.Errorf("failed to create Azure credential: %w", err)
 	}
 
-	return ensureAgentIdentityRBACWithCred(ctx, cred, info, agentNames)
+	return ensureAgentIdentityRBACWithCred(ctx, cred, info, agentIdentities)
 }
 
 // ensureAgentIdentityRBACWithCred performs the core per-agent identity RBAC logic using
-// the provided credential. For each agent name, it looks up the per-agent identity
-// and assigns Azure AI User scoped to the Foundry Project.
-// Agents are processed in parallel since each has an independent identity.
+// the provided credential. For each agent, it assigns Azure AI User scoped to the Foundry Project.
+// When a principal ID is already known it is used directly; otherwise the identity is
+// discovered via Graph API. Agents are processed in parallel.
 func ensureAgentIdentityRBACWithCred(
 	ctx context.Context,
 	cred *azidentity.AzureDeveloperCLICredential,
 	info *agentIdentityInfo,
-	agentNames []string,
+	agentIdentities map[string]string,
 ) error {
 	fmt.Println()
 	fmt.Println("Agent Identity RBAC")
 	fmt.Printf("  AI Account: %s\n", info.AccountName)
 	fmt.Printf("  Project:    %s\n", info.ProjectName)
-	fmt.Printf("  Agents:     %d\n", len(agentNames))
+	fmt.Printf("  Agents:     %d\n", len(agentIdentities))
 
-	graphClient, err := graphsdk.NewGraphClient(cred, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create Graph client: %w", err)
+	// Only create a Graph client if at least one agent needs identity discovery.
+	var graphClient *graphsdk.GraphClient
+	needsDiscovery := false
+	for _, pid := range agentIdentities {
+		if pid == "" {
+			needsDiscovery = true
+			break
+		}
+	}
+	if needsDiscovery {
+		var err error
+		graphClient, err = graphsdk.NewGraphClient(cred, nil)
+		if err != nil {
+			return fmt.Errorf("failed to create Graph client: %w", err)
+		}
 	}
 
-	// Process agents in parallel — each has an independent identity and the
-	// identity lookup polling (up to ~3 min per agent) dominates wall-clock time.
+	// Process agents in parallel — each has an independent identity.
 	type agentResult struct {
 		name string
 		err  error
 	}
 
-	results := make([]agentResult, len(agentNames))
+	sortedNames := slices.Sorted(maps.Keys(agentIdentities))
+	results := make([]agentResult, len(sortedNames))
 	var wg sync.WaitGroup
 
-	for i, agentName := range agentNames {
+	for i, agentName := range sortedNames {
+		principalID := agentIdentities[agentName]
 		wg.Add(1)
-		go func(i int, name string) {
+		go func(i int, name, pid string) {
 			defer wg.Done()
 			results[i] = agentResult{
 				name: name,
-				err:  ensureSingleAgentRBAC(ctx, cred, graphClient, info, name),
+				err:  ensureSingleAgentRBAC(ctx, cred, graphClient, info, name, pid),
 			}
-		}(i, agentName)
+		}(i, agentName, principalID)
 	}
 
 	wg.Wait()
@@ -240,71 +257,96 @@ func ensureAgentIdentityRBACWithCred(
 }
 
 // ensureSingleAgentRBAC handles identity lookup and role assignment for a single agent.
+// If principalID is non-empty, it is used directly; otherwise the identity is discovered
+// via Graph API polling.
 func ensureSingleAgentRBAC(
 	ctx context.Context,
 	cred *azidentity.AzureDeveloperCLICredential,
 	graphClient *graphsdk.GraphClient,
 	info *agentIdentityInfo,
 	agentName string,
+	principalID string,
 ) error {
-	displayName := agentIdentityDisplayName(info.AccountName, info.ProjectName, agentName)
+	if principalID != "" {
+		// Principal ID known from the deploy response — skip Graph discovery.
+		fmt.Printf("  Agent identity: %s (principal: %s)\n", agentName, principalID)
+	} else {
+		// Fall back to Graph API discovery for older deploys that don't have the principal ID.
+		displayName := agentIdentityDisplayName(info.AccountName, info.ProjectName, agentName)
 
-	// Poll for the identity — the platform provisions it asynchronously during agent deployment,
-	// so it may not be visible in Entra ID immediately after deploy completes.
-	var agentIdentities []graphsdk.ServicePrincipal
-	var err error
-	for attempt := range identityLookupMaxAttempts {
-		agentIdentities, err = discoverAgentIdentity(ctx, graphClient, displayName)
-		if err != nil {
-			return fmt.Errorf("failed to discover agent identity: %w", err)
+		var agentIdentities []graphsdk.ServicePrincipal
+		var err error
+		for attempt := range identityLookupMaxAttempts {
+			agentIdentities, err = discoverAgentIdentity(ctx, graphClient, displayName)
+			if err != nil {
+				// Detect Conditional Access token protection blocks (AADSTS530084)
+				// that prevent Graph token acquisition in the fallback discovery path.
+				if isTokenProtectionError(err) {
+					return exterrors.Auth(
+						exterrors.CodeTokenProtectionBlocked,
+						"A Conditional Access token protection policy is blocking "+
+							"Microsoft Graph access required for hosted-agent RBAC setup.\n\n"+
+							"Suggestion: contact your IT administrator or request a policy "+
+							"exception. See https://aka.ms/TBCADocs and "+
+							"https://aka.ms/TokenProtectionFAQ#troubleshooting for more details. "+
+							"To skip RBAC checks when roles are pre-configured, "+
+							"set AZD_AGENT_SKIP_ROLE_ASSIGNMENTS=true.",
+						"",
+					)
+				}
+				return fmt.Errorf("failed to discover agent identity: %w", err)
+			}
+			if len(agentIdentities) > 0 {
+				break
+			}
+			if attempt < identityLookupMaxAttempts-1 {
+				fmt.Printf("  Identity not ready yet in Entra ID, retrying in %s (%d/%d)...\n",
+					identityLookupPollInterval, attempt+1, identityLookupMaxAttempts)
+				time.Sleep(identityLookupPollInterval)
+			}
 		}
-		if len(agentIdentities) > 0 {
-			break
-		}
-		if attempt < identityLookupMaxAttempts-1 {
-			fmt.Printf("  Identity not ready yet in Entra ID, retrying in %s (%d/%d)...\n",
-				identityLookupPollInterval, attempt+1, identityLookupMaxAttempts)
-			time.Sleep(identityLookupPollInterval)
-		}
-	}
 
-	if len(agentIdentities) == 0 {
-		return fmt.Errorf(
-			"agent identity '%s' not found in Entra ID — "+
-				"the platform may not have provisioned it yet, wait a few minutes and re-run: azd deploy",
-			displayName)
-	}
-	fmt.Println("  ✓ Agent identity found in Entra ID")
+		if len(agentIdentities) == 0 {
+			return fmt.Errorf(
+				"agent identity '%s' not found in Entra ID — "+
+					"the platform may not have provisioned it yet, wait a few minutes and re-run: azd deploy",
+				displayName)
+		}
+		fmt.Println("  ✓ Agent identity found in Entra ID")
 
-	// Assign Azure AI User role scoped to the Foundry Project
-	for _, sp := range agentIdentities {
-		principalID := ""
-		if sp.Id != nil {
-			principalID = *sp.Id
+		if len(agentIdentities) > 1 {
+			log.Printf("found %d service principals matching '%s'; using the first",
+				len(agentIdentities), displayName)
+		}
+
+		// Use the first matching identity.
+		if agentIdentities[0].Id != nil {
+			principalID = *agentIdentities[0].Id
 		}
 		if principalID == "" {
-			continue
+			return fmt.Errorf("discovered agent identity '%s' has no principal ID", displayName)
 		}
 
-		fmt.Printf("  Agent identity: %s (%s)\n", sp.DisplayName, principalID)
+		fmt.Printf("  Agent identity: %s (%s)\n", agentIdentities[0].DisplayName, principalID)
+	}
 
-		created, err := assignRoleToIdentity(
-			ctx, cred, principalID, roleAzureAIUser, "Azure AI User → Foundry Project", info.ProjectScope,
-		)
-		if err != nil {
-			return fmt.Errorf("failed to assign Azure AI User role: %w", err)
-		}
+	created, err := assignRoleToIdentity(
+		ctx, cred, principalID, roleAzureAIUser, "Azure AI User → Foundry Project", info.ProjectScope,
+		armauthorization.PrincipalTypeServicePrincipal,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to assign Azure AI User role: %w", err)
+	}
 
-		if created {
-			fmt.Println("    ✓ Azure AI User → Foundry Project (created)")
-			fmt.Println("    ⏳ Verifying Azure AI User...")
-			if err := verifyRoleAssignment(ctx, cred, principalID, roleAzureAIUser, info.ProjectScope); err != nil {
-				return fmt.Errorf("failed to verify Azure AI User role assignment: %w", err)
-			}
-			fmt.Println("    ✓ Azure AI User → Foundry Project (verified)")
-		} else {
-			fmt.Println("    ✓ Azure AI User → Foundry Project (already assigned)")
+	if created {
+		fmt.Println("    ✓ Azure AI User → Foundry Project (created)")
+		fmt.Println("    ⏳ Verifying Azure AI User...")
+		if err := verifyRoleAssignment(ctx, cred, principalID, roleAzureAIUser, info.ProjectScope); err != nil {
+			return fmt.Errorf("failed to verify Azure AI User role assignment: %w", err)
 		}
+		fmt.Println("    ✓ Azure AI User → Foundry Project (verified)")
+	} else {
+		fmt.Println("    ✓ Azure AI User → Foundry Project (already assigned)")
 	}
 
 	return nil
@@ -327,7 +369,7 @@ func discoverAgentIdentity(
 	return resp.Value, nil
 }
 
-// assignRoleToIdentity assigns a single RBAC role to a service principal at the given scope.
+// assignRoleToIdentity assigns a single RBAC role to a principal at the given scope.
 // It is idempotent: existing assignments are detected and skipped.
 // Returns true if a new assignment was created, false if it already existed.
 func assignRoleToIdentity(
@@ -337,6 +379,7 @@ func assignRoleToIdentity(
 	roleID string,
 	roleName string,
 	scope string,
+	principalType armauthorization.PrincipalType,
 ) (bool, error) {
 	subscriptionID := extractSubscriptionID(scope)
 	if subscriptionID == "" {
@@ -380,11 +423,10 @@ func assignRoleToIdentity(
 		return false, nil
 	}
 
-	// Create assignment with explicit ServicePrincipal type
+	// Create assignment
 	fullRoleDefinitionID := fmt.Sprintf(
 		"%s/providers/Microsoft.Authorization/roleDefinitions/%s", scope, roleID)
 	roleAssignmentName := uuid.New().String()
-	principalType := armauthorization.PrincipalTypeServicePrincipal
 	parameters := armauthorization.RoleAssignmentCreateParameters{
 		Properties: &armauthorization.RoleAssignmentProperties{
 			RoleDefinitionID: new(fullRoleDefinitionID),
@@ -471,4 +513,15 @@ func extractSubscriptionID(resourceID string) string {
 		}
 	}
 	return ""
+}
+
+// isTokenProtectionError checks whether an error is caused by an Entra Conditional Access
+// token protection policy (AADSTS530084) that blocks Graph API token acquisition.
+func isTokenProtectionError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errMsg := err.Error()
+	return strings.Contains(errMsg, "AADSTS530084") ||
+		strings.Contains(errMsg, "token protection policy")
 }

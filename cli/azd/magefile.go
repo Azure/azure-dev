@@ -114,7 +114,12 @@ func (Dev) Uninstall() error {
 
 // Preflight runs all pre-commit quality checks: formatting, copyright headers, linting,
 // spell checking, compilation, unit tests, and playback functional tests.
-// Reports a summary of all results at the end.
+//
+// Checks are organized into two waves for faster execution:
+//   - Wave 1 runs formatting, code modernization, copyright, lint, spell-check, and build
+//     in parallel. Results are printed as each check completes.
+//   - Wave 2 runs unit tests followed by playback tests sequentially (they share an
+//     auto-built test binary and cannot safely overlap).
 //
 // Usage: mage preflight
 func Preflight() error {
@@ -141,21 +146,6 @@ func Preflight() error {
 		}
 	}
 
-	type result struct {
-		name   string
-		status string // "pass" or "fail"
-		detail string
-	}
-	var results []result
-	failed := false
-
-	record := func(name, status, detail string) {
-		results = append(results, result{name, status, detail})
-		if status == "fail" {
-			failed = true
-		}
-	}
-
 	// Check required tools are installed before running anything.
 	if err := requireTool("golangci-lint",
 		"go install github.com/golangci/golangci-lint/cmd/golangci-lint@v2.11.4"); err != nil {
@@ -171,103 +161,253 @@ func Preflight() error {
 		} else if p, err := exec.LookPath("sh"); err == nil {
 			shell = p
 		} else {
-			return fmt.Errorf("bash/sh not found — install Git for Windows: https://git-scm.com/downloads/win")
+			return fmt.Errorf(
+				"bash/sh not found — install Git for Windows: https://git-scm.com/downloads/win",
+			)
 		}
 	}
 
-	// 1. gofmt — check for unformatted files
-	fmt.Println("══ Formatting (gofmt) ══")
-	if out, err := runCapture(azdDir, "gofmt", "-s", "-l", "."); err != nil {
-		record("gofmt", "fail", err.Error())
-	} else if len(strings.TrimSpace(out)) > 0 {
-		record("gofmt", "fail", "unformatted files:\n"+out)
-		fmt.Print(out)
-	} else {
-		record("gofmt", "pass", "")
+	// Preallocated result slots — one per check, indexed by constant.
+	// This avoids append races and keeps summary order deterministic.
+	const (
+		checkGofmt = iota
+		checkGoFix
+		checkCopyright
+		checkLint
+		checkCspell
+		checkCspellMisc
+		checkBuild
+		checkTest
+		checkPlayback
+		numChecks
+	)
+	checkNames := [numChecks]string{
+		"gofmt", "go fix", "copyright", "lint",
+		"cspell", "cspell-misc", "build", "test", "playback tests",
 	}
 
-	// 2. go fix — check for code modernization opportunities
-	fmt.Println("══ Code modernization (go fix) ══")
-	if out, err := runCapture(azdDir, "go", "fix", "-diff", "./..."); err != nil {
-		record("go fix", "fail", err.Error())
-	} else if len(strings.TrimSpace(out)) > 0 {
-		record("go fix", "fail", "code should be modernized — run 'go fix ./...' to apply:\n"+out)
-		fmt.Print(out)
-	} else {
-		record("go fix", "pass", "")
+	type checkResult struct {
+		status string // "pass", "fail", or "skip"
+		detail string
+		output string // captured stdout/stderr
 	}
+	results := make([]checkResult, numChecks)
+
+	// printResult writes a completed check's output to the terminal.
+	// Called under printMu so output from different checks doesn't interleave.
+	var printMu sync.Mutex
+	printResult := func(idx int) {
+		printMu.Lock()
+		defer printMu.Unlock()
+		r := results[idx]
+		icon := "✓"
+		switch r.status {
+		case "fail":
+			icon = "✗"
+		case "skip":
+			icon = "−"
+		}
+		fmt.Printf("══ %s %s ══\n", icon, checkNames[idx])
+		if r.output != "" {
+			fmt.Print(r.output)
+			if !strings.HasSuffix(r.output, "\n") {
+				fmt.Println()
+			}
+		}
+		if (r.status == "fail" || r.status == "skip") && r.detail != "" && r.detail != r.output {
+			fmt.Println(r.detail)
+		}
+	}
+
+	// ── Wave 1: parallel formatting, lint, spell-check, build ──────────
+	fmt.Println("══ Wave 1: checks (parallel) ══")
+
+	var wg sync.WaitGroup
+
+	// 1. gofmt
+	wg.Go(func() {
+		out, err := runCapture(azdDir, "gofmt", "-s", "-l", ".")
+		if err != nil {
+			results[checkGofmt] = checkResult{"fail", err.Error(), out}
+		} else if len(strings.TrimSpace(out)) > 0 {
+			results[checkGofmt] = checkResult{
+				"fail", "unformatted files:", out,
+			}
+		} else {
+			results[checkGofmt] = checkResult{"pass", "", ""}
+		}
+		printResult(checkGofmt)
+	})
+
+	// 2. go fix
+	wg.Go(func() {
+		out, err := runCapture(azdDir, "go", "fix", "-diff", "./...")
+		if err != nil {
+			results[checkGoFix] = checkResult{"fail", err.Error(), out}
+		} else if len(strings.TrimSpace(out)) > 0 {
+			results[checkGoFix] = checkResult{
+				"fail",
+				"code should be modernized — run 'go fix ./...' to apply:",
+				out,
+			}
+		} else {
+			results[checkGoFix] = checkResult{"pass", "", ""}
+		}
+		printResult(checkGoFix)
+	})
 
 	// 3. Copyright headers
-	fmt.Println("══ Copyright headers ══")
-	script := filepath.Join(repoRoot, "eng", "scripts", "copyright-check.sh")
-	if _, err := os.Stat(script); err != nil {
-		record("copyright", "fail", "script not found: "+script)
-	} else if err := runShellScript(azdDir, shell, script, "."); err != nil {
-		record("copyright", "fail", err.Error())
-	} else {
-		record("copyright", "pass", "")
-	}
+	wg.Go(func() {
+		script := filepath.Join(repoRoot, "eng", "scripts", "copyright-check.sh")
+		if _, err := os.Stat(script); err != nil {
+			results[checkCopyright] = checkResult{
+				"fail", "script not found: " + script, "",
+			}
+		} else if out, err := runCaptureShellScript(
+			azdDir, shell, script, ".",
+		); err != nil {
+			results[checkCopyright] = checkResult{"fail", err.Error(), out}
+		} else {
+			results[checkCopyright] = checkResult{"pass", "", ""}
+		}
+		printResult(checkCopyright)
+	})
 
 	// 4. golangci-lint
-	fmt.Println("══ Lint (golangci-lint) ══")
-	if err := runStreaming(azdDir, "golangci-lint", "run", "./..."); err != nil {
-		record("lint", "fail", err.Error())
+	wg.Go(func() {
+		out, err := runCaptureAll(azdDir, nil, "golangci-lint", "run", "./...")
+		if err != nil {
+			results[checkLint] = checkResult{"fail", err.Error(), out}
+		} else {
+			results[checkLint] = checkResult{"pass", "", ""}
+		}
+		printResult(checkLint)
+	})
+
+	// 5a. cspell (Go source)
+	wg.Go(func() {
+		out, err := runCaptureAll(azdDir, nil,
+			"cspell", "lint", "**/*.go",
+			"--relative", "--config", "./.vscode/cspell.yaml", "--no-progress")
+		if err != nil {
+			results[checkCspell] = checkResult{"fail", err.Error(), out}
+		} else {
+			results[checkCspell] = checkResult{"pass", "", ""}
+		}
+		printResult(checkCspell)
+	})
+
+	// 5b. cspell (misc/docs)
+	wg.Go(func() {
+		out, err := runCaptureAll(repoRoot, nil,
+			"cspell", "lint", "**/*",
+			"--relative", "--config", "./.vscode/cspell.misc.yaml", "--no-progress")
+		if err != nil {
+			results[checkCspellMisc] = checkResult{"fail", err.Error(), out}
+		} else {
+			results[checkCspellMisc] = checkResult{"pass", "", ""}
+		}
+		printResult(checkCspellMisc)
+	})
+
+	// 6. go build — compile all packages AND pre-build the azd + azd-record
+	// binaries so that Wave 2 tests can skip auto-building. This lets unit
+	// tests and playback tests run in parallel safely.
+	wg.Go(func() {
+		// Compile all packages first (catches errors everywhere).
+		out, err := runCaptureAll(azdDir, nil, "go", "build", "./...")
+		if err != nil {
+			results[checkBuild] = checkResult{"fail", err.Error(), out}
+			printResult(checkBuild)
+			return
+		}
+		// Build the azd binary that unit tests need.
+		azdBin := "azd"
+		if runtime.GOOS == "windows" {
+			azdBin = "azd.exe"
+		}
+		out, err = runCaptureAll(azdDir, nil, "go", "build", "-o", azdBin, ".")
+		if err != nil {
+			results[checkBuild] = checkResult{"fail", err.Error(), out}
+			printResult(checkBuild)
+			return
+		}
+		// Build the azd-record binary that playback tests need.
+		recordBin := "azd-record"
+		if runtime.GOOS == "windows" {
+			recordBin = "azd-record.exe"
+		}
+		out, err = runCaptureAll(
+			azdDir, nil, "go", "build", "-tags=record", "-o", recordBin, ".",
+		)
+		if err != nil {
+			results[checkBuild] = checkResult{"fail", err.Error(), out}
+			printResult(checkBuild)
+			return
+		}
+		results[checkBuild] = checkResult{"pass", "", ""}
+		printResult(checkBuild)
+	})
+
+	wg.Wait()
+
+	// ── Wave 2: tests (parallel — binaries pre-built in Wave 1) ───────
+	// Both test suites use CLI_TEST_SKIP_BUILD=true so they don't attempt
+	// to rebuild the azd binary, eliminating the file-level race that
+	// previously forced sequential execution.
+	fmt.Println("\n══ Wave 2: tests (parallel) ══")
+
+	if results[checkBuild].status == "fail" {
+		results[checkTest] = checkResult{"skip", "skipped (build failed)", ""}
+		printResult(checkTest)
+		results[checkPlayback] = checkResult{"skip", "skipped (build failed)", ""}
+		printResult(checkPlayback)
 	} else {
-		record("lint", "pass", "")
+		skipBuildEnv := []string{"CLI_TEST_SKIP_BUILD=true"}
+		var wg2 sync.WaitGroup
+
+		// 7. Unit tests
+		wg2.Go(func() {
+			if err := runStreamingWithEnv(
+				azdDir, skipBuildEnv,
+				"go", "test", "./...", "-short", "-cover", "-count=1",
+			); err != nil {
+				results[checkTest] = checkResult{"fail", err.Error(), ""}
+			} else {
+				results[checkTest] = checkResult{"pass", "", ""}
+			}
+			printResult(checkTest)
+		})
+
+		// 8. Playback tests
+		wg2.Go(func() {
+			playbackEnv := append(skipBuildEnv, "AZURE_RECORD_MODE=playback")
+			if err := runPlaybackTestsWithEnv(azdDir, playbackEnv); err != nil {
+				results[checkPlayback] = checkResult{"fail", err.Error(), ""}
+			} else {
+				results[checkPlayback] = checkResult{"pass", "", ""}
+			}
+			printResult(checkPlayback)
+		})
+
+		wg2.Wait()
 	}
 
-	// 5a. Spell check (cspell — Go source)
-	fmt.Println("══ Spell check (cspell) ══")
-	if err := runStreaming(azdDir, "cspell", "lint", "**/*.go",
-		"--relative", "--config", "./.vscode/cspell.yaml", "--no-progress"); err != nil {
-		record("cspell", "fail", err.Error())
-	} else {
-		record("cspell", "pass", "")
-	}
-
-	// 5b. Spell check (cspell — misc/docs files, mirrors CI cspell-misc.yml)
-	fmt.Println("══ Spell check (cspell-misc) ══")
-	if err := runStreaming(repoRoot, "cspell", "lint", "**/*",
-		"--relative", "--config", "./.vscode/cspell.misc.yaml", "--no-progress"); err != nil {
-		record("cspell-misc", "fail", err.Error())
-	} else {
-		record("cspell-misc", "pass", "")
-	}
-
-	// 6. Compile check
-	fmt.Println("══ Build (go build) ══")
-	if err := runStreaming(azdDir, "go", "build", "./..."); err != nil {
-		record("build", "fail", err.Error())
-	} else {
-		record("build", "pass", "")
-	}
-
-	// 7. Unit tests (with -cover to match CI and catch os.Args leaks)
-	fmt.Println("══ Unit tests (go test -short -cover) ══")
-	if err := runStreaming(azdDir, "go", "test", "./...", "-short", "-cover", "-count=1"); err != nil {
-		record("test", "fail", err.Error())
-	} else {
-		record("test", "pass", "")
-	}
-
-	// 8. Functional tests in playback mode (no Azure credentials needed).
-	fmt.Println("══ Playback tests (functional) ══")
-	if err := runPlaybackTests(azdDir); err != nil {
-		record("playback tests", "fail", err.Error())
-	} else {
-		record("playback tests", "pass", "")
-	}
-
-	// Summary
+	// ── Summary ────────────────────────────────────────────────────────
+	failed := false
 	fmt.Println("\n══════════════════════════")
 	fmt.Println("  Preflight Summary")
 	fmt.Println("══════════════════════════")
-	for _, r := range results {
+	for i, r := range results {
 		icon := "✓"
-		if r.status == "fail" {
+		switch r.status {
+		case "fail":
 			icon = "✗"
+			failed = true
+		case "skip":
+			icon = "−"
 		}
-		fmt.Printf("  %s %s\n", icon, r.name)
+		fmt.Printf("  %s %s\n", icon, checkNames[i])
 	}
 	fmt.Println("══════════════════════════")
 
@@ -305,6 +445,12 @@ func PlaybackTests() error {
 // runPlaybackTests discovers test recordings and runs matching functional
 // tests in playback mode (AZURE_RECORD_MODE=playback).
 func runPlaybackTests(azdDir string) error {
+	return runPlaybackTestsWithEnv(azdDir, nil)
+}
+
+// runPlaybackTestsWithEnv is like runPlaybackTests but accepts additional
+// environment variables (e.g. CLI_TEST_SKIP_BUILD=true for parallel runs).
+func runPlaybackTestsWithEnv(azdDir string, extraEnv []string) error {
 	recordingsDir := filepath.Join(
 		azdDir, "test", "functional", "testdata", "recordings",
 	)
@@ -324,9 +470,10 @@ func runPlaybackTests(azdDir string) error {
 	pattern := "^(" + strings.Join(escaped, "|") + ")(/|$)"
 	fmt.Printf("Running %d tests in playback mode...\n", len(names))
 
+	env := append(extraEnv, "AZURE_RECORD_MODE=playback")
 	return runStreamingWithEnv(
 		azdDir,
-		[]string{"AZURE_RECORD_MODE=playback"},
+		env,
 		"go", "test", "-run", pattern,
 		"./test/functional", "-timeout", "30m", "-count=1",
 	)
@@ -402,6 +549,57 @@ func goModVersion(dir string) (string, error) {
 // runCapture runs a command and returns its combined stdout/stderr.
 func runCapture(dir string, name string, args ...string) (string, error) {
 	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
+	var buf bytes.Buffer
+	cmd.Stdout = &buf
+	cmd.Stderr = &buf
+	err := cmd.Run()
+	return buf.String(), err
+}
+
+// runCaptureAll runs a command and returns its combined stdout/stderr as a
+// string. Unlike runCapture it also accepts extra environment variables.
+// This is used by parallel checks that cannot stream directly to the terminal.
+func runCaptureAll(
+	dir string, env []string, name string, args ...string,
+) (string, error) {
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
+	if len(env) > 0 {
+		cmd.Env = append(os.Environ(), env...)
+	}
+	var buf bytes.Buffer
+	cmd.Stdout = &buf
+	cmd.Stderr = &buf
+	err := cmd.Run()
+	return buf.String(), err
+}
+
+// runCaptureShellScript is like runShellScript but captures output instead of
+// streaming. Used during parallel checks.
+func runCaptureShellScript(
+	dir string, shell string, script string, args ...string,
+) (string, error) {
+	if runtime.GOOS == "windows" {
+		shellScript := toShellPath(shell, script)
+		shellDir := toShellPath(shell, dir)
+		quotedArgs := make([]string, len(args))
+		for i, a := range args {
+			quotedArgs[i] = shellQuote(a)
+		}
+		inner := fmt.Sprintf(`cd %s && tr -d '\r' < %s | bash -s -- %s`,
+			shellQuote(shellDir), shellQuote(shellScript),
+			strings.Join(quotedArgs, " "))
+		cmd := exec.Command(shell, "-c", inner)
+		var buf bytes.Buffer
+		cmd.Stdout = &buf
+		cmd.Stderr = &buf
+		err := cmd.Run()
+		return buf.String(), err
+	}
+
+	cmdArgs := append([]string{script}, args...)
+	cmd := exec.Command(shell, cmdArgs...)
 	cmd.Dir = dir
 	var buf bytes.Buffer
 	cmd.Stdout = &buf

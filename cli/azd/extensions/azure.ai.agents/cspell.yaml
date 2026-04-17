@@ -22,6 +22,7 @@ words:
   - uaenorth
   - uksouth
   # Project terms
+  - ABAC
   - ADLS
   - agentserver
   - aiservices

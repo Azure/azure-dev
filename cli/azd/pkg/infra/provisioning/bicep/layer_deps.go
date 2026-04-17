@@ -83,20 +83,33 @@ func AnalyzeLayerDependencies(
 	}
 
 	// Phase 1 — Discover outputs from each layer's Bicep file.
-	for i, opts := range resolved {
+	// Iterate layers (not resolved) so the loop index i is clearly bounded by
+	// len(layers) for static analyzers; resolved has the same length by
+	// construction above.
+	for i, layer := range layers {
+		opts := resolved[i]
 		bicepPath := resolveBicepPath(opts, projectPath)
 		outputs, err := extractBicepOutputs(bicepPath)
 		if err != nil {
 			return nil, fmt.Errorf(
 				"extracting outputs for layer %q: %w",
-				layers[i].Name, err,
+				layer.Name, err,
 			)
 		}
 		for _, name := range outputs {
 			if prev, exists := g.outputProviders[name]; exists && prev != i {
+				// prev comes from outputProviders, which we populate only with
+				// loop indices below. Guard defensively so static analyzers can
+				// see the bounded access.
+				if prev < 0 || prev >= len(layers) {
+					return nil, fmt.Errorf(
+						"internal error: invalid layer index %d recorded for output %q",
+						prev, name,
+					)
+				}
 				return nil, fmt.Errorf(
 					"duplicate output %q: produced by both layer %q and layer %q",
-					name, layers[prev].Name, layers[i].Name,
+					name, layers[prev].Name, layer.Name,
 				)
 			}
 			g.outputProviders[name] = i

@@ -1,5 +1,11 @@
 # Release History
 
+## 0.1.24-preview (Unreleased)
+
+### Breaking Changes
+
+- Removed `-e` shorthand for `--environment`; use `--environment` instead. This resolves a collision with the azd global `-e/--environment` flag.
+
 ## 0.1.23-preview (2026-04-16)
 
 - [[#7753]](https://github.com/Azure/azure-dev/pull/7753) Fix `azd ai agent init` to pass the current directory as a positional argument to `azd init`, resolving failures caused by a missing `cwd` assumption in the underlying azd call.

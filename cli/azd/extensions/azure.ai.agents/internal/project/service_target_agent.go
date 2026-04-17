@@ -796,7 +796,7 @@ func (p *AgentServiceTargetProvider) createAgent(
 	)
 
 	// Use constant API version
-	const apiVersion = "2025-05-15-preview"
+	const apiVersion = "2025-11-15-preview"
 
 	// Extract CreateAgentVersionRequest from CreateAgentRequest
 	versionRequest := &agent_api.CreateAgentVersionRequest{

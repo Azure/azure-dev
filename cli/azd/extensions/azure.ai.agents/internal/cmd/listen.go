@@ -245,7 +245,7 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 
 		// Fetch the agent version to get the instance identity principal ID.
 		versionObj, err := agentClient.GetAgentVersion(
-			ctx, nameResp.Value, versionResp.Value, DefaultVNextAgentAPIVersion,
+			ctx, nameResp.Value, versionResp.Value, DefaultAgentAPIVersion,
 		)
 		if err != nil {
 			return fmt.Errorf(

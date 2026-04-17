@@ -272,7 +272,7 @@ func (a *SessionCreateAction) Run(ctx context.Context) error {
 		sc.agentName,
 		a.flags.isolationKey,
 		request,
-		DefaultVNextAgentAPIVersion,
+		DefaultAgentAPIVersion,
 	)
 	if err != nil {
 		return exterrors.ServiceFromAzure(
@@ -347,7 +347,7 @@ func (a *SessionShowAction) Run(ctx context.Context) error {
 		ctx,
 		sc.agentName,
 		a.sessionID,
-		DefaultVNextAgentAPIVersion,
+		DefaultAgentAPIVersion,
 	)
 	if err != nil {
 		if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok &&
@@ -447,7 +447,7 @@ func (a *SessionDeleteAction) Run(ctx context.Context) error {
 		sc.agentName,
 		a.sessionID,
 		a.flags.isolationKey,
-		DefaultVNextAgentAPIVersion,
+		DefaultAgentAPIVersion,
 	)
 	if err != nil {
 		if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok &&
@@ -558,7 +558,7 @@ func (a *SessionListAction) Run(ctx context.Context) error {
 		sc.agentName,
 		limit,
 		token,
-		DefaultVNextAgentAPIVersion,
+		DefaultAgentAPIVersion,
 	)
 	if err != nil {
 		return exterrors.ServiceFromAzure(

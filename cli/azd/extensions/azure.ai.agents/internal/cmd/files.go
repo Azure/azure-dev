@@ -211,7 +211,7 @@ func (a *FilesUploadAction) Run(ctx context.Context) error {
 		a.Name,
 		a.sessionID,
 		remotePath,
-		DefaultVNextAgentAPIVersion,
+		DefaultAgentAPIVersion,
 		file,
 	)
 	if err != nil {
@@ -308,7 +308,7 @@ func (a *FilesDownloadAction) Run(ctx context.Context) error {
 		a.Name,
 		a.sessionID,
 		a.flags.file,
-		DefaultVNextAgentAPIVersion,
+		DefaultAgentAPIVersion,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to download file: %w", err)
@@ -419,7 +419,7 @@ func (a *FilesListAction) Run(ctx context.Context) error {
 		a.Name,
 		a.sessionID,
 		a.remotePath,
-		DefaultVNextAgentAPIVersion,
+		DefaultAgentAPIVersion,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to list files: %w", err)
@@ -551,7 +551,7 @@ func (a *FilesRemoveAction) Run(ctx context.Context) error {
 		a.sessionID,
 		a.remotePath,
 		a.flags.recursive,
-		DefaultVNextAgentAPIVersion,
+		DefaultAgentAPIVersion,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to remove file: %w", err)
@@ -637,7 +637,7 @@ func (a *FilesMkdirAction) Run(ctx context.Context) error {
 		a.Name,
 		a.sessionID,
 		a.remotePath,
-		DefaultVNextAgentAPIVersion,
+		DefaultAgentAPIVersion,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
@@ -721,7 +721,7 @@ func (a *FilesStatAction) Run(ctx context.Context) error {
 		a.Name,
 		a.sessionID,
 		a.remotePath,
-		DefaultVNextAgentAPIVersion,
+		DefaultAgentAPIVersion,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to stat file: %w", err)

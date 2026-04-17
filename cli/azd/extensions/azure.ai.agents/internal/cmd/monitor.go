@@ -142,7 +142,7 @@ func (a *MonitorAction) Run(ctx context.Context) error {
 		ctx,
 		a.Name,
 		a.flags.sessionID,
-		DefaultVNextAgentAPIVersion,
+		DefaultAgentAPIVersion,
 		a.flags.logType,
 		a.flags.tail,
 		a.flags.follow,

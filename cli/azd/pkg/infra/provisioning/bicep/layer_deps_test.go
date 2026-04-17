@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/stretchr/testify/require"
 )
@@ -37,9 +36,8 @@ func TestAnalyzeLayerDependencies_SingleLayer(t *testing.T) {
 	layers := []provisioning.Options{
 		{Path: "networking", Module: "network"},
 	}
-	env := environment.NewWithValues("test", map[string]string{})
 
-	result, err := AnalyzeLayerDependencies(layers, dir, env)
+	result, err := AnalyzeLayerDependencies(layers, dir)
 	require.NoError(t, err)
 	require.Equal(t, [][]int{{0}}, result.Levels)
 }
@@ -67,12 +65,9 @@ func TestAnalyzeLayerDependencies_NoDependencies(t *testing.T) {
 		{Path: "networking", Module: "network"},
 		{Path: "compute", Module: "compute"},
 	}
-	// AZURE_LOCATION is in env so it does not create a dependency.
-	env := environment.NewWithValues("test", map[string]string{
-		"AZURE_LOCATION": "eastus",
-	})
+	// AZURE_LOCATION has no in-graph producer, so no dependency is created.
 
-	result, err := AnalyzeLayerDependencies(layers, dir, env)
+	result, err := AnalyzeLayerDependencies(layers, dir)
 	require.NoError(t, err)
 	require.Equal(t, [][]int{{0, 1}}, result.Levels)
 }
@@ -100,9 +95,8 @@ func TestAnalyzeLayerDependencies_LinearChain(t *testing.T) {
 		{Path: "networking", Module: "network"},
 		{Path: "app", Module: "app"},
 	}
-	env := environment.NewWithValues("test", map[string]string{})
 
-	result, err := AnalyzeLayerDependencies(layers, dir, env)
+	result, err := AnalyzeLayerDependencies(layers, dir)
 	require.NoError(t, err)
 	require.Equal(t, [][]int{{0}, {1}}, result.Levels)
 }
@@ -139,9 +133,8 @@ func TestAnalyzeLayerDependencies_Diamond(t *testing.T) {
 		{Path: "layerB", Module: "b"},
 		{Path: "layerC", Module: "c"},
 	}
-	env := environment.NewWithValues("test", map[string]string{})
 
-	result, err := AnalyzeLayerDependencies(layers, dir, env)
+	result, err := AnalyzeLayerDependencies(layers, dir)
 	require.NoError(t, err)
 	// A first, then B (needs X), then C (needs X and Y).
 	require.Equal(t, [][]int{{0}, {1}, {2}}, result.Levels)
@@ -170,9 +163,8 @@ func TestAnalyzeLayerDependencies_CycleDetected(t *testing.T) {
 		{Path: "layerA", Module: "a"},
 		{Path: "layerB", Module: "b"},
 	}
-	env := environment.NewWithValues("test", map[string]string{})
 
-	_, err := AnalyzeLayerDependencies(layers, dir, env)
+	_, err := AnalyzeLayerDependencies(layers, dir)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "cycle detected")
 }
@@ -198,17 +190,14 @@ func TestAnalyzeLayerDependencies_PreExistingEnvVar(t *testing.T) {
 		{Path: "networking", Module: "network"},
 		{Path: "app", Module: "app"},
 	}
-	// VNET_ID is already in the env, so no dependency is created.
-	env := environment.NewWithValues("test", map[string]string{
-		"VNET_ID": "/subscriptions/.../vnet",
-	})
 
-	result, err := AnalyzeLayerDependencies(layers, dir, env)
+	result, err := AnalyzeLayerDependencies(layers, dir)
 	require.NoError(t, err)
-	// Intra-graph producer/consumer edges are preserved even when the env var
-	// pre-exists, to avoid consuming stale values when the producer's template
-	// has changed. Unchanged producers go through the deployment-state-skipped
-	// fast path, so the serial cost is near-zero.
+	// Intra-graph producer/consumer edges are preserved between layer 0
+	// (emits VNET_ID) and layer 1 (consumes VNET_ID), even if the env var
+	// happens to be pre-set in the ambient environment. Unchanged producers
+	// go through the deployment-state-skipped fast path, so the serial cost
+	// is near-zero.
 	require.Equal(t, [][]int{{0}, {1}}, result.Levels)
 }
 
@@ -235,9 +224,8 @@ func TestAnalyzeLayerDependencies_BicepparamFormat(t *testing.T) {
 		{Path: "storage", Module: "stor"},
 		{Path: "app", Module: "app"},
 	}
-	env := environment.NewWithValues("test", map[string]string{})
 
-	result, err := AnalyzeLayerDependencies(layers, dir, env)
+	result, err := AnalyzeLayerDependencies(layers, dir)
 	require.NoError(t, err)
 	require.Equal(t, [][]int{{0}, {1}}, result.Levels)
 }
@@ -385,9 +373,8 @@ func TestAnalyzeLayerDependencies_DuplicateOutputs(t *testing.T) {
 		{Path: "layerA", Module: "a", Name: "layerA"},
 		{Path: "layerB", Module: "b", Name: "layerB"},
 	}
-	env := environment.NewWithValues("test", map[string]string{})
 
-	_, err := AnalyzeLayerDependencies(layers, dir, env)
+	_, err := AnalyzeLayerDependencies(layers, dir)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "duplicate output")
 	require.Contains(t, err.Error(), "SHARED_VAR")
@@ -406,9 +393,8 @@ func TestAnalyzeLayerDependencies_SameLayerDuplicateOutputIsAllowed(t *testing.T
 	layers := []provisioning.Options{
 		{Path: "single", Module: "s"},
 	}
-	env := environment.NewWithValues("test", map[string]string{})
 
-	result, err := AnalyzeLayerDependencies(layers, dir, env)
+	result, err := AnalyzeLayerDependencies(layers, dir)
 	require.NoError(t, err)
 	require.Equal(t, [][]int{{0}}, result.Levels)
 }

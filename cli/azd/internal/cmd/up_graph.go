@@ -133,7 +133,7 @@ func (u *UpGraphAction) Run(
 	var layerDeps *bicep.LayerDependencies
 	if len(layers) > 0 {
 		var err error
-		layerDeps, err = bicep.AnalyzeLayerDependencies(layers, u.projectConfig.Path, u.env)
+		layerDeps, err = bicep.AnalyzeLayerDependencies(layers, u.projectConfig.Path)
 		if err != nil {
 			return nil, fmt.Errorf("analyzing layer dependencies: %w", err)
 		}

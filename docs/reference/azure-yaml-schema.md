@@ -74,7 +74,7 @@ hooks:
 
 Available hook points (each supports `pre` and `post` prefixes):
 
-- **Command hooks (project-level):** `provision`, `deploy`, `down`, `up`, `restore`, `package`, `infracreate`, `infradelete`, `publish`
+- **Command hooks (project-level):** `build`, `deploy`, `down`, `package`, `provision`, `publish`, `restore`, `up`
 - **Service lifecycle hooks (service-level):** `restore`, `build`, `package`, `publish`, `deploy`
 
 For example, `preprovision` runs before provisioning, `postdeploy` runs after deployment. Service-level hooks are defined under a service's `hooks` section in `azure.yaml` and apply only to that service.

@@ -363,10 +363,24 @@ func (da *DeployAction) deployServicesGraph(
 		},
 		OnStepDone: func(stepName string, err error) {
 			if err != nil {
-				// Extract service name from any step type and mark as failed.
+				// Classify terminal state: skipped (dependency failure or
+				// FailFast cascade) and parent-cancellation both surface via
+				// OnStepDone with a non-nil error, but they are not service
+				// failures and should not render as "Failed" in the progress
+				// UI.
+				phase := phaseFailed
+				detail := err.Error()
+				switch {
+				case exegraph.IsStepSkipped(err):
+					phase = phaseSkipped
+					detail = ""
+				case errors.Is(err, context.Canceled):
+					phase = phaseSkipped
+					detail = "canceled"
+				}
 				for _, prefix := range []string{"deploy-", "publish-", "package-"} {
 					if svc, ok := strings.CutPrefix(stepName, prefix); ok {
-						da.updateProgress(svc, phaseFailed, err.Error())
+						da.updateProgress(svc, phase, detail)
 						return
 					}
 				}

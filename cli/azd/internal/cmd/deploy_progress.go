@@ -32,6 +32,7 @@ const (
 	phaseDeploying deployPhase = "Deploying"
 	phaseDone      deployPhase = "Done"
 	phaseFailed    deployPhase = "Failed"
+	phaseSkipped   deployPhase = "Skipped"
 )
 
 // serviceStatus tracks one service's deployment progress.
@@ -104,7 +105,7 @@ func (t *deployProgressTracker) Update(
 	if svc.startedAt.IsZero() && phase != phaseWaiting {
 		svc.startedAt = time.Now()
 	}
-	if phase == phaseDone || phase == phaseFailed {
+	if phase == phaseDone || phase == phaseFailed || phase == phaseSkipped {
 		svc.endedAt = time.Now()
 	}
 
@@ -291,6 +292,8 @@ func phaseIcon(phase deployPhase) string {
 		return "●"
 	case phaseFailed:
 		return "✗"
+	case phaseSkipped:
+		return "⊘"
 	default:
 		return " "
 	}

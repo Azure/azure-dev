@@ -289,7 +289,8 @@ var modulePattern = regexp.MustCompile(`(?m)module\s+\w+\s+'([^']+)'`)
 // buildCacheKey computes a SHA-256 digest over the Bicep file's content, its matching
 // .bicepparam file (when present), and all recursively referenced local module files.
 // Registry modules (br: and ts: prefixes) are ignored since they are externally versioned.
-// Returns ("", nil) to signal a cache miss when any referenced module file cannot be read.
+// Returns a non-nil error when any referenced module file cannot be read; the caller
+// (Build) treats any such error as a cache miss and falls through to a live build.
 func (cli *Cli) buildCacheKey(file string) (string, error) {
 	h := sha256.New()
 	visited := make(map[string]bool)

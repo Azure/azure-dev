@@ -144,6 +144,7 @@ func TestPhaseIcons(t *testing.T) {
 		{phaseDeploying, "◐"},
 		{phaseDone, "●"},
 		{phaseFailed, "✗"},
+		{phaseSkipped, "⊘"},
 	}
 	for _, tt := range tests {
 		assert.Equal(t, tt.icon, phaseIcon(tt.phase), "icon for %s", tt.phase)

@@ -284,6 +284,8 @@ func classifySentinel(err error) string {
 		return "internal.not_git_repo"
 	case errors.Is(err, azapi.ErrPreviewNotSupported):
 		return "internal.preview_not_supported"
+	case errors.Is(err, azapi.ErrCancelNotSupported):
+		return "internal.cancel_not_supported"
 	case errors.Is(err, provisioning.ErrBindMountOperationDisabled):
 		return "internal.bind_mount_disabled"
 	case errors.Is(err, provisioning.ErrDeploymentInterruptedLeaveRunning):

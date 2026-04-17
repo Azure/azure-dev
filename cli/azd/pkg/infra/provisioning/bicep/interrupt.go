@@ -175,16 +175,31 @@ func (p *BicepProvider) cancelAndAwaitTerminal(
 	defer cancelReqDone()
 
 	if err := deployment.Cancel(cancelReqCtx); err != nil {
-		p.console.StopSpinner(ctx, "Cancel request failed", input.StepFailed)
-		// Try to determine whether the deployment is already in a terminal
-		// state — if so, this is "too late" rather than a real failure.
-		if state, getErr := deployment.Get(context.WithoutCancel(ctx)); getErr == nil &&
-			isTerminalProvisioningState(state.ProvisioningState) {
+		// Some providers (e.g. Deployment Stacks) do not support per-deployment
+		// cancel. Surface that as the safer "leave running" outcome rather
+		// than a cancel failure so the user gets consistent UX/telemetry with
+		// the documented provider behavior.
+		if errors.Is(err, azapi.ErrCancelNotSupported) {
+			p.console.StopSpinner(ctx, "Cancel is not supported for this deployment kind", input.StepWarning)
+			if portalUrl != "" {
+				p.console.Message(ctx,
+					output.WithHighLightFormat(
+						"The Azure deployment will continue running. Track it here:\n  %s",
+						portalUrl))
+			}
 			return interruptOutcome{
-				err:            provisioning.ErrDeploymentCancelTooLate,
-				telemetryValue: "cancel_too_late",
+				err:            provisioning.ErrDeploymentInterruptedLeaveRunning,
+				telemetryValue: "leave_running",
 			}
 		}
+		// If the deployment is already in a terminal state, route through
+		// the same terminal-outcome reporter so the user sees consistent
+		// messaging (including the portal URL).
+		if state, getErr := deployment.Get(context.WithoutCancel(ctx)); getErr == nil &&
+			isTerminalProvisioningState(state.ProvisioningState) {
+			return terminalToOutcome(state.ProvisioningState, portalUrl, p, ctx)
+		}
+		p.console.StopSpinner(ctx, "Cancel request failed", input.StepFailed)
 		log.Printf("interrupt handler: cancel request failed: %v", err)
 		if portalUrl != "" {
 			p.console.Message(ctx,
@@ -252,6 +267,11 @@ func terminalToOutcome(
 	switch state {
 	case azapi.DeploymentProvisioningStateCanceled:
 		p.console.StopSpinner(ctx, "Deployment cancelled", input.StepDone)
+		if portalUrl != "" {
+			p.console.Message(ctx,
+				output.WithHighLightFormat(
+					"Cancelled deployment is recorded in the portal:\n  %s", portalUrl))
+		}
 		return interruptOutcome{
 			err:            provisioning.ErrDeploymentCanceledByUser,
 			telemetryValue: "canceled",

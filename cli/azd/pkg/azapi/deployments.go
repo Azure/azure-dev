@@ -32,6 +32,11 @@ const (
 
 var ErrPreviewNotSupported = errors.New("preview not supported")
 
+// ErrCancelNotSupported indicates that the deployment provider does not support
+// cancelling an in-flight deployment (e.g. deployment stacks). Callers can use
+// errors.Is to detect this case and fall back to "leave running" behavior.
+var ErrCancelNotSupported = errors.New("cancel not supported for this deployment kind")
+
 const emptySubscriptionArmTemplate = `{
 	"$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
 	"contentVersion": "1.0.0.0",

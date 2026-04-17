@@ -769,7 +769,8 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 
 	deployCtx, interruptCh, interruptCleanup := p.installDeploymentInterruptHandler(
 		ctx, deployment, cancelProgress)
-	defer interruptCleanup()
+	cleanupOnce := sync.OnceFunc(interruptCleanup)
+	defer cleanupOnce()
 
 	deployResult, err := p.deployModule(
 		deployCtx,
@@ -779,6 +780,10 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 		deploymentTags,
 		optionsMap,
 	)
+	// Tear the handler down immediately so a Ctrl+C arriving after the
+	// deploy call returns doesn't briefly resurface the cancel/leave prompt
+	// over post-processing output.
+	cleanupOnce()
 
 	// Drain the interrupt outcome (if any) before deciding what to return.
 	// We use a non-blocking read so the normal (non-interrupted) path is

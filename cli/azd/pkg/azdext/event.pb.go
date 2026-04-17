@@ -415,7 +415,9 @@ type ProjectHandlerStatus struct {
 	// Status such as "running", "completed", "failed", etc.
 	Status string `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`
 	// Optional message providing further details.
-	Message       string `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
+	Message string `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
+	// Optional structured error details (set when status is "failed").
+	Error         *ExtensionError `protobuf:"bytes,4,opt,name=error,proto3" json:"error,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -471,6 +473,13 @@ func (x *ProjectHandlerStatus) GetMessage() string {
 	return ""
 }
 
+func (x *ProjectHandlerStatus) GetError() *ExtensionError {
+	if x != nil {
+		return x.Error
+	}
+	return nil
+}
+
 // Client sends status updates for service events
 type ServiceHandlerStatus struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -481,7 +490,9 @@ type ServiceHandlerStatus struct {
 	// Status such as "running", "completed", "failed", etc.
 	Status string `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
 	// Optional message providing further details.
-	Message       string `protobuf:"bytes,4,opt,name=message,proto3" json:"message,omitempty"`
+	Message string `protobuf:"bytes,4,opt,name=message,proto3" json:"message,omitempty"`
+	// Optional structured error details (set when status is "failed").
+	Error         *ExtensionError `protobuf:"bytes,5,opt,name=error,proto3" json:"error,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -544,11 +555,18 @@ func (x *ServiceHandlerStatus) GetMessage() string {
 	return ""
 }
 
+func (x *ServiceHandlerStatus) GetError() *ExtensionError {
+	if x != nil {
+		return x.Error
+	}
+	return nil
+}
+
 var File_event_proto protoreflect.FileDescriptor
 
 const file_event_proto_rawDesc = "" +
 	"\n" +
-	"\vevent.proto\x12\x06azdext\x1a\fmodels.proto\"\xa8\x04\n" +
+	"\vevent.proto\x12\x06azdext\x1a\fmodels.proto\x1a\ferrors.proto\"\xa8\x04\n" +
 	"\fEventMessage\x12W\n" +
 	"\x17subscribe_project_event\x18\x01 \x01(\v2\x1d.azdext.SubscribeProjectEventH\x00R\x15subscribeProjectEvent\x12T\n" +
 	"\x16invoke_project_handler\x18\x02 \x01(\v2\x1c.azdext.InvokeProjectHandlerH\x00R\x14invokeProjectHandler\x12T\n" +
@@ -574,18 +592,20 @@ const file_event_proto_rawDesc = "" +
 	"event_name\x18\x01 \x01(\tR\teventName\x12/\n" +
 	"\aproject\x18\x02 \x01(\v2\x15.azdext.ProjectConfigR\aproject\x12/\n" +
 	"\aservice\x18\x03 \x01(\v2\x15.azdext.ServiceConfigR\aservice\x12?\n" +
-	"\x0fservice_context\x18\x04 \x01(\v2\x16.azdext.ServiceContextR\x0eserviceContext\"g\n" +
+	"\x0fservice_context\x18\x04 \x01(\v2\x16.azdext.ServiceContextR\x0eserviceContext\"\x95\x01\n" +
 	"\x14ProjectHandlerStatus\x12\x1d\n" +
 	"\n" +
 	"event_name\x18\x01 \x01(\tR\teventName\x12\x16\n" +
 	"\x06status\x18\x02 \x01(\tR\x06status\x12\x18\n" +
-	"\amessage\x18\x03 \x01(\tR\amessage\"\x8a\x01\n" +
+	"\amessage\x18\x03 \x01(\tR\amessage\x12,\n" +
+	"\x05error\x18\x04 \x01(\v2\x16.azdext.ExtensionErrorR\x05error\"\xb8\x01\n" +
 	"\x14ServiceHandlerStatus\x12\x1d\n" +
 	"\n" +
 	"event_name\x18\x01 \x01(\tR\teventName\x12!\n" +
 	"\fservice_name\x18\x02 \x01(\tR\vserviceName\x12\x16\n" +
 	"\x06status\x18\x03 \x01(\tR\x06status\x12\x18\n" +
-	"\amessage\x18\x04 \x01(\tR\amessage2M\n" +
+	"\amessage\x18\x04 \x01(\tR\amessage\x12,\n" +
+	"\x05error\x18\x05 \x01(\v2\x16.azdext.ExtensionErrorR\x05error2M\n" +
 	"\fEventService\x12=\n" +
 	"\vEventStream\x12\x14.azdext.EventMessage\x1a\x14.azdext.EventMessage(\x010\x01B/Z-github.com/azure/azure-dev/cli/azd/pkg/azdextb\x06proto3"
 
@@ -613,6 +633,7 @@ var file_event_proto_goTypes = []any{
 	(*ProjectConfig)(nil),         // 7: azdext.ProjectConfig
 	(*ServiceConfig)(nil),         // 8: azdext.ServiceConfig
 	(*ServiceContext)(nil),        // 9: azdext.ServiceContext
+	(*ExtensionError)(nil),        // 10: azdext.ExtensionError
 }
 var file_event_proto_depIdxs = []int32{
 	1,  // 0: azdext.EventMessage.subscribe_project_event:type_name -> azdext.SubscribeProjectEvent
@@ -625,13 +646,15 @@ var file_event_proto_depIdxs = []int32{
 	7,  // 7: azdext.InvokeServiceHandler.project:type_name -> azdext.ProjectConfig
 	8,  // 8: azdext.InvokeServiceHandler.service:type_name -> azdext.ServiceConfig
 	9,  // 9: azdext.InvokeServiceHandler.service_context:type_name -> azdext.ServiceContext
-	0,  // 10: azdext.EventService.EventStream:input_type -> azdext.EventMessage
-	0,  // 11: azdext.EventService.EventStream:output_type -> azdext.EventMessage
-	11, // [11:12] is the sub-list for method output_type
-	10, // [10:11] is the sub-list for method input_type
-	10, // [10:10] is the sub-list for extension type_name
-	10, // [10:10] is the sub-list for extension extendee
-	0,  // [0:10] is the sub-list for field type_name
+	10, // 10: azdext.ProjectHandlerStatus.error:type_name -> azdext.ExtensionError
+	10, // 11: azdext.ServiceHandlerStatus.error:type_name -> azdext.ExtensionError
+	0,  // 12: azdext.EventService.EventStream:input_type -> azdext.EventMessage
+	0,  // 13: azdext.EventService.EventStream:output_type -> azdext.EventMessage
+	13, // [13:14] is the sub-list for method output_type
+	12, // [12:13] is the sub-list for method input_type
+	12, // [12:12] is the sub-list for extension type_name
+	12, // [12:12] is the sub-list for extension extendee
+	0,  // [0:12] is the sub-list for field type_name
 }
 
 func init() { file_event_proto_init() }
@@ -640,6 +663,7 @@ func file_event_proto_init() {
 		return
 	}
 	file_models_proto_init()
+	file_errors_proto_init()
 	file_event_proto_msgTypes[0].OneofWrappers = []any{
 		(*EventMessage_SubscribeProjectEvent)(nil),
 		(*EventMessage_InvokeProjectHandler)(nil),

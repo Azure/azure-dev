@@ -179,6 +179,9 @@ func (s *eventService) createProjectEventHandler(
 			}
 
 			if statusMsg.ProjectHandlerStatus.Status == "failed" {
+				if extErr := azdext.UnwrapError(statusMsg.ProjectHandlerStatus.Error); extErr != nil {
+					return extErr
+				}
 				return fmt.Errorf(
 					"extension %s project hook %s failed: %s",
 					extension.Id,
@@ -297,6 +300,9 @@ func (s *eventService) createServiceEventHandler(
 			}
 
 			if statusMsg.ServiceHandlerStatus.Status == "failed" {
+				if extErr := azdext.UnwrapError(statusMsg.ServiceHandlerStatus.Error); extErr != nil {
+					return extErr
+				}
 				return fmt.Errorf(
 					"extension %s service hook %s.%s failed: %s",
 					extension.Id,

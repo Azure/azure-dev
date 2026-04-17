@@ -7,6 +7,7 @@ package azdext;
 option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext";
 
 import "models.proto";
+import "errors.proto";
 
 // EventService defines methods for event subscription, invocation, and status updates.
 // Clients can subscribe to events and receive notifications via a bidirectional stream.
@@ -69,6 +70,8 @@ message ProjectHandlerStatus {
   string status = 2;
   // Optional message providing further details.
   string message = 3;
+  // Optional structured error details (set when status is "failed").
+  ExtensionError error = 4;
 }
 
 // Client sends status updates for service events
@@ -81,4 +84,6 @@ message ServiceHandlerStatus {
   string status = 3;
   // Optional message providing further details.
   string message = 4;
+  // Optional structured error details (set when status is "failed").
+  ExtensionError error = 5;
 }

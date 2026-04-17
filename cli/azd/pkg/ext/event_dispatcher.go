@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
 type Event string
@@ -127,6 +128,13 @@ func (ed *EventDispatcher[T]) RaiseEvent(ctx context.Context, name Event, eventA
 
 	// Build final error string if their are any failures
 	if len(handlerErrors) > 0 {
+		// Single error: preserve the original error type for unwrapping.
+		// This lets structured errors (e.g. LocalError, ErrorWithSuggestion)
+		// flow through to middleware without losing type information.
+		if len(handlerErrors) == 1 {
+			return handlerErrors[0]
+		}
+
 		// For multiple errors, join them as before
 		lines := make([]string, len(handlerErrors))
 		// If any of the errors have a suggestion, collect them
@@ -136,6 +144,9 @@ func (ed *EventDispatcher[T]) RaiseEvent(ctx context.Context, name Event, eventA
 			if errWithSuggestion, ok := errors.AsType[*internal.ErrorWithSuggestion](err); ok &&
 				errWithSuggestion.Suggestion != "" {
 				suggestions = append(suggestions, errWithSuggestion.Suggestion)
+			}
+			if s := azdext.ErrorSuggestion(err); s != "" {
+				suggestions = append(suggestions, s)
 			}
 		}
 		combinedErr := errors.New(strings.Join(lines, ","))

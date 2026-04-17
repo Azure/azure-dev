@@ -226,6 +226,25 @@ type DeploymentService interface {
 		options map[string]any,
 		progress *async.Progress[DeleteDeploymentProgress],
 	) error
+	// CancelSubscriptionDeployment requests Azure to cancel a running
+	// subscription-scoped deployment. The call returns immediately after the
+	// cancel request is accepted; callers should poll the deployment to observe
+	// the terminal state (Canceled, Failed, or Succeeded).
+	CancelSubscriptionDeployment(
+		ctx context.Context,
+		subscriptionId string,
+		deploymentName string,
+	) error
+	// CancelResourceGroupDeployment requests Azure to cancel a running
+	// resource-group-scoped deployment. The call returns immediately after the
+	// cancel request is accepted; callers should poll the deployment to observe
+	// the terminal state (Canceled, Failed, or Succeeded).
+	CancelResourceGroupDeployment(
+		ctx context.Context,
+		subscriptionId string,
+		resourceGroupName string,
+		deploymentName string,
+	) error
 }
 
 type DeleteResourceState string

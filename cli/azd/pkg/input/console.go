@@ -985,12 +985,32 @@ func watchTerminalInterrupt(c *AskerConsole) {
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, os.Interrupt)
 	go func() {
-		<-signalChan
+		for range signalChan {
+			handler := currentInterruptHandler()
+			if handler == nil {
+				// Default behavior: stop the spinner and exit.
+				_ = c.spinner.Stop()
+				os.Exit(1)
+			}
 
-		// unhide the cursor if applicable
-		_ = c.spinner.Stop()
+			if !tryStartInterruptHandler() {
+				// A handler is already processing a previous Ctrl+C. Per UX
+				// design, ignore additional signals until the user responds
+				// to the in-progress prompt.
+				continue
+			}
 
-		os.Exit(1)
+			go func(h InterruptHandler) {
+				defer finishInterruptHandler()
+				handled := h()
+				if !handled {
+					// Handler declined to take ownership of shutdown — fall
+					// back to default behavior.
+					_ = c.spinner.Stop()
+					os.Exit(1)
+				}
+			}(handler)
+		}
 	}()
 }
 

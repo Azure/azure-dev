@@ -660,6 +660,28 @@ func (d *StackDeployments) CalculateTemplateHash(
 	return d.standardDeployments.CalculateTemplateHash(ctx, subscriptionId, template)
 }
 
+// CancelSubscriptionDeployment is not supported for deployment stacks. The
+// deployment stacks ARM API does not expose a per-stack cancel operation;
+// stopping a stack mid-deployment requires deleting the stack itself.
+func (d *StackDeployments) CancelSubscriptionDeployment(
+	ctx context.Context,
+	subscriptionId string,
+	deploymentName string,
+) error {
+	return fmt.Errorf("cancel is not supported for deployment stacks")
+}
+
+// CancelResourceGroupDeployment is not supported for deployment stacks. See
+// CancelSubscriptionDeployment for details.
+func (d *StackDeployments) CancelResourceGroupDeployment(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroupName string,
+	deploymentName string,
+) error {
+	return fmt.Errorf("cancel is not supported for deployment stacks")
+}
+
 func (d *StackDeployments) createClient(ctx context.Context, subscriptionId string) (*armdeploymentstacks.Client, error) {
 	credential, err := d.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
 	if err != nil {

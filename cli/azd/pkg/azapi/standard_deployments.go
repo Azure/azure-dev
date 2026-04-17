@@ -551,6 +551,47 @@ func (ds *StandardDeployments) DeleteResourceGroupDeployment(
 	return nil
 }
 
+// CancelSubscriptionDeployment requests Azure to cancel a running
+// subscription-scoped deployment. The ARM Cancel call returns immediately once
+// the request is accepted; callers should poll the deployment to observe the
+// terminal state (Canceled, Failed, or Succeeded).
+func (ds *StandardDeployments) CancelSubscriptionDeployment(
+	ctx context.Context,
+	subscriptionId string,
+	deploymentName string,
+) error {
+	deploymentClient, err := ds.createDeploymentsClient(ctx, subscriptionId)
+	if err != nil {
+		return fmt.Errorf("creating deployments client: %w", err)
+	}
+
+	if _, err := deploymentClient.CancelAtSubscriptionScope(ctx, deploymentName, nil); err != nil {
+		return fmt.Errorf("cancelling subscription deployment: %w", err)
+	}
+	return nil
+}
+
+// CancelResourceGroupDeployment requests Azure to cancel a running
+// resource-group-scoped deployment. The ARM Cancel call returns immediately
+// once the request is accepted; callers should poll the deployment to observe
+// the terminal state (Canceled, Failed, or Succeeded).
+func (ds *StandardDeployments) CancelResourceGroupDeployment(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroupName string,
+	deploymentName string,
+) error {
+	deploymentClient, err := ds.createDeploymentsClient(ctx, subscriptionId)
+	if err != nil {
+		return fmt.Errorf("creating deployments client: %w", err)
+	}
+
+	if _, err := deploymentClient.Cancel(ctx, resourceGroupName, deploymentName, nil); err != nil {
+		return fmt.Errorf("cancelling resource group deployment: %w", err)
+	}
+	return nil
+}
+
 func (ds *StandardDeployments) WhatIfDeployToSubscription(
 	ctx context.Context,
 	subscriptionId string,

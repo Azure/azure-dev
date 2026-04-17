@@ -767,17 +767,36 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 	// Start the deployment
 	p.console.ShowSpinner(ctx, "Creating/Updating resources", input.Step)
 
+	deployCtx, interruptCh, interruptCleanup := p.installDeploymentInterruptHandler(
+		ctx, deployment, cancelProgress)
+	defer interruptCleanup()
+
 	deployResult, err := p.deployModule(
-		ctx,
+		deployCtx,
 		deployment,
 		planned.RawArmTemplate,
 		planned.Parameters,
 		deploymentTags,
 		optionsMap,
 	)
+
+	// Drain the interrupt outcome (if any) before deciding what to return.
+	// We use a non-blocking read so the normal (non-interrupted) path is
+	// unaffected.
+	select {
+	case outcome := <-interruptCh:
+		tracing.SetUsageAttributes(
+			fields.ProvisionCancellationKey.String(outcome.telemetryValue))
+		return nil, applyInterruptOutcome(outcome, err)
+	default:
+	}
+
 	if err != nil {
+		tracing.SetUsageAttributes(fields.ProvisionCancellationKey.String("none"))
 		return nil, err
 	}
+
+	tracing.SetUsageAttributes(fields.ProvisionCancellationKey.String("none"))
 
 	result.Outputs = provisioning.OutputParametersFromArmOutputs(
 		planned.Template.Outputs,

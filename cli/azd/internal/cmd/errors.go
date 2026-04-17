@@ -286,6 +286,14 @@ func classifySentinel(err error) string {
 		return "internal.preview_not_supported"
 	case errors.Is(err, provisioning.ErrBindMountOperationDisabled):
 		return "internal.bind_mount_disabled"
+	case errors.Is(err, provisioning.ErrDeploymentInterruptedLeaveRunning):
+		return "user.canceled.leave_running"
+	case errors.Is(err, provisioning.ErrDeploymentCanceledByUser):
+		return "user.canceled.deployment_canceled"
+	case errors.Is(err, provisioning.ErrDeploymentCancelTimeout):
+		return "user.canceled.cancel_timed_out"
+	case errors.Is(err, provisioning.ErrDeploymentCancelTooLate):
+		return "user.canceled.cancel_too_late"
 	case errors.Is(err, update.ErrNeedsElevation):
 		return "update.elevationRequired"
 	case errors.Is(err, pipeline.ErrRemoteHostIsNotAzDo):

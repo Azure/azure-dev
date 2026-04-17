@@ -54,6 +54,11 @@ type Deployment interface {
 		options map[string]any,
 		progress *async.Progress[azapi.DeleteDeploymentProgress],
 	) error
+	// Cancel requests Azure to cancel an in-flight deployment. Returns nil if
+	// the cancel request is accepted (the deployment will transition to the
+	// Canceling/Canceled state asynchronously). Callers should poll Get() to
+	// observe the terminal state.
+	Cancel(ctx context.Context) error
 	// Deploy a given template with a set of parameters.
 	DeployPreview(
 		ctx context.Context,
@@ -112,6 +117,12 @@ func (s *ResourceGroupDeployment) Delete(
 		options,
 		progress,
 	)
+}
+
+// Cancel requests Azure to cancel an in-flight resource-group-scoped deployment.
+func (s *ResourceGroupDeployment) Cancel(ctx context.Context) error {
+	return s.deploymentService.CancelResourceGroupDeployment(
+		ctx, s.subscriptionId, s.resourceGroupName, s.name)
 }
 
 func (s *ResourceGroupDeployment) DeployPreview(
@@ -322,6 +333,11 @@ func (s *SubscriptionDeployment) Delete(
 	progress *async.Progress[azapi.DeleteDeploymentProgress],
 ) error {
 	return s.deploymentService.DeleteSubscriptionDeployment(ctx, s.subscriptionId, s.name, options, progress)
+}
+
+// Cancel requests Azure to cancel an in-flight subscription-scoped deployment.
+func (s *SubscriptionDeployment) Cancel(ctx context.Context) error {
+	return s.deploymentService.CancelSubscriptionDeployment(ctx, s.subscriptionId, s.name)
 }
 
 // Deploy a given template with a set of parameters.

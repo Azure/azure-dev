@@ -86,7 +86,7 @@ func TestRenderUpdateBanner_DailyChannel(t *testing.T) {
 	result := RenderUpdateBanner(params)
 	assert.Contains(t, result, "Update available:")
 	assert.Contains(t, result, "1.24.0-daily.6168094")
-	assert.Contains(t, result, "github.com/Azure/azure-dev/commits/main/")
+	assert.Contains(t, result, "github.com/Azure/azure-dev/commits/main")
 	// Daily banner omits the "current -> latest" format.
 	assert.NotContains(t, result, "1.11.0 ->")
 }

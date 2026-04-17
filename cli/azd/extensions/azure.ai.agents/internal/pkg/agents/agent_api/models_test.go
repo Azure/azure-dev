@@ -264,6 +264,20 @@ func TestAgentVersionObject_RoundTrip(t *testing.T) {
 		Description: new("third version"),
 		Metadata:    map[string]string{"stage": "prod"},
 		CreatedAt:   1710000000,
+		Status:      "active",
+		InstanceIdentity: &AgentIdentityInfo{
+			PrincipalID: "inst-principal-id",
+			ClientID:    "inst-client-id",
+		},
+		Blueprint: &BlueprintInfo{
+			PrincipalID: "bp-principal-id",
+			ClientID:    "bp-client-id",
+		},
+		BlueprintReference: &BlueprintReference{
+			Type:        "ManagedAgentIdentityBlueprint",
+			BlueprintID: "my-agent-abc12",
+		},
+		AgentGUID: "abc12345-0000-1111-2222-333344445555",
 	}
 
 	data, err := json.Marshal(original)
@@ -272,7 +286,11 @@ func TestAgentVersionObject_RoundTrip(t *testing.T) {
 	}
 
 	s := string(data)
-	for _, field := range []string{`"object"`, `"id"`, `"version"`, `"created_at"`} {
+	for _, field := range []string{
+		`"object"`, `"id"`, `"version"`, `"created_at"`,
+		`"status"`, `"instance_identity"`, `"blueprint"`,
+		`"blueprint_reference"`, `"agent_guid"`,
+	} {
 		if !strings.Contains(s, field) {
 			t.Errorf("expected JSON to contain %s", field)
 		}
@@ -291,6 +309,21 @@ func TestAgentVersionObject_RoundTrip(t *testing.T) {
 	}
 	if got.Metadata["stage"] != "prod" {
 		t.Errorf("Metadata[stage] = %q, want %q", got.Metadata["stage"], "prod")
+	}
+	if got.Status != "active" {
+		t.Errorf("Status = %q, want %q", got.Status, "active")
+	}
+	if got.AgentGUID != "abc12345-0000-1111-2222-333344445555" {
+		t.Errorf("AgentGUID = %q, want %q", got.AgentGUID, "abc12345-0000-1111-2222-333344445555")
+	}
+	if got.InstanceIdentity == nil || got.InstanceIdentity.PrincipalID != "inst-principal-id" {
+		t.Errorf("InstanceIdentity.PrincipalID mismatch")
+	}
+	if got.Blueprint == nil || got.Blueprint.PrincipalID != "bp-principal-id" {
+		t.Errorf("Blueprint.PrincipalID mismatch")
+	}
+	if got.BlueprintReference == nil || got.BlueprintReference.BlueprintID != "my-agent-abc12" {
+		t.Errorf("BlueprintReference.BlueprintID mismatch")
 	}
 }
 

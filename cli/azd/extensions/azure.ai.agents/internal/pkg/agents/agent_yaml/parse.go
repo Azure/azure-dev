@@ -11,6 +11,8 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"go.yaml.in/yaml/v3"
+
+	"azureaiagent/internal/exterrors"
 )
 
 // LoadAndValidateAgentManifest parses YAML content and validates it as an AgentManifest
@@ -18,7 +20,13 @@ import (
 func LoadAndValidateAgentManifest(manifestYamlContent []byte) (*AgentManifest, error) {
 	var manifest AgentManifest
 	if err := yaml.Unmarshal(manifestYamlContent, &manifest); err != nil {
-		return nil, fmt.Errorf("YAML content does not conform to AgentManifest format: %w", err)
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			"YAML content does not conform to AgentManifest format",
+			"Ensure the agent manifest is valid YAML and conforms to the AgentManifest schema. "+
+				"An easy first check is whether the YAML contains a 'template' field. "+
+				"See https://github.com/microsoft/AgentSchema for the expected format.",
+		)
 	}
 
 	agentDef, err := ExtractAgentDefinition(manifestYamlContent)

@@ -1,5 +1,15 @@
 # Release History
 
+## 0.1.24-preview (2026-04-17)
+
+- [[#7765]](https://github.com/Azure/azure-dev/pull/7765) Improve invalid manifest error messaging to guide users to check for a required `template` field.
+- [[#7763]](https://github.com/Azure/azure-dev/pull/7763) Fix developer RBAC pre-flight gaps by auto-assigning Azure AI User when missing, adding an explicit role-assignment-write check, and handling ABAC-enabled ACR registries.
+- [[#7747]](https://github.com/Azure/azure-dev/pull/7747) Update agent identity RBAC resolution to read identity information from the agent version instead of relying on graph lookup.
+
+### Breaking Changes
+
+- [[#7741]](https://github.com/Azure/azure-dev/pull/7741) Remove `-e` shorthand for `--environment` on `azd ai agent init`; use `--environment` instead to avoid collision with azd global `-e/--environment`.
+
 ## 0.1.23-preview (2026-04-16)
 
 - [[#7753]](https://github.com/Azure/azure-dev/pull/7753) Fix `azd ai agent init` to pass the current directory as a positional argument to `azd init`, resolving failures caused by a missing `cwd` assumption in the underlying azd call.

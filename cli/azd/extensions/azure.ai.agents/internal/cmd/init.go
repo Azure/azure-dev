@@ -515,7 +515,7 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 	cmd.Flags().StringVarP(&flags.src, "src", "s", "",
 		"Directory to download the agent definition to (defaults to 'src/<agent-id>')")
 
-	cmd.Flags().StringVarP(&flags.env, "environment", "e", "", "The name of the azd environment to use.")
+	cmd.Flags().StringVar(&flags.env, "environment", "", "The name of the azd environment to use.")
 
 	cmd.Flags().StringSliceVar(&flags.protocols, "protocol", nil,
 		"Protocols supported by the agent (e.g., 'responses', 'invocations'). Can be specified multiple times.")

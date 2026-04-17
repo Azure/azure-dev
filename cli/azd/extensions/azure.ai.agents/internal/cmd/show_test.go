@@ -97,6 +97,20 @@ func TestPrintAgentVersionJSON_Format(t *testing.T) {
 		Description: &desc,
 		Metadata:    map[string]string{"env": "prod"},
 		CreatedAt:   1735689600,
+		Status:      "active",
+		InstanceIdentity: &agent_api.AgentIdentityInfo{
+			PrincipalID: "inst-pid",
+			ClientID:    "inst-cid",
+		},
+		Blueprint: &agent_api.BlueprintInfo{
+			PrincipalID: "bp-pid",
+			ClientID:    "bp-cid",
+		},
+		BlueprintReference: &agent_api.BlueprintReference{
+			Type:        "ManagedAgentIdentityBlueprint",
+			BlueprintID: "test-agent-abc12",
+		},
+		AgentGUID: "guid-1234",
 	}
 
 	jsonBytes, err := json.MarshalIndent(version, "", "  ")
@@ -111,8 +125,18 @@ func TestPrintAgentVersionJSON_Format(t *testing.T) {
 	assert.Equal(t, "test-agent", result["name"])
 	assert.Equal(t, "2", result["version"])
 	assert.Equal(t, "A test agent", result["description"])
+	assert.Equal(t, "active", result["status"])
+	assert.Equal(t, "guid-1234", result["agent_guid"])
 	metadata := result["metadata"].(map[string]any)
 	assert.Equal(t, "prod", metadata["env"])
+	instanceIdentity := result["instance_identity"].(map[string]any)
+	assert.Equal(t, "inst-pid", instanceIdentity["principal_id"])
+	assert.Equal(t, "inst-cid", instanceIdentity["client_id"])
+	blueprint := result["blueprint"].(map[string]any)
+	assert.Equal(t, "bp-pid", blueprint["principal_id"])
+	blueprintRef := result["blueprint_reference"].(map[string]any)
+	assert.Equal(t, "ManagedAgentIdentityBlueprint", blueprintRef["type"])
+	assert.Equal(t, "test-agent-abc12", blueprintRef["blueprint_id"])
 }
 
 func TestPrintAgentVersionTable(t *testing.T) {
@@ -125,6 +149,20 @@ func TestPrintAgentVersionTable(t *testing.T) {
 		Description: &desc,
 		Metadata:    map[string]string{"env": "staging"},
 		CreatedAt:   1735689600,
+		Status:      "active",
+		AgentGUID:   "guid-5678",
+		InstanceIdentity: &agent_api.AgentIdentityInfo{
+			PrincipalID: "inst-pid",
+			ClientID:    "inst-cid",
+		},
+		Blueprint: &agent_api.BlueprintInfo{
+			PrincipalID: "bp-pid",
+			ClientID:    "bp-cid",
+		},
+		BlueprintReference: &agent_api.BlueprintReference{
+			Type:        "ManagedAgentIdentityBlueprint",
+			BlueprintID: "my-agent-abc12",
+		},
 	}
 
 	err := printAgentVersionTable(version)

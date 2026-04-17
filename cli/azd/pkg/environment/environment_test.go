@@ -5,8 +5,10 @@ package environment
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -312,4 +314,33 @@ func TestServicePropertyRoundTripWithSpaces(t *testing.T) {
 	// Verify no space-containing key exists
 	rawBadVal := env.Getenv("SERVICE_API AND FRONTEND_IMAGE_NAME")
 	require.Empty(t, rawBadVal)
+}
+
+func TestEnvironment_ConcurrentDotenvSet(t *testing.T) {
+	// Regression: parallel service deploys/hooks all writing SERVICE_<svc>_*
+	// keys against the same *Environment must not panic with "concurrent map
+	// writes" or lose updates. Without the internal mutex on Environment, this
+	// test panics under -race within the first few goroutines.
+	env := NewWithValues("test", nil)
+
+	const goroutines = 32
+	const writesPerG = 200
+
+	var wg sync.WaitGroup
+	for i := range goroutines {
+		wg.Go(func() {
+			for j := range writesPerG {
+				env.SetServiceProperty(fmt.Sprintf("svc%d", i), "KEY", fmt.Sprintf("v%d", j))
+				_ = env.GetServiceProperty(fmt.Sprintf("svc%d", i), "KEY")
+				_ = env.Dotenv()
+				_ = env.Environ()
+			}
+		})
+	}
+	wg.Wait()
+
+	for i := range goroutines {
+		got := env.GetServiceProperty(fmt.Sprintf("svc%d", i), "KEY")
+		require.Equal(t, fmt.Sprintf("v%d", writesPerG-1), got, "lost-update for svc%d", i)
+	}
 }

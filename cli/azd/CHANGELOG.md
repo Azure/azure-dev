@@ -8,7 +8,13 @@
 
 ### Bugs Fixed
 
+- [[#7776]](https://github.com/Azure/azure-dev/pull/7776) Fix `concurrent map writes` panics when running `azd up` or `azd deploy` against multi-service projects: `*environment.Environment` now serializes all `dotenv` map access with an internal `sync.RWMutex`, the environment manager serializes `Save`/`Reload` calls, the singleton `kubectl.Cli` and `kustomize.Cli` are concurrency-safe, and AKS service publish/deploy updates to `SERVICE_<name>_IMAGE_NAME`/`ENDPOINT_URL` are wrapped in a package-level mutex (mirroring the Container Apps pattern).
+
 ### Other Changes
+
+- [[#7776]](https://github.com/Azure/azure-dev/pull/7776) `azd up` now emits a single `"Provisioning and deploying (azd up)"` title and consolidated final message instead of the legacy `"Packaging services (azd package)"` / `"Provisioning Azure resources (azd provision)"` / `"Deploying services (azd deploy)"` banners and the `"Your up workflow to provision and deploy to Azure completed in …"` footer. CI/automation that grep-matches the legacy strings on stdout will need to update its expected output.
+- [[#7776]](https://github.com/Azure/azure-dev/pull/7776) `azd up` honors `AZD_DEPLOY_CONCURRENCY` as a fallback when `AZD_UP_CONCURRENCY` is unset, so existing deploy-tuning configurations carry over to the unified up workflow.
+- [[#7776]](https://github.com/Azure/azure-dev/pull/7776) `FailFast` semantics in the parallel scheduler: when a step fails, the scheduler cancels the run context to interrupt in-flight work, but steps that don't honor context cancellation (e.g., long-running ARM operations) will run to completion before the run returns. This is a behavior change versus the previous strictly-sequential `azd up`, which never started a later step after a prior failure.
 
 ## 1.24.2 (2026-04-24)
 

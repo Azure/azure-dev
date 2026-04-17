@@ -51,10 +51,16 @@ func (cli *Cli) CheckInstalled(ctx context.Context) error {
 	return nil
 }
 
-// WithCwd sets the working directory for the kustomize command
+// WithCwd returns a shallow copy of the Cli with the working directory set
+// to cwd. Returning a copy (rather than mutating the receiver) avoids a data
+// race when the kustomize Cli is shared as a singleton and multiple AKS
+// service deploys call WithCwd(svcA).Edit(...) / WithCwd(svcB).Edit(...) in
+// parallel — without the copy, both calls would see the last-written cwd and
+// `kustomize edit` would run in the wrong directory.
 func (cli *Cli) WithCwd(cwd string) *Cli {
-	cli.cwd = cwd
-	return cli
+	clone := *cli
+	clone.cwd = cwd
+	return &clone
 }
 
 // Edit runs the kustomize edit command with the specified args

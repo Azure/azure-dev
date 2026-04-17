@@ -2,10 +2,11 @@
 
 ## 0.1.24-preview (Unreleased)
 
+- [[#7209]](https://github.com/Azure/azure-dev/issues/7209) Improve `azd ai agent monitor` output: render each SSE log event as a single compact, color-coded line (`HH:MM:SS  <stream>  <message>`) with session-metadata events rendered as `session <state> (v<version>, last accessed: ...)`. Add `--utc` flag to display timestamps in UTC instead of local time, and `--raw` flag to preserve the previous raw SSE output.
+
 ### Breaking Changes
 
 - Removed `-e` shorthand for `--environment`; use `--environment` instead. This resolves a collision with the azd global `-e/--environment` flag.
-- [[#7209]](https://github.com/Azure/azure-dev/issues/7209) Improve `azd ai agent monitor` output: render each SSE log event as a single compact, color-coded line (`HH:MM:SS  <stream>  <message>`) with session-metadata events rendered as `session <state> (v<version>, last accessed: ...)`. Add `--utc` flag to display timestamps in UTC instead of local time, and `--raw` flag to preserve the previous raw SSE output.
 
 ## 0.1.23-preview (2026-04-16)
 

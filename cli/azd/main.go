@@ -262,29 +262,24 @@ func createDailyLogFile() (*os.File, error) {
 }
 
 // platformUpgradeHint returns the platform-specific update action for azd,
-// tailored to the given release channel. Only the script-based installers
-// (install-azd.sh / install-azd.ps1) distribute daily builds, so channel only
-// affects those paths. Package managers (winget/choco/brew) don't publish
-// daily builds — users on those paths are assumed to be on the stable channel.
+// tailored to the current OS, installer, and release channel.
 func platformUpgradeHint(channel update.Channel) update.UpdateHint {
-	installedBy := installer.InstalledBy()
+	return platformUpgradeHintFor(runtime.GOOS, installer.InstalledBy(), channel)
+}
+
+// platformUpgradeHintFor is the testable core of platformUpgradeHint. Only the
+// script-based installers (install-azd.sh / install-azd.ps1) distribute daily
+// builds, so channel only affects those paths. Package managers
+// (winget/choco/brew) don't publish daily builds — users on those paths are
+// assumed to be on the stable channel.
+func platformUpgradeHintFor(goos string, installedBy installer.InstallType, channel update.Channel) update.UpdateHint {
 	isDaily := channel == update.ChannelDaily
 
-	if runtime.GOOS == "windows" {
+	switch goos {
+	case "windows":
 		switch installedBy {
 		case installer.InstallTypePs:
-			var cmd string
-			if isDaily {
-				//nolint:lll
-				cmd = "powershell -ex AllSigned -c \"& ([scriptblock]::Create((Invoke-RestMethod 'https://aka.ms/install-azd.ps1'))) -Version 'daily'\""
-			} else {
-				//nolint:lll
-				cmd = "powershell -ex AllSigned -c \"Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression\""
-			}
-			return update.RunUpdateHint(
-				cmd,
-				update.WithDetails(scriptInstallerDetails("https://aka.ms/azd/upgrade/windows")),
-			)
+			return psInstallerHint(isDaily, "https://aka.ms/azd/upgrade/windows")
 		case installer.InstallTypeWinget:
 			return update.RunUpdateHint("winget upgrade Microsoft.Azd")
 		case installer.InstallTypeChoco:
@@ -292,39 +287,48 @@ func platformUpgradeHint(channel update.Channel) update.UpdateHint {
 		default:
 			return update.VisitUpdateHint("https://aka.ms/azd/upgrade/windows")
 		}
-	} else if runtime.GOOS == "linux" {
+	case "linux":
 		switch installedBy {
 		case installer.InstallTypeSh:
-			cmd := "curl -fsSL https://aka.ms/install-azd.sh | bash"
-			if isDaily {
-				cmd = "curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version daily"
-			}
-			return update.RunUpdateHint(
-				cmd,
-				update.WithDetails(scriptInstallerDetails("https://aka.ms/azd/upgrade/linux")),
-			)
+			return shInstallerHint(isDaily, "https://aka.ms/azd/upgrade/linux")
 		default:
 			return update.VisitUpdateHint("https://aka.ms/azd/upgrade/linux")
 		}
-	} else if runtime.GOOS == "darwin" {
+	case "darwin":
 		switch installedBy {
 		case installer.InstallTypeBrew:
 			return update.RunUpdateHint("brew uninstall azd && brew install --cask azure/azd/azd")
 		case installer.InstallTypeSh:
-			cmd := "curl -fsSL https://aka.ms/install-azd.sh | bash"
-			if isDaily {
-				cmd = "curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version daily"
-			}
-			return update.RunUpdateHint(
-				cmd,
-				update.WithDetails(scriptInstallerDetails("https://aka.ms/azd/upgrade/mac")),
-			)
+			return shInstallerHint(isDaily, "https://aka.ms/azd/upgrade/mac")
 		default:
 			return update.VisitUpdateHint("https://aka.ms/azd/upgrade/mac")
 		}
 	}
 
 	return update.VisitUpdateHint("https://aka.ms/azd/upgrade")
+}
+
+// shInstallerHint builds the curl-based upgrade command shared by Linux and
+// macOS install-azd.sh installs.
+func shInstallerHint(isDaily bool, docsURL string) update.UpdateHint {
+	cmd := "curl -fsSL https://aka.ms/install-azd.sh | bash"
+	if isDaily {
+		cmd = "curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version daily"
+	}
+	return update.RunUpdateHint(cmd, update.WithDetails(scriptInstallerDetails(docsURL)))
+}
+
+// psInstallerHint builds the PowerShell-based upgrade command for Windows
+// install-azd.ps1 installs. The daily form uses an in-memory scriptblock to
+// avoid leaving a stray install-azd.ps1 in the user's cwd.
+func psInstallerHint(isDaily bool, docsURL string) update.UpdateHint {
+	//nolint:lll
+	cmd := "powershell -ex AllSigned -c \"Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression\""
+	if isDaily {
+		//nolint:lll
+		cmd = "powershell -ex AllSigned -c \"& ([scriptblock]::Create((Invoke-RestMethod 'https://aka.ms/install-azd.ps1'))) -Version 'daily'\""
+	}
+	return update.RunUpdateHint(cmd, update.WithDetails(scriptInstallerDetails(docsURL)))
 }
 
 // scriptInstallerDetails returns the caveat shown alongside script-based

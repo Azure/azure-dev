@@ -112,7 +112,7 @@ func (a *ShowAction) Run(ctx context.Context) error {
 
 	if isVNextEnabled(ctx, a.azdClient) {
 		version, err := agentClient.GetAgentVersion(
-			ctx, a.Name, a.Version, DefaultAgentAPIVersion,
+			ctx, a.Name, a.Version, DefaultVNextAgentAPIVersion,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to get agent version: %w", err)
@@ -202,12 +202,30 @@ func printAgentVersionTable(version *agent_api.AgentVersionObject) error {
 	fmt.Fprintf(w, "ID\t%s\n", version.ID)
 	fmt.Fprintf(w, "Name\t%s\n", version.Name)
 	fmt.Fprintf(w, "Version\t%s\n", version.Version)
+	if version.Status != "" {
+		fmt.Fprintf(w, "Status\t%s\n", version.Status)
+	}
 	if version.Description != nil {
 		fmt.Fprintf(w, "Description\t%s\n", *version.Description)
 	}
 	if version.CreatedAt != 0 {
 		ts := time.Unix(version.CreatedAt, 0).UTC().Format(time.RFC3339)
 		fmt.Fprintf(w, "Created At\t%s\n", ts)
+	}
+	if version.AgentGUID != "" {
+		fmt.Fprintf(w, "Agent GUID\t%s\n", version.AgentGUID)
+	}
+	if version.InstanceIdentity != nil {
+		fmt.Fprintf(w, "Instance Identity Principal ID\t%s\n", version.InstanceIdentity.PrincipalID)
+		fmt.Fprintf(w, "Instance Identity Client ID\t%s\n", version.InstanceIdentity.ClientID)
+	}
+	if version.Blueprint != nil {
+		fmt.Fprintf(w, "Blueprint Principal ID\t%s\n", version.Blueprint.PrincipalID)
+		fmt.Fprintf(w, "Blueprint Client ID\t%s\n", version.Blueprint.ClientID)
+	}
+	if version.BlueprintReference != nil {
+		fmt.Fprintf(w, "Blueprint Reference Type\t%s\n", version.BlueprintReference.Type)
+		fmt.Fprintf(w, "Blueprint Reference ID\t%s\n", version.BlueprintReference.BlueprintID)
 	}
 	for k, v := range version.Metadata {
 		fmt.Fprintf(w, "Metadata[%s]\t%s\n", k, v)

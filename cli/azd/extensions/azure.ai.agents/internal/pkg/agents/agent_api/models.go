@@ -166,16 +166,39 @@ type UpdateAgentRequest struct {
 	CreateAgentVersionRequest
 }
 
+// AgentIdentityInfo represents the instance identity assigned to an agent version.
+type AgentIdentityInfo struct {
+	PrincipalID string `json:"principal_id"`
+	ClientID    string `json:"client_id"`
+}
+
+// BlueprintInfo represents the blueprint identity assigned to an agent version.
+type BlueprintInfo struct {
+	PrincipalID string `json:"principal_id"`
+	ClientID    string `json:"client_id"`
+}
+
+// BlueprintReference describes the blueprint backing an agent version.
+type BlueprintReference struct {
+	Type        string `json:"type"`
+	BlueprintID string `json:"blueprint_id"`
+}
+
 // AgentVersionObject represents an agent version
 type AgentVersionObject struct {
-	Object      string            `json:"object"`
-	ID          string            `json:"id"`
-	Name        string            `json:"name"`
-	Version     string            `json:"version"`
-	Description *string           `json:"description,omitempty"`
-	Metadata    map[string]string `json:"metadata,omitempty"`
-	CreatedAt   int64             `json:"created_at"`
-	Definition  any               `json:"definition"` // Can be any of the agent definition types
+	Object             string              `json:"object"`
+	ID                 string              `json:"id"`
+	Name               string              `json:"name"`
+	Version            string              `json:"version"`
+	Description        *string             `json:"description,omitempty"`
+	Metadata           map[string]string   `json:"metadata,omitempty"`
+	CreatedAt          int64               `json:"created_at"`
+	Definition         any                 `json:"definition"` // Can be any of the agent definition types
+	Status             string              `json:"status,omitempty"`
+	InstanceIdentity   *AgentIdentityInfo  `json:"instance_identity,omitempty"`
+	Blueprint          *BlueprintInfo      `json:"blueprint,omitempty"`
+	BlueprintReference *BlueprintReference `json:"blueprint_reference,omitempty"`
+	AgentGUID          string              `json:"agent_guid,omitempty"`
 }
 
 // AgentObject represents an agent

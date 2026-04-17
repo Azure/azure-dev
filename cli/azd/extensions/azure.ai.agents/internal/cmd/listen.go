@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/azure"
 	"azureaiagent/internal/project"
@@ -160,41 +161,118 @@ func isHostedAgentService(svc *azdext.ServiceConfig, proj *azdext.ProjectConfig)
 }
 
 func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
-	// Collect agent names from hosted agent services that were deployed.
-	// After deploy, each hosted agent's name is stored as AGENT_{SERVICE_KEY}_NAME.
-	// Only hosted agents get platform-created per-agent identities; prompt agents do not.
+	// Agent identity RBAC is only relevant for vnext-enabled projects.
+	if !isVNextEnabled(ctx, azdClient) {
+		return nil
+	}
+
+	// Collect agent identities from hosted agent services that were deployed.
+	// After deploy, each hosted agent's name/version is stored as AGENT_{SERVICE_KEY}_NAME/VERSION.
+	// We fetch the full agent version object from the API to get the instance identity principal ID,
+	// which allows us to skip the slow Graph API discovery during RBAC assignment.
 	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
 	if err != nil {
 		return fmt.Errorf("failed to get current environment for agent identity RBAC: %w", err)
 	}
 
-	var agentNames []string
+	envName := envResp.Environment.Name
+
+	// Read the project endpoint for API calls.
+	endpointResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envName,
+		Key:     "AZURE_AI_PROJECT_ENDPOINT",
+	})
+	if err != nil {
+		return fmt.Errorf("failed to read AZURE_AI_PROJECT_ENDPOINT: %w", err)
+	}
+	if endpointResp.Value == "" {
+		return fmt.Errorf("AZURE_AI_PROJECT_ENDPOINT is not set in the environment")
+	}
+
+	// Create a credential for API calls.
+	tenantResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envName,
+		Key:     "AZURE_TENANT_ID",
+	})
+	if err != nil {
+		return fmt.Errorf("failed to read AZURE_TENANT_ID: %w", err)
+	}
+	if tenantResp.Value == "" {
+		return fmt.Errorf("AZURE_TENANT_ID is not set in the environment")
+	}
+
+	cred, err := azidentity.NewAzureDeveloperCLICredential(
+		&azidentity.AzureDeveloperCLICredentialOptions{
+			TenantID:                   tenantResp.Value,
+			AdditionallyAllowedTenants: []string{"*"},
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create credential for agent identity RBAC: %w", err)
+	}
+
+	agentClient := agent_api.NewAgentClient(endpointResp.Value, cred)
+
+	// Build name→principalID map by fetching the agent version for each hosted service.
+	agentIdentities := make(map[string]string)
 	for _, svc := range args.Project.Services {
 		if svc.Host != AiAgentHost || !isHostedAgentService(svc, args.Project) {
 			continue
 		}
-		nameKey := fmt.Sprintf("AGENT_%s_NAME", toServiceKey(svc.Name))
+		serviceKey := toServiceKey(svc.Name)
 
-		valResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-			EnvName: envResp.Environment.Name,
-			Key:     nameKey,
+		nameResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+			EnvName: envName,
+			Key:     fmt.Sprintf("AGENT_%s_NAME", serviceKey),
 		})
 		if err != nil {
-			return fmt.Errorf("failed to read %s from environment: %w", nameKey, err)
+			return fmt.Errorf(
+				"failed to read AGENT_%s_NAME from environment: %w",
+				serviceKey, err,
+			)
 		}
-		if valResp.Value == "" {
+		if nameResp.Value == "" {
 			continue
 		}
-		agentNames = append(agentNames, valResp.Value)
+
+		versionResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+			EnvName: envName,
+			Key:     fmt.Sprintf("AGENT_%s_VERSION", serviceKey),
+		})
+		if err != nil {
+			return fmt.Errorf(
+				"failed to read AGENT_%s_VERSION from environment: %w",
+				serviceKey, err,
+			)
+		}
+		if versionResp.Value == "" {
+			continue
+		}
+
+		// Fetch the agent version to get the instance identity principal ID.
+		versionObj, err := agentClient.GetAgentVersion(
+			ctx, nameResp.Value, versionResp.Value, DefaultVNextAgentAPIVersion,
+		)
+		if err != nil {
+			return fmt.Errorf(
+				"failed to fetch agent version for %s/%s: %w",
+				nameResp.Value, versionResp.Value, err,
+			)
+		}
+
+		principalID := ""
+		if versionObj.InstanceIdentity != nil {
+			principalID = versionObj.InstanceIdentity.PrincipalID
+		}
+
+		agentIdentities[nameResp.Value] = principalID
 	}
 
-	if len(agentNames) == 0 {
+	if len(agentIdentities) == 0 {
 		return nil
 	}
 
-	// Ensure per-agent identity RBAC is configured when vnext is enabled.
-	// Runs post-deploy because the platform provisions the identity during agent deployment.
-	if err := project.EnsureAgentIdentityRBAC(ctx, azdClient, agentNames); err != nil {
+	if err := project.EnsureAgentIdentityRBAC(ctx, azdClient, agentIdentities); err != nil {
 		return fmt.Errorf("agent identity RBAC setup failed: %w", err)
 	}
 

@@ -194,8 +194,9 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient) error 
 				)
 			}
 			fmt.Printf("  ⚠ Azure AI User auto-assign failed (non-auth error): %s — continuing\n", assignErr)
+		} else {
+			fmt.Println("  ✓ Azure AI User auto-assigned to developer identity")
 		}
-		fmt.Println("  ✓ Azure AI User auto-assigned to developer identity")
 	} else {
 		fmt.Println("  ✓ Azure AI User on Foundry Project")
 	}

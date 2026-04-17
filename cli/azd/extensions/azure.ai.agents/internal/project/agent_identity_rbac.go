@@ -330,13 +330,13 @@ func ensureSingleAgentRBAC(
 		fmt.Printf("  Agent identity: %s (%s)\n", agentIdentities[0].DisplayName, principalID)
 	}
 
-		created, err := assignRoleToIdentity(
-			ctx, cred, principalID, roleAzureAIUser, "Azure AI User → Foundry Project", info.ProjectScope,
-			armauthorization.PrincipalTypeServicePrincipal,
-		)
-		if err != nil {
-			return fmt.Errorf("failed to assign Azure AI User role: %w", err)
-		}
+	created, err := assignRoleToIdentity(
+		ctx, cred, principalID, roleAzureAIUser, "Azure AI User → Foundry Project", info.ProjectScope,
+		armauthorization.PrincipalTypeServicePrincipal,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to assign Azure AI User role: %w", err)
+	}
 
 	if created {
 		fmt.Println("    ✓ Azure AI User → Foundry Project (created)")

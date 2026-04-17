@@ -373,7 +373,19 @@ func EnsureSubscriptionAndLocation(
 	subId := env.GetSubscriptionId()
 	if subId == "" {
 		if prompter.IsNoPromptMode() {
-			return fmt.Errorf("subscription ID is required in no-prompt mode. Set AZURE_SUBSCRIPTION_ID environment variable")
+			return &input.PromptRequiredError{
+				Inputs: []input.RequiredInput{
+					{
+						Name: "subscription",
+						Sources: []input.InputSource{
+							{
+								Kind: input.InputSourceEnvironment,
+								Name: environment.SubscriptionIdEnvVarName,
+							},
+						},
+					},
+				},
+			}
 		}
 		subscriptionId, err := prompter.PromptSubscription(ctx, "Select an Azure Subscription to use:")
 		if err != nil {
@@ -394,7 +406,19 @@ func EnsureSubscriptionAndLocation(
 	location := env.GetLocation()
 	if env.GetLocation() == "" {
 		if prompter.IsNoPromptMode() {
-			return fmt.Errorf("location is required in no-prompt mode. Set AZURE_LOCATION environment variable")
+			return &input.PromptRequiredError{
+				Inputs: []input.RequiredInput{
+					{
+						Name: "location",
+						Sources: []input.InputSource{
+							{
+								Kind: input.InputSourceEnvironment,
+								Name: environment.LocationEnvVarName,
+							},
+						},
+					},
+				},
+			}
 		}
 		loc, err := prompter.PromptLocation(
 			ctx,
@@ -423,7 +447,19 @@ func EnsureSubscription(
 	subId := env.GetSubscriptionId()
 	if subId == "" {
 		if prompter.IsNoPromptMode() {
-			return fmt.Errorf("subscription ID is required in no-prompt mode. Set AZURE_SUBSCRIPTION_ID environment variable")
+			return &input.PromptRequiredError{
+				Inputs: []input.RequiredInput{
+					{
+						Name: "subscription",
+						Sources: []input.InputSource{
+							{
+								Kind: input.InputSourceEnvironment,
+								Name: environment.SubscriptionIdEnvVarName,
+							},
+						},
+					},
+				},
+			}
 		}
 		subscriptionId, err := prompter.PromptSubscription(ctx, "Select an Azure Subscription to use:")
 		if err != nil {

@@ -5,13 +5,15 @@ package prompt
 
 import (
 	"context"
-	"strings"
+	"errors"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockauth"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazapi"
@@ -77,97 +79,6 @@ func Test_PromptService_PromptSubscription(t *testing.T) {
 	require.NotNil(t, promptService)
 }
 
-func Test_PromptService_PromptSubscription_NoPrompt_AutoSelect(t *testing.T) {
-	tests := []struct {
-		name          string
-		subscriptions []account.Subscription
-		defaultSubId  string
-		wantErr       bool
-		errContains   string
-		wantSubId     string
-	}{
-		{
-			name: "single subscription auto-selected",
-			subscriptions: []account.Subscription{
-				{Id: "sub-1", TenantId: "tenant-1", Name: "My Only Sub"},
-			},
-			wantSubId: "sub-1",
-		},
-		{
-			name:          "no subscriptions returns error",
-			subscriptions: []account.Subscription{},
-			wantErr:       true,
-			errContains:   "no Azure subscriptions found for the current account",
-		},
-		{
-			name: "multiple subscriptions without default returns error",
-			subscriptions: []account.Subscription{
-				{Id: "sub-1", TenantId: "tenant-1", Name: "Sub 1"},
-				{Id: "sub-2", TenantId: "tenant-2", Name: "Sub 2"},
-			},
-			wantErr:     true,
-			errContains: "multiple Azure subscriptions found",
-		},
-		{
-			name: "default subscription used when set",
-			subscriptions: []account.Subscription{
-				{Id: "sub-1", TenantId: "tenant-1", Name: "Sub 1"},
-				{Id: "sub-2", TenantId: "tenant-2", Name: "Sub 2"},
-			},
-			defaultSubId: "sub-2",
-			wantSubId:    "sub-2",
-		},
-		{
-			name: "default subscription not found returns error",
-			subscriptions: []account.Subscription{
-				{Id: "sub-1", TenantId: "tenant-1", Name: "Sub 1"},
-			},
-			defaultSubId: "sub-nonexistent",
-			wantErr:      true,
-			errContains:  "not found",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cfg := config.NewEmptyConfig()
-			if tt.defaultSubId != "" {
-				err := cfg.Set("defaults.subscription", tt.defaultSubId)
-				require.NoError(t, err)
-			}
-			ucm := newInMemoryUserConfigManager(cfg)
-
-			authManager := &mockauth.MockAuthManager{}
-			subscriptionManager := &mockaccount.MockSubscriptionManager{}
-			resourceService := &mockazapi.MockResourceService{}
-			mockConsole := mockinput.NewMockConsole()
-			mockConsole.SetNoPromptMode(true)
-
-			subscriptionManager.
-				On("GetSubscriptions", mock.Anything).
-				Return(tt.subscriptions, nil)
-
-			globalOptions := &internal.GlobalCommandOptions{
-				NoPrompt: true,
-			}
-
-			ps := NewPromptService(
-				authManager, mockConsole, ucm, subscriptionManager, resourceService, globalOptions,
-			)
-
-			result, err := ps.PromptSubscription(context.Background(), nil)
-			if tt.wantErr {
-				require.Error(t, err)
-				require.Contains(t, err.Error(), tt.errContains)
-			} else {
-				require.NoError(t, err)
-				require.NotNil(t, result)
-				require.Equal(t, tt.wantSubId, result.Id)
-			}
-		})
-	}
-}
-
 func TestFormatSubscriptionDisplayName_DemoModeHidesId(t *testing.T) {
 	displayName := formatSubscriptionDisplayName(&account.Subscription{
 		Id:   "/subscriptions/sub-1",
@@ -177,9 +88,7 @@ func TestFormatSubscriptionDisplayName_DemoModeHidesId(t *testing.T) {
 	require.Equal(t, "Subscription 1", displayName)
 }
 
-func TestPromptSubscription_NoPrompt_AutoSelect_DemoModeRedactsOutput(t *testing.T) {
-	t.Setenv("AZD_DEMO_MODE", "true")
-
+func TestPromptSubscription_NoPrompt_ReturnsPromptRequiredError(t *testing.T) {
 	ucm := newInMemoryUserConfigManager(nil)
 	authManager := &mockauth.MockAuthManager{}
 	subscriptionManager := &mockaccount.MockSubscriptionManager{}
@@ -202,21 +111,20 @@ func TestPromptSubscription_NoPrompt_AutoSelect_DemoModeRedactsOutput(t *testing
 		&internal.GlobalCommandOptions{NoPrompt: true},
 	)
 
-	result, err := ps.PromptSubscription(context.Background(), nil)
-	require.NoError(t, err)
-	require.Equal(t, "sub-1", result.Id)
-	require.Len(t, mockConsole.Output(), 1)
-	require.Equal(t, "Auto-selected subscription: My Only Sub", mockConsole.Output()[0])
+	_, err := ps.PromptSubscription(context.Background(), nil)
+	requirePromptRequiredError(t, err, input.RequiredInput{
+		Name: "subscription",
+		Sources: []input.InputSource{
+			{
+				Kind: input.InputSourceEnvironment,
+				Name: environment.SubscriptionIdEnvVarName,
+			},
+		},
+	})
 }
 
-func TestPromptSubscription_NoPrompt_DefaultNotFound_DemoModeRedactsId(t *testing.T) {
-	t.Setenv("AZD_DEMO_MODE", "true")
-
-	cfg := config.NewEmptyConfig()
-	err := cfg.Set("defaults.subscription", "sub-secret")
-	require.NoError(t, err)
-
-	ucm := newInMemoryUserConfigManager(cfg)
+func TestPromptLocation_NoPrompt_ReturnsPromptRequiredError(t *testing.T) {
+	ucm := newInMemoryUserConfigManager(nil)
 	authManager := &mockauth.MockAuthManager{}
 	subscriptionManager := &mockaccount.MockSubscriptionManager{}
 	resourceService := &mockazapi.MockResourceService{}
@@ -238,18 +146,22 @@ func TestPromptSubscription_NoPrompt_DefaultNotFound_DemoModeRedactsId(t *testin
 		&internal.GlobalCommandOptions{NoPrompt: true},
 	)
 
-	_, err = ps.PromptSubscription(context.Background(), nil)
-	require.Error(t, err)
-	require.ErrorContains(t, err, "default subscription not found")
-	require.False(t, strings.Contains(err.Error(), "sub-secret"))
+	_, err := ps.PromptLocation(context.Background(), &AzureContext{
+		Scope: AzureScope{SubscriptionId: "sub-123"},
+	}, nil)
+	requirePromptRequiredError(t, err, input.RequiredInput{
+		Name: "location",
+		Sources: []input.InputSource{
+			{
+				Kind: input.InputSourceEnvironment,
+				Name: environment.LocationEnvVarName,
+			},
+		},
+	})
 }
 
-func TestPromptLocation_NoPrompt_FiltersAllowedValues(t *testing.T) {
-	cfg := config.NewEmptyConfig()
-	err := cfg.Set("defaults.location", "westus3")
-	require.NoError(t, err)
-
-	ucm := newInMemoryUserConfigManager(cfg)
+func TestPromptResourceGroup_NoPrompt_ReturnsPromptRequiredError(t *testing.T) {
+	ucm := newInMemoryUserConfigManager(nil)
 	authManager := &mockauth.MockAuthManager{}
 	subscriptionManager := &mockaccount.MockSubscriptionManager{}
 	resourceService := &mockazapi.MockResourceService{}
@@ -272,35 +184,27 @@ func TestPromptLocation_NoPrompt_FiltersAllowedValues(t *testing.T) {
 		&internal.GlobalCommandOptions{NoPrompt: true},
 	)
 
-	location, err := ps.PromptLocation(context.Background(), &AzureContext{
+	_, err := ps.PromptResourceGroup(context.Background(), &AzureContext{
 		Scope: AzureScope{SubscriptionId: "sub-123"},
-	}, &SelectOptions{
-		AllowedValues: []string{"westus3"},
+	}, nil)
+	requirePromptRequiredError(t, err, input.RequiredInput{
+		Name: "resource group",
+		Sources: []input.InputSource{
+			{
+				Kind: input.InputSourceEnvironment,
+				Name: environment.ResourceGroupEnvVarName,
+			},
+		},
 	})
-
-	require.NoError(t, err)
-	require.Equal(t, "westus3", location.Name)
-	subscriptionManager.AssertExpectations(t)
 }
 
-func TestPromptLocation_NoPrompt_FiltersAllowedValuesCaseInsensitive(t *testing.T) {
-	cfg := config.NewEmptyConfig()
-	err := cfg.Set("defaults.location", "WESTUS3")
-	require.NoError(t, err)
-
-	ucm := newInMemoryUserConfigManager(cfg)
+func TestPromptSubscriptionResource_NoPrompt_ReturnsPromptRequiredError(t *testing.T) {
+	ucm := newInMemoryUserConfigManager(nil)
 	authManager := &mockauth.MockAuthManager{}
 	subscriptionManager := &mockaccount.MockSubscriptionManager{}
 	resourceService := &mockazapi.MockResourceService{}
 	mockConsole := mockinput.NewMockConsole()
 	mockConsole.SetNoPromptMode(true)
-
-	subscriptionManager.
-		On("GetLocations", mock.Anything, "sub-123").
-		Return([]account.Location{
-			{Name: "eastus2", DisplayName: "East US 2", RegionalDisplayName: "(US) East US 2"},
-			{Name: "westus3", DisplayName: "West US 3", RegionalDisplayName: "(US) West US 3"},
-		}, nil)
 
 	ps := NewPromptService(
 		authManager,
@@ -311,91 +215,27 @@ func TestPromptLocation_NoPrompt_FiltersAllowedValuesCaseInsensitive(t *testing.
 		&internal.GlobalCommandOptions{NoPrompt: true},
 	)
 
-	location, err := ps.PromptLocation(context.Background(), &AzureContext{
+	_, err := ps.PromptSubscriptionResource(context.Background(), &AzureContext{
 		Scope: AzureScope{SubscriptionId: "sub-123"},
-	}, &SelectOptions{
-		AllowedValues: []string{"WestUS3"},
+	}, ResourceOptions{
+		ResourceTypeDisplayName: "OpenAI account",
 	})
-
-	require.NoError(t, err)
-	require.Equal(t, "westus3", location.Name)
-	subscriptionManager.AssertExpectations(t)
+	requirePromptRequiredError(t, err, input.RequiredInput{
+		Name:        "OpenAI account",
+		Description: "OpenAI account must be selected to continue.",
+	})
 }
 
-func TestPromptLocation_NoPrompt_DefaultFilteredOut(t *testing.T) {
-	cfg := config.NewEmptyConfig()
-	err := cfg.Set("defaults.location", "westus3")
-	require.NoError(t, err)
+func requirePromptRequiredError(
+	t *testing.T,
+	err error,
+	expectedInput input.RequiredInput,
+) *input.PromptRequiredError {
+	t.Helper()
 
-	ucm := newInMemoryUserConfigManager(cfg)
-	authManager := &mockauth.MockAuthManager{}
-	subscriptionManager := &mockaccount.MockSubscriptionManager{}
-	resourceService := &mockazapi.MockResourceService{}
-	mockConsole := mockinput.NewMockConsole()
-	mockConsole.SetNoPromptMode(true)
+	promptErr, ok := errors.AsType[*input.PromptRequiredError](err)
+	require.True(t, ok)
+	require.Equal(t, []input.RequiredInput{expectedInput}, promptErr.Inputs)
 
-	subscriptionManager.
-		On("GetLocations", mock.Anything, "sub-123").
-		Return([]account.Location{
-			{Name: "eastus2", DisplayName: "East US 2", RegionalDisplayName: "(US) East US 2"},
-			{Name: "westus3", DisplayName: "West US 3", RegionalDisplayName: "(US) West US 3"},
-		}, nil)
-
-	ps := NewPromptService(
-		authManager,
-		mockConsole,
-		ucm,
-		subscriptionManager,
-		resourceService,
-		&internal.GlobalCommandOptions{NoPrompt: true},
-	)
-
-	_, err = ps.PromptLocation(context.Background(), &AzureContext{
-		Scope: AzureScope{SubscriptionId: "sub-123"},
-	}, &SelectOptions{
-		AllowedValues: []string{"eastus2"},
-	})
-
-	require.Error(t, err)
-	require.ErrorContains(t, err, "default location 'westus3' not found in the available location options")
-	subscriptionManager.AssertExpectations(t)
-}
-
-func TestPromptLocation_NoPrompt_IgnoresEmptyAllowedValues(t *testing.T) {
-	cfg := config.NewEmptyConfig()
-	err := cfg.Set("defaults.location", "westus3")
-	require.NoError(t, err)
-
-	ucm := newInMemoryUserConfigManager(cfg)
-	authManager := &mockauth.MockAuthManager{}
-	subscriptionManager := &mockaccount.MockSubscriptionManager{}
-	resourceService := &mockazapi.MockResourceService{}
-	mockConsole := mockinput.NewMockConsole()
-	mockConsole.SetNoPromptMode(true)
-
-	subscriptionManager.
-		On("GetLocations", mock.Anything, "sub-123").
-		Return([]account.Location{
-			{Name: "eastus2", DisplayName: "East US 2", RegionalDisplayName: "(US) East US 2"},
-			{Name: "westus3", DisplayName: "West US 3", RegionalDisplayName: "(US) West US 3"},
-		}, nil)
-
-	ps := NewPromptService(
-		authManager,
-		mockConsole,
-		ucm,
-		subscriptionManager,
-		resourceService,
-		&internal.GlobalCommandOptions{NoPrompt: true},
-	)
-
-	location, err := ps.PromptLocation(context.Background(), &AzureContext{
-		Scope: AzureScope{SubscriptionId: "sub-123"},
-	}, &SelectOptions{
-		AllowedValues: []string{" ", ""},
-	})
-
-	require.NoError(t, err)
-	require.Equal(t, "westus3", location.Name)
-	subscriptionManager.AssertExpectations(t)
+	return promptErr
 }

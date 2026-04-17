@@ -20,6 +20,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
@@ -253,7 +254,19 @@ func (ps *promptService) PromptSubscription(
 
 	// Handle --no-prompt mode
 	if ps.globalOptions.NoPrompt {
-		return nil, fmt.Errorf("missing input: AZURE_SUBSCRIPTION_ID must be set")
+		return nil, &input.PromptRequiredError{
+			Inputs: []input.RequiredInput{
+				{
+					Name: "subscription",
+					Sources: []input.InputSource{
+						{
+							Kind: input.InputSourceEnvironment,
+							Name: environment.SubscriptionIdEnvVarName,
+						},
+					},
+				},
+			},
+		}
 	}
 
 	return PromptCustomResource(ctx, CustomResourceOptions[account.Subscription]{
@@ -327,7 +340,19 @@ func (ps *promptService) PromptLocation(
 
 	// Handle --no-prompt mode
 	if ps.globalOptions.NoPrompt {
-		return nil, fmt.Errorf("missing input: AZURE_LOCATION must b set")
+		return nil, &input.PromptRequiredError{
+			Inputs: []input.RequiredInput{
+				{
+					Name: "location",
+					Sources: []input.InputSource{
+						{
+							Kind: input.InputSourceEnvironment,
+							Name: environment.LocationEnvVarName,
+						},
+					},
+				},
+			},
+		}
 	}
 
 	return PromptCustomResource(ctx, CustomResourceOptions[account.Location]{
@@ -441,9 +466,19 @@ func (ps *promptService) PromptResourceGroup(
 	// Handle --no-prompt mode
 	if ps.globalOptions.NoPrompt {
 		if azureContext.Scope.ResourceGroup == "" {
-			return nil, fmt.Errorf(
-				"resource group selection required but cannot prompt in --no-prompt mode. " +
-					"Specify AZURE_RESOURCE_GROUP")
+			return nil, &input.PromptRequiredError{
+				Inputs: []input.RequiredInput{
+					{
+						Name: "resource group",
+						Sources: []input.InputSource{
+							{
+								Kind: input.InputSourceEnvironment,
+								Name: environment.ResourceGroupEnvVarName,
+							},
+						},
+					},
+				},
+			}
 		}
 
 		// Load resource groups and find the one specified in context
@@ -572,10 +607,15 @@ func (ps *promptService) PromptSubscriptionResource(
 
 	// Handle --no-prompt mode
 	if ps.globalOptions.NoPrompt {
-		return nil, fmt.Errorf(
-			"%s selection required but cannot prompt in --no-prompt mode. "+
-				"Please specify the resource using an environment variable or configuration file",
-			resourceName)
+		return nil, &input.PromptRequiredError{
+			Message: input.DefaultPromptRequiredMessage,
+			Inputs: []input.RequiredInput{
+				{
+					Name:        resourceName,
+					Description: fmt.Sprintf("%s must be selected to continue.", resourceName),
+				},
+			},
+		}
 	}
 
 	allowNewResource := mergedSelectorOptions.AllowNewResource != nil && *mergedSelectorOptions.AllowNewResource
@@ -718,10 +758,15 @@ func (ps *promptService) PromptResourceGroupResource(
 
 	// Handle --no-prompt mode
 	if ps.globalOptions.NoPrompt {
-		return nil, fmt.Errorf(
-			"%s selection required but cannot prompt in --no-prompt mode. "+
-				"Please specify the resource using an environment variable or configuration file",
-			resourceName)
+		return nil, &input.PromptRequiredError{
+			Message: input.DefaultPromptRequiredMessage,
+			Inputs: []input.RequiredInput{
+				{
+					Name:        resourceName,
+					Description: fmt.Sprintf("%s must be selected to continue.", resourceName),
+				},
+			},
+		}
 	}
 
 	allowNewResource := mergedSelectorOptions.AllowNewResource != nil && *mergedSelectorOptions.AllowNewResource

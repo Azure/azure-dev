@@ -113,7 +113,7 @@ func main() {
 				userCfg = config.NewEmptyConfig()
 			}
 			if !update.HasUpdateConfig(userCfg) {
-				updateHint = platformUpgradeHint()
+				updateHint = platformUpgradeHint(versionInfo.Channel)
 			}
 
 			banner := update.RenderUpdateBanner(update.BannerParams{
@@ -261,16 +261,28 @@ func createDailyLogFile() (*os.File, error) {
 	return logFile, nil
 }
 
-// platformUpgradeHint returns the platform-specific update action for azd.
-func platformUpgradeHint() update.UpdateHint {
+// platformUpgradeHint returns the platform-specific update action for azd,
+// tailored to the given release channel. Only the script-based installers
+// (install-azd.sh / install-azd.ps1) distribute daily builds, so channel only
+// affects those paths. Package managers (winget/choco/brew) don't publish
+// daily builds — users on those paths are assumed to be on the stable channel.
+func platformUpgradeHint(channel update.Channel) update.UpdateHint {
 	installedBy := installer.InstalledBy()
+	isDaily := channel == update.ChannelDaily
 
 	if runtime.GOOS == "windows" {
 		switch installedBy {
 		case installer.InstallTypePs:
-			//nolint:lll
+			var cmd string
+			if isDaily {
+				//nolint:lll
+				cmd = "powershell -ex AllSigned -c \"Invoke-RestMethod 'https://aka.ms/install-azd.ps1' -OutFile 'install-azd.ps1'; ./install-azd.ps1 -Version 'daily'\""
+			} else {
+				//nolint:lll
+				cmd = "powershell -ex AllSigned -c \"Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression\""
+			}
 			return update.RunUpdateHint(
-				"powershell -ex AllSigned -c \"Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression\"",
+				cmd,
 				update.WithDetails(scriptInstallerDetails("https://aka.ms/azd/upgrade/windows")),
 			)
 		case installer.InstallTypeWinget:
@@ -283,8 +295,12 @@ func platformUpgradeHint() update.UpdateHint {
 	} else if runtime.GOOS == "linux" {
 		switch installedBy {
 		case installer.InstallTypeSh:
+			cmd := "curl -fsSL https://aka.ms/install-azd.sh | bash"
+			if isDaily {
+				cmd = "curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version daily"
+			}
 			return update.RunUpdateHint(
-				"curl -fsSL https://aka.ms/install-azd.sh | bash",
+				cmd,
 				update.WithDetails(scriptInstallerDetails("https://aka.ms/azd/upgrade/linux")),
 			)
 		default:
@@ -295,8 +311,12 @@ func platformUpgradeHint() update.UpdateHint {
 		case installer.InstallTypeBrew:
 			return update.RunUpdateHint("brew uninstall azd && brew install --cask azure/azd/azd")
 		case installer.InstallTypeSh:
+			cmd := "curl -fsSL https://aka.ms/install-azd.sh | bash"
+			if isDaily {
+				cmd = "curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version daily"
+			}
 			return update.RunUpdateHint(
-				"curl -fsSL https://aka.ms/install-azd.sh | bash",
+				cmd,
 				update.WithDetails(scriptInstallerDetails("https://aka.ms/azd/upgrade/mac")),
 			)
 		default:
@@ -312,8 +332,7 @@ func platformUpgradeHint() update.UpdateHint {
 // by the default one-liner and pointing at platform-specific advanced docs.
 func scriptInstallerDetails(docsURL string) string {
 	return fmt.Sprintf(
-		"If the install script was run with custom parameters, ensure that the same parameters "+
-			"are used for the upgrade. For advanced install instructions, see: %s",
+		"If you installed azd with custom options, use the same options when updating. See %s for details.",
 		output.WithHyperlink(docsURL, docsURL),
 	)
 }

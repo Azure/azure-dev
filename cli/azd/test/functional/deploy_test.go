@@ -325,25 +325,16 @@ func Test_CLI_Deploy_StoppedWebApp(t *testing.T) {
 
 	// Stop the web app using az CLI
 	t.Logf("Stopping web app %s\n", webAppName)
-	stopResult, err := cli.RunCommand(ctx,
-		"x", "run", "--", "az", "webapp", "stop",
+	//nolint:gosec // test-only: arguments come from test infrastructure, not user input
+	cmd := exec.CommandContext(ctx, "az", "webapp", "stop",
 		"--name", webAppName,
-		"--resource-group", resourceGroup,
-	)
-	if err != nil {
-		// If azd x run doesn't work, try direct exec
-		t.Logf("azd x run failed (%v), trying os/exec", err)
-		cmd := exec.CommandContext(ctx, "az", "webapp", "stop",
-			"--name", webAppName,
-			"--resource-group", resourceGroup)
-		out, execErr := cmd.CombinedOutput()
-		require.NoError(t, execErr, "az webapp stop failed: %s", string(out))
-	} else {
-		t.Logf("Stop result: %s", stopResult.Stdout)
-	}
+		"--resource-group", resourceGroup)
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "az webapp stop failed: %s", string(out))
 
 	// Verify app is stopped
-	cmd := exec.CommandContext(ctx, "az", "webapp", "show",
+	//nolint:gosec // test-only: arguments come from test infrastructure, not user input
+	cmd = exec.CommandContext(ctx, "az", "webapp", "show",
 		"--name", webAppName,
 		"--resource-group", resourceGroup,
 		"--query", "state", "-o", "tsv")

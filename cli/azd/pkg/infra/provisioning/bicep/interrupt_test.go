@@ -19,6 +19,7 @@ func TestIsTerminalProvisioningState(t *testing.T) {
 		azapi.DeploymentProvisioningStateCanceled,
 		azapi.DeploymentProvisioningStateFailed,
 		azapi.DeploymentProvisioningStateSucceeded,
+		azapi.DeploymentProvisioningStateDeleted,
 	}
 	nonTerminal := []azapi.DeploymentProvisioningState{
 		azapi.DeploymentProvisioningStateAccepted,

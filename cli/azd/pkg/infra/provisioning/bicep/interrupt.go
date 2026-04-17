@@ -306,7 +306,20 @@ func terminalToOutcome(
 		}
 	default:
 		// isTerminalProvisioningState should prevent reaching here, but be
-		// defensive: surface as too-late so the caller exits cleanly.
+		// defensive: stop the spinner and warn the user so the UI is left in
+		// a clean state, then surface as too-late so the caller exits.
+		p.console.StopSpinner(ctx, "Deployment reached an unexpected terminal state", input.StepWarning)
+		if portalUrl != "" {
+			p.console.Message(ctx,
+				output.WithWarningFormat(
+					"The Azure deployment reached unexpected terminal state %q after the cancel request. Review:\n  %s",
+					string(state), portalUrl))
+		} else {
+			p.console.Message(ctx,
+				output.WithWarningFormat(
+					"The Azure deployment reached unexpected terminal state %q after the cancel request.",
+					string(state)))
+		}
 		return interruptOutcome{
 			err:            provisioning.ErrDeploymentCancelTooLate,
 			telemetryValue: "cancel_too_late",
@@ -320,7 +333,8 @@ func isTerminalProvisioningState(state azapi.DeploymentProvisioningState) bool {
 	switch state {
 	case azapi.DeploymentProvisioningStateCanceled,
 		azapi.DeploymentProvisioningStateFailed,
-		azapi.DeploymentProvisioningStateSucceeded:
+		azapi.DeploymentProvisioningStateSucceeded,
+		azapi.DeploymentProvisioningStateDeleted:
 		return true
 	}
 	return false

@@ -39,10 +39,11 @@ func PushInterruptHandler(h InterruptHandler) func() {
 	return func() {
 		interruptMu.Lock()
 		defer interruptMu.Unlock()
-		// Trim the stack back to the position before this handler was pushed.
-		// We do not search by identity because handlers are pushed/popped in
-		// LIFO order via defer; truncating to idx is correct.
-		if idx < len(interruptStack) {
+		// Only pop this handler if it is still the current top-of-stack
+		// entry. This enforces strict LIFO semantics and avoids accidentally
+		// removing unrelated newer handlers if pop functions are called out
+		// of order.
+		if len(interruptStack) == idx+1 {
 			interruptStack = interruptStack[:idx]
 		}
 	}

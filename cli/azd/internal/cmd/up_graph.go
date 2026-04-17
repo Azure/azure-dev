@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -647,10 +648,8 @@ func provisionStepFailed(result *exegraph.RunResult) bool {
 		if st.Status != exegraph.StepFailed {
 			continue
 		}
-		for _, tag := range st.Tags {
-			if tag == "provision" {
-				return true
-			}
+		if slices.Contains(st.Tags, "provision") {
+			return true
 		}
 	}
 	return false

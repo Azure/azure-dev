@@ -671,7 +671,7 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		)
 	}
 
-	// Set the vnext experience metadata on the request
+	// Set experience metadata on the request
 	applyVnextMetadata(request)
 
 	// Display agent information

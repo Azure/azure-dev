@@ -557,7 +557,7 @@ func (r *cancelOnCloseReader) Close() error {
 }
 
 // GetAgentSessionLogStream streams logs from an agent session.
-// This uses the session-based logstream endpoint for vnext agent configurations.
+// This uses the session-based logstream endpoint for agent configurations.
 // kind should be "console" (stdout/stderr) or "system" (container events).
 // tail is the number of trailing lines to fetch (1-300).
 // follow controls whether to stream indefinitely (true) or fetch and exit (false).

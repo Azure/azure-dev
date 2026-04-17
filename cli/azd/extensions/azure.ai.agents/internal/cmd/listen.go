@@ -160,11 +160,6 @@ func isHostedAgentService(svc *azdext.ServiceConfig, proj *azdext.ProjectConfig)
 }
 
 func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
-	// Agent identity RBAC is only relevant for vnext-enabled projects.
-	if !isVNextEnabled(ctx, azdClient) {
-		return nil
-	}
-
 	// Collect agent identities from hosted agent services that were deployed.
 	// After deploy, each hosted agent's name/version is stored as AGENT_{SERVICE_KEY}_NAME/VERSION.
 	// We fetch the full agent version object from the API to get the instance identity principal ID,

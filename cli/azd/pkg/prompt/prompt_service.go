@@ -253,50 +253,7 @@ func (ps *promptService) PromptSubscription(
 
 	// Handle --no-prompt mode
 	if ps.globalOptions.NoPrompt {
-		// Load subscriptions for both default lookup and auto-selection
-		subscriptionList, err := ps.subscriptionManager.GetSubscriptions(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load subscriptions: %w", err)
-		}
-
-		// If a default subscription is configured, use it
-		if defaultSubscriptionId != "" {
-			for _, subscription := range subscriptionList {
-				if strings.EqualFold(subscription.Id, defaultSubscriptionId) {
-					return &subscription, nil
-				}
-			}
-
-			if hideId {
-				return nil, fmt.Errorf(
-					"default subscription not found. " +
-						"Update your default subscription using " +
-						"'azd config set defaults.subscription <subscription-id>'")
-			}
-
-			return nil, fmt.Errorf(
-				"default subscription '%s' not found. "+
-					"Update your default subscription using "+
-					"'azd config set defaults.subscription <subscription-id>'",
-				defaultSubscriptionId)
-		}
-
-		// No default configured — try auto-selecting if exactly one subscription exists
-		switch len(subscriptionList) {
-		case 0:
-			return nil, fmt.Errorf(
-				"no Azure subscriptions found for the current account. " +
-					"Verify that you're logged into the correct Azure account and tenant, " +
-					"and that your account has one or more active subscriptions. " +
-					"If needed, run 'azd auth login' to sign in.")
-		case 1:
-			ps.console.Message(ctx, formatAutoSelectedSubscriptionMessage(&subscriptionList[0], hideId))
-			return &subscriptionList[0], nil
-		default:
-			return nil, fmt.Errorf(
-				"multiple Azure subscriptions found but running in non-interactive mode. " +
-					"Set a default subscription using 'azd config set defaults.subscription <subscription-id>'")
-		}
+		return nil, fmt.Errorf("missing input: AZURE_SUBSCRIPTION_ID must be set")
 	}
 
 	return PromptCustomResource(ctx, CustomResourceOptions[account.Subscription]{
@@ -370,32 +327,7 @@ func (ps *promptService) PromptLocation(
 
 	// Handle --no-prompt mode
 	if ps.globalOptions.NoPrompt {
-		// Default location always exists (fallback to eastus2), so we can use it
-		// Load locations and find the default
-		locationList, err := ps.subscriptionManager.GetLocations(
-			ctx,
-			azureContext.Scope.SubscriptionId,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load locations: %w", err)
-		}
-
-		locationList = filterLocationOptions(locationList, mergedOptions.AllowedValues)
-
-		for _, location := range locationList {
-			if strings.EqualFold(location.Name, defaultLocation) {
-				return &account.Location{
-					Name:                location.Name,
-					DisplayName:         location.DisplayName,
-					RegionalDisplayName: location.RegionalDisplayName,
-				}, nil
-			}
-		}
-
-		return nil, fmt.Errorf(
-			"default location '%s' not found in the available location options. "+
-				"Update your default location using 'azd config set defaults.location <location-name>'",
-			defaultLocation)
+		return nil, fmt.Errorf("missing input: AZURE_LOCATION must b set")
 	}
 
 	return PromptCustomResource(ctx, CustomResourceOptions[account.Location]{
@@ -511,7 +443,7 @@ func (ps *promptService) PromptResourceGroup(
 		if azureContext.Scope.ResourceGroup == "" {
 			return nil, fmt.Errorf(
 				"resource group selection required but cannot prompt in --no-prompt mode. " +
-					"Specify a resource group explicitly in your configuration or environment")
+					"Specify AZURE_RESOURCE_GROUP")
 		}
 
 		// Load resource groups and find the one specified in context

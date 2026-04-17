@@ -6,14 +6,20 @@ package update
 import (
 	"testing"
 
+	"github.com/fatih/color"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// disableTerminalFormatting disables terminal hyperlink escape sequences
-// (AZD_FORCE_TTY=false) and color codes (NO_COLOR=1) so banner assertions
-// match plain-string substrings regardless of whether `go test` is run in an
-// interactive terminal.
+// disableTerminalFormatting disables terminal hyperlink escape sequences and
+// ANSI color codes so banner assertions match plain-string substrings
+// regardless of whether `go test` runs attached to a TTY.
+//
+//   - AZD_FORCE_TTY=false suppresses hyperlink OSC-8 sequences from
+//     output.WithHyperlink, which reads the env var at call time.
+//   - color.NoColor is set directly because fatih/color initializes its
+//     NoColor package-level var once at init time; setting NO_COLOR via
+//     t.Setenv after init has no effect.
 //
 // t.Setenv is not compatible with t.Parallel(), so tests that call this
 // helper must not be parallelized. Banner tests are sub-millisecond so this
@@ -21,7 +27,9 @@ import (
 func disableTerminalFormatting(t *testing.T) {
 	t.Helper()
 	t.Setenv("AZD_FORCE_TTY", "false")
-	t.Setenv("NO_COLOR", "1")
+	prev := color.NoColor
+	color.NoColor = true
+	t.Cleanup(func() { color.NoColor = prev })
 }
 
 func TestRenderUpdateBanner(t *testing.T) {
@@ -46,7 +54,7 @@ func TestRenderUpdateBanner(t *testing.T) {
 		assert.Contains(t, result, s, "expected banner to contain %q", s)
 	}
 
-	// The legacy phrasing should not appear after the refactor.
+	// Old wording should not appear.
 	assert.NotContains(t, result, "WARNING:")
 	assert.NotContains(t, result, "out of date")
 }
@@ -85,8 +93,7 @@ func TestRenderUpdateBanner_PlatformCommand(t *testing.T) {
 func TestRenderUpdateBanner_DailyChannel(t *testing.T) {
 	disableTerminalFormatting(t)
 
-	// Daily version strings already embed the build number (e.g.
-	// "1.24.0-daily.6168094"), so no extra formatting is needed.
+	// Daily versions already include the build number.
 	params := BannerParams{
 		CurrentVersion: "1.11.0",
 		LatestVersion:  "1.24.0-daily.6168094",
@@ -98,7 +105,7 @@ func TestRenderUpdateBanner_DailyChannel(t *testing.T) {
 	assert.Contains(t, result, "Update available:")
 	assert.Contains(t, result, "1.24.0-daily.6168094")
 	assert.Contains(t, result, "github.com/Azure/azure-dev/commits/main")
-	// Daily banner omits the "current -> latest" format.
+	// Daily banners omit "current -> latest".
 	assert.NotContains(t, result, "1.11.0 ->")
 }
 
@@ -150,8 +157,7 @@ func TestFormatUpdateHint_EmptyRendersNothing(t *testing.T) {
 }
 
 func TestReleaseNotesLink(t *testing.T) {
-	// Pure string construction — no color/hyperlink output involved, so this
-	// test doesn't need disableTerminalFormatting and can run in parallel.
+	// Pure string construction, so no formatting setup is needed.
 	t.Parallel()
 
 	tests := []struct {

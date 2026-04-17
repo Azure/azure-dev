@@ -215,20 +215,6 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 		}
 		serviceKey := toServiceKey(svc.Name)
 
-		nameResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-			EnvName: envName,
-			Key:     fmt.Sprintf("AGENT_%s_NAME", serviceKey),
-		})
-		if err != nil {
-			return fmt.Errorf(
-				"failed to read AGENT_%s_NAME from environment: %w",
-				serviceKey, err,
-			)
-		}
-		if nameResp.Value == "" {
-			continue
-		}
-
 		versionResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 			EnvName: envName,
 			Key:     fmt.Sprintf("AGENT_%s_VERSION", serviceKey),
@@ -245,12 +231,12 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 
 		// Fetch the agent version to get the instance identity principal ID.
 		versionObj, err := agentClient.GetAgentVersion(
-			ctx, nameResp.Value, versionResp.Value, DefaultAgentAPIVersion,
+			ctx, serviceKey, versionResp.Value, DefaultAgentAPIVersion,
 		)
 		if err != nil {
 			return fmt.Errorf(
 				"failed to fetch agent version for %s/%s: %w",
-				nameResp.Value, versionResp.Value, err,
+				serviceKey, versionResp.Value, err,
 			)
 		}
 
@@ -259,7 +245,7 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 			principalID = versionObj.InstanceIdentity.PrincipalID
 		}
 
-		agentIdentities[nameResp.Value] = principalID
+		agentIdentities[serviceKey] = principalID
 	}
 
 	if len(agentIdentities) == 0 {

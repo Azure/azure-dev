@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
+	"strconv"
 	"strings"
 
 	"azureaiagent/internal/exterrors"
@@ -91,35 +93,35 @@ var sufficientRoleAssignWriteRoles = []string{
 //
 // Returns nil if all checks pass, or a structured error with suggestions on failure.
 func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient) error {
-	azdEnvClient := azdClient.Environment()
-	cEnvResponse, err := azdEnvClient.GetCurrent(ctx, &azdext.EmptyRequest{})
+	envClient := azdClient.Environment()
+	envResp, err := envClient.GetCurrent(ctx, &azdext.EmptyRequest{})
 	if err != nil {
 		return fmt.Errorf("failed to get current environment: %w", err)
 	}
-	envResponse, err := azdEnvClient.GetValues(ctx, &azdext.GetEnvironmentRequest{
-		Name: cEnvResponse.Environment.Name,
+	envName := envResp.Environment.Name
+
+	skipResp, err := envClient.GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envName,
+		Key:     "AZD_AGENT_SKIP_ROLE_ASSIGNMENTS",
 	})
-	if err != nil {
-		return fmt.Errorf("failed to get environment values: %w", err)
+	if err == nil && skipResp.Value == "" {
+		skipResp.Value = os.Getenv("AZD_AGENT_SKIP_ROLE_ASSIGNMENTS")
 	}
-
-	azdEnv := make(map[string]string, len(envResponse.KeyValues))
-	for _, kv := range envResponse.KeyValues {
-		azdEnv[kv.Key] = kv.Value
-	}
-
-	if isRoleAssignmentsSkipped(azdEnv) {
+	if skip, parseErr := strconv.ParseBool(skipResp.Value); parseErr == nil && skip {
 		fmt.Println("  (-) Skipping developer RBAC pre-flight check (AZD_AGENT_SKIP_ROLE_ASSIGNMENTS is set)")
 		return nil
 	}
 
-	projectResourceID := azdEnv["AZURE_AI_PROJECT_ID"]
-	if projectResourceID == "" {
+	projectResp, err := envClient.GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envName,
+		Key:     "AZURE_AI_PROJECT_ID",
+	})
+	if err != nil || projectResp.Value == "" {
 		// Can't check RBAC without the project ID; deployment will fail later with a clearer message.
 		return nil
 	}
 
-	info, err := parseAgentIdentityInfo(projectResourceID)
+	info, err := parseAgentIdentityInfo(projectResp.Value)
 	if err != nil {
 		return nil // Non-critical: let deployment handle parse errors.
 	}
@@ -230,8 +232,11 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient) error 
 	}
 
 	// Check 3: ACR role — must branch on registry mode (ABAC vs classic).
-	acrEndpoint := azdEnv["AZURE_CONTAINER_REGISTRY_ENDPOINT"]
-	if acrEndpoint == "" {
+	acrResp, err := envClient.GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envName,
+		Key:     "AZURE_CONTAINER_REGISTRY_ENDPOINT",
+	})
+	if err != nil || acrResp.Value == "" {
 		fmt.Println("  ⚠ AZURE_CONTAINER_REGISTRY_ENDPOINT not set — skipping ACR role check")
 		return nil
 	}
@@ -242,10 +247,14 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient) error 
 		acrResourceID string
 		isAbac        bool
 	)
-	if rid := azdEnv["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]; rid != "" {
-		acrResourceID, isAbac, err = resolveACRInfoByResourceID(ctx, cred, rid)
+	acrRidResp, _ := envClient.GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envName,
+		Key:     "AZURE_CONTAINER_REGISTRY_RESOURCE_ID",
+	})
+	if acrRidResp != nil && acrRidResp.Value != "" {
+		acrResourceID, isAbac, err = resolveACRInfoByResourceID(ctx, cred, acrRidResp.Value)
 	} else {
-		acrResourceID, isAbac, err = resolveACRInfo(ctx, cred, info.SubscriptionID, acrEndpoint)
+		acrResourceID, isAbac, err = resolveACRInfo(ctx, cred, info.SubscriptionID, acrResp.Value)
 	}
 	if err != nil {
 		fmt.Printf("  ⚠ Could not resolve ACR resource info: %s — skipping ACR role check\n", err)
@@ -264,7 +273,7 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient) error 
 	}
 
 	if !hasACRAccess {
-		acrName := strings.TrimSuffix(normalizeLoginServer(acrEndpoint), ".azurecr.io")
+		acrName := strings.TrimSuffix(normalizeLoginServer(acrResp.Value), ".azurecr.io")
 		if isAbac {
 			return exterrors.Auth(
 				exterrors.CodeDeveloperMissingACRRole,

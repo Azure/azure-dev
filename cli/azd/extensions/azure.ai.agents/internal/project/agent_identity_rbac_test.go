@@ -87,26 +87,6 @@ func TestParseAgentIdentityInfo(t *testing.T) {
 	}
 }
 
-func TestAgentIdentityDisplayName(t *testing.T) {
-	tests := []struct {
-		account   string
-		project   string
-		agentName string
-		want      string
-	}{
-		{"my-account", "my-project", "my-agent", "my-account-my-project-my-agent-AgentIdentity"},
-		{"acct", "proj", "agent1", "acct-proj-agent1-AgentIdentity"},
-		{"a-b-c", "x-y-z", "test-agent", "a-b-c-x-y-z-test-agent-AgentIdentity"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.want, func(t *testing.T) {
-			got := agentIdentityDisplayName(tt.account, tt.project, tt.agentName)
-			assert.Equal(t, tt.want, got)
-		})
-	}
-}
-
 func TestExtractSubscriptionID(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -146,60 +126,4 @@ func TestExtractSubscriptionID(t *testing.T) {
 
 func TestConstants(t *testing.T) {
 	assert.Equal(t, "53ca6127-db72-4b80-b1b0-d745d6d5456d", roleAzureAIUser)
-}
-
-func TestIsRoleAssignmentsSkipped(t *testing.T) {
-	tests := []struct {
-		name     string
-		azdEnv   map[string]string
-		osEnv    string
-		setOsEnv bool
-		want     bool
-	}{
-		{
-			name:   "enabled via azd env true",
-			azdEnv: map[string]string{"AZD_AGENT_SKIP_ROLE_ASSIGNMENTS": "true"},
-			want:   true,
-		},
-		{
-			name:   "enabled via azd env 1",
-			azdEnv: map[string]string{"AZD_AGENT_SKIP_ROLE_ASSIGNMENTS": "1"},
-			want:   true,
-		},
-		{
-			name:   "disabled via azd env false",
-			azdEnv: map[string]string{"AZD_AGENT_SKIP_ROLE_ASSIGNMENTS": "false"},
-			want:   false,
-		},
-		{
-			name:   "not set",
-			azdEnv: map[string]string{},
-			want:   false,
-		},
-		{
-			name:     "fallback to os env",
-			azdEnv:   map[string]string{},
-			osEnv:    "true",
-			setOsEnv: true,
-			want:     true,
-		},
-		{
-			name:   "invalid value",
-			azdEnv: map[string]string{"AZD_AGENT_SKIP_ROLE_ASSIGNMENTS": "notabool"},
-			want:   false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if tt.setOsEnv {
-				t.Setenv("AZD_AGENT_SKIP_ROLE_ASSIGNMENTS", tt.osEnv)
-			} else {
-				t.Setenv("AZD_AGENT_SKIP_ROLE_ASSIGNMENTS", "")
-			}
-
-			got := isRoleAssignmentsSkipped(tt.azdEnv)
-			assert.Equal(t, tt.want, got)
-		})
-	}
 }

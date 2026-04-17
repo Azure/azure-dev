@@ -6,7 +6,7 @@ package provisioning
 import "errors"
 
 // Cancellation sentinels surfaced by providers when the user interrupts a
-// running deployment with Ctrl+C. These are typed errors so the action /
+// running deployment with Ctrl+C. These are sentinel errors so the action /
 // error middleware can produce a friendly, non-zero exit (with the portal URL
 // and a clear message) instead of treating the case as an unexpected failure.
 var (

@@ -780,22 +780,25 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 		deploymentTags,
 		optionsMap,
 	)
-	// Tear the handler down immediately so a Ctrl+C arriving after the
-	// deploy call returns doesn't briefly resurface the cancel/leave prompt
-	// over post-processing output.
-	cleanupOnce()
 
 	// If an interrupt was raised at any point during the deploy (even if the
 	// deploy call itself finished naturally before the user picked an
 	// option), block until the handler produces an outcome so the user's
-	// Ctrl+C is never silently dropped. Otherwise take the normal path.
+	// Ctrl+C is never silently dropped. Keep the handler installed until that
+	// outcome is observed so re-entrant Ctrl+C is still suppressed while the
+	// prompt/cancel flow is active.
 	select {
 	case <-interruptStarted:
 		outcome := <-interruptCh
+		cleanupOnce()
 		tracing.SetUsageAttributes(
 			fields.ProvisionCancellationKey.String(outcome.telemetryValue))
 		return nil, applyInterruptOutcome(outcome, err)
 	default:
+		// No interrupt flow is in progress, so it is safe to tear the handler
+		// down before post-processing to avoid resurfacing the cancel/leave
+		// prompt over subsequent output.
+		cleanupOnce()
 	}
 
 	if err != nil {

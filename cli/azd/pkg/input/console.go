@@ -986,18 +986,22 @@ func watchTerminalInterrupt(c *AskerConsole) {
 	signal.Notify(signalChan, os.Interrupt)
 	go func() {
 		for range signalChan {
-			handler := currentInterruptHandler()
-			if handler == nil {
-				// Default behavior: stop the spinner and exit.
-				_ = c.spinner.Stop()
-				os.Exit(1)
+			// Reserve the running slot first so re-entrant Ctrl+C signals are
+			// suppressed even in the brief window where a handler has been
+			// popped from the stack but is still executing (e.g. a prompt is
+			// up while Deploy has already torn the registration down).
+			if !tryStartInterruptHandler() {
+				continue
 			}
 
-			if !tryStartInterruptHandler() {
-				// A handler is already processing a previous Ctrl+C. Per UX
-				// design, ignore additional signals until the user responds
-				// to the in-progress prompt.
-				continue
+			handler := currentInterruptHandler()
+			if handler == nil {
+				// No handler registered → default behavior. Release the slot
+				// before exiting so future signals would behave correctly if
+				// we did not exit (defensive).
+				finishInterruptHandler()
+				_ = c.spinner.Stop()
+				os.Exit(1)
 			}
 
 			go func(h InterruptHandler) {

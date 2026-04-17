@@ -677,43 +677,32 @@ func (p *BicepProvider) deploymentState(
 ) (*azapi.ResourceDeployment, error) {
 	p.console.ShowSpinner(ctx, "Comparing deployment state", input.Step)
 
-	// Fetch the latest deployment result and calculate the template hash in parallel.
-	// These are independent ARM API calls, so running them concurrently saves ~3-10s.
-	var prevDeploymentResult *azapi.ResourceDeployment
-	var templateHash string
-
-	g, gCtx := errgroup.WithContext(ctx)
-
-	g.Go(func() error {
-		result, err := p.latestDeploymentResult(gCtx, scope)
-		if err != nil {
-			return fmt.Errorf("deployment state error: %w", err)
-		}
-		prevDeploymentResult = result
-		return nil
-	})
-
-	g.Go(func() error {
-		hash, err := p.deploymentManager.CalculateTemplateHash(
-			gCtx, p.env.GetSubscriptionId(),
-			planned.RawArmTemplate,
-		)
-		if err != nil {
-			return fmt.Errorf("can't get hash from current template: %w", err)
-		}
-		templateHash = hash
-		return nil
-	})
-
-	if err := g.Wait(); err != nil {
-		return nil, err
+	// Fetch the latest prior deployment first. When there is no prior
+	// deployment (the common cold-start and per-layer initial-deploy paths)
+	// there is no state to compare against, so we can skip the expensive
+	// CalculateTemplateHash ARM call entirely. Under multi-layer fan-out
+	// the unconditional parallel hash call put direct rate-limit pressure
+	// on ARM with zero benefit. The parallel tradeoff is retained only for
+	// the narrow hot path where a comparable prior deployment actually
+	// exists and was successful.
+	prevDeploymentResult, err := p.latestDeploymentResult(ctx, scope)
+	if err != nil {
+		return nil, fmt.Errorf("deployment state error: %w", err)
 	}
 
-	// State is invalid if the last deployment was not succeeded
+	// State is invalid if the last deployment was not succeeded.
 	// This is currently safe because we rely on latestDeploymentResult which
-	// relies on findCompletedDeployments which filters to only Failed and Succeeded
+	// relies on findCompletedDeployments which filters to only Failed and Succeeded.
 	if prevDeploymentResult.ProvisioningState != azapi.DeploymentProvisioningStateSucceeded {
 		return nil, fmt.Errorf("last deployment failed.")
+	}
+
+	templateHash, err := p.deploymentManager.CalculateTemplateHash(
+		ctx, p.env.GetSubscriptionId(),
+		planned.RawArmTemplate,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("can't get hash from current template: %w", err)
 	}
 
 	if !prevDeploymentEqualToCurrent(prevDeploymentResult, templateHash, currentParamsHash) {
@@ -846,9 +835,20 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 					resId, err := arm.ParseResourceID(*res.ID)
 					if err == nil && resId.ResourceType.Type == arm.ResourceGroupResourceType.Type {
 						rgGroup.Go(func() error {
-							exists, err := p.resourceService.CheckExistenceByID(
+							exists, checkErr := p.resourceService.CheckExistenceByID(
 								rgCtx, *resId, apiVersionResourceGroupExistence)
-							if err == nil && !exists {
+							if checkErr != nil {
+								// Be conservative: if we cannot verify the resource group
+								// still exists (transient ARM failure, throttling, auth
+								// error, etc.), invalidate the cached deployment state so
+								// the caller falls through to a real deployment. Silently
+								// assuming "exists" would skip a deployment that may be
+								// needed to recreate a resource group deleted out-of-band.
+								return fmt.Errorf(
+									"checking resource group %s existence: %w",
+									resId.ResourceGroupName, checkErr)
+							}
+							if !exists {
 								return fmt.Errorf(
 									"resource group %s no longer exists, invalidating deployment state",
 									resId.ResourceGroupName)

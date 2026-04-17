@@ -295,7 +295,7 @@ func (at *containerAppTarget) Deploy(
 
 	// Smart deploy API: prefer direct revision API for code-only changes when template is unchanged.
 	// This avoids the overhead of full ARM template revalidation when only the container image tag changed.
-	if controlledRevision && at.shouldUseDirectRevisionAPI(serviceConfig, mainPath) {
+	if controlledRevision && at.shouldUseDirectRevisionAPI(ctx, serviceConfig, mainPath) {
 		controlledRevision = false
 	}
 
@@ -499,7 +499,10 @@ func (at *containerAppTarget) Endpoints(
 // since the last deployment, indicating that only the container image tag changed and the
 // cheaper direct revision API can be used instead of a full ARM template deployment.
 // The templateHashMu mutex serializes access to the shared environment map for concurrent deploys.
+// The hash is persisted to disk whenever it changes so the optimization survives process
+// exit on revision paths that have no deployment outputs (e.g., no-output template).
 func (at *containerAppTarget) shouldUseDirectRevisionAPI(
+	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	mainPath string,
 ) bool {
@@ -517,8 +520,28 @@ func (at *containerAppTarget) shouldUseDirectRevisionAPI(
 	// deploy would be a data race.
 	templateHashMu.Lock()
 	previousHash := at.env.Getenv(envHashKey)
-	at.env.DotenvSet(envHashKey, currentHashStr)
+	hashChanged := currentHashStr != previousHash
+	if hashChanged {
+		at.env.DotenvSet(envHashKey, currentHashStr)
+	}
 	templateHashMu.Unlock()
+
+	// Persist the updated hash so the next run sees it. The downstream env-save
+	// inside Deploy() only runs when the deployment produced ARM outputs, so a
+	// no-output template (or the direct-revision branch, which skips ARM
+	// deploy entirely) would otherwise lose the hash at process exit and fall
+	// back to a full ARM deployment on the next `azd deploy`.
+	if hashChanged {
+		envSaveMu.Lock()
+		saveErr := at.envManager.Save(ctx, at.env)
+		envSaveMu.Unlock()
+		if saveErr != nil {
+			log.Printf("persisting template hash for %s failed: %v", serviceConfig.Name, saveErr)
+			// Fall through: the in-memory hash is still set for this run, but
+			// the next run may redo a full deploy. Do not fail the build over
+			// a persistence hiccup.
+		}
+	}
 
 	if currentHashStr == previousHash {
 		log.Printf(

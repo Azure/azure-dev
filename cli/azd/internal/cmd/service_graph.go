@@ -43,6 +43,17 @@ type serviceGraphOptions struct {
 	// package steps). Deploy's stand-alone path leaves this empty.
 	publishExtraDeps []string
 
+	// packageExtraDeps augments every package step's DependsOn with these
+	// step names. Used by `azd up` to wire package steps behind the synthetic
+	// `event-prepackage` node (which itself fans in from the
+	// `cmdhook-prepackage` shell-hook step) so that user-defined
+	// prepackage hooks and the project-level `prepackage` event fire
+	// before any service is packaged — preserving parity with the
+	// stand-alone `azd package` cobra command. Deploy's stand-alone path
+	// leaves this empty (package steps then have no DependsOn and overlap
+	// freely with anything upstream of publish).
+	packageExtraDeps []string
+
 	// deployExtraDeps augments every deploy step's DependsOn with these step
 	// names (beyond the Aspire build gate). Reserved for future use; both
 	// current call sites leave this empty.
@@ -101,15 +112,16 @@ type serviceGraphHandles struct {
 //
 // Topology per service `<svc>`:
 //
-//	package-<svc>  (opts.packageExtraDeps = [])         → opts.publishExtraDeps ──▶ publish-<svc> ──▶ deploy-<svc>
-//	                                                                                                    │
-//	                                                                             opts.buildGateKey:
-//	                                                                     first service per non-empty key
-//	                                                                   runs first; later services with the
-//	                                                                    same key wait on that first step.
+//	opts.packageExtraDeps ──▶ package-<svc> ──▶ opts.publishExtraDeps ──▶ publish-<svc> ──▶ deploy-<svc>
+//	                                                                                            │
+//	                                                                     opts.buildGateKey:
+//	                                                             first service per non-empty key
+//	                                                           runs first; later services with the
+//	                                                            same key wait on that first step.
 //
-// Package steps intentionally have no DependsOn so packaging can overlap with
-// whatever provision steps the caller added upstream of publish.
+// When opts.packageExtraDeps is empty (stand-alone `azd deploy`), package
+// steps have no DependsOn and packaging can overlap with whatever provision
+// steps the caller added upstream of publish.
 //
 // The graph builder is intentionally agnostic to why a gate exists; it
 // only understands the opaque-string grouping produced by
@@ -155,11 +167,13 @@ func addServiceStepsToGraph(g *exegraph.Graph, opts serviceGraphOptions) (*servi
 		handles.PublishSteps = append(handles.PublishSteps, publishStepName)
 		handles.DeploySteps = append(handles.DeploySteps, deployStepName)
 
-		// ── package-<svc> ── no deps (overlaps with anything upstream).
+		// ── package-<svc> ── opts.packageExtraDeps (empty for stand-alone
+		// deploy → no deps → packaging overlaps with anything upstream).
 		pkgSvc := svc
 		if err := g.AddStep(&exegraph.Step{
-			Name: pkgStepName,
-			Tags: []string{"package"},
+			Name:      pkgStepName,
+			DependsOn: opts.packageExtraDeps,
+			Tags:      []string{"package"},
 			Action: func(ctx context.Context) error {
 				sc := project.NewServiceContext()
 

@@ -43,15 +43,22 @@ import (
 //	   ──▶ cmdhook-predeploy ──▶ event-predeploy ──▶ publish-<svc>
 //	   ──▶ deploy-<svc> ──▶ event-postdeploy ──▶ cmdhook-postdeploy
 //	                                                ▲
-//	                        package-<svc> (no deps — overlaps provision)
+//	  cmdhook-prepackage ──▶ event-prepackage ──▶ package-<svc>
+//	     ──▶ event-postpackage ──▶ cmdhook-postpackage
+//	         (cmdhook-postpackage gates event-predeploy so prepackage→
+//	          postpackage→predeploy ordering matches the old workflow)
 //
 // Hook semantics:
 //   - Middleware fires `preup`/`postup` around this action. The graph never
 //     duplicates those.
 //   - `cmdhook-*` nodes fire the project-level shell hooks that the cobra
-//     hooks middleware fires for stand-alone `azd provision` / `azd deploy`
-//     invocations. They are no-ops (~µs) when the project declares no such
-//     hooks — structurally identical to the existing `event-*` nodes.
+//     hooks middleware fires for stand-alone `azd package` / `azd provision`
+//     / `azd deploy` invocations. They are no-ops (~µs) when the project
+//     declares no such hooks — structurally identical to the existing
+//     `event-*` nodes.
+//   - `event-prepackage`/`event-postpackage` fire [project.ProjectEventPackage]
+//     pre/post handlers (the Go event dispatcher path that stand-alone
+//     `azd package` invokes via projectConfig.Invoke).
 //   - `event-predeploy`/`event-postdeploy` fire [project.ProjectEventDeploy]
 //     pre/post handlers (the Go event dispatcher path used by e.g. the .NET
 //     Aspire publisher).
@@ -180,6 +187,10 @@ func (u *UpGraphAction) Run(
 		postDeployHookStep    = "cmdhook-postdeploy"
 		preDeployEventStep    = "event-predeploy"
 		postDeployEventStep   = "event-postdeploy"
+		prePackageHookStep    = "cmdhook-prepackage"
+		postPackageHookStep   = "cmdhook-postpackage"
+		prePackageEventStep   = "event-prepackage"
+		postPackageEventStep  = "event-postpackage"
 	)
 
 	if err := g.AddStep(&exegraph.Step{
@@ -241,12 +252,47 @@ func (u *UpGraphAction) Run(
 		Project: u.projectConfig,
 	}
 
+	// ── cmdhook-prepackage ── runs the project-level `prepackage` shell
+	// hook (parity with stand-alone `azd package`). No deps so packaging
+	// can start as early as possible — package steps overlap with
+	// provision intentionally.
+	if err := g.AddStep(&exegraph.Step{
+		Name: prePackageHookStep,
+		Tags: []string{"cmdhook"},
+		Action: func(ctx context.Context) error {
+			return runProjectCommandHook(
+				ctx, hookDeps, ext.HookTypePre, string(project.ProjectEventPackage),
+			)
+		},
+	}); err != nil {
+		return nil, fmt.Errorf("building %s step: %w", prePackageHookStep, err)
+	}
+
+	// ── event-prepackage ── fires ProjectEventPackage pre-handlers
+	// (parity with the projectConfig.Invoke wrap in cmd/package.go). All
+	// per-service package steps gate on this via packageExtraDeps.
+	if err := g.AddStep(&exegraph.Step{
+		Name:      prePackageEventStep,
+		DependsOn: []string{prePackageHookStep},
+		Tags:      []string{"event"},
+		Action: func(ctx context.Context) error {
+			return u.projectConfig.RaiseEvent(
+				ctx,
+				ext.Event("pre"+string(project.ProjectEventPackage)),
+				projectEventArgs,
+			)
+		},
+	}); err != nil {
+		return nil, fmt.Errorf("building %s step: %w", prePackageEventStep, err)
+	}
+
 	handles, err := addServiceStepsToGraph(g, serviceGraphOptions{
 		services:       stableServices,
 		serviceManager: u.serviceManager,
 		deployTimeout:  deployTimeout,
 		// `azd up` never takes a --from-package flag; leave empty.
 		fromPackage:      "",
+		packageExtraDeps: []string{prePackageEventStep},
 		publishExtraDeps: []string{preDeployEventStep},
 		serviceContexts:  serviceContexts,
 		svcCtxMu:         &svcCtxMu,
@@ -261,11 +307,53 @@ func (u *UpGraphAction) Run(
 		return nil, err
 	}
 
-	// ── event-predeploy ── depends on cmdhook-predeploy + all package steps.
-	// Provision readiness is transitively guaranteed via cmdhook-predeploy →
-	// cmdhook-postprovision → provision sinks.
-	preDeployEventDeps := make([]string, 0, 1+len(handles.PackageSteps))
-	preDeployEventDeps = append(preDeployEventDeps, preDeployHookStep)
+	// ── event-postpackage ── fans in from all package steps. Mirrors the
+	// way the projectConfig.Invoke wrapper in cmd/package.go fires the
+	// post-handler after the per-service loop completes. For zero-service
+	// projects, gate on event-prepackage so the pre→post ordering holds.
+	postPackageEventDeps := handles.PackageSteps
+	if len(postPackageEventDeps) == 0 {
+		postPackageEventDeps = []string{prePackageEventStep}
+	}
+	if err := g.AddStep(&exegraph.Step{
+		Name:      postPackageEventStep,
+		DependsOn: postPackageEventDeps,
+		Tags:      []string{"event"},
+		Action: func(ctx context.Context) error {
+			return u.projectConfig.RaiseEvent(
+				ctx,
+				ext.Event("post"+string(project.ProjectEventPackage)),
+				projectEventArgs,
+			)
+		},
+	}); err != nil {
+		return nil, fmt.Errorf("building %s step: %w", postPackageEventStep, err)
+	}
+
+	// ── cmdhook-postpackage ── shell hook after the post-event. Gates
+	// event-predeploy so the old workflow ordering (postpackage runs
+	// before predeploy) is preserved even though package and provision
+	// overlap in the new graph.
+	if err := g.AddStep(&exegraph.Step{
+		Name:      postPackageHookStep,
+		DependsOn: []string{postPackageEventStep},
+		Tags:      []string{"cmdhook"},
+		Action: func(ctx context.Context) error {
+			return runProjectCommandHook(
+				ctx, hookDeps, ext.HookTypePost, string(project.ProjectEventPackage),
+			)
+		},
+	}); err != nil {
+		return nil, fmt.Errorf("building %s step: %w", postPackageHookStep, err)
+	}
+
+	// ── event-predeploy ── depends on cmdhook-predeploy + cmdhook-postpackage
+	// + all package steps. Provision readiness is transitively guaranteed
+	// via cmdhook-predeploy → cmdhook-postprovision → provision sinks. The
+	// cmdhook-postpackage edge preserves the old workflow's ordering of
+	// postpackage before predeploy.
+	preDeployEventDeps := make([]string, 0, 2+len(handles.PackageSteps))
+	preDeployEventDeps = append(preDeployEventDeps, preDeployHookStep, postPackageHookStep)
 	preDeployEventDeps = append(preDeployEventDeps, handles.PackageSteps...)
 	if err := g.AddStep(&exegraph.Step{
 		Name:      preDeployEventStep,

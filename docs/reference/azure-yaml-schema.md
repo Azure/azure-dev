@@ -65,16 +65,16 @@ Hooks run user-defined scripts at lifecycle points:
 ```yaml
 hooks:
   preprovision:
-    shell: sh
+    kind: sh
     run: ./scripts/setup.sh
   postdeploy:
-    shell: sh
+    kind: sh
     run: ./scripts/smoke-test.sh
 ```
 
 Available hook points (each supports `pre` and `post` prefixes):
 
-- **Command hooks (project-level):** `provision`, `deploy`, `down`, `up`, `restore`, `package`, `publish`
+- **Command hooks (project-level):** `provision`, `deploy`, `down`, `up`, `restore`, `package`, `infracreate`, `infradelete`, `publish`
 - **Service lifecycle hooks (service-level):** `restore`, `build`, `package`, `publish`, `deploy`
 
 For example, `preprovision` runs before provisioning, `postdeploy` runs after deployment. Service-level hooks are defined under a service's `hooks` section in `azure.yaml` and apply only to that service.

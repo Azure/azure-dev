@@ -141,11 +141,9 @@ func TestProvisionLayersGraph_BuildsGraph(t *testing.T) {
 		},
 	}
 
-	env := environment.NewWithValues("test", nil)
-
 	// Analyze dependencies.
 	layerDeps, err := bicep.AnalyzeLayerDependencies(
-		layers, projectDir, env,
+		layers, projectDir,
 	)
 	require.NoError(t, err)
 

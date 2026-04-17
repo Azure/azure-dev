@@ -10,7 +10,6 @@ import (
 	"regexp"
 	"slices"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 )
 
@@ -54,7 +53,6 @@ type layerDependencyGraph struct {
 func AnalyzeLayerDependencies(
 	layers []provisioning.Options,
 	projectPath string,
-	env *environment.Environment,
 ) (*LayerDependencies, error) {
 	if len(layers) == 0 {
 		return nil, nil

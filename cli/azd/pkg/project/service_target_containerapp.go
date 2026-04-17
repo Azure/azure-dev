@@ -34,32 +34,34 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 )
 
-// templateHashMu protects concurrent reads/writes to the shared environment map.
-// Environment.DotenvSet and Getenv operate on an unprotected map[string]string,
-// so when parallel deploy is active, all concurrent access to the env map must
-// be serialized.
+// envMu serializes all access to the shared *environment.Environment map
+// during concurrent deploys. Environment.DotenvSet, SetServiceProperty
+// (which calls DotenvSet internally), Getenv, and envManager.Save all touch
+// the same unprotected map[string]string, so every read and write across the
+// Publish + Deploy + preprovision paths must go through this mutex.
 //
 // Threading model for concurrent deploys:
-//   - shouldUseDirectRevisionAPI: reads (Getenv) and writes (DotenvSet) template
-//     hash keys — protected by templateHashMu.
-//   - expandServiceEnv: reads (Getenv via Expand callback) arbitrary env keys —
-//     also protected by templateHashMu to prevent races with DotenvSet.
+//   - shouldUseDirectRevisionAPI: reads (Getenv) and writes (DotenvSet) the
+//     template hash key; then persists via envManager.Save when the hash
+//     changes — all under envMu.
+//   - expandServiceEnv: reads (Getenv via Expand callback) arbitrary env keys
+//     — under envMu.RLock so multiple Expand calls can run concurrently while
+//     still blocking against writers.
+//   - Publish: writes IMAGE_NAME via SetServiceProperty + envManager.Save —
+//     under envMu.
+//   - Deploy: writes deployment outputs via UpdateEnvironment (which also
+//     ends up calling Save) — under envMu.
+//   - preprovision handler: writes RESOURCE_EXISTS + envManager.Save —
+//     under envMu.
 //
-// This is a package-level RWMutex (rather than instance-level) because all containerAppTarget
-// instances in a single azd run share the same *environment.Environment pointer.
-// A per-instance mutex would not protect against cross-instance races on the shared map.
+// This is a package-level RWMutex (rather than instance-level) because all
+// containerAppTarget instances in a single azd run share the same
+// *environment.Environment pointer. A per-instance mutex would not protect
+// against cross-instance races on the shared map.
 //
-// RWMutex allows concurrent reads (expandServiceEnv calls Getenv/Expand) while
-// serializing writes (shouldUseDirectRevisionAPI calls DotenvSet). This prevents
-// the read-only expand path from blocking parallel deploys.
-var templateHashMu sync.RWMutex
-
-// envSaveMu serializes SetServiceProperty + envManager.Save sequences in Publish.
-// When parallel deploy is active, multiple containerAppTarget instances call Publish
-// concurrently. Each reads/writes the shared environment map and persists it to disk.
-// Without serialization, concurrent saves can lose updates (last-writer-wins on the file)
-// and race on the in-memory map.
-var envSaveMu sync.Mutex
+// RWMutex lets the expand path run concurrently (Getenv-only) while
+// serializing every writer against every other writer AND against readers.
+var envMu sync.RWMutex
 
 type containerAppTarget struct {
 	env                 *environment.Environment
@@ -117,13 +119,13 @@ func (at *containerAppTarget) expandServiceEnv(serviceConfig *ServiceConfig) (ma
 		return cached, nil
 	}
 
-	// Hold templateHashMu (read lock) while reading from the shared env map via Expand.
+	// Hold envMu (read lock) while reading from the shared env map via Expand.
 	// The underlying Environment map is not goroutine-safe, and concurrent
-	// shouldUseDirectRevisionAPI calls may write to the same map via DotenvSet.
-	// RLock allows concurrent expand calls across services; only writes take exclusive lock.
-	templateHashMu.RLock()
+	// writers (DotenvSet / SetServiceProperty / envManager.Save) take the
+	// write lock. RLock allows concurrent expand calls across services.
+	envMu.RLock()
 	envVars, err := serviceConfig.Environment.Expand(at.env.Getenv)
-	templateHashMu.RUnlock()
+	envMu.RUnlock()
 	if err != nil {
 		return nil, err
 	}
@@ -215,9 +217,9 @@ func (at *containerAppTarget) Publish(
 	// Save the name of the image we pushed into the environment with a well known key.
 	log.Printf("writing image name to environment")
 
-	// Serialize env mutation + save to prevent lost updates when parallel publishes
-	// write to the same shared environment (see envSaveMu docs).
-	envSaveMu.Lock()
+	// Serialize env mutation + save to prevent lost updates and map races when
+	// parallel publishes write to the same shared environment (see envMu docs).
+	envMu.Lock()
 
 	// Extract remote image from artifacts
 	if remoteContainer, ok := publishResult.Artifacts.FindFirst(WithKind(ArtifactKindContainer)); ok {
@@ -225,11 +227,11 @@ func (at *containerAppTarget) Publish(
 	}
 
 	if err := at.envManager.Save(ctx, at.env); err != nil {
-		envSaveMu.Unlock()
+		envMu.Unlock()
 		return nil, fmt.Errorf("saving image name to environment: %w", err)
 	}
 
-	envSaveMu.Unlock()
+	envMu.Unlock()
 
 	return publishResult, nil
 }
@@ -350,9 +352,9 @@ func (at *containerAppTarget) Deploy(
 
 		if len(outputs) > 0 {
 			outputParams := provisioning.OutputParametersFromArmOutputs(template.Outputs, outputs)
-			envSaveMu.Lock()
+			envMu.Lock()
 			err := provisioning.UpdateEnvironment(ctx, outputParams, at.env, at.envManager)
-			envSaveMu.Unlock()
+			envMu.Unlock()
 			if err != nil {
 				return nil, fmt.Errorf("updating environment: %w", err)
 			}
@@ -498,7 +500,7 @@ func (at *containerAppTarget) Endpoints(
 // shouldUseDirectRevisionAPI checks whether the service's infrastructure template is unchanged
 // since the last deployment, indicating that only the container image tag changed and the
 // cheaper direct revision API can be used instead of a full ARM template deployment.
-// The templateHashMu mutex serializes access to the shared environment map for concurrent deploys.
+// The envMu mutex serializes access to the shared environment map for concurrent deploys.
 // The hash is persisted to disk whenever it changes so the optimization survives process
 // exit on revision paths that have no deployment outputs (e.g., no-output template).
 func (at *containerAppTarget) shouldUseDirectRevisionAPI(
@@ -517,30 +519,31 @@ func (at *containerAppTarget) shouldUseDirectRevisionAPI(
 
 	// Serialize access to the shared Environment map. DotenvSet and Getenv operate
 	// on an unprotected map[string]string, so concurrent calls during parallel
-	// deploy would be a data race.
-	templateHashMu.Lock()
+	// deploy would be a data race. Hold the write lock across the read-modify-write
+	// and the subsequent Save so another writer can't observe a torn state.
+	envMu.Lock()
 	previousHash := at.env.Getenv(envHashKey)
 	hashChanged := currentHashStr != previousHash
 	if hashChanged {
 		at.env.DotenvSet(envHashKey, currentHashStr)
 	}
-	templateHashMu.Unlock()
 
 	// Persist the updated hash so the next run sees it. The downstream env-save
 	// inside Deploy() only runs when the deployment produced ARM outputs, so a
 	// no-output template (or the direct-revision branch, which skips ARM
 	// deploy entirely) would otherwise lose the hash at process exit and fall
 	// back to a full ARM deployment on the next `azd deploy`.
+	var saveErr error
 	if hashChanged {
-		envSaveMu.Lock()
-		saveErr := at.envManager.Save(ctx, at.env)
-		envSaveMu.Unlock()
-		if saveErr != nil {
-			log.Printf("persisting template hash for %s failed: %v", serviceConfig.Name, saveErr)
-			// Fall through: the in-memory hash is still set for this run, but
-			// the next run may redo a full deploy. Do not fail the build over
-			// a persistence hiccup.
-		}
+		saveErr = at.envManager.Save(ctx, at.env)
+	}
+	envMu.Unlock()
+
+	if hashChanged && saveErr != nil {
+		log.Printf("persisting template hash for %s failed: %v", serviceConfig.Name, saveErr)
+		// Fall through: the in-memory hash is still set for this run, but
+		// the next run may redo a full deploy. Do not fail the build over
+		// a persistence hiccup.
 	}
 
 	if currentHashStr == previousHash {
@@ -641,6 +644,8 @@ func (at *containerAppTarget) addPreProvisionChecks(ctx context.Context, service
 				exists = true
 			}
 
+			envMu.Lock()
+			defer envMu.Unlock()
 			at.env.SetServiceProperty(serviceConfig.Name, "RESOURCE_EXISTS", strconv.FormatBool(exists))
 			return at.envManager.Save(ctx, at.env)
 		},

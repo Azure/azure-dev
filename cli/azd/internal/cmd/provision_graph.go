@@ -212,7 +212,7 @@ func (p *ProvisionAction) provisionLayersGraph(
 		// 2. Analyze bicep-level layer dependencies to get precise edges.
 		//    This enables true parallelism for independent layers instead
 		//    of an unnecessary linear chain.
-		layerDeps, err := bicep.AnalyzeLayerDependencies(layers, p.projectConfig.Path, p.env)
+		layerDeps, err := bicep.AnalyzeLayerDependencies(layers, p.projectConfig.Path)
 		if err != nil {
 			return nil, fmt.Errorf("analyzing layer dependencies: %w", err)
 		}

@@ -192,8 +192,8 @@ func (p *BicepProvider) cancelAndAwaitTerminal(
 					"Azure cancel request failed. Track the deployment here:\n  %s", portalUrl))
 		}
 		return interruptOutcome{
-			err: fmt.Errorf("submitting cancel request: %w (%w)",
-				provisioning.ErrDeploymentCancelTimeout, err),
+			err: fmt.Errorf("%w: %w",
+				provisioning.ErrDeploymentCancelFailed, err),
 			telemetryValue: "cancel_failed",
 		}
 	}

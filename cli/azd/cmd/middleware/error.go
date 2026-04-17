@@ -91,6 +91,7 @@ func shouldSkipAgentHandling(err error) bool {
 		errors.Is(err, provisioning.ErrDeploymentCanceledByUser) ||
 		errors.Is(err, provisioning.ErrDeploymentCancelTimeout) ||
 		errors.Is(err, provisioning.ErrDeploymentCancelTooLate) ||
+		errors.Is(err, provisioning.ErrDeploymentCancelFailed) ||
 
 		errors.Is(err, environment.ErrNotFound) ||
 		errors.Is(err, environment.ErrNameNotSpecified) ||

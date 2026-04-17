@@ -299,7 +299,7 @@ func TestScopeGetResourceOperations(t *testing.T) {
 
 func TestScopeCancel(t *testing.T) {
 	t.Run("SubscriptionScopeSuccess", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		deploymentService := mockazapi.NewDeploymentsServiceFromMockContext(mockContext)
 
 		called := false
@@ -320,7 +320,7 @@ func TestScopeCancel(t *testing.T) {
 	})
 
 	t.Run("ResourceGroupScopeSuccess", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		deploymentService := mockazapi.NewDeploymentsServiceFromMockContext(mockContext)
 
 		called := false
@@ -342,7 +342,7 @@ func TestScopeCancel(t *testing.T) {
 	})
 
 	t.Run("PropagatesError", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		deploymentService := mockazapi.NewDeploymentsServiceFromMockContext(mockContext)
 
 		mockContext.HttpClient.When(func(request *http.Request) bool {

@@ -12,21 +12,39 @@ import (
 func TestPushInterruptHandler_LIFO(t *testing.T) {
 	require.Nil(t, currentInterruptHandler())
 
-	first := func() bool { return true }
+	firstCalls := 0
+	first := func() bool {
+		firstCalls++
+		return true
+	}
 	pop1 := PushInterruptHandler(first)
 
-	require.NotNil(t, currentInterruptHandler())
+	cur := currentInterruptHandler()
+	require.NotNil(t, cur)
+	require.True(t, cur())
+	require.Equal(t, 1, firstCalls)
 
-	second := func() bool { return true }
+	secondCalls := 0
+	second := func() bool {
+		secondCalls++
+		return true
+	}
 	pop2 := PushInterruptHandler(second)
 
 	// Top-of-stack should be `second` (most recently pushed).
-	cur := currentInterruptHandler()
+	cur = currentInterruptHandler()
 	require.NotNil(t, cur)
+	require.True(t, cur())
+	require.Equal(t, 1, firstCalls, "pushing second must not invoke first")
+	require.Equal(t, 1, secondCalls)
 
 	pop2()
 	// After popping `second`, current should be `first` again.
-	require.NotNil(t, currentInterruptHandler())
+	cur = currentInterruptHandler()
+	require.NotNil(t, cur)
+	require.True(t, cur())
+	require.Equal(t, 2, firstCalls)
+	require.Equal(t, 1, secondCalls, "popping second must not re-invoke it")
 
 	pop1()
 	require.Nil(t, currentInterruptHandler())

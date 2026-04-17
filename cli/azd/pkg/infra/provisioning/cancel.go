@@ -33,4 +33,10 @@ var (
 	// (Succeeded or Failed) before the cancel request could take effect.
 	ErrDeploymentCancelTooLate = errors.New(
 		"deployment finished before the cancel request could take effect")
+
+	// ErrDeploymentCancelFailed is returned when the ARM Cancel request itself
+	// failed (network, permissions, etc.). The underlying error is wrapped so
+	// the caller can inspect it with errors.Unwrap or errors.Is.
+	ErrDeploymentCancelFailed = errors.New(
+		"deployment cancel request failed")
 )

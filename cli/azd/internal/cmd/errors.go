@@ -294,6 +294,8 @@ func classifySentinel(err error) string {
 		return "user.canceled.cancel_timed_out"
 	case errors.Is(err, provisioning.ErrDeploymentCancelTooLate):
 		return "user.canceled.cancel_too_late"
+	case errors.Is(err, provisioning.ErrDeploymentCancelFailed):
+		return "user.canceled.cancel_failed"
 	case errors.Is(err, update.ErrNeedsElevation):
 		return "update.elevationRequired"
 	case errors.Is(err, pipeline.ErrRemoteHostIsNotAzDo):

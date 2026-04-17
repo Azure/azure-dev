@@ -1,5 +1,11 @@
 # Release History
 
+## 0.1.25-preview (unreleased)
+
+### Breaking Changes
+
+- [[#7764]](https://github.com/Azure/azure-dev/pull/7764) Remove `container.scale` configuration (`minReplicas`/`maxReplicas`) from `azure.yaml`. Scale settings are no longer supported for hosted agents. Remove any `container.scale` section from your service configuration.
+
 ## 0.1.24-preview (2026-04-17)
 
 - [[#7765]](https://github.com/Azure/azure-dev/pull/7765) Improve invalid manifest error messaging to guide users to check for a required `template` field.

@@ -32,7 +32,7 @@ func TestApplyVnextMetadata(t *testing.T) {
 				},
 			}
 
-			applyVnextMetadata(request)
+			applyAgentMetadata(request)
 
 			val, exists := request.Metadata["enableVnextExperience"]
 			if !exists || val != "true" {

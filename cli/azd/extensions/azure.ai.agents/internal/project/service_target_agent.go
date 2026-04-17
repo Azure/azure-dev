@@ -672,7 +672,7 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 	}
 
 	// Set experience metadata on the request
-	applyVnextMetadata(request)
+	applyAgentMetadata(request)
 
 	// Display agent information
 	p.displayAgentInfo(request)
@@ -957,8 +957,9 @@ func encodeSubscriptionID(subscriptionID string) (string, error) {
 	return strings.TrimRight(encoded, "="), nil
 }
 
-// applyVnextMetadata sets the enableVnextExperience metadata on the request.
-func applyVnextMetadata(request *agent_api.CreateAgentRequest) {
+// applyAgentMetadata sets the enableVnextExperience metadata on the request.
+// The "enableVnextExperience" key is a server-side API contract.
+func applyAgentMetadata(request *agent_api.CreateAgentRequest) {
 	if request.Metadata == nil {
 		request.Metadata = make(map[string]string)
 	}

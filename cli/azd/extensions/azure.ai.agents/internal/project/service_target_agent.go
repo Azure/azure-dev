@@ -25,6 +25,7 @@ import (
 	"github.com/drone/envsubst"
 	"github.com/fatih/color"
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 // Reference implementation
@@ -430,6 +431,8 @@ func (p *AgentServiceTargetProvider) Deploy(
 		fmt.Println("Loaded custom service target configuration")
 	}
 
+	warnDeprecatedScaleSettings(serviceConfig.Config)
+
 	// Load and validate the agent manifest
 	data, err := os.ReadFile(p.agentDefinitionPath)
 	if err != nil {
@@ -641,6 +644,8 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 			"check the service configuration in azure.yaml",
 		)
 	}
+
+	warnDeprecatedScaleSettings(serviceConfig.Config)
 
 	var cpu, memory string
 	if foundryAgentConfig.Container != nil && foundryAgentConfig.Container.Resources != nil {
@@ -964,4 +969,22 @@ func applyAgentMetadata(request *agent_api.CreateAgentRequest) {
 		request.Metadata = make(map[string]string)
 	}
 	request.Metadata["enableVnextExperience"] = "true"
+}
+
+// warnDeprecatedScaleSettings prints a user-visible warning if the raw service config
+// contains a container.scale section, which is no longer supported.
+func warnDeprecatedScaleSettings(config *structpb.Struct) {
+	if config == nil {
+		return
+	}
+	containerVal, ok := config.Fields["container"]
+	if !ok || containerVal.GetStructValue() == nil {
+		return
+	}
+	if _, hasScale := containerVal.GetStructValue().Fields["scale"]; hasScale {
+		fmt.Printf("%s\n", output.WithWarningFormat(
+			"WARNING: container.scale settings (minReplicas/maxReplicas) are no longer supported and will be ignored. "+
+				"Remove the container.scale section from your azure.yaml service configuration.",
+		))
+	}
 }

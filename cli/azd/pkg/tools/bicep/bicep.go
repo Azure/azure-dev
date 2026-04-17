@@ -322,6 +322,13 @@ func hashBicepFileTree(file string, h io.Writer, visited map[string]bool) error 
 	}
 	visited[absPath] = true
 
+	// absPath originates from developer-controlled inputs: the initial Bicep
+	// template path configured in the azd project, plus module paths embedded
+	// in those Bicep files. This function is read-only and only feeds the
+	// content into a SHA-256 hash used as an in-memory build-cache key. There
+	// is no untrusted-user input in this flow, so path traversal via taint is
+	// not a real risk here.
+	//nolint:gosec // G304/G703: developer-controlled bicep paths, read-only cache hashing.
 	content, err := os.ReadFile(absPath)
 	if err != nil {
 		return err

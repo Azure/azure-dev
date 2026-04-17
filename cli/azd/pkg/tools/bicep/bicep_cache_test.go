@@ -4,6 +4,7 @@
 package bicep
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -124,7 +125,7 @@ func TestBuildCache_InvalidationOnFileChange(t *testing.T) {
 		return len(args.Args) >= 2 && args.Args[0] == "build"
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		callCount++
-		return exec.NewRunResult(0, `{"version":`+string(rune('0'+callCount))+`}`, ""), nil
+		return exec.NewRunResult(0, fmt.Sprintf(`{"version":%d}`, callCount), ""), nil
 	})
 
 	ctx := *mockContext.Context

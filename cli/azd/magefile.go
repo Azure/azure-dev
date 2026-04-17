@@ -566,8 +566,9 @@ var excludedPlaybackTests = map[string]string{
 	// Recordings affected by feat/exegraph: the graph-driven up/provision path
 	// introduces legitimate new HTTP interactions (layer hash probes, resource-group
 	// existence checks). Must be re-recorded with live Azure credentials before merge.
-	"Test_DeploymentStacks":   "needs re-record for feat/exegraph graph-driven provision",
-	"Test_CLI_ProvisionState": "needs re-record for feat/exegraph graph-driven provision",
+	"Test_DeploymentStacks":                  "needs re-record for feat/exegraph graph-driven provision",
+	"Test_CLI_ProvisionState":                "needs re-record for feat/exegraph graph-driven provision",
+	"Test_CLI_InfraCreateAndDeleteUpperCase": "needs re-record for feat/exegraph graph-driven provision",
 }
 
 // discoverPlaybackTests scans the recordings directory for .yaml files and

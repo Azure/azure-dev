@@ -53,7 +53,7 @@ func Test_slotEnvVarNameForService_Coverage3(t *testing.T) {
 	}
 }
 
-func Test_skipStatusCheckEnvVarNameForService(t *testing.T) {
+func Test_skipStatusCheckEnvVarNameForService_Coverage3(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string

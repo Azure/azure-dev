@@ -443,7 +443,7 @@ func TestLogWebAppDeploymentStatus(t *testing.T) {
 
 		result := logWebAppDeploymentStatus(res, "", noop)
 		require.Error(t, result.err)
-		require.Contains(t, result.err.Error(), "deployment status is nil")
+		require.Contains(t, result.err.Error(), "response or its properties are empty")
 	})
 
 	t.Run("NilInstanceCounters", func(t *testing.T) {

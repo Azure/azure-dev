@@ -215,7 +215,7 @@ func logWebAppDeploymentStatus(
 	properties := res.CsmDeploymentStatus.Properties
 
 	if properties.Status == nil {
-		return deploymentStatusResult{err: fmt.Errorf("deployment status is nil")}
+		return deploymentStatusResult{err: fmt.Errorf("response or its properties are empty")}
 	}
 
 	var inProgressNumber, successNumber, failNumber int
@@ -328,7 +328,7 @@ func (c *ZipDeployClient) DeployTrackStatus(
 
 		if poller.Done() {
 			if response.Properties == nil || response.Properties.Status == nil {
-				return fmt.Errorf("deployment status API completed with nil properties or status")
+				return fmt.Errorf("response or its properties are empty")
 			}
 			status := *response.Properties.Status
 			if status != armappservice.DeploymentBuildStatusRuntimeSuccessful &&

@@ -286,6 +286,12 @@ func Test_CLI_Deploy_StoppedWebApp(t *testing.T) {
 
 	session := recording.Start(t)
 
+	// This test requires live Azure resources and uses az CLI calls (webapp stop/show)
+	// that bypass the recording proxy, so it cannot be replayed from recordings.
+	if session != nil && session.Playback {
+		t.Skip("Skipping test in playback mode. This test is live only.")
+	}
+
 	envName := randomOrStoredEnvName(session)
 	t.Logf("AZURE_ENV_NAME: %s", envName)
 

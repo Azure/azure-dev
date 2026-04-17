@@ -123,28 +123,13 @@ func (Dev) Uninstall() error {
 //
 // Usage: mage preflight
 func Preflight() error {
-	// Disable Go workspace mode so preflight mirrors CI, which has no go.work file.
-	// Without this, a local go.work can silently resolve different module versions
-	// than go.mod alone, masking build failures that only appear in CI.
-	defer setEnvScoped("GOWORK", "off")()
-
-	repoRoot, err := findRepoRoot()
+	azdDir, cleanup, err := mageInit()
 	if err != nil {
 		return err
 	}
-	azdDir := filepath.Join(repoRoot, "cli", "azd")
+	defer cleanup()
 
-	// Pin GOTOOLCHAIN to the version declared in go.mod when it isn't already
-	// set. When the system Go is older (e.g. 1.25) and go.mod says 1.26,
-	// parallel compilations can race the auto-download, producing "compile:
-	// version X does not match go tool version Y" errors. Pinning upfront
-	// avoids this. We skip the override when GOTOOLCHAIN is already set so
-	// that a user's explicit choice (or a newer Go) is respected.
-	if _, hasToolchain := os.LookupEnv("GOTOOLCHAIN"); !hasToolchain {
-		if ver, err := goModVersion(azdDir); err == nil && ver != "" {
-			defer setEnvScoped("GOTOOLCHAIN", "go"+ver)()
-		}
-	}
+	repoRoot := filepath.Dir(filepath.Dir(azdDir))
 
 	// Check required tools are installed before running anything.
 	if err := requireTool("golangci-lint",
@@ -381,8 +366,10 @@ func Preflight() error {
 
 		// 8. Playback tests
 		wg2.Go(func() {
-			playbackEnv := append(skipBuildEnv, "AZURE_RECORD_MODE=playback")
-			if err := runPlaybackTestsWithEnv(azdDir, playbackEnv); err != nil {
+			if err := runFunctionalTests(azdDir, testRunOpts{
+				mode: "playback",
+				env:  skipBuildEnv,
+			}); err != nil {
 				results[checkPlayback] = checkResult{"fail", err.Error(), ""}
 			} else {
 				results[checkPlayback] = checkResult{"pass", "", ""}
@@ -424,33 +411,99 @@ func Preflight() error {
 //
 // Usage: mage playbackTests
 func PlaybackTests() error {
-	defer setEnvScoped("GOWORK", "off")()
-
-	repoRoot, err := findRepoRoot()
+	azdDir, cleanup, err := mageInit()
 	if err != nil {
 		return err
 	}
-	azdDir := filepath.Join(repoRoot, "cli", "azd")
+	defer cleanup()
 
-	// Pin GOTOOLCHAIN (see Preflight for rationale).
+	return runFunctionalTests(azdDir, testRunOpts{mode: "playback"})
+}
+
+// Record re-records functional test playback cassettes against live Azure.
+// Usage:
+//
+//	mage record                              # re-record ALL playback tests
+//	mage record -filter=TestName             # re-record tests matching filter
+//
+// Requires:
+//   - Azure authentication (azd auth login)
+//   - TME subscription config (azd config set defaults.test.subscription/tenant/location)
+//     OR equivalent AZD_TEST_* environment variables
+func Record(filter *string) error {
+	azdDir, cleanup, err := mageInit()
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	// Build azd-record binary (built with -tags=record for recording support).
+	fmt.Println("══ Building azd-record binary ══")
+	binaryName := "azd-record"
+	if runtime.GOOS == "windows" {
+		binaryName = "azd-record.exe"
+	}
+	if err := runStreaming(azdDir, "go", "build", "-tags=record", "-o="+binaryName, "."); err != nil {
+		return fmt.Errorf("building azd-record: %w", err)
+	}
+	binaryPath := filepath.Join(azdDir, binaryName)
+
+	return runFunctionalTests(azdDir, testRunOpts{
+		mode:    "record",
+		filter:  filter,
+		verbose: true,
+		env: []string{
+			"CLI_TEST_SKIP_BUILD=true",
+			"CLI_TEST_AZD_PATH=" + binaryPath,
+		},
+	})
+}
+
+// mageInit sets up the standard mage environment (GOWORK=off, GOTOOLCHAIN pin)
+// and returns the cli/azd directory path. Callers must defer the returned
+// cleanup function to restore environment variables.
+func mageInit() (azdDir string, cleanup func(), err error) {
+	restoreGowork := setEnvScoped("GOWORK", "off")
+
+	repoRoot, err := findRepoRoot()
+	if err != nil {
+		restoreGowork()
+		return "", nil, err
+	}
+	azdDir = filepath.Join(repoRoot, "cli", "azd")
+
+	// Pin GOTOOLCHAIN to the version declared in go.mod when it isn't already
+	// set. Prevents parallel compilation races when the system Go version
+	// differs from go.mod (see Preflight for full rationale).
+	var restoreToolchain func()
 	if _, hasToolchain := os.LookupEnv("GOTOOLCHAIN"); !hasToolchain {
 		if ver, err := goModVersion(azdDir); err == nil && ver != "" {
-			defer setEnvScoped("GOTOOLCHAIN", "go"+ver)()
+			restoreToolchain = setEnvScoped("GOTOOLCHAIN", "go"+ver)
 		}
 	}
 
-	return runPlaybackTests(azdDir)
+	cleanup = func() {
+		if restoreToolchain != nil {
+			restoreToolchain()
+		}
+		restoreGowork()
+	}
+	return azdDir, cleanup, nil
 }
 
-// runPlaybackTests discovers test recordings and runs matching functional
-// tests in playback mode (AZURE_RECORD_MODE=playback).
-func runPlaybackTests(azdDir string) error {
-	return runPlaybackTestsWithEnv(azdDir, nil)
+// testRunOpts configures how runFunctionalTests discovers and executes
+// functional tests with recorded HTTP interactions.
+type testRunOpts struct {
+	mode    string   // "record" or "playback"
+	filter  *string  // optional test name filter (substring match)
+	verbose bool     // add -v flag
+	env     []string // additional env vars beyond AZURE_RECORD_MODE
 }
 
-// runPlaybackTestsWithEnv is like runPlaybackTests but accepts additional
-// environment variables (e.g. CLI_TEST_SKIP_BUILD=true for parallel runs).
-func runPlaybackTestsWithEnv(azdDir string, extraEnv []string) error {
+// runFunctionalTests discovers playback tests from recordings, applies an
+// optional name filter, and runs them via "go test" with the given mode
+// and environment variables.
+func runFunctionalTests(azdDir string, opts testRunOpts) error {
 	recordingsDir := filepath.Join(
 		azdDir, "test", "functional", "testdata", "recordings",
 	)
@@ -459,24 +512,51 @@ func runPlaybackTestsWithEnv(azdDir string, extraEnv []string) error {
 		return err
 	}
 	if len(names) == 0 {
-		fmt.Println("No recording files found — skipping playback tests.")
+		fmt.Printf("No recording files found — skipping %s tests.\n", opts.mode)
 		return nil
 	}
 
+	// Apply optional test filter.
+	if opts.filter != nil {
+		var filtered []string
+		for _, name := range names {
+			if strings.Contains(name, *opts.filter) || name == *opts.filter {
+				filtered = append(filtered, name)
+			}
+		}
+		if len(filtered) == 0 {
+			fmt.Printf("No playback tests match filter %q. Available tests:\n", *opts.filter)
+			for _, name := range names {
+				fmt.Printf("  • %s\n", name)
+			}
+			return fmt.Errorf("no tests match filter %q", *opts.filter)
+		}
+		names = filtered
+	}
+
+	// Build test -run pattern from discovered names.
 	escaped := make([]string, len(names))
 	for i, name := range names {
 		escaped[i] = regexp.QuoteMeta(name)
 	}
 	pattern := "^(" + strings.Join(escaped, "|") + ")(/|$)"
-	fmt.Printf("Running %d tests in playback mode...\n", len(names))
 
-	env := append(extraEnv, "AZURE_RECORD_MODE=playback")
-	return runStreamingWithEnv(
-		azdDir,
-		env,
-		"go", "test", "-run", pattern,
-		"./test/functional", "-timeout", "30m", "-count=1",
-	)
+	fmt.Printf("Running %d test(s) in %s mode...\n", len(names), opts.mode)
+	if opts.verbose {
+		for _, name := range names {
+			fmt.Printf("  • %s\n", name)
+		}
+	}
+
+	env := []string{"AZURE_RECORD_MODE=" + opts.mode}
+	env = append(env, opts.env...)
+
+	args := []string{"test", "-run", pattern, "./test/functional", "-timeout", "30m", "-count=1"}
+	if opts.verbose {
+		args = append(args, "-v")
+	}
+
+	return runStreamingWithEnv(azdDir, env, "go", args...)
 }
 
 // excludedPlaybackTests lists tests whose recordings are known to be stale.

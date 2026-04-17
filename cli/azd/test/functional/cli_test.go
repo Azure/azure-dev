@@ -66,14 +66,21 @@ type cliConfig struct {
 	// The client ID to use for live Azure tests.
 	ClientID string
 	// The tenant ID to use for live Azure tests.
+	// Resolution order (first non-empty wins):
+	//   1. AZD_TEST_TENANT_ID env var
+	//   2. azd config 'defaults.test.tenant'
 	TenantID string
 	// The Azure subscription ID to use for live Azure tests.
-	// In non-CI environments with no additional environment variables set,
-	// the azd user config 'defaults.subscription' value is used.
+	// Resolution order (first non-empty wins):
+	//   1. AZD_TEST_AZURE_SUBSCRIPTION_ID env var
+	//   2. azd config 'defaults.test.subscription'
+	//   3. azd config 'defaults.subscription'
 	SubscriptionID string
 	// The Azure location to use for live Azure tests.
-	// In non-CI environments with no additional environment variables set,
-	// the azd user config 'defaults.location' value is used.
+	// Resolution order (first non-empty wins):
+	//   1. AZD_TEST_AZURE_LOCATION env var
+	//   2. azd config 'defaults.test.location'
+	//   3. azd config 'defaults.location'
 	Location string
 }
 
@@ -84,16 +91,31 @@ func (c *cliConfig) init() {
 	c.SubscriptionID = os.Getenv("AZD_TEST_AZURE_SUBSCRIPTION_ID")
 	c.Location = os.Getenv("AZD_TEST_AZURE_LOCATION")
 
-	if !c.CI && (c.SubscriptionID == "" || c.Location == "") {
+	if !c.CI && (c.SubscriptionID == "" || c.Location == "" || c.TenantID == "") {
 		userConfig := config.NewUserConfigManager(config.NewFileConfigManager(config.NewManager()))
 		cfg, err := userConfig.Load()
 		if err == nil {
-			if subId, ok := cfg.GetString("defaults.subscription"); ok && c.SubscriptionID == "" {
-				c.SubscriptionID = subId
+			// Check test-specific keys first (defaults.test.*), then general defaults.
+			if c.SubscriptionID == "" {
+				if subId, ok := cfg.GetString("defaults.test.subscription"); ok && subId != "" {
+					c.SubscriptionID = subId
+				} else if subId, ok := cfg.GetString("defaults.subscription"); ok && subId != "" {
+					c.SubscriptionID = subId
+				}
 			}
 
-			if loc, ok := cfg.GetString("defaults.location"); ok && c.Location == "" {
-				c.Location = loc
+			if c.TenantID == "" {
+				if tid, ok := cfg.GetString("defaults.test.tenant"); ok && tid != "" {
+					c.TenantID = tid
+				}
+			}
+
+			if c.Location == "" {
+				if loc, ok := cfg.GetString("defaults.test.location"); ok && loc != "" {
+					c.Location = loc
+				} else if loc, ok := cfg.GetString("defaults.location"); ok && loc != "" {
+					c.Location = loc
+				}
 			}
 		}
 

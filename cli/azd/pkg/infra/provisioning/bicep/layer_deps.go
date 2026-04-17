@@ -132,12 +132,9 @@ func AnalyzeLayerDependencies(
 				g.edges[i] = append(g.edges[i], provider)
 				continue
 			}
-			// Only skip for refs with no in-graph producer (externally
-			// supplied env vars). These can't participate in the DAG
-			// regardless.
-			if _, found := env.LookupEnv(ref); found {
-				continue
-			}
+			// Refs with no in-graph producer are externally supplied
+			// (from the environment) or genuinely unresolved. Either
+			// way they don't add a DAG edge.
 		}
 	}
 

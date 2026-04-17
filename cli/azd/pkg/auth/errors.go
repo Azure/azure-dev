@@ -46,9 +46,16 @@ type TokenProtectionBlockedError struct {
 	errText string
 }
 
-// newReLoginRequiredError returns an error if the response indicates that the user needs to reauthenticate.
-// If it is not a reauthentication error, it returns false.
-func newReLoginRequiredError(
+// newActionableAuthError inspects an AAD error response and, if it matches a known
+// pattern that azd can surface with actionable guidance, returns a wrapped error and true.
+//
+// The returned error may be a *ReLoginRequiredError (the user should rerun `azd auth login`)
+// or a *TokenProtectionBlockedError (Conditional Access token protection blocked the request
+// and re-authenticating will not help). Callers must not assume the result always implies
+// re-authentication — inspect the underlying error type if behavior needs to differ.
+//
+// If the response does not match a known pattern, it returns (nil, false).
+func newActionableAuthError(
 	response *AadErrorResponse,
 	scopes []string,
 	cloud *cloud.Cloud,

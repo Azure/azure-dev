@@ -99,7 +99,7 @@ func TestReLoginRequired(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, got := newReLoginRequiredError(tt.resp, LoginScopes(cloud.AzurePublic()), cloud.AzurePublic(), "")
+			_, got := newActionableAuthError(tt.resp, LoginScopes(cloud.AzurePublic()), cloud.AzurePublic(), "")
 			require.Equal(t, tt.want, got)
 		})
 	}
@@ -130,7 +130,7 @@ func TestReLoginRequiredError(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err, _ := newReLoginRequiredError(tt.resp, LoginScopes(cloud.AzurePublic()), cloud.AzurePublic(), "")
+			err, _ := newActionableAuthError(tt.resp, LoginScopes(cloud.AzurePublic()), cloud.AzurePublic(), "")
 			got := err.Error()
 			require.Equal(t, tt.want, got)
 		})
@@ -238,7 +238,7 @@ func TestNewReLoginRequiredError_TokenProtectionTakesPrecedence(t *testing.T) {
 		ErrorCodes:       []int{530084},
 	}
 
-	err, ok := newReLoginRequiredError(resp, LoginScopes(cloud.AzurePublic()), cloud.AzurePublic(), "")
+	err, ok := newActionableAuthError(resp, LoginScopes(cloud.AzurePublic()), cloud.AzurePublic(), "")
 	require.True(t, ok)
 	require.NotNil(t, err)
 

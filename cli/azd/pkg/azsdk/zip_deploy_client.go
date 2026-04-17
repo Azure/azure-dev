@@ -327,8 +327,12 @@ func (c *ZipDeployClient) DeployTrackStatus(
 		}
 
 		if poller.Done() {
+			if response.Properties == nil || response.Properties.Status == nil {
+				return fmt.Errorf("deployment status API completed with nil properties or status")
+			}
 			status := *response.Properties.Status
 			if status != armappservice.DeploymentBuildStatusRuntimeSuccessful &&
+				status != armappservice.DeploymentBuildStatusBuildSuccessful &&
 				status != armappservice.DeploymentBuildStatusBuildFailed &&
 				status != armappservice.DeploymentBuildStatusRuntimeFailed {
 				return fmt.Errorf("deployment status API unexpectedly terminated at stage %s",

@@ -124,7 +124,7 @@ func Test_DeployTrackLinuxWebAppStatus(t *testing.T) {
 
 	t.Run("SkipStatusCheck", func(t *testing.T) {
 		ran := false
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		azCli := newAzureClientFromMockContext(mockContext)
 
 		registerIsLinuxWebAppMocks(mockContext, &ran)

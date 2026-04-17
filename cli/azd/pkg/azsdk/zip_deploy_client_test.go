@@ -361,9 +361,9 @@ func TestLogWebAppDeploymentStatus(t *testing.T) {
 			CsmDeploymentStatus: armappservice.CsmDeploymentStatus{
 				Properties: &armappservice.CsmDeploymentStatusProperties{
 					Status:                      to.Ptr(armappservice.DeploymentBuildStatusRuntimeStarting),
-					NumberOfInstancesInProgress: new(int32(0)),
-					NumberOfInstancesSuccessful: new(int32(0)),
-					NumberOfInstancesFailed:     new(int32(0)),
+					NumberOfInstancesInProgress: new(int32),
+					NumberOfInstancesSuccessful: new(int32),
+					NumberOfInstancesFailed:     new(int32),
 				},
 			},
 		}
@@ -379,8 +379,8 @@ func TestLogWebAppDeploymentStatus(t *testing.T) {
 				Properties: &armappservice.CsmDeploymentStatusProperties{
 					Status:                      to.Ptr(armappservice.DeploymentBuildStatusRuntimeStarting),
 					NumberOfInstancesInProgress: new(int32(1)),
-					NumberOfInstancesSuccessful: new(int32(0)),
-					NumberOfInstancesFailed:     new(int32(0)),
+					NumberOfInstancesSuccessful: new(int32),
+					NumberOfInstancesFailed:     new(int32),
 				},
 			},
 		}
@@ -395,9 +395,9 @@ func TestLogWebAppDeploymentStatus(t *testing.T) {
 			CsmDeploymentStatus: armappservice.CsmDeploymentStatus{
 				Properties: &armappservice.CsmDeploymentStatusProperties{
 					Status:                      to.Ptr(armappservice.DeploymentBuildStatusRuntimeSuccessful),
-					NumberOfInstancesInProgress: new(int32(0)),
+					NumberOfInstancesInProgress: new(int32),
 					NumberOfInstancesSuccessful: new(int32(1)),
-					NumberOfInstancesFailed:     new(int32(0)),
+					NumberOfInstancesFailed:     new(int32),
 				},
 			},
 		}
@@ -412,8 +412,8 @@ func TestLogWebAppDeploymentStatus(t *testing.T) {
 			CsmDeploymentStatus: armappservice.CsmDeploymentStatus{
 				Properties: &armappservice.CsmDeploymentStatusProperties{
 					Status:                      to.Ptr(armappservice.DeploymentBuildStatusRuntimeFailed),
-					NumberOfInstancesInProgress: new(int32(0)),
-					NumberOfInstancesSuccessful: new(int32(0)),
+					NumberOfInstancesInProgress: new(int32),
+					NumberOfInstancesSuccessful: new(int32),
 					NumberOfInstancesFailed:     new(int32(1)),
 				},
 			},

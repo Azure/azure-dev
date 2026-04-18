@@ -13,7 +13,7 @@ Files to update:
 **Version derivation:**
 1. Find the top-most section in `cli/azd/CHANGELOG.md` (e.g., `## X.Y.Z-beta.N (Unreleased)`).
 2. Strip the `-beta.N` suffix and `(Unreleased)` marker.
-3. Format as: `## X.Y.Z (YYYY-MM-DD)` using today's date.
+3. Format as: `## X.Y.Z (YYYY-MM-DD)` using **today's date** (the date the changelog is being authored/committed, not a future planned ship date).
 4. Set `cli/version.txt` to `X.Y.Z`.
 5. Set the `Version` constant in `cli/azd/pkg/azdext/version.go` to `X.Y.Z`.
 6. If no unreleased header is found in the changelog, ask the user for the release version number via `ask_user`.

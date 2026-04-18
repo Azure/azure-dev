@@ -10,7 +10,7 @@
 
 ### Other Changes
 
-## 1.24.1 (2026-04-18)
+## 1.24.1 (2026-04-17)
 
 ### Features Added
 
@@ -28,7 +28,6 @@
 
 - [[#7600]](https://github.com/Azure/azure-dev/pull/7600) Improve `azd up` and `azd deploy` performance with HTTP connection pooling, adaptive ARM poll frequency (5s for deployments, 15s for WhatIf/Validate), per-registry ACR login caching, and Container App revision poll frequency (5s).
 - [[#7721]](https://github.com/Azure/azure-dev/pull/7721) Add telemetry instrumentation for hook executions, recording hook event, level (project or service), kind (shell, JavaScript, TypeScript, .NET), and result across all hook-enabled commands.
-- [[#7744]](https://github.com/Azure/azure-dev/pull/7744) Remove the `--fail-on-prompt` global flag and `AZD_FAIL_ON_PROMPT` environment variable that were advertised in 1.24.0 release notes; the flag has been reverted and is no longer available.
 
 ## 1.24.0 (2026-04-14)
 

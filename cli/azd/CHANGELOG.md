@@ -6,6 +6,7 @@
 
 - [[#7776]](https://github.com/Azure/azure-dev/pull/7776) Layer dependency analysis for `infra.layers` is now safe-by-default: when the static analyzer encounters a syntax pattern it cannot resolve to a literal env-var name (non-literal `readEnvironmentVariable(varName)` in `.bicepparam`, ARM template expressions like `[parameters('foo')]` in `.parameters.json`, or `param x = readEnvironmentVariable('Y')` defaults inside `.bicep`), the consuming layer is forced to depend on all earlier layers. This trades parallelism for correctness on under-analyzed inputs.
 - [[#7776]](https://github.com/Azure/azure-dev/pull/7776) New `infra.layers[].dependsOn` field in `azure.yaml` lets authors declare hook-mediated edges (for example, when a postprovision hook in another layer writes an env var that this layer's bicepparam reads at provision time) that no static analyzer can infer from `.bicep` / `.bicepparam` / `.parameters.json` contents alone. Explicit edges union with detected edges and are validated for unknown layer names, self-references, and cycles.
+- [[#7776]](https://github.com/Azure/azure-dev/pull/7776) Add `provision.layer.*` telemetry attributes (`count`, `max_parallel`, `safe_fallback_count`, `explicit_dependson_count`) on the ambient command span for multi-layer `azd provision` / `azd up` runs so the team can measure adoption and detect when the safe-by-default detector fallback engages on real templates.
 
 ### Breaking Changes
 

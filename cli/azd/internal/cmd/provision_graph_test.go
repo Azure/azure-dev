@@ -235,3 +235,69 @@ func (c *trackingConsole) Message(
 	c.messages = append(c.messages, message)
 	c.mu.Unlock()
 }
+
+// TestProvisionLayersGraph_DependentLayerWaitsForPostHooks verifies the
+// cross-layer ordering contract documented on [runProvisionSingleLayer]:
+// when the dependency graph contains an edge B → A, layer B's step is
+// scheduled only after layer A's step returns — which by construction
+// includes A's post-provision event AND A's layer post-hooks. This test
+// drives the guarantee at the scheduler layer (the layer where it is
+// actually enforced) by simulating each step as a single function whose
+// body runs the full 7-stage lifecycle, then asserting B's start observes
+// A's post-hook completion.
+func TestProvisionLayersGraph_DependentLayerWaitsForPostHooks(t *testing.T) {
+	t.Parallel()
+
+	var (
+		mu                 sync.Mutex
+		aPostHookCompleted bool
+		bStarted           bool
+		bSawPostHook       bool
+	)
+
+	g := exegraph.NewGraph()
+
+	// Layer A: simulates pre-hook → pre-event → deploy → env-merge →
+	// service-event → post-event → post-hook. Records completion only
+	// after the final post-hook stage.
+	require.NoError(t, g.AddStep(&exegraph.Step{
+		Name: "layer-a",
+		Action: func(_ context.Context) error {
+			// Steps 1-6: pretend they all ran.
+			// Step 7: layer post-hook — set the flag last.
+			mu.Lock()
+			aPostHookCompleted = true
+			mu.Unlock()
+			return nil
+		},
+	}))
+
+	// Layer B: depends on A. On entry, observes whether A's post-hook
+	// completed before this step was scheduled.
+	require.NoError(t, g.AddStep(&exegraph.Step{
+		Name:      "layer-b",
+		DependsOn: []string{"layer-a"},
+		Action: func(_ context.Context) error {
+			mu.Lock()
+			bStarted = true
+			bSawPostHook = aPostHookCompleted
+			mu.Unlock()
+			return nil
+		},
+	}))
+
+	require.NoError(t, g.Validate())
+
+	require.NoError(t, exegraph.Run(t.Context(), g, exegraph.RunOptions{
+		MaxConcurrency: 4,
+	}))
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.True(t, bStarted, "layer-b should have run")
+	assert.True(
+		t, bSawPostHook,
+		"layer-b started before layer-a's post-hook completed — "+
+			"hook-mediated values from A would be missed",
+	)
+}

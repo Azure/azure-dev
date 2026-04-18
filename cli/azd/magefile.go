@@ -561,8 +561,13 @@ func runFunctionalTests(azdDir string, opts testRunOpts) error {
 
 // excludedPlaybackTests lists tests whose recordings are known to be stale.
 // These are excluded from automatic playback so they don't block preflight.
-// Re-record the test to remove it from this list.
-var excludedPlaybackTests = map[string]string{}
+// Re-record the test (mage record -filter=<name>) to remove it from this list.
+// Re-recording requires access to the TME subscription — see CONTRIBUTING.md.
+var excludedPlaybackTests = map[string]string{
+	"Test_CLI_VsServer":                "stale recording; re-record requires TME access (#7780)",
+	"Test_CLI_Deploy_SlotDeployment":   "stale recording; re-record requires TME access (#7780)",
+	"Test_CLI_Up_Down_ContainerAppJob": "stale recording; re-record requires TME access (#7014)",
+}
 
 // discoverPlaybackTests scans the recordings directory for .yaml files and
 // subdirectories, returning unique top-level Go test function names.

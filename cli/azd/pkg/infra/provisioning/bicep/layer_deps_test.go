@@ -330,7 +330,7 @@ func TestExtractParamEnvRefs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := extractParamEnvRefs(
+			got, _ := extractParamEnvRefs(
 				tt.filePath, []byte(tt.content),
 			)
 			if tt.expected == nil {
@@ -397,4 +397,281 @@ func TestAnalyzeLayerDependencies_SameLayerDuplicateOutputIsAllowed(t *testing.T
 	result, err := AnalyzeLayerDependencies(layers, dir)
 	require.NoError(t, err)
 	require.Equal(t, [][]int{{0}}, result.Levels)
+}
+
+// --- Safe-fallback coverage for vhvb1989 silent-miss cases ---
+
+// TestExtractParamEnvRefs_NonLiteralReadEnv ensures that bicepparam files
+// containing readEnvironmentVariable(varName) (non-literal argument) flag
+// hasUnknown so the analyzer can engage the safe-by-default fallback.
+func TestExtractParamEnvRefs_NonLiteralReadEnv(t *testing.T) {
+	content := []byte(
+		"using './main.bicep'\n" +
+			"var name = 'MY_VAR'\n" +
+			"param p1 = readEnvironmentVariable(name)\n" +
+			"param p2 = readEnvironmentVariable('LITERAL')\n",
+	)
+	refs, hasUnknown := extractParamEnvRefs("main.bicepparam", content)
+	require.True(
+		t, hasUnknown,
+		"non-literal readEnvironmentVariable must mark hasUnknown",
+	)
+	require.Equal(t, []string{"LITERAL"}, refs)
+}
+
+// TestExtractParamEnvRefs_ArmExpression ensures parameters.json files that
+// contain ARM template expressions like [parameters('foo')] flag
+// hasUnknown — those expressions can reference cross-layer outputs that
+// the literal ${VAR} regex never sees.
+func TestExtractParamEnvRefs_ArmExpression(t *testing.T) {
+	content := []byte(
+		`{"parameters":{` +
+			`"p1":{"value":"${LITERAL}"},` +
+			`"p2":{"value":"[parameters('foo')]"}}}`,
+	)
+	refs, hasUnknown := extractParamEnvRefs(
+		"main.parameters.json", content,
+	)
+	require.True(t, hasUnknown, "ARM expression must mark hasUnknown")
+	require.Equal(t, []string{"LITERAL"}, refs)
+}
+
+// TestExtractBicepParamReadEnvRefs_FromBicepFile ensures that
+// readEnvironmentVariable() calls inside .bicep param defaults (which the
+// original parser never inspected) are discovered and produce edges.
+func TestExtractBicepParamReadEnvRefs_FromBicepFile(t *testing.T) {
+	content := []byte(
+		"param x string = readEnvironmentVariable('FROM_BICEP_DEFAULT')\n" +
+			"output OUT string = x\n",
+	)
+	refs, hasUnknown := extractBicepParamReadEnvRefs(content)
+	require.False(t, hasUnknown)
+	require.Equal(t, []string{"FROM_BICEP_DEFAULT"}, refs)
+}
+
+// TestExtractBicepParamReadEnvRefs_NonLiteralFlagsUnknown ensures the
+// .bicep scanner also flags non-literal readEnvironmentVariable calls.
+func TestExtractBicepParamReadEnvRefs_NonLiteralFlagsUnknown(t *testing.T) {
+	content := []byte(
+		"var n = 'X'\n" +
+			"param x string = readEnvironmentVariable(n)\n",
+	)
+	refs, hasUnknown := extractBicepParamReadEnvRefs(content)
+	require.True(t, hasUnknown)
+	require.Empty(t, refs)
+}
+
+// TestAnalyzeLayerDependencies_SafeFallback_NonLiteralBicepparam asserts
+// the analyzer forces a layer with non-literal readEnvironmentVariable
+// calls to depend on all earlier layers, preserving correctness when the
+// detector cannot resolve the dependency statically.
+func TestAnalyzeLayerDependencies_SafeFallback_NonLiteralBicepparam(t *testing.T) {
+	dir := t.TempDir()
+
+	aDir := filepath.Join(dir, "layerA")
+	mkTestDir(t, aDir)
+	writeTestFile(t, filepath.Join(aDir, "a.bicep"),
+		"output A_OUT string = 'a'\n")
+
+	bDir := filepath.Join(dir, "layerB")
+	mkTestDir(t, bDir)
+	writeTestFile(t, filepath.Join(bDir, "b.bicep"), "param p string\n")
+	writeTestFile(t, filepath.Join(bDir, "b.bicepparam"),
+		"using './b.bicep'\n"+
+			"var n = 'A_OUT'\n"+
+			"param p = readEnvironmentVariable(n)\n")
+
+	layers := []provisioning.Options{
+		{Name: "a", Path: "layerA", Module: "a"},
+		{Name: "b", Path: "layerB", Module: "b"},
+	}
+
+	result, err := AnalyzeLayerDependencies(layers, dir)
+	require.NoError(t, err)
+	require.Equal(t, [][]int{{0}, {1}}, result.Levels)
+	require.Contains(t, result.Edges[1], 0)
+}
+
+// TestAnalyzeLayerDependencies_SafeFallback_ArmExpression asserts the
+// analyzer forces a layer with ARM expressions in .parameters.json to
+// depend on all earlier layers.
+func TestAnalyzeLayerDependencies_SafeFallback_ArmExpression(t *testing.T) {
+	dir := t.TempDir()
+
+	aDir := filepath.Join(dir, "layerA")
+	mkTestDir(t, aDir)
+	writeTestFile(t, filepath.Join(aDir, "a.bicep"),
+		"output A_OUT string = 'a'\n")
+
+	bDir := filepath.Join(dir, "layerB")
+	mkTestDir(t, bDir)
+	writeTestFile(t, filepath.Join(bDir, "b.bicep"), "param p string\n")
+	writeTestFile(t, filepath.Join(bDir, "b.parameters.json"),
+		`{"parameters":{"p":{"value":"[parameters('foo')]"}}}`)
+
+	layers := []provisioning.Options{
+		{Name: "a", Path: "layerA", Module: "a"},
+		{Name: "b", Path: "layerB", Module: "b"},
+	}
+
+	result, err := AnalyzeLayerDependencies(layers, dir)
+	require.NoError(t, err)
+	require.Equal(t, [][]int{{0}, {1}}, result.Levels)
+	require.Contains(t, result.Edges[1], 0)
+}
+
+// TestAnalyzeLayerDependencies_BicepParamDefault verifies an edge is
+// produced when the consumer references the producer's output via a
+// readEnvironmentVariable() default inside its .bicep file (no
+// .bicepparam / .parameters.json file at all).
+func TestAnalyzeLayerDependencies_BicepParamDefault(t *testing.T) {
+	dir := t.TempDir()
+
+	aDir := filepath.Join(dir, "layerA")
+	mkTestDir(t, aDir)
+	writeTestFile(t, filepath.Join(aDir, "a.bicep"),
+		"output VNET_ID string = 'id'\n")
+
+	bDir := filepath.Join(dir, "layerB")
+	mkTestDir(t, bDir)
+	writeTestFile(t, filepath.Join(bDir, "b.bicep"),
+		"param vnetId string = readEnvironmentVariable('VNET_ID')\n"+
+			"output APP_URL string = 'url'\n")
+
+	layers := []provisioning.Options{
+		{Name: "a", Path: "layerA", Module: "a"},
+		{Name: "b", Path: "layerB", Module: "b"},
+	}
+
+	result, err := AnalyzeLayerDependencies(layers, dir)
+	require.NoError(t, err)
+	require.Equal(t, [][]int{{0}, {1}}, result.Levels)
+	require.Contains(t, result.Edges[1], 0)
+}
+
+// TestAnalyzeLayerDependencies_ExplicitDependsOn verifies that
+// author-declared dependsOn edges (used to express hook-mediated
+// dependencies that no static analyzer can discover) are honored.
+func TestAnalyzeLayerDependencies_ExplicitDependsOn(t *testing.T) {
+	dir := t.TempDir()
+
+	aDir := filepath.Join(dir, "layerA")
+	mkTestDir(t, aDir)
+	writeTestFile(t, filepath.Join(aDir, "a.bicep"),
+		"output A_OUT string = 'a'\n")
+
+	bDir := filepath.Join(dir, "layerB")
+	mkTestDir(t, bDir)
+	writeTestFile(t, filepath.Join(bDir, "b.bicep"),
+		"output B_OUT string = 'b'\n")
+
+	layers := []provisioning.Options{
+		{Name: "a", Path: "layerA", Module: "a"},
+		{
+			Name:      "b",
+			Path:      "layerB",
+			Module:    "b",
+			DependsOn: []string{"a"},
+		},
+	}
+
+	result, err := AnalyzeLayerDependencies(layers, dir)
+	require.NoError(t, err)
+	require.Equal(t, [][]int{{0}, {1}}, result.Levels)
+	require.Contains(t, result.Edges[1], 0)
+}
+
+// TestAnalyzeLayerDependencies_ExplicitDependsOn_UnknownLayer ensures
+// references to undeclared layer names are rejected.
+func TestAnalyzeLayerDependencies_ExplicitDependsOn_UnknownLayer(t *testing.T) {
+	dir := t.TempDir()
+
+	aDir := filepath.Join(dir, "layerA")
+	mkTestDir(t, aDir)
+	writeTestFile(t, filepath.Join(aDir, "a.bicep"),
+		"output A_OUT string = 'a'\n")
+
+	bDir := filepath.Join(dir, "layerB")
+	mkTestDir(t, bDir)
+	writeTestFile(t, filepath.Join(bDir, "b.bicep"),
+		"output B_OUT string = 'b'\n")
+
+	layers := []provisioning.Options{
+		{Name: "a", Path: "layerA", Module: "a"},
+		{
+			Name:      "b",
+			Path:      "layerB",
+			Module:    "b",
+			DependsOn: []string{"does-not-exist"},
+		},
+	}
+
+	_, err := AnalyzeLayerDependencies(layers, dir)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unknown layer")
+}
+
+// TestAnalyzeLayerDependencies_ExplicitDependsOn_Self rejects a layer
+// listing itself as a dependency.
+func TestAnalyzeLayerDependencies_ExplicitDependsOn_Self(t *testing.T) {
+	dir := t.TempDir()
+
+	aDir := filepath.Join(dir, "layerA")
+	mkTestDir(t, aDir)
+	writeTestFile(t, filepath.Join(aDir, "a.bicep"),
+		"output A_OUT string = 'a'\n")
+
+	bDir := filepath.Join(dir, "layerB")
+	mkTestDir(t, bDir)
+	writeTestFile(t, filepath.Join(bDir, "b.bicep"),
+		"output B_OUT string = 'b'\n")
+
+	layers := []provisioning.Options{
+		{Name: "a", Path: "layerA", Module: "a"},
+		{
+			Name:      "b",
+			Path:      "layerB",
+			Module:    "b",
+			DependsOn: []string{"b"},
+		},
+	}
+
+	_, err := AnalyzeLayerDependencies(layers, dir)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "cannot depend on itself")
+}
+
+// TestAnalyzeLayerDependencies_ExplicitDependsOn_Cycle ensures cycles
+// introduced via dependsOn are caught by the topological sort.
+func TestAnalyzeLayerDependencies_ExplicitDependsOn_Cycle(t *testing.T) {
+	dir := t.TempDir()
+
+	aDir := filepath.Join(dir, "layerA")
+	mkTestDir(t, aDir)
+	writeTestFile(t, filepath.Join(aDir, "a.bicep"),
+		"output A_OUT string = 'a'\n")
+
+	bDir := filepath.Join(dir, "layerB")
+	mkTestDir(t, bDir)
+	writeTestFile(t, filepath.Join(bDir, "b.bicep"),
+		"output B_OUT string = 'b'\n")
+
+	layers := []provisioning.Options{
+		{
+			Name:      "a",
+			Path:      "layerA",
+			Module:    "a",
+			DependsOn: []string{"b"},
+		},
+		{
+			Name:      "b",
+			Path:      "layerB",
+			Module:    "b",
+			DependsOn: []string{"a"},
+		},
+	}
+
+	_, err := AnalyzeLayerDependencies(layers, dir)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "cycle detected")
 }

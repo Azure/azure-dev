@@ -45,6 +45,14 @@ type Options struct {
 	DeploymentStacks map[string]any `yaml:"deploymentStacks,omitempty"`
 	// Config holds provider-specific configuration options
 	Config map[string]any `yaml:"config,omitempty"`
+	// DependsOn lists the names of other layers this layer must wait for
+	// before being provisioned. Use this to declare hook-mediated edges
+	// (for example, when a postprovision hook in another layer writes an
+	// env var that this layer's bicepparam reads at provision time)
+	// that the static analyzer cannot infer from .bicep / .bicepparam /
+	// .parameters.json contents alone. Only valid on layer entries under
+	// the `infra.layers` array.
+	DependsOn []string `yaml:"dependsOn,omitempty"`
 	// Provisioning options for each individually defined layer.
 	Layers []Options `yaml:"layers,omitempty"`
 

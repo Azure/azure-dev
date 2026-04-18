@@ -377,7 +377,7 @@ func TestReloadSharedEnvLocked_RefreshesDepsEnvFromDisk(t *testing.T) {
 	// the parent process's in-memory deps.env knows nothing about.
 	current, err := os.ReadFile(envPath)
 	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(
+	require.NoError(t, os.WriteFile( //nolint:gosec // G703: envPath is from t.TempDir()
 		envPath, append(current, []byte("HOOK_VAL=\"from-a\"\n")...), 0o600,
 	))
 

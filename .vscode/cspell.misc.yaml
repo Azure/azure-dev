@@ -62,6 +62,7 @@ overrides:
     - filename: ./docs/specs/exegraph/**
       words:
           - stdlib
+          - dependson
     - filename: schemas/**/azure.yaml.json
       words:
           - prodapi

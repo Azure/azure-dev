@@ -1,6 +1,6 @@
 # Release History
 
-## 1.24.0-beta.1 (Unreleased)
+## 1.25.0-beta.1 (Unreleased)
 
 ### Features Added
 
@@ -9,6 +9,25 @@
 ### Bugs Fixed
 
 ### Other Changes
+
+## 1.24.1 (2026-04-17)
+
+### Features Added
+
+- [[#7697]](https://github.com/Azure/azure-dev/pull/7697) Add `.azdxignore` support for `azd x watch`; create a `.azdxignore` file in the project root (gitignore syntax) to exclude directories such as `node_modules/` and `dist/` from triggering unnecessary rebuilds. The watcher also respects existing `.gitignore` patterns.
+- [[#7746]](https://github.com/Azure/azure-dev/pull/7746) Add local Bicep preflight check that warns before provisioning when predicted resource names contain Azure reserved words (e.g., names with `MICROSOFT`, `WINDOWS`, or prefixed with `LOGIN`), with color-highlighted output for readability.
+
+### Bugs Fixed
+
+- [[#7768]](https://github.com/Azure/azure-dev/pull/7768) Fix Copilot error-handling saved preference (`copilot.errorHandling.fix=allow`) to automatically retry the failed command after applying a fix, instead of only applying the fix without retrying.
+- [[#7600]](https://github.com/Azure/azure-dev/pull/7600) Fix `docker.path` and `docker.context` in `azure.yaml` being resolved relative to the service directory instead of the project root when user-specified values are provided.
+- [[#7698]](https://github.com/Azure/azure-dev/pull/7698) Fix subscription-scope deployments incorrectly treating pre-existing resource groups as deployment-owned during cleanup; only resource groups explicitly created by the deployment are now returned.
+- [[#7707]](https://github.com/Azure/azure-dev/pull/7707) Fix `azd pipeline config --provider azdo` failing when no agent queue named "Default" exists; azd now queries available queues, auto-selects when only one is present, and prompts the user to choose when multiple queues are available.
+
+### Other Changes
+
+- [[#7600]](https://github.com/Azure/azure-dev/pull/7600) Improve `azd up` and `azd deploy` performance with HTTP connection pooling, adaptive ARM poll frequency (5s for deployments, 15s for WhatIf/Validate), per-registry ACR login caching, and Container App revision poll frequency (5s).
+- [[#7721]](https://github.com/Azure/azure-dev/pull/7721) Add telemetry instrumentation for hook executions, recording hook event, level (project or service), kind (shell, JavaScript, TypeScript, .NET), and result across all hook-enabled commands.
 
 ## 1.24.0 (2026-04-14)
 

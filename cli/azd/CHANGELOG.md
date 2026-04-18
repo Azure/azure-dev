@@ -12,6 +12,7 @@
 ### Bugs Fixed
 
 - [[#7776]](https://github.com/Azure/azure-dev/pull/7776) Fix `concurrent map writes` panics when running `azd up` or `azd deploy` against multi-service projects: `*environment.Environment` now serializes all `dotenv` map access with an internal `sync.RWMutex`, the environment manager serializes `Save`/`Reload` calls, the singleton `kubectl.Cli` and `kustomize.Cli` are concurrency-safe, and AKS service publish/deploy updates to `SERVICE_<name>_IMAGE_NAME`/`ENDPOINT_URL` are wrapped in a package-level mutex (mirroring the Container Apps pattern).
+- [[#7776]](https://github.com/Azure/azure-dev/pull/7776) Restore intra-phase progress detail (e.g. `"Pushing image"`, `"Updating container app"`) in the per-service progress tracker during `azd deploy` and `azd up`. The graph-driven engine previously dropped sub-phase `ServiceProgress.Message` updates, leaving the tracker's "Detail" column blank between phase transitions.
 
 ### Other Changes
 

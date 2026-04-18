@@ -208,6 +208,14 @@ This file is the authoritative reference for core azd terminal UX patterns inclu
 - **Extension-specific documentation**: Keep extension-specific environment variables and configuration documented in the extension's own docs, not in core azd reference docs, unless they are consumed by the core CLI itself
 - **Verify env vars against source**: When documenting environment variables, verify the actual parsing method in code — `os.LookupEnv` (presence-only) vs `strconv.ParseBool` (true/false) vs `time.ParseDuration` vs integer seconds. Document the expected format and default value accurately
 
+### Concurrency
+
+The graph-driven `up`/`provision`/`deploy` engine runs multiple service steps and (when `infra.layers[]` is configured) multiple layer provision steps in parallel. Several long-lived types now have explicit locking contracts that you MUST honor when adding new methods or write paths.
+
+See [docs/concurrency-model.md](./docs/concurrency-model.md) for the full list — `environment.Environment`, `environment.Manager`, `kubectl.Cli`, `containerAppTarget`/`aksTarget`, and `serviceManager` — and the rules for adding new concurrent state.
+
+When adding a method that mutates one of these types: take the documented lock, hold it across the full read-modify-write, and run `go test -race` to catch missed locks (single-goroutine tests will not).
+
 ### Path Safety
 
 - **Validate derived paths**: When deriving directory names from user input or template paths, always validate the result is not `.`, `..`, empty, or contains path separators. These can cause path traversal outside the working directory

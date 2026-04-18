@@ -93,6 +93,15 @@ type serviceGraphOptions struct {
 	// build and the rest wait — avoiding concurrent builds of the same
 	// AppHost. If nil, no gating is applied.
 	buildGateKey func(svc *project.ServiceConfig) string
+
+	// onPhaseProgress, if non-nil, is invoked with intra-phase progress
+	// messages emitted by ServiceManager.Package/Publish/Deploy (e.g.
+	// "Compiling…", "Pushing image…"). The phase argument identifies which
+	// step is reporting (phasePackaging / phasePublish / phaseDeploying).
+	// Callers wire this to a deployProgressTracker so the table's "Detail"
+	// column reflects what each step is doing in real time, not just which
+	// phase it is in. When nil, progress messages are silently drained.
+	onPhaseProgress func(serviceName string, phase deployPhase, detail string)
 }
 
 // serviceGraphHandles exposes the names of the steps that addServiceStepsToGraph
@@ -158,6 +167,25 @@ func addServiceStepsToGraph(g *exegraph.Graph, opts serviceGraphOptions) (*servi
 	// nil) are unconstrained and run in full parallelism.
 	firstByGate := make(map[string]string)
 
+	// newPhaseProgress returns a *async.Progress whose channel is drained
+	// by a background goroutine that forwards each ServiceProgress.Message
+	// to opts.onPhaseProgress (if non-nil). Callers MUST call Done() —
+	// typically deferred — to terminate the goroutine. When
+	// onPhaseProgress is nil the channel is still drained (matching the
+	// NewNoopProgress contract) so ServiceManager goroutines never block
+	// on an unbuffered SetProgress send.
+	newPhaseProgress := func(serviceName string, phase deployPhase) *async.Progress[project.ServiceProgress] {
+		p := async.NewProgress[project.ServiceProgress]()
+		go func() {
+			for sp := range p.Progress() {
+				if opts.onPhaseProgress != nil && sp.Message != "" {
+					opts.onPhaseProgress(serviceName, phase, sp.Message)
+				}
+			}
+		}()
+		return p
+	}
+
 	for _, svc := range opts.services {
 		pkgStepName := "package-" + svc.Name
 		publishStepName := "publish-" + svc.Name
@@ -188,7 +216,7 @@ func addServiceStepsToGraph(g *exegraph.Graph, opts serviceGraphOptions) (*servi
 						return fmt.Errorf("packaging service %s: %w", pkgSvc.Name, pkgErr)
 					}
 				} else {
-					progress := async.NewNoopProgress[project.ServiceProgress]()
+					progress := newPhaseProgress(pkgSvc.Name, phasePackaging)
 					defer progress.Done()
 					if _, pkgErr := opts.serviceManager.Package(
 						ctx, pkgSvc, sc, progress, nil,
@@ -229,7 +257,7 @@ func addServiceStepsToGraph(g *exegraph.Graph, opts serviceGraphOptions) (*servi
 					)
 				}
 
-				progress := async.NewNoopProgress[project.ServiceProgress]()
+				progress := newPhaseProgress(pubSvc.Name, phasePublish)
 				defer progress.Done()
 				if _, pubErr := opts.serviceManager.Publish(
 					ctx, pubSvc, sc, progress, nil,
@@ -276,7 +304,7 @@ func addServiceStepsToGraph(g *exegraph.Graph, opts serviceGraphOptions) (*servi
 				deployCtx, deployCancel := context.WithTimeout(stepCtx, opts.deployTimeout)
 				defer deployCancel()
 
-				progress := async.NewNoopProgress[project.ServiceProgress]()
+				progress := newPhaseProgress(depSvc.Name, phaseDeploying)
 				defer progress.Done()
 
 				result, depErr := opts.serviceManager.Deploy(deployCtx, depSvc, sc, progress)

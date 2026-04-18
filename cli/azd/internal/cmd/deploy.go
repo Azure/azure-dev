@@ -343,6 +343,13 @@ func (da *DeployAction) deployServicesGraph(
 			da.console.MessageUxItem(ctx, deployTimeoutWarning(svc.Name))
 		},
 		buildGateKey: aspireBuildGateKey,
+		onPhaseProgress: func(svcName string, phase deployPhase, detail string) {
+			// Forward intra-phase progress (e.g. "Pushing image…") to the
+			// tracker so the table's Detail column reflects what each step
+			// is doing — not just which phase. updateProgress is a no-op
+			// when the tracker is nil (JSON output / no writer paths).
+			da.updateProgress(svcName, phase, detail)
+		},
 	}); err != nil {
 		return nil, err
 	}
@@ -619,10 +626,21 @@ func unwrapStepErrors(result *exegraph.RunResult) error {
 // silentSpinnerConsole wraps syncConsole but suppresses spinner output.
 // When the progress table is active, the tracker owns the progress display
 // and per-service spinners would interfere with the table rendering.
+//
+// Dropped spinner calls are logged at debug level so extension authors can
+// diagnose missing spinner output from custom service targets — the swallow
+// is intentional but invisible by default, and a silent no-op makes
+// "my spinner doesn't show up" hard to root-cause without log access.
 type silentSpinnerConsole struct {
 	*syncConsole
 }
 
-func (*silentSpinnerConsole) ShowSpinner(_ context.Context, _ string, _ input.SpinnerUxType) {}
-func (*silentSpinnerConsole) StopSpinner(_ context.Context, _ string, _ input.SpinnerUxType) {}
-func (*silentSpinnerConsole) IsSpinnerRunning(_ context.Context) bool                        { return false }
+func (*silentSpinnerConsole) ShowSpinner(_ context.Context, title string, _ input.SpinnerUxType) {
+	log.Printf("silentSpinnerConsole: dropped ShowSpinner(%q) — progress table active", title)
+}
+
+func (*silentSpinnerConsole) StopSpinner(_ context.Context, title string, _ input.SpinnerUxType) {
+	log.Printf("silentSpinnerConsole: dropped StopSpinner(%q) — progress table active", title)
+}
+
+func (*silentSpinnerConsole) IsSpinnerRunning(_ context.Context) bool { return false }

@@ -231,6 +231,7 @@ Deploy timeout honors `--timeout` / `AZD_DEPLOY_TIMEOUT` via the shared
 | `console_previewer_writer.go` | Atomic pointer nil-check | Write-after-stop returns `len, nil` with a log message instead of panicking |
 | `service_manager.go` | `sync.Mutex` on `operationCache` and `initialized` map | Concurrent service Package/Deploy operations sharing caches |
 | `service_target_containerapp.go` | Caller-supplied `envMu` (the deploy graph's shared env mutex) | Read of `SERVICE_<NAME>_TEMPLATE_HASH` in `evaluateTemplateHash` + post-deploy `DotenvSet`+`Save` of the same key are both held under `envMu` to protect the underlying `map[string]string` from concurrent service deploys |
+| `provision_graph.go` (multi-layer) | `envMu` (per-run shared mutex) protects `deps.env` reads/writes; `hookMu` (per-run shared mutex) serializes hook + event handler execution | Step 0 clone, step 4 reload+merge+save, and step 8 final reload of `deps.env` happen under `envMu`. Steps 1-2 and 5-7 (pre/post hooks + project events) hold `hookMu` so non-thread-safe handlers (AKS k8s context, .NET appsettings) never run concurrently across layers |
 
 **Direct revision API shortcut** (`service_target_containerapp.go`): For each service deploy,
 `evaluateTemplateHash` (read-only) compares the on-disk infrastructure template's SHA-256 against
@@ -263,7 +264,7 @@ OTel events and attributes added:
 | `pkg/exegraph/graph_test.go` | 15 | Mutation rules, ordering, cycles, priority, tags |
 | `pkg/exegraph/scheduler_test.go` | 33 | Execution semantics, cancellation, skip propagation, concurrency bounds, panic recovery, goroutine cleanup, timing, per-step timeout |
 | `pkg/infra/provisioning/bicep/layer_deps_test.go` | 12 | Temp file fixtures, cycles, env-skip, missing refs |
-| `internal/cmd/provision_graph_test.go` | 3 | Graph build, execution ordering |
+| `internal/cmd/provision_graph_test.go` | 7 | Graph build, execution ordering, `dependsOn` edge ordering, env merge (preserves subprocess writes + concurrent merges converge), reload (refreshes `deps.env` from disk for downstream-layer clones) |
 | `internal/cmd/provision_security_test.go` | 2 | Env serialization, clone isolation |
 | `internal/cmd/deploy_graph_test.go` | 4 | Graph construction, Aspire gating, generic multi-group gating |
 | `internal/cmd/deploy_progress_test.go` | 13 | Interactive/non-interactive rendering, truncation, final render |
@@ -382,11 +383,28 @@ Things a reader of the code should know before editing:
    Otherwise two layers would race to prompt the user. See the comment block
    in `provisionLayersGraph` describing the "resolve before spawn" invariant.
 
-8. **Per-layer env clones are deep copies.** Each multi-layer step gets its
-   own `Environment` clone so concurrent `env.DotenvSet` writes don't race.
-   Outputs from successful layer completion are written back into the shared
-   env. Cross-layer output references are resolved by `layer_deps.go` at
-   graph-build time (not at runtime).
+8. **Per-layer env clones are deep copies, but cross-layer hook writes need a
+   reload.** Each multi-layer step gets its own `Environment` clone so
+   concurrent `env.DotenvSet` writes don't race. Outputs from successful layer
+   completion are written back into the shared env. Cross-layer output
+   references are resolved by `layer_deps.go` at graph-build time (not at
+   runtime). Hook-mediated edges (where layer A's `postprovision` hook writes
+   `azd env set FOO=bar` that layer B's `.bicepparam` reads) are NOT
+   detectable statically — authors must declare them via
+   `infra.layers[].dependsOn`.
+
+   `runProvisionSingleLayer` runs an 8-step lifecycle inside one scheduler
+   step: pre-hooks → pre-event → `mgr.Deploy` → env merge → service event →
+   post-event → post-hooks → **reload** `deps.env` from disk. The merge step
+   reloads `deps.env` *before* applying outputs and saving, so the parent
+   process's stale in-memory state never clobbers subprocess writes from
+   pre-hooks. The final reload (step 8) re-syncs `deps.env` after post-hook
+   subprocess writes, so any downstream layer's clone observes those writes
+   at its own step 0. Both reloads happen under `envMu`. Concurrent sibling
+   layers (no `dependsOn` edge) intentionally do NOT see each other's
+   mid-flight hook writes — that's the contract `dependsOn` exists to
+   override. The merge / reload helpers are extracted as
+   `mergeLayerOutputsLocked` / `reloadSharedEnvLocked` and tested directly.
 
 9. **Build gate is policy-driven, not Aspire-specific.** The DAG builder
    (`service_graph.go`) is ecosystem-agnostic: it consumes an opaque-string

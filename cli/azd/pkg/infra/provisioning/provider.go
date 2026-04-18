@@ -52,7 +52,7 @@ type Options struct {
 	// that the static analyzer cannot infer from .bicep / .bicepparam /
 	// .parameters.json contents alone. Only valid on layer entries under
 	// the `infra.layers` array.
-	DependsOn []string `yaml:"dependsOn,omitempty"`
+	DependsOn []string `yaml:"dependsOn,omitempty" json:"dependsOn,omitempty"`
 	// Provisioning options for each individually defined layer.
 	Layers []Options `yaml:"layers,omitempty"`
 

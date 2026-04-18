@@ -30,7 +30,19 @@ var (
 	// a literal env-var scan cannot prove the absence of cross-layer
 	// references, so the consuming layer must fall back to depending on
 	// all earlier layers.
-	armExpressionRe = regexp.MustCompile(`"\s*\[[^"]+\]\s*"`)
+	//
+	// The body uses [^\]] (not [^"]) so that ARM expressions containing
+	// escaped quotes inside string literals — e.g.
+	// "[json('{\"a\":\"b\"}')]" — are still detected. This is a
+	// heuristic, not a parser: an ARM expression whose payload contains
+	// a literal "]" inside a single-quoted string (e.g.
+	// "[json('[1,2]')]") will tokenize wrong. The bias is acceptable
+	// because the only failure mode is a missed match → no detected
+	// edge → potentially missing parallel-safety guarantee, which is
+	// the same risk the rest of the analyzer already carries. Any
+	// downstream silent-miss would still surface as a parameter-time
+	// error from Bicep itself.
+	armExpressionRe = regexp.MustCompile(`"\s*\[[^\]]+\]\s*"`)
 )
 
 // LayerDependencies holds the results of static dependency analysis on
@@ -366,9 +378,16 @@ func discoverParamEnvRefs(
 	if content, err := os.ReadFile(bp); err == nil {
 		r, u := extractParamEnvRefs(bp, content)
 		merge(r, u)
+	} else if !os.IsNotExist(err) {
+		// A read error (permission, I/O) is NOT the same as "file does
+		// not exist". We can't prove what refs the file would have had,
+		// so escalate to the safe-by-default fallback.
+		hasUnknown = true
 	} else if content, err := os.ReadFile(pj); err == nil {
 		r, u := extractParamEnvRefs(pj, content)
 		merge(r, u)
+	} else if !os.IsNotExist(err) {
+		hasUnknown = true
 	}
 
 	// Always scan the .bicep file for param defaults that call
@@ -379,6 +398,8 @@ func discoverParamEnvRefs(
 	); err == nil {
 		r, u := extractBicepParamReadEnvRefs(bicepContent)
 		merge(r, u)
+	} else if !os.IsNotExist(err) {
+		hasUnknown = true
 	}
 
 	return refs, hasUnknown

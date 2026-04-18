@@ -1,6 +1,6 @@
 # Concurrency Model
 
-This document describes the concurrency contracts that azd's parallel execution
+This document describes the concurrency contracts that the azd parallel execution
 engine ([exegraph](../pkg/exegraph)) places on long-lived service types.
 
 Before the graph-driven `up`/`provision`/`deploy` pipelines, almost every type

@@ -42,6 +42,13 @@ type LayerDependencies struct {
 	// Edges maps each layer index to the indices of layers it directly
 	// depends on. A nil or empty slice means the layer has no dependencies.
 	Edges map[int][]int
+	// SafeFallbackLayers holds the indices of layers that triggered the
+	// safe-by-default detector fallback — i.e., the parser encountered a
+	// syntax pattern it could not resolve to a literal env-var name and
+	// the layer was forced to depend on all earlier layers. This is
+	// surfaced for telemetry and diagnostics; the fallback edges are
+	// already reflected in [LayerDependencies.Edges].
+	SafeFallbackLayers []int
 }
 
 // layerDependencyGraph holds the dependency relationships between layers.
@@ -126,6 +133,7 @@ func AnalyzeLayerDependencies(
 	}
 
 	// Phase 2 — Discover input env-var references and build edges.
+	var safeFallback []int
 	for i, opts := range resolved {
 		refs, hasUnknown := discoverParamEnvRefs(opts, projectPath)
 		for _, ref := range refs {
@@ -153,6 +161,7 @@ func AnalyzeLayerDependencies(
 		// layer's outputs and add edges to all earlier layers. This
 		// trades parallelism for correctness on under-analyzed inputs.
 		if hasUnknown {
+			safeFallback = append(safeFallback, i)
 			for j := range i {
 				g.edges[i] = append(g.edges[i], j)
 			}
@@ -206,7 +215,7 @@ func AnalyzeLayerDependencies(
 		}
 	}
 
-	return &LayerDependencies{Levels: levels, Edges: deduped}, nil
+	return &LayerDependencies{Levels: levels, Edges: deduped, SafeFallbackLayers: safeFallback}, nil
 }
 
 // resolveBicepPath returns the absolute path to the layer's main Bicep file.

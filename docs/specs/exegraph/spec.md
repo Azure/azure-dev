@@ -417,3 +417,25 @@ Things a reader of the code should know before editing:
     When adding a new `exegraph.*` span attribute, define the `AttributeKey`
     there (not inline in `scheduler.go`) so the telemetry schema stays
     centralized.
+
+13. **Multi-layer provision adoption telemetry.** Each `azd provision` /
+    `azd up` run that takes the multi-layer path emits four `provision.layer.*`
+    attributes on the ambient command span (defined alongside the
+    `exegraph.*` keys in `internal/tracing/fields/fields.go`):
+
+    | Attribute | What it measures |
+    |---|---|
+    | `provision.layer.count` | Total `infra.layers[]` declared |
+    | `provision.layer.max_parallel` | Largest dependency level after analysis (max achievable parallelism) |
+    | `provision.layer.safe_fallback_count` | Layers that triggered the safe-by-default detector fallback |
+    | `provision.layer.explicit_dependson_count` | Layers using `infra.layers[].dependsOn` |
+
+    These are SystemMetadata only — counts, no template content — and let
+    the azd team answer "what fraction of projects use multi-layer?",
+    "how parallel is the typical project?", and "how often does the
+    safe-by-default fallback engage on real templates?" without inspecting
+    user content. As of this PR, an `org:Azure-Samples filename:azure.yaml`
+    audit found **zero awesome-azd templates using multi-layer
+    `infra.layers[]`**; only three community user repositories on GitHub
+    declare it. These attributes will let us track whether that changes
+    after the feature ships.

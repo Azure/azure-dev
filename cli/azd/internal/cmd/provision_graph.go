@@ -18,6 +18,8 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
@@ -216,6 +218,13 @@ func (p *ProvisionAction) provisionLayersGraph(
 		if err != nil {
 			return nil, fmt.Errorf("analyzing layer dependencies: %w", err)
 		}
+
+		// Emit telemetry on the ambient command span so the azd team can
+		// answer "what fraction of projects use multi-layer?", "how parallel
+		// is the typical project?", and "how often does the safe-by-default
+		// fallback engage on real templates?". These attributes are scoped
+		// to SystemMetadata + PerformanceAndHealth — no user content.
+		emitMultiLayerProvisionTelemetry(ctx, layers, layerDeps)
 
 		// Pre-compute step names so edges can reference layers regardless
 		// of iteration order. Unnamed layers get an indexed fallback so
@@ -507,6 +516,55 @@ func provisionLayerStepName(layer provisioning.Options) string {
 	return "default"
 }
 
+// emitMultiLayerProvisionTelemetry attaches multi-layer adoption + safety
+// metrics to the ambient command span. Called once per multi-layer
+// provision run, immediately after [bicep.AnalyzeLayerDependencies] returns.
+//
+// Emits:
+//
+//   - provision.layer.count                        — total declared layers
+//   - provision.layer.max_parallel                 — largest dependency level
+//   - provision.layer.safe_fallback_count          — layers with hasUnknown
+//   - provision.layer.explicit_dependson_count     — layers using dependsOn
+//
+// All attributes are SystemMetadata (counts only, no template content), so
+// they're collected without any user-facing opt-in beyond the existing
+// telemetry consent.
+func emitMultiLayerProvisionTelemetry(
+	ctx context.Context,
+	layers []provisioning.Options,
+	deps *bicep.LayerDependencies,
+) {
+	maxParallel := 0
+	if deps != nil {
+		for _, level := range deps.Levels {
+			if len(level) > maxParallel {
+				maxParallel = len(level)
+			}
+		}
+	}
+
+	safeFallback := 0
+	if deps != nil {
+		safeFallback = len(deps.SafeFallbackLayers)
+	}
+
+	explicitDependsOn := 0
+	for _, layer := range layers {
+		if len(layer.DependsOn) > 0 {
+			explicitDependsOn++
+		}
+	}
+
+	tracing.SetAttributesInContext(
+		ctx,
+		fields.ProvisionLayerCountKey.Int(len(layers)),
+		fields.ProvisionLayerMaxParallelKey.Int(maxParallel),
+		fields.ProvisionLayerSafeFallbackCountKey.Int(safeFallback),
+		fields.ProvisionLayerExplicitDependsOnCountKey.Int(explicitDependsOn),
+	)
+}
+
 // provisionOutcome captures the resulting disposition of a single-layer
 // provisioning run so the caller can aggregate allSkipped across layers.
 type provisionOutcome int
@@ -755,6 +813,17 @@ func provisionSingleLayer(
 //  7. Layer post-hooks (HooksRunner)
 //
 // Steps 1-2 and 5-7 are serialized via hookMu to protect non-threadsafe handlers.
+//
+// Cross-layer ordering contract: when the dependency graph contains an edge
+// `B → A` (either detected by [bicep.AnalyzeLayerDependencies] or declared
+// via `infra.layers[].dependsOn`), the scheduler treats this entire function
+// invocation as a single graph node. Layer B's node is only scheduled after
+// layer A's node returns, which by construction means after step 7
+// completes. Therefore B observes the env-snapshot taken at step 0 with all
+// of A's outputs (step 4) AND any env mutations performed by A's post-hooks
+// (step 7). Layers that need this guarantee for hook-mediated values must
+// declare the edge explicitly via `dependsOn` — the static analyzer cannot
+// see hook side-effects.
 //
 // Returns the raw [provisioning.DeployResult] so callers can record skip
 // semantics; on [provisioning.PreflightAbortedSkipped] it returns

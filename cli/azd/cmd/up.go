@@ -31,11 +31,18 @@ type upFlags struct {
 	cmd.DeployFlags
 	global *internal.GlobalCommandOptions
 	internal.EnvFlag
+	// flagSet is captured during Bind so the action can iterate the
+	// changed flag set when emitting synthetic cmd.package / cmd.provision
+	// telemetry spans (preserves nested cmd.* span shape from the legacy
+	// workflow runner that spawned `azd package` / `azd provision` as
+	// child processes — see UpGraphAction.Run).
+	flagSet *pflag.FlagSet
 }
 
 func (u *upFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	u.EnvFlag.Bind(local, global)
 	u.global = global
+	u.flagSet = local
 
 	u.ProvisionFlags.BindNonCommon(local, global)
 	u.ProvisionFlags.SetCommon(&u.EnvFlag)
@@ -180,7 +187,7 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	layers := infra.Options.GetLayers()
-	return u.upGraph.Run(ctx, layers, &u.flags.DeployFlags, startTime)
+	return u.upGraph.Run(ctx, layers, &u.flags.DeployFlags, u.flags.flagSet, startTime)
 }
 
 func getCmdUpHelpDescription(c *cobra.Command) string {

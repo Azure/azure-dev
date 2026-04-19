@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
@@ -30,6 +32,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/spf13/pflag"
 )
 
 // UpGraphAction is the single implementation of `azd up`'s default path: it
@@ -135,8 +138,41 @@ func (u *UpGraphAction) Run(
 	ctx context.Context,
 	layers []provisioning.Options,
 	deployFlags *DeployFlags,
+	parentFlags *pflag.FlagSet,
 	startTime time.Time,
 ) (*actions.ActionResult, error) {
+	// Emit synthetic cmd.package and cmd.provision spans as children of the
+	// parent cmd.up span. The legacy `azd up` workflow runner spawned
+	// `azd package --all` and `azd provision` as child processes; each
+	// emitted its own cmd.* telemetry span via the cobra middleware. The
+	// unified up graph absorbs these phases in-process, so we recreate the
+	// nested span shape here for telemetry continuity (dashboards, queries,
+	// and Test_CLI_Telemetry_NestedCommands all rely on this contract).
+	//
+	// The synthetic spans cover the entire Run() duration. This is
+	// approximate (package and provision phases overlap in the unified
+	// graph), but preserves the cmd.up → cmd.package + cmd.provision
+	// parent/child relationship and required attribute set
+	// (SubscriptionIdKey, EnvNameKey, CmdEntry, CmdFlags). Spans must end
+	// in the order package → provision so that the trace file lists them
+	// in the legacy order.
+	parentChangedFlags := changedFlagNames(parentFlags)
+	packageFlags := append([]string{"all"}, parentChangedFlags...)
+	_, packageSpan := tracing.Start(ctx, "cmd.package")
+	packageSpan.SetAttributes(fields.CmdFlags.StringSlice(packageFlags))
+	_, provisionSpan := tracing.Start(ctx, "cmd.provision")
+	provisionSpan.SetAttributes(fields.CmdFlags.StringSlice(parentChangedFlags))
+	defer func() {
+		// Apply usage attributes (e.g. EnvNameKey) at end so they include
+		// any values set during Run. Globals (e.g. SubscriptionIdKey) are
+		// applied automatically by wrapperSpan.End().
+		usageAttrs := tracing.GetUsageAttributes()
+		packageSpan.SetAttributes(usageAttrs...)
+		packageSpan.End()
+		provisionSpan.SetAttributes(usageAttrs...)
+		provisionSpan.End()
+	}()
+
 	// 1. Analyze provision layer dependencies. Empty layers → empty graph.
 	var layerDeps *bicep.LayerDependencies
 	if len(layers) > 0 {
@@ -473,6 +509,23 @@ func (u *UpGraphAction) Run(
 			),
 		},
 	}, nil
+}
+
+// changedFlagNames returns the names of flags that were explicitly set on
+// the FlagSet. Returns nil for a nil FlagSet so callers can pass through
+// without a guard. Mirrors the changedFlags collection in
+// cmd/middleware/telemetry.go used to populate fields.CmdFlags.
+func changedFlagNames(fs *pflag.FlagSet) []string {
+	if fs == nil {
+		return nil
+	}
+	var names []string
+	fs.VisitAll(func(f *pflag.Flag) {
+		if f.Changed {
+			names = append(names, f.Name)
+		}
+	})
+	return names
 }
 
 // initializeServices enumerates services, initializes the project, and ensures

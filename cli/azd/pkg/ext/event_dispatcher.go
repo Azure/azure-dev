@@ -137,15 +137,16 @@ func (ed *EventDispatcher[T]) RaiseEvent(ctx context.Context, name Event, eventA
 
 		// For multiple errors, join them as before
 		lines := make([]string, len(handlerErrors))
-		// If any of the errors have a suggestion, collect them
+		// If any of the errors have a suggestion, collect them.
+		// ErrorWithSuggestion takes precedence — it has an Unwrap() so a nested
+		// extension error's suggestion would otherwise be appended twice.
 		var suggestions []string
 		for i, err := range handlerErrors {
 			lines[i] = err.Error()
 			if errWithSuggestion, ok := errors.AsType[*internal.ErrorWithSuggestion](err); ok &&
 				errWithSuggestion.Suggestion != "" {
 				suggestions = append(suggestions, errWithSuggestion.Suggestion)
-			}
-			if s := azdext.ErrorSuggestion(err); s != "" {
+			} else if s := azdext.ErrorSuggestion(err); s != "" {
 				suggestions = append(suggestions, s)
 			}
 		}

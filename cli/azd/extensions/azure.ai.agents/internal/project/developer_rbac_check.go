@@ -10,14 +10,13 @@ import (
 	"net/http"
 	"strings"
 
-	"azureaiagent/internal/exterrors"
-
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v3"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
 const (
@@ -93,7 +92,8 @@ var sufficientRoleAssignWriteRoles = []string{
 //   - Container Registry Tasks Contributor OR Container Registry Repository Contributor
 //     on the ACR (to build images via remote build and push container images)
 //
-// Returns nil if all checks pass, or a structured error with suggestions on failure.
+// Missing roles are reported as warnings rather than errors so that deployment can proceed.
+// The developer may need to obtain the missing roles separately for full functionality.
 func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient) error {
 	azdEnvClient := azdClient.Environment()
 	cEnvResponse, err := azdEnvClient.GetCurrent(ctx, &azdext.EmptyRequest{})
@@ -179,25 +179,21 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient) error 
 			"Azure AI User → Foundry Project", info.ProjectScope,
 			armauthorization.PrincipalTypeUser,
 		); assignErr != nil {
-			// Only treat 403 as a hard RBAC failure — transient errors (throttling, network) are non-blocking.
+			// Warn rather than fail hard on 403 — deployment can proceed, but the developer
+			// may not be able to interact with agents until this role is assigned.
 			if respErr, ok := errors.AsType[*azcore.ResponseError](assignErr); ok &&
 				respErr.StatusCode == http.StatusForbidden {
-				return exterrors.Auth(
-					exterrors.CodeDeveloperMissingAIUserRole,
-					fmt.Sprintf(
-						"your identity (%s) does not have the 'Azure AI User' role on the Foundry Project %s/%s "+
-							"and auto-assign was denied: %s",
-						userProfile.DisplayName, info.AccountName, info.ProjectName, assignErr,
-					),
-					fmt.Sprintf(
-						"ask a subscription Owner or User Access Administrator to assign the 'Azure AI User' role "+
-							"to your identity on the Foundry Project scope:\n"+
-							"  az role assignment create --assignee %s --role \"Azure AI User\" --scope %q",
-						principalID, info.ProjectScope,
-					),
-				)
+				fmt.Printf("%s\n", output.WithWarningFormat(
+					"Your identity (%s) does not have the 'Azure AI User' role on the Foundry Project %s/%s "+
+						"and auto-assign was denied.\n"+
+						"    Ask a subscription Owner or User Access Administrator to assign the role:\n"+
+						"      az role assignment create --assignee %s --role \"Azure AI User\" --scope %q",
+					userProfile.DisplayName, info.AccountName, info.ProjectName,
+					principalID, info.ProjectScope,
+				))
+			} else {
+				fmt.Printf("  ⚠ Azure AI User auto-assign failed (non-auth error): %s — continuing\n", assignErr)
 			}
-			fmt.Printf("  ⚠ Azure AI User auto-assign failed (non-auth error): %s — continuing\n", assignErr)
 		} else {
 			fmt.Println("  ✓ Azure AI User auto-assigned to developer identity")
 		}
@@ -212,29 +208,23 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient) error 
 	if err != nil {
 		fmt.Printf("  ⚠ Could not check role-assignment-write capability: %s\n", err)
 	} else if !hasRoleWrite {
-		return exterrors.Auth(
-			exterrors.CodeDeveloperMissingRoleAssignWriteRole,
-			fmt.Sprintf(
-				"your identity (%s) does not have the permission to write role assignments on the "+
-					"Foundry Project %s/%s — this is required for the postdeploy step to assign "+
-					"'Azure AI User' to agent service principals",
-				userProfile.DisplayName, info.AccountName, info.ProjectName,
-			),
-			fmt.Sprintf(
-				"ask a subscription Owner or User Access Administrator to assign one of these roles "+
-					"to your identity on the Foundry Project scope:\n"+
-					"  • Owner\n"+
-					"  • User Access Administrator\n"+
-					"  • Role Based Access Control Administrator\n"+
-					"  • Azure AI Project Manager\n"+
-					"  • Azure AI Account Owner\n\n"+
-					"  az role assignment create --assignee %s "+
-					"--role \"Role Based Access Control Administrator\" --scope %q\n\n"+
-					"Alternatively, if role assignments are managed externally:\n"+
-					"  AZD_AGENT_SKIP_ROLE_ASSIGNMENTS=true",
-				principalID, info.ProjectScope,
-			),
-		)
+		// Warn rather than fail hard: deployment can still proceed, but the postdeploy
+		// step that assigns 'Azure AI User' to agent service principals may return 403.
+		// Write with warning color so it appears as a yellow warning, not a red error.
+		fmt.Printf("%s\n", output.WithWarningFormat(
+			"Role assignment write not available on Foundry Project %s/%s.\n"+
+				"    The postdeploy step will attempt to assign 'Azure AI User' to agent service principals,\n"+
+				"    but may fail with a 403. To grant this permission, assign one of these roles:\n"+
+				"      • Owner\n"+
+				"      • User Access Administrator\n"+
+				"      • Role Based Access Control Administrator\n"+
+				"      • Azure AI Project Manager\n"+
+				"      • Azure AI Account Owner\n"+
+				"      az role assignment create --assignee %s "+
+				"--role \"Role Based Access Control Administrator\" --scope %q\n"+
+				"    Or, if roles are managed externally: AZD_AGENT_SKIP_ROLE_ASSIGNMENTS=true",
+			info.AccountName, info.ProjectName, principalID, info.ProjectScope,
+		))
 	} else {
 		fmt.Println("  ✓ Role assignment write on Foundry Project")
 	}
@@ -276,43 +266,33 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient) error 
 	if !hasACRAccess {
 		acrName := strings.TrimSuffix(normalizeLoginServer(acrEndpoint), ".azurecr.io")
 		if isAbac {
-			return exterrors.Auth(
-				exterrors.CodeDeveloperMissingACRRole,
-				fmt.Sprintf(
-					"your identity (%s) does not have the required role on the ABAC-mode Container Registry '%s' "+
-						"to push container images",
-					userProfile.DisplayName, acrName,
-				),
-				fmt.Sprintf(
-					"ask a subscription Owner or User Access Administrator to assign one of these roles "+
-						"to your identity on the Container Registry scope:\n"+
-						"  • Owner (broad access)\n"+
-						"  • Container Registry Repository Writer (ABAC push)\n"+
-						"  • Container Registry Repository Contributor (superset of Writer)\n\n"+
-						"  az role assignment create --assignee %s "+
-						"--role \"Container Registry Repository Writer\" --scope %q",
-					principalID, acrResourceID,
-				),
-			)
-		}
-		return exterrors.Auth(
-			exterrors.CodeDeveloperMissingACRRole,
-			fmt.Sprintf(
-				"your identity (%s) does not have the required role on the Container Registry '%s' "+
-					"to build and push container images",
+			fmt.Printf("%s\n", output.WithWarningFormat(
+				"Your identity (%s) does not have the required role on the ABAC-mode Container Registry '%s' "+
+					"to push container images.\n"+
+					"    Ask a subscription Owner or User Access Administrator to assign one of these roles:\n"+
+					"      • Owner (broad access)\n"+
+					"      • Container Registry Repository Writer (ABAC push)\n"+
+					"      • Container Registry Repository Contributor (superset of Writer)\n\n"+
+					"      az role assignment create --assignee %s "+
+					"--role \"Container Registry Repository Writer\" --scope %q",
 				userProfile.DisplayName, acrName,
-			),
-			fmt.Sprintf(
-				"ask a subscription Owner or User Access Administrator to assign one of these roles "+
-					"to your identity on the Container Registry scope:\n"+
-					"  • Owner or Contributor (broad access)\n"+
-					"  • AcrPush (push and pull images)\n"+
-					"  • Container Registry Tasks Contributor (remote build)\n"+
-					"  • Container Registry Repository Contributor (repository operations)\n\n"+
-					"  az role assignment create --assignee %s --role \"AcrPush\" --scope %q",
 				principalID, acrResourceID,
-			),
-		)
+			))
+		} else {
+			fmt.Printf("%s\n", output.WithWarningFormat(
+				"Your identity (%s) does not have the required role on the Container Registry '%s' "+
+					"to build and push container images.\n"+
+					"    Ask a subscription Owner or User Access Administrator to assign one of these roles:\n"+
+					"      • Owner or Contributor (broad access)\n"+
+					"      • AcrPush (push and pull images)\n"+
+					"      • Container Registry Tasks Contributor (remote build)\n"+
+					"      • Container Registry Repository Contributor (repository operations)\n\n"+
+					"      az role assignment create --assignee %s --role \"AcrPush\" --scope %q",
+				userProfile.DisplayName, acrName,
+				principalID, acrResourceID,
+			))
+		}
+		return nil
 	}
 
 	if isAbac {

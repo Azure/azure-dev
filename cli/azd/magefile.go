@@ -428,8 +428,12 @@ func PlaybackTests() error {
 //
 // Requires:
 //   - Azure authentication (azd auth login)
-//   - TME subscription config (azd config set defaults.test.subscription/tenant/location)
+//   - Test subscription config (azd config set defaults.test.subscription/tenant/location)
 //     OR equivalent AZD_TEST_* environment variables
+//
+// The azd-record binary (built with -tags=record) is built on demand by
+// azdcli.NewCLI via buildRecordOnce when tests run in record mode. To use a
+// custom pre-built binary, set CLI_TEST_AZD_PATH before invoking mage record.
 func Record(filter *string) error {
 	azdDir, cleanup, err := mageInit()
 	if err != nil {
@@ -437,25 +441,10 @@ func Record(filter *string) error {
 	}
 	defer cleanup()
 
-	// Build azd-record binary (built with -tags=record for recording support).
-	fmt.Println("══ Building azd-record binary ══")
-	binaryName := "azd-record"
-	if runtime.GOOS == "windows" {
-		binaryName = "azd-record.exe"
-	}
-	if err := runStreaming(azdDir, "go", "build", "-tags=record", "-o="+binaryName, "."); err != nil {
-		return fmt.Errorf("building azd-record: %w", err)
-	}
-	binaryPath := filepath.Join(azdDir, binaryName)
-
 	return runFunctionalTests(azdDir, testRunOpts{
 		mode:    "record",
 		filter:  filter,
 		verbose: true,
-		env: []string{
-			"CLI_TEST_SKIP_BUILD=true",
-			"CLI_TEST_AZD_PATH=" + binaryPath,
-		},
 	})
 }
 

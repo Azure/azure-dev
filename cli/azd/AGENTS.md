@@ -77,7 +77,7 @@ When writing tests, prefer table-driven tests. Use testify/mock for mocking.
 
 Additional mage targets:
 
-- `mage record` — re-record functional test cassettes against a live Azure subscription. Accepts an optional `-filter=TestName` flag to re-record specific tests. Requires `azd auth login` and a configured test subscription (see `docs/recording-functional-tests-guide.md`).
+- `mage record` — re-record functional test cassettes against a live Azure subscription. Accepts an optional `-filter=TestName` flag to re-record specific tests. Typically only core maintainers need to run this; external contributors can rely on playback mode (the default) which requires no Azure access. Requires `azd auth login` and a configured test subscription (see `docs/recording-functional-tests-guide.md`).
 
 ```bash
 gofmt -s -w .

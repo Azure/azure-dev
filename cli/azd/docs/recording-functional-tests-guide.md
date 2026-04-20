@@ -262,6 +262,8 @@ This helper (from `test/functional/aspire_test.go`) deletes subscription deploym
 
 ## Re-recording an Existing Test
 
+> **Note**: Re-recording is typically a core-maintainer workflow. External contributors generally do not need to re-record cassettes; the default playback mode replays stored interactions and requires no Azure access. Open an issue if a cassette appears stale.
+
 ### Using `mage record` (Recommended)
 
 The easiest way to re-record tests is the `mage record` target:
@@ -276,7 +278,7 @@ mage record                                  # re-record all playback tests
 
 #### Configuring the Test Subscription
 
-Tests need an Azure subscription and tenant. Configure them once with `azd config` (persists across sessions):
+Tests need an Azure subscription and tenant. Any subscription you have access to works — the `defaults.test.*` keys are a separate namespace so test configuration does not affect regular `azd` defaults. Configure them once with `azd config` (persists across sessions):
 
 ```bash
 azd config set defaults.test.subscription <SUBSCRIPTION_ID>

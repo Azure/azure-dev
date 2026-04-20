@@ -61,6 +61,8 @@ mage preflight
 
 ### Re-recording functional test cassettes
 
+> **Note**: Re-recording is typically a core-maintainer workflow and requires an Azure subscription. External contributors can run the tests in the default playback mode, which replays stored cassettes and needs no Azure access.
+
 Re-record stale functional test recordings against a live Azure subscription:
 
 ```bash
@@ -69,14 +71,14 @@ mage record                          # re-record all playback tests
 mage record -filter=Test_CLI_Quota   # re-record only matching tests
 ```
 
-The test subscription and tenant can be configured once via `azd config`:
+Core maintainers configure the test subscription and tenant once via `azd config`:
 
 ```bash
 azd config set defaults.test.subscription <SUBSCRIPTION_ID>
 azd config set defaults.test.tenant <TENANT_ID>
 ```
 
-These values are stored in your user-level azd config and persist across sessions. You can also set them via environment variables (`AZD_TEST_AZURE_SUBSCRIPTION_ID`, `AZD_TEST_TENANT_ID`), which take precedence. See the [recording guide](./docs/recording-functional-tests-guide.md) for details.
+These values are stored in your user-level azd config and persist across sessions. You can also set them via environment variables (`AZD_TEST_AZURE_SUBSCRIPTION_ID`, `AZD_TEST_TENANT_ID`), which take precedence. Any Azure subscription you have access to works; the `defaults.test.*` namespace is kept separate from the top-level `defaults.*` so test config does not affect regular `azd` usage. See the [recording guide](./docs/recording-functional-tests-guide.md) for details.
 
 Run tests:
 

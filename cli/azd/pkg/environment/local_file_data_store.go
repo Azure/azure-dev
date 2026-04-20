@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -39,10 +40,10 @@ func NewLocalFileDataStore(azdContext *azdcontext.AzdContext, configManager conf
 	}
 }
 
-// LockPath returns the path to the OS-level file lock used to serialize
+// lockPath returns the path to the OS-level file lock used to serialize
 // concurrent Reload/Save operations across processes (e.g. parallel
 // `azd env set` subprocesses spawned from service hooks).
-func (fs *LocalFileDataStore) LockPath(env *Environment) string {
+func (fs *LocalFileDataStore) lockPath(env *Environment) string {
 	return filepath.Join(fs.azdContext.EnvironmentRoot(env.name), DotEnvFileName+".lock")
 }
 
@@ -51,14 +52,42 @@ func (fs *LocalFileDataStore) LockPath(env *Environment) string {
 // concurrent holders can always discover it — flock semantics coordinate
 // via the underlying inode, not via file presence.
 func (fs *LocalFileDataStore) newEnvLock(env *Environment) (*flock.Flock, error) {
-	lockPath := fs.LockPath(env)
-	if err := os.MkdirAll(filepath.Dir(lockPath), osPermDir); err != nil {
+	path := fs.lockPath(env)
+	if err := os.MkdirAll(filepath.Dir(path), osutil.PermissionDirectory); err != nil {
 		return nil, fmt.Errorf("creating env dir for lock: %w", err)
 	}
-	return flock.New(lockPath), nil
+	return flock.New(path), nil
 }
 
-const osPermDir = 0o755
+// envLockRetryDelay is the polling interval used by TryLockContext while
+// waiting for another process to release the .env flock.
+const envLockRetryDelay = 50 * time.Millisecond
+
+// acquireEnvLock acquires the OS-level .env flock, polling so the caller's
+// context (Ctrl-C, deadline) can cancel the wait. Without this, a wedged
+// holder (e.g. a hung `azd env set` subprocess on Windows where LockFileEx
+// blocks in a kernel wait that does not honor process signals) would
+// freeze azd indefinitely.
+func (fs *LocalFileDataStore) acquireEnvLock(ctx context.Context, env *Environment) (*flock.Flock, error) {
+	fl, err := fs.newEnvLock(env)
+	if err != nil {
+		return nil, err
+	}
+	locked, err := fl.TryLockContext(ctx, envLockRetryDelay)
+	if err != nil {
+		return nil, fmt.Errorf("locking .env: %w", err)
+	}
+	if !locked {
+		return nil, fmt.Errorf("locking .env: %w", ctx.Err())
+	}
+	return fl, nil
+}
+
+func releaseEnvLock(fl *flock.Flock) {
+	if err := fl.Unlock(); err != nil {
+		log.Printf("failed to release .env lock: %v", err)
+	}
+}
 
 // Path returns the path to the .env file for the given environment
 func (fs *LocalFileDataStore) EnvPath(env *Environment) string {
@@ -130,18 +159,11 @@ func (fs *LocalFileDataStore) Reload(ctx context.Context, env *Environment) erro
 	// Serialize against concurrent cross-process Save (e.g. parallel
 	// `azd env set` subprocesses from service hooks) so we never observe
 	// a truncated or partially-written .env file.
-	fl, err := fs.newEnvLock(env)
+	fl, err := fs.acquireEnvLock(ctx, env)
 	if err != nil {
 		return err
 	}
-	if err := fl.Lock(); err != nil {
-		return fmt.Errorf("locking .env: %w", err)
-	}
-	defer func() {
-		if err := fl.Unlock(); err != nil {
-			log.Printf("failed to release .env lock: %v", err)
-		}
-	}()
+	defer releaseEnvLock(fl)
 
 	return fs.reloadLocked(ctx, env)
 }
@@ -191,18 +213,11 @@ func (fs *LocalFileDataStore) Save(ctx context.Context, env *Environment, option
 	// own keys, then truncate-and-write — the last writer silently clobbers
 	// the first writer's keys. The lock also covers the sibling config.json
 	// write, which is similarly subject to torn reads on concurrent saves.
-	fl, err := fs.newEnvLock(env)
+	fl, err := fs.acquireEnvLock(ctx, env)
 	if err != nil {
 		return err
 	}
-	if err := fl.Lock(); err != nil {
-		return fmt.Errorf("locking .env: %w", err)
-	}
-	defer func() {
-		if err := fl.Unlock(); err != nil {
-			log.Printf("failed to release .env lock: %v", err)
-		}
-	}()
+	defer releaseEnvLock(fl)
 
 	// Update configuration (under the lock so concurrent readers never
 	// observe a half-written config.json).

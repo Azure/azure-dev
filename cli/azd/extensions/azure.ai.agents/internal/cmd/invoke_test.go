@@ -828,3 +828,127 @@ type pollStep struct {
 	retryAfter string
 	repeat     bool
 }
+
+func TestCreateConversation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		agentName  string
+		statusCode int
+		body       string
+		wantID     string
+		wantErr    bool
+		errContain string
+	}{
+		{
+			name:       "success returns conversation ID",
+			agentName:  "my-agent",
+			statusCode: 200,
+			body:       `{"id":"conv-abc123"}`,
+			wantID:     "conv-abc123",
+		},
+		{
+			name:       "HTTP 400 returns error",
+			agentName:  "my-agent",
+			statusCode: 400,
+			body:       `{"error":"bad request"}`,
+			wantErr:    true,
+			errContain: "failed with HTTP 400",
+		},
+		{
+			name:       "HTTP 500 returns error",
+			agentName:  "my-agent",
+			statusCode: 500,
+			body:       `{"error":"internal"}`,
+			wantErr:    true,
+			errContain: "failed with HTTP 500",
+		},
+		{
+			name:       "response missing id field",
+			agentName:  "my-agent",
+			statusCode: 200,
+			body:       `{"status":"ok"}`,
+			wantErr:    true,
+			errContain: "missing 'id' field",
+		},
+		{
+			name:       "response with non-string id",
+			agentName:  "my-agent",
+			statusCode: 200,
+			body:       `{"id":12345}`,
+			wantErr:    true,
+			errContain: "missing 'id' field",
+		},
+		{
+			name:       "invalid JSON response",
+			agentName:  "my-agent",
+			statusCode: 200,
+			body:       `not-json`,
+			wantErr:    true,
+			errContain: "invalid character",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				// Verify request method
+				if r.Method != http.MethodPost {
+					t.Errorf("method = %s, want POST", r.Method)
+				}
+
+				// Verify path includes the agent name and conversations endpoint
+				wantPath := "/agents/" + tt.agentName +
+					"/endpoint/protocols/openai/conversations"
+				if r.URL.Path != wantPath {
+					t.Errorf("path = %s, want %s", r.URL.Path, wantPath)
+				}
+
+				// Verify api-version query parameter uses the constant
+				if got := r.URL.Query().Get("api-version"); got != ConversationsAPIVersion {
+					t.Errorf("api-version = %q, want %q", got, ConversationsAPIVersion)
+				}
+
+				// Verify auth header
+				if got := r.Header.Get("Authorization"); got != "Bearer test-token" {
+					t.Errorf("Authorization = %q, want %q", got, "Bearer test-token")
+				}
+
+				// Verify content type
+				if got := r.Header.Get("Content-Type"); got != "application/json" {
+					t.Errorf("Content-Type = %q, want %q", got, "application/json")
+				}
+
+				w.WriteHeader(tt.statusCode)
+				w.Write([]byte(tt.body))
+			}))
+			defer srv.Close()
+
+			id, err := createConversation(
+				t.Context(), srv.URL, tt.agentName, "test-token",
+			)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if tt.errContain != "" &&
+					!strings.Contains(err.Error(), tt.errContain) {
+					t.Errorf("error = %q, want substring %q",
+						err.Error(), tt.errContain)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if id != tt.wantID {
+				t.Errorf("id = %q, want %q", id, tt.wantID)
+			}
+		})
+	}
+}

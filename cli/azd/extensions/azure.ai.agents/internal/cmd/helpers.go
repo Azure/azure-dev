@@ -363,7 +363,7 @@ func resolveConversationID(
 	agentName string,
 	explicit string,
 	forceNew bool,
-	endpoint string,
+	projectEndpoint string,
 	bearerToken string,
 ) (string, error) {
 	if explicit != "" {
@@ -386,7 +386,7 @@ func resolveConversationID(
 	}
 
 	// Create and persist a new conversation for multi-turn memory.
-	newConvID, err := createConversation(ctx, endpoint, agentName, bearerToken)
+	newConvID, err := createConversation(ctx, projectEndpoint, agentName, bearerToken)
 	if err != nil {
 		return "", fmt.Errorf("failed to create conversation: %w", err)
 	}

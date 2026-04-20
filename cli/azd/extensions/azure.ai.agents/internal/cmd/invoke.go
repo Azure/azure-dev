@@ -359,7 +359,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 		return fmt.Errorf("agent name is required; provide as the first argument or define an azure.ai.agent service in azure.yaml")
 	}
 
-	endpoint, err := resolveAgentEndpoint(ctx, "", "")
+	projectEndpoint, err := resolveAgentEndpoint(ctx, "", "")
 	if err != nil {
 		return err
 	}
@@ -417,7 +417,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 		name,
 		a.flags.conversation,
 		a.flags.newConversation,
-		endpoint,
+		projectEndpoint,
 		token.Token,
 	)
 	if err != nil {
@@ -440,10 +440,10 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	if vnext {
 		url = fmt.Sprintf(
 			"%s/agents/%s/endpoint/protocols/openai/responses?api-version=%s",
-			endpoint, name, DefaultAgentAPIVersion,
+			projectEndpoint, name, DefaultAgentAPIVersion,
 		)
 	} else {
-		url = fmt.Sprintf("%s/openai/responses?api-version=%s", endpoint, DefaultAgentAPIVersion)
+		url = fmt.Sprintf("%s/openai/responses?api-version=%s", projectEndpoint, DefaultAgentAPIVersion)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
 	if err != nil {
@@ -912,7 +912,10 @@ func handleInvocationLRO(
 
 // createConversation creates a new Foundry conversation for multi-turn memory.
 func createConversation(ctx context.Context, projectEndpoint, agentName, bearerToken string) (string, error) {
-	url := fmt.Sprintf("%s/agents/%s/endpoint/protocols/openai/conversations?api-version=v1", projectEndpoint, agentName)
+	url := fmt.Sprintf(
+		"%s/agents/%s/endpoint/protocols/openai/conversations?api-version=%s",
+		projectEndpoint, agentName, ConversationsAPIVersion,
+	)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader([]byte("{}")))
 	if err != nil {
 		return "", err

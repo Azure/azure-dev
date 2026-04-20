@@ -44,12 +44,15 @@ type RequiredInput struct {
 }
 
 // PromptRequiredError is returned when --no-prompt mode prevents collecting required inputs interactively.
+//
+// Either Inputs or PromptMessage is set, but not both.
 type PromptRequiredError struct {
+	// Inputs is the list of required inputs that are missing.
+	Inputs []RequiredInput
 	// Message is the headline used for structured missing-input output.
 	Message string
-	Inputs  []RequiredInput
 
-	// PromptMessage is the original prompt text and is only used when Inputs is empty.
+	// PromptMessage is the prompt text that would have been displayed to the user if interactive prompts were allowed.
 	PromptMessage string
 }
 

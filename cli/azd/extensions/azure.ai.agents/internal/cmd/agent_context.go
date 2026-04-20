@@ -18,6 +18,9 @@ import (
 const DefaultAgentAPIVersion = "2025-05-15-preview"
 const DefaultVNextAgentAPIVersion = "2025-11-15-preview"
 
+// ConversationsAPIVersion is the API version used by the Foundry Conversations protocol.
+const ConversationsAPIVersion = "v1"
+
 // AgentContext holds the common properties of a hosted agent.
 type AgentContext struct {
 	ProjectEndpoint string

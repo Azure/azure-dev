@@ -20,7 +20,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
@@ -252,23 +251,6 @@ func (ps *promptService) PromptSubscription(
 
 	hideId := isDemoModeEnabled()
 
-	// Handle --no-prompt mode
-	if ps.globalOptions.NoPrompt {
-		return nil, &input.PromptRequiredError{
-			Inputs: []input.RequiredInput{
-				{
-					Name: "subscription",
-					Sources: []input.InputSource{
-						{
-							Kind: input.InputSourceEnvironment,
-							Name: environment.SubscriptionIdEnvVarName,
-						},
-					},
-				},
-			},
-		}
-	}
-
 	return PromptCustomResource(ctx, CustomResourceOptions[account.Subscription]{
 		SelectorOptions: mergedOptions,
 		LoadData: func(ctx context.Context) ([]*account.Subscription, error) {
@@ -335,23 +317,6 @@ func (ps *promptService) PromptLocation(
 		userLocation, exists := userConfig.GetString("defaults.location")
 		if exists && userLocation != "" {
 			defaultLocation = userLocation
-		}
-	}
-
-	// Handle --no-prompt mode
-	if ps.globalOptions.NoPrompt {
-		return nil, &input.PromptRequiredError{
-			Inputs: []input.RequiredInput{
-				{
-					Name: "location",
-					Sources: []input.InputSource{
-						{
-							Kind: input.InputSourceEnvironment,
-							Name: environment.LocationEnvVarName,
-						},
-					},
-				},
-			},
 		}
 	}
 
@@ -461,45 +426,6 @@ func (ps *promptService) PromptResourceGroup(
 
 	if err := mergo.Merge(mergedSelectorOptions, defaultSelectorOptions, mergo.WithoutDereference); err != nil {
 		return nil, err
-	}
-
-	// Handle --no-prompt mode
-	if ps.globalOptions.NoPrompt {
-		if azureContext.Scope.ResourceGroup == "" {
-			return nil, &input.PromptRequiredError{
-				Inputs: []input.RequiredInput{
-					{
-						Name: "resource group",
-						Sources: []input.InputSource{
-							{
-								Kind: input.InputSourceEnvironment,
-								Name: environment.ResourceGroupEnvVarName,
-							},
-						},
-					},
-				},
-			}
-		}
-
-		// Load resource groups and find the one specified in context
-		resourceGroupList, err := ps.resourceService.ListResourceGroup(ctx, azureContext.Scope.SubscriptionId, nil)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load resource groups: %w", err)
-		}
-
-		for _, resourceGroup := range resourceGroupList {
-			if resourceGroup.Name == azureContext.Scope.ResourceGroup {
-				return &azapi.ResourceGroup{
-					Id:       resourceGroup.Id,
-					Name:     resourceGroup.Name,
-					Location: resourceGroup.Location,
-				}, nil
-			}
-		}
-
-		return nil, fmt.Errorf(
-			"resource group '%s' not found in subscription",
-			azureContext.Scope.ResourceGroup)
 	}
 
 	return PromptCustomResource(ctx, CustomResourceOptions[azapi.ResourceGroup]{

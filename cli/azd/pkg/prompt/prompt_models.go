@@ -8,7 +8,10 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 )
 
 // Azure Scope contains the high level metadata about an Azure deployment.
@@ -151,6 +154,7 @@ type AzureContext struct {
 	Scope         AzureScope
 	Resources     *AzureResourceList
 	promptService PromptService
+	globalOptions *internal.GlobalCommandOptions
 }
 
 // NewEmptyAzureContext creates a new empty Azure context.
@@ -166,26 +170,46 @@ func NewAzureContext(
 	promptService PromptService,
 	scope AzureScope,
 	resourceList *AzureResourceList,
+	globalOptions *internal.GlobalCommandOptions,
 ) *AzureContext {
 	return &AzureContext{
 		Scope:         scope,
 		Resources:     resourceList,
 		promptService: promptService,
+		globalOptions: globalOptions,
 	}
 }
 
 // EnsureSubscription ensures that the Azure context has a subscription.
 // If the subscription is not set, the user is prompted to select a subscription.
 func (pc *AzureContext) EnsureSubscription(ctx context.Context) error {
-	if pc.Scope.SubscriptionId == "" {
-		subscription, err := pc.promptService.PromptSubscription(ctx, nil)
-		if err != nil {
-			return err
-		}
-
-		pc.Scope.TenantId = subscription.TenantId
-		pc.Scope.SubscriptionId = subscription.Id
+	if pc.Scope.SubscriptionId != "" {
+		return nil
 	}
+
+	if pc.globalOptions != nil && pc.globalOptions.NoPrompt {
+		return &input.PromptRequiredError{
+			Inputs: []input.RequiredInput{
+				{
+					Name: "subscription",
+					Sources: []input.InputSource{
+						{
+							Kind: input.InputSourceEnvironment,
+							Name: environment.SubscriptionIdEnvVarName,
+						},
+					},
+				},
+			},
+		}
+	}
+
+	subscription, err := pc.promptService.PromptSubscription(ctx, nil)
+	if err != nil {
+		return err
+	}
+
+	pc.Scope.TenantId = subscription.TenantId
+	pc.Scope.SubscriptionId = subscription.Id
 
 	return nil
 }
@@ -193,14 +217,33 @@ func (pc *AzureContext) EnsureSubscription(ctx context.Context) error {
 // EnsureResourceGroup ensures that the Azure context has a resource group.
 // If the resource group is not set, the user is prompted to select a resource group.
 func (pc *AzureContext) EnsureResourceGroup(ctx context.Context) error {
-	if pc.Scope.ResourceGroup == "" {
-		resourceGroup, err := pc.promptService.PromptResourceGroup(ctx, pc, nil)
-		if err != nil {
-			return err
-		}
-
-		pc.Scope.ResourceGroup = resourceGroup.Name
+	if pc.Scope.ResourceGroup != "" {
+		return nil
 	}
+
+	if pc.globalOptions != nil && pc.globalOptions.NoPrompt {
+		return &input.PromptRequiredError{
+			Inputs: []input.RequiredInput{
+				{
+					Name:        "resource group",
+					Description: "The name of the resource group to use for the deployment",
+					Sources: []input.InputSource{
+						{
+							Kind: input.InputSourceEnvironment,
+							Name: environment.ResourceGroupEnvVarName,
+						},
+					},
+				},
+			},
+		}
+	}
+
+	resourceGroup, err := pc.promptService.PromptResourceGroup(ctx, pc, nil)
+	if err != nil {
+		return err
+	}
+
+	pc.Scope.ResourceGroup = resourceGroup.Name
 
 	return nil
 }
@@ -208,14 +251,32 @@ func (pc *AzureContext) EnsureResourceGroup(ctx context.Context) error {
 // EnsureLocation ensures that the Azure context has a location.
 // If the location is not set, the user is prompted to select a location.
 func (pc *AzureContext) EnsureLocation(ctx context.Context) error {
-	if pc.Scope.Location == "" {
-		location, err := pc.promptService.PromptLocation(ctx, pc, nil)
-		if err != nil {
-			return err
-		}
-
-		pc.Scope.Location = location.Name
+	if pc.Scope.Location != "" {
+		return nil
 	}
+
+	if pc.globalOptions != nil && pc.globalOptions.NoPrompt {
+		return &input.PromptRequiredError{
+			Inputs: []input.RequiredInput{
+				{
+					Name: "location",
+					Sources: []input.InputSource{
+						{
+							Kind: input.InputSourceEnvironment,
+							Name: environment.LocationEnvVarName,
+						},
+					},
+				},
+			},
+		}
+	}
+
+	location, err := pc.promptService.PromptLocation(ctx, pc, nil)
+	if err != nil {
+		return err
+	}
+
+	pc.Scope.Location = location.Name
 
 	return nil
 }

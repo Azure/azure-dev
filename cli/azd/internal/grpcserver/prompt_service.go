@@ -432,7 +432,7 @@ func (s *promptService) createAzureContext(wire *azdext.AzureContext) (*prompt.A
 
 	resourceList := prompt.NewAzureResourceList(s.resourceService, resources)
 
-	return prompt.NewAzureContext(s.prompter, scope, resourceList), nil
+	return prompt.NewAzureContext(s.prompter, scope, resourceList, s.globalOptions), nil
 }
 
 func createResourceOptions(options *azdext.PromptResourceOptions) prompt.ResourceOptions {

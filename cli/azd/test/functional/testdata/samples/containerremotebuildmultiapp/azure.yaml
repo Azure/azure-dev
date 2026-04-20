@@ -1,0 +1,16 @@
+name: webapp-multi
+metadata:
+  template: azd-test/containerremotebuildmultiapp@v1
+services:
+  web:
+    project: src/web
+    host: containerapp
+    language: js
+    docker:
+      remoteBuild: true
+  api:
+    project: src/api
+    host: containerapp
+    language: js
+    docker:
+      remoteBuild: true

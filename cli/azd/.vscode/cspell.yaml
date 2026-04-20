@@ -434,6 +434,7 @@ overrides:
       - ONENOTE
       - VISIO
       - WEBREFERENCES
+      - sharepointonline
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

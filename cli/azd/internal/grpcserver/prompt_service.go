@@ -16,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ai"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
@@ -54,7 +55,9 @@ func (s *promptService) Confirm(ctx context.Context, req *azdext.ConfirmRequest)
 
 	if s.globalOptions.NoPrompt {
 		if req.Options.DefaultValue == nil {
-			return nil, fmt.Errorf("no default response for prompt '%s'", req.Options.Message)
+			return nil, &input.PromptRequiredError{
+				PromptMessage: req.Options.Message,
+			}
 		} else {
 			return &azdext.ConfirmResponse{
 				Value: req.Options.DefaultValue,
@@ -91,7 +94,9 @@ func (s *promptService) Select(ctx context.Context, req *azdext.SelectRequest) (
 
 	if s.globalOptions.NoPrompt {
 		if req.Options.SelectedIndex == nil {
-			return nil, fmt.Errorf("no default selection for prompt '%s'", req.Options.Message)
+			return nil, &input.PromptRequiredError{
+				PromptMessage: req.Options.Message,
+			}
 		} else {
 			return &azdext.SelectResponse{
 				Value: req.Options.SelectedIndex,
@@ -196,7 +201,9 @@ func (s *promptService) MultiSelect(
 func (s *promptService) Prompt(ctx context.Context, req *azdext.PromptRequest) (*azdext.PromptResponse, error) {
 	if s.globalOptions.NoPrompt {
 		if req.Options.Required && req.Options.DefaultValue == "" {
-			return nil, fmt.Errorf("no default response for prompt '%s'", req.Options.Message)
+			return nil, &input.PromptRequiredError{
+				PromptMessage: req.Options.Message,
+			}
 		} else {
 			return &azdext.PromptResponse{
 				Value: req.Options.DefaultValue,

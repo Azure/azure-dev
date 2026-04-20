@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 
 	"azureaiagent/internal/exterrors"
@@ -18,6 +19,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
 const (
@@ -179,20 +181,17 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient) error 
 			"Azure AI User → Foundry Project", info.ProjectScope,
 			armauthorization.PrincipalTypeUser,
 		); assignErr != nil {
-			// Only treat 403 as a hard RBAC failure — transient errors (throttling, network) are non-blocking.
+			// Warn rather than fail hard on 403 — deployment can proceed, but the developer
+			// may not be able to interact with agents until this role is assigned.
 			if respErr, ok := errors.AsType[*azcore.ResponseError](assignErr); ok &&
 				respErr.StatusCode == http.StatusForbidden {
-				return exterrors.Auth(
-					exterrors.CodeDeveloperMissingAIUserRole,
-					fmt.Sprintf(
-						"your identity (%s) does not have the 'Azure AI User' role on the Foundry Project %s/%s "+
-							"and auto-assign was denied: %s",
-						userProfile.DisplayName, info.AccountName, info.ProjectName, assignErr,
-					),
-					fmt.Sprintf(
-						"ask a subscription Owner or User Access Administrator to assign the 'Azure AI User' role "+
-							"to your identity on the Foundry Project scope:\n"+
-							"  az role assignment create --assignee %s --role \"Azure AI User\" --scope %q",
+				fmt.Fprintf(os.Stderr, "%s\n",
+					output.WithWarningFormat(
+						"Your identity (%s) does not have the 'Azure AI User' role on the Foundry Project %s/%s "+
+							"and auto-assign was denied.\n"+
+							"    Ask a subscription Owner or User Access Administrator to assign the role:\n"+
+							"      az role assignment create --assignee %s --role \"Azure AI User\" --scope %q",
+						userProfile.DisplayName, info.AccountName, info.ProjectName,
 						principalID, info.ProjectScope,
 					),
 				)
@@ -214,19 +213,22 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient) error 
 	} else if !hasRoleWrite {
 		// Warn rather than fail hard: deployment can still proceed, but the postdeploy
 		// step that assigns 'Azure AI User' to agent service principals may return 403.
-		fmt.Printf(
-			"  (!) Warning: Role assignment write not available on Foundry Project %s/%s.\n"+
-				"    The postdeploy step will attempt to assign 'Azure AI User' to agent service principals,\n"+
-				"    but may fail with a 403. To grant this permission, assign one of these roles:\n"+
-				"      • Owner\n"+
-				"      • User Access Administrator\n"+
-				"      • Role Based Access Control Administrator\n"+
-				"      • Azure AI Project Manager\n"+
-				"      • Azure AI Account Owner\n"+
-				"      az role assignment create --assignee %s "+
-				"--role \"Role Based Access Control Administrator\" --scope %q\n"+
-				"    Or, if roles are managed externally: AZD_AGENT_SKIP_ROLE_ASSIGNMENTS=true\n",
-			info.AccountName, info.ProjectName, principalID, info.ProjectScope,
+		// Write to stderr with warning color so the message survives azd's deployment preview capture.
+		fmt.Fprintf(os.Stderr, "%s\n",
+			output.WithWarningFormat(
+				"Role assignment write not available on Foundry Project %s/%s.\n"+
+					"    The postdeploy step will attempt to assign 'Azure AI User' to agent service principals,\n"+
+					"    but may fail with a 403. To grant this permission, assign one of these roles:\n"+
+					"      • Owner\n"+
+					"      • User Access Administrator\n"+
+					"      • Role Based Access Control Administrator\n"+
+					"      • Azure AI Project Manager\n"+
+					"      • Azure AI Account Owner\n"+
+					"      az role assignment create --assignee %s "+
+					"--role \"Role Based Access Control Administrator\" --scope %q\n"+
+					"    Or, if roles are managed externally: AZD_AGENT_SKIP_ROLE_ASSIGNMENTS=true",
+				info.AccountName, info.ProjectName, principalID, info.ProjectScope,
+			),
 		)
 	} else {
 		fmt.Println("  ✓ Role assignment write on Foundry Project")

@@ -24,6 +24,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v3"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/google/uuid"
 )
 
@@ -340,12 +341,14 @@ func ensureSingleAgentRBAC(
 	if err != nil {
 		if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok &&
 			respErr.StatusCode == http.StatusForbidden {
-			// Write to stderr so this survives azd's deployment preview capture of stdout.
-			fmt.Fprintf(os.Stderr,
-				"(!) Warning: Could not assign 'Azure AI User' to agent identity '%s' (403 Forbidden).\n"+
-					"    The agent may not have access to the Foundry Project until this role is assigned.\n"+
-					"    Re-run after granting role assignment write, or set AZD_AGENT_SKIP_ROLE_ASSIGNMENTS=true.\n",
-				agentName,
+			// Write to stderr with warning color so it survives azd's deployment preview capture.
+			fmt.Fprintf(os.Stderr, "%s\n",
+				output.WithWarningFormat(
+					"Could not assign 'Azure AI User' to agent identity '%s' (403 Forbidden).\n"+
+						"    The agent may not have access to the Foundry Project until this role is assigned.\n"+
+						"    Re-run after granting role assignment write, or set AZD_AGENT_SKIP_ROLE_ASSIGNMENTS=true.",
+					agentName,
+				),
 			)
 			return nil
 		}

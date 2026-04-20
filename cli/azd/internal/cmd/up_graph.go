@@ -231,8 +231,9 @@ func (u *UpGraphAction) Run(
 	)
 
 	if err := g.AddStep(&exegraph.Step{
-		Name: preProvisionHookStep,
-		Tags: []string{"cmdhook"},
+		Name:      preProvisionHookStep,
+		DependsOn: []string{prePackageHookStep},
+		Tags:      []string{"cmdhook"},
 		Action: func(ctx context.Context) error {
 			return runProjectCommandHook(
 				ctx, hookDeps, ext.HookTypePre, string(project.ProjectEventProvision),
@@ -290,9 +291,14 @@ func (u *UpGraphAction) Run(
 	}
 
 	// ── cmdhook-prepackage ── runs the project-level `prepackage` shell
-	// hook (parity with stand-alone `azd package`). No deps so packaging
-	// can start as early as possible — package steps overlap with
-	// provision intentionally.
+	// hook (parity with stand-alone `azd package`). Package steps overlap
+	// with provision intentionally, but the `prepackage` and
+	// `preprovision` *hooks* themselves run sequentially
+	// (prepackage → preprovision) to preserve the pre-graph ordering that
+	// `azd up` used when it ran `package` then `provision` as separate
+	// sub-commands. Users rely on `prepackage` writing env-vars that
+	// `preprovision` reads (e.g. computing an image tag for the bicepparam
+	// file); running them concurrently would be a silent breaking change.
 	if err := g.AddStep(&exegraph.Step{
 		Name: prePackageHookStep,
 		Tags: []string{"cmdhook"},

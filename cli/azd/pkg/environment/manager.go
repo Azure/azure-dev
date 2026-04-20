@@ -442,9 +442,16 @@ func (m *manager) Get(ctx context.Context, name string) (*Environment, error) {
 			return nil, err
 		}
 
+		// Use the same in-process lock that public Save acquires so a
+		// concurrent Save from another goroutine can't interleave with
+		// this remote-fallback hydration. Cross-process safety still
+		// comes from the flock inside local.Save.
+		m.saveMu.Lock()
 		if err := m.local.Save(ctx, remoteEnv, nil); err != nil {
+			m.saveMu.Unlock()
 			return nil, err
 		}
+		m.saveMu.Unlock()
 
 		localEnv = remoteEnv
 	}

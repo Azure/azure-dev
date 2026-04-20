@@ -341,15 +341,13 @@ func ensureSingleAgentRBAC(
 	if err != nil {
 		if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok &&
 			respErr.StatusCode == http.StatusForbidden {
-			// Write to stderr with warning color so it survives azd's deployment preview capture.
-			fmt.Fprintf(os.Stderr, "%s\n",
-				output.WithWarningFormat(
-					"Could not assign 'Azure AI User' to agent identity '%s' (403 Forbidden).\n"+
-						"    The agent may not have access to the Foundry Project until this role is assigned.\n"+
-						"    Re-run after granting role assignment write, or set AZD_AGENT_SKIP_ROLE_ASSIGNMENTS=true.",
-					agentName,
-				),
-			)
+			// Write with warning color so it appears as a yellow warning, not a red error.
+			fmt.Printf("%s\n", output.WithWarningFormat(
+				"Could not assign 'Azure AI User' to agent identity '%s' (403 Forbidden).\n"+
+					"    The agent may not have access to the Foundry Project until this role is assigned.\n"+
+					"    Re-run after granting role assignment write, or set AZD_AGENT_SKIP_ROLE_ASSIGNMENTS=true.",
+				agentName,
+			))
 			return nil
 		}
 		return fmt.Errorf("failed to assign Azure AI User role: %w", err)

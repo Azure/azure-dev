@@ -911,8 +911,8 @@ func handleInvocationLRO(
 }
 
 // createConversation creates a new Foundry conversation for multi-turn memory.
-func createConversation(ctx context.Context, endpoint string, bearerToken string) (string, error) {
-	url := fmt.Sprintf("%s/openai/conversations?api-version=%s", endpoint, DefaultAgentAPIVersion)
+func createConversation(ctx context.Context, projectEndpoint, agentName, bearerToken string) (string, error) {
+	url := fmt.Sprintf("%s/agents/%s/endpoint/protocols/openai/v1/conversations", projectEndpoint, agentName)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader([]byte("{}")))
 	if err != nil {
 		return "", err

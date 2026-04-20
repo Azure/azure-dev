@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -167,6 +168,16 @@ func addServiceStepsToGraph(g *exegraph.Graph, opts serviceGraphOptions) (*servi
 	// nil) are unconstrained and run in full parallelism.
 	firstByGate := make(map[string]string)
 
+	// serviceNames is the set of service names in this graph, used to
+	// resolve service-to-service edges declared via `services.<name>.uses`
+	// in azure.yaml. Resource-valued `uses:` entries (targeting entries
+	// under `resources:` rather than `services:`) are ignored here because
+	// the provision layer already owns their lifecycle.
+	serviceNames := make(map[string]struct{}, len(opts.services))
+	for _, svc := range opts.services {
+		serviceNames[svc.Name] = struct{}{}
+	}
+
 	// newPhaseProgress returns a *async.Progress whose channel is drained
 	// by a background goroutine that forwards each ServiceProgress.Message
 	// to opts.onPhaseProgress (if non-nil). Callers MUST call Done() —
@@ -270,8 +281,9 @@ func addServiceStepsToGraph(g *exegraph.Graph, opts serviceGraphOptions) (*servi
 			return nil, fmt.Errorf("building publish step %s: %w", publishStepName, err)
 		}
 
-		// ── deploy-<svc> ── publish + build gate (if any) + any caller-supplied fan-in.
-		deployDeps := make([]string, 0, 1+1+len(opts.deployExtraDeps))
+		// ── deploy-<svc> ── publish + build gate (if any) + declared
+		// service-to-service `uses:` edges + any caller-supplied fan-in.
+		deployDeps := make([]string, 0, 1+1+len(svc.Uses)+len(opts.deployExtraDeps))
 		deployDeps = append(deployDeps, publishStepName)
 		if opts.buildGateKey != nil {
 			if key := opts.buildGateKey(svc); key != "" {
@@ -280,6 +292,26 @@ func addServiceStepsToGraph(g *exegraph.Graph, opts serviceGraphOptions) (*servi
 				} else {
 					firstByGate[key] = deployStepName
 				}
+			}
+		}
+		// Translate `services.<name>.uses: [depSvc]` into a deploy-step
+		// edge so hooks that pass values between services (e.g. api's
+		// postdeploy writes an env var that web's predeploy reads) retain
+		// the deploy ordering they had under the old sequential loop.
+		// Entries that don't match another service's name target a
+		// resource and are left to the provision layer. Duplicates are
+		// filtered so the build-gate and `uses:` edges collapse when they
+		// name the same predecessor.
+		for _, dep := range svc.Uses {
+			if dep == svc.Name {
+				continue
+			}
+			if _, ok := serviceNames[dep]; !ok {
+				continue
+			}
+			depStep := "deploy-" + dep
+			if !slices.Contains(deployDeps, depStep) {
+				deployDeps = append(deployDeps, depStep)
 			}
 		}
 		deployDeps = append(deployDeps, opts.deployExtraDeps...)

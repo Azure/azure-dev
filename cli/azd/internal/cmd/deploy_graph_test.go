@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
@@ -162,10 +163,77 @@ func TestDeployServicesGraph_BuildGateKeyIsGeneric(t *testing.T) {
 	require.NoError(t, g.Validate())
 }
 
+// TestDeployServicesGraph_UsesDependencies verifies that declared
+// `services.<name>.uses:` entries that target other services produce
+// deploy-step edges, so hooks that pass values between services retain
+// the deploy ordering they had under the old sequential loop. Entries
+// that target resources (not services) must be ignored.
+func TestDeployServicesGraph_UsesDependencies(t *testing.T) {
+	services := []*project.ServiceConfig{
+		{Name: "api"},
+		{Name: "web", Uses: []string{"api", "cosmos"}}, // cosmos is a resource
+		{Name: "worker", Uses: []string{"api"}},
+		{Name: "independent"},
+	}
+
+	g := buildDeployGraph(t, services, nil)
+
+	require.Equal(t, 4, g.Len())
+
+	steps := g.Steps()
+	stepMap := make(map[string]*exegraph.Step, len(steps))
+	for _, s := range steps {
+		stepMap[s.Name] = s
+	}
+
+	require.Empty(t, stepMap["deploy-api"].DependsOn,
+		"api has no uses — no deps")
+	require.Equal(t, []string{"deploy-api"}, stepMap["deploy-web"].DependsOn,
+		"web uses api (service); cosmos (resource) must be ignored")
+	require.Equal(t, []string{"deploy-api"}, stepMap["deploy-worker"].DependsOn,
+		"worker uses api (service)")
+	require.Empty(t, stepMap["deploy-independent"].DependsOn,
+		"independent has no uses — no deps")
+
+	require.NoError(t, g.Validate())
+}
+
+// TestDeployServicesGraph_UsesWithBuildGate verifies that `uses:` edges
+// coexist with Aspire build-gate edges — the deploy step depends on both.
+func TestDeployServicesGraph_UsesWithBuildGate(t *testing.T) {
+	services := []*project.ServiceConfig{
+		{Name: "api", DotNetContainerApp: &project.DotNetContainerAppOptions{
+			Manifest: &apphost.Manifest{},
+		}},
+		{Name: "web", Uses: []string{"api"}, DotNetContainerApp: &project.DotNetContainerAppOptions{
+			Manifest: &apphost.Manifest{},
+		}},
+	}
+
+	g := buildDeployGraph(t, services, aspireBuildGateKey)
+
+	steps := g.Steps()
+	stepMap := make(map[string]*exegraph.Step, len(steps))
+	for _, s := range steps {
+		stepMap[s.Name] = s
+	}
+
+	require.Empty(t, stepMap["deploy-api"].DependsOn)
+	// web depends on api — the build-gate and uses edges dedupe to a
+	// single entry.
+	require.Equal(t, []string{"deploy-api"},
+		stepMap["deploy-web"].DependsOn,
+		"web should depend on api exactly once (deduped across build-gate and uses)")
+
+	require.NoError(t, g.Validate())
+}
+
 // buildDeployGraph mirrors the deploy-step wiring in
 // [addServiceStepsToGraph] without pulling in the full DeployAction wiring,
 // so tests can focus on graph topology. The gate policy is injected to match
-// the production contract on [serviceGraphOptions.buildGateKey].
+// the production contract on [serviceGraphOptions.buildGateKey]. Declared
+// `services.<name>.uses:` edges to other services in the set are wired too,
+// mirroring production so tests cover the use-edge path.
 func buildDeployGraph(
 	t *testing.T,
 	services []*project.ServiceConfig,
@@ -175,6 +243,10 @@ func buildDeployGraph(
 
 	g := exegraph.NewGraph()
 	firstByGate := map[string]string{}
+	serviceNames := make(map[string]struct{}, len(services))
+	for _, svc := range services {
+		serviceNames[svc.Name] = struct{}{}
+	}
 
 	for _, svc := range services {
 		stepName := "deploy-" + svc.Name
@@ -187,6 +259,18 @@ func buildDeployGraph(
 				} else {
 					firstByGate[key] = stepName
 				}
+			}
+		}
+		for _, dep := range svc.Uses {
+			if dep == svc.Name {
+				continue
+			}
+			if _, ok := serviceNames[dep]; !ok {
+				continue
+			}
+			depStep := "deploy-" + dep
+			if !slices.Contains(deps, depStep) {
+				deps = append(deps, depStep)
 			}
 		}
 

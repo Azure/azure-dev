@@ -165,7 +165,7 @@ The `daily` feed is periodically updated with builds from the latest source code
 ##### Install
 
 ```pwsh
-powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/install-azd.ps1' -OutFile 'install-azd.ps1'; ./install-azd.ps1 -Version 'daily'"
+powershell -ex AllSigned -c "& ([scriptblock]::Create((Invoke-RestMethod 'https://aka.ms/install-azd.ps1'))) -Version 'daily'"
 ```
 
 ##### Uninstall or switch to another version

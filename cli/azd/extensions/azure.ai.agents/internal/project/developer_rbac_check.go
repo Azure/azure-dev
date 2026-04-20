@@ -92,7 +92,8 @@ var sufficientRoleAssignWriteRoles = []string{
 //   - Container Registry Tasks Contributor OR Container Registry Repository Contributor
 //     on the ACR (to build images via remote build and push container images)
 //
-// Returns nil if all checks pass, or a structured error with suggestions on failure.
+// Missing roles are reported as warnings rather than errors so that deployment can proceed.
+// The developer may need to obtain the missing roles separately for full functionality.
 func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient) error {
 	azdEnvClient := azdClient.Environment()
 	cEnvResponse, err := azdEnvClient.GetCurrent(ctx, &azdext.EmptyRequest{})
@@ -190,8 +191,9 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient) error 
 					userProfile.DisplayName, info.AccountName, info.ProjectName,
 					principalID, info.ProjectScope,
 				))
+			} else {
+				fmt.Printf("  ⚠ Azure AI User auto-assign failed (non-auth error): %s — continuing\n", assignErr)
 			}
-			fmt.Printf("  ⚠ Azure AI User auto-assign failed (non-auth error): %s — continuing\n", assignErr)
 		} else {
 			fmt.Println("  ✓ Azure AI User auto-assigned to developer identity")
 		}

@@ -47,6 +47,7 @@ func TestDeveloperRBACRoleConstants(t *testing.T) {
 	assert.Equal(t, "18d7d88d-d35e-4fb5-a5c3-7773c20a72d9", roleUserAccessAdministrator)
 	assert.Equal(t, "f58310d9-a9f6-439a-9e8d-f62e7b41a168", roleRBACAdministrator)
 	assert.Equal(t, "eadc314b-1a2d-4efa-be10-5d325db5065e", roleAzureAIProjectManager)
+	assert.Equal(t, "e47c6f54-e4a2-4754-9501-8e0985b135e1", roleAzureAIAccountOwner)
 
 	// AI roles
 	assert.Equal(t, "64702f94-c441-49e6-a78b-ef80e0188fee", roleAzureAIDeveloper)
@@ -65,11 +66,13 @@ func TestSufficientRoleLists(t *testing.T) {
 	assert.Contains(t, sufficientAIUserRoles, roleAzureAIUser)
 	assert.Contains(t, sufficientAIUserRoles, roleAzureAIDeveloper)
 
-	// Role-assignment write: Owner, UAA, RBAC Admin, Azure AI Project Manager; Contributor must NOT be included.
+	// Role-assignment write: Owner, UAA, RBAC Admin, Azure AI Project Manager, Azure AI Account Owner;
+	// Contributor must NOT be included.
 	assert.Contains(t, sufficientRoleAssignWriteRoles, roleOwner)
 	assert.Contains(t, sufficientRoleAssignWriteRoles, roleUserAccessAdministrator)
 	assert.Contains(t, sufficientRoleAssignWriteRoles, roleRBACAdministrator)
 	assert.Contains(t, sufficientRoleAssignWriteRoles, roleAzureAIProjectManager)
+	assert.Contains(t, sufficientRoleAssignWriteRoles, roleAzureAIAccountOwner)
 	assert.NotContains(t, sufficientRoleAssignWriteRoles, roleContributor)
 
 	// ABAC ACR roles: Owner, RepositoryWriter, RepositoryContributor; AcrPush must NOT be included.

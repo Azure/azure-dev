@@ -336,3 +336,41 @@ func TestGenerateExtensionMetadata_SkipsEmptyCommands(t *testing.T) {
 		assert.NotEmpty(t, cmd.Name, "Command name should not be empty")
 	}
 }
+
+func TestGenerateExtensionMetadata_FlagOptionsOverride(t *testing.T) {
+	rootCmd, _ := NewExtensionRootCommand(ExtensionCommandOptions{Name: "test-ext"})
+
+	listCmd := RegisterFlagOptions(&cobra.Command{
+		Use:   "list",
+		Short: "List things",
+		RunE:  func(cmd *cobra.Command, args []string) error { return nil },
+	}, "output", []string{"json", "table"}, "json")
+
+	plainCmd := &cobra.Command{
+		Use:   "plain",
+		Short: "Plain command without override",
+		RunE:  func(cmd *cobra.Command, args []string) error { return nil },
+	}
+
+	rootCmd.AddCommand(listCmd, plainCmd)
+
+	metadata := GenerateExtensionMetadata("1.0", "test.extension", rootCmd)
+
+	listMeta := findCommand(metadata.Commands, "list")
+	require.NotNil(t, listMeta)
+	listOutput := findFlag(listMeta.Flags, "output")
+	require.NotNil(t, listOutput)
+	// The metadata description stays clean; ValidValues carries the allowed
+	// set so JSON consumers can render or validate it as they prefer.
+	assert.Equal(t, defaultOutputFlagUsage, listOutput.Description)
+	assert.Equal(t, []string{"json", "table"}, listOutput.ValidValues)
+	assert.Equal(t, "json", listOutput.Default)
+
+	plainMeta := findCommand(metadata.Commands, "plain")
+	require.NotNil(t, plainMeta)
+	plainOutput := findFlag(plainMeta.Flags, "output")
+	require.NotNil(t, plainOutput)
+	assert.Equal(t, defaultOutputFlagUsage, plainOutput.Description)
+	assert.Empty(t, plainOutput.ValidValues)
+	assert.Equal(t, "default", plainOutput.Default)
+}

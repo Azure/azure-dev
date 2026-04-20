@@ -480,6 +480,85 @@ The build process automatically creates binaries for multiple platforms and arch
 > [!NOTE]
 > Build times may vary depending on your hardware and extension complexity.
 
+### Building a Root Command
+
+Go extensions should build their cobra root command using `azdext.NewExtensionRootCommand`. The helper registers the flags and environment-variable handling that `azd` standardizes across all extensions, so extension authors do not need to declare them manually (and avoid name collisions with `azd`'s reserved global flags).
+
+```go
+import "github.com/azure/azure-dev/cli/azd/pkg/azdext"
+
+func NewRootCommand() *cobra.Command {
+  rootCmd, extCtx := azdext.NewExtensionRootCommand(azdext.ExtensionCommandOptions{
+    Name:  "agent",
+    Use:   "agent <command> [options]",
+    Short: "Manage AI agents.",
+  })
+
+  rootCmd.AddCommand(newShowCommand(extCtx))
+  // ... other subcommands
+  return rootCmd
+}
+```
+
+`NewExtensionRootCommand` automatically:
+
+- Registers the standard persistent flags: `--debug`, `--no-prompt`, `-C/--cwd`, `-e/--environment`, `-o/--output`, plus the hidden `--trace-log-file` / `--trace-log-url` flags.
+- Reads the matching `AZD_DEBUG`, `AZD_NO_PROMPT`, `AZD_CWD`, and `AZD_ENVIRONMENT` environment variables that `azd` sets when launching the extension, and applies them when the corresponding flag was not passed explicitly.
+- Honors `--cwd`/`AZD_CWD` by changing the process working directory before the command runs.
+- Extracts W3C trace context from `TRACEPARENT` / `TRACESTATE` and calls `azdext.WithAccessToken` so the command's `cmd.Context()` is ready to use with the gRPC client.
+
+The returned `*ExtensionContext` is the recommended way to read these values inside subcommand `RunE` handlers — do not redeclare any of the standard flags on subcommands.
+
+```go
+type ExtensionContext struct {
+  Debug        bool
+  NoPrompt     bool
+  Cwd          string
+  Environment  string
+  OutputFormat string
+}
+```
+
+Pass `extCtx` into each subcommand factory and read from it inside `RunE`:
+
+```go
+func newShowCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
+  cmd := &cobra.Command{
+    Use: "show",
+    RunE: func(cmd *cobra.Command, args []string) error {
+      if extCtx.NoPrompt {
+        // skip interactive prompts
+      }
+      // use extCtx.Environment, extCtx.OutputFormat, etc.
+      return nil
+    },
+  }
+  return cmd
+}
+```
+
+#### Per-Subcommand Flag Options
+
+The persistent `-o/--output` flag is shared across the whole command tree, but different subcommands often support different output formats (for example a `list` subcommand may support `json` and `table`, while a `version` subcommand only supports `json`). Use `azdext.RegisterFlagOptions` to declare the allowed values and per-command default for any inherited persistent flag without redeclaring it:
+
+```go
+listCmd := &cobra.Command{
+  Use:  "list",
+  RunE: runList,
+}
+azdext.RegisterFlagOptions(listCmd, "output", []string{"json", "table"}, "json")
+```
+
+A single `RegisterFlagOptions` declaration drives all of the following:
+
+- **Help text.** `myext list --help` renders the flag as `-o, --output string   The output format (supported: json, table) (default "json")`.
+- **Metadata.** `azd ext metadata` (and the JSON snapshot extensions ship in their package) populates `flag.validValues` and `flag.default` for the subcommand from the same declaration.
+- **Parse-time validation.** Invocations that pass an unsupported value (e.g. `myext list --output yaml`) are rejected by the SDK with a descriptive error before `RunE` runs.
+- **Shell completion.** Tab-completing `myext list --output ` offers the registered allowed values.
+- **Default substitution.** When the user does not pass `--output`, the SDK writes the per-command default into `extCtx.OutputFormat` before `RunE` runs, so subcommands can read `extCtx.OutputFormat` directly without their own resolution logic.
+
+Sibling and parent commands continue to render the SDK default help text and behavior. The helper generalizes to any inherited persistent flag (passing the flag name as the second argument); it is most commonly used for `--output`.
+
 ### Distributed Tracing
 
 `azd` uses OpenTelemetry and W3C Trace Context for distributed tracing. `azd` sets `TRACEPARENT` in the environment when it launches the extension process.

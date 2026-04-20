@@ -129,6 +129,12 @@ func generateFlags(cmd *cobra.Command) []extensions.Flag {
 	// Ensure the default help flag is initialized (Cobra adds it lazily during execution)
 	cmd.InitDefaultHelpFlag()
 
+	// Per-command flag overrides registered via [RegisterFlagOptions]. These
+	// drive ValidValues and override Default in the emitted metadata so JSON
+	// consumers (azd, IDEs, IntelliSense) see the same per-command
+	// information that --help renders.
+	overrides := flagOverridesForCommand(cmd)
+
 	var flags []extensions.Flag
 
 	cmd.Flags().VisitAll(func(flag *pflag.Flag) {
@@ -146,6 +152,15 @@ func generateFlags(cmd *cobra.Command) []extensions.Flag {
 
 		if flag.Deprecated != "" {
 			flagMeta.Deprecated = flag.Deprecated
+		}
+
+		if ov, ok := overrides[flag.Name]; ok {
+			if len(ov.AllowedValues) > 0 {
+				flagMeta.ValidValues = ov.AllowedValues
+			}
+			if ov.Default != "" {
+				flagMeta.Default = ov.Default
+			}
 		}
 
 		flags = append(flags, flagMeta)

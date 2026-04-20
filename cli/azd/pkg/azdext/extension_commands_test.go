@@ -13,6 +13,148 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestRegisterFlagOptions_HelpRendering(t *testing.T) {
+	root, _ := NewExtensionRootCommand(ExtensionCommandOptions{Name: "test"})
+	showCmd := RegisterFlagOptions(&cobra.Command{
+		Use:   "show",
+		Short: "show",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return nil
+		},
+	}, "output", []string{"json", "table"}, "json")
+	versionCmd := RegisterFlagOptions(&cobra.Command{
+		Use:   "version",
+		Short: "version",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return nil
+		},
+	}, "output", []string{"json"}, "json")
+	root.AddCommand(showCmd, versionCmd)
+
+	showHelp := captureStdout(t, func() {
+		root.SetArgs([]string{"show", "--help"})
+		err := root.Execute()
+		require.NoError(t, err)
+	})
+	require.Contains(t, string(showHelp), `The output format (supported: json, table)`)
+	require.Contains(t, string(showHelp), `(default "json")`)
+
+	versionHelp := captureStdout(t, func() {
+		root.SetArgs([]string{"version", "--help"})
+		err := root.Execute()
+		require.NoError(t, err)
+	})
+	require.Contains(t, string(versionHelp), `The output format (supported: json)`)
+	require.NotContains(t, string(versionHelp), `supported: json, table`)
+
+	rootHelp := captureStdout(t, func() {
+		root.SetArgs([]string{"--help"})
+		err := root.Execute()
+		require.NoError(t, err)
+	})
+	require.Contains(t, string(rootHelp), defaultOutputFlagUsage)
+	require.NotContains(t, string(rootHelp), `supported: json, table`)
+}
+
+func TestRegisterFlagOptions_RejectsInvalidValue(t *testing.T) {
+	root, extCtx := NewExtensionRootCommand(ExtensionCommandOptions{Name: "test"})
+	root.SilenceUsage = true
+	root.SilenceErrors = true
+
+	root.AddCommand(RegisterFlagOptions(&cobra.Command{
+		Use:  "list",
+		RunE: func(cmd *cobra.Command, args []string) error { return nil },
+	}, "output", []string{"json", "table"}, "json"))
+
+	root.SetArgs([]string{"list", "--output", "yaml"})
+	err := root.Execute()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), `invalid value "yaml" for --output`)
+	require.Contains(t, err.Error(), "json, table")
+	// Validation should not have mutated the bound variable past parsing.
+	require.Equal(t, "yaml", extCtx.OutputFormat)
+}
+
+func TestRegisterFlagOptions_AppliesPerCommandDefault(t *testing.T) {
+	root, extCtx := NewExtensionRootCommand(ExtensionCommandOptions{Name: "test"})
+	root.SilenceUsage = true
+	root.SilenceErrors = true
+
+	var observed string
+	root.AddCommand(RegisterFlagOptions(&cobra.Command{
+		Use: "list",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			observed = extCtx.OutputFormat
+			return nil
+		},
+	}, "output", []string{"json", "table"}, "json"))
+
+	root.SetArgs([]string{"list"})
+	require.NoError(t, root.Execute())
+	require.Equal(t, "json", observed)
+	require.Equal(t, "json", extCtx.OutputFormat)
+}
+
+func TestRegisterFlagOptions_AcceptsExplicitAllowedValue(t *testing.T) {
+	root, extCtx := NewExtensionRootCommand(ExtensionCommandOptions{Name: "test"})
+	root.SilenceUsage = true
+	root.SilenceErrors = true
+
+	root.AddCommand(RegisterFlagOptions(&cobra.Command{
+		Use:  "list",
+		RunE: func(cmd *cobra.Command, args []string) error { return nil },
+	}, "output", []string{"json", "table"}, "json"))
+
+	root.SetArgs([]string{"list", "--output", "table"})
+	require.NoError(t, root.Execute())
+	require.Equal(t, "table", extCtx.OutputFormat)
+}
+
+func TestRegisterFlagOptions_RegistersShellCompletion(t *testing.T) {
+	root, _ := NewExtensionRootCommand(ExtensionCommandOptions{Name: "test"})
+	listCmd := RegisterFlagOptions(&cobra.Command{
+		Use:  "list",
+		RunE: func(cmd *cobra.Command, args []string) error { return nil },
+	}, "output", []string{"json", "table"}, "json")
+	root.AddCommand(listCmd)
+
+	var buf bytes.Buffer
+	root.SetOut(&buf)
+	root.SetErr(&buf)
+	root.SetArgs([]string{cobra.ShellCompRequestCmd, "list", "--output", ""})
+	require.NoError(t, root.Execute())
+
+	out := buf.String()
+	require.Contains(t, out, "json")
+	require.Contains(t, out, "table")
+}
+
+func TestRegisterFlagOptions_NilCommandIsNoOp(t *testing.T) {
+	require.NotPanics(t, func() {
+		RegisterFlagOptions(nil, "output", []string{"json"}, "json")
+	})
+}
+
+func TestRegisterFlagOptions_OnlyDefaultStillSubstitutes(t *testing.T) {
+	root, extCtx := NewExtensionRootCommand(ExtensionCommandOptions{Name: "test"})
+	root.SilenceUsage = true
+	root.SilenceErrors = true
+
+	root.AddCommand(RegisterFlagOptions(&cobra.Command{
+		Use:  "list",
+		RunE: func(cmd *cobra.Command, args []string) error { return nil },
+	}, "output", nil, "json"))
+
+	root.SetArgs([]string{"list"})
+	require.NoError(t, root.Execute())
+	require.Equal(t, "json", extCtx.OutputFormat)
+
+	// With no allowed values configured, any value is accepted.
+	root.SetArgs([]string{"list", "--output", "anything"})
+	require.NoError(t, root.Execute())
+	require.Equal(t, "anything", extCtx.OutputFormat)
+}
+
 func TestExtensionCommands_NewListenCommand(t *testing.T) {
 	t.Run("CreatesHiddenCommand", func(t *testing.T) {
 		cmd := NewListenCommand(nil)

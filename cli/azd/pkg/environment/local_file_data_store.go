@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"maps"
 	"os"
 	"path/filepath"
@@ -18,6 +19,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/gofrs/flock"
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 )
@@ -35,6 +38,27 @@ func NewLocalFileDataStore(azdContext *azdcontext.AzdContext, configManager conf
 		configManager: configManager,
 	}
 }
+
+// LockPath returns the path to the OS-level file lock used to serialize
+// concurrent Reload/Save operations across processes (e.g. parallel
+// `azd env set` subprocesses spawned from service hooks).
+func (fs *LocalFileDataStore) LockPath(env *Environment) string {
+	return filepath.Join(fs.azdContext.EnvironmentRoot(env.name), DotEnvFileName+".lock")
+}
+
+// newEnvLock returns an OS-level file lock on the .env file for `env`. The
+// caller owns Lock()/Unlock(). The lock file itself is never deleted so
+// concurrent holders can always discover it — flock semantics coordinate
+// via the underlying inode, not via file presence.
+func (fs *LocalFileDataStore) newEnvLock(env *Environment) (*flock.Flock, error) {
+	lockPath := fs.LockPath(env)
+	if err := os.MkdirAll(filepath.Dir(lockPath), osPermDir); err != nil {
+		return nil, fmt.Errorf("creating env dir for lock: %w", err)
+	}
+	return flock.New(lockPath), nil
+}
+
+const osPermDir = 0o755
 
 // Path returns the path to the .env file for the given environment
 func (fs *LocalFileDataStore) EnvPath(env *Environment) string {
@@ -103,6 +127,28 @@ func (fs *LocalFileDataStore) Get(ctx context.Context, name string) (*Environmen
 
 // Reload reloads the environment from the persistent data store
 func (fs *LocalFileDataStore) Reload(ctx context.Context, env *Environment) error {
+	// Serialize against concurrent cross-process Save (e.g. parallel
+	// `azd env set` subprocesses from service hooks) so we never observe
+	// a truncated or partially-written .env file.
+	fl, err := fs.newEnvLock(env)
+	if err != nil {
+		return err
+	}
+	if err := fl.Lock(); err != nil {
+		return fmt.Errorf("locking .env: %w", err)
+	}
+	defer func() {
+		if err := fl.Unlock(); err != nil {
+			log.Printf("failed to release .env lock: %v", err)
+		}
+	}()
+
+	return fs.reloadLocked(ctx, env)
+}
+
+// reloadLocked performs the actual reload work. Caller MUST hold the env
+// file lock.
+func (fs *LocalFileDataStore) reloadLocked(ctx context.Context, env *Environment) error {
 	// Reload env values
 	var newDotenv map[string]string
 	if envMap, err := godotenv.Read(fs.EnvPath(env)); errors.Is(err, os.ErrNotExist) {
@@ -138,15 +184,37 @@ func (fs *LocalFileDataStore) Reload(ctx context.Context, env *Environment) erro
 
 // Save saves the environment to the persistent data store
 func (fs *LocalFileDataStore) Save(ctx context.Context, env *Environment, options *SaveOptions) error {
-	// Update configuration
+	// Acquire an OS-level file lock so the reload-merge-write cycle below is
+	// atomic against other processes (parallel service hooks spawning
+	// `azd env set` subprocesses, or another `azd` invocation). Without this
+	// two concurrent writers would each read the current .env, merge their
+	// own keys, then truncate-and-write — the last writer silently clobbers
+	// the first writer's keys. The lock also covers the sibling config.json
+	// write, which is similarly subject to torn reads on concurrent saves.
+	fl, err := fs.newEnvLock(env)
+	if err != nil {
+		return err
+	}
+	if err := fl.Lock(); err != nil {
+		return fmt.Errorf("locking .env: %w", err)
+	}
+	defer func() {
+		if err := fl.Unlock(); err != nil {
+			log.Printf("failed to release .env lock: %v", err)
+		}
+	}()
+
+	// Update configuration (under the lock so concurrent readers never
+	// observe a half-written config.json).
 	if err := fs.configManager.Save(env.Config, fs.ConfigPath(env)); err != nil {
 		return fmt.Errorf("saving config: %w", err)
 	}
 
-	// Cache current values & reload to get any new env vars
+	// Cache current values & reload (under the lock) to pick up any new keys
+	// another process wrote since we last read the file.
 	currentValues := env.dotenv
 	deletedValues := env.deletedKeys
-	if err := fs.Reload(ctx, env); err != nil {
+	if err := fs.reloadLocked(ctx, env); err != nil {
 		return fmt.Errorf("failed reloading env vars, %w", err)
 	}
 
@@ -163,19 +231,37 @@ func (fs *LocalFileDataStore) Save(ctx context.Context, env *Environment, option
 		return fmt.Errorf("marshalling .env: %w", err)
 	}
 
-	envFile, err := os.Create(fs.EnvPath(env))
+	// Write atomically: create a sibling tmp file, fsync it, then rename
+	// over the destination. Rename is atomic on POSIX and on Windows
+	// (MoveFileEx w/ REPLACE_EXISTING), so readers never see a
+	// half-truncated file.
+	envPath := fs.EnvPath(env)
+	tmpFile, err := os.CreateTemp(filepath.Dir(envPath), DotEnvFileName+".tmp-*")
 	if err != nil {
-		return fmt.Errorf("saving .env: %w", err)
+		return fmt.Errorf("creating temp .env: %w", err)
 	}
-	defer envFile.Close()
-
-	// Write the contents (with a trailing newline), and sync the file, as godotenv.Write would have.
-	if _, err := envFile.WriteString(marshalled + "\n"); err != nil {
-		return fmt.Errorf("saving .env: %w", err)
+	tmpPath := tmpFile.Name()
+	// Clean up tmp on any error path below.
+	cleanup := func() {
+		tmpFile.Close()
+		_ = os.Remove(tmpPath)
 	}
 
-	if err := envFile.Sync(); err != nil {
-		return fmt.Errorf("saving .env: %w", err)
+	if _, err := tmpFile.WriteString(marshalled + "\n"); err != nil {
+		cleanup()
+		return fmt.Errorf("writing temp .env: %w", err)
+	}
+	if err := tmpFile.Sync(); err != nil {
+		cleanup()
+		return fmt.Errorf("syncing temp .env: %w", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("closing temp .env: %w", err)
+	}
+	if err := osutil.Rename(ctx, tmpPath, envPath); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("renaming temp .env: %w", err)
 	}
 
 	tracing.SetUsageAttributes(fields.StringHashed(fields.EnvNameKey, env.Name()))

@@ -17,6 +17,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
@@ -24,8 +25,54 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
+	"github.com/google/uuid"
 	"github.com/sethvargo/go-retry"
 )
+
+// uniqueCorrelationPolicy is an azcore PerCall policy that overrides the x-ms-correlation-request-id header with a
+// freshly generated UUID on every outgoing HTTP request.
+//
+// The ACR data plane derives the relative blob path it returns from GetBuildSourceUploadURL
+// (tasks-source/<yyyymmdd>/<correlationId>.tar.gz) from the caller's x-ms-correlation-request-id. azd's default
+// correlation policy (azsdk.NewMsCorrelationPolicy) sets that header from the root OpenTelemetry trace id, which
+// is intentionally shared across every HTTP call made within a single azd command invocation — the Azure ARM spec
+// defines x-ms-correlation-request-id as a session-level header meant to correlate RELATED requests, so that
+// trace-derived behavior is correct for ARM in general. When multiple services upload build sources in parallel
+// under the same trace, however, each call receives the same ACR-computed blob path and overlapping writes
+// clobber each other, causing cross-contamination where one service's image ends up with another service's
+// source code. Forcing a unique correlation id per request here (for the ACR upload client only) guarantees ACR
+// hands back a distinct blob path for each upload without weakening the session-level correlation semantics for
+// every other ARM call in the command.
+//
+// This is separate from — and complementary to — the per-request uniqueness that
+// azsdk.NewMsClientRequestIdPolicy and azsdk.NewMsGraphCorrelationPolicy apply to the x-ms-client-request-id and
+// Graph client-request-id headers respectively. Those policies address a different header that the spec requires
+// to be unique per HTTP request globally; this policy addresses the ACR-specific need to also vary the
+// correlation header for parallel source uploads.
+type uniqueCorrelationPolicy struct{}
+
+func (uniqueCorrelationPolicy) Do(req *policy.Request) (*http.Response, error) {
+	req.Raw().Header.Set(azsdk.MsCorrelationIdHeader, uuid.NewString())
+	return req.Next()
+}
+
+// remoteBuildArmClientOptions returns a copy of the base arm.ClientOptions with a PerCall policy that guarantees a
+// unique x-ms-correlation-request-id per request. Used for ACR registry client calls that would otherwise collide on
+// ACR's correlation-id-derived blob path for parallel source uploads.
+func remoteBuildArmClientOptions(base *arm.ClientOptions) *arm.ClientOptions {
+	opts := arm.ClientOptions{}
+	if base != nil {
+		opts = *base
+		opts.ClientOptions.PerCallPolicies = append(
+			append([]policy.Policy{}, base.ClientOptions.PerCallPolicies...),
+			uniqueCorrelationPolicy{},
+		)
+	} else {
+		opts.ClientOptions.PerCallPolicies = []policy.Policy{uniqueCorrelationPolicy{}}
+	}
+	return &opts
+}
 
 // RemoteBuildManager provides functionality to interact with the Azure Container Registry Remote Build feature.
 type RemoteBuildManager struct {
@@ -47,7 +94,8 @@ func (r *RemoteBuildManager) UploadBuildSource(
 		return armcontainerregistry.SourceUploadDefinition{}, err
 	}
 
-	regClient, err := armcontainerregistry.NewRegistriesClient(subscriptionID, cred, r.armClientOptions)
+	uploadClientOptions := remoteBuildArmClientOptions(r.armClientOptions)
+	regClient, err := armcontainerregistry.NewRegistriesClient(subscriptionID, cred, uploadClientOptions)
 	if err != nil {
 		return armcontainerregistry.SourceUploadDefinition{}, err
 	}

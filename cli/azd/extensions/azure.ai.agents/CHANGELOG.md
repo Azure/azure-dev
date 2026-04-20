@@ -1,5 +1,9 @@
 # Release History
 
+## 0.1.25-preview (2026-04-20)
+
+- Add `Azure AI Project Manager` to the list of roles that satisfy the developer role-assignment-write pre-flight check on the Foundry Project scope.
+
 ## 0.1.24-preview (2026-04-17)
 
 - [[#7765]](https://github.com/Azure/azure-dev/pull/7765) Improve invalid manifest error messaging to guide users to check for a required `template` field.

@@ -30,6 +30,7 @@ const (
 	// block Microsoft.Authorization/*/Write.
 	roleUserAccessAdministrator = "18d7d88d-d35e-4fb5-a5c3-7773c20a72d9"
 	roleRBACAdministrator       = "f58310d9-a9f6-439a-9e8d-f62e7b41a168"
+	roleAzureAIProjectManager   = "eadc314b-1a2d-4efa-be10-5d325db5065e"
 
 	// Classic ACR roles that grant push/build access.
 	roleAcrPush                                = "8311e382-0749-4cb8-b61a-304f252e45ec"
@@ -81,6 +82,7 @@ var sufficientRoleAssignWriteRoles = []string{
 	roleOwner,
 	roleUserAccessAdministrator,
 	roleRBACAdministrator,
+	roleAzureAIProjectManager,
 }
 
 // CheckDeveloperRBAC verifies that the currently authenticated developer has the required
@@ -221,7 +223,8 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient) error 
 					"to your identity on the Foundry Project scope:\n"+
 					"  • Owner\n"+
 					"  • User Access Administrator\n"+
-					"  • Role Based Access Control Administrator\n\n"+
+					"  • Role Based Access Control Administrator\n"+
+					"  • Azure AI Project Manager\n\n"+
 					"  az role assignment create --assignee %s "+
 					"--role \"Role Based Access Control Administrator\" --scope %q\n\n"+
 					"Alternatively, if role assignments are managed externally:\n"+

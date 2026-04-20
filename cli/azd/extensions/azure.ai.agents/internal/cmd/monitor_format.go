@@ -75,11 +75,10 @@ func (f *logFormatter) formatStream(ctx context.Context, r io.Reader) error {
 	)
 
 	flush := func() {
-		if len(dataLines) == 0 {
-			return
+		if len(dataLines) != 0 {
+			data := strings.Join(dataLines, "\n")
+			f.renderEvent(eventName, data)
 		}
-		data := strings.Join(dataLines, "\n")
-		f.renderEvent(eventName, data)
 		eventName = ""
 		dataLines = dataLines[:0]
 	}
@@ -137,7 +136,12 @@ func (f *logFormatter) renderEvent(eventName, data string) {
 	// Accept events with no "event:" line (data-only) and "event: log".
 	// Anything else we don't recognize is passed through raw.
 	if eventName != "" && eventName != "log" {
-		fmt.Fprintf(f.writer, "event: %s\ndata: %s\n\n", eventName, data)
+		// Re-emit as valid SSE: one data: line per original data line.
+		fmt.Fprintf(f.writer, "event: %s\n", eventName)
+		for _, dl := range strings.Split(data, "\n") {
+			fmt.Fprintf(f.writer, "data: %s\n", dl)
+		}
+		fmt.Fprintln(f.writer)
 		return
 	}
 
@@ -259,11 +263,7 @@ func (f *logFormatter) formatTimestamp(raw string) string {
 	// correctly with this layout.
 	t, err := time.Parse(time.RFC3339Nano, raw)
 	if err != nil {
-		if t2, err2 := time.Parse(time.RFC3339, raw); err2 == nil {
-			t = t2
-		} else {
-			return raw
-		}
+		return raw
 	}
 	if !f.utc {
 		t = t.Local()

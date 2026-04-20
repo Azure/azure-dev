@@ -13,19 +13,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func init() {
-	// Disable color globally for stable assertions in this test file.
+func newTestFormatter(t *testing.T, utc, raw bool) (*logFormatter, *bytes.Buffer) {
+	prev := color.NoColor
 	color.NoColor = true
-}
-
-func newTestFormatter(utc, raw bool) (*logFormatter, *bytes.Buffer) {
+	t.Cleanup(func() { color.NoColor = prev })
 	buf := &bytes.Buffer{}
 	return &logFormatter{writer: buf, utc: utc, raw: raw}, buf
 }
 
 // formatStream reads one SSE event and emits a formatted line.
 func TestFormatStream_LogEvent_Stdout(t *testing.T) {
-	f, buf := newTestFormatter(true, false)
+	f, buf := newTestFormatter(t, true, false)
 
 	input := "event: log\n" +
 		"data: {\"timestamp\":\"2026-03-19T16:40:03.399273237+00:00\"," +
@@ -41,7 +39,7 @@ func TestFormatStream_LogEvent_Stdout(t *testing.T) {
 }
 
 func TestFormatStream_LogEvent_Stderr(t *testing.T) {
-	f, buf := newTestFormatter(true, false)
+	f, buf := newTestFormatter(t, true, false)
 
 	input := "event: log\n" +
 		"data: {\"timestamp\":\"2026-03-19T16:40:03.420Z\"," +
@@ -57,7 +55,7 @@ func TestFormatStream_LogEvent_Stderr(t *testing.T) {
 }
 
 func TestFormatStream_SessionMetadata(t *testing.T) {
-	f, buf := newTestFormatter(true, false)
+	f, buf := newTestFormatter(t, true, false)
 
 	input := "event: log\n" +
 		"data: {\"timestamp\":\"2026-03-19T16:45:26.74179+00:00\"," +
@@ -78,7 +76,7 @@ func TestFormatStream_SessionMetadata(t *testing.T) {
 
 // Session metadata rendering degrades gracefully when optional fields are missing.
 func TestFormatStream_SessionMetadata_MissingOptionalFields(t *testing.T) {
-	f, buf := newTestFormatter(true, false)
+	f, buf := newTestFormatter(t, true, false)
 
 	input := "event: log\n" +
 		"data: {\"timestamp\":\"2026-03-19T16:45:26Z\"," +
@@ -95,7 +93,7 @@ func TestFormatStream_SessionMetadata_MissingOptionalFields(t *testing.T) {
 }
 
 func TestFormatStream_StatusEvent(t *testing.T) {
-	f, buf := newTestFormatter(true, false)
+	f, buf := newTestFormatter(t, true, false)
 
 	input := "event: log\n" +
 		"data: {\"timestamp\":\"2026-03-19T16:45:27.299Z\"," +
@@ -111,7 +109,7 @@ func TestFormatStream_StatusEvent(t *testing.T) {
 
 // Multiple events in a single stream are each rendered on their own line.
 func TestFormatStream_MultipleEvents(t *testing.T) {
-	f, buf := newTestFormatter(true, false)
+	f, buf := newTestFormatter(t, true, false)
 
 	input := "event: log\n" +
 		"data: {\"timestamp\":\"2026-03-19T16:40:03Z\",\"stream\":\"stdout\",\"message\":\"first\"}\n" +
@@ -132,7 +130,7 @@ func TestFormatStream_MultipleEvents(t *testing.T) {
 
 // Multi-line data: fields are concatenated per SSE spec.
 func TestFormatStream_MultilineDataField(t *testing.T) {
-	f, buf := newTestFormatter(true, false)
+	f, buf := newTestFormatter(t, true, false)
 
 	// Two data: lines whose concatenation forms valid JSON.
 	input := "event: log\n" +
@@ -147,7 +145,7 @@ func TestFormatStream_MultilineDataField(t *testing.T) {
 
 // An event without the trailing blank line is still flushed at EOF.
 func TestFormatStream_FlushOnEOF(t *testing.T) {
-	f, buf := newTestFormatter(true, false)
+	f, buf := newTestFormatter(t, true, false)
 
 	input := "event: log\n" +
 		"data: {\"timestamp\":\"2026-03-19T16:40:03Z\",\"stream\":\"stdout\",\"message\":\"no blank\"}"
@@ -159,7 +157,7 @@ func TestFormatStream_FlushOnEOF(t *testing.T) {
 
 // Malformed JSON falls back to printing the raw data line.
 func TestFormatStream_MalformedJsonRawFallback(t *testing.T) {
-	f, buf := newTestFormatter(true, false)
+	f, buf := newTestFormatter(t, true, false)
 
 	input := "event: log\n" +
 		"data: {not json}\n" +
@@ -172,7 +170,7 @@ func TestFormatStream_MalformedJsonRawFallback(t *testing.T) {
 
 // Unknown event names are passed through as raw SSE to avoid silent drops.
 func TestFormatStream_UnknownEventName(t *testing.T) {
-	f, buf := newTestFormatter(true, false)
+	f, buf := newTestFormatter(t, true, false)
 
 	input := "event: error\n" +
 		"data: {\"code\":\"x\"}\n" +
@@ -187,7 +185,7 @@ func TestFormatStream_UnknownEventName(t *testing.T) {
 
 // Event with no "event:" line (data-only) is still formatted.
 func TestFormatStream_DataOnlyEvent(t *testing.T) {
-	f, buf := newTestFormatter(true, false)
+	f, buf := newTestFormatter(t, true, false)
 
 	input := "data: {\"timestamp\":\"2026-03-19T16:40:03Z\"," +
 		"\"stream\":\"stdout\",\"message\":\"orphan\"}\n" +
@@ -201,7 +199,7 @@ func TestFormatStream_DataOnlyEvent(t *testing.T) {
 // SSE comment lines (starting with ":") are ignored without breaking the
 // current event.
 func TestFormatStream_CommentLinesIgnored(t *testing.T) {
-	f, buf := newTestFormatter(true, false)
+	f, buf := newTestFormatter(t, true, false)
 
 	input := ": heartbeat\n" +
 		"event: log\n" +
@@ -218,7 +216,7 @@ func TestFormatStream_CommentLinesIgnored(t *testing.T) {
 // A message containing embedded newlines (e.g., a stack trace) is split and
 // continuation lines are indented to align under the message column.
 func TestFormatStream_MessageWithEmbeddedNewlines(t *testing.T) {
-	f, buf := newTestFormatter(true, false)
+	f, buf := newTestFormatter(t, true, false)
 
 	input := "event: log\n" +
 		"data: {\"timestamp\":\"2026-03-19T16:40:03Z\"," +
@@ -232,16 +230,16 @@ func TestFormatStream_MessageWithEmbeddedNewlines(t *testing.T) {
 	require.Contains(t, lines[0], "16:40:03")
 	require.Contains(t, lines[0], "stderr")
 	require.Contains(t, lines[0], "Traceback")
-	// Continuation lines should begin with whitespace only (no timestamp).
-	require.True(t, strings.HasPrefix(lines[1], "   "))
+	// Continuation lines should begin with the full indent (no timestamp/stream).
+	require.True(t, strings.HasPrefix(lines[1], strings.Repeat(" ", timeColWidth+2+streamColWidth+2)))
 	require.Contains(t, lines[1], "File x.py")
-	require.True(t, strings.HasPrefix(lines[2], "   "))
+	require.True(t, strings.HasPrefix(lines[2], strings.Repeat(" ", timeColWidth+2+streamColWidth+2)))
 	require.Contains(t, lines[2], "raise Exception")
 }
 
 // An event with no stream and no session_state falls through to raw output.
 func TestFormatStream_UnknownPayloadShape(t *testing.T) {
-	f, buf := newTestFormatter(true, false)
+	f, buf := newTestFormatter(t, true, false)
 
 	input := "event: log\n" +
 		"data: {\"timestamp\":\"2026-03-19T16:40:03Z\",\"foo\":\"bar\"}\n" +
@@ -254,7 +252,7 @@ func TestFormatStream_UnknownPayloadShape(t *testing.T) {
 
 // Raw mode prints the stream verbatim without any parsing.
 func TestFormatStream_RawMode(t *testing.T) {
-	f, buf := newTestFormatter(true, true)
+	f, buf := newTestFormatter(t, true, true)
 
 	input := "event: log\n" +
 		"data: {\"timestamp\":\"2026-03-19T16:40:03Z\",\"stream\":\"stdout\",\"message\":\"raw\"}\n" +
@@ -295,7 +293,7 @@ func TestFormatTimestamp_UtcVsLocal(t *testing.T) {
 // Cancellation is suppressed: the formatter returns nil when the reader ends
 // with a canceled context.
 func TestFormatStream_ContextCanceledSuppressed(t *testing.T) {
-	f, _ := newTestFormatter(true, false)
+	f, _ := newTestFormatter(t, true, false)
 
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()

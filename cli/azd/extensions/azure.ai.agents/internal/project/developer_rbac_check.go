@@ -212,28 +212,21 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient) error 
 	if err != nil {
 		fmt.Printf("  ⚠ Could not check role-assignment-write capability: %s\n", err)
 	} else if !hasRoleWrite {
-		return exterrors.Auth(
-			exterrors.CodeDeveloperMissingRoleAssignWriteRole,
-			fmt.Sprintf(
-				"your identity (%s) does not have the permission to write role assignments on the "+
-					"Foundry Project %s/%s — this is required for the postdeploy step to assign "+
-					"'Azure AI User' to agent service principals",
-				userProfile.DisplayName, info.AccountName, info.ProjectName,
-			),
-			fmt.Sprintf(
-				"ask a subscription Owner or User Access Administrator to assign one of these roles "+
-					"to your identity on the Foundry Project scope:\n"+
-					"  • Owner\n"+
-					"  • User Access Administrator\n"+
-					"  • Role Based Access Control Administrator\n"+
-					"  • Azure AI Project Manager\n"+
-					"  • Azure AI Account Owner\n\n"+
-					"  az role assignment create --assignee %s "+
-					"--role \"Role Based Access Control Administrator\" --scope %q\n\n"+
-					"Alternatively, if role assignments are managed externally:\n"+
-					"  AZD_AGENT_SKIP_ROLE_ASSIGNMENTS=true",
-				principalID, info.ProjectScope,
-			),
+		// Warn rather than fail hard: deployment can still proceed, but the postdeploy
+		// step that assigns 'Azure AI User' to agent service principals may return 403.
+		fmt.Printf(
+			"  (!) Warning: Role assignment write not available on Foundry Project %s/%s.\n"+
+				"    The postdeploy step will attempt to assign 'Azure AI User' to agent service principals,\n"+
+				"    but may fail with a 403. To grant this permission, assign one of these roles:\n"+
+				"      • Owner\n"+
+				"      • User Access Administrator\n"+
+				"      • Role Based Access Control Administrator\n"+
+				"      • Azure AI Project Manager\n"+
+				"      • Azure AI Account Owner\n"+
+				"      az role assignment create --assignee %s "+
+				"--role \"Role Based Access Control Administrator\" --scope %q\n"+
+				"    Or, if roles are managed externally: AZD_AGENT_SKIP_ROLE_ASSIGNMENTS=true\n",
+			info.AccountName, info.ProjectName, principalID, info.ProjectScope,
 		)
 	} else {
 		fmt.Println("  ✓ Role assignment write on Foundry Project")

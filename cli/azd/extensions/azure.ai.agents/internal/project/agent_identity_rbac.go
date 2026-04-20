@@ -5,9 +5,11 @@ package project
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"maps"
+	"net/http"
 	"os"
 	"slices"
 	"strconv"
@@ -17,6 +19,7 @@ import (
 
 	"azureaiagent/internal/exterrors"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v3"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -335,6 +338,17 @@ func ensureSingleAgentRBAC(
 		armauthorization.PrincipalTypeServicePrincipal,
 	)
 	if err != nil {
+		if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok &&
+			respErr.StatusCode == http.StatusForbidden {
+			// Write to stderr so this survives azd's deployment preview capture of stdout.
+			fmt.Fprintf(os.Stderr,
+				"(!) Warning: Could not assign 'Azure AI User' to agent identity '%s' (403 Forbidden).\n"+
+					"    The agent may not have access to the Foundry Project until this role is assigned.\n"+
+					"    Re-run after granting role assignment write, or set AZD_AGENT_SKIP_ROLE_ASSIGNMENTS=true.\n",
+				agentName,
+			)
+			return nil
+		}
 		return fmt.Errorf("failed to assign Azure AI User role: %w", err)
 	}
 

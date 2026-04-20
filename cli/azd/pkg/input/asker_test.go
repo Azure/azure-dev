@@ -5,6 +5,7 @@ package input
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -48,7 +49,9 @@ func Test_askOneNoPrompt_Input(t *testing.T) {
 
 			if tt.wantErr {
 				require.Error(t, err)
-				require.Contains(t, err.Error(), tt.errContains)
+				promptErr, ok := errors.AsType[*PromptRequiredError](err)
+				require.True(t, ok)
+				require.Equal(t, tt.message, promptErr.PromptMessage)
 			} else {
 				require.NoError(t, err)
 				require.Equal(t, tt.wantResult, result)
@@ -100,7 +103,13 @@ func Test_askOneNoPrompt_Select_IntResponse(t *testing.T) {
 
 			if tt.wantErr {
 				require.Error(t, err)
-				require.Contains(t, err.Error(), tt.errContains)
+				if tt.errContains == "no default response" {
+					promptErr, ok := errors.AsType[*PromptRequiredError](err)
+					require.True(t, ok)
+					require.Equal(t, prompt.Message, promptErr.PromptMessage)
+				} else {
+					require.Contains(t, err.Error(), tt.errContains)
+				}
 			} else {
 				require.NoError(t, err)
 				require.Equal(t, tt.wantIdx, result)
@@ -203,7 +212,13 @@ func Test_askOneNoPrompt_MultiSelect(t *testing.T) {
 
 			if tt.wantErr {
 				require.Error(t, err)
-				require.Contains(t, err.Error(), tt.errContains)
+				if tt.errContains == "no default response" {
+					promptErr, ok := errors.AsType[*PromptRequiredError](err)
+					require.True(t, ok)
+					require.Equal(t, prompt.Message, promptErr.PromptMessage)
+				} else {
+					require.Contains(t, err.Error(), tt.errContains)
+				}
 			} else {
 				require.NoError(t, err)
 				require.Equal(t, tt.wantResult, result)
@@ -212,8 +227,20 @@ func Test_askOneNoPrompt_MultiSelect(t *testing.T) {
 	}
 }
 
-func Test_askOneNoPrompt_UnknownType_Panics(t *testing.T) {
+func Test_askOneNoPrompt_Password_ReturnsPromptRequiredError(t *testing.T) {
 	prompt := &survey.Password{Message: "Secret:"}
+	var result string
+
+	err := askOneNoPrompt(prompt, &result)
+
+	require.Error(t, err)
+	promptErr, ok := errors.AsType[*PromptRequiredError](err)
+	require.True(t, ok)
+	require.Equal(t, "Secret:", promptErr.PromptMessage)
+}
+
+func Test_askOneNoPrompt_UnknownType_Panics(t *testing.T) {
+	prompt := &survey.Editor{Message: "Edit:"}
 	var result string
 
 	require.Panics(t, func() {

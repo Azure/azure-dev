@@ -110,6 +110,23 @@ func TestPromptRequiredError_ToString_UsesDescription(t *testing.T) {
 	require.Equal(t, expectedOutput, err.ToString(""))
 }
 
+func TestPromptRequiredError_ToString_UsesPromptMessageWhenInputsMissing(t *testing.T) {
+	err := &PromptRequiredError{
+		PromptMessage: "Enter name:",
+	}
+
+	expectedOutput := strings.Join([]string{
+		"The following prompt requires user input:",
+		"",
+		"  ? Enter name:",
+		"",
+		"This prompt cannot be answered non-interactively. To proceed, run this command in interactive mode.",
+		"",
+	}, "\n")
+
+	require.Equal(t, expectedOutput, err.ToString(""))
+}
+
 func TestPromptRequiredError_MarshalJSON(t *testing.T) {
 	err := &PromptRequiredError{
 		Message: DefaultPromptRequiredMessage,
@@ -165,4 +182,24 @@ func TestPromptRequiredError_MarshalJSON_UsesDefaultMessageWhenEmpty(t *testing.
 	}
 	require.NoError(t, json.Unmarshal(data, &payload))
 	require.Equal(t, DefaultPromptRequiredMessage, payload.Message)
+}
+
+func TestPromptRequiredError_MarshalJSON_IncludesPromptMessageWhenInputsMissing(t *testing.T) {
+	err := &PromptRequiredError{
+		PromptMessage: "Enter name:",
+	}
+
+	data, marshalErr := err.MarshalJSON()
+	require.NoError(t, marshalErr)
+
+	var payload struct {
+		Message string `json:"message"`
+		Details struct {
+			PromptMessage string `json:"promptMessage"`
+		} `json:"details"`
+	}
+	require.NoError(t, json.Unmarshal(data, &payload))
+
+	require.Equal(t, DefaultPromptRequiredMessage, payload.Message)
+	require.Equal(t, "Enter name:", payload.Details.PromptMessage)
 }

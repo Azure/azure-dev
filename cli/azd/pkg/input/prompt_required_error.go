@@ -7,14 +7,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 )
 
 // DefaultPromptRequiredMessage is the default headline used when a command cannot continue without prompting.
 const DefaultPromptRequiredMessage = "This command cannot continue (interactive prompts disabled)"
 
 const (
-	promptRequiredCode              = "promptRequired"
-	promptRequiredMissingInputsType = "missingRequiredInputs"
+	promptRequiredCode                    = "promptRequired"
+	promptRequiredMissingInputsType       = "missingRequiredInputs"
+	promptRequiredInteractiveRequiredType = "interactiveRequired"
 )
 
 // InputSourceKind identifies the kind of source that can satisfy a required input.
@@ -42,8 +45,12 @@ type RequiredInput struct {
 
 // PromptRequiredError is returned when --no-prompt mode prevents collecting required inputs interactively.
 type PromptRequiredError struct {
+	// Message is the headline used for structured missing-input output.
 	Message string
 	Inputs  []RequiredInput
+
+	// PromptMessage is the original prompt text and is only used when Inputs is empty.
+	PromptMessage string
 }
 
 // Error implements the error interface.
@@ -53,16 +60,15 @@ func (e *PromptRequiredError) Error() string {
 
 // ToString returns a formatted message with the missing inputs and short remediation guidance.
 func (e *PromptRequiredError) ToString(currentIndentation string) string {
+	if len(e.Inputs) == 0 && e.PromptMessage != "" {
+		return e.promptMessageToString()
+	}
+
 	var buf strings.Builder
 	separator := "──────────────────────────────────────────────────────────────"
 
-	message := e.Message
-	if message == "" {
-		message = DefaultPromptRequiredMessage
-	}
-
 	buf.WriteString(separator + "\n")
-	buf.WriteString(message + "\n")
+	buf.WriteString(e.message() + "\n")
 	buf.WriteString(separator + "\n\n")
 
 	switch len(e.Inputs) {
@@ -118,29 +124,44 @@ func (e *PromptRequiredError) ToString(currentIndentation string) string {
 
 // MarshalJSON implements json.Marshaler.
 func (e *PromptRequiredError) MarshalJSON() ([]byte, error) {
-	message := e.Message
-	if message == "" {
-		message = DefaultPromptRequiredMessage
+	type details struct {
+		Type          string          `json:"type"`
+		PromptMessage string          `json:"promptMessage,omitempty"`
+		Inputs        []RequiredInput `json:"inputs,omitempty"`
 	}
 
-	return json.Marshal(struct {
-		Code    string `json:"code"`
-		Message string `json:"message"`
-		Details struct {
-			Type   string          `json:"type"`
-			Inputs []RequiredInput `json:"inputs"`
-		} `json:"details"`
-	}{
+	d := details{Inputs: e.Inputs}
+	if len(e.Inputs) == 0 && e.PromptMessage != "" {
+		d.Type = promptRequiredInteractiveRequiredType
+		d.PromptMessage = e.PromptMessage
+	} else {
+		d.Type = promptRequiredMissingInputsType
+	}
+
+	return json.Marshal(contracts.ErrorEnvelope[details]{
 		Code:    promptRequiredCode,
-		Message: message,
-		Details: struct {
-			Type   string          `json:"type"`
-			Inputs []RequiredInput `json:"inputs"`
-		}{
-			Type:   promptRequiredMissingInputsType,
-			Inputs: e.Inputs,
-		},
+		Message: e.message(),
+		Details: d,
 	})
+}
+
+func (e *PromptRequiredError) message() string {
+	if e.Message == "" {
+		return DefaultPromptRequiredMessage
+	}
+
+	return e.Message
+}
+
+func (e *PromptRequiredError) promptMessageToString() string {
+	var buf strings.Builder
+
+	buf.WriteString("The following prompt requires user input:\n\n")
+	buf.WriteString(fmt.Sprintf("  ? %s\n\n", e.PromptMessage))
+	buf.WriteString("This prompt cannot be answered non-interactively. ")
+	buf.WriteString("To proceed, run this command in interactive mode.\n")
+
+	return buf.String()
 }
 
 func (e *PromptRequiredError) hasEnvironmentSource() bool {

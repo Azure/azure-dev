@@ -31,13 +31,13 @@ func askOneNoPrompt(p survey.Prompt, response any) error {
 	switch v := p.(type) {
 	case *survey.Input:
 		if v.Default == "" {
-			return fmt.Errorf("no default response for prompt '%s'", v.Message)
+			return promptRequiredForPrompt(v.Message)
 		}
 
 		*(response.(*string)) = v.Default
 	case *survey.Select:
 		if v.Default == nil {
-			return fmt.Errorf("no default response for prompt '%s'", v.Message)
+			return promptRequiredForPrompt(v.Message)
 		}
 
 		switch ptr := response.(type) {
@@ -60,9 +60,11 @@ func askOneNoPrompt(p survey.Prompt, response any) error {
 		}
 	case *survey.Confirm:
 		*(response.(*bool)) = v.Default
+	case *survey.Password:
+		return promptRequiredForPrompt(v.Message)
 	case *survey.MultiSelect:
 		if v.Default == nil {
-			return fmt.Errorf("no default response for prompt '%s'", v.Message)
+			return promptRequiredForPrompt(v.Message)
 		}
 		defValue, err := v.Default.([]string)
 		if !err {
@@ -74,6 +76,12 @@ func askOneNoPrompt(p survey.Prompt, response any) error {
 	}
 
 	return nil
+}
+
+func promptRequiredForPrompt(promptMessage string) error {
+	return &PromptRequiredError{
+		PromptMessage: promptMessage,
+	}
 }
 
 func withShowCursor(o *survey.AskOptions) error {

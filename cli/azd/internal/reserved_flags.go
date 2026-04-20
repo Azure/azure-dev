@@ -29,7 +29,12 @@ var reservedFlags = []ReservedFlag{
 	{Long: "environment", Short: "e", Description: "The name of the environment to use."},
 	{Long: "cwd", Short: "C", Description: "Sets the current working directory."},
 	{Long: "debug", Short: "", Description: "Enables debugging and diagnostics logging."},
-	{Long: "no-prompt", Short: "", Description: "Accepts the default value instead of prompting."},
+	{
+		Long:  "no-prompt",
+		Short: "",
+		Description: "Runs without prompts. Uses existing values; " +
+			"fails if any required value or decision cannot be resolved automatically.",
+	},
 	{Long: "output", Short: "o", Description: "The output format (json, table, none)."},
 	{Long: "help", Short: "h", Description: "Help for the current command."},
 	{Long: "docs", Short: "", Description: "Opens the documentation for the current command."},

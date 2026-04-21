@@ -30,6 +30,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/rzip"
@@ -758,6 +759,18 @@ func (tm *Manager) createSourcesFromConfig(
 
 		source, err := tm.sourceManager.CreateSource(ctx, config)
 		if err != nil {
+			if schemaErr, ok := errors.AsType[*ErrUnsupportedRegistrySchema](err); ok {
+				return nil, &errorhandler.ErrorWithSuggestion{
+					Err:     schemaErr,
+					Message: schemaErr.Error(),
+					Suggestion: "Upgrade azd to the latest version " +
+						"to use this registry",
+					Links: []errorhandler.ErrorLink{{
+						URL:   "https://aka.ms/azd/install",
+						Title: "Install/upgrade azd",
+					}},
+				}
+			}
 			log.Printf("failed to create source: %v", err)
 			continue
 		}

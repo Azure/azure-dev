@@ -22,6 +22,9 @@ var ValidPlatforms = []string{
 	"linux/arm64",
 }
 
+// schemaVersionRegex validates registry schema version format: major.minor
+var schemaVersionRegex = regexp.MustCompile(`^\d+\.\d+$`)
+
 // ValidCapabilities defines the valid capability types for extensions.
 var ValidCapabilities = []CapabilityType{
 	CustomCommandCapability,
@@ -77,10 +80,61 @@ type ExtensionValidationResult struct {
 
 // RegistryValidationResult represents the validation result for an entire registry file.
 type RegistryValidationResult struct {
+	// Issues contains registry-level validation issues.
+	Issues []ValidationIssue `json:"issues,omitempty"`
 	// Extensions contains validation results for each extension.
 	Extensions []ExtensionValidationResult `json:"extensions"`
-	// Valid is true if all extensions are valid.
+	// Valid is true if all extensions are valid and no registry-level errors exist.
 	Valid bool `json:"valid"`
+}
+
+// addError adds a registry-level error.
+func (r *RegistryValidationResult) addError(msg string) {
+	r.Issues = append(r.Issues, ValidationIssue{
+		Severity: ValidationError,
+		Message:  msg,
+	})
+	r.Valid = false
+}
+
+// addWarning adds a registry-level warning.
+func (r *RegistryValidationResult) addWarning(msg string) {
+	r.Issues = append(r.Issues, ValidationIssue{
+		Severity: ValidationWarning,
+		Message:  msg,
+	})
+}
+
+// ValidateRegistry validates a complete registry including registry-level
+// fields and all extensions.
+func ValidateRegistry(
+	registry *Registry, strict bool,
+) *RegistryValidationResult {
+	result := ValidateExtensions(registry.Extensions, strict)
+	validateSchemaVersion(result, registry.SchemaVersion, strict)
+	return result
+}
+
+// validateSchemaVersion validates the registry-level schemaVersion field.
+func validateSchemaVersion(
+	result *RegistryValidationResult,
+	schemaVersion string,
+	strict bool,
+) {
+	if schemaVersion == "" {
+		result.addWarning(
+			"missing 'schemaVersion' field; " +
+				"consider adding a schema version for forward compatibility",
+		)
+		return
+	}
+
+	if !schemaVersionRegex.MatchString(schemaVersion) {
+		result.addError(fmt.Sprintf(
+			"invalid schemaVersion format %q: expected major.minor (e.g. %q)",
+			schemaVersion, CurrentRegistrySchemaVersion,
+		))
+	}
 }
 
 // ValidateExtensions validates a slice of parsed extension metadata.

@@ -577,6 +577,17 @@ rules:
         title: "Bicep error codes reference"
 
   # ============================================================================
+  # Extension Registry Errors
+  # ============================================================================
+
+  - errorType: "ErrUnsupportedRegistrySchema"
+    message: "The extension registry uses a schema version not supported by this version of azd."
+    suggestion: "Upgrade azd to the latest version to use this registry."
+    links:
+      - url: "https://aka.ms/azd/install"
+        title: "Install/upgrade azd"
+
+  # ============================================================================
   # Text Pattern Rules — Broad/generic patterns (least specific, must be last)
   # ============================================================================
 

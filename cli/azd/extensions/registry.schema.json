@@ -266,6 +266,11 @@
         }
     },
     "properties": {
+        "schemaVersion": {
+            "type": "string",
+            "description": "Schema version for the registry format. Uses major.minor versioning.",
+            "pattern": "^\\d+\\.\\d+$"
+        },
         "extensions": {
             "$comment": "Each extension must have a unique 'id' within the array.",
             "type": "array",

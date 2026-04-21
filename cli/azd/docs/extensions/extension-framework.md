@@ -22,6 +22,7 @@ Table of Contents
     - [Compose Service](#compose-service)
     - [Workflow Service](#workflow-service)
     - [Copilot Service](#copilot-service)
+- [Registry Schema Versioning](#registry-schema-versioning)
 
 ### Related Guides
 
@@ -3009,3 +3010,50 @@ if err != nil {
 - Build interactive AI-assisted tools powered by Copilot
 - Track token consumption and file modifications during AI-driven operations
 - Resume previous sessions for iterative, multi-step tasks
+
+## Registry Schema Versioning
+
+The extension registry format includes a `schemaVersion` field that enables
+forward-compatible evolution of the registry schema.
+
+### Version Format
+
+Registry schema versions use `major.minor` format (e.g. `"1.0"`, `"1.1"`, `"2.0"`).
+
+```json
+{
+  "schemaVersion": "1.0",
+  "extensions": [ ... ]
+}
+```
+
+### Compatibility Rules
+
+| Scenario | Behavior |
+|----------|----------|
+| Missing `schemaVersion` | Treated as `"1.0"` for backward compatibility |
+| Same major, newer minor (e.g. `"1.1"`) | Accepted silently — minor bumps are backward compatible |
+| Newer major (e.g. `"2.0"`) | Rejected with an error and upgrade guidance |
+| Malformed version string | Rejected with a descriptive parse error |
+
+### Upgrade Guidance
+
+When azd encounters a registry with a schema version it cannot support, it will
+display an error with a suggestion to upgrade:
+
+```
+ERROR: registry schema version 2.0 is not supported (max supported: 1.0)
+
+Suggestion: Upgrade azd to the latest version to use this registry
+  https://aka.ms/azd/install
+```
+
+### For Registry Authors
+
+When publishing a third-party registry:
+
+1. **Include `schemaVersion`**: Add `"schemaVersion": "1.0"` at the top level of your registry JSON.
+   Omitting it works but triggers a validation warning.
+2. **Use the JSON schema**: Reference `extensions/registry.schema.json` for the full format specification.
+3. **Minor version bumps** add optional fields that older azd versions can safely ignore.
+4. **Major version bumps** indicate breaking changes that require a newer azd version.

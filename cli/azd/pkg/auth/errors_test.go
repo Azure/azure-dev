@@ -87,7 +87,7 @@ func TestAuthFailedError(t *testing.T) {
 	}
 }
 
-func TestReLoginRequired(t *testing.T) {
+func TestNewActionableAuthError_RecognizesLoginRequiredErrors(t *testing.T) {
 	tests := []struct {
 		name string
 		resp *AadErrorResponse
@@ -105,7 +105,7 @@ func TestReLoginRequired(t *testing.T) {
 	}
 }
 
-func TestReLoginRequiredError(t *testing.T) {
+func TestNewActionableAuthError_PreservesUnderlyingErrorText(t *testing.T) {
 	tests := []struct {
 		name string
 		resp *AadErrorResponse
@@ -223,13 +223,16 @@ func TestTokenProtectionBlockedError(t *testing.T) {
 			inner, ok := errors.AsType[*TokenProtectionBlockedError](err)
 			require.True(t, ok, "expected inner error to be *TokenProtectionBlockedError")
 			require.Equal(t, tt.resp.ErrorDescription, inner.Error())
+			_, isInteractionErr := errors.AsType[AuthInteractionError](err)
+			require.True(t, isInteractionErr,
+				"TokenProtectionBlockedError should satisfy AuthInteractionError through the ErrorWithSuggestion wrapper")
 			// Calling NonRetriable should not panic — verifies the marker method exists.
 			inner.NonRetriable()
 		})
 	}
 }
 
-func TestNewReLoginRequiredError_TokenProtectionTakesPrecedence(t *testing.T) {
+func TestNewActionableAuthError_TokenProtectionTakesPrecedence(t *testing.T) {
 	// AADSTS530084 paired with invalid_grant should produce a TokenProtectionBlockedError
 	// (not a ReLoginRequiredError), because reauthenticating won't unblock the user.
 	resp := &AadErrorResponse{

@@ -77,6 +77,16 @@ func TestWrapErrorWithSuggestion_ReLoginRequired(t *testing.T) {
 	require.Equal(t, codes.Unauthenticated, st.Code())
 }
 
+func TestWrapErrorWithSuggestion_TokenProtectionBlocked(t *testing.T) {
+	t.Parallel()
+	err := fmt.Errorf("token protection: %w", &auth.TokenProtectionBlockedError{})
+
+	wrapped := wrapErrorWithSuggestion(err)
+	st, ok := status.FromError(wrapped)
+	require.True(t, ok)
+	require.Equal(t, codes.PermissionDenied, st.Code())
+}
+
 func TestWrapErrorWithSuggestion_AuthErrorWithSuggestion(t *testing.T) {
 	t.Parallel()
 	inner := auth.ErrNoCurrentUser

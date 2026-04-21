@@ -48,6 +48,8 @@ func MapError(err error, span tracing.Span) {
 	if updateErr, ok := errors.AsType[*update.UpdateError](err); ok {
 		errCode = updateErr.Code
 	} else if _, ok := errors.AsType[*auth.ReLoginRequiredError](err); ok {
+		// Auth interaction errors are classified by concrete type rather than the shared AuthInteractionError interface
+		// because each type has a distinct telemetry code.
 		errCode = "auth.login_required"
 		errDetails = append(errDetails, fields.ErrCategory.String("auth"))
 	} else if _, ok := errors.AsType[*auth.TokenProtectionBlockedError](err); ok {

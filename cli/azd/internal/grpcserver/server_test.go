@@ -286,6 +286,15 @@ func Test_wrapErrorWithSuggestion(t *testing.T) {
 			wantContain:  "azd auth login",
 			wantGrpcCode: codes.Unauthenticated,
 		},
+		{
+			name: "TokenProtectionBlockedError with suggestion returns PermissionDenied",
+			err: &internal.ErrorWithSuggestion{
+				Err:        &auth.TokenProtectionBlockedError{},
+				Suggestion: "Contact your IT administrator or request a policy exception.",
+			},
+			wantContain:  "policy exception",
+			wantGrpcCode: codes.PermissionDenied,
+		},
 	}
 
 	for _, tt := range tests {

@@ -36,7 +36,7 @@ type ReLoginRequiredError struct {
 
 	errText string
 
-	helpLink string
+	helpLink *errorhandler.ErrorLink
 }
 
 // TokenProtectionBlockedError indicates that the token request was blocked by
@@ -50,8 +50,8 @@ type TokenProtectionBlockedError struct {
 // user-facing guidance via *internal.ErrorWithSuggestion. Callers that just need
 // to know "this is an actionable auth failure" (e.g., gRPC status mapping or
 // suppressing the raw error in `azd auth status` / `--only-check-status` flows)
-// should type-assert against this interface so future variants don't require
-// touching every call site.
+// should use errors.AsType[AuthInteractionError](err) so future variants don't
+// require touching every call site.
 //
 // The interface is sealed via an unexported marker method; only types declared
 // in this package may implement it.
@@ -96,13 +96,15 @@ func newActionableAuthError(
 		// Note: Do not prefix with "Suggestion:" here — the UX renderer
 		// (ErrorWithSuggestion.ToString) already adds that prefix when displaying.
 		suggestion := fmt.Sprintf("%s, run `%s` to acquire a new token.", err.scenario, err.loginCmd)
-		if err.helpLink != "" {
-			suggestion += fmt.Sprintf(" See %s for more info.", err.helpLink)
-		}
-		return &internal.ErrorWithSuggestion{
+		suggestionErr := &internal.ErrorWithSuggestion{
 			Err:        &err,
+			Message:    scenarioMessage(err.scenario),
 			Suggestion: suggestion,
-		}, true
+		}
+		if err.helpLink != nil {
+			suggestionErr.Links = []errorhandler.ErrorLink{*err.helpLink}
+		}
+		return suggestionErr, true
 	}
 
 	return nil, false
@@ -153,6 +155,14 @@ func usesGraphScope(scopes []string) bool {
 	})
 }
 
+func scenarioMessage(scenario string) string {
+	if scenario == "" {
+		return ""
+	}
+
+	return strings.ToUpper(scenario[:1]) + scenario[1:] + "."
+}
+
 func (e *ReLoginRequiredError) init(
 	response *AadErrorResponse,
 	scopes []string,
@@ -185,7 +195,10 @@ func (e *ReLoginRequiredError) init(
 	// getting tokens if the Entra tenant has Conditional Access Policies set.
 	if slices.Contains(response.ErrorCodes, 50005) {
 		e.loginCmd += " --use-device-code=false"
-		e.helpLink = "https://aka.ms/azd/troubleshoot/conditional-access-policy"
+		e.helpLink = &errorhandler.ErrorLink{
+			URL:   "https://aka.ms/azd/troubleshoot/conditional-access-policy",
+			Title: "Conditional Access policy troubleshooting",
+		}
 	}
 }
 

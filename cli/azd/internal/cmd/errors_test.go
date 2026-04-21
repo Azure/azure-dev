@@ -212,6 +212,16 @@ func Test_MapError(t *testing.T) {
 			},
 		},
 		{
+			name: "WithTokenProtectionBlockedError",
+			err: &internal.ErrorWithSuggestion{
+				Err: &auth.TokenProtectionBlockedError{},
+			},
+			wantErrReason: "auth.token_protection_blocked",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrorKey(fields.ErrCategory.Key).String("auth"),
+			},
+		},
+		{
 			name:          "WithAzidentityAuthenticationFailedError",
 			err:           &azidentity.AuthenticationFailedError{},
 			wantErrReason: "auth.identity_failed",

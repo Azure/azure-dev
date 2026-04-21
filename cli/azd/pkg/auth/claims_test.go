@@ -431,7 +431,7 @@ func TestReLoginRequiredError_NonRetriable(t *testing.T) {
 	e.NonRetriable() // marker — should not panic
 }
 
-func TestNewReLoginRequiredError(t *testing.T) {
+func TestNewActionableAuthError_ClaimsScenarios(t *testing.T) {
 	t.Parallel()
 
 	t.Run("nil_response_returns_false", func(t *testing.T) {
@@ -533,6 +533,7 @@ func TestNewReLoginRequiredError(t *testing.T) {
 
 		var errWithSuggestion *internal.ErrorWithSuggestion
 		require.True(t, errors.As(err, &errWithSuggestion))
+		assert.Equal(t, "Login expired.", errWithSuggestion.Message)
 		assert.Contains(t, errWithSuggestion.Suggestion, "login expired")
 	})
 
@@ -547,6 +548,13 @@ func TestNewReLoginRequiredError(t *testing.T) {
 			resp, nil, cloud.AzurePublic(), "")
 		assert.True(t, ok)
 		require.Error(t, err)
+
+		errWithSuggestion, ok := errors.AsType[*internal.ErrorWithSuggestion](err)
+		require.True(t, ok)
+		assert.Equal(t, "Reauthentication required.", errWithSuggestion.Message)
+		require.Len(t, errWithSuggestion.Links, 1)
+		assert.Equal(t, "https://aka.ms/azd/troubleshoot/conditional-access-policy", errWithSuggestion.Links[0].URL)
+		assert.Equal(t, "Conditional Access policy troubleshooting", errWithSuggestion.Links[0].Title)
 	})
 
 	t.Run("tenant_id_included_in_suggestion", func(t *testing.T) {

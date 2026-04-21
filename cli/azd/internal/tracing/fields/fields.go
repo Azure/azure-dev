@@ -726,6 +726,49 @@ var (
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
+	// ExtensionVersionFrom is the installed version before an upgrade.
+	ExtensionVersionFrom = AttributeKey{
+		Key:            attribute.Key("extension.version.from"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// ExtensionVersionTo is the target version after an upgrade.
+	ExtensionVersionTo = AttributeKey{
+		Key:            attribute.Key("extension.version.to"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// ExtensionSource is the registry source used for the upgrade.
+	ExtensionSource = AttributeKey{
+		Key:            attribute.Key("extension.source"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// ExtensionSourceFrom is the registry source before a promotion.
+	ExtensionSourceFrom = AttributeKey{
+		Key:            attribute.Key("extension.source.from"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// ExtensionSourceTo is the registry source after a promotion.
+	ExtensionSourceTo = AttributeKey{
+		Key:            attribute.Key("extension.source.to"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// ExtensionUpgradeDurationMs is the time in milliseconds for one upgrade.
+	ExtensionUpgradeDurationMs = AttributeKey{
+		Key:            attribute.Key("extension.upgrade.duration_ms"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
+	}
+	// ExtensionUpgradeOutcome is the upgrade result status.
+	ExtensionUpgradeOutcome = AttributeKey{
+		Key:            attribute.Key("extension.upgrade.outcome"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
 )
 
 // Update related fields

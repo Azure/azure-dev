@@ -80,16 +80,39 @@ func (m *fileConfigManager) Save(c Config, filePath string) error {
 		return fmt.Errorf("failed creating config directory: %w", err)
 	}
 
-	file, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, osutil.PermissionFile)
+	// Atomic write: write to a temp file in the same directory then rename.
+	// This prevents corruption if the process is interrupted mid-write.
+	tmpFile, err := os.CreateTemp(folderPath, ".azd-config-*.tmp")
 	if err != nil {
-		return fmt.Errorf("failed creating config directory: %w", err)
+		return fmt.Errorf("failed creating temp config file: %w", err)
 	}
-	defer file.Close()
+	tmpPath := tmpFile.Name()
 
-	err = m.manager.Save(c, file)
-	if err != nil {
+	// On any failure path, clean up the temp file.
+	success := false
+	defer func() {
+		if !success {
+			_ = tmpFile.Close()
+			_ = os.Remove(tmpPath)
+		}
+	}()
+
+	if err := m.manager.Save(c, tmpFile); err != nil {
 		return err
 	}
+
+	// Flush and close before rename to ensure all data is on disk.
+	if err := tmpFile.Sync(); err != nil {
+		return fmt.Errorf("failed syncing temp config file: %w", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		return fmt.Errorf("failed closing temp config file: %w", err)
+	}
+
+	if err := os.Rename(tmpPath, filePath); err != nil {
+		return fmt.Errorf("failed renaming temp config file: %w", err)
+	}
+	success = true
 
 	baseConfig, ok := c.(*config)
 	if !ok {

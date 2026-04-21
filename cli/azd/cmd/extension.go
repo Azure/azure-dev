@@ -8,19 +8,25 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"slices"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/spf13/cobra"
+	"go.opentelemetry.io/otel/codes"
 )
 
 // Register extension commands
@@ -84,7 +90,19 @@ func extensionActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 	group.Add("upgrade", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
 			Use:   "upgrade [extension-id]",
-			Short: "Upgrade specified extensions.",
+			Short: "Upgrade installed extensions to the latest version.",
+			Long: `Upgrade one or more installed extensions.
+
+By default, uses the stored registry source for each extension. If the stored
+source is unavailable, falls back to the main (azd) registry. Extensions that
+were installed from a non-main registry (e.g., dev) are automatically promoted
+to the main registry when a newer version is available there.
+
+Use --source to explicitly override the registry source for the upgrade. Use
+--all to upgrade all installed extensions in a single batch; failures in one
+extension do not prevent the remaining extensions from being upgraded.
+
+Use --output json for a structured report of all upgrade results.`,
 		},
 		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 		DefaultFormat:  output.NoneFormat,
@@ -1079,7 +1097,8 @@ loop:
 
 // upgradeOneExtension processes a single extension upgrade and returns
 // the result. It never returns an error — failures are captured in
-// the returned UpgradeResult.
+// the returned UpgradeResult. A telemetry span is emitted for every
+// attempt.
 func (a *extensionUpgradeAction) upgradeOneExtension(
 	ctx context.Context,
 	extensionId string,
@@ -1087,7 +1106,36 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 	azdVersion *semver.Version,
 	isJsonOutput bool,
 ) extensions.UpgradeResult {
+	startTime := time.Now()
 	baseResult := extensions.UpgradeResult{ExtensionId: extensionId}
+
+	// Start a telemetry span for this individual extension upgrade.
+	ctx, span := tracing.Start(ctx, events.ExtensionUpgradeEvent)
+	defer func() {
+		elapsed := time.Since(startTime).Milliseconds()
+		span.SetAttributes(
+			fields.ExtensionId.String(extensionId),
+			fields.ExtensionVersionFrom.String(
+				baseResult.FromVersion,
+			),
+			fields.ExtensionVersionTo.String(
+				baseResult.ToVersion,
+			),
+			fields.ExtensionSource.String(
+				baseResult.ToSource,
+			),
+			fields.ExtensionUpgradeDurationMs.Int64(elapsed),
+			fields.ExtensionUpgradeOutcome.String(
+				baseResult.Status.String(),
+			),
+		)
+		if baseResult.Status == extensions.UpgradeStatusFailed {
+			span.SetStatus(codes.Error, "upgrade.failed")
+		} else {
+			span.SetStatus(codes.Ok, "")
+		}
+		span.End()
+	}()
 
 	if !isJsonOutput && index > 0 {
 		a.console.Message(ctx, "")
@@ -1148,15 +1196,35 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 		ctx, allMatchOptions,
 	)
 	if err != nil {
+		if isNetworkError(err) {
+			return fail(fmt.Errorf(
+				"network error looking up extension %s "+
+					"(check your connection and retry): %w",
+				extensionId, err,
+			))
+		}
 		return fail(fmt.Errorf(
 			"failed to find extension %s: %w", extensionId, err,
 		))
 	}
 	if len(matches) == 0 {
-		return fail(fmt.Errorf(
-			"extension '%s' not found in any configured registry",
-			extensionId,
-		))
+		// Delisted or unavailable — skip instead of fail so
+		// the batch continues.
+		baseResult.Status = extensions.UpgradeStatusSkipped
+		baseResult.SkipReason = "extension no longer available " +
+			"in any configured registry"
+		if !isJsonOutput {
+			skipMsg := fmt.Sprintf(
+				"Upgrading %s extension",
+				output.WithHighLightFormat(extensionId),
+			) + output.WithGrayFormat(
+				" (No longer available in any registry)",
+			)
+			a.console.StopSpinner(
+				ctx, skipMsg, input.StepSkipped,
+			)
+		}
+		return baseResult
 	}
 
 	var selectedExt *extensions.ExtensionMetadata
@@ -1286,15 +1354,27 @@ func (a *extensionUpgradeAction) upgradeOneExtension(
 		ctx, compatExt, a.flags.version,
 	)
 	if err != nil {
+		if isNetworkError(err) {
+			return fail(fmt.Errorf(
+				"network error upgrading %s "+
+					"(check your connection and retry): %w",
+				extensionId, err,
+			))
+		}
 		return fail(fmt.Errorf(
 			"failed to upgrade extension: %w", err,
 		))
 	}
 	baseResult.ToVersion = extVersion.Version
 
-	// Handle promotion display
+	// Handle promotion display and distinct telemetry
 	if isPromotion {
 		baseResult.Status = extensions.UpgradeStatusPromoted
+		emitPromotionEvent(
+			ctx, extensionId,
+			installed.Version, extVersion.Version,
+			oldSource, newSource,
+		)
 		if !isJsonOutput {
 			a.displayPromotionWarning(
 				ctx, stepMsg, extensionId,
@@ -1436,6 +1516,72 @@ func upgradeActionResult(
 			Header: "Extensions upgraded successfully",
 		},
 	}, nil
+}
+
+// emitPromotionEvent fires a distinct telemetry span for a registry
+// promotion (e.g., dev → main). This allows tracking promotion
+// adoption rates separately from regular upgrades.
+func emitPromotionEvent(
+	ctx context.Context,
+	extensionId string,
+	fromVersion string,
+	toVersion string,
+	oldSource string,
+	newSource string,
+) {
+	_, promSpan := tracing.Start(ctx, events.ExtensionPromoteEvent)
+	promSpan.SetAttributes(
+		fields.ExtensionId.String(extensionId),
+		fields.ExtensionVersionFrom.String(fromVersion),
+		fields.ExtensionVersionTo.String(toVersion),
+		fields.ExtensionSourceFrom.String(oldSource),
+		fields.ExtensionSourceTo.String(newSource),
+	)
+	promSpan.SetStatus(codes.Ok, "")
+	promSpan.End()
+}
+
+// isNetworkError checks whether err is caused by a network or
+// transport-level failure (DNS resolution, TCP connection, TLS
+// handshake, timeout). This distinguishes connectivity issues from
+// "extension not found" errors.
+func isNetworkError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		return true
+	}
+
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return true
+	}
+
+	var opErr *net.OpError
+	if errors.As(err, &opErr) {
+		return true
+	}
+
+	// Check for common network-related error messages from the
+	// HTTP transport layer that may not implement net.Error.
+	msg := err.Error()
+	networkKeywords := []string{
+		"connection refused",
+		"no such host",
+		"i/o timeout",
+		"TLS handshake timeout",
+		"network is unreachable",
+	}
+	for _, kw := range networkKeywords {
+		if strings.Contains(msg, kw) {
+			return true
+		}
+	}
+
+	return false
 }
 
 type extensionSourceListAction struct {

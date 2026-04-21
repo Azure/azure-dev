@@ -7,6 +7,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"net"
 	"net/http"
 	"testing"
 
@@ -216,7 +218,7 @@ func TestUpgradeOneExtension(t *testing.T) {
 			wantSkipReason: "installed 3.0.0 is newer than 2.0.0",
 		},
 		{
-			name:        "failed_not_found_in_registry",
+			name:        "skipped_delisted_extension",
 			extensionId: "missing-ext",
 			installed: map[string]*extensions.Extension{
 				"missing-ext": {Id: "missing-ext", Version: "1.0.0", Source: "test"},
@@ -225,8 +227,8 @@ func TestUpgradeOneExtension(t *testing.T) {
 			flags: extensionUpgradeFlags{
 				global: &internal.GlobalCommandOptions{NoPrompt: true},
 			},
-			wantStatus:    extensions.UpgradeStatusFailed,
-			wantErrSubstr: "not found in any configured registry",
+			wantStatus:     extensions.UpgradeStatusSkipped,
+			wantSkipReason: "extension no longer available in any configured registry",
 		},
 		{
 			name:        "failed_not_installed",
@@ -321,8 +323,8 @@ func TestUpgradeAction_MixedBatch(t *testing.T) {
 	)
 
 	result, err := action.Run(t.Context())
-	// At least one failure ("missing") so we expect an error
-	require.Error(t, err)
+	// All extensions are skipped (no failures), so no error
+	require.NoError(t, err)
 	require.NotNil(t, result)
 
 	var report struct {
@@ -343,9 +345,9 @@ func TestUpgradeAction_MixedBatch(t *testing.T) {
 	require.NoError(t, json.Unmarshal(buf.Bytes(), &report))
 
 	assert.Equal(t, 3, report.Summary.Total)
-	// "missing" should fail, "newer" and "up-to-date" should skip
-	assert.Equal(t, 2, report.Summary.Skipped)
-	assert.Equal(t, 1, report.Summary.Failed)
+	// "missing" is now skipped (delisted), "newer" and "up-to-date" also skip
+	assert.Equal(t, 3, report.Summary.Skipped)
+	assert.Equal(t, 0, report.Summary.Failed)
 	assert.Equal(t, 0, report.Summary.Upgraded)
 
 	// Verify each extension result
@@ -356,5 +358,221 @@ func TestUpgradeAction_MixedBatch(t *testing.T) {
 
 	assert.Equal(t, "skipped", resultMap["up-to-date"])
 	assert.Equal(t, "skipped", resultMap["newer"])
-	assert.Equal(t, "failed", resultMap["missing"])
+	assert.Equal(t, "skipped", resultMap["missing"])
+}
+
+// ---------------------------------------------------------------------------
+// isNetworkError tests
+// ---------------------------------------------------------------------------
+
+func TestIsNetworkError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "nil_error",
+			err:  nil,
+			want: false,
+		},
+		{
+			name: "regular_error",
+			err:  fmt.Errorf("extension not found"),
+			want: false,
+		},
+		{
+			name: "dns_error",
+			err: &net.DNSError{
+				Err:  "no such host",
+				Name: "registry.example.com",
+			},
+			want: true,
+		},
+		{
+			name: "op_error",
+			err: &net.OpError{
+				Op:  "dial",
+				Net: "tcp",
+				Err: fmt.Errorf("connection refused"),
+			},
+			want: true,
+		},
+		{
+			name: "wrapped_dns_error",
+			err: fmt.Errorf(
+				"failed to find extension: %w",
+				&net.DNSError{
+					Err:  "no such host",
+					Name: "test.example.com",
+				},
+			),
+			want: true,
+		},
+		{
+			name: "connection_refused_message",
+			err:  fmt.Errorf("dial tcp: connection refused"),
+			want: true,
+		},
+		{
+			name: "no_such_host_message",
+			err:  fmt.Errorf("lookup test.example.com: no such host"),
+			want: true,
+		},
+		{
+			name: "io_timeout_message",
+			err:  fmt.Errorf("read tcp: i/o timeout"),
+			want: true,
+		},
+		{
+			name: "tls_timeout_message",
+			err:  fmt.Errorf("net/http: TLS handshake timeout"),
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := isNetworkError(tt.err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Delisted extension edge case tests
+// ---------------------------------------------------------------------------
+
+func TestUpgradeOneExtension_DelistedSkipped(t *testing.T) {
+	t.Parallel()
+
+	const registryURL = "https://test.example.com/registry.json"
+
+	mockCtx := mocks.NewMockContext(context.Background())
+
+	installed := map[string]*extensions.Extension{
+		"delisted-ext": {
+			Id: "delisted-ext", Version: "1.0.0", Source: "test",
+		},
+	}
+
+	// Empty registry — extension no longer listed
+	registry := testRegistry()
+
+	manager := createUpgradeTestManager(
+		t, mockCtx, installed, registryURL, registry,
+	)
+
+	action := &extensionUpgradeAction{
+		args: []string{"delisted-ext"},
+		flags: &extensionUpgradeFlags{
+			global: &internal.GlobalCommandOptions{NoPrompt: true},
+		},
+		formatter:        &output.JsonFormatter{},
+		writer:           &bytes.Buffer{},
+		console:          mockinput.NewMockConsole(),
+		extensionManager: manager,
+	}
+
+	result := action.upgradeOneExtension(
+		t.Context(), "delisted-ext", 0, nil, true,
+	)
+
+	assert.Equal(t, extensions.UpgradeStatusSkipped, result.Status)
+	assert.Contains(
+		t, result.SkipReason,
+		"no longer available",
+	)
+	assert.Nil(t, result.Error)
+}
+
+// ---------------------------------------------------------------------------
+// Network failure edge case tests
+// ---------------------------------------------------------------------------
+
+// TestUpgradeOneExtension_NetworkFailure_SourceCreation verifies that when
+// a network error prevents source creation, the extension is reported as
+// skipped (delisted) because FindExtensions returns 0 matches. The source
+// manager silently drops sources that fail to create.
+func TestUpgradeOneExtension_NetworkFailure_SourceCreation(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	const registryURL = "https://test.example.com/registry.json"
+
+	mockCtx := mocks.NewMockContext(context.Background())
+
+	installed := map[string]*extensions.Extension{
+		"net-fail-ext": {
+			Id: "net-fail-ext", Version: "1.0.0", Source: "test",
+		},
+	}
+
+	userConfigManager := config.NewUserConfigManager(
+		mockCtx.ConfigManager,
+	)
+	sourceManager := extensions.NewSourceManager(
+		mockCtx.Container, userConfigManager, mockCtx.HttpClient,
+	)
+	lazyRunner := lazy.NewLazy(
+		func() (*extensions.Runner, error) {
+			return extensions.NewRunner(exec.NewCommandRunner(nil)), nil
+		},
+	)
+
+	cfg, err := userConfigManager.Load()
+	require.NoError(t, err)
+
+	err = cfg.Set("extension.sources.test", map[string]any{
+		"name":     "test",
+		"type":     "url",
+		"location": registryURL,
+	})
+	require.NoError(t, err)
+
+	err = cfg.Set("extension.installed", installed)
+	require.NoError(t, err)
+
+	// Simulate network failure from HTTP client — source creation
+	// will silently drop the source, yielding 0 matches.
+	mockCtx.HttpClient.When(func(request *http.Request) bool {
+		return request.URL.String() == registryURL
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return nil, &net.DNSError{
+			Err:  "no such host",
+			Name: "test.example.com",
+		}
+	})
+
+	manager, err := extensions.NewManager(
+		userConfigManager, sourceManager,
+		lazyRunner, mockCtx.HttpClient,
+	)
+	require.NoError(t, err)
+
+	action := &extensionUpgradeAction{
+		args: []string{"net-fail-ext"},
+		flags: &extensionUpgradeFlags{
+			global: &internal.GlobalCommandOptions{NoPrompt: true},
+		},
+		formatter:        &output.JsonFormatter{},
+		writer:           &bytes.Buffer{},
+		console:          mockinput.NewMockConsole(),
+		extensionManager: manager,
+	}
+
+	result := action.upgradeOneExtension(
+		t.Context(), "net-fail-ext", 0, nil, true,
+	)
+
+	// Source creation failure means 0 matches → skipped (delisted)
+	assert.Equal(t, extensions.UpgradeStatusSkipped, result.Status)
+	assert.Contains(
+		t, result.SkipReason,
+		"no longer available",
+	)
 }

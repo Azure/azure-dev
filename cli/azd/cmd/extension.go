@@ -1033,7 +1033,22 @@ func (a *extensionUpgradeAction) Run(
 
 	results := make([]extensions.UpgradeResult, 0, len(extensionIds))
 
+loop:
 	for index, extensionId := range extensionIds {
+		// Check for cancellation between extensions
+		select {
+		case <-ctx.Done():
+			for _, remaining := range extensionIds[index:] {
+				results = append(results, extensions.UpgradeResult{
+					ExtensionId: remaining,
+					Status:      extensions.UpgradeStatusFailed,
+					Error:       ctx.Err(),
+				})
+			}
+			break loop
+		default:
+		}
+
 		result := a.upgradeOneExtension(
 			ctx, extensionId, index, azdVersion, isJsonOutput,
 		)

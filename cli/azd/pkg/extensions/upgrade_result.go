@@ -6,6 +6,9 @@ package extensions
 import "encoding/json"
 
 // UpgradeStatus represents the outcome of a single extension upgrade attempt.
+// The String() values ("upgraded", "skipped", "promoted", "failed") are
+// serialized to JSON output and form a public API contract.
+// Changing these values is a breaking change.
 type UpgradeStatus int
 
 const (
@@ -56,7 +59,9 @@ type UpgradeResult struct {
 	SkipReason string
 }
 
-// upgradeResultJSON is the JSON-serializable representation of UpgradeResult.
+// upgradeResultJSON is the JSON serialization format for UpgradeResult.
+// Field names are part of the public --output json contract.
+// Changes to field names or removal of fields is a breaking change.
 type upgradeResultJSON struct {
 	Name        string `json:"name"`
 	Status      string `json:"status"`
@@ -68,7 +73,9 @@ type upgradeResultJSON struct {
 	Error       string `json:"error,omitempty"`
 }
 
-// MarshalJSON implements json.Marshaler for clean JSON output.
+// MarshalJSON serializes UpgradeResult to JSON for --output json.
+// Error messages are included as-is because azd errors are user-facing
+// by design (via ErrorWithSuggestion and error_suggestions.yaml pipeline).
 func (r UpgradeResult) MarshalJSON() ([]byte, error) {
 	j := upgradeResultJSON{
 		Name:        r.ExtensionId,

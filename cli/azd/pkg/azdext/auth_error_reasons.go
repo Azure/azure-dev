@@ -15,8 +15,9 @@ const (
 
 // Auth error reason codes used in gRPC ErrorInfo.Reason.
 const (
-	AuthErrorReasonNotLoggedIn            = "AUTH_NOT_LOGGED_IN"
-	AuthErrorReasonLoginRequired          = "AUTH_LOGIN_REQUIRED"
+	AuthErrorReasonNotLoggedIn   = "AUTH_NOT_LOGGED_IN"
+	AuthErrorReasonLoginRequired = "AUTH_LOGIN_REQUIRED"
+	// #nosec G101 -- gRPC auth reason identifier, not a credential.
 	AuthErrorReasonTokenProtectionBlocked = "AUTH_TOKEN_PROTECTION_BLOCKED"
 )
 

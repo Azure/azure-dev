@@ -86,6 +86,8 @@ func extensionActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 			Use:   "upgrade [extension-id]",
 			Short: "Upgrade specified extensions.",
 		},
+		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+		DefaultFormat:  output.NoneFormat,
 		ActionResolver: newExtensionUpgradeAction,
 		FlagsResolver:  newExtensionUpgradeFlags,
 	})
@@ -937,6 +939,8 @@ func newExtensionUpgradeFlags(cmd *cobra.Command, global *internal.GlobalCommand
 type extensionUpgradeAction struct {
 	args             []string
 	flags            *extensionUpgradeFlags
+	formatter        output.Formatter
+	writer           io.Writer
 	console          input.Console
 	extensionManager *extensions.Manager
 }
@@ -944,24 +948,31 @@ type extensionUpgradeAction struct {
 func newExtensionUpgradeAction(
 	args []string,
 	flags *extensionUpgradeFlags,
+	formatter output.Formatter,
+	writer io.Writer,
 	console input.Console,
 	extensionManager *extensions.Manager,
 ) actions.Action {
 	return &extensionUpgradeAction{
 		args:             args,
 		flags:            flags,
+		formatter:        formatter,
+		writer:           writer,
 		console:          console,
 		extensionManager: extensionManager,
 	}
 }
 
-func (a *extensionUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+func (a *extensionUpgradeAction) Run(
+	ctx context.Context,
+) (*actions.ActionResult, error) {
 	if len(a.args) > 0 && a.flags.all {
 		return nil, &internal.ErrorWithSuggestion{
 			Err: fmt.Errorf(
 				"cannot specify both an extension name and --all flag: %w",
 				internal.ErrInvalidFlagCombination),
-			Suggestion: "Use either 'azd extension upgrade <id>' or 'azd extension upgrade --all'.",
+			Suggestion: "Use either 'azd extension upgrade <id>' " +
+				"or 'azd extension upgrade --all'.",
 		}
 	}
 
@@ -970,227 +981,439 @@ func (a *extensionUpgradeAction) Run(ctx context.Context) (*actions.ActionResult
 			Err: fmt.Errorf(
 				"cannot specify --version with multiple extensions: %w",
 				internal.ErrInvalidFlagCombination),
-			Suggestion: "Upgrade one extension at a time when using --version.",
+			Suggestion: "Upgrade one extension at a time when " +
+				"using --version.",
 		}
 	}
 
 	if len(a.args) == 0 && !a.flags.all {
 		return nil, &internal.ErrorWithSuggestion{
-			Err:        internal.ErrNoArgsProvided,
-			Suggestion: "Run 'azd extension upgrade <extension-id>' or 'azd extension upgrade --all'.",
+			Err: internal.ErrNoArgsProvided,
+			Suggestion: "Run 'azd extension upgrade <extension-id>'" +
+				" or 'azd extension upgrade --all'.",
 		}
 	}
 
-	a.console.MessageUxItem(ctx, &ux.MessageTitle{
-		Title:     "Upgrade azd extensions (azd extension upgrade)",
-		TitleNote: "Upgrades the specified extensions on the local machine",
-	})
+	isJsonOutput := a.formatter.Kind() == output.JsonFormat
+
+	if !isJsonOutput {
+		a.console.MessageUxItem(ctx, &ux.MessageTitle{
+			Title: "Upgrade azd extensions " +
+				"(azd extension upgrade)",
+			TitleNote: "Upgrades the specified extensions " +
+				"on the local machine",
+		})
+	}
 
 	azdVersion := currentAzdSemver()
 
 	extensionIds := a.args
 	if a.flags.all {
-		installed, err := a.extensionManager.ListInstalled()
+		installedMap, err := a.extensionManager.ListInstalled()
 		if err != nil {
-			return nil, fmt.Errorf("failed to list installed extensions: %w", err)
+			return nil, fmt.Errorf(
+				"failed to list installed extensions: %w", err,
+			)
 		}
 
-		extensionIds = make([]string, 0, len(installed))
-		for name := range installed {
+		extensionIds = make([]string, 0, len(installedMap))
+		for name := range installedMap {
 			extensionIds = append(extensionIds, name)
 		}
+		slices.Sort(extensionIds)
 	}
 
 	if len(extensionIds) == 0 {
 		return nil, &internal.ErrorWithSuggestion{
-			Err:        internal.ErrNoExtensionsAvailable,
-			Suggestion: "No extensions are currently installed. Run 'azd extension list' to verify.",
+			Err: internal.ErrNoExtensionsAvailable,
+			Suggestion: "No extensions are currently installed. " +
+				"Run 'azd extension list' to verify.",
 		}
 	}
 
+	results := make([]extensions.UpgradeResult, 0, len(extensionIds))
+
 	for index, extensionId := range extensionIds {
-		if index > 0 {
-			a.console.Message(ctx, "")
+		result := a.upgradeOneExtension(
+			ctx, extensionId, index, azdVersion, isJsonOutput,
+		)
+		results = append(results, result)
+	}
+
+	// JSON output: emit structured report and return
+	if isJsonOutput {
+		report := extensions.UpgradeReport{
+			Extensions: results,
+			Summary:    extensions.NewUpgradeSummary(results),
 		}
-
-		stepMessage := fmt.Sprintf("Upgrading %s extension", output.WithHighLightFormat(extensionId))
-		a.console.ShowSpinner(ctx, stepMessage, input.Step)
-
-		installed, err := a.extensionManager.GetInstalled(extensions.FilterOptions{
-			Id: extensionId,
-		})
-		if err != nil {
-			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-			return nil, fmt.Errorf("failed to get installed extension: %w", err)
-		}
-
-		// Search all sources (no source filter) so the resolver can evaluate all matches.
-		// The resolver applies source priority logic instead of filtering at the query level.
-		allMatchOptions := &extensions.FilterOptions{
-			Id:      extensionId,
-			Version: a.flags.version,
-		}
-
-		// When an explicit --source flag is provided, filter at query level for efficiency
-		if a.flags.source != "" {
-			allMatchOptions.Source = a.flags.source
-		}
-
-		matches, err := a.extensionManager.FindExtensions(ctx, allMatchOptions)
-		if err != nil {
-			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-			return nil, fmt.Errorf("failed to get extension %s: %w", extensionId, err)
-		}
-
-		if len(matches) == 0 {
-			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-			return nil, &internal.ErrorWithSuggestion{
-				Err:        fmt.Errorf("extension '%s': %w", extensionId, internal.ErrExtensionNotFound),
-				Suggestion: "Run 'azd extension list' to browse available extensions.",
-			}
-		}
-
-		// Resolve which source to use for the upgrade.
-		// In batch mode (--all) or non-interactive mode (--no-prompt), use the registry resolver
-		// to deterministically pick a source without prompting.
-		// In interactive single-extension mode with ambiguous sources, fall back to the picker.
-		var selectedExtension *extensions.ExtensionMetadata
-		var isPromotion bool
-		var oldSource, newSource string
-
-		isBatchOrNoPrompt := a.flags.all || a.flags.global.NoPrompt
-
-		if isBatchOrNoPrompt || len(matches) == 1 {
-			resolveResult := extensions.ResolveUpgradeSource(installed, matches, a.flags.source)
-			if resolveResult == nil {
-				a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-				return nil, &internal.ErrorWithSuggestion{
-					Err: fmt.Errorf(
-						"extension '%s': %w",
-						extensionId, internal.ErrExtensionNotFound,
-					),
-					Suggestion: fmt.Sprintf(
-						"Extension not found in source '%s'. "+
-							"Run 'azd extension list' to browse available extensions.",
-						a.flags.source,
-					),
-				}
-			}
-			selectedExtension = resolveResult.Extension
-			isPromotion = resolveResult.IsPromotion
-			oldSource = resolveResult.OldSource
-			newSource = resolveResult.NewSource
-		} else {
-			// Interactive mode with multiple source matches — use existing picker
-			selectedExtension, err = selectDistinctExtension(
-				ctx, a.console, extensionId, matches, a.flags.global,
+		if err := a.formatter.Format(
+			report, a.writer, nil,
+		); err != nil {
+			return nil, fmt.Errorf(
+				"failed to format upgrade report: %w", err,
 			)
-			if err != nil {
-				return nil, err
-			}
-			// Track source change for interactive selection too
-			oldSource = installed.Source
-			newSource = selectedExtension.Source
 		}
+		return upgradeActionResult(results)
+	}
 
-		a.console.ShowSpinner(ctx, stepMessage, input.Step)
+	// Interactive output: display summary
+	displayUpgradeSummary(ctx, a.console, results)
 
-		// Check azd version compatibility
-		compatibleExtension, compatResult, err := resolveCompatibleExtension(
-			selectedExtension, extensionId, a.flags.version, azdVersion,
+	return upgradeActionResult(results)
+}
+
+// upgradeOneExtension processes a single extension upgrade and returns
+// the result. It never returns an error — failures are captured in
+// the returned UpgradeResult.
+func (a *extensionUpgradeAction) upgradeOneExtension(
+	ctx context.Context,
+	extensionId string,
+	index int,
+	azdVersion *semver.Version,
+	isJsonOutput bool,
+) extensions.UpgradeResult {
+	baseResult := extensions.UpgradeResult{ExtensionId: extensionId}
+
+	if !isJsonOutput && index > 0 {
+		a.console.Message(ctx, "")
+	}
+
+	stepMsg := fmt.Sprintf(
+		"Upgrading %s extension",
+		output.WithHighLightFormat(extensionId),
+	)
+	if !isJsonOutput {
+		a.console.ShowSpinner(ctx, stepMsg, input.Step)
+	}
+
+	// Helper to record a failure and stop the spinner.
+	fail := func(err error) extensions.UpgradeResult {
+		baseResult.Status = extensions.UpgradeStatusFailed
+		baseResult.Error = err
+		if !isJsonOutput {
+			a.console.StopSpinner(
+				ctx, stepMsg, input.StepFailed,
+			)
+			a.console.Message(ctx, fmt.Sprintf(
+				"  %s",
+				output.WithGrayFormat("%s", err.Error()),
+			))
+			a.console.Message(ctx, fmt.Sprintf(
+				"  Retry with: %s",
+				output.WithHighLightFormat(
+					"azd extension upgrade %s",
+					extensionId,
+				),
+			))
+		}
+		return baseResult
+	}
+
+	installed, err := a.extensionManager.GetInstalled(
+		extensions.FilterOptions{Id: extensionId},
+	)
+	if err != nil {
+		return fail(fmt.Errorf(
+			"failed to get installed extension: %w", err,
+		))
+	}
+	baseResult.FromVersion = installed.Version
+	baseResult.FromSource = installed.Source
+
+	// Resolve which registry source to use.
+	allMatchOptions := &extensions.FilterOptions{
+		Id:      extensionId,
+		Version: a.flags.version,
+	}
+	if a.flags.source != "" {
+		allMatchOptions.Source = a.flags.source
+	}
+
+	matches, err := a.extensionManager.FindExtensions(
+		ctx, allMatchOptions,
+	)
+	if err != nil {
+		return fail(fmt.Errorf(
+			"failed to find extension %s: %w", extensionId, err,
+		))
+	}
+	if len(matches) == 0 {
+		return fail(fmt.Errorf(
+			"extension '%s' not found in any configured registry",
+			extensionId,
+		))
+	}
+
+	var selectedExt *extensions.ExtensionMetadata
+	var isPromotion bool
+	var oldSource, newSource string
+	isBatchOrNoPrompt := a.flags.all || a.flags.global.NoPrompt
+
+	if isBatchOrNoPrompt || len(matches) == 1 {
+		res := extensions.ResolveUpgradeSource(
+			installed, matches, a.flags.source,
+		)
+		if res == nil {
+			return fail(fmt.Errorf(
+				"extension '%s' not found in source '%s'",
+				extensionId, a.flags.source,
+			))
+		}
+		selectedExt = res.Extension
+		isPromotion = res.IsPromotion
+		oldSource = res.OldSource
+		newSource = res.NewSource
+	} else {
+		selectedExt, err = selectDistinctExtension(
+			ctx, a.console, extensionId,
+			matches, a.flags.global,
 		)
 		if err != nil {
-			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-			return nil, err
+			return fail(err)
 		}
-		if compatResult != nil && compatResult.HasNewerIncompatible && compatResult.LatestOverall != nil {
-			a.console.StopSpinner(ctx, stepMessage, input.Step)
-			displayVersionCompatibilityWarning(ctx, a.console,
-				compatResult.LatestOverall, compatResult.LatestCompatible, azdVersion,
-			)
-			a.console.ShowSpinner(ctx, stepMessage, input.Step)
-		}
+		oldSource = installed.Source
+		newSource = selectedExt.Source
+	}
 
-		// Determine the target version for comparison:
-		// - If --version is specified, compare against the requested version
-		// - Otherwise, compare against the latest compatible version
-		var targetVersionStr string
-		if a.flags.version != "" && a.flags.version != "latest" {
-			targetVersionStr = a.flags.version
-		} else {
-			targetVersionStr = extensions.LatestVersion(compatibleExtension.Versions).Version
-		}
+	if !isJsonOutput {
+		a.console.ShowSpinner(ctx, stepMsg, input.Step)
+	}
 
-		// Parse semantic versions for proper comparison
-		installedSemver, err := semver.NewVersion(installed.Version)
-		if err != nil {
-			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-			return nil, fmt.Errorf("failed to parse installed version '%s': %w", installed.Version, err)
-		}
+	// Check azd version compatibility
+	compatExt, compatResult, err := resolveCompatibleExtension(
+		selectedExt, extensionId, a.flags.version, azdVersion,
+	)
+	if err != nil {
+		return fail(err)
+	}
+	if !isJsonOutput &&
+		compatResult != nil &&
+		compatResult.HasNewerIncompatible &&
+		compatResult.LatestOverall != nil {
+		a.console.StopSpinner(ctx, stepMsg, input.Step)
+		displayVersionCompatibilityWarning(
+			ctx, a.console,
+			compatResult.LatestOverall,
+			compatResult.LatestCompatible,
+			azdVersion,
+		)
+		a.console.ShowSpinner(ctx, stepMsg, input.Step)
+	}
 
-		targetSemver, err := semver.NewVersion(targetVersionStr)
-		if err != nil {
-			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-			return nil, fmt.Errorf("failed to parse target version '%s': %w", targetVersionStr, err)
+	// Determine the target version
+	var targetVersionStr string
+	if a.flags.version != "" && a.flags.version != "latest" {
+		targetVersionStr = a.flags.version
+	} else {
+		latestVer := extensions.LatestVersion(compatExt.Versions)
+		if latestVer == nil {
+			return fail(fmt.Errorf(
+				"no versions available for extension '%s'",
+				extensionId,
+			))
 		}
+		targetVersionStr = latestVer.Version
+	}
 
-		// Compare versions: skip if installed version >= target version
-		if installedSemver.GreaterThan(targetSemver) {
-			stepMessage += output.WithGrayFormat(
+	installedSemver, err := semver.NewVersion(installed.Version)
+	if err != nil {
+		return fail(fmt.Errorf(
+			"failed to parse installed version '%s': %w",
+			installed.Version, err,
+		))
+	}
+
+	targetSemver, err := semver.NewVersion(targetVersionStr)
+	if err != nil {
+		return fail(fmt.Errorf(
+			"failed to parse target version '%s': %w",
+			targetVersionStr, err,
+		))
+	}
+
+	baseResult.ToSource = newSource
+
+	// Compare versions
+	if installedSemver.GreaterThan(targetSemver) {
+		baseResult.Status = extensions.UpgradeStatusSkipped
+		baseResult.SkipReason = fmt.Sprintf(
+			"installed %s is newer than %s",
+			installed.Version, targetVersionStr,
+		)
+		if !isJsonOutput {
+			skipMsg := stepMsg + output.WithGrayFormat(
 				" (Installed version %s is newer than %s)",
-				installed.Version,
-				targetVersionStr,
+				installed.Version, targetVersionStr,
 			)
-			a.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
-		} else if installedSemver.Equal(targetSemver) {
-			stepMessage += output.WithGrayFormat(" (No upgrade available)")
-			a.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
-		} else {
-			extensionVersion, err := a.extensionManager.Upgrade(
-				ctx, compatibleExtension, a.flags.version,
+			a.console.StopSpinner(
+				ctx, skipMsg, input.StepSkipped,
 			)
-			if err != nil {
-				return nil, fmt.Errorf("failed to upgrade extension: %w", err)
-			}
-
-			// Handle promotion: display warning about registry transition.
-			// The source is already persisted by Upgrade() → Install() which uses
-			// the resolved extension metadata (with the new source).
-			if isPromotion {
-				a.console.StopSpinner(ctx, stepMessage, input.StepWarning)
-				a.console.Message(ctx, output.WithWarningFormat(
-					"  (!) Warning: Upgraded %s extension (%s → %s, %s → %s registry)",
-					output.WithHighLightFormat(extensionId),
-					installed.Version,
-					extensionVersion.Version,
-					output.WithHighLightFormat(oldSource),
-					output.WithHighLightFormat(newSource),
-				))
-				a.console.Message(ctx, fmt.Sprintf(
-					"  Extension was promoted from the %s registry "+
-						"to the official %s registry.",
-					output.WithHighLightFormat(oldSource),
-					output.WithHighLightFormat(newSource),
-				))
-				a.console.Message(ctx, fmt.Sprintf(
-					"  Source has been updated automatically. "+
-						"To stay on %s, reinstall with:",
-					output.WithHighLightFormat(oldSource),
-				))
-				a.console.Message(ctx, fmt.Sprintf(
-					"    %s",
-					output.WithHighLightFormat(fmt.Sprintf(
-						"azd extension install %s --source %s",
-						extensionId, oldSource,
-					)),
-				))
-			}
-
-			stepMessage += output.WithGrayFormat(" (%s)", extensionVersion.Version)
-			a.console.StopSpinner(ctx, stepMessage, input.StepDone)
-
-			displayExtensionUsageAndExamples(ctx, a.console, extensionVersion)
 		}
+		return baseResult
+	}
+
+	if installedSemver.Equal(targetSemver) && !isPromotion {
+		baseResult.Status = extensions.UpgradeStatusSkipped
+		baseResult.SkipReason = "already up to date"
+		if !isJsonOutput {
+			skipMsg := stepMsg + output.WithGrayFormat(
+				" (No upgrade available)",
+			)
+			a.console.StopSpinner(
+				ctx, skipMsg, input.StepSkipped,
+			)
+		}
+		return baseResult
+	}
+
+	// Perform the upgrade
+	extVersion, err := a.extensionManager.Upgrade(
+		ctx, compatExt, a.flags.version,
+	)
+	if err != nil {
+		return fail(fmt.Errorf(
+			"failed to upgrade extension: %w", err,
+		))
+	}
+	baseResult.ToVersion = extVersion.Version
+
+	// Handle promotion display
+	if isPromotion {
+		baseResult.Status = extensions.UpgradeStatusPromoted
+		if !isJsonOutput {
+			a.displayPromotionWarning(
+				ctx, stepMsg, extensionId,
+				installed.Version, extVersion.Version,
+				oldSource, newSource,
+			)
+		}
+	} else {
+		baseResult.Status = extensions.UpgradeStatusUpgraded
+	}
+
+	if !isJsonOutput {
+		doneMsg := fmt.Sprintf(
+			"Upgraded %s extension %s",
+			output.WithHighLightFormat(extensionId),
+			output.WithGrayFormat(
+				"(%s \u2192 %s)",
+				installed.Version, extVersion.Version,
+			),
+		)
+		a.console.StopSpinner(ctx, doneMsg, input.StepDone)
+		displayExtensionUsageAndExamples(
+			ctx, a.console, extVersion,
+		)
+	}
+
+	return baseResult
+}
+
+// displayPromotionWarning shows the registry transition warning
+// for a promoted extension.
+func (a *extensionUpgradeAction) displayPromotionWarning(
+	ctx context.Context,
+	stepMsg string,
+	extensionId string,
+	fromVersion string,
+	toVersion string,
+	oldSource string,
+	newSource string,
+) {
+	a.console.StopSpinner(ctx, stepMsg, input.StepWarning)
+	a.console.Message(ctx, output.WithWarningFormat(
+		"  (!) Warning: Upgraded %s extension (%s \u2192 %s, %s \u2192 %s registry)",
+		output.WithHighLightFormat(extensionId),
+		fromVersion, toVersion,
+		output.WithHighLightFormat(oldSource),
+		output.WithHighLightFormat(newSource),
+	))
+	a.console.Message(ctx, fmt.Sprintf(
+		"  Extension was promoted from the %s registry "+
+			"to the official %s registry.",
+		output.WithHighLightFormat(oldSource),
+		output.WithHighLightFormat(newSource),
+	))
+	a.console.Message(ctx, fmt.Sprintf(
+		"  Source has been updated automatically. "+
+			"To stay on %s, reinstall with:",
+		output.WithHighLightFormat(oldSource),
+	))
+	a.console.Message(ctx, fmt.Sprintf(
+		"    %s",
+		output.WithHighLightFormat(
+			"azd extension install %s --source %s",
+			extensionId, oldSource,
+		),
+	))
+}
+
+// displayUpgradeSummary prints the batch summary line after all
+// extensions have been processed.
+func displayUpgradeSummary(
+	ctx context.Context,
+	console input.Console,
+	results []extensions.UpgradeResult,
+) {
+	summary := extensions.NewUpgradeSummary(results)
+	console.Message(ctx, "")
+
+	parts := make([]string, 0, 4)
+	if summary.Upgraded > 0 {
+		parts = append(parts, output.WithSuccessFormat(
+			"%d upgraded", summary.Upgraded,
+		))
+	}
+	if summary.Skipped > 0 {
+		parts = append(parts, output.WithGrayFormat(
+			"%d skipped", summary.Skipped,
+		))
+	}
+	if summary.Promoted > 0 {
+		parts = append(parts, output.WithWarningFormat(
+			"%d promoted", summary.Promoted,
+		))
+	}
+	if summary.Failed > 0 {
+		parts = append(parts, output.WithErrorFormat(
+			"%d failed", summary.Failed,
+		))
+	}
+
+	if len(parts) > 0 {
+		console.Message(ctx, "  "+strings.Join(parts, ", "))
+	}
+
+	if summary.Failed > 0 {
+		console.Message(ctx, "")
+		console.Message(ctx, fmt.Sprintf(
+			"  Run '%s' to retry failed extensions.",
+			output.WithHighLightFormat(
+				"azd extension upgrade <name>",
+			),
+		))
+	}
+}
+
+// upgradeActionResult builds the ActionResult and error from batch
+// upgrade results. Returns a non-nil error when any extension failed.
+func upgradeActionResult(
+	results []extensions.UpgradeResult,
+) (*actions.ActionResult, error) {
+	summary := extensions.NewUpgradeSummary(results)
+
+	if summary.Failed > 0 {
+		return &actions.ActionResult{
+				Message: &actions.ResultMessage{
+					Header: fmt.Sprintf(
+						"%d of %d extensions failed to upgrade",
+						summary.Failed, summary.Total,
+					),
+				},
+			}, fmt.Errorf(
+				"%d of %d extensions failed to upgrade",
+				summary.Failed, summary.Total,
+			)
 	}
 
 	return &actions.ActionResult{

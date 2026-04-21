@@ -143,7 +143,7 @@ func TestFilesMkdirCommand_HasFlags(t *testing.T) {
 }
 
 func TestPrintFileListJSON(t *testing.T) {
-	modified := "2025-01-01T00:00:00Z"
+	modified := agent_api.FlexibleTimestamp("2025-01-01T00:00:00Z")
 	fileList := &agent_api.SessionFileList{
 		Path: "/data",
 		Entries: []agent_api.SessionFileInfo{
@@ -167,7 +167,7 @@ func TestPrintFileListJSON(t *testing.T) {
 }
 
 func TestPrintFileListTable(t *testing.T) {
-	modified := "2025-01-01T00:00:00Z"
+	modified := agent_api.FlexibleTimestamp("2025-01-01T00:00:00Z")
 	fileList := &agent_api.SessionFileList{
 		Path: "/data",
 		Entries: []agent_api.SessionFileInfo{

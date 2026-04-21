@@ -454,7 +454,7 @@ func printFileListTable(fileList *agent_api.SessionFileList) error {
 		}
 		modified := ""
 		if f.LastModified != nil {
-			modified = *f.LastModified
+			modified = f.LastModified.String()
 		}
 		fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%s\n", f.Name, f.Path, fileType, f.Size, modified)
 	}
@@ -751,7 +751,7 @@ func printFileInfoTable(f *agent_api.SessionFileInfo) error {
 	}
 	modified := ""
 	if f.LastModified != nil {
-		modified = *f.LastModified
+		modified = f.LastModified.String()
 	}
 	fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%s\n", f.Name, f.Path, fileType, f.Size, modified)
 

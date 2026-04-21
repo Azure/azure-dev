@@ -2,6 +2,8 @@
 
 ## 0.1.26-preview (unreleased)
 
+- [[#7209]](https://github.com/Azure/azure-dev/issues/7209) Improve `azd ai agent monitor` output: render each SSE log event as a single compact, color-coded line (`HH:MM:SS  <stream>  <message>`) with session-metadata events rendered as `session <state> (v<version>, last accessed: ...)`. Add `--utc` flag to display timestamps in UTC instead of local time, and `--raw` flag to preserve the previous raw SSE output.
+
 ### Breaking Changes
 
 - [[#7764]](https://github.com/Azure/azure-dev/pull/7764) Remove `container.scale` configuration (`minReplicas`/`maxReplicas`) from `azure.yaml`. Scale settings are no longer supported for hosted agents. Remove any `container.scale` section from your service configuration.

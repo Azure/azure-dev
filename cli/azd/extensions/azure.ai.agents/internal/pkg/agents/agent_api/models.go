@@ -3,6 +3,13 @@
 
 package agent_api
 
+import (
+	"encoding/json"
+	"fmt"
+	"math"
+	"time"
+)
+
 // AgentProtocol represents the protocol types supported by agents
 type AgentProtocol string
 
@@ -631,14 +638,63 @@ type StructuredOutputDefinition struct {
 	Strict      *bool          `json:"strict"`
 }
 
+// FlexibleTimestamp is a string that can be unmarshalled from either a JSON
+// string or a JSON number (Unix epoch seconds or milliseconds). This handles
+// APIs that may return modified_time as either format.
+type FlexibleTimestamp string
+
+// UnmarshalJSON unmarshals FlexibleTimestamp from either a JSON string or a
+// JSON number (Unix epoch seconds or milliseconds).
+func (ft *FlexibleTimestamp) UnmarshalJSON(data []byte) error {
+	// Try string first (the common/expected case).
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		*ft = FlexibleTimestamp(s)
+		return nil
+	}
+
+	// Try number (Unix epoch seconds or milliseconds).
+	var n float64
+	if err := json.Unmarshal(data, &n); err == nil {
+		// Interpret as seconds first.
+		sec, frac := math.Modf(n)
+		t := time.Unix(int64(sec), int64(frac*1e9)).UTC()
+
+		// If the result is far in the future, the value is
+		// likely in milliseconds.
+		if t.Year() > 3000 {
+			ms := int64(n)
+			t = time.Unix(
+				ms/1000,
+				(ms%1000)*int64(time.Millisecond),
+			).UTC()
+		}
+
+		*ft = FlexibleTimestamp(t.Format(time.RFC3339Nano))
+		return nil
+	}
+
+	return fmt.Errorf("modified_time: expected string or number, got %s", string(data))
+}
+
+// MarshalJSON marshals FlexibleTimestamp as a JSON string.
+func (ft FlexibleTimestamp) MarshalJSON() ([]byte, error) {
+	return json.Marshal(string(ft))
+}
+
+// String returns the string representation of FlexibleTimestamp.
+func (ft FlexibleTimestamp) String() string {
+	return string(ft)
+}
+
 // SessionFileInfo represents a file or directory entry in a session.
 type SessionFileInfo struct {
-	Name         string  `json:"name"`
-	Path         string  `json:"path"`
-	IsDirectory  bool    `json:"is_dir"`
-	Size         int64   `json:"size,omitempty"`
-	Mode         int     `json:"mode,omitempty"`
-	LastModified *string `json:"modified_time,omitempty"`
+	Name         string             `json:"name"`
+	Path         string             `json:"path"`
+	IsDirectory  bool               `json:"is_dir"`
+	Size         int64              `json:"size,omitempty"`
+	Mode         int                `json:"mode,omitempty"`
+	LastModified *FlexibleTimestamp `json:"modified_time,omitempty"`
 }
 
 // SessionFileList represents the response from listing session files.

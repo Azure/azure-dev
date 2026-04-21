@@ -9,7 +9,7 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_api"
 )
 
-func TestApplyVnextMetadata(t *testing.T) {
+func TestApplyAgentMetadata(t *testing.T) {
 	tests := []struct {
 		name         string
 		existingMeta map[string]string

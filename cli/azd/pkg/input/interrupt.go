@@ -23,6 +23,10 @@ var (
 	interruptMu      sync.Mutex
 	interruptStack   []InterruptHandler
 	interruptRunning bool
+	// forceExitPending tracks whether one suppressed Ctrl+C has been
+	// received while a handler is running. A second suppressed press
+	// triggers a force-exit (standard POSIX convention).
+	forceExitPending bool
 )
 
 // PushInterruptHandler registers a handler to be invoked on the next SIGINT
@@ -73,6 +77,7 @@ func tryStartInterruptHandler() bool {
 		return false
 	}
 	interruptRunning = true
+	forceExitPending = false // reset on new handler start
 	return true
 }
 
@@ -80,4 +85,21 @@ func finishInterruptHandler() {
 	interruptMu.Lock()
 	defer interruptMu.Unlock()
 	interruptRunning = false
+	forceExitPending = false
+}
+
+// incrementForceExitCounter records a suppressed Ctrl+C while a handler is
+// running. Returns true if this is the second suppressed press, indicating
+// a force-exit should occur (standard POSIX convention).
+func incrementForceExitCounter() bool {
+	interruptMu.Lock()
+	defer interruptMu.Unlock()
+	if !interruptRunning {
+		return false
+	}
+	if forceExitPending {
+		return true
+	}
+	forceExitPending = true
+	return false
 }

@@ -991,6 +991,13 @@ func watchTerminalInterrupt(c *AskerConsole) {
 			// popped from the stack but is still executing (e.g. a prompt is
 			// up while Deploy has already torn the registration down).
 			if !tryStartInterruptHandler() {
+				// A handler is already running. A second Ctrl+C while a
+				// handler is active is treated as a force-exit (standard
+				// POSIX convention: kubectl, terraform, docker, etc.).
+				if incrementForceExitCounter() {
+					_ = c.spinner.Stop()
+					os.Exit(130) // 128 + SIGINT
+				}
 				continue
 			}
 
@@ -1009,7 +1016,18 @@ func watchTerminalInterrupt(c *AskerConsole) {
 			// the deploy context) take effect synchronously after the signal
 			// is received — no scheduling window where the deploy goroutine
 			// could complete naturally and silently drop the Ctrl+C.
-			handled := handler()
+			var handled bool
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						buf := make([]byte, 4096)
+						n := runtime.Stack(buf, false)
+						log.Printf(
+							"interrupt handler panic: %v\n%s", r, buf[:n])
+					}
+				}()
+				handled = handler()
+			}()
 			finishInterruptHandler()
 			if !handled {
 				// Handler declined to take ownership of shutdown — fall back

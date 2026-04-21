@@ -767,8 +767,8 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 	// Start the deployment
 	p.console.ShowSpinner(ctx, "Creating/Updating resources", input.Step)
 
-	deployCtx, interruptStarted, interruptCh, interruptCleanup := p.installDeploymentInterruptHandler(
-		ctx, deployment, cancelProgress)
+	deployCtx, interruptStarted, interruptCh, markDeployCompleted, interruptCleanup :=
+		p.installDeploymentInterruptHandler(ctx, deployment, cancelProgress)
 	cleanupOnce := sync.OnceFunc(interruptCleanup)
 	defer cleanupOnce()
 
@@ -781,25 +781,24 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 		optionsMap,
 	)
 
-	// If an interrupt was raised at any point during the deploy (even if the
-	// deploy call itself finished naturally before the user picked an
-	// option), block until the handler produces an outcome so the user's
-	// Ctrl+C is never silently dropped. Keep the handler installed until that
-	// outcome is observed so re-entrant Ctrl+C is still suppressed while the
-	// prompt/cancel flow is active.
-	select {
-	case <-interruptStarted:
+	// Try to atomically claim the "completed" state. If the interrupt
+	// handler already claimed "interrupting", the CAS fails and we must
+	// wait for the handler's outcome so the user's Ctrl+C is never
+	// silently dropped.
+	if !markDeployCompleted() {
+		// Handler has claimed the interrupt — wait for its outcome.
+		<-interruptStarted
 		outcome := <-interruptCh
 		cleanupOnce()
 		tracing.SetUsageAttributes(
 			fields.ProvisionCancellationKey.String(outcome.telemetryValue))
 		return nil, applyInterruptOutcome(outcome, err)
-	default:
-		// No interrupt flow is in progress, so it is safe to tear the handler
-		// down before post-processing to avoid resurfacing the cancel/leave
-		// prompt over subsequent output.
-		cleanupOnce()
 	}
+
+	// Deploy completed naturally — tear the handler down before
+	// post-processing to avoid resurfacing the cancel/leave prompt over
+	// subsequent output.
+	cleanupOnce()
 
 	if err != nil {
 		tracing.SetUsageAttributes(fields.ProvisionCancellationKey.String("none"))

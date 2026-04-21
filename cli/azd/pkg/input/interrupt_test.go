@@ -18,6 +18,7 @@ func TestPushInterruptHandler_LIFO(t *testing.T) {
 		return true
 	}
 	pop1 := PushInterruptHandler(first)
+	t.Cleanup(pop1)
 
 	cur := currentInterruptHandler()
 	require.NotNil(t, cur)
@@ -30,6 +31,7 @@ func TestPushInterruptHandler_LIFO(t *testing.T) {
 		return true
 	}
 	pop2 := PushInterruptHandler(second)
+	t.Cleanup(pop2)
 
 	// Top-of-stack should be `second` (most recently pushed).
 	cur = currentInterruptHandler()
@@ -52,9 +54,32 @@ func TestPushInterruptHandler_LIFO(t *testing.T) {
 
 func TestTryStartInterruptHandler_PreventsConcurrent(t *testing.T) {
 	require.True(t, tryStartInterruptHandler())
-	defer finishInterruptHandler()
+	t.Cleanup(finishInterruptHandler)
 
 	// While the first handler is "running", the second start should be
 	// rejected so additional Ctrl+C signals are ignored.
 	require.False(t, tryStartInterruptHandler())
+}
+
+func TestForceExitCounter(t *testing.T) {
+	require.True(t, tryStartInterruptHandler())
+	t.Cleanup(finishInterruptHandler)
+
+	// First suppressed Ctrl+C while handler is running — not yet force-exit.
+	require.False(t, incrementForceExitCounter())
+	// Second suppressed Ctrl+C — should trigger force-exit.
+	require.True(t, incrementForceExitCounter())
+}
+
+func TestForceExitCounter_ResetsOnNewHandler(t *testing.T) {
+	require.True(t, tryStartInterruptHandler())
+	require.False(t, incrementForceExitCounter())
+	finishInterruptHandler()
+
+	// After finishing and starting a new handler, the counter resets.
+	require.True(t, tryStartInterruptHandler())
+	t.Cleanup(finishInterruptHandler)
+
+	require.False(t, incrementForceExitCounter(),
+		"force-exit counter should reset when a new handler starts")
 }

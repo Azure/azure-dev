@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -50,6 +51,16 @@ type interruptOutcome struct {
 	telemetryValue string
 }
 
+// deployState tracks the lifecycle of the deployment so the interrupt handler
+// and the Deploy goroutine can coordinate without races.
+type deployState int32
+
+const (
+	deployStateRunning      deployState = iota // ARM deploy is in flight
+	deployStateInterrupting                    // handler claimed the Ctrl+C
+	deployStateCompleted                       // Deploy returned naturally
+)
+
 // installDeploymentInterruptHandler registers a Ctrl+C handler covering the
 // in-flight ARM deployment. It returns:
 //
@@ -64,6 +75,10 @@ type interruptOutcome struct {
 //     dropped.
 //   - outcomeCh: receives the interrupt outcome once the user has chosen.
 //     The channel is buffered (size 1).
+//   - markCompleted: must be called by Deploy right after deployModule returns
+//     (before the select on startedCh) to atomically claim the "completed"
+//     state. If the interrupt handler already claimed "interrupting", this
+//     returns false and the caller must wait for the outcome.
 //   - cleanup: must be called (via defer) to unregister the interrupt handler
 //     and release the deploy context.
 //
@@ -79,13 +94,26 @@ func (p *BicepProvider) installDeploymentInterruptHandler(
 	deployCtx context.Context,
 	startedCh <-chan struct{},
 	outcomeCh <-chan interruptOutcome,
+	markCompleted func() bool,
 	cleanup func(),
 ) {
 	deployCtx, cancelDeploy := context.WithCancel(ctx)
 	ch := make(chan interruptOutcome, 1)
 	started := make(chan struct{})
 
+	var state atomic.Int32 // deployState values
+
 	pop := input.PushInterruptHandler(sync.OnceValue(func() bool {
+		// Try to claim the "interrupting" state. If Deploy already set
+		// "completed", the prompt is unnecessary — the deployment finished
+		// naturally and the success path should run instead.
+		if !state.CompareAndSwap(
+			int32(deployStateRunning),
+			int32(deployStateInterrupting),
+		) {
+			return false
+		}
+
 		// Signal interrupt-in-progress and unblock the ARM deploy call
 		// immediately so Deploy can transition to "wait for outcome" mode
 		// rather than racing against a natural completion.
@@ -107,11 +135,18 @@ func (p *BicepProvider) installDeploymentInterruptHandler(
 		return true
 	}))
 
+	markCompleted = func() bool {
+		return state.CompareAndSwap(
+			int32(deployStateRunning),
+			int32(deployStateCompleted),
+		)
+	}
+
 	cleanup = func() {
 		pop()
 		cancelDeploy()
 	}
-	return deployCtx, started, ch, cleanup
+	return deployCtx, started, ch, markCompleted, cleanup
 }
 
 // runInterruptPrompt presents the user with the choice of cancelling the
@@ -121,7 +156,12 @@ func (p *BicepProvider) runInterruptPrompt(
 	ctx context.Context,
 	deployment infra.Deployment,
 ) interruptOutcome {
-	portalUrl, urlErr := deployment.DeploymentUrl(ctx)
+	// Best-effort URL fetch — bounded so a slow/unreachable ARM endpoint
+	// doesn't block the prompt indefinitely.
+	urlCtx, urlDone := context.WithTimeout(
+		context.WithoutCancel(ctx), cancelRequestTimeout)
+	portalUrl, urlErr := deployment.DeploymentUrl(urlCtx)
+	urlDone()
 	if urlErr != nil {
 		// Not fatal — we just won't include the URL in the prompt.
 		log.Printf("interrupt handler: failed to fetch deployment URL: %v", urlErr)
@@ -187,7 +227,7 @@ func (p *BicepProvider) cancelAndAwaitTerminal(
 	deployment infra.Deployment,
 	portalUrl string,
 ) interruptOutcome {
-	p.console.ShowSpinner(ctx, "Cancelling Azure deployment", input.Step)
+	p.console.ShowSpinner(ctx, "Canceling Azure deployment", input.Step)
 
 	// Use a fresh context for the cancel API call so it isn't affected by
 	// the deploy-side cancellation we issue right after.
@@ -216,9 +256,13 @@ func (p *BicepProvider) cancelAndAwaitTerminal(
 		// If the deployment is already in a terminal state, route through
 		// the same terminal-outcome reporter so the user sees consistent
 		// messaging (including the portal URL).
-		if state, getErr := deployment.Get(context.WithoutCancel(ctx)); getErr == nil &&
+		getCtx, getDone := context.WithTimeout(
+			context.WithoutCancel(ctx), cancelRequestTimeout)
+		defer getDone()
+
+		if state, getErr := deployment.Get(getCtx); getErr == nil &&
 			isTerminalProvisioningState(state.ProvisioningState) {
-			return terminalToOutcome(state.ProvisioningState, portalUrl, p, ctx)
+			return p.terminalToOutcome(ctx, state.ProvisioningState, portalUrl)
 		}
 		p.console.StopSpinner(ctx, "Cancel request failed", input.StepFailed)
 		log.Printf("interrupt handler: cancel request failed: %v", err)
@@ -269,7 +313,7 @@ func (p *BicepProvider) cancelAndAwaitTerminal(
 		if err == nil {
 			lastState = state.ProvisioningState
 			if isTerminalProvisioningState(lastState) {
-				return terminalToOutcome(lastState, portalUrl, p, ctx)
+				return p.terminalToOutcome(ctx, lastState, portalUrl)
 			}
 		} else {
 			// Don't fail the whole flow on a transient Get error — keep
@@ -280,19 +324,20 @@ func (p *BicepProvider) cancelAndAwaitTerminal(
 	}
 }
 
-func terminalToOutcome(
+// terminalToOutcome maps a terminal provisioning state to the interrupt outcome
+// that should be propagated back to Deploy.
+func (p *BicepProvider) terminalToOutcome(
+	ctx context.Context,
 	state azapi.DeploymentProvisioningState,
 	portalUrl string,
-	p *BicepProvider,
-	ctx context.Context,
 ) interruptOutcome {
 	switch state {
 	case azapi.DeploymentProvisioningStateCanceled:
-		p.console.StopSpinner(ctx, "Deployment cancelled", input.StepDone)
+		p.console.StopSpinner(ctx, "Deployment canceled", input.StepDone)
 		if portalUrl != "" {
 			p.console.Message(ctx,
 				output.WithHighLightFormat(
-					"Cancelled deployment is recorded in the portal:\n  %s", portalUrl))
+					"Canceled deployment is recorded in the portal:\n  %s", portalUrl))
 		}
 		return interruptOutcome{
 			err:            provisioning.ErrDeploymentCanceledByUser,
@@ -300,12 +345,27 @@ func terminalToOutcome(
 		}
 	case azapi.DeploymentProvisioningStateSucceeded,
 		azapi.DeploymentProvisioningStateFailed:
-		p.console.StopSpinner(ctx, "Deployment finished before cancel could take effect", input.StepWarning)
+		p.console.StopSpinner(ctx,
+			"Deployment finished before cancel could take effect", input.StepWarning)
 		if portalUrl != "" {
 			p.console.Message(ctx,
 				output.WithWarningFormat(
-					"The Azure deployment reached %q before the cancel request took effect. Review:\n  %s",
+					"The Azure deployment reached %q before the cancel "+
+						"request took effect. Review:\n  %s",
 					string(state), portalUrl))
+		}
+		return interruptOutcome{
+			err:            provisioning.ErrDeploymentCancelTooLate,
+			telemetryValue: "cancel_too_late",
+		}
+	case azapi.DeploymentProvisioningStateDeleted:
+		p.console.StopSpinner(ctx, "Deployment was deleted", input.StepWarning)
+		if portalUrl != "" {
+			p.console.Message(ctx,
+				output.WithWarningFormat(
+					"The Azure deployment was deleted before the cancel "+
+						"request could take effect. Review:\n  %s",
+					portalUrl))
 		}
 		return interruptOutcome{
 			err:            provisioning.ErrDeploymentCancelTooLate,

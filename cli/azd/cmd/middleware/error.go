@@ -86,7 +86,6 @@ func shouldSkipAgentHandling(err error) bool {
 		errors.Is(err, consent.ErrElicitationDenied) ||
 		errors.Is(err, consent.ErrSamplingDenied) ||
 		errors.Is(err, internal.ErrAbortedByUser) ||
-
 		errors.Is(err, provisioning.ErrDeploymentInterruptedLeaveRunning) ||
 		errors.Is(err, provisioning.ErrDeploymentCanceledByUser) ||
 		errors.Is(err, provisioning.ErrDeploymentCancelTimeout) ||

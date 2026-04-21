@@ -2499,7 +2499,7 @@ const completionSpec: Fig.Spec = {
 				},
 				{
 					name: ['upgrade'],
-					description: 'Upgrade specified extensions.',
+					description: 'Upgrade installed extensions to the latest version.',
 					options: [
 						{
 							name: ['--all'],
@@ -3781,7 +3781,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['upgrade'],
-							description: 'Upgrade specified extensions.',
+							description: 'Upgrade installed extensions to the latest version.',
 						},
 					],
 				},

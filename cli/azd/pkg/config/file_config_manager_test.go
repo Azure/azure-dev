@@ -283,3 +283,69 @@ func Test_FileConfigManager_Save_VaultID_PathTraversal(t *testing.T) {
 		})
 	}
 }
+
+// Test_FileConfigManager_Save_Atomic verifies that Save uses write-to-temp-then-rename
+// so that no partial file is left behind. After Save, the file should contain valid JSON
+// and no temporary files should remain in the directory.
+func Test_FileConfigManager_Save_Atomic(t *testing.T) {
+	tempDir := t.TempDir()
+	configFilePath := filepath.Join(tempDir, "config.json")
+	configManager := NewFileConfigManager(NewManager())
+
+	azdConfig := NewConfig(map[string]any{
+		"defaults": map[string]any{
+			"location":     "westus2",
+			"subscription": "sub-id-123",
+		},
+	})
+
+	err := configManager.Save(azdConfig, configFilePath)
+	require.NoError(t, err)
+
+	// Verify the file exists and is valid
+	loadedConfig, err := configManager.Load(configFilePath)
+	require.NoError(t, err)
+	require.NotNil(t, loadedConfig)
+	require.Equal(t, azdConfig, loadedConfig)
+
+	// Verify no temp files remain in the directory
+	entries, err := os.ReadDir(tempDir)
+	require.NoError(t, err)
+	for _, entry := range entries {
+		require.False(
+			t,
+			filepath.Ext(entry.Name()) == ".tmp",
+			"temporary file should not remain: %s", entry.Name(),
+		)
+	}
+}
+
+// Test_FileConfigManager_Save_Overwrite verifies that Save atomically
+// replaces an existing config file without data loss.
+func Test_FileConfigManager_Save_Overwrite(t *testing.T) {
+	tempDir := t.TempDir()
+	configFilePath := filepath.Join(tempDir, "config.json")
+	configManager := NewFileConfigManager(NewManager())
+
+	// Write initial config
+	initialConfig := NewConfig(map[string]any{
+		"key": "initial-value",
+	})
+	err := configManager.Save(initialConfig, configFilePath)
+	require.NoError(t, err)
+
+	// Overwrite with new config
+	updatedConfig := NewConfig(map[string]any{
+		"key": "updated-value",
+	})
+	err = configManager.Save(updatedConfig, configFilePath)
+	require.NoError(t, err)
+
+	// Verify updated content
+	loaded, err := configManager.Load(configFilePath)
+	require.NoError(t, err)
+
+	val, ok := loaded.GetString("key")
+	require.True(t, ok)
+	require.Equal(t, "updated-value", val)
+}

@@ -15,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -268,9 +269,9 @@ func (s *authenticatedStream) Context() context.Context {
 // This ensures that helpful suggestions (like "run azd auth login") are preserved
 // when errors are transmitted over gRPC, where only the error message string is sent.
 //
-// Auth-related errors are returned with gRPC auth-adjacent status codes so extensions can
-// distinguish failures that can be fixed by re-authentication from policy blocks that require
-// administrator action.
+// Auth-related errors are returned with codes.Unauthenticated and a structured
+// ErrorInfo reason so extensions can reliably classify them as auth failures
+// while still distinguishing the remediation path.
 func wrapErrorWithSuggestion(err error) error {
 	if err == nil {
 		return nil
@@ -278,29 +279,54 @@ func wrapErrorWithSuggestion(err error) error {
 
 	_, authInteractionErr := errors.AsType[auth.AuthInteractionError](err)
 	isAuthErr := errors.Is(err, auth.ErrNoCurrentUser) || authInteractionErr
-	authCode := grpcAuthCode(err)
 
 	if suggestionErr, ok := errors.AsType[*internal.ErrorWithSuggestion](err); ok {
 		msg := fmt.Sprintf("%s\n%s", err.Error(), suggestionErr.Suggestion)
 		if isAuthErr {
-			return status.Error(authCode, msg)
+			return grpcAuthStatus(err, msg)
 		}
 		return fmt.Errorf("%w\n%s", err, suggestionErr.Suggestion)
 	}
 
 	if isAuthErr {
-		return status.Error(authCode, err.Error())
+		return grpcAuthStatus(err, err.Error())
 	}
 
 	return err
 }
 
-func grpcAuthCode(err error) codes.Code {
-	if _, ok := errors.AsType[*auth.TokenProtectionBlockedError](err); ok {
-		return codes.PermissionDenied
+func grpcAuthStatus(err error, msg string) error {
+	st := status.New(codes.Unauthenticated, msg)
+	reason := grpcAuthReason(err)
+	if reason == "" {
+		return st.Err()
 	}
 
-	return codes.Unauthenticated
+	withDetails, detailErr := st.WithDetails(&errdetails.ErrorInfo{
+		Reason: reason,
+		Domain: azdext.AuthErrorDomain,
+	})
+	if detailErr != nil {
+		return st.Err()
+	}
+
+	return withDetails.Err()
+}
+
+func grpcAuthReason(err error) string {
+	if errors.Is(err, auth.ErrNoCurrentUser) {
+		return azdext.AuthErrorReasonNotLoggedIn
+	}
+
+	if _, ok := errors.AsType[*auth.TokenProtectionBlockedError](err); ok {
+		return azdext.AuthErrorReasonTokenProtectionBlocked
+	}
+
+	if _, ok := errors.AsType[*auth.ReLoginRequiredError](err); ok {
+		return azdext.AuthErrorReasonLoginRequired
+	}
+
+	return ""
 }
 
 func generateSigningKey() ([]byte, error) {

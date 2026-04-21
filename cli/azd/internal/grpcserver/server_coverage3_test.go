@@ -11,8 +11,10 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -84,7 +86,13 @@ func TestWrapErrorWithSuggestion_TokenProtectionBlocked(t *testing.T) {
 	wrapped := wrapErrorWithSuggestion(err)
 	st, ok := status.FromError(wrapped)
 	require.True(t, ok)
-	require.Equal(t, codes.PermissionDenied, st.Code())
+	require.Equal(t, codes.Unauthenticated, st.Code())
+	details := st.Details()
+	require.Len(t, details, 1)
+	info, ok := details[0].(*errdetails.ErrorInfo)
+	require.True(t, ok)
+	require.Equal(t, azdext.AuthErrorDomain, info.Domain)
+	require.Equal(t, azdext.AuthErrorReasonTokenProtectionBlocked, info.Reason)
 }
 
 func TestWrapErrorWithSuggestion_AuthErrorWithSuggestion(t *testing.T) {

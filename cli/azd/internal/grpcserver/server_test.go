@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -237,6 +238,7 @@ func Test_wrapErrorWithSuggestion(t *testing.T) {
 		wantContain      string
 		wantSameInstance bool
 		wantGrpcCode     codes.Code
+		wantAuthReason   string
 	}{
 		{
 			name:    "nil error returns nil",
@@ -266,16 +268,18 @@ func Test_wrapErrorWithSuggestion(t *testing.T) {
 			wantContain: "azd auth login",
 		},
 		{
-			name:         "ErrNoCurrentUser returns Unauthenticated",
-			err:          auth.ErrNoCurrentUser,
-			wantContain:  "not logged in",
-			wantGrpcCode: codes.Unauthenticated,
+			name:           "ErrNoCurrentUser returns Unauthenticated",
+			err:            auth.ErrNoCurrentUser,
+			wantContain:    "not logged in",
+			wantGrpcCode:   codes.Unauthenticated,
+			wantAuthReason: azdext.AuthErrorReasonNotLoggedIn,
 		},
 		{
-			name:         "wrapped ErrNoCurrentUser returns Unauthenticated",
-			err:          fmt.Errorf("failed to list subscriptions: %w", auth.ErrNoCurrentUser),
-			wantContain:  "not logged in",
-			wantGrpcCode: codes.Unauthenticated,
+			name:           "wrapped ErrNoCurrentUser returns Unauthenticated",
+			err:            fmt.Errorf("failed to list subscriptions: %w", auth.ErrNoCurrentUser),
+			wantContain:    "not logged in",
+			wantGrpcCode:   codes.Unauthenticated,
+			wantAuthReason: azdext.AuthErrorReasonNotLoggedIn,
 		},
 		{
 			name: "ReLoginRequiredError with suggestion returns Unauthenticated",
@@ -283,17 +287,19 @@ func Test_wrapErrorWithSuggestion(t *testing.T) {
 				Err:        &auth.ReLoginRequiredError{},
 				Suggestion: "login expired, run `azd auth login` to acquire a new token.",
 			},
-			wantContain:  "azd auth login",
-			wantGrpcCode: codes.Unauthenticated,
+			wantContain:    "azd auth login",
+			wantGrpcCode:   codes.Unauthenticated,
+			wantAuthReason: azdext.AuthErrorReasonLoginRequired,
 		},
 		{
-			name: "TokenProtectionBlockedError with suggestion returns PermissionDenied",
+			name: "TokenProtectionBlockedError with suggestion returns Unauthenticated",
 			err: &internal.ErrorWithSuggestion{
 				Err:        &auth.TokenProtectionBlockedError{},
 				Suggestion: "Contact your IT administrator or request a policy exception.",
 			},
-			wantContain:  "policy exception",
-			wantGrpcCode: codes.PermissionDenied,
+			wantContain:    "policy exception",
+			wantGrpcCode:   codes.Unauthenticated,
+			wantAuthReason: azdext.AuthErrorReasonTokenProtectionBlocked,
 		},
 	}
 
@@ -313,6 +319,14 @@ func Test_wrapErrorWithSuggestion(t *testing.T) {
 				st, ok := status.FromError(result)
 				require.True(t, ok, "expected gRPC status error")
 				require.Equal(t, tt.wantGrpcCode, st.Code())
+				if tt.wantAuthReason != "" {
+					details := st.Details()
+					require.Len(t, details, 1)
+					info, ok := details[0].(*errdetails.ErrorInfo)
+					require.True(t, ok, "expected ErrorInfo detail")
+					require.Equal(t, azdext.AuthErrorDomain, info.Domain)
+					require.Equal(t, tt.wantAuthReason, info.Reason)
+				}
 			}
 		})
 	}

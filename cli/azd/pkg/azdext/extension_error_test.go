@@ -11,6 +11,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -119,11 +120,75 @@ func TestExtensionError_RoundTrip(t *testing.T) {
 			},
 		},
 		{
-			name:     "GrpcUnauthenticatedError",
-			inputErr: status.Error(codes.Unauthenticated, "not logged in, run `azd auth login` to login"),
+			name: "GrpcUnauthenticatedError",
+			inputErr: mustAuthStatusError(
+				codes.Unauthenticated,
+				AuthErrorReasonNotLoggedIn,
+				"not logged in, run `azd auth login` to login",
+			),
 			verify: func(t *testing.T, protoErr *ExtensionError, goErr error) {
 				assert.Equal(t, ErrorOrigin_ERROR_ORIGIN_LOCAL, protoErr.GetOrigin())
 				assert.Contains(t, protoErr.GetMessage(), "not logged in")
+
+				localDetail := protoErr.GetLocalError()
+				require.NotNil(t, localDetail)
+				assert.Equal(t, "not_logged_in", localDetail.GetCode())
+				assert.Equal(t, "auth", localDetail.GetCategory())
+
+				var localErr *LocalError
+				require.ErrorAs(t, goErr, &localErr)
+				assert.Equal(t, LocalErrorCategoryAuth, localErr.Category)
+				assert.Equal(t, "not_logged_in", localErr.Code)
+			},
+		},
+		{
+			name: "WrappedGrpcUnauthenticatedError",
+			inputErr: fmt.Errorf(
+				"failed to prompt: %w",
+				mustAuthStatusError(
+					codes.Unauthenticated,
+					AuthErrorReasonTokenProtectionBlocked,
+					"AADSTS530084: blocked by token protection",
+				),
+			),
+			verify: func(t *testing.T, protoErr *ExtensionError, goErr error) {
+				assert.Equal(t, ErrorOrigin_ERROR_ORIGIN_LOCAL, protoErr.GetOrigin())
+				assert.Equal(t, "AADSTS530084: blocked by token protection", protoErr.GetMessage())
+
+				localDetail := protoErr.GetLocalError()
+				require.NotNil(t, localDetail)
+				assert.Equal(t, "token_protection_blocked", localDetail.GetCode())
+				assert.Equal(t, "auth", localDetail.GetCategory())
+			},
+		},
+		{
+			name: "GrpcUnauthenticatedLoginRequiredError",
+			inputErr: mustAuthStatusError(
+				codes.Unauthenticated,
+				AuthErrorReasonLoginRequired,
+				"AADSTS70043: token expired\nlogin expired, run `azd auth login`",
+			),
+			verify: func(t *testing.T, protoErr *ExtensionError, goErr error) {
+				assert.Equal(t, ErrorOrigin_ERROR_ORIGIN_LOCAL, protoErr.GetOrigin())
+				assert.Contains(t, protoErr.GetMessage(), "login expired")
+
+				localDetail := protoErr.GetLocalError()
+				require.NotNil(t, localDetail)
+				assert.Equal(t, "login_required", localDetail.GetCode())
+				assert.Equal(t, "auth", localDetail.GetCategory())
+
+				var localErr *LocalError
+				require.ErrorAs(t, goErr, &localErr)
+				assert.Equal(t, LocalErrorCategoryAuth, localErr.Category)
+				assert.Equal(t, "login_required", localErr.Code)
+			},
+		},
+		{
+			name:     "GrpcUnauthenticatedWithoutAuthDetailsFallsBackToAuthFailed",
+			inputErr: status.Error(codes.Unauthenticated, "generic auth problem"),
+			verify: func(t *testing.T, protoErr *ExtensionError, goErr error) {
+				assert.Equal(t, ErrorOrigin_ERROR_ORIGIN_LOCAL, protoErr.GetOrigin())
+				assert.Equal(t, "generic auth problem", protoErr.GetMessage())
 
 				localDetail := protoErr.GetLocalError()
 				require.NotNil(t, localDetail)
@@ -134,19 +199,6 @@ func TestExtensionError_RoundTrip(t *testing.T) {
 				require.ErrorAs(t, goErr, &localErr)
 				assert.Equal(t, LocalErrorCategoryAuth, localErr.Category)
 				assert.Equal(t, "auth_failed", localErr.Code)
-			},
-		},
-		{
-			name:     "WrappedGrpcUnauthenticatedError",
-			inputErr: fmt.Errorf("failed to prompt: %w", status.Error(codes.Unauthenticated, "login expired")),
-			verify: func(t *testing.T, protoErr *ExtensionError, goErr error) {
-				assert.Equal(t, ErrorOrigin_ERROR_ORIGIN_LOCAL, protoErr.GetOrigin())
-				assert.Equal(t, "login expired", protoErr.GetMessage())
-
-				localDetail := protoErr.GetLocalError()
-				require.NotNil(t, localDetail)
-				assert.Equal(t, "auth_failed", localDetail.GetCode())
-				assert.Equal(t, "auth", localDetail.GetCategory())
 			},
 		},
 	}
@@ -168,4 +220,17 @@ func TestExtensionError_RoundTrip(t *testing.T) {
 			tt.verify(t, protoErr, goErr)
 		})
 	}
+}
+
+func mustAuthStatusError(code codes.Code, reason, message string) error {
+	st := status.New(code, message)
+	withDetails, err := st.WithDetails(&errdetails.ErrorInfo{
+		Reason: reason,
+		Domain: AuthErrorDomain,
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	return withDetails.Err()
 }

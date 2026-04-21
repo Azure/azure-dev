@@ -56,7 +56,7 @@ func (e *ServiceError) Error() string {
 // The function applies detection in priority order:
 //  1. [ServiceError] / [LocalError] — already structured by extension code (highest specificity)
 //  2. [azcore.ResponseError] — Azure SDK HTTP errors
-//  3. gRPC Unauthenticated — auto-classified as auth category (safety net)
+//  3. gRPC Unauthenticated — auto-classified as auth category, preserving auth subtypes from ErrorInfo when present
 //  4. Fallback — unclassified error with original message
 //
 // The counterpart [UnwrapError] is called from the azd host to deserialize
@@ -121,7 +121,8 @@ func WrapError(err error) *ExtensionError {
 
 	// Detect gRPC Unauthenticated errors as an auth safety net.
 	// If the extension didn't already classify the error, this ensures auth failures
-	// from azd host calls are reported with the correct category in telemetry.
+	// from azd host calls are reported with the correct category in telemetry,
+	// and preserves specific auth subtypes when the host attached auth ErrorInfo details.
 	// Use errors.AsType to detect gRPC status errors even when wrapped by fmt.Errorf.
 	if grpcErr, ok := errors.AsType[interface {
 		error
@@ -132,7 +133,7 @@ func WrapError(err error) *ExtensionError {
 			extErr.Message = st.Message()
 			extErr.Source = &ExtensionError_LocalError{
 				LocalError: &LocalErrorDetail{
-					Code:     "auth_failed",
+					Code:     authLocalErrorCode(st),
 					Category: string(LocalErrorCategoryAuth),
 				},
 			}
@@ -141,6 +142,19 @@ func WrapError(err error) *ExtensionError {
 	}
 
 	return extErr
+}
+
+func authLocalErrorCode(st *status.Status) string {
+	switch AuthErrorReason(st) {
+	case AuthErrorReasonNotLoggedIn:
+		return "not_logged_in"
+	case AuthErrorReasonLoginRequired:
+		return "login_required"
+	case AuthErrorReasonTokenProtectionBlocked:
+		return "token_protection_blocked"
+	default:
+		return "auth_failed"
+	}
 }
 
 // UnwrapError converts an ExtensionError proto back to a typed Go error.

@@ -201,7 +201,7 @@ func writeHostedAgentYAML(t *testing.T, dir string) string {
 	t.Helper()
 	p := filepath.Join(dir, "agent.yaml")
 	content := []byte("kind: hosted\nname: test-agent\n")
-	require.NoError(t, os.WriteFile(p, content, 0o644))
+	require.NoError(t, os.WriteFile(p, content, 0o600))
 	return p
 }
 
@@ -211,7 +211,7 @@ func writePromptAgentYAML(t *testing.T, dir string) string {
 	t.Helper()
 	p := filepath.Join(dir, "agent.yaml")
 	content := []byte("kind: prompt\nname: test-agent\nmodel:\n  id: gpt-4o-mini\n")
-	require.NoError(t, os.WriteFile(p, content, 0o644))
+	require.NoError(t, os.WriteFile(p, content, 0o600))
 	return p
 }
 

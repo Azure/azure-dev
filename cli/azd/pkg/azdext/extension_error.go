@@ -7,6 +7,7 @@ import (
 	"errors"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -24,6 +25,8 @@ type ServiceError struct {
 	ServiceName string
 	// Suggestion contains optional user-facing remediation guidance.
 	Suggestion string
+	// Links contains optional reference links rendered alongside the suggestion.
+	Links []errorhandler.ErrorLink
 }
 
 // LocalError represents non-service extension errors, such as validation/config failures.
@@ -37,6 +40,8 @@ type LocalError struct {
 	Category LocalErrorCategory
 	// Suggestion contains optional user-facing remediation guidance.
 	Suggestion string
+	// Links contains optional reference links rendered alongside the suggestion.
+	Links []errorhandler.ErrorLink
 }
 
 // Error implements the error interface.
@@ -75,6 +80,7 @@ func WrapError(err error) *ExtensionError {
 	if extServiceErr, ok := errors.AsType[*ServiceError](err); ok {
 		extErr.Message = extServiceErr.Message
 		extErr.Suggestion = extServiceErr.Suggestion
+		extErr.Links = wrapErrorLinks(extServiceErr.Links)
 		extErr.Origin = ErrorOrigin_ERROR_ORIGIN_SERVICE
 		extErr.Source = &ExtensionError_ServiceError{
 			ServiceError: &ServiceErrorDetail{
@@ -91,6 +97,7 @@ func WrapError(err error) *ExtensionError {
 		normalizedCategory := NormalizeLocalErrorCategory(extLocalErr.Category)
 		extErr.Message = extLocalErr.Message
 		extErr.Suggestion = extLocalErr.Suggestion
+		extErr.Links = wrapErrorLinks(extLocalErr.Links)
 		extErr.Origin = ErrorOrigin_ERROR_ORIGIN_LOCAL
 		extErr.Source = &ExtensionError_LocalError{
 			LocalError: &LocalErrorDetail{
@@ -164,9 +171,11 @@ func authLocalErrorCode(st *status.Status) string {
 // for telemetry classification and error handling.
 // It returns the appropriate error type based on the origin field.
 func UnwrapError(msg *ExtensionError) error {
-	if msg == nil || msg.GetMessage() == "" {
+	if msg == nil {
 		return nil
 	}
+
+	links := unwrapErrorLinks(msg.GetLinks())
 
 	// Check for service error details
 	if svcErr := msg.GetServiceError(); svcErr != nil {
@@ -176,6 +185,7 @@ func UnwrapError(msg *ExtensionError) error {
 			StatusCode:  int(svcErr.GetStatusCode()),
 			ServiceName: svcErr.GetServiceName(),
 			Suggestion:  msg.GetSuggestion(),
+			Links:       links,
 		}
 	}
 
@@ -186,6 +196,7 @@ func UnwrapError(msg *ExtensionError) error {
 			Code:       localErr.GetCode(),
 			Category:   normalizedCategory,
 			Suggestion: msg.GetSuggestion(),
+			Links:      links,
 		}
 	}
 
@@ -194,6 +205,7 @@ func UnwrapError(msg *ExtensionError) error {
 			Message:    msg.GetMessage(),
 			Category:   LocalErrorCategoryLocal,
 			Suggestion: msg.GetSuggestion(),
+			Links:      links,
 		}
 	}
 
@@ -201,6 +213,7 @@ func UnwrapError(msg *ExtensionError) error {
 		return &ServiceError{
 			Message:    msg.GetMessage(),
 			Suggestion: msg.GetSuggestion(),
+			Links:      links,
 		}
 	}
 
@@ -208,5 +221,42 @@ func UnwrapError(msg *ExtensionError) error {
 		Message:    msg.GetMessage(),
 		Category:   LocalErrorCategoryLocal,
 		Suggestion: msg.GetSuggestion(),
+		Links:      links,
 	}
+}
+
+func wrapErrorLinks(links []errorhandler.ErrorLink) []*ErrorLink {
+	if len(links) == 0 {
+		return nil
+	}
+
+	protoLinks := make([]*ErrorLink, len(links))
+	for i, link := range links {
+		protoLinks[i] = &ErrorLink{
+			Url:   link.URL,
+			Title: link.Title,
+		}
+	}
+
+	return protoLinks
+}
+
+func unwrapErrorLinks(links []*ErrorLink) []errorhandler.ErrorLink {
+	if len(links) == 0 {
+		return nil
+	}
+
+	unwrapped := make([]errorhandler.ErrorLink, len(links))
+	for i, link := range links {
+		if link == nil {
+			continue
+		}
+
+		unwrapped[i] = errorhandler.ErrorLink{
+			URL:   link.GetUrl(),
+			Title: link.GetTitle(),
+		}
+	}
+
+	return unwrapped
 }

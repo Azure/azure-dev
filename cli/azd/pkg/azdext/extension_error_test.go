@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
@@ -54,11 +55,18 @@ func TestExtensionError_RoundTrip(t *testing.T) {
 				StatusCode:  429,
 				ServiceName: "openai.azure.com",
 				Suggestion:  "Retry with exponential backoff",
+				Links: []errorhandler.ErrorLink{{
+					URL:   "https://aka.ms/azd-errors#rate-limit",
+					Title: "Rate limit troubleshooting",
+				}},
 			},
 			verify: func(t *testing.T, protoErr *ExtensionError, goErr error) {
 				assert.Equal(t, "Rate limit exceeded", protoErr.GetMessage())
 				assert.Equal(t, "Retry with exponential backoff", protoErr.GetSuggestion())
 				assert.Equal(t, ErrorOrigin_ERROR_ORIGIN_SERVICE, protoErr.GetOrigin())
+				require.Len(t, protoErr.GetLinks(), 1)
+				assert.Equal(t, "https://aka.ms/azd-errors#rate-limit", protoErr.GetLinks()[0].GetUrl())
+				assert.Equal(t, "Rate limit troubleshooting", protoErr.GetLinks()[0].GetTitle())
 
 				svcDetail := protoErr.GetServiceError()
 				require.NotNil(t, svcDetail)
@@ -73,6 +81,9 @@ func TestExtensionError_RoundTrip(t *testing.T) {
 				assert.Equal(t, 429, svcErr.StatusCode)
 				assert.Equal(t, "openai.azure.com", svcErr.ServiceName)
 				assert.Equal(t, "Retry with exponential backoff", svcErr.Suggestion)
+				require.Len(t, svcErr.Links, 1)
+				assert.Equal(t, "https://aka.ms/azd-errors#rate-limit", svcErr.Links[0].URL)
+				assert.Equal(t, "Rate limit troubleshooting", svcErr.Links[0].Title)
 			},
 		},
 		{
@@ -82,10 +93,16 @@ func TestExtensionError_RoundTrip(t *testing.T) {
 				Code:       "invalid_config",
 				Category:   LocalErrorCategoryValidation,
 				Suggestion: "Add the missing required field",
+				Links: []errorhandler.ErrorLink{{
+					URL:   "https://aka.ms/azd-errors#invalid-config",
+					Title: "Invalid config reference",
+				}},
 			},
 			verify: func(t *testing.T, protoErr *ExtensionError, goErr error) {
 				assert.Equal(t, ErrorOrigin_ERROR_ORIGIN_LOCAL, protoErr.GetOrigin())
 				assert.Equal(t, "Add the missing required field", protoErr.GetSuggestion())
+				require.Len(t, protoErr.GetLinks(), 1)
+				assert.Equal(t, "https://aka.ms/azd-errors#invalid-config", protoErr.GetLinks()[0].GetUrl())
 
 				localDetail := protoErr.GetLocalError()
 				require.NotNil(t, localDetail)
@@ -97,6 +114,8 @@ func TestExtensionError_RoundTrip(t *testing.T) {
 				assert.Equal(t, "invalid_config", localErr.Code)
 				assert.Equal(t, LocalErrorCategoryValidation, localErr.Category)
 				assert.Equal(t, "Add the missing required field", localErr.Suggestion)
+				require.Len(t, localErr.Links, 1)
+				assert.Equal(t, "Invalid config reference", localErr.Links[0].Title)
 			},
 		},
 		{
@@ -222,6 +241,35 @@ func TestExtensionError_RoundTrip(t *testing.T) {
 			tt.verify(t, protoErr, goErr)
 		})
 	}
+}
+
+func TestUnwrapError_EmptyMessagePreservesStructuredError(t *testing.T) {
+	protoErr := &ExtensionError{
+		Origin: ErrorOrigin_ERROR_ORIGIN_LOCAL,
+		Source: &ExtensionError_LocalError{
+			LocalError: &LocalErrorDetail{
+				Code:     "empty_message",
+				Category: "validation",
+			},
+		},
+		Suggestion: "Fill in the required setting",
+		Links: []*ErrorLink{{
+			Url:   "https://aka.ms/azd-errors#empty-message",
+			Title: "Validation troubleshooting",
+		}},
+	}
+
+	err := UnwrapError(protoErr)
+	require.Error(t, err)
+
+	localErr, ok := errors.AsType[*LocalError](err)
+	require.True(t, ok)
+	assert.Empty(t, localErr.Message)
+	assert.Equal(t, "empty_message", localErr.Code)
+	assert.Equal(t, LocalErrorCategoryValidation, localErr.Category)
+	assert.Equal(t, "Fill in the required setting", localErr.Suggestion)
+	require.Len(t, localErr.Links, 1)
+	assert.Equal(t, "Validation troubleshooting", localErr.Links[0].Title)
 }
 
 func mustAuthStatusError(code codes.Code, reason, message string) error {

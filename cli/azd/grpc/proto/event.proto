@@ -69,6 +69,7 @@ message ProjectHandlerStatus {
   // Status such as "running", "completed", "failed", etc.
   string status = 2;
   // Optional message providing further details.
+  // For backward compatibility with older hosts, populate this even when error is set.
   string message = 3;
   // Optional structured error details (set when status is "failed").
   ExtensionError error = 4;
@@ -83,6 +84,7 @@ message ServiceHandlerStatus {
   // Status such as "running", "completed", "failed", etc.
   string status = 3;
   // Optional message providing further details.
+  // For backward compatibility with older hosts, populate this even when error is set.
   string message = 4;
   // Optional structured error details (set when status is "failed").
   ExtensionError error = 5;

@@ -415,6 +415,7 @@ type ProjectHandlerStatus struct {
 	// Status such as "running", "completed", "failed", etc.
 	Status string `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`
 	// Optional message providing further details.
+	// For backward compatibility with older hosts, populate this even when error is set.
 	Message string `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
 	// Optional structured error details (set when status is "failed").
 	Error         *ExtensionError `protobuf:"bytes,4,opt,name=error,proto3" json:"error,omitempty"`
@@ -490,6 +491,7 @@ type ServiceHandlerStatus struct {
 	// Status such as "running", "completed", "failed", etc.
 	Status string `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
 	// Optional message providing further details.
+	// For backward compatibility with older hosts, populate this even when error is set.
 	Message string `protobuf:"bytes,4,opt,name=message,proto3" json:"message,omitempty"`
 	// Optional structured error details (set when status is "failed").
 	Error         *ExtensionError `protobuf:"bytes,5,opt,name=error,proto3" json:"error,omitempty"`

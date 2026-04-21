@@ -7,6 +7,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -376,6 +377,51 @@ func TestEventManager_onInvokeServiceHandler_HandlerError(t *testing.T) {
 	require.NotNil(t, status.Error.GetLocalError())
 	assert.Equal(t, "service_handler_failed", status.Error.GetLocalError().GetCode())
 	assert.Equal(t, string(LocalErrorCategoryUser), status.Error.GetLocalError().GetCategory())
+}
+
+func TestEventManager_onInvokeServiceHandler_ServiceError(t *testing.T) {
+	ctx := context.Background()
+	client := &AzdClient{}
+
+	eventManager := NewEventManager("microsoft.azd.demo", client, nil)
+
+	handlerErr := &ServiceError{
+		Message:     "service handler failed",
+		ErrorCode:   "Conflict",
+		StatusCode:  409,
+		ServiceName: "management.azure.com",
+		Suggestion:  "Wait for the active operation to finish",
+		Links: []errorhandler.ErrorLink{{
+			URL:   "https://aka.ms/azd-errors#conflict",
+			Title: "Conflict troubleshooting",
+		}},
+	}
+	handler := func(ctx context.Context, args *ServiceEventArgs) error {
+		return handlerErr
+	}
+	eventManager.serviceEvents["prepublish"] = handler
+
+	invokeMsg := &InvokeServiceHandler{
+		EventName:      "prepublish",
+		Project:        createTestProjectConfigForEvents(),
+		Service:        createTestServiceConfigForEvents(),
+		ServiceContext: createTestServiceContextForEvents(),
+	}
+
+	resp, err := eventManager.onInvokeServiceHandler(ctx, invokeMsg)
+
+	assert.NoError(t, err)
+	require.NotNil(t, resp)
+	status := resp.GetServiceHandlerStatus()
+	require.NotNil(t, status)
+	require.NotNil(t, status.Error)
+	require.NotNil(t, status.Error.GetServiceError())
+	assert.Equal(t, "Conflict", status.Error.GetServiceError().GetErrorCode())
+	assert.Equal(t, int32(409), status.Error.GetServiceError().GetStatusCode())
+	assert.Equal(t, "management.azure.com", status.Error.GetServiceError().GetServiceName())
+	assert.Equal(t, "Wait for the active operation to finish", status.Error.GetSuggestion())
+	require.Len(t, status.Error.GetLinks(), 1)
+	assert.Equal(t, "Conflict troubleshooting", status.Error.GetLinks()[0].GetTitle())
 }
 
 // Test onInvokeServiceHandler with no registered handler

@@ -291,6 +291,49 @@ func Test_ErrorMiddleware_ExtensionErrorWithSuggestion_BypassesPipeline(t *testi
 	require.Equal(t, extErr.Suggestion, azdext.ErrorSuggestion(err))
 }
 
+func Test_ErrorMiddleware_StructuredExtensionErrorWithoutSuggestion_BypassesPipeline(t *testing.T) {
+	t.Parallel()
+
+	mockContext := mocks.NewMockContext(context.Background())
+	cfg := config.NewEmptyConfig()
+	featureManager := alpha.NewFeaturesManagerWithConfig(cfg)
+	global := &internal.GlobalCommandOptions{
+		NoPrompt: true,
+	}
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	errorPipeline := errorhandler.NewErrorHandlerPipeline(nil)
+	middleware := NewErrorMiddleware(
+		&Options{Name: "test"},
+		mockContext.Console,
+		nil,
+		global,
+		featureManager,
+		userConfigManager,
+		errorPipeline,
+	)
+
+	extErr := &azdext.LocalError{
+		Message:  "Deployment failed: QuotaExceeded for resource",
+		Code:     "quota_exceeded",
+		Category: azdext.LocalErrorCategoryUser,
+	}
+	nextFn := func(ctx context.Context) (*actions.ActionResult, error) {
+		return nil, extErr
+	}
+
+	result, err := middleware.Run(*mockContext.Context, nextFn)
+
+	require.Error(t, err)
+	require.Nil(t, result)
+
+	var wrapped *internal.ErrorWithSuggestion
+	require.False(t, errors.As(err, &wrapped))
+	returned, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Same(t, extErr, returned)
+	require.Empty(t, azdext.ErrorSuggestion(err))
+}
+
 func Test_ErrorMiddleware_NoPatternMatch(t *testing.T) {
 	t.Parallel()
 	mockContext := mocks.NewMockContext(context.Background())

@@ -176,9 +176,9 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		return actionResult, err
 	}
 
-	// Check if extension error already has a structured suggestion (e.g. LocalError)
-	// Skip the YAML pipeline so it doesn't override the extension's specific guidance
-	if azdext.ErrorSuggestion(err) != "" {
+	// Skip the YAML pipeline for typed extension errors so host-side rules don't
+	// override the extension's structured classification or user guidance.
+	if azdext.IsStructuredError(err) {
 		return actionResult, err
 	}
 

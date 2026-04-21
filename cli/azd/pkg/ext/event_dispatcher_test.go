@@ -474,7 +474,7 @@ func Test_Workflow_Context_Handler_Cleanup(t *testing.T) {
 
 		// Raise event again - handler should NOT be called
 		step1CallCount = 0
-		err = ed.RaiseEvent(context.Background(), testEvent, testEventArgs{})
+		err = ed.RaiseEvent(t.Context(), testEvent, testEventArgs{})
 		require.NoError(t, err)
 		require.Equal(t, 0, step1CallCount, "Step 1 handler should not be called after cleanup")
 	})
@@ -483,7 +483,7 @@ func Test_Workflow_Context_Handler_Cleanup(t *testing.T) {
 		ed := NewEventDispatcher[testEventArgs](testEvent)
 
 		// Simulate root context with WithoutCancel
-		rootCtx := context.Background()
+		rootCtx := t.Context()
 		nonCancellableRoot := context.WithoutCancel(rootCtx)
 
 		// Step 1: provision

@@ -15,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockprompt"
@@ -51,7 +52,7 @@ func Test_PromptService_Confirm_NoPromptWithoutDefault(t *testing.T) {
 	})
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "no default response")
+	requirePromptRequiredError(t, err, "Continue?")
 }
 
 func Test_PromptService_Select_NoPromptWithDefault(t *testing.T) {
@@ -88,7 +89,7 @@ func Test_PromptService_Select_NoPromptWithoutDefault(t *testing.T) {
 	})
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "no default selection")
+	requirePromptRequiredError(t, err, "Choose option:")
 }
 
 func Test_PromptService_MultiSelect_NoPrompt(t *testing.T) {
@@ -140,7 +141,7 @@ func Test_PromptService_Prompt_NoPromptRequiredWithoutDefault(t *testing.T) {
 	})
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "no default response")
+	requirePromptRequiredError(t, err, "Enter name:")
 }
 
 func Test_PromptService_Prompt_NoPromptNotRequiredWithoutDefault(t *testing.T) {
@@ -156,6 +157,17 @@ func Test_PromptService_Prompt_NoPromptNotRequiredWithoutDefault(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, "", resp.Value)
+}
+
+func requirePromptRequiredError(t *testing.T, err error, expectedPromptMessage string) *input.PromptRequiredError {
+	t.Helper()
+
+	promptErr, ok := errors.AsType[*input.PromptRequiredError](err)
+	require.True(t, ok)
+	require.Empty(t, promptErr.Inputs)
+	require.Equal(t, expectedPromptMessage, promptErr.PromptMessage)
+
+	return promptErr
 }
 
 func Test_PromptService_PromptSubscription(t *testing.T) {

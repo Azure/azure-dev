@@ -15,7 +15,6 @@ import (
 	"dario.cat/mergo"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
-	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -192,7 +191,6 @@ type promptService struct {
 	userConfigManager   config.UserConfigManager
 	resourceService     ResourceService
 	subscriptionManager SubscriptionManager
-	globalOptions       *internal.GlobalCommandOptions
 }
 
 // NewPromptService creates a new prompt service.
@@ -202,7 +200,6 @@ func NewPromptService(
 	userConfigManager config.UserConfigManager,
 	subscriptionManager SubscriptionManager,
 	resourceService ResourceService,
-	globalOptions *internal.GlobalCommandOptions,
 ) PromptService {
 	return &promptService{
 		authManager:         authManager,
@@ -210,7 +207,6 @@ func NewPromptService(
 		userConfigManager:   userConfigManager,
 		subscriptionManager: subscriptionManager,
 		resourceService:     resourceService,
-		globalOptions:       globalOptions,
 	}
 }
 
@@ -531,19 +527,6 @@ func (ps *promptService) PromptSubscriptionResource(
 		return nil, err
 	}
 
-	// Handle --no-prompt mode
-	if ps.globalOptions.NoPrompt {
-		return nil, &input.PromptRequiredError{
-			Message: input.DefaultPromptRequiredMessage,
-			Inputs: []input.RequiredInput{
-				{
-					Name:        resourceName,
-					Description: fmt.Sprintf("%s must be selected to continue.", resourceName),
-				},
-			},
-		}
-	}
-
 	allowNewResource := mergedSelectorOptions.AllowNewResource != nil && *mergedSelectorOptions.AllowNewResource
 
 	resource, err := PromptCustomResource(ctx, CustomResourceOptions[azapi.ResourceExtended]{
@@ -680,19 +663,6 @@ func (ps *promptService) PromptResourceGroupResource(
 
 	if err := mergo.Merge(mergedSelectorOptions, defaultSelectorOptions, mergo.WithoutDereference); err != nil {
 		return nil, err
-	}
-
-	// Handle --no-prompt mode
-	if ps.globalOptions.NoPrompt {
-		return nil, &input.PromptRequiredError{
-			Message: input.DefaultPromptRequiredMessage,
-			Inputs: []input.RequiredInput{
-				{
-					Name:        resourceName,
-					Description: fmt.Sprintf("%s must be selected to continue.", resourceName),
-				},
-			},
-		}
 	}
 
 	allowNewResource := mergedSelectorOptions.AllowNewResource != nil && *mergedSelectorOptions.AllowNewResource

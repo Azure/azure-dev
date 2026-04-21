@@ -4,16 +4,11 @@
 package prompt
 
 import (
-	"context"
-	"errors"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockauth"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazapi"
@@ -69,13 +64,7 @@ func Test_PromptService_PromptSubscription(t *testing.T) {
 			},
 		}, nil)
 
-	globalOptions := &internal.GlobalCommandOptions{
-		NoPrompt: false,
-	}
-
-	promptService := NewPromptService(
-		authManager, mockConsole, ucm, subscriptionManager, resourceService, globalOptions,
-	)
+	promptService := NewPromptService(authManager, mockConsole, ucm, subscriptionManager, resourceService)
 	require.NotNil(t, promptService)
 }
 
@@ -86,156 +75,4 @@ func TestFormatSubscriptionDisplayName_DemoModeHidesId(t *testing.T) {
 	}, true)
 
 	require.Equal(t, "Subscription 1", displayName)
-}
-
-func TestPromptSubscription_NoPrompt_ReturnsPromptRequiredError(t *testing.T) {
-	ucm := newInMemoryUserConfigManager(nil)
-	authManager := &mockauth.MockAuthManager{}
-	subscriptionManager := &mockaccount.MockSubscriptionManager{}
-	resourceService := &mockazapi.MockResourceService{}
-	mockConsole := mockinput.NewMockConsole()
-	mockConsole.SetNoPromptMode(true)
-
-	subscriptionManager.
-		On("GetSubscriptions", mock.Anything).
-		Return([]account.Subscription{
-			{Id: "sub-1", TenantId: "tenant-1", Name: "My Only Sub"},
-		}, nil)
-
-	ps := NewPromptService(
-		authManager,
-		mockConsole,
-		ucm,
-		subscriptionManager,
-		resourceService,
-		&internal.GlobalCommandOptions{NoPrompt: true},
-	)
-
-	_, err := ps.PromptSubscription(context.Background(), nil)
-	requirePromptRequiredError(t, err, input.RequiredInput{
-		Name: "subscription",
-		Sources: []input.InputSource{
-			{
-				Kind: input.InputSourceEnvironment,
-				Name: environment.SubscriptionIdEnvVarName,
-			},
-		},
-	})
-}
-
-func TestPromptLocation_NoPrompt_ReturnsPromptRequiredError(t *testing.T) {
-	ucm := newInMemoryUserConfigManager(nil)
-	authManager := &mockauth.MockAuthManager{}
-	subscriptionManager := &mockaccount.MockSubscriptionManager{}
-	resourceService := &mockazapi.MockResourceService{}
-	mockConsole := mockinput.NewMockConsole()
-	mockConsole.SetNoPromptMode(true)
-
-	subscriptionManager.
-		On("GetSubscriptions", mock.Anything).
-		Return([]account.Subscription{
-			{Id: "sub-1", TenantId: "tenant-1", Name: "Sub 1"},
-		}, nil)
-
-	ps := NewPromptService(
-		authManager,
-		mockConsole,
-		ucm,
-		subscriptionManager,
-		resourceService,
-		&internal.GlobalCommandOptions{NoPrompt: true},
-	)
-
-	_, err := ps.PromptLocation(context.Background(), &AzureContext{
-		Scope: AzureScope{SubscriptionId: "sub-123"},
-	}, nil)
-	requirePromptRequiredError(t, err, input.RequiredInput{
-		Name: "location",
-		Sources: []input.InputSource{
-			{
-				Kind: input.InputSourceEnvironment,
-				Name: environment.LocationEnvVarName,
-			},
-		},
-	})
-}
-
-func TestPromptResourceGroup_NoPrompt_ReturnsPromptRequiredError(t *testing.T) {
-	ucm := newInMemoryUserConfigManager(nil)
-	authManager := &mockauth.MockAuthManager{}
-	subscriptionManager := &mockaccount.MockSubscriptionManager{}
-	resourceService := &mockazapi.MockResourceService{}
-	mockConsole := mockinput.NewMockConsole()
-	mockConsole.SetNoPromptMode(true)
-
-	subscriptionManager.
-		On("GetLocations", mock.Anything, "sub-123").
-		Return([]account.Location{
-			{Name: "eastus2", DisplayName: "East US 2", RegionalDisplayName: "(US) East US 2"},
-			{Name: "westus3", DisplayName: "West US 3", RegionalDisplayName: "(US) West US 3"},
-		}, nil)
-
-	ps := NewPromptService(
-		authManager,
-		mockConsole,
-		ucm,
-		subscriptionManager,
-		resourceService,
-		&internal.GlobalCommandOptions{NoPrompt: true},
-	)
-
-	_, err := ps.PromptResourceGroup(context.Background(), &AzureContext{
-		Scope: AzureScope{SubscriptionId: "sub-123"},
-	}, nil)
-	requirePromptRequiredError(t, err, input.RequiredInput{
-		Name: "resource group",
-		Sources: []input.InputSource{
-			{
-				Kind: input.InputSourceEnvironment,
-				Name: environment.ResourceGroupEnvVarName,
-			},
-		},
-	})
-}
-
-func TestPromptSubscriptionResource_NoPrompt_ReturnsPromptRequiredError(t *testing.T) {
-	ucm := newInMemoryUserConfigManager(nil)
-	authManager := &mockauth.MockAuthManager{}
-	subscriptionManager := &mockaccount.MockSubscriptionManager{}
-	resourceService := &mockazapi.MockResourceService{}
-	mockConsole := mockinput.NewMockConsole()
-	mockConsole.SetNoPromptMode(true)
-
-	ps := NewPromptService(
-		authManager,
-		mockConsole,
-		ucm,
-		subscriptionManager,
-		resourceService,
-		&internal.GlobalCommandOptions{NoPrompt: true},
-	)
-
-	_, err := ps.PromptSubscriptionResource(context.Background(), &AzureContext{
-		Scope: AzureScope{SubscriptionId: "sub-123"},
-	}, ResourceOptions{
-		ResourceTypeDisplayName: "OpenAI account",
-	})
-	requirePromptRequiredError(t, err, input.RequiredInput{
-		Name:        "OpenAI account",
-		Description: "OpenAI account must be selected to continue.",
-	})
-}
-
-func requirePromptRequiredError(
-	t *testing.T,
-	err error,
-	expectedInput input.RequiredInput,
-) *input.PromptRequiredError {
-	t.Helper()
-
-	promptErr, ok := errors.AsType[*input.PromptRequiredError](err)
-	require.True(t, ok)
-	require.Equal(t, []input.RequiredInput{expectedInput}, promptErr.Inputs)
-
-	return promptErr
 }

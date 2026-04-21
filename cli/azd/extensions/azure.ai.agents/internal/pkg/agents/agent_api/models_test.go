@@ -811,7 +811,7 @@ func TestSessionFileInfo_RoundTrip(t *testing.T) {
 		IsDirectory:  false,
 		Size:         2048,
 		Mode:         0644,
-		LastModified: new("2024-06-15T10:30:00Z"),
+		LastModified: new(FlexibleTimestamp("2024-06-15T10:30:00Z")),
 	}
 
 	data, err := json.Marshal(original)
@@ -840,8 +840,65 @@ func TestSessionFileInfo_RoundTrip(t *testing.T) {
 	if got.Size != 2048 {
 		t.Errorf("Size = %d, want %d", got.Size, int64(2048))
 	}
-	if got.LastModified == nil || *got.LastModified != "2024-06-15T10:30:00Z" {
+	if got.LastModified == nil || got.LastModified.String() != "2024-06-15T10:30:00Z" {
 		t.Error("LastModified mismatch")
+	}
+}
+
+func TestFlexibleTimestamp_UnmarshalString(t *testing.T) {
+	t.Parallel()
+
+	raw := `{"name":"f.txt","path":"/f.txt","is_dir":false,"modified_time":"2025-03-01T12:00:00Z"}`
+	var got SessionFileInfo
+	if err := json.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("unmarshal string timestamp: %v", err)
+	}
+	if got.LastModified == nil || got.LastModified.String() != "2025-03-01T12:00:00Z" {
+		t.Errorf("LastModified = %v, want 2025-03-01T12:00:00Z", got.LastModified)
+	}
+}
+
+func TestFlexibleTimestamp_UnmarshalNumber(t *testing.T) {
+	t.Parallel()
+
+	// 1700000000 == 2023-11-14T22:13:20Z
+	raw := `{"name":"f.txt","path":"/f.txt","is_dir":false,"modified_time":1700000000}`
+	var got SessionFileInfo
+	if err := json.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("unmarshal numeric timestamp: %v", err)
+	}
+	if got.LastModified == nil || got.LastModified.String() != "2023-11-14T22:13:20Z" {
+		t.Errorf("LastModified = %v, want 2023-11-14T22:13:20Z", got.LastModified)
+	}
+}
+
+func TestFlexibleTimestamp_UnmarshalNumberInEntries(t *testing.T) {
+	t.Parallel()
+
+	raw := `{"path":"/","entries":[{"name":"a","path":"/a","is_dir":false,"modified_time":1700000000}]}`
+	var got SessionFileList
+	if err := json.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("unmarshal entries with numeric timestamp: %v", err)
+	}
+	if len(got.Entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(got.Entries))
+	}
+	if got.Entries[0].LastModified == nil || got.Entries[0].LastModified.String() != "2023-11-14T22:13:20Z" {
+		t.Errorf("entry LastModified = %v, want 2023-11-14T22:13:20Z", got.Entries[0].LastModified)
+	}
+}
+
+func TestFlexibleTimestamp_UnmarshalMilliseconds(t *testing.T) {
+	t.Parallel()
+
+	// 1700000000000 ms == 1700000000 s == 2023-11-14T22:13:20Z
+	raw := `{"name":"f.txt","path":"/f.txt","is_dir":false,"modified_time":1700000000000}`
+	var got SessionFileInfo
+	if err := json.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("unmarshal millisecond timestamp: %v", err)
+	}
+	if got.LastModified == nil || got.LastModified.String() != "2023-11-14T22:13:20Z" {
+		t.Errorf("LastModified = %v, want 2023-11-14T22:13:20Z", got.LastModified)
 	}
 }
 

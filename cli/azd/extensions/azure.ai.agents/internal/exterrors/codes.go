@@ -42,20 +42,20 @@ const (
 // These are usually paired with [Dependency] when required external
 // resources, services, or environment values are missing or unavailable.
 const (
-	CodeProjectNotFound           = "project_not_found"
-	CodeProjectInitFailed         = "project_init_failed"
-	CodeEnvironmentNotFound       = "environment_not_found"
-	CodeEnvironmentCreationFailed = "environment_creation_failed"
-	CodeEnvironmentValuesFailed   = "environment_values_failed"
-	CodeMissingAiProjectEndpoint  = "missing_ai_project_endpoint"
-	CodeMissingAzureTenantId      = "missing_azure_tenant_id"
-	CodeMissingAiProjectId        = "missing_ai_project_id"
-	CodeMissingAzureSubscription  = "missing_azure_subscription_id"
+	CodeProjectNotFound                  = "project_not_found"
+	CodeProjectInitFailed                = "project_init_failed"
+	CodeEnvironmentNotFound              = "environment_not_found"
+	CodeEnvironmentCreationFailed        = "environment_creation_failed"
+	CodeEnvironmentValuesFailed          = "environment_values_failed"
+	CodeMissingAiProjectEndpoint         = "missing_ai_project_endpoint"
+	CodeMissingAzureTenantId             = "missing_azure_tenant_id"
+	CodeMissingAiProjectId               = "missing_ai_project_id"
+	CodeMissingAzureSubscription         = "missing_azure_subscription_id"
 	CodeMissingAgentEnvVars              = "missing_agent_env_vars"
 	CodeMissingContainerRegistryEndpoint = "missing_container_registry_endpoint"
 	CodeGitHubDownloadFailed             = "github_download_failed"
-	CodeScaffoldTemplateFailed    = "scaffold_template_failed"
-	CodePromptFailed              = "prompt_failed"
+	CodeScaffoldTemplateFailed           = "scaffold_template_failed"
+	CodePromptFailed                     = "prompt_failed"
 )
 
 // Error codes commonly used for auth errors.

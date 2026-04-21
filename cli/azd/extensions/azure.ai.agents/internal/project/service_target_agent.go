@@ -326,7 +326,7 @@ func (p *AgentServiceTargetProvider) Package(
 	if acrResp == nil || acrResp.Value == "" {
 		return nil, exterrors.Dependency(
 			exterrors.CodeMissingContainerRegistryEndpoint,
-			"AZURE_CONTAINER_REGISTRY_ENDPOINT is required for hosted agents but was not found"+
+			"AZURE_CONTAINER_REGISTRY_ENDPOINT is required: environment variable was not found"+
 				" in the current azd environment",
 			"run 'azd provision' to create infrastructure (including a container registry),"+
 				" or set it manually with"+

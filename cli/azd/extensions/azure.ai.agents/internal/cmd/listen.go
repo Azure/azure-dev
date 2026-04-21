@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"azureaiagent/internal/exterrors"
@@ -161,11 +160,6 @@ func isHostedAgentService(svc *azdext.ServiceConfig, proj *azdext.ProjectConfig)
 }
 
 func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
-	// Agent identity RBAC is only relevant for vnext-enabled projects.
-	if !isVNextEnabled(ctx, azdClient) {
-		return nil
-	}
-
 	// Collect agent identities from hosted agent services that were deployed.
 	// After deploy, each hosted agent's name/version is stored as AGENT_{SERVICE_KEY}_NAME/VERSION.
 	// We fetch the full agent version object from the API to get the instance identity principal ID,
@@ -221,20 +215,6 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 		}
 		serviceKey := toServiceKey(svc.Name)
 
-		nameResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-			EnvName: envName,
-			Key:     fmt.Sprintf("AGENT_%s_NAME", serviceKey),
-		})
-		if err != nil {
-			return fmt.Errorf(
-				"failed to read AGENT_%s_NAME from environment: %w",
-				serviceKey, err,
-			)
-		}
-		if nameResp.Value == "" {
-			continue
-		}
-
 		versionResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 			EnvName: envName,
 			Key:     fmt.Sprintf("AGENT_%s_VERSION", serviceKey),
@@ -251,12 +231,12 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 
 		// Fetch the agent version to get the instance identity principal ID.
 		versionObj, err := agentClient.GetAgentVersion(
-			ctx, nameResp.Value, versionResp.Value, DefaultVNextAgentAPIVersion,
+			ctx, svc.Name, versionResp.Value, DefaultAgentAPIVersion,
 		)
 		if err != nil {
 			return fmt.Errorf(
 				"failed to fetch agent version for %s/%s: %w",
-				nameResp.Value, versionResp.Value, err,
+				svc.Name, versionResp.Value, err,
 			)
 		}
 
@@ -265,7 +245,7 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 			principalID = versionObj.InstanceIdentity.PrincipalID
 		}
 
-		agentIdentities[nameResp.Value] = principalID
+		agentIdentities[svc.Name] = principalID
 	}
 
 	if len(agentIdentities) == 0 {
@@ -361,17 +341,8 @@ func kindEnvUpdate(ctx context.Context, azdClient *azdext.AzdClient, project *az
 			return err
 		}
 
-		vnextValue := os.Getenv("enableHostedAgentVNext")
-		if vnextValue == "" {
-			azdEnv, err := loadAzdEnvironment(ctx, azdClient)
-			if err == nil {
-				vnextValue = azdEnv["enableHostedAgentVNext"]
-			}
-		}
-		if enabled, err := strconv.ParseBool(vnextValue); err == nil && enabled {
-			if err := setEnvVar(ctx, azdClient, envName, "ENABLE_CAPABILITY_HOST", "false"); err != nil {
-				return err
-			}
+		if err := setEnvVar(ctx, azdClient, envName, "ENABLE_CAPABILITY_HOST", "false"); err != nil {
+			return err
 		}
 	}
 
@@ -537,16 +508,6 @@ func populateContainerSettings(ctx context.Context, azdClient *azdext.AzdClient,
 		}
 	}
 
-	// Preserve existing Scale settings from azure.yaml, but don't create new defaults for VNext
-	if containerSettings.Scale != nil {
-		result.Scale = &project.ScaleSettings{
-			MinReplicas: containerSettings.Scale.MinReplicas,
-			MaxReplicas: containerSettings.Scale.MaxReplicas,
-		}
-	} else if !isVNextEnabled(ctx, azdClient) {
-		result.Scale = &project.ScaleSettings{}
-	}
-
 	// Set default values if zero or empty
 	if result.Resources.Memory == "" {
 		result.Resources.Memory = project.DefaultMemory
@@ -554,16 +515,6 @@ func populateContainerSettings(ctx context.Context, azdClient *azdext.AzdClient,
 
 	if result.Resources.Cpu == "" {
 		result.Resources.Cpu = project.DefaultCpu
-	}
-
-	if result.Scale != nil {
-		if result.Scale.MinReplicas == 0 {
-			result.Scale.MinReplicas = project.DefaultMinReplicas
-		}
-
-		if result.Scale.MaxReplicas == 0 {
-			result.Scale.MaxReplicas = project.DefaultMaxReplicas
-		}
 	}
 
 	// Update the container settings in the existing config

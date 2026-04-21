@@ -10,7 +10,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 	"text/tabwriter"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
@@ -25,49 +24,10 @@ type filesFlags struct {
 	session   string // optional: explicit session ID override
 }
 
-// isVNextEnabled checks whether hosted agent vnext is enabled
-// by looking at both the OS environment and the azd environment.
-// An optional AzdClient can be passed to avoid creating a new connection;
-// if nil, the function creates one internally.
-func isVNextEnabled(ctx context.Context, client ...*azdext.AzdClient) bool {
-	if v := os.Getenv("enableHostedAgentVNext"); v != "" {
-		if enabled, err := strconv.ParseBool(v); err == nil && enabled {
-			return true
-		}
-	}
-
-	// Use provided client or create one for best-effort azd env check
-	var azdClient *azdext.AzdClient
-	if len(client) > 0 && client[0] != nil {
-		azdClient = client[0]
-	} else {
-		var err error
-		azdClient, err = azdext.NewAzdClient()
-		if err != nil {
-			return false
-		}
-		defer azdClient.Close()
-	}
-
-	azdEnv, err := loadAzdEnvironment(ctx, azdClient)
-	if err != nil {
-		return false
-	}
-
-	if v := azdEnv["enableHostedAgentVNext"]; v != "" {
-		if enabled, err := strconv.ParseBool(v); err == nil && enabled {
-			return true
-		}
-	}
-
-	return false
-}
-
 func newFilesCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:    "files",
-		Short:  "Manage files in a hosted agent session.",
-		Hidden: !isVNextEnabled(context.Background()),
+		Use:   "files",
+		Short: "Manage files in a hosted agent session.",
 		Long: `Manage files in a hosted agent session.
 
 Upload, download, list, and delete files in the session-scoped filesystem
@@ -87,13 +47,6 @@ from the last invoke session, or can be overridden with --session-id.`,
 				}
 			}
 
-			ctx := azdext.WithAccessToken(cmd.Context())
-			if !isVNextEnabled(ctx) {
-				return fmt.Errorf(
-					"files commands require hosted agent vnext to be enabled\n\n" +
-						"Set 'enableHostedAgentVNext' to 'true' in your azd environment or as an OS environment variable.",
-				)
-			}
 			return nil
 		},
 	}
@@ -258,7 +211,7 @@ func (a *FilesUploadAction) Run(ctx context.Context) error {
 		a.Name,
 		a.sessionID,
 		remotePath,
-		DefaultVNextAgentAPIVersion,
+		DefaultAgentAPIVersion,
 		file,
 	)
 	if err != nil {
@@ -355,7 +308,7 @@ func (a *FilesDownloadAction) Run(ctx context.Context) error {
 		a.Name,
 		a.sessionID,
 		a.flags.file,
-		DefaultVNextAgentAPIVersion,
+		DefaultAgentAPIVersion,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to download file: %w", err)
@@ -466,7 +419,7 @@ func (a *FilesListAction) Run(ctx context.Context) error {
 		a.Name,
 		a.sessionID,
 		a.remotePath,
-		DefaultVNextAgentAPIVersion,
+		DefaultAgentAPIVersion,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to list files: %w", err)
@@ -598,7 +551,7 @@ func (a *FilesRemoveAction) Run(ctx context.Context) error {
 		a.sessionID,
 		a.remotePath,
 		a.flags.recursive,
-		DefaultVNextAgentAPIVersion,
+		DefaultAgentAPIVersion,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to remove file: %w", err)
@@ -684,7 +637,7 @@ func (a *FilesMkdirAction) Run(ctx context.Context) error {
 		a.Name,
 		a.sessionID,
 		a.remotePath,
-		DefaultVNextAgentAPIVersion,
+		DefaultAgentAPIVersion,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
@@ -768,7 +721,7 @@ func (a *FilesStatAction) Run(ctx context.Context) error {
 		a.Name,
 		a.sessionID,
 		a.remotePath,
-		DefaultVNextAgentAPIVersion,
+		DefaultAgentAPIVersion,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to stat file: %w", err)

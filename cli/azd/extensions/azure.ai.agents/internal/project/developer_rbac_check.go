@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
+	"strconv"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -95,39 +97,39 @@ var sufficientRoleAssignWriteRoles = []string{
 // Missing roles are reported as warnings rather than errors so that deployment can proceed.
 // The developer may need to obtain the missing roles separately for full functionality.
 func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient) error {
-	azdEnvClient := azdClient.Environment()
-	cEnvResponse, err := azdEnvClient.GetCurrent(ctx, &azdext.EmptyRequest{})
+	envClient := azdClient.Environment()
+	envResp, err := envClient.GetCurrent(ctx, &azdext.EmptyRequest{})
 	if err != nil {
 		return fmt.Errorf("failed to get current environment: %w", err)
 	}
-	envResponse, err := azdEnvClient.GetValues(ctx, &azdext.GetEnvironmentRequest{
-		Name: cEnvResponse.Environment.Name,
+	envName := envResp.Environment.Name
+
+	skipValue := ""
+	skipResp, err := envClient.GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envName,
+		Key:     "AZD_AGENT_SKIP_ROLE_ASSIGNMENTS",
 	})
-	if err != nil {
-		return fmt.Errorf("failed to get environment values: %w", err)
+	if err == nil {
+		skipValue = skipResp.Value
 	}
-
-	azdEnv := make(map[string]string, len(envResponse.KeyValues))
-	for _, kv := range envResponse.KeyValues {
-		azdEnv[kv.Key] = kv.Value
+	if skipValue == "" {
+		skipValue = os.Getenv("AZD_AGENT_SKIP_ROLE_ASSIGNMENTS")
 	}
-
-	if !isVnextEnabled(azdEnv) {
-		return nil
-	}
-
-	if isRoleAssignmentsSkipped(azdEnv) {
+	if skip, parseErr := strconv.ParseBool(skipValue); parseErr == nil && skip {
 		fmt.Println("  (-) Skipping developer RBAC pre-flight check (AZD_AGENT_SKIP_ROLE_ASSIGNMENTS is set)")
 		return nil
 	}
 
-	projectResourceID := azdEnv["AZURE_AI_PROJECT_ID"]
-	if projectResourceID == "" {
+	projectResp, err := envClient.GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envName,
+		Key:     "AZURE_AI_PROJECT_ID",
+	})
+	if err != nil || projectResp.Value == "" {
 		// Can't check RBAC without the project ID; deployment will fail later with a clearer message.
 		return nil
 	}
 
-	info, err := parseAgentIdentityInfo(projectResourceID)
+	info, err := parseAgentIdentityInfo(projectResp.Value)
 	if err != nil {
 		return nil // Non-critical: let deployment handle parse errors.
 	}
@@ -230,8 +232,11 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient) error 
 	}
 
 	// Check 3: ACR role — must branch on registry mode (ABAC vs classic).
-	acrEndpoint := azdEnv["AZURE_CONTAINER_REGISTRY_ENDPOINT"]
-	if acrEndpoint == "" {
+	acrResp, err := envClient.GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envName,
+		Key:     "AZURE_CONTAINER_REGISTRY_ENDPOINT",
+	})
+	if err != nil || acrResp.Value == "" {
 		fmt.Println("  ⚠ AZURE_CONTAINER_REGISTRY_ENDPOINT not set — skipping ACR role check")
 		return nil
 	}
@@ -242,10 +247,14 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient) error 
 		acrResourceID string
 		isAbac        bool
 	)
-	if rid := azdEnv["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]; rid != "" {
-		acrResourceID, isAbac, err = resolveACRInfoByResourceID(ctx, cred, rid)
+	acrRidResp, _ := envClient.GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envName,
+		Key:     "AZURE_CONTAINER_REGISTRY_RESOURCE_ID",
+	})
+	if acrRidResp != nil && acrRidResp.Value != "" {
+		acrResourceID, isAbac, err = resolveACRInfoByResourceID(ctx, cred, acrRidResp.Value)
 	} else {
-		acrResourceID, isAbac, err = resolveACRInfo(ctx, cred, info.SubscriptionID, acrEndpoint)
+		acrResourceID, isAbac, err = resolveACRInfo(ctx, cred, info.SubscriptionID, acrResp.Value)
 	}
 	if err != nil {
 		fmt.Printf("  ⚠ Could not resolve ACR resource info: %s — skipping ACR role check\n", err)
@@ -264,7 +273,7 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient) error 
 	}
 
 	if !hasACRAccess {
-		acrName := strings.TrimSuffix(normalizeLoginServer(acrEndpoint), ".azurecr.io")
+		acrName := strings.TrimSuffix(normalizeLoginServer(acrResp.Value), ".azurecr.io")
 		if isAbac {
 			fmt.Printf("%s\n", output.WithWarningFormat(
 				"Your identity (%s) does not have the required role on the ABAC-mode Container Registry '%s' "+

@@ -29,9 +29,8 @@ type sessionFlags struct {
 
 func newSessionCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:    "sessions",
-		Short:  "Manage sessions for a hosted agent endpoint.",
-		Hidden: !isVNextEnabled(context.Background()),
+		Use:   "sessions",
+		Short: "Manage sessions for a hosted agent endpoint.",
 		Long: `Manage sessions for a hosted agent endpoint.
 
 Create, show, list, and delete hosted agent sessions.
@@ -57,14 +56,6 @@ multiple azure.ai.agent services.`,
 			}
 		}
 
-		ctx := azdext.WithAccessToken(childCmd.Context())
-		if !isVNextEnabled(ctx) {
-			return fmt.Errorf(
-				"session commands require hosted agent vnext to be enabled\n\n" +
-					"Set 'enableHostedAgentVNext' to 'true' in your azd " +
-					"environment or as an OS environment variable.",
-			)
-		}
 		return nil
 	}
 
@@ -281,7 +272,7 @@ func (a *SessionCreateAction) Run(ctx context.Context) error {
 		sc.agentName,
 		a.flags.isolationKey,
 		request,
-		DefaultVNextAgentAPIVersion,
+		DefaultAgentAPIVersion,
 	)
 	if err != nil {
 		return exterrors.ServiceFromAzure(
@@ -356,7 +347,7 @@ func (a *SessionShowAction) Run(ctx context.Context) error {
 		ctx,
 		sc.agentName,
 		a.sessionID,
-		DefaultVNextAgentAPIVersion,
+		DefaultAgentAPIVersion,
 	)
 	if err != nil {
 		if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok &&
@@ -456,7 +447,7 @@ func (a *SessionDeleteAction) Run(ctx context.Context) error {
 		sc.agentName,
 		a.sessionID,
 		a.flags.isolationKey,
-		DefaultVNextAgentAPIVersion,
+		DefaultAgentAPIVersion,
 	)
 	if err != nil {
 		if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok &&
@@ -567,7 +558,7 @@ func (a *SessionListAction) Run(ctx context.Context) error {
 		sc.agentName,
 		limit,
 		token,
-		DefaultVNextAgentAPIVersion,
+		DefaultAgentAPIVersion,
 	)
 	if err != nil {
 		return exterrors.ServiceFromAzure(

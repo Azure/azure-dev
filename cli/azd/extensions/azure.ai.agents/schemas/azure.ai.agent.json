@@ -52,9 +52,6 @@
       "properties": {
         "resources": {
           "$ref": "#/definitions/ResourceSettings"
-        },
-        "scale": {
-          "$ref": "#/definitions/ScaleSettings"
         }
       },
       "additionalProperties": false
@@ -72,23 +69,6 @@
           "type": "string",
           "description": "CPU allocation (e.g., '1', '500m')",
           "pattern": "^[0-9]+(\\.[0-9]+)?m?$"
-        }
-      },
-      "additionalProperties": false
-    },
-    "ScaleSettings": {
-      "type": "object",
-      "description": "Scaling configuration for the Azure AI Agent Service target",
-      "properties": {
-        "minReplicas": {
-          "type": "integer",
-          "description": "Minimum number of replicas",
-          "minimum": 0
-        },
-        "maxReplicas": {
-          "type": "integer",
-          "description": "Maximum number of replicas",
-          "minimum": 1
         }
       },
       "additionalProperties": false

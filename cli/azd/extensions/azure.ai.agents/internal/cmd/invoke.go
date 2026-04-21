@@ -176,15 +176,8 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 		}
 	}
 
-	// Remote: only allow the invocations protocol when vnext is enabled.
+	// Remote: route by protocol.
 	if protocol == agent_api.AgentProtocolInvocations {
-		if !isVNextEnabled(ctx) {
-			return exterrors.Validation(
-				exterrors.CodeInvalidParameter,
-				"invocations protocol for remote agents requires vnext to be enabled",
-				"enable vnext or use --protocol responses",
-			)
-		}
 		return a.invocationsRemote(ctx)
 	}
 	return a.responsesRemote(ctx)
@@ -377,16 +370,6 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 		"stream": true,
 	}
 
-	vnext := isVNextEnabled(ctx)
-
-	// The non-vnext /openai/responses endpoint requires an agent reference in the body.
-	if !vnext {
-		reqBody["agent"] = map[string]string{
-			"name": name,
-			"type": "agent_reference",
-		}
-	}
-
 	// Session ID — routes to the same microVM container instance.
 	// When empty, let the server assign one.
 	sid, err := resolveStoredID(ctx, azdClient, name, a.flags.session, a.flags.newSession, "sessions", false)
@@ -436,15 +419,10 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	var url string
-	if vnext {
-		url = fmt.Sprintf(
-			"%s/agents/%s/endpoint/protocols/openai/responses?api-version=%s",
-			projectEndpoint, name, DefaultAgentAPIVersion,
-		)
-	} else {
-		url = fmt.Sprintf("%s/openai/responses?api-version=%s", projectEndpoint, DefaultAgentAPIVersion)
-	}
+	url := fmt.Sprintf(
+		"%s/agents/%s/endpoint/protocols/openai/responses?api-version=%s",
+		projectEndpoint, name, DefaultAgentAPIVersion,
+	)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)

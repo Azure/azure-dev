@@ -109,67 +109,6 @@ func TestAgentObject_RoundTrip(t *testing.T) {
 	}
 }
 
-func TestAgentContainerObject_RoundTrip(t *testing.T) {
-	t.Parallel()
-
-	original := AgentContainerObject{
-		Object:       "container",
-		ID:           "ctr-1",
-		Status:       AgentContainerStatusRunning,
-		MaxReplicas:  new(int32(3)),
-		MinReplicas:  new(int32(1)),
-		ErrorMessage: new("partial failure"),
-		CreatedAt:    "2024-01-01T00:00:00Z",
-		UpdatedAt:    "2024-06-01T00:00:00Z",
-		Container: &AgentContainerDetails{
-			HealthState:       "healthy",
-			ProvisioningState: "Succeeded",
-			State:             "Running",
-			UpdatedOn:         "2024-06-01T00:00:00Z",
-			Replicas: []AgentContainerReplicaState{
-				{Name: "replica-0", State: "Running", ContainerState: "started"},
-			},
-		},
-	}
-
-	data, err := json.Marshal(original)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-
-	s := string(data)
-	for _, field := range []string{
-		`"max_replicas"`, `"min_replicas"`, `"error_message"`,
-		`"created_at"`, `"updated_at"`, `"container"`,
-		`"health_state"`, `"provisioning_state"`, `"container_state"`,
-	} {
-		if !strings.Contains(s, field) {
-			t.Errorf("expected JSON to contain %s", field)
-		}
-	}
-
-	var got AgentContainerObject
-	if err := json.Unmarshal(data, &got); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-
-	if got.Status != AgentContainerStatusRunning {
-		t.Errorf("Status = %q, want %q", got.Status, AgentContainerStatusRunning)
-	}
-	if got.MaxReplicas == nil || *got.MaxReplicas != 3 {
-		t.Error("MaxReplicas mismatch")
-	}
-	if got.MinReplicas == nil || *got.MinReplicas != 1 {
-		t.Error("MinReplicas mismatch")
-	}
-	if got.ErrorMessage == nil || *got.ErrorMessage != "partial failure" {
-		t.Error("ErrorMessage mismatch")
-	}
-	if got.Container == nil || len(got.Container.Replicas) != 1 {
-		t.Error("Container.Replicas mismatch")
-	}
-}
-
 func TestPromptAgentDefinition_RoundTrip(t *testing.T) {
 	t.Parallel()
 
@@ -1083,46 +1022,6 @@ func TestWorkflowDefinition_RoundTrip(t *testing.T) {
 	}
 	if got.Trigger["type"] != "schedule" {
 		t.Errorf("Trigger[type] = %v, want %q", got.Trigger["type"], "schedule")
-	}
-}
-
-func TestAgentContainerOperationObject_RoundTrip(t *testing.T) {
-	t.Parallel()
-
-	original := AgentContainerOperationObject{
-		ID:             "op-1",
-		AgentID:        "agent-1",
-		AgentVersionID: "ver-1",
-		Status:         AgentContainerOperationStatusSucceeded,
-		Error: &AgentContainerOperationError{
-			Code:    "E001",
-			Type:    "runtime",
-			Message: "something went wrong",
-		},
-	}
-
-	data, err := json.Marshal(original)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-
-	s := string(data)
-	for _, field := range []string{`"agent_id"`, `"agent_version_id"`, `"status"`} {
-		if !strings.Contains(s, field) {
-			t.Errorf("expected JSON to contain %s", field)
-		}
-	}
-
-	var got AgentContainerOperationObject
-	if err := json.Unmarshal(data, &got); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-
-	if got.Status != AgentContainerOperationStatusSucceeded {
-		t.Errorf("Status = %q, want %q", got.Status, AgentContainerOperationStatusSucceeded)
-	}
-	if got.Error == nil || got.Error.Message != "something went wrong" {
-		t.Error("Error.Message mismatch")
 	}
 }
 

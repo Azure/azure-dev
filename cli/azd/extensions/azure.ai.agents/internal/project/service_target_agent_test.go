@@ -9,74 +9,22 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_api"
 )
 
-func TestApplyVnextMetadata(t *testing.T) {
+func TestApplyAgentMetadata(t *testing.T) {
 	tests := []struct {
-		name          string
-		azdEnv        map[string]string
-		osEnvValue    string
-		existingMeta  map[string]string
-		expectEnabled bool
+		name         string
+		existingMeta map[string]string
 	}{
 		{
-			name:          "enabled via azd env",
-			azdEnv:        map[string]string{"enableHostedAgentVNext": "true"},
-			expectEnabled: true,
+			name: "nil metadata initialized",
 		},
 		{
-			name:          "enabled via azd env value 1",
-			azdEnv:        map[string]string{"enableHostedAgentVNext": "1"},
-			expectEnabled: true,
-		},
-		{
-			name:          "disabled via azd env",
-			azdEnv:        map[string]string{"enableHostedAgentVNext": "false"},
-			expectEnabled: false,
-		},
-		{
-			name:          "enabled via OS env fallback",
-			azdEnv:        map[string]string{},
-			osEnvValue:    "true",
-			expectEnabled: true,
-		},
-		{
-			name:          "azd env takes precedence over OS env",
-			azdEnv:        map[string]string{"enableHostedAgentVNext": "false"},
-			osEnvValue:    "true",
-			expectEnabled: false,
-		},
-		{
-			name:          "absent from both envs",
-			azdEnv:        map[string]string{},
-			expectEnabled: false,
-		},
-		{
-			name:          "invalid value ignored",
-			azdEnv:        map[string]string{"enableHostedAgentVNext": "notabool"},
-			expectEnabled: false,
-		},
-		{
-			name:          "preserves existing metadata",
-			azdEnv:        map[string]string{"enableHostedAgentVNext": "true"},
-			existingMeta:  map[string]string{"authors": "test"},
-			expectEnabled: true,
-		},
-		{
-			name:          "nil metadata initialized when enabled",
-			azdEnv:        map[string]string{"enableHostedAgentVNext": "true"},
-			existingMeta:  nil,
-			expectEnabled: true,
+			name:         "preserves existing metadata",
+			existingMeta: map[string]string{"authors": "test"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Set/unset OS env
-			if tt.osEnvValue != "" {
-				t.Setenv("enableHostedAgentVNext", tt.osEnvValue)
-			} else {
-				t.Setenv("enableHostedAgentVNext", "")
-			}
-
 			request := &agent_api.CreateAgentRequest{
 				Name: "test-agent",
 				CreateAgentVersionRequest: agent_api.CreateAgentVersionRequest{
@@ -84,17 +32,11 @@ func TestApplyVnextMetadata(t *testing.T) {
 				},
 			}
 
-			applyVnextMetadata(request, tt.azdEnv)
+			applyAgentMetadata(request)
 
 			val, exists := request.Metadata["enableVnextExperience"]
-			if tt.expectEnabled {
-				if !exists || val != "true" {
-					t.Errorf("expected enableVnextExperience=true in metadata, got exists=%v val=%q", exists, val)
-				}
-			} else {
-				if exists {
-					t.Errorf("expected enableVnextExperience to be absent, but found val=%q", val)
-				}
+			if !exists || val != "true" {
+				t.Errorf("expected enableVnextExperience=true in metadata, got exists=%v val=%q", exists, val)
 			}
 
 			// Verify existing metadata is preserved

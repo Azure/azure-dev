@@ -916,7 +916,12 @@ func (a *InitAction) configureModelChoice(
 			return nil, err
 		}
 
-		if selectedProject == nil {
+		if selectedProject != nil {
+			// Signal Bicep to skip project/role/connection provisioning for this existing project
+			if err := setEnvValue(ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "true"); err != nil {
+				return nil, err
+			}
+		} else {
 			// No existing project selected (no projects found or user chose "Create new") → fall back to "deploy new" path
 			fmt.Println(output.WithGrayFormat(
 				"No existing Foundry project was selected. Falling back to deploying a new model.",

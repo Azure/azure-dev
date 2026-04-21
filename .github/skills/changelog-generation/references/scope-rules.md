@@ -13,10 +13,21 @@ Files to update:
 **Version derivation:**
 1. Find the top-most section in `cli/azd/CHANGELOG.md` (e.g., `## X.Y.Z-beta.N (Unreleased)`).
 2. Strip the `-beta.N` suffix and `(Unreleased)` marker.
-3. Format as: `## X.Y.Z (YYYY-MM-DD)` using today's date.
+3. Format as: `## X.Y.Z (YYYY-MM-DD)` using **today's date** (the date the changelog is being authored/committed, not a future planned ship date).
 4. Set `cli/version.txt` to `X.Y.Z`.
 5. Set the `Version` constant in `cli/azd/pkg/azdext/version.go` to `X.Y.Z`.
 6. If no unreleased header is found in the changelog, ask the user for the release version number via `ask_user`.
+
+**Unreleased placeholder after release:**
+
+After converting the top section from `X.Y.Z-beta.N (Unreleased)` to `X.Y.Z (YYYY-MM-DD)`, add a new `(Unreleased)` placeholder at the top using the **next minor version**, not the next patch:
+
+- If releasing a **patch** (`X.Y.Z` where `Z > 0`), the new placeholder is `X.(Y+1).0-beta.1 (Unreleased)`.
+- If releasing a **minor** (`X.Y.0`), the new placeholder is `X.(Y+1).0-beta.1 (Unreleased)`.
+
+Example: after releasing `1.24.1`, add `## 1.25.0-beta.1 (Unreleased)` at the top — not `## 1.24.2-beta.1`.
+
+This matches the behavior of `eng/scripts/Update-CliVersion.ps1`, which increments the minor version (not the patch) when creating the post-release development placeholder.
 
 **Do NOT** update any extension files.
 

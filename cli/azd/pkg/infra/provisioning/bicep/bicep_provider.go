@@ -115,6 +115,64 @@ var azureReservedResourceNameContainsMatches = []string{
 
 const azureReservedResourceNamePrefixMatch = "LOGIN"
 
+// azureReservedResourceNameExemptTypes lists resource type prefixes for which
+// the reserved-word check is skipped. ARM does not enforce the reserved-word
+// rule on these types — either because they have no public endpoint, or because
+// their names are FQDN/convention-shaped by design (e.g. DNS zones, VM
+// extensions named "Publisher.Type").
+//
+// Each entry matches the exact type or any descendant child type
+// (case-insensitive). One entry like "Microsoft.Network/privateDnsZones"
+// covers the parent zone plus every record/link child without enumerating them.
+var azureReservedResourceNameExemptTypes = []string{
+	// FQDN-shaped names.
+	"Microsoft.Network/privateDnsZones",
+	"Microsoft.Network/dnsZones",
+	"Microsoft.Network/dnsForwardingRulesets",
+	"Microsoft.Network/dnsResolvers",
+	"Microsoft.Network/firewallPolicies",
+
+	// Internal-only names (no public endpoint).
+	"Microsoft.Resources/resourceGroups",
+	"Microsoft.Resources/deployments",
+	"Microsoft.Resources/deploymentScripts",
+	"Microsoft.Authorization/roleAssignments",
+	"Microsoft.Authorization/roleDefinitions",
+	"Microsoft.Authorization/policyAssignments",
+	"Microsoft.Authorization/policyDefinitions",
+	"Microsoft.Authorization/policySetDefinitions",
+	"Microsoft.Authorization/locks",
+	"Microsoft.Insights/diagnosticSettings",
+
+	// User-labeled child resources (e.g. NSG rule "AllowMicrosoftContainerRegistryOutbound").
+	"Microsoft.Network/networkSecurityGroups",
+	"Microsoft.KeyVault/vaults/secrets",
+	"Microsoft.KeyVault/vaults/keys",
+	"Microsoft.KeyVault/vaults/certificates",
+	"Microsoft.KeyVault/vaults/accessPolicies",
+	"Microsoft.OperationalInsights/workspaces/dataSources",
+
+	// Convention-named resources (names mirror a publisher, connector, or service tag).
+	"Microsoft.Compute/virtualMachines/extensions", // e.g. "Microsoft.Insights.LogAnalyticsAgent"
+	"Microsoft.Compute/virtualMachineScaleSets/extensions",
+	"Microsoft.Web/connections",                             // e.g. "office365", "sharepointonline"
+	"Microsoft.Network/virtualNetworks/subnets/delegations", // e.g. "Microsoft.Web/serverFarms"
+}
+
+// isReservedNameCheckExempt reports whether the reserved-word check should be
+// skipped for the given resource type. Matching is case-insensitive and applies
+// to the type itself or any descendant child type.
+func isReservedNameCheckExempt(resourceType string) bool {
+	normalized := strings.ToLower(resourceType)
+	for _, exempt := range azureReservedResourceNameExemptTypes {
+		exemptLower := strings.ToLower(exempt)
+		if normalized == exemptLower || strings.HasPrefix(normalized, exemptLower+"/") {
+			return true
+		}
+	}
+	return false
+}
+
 // BicepProvider exposes infrastructure provisioning using Azure Bicep templates
 type BicepProvider struct {
 	// Options that are available after Initialize()
@@ -2489,6 +2547,9 @@ func (p *BicepProvider) checkReservedResourceNames(
 	const docsLink = "https://learn.microsoft.com/azure/azure-resource-manager/templates/error-reserved-resource-name"
 
 	for _, resource := range valCtx.SnapshotResources {
+		if isReservedNameCheckExempt(resource.Type) {
+			continue
+		}
 		for _, v := range findReservedResourceNameViolations(resource.Name) {
 			resourceName := output.WithHighLightFormat("%q", resource.Name)
 			resourceType := output.WithGrayFormat("(%s)", resource.Type)
@@ -2711,11 +2772,18 @@ type reservedNameViolation struct {
 	matchType    string
 }
 
-// findReservedResourceNameViolations returns every reserved-word violation found
-// across the `/`-delimited segments of resourceName. A single segment can
-// produce multiple violations (for example "LoginMicrosoftApp" triggers both
-// the LOGIN prefix and the MICROSOFT substring rule), so all matches are
-// returned to avoid fix-rerun cycles during preflight.
+// findReservedResourceNameViolations returns every reserved-word violation
+// found in resourceName. A single resource can produce multiple violations
+// (for example "LoginMicrosoftApp" triggers both the LOGIN prefix and the
+// MICROSOFT substring rule), so all matches are returned to avoid fix-rerun
+// cycles during preflight.
+//
+// Only the trailing `/`-delimited segment of the name is evaluated. For child
+// resources, ARM emits the name as `<parent>/<child>` (and `<grandparent>/...`
+// for deeper children), but the parent is also enumerated separately in the
+// snapshot and is checked on its own pass — re-scanning the parent prefix
+// under each child would duplicate warnings whenever a parent name contains a
+// reserved word.
 func findReservedResourceNameViolations(resourceName string) []reservedNameViolation {
 	// Skip names that are unresolved ARM template expressions (e.g. "[guid(...)]").
 	// These are evaluated at deployment time and the literal text inside the expression
@@ -2725,40 +2793,43 @@ func findReservedResourceNameViolations(resourceName string) []reservedNameViola
 		return nil
 	}
 
+	// Evaluate only the trailing path segment so child resources don't re-flag
+	// reserved words already reported on their parents.
+	segment := resourceName
+	if idx := strings.LastIndex(resourceName, "/"); idx >= 0 {
+		segment = resourceName[idx+1:]
+	}
+	if segment == "" {
+		return nil
+	}
+
 	var violations []reservedNameViolation
-	for segment := range strings.SplitSeq(resourceName, "/") {
-		if segment == "" {
-			continue
-		}
+	normalized := strings.ToUpper(segment)
+	if _, found := azureReservedResourceNameExactMatches[normalized]; found {
+		// An exact match subsumes any prefix/substring match on the same segment,
+		// so skip the remaining checks to avoid duplicate reports.
+		return []reservedNameViolation{{
+			segment:      segment,
+			reservedWord: normalized,
+			matchType:    "exactly matches",
+		}}
+	}
 
-		normalized := strings.ToUpper(segment)
-		if _, found := azureReservedResourceNameExactMatches[normalized]; found {
-			// An exact match subsumes any prefix/substring match on the same segment,
-			// so skip the remaining checks to avoid duplicate reports.
+	if strings.HasPrefix(normalized, azureReservedResourceNamePrefixMatch) {
+		violations = append(violations, reservedNameViolation{
+			segment:      segment,
+			reservedWord: azureReservedResourceNamePrefixMatch,
+			matchType:    "starts with",
+		})
+	}
+
+	for _, reservedWord := range azureReservedResourceNameContainsMatches {
+		if strings.Contains(normalized, reservedWord) {
 			violations = append(violations, reservedNameViolation{
 				segment:      segment,
-				reservedWord: normalized,
-				matchType:    "exactly matches",
+				reservedWord: reservedWord,
+				matchType:    "contains",
 			})
-			continue
-		}
-
-		if strings.HasPrefix(normalized, azureReservedResourceNamePrefixMatch) {
-			violations = append(violations, reservedNameViolation{
-				segment:      segment,
-				reservedWord: azureReservedResourceNamePrefixMatch,
-				matchType:    "starts with",
-			})
-		}
-
-		for _, reservedWord := range azureReservedResourceNameContainsMatches {
-			if strings.Contains(normalized, reservedWord) {
-				violations = append(violations, reservedNameViolation{
-					segment:      segment,
-					reservedWord: reservedWord,
-					matchType:    "contains",
-				})
-			}
 		}
 	}
 

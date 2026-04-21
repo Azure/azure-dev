@@ -35,6 +35,9 @@ func newListenCommand() *cobra.Command {
 				WithFrameworkService("rust", func() azdext.FrameworkServiceProvider {
 					return project.NewDemoFrameworkServiceProvider(azdClient)
 				}).
+				WithProvisioningProvider("demo", func() azdext.ProvisioningProvider {
+					return project.NewDemoProvisioningProvider(azdClient)
+				}).
 				WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 					for i := 1; i <= 20; i++ {
 						fmt.Printf("%d. Doing important work in extension...\n", i)

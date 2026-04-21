@@ -1,12 +1,24 @@
 # Release History
 
-## 0.1.24-preview (Unreleased)
+## 0.1.26-preview (Unreleased)
 
 - [[#7209]](https://github.com/Azure/azure-dev/issues/7209) Improve `azd ai agent monitor` output: render each SSE log event as a single compact, color-coded line (`HH:MM:SS  <stream>  <message>`) with session-metadata events rendered as `session <state> (v<version>, last accessed: ...)`. Add `--utc` flag to display timestamps in UTC instead of local time, and `--raw` flag to preserve the previous raw SSE output.
 
+## 0.1.25-preview (2026-04-20)
+
+- [[#7811]](https://github.com/Azure/azure-dev/pull/7811) Fix agent deployment RBAC checks to show warnings instead of blocking deployment when role assignment issues are encountered.
+- [[#7808]](https://github.com/Azure/azure-dev/pull/7808) Add Azure AI Project Manager and Azure AI Account Owner as accepted roles in the developer RBAC role-assignment-write preflight check.
+- [[#7807]](https://github.com/Azure/azure-dev/pull/7807) Fix `azd ai agent invoke` to use the correct endpoint for creating conversations.
+
+## 0.1.24-preview (2026-04-17)
+
+- [[#7765]](https://github.com/Azure/azure-dev/pull/7765) Improve invalid manifest error messaging to guide users to check for a required `template` field.
+- [[#7763]](https://github.com/Azure/azure-dev/pull/7763) Fix developer RBAC pre-flight gaps by auto-assigning Azure AI User when missing, adding an explicit role-assignment-write check, and handling ABAC-enabled ACR registries.
+- [[#7747]](https://github.com/Azure/azure-dev/pull/7747) Update agent identity RBAC resolution to read identity information from the agent version instead of relying on graph lookup.
+
 ### Breaking Changes
 
-- Removed `-e` shorthand for `--environment`; use `--environment` instead. This resolves a collision with the azd global `-e/--environment` flag.
+- [[#7741]](https://github.com/Azure/azure-dev/pull/7741) Remove `-e` shorthand for `--environment` on `azd ai agent init`; use `--environment` instead to avoid collision with azd global `-e/--environment`.
 
 ## 0.1.23-preview (2026-04-16)
 

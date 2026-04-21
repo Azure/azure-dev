@@ -718,7 +718,7 @@ func Test_ErrorMiddleware_MaxRetry_FirstIterationSkipsCounter(t *testing.T) {
 	require.NotNil(t, result)
 }
 
-func Test_PromptNextAction_SavedAllow_ReturnsFixOnly(t *testing.T) {
+func Test_PromptNextAction_SavedAllow_ReturnsFixAndRetry(t *testing.T) {
 	t.Parallel()
 
 	cfg := configWithKeys(agentcopilot.ConfigKeyErrorHandlingFix, "allow")
@@ -731,8 +731,8 @@ func Test_PromptNextAction_SavedAllow_ReturnsFixOnly(t *testing.T) {
 
 	action, err := m.promptNextAction(t.Context())
 	require.NoError(t, err)
-	require.Equal(t, actionFixOnly, action,
-		"saved 'allow' preference should return actionFixOnly, not actionFixAndRetry")
+	require.Equal(t, actionFixAndRetry, action,
+		"saved 'allow' preference should return actionFixAndRetry to auto-rerun the command")
 }
 
 func Test_PromptNextAction_ConfigLoadError(t *testing.T) {
@@ -749,4 +749,37 @@ func Test_PromptNextAction_ConfigLoadError(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "io error")
 	require.Equal(t, actionExit, action)
+}
+
+func Test_PromptRetryAfterFix_SavedAllow_ReturnsTrue(t *testing.T) {
+	t.Parallel()
+
+	cfg := configWithKeys(agentcopilot.ConfigKeyErrorHandlingFix, "allow")
+	ucm := &mockUserConfigManager{cfg: cfg}
+
+	m := &ErrorMiddleware{
+		console:           mockinput.NewMockConsole(),
+		userConfigManager: ucm,
+	}
+
+	shouldRetry, err := m.promptRetryAfterFix(t.Context())
+	require.NoError(t, err)
+	require.True(t, shouldRetry,
+		"saved 'allow' preference should bypass the retry prompt and auto-retry")
+}
+
+func Test_PromptRetryAfterFix_ConfigLoadError(t *testing.T) {
+	t.Parallel()
+
+	ucm := &mockUserConfigManager{cfg: nil, err: errors.New("io error")}
+
+	m := &ErrorMiddleware{
+		console:           mockinput.NewMockConsole(),
+		userConfigManager: ucm,
+	}
+
+	shouldRetry, err := m.promptRetryAfterFix(t.Context())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "io error")
+	require.False(t, shouldRetry)
 }

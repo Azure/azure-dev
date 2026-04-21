@@ -10,7 +10,7 @@ Available Commands
   show     	: Show details for a specific extension.
   source   	: View and manage extension sources
   uninstall	: Uninstall specified extensions.
-  upgrade  	: Upgrade specified extensions.
+  upgrade  	: Upgrade installed extensions to the latest version.
 
 Global Flags
     -C, --cwd string         	: Sets the current working directory.

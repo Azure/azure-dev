@@ -1,5 +1,5 @@
 
-Upgrade specified extensions.
+Upgrade installed extensions to the latest version.
 
 Usage
   azd extension upgrade [extension-id] [flags]

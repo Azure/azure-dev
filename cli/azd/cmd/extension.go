@@ -1157,6 +1157,39 @@ func (a *extensionUpgradeAction) Run(ctx context.Context) (*actions.ActionResult
 				return nil, fmt.Errorf("failed to upgrade extension: %w", err)
 			}
 
+			// Handle promotion: display warning about registry transition.
+			// The source is already persisted by Upgrade() → Install() which uses
+			// the resolved extension metadata (with the new source).
+			if isPromotion {
+				a.console.StopSpinner(ctx, stepMessage, input.StepWarning)
+				a.console.Message(ctx, output.WithWarningFormat(
+					"  (!) Warning: Upgraded %s extension (%s → %s, %s → %s registry)",
+					output.WithHighLightFormat(extensionId),
+					installed.Version,
+					extensionVersion.Version,
+					output.WithHighLightFormat(oldSource),
+					output.WithHighLightFormat(newSource),
+				))
+				a.console.Message(ctx, fmt.Sprintf(
+					"  Extension was promoted from the %s registry "+
+						"to the official %s registry.",
+					output.WithHighLightFormat(oldSource),
+					output.WithHighLightFormat(newSource),
+				))
+				a.console.Message(ctx, fmt.Sprintf(
+					"  Source has been updated automatically. "+
+						"To stay on %s, reinstall with:",
+					output.WithHighLightFormat(oldSource),
+				))
+				a.console.Message(ctx, fmt.Sprintf(
+					"    %s",
+					output.WithHighLightFormat(fmt.Sprintf(
+						"azd extension install %s --source %s",
+						extensionId, oldSource,
+					)),
+				))
+			}
+
 			stepMessage += output.WithGrayFormat(" (%s)", extensionVersion.Version)
 			a.console.StopSpinner(ctx, stepMessage, input.StepDone)
 

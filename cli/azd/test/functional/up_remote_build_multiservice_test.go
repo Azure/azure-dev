@@ -59,11 +59,18 @@ func Test_CLI_Up_Down_ContainerApp_RemoteBuild_MultiService(t *testing.T) {
 	dir := tempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
+	// Live-only: this test exercises a real ACR build. We need either a recorded
+	// cassette OR live Azure credentials. Skip early if neither is available so
+	// `recording.Start(t)` does not t.Fatal on the missing cassette.
+	cassettePath := filepath.Join("testdata", "recordings",
+		"Test_CLI_Up_Down_ContainerApp_RemoteBuild_MultiService.yaml")
+	if _, err := os.Stat(cassettePath); err != nil && os.Getenv("AZURE_TENANT_ID") == "" {
+		t.Skip("skipping multi-service remote-build test: no cassette recorded and no AZURE_TENANT_ID set")
+	}
+
 	session := recording.Start(t)
 
-	// Live-only: if no cassette has been recorded AND no Azure creds are configured, skip. This keeps
-	// `go test ./...` runnable in dev / CI without Azure access, and preserves the opt-in model described in
-	// the comment above.
+	// Defensive: recording.Start can still return nil in passthrough/live mode.
 	if session == nil && os.Getenv("AZURE_TENANT_ID") == "" {
 		t.Skip("skipping multi-service remote-build test: no cassette recorded and no AZURE_TENANT_ID set")
 	}

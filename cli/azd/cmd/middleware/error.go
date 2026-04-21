@@ -320,6 +320,8 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			// Unlike the explain/guidance path (which auto-retries when the user
 			// explicitly chose actionFixAndRetry), the category-fix path asks for
 			// retry confirmation because the user only chose "fix" — not "fix and retry".
+			// The saved copilot.errorHandling.fix=allow preference bypasses this prompt
+			// and auto-retries.
 			shouldRetry, err := e.promptRetryAfterFix(ctx)
 			if err != nil {
 				span.SetStatus(codes.Error, "agent.retry.failed")
@@ -488,18 +490,17 @@ func (e *ErrorMiddleware) promptNextAction(
 			"failed to load user config: %w", err)
 	}
 
-	// Saved "always fix" preference → auto-approve fix only (user still
-	// controls retry via the category-fix path or interactive prompt).
+	// Saved "always fix" preference → auto-approve fix and rerun the command.
 	if val, ok := userConfig.GetString(
 		agentcopilot.ConfigKeyErrorHandlingFix); ok && val == "allow" {
 		e.console.Message(ctx, output.WithWarningFormat(
-			"\n%s auto-fix is enabled. To change, run %s.",
+			"\n%s auto-fix and retry is enabled. To change, run %s.",
 			agentcopilot.DisplayTitle,
 			output.WithHighLightFormat(
 				fmt.Sprintf("azd config unset %s",
 					agentcopilot.ConfigKeyErrorHandlingFix)),
 		))
-		return actionFixOnly, nil
+		return actionFixAndRetry, nil
 	}
 
 	choices := []*uxlib.SelectChoice{
@@ -518,7 +519,7 @@ func (e *ErrorMiddleware) promptNextAction(
 	selector := uxlib.NewSelect(&uxlib.SelectOptions{
 		Message: "How would you like to proceed?",
 		HelpMessage: fmt.Sprintf(
-			"To always allow fixes, run %s.",
+			"To always auto-fix and retry, run %s.",
 			output.WithHighLightFormat(
 				fmt.Sprintf("azd config set %s allow",
 					agentcopilot.ConfigKeyErrorHandlingFix))),
@@ -539,18 +540,52 @@ func (e *ErrorMiddleware) promptNextAction(
 		return actionExit, fmt.Errorf("invalid choice selected")
 	}
 
-	return nextAction(choices[*choiceIndex].Value), nil
+	selected := nextAction(choices[*choiceIndex].Value)
+
+	// Print hint about persisting the choice (only fix_and_retry has a saved equivalent).
+	if selected == actionFixAndRetry {
+		e.console.Message(ctx, output.WithGrayFormat(
+			"Tip: To always auto-fix and retry, run: %s",
+			output.WithHighLightFormat(
+				fmt.Sprintf("azd config set %s allow", agentcopilot.ConfigKeyErrorHandlingFix)),
+		))
+	}
+
+	return selected, nil
 }
 
 // promptRetryAfterFix asks the user if the agent applied a fix and they want to retry the command.
 func (e *ErrorMiddleware) promptRetryAfterFix(ctx context.Context) (bool, error) {
+	userConfig, err := e.userConfigManager.Load()
+	if err != nil {
+		return false, fmt.Errorf("failed to load user config: %w", err)
+	}
+
+	// Saved "always fix" preference → auto-retry the command after fix.
+	if val, ok := userConfig.GetString(
+		agentcopilot.ConfigKeyErrorHandlingFix); ok && val == "allow" {
+		e.console.Message(ctx, output.WithWarningFormat(
+			"\n%s auto-fix and retry is enabled. To change, run %s.",
+			agentcopilot.DisplayTitle,
+			output.WithHighLightFormat(
+				fmt.Sprintf("azd config unset %s",
+					agentcopilot.ConfigKeyErrorHandlingFix)),
+		))
+		return true, nil
+	}
+
 	choices := []*uxlib.SelectChoice{
 		{Value: "retry", Label: "Retry the command"},
 		{Value: "exit", Label: "Exit"},
 	}
 
 	selector := uxlib.NewSelect(&uxlib.SelectOptions{
-		Message:         "How would you like to proceed?",
+		Message: "How would you like to proceed?",
+		HelpMessage: fmt.Sprintf(
+			"To always auto-fix and retry, run %s.",
+			output.WithHighLightFormat(
+				fmt.Sprintf("azd config set %s allow",
+					agentcopilot.ConfigKeyErrorHandlingFix))),
 		Choices:         choices,
 		EnableFiltering: new(false),
 		DisplayCount:    len(choices),
@@ -566,5 +601,16 @@ func (e *ErrorMiddleware) promptRetryAfterFix(ctx context.Context) (bool, error)
 		return false, fmt.Errorf("invalid retry choice selected")
 	}
 
-	return choices[*choiceIndex].Value == "retry", nil
+	shouldRetry := choices[*choiceIndex].Value == "retry"
+
+	// Print hint about persisting the choice (only retry has a saved equivalent).
+	if shouldRetry {
+		e.console.Message(ctx, output.WithGrayFormat(
+			"Tip: To always auto retry after fix, run: %s",
+			output.WithHighLightFormat(
+				fmt.Sprintf("azd config set %s allow", agentcopilot.ConfigKeyErrorHandlingFix)),
+		))
+	}
+
+	return shouldRetry, nil
 }

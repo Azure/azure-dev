@@ -1,10 +1,16 @@
 # Release History
 
-## 0.1.25-preview (unreleased)
+## 0.1.26-preview (unreleased)
 
 ### Breaking Changes
 
 - [[#7764]](https://github.com/Azure/azure-dev/pull/7764) Remove `container.scale` configuration (`minReplicas`/`maxReplicas`) from `azure.yaml`. Scale settings are no longer supported for hosted agents. Remove any `container.scale` section from your service configuration.
+
+## 0.1.25-preview (2026-04-20)
+
+- [[#7811]](https://github.com/Azure/azure-dev/pull/7811) Fix agent deployment RBAC checks to show warnings instead of blocking deployment when role assignment issues are encountered.
+- [[#7808]](https://github.com/Azure/azure-dev/pull/7808) Add Azure AI Project Manager and Azure AI Account Owner as accepted roles in the developer RBAC role-assignment-write preflight check.
+- [[#7807]](https://github.com/Azure/azure-dev/pull/7807) Fix `azd ai agent invoke` to use the correct endpoint for creating conversations.
 
 ## 0.1.24-preview (2026-04-17)
 

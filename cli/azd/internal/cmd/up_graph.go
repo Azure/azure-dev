@@ -153,9 +153,9 @@ func (u *UpGraphAction) Run(
 	// approximate (package and provision phases overlap in the unified
 	// graph), but preserves the cmd.up → cmd.package + cmd.provision
 	// parent/child relationship and required attribute set
-	// (SubscriptionIdKey, EnvNameKey, CmdEntry, CmdFlags). Spans must end
-	// in the order package → provision so that the trace file lists them
-	// in the legacy order.
+	// (SubscriptionIdKey, EnvNameKey, CmdEntry, CmdFlags). Span ordering
+	// in the trace file is not guaranteed (BatchSpanProcessor batches
+	// asynchronously); consumers should look up spans by name.
 	parentChangedFlags := changedFlagNames(parentFlags)
 	packageFlags := append([]string{"all"}, parentChangedFlags...)
 	_, packageSpan := tracing.Start(ctx, "cmd.package")

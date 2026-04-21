@@ -275,10 +275,11 @@ func Test_CLI_Telemetry_NestedCommands(t *testing.T) {
 	require.NoError(t, err)
 
 	scanner := bufio.NewScanner(bytes.NewReader(traceContent))
-	// In order of observed events: package -> provision -> up
-	packageCmdFound := false
-	provisionCmdFound := false
-	upCmdFound := false
+	// Collect cmd.* spans by name. With the unified `azd up` command (post-exegraph),
+	// cmd.package, cmd.provision and cmd.up all flow through a single in-process
+	// BatchSpanProcessor. The OTEL SDK does not guarantee FIFO ordering of spans
+	// across batches, so we verify presence and per-span attributes rather than order.
+	cmdSpans := map[string]Span{}
 	for scanner.Scan() {
 		if scanner.Text() == "" {
 			continue
@@ -293,65 +294,43 @@ func Test_CLI_Telemetry_NestedCommands(t *testing.T) {
 			continue
 		}
 
-		if !packageCmdFound {
-			require.Equal(t, "cmd.package", span.Name)
-			packageCmdFound = true
-			require.Equal(t, traceId, span.SpanContext.TraceID, "commands do not share a traceID")
-
-			m := attributesMap(span.Attributes)
-			require.Contains(t, m, fields.SubscriptionIdKey.Key)
-			require.Equal(t, getEnvSubscriptionId(t, dir, envName), m[fields.SubscriptionIdKey.Key])
-
-			require.Contains(t, m, fields.EnvNameKey.Key)
-			require.Equal(t, fields.CaseInsensitiveHash(envName), m[fields.EnvNameKey.Key])
-
-			require.Contains(t, m, fields.CmdEntry.Key)
-			require.Equal(t, "cmd.up", m[fields.CmdEntry.Key])
-
-			require.Contains(t, m, fields.CmdFlags.Key)
-			require.ElementsMatch(t, []string{"all", "trace-log-file"}, m[fields.CmdFlags.Key])
-		} else if !provisionCmdFound {
-			require.Equal(t, "cmd.provision", span.Name)
-			provisionCmdFound = true
-			require.Equal(t, traceId, span.SpanContext.TraceID, "commands do not share a traceID")
-
-			m := attributesMap(span.Attributes)
-			require.Contains(t, m, fields.SubscriptionIdKey.Key)
-			require.Equal(t, getEnvSubscriptionId(t, dir, envName), m[fields.SubscriptionIdKey.Key])
-
-			require.Contains(t, m, fields.EnvNameKey.Key)
-			require.Equal(t, fields.CaseInsensitiveHash(envName), m[fields.EnvNameKey.Key])
-
-			require.Contains(t, m, fields.CmdEntry.Key)
-			require.Equal(t, "cmd.up", m[fields.CmdEntry.Key])
-
-			require.Contains(t, m, fields.CmdFlags.Key)
-			require.ElementsMatch(t, []string{"trace-log-file"}, m[fields.CmdFlags.Key])
-		} else if !upCmdFound {
-			require.Equal(t, "cmd.up", span.Name)
-			upCmdFound = true
-			require.Equal(t, traceId, span.SpanContext.TraceID, "commands do not share a traceID")
-
-			m := attributesMap(span.Attributes)
-			require.Contains(t, m, fields.SubscriptionIdKey.Key)
-			require.Equal(t, getEnvSubscriptionId(t, dir, envName), m[fields.SubscriptionIdKey.Key])
-
-			require.Contains(t, m, fields.EnvNameKey.Key)
-			require.Equal(t, fields.CaseInsensitiveHash(envName), m[fields.EnvNameKey.Key])
-
-			require.Contains(t, m, fields.CmdEntry.Key)
-			require.Equal(t, "cmd.up", m[fields.CmdEntry.Key])
-
-			require.Contains(t, m, fields.CmdFlags.Key)
-			require.ElementsMatch(t, []string{"trace-log-file"}, m[fields.CmdFlags.Key])
-
-			require.Contains(t, m, fields.CmdArgsCount.Key)
-			require.Equal(t, float64(0), m[fields.CmdArgsCount.Key])
+		// First occurrence wins (defensive; each cmd.* span should appear once).
+		if _, ok := cmdSpans[span.Name]; !ok {
+			cmdSpans[span.Name] = span
 		}
 	}
-	require.True(t, packageCmdFound, "cmd.package not found")
-	require.True(t, provisionCmdFound, "cmd.provision not found")
-	require.True(t, upCmdFound, "cmd.up not found")
+
+	require.Contains(t, cmdSpans, "cmd.package", "cmd.package not found")
+	require.Contains(t, cmdSpans, "cmd.provision", "cmd.provision not found")
+	require.Contains(t, cmdSpans, "cmd.up", "cmd.up not found")
+
+	subId := getEnvSubscriptionId(t, dir, envName)
+	envHash := fields.CaseInsensitiveHash(envName)
+
+	assertCommonAttrs := func(span Span, expectedFlags []string) {
+		require.Equal(t, traceId, span.SpanContext.TraceID, "commands do not share a traceID")
+
+		m := attributesMap(span.Attributes)
+		require.Contains(t, m, fields.SubscriptionIdKey.Key)
+		require.Equal(t, subId, m[fields.SubscriptionIdKey.Key])
+
+		require.Contains(t, m, fields.EnvNameKey.Key)
+		require.Equal(t, envHash, m[fields.EnvNameKey.Key])
+
+		require.Contains(t, m, fields.CmdEntry.Key)
+		require.Equal(t, "cmd.up", m[fields.CmdEntry.Key])
+
+		require.Contains(t, m, fields.CmdFlags.Key)
+		require.ElementsMatch(t, expectedFlags, m[fields.CmdFlags.Key])
+	}
+
+	assertCommonAttrs(cmdSpans["cmd.package"], []string{"all", "trace-log-file"})
+	assertCommonAttrs(cmdSpans["cmd.provision"], []string{"trace-log-file"})
+	assertCommonAttrs(cmdSpans["cmd.up"], []string{"trace-log-file"})
+
+	upAttrs := attributesMap(cmdSpans["cmd.up"].Attributes)
+	require.Contains(t, upAttrs, fields.CmdArgsCount.Key)
+	require.Equal(t, float64(0), upAttrs[fields.CmdArgsCount.Key])
 }
 
 func Test_Telemetry_AlphaFeatures_Enabled(t *testing.T) {

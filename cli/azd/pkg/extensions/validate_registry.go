@@ -22,9 +22,6 @@ var ValidPlatforms = []string{
 	"linux/arm64",
 }
 
-// schemaVersionRegex validates registry schema version format: major.minor
-var schemaVersionRegex = regexp.MustCompile(`^\d+\.\d+$`)
-
 // ValidCapabilities defines the valid capability types for extensions.
 var ValidCapabilities = []CapabilityType{
 	CustomCommandCapability,
@@ -129,10 +126,10 @@ func validateSchemaVersion(
 		return
 	}
 
-	if !schemaVersionRegex.MatchString(schemaVersion) {
+	if _, err := semver.NewVersion(schemaVersion); err != nil {
 		result.addError(fmt.Sprintf(
-			"invalid schemaVersion format %q: expected major.minor (e.g. %q)",
-			schemaVersion, CurrentRegistrySchemaVersion,
+			"invalid schemaVersion format %q: %v",
+			schemaVersion, err,
 		))
 	}
 }

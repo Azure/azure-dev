@@ -96,6 +96,11 @@ func TestCheckRegistrySchemaVersion(t *testing.T) {
 			expectErr:   true,
 			errContains: "invalid registry schema version",
 		},
+		{
+			name:      "major version 0.0",
+			version:   "0.0",
+			expectErr: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -268,10 +273,9 @@ func TestValidateRegistry_SchemaVersion(t *testing.T) {
 			expectErrors:  1,
 		},
 		{
-			name:          "three segments invalid",
+			name:          "three segments valid semver",
 			schemaVersion: "1.0.0",
-			expectValid:   false,
-			expectErrors:  1,
+			expectValid:   true,
 		},
 	}
 

@@ -268,8 +268,7 @@
     "properties": {
         "schemaVersion": {
             "type": "string",
-            "description": "Schema version for the registry format. Uses major.minor versioning.",
-            "pattern": "^\\d+\\.\\d+$"
+            "description": "Semantic version string for the registry format (e.g., '1.0', '1.0.0')."
         },
         "extensions": {
             "$comment": "Each extension must have a unique 'id' within the array.",

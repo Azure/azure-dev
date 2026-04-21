@@ -715,8 +715,8 @@ type StructuredOutputDefinition struct {
 }
 
 // FlexibleTimestamp is a string that can be unmarshalled from either a JSON
-// string or a JSON number (Unix epoch seconds). This handles APIs that may
-// return modified_time as either format.
+// string or a JSON number (Unix epoch seconds or milliseconds). This handles
+// APIs that may return modified_time as either format.
 type FlexibleTimestamp string
 
 // UnmarshalJSON unmarshals FlexibleTimestamp from either a JSON string or a
@@ -729,15 +729,24 @@ func (ft *FlexibleTimestamp) UnmarshalJSON(data []byte) error {
 		return nil
 	}
 
-	// Try number (Unix epoch seconds, or milliseconds if > 1e12).
+	// Try number (Unix epoch seconds or milliseconds).
 	var n float64
 	if err := json.Unmarshal(data, &n); err == nil {
-		if n > 1e12 {
-			n /= 1000
-		}
+		// Interpret as seconds first.
 		sec, frac := math.Modf(n)
 		t := time.Unix(int64(sec), int64(frac*1e9)).UTC()
-		*ft = FlexibleTimestamp(t.Format(time.RFC3339))
+
+		// If the result is far in the future, the value is
+		// likely in milliseconds.
+		if t.Year() > 3000 {
+			ms := int64(n)
+			t = time.Unix(
+				ms/1000,
+				(ms%1000)*int64(time.Millisecond),
+			).UTC()
+		}
+
+		*ft = FlexibleTimestamp(t.Format(time.RFC3339Nano))
 		return nil
 	}
 

@@ -867,8 +867,27 @@ func TestFlexibleTimestamp_UnmarshalNumber(t *testing.T) {
 	if err := json.Unmarshal([]byte(raw), &got); err != nil {
 		t.Fatalf("unmarshal numeric timestamp: %v", err)
 	}
-	if got.LastModified == nil || got.LastModified.String() != "2023-11-14T22:13:20Z" {
-		t.Errorf("LastModified = %v, want 2023-11-14T22:13:20Z", got.LastModified)
+	if got.LastModified == nil ||
+		got.LastModified.String() != "2023-11-14T22:13:20Z" {
+		t.Errorf(
+			"LastModified = %v, want 2023-11-14T22:13:20Z",
+			got.LastModified,
+		)
+	}
+
+	// Verify round-trip: re-marshalling produces an RFC3339 string.
+	data, err := json.Marshal(got)
+	if err != nil {
+		t.Fatalf("marshal numeric timestamp: %v", err)
+	}
+	if !strings.Contains(
+		string(data),
+		`"modified_time":"2023-11-14T22:13:20Z"`,
+	) {
+		t.Errorf(
+			"marshalled JSON = %s, want RFC3339 string",
+			string(data),
+		)
 	}
 }
 
@@ -883,22 +902,44 @@ func TestFlexibleTimestamp_UnmarshalNumberInEntries(t *testing.T) {
 	if len(got.Entries) != 1 {
 		t.Fatalf("expected 1 entry, got %d", len(got.Entries))
 	}
-	if got.Entries[0].LastModified == nil || got.Entries[0].LastModified.String() != "2023-11-14T22:13:20Z" {
-		t.Errorf("entry LastModified = %v, want 2023-11-14T22:13:20Z", got.Entries[0].LastModified)
+	if got.Entries[0].LastModified == nil ||
+		got.Entries[0].LastModified.String() != "2023-11-14T22:13:20Z" {
+		t.Errorf(
+			"entry LastModified = %v, want 2023-11-14T22:13:20Z",
+			got.Entries[0].LastModified,
+		)
 	}
 }
 
 func TestFlexibleTimestamp_UnmarshalMilliseconds(t *testing.T) {
 	t.Parallel()
 
-	// 1700000000000 ms == 1700000000 s == 2023-11-14T22:13:20Z
-	raw := `{"name":"f.txt","path":"/f.txt","is_dir":false,"modified_time":1700000000000}`
+	// 1700000000123 ms == 2023-11-14T22:13:20.123Z
+	raw := `{"name":"f.txt","path":"/f.txt","is_dir":false,"modified_time":1700000000123}`
 	var got SessionFileInfo
 	if err := json.Unmarshal([]byte(raw), &got); err != nil {
 		t.Fatalf("unmarshal millisecond timestamp: %v", err)
 	}
-	if got.LastModified == nil || got.LastModified.String() != "2023-11-14T22:13:20Z" {
-		t.Errorf("LastModified = %v, want 2023-11-14T22:13:20Z", got.LastModified)
+	want := "2023-11-14T22:13:20.123Z"
+	if got.LastModified == nil ||
+		got.LastModified.String() != want {
+		t.Errorf(
+			"LastModified = %v, want %s",
+			got.LastModified, want,
+		)
+	}
+
+	// Verify round-trip preserves millisecond precision.
+	data, err := json.Marshal(got)
+	if err != nil {
+		t.Fatalf("marshal millisecond timestamp: %v", err)
+	}
+	wantJSON := `"modified_time":"2023-11-14T22:13:20.123Z"`
+	if !strings.Contains(string(data), wantJSON) {
+		t.Errorf(
+			"marshalled JSON = %s, want %s",
+			string(data), wantJSON,
+		)
 	}
 }
 

@@ -68,19 +68,19 @@ type cliConfig struct {
 	// The tenant ID to use for live Azure tests.
 	// Resolution order (first non-empty wins):
 	//   1. AZD_TEST_TENANT_ID env var
-	//   2. azd config 'defaults.test.tenant'
+	//   2. azd config 'defaults.test.tenant' (only when CI is unset)
 	TenantID string
 	// The Azure subscription ID to use for live Azure tests.
 	// Resolution order (first non-empty wins):
 	//   1. AZD_TEST_AZURE_SUBSCRIPTION_ID env var
-	//   2. azd config 'defaults.test.subscription'
-	//   3. azd config 'defaults.subscription'
+	//   2. azd config 'defaults.test.subscription' (only when CI is unset)
+	//   3. azd config 'defaults.subscription'      (only when CI is unset)
 	SubscriptionID string
 	// The Azure location to use for live Azure tests.
 	// Resolution order (first non-empty wins):
 	//   1. AZD_TEST_AZURE_LOCATION env var
-	//   2. azd config 'defaults.test.location'
-	//   3. azd config 'defaults.location'
+	//   2. azd config 'defaults.test.location' (only when CI is unset)
+	//   3. azd config 'defaults.location'      (only when CI is unset)
 	Location string
 }
 

@@ -242,6 +242,9 @@ These variables are used by the Terraform provider integration to authenticate w
 > ```
 >
 > Resolution order: environment variable → `defaults.test.*` → `defaults.*` (global default).
+> Note: `AZD_TEST_TENANT_ID` only falls back to `defaults.test.tenant` (no
+> `defaults.tenant` global fallback). Config fallbacks are only consulted when
+> the `CI` environment variable is unset.
 
 | Variable | Description | Config Fallback |
 | --- | --- | --- |

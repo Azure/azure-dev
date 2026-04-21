@@ -286,6 +286,8 @@ azd config set defaults.test.tenant <TENANT_ID>
 ```
 
 The resolution order is: environment variable → `defaults.test.*` config → `defaults.*` config.
+Note: tenant only falls back to `defaults.test.tenant` (no `defaults.tenant` global fallback).
+Config fallbacks are only consulted when the `CI` environment variable is unset.
 
 | Setting | Environment Variable | Config Key |
 |---------|---------------------|------------|

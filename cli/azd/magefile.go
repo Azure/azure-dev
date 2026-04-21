@@ -496,7 +496,10 @@ func runFunctionalTests(azdDir string, opts testRunOpts) error {
 	recordingsDir := filepath.Join(
 		azdDir, "test", "functional", "testdata", "recordings",
 	)
-	names, err := discoverPlaybackTests(recordingsDir)
+	// In record mode, ignore the stale-recording exclusion list so users can
+	// re-record those tests via `mage record -filter=<name>`. In playback
+	// mode, skip them so they don't block preflight.
+	names, err := discoverPlaybackTests(recordingsDir, opts.mode == "playback")
 	if err != nil {
 		return err
 	}
@@ -514,7 +517,7 @@ func runFunctionalTests(azdDir string, opts testRunOpts) error {
 			}
 		}
 		if len(filtered) == 0 {
-			fmt.Printf("No playback tests match filter %q. Available tests:\n", *opts.filter)
+			fmt.Printf("No tests match filter %q in %s mode. Available tests:\n", *opts.filter, opts.mode)
 			for _, name := range names {
 				fmt.Printf("  • %s\n", name)
 			}
@@ -559,8 +562,12 @@ var excludedPlaybackTests = map[string]string{
 }
 
 // discoverPlaybackTests scans the recordings directory for .yaml files and
-// subdirectories, returning unique top-level Go test function names.
-func discoverPlaybackTests(recordingsDir string) ([]string, error) {
+// subdirectories, returning unique top-level Go test function names. When
+// applyExclusions is true, tests in excludedPlaybackTests are filtered out
+// (used in playback mode to avoid blocking preflight on known-stale
+// recordings). In record mode, callers pass false so excluded tests can
+// be re-recorded via `mage record -filter=<name>`.
+func discoverPlaybackTests(recordingsDir string, applyExclusions bool) ([]string, error) {
 	entries, err := os.ReadDir(recordingsDir)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -593,9 +600,13 @@ func discoverPlaybackTests(recordingsDir string) ([]string, error) {
 		seen[cassette] = true
 	}
 
-	// Remove tests with known stale recordings.
-	for name := range excludedPlaybackTests {
-		delete(seen, name)
+	// Remove tests with known stale recordings, but only when requested
+	// (i.e. in playback mode). Record mode needs to see all tests so users
+	// can re-record the excluded ones via `mage record -filter=<name>`.
+	if applyExclusions {
+		for name := range excludedPlaybackTests {
+			delete(seen, name)
+		}
 	}
 
 	if len(seen) == 0 {

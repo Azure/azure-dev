@@ -1,5 +1,9 @@
 # Release History
 
+## 0.1.26-preview (Unreleased)
+
+- [[#7209]](https://github.com/Azure/azure-dev/issues/7209) Improve `azd ai agent monitor` output: render each SSE log event as a single compact, color-coded line (`HH:MM:SS  <stream>  <message>`) with session-metadata events rendered as `session <state> (v<version>, last accessed: ...)`. Add `--utc` flag to display timestamps in UTC instead of local time, and `--raw` flag to preserve the previous raw SSE output.
+
 ## 0.1.25-preview (2026-04-20)
 
 - [[#7811]](https://github.com/Azure/azure-dev/pull/7811) Fix agent deployment RBAC checks to show warnings instead of blocking deployment when role assignment issues are encountered.

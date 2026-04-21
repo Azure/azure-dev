@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -154,7 +153,7 @@ type AzureContext struct {
 	Scope         AzureScope
 	Resources     *AzureResourceList
 	promptService PromptService
-	globalOptions *internal.GlobalCommandOptions
+	noPrompt      bool
 }
 
 // NewEmptyAzureContext creates a new empty Azure context.
@@ -170,13 +169,13 @@ func NewAzureContext(
 	promptService PromptService,
 	scope AzureScope,
 	resourceList *AzureResourceList,
-	globalOptions *internal.GlobalCommandOptions,
+	noPrompt bool,
 ) *AzureContext {
 	return &AzureContext{
 		Scope:         scope,
 		Resources:     resourceList,
 		promptService: promptService,
-		globalOptions: globalOptions,
+		noPrompt:      noPrompt,
 	}
 }
 
@@ -187,7 +186,7 @@ func (pc *AzureContext) EnsureSubscription(ctx context.Context) error {
 		return nil
 	}
 
-	if pc.globalOptions != nil && pc.globalOptions.NoPrompt {
+	if pc.noPrompt {
 		return &input.PromptRequiredError{
 			Inputs: []input.RequiredInput{
 				{
@@ -221,7 +220,7 @@ func (pc *AzureContext) EnsureResourceGroup(ctx context.Context) error {
 		return nil
 	}
 
-	if pc.globalOptions != nil && pc.globalOptions.NoPrompt {
+	if pc.noPrompt {
 		return &input.PromptRequiredError{
 			Inputs: []input.RequiredInput{
 				{
@@ -255,7 +254,7 @@ func (pc *AzureContext) EnsureLocation(ctx context.Context) error {
 		return nil
 	}
 
-	if pc.globalOptions != nil && pc.globalOptions.NoPrompt {
+	if pc.noPrompt {
 		return &input.PromptRequiredError{
 			Inputs: []input.RequiredInput{
 				{

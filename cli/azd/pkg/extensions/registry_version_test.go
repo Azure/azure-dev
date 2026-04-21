@@ -57,31 +57,28 @@ func TestCheckRegistrySchemaVersion(t *testing.T) {
 			name:        "malformed: letters",
 			version:     "abc",
 			expectErr:   true,
-			errContains: "expected major.minor format",
+			errContains: "invalid registry schema version",
 		},
 		{
-			name:        "malformed: single number",
-			version:     "1",
-			expectErr:   true,
-			errContains: "expected major.minor format",
+			name:      "single number accepted by semver",
+			version:   "1",
+			expectErr: false,
 		},
 		{
-			name:        "malformed: three segments",
-			version:     "1.0.0",
-			expectErr:   true,
-			errContains: "expected major.minor format",
+			name:      "three segments accepted as valid semver",
+			version:   "1.0.0",
+			expectErr: false,
 		},
 		{
-			name:        "malformed: v-prefix",
-			version:     "v1.0",
-			expectErr:   true,
-			errContains: "cannot parse major component",
+			name:      "v-prefix accepted by semver",
+			version:   "v1.0",
+			expectErr: false,
 		},
 		{
 			name:        "malformed: non-numeric minor",
 			version:     "1.x",
 			expectErr:   true,
-			errContains: "cannot parse minor component",
+			errContains: "invalid registry schema version",
 		},
 		{
 			name:      "major version 0",
@@ -92,6 +89,12 @@ func TestCheckRegistrySchemaVersion(t *testing.T) {
 			name:      "version 1.0 exact match",
 			version:   "1.0",
 			expectErr: false,
+		},
+		{
+			name:        "malformed: negative major",
+			version:     "-1.0",
+			expectErr:   true,
+			errContains: "invalid registry schema version",
 		},
 	}
 
@@ -297,95 +300,6 @@ func TestValidateRegistry_SchemaVersion(t *testing.T) {
 				"unexpected warning count")
 			assert.Equal(t, tt.expectErrors, errs,
 				"unexpected error count")
-		})
-	}
-}
-
-func TestParseSchemaVersion(t *testing.T) {
-	tests := []struct {
-		name        string
-		version     string
-		wantMajor   int
-		wantMinor   int
-		expectErr   bool
-		errContains string
-	}{
-		{
-			name:      "standard 1.0",
-			version:   "1.0",
-			wantMajor: 1,
-			wantMinor: 0,
-		},
-		{
-			name:      "higher minor",
-			version:   "1.5",
-			wantMajor: 1,
-			wantMinor: 5,
-		},
-		{
-			name:      "major 2",
-			version:   "2.0",
-			wantMajor: 2,
-			wantMinor: 0,
-		},
-		{
-			name:        "no dot",
-			version:     "1",
-			expectErr:   true,
-			errContains: "expected major.minor",
-		},
-		{
-			name:        "triple dot",
-			version:     "1.2.3",
-			expectErr:   true,
-			errContains: "expected major.minor",
-		},
-		{
-			name:        "alpha major",
-			version:     "a.0",
-			expectErr:   true,
-			errContains: "cannot parse major",
-		},
-		{
-			name:        "alpha minor",
-			version:     "1.b",
-			expectErr:   true,
-			errContains: "cannot parse minor",
-		},
-		{
-			name:        "negative major",
-			version:     "-1.0",
-			expectErr:   true,
-			errContains: "major version cannot be negative",
-		},
-		{
-			name:        "negative minor",
-			version:     "1.-5",
-			expectErr:   true,
-			errContains: "minor version cannot be negative",
-		},
-		{
-			name:        "negative both",
-			version:     "-5.-10",
-			expectErr:   true,
-			errContains: "major version cannot be negative",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			major, minor, err := parseSchemaVersion(tt.version)
-			if tt.expectErr {
-				require.Error(t, err)
-				if tt.errContains != "" {
-					assert.Contains(t, err.Error(), tt.errContains)
-				}
-				return
-			}
-
-			require.NoError(t, err)
-			assert.Equal(t, tt.wantMajor, major)
-			assert.Equal(t, tt.wantMinor, minor)
 		})
 	}
 }

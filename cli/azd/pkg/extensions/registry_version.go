@@ -5,8 +5,8 @@ package extensions
 
 import (
 	"fmt"
-	"strconv"
-	"strings"
+
+	"github.com/Masterminds/semver/v3"
 )
 
 // ErrUnsupportedRegistrySchema is returned when the registry schema version
@@ -39,14 +39,15 @@ func CheckRegistrySchemaVersion(schemaVersion string) error {
 		return nil
 	}
 
-	major, minor, err := parseSchemaVersion(schemaVersion)
+	v, err := semver.NewVersion(schemaVersion)
 	if err != nil {
-		return err
+		return fmt.Errorf(
+			"invalid registry schema version %q: %w",
+			schemaVersion, err,
+		)
 	}
 
-	_ = minor // newer minor versions are accepted silently
-
-	if major > MinSupportedMajorVersion {
+	if v.Major() > uint64(MinSupportedMajorVersion) {
 		return &ErrUnsupportedRegistrySchema{
 			SchemaVersion:       schemaVersion,
 			MaxSupportedVersion: CurrentRegistrySchemaVersion,
@@ -54,56 +55,4 @@ func CheckRegistrySchemaVersion(schemaVersion string) error {
 	}
 
 	return nil
-}
-
-// parseSchemaVersion parses a "major.minor" version string into its
-// integer components. Returns an error for malformed input.
-func parseSchemaVersion(version string) (int, int, error) {
-	majorStr, minorStr, ok := strings.Cut(version, ".")
-	if !ok {
-		return 0, 0, fmt.Errorf(
-			"invalid registry schema version %q: expected major.minor format",
-			version,
-		)
-	}
-
-	// Reject extra dot segments (e.g. "1.0.0")
-	if strings.Contains(minorStr, ".") {
-		return 0, 0, fmt.Errorf(
-			"invalid registry schema version %q: expected major.minor format",
-			version,
-		)
-	}
-
-	major, err := strconv.Atoi(majorStr)
-	if err != nil {
-		return 0, 0, fmt.Errorf(
-			"invalid registry schema version %q: cannot parse major component",
-			version,
-		)
-	}
-
-	if major < 0 {
-		return 0, 0, fmt.Errorf(
-			"invalid registry schema version %q: major version cannot be negative",
-			version,
-		)
-	}
-
-	minor, err := strconv.Atoi(minorStr)
-	if err != nil {
-		return 0, 0, fmt.Errorf(
-			"invalid registry schema version %q: cannot parse minor component",
-			version,
-		)
-	}
-
-	if minor < 0 {
-		return 0, 0, fmt.Errorf(
-			"invalid registry schema version %q: minor version cannot be negative",
-			version,
-		)
-	}
-
-	return major, minor, nil
 }

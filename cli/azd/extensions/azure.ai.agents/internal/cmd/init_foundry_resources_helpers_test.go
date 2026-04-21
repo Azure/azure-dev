@@ -162,6 +162,7 @@ type testEnvironmentServiceServer struct {
 	azdext.UnimplementedEnvironmentServiceServer
 	environments map[string]*azdext.Environment
 	current      *azdext.Environment
+	values       map[string]map[string]string // envName -> key -> value
 }
 
 func (s *testEnvironmentServiceServer) GetCurrent(context.Context, *azdext.EmptyRequest) (*azdext.EnvironmentResponse, error) {
@@ -172,13 +173,41 @@ func (s *testEnvironmentServiceServer) GetCurrent(context.Context, *azdext.Empty
 	return &azdext.EnvironmentResponse{Environment: s.current}, nil
 }
 
-func (s *testEnvironmentServiceServer) Get(_ context.Context, req *azdext.GetEnvironmentRequest) (*azdext.EnvironmentResponse, error) {
+func (s *testEnvironmentServiceServer) Get(
+	_ context.Context, req *azdext.GetEnvironmentRequest,
+) (*azdext.EnvironmentResponse, error) {
 	env, ok := s.environments[req.Name]
 	if !ok {
 		return nil, status.Error(codes.NotFound, "environment not found")
 	}
 
 	return &azdext.EnvironmentResponse{Environment: env}, nil
+}
+
+func (s *testEnvironmentServiceServer) SetValue(
+	_ context.Context, req *azdext.SetEnvRequest,
+) (*azdext.EmptyResponse, error) {
+	if s.values == nil {
+		s.values = make(map[string]map[string]string)
+	}
+	if s.values[req.EnvName] == nil {
+		s.values[req.EnvName] = make(map[string]string)
+	}
+	s.values[req.EnvName][req.Key] = req.Value
+	return &azdext.EmptyResponse{}, nil
+}
+
+func (s *testEnvironmentServiceServer) GetValue(
+	_ context.Context, req *azdext.GetEnvRequest,
+) (*azdext.KeyValueResponse, error) {
+	if s.values != nil {
+		if envVals, ok := s.values[req.EnvName]; ok {
+			if val, ok := envVals[req.Key]; ok {
+				return &azdext.KeyValueResponse{Value: val}, nil
+			}
+		}
+	}
+	return nil, status.Error(codes.NotFound, "key not found")
 }
 
 type testWorkflowServiceServer struct {
@@ -486,4 +515,36 @@ func TestNormalizeLoginServer(t *testing.T) {
 			require.Equal(t, tt.want, normalizeLoginServer(tt.input))
 		})
 	}
+}
+
+func TestSetEnvValue_PersistsKeyValue(t *testing.T) {
+	t.Parallel()
+
+	envServer := &testEnvironmentServiceServer{
+		environments: map[string]*azdext.Environment{
+			"test-env": {Name: "test-env"},
+		},
+	}
+	workflowServer := &testWorkflowServiceServer{}
+	azdClient := newTestAzdClient(t, envServer, workflowServer)
+
+	const envName = "test-env"
+
+	// Set a value
+	err := setEnvValue(
+		t.Context(), azdClient, envName, "USE_EXISTING_AI_PROJECT", "true",
+	)
+	require.NoError(t, err)
+
+	// Verify it was stored
+	require.Equal(t, "true", envServer.values[envName]["USE_EXISTING_AI_PROJECT"])
+
+	// Overwrite with "false" (simulating re-init choosing "create new")
+	err = setEnvValue(
+		t.Context(), azdClient, envName, "USE_EXISTING_AI_PROJECT", "false",
+	)
+	require.NoError(t, err)
+
+	// Verify the value was updated
+	require.Equal(t, "false", envServer.values[envName]["USE_EXISTING_AI_PROJECT"])
 }

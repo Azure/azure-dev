@@ -1,8 +1,11 @@
 # Release History
 
-## 0.1.26-preview (unreleased)
+## 0.1.26-preview (2026-04-21)
 
-- [[#7209]](https://github.com/Azure/azure-dev/issues/7209) Improve `azd ai agent monitor` output: render each SSE log event as a single compact, color-coded line (`HH:MM:SS  <stream>  <message>`) with session-metadata events rendered as `session <state> (v<version>, last accessed: ...)`. Add `--utc` flag to display timestamps in UTC instead of local time, and `--raw` flag to preserve the previous raw SSE output.
+- [[#7843]](https://github.com/Azure/azure-dev/pull/7843) Improve `azd ai agent init` model setup by allowing existing AI project selection to proceed without requiring model deployment selection.
+- [[#7835]](https://github.com/Azure/azure-dev/pull/7835) Add validation for missing container registry endpoints in agent service configuration.
+- [[#7790]](https://github.com/Azure/azure-dev/pull/7790) Improve `azd ai agent monitor` output: render each SSE log event as a single compact, color-coded line (`HH:MM:SS  <stream>  <message>`) with session-metadata events rendered as `session <state> (v<version>, last accessed: ...)`. Add `--utc` flag to display timestamps in UTC instead of local time, and `--raw` flag to preserve the previous raw SSE output.
+- [[#7834]](https://github.com/Azure/azure-dev/pull/7834) Implement flexible timestamp parsing for `modified_time` values in JSON responses.
 
 ### Breaking Changes
 

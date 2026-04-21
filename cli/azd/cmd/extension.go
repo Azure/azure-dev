@@ -1024,13 +1024,19 @@ func (a *extensionUpgradeAction) Run(ctx context.Context) (*actions.ActionResult
 			return nil, fmt.Errorf("failed to get installed extension: %w", err)
 		}
 
-		filterOptions := &extensions.FilterOptions{
+		// Search all sources (no source filter) so the resolver can evaluate all matches.
+		// The resolver applies source priority logic instead of filtering at the query level.
+		allMatchOptions := &extensions.FilterOptions{
 			Id:      extensionId,
-			Source:  a.flags.source,
 			Version: a.flags.version,
 		}
 
-		matches, err := a.extensionManager.FindExtensions(ctx, filterOptions)
+		// When an explicit --source flag is provided, filter at query level for efficiency
+		if a.flags.source != "" {
+			allMatchOptions.Source = a.flags.source
+		}
+
+		matches, err := a.extensionManager.FindExtensions(ctx, allMatchOptions)
 		if err != nil {
 			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 			return nil, fmt.Errorf("failed to get extension %s: %w", extensionId, err)
@@ -1044,9 +1050,47 @@ func (a *extensionUpgradeAction) Run(ctx context.Context) (*actions.ActionResult
 			}
 		}
 
-		selectedExtension, err := selectDistinctExtension(ctx, a.console, extensionId, matches, a.flags.global)
-		if err != nil {
-			return nil, err
+		// Resolve which source to use for the upgrade.
+		// In batch mode (--all) or non-interactive mode (--no-prompt), use the registry resolver
+		// to deterministically pick a source without prompting.
+		// In interactive single-extension mode with ambiguous sources, fall back to the picker.
+		var selectedExtension *extensions.ExtensionMetadata
+		var isPromotion bool
+		var oldSource, newSource string
+
+		isBatchOrNoPrompt := a.flags.all || a.flags.global.NoPrompt
+
+		if isBatchOrNoPrompt || len(matches) == 1 {
+			resolveResult := extensions.ResolveUpgradeSource(installed, matches, a.flags.source)
+			if resolveResult == nil {
+				a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+				return nil, &internal.ErrorWithSuggestion{
+					Err: fmt.Errorf(
+						"extension '%s': %w",
+						extensionId, internal.ErrExtensionNotFound,
+					),
+					Suggestion: fmt.Sprintf(
+						"Extension not found in source '%s'. "+
+							"Run 'azd extension list' to browse available extensions.",
+						a.flags.source,
+					),
+				}
+			}
+			selectedExtension = resolveResult.Extension
+			isPromotion = resolveResult.IsPromotion
+			oldSource = resolveResult.OldSource
+			newSource = resolveResult.NewSource
+		} else {
+			// Interactive mode with multiple source matches — use existing picker
+			selectedExtension, err = selectDistinctExtension(
+				ctx, a.console, extensionId, matches, a.flags.global,
+			)
+			if err != nil {
+				return nil, err
+			}
+			// Track source change for interactive selection too
+			oldSource = installed.Source
+			newSource = selectedExtension.Source
 		}
 
 		a.console.ShowSpinner(ctx, stepMessage, input.Step)
@@ -1102,9 +1146,44 @@ func (a *extensionUpgradeAction) Run(ctx context.Context) (*actions.ActionResult
 			stepMessage += output.WithGrayFormat(" (No upgrade available)")
 			a.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
 		} else {
-			extensionVersion, err := a.extensionManager.Upgrade(ctx, compatibleExtension, a.flags.version)
+			extensionVersion, err := a.extensionManager.Upgrade(
+				ctx, compatibleExtension, a.flags.version,
+			)
 			if err != nil {
 				return nil, fmt.Errorf("failed to upgrade extension: %w", err)
+			}
+
+			// Handle promotion: display warning about registry transition.
+			// The source is already persisted by Upgrade() → Install() which uses
+			// the resolved extension metadata (with the new source).
+			if isPromotion {
+				a.console.StopSpinner(ctx, stepMessage, input.StepWarning)
+				a.console.Message(ctx, output.WithWarningFormat(
+					"  (!) Warning: Upgraded %s extension (%s → %s, %s → %s registry)",
+					output.WithHighLightFormat(extensionId),
+					installed.Version,
+					extensionVersion.Version,
+					output.WithHighLightFormat(oldSource),
+					output.WithHighLightFormat(newSource),
+				))
+				a.console.Message(ctx, fmt.Sprintf(
+					"  Extension was promoted from the %s registry "+
+						"to the official %s registry.",
+					output.WithHighLightFormat(oldSource),
+					output.WithHighLightFormat(newSource),
+				))
+				a.console.Message(ctx, fmt.Sprintf(
+					"  Source has been updated automatically. "+
+						"To stay on %s, reinstall with:",
+					output.WithHighLightFormat(oldSource),
+				))
+				a.console.Message(ctx, fmt.Sprintf(
+					"    %s",
+					output.WithHighLightFormat(fmt.Sprintf(
+						"azd extension install %s --source %s",
+						extensionId, oldSource,
+					)),
+				))
 			}
 
 			stepMessage += output.WithGrayFormat(" (%s)", extensionVersion.Version)

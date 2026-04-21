@@ -1044,8 +1044,12 @@ func (a *extensionUpgradeAction) Run(ctx context.Context) (*actions.ActionResult
 
 		if len(matches) == 0 {
 			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+			errMsg := fmt.Sprintf("extension '%s'", extensionId)
+			if a.flags.source != "" {
+				errMsg += fmt.Sprintf(" not found in source '%s'", a.flags.source)
+			}
 			return nil, &internal.ErrorWithSuggestion{
-				Err:        fmt.Errorf("extension '%s': %w", extensionId, internal.ErrExtensionNotFound),
+				Err:        fmt.Errorf("%s: %w", errMsg, internal.ErrExtensionNotFound),
 				Suggestion: "Run 'azd extension list' to browse available extensions.",
 			}
 		}
@@ -1153,16 +1157,16 @@ func (a *extensionUpgradeAction) Run(ctx context.Context) (*actions.ActionResult
 				return nil, fmt.Errorf("failed to upgrade extension: %w", err)
 			}
 
+			stepMessage += output.WithGrayFormat(" (%s)", extensionVersion.Version)
+			a.console.StopSpinner(ctx, stepMessage, input.StepDone)
+
 			// Handle promotion: display warning about registry transition.
 			// The source is already persisted by Upgrade() → Install() which uses
 			// the resolved extension metadata (with the new source).
 			if isPromotion {
-				a.console.StopSpinner(ctx, stepMessage, input.StepWarning)
 				a.console.Message(ctx, output.WithWarningFormat(
-					"  (!) Warning: Upgraded %s extension (%s → %s, %s → %s registry)",
+					"  (!) Warning: %s extension promoted (%s → %s registry)",
 					output.WithHighLightFormat(extensionId),
-					installed.Version,
-					extensionVersion.Version,
 					output.WithHighLightFormat(oldSource),
 					output.WithHighLightFormat(newSource),
 				))
@@ -1185,9 +1189,6 @@ func (a *extensionUpgradeAction) Run(ctx context.Context) (*actions.ActionResult
 					)),
 				))
 			}
-
-			stepMessage += output.WithGrayFormat(" (%s)", extensionVersion.Version)
-			a.console.StopSpinner(ctx, stepMessage, input.StepDone)
 
 			displayExtensionUsageAndExamples(ctx, a.console, extensionVersion)
 		}

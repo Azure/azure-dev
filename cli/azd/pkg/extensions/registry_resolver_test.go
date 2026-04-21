@@ -99,7 +99,7 @@ func TestResolveUpgradeSource(t *testing.T) {
 			wantNewSource: "azd",
 		},
 		{
-			name:      "promotion dev to main when main version >= dev version",
+			name:      "promotion dev to main when main version > dev version",
 			installed: &Extension{Id: "test-ext", Source: "dev"},
 			allMatches: []*ExtensionMetadata{
 				makeExt("azd", "1.0.0"),
@@ -159,16 +159,13 @@ func TestResolveUpgradeSource(t *testing.T) {
 			wantNewSource: "azd",
 		},
 		{
-			name:      "fallback to first available when no stored/main match",
+			name:      "returns nil when no stored/main match (no silent fallback)",
 			installed: &Extension{Id: "test-ext", Source: "removed-registry"},
 			allMatches: []*ExtensionMetadata{
 				makeExt("custom-a", "1.0.0"),
 				makeExt("custom-b", "1.0.0"),
 			},
-			wantSource:    "custom-a",
-			wantPromotion: false,
-			wantOldSource: "removed-registry",
-			wantNewSource: "custom-a",
+			wantNil: true,
 		},
 		{
 			name:      "custom source stays custom (no promotion to main)",
@@ -280,6 +277,14 @@ func TestShouldPromote(t *testing.T) {
 			storedMatch: makeExt("dev", "2.0.0-beta.1"),
 			mainMatch:   makeExt("azd", "1.0.0"),
 			want:        false,
+		},
+		{
+			name:        "main has no versions does not promote",
+			storedMatch: makeExt("dev", "1.0.0"),
+			mainMatch: &ExtensionMetadata{
+				Id: "test-ext", Source: "azd", Versions: []ExtensionVersion{},
+			},
+			want: false,
 		},
 		{
 			name: "stored has no versions promotes",

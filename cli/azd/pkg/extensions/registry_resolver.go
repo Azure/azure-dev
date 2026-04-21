@@ -4,7 +4,6 @@
 package extensions
 
 import (
-	"log"
 	"strings"
 
 	"github.com/Masterminds/semver/v3"
@@ -35,7 +34,9 @@ type ResolveResult struct {
 //  1. Explicit source flag — if flagSource is non-empty, only matches from that source are considered.
 //  2. Stored source — prefer matches from the extension's persisted Source field.
 //  3. Main registry fallback — if the stored source has no match, fall back to the main "azd" registry.
-//  4. Any source — if none of the above match, return the first available match.
+//
+// If no step in the priority chain produces a match, nil is returned so the caller
+// can report a meaningful error.
 //
 // Promotion detection: when the installed extension's stored source is a non-main registry
 // (e.g., "dev") and the extension is also available in the main "azd" registry, this is a
@@ -132,16 +133,10 @@ func ResolveUpgradeSource(
 		}
 	}
 
-	// Priority 4: First available match from any source
-	log.Printf(
-		"Warning: extension '%s' not found in stored source '%s' or main registry, using first available match",
-		installed.Id, storedSource,
-	)
-	return &ResolveResult{
-		Extension: allMatches[0],
-		OldSource: installed.Source,
-		NewSource: allMatches[0].Source,
-	}
+	// No match found in any priority chain step — the extension exists in other sources
+	// but none matched the stored source or the main registry. Return nil so the caller
+	// can report a meaningful error.
+	return nil
 }
 
 // shouldPromote determines whether a promotion from a non-main source to the main registry
@@ -165,7 +160,12 @@ func shouldPromote(storedMatch, mainMatch *ExtensionMetadata) bool {
 	storedLatest := LatestVersion(storedMatch.Versions)
 	mainLatest := LatestVersion(mainMatch.Versions)
 
-	if storedLatest == nil || mainLatest == nil {
+	// If main registry has no parseable versions, don't promote
+	if mainLatest == nil {
+		return false
+	}
+	// If stored source has no parseable versions, promote to main (which has versions)
+	if storedLatest == nil {
 		return true
 	}
 

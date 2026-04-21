@@ -19,6 +19,7 @@
 
 ### Other Changes
 
+- [[#7776]](https://github.com/Azure/azure-dev/pull/7776) **Security:** environment `.env` files are now persisted with mode `0600` (owner read/write only) on Unix-like systems. Previously they inherited the process umask (typically `0644`). The change tightens default permissions for files that may contain subscription IDs and values written via `azd env set`.
 - [[#7776]](https://github.com/Azure/azure-dev/pull/7776) `azd up` now emits a single `"Provisioning and deploying (azd up)"` title and consolidated final message instead of the legacy `"Packaging services (azd package)"` / `"Provisioning Azure resources (azd provision)"` / `"Deploying services (azd deploy)"` banners and the `"Your up workflow to provision and deploy to Azure completed in …"` footer. CI/automation that grep-matches the legacy strings on stdout will need to update its expected output.
 - [[#7776]](https://github.com/Azure/azure-dev/pull/7776) `azd up` honors `AZD_DEPLOY_CONCURRENCY` as a fallback when `AZD_UP_CONCURRENCY` is unset, so existing deploy-tuning configurations carry over to the unified up workflow.
 - [[#7776]](https://github.com/Azure/azure-dev/pull/7776) `FailFast` semantics in the parallel scheduler: when a step fails, the scheduler cancels the run context to interrupt in-flight work, but steps that don't honor context cancellation (e.g., long-running ARM operations) will run to completion before the run returns. This is a behavior change versus the previous strictly-sequential `azd up`, which never started a later step after a prior failure.

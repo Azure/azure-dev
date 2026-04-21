@@ -251,6 +251,18 @@ func (fs *LocalFileDataStore) Save(ctx context.Context, env *Environment, option
 	// (MoveFileEx w/ REPLACE_EXISTING), so readers never see a
 	// half-truncated file.
 	envPath := fs.EnvPath(env)
+
+	// Best-effort sweep of stale tmp files (>1h old) left behind by prior
+	// crashed/SIGKILL'd writers. Safe under the flock — no concurrent
+	// in-flight tmp files possible.
+	if matches, _ := filepath.Glob(filepath.Join(filepath.Dir(envPath), DotEnvFileName+".tmp-*")); len(matches) > 0 {
+		for _, m := range matches {
+			if info, statErr := os.Stat(m); statErr == nil && time.Since(info.ModTime()) > time.Hour {
+				_ = os.Remove(m)
+			}
+		}
+	}
+
 	tmpFile, err := os.CreateTemp(filepath.Dir(envPath), DotEnvFileName+".tmp-*")
 	if err != nil {
 		return fmt.Errorf("creating temp .env: %w", err)

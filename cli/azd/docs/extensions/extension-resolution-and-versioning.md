@@ -63,25 +63,45 @@ All configured sources are loaded from `~/.azd/config.json` and sorted alphabeti
 
 ### 3. Handle Conflicts
 
-If the same extension ID exists in **two or more sources**, `azd` returns an error rather than silently picking one:
+If the same extension ID exists in **two or more sources**, `azd` handles the conflict differently depending on the mode:
 
-```
-The <id> extension was found in multiple sources.
-```
+- **Interactive mode** — `azd` prompts the user to choose which source to install from.
+- **Non-interactive mode** (`--no-prompt` or CI environments) — `azd` returns an error:
 
-To resolve this, specify the source explicitly:
+  ```
+  The <id> extension was found in multiple sources.
+  ```
+
+To avoid the prompt or error, specify the source explicitly:
 
 ```bash
 azd extension install <id> --source <source-name>
 ```
 
-There is no priority or merge logic between sources — each extension must be unambiguously resolvable to a single source (unless `--source` is provided).
+There is no priority or merge logic between sources — the `--source` flag is the only way to disambiguate programmatically.
 
 ## Version Constraints
 
 ### Constraint Syntax
 
-When installing an extension, you can specify a version constraint using the `--version` flag. `azd` uses the [Masterminds semver](https://github.com/Masterminds/semver) library to parse and evaluate constraints.
+Version constraints differ between the CLI and `azure.yaml`:
+
+#### CLI `--version` flag
+
+The `azd extension install --version` flag accepts only an **exact version string** or **`latest`** (the default when omitted):
+
+```bash
+# Install an exact version
+azd extension install my.extension --version 1.0.0
+
+# Install the latest version (default)
+azd extension install my.extension --version latest
+azd extension install my.extension
+```
+
+#### `azure.yaml` `requiredVersions.extensions`
+
+The `requiredVersions.extensions` section in `azure.yaml` supports the full semver constraint syntax provided by the [Masterminds semver](https://github.com/Masterminds/semver) library:
 
 | Syntax | Example | Matches |
 |--------|---------|---------|
@@ -91,23 +111,12 @@ When installing an extension, you can specify a version constraint using the `--
 | Range | `>=1.0.0,<2.0.0` | Explicit lower and upper bounds |
 | Latest | `latest` or omitted | Highest available version |
 
-Examples:
-
-```bash
-# Install an exact version
-azd extension install my.extension --version 1.0.0
-
-# Install the latest patch in the 1.2.x line
-azd extension install my.extension --version "~1.2.0"
-
-# Install any compatible version in the 1.x range
-azd extension install my.extension --version "^1.0.0"
-
-# Install with explicit bounds
-azd extension install my.extension --version ">=1.0.0,<2.0.0"
-
-# Install the latest version (default)
-azd extension install my.extension
+```yaml
+requiredVersions:
+  extensions:
+    azure.ai.agents: ">=1.0.0"
+    microsoft.azd.demo: "latest"
+    my.custom.extension: "^2.0.0"
 ```
 
 ### Version Selection
@@ -127,8 +136,9 @@ When `azd` resolves versions, it filters them into compatible and incompatible s
 
 ### Behavior
 
-- If the highest version matching the user's constraint is **compatible**, it is installed normally.
-- If the highest version matching the user's constraint is **incompatible**, the install fails with guidance to upgrade `azd`.
+- `azd` filters out all versions whose `requiredAzdVersion` constraint is not satisfied by the running `azd` version, then selects the **highest remaining compatible version** that also matches the user's version constraint.
+- If a **newer incompatible version** exists beyond the selected version, `azd` shows a **warning** suggesting the user upgrade `azd`.
+- If **no compatible versions** remain after filtering, the install **fails** with guidance to upgrade `azd`. The install also fails if the user explicitly requests a specific version that is incompatible.
 - If `requiredAzdVersion` is **empty or cannot be parsed**, the version is treated as compatible (fail-open). This ensures that extensions without the field remain installable.
 
 ## Install Flow
@@ -136,7 +146,7 @@ When `azd` resolves versions, it filters them into compatible and incompatible s
 Once a version is resolved, installation proceeds through these steps:
 
 1. **Resolve version** — Apply the version constraint against available versions, filter by `azd` compatibility, and select the highest match.
-2. **Resolve dependencies** — If the extension declares dependencies, resolve each one recursively from configured sources. Dependencies follow the same conflict and version rules.
+2. **Resolve dependencies** — If the extension declares dependencies, resolve each one recursively from the **same source as the parent extension**. Cross-source dependency resolution is not performed. Dependencies follow the same version and compatibility rules.
 3. **Match platform artifact** — Find the artifact for the current OS and architecture. `azd` first looks for `<os>/<arch>` (for example, `linux/amd64` or `windows/amd64`). If no exact match is found, it falls back to `<os>` only (for example, `linux` or `windows`).
 4. **Download** — Fetch the artifact from its URL (HTTP/HTTPS) or copy from a local file path.
 5. **Validate checksum** — Verify the downloaded file against the published checksum. Supported algorithms are `sha256` and `sha512`.
@@ -167,7 +177,10 @@ Each entry maps an extension ID to a version constraint string. The same constra
 
 - When `azd init` runs, it reads the `requiredVersions.extensions` map and installs each extension with the specified constraint.
 - If the constraint value is `null` or empty, `"latest"` is used (the highest available version is installed).
-- Extensions already installed at a satisfying version are not re-downloaded.
+- If an extension is already installed (any version), `azd init` **skips it** — it does not check whether the installed version satisfies the configured constraint.
+- `azd init` does **not** apply `requiredAzdVersion` compatibility filtering (unlike `azd extension install`).
+
+> **Note:** These are known limitations in the current implementation and may be addressed in future versions.
 
 ## Caching
 
@@ -179,7 +192,7 @@ Each entry maps an extension ID to a version constraint string. The same constra
 ~/.azd/cache/extensions/<source-name>.json
 ```
 
-Each source has its own cache file, named after the source.
+Each source has its own cache file. The filename is derived from the source name by lowercasing it and replacing any characters outside `[a-zA-Z0-9._-]` with `_`. For example, a source named `"My Source!"` would be cached as `my_source_.json`.
 
 ### Default TTL
 
@@ -247,7 +260,7 @@ Use pre-release suffixes for testing before a stable release:
 2.0.0-rc.1
 ```
 
-Pre-release versions are not selected by default when a user installs with `latest` — they must be requested explicitly with an exact version constraint.
+When `latest` is specified (or the version is omitted), `azd` selects the **highest semantic version**, which can be a pre-release if it sorts higher than the latest stable version. For semver range constraints in `azure.yaml`, pre-release versions are generally excluded unless the constraint itself explicitly includes a pre-release identifier.
 
 ## Troubleshooting
 

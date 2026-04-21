@@ -308,6 +308,32 @@ func (p *AgentServiceTargetProvider) Package(
 		return &azdext.ServicePackageResult{}, nil
 	}
 
+	// Verify ACR endpoint is configured before attempting container operations.
+	// When users leave ACR blank during init, the Bicep template creates one
+	// during 'azd provision'. If provision hasn't run, catch it early with an
+	// actionable message instead of a cryptic RPC error from core azd.
+	acrResp, err := p.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: p.env.Name,
+		Key:     "AZURE_CONTAINER_REGISTRY_ENDPOINT",
+	})
+	if err != nil {
+		return nil, exterrors.Dependency(
+			exterrors.CodeEnvironmentValuesFailed,
+			fmt.Sprintf("failed to read AZURE_CONTAINER_REGISTRY_ENDPOINT: %s", err),
+			"run 'azd env get-values' to verify environment state",
+		)
+	}
+	if acrResp == nil || acrResp.Value == "" {
+		return nil, exterrors.Dependency(
+			exterrors.CodeMissingContainerRegistryEndpoint,
+			"AZURE_CONTAINER_REGISTRY_ENDPOINT is required for hosted agents but was not found"+
+				" in the current azd environment",
+			"run 'azd provision' to create infrastructure (including a container registry),"+
+				" or set it manually with"+
+				" 'azd env set AZURE_CONTAINER_REGISTRY_ENDPOINT <your-registry>.azurecr.io'",
+		)
+	}
+
 	var packageArtifact *azdext.Artifact
 	var newArtifacts []*azdext.Artifact
 

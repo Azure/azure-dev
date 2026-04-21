@@ -51,8 +51,9 @@ const (
 	CodeMissingAzureTenantId      = "missing_azure_tenant_id"
 	CodeMissingAiProjectId        = "missing_ai_project_id"
 	CodeMissingAzureSubscription  = "missing_azure_subscription_id"
-	CodeMissingAgentEnvVars       = "missing_agent_env_vars"
-	CodeGitHubDownloadFailed      = "github_download_failed"
+	CodeMissingAgentEnvVars              = "missing_agent_env_vars"
+	CodeMissingContainerRegistryEndpoint = "missing_container_registry_endpoint"
+	CodeGitHubDownloadFailed             = "github_download_failed"
 	CodeScaffoldTemplateFailed    = "scaffold_template_failed"
 	CodePromptFailed              = "prompt_failed"
 )

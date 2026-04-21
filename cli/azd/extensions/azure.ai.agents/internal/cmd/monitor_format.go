@@ -138,7 +138,7 @@ func (f *logFormatter) renderEvent(eventName, data string) {
 	if eventName != "" && eventName != "log" {
 		// Re-emit as valid SSE: one data: line per original data line.
 		fmt.Fprintf(f.writer, "event: %s\n", eventName)
-		for _, dl := range strings.Split(data, "\n") {
+		for dl := range strings.SplitSeq(data, "\n") {
 			fmt.Fprintf(f.writer, "data: %s\n", dl)
 		}
 		fmt.Fprintln(f.writer)

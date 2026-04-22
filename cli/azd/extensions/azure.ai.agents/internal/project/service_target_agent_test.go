@@ -5,13 +5,11 @@ package project
 
 import (
 	"context"
-	"errors"
 	"net"
 	"os"
 	"path/filepath"
 	"testing"
 
-	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -88,38 +86,51 @@ func TestGetServiceKey_NormalizesToolboxNames(t *testing.T) {
 	}
 }
 
-// --- helpers for Package ACR-validation tests ---
+// --- helpers for Package tests ---
 
-// packageEnvServer is a minimal EnvironmentServiceServer that stubs GetValue
-// and GetCurrent for Package tests.
-type packageEnvServer struct {
-	azdext.UnimplementedEnvironmentServiceServer
-	values  map[string]string
-	getErr  error
-	envName string
+// writeHostedAgentYAML creates a minimal hosted-kind agent.yaml in dir.
+func writeHostedAgentYAML(t *testing.T, dir string) string {
+	t.Helper()
+	p := filepath.Join(dir, "agent.yaml")
+	require.NoError(t, os.WriteFile(p, []byte("kind: hosted\nname: test-agent\n"), 0o600))
+	return p
 }
 
-func (s *packageEnvServer) GetCurrent(context.Context, *azdext.EmptyRequest) (*azdext.EnvironmentResponse, error) {
-	return &azdext.EnvironmentResponse{
-		Environment: &azdext.Environment{Name: s.envName},
+// stubContainerServer is a minimal ContainerServiceServer that returns
+// success responses for Build and Package.
+type stubContainerServer struct {
+	azdext.UnimplementedContainerServiceServer
+}
+
+func (s *stubContainerServer) Build(_ context.Context, _ *azdext.ContainerBuildRequest) (*azdext.ContainerBuildResponse, error) {
+	return &azdext.ContainerBuildResponse{
+		Result: &azdext.ServiceBuildResult{
+			Artifacts: []*azdext.Artifact{{
+				Kind:     azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER,
+				Location: "test-image:latest",
+			}},
+		},
 	}, nil
 }
 
-func (s *packageEnvServer) GetValue(_ context.Context, req *azdext.GetEnvRequest) (*azdext.KeyValueResponse, error) {
-	if s.getErr != nil {
-		return nil, s.getErr
-	}
-	v := s.values[req.Key]
-	return &azdext.KeyValueResponse{Key: req.Key, Value: v}, nil
+func (s *stubContainerServer) Package(_ context.Context, _ *azdext.ContainerPackageRequest) (*azdext.ContainerPackageResponse, error) {
+	return &azdext.ContainerPackageResponse{
+		Result: &azdext.ServicePackageResult{
+			Artifacts: []*azdext.Artifact{{
+				Kind:     azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER,
+				Location: "myregistry.azurecr.io/test-image:latest",
+			}},
+		},
+	}, nil
 }
 
-// newPackageTestClient spins up a gRPC server with the given env server and
-// returns an AzdClient connected to it. Cleanup is handled by t.Cleanup.
-func newPackageTestClient(t *testing.T, envSrv azdext.EnvironmentServiceServer) *azdext.AzdClient {
+// newContainerTestClient spins up a gRPC server with the given container
+// service and returns an AzdClient connected to it.
+func newContainerTestClient(t *testing.T, containerSrv azdext.ContainerServiceServer) *azdext.AzdClient {
 	t.Helper()
 
 	srv := grpc.NewServer()
-	azdext.RegisterEnvironmentServiceServer(srv, envSrv)
+	azdext.RegisterContainerServiceServer(srv, containerSrv)
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -137,129 +148,32 @@ func newPackageTestClient(t *testing.T, envSrv azdext.EnvironmentServiceServer) 
 	return client
 }
 
-// writeHostedAgentYAML creates a minimal hosted-kind agent.yaml in dir and
-// returns the full path.
-func writeHostedAgentYAML(t *testing.T, dir string) string {
-	t.Helper()
-	p := filepath.Join(dir, "agent.yaml")
-	content := []byte("kind: hosted\nname: test-agent\n")
-	require.NoError(t, os.WriteFile(p, content, 0o600))
-	return p
-}
-
-// writePromptAgentYAML creates a minimal prompt-kind agent.yaml in dir and
-// returns the full path.
-func writePromptAgentYAML(t *testing.T, dir string) string {
-	t.Helper()
-	p := filepath.Join(dir, "agent.yaml")
-	content := []byte("kind: prompt\nname: test-agent\nmodel:\n  id: gpt-4o-mini\n")
-	require.NoError(t, os.WriteFile(p, content, 0o600))
-	return p
-}
-
-func TestPackage_ACREndpointValidation(t *testing.T) {
+// TestPackage_NoEarlyFailureWithoutACR is a regression test ensuring that
+// Package for a hosted agent does not fail early when
+// AZURE_CONTAINER_REGISTRY_ENDPOINT is unset. The ACR endpoint is resolved
+// later by the azd core container service, not by the extension.
+func TestPackage_NoEarlyFailureWithoutACR(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name       string
-		agentKind  string // "hosted" or "prompt"
-		envValues  map[string]string
-		envGetErr  error
-		wantErr    bool
-		wantCode   string
-		wantNotACR bool // when true, expect an error but NOT an ACR-related code
-	}{
-		{
-			name:      "returns error when ACR endpoint is empty",
-			agentKind: "hosted",
-			envValues: map[string]string{},
-			wantErr:   true,
-			wantCode:  exterrors.CodeMissingContainerRegistryEndpoint,
-		},
-		{
-			name:      "returns error when GetValue fails",
-			agentKind: "hosted",
-			envValues: map[string]string{},
-			envGetErr: errors.New("env service unavailable"),
-			wantErr:   true,
-			wantCode:  exterrors.CodeEnvironmentValuesFailed,
-		},
-		{
-			name:      "proceeds past ACR check when endpoint is set",
-			agentKind: "hosted",
-			envValues: map[string]string{
-				"AZURE_CONTAINER_REGISTRY_ENDPOINT": "myregistry.azurecr.io",
-			},
-			// Package will continue past the ACR check and fail later
-			// (no container service stub), but the ACR validation itself passes.
-			wantErr:    true,
-			wantCode:   "",
-			wantNotACR: true,
-		},
-		{
-			name:      "skips ACR check for prompt agents",
-			agentKind: "prompt",
-			envValues: map[string]string{},
-			wantErr:   false,
-			wantCode:  "",
-		},
+	dir := t.TempDir()
+	agentPath := writeHostedAgentYAML(t, dir)
+
+	client := newContainerTestClient(t, &stubContainerServer{})
+
+	provider := &AgentServiceTargetProvider{
+		azdClient:           client,
+		agentDefinitionPath: agentPath,
+		env:                 &azdext.Environment{Name: "test-env"},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
+	result, err := provider.Package(
+		t.Context(),
+		&azdext.ServiceConfig{Name: "test-svc"},
+		&azdext.ServiceContext{},
+		func(string) {},
+	)
 
-			dir := t.TempDir()
-
-			var agentPath string
-			if tt.agentKind == "hosted" {
-				agentPath = writeHostedAgentYAML(t, dir)
-			} else {
-				agentPath = writePromptAgentYAML(t, dir)
-			}
-
-			envSrv := &packageEnvServer{
-				values:  tt.envValues,
-				getErr:  tt.envGetErr,
-				envName: "test-env",
-			}
-
-			client := newPackageTestClient(t, envSrv)
-
-			provider := &AgentServiceTargetProvider{
-				azdClient:           client,
-				agentDefinitionPath: agentPath,
-				env:                 &azdext.Environment{Name: "test-env"},
-			}
-
-			result, err := provider.Package(
-				t.Context(),
-				&azdext.ServiceConfig{},
-				&azdext.ServiceContext{},
-				func(string) {},
-			)
-
-			if tt.wantErr {
-				require.Error(t, err)
-				if tt.wantNotACR {
-					// Verify the error is NOT the ACR validation error,
-					// confirming the check was passed successfully.
-					var localErr *azdext.LocalError
-					if errors.As(err, &localErr) {
-						require.NotEqual(t, exterrors.CodeMissingContainerRegistryEndpoint, localErr.Code,
-							"expected ACR check to pass, but got ACR missing error")
-						require.NotEqual(t, exterrors.CodeEnvironmentValuesFailed, localErr.Code,
-							"expected ACR check to pass, but got env values error")
-					}
-				} else {
-					var localErr *azdext.LocalError
-					require.True(t, errors.As(err, &localErr), "expected *azdext.LocalError, got %T", err)
-					require.Equal(t, tt.wantCode, localErr.Code)
-				}
-			} else {
-				require.NoError(t, err)
-				require.NotNil(t, result)
-			}
-		})
-	}
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotEmpty(t, result.Artifacts, "expected container artifacts from Package")
 }

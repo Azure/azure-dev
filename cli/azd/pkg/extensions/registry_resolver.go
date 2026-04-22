@@ -160,11 +160,11 @@ func shouldPromote(storedMatch, mainMatch *ExtensionMetadata) bool {
 	storedLatest := LatestVersion(storedMatch.Versions)
 	mainLatest := LatestVersion(mainMatch.Versions)
 
-	// If main registry has no parseable versions, don't promote
+	// If main registry has no parsable versions, don't promote
 	if mainLatest == nil {
 		return false
 	}
-	// If stored source has no parseable versions, promote to main (which has versions)
+	// If stored source has no parsable versions, promote to main (which has versions)
 	if storedLatest == nil {
 		return true
 	}

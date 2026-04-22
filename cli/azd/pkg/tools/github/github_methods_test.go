@@ -198,7 +198,10 @@ func TestApiCall(t *testing.T) {
 			ApiCallOptions{},
 		)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "failed running gh api")
+		// Should be a typed *ApiError so callers can branch on status, etc.
+		apiErr, ok := errors.AsType[*ApiError](err)
+		require.True(t, ok, "expected error to be *ApiError, got: %v", err)
+		require.Equal(t, "https://api.github.com/bad", apiErr.URL)
 	})
 }
 

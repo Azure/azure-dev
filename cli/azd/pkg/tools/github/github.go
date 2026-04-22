@@ -232,7 +232,11 @@ func (cli *Cli) ApiCall(ctx context.Context, hostname, path string, options ApiC
 	runArgs := cli.newRunArgs(args...)
 	result, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return "", fmt.Errorf("failed running gh api: %s: %w", url, err)
+		// Build a typed *ApiError from the captured stdout (GitHub's JSON
+		// error envelope) and stderr. Callers can branch on HTTP status,
+		// SAML enforcement, and rate-limit conditions without sniffing
+		// error strings. The original error is preserved via Unwrap().
+		return "", parseApiError(url, result.Stdout, result.Stderr, err)
 	}
 
 	return result.Stdout, nil

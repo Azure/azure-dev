@@ -28,6 +28,10 @@ const AgentTroubleshootEvent = "agent.troubleshoot"
 const (
 	ExtensionRunEvent     = "ext.run"
 	ExtensionInstallEvent = "ext.install"
+	// ExtensionUpgradeEvent tracks a single extension upgrade attempt.
+	ExtensionUpgradeEvent = "ext.upgrade"
+	// ExtensionPromoteEvent tracks a registry promotion (e.g., dev → main).
+	ExtensionPromoteEvent = "ext.promote"
 )
 
 // Copilot agent related events.

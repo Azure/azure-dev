@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -282,4 +283,152 @@ func Test_FileConfigManager_Save_VaultID_PathTraversal(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Test_FileConfigManager_Save_Atomic verifies that Save uses write-to-temp-then-rename
+// so that no partial file is left behind. After Save, the file should contain valid JSON
+// and no temporary files should remain in the directory.
+func Test_FileConfigManager_Save_Atomic(t *testing.T) {
+	tempDir := t.TempDir()
+	configFilePath := filepath.Join(tempDir, "config.json")
+	configManager := NewFileConfigManager(NewManager())
+
+	azdConfig := NewConfig(map[string]any{
+		"defaults": map[string]any{
+			"location":     "westus2",
+			"subscription": "sub-id-123",
+		},
+	})
+
+	err := configManager.Save(azdConfig, configFilePath)
+	require.NoError(t, err)
+
+	// Verify the file exists and is valid
+	loadedConfig, err := configManager.Load(configFilePath)
+	require.NoError(t, err)
+	require.NotNil(t, loadedConfig)
+	require.Equal(t, azdConfig, loadedConfig)
+
+	// Verify no temp files remain in the directory
+	entries, err := os.ReadDir(tempDir)
+	require.NoError(t, err)
+	for _, entry := range entries {
+		require.False(
+			t,
+			filepath.Ext(entry.Name()) == ".tmp",
+			"temporary file should not remain: %s", entry.Name(),
+		)
+	}
+}
+
+// Test_FileConfigManager_Save_Overwrite verifies that Save atomically
+// replaces an existing config file without data loss.
+func Test_FileConfigManager_Save_Overwrite(t *testing.T) {
+	tempDir := t.TempDir()
+	configFilePath := filepath.Join(tempDir, "config.json")
+	configManager := NewFileConfigManager(NewManager())
+
+	// Write initial config
+	initialConfig := NewConfig(map[string]any{
+		"key": "initial-value",
+	})
+	err := configManager.Save(initialConfig, configFilePath)
+	require.NoError(t, err)
+
+	// Overwrite with new config
+	updatedConfig := NewConfig(map[string]any{
+		"key": "updated-value",
+	})
+	err = configManager.Save(updatedConfig, configFilePath)
+	require.NoError(t, err)
+
+	// Verify updated content
+	loaded, err := configManager.Load(configFilePath)
+	require.NoError(t, err)
+
+	val, ok := loaded.GetString("key")
+	require.True(t, ok)
+	require.Equal(t, "updated-value", val)
+}
+
+// Test_FileConfigManager_Save_CleansUpTempFile verifies that the
+// atomic-write implementation does not leak temp files and produces
+// clear errors when the target path is unusable.
+func Test_FileConfigManager_Save_CleansUpTempFile(t *testing.T) {
+	t.Run("no temp files after successful save", func(t *testing.T) {
+		dir := t.TempDir()
+		configPath := filepath.Join(dir, "config.json")
+		mgr := NewFileConfigManager(NewManager())
+
+		c := NewConfig(map[string]any{"key": "value"})
+		err := mgr.Save(c, configPath)
+		require.NoError(t, err)
+
+		// No .tmp files should remain in the directory.
+		entries, err := os.ReadDir(dir)
+		require.NoError(t, err)
+		for _, entry := range entries {
+			require.False(
+				t,
+				strings.HasSuffix(entry.Name(), ".tmp"),
+				"temp file should be cleaned up: %s", entry.Name(),
+			)
+		}
+	})
+
+	t.Run("clear error when directory cannot be created", func(t *testing.T) {
+		dir := t.TempDir()
+
+		// Create a regular file that blocks MkdirAll from creating
+		// a directory at the same path.
+		blocker := filepath.Join(dir, "blocker")
+		err := os.WriteFile(blocker, []byte("x"), 0o600)
+		require.NoError(t, err)
+
+		configPath := filepath.Join(blocker, "subdir", "config.json")
+		mgr := NewFileConfigManager(NewManager())
+		c := NewConfig(map[string]any{"key": "value"})
+
+		err = mgr.Save(c, configPath)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed creating config directory")
+	})
+
+	t.Run("original file preserved on write failure", func(t *testing.T) {
+		dir := t.TempDir()
+		configPath := filepath.Join(dir, "config.json")
+		mgr := NewFileConfigManager(NewManager())
+
+		// Save an initial, valid config.
+		original := NewConfig(map[string]any{"key": "original-value"})
+		err := mgr.Save(original, configPath)
+		require.NoError(t, err)
+
+		// Attempt to save a config whose data cannot be marshalled
+		// to JSON (a channel is not serialisable). This forces the
+		// write to fail after the temp file has been created.
+		bad := NewConfig(map[string]any{"bad": make(chan int)})
+		err = mgr.Save(bad, configPath)
+		require.Error(t, err)
+
+		// The original file must still be intact.
+		loaded, err := mgr.Load(configPath)
+		require.NoError(t, err)
+
+		val, ok := loaded.GetString("key")
+		require.True(t, ok)
+		require.Equal(t, "original-value", val)
+
+		// No orphaned temp files should remain.
+		entries, err := os.ReadDir(dir)
+		require.NoError(t, err)
+		for _, entry := range entries {
+			require.False(
+				t,
+				strings.HasSuffix(entry.Name(), ".tmp"),
+				"orphaned temp file should not remain: %s",
+				entry.Name(),
+			)
+		}
+	})
 }

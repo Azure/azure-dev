@@ -4,7 +4,7 @@
 package azdext
 
 import (
-	context "context"
+	"context"
 	"os"
 	"testing"
 

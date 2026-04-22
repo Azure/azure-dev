@@ -84,10 +84,7 @@ func TestApiVersionPolicy_PreservesExistingQueryParams(t *testing.T) {
 	require.Equal(t, "2024-02-01", q.Get("api-version"))
 }
 
-func TestApiVersionPolicy_CustomVersionStillBoundToDefault(t *testing.T) {
-	// The current implementation always injects the default api-version even
-	// when a custom value is provided. This test pins that documented behavior
-	// so a future change will be intentional.
+func TestApiVersionPolicy_HonorsCustomVersion(t *testing.T) {
 	t.Parallel()
 
 	custom := "2023-10-01"
@@ -95,5 +92,5 @@ func TestApiVersionPolicy_CustomVersionStillBoundToDefault(t *testing.T) {
 	require.NotNil(t, p)
 
 	sent := runPolicyPipeline(t, p)
-	require.Equal(t, "2024-02-01", sent.URL.Query().Get("api-version"))
+	require.Equal(t, custom, sent.URL.Query().Get("api-version"))
 }

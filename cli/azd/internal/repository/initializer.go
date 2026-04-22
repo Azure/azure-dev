@@ -486,8 +486,8 @@ func (i *Initializer) promptForDuplicates(
 	if len(duplicateFiles) > 0 {
 		i.console.StopSpinner(ctx, "", input.StepDone)
 		i.console.MessageUxItem(ctx, &ux.WarningMessage{
-			Description: "The current directory is not empty. " +
-				"Initializing an app in this directory may overwrite existing files:",
+			Description: "The current directory is not empty." +
+				" Initializing an app in this directory may overwrite existing files:",
 		})
 
 		for _, file := range duplicateFiles {

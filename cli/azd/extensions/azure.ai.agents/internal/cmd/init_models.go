@@ -83,11 +83,11 @@ func (a *modelSelector) updateEnvLocation(ctx context.Context, selectedLocation 
 
 	_, err := a.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
 		EnvName: envName,
-		Key:     "AZURE_LOCATION",
+		Key:     "AZURE_AI_DEPLOYMENTS_LOCATION",
 		Value:   selectedLocation,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to update AZURE_LOCATION in azd environment: %w", err)
+		return fmt.Errorf("failed to update AZURE_AI_DEPLOYMENTS_LOCATION in azd environment: %w", err)
 	}
 
 	if a.azureContext == nil {
@@ -98,7 +98,9 @@ func (a *modelSelector) updateEnvLocation(ctx context.Context, selectedLocation 
 	}
 	a.azureContext.Scope.Location = selectedLocation
 
-	fmt.Println(output.WithSuccessFormat("Updated AZURE_LOCATION to '%s' in your azd environment.", selectedLocation))
+	fmt.Println(output.WithSuccessFormat(
+		"Updated AZURE_AI_DEPLOYMENTS_LOCATION to '%s' in your azd environment.", selectedLocation,
+	))
 	return nil
 }
 

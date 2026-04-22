@@ -41,9 +41,6 @@ pr:
       - cli/azd/.vscode/cspell.yaml
       - cli/azd/.vscode/cspell-azd-dictionary.txt
       - cli/azd/AGENTS.md
-      # TestFigSpec.ts is a snapshot regenerated when extensions change; it is
-      # validated by the ext-registry-ci workflow and does not require a full
-      # azure-dev - cli pipeline run on its own.
       - cli/azd/cmd/testdata/TestFigSpec.ts
 
 extends: 

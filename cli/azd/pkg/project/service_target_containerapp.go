@@ -5,8 +5,6 @@ package project
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -41,12 +39,6 @@ import (
 // Publish + Deploy + preprovision paths must go through this mutex.
 //
 // Threading model for concurrent deploys:
-//   - shouldUseDirectRevisionAPI: reads (Getenv) and writes (DotenvSet) the
-//     template hash key; then persists via envManager.Save when the hash
-//     changes — all under envMu.
-//   - expandServiceEnv: reads (Getenv via Expand callback) arbitrary env keys
-//     — under envMu.RLock so multiple Expand calls can run concurrently while
-//     still blocking against writers.
 //   - Publish: writes IMAGE_NAME via SetServiceProperty + envManager.Save —
 //     under envMu.
 //   - Deploy: writes deployment outputs via UpdateEnvironment (which also
@@ -59,7 +51,7 @@ import (
 // *environment.Environment pointer. A per-instance mutex would not protect
 // against cross-instance races on the shared map.
 //
-// RWMutex lets the expand path run concurrently (Getenv-only) while
+// RWMutex lets read-only paths (Getenv-only) run concurrently while
 // serializing every writer against every other writer AND against readers.
 var envMu sync.RWMutex
 
@@ -74,12 +66,6 @@ type containerAppTarget struct {
 	commandRunner       exec.CommandRunner
 
 	bicepCli func() (*bicep.Cli, error)
-
-	// expandedEnvMu protects expandedEnvCache from concurrent access.
-	expandedEnvMu sync.Mutex
-	// expandedEnvCache caches the result of serviceConfig.Environment.Expand()
-	// keyed by the service name, to avoid redundant env var resolution within the same azd process.
-	expandedEnvCache map[string]map[string]string
 }
 
 // NewContainerAppTarget creates the container app service target.
@@ -103,35 +89,9 @@ func NewContainerAppTarget(
 		containerAppService: containerAppService,
 		resourceManager:     resourceManager,
 		armDeployments:      deploymentService,
-		console:             console,
-		commandRunner:       commandRunner,
-		expandedEnvCache:    make(map[string]map[string]string),
+		console:       console,
+		commandRunner: commandRunner,
 	}
-}
-
-// expandServiceEnv expands environment variables from the service config, caching results
-// to avoid redundant resolution within the same azd process.
-func (at *containerAppTarget) expandServiceEnv(serviceConfig *ServiceConfig) (map[string]string, error) {
-	at.expandedEnvMu.Lock()
-	defer at.expandedEnvMu.Unlock()
-
-	if cached, ok := at.expandedEnvCache[serviceConfig.Name]; ok {
-		return cached, nil
-	}
-
-	// Hold envMu (read lock) while reading from the shared env map via Expand.
-	// The underlying Environment map is not goroutine-safe, and concurrent
-	// writers (DotenvSet / SetServiceProperty / envManager.Save) take the
-	// write lock. RLock allows concurrent expand calls across services.
-	envMu.RLock()
-	envVars, err := serviceConfig.Environment.Expand(at.env.Getenv)
-	envMu.RUnlock()
-	if err != nil {
-		return nil, err
-	}
-
-	at.expandedEnvCache[serviceConfig.Name] = envVars
-	return envVars, nil
 }
 
 // Gets the required external tools
@@ -295,29 +255,6 @@ func (at *containerAppTarget) Deploy(
 		}
 	}
 
-	// Smart deploy API: prefer direct revision API for code-only changes when template is unchanged.
-	// This avoids the overhead of full ARM template revalidation when only the container image tag changed.
-	// We compute the current template hash up front; if controlledRevision still holds after the ARM
-	// deploy succeeds, we persist the hash so the next run can take the cheaper direct-revision path.
-	var (
-		templateHashKey      string
-		currentTemplateHash  string
-		templateHashChanged  bool
-		shouldPersistTplHash bool
-	)
-	if controlledRevision {
-		var useDirect bool
-		envMu.Lock()
-		useDirect, currentTemplateHash, templateHashChanged = at.evaluateTemplateHash(serviceConfig, mainPath)
-		envMu.Unlock()
-		if useDirect {
-			controlledRevision = false
-		} else if currentTemplateHash != "" {
-			templateHashKey = fmt.Sprintf("SERVICE_%s_TEMPLATE_HASH", environment.Key(serviceConfig.Name))
-			shouldPersistTplHash = templateHashChanged
-		}
-	}
-
 	if controlledRevision {
 		tracing.AppendUsageAttributeUnique(fields.FeaturesKey.String(fields.FeatRevisionDeployment))
 
@@ -376,25 +313,6 @@ func (at *containerAppTarget) Deploy(
 				return nil, fmt.Errorf("updating environment: %w", err)
 			}
 		}
-
-		// Persist the template hash only after a successful ARM deploy so that
-		// a failed deploy does not leave a stored hash that would cause the
-		// next run to skip the (still-required) full deployment via the
-		// direct-revision optimization path. Done outside the outputs branch
-		// so no-output templates also get the hash recorded.
-		if shouldPersistTplHash {
-			envMu.Lock()
-			if at.env.Getenv(templateHashKey) != currentTemplateHash {
-				at.env.DotenvSet(templateHashKey, currentTemplateHash)
-				if saveErr := at.envManager.Save(ctx, at.env); saveErr != nil {
-					log.Printf(
-						"persisting template hash for %s failed: %v",
-						serviceConfig.Name, saveErr,
-					)
-				}
-			}
-			envMu.Unlock()
-		}
 	} else {
 		if resourceName == "" {
 			// Fetch the target resource explicitly
@@ -419,7 +337,9 @@ func (at *containerAppTarget) Deploy(
 			resourceTypeContainer = azapi.AzureResourceTypeContainerAppJob
 
 			// Expand environment variables from service config
-			envVars, err := at.expandServiceEnv(serviceConfig)
+			envMu.RLock()
+			envVars, err := serviceConfig.Environment.Expand(at.env.Getenv)
+			envMu.RUnlock()
 			if err != nil {
 				return nil, fmt.Errorf("expanding environment variables: %w", err)
 			}
@@ -439,7 +359,9 @@ func (at *containerAppTarget) Deploy(
 			}
 		} else {
 			// Expand environment variables from service config
-			envVars, err := at.expandServiceEnv(serviceConfig)
+			envMu.RLock()
+			envVars, err := serviceConfig.Environment.Expand(at.env.Getenv)
+			envMu.RUnlock()
 			if err != nil {
 				return nil, fmt.Errorf("expanding environment variables: %w", err)
 			}
@@ -531,54 +453,6 @@ func (at *containerAppTarget) Endpoints(
 
 		return endpoints, nil
 	}
-}
-
-// evaluateTemplateHash compares the on-disk infrastructure template's hash
-// against the value previously persisted under SERVICE_<NAME>_TEMPLATE_HASH.
-//
-// It returns:
-//   - useDirectRevision: true when the template is unchanged since the last
-//     successful deployment, indicating the cheaper direct-revision API can
-//     be used instead of a full ARM template deployment.
-//   - currentHash: the SHA-256 hex of the current template (empty if the
-//     template could not be read).
-//   - changed: true when currentHash differs from the persisted value (or no
-//     prior value existed), meaning the caller should persist currentHash
-//     after the ARM deploy succeeds. Persistence is intentionally NOT done
-//     here so a failed deploy does not poison the cache and cause the next
-//     run to skip the (still-required) full deployment via direct-revision.
-//
-// The function reads from the shared Environment map without locking; the
-// caller MUST hold envMu across the call to prevent concurrent writers (from
-// other service deploys) from racing the underlying map[string]string.
-func (at *containerAppTarget) evaluateTemplateHash(
-	serviceConfig *ServiceConfig,
-	mainPath string,
-) (useDirectRevision bool, currentHash string, changed bool) {
-	templateContent, readErr := os.ReadFile(mainPath)
-	if readErr != nil {
-		return false, "", false
-	}
-
-	sum := sha256.Sum256(templateContent)
-	currentHash = hex.EncodeToString(sum[:])
-	envHashKey := fmt.Sprintf("SERVICE_%s_TEMPLATE_HASH", environment.Key(serviceConfig.Name))
-
-	// Read-only access to the env map. Concurrent deploys for different
-	// services use distinct keys; concurrent reads of the underlying
-	// map[string]string are safe so long as no writer is active. The caller
-	// holds envMu around the post-deploy write that updates this same key,
-	// preventing torn writes.
-	previousHash := at.env.Getenv(envHashKey)
-	if currentHash == previousHash {
-		log.Printf(
-			"template unchanged for %s, using direct revision API",
-			serviceConfig.Name,
-		)
-		return true, currentHash, false
-	}
-
-	return false, currentHash, true
 }
 
 func (at *containerAppTarget) validateTargetResource(

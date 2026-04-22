@@ -13,7 +13,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
@@ -31,29 +30,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 )
-
-// envMu serializes all access to the shared *environment.Environment map
-// during concurrent deploys. Environment.DotenvSet, SetServiceProperty
-// (which calls DotenvSet internally), Getenv, and envManager.Save all touch
-// the same unprotected map[string]string, so every read and write across the
-// Publish + Deploy + preprovision paths must go through this mutex.
-//
-// Threading model for concurrent deploys:
-//   - Publish: writes IMAGE_NAME via SetServiceProperty + envManager.Save —
-//     under envMu.
-//   - Deploy: writes deployment outputs via UpdateEnvironment (which also
-//     ends up calling Save) — under envMu.
-//   - preprovision handler: writes RESOURCE_EXISTS + envManager.Save —
-//     under envMu.
-//
-// This is a package-level RWMutex (rather than instance-level) because all
-// containerAppTarget instances in a single azd run share the same
-// *environment.Environment pointer. A per-instance mutex would not protect
-// against cross-instance races on the shared map.
-//
-// RWMutex lets read-only paths (Getenv-only) run concurrently while
-// serializing every writer against every other writer AND against readers.
-var envMu sync.RWMutex
 
 type containerAppTarget struct {
 	env                 *environment.Environment
@@ -89,8 +65,8 @@ func NewContainerAppTarget(
 		containerAppService: containerAppService,
 		resourceManager:     resourceManager,
 		armDeployments:      deploymentService,
-		console:       console,
-		commandRunner: commandRunner,
+		console:             console,
+		commandRunner:       commandRunner,
 	}
 }
 
@@ -177,21 +153,14 @@ func (at *containerAppTarget) Publish(
 	// Save the name of the image we pushed into the environment with a well known key.
 	log.Printf("writing image name to environment")
 
-	// Serialize env mutation + save to prevent lost updates and map races when
-	// parallel publishes write to the same shared environment (see envMu docs).
-	envMu.Lock()
-
 	// Extract remote image from artifacts
 	if remoteContainer, ok := publishResult.Artifacts.FindFirst(WithKind(ArtifactKindContainer)); ok {
 		at.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", remoteContainer.Location)
 	}
 
 	if err := at.envManager.Save(ctx, at.env); err != nil {
-		envMu.Unlock()
 		return nil, fmt.Errorf("saving image name to environment: %w", err)
 	}
-
-	envMu.Unlock()
 
 	return publishResult, nil
 }
@@ -306,9 +275,7 @@ func (at *containerAppTarget) Deploy(
 
 		if len(outputs) > 0 {
 			outputParams := provisioning.OutputParametersFromArmOutputs(template.Outputs, outputs)
-			envMu.Lock()
 			err := provisioning.UpdateEnvironment(ctx, outputParams, at.env, at.envManager)
-			envMu.Unlock()
 			if err != nil {
 				return nil, fmt.Errorf("updating environment: %w", err)
 			}
@@ -337,9 +304,7 @@ func (at *containerAppTarget) Deploy(
 			resourceTypeContainer = azapi.AzureResourceTypeContainerAppJob
 
 			// Expand environment variables from service config
-			envMu.RLock()
 			envVars, err := serviceConfig.Environment.Expand(at.env.Getenv)
-			envMu.RUnlock()
 			if err != nil {
 				return nil, fmt.Errorf("expanding environment variables: %w", err)
 			}
@@ -359,9 +324,7 @@ func (at *containerAppTarget) Deploy(
 			}
 		} else {
 			// Expand environment variables from service config
-			envMu.RLock()
 			envVars, err := serviceConfig.Environment.Expand(at.env.Getenv)
-			envMu.RUnlock()
 			if err != nil {
 				return nil, fmt.Errorf("expanding environment variables: %w", err)
 			}
@@ -542,8 +505,6 @@ func (at *containerAppTarget) addPreProvisionChecks(ctx context.Context, service
 				exists = true
 			}
 
-			envMu.Lock()
-			defer envMu.Unlock()
 			at.env.SetServiceProperty(serviceConfig.Name, "RESOURCE_EXISTS", strconv.FormatBool(exists))
 			return at.envManager.Save(ctx, at.env)
 		},

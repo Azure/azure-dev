@@ -1,5 +1,16 @@
 # Release History
 
+## 0.1.26-preview (2026-04-21)
+
+- [[#7843]](https://github.com/Azure/azure-dev/pull/7843) When `azd ai agent init` uses an existing Azure AI project, set `USE_EXISTING_AI_PROJECT=true` so downstream Bicep provisioning skips creating the project, roles, and connections again.
+- [[#7835]](https://github.com/Azure/azure-dev/pull/7835) Add validation for missing container registry endpoints in agent service configuration.
+- [[#7790]](https://github.com/Azure/azure-dev/pull/7790) Improve `azd ai agent monitor` output: render each SSE log event as a single compact, color-coded line (`HH:MM:SS  <stream>  <message>`) with session-metadata events rendered as `session <state> (v<version>, last accessed: ...)`. Add `--utc` flag to display timestamps in UTC instead of local time, and `--raw` flag to preserve the previous raw SSE output.
+- [[#7834]](https://github.com/Azure/azure-dev/pull/7834) Implement flexible timestamp parsing for `modified_time` values in JSON responses.
+
+### Breaking Changes
+
+- [[#7764]](https://github.com/Azure/azure-dev/pull/7764) Remove `container.scale` configuration (`minReplicas`/`maxReplicas`) from `azure.yaml`. Scale settings are no longer supported for hosted agents. Remove any `container.scale` section from your service configuration.
+
 ## 0.1.25-preview (2026-04-20)
 
 - [[#7811]](https://github.com/Azure/azure-dev/pull/7811) Fix agent deployment RBAC checks to show warnings instead of blocking deployment when role assignment issues are encountered.

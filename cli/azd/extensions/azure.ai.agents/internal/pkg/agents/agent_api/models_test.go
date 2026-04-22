@@ -109,67 +109,6 @@ func TestAgentObject_RoundTrip(t *testing.T) {
 	}
 }
 
-func TestAgentContainerObject_RoundTrip(t *testing.T) {
-	t.Parallel()
-
-	original := AgentContainerObject{
-		Object:       "container",
-		ID:           "ctr-1",
-		Status:       AgentContainerStatusRunning,
-		MaxReplicas:  new(int32(3)),
-		MinReplicas:  new(int32(1)),
-		ErrorMessage: new("partial failure"),
-		CreatedAt:    "2024-01-01T00:00:00Z",
-		UpdatedAt:    "2024-06-01T00:00:00Z",
-		Container: &AgentContainerDetails{
-			HealthState:       "healthy",
-			ProvisioningState: "Succeeded",
-			State:             "Running",
-			UpdatedOn:         "2024-06-01T00:00:00Z",
-			Replicas: []AgentContainerReplicaState{
-				{Name: "replica-0", State: "Running", ContainerState: "started"},
-			},
-		},
-	}
-
-	data, err := json.Marshal(original)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-
-	s := string(data)
-	for _, field := range []string{
-		`"max_replicas"`, `"min_replicas"`, `"error_message"`,
-		`"created_at"`, `"updated_at"`, `"container"`,
-		`"health_state"`, `"provisioning_state"`, `"container_state"`,
-	} {
-		if !strings.Contains(s, field) {
-			t.Errorf("expected JSON to contain %s", field)
-		}
-	}
-
-	var got AgentContainerObject
-	if err := json.Unmarshal(data, &got); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-
-	if got.Status != AgentContainerStatusRunning {
-		t.Errorf("Status = %q, want %q", got.Status, AgentContainerStatusRunning)
-	}
-	if got.MaxReplicas == nil || *got.MaxReplicas != 3 {
-		t.Error("MaxReplicas mismatch")
-	}
-	if got.MinReplicas == nil || *got.MinReplicas != 1 {
-		t.Error("MinReplicas mismatch")
-	}
-	if got.ErrorMessage == nil || *got.ErrorMessage != "partial failure" {
-		t.Error("ErrorMessage mismatch")
-	}
-	if got.Container == nil || len(got.Container.Replicas) != 1 {
-		t.Error("Container.Replicas mismatch")
-	}
-}
-
 func TestPromptAgentDefinition_RoundTrip(t *testing.T) {
 	t.Parallel()
 
@@ -811,7 +750,7 @@ func TestSessionFileInfo_RoundTrip(t *testing.T) {
 		IsDirectory:  false,
 		Size:         2048,
 		Mode:         0644,
-		LastModified: new("2024-06-15T10:30:00Z"),
+		LastModified: new(FlexibleTimestamp("2024-06-15T10:30:00Z")),
 	}
 
 	data, err := json.Marshal(original)
@@ -840,8 +779,106 @@ func TestSessionFileInfo_RoundTrip(t *testing.T) {
 	if got.Size != 2048 {
 		t.Errorf("Size = %d, want %d", got.Size, int64(2048))
 	}
-	if got.LastModified == nil || *got.LastModified != "2024-06-15T10:30:00Z" {
+	if got.LastModified == nil || got.LastModified.String() != "2024-06-15T10:30:00Z" {
 		t.Error("LastModified mismatch")
+	}
+}
+
+func TestFlexibleTimestamp_UnmarshalString(t *testing.T) {
+	t.Parallel()
+
+	raw := `{"name":"f.txt","path":"/f.txt","is_dir":false,"modified_time":"2025-03-01T12:00:00Z"}`
+	var got SessionFileInfo
+	if err := json.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("unmarshal string timestamp: %v", err)
+	}
+	if got.LastModified == nil || got.LastModified.String() != "2025-03-01T12:00:00Z" {
+		t.Errorf("LastModified = %v, want 2025-03-01T12:00:00Z", got.LastModified)
+	}
+}
+
+func TestFlexibleTimestamp_UnmarshalNumber(t *testing.T) {
+	t.Parallel()
+
+	// 1700000000 == 2023-11-14T22:13:20Z
+	raw := `{"name":"f.txt","path":"/f.txt","is_dir":false,"modified_time":1700000000}`
+	var got SessionFileInfo
+	if err := json.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("unmarshal numeric timestamp: %v", err)
+	}
+	if got.LastModified == nil ||
+		got.LastModified.String() != "2023-11-14T22:13:20Z" {
+		t.Errorf(
+			"LastModified = %v, want 2023-11-14T22:13:20Z",
+			got.LastModified,
+		)
+	}
+
+	// Verify round-trip: re-marshalling produces an RFC3339 string.
+	data, err := json.Marshal(got)
+	if err != nil {
+		t.Fatalf("marshal numeric timestamp: %v", err)
+	}
+	if !strings.Contains(
+		string(data),
+		`"modified_time":"2023-11-14T22:13:20Z"`,
+	) {
+		t.Errorf(
+			"marshalled JSON = %s, want RFC3339 string",
+			string(data),
+		)
+	}
+}
+
+func TestFlexibleTimestamp_UnmarshalNumberInEntries(t *testing.T) {
+	t.Parallel()
+
+	raw := `{"path":"/","entries":[{"name":"a","path":"/a","is_dir":false,"modified_time":1700000000}]}`
+	var got SessionFileList
+	if err := json.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("unmarshal entries with numeric timestamp: %v", err)
+	}
+	if len(got.Entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(got.Entries))
+	}
+	if got.Entries[0].LastModified == nil ||
+		got.Entries[0].LastModified.String() != "2023-11-14T22:13:20Z" {
+		t.Errorf(
+			"entry LastModified = %v, want 2023-11-14T22:13:20Z",
+			got.Entries[0].LastModified,
+		)
+	}
+}
+
+func TestFlexibleTimestamp_UnmarshalMilliseconds(t *testing.T) {
+	t.Parallel()
+
+	// 1700000000123 ms == 2023-11-14T22:13:20.123Z
+	raw := `{"name":"f.txt","path":"/f.txt","is_dir":false,"modified_time":1700000000123}`
+	var got SessionFileInfo
+	if err := json.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("unmarshal millisecond timestamp: %v", err)
+	}
+	want := "2023-11-14T22:13:20.123Z"
+	if got.LastModified == nil ||
+		got.LastModified.String() != want {
+		t.Errorf(
+			"LastModified = %v, want %s",
+			got.LastModified, want,
+		)
+	}
+
+	// Verify round-trip preserves millisecond precision.
+	data, err := json.Marshal(got)
+	if err != nil {
+		t.Fatalf("marshal millisecond timestamp: %v", err)
+	}
+	wantJSON := `"modified_time":"2023-11-14T22:13:20.123Z"`
+	if !strings.Contains(string(data), wantJSON) {
+		t.Errorf(
+			"marshalled JSON = %s, want %s",
+			string(data), wantJSON,
+		)
 	}
 }
 
@@ -985,46 +1022,6 @@ func TestWorkflowDefinition_RoundTrip(t *testing.T) {
 	}
 	if got.Trigger["type"] != "schedule" {
 		t.Errorf("Trigger[type] = %v, want %q", got.Trigger["type"], "schedule")
-	}
-}
-
-func TestAgentContainerOperationObject_RoundTrip(t *testing.T) {
-	t.Parallel()
-
-	original := AgentContainerOperationObject{
-		ID:             "op-1",
-		AgentID:        "agent-1",
-		AgentVersionID: "ver-1",
-		Status:         AgentContainerOperationStatusSucceeded,
-		Error: &AgentContainerOperationError{
-			Code:    "E001",
-			Type:    "runtime",
-			Message: "something went wrong",
-		},
-	}
-
-	data, err := json.Marshal(original)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-
-	s := string(data)
-	for _, field := range []string{`"agent_id"`, `"agent_version_id"`, `"status"`} {
-		if !strings.Contains(s, field) {
-			t.Errorf("expected JSON to contain %s", field)
-		}
-	}
-
-	var got AgentContainerOperationObject
-	if err := json.Unmarshal(data, &got); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-
-	if got.Status != AgentContainerOperationStatusSucceeded {
-		t.Errorf("Status = %q, want %q", got.Status, AgentContainerOperationStatusSucceeded)
-	}
-	if got.Error == nil || got.Error.Message != "something went wrong" {
-		t.Error("Error.Message mismatch")
 	}
 }
 

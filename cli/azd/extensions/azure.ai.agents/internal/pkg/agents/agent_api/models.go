@@ -3,6 +3,13 @@
 
 package agent_api
 
+import (
+	"encoding/json"
+	"fmt"
+	"math"
+	"time"
+)
+
 // AgentProtocol represents the protocol types supported by agents
 type AgentProtocol string
 
@@ -34,30 +41,6 @@ type AgentEventHandlerDestinationType string
 
 const (
 	AgentEventHandlerDestinationTypeEvals AgentEventHandlerDestinationType = "evals"
-)
-
-// AgentContainerStatus represents the status of an agent container
-type AgentContainerStatus string
-
-const (
-	AgentContainerStatusStarting AgentContainerStatus = "Starting"
-	AgentContainerStatusRunning  AgentContainerStatus = "Running"
-	AgentContainerStatusStopping AgentContainerStatus = "Stopping"
-	AgentContainerStatusStopped  AgentContainerStatus = "Stopped"
-	AgentContainerStatusFailed   AgentContainerStatus = "Failed"
-	AgentContainerStatusDeleting AgentContainerStatus = "Deleting"
-	AgentContainerStatusDeleted  AgentContainerStatus = "Deleted"
-	AgentContainerStatusUpdating AgentContainerStatus = "Updating"
-)
-
-// AgentContainerOperationStatus represents the status of container operations
-type AgentContainerOperationStatus string
-
-const (
-	AgentContainerOperationStatusNotStarted AgentContainerOperationStatus = "NotStarted"
-	AgentContainerOperationStatusInProgress AgentContainerOperationStatus = "InProgress"
-	AgentContainerOperationStatusSucceeded  AgentContainerOperationStatus = "Succeeded"
-	AgentContainerOperationStatusFailed     AgentContainerOperationStatus = "Failed"
 )
 
 // RaiConfig represents configuration for Responsible AI content filtering
@@ -289,58 +272,6 @@ type DeleteAgentEventHandlerResponse struct {
 	Object  string `json:"object"`
 	Name    string `json:"name"`
 	Deleted bool   `json:"deleted"`
-}
-
-// AgentContainerOperationError represents error details for container operations
-type AgentContainerOperationError struct {
-	Code    string `json:"code"`
-	Type    string `json:"type"`
-	Message string `json:"message"`
-}
-
-// AgentContainerReplicaState represents the state of a single container replica
-type AgentContainerReplicaState struct {
-	Name           string `json:"name"`
-	State          string `json:"state"`
-	ContainerState string `json:"container_state,omitempty"`
-}
-
-// AgentContainerDetails represents the nested container runtime details
-type AgentContainerDetails struct {
-	HealthState       string                       `json:"health_state,omitempty"`
-	ProvisioningState string                       `json:"provisioning_state,omitempty"`
-	State             string                       `json:"state,omitempty"`
-	UpdatedOn         string                       `json:"updated_on,omitempty"`
-	Replicas          []AgentContainerReplicaState `json:"replicas,omitempty"`
-}
-
-// AgentContainerObject represents the details of an agent container
-type AgentContainerObject struct {
-	Object       string                 `json:"object"`
-	ID           string                 `json:"id,omitempty"`
-	Status       AgentContainerStatus   `json:"status"`
-	MaxReplicas  *int32                 `json:"max_replicas,omitempty"`
-	MinReplicas  *int32                 `json:"min_replicas,omitempty"`
-	ErrorMessage *string                `json:"error_message,omitempty"`
-	CreatedAt    string                 `json:"created_at"`
-	UpdatedAt    string                 `json:"updated_at"`
-	Container    *AgentContainerDetails `json:"container,omitempty"`
-}
-
-// AgentContainerOperationObject represents a container operation
-type AgentContainerOperationObject struct {
-	ID             string                        `json:"id"`
-	AgentID        string                        `json:"agent_id"`
-	AgentVersionID string                        `json:"agent_version_id"`
-	Status         AgentContainerOperationStatus `json:"status"`
-	Error          *AgentContainerOperationError `json:"error,omitempty"`
-	Container      *AgentContainerObject         `json:"container,omitempty"`
-}
-
-// AcceptedAgentContainerOperation represents an accepted container operation response
-type AcceptedAgentContainerOperation struct {
-	Location string                        `json:"location"` // From Operation-Location header
-	Body     AgentContainerOperationObject `json:"body"`
 }
 
 // ListAgentQueryParameters represents query parameters for listing agents
@@ -707,14 +638,63 @@ type StructuredOutputDefinition struct {
 	Strict      *bool          `json:"strict"`
 }
 
+// FlexibleTimestamp is a string that can be unmarshalled from either a JSON
+// string or a JSON number (Unix epoch seconds or milliseconds). This handles
+// APIs that may return modified_time as either format.
+type FlexibleTimestamp string
+
+// UnmarshalJSON unmarshals FlexibleTimestamp from either a JSON string or a
+// JSON number (Unix epoch seconds or milliseconds).
+func (ft *FlexibleTimestamp) UnmarshalJSON(data []byte) error {
+	// Try string first (the common/expected case).
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		*ft = FlexibleTimestamp(s)
+		return nil
+	}
+
+	// Try number (Unix epoch seconds or milliseconds).
+	var n float64
+	if err := json.Unmarshal(data, &n); err == nil {
+		// Interpret as seconds first.
+		sec, frac := math.Modf(n)
+		t := time.Unix(int64(sec), int64(frac*1e9)).UTC()
+
+		// If the result is far in the future, the value is
+		// likely in milliseconds.
+		if t.Year() > 3000 {
+			ms := int64(n)
+			t = time.Unix(
+				ms/1000,
+				(ms%1000)*int64(time.Millisecond),
+			).UTC()
+		}
+
+		*ft = FlexibleTimestamp(t.Format(time.RFC3339Nano))
+		return nil
+	}
+
+	return fmt.Errorf("modified_time: expected string or number, got %s", string(data))
+}
+
+// MarshalJSON marshals FlexibleTimestamp as a JSON string.
+func (ft FlexibleTimestamp) MarshalJSON() ([]byte, error) {
+	return json.Marshal(string(ft))
+}
+
+// String returns the string representation of FlexibleTimestamp.
+func (ft FlexibleTimestamp) String() string {
+	return string(ft)
+}
+
 // SessionFileInfo represents a file or directory entry in a session.
 type SessionFileInfo struct {
-	Name         string  `json:"name"`
-	Path         string  `json:"path"`
-	IsDirectory  bool    `json:"is_dir"`
-	Size         int64   `json:"size,omitempty"`
-	Mode         int     `json:"mode,omitempty"`
-	LastModified *string `json:"modified_time,omitempty"`
+	Name         string             `json:"name"`
+	Path         string             `json:"path"`
+	IsDirectory  bool               `json:"is_dir"`
+	Size         int64              `json:"size,omitempty"`
+	Mode         int                `json:"mode,omitempty"`
+	LastModified *FlexibleTimestamp `json:"modified_time,omitempty"`
 }
 
 // SessionFileList represents the response from listing session files.

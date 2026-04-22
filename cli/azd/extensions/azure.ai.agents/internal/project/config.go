@@ -13,10 +13,8 @@ import (
 
 // Default container settings constants
 const (
-	DefaultMemory      = "0.5Gi"
-	DefaultCpu         = "0.25"
-	DefaultMinReplicas = 0
-	DefaultMaxReplicas = 1
+	DefaultMemory = "0.5Gi"
+	DefaultCpu    = "0.25"
 )
 
 // ResourceTier defines a preset CPU and memory allocation for container resources.
@@ -57,19 +55,12 @@ type ServiceTargetAgentConfig struct {
 // ContainerSettings provides container configuration for the Azure AI Service target
 type ContainerSettings struct {
 	Resources *ResourceSettings `json:"resources,omitempty"`
-	Scale     *ScaleSettings    `json:"scale,omitempty"`
 }
 
 // ResourceSettings provides resource configuration for the Azure AI Service target
 type ResourceSettings struct {
 	Memory string `json:"memory,omitempty"`
 	Cpu    string `json:"cpu,omitempty"`
-}
-
-// ScaleSettings provides scaling configuration for the Azure AI Service target
-type ScaleSettings struct {
-	MinReplicas int `json:"minReplicas,omitempty"`
-	MaxReplicas int `json:"maxReplicas,omitempty"`
 }
 
 // Deployment represents a single model deployment

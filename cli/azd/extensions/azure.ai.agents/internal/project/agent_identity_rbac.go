@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"maps"
 	"net/http"
 	"os"
@@ -17,13 +16,10 @@ import (
 	"sync"
 	"time"
 
-	"azureaiagent/internal/exterrors"
-
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v3"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/google/uuid"
 )
@@ -32,10 +28,8 @@ const (
 	roleAzureAIUser     = "53ca6127-db72-4b80-b1b0-d745d6d5456d"
 	agentIdentitySuffix = "AgentIdentity"
 
-	rbacVerifyMaxAttempts      = 12
-	rbacVerifyPollInterval     = 5 * time.Second
-	identityLookupMaxAttempts  = 12
-	identityLookupPollInterval = 15 * time.Second
+	rbacVerifyMaxAttempts  = 12
+	rbacVerifyPollInterval = 5 * time.Second
 )
 
 // agentIdentityInfo holds the parsed project information needed for agent identity RBAC.
@@ -46,32 +40,6 @@ type agentIdentityInfo struct {
 	AccountScope   string // AI account resource ID
 	SubscriptionID string
 	ResourceGroup  string
-}
-
-// isVnextEnabled checks if the enableHostedAgentVNext flag is set in the azd environment or OS env.
-func isVnextEnabled(azdEnv map[string]string) bool {
-	vnextValue := azdEnv["enableHostedAgentVNext"]
-	if vnextValue == "" {
-		vnextValue = os.Getenv("enableHostedAgentVNext")
-	}
-	if enabled, err := strconv.ParseBool(vnextValue); err == nil && enabled {
-		return true
-	}
-	return false
-}
-
-// isRoleAssignmentsSkipped checks if AZD_AGENT_SKIP_ROLE_ASSIGNMENTS is set to a truthy value
-// in the azd environment or OS environment. When true, both developer RBAC pre-flight checks
-// and per-agent identity RBAC assignments are skipped.
-func isRoleAssignmentsSkipped(azdEnv map[string]string) bool {
-	value := azdEnv["AZD_AGENT_SKIP_ROLE_ASSIGNMENTS"]
-	if value == "" {
-		value = os.Getenv("AZD_AGENT_SKIP_ROLE_ASSIGNMENTS")
-	}
-	if skip, err := strconv.ParseBool(value); err == nil && skip {
-		return true
-	}
-	return false
 }
 
 // parseAgentIdentityInfo extracts account name, project name, subscription, resource group,
@@ -119,19 +87,13 @@ func parseAgentIdentityInfo(projectResourceID string) (*agentIdentityInfo, error
 	return info, nil
 }
 
-// agentIdentityDisplayName returns the expected display name for a per-agent identity SP.
-// The platform creates an identity named {account}-{project}-{agentName}-AgentIdentity
-// for each deployed hosted agent.
-func agentIdentityDisplayName(accountName, projectName, agentName string) string {
-	return fmt.Sprintf("%s-%s-%s-%s", accountName, projectName, agentName, agentIdentitySuffix)
-}
-
 // EnsureAgentIdentityRBAC assigns the required RBAC roles to per-agent identity service principals.
-// This is designed to be called from the postdeploy handler when the vnext experience is enabled.
+// This is designed to be called from the postdeploy handler after agent deployment.
 //
-// agentIdentities maps agent name → instance identity principal ID. When a principal ID is
-// provided (non-empty), the role is assigned directly without Graph API discovery. When empty,
-// the function falls back to polling Entra ID for the platform-created service principal.
+// EnsureAgentIdentityRBAC assigns Cognitive Services OpenAI Contributor roles to
+// each deployed agent's instance identity. The principal ID is expected to be
+// provided in the agentIdentities map from the deploy response. If a principal ID
+// is empty, the agent is skipped with a warning.
 func EnsureAgentIdentityRBAC(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -141,33 +103,38 @@ func EnsureAgentIdentityRBAC(
 		return nil
 	}
 
-	azdEnvClient := azdClient.Environment()
-	cEnvResponse, err := azdEnvClient.GetCurrent(ctx, &azdext.EmptyRequest{})
+	envClient := azdClient.Environment()
+	envResp, err := envClient.GetCurrent(ctx, &azdext.EmptyRequest{})
 	if err != nil {
 		return fmt.Errorf("failed to get current environment: %w", err)
 	}
-	envResponse, err := azdEnvClient.GetValues(ctx, &azdext.GetEnvironmentRequest{
-		Name: cEnvResponse.Environment.Name,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to get environment values: %w", err)
-	}
-	azdEnv := make(map[string]string, len(envResponse.KeyValues))
-	for _, kv := range envResponse.KeyValues {
-		azdEnv[kv.Key] = kv.Value
-	}
+	envName := envResp.Environment.Name
 
-	if isRoleAssignmentsSkipped(azdEnv) {
+	skipValue := ""
+	skipResp, err := envClient.GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envName,
+		Key:     "AZD_AGENT_SKIP_ROLE_ASSIGNMENTS",
+	})
+	if err == nil {
+		skipValue = skipResp.Value
+	}
+	if skipValue == "" {
+		skipValue = os.Getenv("AZD_AGENT_SKIP_ROLE_ASSIGNMENTS")
+	}
+	if skip, parseErr := strconv.ParseBool(skipValue); parseErr == nil && skip {
 		fmt.Println("  (-) Skipping agent identity RBAC (AZD_AGENT_SKIP_ROLE_ASSIGNMENTS is set)")
 		return nil
 	}
 
-	projectResourceID := azdEnv["AZURE_AI_PROJECT_ID"]
-	if projectResourceID == "" {
+	projectResp, err := envClient.GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envName,
+		Key:     "AZURE_AI_PROJECT_ID",
+	})
+	if err != nil || projectResp.Value == "" {
 		return fmt.Errorf("AZURE_AI_PROJECT_ID not set, unable to ensure agent identity RBAC")
 	}
 
-	info, err := parseAgentIdentityInfo(projectResourceID)
+	info, err := parseAgentIdentityInfo(projectResp.Value)
 	if err != nil {
 		return fmt.Errorf("failed to parse project resource ID: %w", err)
 	}
@@ -193,8 +160,7 @@ func EnsureAgentIdentityRBAC(
 
 // ensureAgentIdentityRBACWithCred performs the core per-agent identity RBAC logic using
 // the provided credential. For each agent, it assigns Azure AI User scoped to the Foundry Project.
-// When a principal ID is already known it is used directly; otherwise the identity is
-// discovered via Graph API. Agents are processed in parallel.
+// The principal ID must be provided from the deploy response. Agents are processed in parallel.
 func ensureAgentIdentityRBACWithCred(
 	ctx context.Context,
 	cred *azidentity.AzureDeveloperCLICredential,
@@ -206,23 +172,6 @@ func ensureAgentIdentityRBACWithCred(
 	fmt.Printf("  AI Account: %s\n", info.AccountName)
 	fmt.Printf("  Project:    %s\n", info.ProjectName)
 	fmt.Printf("  Agents:     %d\n", len(agentIdentities))
-
-	// Only create a Graph client if at least one agent needs identity discovery.
-	var graphClient *graphsdk.GraphClient
-	needsDiscovery := false
-	for _, pid := range agentIdentities {
-		if pid == "" {
-			needsDiscovery = true
-			break
-		}
-	}
-	if needsDiscovery {
-		var err error
-		graphClient, err = graphsdk.NewGraphClient(cred, nil)
-		if err != nil {
-			return fmt.Errorf("failed to create Graph client: %w", err)
-		}
-	}
 
 	// Process agents in parallel — each has an independent identity.
 	type agentResult struct {
@@ -241,7 +190,7 @@ func ensureAgentIdentityRBACWithCred(
 			defer wg.Done()
 			results[i] = agentResult{
 				name: name,
-				err:  ensureSingleAgentRBAC(ctx, cred, graphClient, info, name, pid),
+				err:  ensureSingleAgentRBAC(ctx, cred, info, name, pid),
 			}
 		}(i, agentName, principalID)
 	}
@@ -260,79 +209,23 @@ func ensureAgentIdentityRBACWithCred(
 	return nil
 }
 
-// ensureSingleAgentRBAC handles identity lookup and role assignment for a single agent.
-// If principalID is non-empty, it is used directly; otherwise the identity is discovered
-// via Graph API polling.
+// ensureSingleAgentRBAC handles role assignment for a single agent.
+// The principalID must be provided from the deploy response's instance identity.
 func ensureSingleAgentRBAC(
 	ctx context.Context,
 	cred *azidentity.AzureDeveloperCLICredential,
-	graphClient *graphsdk.GraphClient,
 	info *agentIdentityInfo,
 	agentName string,
 	principalID string,
 ) error {
-	if principalID != "" {
-		// Principal ID known from the deploy response — skip Graph discovery.
-		fmt.Printf("  Agent identity: %s (principal: %s)\n", agentName, principalID)
-	} else {
-		// Fall back to Graph API discovery for older deploys that don't have the principal ID.
-		displayName := agentIdentityDisplayName(info.AccountName, info.ProjectName, agentName)
-
-		var agentIdentities []graphsdk.ServicePrincipal
-		var err error
-		for attempt := range identityLookupMaxAttempts {
-			agentIdentities, err = discoverAgentIdentity(ctx, graphClient, displayName)
-			if err != nil {
-				// Detect Conditional Access token protection blocks (AADSTS530084)
-				// that prevent Graph token acquisition in the fallback discovery path.
-				if isTokenProtectionError(err) {
-					return exterrors.Auth(
-						exterrors.CodeTokenProtectionBlocked,
-						"A Conditional Access token protection policy is blocking "+
-							"Microsoft Graph access required for hosted-agent RBAC setup.\n\n"+
-							"Suggestion: contact your IT administrator or request a policy "+
-							"exception. See https://aka.ms/TBCADocs and "+
-							"https://aka.ms/TokenProtectionFAQ#troubleshooting for more details. "+
-							"To skip RBAC checks when roles are pre-configured, "+
-							"set AZD_AGENT_SKIP_ROLE_ASSIGNMENTS=true.",
-						"",
-					)
-				}
-				return fmt.Errorf("failed to discover agent identity: %w", err)
-			}
-			if len(agentIdentities) > 0 {
-				break
-			}
-			if attempt < identityLookupMaxAttempts-1 {
-				fmt.Printf("  Identity not ready yet in Entra ID, retrying in %s (%d/%d)...\n",
-					identityLookupPollInterval, attempt+1, identityLookupMaxAttempts)
-				time.Sleep(identityLookupPollInterval)
-			}
-		}
-
-		if len(agentIdentities) == 0 {
-			return fmt.Errorf(
-				"agent identity '%s' not found in Entra ID — "+
-					"the platform may not have provisioned it yet, wait a few minutes and re-run: azd deploy",
-				displayName)
-		}
-		fmt.Println("  ✓ Agent identity found in Entra ID")
-
-		if len(agentIdentities) > 1 {
-			log.Printf("found %d service principals matching '%s'; using the first",
-				len(agentIdentities), displayName)
-		}
-
-		// Use the first matching identity.
-		if agentIdentities[0].Id != nil {
-			principalID = *agentIdentities[0].Id
-		}
-		if principalID == "" {
-			return fmt.Errorf("discovered agent identity '%s' has no principal ID", displayName)
-		}
-
-		fmt.Printf("  Agent identity: %s (%s)\n", agentIdentities[0].DisplayName, principalID)
+	if principalID == "" {
+		fmt.Printf("  %s\n", output.WithErrorFormat(
+			"ERROR: agent %q has no instance identity principal ID — skipping RBAC assignment. ", agentName,
+		))
+		return nil
 	}
+
+	fmt.Printf("  Agent identity: %s (principal: %s)\n", agentName, principalID)
 
 	created, err := assignRoleToIdentity(
 		ctx, cred, principalID, roleAzureAIUser, "Azure AI User → Foundry Project", info.ProjectScope,
@@ -379,23 +272,6 @@ func ensureSingleAgentRBAC(
 	}
 
 	return nil
-}
-
-// discoverAgentIdentity searches Entra ID for service principals matching the given display name.
-func discoverAgentIdentity(
-	ctx context.Context,
-	graphClient *graphsdk.GraphClient,
-	displayName string,
-) ([]graphsdk.ServicePrincipal, error) {
-	filter := fmt.Sprintf("displayName eq '%s'", displayName)
-	resp, err := graphClient.
-		ServicePrincipals().
-		Filter(filter).
-		Get(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list service principals: %w", err)
-	}
-	return resp.Value, nil
 }
 
 // assignRoleToIdentity assigns a single RBAC role to a principal at the given scope.
@@ -542,15 +418,4 @@ func extractSubscriptionID(resourceID string) string {
 		}
 	}
 	return ""
-}
-
-// isTokenProtectionError checks whether an error is caused by an Entra Conditional Access
-// token protection policy (AADSTS530084) that blocks Graph API token acquisition.
-func isTokenProtectionError(err error) bool {
-	if err == nil {
-		return false
-	}
-	errMsg := err.Error()
-	return strings.Contains(errMsg, "AADSTS530084") ||
-		strings.Contains(errMsg, "token protection policy")
 }

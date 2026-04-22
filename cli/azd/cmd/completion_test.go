@@ -4,6 +4,8 @@
 package cmd
 
 import (
+	"bytes"
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -190,7 +192,9 @@ func TestCompletionHelpDescriptions(t *testing.T) {
 func TestCompletionFigAction_Run(t *testing.T) {
 	t.Parallel()
 
+	var stdout bytes.Buffer
 	root := &cobra.Command{Use: "azd", Short: "Azure Developer CLI"}
+	root.SetOut(&stdout)
 	child := &cobra.Command{Use: "init", Short: "Initialize", Run: func(cmd *cobra.Command, args []string) {}}
 	root.AddCommand(child)
 
@@ -199,4 +203,5 @@ func TestCompletionFigAction_Run(t *testing.T) {
 	result, err := action.Run(t.Context())
 	require.NoError(t, err)
 	require.NotNil(t, result)
+	require.True(t, strings.HasSuffix(stdout.String(), "\n"))
 }

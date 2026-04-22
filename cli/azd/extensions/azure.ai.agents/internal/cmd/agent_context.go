@@ -15,8 +15,7 @@ import (
 )
 
 // DefaultAgentAPIVersion is the default API version for agent operations.
-const DefaultAgentAPIVersion = "2025-05-15-preview"
-const DefaultVNextAgentAPIVersion = "2025-11-15-preview"
+const DefaultAgentAPIVersion = "2025-11-15-preview"
 
 // ConversationsAPIVersion is the API version used by the Foundry Conversations protocol.
 const ConversationsAPIVersion = "v1"

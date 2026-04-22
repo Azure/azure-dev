@@ -16,6 +16,10 @@ func newJsonSource(name string, jsonRegistry string) (Source, error) {
 		return nil, fmt.Errorf("unable to unmarshal extensions JSON: %w", err)
 	}
 
+	if registry == nil {
+		return nil, fmt.Errorf("registry content is empty or null")
+	}
+
 	if err := CheckRegistrySchemaVersion(registry.SchemaVersion); err != nil {
 		return nil, err
 	}

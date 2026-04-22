@@ -320,3 +320,23 @@ func TestErrUnsupportedRegistrySchema_Formatting(t *testing.T) {
 	)
 	assert.Equal(t, expected, err.Error())
 }
+
+func TestValidateRegistry_NilRegistry(t *testing.T) {
+	result := ValidateRegistry(nil, false)
+	require.NotNil(t, result)
+	assert.False(t, result.Valid)
+	require.Len(t, result.Issues, 1)
+	assert.Equal(t, ValidationError, result.Issues[0].Severity)
+	assert.Contains(t, result.Issues[0].Message, "registry is nil")
+}
+
+func TestNewJsonSource_NullJson(t *testing.T) {
+	_, err := newJsonSource("test", "null")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "registry content is empty or null")
+}
+
+func TestNewJsonSource_EmptyJson(t *testing.T) {
+	_, err := newJsonSource("test", "")
+	require.Error(t, err)
+}

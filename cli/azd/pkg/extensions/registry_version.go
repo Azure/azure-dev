@@ -47,7 +47,7 @@ func CheckRegistrySchemaVersion(schemaVersion string) error {
 		)
 	}
 
-	if v.Major() > uint64(MinSupportedMajorVersion) {
+	if v.Major() > uint64(MaxSupportedMajorVersion) {
 		return &ErrUnsupportedRegistrySchema{
 			SchemaVersion:       schemaVersion,
 			MaxSupportedVersion: CurrentRegistrySchemaVersion,

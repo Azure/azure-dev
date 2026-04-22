@@ -107,7 +107,13 @@ func (r *RegistryValidationResult) addWarning(msg string) {
 func ValidateRegistry(
 	registry *Registry, strict bool,
 ) *RegistryValidationResult {
-	result := ValidateExtensions(registry.Extensions, strict)
+	result := &RegistryValidationResult{Valid: true}
+	if registry == nil {
+		result.addError("registry is nil")
+		return result
+	}
+
+	result = ValidateExtensions(registry.Extensions, strict)
 	validateSchemaVersion(result, registry.SchemaVersion, strict)
 	return result
 }

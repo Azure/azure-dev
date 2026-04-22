@@ -26,8 +26,8 @@ type Provider struct {
 // CurrentRegistrySchemaVersion is the current registry schema version that azd produces.
 const CurrentRegistrySchemaVersion = "1.0"
 
-// MinSupportedMajorVersion is the minimum major version azd can consume.
-const MinSupportedMajorVersion = 1
+// MaxSupportedMajorVersion is the highest major schema version this version of azd can consume.
+const MaxSupportedMajorVersion = 1
 
 // Registry represents the registry.json structure
 type Registry struct {

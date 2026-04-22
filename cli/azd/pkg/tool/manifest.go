@@ -37,6 +37,14 @@ const (
 	ToolPriorityOptional ToolPriority = "optional"
 )
 
+// Checksum describes the expected hash of a downloaded artifact.
+type Checksum struct {
+	// Algorithm is the hash algorithm (e.g. "sha256", "sha512").
+	Algorithm string
+	// Value is the hex-encoded checksum to compare against.
+	Value string
+}
+
 // InstallStrategy describes how to install a tool on a specific platform.
 type InstallStrategy struct {
 	// PackageManager is the package manager name (e.g. "winget", "brew", "apt", "npm", "code").
@@ -46,6 +54,14 @@ type InstallStrategy struct {
 	// InstallCommand is the full shell command when a simple package-manager install
 	// does not apply (e.g. "curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash").
 	InstallCommand string
+	// DirectDownloadUrl is a URL to a binary or archive that azd downloads
+	// directly. When set, azd downloads the artifact, verifies its checksum
+	// (if provided), and makes it available locally. This path is used
+	// instead of PackageManager or InstallCommand.
+	DirectDownloadUrl string
+	// Checksum is the expected hash of the artifact referenced by
+	// DirectDownloadUrl. When empty, checksum verification is skipped.
+	Checksum Checksum
 	// FallbackUrl points to manual installation instructions.
 	FallbackUrl string
 }
@@ -194,7 +210,7 @@ func vscodeAzureTools() *ToolDefinition {
 		VersionRegex:  `ms-azuretools\.vscode-azureresourcegroups@(\d+\.\d+\.\d+)`,
 		InstallStrategies: allPlatforms(InstallStrategy{
 			PackageManager: "code",
-			InstallCommand: "code --install-extension ms-azuretools.vscode-azureresourcegroups",
+			PackageId:      "ms-azuretools.vscode-azureresourcegroups",
 		}),
 	}
 }
@@ -212,7 +228,7 @@ func vscodeBicep() *ToolDefinition {
 		VersionRegex:  `ms-azuretools\.vscode-bicep@(\d+\.\d+\.\d+)`,
 		InstallStrategies: allPlatforms(InstallStrategy{
 			PackageManager: "code",
-			InstallCommand: "code --install-extension ms-azuretools.vscode-bicep",
+			PackageId:      "ms-azuretools.vscode-bicep",
 		}),
 	}
 }
@@ -230,7 +246,7 @@ func vscodeGitHubCopilot() *ToolDefinition {
 		VersionRegex:  `GitHub\.copilot@(\d+\.\d+\.\d+)`,
 		InstallStrategies: allPlatforms(InstallStrategy{
 			PackageManager: "code",
-			InstallCommand: "code --install-extension GitHub.copilot",
+			PackageId:      "GitHub.copilot",
 		}),
 	}
 }

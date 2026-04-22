@@ -5,7 +5,8 @@ Usage
   azd tool install [tool-name...] [flags]
 
 Flags
-        --all 	: Install all recommended tools
+        --all     	: Install all recommended tools
+        --dry-run 	: Preview what would be installed without making changes
 
 Global Flags
     -C, --cwd string         	: Sets the current working directory.

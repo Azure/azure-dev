@@ -5,7 +5,13 @@ package tool
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 
@@ -550,4 +556,181 @@ func TestSplitCommand(t *testing.T) {
 			}
 		})
 	}
+}
+
+// ---------------------------------------------------------------------------
+// validateChecksum tests
+// ---------------------------------------------------------------------------
+
+func TestValidateChecksum_SHA256_Match(t *testing.T) {
+	t.Parallel()
+
+	content := []byte("hello world")
+	tmpFile := filepath.Join(t.TempDir(), "test.bin")
+	require.NoError(t, os.WriteFile(tmpFile, content, 0o600))
+
+	sum := sha256.Sum256(content)
+	expected := hex.EncodeToString(sum[:])
+
+	err := validateChecksum(tmpFile, Checksum{
+		Algorithm: "sha256",
+		Value:     expected,
+	})
+	require.NoError(t, err)
+}
+
+func TestValidateChecksum_SHA256_Mismatch(t *testing.T) {
+	t.Parallel()
+
+	content := []byte("hello world")
+	tmpFile := filepath.Join(t.TempDir(), "test.bin")
+	require.NoError(t, os.WriteFile(tmpFile, content, 0o600))
+
+	err := validateChecksum(tmpFile, Checksum{
+		Algorithm: "sha256",
+		Value: "0000000000000000000000000000" +
+			"000000000000000000000000000000000000",
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "checksum verification failed")
+}
+
+func TestValidateChecksum_SkippedWhenEmpty(t *testing.T) {
+	t.Parallel()
+
+	err := validateChecksum("/nonexistent", Checksum{})
+	require.NoError(t, err)
+}
+
+func TestValidateChecksum_UnsupportedAlgorithm(t *testing.T) {
+	t.Parallel()
+
+	tmpFile := filepath.Join(t.TempDir(), "test.bin")
+	require.NoError(t, os.WriteFile(
+		tmpFile, []byte("data"), 0o600,
+	))
+
+	err := validateChecksum(tmpFile, Checksum{
+		Algorithm: "md5",
+		Value:     "abc",
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unsupported checksum algorithm")
+}
+
+// ---------------------------------------------------------------------------
+// Direct download tests
+// ---------------------------------------------------------------------------
+
+func TestInstall_DirectDownload_WithChecksum(t *testing.T) {
+	t.Parallel()
+
+	content := []byte("#!/bin/sh\necho hello")
+	sum := sha256.Sum256(content)
+	expectedChecksum := hex.EncodeToString(sum[:])
+
+	srv := httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, _ *http.Request) {
+			w.Write(content) //nolint:errcheck
+		},
+	))
+	defer srv.Close()
+
+	runner := mockexec.NewMockCommandRunner()
+	for _, managers := range platformManagers {
+		for _, mgr := range managers {
+			runner.MockToolInPath(
+				mgr, errors.New("not found"),
+			)
+		}
+	}
+
+	det := &mockDetector{
+		detectToolFn: func(
+			_ context.Context, tool *ToolDefinition,
+		) (*ToolStatus, error) {
+			return &ToolStatus{
+				Tool:             tool,
+				Installed:        true,
+				InstalledVersion: "1.0.0",
+			}, nil
+		},
+	}
+
+	pd := NewPlatformDetector(runner)
+	inst := NewInstallerWithHTTPClient(
+		runner, pd, det, srv.Client(),
+	)
+
+	toolDef := &ToolDefinition{
+		Id:       "direct-dl",
+		Name:     "Direct Download Tool",
+		Category: ToolCategoryCLI,
+		InstallStrategies: allPlatforms(InstallStrategy{
+			DirectDownloadUrl: srv.URL + "/tool.bin",
+			Checksum: Checksum{
+				Algorithm: "sha256",
+				Value:     expectedChecksum,
+			},
+		}),
+	}
+
+	result, err := inst.Install(t.Context(), toolDef)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.Success)
+	assert.Equal(t, "direct-download", result.Strategy)
+}
+
+func TestInstall_DirectDownload_ChecksumMismatch(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, _ *http.Request) {
+			//nolint:errcheck
+			w.Write([]byte("actual content"))
+		},
+	))
+	defer srv.Close()
+
+	runner := mockexec.NewMockCommandRunner()
+	for _, managers := range platformManagers {
+		for _, mgr := range managers {
+			runner.MockToolInPath(
+				mgr, errors.New("not found"),
+			)
+		}
+	}
+
+	det := &mockDetector{}
+	pd := NewPlatformDetector(runner)
+	inst := NewInstallerWithHTTPClient(
+		runner, pd, det, srv.Client(),
+	)
+
+	toolDef := &ToolDefinition{
+		Id:       "bad-checksum",
+		Name:     "Bad Checksum Tool",
+		Category: ToolCategoryCLI,
+		InstallStrategies: allPlatforms(InstallStrategy{
+			DirectDownloadUrl: srv.URL + "/tool.bin",
+			Checksum: Checksum{
+				Algorithm: "sha256",
+				Value: "0000000000000000000000000000" +
+					"000000000000000000000000000000000000",
+			},
+		}),
+	}
+
+	result, err := inst.Install(t.Context(), toolDef)
+
+	require.NoError(t, err) // error in result, not returned
+	require.NotNil(t, result)
+	assert.False(t, result.Success)
+	require.Error(t, result.Error)
+	assert.Contains(
+		t, result.Error.Error(),
+		"checksum verification failed",
+	)
 }

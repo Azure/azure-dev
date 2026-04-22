@@ -233,6 +233,15 @@ func (m *Manager) HasUpdatesAvailable(
 	return m.updateChecker.HasUpdatesAvailable(ctx)
 }
 
+// ShouldShowNotification reports whether an update notification should
+// be displayed for the current check cycle. It returns false when a
+// notification has already been shown since the last update check.
+func (m *Manager) ShouldShowNotification(
+	ctx context.Context,
+) bool {
+	return m.updateChecker.ShouldShowNotification(ctx)
+}
+
 // MarkUpdateNotificationShown records that the user has been notified
 // about available updates so that the notification is not repeated
 // too soon.

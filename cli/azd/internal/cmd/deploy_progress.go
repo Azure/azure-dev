@@ -197,6 +197,9 @@ func (t *deployProgressTracker) Render() {
 	}
 
 	t.lastLines = lines
+	// Erase from cursor to end of screen so wrapped-line remnants
+	// from a previous render don't linger below the table.
+	buf.WriteString("\033[J")
 	fmt.Fprint(t.writer, buf.String())
 }
 
@@ -248,6 +251,9 @@ func (t *deployProgressTracker) RenderFinal() {
 	}
 
 	t.lastLines = 0
+	// Erase from cursor to end of screen to clear any stale content
+	// left behind by long lines that wrapped in the terminal.
+	buf.WriteString("\033[J")
 	fmt.Fprint(t.writer, buf.String())
 }
 

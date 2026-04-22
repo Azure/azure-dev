@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"slices"
 	"strings"
@@ -1151,14 +1152,6 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		Title: fmt.Sprintf("Refreshing environment %s (azd env refresh)", ef.env.Name()),
 	})
 
-	if err := ef.projectManager.Initialize(ctx, ef.projectConfig); err != nil {
-		return nil, err
-	}
-
-	if err := ef.projectManager.EnsureAllTools(ctx, ef.projectConfig, nil); err != nil {
-		return nil, err
-	}
-
 	infra, err := ef.importManager.ProjectInfrastructure(ctx, ef.projectConfig)
 	if err != nil {
 		return nil, err
@@ -1223,23 +1216,40 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		}
 	}
 
-	servicesStable, err := ef.importManager.ServiceStable(ctx, ef.projectConfig)
-	if err != nil {
-		return nil, err
-	}
+	// After the environment has been refreshed, try to initialize services
+	// and raise ServiceEventEnvUpdated. This is best-effort: if initialization
+	// fails (e.g. an extension service target can't initialize), we log a
+	// warning but consider the refresh successful since the .env file has
+	// already been updated with the latest deployment outputs.
+	if err := ef.projectManager.Initialize(ctx, ef.projectConfig); err != nil {
+		log.Printf(
+			"project initialization after env refresh: %v (service events will be skipped)",
+			err,
+		)
+	} else {
+		servicesStable, err := ef.importManager.ServiceStable(ctx, ef.projectConfig)
+		if err != nil {
+			log.Printf("failed to list services for env update events: %v", err)
+		} else {
+			for _, svc := range servicesStable {
+				eventArgs := project.ServiceLifecycleEventArgs{
+					Project:        ef.projectConfig,
+					Service:        svc,
+					ServiceContext: project.NewServiceContext(),
+					Args: map[string]any{
+						"bicepOutput": state.Outputs,
+					},
+				}
 
-	for _, svc := range servicesStable {
-		eventArgs := project.ServiceLifecycleEventArgs{
-			Project:        ef.projectConfig,
-			Service:        svc,
-			ServiceContext: project.NewServiceContext(),
-			Args: map[string]any{
-				"bicepOutput": state.Outputs,
-			},
-		}
-
-		if err := svc.RaiseEvent(ctx, project.ServiceEventEnvUpdated, eventArgs); err != nil {
-			return nil, err
+				if err := svc.RaiseEvent(
+					ctx, project.ServiceEventEnvUpdated, eventArgs,
+				); err != nil {
+					log.Printf(
+						"failed to raise env updated event for service %s: %v",
+						svc.Name, err,
+					)
+				}
+			}
 		}
 	}
 

@@ -216,16 +216,21 @@ func Test_MapError(t *testing.T) {
 			err: &internal.ErrorWithSuggestion{
 				Err: &auth.AuthFailedError{
 					Parsed: &auth.AadErrorResponse{
-						Error:      "invalid_grant",
-						ErrorCodes: []int{530084},
+						Error:         "invalid_grant",
+						ErrorCodes:    []int{530084},
+						CorrelationId: "blocked-token-protection",
 					},
 				},
 			},
 			// AADSTS530084 surfaced via the suggestion wrapper still classifies as the generic
-			// AAD service failure for telemetry, matching pre-existing AuthFailedError behavior.
+			// AAD service failure for telemetry, and should preserve the wrapped AAD details.
 			wantErrReason: "error.suggestion",
 			wantErrDetails: []attribute.KeyValue{
 				fields.ErrType.String("service.aad.failed"),
+				fields.ErrorKey(fields.ServiceName.Key).String("aad"),
+				fields.ErrorKey(fields.ServiceErrorCode.Key).String("530084"),
+				fields.ErrorKey(fields.ServiceStatusCode.Key).String("invalid_grant"),
+				fields.ErrorKey(fields.ServiceCorrelationId.Key).String("blocked-token-protection"),
 			},
 		},
 		{

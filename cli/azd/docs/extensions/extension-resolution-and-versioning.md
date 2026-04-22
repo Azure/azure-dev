@@ -146,7 +146,7 @@ When `azd` resolves versions, it filters them into compatible and incompatible s
 Once a version is resolved, installation proceeds through these steps:
 
 1. **Resolve version** — Apply the version constraint against available versions, filter by `azd` compatibility, and select the highest match.
-2. **Resolve dependencies** — If the extension declares dependencies, resolve each one recursively from the **same source as the parent extension**. Cross-source dependency resolution is not performed. Dependencies follow the same version and compatibility rules.
+2. **Resolve dependencies** — If the extension declares dependencies, resolve each one recursively from the **same source as the parent extension**. Cross-source dependency resolution is not performed. Dependencies use the declared version constraint (or `latest`) but do **not** go through `azd` version compatibility filtering — `requiredAzdVersion` checks are only applied to the top-level extension.
 3. **Match platform artifact** — Find the artifact for the current OS and architecture. `azd` first looks for `<os>/<arch>` (for example, `linux/amd64` or `windows/amd64`). If no exact match is found, it falls back to `<os>` only (for example, `linux` or `windows`).
 4. **Download** — Fetch the artifact from its URL (HTTP/HTTPS) or copy from a local file path.
 5. **Validate checksum** — Verify the downloaded file against the published checksum. Supported algorithms are `sha256` and `sha512`.
@@ -180,7 +180,11 @@ Each entry maps an extension ID to a version constraint string. The same constra
 - If an extension is already installed (any version), `azd init` **skips it** — it does not check whether the installed version satisfies the configured constraint.
 - `azd init` does **not** apply `requiredAzdVersion` compatibility filtering (unlike `azd extension install`).
 
-> **Note:** These are known limitations in the current implementation and may be addressed in future versions.
+> **Note:** These are known limitations in the current implementation and may be addressed in future versions:
+>
+> - `azd init` does not check whether an already-installed extension satisfies the configured version constraint.
+> - `azd init` does not apply `requiredAzdVersion` compatibility filtering.
+> - Dependency (transitive) installation calls `Install()` directly without passing through `requiredAzdVersion` compatibility filtering, so a dependency may be installed even if its `requiredAzdVersion` is not satisfied by the running `azd` version.
 
 ## Caching
 

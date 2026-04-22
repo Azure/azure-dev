@@ -16,6 +16,9 @@ import (
 	"time"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestReadSSEStream(t *testing.T) {
@@ -951,4 +954,114 @@ func TestCreateConversation(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestNewSession_ImpliesNewConversation(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, ConfigFile)
+	agentName := "my-agent"
+
+	// Seed a conversation ID in the local context so there is
+	// an existing value that should be discarded by --new-session.
+	seedCtx := &AgentLocalContext{
+		Conversations: map[string]string{agentName: "old-conv-id"},
+		Sessions:      map[string]string{agentName: "old-session-id"},
+	}
+	require.NoError(t, saveLocalContext(seedCtx, configPath))
+
+	// Simulate the flag combination used in responsesLocal / responsesRemote:
+	// --new-session=true, --new-conversation=false  →  forceNew should be true.
+	flags := &invokeFlags{
+		newSession:      true,
+		newConversation: false,
+	}
+	forceNewConv := flags.newConversation || flags.newSession
+
+	// For sessions, forceNew + generateIfMissing produces a fresh UUID.
+	newSID, err := resolveStoredIDFromPath(
+		configPath, agentName, "", flags.newSession, "sessions", true,
+	)
+	require.NoError(t, err)
+	assert.NotEqual(t, "old-session-id", newSID, "session should be new")
+	assert.NotEmpty(t, newSID)
+
+	// For conversations, the derived forceNew flag should also produce a fresh UUID.
+	newConvID, err := resolveStoredIDFromPath(
+		configPath, agentName, "", forceNewConv, "conversations", true,
+	)
+	require.NoError(t, err)
+	assert.NotEqual(t, "old-conv-id", newConvID, "--new-session should force a new conversation")
+	assert.NotEmpty(t, newConvID)
+}
+
+func TestNewConversation_AloneDoesNotAffectSession(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, ConfigFile)
+	agentName := "my-agent"
+
+	// Seed both session and conversation IDs.
+	seedCtx := &AgentLocalContext{
+		Conversations: map[string]string{agentName: "old-conv-id"},
+		Sessions:      map[string]string{agentName: "old-session-id"},
+	}
+	require.NoError(t, saveLocalContext(seedCtx, configPath))
+
+	// --new-conversation=true, --new-session=false
+	flags := &invokeFlags{
+		newSession:      false,
+		newConversation: true,
+	}
+
+	// Session should stay the same (forceNew=false).
+	sid, err := resolveStoredIDFromPath(
+		configPath, agentName, "", flags.newSession, "sessions", true,
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "old-session-id", sid, "session should be unchanged")
+
+	// Conversation should be new.
+	forceNewConv := flags.newConversation || flags.newSession
+	convID, err := resolveStoredIDFromPath(
+		configPath, agentName, "", forceNewConv, "conversations", true,
+	)
+	require.NoError(t, err)
+	assert.NotEqual(t, "old-conv-id", convID, "--new-conversation should force a new conversation")
+	assert.NotEmpty(t, convID)
+}
+
+func TestNewSessionAndNewConversation_BothSet(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, ConfigFile)
+	agentName := "my-agent"
+
+	seedCtx := &AgentLocalContext{
+		Conversations: map[string]string{agentName: "old-conv-id"},
+		Sessions:      map[string]string{agentName: "old-session-id"},
+	}
+	require.NoError(t, saveLocalContext(seedCtx, configPath))
+
+	// --new-session=true, --new-conversation=true (redundant but valid)
+	flags := &invokeFlags{
+		newSession:      true,
+		newConversation: true,
+	}
+	forceNewConv := flags.newConversation || flags.newSession
+
+	newSID, err := resolveStoredIDFromPath(
+		configPath, agentName, "", flags.newSession, "sessions", true,
+	)
+	require.NoError(t, err)
+	assert.NotEqual(t, "old-session-id", newSID)
+
+	newConvID, err := resolveStoredIDFromPath(
+		configPath, agentName, "", forceNewConv, "conversations", true,
+	)
+	require.NoError(t, err)
+	assert.NotEqual(t, "old-conv-id", newConvID)
 }

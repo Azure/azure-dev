@@ -264,8 +264,11 @@ func (a *InvokeAction) responsesLocal(ctx context.Context) error {
 		sid, _ = resolveStoredID(
 			ctx, azdClient, agentKey, a.flags.session, a.flags.newSession, "sessions", true,
 		)
+		// --new-session implies --new-conversation because the backend
+		// derives sessions from a conversation ID.
 		convID, _ = resolveStoredID(
-			ctx, azdClient, agentKey, a.flags.conversation, a.flags.newConversation, "conversations", true,
+			ctx, azdClient, agentKey, a.flags.conversation,
+			a.flags.newConversation || a.flags.newSession, "conversations", true,
 		)
 	}
 
@@ -393,13 +396,16 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 		return fmt.Errorf("failed to get auth token: %w", err)
 	}
 
-	// Conversation ID — enables multi-turn memory via Foundry Conversations API
+	// Conversation ID — enables multi-turn memory via Foundry Conversations API.
+	// --new-session implies --new-conversation because the backend derives
+	// sessions from a conversation ID; reusing a conversation would return
+	// the same session.
 	convID, err := resolveConversationID(
 		ctx,
 		azdClient,
 		name,
 		a.flags.conversation,
-		a.flags.newConversation,
+		a.flags.newConversation || a.flags.newSession,
 		projectEndpoint,
 		token.Token,
 	)

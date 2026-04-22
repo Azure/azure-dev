@@ -48,12 +48,7 @@ func MapError(err error, span tracing.Span) {
 	if updateErr, ok := errors.AsType[*update.UpdateError](err); ok {
 		errCode = updateErr.Code
 	} else if _, ok := errors.AsType[*auth.ReLoginRequiredError](err); ok {
-		// Auth interaction errors are classified by concrete type rather than the shared AuthInteractionError interface
-		// because each type has a distinct telemetry code.
 		errCode = "auth.login_required"
-		errDetails = append(errDetails, fields.ErrCategory.String("auth"))
-	} else if _, ok := errors.AsType[*auth.TokenProtectionBlockedError](err); ok {
-		errCode = "auth.token_protection_blocked"
 		errDetails = append(errDetails, fields.ErrCategory.String("auth"))
 	} else if errWithSuggestion, ok := errors.AsType[*internal.ErrorWithSuggestion](err); ok {
 		errCode = "error.suggestion"
@@ -312,10 +307,6 @@ func classifySuggestionType(err error) string {
 
 	if _, ok := errors.AsType[*auth.ReLoginRequiredError](err); ok {
 		return "auth.login_required"
-	}
-
-	if _, ok := errors.AsType[*auth.TokenProtectionBlockedError](err); ok {
-		return "auth.token_protection_blocked"
 	}
 
 	if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok {

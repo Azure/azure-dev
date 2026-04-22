@@ -294,12 +294,17 @@ func Test_wrapErrorWithSuggestion(t *testing.T) {
 		{
 			name: "TokenProtectionBlockedError with suggestion returns Unauthenticated",
 			err: &internal.ErrorWithSuggestion{
-				Err:        &auth.TokenProtectionBlockedError{},
+				Err: &auth.AuthFailedError{
+					Parsed: &auth.AadErrorResponse{
+						Error:      "invalid_grant",
+						ErrorCodes: []int{530084},
+					},
+				},
 				Suggestion: "Contact your IT administrator or request a policy exception.",
 			},
 			wantContain:    "policy exception",
 			wantGrpcCode:   codes.Unauthenticated,
-			wantAuthReason: azdext.AuthErrorReasonTokenProtectionBlocked,
+			wantAuthReason: "AADSTS530084",
 		},
 	}
 

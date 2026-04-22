@@ -277,8 +277,7 @@ func wrapErrorWithSuggestion(err error) error {
 		return nil
 	}
 
-	_, authInteractionErr := errors.AsType[auth.AuthInteractionError](err)
-	isAuthErr := errors.Is(err, auth.ErrNoCurrentUser) || authInteractionErr
+	isAuthErr := isAuthError(err)
 
 	if suggestionErr, ok := errors.AsType[*internal.ErrorWithSuggestion](err); ok {
 		msg := fmt.Sprintf("%s\n%s", err.Error(), suggestionErr.Suggestion)
@@ -293,6 +292,21 @@ func wrapErrorWithSuggestion(err error) error {
 	}
 
 	return err
+}
+
+// isAuthError reports whether err's chain contains a known auth-failure type that should be
+// surfaced over gRPC as codes.Unauthenticated.
+func isAuthError(err error) bool {
+	if errors.Is(err, auth.ErrNoCurrentUser) {
+		return true
+	}
+	if _, ok := errors.AsType[*auth.ReLoginRequiredError](err); ok {
+		return true
+	}
+	if _, ok := errors.AsType[*auth.AuthFailedError](err); ok {
+		return true
+	}
+	return false
 }
 
 func grpcAuthStatus(err error, msg string) error {
@@ -318,8 +332,12 @@ func grpcAuthReason(err error) string {
 		return azdext.AuthErrorReasonNotLoggedIn
 	}
 
-	if _, ok := errors.AsType[*auth.TokenProtectionBlockedError](err); ok {
-		return azdext.AuthErrorReasonTokenProtectionBlocked
+	// Pass through the originating AAD error code (e.g., "AADSTS530084") when available.
+	// This preserves Entra's own semantics rather than redefining them on azd's side.
+	if authFailed, ok := errors.AsType[*auth.AuthFailedError](err); ok {
+		if authFailed.Parsed != nil && len(authFailed.Parsed.ErrorCodes) > 0 {
+			return fmt.Sprintf("AADSTS%d", authFailed.Parsed.ErrorCodes[0])
+		}
 	}
 
 	if _, ok := errors.AsType[*auth.ReLoginRequiredError](err); ok {

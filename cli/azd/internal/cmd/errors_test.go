@@ -212,13 +212,20 @@ func Test_MapError(t *testing.T) {
 			},
 		},
 		{
-			name: "WithTokenProtectionBlockedError",
+			name: "WithTokenProtectionBlockedAuthFailedError",
 			err: &internal.ErrorWithSuggestion{
-				Err: &auth.TokenProtectionBlockedError{},
+				Err: &auth.AuthFailedError{
+					Parsed: &auth.AadErrorResponse{
+						Error:      "invalid_grant",
+						ErrorCodes: []int{530084},
+					},
+				},
 			},
-			wantErrReason: "auth.token_protection_blocked",
+			// AADSTS530084 surfaced via the suggestion wrapper still classifies as the generic
+			// AAD service failure for telemetry, matching pre-existing AuthFailedError behavior.
+			wantErrReason: "error.suggestion",
 			wantErrDetails: []attribute.KeyValue{
-				fields.ErrorKey(fields.ErrCategory.Key).String("auth"),
+				fields.ErrType.String("service.aad.failed"),
 			},
 		},
 		{

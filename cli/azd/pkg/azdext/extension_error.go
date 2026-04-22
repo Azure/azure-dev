@@ -150,11 +150,12 @@ func authLocalErrorCode(st *status.Status) string {
 		return "not_logged_in"
 	case AuthErrorReasonLoginRequired:
 		return "login_required"
-	case AuthErrorReasonTokenProtectionBlocked:
-		return "token_protection_blocked"
-	default:
-		return "auth_failed"
 	}
+
+	// All other reasons (including AAD-originated codes like "AADSTS530084") collapse to a
+	// generic "auth_failed" label. Extensions that need per-AAD-code granularity can read the
+	// raw reason directly from the gRPC ErrorInfo via AuthErrorReason.
+	return "auth_failed"
 }
 
 // UnwrapError converts an ExtensionError proto back to a typed Go error.

@@ -147,7 +147,7 @@ func TestExtensionError_RoundTrip(t *testing.T) {
 				"failed to prompt: %w",
 				mustAuthStatusError(
 					codes.Unauthenticated,
-					AuthErrorReasonTokenProtectionBlocked,
+					"AADSTS530084",
 					"AADSTS530084: blocked by token protection",
 				),
 			),
@@ -157,7 +157,9 @@ func TestExtensionError_RoundTrip(t *testing.T) {
 
 				localDetail := protoErr.GetLocalError()
 				require.NotNil(t, localDetail)
-				assert.Equal(t, "token_protection_blocked", localDetail.GetCode())
+				// AAD-originated reasons collapse to the generic "auth_failed" code; the raw
+				// "AADSTS530084" reason remains available to extensions via the gRPC ErrorInfo.
+				assert.Equal(t, "auth_failed", localDetail.GetCode())
 				assert.Equal(t, "auth", localDetail.GetCategory())
 			},
 		},

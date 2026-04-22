@@ -81,10 +81,12 @@ func (a *authStatusAction) Run(ctx context.Context) (*actions.ActionResult, erro
 
 	// get user account information
 	details, err := a.authManager.LogInDetails(ctx)
-	_, authInteractionErr := errors.AsType[auth.AuthInteractionError](err)
+	// An *internal.ErrorWithSuggestion already carries actionable, user-facing guidance
+	// surfaced through the status result; avoid double-printing the raw error.
+	_, hasSuggestion := errors.AsType[*internal.ErrorWithSuggestion](err)
 	if err != nil {
 		if !errors.Is(err, auth.ErrNoCurrentUser) &&
-			!authInteractionErr {
+			!hasSuggestion {
 			// print a useful message for unknown errors
 			fmt.Fprintln(a.console.Handles().Stderr, err.Error())
 		}

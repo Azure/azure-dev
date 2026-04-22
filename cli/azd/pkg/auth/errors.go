@@ -39,37 +39,13 @@ type ReLoginRequiredError struct {
 	helpLink *errorhandler.ErrorLink
 }
 
-// TokenProtectionBlockedError indicates that the token request was blocked by
-// an organization's Conditional Access token protection policy (AADSTS530084), and until #7704 is addressed,
-// re-running `azd auth login` won't help.
-type TokenProtectionBlockedError struct {
-	errText string
-}
-
-// AuthInteractionError marks AAD-classified, non-retriable errors that carry
-// user-facing guidance via *internal.ErrorWithSuggestion. Callers that just need
-// to know "this is an actionable auth failure" (e.g., gRPC status mapping or
-// suppressing the raw error in `azd auth status` / `--only-check-status` flows)
-// should use errors.AsType[AuthInteractionError](err) so future variants don't
-// require touching every call site.
-//
-// The interface is sealed via an unexported marker method; only types declared
-// in this package may implement it.
-type AuthInteractionError interface {
-	error
-	isAuthInteractionError()
-}
-
-func (*ReLoginRequiredError) isAuthInteractionError()        {}
-func (*TokenProtectionBlockedError) isAuthInteractionError() {}
-
 // newActionableAuthError inspects an AAD error response and, if it matches a known
 // pattern that azd can surface with actionable guidance, returns a wrapped error and true.
 //
-// The returned error may be a *ReLoginRequiredError (the user should rerun `azd auth login`)
-// or a *TokenProtectionBlockedError (Conditional Access token protection blocked the request
-// and re-running `azd auth login` will not help). Callers must not assume the result always
-// implies the user can simply log in again — inspect the underlying error type if behavior needs to differ.
+// For Conditional Access token protection (AADSTS530084), the wrapper preserves the original
+// *AuthFailedError as the inner error (via failedErr) so the AAD error semantics are not
+// shadowed by an azd-specific type. Callers that need to distinguish behavior should match on
+// the AAD error code from *AuthFailedError.Parsed.
 //
 // If the response does not match a known pattern, it returns (nil, false).
 func newActionableAuthError(
@@ -77,12 +53,13 @@ func newActionableAuthError(
 	scopes []string,
 	cloud *cloud.Cloud,
 	tenantID string,
+	failedErr *AuthFailedError,
 ) (error, bool) {
 	if response == nil {
 		return nil, false
 	}
 
-	if err, ok := newTokenProtectionBlockedError(response, scopes); ok {
+	if err, ok := newTokenProtectionBlockedSuggestion(response, scopes, failedErr); ok {
 		return err, true
 	}
 
@@ -116,7 +93,18 @@ const (
 	tokenProtectionFAQLink = "https://aka.ms/TokenProtectionFAQ#troubleshooting"
 )
 
-func newTokenProtectionBlockedError(response *AadErrorResponse, scopes []string) (error, bool) {
+// newTokenProtectionBlockedSuggestion returns an *internal.ErrorWithSuggestion that wraps
+// the original *AuthFailedError when the AAD response indicates AADSTS530084 (Conditional
+// Access token protection blocked the request). Until #7704 is addressed, re-running
+// `azd auth login` will not help, so the suggestion directs the user to their IT admin.
+//
+// The inner Err is the original *AuthFailedError so the AAD error code/description remain
+// the source of truth for downstream classification (telemetry, gRPC ErrorInfo, etc.).
+func newTokenProtectionBlockedSuggestion(
+	response *AadErrorResponse,
+	scopes []string,
+	failedErr *AuthFailedError,
+) (error, bool) {
 	if response == nil {
 		return nil, false
 	}
@@ -130,10 +118,15 @@ func newTokenProtectionBlockedError(response *AadErrorResponse, scopes []string)
 		message = "A Conditional Access token protection policy blocked this Microsoft Graph token request."
 	}
 
+	var inner error = failedErr
+	if inner == nil {
+		// Defensive: callers should always pass the originating *AuthFailedError, but if not
+		// available, surface the AAD description so the wrapper still carries detail.
+		inner = errors.New(response.ErrorDescription)
+	}
+
 	return &internal.ErrorWithSuggestion{
-		Err: &TokenProtectionBlockedError{
-			errText: response.ErrorDescription,
-		},
+		Err:        inner,
 		Message:    message,
 		Suggestion: "Contact your IT administrator or request a policy exception.",
 		Links: []errorhandler.ErrorLink{
@@ -206,16 +199,8 @@ func (e *ReLoginRequiredError) Error() string {
 	return e.errText
 }
 
-func (e *TokenProtectionBlockedError) Error() string {
-	return e.errText
-}
-
 // Marker method to indicate this as non-retriable when executed within an armruntime pipeline
 func (e *ReLoginRequiredError) NonRetriable() {
-}
-
-// Marker method to indicate this as non-retriable when executed within an armruntime pipeline
-func (e *TokenProtectionBlockedError) NonRetriable() {
 }
 
 const authFailedPrefix string = "failed to authenticate"
@@ -290,7 +275,13 @@ func (e *AuthFailedError) Unwrap() error {
 
 func (e *AuthFailedError) Error() string {
 	if e.RawResp == nil { // non-http error, simply append inner error
-		return fmt.Sprintf("%s: %s", authFailedPrefix, e.innerErr.Error())
+		if e.innerErr != nil {
+			return fmt.Sprintf("%s: %s", authFailedPrefix, e.innerErr.Error())
+		}
+		if e.Parsed != nil && e.Parsed.ErrorDescription != "" {
+			return fmt.Sprintf("%s: %s", authFailedPrefix, e.Parsed.ErrorDescription)
+		}
+		return authFailedPrefix
 	}
 
 	if e.Parsed == nil { // unable to parse, provide HTTP error details

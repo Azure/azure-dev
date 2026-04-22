@@ -14,11 +14,14 @@ const (
 )
 
 // Auth error reason codes used in gRPC ErrorInfo.Reason.
+//
+// For AAD-originated failures, the Reason is the originating Entra error code formatted as
+// "AADSTS<code>" (e.g. "AADSTS530084") so extensions can match on the AAD code directly without
+// azd having to define a synthetic taxonomy. The constants below cover azd-local conditions
+// that have no corresponding Entra code.
 const (
 	AuthErrorReasonNotLoggedIn   = "AUTH_NOT_LOGGED_IN"
 	AuthErrorReasonLoginRequired = "AUTH_LOGIN_REQUIRED"
-	// #nosec G101 -- gRPC auth reason identifier, not a credential.
-	AuthErrorReasonTokenProtectionBlocked = "AUTH_TOKEN_PROTECTION_BLOCKED"
 )
 
 // AuthErrorReason extracts the ErrorInfo.Reason from a gRPC status when the domain

@@ -81,7 +81,18 @@ func TestWrapErrorWithSuggestion_ReLoginRequired(t *testing.T) {
 
 func TestWrapErrorWithSuggestion_TokenProtectionBlocked(t *testing.T) {
 	t.Parallel()
-	err := fmt.Errorf("token protection: %w", &auth.TokenProtectionBlockedError{})
+	authFailed := &auth.AuthFailedError{
+		Parsed: &auth.AadErrorResponse{
+			Error:      "invalid_grant",
+			ErrorCodes: []int{530084},
+		},
+	}
+	// In production the wrapper is built by newActionableAuthError; mirror that shape here so
+	// wrapErrorWithSuggestion classifies the wrapped *AuthFailedError as an auth interaction.
+	err := fmt.Errorf("token protection: %w", &internal.ErrorWithSuggestion{
+		Err:        authFailed,
+		Suggestion: "Contact your IT administrator or request a policy exception.",
+	})
 
 	wrapped := wrapErrorWithSuggestion(err)
 	st, ok := status.FromError(wrapped)
@@ -92,7 +103,7 @@ func TestWrapErrorWithSuggestion_TokenProtectionBlocked(t *testing.T) {
 	info, ok := details[0].(*errdetails.ErrorInfo)
 	require.True(t, ok)
 	require.Equal(t, azdext.AuthErrorDomain, info.Domain)
-	require.Equal(t, azdext.AuthErrorReasonTokenProtectionBlocked, info.Reason)
+	require.Equal(t, "AADSTS530084", info.Reason)
 }
 
 func TestWrapErrorWithSuggestion_AuthErrorWithSuggestion(t *testing.T) {

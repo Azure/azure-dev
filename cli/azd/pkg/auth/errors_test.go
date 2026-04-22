@@ -99,7 +99,7 @@ func TestNewActionableAuthError_RecognizesLoginRequiredErrors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, got := newActionableAuthError(tt.resp, LoginScopes(cloud.AzurePublic()), cloud.AzurePublic(), "")
+			_, got := newActionableAuthError(tt.resp, LoginScopes(cloud.AzurePublic()), cloud.AzurePublic(), "", nil)
 			require.Equal(t, tt.want, got)
 		})
 	}
@@ -130,14 +130,14 @@ func TestNewActionableAuthError_PreservesUnderlyingErrorText(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err, _ := newActionableAuthError(tt.resp, LoginScopes(cloud.AzurePublic()), cloud.AzurePublic(), "")
+			err, _ := newActionableAuthError(tt.resp, LoginScopes(cloud.AzurePublic()), cloud.AzurePublic(), "", nil)
 			got := err.Error()
 			require.Equal(t, tt.want, got)
 		})
 	}
 }
 
-func TestTokenProtectionBlockedError(t *testing.T) {
+func TestTokenProtectionBlockedSuggestion(t *testing.T) {
 	graphScopes := []string{"https://graph.microsoft.com/.default"}
 	armScopes := LoginScopes(cloud.AzurePublic())
 
@@ -196,7 +196,11 @@ func TestTokenProtectionBlockedError(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err, ok := newTokenProtectionBlockedError(tt.resp, tt.scopes)
+			var failed *AuthFailedError
+			if tt.resp != nil {
+				failed = &AuthFailedError{Parsed: tt.resp, innerErr: errors.New(tt.resp.ErrorDescription)}
+			}
+			err, ok := newTokenProtectionBlockedSuggestion(tt.resp, tt.scopes, failed)
 			require.Equal(t, tt.want, ok)
 			if !tt.want {
 				require.Nil(t, err)
@@ -204,9 +208,6 @@ func TestTokenProtectionBlockedError(t *testing.T) {
 			}
 
 			require.NotNil(t, err)
-
-			// Underlying error message preserves the AAD error description.
-			require.Equal(t, tt.resp.ErrorDescription, err.Error())
 
 			// Wrapped as ErrorWithSuggestion with the expected scope-aware message and links.
 			ews, ok := errors.AsType[*internal.ErrorWithSuggestion](err)
@@ -219,37 +220,37 @@ func TestTokenProtectionBlockedError(t *testing.T) {
 			require.Equal(t, tokenProtectionFAQLink, ews.Links[1].URL)
 			require.NotEmpty(t, ews.Links[1].Title)
 
-			// Inner error must be *TokenProtectionBlockedError and marked non-retriable.
-			inner, ok := errors.AsType[*TokenProtectionBlockedError](err)
-			require.True(t, ok, "expected inner error to be *TokenProtectionBlockedError")
-			require.Equal(t, tt.resp.ErrorDescription, inner.Error())
-			_, isInteractionErr := errors.AsType[AuthInteractionError](err)
-			require.True(t, isInteractionErr,
-				"TokenProtectionBlockedError should satisfy AuthInteractionError through the ErrorWithSuggestion wrapper")
-			// Calling NonRetriable should not panic — verifies the marker method exists.
-			inner.NonRetriable()
+			// Inner error is preserved as the originating *AuthFailedError so AAD semantics
+			// (error code, description) flow through unmodified.
+			inner, ok := errors.AsType[*AuthFailedError](err)
+			require.True(t, ok, "expected inner error to be *AuthFailedError")
+			require.NotNil(t, inner.Parsed)
+			require.Contains(t, inner.Parsed.ErrorCodes, 530084)
 		})
 	}
 }
 
 func TestNewActionableAuthError_TokenProtectionTakesPrecedence(t *testing.T) {
-	// AADSTS530084 paired with invalid_grant should produce a TokenProtectionBlockedError
+	// AADSTS530084 paired with invalid_grant should produce a token-protection suggestion
 	// (not a ReLoginRequiredError), because reauthenticating won't unblock the user.
 	resp := &AadErrorResponse{
 		Error:            "invalid_grant",
 		ErrorDescription: "AADSTS530084: blocked by token protection",
 		ErrorCodes:       []int{530084},
 	}
+	failed := &AuthFailedError{Parsed: resp, innerErr: errors.New(resp.ErrorDescription)}
 
-	err, ok := newActionableAuthError(resp, LoginScopes(cloud.AzurePublic()), cloud.AzurePublic(), "")
+	err, ok := newActionableAuthError(resp, LoginScopes(cloud.AzurePublic()), cloud.AzurePublic(), "", failed)
 	require.True(t, ok)
 	require.NotNil(t, err)
 
 	_, isReLogin := errors.AsType[*ReLoginRequiredError](err)
 	require.False(t, isReLogin, "should not be classified as ReLoginRequiredError")
 
-	_, isTokenProtection := errors.AsType[*TokenProtectionBlockedError](err)
-	require.True(t, isTokenProtection, "should be classified as TokenProtectionBlockedError")
+	// The wrapper preserves the originating *AuthFailedError (and its AAD code) as the inner err.
+	inner, ok := errors.AsType[*AuthFailedError](err)
+	require.True(t, ok, "should preserve inner *AuthFailedError")
+	require.Contains(t, inner.Parsed.ErrorCodes, 530084)
 }
 
 func TestUsesGraphScope(t *testing.T) {

@@ -437,7 +437,7 @@ func TestNewActionableAuthError_ClaimsScenarios(t *testing.T) {
 	t.Run("nil_response_returns_false", func(t *testing.T) {
 		t.Parallel()
 		err, ok := newActionableAuthError(
-			nil, nil, cloud.AzurePublic(), "")
+			nil, nil, cloud.AzurePublic(), "", nil)
 		assert.Nil(t, err)
 		assert.False(t, ok)
 	})
@@ -449,7 +449,7 @@ func TestNewActionableAuthError_ClaimsScenarios(t *testing.T) {
 			ErrorDescription: "something else",
 		}
 		err, ok := newActionableAuthError(
-			resp, nil, cloud.AzurePublic(), "")
+			resp, nil, cloud.AzurePublic(), "", nil)
 		assert.Nil(t, err)
 		assert.False(t, ok)
 	})
@@ -465,6 +465,7 @@ func TestNewActionableAuthError_ClaimsScenarios(t *testing.T) {
 			[]string{"https://management.azure.com//.default"},
 			cloud.AzurePublic(),
 			"",
+			nil,
 		)
 		assert.True(t, ok)
 		require.Error(t, err)
@@ -482,6 +483,7 @@ func TestNewActionableAuthError_ClaimsScenarios(t *testing.T) {
 			[]string{"https://management.azure.com//.default"},
 			cloud.AzurePublic(),
 			"",
+			nil,
 		)
 		assert.True(t, ok)
 		require.Error(t, err)
@@ -501,6 +503,7 @@ func TestNewActionableAuthError_ClaimsScenarios(t *testing.T) {
 			},
 			cloud.AzurePublic(),
 			"",
+			nil,
 		)
 		assert.True(t, ok)
 		require.Error(t, err)
@@ -515,7 +518,7 @@ func TestNewActionableAuthError_ClaimsScenarios(t *testing.T) {
 			ErrorCodes:       []int{70043},
 		}
 		err, ok := newActionableAuthError(
-			resp, nil, cloud.AzurePublic(), "")
+			resp, nil, cloud.AzurePublic(), "", nil)
 		assert.True(t, ok)
 		require.Error(t, err)
 	})
@@ -527,7 +530,7 @@ func TestNewActionableAuthError_ClaimsScenarios(t *testing.T) {
 			ErrorDescription: "AADSTS700082: expired",
 			ErrorCodes:       []int{700082},
 		}
-		err, ok := newActionableAuthError(resp, nil, cloud.AzurePublic(), "")
+		err, ok := newActionableAuthError(resp, nil, cloud.AzurePublic(), "", nil)
 		assert.True(t, ok)
 		require.Error(t, err)
 
@@ -545,7 +548,7 @@ func TestNewActionableAuthError_ClaimsScenarios(t *testing.T) {
 			ErrorCodes:       []int{50005},
 		}
 		err, ok := newActionableAuthError(
-			resp, nil, cloud.AzurePublic(), "")
+			resp, nil, cloud.AzurePublic(), "", nil)
 		assert.True(t, ok)
 		require.Error(t, err)
 
@@ -566,7 +569,7 @@ func TestNewActionableAuthError_ClaimsScenarios(t *testing.T) {
 		}
 		tenantID := "72f988bf-86f1-41af-91ab-2d7cd011db47"
 		err, ok := newActionableAuthError(
-			resp, nil, cloud.AzurePublic(), tenantID)
+			resp, nil, cloud.AzurePublic(), tenantID, nil)
 		assert.True(t, ok)
 		require.Error(t, err)
 

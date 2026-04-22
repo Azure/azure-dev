@@ -178,23 +178,38 @@ func addServiceStepsToGraph(g *exegraph.Graph, opts serviceGraphOptions) (*servi
 		serviceNames[svc.Name] = struct{}{}
 	}
 
-	// newPhaseProgress returns a *async.Progress whose channel is drained
+	// phaseProgress bundles an async.Progress with a wait function that
+	// blocks until the drain goroutine has finished. Callers MUST call
+	// Done() to close the channel, then Wait() before returning to ensure
+	// no late onPhaseProgress callback fires after the step completes.
+	type phaseProgress struct {
+		*async.Progress[project.ServiceProgress]
+		Wait func()
+	}
+
+	// newPhaseProgress returns a phaseProgress whose channel is drained
 	// by a background goroutine that forwards each ServiceProgress.Message
 	// to opts.onPhaseProgress (if non-nil). Callers MUST call Done() —
-	// typically deferred — to terminate the goroutine. When
-	// onPhaseProgress is nil the channel is still drained (matching the
-	// NewNoopProgress contract) so ServiceManager goroutines never block
-	// on an unbuffered SetProgress send.
-	newPhaseProgress := func(serviceName string, phase deployPhase) *async.Progress[project.ServiceProgress] {
+	// typically deferred — to terminate the goroutine, then call Wait()
+	// to block until the goroutine exits. When onPhaseProgress is nil the
+	// channel is still drained (matching the NewNoopProgress contract) so
+	// ServiceManager goroutines never block on an unbuffered SetProgress
+	// send.
+	newPhaseProgress := func(serviceName string, phase deployPhase) phaseProgress {
 		p := async.NewProgress[project.ServiceProgress]()
+		done := make(chan struct{})
 		go func() {
+			defer close(done)
 			for sp := range p.Progress() {
 				if opts.onPhaseProgress != nil && sp.Message != "" {
 					opts.onPhaseProgress(serviceName, phase, sp.Message)
 				}
 			}
 		}()
-		return p
+		return phaseProgress{
+			Progress: p,
+			Wait:     func() { <-done },
+		}
 	}
 
 	for _, svc := range opts.services {
@@ -228,9 +243,10 @@ func addServiceStepsToGraph(g *exegraph.Graph, opts serviceGraphOptions) (*servi
 					}
 				} else {
 					progress := newPhaseProgress(pkgSvc.Name, phasePackaging)
+					defer progress.Wait()
 					defer progress.Done()
 					if _, pkgErr := opts.serviceManager.Package(
-						ctx, pkgSvc, sc, progress, nil,
+						ctx, pkgSvc, sc, progress.Progress, nil,
 					); pkgErr != nil {
 						return fmt.Errorf("packaging service %s: %w", pkgSvc.Name, pkgErr)
 					}
@@ -269,9 +285,10 @@ func addServiceStepsToGraph(g *exegraph.Graph, opts serviceGraphOptions) (*servi
 				}
 
 				progress := newPhaseProgress(pubSvc.Name, phasePublish)
+				defer progress.Wait()
 				defer progress.Done()
 				if _, pubErr := opts.serviceManager.Publish(
-					ctx, pubSvc, sc, progress, nil,
+					ctx, pubSvc, sc, progress.Progress, nil,
 				); pubErr != nil {
 					return fmt.Errorf("publishing service %s: %w", pubSvc.Name, pubErr)
 				}
@@ -337,9 +354,10 @@ func addServiceStepsToGraph(g *exegraph.Graph, opts serviceGraphOptions) (*servi
 				defer deployCancel()
 
 				progress := newPhaseProgress(depSvc.Name, phaseDeploying)
+				defer progress.Wait()
 				defer progress.Done()
 
-				result, depErr := opts.serviceManager.Deploy(deployCtx, depSvc, sc, progress)
+				result, depErr := opts.serviceManager.Deploy(deployCtx, depSvc, sc, progress.Progress)
 				if depErr != nil {
 					if errors.Is(deployCtx.Err(), context.DeadlineExceeded) {
 						if opts.onDeployTimeout != nil {

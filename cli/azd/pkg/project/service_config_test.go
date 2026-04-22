@@ -17,7 +17,7 @@ import (
 )
 
 func TestServiceConfigAddHandler(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	service := getServiceConfig()
 	handlerCalled := false
 
@@ -57,7 +57,7 @@ func TestServiceConfigRemoveHandler(t *testing.T) {
 	require.Eventually(t, func() bool {
 		// Handler should not be called after context cancellation
 		handler1Called = false
-		err = service.RaiseEvent(context.Background(), ServiceEventDeploy, ServiceLifecycleEventArgs{
+		err = service.RaiseEvent(t.Context(), ServiceEventDeploy, ServiceLifecycleEventArgs{
 			Service:        service,
 			ServiceContext: NewServiceContext(),
 		})
@@ -66,7 +66,7 @@ func TestServiceConfigRemoveHandler(t *testing.T) {
 }
 
 func TestServiceConfigWithMultipleEventHandlers(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	service := getServiceConfig()
 	handlerCalled1 := false
 	handlerCalled2 := false
@@ -101,7 +101,7 @@ func TestServiceConfigWithMultipleEventHandlers(t *testing.T) {
 }
 
 func TestServiceConfigWithMultipleEvents(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	service := getServiceConfig()
 
 	provisionHandlerCalled := false
@@ -133,7 +133,7 @@ func TestServiceConfigWithMultipleEvents(t *testing.T) {
 }
 
 func TestServiceConfigWithEventHandlerErrors(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	service := getServiceConfig()
 
 	handler1 := func(ctx context.Context, args ServiceLifecycleEventArgs) error {
@@ -178,7 +178,7 @@ services:
 }
 
 func TestServiceConfigRaiseEventWithoutArgs(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	service := getServiceConfig()
 	handlerCalled := false
 
@@ -200,7 +200,7 @@ func TestServiceConfigRaiseEventWithoutArgs(t *testing.T) {
 }
 
 func TestServiceConfigRaiseEventWithArgs(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	service := getServiceConfig()
 	handlerCalled := false
 	eventArgs := ServiceLifecycleEventArgs{
@@ -224,7 +224,7 @@ func TestServiceConfigRaiseEventWithArgs(t *testing.T) {
 }
 
 func TestServiceConfigEventHandlerReceivesServiceContext(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	service := getServiceConfig()
 	handlerCalled := false
 
@@ -480,7 +480,7 @@ services:
     host: appservice
 `
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	projectConfig, err := Parse(*mockContext.Context, testProj)
 	require.Nil(t, err)
 	require.NotNil(t, projectConfig)

@@ -4,7 +4,6 @@
 package devcentersdk_test
 
 import (
-	"context"
 	"net/http"
 	"testing"
 
@@ -42,7 +41,7 @@ func runPolicyPipeline(t *testing.T, p policy.Policy) *http.Request {
 
 	pipeline := runtime.NewPipeline("test", "1.0.0", runtime.PipelineOptions{}, clientOptions)
 
-	req, err := runtime.NewRequest(context.Background(), http.MethodGet, "https://example.com/resource")
+	req, err := runtime.NewRequest(t.Context(), http.MethodGet, "https://example.com/resource")
 	require.NoError(t, err)
 
 	_, err = pipeline.Do(req)
@@ -74,7 +73,7 @@ func TestApiVersionPolicy_PreservesExistingQueryParams(t *testing.T) {
 	}
 	pipeline := runtime.NewPipeline("test", "1.0.0", runtime.PipelineOptions{}, clientOptions)
 
-	req, err := runtime.NewRequest(context.Background(), http.MethodGet, "https://example.com/resource?foo=bar")
+	req, err := runtime.NewRequest(t.Context(), http.MethodGet, "https://example.com/resource?foo=bar")
 	require.NoError(t, err)
 
 	_, err = pipeline.Do(req)

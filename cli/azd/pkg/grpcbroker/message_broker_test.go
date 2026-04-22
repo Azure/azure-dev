@@ -282,7 +282,7 @@ func TestSend_Success(t *testing.T) {
 	envelope := &SimpleMessageEnvelope{}
 	clientBroker := NewMessageBroker(sim.ClientStream(), envelope, "client", nil)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	msg := &TestMessage{RequestId: "fire-forget-123", Data: "notification"}
 
 	err := clientBroker.Send(ctx, msg)
@@ -305,7 +305,7 @@ func TestSendAndWait_NoRequestId(t *testing.T) {
 	envelope := &SimpleMessageEnvelope{}
 	clientBroker := NewMessageBroker(sim.ClientStream(), envelope, "client", nil)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	requestMsg := &TestMessage{Data: "request"} // No RequestId
 
 	_, err := clientBroker.SendAndWait(ctx, requestMsg)
@@ -348,8 +348,9 @@ func TestEndToEnd_ClientSendsServerResponds(t *testing.T) {
 		clientDone <- clientBroker.Run(ctx)
 	}()
 
-	// Give brokers time to start
-	time.Sleep(50 * time.Millisecond)
+	// Wait until both brokers are ready to process messages.
+	require.NoError(t, serverBroker.Ready(ctx))
+	require.NoError(t, clientBroker.Ready(ctx))
 
 	// Client sends request and waits for response
 	requestMsg := &TestMessage{
@@ -391,6 +392,9 @@ func TestEndToEnd_SendAndWaitWithProgress(t *testing.T) {
 	// Register handler with progress
 	handler := func(ctx context.Context, req *TestRequest, progress ProgressFunc) (*TestMessage, error) {
 		progress("Starting...")
+		// justified: these sleeps simulate work between progress updates so the test
+		// can observe the intermediate progress messages being delivered to the client
+		// before the handler returns its final response.
 		time.Sleep(10 * time.Millisecond)
 		progress("50% done")
 		time.Sleep(10 * time.Millisecond)
@@ -627,7 +631,7 @@ func TestRun_GracefulShutdown_EOF(t *testing.T) {
 	envelope := &SimpleMessageEnvelope{}
 	broker := NewMessageBroker(sim.ServerStream(), envelope, "test", nil)
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Close stream immediately to cause EOF
 	sim.Close()
@@ -645,7 +649,7 @@ func TestClose_ClosesAllChannels(t *testing.T) {
 	envelope := &SimpleMessageEnvelope{}
 	broker := NewMessageBroker(sim.ClientStream(), envelope, "test", nil)
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Start some SendAndWait operations that will register channels
 	go func() {
@@ -919,7 +923,7 @@ func TestReady_RunAlreadyStartedMultipleTimes(t *testing.T) {
 	time.Sleep(10 * time.Millisecond) // Let Run() start
 
 	// Multiple Ready() calls should all be immediate
-	ctx := context.Background()
+	ctx := t.Context()
 	for i := range 3 {
 		start := time.Now()
 		err := broker.Ready(ctx)

@@ -4,7 +4,6 @@
 package azapi
 
 import (
-	"context"
 	"net/http"
 	"strings"
 	"testing"
@@ -16,7 +15,7 @@ import (
 
 func Test_GetCognitiveAccount(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		azCli := newAzureClientFromMockContext(mockContext)
 
 		expectedName := "ACCOUNT_NAME"
@@ -44,7 +43,7 @@ func Test_GetCognitiveAccount(t *testing.T) {
 
 func Test_PurgeCognitiveAccount(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		azCli := newAzureClientFromMockContext(mockContext)
 		mockContext.HttpClient.When(func(request *http.Request) bool {
 			return request.Method == http.MethodDelete &&

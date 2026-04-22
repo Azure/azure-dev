@@ -5,7 +5,6 @@ package bicep
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -40,7 +39,7 @@ func writeFakeBicep(t *testing.T) string {
 func TestNewCli(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	cli := NewCli(mockContext.Console, mockContext.CommandRunner)
 	require.NotNil(t, cli)
 	require.NotNil(t, cli.runner)
@@ -51,7 +50,7 @@ func TestNewCli(t *testing.T) {
 func TestEnsureInstalled_ToolPathOverride(t *testing.T) {
 	p := writeFakeBicep(t)
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	cli := newCliWithTransporter(mockContext.Console, mockContext.CommandRunner, mockContext.HttpClient)
 
 	require.NoError(t, cli.ensureInstalledOnce(*mockContext.Context))
@@ -89,7 +88,7 @@ func TestBuild_SuccessAndError(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			writeFakeBicep(t)
 
-			mockContext := mocks.NewMockContext(context.Background())
+			mockContext := mocks.NewMockContext(t.Context())
 			mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 				return len(args.Args) >= 1 && args.Args[0] == "build"
 			}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -119,7 +118,7 @@ func TestBuild_EnsureInstalledError(t *testing.T) {
 	// Instead, force download failure using an HTTP 500.
 	t.Setenv("AZD_CONFIG_DIR", t.TempDir())
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.URL.Host == "downloads.bicep.azure.com"
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
@@ -150,7 +149,7 @@ func TestBuildBicepParam_SuccessAndError(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			writeFakeBicep(t)
 
-			mockContext := mocks.NewMockContext(context.Background())
+			mockContext := mocks.NewMockContext(t.Context())
 			var capturedArgs exec.RunArgs
 			mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 				return len(args.Args) >= 1 && args.Args[0] == "build-params"
@@ -210,7 +209,7 @@ func TestSnapshot_Success_AllOptionsAppendedAndFileRead(t *testing.T) {
 	require.NoError(t, os.WriteFile(paramFile, []byte("param"), 0o644))
 	snapshotFile := filepath.Join(dir, "main.snapshot.json")
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	var capturedArgs []string
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return len(args.Args) >= 1 && args.Args[0] == "snapshot"
@@ -261,7 +260,7 @@ func TestSnapshot_Success_NoOptions(t *testing.T) {
 	require.NoError(t, os.WriteFile(paramFile, []byte("param"), 0o644))
 	snapshotFile := filepath.Join(dir, "main.snapshot.json")
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return len(args.Args) >= 1 && args.Args[0] == "snapshot"
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -283,7 +282,7 @@ func TestSnapshot_CommandFails(t *testing.T) {
 	paramFile := filepath.Join(dir, "main.bicepparam")
 	require.NoError(t, os.WriteFile(paramFile, []byte("param"), 0o644))
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return len(args.Args) >= 1 && args.Args[0] == "snapshot"
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -302,7 +301,7 @@ func TestSnapshot_MissingSnapshotFile(t *testing.T) {
 	paramFile := filepath.Join(dir, "main.bicepparam")
 	require.NoError(t, os.WriteFile(paramFile, []byte("param"), 0o644))
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return len(args.Args) >= 1 && args.Args[0] == "snapshot"
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -319,7 +318,7 @@ func TestSnapshot_MissingSnapshotFile(t *testing.T) {
 func TestVersion_ParseFailure(t *testing.T) {
 	writeFakeBicep(t)
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return len(args.Args) == 1 && args.Args[0] == "--version"
 	}).Respond(exec.NewRunResult(0, "not a version string", ""))
@@ -332,7 +331,7 @@ func TestVersion_ParseFailure(t *testing.T) {
 func TestVersion_RunnerFailure(t *testing.T) {
 	writeFakeBicep(t)
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return len(args.Args) == 1 && args.Args[0] == "--version"
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -350,7 +349,7 @@ func TestEnsureInstalled_VersionCheckFailure(t *testing.T) {
 	// Ensure override is not set.
 	t.Setenv("AZD_BICEP_TOOL_PATH", "")
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.URL.Host == "downloads.bicep.azure.com"
 	}).Respond(&http.Response{
@@ -373,7 +372,7 @@ func TestDownloadBicep_HttpError(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "bicep.out")
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.URL.Host == "downloads.bicep.azure.com"
 	}).Respond(&http.Response{
@@ -390,7 +389,7 @@ func TestDownloadBicep_TransportError(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "bicep.out")
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return true
 	}).SetNonRetriableError(fmt.Errorf("network is down"))
@@ -401,7 +400,7 @@ func TestDownloadBicep_TransportError(t *testing.T) {
 }
 
 func TestRunStep_ActionFailure(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	err := runStep(*mockContext.Context, mockContext.Console, "Working", func() error {
 		return errors.New("oh no")
 	})

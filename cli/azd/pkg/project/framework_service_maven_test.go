@@ -4,7 +4,6 @@
 package project
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -34,7 +33,7 @@ func Test_MavenProject(t *testing.T) {
 	t.Run("Restore", func(t *testing.T) {
 		var runArgs exec.RunArgs
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.
 			When(func(args exec.RunArgs, command string) bool {
 				return strings.Contains(command, fmt.Sprintf("%s dependency:resolve", getMvnwCmd()))
@@ -71,7 +70,7 @@ func Test_MavenProject(t *testing.T) {
 	t.Run("Build", func(t *testing.T) {
 		var runArgs exec.RunArgs
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.
 			When(func(args exec.RunArgs, command string) bool {
 				return strings.Contains(command, fmt.Sprintf("%s compile", getMvnwCmd()))
@@ -108,7 +107,7 @@ func Test_MavenProject(t *testing.T) {
 	t.Run("Package", func(t *testing.T) {
 		var runArgs exec.RunArgs
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.
 			When(func(args exec.RunArgs, command string) bool {
 				return strings.Contains(command, fmt.Sprintf("%s package", getMvnwCmd()))
@@ -266,7 +265,7 @@ func Test_MavenProject_AppService_Package(t *testing.T) {
 			require.NoError(t, err)
 
 			var runArgs exec.RunArgs
-			mockContext := mocks.NewMockContext(context.Background())
+			mockContext := mocks.NewMockContext(t.Context())
 			mockContext.CommandRunner.
 				When(func(args exec.RunArgs, command string) bool {
 					return strings.Contains(command, fmt.Sprintf("%s package", getMvnwCmd()))
@@ -344,7 +343,7 @@ func Test_MavenProject_FuncApp_Package(t *testing.T) {
 	err := os.WriteFile(getMvnwCmd(), nil, osutil.PermissionExecutableFile)
 	require.NoError(t, err)
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.CommandRunner.
 		When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, getMvnwCmd()+" package")

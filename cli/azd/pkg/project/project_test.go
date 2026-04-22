@@ -4,7 +4,6 @@
 package project
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -42,7 +41,7 @@ services:
     language: js
     host: appservice
 `
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockarmresources.AddAzResourceListMock(
 		mockContext.HttpClient,
 		new("rg-test"),
@@ -86,7 +85,7 @@ services:
     language: js
     host: appservice
 `
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	resourceName := "app-api-abc123"
 	mockarmresources.AddAzResourceListMock(
 		mockContext.HttpClient,
@@ -138,7 +137,7 @@ services:
     language: js
     host: appservice
 `
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	resourceGroupName := "rg-custom-group"
 	mockarmresources.AddAzResourceListMock(
 		mockContext.HttpClient,
@@ -197,7 +196,7 @@ services:
     language: js
     host: appservice
 `
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	expectedResourceGroupName := "custom-name-from-env-rg"
 
@@ -271,7 +270,7 @@ func Test_Invalid_Project_File(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			projectConfig, err := Parse(context.Background(), test)
+			projectConfig, err := Parse(t.Context(), test)
 			require.Nil(t, projectConfig)
 			require.Error(t, err)
 		})
@@ -347,7 +346,7 @@ services:
     dist: bin\api
 `
 
-	projectConfig, err := Parse(context.Background(), testProj)
+	projectConfig, err := Parse(t.Context(), testProj)
 	require.NoError(t, err)
 
 	assert.Equal(t, filepath.FromSlash("./iac"), projectConfig.Infra.Path)
@@ -408,7 +407,7 @@ postbuild:
 			},
 			}}
 
-		project, err := Load(context.Background(), azureYamlPath)
+		project, err := Load(t.Context(), azureYamlPath)
 		require.NoError(t, err)
 		require.Equal(t, expectedHooks, project.Hooks)
 	})
@@ -450,7 +449,7 @@ postbuild:
 		err = os.WriteFile(hooksPath, hooksContent, osutil.PermissionDirectory)
 		require.NoError(t, err)
 
-		project, err := Load(context.Background(), azureYamlPath)
+		project, err := Load(t.Context(), azureYamlPath)
 		require.NoError(t, err)
 		expectedHooks := HooksConfig{
 			"prebuild": {{
@@ -497,7 +496,7 @@ func TestInfraDefaultsNotSavedToYaml(t *testing.T) {
 		projectFile := filepath.Join(tempDir, "azure.yaml")
 
 		// Save the project - should not include default infra values
-		err := Save(context.Background(), projectConfig, projectFile)
+		err := Save(t.Context(), projectConfig, projectFile)
 		require.NoError(t, err)
 
 		// Read the file content directly to verify defaults aren't written
@@ -513,7 +512,7 @@ func TestInfraDefaultsNotSavedToYaml(t *testing.T) {
 		assert.NotContains(t, yamlContent, "provider: bicep")
 
 		// Load the project back - should work with defaults applied at runtime
-		loadedProject, err := Load(context.Background(), projectFile)
+		loadedProject, err := Load(t.Context(), projectFile)
 		require.NoError(t, err)
 
 		// Verify the project loaded correctly with the right name
@@ -542,7 +541,7 @@ func TestInfraDefaultsNotSavedToYaml(t *testing.T) {
 		projectFile := filepath.Join(tempDir, "azure.yaml")
 
 		// Save the project - should include custom infra values
-		err := Save(context.Background(), projectConfig, projectFile)
+		err := Save(t.Context(), projectConfig, projectFile)
 		require.NoError(t, err)
 
 		// Read the file content directly to verify custom values are written
@@ -558,7 +557,7 @@ func TestInfraDefaultsNotSavedToYaml(t *testing.T) {
 		assert.Contains(t, yamlContent, "provider: terraform")
 
 		// Load the project back
-		loadedProject, err := Load(context.Background(), projectFile)
+		loadedProject, err := Load(t.Context(), projectFile)
 		require.NoError(t, err)
 
 		// Verify the custom values are preserved
@@ -584,7 +583,7 @@ func TestInfraDefaultsNotSavedToYaml(t *testing.T) {
 		projectFile := filepath.Join(tempDir, "azure.yaml")
 
 		// Save the project
-		err := Save(context.Background(), projectConfig, projectFile)
+		err := Save(t.Context(), projectConfig, projectFile)
 		require.NoError(t, err)
 
 		// Read the file content
@@ -600,7 +599,7 @@ func TestInfraDefaultsNotSavedToYaml(t *testing.T) {
 		assert.NotContains(t, yamlContent, "module: main") // Default not written
 
 		// Load the project back
-		loadedProject, err := Load(context.Background(), projectFile)
+		loadedProject, err := Load(t.Context(), projectFile)
 		require.NoError(t, err)
 
 		// Verify the custom values are preserved and module is empty (will use default at runtime)
@@ -624,7 +623,7 @@ func TestInfraDefaultsNotSavedToYaml(t *testing.T) {
 		projectFile := filepath.Join(tempDir, "azure.yaml")
 
 		// Save the project
-		err := Save(context.Background(), projectConfig, projectFile)
+		err := Save(t.Context(), projectConfig, projectFile)
 		require.NoError(t, err)
 
 		// Read the file content
@@ -640,7 +639,7 @@ func TestInfraDefaultsNotSavedToYaml(t *testing.T) {
 		assert.NotContains(t, yamlContent, "module: main") // Default not written
 
 		// Load the project back
-		loadedProject, err := Load(context.Background(), projectFile)
+		loadedProject, err := Load(t.Context(), projectFile)
 		require.NoError(t, err)
 
 		// Verify the custom provider is preserved and path/module are empty (will use defaults at runtime)
@@ -677,7 +676,7 @@ func TestInfraDefaultsNotSavedToYaml(t *testing.T) {
 		projectFile := filepath.Join(tempDir, "azure.yaml")
 
 		// Save the project
-		err := Save(context.Background(), projectConfig, projectFile)
+		err := Save(t.Context(), projectConfig, projectFile)
 		require.NoError(t, err)
 
 		// Read the file content
@@ -705,7 +704,7 @@ func TestInfraDefaultsNotSavedToYaml(t *testing.T) {
 		assert.NotRegexp(t, `(?m)^provider: bicep$`, yamlContent) // Root default provider not written
 
 		// Load the project back
-		loadedProject, err := Load(context.Background(), projectFile)
+		loadedProject, err := Load(t.Context(), projectFile)
 		require.NoError(t, err)
 
 		// Verify the layers are preserved
@@ -835,20 +834,20 @@ func TestAdditionalPropertiesMarshalling(t *testing.T) {
 
 			// First save: write the constructed project to YAML
 			firstSaveFile := filepath.Join(tempDir, "azure-first.yaml")
-			err := Save(context.Background(), tt.project, firstSaveFile)
+			err := Save(t.Context(), tt.project, firstSaveFile)
 			require.NoError(t, err)
 
 			// Load the project back (this initializes all internal fields properly)
-			loadedProject, err := Load(context.Background(), firstSaveFile)
+			loadedProject, err := Load(t.Context(), firstSaveFile)
 			require.NoError(t, err)
 
 			// Second save: save the loaded project to verify round-trip
 			secondSaveFile := filepath.Join(tempDir, "azure-second.yaml")
-			err = Save(context.Background(), loadedProject, secondSaveFile)
+			err = Save(t.Context(), loadedProject, secondSaveFile)
 			require.NoError(t, err)
 
 			// Load the second save and compare with first loaded project
-			reloadedProject, err := Load(context.Background(), secondSaveFile)
+			reloadedProject, err := Load(t.Context(), secondSaveFile)
 			require.NoError(t, err)
 
 			// Verify round-trip preservation with deep equality
@@ -962,11 +961,11 @@ func TestAdditionalPropertiesExtraction(t *testing.T) {
 
 		// Save the original project
 		originalFile := filepath.Join(tempDir, "original.yaml")
-		err := Save(context.Background(), project, originalFile)
+		err := Save(t.Context(), project, originalFile)
 		require.NoError(t, err)
 
 		// Load it back
-		loadedProject, err := Load(context.Background(), originalFile)
+		loadedProject, err := Load(t.Context(), originalFile)
 		require.NoError(t, err)
 
 		// Extract the extension config using the config system
@@ -990,11 +989,11 @@ func TestAdditionalPropertiesExtraction(t *testing.T) {
 
 		// Save the modified project
 		modifiedFile := filepath.Join(tempDir, "modified.yaml")
-		err = Save(context.Background(), loadedProject, modifiedFile)
+		err = Save(t.Context(), loadedProject, modifiedFile)
 		require.NoError(t, err)
 
 		// Load and verify the changes were preserved
-		finalProject, err := Load(context.Background(), modifiedFile)
+		finalProject, err := Load(t.Context(), modifiedFile)
 		require.NoError(t, err)
 
 		// Extract the final config using the config system

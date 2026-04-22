@@ -26,7 +26,7 @@ func (s *stubCredential) GetToken(_ context.Context, _ policy.TokenRequestOption
 func TestNewTokenProvider_NilClient(t *testing.T) {
 	t.Parallel()
 
-	_, err := NewTokenProvider(context.Background(), nil, nil)
+	_, err := NewTokenProvider(t.Context(), nil, nil)
 	if err == nil {
 		t.Fatal("expected error for nil client")
 	}
@@ -41,7 +41,7 @@ func TestNewTokenProvider_ExplicitTenantAndCredential(t *testing.T) {
 
 	// Use a minimal AzdClient (no gRPC connection needed since we supply tenant+cred).
 	client := &AzdClient{}
-	tp, err := NewTokenProvider(context.Background(), client, &TokenProviderOptions{
+	tp, err := NewTokenProvider(t.Context(), client, &TokenProviderOptions{
 		TenantID:   "test-tenant-id",
 		Credential: cred,
 	})
@@ -53,7 +53,7 @@ func TestNewTokenProvider_ExplicitTenantAndCredential(t *testing.T) {
 		t.Errorf("TenantID() = %q, want %q", tp.TenantID(), "test-tenant-id")
 	}
 
-	tok, err := tp.GetToken(context.Background(), policy.TokenRequestOptions{
+	tok, err := tp.GetToken(t.Context(), policy.TokenRequestOptions{
 		Scopes: []string{"https://management.azure.com/.default"},
 	})
 	if err != nil {
@@ -77,7 +77,7 @@ func TestTokenProvider_GetToken_NoScopes(t *testing.T) {
 		tenantID:   "tenant",
 	}
 
-	_, err := tp.GetToken(context.Background(), policy.TokenRequestOptions{})
+	_, err := tp.GetToken(t.Context(), policy.TokenRequestOptions{})
 	if err == nil {
 		t.Fatal("expected error when no scopes provided")
 	}
@@ -94,7 +94,7 @@ func TestTokenProvider_GetToken_CredentialError(t *testing.T) {
 		tenantID:   "tenant",
 	}
 
-	_, err := tp.GetToken(context.Background(), policy.TokenRequestOptions{
+	_, err := tp.GetToken(t.Context(), policy.TokenRequestOptions{
 		Scopes: []string{"https://management.azure.com/.default"},
 	})
 	if err == nil {

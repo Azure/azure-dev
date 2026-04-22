@@ -4,7 +4,6 @@
 package templates
 
 import (
-	"context"
 	"encoding/json"
 	"testing"
 
@@ -53,7 +52,7 @@ func Test_JsonTemplateSource_ListTemplates(t *testing.T) {
 	source, err := newJsonTemplateSource(name, jsonTemplates())
 	require.Nil(t, err)
 
-	templates, err := source.ListTemplates(context.Background())
+	templates, err := source.ListTemplates(t.Context())
 	require.Nil(t, err)
 	require.Equal(t, 2, len(templates))
 }
@@ -63,7 +62,7 @@ func Test_JsonTemplateSource_GetTemplate_MatchFound(t *testing.T) {
 	source, err := newJsonTemplateSource(name, jsonTemplates())
 	require.Nil(t, err)
 
-	template, err := source.GetTemplate(context.Background(), "owner/template1")
+	template, err := source.GetTemplate(t.Context(), "owner/template1")
 	require.Nil(t, err)
 
 	expectedTemplate := &Template{
@@ -80,7 +79,7 @@ func Test_JsonTemplateSource_GetTemplate_NoMatchFound(t *testing.T) {
 	source, err := newJsonTemplateSource(name, jsonTemplates())
 	require.Nil(t, err)
 
-	template, err := source.GetTemplate(context.Background(), "owner/notfound")
+	template, err := source.GetTemplate(t.Context(), "owner/notfound")
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrTemplateNotFound)
 

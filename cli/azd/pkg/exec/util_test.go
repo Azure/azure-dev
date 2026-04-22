@@ -23,7 +23,7 @@ func TestRunCommand(t *testing.T) {
 		Cmd:  "git",
 		Args: []string{"--version"},
 	}
-	res, err := runner.Run(context.Background(), args)
+	res, err := runner.Run(t.Context(), args)
 
 	if err != nil {
 		t.Errorf("failed to launch process: %v", err)
@@ -100,7 +100,7 @@ func TestAppendEnv(t *testing.T) {
 
 func TestRunList(t *testing.T) {
 	runner := NewCommandRunner(nil)
-	res, err := runner.RunList(context.Background(), []string{
+	res, err := runner.RunList(t.Context(), []string{
 		"git --version",
 	}, RunArgs{})
 
@@ -125,7 +125,7 @@ func TestRunCapturingStderr(t *testing.T) {
 	myStderr := &bytes.Buffer{}
 
 	runner := NewCommandRunner(nil)
-	res, _ := runner.Run(context.Background(), RunArgs{
+	res, _ := runner.Run(t.Context(), RunArgs{
 		Cmd:    "go",
 		Args:   []string{"--help"},
 		Stderr: myStderr,
@@ -137,7 +137,7 @@ func TestRunCapturingStderr(t *testing.T) {
 
 func TestError(t *testing.T) {
 	runner := NewCommandRunner(nil)
-	_, err := runner.Run(context.Background(), RunArgs{
+	_, err := runner.Run(t.Context(), RunArgs{
 		Cmd:  "go",
 		Args: []string{"--help"},
 	})
@@ -149,7 +149,7 @@ func TestError(t *testing.T) {
 
 func TestError_Interactive(t *testing.T) {
 	runner := NewCommandRunner(nil)
-	_, err := runner.Run(context.Background(), RunArgs{
+	_, err := runner.Run(t.Context(), RunArgs{
 		Cmd:         "go",
 		Args:        []string{"--help"},
 		Interactive: true,

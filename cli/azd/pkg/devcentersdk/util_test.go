@@ -4,7 +4,6 @@
 package devcentersdk_test
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -21,7 +20,7 @@ func TestSetHttpRequestBody(t *testing.T) {
 
 	t.Run("SerializesStruct", func(t *testing.T) {
 		t.Parallel()
-		req, err := runtime.NewRequest(context.Background(), http.MethodPost, "https://example.com/api")
+		req, err := runtime.NewRequest(t.Context(), http.MethodPost, "https://example.com/api")
 		require.NoError(t, err)
 
 		spec := devcentersdk.EnvironmentSpec{
@@ -53,7 +52,7 @@ func TestSetHttpRequestBody(t *testing.T) {
 
 	t.Run("ReturnsErrorForUnmarshalableValue", func(t *testing.T) {
 		t.Parallel()
-		req, err := runtime.NewRequest(context.Background(), http.MethodPost, "https://example.com/api")
+		req, err := runtime.NewRequest(t.Context(), http.MethodPost, "https://example.com/api")
 		require.NoError(t, err)
 
 		// channels cannot be JSON marshaled
@@ -67,7 +66,7 @@ func TestSetHttpRequestBody(t *testing.T) {
 func TestNewPipeline(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	pipeline := devcentersdk.NewPipeline(
 		mockContext.Credentials,
 		devcentersdk.ServiceConfig,

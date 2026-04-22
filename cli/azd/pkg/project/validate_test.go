@@ -4,7 +4,6 @@
 package project
 
 import (
-	"context"
 	"strings"
 	"testing"
 
@@ -14,7 +13,7 @@ import (
 
 func TestNilDefinitionsReportAllErrors(t *testing.T) {
 	yamlContent := "name: test-proj\nservices:\n  web:\n    # empty\nresources:\n  mydb:\n    # empty\n"
-	projectConfig, err := Parse(context.Background(), yamlContent)
+	projectConfig, err := Parse(t.Context(), yamlContent)
 	require.Nil(t, projectConfig)
 	require.Error(t, err)
 
@@ -88,7 +87,7 @@ func TestValidateParsedConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			projectConfig, err := Parse(context.Background(), tt.yaml)
+			projectConfig, err := Parse(t.Context(), tt.yaml)
 			require.Nil(t, projectConfig)
 			require.Error(t, err)
 
@@ -110,7 +109,7 @@ func TestValidateParsedConfigSortedOutput(t *testing.T) {
 	yaml := "name: test-proj\nservices:\n  zz-last:\n  mm-middle:\n  aa-first:\n  dd-fourth:\n  qq-fifth:\n"
 
 	for range 50 {
-		_, err := Parse(context.Background(), yaml)
+		_, err := Parse(t.Context(), yaml)
 		require.Error(t, err)
 
 		var validationErr *ConfigValidationError

@@ -4,7 +4,6 @@
 package copilot
 
 import (
-	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -36,7 +35,7 @@ func TestCopilotCLI_CheckInstalled_Override(t *testing.T) {
 	t.Setenv("AZD_COPILOT_CLI_PATH", override)
 
 	cli := &CopilotCLI{}
-	err := cli.CheckInstalled(context.Background())
+	err := cli.CheckInstalled(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, override, cli.path)
 }
@@ -46,12 +45,12 @@ func TestCopilotCLI_Path_CachesResult(t *testing.T) {
 	t.Setenv("AZD_COPILOT_CLI_PATH", override)
 
 	cli := &CopilotCLI{}
-	p1, err := cli.Path(context.Background())
+	p1, err := cli.Path(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, override, p1)
 
 	// Second call must return the same path (installOnce guarantees a single run).
-	p2, err := cli.Path(context.Background())
+	p2, err := cli.Path(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, p1, p2)
 }
@@ -161,7 +160,7 @@ func TestCopilotCLI_ListPlugins_FallbackToDirectoryScan(t *testing.T) {
 		0o755,
 	))
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return args.Cmd == "copilot" && len(args.Args) >= 2 &&
 			args.Args[0] == "plugin" && args.Args[1] == "list"

@@ -86,7 +86,7 @@ func TestNewFuncAppHostClient(t *testing.T) {
 
 	t.Run("WithOptions", func(t *testing.T) {
 		t.Parallel()
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		client, err := NewFuncAppHostClient("host.example", &mocks.MockCredentials{}, mockContext.ArmClientOptions)
 		require.NoError(t, err)
 		require.NotNil(t, client)
@@ -96,7 +96,7 @@ func TestNewFuncAppHostClient(t *testing.T) {
 func TestFuncAppHostClient_Publish_Success(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	var captured *http.Request
 	respondPublishPost(mockContext, http.StatusAccepted, `"deploy-123"`, func(r *http.Request) {
@@ -123,7 +123,7 @@ func TestFuncAppHostClient_Publish_Success(t *testing.T) {
 func TestFuncAppHostClient_Publish_RemoteBuildQueryParam(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	var captured *http.Request
 	respondPublishPost(mockContext, http.StatusAccepted, `"id-1"`, func(r *http.Request) {
@@ -173,7 +173,7 @@ func TestFuncAppHostClient_Publish_PostErrors(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			mockContext := mocks.NewMockContext(context.Background())
+			mockContext := mocks.NewMockContext(t.Context())
 			respondPublishPost(mockContext, tc.statusCode, tc.body, nil)
 
 			client, err := NewFuncAppHostClient(
@@ -248,7 +248,7 @@ func TestFuncAppHostClient_WaitForDeployment_StatusHandling(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			mockContext := mocks.NewMockContext(context.Background())
+			mockContext := mocks.NewMockContext(t.Context())
 			respondPublishPost(mockContext, http.StatusAccepted, `"d1"`, nil)
 			respondDeploymentGet(mockContext, tc.getStatus, tc.payload)
 
@@ -275,7 +275,7 @@ func TestFuncAppHostClient_WaitForDeployment_StatusHandling(t *testing.T) {
 func TestFuncAppHostClient_WaitForDeployment_NotFoundFallback(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	respondPublishPost(mockContext, http.StatusAccepted, `"d1"`, nil)
 
 	var calls atomic.Int32

@@ -8,7 +8,6 @@
 package grpcserver
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"testing"
@@ -65,7 +64,7 @@ func Test_Server_Start(t *testing.T) {
 		accessToken, err := GenerateExtensionToken(extension, serverInfo)
 		require.NoError(t, err)
 
-		ctx := azdext.WithAccessToken(context.Background(), accessToken)
+		ctx := azdext.WithAccessToken(t.Context(), accessToken)
 		client, err := azdext.NewAzdClient(azdext.WithAddress(serverInfo.Address))
 		require.NoError(t, err)
 
@@ -87,7 +86,7 @@ func Test_Server_Start(t *testing.T) {
 		accessToken, err := GenerateExtensionToken(extension, invalidServerInfo)
 		require.NoError(t, err)
 
-		ctx := azdext.WithAccessToken(context.Background(), accessToken)
+		ctx := azdext.WithAccessToken(t.Context(), accessToken)
 		client, err := azdext.NewAzdClient(azdext.WithAddress(serverInfo.Address))
 		require.NoError(t, err)
 
@@ -99,7 +98,7 @@ func Test_Server_Start(t *testing.T) {
 
 	t.Run("MissingToken", func(t *testing.T) {
 		// Test for missing authentication token: expect Unauthenticated error.
-		ctx := context.Background()
+		ctx := t.Context()
 		client, err := azdext.NewAzdClient(azdext.WithAddress(serverInfo.Address))
 		require.NoError(t, err)
 
@@ -152,7 +151,7 @@ func Test_Server_StreamInterceptor(t *testing.T) {
 		accessToken, err := GenerateExtensionToken(extension, serverInfo)
 		require.NoError(t, err)
 
-		ctx := azdext.WithAccessToken(context.Background(), accessToken)
+		ctx := azdext.WithAccessToken(t.Context(), accessToken)
 		client, err := azdext.NewAzdClient(azdext.WithAddress(serverInfo.Address))
 		require.NoError(t, err)
 		defer client.Close()
@@ -181,7 +180,7 @@ func Test_Server_StreamInterceptor(t *testing.T) {
 	})
 
 	t.Run("MissingToken", func(t *testing.T) {
-		ctx := context.Background()
+		ctx := t.Context()
 		client, err := azdext.NewAzdClient(azdext.WithAddress(serverInfo.Address))
 		require.NoError(t, err)
 		defer client.Close()
@@ -210,7 +209,7 @@ func Test_Server_StreamInterceptor(t *testing.T) {
 		accessToken, err := GenerateExtensionToken(extension, invalidServerInfo)
 		require.NoError(t, err)
 
-		ctx := azdext.WithAccessToken(context.Background(), accessToken)
+		ctx := azdext.WithAccessToken(t.Context(), accessToken)
 		client, err := azdext.NewAzdClient(azdext.WithAddress(serverInfo.Address))
 		require.NoError(t, err)
 		defer client.Close()

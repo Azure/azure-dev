@@ -36,7 +36,7 @@ import (
 
 func Test_PipelineManager_Initialize(t *testing.T) {
 	tempDir := t.TempDir()
-	ctx := context.Background()
+	ctx := t.Context()
 	azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
 	mockContext := resetContext(tempDir, ctx)
 

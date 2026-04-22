@@ -4,7 +4,6 @@
 package azapi
 
 import (
-	"context"
 	"sort"
 	"testing"
 	"time"
@@ -17,7 +16,7 @@ import (
 )
 
 func Test_StandardDeployments_GenerateDeploymentName(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.Clock.Set(time.Unix(1683303710, 0))
 
 	deploymentService := NewStandardDeployments(

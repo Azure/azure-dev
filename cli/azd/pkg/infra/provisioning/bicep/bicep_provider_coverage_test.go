@@ -332,7 +332,7 @@ func TestEvalCommandSubstitutionPassthrough(t *testing.T) {
 
 	p := &BicepProvider{}
 	for _, input := range []string{"", "plain-value", "https://example.com"} {
-		out, err := p.evalCommandSubstitution(context.Background(), input)
+		out, err := p.evalCommandSubstitution(t.Context(), input)
 		require.NoError(t, err)
 		require.Equal(t, input, out)
 	}
@@ -344,7 +344,7 @@ func TestCreateDeploymentFromArmDeployment(t *testing.T) {
 
 	t.Run("SubscriptionScope", func(t *testing.T) {
 		t.Parallel()
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		prepareBicepMocks(mockContext)
 		p := createBicepProvider(t, mockContext)
 		scope := p.deploymentManager.SubscriptionScope("SUBSCRIPTION_ID", "westus2")
@@ -355,7 +355,7 @@ func TestCreateDeploymentFromArmDeployment(t *testing.T) {
 
 	t.Run("ResourceGroupScope", func(t *testing.T) {
 		t.Parallel()
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		prepareBicepMocks(mockContext)
 		p := createBicepProvider(t, mockContext)
 		scope := p.deploymentManager.ResourceGroupScope("SUBSCRIPTION_ID", "RG")
@@ -366,7 +366,7 @@ func TestCreateDeploymentFromArmDeployment(t *testing.T) {
 
 	t.Run("UnsupportedScope", func(t *testing.T) {
 		t.Parallel()
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		prepareBicepMocks(mockContext)
 		p := createBicepProvider(t, mockContext)
 		_, err := p.createDeploymentFromArmDeployment(unsupportedScope{}, "dep-name")
@@ -391,7 +391,7 @@ func TestInferScopeFromEnv(t *testing.T) {
 
 	t.Run("ResourceGroupScopeWhenEnvSet", func(t *testing.T) {
 		t.Parallel()
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		prepareBicepMocks(mockContext)
 		p := createBicepProvider(t, mockContext)
 		p.env.DotenvSet(environment.ResourceGroupEnvVarName, "my-rg")
@@ -405,7 +405,7 @@ func TestInferScopeFromEnv(t *testing.T) {
 
 	t.Run("SubscriptionScopeByDefault", func(t *testing.T) {
 		t.Parallel()
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		prepareBicepMocks(mockContext)
 		p := createBicepProvider(t, mockContext)
 
@@ -422,7 +422,7 @@ func TestScopeForTemplate(t *testing.T) {
 
 	t.Run("Subscription", func(t *testing.T) {
 		t.Parallel()
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		prepareBicepMocks(mockContext)
 		p := createBicepProvider(t, mockContext)
 		tpl := azure.ArmTemplate{
@@ -436,7 +436,7 @@ func TestScopeForTemplate(t *testing.T) {
 
 	t.Run("ResourceGroup", func(t *testing.T) {
 		t.Parallel()
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		prepareBicepMocks(mockContext)
 		p := createBicepProvider(t, mockContext)
 		p.env.DotenvSet(environment.ResourceGroupEnvVarName, "my-rg")
@@ -452,7 +452,7 @@ func TestScopeForTemplate(t *testing.T) {
 
 	t.Run("Unsupported", func(t *testing.T) {
 		t.Parallel()
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		prepareBicepMocks(mockContext)
 		p := createBicepProvider(t, mockContext)
 		// Empty schema causes TargetScope() to return an unsupported scope or error.
@@ -543,7 +543,7 @@ func TestLocationParameterFilterImpl(t *testing.T) {
 func TestGenerateDeploymentObjectUnsupportedScope(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	prepareBicepMocks(mockContext)
 	p := createBicepProvider(t, mockContext)
 
@@ -557,7 +557,7 @@ func TestGenerateDeploymentObjectUnsupportedScope(t *testing.T) {
 func TestGenerateDeploymentObjectResourceGroup(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	prepareBicepMocks(mockContext)
 	p := createBicepProvider(t, mockContext)
 	p.env.DotenvSet(environment.ResourceGroupEnvVarName, "rg-alpha")
@@ -577,7 +577,7 @@ func TestGenerateDeploymentObjectResourceGroup(t *testing.T) {
 func TestGenerateDeploymentObjectWithLayer(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	prepareBicepMocks(mockContext)
 	p := createBicepProvider(t, mockContext)
 	p.layer = "api"
@@ -855,20 +855,20 @@ func TestResolveResourceGroupLocation(t *testing.T) {
 
 	t.Run("EmptySubscriptionId", func(t *testing.T) {
 		t.Parallel()
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		prepareBicepMocks(mockContext)
 		p := createBicepProvider(t, mockContext)
-		loc := p.resolveResourceGroupLocation(context.Background(), "")
+		loc := p.resolveResourceGroupLocation(t.Context(), "")
 		require.Equal(t, "", loc)
 	})
 
 	t.Run("NoResourceGroupEnvVar", func(t *testing.T) {
 		t.Parallel()
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		prepareBicepMocks(mockContext)
 		p := createBicepProvider(t, mockContext)
 		// Don't set AZURE_RESOURCE_GROUP; expect empty result.
-		loc := p.resolveResourceGroupLocation(context.Background(), "SUBSCRIPTION_ID")
+		loc := p.resolveResourceGroupLocation(t.Context(), "SUBSCRIPTION_ID")
 		require.Equal(t, "", loc)
 	})
 }
@@ -935,7 +935,7 @@ func TestNewLocalArmPreflightAndAddCheck(t *testing.T) {
 func TestLatestDeploymentResult(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	prepareBicepMocks(mockContext)
 	p := createBicepProvider(t, mockContext)
 
@@ -944,7 +944,7 @@ func TestLatestDeploymentResult(t *testing.T) {
 		envTag:   p.env.Name(),
 	}
 
-	dep, err := p.latestDeploymentResult(context.Background(), scope)
+	dep, err := p.latestDeploymentResult(t.Context(), scope)
 	require.NoError(t, err)
 	require.NotNil(t, dep)
 }
@@ -954,12 +954,12 @@ func TestLatestDeploymentResult(t *testing.T) {
 func TestLatestDeploymentResultError(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	prepareBicepMocks(mockContext)
 	p := createBicepProvider(t, mockContext)
 
 	// unsupportedScope returns error from ListDeployments.
-	_, err := p.latestDeploymentResult(context.Background(), unsupportedScope{})
+	_, err := p.latestDeploymentResult(t.Context(), unsupportedScope{})
 	require.Error(t, err)
 }
 
@@ -970,12 +970,12 @@ func TestDeploymentStateErrors(t *testing.T) {
 
 	t.Run("listDeploymentsError", func(t *testing.T) {
 		t.Parallel()
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		prepareBicepMocks(mockContext)
 		p := createBicepProvider(t, mockContext)
 
 		_, err := p.deploymentState(
-			context.Background(),
+			t.Context(),
 			&compileBicepResult{},
 			unsupportedScope{},
 			"hash",
@@ -991,14 +991,14 @@ func TestValidateErrors(t *testing.T) {
 
 	t.Run("parseTemplateError", func(t *testing.T) {
 		t.Parallel()
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		prepareBicepMocks(mockContext)
 		p := createBicepProvider(t, mockContext)
 
 		pre := newLocalArmPreflight("main.bicep", p.bicepCli, nil, "eastus2")
 		// Pass invalid JSON to trigger parseTemplate error.
 		_, err := pre.validate(
-			context.Background(),
+			t.Context(),
 			mockContext.Console,
 			azure.RawArmTemplate("not-json"),
 			azure.ArmParameters{},
@@ -1008,7 +1008,7 @@ func TestValidateErrors(t *testing.T) {
 
 	t.Run("snapshotUnavailableSkips", func(t *testing.T) {
 		t.Parallel()
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		prepareBicepMocks(mockContext)
 		// Mock bicep snapshot to fail; validate should treat it as a skip.
 		mockContext.CommandRunner.
@@ -1029,7 +1029,7 @@ func TestValidateErrors(t *testing.T) {
 
 		pre := newLocalArmPreflight("nonexistent.bicepparam", p.bicepCli, nil, "")
 		results, err := pre.validate(
-			context.Background(),
+			t.Context(),
 			mockContext.Console,
 			raw,
 			azure.ArmParameters{},
@@ -1040,7 +1040,7 @@ func TestValidateErrors(t *testing.T) {
 
 	t.Run("bicepModulePathCreatesTempParam", func(t *testing.T) {
 		t.Parallel()
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		prepareBicepMocks(mockContext)
 		mockContext.CommandRunner.
 			When(func(args exec.RunArgs, command string) bool {
@@ -1064,7 +1064,7 @@ func TestValidateErrors(t *testing.T) {
 
 		pre := newLocalArmPreflight(modulePath, p.bicepCli, nil, "eastus2")
 		results, err := pre.validate(
-			context.Background(),
+			t.Context(),
 			mockContext.Console,
 			raw,
 			azure.ArmParameters{
@@ -1082,10 +1082,10 @@ func TestValidateErrors(t *testing.T) {
 func TestPurgeHelpersEmptyInputs(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	prepareBicepMocks(mockContext)
 	p := createBicepProvider(t, mockContext)
-	ctx := context.Background()
+	ctx := t.Context()
 	empty := map[string][]*azapi.Resource{}
 
 	t.Run("getKeyVaults", func(t *testing.T) {
@@ -1169,10 +1169,10 @@ func TestPurgeHelpersEmptyInputs(t *testing.T) {
 func TestPurgeCognitiveAccountsValidationErrors(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	prepareBicepMocks(mockContext)
 	p := createBicepProvider(t, mockContext)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	t.Run("missingName", func(t *testing.T) {
 		err := p.purgeCognitiveAccounts(ctx, []cognitiveAccount{

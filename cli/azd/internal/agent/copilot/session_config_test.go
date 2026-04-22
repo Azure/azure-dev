@@ -4,7 +4,6 @@
 package copilot
 
 import (
-	"context"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal/mcp"
@@ -19,7 +18,7 @@ func TestSessionConfigBuilder_Build(t *testing.T) {
 		}
 		builder := NewSessionConfigBuilder(ucm)
 
-		cfg, err := builder.Build(context.Background(), nil)
+		cfg, err := builder.Build(t.Context(), nil)
 		require.NoError(t, err)
 		require.NotNil(t, cfg)
 		require.True(t, cfg.Streaming)
@@ -33,7 +32,7 @@ func TestSessionConfigBuilder_Build(t *testing.T) {
 		ucm := &mockUserConfigManager{config: c}
 		builder := NewSessionConfigBuilder(ucm)
 
-		cfg, err := builder.Build(context.Background(), nil)
+		cfg, err := builder.Build(t.Context(), nil)
 		require.NoError(t, err)
 		require.Equal(t, "gpt-4.1", cfg.Model)
 	})
@@ -45,7 +44,7 @@ func TestSessionConfigBuilder_Build(t *testing.T) {
 		ucm := &mockUserConfigManager{config: c}
 		builder := NewSessionConfigBuilder(ucm)
 
-		cfg, err := builder.Build(context.Background(), nil)
+		cfg, err := builder.Build(t.Context(), nil)
 		require.NoError(t, err)
 		require.NotNil(t, cfg.SystemMessage)
 		require.Equal(t, "append", cfg.SystemMessage.Mode)
@@ -61,7 +60,7 @@ func TestSessionConfigBuilder_Build(t *testing.T) {
 		ucm := &mockUserConfigManager{config: c}
 		builder := NewSessionConfigBuilder(ucm)
 
-		cfg, err := builder.Build(context.Background(), nil)
+		cfg, err := builder.Build(t.Context(), nil)
 		require.NoError(t, err)
 		require.Equal(t, []string{"read_file", "write_file"}, cfg.AvailableTools)
 		require.Equal(t, []string{"execute_command"}, cfg.ExcludedTools)
@@ -80,7 +79,7 @@ func TestSessionConfigBuilder_Build(t *testing.T) {
 			},
 		}
 
-		cfg, err := builder.Build(context.Background(), builtIn)
+		cfg, err := builder.Build(t.Context(), builtIn)
 		require.NoError(t, err)
 		require.Contains(t, cfg.MCPServers, "azd")
 		// Also includes Azure plugin MCP servers if installed
@@ -112,7 +111,7 @@ func TestSessionConfigBuilder_Build(t *testing.T) {
 			},
 		}
 
-		cfg, err := builder.Build(context.Background(), builtIn)
+		cfg, err := builder.Build(t.Context(), builtIn)
 		require.NoError(t, err)
 		require.GreaterOrEqual(t, len(cfg.MCPServers), 2)
 

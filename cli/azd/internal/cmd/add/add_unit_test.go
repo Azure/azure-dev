@@ -5,7 +5,6 @@ package add
 
 import (
 	"bytes"
-	"context"
 	"strings"
 	"testing"
 
@@ -347,7 +346,7 @@ func TestFillAiProjectName(t *testing.T) {
 				},
 			}
 			got, err := fillAiProjectName(
-				context.Background(), r, nil, opts,
+				t.Context(), r, nil, opts,
 			)
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantName, got.Name)
@@ -422,7 +421,7 @@ func TestConfigure_SingletonResources(t *testing.T) {
 				},
 			}
 			got, err := Configure(
-				context.Background(), r, nil, opts,
+				t.Context(), r, nil, opts,
 			)
 			if tt.wantError != "" {
 				require.Error(t, err)

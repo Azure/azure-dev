@@ -4,7 +4,6 @@
 package repository
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -309,7 +308,7 @@ func TestInitializer_prjConfigFromDetect(t *testing.T) {
 			}
 
 			spec, err := i.prjConfigFromDetect(
-				context.Background(),
+				t.Context(),
 				dir,
 				tt.detect)
 

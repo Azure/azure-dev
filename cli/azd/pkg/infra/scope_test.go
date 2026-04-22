@@ -5,7 +5,6 @@ package infra
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -65,7 +64,7 @@ func TestScopeGetDeployment(t *testing.T) {
 	}
 
 	t.Run("SubscriptionScopeSuccess", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		deploymentService := mockazapi.NewDeploymentsServiceFromMockContext(mockContext)
 
 		subscriptionId := "SUBSCRIPTION_ID"
@@ -102,7 +101,7 @@ func TestScopeGetDeployment(t *testing.T) {
 	})
 
 	t.Run("ResourceGroupScopeSuccess", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		deploymentService := mockazapi.NewDeploymentsServiceFromMockContext(mockContext)
 
 		subscriptionId := "SUBSCRIPTION_ID"
@@ -155,7 +154,7 @@ var deploymentExtended = armresources.DeploymentExtended{
 
 func TestScopeDeploy(t *testing.T) {
 	t.Run("SubscriptionScopeSuccess", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		deploymentService := mockazapi.NewDeploymentsServiceFromMockContext(mockContext)
 
 		mockContext.HttpClient.When(func(request *http.Request) bool {
@@ -185,7 +184,7 @@ func TestScopeDeploy(t *testing.T) {
 	})
 
 	t.Run("ResourceGroupScopeSuccess", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		deploymentService := mockazapi.NewDeploymentsServiceFromMockContext(mockContext)
 
 		mockContext.HttpClient.When(func(request *http.Request) bool {
@@ -237,7 +236,7 @@ var deploymentOperationsListResult = armresources.DeploymentOperationsListResult
 
 func TestScopeGetResourceOperations(t *testing.T) {
 	t.Run("SubscriptionScopeSuccess", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		deploymentService := mockazapi.NewDeploymentsServiceFromMockContext(mockContext)
 
 		mockContext.HttpClient.When(func(request *http.Request) bool {
@@ -267,7 +266,7 @@ func TestScopeGetResourceOperations(t *testing.T) {
 	})
 
 	t.Run("ResourceGroupScopeSuccess", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		deploymentService := mockazapi.NewDeploymentsServiceFromMockContext(mockContext)
 
 		mockContext.HttpClient.When(func(request *http.Request) bool {

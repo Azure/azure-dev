@@ -4,7 +4,6 @@
 package tools
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -33,7 +32,7 @@ func TestHandleAzdYamlSchema_ValidYaml(t *testing.T) {
 	req.Params.Arguments = map[string]any{"path": yamlPath}
 
 	// Act
-	result, err := HandleAzdYamlSchema(context.Background(), req)
+	result, err := HandleAzdYamlSchema(t.Context(), req)
 
 	// Assert
 	require.NoError(t, err)
@@ -51,7 +50,7 @@ func TestHandleAzdYamlSchema_MissingYaml(t *testing.T) {
 	req.Params.Arguments = map[string]any{"path": yamlPath}
 
 	// Act
-	result, err := HandleAzdYamlSchema(context.Background(), req)
+	result, err := HandleAzdYamlSchema(t.Context(), req)
 
 	// Assert
 	require.NoError(t, err)
@@ -70,7 +69,7 @@ func TestHandleAzdYamlSchema_InvalidYaml(t *testing.T) {
 	req.Params.Arguments = map[string]any{"path": yamlPath}
 
 	// Act
-	result, err := HandleAzdYamlSchema(context.Background(), req)
+	result, err := HandleAzdYamlSchema(t.Context(), req)
 
 	// Assert
 	require.NoError(t, err)
@@ -89,7 +88,7 @@ func TestHandleAzdYamlSchema_YamlNotValidSyntax(t *testing.T) {
 	req.Params.Arguments = map[string]any{"path": yamlPath}
 
 	// Act
-	result, err := HandleAzdYamlSchema(context.Background(), req)
+	result, err := HandleAzdYamlSchema(t.Context(), req)
 
 	// Assert
 	require.NoError(t, err)
@@ -109,7 +108,7 @@ func TestHandleAzdYamlSchema_YamlValidButSchemaInvalid(t *testing.T) {
 	req.Params.Arguments = map[string]any{"path": yamlPath}
 
 	// Act
-	result, err := HandleAzdYamlSchema(context.Background(), req)
+	result, err := HandleAzdYamlSchema(t.Context(), req)
 
 	// Assert
 	require.NoError(t, err)
@@ -128,7 +127,7 @@ func TestHandleAzdYamlSchema_InvalidYaml_Structural(t *testing.T) {
 	req.Params.Arguments = map[string]any{"path": yamlPath}
 
 	// Act
-	result, err := HandleAzdYamlSchema(context.Background(), req)
+	result, err := HandleAzdYamlSchema(t.Context(), req)
 
 	// Assert
 	require.NoError(t, err)

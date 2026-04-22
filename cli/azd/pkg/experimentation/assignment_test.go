@@ -5,7 +5,6 @@ package experimentation
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -59,7 +58,7 @@ func TestParametersAreSent(t *testing.T) {
 
 	// The mock validates that the required parameters are passed parameter
 	// to the request. No need for us to validate the return value.
-	_, err = mgr.Assignment(context.Background())
+	_, err = mgr.Assignment(t.Context())
 	require.NoError(t, err)
 }
 
@@ -103,7 +102,7 @@ func TestCache(t *testing.T) {
 	mgr, err := NewAssignmentsManager(mockEndpoint, mockHttp)
 	require.NoError(t, err)
 
-	assignment, err := mgr.Assignment(context.Background())
+	assignment, err := mgr.Assignment(t.Context())
 	require.NoError(t, err)
 
 	require.Equal(t, "context:393182", assignment.AssignmentContext)
@@ -134,7 +133,7 @@ func TestCache(t *testing.T) {
 	mgr, err = NewAssignmentsManager(mockEndpoint, mockHttp)
 	require.NoError(t, err)
 
-	assignment, err = mgr.Assignment(context.Background())
+	assignment, err = mgr.Assignment(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, "context:393182", assignment.AssignmentContext)
 
@@ -188,7 +187,7 @@ func TestCache(t *testing.T) {
 	mgr, err = NewAssignmentsManager(mockEndpoint, mockHttp)
 	require.NoError(t, err)
 
-	assignment, err = mgr.Assignment(context.Background())
+	assignment, err = mgr.Assignment(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, "context:393182;anothercontext:393183", assignment.AssignmentContext)
 }

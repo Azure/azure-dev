@@ -4,7 +4,6 @@
 package repository
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -224,7 +223,7 @@ func Test_detectConfirm_confirm(t *testing.T) {
 			}
 			d.Init(tt.detection, dir)
 
-			err = d.Confirm(context.Background())
+			err = d.Confirm(t.Context())
 
 			// Print extra newline to avoid mangling `go test -v` final test result output while waiting for final stdin,
 			// which may result in incorrect `gotestsum` reporting

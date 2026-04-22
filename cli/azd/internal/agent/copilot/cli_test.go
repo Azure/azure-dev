@@ -4,7 +4,6 @@
 package copilot
 
 import (
-	"context"
 	"runtime"
 	"testing"
 
@@ -92,7 +91,7 @@ func TestConfigKeyComposition(t *testing.T) {
 }
 
 func TestCopilotCLI_ListPlugins(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return args.Cmd == "copilot" && len(args.Args) >= 2 &&
@@ -116,7 +115,7 @@ func TestCopilotCLI_ListPlugins(t *testing.T) {
 }
 
 func TestCopilotCLI_ListPlugins_Empty(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return args.Cmd == "copilot" && len(args.Args) >= 2 &&
@@ -138,7 +137,7 @@ func TestCopilotCLI_ListPlugins_Empty(t *testing.T) {
 }
 
 func TestCopilotCLI_ListPlugins_Error(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return args.Cmd == "copilot"
@@ -158,7 +157,7 @@ func TestCopilotCLI_ListPlugins_Error(t *testing.T) {
 }
 
 func TestCopilotCLI_InstallPlugin(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	var capturedArgs []string
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -180,7 +179,7 @@ func TestCopilotCLI_InstallPlugin(t *testing.T) {
 }
 
 func TestCopilotCLI_InstallPlugin_Error(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return args.Cmd == "copilot"
@@ -202,13 +201,13 @@ func TestCopilotCLI_PathOverride(t *testing.T) {
 	t.Setenv("AZD_COPILOT_CLI_PATH", "/custom/copilot")
 
 	cli := &CopilotCLI{}
-	path, err := cli.Path(context.Background())
+	path, err := cli.Path(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, "/custom/copilot", path)
 }
 
 func TestCopilotCLI_Login(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	var capturedArgs []string
 	var capturedInteractive bool
@@ -232,7 +231,7 @@ func TestCopilotCLI_Login(t *testing.T) {
 }
 
 func TestCopilotCLI_Login_Error(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return args.Cmd == "copilot"

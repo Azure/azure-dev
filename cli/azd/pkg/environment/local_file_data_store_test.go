@@ -4,7 +4,6 @@
 package environment
 
 import (
-	"context"
 	"path/filepath"
 	"testing"
 
@@ -15,7 +14,7 @@ import (
 )
 
 func Test_LocalFileDataStore_List(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
 	fileConfigManager := config.NewFileConfigManager(config.NewManager())
 	dataStore := NewLocalFileDataStore(azdContext, fileConfigManager)
@@ -43,7 +42,7 @@ func Test_LocalFileDataStore_List(t *testing.T) {
 }
 
 func Test_LocalFileDataStore_SaveAndGet(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
 	fileConfigManager := config.NewFileConfigManager(config.NewManager())
 	dataStore := NewLocalFileDataStore(azdContext, fileConfigManager)

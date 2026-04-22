@@ -4,7 +4,6 @@
 package project
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -95,7 +94,7 @@ func Test_ResourceManager_GetTargetResource(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockContext := mocks.NewMockContext(context.Background())
+			mockContext := mocks.NewMockContext(t.Context())
 			resourceService := azapi.NewResourceService(
 				mockContext.SubscriptionCredentialProvider,
 				mockContext.ArmClientOptions,
@@ -254,7 +253,7 @@ func Test_ResourceManager_GetServiceResource_DuplicateHostTags(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockContext := mocks.NewMockContext(context.Background())
+			mockContext := mocks.NewMockContext(t.Context())
 			resourceService := azapi.NewResourceService(
 				mockContext.SubscriptionCredentialProvider,
 				mockContext.ArmClientOptions,

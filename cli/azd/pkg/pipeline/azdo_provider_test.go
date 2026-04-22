@@ -4,7 +4,6 @@
 package pipeline
 
 import (
-	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -27,7 +26,7 @@ func Test_azdo_provider_getRepoDetails(t *testing.T) {
 		provider := getAzdoScmProviderTestHarness(mockinput.NewMockConsole())
 		testOrgName := provider.env.Dotenv()[azdo.AzDoEnvironmentOrgName]
 		testRepoName := provider.env.Dotenv()[azdo.AzDoEnvironmentRepoName]
-		ctx := context.Background()
+		ctx := t.Context()
 
 		// act
 		details, e := provider.gitRepoDetails(ctx, "https://fake_org@dev.azure.com/fake_org/repo1/_git/repo1")
@@ -44,7 +43,7 @@ func Test_azdo_provider_getRepoDetails(t *testing.T) {
 		provider := &AzdoScmProvider{
 			env: environment.New("test"),
 		}
-		ctx := context.Background()
+		ctx := t.Context()
 
 		//act
 		details, e := provider.gitRepoDetails(ctx, "https://github.com/Azure/azure-dev.git")
@@ -59,7 +58,7 @@ func Test_azdo_provider_getRepoDetails(t *testing.T) {
 		provider := &AzdoScmProvider{
 			env: environment.New("test"),
 		}
-		ctx := context.Background()
+		ctx := t.Context()
 
 		//act
 		details, e := provider.gitRepoDetails(ctx, "git@github.com:Azure/azure-dev.git")
@@ -80,7 +79,7 @@ func Test_azdo_provider_getRepoDetails(t *testing.T) {
 			env:     environment.New("test"),
 			console: testConsole,
 		}
-		ctx := context.Background()
+		ctx := t.Context()
 
 		//act
 		details, e := provider.gitRepoDetails(ctx, "https://devops.example.com/Collection/Project/_git/Repo")
@@ -100,7 +99,7 @@ func Test_azdo_scm_provider_preConfigureCheck(t *testing.T) {
 		provider := getEmptyAzdoScmProviderTestHarness(envManager, mockinput.NewMockConsole())
 		t.Setenv(azdo.AzDoEnvironmentOrgName, "testOrg")
 		t.Setenv(azdo.AzDoPatName, testPat)
-		ctx := context.Background()
+		ctx := t.Context()
 
 		// act
 		updatedConfig, e := provider.preConfigureCheck(ctx, PipelineManagerArgs{}, provisioning.Options{}, "")
@@ -119,7 +118,7 @@ func Test_azdo_scm_provider_preConfigureCheck(t *testing.T) {
 		testConsole.WhenPrompt(func(options input.ConsoleOptions) bool {
 			return options.Message == "Personal Access Token (PAT):"
 		}).Respond(testPat)
-		ctx := context.Background()
+		ctx := t.Context()
 		envManager := &mockenv.MockEnvManager{}
 		provider := getEmptyAzdoScmProviderTestHarness(envManager, testConsole)
 
@@ -136,7 +135,7 @@ func Test_azdo_scm_provider_preConfigureCheck(t *testing.T) {
 
 func Test_azdo_ci_provider_preConfigureCheck(t *testing.T) {
 	t.Run("success with default options", func(t *testing.T) {
-		ctx := context.Background()
+		ctx := t.Context()
 
 		testConsole := mockinput.NewMockConsole()
 		testPat := "testPAT12345"
@@ -154,7 +153,7 @@ func Test_azdo_ci_provider_preConfigureCheck(t *testing.T) {
 	})
 
 	t.Run("fails if auth type is set to federated", func(t *testing.T) {
-		ctx := context.Background()
+		ctx := t.Context()
 
 		testConsole := mockinput.NewMockConsole()
 		pipelineManagerArgs := PipelineManagerArgs{
@@ -170,7 +169,7 @@ func Test_azdo_ci_provider_preConfigureCheck(t *testing.T) {
 }
 
 func Test_saveEnvironmentConfig(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	env := environment.New("test")
 
 	t.Run("saves to environment file", func(t *testing.T) {

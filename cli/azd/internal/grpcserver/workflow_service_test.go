@@ -20,7 +20,7 @@ import (
 )
 
 func Test_WorkflowService_Run_Success(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	contextType := mock.AnythingOfType("*context.cancelCtx")
 
 	t.Run("Success", func(t *testing.T) {

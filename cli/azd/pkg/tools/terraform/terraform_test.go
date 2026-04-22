@@ -4,7 +4,6 @@
 package terraform
 
 import (
-	"context"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -16,7 +15,7 @@ func Test_WithEnv(t *testing.T) {
 	ran := false
 	expectedEnvVars := []string{"TF_DATA_DIR=MYDIR"}
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return args.Cmd == "terraform"
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {

@@ -1004,7 +1004,7 @@ func Test_EnvSetSecretAction_UsesResourceTenantForKeyVaultAndPrincipalId(t *test
 		"secret-value",
 	).Return(nil)
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	userProfileService := azapi.NewUserProfileService(
 		&mocks.MockMultiTenantCredentialProvider{
 			TokenMap: map[string]mocks.MockCredentials{

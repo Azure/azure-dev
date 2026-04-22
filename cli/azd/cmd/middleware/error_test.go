@@ -38,7 +38,7 @@ import (
 
 func Test_ErrorMiddleware_SuccessNoError(t *testing.T) {
 	t.Parallel()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	cfg := config.NewConfig(map[string]any{
 		"alpha": map[string]any{
 			string(agentcopilot.FeatureCopilot): "on",
@@ -76,7 +76,7 @@ func Test_ErrorMiddleware_SuccessNoError(t *testing.T) {
 
 func Test_ErrorMiddleware_LLMAlphaFeatureDisabled(t *testing.T) {
 	t.Parallel()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	cfg := config.NewEmptyConfig()
 	featureManager := alpha.NewFeaturesManagerWithConfig(cfg)
 	global := &internal.GlobalCommandOptions{
@@ -109,7 +109,7 @@ func Test_ErrorMiddleware_LLMAlphaFeatureDisabled(t *testing.T) {
 
 func Test_ErrorMiddleware_ChildAction(t *testing.T) {
 	t.Parallel()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	cfg := config.NewConfig(map[string]any{
 		"alpha": map[string]any{
 			string(agentcopilot.FeatureCopilot): "on",
@@ -150,7 +150,7 @@ func Test_ErrorMiddleware_ErrorWithSuggestion(t *testing.T) {
 		t.Skip("Skipping test in CI/CD environment")
 	}
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	cfg := config.NewConfig(map[string]any{
 		"alpha": map[string]any{
 			string(agentcopilot.FeatureCopilot): "on",
@@ -195,7 +195,7 @@ func Test_ErrorMiddleware_ErrorWithSuggestion(t *testing.T) {
 
 func Test_ErrorMiddleware_PatternMatchingSuggestion(t *testing.T) {
 	t.Parallel()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	cfg := config.NewEmptyConfig()
 	featureManager := alpha.NewFeaturesManagerWithConfig(cfg)
 	global := &internal.GlobalCommandOptions{
@@ -233,7 +233,7 @@ func Test_ErrorMiddleware_PatternMatchingSuggestion(t *testing.T) {
 
 func Test_ErrorMiddleware_NoPatternMatch(t *testing.T) {
 	t.Parallel()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	cfg := config.NewEmptyConfig()
 	featureManager := alpha.NewFeaturesManagerWithConfig(cfg)
 	global := &internal.GlobalCommandOptions{
@@ -552,7 +552,7 @@ func Test_ShouldSkipAgentHandling_WrappedConfigValidationError(t *testing.T) {
 func Test_ErrorMiddleware_NonFixableError_SkipsAgentCreation(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	cfg := config.NewConfig(map[string]any{
 		"alpha": map[string]any{
 			string(agentcopilot.FeatureCopilot): "on",

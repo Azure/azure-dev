@@ -4,7 +4,6 @@
 package devcentersdk_test
 
 import (
-	"context"
 	"net/http"
 	"strings"
 	"testing"
@@ -57,12 +56,12 @@ func newTestClient(t *testing.T, mockContext *mocks.MockContext) devcentersdk.De
 func TestDevCenters_List(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockdevcentersdk.MockDevCenterGraphQuery(mockContext, testDevCenters)
 
 	client := newTestClient(t, mockContext)
 
-	list, err := client.DevCenters().Get(context.Background())
+	list, err := client.DevCenters().Get(t.Context())
 	require.NoError(t, err)
 	require.NotNil(t, list)
 	require.Len(t, list.Value, 2)
@@ -71,7 +70,7 @@ func TestDevCenters_List(t *testing.T) {
 func TestDevCenterByEndpoint_And_ByName(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	client := newTestClient(t, mockContext)
 
 	byEndpoint := client.DevCenterByEndpoint("https://devcenter1.eastus.devcenter.azure.com")
@@ -88,7 +87,7 @@ func TestDevCenterByEndpoint_And_ByName(t *testing.T) {
 func TestProjects_List(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockdevcentersdk.MockDevCenterGraphQuery(mockContext, testDevCenters)
 
 	client := newTestClient(t, mockContext)
@@ -96,7 +95,7 @@ func TestProjects_List(t *testing.T) {
 	list, err := client.
 		DevCenterByName("DevCenter1").
 		Projects().
-		Get(context.Background())
+		Get(t.Context())
 	require.NoError(t, err)
 	require.NotNil(t, list)
 	require.Len(t, list.Value, 1)
@@ -106,7 +105,7 @@ func TestProjects_List(t *testing.T) {
 func TestProject_Get(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockdevcentersdk.MockDevCenterGraphQuery(mockContext, testDevCenters)
 
 	mockContext.HttpClient.When(func(req *http.Request) bool {
@@ -120,7 +119,7 @@ func TestProject_Get(t *testing.T) {
 	project, err := client.
 		DevCenterByName("DevCenter1").
 		ProjectByName("Project1").
-		Get(context.Background())
+		Get(t.Context())
 
 	require.NoError(t, err)
 	require.NotNil(t, project)
@@ -130,7 +129,7 @@ func TestProject_Get(t *testing.T) {
 func TestProject_Get_NotFound(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockdevcentersdk.MockDevCenterGraphQuery(mockContext, testDevCenters)
 
 	mockContext.HttpClient.When(func(req *http.Request) bool {
@@ -144,14 +143,14 @@ func TestProject_Get_NotFound(t *testing.T) {
 	_, err := client.
 		DevCenterByName("DevCenter1").
 		ProjectByName("Missing").
-		Get(context.Background())
+		Get(t.Context())
 	require.Error(t, err)
 }
 
 func TestProject_Get_UnknownDevCenter(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockdevcentersdk.MockDevCenterGraphQuery(mockContext, testDevCenters)
 
 	client := newTestClient(t, mockContext)
@@ -159,14 +158,14 @@ func TestProject_Get_UnknownDevCenter(t *testing.T) {
 	_, err := client.
 		DevCenterByName("UnknownDevCenter").
 		ProjectByName("Project1").
-		Get(context.Background())
+		Get(t.Context())
 	require.Error(t, err)
 }
 
 func TestCatalogs_List(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockdevcentersdk.MockDevCenterGraphQuery(mockContext, testDevCenters)
 
 	catalogs := []*devcentersdk.Catalog{
@@ -181,7 +180,7 @@ func TestCatalogs_List(t *testing.T) {
 		DevCenterByName("DevCenter1").
 		ProjectByName("Project1").
 		Catalogs().
-		Get(context.Background())
+		Get(t.Context())
 	require.NoError(t, err)
 	require.NotNil(t, list)
 	require.Len(t, list.Value, 2)
@@ -190,7 +189,7 @@ func TestCatalogs_List(t *testing.T) {
 func TestCatalog_Get(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockdevcentersdk.MockDevCenterGraphQuery(mockContext, testDevCenters)
 
 	mockContext.HttpClient.When(func(req *http.Request) bool {
@@ -205,7 +204,7 @@ func TestCatalog_Get(t *testing.T) {
 		DevCenterByName("DevCenter1").
 		ProjectByName("Project1").
 		CatalogByName("Catalog1").
-		Get(context.Background())
+		Get(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, "Catalog1", catalog.Name)
 }
@@ -213,7 +212,7 @@ func TestCatalog_Get(t *testing.T) {
 func TestCatalog_Get_MalformedJSON(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockdevcentersdk.MockDevCenterGraphQuery(mockContext, testDevCenters)
 
 	mockContext.HttpClient.When(func(req *http.Request) bool {
@@ -230,14 +229,14 @@ func TestCatalog_Get_MalformedJSON(t *testing.T) {
 		DevCenterByName("DevCenter1").
 		ProjectByName("Project1").
 		CatalogByName("Catalog1").
-		Get(context.Background())
+		Get(t.Context())
 	require.Error(t, err)
 }
 
 func TestEnvironmentTypes_List(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockdevcentersdk.MockDevCenterGraphQuery(mockContext, testDevCenters)
 
 	envTypes := []*devcentersdk.EnvironmentType{
@@ -252,7 +251,7 @@ func TestEnvironmentTypes_List(t *testing.T) {
 		DevCenterByName("DevCenter1").
 		ProjectByName("Project1").
 		EnvironmentTypes().
-		Get(context.Background())
+		Get(t.Context())
 	require.NoError(t, err)
 	require.NotNil(t, list)
 	require.Len(t, list.Value, 2)
@@ -261,7 +260,7 @@ func TestEnvironmentTypes_List(t *testing.T) {
 func TestEnvironmentDefinitions_ListByProject(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockdevcentersdk.MockDevCenterGraphQuery(mockContext, testDevCenters)
 
 	defs := []*devcentersdk.EnvironmentDefinition{
@@ -276,7 +275,7 @@ func TestEnvironmentDefinitions_ListByProject(t *testing.T) {
 		DevCenterByName("DevCenter1").
 		ProjectByName("Project1").
 		EnvironmentDefinitions().
-		Get(context.Background())
+		Get(t.Context())
 	require.NoError(t, err)
 	require.NotNil(t, list)
 	require.Len(t, list.Value, 2)
@@ -285,7 +284,7 @@ func TestEnvironmentDefinitions_ListByProject(t *testing.T) {
 func TestEnvironmentDefinitions_ListByCatalog(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockdevcentersdk.MockDevCenterGraphQuery(mockContext, testDevCenters)
 
 	mockContext.HttpClient.When(func(req *http.Request) bool {
@@ -306,7 +305,7 @@ func TestEnvironmentDefinitions_ListByCatalog(t *testing.T) {
 		ProjectByName("Project1").
 		CatalogByName("Catalog1").
 		EnvironmentDefinitions().
-		Get(context.Background())
+		Get(t.Context())
 	require.NoError(t, err)
 	require.Len(t, list.Value, 1)
 }
@@ -314,7 +313,7 @@ func TestEnvironmentDefinitions_ListByCatalog(t *testing.T) {
 func TestEnvironmentDefinition_Get(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockdevcentersdk.MockDevCenterGraphQuery(mockContext, testDevCenters)
 
 	mockdevcentersdk.MockGetEnvironmentDefinition(mockContext, "Project1", "Catalog1", "WebApp",
@@ -327,7 +326,7 @@ func TestEnvironmentDefinition_Get(t *testing.T) {
 		ProjectByName("Project1").
 		CatalogByName("Catalog1").
 		EnvironmentDefinitionByName("WebApp").
-		Get(context.Background())
+		Get(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, "WebApp", def.Name)
 }
@@ -335,7 +334,7 @@ func TestEnvironmentDefinition_Get(t *testing.T) {
 func TestEnvironments_List(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockdevcentersdk.MockDevCenterGraphQuery(mockContext, testDevCenters)
 
 	envs := []*devcentersdk.Environment{
@@ -350,7 +349,7 @@ func TestEnvironments_List(t *testing.T) {
 		DevCenterByName("DevCenter1").
 		ProjectByName("Project1").
 		Environments().
-		Get(context.Background())
+		Get(t.Context())
 	require.NoError(t, err)
 	require.Len(t, list.Value, 2)
 }
@@ -358,7 +357,7 @@ func TestEnvironments_List(t *testing.T) {
 func TestEnvironments_ListByUser(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockdevcentersdk.MockDevCenterGraphQuery(mockContext, testDevCenters)
 
 	envs := []*devcentersdk.Environment{
@@ -372,7 +371,7 @@ func TestEnvironments_ListByUser(t *testing.T) {
 		DevCenterByName("DevCenter1").
 		ProjectByName("Project1").
 		EnvironmentsByMe().
-		Get(context.Background())
+		Get(t.Context())
 	require.NoError(t, err)
 	require.Len(t, list.Value, 1)
 }
@@ -380,7 +379,7 @@ func TestEnvironments_ListByUser(t *testing.T) {
 func TestEnvironments_ListByExplicitUser(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockdevcentersdk.MockDevCenterGraphQuery(mockContext, testDevCenters)
 
 	mockdevcentersdk.MockListEnvironmentsByUser(mockContext, "Project1", "user01",
@@ -392,7 +391,7 @@ func TestEnvironments_ListByExplicitUser(t *testing.T) {
 		DevCenterByName("DevCenter1").
 		ProjectByName("Project1").
 		EnvironmentsByUser("user01").
-		Get(context.Background())
+		Get(t.Context())
 	require.NoError(t, err)
 	require.Len(t, list.Value, 1)
 }
@@ -400,7 +399,7 @@ func TestEnvironments_ListByExplicitUser(t *testing.T) {
 func TestEnvironment_Get(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockdevcentersdk.MockDevCenterGraphQuery(mockContext, testDevCenters)
 
 	mockdevcentersdk.MockGetEnvironment(mockContext, "Project1", "me", "env1",
@@ -413,7 +412,7 @@ func TestEnvironment_Get(t *testing.T) {
 		ProjectByName("Project1").
 		EnvironmentsByMe().
 		EnvironmentByName("env1").
-		Get(context.Background())
+		Get(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, "env1", env.Name)
 }
@@ -421,7 +420,7 @@ func TestEnvironment_Get(t *testing.T) {
 func TestEnvironment_Get_NotFound(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockdevcentersdk.MockDevCenterGraphQuery(mockContext, testDevCenters)
 
 	mockdevcentersdk.MockGetEnvironment(mockContext, "Project1", "me", "missing", nil)
@@ -433,14 +432,14 @@ func TestEnvironment_Get_NotFound(t *testing.T) {
 		ProjectByName("Project1").
 		EnvironmentsByMe().
 		EnvironmentByName("missing").
-		Get(context.Background())
+		Get(t.Context())
 	require.Error(t, err)
 }
 
 func TestOutputs_Get(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockdevcentersdk.MockDevCenterGraphQuery(mockContext, testDevCenters)
 
 	mockContext.HttpClient.When(func(req *http.Request) bool {
@@ -465,7 +464,7 @@ func TestOutputs_Get(t *testing.T) {
 		EnvironmentsByMe().
 		EnvironmentByName("env1").
 		Outputs().
-		Get(context.Background())
+		Get(t.Context())
 	require.NoError(t, err)
 	require.NotNil(t, outputs)
 	require.Len(t, outputs.Outputs, 1)
@@ -475,7 +474,7 @@ func TestOutputs_Get(t *testing.T) {
 func TestOutputs_Get_Error(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockdevcentersdk.MockDevCenterGraphQuery(mockContext, testDevCenters)
 
 	mockContext.HttpClient.When(func(req *http.Request) bool {
@@ -493,14 +492,14 @@ func TestOutputs_Get_Error(t *testing.T) {
 		EnvironmentsByMe().
 		EnvironmentByName("env1").
 		Outputs().
-		Get(context.Background())
+		Get(t.Context())
 	require.Error(t, err)
 }
 
 func TestEnvironment_Delete_Success(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockdevcentersdk.MockDevCenterGraphQuery(mockContext, testDevCenters)
 
 	mockdevcentersdk.MockDeleteEnvironment(mockContext, "Project1", "me", "env1",
@@ -513,14 +512,14 @@ func TestEnvironment_Delete_Success(t *testing.T) {
 		ProjectByName("Project1").
 		EnvironmentsByMe().
 		EnvironmentByName("env1").
-		Delete(context.Background())
+		Delete(t.Context())
 	require.NoError(t, err)
 }
 
 func TestEnvironment_Put_Success(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockdevcentersdk.MockDevCenterGraphQuery(mockContext, testDevCenters)
 
 	mockdevcentersdk.MockPutEnvironment(mockContext, "Project1", "me", "env1",
@@ -542,14 +541,14 @@ func TestEnvironment_Put_Success(t *testing.T) {
 		ProjectByName("Project1").
 		EnvironmentsByMe().
 		EnvironmentByName("env1").
-		Put(context.Background(), spec)
+		Put(t.Context(), spec)
 	require.NoError(t, err)
 }
 
 func TestEnvironment_Put_Error(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockdevcentersdk.MockDevCenterGraphQuery(mockContext, testDevCenters)
 
 	// Status != "Succeeded" causes MockPutEnvironment to return 400
@@ -569,14 +568,14 @@ func TestEnvironment_Put_Error(t *testing.T) {
 		ProjectByName("Project1").
 		EnvironmentsByMe().
 		EnvironmentByName("env1").
-		Put(context.Background(), spec)
+		Put(t.Context(), spec)
 	require.Error(t, err)
 }
 
 func TestList_FilterAndTop_FluentMethods(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockdevcentersdk.MockDevCenterGraphQuery(mockContext, testDevCenters)
 
 	// Capture the outgoing request to verify $filter and $top query parameters.
@@ -599,7 +598,7 @@ func TestList_FilterAndTop_FluentMethods(t *testing.T) {
 	builder.Filter("name eq 'env1'")
 	builder.Top(5)
 
-	_, err := builder.Get(context.Background())
+	_, err := builder.Get(t.Context())
 	require.NoError(t, err)
 	require.Contains(t, capturedURL, "%24filter=name+eq+%27env1%27")
 	require.Contains(t, capturedURL, "%24top=5")
@@ -608,7 +607,7 @@ func TestList_FilterAndTop_FluentMethods(t *testing.T) {
 func TestItem_SelectFluentMethod(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockdevcentersdk.MockDevCenterGraphQuery(mockContext, testDevCenters)
 
 	var capturedURL string
@@ -627,7 +626,7 @@ func TestItem_SelectFluentMethod(t *testing.T) {
 		CatalogByName("Catalog1")
 	builder.Select([]string{"name", "description"})
 
-	_, err := builder.Get(context.Background())
+	_, err := builder.Get(t.Context())
 	require.NoError(t, err)
 	require.Contains(t, capturedURL, "%24select=name%2Cdescription")
 }
@@ -635,7 +634,7 @@ func TestItem_SelectFluentMethod(t *testing.T) {
 func TestDevCenters_List_GraphError(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	// Respond with a 500 to the resource graph call to exercise the error path
 	mockContext.HttpClient.When(func(req *http.Request) bool {
 		return strings.Contains(req.URL.Path, "Microsoft.ResourceGraph/resources")
@@ -645,6 +644,6 @@ func TestDevCenters_List_GraphError(t *testing.T) {
 
 	client := newTestClient(t, mockContext)
 
-	_, err := client.DevCenters().Get(context.Background())
+	_, err := client.DevCenters().Get(t.Context())
 	require.Error(t, err)
 }

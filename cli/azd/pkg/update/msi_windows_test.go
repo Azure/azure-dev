@@ -4,7 +4,6 @@
 package update
 
 import (
-	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -264,7 +263,7 @@ func TestUpdateViaMSI_NonStandardInstallBlocks(t *testing.T) {
 	var buf strings.Builder
 	cfg := &UpdateConfig{Channel: ChannelStable}
 
-	err := m.updateViaMSI(context.Background(), cfg, &buf)
+	err := m.updateViaMSI(t.Context(), cfg, &buf)
 	require.Error(t, err)
 
 	var updateErr *UpdateError

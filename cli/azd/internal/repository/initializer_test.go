@@ -57,7 +57,7 @@ func Test_Initializer_Initialize(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			projectDir := t.TempDir()
 			azdCtx := azdcontext.NewAzdContextWithDirectory(projectDir)
-			mockContext := mocks.NewMockContext(context.Background())
+			mockContext := mocks.NewMockContext(t.Context())
 			mockGitClone(t, mockContext, "https://github.com/Azure-Samples/local", tt)
 
 			mockEnv := &mockenv.MockEnvManager{}
@@ -87,7 +87,7 @@ func Test_Initializer_DevCenter(t *testing.T) {
 	t.Parallel()
 	projectDir := t.TempDir()
 	azdCtx := azdcontext.NewAzdContextWithDirectory(projectDir)
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	testMetadata := testCase{
 		name:        "devcenter",
 		templateDir: "template",
@@ -169,13 +169,13 @@ func Test_Initializer_InitializeWithOverwritePrompt(t *testing.T) {
 						slices.Contains(args.Args, "https://github.com/Azure-Samples/local") {
 						stagingDir := args.Args[len(args.Args)-1]
 						copyTemplate(t, testDataPath(templateDir), stagingDir)
-						_, err := realRunner.Run(context.Background(), exec.NewRunArgs("git", "-C", stagingDir, "init"))
+						_, err := realRunner.Run(t.Context(), exec.NewRunArgs("git", "-C", stagingDir, "init"))
 						require.NoError(t, err)
 
 						return exec.NewRunResult(0, "", ""), nil
 					}
 
-					return realRunner.Run(context.Background(), args)
+					return realRunner.Run(t.Context(), args)
 				})
 
 			mockEnv := &mockenv.MockEnvManager{}
@@ -188,7 +188,7 @@ func Test_Initializer_InitializeWithOverwritePrompt(t *testing.T) {
 				alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
 				lazy.From[environment.Manager](mockEnv),
 			)
-			err = i.Initialize(context.Background(), azdCtx, &templates.Template{RepositoryPath: "local"}, "")
+			err = i.Initialize(t.Context(), azdCtx, &templates.Template{RepositoryPath: "local"}, "")
 			require.NoError(t, err)
 
 			switch tt.selection {
@@ -393,7 +393,7 @@ func Test_Initializer_WriteCoreAssets(t *testing.T) {
 				console, git.NewCli(realRunner), nil,
 				alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
 				lazy.From[environment.Manager](envManager))
-			err := i.writeCoreAssets(context.Background(), azdCtx)
+			err := i.writeCoreAssets(t.Context(), azdCtx)
 			require.NoError(t, err)
 
 			projectFileContent := readFile(t, testDataPath("empty", tt.expected.projectFile))
@@ -455,7 +455,7 @@ func verifyProjectFile(t *testing.T, azdCtx *azdcontext.AzdContext, content stri
 	content = strings.Replace(content, "<project>", azdcontext.ProjectName(azdCtx.ProjectDirectory()), 1)
 	verifyFileContent(t, azdCtx.ProjectPath(), content)
 
-	_, err := project.Load(context.Background(), azdCtx.ProjectPath())
+	_, err := project.Load(t.Context(), azdCtx.ProjectPath())
 	require.NoError(t, err)
 }
 
@@ -656,7 +656,7 @@ func TestInitializer_PromptIfNonEmpty(t *testing.T) {
 			// if confirmation is declined and app is not initialized
 			// we skip the test as it will exit with code 1
 			if tt.declinedOutput == "" {
-				err := i.PromptIfNonEmpty(context.Background(), azdCtx)
+				err := i.PromptIfNonEmpty(t.Context(), azdCtx)
 				require.NoError(t, err)
 			}
 		})
@@ -712,7 +712,7 @@ func TestInitializer_writeFileSafe(t *testing.T) {
 			}
 
 			err := i.writeFileSafe(
-				context.Background(),
+				t.Context(),
 				filepath.Join(dir, tt.args.path),
 				infix,
 				[]byte(tt.args.content),
@@ -843,7 +843,7 @@ func Test_Initializer_Initialize_LocalTemplate(t *testing.T) {
 		lazy.From[environment.Manager](mockEnv),
 	)
 
-	err := i.Initialize(context.Background(), azdCtx, &templates.Template{
+	err := i.Initialize(t.Context(), azdCtx, &templates.Template{
 		RepositoryPath: localTemplateDir,
 	}, "")
 	require.NoError(t, err)
@@ -898,7 +898,7 @@ func Test_Initializer_Initialize_LocalTemplateWithGitDir(t *testing.T) {
 		lazy.From[environment.Manager](mockEnv),
 	)
 
-	err := i.Initialize(context.Background(), azdCtx, &templates.Template{
+	err := i.Initialize(t.Context(), azdCtx, &templates.Template{
 		RepositoryPath: localTemplateDir,
 	}, "")
 	require.NoError(t, err)
@@ -971,7 +971,7 @@ func Test_Initializer_Initialize_LocalTemplateRespectsGitignore(t *testing.T) {
 		lazy.From[environment.Manager](mockEnv),
 	)
 
-	err := i.Initialize(context.Background(), azdCtx, &templates.Template{
+	err := i.Initialize(t.Context(), azdCtx, &templates.Template{
 		RepositoryPath: localTemplateDir,
 	}, "")
 	require.NoError(t, err)
@@ -1032,7 +1032,7 @@ func Test_Initializer_Initialize_LocalTemplateGitignoreNegation(t *testing.T) {
 		lazy.From[environment.Manager](mockEnv),
 	)
 
-	err := i.Initialize(context.Background(), azdCtx, &templates.Template{
+	err := i.Initialize(t.Context(), azdCtx, &templates.Template{
 		RepositoryPath: localTemplateDir,
 	}, "")
 	require.NoError(t, err)
@@ -1073,7 +1073,7 @@ func Test_Initializer_Initialize_LocalTemplateGitFile(t *testing.T) {
 		lazy.From[environment.Manager](mockEnv),
 	)
 
-	err := i.Initialize(context.Background(), azdCtx, &templates.Template{
+	err := i.Initialize(t.Context(), azdCtx, &templates.Template{
 		RepositoryPath: localTemplateDir,
 	}, "")
 	require.NoError(t, err)
@@ -1130,7 +1130,7 @@ func Test_Initializer_Initialize_LocalTemplateNestedGitignore(t *testing.T) {
 		lazy.From[environment.Manager](mockEnv),
 	)
 
-	err := i.Initialize(context.Background(), azdCtx, &templates.Template{
+	err := i.Initialize(t.Context(), azdCtx, &templates.Template{
 		RepositoryPath: localTemplateDir,
 	}, "")
 	require.NoError(t, err)
@@ -1165,7 +1165,7 @@ func Test_Initializer_Initialize_LocalTemplateOverlapRejected(t *testing.T) {
 	t.Run("SameDirectory", func(t *testing.T) {
 		// Project dir == template dir
 		azdCtx := azdcontext.NewAzdContextWithDirectory(localTemplateDir)
-		err := i.Initialize(context.Background(), azdCtx, &templates.Template{
+		err := i.Initialize(t.Context(), azdCtx, &templates.Template{
 			RepositoryPath: localTemplateDir,
 		}, "")
 		require.Error(t, err)
@@ -1177,7 +1177,7 @@ func Test_Initializer_Initialize_LocalTemplateOverlapRejected(t *testing.T) {
 		subDir := filepath.Join(localTemplateDir, "child")
 		require.NoError(t, os.MkdirAll(subDir, 0755))
 		azdCtx := azdcontext.NewAzdContextWithDirectory(subDir)
-		err := i.Initialize(context.Background(), azdCtx, &templates.Template{
+		err := i.Initialize(t.Context(), azdCtx, &templates.Template{
 			RepositoryPath: localTemplateDir,
 		}, "")
 		require.Error(t, err)

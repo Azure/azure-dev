@@ -312,7 +312,7 @@ func TestWalkDeploymentOperationsSuccess(t *testing.T) {
 	subCalls := 0
 	groupCalls := 0
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
 	deploymentService := mockazapi.NewStandardDeploymentsFromMockContext(mockContext)
 	scope := newSubscriptionScope(deploymentService, "SUBSCRIPTION_ID", "eastus2")
@@ -373,7 +373,7 @@ func TestWalkDeploymentOperationsSkipExpand(t *testing.T) {
 	subCalls := 0
 	groupCalls := 0
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
 	deploymentService := mockazapi.NewStandardDeploymentsFromMockContext(mockContext)
 	scope := newSubscriptionScope(deploymentService, "SUBSCRIPTION_ID", "eastus2")
@@ -513,7 +513,7 @@ func TestWalkDeploymentOperationsTreeShapes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockContext := mocks.NewMockContext(context.Background())
+			mockContext := mocks.NewMockContext(t.Context())
 			resourceService := azapi.NewResourceService(
 				mockContext.SubscriptionCredentialProvider,
 				mockContext.ArmClientOptions,
@@ -543,7 +543,7 @@ func TestWalkDeploymentOperationsTreeShapes(t *testing.T) {
 }
 
 func TestWalkDeploymentOperationsContextCancelledDuringTraversal(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
 	deploymentService := mockazapi.NewStandardDeploymentsFromMockContext(mockContext)
 	scope := newSubscriptionScope(deploymentService, "SUBSCRIPTION_ID", "eastus2")
@@ -629,7 +629,7 @@ func TestWalkDeploymentOperationsContextCancelledDuringTraversal(t *testing.T) {
 }
 
 func TestWalkDeploymentOperationsCallbackErrorNoDeadlock(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
 	deploymentService := mockazapi.NewStandardDeploymentsFromMockContext(mockContext)
 	scope := newSubscriptionScope(deploymentService, "SUBSCRIPTION_ID", "eastus2")
@@ -691,7 +691,7 @@ func TestWalkDeploymentOperationsFail(t *testing.T) {
 	subCalls := 0
 	groupCalls := 0
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
 	deploymentService := mockazapi.NewStandardDeploymentsFromMockContext(mockContext)
 	scope := newSubscriptionScope(deploymentService, "SUBSCRIPTION_ID", "eastus2")
@@ -754,7 +754,7 @@ func TestWalkDeploymentOperationsNoResourceGroup(t *testing.T) {
 	subCalls := 0
 	groupCalls := 0
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
 	deploymentService := mockazapi.NewStandardDeploymentsFromMockContext(mockContext)
 	scope := newSubscriptionScope(deploymentService, "SUBSCRIPTION_ID", "eastus2")
@@ -810,7 +810,7 @@ func TestWalkDeploymentOperationsWithNestedDeployments(t *testing.T) {
 	subCalls := 0
 	groupCalls := 0
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
 	deploymentService := mockazapi.NewStandardDeploymentsFromMockContext(mockContext)
 	scope := newSubscriptionScope(deploymentService, "SUBSCRIPTION_ID", "eastus2")
@@ -943,7 +943,7 @@ func TestFindResourceGroupForEnvironment(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockContext := mocks.NewMockContext(context.Background())
+			mockContext := mocks.NewMockContext(t.Context())
 			resourceService := azapi.NewResourceService(
 				mockContext.SubscriptionCredentialProvider,
 				mockContext.ArmClientOptions,
@@ -1060,7 +1060,7 @@ func TestGetResourceTypeDisplayNameForCognitiveServices(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockContext := mocks.NewMockContext(context.Background())
+			mockContext := mocks.NewMockContext(t.Context())
 			resourceService := azapi.NewResourceService(
 				mockContext.SubscriptionCredentialProvider,
 				mockContext.ArmClientOptions,
@@ -1135,7 +1135,7 @@ func TestGetResourceTypeDisplayNameForRedisEnterprise(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockContext := mocks.NewMockContext(context.Background())
+			mockContext := mocks.NewMockContext(t.Context())
 			resourceService := azapi.NewResourceService(
 				mockContext.SubscriptionCredentialProvider,
 				mockContext.ArmClientOptions,

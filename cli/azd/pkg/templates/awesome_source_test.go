@@ -4,7 +4,6 @@
 package templates
 
 import (
-	"context"
 	"net/http"
 	"testing"
 
@@ -26,20 +25,20 @@ var testAwesomeAzdTemplates []*awesomeAzdTemplate = []*awesomeAzdTemplate{
 }
 
 func Test_NewAwesomeAzdTemplateSource_ValidUrl(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockAwesomeAzdTemplateSource(mockContext)
 
 	name := "test"
 	url := "https://aka.ms/awesome-azd/templates.json"
 
-	source, err := newAwesomeAzdTemplateSource(context.Background(), name, url, mockContext.HttpClient)
+	source, err := newAwesomeAzdTemplateSource(t.Context(), name, url, mockContext.HttpClient)
 	require.Nil(t, err)
 
 	require.Equal(t, name, source.Name())
 }
 
 func Test_NewAwesomeAzdTemplateSource_ValidUrl_InvalidJson(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	name := "test"
 	url := "https://example.com/templates.json"
@@ -50,13 +49,13 @@ func Test_NewAwesomeAzdTemplateSource_ValidUrl_InvalidJson(t *testing.T) {
 		return mocks.CreateHttpResponseWithBody(req, http.StatusOK, "invalid json")
 	})
 
-	source, err := newAwesomeAzdTemplateSource(context.Background(), name, url, mockContext.HttpClient)
+	source, err := newAwesomeAzdTemplateSource(t.Context(), name, url, mockContext.HttpClient)
 	require.Nil(t, source)
 	require.Error(t, err)
 }
 
 func Test_NewAwesomeAzdTemplateSource_InvalidUrl(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	name := "test"
 	url := "https://example.com/templates.json"
@@ -67,7 +66,7 @@ func Test_NewAwesomeAzdTemplateSource_InvalidUrl(t *testing.T) {
 		return mocks.CreateEmptyHttpResponse(req, http.StatusNotFound)
 	})
 
-	source, err := newAwesomeAzdTemplateSource(context.Background(), name, url, mockContext.HttpClient)
+	source, err := newAwesomeAzdTemplateSource(t.Context(), name, url, mockContext.HttpClient)
 	require.Nil(t, source)
 	require.Error(t, err)
 }

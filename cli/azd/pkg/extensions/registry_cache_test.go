@@ -4,7 +4,6 @@
 package extensions
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -47,7 +46,7 @@ func Test_RegistryCacheManager_GetSet(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, cacheManager)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	sourceName := "test-source"
 
 	// Initially cache should not exist
@@ -92,14 +91,16 @@ func Test_RegistryCacheManager_Expiration(t *testing.T) {
 	cacheManager, err := NewRegistryCacheManager()
 	require.NoError(t, err)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	sourceName := "expiring-source"
 
 	// Set cache
 	err = cacheManager.Set(ctx, sourceName, []*ExtensionMetadata{})
 	require.NoError(t, err)
 
-	// Wait for cache to expire
+	// Wait for expiration (TTL is 1ms, set via cacheTTLEnvVar above).
+	// justified: legitimate TTL expiration test — the cache relies on wall-clock time
+	// internally, so a real sleep is required to observe expiration.
 	time.Sleep(10 * time.Millisecond)
 
 	// Get should return expired error
@@ -130,7 +131,7 @@ func Test_RegistryCacheManager_GetExtensionLatestVersion(t *testing.T) {
 	cacheManager, err := NewRegistryCacheManager()
 	require.NoError(t, err)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	sourceName := "version-test-source"
 
 	// Set cache with multiple versions
@@ -166,7 +167,7 @@ func Test_RegistryCacheManager_GetExtensionLatestVersion_DescendingOrder(t *test
 	cacheManager, err := NewRegistryCacheManager()
 	require.NoError(t, err)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	sourceName := "version-desc-test-source"
 
 	// Simulate registry returning versions in descending order (newest first)
@@ -199,7 +200,7 @@ func Test_RegistryCacheManager_IsExpiredOrMissing(t *testing.T) {
 	cacheManager, err := NewRegistryCacheManager()
 	require.NoError(t, err)
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Missing cache
 	require.True(t, cacheManager.IsExpiredOrMissing(ctx, "missing-source"))
@@ -224,7 +225,7 @@ func Test_RegistryCacheManager_CorruptCache(t *testing.T) {
 	err = os.WriteFile(cacheFile, []byte("not valid json"), 0600)
 	require.NoError(t, err)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err = cacheManager.Get(ctx, "corrupt-source")
 	require.ErrorIs(t, err, ErrCacheNotFound)
 }
@@ -236,7 +237,7 @@ func Test_RegistryCacheManager_PerSourceIsolation(t *testing.T) {
 	cacheManager, err := NewRegistryCacheManager()
 	require.NoError(t, err)
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Set cache for source A
 	extensionsA := []*ExtensionMetadata{

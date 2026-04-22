@@ -4,7 +4,6 @@
 package vsrpc
 
 import (
-	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -29,7 +28,7 @@ func TestInitializeAsync_RootPath_NotExists(t *testing.T) {
 	t.Parallel()
 	s := newTestServer()
 	svc := newServerService(s)
-	_, err := svc.InitializeAsync(context.Background(), filepath.Join(t.TempDir(), "no-such-dir"), InitializeServerOptions{})
+	_, err := svc.InitializeAsync(t.Context(), filepath.Join(t.TempDir(), "no-such-dir"), InitializeServerOptions{})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "invalid root path")
 }
@@ -42,7 +41,7 @@ func TestInitializeAsync_RootPath_NotDirectory(t *testing.T) {
 
 	s := newTestServer()
 	svc := newServerService(s)
-	_, err := svc.InitializeAsync(context.Background(), file, InitializeServerOptions{})
+	_, err := svc.InitializeAsync(t.Context(), file, InitializeServerOptions{})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "not a directory")
 }
@@ -51,7 +50,7 @@ func TestInitializeAsync_EmptyRootPath_Succeeds(t *testing.T) {
 	t.Parallel()
 	s := newTestServer()
 	svc := newServerService(s)
-	sess, err := svc.InitializeAsync(context.Background(), "", InitializeServerOptions{})
+	sess, err := svc.InitializeAsync(t.Context(), "", InitializeServerOptions{})
 	require.NoError(t, err)
 	require.NotNil(t, sess)
 	require.NotEmpty(t, sess.Id)
@@ -64,7 +63,7 @@ func TestInitializeAsync_WithAuthEndpointAndKey(t *testing.T) {
 
 	endpoint := "https://auth.example.com"
 	key := "secret"
-	sess, err := svc.InitializeAsync(context.Background(), t.TempDir(), InitializeServerOptions{
+	sess, err := svc.InitializeAsync(t.Context(), t.TempDir(), InitializeServerOptions{
 		AuthenticationEndpoint: &endpoint,
 		AuthenticationKey:      &key,
 	})
@@ -85,7 +84,7 @@ func TestInitializeAsync_WithInvalidCertificate(t *testing.T) {
 	svc := newServerService(s)
 
 	badCert := "this-is-not-a-cert"
-	_, err := svc.InitializeAsync(context.Background(), t.TempDir(), InitializeServerOptions{
+	_, err := svc.InitializeAsync(t.Context(), t.TempDir(), InitializeServerOptions{
 		AuthenticationCertificate: &badCert,
 	})
 	require.Error(t, err)
@@ -118,7 +117,7 @@ func TestInitializeAsync_CertWithNonHttpsEndpoint(t *testing.T) {
 	s := newTestServer()
 	svc := newServerService(s)
 
-	_, err := svc.InitializeAsync(context.Background(), t.TempDir(), InitializeServerOptions{
+	_, err := svc.InitializeAsync(t.Context(), t.TempDir(), InitializeServerOptions{
 		AuthenticationEndpoint:    &endpoint,
 		AuthenticationCertificate: &cert,
 	})
@@ -135,7 +134,7 @@ func TestInitializeAsync_CertWithUnparseableEndpoint(t *testing.T) {
 	s := newTestServer()
 	svc := newServerService(s)
 
-	_, err := svc.InitializeAsync(context.Background(), t.TempDir(), InitializeServerOptions{
+	_, err := svc.InitializeAsync(t.Context(), t.TempDir(), InitializeServerOptions{
 		AuthenticationEndpoint:    &endpoint,
 		AuthenticationCertificate: &cert,
 	})
@@ -150,7 +149,7 @@ func TestInitializeAsync_CertWithHttpsEndpoint_Succeeds(t *testing.T) {
 	s := newTestServer()
 	svc := newServerService(s)
 
-	sess, err := svc.InitializeAsync(context.Background(), t.TempDir(), InitializeServerOptions{
+	sess, err := svc.InitializeAsync(t.Context(), t.TempDir(), InitializeServerOptions{
 		AuthenticationEndpoint:    &endpoint,
 		AuthenticationCertificate: &cert,
 	})

@@ -4,7 +4,6 @@
 package prompt
 
 import (
-	"context"
 	"strings"
 	"testing"
 
@@ -155,7 +154,7 @@ func Test_PromptService_PromptSubscription_NoPrompt_AutoSelect(t *testing.T) {
 				authManager, mockConsole, ucm, subscriptionManager, resourceService, globalOptions,
 			)
 
-			result, err := ps.PromptSubscription(context.Background(), nil)
+			result, err := ps.PromptSubscription(t.Context(), nil)
 			if tt.wantErr {
 				require.Error(t, err)
 				require.Contains(t, err.Error(), tt.errContains)
@@ -202,7 +201,7 @@ func TestPromptSubscription_NoPrompt_AutoSelect_DemoModeRedactsOutput(t *testing
 		&internal.GlobalCommandOptions{NoPrompt: true},
 	)
 
-	result, err := ps.PromptSubscription(context.Background(), nil)
+	result, err := ps.PromptSubscription(t.Context(), nil)
 	require.NoError(t, err)
 	require.Equal(t, "sub-1", result.Id)
 	require.Len(t, mockConsole.Output(), 1)
@@ -238,7 +237,7 @@ func TestPromptSubscription_NoPrompt_DefaultNotFound_DemoModeRedactsId(t *testin
 		&internal.GlobalCommandOptions{NoPrompt: true},
 	)
 
-	_, err = ps.PromptSubscription(context.Background(), nil)
+	_, err = ps.PromptSubscription(t.Context(), nil)
 	require.Error(t, err)
 	require.ErrorContains(t, err, "default subscription not found")
 	require.False(t, strings.Contains(err.Error(), "sub-secret"))
@@ -272,7 +271,7 @@ func TestPromptLocation_NoPrompt_FiltersAllowedValues(t *testing.T) {
 		&internal.GlobalCommandOptions{NoPrompt: true},
 	)
 
-	location, err := ps.PromptLocation(context.Background(), &AzureContext{
+	location, err := ps.PromptLocation(t.Context(), &AzureContext{
 		Scope: AzureScope{SubscriptionId: "sub-123"},
 	}, &SelectOptions{
 		AllowedValues: []string{"westus3"},
@@ -311,7 +310,7 @@ func TestPromptLocation_NoPrompt_FiltersAllowedValuesCaseInsensitive(t *testing.
 		&internal.GlobalCommandOptions{NoPrompt: true},
 	)
 
-	location, err := ps.PromptLocation(context.Background(), &AzureContext{
+	location, err := ps.PromptLocation(t.Context(), &AzureContext{
 		Scope: AzureScope{SubscriptionId: "sub-123"},
 	}, &SelectOptions{
 		AllowedValues: []string{"WestUS3"},
@@ -350,7 +349,7 @@ func TestPromptLocation_NoPrompt_DefaultFilteredOut(t *testing.T) {
 		&internal.GlobalCommandOptions{NoPrompt: true},
 	)
 
-	_, err = ps.PromptLocation(context.Background(), &AzureContext{
+	_, err = ps.PromptLocation(t.Context(), &AzureContext{
 		Scope: AzureScope{SubscriptionId: "sub-123"},
 	}, &SelectOptions{
 		AllowedValues: []string{"eastus2"},
@@ -389,7 +388,7 @@ func TestPromptLocation_NoPrompt_IgnoresEmptyAllowedValues(t *testing.T) {
 		&internal.GlobalCommandOptions{NoPrompt: true},
 	)
 
-	location, err := ps.PromptLocation(context.Background(), &AzureContext{
+	location, err := ps.PromptLocation(t.Context(), &AzureContext{
 		Scope: AzureScope{SubscriptionId: "sub-123"},
 	}, &SelectOptions{
 		AllowedValues: []string{" ", ""},

@@ -4,7 +4,6 @@
 package apphost
 
 import (
-	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -22,7 +21,7 @@ func TestAspireDashboardUrl(t *testing.T) {
 		env := environment.NewWithValues("test", map[string]string{
 			"AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN": "example.azurecontainerapps.io",
 		})
-		d := AspireDashboardUrl(context.Background(), env, nil)
+		d := AspireDashboardUrl(t.Context(), env, nil)
 		require.NotNil(t, d)
 		require.Equal(t, "https://aspire-dashboard.ext.example.azurecontainerapps.io", d.Link)
 		// ToString and MarshalJSON
@@ -37,14 +36,14 @@ func TestAspireDashboardUrl(t *testing.T) {
 		env := environment.NewWithValues("test", map[string]string{
 			environment.AppServiceAspireDashboardUrlEnvVarName: "https://dashboard.example.com",
 		})
-		d := AspireDashboardUrl(context.Background(), env, nil)
+		d := AspireDashboardUrl(t.Context(), env, nil)
 		require.NotNil(t, d)
 		require.Equal(t, "https://dashboard.example.com", d.Link)
 	})
 
 	t.Run("no_env", func(t *testing.T) {
 		env := environment.NewWithValues("test", map[string]string{})
-		d := AspireDashboardUrl(context.Background(), env, nil)
+		d := AspireDashboardUrl(t.Context(), env, nil)
 		require.Nil(t, d)
 	})
 }
@@ -397,7 +396,7 @@ func TestGenerateProjectArtifacts(t *testing.T) {
 	tmp := t.TempDir()
 	m := &Manifest{Resources: map[string]*Resource{}}
 	appHostProject := tmp + "/MyApp/MyApp.AppHost.csproj"
-	files, err := GenerateProjectArtifacts(context.Background(), tmp, "demo", m, appHostProject)
+	files, err := GenerateProjectArtifacts(t.Context(), tmp, "demo", m, appHostProject)
 	require.NoError(t, err)
 	require.Contains(t, files, "azure.yaml")
 	require.Contains(t, files, "next-steps.md")

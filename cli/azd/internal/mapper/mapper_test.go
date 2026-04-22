@@ -352,7 +352,7 @@ func TestGetResolverFromContext(t *testing.T) {
 	assert.Equal(t, "resolved-test", resolver("test"))
 
 	// Test context without resolver
-	emptyCtx := context.Background()
+	emptyCtx := t.Context()
 	resolver = GetResolver(emptyCtx)
 	assert.Nil(t, resolver)
 }
@@ -370,7 +370,7 @@ func TestResolverFromContext(t *testing.T) {
 	assert.Equal(t, "resolved-test", resolver("test"))
 
 	// Test context without resolver
-	emptyCtx := context.Background()
+	emptyCtx := t.Context()
 	resolver, hasResolver = ResolverFromContext(emptyCtx)
 	assert.False(t, hasResolver, "should indicate resolver is not present")
 	assert.Nil(t, resolver, "resolver should be nil when not present")

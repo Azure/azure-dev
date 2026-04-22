@@ -22,7 +22,7 @@ func Test_Middleware_RunAction(t *testing.T) {
 		postRan := false
 		runLog := []string{}
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		middlewareRunner := NewMiddlewareRunner(mockContext.Container)
 
 		_ = middlewareRunner.Use("test", func() Middleware {
@@ -60,7 +60,7 @@ func Test_Middleware_RunAction(t *testing.T) {
 		postRan := false
 		runLog := []string{}
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		middlewareRunner := NewMiddlewareRunner(mockContext.Container)
 
 		_ = middlewareRunner.Use("test", func() Middleware {
@@ -91,7 +91,7 @@ func Test_Middleware_RunAction(t *testing.T) {
 
 	t.Run("multiple middleware components", func(t *testing.T) {
 		t.Parallel()
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		middlewareRunner := NewMiddlewareRunner(mockContext.Container)
 		runLog := []string{}
 
@@ -134,7 +134,7 @@ func Test_Middleware_RunAction(t *testing.T) {
 
 	t.Run("context propagated to action", func(t *testing.T) {
 		t.Parallel()
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		middlewareRunner := NewMiddlewareRunner(mockContext.Container)
 
 		key := cxtKey{}

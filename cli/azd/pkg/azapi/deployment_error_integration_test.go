@@ -4,7 +4,6 @@
 package azapi
 
 import (
-	"context"
 	"fmt"
 	"testing"
 
@@ -29,7 +28,7 @@ func TestPipeline_DeploymentErrorLine_DeepNested(t *testing.T) {
 
 	pipeline := errorhandler.NewErrorHandlerPipeline(nil)
 	result := pipeline.ProcessWithRules(
-		context.Background(),
+		t.Context(),
 		deployErr,
 		[]errorhandler.ErrorSuggestionRule{
 			{
@@ -59,7 +58,7 @@ func TestPipeline_DeploymentErrorLine_QuotaNestedInDeployment(t *testing.T) {
 
 	pipeline := errorhandler.NewErrorHandlerPipeline(nil)
 	result := pipeline.ProcessWithRules(
-		context.Background(),
+		t.Context(),
 		deployErr,
 		[]errorhandler.ErrorSuggestionRule{
 			{
@@ -88,7 +87,7 @@ func TestPipeline_DeploymentErrorLine_ConflictWithKeyword(t *testing.T) {
 
 	pipeline := errorhandler.NewErrorHandlerPipeline(nil)
 	result := pipeline.ProcessWithRules(
-		context.Background(),
+		t.Context(),
 		deployErr,
 		[]errorhandler.ErrorSuggestionRule{
 			{
@@ -118,7 +117,7 @@ func TestPipeline_DeploymentErrorLine_NoMatchWrongCode(t *testing.T) {
 
 	pipeline := errorhandler.NewErrorHandlerPipeline(nil)
 	result := pipeline.ProcessWithRules(
-		context.Background(),
+		t.Context(),
 		deployErr,
 		[]errorhandler.ErrorSuggestionRule{
 			{
@@ -149,7 +148,7 @@ func TestPipeline_DeploymentErrorLine_MultipleRulesFirstWins(t *testing.T) {
 
 	pipeline := errorhandler.NewErrorHandlerPipeline(nil)
 	result := pipeline.ProcessWithRules(
-		context.Background(),
+		t.Context(),
 		deployErr,
 		[]errorhandler.ErrorSuggestionRule{
 			{
@@ -190,7 +189,7 @@ func TestPipeline_DeploymentErrorLine_WrappedInStandardError(t *testing.T) {
 
 	pipeline := errorhandler.NewErrorHandlerPipeline(nil)
 	result := pipeline.ProcessWithRules(
-		context.Background(),
+		t.Context(),
 		wrappedErr,
 		[]errorhandler.ErrorSuggestionRule{
 			{
@@ -222,7 +221,7 @@ func TestPipeline_DeploymentErrorLine_FourLevelsDeep(t *testing.T) {
 
 	pipeline := errorhandler.NewErrorHandlerPipeline(nil)
 	result := pipeline.ProcessWithRules(
-		context.Background(),
+		t.Context(),
 		deployErr,
 		[]errorhandler.ErrorSuggestionRule{
 			{
@@ -256,7 +255,7 @@ func TestPipeline_DeploymentErrorLine_LocationNotAvailableForResourceType(t *tes
 
 	pipeline := errorhandler.NewErrorHandlerPipeline(nil)
 	result := pipeline.ProcessWithRules(
-		context.Background(),
+		t.Context(),
 		deployErr,
 		[]errorhandler.ErrorSuggestionRule{
 			{

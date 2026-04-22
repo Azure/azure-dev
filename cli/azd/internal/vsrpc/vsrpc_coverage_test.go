@@ -34,7 +34,7 @@ func Test_servicesFromProjectConfig(t *testing.T) {
 			Path:     t.TempDir(),
 			Services: nil,
 		}
-		result := servicesFromProjectConfig(context.Background(), pc)
+		result := servicesFromProjectConfig(t.Context(), pc)
 		require.Empty(t, result)
 	})
 
@@ -44,7 +44,7 @@ func Test_servicesFromProjectConfig(t *testing.T) {
 			Path:     t.TempDir(),
 			Services: map[string]*project.ServiceConfig{},
 		}
-		result := servicesFromProjectConfig(context.Background(), pc)
+		result := servicesFromProjectConfig(t.Context(), pc)
 		require.Empty(t, result)
 	})
 
@@ -64,7 +64,7 @@ func Test_servicesFromProjectConfig(t *testing.T) {
 			svc.Project = pc
 		}
 
-		result := servicesFromProjectConfig(context.Background(), pc)
+		result := servicesFromProjectConfig(t.Context(), pc)
 		require.Len(t, result, 1)
 		require.Equal(t, "api", result[0].Name)
 		// Path() returns the absolute path directly since RelativePath is absolute
@@ -95,7 +95,7 @@ func Test_servicesFromProjectConfig(t *testing.T) {
 			svc.Project = pc
 		}
 
-		result := servicesFromProjectConfig(context.Background(), pc)
+		result := servicesFromProjectConfig(t.Context(), pc)
 		require.Len(t, result, 3)
 
 		// Build maps for order-independent comparison
@@ -233,7 +233,7 @@ func TestLineWriter_Flush_WithBufferedContent(t *testing.T) {
 	require.Empty(t, captured.writes, "no newline yet, nothing should be flushed to next")
 
 	// Flush should push the buffered content
-	err = lw.Flush(context.Background())
+	err = lw.Flush(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, []string{"partial content"}, captured.writes)
 }
@@ -245,7 +245,7 @@ func TestLineWriter_Flush_EmptyBuffer(t *testing.T) {
 	}
 
 	// Flush with nothing buffered should be a no-op
-	err := lw.Flush(context.Background())
+	err := lw.Flush(t.Context())
 	require.NoError(t, err)
 	require.Empty(t, captured.writes)
 }
@@ -262,7 +262,7 @@ func TestLineWriter_Flush_AfterCompleteLine(t *testing.T) {
 	require.Equal(t, []string{"complete line\n"}, captured.writes)
 
 	// Flush should be a no-op since buffer was drained by the newline
-	err = lw.Flush(context.Background())
+	err = lw.Flush(t.Context())
 	require.NoError(t, err)
 	require.Len(t, captured.writes, 1, "no additional writes from flush")
 }
@@ -281,7 +281,7 @@ func TestLineWriter_Flush_NextWriterError(t *testing.T) {
 	require.NoError(t, err) // Write doesn't flush (no newline)
 
 	// Flush should propagate the error
-	err = lw.Flush(context.Background())
+	err = lw.Flush(t.Context())
 	require.ErrorIs(t, err, expectedErr)
 }
 
@@ -717,13 +717,13 @@ func TestWsStream_ReadWrite(t *testing.T) {
 		stream := newWebSocketStream(c)
 
 		// Read a message and write it back
-		msg, _, err := stream.Read(context.Background())
+		msg, _, err := stream.Read(t.Context())
 		if err != nil {
 			t.Logf("read error: %v", err)
 			return
 		}
 
-		_, err = stream.Write(context.Background(), msg)
+		_, err = stream.Write(t.Context(), msg)
 		if err != nil {
 			t.Logf("write error: %v", err)
 		}
@@ -747,12 +747,12 @@ func TestWsStream_ReadWrite(t *testing.T) {
 	notification, err := jsonrpc2.NewNotification("test/method", []string{"arg1"})
 	require.NoError(t, err)
 
-	n, err := stream.Write(context.Background(), notification)
+	n, err := stream.Write(t.Context(), notification)
 	require.NoError(t, err)
 	require.Greater(t, n, int64(0))
 
 	// Read it back (the server echoes it)
-	msg, bytesRead, err := stream.Read(context.Background())
+	msg, bytesRead, err := stream.Read(t.Context())
 	require.NoError(t, err)
 	require.Greater(t, bytesRead, int64(0))
 	require.NotNil(t, msg)
@@ -784,7 +784,7 @@ func TestWsStream_Read_NonTextMessage(t *testing.T) {
 
 	stream := newWebSocketStream(wsConn)
 
-	_, _, err = stream.Read(context.Background())
+	_, _, err = stream.Read(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "unexpected message type")
 }
@@ -814,9 +814,9 @@ func TestServeRpc_MethodNotFound(t *testing.T) {
 	require.NoError(t, err)
 
 	rpcConn := jsonrpc2.NewConn(newWebSocketStream(wsConn))
-	rpcConn.Go(context.Background(), nil)
+	rpcConn.Go(t.Context(), nil)
 
-	_, err = rpcConn.Call(context.Background(), "NonExistentMethod", nil, nil)
+	_, err = rpcConn.Call(t.Context(), "NonExistentMethod", nil, nil)
 	require.Error(t, err)
 
 	var rpcErr *jsonrpc2.Error
@@ -844,10 +844,10 @@ func TestServeRpc_CancelUnknownId(t *testing.T) {
 	require.NoError(t, err)
 
 	rpcConn := jsonrpc2.NewConn(newWebSocketStream(wsConn))
-	rpcConn.Go(context.Background(), nil)
+	rpcConn.Go(t.Context(), nil)
 
 	// Send a cancel for a non-existent ID — should not panic
-	err = rpcConn.Notify(context.Background(), "$/cancelRequest", struct {
+	err = rpcConn.Notify(t.Context(), "$/cancelRequest", struct {
 		Id int `json:"id"`
 	}{Id: 999})
 	require.NoError(t, err)
@@ -927,7 +927,7 @@ func TestNewHandler_ValueAndErrorReturn(t *testing.T) {
 		return nil
 	}
 
-	_ = h(context.Background(), nil, replier, call)
+	_ = h(t.Context(), nil, replier, call)
 	require.Equal(t, "echo: hello", gotResult)
 }
 
@@ -946,7 +946,7 @@ func TestNewHandler_ValueAndErrorReturn_WithError(t *testing.T) {
 		return nil
 	}
 
-	_ = h(context.Background(), nil, replier, call)
+	_ = h(t.Context(), nil, replier, call)
 	require.Equal(t, expectedErr, gotErr)
 }
 
@@ -968,7 +968,7 @@ func TestNewHandler_PanicRecovery_SingleReturn(t *testing.T) {
 		return nil
 	}
 
-	_ = h(context.Background(), nil, replier, call)
+	_ = h(t.Context(), nil, replier, call)
 	require.Error(t, gotErr)
 	require.Contains(t, gotErr.Error(), "boom")
 }
@@ -987,7 +987,7 @@ func TestNewHandler_PanicRecovery_TwoReturns(t *testing.T) {
 		return nil
 	}
 
-	_ = h(context.Background(), nil, replier, call)
+	_ = h(t.Context(), nil, replier, call)
 	require.Error(t, gotErr)
 	require.Contains(t, gotErr.Error(), "kaboom")
 }
@@ -1011,7 +1011,7 @@ func connectRPC(t *testing.T, handler http.Handler) jsonrpc2.Conn {
 	require.NoError(t, err)
 
 	rpcConn := jsonrpc2.NewConn(newWebSocketStream(wsConn))
-	rpcConn.Go(context.Background(), nil)
+	rpcConn.Go(t.Context(), nil)
 	return rpcConn
 }
 
@@ -1022,7 +1022,7 @@ func TestEnvironmentService_ServeHTTP(t *testing.T) {
 
 	// Call a registered method with wrong params to exercise ServeHTTP handler map setup
 	// The method exists in the handler map, so we should get InvalidParams, not MethodNotFound
-	_, err := rpcConn.Call(context.Background(), "GetEnvironmentsAsync", "not-an-array", nil)
+	_, err := rpcConn.Call(t.Context(), "GetEnvironmentsAsync", "not-an-array", nil)
 	require.Error(t, err)
 
 	var rpcErr *jsonrpc2.Error
@@ -1035,7 +1035,7 @@ func TestServerService_ServeHTTP(t *testing.T) {
 	svc := newServerService(s)
 	rpcConn := connectRPC(t, svc)
 
-	_, err := rpcConn.Call(context.Background(), "InitializeAsync", "not-an-array", nil)
+	_, err := rpcConn.Call(t.Context(), "InitializeAsync", "not-an-array", nil)
 	require.Error(t, err)
 
 	var rpcErr *jsonrpc2.Error
@@ -1048,7 +1048,7 @@ func TestAspireService_ServeHTTP(t *testing.T) {
 	svc := newAspireService(s)
 	rpcConn := connectRPC(t, svc)
 
-	_, err := rpcConn.Call(context.Background(), "GetAspireHostAsync", "not-an-array", nil)
+	_, err := rpcConn.Call(t.Context(), "GetAspireHostAsync", "not-an-array", nil)
 	require.Error(t, err)
 
 	var rpcErr *jsonrpc2.Error
@@ -1077,7 +1077,7 @@ func TestEnvironmentService_ServeHTTP_AllMethods(t *testing.T) {
 	for _, method := range methods {
 		t.Run(method, func(t *testing.T) {
 			// Call with wrong param format to exercise the handler registration
-			_, err := rpcConn.Call(context.Background(), method, "bad-params", nil)
+			_, err := rpcConn.Call(t.Context(), method, "bad-params", nil)
 			require.Error(t, err)
 		})
 	}
@@ -1119,7 +1119,7 @@ func TestMessageWriter_Write_ViaObserver(t *testing.T) {
 	require.NoError(t, err)
 
 	rpcConn := jsonrpc2.NewConn(newWebSocketStream(wsConn))
-	rpcConn.Go(context.Background(), nil)
+	rpcConn.Go(t.Context(), nil)
 
 	// Create an observer with handle 5
 	obs := &Observer[ProgressMessage]{
@@ -1129,7 +1129,7 @@ func TestMessageWriter_Write_ViaObserver(t *testing.T) {
 
 	// Create messageWriter
 	mw := &messageWriter{
-		ctx:      context.Background(),
+		ctx:      t.Context(),
 		observer: obs,
 		messageTemplate: ProgressMessage{
 			Severity: Info,
@@ -1167,10 +1167,10 @@ func TestServeRpc_CancelNilId(t *testing.T) {
 	require.NoError(t, err)
 
 	rpcConn := jsonrpc2.NewConn(newWebSocketStream(wsConn))
-	rpcConn.Go(context.Background(), nil)
+	rpcConn.Go(t.Context(), nil)
 
 	// Send cancel request without an id field — should get InvalidParams
-	err = rpcConn.Notify(context.Background(), "$/cancelRequest", struct{}{})
+	err = rpcConn.Notify(t.Context(), "$/cancelRequest", struct{}{})
 	require.NoError(t, err) // notification itself doesn't return an error
 }
 
@@ -1218,7 +1218,7 @@ func TestEnvironmentService_GetEnvironmentsAsync_InvalidSession(t *testing.T) {
 		Session:         Session{Id: "bad-session"},
 		HostProjectPath: "/some/path",
 	}
-	_, err := rpcConn.Call(context.Background(), "GetEnvironmentsAsync", []any{
+	_, err := rpcConn.Call(t.Context(), "GetEnvironmentsAsync", []any{
 		rc,
 		map[string]any{"__jsonrpc_marshaled": 1, "handle": 1},
 	}, nil)
@@ -1235,7 +1235,7 @@ func TestEnvironmentService_SetCurrentEnvironmentAsync_InvalidSession(t *testing
 		Session:         Session{Id: "bad-session"},
 		HostProjectPath: "/some/path",
 	}
-	_, err := rpcConn.Call(context.Background(), "SetCurrentEnvironmentAsync", []any{
+	_, err := rpcConn.Call(t.Context(), "SetCurrentEnvironmentAsync", []any{
 		rc,
 		"env-name",
 		map[string]any{"__jsonrpc_marshaled": 1, "handle": 1},
@@ -1253,7 +1253,7 @@ func TestEnvironmentService_DeleteEnvironmentAsync_InvalidSession(t *testing.T) 
 		Session:         Session{Id: "bad-session"},
 		HostProjectPath: "/some/path",
 	}
-	_, err := rpcConn.Call(context.Background(), "DeleteEnvironmentAsync", []any{
+	_, err := rpcConn.Call(t.Context(), "DeleteEnvironmentAsync", []any{
 		rc,
 		"env-name",
 		1,
@@ -1279,7 +1279,7 @@ func TestEnvironmentService_CreateEnvironmentAsync_InvalidSession(t *testing.T) 
 			"Location":     "eastus",
 		},
 	}
-	_, err := rpcConn.Call(context.Background(), "CreateEnvironmentAsync", []any{
+	_, err := rpcConn.Call(t.Context(), "CreateEnvironmentAsync", []any{
 		rc,
 		env,
 		map[string]any{"__jsonrpc_marshaled": 1, "handle": 1},
@@ -1297,7 +1297,7 @@ func TestEnvironmentService_OpenEnvironmentAsync_InvalidSession(t *testing.T) {
 		Session:         Session{Id: "bad-session"},
 		HostProjectPath: "/some/path",
 	}
-	_, err := rpcConn.Call(context.Background(), "OpenEnvironmentAsync", []any{
+	_, err := rpcConn.Call(t.Context(), "OpenEnvironmentAsync", []any{
 		rc,
 		"env-name",
 		map[string]any{"__jsonrpc_marshaled": 1, "handle": 1},
@@ -1315,7 +1315,7 @@ func TestEnvironmentService_LoadEnvironmentAsync_InvalidSession(t *testing.T) {
 		Session:         Session{Id: "bad-session"},
 		HostProjectPath: "/some/path",
 	}
-	_, err := rpcConn.Call(context.Background(), "LoadEnvironmentAsync", []any{
+	_, err := rpcConn.Call(t.Context(), "LoadEnvironmentAsync", []any{
 		rc,
 		"env-name",
 		map[string]any{"__jsonrpc_marshaled": 1, "handle": 1},
@@ -1333,7 +1333,7 @@ func TestEnvironmentService_RefreshEnvironmentAsync_InvalidSession(t *testing.T)
 		Session:         Session{Id: "bad-session"},
 		HostProjectPath: "/some/path",
 	}
-	_, err := rpcConn.Call(context.Background(), "RefreshEnvironmentAsync", []any{
+	_, err := rpcConn.Call(t.Context(), "RefreshEnvironmentAsync", []any{
 		rc,
 		"env-name",
 		map[string]any{"__jsonrpc_marshaled": 1, "handle": 1},
@@ -1351,7 +1351,7 @@ func TestEnvironmentService_DeployAsync_InvalidSession(t *testing.T) {
 		Session:         Session{Id: "bad-session"},
 		HostProjectPath: "/some/path",
 	}
-	_, err := rpcConn.Call(context.Background(), "DeployAsync", []any{
+	_, err := rpcConn.Call(t.Context(), "DeployAsync", []any{
 		rc,
 		"env-name",
 		map[string]any{"__jsonrpc_marshaled": 1, "handle": 1},
@@ -1369,7 +1369,7 @@ func TestEnvironmentService_DeployServiceAsync_InvalidSession(t *testing.T) {
 		Session:         Session{Id: "bad-session"},
 		HostProjectPath: "/some/path",
 	}
-	_, err := rpcConn.Call(context.Background(), "DeployServiceAsync", []any{
+	_, err := rpcConn.Call(t.Context(), "DeployServiceAsync", []any{
 		rc,
 		"env-name",
 		"service-name",
@@ -1388,7 +1388,7 @@ func TestAspireService_GetAspireHostAsync_InvalidSession(t *testing.T) {
 		Session:         Session{Id: "bad-session"},
 		HostProjectPath: "/some/path",
 	}
-	_, err := rpcConn.Call(context.Background(), "GetAspireHostAsync", []any{
+	_, err := rpcConn.Call(t.Context(), "GetAspireHostAsync", []any{
 		rc,
 		"aspire-env",
 		map[string]any{"__jsonrpc_marshaled": 1, "handle": 1},
@@ -1406,7 +1406,7 @@ func TestAspireService_RenameAspireHostAsync_InvalidSession(t *testing.T) {
 		Session:         Session{Id: "bad-session"},
 		HostProjectPath: "/some/path",
 	}
-	_, err := rpcConn.Call(context.Background(), "RenameAspireHostAsync", []any{
+	_, err := rpcConn.Call(t.Context(), "RenameAspireHostAsync", []any{
 		rc,
 		"/new/path",
 		map[string]any{"__jsonrpc_marshaled": 1, "handle": 1},
@@ -1427,7 +1427,7 @@ func TestServerService_InitializeAsync_InvalidParams(t *testing.T) {
 	require.NoError(t, err)
 
 	var result Session
-	_, err = rpcConn.Call(context.Background(), "InitializeAsync", []any{
+	_, err = rpcConn.Call(t.Context(), "InitializeAsync", []any{
 		cwd,
 		InitializeServerOptions{},
 	}, &result)
@@ -1446,6 +1446,6 @@ func TestServerService_StopAsync(t *testing.T) {
 	svc := newServerService(s)
 	rpcConn := connectRPC(t, svc)
 
-	_, err := rpcConn.Call(context.Background(), "StopAsync", []any{}, nil)
+	_, err := rpcConn.Call(t.Context(), "StopAsync", []any{}, nil)
 	require.NoError(t, err)
 }

@@ -4,7 +4,6 @@
 package state
 
 import (
-	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -17,7 +16,7 @@ import (
 func TestStateCacheManager_SaveAndLoad(t *testing.T) {
 	tempDir := t.TempDir()
 	manager := NewStateCacheManager(tempDir)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	cache := &StateCache{
 		SubscriptionId:    "sub-123",
@@ -47,7 +46,7 @@ func TestStateCacheManager_SaveAndLoad(t *testing.T) {
 func TestStateCacheManager_LoadNonExistent(t *testing.T) {
 	tempDir := t.TempDir()
 	manager := NewStateCacheManager(tempDir)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Load non-existent cache
 	loaded, err := manager.Load(ctx, "non-existent")
@@ -58,7 +57,7 @@ func TestStateCacheManager_LoadNonExistent(t *testing.T) {
 func TestStateCacheManager_Invalidate(t *testing.T) {
 	tempDir := t.TempDir()
 	manager := NewStateCacheManager(tempDir)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	cache := &StateCache{
 		SubscriptionId:    "sub-123",
@@ -83,7 +82,7 @@ func TestStateCacheManager_TTL(t *testing.T) {
 	tempDir := t.TempDir()
 	manager := NewStateCacheManager(tempDir)
 	manager.SetTTL(1 * time.Hour) // Use a large TTL — we test expiration by backdating, not sleeping
-	ctx := context.Background()
+	ctx := t.Context()
 
 	cache := &StateCache{
 		SubscriptionId:    "sub-123",
@@ -116,7 +115,7 @@ func TestStateCacheManager_TTL(t *testing.T) {
 func TestStateCacheManager_StateChangeFile(t *testing.T) {
 	tempDir := t.TempDir()
 	manager := NewStateCacheManager(tempDir)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	cache := &StateCache{
 		SubscriptionId:    "sub-123",
@@ -136,7 +135,9 @@ func TestStateCacheManager_StateChangeFile(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, changeTime.IsZero())
 
-	// Wait a bit and invalidate to update the timestamp
+	// justified: a tiny sleep here ensures that when Invalidate writes the state-change
+	// file, its mtime may differ from the initial Save's mtime on filesystems with
+	// coarse timestamp granularity. The assertion below tolerates equal timestamps too.
 	time.Sleep(100 * time.Millisecond)
 	err = manager.Invalidate(ctx, "test-env")
 	require.NoError(t, err)

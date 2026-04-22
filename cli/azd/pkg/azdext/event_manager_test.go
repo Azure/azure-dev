@@ -133,7 +133,7 @@ func TestNewEventManager(t *testing.T) {
 
 // Test onInvokeProjectHandler with successful handler
 func TestEventManager_onInvokeProjectHandler_Success(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	client := &AzdClient{}
 
 	eventManager := NewEventManager("microsoft.azd.demo", client, nil)
@@ -173,7 +173,7 @@ func TestEventManager_onInvokeProjectHandler_Success(t *testing.T) {
 
 // Test onInvokeProjectHandler with handler error
 func TestEventManager_onInvokeProjectHandler_HandlerError(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	client := &AzdClient{}
 
 	eventManager := NewEventManager("microsoft.azd.demo", client, nil)
@@ -206,7 +206,7 @@ func TestEventManager_onInvokeProjectHandler_HandlerError(t *testing.T) {
 
 // Test onInvokeProjectHandler with no registered handler
 func TestEventManager_onInvokeProjectHandler_NoHandler(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	client := &AzdClient{}
 	eventManager := NewEventManager("microsoft.azd.demo", client, nil)
 
@@ -226,7 +226,7 @@ func TestEventManager_onInvokeProjectHandler_NoHandler(t *testing.T) {
 
 // Test onInvokeServiceHandler with successful handler
 func TestEventManager_onInvokeServiceHandler_Success(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	client := &AzdClient{}
 
 	eventManager := NewEventManager("microsoft.azd.demo", client, nil)
@@ -274,7 +274,7 @@ func TestEventManager_onInvokeServiceHandler_Success(t *testing.T) {
 
 // Test onInvokeServiceHandler with nil ServiceContext (should default to empty)
 func TestEventManager_onInvokeServiceHandler_NilServiceContext(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	client := &AzdClient{}
 
 	eventManager := NewEventManager("microsoft.azd.demo", client, nil)
@@ -313,7 +313,7 @@ func TestEventManager_onInvokeServiceHandler_NilServiceContext(t *testing.T) {
 
 // Test onInvokeServiceHandler with handler error
 func TestEventManager_onInvokeServiceHandler_HandlerError(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	client := &AzdClient{}
 
 	eventManager := NewEventManager("microsoft.azd.demo", client, nil)
@@ -349,7 +349,7 @@ func TestEventManager_onInvokeServiceHandler_HandlerError(t *testing.T) {
 
 // Test onInvokeServiceHandler with no registered handler
 func TestEventManager_onInvokeServiceHandler_NoHandler(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	client := &AzdClient{}
 	eventManager := NewEventManager("microsoft.azd.demo", client, nil)
 

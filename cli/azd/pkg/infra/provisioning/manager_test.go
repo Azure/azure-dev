@@ -4,7 +4,6 @@
 package provisioning_test
 
 import (
-	"context"
 	"strings"
 	"testing"
 
@@ -28,7 +27,7 @@ import (
 func TestProvisionInitializesEnvironment(t *testing.T) {
 	env := environment.NewWithValues("test-env", nil)
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
 		return strings.Contains(options.Message, "Select an Azure Subscription to use")
 	}).RespondFn(func(options input.ConsoleOptions) (any, error) {
@@ -68,7 +67,7 @@ func TestManagerPreview(t *testing.T) {
 		"AZURE_LOCATION":        "eastus2",
 	})
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	registerContainerDependencies(mockContext, env)
 
 	envManager := &mockenv.MockEnvManager{}
@@ -97,7 +96,7 @@ func TestManagerGetState(t *testing.T) {
 		"AZURE_LOCATION":        "eastus2",
 	})
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	registerContainerDependencies(mockContext, env)
 
 	envManager := &mockenv.MockEnvManager{}
@@ -126,7 +125,7 @@ func TestManagerDeploy(t *testing.T) {
 		"AZURE_LOCATION":        "eastus2",
 	})
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	registerContainerDependencies(mockContext, env)
 
 	envManager := &mockenv.MockEnvManager{}
@@ -155,7 +154,7 @@ func TestManagerDestroyWithPositiveConfirmation(t *testing.T) {
 		"AZURE_LOCATION":        "eastus2",
 	})
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
 		return strings.Contains(options.Message, "Are you sure you want to destroy?")
 	}).Respond(true)
@@ -192,7 +191,7 @@ func TestManagerDestroyWithNegativeConfirmation(t *testing.T) {
 		"AZURE_LOCATION":        "eastus2",
 	})
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
 		return strings.Contains(options.Message, "Are you sure you want to destroy?")

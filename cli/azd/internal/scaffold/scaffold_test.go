@@ -4,7 +4,6 @@
 package scaffold
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -255,7 +254,7 @@ func TestExecInfra(t *testing.T) {
 				return
 			}
 
-			ctx := context.Background()
+			ctx := t.Context()
 			cli := bicep.NewCli(mockinput.NewMockConsole(), exec.NewCommandRunner(nil))
 
 			res, err := cli.Build(ctx, filepath.Join(dir, "main.bicep"))

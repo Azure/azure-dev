@@ -4,7 +4,6 @@
 package ai
 
 import (
-	"context"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -16,7 +15,7 @@ import (
 func Test_PythonBridge_RequiredExternalTools(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	pythonCli := python.NewCli(mockContext.CommandRunner)
 	azdCtx := azdcontext.NewAzdContextWithDirectory(t.TempDir())
 
@@ -29,7 +28,7 @@ func Test_PythonBridge_RequiredExternalTools(t *testing.T) {
 func Test_PythonBridge_Initialize_Idempotent(t *testing.T) {
 	// Avoid t.Parallel here because the sibling Test_PythonBridge_Init already sets
 	// AZD_CONFIG_DIR via os.Setenv — we only test the short-circuit branch.
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	pythonCli := python.NewCli(mockContext.CommandRunner)
 	azdCtx := azdcontext.NewAzdContextWithDirectory(t.TempDir())
 

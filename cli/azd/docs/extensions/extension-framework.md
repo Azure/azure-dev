@@ -32,6 +32,7 @@ Table of Contents
 | [Extension End-to-End Walkthrough](./extension-e2e-walkthrough.md) | Build a complete extension from scratch with root command, MCP server, lifecycle events, and security. |
 | [Extension Framework Services](./extension-framework-services.md) | Custom language/framework support via `FrameworkServiceProvider`. |
 | [Extension Style Guide](./extensions-style-guide.md) | Design guidelines for command integration, flags, and discoverability. |
+| [Extension Resolution and Versioning](./extension-resolution-and-versioning.md) | How azd resolves extensions from sources, version constraint syntax, caching, and semver guidance. |
 
 ## Getting Started
 

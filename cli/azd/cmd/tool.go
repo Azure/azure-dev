@@ -53,6 +53,8 @@ func toolActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 			Use:   "install [tool-name...]",
 			Short: "Install specified tools.",
 		},
+		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+		DefaultFormat:  output.NoneFormat,
 		ActionResolver: newToolInstallAction,
 		FlagsResolver:  newToolInstallFlags,
 	})
@@ -63,7 +65,10 @@ func toolActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 			Use:   "upgrade [tool-name...]",
 			Short: "Upgrade installed tools.",
 		},
+		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+		DefaultFormat:  output.NoneFormat,
 		ActionResolver: newToolUpgradeAction,
+		FlagsResolver:  newToolUpgradeFlags,
 	})
 
 	// azd tool check
@@ -83,6 +88,8 @@ func toolActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 			Use:   "show <tool-name>",
 			Short: "Show details for a specific tool.",
 		},
+		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+		DefaultFormat:  output.NoneFormat,
 		ActionResolver: newToolShowAction,
 	})
 
@@ -221,8 +228,15 @@ func (a *toolAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 				if installErr != nil {
 					return uxlib.Error, installErr
 				}
-				if len(results) > 0 && !results[0].Success {
-					return uxlib.Error, results[0].Error
+				// Find the result for the specific tool we requested
+				// (dependency results may precede it in the slice).
+				for _, r := range results {
+					if r.Tool != nil && r.Tool.Id == capturedID {
+						if !r.Success {
+							return uxlib.Error, r.Error
+						}
+						break
+					}
 				}
 				return uxlib.Success, nil
 			},
@@ -333,7 +347,8 @@ func (a *toolListAction) Run(ctx context.Context) (*actions.ActionResult, error)
 // ---------------------------------------------------------------------------
 
 type toolInstallFlags struct {
-	all bool
+	all    bool
+	dryRun bool
 }
 
 func newToolInstallFlags(cmd *cobra.Command) *toolInstallFlags {
@@ -341,14 +356,20 @@ func newToolInstallFlags(cmd *cobra.Command) *toolInstallFlags {
 	cmd.Flags().BoolVar(
 		&flags.all, "all", false, "Install all recommended tools",
 	)
+	cmd.Flags().BoolVar(
+		&flags.dryRun, "dry-run", false,
+		"Preview what would be installed without making changes",
+	)
 	return flags
 }
 
 type toolInstallAction struct {
-	args    []string
-	flags   *toolInstallFlags
-	manager *tool.Manager
-	console input.Console
+	args      []string
+	flags     *toolInstallFlags
+	manager   *tool.Manager
+	console   input.Console
+	formatter output.Formatter
+	writer    io.Writer
 }
 
 func newToolInstallAction(
@@ -356,21 +377,20 @@ func newToolInstallAction(
 	flags *toolInstallFlags,
 	manager *tool.Manager,
 	console input.Console,
+	formatter output.Formatter,
+	writer io.Writer,
 ) actions.Action {
 	return &toolInstallAction{
-		args:    args,
-		flags:   flags,
-		manager: manager,
-		console: console,
+		args:      args,
+		flags:     flags,
+		manager:   manager,
+		console:   console,
+		formatter: formatter,
+		writer:    writer,
 	}
 }
 
 func (a *toolInstallAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	a.console.MessageUxItem(ctx, &ux.MessageTitle{
-		Title:     "Install Azure development tools (azd tool install)",
-		TitleNote: "Installs specified tools onto the local machine",
-	})
-
 	ids, err := a.resolveToolIds(ctx)
 	if err != nil {
 		return nil, err
@@ -381,9 +401,22 @@ func (a *toolInstallAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, nil
 	}
 
+	// --dry-run: detect tool status and display what would happen
+	// without actually installing anything.
+	if a.flags.dryRun {
+		return a.dryRun(ctx, ids)
+	}
+
+	a.console.MessageUxItem(ctx, &ux.MessageTitle{
+		Title:     "Install Azure development tools (azd tool install)",
+		TitleNote: "Installs specified tools onto the local machine",
+	})
+
 	taskList := uxlib.NewTaskList(
 		&uxlib.TaskListOptions{ContinueOnError: true},
 	)
+
+	var installResults []*toolInstallResultItem
 
 	for _, id := range ids {
 		capturedID := id
@@ -395,13 +428,53 @@ func (a *toolInstallAction) Run(ctx context.Context) (*actions.ActionResult, err
 		taskList.AddTask(uxlib.TaskOptions{
 			Title: fmt.Sprintf("Installing %s", toolDef.Name),
 			Action: func(setProgress uxlib.SetProgressFunc) (uxlib.TaskState, error) {
-				results, installErr := a.manager.InstallTools(ctx, []string{capturedID})
+				results, installErr := a.manager.InstallTools(
+					ctx, []string{capturedID},
+				)
 				if installErr != nil {
+					installResults = append(installResults, &toolInstallResultItem{
+						Id:      capturedID,
+						Name:    toolDef.Name,
+						Action:  "install",
+						Success: false,
+						Error:   installErr.Error(),
+					})
 					return uxlib.Error, installErr
 				}
-				if len(results) > 0 && !results[0].Success {
-					return uxlib.Error, results[0].Error
+				// Find the result for the specific tool we requested
+				// (dependency results may precede it in the slice).
+				var matched *tool.InstallResult
+				for _, r := range results {
+					if r.Tool != nil && r.Tool.Id == capturedID {
+						matched = r
+						break
+					}
 				}
+				if matched != nil && !matched.Success {
+					errMsg := ""
+					if matched.Error != nil {
+						errMsg = matched.Error.Error()
+					}
+					installResults = append(installResults, &toolInstallResultItem{
+						Id:      capturedID,
+						Name:    toolDef.Name,
+						Action:  "install",
+						Success: false,
+						Error:   errMsg,
+					})
+					return uxlib.Error, matched.Error
+				}
+				version := ""
+				if matched != nil {
+					version = matched.InstalledVersion
+				}
+				installResults = append(installResults, &toolInstallResultItem{
+					Id:               capturedID,
+					Name:             toolDef.Name,
+					Action:           "install",
+					Success:          true,
+					InstalledVersion: version,
+				})
 				return uxlib.Success, nil
 			},
 		})
@@ -413,11 +486,65 @@ func (a *toolInstallAction) Run(ctx context.Context) (*actions.ActionResult, err
 		))
 	}
 
+	if a.formatter.Kind() == output.JsonFormat {
+		return nil, a.formatter.Format(installResults, a.writer, nil)
+	}
+
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header: "Tool installation complete",
 		},
 	}, nil
+}
+
+// dryRun detects the current status of the requested tools and
+// displays what the install command would do without making changes.
+func (a *toolInstallAction) dryRun(
+	ctx context.Context,
+	ids []string,
+) (*actions.ActionResult, error) {
+	rows := make([]toolDryRunItem, 0, len(ids))
+
+	for _, id := range ids {
+		toolDef, findErr := a.manager.FindTool(id)
+		if findErr != nil {
+			return nil, findErr
+		}
+
+		status, detectErr := a.manager.DetectTool(ctx, id)
+		if detectErr != nil {
+			return nil, fmt.Errorf("detecting %s: %w", id, detectErr)
+		}
+
+		action := "install"
+		currentVersion := ""
+		if status.Installed {
+			action = "skip (already installed)"
+			currentVersion = status.InstalledVersion
+		}
+
+		rows = append(rows, toolDryRunItem{
+			Id:             id,
+			Name:           toolDef.Name,
+			CurrentVersion: currentVersion,
+			Action:         action,
+		})
+	}
+
+	if a.formatter.Kind() == output.JsonFormat {
+		return nil, a.formatter.Format(rows, a.writer, nil)
+	}
+
+	if err := writeDryRunTable(a.writer, rows); err != nil {
+		return nil, err
+	}
+
+	a.console.Message(ctx, "")
+	a.console.Message(ctx, output.WithGrayFormat(
+		"Dry run complete. No changes were made.",
+	))
+
+	return nil, nil
 }
 
 // resolveToolIds determines which tool IDs to install based on flags and arguments.
@@ -494,30 +621,47 @@ func (a *toolInstallAction) resolveToolIds(ctx context.Context) ([]string, error
 // azd tool upgrade [tool-name...]
 // ---------------------------------------------------------------------------
 
+type toolUpgradeFlags struct {
+	dryRun bool
+}
+
+func newToolUpgradeFlags(cmd *cobra.Command) *toolUpgradeFlags {
+	flags := &toolUpgradeFlags{}
+	cmd.Flags().BoolVar(
+		&flags.dryRun, "dry-run", false,
+		"Preview what would be upgraded without making changes",
+	)
+	return flags
+}
+
 type toolUpgradeAction struct {
-	args    []string
-	manager *tool.Manager
-	console input.Console
+	args      []string
+	flags     *toolUpgradeFlags
+	manager   *tool.Manager
+	console   input.Console
+	formatter output.Formatter
+	writer    io.Writer
 }
 
 func newToolUpgradeAction(
 	args []string,
+	flags *toolUpgradeFlags,
 	manager *tool.Manager,
 	console input.Console,
+	formatter output.Formatter,
+	writer io.Writer,
 ) actions.Action {
 	return &toolUpgradeAction{
-		args:    args,
-		manager: manager,
-		console: console,
+		args:      args,
+		flags:     flags,
+		manager:   manager,
+		console:   console,
+		formatter: formatter,
+		writer:    writer,
 	}
 }
 
 func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	a.console.MessageUxItem(ctx, &ux.MessageTitle{
-		Title:     "Upgrade Azure development tools (azd tool upgrade)",
-		TitleNote: "Upgrades installed tools to their latest versions",
-	})
-
 	// Determine which tools to upgrade — resolve tool definitions
 	// up front but defer the actual upgrade work to each task callback
 	// so that the spinner reflects real-time progress.
@@ -544,34 +688,89 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 	}
 
 	if len(toolsToUpgrade) == 0 {
-		a.console.Message(ctx, output.WithGrayFormat("No installed tools to upgrade."))
+		a.console.Message(ctx, output.WithGrayFormat(
+			"No installed tools to upgrade.",
+		))
 		return nil, nil
 	}
+
+	// --dry-run: display what would be upgraded without making
+	// changes.
+	if a.flags.dryRun {
+		return a.dryRun(ctx, toolsToUpgrade)
+	}
+
+	a.console.MessageUxItem(ctx, &ux.MessageTitle{
+		Title:     "Upgrade Azure development tools (azd tool upgrade)",
+		TitleNote: "Upgrades installed tools to their latest versions",
+	})
 
 	taskList := uxlib.NewTaskList(
 		&uxlib.TaskListOptions{ContinueOnError: true},
 	)
+
+	var upgradeResults []*toolInstallResultItem
 
 	for _, t := range toolsToUpgrade {
 		capturedTool := t
 		taskList.AddTask(uxlib.TaskOptions{
 			Title: fmt.Sprintf("Upgrading %s", capturedTool.Name),
 			Action: func(setProgress uxlib.SetProgressFunc) (uxlib.TaskState, error) {
-				results, upgradeErr := a.manager.UpgradeTools(ctx, []string{capturedTool.Id})
+				results, upgradeErr := a.manager.UpgradeTools(
+					ctx, []string{capturedTool.Id},
+				)
 				if upgradeErr != nil {
+					upgradeResults = append(
+						upgradeResults, &toolInstallResultItem{
+							Id:      capturedTool.Id,
+							Name:    capturedTool.Name,
+							Action:  "upgrade",
+							Success: false,
+							Error:   upgradeErr.Error(),
+						},
+					)
 					return uxlib.Error, upgradeErr
 				}
 				if len(results) > 0 {
 					r := results[0]
 					if r.Error != nil {
+						upgradeResults = append(
+							upgradeResults, &toolInstallResultItem{
+								Id:      capturedTool.Id,
+								Name:    capturedTool.Name,
+								Action:  "upgrade",
+								Success: false,
+								Error:   r.Error.Error(),
+							},
+						)
 						return uxlib.Error, r.Error
 					}
 					if !r.Success {
-						return uxlib.Warning, fmt.Errorf("upgrade did not succeed: %w", internal.ErrToolUpgradeFailed)
+						upgradeResults = append(
+							upgradeResults, &toolInstallResultItem{
+								Id:      capturedTool.Id,
+								Name:    capturedTool.Name,
+								Action:  "upgrade",
+								Success: false,
+							},
+						)
+						return uxlib.Warning, fmt.Errorf(
+							"upgrade did not succeed: %w",
+							internal.ErrToolUpgradeFailed,
+						)
 					}
 					if r.InstalledVersion != "" {
 						setProgress(r.InstalledVersion)
 					}
+					upgradeResults = append(
+						upgradeResults, &toolInstallResultItem{
+							Id:               capturedTool.Id,
+							Name:             capturedTool.Name,
+							Action:           "upgrade",
+							Success:          true,
+							InstalledVersion: r.InstalledVersion,
+						},
+					)
 				}
 				return uxlib.Success, nil
 			},
@@ -584,11 +783,63 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 		))
 	}
 
+	if a.formatter.Kind() == output.JsonFormat {
+		return nil, a.formatter.Format(upgradeResults, a.writer, nil)
+	}
+
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header: "Tool upgrade complete",
 		},
 	}, nil
+}
+
+// dryRun detects the current status of the tools and displays what
+// the upgrade command would do without making changes.
+func (a *toolUpgradeAction) dryRun(
+	ctx context.Context,
+	tools []*tool.ToolDefinition,
+) (*actions.ActionResult, error) {
+	rows := make([]toolDryRunItem, 0, len(tools))
+
+	for _, t := range tools {
+		status, detectErr := a.manager.DetectTool(ctx, t.Id)
+		if detectErr != nil {
+			return nil, fmt.Errorf(
+				"detecting %s: %w", t.Id, detectErr,
+			)
+		}
+
+		action := "upgrade"
+		currentVersion := ""
+		if status.Installed {
+			currentVersion = status.InstalledVersion
+		} else {
+			action = "skip (not installed)"
+		}
+
+		rows = append(rows, toolDryRunItem{
+			Id:             t.Id,
+			Name:           t.Name,
+			CurrentVersion: currentVersion,
+			Action:         action,
+		})
+	}
+
+	if a.formatter.Kind() == output.JsonFormat {
+		return nil, a.formatter.Format(rows, a.writer, nil)
+	}
+
+	if err := writeDryRunTable(a.writer, rows); err != nil {
+		return nil, err
+	}
+
+	a.console.Message(ctx, "")
+	a.console.Message(ctx, output.WithGrayFormat(
+		"Dry run complete. No changes were made.",
+	))
+
+	return nil, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -693,23 +944,26 @@ func (a *toolCheckAction) Run(ctx context.Context) (*actions.ActionResult, error
 // ---------------------------------------------------------------------------
 
 type toolShowAction struct {
-	args    []string
-	console input.Console
-	manager *tool.Manager
-	writer  io.Writer
+	args      []string
+	console   input.Console
+	manager   *tool.Manager
+	formatter output.Formatter
+	writer    io.Writer
 }
 
 func newToolShowAction(
 	args []string,
 	manager *tool.Manager,
 	console input.Console,
+	formatter output.Formatter,
 	writer io.Writer,
 ) actions.Action {
 	return &toolShowAction{
-		args:    args,
-		manager: manager,
-		console: console,
-		writer:  writer,
+		args:      args,
+		manager:   manager,
+		console:   console,
+		formatter: formatter,
+		writer:    writer,
 	}
 }
 
@@ -741,6 +995,21 @@ func (a *toolShowAction) Run(ctx context.Context) (*actions.ActionResult, error)
 	status, err := a.manager.DetectTool(ctx, toolID)
 	if err != nil {
 		return nil, fmt.Errorf("detecting tool: %w", err)
+	}
+
+	// JSON output: return structured data.
+	if a.formatter.Kind() == output.JsonFormat {
+		item := toolShowItem{
+			Id:          toolDef.Id,
+			Name:        toolDef.Name,
+			Description: toolDef.Description,
+			Category:    string(toolDef.Category),
+			Priority:    string(toolDef.Priority),
+			Website:     toolDef.Website,
+			Installed:   status.Installed,
+			Version:     status.InstalledVersion,
+		}
+		return nil, a.formatter.Format(item, a.writer, nil)
 	}
 
 	if displayErr := a.displayToolDetails(toolDef, status); displayErr != nil {
@@ -853,3 +1122,68 @@ func (a *toolShowAction) displayToolDetails(
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+// toolDryRunItem represents a single row in the dry-run output table for
+// install and upgrade commands.
+type toolDryRunItem struct {
+	Id             string `json:"id"`
+	Name           string `json:"name"`
+	CurrentVersion string `json:"currentVersion"`
+	Action         string `json:"action"`
+}
+
+// toolInstallResultItem represents the JSON output for a single install or
+// upgrade result.
+type toolInstallResultItem struct {
+	Id               string `json:"id"`
+	Name             string `json:"name"`
+	Action           string `json:"action"`
+	Success          bool   `json:"success"`
+	InstalledVersion string `json:"installedVersion,omitempty"`
+	Error            string `json:"error,omitempty"`
+}
+
+// toolShowItem is the structured JSON representation returned by
+// "azd tool show --output json".
+type toolShowItem struct {
+	Id          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Category    string `json:"category"`
+	Priority    string `json:"priority"`
+	Website     string `json:"website"`
+	Installed   bool   `json:"installed"`
+	Version     string `json:"version"`
+}
+
+// writeDryRunTable renders a dry-run results table using tabwriter.
+func writeDryRunTable(w io.Writer, rows []toolDryRunItem) error {
+	tw := tabwriter.NewWriter(
+		w,
+		0,
+		output.TableTabSize,
+		1,
+		output.TablePadCharacter,
+		output.TableFlags,
+	)
+
+	header := fmt.Sprintf(
+		"%s\t%s\t%s\t%s\n",
+		"Id", "Name", "Current Version", "Action",
+	)
+	if _, err := tw.Write([]byte(header)); err != nil {
+		return err
+	}
+
+	for _, r := range rows {
+		line := fmt.Sprintf(
+			"%s\t%s\t%s\t%s\n",
+			r.Id, r.Name, r.CurrentVersion, r.Action,
+		)
+		if _, err := tw.Write([]byte(line)); err != nil {
+			return err
+		}
+	}
+
+	return tw.Flush()
+}

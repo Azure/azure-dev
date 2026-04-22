@@ -5,7 +5,15 @@ package tool
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/sha512"
+	"encoding/hex"
 	"fmt"
+	"hash"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -57,9 +65,15 @@ type installer struct {
 	commandRunner    exec.CommandRunner
 	platformDetector *PlatformDetector
 	detector         Detector
+	httpClient       httpDoer
 	platformOnce     sync.Once
 	platform         *Platform // lazily populated by ensurePlatform
 	platformErr      error
+}
+
+// httpDoer is an interface satisfied by [*http.Client] for testing.
+type httpDoer interface {
+	Do(req *http.Request) (*http.Response, error)
 }
 
 // NewInstaller creates an [Installer] backed by the provided
@@ -74,6 +88,23 @@ func NewInstaller(
 		commandRunner:    commandRunner,
 		platformDetector: platformDetector,
 		detector:         detector,
+		httpClient:       http.DefaultClient,
+	}
+}
+
+// NewInstallerWithHTTPClient creates an [Installer] with a custom
+// HTTP client, primarily for testing.
+func NewInstallerWithHTTPClient(
+	commandRunner exec.CommandRunner,
+	platformDetector *PlatformDetector,
+	detector Detector,
+	httpClient httpDoer,
+) Installer {
+	return &installer{
+		commandRunner:    commandRunner,
+		platformDetector: platformDetector,
+		detector:         detector,
+		httpClient:       httpClient,
 	}
 }
 
@@ -140,6 +171,7 @@ func (i *installer) run(
 	//    explicit InstallCommand, verify the manager is available.
 	if strategy.PackageManager != "" &&
 		strategy.InstallCommand == "" &&
+		strategy.DirectDownloadUrl == "" &&
 		!platform.HasManager(strategy.PackageManager) {
 		result.Strategy = "manual"
 		result.Error = i.managerUnavailableError(
@@ -149,8 +181,22 @@ func (i *installer) run(
 		return result, nil
 	}
 
-	// 4. Execute the install or upgrade command.
-	if err := i.executeStrategy(
+	// 4. Execute the install using the best available mechanism.
+	if strategy.DirectDownloadUrl != "" {
+		// Direct download: azd manages the download, checksum,
+		// and placement.
+		if err := i.executeDirectDownload(
+			ctx, strategy,
+		); err != nil {
+			result.Error = fmt.Errorf(
+				"direct download for %s: %w",
+				tool.Name, err,
+			)
+			result.Duration = time.Since(start)
+			return result, nil
+		}
+		result.Strategy = "direct-download"
+	} else if err := i.executeStrategy(
 		ctx, strategy, upgrade,
 	); err != nil {
 		result.Error = fmt.Errorf(
@@ -306,6 +352,174 @@ func (i *installer) managerUnavailableError(
 		Suggestion: suggestion,
 		Links:      links,
 	}
+}
+
+// -----------------------------------------------------------------------
+// Direct download + checksum verification
+// -----------------------------------------------------------------------
+
+// executeDirectDownload fetches the artifact from the strategy's
+// DirectDownloadUrl, verifies the checksum (when configured), and
+// places the downloaded file in a well-known location. The caller is
+// responsible for post-download verification via the Detector.
+func (i *installer) executeDirectDownload(
+	ctx context.Context,
+	strategy *InstallStrategy,
+) error {
+	req, err := http.NewRequestWithContext(
+		ctx, http.MethodGet, strategy.DirectDownloadUrl, nil,
+	)
+	if err != nil {
+		return fmt.Errorf("creating request: %w", err)
+	}
+
+	resp, err := i.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("downloading artifact: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf(
+			"download failed with HTTP %d", resp.StatusCode,
+		)
+	}
+
+	// Write to a temp file first.
+	tmpFile, err := os.CreateTemp("", "azd-tool-*")
+	if err != nil {
+		return fmt.Errorf("creating temp file: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+
+	defer func() {
+		tmpFile.Close()
+		os.Remove(tmpPath)
+	}()
+
+	if _, err := io.Copy(tmpFile, resp.Body); err != nil {
+		return fmt.Errorf("writing download: %w", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		return fmt.Errorf("closing temp file: %w", err)
+	}
+
+	// Verify checksum when configured.
+	if err := validateChecksum(
+		tmpPath, strategy.Checksum,
+	); err != nil {
+		return err
+	}
+
+	// Move the artifact to a permanent location.
+	destDir, err := toolInstallDir()
+	if err != nil {
+		return fmt.Errorf("install dir: %w", err)
+	}
+
+	fileName := filepath.Base(strategy.DirectDownloadUrl)
+	destPath := filepath.Join(destDir, fileName)
+
+	if err := os.MkdirAll(destDir, 0o755); err != nil {
+		return fmt.Errorf("creating install dir: %w", err)
+	}
+
+	if err := os.Rename(tmpPath, destPath); err != nil {
+		// Rename may fail across filesystems; fall back to
+		// copy + remove.
+		if cpErr := copyFilePath(tmpPath, destPath); cpErr != nil {
+			return fmt.Errorf("placing artifact: %w", cpErr)
+		}
+	}
+
+	// Make executable on Unix systems.
+	if runtime.GOOS != "windows" {
+		if err := os.Chmod(destPath, 0o755); err != nil {
+			return fmt.Errorf("chmod: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// validateChecksum verifies the file at filePath against the
+// expected checksum. When the checksum is empty (both Algorithm and
+// Value are ""), validation is silently skipped.
+func validateChecksum(filePath string, checksum Checksum) error {
+	if checksum.Algorithm == "" && checksum.Value == "" {
+		return nil
+	}
+
+	var hashAlgo hash.Hash
+
+	switch checksum.Algorithm {
+	case "sha256":
+		hashAlgo = sha256.New()
+	case "sha512":
+		hashAlgo = sha512.New()
+	default:
+		return fmt.Errorf(
+			"unsupported checksum algorithm: %s",
+			checksum.Algorithm,
+		)
+	}
+
+	//nolint:gosec // filePath from controlled download
+	file, err := os.Open(filePath)
+	if err != nil {
+		return fmt.Errorf(
+			"opening file for checksum: %w", err,
+		)
+	}
+	defer file.Close()
+
+	if _, err := io.Copy(hashAlgo, file); err != nil {
+		return fmt.Errorf("computing checksum: %w", err)
+	}
+
+	actual := hex.EncodeToString(hashAlgo.Sum(nil))
+
+	if actual != checksum.Value {
+		return fmt.Errorf(
+			"checksum verification failed. "+
+				"Expected: %s, Got: %s. "+
+				"This may indicate a corrupted download",
+			checksum.Value, actual,
+		)
+	}
+
+	return nil
+}
+
+// toolInstallDir returns the directory where directly downloaded
+// tools are placed. It defaults to ~/.azd/tools/.
+func toolInstallDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("user home dir: %w", err)
+	}
+	return filepath.Join(home, ".azd", "tools"), nil
+}
+
+// copyFilePath copies a file from src to dst using a byte stream.
+func copyFilePath(src, dst string) error {
+	//nolint:gosec // src is a controlled temp file
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	if _, err := io.Copy(out, in); err != nil {
+		return err
+	}
+	return out.Close()
 }
 
 // -----------------------------------------------------------------------

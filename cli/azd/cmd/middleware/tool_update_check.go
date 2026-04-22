@@ -78,6 +78,10 @@ func (m *ToolUpdateCheckMiddleware) showNotificationIfNeeded(ctx context.Context
 		return
 	}
 
+	if !m.manager.ShouldShowNotification(ctx) {
+		return
+	}
+
 	hasUpdates, count, err := m.manager.HasUpdatesAvailable(ctx)
 	if err != nil {
 		log.Printf("tool-update-check: error checking cached updates: %v", err)

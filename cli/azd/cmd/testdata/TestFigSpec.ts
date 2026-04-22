@@ -3010,6 +3010,10 @@ const completionSpec: Fig.Spec = {
 							name: ['--all'],
 							description: 'Install all recommended tools',
 						},
+						{
+							name: ['--dry-run'],
+							description: 'Preview what would be installed without making changes',
+						},
 					],
 					args: {
 						name: 'tool-name...',
@@ -3030,6 +3034,12 @@ const completionSpec: Fig.Spec = {
 				{
 					name: ['upgrade'],
 					description: 'Upgrade installed tools.',
+					options: [
+						{
+							name: ['--dry-run'],
+							description: 'Preview what would be upgraded without making changes',
+						},
+					],
 					args: {
 						name: 'tool-name...',
 						isOptional: true,

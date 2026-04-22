@@ -241,6 +241,20 @@ func newGitHubAccessErrorWithSuggestion(
 			"settings. If you're using a GITHUB_TOKEN, " +
 			"update the token's SSO authorization in " +
 			"'Configure SSO' for the correct organization.",
+		Links: []errorhandler.ErrorLink{
+			{
+				URL: "https://docs.github.com/en/" +
+					"enterprise-cloud@latest/" +
+					"authentication/" +
+					"authenticating-with-saml-" +
+					"single-sign-on/" +
+					"authorizing-a-personal-" +
+					"access-token-for-use-with-" +
+					"saml-single-sign-on",
+				Title: "Authorizing a PAT for " +
+					"SAML SSO",
+			},
+		},
 	}
 }
 

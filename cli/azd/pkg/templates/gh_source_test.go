@@ -19,6 +19,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const samlStderr = "Resource protected by organization SAML " +
+	"enforcement. You must grant your Personal Access token " +
+	"access to this organization. (HTTP 403)"
+
 func Test_GhSourceRawFile(t *testing.T) {
 	name := "test"
 	mockContext := mocks.NewMockContext(context.Background())
@@ -805,7 +809,7 @@ func Test_ParseGitHubUrl_HTTP401Error(t *testing.T) {
 	var sugErr *errorhandler.ErrorWithSuggestion
 	require.ErrorAs(t, err, &sugErr)
 	require.Contains(t, sugErr.Message, "Unable to access")
-	require.Contains(t, sugErr.Suggestion, "SAML/SSO")
+	require.Contains(t, sugErr.Suggestion, "gh auth login")
 }
 
 // Test_isGitHubAccessError tests the access error detection.
@@ -854,7 +858,3 @@ func Test_isGitHubAccessError(t *testing.T) {
 		})
 	}
 }
-
-const samlStderr = "Resource protected by organization SAML " +
-	"enforcement. You must grant your Personal Access token " +
-	"access to this organization. (HTTP 403)"

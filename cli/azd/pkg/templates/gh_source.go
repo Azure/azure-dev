@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 )
@@ -153,7 +154,11 @@ func resolveBranchAndPath(
 	parts := strings.Split(branchAndPath, "/")
 	if len(parts) == 1 {
 		// Only one segment - try it as a branch first
-		if branchExists(ctx, ghCli, hostname, repoSlug, parts[0]) {
+		exists, accessErr := branchExists(ctx, ghCli, hostname, repoSlug, parts[0])
+		if accessErr != nil {
+			return "", "", newGitHubAccessErrorWithSuggestion(accessErr)
+		}
+		if exists {
 			return parts[0], "", nil
 		}
 		// If not a branch, assume it's a file in the default branch
@@ -166,7 +171,11 @@ func resolveBranchAndPath(
 		candidateBranch := strings.Join(parts[:i], "/")
 		candidatePath := strings.Join(parts[i:], "/")
 
-		if branchExists(ctx, ghCli, hostname, repoSlug, candidateBranch) {
+		exists, accessErr := branchExists(ctx, ghCli, hostname, repoSlug, candidateBranch)
+		if accessErr != nil {
+			return "", "", newGitHubAccessErrorWithSuggestion(accessErr)
+		}
+		if exists {
 			return candidateBranch, candidatePath, nil
 		}
 	}
@@ -177,10 +186,62 @@ func resolveBranchAndPath(
 }
 
 // branchExists checks if a branch exists in the repository using the GitHub API.
-func branchExists(ctx context.Context, ghCli *github.Cli, hostname string, repoSlug string, branchName string) bool {
-	apiPath := fmt.Sprintf("/repos/%s/branches/%s", repoSlug, url.PathEscape(branchName))
+// Returns (true, nil) if the branch exists, (false, nil) if not found (404),
+// or (false, err) if an access/auth error occurred (e.g., 403 SAML enforcement).
+func branchExists(
+	ctx context.Context,
+	ghCli *github.Cli,
+	hostname string,
+	repoSlug string,
+	branchName string,
+) (bool, error) {
+	apiPath := fmt.Sprintf(
+		"/repos/%s/branches/%s",
+		repoSlug, url.PathEscape(branchName),
+	)
 	_, err := ghCli.ApiCall(ctx, hostname, apiPath, github.ApiCallOptions{})
-	return err == nil
+	if err != nil {
+		if isGitHubAccessError(err) {
+			return false, err
+		}
+		return false, nil
+	}
+	return true, nil
+}
+
+// isGitHubAccessError checks if an error from the GitHub API indicates
+// an access or authorization issue (e.g., 403 SAML enforcement, 401
+// unauthorized) rather than a simple "not found" response.
+func isGitHubAccessError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errMsg := strings.ToLower(err.Error())
+	return strings.Contains(errMsg, "403") ||
+		strings.Contains(errMsg, "401") ||
+		strings.Contains(errMsg, "saml") ||
+		strings.Contains(errMsg, "sso")
+}
+
+// newGitHubAccessErrorWithSuggestion wraps a GitHub access error with
+// an actionable suggestion for the user.
+func newGitHubAccessErrorWithSuggestion(
+	err error,
+) *errorhandler.ErrorWithSuggestion {
+	return &errorhandler.ErrorWithSuggestion{
+		Err: err,
+		Message: "Unable to access the GitHub repository. " +
+			"The repository may be private, or your account " +
+			"may not have the required permissions.",
+		Suggestion: "Run `gh auth login` and ensure your " +
+			"account has access to this repository. " +
+			"If the repository is protected by SAML/SSO " +
+			"enforcement, select the 'Authorize' button " +
+			"next to the organization in your GitHub " +
+			"settings. If you're using a GITHUB_TOKEN, " +
+			"update the token's SSO authorization in " +
+			"'Configure SSO' for the correct organization.",
+	}
 }
 
 // ensureGitHubAuthenticated checks if the user is authenticated to GitHub and initiates login if not.

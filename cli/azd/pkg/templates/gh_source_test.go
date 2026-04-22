@@ -6,11 +6,13 @@ package templates
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -684,3 +686,175 @@ func Test_ParseGitHubUrl_NotAuthenticated(t *testing.T) {
 	require.Equal(t, "main", urlInfo.Branch)
 	require.Equal(t, "path/to/file.yaml", urlInfo.FilePath)
 }
+
+// Test_ParseGitHubUrl_SAMLAuthError tests that SAML/SSO
+// enforcement errors are surfaced with actionable suggestions
+// instead of the generic "could not find a valid branch" message.
+func Test_ParseGitHubUrl_SAMLAuthError(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+
+	mockContext.CommandRunner.When(func(
+		args exec.RunArgs, command string,
+	) bool {
+		return strings.Contains(
+			command, string(filepath.Separator)+"gh",
+		) && args.Args[0] == "--version"
+	}).Respond(exec.RunResult{
+		Stdout: github.Version.String(),
+	})
+
+	// Simulate authenticated scenario
+	mockContext.CommandRunner.When(func(
+		args exec.RunArgs, command string,
+	) bool {
+		return strings.Contains(
+			command, string(filepath.Separator)+"gh",
+		) && args.Args[0] == "auth" && args.Args[1] == "status"
+	}).Respond(exec.RunResult{
+		Stdout: "Logged in to",
+	})
+
+	// Simulate 403 SAML enforcement error from gh api
+	mockContext.CommandRunner.When(func(
+		args exec.RunArgs, command string,
+	) bool {
+		return strings.Contains(
+			command, string(filepath.Separator)+"gh",
+		) && args.Args[0] == "api"
+	}).RespondFn(func(
+		args exec.RunArgs,
+	) (exec.RunResult, error) {
+		return exec.RunResult{
+			Stdout:   "",
+			Stderr:   samlStderr,
+			ExitCode: 1,
+		}, errors.New(samlStderr)
+	})
+
+	ghCli := github.NewGitHubCli(
+		mockContext.Console, mockContext.CommandRunner,
+	)
+
+	_, err := ParseGitHubUrl(
+		*mockContext.Context,
+		"https://github.com/org/repo/blob/main/path/file.yaml",
+		ghCli,
+	)
+	require.Error(t, err)
+
+	// Verify the error is an ErrorWithSuggestion
+	var sugErr *errorhandler.ErrorWithSuggestion
+	require.ErrorAs(t, err, &sugErr)
+	require.Contains(t, sugErr.Message, "Unable to access")
+	require.Contains(t, sugErr.Suggestion, "gh auth login")
+}
+
+// Test_ParseGitHubUrl_HTTP401Error tests that 401 unauthorized
+// errors are surfaced with actionable suggestions.
+func Test_ParseGitHubUrl_HTTP401Error(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+
+	mockContext.CommandRunner.When(func(
+		args exec.RunArgs, command string,
+	) bool {
+		return strings.Contains(
+			command, string(filepath.Separator)+"gh",
+		) && args.Args[0] == "--version"
+	}).Respond(exec.RunResult{
+		Stdout: github.Version.String(),
+	})
+
+	mockContext.CommandRunner.When(func(
+		args exec.RunArgs, command string,
+	) bool {
+		return strings.Contains(
+			command, string(filepath.Separator)+"gh",
+		) && args.Args[0] == "auth" && args.Args[1] == "status"
+	}).Respond(exec.RunResult{
+		Stdout: "Logged in to",
+	})
+
+	// Simulate 401 unauthorized error
+	mockContext.CommandRunner.When(func(
+		args exec.RunArgs, command string,
+	) bool {
+		return strings.Contains(
+			command, string(filepath.Separator)+"gh",
+		) && args.Args[0] == "api"
+	}).RespondFn(func(
+		args exec.RunArgs,
+	) (exec.RunResult, error) {
+		return exec.RunResult{
+			Stdout:   "",
+			Stderr:   "HTTP 401",
+			ExitCode: 1,
+		}, fmt.Errorf("HTTP 401: Unauthorized")
+	})
+
+	ghCli := github.NewGitHubCli(
+		mockContext.Console, mockContext.CommandRunner,
+	)
+
+	_, err := ParseGitHubUrl(
+		*mockContext.Context,
+		"https://raw.githubusercontent.com/org/repo/main/f.yaml",
+		ghCli,
+	)
+	require.Error(t, err)
+
+	var sugErr *errorhandler.ErrorWithSuggestion
+	require.ErrorAs(t, err, &sugErr)
+	require.Contains(t, sugErr.Message, "Unable to access")
+	require.Contains(t, sugErr.Suggestion, "SAML/SSO")
+}
+
+// Test_isGitHubAccessError tests the access error detection.
+func Test_isGitHubAccessError(t *testing.T) {
+	tests := []struct {
+		name   string
+		err    error
+		expect bool
+	}{
+		{
+			"nil error",
+			nil,
+			false,
+		},
+		{
+			"not found 404",
+			fmt.Errorf("HTTP 404: Not Found"),
+			false,
+		},
+		{
+			"SAML 403",
+			errors.New(samlStderr),
+			true,
+		},
+		{
+			"HTTP 401",
+			fmt.Errorf("HTTP 401: Unauthorized"),
+			true,
+		},
+		{
+			"SSO required",
+			fmt.Errorf("SSO authentication required"),
+			true,
+		},
+		{
+			"generic error",
+			fmt.Errorf("network timeout"),
+			false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := isGitHubAccessError(tc.err)
+			require.Equal(t, tc.expect, result)
+		})
+	}
+}
+
+const samlStderr = "Resource protected by organization SAML " +
+	"enforcement. You must grant your Personal Access token " +
+	"access to this organization. (HTTP 403)"

@@ -952,3 +952,49 @@ func TestCreateConversation(t *testing.T) {
 		})
 	}
 }
+
+func TestResponseTraceID(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		headers map[string]string
+		want    string
+	}{
+		{
+			name:    "prefers x-request-id when both present",
+			headers: map[string]string{"X-Request-ID": "trace-abc", "apim-request-id": "apim-xyz"},
+			want:    "trace-abc",
+		},
+		{
+			name:    "falls back to apim-request-id",
+			headers: map[string]string{"apim-request-id": "apim-xyz"},
+			want:    "apim-xyz",
+		},
+		{
+			name:    "returns empty when neither present",
+			headers: map[string]string{},
+			want:    "",
+		},
+		{
+			name:    "returns x-request-id when only it is present",
+			headers: map[string]string{"X-Request-ID": "trace-only"},
+			want:    "trace-only",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			resp := &http.Response{Header: http.Header{}}
+			for k, v := range tt.headers {
+				resp.Header.Set(k, v)
+			}
+
+			if got := responseTraceID(resp); got != tt.want {
+				t.Errorf("responseTraceID() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

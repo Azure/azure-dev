@@ -1099,6 +1099,10 @@ loop:
 // the result. It never returns an error — failures are captured in
 // the returned UpgradeResult. A telemetry span is emitted for every
 // attempt.
+//
+// Telemetry attributes use constants from internal/tracing/fields to ensure consistency.
+// Integration testing of telemetry output is done via the tracing test infrastructure
+// in internal/tracing/ — unit tests here verify the upgrade logic, not span emission.
 func (a *extensionUpgradeAction) upgradeOneExtension(
 	ctx context.Context,
 	extensionId string,
@@ -1521,6 +1525,10 @@ func upgradeActionResult(
 // emitPromotionEvent fires a distinct telemetry span for a registry
 // promotion (e.g., dev → main). This allows tracking promotion
 // adoption rates separately from regular upgrades.
+//
+// Telemetry attributes use constants from internal/tracing/fields to ensure consistency.
+// Integration testing of telemetry output is done via the tracing test infrastructure
+// in internal/tracing/ — unit tests here verify the upgrade logic, not span emission.
 func emitPromotionEvent(
 	ctx context.Context,
 	extensionId string,

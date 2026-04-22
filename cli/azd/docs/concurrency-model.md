@@ -76,6 +76,11 @@ race on `env` (one writing `KUBECONFIG=…`, the other reading it for an
 
 ## `pkg/project.containerAppTarget` and `pkg/project.aksTarget`
 
+These targets no longer carry package-level `envMu` / `aksEnvMu` mutexes.
+All dotenv access is protected by `Environment.mu` internally, and
+`Manager.saveMu` serializes disk writes. The external mutexes were removed
+once `Environment` became internally thread-safe (see above).
+
 | Lock                       | Protects                          | Acquired by                                                        |
 |----------------------------|-----------------------------------|--------------------------------------------------------------------|
 | `expandedEnvMu sync.Mutex` | `expandedEnvCache` per-target map | `expandServiceEnv` (read-cache and write-cache critical sections)  |
@@ -86,13 +91,11 @@ that happen to share a target. The cache is a memoization optimization, not
 a correctness requirement, but the underlying map mutation must be guarded.
 
 **Why it matters**: Container-Apps and AKS targets compute and persist
-template-hash values (`SetServiceProperty` → `env.DotenvSet`) under
-`expandedEnvMu` AND under `Environment.mu`. Adding a new write path that
-touches the dotenv must acquire `Environment`'s lock; adding a new write
-that mutates the per-target cache must acquire `expandedEnvMu`. **Do not
-introduce a third disjoint mutex** — splitting the dotenv writes across
-multiple unrelated mutexes creates a split-mutex race (one goroutine writes
-under lock A, another reads under lock B, both touching the same map).
+template-hash values (`SetServiceProperty` → `env.DotenvSet`) via
+`Environment.mu`. Adding a new write path that touches the dotenv map
+does NOT need an external mutex — `Environment` handles that internally.
+Adding a new write that mutates the per-target cache must acquire
+`expandedEnvMu`.
 
 ---
 

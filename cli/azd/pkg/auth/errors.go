@@ -118,11 +118,13 @@ func newTokenProtectionBlockedSuggestion(
 		message = "A Conditional Access token protection policy blocked this Microsoft Graph token request."
 	}
 
-	var inner error = failedErr
-	if inner == nil {
+	var inner error
+	if failedErr == nil {
 		// Defensive: callers should always pass the originating *AuthFailedError, but if not
 		// available, surface the AAD description so the wrapper still carries detail.
 		inner = errors.New(response.ErrorDescription)
+	} else {
+		inner = failedErr
 	}
 
 	return &internal.ErrorWithSuggestion{

@@ -279,4 +279,3 @@ func Test_FileShareService_UploadPath_DirectoryAlreadyExists(t *testing.T) {
 	err := svc.UploadPath(t.Context(), "sub-id", srv.URL+"/share", tempDir)
 	require.NoError(t, err)
 }
-

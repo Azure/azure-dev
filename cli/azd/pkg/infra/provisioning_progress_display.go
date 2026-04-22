@@ -32,10 +32,6 @@ type ProvisioningProgressDisplay struct {
 	// Tracks the number of times we've observed a terminal provisioning state for a given deployment operation,
 	// keyed by operation ID
 	terminalOperationPollCounts map[string]int
-	// Tracks leaf operation IDs that have reached terminal state and been displayed.
-	// Operations in this set are skipped immediately on subsequent polls, reducing per-poll work
-	// from O(total_ops) to O(new_ops).
-	terminalLeafIDs map[string]bool
 	// The last recorded spinner message, used to avoid unnecessary updates to the spinner
 	lastSpinnerMessage string
 
@@ -53,7 +49,6 @@ func NewProvisioningProgressDisplay(
 		displayedResources:          map[string]bool{},
 		resourceDisplayNames:        map[string]string{},
 		terminalOperationPollCounts: map[string]int{},
-		terminalLeafIDs:             map[string]bool{},
 		deployment:                  deployment,
 		resourceManager:             rm,
 		console:                     console,
@@ -162,12 +157,6 @@ func (display *ProvisioningProgressDisplay) ReportProgress(
 				return nil
 			}
 
-			// Skip leaf operations that have already reached terminal state and been displayed.
-			// This avoids re-processing the same completed operations each poll cycle.
-			if operation.ID != nil && display.terminalLeafIDs[*operation.ID] {
-				return nil
-			}
-
 			if operation.Properties.Timestamp == nil ||
 				operation.Properties.ProvisioningOperation == nil ||
 				operation.Properties.TargetResource == nil ||
@@ -187,18 +176,10 @@ func (display *ProvisioningProgressDisplay) ReportProgress(
 				switch *operation.Properties.ProvisioningState {
 				case string(armresources.ProvisioningStateSucceeded):
 					newlyDeployedResources = append(newlyDeployedResources, operation)
-					// Mark as terminal so future polls skip this operation entirely
-					if operation.ID != nil {
-						display.terminalLeafIDs[*operation.ID] = true
-					}
 				case string(armresources.ProvisioningStateRunning):
 					runningDeployments = append(runningDeployments, operation)
 				case string(armresources.ProvisioningStateFailed):
 					newlyFailedResources = append(newlyFailedResources, operation)
-					// Mark as terminal so future polls skip this operation entirely
-					if operation.ID != nil {
-						display.terminalLeafIDs[*operation.ID] = true
-					}
 				}
 			}
 

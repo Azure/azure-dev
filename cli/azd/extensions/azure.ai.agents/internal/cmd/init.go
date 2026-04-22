@@ -1644,6 +1644,22 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	agentConfig.Deployments = a.deploymentDetails
 	agentConfig.Resources = resourceDetails
 
+	// Persist deployment details as environment variables so they are
+	// per-environment. When a new environment is created the env var
+	// won't exist and the user will be re-prompted for model selection
+	// during provisioning.
+	if len(a.deploymentDetails) > 0 {
+		if err := deploymentEnvUpdate(
+			ctx, a.deploymentDetails,
+			a.azdClient, a.environment.Name,
+		); err != nil {
+			return fmt.Errorf(
+				"failed to persist deployment details "+
+					"to environment: %w", err,
+			)
+		}
+	}
+
 	// Process toolbox resources from the manifest
 	toolboxes, toolConnections, credEnvVars, err := extractToolboxAndConnectionConfigs(agentManifest)
 	if err != nil {

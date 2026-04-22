@@ -277,8 +277,62 @@ func envUpdate(ctx context.Context, azdClient *azdext.AzdClient, azdProject *azd
 	}
 
 	if len(foundryAgentConfig.Deployments) > 0 {
-		if err := deploymentEnvUpdate(ctx, foundryAgentConfig.Deployments, azdClient, currentEnvResponse.Environment.Name); err != nil {
-			return err
+		envName := currentEnvResponse.Environment.Name
+
+		// Check if deployments are already configured for this
+		// environment (set during init or a previous provision).
+		deploymentsResp, getErr := azdClient.Environment().GetValue(
+			ctx, &azdext.GetEnvRequest{
+				EnvName: envName,
+				Key:     "AI_PROJECT_DEPLOYMENTS",
+			},
+		)
+		currentValue := ""
+		if getErr == nil && deploymentsResp != nil {
+			currentValue = deploymentsResp.Value
+		}
+
+		switch resolveDeploymentAction(
+			currentValue, rootFlags.NoPrompt,
+		) {
+		case deploymentActionUseTemplate:
+			if err := deploymentEnvUpdate(
+				ctx,
+				foundryAgentConfig.Deployments,
+				azdClient, envName,
+			); err != nil {
+				return err
+			}
+		case deploymentActionPrompt:
+			deployments, promptErr := promptModelDeployments(
+				ctx, azdClient,
+				foundryAgentConfig.Deployments, envName,
+			)
+			if promptErr != nil {
+				return promptErr
+			}
+			if err := deploymentEnvUpdate(
+				ctx, deployments,
+				azdClient, envName,
+			); err != nil {
+				return err
+			}
+			setter := func(
+				ctx context.Context,
+				key, value string,
+			) error {
+				return setEnvVar(
+					ctx, azdClient, envName,
+					key, value,
+				)
+			}
+			if err := persistFirstDeploymentName(
+				ctx, setter, deployments,
+			); err != nil {
+				return err
+			}
+		case deploymentActionSkip:
+			// Already configured — nothing to do.
 		}
 	}
 
@@ -361,6 +415,215 @@ func deploymentEnvUpdate(ctx context.Context, deployments []project.Deployment, 
 	escapedJsonString = strings.ReplaceAll(escapedJsonString, "\"", "\\\"")
 
 	return setEnvVar(ctx, azdClient, envName, "AI_PROJECT_DEPLOYMENTS", escapedJsonString)
+}
+
+// deploymentAction describes what envUpdate should do with the
+// deployment section of the service config.
+type deploymentAction int
+
+const (
+	// deploymentActionSkip means deployments are already configured in
+	// the environment – do not overwrite.
+	deploymentActionSkip deploymentAction = iota
+	// deploymentActionUseTemplate means use the azure.yaml values
+	// as-is (typically in no-prompt mode).
+	deploymentActionUseTemplate
+	// deploymentActionPrompt means prompt the user to configure
+	// model deployments for this environment.
+	deploymentActionPrompt
+)
+
+// resolveDeploymentAction decides what to do with deployments during
+// envUpdate. It is a pure function to simplify testing.
+func resolveDeploymentAction(
+	currentEnvValue string, noPrompt bool,
+) deploymentAction {
+	if currentEnvValue != "" {
+		return deploymentActionSkip
+	}
+	if noPrompt {
+		return deploymentActionUseTemplate
+	}
+	return deploymentActionPrompt
+}
+
+// promptModelDeployments prompts the user to configure model deployments
+// for the current environment. This is called when a new environment is
+// created and the deployment env vars have not been set yet.
+// It uses the azure.yaml deployment config as defaults and lets the user
+// select model version, SKU, and capacity with quota checking.
+func promptModelDeployments(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	templateDeployments []project.Deployment,
+	envName string,
+) ([]project.Deployment, error) {
+	subResp, err := azdClient.Environment().GetValue(
+		ctx,
+		&azdext.GetEnvRequest{
+			EnvName: envName, Key: "AZURE_SUBSCRIPTION_ID",
+		},
+	)
+	if err != nil || subResp.Value == "" {
+		return nil, fmt.Errorf(
+			"AZURE_SUBSCRIPTION_ID is not set in environment %q",
+			envName,
+		)
+	}
+
+	locResp, err := azdClient.Environment().GetValue(
+		ctx,
+		&azdext.GetEnvRequest{
+			EnvName: envName, Key: "AZURE_LOCATION",
+		},
+	)
+	if err != nil || locResp.Value == "" {
+		return nil, fmt.Errorf(
+			"AZURE_LOCATION is not set in environment %q",
+			envName,
+		)
+	}
+
+	azureContext := &azdext.AzureContext{
+		Scope: &azdext.AzureScope{
+			SubscriptionId: subResp.Value,
+			Location:       locResp.Value,
+		},
+	}
+
+	fmt.Println(
+		"\nConfiguring model deployment(s) " +
+			"for this environment...",
+	)
+
+	newDeployments := make(
+		[]project.Deployment, 0, len(templateDeployments),
+	)
+
+	for _, d := range templateDeployments {
+		deployment, err := promptSingleDeployment(
+			ctx, azdClient, azureContext,
+			locResp.Value, d,
+		)
+		if err != nil {
+			return nil, err
+		}
+		newDeployments = append(newDeployments, *deployment)
+	}
+
+	return newDeployments, nil
+}
+
+// promptSingleDeployment prompts for a single model deployment
+// configuration, using the original deployment as defaults.
+func promptSingleDeployment(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	azureContext *azdext.AzureContext,
+	location string,
+	original project.Deployment,
+) (*project.Deployment, error) {
+	modelName := original.Model.Name
+
+	// Try to configure the deployment with the original model.
+	deployResp, err := azdClient.Prompt().PromptAiDeployment(
+		ctx,
+		&azdext.PromptAiDeploymentRequest{
+			AzureContext: azureContext,
+			ModelName:    modelName,
+			Options: &azdext.AiModelDeploymentOptions{
+				Locations: []string{location},
+			},
+			Quota: &azdext.QuotaCheckOptions{
+				MinRemainingCapacity: 1,
+			},
+		},
+	)
+
+	if err != nil {
+		// Model not available in this region/subscription
+		// — let the user pick an alternative.
+		if !isRecoverableDeploymentSelectionError(err) {
+			return nil, fmt.Errorf(
+				"failed to configure deployment for "+
+					"model %q: %w",
+				modelName, err,
+			)
+		}
+
+		fmt.Printf(
+			"Model '%s' is not available or has "+
+				"insufficient quota in location '%s'. "+
+				"Please select an alternative.\n",
+			modelName, location,
+		)
+
+		modelResp, promptErr := azdClient.Prompt().PromptAiModel(
+			ctx,
+			&azdext.PromptAiModelRequest{
+				AzureContext: azureContext,
+				Filter: agentModelFilter(
+					[]string{location}, nil,
+				),
+				SelectOptions: &azdext.SelectOptions{
+					Message: "Select a model",
+				},
+				Quota: &azdext.QuotaCheckOptions{
+					MinRemainingCapacity: 1,
+				},
+				DefaultValue: modelName,
+			},
+		)
+		if promptErr != nil {
+			return nil, fmt.Errorf(
+				"failed to select alternative model: %w",
+				promptErr,
+			)
+		}
+
+		modelName = modelResp.Model.Name
+
+		deployResp, err = azdClient.Prompt().PromptAiDeployment(
+			ctx,
+			&azdext.PromptAiDeploymentRequest{
+				AzureContext: azureContext,
+				ModelName:    modelName,
+				Options: &azdext.AiModelDeploymentOptions{
+					Locations: []string{location},
+				},
+				Quota: &azdext.QuotaCheckOptions{
+					MinRemainingCapacity: 1,
+				},
+			},
+		)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"failed to configure deployment for "+
+					"model %q: %w",
+				modelName, err,
+			)
+		}
+	}
+
+	deploymentName := original.Name
+	if deploymentName == "" {
+		deploymentName = modelName
+	}
+
+	return &project.Deployment{
+		Name: deploymentName,
+		Model: project.DeploymentModel{
+			Name:    deployResp.Deployment.ModelName,
+			Format:  deployResp.Deployment.Format,
+			Version: deployResp.Deployment.Version,
+		},
+		Sku: project.DeploymentSku{
+			Name: deployResp.Deployment.Sku.Name,
+			Capacity: int(
+				deployResp.Deployment.Capacity,
+			),
+		},
+	}, nil
 }
 
 func resourcesEnvUpdate(ctx context.Context, resources []project.Resource, azdClient *azdext.AzdClient, envName string) error {

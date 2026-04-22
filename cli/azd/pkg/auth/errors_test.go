@@ -250,12 +250,14 @@ func TestNewActionableAuthError_TokenProtectionTakesPrecedence(t *testing.T) {
 	// The wrapper preserves the originating *AuthFailedError (and its AAD code) as the inner err.
 	inner, ok := errors.AsType[*AuthFailedError](err)
 	require.True(t, ok, "should preserve inner *AuthFailedError")
+	require.Contains(t, inner.Parsed.ErrorCodes, 530084)
+}
 
 func TestNewTokenProtectionBlockedSuggestion_NilAuthFailedErrorFallsBackToDescription(t *testing.T) {
 	resp := &AadErrorResponse{
 		Error:            "invalid_grant",
-		ErrorDescription: "AADSTS90002: blocked by token protection",
-		ErrorCodes:       []int{90002},
+		ErrorDescription: "AADSTS530084: blocked by token protection",
+		ErrorCodes:       []int{530084},
 	}
 
 	err, ok := newTokenProtectionBlockedSuggestion(resp, LoginScopes(cloud.AzurePublic()), nil)

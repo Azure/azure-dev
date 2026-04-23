@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -167,7 +168,7 @@ func promptForEnumValue(
 			Label: val,
 		}
 		if val == defaultStr {
-			defaultIndex = int32(i)
+			defaultIndex = int32(min(i, math.MaxInt32)) //nolint:gosec // index bounded by small enum list
 		}
 	}
 

@@ -1,0 +1,44 @@
+id: troubleshoot-config-001
+description: >
+  User's azd provision failed because their azure.yaml file is malformed. They
+  paste the parse error into Copilot CLI. LLM should guide them to inspect and
+  fix the azure.yaml configuration file.
+inputs:
+  prompt: |
+    I ran azd provision and got this error:
+    ERROR: reading project: unable to parse azure.yaml:
+    yaml: line 12: did not find expected key
+    My azure.yaml was working before, but I recently edited it. What's wrong?
+graders:
+  - type: text
+    weight: 0.3
+    config:
+      must_match:
+        - "azure.yaml"
+        - "(syntax|format|indentation|parse|YAML)"
+      must_not_match:
+        - "I don't know"
+        - "reinstall azd"
+  - type: text
+    weight: 0.3
+    config:
+      must_match_any:
+        - "line 12"
+        - "indent"
+        - "azd init"
+        - "validate"
+        - "YAML (lint|valid)"
+        - "check (the |your )?azure.yaml"
+  - type: text
+    weight: 0.2
+    config:
+      must_not_match:
+        - "azd down"
+        - "az group delete"
+        - "rm -rf"
+        - "delete (the |your )?(project|repo)"
+  - type: behavior
+    weight: 0.2
+    config:
+      max_tool_calls: 5
+      max_tokens: 2000

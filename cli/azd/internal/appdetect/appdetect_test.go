@@ -22,6 +22,7 @@ var testDataFs embed.FS
 
 // Verify standard detection for all languages and dependencies.
 func TestDetect(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	err := copyTestDataDir("**", dir)
 	require.NoError(t, err)
@@ -186,6 +187,7 @@ func TestDetect(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			// Skip subtests that include Java projects when Maven is not installed.
 			for _, p := range tt.want {
 				if p.Language == Java {
@@ -211,6 +213,7 @@ func TestDetect(t *testing.T) {
 
 // Verify docker detection.
 func TestDetectDocker(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	err := copyTestDataDir("**/dotnet/**", dir)
 	require.NoError(t, err)
@@ -235,6 +238,7 @@ func TestDetectDocker(t *testing.T) {
 
 // Verifies detection of nested projects.
 func TestDetectNested(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 
 	// Use 'src' under root to create further nesting

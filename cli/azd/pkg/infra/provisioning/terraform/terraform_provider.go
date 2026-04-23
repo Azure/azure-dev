@@ -748,6 +748,7 @@ func (t *TerraformProvider) createInputParametersFile(
 	}
 
 	log.Printf("Writing parameters file to: %s", inputFilePath)
+	//nolint:gosec // G703: inputFilePath is derived from azd's managed .azure environment directory.
 	err = os.WriteFile(inputFilePath, []byte(replaced), 0600)
 	if err != nil {
 		return fmt.Errorf("writing parameter file: %w", err)
@@ -808,6 +809,11 @@ type terraformChildModule struct {
 }
 
 func (t *TerraformProvider) Parameters(ctx context.Context) ([]provisioning.Parameter, error) {
+	// not supported (no-op)
+	return nil, nil
+}
+
+func (t *TerraformProvider) PlannedOutputs(ctx context.Context) ([]provisioning.PlannedOutput, error) {
 	// not supported (no-op)
 	return nil, nil
 }

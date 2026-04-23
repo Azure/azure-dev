@@ -492,6 +492,7 @@ func TestValidateExtension_AllValidCapabilities(t *testing.T) {
 					ServiceTargetProviderCapability,
 					FrameworkServiceProviderCapability,
 					MetadataCapability,
+					ProvisioningProviderCapability,
 				},
 				Artifacts: validArtifacts(),
 			},

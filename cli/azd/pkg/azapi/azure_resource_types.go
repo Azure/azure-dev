@@ -57,6 +57,8 @@ const (
 	//nolint:lll
 	AzureResourceTypeCognitiveServiceAccountProject AzureResourceType = "Microsoft.CognitiveServices/accounts/projects"
 	//nolint:lll
+	AzureResourceTypeCognitiveServiceAccountProjectConnection AzureResourceType = "Microsoft.CognitiveServices/accounts/projects/connections"
+	//nolint:lll
 	AzureResourceTypeCognitiveServiceAccountCapabilityHost AzureResourceType = "Microsoft.CognitiveServices/accounts/capabilityHosts"
 )
 
@@ -135,6 +137,8 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 		return "Azure AI Services Model Deployment"
 	case AzureResourceTypeCognitiveServiceAccountProject:
 		return "Foundry project"
+	case AzureResourceTypeCognitiveServiceAccountProjectConnection:
+		return "Foundry project connection"
 	case AzureResourceTypeCognitiveServiceAccountCapabilityHost:
 		return "Foundry capability host"
 	case AzureResourceTypeSearchService:

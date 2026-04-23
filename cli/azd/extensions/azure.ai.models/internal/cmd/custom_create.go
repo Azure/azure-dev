@@ -155,6 +155,19 @@ func runCustomCreate(ctx context.Context, parentFlags *customFlags, flags *custo
 			fmt.Printf("  azd ai models custom create --name %s --version <next-version> ...\n", flags.Name)
 			return fmt.Errorf("model version already exists")
 		}
+		if strings.Contains(err.Error(), "403") {
+			fmt.Println()
+			color.Red("✗ Permission denied: you do not have the required role to upload custom models.")
+			fmt.Println()
+			color.Yellow("Ensure you have the appropriate role assigned for this Azure AI Foundry project.")
+			fmt.Println()
+			fmt.Println("  Prerequisites:")
+			fmt.Println("  https://learn.microsoft.com/en-us/azure/foundry/how-to/fireworks/import-custom-models?tabs=rest-api#prerequisites")
+			fmt.Println()
+			fmt.Println("  Role-based access control (RBAC) details:")
+			fmt.Println("  https://learn.microsoft.com/en-us/azure/foundry/concepts/rbac-foundry")
+			return fmt.Errorf("insufficient permissions (403)")
+		}
 		return fmt.Errorf("failed to get upload location: %w", err)
 	}
 

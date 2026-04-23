@@ -58,11 +58,11 @@ export class WorkspaceAzureDevShowProvider implements AzureDevShowProvider {
             const errorMessage = error instanceof Error ? error.message : String(error);
 
             if (errorMessage.includes('File is empty') || errorMessage.includes('unable to parse azure.yaml')) {
-                throw new Error(vscode.l10n.t('The azure.yaml file is invalid or empty. Please check the Problems panel for validation errors.'));
+                throw new Error(vscode.l10n.t('The azure.yaml file is invalid or empty. Please check the Problems panel for validation errors.'), { cause: error });
             }
 
             if (errorMessage.includes('parsing project file')) {
-                throw new Error(vscode.l10n.t('Failed to parse azure.yaml. Please check the Problems panel for validation errors.'));
+                throw new Error(vscode.l10n.t('Failed to parse azure.yaml. Please check the Problems panel for validation errors.'), { cause: error });
             }
 
             // Re-throw the original error for other cases

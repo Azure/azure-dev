@@ -7,9 +7,7 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path"
 	"path/filepath"
-	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -57,30 +55,24 @@ func (pp *pythonProject) Restore(
 	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceRestoreResult, error) {
-	progress.SetProgress(NewServiceProgress("Checking for Python virtual environment"))
-	vEnvName := pp.getVenvName(serviceConfig)
-	vEnvPath := path.Join(serviceConfig.Path(), vEnvName)
+	progress.SetProgress(NewServiceProgress("Ensuring Python virtual environment"))
+	vEnvName := python.VenvNameForDir(serviceConfig.Path())
 
-	_, err := os.Stat(vEnvPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			progress.SetProgress(NewServiceProgress("Creating Python virtual environment"))
-			err = pp.cli.CreateVirtualEnv(ctx, serviceConfig.Path(), vEnvName, pp.env.Environ())
-			if err != nil {
-				return nil, fmt.Errorf(
-					"python virtual environment for project '%s' could not be created: %w",
-					serviceConfig.Path(),
-					err,
-				)
-			}
-		} else {
-			return nil, fmt.Errorf(
-				"python virtual environment for project '%s' is not accessible: %w", serviceConfig.Path(), err)
-		}
+	if err := pp.cli.EnsureVirtualEnv(
+		ctx, serviceConfig.Path(), vEnvName,
+		pp.env.Environ(),
+	); err != nil {
+		return nil, fmt.Errorf(
+			"python virtual environment for project"+
+				" '%s' could not be set up: %w",
+			serviceConfig.Path(), err,
+		)
 	}
 
 	// Detect dependency file: prefer pyproject.toml over requirements.txt
-	pyprojectPath := filepath.Join(serviceConfig.Path(), "pyproject.toml")
+	pyprojectPath := filepath.Join(
+		serviceConfig.Path(), "pyproject.toml",
+	)
 	depFile := "requirements.txt"
 
 	if _, statErr := os.Stat(pyprojectPath); statErr == nil {
@@ -88,15 +80,25 @@ func (pp *pythonProject) Restore(
 	}
 
 	if depFile == "pyproject.toml" {
-		progress.SetProgress(NewServiceProgress("Installing Python dependencies from pyproject.toml"))
-		err = pp.cli.InstallProject(ctx, serviceConfig.Path(), vEnvName, pp.env.Environ())
+		progress.SetProgress(NewServiceProgress(
+			"Installing Python dependencies from " +
+				"pyproject.toml",
+		))
 	} else {
-		progress.SetProgress(NewServiceProgress("Installing Python PIP dependencies"))
-		err = pp.cli.InstallRequirements(ctx, serviceConfig.Path(), vEnvName, "requirements.txt", pp.env.Environ())
+		progress.SetProgress(NewServiceProgress(
+			"Installing Python PIP dependencies",
+		))
 	}
 
-	if err != nil {
-		return nil, fmt.Errorf("dependencies for project '%s' could not be installed: %w", serviceConfig.Path(), err)
+	if err := pp.cli.InstallDependencies(
+		ctx, serviceConfig.Path(), vEnvName, depFile,
+		pp.env.Environ(),
+	); err != nil {
+		return nil, fmt.Errorf(
+			"dependencies for project '%s' could "+
+				"not be installed: %w",
+			serviceConfig.Path(), err,
+		)
 	}
 
 	// Create restore artifact for the project directory with virtual environment
@@ -180,13 +182,4 @@ func (pp *pythonProject) Package(
 			},
 		},
 	}, nil
-}
-
-func (pp *pythonProject) getVenvName(serviceConfig *ServiceConfig) string {
-	trimmedPath := strings.TrimSpace(serviceConfig.Path())
-	if len(trimmedPath) > 0 && trimmedPath[len(trimmedPath)-1] == os.PathSeparator {
-		trimmedPath = trimmedPath[:len(trimmedPath)-1]
-	}
-	_, projectDir := filepath.Split(trimmedPath)
-	return projectDir + "_env"
 }

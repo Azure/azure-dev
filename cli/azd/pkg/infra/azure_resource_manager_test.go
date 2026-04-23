@@ -194,7 +194,7 @@ func createNestedDeploymentOperation(
 			ProvisioningState:     new(string(state)),
 			TargetResource: &armresources.TargetResource{
 				ResourceType: to.Ptr(string(azapi.AzureResourceTypeDeployment)),
-				ID:           new(resourceID),
+				ID:           &resourceID,
 				ResourceName: new(deploymentName),
 			},
 			Timestamp: new(time.Now().UTC().Add(time.Hour)),
@@ -216,7 +216,7 @@ func createLeafOperation(id string, resourceType string, resourceName string) *a
 			ProvisioningState:     to.Ptr(string(armresources.ProvisioningStateSucceeded)),
 			TargetResource: &armresources.TargetResource{
 				ResourceType: new(resourceType),
-				ID:           new(resourceID),
+				ID:           &resourceID,
 				ResourceName: new(resourceName),
 			},
 			Timestamp: new(time.Now().UTC().Add(time.Hour)),
@@ -420,7 +420,7 @@ func TestWalkDeploymentOperationsSkipExpand(t *testing.T) {
 	err := arm.WalkDeploymentOperations(*mockContext.Context, deployment,
 		func(ctx context.Context, operation *armresources.DeploymentOperation) error {
 			if operation.ID != nil && *operation.ID == "deployment-id" {
-				return SkipExpand
+				return SkipExpand()
 			}
 
 			return nil

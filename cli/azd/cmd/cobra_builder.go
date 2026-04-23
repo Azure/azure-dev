@@ -131,7 +131,15 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 		actionName := createActionName(cmd)
 		_, err = middlewareRunner.RunAction(ctx, runOptions, actionName)
 
-		// At this point, we know that there might be an error, so we can silence cobra from showing it after us.
+		// Only silence Cobra if the command-scoped console can resolve. When console resolution fails
+		// (for example, because output formatter validation failed before UX middleware ran), we want
+		// Cobra to print the raw error instead of suppressing it.
+		if err != nil {
+			var console input.Console
+			cmd.SilenceErrors = cmdContainer.Resolve(&console) == nil
+			return err
+		}
+
 		cmd.SilenceErrors = true
 
 		return err
@@ -287,6 +295,15 @@ func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.Acti
 			cmd.Annotations = make(map[string]string)
 		}
 		actions.SetGroupCommandAnnotation(cmd, descriptor.Options.GroupingOptions.RootLevelHelp)
+	}
+
+	// Propagate lightspeed flag to cobra annotations so it can be detected
+	// after rootCmd.Find() without needing access to the ActionDescriptor.
+	if descriptor.Options != nil && descriptor.Options.Lightspeed {
+		if cmd.Annotations == nil {
+			cmd.Annotations = make(map[string]string)
+		}
+		cmd.Annotations[actions.AnnotationLightspeed] = "true"
 	}
 
 	// `generateCmdHelp` sets a default help section when `descriptor.Options.HelpOptions` is nil.

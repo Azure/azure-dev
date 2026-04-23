@@ -4,13 +4,10 @@
 package cmd
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
-	"strconv"
 
 	"azureaiagent/internal/exterrors"
 
@@ -19,14 +16,13 @@ import (
 )
 
 type monitorFlags struct {
-	accountName string
-	projectName string
-	name        string
-	version     string
-	sessionID   string
-	follow      bool
-	tail        int
-	logType     string
+	name      string
+	sessionID string
+	follow    bool
+	tail      int
+	logType   string
+	utc       bool
+	raw       bool
 }
 
 // MonitorAction handles the execution of the monitor command.
@@ -39,51 +35,82 @@ func newMonitorCommand() *cobra.Command {
 	flags := &monitorFlags{}
 
 	cmd := &cobra.Command{
-		Use:   "monitor",
+		Use:   "monitor [name]",
 		Short: "Monitor logs from a hosted agent.",
 		Long: `Monitor logs from a hosted agent.
 
-Streams console output (stdout/stderr) or system events from an agent session or container.
-Use --session to stream logs for a specific session, or omit it to use the container logstream.
+Streams console output (stdout/stderr) or system events from an agent session.
+A session ID is required — it is auto-resolved from the last invocation, or you can
+specify one explicitly with --session-id.
 Use --follow to stream logs in real-time, or omit it to fetch recent logs and exit.
-This is useful for troubleshooting agent startup issues or monitoring agent behavior.`,
-		Example: `  # Stream session logs
-  azd ai agent monitor --name my-agent --version 1 --session <session-id>
+This is useful for troubleshooting agent issues or monitoring agent behavior.
+
+The agent name and version are resolved automatically from the azure.yaml service
+configuration and the current azd environment. Optionally specify the service name
+(from azure.yaml) as a positional argument when multiple agent services exist.`,
+		Example: `  # Monitor session logs (auto-resolves session from last invocation)
+  azd ai agent monitor
+
+  # Monitor logs for a specific agent service
+  azd ai agent monitor my-agent
+
+  # Stream logs for a specific session
+  azd ai agent monitor --session-id <session-id>
 
   # Stream session logs in real-time
-  azd ai agent monitor --name my-agent --version 1 --session <session-id> --follow
+  azd ai agent monitor --session-id <session-id> --follow
 
-  # Fetch container console logs (legacy)
-  azd ai agent monitor --name my-agent --version 1
-
-  # Fetch system event logs from container (legacy)
-  azd ai agent monitor --name my-agent --version 1 --type system`,
+  # Fetch system event logs
+  azd ai agent monitor --type system`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) > 0 {
+				flags.name = args[0]
+			}
+
 			if err := validateMonitorFlags(flags); err != nil {
 				return err
 			}
 
 			ctx := azdext.WithAccessToken(cmd.Context())
-			setupDebugLogging(cmd.Flags())
+			logCleanup := setupDebugLogging(cmd.Flags())
+			defer logCleanup()
 
-			agentContext, err := newAgentContext(ctx, flags.accountName, flags.projectName, flags.name, flags.version)
+			azdClient, err := azdext.NewAzdClient()
+			if err != nil {
+				return fmt.Errorf("failed to create azd client: %w", err)
+			}
+			defer azdClient.Close()
+
+			info, err := resolveAgentServiceFromProject(ctx, azdClient, flags.name, rootFlags.NoPrompt)
 			if err != nil {
 				return err
 			}
 
-			// When vnext is enabled, resolve session ID for session-based logstream.
+			if info.AgentName == "" {
+				return fmt.Errorf(
+					"agent name could not be resolved from azd environment for service '%s'\n\n"+
+						"Run 'azd deploy' first to deploy the agent, or check your azd environment values",
+					info.ServiceName,
+				)
+			}
+
+			agentContext, err := newAgentContext(ctx, "", "", info.AgentName, info.Version)
+			if err != nil {
+				return err
+			}
+
+			// Resolve session ID for session-based logstream.
 			if flags.sessionID == "" {
-				sessionID, vnext := resolveMonitorSession(ctx, flags.name)
-				if vnext {
-					if sessionID == "" {
-						return exterrors.Validation(
-							exterrors.CodeInvalidSessionId,
-							"VNext agents are currently enabled and require a session ID for log streaming.",
-							"Specify the session ID using --session, or run `azd ai agent invoke` first to create one",
-						)
-					}
-					flags.sessionID = sessionID
+				sessionID := resolveMonitorSession(ctx, info.AgentName)
+				if sessionID == "" {
+					return exterrors.Validation(
+						exterrors.CodeInvalidSessionId,
+						"A session ID is required for log streaming.",
+						"Specify the session ID using --session-id, or run `azd ai agent invoke` first to create one",
+					)
 				}
+				flags.sessionID = sessionID
 			}
 
 			action := &MonitorAction{
@@ -95,17 +122,13 @@ This is useful for troubleshooting agent startup issues or monitoring agent beha
 		},
 	}
 
-	cmd.Flags().StringVarP(&flags.accountName, "account-name", "a", "", "Cognitive Services account name")
-	cmd.Flags().StringVarP(&flags.projectName, "project-name", "p", "", "AI Foundry project name")
-	cmd.Flags().StringVarP(&flags.name, "name", "n", "", "Name of the hosted agent (required)")
-	cmd.Flags().StringVarP(&flags.version, "version", "v", "", "Version of the hosted agent (required)")
-	cmd.Flags().StringVarP(&flags.sessionID, "session", "s", "", "Session ID to stream logs for")
+	cmd.Flags().StringVarP(&flags.sessionID, "session-id", "s", "", "Session ID to stream logs for")
 	cmd.Flags().BoolVarP(&flags.follow, "follow", "f", false, "Stream logs in real-time")
 	cmd.Flags().IntVarP(&flags.tail, "tail", "l", 50, "Number of trailing log lines to fetch (1-300)")
-	cmd.Flags().StringVarP(&flags.logType, "type", "t", "console", "Type of logs: 'console' (stdout/stderr) or 'system' (container events)")
-
-	_ = cmd.MarkFlagRequired("name")
-	_ = cmd.MarkFlagRequired("version")
+	cmd.Flags().StringVarP(&flags.logType, "type", "t", "console",
+		"Type of logs: 'console' (stdout/stderr) or 'system' (container events)")
+	cmd.Flags().BoolVar(&flags.utc, "utc", false, "Display timestamps in UTC instead of local time")
+	cmd.Flags().BoolVar(&flags.raw, "raw", false, "Print the raw SSE stream without formatting")
 
 	return cmd
 }
@@ -117,30 +140,16 @@ func (a *MonitorAction) Run(ctx context.Context) error {
 		return err
 	}
 
-	var body io.ReadCloser
-	if a.flags.sessionID != "" {
-		fmt.Fprintf(os.Stderr, "Streaming session logs for %s (session: %s)...\n", a.Name, a.flags.sessionID)
-		body, err = agentClient.GetAgentSessionLogStream(
-			ctx,
-			a.Name,
-			a.Version,
-			a.flags.sessionID,
-			DefaultVNextAgentAPIVersion,
-			a.flags.logType,
-			a.flags.tail,
-			a.flags.follow,
-		)
-	} else {
-		body, err = agentClient.GetAgentContainerLogStream(
-			ctx,
-			a.Name,
-			a.Version,
-			DefaultAgentAPIVersion,
-			a.flags.logType,
-			a.flags.tail,
-			a.flags.follow,
-		)
-	}
+	fmt.Fprintf(os.Stderr, "Streaming session logs for %s (session: %s)...\n", a.Name, a.flags.sessionID)
+	body, err := agentClient.GetAgentSessionLogStream(
+		ctx,
+		a.Name,
+		a.flags.sessionID,
+		DefaultAgentAPIVersion,
+		a.flags.logType,
+		a.flags.tail,
+		a.flags.follow,
+	)
 	if err != nil {
 		// Suppress context deadline/cancellation errors (expected in non-follow timeout and Ctrl+C)
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
@@ -150,19 +159,16 @@ func (a *MonitorAction) Run(ctx context.Context) error {
 	}
 	defer body.Close()
 
-	scanner := bufio.NewScanner(body)
-	for scanner.Scan() {
-		fmt.Println(scanner.Text())
+	formatter := &logFormatter{
+		writer: os.Stdout,
+		utc:    a.flags.utc,
+		raw:    a.flags.raw,
 	}
-
-	if err := scanner.Err(); err != nil {
-		// Suppress context deadline/cancellation errors:
-		// - DeadlineExceeded: expected in non-follow mode (internal timeout fires after available data is read)
-		// - Canceled: expected when user presses Ctrl+C in follow mode
+	if err := formatter.formatStream(ctx, body); err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 			return nil
 		}
-		return fmt.Errorf("error reading log stream: %w", err)
+		return err
 	}
 
 	return nil
@@ -180,41 +186,26 @@ func validateMonitorFlags(flags *monitorFlags) error {
 	return nil
 }
 
-// resolveMonitorSession checks if vnext is enabled and resolves the session ID
-// from the .foundry-agent.json file. Returns the session ID and whether vnext is enabled.
-// If vnext is not enabled or the session cannot be resolved, the returned string will be empty.
-func resolveMonitorSession(ctx context.Context, agentName string) (string, bool) {
+// resolveMonitorSession resolves the session ID from the .foundry-agent.json file.
+// Returns the session ID if available, or empty string if not found.
+func resolveMonitorSession(ctx context.Context, agentName string) string {
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
-		return "", false
+		return ""
 	}
 	defer azdClient.Close()
-
-	// Check if vnext is enabled
-	vnextValue := ""
-	azdEnv, err := loadAzdEnvironment(ctx, azdClient)
-	if err == nil {
-		vnextValue = azdEnv["enableHostedAgentVNext"]
-	}
-	if vnextValue == "" {
-		vnextValue = os.Getenv("enableHostedAgentVNext")
-	}
-	enabled, err := strconv.ParseBool(vnextValue)
-	if err != nil || !enabled {
-		return "", false
-	}
 
 	// Resolve session ID from .foundry-agent.json
 	configPath, err := resolveConfigPath(ctx, azdClient)
 	if err != nil {
-		return "", true
+		return ""
 	}
 	agentCtx := loadLocalContext(configPath)
 	if agentCtx.Sessions != nil {
 		if sid, ok := agentCtx.Sessions[agentName]; ok {
-			return sid, true
+			return sid
 		}
 	}
 
-	return "", true
+	return ""
 }

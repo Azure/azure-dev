@@ -40,7 +40,7 @@ service AiModelService {
 message AiModel {
   string name = 1;                                // e.g. "gpt-4o"
   string format = 2;                              // e.g. "OpenAI"
-  string lifecycle_status = 3;                    // e.g. "preview", "stable"
+  string lifecycle_status = 3 [deprecated = true]; // deprecated; always empty; use AiModelVersion.lifecycle_status
   repeated string capabilities = 4;               // e.g. ["chat", "embeddings"]
   repeated AiModelVersion versions = 5;
   repeated string locations = 6;                  // canonical locations where available
@@ -50,6 +50,7 @@ message AiModelVersion {
   string version = 1;
   bool is_default = 2;
   repeated AiModelSku skus = 3;
+  string lifecycle_status = 4;                    // e.g. "GenerallyAvailable", "Preview"
 }
 
 // AiModelSku represents a deployment SKU with capacity constraints.
@@ -110,8 +111,9 @@ message AiModelFilterOptions {
   // Matches AiModel.format exactly (for example: "OpenAI", "Microsoft").
   repeated string formats = 3;
 
-  // Include models whose lifecycle status matches one of these values.
-  // Matches AiModel.lifecycle_status exactly (for example: "Stable", "Preview").
+  // Include model versions whose lifecycle status matches one of these values.
+  // Filtering is applied before aggregation, so returned versions, derived
+  // AiModel.lifecycle_status, and locations reflect only matching versions.
   repeated string statuses = 4;
 
   // Exclude models by exact model name (for example: "gpt-4o-mini").

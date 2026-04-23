@@ -22,7 +22,10 @@ import (
 
 const ProxyConfigName = "proxy.config"
 
-var buildOnce sync.Once
+var (
+	buildOnce sync.Once
+	buildErr  error
+)
 
 type Recorder struct {
 	opt Options
@@ -55,12 +58,8 @@ func NewWithOptions(opt Options) *Recorder {
 func (r *Recorder) Start() (proxyDir string, err error) {
 	proxyBinaryName := "proxy"
 	cmdPath := getCmdPath()
-	var buildErr error
 	buildOnce.Do(func() {
-		err := build(cmdPath, "-o", proxyBinaryName)
-		if err != nil {
-			buildErr = err
-		}
+		buildErr = build(cmdPath, "-o", proxyBinaryName)
 	})
 
 	if buildErr != nil {

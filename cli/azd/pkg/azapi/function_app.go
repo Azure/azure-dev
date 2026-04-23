@@ -96,7 +96,7 @@ func (cli *AzureClient) DeployFunctionAppUsingZipFileFlexConsumption(
 	if err != nil {
 		return nil, fmt.Errorf("publishing zip file: %w", err)
 	}
-	return new(response.StatusText), nil
+	return &response.StatusText, nil
 }
 
 // DeployFunctionAppUsingZipFileRegular deploys to a regular (non-Flex Consumption) function app
@@ -123,7 +123,7 @@ func (cli *AzureClient) DeployFunctionAppUsingZipFileRegular(
 		return nil, err
 	}
 
-	return new(response.StatusText), nil
+	return &response.StatusText, nil
 }
 
 // functionAppRepositoryHost finds the SCM host name from function app properties.

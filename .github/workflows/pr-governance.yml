@@ -1,0 +1,43 @@
+name: pr-governance
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, edited, synchronize, labeled, unlabeled, reopened, ready_for_review]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  pull-requests: write
+  issues: write
+  contents: read
+
+jobs:
+  governance-checks:
+    name: PR Governance
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check linked issue
+        id: issue-check
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const script = require('./.github/scripts/pr-governance-issue-check.js');
+            await script({ github, context, core });
+
+      - name: Check issue priority
+        if: steps.issue-check.outputs.skipped != 'true' && steps.issue-check.outcome == 'success'
+        uses: actions/github-script@v7
+        env:
+          PROJECT_TOKEN: ${{ secrets.PROJECT_READ_TOKEN }}
+          ISSUE_NUMBERS: ${{ steps.issue-check.outputs.issue_numbers }}
+        with:
+          script: |
+            const script = require('./.github/scripts/pr-governance-priority-check.js');
+            await script({ github, context, core });

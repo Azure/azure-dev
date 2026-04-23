@@ -6,11 +6,14 @@ package azsdk
 import (
 	"bytes"
 	"context"
+	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
@@ -164,4 +167,186 @@ func registerPollingErrorMocks(mockContext *mocks.MockContext) {
 
 		return mocks.CreateHttpResponseWithBody(request, http.StatusBadRequest, errorStatus)
 	})
+}
+
+// scmTransportFunc adapts a function to policy.Transporter for testing.
+type scmTransportFunc func(*http.Request) (*http.Response, error)
+
+func (f scmTransportFunc) Do(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+// scmTimeoutError satisfies net.Error with Timeout() returning true.
+type scmTimeoutError struct{ msg string }
+
+var _ net.Error = (*scmTimeoutError)(nil)
+
+func (e *scmTimeoutError) Error() string   { return e.msg }
+func (e *scmTimeoutError) Timeout() bool   { return true }
+func (e *scmTimeoutError) Temporary() bool { return false }
+
+func newTestScmClient(
+	transport policy.Transporter,
+) *ZipDeployClient {
+	pipeline := runtime.NewPipeline(
+		"test", "1.0.0",
+		runtime.PipelineOptions{},
+		&policy.ClientOptions{
+			Transport: transport,
+			Retry: policy.RetryOptions{
+				MaxRetries:    1,
+				RetryDelay:    time.Nanosecond,
+				MaxRetryDelay: time.Nanosecond,
+			},
+		},
+	)
+	return &ZipDeployClient{
+		hostName: "test.scm.azurewebsites.net",
+		pipeline: pipeline,
+	}
+}
+
+func TestIsScmReady(t *testing.T) {
+	tests := []struct {
+		name            string
+		transport       scmTransportFunc
+		ctx             func(*testing.T) context.Context
+		wantReady       bool
+		wantErr         error
+		wantErrContains string
+	}{
+		{
+			name: "HTTP200_Ready",
+			transport: func(req *http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{},
+					Request:    req,
+					Body:       http.NoBody,
+				}, nil
+			},
+			wantReady: true,
+		},
+		{
+			name: "HTTP502_BadGateway",
+			transport: func(req *http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: http.StatusBadGateway,
+					Header:     http.Header{},
+					Request:    req,
+					Body:       http.NoBody,
+				}, nil
+			},
+			wantReady: false,
+		},
+		{
+			name: "HTTP503_ServiceUnavailable",
+			transport: func(req *http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: http.StatusServiceUnavailable,
+					Header:     http.Header{},
+					Request:    req,
+					Body:       http.NoBody,
+				}, nil
+			},
+			wantReady: false,
+		},
+		{
+			name: "HTTP500_InternalServerError",
+			transport: func(req *http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: http.StatusInternalServerError,
+					Header:     http.Header{},
+					Request:    req,
+					Body:       http.NoBody,
+				}, nil
+			},
+			wantReady:       false,
+			wantErrContains: "500",
+		},
+		{
+			name: "ConnectionRefused",
+			transport: func(req *http.Request) (*http.Response, error) {
+				return nil, fmt.Errorf("dial tcp: connection refused")
+			},
+			wantReady: false,
+		},
+		{
+			name: "NoSuchHost",
+			transport: func(req *http.Request) (*http.Response, error) {
+				return nil, fmt.Errorf(
+					"dial tcp: lookup host: no such host",
+				)
+			},
+			wantReady: false,
+		},
+		{
+			name: "NetTimeout",
+			transport: func(req *http.Request) (*http.Response, error) {
+				return nil, &scmTimeoutError{msg: "i/o timeout"}
+			},
+			wantReady: false,
+		},
+		{
+			name: "ContextCanceled",
+			transport: func(req *http.Request) (*http.Response, error) {
+				return nil, context.Canceled
+			},
+			ctx: func(t *testing.T) context.Context {
+				ctx, cancel := context.WithCancel(t.Context())
+				cancel()
+				return ctx
+			},
+			wantReady: false,
+			wantErr:   context.Canceled,
+		},
+		{
+			name: "ContextDeadlineExceeded",
+			transport: func(req *http.Request) (*http.Response, error) {
+				return nil, context.DeadlineExceeded
+			},
+			ctx: func(t *testing.T) context.Context {
+				ctx, cancel := context.WithDeadline(
+					t.Context(),
+					time.Now().Add(-time.Second),
+				)
+				t.Cleanup(cancel)
+				return ctx
+			},
+			wantReady: false,
+			wantErr:   context.DeadlineExceeded,
+		},
+		{
+			name: "UnknownTransportError_TLS",
+			transport: func(req *http.Request) (*http.Response, error) {
+				return nil, fmt.Errorf("tls: handshake failure")
+			},
+			wantReady:       false,
+			wantErrContains: "SCM readiness probe",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := newTestScmClient(tt.transport)
+
+			ctx := t.Context()
+			if tt.ctx != nil {
+				ctx = tt.ctx(t)
+			}
+
+			ready, err := client.IsScmReady(ctx)
+			require.Equal(t, tt.wantReady, ready)
+
+			switch {
+			case tt.wantErr != nil:
+				require.ErrorIs(t, err, tt.wantErr)
+			case tt.wantErrContains != "":
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tt.wantErrContains)
+			default:
+				require.NoError(t, err)
+			}
+		})
+	}
 }

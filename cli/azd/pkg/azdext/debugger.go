@@ -85,7 +85,10 @@ func getExtensionId(ctx context.Context) string {
 		return ""
 	}
 
-	// Parse the JWT token without validation (we just need the subject claim)
+	// ParseUnverified is intentionally used here for debug/diagnostic logging only.
+	// This token has already been validated by the gRPC auth interceptor before reaching
+	// this code path. We only parse it here to extract claims for debug output, not for
+	// any security decision. Using ParseUnverified avoids needing access to the signing key.
 	token, _, err := jwt.NewParser().ParseUnverified(tokenString, jwt.MapClaims{})
 	if err != nil {
 		return ""

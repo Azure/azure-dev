@@ -66,20 +66,20 @@ func NewProjectService(
 }
 
 // reloadAndCacheProjectConfig reloads the project configuration from disk and updates the lazy cache.
-// It preserves the EventDispatcher from the previous instance to maintain event handler continuity
+// It preserves in-memory runtime state from the previous instance to maintain event handler continuity
 // for both the project and all services.
 //
-// Event dispatchers must be preserved because they contain event handlers that were registered by:
+// Runtime state must be preserved because it contains event handlers and registration state created by:
 //   - azure.yaml hooks (prepackage, postdeploy, etc.)
 //   - azd extensions that registered custom event handlers
 //
-// Without preserving these dispatchers, any event handlers registered before the reload would be lost,
+// Without preserving this state, any event handlers registered before the reload would be lost,
 // causing hooks and extension-registered handlers to stop working after configuration updates.
 func (s *projectService) reloadAndCacheProjectConfig(ctx context.Context, projectPath string) error {
-	// Get the current config to preserve the EventDispatchers
+	// Get the current config to preserve runtime state.
 	oldConfig, err := s.lazyProjectConfig.GetValue()
 	if err != nil {
-		// If we can't get old config, just reload without preserving dispatchers
+		// If we can't get old config, just reload without preserving runtime state.
 		reloadedConfig, err := project.Load(ctx, projectPath)
 		if err != nil {
 			return err
@@ -94,19 +94,7 @@ func (s *projectService) reloadAndCacheProjectConfig(ctx context.Context, projec
 		return err
 	}
 
-	// Preserve the EventDispatcher from the old project config
-	if oldConfig.EventDispatcher != nil {
-		reloadedConfig.EventDispatcher = oldConfig.EventDispatcher
-	}
-
-	// Preserve the EventDispatcher for each service
-	if oldConfig.Services != nil && reloadedConfig.Services != nil {
-		for serviceName, oldService := range oldConfig.Services {
-			if reloadedService, exists := reloadedConfig.Services[serviceName]; exists && oldService.EventDispatcher != nil {
-				reloadedService.EventDispatcher = oldService.EventDispatcher
-			}
-		}
-	}
+	oldConfig.CopyRuntimeStateTo(reloadedConfig)
 
 	// Update the lazy cache
 	s.lazyProjectConfig.SetValue(reloadedConfig)

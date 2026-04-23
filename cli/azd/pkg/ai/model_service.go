@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
@@ -62,19 +63,15 @@ func (s *AiModelService) ListModels(
 	return s.convertToAiModels(rawModels), nil
 }
 
-// ListLocations returns subscription location names that can be used for model queries.
+// ListLocations returns AI Services-supported location names that can be used for model queries.
 func (s *AiModelService) ListLocations(
 	ctx context.Context,
 	subscriptionId string,
 ) ([]string, error) {
-	subLocations, err := s.subManager.GetLocations(ctx, subscriptionId)
+	locations, err := s.azureClient.GetResourceSkuLocations(
+		ctx, subscriptionId, "AIServices", "S0", "Standard", "accounts")
 	if err != nil {
-		return nil, fmt.Errorf("listing locations: %w", err)
-	}
-
-	locations := make([]string, 0, len(subLocations))
-	for _, loc := range subLocations {
-		locations = append(locations, loc.Name)
+		return nil, fmt.Errorf("listing AI Services locations: %w", err)
 	}
 
 	return locations, nil
@@ -86,14 +83,30 @@ func (s *AiModelService) ListFilteredModels(
 	subscriptionId string,
 	options *FilterOptions,
 ) ([]AiModel, error) {
+	if options == nil {
+		return s.ListModels(ctx, subscriptionId, nil)
+	}
+
+	filteredOptions := *options
+
 	// Fetch canonical models and apply filters in-memory so model metadata
-	// (especially Locations) remains complete.
-	models, err := s.ListModels(ctx, subscriptionId, nil)
+	// remains complete for non-status filters. Status filtering is applied during
+	// aggregation so Versions, derived LifecycleStatus, and Locations reflect only
+	// versions matching the requested statuses.
+	locations, err := s.ListLocations(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
 	}
 
-	return FilterModels(models, options), nil
+	rawModels, err := s.fetchModelsForLocations(ctx, subscriptionId, locations)
+	if err != nil {
+		return nil, err
+	}
+
+	models := s.convertToAiModelsAt(rawModels, time.Now().UTC(), filteredOptions.Statuses)
+	filteredOptions.Statuses = nil
+
+	return FilterModels(models, &filteredOptions), nil
 }
 
 // ListModelVersions returns available versions for a specific model at a location.
@@ -456,9 +469,8 @@ func (s *AiModelService) resolveDeployments(
 				continue
 			}
 
-			capacity := ResolveCapacity(sku, options.Capacity)
-
 			// Quota check
+			capacity := ResolveCapacity(sku, options.Capacity)
 			if quotaOpts != nil && usageMap != nil {
 				usage, ok := usageMap[sku.UsageName]
 				if !ok {
@@ -470,9 +482,15 @@ func (s *AiModelService) resolveDeployments(
 				if minReq <= 0 {
 					minReq = 1
 				}
-				if remaining < minReq || (capacity > 0 && float64(capacity) > remaining) {
+				if remaining < minReq {
 					continue
 				}
+
+				resolvedCapacity, fitsQuota := ResolveCapacityWithQuota(sku, options.Capacity, remaining)
+				if !fitsQuota {
+					continue
+				}
+				capacity = resolvedCapacity
 			}
 
 			// Only set location when exactly one was provided — never guess.
@@ -569,12 +587,26 @@ func (s *AiModelService) fetchModelsForLocations(
 func (s *AiModelService) convertToAiModels(
 	rawByLocation map[string][]*armcognitiveservices.Model,
 ) []AiModel {
+	return s.convertToAiModelsAt(rawByLocation, time.Now().UTC(), nil)
+}
+
+// convertToAiModelsAt converts raw ARM models grouped by location into domain AiModel types,
+// optionally filtering by version lifecycle status before aggregation. The now parameter
+// makes deprecation filtering deterministic in tests.
+func (s *AiModelService) convertToAiModelsAt(
+	rawByLocation map[string][]*armcognitiveservices.Model,
+	now time.Time,
+	statuses []string,
+) []AiModel {
 	// Aggregate: model name → location → version → SKUs
 	modelMap := make(map[string]*AiModel)
 
 	for loc, models := range rawByLocation {
 		for _, m := range models {
-			if m.Model == nil || m.Model.Name == nil {
+			if m.Model == nil || m.Model.Name == nil || modelVersionDeprecated(m.Model, now) {
+				continue
+			}
+			if len(statuses) > 0 && !slices.Contains(statuses, modelLifecycleStatusValue(m.Model.LifecycleStatus)) {
 				continue
 			}
 			name := *m.Model.Name
@@ -585,9 +617,6 @@ func (s *AiModelService) convertToAiModels(
 					Name:   name,
 					Format: safeString(m.Model.Format),
 				}
-				if m.Model.LifecycleStatus != nil {
-					aiModel.LifecycleStatus = string(*m.Model.LifecycleStatus)
-				}
 				if m.Model.Capabilities != nil {
 					for key := range m.Model.Capabilities {
 						aiModel.Capabilities = append(aiModel.Capabilities, key)
@@ -597,20 +626,28 @@ func (s *AiModelService) convertToAiModels(
 				modelMap[name] = aiModel
 			}
 
-			// Track locations
-			if !slices.Contains(aiModel.Locations, loc) {
-				aiModel.Locations = append(aiModel.Locations, loc)
-			}
-
 			// Build version entry
 			ver := safeString(m.Model.Version)
 			isDefault := m.Model.IsDefaultVersion != nil && *m.Model.IsDefaultVersion
+			lifecycleStatus := modelLifecycleStatusValue(m.Model.LifecycleStatus)
 
+			hadSkus := len(m.Model.SKUs) > 0
 			var skus []AiModelSku
 			if m.Model.SKUs != nil {
 				for _, sku := range m.Model.SKUs {
+					if modelSkuDeprecated(sku, now) {
+						continue
+					}
 					skus = append(skus, convertSku(sku))
 				}
+			}
+			if hadSkus && len(skus) == 0 {
+				continue
+			}
+
+			// Track locations only when this location contributes a surviving version/SKU.
+			if !slices.Contains(aiModel.Locations, loc) {
+				aiModel.Locations = append(aiModel.Locations, loc)
 			}
 
 			// Find or create version in model
@@ -620,6 +657,9 @@ func (s *AiModelService) convertToAiModels(
 					versionFound = true
 					if isDefault {
 						aiModel.Versions[i].IsDefault = true
+					}
+					if aiModel.Versions[i].LifecycleStatus == "" {
+						aiModel.Versions[i].LifecycleStatus = lifecycleStatus
 					}
 					// Merge SKUs (deduplicate by name + usage_name, since the same SKU name
 					// can appear with different usage names representing different quota pools)
@@ -635,9 +675,10 @@ func (s *AiModelService) convertToAiModels(
 			}
 			if !versionFound {
 				aiModel.Versions = append(aiModel.Versions, AiModelVersion{
-					Version:   ver,
-					IsDefault: isDefault,
-					Skus:      skus,
+					Version:         ver,
+					IsDefault:       isDefault,
+					LifecycleStatus: lifecycleStatus,
+					Skus:            skus,
 				})
 			}
 		}
@@ -646,6 +687,9 @@ func (s *AiModelService) convertToAiModels(
 	// Convert map to sorted slice
 	result := make([]AiModel, 0, len(modelMap))
 	for _, model := range modelMap {
+		if len(model.Versions) == 0 {
+			continue
+		}
 		slices.Sort(model.Locations)
 		result = append(result, *model)
 	}
@@ -656,7 +700,66 @@ func (s *AiModelService) convertToAiModels(
 	return result
 }
 
-// FilterModels applies FilterOptions to a list of models.
+func modelVersionDeprecated(model *armcognitiveservices.AccountModel, now time.Time) bool {
+	if model == nil {
+		return false
+	}
+
+	if modelLifecycleDeprecated(model.LifecycleStatus) {
+		return true
+	}
+
+	return modelDeprecationReached(model.Deprecation, now)
+}
+
+func modelLifecycleDeprecated(status *armcognitiveservices.ModelLifecycleStatus) bool {
+	if status == nil {
+		return false
+	}
+
+	return strings.EqualFold(string(*status), "Deprecated")
+}
+
+func modelLifecycleStatusValue(status *armcognitiveservices.ModelLifecycleStatus) string {
+	if status == nil {
+		return ""
+	}
+
+	return string(*status)
+}
+
+func modelDeprecationReached(info *armcognitiveservices.ModelDeprecationInfo, now time.Time) bool {
+	if info == nil || info.Inference == nil {
+		return false
+	}
+
+	return deprecationReached(*info.Inference, now)
+}
+
+func modelSkuDeprecated(sku *armcognitiveservices.ModelSKU, now time.Time) bool {
+	if sku == nil || sku.DeprecationDate == nil {
+		return false
+	}
+
+	return !sku.DeprecationDate.After(now)
+}
+
+func deprecationReached(value string, now time.Time) bool {
+	if strings.TrimSpace(value) == "" {
+		return false
+	}
+
+	deprecatedAt, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return false
+	}
+
+	return !deprecatedAt.After(now)
+}
+
+// FilterModels applies FilterOptions to already-aggregated models. When Statuses is set,
+// versions are pruned, but Locations cannot be recomputed (version-to-location provenance
+// is lost). Use ListFilteredModels for full fidelity.
 func FilterModels(models []AiModel, options *FilterOptions) []AiModel {
 	if options == nil {
 		return models
@@ -664,13 +767,18 @@ func FilterModels(models []AiModel, options *FilterOptions) []AiModel {
 
 	var filtered []AiModel
 	for _, model := range models {
+		if len(options.Statuses) > 0 {
+			model.Versions = slices.DeleteFunc(slices.Clone(model.Versions), func(version AiModelVersion) bool {
+				return !slices.Contains(options.Statuses, version.LifecycleStatus)
+			})
+			if len(model.Versions) == 0 {
+				continue
+			}
+		}
 		if len(options.ExcludeModelNames) > 0 && slices.Contains(options.ExcludeModelNames, model.Name) {
 			continue
 		}
 		if len(options.Formats) > 0 && !slices.Contains(options.Formats, model.Format) {
-			continue
-		}
-		if len(options.Statuses) > 0 && !slices.Contains(options.Statuses, model.LifecycleStatus) {
 			continue
 		}
 		if len(options.Capabilities) > 0 {
@@ -731,14 +839,107 @@ func convertSku(sku *armcognitiveservices.ModelSKU) AiModelSku {
 func ResolveCapacity(sku AiModelSku, preferred *int32) int32 {
 	if preferred != nil {
 		cap := *preferred
-		if cap > 0 &&
-			(sku.MinCapacity <= 0 || cap >= sku.MinCapacity) &&
-			(sku.MaxCapacity <= 0 || cap <= sku.MaxCapacity) &&
-			(sku.CapacityStep <= 0 || cap%sku.CapacityStep == 0) {
+		if capacityValidForSku(sku, cap) {
 			return cap
 		}
 	}
 	return sku.DefaultCapacity
+}
+
+// ResolveCapacityWithQuota resolves the deployment capacity for a SKU while considering remaining quota.
+// If preferred is set, it must fit within the remaining quota or resolution fails.
+// When preferred is unset and the default capacity exceeds remaining quota, it falls back to the highest
+// valid capacity within the SKU constraints that still fits in the remaining quota.
+func ResolveCapacityWithQuota(sku AiModelSku, preferred *int32, remaining float64) (int32, bool) {
+	capacity := ResolveCapacity(sku, preferred)
+	if preferred != nil {
+		return capacity, capacityFitsWithinQuota(sku, capacity, remaining)
+	}
+
+	if capacityFitsWithinQuota(sku, capacity, remaining) {
+		return capacity, true
+	}
+
+	return fallbackCapacityWithinQuota(sku, remaining)
+}
+
+func capacityValidForSku(sku AiModelSku, capacity int32) bool {
+	if capacity <= 0 {
+		return false
+	}
+
+	if sku.MinCapacity > 0 && capacity < sku.MinCapacity {
+		return false
+	}
+
+	if sku.MaxCapacity > 0 && capacity > sku.MaxCapacity {
+		return false
+	}
+
+	if sku.CapacityStep > 0 {
+		baseline := capacityStepBaseline(sku)
+		if capacity < baseline || (capacity-baseline)%sku.CapacityStep != 0 {
+			return false
+		}
+	}
+
+	return true
+}
+
+func capacityStepBaseline(sku AiModelSku) int32 {
+	if sku.MinCapacity > 0 {
+		return sku.MinCapacity
+	}
+
+	return sku.CapacityStep
+}
+
+func minimumValidCapacity(sku AiModelSku) int32 {
+	if sku.MinCapacity > 0 {
+		return sku.MinCapacity
+	}
+
+	if sku.CapacityStep > 0 {
+		return sku.CapacityStep
+	}
+
+	return 1
+}
+
+func capacityFitsWithinQuota(sku AiModelSku, capacity int32, remaining float64) bool {
+	if !capacityValidForSku(sku, capacity) {
+		return false
+	}
+
+	return float64(capacity) <= remaining
+}
+
+func fallbackCapacityWithinQuota(sku AiModelSku, remaining float64) (int32, bool) {
+	upperBound := int32(remaining)
+	if upperBound <= 0 {
+		return 0, false
+	}
+
+	if sku.MaxCapacity > 0 && upperBound > sku.MaxCapacity {
+		upperBound = sku.MaxCapacity
+	}
+
+	lowerBound := minimumValidCapacity(sku)
+
+	if upperBound < lowerBound {
+		return 0, false
+	}
+
+	if sku.CapacityStep <= 0 {
+		return upperBound, true
+	}
+
+	candidate := upperBound - (upperBound-lowerBound)%sku.CapacityStep
+	if candidate < lowerBound {
+		return 0, false
+	}
+
+	return candidate, true
 }
 
 // ModelHasDefaultVersion returns true if any version of the model is marked as default.
@@ -758,6 +959,9 @@ func modelHasQuota(model AiModel, usageMap map[string]AiModelUsage, minRemaining
 			if ok {
 				remaining := usage.Limit - usage.CurrentValue
 				if remaining >= minRemaining {
+					if _, ok := ResolveCapacityWithQuota(sku, nil, remaining); !ok {
+						continue
+					}
 					return true
 				}
 			}
@@ -777,6 +981,9 @@ func maxModelRemainingQuota(model AiModel, usageMap map[string]AiModelUsage) (fl
 			}
 
 			remaining := usage.Limit - usage.CurrentValue
+			if _, ok := ResolveCapacityWithQuota(sku, nil, remaining); !ok {
+				continue
+			}
 			if !found || remaining > maxRemaining {
 				maxRemaining = remaining
 			}

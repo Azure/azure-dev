@@ -18,7 +18,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
 // MockBidiStreamingServer mocks the gRPC bidirectional streaming server using generics
@@ -178,7 +180,7 @@ func TestEventService_handleSubscribeProjectEvent(t *testing.T) {
 			subscribeMsg: &azdext.SubscribeProjectEvent{
 				EventNames: []string{},
 			},
-			expectError: false,
+			expectError: true,
 		},
 	}
 
@@ -359,4 +361,38 @@ func TestEventService_New(t *testing.T) {
 	assert.NotNil(t, eventSvc.lazyProject)
 	assert.NotNil(t, eventSvc.lazyEnv)
 	assert.NotNil(t, eventSvc.console)
+}
+
+func TestEventService_EmptyEventNameInArray(t *testing.T) {
+	service, _ := createTestEventService()
+	extension := createTestExtension()
+	ctx := t.Context()
+
+	t.Run("project_event_with_empty_name", func(t *testing.T) {
+		var mockBroker *grpcbroker.MessageBroker[azdext.EventMessage]
+
+		err := service.onSubscribeProjectEvent(ctx, extension, &azdext.SubscribeProjectEvent{
+			EventNames: []string{"prepackage", "", "postpackage"},
+		}, mockBroker)
+
+		require.Error(t, err)
+		st, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, codes.InvalidArgument, st.Code())
+		require.Contains(t, st.Message(), "event name at index 1 cannot be empty")
+	})
+
+	t.Run("service_event_with_empty_name", func(t *testing.T) {
+		var mockBroker *grpcbroker.MessageBroker[azdext.EventMessage]
+
+		err := service.onSubscribeServiceEvent(ctx, extension, &azdext.SubscribeServiceEvent{
+			EventNames: []string{"", "prepackage"},
+		}, mockBroker)
+
+		require.Error(t, err)
+		st, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, codes.InvalidArgument, st.Code())
+		require.Contains(t, st.Message(), "event name at index 0 cannot be empty")
+	})
 }

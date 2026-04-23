@@ -5,6 +5,7 @@ package state
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -81,7 +82,7 @@ func TestStateCacheManager_Invalidate(t *testing.T) {
 func TestStateCacheManager_TTL(t *testing.T) {
 	tempDir := t.TempDir()
 	manager := NewStateCacheManager(tempDir)
-	manager.SetTTL(500 * time.Millisecond) // Short TTL for testing (not too short to be flaky)
+	manager.SetTTL(1 * time.Hour) // Use a large TTL — we test expiration by backdating, not sleeping
 	ctx := context.Background()
 
 	cache := &StateCache{
@@ -93,15 +94,20 @@ func TestStateCacheManager_TTL(t *testing.T) {
 	err := manager.Save(ctx, "test-env", cache)
 	require.NoError(t, err)
 
-	// Load immediately should work
+	// Load immediately should work (cache just created, TTL is 1 hour)
 	loaded, err := manager.Load(ctx, "test-env")
 	require.NoError(t, err)
 	require.NotNil(t, loaded)
 
-	// Wait for TTL to expire
-	time.Sleep(600 * time.Millisecond)
+	// Backdate the cache's UpdatedAt to simulate TTL expiration deterministically
+	// (avoids flaky time.Sleep-based expiration that depends on wall clock behavior)
+	loaded.UpdatedAt = time.Now().Add(-2 * time.Hour)
+	data, err := json.MarshalIndent(loaded, "", "  ")
+	require.NoError(t, err)
+	err = os.WriteFile(manager.GetCachePath("test-env"), data, 0600)
+	require.NoError(t, err)
 
-	// Load after TTL should return nil
+	// Load after backdating should return nil (TTL expired)
 	loaded, err = manager.Load(ctx, "test-env")
 	require.NoError(t, err)
 	require.Nil(t, loaded)

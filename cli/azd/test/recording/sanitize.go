@@ -93,7 +93,7 @@ func sanitizeContainerRegistryListBuildSourceUploadUrl(i *cassette.Interaction) 
 		if err != nil {
 			return fmt.Errorf("sanitizing UploadURL: %w", err)
 		}
-		body.UploadURL = new(s)
+		body.UploadURL = &s
 
 		sanitized, err := json.Marshal(body)
 		if err != nil {
@@ -122,7 +122,7 @@ func sanitizeContainerRegistryListLogSasUrl(i *cassette.Interaction) error {
 		if err != nil {
 			return fmt.Errorf("sanitizing UploadURL: %w", err)
 		}
-		body.LogLink = new(s)
+		body.LogLink = &s
 
 		sanitized, err := json.Marshal(body)
 		if err != nil {

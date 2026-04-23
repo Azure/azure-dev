@@ -116,7 +116,7 @@ export function getAzDevTerminalTitle(): string {
 const UseCustomTemplate: string = 'azure-dev:/template/custom';
 
 export async function selectApplicationTemplate(context: IActionContext): Promise<string> {
-    let templateUrl: string = '';
+    let templateUrl: string;
 
     const azureCli = await createAzureDevCli(context);
     const args = composeArgs(

@@ -142,6 +142,7 @@ func PyFastApiLaunch(projectPath string) (string, error) {
 		}
 
 		if strings.HasSuffix(path, "main.py") || strings.HasSuffix(path, "app.py") {
+			//nolint:gosec // G122: local project contents are trusted for FastAPI detection.
 			f, err := os.Open(path)
 			if err != nil {
 				return err

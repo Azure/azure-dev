@@ -14,6 +14,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type containerService struct {
@@ -45,6 +47,10 @@ func (c *containerService) Build(
 	ctx context.Context,
 	req *azdext.ContainerBuildRequest,
 ) (*azdext.ContainerBuildResponse, error) {
+	if req.ServiceName == "" {
+		return nil, status.Error(codes.InvalidArgument, "service name is required")
+	}
+
 	projectConfig, err := c.lazyProject.GetValue()
 	if err != nil {
 		return nil, err
@@ -52,7 +58,8 @@ func (c *containerService) Build(
 
 	serviceConfig, has := projectConfig.Services[req.ServiceName]
 	if !has {
-		return nil, fmt.Errorf("service %q not found in project configuration", req.ServiceName)
+		return nil, status.Errorf(codes.NotFound,
+			"service %q not found in project configuration", req.ServiceName)
 	}
 
 	containerHelper, err := c.lazyContainerHelper.GetValue()
@@ -95,6 +102,10 @@ func (c *containerService) Package(
 	ctx context.Context,
 	req *azdext.ContainerPackageRequest,
 ) (*azdext.ContainerPackageResponse, error) {
+	if req.ServiceName == "" {
+		return nil, status.Error(codes.InvalidArgument, "service name is required")
+	}
+
 	projectConfig, err := c.lazyProject.GetValue()
 	if err != nil {
 		return nil, err
@@ -102,7 +113,8 @@ func (c *containerService) Package(
 
 	serviceConfig, has := projectConfig.Services[req.ServiceName]
 	if !has {
-		return nil, fmt.Errorf("service %q not found in project configuration", req.ServiceName)
+		return nil, status.Errorf(codes.NotFound,
+			"service %q not found in project configuration", req.ServiceName)
 	}
 
 	containerHelper, err := c.lazyContainerHelper.GetValue()
@@ -145,6 +157,10 @@ func (c *containerService) Publish(
 	ctx context.Context,
 	req *azdext.ContainerPublishRequest,
 ) (*azdext.ContainerPublishResponse, error) {
+	if req.ServiceName == "" {
+		return nil, status.Error(codes.InvalidArgument, "service name is required")
+	}
+
 	projectConfig, err := c.lazyProject.GetValue()
 	if err != nil {
 		return nil, err
@@ -152,7 +168,8 @@ func (c *containerService) Publish(
 
 	serviceConfig, has := projectConfig.Services[req.ServiceName]
 	if !has {
-		return nil, fmt.Errorf("service %q not found in project configuration", req.ServiceName)
+		return nil, status.Errorf(codes.NotFound,
+			"service %q not found in project configuration", req.ServiceName)
 	}
 
 	containerHelper, err := c.lazyContainerHelper.GetValue()

@@ -3,8 +3,14 @@ words:
   - agentcopilot
   - agentdetect
   - Authenticode
+  - azdignore
+  - gofmt
+  - golangci
+  - lightspeed
+  - toplevel
   - azcloud
   - azdext
+  - azdxignore
   - azurefd
   - azcontainerregistry
   - CGNAT
@@ -32,11 +38,13 @@ words:
   - grpcbroker
   - msiexec
   - nosec
+  - npx
   - oneof
   - idxs
   # Looks like the protogen has a spelling error for panics
   - pancis
   - Paren
+  - OIDCREQUESTURI
   - pkgux
   - ppid
   - PPID
@@ -50,6 +58,7 @@ words:
   - structpb
   - syncmap
   - syscall
+  - tsx
   - Retryable
   - runcontext
   - surveyterm
@@ -74,11 +83,46 @@ words:
   - subcmd
   - genproto
   - errdetails
+  - slogger
+  - SSRF
+  - ssrf
+  - Teredo
+  - allowlist
+  - blocklist
+  - metacharacter
+  - metacharacters
   - yarnpkg
   - azconfig
   - hostnames
+  - managedhsm
+  - microsoftazure
   - seekable
   - seekability
+  - APFS
+  - NTFS
+  - mcpgo
+  - cpus
+  - unsanitized
+  - PATHEXT
+  - mintty
+  - dockerenv
+  - dedup
+  - exfiltration
+  - Fprintf
+  - gocritic
+  - gradlew
+  - IMDS
+  - managedhsm
+  - microsoftazure
+  - myhost
+  - newtag
+  - preconfigured
+  - Println
+  - sctx
+  - secretname
+  - secretversion
+  - TTLs
+  - vaultname
 languageSettings:
   - languageId: go
     ignoreRegExpList:
@@ -92,6 +136,16 @@ dictionaryDefinitions:
 dictionaries:
   - azdProjectDictionary
 overrides:
+  - filename: cmd/mcp.go
+    words:
+      - internalcmd
+  - filename: cmd/extension.go
+    words:
+      - compatResult
+      - compatCopy
+  - filename: pkg/azdext/config_helper.go
+    words:
+      - myext
   - filename: internal/tracing/fields/domains.go
     words:
       - azmk
@@ -175,6 +229,7 @@ overrides:
       - aistudio
       - apiserver
       - azdevify
+      - Chdir
       - creds
       - Moby
       - upsert
@@ -256,6 +311,12 @@ overrides:
   - filename: pkg/project/service_target_dotnet_containerapp.go
     words:
       - IMAGENAME
+  - filename: internal/vsrpc/server.go
+    words:
+      - CSWSH
+  - filename: pkg/extensions/manager.go
+    words:
+      - myext
   - filename: extensions/microsoft.azd.extensions/internal/resources/languages/**/.gitignore
     words:
       - rsuser
@@ -306,9 +367,74 @@ overrides:
   - filename: pkg/azdext/scope_detector.go
     words:
       - fakeazure
+  - filename: "{pkg/azapi/permissions.go,pkg/infra/provisioning/bicep/bicep_provider.go}"
+    words:
+      - ABAC
   - filename: extensions/azure.ai.models/internal/cmd/custom_create.go
     words:
       - Qwen
+  - filename: pkg/infra/provisioning/bicep/local_preflight.go
+    words:
+      - actioned
+  - filename: pkg/project/project.go
+    words:
+      - copylocks
+      - covdata
+      - GOWORK
+  - filename: pkg/ext/models.go
+    words:
+      - unvalidated
+      - venvs
+      - workdir
+  - filename: pkg/tools/language/python_executor.go
+    words:
+      - venvs
+  - filename: extensions/azure.ai.agents/internal/cmd/init_locations.go
+    words:
+      - swedencentral
+  - filename: docs/code-coverage-guide.md
+    words:
+      - covdata
+      - GOWORK
+  - filename: test/eval/README.md
+    words:
+      - Waza
+      - waza
+      - urlopen
+  - filename: "test/eval/graders/*.py"
+    words:
+      - Waza
+      - waza
+      - hdrs
+      - mysite
+      - mydb
+  - filename: "test/eval/tasks/**/*.yaml"
+    words:
+      - authenticat
+      - idempoten
+  - filename: "test/eval/tests/human/*.test.ts"
+    words:
+      - compdef
+      - badcfg
+      - provison
+      - notacommand
+  - filename: pkg/infra/provisioning/bicep/bicep_provider.go
+    words:
+      - BIZSPARK
+      - BIZTALK
+      - CORTANA
+      - DIRECTX
+      - GLOBALRESOURCES
+      - HOLOLENS
+      - HYPERV
+      - KINECT
+      - LOCALRESOURCES
+      - LYNC
+      - ONEDRIVE
+      - ONENOTE
+      - VISIO
+      - WEBREFERENCES
+      - sharepointonline
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

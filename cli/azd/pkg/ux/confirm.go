@@ -191,6 +191,11 @@ func (p *Confirm) Render(printer Printer) error {
 	// Message
 	printer.Fprintf("%s", BoldString("%s: ", p.options.Message))
 
+	// Hint indicator
+	if !p.cancelled && !p.complete && p.options.HelpMessage != "" {
+		printer.Fprintf("%s ", output.WithGrayFormat("[type ? for hint]"))
+	}
+
 	// Hint
 	if !p.cancelled && !p.complete && p.options.Hint != "" {
 		printer.Fprintf("%s ", output.WithHighLightFormat(p.options.Hint))

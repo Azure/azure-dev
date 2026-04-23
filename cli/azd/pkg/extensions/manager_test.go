@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -19,6 +20,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
@@ -1179,4 +1181,66 @@ func Test_GetInstalled_WithSourceFilter(t *testing.T) {
 		_, err := manager.GetInstalled(FilterOptions{Id: "non.existent"})
 		require.ErrorIs(t, err, ErrInstalledExtensionNotFound)
 	})
+}
+
+func Test_EntryPoint_PathTraversal_Blocked(t *testing.T) {
+	// Test that path traversal in entryPoint is detected via the shared IsPathContained utility
+	testCases := []struct {
+		name        string
+		entryPoint  string
+		shouldFail  bool
+		windowsOnly bool
+	}{
+		{"normal entry point", "myext.exe", false, false},
+		{"subdirectory entry point", "bin/myext", false, false},
+		{"path traversal attempt", "../../malicious", true, false},
+		// While backslashes are traditionally path separators only on Windows, IsPathContained normalizes
+		// them on all platforms and will treat `..\..` as a traversal sequence even on non-Windows.
+		{"path traversal with backslash", `..\..\malicious`, true, false},
+		{"double dot deep traversal", "../../../../../../../tmp/evil", true, false},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.windowsOnly && runtime.GOOS != "windows" {
+				t.Skip("backslash path traversal only applies on Windows")
+			}
+			baseDir := t.TempDir()
+			targetPath := filepath.Join(baseDir, tc.entryPoint)
+			isContained := osutil.IsPathContained(baseDir, targetPath)
+
+			if tc.shouldFail {
+				require.False(t, isContained, "path traversal should have been detected for %q", tc.entryPoint)
+			} else {
+				require.True(t, isContained, "legitimate entry point %q should be allowed", tc.entryPoint)
+			}
+		})
+	}
+}
+
+func Test_CopyFromLocalPath_PathTraversal_Blocked(t *testing.T) {
+	// Verify the containment check logic for relative artifact paths via shared IsPathContained
+	testCases := []struct {
+		name       string
+		path       string
+		shouldFail bool
+	}{
+		{"normal relative path", "extensions/myext.zip", false},
+		{"path traversal attempt", "../../etc/passwd", true},
+		{"path traversal with nested dirs", "../../../tmp/malicious", true},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			baseDir := t.TempDir()
+			resolvedPath := filepath.Join(baseDir, tc.path)
+			isContained := osutil.IsPathContained(baseDir, resolvedPath)
+
+			if tc.shouldFail {
+				require.False(t, isContained, "path traversal should have been detected for %q", tc.path)
+			} else {
+				require.True(t, isContained, "legitimate path %q should be allowed", tc.path)
+			}
+		})
+	}
 }

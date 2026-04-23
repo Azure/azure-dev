@@ -19,11 +19,19 @@ func Test_Valid_Event_Names(t *testing.T) {
 	}
 
 	ed := NewEventDispatcher[testEventArgs](testEvent)
-	err := ed.AddHandler(context.Background(), testEvent, handler)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	err := ed.AddHandler(ctx, testEvent, handler)
 	require.NoError(t, err)
 
-	err = ed.RemoveHandler(context.Background(), testEvent, handler)
-	require.NoError(t, err)
+	// Cancel context to remove handler
+	cancel()
+
+	require.Eventually(t, func() bool {
+		ed.mu.RLock()
+		defer ed.mu.RUnlock()
+		return len(ed.handlers[testEvent]) == 0
+	}, time.Second, 10*time.Millisecond, "Handler should be removed after context cancel")
 
 	err = ed.Invoke(context.Background(), testEvent, testEventArgs{}, func() error {
 		return nil
@@ -43,9 +51,6 @@ func Test_Invalid_Event_Names(t *testing.T) {
 	tests := map[string]func() error{
 		"AddHandler": func() error {
 			return ed.AddHandler(context.Background(), invalidEventName, handler)
-		},
-		"RemoveHandler": func() error {
-			return ed.RemoveHandler(context.Background(), invalidEventName, handler)
 		},
 		"Invoke": func() error {
 			return ed.Invoke(context.Background(), invalidEventName, testEventArgs{}, func() error {
@@ -225,22 +230,20 @@ func Test_Already_Cancelled_Context_Handler_Cleanup(t *testing.T) {
 	err := ed.AddHandler(ctx, testEvent, handler)
 	require.NoError(t, err)
 
-	// Give cleanup goroutine time to detect the already-cancelled context
-	time.Sleep(50 * time.Millisecond)
-
 	// Handler should not be called because context was already cancelled
 	err = ed.RaiseEvent(context.Background(), testEvent, testEventArgs{})
 	require.NoError(t, err)
 	require.Equal(t, 0, callCount, "Handler should not be called with already cancelled context")
 
 	// Verify handler was removed from internal map
-	ed.mu.RLock()
-	remainingHandlers := len(ed.handlers[testEvent])
-	ed.mu.RUnlock()
-	require.Equal(t, 0, remainingHandlers, "Handler should be automatically removed for already cancelled context")
+	require.Eventually(t, func() bool {
+		ed.mu.RLock()
+		defer ed.mu.RUnlock()
+		return len(ed.handlers[testEvent]) == 0
+	}, time.Second, 10*time.Millisecond, "Handler should be automatically removed for already cancelled context")
 }
 
-func Test_Duplicate_Handler_Detection(t *testing.T) {
+func Test_Same_Handler_Registered_Twice(t *testing.T) {
 	callCount := 0
 	handler := func(ctx context.Context, args testEventArgs) error {
 		callCount++
@@ -249,27 +252,26 @@ func Test_Duplicate_Handler_Detection(t *testing.T) {
 
 	ed := NewEventDispatcher[testEventArgs](testEvent)
 
-	// First registration should succeed
+	// Both registrations should succeed
 	err := ed.AddHandler(context.Background(), testEvent, handler)
 	require.NoError(t, err)
 
-	// Second registration of same handler should log warning and skip
 	err = ed.AddHandler(context.Background(), testEvent, handler)
 	require.NoError(t, err)
 
-	// Verify handler was not added again by checking the handler count
+	// Both registrations are kept — each AddHandler call is a distinct registration
 	ed.mu.RLock()
 	handlerCount := len(ed.handlers[testEvent])
 	ed.mu.RUnlock()
-	require.Equal(t, 1, handlerCount, "Should have only 1 handler, not 2")
+	require.Equal(t, 2, handlerCount, "Both registrations should be kept")
 
-	// Verify handler is only called once when event is raised
+	// Handler is called once per registration
 	err = ed.RaiseEvent(context.Background(), testEvent, testEventArgs{})
 	require.NoError(t, err)
-	require.Equal(t, 1, callCount, "Handler should be called only once, not twice")
+	require.Equal(t, 2, callCount, "Handler should be called once per registration")
 }
 
-func Test_Duplicate_Handler_Detection_Different_Events(t *testing.T) {
+func Test_Same_Handler_Different_Events(t *testing.T) {
 	callCount := 0
 	handler := func(ctx context.Context, args testEventArgs) error {
 		callCount++
@@ -307,7 +309,7 @@ func Test_Duplicate_Handler_Detection_Different_Events(t *testing.T) {
 	require.Equal(t, 2, callCount, "Handler should be called again for event2")
 }
 
-func Test_Duplicate_Handler_Detection_Different_Handlers(t *testing.T) {
+func Test_Different_Handlers_Same_Event(t *testing.T) {
 	// Different handlers for the same event should not trigger duplicate detection
 	callCount1 := 0
 	handler1 := func(ctx context.Context, args testEventArgs) error {
@@ -343,7 +345,7 @@ func Test_Duplicate_Handler_Detection_Different_Handlers(t *testing.T) {
 	require.Equal(t, 1, callCount2, "Handler2 should be called")
 }
 
-func Test_Duplicate_Handler_Detection_Multiple_Duplicates(t *testing.T) {
+func Test_Same_Handler_Multiple_Registrations(t *testing.T) {
 	callCount := 0
 	handler := func(ctx context.Context, args testEventArgs) error {
 		callCount++
@@ -356,22 +358,22 @@ func Test_Duplicate_Handler_Detection_Multiple_Duplicates(t *testing.T) {
 	err := ed.AddHandler(context.Background(), testEvent, handler)
 	require.NoError(t, err)
 
-	// Multiple duplicate registrations
+	// Multiple registrations of the same handler
 	for range 3 {
 		err = ed.AddHandler(context.Background(), testEvent, handler)
 		require.NoError(t, err)
 	}
 
-	// Verify only one handler is registered
+	// All registrations are kept
 	ed.mu.RLock()
 	handlerCount := len(ed.handlers[testEvent])
 	ed.mu.RUnlock()
-	require.Equal(t, 1, handlerCount, "Should still have only 1 handler after multiple duplicate attempts")
+	require.Equal(t, 4, handlerCount, "All registrations should be kept")
 
-	// Handler should only be called once
+	// Handler is called once per registration
 	err = ed.RaiseEvent(context.Background(), testEvent, testEventArgs{})
 	require.NoError(t, err)
-	require.Equal(t, 1, callCount, "Handler should be called only once despite multiple registration attempts")
+	require.Equal(t, 4, callCount, "Handler should be called once per registration")
 }
 
 // Test_Workflow_Context_Handler_Cleanup validates that event handlers are properly cleaned up
@@ -399,8 +401,6 @@ func Test_Workflow_Context_Handler_Cleanup(t *testing.T) {
 		}
 		err := ed.AddHandler(step1Ctx, testEvent, step1Handler)
 		require.NoError(t, err)
-
-		// Verify handler is registered
 		ed.mu.RLock()
 		require.Equal(t, 1, len(ed.handlers[testEvent]), "Step 1 handler should be registered")
 		ed.mu.RUnlock()
@@ -413,13 +413,12 @@ func Test_Workflow_Context_Handler_Cleanup(t *testing.T) {
 		// Cancel step 1 context (simulating workflow step completion)
 		cancelStep1()
 
-		// Give cleanup goroutine time to process
-		time.Sleep(50 * time.Millisecond)
-
 		// Verify handler was removed
-		ed.mu.RLock()
-		require.Equal(t, 0, len(ed.handlers[testEvent]), "Step 1 handler should be cleaned up after cancel")
-		ed.mu.RUnlock()
+		require.Eventually(t, func() bool {
+			ed.mu.RLock()
+			defer ed.mu.RUnlock()
+			return len(ed.handlers[testEvent]) == 0
+		}, time.Second, 10*time.Millisecond, "Step 1 handler should be cleaned up after cancel")
 
 		// Raise event again - handler should NOT be called
 		step1CallCount = 0
@@ -444,20 +443,19 @@ func Test_Workflow_Context_Handler_Cleanup(t *testing.T) {
 		}
 		err := ed.AddHandler(step1Ctx, testEvent, step1Handler)
 		require.NoError(t, err)
-
-		// Verify step 1 handler works
 		err = ed.RaiseEvent(step1Ctx, testEvent, testEventArgs{})
 		require.NoError(t, err)
 		require.Equal(t, 1, step1CallCount)
 
 		// Complete step 1
 		cancelStep1()
-		time.Sleep(50 * time.Millisecond)
 
 		// Verify step 1 handler cleaned up
-		ed.mu.RLock()
-		require.Equal(t, 0, len(ed.handlers[testEvent]), "Step 1 handler should be cleaned up")
-		ed.mu.RUnlock()
+		require.Eventually(t, func() bool {
+			ed.mu.RLock()
+			defer ed.mu.RUnlock()
+			return len(ed.handlers[testEvent]) == 0
+		}, time.Second, 10*time.Millisecond, "Step 1 handler should be cleaned up")
 
 		// Step 2: deploy (fresh context, same root)
 		step2Ctx, cancelStep2 := context.WithCancel(nonCancellableRoot)
@@ -477,12 +475,13 @@ func Test_Workflow_Context_Handler_Cleanup(t *testing.T) {
 
 		// Complete step 2
 		cancelStep2()
-		time.Sleep(50 * time.Millisecond)
 
 		// Verify step 2 handler cleaned up
-		ed.mu.RLock()
-		require.Equal(t, 0, len(ed.handlers[testEvent]), "Step 2 handler should be cleaned up")
-		ed.mu.RUnlock()
+		require.Eventually(t, func() bool {
+			ed.mu.RLock()
+			defer ed.mu.RUnlock()
+			return len(ed.handlers[testEvent]) == 0
+		}, time.Second, 10*time.Millisecond, "Step 2 handler should be cleaned up")
 	})
 
 	t.Run("NonCancellableContextHandlerNotCleanedUp", func(t *testing.T) {
@@ -503,10 +502,7 @@ func Test_Workflow_Context_Handler_Cleanup(t *testing.T) {
 		require.Equal(t, 1, len(ed.handlers[testEvent]))
 		ed.mu.RUnlock()
 
-		// Wait a bit - handler should NOT be cleaned up since context is non-cancellable
-		time.Sleep(50 * time.Millisecond)
-
-		// Handler should still be registered
+		// Handler should still be registered (non-cancellable context means no cleanup goroutine)
 		ed.mu.RLock()
 		require.Equal(t, 1, len(ed.handlers[testEvent]), "Handler with non-cancellable context should persist")
 		ed.mu.RUnlock()
@@ -516,6 +512,122 @@ func Test_Workflow_Context_Handler_Cleanup(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, 1, callCount)
 	})
+}
+
+// Test_Closures_From_Same_Literal validates that closures created from the same function literal
+// can all be registered for the same event (e.g., multiple extensions registering via
+// createProjectEventHandler).
+func Test_Closures_From_Same_Literal(t *testing.T) {
+	type extensionInfo struct {
+		name string
+	}
+
+	// createHandler simulates createProjectEventHandler: returns closures from the same literal
+	createHandler := func(ext *extensionInfo, eventName string) EventHandlerFn[testEventArgs] {
+		return func(ctx context.Context, args testEventArgs) error {
+			_ = ext.name
+			_ = eventName
+			return nil
+		}
+	}
+
+	ed := NewEventDispatcher[testEventArgs](testEvent)
+
+	ext1 := &extensionInfo{name: "microsoft.azd.demo"}
+	ext2 := &extensionInfo{name: "azure.ai.agents"}
+
+	// Register handlers from two "extensions" for the same event
+	h1 := createHandler(ext1, "preprovision")
+	h2 := createHandler(ext2, "preprovision")
+
+	err := ed.AddHandler(context.Background(), testEvent, h1)
+	require.NoError(t, err)
+
+	err = ed.AddHandler(context.Background(), testEvent, h2)
+	require.NoError(t, err)
+	ed.mu.RLock()
+	handlerCount := len(ed.handlers[testEvent])
+	ed.mu.RUnlock()
+	require.Equal(t, 2, handlerCount, "Both extension handlers must be registered")
+}
+
+// Test_Context_Cleanup_With_Same_Literal_Closures validates that context-based cleanup
+// removes only the correct handler when multiple closures from the same literal are registered.
+func Test_Context_Cleanup_With_Same_Literal_Closures(t *testing.T) {
+	createHandler := func(name string, counter *int) EventHandlerFn[testEventArgs] {
+		return func(ctx context.Context, args testEventArgs) error {
+			(*counter)++
+			return nil
+		}
+	}
+
+	ed := NewEventDispatcher[testEventArgs](testEvent)
+
+	ctx1, cancel1 := context.WithCancel(context.Background())
+	ctx2 := context.Background()
+
+	counter1, counter2 := 0, 0
+	h1 := createHandler("ext1", &counter1)
+	h2 := createHandler("ext2", &counter2)
+
+	err := ed.AddHandler(ctx1, testEvent, h1)
+	require.NoError(t, err)
+	err = ed.AddHandler(ctx2, testEvent, h2)
+	require.NoError(t, err)
+
+	// Both should fire
+	err = ed.RaiseEvent(context.Background(), testEvent, testEventArgs{})
+	require.NoError(t, err)
+	require.Equal(t, 1, counter1)
+	require.Equal(t, 1, counter2)
+
+	// Cancel ext1's context — only ext1's handler should be removed
+	cancel1()
+
+	require.Eventually(t, func() bool {
+		counter1, counter2 = 0, 0
+		err = ed.RaiseEvent(context.Background(), testEvent, testEventArgs{})
+		require.NoError(t, err)
+		return counter1 == 0 && counter2 == 1
+	}, time.Second, 10*time.Millisecond,
+		"ext1 handler should be removed after context cancel while ext2 remains active")
+}
+
+// Test_Workflow_Step_Race_No_Duplicate_Execution simulates the race window during
+// workflow commands (e.g., azd up) where step 1's context is cancelled but the cleanup
+// goroutine hasn't run yet when step 2 registers the same hooks. Handlers from step 1
+// must not fire during step 2, even before async cleanup removes them.
+// Regression test for https://github.com/Azure/azure-dev/issues/6011.
+func Test_Workflow_Step_Race_No_Duplicate_Execution(t *testing.T) {
+	ed := NewEventDispatcher[testEventArgs](testEvent)
+
+	callCount := 0
+	createHandler := func() EventHandlerFn[testEventArgs] {
+		return func(ctx context.Context, args testEventArgs) error {
+			callCount++
+			return nil
+		}
+	}
+
+	// Step 1: register handler with cancellable context
+	step1Ctx, cancelStep1 := context.WithCancel(context.Background())
+	err := ed.AddHandler(step1Ctx, testEvent, createHandler())
+	require.NoError(t, err)
+
+	// Step 1 completes — cancel context (cleanup goroutine queued but may or may not have run)
+	cancelStep1()
+
+	// Step 2 starts immediately — registers the same hook again
+	step2Ctx := t.Context()
+	err = ed.AddHandler(step2Ctx, testEvent, createHandler())
+	require.NoError(t, err)
+
+	// Raise event — only step 2's handler should fire since step 1's context is cancelled.
+	// This is deterministic regardless of whether the cleanup goroutine has run yet,
+	// because RaiseEvent skips handlers with cancelled contexts.
+	err = ed.RaiseEvent(context.Background(), testEvent, testEventArgs{})
+	require.NoError(t, err)
+	require.Equal(t, 1, callCount, "Only step 2's handler should fire; step 1's context is cancelled")
 }
 
 type testEventArgs struct{}

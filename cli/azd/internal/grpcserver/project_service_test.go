@@ -15,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
@@ -1189,15 +1190,14 @@ func Test_ProjectService_TypeValidation_InvalidChangesNotPersisted(t *testing.T)
 			Value: invalidProvider,
 		})
 
-		// SetConfigValue calls reloadAndCacheProjectConfig which calls project.Load
-		// project.Load fails because "999" is not a valid provider
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "unsupported IaC provider '999'")
+		// ParseProvider now accepts any value to support extension-provided providers.
+		// Setting an int value is coerced to string "999", which is accepted.
+		require.NoError(t, err)
 
-		// Verify the change was NOT persisted to disk (should still be valid)
+		// Verify the value was persisted to disk
 		reloadedConfig, err := project.Load(*mockContext.Context, azdContext.ProjectPath())
 		require.NoError(t, err)
-		require.Empty(t, reloadedConfig.Infra.Provider)
+		require.Equal(t, provisioning.ProviderKind("999"), reloadedConfig.Infra.Provider)
 	})
 
 	t.Run("Service_SetHostToInt_CoercesToString", func(t *testing.T) {

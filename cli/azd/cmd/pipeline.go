@@ -10,6 +10,8 @@ import (
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -170,6 +172,13 @@ func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, 
 
 	// Command title
 	pipelineProviderName := p.manager.CiProviderName()
+
+	// Track the resolved pipeline provider (after CiProviderName resolves auto-detection).
+	// cmd.flags already indicates whether --provider was explicitly set by the user.
+	tracing.SetUsageAttributes(fields.PipelineProviderKey.String(pipelineProviderName))
+	if p.flags.PipelineAuthTypeName != "" {
+		tracing.SetUsageAttributes(fields.PipelineAuthKey.String(p.flags.PipelineAuthTypeName))
+	}
 	p.console.MessageUxItem(ctx, &ux.MessageTitle{
 		Title: fmt.Sprintf("Configure your %s pipeline", pipelineProviderName),
 	})
@@ -177,19 +186,68 @@ func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, 
 	layers := infra.Options.GetLayers()
 	allParameters := []provisioning.Parameter{}
 
-	for _, layer := range layers {
+	inputParameters := func(layer provisioning.Options) ([]provisioning.Parameter, error) {
 		err = p.provisioningManager.Initialize(ctx, p.projectConfig.Path, layer)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf(
+				"failed to initialize infra provider %s: %w",
+				layer.Provider,
+				err,
+			)
 		}
 
-		// Pull provider specific parameters
-		providerParameters, err := p.provisioningManager.Parameters(ctx)
+		parameters, err := p.provisioningManager.Parameters(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get parameters for provider %s: %w", pipelineProviderName, err)
+			return nil, fmt.Errorf(
+				"failed to get parameters for infra provider %s: %w",
+				layer.Provider,
+				err,
+			)
 		}
 
-		allParameters = append(allParameters, providerParameters...)
+		return parameters, nil
+	}
+
+	if len(layers) <= 1 {
+		for _, layer := range layers {
+			parameters, err := inputParameters(layer)
+			if err != nil {
+				return nil, err
+			}
+
+			allParameters = append(allParameters, parameters...)
+		}
+	} else {
+		// virtualEnv contains all accumulated outputs from previous layers.
+		virtualEnv := map[string]string{}
+
+		for _, layer := range layers {
+			layer.VirtualEnv = virtualEnv
+
+			parameters, err := inputParameters(layer)
+			if err != nil {
+				return nil, fmt.Errorf("layer '%s': %w", layer.Name, err)
+			}
+
+			allParameters = append(allParameters, parameters...)
+
+			outputs, err := p.provisioningManager.PlannedOutputs(ctx)
+			if err != nil {
+				return nil, fmt.Errorf(
+					"layer '%s': failed to get planned outputs for infra provider %s: %w",
+					layer.Name,
+					layer.Provider,
+					err,
+				)
+			}
+
+			// Save current outputs
+			for _, output := range outputs {
+				// Use a sentinel value that records the source layer and output name so
+				// downstream virtual env substitutions remain traceable during planning.
+				virtualEnv[output.Name] = fmt.Sprintf("%s--%s", layer.Name, output.Name)
+			}
+		}
 	}
 
 	p.manager.SetParameters(allParameters)

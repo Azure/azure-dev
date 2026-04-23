@@ -17,68 +17,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Test HasAppServiceDeployments
-func Test_HasAppServiceDeployments(t *testing.T) {
-	t.Run("HasDeployments", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
-		azCli := newAzureClientFromMockContext(mockContext)
-
-		mockContext.HttpClient.When(func(request *http.Request) bool {
-			return request.Method == http.MethodGet &&
-				strings.Contains(request.URL.Path, "/deployments")
-		}).RespondFn(func(request *http.Request) (*http.Response, error) {
-			response := armappservice.WebAppsClientListDeploymentsResponse{
-				DeploymentCollection: armappservice.DeploymentCollection{
-					Value: []*armappservice.Deployment{
-						{
-							ID:   new("deployment-1"),
-							Name: new("deployment-1"),
-						},
-					},
-				},
-			}
-			return mocks.CreateHttpResponseWithBody(request, http.StatusOK, response)
-		})
-
-		hasDeployments, err := azCli.HasAppServiceDeployments(
-			*mockContext.Context,
-			"SUBSCRIPTION_ID",
-			"RESOURCE_GROUP_ID",
-			"WEB_APP_NAME",
-		)
-
-		require.NoError(t, err)
-		require.True(t, hasDeployments)
-	})
-
-	t.Run("NoDeployments", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
-		azCli := newAzureClientFromMockContext(mockContext)
-
-		mockContext.HttpClient.When(func(request *http.Request) bool {
-			return request.Method == http.MethodGet &&
-				strings.Contains(request.URL.Path, "/deployments")
-		}).RespondFn(func(request *http.Request) (*http.Response, error) {
-			response := armappservice.WebAppsClientListDeploymentsResponse{
-				DeploymentCollection: armappservice.DeploymentCollection{
-					Value: []*armappservice.Deployment{},
-				},
-			}
-			return mocks.CreateHttpResponseWithBody(request, http.StatusOK, response)
-		})
-
-		hasDeployments, err := azCli.HasAppServiceDeployments(
-			*mockContext.Context,
-			"SUBSCRIPTION_ID",
-			"RESOURCE_GROUP_ID",
-			"WEB_APP_NAME",
-		)
-
-		require.NoError(t, err)
-		require.False(t, hasDeployments)
-	})
-}
-
 // Test GetAppServiceSlots
 func Test_GetAppServiceSlots(t *testing.T) {
 	t.Run("WithSlots", func(t *testing.T) {

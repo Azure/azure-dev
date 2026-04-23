@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestMCPSecurityCheckURL_BlocksMetadataEndpoints(t *testing.T) {
@@ -318,25 +320,12 @@ func TestMCPSecurityFluentBuilder(t *testing.T) {
 		RedactHeaders("Authorization").
 		ValidatePathsWithinBase("/tmp")
 
-	if policy == nil {
-		t.Fatal("fluent builder should return non-nil policy")
-	}
-
-	if !policy.blockMetadata {
-		t.Error("blockMetadata should be true")
-	}
-	if !policy.blockPrivate {
-		t.Error("blockPrivate should be true")
-	}
-	if !policy.requireHTTPS {
-		t.Error("requireHTTPS should be true")
-	}
-	if !policy.IsHeaderBlocked("Authorization") {
-		t.Error("Authorization should be blocked")
-	}
-	if len(policy.allowedBasePaths) != 1 {
-		t.Errorf("expected 1 base path, got %d", len(policy.allowedBasePaths))
-	}
+	require.NotNil(t, policy, "fluent builder should return non-nil policy")
+	require.True(t, policy.blockMetadata, "blockMetadata should be true")
+	require.True(t, policy.blockPrivate, "blockPrivate should be true")
+	require.True(t, policy.requireHTTPS, "requireHTTPS should be true")
+	require.True(t, policy.IsHeaderBlocked("Authorization"), "Authorization should be blocked")
+	require.Len(t, policy.allowedBasePaths, 1, "expected 1 base path")
 }
 
 func TestSSRFSafeRedirect_SchemeDowngrade(t *testing.T) {
@@ -421,8 +410,8 @@ func TestSSRFSafeRedirect_HostnameResolvesPrivateBlocked(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for redirect hostname resolving to private IP")
 	}
-	if !strings.Contains(err.Error(), "resolved to private/loopback") {
-		t.Errorf("error = %q, want mention of resolved private/loopback", err.Error())
+	if !strings.Contains(err.Error(), "resolved to blocked IP") {
+		t.Errorf("error = %q, want mention of resolved blocked IP", err.Error())
 	}
 }
 
@@ -446,16 +435,14 @@ func TestMCPSecurityOnBlocked_URLCallback(t *testing.T) {
 	t.Parallel()
 
 	var (
-		gotAction string
-		gotDetail string
-		callCount int
+		gotViolation string
+		callCount    int
 	)
 
 	policy := NewMCPSecurityPolicy().
 		RequireHTTPS().
-		OnBlocked(func(action, detail string) {
-			gotAction = action
-			gotDetail = detail
+		OnBlocked(func(violation string) {
+			gotViolation = violation
 			callCount++
 		})
 
@@ -468,18 +455,15 @@ func TestMCPSecurityOnBlocked_URLCallback(t *testing.T) {
 	if callCount != 1 {
 		t.Errorf("callCount = %d, want 1", callCount)
 	}
-	if gotAction != "url_blocked" {
-		t.Errorf("action = %q, want %q", gotAction, "url_blocked")
-	}
-	if !strings.Contains(gotDetail, "HTTPS required") {
-		t.Errorf("detail = %q, want to contain %q", gotDetail, "HTTPS required")
+	if !strings.Contains(gotViolation, "HTTPS required") {
+		t.Errorf("violation = %q, want to contain %q", gotViolation, "HTTPS required")
 	}
 }
 
 func TestMCPSecurityOnBlocked_PathCallback(t *testing.T) {
 	t.Parallel()
 
-	var gotAction string
+	var gotViolation string
 
 	base := t.TempDir()
 	outside := t.TempDir()
@@ -490,8 +474,8 @@ func TestMCPSecurityOnBlocked_PathCallback(t *testing.T) {
 
 	policy := NewMCPSecurityPolicy().
 		ValidatePathsWithinBase(base).
-		OnBlocked(func(action, detail string) {
-			gotAction = action
+		OnBlocked(func(violation string) {
+			gotViolation = violation
 		})
 
 	err := policy.CheckPath(outsideFile)
@@ -499,8 +483,8 @@ func TestMCPSecurityOnBlocked_PathCallback(t *testing.T) {
 		t.Fatal("expected error for path outside base")
 	}
 
-	if gotAction != "path_blocked" {
-		t.Errorf("action = %q, want %q", gotAction, "path_blocked")
+	if gotViolation == "" {
+		t.Error("expected OnBlocked callback to be invoked with violation message")
 	}
 }
 

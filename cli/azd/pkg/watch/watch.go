@@ -4,13 +4,17 @@
 package watch
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"sync"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/ignore"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/fatih/color"
@@ -18,7 +22,9 @@ import (
 )
 
 type Watcher interface {
+	// Deprecated: Use GetFileChanges().String() instead.
 	PrintChangedFiles(ctx context.Context)
+	GetFileChanges() FileChanges
 }
 
 type fileWatcher struct {
@@ -26,6 +32,8 @@ type fileWatcher struct {
 	watcher         *fsnotify.Watcher
 	ignoredFolders  map[string]struct{}
 	globIgnorePaths []string
+	ignoreMatcher   *ignore.Matcher
+	root            string
 	mu              sync.Mutex
 }
 
@@ -47,7 +55,21 @@ func NewWatcher(ctx context.Context) (Watcher, error) {
 		return nil, fmt.Errorf("failed to create watcher: %w", err)
 	}
 
-	// Set up ignore patterns
+	cwd, err := os.Getwd()
+	if err != nil {
+		watcher.Close()
+		return nil, fmt.Errorf("failed to get current working directory: %w", err)
+	}
+
+	// Load ignore patterns from .azdxignore and .gitignore files.
+	ignoreMatcher, err := ignore.NewMatcher(cwd)
+	if err != nil {
+		watcher.Close()
+		return nil, fmt.Errorf("failed to load ignore patterns: %w", err)
+	}
+
+	// Hardcoded folder ignores are kept as a fast-path default — they apply
+	// even when no .azdxignore or .gitignore file exists.
 	ignoredFolders := map[string]struct{}{
 		".git": {},
 	}
@@ -63,6 +85,8 @@ func NewWatcher(ctx context.Context) (Watcher, error) {
 		watcher:         watcher,
 		ignoredFolders:  ignoredFolders,
 		globIgnorePaths: globIgnorePaths,
+		ignoreMatcher:   ignoreMatcher,
+		root:            cwd,
 	}
 
 	go func() {
@@ -71,7 +95,7 @@ func NewWatcher(ctx context.Context) (Watcher, error) {
 		for {
 			select {
 			case event := <-watcher.Events:
-				// Ignore events matching glob patterns
+				// Fast path: ignore events matching hardcoded glob patterns.
 				shouldIgnore := false
 				for _, pattern := range fw.globIgnorePaths {
 					matched, _ := doublestar.PathMatch(pattern, event.Name)
@@ -84,12 +108,28 @@ func NewWatcher(ctx context.Context) (Watcher, error) {
 					continue
 				}
 
-				fw.mu.Lock()
 				name := event.Name
 
-				// Check if this is a file or directory
-				info, err := os.Stat(name)
-				isDir := err == nil && info.IsDir()
+				// Single os.Stat call — reused for both isDir and ignore matching.
+				info, statErr := os.Stat(name)
+				isDir := statErr == nil && info.IsDir()
+
+				// Check user-defined ignore patterns (.azdxignore / .gitignore).
+				if relPath, relErr := filepath.Rel(fw.root, name); relErr != nil {
+					log.Printf("debug: failed to compute relative path for %s: %v", name, relErr)
+				} else {
+					if fw.ignoreMatcher.IsIgnored(relPath, isDir) {
+						continue
+					}
+					// When the path no longer exists (e.g. Remove event), os.Stat fails
+					// and isDir defaults to false. Re-check as a directory so that
+					// directory-only patterns (trailing slash) still filter the event.
+					if statErr != nil && fw.ignoreMatcher.IsIgnored(relPath, true) {
+						continue
+					}
+				}
+
+				fw.mu.Lock()
 
 				switch {
 				case event.Has(fsnotify.Create):
@@ -129,11 +169,6 @@ func NewWatcher(ctx context.Context) (Watcher, error) {
 		}
 	}()
 
-	cwd, err := os.Getwd()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get current working directory: %w", err)
-	}
-
 	if err := fw.watchRecursive(cwd, watcher); err != nil {
 		return nil, fmt.Errorf("watcher failed: %w", err)
 	}
@@ -147,9 +182,18 @@ func (fw *fileWatcher) watchRecursive(root string, watcher *fsnotify.Watcher) er
 			return err
 		}
 		if info.IsDir() {
-			// Check if this directory should be ignored
+			// Check if this directory should be ignored by hardcoded defaults.
 			if _, ignored := fw.ignoredFolders[info.Name()]; ignored {
 				return filepath.SkipDir
+			}
+
+			// Check user-defined ignore patterns (.azdxignore / .gitignore).
+			if relPath, relErr := filepath.Rel(fw.root, path); relErr != nil {
+				log.Printf("debug: failed to compute relative path for %s: %v", path, relErr)
+			} else if relPath != "." {
+				if fw.ignoreMatcher.IsIgnored(relPath, true) {
+					return filepath.SkipDir
+				}
 			}
 
 			err = watcher.Add(path)
@@ -203,4 +247,96 @@ func (fw *fileWatcher) PrintChangedFiles(ctx context.Context) {
 			fmt.Println(output.WithGrayFormat("| "), color.RedString("- Deleted  "), getDisplayPath(file))
 		}
 	}
+}
+
+// FileChangeType enumerates the types of file changes.
+type FileChangeType int
+
+const (
+	// FileCreated indicates a new file was created.
+	FileCreated FileChangeType = iota
+	// FileModified indicates an existing file was modified.
+	FileModified
+	// FileDeleted indicates a file was deleted.
+	FileDeleted
+)
+
+// FileChange describes a single file change with its path and type.
+type FileChange struct {
+	Path       string
+	ChangeType FileChangeType
+}
+
+// String returns a formatted display string for a single file change.
+func (fc FileChange) String() string {
+	cwd, cwdErr := os.Getwd()
+	path := fc.Path
+	if cwdErr == nil {
+		if rel, err := filepath.Rel(cwd, fc.Path); err == nil {
+			path = rel
+		}
+	}
+
+	switch fc.ChangeType {
+	case FileCreated:
+		return fmt.Sprintf("%s %s %s",
+			output.WithGrayFormat("|"),
+			color.GreenString("+ Created  "),
+			path)
+	case FileModified:
+		return fmt.Sprintf("%s %s %s",
+			output.WithGrayFormat("|"),
+			color.YellowString("± Modified "),
+			path)
+	case FileDeleted:
+		return fmt.Sprintf("%s %s %s",
+			output.WithGrayFormat("|"),
+			color.RedString("- Deleted  "),
+			path)
+	default:
+		return fmt.Sprintf("%s   %s", output.WithGrayFormat("|"), path)
+	}
+}
+
+// FileChanges is a collection of file changes with formatted output support.
+type FileChanges []FileChange
+
+// String returns a formatted display of all file changes.
+func (fc FileChanges) String() string {
+	if len(fc) == 0 {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString(output.WithGrayFormat("| Files changed:"))
+	for _, change := range fc {
+		b.WriteString("\n")
+		b.WriteString(change.String())
+	}
+	return b.String()
+}
+
+// GetFileChanges returns all file changes tracked by the watcher, sorted by path.
+func (fw *fileWatcher) GetFileChanges() FileChanges {
+	fw.mu.Lock()
+	defer fw.mu.Unlock()
+
+	changes := make(FileChanges, 0,
+		len(fw.fileChanges.Created)+len(fw.fileChanges.Modified)+len(fw.fileChanges.Deleted))
+
+	for file := range fw.fileChanges.Created {
+		changes = append(changes, FileChange{Path: file, ChangeType: FileCreated})
+	}
+	for file := range fw.fileChanges.Modified {
+		changes = append(changes, FileChange{Path: file, ChangeType: FileModified})
+	}
+	for file := range fw.fileChanges.Deleted {
+		changes = append(changes, FileChange{Path: file, ChangeType: FileDeleted})
+	}
+
+	slices.SortFunc(changes, func(a, b FileChange) int {
+		return cmp.Compare(a.Path, b.Path)
+	})
+
+	return changes
 }

@@ -67,7 +67,18 @@ func (b *SessionConfigBuilder) Build(
 
 	Do not respond to requests unrelated to application development, Azure services, or deployment.
 	For unrelated requests, briefly explain that you are focused on Azure application development
-	and suggest the user use a general-purpose assistant for other topics.`
+	and suggest the user use a general-purpose assistant for other topics.
+
+	When prompting the user to choose Azure subscriptions, regions, or resources, follow these guidelines:
+	- Use short, focused prompts (e.g., "Which subscription would you like to use?") paired with
+	  well-formatted choices via the ask_user tool with the choices field.
+	- Do NOT embed long inline lists of options inside a text message with an open-ended question.
+	- Keep prompt messages concise — move details into choices, not the question text.
+	- Format Azure subscriptions as: <Subscription Name> (<subscription-id>)
+	  Example: "My Dev Subscription (a1b2c3d4-e5f6-7890-abcd-ef1234567890)"
+	- Format Azure regions as: <Full Region Name> (<region-short-name>)
+	  Example: "East US 2 (eastus2)"
+	- Always use actual entity names and identifiers from Azure APIs, never placeholders.`
 
 	if msg, ok := userConfig.GetString(ConfigKeySystemMessage); ok && msg != "" {
 		systemContent += "\n\n" + msg

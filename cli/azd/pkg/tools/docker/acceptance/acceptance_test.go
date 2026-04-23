@@ -97,6 +97,7 @@ func Test_DockerAcceptance(t *testing.T) {
 		buildArgs,
 		buildSecrets,
 		buildEnv,
+		"",
 		&buildOutput,
 	)
 	require.NoError(t, err, "build should succeed")

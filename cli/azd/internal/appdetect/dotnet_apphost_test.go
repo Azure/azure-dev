@@ -18,6 +18,7 @@ import (
 )
 
 func TestDotNetAppHostDetector_DetectProject(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name         string
 		setupDir     func(t *testing.T) (string, []fs.DirEntry)
@@ -212,6 +213,7 @@ builder.Build().Run();`
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			mockCtx := mocks.NewMockContext(context.Background())
 
 			// Mock msbuild calls to return false for non-Aspire projects
@@ -244,6 +246,7 @@ builder.Build().Run();`
 }
 
 func TestDotNetAppHostDetector_Language(t *testing.T) {
+	t.Parallel()
 	detector := &dotNetAppHostDetector{}
 	require.Equal(t, DotNetAppHost, detector.Language())
 }

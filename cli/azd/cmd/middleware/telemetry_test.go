@@ -19,6 +19,7 @@ import (
 )
 
 func Test_Telemetry_Run(t *testing.T) {
+	t.Parallel()
 	lazyPlatformConfig := lazy.NewLazy(func() (*platform.Config, error) {
 		return &platform.Config{
 			Type: "devcenter",
@@ -26,6 +27,7 @@ func Test_Telemetry_Run(t *testing.T) {
 	})
 
 	t.Run("WithRootAction", func(t *testing.T) {
+		t.Parallel()
 		mockContext := mocks.NewMockContext(context.Background())
 
 		options := &Options{
@@ -55,6 +57,7 @@ func Test_Telemetry_Run(t *testing.T) {
 	})
 
 	t.Run("WithChildAction", func(t *testing.T) {
+		t.Parallel()
 		mockContext := mocks.NewMockContext(context.Background())
 
 		options := &Options{
@@ -85,6 +88,7 @@ func Test_Telemetry_Run(t *testing.T) {
 	})
 
 	t.Run("WithInstalledExtensions", func(t *testing.T) {
+		t.Parallel()
 		mockContext := mocks.NewMockContext(context.Background())
 
 		// Set up installed extensions in config
@@ -131,6 +135,7 @@ func Test_Telemetry_Run(t *testing.T) {
 	})
 
 	t.Run("WithNoInstalledExtensions", func(t *testing.T) {
+		t.Parallel()
 		mockContext := mocks.NewMockContext(context.Background())
 
 		userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
@@ -156,6 +161,7 @@ func Test_Telemetry_Run(t *testing.T) {
 	})
 
 	t.Run("WithAllNilExtensionEntries", func(t *testing.T) {
+		t.Parallel()
 		mockContext := mocks.NewMockContext(context.Background())
 
 		userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
@@ -191,6 +197,7 @@ func Test_Telemetry_Run(t *testing.T) {
 	})
 
 	t.Run("WithNilExtensionManager", func(t *testing.T) {
+		t.Parallel()
 		options := &Options{
 			CommandPath: "azd provision",
 			Name:        "provision",
@@ -205,6 +212,7 @@ func Test_Telemetry_Run(t *testing.T) {
 	})
 
 	t.Run("WithListInstalledError", func(t *testing.T) {
+		t.Parallel()
 		mockContext := mocks.NewMockContext(context.Background())
 
 		userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)

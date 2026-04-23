@@ -18,10 +18,12 @@ import (
 func getParentProcessInfoWithPPID(pid int) (parentProcessInfo, int, error) {
 	info := parentProcessInfo{}
 	parentPid := 0
+	pidArg := strconv.Itoa(pid)
 
 	// Use ps to get process info and parent PID
 	// -o comm= gives just the command name, -o ppid= gives parent PID
-	cmd := exec.Command("ps", "-p", fmt.Sprintf("%d", pid), "-o", "comm=,ppid=")
+	//nolint:gosec // G204: pidArg is derived from an integer process ID, not shell input.
+	cmd := exec.Command("ps", "-p", pidArg, "-o", "comm=,ppid=")
 	output, err := cmd.Output()
 	if err != nil {
 		return info, 0, fmt.Errorf("failed to get process info: %w", err)
@@ -37,7 +39,8 @@ func getParentProcessInfoWithPPID(pid int) (parentProcessInfo, int, error) {
 	}
 
 	// Get the full command path
-	cmd = exec.Command("ps", "-p", fmt.Sprintf("%d", pid), "-o", "args=")
+	//nolint:gosec // G204: pidArg is derived from an integer process ID, not shell input.
+	cmd = exec.Command("ps", "-p", pidArg, "-o", "args=")
 	output, err = cmd.Output()
 	if err == nil {
 		cmdLine := strings.TrimSpace(string(output))
@@ -52,7 +55,8 @@ func getParentProcessInfoWithPPID(pid int) (parentProcessInfo, int, error) {
 
 	// If we couldn't get the executable from args, try lsof
 	if info.Executable == "" {
-		cmd = exec.Command("lsof", "-p", fmt.Sprintf("%d", pid), "-Fn")
+		//nolint:gosec // G204: pidArg is derived from an integer process ID, not shell input.
+		cmd = exec.Command("lsof", "-p", pidArg, "-Fn")
 		output, err = cmd.Output()
 		if err == nil {
 			// Parse lsof output - lines starting with 'n' contain file names

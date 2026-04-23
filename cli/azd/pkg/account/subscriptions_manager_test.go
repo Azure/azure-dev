@@ -177,6 +177,54 @@ func TestSubscriptionsManager_ListSubscriptions(t *testing.T) {
 	}
 }
 
+type staticSubCache struct {
+	subscriptions []Subscription
+}
+
+func (c *staticSubCache) Load(ctx context.Context, key string) ([]Subscription, error) {
+	return c.subscriptions, nil
+}
+
+func (c *staticSubCache) Save(ctx context.Context, key string, save []Subscription) error {
+	return nil
+}
+
+func (c *staticSubCache) Merge(ctx context.Context, key string, save []Subscription) error {
+	return nil
+}
+
+func (c *staticSubCache) Clear(ctx context.Context) error {
+	return nil
+}
+
+func TestSubscriptionsManager_GetSubscription_PreservesTenantFields(t *testing.T) {
+	t.Parallel()
+
+	subManager := &SubscriptionsManager{
+		cache: &staticSubCache{
+			subscriptions: []Subscription{
+				{
+					Id:                 "sub-123",
+					Name:               "Subscription 123",
+					TenantId:           "resource-tenant",
+					UserAccessTenantId: "access-tenant",
+				},
+			},
+		},
+		principalInfo: &principalInfoProviderMock{},
+		console:       mockinput.NewMockConsole(),
+	}
+
+	subscription, err := subManager.GetSubscription(t.Context(), "sub-123")
+	require.NoError(t, err)
+	require.Equal(t, &Subscription{
+		Id:                 "sub-123",
+		Name:               "Subscription 123",
+		TenantId:           "resource-tenant",
+		UserAccessTenantId: "access-tenant",
+	}, subscription)
+}
+
 func generateTenants(total int) []*armsubscriptions.TenantIDDescription {
 	results := make([]*armsubscriptions.TenantIDDescription, 0, total)
 	for i := 1; i <= total; i++ {

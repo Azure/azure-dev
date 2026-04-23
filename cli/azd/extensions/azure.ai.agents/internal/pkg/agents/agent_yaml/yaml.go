@@ -3,7 +3,12 @@
 
 package agent_yaml
 
-import "slices"
+import (
+	"fmt"
+	"slices"
+
+	"go.yaml.in/yaml/v3"
+)
 
 // AgentKind represents the type of agent
 type AgentKind string
@@ -31,8 +36,10 @@ func ValidAgentKinds() []AgentKind {
 type ResourceKind string
 
 const (
-	ResourceKindModel ResourceKind = "model"
-	ResourceKindTool  ResourceKind = "tool"
+	ResourceKindModel      ResourceKind = "model"
+	ResourceKindTool       ResourceKind = "tool"
+	ResourceKindToolbox    ResourceKind = "toolbox"
+	ResourceKindConnection ResourceKind = "connection"
 )
 
 type ToolKind string
@@ -40,12 +47,84 @@ type ToolKind string
 const (
 	ToolKindFunction        ToolKind = "function"
 	ToolKindCustom          ToolKind = "custom"
-	ToolKindWebSearch       ToolKind = "webSearch"
-	ToolKindBingGrounding   ToolKind = "bingGrounding"
-	ToolKindFileSearch      ToolKind = "fileSearch"
+	ToolKindWebSearch       ToolKind = "web_search"
+	ToolKindBingGrounding   ToolKind = "bing_grounding"
+	ToolKindFileSearch      ToolKind = "file_search"
 	ToolKindMcp             ToolKind = "mcp"
-	ToolKindOpenApi         ToolKind = "openApi"
-	ToolKindCodeInterpreter ToolKind = "codeInterpreter"
+	ToolKindOpenApi         ToolKind = "openapi"
+	ToolKindCodeInterpreter ToolKind = "code_interpreter"
+	ToolKindAzureAiSearch   ToolKind = "azure_ai_search"
+	ToolKindA2APreview      ToolKind = "a2a_preview"
+)
+
+// legacyToolKindAliases maps deprecated camelCase tool kind names to their
+// current snake_case equivalents so that older agent.yaml files continue to parse.
+var legacyToolKindAliases = map[ToolKind]ToolKind{
+	"webSearch":       ToolKindWebSearch,
+	"bingGrounding":   ToolKindBingGrounding,
+	"fileSearch":      ToolKindFileSearch,
+	"codeInterpreter": ToolKindCodeInterpreter,
+	"azureAiSearch":   ToolKindAzureAiSearch,
+	"a2aPreview":      ToolKindA2APreview,
+	"openApi":         ToolKindOpenApi,
+}
+
+// NormalizeToolKind maps legacy camelCase tool kind values to the current
+// snake_case form. If the kind is already canonical it is returned unchanged.
+func NormalizeToolKind(kind ToolKind) ToolKind {
+	if canonical, ok := legacyToolKindAliases[kind]; ok {
+		return canonical
+	}
+	return kind
+}
+
+// AuthType represents the authentication type for a connection.
+type AuthType string
+
+const (
+	AuthTypeAAD              AuthType = "AAD"
+	AuthTypeApiKey           AuthType = "ApiKey"
+	AuthTypeCustomKeys       AuthType = "CustomKeys"
+	AuthTypeNone             AuthType = "None"
+	AuthTypeOAuth2           AuthType = "OAuth2"
+	AuthTypePAT              AuthType = "PAT"
+	AuthTypeUserEntraToken   AuthType = "UserEntraToken"
+	AuthTypeAgenticIdentity  AuthType = "AgenticIdentity"
+	AuthTypeManagedIdentity  AuthType = "ProjectManagedIdentity"
+	AuthTypeServicePrincipal AuthType = "ServicePrincipal"
+	AuthTypeUsernamePassword AuthType = "UsernamePassword"
+	AuthTypeAccessKey        AuthType = "AccessKey"
+	AuthTypeAccountKey       AuthType = "AccountKey"
+	AuthTypeSAS              AuthType = "SAS"
+)
+
+// CategoryKind represents the category of a connection resource.
+type CategoryKind string
+
+const (
+	CategoryAzureOpenAI           CategoryKind = "AzureOpenAI"
+	CategoryCognitiveSearch       CategoryKind = "CognitiveSearch"
+	CategoryCognitiveService      CategoryKind = "CognitiveService"
+	CategoryCustomKeys            CategoryKind = "CustomKeys"
+	CategoryServerlessEndpoint    CategoryKind = "Serverless"
+	CategoryContainerRegistry     CategoryKind = "ContainerRegistry"
+	CategoryApiKey                CategoryKind = "ApiKey"
+	CategoryAzureBlob             CategoryKind = "AzureBlob"
+	CategoryGit                   CategoryKind = "Git"
+	CategoryRedis                 CategoryKind = "Redis"
+	CategoryS3                    CategoryKind = "S3"
+	CategorySnowflake             CategoryKind = "Snowflake"
+	CategoryAzureSqlDb            CategoryKind = "AzureSqlDb"
+	CategoryAzureSynapseAnalytics CategoryKind = "AzureSynapseAnalytics"
+	CategoryAzureMySqlDb          CategoryKind = "AzureMySqlDb"
+	CategoryAzurePostgresDb       CategoryKind = "AzurePostgresDb"
+	CategoryADLSGen2              CategoryKind = "ADLSGen2"
+	CategoryAzureDataExplorer     CategoryKind = "AzureDataExplorer"
+	CategoryBingLLMSearch         CategoryKind = "BingLLMSearch"
+	CategoryMicrosoftOneLake      CategoryKind = "MicrosoftOneLake"
+	CategoryElasticSearch         CategoryKind = "Elasticsearch"
+	CategoryPinecone              CategoryKind = "Pinecone"
+	CategoryQdrant                CategoryKind = "Qdrant"
 )
 
 type ConnectionKind string
@@ -98,12 +177,19 @@ type Workflow struct {
 	Trigger         *map[string]any `json:"trigger,omitempty" yaml:"trigger,omitempty"`
 }
 
+// ContainerResources represents the resource allocation for a containerized agent.
+type ContainerResources struct {
+	Cpu    string `json:"cpu" yaml:"cpu"`
+	Memory string `json:"memory" yaml:"memory"`
+}
+
 // ContainerAgent This represents a container based agent hosted by the provider/publisher.
 // The intent is to represent a container application that the user wants to run
 // in a hosted environment that the provider manages.
 type ContainerAgent struct {
 	AgentDefinition      `json:",inline" yaml:",inline"`
 	Protocols            []ProtocolVersionRecord `json:"protocols" yaml:"protocols"`
+	Resources            *ContainerResources     `json:"resources,omitempty" yaml:"resources,omitempty"`
 	EnvironmentVariables *[]EnvironmentVariable  `json:"environmentVariables,omitempty" yaml:"environment_variables,omitempty"`
 }
 
@@ -252,6 +338,7 @@ type Property struct {
 	Default     *any    `json:"default,omitempty" yaml:"default,omitempty"`
 	Example     *any    `json:"example,omitempty" yaml:"example,omitempty"`
 	EnumValues  *[]any  `json:"enumValues,omitempty" yaml:"enumValues,omitempty"`
+	Secret      *bool   `json:"secret,omitempty" yaml:"secret,omitempty"`
 }
 
 // ArrayProperty Represents an array property.
@@ -272,10 +359,250 @@ type ObjectProperty struct {
 
 // PropertySchema Definition for the property schema of a model.
 // This includes the properties and example records.
+//
+// The schema supports two YAML layouts for Properties:
+//
+// Array format (explicit):
+//
+//	properties:
+//	  - name: foo
+//	    kind: string
+//
+// Record/map format (canonical agent manifest shorthand):
+//
+//	parameters:
+//	  foo:
+//	    schema: { type: string }
+//	    description: a foo param
+//	    required: true
+//
+// UnmarshalYAML detects which layout is present and normalises to []Property.
 type PropertySchema struct {
-	Examples   *[]map[string]any `json:"examples,omitempty" yaml:"examples,omitempty"`
-	Strict     *bool             `json:"strict,omitempty" yaml:"strict,omitempty"`
-	Properties []Property        `json:"properties" yaml:"properties"`
+	Examples   *[]map[string]any `json:"examples,omitempty" yaml:"-"`
+	Strict     *bool             `json:"strict,omitempty" yaml:"-"`
+	Properties []Property        `json:"properties" yaml:"-"`
+}
+
+// UnmarshalYAML supports both the array format (properties: []) and the
+// record/map format where parameter names are direct YAML keys.
+func (ps *PropertySchema) UnmarshalYAML(value *yaml.Node) error {
+	// The node should be a mapping.
+	if value.Kind != yaml.MappingNode {
+		return fmt.Errorf("PropertySchema: expected mapping node, got %d", value.Kind)
+	}
+
+	// First pass: look for known struct keys (examples, strict, properties).
+	// Anything else is treated as a record-format parameter name.
+	var (
+		propertiesNode *yaml.Node
+		extraKeys      []string
+		extraValues    []*yaml.Node
+	)
+
+	for i := 0; i < len(value.Content)-1; i += 2 {
+		key := value.Content[i].Value
+		val := value.Content[i+1]
+
+		switch key {
+		case "examples":
+			var examples []map[string]any
+			if err := val.Decode(&examples); err != nil {
+				return fmt.Errorf("PropertySchema.examples: %w", err)
+			}
+			ps.Examples = &examples
+		case "strict":
+			var strict bool
+			if err := val.Decode(&strict); err != nil {
+				return fmt.Errorf("PropertySchema.strict: %w", err)
+			}
+			ps.Strict = &strict
+		case "properties":
+			propertiesNode = val
+		default:
+			extraKeys = append(extraKeys, key)
+			extraValues = append(extraValues, val)
+		}
+	}
+
+	// If an explicit "properties" key was found, decode it (array or map).
+	if propertiesNode != nil {
+		props, err := decodePropertiesNode(propertiesNode)
+		if err != nil {
+			return fmt.Errorf("PropertySchema.properties: %w", err)
+		}
+		ps.Properties = props
+		return nil
+	}
+
+	// No explicit "properties" key — treat extra keys as record-format params.
+	if len(extraKeys) > 0 {
+		for i, name := range extraKeys {
+			prop, err := decodeRecordProperty(name, extraValues[i])
+			if err != nil {
+				return fmt.Errorf("PropertySchema parameter %q: %w", name, err)
+			}
+			ps.Properties = append(ps.Properties, prop)
+		}
+	}
+
+	return nil
+}
+
+// decodePropertiesNode handles "properties:" as either an array or a map.
+func decodePropertiesNode(node *yaml.Node) ([]Property, error) {
+	switch node.Kind {
+	case yaml.SequenceNode:
+		var props []Property
+		if err := node.Decode(&props); err != nil {
+			return nil, err
+		}
+		return props, nil
+	case yaml.MappingNode:
+		var props []Property
+		for i := 0; i < len(node.Content)-1; i += 2 {
+			name := node.Content[i].Value
+			prop, err := decodeRecordProperty(name, node.Content[i+1])
+			if err != nil {
+				return nil, fmt.Errorf("property %q: %w", name, err)
+			}
+			props = append(props, prop)
+		}
+		return props, nil
+	default:
+		return nil, fmt.Errorf("expected sequence or mapping, got %d", node.Kind)
+	}
+}
+
+// recordEntry is the intermediate structure for parsing a single record-format
+// parameter entry like:
+//
+//	param_name:
+//	  schema: { type: string, enum: [...], default: ... }
+//	  description: some text
+//	  required: true
+type recordEntry struct {
+	Schema      *recordSchema `yaml:"schema"`
+	Description string        `yaml:"description"`
+	Required    bool          `yaml:"required"`
+	Default     *any          `yaml:"default"`
+	Example     *any          `yaml:"example"`
+	EnumValues  *[]any        `yaml:"enumValues"`
+}
+
+type recordSchema struct {
+	Type    string `yaml:"type"`
+	Enum    []any  `yaml:"enum"`
+	Default *any   `yaml:"default"`
+	Secret  bool   `yaml:"secret"`
+}
+
+// decodeRecordProperty converts a record-format parameter entry into a Property.
+func decodeRecordProperty(name string, node *yaml.Node) (Property, error) {
+	var entry recordEntry
+	if err := node.Decode(&entry); err != nil {
+		return Property{}, err
+	}
+
+	prop := Property{Name: name}
+	if entry.Description != "" {
+		prop.Description = &entry.Description
+	}
+	if entry.Required {
+		prop.Required = &entry.Required
+	}
+	if entry.Default != nil {
+		prop.Default = entry.Default
+	}
+	if entry.Example != nil {
+		prop.Example = entry.Example
+	}
+	if entry.EnumValues != nil {
+		prop.EnumValues = entry.EnumValues
+	}
+
+	// Extract kind/default/enum/secret from nested schema if present
+	if entry.Schema != nil {
+		prop.Kind = entry.Schema.Type
+		if entry.Schema.Default != nil && prop.Default == nil {
+			prop.Default = entry.Schema.Default
+		}
+		if len(entry.Schema.Enum) > 0 && prop.EnumValues == nil {
+			prop.EnumValues = &entry.Schema.Enum
+		}
+		if entry.Schema.Secret {
+			prop.Secret = new(true)
+		}
+	}
+
+	return prop, nil
+}
+
+// MarshalYAML writes PropertySchema back as the record/map format so that
+// {{param}} placeholders elsewhere in the document survive a marshal→unmarshal
+// round-trip through InjectParameterValuesIntoManifest.
+func (ps PropertySchema) MarshalYAML() (any, error) {
+	out := make(map[string]any)
+
+	if ps.Examples != nil {
+		out["examples"] = *ps.Examples
+	}
+	if ps.Strict != nil {
+		out["strict"] = *ps.Strict
+	}
+
+	// Emit each property as a record-format entry.
+	props := make(map[string]any, len(ps.Properties))
+	for _, p := range ps.Properties {
+		entry := map[string]any{}
+		schema := map[string]any{}
+
+		if p.Kind != "" {
+			schema["type"] = p.Kind
+		}
+		if p.Default != nil {
+			schema["default"] = *p.Default
+		}
+		if p.EnumValues != nil {
+			schema["enum"] = *p.EnumValues
+		}
+		if p.Secret != nil && *p.Secret {
+			schema["secret"] = true
+		}
+		if len(schema) > 0 {
+			entry["schema"] = schema
+		}
+
+		if p.Description != nil {
+			entry["description"] = *p.Description
+		}
+		if p.Required != nil {
+			entry["required"] = *p.Required
+		}
+		if p.Example != nil {
+			entry["example"] = *p.Example
+		}
+		props[p.Name] = entry
+	}
+
+	if len(props) > 0 {
+		// Merge property keys at the top level (record format).
+		// Reject parameter names that collide with reserved schema keys.
+		reservedKeys := map[string]bool{
+			"examples":   true,
+			"strict":     true,
+			"properties": true,
+		}
+		for k, v := range props {
+			if reservedKeys[k] {
+				return nil, fmt.Errorf(
+					"parameter name %q conflicts with reserved PropertySchema key", k,
+				)
+			}
+			out[k] = v
+		}
+	}
+
+	return out, nil
 }
 
 // ProtocolVersionRecord represents a protocolversionrecord.
@@ -303,6 +630,52 @@ type ToolResource struct {
 	Resource `json:",inline" yaml:",inline"`
 	Id       string         `json:"id" yaml:"id"`
 	Options  map[string]any `json:"options" yaml:"options"`
+}
+
+// ToolboxResource Represents a toolbox resource required by the agent.
+// A toolbox is a reusable collection of tools that can be deployed as a Foundry Toolset.
+type ToolboxResource struct {
+	Resource    `json:",inline" yaml:",inline"`
+	Description string `json:"description,omitempty" yaml:"description,omitempty"`
+	Tools       []any  `json:"tools" yaml:"tools"`
+}
+
+// ConnectionResource Represents a connection resource required by the agent.
+// Maps to the Bicep ConnectionPropertiesV2 spec for creating project connections.
+type ConnectionResource struct {
+	Resource       `json:",inline" yaml:",inline"`
+	Category       CategoryKind      `json:"category" yaml:"category"`
+	Target         string            `json:"target" yaml:"target"`
+	AuthType       AuthType          `json:"authType" yaml:"authType"`
+	Credentials    map[string]any    `json:"credentials,omitempty" yaml:"credentials,omitempty"`
+	Metadata       map[string]string `json:"metadata,omitempty" yaml:"metadata,omitempty"`
+	ExpiryTime     string            `json:"expiryTime,omitempty" yaml:"expiryTime,omitempty"`
+	IsSharedToAll  *bool             `json:"isSharedToAll,omitempty" yaml:"isSharedToAll,omitempty"`
+	SharedUserList []string          `json:"sharedUserList,omitempty" yaml:"sharedUserList,omitempty"`
+	PeRequirement  string            `json:"peRequirement,omitempty" yaml:"peRequirement,omitempty"`
+	PeStatus       string            `json:"peStatus,omitempty" yaml:"peStatus,omitempty"`
+	Error          string            `json:"error,omitempty" yaml:"error,omitempty"`
+
+	// UseWorkspaceManagedIdentity indicates whether to use workspace managed identity.
+	UseWorkspaceManagedIdentity *bool `json:"useWorkspaceManagedIdentity,omitempty" yaml:"useWorkspaceManagedIdentity,omitempty"` //nolint:lll
+
+	// AuthorizationUrl is the OAuth2 authorization endpoint URL (OAuth2 authType).
+	AuthorizationUrl string `json:"authorizationUrl,omitempty" yaml:"authorizationUrl,omitempty"` //nolint:lll
+
+	// TokenUrl is the OAuth2 token endpoint URL (OAuth2 authType).
+	TokenUrl string `json:"tokenUrl,omitempty" yaml:"tokenUrl,omitempty"`
+
+	// RefreshUrl is the OAuth2 token refresh endpoint URL (OAuth2 authType).
+	RefreshUrl string `json:"refreshUrl,omitempty" yaml:"refreshUrl,omitempty"`
+
+	// Scopes is the list of OAuth2 scopes to request (OAuth2 authType).
+	Scopes []string `json:"scopes,omitempty" yaml:"scopes,omitempty"`
+
+	// Audience is the token audience for ManagedIdentity / AgenticIdentity / UserEntraToken auth types.
+	Audience string `json:"audience,omitempty" yaml:"audience,omitempty"`
+
+	// ConnectorName is the connector name for OAuth2 auth type, where Microsoft provides a managed OAuth2 app
+	ConnectorName string `json:"connectorName,omitempty" yaml:"connectorName,omitempty"`
 }
 
 // Template Template model for defining prompt templates.
@@ -395,4 +768,58 @@ type CodeInterpreterTool struct {
 	Tool    `json:",inline" yaml:",inline"`
 	FileIds []string       `json:"fileIds" yaml:"fileIds"`
 	Options map[string]any `json:"options" yaml:"options"`
+}
+
+// AzureAISearchIndex represents a single index configuration within an AzureAISearchTool.
+type AzureAISearchIndex struct {
+	ProjectConnectionId string  `json:"project_connection_id" yaml:"project_connection_id"`
+	IndexName           string  `json:"index_name" yaml:"index_name"`
+	QueryType           *string `json:"query_type,omitempty" yaml:"query_type,omitempty"`
+	TopK                *int    `json:"top_k,omitempty" yaml:"top_k,omitempty"`
+	Filter              *string `json:"filter,omitempty" yaml:"filter,omitempty"`
+}
+
+// AzureAISearchTool The Azure AI Search tool for grounding agent responses with search index data.
+type AzureAISearchTool struct {
+	Tool    `json:",inline" yaml:",inline"`
+	Indexes []AzureAISearchIndex `json:"indexes" yaml:"indexes"`
+}
+
+// A2APreviewTool The A2A (Agent-to-Agent) preview tool for delegating tasks to other agents.
+type A2APreviewTool struct {
+	Tool                `json:",inline" yaml:",inline"`
+	BaseUrl             string  `json:"baseUrl" yaml:"baseUrl"`
+	AgentCardPath       *string `json:"agentCardPath,omitempty" yaml:"agentCardPath,omitempty"`
+	ProjectConnectionId string  `json:"projectConnectionId" yaml:"projectConnectionId"`
+}
+
+// Credential type structs for typed access to connection credentials.
+// The ConnectionResource.Credentials field is map[string]any for flexibility,
+// but these structs can be used when code needs structured access.
+
+// ApiKeyCredentials holds credentials for ApiKey auth type.
+type ApiKeyCredentials struct {
+	Key string `json:"key" yaml:"key"`
+}
+
+// CustomKeysCredentials holds credentials for CustomKeys auth type.
+type CustomKeysCredentials struct {
+	Keys map[string]string `json:"keys" yaml:"keys"`
+}
+
+// OAuth2Credentials holds credentials for OAuth2 auth type.
+type OAuth2Credentials struct {
+	AuthUrl        string `json:"authUrl,omitempty" yaml:"authUrl,omitempty"`
+	ClientId       string `json:"clientId" yaml:"clientId"`
+	ClientSecret   string `json:"clientSecret,omitempty" yaml:"clientSecret,omitempty"`
+	DeveloperToken string `json:"developerToken,omitempty" yaml:"developerToken,omitempty"`
+	Password       string `json:"password,omitempty" yaml:"password,omitempty"`
+	RefreshToken   string `json:"refreshToken,omitempty" yaml:"refreshToken,omitempty"`
+	TenantId       string `json:"tenantId,omitempty" yaml:"tenantId,omitempty"`
+	Username       string `json:"username,omitempty" yaml:"username,omitempty"`
+}
+
+// PATCredentials holds credentials for PAT (Personal Access Token) auth type.
+type PATCredentials struct {
+	Pat string `json:"pat" yaml:"pat"`
 }

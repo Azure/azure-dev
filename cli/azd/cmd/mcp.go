@@ -14,11 +14,13 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	internalcmd "github.com/azure/azure-dev/cli/azd/internal/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal/grpcserver"
 	"github.com/azure/azure-dev/cli/azd/internal/mcp"
 	"github.com/azure/azure-dev/cli/azd/internal/mcp/tools"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
@@ -141,7 +143,7 @@ func (a *mcpStartAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		server.WithHooks(mcpHost.Hooks()),
 		server.WithToolHandlerMiddleware(func(next server.ToolHandlerFunc) server.ToolHandlerFunc {
 			return func(ctx context.Context, request mmcp.CallToolRequest) (result *mmcp.CallToolResult, err error) {
-				ctx, span := tracing.Start(ctx, "mcp."+request.Params.Name)
+				ctx, span := tracing.Start(ctx, events.McpEventPrefix+request.Params.Name)
 				if session := server.ClientSessionFromContext(ctx); session != nil {
 					if sessionWithClientInfo, ok := session.(server.SessionWithClientInfo); ok {
 						clientInfo := sessionWithClientInfo.GetClientInfo()
@@ -151,7 +153,10 @@ func (a *mcpStartAction) Run(ctx context.Context) (*actions.ActionResult, error)
 				}
 
 				result, err = next(ctx, request)
-				span.EndWithStatus(err)
+				if err != nil {
+					internalcmd.MapError(err, span)
+				}
+				span.End()
 
 				return result, err
 			}

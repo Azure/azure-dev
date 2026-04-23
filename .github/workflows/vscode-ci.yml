@@ -63,7 +63,6 @@ jobs:
 
       - name: Install dependencies
         run: |
-          npm install -g npm
           npm ci --no-optional
         working-directory: ./ext/vscode
 

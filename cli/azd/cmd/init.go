@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,6 +21,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
 	agentcopilot "github.com/azure/azure-dev/cli/azd/internal/agent/copilot"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
+	"github.com/azure/azure-dev/cli/azd/internal/runcontext/agentdetect"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
@@ -30,6 +32,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -55,6 +58,12 @@ func newInitCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "init",
 		Short: "Initialize a new application.",
+		Long: `Initialize a new application.
+
+When used with --template, a new directory is created (named after the template)
+and the project is initialized inside it — similar to git clone.
+Pass "." as the directory to initialize in the current directory instead.`,
+		Args: cobra.MaximumNArgs(1),
 	}
 }
 
@@ -134,14 +143,18 @@ type initAction struct {
 	cmdRun            exec.CommandRunner
 	gitCli            *git.Cli
 	flags             *initFlags
+	args              []string
 	repoInitializer   *repository.Initializer
 	templateManager   *templates.TemplateManager
 	featuresManager   *alpha.FeatureManager
 	extensionsManager *extensions.Manager
 	azd               workflow.AzdCommandRunner
-	agentFactory      *agent.CopilotAgentFactory
+	agentFactory      agent.AgentFactory
 	consentManager    consent.ConsentManager
 	configManager     config.UserConfigManager
+	// isRunningInAgent reports whether azd was invoked by an AI agent.
+	// Defaults to agentdetect.IsRunningInAgent; overridable in tests.
+	isRunningInAgent func() bool
 }
 
 func newInitAction(
@@ -151,12 +164,13 @@ func newInitAction(
 	console input.Console,
 	gitCli *git.Cli,
 	flags *initFlags,
+	args []string,
 	repoInitializer *repository.Initializer,
 	templateManager *templates.TemplateManager,
 	featuresManager *alpha.FeatureManager,
 	extensionsManager *extensions.Manager,
 	azd workflow.AzdCommandRunner,
-	agentFactory *agent.CopilotAgentFactory,
+	agentFactory agent.AgentFactory,
 	consentManager consent.ConsentManager,
 	configManager config.UserConfigManager,
 ) actions.Action {
@@ -167,6 +181,7 @@ func newInitAction(
 		cmdRun:            cmdRun,
 		gitCli:            gitCli,
 		flags:             flags,
+		args:              args,
 		repoInitializer:   repoInitializer,
 		templateManager:   templateManager,
 		featuresManager:   featuresManager,
@@ -175,17 +190,15 @@ func newInitAction(
 		agentFactory:      agentFactory,
 		consentManager:    consentManager,
 		configManager:     configManager,
+		isRunningInAgent:  agentdetect.IsRunningInAgent,
 	}
 }
 
-func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+func (i *initAction) Run(ctx context.Context) (_ *actions.ActionResult, retErr error) {
 	wd, err := os.Getwd()
 	if err != nil {
 		return nil, fmt.Errorf("getting cwd: %w", err)
 	}
-
-	azdCtx := azdcontext.NewAzdContextWithDirectory(wd)
-	i.lazyAzdCtx.SetValue(azdCtx)
 
 	if i.flags.templateBranch != "" && i.flags.templatePath == "" {
 		return nil, &internal.ErrorWithSuggestion{
@@ -193,6 +206,116 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			Suggestion: "Add '--template <repo-url>' when using '--branch'.",
 		}
 	}
+
+	// Validate init-mode combinations before any filesystem side effects.
+	isTemplateInit := i.flags.templatePath != "" || len(i.flags.templateTags) > 0
+	initModeCount := 0
+	if isTemplateInit {
+		initModeCount++
+	}
+	if i.flags.fromCode {
+		initModeCount++
+	}
+	if i.flags.minimal {
+		initModeCount++
+	}
+	if initModeCount > 1 {
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        internal.ErrMultipleInitModes,
+			Suggestion: "Choose one: 'azd init --template <url>', 'azd init --from-code', or 'azd init --minimal'.",
+		}
+	}
+
+	// The positional [directory] argument is only valid with --template.
+	if len(i.args) > 0 && !isTemplateInit {
+		return nil, &internal.ErrorWithSuggestion{
+			Err: fmt.Errorf(
+				"unexpected argument %q: the [directory] option requires --template: %w",
+				i.args[0],
+				internal.ErrInvalidFlagCombination,
+			),
+			Suggestion: "Run 'azd init' to initialize interactively, or " +
+				"'azd init --template <url> [directory]' to create a project from a template.",
+		}
+	}
+
+	// Resolve local template paths to absolute before any chdir so that
+	// relative paths like ../my-template resolve against the original CWD.
+	if i.flags.templatePath != "" && templates.LooksLikeLocalPath(i.flags.templatePath) {
+		absPath, err := filepath.Abs(i.flags.templatePath)
+		if err == nil {
+			i.flags.templatePath = absPath
+		}
+	}
+
+	// When a template is specified, auto-create a project directory (like git clone).
+	// The user can pass a positional [directory] argument to override the folder name,
+	// or pass "." to use the current directory (preserving existing behavior).
+	createdProjectDir := ""
+	originalWd := wd
+
+	if isTemplateInit {
+		targetDir, err := i.resolveTargetDirectory(wd)
+		if err != nil {
+			return nil, err
+		}
+
+		if targetDir != wd {
+			// Guard against self-targeting: if a local template path resolves to the
+			// same directory we'd create, skip auto-create to avoid conflicts where
+			// the template source and target directory overlap.
+			if i.flags.templatePath != "" && templates.LooksLikeLocalPath(i.flags.templatePath) {
+				absTemplate, absErr := filepath.Abs(i.flags.templatePath)
+				if absErr == nil && filepath.Clean(absTemplate) == filepath.Clean(targetDir) {
+					// Template source is the target directory — fall back to CWD.
+					targetDir = wd
+				}
+			}
+		}
+
+		if targetDir != wd {
+			// Check if target already exists and is non-empty
+			if err := i.validateTargetDirectory(ctx, targetDir); err != nil {
+				return nil, err
+			}
+
+			// Track whether the directory existed before we create it so the
+			// cleanup defer only removes directories we actually created.
+			dirExistedBefore := false
+			if _, statErr := os.Stat(targetDir); statErr == nil {
+				dirExistedBefore = true
+			}
+
+			if err := os.MkdirAll(targetDir, osutil.PermissionDirectory); err != nil {
+				return nil, fmt.Errorf("creating project directory '%s': %w",
+					filepath.Base(targetDir), err)
+			}
+
+			if err := os.Chdir(targetDir); err != nil {
+				return nil, fmt.Errorf("changing to project directory '%s': %w",
+					filepath.Base(targetDir), err)
+			}
+
+			wd = targetDir
+			createdProjectDir = targetDir
+
+			// Clean up the created directory and restore the original CWD
+			// if any downstream step fails, matching git clone's behavior.
+			// Only remove the directory if we created it — don't delete
+			// pre-existing directories the user pointed at.
+			defer func() {
+				if retErr != nil {
+					_ = os.Chdir(originalWd)
+					if !dirExistedBefore {
+						_ = os.RemoveAll(createdProjectDir)
+					}
+				}
+			}()
+		}
+	}
+
+	azdCtx := azdcontext.NewAzdContextWithDirectory(wd)
+	i.lazyAzdCtx.SetValue(azdCtx)
 
 	// ensure that git is available
 	if err := tools.EnsureInstalled(ctx, []tools.ExternalTool{i.gitCli}...); err != nil {
@@ -207,6 +330,11 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// AZD supports having .env at the root of the project directory as the initial environment file.
 	// godotenv.Load() -> add all the values from the .env file in the process environment
 	// If AZURE_ENV_NAME is set in the .env file, it will be used to name the environment during env initialize.
+	//
+	// Note: When auto-creating a project directory, this runs after chdir into the target
+	// directory. For new directories this is a no-op (no .env exists). For existing directories
+	// passed via positional arg, we intentionally load the target directory's .env — the project
+	// directory's configuration should take precedence over the invocation directory's.
 	if err := godotenv.Overload(); err != nil {
 		// ignore the error if the file does not exist
 		if !os.IsNotExist(err) {
@@ -238,25 +366,10 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	var initTypeSelect initType = initUnknown
-	initTypeCount := 0
-	if i.flags.templatePath != "" || len(i.flags.templateTags) > 0 {
-		initTypeCount++
+	if isTemplateInit {
 		initTypeSelect = initAppTemplate
-	}
-	if i.flags.fromCode {
-		initTypeCount++
+	} else if i.flags.fromCode || i.flags.minimal {
 		initTypeSelect = initFromApp
-	}
-	if i.flags.minimal {
-		initTypeCount++
-		initTypeSelect = initFromApp // Minimal now also uses initFromApp path
-	}
-
-	if initTypeCount > 1 {
-		return nil, &internal.ErrorWithSuggestion{
-			Err:        internal.ErrMultipleInitModes,
-			Suggestion: "Choose one: 'azd init --template <url>', 'azd init --from-code', or 'azd init --minimal'.",
-		}
 	}
 
 	if initTypeSelect == initUnknown {
@@ -281,9 +394,24 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		output.WithLinkFormat("%s", wd),
 		output.WithLinkFormat("%s", "https://aka.ms/azd-third-party-code-notice"))
 
+	if createdProjectDir != "" {
+		// Compute a user-friendly cd path relative to where they started
+		cdPath, relErr := filepath.Rel(originalWd, createdProjectDir)
+		if relErr != nil {
+			cdPath = createdProjectDir // Fall back to absolute path
+		}
+		// Quote the path when it contains whitespace so the hint is copy/paste-safe
+		cdPathDisplay := cdPath
+		if strings.ContainsAny(cdPath, " \t") {
+			cdPathDisplay = fmt.Sprintf("%q", cdPath)
+		}
+		followUp += fmt.Sprintf("\n\nChange to the project directory:\n  %s",
+			output.WithHighLightFormat("cd %s", cdPathDisplay))
+	}
+
 	if i.featuresManager.IsEnabled(agentcopilot.FeatureCopilot) {
 		followUp += fmt.Sprintf("\n\n%s Run %s to deploy project to the cloud.",
-			color.HiMagentaString("Next steps:"),
+			output.WithHintFormat("(→) NEXT STEPS:"),
 			output.WithHighLightFormat("azd up"))
 	}
 
@@ -314,8 +442,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			if deploy {
 				// Call azd up
 				startTime := time.Now()
-				i.azd.SetArgs([]string{"up", "--cwd", azdCtx.ProjectDirectory()})
-				err := i.azd.ExecuteContext(ctx)
+				err := i.azd.ExecuteContext(ctx, []string{"up", "--cwd", azdCtx.ProjectDirectory()})
 				header = "New project initialized! Provision and deploy to Azure was completed in " +
 					ux.DurationAsText(since(startTime)) + "."
 				if err != nil {
@@ -372,6 +499,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			return nil, err
 		}
 	case initEnvironment:
+		tracing.SetUsageAttributes(fields.InitMethod.String("environment"))
 		env, err := i.initializeEnv(ctx, azdCtx, templates.Metadata{})
 		if err != nil {
 			return nil, err
@@ -380,7 +508,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		header = fmt.Sprintf("Initialized environment %s.", env.Name())
 		followUp = ""
 	case initWithAgent:
-		tracing.SetUsageAttributes(fields.InitMethod.String("agent"))
+		tracing.SetUsageAttributes(fields.InitMethod.String("copilot"))
 		if err := i.initAppWithAgent(ctx, azdCtx); err != nil {
 			return nil, err
 		}
@@ -410,7 +538,11 @@ func (i *initAction) initAppWithAgent(ctx context.Context, azdCtx *azdcontext.Az
 	if dirty {
 		defaultNo := false
 		confirm := uxlib.NewConfirm(&uxlib.ConfirmOptions{
-			Message:      "Your working directory has uncommitted changes. Continue initializing?",
+			Message: "Your working directory has uncommitted changes. Continue initializing?",
+			HelpMessage: fmt.Sprintf(
+				"%s may create or modify files in your working directory. "+
+					"Consider committing or stashing your changes first to avoid losing work.",
+				agentcopilot.DisplayTitle),
 			DefaultValue: &defaultNo,
 		})
 		result, promptErr := confirm.Ask(ctx)
@@ -423,12 +555,14 @@ func (i *initAction) initAppWithAgent(ctx context.Context, azdCtx *azdcontext.Az
 		}
 	}
 
-	// Show alpha warning
+	// Show preview notice
 	i.console.MessageUxItem(ctx, &ux.MessageTitle{
-		Title: fmt.Sprintf("Agentic mode init is in preview. The agent will scan your repository and "+
-			"attempt to make an azd-ready template to init.\nYou can always change permissions later "+
-			"by running %s. Mistakes may occur in agent mode.\n\n"+
-			"To learn more, go to %s",
+		Title: fmt.Sprintf(
+			"%s will scan your repository and help generate an azd compatible project to get you started. "+
+				"This experience is currently in preview.\n\n"+
+				"You can always change permissions later by running %s.\n\n"+
+				"To learn more, go to %s",
+			agentcopilot.DisplayTitle,
 			output.WithHighLightFormat("azd copilot consent"),
 			output.WithLinkFormat("https://aka.ms/azd-feature-stages")),
 	})
@@ -487,7 +621,9 @@ func (i *initAction) initAppWithAgent(ctx context.Context, azdCtx *azdcontext.Az
 			timeDisplay := agent.FormatSessionTime(session.StartedAt)
 			defaultYes := true
 			confirm := uxlib.NewConfirm(&uxlib.ConfirmOptions{
-				Message:      fmt.Sprintf("Resume previous session from %s?", timeDisplay),
+				Message: fmt.Sprintf("Resume previous session from %s?", timeDisplay),
+				HelpMessage: "Resuming continues where you left off. " +
+					"Choosing no starts a fresh session.",
 				DefaultValue: &defaultYes,
 			})
 			if result, err := confirm.Ask(ctx); err == nil && result != nil && *result {
@@ -523,7 +659,7 @@ When complete, provide a brief summary of what was accomplished.`
 
 	i.console.Message(ctx, color.MagentaString("Preparing application for Azure deployment..."))
 
-	result, err := copilotAgent.SendMessageWithRetry(ctx, prompt, opts...)
+	_, err = copilotAgent.SendMessageWithRetry(ctx, prompt, opts...)
 	if err != nil {
 		return err
 	}
@@ -533,10 +669,10 @@ When complete, provide a brief summary of what was accomplished.`
 		_ = azdCtx.ClearCopilotSession()
 	}
 
-	// Show usage
-	if usage := result.Usage.Format(); usage != "" {
+	// Show session metrics (usage + file changes)
+	if metricsStr := copilotAgent.GetMetrics().String(); metricsStr != "" {
 		i.console.Message(ctx, "")
-		i.console.Message(ctx, usage)
+		i.console.Message(ctx, metricsStr)
 	}
 
 	i.console.Message(ctx, "")
@@ -562,7 +698,7 @@ func promptInitType(
 	options := []string{
 		"Scan current directory", // This now covers minimal project creation too
 		"Select a template",
-		fmt.Sprintf("Use agent mode %s", color.YellowString("(Alpha)")),
+		fmt.Sprintf("Set up with %s %s", agentcopilot.DisplayTitle, color.YellowString("(Preview)")),
 	}
 
 	selection, err := console.Select(ctx, input.ConsoleOptions{
@@ -595,8 +731,8 @@ func promptInitType(
 				return initUnknown, fmt.Errorf("failed to save config: %w", err)
 			}
 
-			console.Message(ctx, "\nThe azd agent feature has been enabled to support this new experience."+
-				" To turn off in the future run `azd config unset alpha.llm`.")
+			console.Message(ctx, fmt.Sprintf("\n%s has been enabled to support this new experience."+
+				" To turn off in the future run `azd config unset alpha.llm`.", agentcopilot.DisplayTitle))
 
 			err = azdConfig.Set(agentcopilot.ConfigKeyModelType, "copilot")
 			if err != nil {
@@ -608,8 +744,10 @@ func promptInitType(
 				return initUnknown, fmt.Errorf("failed to save config: %w", err)
 			}
 
-			console.Message(ctx, fmt.Sprintf("\nGitHub Copilot has been enabled to support this new experience."+
-				" To turn off in the future run `azd config unset %s`.", agentcopilot.ConfigKeyModelType))
+			console.Message(ctx, fmt.Sprintf(
+				"\n%s has been enabled to support this new experience."+
+					" To turn off in the future run `azd config unset %s`.",
+				agentcopilot.DisplayTitle, agentcopilot.ConfigKeyModelType))
 		}
 
 		return initWithAgent, nil
@@ -803,12 +941,20 @@ func (i *initAction) initializeExtensions(ctx context.Context, azdCtx *azdcontex
 }
 
 func getCmdInitHelpDescription(*cobra.Command) string {
-	return generateCmdHelpDescription("Initialize a new application in your current directory.",
+	return generateCmdHelpDescription(
+		"Initialize a new application. When using --template, creates a project directory automatically.",
 		[]string{
 			formatHelpNote(
 				fmt.Sprintf("Running %s without flags specified will prompt "+
 					"you to initialize using your existing code, or from a template.",
 					output.WithHighLightFormat("init"),
+				)),
+			formatHelpNote(
+				fmt.Sprintf("When using %s, a new directory is created "+
+					"(named after the template) and the project is initialized inside it. "+
+					"Pass %s as the directory to use the current directory instead.",
+					output.WithHighLightFormat("--template"),
+					output.WithHighLightFormat("."),
 				)),
 			formatHelpNote(
 				"To view all available sample templates, including those submitted by the azd community, visit: " +
@@ -818,11 +964,16 @@ func getCmdInitHelpDescription(*cobra.Command) string {
 
 func getCmdInitHelpFooter(*cobra.Command) string {
 	return generateCmdHelpSamplesBlock(map[string]string{
-		"Initialize a template to your current local directory from a GitHub repo.": fmt.Sprintf("%s %s",
+		"Initialize a template into a new project directory.": fmt.Sprintf("%s %s",
 			output.WithHighLightFormat("azd init --template"),
 			output.WithWarningFormat("[GitHub repo URL]"),
 		),
-		"Initialize a template to your current local directory from a branch other than main.": fmt.Sprintf("%s %s %s %s",
+		"Initialize a template into the current directory.": fmt.Sprintf("%s %s %s",
+			output.WithHighLightFormat("azd init --template"),
+			output.WithWarningFormat("[GitHub repo URL]"),
+			output.WithHighLightFormat("."),
+		),
+		"Initialize a template from a branch other than main.": fmt.Sprintf("%s %s %s %s",
 			output.WithHighLightFormat("azd init --template"),
 			output.WithWarningFormat("[GitHub repo URL]"),
 			output.WithHighLightFormat("--branch"),
@@ -899,4 +1050,104 @@ type initModeRequiredErrorOptions struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	Command     string `json:"command"`
+}
+
+// resolveTargetDirectory determines the target directory for template initialization.
+// It returns the current working directory when "." is passed or no template is specified,
+// otherwise it derives or uses the explicit directory name.
+func (i *initAction) resolveTargetDirectory(wd string) (string, error) {
+	if len(i.args) > 0 {
+		dirArg := i.args[0]
+		if dirArg == "." {
+			return wd, nil
+		}
+
+		// Reject absolute paths to prevent creating directories outside the working tree.
+		// With cleanup-on-failure, an absolute path could lead to os.RemoveAll on an
+		// unrelated directory.
+		if filepath.IsAbs(dirArg) {
+			return "", &internal.ErrorWithSuggestion{
+				Err:        fmt.Errorf("absolute path %q is not allowed as a directory argument", dirArg),
+				Suggestion: "Use a relative directory name (e.g., 'my-project') or '.' for the current directory.",
+			}
+		}
+
+		// Reject paths that escape the working directory via ".." traversal.
+		// filepath.Join + filepath.Rel gives us a cleaned relative path; if it
+		// starts with ".." the target is outside the working tree.
+		resolved := filepath.Join(wd, dirArg)
+		rel, err := filepath.Rel(wd, resolved)
+		if err != nil || strings.HasPrefix(rel, "..") {
+			return "", &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"directory %q escapes the current working directory", dirArg),
+				Suggestion: "Use a directory name without '..' traversal (e.g., 'my-project').",
+			}
+		}
+
+		return resolved, nil
+	}
+
+	// In non-interactive mode, non-TTY environments (CI, piped stdin), or when called by
+	// an AI agent, default to CWD to preserve backward compatibility. Existing scripts,
+	// CI pipelines, and LLM agents expect `azd init -t <template>` to place files in CWD.
+	// The auto-create-directory behavior only activates for interactive terminal users.
+	// Users can still pass an explicit positional arg to opt into the new behavior anywhere.
+	if i.console.IsNoPromptMode() || !i.console.IsSpinnerInteractive() || i.isRunningInAgent() {
+		return wd, nil
+	}
+
+	// No positional arg: auto-derive from template path
+	if i.flags.templatePath != "" {
+		dirName := templates.DeriveDirectoryName(i.flags.templatePath)
+		return filepath.Join(wd, dirName), nil
+	}
+
+	// Template selected via --filter tags (interactive selection) — use CWD for now.
+	// TODO(#7290): Derive directory name from the selected template after interactive
+	// selection completes, so --filter users also get git-clone-style behavior.
+	return wd, nil
+}
+
+// validateTargetDirectory checks that the target directory is safe to use.
+// If it already exists and is non-empty, it prompts the user for confirmation
+// or returns an error in non-interactive mode.
+func (i *initAction) validateTargetDirectory(ctx context.Context, targetDir string) error {
+	f, err := os.Open(targetDir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil // Directory doesn't exist yet — will be created
+	}
+	if err != nil {
+		return fmt.Errorf("reading directory '%s': %w", filepath.Base(targetDir), err)
+	}
+
+	// Read a single entry to check emptiness without loading the full listing.
+	names, readErr := f.Readdirnames(1)
+	f.Close()
+
+	if readErr != nil && !errors.Is(readErr, io.EOF) {
+		return fmt.Errorf("checking directory contents of '%s': %w",
+			filepath.Base(targetDir), readErr)
+	}
+
+	if len(names) == 0 {
+		return nil // Empty directory is fine
+	}
+
+	dirName := filepath.Base(targetDir)
+
+	if i.console.IsNoPromptMode() {
+		return fmt.Errorf(
+			"directory '%s' already exists and is not empty; "+
+				"use '.' to initialize in the current directory instead", dirName)
+	}
+
+	// Warn the user but don't prompt for confirmation here — the downstream
+	// template initialization will prompt when overwriting individual files,
+	// avoiding redundant confirmations.
+	i.console.MessageUxItem(ctx, &ux.WarningMessage{
+		Description: fmt.Sprintf("Directory '%s' already exists and is not empty.", dirName),
+	})
+
+	return nil
 }

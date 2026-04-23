@@ -710,8 +710,9 @@ func TestExtensionHost_BrokerLogging(t *testing.T) {
 				t.Setenv("AZD_EXT_DEBUG", tt.envValue)
 			} else {
 				// Ensure the variable is not inherited from the outer process.
+				// t.Setenv handles cleanup automatically; do not use os.Unsetenv
+				// as it is not parallel-safe.
 				t.Setenv("AZD_EXT_DEBUG", "")
-				os.Unsetenv("AZD_EXT_DEBUG")
 			}
 
 			// Exercise the same strconv.ParseBool logic that Run() uses.
@@ -726,6 +727,56 @@ func TestExtensionHost_BrokerLogging(t *testing.T) {
 			host.initManagers("test-ext", brokerLogger)
 
 			// Verify all three managers received the expected logger value.
+			stm := host.serviceTargetManager.(*ServiceTargetManager)
+			fsm := host.frameworkServiceManager.(*FrameworkServiceManager)
+			em := host.eventManager.(*EventManager)
+
+			if tt.wantNil {
+				assert.Nil(t, stm.brokerLogger, "service target manager broker logger")
+				assert.Nil(t, fsm.brokerLogger, "framework service manager broker logger")
+				assert.Nil(t, em.brokerLogger, "event manager broker logger")
+			} else {
+				assert.NotNil(t, stm.brokerLogger, "service target manager broker logger")
+				assert.NotNil(t, fsm.brokerLogger, "framework service manager broker logger")
+				assert.NotNil(t, em.brokerLogger, "event manager broker logger")
+			}
+		})
+	}
+}
+
+// TestExtensionHost_BrokerLogging_AZD_DEBUG_Fallback verifies that AZD_DEBUG
+// is used as a fallback when AZD_EXT_DEBUG is not set, matching the behavior
+// in Run() where --debug propagates via AZD_DEBUG.
+func TestExtensionHost_BrokerLogging_AZD_DEBUG_Fallback(t *testing.T) {
+	tests := []struct {
+		name     string
+		envValue string // value for AZD_DEBUG; AZD_EXT_DEBUG is always unset
+		wantNil  bool
+	}{
+		{name: "AZD_DEBUG=true enables broker logging as fallback", envValue: "true", wantNil: false},
+		{name: "AZD_DEBUG=1 enables broker logging as fallback", envValue: "1", wantNil: false},
+		{name: "AZD_DEBUG=false does not enable broker logging", envValue: "false", wantNil: true},
+		{name: "AZD_DEBUG=0 does not enable broker logging", envValue: "0", wantNil: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Ensure AZD_EXT_DEBUG is unset so AZD_DEBUG fallback is exercised.
+			t.Setenv("AZD_EXT_DEBUG", "")
+			t.Setenv("AZD_DEBUG", tt.envValue)
+
+			// Replicate the same fallback logic from Run().
+			var brokerLogger *log.Logger
+			if isDebug, err := strconv.ParseBool(os.Getenv("AZD_EXT_DEBUG")); err == nil && isDebug {
+				brokerLogger = log.New(os.Stderr, "", log.LstdFlags)
+			} else if isDebug, err := strconv.ParseBool(os.Getenv("AZD_DEBUG")); err == nil && isDebug {
+				brokerLogger = log.New(os.Stderr, "", log.LstdFlags)
+			}
+
+			client := newTestAzdClient()
+			host := NewExtensionHost(client)
+			host.initManagers("test-ext", brokerLogger)
+
 			stm := host.serviceTargetManager.(*ServiceTargetManager)
 			fsm := host.frameworkServiceManager.(*FrameworkServiceManager)
 			em := host.eventManager.(*EventManager)

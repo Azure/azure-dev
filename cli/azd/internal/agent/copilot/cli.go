@@ -7,6 +7,7 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -61,6 +62,9 @@ func (c *CopilotCLI) CheckInstalled(ctx context.Context) error {
 }
 
 // ListPlugins returns a map of installed plugin names.
+// First tries "copilot plugin list" CLI command. If that returns no results
+// (known issue: CLI may not detect plugins installed by a different version),
+// falls back to scanning the plugin directory on disk.
 func (c *CopilotCLI) ListPlugins(ctx context.Context) (map[string]bool, error) {
 	result, err := c.runCommand(ctx, "plugin", "list")
 	if err != nil {
@@ -84,7 +88,76 @@ func (c *CopilotCLI) ListPlugins(ctx context.Context) (map[string]bool, error) {
 			}
 		}
 	}
+
+	// WORKAROUND: "copilot plugin list" does not reliably detect plugins
+	// installed by a different CLI version. When the CLI explicitly reports
+	// "No plugins installed" but the plugin directory exists on disk,
+	// fall back to scanning the directory directly.
+	// TODO: Remove this fallback once the CLI plugin detection is fixed.
+	if len(installed) == 0 && strings.Contains(result.Stdout, "No plugins installed") {
+		log.Printf("[copilot-cli] CLI returned no plugins, falling back to directory scan")
+		return detectPluginsByDirectory(), nil
+	}
+
 	return installed, nil
+}
+
+// detectPluginsByDirectory scans ~/.copilot/installed-plugins/ for plugin folders
+// as a fallback when "copilot plugin list" doesn't detect them.
+func detectPluginsByDirectory() map[string]bool {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+
+	installed := make(map[string]bool)
+	pluginsRoot := filepath.Join(home, ".copilot", "installed-plugins")
+
+	// Check _direct/ subdirectory
+	directDir := filepath.Join(pluginsRoot, "_direct")
+	if entries, err := os.ReadDir(directDir); err == nil {
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			if name := readPluginName(filepath.Join(directDir, entry.Name())); name != "" {
+				installed[name] = true
+			}
+		}
+	}
+
+	// Check flat layout
+	if entries, err := os.ReadDir(pluginsRoot); err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() && entry.Name() != "_direct" {
+				installed[entry.Name()] = true
+			}
+		}
+	}
+
+	log.Printf("[copilot-cli] Detected plugins via directory scan: %v", installed)
+	return installed
+}
+
+// readPluginName reads the "name" field from a plugin's metadata file.
+func readPluginName(pluginDir string) string {
+	for _, metaPath := range []string{
+		filepath.Join(pluginDir, ".plugin", "plugin.json"),
+		filepath.Join(pluginDir, ".claude-plugin", "plugin.json"),
+		filepath.Join(pluginDir, "plugin.json"),
+	} {
+		data, err := os.ReadFile(metaPath)
+		if err != nil {
+			continue
+		}
+		var meta struct {
+			Name string `json:"name"`
+		}
+		if json.Unmarshal(data, &meta) == nil && meta.Name != "" {
+			return meta.Name
+		}
+	}
+	return ""
 }
 
 // InstallPlugin installs a plugin by source reference.
@@ -156,13 +229,13 @@ func (c *CopilotCLI) ensureInstalled(ctx context.Context) error {
 			return fmt.Errorf("creating copilot CLI directory: %w", err)
 		}
 
-		c.console.ShowSpinner(ctx, "Downloading Copilot CLI", input.Step)
+		c.console.ShowSpinner(ctx, "Downloading GitHub Copilot CLI", input.Step)
 		err := downloadCopilotCLI(ctx, c.transporter, cliVersion, cliPath)
 		if err != nil {
-			c.console.StopSpinner(ctx, "Downloading Copilot CLI", input.StepFailed)
+			c.console.StopSpinner(ctx, "Downloading GitHub Copilot CLI", input.StepFailed)
 			return fmt.Errorf("downloading copilot CLI: %w", err)
 		}
-		c.console.StopSpinner(ctx, "Downloading Copilot CLI", input.StepDone)
+		c.console.StopSpinner(ctx, "Downloading GitHub Copilot CLI", input.StepDone)
 		c.console.Message(ctx, "")
 	}
 

@@ -31,17 +31,31 @@ func (m *mockMultiTenantCredentialProvider) GetTokenCredential(
 	return args.Get(0).(azcore.TokenCredential), args.Error(1)
 }
 
-// mockSubscriptionTenantResolver is a mock implementation for testing
-type mockSubscriptionTenantResolver struct {
+// mockSubscriptionResolver is a mock implementation for testing.
+type mockSubscriptionResolver struct {
 	mock.Mock
 }
 
-var _ account.SubscriptionTenantResolver = (*mockSubscriptionTenantResolver)(nil)
+var _ account.SubscriptionResolver = (*mockSubscriptionResolver)(nil)
 
-func (m *mockSubscriptionTenantResolver) LookupTenant(
-	ctx context.Context, subscriptionId string) (string, error) {
+func (m *mockSubscriptionResolver) GetSubscription(
+	ctx context.Context, subscriptionId string,
+) (*account.Subscription, error) {
 	args := m.Called(ctx, subscriptionId)
-	return args.String(0), args.Error(1)
+
+	if subscription, ok := args.Get(0).(*account.Subscription); ok {
+		return subscription, args.Error(1)
+	}
+
+	if tenantId, ok := args.Get(0).(string); ok {
+		return &account.Subscription{
+			Id:                 subscriptionId,
+			TenantId:           "resource-" + tenantId,
+			UserAccessTenantId: tenantId,
+		}, args.Error(1)
+	}
+
+	return nil, args.Error(1)
 }
 
 // mockTokenCredential is a minimal mock implementation for testing
@@ -77,7 +91,7 @@ func (m *mockUserConfigManager) Load() (config.Config, error) {
 
 func Test_NewBlobSdkClient_UsesHomeTenantWhenNoSubscriptionId(t *testing.T) {
 	mockCredProvider := &mockMultiTenantCredentialProvider{}
-	mockTenantResolver := &mockSubscriptionTenantResolver{}
+	mockTenantResolver := &mockSubscriptionResolver{}
 	mockCred := &mockTokenCredential{}
 	mockConfigMgr := &mockUserConfigManager{}
 
@@ -108,13 +122,13 @@ func Test_NewBlobSdkClient_UsesHomeTenantWhenNoSubscriptionId(t *testing.T) {
 	require.NotNil(t, client)
 	mockCredProvider.AssertExpectations(t)
 
-	// TenantResolver should NOT be called when no subscription ID is provided
-	mockTenantResolver.AssertNotCalled(t, "LookupTenant", mock.Anything, mock.Anything)
+	// GetSubscription should NOT be called when no subscription ID is provided.
+	mockTenantResolver.AssertNotCalled(t, "GetSubscription", mock.Anything, mock.Anything)
 }
 
 func Test_NewBlobSdkClient_ResolvesTenantWhenSubscriptionIdProvided(t *testing.T) {
 	mockCredProvider := &mockMultiTenantCredentialProvider{}
-	mockTenantResolver := &mockSubscriptionTenantResolver{}
+	mockTenantResolver := &mockSubscriptionResolver{}
 	mockCred := &mockTokenCredential{}
 	mockConfigMgr := &mockUserConfigManager{}
 
@@ -129,8 +143,13 @@ func Test_NewBlobSdkClient_ResolvesTenantWhenSubscriptionIdProvided(t *testing.T
 
 	coreClientOptions := &azcore.ClientOptions{}
 
-	// Expect tenant resolver to be called with the subscription ID
-	mockTenantResolver.On("LookupTenant", mock.Anything, testSubscriptionId).Return(testTenantId, nil)
+	// Expect the subscription resolver to be called with the subscription ID.
+	mockTenantResolver.On("GetSubscription", mock.Anything, testSubscriptionId).
+		Return(&account.Subscription{
+			Id:                 testSubscriptionId,
+			TenantId:           "resource-" + testTenantId,
+			UserAccessTenantId: testTenantId,
+		}, nil)
 
 	// Expect credential provider to be called with resolved tenant ID
 	mockCredProvider.On("GetTokenCredential", mock.Anything, testTenantId).Return(mockCred, nil)
@@ -155,7 +174,7 @@ func Test_NewBlobSdkClient_ResolvesTenantWhenSubscriptionIdProvided(t *testing.T
 
 func Test_NewBlobSdkClient_ReturnsErrorWhenTenantResolutionFails(t *testing.T) {
 	mockCredProvider := &mockMultiTenantCredentialProvider{}
-	mockTenantResolver := &mockSubscriptionTenantResolver{}
+	mockTenantResolver := &mockSubscriptionResolver{}
 	mockConfigMgr := &mockUserConfigManager{}
 
 	testSubscriptionId := "test-subscription-id"
@@ -168,9 +187,9 @@ func Test_NewBlobSdkClient_ReturnsErrorWhenTenantResolutionFails(t *testing.T) {
 
 	coreClientOptions := &azcore.ClientOptions{}
 
-	// Simulate tenant resolution failure
-	mockTenantResolver.On("LookupTenant", mock.Anything, testSubscriptionId).
-		Return("", errors.New("subscription not found"))
+	// Simulate subscription resolution failure.
+	mockTenantResolver.On("GetSubscription", mock.Anything, testSubscriptionId).
+		Return((*account.Subscription)(nil), errors.New("subscription not found"))
 
 	client, err := NewBlobSdkClient(
 		mockCredProvider,
@@ -183,13 +202,13 @@ func Test_NewBlobSdkClient_ReturnsErrorWhenTenantResolutionFails(t *testing.T) {
 
 	require.Error(t, err)
 	require.Nil(t, client)
-	require.Contains(t, err.Error(), "failed to resolve tenant for subscription")
+	require.Contains(t, err.Error(), "failed to get subscription")
 	mockTenantResolver.AssertExpectations(t)
 }
 
 func Test_NewBlobSdkClient_FallsBackToDefaultSubscriptionFromUserConfig(t *testing.T) {
 	mockCredProvider := &mockMultiTenantCredentialProvider{}
-	mockTenantResolver := &mockSubscriptionTenantResolver{}
+	mockTenantResolver := &mockSubscriptionResolver{}
 	mockCred := &mockTokenCredential{}
 	mockConfigMgr := &mockUserConfigManager{}
 
@@ -212,8 +231,13 @@ func Test_NewBlobSdkClient_FallsBackToDefaultSubscriptionFromUserConfig(t *testi
 	})
 	mockConfigMgr.On("Load").Return(userCfg, nil)
 
-	// Expect tenant resolver to be called with the default subscription
-	mockTenantResolver.On("LookupTenant", mock.Anything, defaultSubscriptionId).Return(resolvedTenantId, nil)
+	// Expect the subscription resolver to be called with the default subscription.
+	mockTenantResolver.On("GetSubscription", mock.Anything, defaultSubscriptionId).
+		Return(&account.Subscription{
+			Id:                 defaultSubscriptionId,
+			TenantId:           "resource-" + resolvedTenantId,
+			UserAccessTenantId: resolvedTenantId,
+		}, nil)
 
 	// Expect credential provider to be called with resolved tenant ID
 	mockCredProvider.On("GetTokenCredential", mock.Anything, resolvedTenantId).Return(mockCred, nil)
@@ -236,7 +260,7 @@ func Test_NewBlobSdkClient_FallsBackToDefaultSubscriptionFromUserConfig(t *testi
 
 func Test_NewBlobSdkClient_UsesHomeTenantWhenUserConfigLoadFails(t *testing.T) {
 	mockCredProvider := &mockMultiTenantCredentialProvider{}
-	mockTenantResolver := &mockSubscriptionTenantResolver{}
+	mockTenantResolver := &mockSubscriptionResolver{}
 	mockCred := &mockTokenCredential{}
 	mockConfigMgr := &mockUserConfigManager{}
 
@@ -265,5 +289,5 @@ func Test_NewBlobSdkClient_UsesHomeTenantWhenUserConfigLoadFails(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, client)
 	mockCredProvider.AssertExpectations(t)
-	mockTenantResolver.AssertNotCalled(t, "LookupTenant", mock.Anything, mock.Anything)
+	mockTenantResolver.AssertNotCalled(t, "GetSubscription", mock.Anything, mock.Anything)
 }

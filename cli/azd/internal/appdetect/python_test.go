@@ -23,6 +23,7 @@ func moveFile(t *testing.T, src, dst string) string {
 }
 
 func TestFindFastApiMain(t *testing.T) {
+	t.Parallel()
 	temp := t.TempDir()
 
 	contents, err := testDataFs.ReadFile("testdata/assets/fastapi.py")
@@ -52,6 +53,7 @@ func TestFindFastApiMain(t *testing.T) {
 }
 
 func TestDetectPythonProject(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		files      map[string]string // filename -> content
@@ -125,6 +127,7 @@ func TestDetectPythonProject(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			dir := t.TempDir()
 			for name, content := range tt.files {
 				err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0600)

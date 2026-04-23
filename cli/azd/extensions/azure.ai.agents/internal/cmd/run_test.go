@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -196,4 +197,217 @@ func createVenv(t *testing.T, projectDir string) string {
 	}
 
 	return venvDir
+}
+
+func TestAppendFoundryEnvVars(t *testing.T) {
+	t.Parallel()
+
+	t.Run("maps AZURE_AI_PROJECT_ENDPOINT to FOUNDRY_PROJECT_ENDPOINT", func(t *testing.T) {
+		t.Parallel()
+		azdEnv := map[string]string{
+			"AZURE_AI_PROJECT_ENDPOINT": "https://myaccount.services.ai.azure.com/api/projects/myproject",
+		}
+		env := appendFoundryEnvVars(nil, azdEnv, "")
+		expected := "FOUNDRY_PROJECT_ENDPOINT=https://myaccount.services.ai.azure.com/api/projects/myproject"
+		if !slices.Contains(env, expected) {
+			t.Errorf("expected %q in env, got %v", expected, env)
+		}
+	})
+
+	t.Run("maps AZURE_AI_PROJECT_ID to FOUNDRY_PROJECT_ARM_ID", func(t *testing.T) {
+		t.Parallel()
+		azdEnv := map[string]string{
+			"AZURE_AI_PROJECT_ID": "/subscriptions/sub1/resourceGroups/rg1/providers/Microsoft.CognitiveServices/accounts/acct1/projects/proj1",
+		}
+		env := appendFoundryEnvVars(nil, azdEnv, "")
+		expected := "FOUNDRY_PROJECT_ARM_ID=/subscriptions/sub1/resourceGroups/rg1/providers/Microsoft.CognitiveServices/accounts/acct1/projects/proj1"
+		if !slices.Contains(env, expected) {
+			t.Errorf("expected %q in env, got %v", expected, env)
+		}
+	})
+
+	t.Run("maps service-specific agent vars to FOUNDRY_AGENT_*", func(t *testing.T) {
+		t.Parallel()
+		azdEnv := map[string]string{
+			"AGENT_MY_SVC_NAME":    "my-agent",
+			"AGENT_MY_SVC_VERSION": "v3",
+		}
+		env := appendFoundryEnvVars(nil, azdEnv, "my-svc")
+		if !slices.Contains(env, "FOUNDRY_AGENT_NAME=my-agent") {
+			t.Errorf("expected FOUNDRY_AGENT_NAME=my-agent in env, got %v", env)
+		}
+		if !slices.Contains(env, "FOUNDRY_AGENT_VERSION=v3") {
+			t.Errorf("expected FOUNDRY_AGENT_VERSION=v3 in env, got %v", env)
+		}
+	})
+
+	t.Run("skips missing values", func(t *testing.T) {
+		t.Parallel()
+		azdEnv := map[string]string{}
+		env := appendFoundryEnvVars(nil, azdEnv, "my-svc")
+		if len(env) != 0 {
+			t.Errorf("expected empty env, got %v", env)
+		}
+	})
+
+	t.Run("includes all mappings together", func(t *testing.T) {
+		t.Parallel()
+		azdEnv := map[string]string{
+			"AZURE_AI_PROJECT_ENDPOINT": "https://acct.services.ai.azure.com/api/projects/proj",
+			"AZURE_AI_PROJECT_ID":       "/subscriptions/sub/rg/rg/acct/proj",
+			"AGENT_AGENT1_NAME":         "agent1",
+			"AGENT_AGENT1_VERSION":      "v1",
+		}
+		env := appendFoundryEnvVars(nil, azdEnv, "agent1")
+		if len(env) != 4 {
+			t.Errorf("expected 4 env vars, got %d: %v", len(env), env)
+		}
+	})
+
+	t.Run("skips foundry key when already set in azd env", func(t *testing.T) {
+		t.Parallel()
+		azdEnv := map[string]string{
+			"AZURE_AI_PROJECT_ENDPOINT": "https://from-azd.services.ai.azure.com",
+			"FOUNDRY_PROJECT_ENDPOINT":  "https://explicit.services.ai.azure.com",
+			"AGENT_MY_SVC_NAME":         "my-agent",
+			"FOUNDRY_AGENT_NAME":        "explicit-agent",
+		}
+		env := appendFoundryEnvVars(nil, azdEnv, "my-svc")
+
+		// Neither FOUNDRY_PROJECT_ENDPOINT nor FOUNDRY_AGENT_NAME should be
+		// appended because they already exist in azdEnv (and were thus already
+		// added to the env slice by the caller's loop over azdEnv).
+		for _, entry := range env {
+			if strings.HasPrefix(entry, "FOUNDRY_PROJECT_ENDPOINT=") ||
+				strings.HasPrefix(entry, "FOUNDRY_AGENT_NAME=") {
+				t.Errorf("should not translate when foundry key already in azdEnv, got %q", entry)
+			}
+		}
+
+		// AZURE_AI_PROJECT_ID has no explicit FOUNDRY_PROJECT_ARM_ID, so it should still be skipped
+		// (it's not in azdEnv either, so appendFoundryEnvVars skips it because the source key is empty)
+		if len(env) != 0 {
+			t.Errorf("expected no translated env vars, got %v", env)
+		}
+	})
+
+	t.Run("skips foundry key when already set in process env slice", func(t *testing.T) {
+		t.Parallel()
+		// Simulate os.Environ() already containing FOUNDRY_* vars set by the user's shell
+		existingEnv := []string{
+			"HOME=/home/user",
+			"FOUNDRY_PROJECT_ENDPOINT=https://user-shell.services.ai.azure.com",
+			"FOUNDRY_AGENT_NAME=shell-agent",
+		}
+		azdEnv := map[string]string{
+			"AZURE_AI_PROJECT_ENDPOINT": "https://from-azd.services.ai.azure.com",
+			"AZURE_AI_PROJECT_ID":       "/subscriptions/sub/rg/rg/acct/proj",
+			"AGENT_MY_SVC_NAME":         "my-agent",
+			"AGENT_MY_SVC_VERSION":      "v2",
+		}
+		env := appendFoundryEnvVars(existingEnv, azdEnv, "my-svc")
+
+		// FOUNDRY_PROJECT_ENDPOINT and FOUNDRY_AGENT_NAME should NOT be appended
+		// because they already exist in the process env slice.
+		foundryEndpointCount := 0
+		foundryAgentNameCount := 0
+		for _, entry := range env {
+			if strings.HasPrefix(entry, "FOUNDRY_PROJECT_ENDPOINT=") {
+				foundryEndpointCount++
+			}
+			if strings.HasPrefix(entry, "FOUNDRY_AGENT_NAME=") {
+				foundryAgentNameCount++
+			}
+		}
+		if foundryEndpointCount != 1 {
+			t.Errorf("expected exactly 1 FOUNDRY_PROJECT_ENDPOINT entry (from shell), got %d in %v", foundryEndpointCount, env)
+		}
+		if foundryAgentNameCount != 1 {
+			t.Errorf("expected exactly 1 FOUNDRY_AGENT_NAME entry (from shell), got %d in %v", foundryAgentNameCount, env)
+		}
+
+		// FOUNDRY_PROJECT_ARM_ID and FOUNDRY_AGENT_VERSION should still be translated
+		// since they are NOT already present in the env slice.
+		if !slices.Contains(env, "FOUNDRY_PROJECT_ARM_ID=/subscriptions/sub/rg/rg/acct/proj") {
+			t.Errorf("expected FOUNDRY_PROJECT_ARM_ID to be translated, got %v", env)
+		}
+		if !slices.Contains(env, "FOUNDRY_AGENT_VERSION=v2") {
+			t.Errorf("expected FOUNDRY_AGENT_VERSION to be translated, got %v", env)
+		}
+	})
+}
+
+func TestAppendPortEnvVars(t *testing.T) {
+	t.Parallel()
+
+	t.Run("dotnet project includes ASPNETCORE_URLS", func(t *testing.T) {
+		t.Parallel()
+		pt := ProjectType{Language: "dotnet", StartCmd: "dotnet run"}
+		env := appendPortEnvVars(nil, pt, 8088)
+
+		if !slices.Contains(env, "PORT=8088") {
+			t.Errorf("expected PORT=8088 in env, got %v", env)
+		}
+		if !slices.Contains(env, "ASPNETCORE_URLS=http://localhost:8088") {
+			t.Errorf("expected ASPNETCORE_URLS=http://localhost:8088 in env, got %v", env)
+		}
+	})
+
+	t.Run("python project does not include ASPNETCORE_URLS", func(t *testing.T) {
+		t.Parallel()
+		pt := ProjectType{Language: "python", StartCmd: "python main.py"}
+		env := appendPortEnvVars(nil, pt, 8088)
+
+		if !slices.Contains(env, "PORT=8088") {
+			t.Errorf("expected PORT=8088 in env, got %v", env)
+		}
+		for _, entry := range env {
+			if strings.HasPrefix(entry, "ASPNETCORE_URLS=") {
+				t.Errorf("ASPNETCORE_URLS should not be set for python, got %v", env)
+			}
+		}
+	})
+
+	t.Run("node project does not include ASPNETCORE_URLS", func(t *testing.T) {
+		t.Parallel()
+		pt := ProjectType{Language: "node", StartCmd: "npm start"}
+		env := appendPortEnvVars(nil, pt, 9090)
+
+		if !slices.Contains(env, "PORT=9090") {
+			t.Errorf("expected PORT=9090 in env, got %v", env)
+		}
+		for _, entry := range env {
+			if strings.HasPrefix(entry, "ASPNETCORE_URLS=") {
+				t.Errorf("ASPNETCORE_URLS should not be set for node, got %v", env)
+			}
+		}
+	})
+
+	t.Run("dotnet project respects custom port", func(t *testing.T) {
+		t.Parallel()
+		pt := ProjectType{Language: "dotnet", StartCmd: "dotnet run"}
+		env := appendPortEnvVars(nil, pt, 3000)
+
+		if !slices.Contains(env, "PORT=3000") {
+			t.Errorf("expected PORT=3000 in env, got %v", env)
+		}
+		expected := "ASPNETCORE_URLS=http://localhost:3000"
+		if !slices.Contains(env, expected) {
+			t.Errorf("expected %q in env, got %v", expected, env)
+		}
+	})
+
+	t.Run("preserves existing env entries", func(t *testing.T) {
+		t.Parallel()
+		pt := ProjectType{Language: "dotnet", StartCmd: "dotnet run"}
+		existing := []string{"HOME=/home/user", "PATH=/usr/bin"}
+		env := appendPortEnvVars(existing, pt, 8088)
+
+		if len(env) != 4 {
+			t.Errorf("expected 4 entries (2 existing + PORT + ASPNETCORE_URLS), got %d: %v", len(env), env)
+		}
+		if env[0] != "HOME=/home/user" || env[1] != "PATH=/usr/bin" {
+			t.Errorf("existing entries not preserved, got %v", env)
+		}
+	})
 }

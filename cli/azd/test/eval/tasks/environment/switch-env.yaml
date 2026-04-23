@@ -1,0 +1,29 @@
+id: env-switch-001
+description: >
+  User wants to switch between existing azd environments.
+  LLM should suggest azd env select and azd env list commands.
+inputs:
+  prompt: "I have multiple environments set up with azd. How do I switch from production to staging?"
+  context: "User has an azd project with 'production' and 'staging' environments configured."
+graders:
+  - type: text
+    weight: 0.4
+    config:
+      must_match:
+        - "azd env select"
+      must_not_match:
+        - "azd env new"
+        - "azd env remove"
+        - "azd down"
+  - type: text
+    weight: 0.3
+    config:
+      must_match_any:
+        - "azd env select staging"
+        - "azd env select <name>"
+        - "azd env select <environment>"
+  - type: text
+    weight: 0.3
+    config:
+      must_match:
+        - "azd env list"

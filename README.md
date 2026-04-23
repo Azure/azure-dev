@@ -53,7 +53,7 @@ powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/install-azd.ps1' 
 ### macOS
 
 ```bash
-brew install azure/azd/azd
+brew install --cask azure/azd/azd
 ```
 
 > **Note:** If upgrading from a non-Homebrew installation, remove the existing `azd` binary first.

@@ -77,6 +77,7 @@ func (d *Cli) Build(
 	buildArgs []string,
 	buildSecrets []string,
 	buildEnv []string,
+	buildNetwork string,
 	buildProgress io.Writer,
 ) (string, error) {
 	if strings.TrimSpace(platform) == "" {
@@ -103,6 +104,10 @@ func (d *Cli) Build(
 
 	if target != "" {
 		args = append(args, "--target", target)
+	}
+
+	if buildNetwork != "" {
+		args = append(args, "--network", buildNetwork)
 	}
 
 	if tagName != "" {

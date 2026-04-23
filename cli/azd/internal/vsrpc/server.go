@@ -11,8 +11,10 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -46,7 +48,31 @@ func NewServer(rootContainer *ioc.NestedContainer) *Server {
 }
 
 // upgrader is the websocket.Upgrader used by the server to upgrade each request to a websocket connection.
-var upgrader = websocket.Upgrader{}
+var upgrader = websocket.Upgrader{
+	CheckOrigin: checkLocalhostOrigin,
+}
+
+// checkLocalhostOrigin prevents Cross-Site WebSocket Hijacking (CSWSH) by rejecting
+// WebSocket upgrade requests from non-localhost origins. Without this check, any web
+// page the user visits could open a WebSocket connection to the local RPC server.
+func checkLocalhostOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true // same-origin requests don't send Origin
+	}
+
+	u, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+
+	host := u.Hostname()
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
 
 // Serve calls http.Serve with the given listener and a handler that serves the VS RPC protocol.
 func (s *Server) Serve(l net.Listener) error {
@@ -64,6 +90,7 @@ func (s *Server) Serve(l net.Listener) error {
 	}
 
 	// Run upload periodically in the background while the server is running.
+	//nolint:gosec // G118: cancel is stored on the server and invoked later by StopAsync.
 	ctx, cancel := context.WithCancel(context.Background())
 	ts := telemetry.GetTelemetrySystem()
 	backgroundTelemetry := func() {
@@ -187,8 +214,9 @@ func serveRpc(w http.ResponseWriter, r *http.Request, handlers map[string]Handle
 			call, isCall := req.(*jsonrpc2.Call)
 			if isCall {
 				span.SetAttributes(fields.JsonRpcId.String(fmt.Sprint(call.ID())))
-				ctx, cancel := context.WithCancel(ctx)
-				childCtx = ctx
+				var cancel context.CancelFunc
+				//nolint:gosec // G118: cancel is stored in cancelers and invoked later by request cancellation handling.
+				childCtx, cancel = context.WithCancel(childCtx)
 				cancelersMu.Lock()
 				cancelers[call.ID()] = cancel
 				cancelersMu.Unlock()

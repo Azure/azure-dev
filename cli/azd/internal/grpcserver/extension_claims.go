@@ -25,7 +25,7 @@ func GenerateExtensionToken(extension *extensions.Extension, serverInfo *ServerI
 		Capabilities: extension.Capabilities,
 	}
 
-	jwtToken, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(serverInfo.SigningKey))
+	jwtToken, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(serverInfo.SigningKey)
 	if err != nil {
 		return "", err
 	}
@@ -38,11 +38,11 @@ func ParseExtensionToken(tokenValue string, serverInfo *ServerInfo) (*extensions
 	claims := &extensions.ExtensionClaims{}
 
 	token, err := jwt.ParseWithClaims(tokenValue, claims, func(t *jwt.Token) (any, error) {
-		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+		if t.Method != jwt.SigningMethodHS256 {
 			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
 		}
 
-		return []byte(serverInfo.SigningKey), nil
+		return serverInfo.SigningKey, nil
 	}, jwt.WithAudience(serverInfo.Address), jwt.WithIssuer("azd"))
 
 	if err != nil {

@@ -12,11 +12,15 @@ capabilities:
   - mcp-server
   - service-target-provider
   - framework-service-provider
+  - provisioning-provider
   - metadata
 providers:
   - name: demo
     type: service-target
     description: Deploys application components to demo
+  - name: demo
+    type: provisioning-provider
+    description: Provisions infrastructure using the demo provider
 examples:
   - name: context
     description: Displays the current `azd` project & environment context.
@@ -36,3 +40,6 @@ examples:
   - name: mcp
     description: Start MCP server with demo tools.
     usage: azd demo mcp start
+  - name: copilot
+    description: Interactive Copilot chat loop demonstrating CopilotService gRPC API.
+    usage: azd demo copilot [--model <model>] [--resume]

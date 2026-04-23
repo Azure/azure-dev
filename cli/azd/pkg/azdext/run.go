@@ -61,6 +61,16 @@ func Run(rootCmd *cobra.Command, opts ...RunOption) {
 		o(&cfg)
 	}
 
+	// Validate that extension-defined flags do not collide with azd reserved global flags.
+	// This check runs before execution so extension developers see the error immediately.
+	if err := ValidateNoReservedFlagConflicts(rootCmd); err != nil {
+		if reportErr := ReportError(ctx, err); reportErr != nil {
+			log.Printf("warning: failed to report structured error: %v", reportErr)
+			printError(err)
+		}
+		os.Exit(1)
+	}
+
 	if cfg.preExecute != nil {
 		if err := cfg.preExecute(ctx, rootCmd); err != nil {
 			if reportErr := ReportError(ctx, err); reportErr != nil {

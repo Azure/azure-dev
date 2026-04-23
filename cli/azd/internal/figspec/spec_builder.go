@@ -190,8 +190,11 @@ func (sb *SpecBuilder) generateOptions(flagSet *pflag.FlagSet, commandPath strin
 			return
 		}
 
-		// Skip non-persistent global flags for subcommands since they're already defined as persistent at root
-		if !persistent && slices.Contains(cmd.NonPersistentGlobalFlags, flag.Name) {
+		// Skip global flags when generating non-persistent (local) options.
+		// These are already defined as persistent at root level, covering both
+		// persistent global flags (--environment, --cwd, etc.) and
+		// non-persistent global flags (--help, --docs) to avoid duplicate option entries.
+		if !persistent && sb.globalFlagNames[flag.Name] {
 			return
 		}
 

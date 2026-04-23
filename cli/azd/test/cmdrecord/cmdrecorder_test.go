@@ -15,8 +15,23 @@ import (
 	"gopkg.in/dnaeon/go-vcr.v3/recorder"
 )
 
+func TestMain(m *testing.M) {
+	// Pre-build the proxy binary so the cost is explicit and not measured
+	// inside individual test functions. Subsequent Start() calls observe
+	// buildOnce as already executed.
+	buildOnce.Do(func() {
+		buildErr = build(getCmdPath(), "-o", "proxy")
+	})
+	if buildErr != nil {
+		fmt.Fprintf(os.Stderr, "cmdrecord: failed to build proxy: %v\n", buildErr)
+		os.Exit(1)
+	}
+	os.Exit(m.Run())
+}
+
 // Verify that record + playback work together.
 func TestRecordPlayback(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	r := &Recorder{
 		opt: Options{
@@ -120,6 +135,7 @@ func TestRecordPlayback(t *testing.T) {
 
 // Verify schema compatibility -- does playback succeed from a known "frozen" cassette?
 func TestPlaybackFromKnownFile(t *testing.T) {
+	t.Parallel()
 	r := &Recorder{
 		opt: Options{
 			CmdName:      "go",
@@ -161,6 +177,7 @@ func TestPlaybackFromKnownFile(t *testing.T) {
 }
 
 func TestPassthrough(t *testing.T) {
+	t.Parallel()
 	r := &Recorder{
 		opt: Options{
 			CmdName: "go",

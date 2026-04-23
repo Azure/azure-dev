@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -19,13 +21,25 @@ import (
 
 // FoundryProjectsClient provides methods to interact with Microsoft Foundry projects
 type FoundryProjectsClient struct {
-	baseEndpoint string
-	apiVersion   string
-	pipeline     runtime.Pipeline
+	baseEndpoint  string
+	baseOriginURL *url.URL // cached parsed base URL for SSRF origin checks
+	apiVersion    string
+	pipeline      runtime.Pipeline
 }
 
 // NewFoundryProjectsClient creates a new instance of FoundryProjectsClient
-func NewFoundryProjectsClient(accountName string, projectName string, cred azcore.TokenCredential) *FoundryProjectsClient {
+func NewFoundryProjectsClient(
+	accountName string,
+	projectName string,
+	cred azcore.TokenCredential,
+) (*FoundryProjectsClient, error) {
+	if strings.TrimSpace(accountName) == "" {
+		return nil, fmt.Errorf("accountName must not be empty")
+	}
+	if strings.TrimSpace(projectName) == "" {
+		return nil, fmt.Errorf("projectName must not be empty")
+	}
+
 	baseEndpoint := fmt.Sprintf("https://%s.services.ai.azure.com/api/projects/%s", accountName, projectName)
 
 	userAgent := fmt.Sprintf("azd-ext-azure-ai-agents/%s", version.Version)
@@ -48,11 +62,17 @@ func NewFoundryProjectsClient(accountName string, projectName string, cred azcor
 		clientOptions,
 	)
 
-	return &FoundryProjectsClient{
-		baseEndpoint: baseEndpoint,
-		apiVersion:   "2025-11-15-preview",
-		pipeline:     pipeline,
+	parsedBase, err := url.Parse(baseEndpoint)
+	if err != nil {
+		return nil, fmt.Errorf("invalid base endpoint URL: %w", err)
 	}
+
+	return &FoundryProjectsClient{
+		baseEndpoint:  baseEndpoint,
+		baseOriginURL: parsedBase,
+		apiVersion:    "2025-11-15-preview",
+		pipeline:      pipeline,
+	}, nil
 }
 
 // Connection-related types
@@ -144,7 +164,8 @@ func (c *FoundryProjectsClient) GetPagedConnections(ctx context.Context) (*Paged
 // GetConnectionWithCredentials retrieves a specific connection with its credentials
 func (c *FoundryProjectsClient) GetConnectionWithCredentials(ctx context.Context, name string) (*Connection, error) {
 	targetEndpoint := fmt.Sprintf(
-		"%s/connections/%s/getConnectionWithCredentials?api-version=%s", c.baseEndpoint, name, c.apiVersion)
+		"%s/connections/%s/getConnectionWithCredentials?api-version=%s",
+		c.baseEndpoint, url.PathEscape(name), c.apiVersion)
 
 	req, err := runtime.NewRequest(ctx, http.MethodPost, targetEndpoint)
 	if err != nil {
@@ -191,6 +212,9 @@ func (c *FoundryProjectsClient) GetAllConnections(ctx context.Context) ([]Connec
 
 	// Continue fetching pages while there's a next link
 	for nextLink != nil && *nextLink != "" {
+		if err := c.validateNextLinkOrigin(*nextLink); err != nil {
+			return nil, fmt.Errorf("refusing to follow pagination link: %w", err)
+		}
 		pagedConnections, err := c.getNextPage(ctx, *nextLink)
 		if err != nil {
 			return nil, err
@@ -202,6 +226,36 @@ func (c *FoundryProjectsClient) GetAllConnections(ctx context.Context) ([]Connec
 	}
 
 	return allConnections, nil
+}
+
+// validateNextLinkOrigin ensures that a pagination nextLink URL points to the same
+// origin (scheme + host) as the client's base endpoint. This prevents SSRF attacks
+// where a malicious API response redirects pagination to an attacker-controlled server.
+func (c *FoundryProjectsClient) validateNextLinkOrigin(nextLink string) error {
+	if c.baseOriginURL == nil {
+		return fmt.Errorf("base endpoint URL not initialized")
+	}
+
+	linkURL, err := url.Parse(nextLink)
+	if err != nil {
+		return fmt.Errorf("invalid nextLink URL: %w", err)
+	}
+
+	// Reject scheme-relative URLs (e.g., "//evil.com/path") and URLs without an explicit scheme.
+	// These could bypass origin checks or behave unpredictably.
+	if linkURL.Scheme == "" {
+		return fmt.Errorf("nextLink must have an explicit scheme, got %q", nextLink)
+	}
+
+	if !strings.EqualFold(linkURL.Scheme, c.baseOriginURL.Scheme) ||
+		!strings.EqualFold(linkURL.Host, c.baseOriginURL.Host) {
+		return fmt.Errorf(
+			"nextLink origin mismatch: expected %s://%s, got %s://%s",
+			c.baseOriginURL.Scheme, c.baseOriginURL.Host, linkURL.Scheme, linkURL.Host,
+		)
+	}
+
+	return nil
 }
 
 // getNextPage fetches a single page of connections from the given URL

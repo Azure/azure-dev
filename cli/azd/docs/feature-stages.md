@@ -22,6 +22,7 @@ As of `1.21.1`, each Azure Developer CLI feature has been evaluated and assigned
 | Command      | package                  | Beta      |
 | Command      | add                      | Beta      |
 | Command      | infra generate           | Beta      |
+| Command      | update                   | Beta      |
 | Language     | Python                   | Stable    |
 | Language     | JavaScript/TypeScript    | Stable    |
 | Language     | Java                     | Stable    |

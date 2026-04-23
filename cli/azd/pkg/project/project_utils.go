@@ -4,6 +4,7 @@
 package project
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -30,12 +31,19 @@ func createDeployableZip(svc *ServiceConfig, root string) (string, error) {
 	ignoreFile := svc.Host.IgnoreFile()
 	var ignorer gitignore.GitIgnore
 	if ignoreFile != "" {
-		ig, err := gitignore.NewFromFile(filepath.Join(root, ignoreFile))
-		if !errors.Is(err, fs.ErrNotExist) && err != nil {
+		ignoreFilePath := filepath.Join(root, ignoreFile)
+		contents, err := os.ReadFile(ignoreFilePath)
+		if errors.Is(err, fs.ErrNotExist) {
+			// no ignore file, use defaults below
+		} else if err != nil {
+			zipFile.Close()
+			os.Remove(zipFile.Name()) //nolint:gosec // G703: zipFile.Name() is our own temp file, not user-controlled
 			return "", fmt.Errorf("reading ignore file: %w", err)
+		} else {
+			// Strip UTF-8 BOM if present, then parse from in-memory contents.
+			contents = stripUTF8BOM(contents)
+			ignorer = gitignore.New(bytes.NewReader(contents), root, nil)
 		}
-
-		ignorer = ig
 	}
 
 	// apply exclusions for zip deployment
@@ -68,9 +76,11 @@ func createDeployableZip(svc *ServiceConfig, root string) (string, error) {
 		}
 
 		// apply exclusions from ignore file
-		if ignorer != nil && ignorer.Absolute(src, isDir) != nil {
-			return false, nil
-		} else if ignorer == nil { // default exclusions without ignorefile control
+		if ignorer != nil {
+			if match := ignorer.Absolute(src, isDir); match != nil && match.Ignore() {
+				return false, nil
+			}
+		} else { // default exclusions without ignorefile control
 			if svc.Language == ServiceLanguagePython {
 				if isDir {
 					// check for .venv containing pyvenv.cfg
@@ -84,6 +94,11 @@ func createDeployableZip(svc *ServiceConfig, root string) (string, error) {
 				}
 			} else if svc.Language == ServiceLanguageJavaScript || svc.Language == ServiceLanguageTypeScript {
 				if name == "node_modules" && isDir {
+					if svc.RemoteBuild != nil && !*svc.RemoteBuild {
+						// if remote build is false, we do not exclude node_modules by default
+						return true, nil
+					}
+
 					return false, nil
 				}
 			}
@@ -106,4 +121,13 @@ func createDeployableZip(svc *ServiceConfig, root string) (string, error) {
 	}
 
 	return zipFile.Name(), nil
+}
+
+// utf8BOM is the byte order mark that some Windows editors prepend to UTF-8 files.
+var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
+
+// stripUTF8BOM removes a leading UTF-8 BOM from the given byte slice if present.
+// The BOM breaks gitignore pattern parsing because the invisible bytes become part of the first pattern.
+func stripUTF8BOM(data []byte) []byte {
+	return bytes.TrimPrefix(data, utf8BOM)
 }

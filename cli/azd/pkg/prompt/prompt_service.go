@@ -7,7 +7,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"slices"
+	"strconv"
 	"strings"
 
 	"dario.cat/mergo"
@@ -27,6 +29,28 @@ var (
 	ErrNoResourcesFound   = fmt.Errorf("no resources found")
 	ErrNoResourceSelected = fmt.Errorf("no resource selected")
 )
+
+func isDemoModeEnabled() bool {
+	v, err := strconv.ParseBool(os.Getenv("AZD_DEMO_MODE"))
+	return err == nil && v
+}
+
+func formatSubscriptionDisplayName(subscription *account.Subscription, hideId bool) string {
+	if hideId {
+		return subscription.Name
+	}
+
+	return fmt.Sprintf("%s %s", subscription.Name, output.WithGrayFormat("(%s)", subscription.Id))
+}
+
+func formatAutoSelectedSubscriptionMessage(subscription *account.Subscription, hideId bool) string {
+	message := fmt.Sprintf("Auto-selected subscription: %s", subscription.Name)
+	if hideId {
+		return message
+	}
+
+	return fmt.Sprintf("%s (%s)", message, subscription.Id)
+}
 
 // ResourceOptions contains options for prompting the user to select a resource.
 type ResourceOptions struct {
@@ -86,6 +110,9 @@ type SelectOptions struct {
 	Hint string
 	// EnableFiltering specifies whether to enable filtering of choices.
 	EnableFiltering *bool
+	// AllowedValues limits candidates for prompts that support value filtering,
+	// such as PromptLocation.
+	AllowedValues []string
 	// Writer is the writer to use for output.
 	Writer io.Writer
 }
@@ -222,6 +249,8 @@ func (ps *promptService) PromptSubscription(
 		}
 	}
 
+	hideId := isDemoModeEnabled()
+
 	// Handle --no-prompt mode
 	if ps.globalOptions.NoPrompt {
 		// Load subscriptions for both default lookup and auto-selection
@@ -236,6 +265,13 @@ func (ps *promptService) PromptSubscription(
 				if strings.EqualFold(subscription.Id, defaultSubscriptionId) {
 					return &subscription, nil
 				}
+			}
+
+			if hideId {
+				return nil, fmt.Errorf(
+					"default subscription not found. " +
+						"Update your default subscription using " +
+						"'azd config set defaults.subscription <subscription-id>'")
 			}
 
 			return nil, fmt.Errorf(
@@ -254,9 +290,7 @@ func (ps *promptService) PromptSubscription(
 					"and that your account has one or more active subscriptions. " +
 					"If needed, run 'azd auth login' to sign in.")
 		case 1:
-			ps.console.Message(ctx, fmt.Sprintf(
-				"Auto-selected subscription: %s (%s)",
-				subscriptionList[0].Name, subscriptionList[0].Id))
+			ps.console.Message(ctx, formatAutoSelectedSubscriptionMessage(&subscriptionList[0], hideId))
 			return &subscriptionList[0], nil
 		default:
 			return nil, fmt.Errorf(
@@ -281,7 +315,7 @@ func (ps *promptService) PromptSubscription(
 			return subscriptions, nil
 		},
 		DisplayResource: func(subscription *account.Subscription) (string, error) {
-			return fmt.Sprintf("%s %s", subscription.Name, output.WithGrayFormat("(%s)", subscription.Id)), nil
+			return formatSubscriptionDisplayName(subscription, hideId), nil
 		},
 		Selected: func(subscription *account.Subscription) bool {
 			return strings.EqualFold(subscription.Id, defaultSubscriptionId)
@@ -346,8 +380,10 @@ func (ps *promptService) PromptLocation(
 			return nil, fmt.Errorf("failed to load locations: %w", err)
 		}
 
+		locationList = filterLocationOptions(locationList, mergedOptions.AllowedValues)
+
 		for _, location := range locationList {
-			if location.Name == defaultLocation {
+			if strings.EqualFold(location.Name, defaultLocation) {
 				return &account.Location{
 					Name:                location.Name,
 					DisplayName:         location.DisplayName,
@@ -357,7 +393,7 @@ func (ps *promptService) PromptLocation(
 		}
 
 		return nil, fmt.Errorf(
-			"default location '%s' not found. "+
+			"default location '%s' not found in the available location options. "+
 				"Update your default location using 'azd config set defaults.location <location-name>'",
 			defaultLocation)
 	}
@@ -371,6 +407,14 @@ func (ps *promptService) PromptLocation(
 			)
 			if err != nil {
 				return nil, err
+			}
+
+			locationList = filterLocationOptions(locationList, mergedOptions.AllowedValues)
+
+			if len(locationList) == 0 {
+				return nil, fmt.Errorf(
+					"no locations matched the allowed locations filter. " +
+						"Verify the allowed locations configuration is correct")
 			}
 
 			locations := make([]*account.Location, len(locationList))
@@ -388,9 +432,38 @@ func (ps *promptService) PromptLocation(
 			return fmt.Sprintf("%s %s", location.RegionalDisplayName, output.WithGrayFormat("(%s)", location.Name)), nil
 		},
 		Selected: func(resource *account.Location) bool {
-			return resource.Name == defaultLocation
+			return strings.EqualFold(resource.Name, defaultLocation)
 		},
 	})
+}
+
+func filterLocationOptions(locations []account.Location, allowed []string) []account.Location {
+	if len(allowed) == 0 {
+		return locations
+	}
+
+	allowedSet := make(map[string]struct{}, len(allowed))
+	for _, location := range allowed {
+		normalized := normalizePromptLocationName(location)
+		if normalized == "" {
+			continue
+		}
+		allowedSet[normalized] = struct{}{}
+	}
+
+	// If all allowed entries normalize to empty/whitespace, treat as "no filtering".
+	if len(allowedSet) == 0 {
+		return locations
+	}
+
+	return slices.DeleteFunc(slices.Clone(locations), func(location account.Location) bool {
+		_, ok := allowedSet[normalizePromptLocationName(location.Name)]
+		return !ok
+	})
+}
+
+func normalizePromptLocationName(location string) string {
+	return strings.TrimSpace(strings.ToLower(location))
 }
 
 // PromptResourceGroup prompts the user to select an Azure resource group.

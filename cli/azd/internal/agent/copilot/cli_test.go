@@ -77,13 +77,14 @@ func TestConfigKeyComposition(t *testing.T) {
 	require.Equal(t, "copilot.mcp.servers", ConfigKeyMCPServers)
 	require.Equal(t, "copilot.consent", ConfigKeyConsent)
 	require.Equal(t, "copilot.errorHandling.fix", ConfigKeyErrorHandlingFix)
+	require.Equal(t, "copilot.errorHandling.category", ConfigKeyErrorHandlingCategory)
 
 	for _, key := range []string{
 		ConfigKeyModelType, ConfigKeyModel, ConfigKeyReasoningEffort,
 		ConfigKeySystemMessage, ConfigKeyToolsAvailable, ConfigKeyToolsExcluded,
 		ConfigKeySkillsDirectories, ConfigKeySkillsDisabled, ConfigKeyMCPServers,
 		ConfigKeyConsent, ConfigKeyLogLevel, ConfigKeyMode,
-		ConfigKeyErrorHandlingFix, ConfigKeyErrorHandlingTroubleshootSkip,
+		ConfigKeyErrorHandlingFix, ConfigKeyErrorHandlingCategory,
 	} {
 		require.True(t, len(key) > len(ConfigRoot), "key %q should be longer than root", key)
 		require.Equal(t, ConfigRoot+".", key[:len(ConfigRoot)+1], "key %q should start with root", key)

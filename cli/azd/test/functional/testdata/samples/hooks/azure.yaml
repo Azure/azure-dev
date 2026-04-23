@@ -1,0 +1,51 @@
+name: hooks
+
+infra:
+  layers:
+    - name: core
+      path: infra
+      hooks:
+        preprovision:
+          windows:
+            run: 'Add-Content -Path $env:HOOK_TRACE_FILE -Value "layer-preprovision"; exit 1'
+            shell: pwsh
+          posix:
+            run: 'echo layer-preprovision >> "$HOOK_TRACE_FILE"; exit 1'
+            shell: sh
+
+hooks:
+  preprovision:
+    windows:
+      run: 'Add-Content -Path $env:HOOK_TRACE_FILE -Value "command-preprovision"'
+      shell: pwsh
+    posix:
+      run: 'echo command-preprovision >> "$HOOK_TRACE_FILE"'
+      shell: sh
+  predeploy:
+    windows:
+      run: 'Add-Content -Path $env:HOOK_TRACE_FILE -Value "command-predeploy"'
+      shell: pwsh
+    posix:
+      run: 'echo command-predeploy >> "$HOOK_TRACE_FILE"'
+      shell: sh
+
+services:
+  app:
+    project: .
+    host: appservice
+    language: js
+    hooks:
+      predeploy:
+        windows:
+          run: 'Add-Content -Path $env:HOOK_TRACE_FILE -Value "service-predeploy"'
+          shell: pwsh
+        posix:
+          run: 'echo service-predeploy >> "$HOOK_TRACE_FILE"'
+          shell: sh
+      prerestore:
+        windows:
+          run: 'Add-Content -Path $env:HOOK_TRACE_FILE -Value "service-prerestore"'
+          shell: pwsh
+        posix:
+          run: 'echo service-prerestore >> "$HOOK_TRACE_FILE"'
+          shell: sh

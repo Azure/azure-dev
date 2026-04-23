@@ -15,6 +15,9 @@ import (
 type PreflightReportItem struct {
 	// IsError is true for blocking errors, false for warnings.
 	IsError bool
+	// DiagnosticID is a unique, stable identifier for this finding type (e.g.
+	// "role_assignment_missing"). Used in telemetry for error correlation.
+	DiagnosticID string
 	// Message describes the finding.
 	Message string
 }

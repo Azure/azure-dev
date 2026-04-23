@@ -13,7 +13,7 @@ import (
 func TestUsageMetrics_Format(t *testing.T) {
 	t.Run("Empty", func(t *testing.T) {
 		u := UsageMetrics{}
-		require.Empty(t, u.Format())
+		require.Empty(t, u.String())
 	})
 
 	t.Run("BasicTokens", func(t *testing.T) {
@@ -21,7 +21,7 @@ func TestUsageMetrics_Format(t *testing.T) {
 			InputTokens:  1500,
 			OutputTokens: 500,
 		}
-		result := u.Format()
+		result := u.String()
 		require.Contains(t, result, "1.5K")
 		require.Contains(t, result, "500")
 		require.Contains(t, result, "2.0K")
@@ -33,7 +33,7 @@ func TestUsageMetrics_Format(t *testing.T) {
 			InputTokens:  10000,
 			OutputTokens: 5000,
 		}
-		result := u.Format()
+		result := u.String()
 		require.Contains(t, result, "claude-sonnet-4.5")
 	})
 
@@ -44,7 +44,7 @@ func TestUsageMetrics_Format(t *testing.T) {
 			BillingRate:     2.0,
 			PremiumRequests: 15,
 		}
-		result := u.Format()
+		result := u.String()
 		require.Contains(t, result, "2x per request")
 		require.Contains(t, result, "15")
 	})
@@ -55,7 +55,7 @@ func TestUsageMetrics_Format(t *testing.T) {
 			OutputTokens: 50,
 			DurationMS:   45000,
 		}
-		result := u.Format()
+		result := u.String()
 		require.Contains(t, result, "45.0s")
 	})
 
@@ -65,7 +65,7 @@ func TestUsageMetrics_Format(t *testing.T) {
 			OutputTokens: 50,
 			DurationMS:   125000,
 		}
-		result := u.Format()
+		result := u.String()
 		require.Contains(t, result, "2m")
 	})
 }

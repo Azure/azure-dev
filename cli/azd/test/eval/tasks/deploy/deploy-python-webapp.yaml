@@ -1,0 +1,38 @@
+id: deploy-python-webapp-001
+description: >
+  User asks Copilot CLI to deploy a Python web app to Azure.
+  LLM should suggest azd init + provision + deploy (or azd up).
+inputs:
+  prompt: "I want to deploy a Python web app to Azure using azd"
+  context: |
+    The user has no existing azure.yaml. They want to start from scratch
+    with an Azure-hosted Python application.
+graders:
+  - type: text
+    weight: 0.3
+    config:
+      must_match:
+        - "azd init"
+        - "azd (up|provision)"
+      must_not_match:
+        - "azd down"
+        - "az group delete"
+  - type: action_sequence
+    weight: 0.3
+    config:
+      expected_order:
+        - "azd init"
+        - "azd provision"
+        - "azd deploy"
+  - type: behavior
+    weight: 0.2
+    config:
+      max_tool_calls: 10
+      max_tokens: 3000
+  - type: text
+    weight: 0.2
+    config:
+      must_match_any:
+        - "template"
+        - "--template"
+        - "azd up"

@@ -19,7 +19,6 @@ func NewRootCommand() *cobra.Command {
 	}
 
 	rootCmd.SetHelpCommand(&cobra.Command{Hidden: true})
-	rootCmd.PersistentFlags().Bool("debug", false, "Enable debug mode")
 
 	rootCmd.AddCommand(newListenCommand())
 	rootCmd.AddCommand(newContextCommand())
@@ -31,6 +30,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newGhUrlParseCommand())
 	rootCmd.AddCommand(newMetadataCommand())
 	rootCmd.AddCommand(newAiCommand())
+	rootCmd.AddCommand(newCopilotCommand())
 
 	return rootCmd
 }

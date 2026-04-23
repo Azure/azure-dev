@@ -5,16 +5,17 @@ package workflow
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 )
 
-// AzdCommandRunner abstracts the execution of an azd command given an set of arguments and context.
+// AzdCommandRunner abstracts the execution of an azd command given a set of arguments and context.
 type AzdCommandRunner interface {
-	SetArgs(args []string)
-	ExecuteContext(ctx context.Context) error
+	ExecuteContext(ctx context.Context, args []string) error
 }
 
 // Runner is responsible for executing a workflow
@@ -37,18 +38,19 @@ func (r *Runner) Run(ctx context.Context, workflow *Workflow) error {
 		// Create a child context for this step to enable automatic handler cleanup
 		stepCtx, cancel := context.WithCancel(ctx)
 
-		if len(step.AzdCommand.Args) > 0 {
-			r.azdRunner.SetArgs(step.AzdCommand.Args)
-		}
-
-		// Execute the step with the step-scoped context
-		err := r.azdRunner.ExecuteContext(stepCtx)
+		// Execute the step with the step-scoped context and command args
+		err := r.azdRunner.ExecuteContext(stepCtx, step.AzdCommand.Args)
 
 		// Cancel the step context to trigger automatic cleanup of any handlers
 		// registered during this step execution
 		cancel()
 
 		if err != nil {
+			// User intentionally aborted — stop the workflow without wrapping the error.
+			// Returning the original error preserves errors.Is checks upstream.
+			if errors.Is(err, internal.ErrAbortedByUser) {
+				return err
+			}
 			return fmt.Errorf("error executing step command '%s': %w", strings.Join(step.AzdCommand.Args, " "), err)
 		}
 	}

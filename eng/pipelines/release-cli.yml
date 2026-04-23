@@ -26,6 +26,7 @@ trigger:
       - /eng/pipelines/templates/variables/image.yml
     exclude:
       - cli/azd/extensions/**
+      - cli/azd/cmd/testdata/TestFigSpec.ts
 
 pr:
   paths:
@@ -39,6 +40,8 @@ pr:
       - cli/azd/extensions/**
       - cli/azd/.vscode/cspell.yaml
       - cli/azd/.vscode/cspell-azd-dictionary.txt
+      - cli/azd/AGENTS.md
+      - cli/azd/cmd/testdata/TestFigSpec.ts
 
 extends: 
   template: /eng/pipelines/templates/stages/1es-redirect.yml
@@ -125,6 +128,7 @@ extends:
 
     - template: /eng/pipelines/templates/stages/code-coverage-upload.yml
       parameters:
+        MinimumCoveragePercent: 58
         DownloadArtifacts:
           - cover-win
           - cover-lin

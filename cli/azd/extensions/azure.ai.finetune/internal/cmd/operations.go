@@ -41,7 +41,7 @@ func newOperationCommand() *cobra.Command {
 
 	cmd.PersistentFlags().StringVarP(&flags.subscriptionId, "subscription", "s", "",
 		"Azure subscription ID (enables implicit init if environment not configured)")
-	cmd.PersistentFlags().StringVarP(&flags.projectEndpoint, "project-endpoint", "e", "",
+	cmd.PersistentFlags().StringVar(&flags.projectEndpoint, "project-endpoint", "",
 		"Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)")
 
 	cmd.AddCommand(newOperationSubmitCommand())

@@ -130,6 +130,7 @@ func (tr *TransmitterStub) Transmit(
 }
 
 func TestUploadEmpty(t *testing.T) {
+	t.Parallel()
 	clock := clock.NewMock()
 	_, _, uploader := setupUploader(clock)
 
@@ -138,6 +139,7 @@ func TestUploadEmpty(t *testing.T) {
 }
 
 func TestUploadSuccess(t *testing.T) {
+	t.Parallel()
 	clock := clock.NewMock()
 	transmitter, queue, uploader := setupUploader(clock)
 	messages := addMessages(queue)
@@ -149,6 +151,7 @@ func TestUploadSuccess(t *testing.T) {
 }
 
 func TestUpload_OnHttpCompleteFailure_DiscardItem(t *testing.T) {
+	t.Parallel()
 	clock := clock.NewMock()
 	transmitter, queue, uploader := setupUploader(clock)
 	messages := addMessages(queue)
@@ -162,6 +165,7 @@ func TestUpload_OnHttpCompleteFailure_DiscardItem(t *testing.T) {
 }
 
 func TestUpload_OnNetworkError_Requeue(t *testing.T) {
+	t.Parallel()
 	clock := clock.NewMock()
 	transmitter, queue, uploader := setupUploader(clock)
 	messages := addMessages(queue)
@@ -176,6 +180,7 @@ func TestUpload_OnNetworkError_Requeue(t *testing.T) {
 }
 
 func TestUpload_OnHttpError_Requeue(t *testing.T) {
+	t.Parallel()
 	clock := clock.NewMock()
 	transmitter, queue, uploader := setupUploader(clock)
 	messages := addMessages(queue)
@@ -190,6 +195,7 @@ func TestUpload_OnHttpError_Requeue(t *testing.T) {
 }
 
 func TestUpload_OnHttpErrorWithRetryAfter_Requeue(t *testing.T) {
+	t.Parallel()
 	clock := clock.NewMock()
 	transmitter, queue, uploader := setupUploader(clock)
 	messages := addMessages(queue)
@@ -207,6 +213,7 @@ func TestUpload_OnHttpErrorWithRetryAfter_Requeue(t *testing.T) {
 }
 
 func TestUpload_OnPartialHttpError_RequeueIndividualItem(t *testing.T) {
+	t.Parallel()
 	clock := clock.NewMock()
 	transmitter, queue, uploader := setupUploader(clock)
 
@@ -243,7 +250,9 @@ func TestUpload_OnPersistentFailure_DiscardItem(t *testing.T) {
 	messages := addMessages(queue)
 
 	transmitter.mockResponse.StatusCode = 503
+	origDelay := defaultTransmitRetryDelay
 	defaultTransmitRetryDelay = time.Duration(1) * time.Second
+	t.Cleanup(func() { defaultTransmitRetryDelay = origDelay })
 
 	for i := range maxRetryCount {
 		err := syncUpload(uploader)

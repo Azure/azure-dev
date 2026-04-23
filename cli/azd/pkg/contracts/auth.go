@@ -59,4 +59,7 @@ type StatusResult struct {
 
 	// The client ID of the service principal. Only set when Type is AccountTypeServicePrincipal.
 	ClientID string `json:"clientId,omitempty"`
+
+	// When authenticated, the time at which the current access token expires.
+	ExpiresOn *RFC3339Time `json:"expiresOn,omitempty"`
 }

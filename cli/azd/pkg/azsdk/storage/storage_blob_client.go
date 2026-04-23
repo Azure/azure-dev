@@ -277,7 +277,7 @@ func NewBlobSdkClient(
 	userConfigManager config.UserConfigManager,
 	coreClientOptions *azcore.ClientOptions,
 	cloud *cloud.Cloud,
-	tenantResolver account.SubscriptionTenantResolver,
+	subscriptionResolver account.SubscriptionResolver,
 ) (*azblob.Client, error) {
 	blobOptions := &azblob.ClientOptions{
 		ClientOptions: *coreClientOptions,
@@ -301,13 +301,12 @@ func NewBlobSdkClient(
 
 	tenantId := ""
 	if subscriptionId != "" {
-		// If a subscription ID is configured, resolve the tenant ID for that subscription
-		resolvedTenantId, err := tenantResolver.LookupTenant(context.Background(), subscriptionId)
+		// If a subscription ID is configured, resolve the subscription for the current account.
+		subscription, err := subscriptionResolver.GetSubscription(context.Background(), subscriptionId)
 		if err != nil {
-			return nil, fmt.Errorf(
-				"failed to resolve tenant for subscription '%s': %w", subscriptionId, err)
+			return nil, fmt.Errorf("failed to get subscription '%s': %w", subscriptionId, err)
 		}
-		tenantId = resolvedTenantId
+		tenantId = subscription.UserAccessTenantId
 	}
 
 	// Otherwise, use home tenant ID (empty string)

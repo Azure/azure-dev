@@ -107,7 +107,7 @@ func (s *wrapperSpan) End(options ...trace.SpanEndOption) {
 
 func (s *wrapperSpan) EndWithStatus(err error, options ...trace.SpanEndOption) {
 	if err != nil {
-		s.span.SetStatus(codes.Error, errorDescription(err))
+		s.span.SetStatus(codes.Error, "internal."+errorDescription(err))
 	} else {
 		s.span.SetStatus(codes.Ok, "")
 	}

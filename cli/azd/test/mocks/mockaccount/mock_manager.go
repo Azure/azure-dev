@@ -100,7 +100,7 @@ func (a *MockAccountManager) SetDefaultLocation(
 	return nil, nil
 }
 
-// SubscriptionTenantResolverFunc implements [account.SubscriptionCredentialProvider] using the provided function.
+// SubscriptionCredentialProviderFunc implements [account.SubscriptionCredentialProvider] using the provided function.
 type SubscriptionCredentialProviderFunc func(ctx context.Context, subscriptionId string) (azcore.TokenCredential, error)
 
 func (f SubscriptionCredentialProviderFunc) CredentialForSubscription(

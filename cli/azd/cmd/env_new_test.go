@@ -17,7 +17,9 @@ import (
 )
 
 func TestEnvNewAction_NoPrompt_AutoSetsDefault(t *testing.T) {
+	t.Parallel()
 	t.Run("auto-sets default when multiple envs exist", func(t *testing.T) {
+		t.Parallel()
 		mockContext := mocks.NewMockContext(context.Background())
 		mockContext.Console.SetNoPromptMode(true)
 

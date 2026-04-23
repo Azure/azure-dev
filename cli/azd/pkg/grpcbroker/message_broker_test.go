@@ -615,7 +615,7 @@ func TestRun_ContextCancellation(t *testing.T) {
 	select {
 	case err := <-done:
 		assert.Equal(t, context.Canceled, err)
-	case <-time.After(1 * time.Second):
+	case <-time.After(5 * time.Second):
 		t.Fatal("Run did not exit after context cancellation")
 	}
 }

@@ -114,7 +114,7 @@ func (m *FeatureManager) IsEnabled(featureId FeatureId) bool {
 	} else if featureOn := isEnabled(m.userConfigCache, featureId); featureOn {
 		// check if the feature is ON
 		enabled = true
-	} else if val, ok := defaultEnablement[strings.ToLower(string(featureId))]; ok {
+	} else if val, ok := getDefaultEnablement(string(featureId)); ok {
 		// check if the feature has been set with a default value internally
 		enabled = val
 	}
@@ -129,11 +129,32 @@ func (m *FeatureManager) IsEnabled(featureId FeatureId) bool {
 // defaultEnablement is a map of lower-cased feature ids to their default enablement values.
 //
 // This is used to determine if a feature is enabled by default, when no user configuration is specified.
-var defaultEnablement = map[string]bool{}
+var (
+	defaultEnablement   = map[string]bool{}
+	defaultEnablementMu sync.RWMutex
+)
 
 // SetDefaultEnablement sets the default enablement value for the given feature id.
 func SetDefaultEnablement(id string, val bool) {
+	defaultEnablementMu.Lock()
+	defer defaultEnablementMu.Unlock()
 	defaultEnablement[strings.ToLower(id)] = val
+}
+
+// ResetDefaultEnablement removes the default enablement value for the given feature id.
+// This is intended for test cleanup to avoid leaking state between tests.
+func ResetDefaultEnablement(id string) {
+	defaultEnablementMu.Lock()
+	defer defaultEnablementMu.Unlock()
+	delete(defaultEnablement, strings.ToLower(id))
+}
+
+// getDefaultEnablement returns the default enablement value for the given feature id.
+func getDefaultEnablement(id string) (bool, bool) {
+	defaultEnablementMu.RLock()
+	defer defaultEnablementMu.RUnlock()
+	val, ok := defaultEnablement[strings.ToLower(id)]
+	return val, ok
 }
 
 func isEnabled(config config.Config, id FeatureId) bool {

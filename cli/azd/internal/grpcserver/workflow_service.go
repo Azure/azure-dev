@@ -5,8 +5,10 @@ package grpcserver
 
 import (
 	"context"
+	"errors"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -39,6 +41,9 @@ func (s *workflowService) Run(ctx context.Context, request *azdext.RunWorkflowRe
 	}
 
 	if err := s.runner.Run(ctx, azdWorkflow); err != nil {
+		if errors.Is(err, environment.ErrExists) {
+			return nil, status.Errorf(codes.AlreadyExists, "failed to run workflow: %v", err)
+		}
 		return nil, status.Errorf(codes.Internal, "failed to run workflow: %v", err)
 	}
 

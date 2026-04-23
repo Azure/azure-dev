@@ -169,18 +169,20 @@ func mergeProjectVariablesAndSecrets(
 			// env var == 0 AND no local prompt, ignore it
 			continue
 		}
-		if envVarsCount > 1 {
-			if parameter.LocalPrompt {
-				return nil, nil,
-					fmt.Errorf(
-						"parameter %s got its value from a local prompt and it has more than one mapped environment "+
-							"variable. "+
-							"The value can't be configured in CI mapped to multiple ENV VARS if azd prompt for its value. "+
-							"Define a single mapping for %s to one ENV VAR as part of the infra parameters definition",
-						parameter.Name, parameter.Name)
-			}
-			// env var > 1 AND no local prompt, ignore it
-			// for parameters mapped to more than one ENV VAR, each env var becomes either a variable or a secret
+
+		if envVarsCount > 1 && parameter.LocalPrompt {
+			return nil, nil,
+				fmt.Errorf(
+					"parameter %s got its value from a local prompt and it has more than one mapped environment "+
+						"variable. "+
+						"The value can't be configured in CI mapped to multiple ENV VARS if azd prompt for its value. "+
+						"Define a single mapping for %s to one ENV VAR as part of the infra parameters definition",
+					parameter.Name, parameter.Name)
+		}
+
+		if envVarsCount > 1 || parameter.Value == nil {
+			// for parameters mapped to multiple env vars, or without a resolved value,
+			// each env var becomes either a variable or a secret
 			for _, envVar := range parameter.EnvVarMapping {
 				// see if the env var is set in the system env or azd env
 				// NOTE: provider parameters have access to system env vars but not project env vars/secrets.
@@ -201,6 +203,7 @@ func mergeProjectVariablesAndSecrets(
 			// nothing else to do for parameters mapped to multiple env vars
 			continue
 		}
+
 		// Param mapped to a single env var, use that ENV VAR to set the link in CI
 		// marshall the value to a string
 		envVar := parameter.EnvVarMapping[0]

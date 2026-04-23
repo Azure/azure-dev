@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -33,6 +34,12 @@ import (
 )
 
 const (
+	// containerAppPollFrequency is the polling interval for Container App create/update operations.
+	// Default SDK polling is 30s; Container App updates typically complete in 10-60s, so 5s polling
+	// reduces tail latency by up to 25s per operation while leaving headroom against the ARM
+	// read-rate limit (1200 reads/5min/subscription) during large parallel deployments.
+	containerAppPollFrequency = 5 * time.Second
+
 	pathLatestRevisionName                 = "properties.latestRevisionName"
 	pathTemplate                           = "properties.template"
 	pathTemplateRevisionSuffix             = "properties.template.revisionSuffix"
@@ -184,8 +191,7 @@ func (cas *containerAppService) persistSettings(
 	aca, err := cas.getContainerApp(ctx, subscriptionId, resourceGroupName, appName, options)
 	if err != nil {
 		// On first deploy the app doesn't exist yet (404) — proceed without persisting.
-		var respErr *azcore.ResponseError
-		if errors.As(err, &respErr) && respErr.StatusCode == http.StatusNotFound {
+		if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok && respErr.StatusCode == http.StatusNotFound {
 			return obj, nil
 		}
 
@@ -312,7 +318,9 @@ func (cas *containerAppService) DeployYaml(
 		poller = p
 	}
 
-	_, err = poller.PollUntilDone(ctx, nil)
+	_, err = poller.PollUntilDone(ctx, &runtime.PollUntilDoneOptions{
+		Frequency: containerAppPollFrequency,
+	})
 	if err != nil {
 		return fmt.Errorf("polling for container app update completion: %w", err)
 	}
@@ -535,7 +543,9 @@ func (cas *containerAppService) updateContainerApp(
 		return fmt.Errorf("begin updating ingress traffic: %w", err)
 	}
 
-	_, err = poller.PollUntilDone(ctx, nil)
+	_, err = poller.PollUntilDone(ctx, &runtime.PollUntilDoneOptions{
+		Frequency: containerAppPollFrequency,
+	})
 	if err != nil {
 		return fmt.Errorf("polling for container app update completion: %w", err)
 	}
@@ -691,7 +701,10 @@ func (cas *containerAppService) UpdateContainerAppJobImage(
 	}
 	job := &getResp.Job
 
-	// Update image on first container in the template
+	// Find the target container by matching the image repository.
+	// The new imageName typically shares the same repository prefix (e.g.,
+	// "registry.azurecr.io/app:newtag"). If no container matches by repository,
+	// fall back to the first container (standard azd convention).
 	if job.Properties == nil ||
 		job.Properties.Template == nil ||
 		len(job.Properties.Template.Containers) == 0 {
@@ -701,17 +714,28 @@ func (cas *containerAppService) UpdateContainerAppJobImage(
 		)
 	}
 
-	if job.Properties.Template.Containers[0] == nil {
+	targetIdx := 0
+	newRepo := imageRepository(imageName)
+	if newRepo != "" {
+		for i, c := range job.Properties.Template.Containers {
+			if c != nil && c.Image != nil && imageRepository(*c.Image) == newRepo {
+				targetIdx = i
+				break
+			}
+		}
+	}
+
+	container := job.Properties.Template.Containers[targetIdx]
+	if container == nil {
 		return fmt.Errorf(
 			"container app job %s has a nil container entry",
 			jobName,
 		)
 	}
-	job.Properties.Template.Containers[0].Image = &imageName
+	container.Image = &imageName
 
 	// Merge environment variables if provided
 	if len(envVars) > 0 {
-		container := job.Properties.Template.Containers[0]
 		envMap := make(map[string]*armappcontainers.EnvironmentVar)
 
 		// Build map from existing env vars
@@ -753,7 +777,9 @@ func (cas *containerAppService) UpdateContainerAppJobImage(
 		)
 	}
 
-	_, err = poller.PollUntilDone(ctx, nil)
+	_, err = poller.PollUntilDone(ctx, &runtime.PollUntilDoneOptions{
+		Frequency: containerAppPollFrequency,
+	})
 	if err != nil {
 		return fmt.Errorf(
 			"waiting for container app job update: %w", err,
@@ -812,4 +838,28 @@ func withApiVersionSuggestion(err error) error {
 		Err:        err,
 		Suggestion: suggestion,
 	}
+}
+
+// imageRepository extracts the repository portion of a container image reference
+// by stripping the tag or digest suffix. For example:
+//   - "registry.azurecr.io/app:v2" → "registry.azurecr.io/app"
+//   - "registry.azurecr.io/app@sha256:abc" → "registry.azurecr.io/app"
+//   - "registry.azurecr.io/app" → "registry.azurecr.io/app"
+//
+// Returns "" if the image string is empty.
+func imageRepository(image string) string {
+	if image == "" {
+		return ""
+	}
+	// Strip digest suffix first (@sha256:...), then tag suffix (:tag).
+	if idx := strings.LastIndex(image, "@"); idx > 0 {
+		return image[:idx]
+	}
+	// For tags, only strip after the last "/" to avoid stripping port numbers
+	// (e.g., "registry:5000/app:v1" should become "registry:5000/app").
+	lastSlash := strings.LastIndex(image, "/")
+	if idx := strings.LastIndex(image, ":"); idx > lastSlash {
+		return image[:idx]
+	}
+	return image
 }

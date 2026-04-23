@@ -15,6 +15,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // Test_EnvironmentService_NoEnvironment verifies that when no environments are set,
@@ -331,4 +333,61 @@ func Test_EnvironmentService_ResolveEnvironment(t *testing.T) {
 			require.Equal(t, "configval1", resp.Value)
 		})
 	})
+}
+
+// Test_EnvironmentService_EmptyKeyValidation verifies that GetValue and SetValue
+// return InvalidArgument when called with an empty key.
+func Test_EnvironmentService_EmptyKeyValidation(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	temp := t.TempDir()
+
+	azdContext := azdcontext.NewAzdContextWithDirectory(temp)
+	projectConfig := project.ProjectConfig{Name: "test"}
+	err := project.Save(*mockContext.Context, &projectConfig, azdContext.ProjectPath())
+	require.NoError(t, err)
+
+	fileConfigManager := config.NewFileConfigManager(config.NewManager())
+	localDataStore := environment.NewLocalFileDataStore(azdContext, fileConfigManager)
+	envManager, err := environment.NewManager(
+		mockContext.Container, azdContext, mockContext.Console, localDataStore, nil,
+	)
+	require.NoError(t, err)
+
+	env1, err := envManager.Create(*mockContext.Context, environment.Spec{Name: "env1"})
+	require.NoError(t, err)
+	require.NoError(t, envManager.Save(*mockContext.Context, env1))
+	require.NoError(t, azdContext.SetProjectState(
+		azdcontext.ProjectState{DefaultEnvironment: "env1"},
+	))
+
+	service := NewEnvironmentService(lazy.From(azdContext), lazy.From(envManager))
+	ctx := *mockContext.Context
+
+	tests := []struct {
+		name   string
+		method string
+	}{
+		{"GetValue_empty_key", "GetValue"},
+		{"SetValue_empty_key", "SetValue"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var callErr error
+			switch tt.method {
+			case "GetValue":
+				_, callErr = service.GetValue(ctx, &azdext.GetEnvRequest{Key: ""})
+			case "SetValue":
+				_, callErr = service.SetValue(
+					ctx, &azdext.SetEnvRequest{Key: "", Value: "v"},
+				)
+			}
+
+			require.Error(t, callErr)
+			st, ok := status.FromError(callErr)
+			require.True(t, ok)
+			require.Equal(t, codes.InvalidArgument, st.Code())
+			require.Contains(t, st.Message(), "key is required")
+		})
+	}
 }

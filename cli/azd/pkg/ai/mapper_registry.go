@@ -27,13 +27,13 @@ func registerAiModelMappings() {
 			versions[i] = proto
 		}
 
+		// LifecycleStatus intentionally omitted — deprecated, always empty.
 		return &azdext.AiModel{
-			Name:            src.Name,
-			Format:          src.Format,
-			LifecycleStatus: src.LifecycleStatus,
-			Capabilities:    src.Capabilities,
-			Versions:        versions,
-			Locations:       src.Locations,
+			Name:         src.Name,
+			Format:       src.Format,
+			Capabilities: src.Capabilities,
+			Versions:     versions,
+			Locations:    src.Locations,
 		}, nil
 	})
 
@@ -44,13 +44,13 @@ func registerAiModelMappings() {
 			versions[i] = protoToAiModelVersion(v)
 		}
 
+		// LifecycleStatus intentionally omitted — deprecated, always empty.
 		return &AiModel{
-			Name:            src.Name,
-			Format:          src.Format,
-			LifecycleStatus: src.LifecycleStatus,
-			Capabilities:    src.Capabilities,
-			Versions:        versions,
-			Locations:       src.Locations,
+			Name:         src.Name,
+			Format:       src.Format,
+			Capabilities: src.Capabilities,
+			Versions:     versions,
+			Locations:    src.Locations,
 		}, nil
 	})
 
@@ -120,9 +120,10 @@ func aiModelVersionToProto(src *AiModelVersion) (*azdext.AiModelVersion, error) 
 	}
 
 	return &azdext.AiModelVersion{
-		Version:   src.Version,
-		IsDefault: src.IsDefault,
-		Skus:      skus,
+		Version:         src.Version,
+		IsDefault:       src.IsDefault,
+		Skus:            skus,
+		LifecycleStatus: src.LifecycleStatus,
 	}, nil
 }
 
@@ -133,9 +134,10 @@ func protoToAiModelVersion(src *azdext.AiModelVersion) AiModelVersion {
 	}
 
 	return AiModelVersion{
-		Version:   src.Version,
-		IsDefault: src.IsDefault,
-		Skus:      skus,
+		Version:         src.Version,
+		IsDefault:       src.IsDefault,
+		Skus:            skus,
+		LifecycleStatus: src.LifecycleStatus,
 	}
 }
 

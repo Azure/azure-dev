@@ -16,28 +16,66 @@ import (
 )
 
 type azdCredential struct {
-	client  publicClient
-	account *public.Account
-	cloud   *cloud.Cloud
+	client      publicClient
+	account     *public.Account
+	cloud       *cloud.Cloud
+	tenantID    string
+	cacheTracer *msalCacheTracer
 }
 
-func newAzdCredential(client publicClient, account *public.Account, cloud *cloud.Cloud) *azdCredential {
+// newAzdCredential creates a credential that acquires tokens via MSAL's public client.
+// tenantID, when non-empty, is forwarded to AcquireTokenSilent so MSAL issues tokens
+// for that specific tenant instead of defaulting to the account's home tenant.
+func newAzdCredential(
+	client publicClient,
+	account *public.Account,
+	cloud *cloud.Cloud,
+	tenantID string,
+	cacheTracer *msalCacheTracer,
+) *azdCredential {
 	return &azdCredential{
-		client:  client,
-		account: account,
-		cloud:   cloud,
+		client:      client,
+		account:     account,
+		cloud:       cloud,
+		tenantID:    tenantID,
+		cacheTracer: cacheTracer,
 	}
 }
 
 func (c *azdCredential) GetToken(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
-	res, err := c.client.AcquireTokenSilent(ctx,
-		options.Scopes,
+	silentOpts := []public.AcquireSilentOption{
 		public.WithSilentAccount(*c.account),
-		public.WithClaims(options.Claims))
+		public.WithClaims(options.Claims),
+	}
 
+	// Forward the tenant ID so MSAL acquires a token from the correct tenant
+	// authority. The credential's tenantID is set when the credential is created
+	// for a specific tenant (e.g. resource tenant for B2B guests). The caller
+	// can override via options.TenantID (e.g. during CAE challenges).
+	// Without this, MSAL defaults to the account's home tenant, which causes
+	// cross-tenant calls (e.g. Graph /me for B2B guests) to return identity
+	// information for the home tenant instead of the resource tenant.
+	tenantID := c.tenantID
+	if options.TenantID != "" {
+		tenantID = options.TenantID
+	}
+	if tenantID != "" {
+		silentOpts = append(silentOpts, public.WithTenantID(tenantID))
+	}
+
+	phase := "after-first-acquire-token-silent"
+	failurePhase := "after-first-acquire-token-silent-failure"
+	if tenantID != "" {
+		phase = "after-first-tenant-acquire-token-silent"
+		failurePhase = "after-first-tenant-acquire-token-silent-failure"
+	}
+
+	res, err := c.client.AcquireTokenSilent(ctx, options.Scopes, silentOpts...)
 	if err != nil {
+		c.cacheTracer.LogSnapshotOnce(failurePhase)
+
 		if authFailed, ok := errors.AsType[*AuthFailedError](err); ok {
-			if loginErr, ok := newReLoginRequiredError(authFailed.Parsed, options.Scopes, c.cloud); ok {
+			if loginErr, ok := newReLoginRequiredError(authFailed.Parsed, options.Scopes, c.cloud, tenantID); ok {
 				log.Println(authFailed.httpErrorDetails())
 
 				if options.Claims != "" {
@@ -54,6 +92,8 @@ func (c *azdCredential) GetToken(ctx context.Context, options policy.TokenReques
 
 		return azcore.AccessToken{}, err
 	}
+
+	c.cacheTracer.LogSnapshotOnce(phase)
 
 	return azcore.AccessToken{
 		Token:     res.AccessToken,

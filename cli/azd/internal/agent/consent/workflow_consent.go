@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -27,6 +29,13 @@ func (cm *consentManager) PromptWorkflowConsent(ctx context.Context, servers []s
 	scope, err := promptForWorkflowConsent(ctx, servers)
 	if err != nil {
 		return err
+	}
+
+	// Track the consent scope selection
+	if scope == "" {
+		tracing.SetUsageAttributes(fields.CopilotInitConsentScope.String("prompt"))
+	} else {
+		tracing.SetUsageAttributes(fields.CopilotInitConsentScope.String(string(scope)))
 	}
 
 	// Empty scope means the user chose "No, prompt me for each operation" — no rules to add

@@ -36,7 +36,7 @@ func newCustomCommand() *cobra.Command {
 
 	customCmd.PersistentFlags().StringVarP(&flags.subscriptionId, "subscription", "s", "",
 		"Azure subscription ID")
-	customCmd.PersistentFlags().StringVarP(&flags.projectEndpoint, "project-endpoint", "e", "",
+	customCmd.PersistentFlags().StringVar(&flags.projectEndpoint, "project-endpoint", "",
 		"Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)")
 
 	customCmd.AddCommand(newCustomCreateCommand(flags))
@@ -118,8 +118,9 @@ func promptForProject(ctx context.Context, flags *customFlags, azdClient *azdext
 		var err error
 		azdClient, err = azdext.NewAzdClient()
 		if err != nil {
-			return fmt.Errorf("--project-endpoint (-e) is required when azd is not available.\n\n" +
-				"Example: azd ai models custom list -e https://<account>.services.ai.azure.com/api/projects/<project>\n\n" +
+			return fmt.Errorf("--project-endpoint is required when azd is not available.\n\n" +
+				"Example: azd ai models custom list " +
+				"--project-endpoint https://<account>.services.ai.azure.com/api/projects/<project>\n\n" +
 				"Or run 'azd ai models init' to set up your project first")
 		}
 		defer azdClient.Close()

@@ -259,6 +259,24 @@ var (
 	}
 )
 
+// Deployment attributes
+var (
+	// DeployAttemptKey tracks the retry attempt number for App Service zip deployments.
+	DeployAttemptKey = AttributeKey{
+		Key:            attribute.Key("deploy.appservice.attempt"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
+	}
+
+	// DeployLinuxKey tracks whether an App Service deployment targets a Linux web app.
+	DeployLinuxKey = AttributeKey{
+		Key:            attribute.Key("deploy.appservice.linux"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+)
+
 // All possible enumerations of ExecutionEnvironmentKey
 //
 // Environments are mutually exclusive. Modifiers can be set additionally to signal different types of usages.
@@ -312,6 +330,128 @@ const (
 	AccountTypeUser = "User"
 	// A service principal, typically an application.
 	AccountTypeServicePrincipal = "Service Principal"
+)
+
+// Auth command related fields
+var (
+	// The authentication method used for login.
+	//
+	// Example: "browser", "device-code", "service-principal-secret", "managed-identity"
+	AuthMethodKey = AttributeKey{
+		Key:            attribute.Key("auth.method"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+)
+
+// Environment command related fields
+var (
+	// The number of environments that exist for the current project.
+	EnvCountKey = AttributeKey{
+		Key:            attribute.Key("env.count"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+		IsMeasurement:  true,
+	}
+)
+
+// Hooks command related fields
+var (
+	// The name of the hook being run.
+	HooksNameKey = AttributeKey{
+		Key:            attribute.Key("hooks.name"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// The type of the hook run scope (project, layer, or service).
+	HooksTypeKey = AttributeKey{
+		Key:            attribute.Key("hooks.type"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// The executor kind used to run the hook (e.g., "sh", "pwsh", "python", "js", "ts", "dotnet").
+	HooksKindKey = AttributeKey{
+		Key:            attribute.Key("hooks.kind"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+)
+
+// Pipeline command related fields
+var (
+	// The pipeline provider being configured.
+	//
+	// Example: "github", "azdo"
+	PipelineProviderKey = AttributeKey{
+		Key:            attribute.Key("pipeline.provider"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// The authentication type used for pipeline configuration.
+	PipelineAuthKey = AttributeKey{
+		Key:            attribute.Key("pipeline.auth"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+)
+
+// Infrastructure command related fields
+var (
+	// The IaC provider used for infrastructure generation.
+	//
+	// Example: "bicep", "terraform"
+	InfraProviderKey = AttributeKey{
+		Key:            attribute.Key("infra.provider"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+)
+
+// Preflight validation related fields
+var (
+	// PreflightOutcomeKey records the outcome of preflight validation.
+	//
+	// Example: "passed", "warnings_accepted", "aborted_by_errors",
+	//          "aborted_by_user", "skipped", "error"
+	PreflightOutcomeKey = AttributeKey{
+		Key:            attribute.Key("validation.preflight.outcome"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+
+	// PreflightDiagnosticsKey records the list of diagnostic IDs emitted by preflight checks.
+	//
+	// Example: ["role_assignment_missing", "role_assignment_conditional"]
+	PreflightDiagnosticsKey = AttributeKey{
+		Key:            attribute.Key("validation.preflight.diagnostics"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+
+	// PreflightRulesKey records the list of rule IDs that were executed.
+	//
+	// Example: ["role_assignment_permissions"]
+	PreflightRulesKey = AttributeKey{
+		Key:            attribute.Key("validation.preflight.rules"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+
+	// PreflightWarningCountKey records the number of warnings produced by preflight validation.
+	PreflightWarningCountKey = AttributeKey{
+		Key:            attribute.Key("validation.preflight.warning.count"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+		IsMeasurement:  true,
+	}
+
+	// PreflightErrorCountKey records the number of errors produced by preflight validation.
+	PreflightErrorCountKey = AttributeKey{
+		Key:            attribute.Key("validation.preflight.error.count"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+		IsMeasurement:  true,
+	}
 )
 
 // The value used for ServiceNameKey
@@ -619,5 +759,125 @@ var (
 		Key:            attribute.Key("update.result"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
+	}
+)
+
+// Copilot agent session related fields
+var (
+	// CopilotSessionId is the session ID for correlation across messages.
+	CopilotSessionId = AttributeKey{
+		Key:            attribute.Key("copilot.session.id"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// CopilotSessionIsNew indicates whether this was a new session (true) or resumed (false).
+	CopilotSessionIsNew = AttributeKey{
+		Key:            attribute.Key("copilot.session.isNew"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// CopilotSessionMessageCount is the number of messages sent in the session.
+	CopilotSessionMessageCount = AttributeKey{
+		Key:            attribute.Key("copilot.session.messageCount"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+		IsMeasurement:  true,
+	}
+)
+
+// Copilot agent initialization related fields
+var (
+	// CopilotInitIsFirstRun indicates whether this was the user's first agent initialization.
+	CopilotInitIsFirstRun = AttributeKey{
+		Key:            attribute.Key("copilot.init.isFirstRun"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// CopilotInitReasoningEffort is the reasoning level selected (low/medium/high).
+	CopilotInitReasoningEffort = AttributeKey{
+		Key:            attribute.Key("copilot.init.reasoningEffort"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// CopilotInitModel is the model ID selected (empty string = default).
+	CopilotInitModel = AttributeKey{
+		Key:            attribute.Key("copilot.init.model"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// CopilotInitConsentScope is the workflow consent scope chosen (session/project/global).
+	CopilotInitConsentScope = AttributeKey{
+		Key:            attribute.Key("copilot.init.consentScope"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+)
+
+// Copilot agent mode and message related fields
+var (
+	// CopilotMode is the agent operating mode (interactive/autopilot/plan).
+	CopilotMode = AttributeKey{
+		Key:            attribute.Key("copilot.mode"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// CopilotMessageModel is the model used for a specific message.
+	CopilotMessageModel = AttributeKey{
+		Key:            attribute.Key("copilot.message.model"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// CopilotMessageInputTokens is the number of input tokens consumed per message.
+	CopilotMessageInputTokens = AttributeKey{
+		Key:            attribute.Key("copilot.message.inputTokens"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
+	}
+	// CopilotMessageOutputTokens is the number of output tokens consumed per message.
+	CopilotMessageOutputTokens = AttributeKey{
+		Key:            attribute.Key("copilot.message.outputTokens"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
+	}
+	// CopilotMessageBillingRate is the billing rate multiplier per message.
+	CopilotMessageBillingRate = AttributeKey{
+		Key:            attribute.Key("copilot.message.billingRate"),
+		Classification: SystemMetadata,
+		Purpose:        BusinessInsight,
+		IsMeasurement:  true,
+	}
+	// CopilotMessagePremiumRequests is the number of premium requests used per message.
+	CopilotMessagePremiumRequests = AttributeKey{
+		Key:            attribute.Key("copilot.message.premiumRequests"),
+		Classification: SystemMetadata,
+		Purpose:        BusinessInsight,
+		IsMeasurement:  true,
+	}
+	// CopilotMessageDurationMs is the API call duration in milliseconds per message.
+	CopilotMessageDurationMs = AttributeKey{
+		Key:            attribute.Key("copilot.message.durationMs"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
+	}
+)
+
+// Copilot consent related fields
+var (
+	// CopilotConsentApprovedCount is the running count of tool calls approved during the session.
+	CopilotConsentApprovedCount = AttributeKey{
+		Key:            attribute.Key("copilot.consent.approvedCount"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+		IsMeasurement:  true,
+	}
+	// CopilotConsentDeniedCount is the running count of tool calls denied during the session.
+	CopilotConsentDeniedCount = AttributeKey{
+		Key:            attribute.Key("copilot.consent.deniedCount"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+		IsMeasurement:  true,
 	}
 )

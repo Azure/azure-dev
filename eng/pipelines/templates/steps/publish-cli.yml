@@ -52,6 +52,71 @@ steps:
       env:
         GH_TOKEN: $(azuresdk-github-pat)
 
+    - pwsh: |
+        $goModuleTag = "cli/azd/v$(CLI_VERSION)"
+        Write-Host "Go module tag: $goModuleTag"
+
+        # Check if the Go module tag already exists (idempotent for re-runs)
+        $existingRefs = @(
+          gh api "repos/$(Build.Repository.Name)/git/matching-refs/tags/$goModuleTag" |
+            ConvertFrom-Json
+        )
+        $exactMatch = $existingRefs | Where-Object { $_.ref -eq "refs/tags/$goModuleTag" }
+        if ($exactMatch) {
+          Write-Host "Tag $goModuleTag already exists. Skipping."
+          exit 0
+        }
+
+        # Resolve the commit SHA from the release tag created in the previous step.
+        # This ensures both tags always point to the same commit, even if new
+        # commits landed between the build trigger and the publish stage.
+        $tagRef = gh api "repos/$(Build.Repository.Name)/git/ref/tags/$(GH_RELEASE_TAG)" |
+          ConvertFrom-Json
+        $sha = $tagRef.object.sha
+
+        if (-not $sha) {
+          Write-Error "Failed to resolve commit SHA from release tag $(GH_RELEASE_TAG)"
+          exit 1
+        }
+
+        # For annotated tags, dereference to get the underlying commit SHA
+        if ($tagRef.object.type -eq 'tag') {
+          $tagObj = gh api "repos/$(Build.Repository.Name)/git/tags/$sha" | ConvertFrom-Json
+          $sha = $tagObj.object.sha
+        }
+
+        Write-Host "Creating tag $goModuleTag at commit $sha"
+
+        # Create the lightweight tag via the Git refs API
+        gh api "repos/$(Build.Repository.Name)/git/refs" `
+          --method POST `
+          -f ref="refs/tags/$goModuleTag" `
+          -f sha=$sha
+
+        if ($LASTEXITCODE -ne 0) {
+          Write-Warning "Failed to create Go module tag $goModuleTag. Checking if the tag was created concurrently..."
+
+          # Re-check for the tag to handle the race where another job created it
+          $existingRefs = @(
+            gh api "repos/$(Build.Repository.Name)/git/matching-refs/tags/$goModuleTag" |
+              ConvertFrom-Json
+          )
+          $exactMatch = $existingRefs | Where-Object { $_.ref -eq "refs/tags/$goModuleTag" }
+
+          if ($exactMatch) {
+            Write-Host "Tag $goModuleTag already exists (likely created by another job). Treating as success."
+            exit 0
+          }
+
+          Write-Error "Failed to create Go module tag $goModuleTag"
+          exit 1
+        }
+
+        Write-Host "Successfully created tag: $goModuleTag"
+      displayName: Create Go module version tag
+      env:
+        GH_TOKEN: $(azuresdk-github-pat)
+
   - ${{ if eq('true', parameters.UploadInstaller) }}:
     - pwsh: |
         Copy-Item installer/install-azd.sh release/

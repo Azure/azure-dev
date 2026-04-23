@@ -39,6 +39,7 @@ linters:
         - G304 # TODO: Potential file inclusion via variable
         - G104 # TODO: Errors unhandled
         - G117 # Exported struct fields matching secret patterns (false positives on field names)
+        - G122 # TODO: Filesystem operation in filepath.Walk/WalkDir callback uses race-prone path
 formatters:
   enable:
     - gofmt

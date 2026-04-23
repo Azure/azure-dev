@@ -27,29 +27,81 @@ func createBuildDefinitionVariable(value string, isSecret bool, allowOverride bo
 	}
 }
 
-// returns the default agent queue. This is used to associate a Pipeline with a default agent pool queue
+// selectAgentQueue picks the agent queue to use from the provided list.
+// Auto-selects if only one queue exists, prompts the user if multiple.
+// Queues with nil IDs or nil/empty names are filtered out.
+func selectAgentQueue(
+	ctx context.Context,
+	projectId string,
+	queues []taskagent.TaskAgentQueue,
+	console input.Console,
+) (*taskagent.TaskAgentQueue, error) {
+	// Filter out queues with nil IDs or nil/empty names
+	valid := make([]taskagent.TaskAgentQueue, 0, len(queues))
+	for _, q := range queues {
+		if q.Id != nil && q.Name != nil && *q.Name != "" {
+			valid = append(valid, q)
+		}
+	}
+
+	if len(valid) == 0 {
+		return nil, fmt.Errorf("no agent queues available in project %s", projectId)
+	}
+
+	if len(valid) == 1 {
+		console.Message(ctx, fmt.Sprintf("Using agent queue: %s", *valid[0].Name))
+		return &valid[0], nil
+	}
+
+	options := make([]string, 0, len(valid))
+	for _, q := range valid {
+		options = append(options, *q.Name)
+	}
+
+	idx, err := console.Select(ctx, input.ConsoleOptions{
+		Message:      "Choose an agent queue for the pipeline",
+		Options:      options,
+		DefaultValue: options[0],
+	})
+	if err != nil {
+		return nil, fmt.Errorf("selecting agent queue: %w", err)
+	}
+
+	if idx < 0 || idx >= len(valid) {
+		return nil, fmt.Errorf("selecting agent queue: invalid queue index %d for %d queues", idx, len(valid))
+	}
+
+	return &valid[idx], nil
+}
+
+// getAgentQueue returns the agent queue to associate with the pipeline.
+// It queries all usable queues and auto-selects if only one is available,
+// or prompts the user to choose if multiple queues exist.
 func getAgentQueue(
 	ctx context.Context,
 	projectId string,
 	connection *azuredevops.Connection,
+	console input.Console,
 ) (*taskagent.TaskAgentQueue, error) {
 	client, err := taskagent.NewClient(ctx, connection)
 	if err != nil {
 		return nil, err
 	}
-	getAgentQueuesArgs := taskagent.GetAgentQueuesArgs{
-		Project: &projectId,
-	}
-	queues, err := client.GetAgentQueues(ctx, getAgentQueuesArgs)
+
+	actionFilter := taskagent.TaskAgentQueueActionFilterValues.Use
+	queues, err := client.GetAgentQueues(ctx, taskagent.GetAgentQueuesArgs{
+		Project:      &projectId,
+		ActionFilter: &actionFilter,
+	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("listing agent queues: %w", err)
 	}
-	for _, queue := range *queues {
-		if *queue.Name == "Default" {
-			return &queue, nil
-		}
+
+	if queues == nil {
+		return nil, fmt.Errorf("no agent queues available in project %s", projectId)
 	}
-	return nil, fmt.Errorf("could not find a default agent queue in project %s", projectId)
+
+	return selectAgentQueue(ctx, projectId, *queues, console)
 }
 
 // find pipeline by name
@@ -128,7 +180,7 @@ func CreatePipeline(
 		return definition, nil
 	}
 
-	queue, err := getAgentQueue(ctx, projectId, connection)
+	queue, err := getAgentQueue(ctx, projectId, connection, console)
 	if err != nil {
 		return nil, err
 	}

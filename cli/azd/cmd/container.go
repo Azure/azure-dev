@@ -67,19 +67,23 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/state"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/az"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/bash"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/javac"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/kubectl"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/language"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/maven"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/node"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/powershell"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/python"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/swa"
 	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
 	"github.com/mattn/go-colorable"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 // Registers a transient action initializer for the specified action name
@@ -188,8 +192,12 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		return writer
 	})
 
-	container.MustRegisterScoped(func(ctx context.Context, cmd *cobra.Command) internal.EnvFlag {
-		// The env flag `-e, --environment` is available on most azd commands but not all
+	container.MustRegisterScoped(func(
+		ctx context.Context,
+		cmd *cobra.Command,
+		globalOptions *internal.GlobalCommandOptions,
+	) internal.EnvFlag {
+		// The env flag `-e, --environment` is available on most azd commands but not all.
 		// This is typically used to override the default environment and is used for bootstrapping other components
 		// such as the azd environment.
 		// If the flag is not available, don't panic, just return an empty string which will then allow for our default
@@ -198,6 +206,13 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		if err != nil {
 			log.Printf("'%s' command did not include --environment so using default environment instead.", cmd.CommandPath())
 			envValue = ""
+		}
+
+		// For extension commands (DisableFlagParsing=true), cobra never parses -e so
+		// cmd.Flags().GetString always returns "". Fall back to the value that was
+		// pre-parsed in ParseGlobalFlags before the command tree was built.
+		if envValue == "" && globalOptions.EnvironmentName != "" {
+			envValue = globalOptions.EnvironmentName
 		}
 
 		if envValue == "" {
@@ -688,7 +703,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		})
 	})
 
-	container.MustRegisterSingleton(func(subManager *account.SubscriptionsManager) account.SubscriptionTenantResolver {
+	container.MustRegisterSingleton(func(subManager *account.SubscriptionsManager) account.SubscriptionResolver {
 		return subManager
 	})
 
@@ -799,6 +814,21 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	container.MustRegisterNamedScoped(string(project.ServiceLanguageDocker), project.NewDockerProjectAsFrameworkService)
 
+	// Hook executors registered by language name (transient — fresh per hook invocation).
+	// The HooksRunner resolves these via serviceLocator.ResolveNamed().
+	hookExecutorMap := map[language.HookKind]any{
+		language.HookKindBash:       bash.NewExecutor,
+		language.HookKindPowerShell: powershell.NewExecutor,
+		language.HookKindPython:     language.NewPythonExecutor,
+		language.HookKindJavaScript: language.NewJavaScriptExecutor,
+		language.HookKindTypeScript: language.NewTypeScriptExecutor,
+		language.HookKindDotNet:     language.NewDotNetExecutor,
+	}
+
+	for kind, constructor := range hookExecutorMap {
+		container.MustRegisterNamedTransient(string(kind), constructor)
+	}
+
 	// Pipelines
 	container.MustRegisterScoped(pipeline.NewPipelineManager)
 	container.MustRegisterSingleton(func(flags *pipelineConfigFlags) *pipeline.PipelineManagerArgs {
@@ -891,13 +921,13 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		container.MustRegisterNamedSingleton(platformName, constructor)
 	}
 
-	container.MustRegisterSingleton(func(s ioc.ServiceLocator) (workflow.AzdCommandRunner, error) {
-		var rootCmd *cobra.Command
-		if err := s.ResolveNamed("root-cmd", &rootCmd); err != nil {
-			return nil, err
+	container.MustRegisterSingleton(func() workflow.AzdCommandRunner {
+		return &workflowCmdAdapter{
+			newCommand: func() *cobra.Command {
+				return newRootCmdWithoutRegistration(container)
+			},
+			globalArgs: extractGlobalArgs(),
 		}
-		return &workflowCmdAdapter{cmd: rootCmd}, nil
-
 	})
 	container.MustRegisterSingleton(workflow.NewRunner)
 
@@ -940,7 +970,9 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(grpcserver.NewExtensionService)
 	container.MustRegisterSingleton(grpcserver.NewServiceTargetService)
 	container.MustRegisterSingleton(grpcserver.NewFrameworkService)
+	container.MustRegisterSingleton(grpcserver.NewProvisioningService)
 	container.MustRegisterSingleton(grpcserver.NewAiModelService)
+	container.MustRegisterScoped(grpcserver.NewCopilotService)
 
 	// Required for nested actions called from composite actions like 'up'
 	registerAction[*cmd.ProvisionAction](container, "azd-provision-action")
@@ -948,19 +980,62 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	registerAction[*configShowAction](container, "azd-config-show-action")
 }
 
-// workflowCmdAdapter adapts a cobra command to the workflow.AzdCommandRunner interface
+// workflowCmdAdapter adapts a cobra command to the workflow.AzdCommandRunner interface.
+// On each ExecuteContext call, a fresh cobra command tree is built via the newCommand factory
+// to avoid stale context or command state from previous executions.
+// See: https://github.com/Azure/azure-dev/issues/6530
 type workflowCmdAdapter struct {
-	cmd *cobra.Command
+	newCommand func() *cobra.Command
+	globalArgs []string
 }
 
-func (w *workflowCmdAdapter) SetArgs(args []string) {
-	w.cmd.SetArgs(args)
+// ExecuteContext implements workflow.AzdCommandRunner.
+// It rebuilds the cobra command tree on each call to ensure a clean slate,
+// preventing "context canceled" errors from stale command state during retries.
+// Global flags from the original process invocation are appended to the step args
+// so that persistent flags (e.g., --trace-log-file) are properly parsed and visible
+// to telemetry middleware on the fresh command tree.
+func (w *workflowCmdAdapter) ExecuteContext(ctx context.Context, args []string) error {
+	// Cancel the child context when the step completes so that any event handlers
+	// registered during this step (e.g. by service target Initialize methods) are
+	// marked as expired and cleaned up on the next RaiseEvent call.
+	childCtx, cancel := context.WithCancel(middleware.WithChildAction(ctx))
+	defer cancel()
+
+	rootCmd := w.newCommand()
+	// Always set args explicitly to prevent Cobra from falling back to os.Args[1:].
+	// Cobra uses os.Args when cmd.args is nil (but not when it's an empty slice).
+	mergedArgs := append(slices.Clone(args), w.globalArgs...)
+	if mergedArgs == nil {
+		mergedArgs = []string{}
+	}
+	rootCmd.SetArgs(mergedArgs)
+	return rootCmd.ExecuteContext(childCtx)
 }
 
-// ExecuteContext implements workflow.AzdCommandRunner
-func (w *workflowCmdAdapter) ExecuteContext(ctx context.Context) error {
-	childCtx := middleware.WithChildAction(ctx)
-	return w.cmd.ExecuteContext(childCtx)
+// extractGlobalArgs extracts global flag arguments from the process command line.
+// It parses os.Args against the global flag set and returns only the flags that were
+// explicitly set by the user, formatted as command-line arguments.
+//
+// The "environment" flag is intentionally excluded: workflow steps may define their own
+// -e/--environment (e.g. `azd: env set KEY VALUE -e env1`), and appending the parent's
+// --environment would override the step-level value. Environment propagation to workflow
+// steps is handled by the globalOptions DI fallback in the EnvFlag resolver instead.
+func extractGlobalArgs() []string {
+	globalFlagSet := CreateGlobalFlagSet()
+	globalFlagSet.SetOutput(io.Discard)
+	globalFlagSet.ParseErrorsAllowlist = pflag.ParseErrorsAllowlist{UnknownFlags: true}
+	_ = globalFlagSet.Parse(os.Args[1:])
+
+	var result []string
+	globalFlagSet.VisitAll(func(f *pflag.Flag) {
+		if f.Changed && f.Name != internal.EnvironmentNameFlagName {
+			// Use --flag=value syntax to avoid ambiguity. The two-arg form (--flag value)
+			// doesn't work for boolean flags, where the value is treated as a positional arg.
+			result = append(result, fmt.Sprintf("--%s=%s", f.Name, f.Value.String()))
+		}
+	})
+	return result
 }
 
 // ArmClientInitializer is a function definition for all Azure SDK ARM Client

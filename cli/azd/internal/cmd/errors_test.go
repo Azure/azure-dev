@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -41,6 +42,7 @@ import (
 )
 
 func Test_MapError(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name           string
 		err            error
@@ -202,6 +204,22 @@ func Test_MapError(t *testing.T) {
 			},
 		},
 		{
+			name:          "WithReLoginRequiredError",
+			err:           &auth.ReLoginRequiredError{},
+			wantErrReason: "auth.login_required",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrorKey(fields.ErrCategory.Key).String("auth"),
+			},
+		},
+		{
+			name:          "WithAzidentityAuthenticationFailedError",
+			err:           &azidentity.AuthenticationFailedError{},
+			wantErrReason: "auth.identity_failed",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrorKey(fields.ErrCategory.Key).String("auth"),
+			},
+		},
+		{
 			name: "WithExtServiceError",
 			err: &azdext.ServiceError{
 				Message:     "Rate limit exceeded",
@@ -274,16 +292,20 @@ func Test_MapError(t *testing.T) {
 			wantErrDetails: nil,
 		},
 		{
-			name:           "WithErrNoCurrentUser",
-			err:            auth.ErrNoCurrentUser,
-			wantErrReason:  "auth.not_logged_in",
-			wantErrDetails: nil,
+			name:          "WithErrNoCurrentUser",
+			err:           auth.ErrNoCurrentUser,
+			wantErrReason: "auth.not_logged_in",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrorKey(fields.ErrCategory.Key).String("auth"),
+			},
 		},
 		{
-			name:           "WithWrappedErrNoCurrentUser",
-			err:            fmt.Errorf("failed to create credential: %w: %w", errors.New("inner"), auth.ErrNoCurrentUser),
-			wantErrReason:  "auth.not_logged_in",
-			wantErrDetails: nil,
+			name:          "WithWrappedErrNoCurrentUser",
+			err:           fmt.Errorf("failed to create credential: %w: %w", errors.New("inner"), auth.ErrNoCurrentUser),
+			wantErrReason: "auth.not_logged_in",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrorKey(fields.ErrCategory.Key).String("auth"),
+			},
 		},
 		{
 			name:           "WithErrToolExecutionDenied",
@@ -795,6 +817,7 @@ func Test_MapError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			span := &mocktracing.Span{}
 			MapError(tt.err, span)
 
@@ -818,6 +841,7 @@ func Test_MapError(t *testing.T) {
 // When the inner error matches a known sentinel, the descriptive code is used
 // instead of the raw Go type name.
 func TestMapError_ErrorWithSuggestionSetsErrorType(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name        string
 		err         error
@@ -884,6 +908,7 @@ func TestMapError_ErrorWithSuggestionSetsErrorType(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			span := &mocktracing.Span{}
 			MapError(tt.err, span)
 
@@ -901,6 +926,7 @@ func TestMapError_ErrorWithSuggestionSetsErrorType(t *testing.T) {
 // the same errCode as MapError for every structured error type and sentinel.
 // This catches drift if someone updates the classification logic in one function but not the other.
 func Test_ClassifySuggestionType_MatchesMapError(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		err  error
@@ -974,6 +1000,14 @@ func Test_ClassifySuggestionType_MatchesMapError(t *testing.T) {
 				Parsed: &auth.AadErrorResponse{Error: "invalid_grant"},
 			},
 		},
+		{
+			name: "ReLoginRequiredError",
+			err:  &auth.ReLoginRequiredError{},
+		},
+		{
+			name: "AzidentityAuthenticationFailedError",
+			err:  &azidentity.AuthenticationFailedError{},
+		},
 		// Sentinels
 		{name: "context.Canceled", err: context.Canceled},
 		{name: "context.DeadlineExceeded", err: context.DeadlineExceeded},
@@ -989,6 +1023,7 @@ func Test_ClassifySuggestionType_MatchesMapError(t *testing.T) {
 		{name: "ErrKeyNotFound", err: internal.ErrKeyNotFound},
 		{name: "ErrExtensionNotFound", err: internal.ErrExtensionNotFound},
 		{name: "ErrOperationCancelled", err: internal.ErrOperationCancelled},
+		{name: "ErrAbortedByUser", err: internal.ErrAbortedByUser},
 		// Network error
 		{
 			name: "DNSError",
@@ -998,6 +1033,7 @@ func Test_ClassifySuggestionType_MatchesMapError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			// Get errCode from MapError
 			span := &mocktracing.Span{}
 			MapError(tt.err, span)
@@ -1013,6 +1049,7 @@ func Test_ClassifySuggestionType_MatchesMapError(t *testing.T) {
 }
 
 func Test_cmdAsName(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		cmd  string
@@ -1027,12 +1064,14 @@ func Test_cmdAsName(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			require.Equal(t, tt.want, cmdAsName(tt.cmd))
 		})
 	}
 }
 
 func Test_normalizeCodeSegment(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		value    string
@@ -1051,12 +1090,14 @@ func Test_normalizeCodeSegment(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			require.Equal(t, tt.want, normalizeCodeSegment(tt.value, tt.fallback))
 		})
 	}
 }
 
 func Test_errorType(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		err  error
@@ -1123,6 +1164,7 @@ func Test_errorType(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := errorType(tt.err)
 			require.Equal(t, tt.want, got)
 		})
@@ -1164,6 +1206,7 @@ func mustMarshalJson(v any) string {
 }
 
 func Test_isNetworkError(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		err  error
@@ -1222,6 +1265,7 @@ func Test_isNetworkError(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			require.Equal(t, tt.want, isNetworkError(tt.err))
 		})
 	}
@@ -1238,6 +1282,7 @@ func Test_isNetworkError(t *testing.T) {
 // 1. Add an errors.Is() check for your error variable in MapError (errors.go), OR
 // 2. Add it to the excludedErrors list below with a comment explaining why.
 func Test_PackageLevelErrorsMapped(t *testing.T) {
+	t.Parallel()
 	// Package-level error variables that are intentionally NOT mapped in MapError, with reasons:
 	//nolint:gosec // G101: map variable name, not credentials
 	excludedErrors := map[string]string{
@@ -1321,6 +1366,9 @@ func Test_PackageLevelErrorsMapped(t *testing.T) {
 		"ErrExtensionNotFound":          "pkg/extensions: caught in extension manager callers",
 		"ErrInstalledExtensionNotFound": "pkg/extensions: caught in extension manager callers",
 		"ErrRegistryExtensionNotFound":  "pkg/extensions: caught in extension manager callers",
+
+		// Extension SDK errors used by extensions, never reach host MapError
+		"ErrProjectNotFound": "pkg/azdext: extension SDK helper, used by extensions not the host",
 	}
 
 	// Find the azd root directory (two levels up from internal/cmd)
@@ -1444,6 +1492,7 @@ func isErrorConstructorCall(call *ast.CallExpr) bool {
 // These errors reach MapError via the telemetry middleware and must use typed sentinels or wrap
 // an existing error with %w for proper classification.
 func Test_RunMethodsNoBareErrors(t *testing.T) {
+	t.Parallel()
 	azdRoot, err := filepath.Abs(filepath.Join("..", ".."))
 	require.NoError(t, err)
 

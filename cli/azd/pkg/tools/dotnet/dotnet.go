@@ -90,6 +90,20 @@ func (cli *Cli) CheckInstalled(ctx context.Context) error {
 	return nil
 }
 
+// SdkVersion returns the installed .NET SDK version by running
+// `dotnet --version` and parsing the output as semver.
+func (cli *Cli) SdkVersion(ctx context.Context) (semver.Version, error) {
+	res, err := cli.commandRunner.Run(ctx, newDotNetRunArgs("--version"))
+	if err != nil {
+		return semver.Version{}, fmt.Errorf("checking %s version: %w", cli.Name(), err)
+	}
+	ver, err := tools.ExtractVersion(res.Stdout)
+	if err != nil {
+		return semver.Version{}, fmt.Errorf("parsing .NET SDK version from %q: %w", res.Stdout, err)
+	}
+	return ver, nil
+}
+
 func (cli *Cli) Restore(ctx context.Context, project string, env []string) error {
 	runArgs := newDotNetRunArgs("restore", project)
 	// Append user env vars to preserve base env set by newDotNetRunArgs (DOTNET_NOLOGO, etc.)
@@ -163,6 +177,7 @@ func (cli *Cli) PublishAppHostManifest(
 			)
 		}
 
+		//nolint:gosec // G703: manifestPath is the azd-managed output path for the generated manifest.
 		return os.WriteFile(manifestPath, m, osutil.PermissionFile)
 	}
 

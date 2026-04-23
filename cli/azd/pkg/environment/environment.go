@@ -11,6 +11,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"unicode"
 
 	"maps"
 
@@ -140,6 +141,14 @@ func IsValidEnvironmentName(name string) bool {
 	return EnvironmentNameRegexp.MatchString(name)
 }
 
+// InvalidEnvironmentNameError returns a standardized error for an invalid environment name.
+func InvalidEnvironmentNameError(name string) error {
+	return fmt.Errorf(
+		"environment name '%s' is invalid (it should contain only alphanumeric characters and hyphens)",
+		name,
+	)
+}
+
 // CleanName returns a version of [name] where all characters not allowed in an environment name have been replaced
 // with hyphens
 func CleanName(name string) string {
@@ -238,8 +247,19 @@ func (e *Environment) SetLocation(location string) {
 }
 
 // Key returns the environment key name for the given name.
+// The name is converted to uppercase, and whitespace (including tabs and Unicode spaces)
+// and hyphens are replaced with underscores. Other characters (e.g., dots,
+// slashes) are passed through unchanged.
 func Key(name string) string {
-	return strings.ReplaceAll(strings.ToUpper(name), "-", "_")
+	upper := strings.ToUpper(name)
+	upper = strings.Map(func(r rune) rune {
+		if unicode.IsSpace(r) {
+			return '_'
+		}
+		return r
+	}, upper)
+	upper = strings.ReplaceAll(upper, "-", "_")
+	return upper
 }
 
 // GetServiceProperty is shorthand for Getenv(SERVICE_$SERVICE_NAME_$PROPERTY_NAME)

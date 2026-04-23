@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -16,8 +17,13 @@ import (
 
 func Test_MergeKubeConfig(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	commandRunner := exec.NewCommandRunner(nil)
-	cli := NewCli(commandRunner)
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "kubectl config view")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		// Return a valid merged kube config YAML so MergeConfigs can write it.
+		return exec.NewRunResult(0, "apiVersion: v1\nkind: Config\nclusters: []\ncontexts: []\nusers: []\n", ""), nil
+	})
+	cli := NewCli(mockContext.CommandRunner)
 	kubeConfigManager, err := NewKubeConfigManager(cli)
 	require.NoError(t, err)
 

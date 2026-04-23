@@ -9,19 +9,23 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
 )
 
+func newMsalCacheStore(root string) Cache {
+	return &memoryCache{
+		cache: make(map[string][]byte),
+		inner: &fileCache{
+			prefix: "cache",
+			root:   root,
+			ext:    "json",
+		},
+	}
+}
+
 // newCache creates a cache implementation that satisfies [cache.ExportReplace] from the MSAL library.
 //
 // root must be created beforehand, and must point to a directory.
 func newCache(root string) cache.ExportReplace {
 	return &msalCacheAdapter{
-		cache: &memoryCache{
-			cache: make(map[string][]byte),
-			inner: &fileCache{
-				prefix: "cache",
-				root:   root,
-				ext:    "json",
-			},
-		},
+		cache: newMsalCacheStore(root),
 	}
 }
 

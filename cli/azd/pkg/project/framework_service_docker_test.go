@@ -46,6 +46,9 @@ services:
 `
 	ran := false
 
+	// Create service temp dir upfront so the mock closure can reference it.
+	serviceDir := t.TempDir()
+
 	env := environment.NewWithValues("test-env", nil)
 	env.SetSubscriptionId("sub")
 
@@ -81,10 +84,10 @@ services:
 
 		require.Equal(t, []string{
 			"build",
-			"-f", "./Dockerfile",
+			"-f", filepath.Join(serviceDir, "Dockerfile"),
 			"--platform", docker.DefaultPlatform,
 			"-t", "test-proj-web",
-			".",
+			serviceDir,
 		}, argsNoFile)
 
 		// create the file as expected
@@ -102,10 +105,9 @@ services:
 	require.NoError(t, err)
 	service := projectConfig.Services["web"]
 
-	temp := t.TempDir()
-	service.Project.Path = temp
+	service.Project.Path = serviceDir
 	service.RelativePath = ""
-	err = os.WriteFile(filepath.Join(temp, "Dockerfile"), []byte("FROM node:14"), 0600)
+	err = os.WriteFile(filepath.Join(serviceDir, "Dockerfile"), []byte("FROM node:14"), 0600)
 	require.NoError(t, err)
 
 	npmCli := node.NewCli(mockContext.CommandRunner)
@@ -162,6 +164,10 @@ services:
 
 	env := environment.NewWithValues("test-env", nil)
 	env.SetSubscriptionId("sub")
+
+	// Create service temp dir upfront so the mock closure can reference it.
+	serviceDir := t.TempDir()
+
 	mockContext := mocks.NewMockContext(context.Background())
 	envManager := &mockenv.MockEnvManager{}
 	envManager.On("Get", mock.Anything, "test-env").Return(env, nil)
@@ -196,10 +202,10 @@ services:
 
 		require.Equal(t, []string{
 			"build",
-			"-f", "./Dockerfile.dev",
+			"-f", filepath.Join(serviceDir, "Dockerfile.dev"),
 			"--platform", docker.DefaultPlatform,
 			"-t", "test-proj-web",
-			"../",
+			filepath.Join(serviceDir, ".."),
 		}, argsNoFile)
 
 		// create the file as expected
@@ -221,10 +227,9 @@ services:
 	require.NoError(t, err)
 
 	service := projectConfig.Services["web"]
-	temp := t.TempDir()
-	service.Project.Path = temp
+	service.Project.Path = serviceDir
 	service.RelativePath = ""
-	err = os.WriteFile(filepath.Join(temp, "Dockerfile.dev"), []byte("FROM node:14"), 0600)
+	err = os.WriteFile(filepath.Join(serviceDir, "Dockerfile.dev"), []byte("FROM node:14"), 0600)
 	require.NoError(t, err)
 
 	internalFramework := NewNodeProject(npmCli, env, mockContext.CommandRunner)
@@ -406,7 +411,7 @@ func Test_DockerProject_Build(t *testing.T) {
 			language:      ServiceLanguageJavaScript,
 			hasDockerFile: true,
 			init: func(t *testing.T) error {
-				os.Setenv("AZD_CUSTOM_OS_VAR", "os-value")
+				t.Setenv("AZD_CUSTOM_OS_VAR", "os-value")
 				return nil
 			},
 			env: environment.NewWithValues("test", map[string]string{
@@ -559,7 +564,30 @@ func Test_DockerProject_Build(t *testing.T) {
 				require.NoError(t, err)
 				require.NotNil(t, result)
 				require.Equal(t, tt.expectedBuildResult, result)
-				require.Equal(t, tt.expectedDockerBuildArgs, dockerBuildArgs.Args)
+
+				if tt.expectedDockerBuildArgs != nil {
+					// Build expected absolute paths directly from test temp dir.
+					// Do NOT call resolveDockerPaths here - it is the production helper
+					// under test, so using it would make assertions self-referential.
+					serviceDir := filepath.Join(temp, tt.project)
+					expected := make([]string, len(tt.expectedDockerBuildArgs))
+					copy(expected, tt.expectedDockerBuildArgs)
+					for i := range expected {
+						if i > 0 && expected[i-1] == "-f" {
+							if !filepath.IsAbs(expected[i]) {
+								expected[i] = filepath.Clean(filepath.Join(serviceDir, expected[i]))
+							}
+						}
+					}
+					if n := len(expected); n > 0 {
+						last := expected[n-1]
+						if !filepath.IsAbs(last) &&
+							(last == "." || strings.HasPrefix(last, "./") || strings.HasPrefix(last, "../")) {
+							expected[n-1] = filepath.Clean(filepath.Join(serviceDir, last))
+						}
+					}
+					require.Equal(t, expected, dockerBuildArgs.Args)
+				}
 			}
 		})
 	}

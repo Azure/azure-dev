@@ -384,9 +384,9 @@ func registerContainerComponents(t *testing.T, mockContext *mocks.MockContext) {
 		return mockContext.CoreClientOptions
 	})
 
-	// Register a mock SubscriptionTenantResolver for tests
-	mockContext.Container.MustRegisterSingleton(func() account.SubscriptionTenantResolver {
-		return &mockSubscriptionTenantResolver{}
+	// Register a mock subscription resolver for tests.
+	mockContext.Container.MustRegisterSingleton(func() account.SubscriptionResolver {
+		return &mockSubscriptionResolver{}
 	})
 
 	mockContext.Container.MustRegisterSingleton(func() config.UserConfigManager {
@@ -419,14 +419,19 @@ func registerContainerComponents(t *testing.T, mockContext *mocks.MockContext) {
 	})
 }
 
-// mockSubscriptionTenantResolver is a simple mock for testing
-type mockSubscriptionTenantResolver struct{}
+// mockSubscriptionResolver is a simple mock for testing.
+type mockSubscriptionResolver struct{}
 
-var _ account.SubscriptionTenantResolver = (*mockSubscriptionTenantResolver)(nil)
+var _ account.SubscriptionResolver = (*mockSubscriptionResolver)(nil)
 
-func (m *mockSubscriptionTenantResolver) LookupTenant(ctx context.Context, subscriptionId string) (string, error) {
-	// For tests, just return empty string (home tenant)
-	return "", nil
+func (m *mockSubscriptionResolver) GetSubscription(
+	ctx context.Context, subscriptionId string,
+) (*account.Subscription, error) {
+	return &account.Subscription{
+		Id:                 subscriptionId,
+		TenantId:           "",
+		UserAccessTenantId: "",
+	}, nil
 }
 
 type MockDataStore struct {

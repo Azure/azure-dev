@@ -1,0 +1,178 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+syntax = "proto3";
+
+package azdext;
+
+option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext";
+
+import "models.proto";
+import "include/google/protobuf/struct.proto";
+
+// CopilotService provides Copilot agent capabilities to extensions.
+// Sessions are created lazily on the first SendMessage call and can be
+// reused across multiple calls. Sessions run in headless/autopilot mode
+// by default when invoked via gRPC, suppressing all console output.
+service CopilotService {
+  // Initialize starts the Copilot client, verifies authentication, and
+  // resolves model/reasoning configuration. Call before SendMessage to
+  // warm up the client and validate settings. Idempotent.
+  rpc Initialize(InitializeCopilotRequest) returns (InitializeCopilotResponse);
+
+  // ListSessions returns available Copilot sessions for a working directory.
+  rpc ListSessions(ListCopilotSessionsRequest) returns (ListCopilotSessionsResponse);
+
+  // SendMessage sends a prompt to the Copilot agent. On the first call,
+  // a new session is created using the provided configuration. If session_id
+  // is set, that existing session is resumed instead. Subsequent calls with
+  // the returned session_id reuse the same session without re-bootstrapping.
+  rpc SendMessage(SendCopilotMessageRequest) returns (SendCopilotMessageResponse);
+
+  // GetUsageMetrics returns cumulative usage metrics cached for a session.
+  rpc GetUsageMetrics(GetCopilotUsageMetricsRequest) returns (GetCopilotUsageMetricsResponse);
+
+  // GetFileChanges returns files created, modified, or deleted during a session.
+  rpc GetFileChanges(GetCopilotFileChangesRequest) returns (GetCopilotFileChangesResponse);
+
+  // StopSession stops and cleans up a Copilot agent session.
+  rpc StopSession(StopCopilotSessionRequest) returns (EmptyResponse);
+
+  // GetMessages returns the session event log from the Copilot SDK.
+  // Each event contains a type, timestamp, and dynamic data as a Struct.
+  rpc GetMessages(GetCopilotMessagesRequest) returns (GetCopilotMessagesResponse);
+}
+
+// --- Initialize messages ---
+
+// InitializeCopilotRequest configures and starts the Copilot client.
+message InitializeCopilotRequest {
+  string model = 1;             // Model to configure (empty = use existing/default).
+  string reasoning_effort = 2;  // Reasoning effort level (low, medium, high).
+}
+
+// InitializeCopilotResponse returns the resolved configuration.
+message InitializeCopilotResponse {
+  string model = 1;             // Resolved model name.
+  string reasoning_effort = 2;  // Resolved reasoning effort level.
+  bool is_first_run = 3;        // True if this was the first configuration.
+}
+
+// --- ListSessions messages ---
+
+// ListCopilotSessionsRequest requests available sessions for a directory.
+message ListCopilotSessionsRequest {
+  string working_directory = 1; // Directory to list sessions for (empty = cwd).
+}
+
+// ListCopilotSessionsResponse contains available sessions.
+message ListCopilotSessionsResponse {
+  repeated CopilotSessionMetadata sessions = 1; // Available sessions.
+}
+
+// CopilotSessionMetadata describes a previous Copilot session.
+message CopilotSessionMetadata {
+  string session_id = 1;     // Unique session identifier.
+  string modified_time = 2;  // Last modified time (RFC3339 format).
+  string summary = 3;        // Optional session summary.
+}
+
+// --- SendMessage messages ---
+
+// SendCopilotMessageRequest sends a prompt to the agent.
+// On the first call, include session configuration fields. If session_id
+// is provided, the existing session is resumed. If omitted, a new session
+// is created with the provided configuration.
+message SendCopilotMessageRequest {
+  string prompt = 1;             // The prompt/message to send.
+  string session_id = 2;         // Optional: session to reuse or resume.
+  string model = 3;              // Optional: model override (first call or resume).
+  string reasoning_effort = 4;   // Optional: reasoning effort (low, medium, high).
+  string system_message = 5;     // Optional: custom system message appended to default.
+  string mode = 6;               // Optional: agent mode (autopilot, interactive, plan).
+  bool debug = 7;                // Optional: enable debug logging.
+  bool headless = 8;             // Set to true for headless mode (suppresses console output).
+}
+
+// SendCopilotMessageResponse contains the result of the message.
+message SendCopilotMessageResponse {
+  string session_id = 1;                        // Session ID — use in subsequent calls to reuse.
+  CopilotUsageMetrics usage = 2;                // Usage metrics for this message turn.
+  repeated CopilotFileChange file_changes = 3;  // Files changed during this message turn.
+}
+
+// --- Metrics messages ---
+
+// GetCopilotUsageMetricsRequest requests cached usage metrics for a session.
+message GetCopilotUsageMetricsRequest {
+  string session_id = 1; // Session to get metrics for.
+}
+
+// GetCopilotUsageMetricsResponse contains cumulative usage metrics.
+message GetCopilotUsageMetricsResponse {
+  CopilotUsageMetrics usage = 1; // Cumulative usage metrics for the session.
+}
+
+// CopilotUsageMetrics tracks resource consumption for a Copilot session.
+message CopilotUsageMetrics {
+  string model = 1;             // Model used.
+  double input_tokens = 2;      // Total input tokens consumed.
+  double output_tokens = 3;     // Total output tokens consumed.
+  double total_tokens = 4;      // Sum of input + output tokens.
+  double billing_rate = 5;      // Per-request cost multiplier (e.g., 1.0x, 2.0x).
+  double premium_requests = 6;  // Number of premium requests used.
+  double duration_ms = 7;       // Total API duration in milliseconds.
+}
+
+// --- File change messages ---
+
+// GetCopilotFileChangesRequest requests cached file changes for a session.
+message GetCopilotFileChangesRequest {
+  string session_id = 1; // Session to get file changes for.
+}
+
+// GetCopilotFileChangesResponse contains file changes tracked during the session.
+message GetCopilotFileChangesResponse {
+  repeated CopilotFileChange file_changes = 1; // Files changed during the session.
+}
+
+// CopilotFileChange describes a single file change.
+message CopilotFileChange {
+  string path = 1;                       // File path (relative to working directory).
+  CopilotFileChangeType change_type = 2; // Type of change.
+}
+
+// CopilotFileChangeType enumerates the types of file changes.
+enum CopilotFileChangeType {
+  COPILOT_FILE_CHANGE_TYPE_UNSPECIFIED = 0; // Unknown change type.
+  COPILOT_FILE_CHANGE_TYPE_CREATED = 1;     // File was created.
+  COPILOT_FILE_CHANGE_TYPE_MODIFIED = 2;    // File was modified.
+  COPILOT_FILE_CHANGE_TYPE_DELETED = 3;     // File was deleted.
+}
+
+// --- Session cleanup messages ---
+
+// StopCopilotSessionRequest stops a session and releases resources.
+message StopCopilotSessionRequest {
+  string session_id = 1; // Session to stop.
+}
+
+// --- Session log messages ---
+
+// GetCopilotMessagesRequest requests the session event log.
+message GetCopilotMessagesRequest {
+  string session_id = 1; // Session to get messages for.
+}
+
+// GetCopilotMessagesResponse contains the session event log.
+message GetCopilotMessagesResponse {
+  repeated CopilotSessionEvent events = 1; // Session events in chronological order.
+}
+
+// CopilotSessionEvent represents a single event from the Copilot session log.
+// The data field uses google.protobuf.Struct to carry dynamic event data
+// without requiring schema updates when the SDK adds new event types or fields.
+message CopilotSessionEvent {
+  string type = 1;                    // Event type (e.g., "assistant.message", "tool.execution_complete").
+  string timestamp = 2;               // ISO 8601 timestamp.
+  google.protobuf.Struct data = 3;    // Full event data as a dynamic struct.
+}

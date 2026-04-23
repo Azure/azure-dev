@@ -70,8 +70,8 @@ func (m *CopilotClientManager) Start(ctx context.Context) error {
 	if err := m.client.Start(ctx); err != nil {
 		log.Printf("[copilot-client] Start failed: %v", err)
 		return fmt.Errorf(
-			"failed to start Copilot agent runtime: %w",
-			err,
+			"failed to start %s agent runtime: %w",
+			DisplayTitle, err,
 		)
 	}
 	log.Printf("[copilot-client] Started successfully (state=%s)", m.client.State())
@@ -95,7 +95,7 @@ func (m *CopilotClientManager) Client() *copilot.Client {
 func (m *CopilotClientManager) GetAuthStatus(ctx context.Context) (*copilot.GetAuthStatusResponse, error) {
 	status, err := m.client.GetAuthStatus(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to check Copilot auth status: %w", err)
+		return nil, fmt.Errorf("failed to check %s auth status: %w", DisplayTitle, err)
 	}
 	return status, nil
 }
@@ -104,7 +104,7 @@ func (m *CopilotClientManager) GetAuthStatus(ctx context.Context) (*copilot.GetA
 func (m *CopilotClientManager) ListModels(ctx context.Context) ([]copilot.ModelInfo, error) {
 	models, err := m.client.ListModels(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list Copilot models: %w", err)
+		return nil, fmt.Errorf("failed to list %s models: %w", DisplayTitle, err)
 	}
 	return models, nil
 }

@@ -20,6 +20,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type promptService struct {
@@ -47,6 +48,10 @@ func NewPromptService(
 }
 
 func (s *promptService) Confirm(ctx context.Context, req *azdext.ConfirmRequest) (*azdext.ConfirmResponse, error) {
+	if req == nil || req.Options == nil {
+		return nil, status.Error(codes.InvalidArgument, "request and options are required")
+	}
+
 	if s.globalOptions.NoPrompt {
 		if req.Options.DefaultValue == nil {
 			return nil, fmt.Errorf("no default response for prompt '%s'", req.Options.Message)
@@ -80,6 +85,10 @@ func (s *promptService) Confirm(ctx context.Context, req *azdext.ConfirmRequest)
 }
 
 func (s *promptService) Select(ctx context.Context, req *azdext.SelectRequest) (*azdext.SelectResponse, error) {
+	if req == nil || req.Options == nil {
+		return nil, status.Error(codes.InvalidArgument, "request and options are required")
+	}
+
 	if s.globalOptions.NoPrompt {
 		if req.Options.SelectedIndex == nil {
 			return nil, fmt.Errorf("no default selection for prompt '%s'", req.Options.Message)
@@ -126,6 +135,10 @@ func (s *promptService) MultiSelect(
 	ctx context.Context,
 	req *azdext.MultiSelectRequest,
 ) (*azdext.MultiSelectResponse, error) {
+	if req == nil || req.Options == nil {
+		return nil, status.Error(codes.InvalidArgument, "request and options are required")
+	}
+
 	if s.globalOptions.NoPrompt {
 		var selectedChoices []*azdext.MultiSelectChoice
 		for _, choice := range req.Options.Choices {
@@ -266,7 +279,14 @@ func (s *promptService) PromptLocation(
 		return nil, err
 	}
 
-	selectedLocation, err := s.prompter.PromptLocation(ctx, azureContext, nil)
+	var selectorOptions *prompt.SelectOptions
+	if len(req.AllowedLocations) > 0 {
+		selectorOptions = &prompt.SelectOptions{
+			AllowedValues: req.AllowedLocations,
+		}
+	}
+
+	selectedLocation, err := s.prompter.PromptLocation(ctx, azureContext, selectorOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -385,6 +405,13 @@ func (s *promptService) PromptResourceGroupResource(
 }
 
 func (s *promptService) createAzureContext(wire *azdext.AzureContext) (*prompt.AzureContext, error) {
+	if wire == nil {
+		return nil, status.Error(codes.InvalidArgument, "azure context is required")
+	}
+	if wire.Scope == nil {
+		return nil, status.Error(codes.InvalidArgument, "azure context scope is required")
+	}
+
 	scope := prompt.AzureScope{
 		TenantId:       wire.Scope.TenantId,
 		SubscriptionId: wire.Scope.SubscriptionId,
@@ -396,7 +423,8 @@ func (s *promptService) createAzureContext(wire *azdext.AzureContext) (*prompt.A
 	for _, resourceId := range wire.Resources {
 		parsedResource, err := arm.ParseResourceID(resourceId)
 		if err != nil {
-			return nil, err
+			return nil, status.Errorf(codes.InvalidArgument,
+				"invalid resource ID %q: %v", resourceId, err)
 		}
 
 		resources = append(resources, parsedResource)
@@ -843,6 +871,18 @@ func (s *promptService) PromptAiDeployment(
 
 	// --- Step 3: Resolve capacity, optionally prompting ---
 	capacity := ai.ResolveCapacity(selectedSku.sku, options.Capacity)
+	if req.Quota != nil && selectedSku.remaining != nil {
+		resolvedCapacity, ok := ai.ResolveCapacityWithQuota(selectedSku.sku, options.Capacity, *selectedSku.remaining)
+		if !ok {
+			return nil, aiStatusError(
+				codes.FailedPrecondition,
+				azdext.AiErrorReasonNoDeploymentMatch,
+				fmt.Sprintf("no deployment match for model %q with the selected SKU and quota", req.ModelName),
+				map[string]string{"model_name": req.ModelName},
+			)
+		}
+		capacity = resolvedCapacity
+	}
 
 	if !req.UseDefaultCapacity {
 		sku := selectedSku.sku
@@ -1229,8 +1269,6 @@ func buildSkuCandidatesForVersion(
 			continue
 		}
 
-		capacity := ai.ResolveCapacity(sku, options.Capacity)
-
 		var remaining *float64
 		if quota != nil {
 			if usageMap == nil {
@@ -1244,7 +1282,11 @@ func buildSkuCandidatesForVersion(
 
 			rem := usage.Limit - usage.CurrentValue
 			remaining = &rem
-			if rem < minReq || (capacity > 0 && float64(capacity) > rem) {
+			if rem < minReq {
+				continue
+			}
+
+			if _, ok := ai.ResolveCapacityWithQuota(sku, options.Capacity, rem); !ok {
 				continue
 			}
 		}

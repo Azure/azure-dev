@@ -44,6 +44,12 @@ func (m *UxMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionRes
 	// Stop the spinner always to un-hide cursor
 	m.console.StopSpinner(ctx, "", input.Step)
 
+	// User intentionally aborted — not a failure.
+	// The action already printed a message; swallow the error so the CLI exits with code 0.
+	if errors.Is(err, internal.ErrAbortedByUser) {
+		return actionResult, nil
+	}
+
 	if err != nil {
 		// Use ErrorWithSuggestion for errors with suggestions (better UX).
 		// This catches errors wrapped by the error pipeline's YAML rules

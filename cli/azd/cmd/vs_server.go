@@ -101,7 +101,8 @@ func (s *vsServerAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		}
 
 		listener = tls.NewListener(listener, config)
-		res.CertificateBytes = new(base64.StdEncoding.EncodeToString(derBytes))
+		certBytesStr := base64.StdEncoding.EncodeToString(derBytes)
+		res.CertificateBytes = &certBytesStr
 	}
 
 	resString, err := json.Marshal(res)

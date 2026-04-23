@@ -7,12 +7,9 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"math"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
-	"time"
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
@@ -28,6 +25,7 @@ import (
 	"github.com/drone/envsubst"
 	"github.com/fatih/color"
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 // Reference implementation
@@ -433,6 +431,8 @@ func (p *AgentServiceTargetProvider) Deploy(
 		fmt.Println("Loaded custom service target configuration")
 	}
 
+	warnDeprecatedScaleSettings(serviceConfig.Config)
+
 	// Load and validate the agent manifest
 	data, err := os.ReadFile(p.agentDefinitionPath)
 	if err != nil {
@@ -645,6 +645,8 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		)
 	}
 
+	warnDeprecatedScaleSettings(serviceConfig.Config)
+
 	var cpu, memory string
 	if foundryAgentConfig.Container != nil && foundryAgentConfig.Container.Resources != nil {
 		cpu = foundryAgentConfig.Container.Resources.Cpu
@@ -674,8 +676,8 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		)
 	}
 
-	// Check enableHostedAgentVNext from azd env first, then OS env
-	applyVnextMetadata(request, azdEnv)
+	// Set experience metadata on the request
+	applyAgentMetadata(request)
 
 	// Display agent information
 	p.displayAgentInfo(request)
@@ -685,15 +687,6 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 	agentVersionResponse, err := p.createAgent(ctx, request, azdEnv)
 	if err != nil {
 		return nil, err
-	}
-
-	// Step 5: Start agent container (skip in vnext — the platform manages the container lifecycle)
-	if !isVnextEnabled(azdEnv) {
-		progress("Starting agent container")
-		err = p.startAgentContainer(ctx, foundryAgentConfig, agentVersionResponse, azdEnv)
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	// Register agent info in environment
@@ -808,7 +801,7 @@ func (p *AgentServiceTargetProvider) createAgent(
 	)
 
 	// Use constant API version
-	const apiVersion = "2025-05-15-preview"
+	const apiVersion = "2025-11-15-preview"
 
 	// Extract CreateAgentVersionRequest from CreateAgentRequest
 	versionRequest := &agent_api.CreateAgentVersionRequest{
@@ -825,171 +818,6 @@ func (p *AgentServiceTargetProvider) createAgent(
 
 	fmt.Fprintf(os.Stderr, "Agent version '%s' created successfully!\n", agentVersionResponse.Name)
 	return agentVersionResponse, nil
-}
-
-// startAgentContainer starts the hosted agent container
-func (p *AgentServiceTargetProvider) startAgentContainer(
-	ctx context.Context,
-	foundryAgentConfig *ServiceTargetAgentConfig,
-	agentVersionResponse *agent_api.AgentVersionObject,
-	azdEnv map[string]string,
-) error {
-	fmt.Fprintln(os.Stderr, "Starting Agent Container")
-	fmt.Fprintln(os.Stderr, "=======================")
-
-	// Use constants for wait configuration
-	const waitForReady = true
-	const maxWaitTime = 10 * time.Minute
-	const apiVersion = "2025-05-15-preview"
-
-	fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["AZURE_AI_PROJECT_ENDPOINT"])
-	fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentVersionResponse.Name)
-	fmt.Fprintf(os.Stderr, "Agent Version: %s\n", agentVersionResponse.Version)
-	fmt.Fprintf(os.Stderr, "Wait for Ready: %t\n", waitForReady)
-	if waitForReady {
-		fmt.Fprintf(os.Stderr, "Max Wait Time: %v\n", maxWaitTime)
-	}
-	fmt.Fprintln(os.Stderr)
-
-	// Create agent client
-	agentClient := agent_api.NewAgentClient(
-		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
-		p.credential,
-	)
-
-	var minReplicas, maxReplicas *int32
-	if foundryAgentConfig.Container != nil && foundryAgentConfig.Container.Scale != nil {
-		if foundryAgentConfig.Container.Scale.MinReplicas > 0 {
-			if foundryAgentConfig.Container.Scale.MinReplicas > math.MaxInt32 {
-				return exterrors.Validation(
-					exterrors.CodeInvalidServiceConfig,
-					fmt.Sprintf("minReplicas exceeds int32 range: %d", foundryAgentConfig.Container.Scale.MinReplicas),
-					fmt.Sprintf("set container.scale.minReplicas to a value <= %d", math.MaxInt32),
-				)
-			}
-			minReplicasInt32 := int32(foundryAgentConfig.Container.Scale.MinReplicas)
-			minReplicas = &minReplicasInt32
-		}
-		if foundryAgentConfig.Container.Scale.MaxReplicas > 0 {
-			if foundryAgentConfig.Container.Scale.MaxReplicas > math.MaxInt32 {
-				return exterrors.Validation(
-					exterrors.CodeInvalidServiceConfig,
-					fmt.Sprintf("maxReplicas exceeds int32 range: %d", foundryAgentConfig.Container.Scale.MaxReplicas),
-					fmt.Sprintf("set container.scale.maxReplicas to a value <= %d", math.MaxInt32),
-				)
-			}
-			maxReplicasInt32 := int32(foundryAgentConfig.Container.Scale.MaxReplicas)
-			maxReplicas = &maxReplicasInt32
-		}
-	}
-
-	// Build StartAgentContainerOptions
-	options := &agent_api.StartAgentContainerOptions{
-		MinReplicas: minReplicas,
-		MaxReplicas: maxReplicas,
-	}
-
-	// Start agent container
-	operation, err := agentClient.StartAgentContainer(
-		ctx, agentVersionResponse.Name, agentVersionResponse.Version, options, apiVersion)
-	if err != nil {
-		return exterrors.ServiceFromAzure(err, exterrors.OpStartContainer)
-	}
-
-	fmt.Fprintf(os.Stderr, "Agent container start operation initiated successfully!\n")
-
-	// Wait for operation to complete if requested
-	if waitForReady {
-		fmt.Fprintf(os.Stderr, "Waiting for operation to complete (timeout: %v)...\n", maxWaitTime)
-
-		// Poll the operation status
-		ticker := time.NewTicker(5 * time.Second)
-		defer ticker.Stop()
-
-		timeout := time.After(maxWaitTime)
-
-		for {
-			select {
-			case <-timeout:
-				return exterrors.Internal(
-					exterrors.CodeContainerStartTimeout,
-					fmt.Sprintf(
-						"timeout waiting for operation (id: %s) to complete after %v",
-						operation.Body.ID,
-						maxWaitTime,
-					),
-				)
-			case <-ticker.C:
-				completedOperation, err := agentClient.GetAgentContainerOperation(
-					ctx, agentVersionResponse.Name, operation.Body.ID, apiVersion)
-				if err != nil {
-					return exterrors.ServiceFromAzure(err, exterrors.OpGetContainerOperation)
-				}
-
-				// Check if operation is complete
-				if completedOperation.Status == "Failed" {
-					// Try to get reason for failure by querying container API
-					containerInfo, containerErr := agentClient.GetAgentContainer(
-						ctx, agentVersionResponse.Name, agentVersionResponse.Version, apiVersion)
-					if containerErr != nil {
-						return exterrors.Internal(
-							exterrors.CodeContainerStartFailed,
-							fmt.Sprintf(
-								"operation failed (id: %s): failed to retrieve container details: %s",
-								operation.Body.ID,
-								containerErr,
-							),
-						)
-					}
-
-					var errorMsg string
-					if containerInfo.ErrorMessage != nil && *containerInfo.ErrorMessage != "" {
-						errorMsg = fmt.Sprintf(
-							"operation failed (id: %s): container status is %q with error: %s",
-							operation.Body.ID,
-							containerInfo.Status,
-							*containerInfo.ErrorMessage,
-						)
-					} else {
-						errorMsg = fmt.Sprintf(
-							"operation failed (id: %s): container status is %q with no error details",
-							operation.Body.ID,
-							containerInfo.Status)
-					}
-
-					return exterrors.Internal(exterrors.CodeContainerStartFailed, errorMsg)
-				}
-
-				if completedOperation.Status == "Succeeded" {
-					if completedOperation.Container != nil {
-						fmt.Fprintf(
-							os.Stderr,
-							"Agent container '%s' (version: %s) operation completed! Container status: %s\n",
-							agentVersionResponse.Name,
-							agentVersionResponse.Version,
-							completedOperation.Container.Status,
-						)
-					} else {
-						fmt.Fprintf(
-							os.Stderr,
-							"Agent container '%s' (version: %s) operation completed successfully!\n",
-							agentVersionResponse.Name, agentVersionResponse.Version)
-					}
-					return nil
-				}
-
-				// Still in progress, continue polling
-				fmt.Fprintf(os.Stderr, "Operation status: %s\n", completedOperation.Status)
-			}
-		}
-	} else {
-		fmt.Fprintf(
-			os.Stderr,
-			"Agent container '%s' (version: %s) start operation initiated (ID: %s).\n",
-			agentVersionResponse.Name, agentVersionResponse.Version, operation.Body.ID)
-	}
-
-	return nil
 }
 
 // displayAgentInfo displays information about the agent being deployed
@@ -1134,17 +962,29 @@ func encodeSubscriptionID(subscriptionID string) (string, error) {
 	return strings.TrimRight(encoded, "="), nil
 }
 
-// applyVnextMetadata checks enableHostedAgentVNext from azdEnv then OS env,
-// and if truthy, sets the enableVnextExperience metadata on the request.
-func applyVnextMetadata(request *agent_api.CreateAgentRequest, azdEnv map[string]string) {
-	vnextValue := azdEnv["enableHostedAgentVNext"]
-	if vnextValue == "" {
-		vnextValue = os.Getenv("enableHostedAgentVNext")
+// applyAgentMetadata sets the enableVnextExperience metadata on the request.
+// The "enableVnextExperience" key is a server-side API contract.
+func applyAgentMetadata(request *agent_api.CreateAgentRequest) {
+	if request.Metadata == nil {
+		request.Metadata = make(map[string]string)
 	}
-	if enabled, err := strconv.ParseBool(vnextValue); err == nil && enabled {
-		if request.Metadata == nil {
-			request.Metadata = make(map[string]string)
-		}
-		request.Metadata["enableVnextExperience"] = "true"
+	request.Metadata["enableVnextExperience"] = "true"
+}
+
+// warnDeprecatedScaleSettings prints a user-visible warning if the raw service config
+// contains a container.scale section, which is no longer supported.
+func warnDeprecatedScaleSettings(config *structpb.Struct) {
+	if config == nil {
+		return
+	}
+	containerVal, ok := config.Fields["container"]
+	if !ok || containerVal.GetStructValue() == nil {
+		return
+	}
+	if _, hasScale := containerVal.GetStructValue().Fields["scale"]; hasScale {
+		fmt.Printf("%s\n", output.WithWarningFormat(
+			"WARNING: container.scale settings (minReplicas/maxReplicas) are no longer supported and will be ignored. "+
+				"Remove the container.scale section from your azure.yaml service configuration.",
+		))
 	}
 }

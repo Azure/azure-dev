@@ -225,21 +225,27 @@ func (fs *LocalFileDataStore) Save(ctx context.Context, env *Environment, option
 		return fmt.Errorf("saving config: %w", err)
 	}
 
-	// Cache current values & reload (under the lock) to pick up any new keys
-	// another process wrote since we last read the file.
-	currentValues := env.dotenv
-	deletedValues := env.deletedKeys
+	// Snapshot current in-memory state under RLock so the reads of env.dotenv
+	// and env.deletedKeys don't race with concurrent DotenvSet/DotenvDelete.
+	env.mu.RLock()
+	currentValues := maps.Clone(env.dotenv)
+	deletedValues := maps.Clone(env.deletedKeys)
+	env.mu.RUnlock()
+
+	// reloadLocked replaces env.dotenv via replaceState (acquires env.mu
+	// internally) — we must NOT hold env.mu here or we deadlock.
 	if err := fs.reloadLocked(ctx, env); err != nil {
 		return fmt.Errorf("failed reloading env vars, %w", err)
 	}
 
-	// Overlay current values before saving
+	// Overlay cached values and replay deletions under Lock so we don't race
+	// with concurrent DotenvSet/DotenvDelete on the new env.dotenv map.
+	env.mu.Lock()
 	maps.Copy(env.dotenv, currentValues)
-
-	// Replay deletion
 	for key := range deletedValues {
 		delete(env.dotenv, key)
 	}
+	env.mu.Unlock()
 
 	marshalled, err := marshallDotEnv(env)
 	if err != nil {

@@ -44,6 +44,13 @@ and Go's runtime will panic on a concurrent map write.
 | `cacheMu sync.RWMutex`     | `cache map[string]*Environment` (env-name → instance) | `Get`, `LoadOrCreateInteractive`, `Save`, `Reload`, `cachePut`    |
 | `saveMu sync.Mutex`        | The .env file write critical section                  | `Save` (held across read → merge → write to prevent torn writes)  |
 
+**Save path in `local_file_data_store.Save()`**: The reload-merge-write
+cycle snapshots `dotenv`/`deletedKeys` under `env.mu.RLock()`, calls
+`reloadLocked` (which acquires `env.mu` internally via `replaceState`),
+then overlays the snapshot and replays deletions under `env.mu.Lock()`.
+This ensures the overlay writes don't race with concurrent `DotenvSet`/
+`DotenvDelete` calls from parallel service publishes.
+
 **Contract**: `cacheMu` ensures every caller asking for env "X" gets the
 **same** `*Environment` instance — without this, parallel deploy steps would
 each get their own copy and writes would diverge. `saveMu` serializes the

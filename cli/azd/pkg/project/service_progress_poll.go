@@ -11,7 +11,7 @@ import (
 )
 
 // startPollingProgress starts a background goroutine that emits periodic progress messages
-// during long-running operations like ARM polling or kubectl rollouts.
+// during long-running operations like ARM polling or kubectl roll-outs.
 // It returns a stop function that must be called when the operation completes.
 func startPollingProgress(
 	progress *async.Progress[ServiceProgress],

@@ -177,7 +177,7 @@ func (u *UpGraphAction) Run(
 	var layerDeps *bicep.LayerDependencies
 	if len(layers) > 0 {
 		var err error
-		layerDeps, err = bicep.AnalyzeLayerDependencies(layers, u.projectConfig.Path)
+		layerDeps, err = bicep.AnalyzeLayerDependencies(ctx, layers, u.projectConfig.Path)
 		if err != nil {
 			return nil, fmt.Errorf("analyzing layer dependencies: %w", err)
 		}
@@ -342,7 +342,7 @@ func (u *UpGraphAction) Run(
 		deployResults:    deployResults,
 		resultsMu:        &resultsMu,
 		onDeployTimeout: func(cbCtx context.Context, svc *project.ServiceConfig) {
-			safeCon.MessageUxItem(cbCtx, deployTimeoutWarning(svc.Name))
+			safeCon.MessageUxItem(cbCtx, deployTimeoutWarning(svc.Name, deployTimeout))
 		},
 		buildGateKey: aspireBuildGateKey,
 	})
@@ -670,11 +670,19 @@ func (u *UpGraphAction) runOptions() exegraph.RunOptions {
 	// get unlimited concurrency when they switch to `azd up`.
 	if v, ok := os.LookupEnv("AZD_UP_CONCURRENCY"); ok {
 		if n, parseErr := strconv.Atoi(v); parseErr == nil && n > 0 {
-			opts.MaxConcurrency = min(n, 64)
+			clamped := min(n, 64)
+			if clamped < n {
+				log.Printf("clamping up concurrency from %d to %d", n, clamped)
+			}
+			opts.MaxConcurrency = clamped
 		}
 	} else if v, ok := os.LookupEnv("AZD_DEPLOY_CONCURRENCY"); ok {
 		if n, parseErr := strconv.Atoi(v); parseErr == nil && n > 0 {
-			opts.MaxConcurrency = min(n, 64)
+			clamped := min(n, 64)
+			if clamped < n {
+				log.Printf("clamping deploy concurrency from %d to %d", n, clamped)
+			}
+			opts.MaxConcurrency = clamped
 		}
 	}
 

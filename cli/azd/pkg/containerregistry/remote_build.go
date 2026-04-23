@@ -222,12 +222,21 @@ func (r *RemoteBuildManager) RunDockerBuildRequestWithLogs(
 }
 
 // streamLogs streams the logs from the specified blob client to the provided writer, until the log is marked as complete
-// or an error occurs.
+// or an error occurs. The inner polling loop is bounded to prevent runaway iteration.
 func streamLogs(ctx context.Context, blobClient *blockblob.Client, writer io.Writer) error {
+	const maxPollIterations = 1200 // ~20 minutes at 1s intervals
+
 	var written int64 = 0
 	return retry.Do(ctx, retry.WithMaxRetries(10, retry.NewConstant(5*time.Second)), func(ctx context.Context) error {
 		err := func() error {
-			for {
+			for iteration := 0; ; iteration++ {
+				if iteration >= maxPollIterations {
+					return fmt.Errorf(
+						"streamLogs exceeded maximum poll iterations (%d); remote build may still be running",
+						maxPollIterations,
+					)
+				}
+
 				props, err := blobClient.GetProperties(ctx, nil)
 				if err != nil {
 					return err
@@ -279,6 +288,8 @@ func streamLogs(ctx context.Context, blobClient *blockblob.Client, writer io.Wri
 				// that it will never be available.
 				return retry.RetryableError(err)
 			}
+			// Wrap non-404 HTTP errors with additional context about the operation and URL.
+			return fmt.Errorf("streaming remote build logs (HTTP %d): %w", azErr.StatusCode, err)
 		}
 		return err
 	})

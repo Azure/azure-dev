@@ -392,16 +392,19 @@ func addServiceStepsToGraph(g *exegraph.Graph, opts serviceGraphOptions) (*servi
 // deployTimeoutWarning is the UX element emitted when a deploy step exceeds
 // its timeout. Kept next to the graph builder so both call sites share
 // identical wording.
-func deployTimeoutWarning(svcName string) *ux.WarningMessage {
+func deployTimeoutWarning(svcName string, timeout time.Duration) *ux.WarningMessage {
 	return &ux.WarningMessage{
 		Description: fmt.Sprintf(
-			"Deployment of service '%s' exceeded the azd wait timeout."+
+			"Deployment of service '%s' exceeded the azd wait timeout (%s)."+
 				" azd has stopped waiting, but the deployment may still be running in Azure.",
-			svcName,
+			svcName, timeout,
 		),
 		Hints: []string{
 			"Check the Azure Portal for current deployment status.",
-			"Increase timeout with --timeout flag or AZD_DEPLOY_TIMEOUT env var.",
+			fmt.Sprintf(
+				"Increase timeout with --timeout flag (e.g. azd deploy --timeout %d)"+
+					" or AZD_DEPLOY_TIMEOUT env var (e.g. AZD_DEPLOY_TIMEOUT=%d).",
+				int(timeout.Seconds())*2, int(timeout.Seconds())*2),
 		},
 	}
 }

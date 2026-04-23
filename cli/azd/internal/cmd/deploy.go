@@ -340,7 +340,7 @@ func (da *DeployAction) deployServicesGraph(
 		deployResults:   deployResults,
 		resultsMu:       &mu,
 		onDeployTimeout: func(ctx context.Context, svc *project.ServiceConfig) {
-			da.console.MessageUxItem(ctx, deployTimeoutWarning(svc.Name))
+			da.console.MessageUxItem(ctx, deployTimeoutWarning(svc.Name, deployTimeout))
 		},
 		buildGateKey: aspireBuildGateKey,
 		onPhaseProgress: func(svcName string, phase deployPhase, detail string) {
@@ -506,7 +506,11 @@ func (da *DeployAction) deployServicesGraph(
 func (da *DeployAction) resolveDAGConcurrency() int {
 	if envVal, ok := os.LookupEnv("AZD_DEPLOY_CONCURRENCY"); ok {
 		if n, err := strconv.Atoi(envVal); err == nil && n > 0 {
-			return min(n, 64)
+			clamped := min(n, 64)
+			if clamped < n {
+				log.Printf("clamping deploy concurrency from %d to %d", n, clamped)
+			}
+			return clamped
 		}
 	}
 	return 0

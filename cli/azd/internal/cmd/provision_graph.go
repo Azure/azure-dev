@@ -214,7 +214,7 @@ func (p *ProvisionAction) provisionLayersGraph(
 		// 2. Analyze bicep-level layer dependencies to get precise edges.
 		//    This enables true parallelism for independent layers instead
 		//    of an unnecessary linear chain.
-		layerDeps, err := bicep.AnalyzeLayerDependencies(layers, p.projectConfig.Path)
+		layerDeps, err := bicep.AnalyzeLayerDependencies(ctx, layers, p.projectConfig.Path)
 		if err != nil {
 			return nil, fmt.Errorf("analyzing layer dependencies: %w", err)
 		}
@@ -490,7 +490,11 @@ func (p *ProvisionAction) graphRunOptions(ctx context.Context, quiet bool) exegr
 
 	if v, ok := os.LookupEnv("AZD_PROVISION_CONCURRENCY"); ok {
 		if n, parseErr := strconv.Atoi(v); parseErr == nil && n > 0 {
-			opts.MaxConcurrency = min(n, 64)
+			clamped := min(n, 64)
+			if clamped < n {
+				log.Printf("clamping provision concurrency from %d to %d", n, clamped)
+			}
+			opts.MaxConcurrency = clamped
 		}
 	}
 

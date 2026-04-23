@@ -372,6 +372,21 @@ func EnsureSubscriptionAndLocation(
 ) error {
 	subId := env.GetSubscriptionId()
 	if subId == "" {
+		if prompter.IsNoPromptMode() {
+			return &input.PromptRequiredError{
+				Inputs: []input.RequiredInput{
+					{
+						Name: "subscription",
+						Sources: []input.InputSource{
+							{
+								Kind: input.InputSourceEnvironment,
+								Name: environment.SubscriptionIdEnvVarName,
+							},
+						},
+					},
+				},
+			}
+		}
 		subscriptionId, err := prompter.PromptSubscription(ctx, "Select an Azure Subscription to use:")
 		if err != nil {
 			return err
@@ -390,6 +405,21 @@ func EnsureSubscriptionAndLocation(
 
 	location := env.GetLocation()
 	if env.GetLocation() == "" {
+		if prompter.IsNoPromptMode() {
+			return &input.PromptRequiredError{
+				Inputs: []input.RequiredInput{
+					{
+						Name: "location",
+						Sources: []input.InputSource{
+							{
+								Kind: input.InputSourceEnvironment,
+								Name: environment.LocationEnvVarName,
+							},
+						},
+					},
+				},
+			}
+		}
 		loc, err := prompter.PromptLocation(
 			ctx,
 			env.GetSubscriptionId(),
@@ -416,6 +446,21 @@ func EnsureSubscription(
 ) error {
 	subId := env.GetSubscriptionId()
 	if subId == "" {
+		if prompter.IsNoPromptMode() {
+			return &input.PromptRequiredError{
+				Inputs: []input.RequiredInput{
+					{
+						Name: "subscription",
+						Sources: []input.InputSource{
+							{
+								Kind: input.InputSourceEnvironment,
+								Name: environment.SubscriptionIdEnvVarName,
+							},
+						},
+					},
+				},
+			}
+		}
 		subscriptionId, err := prompter.PromptSubscription(ctx, "Select an Azure Subscription to use:")
 		if err != nil {
 			return err

@@ -13,9 +13,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func intPtr(i int) *int       { return &i }
-func strPtr(s string) *string { return &s }
-
 func TestAspireDashboardUrl(t *testing.T) {
 	t.Run("container_env_domain", func(t *testing.T) {
 		env := environment.NewWithValues("test", map[string]string{
@@ -50,9 +47,9 @@ func TestAspireDashboardUrl(t *testing.T) {
 
 func TestProjectPaths(t *testing.T) {
 	m := &Manifest{Resources: map[string]*Resource{
-		"api":   {Type: "project.v0", Path: strPtr("/p/api.csproj")},
-		"web":   {Type: "project.v1", Path: strPtr("/p/web.csproj")},
-		"other": {Type: "container.v0", Image: strPtr("x")},
+		"api":   {Type: "project.v0", Path: new("/p/api.csproj")},
+		"web":   {Type: "project.v1", Path: new("/p/web.csproj")},
+		"other": {Type: "container.v0", Image: new("x")},
 	}}
 	paths := ProjectPaths(m)
 	require.Equal(t, "/p/api.csproj", paths["api"])
@@ -65,8 +62,8 @@ func TestDockerfiles(t *testing.T) {
 	m := &Manifest{Resources: map[string]*Resource{
 		"df": {
 			Type:      "dockerfile.v0",
-			Path:      strPtr("/p/Dockerfile"),
-			Context:   strPtr("/p"),
+			Path:      new("/p/Dockerfile"),
+			Context:   new("/p"),
 			Env:       map[string]string{"A": "1"},
 			BuildArgs: map[string]string{"B": "2"},
 			Args:      []string{"--flag"},
@@ -85,7 +82,7 @@ func TestContainers(t *testing.T) {
 	m := &Manifest{Resources: map[string]*Resource{
 		"c": {
 			Type:  "container.v0",
-			Image: strPtr("nginx:latest"),
+			Image: new("nginx:latest"),
 			Env:   map[string]string{"A": "1"},
 			Args:  []string{"-x"},
 		},
@@ -98,7 +95,7 @@ func TestContainers(t *testing.T) {
 
 func TestBuildContainers_Image(t *testing.T) {
 	m := &Manifest{Resources: map[string]*Resource{
-		"c": {Type: "container.v1", Image: strPtr("myimg:1.0")},
+		"c": {Type: "container.v1", Image: new("myimg:1.0")},
 	}}
 	got, err := BuildContainers(m)
 	require.NoError(t, err)
@@ -108,7 +105,7 @@ func TestBuildContainers_Image(t *testing.T) {
 
 func TestBuildContainerFromResource(t *testing.T) {
 	t.Run("v0_image", func(t *testing.T) {
-		r := &Resource{Type: "container.v0", Image: strPtr("redis")}
+		r := &Resource{Type: "container.v0", Image: new("redis")}
 		bc, err := buildContainerFromResource(r)
 		require.NoError(t, err)
 		require.Equal(t, "redis", bc.Image)
@@ -116,7 +113,7 @@ func TestBuildContainerFromResource(t *testing.T) {
 		require.Nil(t, bc.Build)
 	})
 	t.Run("v1_default_port", func(t *testing.T) {
-		r := &Resource{Type: "container.v1", Image: strPtr("x")}
+		r := &Resource{Type: "container.v1", Image: new("x")}
 		bc, err := buildContainerFromResource(r)
 		require.NoError(t, err)
 		require.Equal(t, 8080, bc.DefaultTargetPort)
@@ -124,8 +121,8 @@ func TestBuildContainerFromResource(t *testing.T) {
 	t.Run("dockerfile_v0_with_context", func(t *testing.T) {
 		r := &Resource{
 			Type:    "dockerfile.v0",
-			Path:    strPtr("/abs/Dockerfile"),
-			Context: strPtr("/abs"),
+			Path:    new("/abs/Dockerfile"),
+			Context: new("/abs"),
 		}
 		bc, err := buildContainerFromResource(r)
 		require.NoError(t, err)
@@ -157,10 +154,10 @@ func TestBuildContainerFromResource(t *testing.T) {
 	t.Run("with_deployment", func(t *testing.T) {
 		r := &Resource{
 			Type:  "container.v1",
-			Image: strPtr("x"),
+			Image: new("x"),
 			Deployment: &DeploymentMetadata{
 				Type:   "azure.bicep.v0",
-				Path:   strPtr("/m/thing.bicep"),
+				Path:   new("/m/thing.bicep"),
 				Params: map[string]any{"a": "b"},
 			},
 		}
@@ -202,7 +199,7 @@ func TestInputMetadata_ClusterLargerThanMin(t *testing.T) {
 	require.Contains(t, s, "length:26")
 }
 
-func uintPtr(u uint) *uint { return &u }
+func uintPtr(u uint) *uint { return new(u) }
 
 func TestIsComplexExpression(t *testing.T) {
 	cases := []struct {
@@ -236,12 +233,12 @@ func TestUrlPort(t *testing.T) {
 		require.Equal(t, "", p)
 	})
 	t.Run("port_defined", func(t *testing.T) {
-		p, err := urlPort(&Binding{Scheme: "http", Port: intPtr(8080)}, false)
+		p, err := urlPort(&Binding{Scheme: "http", Port: new(8080)}, false)
 		require.NoError(t, err)
 		require.Equal(t, "8080", p)
 	})
 	t.Run("target_port_fallback", func(t *testing.T) {
-		p, err := urlPort(&Binding{Scheme: "tcp", TargetPort: intPtr(5432)}, false)
+		p, err := urlPort(&Binding{Scheme: "tcp", TargetPort: new(5432)}, false)
 		require.NoError(t, err)
 		require.Equal(t, "5432", p)
 	})
@@ -264,12 +261,12 @@ func TestBindingPort(t *testing.T) {
 		require.Equal(t, "443", p)
 	})
 	t.Run("port_priority", func(t *testing.T) {
-		p, err := bindingPort(&Binding{Scheme: "tcp", Port: intPtr(9000), TargetPort: intPtr(1)}, false)
+		p, err := bindingPort(&Binding{Scheme: "tcp", Port: new(9000), TargetPort: new(1)}, false)
 		require.NoError(t, err)
 		require.Equal(t, "9000", p)
 	})
 	t.Run("target_port", func(t *testing.T) {
-		p, err := bindingPort(&Binding{Scheme: "tcp", TargetPort: intPtr(1234)}, false)
+		p, err := bindingPort(&Binding{Scheme: "tcp", TargetPort: new(1234)}, false)
 		require.NoError(t, err)
 		require.Equal(t, "1234", p)
 	})
@@ -287,7 +284,7 @@ func TestUrlPortFromTargetPort(t *testing.T) {
 	p, err = urlPortFromTargetPort(&Binding{Scheme: "https"}, true)
 	require.NoError(t, err)
 	require.Equal(t, "443", p)
-	p, err = urlPortFromTargetPort(&Binding{TargetPort: intPtr(42)}, false)
+	p, err = urlPortFromTargetPort(&Binding{TargetPort: new(42)}, false)
 	require.NoError(t, err)
 	require.Equal(t, "42", p)
 	p, err = urlPortFromTargetPort(&Binding{}, false)
@@ -591,7 +588,7 @@ func TestInfraGenerator_ConnectionString(t *testing.T) {
 func TestInfraGenerator_ContainerV0(t *testing.T) {
 	g := newInfraGenerator()
 	m := &Manifest{Resources: map[string]*Resource{
-		"redis": {Type: "container.v0", Image: strPtr("redis:7")},
+		"redis": {Type: "container.v0", Image: new("redis:7")},
 	}}
 	require.NoError(t, g.LoadManifest(m))
 	require.NoError(t, g.Compile())
@@ -604,7 +601,7 @@ func TestInfraGenerator_ContainerV0_ImageAndBuildError(t *testing.T) {
 	m := &Manifest{Resources: map[string]*Resource{
 		"bad": {
 			Type:  "container.v1",
-			Image: strPtr("x"),
+			Image: new("x"),
 			Build: &ContainerV1Build{Context: "/c", Dockerfile: "/c/Dockerfile"},
 		},
 	}}
@@ -640,7 +637,7 @@ func TestInfraGenerator_DaprFullFlow(t *testing.T) {
 
 	g := newInfraGenerator()
 	m := &Manifest{Resources: map[string]*Resource{
-		"frontend": {Type: "project.v0", Path: strPtr("/p/f.csproj")},
+		"frontend": {Type: "project.v0", Path: new("/p/f.csproj")},
 		"dsidecar": {
 			Type: "dapr.v0",
 			Dapr: &DaprResourceMetadata{
@@ -674,7 +671,7 @@ func TestInfraGenerator_BicepV0_WithPath(t *testing.T) {
 	m := &Manifest{Resources: map[string]*Resource{
 		"mod": {
 			Type:   "azure.bicep.v0",
-			Path:   strPtr("mod/mod.bicep"),
+			Path:   new("mod/mod.bicep"),
 			Params: map[string]any{"keyVaultName": "", "other": "v"},
 		},
 	}}
@@ -690,7 +687,7 @@ func TestInfraGenerator_BicepV0_ScopeWithoutResourceGroup(t *testing.T) {
 	m := &Manifest{Resources: map[string]*Resource{
 		"mod": {
 			Type:  "azure.bicep.v0",
-			Path:  strPtr("mod/mod.bicep"),
+			Path:  new("mod/mod.bicep"),
 			Scope: &BicepModuleScope{},
 		},
 	}}

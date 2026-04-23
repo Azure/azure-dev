@@ -41,12 +41,12 @@ func sampleModel(name, version, skuName, usageName string, isDefault bool) *armc
 		Model: &armcognitiveservices.AccountModel{
 			Name:             &name,
 			Version:          &version,
-			Format:           ptrString("OpenAI"),
+			Format:           new("OpenAI"),
 			IsDefaultVersion: &isDefault,
 			LifecycleStatus:  &ga,
 			Capabilities: map[string]*string{
-				"chat":       ptrString("true"),
-				"embeddings": ptrString("true"),
+				"chat":       new("true"),
+				"embeddings": new("true"),
 			},
 			SKUs: []*armcognitiveservices.ModelSKU{
 				{
@@ -64,8 +64,6 @@ func sampleModel(name, version, skuName, usageName string, isDefault bool) *armc
 		},
 	}
 }
-
-func ptrString(s string) *string { return &s }
 
 func TestAiModelService_ListModels_FromCache(t *testing.T) {
 	t.Parallel()

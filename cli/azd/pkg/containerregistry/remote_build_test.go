@@ -104,7 +104,7 @@ func TestUploadBuildSource_OpenFileError(t *testing.T) {
 		return mocks.CreateHttpResponseWithBody(
 			request, http.StatusOK, armcontainerregistry.SourceUploadDefinition{
 				UploadURL:    &uploadURL,
-				RelativePath: strPtr("source.tar.gz"),
+				RelativePath: new("source.tar.gz"),
 			},
 		)
 	})
@@ -139,7 +139,7 @@ func TestUploadBuildSource_Success(t *testing.T) {
 			uploadURL := "https://" + host + "/upload-container/source.tar.gz?sig=abc"
 			def := armcontainerregistry.SourceUploadDefinition{
 				UploadURL:    &uploadURL,
-				RelativePath: strPtr("source.tar.gz"),
+				RelativePath: new("source.tar.gz"),
 			}
 			body, err := json.Marshal(def)
 			require.NoError(t, err)
@@ -297,6 +297,7 @@ func (r *rewritingTransport) Do(req *http.Request) (*http.Response, error) {
 	clone.Host = r.host
 	// RequestURI must be empty for client requests.
 	clone.RequestURI = ""
+	//nolint:gosec // G704: test transport intentionally rewrites URL target
 	return r.inner.Do(clone)
 }
 
@@ -307,5 +308,3 @@ func mustParseURL(raw string) *url.URL {
 	}
 	return u
 }
-
-func strPtr(s string) *string { return &s }

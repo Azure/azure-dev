@@ -204,7 +204,7 @@ func TestDynamicMultiWriter_ConcurrentWrites(t *testing.T) {
 	var wg sync.WaitGroup
 	const n = 50
 	wg.Add(n)
-	for i := 0; i < n; i++ {
+	for range n {
 		go func() {
 			defer wg.Done()
 			_, err := dmw.Write([]byte("a"))

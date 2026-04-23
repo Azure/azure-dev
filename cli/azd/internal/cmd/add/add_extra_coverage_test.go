@@ -83,7 +83,8 @@ func TestSelectProvisionOptions(t *testing.T) {
 func TestSelectProvisionOptions_Error(t *testing.T) {
 	t.Parallel()
 	c := newTestConsole()
-	c.WhenSelect(func(input.ConsoleOptions) bool { return true }).RespondFn(func(input.ConsoleOptions) (any, error) { return 0, assertErr() })
+	c.WhenSelect(func(input.ConsoleOptions) bool { return true }).
+		RespondFn(func(input.ConsoleOptions) (any, error) { return 0, assertErr() })
 	_, err := selectProvisionOptions(t.Context(), c, "prompt?")
 	require.Error(t, err)
 }
@@ -151,7 +152,8 @@ func TestFillDatabaseName_RetriesOnInvalidName(t *testing.T) {
 func TestFillDatabaseName_PromptError(t *testing.T) {
 	t.Parallel()
 	c := newTestConsole()
-	c.WhenPrompt(func(input.ConsoleOptions) bool { return true }).RespondFn(func(input.ConsoleOptions) (any, error) { return "", assertErr() })
+	c.WhenPrompt(func(input.ConsoleOptions) bool { return true }).
+		RespondFn(func(input.ConsoleOptions) (any, error) { return "", assertErr() })
 	r := &project.ResourceConfig{Type: project.ResourceTypeDbPostgres}
 	opts := PromptOptions{PrjConfig: &project.ProjectConfig{
 		Resources: map[string]*project.ResourceConfig{},
@@ -238,7 +240,8 @@ func TestFillOpenAiModelName_InvalidNameRetries(t *testing.T) {
 func TestFillOpenAiModelName_PromptError(t *testing.T) {
 	t.Parallel()
 	c := newTestConsole()
-	c.WhenPrompt(func(input.ConsoleOptions) bool { return true }).RespondFn(func(input.ConsoleOptions) (any, error) { return "", assertErr() })
+	c.WhenPrompt(func(input.ConsoleOptions) bool { return true }).
+		RespondFn(func(input.ConsoleOptions) (any, error) { return "", assertErr() })
 	r := &project.ResourceConfig{Type: project.ResourceTypeOpenAiModel}
 	opts := PromptOptions{PrjConfig: &project.ProjectConfig{
 		Resources: map[string]*project.ResourceConfig{},
@@ -292,7 +295,8 @@ func TestFillEventHubs_ValidationRetry(t *testing.T) {
 func TestFillEventHubs_PromptError(t *testing.T) {
 	t.Parallel()
 	c := newTestConsole()
-	c.WhenPrompt(func(input.ConsoleOptions) bool { return true }).RespondFn(func(input.ConsoleOptions) (any, error) { return "", assertErr() })
+	c.WhenPrompt(func(input.ConsoleOptions) bool { return true }).
+		RespondFn(func(input.ConsoleOptions) (any, error) { return "", assertErr() })
 	r := &project.ResourceConfig{Type: project.ResourceTypeMessagingEventHubs}
 	opts := PromptOptions{PrjConfig: &project.ProjectConfig{
 		Resources: map[string]*project.ResourceConfig{},
@@ -342,7 +346,8 @@ func TestFillServiceBus_ValidationRetry(t *testing.T) {
 func TestFillServiceBus_PromptError(t *testing.T) {
 	t.Parallel()
 	c := newTestConsole()
-	c.WhenPrompt(func(input.ConsoleOptions) bool { return true }).RespondFn(func(input.ConsoleOptions) (any, error) { return "", assertErr() })
+	c.WhenPrompt(func(input.ConsoleOptions) bool { return true }).
+		RespondFn(func(input.ConsoleOptions) (any, error) { return "", assertErr() })
 	r := &project.ResourceConfig{Type: project.ResourceTypeMessagingServiceBus}
 	opts := PromptOptions{PrjConfig: &project.ProjectConfig{
 		Resources: map[string]*project.ResourceConfig{},
@@ -414,7 +419,8 @@ func TestFillBlobDetails_SuccessAndRetry(t *testing.T) {
 func TestFillBlobDetails_PromptError(t *testing.T) {
 	t.Parallel()
 	c := newTestConsole()
-	c.WhenPrompt(func(input.ConsoleOptions) bool { return true }).RespondFn(func(input.ConsoleOptions) (any, error) { return "", assertErr() })
+	c.WhenPrompt(func(input.ConsoleOptions) bool { return true }).
+		RespondFn(func(input.ConsoleOptions) (any, error) { return "", assertErr() })
 	props := &project.StorageProps{}
 	err := fillBlobDetails(t.Context(), c, props)
 	require.Error(t, err)
@@ -478,7 +484,8 @@ func TestSelectDatabase_FirstOption(t *testing.T) {
 func TestSelectDatabase_Error(t *testing.T) {
 	t.Parallel()
 	c := newTestConsole()
-	c.WhenSelect(func(input.ConsoleOptions) bool { return true }).RespondFn(func(input.ConsoleOptions) (any, error) { return 0, assertErr() })
+	c.WhenSelect(func(input.ConsoleOptions) bool { return true }).
+		RespondFn(func(input.ConsoleOptions) (any, error) { return 0, assertErr() })
 	_, err := selectDatabase(c, t.Context(), PromptOptions{})
 	require.Error(t, err)
 }
@@ -496,7 +503,8 @@ func TestSelectHost_DefaultIsContainerApp(t *testing.T) {
 func TestSelectHost_Error(t *testing.T) {
 	t.Parallel()
 	c := newTestConsole()
-	c.WhenSelect(func(input.ConsoleOptions) bool { return true }).RespondFn(func(input.ConsoleOptions) (any, error) { return 0, assertErr() })
+	c.WhenSelect(func(input.ConsoleOptions) bool { return true }).
+		RespondFn(func(input.ConsoleOptions) (any, error) { return 0, assertErr() })
 	_, err := selectHost(c, t.Context(), PromptOptions{})
 	require.Error(t, err)
 }
@@ -513,7 +521,8 @@ func TestSelectMessaging_FirstOption(t *testing.T) {
 func TestSelectMessaging_Error(t *testing.T) {
 	t.Parallel()
 	c := newTestConsole()
-	c.WhenSelect(func(input.ConsoleOptions) bool { return true }).RespondFn(func(input.ConsoleOptions) (any, error) { return 0, assertErr() })
+	c.WhenSelect(func(input.ConsoleOptions) bool { return true }).
+		RespondFn(func(input.ConsoleOptions) (any, error) { return 0, assertErr() })
 	_, err := selectMessaging(c, t.Context(), PromptOptions{})
 	require.Error(t, err)
 }
@@ -549,7 +558,8 @@ func TestSelectAiType_Branches(t *testing.T) {
 func TestSelectAiType_SelectError(t *testing.T) {
 	t.Parallel()
 	c := newTestConsole()
-	c.WhenSelect(func(input.ConsoleOptions) bool { return true }).RespondFn(func(input.ConsoleOptions) (any, error) { return 0, assertErr() })
+	c.WhenSelect(func(input.ConsoleOptions) bool { return true }).
+		RespondFn(func(input.ConsoleOptions) (any, error) { return 0, assertErr() })
 	a := &AddAction{}
 	_, err := a.selectAiType(c, t.Context(), PromptOptions{})
 	require.Error(t, err)
@@ -568,8 +578,9 @@ func TestConfigureExisting_PromptsForName(t *testing.T) {
 			return opts.DefaultValue, nil
 		})
 	r := &project.ResourceConfig{
-		Type:       project.ResourceTypeDbRedis,
-		ResourceId: "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg/providers/Microsoft.Cache/Redis/mycache",
+		Type: project.ResourceTypeDbRedis,
+		ResourceId: "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg/" +
+			"providers/Microsoft.Cache/Redis/mycache",
 	}
 	got, err := ConfigureExisting(t.Context(), r, c, PromptOptions{
 		PrjConfig: &project.ProjectConfig{},
@@ -590,8 +601,9 @@ func TestConfigureExisting_RetriesOnInvalidName(t *testing.T) {
 			return v, nil
 		})
 	r := &project.ResourceConfig{
-		Type:       project.ResourceTypeDbRedis,
-		ResourceId: "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg/providers/Microsoft.Cache/Redis/c",
+		Type: project.ResourceTypeDbRedis,
+		ResourceId: "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg/" +
+			"providers/Microsoft.Cache/Redis/c",
 	}
 	got, err := ConfigureExisting(t.Context(), r, c, PromptOptions{
 		PrjConfig: &project.ProjectConfig{},
@@ -616,10 +628,12 @@ func TestConfigureExisting_InvalidResourceId(t *testing.T) {
 func TestConfigureExisting_PromptError(t *testing.T) {
 	t.Parallel()
 	c := newTestConsole()
-	c.WhenPrompt(func(input.ConsoleOptions) bool { return true }).RespondFn(func(input.ConsoleOptions) (any, error) { return "", assertErr() })
+	c.WhenPrompt(func(input.ConsoleOptions) bool { return true }).
+		RespondFn(func(input.ConsoleOptions) (any, error) { return "", assertErr() })
 	r := &project.ResourceConfig{
-		Type:       project.ResourceTypeDbRedis,
-		ResourceId: "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg/providers/Microsoft.Cache/Redis/mycache",
+		Type: project.ResourceTypeDbRedis,
+		ResourceId: "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg/" +
+			"providers/Microsoft.Cache/Redis/mycache",
 	}
 	_, err := ConfigureExisting(t.Context(), r, c, PromptOptions{
 		PrjConfig: &project.ProjectConfig{},
@@ -681,7 +695,8 @@ func TestPromptPort_NoPortsExposed_PromptsNumber(t *testing.T) {
 func TestPromptPort_MultiplePorts_SelectError(t *testing.T) {
 	t.Parallel()
 	c := newTestConsole()
-	c.WhenSelect(func(input.ConsoleOptions) bool { return true }).RespondFn(func(input.ConsoleOptions) (any, error) { return 0, assertErr() })
+	c.WhenSelect(func(input.ConsoleOptions) bool { return true }).
+		RespondFn(func(input.ConsoleOptions) (any, error) { return 0, assertErr() })
 	prj := appdetect.Project{
 		Language: appdetect.Python,
 		Docker: &appdetect.Docker{
@@ -697,7 +712,8 @@ func TestPromptPort_MultiplePorts_OtherPromptError(t *testing.T) {
 	t.Parallel()
 	c := newTestConsole()
 	c.WhenSelect(func(input.ConsoleOptions) bool { return true }).Respond(2)
-	c.WhenPrompt(func(input.ConsoleOptions) bool { return true }).RespondFn(func(input.ConsoleOptions) (any, error) { return "", assertErr() })
+	c.WhenPrompt(func(input.ConsoleOptions) bool { return true }).
+		RespondFn(func(input.ConsoleOptions) (any, error) { return "", assertErr() })
 	prj := appdetect.Project{
 		Language: appdetect.Python,
 		Docker: &appdetect.Docker{
@@ -757,7 +773,8 @@ func TestPromptPortNumber_OutOfRangeThenValid(t *testing.T) {
 func TestPromptPortNumber_PromptError(t *testing.T) {
 	t.Parallel()
 	c := newTestConsole()
-	c.WhenPrompt(func(input.ConsoleOptions) bool { return true }).RespondFn(func(input.ConsoleOptions) (any, error) { return "", assertErr() })
+	c.WhenPrompt(func(input.ConsoleOptions) bool { return true }).
+		RespondFn(func(input.ConsoleOptions) (any, error) { return "", assertErr() })
 	_, err := promptPortNumber(c, t.Context(), "port?")
 	require.Error(t, err)
 }
@@ -973,7 +990,8 @@ func TestSelectFromMap_MultipleOptions_WithDefault(t *testing.T) {
 func TestSelectFromMap_SelectError(t *testing.T) {
 	t.Parallel()
 	c := newTestConsole()
-	c.WhenSelect(func(input.ConsoleOptions) bool { return true }).RespondFn(func(input.ConsoleOptions) (any, error) { return 0, assertErr() })
+	c.WhenSelect(func(input.ConsoleOptions) bool { return true }).
+		RespondFn(func(input.ConsoleOptions) (any, error) { return 0, assertErr() })
 	m := map[string]int{"a": 1, "b": 2}
 	_, _, err := selectFromMap(t.Context(), c, "q", m, nil)
 	require.Error(t, err)
@@ -999,7 +1017,8 @@ func TestSelectFromSkus_Multiple(t *testing.T) {
 func TestSelectFromSkus_MultipleError(t *testing.T) {
 	t.Parallel()
 	c := newTestConsole()
-	c.WhenSelect(func(input.ConsoleOptions) bool { return true }).RespondFn(func(input.ConsoleOptions) (any, error) { return 0, assertErr() })
+	c.WhenSelect(func(input.ConsoleOptions) bool { return true }).
+		RespondFn(func(input.ConsoleOptions) (any, error) { return 0, assertErr() })
 	skus := []ModelSku{{Name: "Standard"}, {Name: "Premium"}}
 	_, err := selectFromSkus(t.Context(), c, "q", skus)
 	require.Error(t, err)

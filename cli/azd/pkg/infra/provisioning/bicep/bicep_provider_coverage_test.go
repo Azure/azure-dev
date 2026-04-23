@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
@@ -82,7 +81,7 @@ func TestPrevDeploymentEqualToCurrent(t *testing.T) {
 
 	matchingTags := func() map[string]*string {
 		return map[string]*string{
-			azure.TagKeyAzdDeploymentStateParamHashName: to.Ptr(paramsHash),
+			azure.TagKeyAzdDeploymentStateParamHashName: new(paramsHash),
 		}
 	}
 
@@ -98,13 +97,13 @@ func TestPrevDeploymentEqualToCurrent(t *testing.T) {
 		},
 		{
 			name: "NoTags",
-			prev: &azapi.ResourceDeployment{TemplateHash: to.Ptr(templateHash)},
+			prev: &azapi.ResourceDeployment{TemplateHash: new(templateHash)},
 			want: false,
 		},
 		{
 			name: "DifferentTemplateHash",
 			prev: &azapi.ResourceDeployment{
-				TemplateHash: to.Ptr("OTHER"),
+				TemplateHash: new("OTHER"),
 				Tags:         matchingTags(),
 			},
 			want: false,
@@ -112,17 +111,17 @@ func TestPrevDeploymentEqualToCurrent(t *testing.T) {
 		{
 			name: "MissingParamHashTag",
 			prev: &azapi.ResourceDeployment{
-				TemplateHash: to.Ptr(templateHash),
-				Tags:         map[string]*string{"unrelated": to.Ptr("x")},
+				TemplateHash: new(templateHash),
+				Tags:         map[string]*string{"unrelated": new("x")},
 			},
 			want: false,
 		},
 		{
 			name: "DifferentParamHash",
 			prev: &azapi.ResourceDeployment{
-				TemplateHash: to.Ptr(templateHash),
+				TemplateHash: new(templateHash),
 				Tags: map[string]*string{
-					azure.TagKeyAzdDeploymentStateParamHashName: to.Ptr("DIFF"),
+					azure.TagKeyAzdDeploymentStateParamHashName: new("DIFF"),
 				},
 			},
 			want: false,
@@ -130,7 +129,7 @@ func TestPrevDeploymentEqualToCurrent(t *testing.T) {
 		{
 			name: "Equal",
 			prev: &azapi.ResourceDeployment{
-				TemplateHash: to.Ptr(templateHash),
+				TemplateHash: new(templateHash),
 				Tags:         matchingTags(),
 			},
 			want: true,
@@ -138,7 +137,6 @@ func TestPrevDeploymentEqualToCurrent(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got := prevDeploymentEqualToCurrent(tc.prev, templateHash, paramsHash)
@@ -178,7 +176,7 @@ func TestConvertPropertyChanges(t *testing.T) {
 		create := armresources.PropertyChangeTypeCreate
 		childPath := "child"
 		parent := &armresources.WhatIfPropertyChange{
-			Path:               to.Ptr("parent"),
+			Path:               new("parent"),
 			PropertyChangeType: &modify,
 			Before:             "old",
 			After:              "new",
@@ -606,11 +604,11 @@ func TestCognitiveAccountsByKind(t *testing.T) {
 
 	input := map[string][]armcognitiveservices.Account{
 		"rg1": {
-			{Kind: to.Ptr("OpenAI")},
-			{Kind: to.Ptr("FormRecognizer")},
+			{Kind: new("OpenAI")},
+			{Kind: new("FormRecognizer")},
 		},
 		"rg2": {
-			{Kind: to.Ptr("OpenAI")},
+			{Kind: new("OpenAI")},
 		},
 	}
 
@@ -664,7 +662,6 @@ func TestUsageNameDetailsFromString(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got, err := usageNameDetailsFromString(tc.input)
@@ -743,7 +740,6 @@ func TestArmParameterFileValue(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got := armParameterFileValue(tc.paramType, tc.value, tc.defValue)
@@ -780,7 +776,6 @@ func TestIsValueAssignableToParameterTypeAdditional(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got := isValueAssignableToParameterType(tc.paramType, tc.value)
@@ -1182,15 +1177,15 @@ func TestPurgeCognitiveAccountsValidationErrors(t *testing.T) {
 	})
 	t.Run("missingId", func(t *testing.T) {
 		err := p.purgeCognitiveAccounts(ctx, []cognitiveAccount{
-			{account: armcognitiveservices.Account{Name: to.Ptr("n")}, resourceGroup: "rg"},
+			{account: armcognitiveservices.Account{Name: new("n")}, resourceGroup: "rg"},
 		}, false)
 		require.Error(t, err)
 	})
 	t.Run("missingLocation", func(t *testing.T) {
 		err := p.purgeCognitiveAccounts(ctx, []cognitiveAccount{
 			{account: armcognitiveservices.Account{
-				Name: to.Ptr("n"),
-				ID:   to.Ptr("/subscriptions/x/resourceGroups/rg/providers/p/accounts/n"),
+				Name: new("n"),
+				ID:   new("/subscriptions/x/resourceGroups/rg/providers/p/accounts/n"),
 			}, resourceGroup: "rg"},
 		}, false)
 		require.Error(t, err)

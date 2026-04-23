@@ -29,7 +29,7 @@ func writeFakeBicep(t *testing.T) string {
 		name = "bicep.exe"
 	}
 	p := filepath.Join(dir, name)
-	require.NoError(t, os.WriteFile(p, []byte("fake"), 0o755))
+	require.NoError(t, os.WriteFile(p, []byte("fake"), 0o600))
 	t.Setenv("AZD_BICEP_TOOL_PATH", p)
 	// Also give a config dir so azdBicepPath never complains if queried elsewhere.
 	t.Setenv("AZD_CONFIG_DIR", t.TempDir())
@@ -84,7 +84,6 @@ func TestBuild_SuccessAndError(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			writeFakeBicep(t)
 
@@ -145,7 +144,6 @@ func TestBuildBicepParam_SuccessAndError(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			writeFakeBicep(t)
 
@@ -206,7 +204,7 @@ func TestSnapshot_Success_AllOptionsAppendedAndFileRead(t *testing.T) {
 
 	dir := t.TempDir()
 	paramFile := filepath.Join(dir, "main.bicepparam")
-	require.NoError(t, os.WriteFile(paramFile, []byte("param"), 0o644))
+	require.NoError(t, os.WriteFile(paramFile, []byte("param"), 0o600))
 	snapshotFile := filepath.Join(dir, "main.snapshot.json")
 
 	mockContext := mocks.NewMockContext(t.Context())
@@ -216,7 +214,7 @@ func TestSnapshot_Success_AllOptionsAppendedAndFileRead(t *testing.T) {
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		capturedArgs = args.Args
 		// simulate bicep CLI producing the snapshot file
-		require.NoError(t, os.WriteFile(snapshotFile, []byte(`{"snap":true}`), 0o644))
+		require.NoError(t, os.WriteFile(snapshotFile, []byte(`{"snap":true}`), 0o600))
 		return exec.NewRunResult(0, "", ""), nil
 	})
 
@@ -257,7 +255,7 @@ func TestSnapshot_Success_NoOptions(t *testing.T) {
 
 	dir := t.TempDir()
 	paramFile := filepath.Join(dir, "main.bicepparam")
-	require.NoError(t, os.WriteFile(paramFile, []byte("param"), 0o644))
+	require.NoError(t, os.WriteFile(paramFile, []byte("param"), 0o600))
 	snapshotFile := filepath.Join(dir, "main.snapshot.json")
 
 	mockContext := mocks.NewMockContext(t.Context())
@@ -266,7 +264,7 @@ func TestSnapshot_Success_NoOptions(t *testing.T) {
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		// Only "snapshot" and filename, no other flags.
 		require.Equal(t, []string{"snapshot", paramFile}, args.Args)
-		require.NoError(t, os.WriteFile(snapshotFile, []byte("x"), 0o644))
+		require.NoError(t, os.WriteFile(snapshotFile, []byte("x"), 0o600))
 		return exec.NewRunResult(0, "", ""), nil
 	})
 
@@ -280,7 +278,7 @@ func TestSnapshot_CommandFails(t *testing.T) {
 	writeFakeBicep(t)
 	dir := t.TempDir()
 	paramFile := filepath.Join(dir, "main.bicepparam")
-	require.NoError(t, os.WriteFile(paramFile, []byte("param"), 0o644))
+	require.NoError(t, os.WriteFile(paramFile, []byte("param"), 0o600))
 
 	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -299,7 +297,7 @@ func TestSnapshot_MissingSnapshotFile(t *testing.T) {
 	writeFakeBicep(t)
 	dir := t.TempDir()
 	paramFile := filepath.Join(dir, "main.bicepparam")
-	require.NoError(t, os.WriteFile(paramFile, []byte("param"), 0o644))
+	require.NoError(t, os.WriteFile(paramFile, []byte("param"), 0o600))
 
 	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {

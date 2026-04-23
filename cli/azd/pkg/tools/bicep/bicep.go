@@ -284,7 +284,9 @@ type BuildResult struct {
 
 // modulePattern matches Bicep module declarations that reference local files.
 // It captures the relative path from: module <name> '<path>' ...
-var modulePattern = regexp.MustCompile(`(?m)module\s+\w+\s+'([^']+)'`)
+// The ^\s* anchor prevents matching commented-out module declarations
+// (e.g. "// module old 'path'").
+var modulePattern = regexp.MustCompile(`(?m)^\s*module\s+\w+\s+'([^']+)'`)
 
 // buildCacheKey computes a SHA-256 digest over the Bicep file's content, its matching
 // .bicepparam file (when present), and all recursively referenced local module files.

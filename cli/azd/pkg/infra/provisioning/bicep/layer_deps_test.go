@@ -700,3 +700,71 @@ func TestDiscoverParamEnvRefs_NonExistentDirectory(t *testing.T) {
 	// valid (conservative) result.
 	_ = hasUnknown // accept either true or false
 }
+
+func TestStripBicepLineComments(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "no comments",
+			input:    "output VNET_ID string = 'abc'\n",
+			expected: "output VNET_ID string = 'abc'\n",
+		},
+		{
+			name:     "full-line comment",
+			input:    "// output FAKE string\noutput REAL string = 'x'\n",
+			expected: "\noutput REAL string = 'x'\n",
+		},
+		{
+			name:     "inline comment",
+			input:    "param x string // default\n",
+			expected: "param x string \n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := string(stripBicepLineComments([]byte(tt.input)))
+			require.Equal(t, tt.expected, got)
+		})
+	}
+}
+
+func TestExtractBicepOutputs_IgnoresCommentedOutputs(t *testing.T) {
+	t.Parallel()
+	content := []byte(
+		"// output FAKE_OUTPUT string = 'old'\n" +
+			"output REAL_OUTPUT string = 'value'\n" +
+			"  // output ANOTHER_FAKE string\n",
+	)
+	names := extractBicepOutputsFromContent(content)
+	require.Equal(t, []string{"REAL_OUTPUT"}, names)
+}
+
+func TestExtractParamEnvRefs_IgnoresCommentedRefs(t *testing.T) {
+	t.Parallel()
+
+	t.Run("bicepparam", func(t *testing.T) {
+		t.Parallel()
+		content := []byte(
+			"using 'main.bicep'\n" +
+				"// param old = readEnvironmentVariable('COMMENTED_VAR')\n" +
+				"param foo = readEnvironmentVariable('REAL_VAR')\n",
+		)
+		refs, _ := extractParamEnvRefs("main.bicepparam", content)
+		require.Equal(t, []string{"REAL_VAR"}, refs)
+	})
+}
+
+func TestExtractBicepParamReadEnvRefs_IgnoresComments(t *testing.T) {
+	t.Parallel()
+	content := []byte(
+		"// param old string = readEnvironmentVariable('COMMENTED')\n" +
+			"param real string = readEnvironmentVariable('ACTIVE')\n",
+	)
+	refs, _ := extractBicepParamReadEnvRefs(content)
+	require.Equal(t, []string{"ACTIVE"}, refs)
+}

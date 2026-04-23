@@ -361,7 +361,9 @@ func (t *aksTarget) deployManifests(
 	// It is not a requirement for a AZD deploy to contain a deployment object
 	// If we don't find any deployment within the namespace we will continue
 	task.SetProgress(NewServiceProgress("Verifying deployment"))
+	stopProgress := startPollingProgress(task, "Waiting for deployment to be ready", 15*time.Second)
 	deployment, err := t.waitForDeployment(ctx, deploymentName)
+	stopProgress()
 	if err != nil && !errors.Is(err, kubectl.ErrResourceNotFound) {
 		// We continue to return a true value here since at this point we have successfully applied the manifests
 		// even through the deployment may not have been found
@@ -489,6 +491,9 @@ func (t *aksTarget) deployHelmCharts(
 		}
 
 		task.SetProgress(NewServiceProgress(fmt.Sprintf("Checking helm release status: %s", release.Name)))
+		stopProgress := startPollingProgress(
+			task, fmt.Sprintf("Waiting for helm release: %s", release.Name), 15*time.Second,
+		)
 		err := retry.Do(
 			ctx,
 			retry.WithMaxDuration(10*time.Minute, retry.NewConstant(5*time.Second)),
@@ -508,6 +513,7 @@ func (t *aksTarget) deployHelmCharts(
 				return nil
 			},
 		)
+		stopProgress()
 
 		if err != nil {
 			return false, err

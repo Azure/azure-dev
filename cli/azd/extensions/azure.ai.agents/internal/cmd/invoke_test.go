@@ -957,7 +957,7 @@ func TestResponseTraceID(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name string
+		name    string
 		headers map[string]string
 		want    string
 	}{

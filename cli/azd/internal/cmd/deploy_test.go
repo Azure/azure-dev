@@ -216,15 +216,15 @@ func TestDeployActionRunTimeoutWarningAndErrorMessage(t *testing.T) {
 		t,
 		output,
 		"WARNING: Deployment of service 'api'"+
-			" exceeded the azd wait timeout.",
+			" exceeded the azd wait timeout (1s).",
 	)
 	require.Contains(
 		t, output,
 		"Check the Azure Portal for current deployment status.",
 	)
-	require.Contains(
-		t, output,
-		"Increase timeout with --timeout flag or AZD_DEPLOY_TIMEOUT env var.",
+	require.Contains(t, output,
+		"Increase timeout with --timeout flag (e.g. azd deploy --timeout 2)"+
+			" or AZD_DEPLOY_TIMEOUT env var (e.g. AZD_DEPLOY_TIMEOUT=2).",
 	)
 	serviceManager.AssertExpectations(t)
 }

@@ -478,6 +478,7 @@ func runStep(ctx context.Context, step *Step, opts RunOptions) (stepErr error) {
 
 	defer func() {
 		if r := recover(); r != nil {
+			log.Printf("exegraph: recovered panic in step %q (this is likely an internal bug): %v", step.Name, r)
 			stepErr = fmt.Errorf("step %q panicked: %v\n%s", step.Name, r, debug.Stack())
 		}
 		span.EndWithStatus(stepErr)

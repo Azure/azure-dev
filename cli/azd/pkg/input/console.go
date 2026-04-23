@@ -347,7 +347,9 @@ func (c *AskerConsole) ShowPreviewer(ctx context.Context, options *ShowPreviewer
 	}
 
 	// Pause any active spinner
+	c.spinnerLineMu.Lock()
 	currentMsg := c.spinnerCurrentTitle
+	c.spinnerLineMu.Unlock()
 	_ = c.spinner.Pause()
 
 	if options == nil {

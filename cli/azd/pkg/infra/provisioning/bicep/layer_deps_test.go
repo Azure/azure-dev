@@ -37,7 +37,7 @@ func TestAnalyzeLayerDependencies_SingleLayer(t *testing.T) {
 		{Path: "networking", Module: "network"},
 	}
 
-	result, err := AnalyzeLayerDependencies(layers, dir)
+	result, err := AnalyzeLayerDependencies(t.Context(), layers, dir)
 	require.NoError(t, err)
 	require.Equal(t, [][]int{{0}}, result.Levels)
 }
@@ -67,7 +67,7 @@ func TestAnalyzeLayerDependencies_NoDependencies(t *testing.T) {
 	}
 	// AZURE_LOCATION has no in-graph producer, so no dependency is created.
 
-	result, err := AnalyzeLayerDependencies(layers, dir)
+	result, err := AnalyzeLayerDependencies(t.Context(), layers, dir)
 	require.NoError(t, err)
 	require.Equal(t, [][]int{{0, 1}}, result.Levels)
 }
@@ -96,7 +96,7 @@ func TestAnalyzeLayerDependencies_LinearChain(t *testing.T) {
 		{Path: "app", Module: "app"},
 	}
 
-	result, err := AnalyzeLayerDependencies(layers, dir)
+	result, err := AnalyzeLayerDependencies(t.Context(), layers, dir)
 	require.NoError(t, err)
 	require.Equal(t, [][]int{{0}, {1}}, result.Levels)
 }
@@ -134,7 +134,7 @@ func TestAnalyzeLayerDependencies_Diamond(t *testing.T) {
 		{Path: "layerC", Module: "c"},
 	}
 
-	result, err := AnalyzeLayerDependencies(layers, dir)
+	result, err := AnalyzeLayerDependencies(t.Context(), layers, dir)
 	require.NoError(t, err)
 	// A first, then B (needs X), then C (needs X and Y).
 	require.Equal(t, [][]int{{0}, {1}, {2}}, result.Levels)
@@ -164,7 +164,7 @@ func TestAnalyzeLayerDependencies_CycleDetected(t *testing.T) {
 		{Path: "layerB", Module: "b"},
 	}
 
-	_, err := AnalyzeLayerDependencies(layers, dir)
+	_, err := AnalyzeLayerDependencies(t.Context(), layers, dir)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "cycle detected")
 }
@@ -191,7 +191,7 @@ func TestAnalyzeLayerDependencies_PreExistingEnvVar(t *testing.T) {
 		{Path: "app", Module: "app"},
 	}
 
-	result, err := AnalyzeLayerDependencies(layers, dir)
+	result, err := AnalyzeLayerDependencies(t.Context(), layers, dir)
 	require.NoError(t, err)
 	// Intra-graph producer/consumer edges are preserved between layer 0
 	// (emits VNET_ID) and layer 1 (consumes VNET_ID), even if the env var
@@ -225,7 +225,7 @@ func TestAnalyzeLayerDependencies_BicepparamFormat(t *testing.T) {
 		{Path: "app", Module: "app"},
 	}
 
-	result, err := AnalyzeLayerDependencies(layers, dir)
+	result, err := AnalyzeLayerDependencies(t.Context(), layers, dir)
 	require.NoError(t, err)
 	require.Equal(t, [][]int{{0}, {1}}, result.Levels)
 }
@@ -374,7 +374,7 @@ func TestAnalyzeLayerDependencies_DuplicateOutputs(t *testing.T) {
 		{Path: "layerB", Module: "b", Name: "layerB"},
 	}
 
-	_, err := AnalyzeLayerDependencies(layers, dir)
+	_, err := AnalyzeLayerDependencies(t.Context(), layers, dir)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "duplicate output")
 	require.Contains(t, err.Error(), "SHARED_VAR")
@@ -394,7 +394,7 @@ func TestAnalyzeLayerDependencies_SameLayerDuplicateOutputIsAllowed(t *testing.T
 		{Path: "single", Module: "s"},
 	}
 
-	result, err := AnalyzeLayerDependencies(layers, dir)
+	result, err := AnalyzeLayerDependencies(t.Context(), layers, dir)
 	require.NoError(t, err)
 	require.Equal(t, [][]int{{0}}, result.Levels)
 }
@@ -486,7 +486,7 @@ func TestAnalyzeLayerDependencies_SafeFallback_NonLiteralBicepparam(t *testing.T
 		{Name: "b", Path: "layerB", Module: "b"},
 	}
 
-	result, err := AnalyzeLayerDependencies(layers, dir)
+	result, err := AnalyzeLayerDependencies(t.Context(), layers, dir)
 	require.NoError(t, err)
 	require.Equal(t, [][]int{{0}, {1}}, result.Levels)
 	require.Contains(t, result.Edges[1], 0)
@@ -514,7 +514,7 @@ func TestAnalyzeLayerDependencies_SafeFallback_ArmExpression(t *testing.T) {
 		{Name: "b", Path: "layerB", Module: "b"},
 	}
 
-	result, err := AnalyzeLayerDependencies(layers, dir)
+	result, err := AnalyzeLayerDependencies(t.Context(), layers, dir)
 	require.NoError(t, err)
 	require.Equal(t, [][]int{{0}, {1}}, result.Levels)
 	require.Contains(t, result.Edges[1], 0)
@@ -543,7 +543,7 @@ func TestAnalyzeLayerDependencies_BicepParamDefault(t *testing.T) {
 		{Name: "b", Path: "layerB", Module: "b"},
 	}
 
-	result, err := AnalyzeLayerDependencies(layers, dir)
+	result, err := AnalyzeLayerDependencies(t.Context(), layers, dir)
 	require.NoError(t, err)
 	require.Equal(t, [][]int{{0}, {1}}, result.Levels)
 	require.Contains(t, result.Edges[1], 0)
@@ -575,7 +575,7 @@ func TestAnalyzeLayerDependencies_ExplicitDependsOn(t *testing.T) {
 		},
 	}
 
-	result, err := AnalyzeLayerDependencies(layers, dir)
+	result, err := AnalyzeLayerDependencies(t.Context(), layers, dir)
 	require.NoError(t, err)
 	require.Equal(t, [][]int{{0}, {1}}, result.Levels)
 	require.Contains(t, result.Edges[1], 0)
@@ -606,7 +606,7 @@ func TestAnalyzeLayerDependencies_ExplicitDependsOn_UnknownLayer(t *testing.T) {
 		},
 	}
 
-	_, err := AnalyzeLayerDependencies(layers, dir)
+	_, err := AnalyzeLayerDependencies(t.Context(), layers, dir)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "unknown layer")
 }
@@ -636,7 +636,7 @@ func TestAnalyzeLayerDependencies_ExplicitDependsOn_Self(t *testing.T) {
 		},
 	}
 
-	_, err := AnalyzeLayerDependencies(layers, dir)
+	_, err := AnalyzeLayerDependencies(t.Context(), layers, dir)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "cannot depend on itself")
 }
@@ -671,7 +671,32 @@ func TestAnalyzeLayerDependencies_ExplicitDependsOn_Cycle(t *testing.T) {
 		},
 	}
 
-	_, err := AnalyzeLayerDependencies(layers, dir)
+	_, err := AnalyzeLayerDependencies(t.Context(), layers, dir)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "cycle detected")
+}
+
+// --- Test 9: File I/O error path in discoverParamEnvRefs ---
+
+func TestDiscoverParamEnvRefs_NonExistentDirectory(t *testing.T) {
+	// When the project path doesn't exist, discoverParamEnvRefs should
+	// not panic and should return a valid (conservative) result.
+	opts := provisioning.Options{
+		Path:   "completely-nonexistent-dir",
+		Module: "main",
+	}
+	projectPath := filepath.Join(t.TempDir(), "no-such-project")
+
+	// Should not panic.
+	refs, hasUnknown := discoverParamEnvRefs(t.Context(), opts, projectPath)
+
+	// No refs can be discovered from nonexistent files.
+	require.Empty(t, refs)
+
+	// The .bicep file read failure (not os.IsNotExist for a deeply
+	// missing path) triggers the safe fallback or — if the OS returns
+	// a "not exists" error — returns empty refs with no fallback.
+	// Either behavior is acceptable; what matters is no panic and a
+	// valid (conservative) result.
+	_ = hasUnknown // accept either true or false
 }

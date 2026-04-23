@@ -4,7 +4,9 @@
 package bicep
 
 import (
+	"context"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -81,6 +83,7 @@ type layerDependencyGraph struct {
 //
 // It returns an error when a dependency cycle exists.
 func AnalyzeLayerDependencies(
+	ctx context.Context,
 	layers []provisioning.Options,
 	projectPath string,
 ) (*LayerDependencies, error) {
@@ -117,7 +120,7 @@ func AnalyzeLayerDependencies(
 	for i, layer := range layers {
 		opts := resolved[i]
 		bicepPath := resolveBicepPath(opts, projectPath)
-		outputs, err := extractBicepOutputs(bicepPath)
+		outputs, err := extractBicepOutputs(ctx, bicepPath)
 		if err != nil {
 			return nil, fmt.Errorf(
 				"extracting outputs for layer %q: %w",
@@ -147,7 +150,7 @@ func AnalyzeLayerDependencies(
 	// Phase 2 — Discover input env-var references and build edges.
 	var safeFallback []int
 	for i, opts := range resolved {
-		refs, hasUnknown := discoverParamEnvRefs(opts, projectPath)
+		refs, hasUnknown := discoverParamEnvRefs(ctx, opts, projectPath)
 		for _, ref := range refs {
 			if provider, ok := g.outputProviders[ref]; ok && provider != i {
 				// Always keep intra-graph edges, even when the ref is
@@ -254,10 +257,32 @@ func resolveParamPaths(
 		filepath.Join(infraPath, opts.Module+".parameters.json")
 }
 
+// readFileWithContext wraps os.ReadFile with context awareness so that
+// a parent context cancellation (e.g. user Ctrl-C or deploy timeout)
+// unblocks the caller even if the underlying file I/O stalls on a
+// network or FUSE mount.
+func readFileWithContext(ctx context.Context, path string) ([]byte, error) {
+	type result struct {
+		data []byte
+		err  error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		data, err := os.ReadFile(path)
+		ch <- result{data, err}
+	}()
+	select {
+	case r := <-ch:
+		return r.data, r.err
+	case <-ctx.Done():
+		return nil, fmt.Errorf("reading %s: %w", path, ctx.Err())
+	}
+}
+
 // extractBicepOutputs reads a Bicep file and returns the declared output
 // names.
-func extractBicepOutputs(bicepFilePath string) ([]string, error) {
-	content, err := os.ReadFile(bicepFilePath)
+func extractBicepOutputs(ctx context.Context, bicepFilePath string) ([]string, error) {
+	content, err := readFileWithContext(ctx, bicepFilePath)
 	if err != nil {
 		return nil, fmt.Errorf("reading %s: %w", bicepFilePath, err)
 	}
@@ -355,7 +380,7 @@ func extractBicepParamReadEnvRefs(
 // files are inspected. hasUnknown is true if any source contains a
 // non-literal env-var reference.
 func discoverParamEnvRefs(
-	opts provisioning.Options, projectPath string,
+	ctx context.Context, opts provisioning.Options, projectPath string,
 ) (refs []string, hasUnknown bool) {
 	bp, pj := resolveParamPaths(opts, projectPath)
 
@@ -375,30 +400,33 @@ func discoverParamEnvRefs(
 		}
 	}
 
-	if content, err := os.ReadFile(bp); err == nil {
+	if content, err := readFileWithContext(ctx, bp); err == nil {
 		r, u := extractParamEnvRefs(bp, content)
 		merge(r, u)
 	} else if !os.IsNotExist(err) {
 		// A read error (permission, I/O) is NOT the same as "file does
 		// not exist". We can't prove what refs the file would have had,
 		// so escalate to the safe-by-default fallback.
+		log.Printf("warning: failed to read %s: %v, using safe fallback", bp, err)
 		hasUnknown = true
-	} else if content, err := os.ReadFile(pj); err == nil {
+	} else if content, err := readFileWithContext(ctx, pj); err == nil {
 		r, u := extractParamEnvRefs(pj, content)
 		merge(r, u)
 	} else if !os.IsNotExist(err) {
+		log.Printf("warning: failed to read %s: %v, using safe fallback", pj, err)
 		hasUnknown = true
 	}
 
 	// Always scan the .bicep file for param defaults that call
 	// readEnvironmentVariable. These are independent of the param file
 	// and silently dropped when only parameter files are inspected.
-	if bicepContent, err := os.ReadFile(
+	if bicepContent, err := readFileWithContext(ctx,
 		resolveBicepPath(opts, projectPath),
 	); err == nil {
 		r, u := extractBicepParamReadEnvRefs(bicepContent)
 		merge(r, u)
 	} else if !os.IsNotExist(err) {
+		log.Printf("warning: failed to read %s: %v, using safe fallback", resolveBicepPath(opts, projectPath), err)
 		hasUnknown = true
 	}
 

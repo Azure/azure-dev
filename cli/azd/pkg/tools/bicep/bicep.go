@@ -295,7 +295,7 @@ func (cli *Cli) buildCacheKey(file string) (string, error) {
 	h := sha256.New()
 	visited := make(map[string]bool)
 
-	if err := hashBicepFileTree(file, h, visited); err != nil {
+	if err := hashBicepFileTree(file, h, visited, 0); err != nil {
 		return "", err
 	}
 
@@ -311,9 +311,14 @@ func (cli *Cli) buildCacheKey(file string) (string, error) {
 
 // hashBicepFileTree reads a Bicep file, writes its content to the hash, and recursively
 // processes any local module imports found in the file. visited tracks already-processed
-// absolute paths to avoid cycles. Returns a non-nil error if the file (or any referenced
-// module) cannot be read — the caller should treat this as a cache miss.
-func hashBicepFileTree(file string, h io.Writer, visited map[string]bool) error {
+// absolute paths to avoid cycles. depth limits recursion to prevent stack overflow from
+// deeply nested or pathological module references. Returns a non-nil error if the file
+// (or any referenced module) cannot be read — the caller should treat this as a cache miss.
+func hashBicepFileTree(file string, h io.Writer, visited map[string]bool, depth int) error {
+	if depth > 100 {
+		return fmt.Errorf("hashBicepFileTree: recursion depth exceeded 100 at %s", file)
+	}
+
 	absPath, err := filepath.Abs(file)
 	if err != nil {
 		return err
@@ -349,7 +354,17 @@ func hashBicepFileTree(file string, h io.Writer, visited map[string]bool) error 
 		}
 
 		resolved := filepath.Join(dir, modulePath)
-		if err := hashBicepFileTree(resolved, h, visited); err != nil {
+
+		// Validate that the resolved module path stays within the project
+		// directory tree (the directory containing the root Bicep file).
+		if rel, relErr := filepath.Rel(dir, resolved); relErr == nil {
+			if strings.HasPrefix(rel, "..") {
+				log.Printf("warning: bicep module path %q resolves outside project directory, skipping", modulePath)
+				continue
+			}
+		}
+
+		if err := hashBicepFileTree(resolved, h, visited, depth+1); err != nil {
 			// Module file unresolvable — force cache miss.
 			return err
 		}

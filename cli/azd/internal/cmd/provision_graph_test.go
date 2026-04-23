@@ -146,7 +146,7 @@ func TestProvisionLayersGraph_BuildsGraph(t *testing.T) {
 
 	// Analyze dependencies.
 	layerDeps, err := bicep.AnalyzeLayerDependencies(
-		layers, projectDir,
+		t.Context(), layers, projectDir,
 	)
 	require.NoError(t, err)
 

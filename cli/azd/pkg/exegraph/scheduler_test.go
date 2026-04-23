@@ -6,6 +6,7 @@ package exegraph
 import (
 	"context"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -892,4 +893,109 @@ func TestRunWithResult_FailedStepRecordsTiming(t *testing.T) {
 
 	require.NotNil(t, skipStep)
 	assert.Equal(t, StepSkipped, skipStep.Status)
+}
+
+// --- Test 8: Parent context deadline canceling in-flight steps ---
+
+func TestParentContextDeadline_CancelsInFlightSteps(t *testing.T) {
+	g := NewGraph()
+	var stepStarted atomic.Bool
+
+	require.NoError(t, g.AddStep(&Step{
+		Name: "long-running",
+		Action: func(ctx context.Context) error {
+			stepStarted.Store(true)
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(10 * time.Second):
+				return nil
+			}
+		},
+	}))
+
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	defer cancel()
+
+	result := RunWithResult(ctx, g, RunOptions{})
+	require.Error(t, result.Error)
+
+	// The step should have been started and then canceled.
+	assert.True(t, stepStarted.Load(), "step should have started before deadline")
+
+	// Result should contain the step with a canceled/skipped status.
+	require.Len(t, result.Steps, 1)
+	st := result.Steps[0]
+	assert.Equal(t, "long-running", st.Name)
+	// Parent context cancellation marks the step as skipped (scheduler-level cancel).
+	assert.Equal(t, StepSkipped, st.Status,
+		"parent deadline should cause the step to be recorded as skipped")
+}
+
+// --- Test 21: MaxConcurrency=1 doesn't panic ---
+
+func TestMaxConcurrency1_DoesNotPanic(t *testing.T) {
+	g := NewGraph()
+	var order []string
+	var mu sync.Mutex
+
+	for _, name := range []string{"s1", "s2", "s3", "s4"} {
+		n := name
+		require.NoError(t, g.AddStep(&Step{
+			Name: n,
+			Action: func(_ context.Context) error {
+				mu.Lock()
+				order = append(order, n)
+				mu.Unlock()
+				time.Sleep(5 * time.Millisecond)
+				return nil
+			},
+		}))
+	}
+
+	assert.NotPanics(t, func() {
+		err := Run(t.Context(), g, RunOptions{MaxConcurrency: 1})
+		require.NoError(t, err)
+	})
+
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Len(t, order, 4, "all 4 steps must complete")
+}
+
+// --- Test 22: errors.Join aggregation under ContinueOnError ---
+
+func TestContinueOnError_JoinsMultipleFailures(t *testing.T) {
+	g := NewGraph()
+
+	require.NoError(t, g.AddStep(&Step{
+		Name:   "ok",
+		Action: func(_ context.Context) error { return nil },
+	}))
+	require.NoError(t, g.AddStep(&Step{
+		Name: "fail1",
+		Action: func(_ context.Context) error {
+			return errors.New("failure-alpha")
+		},
+	}))
+	require.NoError(t, g.AddStep(&Step{
+		Name: "fail2",
+		Action: func(_ context.Context) error {
+			return errors.New("failure-beta")
+		},
+	}))
+
+	err := Run(t.Context(), g, RunOptions{ErrorPolicy: ContinueOnError})
+	require.Error(t, err)
+
+	// Both failure messages must appear in the joined error.
+	assert.Contains(t, err.Error(), "failure-alpha")
+	assert.Contains(t, err.Error(), "failure-beta")
+
+	// Verify errors.Join structure: the error should unwrap to multiple errors.
+	var joined interface{ Unwrap() []error }
+	require.ErrorAs(t, err, &joined, "error should be a joined error")
+	unwrapped := joined.Unwrap()
+	assert.GreaterOrEqual(t, len(unwrapped), 2,
+		"at least 2 errors from the 2 failed steps")
 }

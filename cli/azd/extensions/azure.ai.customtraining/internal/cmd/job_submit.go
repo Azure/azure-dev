@@ -130,14 +130,14 @@ func newJobSubmitCommand() *cobra.Command {
 // buildJobResource converts a parsed YAML JobDefinition into the REST API payload.
 func buildJobResource(def *utils.JobDefinition) *models.JobResource {
 	job := models.CommandJob{
-		JobType:              "Command",
-		DisplayName:          def.DisplayName,
-		Description:          def.Description,
-		Command:              def.Command,
-		EnvironmentID:        def.Environment,
-		ComputeID:            def.Compute,
-		CodeID:               def.Code,
-		EnvironmentVariables: def.EnvironmentVariables,
+		JobType:                   "Command",
+		DisplayName:               def.DisplayName,
+		Description:               def.Description,
+		Command:                   def.Command,
+		EnvironmentImageReference: def.Environment,
+		ComputeID:                 def.Compute,
+		CodeID:                    def.Code,
+		EnvironmentVariables:      def.EnvironmentVariables,
 	}
 
 	if job.DisplayName == "" {

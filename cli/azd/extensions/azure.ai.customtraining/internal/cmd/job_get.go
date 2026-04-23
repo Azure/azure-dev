@@ -312,7 +312,7 @@ func printJobDetails(d *jobDetails) {
 
 	// Environment & Code
 	w = tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintf(w, "Environment:\t%s\n", valueOrDash(props.EnvironmentID))
+	fmt.Fprintf(w, "Environment:\t%s\n", valueOrDash(props.EnvironmentImageReference))
 
 	// Show code ID from job props, or fall back to run history inputs
 	codeID := props.CodeID
@@ -455,11 +455,11 @@ func printComputeSection(d *jobDetails) {
 func printInputsSection(inputs map[string]models.JobInput, history *models.RunHistory) {
 	// Merge: job inputs + any extra inputs from run history not in the job response
 	type mergedInput struct {
-		Name     string
-		Type     string
-		Mode     string
-		Value    string // URI or literal value
-		AssetID  string // from run history
+		Name    string
+		Type    string
+		Mode    string
+		Value   string // URI or literal value
+		AssetID string // from run history
 	}
 
 	seen := make(map[string]bool)

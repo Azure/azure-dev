@@ -6,7 +6,7 @@ package provisioning
 import (
 	"context"
 	"fmt"
-	"os"
+	"log"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
@@ -115,6 +115,9 @@ func (p *ScriptProvisioningProvider) Destroy(
 		return &azdext.ProvisioningDestroyResult{}, nil
 	}
 
+	// Destroy scripts don't produce meaningful provisioning outputs.
+	// Only invalidation keys from prior provisioning are returned to
+	// signal which cached resources should be cleared.
 	_, err := p.runScripts(ctx, p.config.Destroy, progress)
 	if err != nil {
 		return nil, fmt.Errorf("destroy failed: %w", err)
@@ -165,6 +168,10 @@ func (p *ScriptProvisioningProvider) runScripts(
 	allOutputs := make(map[string]OutputParameter)
 
 	for i, sc := range scripts {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+
 		progress(fmt.Sprintf("Running %s (%d/%d)", sc.Name, i+1, len(scripts)))
 
 		env, err := resolver.Resolve(sc)
@@ -173,7 +180,7 @@ func (p *ScriptProvisioningProvider) runScripts(
 		}
 
 		_, execErr := executor.Execute(ctx, sc, env)
-		if execErr != nil && !sc.ContinueOnError {
+		if execErr != nil && (sc.ContinueOnError == nil || !*sc.ContinueOnError) {
 			return nil, execErr
 		}
 
@@ -210,7 +217,7 @@ func (p *ScriptProvisioningProvider) getAzdEnv(ctx context.Context) (map[string]
 		}
 
 		// Log the error but continue with empty env — environment may not be initialized yet
-		fmt.Fprintf(os.Stderr, "Warning: could not load azd environment: %v\n", err)
+		log.Printf("Warning: could not load azd environment: %v", err)
 		return make(map[string]string), nil
 	}
 

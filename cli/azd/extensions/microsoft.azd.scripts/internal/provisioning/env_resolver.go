@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/drone/envsubst"
@@ -56,7 +57,10 @@ func (r *EnvResolver) Resolve(sc *ScriptConfig) (map[string]string, error) {
 			return ""
 		}
 
-		for k, tmpl := range sc.Env {
+		// Sort keys for deterministic resolution order — important when
+		// variables in the same env map reference each other.
+		for _, k := range slices.Sorted(maps.Keys(sc.Env)) {
+			tmpl := sc.Env[k]
 			resolved, err := envsubst.Eval(tmpl, lookup)
 			if err != nil {
 				return nil, fmt.Errorf("resolving env variable %q: %w", k, err)

@@ -265,3 +265,17 @@ func TestBuildCacheKey_IncludesBicepparamContent(t *testing.T) {
 
 	require.NotEqual(t, keyWithout, keyWith, "adding a .bicepparam file must change the cache key")
 }
+
+func TestBuildCacheKey_CommentedModuleIgnored(t *testing.T) {
+	cli, _ := newCacheTestCli(t)
+	dir := t.TempDir()
+
+	mainBicep := filepath.Join(dir, "main.bicep")
+	content := "// module old './nonexistent.bicep' = {\n//   name: 'old'\n// }\n" +
+		"param location string\n"
+	require.NoError(t, os.WriteFile(mainBicep, []byte(content), 0600))
+
+	key, err := cli.buildCacheKey(mainBicep)
+	require.NoError(t, err, "commented-out module should not cause cache miss")
+	require.NotEmpty(t, key)
+}

@@ -4,6 +4,7 @@
 package bicep
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"log"
@@ -46,6 +47,21 @@ var (
 	// error from Bicep itself.
 	armExpressionRe = regexp.MustCompile(`"\s*\[[^\]]+\]\s*"`)
 )
+
+// stripBicepLineComments removes single-line // comments from Bicep and
+// .bicepparam content so that regex-based scanners do not match references
+// inside commented-out code. Block comments (/* ... */) are not handled;
+// they are rare in practice and the failure mode is conservative (extra
+// dependency edges, not missing ones).
+func stripBicepLineComments(content []byte) []byte {
+	lines := bytes.Split(content, []byte("\n"))
+	for i, line := range lines {
+		if idx := bytes.Index(line, []byte("//")); idx >= 0 {
+			lines[i] = line[:idx]
+		}
+	}
+	return bytes.Join(lines, []byte("\n"))
+}
 
 // LayerDependencies holds the results of static dependency analysis on
 // infrastructure layers.
@@ -292,7 +308,8 @@ func extractBicepOutputs(ctx context.Context, bicepFilePath string) ([]string, e
 // extractBicepOutputsFromContent parses Bicep source bytes for output
 // declarations and returns their names.
 func extractBicepOutputsFromContent(content []byte) []string {
-	matches := bicepOutputRe.FindAllSubmatch(content, -1)
+	cleaned := stripBicepLineComments(content)
+	matches := bicepOutputRe.FindAllSubmatch(cleaned, -1)
 	names := make([]string, 0, len(matches))
 	for _, m := range matches {
 		names = append(names, string(m[1]))
@@ -316,6 +333,9 @@ func extractParamEnvRefs(
 	var re *regexp.Regexp
 	switch filepath.Ext(paramFilePath) {
 	case ".bicepparam":
+		// Strip line comments so that commented-out readEnvironmentVariable
+		// calls do not create false dependency edges.
+		content = stripBicepLineComments(content)
 		re = paramReadEnvRe
 		// A literal-only regex would silently drop calls like
 		// readEnvironmentVariable(myVar). Compare the count of any
@@ -356,7 +376,10 @@ func extractParamEnvRefs(
 func extractBicepParamReadEnvRefs(
 	content []byte,
 ) (refs []string, hasUnknown bool) {
-	matches := paramReadEnvRe.FindAllSubmatch(content, -1)
+	// Strip line comments so that commented-out readEnvironmentVariable
+	// calls do not create false dependency edges.
+	cleaned := stripBicepLineComments(content)
+	matches := paramReadEnvRe.FindAllSubmatch(cleaned, -1)
 	seen := make(map[string]bool)
 	for _, m := range matches {
 		name := string(m[1])
@@ -365,8 +388,8 @@ func extractBicepParamReadEnvRefs(
 			refs = append(refs, name)
 		}
 	}
-	anyCount := len(paramReadEnvAnyRe.FindAllIndex(content, -1))
-	litCount := len(paramReadEnvRe.FindAllSubmatchIndex(content, -1))
+	anyCount := len(paramReadEnvAnyRe.FindAllIndex(cleaned, -1))
+	litCount := len(paramReadEnvRe.FindAllSubmatchIndex(cleaned, -1))
 	if anyCount > litCount {
 		hasUnknown = true
 	}

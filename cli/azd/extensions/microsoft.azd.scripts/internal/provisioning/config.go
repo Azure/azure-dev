@@ -28,7 +28,7 @@ type ScriptConfig struct {
 	Name            string            `json:"name,omitempty"`
 	Env             map[string]string `json:"env,omitempty"`
 	Secrets         map[string]string `json:"secrets,omitempty"`
-	ContinueOnError bool              `json:"continueOnError,omitempty"`
+	ContinueOnError *bool             `json:"continueOnError,omitempty"`
 	Windows         *ScriptConfig     `json:"windows,omitempty"`
 	Posix           *ScriptConfig     `json:"posix,omitempty"`
 }
@@ -178,7 +178,7 @@ func applyPlatformOverride(sc *ScriptConfig) {
 		}
 		maps.Copy(sc.Secrets, override.Secrets)
 	}
-	if override.ContinueOnError {
+	if override.ContinueOnError != nil {
 		sc.ContinueOnError = override.ContinueOnError
 	}
 }

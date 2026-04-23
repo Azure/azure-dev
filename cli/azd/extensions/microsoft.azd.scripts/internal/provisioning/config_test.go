@@ -169,19 +169,20 @@ func TestValidateScriptConfig_ContinueOnError(t *testing.T) {
 		Provision: []*ScriptConfig{{
 			Kind:            "sh",
 			Run:             "setup.sh",
-			ContinueOnError: true,
+			ContinueOnError: new(true),
 		}},
 	}
 	err := cfg.Validate(dir)
 	require.NoError(t, err)
-	require.True(t, cfg.Provision[0].ContinueOnError)
+	require.NotNil(t, cfg.Provision[0].ContinueOnError)
+	require.True(t, *cfg.Provision[0].ContinueOnError)
 }
 
 func TestApplyPlatformOverride_DoesNotResetContinueOnError(t *testing.T) {
 	sc := &ScriptConfig{
 		Kind:            "sh",
 		Run:             "fallback.sh",
-		ContinueOnError: true,
+		ContinueOnError: new(true),
 		Posix: &ScriptConfig{
 			Run: "linux-specific.sh",
 		},
@@ -192,9 +193,10 @@ func TestApplyPlatformOverride_DoesNotResetContinueOnError(t *testing.T) {
 
 	applyPlatformOverride(sc)
 
-	// ContinueOnError should NOT be reset to false by a platform override
+	// ContinueOnError should NOT be reset to nil/false by a platform override
 	// that doesn't explicitly set it.
-	require.True(t, sc.ContinueOnError, "ContinueOnError should not be reset by platform override")
+	require.NotNil(t, sc.ContinueOnError, "ContinueOnError should not be reset by platform override")
+	require.True(t, *sc.ContinueOnError, "ContinueOnError should not be reset by platform override")
 }
 
 func TestApplyPlatformOverride_MergesEnvMaps(t *testing.T) {

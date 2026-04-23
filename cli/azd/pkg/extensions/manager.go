@@ -751,6 +751,7 @@ func (tm *Manager) createSourcesFromConfig(
 	filter sourceFilterPredicate,
 ) ([]Source, error) {
 	sources := []Source{}
+	var schemaErrors []*ErrUnsupportedRegistrySchema
 
 	for _, config := range configs {
 		if filter != nil && !filter(config) {
@@ -760,22 +761,34 @@ func (tm *Manager) createSourcesFromConfig(
 		source, err := tm.sourceManager.CreateSource(ctx, config)
 		if err != nil {
 			if schemaErr, ok := errors.AsType[*ErrUnsupportedRegistrySchema](err); ok {
-				return nil, &errorhandler.ErrorWithSuggestion{
-					Err:     schemaErr,
-					Message: schemaErr.Error(),
-					Suggestion: "Upgrade azd to the latest version " +
-						"to use this registry",
-					Links: []errorhandler.ErrorLink{{
-						URL:   "https://aka.ms/azd/install",
-						Title: "Install/upgrade azd",
-					}},
-				}
+				log.Printf(
+					"WARNING: source '%s' has incompatible "+
+						"schema version %s, skipping",
+					config.Name, schemaErr.SchemaVersion,
+				)
+				schemaErrors = append(schemaErrors, schemaErr)
+				continue
 			}
 			log.Printf("failed to create source: %v", err)
 			continue
 		}
 
 		sources = append(sources, source)
+	}
+
+	// Only hard-fail when every source had an incompatible schema and
+	// no usable sources remain.
+	if len(sources) == 0 && len(schemaErrors) > 0 {
+		return nil, &errorhandler.ErrorWithSuggestion{
+			Err:     schemaErrors[0],
+			Message: schemaErrors[0].Error(),
+			Suggestion: "Upgrade azd to the latest version " +
+				"to use this registry",
+			Links: []errorhandler.ErrorLink{{
+				URL:   "https://aka.ms/azd/install",
+				Title: "Install/upgrade azd",
+			}},
+		}
 	}
 
 	return sources, nil

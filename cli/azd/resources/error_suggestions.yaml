@@ -580,6 +580,9 @@ rules:
   # Extension Registry Errors
   # ============================================================================
 
+  # NOTE: The primary path wraps ErrUnsupportedRegistrySchema in ErrorWithSuggestion
+  # directly (manager.go), which bypasses this YAML pipeline. This rule serves as a
+  # catch-all for any alternative code paths where the error surfaces unwrapped.
   - errorType: "ErrUnsupportedRegistrySchema"
     message: "The extension registry uses a schema version not supported by this version of azd."
     suggestion: "Upgrade azd to the latest version to use this registry."

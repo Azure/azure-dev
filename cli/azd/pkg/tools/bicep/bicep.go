@@ -350,8 +350,11 @@ func hashBicepFileTree(file string, h io.Writer, visited map[string]bool, depth 
 	for _, match := range modulePattern.FindAllSubmatch(content, -1) {
 		modulePath := string(match[1])
 
-		// Skip registry modules (br: for Bicep Registry, ts: for Template Specs).
-		if strings.HasPrefix(modulePath, "br:") || strings.HasPrefix(modulePath, "ts:") {
+		// Skip registry modules (br: for Bicep Registry, br/alias: for registry
+		// aliases like br/public:, ts: for Template Specs).
+		if strings.HasPrefix(modulePath, "br:") ||
+			strings.HasPrefix(modulePath, "br/") ||
+			strings.HasPrefix(modulePath, "ts:") {
 			continue
 		}
 

@@ -279,3 +279,80 @@ func TestBuildCacheKey_CommentedModuleIgnored(t *testing.T) {
 	require.NoError(t, err, "commented-out module should not cause cache miss")
 	require.NotEmpty(t, key)
 }
+
+func TestBuildCacheKey_ConditionalModule(t *testing.T) {
+	// Conditional modules use: module <name> '<path>' = if (cond) { ... }
+	// The regex should still match the module path.
+	cli, _ := newCacheTestCli(t)
+	dir := t.TempDir()
+
+	modFile := filepath.Join(dir, "optional.bicep")
+	require.NoError(t, os.WriteFile(modFile, []byte("param x string"), 0600))
+
+	mainBicep := filepath.Join(dir, "main.bicep")
+	content := "param deploy bool\nmodule opt './optional.bicep' = if (deploy) {\n  name: 'opt'\n}\n"
+	require.NoError(t, os.WriteFile(mainBicep, []byte(content), 0600))
+
+	key1, err := cli.buildCacheKey(mainBicep)
+	require.NoError(t, err, "conditional module should be detected and hashed")
+	require.NotEmpty(t, key1)
+
+	// Changing the conditional module content should change the key.
+	require.NoError(t, os.WriteFile(modFile, []byte("param x string\nparam y int"), 0600))
+	key2, err := cli.buildCacheKey(mainBicep)
+	require.NoError(t, err)
+	require.NotEqual(t, key1, key2, "conditional module content change must invalidate cache")
+}
+
+func TestBuildCacheKey_RegistryAliasModules(t *testing.T) {
+	// Registry alias modules use br/alias: prefix and should be skipped.
+	cli, _ := newCacheTestCli(t)
+	dir := t.TempDir()
+
+	mainBicep := filepath.Join(dir, "main.bicep")
+	content := "module avmStorage 'br/public:avm/res/storage/storage-account:0.9.1' = {\n  name: 'storage'\n}\n" +
+		"module avmVnet 'br/public:avm/res/network/virtual-network:0.1.6' = {\n  name: 'vnet'\n}\n" +
+		"param location string\n"
+	require.NoError(t, os.WriteFile(mainBicep, []byte(content), 0600))
+
+	key, err := cli.buildCacheKey(mainBicep)
+	require.NoError(t, err, "br/alias registry modules should be skipped, not cause errors")
+	require.NotEmpty(t, key)
+}
+
+func TestBuildCacheKey_BlockCommentedModule(t *testing.T) {
+	// Block comments (/* ... */) are NOT stripped by the current regex.
+	// A block-commented module will match the regex and cause a cache miss
+	// (file not found). This is the known conservative failure mode.
+	cli, _ := newCacheTestCli(t)
+	dir := t.TempDir()
+
+	mainBicep := filepath.Join(dir, "main.bicep")
+	content := "/*\nmodule old './nonexistent.bicep' = {\n  name: 'old'\n}\n*/\n" +
+		"param location string\n"
+	require.NoError(t, os.WriteFile(mainBicep, []byte(content), 0600))
+
+	// Block-commented module causes cache miss (file not found) — this is
+	// the known conservative behavior documented in the comment-stripping
+	// helper. The build itself is correct; only caching is affected.
+	_, err := cli.buildCacheKey(mainBicep)
+	require.Error(t, err, "block-commented module causes cache miss (known limitation)")
+}
+
+func TestBuildCacheKey_IndentedModule(t *testing.T) {
+	// Modules inside if/for blocks are indented. The ^\s* anchor must
+	// allow leading whitespace.
+	cli, _ := newCacheTestCli(t)
+	dir := t.TempDir()
+
+	modFile := filepath.Join(dir, "nested.bicep")
+	require.NoError(t, os.WriteFile(modFile, []byte("param x string"), 0600))
+
+	mainBicep := filepath.Join(dir, "main.bicep")
+	content := "param deploy bool\n\n  module nested './nested.bicep' = {\n    name: 'n'\n  }\n"
+	require.NoError(t, os.WriteFile(mainBicep, []byte(content), 0600))
+
+	key, err := cli.buildCacheKey(mainBicep)
+	require.NoError(t, err, "indented module should be detected")
+	require.NotEmpty(t, key)
+}

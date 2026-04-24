@@ -907,7 +907,7 @@ Once PR has been merged the extension updates are now live in the official `azd`
 
 Each extension must declare an `extension.yaml` file that describes the metadata for the extension and the capabilities that it supports. This metadata is used within the extension registry to provide details to developers when searching for and installing extensions.
 
-A [JSON schema](../extensions/extension.schema.json) is available to support authoring extension manifests.
+A [JSON schema](../../extensions/extension.schema.json) is available to support authoring extension manifests.
 
 #### Schema Properties
 
@@ -1097,7 +1097,7 @@ examples:
     usage: azd demo prompt
 ```
 
-The following is an example of an [extension manifest](../extensions/microsoft.azd.demo/extension.yaml).
+The following is an example of an [extension manifest](../../extensions/microsoft.azd.demo/extension.yaml).
 
 ```yaml
 # yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/refs/heads/main/cli/azd/extensions/extension.schema.json

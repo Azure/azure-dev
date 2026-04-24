@@ -486,11 +486,12 @@ func (i *Initializer) promptForDuplicates(
 	if len(duplicateFiles) > 0 {
 		i.console.StopSpinner(ctx, "", input.StepDone)
 		i.console.MessageUxItem(ctx, &ux.WarningMessage{
-			Description: "The following files are present both locally and in the template:",
+			Description: "The current directory is not empty." +
+				" Initializing an app in this directory may overwrite existing files:",
 		})
 
 		for _, file := range duplicateFiles {
-			i.console.Message(ctx, fmt.Sprintf(" * %s", file))
+			i.console.Message(ctx, output.WithErrorFormat("  %s", file))
 		}
 
 		selection, err := i.console.Select(ctx, input.ConsoleOptions{
@@ -836,52 +837,14 @@ func InitEnvFileValues() (map[string]string, error) {
 	return values, nil
 }
 
-// PromptIfNonEmpty prompts the user for confirmation if the project directory to initialize in is non-empty.
-// Returns error if an error occurred while prompting, or if the user declines confirmation.
-func (i *Initializer) PromptIfNonEmpty(ctx context.Context, azdCtx *azdcontext.AzdContext) error {
-	dir := azdCtx.ProjectDirectory()
-	isEmpty, err := osutil.IsDirEmpty(dir)
-	if err != nil {
-		return err
-	}
-
-	if _, allowNonEmpty := os.LookupEnv(allowNonEmptyEnvVar); allowNonEmpty {
-		return nil
-	}
-
-	if !isEmpty {
-		_, err := i.gitCli.GetCurrentBranch(ctx, dir)
-		if err != nil && !errors.Is(err, git.ErrNotRepository) {
-			return fmt.Errorf("determining current git repository state: %w", err)
-		}
-
-		warningMessage := output.WithWarningFormat("WARNING: The current directory is not empty.")
-		i.console.Message(ctx, warningMessage)
-		i.console.Message(ctx, "Initializing an app in this directory may overwrite existing files.\n")
-
-		message := fmt.Sprintf(
-			"Continue initializing an app in '%s'?",
-			dir)
-		if err != nil {
-			message = fmt.Sprintf(
-				"Continue initializing an app here? This will also initialize a new git repository in '%s'.",
-				dir)
-		}
-
-		confirm, err := i.console.Confirm(ctx, input.ConsoleOptions{
-			Message: message,
-		})
-		if err != nil {
-			return err
-		}
-
-		if !confirm {
-			successMessage := "\n\nconfirmation declined; app was not initialized"
-			i.console.Message(ctx, successMessage)
-			os.Exit(1)
-		}
-	}
-
+// PromptIfNonEmpty is a no-op kept for backward compatibility.
+//
+// The generic "directory is not empty" warning was removed because [promptForDuplicates]
+// (called later, after the template is staged) already lists the exact files that
+// would collide and lets the user choose to overwrite or keep them.  Showing a
+// blanket warning before the collision set is known was confusing: it fired even
+// when no files would actually be overwritten.
+func (i *Initializer) PromptIfNonEmpty(_ context.Context, _ *azdcontext.AzdContext) error {
 	return nil
 }
 

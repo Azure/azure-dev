@@ -576,91 +576,88 @@ func Test_parseExecutableFiles(t *testing.T) {
 
 func TestInitializer_PromptIfNonEmpty(t *testing.T) {
 	t.Parallel()
-	type dirSetup struct {
-		// whether the directory is a git repository
-		isGitRepo bool
-		// filenames to create in the directory before running tests
-		files []string
-	}
-	tests := []struct {
-		name           string
-		dir            dirSetup
-		userConfirm    bool
-		declinedOutput string
-	}{
-		{
-			"EmptyDir",
-			dirSetup{false, []string{}},
-			false,
-			"",
-		},
-		{
-			"NonEmptyDir",
-			dirSetup{false, []string{"a.txt"}},
-			true,
-			"",
-		},
-		{
-			"NonEmptyDir_Declined",
-			dirSetup{false, []string{"a.txt"}},
-			false,
-			"confirmation declined; app was not initialized",
-		},
-		{
-			"NonEmptyGitDir",
-			dirSetup{true, []string{"a.txt"}},
-			true,
-			"",
-		},
-		{
-			"NonEmptyGitDir_Declined",
-			dirSetup{true, []string{"a.txt"}},
-			false,
-			"confirmation declined; app was not initialized",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			dir := t.TempDir()
-			console := mockinput.NewMockConsole()
-			cmdRun := mockexec.NewMockCommandRunner()
-			gitCli := git.NewCli(cmdRun)
 
-			// create files
-			for _, file := range tt.dir.files {
-				require.NoError(t, os.WriteFile(filepath.Join(dir, file), []byte{}, 0600))
-			}
+	t.Run("EmptyDir", func(t *testing.T) {
+		dir := t.TempDir()
+		i := &Initializer{}
+		azdCtx := azdcontext.NewAzdContextWithDirectory(dir)
 
-			// mock git branch command
-			gitBranchImpl := cmdRun.When(func(args exec.RunArgs, command string) bool {
-				return slices.Contains(args.Args, "branch") &&
-					slices.Contains(args.Args, "--show-current")
-			})
-			if tt.dir.isGitRepo {
-				gitBranchImpl.Respond(exec.RunResult{ExitCode: 0})
-			} else {
-				gitBranchImpl.Respond(exec.RunResult{ExitCode: 128, Stderr: "fatal: not a git repository"})
-			}
+		err := i.PromptIfNonEmpty(context.Background(), azdCtx)
+		require.NoError(t, err)
+	})
 
-			// mock console input
-			console.WhenConfirm(func(options input.ConsoleOptions) bool { return true }).
-				Respond(tt.userConfirm)
+	t.Run("NonEmptyDir_NoWarning", func(t *testing.T) {
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "a.txt"), []byte{}, 0600))
 
-			i := &Initializer{
-				console: console,
-				gitCli:  gitCli,
-			}
-			azdCtx := azdcontext.NewAzdContextWithDirectory(dir)
+		i := &Initializer{}
+		azdCtx := azdcontext.NewAzdContextWithDirectory(dir)
 
-			// we only test if declinedOutput is empty
-			// if confirmation is declined and app is not initialized
-			// we skip the test as it will exit with code 1
-			if tt.declinedOutput == "" {
-				err := i.PromptIfNonEmpty(context.Background(), azdCtx)
-				require.NoError(t, err)
-			}
-		})
-	}
+		// PromptIfNonEmpty is now a no-op — it should return nil without
+		// showing a warning or asking for confirmation.  The actual collision
+		// check is deferred to promptForDuplicates.
+		err := i.PromptIfNonEmpty(context.Background(), azdCtx)
+		require.NoError(t, err)
+	})
+}
+
+func TestPromptForDuplicates_ShowsCollisions(t *testing.T) {
+	t.Parallel()
+
+	t.Run("NoCollisions_NoWarning", func(t *testing.T) {
+		t.Parallel()
+		staging := t.TempDir()
+		target := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(staging, "new.txt"), []byte("a"), 0600))
+
+		console := mockinput.NewMockConsole()
+		i := &Initializer{console: console}
+
+		skip, err := i.promptForDuplicates(context.Background(), staging, target)
+		require.NoError(t, err)
+		require.Nil(t, skip)
+
+		// No messages should be logged when there are no collisions.
+		require.Empty(t, console.Output())
+	})
+
+	t.Run("WithCollisions_WarningAndFiles", func(t *testing.T) {
+		t.Parallel()
+		staging := t.TempDir()
+		target := t.TempDir()
+
+		// Create a collision: same file in both staging and target.
+		require.NoError(t, os.WriteFile(filepath.Join(staging, "README.md"), []byte("a"), 0600))
+		require.NoError(t, os.WriteFile(filepath.Join(target, "README.md"), []byte("b"), 0600))
+
+		// Create a second collision in a subdirectory.
+		require.NoError(t, os.MkdirAll(filepath.Join(staging, "src"), 0700))
+		require.NoError(t, os.MkdirAll(filepath.Join(target, "src"), 0700))
+		require.NoError(t, os.WriteFile(filepath.Join(staging, "src", "app.py"), []byte("a"), 0600))
+		require.NoError(t, os.WriteFile(filepath.Join(target, "src", "app.py"), []byte("b"), 0600))
+
+		console := mockinput.NewMockConsole()
+		console.WhenSelect(func(options input.ConsoleOptions) bool {
+			return strings.Contains(options.Message, "What would you like to do with these files?")
+		}).Respond(0) // overwrite
+
+		i := &Initializer{console: console}
+
+		_, err := i.promptForDuplicates(context.Background(), staging, target)
+		require.NoError(t, err)
+
+		msgs := console.Output()
+		require.NotEmpty(t, msgs)
+
+		// The first message should contain the warning text.
+		assert.Contains(t, msgs[0], "The current directory is not empty")
+		assert.Contains(t, msgs[0], "may overwrite existing files")
+
+		// Colliding file paths should appear in the console output.
+		allOutput := strings.Join(msgs, "\n")
+		assert.Contains(t, allOutput, "README.md")
+		assert.Contains(t, allOutput, filepath.Join("src", "app.py"))
+	})
 }
 
 func TestInitializer_writeFileSafe(t *testing.T) {

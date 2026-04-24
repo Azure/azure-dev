@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
 )
 
@@ -65,6 +66,57 @@ func Test_Invalid_Event_Names(t *testing.T) {
 			require.ErrorIs(t, err, ErrInvalidEvent)
 		})
 	}
+}
+
+func Test_Single_Error_Preserves_Type(t *testing.T) {
+	// When exactly one handler fails, RaiseEvent must return the original error
+	// untouched so callers can recover the typed error (e.g. *azdext.LocalError or
+	// *internal.ErrorWithSuggestion) and surface its Suggestion. Regression test
+	// for https://github.com/Azure/azure-dev/issues/7706 — flattening the single
+	// error into errors.New(...) silently drops the structured payload.
+
+	t.Run("LocalError preserved with suggestion", func(t *testing.T) {
+		localErr := &azdext.LocalError{
+			Message:    "extension failed",
+			Code:       "boom",
+			Category:   azdext.LocalErrorCategoryUser,
+			Suggestion: "Try again with --debug",
+		}
+		ed := NewEventDispatcher[testEventArgs](testEvent)
+		require.NoError(t, ed.AddHandler(context.Background(), testEvent, func(
+			ctx context.Context, args testEventArgs,
+		) error {
+			return localErr
+		}))
+
+		err := ed.RaiseEvent(context.Background(), testEvent, testEventArgs{})
+		require.Error(t, err)
+
+		got, ok := errors.AsType[*azdext.LocalError](err)
+		require.True(t, ok, "expected *azdext.LocalError to survive RaiseEvent")
+		require.Same(t, localErr, got)
+		require.Equal(t, localErr.Suggestion, azdext.ErrorSuggestion(err))
+	})
+
+	t.Run("ErrorWithSuggestion preserved", func(t *testing.T) {
+		suggErr := &internal.ErrorWithSuggestion{
+			Err:        errors.New("boom"),
+			Suggestion: "Try again",
+		}
+		ed := NewEventDispatcher[testEventArgs](testEvent)
+		require.NoError(t, ed.AddHandler(context.Background(), testEvent, func(
+			ctx context.Context, args testEventArgs,
+		) error {
+			return suggErr
+		}))
+
+		err := ed.RaiseEvent(context.Background(), testEvent, testEventArgs{})
+		require.Error(t, err)
+
+		got, ok := errors.AsType[*internal.ErrorWithSuggestion](err)
+		require.True(t, ok, "expected *ErrorWithSuggestion to survive RaiseEvent")
+		require.Same(t, suggErr, got)
+	})
 }
 
 func Test_Multiple_Errors_With_Suggestions(t *testing.T) {
@@ -422,7 +474,7 @@ func Test_Workflow_Context_Handler_Cleanup(t *testing.T) {
 
 		// Raise event again - handler should NOT be called
 		step1CallCount = 0
-		err = ed.RaiseEvent(context.Background(), testEvent, testEventArgs{})
+		err = ed.RaiseEvent(t.Context(), testEvent, testEventArgs{})
 		require.NoError(t, err)
 		require.Equal(t, 0, step1CallCount, "Step 1 handler should not be called after cleanup")
 	})
@@ -431,7 +483,7 @@ func Test_Workflow_Context_Handler_Cleanup(t *testing.T) {
 		ed := NewEventDispatcher[testEventArgs](testEvent)
 
 		// Simulate root context with WithoutCancel
-		rootCtx := context.Background()
+		rootCtx := t.Context()
 		nonCancellableRoot := context.WithoutCancel(rootCtx)
 
 		// Step 1: provision

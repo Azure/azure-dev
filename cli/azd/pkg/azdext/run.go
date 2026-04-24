@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
@@ -131,4 +132,29 @@ func ErrorMessage(err error) string {
 	}
 
 	return ""
+}
+
+// ErrorLinks extracts the Links field from a [LocalError] or [ServiceError].
+// Returns nil if the error has no links.
+func ErrorLinks(err error) []errorhandler.ErrorLink {
+	if localErr, ok := errors.AsType[*LocalError](err); ok && len(localErr.Links) > 0 {
+		return localErr.Links
+	}
+
+	if svcErr, ok := errors.AsType[*ServiceError](err); ok && len(svcErr.Links) > 0 {
+		return svcErr.Links
+	}
+
+	return nil
+}
+
+// IsStructuredError reports whether err is an azd extension local or service error.
+func IsStructuredError(err error) bool {
+	_, localErr := errors.AsType[*LocalError](err)
+	if localErr {
+		return true
+	}
+
+	_, svcErr := errors.AsType[*ServiceError](err)
+	return svcErr
 }

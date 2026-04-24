@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/stretchr/testify/require"
 )
 
@@ -143,6 +144,58 @@ func TestErrorMessage(t *testing.T) {
 			require.Equal(t, tt.expected, result)
 		})
 	}
+}
+
+func TestErrorLinks(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		expected []errorhandler.ErrorLink
+	}{
+		{
+			name: "LocalErrorWithLinks",
+			err: &LocalError{
+				Links: []errorhandler.ErrorLink{{
+					URL:   "https://aka.ms/azd-errors#local",
+					Title: "Local error help",
+				}},
+			},
+			expected: []errorhandler.ErrorLink{{
+				URL:   "https://aka.ms/azd-errors#local",
+				Title: "Local error help",
+			}},
+		},
+		{
+			name: "WrappedServiceErrorWithLinks",
+			err: fmt.Errorf("op: %w", &ServiceError{
+				Links: []errorhandler.ErrorLink{{
+					URL: "https://aka.ms/azd-errors#service",
+				}},
+			}),
+			expected: []errorhandler.ErrorLink{{
+				URL: "https://aka.ms/azd-errors#service",
+			}},
+		},
+		{
+			name:     "GenericError",
+			err:      errors.New("generic"),
+			expected: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.expected, ErrorLinks(tt.err))
+		})
+	}
+}
+
+func TestIsStructuredError(t *testing.T) {
+	require.True(t, IsStructuredError(&LocalError{}))
+	require.True(t, IsStructuredError(&ServiceError{}))
+	require.True(t, IsStructuredError(fmt.Errorf("wrapped: %w", &LocalError{})))
+	require.False(t, IsStructuredError(errors.New("plain")))
+	require.False(t, IsStructuredError(nil))
 }
 
 func TestVersion_IsSet(t *testing.T) {

@@ -68,7 +68,7 @@ func (m *UxMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionRes
 
 		// Bridge extension errors (LocalError/ServiceError) with suggestions to rich UX.
 		// Covers both CLI extension commands and gRPC service target errors.
-		if suggestion := azdext.ErrorSuggestion(err); suggestion != "" {
+		if suggestion := azdext.ErrorSuggestion(err); suggestion != "" || len(azdext.ErrorLinks(err)) > 0 {
 			message := azdext.ErrorMessage(err)
 			if message == "" {
 				message = err.Error()
@@ -76,6 +76,7 @@ func (m *UxMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionRes
 			displayErr := &ux.ErrorWithSuggestion{
 				Message:    message,
 				Suggestion: suggestion,
+				Links:      azdext.ErrorLinks(err),
 			}
 			m.console.Message(ctx, "")
 			m.console.MessageUxItem(ctx, displayErr)

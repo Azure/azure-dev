@@ -24,6 +24,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -172,6 +173,12 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 	// Check if error already has a suggestion
 	if _, ok := errors.AsType[*internal.ErrorWithSuggestion](err); ok {
 		// Already has a suggestion, return as-is
+		return actionResult, err
+	}
+
+	// Skip the YAML pipeline for typed extension errors so host-side rules don't
+	// override the extension's structured classification or user guidance.
+	if azdext.IsStructuredError(err) {
 		return actionResult, err
 	}
 

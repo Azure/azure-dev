@@ -617,6 +617,34 @@ func TestUxMiddleware_Run_AzdextServiceErrorWithSuggestion(t *testing.T) {
 	require.Nil(t, result)
 }
 
+func TestUxMiddleware_Run_AzdextLocalErrorWithLinks(t *testing.T) {
+	t.Parallel()
+	console := mockinput.NewMockConsole()
+	m := &UxMiddleware{
+		options:         &Options{},
+		console:         console,
+		featuresManager: alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
+	}
+
+	localErr := &azdext.LocalError{
+		Message: "Extension config missing",
+		Code:    "missing_config",
+		Links: []errorhandler.ErrorLink{{
+			URL:   "https://aka.ms/azd-errors#missing-config",
+			Title: "Missing config help",
+		}},
+	}
+
+	result, err := m.Run(t.Context(), func(_ context.Context) (*actions.ActionResult, error) {
+		return nil, localErr
+	})
+
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Contains(t, fmt.Sprint(console.Output()), "https://aka.ms/azd-errors#missing-config")
+	require.NotContains(t, fmt.Sprint(console.Output()), "Suggestion:")
+}
+
 func TestUxMiddleware_Run_AzdextLocalErrorWithoutSuggestion(t *testing.T) {
 	t.Parallel()
 	console := mockinput.NewMockConsole()

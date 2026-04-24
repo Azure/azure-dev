@@ -5,9 +5,9 @@ package azdext
 
 import (
 	"context"
-	"errors"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -178,9 +178,16 @@ func TestEventManager_onInvokeProjectHandler_HandlerError(t *testing.T) {
 
 	eventManager := NewEventManager("microsoft.azd.demo", client, nil)
 
-	// Add a test handler that fails
+	// Add a test handler that fails with a structured LocalError so we can verify
+	// the failure response carries the structured error payload, not just a string.
+	handlerErr := &LocalError{
+		Message:    "handler failed",
+		Code:       "handler_failed",
+		Category:   LocalErrorCategoryUser,
+		Suggestion: "Try again with --debug",
+	}
 	handler := func(ctx context.Context, args *ProjectEventArgs) error {
-		return errors.New("handler failed")
+		return handlerErr
 	}
 	eventManager.projectEvents["postbuild"] = handler
 
@@ -202,6 +209,15 @@ func TestEventManager_onInvokeProjectHandler_HandlerError(t *testing.T) {
 	assert.Equal(t, "postbuild", status.EventName)
 	assert.Equal(t, "failed", status.Status)
 	assert.Equal(t, "handler failed", status.Message)
+
+	// Verify the structured ExtensionError is also populated so the host can unwrap
+	// it back into a typed LocalError (preserving the Suggestion and category).
+	require.NotNil(t, status.Error, "expected structured ExtensionError on failed status")
+	assert.Equal(t, "handler failed", status.Error.GetMessage())
+	assert.Equal(t, "Try again with --debug", status.Error.GetSuggestion())
+	require.NotNil(t, status.Error.GetLocalError())
+	assert.Equal(t, "handler_failed", status.Error.GetLocalError().GetCode())
+	assert.Equal(t, string(LocalErrorCategoryUser), status.Error.GetLocalError().GetCategory())
 }
 
 // Test onInvokeProjectHandler with no registered handler
@@ -318,9 +334,16 @@ func TestEventManager_onInvokeServiceHandler_HandlerError(t *testing.T) {
 
 	eventManager := NewEventManager("microsoft.azd.demo", client, nil)
 
-	// Add a test handler that fails
+	// Add a test handler that fails with a structured LocalError so we can verify
+	// the failure response carries the structured error payload, not just a string.
+	handlerErr := &LocalError{
+		Message:    "service handler failed",
+		Code:       "service_handler_failed",
+		Category:   LocalErrorCategoryUser,
+		Suggestion: "Re-run with --debug",
+	}
 	handler := func(ctx context.Context, args *ServiceEventArgs) error {
-		return errors.New("service handler failed")
+		return handlerErr
 	}
 	eventManager.serviceEvents["prepublish"] = handler
 
@@ -345,6 +368,60 @@ func TestEventManager_onInvokeServiceHandler_HandlerError(t *testing.T) {
 	assert.Equal(t, "test-service", status.ServiceName)
 	assert.Equal(t, "failed", status.Status)
 	assert.Equal(t, "service handler failed", status.Message)
+
+	// Verify the structured ExtensionError is also populated so the host can unwrap
+	// it back into a typed LocalError (preserving the Suggestion and category).
+	require.NotNil(t, status.Error, "expected structured ExtensionError on failed status")
+	assert.Equal(t, "service handler failed", status.Error.GetMessage())
+	assert.Equal(t, "Re-run with --debug", status.Error.GetSuggestion())
+	require.NotNil(t, status.Error.GetLocalError())
+	assert.Equal(t, "service_handler_failed", status.Error.GetLocalError().GetCode())
+	assert.Equal(t, string(LocalErrorCategoryUser), status.Error.GetLocalError().GetCategory())
+}
+
+func TestEventManager_onInvokeServiceHandler_ServiceError(t *testing.T) {
+	ctx := context.Background()
+	client := &AzdClient{}
+
+	eventManager := NewEventManager("microsoft.azd.demo", client, nil)
+
+	handlerErr := &ServiceError{
+		Message:     "service handler failed",
+		ErrorCode:   "Conflict",
+		StatusCode:  409,
+		ServiceName: "management.azure.com",
+		Suggestion:  "Wait for the active operation to finish",
+		Links: []errorhandler.ErrorLink{{
+			URL:   "https://aka.ms/azd-errors#conflict",
+			Title: "Conflict troubleshooting",
+		}},
+	}
+	handler := func(ctx context.Context, args *ServiceEventArgs) error {
+		return handlerErr
+	}
+	eventManager.serviceEvents["prepublish"] = handler
+
+	invokeMsg := &InvokeServiceHandler{
+		EventName:      "prepublish",
+		Project:        createTestProjectConfigForEvents(),
+		Service:        createTestServiceConfigForEvents(),
+		ServiceContext: createTestServiceContextForEvents(),
+	}
+
+	resp, err := eventManager.onInvokeServiceHandler(ctx, invokeMsg)
+
+	assert.NoError(t, err)
+	require.NotNil(t, resp)
+	status := resp.GetServiceHandlerStatus()
+	require.NotNil(t, status)
+	require.NotNil(t, status.Error)
+	require.NotNil(t, status.Error.GetServiceError())
+	assert.Equal(t, "Conflict", status.Error.GetServiceError().GetErrorCode())
+	assert.Equal(t, int32(409), status.Error.GetServiceError().GetStatusCode())
+	assert.Equal(t, "management.azure.com", status.Error.GetServiceError().GetServiceName())
+	assert.Equal(t, "Wait for the active operation to finish", status.Error.GetSuggestion())
+	require.Len(t, status.Error.GetLinks(), 1)
+	assert.Equal(t, "Conflict troubleshooting", status.Error.GetLinks()[0].GetTitle())
 }
 
 // Test onInvokeServiceHandler with no registered handler

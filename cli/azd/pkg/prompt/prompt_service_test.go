@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -66,13 +65,7 @@ func Test_PromptService_PromptSubscription(t *testing.T) {
 			},
 		}, nil)
 
-	globalOptions := &internal.GlobalCommandOptions{
-		NoPrompt: false,
-	}
-
-	promptService := NewPromptService(
-		authManager, mockConsole, ucm, subscriptionManager, resourceService, globalOptions,
-	)
+	promptService := NewPromptService(authManager, mockConsole, ucm, subscriptionManager, resourceService)
 	require.NotNil(t, promptService)
 }
 

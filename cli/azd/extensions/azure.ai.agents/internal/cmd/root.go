@@ -54,7 +54,8 @@ func NewRootCommand() *cobra.Command {
 		&rootFlags.NoPrompt,
 		"no-prompt",
 		false,
-		"Accepts the default value instead of prompting, or it fails if there is no default.",
+		"Runs without prompts. Uses existing values; "+
+			"fails if any required value or decision cannot be resolved automatically.",
 	)
 
 	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {

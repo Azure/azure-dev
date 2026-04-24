@@ -26,6 +26,7 @@ trigger:
       - /eng/pipelines/templates/variables/image.yml
     exclude:
       - cli/azd/extensions/**
+      - cli/azd/cmd/testdata/TestFigSpec.ts
 
 pr:
   paths:
@@ -40,6 +41,7 @@ pr:
       - cli/azd/.vscode/cspell.yaml
       - cli/azd/.vscode/cspell-azd-dictionary.txt
       - cli/azd/AGENTS.md
+      - cli/azd/cmd/testdata/TestFigSpec.ts
 
 extends: 
   template: /eng/pipelines/templates/stages/1es-redirect.yml

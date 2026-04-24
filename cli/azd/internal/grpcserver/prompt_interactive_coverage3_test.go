@@ -122,7 +122,7 @@ func TestPromptService_Confirm_NoPrompt_NoDefault(t *testing.T) {
 		},
 	})
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "no default response")
+	requirePromptRequiredError(t, err, "continue?")
 }
 
 // --- Select tests ---
@@ -169,7 +169,7 @@ func TestPromptService_Select_NoPrompt_NoDefault(t *testing.T) {
 		},
 	})
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "no default selection")
+	requirePromptRequiredError(t, err, "choose:")
 }
 
 // --- MultiSelect tests ---
@@ -247,7 +247,7 @@ func TestPromptService_Prompt_NoPrompt_RequiredNoDefault(t *testing.T) {
 		},
 	})
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "no default response")
+	requirePromptRequiredError(t, err, "enter:")
 }
 
 func TestPromptService_Prompt_NoPrompt_RequiredWithDefault(t *testing.T) {
@@ -300,6 +300,14 @@ func TestPromptService_PromptSubscription_Error(t *testing.T) {
 	_, err := svc.PromptSubscription(t.Context(), &azdext.PromptSubscriptionRequest{})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "no subscriptions")
+}
+
+func TestPromptService_PromptSubscription_NoPrompt_DefaultMessage(t *testing.T) {
+	t.Parallel()
+	svc := newTestPromptService(&mockPromptService{}, true)
+	_, err := svc.PromptSubscription(t.Context(), &azdext.PromptSubscriptionRequest{})
+	require.Error(t, err)
+	requirePromptRequiredError(t, err, "Select subscription")
 }
 
 // --- PromptLocation tests ---
@@ -382,6 +390,14 @@ func TestPromptService_PromptLocation_Error(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestPromptService_PromptLocation_NoPrompt(t *testing.T) {
+	t.Parallel()
+	svc := newTestPromptService(&mockPromptService{}, true)
+	_, err := svc.PromptLocation(t.Context(), &azdext.PromptLocationRequest{})
+	require.Error(t, err)
+	requirePromptRequiredError(t, err, "Select location")
+}
+
 // --- PromptResourceGroup tests ---
 
 func TestPromptService_PromptResourceGroup_NilAzureContext(t *testing.T) {
@@ -436,6 +452,14 @@ func TestPromptService_PromptResourceGroup_Error(t *testing.T) {
 		},
 	})
 	require.Error(t, err)
+}
+
+func TestPromptService_PromptResourceGroup_NoPrompt_DefaultMessage(t *testing.T) {
+	t.Parallel()
+	svc := newTestPromptService(&mockPromptService{}, true)
+	_, err := svc.PromptResourceGroup(t.Context(), &azdext.PromptResourceGroupRequest{})
+	require.Error(t, err)
+	requirePromptRequiredError(t, err, "Select resource group")
 }
 
 // --- PromptSubscriptionResource tests ---
@@ -503,6 +527,18 @@ func TestPromptService_PromptSubscriptionResource_Error(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestPromptService_PromptSubscriptionResource_NoPrompt_DefaultResourceMessage(t *testing.T) {
+	t.Parallel()
+	svc := newTestPromptService(&mockPromptService{}, true)
+	_, err := svc.PromptSubscriptionResource(t.Context(), &azdext.PromptSubscriptionResourceRequest{
+		Options: &azdext.PromptResourceOptions{
+			ResourceTypeDisplayName: "OpenAI account",
+		},
+	})
+	require.Error(t, err)
+	requirePromptRequiredError(t, err, "Select OpenAI account")
+}
+
 // --- PromptResourceGroupResource tests ---
 
 func TestPromptService_PromptResourceGroupResource_NilAzureContext(t *testing.T) {
@@ -510,6 +546,20 @@ func TestPromptService_PromptResourceGroupResource_NilAzureContext(t *testing.T)
 	svc := newTestPromptService(&mockPromptService{}, false)
 	_, err := svc.PromptResourceGroupResource(t.Context(), &azdext.PromptResourceGroupResourceRequest{})
 	require.Error(t, err)
+}
+
+func TestPromptService_PromptResourceGroupResource_NoPrompt_UsesSelectOptionsMessage(t *testing.T) {
+	t.Parallel()
+	svc := newTestPromptService(&mockPromptService{}, true)
+	_, err := svc.PromptResourceGroupResource(t.Context(), &azdext.PromptResourceGroupResourceRequest{
+		Options: &azdext.PromptResourceOptions{
+			SelectOptions: &azdext.PromptResourceSelectOptions{
+				Message: "Select existing web app",
+			},
+		},
+	})
+	require.Error(t, err)
+	requirePromptRequiredError(t, err, "Select existing web app")
 }
 
 func TestPromptService_PromptResourceGroupResource_Success(t *testing.T) {

@@ -1,5 +1,9 @@
 # Release History
 
+## 0.1.27-preview (2026-04-22)
+
+- [[#7880]](https://github.com/Azure/azure-dev/pull/7880) Remove ACR endpoint pre-check from the package step; packaging no longer fails early when `AZURE_CONTAINER_REGISTRY_ENDPOINT` is absent, allowing provisioning to create the registry first for new projects.
+
 ## 0.1.26-preview (2026-04-21)
 
 - [[#7843]](https://github.com/Azure/azure-dev/pull/7843) When `azd ai agent init` uses an existing Azure AI project, set `USE_EXISTING_AI_PROJECT=true` so downstream Bicep provisioning skips creating the project, roles, and connections again.

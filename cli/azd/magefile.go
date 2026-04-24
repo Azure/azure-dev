@@ -493,6 +493,10 @@ type testRunOpts struct {
 // optional name filter, and runs them via "go test" with the given mode
 // and environment variables.
 func runFunctionalTests(azdDir string, opts testRunOpts) error {
+	if opts.mode != "record" && opts.mode != "playback" {
+		return fmt.Errorf("invalid test mode %q: must be %q or %q", opts.mode, "record", "playback")
+	}
+
 	recordingsDir := filepath.Join(
 		azdDir, "test", "functional", "testdata", "recordings",
 	)

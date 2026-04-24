@@ -95,27 +95,27 @@ func (c *cliConfig) init() {
 		userConfig := config.NewUserConfigManager(config.NewFileConfigManager(config.NewManager()))
 		cfg, err := userConfig.Load()
 		if err == nil {
-			// Check test-specific keys first (defaults.test.*), then general defaults.
-			if c.SubscriptionID == "" {
-				if subId, ok := cfg.GetString("defaults.test.subscription"); ok && subId != "" {
-					c.SubscriptionID = subId
-				} else if subId, ok := cfg.GetString("defaults.subscription"); ok && subId != "" {
-					c.SubscriptionID = subId
+			// configFallback returns the first non-empty value from the given config keys.
+			// Test-specific keys (defaults.test.*) take precedence over general defaults.
+			configFallback := func(keys ...string) string {
+				for _, key := range keys {
+					if val, ok := cfg.GetString(key); ok && val != "" {
+						return val
+					}
 				}
+				return ""
+			}
+
+			if c.SubscriptionID == "" {
+				c.SubscriptionID = configFallback("defaults.test.subscription", "defaults.subscription")
 			}
 
 			if c.TenantID == "" {
-				if tid, ok := cfg.GetString("defaults.test.tenant"); ok && tid != "" {
-					c.TenantID = tid
-				}
+				c.TenantID = configFallback("defaults.test.tenant")
 			}
 
 			if c.Location == "" {
-				if loc, ok := cfg.GetString("defaults.test.location"); ok && loc != "" {
-					c.Location = loc
-				} else if loc, ok := cfg.GetString("defaults.location"); ok && loc != "" {
-					c.Location = loc
-				}
+				c.Location = configFallback("defaults.test.location", "defaults.location")
 			}
 		}
 

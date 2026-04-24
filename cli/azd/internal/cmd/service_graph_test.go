@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"context"
-	"sync"
 	"testing"
 	"time"
 
@@ -78,15 +77,11 @@ func (s *stubServiceManager) GetServiceTarget(
 
 func newGraphOpts(services []*project.ServiceConfig) (serviceGraphOptions, *exegraph.Graph) {
 	g := exegraph.NewGraph()
-	var svcCtxMu, resultsMu sync.Mutex
 	return serviceGraphOptions{
-		services:        services,
-		serviceManager:  &stubServiceManager{},
-		deployTimeout:   30 * time.Second,
-		serviceContexts: make(map[string]*project.ServiceContext),
-		svcCtxMu:        &svcCtxMu,
-		deployResults:   make(map[string]*project.ServiceDeployResult),
-		resultsMu:       &resultsMu,
+		services:       services,
+		serviceManager: &stubServiceManager{},
+		deployTimeout:  30 * time.Second,
+		state:          newDeployGraphState(services),
 	}, g
 }
 

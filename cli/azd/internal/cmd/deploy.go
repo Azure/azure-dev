@@ -12,7 +12,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -319,26 +318,14 @@ func (da *DeployAction) deployServicesGraph(
 	}()
 
 	g := exegraph.NewGraph()
-	var mu sync.Mutex
-	deployResults := map[string]*project.ServiceDeployResult{}
-
-	// serviceContexts stores the packaging result so publish and deploy can consume it.
-	serviceContexts := make(map[string]*project.ServiceContext, len(stableServices))
-	var svcCtxMu sync.Mutex
-
-	// Track the first Aspire deploy step so that subsequent Aspire services
-	// can declare a dependency on it (build gate serialization).
-	// (Handled inside addServiceStepsToGraph via buildGateKey below.)
+	state := newDeployGraphState(stableServices)
 
 	if _, err := addServiceStepsToGraph(g, serviceGraphOptions{
-		services:        stableServices,
-		serviceManager:  da.serviceManager,
-		deployTimeout:   deployTimeout,
-		fromPackage:     da.flags.fromPackage,
-		serviceContexts: serviceContexts,
-		svcCtxMu:        &svcCtxMu,
-		deployResults:   deployResults,
-		resultsMu:       &mu,
+		services:       stableServices,
+		serviceManager: da.serviceManager,
+		deployTimeout:  deployTimeout,
+		fromPackage:    da.flags.fromPackage,
+		state:          state,
 		onDeployTimeout: func(ctx context.Context, svc *project.ServiceConfig) {
 			da.console.MessageUxItem(ctx, deployTimeoutWarning(svc.Name, deployTimeout))
 		},
@@ -432,27 +419,14 @@ func (da *DeployAction) deployServicesGraph(
 	}
 
 	// Clean up temporary package artifacts created during graph execution.
-	// The graph path must do it after execution since steps run in parallel
-	// and may still hold file locks.
 	if da.flags.fromPackage == "" {
-		for _, sc := range serviceContexts {
-			for _, artifact := range sc.Package {
-				if artifact.Kind == project.ArtifactKindArchive &&
-					strings.HasPrefix(artifact.Location, os.TempDir()) {
-					if rmErr := os.RemoveAll(artifact.Location); rmErr != nil {
-						log.Printf("failed to remove temporary package: %s : %s", artifact.Location, rmErr)
-					}
-				}
-			}
-		}
+		state.CleanupTempArtifacts()
 	}
 
 	// Display service endpoint artifacts collected during deploy steps.
-	// The graph path must display them after execution since results are
-	// collected concurrently.
 	if da.formatter.Kind() != output.JsonFormat {
 		for _, svc := range stableServices {
-			if dr, ok := deployResults[svc.Name]; ok && dr != nil {
+			if dr := state.GetResult(svc.Name); dr != nil {
 				da.console.MessageUxItem(ctx, dr.Artifacts)
 			}
 		}
@@ -470,7 +444,7 @@ func (da *DeployAction) deployServicesGraph(
 	if da.formatter.Kind() == output.JsonFormat {
 		deployResult := DeploymentResult{
 			Timestamp: time.Now(),
-			Services:  deployResults,
+			Services:  state.ResultsSnapshot(),
 		}
 
 		if fmtErr := da.formatter.Format(deployResult, da.writer, nil); fmtErr != nil {

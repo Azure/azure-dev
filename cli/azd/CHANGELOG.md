@@ -10,6 +10,24 @@
 
 ### Other Changes
 
+## 1.24.2 (2026-04-24)
+
+### Features Added
+
+- [[#7482]](https://github.com/Azure/azure-dev/pull/7482) Add custom provisioning provider support to the extension framework; extension authors can register alternative infrastructure providers via `WithProvisioningProvider("name", factory)` on the `ExtensionHost`, and users set `infra: { provider: name }` in `azure.yaml` to use them.
+- [[#7841]](https://github.com/Azure/azure-dev/pull/7841) Improve `azd extension upgrade` with intelligent registry source resolution: extensions upgrade from their installed source by default, are auto-promoted from a dev registry to the main registry when a newer version is available there, and `--all` or `--no-prompt` batch upgrades proceed non-interactively without prompts.
+- [[#7825]](https://github.com/Azure/azure-dev/pull/7825) Standardize `--no-prompt` behavior to consistently fail with a structured error when required input (subscription, location, or resource group) cannot be resolved automatically, enabling reliable non-interactive use in CI pipelines and AI agents.
+
+### Bugs Fixed
+
+- [[#7797]](https://github.com/Azure/azure-dev/pull/7797) Fix error handling for `AADSTS530084` token protection errors to display clear guidance and documentation links instead of an opaque authentication failure message.
+- [[#7819]](https://github.com/Azure/azure-dev/pull/7819) Fix local Bicep preflight reserved-name check to skip ARM-allow-listed resource types (e.g., Private Link DNS zones, resource groups, role assignments) that accept reserved names server-side, and fix compound child resource names generating duplicate warnings.
+- [[#7723]](https://github.com/Azure/azure-dev/pull/7723) Fix service names containing spaces in `azure.yaml` generating invalid environment variable names (e.g., `SERVICE_API AND FRONTEND_IMAGE_NAME` → `SERVICE_API_AND_FRONTEND_IMAGE_NAME`). Thanks @spboyer for the contribution!
+
+### Other Changes
+
+- [[#7767]](https://github.com/Azure/azure-dev/pull/7767) Update the "update available" banner to a shorter, more actionable format that includes a link to release notes (stable channel) or recent changes (daily channel).
+
 ## 1.24.1 (2026-04-17)
 
 ### Features Added

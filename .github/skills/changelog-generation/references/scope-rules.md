@@ -11,12 +11,13 @@ Files to update:
 - `.vscode/cspell-github-user-aliases.txt` — if spell check additions needed
 
 **Version derivation:**
-1. Find the top-most section in `cli/azd/CHANGELOG.md` (e.g., `## X.Y.Z-beta.N (Unreleased)`).
-2. Strip the `-beta.N` suffix and `(Unreleased)` marker.
-3. Format as: `## X.Y.Z (YYYY-MM-DD)` using **today's date** (the date the changelog is being authored/committed, not a future planned ship date).
-4. Set `cli/version.txt` to `X.Y.Z`.
-5. Set the `Version` constant in `cli/azd/pkg/azdext/version.go` to `X.Y.Z`.
-6. If no unreleased header is found in the changelog, ask the user for the release version number via `ask_user`.
+1. Check if the triggering issue or user request specifies an explicit version (e.g., "Create changelog for 1.24.2"). If yes, use that version — skip to step 4.
+2. Find the top-most section in `cli/azd/CHANGELOG.md` (e.g., `## X.Y.Z-beta.N (Unreleased)`).
+3. Strip the `-beta.N` suffix and `(Unreleased)` marker.
+4. Format as: `## X.Y.Z (YYYY-MM-DD)` using **today's date** (the date the changelog is being authored/committed, not a future planned ship date).
+5. Set `cli/version.txt` to `X.Y.Z`.
+6. Set the `Version` constant in `cli/azd/pkg/azdext/version.go` to `X.Y.Z`.
+7. If no version can be determined (no explicit version requested and no unreleased header found), ask the user for the release version number via `ask_user`.
 
 **Unreleased placeholder after release:**
 

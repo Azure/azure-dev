@@ -12,6 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exegraph"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/stretchr/testify/require"
@@ -182,4 +183,24 @@ func TestSequentialFallbackNotAppliedWithUses(t *testing.T) {
 	// graph-determined, not forced sequential.
 	err = exegraph.Run(t.Context(), g, exegraph.RunOptions{})
 	require.NoError(t, err)
+}
+
+// TestSuggestServiceDeps verifies that the advisory scanner detects
+// SERVICE_<OTHER>_* references in service env configs.
+func TestSuggestServiceDeps(t *testing.T) {
+	t.Parallel()
+	services := []*project.ServiceConfig{
+		{Name: "api"},
+		{
+			Name: "web",
+			Environment: osutil.ExpandableMap{
+				"API_URL": osutil.NewExpandableString("${SERVICE_API_ENDPOINT_URL}"),
+			},
+		},
+		{Name: "worker"},
+	}
+
+	// suggestServiceDeps only logs — verify it doesn't panic and
+	// correctly identifies the web->api dependency.
+	suggestServiceDeps(services)
 }

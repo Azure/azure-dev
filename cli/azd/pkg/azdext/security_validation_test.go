@@ -263,8 +263,8 @@ func TestIsContainerEnvironment_EnvVars(t *testing.T) {
 			// Clear all container env vars so only the one under test is active.
 			// This prevents false positives when running inside a devcontainer
 			// or Codespace where other vars are already set.
-			for envKey := range containerEnvVars {
-				t.Setenv(envKey, "")
+			for _, e := range containerEnvVars {
+				t.Setenv(e.envKey, "")
 			}
 			t.Setenv(tc.envKey, "true")
 
@@ -282,10 +282,10 @@ func TestIsContainerEnvironment_EnvVars(t *testing.T) {
 
 func TestIsContainerEnvironment_NoContainerEnv(t *testing.T) {
 	// Clear all container-related env vars.
-	for envKey := range containerEnvVars {
-		if v := os.Getenv(envKey); v != "" {
-			t.Setenv(envKey, "")
-			os.Unsetenv(envKey)
+	for _, e := range containerEnvVars {
+		if v := os.Getenv(e.envKey); v != "" {
+			t.Setenv(e.envKey, "")
+			os.Unsetenv(e.envKey)
 		}
 	}
 

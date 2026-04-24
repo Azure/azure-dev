@@ -204,3 +204,37 @@ func TestSuggestServiceDeps(t *testing.T) {
 	// correctly identifies the web->api dependency.
 	suggestServiceDeps(services)
 }
+
+func TestDeployGraphState_ResultsSnapshot(t *testing.T) {
+	t.Parallel()
+	services := []*project.ServiceConfig{{Name: "api"}, {Name: "web"}}
+	state := newDeployGraphState(services)
+
+	// Store some results.
+	r1 := &project.ServiceDeployResult{}
+	r2 := &project.ServiceDeployResult{}
+	state.StoreResult("api", r1)
+	state.StoreResult("web", r2)
+
+	// Snapshot must return a copy.
+	snap := state.ResultsSnapshot()
+	require.Len(t, snap, 2)
+	require.Same(t, r1, snap["api"])
+	require.Same(t, r2, snap["web"])
+
+	// Mutating the snapshot must not affect the state.
+	delete(snap, "api")
+	require.Equal(t, r1, state.GetResult("api"), "deleting from snapshot must not affect state")
+}
+
+func TestDeployGraphState_StoreLoadContext(t *testing.T) {
+	t.Parallel()
+	services := []*project.ServiceConfig{{Name: "svc"}}
+	state := newDeployGraphState(services)
+
+	require.Nil(t, state.LoadContext("svc"))
+
+	sc := project.NewServiceContext()
+	state.StoreContext("svc", sc)
+	require.Same(t, sc, state.LoadContext("svc"))
+}

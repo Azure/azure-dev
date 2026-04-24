@@ -496,3 +496,30 @@ func TestDeploymentResultJSON(t *testing.T) {
 	require.True(t, ok, "services should be a map")
 	require.Len(t, services, 2)
 }
+
+func TestResolveDAGConcurrency(t *testing.T) {
+	tests := []struct {
+		name     string
+		envVal   string
+		setEnv   bool
+		expected int
+	}{
+		{"Unset", "", false, 0},
+		{"Valid", "4", true, 4},
+		{"ClampedTo64", "100", true, 64},
+		{"ExactlyMax", "64", true, 64},
+		{"Invalid", "abc", true, 0},
+		{"Zero", "0", true, 0},
+		{"Negative", "-1", true, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.setEnv {
+				t.Setenv("AZD_DEPLOY_CONCURRENCY", tt.envVal)
+			}
+			da := &DeployAction{}
+			got := da.resolveDAGConcurrency()
+			require.Equal(t, tt.expected, got)
+		})
+	}
+}

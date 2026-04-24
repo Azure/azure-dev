@@ -26,7 +26,7 @@ backward compatibility with existing templates:
 
 | Scenario | Deploy ordering | Why |
 |----------|----------------|-----|
-| No service declares `uses:` targeting another service | **Sequential** in azure.yaml order | Templates relied on implicit ordering (e.g. api before web) |
+| No service declares `uses:` targeting another service | **Sequential** in alphabetical order | Templates relied on implicit ordering; alphabetical matches legacy `ServiceStable()` |
 | Any service declares `uses: [other-service]` | **Graph-driven** per declared edges | Explicit deps enable safe parallelism |
 
 **Package and publish steps always run in parallel** regardless of `uses:`
@@ -57,10 +57,11 @@ services:
 ```
 
 When **no service** in the project declares a `uses:` entry targeting
-another service, the graph builder chains deploy steps in azure.yaml
-slice order — matching the legacy sequential behavior. This prevents
-regressions in templates where one service reads environment variables
-(e.g. `SERVICE_API_ENDPOINT_URL`) set by a previously deployed service.
+another service, the graph builder chains deploy steps in alphabetical
+order (matching the `ServiceStable()` sort used by the legacy sequential
+path). This prevents regressions in templates where one service reads
+environment variables (e.g. `SERVICE_API_ENDPOINT_URL`) set by a
+previously deployed service.
 
 A diagnostic log message is emitted when the sequential fallback activates:
 > `deploying N services sequentially (no uses: edges declared; add uses: to azure.yaml to enable parallel deployment)`
@@ -142,26 +143,16 @@ race on `env` (one writing `KUBECONFIG=…`, the other reading it for an
 
 ## `pkg/project.containerAppTarget` and `pkg/project.aksTarget`
 
-These targets no longer carry package-level `envMu` / `aksEnvMu` mutexes.
-All dotenv access is protected by `Environment.mu` internally, and
-`Manager.saveMu` serializes disk writes. The external mutexes were removed
-once `Environment` became internally thread-safe (see above).
+These targets no longer carry package-level `envMu` / `aksEnvMu` mutexes
+or per-target `expandedEnvCache`/`expandedEnvMu` fields. All dotenv
+access is protected by `Environment.mu` internally, and `Manager.saveMu`
+serializes disk writes. The external mutexes were removed once
+`Environment` became internally thread-safe (see above).
 
-| Lock                       | Protects                          | Acquired by                                                        |
-|----------------------------|-----------------------------------|--------------------------------------------------------------------|
-| `expandedEnvMu sync.Mutex` | `expandedEnvCache` per-target map | `expandServiceEnv` (read-cache and write-cache critical sections)  |
-
-**Contract**: Each service-target instance is shared across the
-package/publish/deploy steps for that service AND across parallel services
-that happen to share a target. The cache is a memoization optimization, not
-a correctness requirement, but the underlying map mutation must be guarded.
-
-**Why it matters**: Container-Apps and AKS targets compute and persist
-template-hash values (`SetServiceProperty` → `env.DotenvSet`) via
-`Environment.mu`. Adding a new write path that touches the dotenv map
-does NOT need an external mutex — `Environment` handles that internally.
-Adding a new write that mutates the per-target cache must acquire
-`expandedEnvMu`.
+**Contract**: Adding a new write path that touches the dotenv map does
+NOT need an external mutex — `Environment` handles that internally.
+AKS Kustomize env expansion (`K8s.Kustomize.Env.Expand`) reads from
+`env.Getenv` which acquires `Environment.mu.RLock()` internally.
 
 ---
 

@@ -255,10 +255,3 @@ func TestPromptCustomResource_NilSelectorOptions_UsesDefaultsAndForce(t *testing
 // helpers
 
 func emptySubs() []account.Subscription { return []account.Subscription{} }
-
-func locations() []account.Location {
-	return []account.Location{
-		{Name: "eastus2", DisplayName: "East US 2", RegionalDisplayName: "(US) East US 2"},
-		{Name: "westus3", DisplayName: "West US 3", RegionalDisplayName: "(US) West US 3"},
-	}
-}

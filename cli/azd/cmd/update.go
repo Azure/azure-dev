@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -69,6 +70,7 @@ type updateAction struct {
 	writer        io.Writer
 	configManager config.UserConfigManager
 	commandRunner exec.CommandRunner
+	httpClient    *http.Client // nil uses default; tests inject a failing client
 }
 
 func newUpdateAction(
@@ -176,7 +178,7 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}, nil
 	}
 
-	mgr := update.NewManager(a.commandRunner, nil)
+	mgr := update.NewManager(a.commandRunner, a.httpClient)
 
 	// Block update in CI/CD environments
 	if resource.IsRunningOnCI() {

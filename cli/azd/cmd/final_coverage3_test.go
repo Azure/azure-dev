@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"net/http"
 	"os"
 	"testing"
 
@@ -85,6 +86,18 @@ func (r *noopCommandRunner) ToolInPath(_ string) error {
 	return errors.New("not found")
 }
 
+// failingTransport is an http.RoundTripper that always returns an error.
+type failingTransport struct{}
+
+func (ft *failingTransport) RoundTrip(_ *http.Request) (*http.Response, error) {
+	return nil, errors.New("test: network disabled")
+}
+
+// failingHTTPClient returns an *http.Client that fails all requests.
+func failingHTTPClient() *http.Client {
+	return &http.Client{Transport: &failingTransport{}}
+}
+
 // ===========================================================================
 // updateAction.Run tests
 // ===========================================================================
@@ -131,6 +144,7 @@ func newTestUpdateAction(
 		writer:        writer,
 		configManager: cfgMgr,
 		commandRunner: cmdRunner,
+		httpClient:    failingHTTPClient(),
 	}
 }
 

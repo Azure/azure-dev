@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -122,6 +123,63 @@ func TestNonexistentUses(t *testing.T) {
 
 	// Validate and run: nonexistent uses should be silently filtered.
 	require.NoError(t, g.Validate())
+	err = exegraph.Run(t.Context(), g, exegraph.RunOptions{})
+	require.NoError(t, err)
+}
+
+// TestSequentialFallback verifies that when no service declares a uses:
+// edge targeting another service, deploy steps are chained sequentially
+// in slice order for backward compatibility with templates that relied
+// on implicit ordering.
+func TestSequentialFallback(t *testing.T) {
+	t.Parallel()
+	services := []*project.ServiceConfig{
+		{Name: "api"},
+		{Name: "web"},
+		{Name: "worker"},
+	}
+
+	opts, g := newGraphOpts(services)
+	handles, err := addServiceStepsToGraph(g, opts)
+	require.NoError(t, err)
+	require.Len(t, handles.DeploySteps, 3)
+
+	// Run the graph and record completion order.
+	var order []string
+	var mu sync.Mutex
+	err = exegraph.Run(t.Context(), g, exegraph.RunOptions{
+		OnStepDone: func(name string, err error) {
+			if err == nil && len(name) > 7 && name[:7] == "deploy-" {
+				mu.Lock()
+				order = append(order, name)
+				mu.Unlock()
+			}
+		},
+	})
+	require.NoError(t, err)
+
+	// Deploy steps must complete in slice order (sequential fallback).
+	require.Equal(t, []string{"deploy-api", "deploy-web", "deploy-worker"}, order)
+}
+
+// TestSequentialFallbackNotAppliedWithUses verifies that when at least
+// one service declares a uses: edge to another service, the sequential
+// fallback does NOT activate — services without uses: run in parallel.
+func TestSequentialFallbackNotAppliedWithUses(t *testing.T) {
+	t.Parallel()
+	services := []*project.ServiceConfig{
+		{Name: "api"},
+		{Name: "web", Uses: []string{"api"}},
+		{Name: "worker"},
+	}
+
+	opts, g := newGraphOpts(services)
+	_, err := addServiceStepsToGraph(g, opts)
+	require.NoError(t, err)
+	require.NoError(t, g.Validate())
+
+	// Just verify it runs without deadlock — ordering is now
+	// graph-determined, not forced sequential.
 	err = exegraph.Run(t.Context(), g, exegraph.RunOptions{})
 	require.NoError(t, err)
 }

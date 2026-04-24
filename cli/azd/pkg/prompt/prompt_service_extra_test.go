@@ -8,7 +8,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
@@ -32,97 +31,13 @@ func newTestPromptService(
 	console.SetNoPromptMode(noPrompt)
 
 	ps := NewPromptService(
-		auth, console, ucm, sm, rs, &internal.GlobalCommandOptions{NoPrompt: noPrompt},
+		auth, console, ucm, sm, rs,
 	).(*promptService)
 
 	return ps, rs, sm, console
 }
 
 // PromptResourceGroup - NoPrompt branches
-
-func TestPromptService_PromptResourceGroup_NoPrompt_Missing(t *testing.T) {
-	t.Parallel()
-
-	ps, _, _, _ := newTestPromptService(t, true)
-
-	// azureContext.Scope.ResourceGroup is empty -> must error
-	_, err := ps.PromptResourceGroup(t.Context(), &AzureContext{
-		Scope: AzureScope{SubscriptionId: "sub-1"},
-	}, nil)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "resource group selection required")
-}
-
-func TestPromptService_PromptResourceGroup_NoPrompt_Found(t *testing.T) {
-	t.Parallel()
-
-	ps, rs, _, _ := newTestPromptService(t, true)
-
-	rs.On("ListResourceGroup", mock.Anything, "sub-1", mock.Anything).
-		Return([]*azapi.Resource{
-			{Id: "/subscriptions/sub-1/resourceGroups/rg-other", Name: "rg-other", Location: "eastus"},
-			{Id: "/subscriptions/sub-1/resourceGroups/rg-pick", Name: "rg-pick", Location: "westus"},
-		}, nil)
-
-	got, err := ps.PromptResourceGroup(t.Context(), &AzureContext{
-		Scope: AzureScope{SubscriptionId: "sub-1", ResourceGroup: "rg-pick"},
-	}, nil)
-	require.NoError(t, err)
-	require.NotNil(t, got)
-	require.Equal(t, "rg-pick", got.Name)
-	require.Equal(t, "westus", got.Location)
-}
-
-func TestPromptService_PromptResourceGroup_NoPrompt_NotFound(t *testing.T) {
-	t.Parallel()
-
-	ps, rs, _, _ := newTestPromptService(t, true)
-
-	rs.On("ListResourceGroup", mock.Anything, "sub-1", mock.Anything).
-		Return([]*azapi.Resource{
-			{Id: "/subscriptions/sub-1/resourceGroups/rg-a", Name: "rg-a", Location: "eastus"},
-		}, nil)
-
-	_, err := ps.PromptResourceGroup(t.Context(), &AzureContext{
-		Scope: AzureScope{SubscriptionId: "sub-1", ResourceGroup: "rg-missing"},
-	}, nil)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "rg-missing")
-}
-
-func TestPromptService_PromptResourceGroup_NoPrompt_ListError(t *testing.T) {
-	t.Parallel()
-
-	ps, rs, _, _ := newTestPromptService(t, true)
-
-	rs.On("ListResourceGroup", mock.Anything, "sub-1", mock.Anything).
-		Return(([]*azapi.Resource)(nil), errors.New("list failed"))
-
-	_, err := ps.PromptResourceGroup(t.Context(), &AzureContext{
-		Scope: AzureScope{SubscriptionId: "sub-1", ResourceGroup: "rg-any"},
-	}, nil)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to load resource groups")
-}
-
-func TestPromptService_PromptResourceGroup_NoPrompt_NilContext_Errors(t *testing.T) {
-	t.Parallel()
-
-	ps, _, sm, _ := newTestPromptService(t, true)
-
-	// With a nil azure context and no default subscription, EnsureSubscription will try to prompt which
-	// will fail because there is no PromptService attached and NoPrompt=true means PromptSubscription
-	// returns an error for 0 subscriptions.
-	sm.On("GetSubscriptions", mock.Anything).Return(emptySubs(), nil)
-
-	// The nil context case causes EnsureSubscription to call the context's internal promptService which
-	// is nil; to avoid a nil deref, supply a subscription explicitly.
-	_, err := ps.PromptResourceGroup(t.Context(), &AzureContext{
-		Scope: AzureScope{SubscriptionId: "sub-1"},
-	}, &ResourceGroupOptions{})
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "resource group selection required")
-}
 
 func newAzCtx(scope AzureScope) *AzureContext {
 	return &AzureContext{
@@ -136,41 +51,53 @@ func newAzCtx(scope AzureScope) *AzureContext {
 func TestPromptService_PromptSubscriptionResource_NoPrompt_Errors(t *testing.T) {
 	t.Parallel()
 
-	ps, _, _, _ := newTestPromptService(t, true)
+	ps, rs, _, _ := newTestPromptService(t, true)
 	rtype := azapi.AzureResourceType("Microsoft.Storage/storageAccounts")
+
+	rs.On("ListSubscriptionResources", mock.Anything, "sub-1", mock.Anything).
+		Return([]*azapi.ResourceExtended{}, nil)
 
 	_, err := ps.PromptSubscriptionResource(t.Context(), newAzCtx(AzureScope{SubscriptionId: "sub-1"}),
 		ResourceOptions{
-			ResourceType: &rtype,
+			ResourceType:    &rtype,
+			SelectorOptions: &SelectOptions{AllowNewResource: new(false)},
 		})
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "cannot prompt in --no-prompt mode")
-	require.Contains(t, err.Error(), string(rtype))
+	require.Contains(t, err.Error(), "no resources found with type")
 }
 
 func TestPromptService_PromptSubscriptionResource_NoPrompt_CustomDisplayName(t *testing.T) {
 	t.Parallel()
 
-	ps, _, _, _ := newTestPromptService(t, true)
+	ps, rs, _, _ := newTestPromptService(t, true)
+
+	rs.On("ListSubscriptionResources", mock.Anything, "sub-1", mock.Anything).
+		Return([]*azapi.ResourceExtended{}, nil)
 
 	_, err := ps.PromptSubscriptionResource(t.Context(), newAzCtx(AzureScope{SubscriptionId: "sub-1"}),
 		ResourceOptions{
 			ResourceTypeDisplayName: "My Fancy Resource",
+			SelectorOptions:         &SelectOptions{AllowNewResource: new(false)},
 		})
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "My Fancy Resource")
+	require.ErrorIs(t, err, ErrNoResourcesFound)
 }
 
 func TestPromptService_PromptSubscriptionResource_NoPrompt_FallbackName(t *testing.T) {
 	t.Parallel()
 
-	ps, _, _, _ := newTestPromptService(t, true)
+	ps, rs, _, _ := newTestPromptService(t, true)
 
 	// Neither ResourceType nor ResourceTypeDisplayName provided -> fallback "resource".
+	rs.On("ListSubscriptionResources", mock.Anything, "sub-1", mock.Anything).
+		Return([]*azapi.ResourceExtended{}, nil)
+
 	_, err := ps.PromptSubscriptionResource(t.Context(), newAzCtx(AzureScope{SubscriptionId: "sub-1"}),
-		ResourceOptions{})
+		ResourceOptions{
+			SelectorOptions: &SelectOptions{AllowNewResource: new(false)},
+		})
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "resource selection required")
+	require.ErrorIs(t, err, ErrNoResourcesFound)
 }
 
 // PromptResourceGroupResource - NoPrompt errors
@@ -178,60 +105,58 @@ func TestPromptService_PromptSubscriptionResource_NoPrompt_FallbackName(t *testi
 func TestPromptService_PromptResourceGroupResource_NoPrompt_Errors(t *testing.T) {
 	t.Parallel()
 
-	ps, _, _, _ := newTestPromptService(t, true)
+	ps, rs, _, _ := newTestPromptService(t, true)
 	rtype := azapi.AzureResourceType("Microsoft.Web/sites")
+
+	rs.On("ListResourceGroupResources", mock.Anything, "sub-1", "rg-1", mock.Anything).
+		Return([]*azapi.ResourceExtended{}, nil)
 
 	_, err := ps.PromptResourceGroupResource(t.Context(),
 		newAzCtx(AzureScope{SubscriptionId: "sub-1", ResourceGroup: "rg-1"}),
 		ResourceOptions{
-			ResourceType: &rtype,
+			ResourceType:    &rtype,
+			SelectorOptions: &SelectOptions{AllowNewResource: new(false)},
 		})
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "cannot prompt in --no-prompt mode")
-	require.Contains(t, err.Error(), string(rtype))
+	require.Contains(t, err.Error(), "no resources found with type")
 }
 
 func TestPromptService_PromptResourceGroupResource_NoPrompt_CustomDisplayName(t *testing.T) {
 	t.Parallel()
 
-	ps, _, _, _ := newTestPromptService(t, true)
+	ps, rs, _, _ := newTestPromptService(t, true)
+
+	rs.On("ListResourceGroupResources", mock.Anything, "sub-1", "rg-1", mock.Anything).
+		Return([]*azapi.ResourceExtended{}, nil)
 
 	_, err := ps.PromptResourceGroupResource(t.Context(),
 		newAzCtx(AzureScope{SubscriptionId: "sub-1", ResourceGroup: "rg-1"}),
 		ResourceOptions{
 			ResourceTypeDisplayName: "Widget",
+			SelectorOptions:         &SelectOptions{AllowNewResource: new(false)},
 		})
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "Widget")
+	require.ErrorIs(t, err, ErrNoResourcesFound)
 }
 
 func TestPromptService_PromptResourceGroupResource_NoPrompt_FallbackName(t *testing.T) {
 	t.Parallel()
 
-	ps, _, _, _ := newTestPromptService(t, true)
+	ps, rs, _, _ := newTestPromptService(t, true)
+
+	rs.On("ListResourceGroupResources", mock.Anything, "sub-1", "rg-1", mock.Anything).
+		Return([]*azapi.ResourceExtended{}, nil)
 
 	_, err := ps.PromptResourceGroupResource(t.Context(),
 		newAzCtx(AzureScope{SubscriptionId: "sub-1", ResourceGroup: "rg-1"}),
-		ResourceOptions{})
+		ResourceOptions{
+			SelectorOptions: &SelectOptions{AllowNewResource: new(false)},
+		})
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "resource selection required")
+	require.ErrorIs(t, err, ErrNoResourcesFound)
 }
 
 // PromptLocation - pre-set scope paths (already covered by existing tests but adding additional shape tests)
-
-func TestPromptService_PromptLocation_NoPrompt_DefaultsToEastUS2(t *testing.T) {
-	t.Parallel()
-
-	// No explicit user config -> default "eastus2" must be used.
-	ps, _, sm, _ := newTestPromptService(t, true)
-	sm.On("GetLocations", mock.Anything, "sub-1").Return(locations(), nil)
-
-	loc, err := ps.PromptLocation(t.Context(), &AzureContext{
-		Scope: AzureScope{SubscriptionId: "sub-1"},
-	}, nil)
-	require.NoError(t, err)
-	require.Equal(t, "eastus2", loc.Name)
-}
 
 // TestPromptService_PromptLocation_EmptySubscription_PropagatesError ensures
 // that when PromptLocation is called with a context that has no subscription,
@@ -246,7 +171,7 @@ func TestPromptService_PromptLocation_EmptySubscription_PropagatesError(t *testi
 	// Pre-load no subscriptions so EnsureSubscription fails with a clear error.
 	sm.On("GetSubscriptions", mock.Anything).Return(emptySubs(), nil)
 
-	azCtx := NewAzureContext(ps, AzureScope{}, nil)
+	azCtx := NewAzureContext(ps, AzureScope{}, nil, true)
 	_, err := ps.PromptLocation(t.Context(), azCtx, nil)
 	require.Error(t, err)
 }

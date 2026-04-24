@@ -106,7 +106,7 @@ func printError(err error) {
 	}
 }
 
-// ErrorSuggestion extracts the Suggestion field from a [LocalError] or [ServiceError].
+// ErrorSuggestion extracts the Suggestion field from structured extension or host gRPC errors.
 // Returns an empty string if the error has no suggestion.
 func ErrorSuggestion(err error) string {
 	if localErr, ok := errors.AsType[*LocalError](err); ok && localErr.Suggestion != "" {
@@ -117,11 +117,15 @@ func ErrorSuggestion(err error) string {
 		return svcErr.Suggestion
 	}
 
+	if actionable := ActionableErrorDetailFromError(err); actionable != nil && actionable.GetSuggestion() != "" {
+		return actionable.GetSuggestion()
+	}
+
 	return ""
 }
 
-// ErrorMessage extracts the user-friendly Message field from a [LocalError] or [ServiceError].
-// Returns an empty string if the error is not an extension error type.
+// ErrorMessage extracts the user-friendly message from a [LocalError], [ServiceError],
+// or a host gRPC error carrying an [ActionableErrorDetail]. Returns "" otherwise.
 func ErrorMessage(err error) string {
 	if localErr, ok := errors.AsType[*LocalError](err); ok && localErr.Message != "" {
 		return localErr.Message
@@ -131,10 +135,19 @@ func ErrorMessage(err error) string {
 		return svcErr.Message
 	}
 
+	// Host-originated actionable errors carry the user-facing message in status.Message
+	// (ActionableErrorDetail intentionally does not duplicate it). Only return when an
+	// ActionableErrorDetail is present so we don't claim every random gRPC error is structured.
+	if st, ok := GRPCStatusFromError(err); ok {
+		if ActionableErrorDetailFromStatus(st) != nil && st.Message() != "" {
+			return st.Message()
+		}
+	}
+
 	return ""
 }
 
-// ErrorLinks extracts the Links field from a [LocalError] or [ServiceError].
+// ErrorLinks extracts the Links field from structured extension or host gRPC errors.
 // Returns nil if the error has no links.
 func ErrorLinks(err error) []errorhandler.ErrorLink {
 	if localErr, ok := errors.AsType[*LocalError](err); ok && len(localErr.Links) > 0 {
@@ -143,6 +156,10 @@ func ErrorLinks(err error) []errorhandler.ErrorLink {
 
 	if svcErr, ok := errors.AsType[*ServiceError](err); ok && len(svcErr.Links) > 0 {
 		return svcErr.Links
+	}
+
+	if actionable := ActionableErrorDetailFromError(err); actionable != nil {
+		return UnwrapErrorLinks(actionable.GetLinks())
 	}
 
 	return nil

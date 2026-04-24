@@ -15,6 +15,7 @@ import (
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/protoadapt"
 )
 
 func TestExtensionError_RoundTrip(t *testing.T) {
@@ -205,6 +206,74 @@ func TestExtensionError_RoundTrip(t *testing.T) {
 			},
 		},
 		{
+			name: "GrpcUnauthenticatedWithActionableDetail",
+			inputErr: mustStatusErrorWithDetails(
+				codes.Unauthenticated,
+				"A Conditional Access token protection policy blocked this token request.",
+				&errdetails.ErrorInfo{
+					Reason: "AADSTS530084",
+					Domain: AuthErrorDomain,
+				},
+				&ActionableErrorDetail{
+					Suggestion: "Contact your IT administrator or request a policy exception.",
+					Links: []*ErrorLink{{
+						Url:   "https://aka.ms/TokenProtectionFAQ#troubleshooting",
+						Title: "Token protection FAQ",
+					}},
+				},
+			),
+			verify: func(t *testing.T, protoErr *ExtensionError, goErr error) {
+				assert.Equal(t, ErrorOrigin_ERROR_ORIGIN_LOCAL, protoErr.GetOrigin())
+				assert.Equal(t,
+					"A Conditional Access token protection policy blocked this token request.",
+					protoErr.GetMessage())
+				assert.Equal(t, "Contact your IT administrator or request a policy exception.", protoErr.GetSuggestion())
+				require.Len(t, protoErr.GetLinks(), 1)
+				assert.Equal(t, "https://aka.ms/TokenProtectionFAQ#troubleshooting", protoErr.GetLinks()[0].GetUrl())
+
+				localDetail := protoErr.GetLocalError()
+				require.NotNil(t, localDetail)
+				assert.Equal(t, "auth_failed", localDetail.GetCode())
+				assert.Equal(t, "auth", localDetail.GetCategory())
+
+				var localErr *LocalError
+				require.ErrorAs(t, goErr, &localErr)
+				assert.Equal(t, LocalErrorCategoryAuth, localErr.Category)
+				assert.Equal(t, "auth_failed", localErr.Code)
+				assert.Equal(t, "Contact your IT administrator or request a policy exception.", localErr.Suggestion)
+				require.Len(t, localErr.Links, 1)
+			},
+		},
+		{
+			name: "GrpcActionableNonAuthError",
+			inputErr: mustStatusErrorWithDetails(
+				codes.InvalidArgument,
+				"The extension configuration is invalid.",
+				&ActionableErrorDetail{
+					Suggestion: "Fix the extension config and retry.",
+					Links: []*ErrorLink{{
+						Url:   "https://aka.ms/azd-errors#invalid-config",
+						Title: "Invalid config reference",
+					}},
+				},
+			),
+			verify: func(t *testing.T, protoErr *ExtensionError, goErr error) {
+				assert.Equal(t, ErrorOrigin_ERROR_ORIGIN_LOCAL, protoErr.GetOrigin())
+				assert.Equal(t, "The extension configuration is invalid.", protoErr.GetMessage())
+				assert.Equal(t, "Fix the extension config and retry.", protoErr.GetSuggestion())
+				require.Len(t, protoErr.GetLinks(), 1)
+
+				localDetail := protoErr.GetLocalError()
+				require.NotNil(t, localDetail)
+				assert.Equal(t, string(LocalErrorCategoryLocal), localDetail.GetCategory())
+
+				var localErr *LocalError
+				require.ErrorAs(t, goErr, &localErr)
+				assert.Equal(t, LocalErrorCategoryLocal, localErr.Category)
+				assert.Equal(t, "Fix the extension config and retry.", localErr.Suggestion)
+			},
+		},
+		{
 			name:     "GrpcUnauthenticatedWithoutAuthDetailsFallsBackToAuthFailed",
 			inputErr: status.Error(codes.Unauthenticated, "generic auth problem"),
 			verify: func(t *testing.T, protoErr *ExtensionError, goErr error) {
@@ -273,11 +342,15 @@ func TestUnwrapError_EmptyMessagePreservesStructuredError(t *testing.T) {
 }
 
 func mustAuthStatusError(code codes.Code, reason, message string) error {
-	st := status.New(code, message)
-	withDetails, err := st.WithDetails(&errdetails.ErrorInfo{
+	return mustStatusErrorWithDetails(code, message, &errdetails.ErrorInfo{
 		Reason: reason,
 		Domain: AuthErrorDomain,
 	})
+}
+
+func mustStatusErrorWithDetails(code codes.Code, message string, details ...protoadapt.MessageV1) error {
+	st := status.New(code, message)
+	withDetails, err := st.WithDetails(details...)
 	if err != nil {
 		panic(err)
 	}

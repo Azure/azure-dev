@@ -19,6 +19,65 @@ it protects are co-located by convention.
 
 ---
 
+## Service Deploy Ordering
+
+Service deployment uses a **sequential-by-default** model to preserve
+backward compatibility with existing templates:
+
+| Scenario | Deploy ordering | Why |
+|----------|----------------|-----|
+| No service declares `uses:` targeting another service | **Sequential** in azure.yaml order | Templates relied on implicit ordering (e.g. api before web) |
+| Any service declares `uses: [other-service]` | **Graph-driven** per declared edges | Explicit deps enable safe parallelism |
+
+**Package and publish steps always run in parallel** regardless of `uses:`
+declarations — only deploy ordering is affected by the fallback.
+
+### How `uses:` enables parallel deployment
+
+In `azure.yaml`, the `uses:` field on a service declares deploy-time
+dependencies. When `web` declares `uses: [api]`, `deploy-web` waits for
+`deploy-api` to complete before starting. Services without mutual `uses:`
+edges deploy in parallel.
+
+```yaml
+services:
+  api:
+    host: containerapp
+    language: python
+  web:
+    host: containerapp
+    language: js
+    uses:
+      - api   # deploy-web waits for deploy-api
+  worker:
+    host: containerapp
+    language: python
+    # no uses: → deploys in parallel with api (or sequentially if no
+    # service in the project declares any uses: edges)
+```
+
+When **no service** in the project declares a `uses:` entry targeting
+another service, the graph builder chains deploy steps in azure.yaml
+slice order — matching the legacy sequential behavior. This prevents
+regressions in templates where one service reads environment variables
+(e.g. `SERVICE_API_ENDPOINT_URL`) set by a previously deployed service.
+
+A diagnostic log message is emitted when the sequential fallback activates:
+> `deploying N services sequentially (no uses: edges declared; add uses: to azure.yaml to enable parallel deployment)`
+
+### Environment variable flow during deployment
+
+Each service's `Deploy` step writes `SERVICE_<NAME>_ENDPOINT_URL` into the
+shared `.env` after completing. In sequential mode, a later service can read
+earlier services' endpoint URLs because the `.env` is updated between steps.
+In parallel mode with explicit `uses:` edges, the same guarantee holds
+because `deploy-web` doesn't start until `deploy-api` has written its
+endpoint URL.
+
+**If you depend on another service's endpoint URL, declare `uses:`.**
+
+---
+
 ## `pkg/environment.Environment`
 
 | Lock                     | Protects                                          | Acquired by                                                                |

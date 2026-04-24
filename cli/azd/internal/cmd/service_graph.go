@@ -205,6 +205,14 @@ type serviceGraphHandles struct {
 //	                                                           runs first; later services with the
 //	                                                            same key wait on that first step.
 //
+// Deploy ordering: when no service declares a `uses:` edge targeting
+// another service in this graph, deploy steps chain sequentially in slice
+// order for backward compatibility with templates that relied on implicit
+// ordering (e.g. api deploys before web). When at least one service
+// declares `uses:`, the graph uses explicit edges and services without
+// mutual `uses:` edges deploy in parallel. Package and publish steps
+// always run in parallel regardless.
+//
 // When opts.packageExtraDeps is empty (stand-alone `azd deploy`), package
 // steps have no DependsOn and packaging can overlap with whatever provision
 // steps the caller added upstream of publish.

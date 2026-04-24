@@ -260,8 +260,12 @@ func TestIsContainerEnvironment_EnvVars(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.envKey, func(t *testing.T) {
-			// Ensure the env var is clean before/after.
-			orig := os.Getenv(tc.envKey)
+			// Clear all container env vars so only the one under test is active.
+			// This prevents false positives when running inside a devcontainer
+			// or Codespace where other vars are already set.
+			for envKey := range containerEnvVars {
+				t.Setenv(envKey, "")
+			}
 			t.Setenv(tc.envKey, "true")
 
 			if !IsContainerEnvironment() {
@@ -271,13 +275,6 @@ func TestIsContainerEnvironment_EnvVars(t *testing.T) {
 			rt := ContainerRuntime()
 			if rt != tc.runtime {
 				t.Errorf("ContainerRuntime() = %q with %s set, want %q", rt, tc.envKey, tc.runtime)
-			}
-
-			// Restore and verify negative case.
-			if orig == "" {
-				os.Unsetenv(tc.envKey)
-			} else {
-				os.Setenv(tc.envKey, orig)
 			}
 		})
 	}

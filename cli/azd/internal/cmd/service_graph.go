@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exegraph"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -285,6 +286,10 @@ func addServiceStepsToGraph(g *exegraph.Graph, opts serviceGraphOptions) (*servi
 				"add uses: to azure.yaml to enable parallel deployment)",
 			len(opts.services),
 		)
+		// Advisory: scan service env configs for SERVICE_<OTHER>_* references
+		// and suggest uses: declarations. This does NOT change execution order
+		// — it only logs hints to help template authors opt into parallelism.
+		suggestServiceDeps(opts.services)
 	}
 
 	// phaseProgress bundles an async.Progress with a wait function that
@@ -520,5 +525,46 @@ func deployTimeoutWarning(svcName string, timeout time.Duration) *ux.WarningMess
 					" or AZD_DEPLOY_TIMEOUT env var (e.g. AZD_DEPLOY_TIMEOUT=%d).",
 				int(timeout.Seconds())*2, int(timeout.Seconds())*2),
 		},
+	}
+}
+
+// suggestServiceDeps scans each service's Environment map for references to
+// other services' env vars (SERVICE_<OTHER>_*) and logs advisory hints
+// suggesting uses: declarations. This does NOT affect execution order — it
+// only helps template authors discover implicit dependencies so they can
+// opt into parallel deployment.
+func suggestServiceDeps(services []*project.ServiceConfig) {
+	// Build a lookup from normalized env key prefix to service name.
+	prefixToService := make(map[string]string, len(services))
+	for _, svc := range services {
+		prefix := "SERVICE_" + environment.Key(svc.Name) + "_"
+		prefixToService[prefix] = svc.Name
+	}
+
+	for _, svc := range services {
+		if svc.Environment == nil {
+			continue
+		}
+		deps := map[string]bool{}
+		for _, expandable := range svc.Environment {
+			// Use Envsubst with a recording mapper: each ${VAR} reference
+			// calls the mapper, letting us see which env vars are referenced
+			// without needing access to the unexported template field.
+			expandable.Envsubst(func(key string) string {
+				for prefix, depName := range prefixToService {
+					if depName != svc.Name && strings.HasPrefix(key, prefix) {
+						deps[depName] = true
+					}
+				}
+				return "" // value doesn't matter — we only care about the key
+			})
+		}
+		for dep := range deps {
+			log.Printf(
+				"  hint: service %q references SERVICE_%s_* env vars; "+
+					"consider adding 'uses: [%s]' for parallel deployment",
+				svc.Name, environment.Key(dep), dep,
+			)
+		}
 	}
 }

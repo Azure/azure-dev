@@ -47,7 +47,7 @@ func TestServiceConfigRemoveHandler(t *testing.T) {
 	}
 
 	// Register handler with a cancellable context
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	err := service.AddHandler(ctx, ServiceEventDeploy, handler1)
 	require.Nil(t, err)
 

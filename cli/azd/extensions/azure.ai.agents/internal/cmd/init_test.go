@@ -137,7 +137,7 @@ func TestValidateLocalContainerAgentCopy_AllowsReinitInPlace(t *testing.T) {
 	// InitAction with nil azdClient is safe here because isSamePath returns early
 	// before any prompting code is reached.
 	a := &InitAction{}
-	if err := a.validateLocalContainerAgentCopy(context.Background(), manifestPointer, dir); err != nil {
+	if err := a.validateLocalContainerAgentCopy(t.Context(), manifestPointer, dir); err != nil {
 		t.Fatalf("expected no error for re-init in place: %v", err)
 	}
 }

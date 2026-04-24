@@ -239,7 +239,7 @@ func createBrokerForEventHandler(
 ) (*grpcbroker.MessageBroker[azdext.EventMessage], context.Context, func()) {
 	t.Helper()
 
-	streamCtx := extensions.WithClaimsContext(context.Background(), &extensions.ExtensionClaims{
+	streamCtx := extensions.WithClaimsContext(t.Context(), &extensions.ExtensionClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject: extensionID,
 		},

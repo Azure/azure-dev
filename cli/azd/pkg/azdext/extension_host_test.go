@@ -258,7 +258,7 @@ func TestExtensionHost_ServiceTargetOnly(t *testing.T) {
 	})
 
 	// Run test
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	// Run in goroutine and collect result
@@ -325,7 +325,7 @@ func TestExtensionHost_EventHandlersOnly(t *testing.T) {
 	}, nil)
 
 	// Run test
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	// Run in goroutine and collect result
@@ -410,7 +410,7 @@ func TestExtensionHost_ServiceTargetsAndEvents(t *testing.T) {
 	})
 
 	// Run test
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	// Run in goroutine and collect result
@@ -512,7 +512,7 @@ func TestExtensionHost_WithFrameworkService(t *testing.T) {
 	})
 
 	// Run test
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	// Run in goroutine and collect result
@@ -615,7 +615,7 @@ func TestExtensionHost_MultipleServiceTypes(t *testing.T) {
 	})
 
 	// Run test
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	// Run in goroutine and collect result
@@ -688,7 +688,7 @@ func TestExtensionHost_MultipleRegistrationErrors(t *testing.T) {
 	})
 
 	// Run test
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	// Run in goroutine and collect result

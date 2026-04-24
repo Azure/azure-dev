@@ -240,7 +240,7 @@ func Test_ErrorMiddleware_PatternMatchingSuggestion(t *testing.T) {
 func Test_ErrorMiddleware_ExtensionErrorWithSuggestion_BypassesPipeline(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	cfg := config.NewEmptyConfig()
 	featureManager := alpha.NewFeaturesManagerWithConfig(cfg)
 	global := &internal.GlobalCommandOptions{
@@ -294,7 +294,7 @@ func Test_ErrorMiddleware_ExtensionErrorWithSuggestion_BypassesPipeline(t *testi
 func Test_ErrorMiddleware_StructuredExtensionErrorWithoutSuggestion_BypassesPipeline(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	cfg := config.NewEmptyConfig()
 	featureManager := alpha.NewFeaturesManagerWithConfig(cfg)
 	global := &internal.GlobalCommandOptions{

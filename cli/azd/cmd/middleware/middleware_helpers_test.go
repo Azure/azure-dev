@@ -49,9 +49,7 @@ func TestWithChildAction_IsChildAction(t *testing.T) {
 func TestIsChildAction_WrongType(t *testing.T) {
 	t.Parallel()
 	// Manually set a non-bool value under the same key
-	ctx := context.WithValue(
-		context.Background(),
-		childActionKey,
+	ctx := context.WithValue(t.Context(), childActionKey,
 		"not-a-bool",
 	)
 	require.False(t, IsChildAction(ctx))
@@ -59,9 +57,7 @@ func TestIsChildAction_WrongType(t *testing.T) {
 
 func TestIsChildAction_FalseValue(t *testing.T) {
 	t.Parallel()
-	ctx := context.WithValue(
-		context.Background(),
-		childActionKey,
+	ctx := context.WithValue(t.Context(), childActionKey,
 		false,
 	)
 	require.False(t, IsChildAction(ctx))

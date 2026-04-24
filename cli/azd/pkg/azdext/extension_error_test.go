@@ -284,16 +284,3 @@ func mustAuthStatusError(code codes.Code, reason, message string) error {
 
 	return withDetails.Err()
 }
-
-func mustAuthStatusError(code codes.Code, reason, message string) error {
-	st := status.New(code, message)
-	withDetails, err := st.WithDetails(&errdetails.ErrorInfo{
-		Reason: reason,
-		Domain: AuthErrorDomain,
-	})
-	if err != nil {
-		panic(err)
-	}
-
-	return withDetails.Err()
-}

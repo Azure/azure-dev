@@ -575,7 +575,7 @@ func TestExperimentationMiddleware_Run_CancelledContext(t *testing.T) {
 	t.Parallel()
 	m := &ExperimentationMiddleware{}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel() // cancel immediately
 
 	nextFn, count := nextCounter()

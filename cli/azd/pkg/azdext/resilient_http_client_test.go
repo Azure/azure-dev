@@ -194,7 +194,7 @@ func TestResilientClient_ContextCancelled(t *testing.T) {
 		}, nil
 	})
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel() // cancel immediately
 
 	rc := NewResilientClient(nil, &ResilientClientOptions{
@@ -705,7 +705,7 @@ func TestResilientClient_RetryAfterCappedInDo(t *testing.T) {
 		MaxRetries: 1,
 	})
 
-	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
+	ctx, cancel := context.WithTimeout(t.Context(), 25*time.Millisecond)
 	defer cancel()
 
 	_, err := rc.Do(ctx, http.MethodGet, "https://example.com/api", nil)

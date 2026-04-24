@@ -38,7 +38,7 @@ func Test_GetClaimsFromContext_WithoutClaims_ReturnsError(t *testing.T) {
 }
 
 func Test_GetClaimsFromContext_NilClaims_ReturnsError(t *testing.T) {
-	ctx := context.WithValue(context.Background(), extensionClaimsKey, (*ExtensionClaims)(nil))
+	ctx := context.WithValue(t.Context(), extensionClaimsKey, (*ExtensionClaims)(nil))
 	claims, err := GetClaimsFromContext(ctx)
 	require.Error(t, err)
 	require.Nil(t, claims)

@@ -380,7 +380,7 @@ func TestEventManager_onInvokeServiceHandler_HandlerError(t *testing.T) {
 }
 
 func TestEventManager_onInvokeServiceHandler_ServiceError(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	client := &AzdClient{}
 
 	eventManager := NewEventManager("microsoft.azd.demo", client, nil)

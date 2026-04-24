@@ -227,9 +227,7 @@ func TestManagerDestroyWithNegativeConfirmation(t *testing.T) {
 func TestEnsureSubscriptionAndLocation_NoPromptMissingSubscriptionReturnsPromptRequiredError(t *testing.T) {
 	env := environment.NewWithValues("test-env", nil)
 
-	err := provisioning.EnsureSubscriptionAndLocation(
-		context.Background(),
-		&mockenv.MockEnvManager{},
+	err := provisioning.EnsureSubscriptionAndLocation(t.Context(), &mockenv.MockEnvManager{},
 		env,
 		noPromptPrompter{},
 		provisioning.EnsureSubscriptionAndLocationOptions{},
@@ -254,9 +252,7 @@ func TestEnsureSubscriptionAndLocation_NoPromptMissingLocationReturnsPromptRequi
 	envManager := &mockenv.MockEnvManager{}
 	envManager.On("Save", mock.Anything, env).Return(nil).Once()
 
-	err := provisioning.EnsureSubscriptionAndLocation(
-		context.Background(),
-		envManager,
+	err := provisioning.EnsureSubscriptionAndLocation(t.Context(), envManager,
 		env,
 		noPromptPrompter{},
 		provisioning.EnsureSubscriptionAndLocationOptions{},
@@ -278,9 +274,7 @@ func TestEnsureSubscriptionAndLocation_NoPromptMissingLocationReturnsPromptRequi
 func TestEnsureSubscription_NoPromptMissingSubscriptionReturnsPromptRequiredError(t *testing.T) {
 	env := environment.NewWithValues("test-env", nil)
 
-	err := provisioning.EnsureSubscription(
-		context.Background(),
-		&mockenv.MockEnvManager{},
+	err := provisioning.EnsureSubscription(t.Context(), &mockenv.MockEnvManager{},
 		env,
 		noPromptPrompter{},
 	)

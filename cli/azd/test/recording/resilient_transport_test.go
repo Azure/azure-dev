@@ -134,11 +134,11 @@ func TestResilientHttpTransport_RetryOnNetworkErrors(t *testing.T) {
 			// Use short backoff duration for tests (1ms instead of 2s)
 			resilient := NewResilientHttpTransportWithBackoff(mock, 1*time.Millisecond)
 
-			req, err := http.NewRequestWithContext(context.Background(), "GET", "http://example.com", nil)
+			req, err := http.NewRequestWithContext(t.Context(), "GET", "http://example.com", nil)
 			require.NoError(t, err)
 
 			// Set a reasonable timeout for the test
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 			defer cancel()
 			req = req.WithContext(ctx)
 
@@ -171,7 +171,7 @@ func TestResilientHttpTransport_ImmediateSuccess(t *testing.T) {
 	// Use short backoff duration for tests
 	resilient := NewResilientHttpTransportWithBackoff(mock, 1*time.Millisecond)
 
-	req, err := http.NewRequestWithContext(context.Background(), "GET", "http://example.com", nil)
+	req, err := http.NewRequestWithContext(t.Context(), "GET", "http://example.com", nil)
 	require.NoError(t, err)
 
 	start := time.Now()

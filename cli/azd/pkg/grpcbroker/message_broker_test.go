@@ -322,7 +322,7 @@ func TestEndToEnd_ClientSendsServerResponds(t *testing.T) {
 	clientBroker := NewMessageBroker(sim.ClientStream(), envelope, "client", nil)
 	serverBroker := NewMessageBroker(sim.ServerStream(), envelope, "server", nil)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	// Register server handler
@@ -386,7 +386,7 @@ func TestEndToEnd_SendAndWaitWithProgress(t *testing.T) {
 	clientBroker := NewMessageBroker(sim.ClientStream(), envelope, "client", nil)
 	serverBroker := NewMessageBroker(sim.ServerStream(), envelope, "server", nil)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	// Register handler with progress
@@ -419,7 +419,9 @@ func TestEndToEnd_SendAndWaitWithProgress(t *testing.T) {
 		clientDone <- clientBroker.Run(ctx)
 	}()
 
-	time.Sleep(50 * time.Millisecond)
+	// Wait for both brokers' Run() loops to enter the receive loop.
+	require.NoError(t, serverBroker.Ready(ctx))
+	require.NoError(t, clientBroker.Ready(ctx))
 
 	// Client sends with progress callback
 	progressUpdates := []string{}
@@ -464,7 +466,7 @@ func TestEndToEnd_HandlerReturnsError(t *testing.T) {
 	clientBroker := NewMessageBroker(sim.ClientStream(), envelope, "client", nil)
 	serverBroker := NewMessageBroker(sim.ServerStream(), envelope, "server", nil)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	// Register handler that returns an error
@@ -487,7 +489,9 @@ func TestEndToEnd_HandlerReturnsError(t *testing.T) {
 		clientDone <- clientBroker.Run(ctx)
 	}()
 
-	time.Sleep(50 * time.Millisecond)
+	// Wait for both brokers' Run() loops to enter the receive loop.
+	require.NoError(t, serverBroker.Ready(ctx))
+	require.NoError(t, clientBroker.Ready(ctx))
 
 	// Client sends request
 	requestMsg := &TestMessage{
@@ -515,7 +519,7 @@ func TestEndToEnd_MultipleHandlers(t *testing.T) {
 	serverBroker := NewMessageBroker(sim.ServerStream(), envelope, "server", nil)
 	clientBroker := NewMessageBroker(sim.ClientStream(), envelope, "client", nil)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	// Define alternate request type
@@ -554,7 +558,9 @@ func TestEndToEnd_MultipleHandlers(t *testing.T) {
 		clientDone <- clientBroker.Run(ctx)
 	}()
 
-	time.Sleep(50 * time.Millisecond)
+	// Wait for both brokers' Run() loops to enter the receive loop.
+	require.NoError(t, serverBroker.Ready(ctx))
+	require.NoError(t, clientBroker.Ready(ctx))
 
 	// Send first request type
 	req1 := &TestMessage{
@@ -604,7 +610,7 @@ func TestRun_ContextCancellation(t *testing.T) {
 	envelope := &SimpleMessageEnvelope{}
 	broker := NewMessageBroker(sim.ServerStream(), envelope, "test", nil)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 
 	// Start broker
 	done := make(chan error, 1)
@@ -662,8 +668,15 @@ func TestClose_ClosesAllChannels(t *testing.T) {
 		broker.SendAndWait(ctx, msg)
 	}()
 
-	// Give time for channels to register
-	time.Sleep(100 * time.Millisecond)
+	// Wait for both response channels to register in responseChans.
+	require.Eventually(t, func() bool {
+		count := 0
+		broker.responseChans.Range(func(_ string, _ chan *TestMessage) bool {
+			count++
+			return true
+		})
+		return count == 2
+	}, 1*time.Second, 5*time.Millisecond, "both response channels should register")
 
 	// Close the broker
 	broker.Close()
@@ -680,7 +693,7 @@ func TestClose_ClosesAllChannels(t *testing.T) {
 // TestEndToEnd_HandlerPanic verifies that when a handler panics, the client receives
 // an error response instead of hanging forever
 func TestEndToEnd_HandlerPanic(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
 	// Create simulated stream and both client/server brokers
@@ -700,8 +713,9 @@ func TestEndToEnd_HandlerPanic(t *testing.T) {
 	go serverBroker.Run(ctx)
 	go clientBroker.Run(ctx)
 
-	// Give brokers time to start
-	time.Sleep(50 * time.Millisecond)
+	// Wait for both brokers' Run() loops to enter the receive loop.
+	require.NoError(t, serverBroker.Ready(ctx))
+	require.NoError(t, clientBroker.Ready(ctx))
 
 	// Send request from client
 	requestMsg := &TestMessage{
@@ -758,7 +772,7 @@ func TestReady_BlocksUntilRunStarts(t *testing.T) {
 	readyDone := make(chan error, 1)
 
 	// Use a short-lived context just for the blocking check
-	blockCtx, blockCancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	blockCtx, blockCancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 	defer blockCancel()
 
 	// Start Ready() with the short context - should block and then timeout
@@ -779,7 +793,7 @@ func TestReady_BlocksUntilRunStarts(t *testing.T) {
 	}
 
 	// Now use a generous context for the second Ready() call
-	readyCtx, readyCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	readyCtx, readyCancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer readyCancel()
 
 	readyDone2 := make(chan error, 1)
@@ -819,10 +833,11 @@ func TestReady_CompletesImmediatelyAfterRunStarts(t *testing.T) {
 		_ = broker.Run(runCtx)
 	}()
 
-	time.Sleep(10 * time.Millisecond) // Let Run() start
+	// Wait for Run() to reach the receive loop (closes readyCh as its first action).
+	require.NoError(t, broker.Ready(runCtx))
 
-	// Ready() should complete immediately
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	// Subsequent Ready() should complete immediately since readyCh is already closed.
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer cancel()
 
 	start := time.Now()
@@ -844,7 +859,7 @@ func TestReady_MultipleCallersAllComplete(t *testing.T) {
 
 	const numCallers = 5
 	readyResults := make(chan error, numCallers)
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
 	defer cancel()
 
 	// Start multiple Ready() calls
@@ -883,16 +898,17 @@ func TestReady_ContextCancellation(t *testing.T) {
 	envelope := &SimpleMessageEnvelope{}
 	broker := NewMessageBroker(stream.ClientStream(), envelope, "client", nil)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 
 	readyDone := make(chan error, 1)
 	go func() {
 		readyDone <- broker.Ready(ctx)
 	}()
 
-	time.Sleep(20 * time.Millisecond) // Let Ready() block
-
-	cancel() // Cancel context
+	// The Ready() contract guarantees ctx.Err() is returned when ctx is cancelled
+	// before Run() starts. No need to prove the goroutine is blocked first — a
+	// closed context causes Ready() to return regardless of scheduling order.
+	cancel()
 
 	// Ready() should return with context cancellation error
 	select {
@@ -920,7 +936,8 @@ func TestReady_RunAlreadyStartedMultipleTimes(t *testing.T) {
 		_ = broker.Run(runCtx)
 	}()
 
-	time.Sleep(10 * time.Millisecond) // Let Run() start
+	// Wait for Run() to reach the receive loop (closes readyCh as its first action).
+	require.NoError(t, broker.Ready(runCtx))
 
 	// Multiple Ready() calls should all be immediate
 	ctx := t.Context()

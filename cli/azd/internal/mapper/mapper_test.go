@@ -346,7 +346,7 @@ func TestGetResolverFromContext(t *testing.T) {
 	}
 
 	// Test context with resolver
-	ctx := context.WithValue(context.Background(), resolverKey, testResolver)
+	ctx := context.WithValue(t.Context(), resolverKey, testResolver)
 	resolver := GetResolver(ctx)
 	require.NotNil(t, resolver, "resolver should not be nil when stored in context")
 	assert.Equal(t, "resolved-test", resolver("test"))
@@ -363,7 +363,7 @@ func TestResolverFromContext(t *testing.T) {
 	}
 
 	// Test context with resolver
-	ctx := context.WithValue(context.Background(), resolverKey, testResolver)
+	ctx := context.WithValue(t.Context(), resolverKey, testResolver)
 	resolver, hasResolver := ResolverFromContext(ctx)
 	require.True(t, hasResolver, "should indicate resolver is present")
 	require.NotNil(t, resolver, "resolver should not be nil when present")

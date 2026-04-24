@@ -1183,7 +1183,7 @@ func TestNewHandler_Cancellation_ValueReturn(t *testing.T) {
 		return "", ctx.Err()
 	})
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel() // cancel immediately
 
 	call, err := jsonrpc2.NewCall(jsonrpc2.NewNumberID(1), "Test", []any{})

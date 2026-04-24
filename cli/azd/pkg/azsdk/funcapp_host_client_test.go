@@ -323,7 +323,7 @@ func TestFuncAppHostClient_WaitForDeployment_NotFoundFallback(t *testing.T) {
 func TestFuncAppHostClient_WaitForDeployment_ContextCanceled(t *testing.T) {
 	t.Parallel()
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	mockContext := mocks.NewMockContext(ctx)
 	respondPublishPost(mockContext, http.StatusAccepted, `"d1"`, nil)
 

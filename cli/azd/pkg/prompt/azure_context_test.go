@@ -94,8 +94,13 @@ func TestAzureContext_EnsureResourceGroup_NoPrompt(t *testing.T) {
 	}, nil, true)
 
 	err := azureContext.EnsureResourceGroup(t.Context())
-	require.NoError(t, err)
-	require.Equal(t, "test-resource-group", azureContext.Scope.ResourceGroup)
+	require.Error(t, err)
+
+	var promptErr *input.PromptRequiredError
+	require.ErrorAs(t, err, &promptErr)
+	require.Len(t, promptErr.Inputs, 1)
+	require.Contains(t, promptErr.ToString(""), environment.ResourceGroupEnvVarName)
+	require.Equal(t, "", azureContext.Scope.ResourceGroup)
 
 	mockPromptService.AssertNotCalled(t, "PromptResourceGroup", mock.Anything, mock.Anything, mock.Anything)
 }
@@ -139,8 +144,13 @@ func TestAzureContext_EnsureLocation_NoPrompt(t *testing.T) {
 	}, nil, true)
 
 	err := azureContext.EnsureLocation(t.Context())
-	require.NoError(t, err)
-	require.Equal(t, "test-location", azureContext.Scope.Location)
+	require.Error(t, err)
+
+	var promptErr *input.PromptRequiredError
+	require.ErrorAs(t, err, &promptErr)
+	require.Len(t, promptErr.Inputs, 1)
+	require.Contains(t, promptErr.ToString(""), environment.LocationEnvVarName)
+	require.Equal(t, "", azureContext.Scope.Location)
 
 	mockPromptService.AssertNotCalled(t, "PromptLocation", mock.Anything, mock.Anything, mock.Anything)
 }

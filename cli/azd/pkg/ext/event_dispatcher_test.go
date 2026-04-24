@@ -21,7 +21,7 @@ func Test_Valid_Event_Names(t *testing.T) {
 
 	ed := NewEventDispatcher[testEventArgs](testEvent)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	err := ed.AddHandler(ctx, testEvent, handler)
 	require.NoError(t, err)
 
@@ -83,13 +83,13 @@ func Test_Single_Error_Preserves_Type(t *testing.T) {
 			Suggestion: "Try again with --debug",
 		}
 		ed := NewEventDispatcher[testEventArgs](testEvent)
-		require.NoError(t, ed.AddHandler(context.Background(), testEvent, func(
+		require.NoError(t, ed.AddHandler(t.Context(), testEvent, func(
 			ctx context.Context, args testEventArgs,
 		) error {
 			return localErr
 		}))
 
-		err := ed.RaiseEvent(context.Background(), testEvent, testEventArgs{})
+		err := ed.RaiseEvent(t.Context(), testEvent, testEventArgs{})
 		require.Error(t, err)
 
 		got, ok := errors.AsType[*azdext.LocalError](err)
@@ -104,13 +104,13 @@ func Test_Single_Error_Preserves_Type(t *testing.T) {
 			Suggestion: "Try again",
 		}
 		ed := NewEventDispatcher[testEventArgs](testEvent)
-		require.NoError(t, ed.AddHandler(context.Background(), testEvent, func(
+		require.NoError(t, ed.AddHandler(t.Context(), testEvent, func(
 			ctx context.Context, args testEventArgs,
 		) error {
 			return suggErr
 		}))
 
-		err := ed.RaiseEvent(context.Background(), testEvent, testEventArgs{})
+		err := ed.RaiseEvent(t.Context(), testEvent, testEventArgs{})
 		require.Error(t, err)
 
 		got, ok := errors.AsType[*internal.ErrorWithSuggestion](err)
@@ -164,7 +164,7 @@ func Test_Automatic_Handler_Removal_On_Context_Done(t *testing.T) {
 	ed := NewEventDispatcher[testEventArgs](testEvent)
 
 	// Create a cancellable context
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 
 	// Add handler with the cancellable context
 	err := ed.AddHandler(ctx, testEvent, handler)
@@ -222,9 +222,9 @@ func Test_Multiple_Handlers_Selective_Removal_On_Context_Done(t *testing.T) {
 	ed := NewEventDispatcher[testEventArgs](testEvent)
 
 	// Create different contexts
-	ctx1, cancel1 := context.WithCancel(context.Background())
-	ctx2, cancel2 := context.WithCancel(context.Background())
-	ctx3 := t.Context() // Non-cancellable context
+	ctx1, cancel1 := context.WithCancel(t.Context())
+	ctx2, cancel2 := context.WithCancel(t.Context())
+	ctx3 := t.Context() // Not cancelled during this test (only at test completion)
 	defer cancel2()     // Ensure cleanup
 
 	// Add handlers with different contexts
@@ -283,7 +283,7 @@ func Test_Already_Cancelled_Context_Handler_Cleanup(t *testing.T) {
 	ed := NewEventDispatcher[testEventArgs](testEvent)
 
 	// Create and immediately cancel a context
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel() // Cancel before adding handler
 
 	// Add handler with already cancelled context
@@ -623,7 +623,7 @@ func Test_Context_Cleanup_With_Same_Literal_Closures(t *testing.T) {
 
 	ed := NewEventDispatcher[testEventArgs](testEvent)
 
-	ctx1, cancel1 := context.WithCancel(context.Background())
+	ctx1, cancel1 := context.WithCancel(t.Context())
 	ctx2 := t.Context()
 
 	counter1, counter2 := 0, 0
@@ -670,7 +670,7 @@ func Test_Workflow_Step_Race_No_Duplicate_Execution(t *testing.T) {
 	}
 
 	// Step 1: register handler with cancellable context
-	step1Ctx, cancelStep1 := context.WithCancel(context.Background())
+	step1Ctx, cancelStep1 := context.WithCancel(t.Context())
 	err := ed.AddHandler(step1Ctx, testEvent, createHandler())
 	require.NoError(t, err)
 

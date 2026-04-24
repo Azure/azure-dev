@@ -43,7 +43,7 @@ func TestRunCommand(t *testing.T) {
 }
 
 func TestKillCommand(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 1*time.Second)
 	defer cancel()
 
 	s := time.Now()

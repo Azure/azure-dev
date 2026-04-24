@@ -251,6 +251,34 @@ func addServiceStepsToGraph(g *exegraph.Graph, opts serviceGraphOptions) (*servi
 		serviceNames[svc.Name] = struct{}{}
 	}
 
+	// hasServiceDeps is true when at least one service declares a `uses:`
+	// entry targeting another service in this graph. When false, no service
+	// has declared explicit deploy ordering, so we fall back to sequential
+	// deployment in azure.yaml slice order to preserve backward
+	// compatibility with templates that relied on implicit ordering.
+	hasServiceDeps := false
+	for _, svc := range opts.services {
+		for _, dep := range svc.Uses {
+			if dep != svc.Name {
+				if _, ok := serviceNames[dep]; ok {
+					hasServiceDeps = true
+					break
+				}
+			}
+		}
+		if hasServiceDeps {
+			break
+		}
+	}
+
+	if !hasServiceDeps && len(opts.services) > 1 {
+		log.Printf(
+			"deploying %d services sequentially (no uses: edges declared; "+
+				"add uses: to azure.yaml to enable parallel deployment)",
+			len(opts.services),
+		)
+	}
+
 	// phaseProgress bundles an async.Progress with a wait function that
 	// blocks until the drain goroutine has finished. Callers MUST call
 	// Done() to close the channel, then Wait() before returning to ensure
@@ -398,6 +426,19 @@ func addServiceStepsToGraph(g *exegraph.Graph, opts serviceGraphOptions) (*servi
 			depStep := "deploy-" + dep
 			if !slices.Contains(deployDeps, depStep) {
 				deployDeps = append(deployDeps, depStep)
+			}
+		}
+		// Sequential fallback: when no service in this graph declares a
+		// `uses:` edge to another service, chain deploy steps in slice
+		// order so that templates relying on implicit sequential ordering
+		// (e.g., api deploys before web) continue to work. This preserves
+		// backward compatibility with existing templates while still
+		// allowing parallel deployment for templates that opt in via
+		// `uses:`. Package and publish steps remain parallel regardless.
+		if !hasServiceDeps && len(handles.DeploySteps) >= 2 {
+			prevDeploy := handles.DeploySteps[len(handles.DeploySteps)-2]
+			if !slices.Contains(deployDeps, prevDeploy) {
+				deployDeps = append(deployDeps, prevDeploy)
 			}
 		}
 		deployDeps = append(deployDeps, opts.deployExtraDeps...)

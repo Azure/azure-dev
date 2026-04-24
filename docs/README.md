@@ -18,7 +18,7 @@ Core mental models, terminology, and feature lifecycle.
 
 Task-oriented how-tos for common contributor workflows.
 
-- [Contributing](guides/contributing.md) — How to build, test, lint, and submit changes
+- [Contributing](../../CONTRIBUTING.md) — How to build, test, lint, and submit changes
 - [Adding a New Command](guides/adding-a-new-command.md) — End-to-end walkthrough for new CLI commands
 - [Creating an Extension](guides/creating-an-extension.md) — How to build and publish an azd extension
 - [Observability and Tracing](guides/observability.md) — Adding telemetry, traces, and debugging

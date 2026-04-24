@@ -7,7 +7,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
+	"maps"
+	"os"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,6 +20,85 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 )
+
+// deployGraphState consolidates the shared mutable state produced during
+// service graph execution. Package steps store ServiceContexts (consumed by
+// publish/deploy steps); deploy steps store ServiceDeployResults (consumed by
+// the caller for artifact display and JSON output). Using this struct instead
+// of passing raw maps+mutexes keeps the action layers thin:
+//
+//	create state → build graph → execute → consume results.
+type deployGraphState struct {
+	ctxMu    sync.Mutex
+	contexts map[string]*project.ServiceContext
+
+	resMu   sync.Mutex
+	results map[string]*project.ServiceDeployResult
+}
+
+// newDeployGraphState creates a state container pre-sized for the given services.
+func newDeployGraphState(services []*project.ServiceConfig) *deployGraphState {
+	return &deployGraphState{
+		contexts: make(map[string]*project.ServiceContext, len(services)),
+		results:  make(map[string]*project.ServiceDeployResult, len(services)),
+	}
+}
+
+// StoreContext records the ServiceContext produced by a package step.
+func (s *deployGraphState) StoreContext(name string, ctx *project.ServiceContext) {
+	s.ctxMu.Lock()
+	s.contexts[name] = ctx
+	s.ctxMu.Unlock()
+}
+
+// LoadContext retrieves the ServiceContext for a service (nil if not yet stored).
+func (s *deployGraphState) LoadContext(name string) *project.ServiceContext {
+	s.ctxMu.Lock()
+	defer s.ctxMu.Unlock()
+	return s.contexts[name]
+}
+
+// StoreResult records the ServiceDeployResult produced by a deploy step.
+func (s *deployGraphState) StoreResult(name string, result *project.ServiceDeployResult) {
+	s.resMu.Lock()
+	s.results[name] = result
+	s.resMu.Unlock()
+}
+
+// GetResult retrieves the ServiceDeployResult for a service (nil if not yet stored).
+func (s *deployGraphState) GetResult(name string) *project.ServiceDeployResult {
+	s.resMu.Lock()
+	defer s.resMu.Unlock()
+	return s.results[name]
+}
+
+// ResultsSnapshot returns a shallow copy of the results map, safe to iterate
+// without holding the lock.
+func (s *deployGraphState) ResultsSnapshot() map[string]*project.ServiceDeployResult {
+	s.resMu.Lock()
+	defer s.resMu.Unlock()
+	snap := make(map[string]*project.ServiceDeployResult, len(s.results))
+	maps.Copy(snap, s.results)
+	return snap
+}
+
+// CleanupTempArtifacts removes temporary package archives created during graph
+// execution. This must be called after the graph finishes because steps run in
+// parallel and may still hold file locks during execution.
+func (s *deployGraphState) CleanupTempArtifacts() {
+	s.ctxMu.Lock()
+	defer s.ctxMu.Unlock()
+	for _, sc := range s.contexts {
+		for _, artifact := range sc.Package {
+			if artifact.Kind == project.ArtifactKindArchive &&
+				strings.HasPrefix(artifact.Location, os.TempDir()) {
+				if rmErr := os.RemoveAll(artifact.Location); rmErr != nil {
+					log.Printf("failed to remove temporary package: %s : %s", artifact.Location, rmErr)
+				}
+			}
+		}
+	}
+}
 
 // serviceGraphOptions configures how the package → publish → deploy service
 // sub-graph is built. Both stand-alone `azd deploy` and the unified `azd up`
@@ -60,19 +143,12 @@ type serviceGraphOptions struct {
 	// current call sites leave this empty.
 	deployExtraDeps []string
 
-	// serviceContexts is the cross-step sink for per-service
-	// [project.ServiceContext] values produced by package and consumed by
-	// publish and deploy. The caller owns the map and supplies the mutex so
-	// package-step cleanup (temporary artifact removal) can run after the
-	// graph finishes.
-	serviceContexts map[string]*project.ServiceContext
-	svcCtxMu        *sync.Mutex
-
-	// deployResults is the per-service sink for [project.ServiceDeployResult]
-	// values produced by successful deploy steps. The caller owns the map and
-	// supplies the mutex.
-	deployResults map[string]*project.ServiceDeployResult
-	resultsMu     *sync.Mutex
+	// state is the shared mutable store for per-service ServiceContexts
+	// (produced by package, consumed by publish/deploy) and
+	// ServiceDeployResults (produced by deploy, consumed by the caller
+	// for artifact display). The caller owns the state and may call
+	// CleanupTempArtifacts() after graph execution.
+	state *deployGraphState
 
 	// onDeployTimeout is invoked when a deploy step's context deadline is
 	// exceeded. It lets the caller emit a richer UX (e.g., a warning box
@@ -148,11 +224,8 @@ func addServiceStepsToGraph(g *exegraph.Graph, opts serviceGraphOptions) (*servi
 	if opts.deployTimeout <= 0 {
 		return nil, fmt.Errorf("deployTimeout must be > 0, got %s", opts.deployTimeout)
 	}
-	if opts.serviceContexts == nil || opts.svcCtxMu == nil {
-		return nil, fmt.Errorf("serviceContexts and svcCtxMu must be provided")
-	}
-	if opts.deployResults == nil || opts.resultsMu == nil {
-		return nil, fmt.Errorf("deployResults and resultsMu must be provided")
+	if opts.state == nil {
+		return nil, fmt.Errorf("state must be provided")
 	}
 
 	handles := &serviceGraphHandles{
@@ -252,9 +325,7 @@ func addServiceStepsToGraph(g *exegraph.Graph, opts serviceGraphOptions) (*servi
 					}
 				}
 
-				opts.svcCtxMu.Lock()
-				opts.serviceContexts[pkgSvc.Name] = sc
-				opts.svcCtxMu.Unlock()
+				opts.state.StoreContext(pkgSvc.Name, sc)
 				return nil
 			},
 		}); err != nil {
@@ -273,9 +344,7 @@ func addServiceStepsToGraph(g *exegraph.Graph, opts serviceGraphOptions) (*servi
 			DependsOn: publishDeps,
 			Tags:      []string{"publish"},
 			Action: func(ctx context.Context) error {
-				opts.svcCtxMu.Lock()
-				sc := opts.serviceContexts[pubSvc.Name]
-				opts.svcCtxMu.Unlock()
+				sc := opts.state.LoadContext(pubSvc.Name)
 
 				if sc == nil {
 					return fmt.Errorf(
@@ -339,9 +408,7 @@ func addServiceStepsToGraph(g *exegraph.Graph, opts serviceGraphOptions) (*servi
 			DependsOn: deployDeps,
 			Tags:      []string{"deploy"},
 			Action: func(stepCtx context.Context) error {
-				opts.svcCtxMu.Lock()
-				sc := opts.serviceContexts[depSvc.Name]
-				opts.svcCtxMu.Unlock()
+				sc := opts.state.LoadContext(depSvc.Name)
 
 				if sc == nil {
 					return fmt.Errorf(
@@ -375,9 +442,7 @@ func addServiceStepsToGraph(g *exegraph.Graph, opts serviceGraphOptions) (*servi
 					return fmt.Errorf("deploying service %s: %w", depSvc.Name, depErr)
 				}
 
-				opts.resultsMu.Lock()
-				opts.deployResults[depSvc.Name] = result
-				opts.resultsMu.Unlock()
+				opts.state.StoreResult(depSvc.Name, result)
 
 				return nil
 			},

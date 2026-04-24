@@ -11,7 +11,6 @@ import (
 	"os"
 	"slices"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -211,10 +210,7 @@ func (u *UpGraphAction) Run(
 	}
 
 	// Deploy results and service contexts collected during graph execution.
-	deployResults := map[string]*project.ServiceDeployResult{}
-	var resultsMu sync.Mutex
-	serviceContexts := make(map[string]*project.ServiceContext, len(stableServices))
-	var svcCtxMu sync.Mutex
+	state := newDeployGraphState(stableServices)
 
 	// ── cmdhook-preprovision ── no deps; first.
 	const (
@@ -337,10 +333,7 @@ func (u *UpGraphAction) Run(
 		fromPackage:      "",
 		packageExtraDeps: []string{prePackageEventStep},
 		publishExtraDeps: []string{preDeployEventStep},
-		serviceContexts:  serviceContexts,
-		svcCtxMu:         &svcCtxMu,
-		deployResults:    deployResults,
-		resultsMu:        &resultsMu,
+		state:            state,
 		onDeployTimeout: func(cbCtx context.Context, svc *project.ServiceConfig) {
 			safeCon.MessageUxItem(cbCtx, deployTimeoutWarning(svc.Name, deployTimeout))
 		},
@@ -458,18 +451,7 @@ func (u *UpGraphAction) Run(
 	result := exegraph.RunWithResult(ctx, g, u.runOptions())
 
 	// Clean up temporary package artifacts regardless of success/failure.
-	// Runs before error check so temp files don't leak on failed runs.
-	// Safe: RunWithResult guarantees all goroutines have exited.
-	for _, sc := range serviceContexts {
-		for _, artifact := range sc.Package {
-			if artifact.Kind == project.ArtifactKindArchive &&
-				strings.HasPrefix(artifact.Location, os.TempDir()) {
-				if rmErr := os.RemoveAll(artifact.Location); rmErr != nil {
-					log.Printf("failed to remove temporary package: %s : %s", artifact.Location, rmErr)
-				}
-			}
-		}
-	}
+	state.CleanupTempArtifacts()
 
 	// Log per-step timing for diagnostics and benchmarking.
 	for _, st := range result.Steps {
@@ -497,7 +479,7 @@ func (u *UpGraphAction) Run(
 
 	// Display service endpoint artifacts collected during deploy steps.
 	for _, svc := range stableServices {
-		if dr, ok := deployResults[svc.Name]; ok && dr != nil && dr.Artifacts != nil {
+		if dr := state.GetResult(svc.Name); dr != nil && dr.Artifacts != nil {
 			u.console.MessageUxItem(ctx, dr.Artifacts)
 		}
 	}

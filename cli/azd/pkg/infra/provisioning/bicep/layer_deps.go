@@ -56,8 +56,8 @@ var (
 func stripBicepLineComments(content []byte) []byte {
 	lines := bytes.Split(content, []byte("\n"))
 	for i, line := range lines {
-		if idx := bytes.Index(line, []byte("//")); idx >= 0 {
-			lines[i] = line[:idx]
+		if before, _, ok := bytes.Cut(line, []byte("//")); ok {
+			lines[i] = before
 		}
 	}
 	return bytes.Join(lines, []byte("\n"))

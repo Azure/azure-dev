@@ -81,7 +81,13 @@ func NewExtensionRootCommand(opts ExtensionCommandOptions) (*cobra.Command, *Ext
 	// Register persistent flags
 	flags := cmd.PersistentFlags()
 	flags.BoolVar(&extCtx.Debug, "debug", false, "Enables debug and diagnostics logging")
-	flags.BoolVar(&extCtx.NoPrompt, "no-prompt", false, "Accepts the default value instead of prompting")
+	flags.BoolVar(
+		&extCtx.NoPrompt,
+		"no-prompt",
+		false,
+		"Runs without prompts. Uses existing values; "+
+			"fails if any required value or decision cannot be resolved automatically.",
+	)
 	flags.StringVarP(&extCtx.Cwd, "cwd", "C", "", "Sets the current working directory")
 	flags.StringVarP(&extCtx.Environment, "environment", "e", "", "The name of the environment to use")
 	flags.StringVarP(&extCtx.OutputFormat, "output", "o", "default", "The output format")

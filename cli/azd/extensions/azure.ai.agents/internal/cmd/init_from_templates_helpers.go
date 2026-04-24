@@ -32,16 +32,24 @@ const (
 
 	// TemplateTypeAzd is a full azd template repository.
 	TemplateTypeAzd = "azd"
+
+	// templateTypeExtensionAIAgent is the discriminator value in the unified
+	// awesome-azd templates.json manifest that identifies an agent-init
+	// template. Entries with any other (or empty) templateType belong to the
+	// standard awesome-azd gallery and are filtered out.
+	templateTypeExtensionAIAgent = "extension.ai.agent"
 )
 
 // AgentTemplate represents an agent template entry from the remote JSON catalog.
+// Field names mirror the awesome-azd templates.json schema.
 type AgentTemplate struct {
-	Title       string   `json:"title"`
-	Description string   `json:"description"`
-	Language    string   `json:"language"`
-	Framework   string   `json:"framework"`
-	Source      string   `json:"source"`
-	Tags        []string `json:"tags"`
+	Title              string   `json:"title"`
+	Description        string   `json:"description"`
+	Languages          []string `json:"languages"`
+	ExtensionFramework string   `json:"extensionFramework"`
+	Source             string   `json:"source"`
+	Tags               []string `json:"extensionTags"`
+	TemplateType       string   `json:"templateType"`
 }
 
 // EffectiveType determines the template type by inspecting the source URL.
@@ -110,14 +118,27 @@ func dirIsEmpty(dir string) (bool, error) {
 	return len(entries) == 0, nil
 }
 
-// fetchAgentTemplates retrieves the agent template catalog from the remote JSON URL.
+// fetchAgentTemplates retrieves the agent template catalog from the remote
+// awesome-azd manifest URL.
 func fetchAgentTemplates(ctx context.Context, httpClient *http.Client) ([]AgentTemplate, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, agentTemplatesURL, nil)
+	return fetchAgentTemplatesFromURL(ctx, httpClient, agentTemplatesURL)
+}
+
+// fetchAgentTemplatesFromURL retrieves the awesome-azd templates manifest from
+// the given URL and returns only entries whose templateType marks them as
+// agent-init templates. The URL is parameterized to keep this function
+// directly testable against an httptest server.
+func fetchAgentTemplatesFromURL(
+	ctx context.Context,
+	httpClient *http.Client,
+	url string,
+) ([]AgentTemplate, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	//nolint:gosec // URL is the hard-coded agentTemplatesURL constant, not user input
+	//nolint:gosec // URL is supplied by the caller from a trusted constant or a test server
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch agent templates: %w", err)
@@ -133,12 +154,21 @@ func fetchAgentTemplates(ctx context.Context, httpClient *http.Client) ([]AgentT
 		return nil, fmt.Errorf("failed to read agent templates response: %w", err)
 	}
 
-	var templates []AgentTemplate
-	if err := json.Unmarshal(body, &templates); err != nil {
+	var all []AgentTemplate
+	if err := json.Unmarshal(body, &all); err != nil {
 		return nil, fmt.Errorf("failed to parse agent templates: %w", err)
 	}
 
-	return templates, nil
+	// Keep only agent-init entries. The shared templates.json manifest also
+	// carries the awesome-azd gallery; those entries must not surface here.
+	filtered := make([]AgentTemplate, 0, len(all))
+	for _, t := range all {
+		if t.TemplateType == templateTypeExtensionAIAgent {
+			filtered = append(filtered, t)
+		}
+	}
+
+	return filtered, nil
 }
 
 // promptAgentTemplate guides the user through language selection and template selection.
@@ -169,10 +199,11 @@ func promptAgentTemplate(
 		return nil, fmt.Errorf("no agent templates available")
 	}
 
-	// Prompt for language
+	// Prompt for language. Values must match the language tokens used in
+	// the awesome-azd templates.json `languages` field (e.g. "dotnetCsharp").
 	languageChoices := []*azdext.SelectChoice{
 		{Label: "Python", Value: "python"},
-		{Label: "C#", Value: "csharp"},
+		{Label: "C#", Value: "dotnetCsharp"},
 	}
 
 	langResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
@@ -190,10 +221,10 @@ func promptAgentTemplate(
 
 	selectedLanguage := languageChoices[*langResp.Value].Value
 
-	// Filter templates by selected language
+	// Filter templates by selected language (entries can declare multiple).
 	var filtered []AgentTemplate
 	for _, t := range templates {
-		if t.Language == selectedLanguage {
+		if slices.Contains(t.Languages, selectedLanguage) {
 			filtered = append(filtered, t)
 		}
 	}
@@ -210,7 +241,7 @@ func promptAgentTemplate(
 	// Build template choices with framework in label
 	templateChoices := make([]*azdext.SelectChoice, len(filtered))
 	for i, t := range filtered {
-		label := fmt.Sprintf("%s (%s)", t.Title, t.Framework)
+		label := fmt.Sprintf("%s (%s)", t.Title, t.ExtensionFramework)
 		templateChoices[i] = &azdext.SelectChoice{
 			Label: label,
 			Value: fmt.Sprintf("%d", i),

@@ -27,6 +27,7 @@ Client-side validation that runs after compilation but before deployment:
 
 - **Role assignment permissions** — Checks if the user has required RBAC roles for role assignments in the template
 - **AI model quota** — Validates that sufficient AI model capacity is available in the target region
+- **Reserved resource names** — Warns when predicted resource names collide with Azure reserved or restricted names
 
 The preflight framework is pluggable — new checks can be added via `AddCheck()`.
 

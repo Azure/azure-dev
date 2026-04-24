@@ -48,7 +48,7 @@ A hash-based mechanism that tracks whether the IaC template has changed since th
 
 ### Preflight Checks
 
-Client-side validation that runs after Bicep compilation but before deployment. Validates role assignment permissions and AI model quotas to surface issues early.
+Client-side validation that runs after Bicep compilation but before deployment. Validates role assignment permissions, AI model quotas, and reserved resource names to surface issues early.
 
 ## Extensions
 

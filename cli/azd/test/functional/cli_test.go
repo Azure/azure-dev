@@ -799,7 +799,7 @@ func Test_CLI_NoDebugSpewWhenHelpPassedWithoutDebug(t *testing.T) {
 	// Update checks are one of the things that can write to stderr. Disable it since it's not relevant to this test.
 	cli.Env = append(cli.Env, os.Environ()...)
 	cli.Env = append(cli.Env, "AZD_SKIP_UPDATE_CHECK=true")
-	ctx := context.Background()
+	ctx := t.Context()
 	result, err := cli.RunCommand(ctx, "--help")
 	require.NoError(t, err)
 
@@ -934,7 +934,7 @@ func getTestEnvPath(dir string, envName string) string {
 // the provided `testing.T` has a deadline applied, the returned context
 // respects the deadline.
 func newTestContext(t *testing.T) (context.Context, context.CancelFunc) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	if deadline, ok := t.Deadline(); ok {
 		return context.WithDeadline(ctx, deadline)
@@ -1042,9 +1042,7 @@ func logHandles(t *testing.T, path string) {
 func removeAllWithDiagnostics(t *testing.T, path string) error {
 	retryCount := 0
 	loggedOnce := false
-	return retry.Do(
-		context.Background(),
-		retry.WithMaxRetries(10, retry.NewConstant(1*time.Second)),
+	return retry.Do(context.Background(), retry.WithMaxRetries(10, retry.NewConstant(1*time.Second)),
 		func(_ context.Context) error {
 			removeErr := os.RemoveAll(path)
 			if removeErr == nil {

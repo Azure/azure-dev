@@ -33,7 +33,7 @@ func TestAzureContext_EnsureSubscription(t *testing.T) {
 			TenantId: "test-tenant-id",
 		}, nil)
 
-	err := azureContext.EnsureSubscription(context.Background())
+	err := azureContext.EnsureSubscription(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, "test-subscription-id", azureContext.Scope.SubscriptionId)
 	require.Equal(t, "test-tenant-id", azureContext.Scope.TenantId)
@@ -45,7 +45,7 @@ func TestAzureContext_EnsureSubscription_NoPrompt(t *testing.T) {
 	mockPromptService := &MockPromptService{}
 	azureContext := NewAzureContext(mockPromptService, AzureScope{}, nil, true)
 
-	err := azureContext.EnsureSubscription(context.Background())
+	err := azureContext.EnsureSubscription(t.Context())
 	require.Error(t, err)
 
 	var promptErr *input.PromptRequiredError
@@ -63,7 +63,7 @@ func TestAzureContext_EnsureSubscription_Error(t *testing.T) {
 	mockPromptService.On("PromptSubscription", mockContextType, mockSelectOptionsType).
 		Return(nil, fmt.Errorf("subscription error"))
 
-	err := azureContext.EnsureSubscription(context.Background())
+	err := azureContext.EnsureSubscription(t.Context())
 	require.Error(t, err)
 	require.Equal(t, "", azureContext.Scope.SubscriptionId)
 	require.Equal(t, "", azureContext.Scope.TenantId)
@@ -80,7 +80,7 @@ func TestAzureContext_EnsureResourceGroup(t *testing.T) {
 			Name: "test-resource-group",
 		}, nil)
 
-	err := azureContext.EnsureResourceGroup(context.Background())
+	err := azureContext.EnsureResourceGroup(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, "test-resource-group", azureContext.Scope.ResourceGroup)
 
@@ -93,13 +93,14 @@ func TestAzureContext_EnsureResourceGroup_NoPrompt(t *testing.T) {
 		SubscriptionId: "test-subscription-id",
 	}, nil, true)
 
-	err := azureContext.EnsureResourceGroup(context.Background())
+	err := azureContext.EnsureResourceGroup(t.Context())
 	require.Error(t, err)
 
 	var promptErr *input.PromptRequiredError
 	require.ErrorAs(t, err, &promptErr)
 	require.Len(t, promptErr.Inputs, 1)
 	require.Contains(t, promptErr.ToString(""), environment.ResourceGroupEnvVarName)
+	require.Equal(t, "", azureContext.Scope.ResourceGroup)
 
 	mockPromptService.AssertNotCalled(t, "PromptResourceGroup", mock.Anything, mock.Anything, mock.Anything)
 }
@@ -113,7 +114,7 @@ func TestAzureContext_EnsureResourceGroup_Error(t *testing.T) {
 	mockPromptService.On("PromptResourceGroup", mockContextType, mockAzureContextType, mockResourceGroupOptions).
 		Return(nil, fmt.Errorf("resource group error"))
 
-	err := azureContext.EnsureResourceGroup(context.Background())
+	err := azureContext.EnsureResourceGroup(t.Context())
 	require.Error(t, err)
 	require.Equal(t, "", azureContext.Scope.ResourceGroup)
 }
@@ -129,7 +130,7 @@ func TestAzureContext_EnsureLocation(t *testing.T) {
 			Name: "test-location",
 		}, nil)
 
-	err := azureContext.EnsureLocation(context.Background())
+	err := azureContext.EnsureLocation(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, "test-location", azureContext.Scope.Location)
 
@@ -142,12 +143,14 @@ func TestAzureContext_EnsureLocation_NoPrompt(t *testing.T) {
 		SubscriptionId: "test-subscription-id",
 	}, nil, true)
 
-	err := azureContext.EnsureLocation(context.Background())
+	err := azureContext.EnsureLocation(t.Context())
 	require.Error(t, err)
 
 	var promptErr *input.PromptRequiredError
 	require.ErrorAs(t, err, &promptErr)
+	require.Len(t, promptErr.Inputs, 1)
 	require.Contains(t, promptErr.ToString(""), environment.LocationEnvVarName)
+	require.Equal(t, "", azureContext.Scope.Location)
 
 	mockPromptService.AssertNotCalled(t, "PromptLocation", mock.Anything, mock.Anything, mock.Anything)
 }
@@ -161,7 +164,7 @@ func TestAzureContext_EnsureLocation_Error(t *testing.T) {
 	mockPromptService.On("PromptLocation", mockContextType, mockAzureContextType, mockSelectOptionsType).
 		Return(nil, fmt.Errorf("location error"))
 
-	err := azureContext.EnsureLocation(context.Background())
+	err := azureContext.EnsureLocation(t.Context())
 	require.Error(t, err)
 	require.Equal(t, "", azureContext.Scope.Location)
 }

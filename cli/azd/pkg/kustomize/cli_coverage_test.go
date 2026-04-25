@@ -4,7 +4,6 @@
 package kustomize
 
 import (
-	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -16,13 +15,13 @@ import (
 )
 
 func TestCliName(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	cli := NewCli(mockContext.CommandRunner)
 	assert.Equal(t, "kustomize", cli.Name())
 }
 
 func TestCliInstallUrl(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	cli := NewCli(mockContext.CommandRunner)
 	assert.Equal(
 		t,
@@ -33,7 +32,7 @@ func TestCliInstallUrl(t *testing.T) {
 
 func TestCheckInstalled(t *testing.T) {
 	t.Run("ToolFoundAndVersionSucceeds", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.MockToolInPath(
 			"kustomize", nil,
 		)
@@ -57,7 +56,7 @@ func TestCheckInstalled(t *testing.T) {
 	})
 
 	t.Run("ToolFoundButVersionFails", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.MockToolInPath(
 			"kustomize", nil,
 		)
@@ -82,7 +81,7 @@ func TestCheckInstalled(t *testing.T) {
 	})
 
 	t.Run("ToolNotInPath", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.MockToolInPath(
 			"kustomize",
 			errors.New("kustomize not found in PATH"),
@@ -96,7 +95,7 @@ func TestCheckInstalled(t *testing.T) {
 }
 
 func TestNewCli(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	cli := NewCli(mockContext.CommandRunner)
 	require.NotNil(t, cli)
 	// Verify the cli is usable after construction
@@ -104,7 +103,7 @@ func TestNewCli(t *testing.T) {
 }
 
 func TestWithCwd_Chaining(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	cli := NewCli(mockContext.CommandRunner)
 
 	// WithCwd should return the same *Cli for chaining

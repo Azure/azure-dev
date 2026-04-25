@@ -30,18 +30,18 @@ func TestArity(t *testing.T) {
 	require.NoError(t, err)
 
 	rpcConn := jsonrpc2.NewConn(newWebSocketStream(wsConn))
-	rpcConn.Go(context.Background(), nil)
+	rpcConn.Go(t.Context(), nil)
 
 	var rpcErr *jsonrpc2.Error
 
 	// TestIObserverAsync expects two argumments - this call should fail, there are too few arguments.
-	_, err = rpcConn.Call(context.Background(), "TestIObserverAsync", []any{10}, nil)
+	_, err = rpcConn.Call(t.Context(), "TestIObserverAsync", []any{10}, nil)
 	require.Error(t, err)
 	require.True(t, errors.As(err, &rpcErr))
 	require.Equal(t, jsonrpc2.InvalidParams, rpcErr.Code)
 
 	// TestIObserverAsync expects two argumments - this call should fail, there are too many arguments.
-	_, err = rpcConn.Call(context.Background(), "TestIObserverAsync", []any{10, map[string]any{
+	_, err = rpcConn.Call(t.Context(), "TestIObserverAsync", []any{10, map[string]any{
 		"__jsonrpc_marshaled": 1,
 		"handle":              1,
 	}, "extra-argument"}, nil)
@@ -70,7 +70,7 @@ func TestCancellation(t *testing.T) {
 	require.NoError(t, err)
 
 	rpcConn := jsonrpc2.NewConn(newWebSocketStream(wsConn))
-	rpcConn.Go(context.Background(), nil)
+	rpcConn.Go(t.Context(), nil)
 
 	// Call blocks until the response is returned from the server, so spin off a goroutine that will make
 	// the call and the shuttle the response back to us.
@@ -81,7 +81,7 @@ func TestCancellation(t *testing.T) {
 
 	go func() {
 		var res bool
-		_, err := rpcConn.Call(context.Background(), "TestCancelAsync", []any{10000}, &res)
+		_, err := rpcConn.Call(t.Context(), "TestCancelAsync", []any{10000}, &res)
 		result <- struct {
 			res bool
 			err error
@@ -92,7 +92,7 @@ func TestCancellation(t *testing.T) {
 	// Wait until the server starts processing the RPC, then request it be cancelled. We know the
 	// id of the inflight call is 1 because the jsonrpc2 package assigns ids starting at 1.
 	wg.Wait()
-	err = rpcConn.Notify(context.Background(), "$/cancelRequest", struct {
+	err = rpcConn.Notify(t.Context(), "$/cancelRequest", struct {
 		Id int `json:"id"`
 	}{Id: 1})
 	require.NoError(t, err)
@@ -125,7 +125,7 @@ func TestObserverable(t *testing.T) {
 	var onCompletedParams []json.RawMessage
 
 	rpcConn := jsonrpc2.NewConn(newWebSocketStream(wsConn))
-	rpcConn.Go(context.Background(), func(ctx context.Context, reply jsonrpc2.Replier, req jsonrpc2.Request) error {
+	rpcConn.Go(t.Context(), func(ctx context.Context, reply jsonrpc2.Replier, req jsonrpc2.Request) error {
 		switch req.Method() {
 		case "$/invokeProxy/1/onNext":
 			onNextParams = append(onNextParams, req.Params())
@@ -150,7 +150,7 @@ func TestObserverable(t *testing.T) {
 
 	require.NoError(t, err)
 
-	_, err = rpcConn.Call(context.Background(), "TestIObserverAsync", args, nil)
+	_, err = rpcConn.Call(t.Context(), "TestIObserverAsync", args, nil)
 	require.NoError(t, err)
 
 	require.Len(t, onNextParams, 10)
@@ -182,14 +182,14 @@ func TestPanic(t *testing.T) {
 	require.NoError(t, err)
 
 	rpcConn := jsonrpc2.NewConn(newWebSocketStream(wsConn))
-	rpcConn.Go(context.Background(), nil)
+	rpcConn.Go(t.Context(), nil)
 
-	_, err = rpcConn.Call(context.Background(), "TestPanicAsync", []any{"this is the panic office."}, nil)
+	_, err = rpcConn.Call(t.Context(), "TestPanicAsync", []any{"this is the panic office."}, nil)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "this is the panic office.")
 
 	// Ensure the server is still running and we can make another call.
-	_, err = rpcConn.Call(context.Background(), "TestPanicAsync", []any{"this is the panic office, again."}, nil)
+	_, err = rpcConn.Call(t.Context(), "TestPanicAsync", []any{"this is the panic office, again."}, nil)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "this is the panic office, again.")
 }

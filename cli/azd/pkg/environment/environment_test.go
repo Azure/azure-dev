@@ -4,7 +4,6 @@
 package environment
 
 import (
-	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -36,7 +35,7 @@ func TestIsValidEnvironmentName(t *testing.T) {
 func TestConfigRoundTrips(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	root := t.TempDir()
 
 	envManager, _ := createEnvManager(mockContext, root)
@@ -66,7 +65,7 @@ func TestConfigRoundTrips(t *testing.T) {
 func TestFromRoot(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	t.Run("EmptyRoot", func(t *testing.T) {
 		t.Parallel()
@@ -117,7 +116,7 @@ func Test_SaveAndReload(t *testing.T) {
 	tempDir := t.TempDir()
 	ostest.Chdir(t, tempDir)
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	envManager, azdCtx := createEnvManager(mockContext, t.TempDir())
 
 	env := New("test")
@@ -185,7 +184,7 @@ func TestCleanName(t *testing.T) {
 }
 
 func TestRoundTripNumberWithLeadingZeros(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	envManager, _ := createEnvManager(mockContext, t.TempDir())
 	env := New("test")
 	env.DotenvSet("TEST", "01")

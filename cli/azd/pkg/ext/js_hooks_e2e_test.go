@@ -4,7 +4,6 @@
 package ext
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -117,7 +116,7 @@ func TestJsHook_AutoDetectFromExtension(t *testing.T) {
 		}},
 	}
 
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockCtx)
 	stubNodeVersionCheck(mockCtx)
 
@@ -169,7 +168,7 @@ func TestJsHook_ExplicitKind(t *testing.T) {
 		}},
 	}
 
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockCtx)
 	stubNodeVersionCheck(mockCtx)
 
@@ -214,7 +213,7 @@ func TestJsHook_WithPackageJSON(t *testing.T) {
 		}},
 	}
 
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockCtx)
 	stubNodeVersionCheck(mockCtx)
 
@@ -259,7 +258,7 @@ func TestJsHook_NodeBinaryResolution(t *testing.T) {
 		}},
 	}
 
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockCtx)
 	stubNodeVersionCheck(mockCtx)
 
@@ -302,7 +301,7 @@ func TestJsHook_NonZeroExitCode(t *testing.T) {
 		}},
 	}
 
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockCtx)
 	stubNodeVersionCheck(mockCtx)
 
@@ -345,7 +344,7 @@ func TestJsHook_ContinueOnError(t *testing.T) {
 		}},
 	}
 
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockCtx)
 	stubNodeVersionCheck(mockCtx)
 
@@ -388,7 +387,7 @@ func TestJsHook_ServiceLevel(t *testing.T) {
 		}},
 	}
 
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockCtx)
 	stubNodeVersionCheck(mockCtx)
 
@@ -434,7 +433,7 @@ func TestJsHook_EnvVarsPassthrough(t *testing.T) {
 		}},
 	}
 
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockCtx)
 	stubNodeVersionCheck(mockCtx)
 
@@ -482,7 +481,7 @@ func TestJsHook_NodeMissing(t *testing.T) {
 		}},
 	}
 
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 
 	// Register all executors but make node --version fail.
 	registerHookExecutors(mockCtx)
@@ -599,7 +598,7 @@ func TestJsHook_ExecutionPipeline(t *testing.T) {
 			}
 
 			mockCtx := mocks.NewMockContext(
-				context.Background(),
+				t.Context(),
 			)
 			registerHookExecutors(mockCtx)
 			stubNodeVersionCheck(mockCtx)
@@ -657,7 +656,7 @@ func TestJsHook_InlineScriptRejected(t *testing.T) {
 		}},
 	}
 
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockCtx)
 
 	runner := buildRunner(
@@ -690,7 +689,7 @@ func TestJsHook_StdoutCapture(t *testing.T) {
 		}},
 	}
 
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockCtx)
 	stubNodeVersionCheck(mockCtx)
 
@@ -755,7 +754,7 @@ func TestJsHook_ShellHookUnaffected(t *testing.T) {
 		}},
 	}
 
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockCtx)
 	stubNodeVersionCheck(mockCtx)
 
@@ -848,7 +847,7 @@ func TestJsHook_ExplicitDirOverridesCwd(t *testing.T) {
 		}},
 	}
 
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockCtx)
 	stubNodeVersionCheck(mockCtx)
 
@@ -896,7 +895,7 @@ func TestJsHook_ProjectLevel(t *testing.T) {
 		}},
 	}
 
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockCtx)
 	stubNodeVersionCheck(mockCtx)
 

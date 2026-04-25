@@ -4,7 +4,6 @@
 package consent
 
 import (
-	"context"
 	"fmt"
 	"testing"
 
@@ -19,7 +18,7 @@ import (
 // Read 1: approve once, Read 2: approve once, Read 3: approve always, Read 4+: should auto-approve.
 func TestConsentPersistence_AlwaysAllow(t *testing.T) {
 	mgr := newTestConsentManager(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	readOnly := true
 	readReq := ConsentRequest{
@@ -94,7 +93,7 @@ func TestConsentPersistence_AlwaysAllow_SurvivesReload(t *testing.T) {
 		sessionRules:      make([]ConsentRule, 0),
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	readOnly := true
 	readReq := ConsentRequest{
@@ -133,7 +132,7 @@ func TestConsentPersistence_AlwaysAllow_SurvivesReload(t *testing.T) {
 // TestConsentPersistence_SessionScope_NotAfterReload verifies session rules don't survive reload.
 func TestConsentPersistence_SessionScope_NotAfterReload(t *testing.T) {
 	mgr := newTestConsentManager(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	readOnly := true
 	readReq := ConsentRequest{

@@ -4,7 +4,6 @@
 package az
 
 import (
-	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -16,7 +15,7 @@ import (
 
 func TestAccount(t *testing.T) {
 	t.Run("unauthenticated exit error with az login message", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.When(func(args exec.RunArgs, cmd string) bool {
 			return strings.Contains(cmd, "az account show")
 		}).SetError(fmt.Errorf(
@@ -26,13 +25,13 @@ func TestAccount(t *testing.T) {
 		azCli, err := NewCli(mockContext.CommandRunner)
 		require.NoError(t, err)
 
-		_, err = azCli.Account(context.Background())
+		_, err = azCli.Account(t.Context())
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "not authenticated")
 	})
 
 	t.Run("unauthenticated output with az login message", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.When(func(args exec.RunArgs, cmd string) bool {
 			return strings.Contains(cmd, "az account show")
 		}).Respond(exec.RunResult{
@@ -42,13 +41,13 @@ func TestAccount(t *testing.T) {
 		azCli, err := NewCli(mockContext.CommandRunner)
 		require.NoError(t, err)
 
-		_, err = azCli.Account(context.Background())
+		_, err = azCli.Account(t.Context())
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "not authenticated")
 	})
 
 	t.Run("authenticated user account", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.When(func(args exec.RunArgs, cmd string) bool {
 			return strings.Contains(cmd, "az account show")
 		}).Respond(exec.RunResult{
@@ -58,7 +57,7 @@ func TestAccount(t *testing.T) {
 		azCli, err := NewCli(mockContext.CommandRunner)
 		require.NoError(t, err)
 
-		account, err := azCli.Account(context.Background())
+		account, err := azCli.Account(t.Context())
 		require.NoError(t, err)
 		require.Equal(t, "test@example.com", account.User.Name)
 		require.Equal(t, "user", account.User.Type)

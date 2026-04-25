@@ -75,7 +75,7 @@ func runActionSafe(ctx context.Context, action *initAction) (retErr error) {
 
 func TestInitNoPromptRequiresMode(t *testing.T) {
 	t.Run("ReturnsInitNoPromptErrorWhenNoMode", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.Console.SetNoPromptMode(true)
 
 		flags := &initFlags{
@@ -98,7 +98,7 @@ func TestInitNoPromptRequiresMode(t *testing.T) {
 	})
 
 	t.Run("DoesNotErrorWhenMinimalFlagSet", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.Console.SetNoPromptMode(true)
 
 		flags := &initFlags{
@@ -117,7 +117,7 @@ func TestInitNoPromptRequiresMode(t *testing.T) {
 	})
 
 	t.Run("DoesNotErrorWhenTemplateAndEnvironmentProvided", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.Console.SetNoPromptMode(true)
 
 		flags := &initFlags{
@@ -139,7 +139,7 @@ func TestInitNoPromptRequiresMode(t *testing.T) {
 
 func TestInitFailFastMissingEnvNonInteractive(t *testing.T) {
 	t.Run("NoLongerFailsWhenNoPromptWithTemplateAndNoEnv", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.Console.SetNoPromptMode(true)
 
 		flags := &initFlags{
@@ -161,7 +161,7 @@ func TestInitFailFastMissingEnvNonInteractive(t *testing.T) {
 	})
 
 	t.Run("DoesNotFailWhenEnvProvidedViaFlag", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 
 		flags := &initFlags{
 			templatePath: "owner/repo",
@@ -179,7 +179,7 @@ func TestInitFailFastMissingEnvNonInteractive(t *testing.T) {
 	})
 
 	t.Run("DoesNotFailWhenEnvProvidedViaDotEnv", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 
 		flags := &initFlags{
 			templatePath: "owner/repo",
@@ -202,7 +202,7 @@ func TestInitFailFastMissingEnvNonInteractive(t *testing.T) {
 	})
 
 	t.Run("DoesNotFailInInteractiveMode", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 
 		flags := &initFlags{
 			templatePath: "owner/repo",
@@ -219,7 +219,7 @@ func TestInitFailFastMissingEnvNonInteractive(t *testing.T) {
 	})
 
 	t.Run("DoesNotFailWithoutTemplate", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 
 		flags := &initFlags{
 			templatePath: "",
@@ -238,7 +238,7 @@ func TestInitFailFastMissingEnvNonInteractive(t *testing.T) {
 
 func TestInitResolveTargetDirectory(t *testing.T) {
 	t.Run("DotArgUsesCwd", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		flags := &initFlags{
 			templatePath: "owner/repo",
 			global:       &internal.GlobalCommandOptions{},
@@ -254,7 +254,7 @@ func TestInitResolveTargetDirectory(t *testing.T) {
 	})
 
 	t.Run("ExplicitDirectoryUsesArg", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		flags := &initFlags{
 			templatePath: "owner/repo",
 			global:       &internal.GlobalCommandOptions{},
@@ -270,7 +270,7 @@ func TestInitResolveTargetDirectory(t *testing.T) {
 	})
 
 	t.Run("NoArgDerivesFromTemplatePath", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		// Simulate a real terminal — auto-derive only activates in interactive TTY mode.
 		mockContext.Console.SetTerminal(true)
 		flags := &initFlags{
@@ -288,7 +288,7 @@ func TestInitResolveTargetDirectory(t *testing.T) {
 	})
 
 	t.Run("NonTTYDefaultsToCwd", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		// Non-TTY (default mock) — should fall back to CWD even without --no-prompt,
 		// preventing breakage for CI scripts that pipe stdin.
 		flags := &initFlags{
@@ -306,7 +306,7 @@ func TestInitResolveTargetDirectory(t *testing.T) {
 	})
 
 	t.Run("NoArgWithFilterTagsUsesCwd", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		flags := &initFlags{
 			templateTags: []string{"python"},
 			global:       &internal.GlobalCommandOptions{},
@@ -322,7 +322,7 @@ func TestInitResolveTargetDirectory(t *testing.T) {
 	})
 
 	t.Run("TemplateWithDotGitSuffix", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.Console.SetTerminal(true)
 		flags := &initFlags{
 			templatePath: "https://github.com/Azure-Samples/todo-nodejs-mongo.git",
@@ -339,7 +339,7 @@ func TestInitResolveTargetDirectory(t *testing.T) {
 	})
 
 	t.Run("AbsolutePathIsRejected", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		flags := &initFlags{
 			templatePath: "owner/repo",
 			global:       &internal.GlobalCommandOptions{},
@@ -357,7 +357,7 @@ func TestInitResolveTargetDirectory(t *testing.T) {
 	})
 
 	t.Run("DotDotTraversalIsRejected", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		flags := &initFlags{
 			templatePath: "owner/repo",
 			global:       &internal.GlobalCommandOptions{},
@@ -373,7 +373,7 @@ func TestInitResolveTargetDirectory(t *testing.T) {
 	})
 
 	t.Run("SingleDotDotIsRejected", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		flags := &initFlags{
 			templatePath: "owner/repo",
 			global:       &internal.GlobalCommandOptions{},
@@ -389,7 +389,7 @@ func TestInitResolveTargetDirectory(t *testing.T) {
 	})
 
 	t.Run("NestedSubdirectoryIsAllowed", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		flags := &initFlags{
 			templatePath: "owner/repo",
 			global:       &internal.GlobalCommandOptions{},
@@ -405,7 +405,7 @@ func TestInitResolveTargetDirectory(t *testing.T) {
 	})
 
 	t.Run("NoPromptNoArgDefaultsToCwd", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.Console.SetNoPromptMode(true)
 		flags := &initFlags{
 			templatePath: "Azure-Samples/todo-nodejs-mongo",
@@ -424,7 +424,7 @@ func TestInitResolveTargetDirectory(t *testing.T) {
 
 func TestInitValidateTargetDirectory(t *testing.T) {
 	t.Run("NonExistentDirectoryIsValid", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		flags := &initFlags{
 			templatePath: "owner/repo",
 			global:       &internal.GlobalCommandOptions{},
@@ -437,7 +437,7 @@ func TestInitValidateTargetDirectory(t *testing.T) {
 	})
 
 	t.Run("EmptyDirectoryIsValid", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		flags := &initFlags{
 			templatePath: "owner/repo",
 			global:       &internal.GlobalCommandOptions{},
@@ -450,7 +450,7 @@ func TestInitValidateTargetDirectory(t *testing.T) {
 	})
 
 	t.Run("NonEmptyDirectoryErrorsInNoPromptMode", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.Console.SetNoPromptMode(true)
 		flags := &initFlags{
 			templatePath: "owner/repo",
@@ -468,7 +468,7 @@ func TestInitValidateTargetDirectory(t *testing.T) {
 	})
 
 	t.Run("NonEmptyDirectoryShowsWarningInInteractiveMode", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		flags := &initFlags{
 			templatePath: "owner/repo",
 			global:       &internal.GlobalCommandOptions{},
@@ -488,7 +488,7 @@ func TestInitValidateTargetDirectory(t *testing.T) {
 
 func TestInitCreatesProjectDirectory(t *testing.T) {
 	t.Run("TemplateInitCreatesDirectory", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		// Simulate interactive terminal so auto-directory creation kicks in.
 		mockContext.Console.SetTerminal(true)
 		// Not using --no-prompt so the auto-directory creation kicks in
@@ -512,7 +512,7 @@ func TestInitCreatesProjectDirectory(t *testing.T) {
 	})
 
 	t.Run("NoPromptTemplateInitUsesCwd", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.Console.SetNoPromptMode(true)
 		flags := &initFlags{
 			templatePath: "Azure-Samples/todo-nodejs-mongo",
@@ -533,7 +533,7 @@ func TestInitCreatesProjectDirectory(t *testing.T) {
 	})
 
 	t.Run("DotArgDoesNotCreateDirectory", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.Console.SetNoPromptMode(true)
 		flags := &initFlags{
 			templatePath: "Azure-Samples/todo-nodejs-mongo",
@@ -553,7 +553,7 @@ func TestInitCreatesProjectDirectory(t *testing.T) {
 	})
 
 	t.Run("ExplicitDirArgCreatesNamedDirectory", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.Console.SetNoPromptMode(true)
 		flags := &initFlags{
 			templatePath: "Azure-Samples/todo-nodejs-mongo",
@@ -573,7 +573,7 @@ func TestInitCreatesProjectDirectory(t *testing.T) {
 	})
 
 	t.Run("FailedInitCleansUpDirectory", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		// Not using --no-prompt so auto-directory creation happens
 		flags := &initFlags{
 			templatePath: "Azure-Samples/todo-nodejs-mongo",
@@ -620,7 +620,7 @@ func TestInitCreatesProjectDirectory(t *testing.T) {
 	})
 
 	t.Run("FailedInitPreservesPreExistingDirectory", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		flags := &initFlags{
 			templatePath: "Azure-Samples/todo-nodejs-mongo",
 			global:       &internal.GlobalCommandOptions{},
@@ -663,7 +663,7 @@ func TestInitCreatesProjectDirectory(t *testing.T) {
 	})
 
 	t.Run("LocalTemplateSelfTargetFallsBackToCwd", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.Console.SetTerminal(true)
 
 		tmpDir := t.TempDir()

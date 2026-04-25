@@ -4,7 +4,6 @@
 package project
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -21,7 +20,7 @@ func Test_noOpProject_Requirements(t *testing.T) {
 func Test_noOpProject_RequiredExternalTools(t *testing.T) {
 	svc := NewNoOpProject(nil)
 	tools := svc.RequiredExternalTools(
-		context.Background(), nil,
+		t.Context(), nil,
 	)
 
 	require.NotNil(t, tools)
@@ -30,14 +29,14 @@ func Test_noOpProject_RequiredExternalTools(t *testing.T) {
 
 func Test_noOpProject_Initialize(t *testing.T) {
 	svc := NewNoOpProject(nil)
-	err := svc.Initialize(context.Background(), nil)
+	err := svc.Initialize(t.Context(), nil)
 	require.NoError(t, err)
 }
 
 func Test_noOpProject_Restore(t *testing.T) {
 	svc := NewNoOpProject(nil)
 	result, err := svc.Restore(
-		context.Background(), nil, nil, nil,
+		t.Context(), nil, nil, nil,
 	)
 
 	require.NoError(t, err)
@@ -47,7 +46,7 @@ func Test_noOpProject_Restore(t *testing.T) {
 func Test_noOpProject_Build(t *testing.T) {
 	svc := NewNoOpProject(nil)
 	result, err := svc.Build(
-		context.Background(), nil, nil, nil,
+		t.Context(), nil, nil, nil,
 	)
 
 	require.NoError(t, err)
@@ -57,7 +56,7 @@ func Test_noOpProject_Build(t *testing.T) {
 func Test_noOpProject_Package(t *testing.T) {
 	svc := NewNoOpProject(nil)
 	result, err := svc.Package(
-		context.Background(), nil, nil, nil,
+		t.Context(), nil, nil, nil,
 	)
 
 	require.NoError(t, err)

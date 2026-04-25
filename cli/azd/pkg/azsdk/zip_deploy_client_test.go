@@ -21,7 +21,7 @@ import (
 
 func TestZipDeploy(t *testing.T) {
 	t.Run("WithPollingSuccess", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		registerDeployMocks(mockContext)
 		registerPollingMocks(mockContext)
 
@@ -42,7 +42,7 @@ func TestZipDeploy(t *testing.T) {
 	})
 
 	t.Run("WithPollingError", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		registerDeployMocks(mockContext)
 		registerPollingErrorMocks(mockContext)
 
@@ -63,7 +63,7 @@ func TestZipDeploy(t *testing.T) {
 	})
 
 	t.Run("WithInitialError", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		registerConflictMocks(mockContext)
 
 		client, err := NewZipDeployClient("HOSTNAME", &mocks.MockCredentials{}, mockContext.ArmClientOptions)

@@ -24,7 +24,7 @@ import (
 )
 
 func Test_MlEndpointTarget_Deploy(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.Clock.Set(time.Now())
 	env := environment.NewWithValues("test", map[string]string{
 		AiProjectNameEnvVarName:              "AI_WORKSPACE",

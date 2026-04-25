@@ -21,7 +21,7 @@ func Test_Valid_Event_Names(t *testing.T) {
 
 	ed := NewEventDispatcher[testEventArgs](testEvent)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	err := ed.AddHandler(ctx, testEvent, handler)
 	require.NoError(t, err)
 
@@ -34,7 +34,7 @@ func Test_Valid_Event_Names(t *testing.T) {
 		return len(ed.handlers[testEvent]) == 0
 	}, time.Second, 10*time.Millisecond, "Handler should be removed after context cancel")
 
-	err = ed.Invoke(context.Background(), testEvent, testEventArgs{}, func() error {
+	err = ed.Invoke(t.Context(), testEvent, testEventArgs{}, func() error {
 		return nil
 	})
 
@@ -51,10 +51,10 @@ func Test_Invalid_Event_Names(t *testing.T) {
 
 	tests := map[string]func() error{
 		"AddHandler": func() error {
-			return ed.AddHandler(context.Background(), invalidEventName, handler)
+			return ed.AddHandler(t.Context(), invalidEventName, handler)
 		},
 		"Invoke": func() error {
-			return ed.Invoke(context.Background(), invalidEventName, testEventArgs{}, func() error {
+			return ed.Invoke(t.Context(), invalidEventName, testEventArgs{}, func() error {
 				return nil
 			})
 		},
@@ -83,13 +83,13 @@ func Test_Single_Error_Preserves_Type(t *testing.T) {
 			Suggestion: "Try again with --debug",
 		}
 		ed := NewEventDispatcher[testEventArgs](testEvent)
-		require.NoError(t, ed.AddHandler(context.Background(), testEvent, func(
+		require.NoError(t, ed.AddHandler(t.Context(), testEvent, func(
 			ctx context.Context, args testEventArgs,
 		) error {
 			return localErr
 		}))
 
-		err := ed.RaiseEvent(context.Background(), testEvent, testEventArgs{})
+		err := ed.RaiseEvent(t.Context(), testEvent, testEventArgs{})
 		require.Error(t, err)
 
 		got, ok := errors.AsType[*azdext.LocalError](err)
@@ -104,13 +104,13 @@ func Test_Single_Error_Preserves_Type(t *testing.T) {
 			Suggestion: "Try again",
 		}
 		ed := NewEventDispatcher[testEventArgs](testEvent)
-		require.NoError(t, ed.AddHandler(context.Background(), testEvent, func(
+		require.NoError(t, ed.AddHandler(t.Context(), testEvent, func(
 			ctx context.Context, args testEventArgs,
 		) error {
 			return suggErr
 		}))
 
-		err := ed.RaiseEvent(context.Background(), testEvent, testEventArgs{})
+		err := ed.RaiseEvent(t.Context(), testEvent, testEventArgs{})
 		require.Error(t, err)
 
 		got, ok := errors.AsType[*internal.ErrorWithSuggestion](err)
@@ -134,12 +134,12 @@ func Test_Multiple_Errors_With_Suggestions(t *testing.T) {
 	}
 
 	ed := NewEventDispatcher[testEventArgs](testEvent)
-	err := ed.AddHandler(context.Background(), testEvent, handler1)
+	err := ed.AddHandler(t.Context(), testEvent, handler1)
 	require.NoError(t, err)
-	err = ed.AddHandler(context.Background(), testEvent, handler2)
+	err = ed.AddHandler(t.Context(), testEvent, handler2)
 	require.NoError(t, err)
 
-	err = ed.RaiseEvent(context.Background(), testEvent, testEventArgs{})
+	err = ed.RaiseEvent(t.Context(), testEvent, testEventArgs{})
 	require.Error(t, err)
 
 	var errWithSuggestion *internal.ErrorWithSuggestion
@@ -164,28 +164,32 @@ func Test_Automatic_Handler_Removal_On_Context_Done(t *testing.T) {
 	ed := NewEventDispatcher[testEventArgs](testEvent)
 
 	// Create a cancellable context
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 
 	// Add handler with the cancellable context
 	err := ed.AddHandler(ctx, testEvent, handler)
 	require.NoError(t, err)
 
 	// Verify handler is registered by calling it
-	err = ed.RaiseEvent(context.Background(), testEvent, testEventArgs{})
+	err = ed.RaiseEvent(t.Context(), testEvent, testEventArgs{})
 	require.NoError(t, err)
 	require.Equal(t, 1, callCount, "Handler should be called initially")
 
 	// Cancel the context to trigger automatic removal
 	cancel()
 
-	// Give the cleanup goroutine time to process the cancellation
-	time.Sleep(50 * time.Millisecond)
+	// Wait for the cleanup goroutine to process the cancellation.
+	require.Eventually(t, func() bool {
+		ed.mu.RLock()
+		defer ed.mu.RUnlock()
+		return len(ed.handlers[testEvent]) == 0
+	}, 2*time.Second, 5*time.Millisecond, "handler should be removed after context cancellation")
 
 	// Reset call count to verify handler was actually removed
 	callCount = 0
 
 	// Attempt to raise the event again - handler should not be called
-	err = ed.RaiseEvent(context.Background(), testEvent, testEventArgs{})
+	err = ed.RaiseEvent(t.Context(), testEvent, testEventArgs{})
 	require.NoError(t, err)
 	require.Equal(t, 0, callCount, "Handler should not be called after context cancellation")
 
@@ -218,10 +222,10 @@ func Test_Multiple_Handlers_Selective_Removal_On_Context_Done(t *testing.T) {
 	ed := NewEventDispatcher[testEventArgs](testEvent)
 
 	// Create different contexts
-	ctx1, cancel1 := context.WithCancel(context.Background())
-	ctx2, cancel2 := context.WithCancel(context.Background())
-	ctx3 := context.Background() // Non-cancellable context
-	defer cancel2()              // Ensure cleanup
+	ctx1, cancel1 := context.WithCancel(t.Context())
+	ctx2, cancel2 := context.WithCancel(t.Context())
+	ctx3 := t.Context() // Not cancelled during this test (only at test completion)
+	defer cancel2()     // Ensure cleanup
 
 	// Add handlers with different contexts
 	err := ed.AddHandler(ctx1, testEvent, handler1)
@@ -234,7 +238,7 @@ func Test_Multiple_Handlers_Selective_Removal_On_Context_Done(t *testing.T) {
 	require.NoError(t, err)
 
 	// All handlers should be called initially
-	err = ed.RaiseEvent(context.Background(), testEvent, testEventArgs{})
+	err = ed.RaiseEvent(t.Context(), testEvent, testEventArgs{})
 	require.NoError(t, err)
 	require.Equal(t, 1, callCount1, "Handler1 should be called initially")
 	require.Equal(t, 1, callCount2, "Handler2 should be called initially")
@@ -243,8 +247,12 @@ func Test_Multiple_Handlers_Selective_Removal_On_Context_Done(t *testing.T) {
 	// Cancel only ctx1
 	cancel1()
 
-	// Give cleanup time to process
-	time.Sleep(50 * time.Millisecond)
+	// Wait for the cleanup goroutine to remove only handler1.
+	require.Eventually(t, func() bool {
+		ed.mu.RLock()
+		defer ed.mu.RUnlock()
+		return len(ed.handlers[testEvent]) == 2
+	}, 2*time.Second, 5*time.Millisecond, "handler1 should be removed after ctx1 cancellation")
 
 	// Reset counters
 	callCount1 = 0
@@ -252,7 +260,7 @@ func Test_Multiple_Handlers_Selective_Removal_On_Context_Done(t *testing.T) {
 	callCount3 = 0
 
 	// Only handler1 should be removed, handler2 and handler3 should still be called
-	err = ed.RaiseEvent(context.Background(), testEvent, testEventArgs{})
+	err = ed.RaiseEvent(t.Context(), testEvent, testEventArgs{})
 	require.NoError(t, err)
 	require.Equal(t, 0, callCount1, "Handler1 should not be called after its context cancellation")
 	require.Equal(t, 1, callCount2, "Handler2 should still be called")
@@ -275,7 +283,7 @@ func Test_Already_Cancelled_Context_Handler_Cleanup(t *testing.T) {
 	ed := NewEventDispatcher[testEventArgs](testEvent)
 
 	// Create and immediately cancel a context
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel() // Cancel before adding handler
 
 	// Add handler with already cancelled context
@@ -283,7 +291,7 @@ func Test_Already_Cancelled_Context_Handler_Cleanup(t *testing.T) {
 	require.NoError(t, err)
 
 	// Handler should not be called because context was already cancelled
-	err = ed.RaiseEvent(context.Background(), testEvent, testEventArgs{})
+	err = ed.RaiseEvent(t.Context(), testEvent, testEventArgs{})
 	require.NoError(t, err)
 	require.Equal(t, 0, callCount, "Handler should not be called with already cancelled context")
 
@@ -305,10 +313,10 @@ func Test_Same_Handler_Registered_Twice(t *testing.T) {
 	ed := NewEventDispatcher[testEventArgs](testEvent)
 
 	// Both registrations should succeed
-	err := ed.AddHandler(context.Background(), testEvent, handler)
+	err := ed.AddHandler(t.Context(), testEvent, handler)
 	require.NoError(t, err)
 
-	err = ed.AddHandler(context.Background(), testEvent, handler)
+	err = ed.AddHandler(t.Context(), testEvent, handler)
 	require.NoError(t, err)
 
 	// Both registrations are kept — each AddHandler call is a distinct registration
@@ -318,7 +326,7 @@ func Test_Same_Handler_Registered_Twice(t *testing.T) {
 	require.Equal(t, 2, handlerCount, "Both registrations should be kept")
 
 	// Handler is called once per registration
-	err = ed.RaiseEvent(context.Background(), testEvent, testEventArgs{})
+	err = ed.RaiseEvent(t.Context(), testEvent, testEventArgs{})
 	require.NoError(t, err)
 	require.Equal(t, 2, callCount, "Handler should be called once per registration")
 }
@@ -336,10 +344,10 @@ func Test_Same_Handler_Different_Events(t *testing.T) {
 	ed := NewEventDispatcher[testEventArgs](event1, event2)
 
 	// Register same handler for different events - should succeed both times
-	err := ed.AddHandler(context.Background(), event1, handler)
+	err := ed.AddHandler(t.Context(), event1, handler)
 	require.NoError(t, err)
 
-	err = ed.AddHandler(context.Background(), event2, handler)
+	err = ed.AddHandler(t.Context(), event2, handler)
 	require.NoError(t, err)
 
 	// Verify both events have the handler registered
@@ -352,11 +360,11 @@ func Test_Same_Handler_Different_Events(t *testing.T) {
 	require.Equal(t, 1, handler2Count, "Event2 should have 1 handler")
 
 	// Both events should trigger the handler
-	err = ed.RaiseEvent(context.Background(), event1, testEventArgs{})
+	err = ed.RaiseEvent(t.Context(), event1, testEventArgs{})
 	require.NoError(t, err)
 	require.Equal(t, 1, callCount, "Handler should be called once for event1")
 
-	err = ed.RaiseEvent(context.Background(), event2, testEventArgs{})
+	err = ed.RaiseEvent(t.Context(), event2, testEventArgs{})
 	require.NoError(t, err)
 	require.Equal(t, 2, callCount, "Handler should be called again for event2")
 }
@@ -378,10 +386,10 @@ func Test_Different_Handlers_Same_Event(t *testing.T) {
 	ed := NewEventDispatcher[testEventArgs](testEvent)
 
 	// Register two different handlers for the same event
-	err := ed.AddHandler(context.Background(), testEvent, handler1)
+	err := ed.AddHandler(t.Context(), testEvent, handler1)
 	require.NoError(t, err)
 
-	err = ed.AddHandler(context.Background(), testEvent, handler2)
+	err = ed.AddHandler(t.Context(), testEvent, handler2)
 	require.NoError(t, err)
 
 	// Verify both handlers are registered
@@ -391,7 +399,7 @@ func Test_Different_Handlers_Same_Event(t *testing.T) {
 	require.Equal(t, 2, handlerCount, "Should have 2 different handlers")
 
 	// Both handlers should be called when event is raised
-	err = ed.RaiseEvent(context.Background(), testEvent, testEventArgs{})
+	err = ed.RaiseEvent(t.Context(), testEvent, testEventArgs{})
 	require.NoError(t, err)
 	require.Equal(t, 1, callCount1, "Handler1 should be called")
 	require.Equal(t, 1, callCount2, "Handler2 should be called")
@@ -407,12 +415,12 @@ func Test_Same_Handler_Multiple_Registrations(t *testing.T) {
 	ed := NewEventDispatcher[testEventArgs](testEvent)
 
 	// First registration
-	err := ed.AddHandler(context.Background(), testEvent, handler)
+	err := ed.AddHandler(t.Context(), testEvent, handler)
 	require.NoError(t, err)
 
 	// Multiple registrations of the same handler
 	for range 3 {
-		err = ed.AddHandler(context.Background(), testEvent, handler)
+		err = ed.AddHandler(t.Context(), testEvent, handler)
 		require.NoError(t, err)
 	}
 
@@ -423,7 +431,7 @@ func Test_Same_Handler_Multiple_Registrations(t *testing.T) {
 	require.Equal(t, 4, handlerCount, "All registrations should be kept")
 
 	// Handler is called once per registration
-	err = ed.RaiseEvent(context.Background(), testEvent, testEventArgs{})
+	err = ed.RaiseEvent(t.Context(), testEvent, testEventArgs{})
 	require.NoError(t, err)
 	require.Equal(t, 4, callCount, "Handler should be called once per registration")
 }
@@ -439,7 +447,7 @@ func Test_Workflow_Context_Handler_Cleanup(t *testing.T) {
 		ed := NewEventDispatcher[testEventArgs](testEvent)
 
 		// Simulate root context that uses WithoutCancel (like singletons)
-		rootCtx := context.Background()
+		rootCtx := t.Context()
 		nonCancellableRoot := context.WithoutCancel(rootCtx)
 
 		// Simulate workflow step 1 - create cancellable child context
@@ -540,7 +548,7 @@ func Test_Workflow_Context_Handler_Cleanup(t *testing.T) {
 		ed := NewEventDispatcher[testEventArgs](testEvent)
 
 		// Register handler with non-cancellable context (simulating incorrect usage)
-		nonCancellableCtx := context.WithoutCancel(context.Background())
+		nonCancellableCtx := context.WithoutCancel(t.Context())
 		callCount := 0
 		handler := func(ctx context.Context, args testEventArgs) error {
 			callCount++
@@ -560,7 +568,7 @@ func Test_Workflow_Context_Handler_Cleanup(t *testing.T) {
 		ed.mu.RUnlock()
 
 		// Handler should still be called
-		err = ed.RaiseEvent(context.Background(), testEvent, testEventArgs{})
+		err = ed.RaiseEvent(t.Context(), testEvent, testEventArgs{})
 		require.NoError(t, err)
 		require.Equal(t, 1, callCount)
 	})
@@ -592,10 +600,10 @@ func Test_Closures_From_Same_Literal(t *testing.T) {
 	h1 := createHandler(ext1, "preprovision")
 	h2 := createHandler(ext2, "preprovision")
 
-	err := ed.AddHandler(context.Background(), testEvent, h1)
+	err := ed.AddHandler(t.Context(), testEvent, h1)
 	require.NoError(t, err)
 
-	err = ed.AddHandler(context.Background(), testEvent, h2)
+	err = ed.AddHandler(t.Context(), testEvent, h2)
 	require.NoError(t, err)
 	ed.mu.RLock()
 	handlerCount := len(ed.handlers[testEvent])
@@ -615,8 +623,8 @@ func Test_Context_Cleanup_With_Same_Literal_Closures(t *testing.T) {
 
 	ed := NewEventDispatcher[testEventArgs](testEvent)
 
-	ctx1, cancel1 := context.WithCancel(context.Background())
-	ctx2 := context.Background()
+	ctx1, cancel1 := context.WithCancel(t.Context())
+	ctx2 := t.Context()
 
 	counter1, counter2 := 0, 0
 	h1 := createHandler("ext1", &counter1)
@@ -628,7 +636,7 @@ func Test_Context_Cleanup_With_Same_Literal_Closures(t *testing.T) {
 	require.NoError(t, err)
 
 	// Both should fire
-	err = ed.RaiseEvent(context.Background(), testEvent, testEventArgs{})
+	err = ed.RaiseEvent(t.Context(), testEvent, testEventArgs{})
 	require.NoError(t, err)
 	require.Equal(t, 1, counter1)
 	require.Equal(t, 1, counter2)
@@ -638,7 +646,7 @@ func Test_Context_Cleanup_With_Same_Literal_Closures(t *testing.T) {
 
 	require.Eventually(t, func() bool {
 		counter1, counter2 = 0, 0
-		err = ed.RaiseEvent(context.Background(), testEvent, testEventArgs{})
+		err = ed.RaiseEvent(t.Context(), testEvent, testEventArgs{})
 		require.NoError(t, err)
 		return counter1 == 0 && counter2 == 1
 	}, time.Second, 10*time.Millisecond,
@@ -662,7 +670,7 @@ func Test_Workflow_Step_Race_No_Duplicate_Execution(t *testing.T) {
 	}
 
 	// Step 1: register handler with cancellable context
-	step1Ctx, cancelStep1 := context.WithCancel(context.Background())
+	step1Ctx, cancelStep1 := context.WithCancel(t.Context())
 	err := ed.AddHandler(step1Ctx, testEvent, createHandler())
 	require.NoError(t, err)
 
@@ -677,7 +685,7 @@ func Test_Workflow_Step_Race_No_Duplicate_Execution(t *testing.T) {
 	// Raise event — only step 2's handler should fire since step 1's context is cancelled.
 	// This is deterministic regardless of whether the cleanup goroutine has run yet,
 	// because RaiseEvent skips handlers with cancelled contexts.
-	err = ed.RaiseEvent(context.Background(), testEvent, testEventArgs{})
+	err = ed.RaiseEvent(t.Context(), testEvent, testEventArgs{})
 	require.NoError(t, err)
 	require.Equal(t, 1, callCount, "Only step 2's handler should fire; step 1's context is cancelled")
 }

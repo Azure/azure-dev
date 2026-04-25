@@ -254,7 +254,7 @@ func TestMcpHost_ServerTools_NoClient(t *testing.T) {
 		"test-server": {Type: "stdio", Command: "test"},
 	}))
 
-	ctx := context.Background()
+	ctx := t.Context()
 	tools, err := host.ServerTools(ctx, "test-server")
 
 	assert.Error(t, err)
@@ -265,7 +265,7 @@ func TestMcpHost_ServerTools_NoClient(t *testing.T) {
 func TestMcpHost_ServerTools_NonexistentServer(t *testing.T) {
 	host := NewMcpHost()
 
-	ctx := context.Background()
+	ctx := t.Context()
 	tools, err := host.ServerTools(ctx, "nonexistent-server")
 
 	assert.Error(t, err)
@@ -276,7 +276,7 @@ func TestMcpHost_ServerTools_NonexistentServer(t *testing.T) {
 func TestMcpHost_AllTools_NoServers(t *testing.T) {
 	host := NewMcpHost()
 
-	ctx := context.Background()
+	ctx := t.Context()
 	tools, err := host.AllTools(ctx)
 
 	assert.NoError(t, err)
@@ -289,7 +289,7 @@ func TestMcpHost_AllTools_WithServersButNoClients(t *testing.T) {
 		"server2": {Type: "http", Url: "http://example.com"},
 	}))
 
-	ctx := context.Background()
+	ctx := t.Context()
 	tools, err := host.AllTools(ctx)
 
 	// Should not return error even if individual servers fail
@@ -326,7 +326,7 @@ func TestMcpHost_Hooks_OnRegisterSession(t *testing.T) {
 	assert.Nil(t, host.session)
 
 	// Call the hook function
-	ctx := context.Background()
+	ctx := t.Context()
 	hookFunc(ctx, session)
 
 	// Verify session is now set
@@ -340,7 +340,7 @@ func TestMcpHost_Hooks_OnRegisterSession_NilSession(t *testing.T) {
 	hookFunc := hooks.OnRegisterSession[0]
 
 	// Call the hook function with nil session
-	ctx := context.Background()
+	ctx := t.Context()
 	hookFunc(ctx, nil)
 
 	// Session should remain nil
@@ -434,7 +434,7 @@ func TestCreateProxyTool_HandlerForwardsCall(t *testing.T) {
 		},
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	result, err := proxyTool.Handler(ctx, request)
 
 	// Verify the call was successful
@@ -472,7 +472,7 @@ func TestCreateProxyTool_HandlerForwardsError(t *testing.T) {
 		},
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	result, err := proxyTool.Handler(ctx, request)
 
 	// Verify the error was forwarded
@@ -510,7 +510,7 @@ func TestCreateProxyTool_HandlerCallsExactlyOnce(t *testing.T) {
 		},
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Call the handler
 	result, err := proxyTool.Handler(ctx, request)

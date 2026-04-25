@@ -4,7 +4,6 @@
 package cli_test
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -111,7 +110,7 @@ func Test_DeploymentStacks(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		_, err = rgClient.CreateOrUpdate(context.Background(), resourceGroupName, armresources.ResourceGroup{
+		_, err = rgClient.CreateOrUpdate(t.Context(), resourceGroupName, armresources.ResourceGroup{
 			Name:     new(resourceGroupName),
 			Location: &location,
 			Tags: map[string]*string{

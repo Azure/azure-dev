@@ -4,7 +4,6 @@
 package pipeline
 
 import (
-	"context"
 	"maps"
 	"os"
 	"path/filepath"
@@ -703,7 +702,7 @@ func Test_pipelineProviderFiles_structure(t *testing.T) {
 func Test_ProviderName_GitHub(t *testing.T) {
 	t.Parallel()
 	tempDir := t.TempDir()
-	ctx := context.Background()
+	ctx := t.Context()
 	azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
 	mockContext := resetContext(tempDir, ctx)
 
@@ -723,7 +722,7 @@ func Test_ProviderName_GitHub(t *testing.T) {
 func Test_ProviderName_AzDo(t *testing.T) {
 	t.Parallel()
 	tempDir := t.TempDir()
-	ctx := context.Background()
+	ctx := t.Context()
 	azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
 	mockContext := resetContext(tempDir, ctx)
 
@@ -747,7 +746,7 @@ func Test_ProviderName_AzDo(t *testing.T) {
 func Test_PipelineManager_requiredTools_GitHub(t *testing.T) {
 	t.Parallel()
 	tempDir := t.TempDir()
-	ctx := context.Background()
+	ctx := t.Context()
 	azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
 	mockContext := resetContext(tempDir, ctx)
 
@@ -767,7 +766,7 @@ func Test_PipelineManager_requiredTools_GitHub(t *testing.T) {
 func Test_PipelineManager_requiredTools_AzDo(t *testing.T) {
 	t.Parallel()
 	tempDir := t.TempDir()
-	ctx := context.Background()
+	ctx := t.Context()
 	azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
 	mockContext := resetContext(tempDir, ctx)
 
@@ -791,7 +790,7 @@ func Test_PipelineManager_requiredTools_AzDo(t *testing.T) {
 func Test_PipelineManager_preConfigureCheck_invalidAuthType(t *testing.T) {
 	t.Parallel()
 	tempDir := t.TempDir()
-	ctx := context.Background()
+	ctx := t.Context()
 	azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
 	mockContext := resetContext(tempDir, ctx)
 
@@ -820,7 +819,7 @@ func Test_PipelineManager_preConfigureCheck_invalidAuthType(t *testing.T) {
 func Test_GitHubScmProvider_Name(t *testing.T) {
 	t.Parallel()
 	tempDir := t.TempDir()
-	ctx := context.Background()
+	ctx := t.Context()
 	azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
 	mockContext := resetContext(tempDir, ctx)
 
@@ -837,7 +836,7 @@ func Test_GitHubScmProvider_Name(t *testing.T) {
 func Test_GitHubCiProvider_Name(t *testing.T) {
 	t.Parallel()
 	tempDir := t.TempDir()
-	ctx := context.Background()
+	ctx := t.Context()
 	azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
 	mockContext := resetContext(tempDir, ctx)
 
@@ -854,7 +853,7 @@ func Test_GitHubCiProvider_Name(t *testing.T) {
 func Test_AzdoScmProvider_Name(t *testing.T) {
 	t.Parallel()
 	tempDir := t.TempDir()
-	ctx := context.Background()
+	ctx := t.Context()
 	azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
 	mockContext := resetContext(tempDir, ctx)
 
@@ -871,7 +870,7 @@ func Test_AzdoScmProvider_Name(t *testing.T) {
 func Test_AzdoCiProvider_Name(t *testing.T) {
 	t.Parallel()
 	tempDir := t.TempDir()
-	ctx := context.Background()
+	ctx := t.Context()
 	azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
 	mockContext := resetContext(tempDir, ctx)
 
@@ -892,7 +891,7 @@ func Test_AzdoCiProvider_Name(t *testing.T) {
 func Test_GitHubScmProvider_requiredTools(t *testing.T) {
 	t.Parallel()
 	tempDir := t.TempDir()
-	ctx := context.Background()
+	ctx := t.Context()
 	azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
 	mockContext := resetContext(tempDir, ctx)
 
@@ -912,7 +911,7 @@ func Test_GitHubScmProvider_requiredTools(t *testing.T) {
 func Test_GitHubCiProvider_requiredTools(t *testing.T) {
 	t.Parallel()
 	tempDir := t.TempDir()
-	ctx := context.Background()
+	ctx := t.Context()
 	azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
 	mockContext := resetContext(tempDir, ctx)
 
@@ -932,7 +931,7 @@ func Test_GitHubCiProvider_requiredTools(t *testing.T) {
 func Test_AzdoScmProvider_requiredTools(t *testing.T) {
 	t.Parallel()
 	tempDir := t.TempDir()
-	ctx := context.Background()
+	ctx := t.Context()
 	azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
 	mockContext := resetContext(tempDir, ctx)
 
@@ -952,7 +951,7 @@ func Test_AzdoScmProvider_requiredTools(t *testing.T) {
 func Test_AzdoCiProvider_requiredTools(t *testing.T) {
 	t.Parallel()
 	tempDir := t.TempDir()
-	ctx := context.Background()
+	ctx := t.Context()
 	azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
 	mockContext := resetContext(tempDir, ctx)
 
@@ -976,7 +975,7 @@ func Test_AzdoCiProvider_requiredTools(t *testing.T) {
 func Test_AzdoCiProvider_preConfigureCheck_federatedAuthError(t *testing.T) {
 	t.Parallel()
 	tempDir := t.TempDir()
-	ctx := context.Background()
+	ctx := t.Context()
 	azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
 	mockContext := resetContext(tempDir, ctx)
 
@@ -1006,7 +1005,7 @@ func Test_AzdoCiProvider_preConfigureCheck_federatedAuthError(t *testing.T) {
 func Test_GitHubScmProvider_gitRepoDetails(t *testing.T) {
 	t.Parallel()
 	tempDir := t.TempDir()
-	ctx := context.Background()
+	ctx := t.Context()
 	azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
 	mockContext := resetContext(tempDir, ctx)
 
@@ -1034,7 +1033,7 @@ func Test_GitHubScmProvider_gitRepoDetails(t *testing.T) {
 func Test_AzdoScmProvider_preventGitPush(t *testing.T) {
 	t.Parallel()
 	tempDir := t.TempDir()
-	ctx := context.Background()
+	ctx := t.Context()
 	azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
 	mockContext := resetContext(tempDir, ctx)
 
@@ -1063,7 +1062,7 @@ func helperSetupManager(
 ) (*PipelineManager, *mocks.MockContext) {
 	t.Helper()
 	tempDir := t.TempDir()
-	ctx := context.Background()
+	ctx := t.Context()
 	azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
 	mockCtx := resetContext(tempDir, ctx)
 

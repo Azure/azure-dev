@@ -170,7 +170,7 @@ func TestGetUserString_EmptyPath(t *testing.T) {
 	client := &AzdClient{}
 	ch, _ := NewConfigHelper(client)
 
-	_, _, err := ch.GetUserString(context.Background(), "")
+	_, _, err := ch.GetUserString(t.Context(), "")
 	if err == nil {
 		t.Fatal("expected error for empty path")
 	}
@@ -186,7 +186,7 @@ func TestGetUserString_Found(t *testing.T) {
 	client := &AzdClient{userConfigClient: stub}
 	ch, _ := NewConfigHelper(client)
 
-	val, found, err := ch.GetUserString(context.Background(), "extensions.myext.port")
+	val, found, err := ch.GetUserString(t.Context(), "extensions.myext.port")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -210,7 +210,7 @@ func TestGetUserString_NotFound(t *testing.T) {
 	client := &AzdClient{userConfigClient: stub}
 	ch, _ := NewConfigHelper(client)
 
-	val, found, err := ch.GetUserString(context.Background(), "nonexistent.path")
+	val, found, err := ch.GetUserString(t.Context(), "nonexistent.path")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -234,7 +234,7 @@ func TestGetUserString_GRPCError(t *testing.T) {
 	client := &AzdClient{userConfigClient: stub}
 	ch, _ := NewConfigHelper(client)
 
-	_, _, err := ch.GetUserString(context.Background(), "some.path")
+	_, _, err := ch.GetUserString(t.Context(), "some.path")
 	if err == nil {
 		t.Fatal("expected error for gRPC failure")
 	}
@@ -259,7 +259,7 @@ func TestGetUserJSON_Found(t *testing.T) {
 	ch, _ := NewConfigHelper(client)
 
 	var cfg myConfig
-	found, err := ch.GetUserJSON(context.Background(), "extensions.myext", &cfg)
+	found, err := ch.GetUserJSON(t.Context(), "extensions.myext", &cfg)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -288,7 +288,7 @@ func TestGetUserJSON_NotFound(t *testing.T) {
 	ch, _ := NewConfigHelper(client)
 
 	var cfg map[string]any
-	found, err := ch.GetUserJSON(context.Background(), "nonexistent", &cfg)
+	found, err := ch.GetUserJSON(t.Context(), "nonexistent", &cfg)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -304,7 +304,7 @@ func TestGetUserJSON_NilOut(t *testing.T) {
 	client := &AzdClient{userConfigClient: &stubUserConfigService{}}
 	ch, _ := NewConfigHelper(client)
 
-	_, err := ch.GetUserJSON(context.Background(), "some.path", nil)
+	_, err := ch.GetUserJSON(t.Context(), "some.path", nil)
 	if err == nil {
 		t.Fatal("expected error for nil out parameter")
 	}
@@ -321,7 +321,7 @@ func TestGetUserJSON_InvalidJSON(t *testing.T) {
 	ch, _ := NewConfigHelper(client)
 
 	var cfg map[string]any
-	_, err := ch.GetUserJSON(context.Background(), "bad.json", &cfg)
+	_, err := ch.GetUserJSON(t.Context(), "bad.json", &cfg)
 	if err == nil {
 		t.Fatal("expected error for invalid JSON")
 	}
@@ -343,7 +343,7 @@ func TestGetUserJSON_EmptyPath(t *testing.T) {
 	ch, _ := NewConfigHelper(client)
 
 	var cfg map[string]any
-	_, err := ch.GetUserJSON(context.Background(), "", &cfg)
+	_, err := ch.GetUserJSON(t.Context(), "", &cfg)
 	if err == nil {
 		t.Fatal("expected error for empty path")
 	}
@@ -359,7 +359,7 @@ func TestSetUserJSON_Success(t *testing.T) {
 	client := &AzdClient{userConfigClient: stub}
 	ch, _ := NewConfigHelper(client)
 
-	err := ch.SetUserJSON(context.Background(), "extensions.myext.port", 3000)
+	err := ch.SetUserJSON(t.Context(), "extensions.myext.port", 3000)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -371,7 +371,7 @@ func TestSetUserJSON_EmptyPath(t *testing.T) {
 	client := &AzdClient{}
 	ch, _ := NewConfigHelper(client)
 
-	err := ch.SetUserJSON(context.Background(), "", "value")
+	err := ch.SetUserJSON(t.Context(), "", "value")
 	if err == nil {
 		t.Fatal("expected error for empty path")
 	}
@@ -383,7 +383,7 @@ func TestSetUserJSON_NilValue(t *testing.T) {
 	client := &AzdClient{userConfigClient: &stubUserConfigService{}}
 	ch, _ := NewConfigHelper(client)
 
-	err := ch.SetUserJSON(context.Background(), "some.path", nil)
+	err := ch.SetUserJSON(t.Context(), "some.path", nil)
 	if err == nil {
 		t.Fatal("expected error for nil value")
 	}
@@ -399,7 +399,7 @@ func TestSetUserJSON_GRPCError(t *testing.T) {
 	client := &AzdClient{userConfigClient: stub}
 	ch, _ := NewConfigHelper(client)
 
-	err := ch.SetUserJSON(context.Background(), "some.path", "value")
+	err := ch.SetUserJSON(t.Context(), "some.path", "value")
 	if err == nil {
 		t.Fatal("expected error for gRPC failure")
 	}
@@ -413,7 +413,7 @@ func TestSetUserJSON_UnmarshalableValue(t *testing.T) {
 	ch, _ := NewConfigHelper(client)
 
 	// Channels cannot be marshaled to JSON
-	err := ch.SetUserJSON(context.Background(), "some.path", make(chan int))
+	err := ch.SetUserJSON(t.Context(), "some.path", make(chan int))
 	if err == nil {
 		t.Fatal("expected error for unmarshalable value")
 	}
@@ -437,7 +437,7 @@ func TestUnsetUser_Success(t *testing.T) {
 	client := &AzdClient{userConfigClient: stub}
 	ch, _ := NewConfigHelper(client)
 
-	err := ch.UnsetUser(context.Background(), "some.path")
+	err := ch.UnsetUser(t.Context(), "some.path")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -449,7 +449,7 @@ func TestUnsetUser_EmptyPath(t *testing.T) {
 	client := &AzdClient{}
 	ch, _ := NewConfigHelper(client)
 
-	err := ch.UnsetUser(context.Background(), "")
+	err := ch.UnsetUser(t.Context(), "")
 	if err == nil {
 		t.Fatal("expected error for empty path")
 	}
@@ -467,7 +467,7 @@ func TestGetEnvString_Found(t *testing.T) {
 	client := &AzdClient{environmentClient: stub}
 	ch, _ := NewConfigHelper(client)
 
-	val, found, err := ch.GetEnvString(context.Background(), "extensions.myext.mode")
+	val, found, err := ch.GetEnvString(t.Context(), "extensions.myext.mode")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -491,7 +491,7 @@ func TestGetEnvString_NotFound(t *testing.T) {
 	client := &AzdClient{environmentClient: stub}
 	ch, _ := NewConfigHelper(client)
 
-	_, found, err := ch.GetEnvString(context.Background(), "nonexistent")
+	_, found, err := ch.GetEnvString(t.Context(), "nonexistent")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -507,7 +507,7 @@ func TestGetEnvString_EmptyPath(t *testing.T) {
 	client := &AzdClient{}
 	ch, _ := NewConfigHelper(client)
 
-	_, _, err := ch.GetEnvString(context.Background(), "")
+	_, _, err := ch.GetEnvString(t.Context(), "")
 	if err == nil {
 		t.Fatal("expected error for empty path")
 	}
@@ -531,7 +531,7 @@ func TestGetEnvJSON_Found(t *testing.T) {
 	ch, _ := NewConfigHelper(client)
 
 	var cfg envConfig
-	found, err := ch.GetEnvJSON(context.Background(), "extensions.myext", &cfg)
+	found, err := ch.GetEnvJSON(t.Context(), "extensions.myext", &cfg)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -556,7 +556,7 @@ func TestGetEnvJSON_NotFound(t *testing.T) {
 	ch, _ := NewConfigHelper(client)
 
 	var cfg map[string]any
-	found, err := ch.GetEnvJSON(context.Background(), "nonexistent", &cfg)
+	found, err := ch.GetEnvJSON(t.Context(), "nonexistent", &cfg)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -572,7 +572,7 @@ func TestGetEnvJSON_NilOut(t *testing.T) {
 	client := &AzdClient{environmentClient: &stubEnvironmentService{}}
 	ch, _ := NewConfigHelper(client)
 
-	_, err := ch.GetEnvJSON(context.Background(), "some.path", nil)
+	_, err := ch.GetEnvJSON(t.Context(), "some.path", nil)
 	if err == nil {
 		t.Fatal("expected error for nil out parameter")
 	}
@@ -587,7 +587,7 @@ func TestSetEnvJSON_Success(t *testing.T) {
 	client := &AzdClient{environmentClient: stub}
 	ch, _ := NewConfigHelper(client)
 
-	err := ch.SetEnvJSON(context.Background(), "extensions.myext.mode", "prod")
+	err := ch.SetEnvJSON(t.Context(), "extensions.myext.mode", "prod")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -599,7 +599,7 @@ func TestSetEnvJSON_EmptyPath(t *testing.T) {
 	client := &AzdClient{}
 	ch, _ := NewConfigHelper(client)
 
-	err := ch.SetEnvJSON(context.Background(), "", "value")
+	err := ch.SetEnvJSON(t.Context(), "", "value")
 	if err == nil {
 		t.Fatal("expected error for empty path")
 	}
@@ -611,7 +611,7 @@ func TestSetEnvJSON_NilValue(t *testing.T) {
 	client := &AzdClient{environmentClient: &stubEnvironmentService{}}
 	ch, _ := NewConfigHelper(client)
 
-	err := ch.SetEnvJSON(context.Background(), "some.path", nil)
+	err := ch.SetEnvJSON(t.Context(), "some.path", nil)
 	if err == nil {
 		t.Fatal("expected error for nil value")
 	}
@@ -626,7 +626,7 @@ func TestUnsetEnv_Success(t *testing.T) {
 	client := &AzdClient{environmentClient: stub}
 	ch, _ := NewConfigHelper(client)
 
-	err := ch.UnsetEnv(context.Background(), "some.path")
+	err := ch.UnsetEnv(t.Context(), "some.path")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -638,7 +638,7 @@ func TestUnsetEnv_EmptyPath(t *testing.T) {
 	client := &AzdClient{}
 	ch, _ := NewConfigHelper(client)
 
-	err := ch.UnsetEnv(context.Background(), "")
+	err := ch.UnsetEnv(t.Context(), "")
 	if err == nil {
 		t.Fatal("expected error for empty path")
 	}

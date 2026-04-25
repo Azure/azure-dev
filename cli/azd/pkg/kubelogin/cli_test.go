@@ -4,7 +4,6 @@
 package kubelogin
 
 import (
-	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -16,19 +15,19 @@ import (
 )
 
 func TestNewCli(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	cli := NewCli(mockContext.CommandRunner)
 	require.NotNil(t, cli)
 }
 
 func TestCliName(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	cli := NewCli(mockContext.CommandRunner)
 	assert.Equal(t, "kubelogin", cli.Name())
 }
 
 func TestCliInstallUrl(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	cli := NewCli(mockContext.CommandRunner)
 	assert.Equal(
 		t,
@@ -39,7 +38,7 @@ func TestCliInstallUrl(t *testing.T) {
 
 func TestCheckInstalled(t *testing.T) {
 	t.Run("Found", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.MockToolInPath(
 			"kubelogin", nil,
 		)
@@ -50,7 +49,7 @@ func TestCheckInstalled(t *testing.T) {
 	})
 
 	t.Run("NotFound", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.MockToolInPath(
 			"kubelogin",
 			errors.New("kubelogin not found in PATH"),
@@ -66,7 +65,7 @@ func TestCheckInstalled(t *testing.T) {
 func TestConvertKubeConfig(t *testing.T) {
 	t.Run("NilOptionsDefaultsToAzdLogin", func(t *testing.T) {
 		var capturedArgs exec.RunArgs
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.
 			When(func(args exec.RunArgs, command string) bool {
 				return strings.Contains(command, "kubelogin")
@@ -89,7 +88,7 @@ func TestConvertKubeConfig(t *testing.T) {
 
 	t.Run("EmptyOptionsDefaultsToAzdLogin", func(t *testing.T) {
 		var capturedArgs exec.RunArgs
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.
 			When(func(args exec.RunArgs, command string) bool {
 				return strings.Contains(command, "kubelogin")
@@ -114,7 +113,7 @@ func TestConvertKubeConfig(t *testing.T) {
 
 	t.Run("AllOptionsSet", func(t *testing.T) {
 		var capturedArgs exec.RunArgs
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.
 			When(func(args exec.RunArgs, command string) bool {
 				return strings.Contains(command, "kubelogin")
@@ -149,7 +148,7 @@ func TestConvertKubeConfig(t *testing.T) {
 
 	t.Run("OnlyKubeConfigSet", func(t *testing.T) {
 		var capturedArgs exec.RunArgs
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.
 			When(func(args exec.RunArgs, command string) bool {
 				return strings.Contains(command, "kubelogin")
@@ -178,7 +177,7 @@ func TestConvertKubeConfig(t *testing.T) {
 
 	t.Run("OnlyTenantIdSet", func(t *testing.T) {
 		var capturedArgs exec.RunArgs
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.
 			When(func(args exec.RunArgs, command string) bool {
 				return strings.Contains(command, "kubelogin")
@@ -207,7 +206,7 @@ func TestConvertKubeConfig(t *testing.T) {
 
 	t.Run("OnlyContextSet", func(t *testing.T) {
 		var capturedArgs exec.RunArgs
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.
 			When(func(args exec.RunArgs, command string) bool {
 				return strings.Contains(command, "kubelogin")
@@ -235,7 +234,7 @@ func TestConvertKubeConfig(t *testing.T) {
 	})
 
 	t.Run("CommandFailure", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.
 			When(func(args exec.RunArgs, command string) bool {
 				return strings.Contains(command, "kubelogin")
@@ -256,7 +255,7 @@ func TestConvertKubeConfig(t *testing.T) {
 
 	t.Run("CustomLoginMethod", func(t *testing.T) {
 		var capturedArgs exec.RunArgs
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.
 			When(func(args exec.RunArgs, command string) bool {
 				return strings.Contains(command, "kubelogin")

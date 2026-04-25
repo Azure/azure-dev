@@ -4,7 +4,6 @@
 package project
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -25,7 +24,7 @@ func Test_PythonProject_Restore(t *testing.T) {
 	var venvArgs exec.RunArgs
 	var pipArgs exec.RunArgs
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.CommandRunner.
 		When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "-m venv")
@@ -82,7 +81,7 @@ func Test_PythonProject_Restore_PyprojectToml(t *testing.T) {
 
 	var pipArgs exec.RunArgs
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.CommandRunner.
 		When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "-m venv")
@@ -140,7 +139,7 @@ func Test_PythonProject_Restore_PyprojectTomlPriority(t *testing.T) {
 
 	var pipArgs exec.RunArgs
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.CommandRunner.
 		When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "-m venv")
@@ -199,7 +198,7 @@ func Test_PythonProject_Restore_PyprojectTomlPriority(t *testing.T) {
 }
 
 func Test_PythonProject_Build(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	env := environment.New("test")
 	pythonCli := python.NewCli(mockContext.CommandRunner)
@@ -219,7 +218,7 @@ func Test_PythonProject_Build(t *testing.T) {
 func Test_PythonProject_Package(t *testing.T) {
 	tempDir := t.TempDir()
 	ostest.Chdir(t, tempDir)
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	env := environment.New("test")
 	pythonCli := python.NewCli(mockContext.CommandRunner)

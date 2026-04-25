@@ -46,7 +46,7 @@ import (
 )
 
 func Test_NewAksTarget(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	err := setupMocksForAksTarget(mockContext)
 	require.NoError(t, err)
 
@@ -64,7 +64,7 @@ func Test_Required_Tools(t *testing.T) {
 	tempDir := t.TempDir()
 	ostest.Chdir(t, tempDir)
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	err := setupMocksForAksTarget(mockContext)
 	require.NoError(t, err)
 
@@ -85,7 +85,7 @@ func Test_Required_Tools_WithAlpha(t *testing.T) {
 	tempDir := t.TempDir()
 	ostest.Chdir(t, tempDir)
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	err := setupMocksForAksTarget(mockContext)
 	require.NoError(t, err)
 
@@ -110,7 +110,7 @@ func Test_Package_Deploy_HappyPath(t *testing.T) {
 	tempDir := t.TempDir()
 	ostest.Chdir(t, tempDir)
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	err := setupMocksForAksTarget(mockContext)
 	require.NoError(t, err)
 
@@ -184,7 +184,7 @@ func Test_AKS_Publish(t *testing.T) {
 	tempDir := t.TempDir()
 	ostest.Chdir(t, tempDir)
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	err := setupMocksForAksTarget(mockContext)
 	require.NoError(t, err)
 
@@ -249,7 +249,7 @@ func Test_AKS_Publish_NoContainer(t *testing.T) {
 	tempDir := t.TempDir()
 	ostest.Chdir(t, tempDir)
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	err := setupMocksForAksTarget(mockContext)
 	require.NoError(t, err)
 
@@ -287,7 +287,7 @@ func Test_Resolve_Cluster_Name(t *testing.T) {
 		tempDir := t.TempDir()
 		ostest.Chdir(t, tempDir)
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		err := setupMocksForAksTarget(mockContext)
 		require.NoError(t, err)
 
@@ -301,7 +301,7 @@ func Test_Resolve_Cluster_Name(t *testing.T) {
 	})
 
 	t.Run("Simple String", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		err := setupMocksForAksTarget(mockContext)
 		require.NoError(t, err)
 
@@ -319,7 +319,7 @@ func Test_Resolve_Cluster_Name(t *testing.T) {
 	})
 
 	t.Run("Expandable String", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		err := setupMocksForAksTarget(mockContext)
 		require.NoError(t, err)
 
@@ -341,7 +341,7 @@ func Test_Resolve_Cluster_Name(t *testing.T) {
 		tempDir := t.TempDir()
 		ostest.Chdir(t, tempDir)
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		err := setupMocksForAksTarget(mockContext)
 		require.NoError(t, err)
 
@@ -363,7 +363,7 @@ func Test_Deploy_No_Credentials(t *testing.T) {
 	tempDir := t.TempDir()
 	ostest.Chdir(t, tempDir)
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	err := setupMocksForAksTarget(mockContext)
 	require.NoError(t, err)
 
@@ -386,7 +386,7 @@ func Test_Deploy_Helm(t *testing.T) {
 	tempDir := t.TempDir()
 	ostest.Chdir(t, tempDir)
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	err := setupMocksForAksTarget(mockContext)
 	require.NoError(t, err)
 
@@ -455,7 +455,7 @@ func Test_Deploy_Kustomize(t *testing.T) {
 	tempDir := t.TempDir()
 	ostest.Chdir(t, tempDir)
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	err := setupMocksForAksTarget(mockContext)
 	require.NoError(t, err)
 

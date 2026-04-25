@@ -17,7 +17,7 @@ import (
 
 func Test_FindContainerRegistryResourceGroup(t *testing.T) {
 	t.Run("ResolvesDifferentResourceGroup", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 
 		mockazsdk.MockContainerRegistryList(mockContext, []*armcontainerregistry.Registry{
 			{
@@ -45,7 +45,7 @@ func Test_FindContainerRegistryResourceGroup(t *testing.T) {
 	})
 
 	t.Run("RegistryNotFound", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 
 		mockazsdk.MockContainerRegistryList(mockContext, []*armcontainerregistry.Registry{})
 

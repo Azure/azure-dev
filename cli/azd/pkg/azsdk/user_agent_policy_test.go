@@ -4,7 +4,6 @@
 package azsdk
 
 import (
-	"context"
 	"net/http"
 	"testing"
 
@@ -19,7 +18,7 @@ import (
 func TestOverrideUserAgent(t *testing.T) {
 	expectedUserAgent := "custom/agent (5.0.0)"
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return true
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {

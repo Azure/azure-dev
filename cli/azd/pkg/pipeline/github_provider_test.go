@@ -4,7 +4,6 @@
 package pipeline
 
 import (
-	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -22,7 +21,7 @@ import (
 func Test_gitHub_provider_getRepoDetails(t *testing.T) {
 	t.Run("https", func(t *testing.T) {
 		provider := &GitHubScmProvider{}
-		ctx := context.Background()
+		ctx := t.Context()
 		details, e := provider.gitRepoDetails(ctx, "https://github.com/Azure/azure-dev.git")
 		require.NoError(t, e)
 		require.Equal(t, "Azure", details.owner)
@@ -30,7 +29,7 @@ func Test_gitHub_provider_getRepoDetails(t *testing.T) {
 	})
 	t.Run("ssh", func(t *testing.T) {
 		provider := &GitHubScmProvider{}
-		ctx := context.Background()
+		ctx := t.Context()
 		details, e := provider.gitRepoDetails(ctx, "git@github.com:Azure/azure-dev.git")
 		require.NoError(t, e)
 		require.EqualValues(t, "Azure", details.owner)
@@ -38,7 +37,7 @@ func Test_gitHub_provider_getRepoDetails(t *testing.T) {
 	})
 	t.Run("error", func(t *testing.T) {
 		provider := &GitHubScmProvider{}
-		ctx := context.Background()
+		ctx := t.Context()
 		details, e := provider.gitRepoDetails(ctx, "gt@other.com:Azure/azure-dev.git")
 		require.Error(t, e, ErrRemoteHostIsNotGitHub)
 		require.EqualValues(t, (*gitRepositoryDetails)(nil), details)
@@ -47,7 +46,7 @@ func Test_gitHub_provider_getRepoDetails(t *testing.T) {
 
 func Test_gitHub_provider_preConfigure_check(t *testing.T) {
 	t.Run("success with all default values", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		setupGithubCliMocks(mockContext)
 
 		provider := createGitHubCiProvider(t, mockContext)
@@ -74,7 +73,7 @@ func Test_gitHub_provider_preConfigure_check(t *testing.T) {
 			Provider: provisioning.Terraform,
 		}
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		setupGithubCliMocks(mockContext)
 
 		provider := createGitHubCiProvider(t, mockContext)

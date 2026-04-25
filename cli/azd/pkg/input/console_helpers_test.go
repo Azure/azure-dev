@@ -5,7 +5,6 @@ package input
 
 import (
 	"bytes"
-	"context"
 	"os"
 	"testing"
 
@@ -152,7 +151,7 @@ func TestIsSpinnerInteractive_NonTerminal(t *testing.T) {
 
 func TestIsSpinnerRunning_InitiallyStopped(t *testing.T) {
 	c, _ := newTestConsole(t, false, nil)
-	require.False(t, c.IsSpinnerRunning(context.Background()))
+	require.False(t, c.IsSpinnerRunning(t.Context()))
 }
 
 func TestSupportsPromptDialog(t *testing.T) {
@@ -233,7 +232,7 @@ func TestEnsureBlankLine(t *testing.T) {
 			c, buf := newTestConsole(t, false, formatter)
 			c.last2Byte = tt.last2
 			before := buf.Len()
-			c.EnsureBlankLine(context.Background())
+			c.EnsureBlankLine(t.Context())
 			if tt.wantCall {
 				require.Greater(t, buf.Len(), before,
 					"expected output to be written")

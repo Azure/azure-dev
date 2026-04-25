@@ -4,7 +4,6 @@
 package apphost
 
 import (
-	"context"
 	_ "embed"
 	"fmt"
 	"io/fs"
@@ -76,7 +75,7 @@ func TestAspireBicepGenerationAppHostOwnsCompute(t *testing.T) {
 		t.Skip("Skipping due to EOL issues on Windows with the baselines")
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	mockCtx := mocks.NewMockContext(ctx)
 	filesFromManifest := make(map[string]string)
 	ignoredBicepContent := "bicep file contents"
@@ -128,7 +127,7 @@ func TestAspireBicepGeneration(t *testing.T) {
 		t.Skip("Skipping due to EOL issues on Windows with the baselines")
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	mockCtx := mocks.NewMockContext(ctx)
 	filesFromManifest := make(map[string]string)
 	ignoredBicepContent := "bicep file contents"
@@ -180,7 +179,7 @@ func TestAspireDockerGeneration(t *testing.T) {
 		t.Skip("Skipping due to EOL issues on Windows with the baselines")
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	mockCtx := mocks.NewMockContext(ctx)
 	mockPublishManifest(mockCtx, aspireDockerManifest, nil)
 	mockCli := dotnet.NewCli(mockCtx.CommandRunner)
@@ -224,7 +223,7 @@ func TestAspireDashboardGeneration(t *testing.T) {
 		t.Skip("Skipping due to EOL issues on Windows with the baselines")
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	mockCtx := mocks.NewMockContext(ctx)
 	mockPublishManifest(mockCtx, aspireDockerManifest, nil)
 	mockCli := dotnet.NewCli(mockCtx.CommandRunner)
@@ -259,7 +258,7 @@ func TestAspireArgsGeneration(t *testing.T) {
 		t.Skip("Skipping due to EOL issues on Windows with the baselines")
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	mockCtx := mocks.NewMockContext(ctx)
 	mockPublishManifest(mockCtx, aspireArgsManifest, nil)
 	mockCli := dotnet.NewCli(mockCtx.CommandRunner)
@@ -279,7 +278,7 @@ func TestAspireContainerGeneration(t *testing.T) {
 		t.Skip("Skipping due to EOL issues on Windows with the baselines")
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	mockCtx := mocks.NewMockContext(ctx)
 	mockPublishManifest(mockCtx, aspireContainerManifest, nil)
 	mockCli := dotnet.NewCli(mockCtx.CommandRunner)
@@ -332,7 +331,7 @@ func TestAspireContainerArgs(t *testing.T) {
 		t.Skip("Skipping due to EOL issues on Windows with the baselines")
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	mockCtx := mocks.NewMockContext(ctx)
 	mockPublishManifest(mockCtx, aspireContainerArgsManifest, nil)
 	mockCli := dotnet.NewCli(mockCtx.CommandRunner)
@@ -553,7 +552,7 @@ func TestAspireProjectV1Generation(t *testing.T) {
 		t.Skip("Skipping due to EOL issues on Windows with the baselines")
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	mockCtx := mocks.NewMockContext(ctx)
 	filesFromManifest := make(map[string]string)
 	ignoredBicepContent := "bicep file contents"

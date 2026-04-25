@@ -78,7 +78,7 @@ func Test_Hooks_Execute(t *testing.T) {
 		ranPreHook := false
 		ranPostHook := false
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		registerHookExecutors(mockContext)
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "precommand.sh")
@@ -116,7 +116,7 @@ func Test_Hooks_Execute(t *testing.T) {
 		ranPreHook := false
 		ranPostHook := false
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		registerHookExecutors(mockContext)
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "postcommand.sh")
@@ -154,7 +154,7 @@ func Test_Hooks_Execute(t *testing.T) {
 		ranPreHook := false
 		ranPostHook := false
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		registerHookExecutors(mockContext)
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "preinteractive.sh")
@@ -192,7 +192,7 @@ func Test_Hooks_Execute(t *testing.T) {
 		ranPreHook := false
 		ranPostHook := false
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		registerHookExecutors(mockContext)
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "preinline")
@@ -227,7 +227,7 @@ func Test_Hooks_Execute(t *testing.T) {
 
 		hookLog := []string{}
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		registerHookExecutors(mockContext)
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "precommand.sh")
@@ -322,7 +322,7 @@ func Test_Hooks_Validation(t *testing.T) {
 		}
 
 		shellRan := false
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		registerHookExecutors(mockContext)
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "script.sh")
@@ -351,7 +351,7 @@ func Test_Hooks_Validation(t *testing.T) {
 		}
 
 		shellRan := false
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		registerHookExecutors(mockContext)
 		mockContext.CommandRunner.MockToolInPath("pwsh", nil)
 
@@ -384,7 +384,7 @@ func Test_Hooks_Validation(t *testing.T) {
 		}
 
 		inlineRan := false
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		registerHookExecutors(mockContext)
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "preinline")
@@ -412,7 +412,7 @@ func Test_Hooks_Validation(t *testing.T) {
 			}},
 		}
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		registerHookExecutors(mockContext)
 		hooksManager := NewHooksManager(HooksManagerOptions{Cwd: cwd, ProjectDir: cwd}, mockContext.CommandRunner)
 		runner := NewHooksRunner(
@@ -458,7 +458,7 @@ func Test_ExecHook_NonShellHooks(t *testing.T) {
 		prepareRan := false
 		executeRan := false
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		registerHookExecutors(mockContext)
 
 		// Mock the Python version check issued by python.Cli.CheckInstalled
@@ -521,7 +521,7 @@ func Test_ExecHook_NonShellHooks(t *testing.T) {
 
 		shellRan := false
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		registerHookExecutors(mockContext)
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "predeploy.sh")
@@ -579,7 +579,7 @@ func Test_ExecHook_NonShellHooks(t *testing.T) {
 		envManager := &mockenv.MockEnvManager{}
 		envManager.On("Reload", mock.Anything, env).Return(nil)
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		registerHookExecutors(mockContext)
 
 		// Simulate Python not being installed — version check
@@ -635,7 +635,7 @@ func Test_ExecHook_NonShellHooks(t *testing.T) {
 		envManager := &mockenv.MockEnvManager{}
 		envManager.On("Reload", mock.Anything, env).Return(nil)
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		registerHookExecutors(mockContext)
 
 		// Prepare succeeds (version check passes).
@@ -703,7 +703,7 @@ func Test_ExecHook_NonShellHooks(t *testing.T) {
 
 		var capturedEnv []string
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		registerHookExecutors(mockContext)
 
 		// Allow version check to pass.
@@ -800,7 +800,7 @@ func Test_ExecHook_DirRunResolution(t *testing.T) {
 		var capturedScriptPath string
 		var capturedCwd string
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		registerHookExecutors(mockContext)
 
 		// Mock Python version check.
@@ -907,7 +907,7 @@ func Test_ExecHook_DirRunResolution(t *testing.T) {
 		var capturedScriptArg string
 		shellRan := false
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		registerHookExecutors(mockContext)
 
 		mockContext.CommandRunner.When(
@@ -991,7 +991,7 @@ func Test_ExecHook_DirRunResolution(t *testing.T) {
 
 		var capturedScriptPath string
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		registerHookExecutors(mockContext)
 
 		mockContext.CommandRunner.When(
@@ -1124,7 +1124,7 @@ func Test_ExecHook_ConfigThreading(t *testing.T) {
 
 		var capturedCtx tools.ExecutionContext
 		mockContext := mocks.NewMockContext(
-			context.Background(),
+			t.Context(),
 		)
 
 		// Register a capture executor instead of the real
@@ -1202,7 +1202,7 @@ func Test_ExecHook_ConfigThreading(t *testing.T) {
 
 		var capturedCtx tools.ExecutionContext
 		mockContext := mocks.NewMockContext(
-			context.Background(),
+			t.Context(),
 		)
 
 		mockContext.Container.MustRegisterNamedTransient(
@@ -1273,7 +1273,7 @@ func TestHooksRunner_Telemetry(t *testing.T) {
 		envManager := &mockenv.MockEnvManager{}
 		envManager.On("Reload", mock.Anything, env).Return(nil)
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		registerHookExecutors(mockContext)
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "predeploy.sh")
@@ -1323,7 +1323,7 @@ func TestHooksRunner_Telemetry(t *testing.T) {
 		envManager := &mockenv.MockEnvManager{}
 		envManager.On("Reload", mock.Anything, env).Return(nil)
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		registerHookExecutors(mockContext)
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "predeploy.sh")
@@ -1368,7 +1368,7 @@ func TestHooksRunner_Telemetry(t *testing.T) {
 		envManager := &mockenv.MockEnvManager{}
 		envManager.On("Reload", mock.Anything, env).Return(nil)
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		registerHookExecutors(mockContext)
 
 		hooksManager := NewHooksManager(

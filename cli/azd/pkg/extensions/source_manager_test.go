@@ -4,7 +4,6 @@
 package extensions
 
 import (
-	"context"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -13,8 +12,8 @@ import (
 )
 
 func TestSourceManager_Add(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
-	ctx := context.Background()
+	mockContext := mocks.NewMockContext(t.Context())
+	ctx := t.Context()
 
 	configManager := config.NewUserConfigManager(mockContext.ConfigManager)
 	sourceManager := NewSourceManager(mockContext.Container, configManager, mockContext.HttpClient)
@@ -42,8 +41,8 @@ func TestSourceManager_Add(t *testing.T) {
 }
 
 func TestSourceManager_Get(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
-	ctx := context.Background()
+	mockContext := mocks.NewMockContext(t.Context())
+	ctx := t.Context()
 
 	mockConfig := config.NewEmptyConfig()
 	configManager := config.NewUserConfigManager(mockContext.ConfigManager)
@@ -74,8 +73,8 @@ func TestSourceManager_Get(t *testing.T) {
 }
 
 func TestSourceManager_Remove(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
-	ctx := context.Background()
+	mockContext := mocks.NewMockContext(t.Context())
+	ctx := t.Context()
 
 	mockConfig := config.NewEmptyConfig()
 	configManager := config.NewUserConfigManager(mockContext.ConfigManager)
@@ -108,8 +107,8 @@ func TestSourceManager_Remove(t *testing.T) {
 }
 
 func TestSourceManager_List(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
-	ctx := context.Background()
+	mockContext := mocks.NewMockContext(t.Context())
+	ctx := t.Context()
 
 	mockConfig := config.NewEmptyConfig()
 	configManager := config.NewUserConfigManager(mockContext.ConfigManager)

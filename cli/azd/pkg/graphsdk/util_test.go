@@ -21,7 +21,7 @@ import (
 // Tests whether the requests executed with the pipeline run with a bearer token policy
 // and are called with the correct scopes
 func TestNewPipeline(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return true
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {

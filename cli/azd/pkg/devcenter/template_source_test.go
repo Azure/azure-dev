@@ -4,7 +4,6 @@
 package devcenter
 
 import (
-	"context"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
@@ -19,7 +18,7 @@ import (
 
 func Test_TemplateSource_ListTemplates(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		templateSource := newTemplateSourceForTest(t, mockContext, &Config{}, nil)
 		setupDevCenterSuccessMocks(mockContext, templateSource)
 
@@ -51,7 +50,7 @@ func Test_TemplateSource_ListTemplates(t *testing.T) {
 			},
 		}
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		templateSource := newTemplateSourceForTest(t, mockContext, &Config{}, nil)
 		setupDevCenterSuccessMocks(mockContext, templateSource)
 		mockdevcentersdk.MockListEnvironmentDefinitions(
@@ -94,7 +93,7 @@ func Test_TemplateSource_ListTemplates(t *testing.T) {
 			},
 		}
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		templateSource := newTemplateSourceForTest(t, mockContext, &Config{}, nil)
 		setupDevCenterSuccessMocks(mockContext, templateSource)
 		mockdevcentersdk.MockListEnvironmentDefinitions(
@@ -128,7 +127,7 @@ func Test_TemplateSource_ListTemplates(t *testing.T) {
 			Parameters:   []devcentersdk.Parameter{},
 		}
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		templateSource := newTemplateSourceForTest(t, mockContext, &Config{}, nil)
 		setupDevCenterSuccessMocks(mockContext, templateSource)
 		mockdevcentersdk.MockListEnvironmentDefinitions(
@@ -144,7 +143,7 @@ func Test_TemplateSource_ListTemplates(t *testing.T) {
 	})
 
 	t.Run("Fail", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		templateSource := newTemplateSourceForTest(t, mockContext, &Config{}, nil)
 		setupDevCenterSuccessMocks(mockContext, templateSource)
 		// Mock will throw 404 not found for this API call causing a failure
@@ -158,7 +157,7 @@ func Test_TemplateSource_ListTemplates(t *testing.T) {
 
 func Test_TemplateSource_GetTemplate(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		templateSource := newTemplateSourceForTest(t, mockContext, &Config{}, nil)
 		setupDevCenterSuccessMocks(mockContext, templateSource)
 
@@ -168,7 +167,7 @@ func Test_TemplateSource_GetTemplate(t *testing.T) {
 	})
 
 	t.Run("TemplateNotFound", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		templateSource := newTemplateSourceForTest(t, mockContext, &Config{}, nil)
 		setupDevCenterSuccessMocks(mockContext, templateSource)
 

@@ -116,7 +116,7 @@ func TestCheckToolConsent(t *testing.T) {
 			cc := NewConsentChecker(mgr, "srv")
 
 			decision, err := cc.CheckToolConsent(
-				context.Background(),
+				t.Context(),
 				"myTool",
 				"does stuff",
 				mcp.ToolAnnotation{},
@@ -135,7 +135,7 @@ func TestCheckToolConsent_Error(t *testing.T) {
 	cc := NewConsentChecker(mgr, "srv")
 
 	_, err := cc.CheckToolConsent(
-		context.Background(),
+		t.Context(),
 		"tool",
 		"desc",
 		mcp.ToolAnnotation{},
@@ -153,7 +153,7 @@ func TestCheckSamplingConsent(t *testing.T) {
 	cc := NewConsentChecker(mgr, "srv")
 
 	decision, err := cc.CheckSamplingConsent(
-		context.Background(), "sample",
+		t.Context(), "sample",
 	)
 	require.NoError(t, err)
 	require.True(t, decision.Allowed)
@@ -168,7 +168,7 @@ func TestCheckElicitationConsent(t *testing.T) {
 	cc := NewConsentChecker(mgr, "srv")
 
 	decision, err := cc.CheckElicitationConsent(
-		context.Background(), "elicit",
+		t.Context(), "elicit",
 	)
 	require.NoError(t, err)
 	require.True(t, decision.Allowed)
@@ -436,7 +436,7 @@ func TestGrantConsentFromChoice(t *testing.T) {
 			cc := NewConsentChecker(mgr, "srv")
 
 			err := cc.grantConsentFromChoice(
-				context.Background(),
+				t.Context(),
 				tt.toolID,
 				tt.choice,
 				tt.operation,
@@ -470,7 +470,7 @@ func TestIsServerAlreadyTrusted(t *testing.T) {
 		cc := NewConsentChecker(mgr, "srv")
 		require.True(
 			t, cc.isServerAlreadyTrusted(
-				context.Background(), OperationTypeTool,
+				t.Context(), OperationTypeTool,
 			),
 		)
 	})
@@ -482,7 +482,7 @@ func TestIsServerAlreadyTrusted(t *testing.T) {
 		cc := NewConsentChecker(mgr, "srv")
 		require.False(
 			t, cc.isServerAlreadyTrusted(
-				context.Background(), OperationTypeTool,
+				t.Context(), OperationTypeTool,
 			),
 		)
 	})
@@ -494,7 +494,7 @@ func TestIsServerAlreadyTrusted(t *testing.T) {
 		cc := NewConsentChecker(mgr, "srv")
 		require.False(
 			t, cc.isServerAlreadyTrusted(
-				context.Background(), OperationTypeSampling,
+				t.Context(), OperationTypeSampling,
 			),
 		)
 	})
@@ -503,7 +503,7 @@ func TestIsServerAlreadyTrusted(t *testing.T) {
 func TestConsentManagerRuleMatchesFilters(t *testing.T) {
 	mgr := newTestConsentManager(t)
 	cm := mgr.(*consentManager)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Grant several rules of different types
 	rules := []ConsentRule{
@@ -702,7 +702,7 @@ func TestTargetMatches(t *testing.T) {
 
 func TestClearConsentRules(t *testing.T) {
 	mgr := newTestConsentManager(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Grant rules in session scope
 	require.NoError(t, mgr.GrantConsent(ctx, ConsentRule{
@@ -738,7 +738,7 @@ func TestClearConsentRules(t *testing.T) {
 
 func TestGrantConsent_InvalidRule(t *testing.T) {
 	mgr := newTestConsentManager(t)
-	err := mgr.GrantConsent(context.Background(), ConsentRule{
+	err := mgr.GrantConsent(t.Context(), ConsentRule{
 		Scope:      ScopeGlobal,
 		Target:     Target(""), // invalid
 		Action:     ActionAny,
@@ -751,7 +751,7 @@ func TestGrantConsent_InvalidRule(t *testing.T) {
 
 func TestGrantConsent_UnknownScope(t *testing.T) {
 	mgr := newTestConsentManager(t)
-	err := mgr.GrantConsent(context.Background(), ConsentRule{
+	err := mgr.GrantConsent(t.Context(), ConsentRule{
 		Scope:      Scope("unknown"),
 		Target:     NewToolTarget("s", "t"),
 		Action:     ActionAny,

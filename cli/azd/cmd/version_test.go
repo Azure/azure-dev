@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"testing"
 
@@ -18,7 +17,7 @@ import (
 
 func TestVersionAction_NoneFormat(t *testing.T) {
 	t.Parallel()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	action := newVersionAction(
 		&versionFlags{},
@@ -35,7 +34,7 @@ func TestVersionAction_NoneFormat(t *testing.T) {
 func TestVersionAction_JsonFormat(t *testing.T) {
 	t.Parallel()
 	buf := &bytes.Buffer{}
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	action := newVersionAction(
 		&versionFlags{},

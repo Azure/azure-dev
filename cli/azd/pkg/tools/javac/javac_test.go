@@ -4,7 +4,6 @@
 package javac
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -48,7 +47,7 @@ func TestCheckInstalledVersion(t *testing.T) {
 				Respond(azdexec.NewRunResult(0, tt.stdOut, ""))
 
 			cli := NewCli(execMock)
-			err := cli.CheckInstalled(context.Background())
+			err := cli.CheckInstalled(t.Context())
 			if tt.wantErr {
 				require.Error(t, err)
 			} else {
@@ -79,7 +78,7 @@ func TestCheckInstalled_OlderJavaVersion(t *testing.T) {
 		Respond(azdexec.NewRunResult(0, "", "javac 1.8_353"))
 
 	cli := NewCli(execMock)
-	err := cli.CheckInstalled(context.Background())
+	err := cli.CheckInstalled(t.Context())
 
 	assert.ErrorContains(t, err, "need at least version")
 }

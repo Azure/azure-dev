@@ -33,7 +33,7 @@ import (
 
 func TestTerraformPlan(t *testing.T) {
 	skipIfTerraformNotInstalled(t)
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	prepareGenericMocks(mockContext.CommandRunner)
 	preparePlanningMocks(mockContext.CommandRunner)
 
@@ -65,7 +65,7 @@ func TestTerraformPlan(t *testing.T) {
 
 func TestTerraformDestroy(t *testing.T) {
 	skipIfTerraformNotInstalled(t)
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	prepareGenericMocks(mockContext.CommandRunner)
 	preparePlanningMocks(mockContext.CommandRunner)
 	prepareDestroyMocks(mockContext.CommandRunner)
@@ -83,7 +83,7 @@ func TestTerraformDestroy(t *testing.T) {
 
 func TestTerraformState(t *testing.T) {
 	skipIfTerraformNotInstalled(t)
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	prepareGenericMocks(mockContext.CommandRunner)
 	prepareShowMocks(mockContext.CommandRunner)
 
@@ -290,7 +290,7 @@ func TestIsRemoteBackendConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockContext := mocks.NewMockContext(context.Background())
+			mockContext := mocks.NewMockContext(t.Context())
 			prepareGenericMocks(mockContext.CommandRunner)
 
 			// Create a temporary directory for the test

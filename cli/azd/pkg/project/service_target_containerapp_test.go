@@ -98,7 +98,7 @@ func Test_ContainerApp_Deploy(t *testing.T) {
 	tempDir := t.TempDir()
 	ostest.Chdir(t, tempDir)
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	setupMocksForContainerAppTarget(mockContext)
 
 	serviceConfig := createTestServiceConfig(tempDir, ContainerAppTarget, ServiceLanguageTypeScript)
@@ -176,7 +176,7 @@ func Test_ContainerApp_Publish(t *testing.T) {
 	tempDir := t.TempDir()
 	ostest.Chdir(t, tempDir)
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	setupMocksForContainerAppTarget(mockContext)
 
 	serviceConfig := createTestServiceConfig(tempDir, ContainerAppTarget, ServiceLanguageTypeScript)
@@ -395,7 +395,7 @@ func Test_ContainerAppJob_Endpoints(t *testing.T) {
 	)
 
 	endpoints, err := serviceTarget.Endpoints(
-		context.Background(),
+		t.Context(),
 		&ServiceConfig{},
 		scope,
 	)
@@ -408,7 +408,7 @@ func Test_ContainerAppJob_Deploy(t *testing.T) {
 	tempDir := t.TempDir()
 	ostest.Chdir(t, tempDir)
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	setupMocksForContainerAppJobs(mockContext)
 
 	serviceConfig := createTestServiceConfig(tempDir, ContainerAppTarget, ServiceLanguageTypeScript)

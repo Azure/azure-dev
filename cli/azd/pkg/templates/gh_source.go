@@ -292,7 +292,7 @@ func branchExists(
 	if apiErr, ok := errors.AsType[*github.ApiError](err); ok {
 		// Only surface errors we have positive evidence are access failures.
 		// For 404 or unclassifiable errors (e.g., Kind == KindUnknown because
-		// gh's output wasn't parseable) keep walking the candidate branches —
+		// gh's output wasn't parsable) keep walking the candidate branches —
 		// this matches the historical "treat any non-2xx as not-a-branch"
 		// behavior and avoids regressing on transient or unexpected gh
 		// output formats.

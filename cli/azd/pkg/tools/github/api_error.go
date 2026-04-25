@@ -70,7 +70,7 @@ func (k ApiErrorKind) String() string {
 
 // ApiError represents a structured error returned from a `gh api` invocation.
 //
-// It is built from the underlying gh CLI's output (the JSON body that GitHub's
+// It is built from the underlying gh CLI output (the JSON body that GitHub's
 // REST API writes to stdout on errors, plus the human-readable stderr) so
 // callers can branch on the failure mode without doing brittle substring
 // matching against opaque error strings.
@@ -134,7 +134,7 @@ func (e *ApiError) IsNotFound() bool {
 	return e.Kind == KindNotFound
 }
 
-// httpStatusRe matches gh CLI's standard "(HTTP <code>)" suffix that appears
+// httpStatusRe matches the standard "(HTTP <code>)" suffix that gh CLI prints
 // at the end of error messages from `gh api` when the request was issued and
 // returned a non-2xx response. Example:
 //

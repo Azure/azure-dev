@@ -7,7 +7,53 @@ import (
 	"testing"
 
 	"azureaiagent/internal/project"
+
+	"github.com/stretchr/testify/assert"
 )
+
+func TestResolveDeploymentAction(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		envValue   string
+		noPrompt   bool
+		wantAction deploymentAction
+	}{
+		{
+			name:       "env already set skips",
+			envValue:   `[{"name":"gpt-4o"}]`,
+			noPrompt:   false,
+			wantAction: deploymentActionSkip,
+		},
+		{
+			name:       "env already set + no-prompt skips",
+			envValue:   `[{"name":"gpt-4o"}]`,
+			noPrompt:   true,
+			wantAction: deploymentActionSkip,
+		},
+		{
+			name:       "env empty + no-prompt uses template",
+			envValue:   "",
+			noPrompt:   true,
+			wantAction: deploymentActionUseTemplate,
+		},
+		{
+			name:       "env empty + interactive prompts",
+			envValue:   "",
+			noPrompt:   false,
+			wantAction: deploymentActionPrompt,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := resolveDeploymentAction(tt.envValue, tt.noPrompt)
+			assert.Equal(t, tt.wantAction, got)
+		})
+	}
+}
 
 func TestParseConnectionIDs(t *testing.T) {
 	t.Parallel()

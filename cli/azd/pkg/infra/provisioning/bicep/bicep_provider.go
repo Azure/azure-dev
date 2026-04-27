@@ -830,6 +830,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 			// which is quite common.
 			// Resource group checks run in parallel to reduce wall-clock time.
 			rgGroup, rgCtx := errgroup.WithContext(ctx)
+			rgGroup.SetLimit(10) // bound parallel ARM calls
 			for _, res := range deploymentState.Resources {
 				if res != nil && res.ID != nil {
 					resId, err := arm.ParseResourceID(*res.ID)

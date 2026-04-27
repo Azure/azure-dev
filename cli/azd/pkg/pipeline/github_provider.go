@@ -387,29 +387,49 @@ func (p *GitHubCiProvider) credentialOptions(
 		}
 
 		repoSlug := repoDetails.owner + "/" + repoDetails.repoName
-		credentialSafeName := credentialNameSanitizer.ReplaceAllString(repoSlug, "-")
+		credentialSafeName := credentialNameSanitizer.ReplaceAllString(
+			repoSlug, "-",
+		)
+
+		// Query OIDC subject claim customization and build subjects
+		subjects, err := p.resolveOIDCSubjects(
+			ctx, repoSlug, branches,
+		)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"failed to resolve OIDC subjects: %w", err,
+			)
+		}
 
 		federatedCredentials := []*graphsdk.FederatedIdentityCredential{
 			{
-				Name:        fmt.Sprintf("%s-pull_request", credentialSafeName),
-				Issuer:      federatedIdentityIssuer,
-				Subject:     fmt.Sprintf("repo:%s:pull_request", repoSlug),
-				Description: new("Created by Azure Developer CLI"),
-				Audiences:   []string{federatedIdentityAudience},
+				Name:    fmt.Sprintf("%s-pull_request", credentialSafeName),
+				Issuer:  federatedIdentityIssuer,
+				Subject: subjects.pullRequest,
+				Description: new(
+					"Created by Azure Developer CLI",
+				),
+				Audiences: []string{federatedIdentityAudience},
 			},
 		}
 
 		for _, branch := range branches {
-			safeBranchName := credentialNameSanitizer.ReplaceAllString(branch, "-")
+			safeBranchName := credentialNameSanitizer.ReplaceAllString(
+				branch, "-",
+			)
 			branchCredentials := &graphsdk.FederatedIdentityCredential{
-				Name:        fmt.Sprintf("%s-%s", credentialSafeName, safeBranchName),
-				Issuer:      federatedIdentityIssuer,
-				Subject:     fmt.Sprintf("repo:%s:ref:refs/heads/%s", repoSlug, branch),
-				Description: new("Created by Azure Developer CLI"),
-				Audiences:   []string{federatedIdentityAudience},
+				Name:    fmt.Sprintf("%s-%s", credentialSafeName, safeBranchName),
+				Issuer:  federatedIdentityIssuer,
+				Subject: subjects.branches[branch],
+				Description: new(
+					"Created by Azure Developer CLI",
+				),
+				Audiences: []string{federatedIdentityAudience},
 			}
 
-			federatedCredentials = append(federatedCredentials, branchCredentials)
+			federatedCredentials = append(
+				federatedCredentials, branchCredentials,
+			)
 		}
 
 		return &CredentialOptions{
@@ -425,6 +445,215 @@ func (p *GitHubCiProvider) credentialOptions(
 }
 
 // ***  ciProvider implementation ******
+
+// oidcSubjects holds the resolved OIDC subject strings for federated credentials.
+type oidcSubjects struct {
+	pullRequest string
+	branches    map[string]string
+}
+
+// resolveOIDCSubjects queries the GitHub OIDC customization API, builds the
+// auto-detected subject strings, and optionally prompts the user to confirm
+// or override them.
+func (p *GitHubCiProvider) resolveOIDCSubjects(
+	ctx context.Context, repoSlug string, branches []string,
+) (*oidcSubjects, error) {
+	oidcConfig, repoInfo, err := p.detectOIDCConfig(ctx, repoSlug)
+	if err != nil {
+		return nil, err
+	}
+
+	// Build auto-detected subjects
+	subjects, err := buildAllSubjects(
+		repoSlug, repoInfo, oidcConfig, branches,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// In non-interactive mode, use detected subjects without prompting
+	if p.console.IsNoPromptMode() {
+		return subjects, nil
+	}
+
+	return p.promptForSubjects(ctx, subjects)
+}
+
+// detectOIDCConfig queries the GitHub OIDC customization API and fetches
+// repo info if needed. Falls back to default format on API errors.
+func (p *GitHubCiProvider) detectOIDCConfig(
+	ctx context.Context, repoSlug string,
+) (*github.OIDCSubjectConfig, *github.RepoInfo, error) {
+	oidcConfig, err := p.ghCli.GetOIDCSubjectConfig(ctx, repoSlug)
+	if err != nil {
+		p.console.MessageUxItem(ctx, &ux.WarningMessage{
+			Description: fmt.Sprintf(
+				"Unable to query OIDC subject claim config;"+
+					" using default format. %v",
+				err,
+			),
+		})
+		return &github.OIDCSubjectConfig{UseDefault: true}, nil, nil
+	}
+
+	var repoInfo *github.RepoInfo
+	if !oidcConfig.UseDefault && needsRepoInfo(oidcConfig) {
+		repoInfo, err = p.ghCli.GetRepoInfo(ctx, repoSlug)
+		if err != nil {
+			return nil, nil, fmt.Errorf(
+				"failed to get repository info for OIDC"+
+					" subject construction: %w", err,
+			)
+		}
+	}
+	return oidcConfig, repoInfo, nil
+}
+
+// needsRepoInfo returns true if the OIDC config contains claim keys that
+// require numeric repository/owner IDs from the GitHub API.
+func needsRepoInfo(config *github.OIDCSubjectConfig) bool {
+	return slices.Contains(config.IncludeClaimKeys, "repository_owner_id") ||
+		slices.Contains(config.IncludeClaimKeys, "repository_id")
+}
+
+// buildAllSubjects constructs all OIDC subject strings from config.
+func buildAllSubjects(
+	repoSlug string,
+	repoInfo *github.RepoInfo,
+	oidcConfig *github.OIDCSubjectConfig,
+	branches []string,
+) (*oidcSubjects, error) {
+	prSubject, err := github.BuildOIDCSubject(
+		repoSlug, repoInfo, oidcConfig, "pull_request",
+	)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"failed to build OIDC subject for pull requests: %w", err,
+		)
+	}
+
+	branchSubjects := make(map[string]string, len(branches))
+	for _, branch := range branches {
+		subject, err := github.BuildOIDCSubject(
+			repoSlug, repoInfo, oidcConfig,
+			fmt.Sprintf("ref:refs/heads/%s", branch),
+		)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"failed to build OIDC subject for branch %s: %w",
+				branch, err,
+			)
+		}
+		branchSubjects[branch] = subject
+	}
+
+	return &oidcSubjects{
+		pullRequest: prSubject,
+		branches:    branchSubjects,
+	}, nil
+}
+
+const (
+	oidcOptionUseDetected = "Use detected subjects (Recommended)"
+	oidcOptionCustom      = "Enter custom subject manually"
+)
+
+// promptForSubjects shows the detected OIDC subjects and lets the user
+// use them or override them.
+func (p *GitHubCiProvider) promptForSubjects(
+	ctx context.Context,
+	detected *oidcSubjects,
+) (*oidcSubjects, error) {
+	// Display detected subjects
+	p.console.Message(ctx, "")
+	p.console.Message(
+		ctx,
+		"Detected OIDC subject format for federated credentials:",
+	)
+	branchNames := slices.Sorted(maps.Keys(detected.branches))
+	for _, branch := range branchNames {
+		p.console.Message(
+			ctx,
+			fmt.Sprintf("  • Branch %s: %s", branch, detected.branches[branch]),
+		)
+	}
+	p.console.Message(
+		ctx,
+		fmt.Sprintf("  • Pull request: %s", detected.pullRequest),
+	)
+	p.console.Message(ctx, "")
+
+	options := []string{oidcOptionUseDetected, oidcOptionCustom}
+	selection, err := p.console.Select(ctx, input.ConsoleOptions{
+		Message: "How would you like to configure federated" +
+			" identity credential subjects?",
+		Options: options,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("prompting for OIDC subject choice: %w", err)
+	}
+
+	switch options[selection] {
+	case oidcOptionUseDetected:
+		return detected, nil
+	case oidcOptionCustom:
+		return p.promptCustomSubjects(ctx, detected)
+	}
+
+	return detected, nil
+}
+
+// promptCustomSubjects prompts the user to enter custom OIDC subjects,
+// pre-filling with the auto-detected values as defaults.
+func (p *GitHubCiProvider) promptCustomSubjects(
+	ctx context.Context, defaults *oidcSubjects,
+) (*oidcSubjects, error) {
+	result := &oidcSubjects{
+		branches: make(map[string]string, len(defaults.branches)),
+	}
+
+	branchNames := slices.Sorted(maps.Keys(defaults.branches))
+	for _, branch := range branchNames {
+		subject, err := p.console.Prompt(ctx, input.ConsoleOptions{
+			Message: fmt.Sprintf(
+				"Enter the OIDC subject for the '%s' branch credential:",
+				branch,
+			),
+			DefaultValue: defaults.branches[branch],
+		})
+		if err != nil {
+			return nil, fmt.Errorf(
+				"prompting for branch %s OIDC subject: %w", branch, err,
+			)
+		}
+		subject = strings.TrimSpace(subject)
+		if subject == "" {
+			return nil, fmt.Errorf(
+				"OIDC subject for branch %s cannot be empty", branch,
+			)
+		}
+		result.branches[branch] = subject
+	}
+
+	prSubject, err := p.console.Prompt(ctx, input.ConsoleOptions{
+		Message:      "Enter the OIDC subject for the pull request credential:",
+		DefaultValue: defaults.pullRequest,
+	})
+	if err != nil {
+		return nil, fmt.Errorf(
+			"prompting for pull request OIDC subject: %w", err,
+		)
+	}
+	prSubject = strings.TrimSpace(prSubject)
+	if prSubject == "" {
+		return nil, fmt.Errorf(
+			"OIDC subject for pull request cannot be empty",
+		)
+	}
+	result.pullRequest = prSubject
+
+	return result, nil
+}
 
 // configureConnection set up GitHub account with Azure Credentials for
 // GitHub actions to use a service principal account to log in to Azure

@@ -468,6 +468,30 @@ func TestHandleInvocationSSE(t *testing.T) {
 			agentName:  "agent",
 			wantOutput: "[agent] line1\nline2\nline3\n",
 		},
+		{
+			name:       "raw text without data prefix is printed as fallback",
+			input:      "Hello from agent\n",
+			agentName:  "raw-agent",
+			wantOutput: "[raw-agent] Hello from agent\n",
+		},
+		{
+			name:       "multiple raw text lines are concatenated",
+			input:      "Hello \nworld!\n",
+			agentName:  "raw-agent",
+			wantOutput: "[raw-agent] Hello world!\n",
+		},
+		{
+			name:       "mixed SSE data and raw text",
+			input:      "data: sse-line\nraw-text\n\n",
+			agentName:  "mix-agent",
+			wantOutput: "[mix-agent] sse-line\nraw-text\n",
+		},
+		{
+			name:       "SSE comment lines are skipped",
+			input:      ": this is a comment\ndata: content\n\n",
+			agentName:  "test-agent",
+			wantOutput: "[test-agent] content\n",
+		},
 	}
 
 	for _, tt := range tests {

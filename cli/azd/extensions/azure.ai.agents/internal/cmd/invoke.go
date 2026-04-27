@@ -689,11 +689,14 @@ func handleInvocationSync(body io.Reader, agentName string) error {
 
 // handleInvocationSSE handles a streaming (200 OK, text/event-stream) invocations response.
 // The invocations protocol has a developer-defined SSE format, so we print data lines as they arrive.
+// As a fallback, lines that are not SSE control lines (event:, id:, : comment, or blank) are
+// printed as raw text output — this supports agents that stream raw text over text/event-stream.
 func handleInvocationSSE(w io.Writer, body io.Reader, agentName string) error {
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
 	var printed bool
+	var lastWasRaw bool
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -728,11 +731,33 @@ func handleInvocationSSE(w io.Writer, body io.Reader, agentName string) error {
 				printed = true
 			}
 			fmt.Fprintln(w, data)
+			lastWasRaw = false
+			continue
 		}
+
+		// Skip SSE control lines and blank lines
+		if line == "" ||
+			strings.HasPrefix(line, "event:") ||
+			strings.HasPrefix(line, "id:") ||
+			strings.HasPrefix(line, ":") {
+			continue
+		}
+
+		// Raw text fallback — agents may stream plain text over text/event-stream
+		if !printed {
+			fmt.Fprintf(w, "[%s] ", agentName)
+			printed = true
+		}
+		fmt.Fprint(w, line)
+		lastWasRaw = true
 	}
 
 	if err := scanner.Err(); err != nil {
 		return fmt.Errorf("error reading response stream: %w", err)
+	}
+
+	if lastWasRaw {
+		fmt.Fprintln(w)
 	}
 
 	return nil

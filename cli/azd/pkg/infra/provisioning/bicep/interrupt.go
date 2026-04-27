@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -26,14 +28,21 @@ var (
 	// cancelRequestTimeout bounds the time spent waiting for the ARM Cancel
 	// API call itself to return.
 	cancelRequestTimeout = 30 * time.Second
-	// cancelTerminalTimeout bounds the total time we wait for the Azure
-	// deployment to transition to a terminal state after the cancel request
-	// has been accepted.
-	cancelTerminalTimeout = 2 * time.Minute
+	// cancelOverallTimeout is the global budget covering EVERYTHING that
+	// happens after the cancel request is accepted: waiting for the
+	// top-level deployment to reach a terminal state, discovering and
+	// canceling any descendant deployments, and waiting for those to also
+	// reach a terminal state. The user will see at most ~this much time
+	// between selecting "Cancel" and azd reporting an outcome.
+	cancelOverallTimeout = 5 * time.Minute
 	// cancelPollInterval controls how often we poll the deployment for state
 	// changes after submitting cancel.
 	cancelPollInterval = 5 * time.Second
 )
+
+// cancelNestedConcurrency caps the number of concurrent ARM API calls when
+// canceling/polling descendant deployments to avoid throttling on large trees.
+const cancelNestedConcurrency = 5
 
 // User-facing labels for the interrupt prompt. Kept as constants so tests can
 // reason about the prompt selection without depending on copy edits.
@@ -151,6 +160,17 @@ func (p *BicepProvider) installDeploymentInterruptHandler(
 	return deployCtx, started, ch, markCompleted, cleanup
 }
 
+// printLeaveRunningMessage emits the standard "Azure deployment will continue
+// running" message with a clickable portal link. No-op when portalUrl is empty.
+func (p *BicepProvider) printLeaveRunningMessage(ctx context.Context, portalUrl string) {
+	if portalUrl == "" {
+		return
+	}
+	p.console.Message(ctx,
+		output.WithHighLightFormat("The Azure deployment will continue running. Track it here:\n  %s",
+			output.WithLinkFormat(portalUrl)))
+}
+
 // runInterruptPrompt presents the user with the choice of cancelling the
 // running Azure deployment or leaving it to run. It returns the outcome that
 // should be propagated back to Deploy.
@@ -188,11 +208,7 @@ func (p *BicepProvider) runInterruptPrompt(
 		// to the safer "leave running" behavior so the user can decide
 		// manually via the portal.
 		log.Printf("interrupt handler: failed to show prompt, defaulting to leave-running: %v", err)
-		if portalUrl != "" {
-			p.console.Message(ctx,
-				output.WithHighLightFormat("The Azure deployment will continue running. Track it here:\n  %s",
-					portalUrl))
-		}
+		p.printLeaveRunningMessage(ctx, portalUrl)
 		return interruptOutcome{
 			err:            provisioning.ErrDeploymentInterruptedLeaveRunning,
 			telemetryValue: "leave_running",
@@ -201,11 +217,7 @@ func (p *BicepProvider) runInterruptPrompt(
 
 	switch choice {
 	case 0: // leave running
-		if portalUrl != "" {
-			p.console.Message(ctx,
-				output.WithHighLightFormat("The Azure deployment will continue running. Track it here:\n  %s",
-					portalUrl))
-		}
+		p.printLeaveRunningMessage(ctx, portalUrl)
 		return interruptOutcome{
 			err:            provisioning.ErrDeploymentInterruptedLeaveRunning,
 			telemetryValue: "leave_running",
@@ -244,12 +256,7 @@ func (p *BicepProvider) cancelAndAwaitTerminal(
 		// the documented provider behavior.
 		if errors.Is(err, azapi.ErrCancelNotSupported) {
 			p.console.StopSpinner(ctx, "Cancel is not supported for this deployment kind", input.StepWarning)
-			if portalUrl != "" {
-				p.console.Message(ctx,
-					output.WithHighLightFormat(
-						"The Azure deployment will continue running. Track it here:\n  %s",
-						portalUrl))
-			}
+			p.printLeaveRunningMessage(ctx, portalUrl)
 			return interruptOutcome{
 				err:            provisioning.ErrDeploymentInterruptedLeaveRunning,
 				telemetryValue: "leave_running",
@@ -276,7 +283,8 @@ func (p *BicepProvider) cancelAndAwaitTerminal(
 		if portalUrl != "" {
 			p.console.Message(ctx,
 				output.WithWarningFormat(
-					"Azure cancel request failed. Track the deployment here:\n  %s", portalUrl))
+					"Azure cancel request failed. Track the deployment here:\n  %s",
+					output.WithLinkFormat(portalUrl)))
 		}
 		return interruptOutcome{
 			err: fmt.Errorf("%w: %w",
@@ -288,18 +296,65 @@ func (p *BicepProvider) cancelAndAwaitTerminal(
 	p.console.StopSpinner(ctx, "", input.Step)
 	p.console.ShowSpinner(ctx, "Waiting for Azure to confirm cancellation", input.Step)
 
-	// Poll until terminal or until our wait budget elapses.
+	// Single global deadline covering BOTH the top-level wait and any
+	// descendant-deployment cleanup. The user shouldn't wait more than
+	// cancelOverallTimeout total between pressing Ctrl+C and seeing an
+	// outcome reported by azd.
 	pollCtx, pollDone := context.WithTimeout(
-		context.WithoutCancel(ctx), cancelTerminalTimeout)
+		context.WithoutCancel(ctx), cancelOverallTimeout)
 	defer pollDone()
 
+	state, timedOut := p.awaitTopLevelTerminal(pollCtx, deployment)
+	if timedOut {
+		p.console.StopSpinner(ctx, "Cancellation still in progress on Azure", input.StepWarning)
+		if portalUrl != "" {
+			p.console.Message(ctx,
+				output.WithWarningFormat(
+					"Azure has not confirmed cancellation within %s. Track the deployment here:\n  %s",
+					cancelOverallTimeout, output.WithLinkFormat(portalUrl)))
+		}
+		return interruptOutcome{
+			err:            provisioning.ErrDeploymentCancelTimeout,
+			telemetryValue: "cancel_timed_out",
+		}
+	}
+
+	// When the cancel actually took effect on the top-level deployment, also
+	// wait for any descendant deployments to reach a terminal state. ARM's
+	// cancel cascade is asynchronous, and a child deployment can still hold
+	// an active deployment lease for several minutes after the parent reports
+	// "Canceled" — which would cause the next `azd provision` to fail with
+	// a `DeploymentActive` validation error. We skip this for Succeeded /
+	// Failed / Deleted because in those cases the children should already be
+	// terminal (a parent only reports Succeeded once its children are done,
+	// and Failed/Deleted reflect a settled state).
+	if state == azapi.DeploymentProvisioningStateCanceled {
+		stuck := p.cancelAndAwaitNested(pollCtx, deployment)
+		if len(stuck) > 0 {
+			return p.nestedTimeoutOutcome(ctx, stuck, portalUrl)
+		}
+	}
+
+	return p.terminalToOutcome(ctx, state, portalUrl)
+}
+
+// awaitTopLevelTerminal polls the top-level deployment until it reaches a
+// terminal provisioning state or the supplied context is canceled (e.g. by
+// the global cancelOverallTimeout). The first Get is issued immediately so
+// the fast path doesn't pay a poll-interval penalty; subsequent polls are
+// ticker-spaced. Returns (state, timedOut). When timedOut is true, state is
+// the zero value and the caller should report the timeout outcome.
+func (p *BicepProvider) awaitTopLevelTerminal(
+	pollCtx context.Context,
+	deployment infra.Deployment,
+) (azapi.DeploymentProvisioningState, bool) {
 	// Issue the first Get immediately after the cancel request was accepted
 	// — Azure can transition to a terminal state very quickly for deployments
 	// that were just starting, and we don't want to make the user wait a full
 	// poll interval for that fast path.
 	if state, err := deployment.Get(pollCtx); err == nil {
 		if isTerminalProvisioningState(state.ProvisioningState) {
-			return p.terminalToOutcome(ctx, state.ProvisioningState, portalUrl)
+			return state.ProvisioningState, false
 		}
 	} else {
 		log.Printf("interrupt handler: initial poll Get failed (will retry): %v", err)
@@ -313,24 +368,14 @@ func (p *BicepProvider) cancelAndAwaitTerminal(
 	for {
 		select {
 		case <-pollCtx.Done():
-			p.console.StopSpinner(ctx, "Cancellation still in progress on Azure", input.StepWarning)
-			if portalUrl != "" {
-				p.console.Message(ctx,
-					output.WithWarningFormat(
-						"Azure has not confirmed cancellation within %s. Track the deployment here:\n  %s",
-						cancelTerminalTimeout, portalUrl))
-			}
-			return interruptOutcome{
-				err:            provisioning.ErrDeploymentCancelTimeout,
-				telemetryValue: "cancel_timed_out",
-			}
+			return "", true
 		case <-ticker.C:
 		}
 
 		state, err := deployment.Get(pollCtx)
 		if err == nil {
 			if isTerminalProvisioningState(state.ProvisioningState) {
-				return p.terminalToOutcome(ctx, state.ProvisioningState, portalUrl)
+				return state.ProvisioningState, false
 			}
 		} else {
 			// Don't fail the whole flow on a transient Get error — keep
@@ -354,7 +399,8 @@ func (p *BicepProvider) terminalToOutcome(
 		if portalUrl != "" {
 			p.console.Message(ctx,
 				output.WithHighLightFormat(
-					"Canceled deployment is recorded in the portal:\n  %s", portalUrl))
+					"Canceled deployment is recorded in the portal:\n  %s",
+					output.WithLinkFormat(portalUrl)))
 		}
 		return interruptOutcome{
 			err:            provisioning.ErrDeploymentCanceledByUser,
@@ -369,7 +415,7 @@ func (p *BicepProvider) terminalToOutcome(
 				output.WithWarningFormat(
 					"The Azure deployment reached %q before the cancel "+
 						"request took effect. Review:\n  %s",
-					string(state), portalUrl))
+					string(state), output.WithLinkFormat(portalUrl)))
 		}
 		return interruptOutcome{
 			err:            provisioning.ErrDeploymentCancelTooLate,
@@ -382,7 +428,7 @@ func (p *BicepProvider) terminalToOutcome(
 				output.WithWarningFormat(
 					"The Azure deployment was deleted before the cancel "+
 						"request could take effect. Review:\n  %s",
-					portalUrl))
+					output.WithLinkFormat(portalUrl)))
 		}
 		return interruptOutcome{
 			err:            provisioning.ErrDeploymentCancelTooLate,
@@ -397,7 +443,7 @@ func (p *BicepProvider) terminalToOutcome(
 			p.console.Message(ctx,
 				output.WithWarningFormat(
 					"The Azure deployment reached unexpected terminal state %q after the cancel request. Review:\n  %s",
-					string(state), portalUrl))
+					string(state), output.WithLinkFormat(portalUrl)))
 		} else {
 			p.console.Message(ctx,
 				output.WithWarningFormat(
@@ -422,6 +468,300 @@ func isTerminalProvisioningState(state azapi.DeploymentProvisioningState) bool {
 		return true
 	}
 	return false
+}
+
+// isNestedDeployment reports whether a deployment-operation refers to a
+// child Microsoft.Resources/deployments resource. Mirrors the predicate
+// used by pkg/infra.WalkDeploymentOperations so we can reuse the same
+// "child deployment" semantics without exporting that package's internal.
+func isNestedDeployment(op *armresources.DeploymentOperation) bool {
+	if op == nil || op.Properties == nil ||
+		op.Properties.TargetResource == nil ||
+		op.Properties.TargetResource.ResourceType == nil ||
+		op.Properties.ProvisioningOperation == nil {
+		return false
+	}
+	return *op.Properties.TargetResource.ResourceType ==
+		string(azapi.AzureResourceTypeDeployment) &&
+		*op.Properties.ProvisioningOperation == armresources.ProvisioningOperationCreate
+}
+
+// cancelAndAwaitNested discovers the descendant deployments of a freshly
+// canceled top-level deployment, best-effort cancels any that are still
+// non-terminal, and polls them until either all have reached a terminal
+// state or pollCtx is canceled (typically by the global cancelOverallTimeout).
+//
+// Returns the descendant deployments that were still non-terminal when the
+// wait deadline fired; on success the returned slice is empty.
+//
+// Any failure to discover descendants (e.g. transient ARM error listing
+// operations) is logged and treated as "no descendants found" — the
+// interrupt UX should never explode just because we couldn't enumerate
+// child deployments.
+func (p *BicepProvider) cancelAndAwaitNested(
+	pollCtx context.Context,
+	parent infra.Deployment,
+) []infra.Deployment {
+	descendants, err := p.discoverDescendantDeployments(pollCtx, parent, p.deploymentForResourceID)
+	if err != nil {
+		log.Printf("interrupt handler: failed to discover descendant deployments: %v", err)
+		return nil
+	}
+	if len(descendants) == 0 {
+		return nil
+	}
+
+	// Best-effort cancel of any descendant still in a non-terminal state.
+	// We deliberately swallow per-descendant errors here (logged) — the
+	// authoritative signal is the polling loop below, and a failed Cancel
+	// for a descendant that is already terminal is expected.
+	p.cancelDescendants(pollCtx, descendants)
+
+	// Poll concurrently with a small worker pool, returning whichever
+	// deployments remain non-terminal at the deadline.
+	return p.pollDescendantsTerminal(pollCtx, descendants)
+}
+
+// discoverDescendantDeployments walks the parent's deployment-operations tree
+// and returns one infra.Deployment per *unique* nested deployment found at
+// any depth. The deployment objects are constructed by `factory` from each
+// operation's TargetResource.ID, so a sub-scope parent with RG-scope
+// children is handled correctly. The factory is injected for test
+// purposes — production callers should pass `p.deploymentForResourceID`.
+func (p *BicepProvider) discoverDescendantDeployments(
+	ctx context.Context,
+	parent infra.Deployment,
+	factory func(*arm.ResourceID) infra.Deployment,
+) ([]infra.Deployment, error) {
+	type frame struct {
+		ops []*armresources.DeploymentOperation
+	}
+
+	rootOps, err := parent.Operations(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listing operations: %w", err)
+	}
+
+	seen := map[string]struct{}{}
+	var out []infra.Deployment
+	queue := []frame{{ops: rootOps}}
+
+	for len(queue) > 0 {
+		cur := queue[0]
+		queue = queue[1:]
+
+		for _, op := range cur.ops {
+			if op == nil || op.Properties == nil {
+				continue
+			}
+			if !isNestedDeployment(op) {
+				continue
+			}
+			if op.Properties.TargetResource == nil ||
+				op.Properties.TargetResource.ID == nil {
+				continue
+			}
+			id := *op.Properties.TargetResource.ID
+			if _, dup := seen[id]; dup {
+				continue
+			}
+			seen[id] = struct{}{}
+
+			parsed, err := arm.ParseResourceID(id)
+			if err != nil {
+				log.Printf("interrupt handler: skipping unparsable nested deployment id %q: %v", id, err)
+				continue
+			}
+
+			child := factory(parsed)
+			out = append(out, child)
+
+			// Recurse into this child's operations to pick up grandchildren.
+			childOps, err := child.Operations(ctx)
+			if err != nil {
+				log.Printf("interrupt handler: failed to list operations for nested deployment %q: %v",
+					parsed.Name, err)
+				continue
+			}
+			queue = append(queue, frame{ops: childOps})
+		}
+	}
+	return out, nil
+}
+
+// deploymentForResourceID constructs an infra.Deployment from the parsed
+// resource ID of a nested Microsoft.Resources/deployments resource. We pick
+// the right scope (subscription vs resource group) from the ID itself rather
+// than inheriting from the parent, so a sub-scope parent with RG-scope
+// children works correctly.
+func (p *BicepProvider) deploymentForResourceID(id *arm.ResourceID) infra.Deployment {
+	if id.ResourceGroupName != "" {
+		// Cancel/Get on RG-scope deployments don't depend on the
+		// deployment manager's location, so we pass through subscription /
+		// RG / name directly.
+		scope := p.deploymentManager.ResourceGroupScope(id.SubscriptionID, id.ResourceGroupName)
+		return p.deploymentManager.ResourceGroupDeployment(scope, id.Name)
+	}
+	// Sub-scope: location is irrelevant for Cancel/Get/DeploymentUrl.
+	scope := p.deploymentManager.SubscriptionScope(id.SubscriptionID, "")
+	return p.deploymentManager.SubscriptionDeployment(scope, id.Name)
+}
+
+// cancelDescendants issues a best-effort Cancel on each descendant that is
+// not already in a terminal state. Per-descendant errors (including
+// already-terminal "Conflict" responses and ErrCancelNotSupported) are
+// logged at DEBUG and otherwise ignored — the polling loop is what decides
+// success.
+func (p *BicepProvider) cancelDescendants(
+	pollCtx context.Context,
+	descendants []infra.Deployment,
+) {
+	sem := make(chan struct{}, cancelNestedConcurrency)
+	var wg sync.WaitGroup
+
+	for _, d := range descendants {
+		select {
+		case <-pollCtx.Done():
+			return
+		default:
+		}
+		sem <- struct{}{}
+		wg.Go(func() {
+			defer func() { <-sem }()
+
+			// Skip if already terminal — saves an unnecessary Cancel call
+			// (which would just return Conflict).
+			if state, err := d.Get(pollCtx); err == nil &&
+				isTerminalProvisioningState(state.ProvisioningState) {
+				return
+			}
+
+			// Bound the cancel call itself so a single hung ARM endpoint
+			// can't consume the global budget.
+			cancelCtx, cancelDone := context.WithTimeout(pollCtx, cancelRequestTimeout)
+			defer cancelDone()
+
+			if err := d.Cancel(cancelCtx); err != nil {
+				if !errors.Is(err, azapi.ErrCancelNotSupported) {
+					log.Printf("interrupt handler: cancel failed for nested deployment %q: %v",
+						d.Name(), err)
+				}
+			}
+		})
+	}
+	wg.Wait()
+}
+
+// pollDescendantsTerminal polls each non-terminal descendant deployment until
+// it reaches a terminal state or pollCtx fires. Returns the slice of
+// descendants that were still non-terminal when pollCtx fired (empty slice
+// on full success).
+func (p *BicepProvider) pollDescendantsTerminal(
+	pollCtx context.Context,
+	descendants []infra.Deployment,
+) []infra.Deployment {
+	type result struct {
+		d        infra.Deployment
+		terminal bool
+	}
+
+	results := make(chan result, len(descendants))
+	sem := make(chan struct{}, cancelNestedConcurrency)
+	var wg sync.WaitGroup
+
+	for _, d := range descendants {
+		sem <- struct{}{}
+		wg.Go(func() {
+			defer func() { <-sem }()
+			results <- result{d: d, terminal: pollSingleTerminal(pollCtx, d)}
+		})
+	}
+
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	var stuck []infra.Deployment
+	for r := range results {
+		if !r.terminal {
+			stuck = append(stuck, r.d)
+		}
+	}
+	return stuck
+}
+
+// pollSingleTerminal polls a single deployment until terminal or pollCtx fires.
+// Returns true if a terminal state was observed.
+func pollSingleTerminal(pollCtx context.Context, d infra.Deployment) bool {
+	if state, err := d.Get(pollCtx); err == nil &&
+		isTerminalProvisioningState(state.ProvisioningState) {
+		return true
+	}
+	ticker := time.NewTicker(cancelPollInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-pollCtx.Done():
+			return false
+		case <-ticker.C:
+		}
+		state, err := d.Get(pollCtx)
+		if err != nil {
+			log.Printf("interrupt handler: poll Get failed for nested deployment %q (will retry): %v",
+				d.Name(), err)
+			continue
+		}
+		if isTerminalProvisioningState(state.ProvisioningState) {
+			return true
+		}
+	}
+}
+
+// nestedTimeoutOutcome reports the timeout outcome when one or more
+// descendant deployments did not reach a terminal state within the global
+// cancelOverallTimeout. The user-facing message lists portal URLs for the
+// stuck deployments so they can investigate.
+func (p *BicepProvider) nestedTimeoutOutcome(
+	ctx context.Context,
+	stuck []infra.Deployment,
+	parentPortalUrl string,
+) interruptOutcome {
+	p.console.StopSpinner(ctx,
+		fmt.Sprintf("%d nested Azure deployment(s) did not finish within %s",
+			len(stuck), cancelOverallTimeout),
+		input.StepWarning)
+
+	var lines []string
+	if parentPortalUrl != "" {
+		lines = append(lines,
+			fmt.Sprintf("Top-level deployment was canceled, but the following nested "+
+				"deployment(s) are still running. Track them in the portal:"))
+	} else {
+		lines = append(lines,
+			"Top-level deployment was canceled, but the following nested "+
+				"deployment(s) are still running. They may block the next deployment "+
+				"until they reach a terminal state:")
+	}
+
+	for _, d := range stuck {
+		url, err := d.DeploymentUrl(ctx)
+		if err != nil || url == "" {
+			lines = append(lines, fmt.Sprintf("  - %s", d.Name()))
+		} else {
+			lines = append(lines,
+				fmt.Sprintf("  - %s\n      %s", d.Name(), output.WithLinkFormat(url)))
+		}
+	}
+
+	for _, l := range lines {
+		p.console.Message(ctx, output.WithWarningFormat("%s", l))
+	}
+
+	return interruptOutcome{
+		err:            provisioning.ErrDeploymentCancelTimeout,
+		telemetryValue: "cancel_timed_out_nested",
+	}
 }
 
 // applyInterruptOutcome decides what to return from BicepProvider.Deploy when

@@ -991,8 +991,10 @@ func watchTerminalInterrupt(c *AskerConsole) {
 			// popped from the stack but is still executing (e.g. a prompt is
 			// up while Deploy has already torn the registration down).
 			if !tryStartInterruptHandler() {
-				// A handler is already running. A second Ctrl+C while a
-				// handler is active is treated as a force-exit (standard
+				// A handler is already running. Subsequent Ctrl+C presses
+				// allow the user to force-exit if the handler appears stuck:
+				// the first additional press arms the force-exit latch and
+				// is suppressed; the next press triggers the exit (standard
 				// POSIX convention: kubectl, terraform, docker, etc.).
 				if incrementForceExitCounter() {
 					_ = c.spinner.Stop()

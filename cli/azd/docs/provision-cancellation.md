@@ -14,8 +14,12 @@ finish, azd will pause and ask what to do instead of exiting immediately.
      exits with a non-zero status; the Azure deployment continues to
      completion. The user can monitor or cancel it from the portal link.
    - **Cancel the Azure deployment**. azd submits an ARM cancel request
-     against the deployment and waits up to 2 minutes for Azure to confirm a
-     terminal state (`Canceled`, `Failed`, or `Succeeded`).
+     against the deployment and waits up to **5 minutes** (a single global
+     budget) for Azure to confirm a terminal state (`Canceled`, `Failed`,
+     or `Succeeded`). Once the top-level deployment reaches `Canceled`,
+     azd best-effort cancels and waits for any descendant (nested)
+     deployments within the same 5-minute budget so leftover children do
+     not keep running on Azure.
 3. Additional <kbd>Ctrl</kbd>+<kbd>C</kbd> presses while the prompt is
    showing (or while a cancel request is in flight) are ignored so the user
    can finish reading and choose deliberately.
@@ -52,8 +56,13 @@ with one of:
 - `canceled` — cancel request succeeded and Azure reached `Canceled`.
 - `cancel_too_late` — Azure reached `Succeeded` / `Failed` before cancel
   took effect.
-- `cancel_timed_out` — Azure did not reach a terminal state within the
-  wait budget.
+- `cancel_timed_out` — top-level deployment did not reach a terminal state
+  within the wait budget (5 minutes).
+- `cancel_timed_out_nested` — top-level reached `Canceled`, but one or
+  more descendant (nested) deployments did not reach a terminal state
+  within the same 5-minute global budget. The user-facing output lists
+  the stuck deployment(s) with portal links so they can be investigated
+  manually.
 - `cancel_failed` — the ARM `Cancel` API call itself returned an error.
 
 ## Non-interactive mode

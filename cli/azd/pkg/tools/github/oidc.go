@@ -41,15 +41,16 @@ func isGitHubNotFoundError(err error) bool {
 }
 
 // GetOIDCSubjectConfig queries the GitHub OIDC customization API for a repository.
-// It first checks the repo-level customization. If the repo returns a valid response
-// (even with UseDefault=true), it is returned as-is — this handles the case where a repo
-// explicitly sets use_default=true to override an org-level customization.
-// Only when the repo-level endpoint returns 404 does it fall back to the org-level endpoint.
-// If both return 404, it returns a config with UseDefault=true (the default format).
+// It checks the repo-level customization endpoint. If the repo returns a valid response
+// (even with UseDefault=true), it is returned as-is.
+//
+// A repo-level 404 means the repository has not opted in to custom OIDC subjects.
+// Per GitHub's docs, repos that haven't opted in receive default-format tokens
+// regardless of any org-level template, so we return the default config directly
+// without checking the org endpoint.
 func (cli *Cli) GetOIDCSubjectConfig(
 	ctx context.Context, repoSlug string,
 ) (*OIDCSubjectConfig, error) {
-	// Try repo-level first.
 	runArgs := cli.newRunArgs(
 		"api", "/repos/"+repoSlug+"/actions/oidc/customization/sub",
 	)
@@ -70,36 +71,7 @@ func (cli *Cli) GetOIDCSubjectConfig(
 		)
 	}
 
-	// Fall back to org-level only when the repo-level endpoint returns 404.
-	parts := strings.SplitN(repoSlug, "/", 2)
-	if len(parts) == 2 {
-		orgRunArgs := cli.newRunArgs(
-			"api",
-			"/orgs/"+parts[0]+"/actions/oidc/customization/sub",
-		)
-		orgRes, orgErr := cli.run(ctx, orgRunArgs)
-		if orgErr == nil {
-			var config OIDCSubjectConfig
-			if jsonErr := json.Unmarshal(
-				[]byte(orgRes.Stdout), &config,
-			); jsonErr != nil {
-				return nil, fmt.Errorf(
-					"failed to parse org OIDC config for %s: %w",
-					parts[0], jsonErr,
-				)
-			}
-			return &config, nil
-		}
-
-		if !isGitHubNotFoundError(orgErr) {
-			return nil, fmt.Errorf(
-				"failed to query org-level OIDC config for %s: %w",
-				parts[0], orgErr,
-			)
-		}
-	}
-
-	// Default: no customization.
+	// Repo 404 = not opted in → default format.
 	return &OIDCSubjectConfig{UseDefault: true}, nil
 }
 

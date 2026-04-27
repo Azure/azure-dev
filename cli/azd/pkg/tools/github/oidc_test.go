@@ -138,8 +138,6 @@ func TestBuildOIDCSubject(t *testing.T) {
 
 func TestGetOIDCSubjectConfig(t *testing.T) {
 	repoSlug := "Azure-Samples/my-repo"
-	orgName := "Azure-Samples"
-
 	customConfig := OIDCSubjectConfig{
 		UseDefault: false,
 		IncludeClaimKeys: []string{
@@ -182,36 +180,10 @@ func TestGetOIDCSubjectConfig(t *testing.T) {
 			wantConf: &defaultConfig,
 		},
 		{
-			name: "repo 404 falls back to org custom config",
+			name: "repo 404 returns default (no org fallback)",
 			setup: func(mc *mocks.MockContext) {
 				mc.CommandRunner.When(func(args exec.RunArgs, cmd string) bool {
 					return strings.Contains(cmd, "/repos/"+repoSlug+
-						"/actions/oidc/customization/sub")
-				}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-					return exec.NewRunResult(1, "", "HTTP 404: Not Found"),
-						fmt.Errorf("HTTP 404: Not Found")
-				})
-				mc.CommandRunner.When(func(args exec.RunArgs, cmd string) bool {
-					return strings.Contains(cmd, "/orgs/"+orgName+
-						"/actions/oidc/customization/sub")
-				}).Respond(exec.NewRunResult(
-					0, string(customJSON), "",
-				))
-			},
-			wantConf: &customConfig,
-		},
-		{
-			name: "both 404 returns default",
-			setup: func(mc *mocks.MockContext) {
-				mc.CommandRunner.When(func(args exec.RunArgs, cmd string) bool {
-					return strings.Contains(cmd, "/repos/"+repoSlug+
-						"/actions/oidc/customization/sub")
-				}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-					return exec.NewRunResult(1, "", "HTTP 404: Not Found"),
-						fmt.Errorf("HTTP 404: Not Found")
-				})
-				mc.CommandRunner.When(func(args exec.RunArgs, cmd string) bool {
-					return strings.Contains(cmd, "/orgs/"+orgName+
 						"/actions/oidc/customization/sub")
 				}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 					return exec.NewRunResult(1, "", "HTTP 404: Not Found"),
@@ -232,26 +204,6 @@ func TestGetOIDCSubjectConfig(t *testing.T) {
 				})
 			},
 			wantErr: "failed to query repo-level OIDC config",
-		},
-		{
-			name: "repo 404 then org non-404 error is returned",
-			setup: func(mc *mocks.MockContext) {
-				mc.CommandRunner.When(func(args exec.RunArgs, cmd string) bool {
-					return strings.Contains(cmd, "/repos/"+repoSlug+
-						"/actions/oidc/customization/sub")
-				}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-					return exec.NewRunResult(1, "", "HTTP 404: Not Found"),
-						fmt.Errorf("HTTP 404: Not Found")
-				})
-				mc.CommandRunner.When(func(args exec.RunArgs, cmd string) bool {
-					return strings.Contains(cmd, "/orgs/"+orgName+
-						"/actions/oidc/customization/sub")
-				}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-					return exec.NewRunResult(1, "", "HTTP 403: Forbidden"),
-						fmt.Errorf("HTTP 403: Forbidden")
-				})
-			},
-			wantErr: "failed to query org-level OIDC config",
 		},
 	}
 

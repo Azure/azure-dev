@@ -18,13 +18,12 @@ import (
 )
 
 const (
-	// flagAllowedValuesAnnotationPrefix is the cobra command annotation prefix
-	// used to record per-command allowed values for an inherited persistent
-	// flag. The full key is "azdext.allowed-values/<flagName>" and the value
-	// is a comma-joined list. See [RegisterFlagOptions].
+	// flagAllowedValuesAnnotationPrefix prefixes cobra annotation keys that
+	// record per-command allowed values for an inherited flag. The value is
+	// a comma-joined list. See [RegisterFlagOptions].
 	flagAllowedValuesAnnotationPrefix = "azdext.allowed-values/"
-	// flagDefaultAnnotationPrefix records the per-command default value for
-	// an inherited persistent flag. See [RegisterFlagOptions].
+	// flagDefaultAnnotationPrefix prefixes cobra annotation keys that record
+	// the per-command default for an inherited flag. See [RegisterFlagOptions].
 	flagDefaultAnnotationPrefix = "azdext.default/"
 
 	defaultOutputFlagUsage = "The output format"
@@ -111,20 +110,19 @@ func NewExtensionRootCommand(opts ExtensionCommandOptions) (*cobra.Command, *Ext
 	_ = flags.MarkHidden("trace-log-file")
 	_ = flags.MarkHidden("trace-log-url")
 
-	// Register delegating shell completion for the SDK-managed --output flag.
-	// Cobra keys completion functions by *pflag.Flag pointer globally, so
-	// individual subcommands can't register their own completions for this
-	// inherited flag without conflicting. Instead this single delegating
-	// function consults the executing subcommand's [RegisterFlagOptions]
-	// annotations at completion time.
+	// Delegating completion for the SDK-managed --output flag. Cobra keys
+	// completion funcs by *pflag.Flag pointer, so subcommands can't register
+	// their own for an inherited flag; this delegate reads the executing
+	// subcommand's [RegisterFlagOptions] annotations at completion time.
+	// Other inherited string flags (--environment, --cwd) can be added if
+	// extensions need to constrain them.
 	_ = cmd.RegisterFlagCompletionFunc("output", flagOptionsCompletion("output"))
 
 	defaultUsage := cmd.UsageFunc()
 
-	// Wrap UsageFunc only. Cobra's default HelpFunc calls UsageString()
-	// which goes through UsageFunc, so a single layer of mutation here
-	// covers both `--help` rendering and usage-on-error rendering. Wrapping
-	// HelpFunc in addition would cause overrides to be applied twice.
+	// Wrap UsageFunc only — cobra's default HelpFunc calls UsageString
+	// which goes through UsageFunc, so wrapping both would double-apply
+	// the per-command help overrides.
 	cmd.SetUsageFunc(func(usageCmd *cobra.Command) error {
 		restore := applyFlagOverridesForCommand(usageCmd)
 		defer restore()
@@ -161,10 +159,7 @@ func NewExtensionRootCommand(opts ExtensionCommandOptions) (*cobra.Command, *Ext
 			}
 		}
 
-		// Apply per-command flag option overrides registered via
-		// RegisterFlagOptions: validate user-supplied values against the
-		// allowed set, and substitute the per-command default when the user
-		// did not pass the flag.
+		// Validate and apply per-command overrides from [RegisterFlagOptions].
 		if err := applyFlagOptionsForCommand(cmd); err != nil {
 			return err
 		}
@@ -208,58 +203,76 @@ func NewExtensionRootCommand(opts ExtensionCommandOptions) (*cobra.Command, *Ext
 	return cmd, extCtx
 }
 
-// RegisterFlagOptions configures per-subcommand metadata for an inherited
-// persistent flag (typically one registered by [NewExtensionRootCommand], such
-// as -o/--output). When set, the SDK uses this single registration to drive:
+// FlagOptions describes per-subcommand configuration for an inherited
+// persistent flag. See [RegisterFlagOptions] for the effects each field
+// drives.
+type FlagOptions struct {
+	// Name is the flag name without leading dashes (e.g. "output"). Required.
+	Name string
+
+	// AllowedValues, when non-empty, restricts accepted values, drives
+	// "(supported: ...)" help text, populates metadata ValidValues, and
+	// powers shell completion.
+	AllowedValues []string
+
+	// Default, when non-empty, becomes the per-subcommand default: shown in
+	// help, surfaced in metadata, and substituted into the bound variable
+	// (e.g. [ExtensionContext.OutputFormat]) when the user does not pass
+	// the flag.
+	Default string
+}
+
+// RegisterFlagOptions configures per-subcommand behavior for an inherited
+// persistent flag (typically one registered by [NewExtensionRootCommand],
+// such as -o/--output). One declaration drives:
 //
-//   - help and usage rendering — the flag's help text is annotated with
-//     "(supported: ...)" and the per-command default is shown
-//   - extension metadata JSON (see [GenerateExtensionMetadata]) — populates
-//     [extensions.Flag.ValidValues] and overrides [extensions.Flag.Default]
-//   - parse-time validation — values not in allowedValues are rejected before
-//     the command's RunE is invoked
-//   - shell completion — allowedValues are suggested for the flag
-//   - default substitution — when the user did not pass the flag, the
-//     bound variable (e.g. [ExtensionContext.OutputFormat]) is set to
-//     defaultValue before RunE runs, so RunE can read it directly without
-//     extra normalization
+//   - help/usage rendering — flag usage gets "(supported: ...)" appended and
+//     shows the per-command default
+//   - extension metadata (see [GenerateExtensionMetadata]) — populates the
+//     flag's ValidValues field and overrides its Default field
+//   - parse-time validation — values outside AllowedValues are rejected
+//     before the command's RunE runs
+//   - shell completion — AllowedValues are suggested for the flag
+//   - default substitution — when the user does not pass the flag, the
+//     bound variable is set to Default before RunE runs
 //
-// Pass an empty allowedValues to skip validation/completion while still
-// customizing the default. Pass an empty defaultValue to leave the SDK
-// default in place. Calling this multiple times for the same flag overwrites
-// the previous configuration. Passing a nil command or empty flagName is a
-// no-op.
+// Empty AllowedValues skips validation/completion. Empty Default leaves the
+// SDK default in place. Repeat calls for the same flag overwrite. A nil
+// command or empty Name is a no-op.
 //
-// Typical usage in an extension subcommand:
+// Panics if Default is set but not in a non-empty AllowedValues, since this
+// would silently bypass validation.
+//
+// Typical usage:
 //
 //	cmd := &cobra.Command{Use: "list", RunE: runList}
-//	azdext.RegisterFlagOptions(cmd, "output", []string{"json", "table"}, "json")
-func RegisterFlagOptions(cmd *cobra.Command, flagName string, allowedValues []string, defaultValue string) *cobra.Command {
-	if cmd == nil || flagName == "" {
+//	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
+//	    Name:          "output",
+//	    AllowedValues: []string{"json", "table"},
+//	    Default:       "json",
+//	})
+func RegisterFlagOptions(cmd *cobra.Command, opts FlagOptions) *cobra.Command {
+	if cmd == nil || opts.Name == "" {
 		return cmd
+	}
+	if opts.Default != "" && len(opts.AllowedValues) > 0 && !slices.Contains(opts.AllowedValues, opts.Default) {
+		panic(fmt.Sprintf(
+			"azdext.RegisterFlagOptions: default %q for flag %q is not in allowed values %v",
+			opts.Default, opts.Name, opts.AllowedValues,
+		))
 	}
 	if cmd.Annotations == nil {
 		cmd.Annotations = map[string]string{}
 	}
-	if len(allowedValues) > 0 {
-		cmd.Annotations[flagAllowedValuesAnnotationPrefix+flagName] = strings.Join(allowedValues, ",")
-		// Best-effort: register completion if the flag is owned directly by
-		// cmd (not inherited). For inherited persistent flags managed by
-		// [NewExtensionRootCommand], a delegating completion function is
-		// already registered at the root that consults this command's
-		// annotations; RegisterFlagCompletionFunc would error with "already
-		// registered" here, which we deliberately ignore.
-		_ = cmd.RegisterFlagCompletionFunc(
-			flagName,
-			cobra.FixedCompletions(allowedValues, cobra.ShellCompDirectiveNoFileComp),
-		)
+	if len(opts.AllowedValues) > 0 {
+		cmd.Annotations[flagAllowedValuesAnnotationPrefix+opts.Name] = strings.Join(opts.AllowedValues, ",")
 	} else {
-		delete(cmd.Annotations, flagAllowedValuesAnnotationPrefix+flagName)
+		delete(cmd.Annotations, flagAllowedValuesAnnotationPrefix+opts.Name)
 	}
-	if defaultValue != "" {
-		cmd.Annotations[flagDefaultAnnotationPrefix+flagName] = defaultValue
+	if opts.Default != "" {
+		cmd.Annotations[flagDefaultAnnotationPrefix+opts.Name] = opts.Default
 	} else {
-		delete(cmd.Annotations, flagDefaultAnnotationPrefix+flagName)
+		delete(cmd.Annotations, flagDefaultAnnotationPrefix+opts.Name)
 	}
 	return cmd
 }
@@ -271,12 +284,11 @@ type flagOverride struct {
 	Default       string
 }
 
-// flagOptionsCompletion returns a cobra completion function for flagName that
-// resolves allowed values from the executing command's [RegisterFlagOptions]
-// annotations. Used as a delegating completion for SDK-managed inherited
-// persistent flags (notably --output): cobra keys completion funcs by
-// *pflag.Flag pointer, which is shared across the tree for inherited flags,
-// so per-subcommand completions can't be registered directly.
+// flagOptionsCompletion returns a delegating completion func for flagName
+// that resolves allowed values from the executing command's
+// [RegisterFlagOptions] annotations at completion time. Used so completions
+// for SDK-managed inherited flags can vary per subcommand (cobra keys flag
+// completions by *pflag.Flag pointer, which is shared for inherited flags).
 func flagOptionsCompletion(flagName string) func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
 	return func(cmd *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 		if ov, ok := flagOverridesForCommand(cmd)[flagName]; ok && len(ov.AllowedValues) > 0 {
@@ -316,10 +328,9 @@ func flagOverridesForCommand(cmd *cobra.Command) map[string]flagOverride {
 	return out
 }
 
-// applyFlagOverridesForCommand transiently mutates the inherited persistent
-// flags referenced by cmd's per-command overrides so help/usage rendering
-// reflects the per-command supported values and default. Returns a restore
-// function that callers must defer to undo the mutation.
+// applyFlagOverridesForCommand transiently mutates flag Usage/DefValue so
+// help/usage rendering reflects cmd's per-command [RegisterFlagOptions]
+// overrides. Returns a restore func that callers must defer.
 func applyFlagOverridesForCommand(cmd *cobra.Command) func() {
 	overrides := flagOverridesForCommand(cmd)
 	if len(overrides) == 0 || cmd == nil {
@@ -352,19 +363,10 @@ func applyFlagOverridesForCommand(cmd *cobra.Command) func() {
 	}
 }
 
-// applyFlagOptionsForCommand validates and defaults the inherited persistent
-// flags configured via [RegisterFlagOptions] for the executing command. It is
-// invoked from the root command's PersistentPreRunE so it runs once before
-// the leaf command's RunE.
-//
-// For each registered override:
-//   - If the user supplied a value (cmd.Flags().Changed) and an allowedValues
-//     set is configured, the value is checked and a descriptive error is
-//     returned for unsupported values.
-//   - If the user did not supply a value and a per-command default is
-//     configured, the flag is set to that default. Because the SDK persistent
-//     flags are bound to fields on [ExtensionContext], this also updates the
-//     extension context value (e.g. [ExtensionContext.OutputFormat]).
+// applyFlagOptionsForCommand applies [RegisterFlagOptions] overrides for cmd:
+// rejects user-supplied values not in AllowedValues, and substitutes Default
+// when the flag was not passed. Run from the root PersistentPreRunE so the
+// substituted value reaches the bound [ExtensionContext] field before RunE.
 func applyFlagOptionsForCommand(cmd *cobra.Command) error {
 	overrides := flagOverridesForCommand(cmd)
 	for name, ov := range overrides {

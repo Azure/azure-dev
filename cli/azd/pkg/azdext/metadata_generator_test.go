@@ -344,7 +344,7 @@ func TestGenerateExtensionMetadata_FlagOptionsOverride(t *testing.T) {
 		Use:   "list",
 		Short: "List things",
 		RunE:  func(cmd *cobra.Command, args []string) error { return nil },
-	}, "output", []string{"json", "table"}, "json")
+	}, FlagOptions{Name: "output", AllowedValues: []string{"json", "table"}, Default: "json"})
 
 	plainCmd := &cobra.Command{
 		Use:   "plain",

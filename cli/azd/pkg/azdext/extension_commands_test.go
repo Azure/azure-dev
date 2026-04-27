@@ -21,14 +21,14 @@ func TestRegisterFlagOptions_HelpRendering(t *testing.T) {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return nil
 		},
-	}, "output", []string{"json", "table"}, "json")
+	}, FlagOptions{Name: "output", AllowedValues: []string{"json", "table"}, Default: "json"})
 	versionCmd := RegisterFlagOptions(&cobra.Command{
 		Use:   "version",
 		Short: "version",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return nil
 		},
-	}, "output", []string{"json"}, "json")
+	}, FlagOptions{Name: "output", AllowedValues: []string{"json"}, Default: "json"})
 	root.AddCommand(showCmd, versionCmd)
 
 	showHelp := captureStdout(t, func() {
@@ -64,7 +64,7 @@ func TestRegisterFlagOptions_RejectsInvalidValue(t *testing.T) {
 	root.AddCommand(RegisterFlagOptions(&cobra.Command{
 		Use:  "list",
 		RunE: func(cmd *cobra.Command, args []string) error { return nil },
-	}, "output", []string{"json", "table"}, "json"))
+	}, FlagOptions{Name: "output", AllowedValues: []string{"json", "table"}, Default: "json"}))
 
 	root.SetArgs([]string{"list", "--output", "yaml"})
 	err := root.Execute()
@@ -87,7 +87,7 @@ func TestRegisterFlagOptions_AppliesPerCommandDefault(t *testing.T) {
 			observed = extCtx.OutputFormat
 			return nil
 		},
-	}, "output", []string{"json", "table"}, "json"))
+	}, FlagOptions{Name: "output", AllowedValues: []string{"json", "table"}, Default: "json"}))
 
 	root.SetArgs([]string{"list"})
 	require.NoError(t, root.Execute())
@@ -103,7 +103,7 @@ func TestRegisterFlagOptions_AcceptsExplicitAllowedValue(t *testing.T) {
 	root.AddCommand(RegisterFlagOptions(&cobra.Command{
 		Use:  "list",
 		RunE: func(cmd *cobra.Command, args []string) error { return nil },
-	}, "output", []string{"json", "table"}, "json"))
+	}, FlagOptions{Name: "output", AllowedValues: []string{"json", "table"}, Default: "json"}))
 
 	root.SetArgs([]string{"list", "--output", "table"})
 	require.NoError(t, root.Execute())
@@ -115,7 +115,7 @@ func TestRegisterFlagOptions_RegistersShellCompletion(t *testing.T) {
 	listCmd := RegisterFlagOptions(&cobra.Command{
 		Use:  "list",
 		RunE: func(cmd *cobra.Command, args []string) error { return nil },
-	}, "output", []string{"json", "table"}, "json")
+	}, FlagOptions{Name: "output", AllowedValues: []string{"json", "table"}, Default: "json"})
 	root.AddCommand(listCmd)
 
 	var buf bytes.Buffer
@@ -131,8 +131,21 @@ func TestRegisterFlagOptions_RegistersShellCompletion(t *testing.T) {
 
 func TestRegisterFlagOptions_NilCommandIsNoOp(t *testing.T) {
 	require.NotPanics(t, func() {
-		RegisterFlagOptions(nil, "output", []string{"json"}, "json")
+		RegisterFlagOptions(nil, FlagOptions{Name: "output", AllowedValues: []string{"json"}, Default: "json"})
 	})
+}
+
+func TestRegisterFlagOptions_PanicsOnDefaultNotInAllowed(t *testing.T) {
+	require.PanicsWithValue(t,
+		`azdext.RegisterFlagOptions: default "yaml" for flag "output" is not in allowed values [json table]`,
+		func() {
+			RegisterFlagOptions(&cobra.Command{Use: "list"}, FlagOptions{
+				Name:          "output",
+				AllowedValues: []string{"json", "table"},
+				Default:       "yaml",
+			})
+		},
+	)
 }
 
 func TestRegisterFlagOptions_OnlyDefaultStillSubstitutes(t *testing.T) {
@@ -143,7 +156,7 @@ func TestRegisterFlagOptions_OnlyDefaultStillSubstitutes(t *testing.T) {
 	root.AddCommand(RegisterFlagOptions(&cobra.Command{
 		Use:  "list",
 		RunE: func(cmd *cobra.Command, args []string) error { return nil },
-	}, "output", nil, "json"))
+	}, FlagOptions{Name: "output", Default: "json"}))
 
 	root.SetArgs([]string{"list"})
 	require.NoError(t, root.Execute())

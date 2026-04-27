@@ -546,7 +546,11 @@ listCmd := &cobra.Command{
   Use:  "list",
   RunE: runList,
 }
-azdext.RegisterFlagOptions(listCmd, "output", []string{"json", "table"}, "json")
+azdext.RegisterFlagOptions(listCmd, azdext.FlagOptions{
+  Name:          "output",
+  AllowedValues: []string{"json", "table"},
+  Default:       "json",
+})
 ```
 
 A single `RegisterFlagOptions` declaration drives all of the following:

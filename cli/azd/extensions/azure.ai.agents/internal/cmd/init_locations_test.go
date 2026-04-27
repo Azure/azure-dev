@@ -10,7 +10,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
+
+	"azureaiagent/internal/exterrors"
 )
 
 func TestFetchHostedAgentRegionsFromURL_Success(t *testing.T) {
@@ -92,36 +95,45 @@ func TestFetchHostedAgentRegionsFromURL_RespectsTimeout(t *testing.T) {
 }
 
 func TestSupportedModelLocations(t *testing.T) {
-	t.Parallel()
-
 	resetRegionsCache(t, []string{"eastus2", "westus3"})
 
 	tests := []struct {
 		name           string
 		modelLocations []string
 		want           []string
+		wantErr        bool
 	}{
-		{"AllSupported", []string{"eastus2", "westus3"}, []string{"eastus2", "westus3"}},
-		{"SomeUnsupported", []string{"eastus2", "unsupported"}, []string{"eastus2"}},
-		{"NoneSupported", []string{"unsupported1", "unsupported2"}, []string{}},
-		{"EmptyInput", []string{}, []string{}},
-		{"NilInput", nil, []string{}},
+		{"AllSupported", []string{"eastus2", "westus3"}, []string{"eastus2", "westus3"}, false},
+		{"SomeUnsupported", []string{"eastus2", "unsupported"}, []string{"eastus2"}, false},
+		{"NoneSupported", []string{"unsupported1", "unsupported2"}, nil, true},
+		{"EmptyInput", []string{}, nil, true},
+		{"NilInput", nil, nil, true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
 			result, err := supportedModelLocations(t.Context(), tt.modelLocations)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
 			require.NoError(t, err)
 			require.ElementsMatch(t, tt.want, result)
 		})
 	}
 }
 
-func TestSupportedModelLocations_DoesNotMutateInput(t *testing.T) {
-	t.Parallel()
+func TestSupportedModelLocations_EmptyIntersectionReturnsStructuredError(t *testing.T) {
+	resetRegionsCache(t, []string{"eastus2"})
 
+	_, err := supportedModelLocations(t.Context(), []string{"unsupported"})
+	require.Error(t, err)
+	localErr, ok := err.(*azdext.LocalError)
+	require.True(t, ok, "expected *azdext.LocalError, got %T", err)
+	require.Equal(t, exterrors.CodeNoSupportedModelLocations, localErr.Code)
+}
+
+func TestSupportedModelLocations_DoesNotMutateInput(t *testing.T) {
 	resetRegionsCache(t, []string{"eastus2", "westus3"})
 
 	input := []string{"eastus2", "unsupported", "westus3"}
@@ -132,7 +144,7 @@ func TestSupportedModelLocations_DoesNotMutateInput(t *testing.T) {
 	require.Equal(t, original, input)
 }
 
-func TestSupportedRegionsForInit_CachesAfterFirstFetch(t *testing.T) {
+func TestSupportedRegionsForInit_FetchesOnceAndCaches(t *testing.T) {
 	resetRegionsCache(t, nil)
 
 	hits := 0
@@ -142,11 +154,9 @@ func TestSupportedRegionsForInit_CachesAfterFirstFetch(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	regions, err := fetchHostedAgentRegionsFromURL(t.Context(), http.DefaultClient, server.URL)
-	require.NoError(t, err)
-	regionsCache.mu.Lock()
-	regionsCache.regions = regions
-	regionsCache.mu.Unlock()
+	prev := hostedAgentRegionsURL
+	hostedAgentRegionsURL = server.URL
+	t.Cleanup(func() { hostedAgentRegionsURL = prev })
 
 	for range 3 {
 		got, err := supportedRegionsForInit(t.Context())

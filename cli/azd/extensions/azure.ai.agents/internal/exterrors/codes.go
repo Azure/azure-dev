@@ -82,9 +82,10 @@ const (
 // Used as fallback codes with [FromAiService] when the gRPC response
 // doesn't include a more specific ErrorInfo reason.
 const (
-	CodeModelCatalogFailed    = "model_catalog_failed"
-	CodeModelResolutionFailed = "model_resolution_failed"
-	CodeRegionsFetchFailed    = "regions_fetch_failed"
+	CodeModelCatalogFailed        = "model_catalog_failed"
+	CodeModelResolutionFailed     = "model_resolution_failed"
+	CodeRegionsFetchFailed        = "regions_fetch_failed"
+	CodeNoSupportedModelLocations = "no_supported_model_locations"
 )
 
 // Error codes for session errors.

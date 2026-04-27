@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,12 +15,13 @@ import (
 	"time"
 
 	"azureaiagent/internal/exterrors"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
 // hostedAgentRegionsURL points at the supported-regions manifest.
-// TODO: switch to an aka.ms link once provisioned.
-const hostedAgentRegionsURL = "https://raw.githubusercontent.com/Azure/azure-dev/main/" +
-	"cli/azd/extensions/azure.ai.agents/hosted-agent-regions.json"
+// It is a var so tests can override it.
+var hostedAgentRegionsURL = "https://aka.ms/azd-ai-agents/regions"
 
 const hostedAgentRegionsFetchTimeout = 5 * time.Second
 
@@ -52,16 +54,28 @@ func supportedRegionsForInit(ctx context.Context) ([]string, error) {
 }
 
 // supportedModelLocations returns the intersection of a model's available locations with
-// the supported hosted-agent regions.
+// the supported hosted-agent regions. Returns an error when the intersection is empty
+// because passing an empty allowlist downstream disables filtering, which would let users
+// pick regions that are not supported for hosted agents.
 func supportedModelLocations(ctx context.Context, modelLocations []string) ([]string, error) {
 	supported, err := supportedRegionsForInit(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	return slices.DeleteFunc(slices.Clone(modelLocations), func(loc string) bool {
+	result := slices.DeleteFunc(slices.Clone(modelLocations), func(loc string) bool {
 		return !locationAllowed(loc, supported)
-	}), nil
+	})
+
+	if len(result) == 0 {
+		return nil, exterrors.Dependency(
+			exterrors.CodeNoSupportedModelLocations,
+			"the selected model is not available in any region supported for hosted agents",
+			"select a different model.",
+		)
+	}
+
+	return result, nil
 }
 
 func fetchHostedAgentRegionsFromURL(ctx context.Context, httpClient *http.Client, url string) ([]string, error) {
@@ -115,4 +129,12 @@ func regionsFetchError(err error) error {
 		"check your network connection and try again. "+
 			"If the issue persists, file an issue at https://github.com/Azure/azure-dev/issues",
 	)
+}
+
+// isNoSupportedLocationsError reports whether err is the structured error returned by
+// [supportedModelLocations] when no region in the model's location list is supported
+// for hosted agents.
+func isNoSupportedLocationsError(err error) bool {
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	return ok && localErr.Code == exterrors.CodeNoSupportedModelLocations
 }

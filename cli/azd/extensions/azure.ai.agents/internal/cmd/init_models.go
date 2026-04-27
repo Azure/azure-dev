@@ -623,6 +623,13 @@ func (a *modelSelector) promptForModelLocationMismatch(
 		if selectedChoice == "location" {
 			allowedLocations, err := supportedModelLocations(ctx, currentModel.Locations)
 			if err != nil {
+				if isNoSupportedLocationsError(err) {
+					message = fmt.Sprintf(
+						"Model '%s' is not available in any region supported for hosted agents.",
+						currentModel.Name,
+					)
+					continue
+				}
 				return nil, "", err
 			}
 			locationResp, err := a.azdClient.Prompt().PromptAiModelLocationWithQuota(ctx,
@@ -678,6 +685,14 @@ func (a *modelSelector) promptForModelLocationMismatch(
 			selectedModel := modelResp.Model
 			allowedLocations, err := supportedModelLocations(ctx, selectedModel.Locations)
 			if err != nil {
+				if isNoSupportedLocationsError(err) {
+					currentModel = selectedModel
+					message = fmt.Sprintf(
+						"Model '%s' is not available in any region supported for hosted agents.",
+						selectedModel.Name,
+					)
+					continue
+				}
 				return nil, "", err
 			}
 			locationResp, err := a.azdClient.Prompt().PromptAiModelLocationWithQuota(ctx,

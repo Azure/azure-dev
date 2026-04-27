@@ -7,17 +7,21 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"maps"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/gofrs/flock"
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 )
@@ -33,6 +37,55 @@ func NewLocalFileDataStore(azdContext *azdcontext.AzdContext, configManager conf
 	return &LocalFileDataStore{
 		azdContext:    azdContext,
 		configManager: configManager,
+	}
+}
+
+// lockPath returns the path to the OS-level file lock used to serialize
+// concurrent Reload/Save operations across processes (e.g. parallel
+// `azd env set` subprocesses spawned from service hooks).
+func (fs *LocalFileDataStore) lockPath(env *Environment) string {
+	return filepath.Join(fs.azdContext.EnvironmentRoot(env.name), DotEnvFileName+".lock")
+}
+
+// newEnvLock returns an OS-level file lock on the .env file for `env`. The
+// caller owns Lock()/Unlock(). The lock file itself is never deleted so
+// concurrent holders can always discover it — flock semantics coordinate
+// via the underlying inode, not via file presence.
+func (fs *LocalFileDataStore) newEnvLock(env *Environment) (*flock.Flock, error) {
+	path := fs.lockPath(env)
+	if err := os.MkdirAll(filepath.Dir(path), osutil.PermissionDirectory); err != nil {
+		return nil, fmt.Errorf("creating env dir for lock: %w", err)
+	}
+	return flock.New(path), nil
+}
+
+// envLockRetryDelay is the polling interval used by TryLockContext while
+// waiting for another process to release the .env flock.
+const envLockRetryDelay = 50 * time.Millisecond
+
+// acquireEnvLock acquires the OS-level .env flock, polling so the caller's
+// context (Ctrl-C, deadline) can cancel the wait. Without this, a wedged
+// holder (e.g. a hung `azd env set` subprocess on Windows where LockFileEx
+// blocks in a kernel wait that does not honor process signals) would
+// freeze azd indefinitely.
+func (fs *LocalFileDataStore) acquireEnvLock(ctx context.Context, env *Environment) (*flock.Flock, error) {
+	fl, err := fs.newEnvLock(env)
+	if err != nil {
+		return nil, err
+	}
+	locked, err := fl.TryLockContext(ctx, envLockRetryDelay)
+	if err != nil {
+		return nil, fmt.Errorf("locking .env: %w", err)
+	}
+	if !locked {
+		return nil, fmt.Errorf("locking .env: %w", ctx.Err())
+	}
+	return fl, nil
+}
+
+func releaseEnvLock(fl *flock.Flock) {
+	if err := fl.Unlock(); err != nil {
+		log.Printf("failed to release .env lock: %v", err)
 	}
 }
 
@@ -103,16 +156,31 @@ func (fs *LocalFileDataStore) Get(ctx context.Context, name string) (*Environmen
 
 // Reload reloads the environment from the persistent data store
 func (fs *LocalFileDataStore) Reload(ctx context.Context, env *Environment) error {
+	// Serialize against concurrent cross-process Save (e.g. parallel
+	// `azd env set` subprocesses from service hooks) so we never observe
+	// a truncated or partially-written .env file.
+	fl, err := fs.acquireEnvLock(ctx, env)
+	if err != nil {
+		return err
+	}
+	defer releaseEnvLock(fl)
+
+	return fs.reloadLocked(ctx, env)
+}
+
+// reloadLocked performs the actual reload work. Caller MUST hold the env
+// file lock.
+func (fs *LocalFileDataStore) reloadLocked(ctx context.Context, env *Environment) error {
 	// Reload env values
+	var newDotenv map[string]string
 	if envMap, err := godotenv.Read(fs.EnvPath(env)); errors.Is(err, os.ErrNotExist) {
-		env.dotenv = make(map[string]string)
-		env.deletedKeys = make(map[string]struct{})
+		newDotenv = make(map[string]string)
 	} else if err != nil {
 		return fmt.Errorf("loading .env: %w", err)
 	} else {
-		env.dotenv = envMap
-		env.deletedKeys = make(map[string]struct{})
+		newDotenv = envMap
 	}
+	env.replaceState(newDotenv, make(map[string]struct{}))
 
 	// Reload env config
 	if cfg, err := fs.configManager.Load(fs.ConfigPath(env)); errors.Is(err, os.ErrNotExist) {
@@ -138,44 +206,95 @@ func (fs *LocalFileDataStore) Reload(ctx context.Context, env *Environment) erro
 
 // Save saves the environment to the persistent data store
 func (fs *LocalFileDataStore) Save(ctx context.Context, env *Environment, options *SaveOptions) error {
-	// Update configuration
+	// Acquire an OS-level file lock so the reload-merge-write cycle below is
+	// atomic against other processes (parallel service hooks spawning
+	// `azd env set` subprocesses, or another `azd` invocation). Without this
+	// two concurrent writers would each read the current .env, merge their
+	// own keys, then truncate-and-write — the last writer silently clobbers
+	// the first writer's keys. The lock also covers the sibling config.json
+	// write, which is similarly subject to torn reads on concurrent saves.
+	fl, err := fs.acquireEnvLock(ctx, env)
+	if err != nil {
+		return err
+	}
+	defer releaseEnvLock(fl)
+
+	// Update configuration (under the lock so concurrent readers never
+	// observe a half-written config.json).
 	if err := fs.configManager.Save(env.Config, fs.ConfigPath(env)); err != nil {
 		return fmt.Errorf("saving config: %w", err)
 	}
 
-	// Cache current values & reload to get any new env vars
-	currentValues := env.dotenv
-	deletedValues := env.deletedKeys
-	if err := fs.Reload(ctx, env); err != nil {
+	// Snapshot current in-memory state under RLock so the reads of env.dotenv
+	// and env.deletedKeys don't race with concurrent DotenvSet/DotenvDelete.
+	env.mu.RLock()
+	currentValues := maps.Clone(env.dotenv)
+	deletedValues := maps.Clone(env.deletedKeys)
+	env.mu.RUnlock()
+
+	// reloadLocked replaces env.dotenv via replaceState (acquires env.mu
+	// internally) — we must NOT hold env.mu here or we deadlock.
+	if err := fs.reloadLocked(ctx, env); err != nil {
 		return fmt.Errorf("failed reloading env vars, %w", err)
 	}
 
-	// Overlay current values before saving
+	// Overlay cached values and replay deletions under Lock so we don't race
+	// with concurrent DotenvSet/DotenvDelete on the new env.dotenv map.
+	env.mu.Lock()
 	maps.Copy(env.dotenv, currentValues)
-
-	// Replay deletion
 	for key := range deletedValues {
 		delete(env.dotenv, key)
 	}
+	env.mu.Unlock()
 
 	marshalled, err := marshallDotEnv(env)
 	if err != nil {
 		return fmt.Errorf("marshalling .env: %w", err)
 	}
 
-	envFile, err := os.Create(fs.EnvPath(env))
+	// Write atomically: create a sibling tmp file, fsync it, then rename
+	// over the destination. Rename is atomic on POSIX and on Windows
+	// (MoveFileEx w/ REPLACE_EXISTING), so readers never see a
+	// half-truncated file.
+	envPath := fs.EnvPath(env)
+
+	// Best-effort sweep of stale tmp files (>1h old) left behind by prior
+	// crashed/SIGKILL'd writers. Safe under the flock — no concurrent
+	// in-flight tmp files possible.
+	if matches, _ := filepath.Glob(filepath.Join(filepath.Dir(envPath), DotEnvFileName+".tmp-*")); len(matches) > 0 {
+		for _, m := range matches {
+			if info, statErr := os.Stat(m); statErr == nil && time.Since(info.ModTime()) > time.Hour {
+				_ = os.Remove(m)
+			}
+		}
+	}
+
+	tmpFile, err := os.CreateTemp(filepath.Dir(envPath), DotEnvFileName+".tmp-*")
 	if err != nil {
-		return fmt.Errorf("saving .env: %w", err)
+		return fmt.Errorf("creating temp .env: %w", err)
 	}
-	defer envFile.Close()
-
-	// Write the contents (with a trailing newline), and sync the file, as godotenv.Write would have.
-	if _, err := envFile.WriteString(marshalled + "\n"); err != nil {
-		return fmt.Errorf("saving .env: %w", err)
+	tmpPath := tmpFile.Name()
+	// Clean up tmp on any error path below.
+	cleanup := func() {
+		tmpFile.Close()
+		_ = os.Remove(tmpPath)
 	}
 
-	if err := envFile.Sync(); err != nil {
-		return fmt.Errorf("saving .env: %w", err)
+	if _, err := tmpFile.WriteString(marshalled + "\n"); err != nil {
+		cleanup()
+		return fmt.Errorf("writing temp .env: %w", err)
+	}
+	if err := tmpFile.Sync(); err != nil {
+		cleanup()
+		return fmt.Errorf("syncing temp .env: %w", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("closing temp .env: %w", err)
+	}
+	if err := osutil.Rename(ctx, tmpPath, envPath); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("renaming temp .env: %w", err)
 	}
 
 	tracing.SetUsageAttributes(fields.StringHashed(fields.EnvNameKey, env.Name()))

@@ -4,7 +4,10 @@
 package environment
 
 import (
+	"context"
+	"fmt"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -84,4 +87,69 @@ func Test_LocalFileDataStore_ConfigPath(t *testing.T) {
 	actual := dataStore.ConfigPath(env)
 
 	require.Equal(t, expected, actual)
+}
+
+// Test_LocalFileDataStore_ConcurrentSave_NoLostUpdate is a regression test
+// for the cross-process write race that existed before the OS-level flock
+// + atomic-rename was added to Save (see #7776 review thread H1).
+//
+// Pre-fix: two LocalFileDataStore instances against the same .env file would
+// each Reload, merge their own keys, then `os.Create`-truncate-and-write —
+// last writer silently clobbered the first writer's keys. This mirrors the
+// real cross-process scenario where parallel service hooks spawn `azd env
+// set` subprocesses, each owning its own in-process `saveMu` but sharing
+// the same on-disk file.
+//
+// With flock + atomic rename, both writers' keys must be present in the
+// final file regardless of interleaving.
+func Test_LocalFileDataStore_ConcurrentSave_NoLostUpdate(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	dir := t.TempDir()
+	fileConfigManager := config.NewFileConfigManager(config.NewManager())
+
+	// Seed the env directory with a save through one store so the env
+	// root exists for both writers.
+	seedCtx := azdcontext.NewAzdContextWithDirectory(dir)
+	seedStore := NewLocalFileDataStore(seedCtx, fileConfigManager)
+	seedEnv := New("concurrent")
+	require.NoError(t, seedStore.Save(*mockContext.Context, seedEnv, nil))
+
+	const writers = 8
+	const keysPerWriter = 5
+
+	// Each goroutine builds its own LocalFileDataStore + Environment,
+	// bypassing any in-process synchronisation on a shared instance and
+	// reproducing the cross-process race.
+	var wg sync.WaitGroup
+	for w := range writers {
+		wg.Add(1)
+		go func(writerIdx int) {
+			defer wg.Done()
+			ctx := azdcontext.NewAzdContextWithDirectory(dir)
+			store := NewLocalFileDataStore(ctx, fileConfigManager)
+			env, err := store.Get(*mockContext.Context, "concurrent")
+			if err != nil {
+				t.Errorf("writer %d Get: %v", writerIdx, err)
+				return
+			}
+			for k := range keysPerWriter {
+				env.DotenvSet(fmt.Sprintf("W%d_K%d", writerIdx, k), fmt.Sprintf("v%d", k))
+			}
+			if err := store.Save(*mockContext.Context, env, nil); err != nil {
+				t.Errorf("writer %d Save: %v", writerIdx, err)
+			}
+		}(w)
+	}
+	wg.Wait()
+
+	// Final read must see every key from every writer.
+	final, err := seedStore.Get(*mockContext.Context, "concurrent")
+	require.NoError(t, err)
+	for w := range writers {
+		for k := range keysPerWriter {
+			key := fmt.Sprintf("W%d_K%d", w, k)
+			require.Equal(t, fmt.Sprintf("v%d", k), final.Getenv(key),
+				"key %s missing — concurrent Save lost an update", key)
+		}
+	}
 }

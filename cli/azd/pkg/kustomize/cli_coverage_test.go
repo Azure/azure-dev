@@ -106,7 +106,17 @@ func TestWithCwd_Chaining(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
 	cli := NewCli(mockContext.CommandRunner)
 
-	// WithCwd should return the same *Cli for chaining
+	// WithCwd returns a shallow copy so the singleton Cli isn't mutated by
+	// concurrent callers; the returned *Cli must be a different pointer with
+	// the requested cwd, while the original remains untouched.
 	result := cli.WithCwd("/some/path")
-	assert.Same(t, cli, result)
+	assert.NotSame(t, cli, result)
+	assert.Equal(t, "/some/path", result.cwd)
+	assert.Equal(t, "", cli.cwd)
+
+	// Returned *Cli must still be usable for subsequent chained calls.
+	chained := result.WithCwd("/another/path")
+	assert.NotSame(t, result, chained)
+	assert.Equal(t, "/another/path", chained.cwd)
+	assert.Equal(t, "/some/path", result.cwd)
 }

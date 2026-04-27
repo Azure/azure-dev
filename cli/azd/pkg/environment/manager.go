@@ -103,6 +103,12 @@ type manager struct {
 	cacheMu  sync.RWMutex
 	envCache map[string]*Environment
 
+	// saveMu serializes Save and Reload operations across goroutines so that
+	// parallel services running publish/deploy/hooks against the same
+	// *Environment cannot corrupt the on-disk .env file or interleave a
+	// partial Reload with another goroutine's writes.
+	saveMu sync.Mutex
+
 	// State cache manager for managing cached Azure resource information
 	stateCacheManager *state.StateCacheManager
 }
@@ -436,7 +442,15 @@ func (m *manager) Get(ctx context.Context, name string) (*Environment, error) {
 			return nil, err
 		}
 
-		if err := m.local.Save(ctx, remoteEnv, nil); err != nil {
+		// Use the same in-process lock that public Save acquires so a
+		// concurrent Save from another goroutine can't interleave with
+		// this remote-fallback hydration. Cross-process safety still
+		// comes from the flock inside local.Save.
+		if err := func() error {
+			m.saveMu.Lock()
+			defer m.saveMu.Unlock()
+			return m.local.Save(ctx, remoteEnv, nil)
+		}(); err != nil {
 			return nil, err
 		}
 
@@ -491,6 +505,13 @@ func (m *manager) SaveWithOptions(ctx context.Context, env *Environment, options
 		options = &SaveOptions{}
 	}
 
+	// Serialize Save calls so that parallel services writing different
+	// SERVICE_<name>_* keys into the same env can't race on the .env file
+	// (the local data store reads-merges-writes the file, and the env's
+	// internal mutex protects the in-memory map but not the file I/O).
+	m.saveMu.Lock()
+	defer m.saveMu.Unlock()
+
 	if err := m.local.Save(ctx, env, options); err != nil {
 		return fmt.Errorf("saving local environment, %w", err)
 	}
@@ -508,6 +529,11 @@ func (m *manager) SaveWithOptions(ctx context.Context, env *Environment, options
 
 // Reload reloads the environment from the persistent data store
 func (m *manager) Reload(ctx context.Context, env *Environment) error {
+	// Reload swaps the in-memory dotenv map; serialize against Save so that
+	// a Reload triggered by a hook in service A doesn't observe a half-written
+	// .env file produced by service B's concurrent Save.
+	m.saveMu.Lock()
+	defer m.saveMu.Unlock()
 	return m.local.Reload(ctx, env)
 }
 

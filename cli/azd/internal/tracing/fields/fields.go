@@ -454,6 +454,113 @@ var (
 	}
 )
 
+// Execution graph scheduler related fields
+var (
+	// ExeGraphStepCountKey records the total number of steps in the graph.
+	ExeGraphStepCountKey = AttributeKey{
+		Key:            attribute.Key("exegraph.step.count"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
+	}
+
+	// ExeGraphMaxConcurrencyKey records the effective concurrency limit used.
+	ExeGraphMaxConcurrencyKey = AttributeKey{
+		Key:            attribute.Key("exegraph.max_concurrency"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
+
+	// ExeGraphErrorPolicyKey records the error policy (fail_fast or continue_on_error).
+	ExeGraphErrorPolicyKey = AttributeKey{
+		Key:            attribute.Key("exegraph.error_policy"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
+
+	// ExeGraphStepNameKey records the step name within an exegraph.step span.
+	ExeGraphStepNameKey = AttributeKey{
+		Key:            attribute.Key("exegraph.step.name"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
+
+	// ExeGraphStepDepsKey records the dependency list for a step.
+	ExeGraphStepDepsKey = AttributeKey{
+		Key:            attribute.Key("exegraph.step.deps"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
+
+	// ExeGraphStepTagsKey records the tags for a step.
+	ExeGraphStepTagsKey = AttributeKey{
+		Key:            attribute.Key("exegraph.step.tags"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
+
+	// ExeGraphStepTimeoutKey records the per-step timeout if set (in seconds).
+	ExeGraphStepTimeoutKey = AttributeKey{
+		Key:            attribute.Key("exegraph.step.timeout_s"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
+	}
+)
+
+// Multi-layer provision related fields. These power telemetry that lets the
+// azd team measure adoption and safety of `infra.layers[]` parallel
+// provisioning — answering questions like "what fraction of projects use
+// multi-layer?", "how parallel is the typical project?", and "how often
+// does the safe-by-default fallback engage on real templates?".
+var (
+	// ProvisionLayerCountKey records the total number of `infra.layers[]`
+	// declared in `azure.yaml` for the current `azd provision`/`azd up` run.
+	// 0 or 1 means single-layer (the legacy path).
+	ProvisionLayerCountKey = AttributeKey{
+		Key:            attribute.Key("provision.layer.count"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
+	}
+
+	// ProvisionLayerMaxParallelKey records the largest number of layers
+	// scheduled in a single dependency level after static analysis. This
+	// is the maximum *achievable* parallelism for the run — different from
+	// `exegraph.max_concurrency`, which is the configured cap.
+	ProvisionLayerMaxParallelKey = AttributeKey{
+		Key:            attribute.Key("provision.layer.max_parallel"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
+	}
+
+	// ProvisionLayerSafeFallbackCountKey records how many layers triggered
+	// the safe-by-default detector fallback (forced to depend on all
+	// earlier layers because the static analyzer encountered a syntax
+	// pattern it could not resolve to a literal env-var name). A non-zero
+	// value here means that layer's parallelism opportunity was sacrificed
+	// for correctness — useful for sizing future detector improvements.
+	ProvisionLayerSafeFallbackCountKey = AttributeKey{
+		Key:            attribute.Key("provision.layer.safe_fallback_count"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
+	}
+
+	// ProvisionLayerExplicitDependsOnCountKey records how many layers used
+	// the explicit `infra.layers[].dependsOn` schema (the documented
+	// escape hatch for hook-mediated edges that no static analyzer can
+	// infer). Adoption of this field signals that authors are reaching
+	// for the explicit override.
+	ProvisionLayerExplicitDependsOnCountKey = AttributeKey{
+		Key:            attribute.Key("provision.layer.explicit_dependson_count"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
+	}
+)
+
 // The value used for ServiceNameKey
 const ServiceNameAzd = "azd"
 

@@ -55,6 +55,12 @@ func NewProvisioningProgressDisplay(
 	}
 }
 
+// DisplayedResourceCount returns the count of resources that have been displayed (completed or failed).
+// This is used by adaptive polling to detect state changes between polls.
+func (display *ProvisioningProgressDisplay) DisplayedResourceCount() int {
+	return len(display.displayedResources)
+}
+
 // getResourceTypeDisplayName returns the display name for a resource type, using a cache to avoid repeated lookups.
 func (display *ProvisioningProgressDisplay) getResourceTypeDisplayName(
 	ctx context.Context,

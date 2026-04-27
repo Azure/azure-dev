@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
@@ -252,6 +253,7 @@ func (at *containerAppTarget) Deploy(
 		}
 
 		progress.SetProgress(NewServiceProgress("Deploying revision"))
+		stopProgress := startPollingProgress(progress, "Waiting for revision deployment", 15*time.Second)
 		deploymentResult, err := at.armDeployments.DeployToResourceGroup(
 			ctx,
 			targetResource.SubscriptionId(),
@@ -261,6 +263,7 @@ func (at *containerAppTarget) Deploy(
 			deployment.Parameters,
 			nil, nil,
 		)
+		stopProgress()
 		if err != nil {
 			return nil, fmt.Errorf("deploying bicep template: %w", err)
 		}
@@ -299,17 +302,18 @@ func (at *containerAppTarget) Deploy(
 
 		isJob := isJobResource(targetResource)
 
-		// Expand environment variables from service config (common to both jobs and apps)
-		envVars, err := serviceConfig.Environment.Expand(at.env.Getenv)
-		if err != nil {
-			return nil, fmt.Errorf("expanding environment variables: %w", err)
-		}
-
 		if isJob {
 			tracing.AppendUsageAttributeUnique(fields.FeaturesKey.String(fields.FeatJobDeployment))
 			resourceTypeContainer = azapi.AzureResourceTypeContainerAppJob
 
+			// Expand environment variables from service config
+			envVars, err := serviceConfig.Environment.Expand(at.env.Getenv)
+			if err != nil {
+				return nil, fmt.Errorf("expanding environment variables: %w", err)
+			}
+
 			progress.SetProgress(NewServiceProgress("Updating container app job image"))
+			stopProgress := startPollingProgress(progress, "Waiting for container app job update", 15*time.Second)
 			err = at.containerAppService.UpdateContainerAppJobImage(
 				ctx,
 				targetResource.SubscriptionId(),
@@ -319,11 +323,19 @@ func (at *containerAppTarget) Deploy(
 				envVars,
 				&containerAppOptions,
 			)
+			stopProgress()
 			if err != nil {
 				return nil, fmt.Errorf("updating container app job: %w", err)
 			}
 		} else {
+			// Expand environment variables from service config
+			envVars, err := serviceConfig.Environment.Expand(at.env.Getenv)
+			if err != nil {
+				return nil, fmt.Errorf("expanding environment variables: %w", err)
+			}
+
 			progress.SetProgress(NewServiceProgress("Updating container app revision"))
+			stopProgress := startPollingProgress(progress, "Waiting for container revision", 15*time.Second)
 			err = at.containerAppService.AddRevision(
 				ctx,
 				targetResource.SubscriptionId(),
@@ -333,6 +345,7 @@ func (at *containerAppTarget) Deploy(
 				envVars,
 				&containerAppOptions,
 			)
+			stopProgress()
 			if err != nil {
 				return nil, fmt.Errorf("updating container app service: %w", err)
 			}

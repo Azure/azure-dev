@@ -31,11 +31,18 @@ type upFlags struct {
 	cmd.DeployFlags
 	global *internal.GlobalCommandOptions
 	internal.EnvFlag
+	// flagSet is captured during Bind so the action can iterate the
+	// changed flag set when emitting synthetic cmd.package / cmd.provision
+	// telemetry spans (preserves nested cmd.* span shape from the legacy
+	// workflow runner that spawned `azd package` / `azd provision` as
+	// child processes — see UpGraphAction.Run).
+	flagSet *pflag.FlagSet
 }
 
 func (u *upFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	u.EnvFlag.Bind(local, global)
 	u.global = global
+	u.flagSet = local
 
 	u.ProvisionFlags.BindNonCommon(local, global)
 	u.ProvisionFlags.SetCommon(&u.EnvFlag)
@@ -67,15 +74,7 @@ type upAction struct {
 	prompters           prompt.Prompter
 	importManager       *project.ImportManager
 	workflowRunner      *workflow.Runner
-}
-
-var defaultUpWorkflow = &workflow.Workflow{
-	Name: "up",
-	Steps: []*workflow.Step{
-		{AzdCommand: workflow.Command{Args: []string{"package", "--all"}}},
-		{AzdCommand: workflow.Command{Args: []string{"provision"}}},
-		{AzdCommand: workflow.Command{Args: []string{"deploy", "--all"}}},
-	},
+	upGraph             *cmd.UpGraphAction
 }
 
 func newUpAction(
@@ -88,6 +87,7 @@ func newUpAction(
 	prompters prompt.Prompter,
 	importManager *project.ImportManager,
 	workflowRunner *workflow.Runner,
+	upGraph *cmd.UpGraphAction,
 ) actions.Action {
 	return &upAction{
 		flags:               flags,
@@ -99,6 +99,7 @@ func newUpAction(
 		prompters:           prompters,
 		importManager:       importManager,
 		workflowRunner:      workflowRunner,
+		upGraph:             upGraph,
 	}
 }
 
@@ -157,27 +158,36 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	startTime := time.Now()
 
-	upWorkflow, has := u.projectConfig.Workflows["up"]
-	if !has {
-		upWorkflow = defaultUpWorkflow
-	} else {
+	// User-authored custom `workflows.up:` in azure.yaml still delegates to
+	// the sequential workflow runner (spawning `azd package`, `azd provision`,
+	// `azd deploy` as sub-commands). This preserves full backward compatibility
+	// for projects that rely on the historical workflow hook. Each sub-command
+	// still runs its own phase-scoped DAG (layer graph for provision, service
+	// graph for deploy), so parallelism within a phase is preserved. What is
+	// lost is the unified cross-phase DAG: packaging cannot overlap with
+	// provisioning, and synthetic cmdhook-* node integration is not available.
+	// Without a custom workflow, `azd up` runs through the unified exegraph
+	// instead: one DAG that absorbs package, provision, command hooks, publish,
+	// and deploy into a single execution so packaging can overlap with
+	// provisioning.
+	if upWorkflow, has := u.projectConfig.Workflows["up"]; has {
 		u.console.Message(ctx, output.WithGrayFormat("Note: Running custom 'up' workflow from azure.yaml"))
+		if u.flags.EnvironmentName != "" {
+			ctx = context.WithValue(ctx, envFlagCtxKey, u.flags.EnvFlag)
+		}
+		if err := u.workflowRunner.Run(ctx, upWorkflow); err != nil {
+			return nil, err
+		}
+		return &actions.ActionResult{
+			Message: &actions.ResultMessage{
+				Header: fmt.Sprintf("Your up workflow to provision and deploy to Azure completed in %s.",
+					ux.DurationAsText(since(startTime))),
+			},
+		}, nil
 	}
 
-	if u.flags.EnvironmentName != "" {
-		ctx = context.WithValue(ctx, envFlagCtxKey, u.flags.EnvFlag)
-	}
-
-	if err := u.workflowRunner.Run(ctx, upWorkflow); err != nil {
-		return nil, err
-	}
-
-	return &actions.ActionResult{
-		Message: &actions.ResultMessage{
-			Header: fmt.Sprintf("Your up workflow to provision and deploy to Azure completed in %s.",
-				ux.DurationAsText(since(startTime))),
-		},
-	}, nil
+	layers := infra.Options.GetLayers()
+	return u.upGraph.Run(ctx, layers, &u.flags.DeployFlags, u.flags.flagSet, startTime)
 }
 
 func getCmdUpHelpDescription(c *cobra.Command) string {

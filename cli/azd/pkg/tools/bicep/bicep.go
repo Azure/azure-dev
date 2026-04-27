@@ -5,6 +5,8 @@ package bicep
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -12,8 +14,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -41,6 +45,10 @@ type Cli struct {
 	runner      exec.CommandRunner
 	console     input.Console
 	transporter policy.Transporter
+
+	// buildCache stores compiled BuildResult values keyed by content hash to avoid redundant
+	// recompilation within the same azd process.
+	buildCache sync.Map
 
 	installInit osutil.LazyRetryInit
 }
@@ -274,7 +282,111 @@ type BuildResult struct {
 	LintErr string
 }
 
+// modulePattern matches Bicep module declarations that reference local files.
+// It captures the relative path from: module <name> '<path>' ...
+// The ^\s* anchor prevents matching commented-out module declarations
+// (e.g. "// module old 'path'").
+var modulePattern = regexp.MustCompile(`(?m)^\s*module\s+\w+\s+'([^']+)'`)
+
+// buildCacheKey computes a SHA-256 digest over the Bicep file's content, its matching
+// .bicepparam file (when present), and all recursively referenced local module files.
+// Registry modules (br: and ts: prefixes) are ignored since they are externally versioned.
+// Returns a non-nil error when any referenced module file cannot be read; the caller
+// (Build) treats any such error as a cache miss and falls through to a live build.
+func (cli *Cli) buildCacheKey(file string) (string, error) {
+	h := sha256.New()
+	visited := make(map[string]bool)
+
+	if err := hashBicepFileTree(file, h, visited, 0); err != nil {
+		return "", err
+	}
+
+	// Also incorporate the companion .bicepparam file when it exists so that
+	// parameter-only changes correctly invalidate the cache.
+	paramFile := strings.TrimSuffix(file, filepath.Ext(file)) + ".bicepparam"
+	if paramContent, err := os.ReadFile(paramFile); err == nil {
+		h.Write(paramContent)
+	}
+
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// hashBicepFileTree reads a Bicep file, writes its content to the hash, and recursively
+// processes any local module imports found in the file. visited tracks already-processed
+// absolute paths to avoid cycles. depth limits recursion to prevent stack overflow from
+// deeply nested or pathological module references. Returns a non-nil error if the file
+// (or any referenced module) cannot be read — the caller should treat this as a cache miss.
+func hashBicepFileTree(file string, h io.Writer, visited map[string]bool, depth int) error {
+	if depth > 100 {
+		return fmt.Errorf("hashBicepFileTree: recursion depth exceeded 100 at %s", file)
+	}
+
+	absPath, err := filepath.Abs(file)
+	if err != nil {
+		return err
+	}
+	if visited[absPath] {
+		return nil
+	}
+	visited[absPath] = true
+
+	// absPath originates from developer-controlled inputs: the initial Bicep
+	// template path configured in the azd project, plus module paths embedded
+	// in those Bicep files. This function is read-only and only feeds the
+	// content into a SHA-256 hash used as an in-memory build-cache key. There
+	// is no untrusted-user input in this flow, so path traversal via taint is
+	// not a real risk here.
+	//nolint:gosec // G304/G703: developer-controlled bicep paths, read-only cache hashing.
+	content, err := os.ReadFile(absPath)
+	if err != nil {
+		return err
+	}
+	if _, err := h.Write(content); err != nil {
+		return err
+	}
+
+	// Scan for module declarations referencing local files.
+	dir := filepath.Dir(absPath)
+	for _, match := range modulePattern.FindAllSubmatch(content, -1) {
+		modulePath := string(match[1])
+
+		// Skip registry modules (br: for Bicep Registry, br/alias: for registry
+		// aliases like br/public:, ts: for Template Specs).
+		if strings.HasPrefix(modulePath, "br:") ||
+			strings.HasPrefix(modulePath, "br/") ||
+			strings.HasPrefix(modulePath, "ts:") {
+			continue
+		}
+
+		resolved := filepath.Join(dir, modulePath)
+
+		// Validate that the resolved module path stays within the project
+		// directory tree (the directory containing the root Bicep file).
+		if rel, relErr := filepath.Rel(dir, resolved); relErr == nil {
+			if strings.HasPrefix(rel, "..") {
+				log.Printf("warning: bicep module path %q resolves outside project directory, skipping", modulePath)
+				continue
+			}
+		}
+
+		if err := hashBicepFileTree(resolved, h, visited, depth+1); err != nil {
+			// Module file unresolvable — force cache miss.
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (cli *Cli) Build(ctx context.Context, file string) (BuildResult, error) {
+	// Check in-memory cache.
+	if key, err := cli.buildCacheKey(file); err == nil {
+		if cached, ok := cli.buildCache.Load(key); ok {
+			log.Printf("bicep build cache hit for %s", file)
+			return cached.(BuildResult), nil
+		}
+	}
+
 	if err := cli.ensureInstalledOnce(ctx); err != nil {
 		return BuildResult{}, fmt.Errorf("ensuring bicep is installed: %w", err)
 	}
@@ -289,10 +401,18 @@ func (cli *Cli) Build(ctx context.Context, file string) (BuildResult, error) {
 		)
 	}
 
-	return BuildResult{
+	result := BuildResult{
 		Compiled: buildRes.Stdout,
 		LintErr:  buildRes.Stderr,
-	}, nil
+	}
+
+	// Store in cache for subsequent calls within the same process.
+	if key, err := cli.buildCacheKey(file); err == nil {
+		cli.buildCache.Store(key, result)
+		log.Printf("bicep build cache store for %s", file)
+	}
+
+	return result, nil
 }
 
 func (cli *Cli) BuildBicepParam(ctx context.Context, file string, env []string) (BuildResult, error) {

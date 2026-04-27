@@ -19,12 +19,12 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
-	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/exegraph"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
@@ -152,6 +152,7 @@ type DeployAction struct {
 	commandRunner       exec.CommandRunner
 	alphaFeatureManager *alpha.FeatureManager
 	importManager       *project.ImportManager
+	progressTracker     *deployProgressTracker // set at runtime when using parallel deployment graph
 }
 
 func NewDeployAction(
@@ -263,139 +264,173 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		return nil, err
 	}
 
-	projectEventArgs := project.ProjectLifecycleEventArgs{
-		Project: da.projectConfig,
-	}
+	// Always deploy through the service execution graph. The graph handles
+	// any service count (including N=1) with a uniform progress tracker
+	// and the same package → publish → deploy step topology.
+	return da.deployServicesGraph(ctx, stableServices, startTime)
+}
 
-	deployResults := map[string]*project.ServiceDeployResult{}
+// deployServicesGraph builds an execution graph of service deployments and runs them in
+// parallel via the execution graph scheduler. Services that share a non-empty
+// [serviceGraphOptions.buildGateKey] serialize on the first one to act as a
+// shared build gate; today that policy only fires for Aspire services
+// (DotNetContainerApp != nil), which share a single .NET AppHost build. Every
+// other service runs fully in parallel with no inter-service edges.
+func (da *DeployAction) deployServicesGraph(
+	ctx context.Context,
+	stableServices []*project.ServiceConfig,
+	startTime time.Time,
+) (*actions.ActionResult, error) {
 	deployTimeout, err := da.resolveDeployTimeout()
 	if err != nil {
 		return nil, err
 	}
 
-	err = da.projectConfig.Invoke(ctx, project.ProjectEventDeploy, projectEventArgs, func() error {
-		for _, svc := range stableServices {
-			stepMessage := fmt.Sprintf("Deploying service %s", svc.Name)
-			da.console.ShowSpinner(ctx, stepMessage, input.Step)
+	// Wrap console for thread-safe output during parallel deployment.
+	// Graph step callbacks may call ShowSpinner/StopSpinner/Message which are
+	// not goroutine-safe on the underlying console.
+	origConsole := da.console
+	sc := &syncConsole{Console: origConsole}
 
-			if alphaFeatureId, isAlphaFeature := alpha.IsFeatureKey(string(svc.Host)); isAlphaFeature {
-				// alpha feature on/off detection for host is done during initialization.
-				// This is just for displaying the warning during deployment.
-				da.console.WarnForFeature(ctx, alphaFeatureId)
+	// Create a tracker and suppress individual service spinners so
+	// the tracker owns the progress display. Skip the tracker entirely in
+	// machine-readable output modes (e.g. --output json) so raw progress
+	// lines don't pollute stdout alongside the JSON result, and when no
+	// writer is available (e.g. test mocks).
+	if w := origConsole.GetWriter(); da.formatter.Kind() != output.JsonFormat && w != nil {
+		serviceNames := make([]string, len(stableServices))
+		for i, svc := range stableServices {
+			serviceNames[i] = svc.Name
+		}
+		da.progressTracker = newDeployProgressTracker(
+			w,
+			origConsole.IsSpinnerInteractive(),
+			serviceNames,
+		)
+		da.console = &silentSpinnerConsole{syncConsole: sc}
+	} else {
+		// Still wrap the console for thread-safety without suppressing spinners.
+		da.console = sc
+	}
+	defer func() {
+		da.console = origConsole
+		da.progressTracker = nil
+	}()
+
+	g := exegraph.NewGraph()
+	state := newDeployGraphState(stableServices)
+
+	if _, err := addServiceStepsToGraph(g, serviceGraphOptions{
+		services:       stableServices,
+		serviceManager: da.serviceManager,
+		deployTimeout:  deployTimeout,
+		fromPackage:    da.flags.fromPackage,
+		state:          state,
+		onDeployTimeout: func(ctx context.Context, svc *project.ServiceConfig) {
+			da.console.MessageUxItem(ctx, deployTimeoutWarning(svc.Name, deployTimeout))
+		},
+		buildGateKey: aspireBuildGateKey,
+		onPhaseProgress: func(svcName string, phase deployPhase, detail string) {
+			// Forward intra-phase progress (e.g. "Pushing image…") to the
+			// tracker so the table's Detail column reflects what each step
+			// is doing — not just which phase. updateProgress is a no-op
+			// when the tracker is nil (JSON output / no writer paths).
+			da.updateProgress(svcName, phase, detail)
+		},
+	}); err != nil {
+		return nil, err
+	}
+
+	// Wire progress tracker to graph step lifecycle callbacks.
+	// Step names are "package-<svc>", "publish-<svc>", "deploy-<svc>".
+	opts := exegraph.RunOptions{
+		MaxConcurrency: da.resolveDAGConcurrency(),
+		ErrorPolicy:    exegraph.FailFast,
+		OnStepStart: func(stepName string) {
+			if svc, ok := strings.CutPrefix(stepName, "package-"); ok {
+				da.updateProgress(svc, phasePackaging, "")
+			} else if svc, ok := strings.CutPrefix(stepName, "publish-"); ok {
+				da.updateProgress(svc, phasePublish, "")
+			} else if svc, ok := strings.CutPrefix(stepName, "deploy-"); ok {
+				da.updateProgress(svc, phaseDeploying, "")
 			}
-
-			// Initialize service context for tracking artifacts across operations
-			serviceContext := project.NewServiceContext()
-
-			if da.flags.fromPackage != "" {
-				// --from-package set, skip packaging and create package artifact
-				err = serviceContext.Package.Add(&project.Artifact{
-					Kind:         determineArtifactKind(da.flags.fromPackage),
-					Location:     da.flags.fromPackage,
-					LocationKind: project.LocationKindLocal,
-				})
-
-				if err != nil {
-					da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-					return err
-				}
-			} else {
-				//  --from-package not set, automatically package the application
-				_, err := async.RunWithProgress(
-					func(packageProgress project.ServiceProgress) {
-						progressMessage := fmt.Sprintf("Packaging service %s (%s)", svc.Name, packageProgress.Message)
-						da.console.ShowSpinner(ctx, progressMessage, input.Step)
-					},
-					func(progress *async.Progress[project.ServiceProgress]) (*project.ServicePackageResult, error) {
-						return da.serviceManager.Package(ctx, svc, serviceContext, progress, nil)
-					},
-				)
-
-				// do not stop progress here as next step is to publish
-				if err != nil {
-					da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-					return err
-				}
-			}
-
-			_, err := async.RunWithProgress(
-				func(publishProgress project.ServiceProgress) {
-					progressMessage := fmt.Sprintf("Publishing service %s (%s)", svc.Name, publishProgress.Message)
-					da.console.ShowSpinner(ctx, progressMessage, input.Step)
-				},
-				func(progress *async.Progress[project.ServiceProgress]) (*project.ServicePublishResult, error) {
-					return da.serviceManager.Publish(ctx, svc, serviceContext, progress, nil)
-				},
-			)
-
-			// do not stop progress here as next step is to deploy
+		},
+		OnStepDone: func(stepName string, err error) {
 			if err != nil {
-				da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-				return err
-			}
-
-			deployCtx, deployCancel := context.WithTimeout(ctx, deployTimeout)
-			defer deployCancel()
-
-			deployResult, err := async.RunWithProgress(
-				func(deployProgress project.ServiceProgress) {
-					progressMessage := fmt.Sprintf("Deploying service %s (%s)", svc.Name, deployProgress.Message)
-					da.console.ShowSpinner(ctx, progressMessage, input.Step)
-				},
-				func(progress *async.Progress[project.ServiceProgress]) (*project.ServiceDeployResult, error) {
-					return da.serviceManager.Deploy(deployCtx, svc, serviceContext, progress)
-				},
-			)
-
-			if err != nil {
-				da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-				if deployCtx.Err() == context.DeadlineExceeded {
-					warnMsg := fmt.Sprintf(
-						"Deployment of service '%s' exceeded the azd wait timeout."+
-							" azd has stopped waiting, but the deployment may"+
-							" still be running in Azure.",
-						svc.Name,
-					)
-					da.console.MessageUxItem(ctx, &ux.WarningMessage{
-						Description: warnMsg,
-						Hints: []string{
-							"Check the Azure Portal for current deployment status.",
-							"Increase timeout with --timeout flag or AZD_DEPLOY_TIMEOUT env var.",
-						},
-					})
-
-					return fmt.Errorf(
-						"deployment of service '%s' timed out after %d seconds. To increase, use --timeout flag "+
-							"or AZD_DEPLOY_TIMEOUT env var. Note: azd has stopped "+
-							"waiting, but the deployment may still be running in Azure. Check the Azure Portal for "+
-							"current deployment status.",
-						svc.Name,
-						int(deployTimeout.Seconds()),
-					)
+				// Classify terminal state: skipped (dependency failure or
+				// FailFast cascade) and parent-cancellation both surface via
+				// OnStepDone with a non-nil error, but they are not service
+				// failures and should not render as "Failed" in the progress
+				// UI.
+				phase := phaseFailed
+				detail := err.Error()
+				switch {
+				case exegraph.IsStepSkipped(err):
+					phase = phaseSkipped
+					detail = ""
+				case errors.Is(err, context.Canceled):
+					phase = phaseSkipped
+					detail = "canceled"
 				}
-				return err
-			}
-
-			// clean up for packages automatically created in temp dir
-			if da.flags.fromPackage == "" {
-				for _, artifact := range serviceContext.Package {
-					if artifact.Kind == project.ArtifactKindArchive && strings.HasPrefix(artifact.Location, os.TempDir()) {
-						if err := os.RemoveAll(artifact.Location); err != nil {
-							log.Printf("failed to remove temporary package: %s : %s", artifact.Location, err)
-						}
+				for _, prefix := range []string{"deploy-", "publish-", "package-"} {
+					if svc, ok := strings.CutPrefix(stepName, prefix); ok {
+						da.updateProgress(svc, phase, detail)
+						return
 					}
 				}
 			}
+			if svc, ok := strings.CutPrefix(stepName, "deploy-"); ok {
+				da.updateProgress(svc, phaseDone, "")
+			}
+		},
+	}
 
-			da.console.StopSpinner(ctx, stepMessage, input.GetStepResultFormat(err))
-			deployResults[svc.Name] = deployResult
+	projectEventArgs := project.ProjectLifecycleEventArgs{
+		Project: da.projectConfig,
+	}
 
-			// report deploy outputs
-			da.console.MessageUxItem(ctx, deployResult.Artifacts)
+	// Start the progress ticker if the tracker is active.
+	var stopTicker func()
+	if da.progressTracker != nil {
+		stopTicker = da.progressTracker.StartTicker(ctx)
+	}
+
+	err = da.projectConfig.Invoke(ctx, project.ProjectEventDeploy, projectEventArgs, func() error {
+		result := exegraph.RunWithResult(ctx, g, opts)
+		// Log per-step timing for diagnostics and benchmarking.
+		for _, st := range result.Steps {
+			log.Printf("deploy-graph step %-30s  %s  %s", st.Name, st.Status, st.Duration.Round(time.Millisecond))
 		}
+		log.Printf("deploy-graph total: %s (%d steps)", result.TotalDuration.Round(time.Millisecond), len(result.Steps))
 
-		return nil
+		// Unwrap the graph runner's step-level error prefix ("step X failed: ...")
+		// so user-facing messages contain only the action error, not internal graph
+		// framing. When exactly one step failed, return its inner error directly;
+		// when multiple failed, join their inner errors.
+		return unwrapStepErrors(result)
 	})
+
+	// Stop ticker and render final progress state.
+	if stopTicker != nil {
+		stopTicker()
+	}
+	if da.progressTracker != nil {
+		da.progressTracker.RenderFinal()
+	}
+
+	// Clean up temporary package artifacts created during graph execution.
+	if da.flags.fromPackage == "" {
+		state.CleanupTempArtifacts()
+	}
+
+	// Display service endpoint artifacts collected during deploy steps.
+	if da.formatter.Kind() != output.JsonFormat {
+		for _, svc := range stableServices {
+			if dr := state.GetResult(svc.Name); dr != nil {
+				da.console.MessageUxItem(ctx, dr.Artifacts)
+			}
+		}
+	}
 
 	if err != nil {
 		return nil, err
@@ -409,7 +444,7 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	if da.formatter.Kind() == output.JsonFormat {
 		deployResult := DeploymentResult{
 			Timestamp: time.Now(),
-			Services:  deployResults,
+			Services:  state.ResultsSnapshot(),
 		}
 
 		if fmtErr := da.formatter.Format(deployResult, da.writer, nil); fmtErr != nil {
@@ -424,7 +459,10 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header: fmt.Sprintf("Your application was deployed to Azure in %s.", ux.DurationAsText(since(startTime))),
+			Header: fmt.Sprintf(
+				"Your application was deployed to Azure in %s.",
+				ux.DurationAsText(since(startTime)),
+			),
 			FollowUp: getResourceGroupFollowUp(ctx,
 				da.formatter,
 				da.portalUrlBase,
@@ -437,13 +475,43 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	}, nil
 }
 
+// resolveDAGConcurrency reads AZD_DEPLOY_CONCURRENCY from the environment.
+// Returns 0 (unlimited) if the variable is unset or invalid.
+func (da *DeployAction) resolveDAGConcurrency() int {
+	if envVal, ok := os.LookupEnv("AZD_DEPLOY_CONCURRENCY"); ok {
+		if n, err := strconv.Atoi(envVal); err != nil {
+			log.Printf("warning: ignoring invalid AZD_DEPLOY_CONCURRENCY=%q: %v", envVal, err)
+		} else if n > 0 {
+			clamped := min(n, 64)
+			if clamped < n {
+				log.Printf("clamping deploy concurrency from %d to %d", n, clamped)
+			}
+			return clamped
+		}
+	}
+	return 0
+}
+
 func (da *DeployAction) resolveDeployTimeout() (time.Duration, error) {
-	if da.flags.timeoutChanged() {
-		if da.flags.Timeout <= 0 {
+	return resolveDeployTimeout(da.flags)
+}
+
+// resolveDeployTimeout picks the deploy-per-service timeout from, in order:
+//
+//  1. --timeout CLI flag (if set by the user)
+//  2. AZD_DEPLOY_TIMEOUT environment variable (integer seconds)
+//  3. [defaultDeployTimeoutSeconds]
+//
+// Exposed as a free function so [UpGraphAction] — which shares the same
+// [DeployFlags] type but not the [DeployAction] receiver — can resolve the
+// timeout without duplicating the precedence logic.
+func resolveDeployTimeout(flags *DeployFlags) (time.Duration, error) {
+	if flags != nil && flags.timeoutChanged() {
+		if flags.Timeout <= 0 {
 			return 0, errors.New("invalid value for --timeout: must be greater than 0 seconds")
 		}
 
-		return time.Duration(da.flags.Timeout) * time.Second, nil
+		return time.Duration(flags.Timeout) * time.Second, nil
 	}
 
 	if envVal, ok := os.LookupEnv("AZD_DEPLOY_TIMEOUT"); ok {
@@ -488,3 +556,71 @@ func GetCmdDeployHelpFooter(*cobra.Command) string {
 		),
 	})
 }
+
+// updateProgress notifies the progress tracker if it is active.
+// When the tracker is nil (single-service path), this is a no-op.
+func (da *DeployAction) updateProgress(serviceName string, phase deployPhase, detail string) {
+	if da.progressTracker != nil {
+		da.progressTracker.Update(serviceName, phase, detail)
+	}
+}
+
+// unwrapStepErrors extracts the inner (action-level) errors from a graph
+// RunResult, stripping the graph scheduler's "step %q failed: " prefix added
+// by runStep. This keeps user-facing deploy errors clean — the step-name
+// framing is useful for diagnostics logs but should not leak to users.
+//
+// Skipped steps (dependency failures) are omitted — only genuine step Action
+// errors are returned. When exactly one step failed, its inner error is
+// returned directly (not wrapped in errors.Join).
+func unwrapStepErrors(result *exegraph.RunResult) error {
+	if result.Error == nil {
+		return nil
+	}
+
+	var inner []error
+	for _, st := range result.Steps {
+		if st.Err == nil || st.Status == exegraph.StepSkipped {
+			continue
+		}
+		// runStep wraps with fmt.Errorf("step %q failed: %w", ...) — one Unwrap
+		// level peels off that prefix while preserving the action error chain.
+		if unwrapped := errors.Unwrap(st.Err); unwrapped != nil {
+			inner = append(inner, unwrapped)
+		} else {
+			inner = append(inner, st.Err)
+		}
+	}
+
+	switch len(inner) {
+	case 0:
+		// Shouldn't happen if result.Error != nil, but be safe.
+		return result.Error
+	case 1:
+		return inner[0]
+	default:
+		return errors.Join(inner...)
+	}
+}
+
+// silentSpinnerConsole wraps syncConsole but suppresses spinner output.
+// When the progress table is active, the tracker owns the progress display
+// and per-service spinners would interfere with the table rendering.
+//
+// Dropped spinner calls are logged at debug level so extension authors can
+// diagnose missing spinner output from custom service targets — the swallow
+// is intentional but invisible by default, and a silent no-op makes
+// "my spinner doesn't show up" hard to root-cause without log access.
+type silentSpinnerConsole struct {
+	*syncConsole
+}
+
+func (*silentSpinnerConsole) ShowSpinner(_ context.Context, title string, _ input.SpinnerUxType) {
+	log.Printf("silentSpinnerConsole: dropped ShowSpinner(%q) — progress table active", title)
+}
+
+func (*silentSpinnerConsole) StopSpinner(_ context.Context, title string, _ input.SpinnerUxType) {
+	log.Printf("silentSpinnerConsole: dropped StopSpinner(%q) — progress table active", title)
+}
+
+func (*silentSpinnerConsole) IsSpinnerRunning(_ context.Context) bool { return false }

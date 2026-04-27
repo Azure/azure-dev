@@ -41,10 +41,7 @@ positional argument. When omitted, the single agent service is used.
 
 The startup command is read from the startupCommand property of the
 agent service in azure.yaml. If not set, it is auto-detected from the
-project type. Use --start-command to override both.
-
-Use a separate terminal to invoke the running agent:
-  azd ai agent invoke --local "Hello!"`,
+project type. Use --start-command to override both.`,
 		Example: `  # Start the agent in the current directory
   azd ai agent run
 
@@ -153,10 +150,7 @@ func runRun(ctx context.Context, flags *runFlags) error {
 	}
 
 	url := fmt.Sprintf("http://localhost:%d", flags.port)
-	fmt.Println()
-	fmt.Println("After startup, in another terminal, try:")
-	fmt.Printf("  azd ai agent invoke --local \"Hello!\"\n\n")
-	fmt.Printf("Starting agent on %s (Ctrl+C to stop)\n\n", url)
+	fmt.Printf("\nStarting agent on %s (Ctrl+C to stop)\n\n", url)
 
 	// Create command with stdout/stderr piped to terminal
 	ctx, cancel := context.WithCancel(ctx)

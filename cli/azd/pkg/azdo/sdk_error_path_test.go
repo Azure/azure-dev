@@ -91,7 +91,7 @@ func TestCreateServiceConnection_NewClientErrorPath(t *testing.T) {
 		TenantId:       "tenant",
 		ClientId:       "client",
 	}
-	ep, err := CreateServiceConnection(t.Context(), conn, "proj-id", "proj-name", *env, creds, mockConsole)
+	ep, err := CreateServiceConnection(t.Context(), conn, "proj-id", "proj-name", env, creds, mockConsole)
 	require.Error(t, err)
 	assert.Nil(t, ep)
 }
@@ -274,7 +274,7 @@ func TestCreateServiceConnection_SdkCallErrorPath(t *testing.T) {
 		TenantId:       "tenant",
 		ClientId:       "client",
 	}
-	ep, err := CreateServiceConnection(t.Context(), conn, "proj-id", "proj-name", *env, creds, mockConsole)
+	ep, err := CreateServiceConnection(t.Context(), conn, "proj-id", "proj-name", env, creds, mockConsole)
 	require.Error(t, err)
 	assert.Nil(t, ep)
 }

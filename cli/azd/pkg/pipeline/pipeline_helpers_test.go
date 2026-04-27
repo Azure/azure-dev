@@ -685,7 +685,7 @@ func (m *mockEntraIdService) GetServicePrincipal(
 }
 
 func Test_servicePrincipal(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	t.Run("uses principal-id arg when set", func(t *testing.T) {
 		orgId := "org-id-123"
@@ -801,7 +801,7 @@ func Test_servicePrincipal(t *testing.T) {
 // ------------------------------------------------------------------
 
 func Test_GitHubCiProvider_credentialOptions(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	provider := &GitHubCiProvider{}
 
 	t.Run("client-credentials auth", func(t *testing.T) {

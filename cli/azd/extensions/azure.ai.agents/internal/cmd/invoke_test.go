@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"azureaiagent/internal/pkg/agents/agent_api"
 )
 
 func TestReadSSEStream(t *testing.T) {
@@ -246,6 +248,95 @@ func TestHttpTimeout(t *testing.T) {
 			got := action.httpTimeout()
 			if got != tt.want {
 				t.Errorf("httpTimeout() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestResolveProtocol_ExplicitFlag(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		protocol string
+		want     agent_api.AgentProtocol
+	}{
+		{
+			name:     "explicit invocations",
+			protocol: "invocations",
+			want:     agent_api.AgentProtocolInvocations,
+		},
+		{
+			name:     "explicit responses",
+			protocol: "responses",
+			want:     agent_api.AgentProtocolResponses,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			action := &InvokeAction{
+				flags: &invokeFlags{protocol: tt.protocol},
+			}
+			// resolveProtocol with an explicit flag should return it directly
+			// without trying to read agent.yaml (which would fail in tests).
+			got, err := action.resolveProtocol(t.Context())
+			if err != nil {
+				t.Fatalf("resolveProtocol() unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("resolveProtocol() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestProtocolFlagValidation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr bool
+		errSub  string
+	}{
+		{
+			name:    "valid responses",
+			args:    []string{"--protocol", "responses", "hello"},
+			wantErr: false,
+		},
+		{
+			name:    "valid invocations",
+			args:    []string{"--protocol", "invocations", "hello"},
+			wantErr: false,
+		},
+		{
+			name:    "invalid protocol",
+			args:    []string{"--protocol", "bogus", "hello"},
+			wantErr: true,
+			errSub:  "unsupported protocol",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cmd := newInvokeCommand()
+			cmd.SetArgs(tt.args)
+			err := cmd.Execute()
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if !strings.Contains(err.Error(), tt.errSub) {
+					t.Errorf("error %q should contain %q", err.Error(), tt.errSub)
+				}
+			}
+			// For valid protocols the command will still fail (no azd host),
+			// but the error should NOT be about an invalid protocol.
+			if !tt.wantErr && err != nil && strings.Contains(err.Error(), "unsupported protocol") {
+				t.Errorf("unexpected validation error: %v", err)
 			}
 		})
 	}
@@ -736,4 +827,128 @@ type pollStep struct {
 	body       string
 	retryAfter string
 	repeat     bool
+}
+
+func TestCreateConversation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		agentName  string
+		statusCode int
+		body       string
+		wantID     string
+		wantErr    bool
+		errContain string
+	}{
+		{
+			name:       "success returns conversation ID",
+			agentName:  "my-agent",
+			statusCode: 200,
+			body:       `{"id":"conv-abc123"}`,
+			wantID:     "conv-abc123",
+		},
+		{
+			name:       "HTTP 400 returns error",
+			agentName:  "my-agent",
+			statusCode: 400,
+			body:       `{"error":"bad request"}`,
+			wantErr:    true,
+			errContain: "failed with HTTP 400",
+		},
+		{
+			name:       "HTTP 500 returns error",
+			agentName:  "my-agent",
+			statusCode: 500,
+			body:       `{"error":"internal"}`,
+			wantErr:    true,
+			errContain: "failed with HTTP 500",
+		},
+		{
+			name:       "response missing id field",
+			agentName:  "my-agent",
+			statusCode: 200,
+			body:       `{"status":"ok"}`,
+			wantErr:    true,
+			errContain: "missing 'id' field",
+		},
+		{
+			name:       "response with non-string id",
+			agentName:  "my-agent",
+			statusCode: 200,
+			body:       `{"id":12345}`,
+			wantErr:    true,
+			errContain: "missing 'id' field",
+		},
+		{
+			name:       "invalid JSON response",
+			agentName:  "my-agent",
+			statusCode: 200,
+			body:       `not-json`,
+			wantErr:    true,
+			errContain: "invalid character",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				// Verify request method
+				if r.Method != http.MethodPost {
+					t.Errorf("method = %s, want POST", r.Method)
+				}
+
+				// Verify path includes the agent name and conversations endpoint
+				wantPath := "/agents/" + tt.agentName +
+					"/endpoint/protocols/openai/conversations"
+				if r.URL.Path != wantPath {
+					t.Errorf("path = %s, want %s", r.URL.Path, wantPath)
+				}
+
+				// Verify api-version query parameter uses the constant
+				if got := r.URL.Query().Get("api-version"); got != ConversationsAPIVersion {
+					t.Errorf("api-version = %q, want %q", got, ConversationsAPIVersion)
+				}
+
+				// Verify auth header
+				if got := r.Header.Get("Authorization"); got != "Bearer test-token" {
+					t.Errorf("Authorization = %q, want %q", got, "Bearer test-token")
+				}
+
+				// Verify content type
+				if got := r.Header.Get("Content-Type"); got != "application/json" {
+					t.Errorf("Content-Type = %q, want %q", got, "application/json")
+				}
+
+				w.WriteHeader(tt.statusCode)
+				_, _ = w.Write([]byte(tt.body))
+			}))
+			defer srv.Close()
+
+			id, err := createConversation(
+				t.Context(), srv.URL, tt.agentName, "test-token",
+			)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if tt.errContain != "" &&
+					!strings.Contains(err.Error(), tt.errContain) {
+					t.Errorf("error = %q, want substring %q",
+						err.Error(), tt.errContain)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if id != tt.wantID {
+				t.Errorf("id = %q, want %q", id, tt.wantID)
+			}
+		})
+	}
 }

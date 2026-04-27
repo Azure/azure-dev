@@ -4,20 +4,16 @@
 package repository
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/stretchr/testify/require"
 )
 
 func Test_detectConfirm_confirm(t *testing.T) {
-	t.Parallel()
 	dir := t.TempDir()
 	// avoid symlinked paths as this may result in the final path returned
 	// to be a valid, but aliased path to the absolute entries in the test,
@@ -34,6 +30,8 @@ func Test_detectConfirm_confirm(t *testing.T) {
 	javaDir := filepath.Join(dir, "java-dir")
 	err = os.MkdirAll(javaDir, 0700)
 	require.NoError(t, err)
+
+	t.Chdir(dir)
 
 	tests := []struct {
 		name         string
@@ -209,25 +207,11 @@ func Test_detectConfirm_confirm(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			d := &detectConfirm{
-				console: input.NewConsole(
-					false,
-					false,
-					input.Writers{Output: os.Stdout},
-					input.ConsoleHandles{
-						Stderr: os.Stderr,
-						Stdin:  strings.NewReader(strings.Join(tt.interactions, "\n") + "\n"),
-						Stdout: os.Stdout,
-					},
-					nil,
-					nil),
+				console: newCapturedTestConsole(t, tt.interactions),
 			}
 			d.Init(tt.detection, dir)
 
-			err = d.Confirm(context.Background())
-
-			// Print extra newline to avoid mangling `go test -v` final test result output while waiting for final stdin,
-			// which may result in incorrect `gotestsum` reporting
-			fmt.Println()
+			err = d.Confirm(t.Context())
 
 			require.NoError(t, err)
 			require.Equal(t, tt.want, d.Services)

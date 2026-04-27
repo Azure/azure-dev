@@ -62,7 +62,7 @@ func Test_GetAccountDefaults(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		accountDefaults, err := manager.GetAccountDefaults(context.Background())
+		accountDefaults, err := manager.GetAccountDefaults(t.Context())
 		require.NoError(t, err)
 		require.Equal(t, "SUBSCRIPTION_01", accountDefaults.DefaultSubscription.Id)
 		require.Equal(t, "westus", accountDefaults.DefaultLocation.Name)
@@ -87,7 +87,7 @@ func Test_GetAccountDefaults(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		accountDefaults, err := manager.GetAccountDefaults(context.Background())
+		accountDefaults, err := manager.GetAccountDefaults(t.Context())
 		require.NoError(t, err)
 		require.Nil(t, accountDefaults.DefaultSubscription)
 		require.Equal(t, "eastus2", accountDefaults.DefaultLocation.Name)
@@ -121,7 +121,7 @@ func Test_GetAccountDefaults(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		accountDefaults, err := manager.GetAccountDefaults(context.Background())
+		accountDefaults, err := manager.GetAccountDefaults(t.Context())
 		require.Equal(
 			t,
 			&Account{DefaultSubscription: (*Subscription)(nil), DefaultLocation: (&defaultLocation)},
@@ -155,7 +155,7 @@ func Test_GetAccountDefaults(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		accountDefaults, err := manager.GetAccountDefaults(context.Background())
+		accountDefaults, err := manager.GetAccountDefaults(t.Context())
 		require.Nil(t, accountDefaults)
 		require.Error(t, err)
 	})
@@ -175,7 +175,7 @@ func Test_GetSubscriptionsWithDefaultSet(t *testing.T) {
 			NewBypassSubscriptionsCache()))
 		require.NoError(t, err)
 
-		subscriptions, err := manager.GetSubscriptionsWithDefaultSet(context.Background())
+		subscriptions, err := manager.GetSubscriptionsWithDefaultSet(t.Context())
 
 		require.NoError(t, err)
 		require.Len(t, subscriptions, 3)
@@ -212,7 +212,7 @@ func Test_GetSubscriptionsWithDefaultSet(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		subscriptions, err := manager.GetSubscriptionsWithDefaultSet(context.Background())
+		subscriptions, err := manager.GetSubscriptionsWithDefaultSet(t.Context())
 
 		defaultIndex := slices.IndexFunc(subscriptions, func(sub Subscription) bool {
 			return sub.IsDefault
@@ -240,7 +240,7 @@ func Test_GetSubscriptionsWithDefaultSet(t *testing.T) {
 			))
 		require.NoError(t, err)
 
-		subscriptions, err := manager.GetSubscriptionsWithDefaultSet(context.Background())
+		subscriptions, err := manager.GetSubscriptionsWithDefaultSet(t.Context())
 
 		require.Error(t, err)
 		require.Nil(t, subscriptions)
@@ -279,7 +279,7 @@ func Test_GetLocations(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		locations, err := manager.GetLocations(context.Background(), subscription.Id)
+		locations, err := manager.GetLocations(t.Context(), subscription.Id)
 
 		require.NoError(t, err)
 		require.Len(t, locations, 4)
@@ -298,7 +298,7 @@ func Test_GetLocations(t *testing.T) {
 			NewBypassSubscriptionsCache()))
 		require.NoError(t, err)
 
-		locations, err := manager.GetLocations(context.Background(), subscription.Id)
+		locations, err := manager.GetLocations(t.Context(), subscription.Id)
 
 		require.Error(t, err)
 		require.Nil(t, locations)
@@ -318,7 +318,7 @@ func Test_GetLocations(t *testing.T) {
 			NewBypassSubscriptionsCache()))
 		require.NoError(t, err)
 
-		locations, err := manager.GetLocations(context.Background(), subscription.Id)
+		locations, err := manager.GetLocations(t.Context(), subscription.Id)
 
 		require.Error(t, err)
 		require.Nil(t, locations)
@@ -346,7 +346,7 @@ func Test_SetDefaultSubscription(t *testing.T) {
 			NewBypassSubscriptionsCache()))
 		require.NoError(t, err)
 
-		actualSubscription, err := manager.SetDefaultSubscription(context.Background(), expectedSubscription.Id)
+		actualSubscription, err := manager.SetDefaultSubscription(t.Context(), expectedSubscription.Id)
 
 		require.NoError(t, err)
 		require.Equal(t, expectedSubscription, *actualSubscription)
@@ -372,7 +372,7 @@ func Test_SetDefaultSubscription(t *testing.T) {
 			NewBypassSubscriptionsCache()))
 		require.NoError(t, err)
 
-		actualSubscription, err := manager.SetDefaultSubscription(context.Background(), "invalid")
+		actualSubscription, err := manager.SetDefaultSubscription(t.Context(), "invalid")
 
 		require.Error(t, err)
 		require.Nil(t, actualSubscription)
@@ -413,7 +413,7 @@ func Test_SetDefaultLocation(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		location, err := manager.SetDefaultLocation(context.Background(), subscription.Id, expectedLocation)
+		location, err := manager.SetDefaultLocation(t.Context(), subscription.Id, expectedLocation)
 
 		require.NoError(t, err)
 		require.Equal(t, expectedLocation, location.Name)
@@ -435,7 +435,7 @@ func Test_SetDefaultLocation(t *testing.T) {
 			NewBypassSubscriptionsCache()))
 		require.NoError(t, err)
 
-		location, err := manager.SetDefaultLocation(context.Background(), subscription.Id, expectedLocation)
+		location, err := manager.SetDefaultLocation(t.Context(), subscription.Id, expectedLocation)
 
 		require.Error(t, err)
 		require.Nil(t, location)
@@ -462,10 +462,10 @@ func Test_Clear(t *testing.T) {
 		NewBypassSubscriptionsCache()))
 	require.NoError(t, err)
 
-	subscription, err := manager.SetDefaultSubscription(context.Background(), expectedSubscription.Id)
+	subscription, err := manager.SetDefaultSubscription(t.Context(), expectedSubscription.Id)
 	require.NoError(t, err)
 
-	location, err := manager.SetDefaultLocation(context.Background(), subscription.Id, "westus2")
+	location, err := manager.SetDefaultLocation(t.Context(), subscription.Id, "westus2")
 	require.NoError(t, err)
 
 	updatedConfig, err := mockConfig.Load("PATH")
@@ -477,7 +477,7 @@ func Test_Clear(t *testing.T) {
 	require.Equal(t, subscription.Id, configSubscription)
 	require.Equal(t, location.Name, configLocation)
 
-	err = manager.Clear(context.Background())
+	err = manager.Clear(t.Context())
 	require.NoError(t, err)
 
 	clearedConfig, err := mockConfig.Load("PATH")

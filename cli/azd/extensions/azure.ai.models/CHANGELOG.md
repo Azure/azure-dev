@@ -1,6 +1,12 @@
 # Release History
 
 
+## 0.0.6-preview (Unreleased)
+
+### Breaking Changes
+
+- Removed `-e` shorthand for `--project-endpoint`; use `--project-endpoint` instead. This resolves a collision with the azd global `-e/--environment` flag.
+
 ## 0.0.5-preview (2026-03-24)
 
 - Deprecated `-e` shorthand for `--project-endpoint`; use the full flag name instead

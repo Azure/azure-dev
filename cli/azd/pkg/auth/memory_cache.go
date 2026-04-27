@@ -5,6 +5,7 @@ package auth
 
 import (
 	"bytes"
+	"sync"
 )
 
 type fixedMarshaller struct {
@@ -23,14 +24,21 @@ func (f *fixedMarshaller) Unmarshal(cache []byte) error {
 // memoryCache is a simple memory cache that implements Cache. During export, if the cache contents has not changed, the
 // inner cache is not notified of a change.
 type memoryCache struct {
+	mu    sync.RWMutex
 	cache map[string][]byte
 	inner Cache
 }
 
 func (c *memoryCache) Read(key string) ([]byte, error) {
-	if v, has := c.cache[key]; has {
+	c.mu.RLock()
+	v, has := c.cache[key]
+	c.mu.RUnlock()
+
+	if has {
 		return v, nil
-	} else if c.inner != nil {
+	}
+
+	if c.inner != nil {
 		return c.inner.Read(key)
 	}
 
@@ -38,9 +46,10 @@ func (c *memoryCache) Read(key string) ([]byte, error) {
 }
 
 func (c *memoryCache) Set(key string, value []byte) error {
-	old := c.cache[key]
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
-	if bytes.Equal(old, value) {
+	if bytes.Equal(c.cache[key], value) {
 		// no change, nothing more to do.
 		return nil
 	}

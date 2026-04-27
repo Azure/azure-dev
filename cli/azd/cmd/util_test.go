@@ -112,7 +112,7 @@ func TestWarnKeyCaseConflicts(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			mockContext := mocks.NewMockContext(context.Background())
+			mockContext := mocks.NewMockContext(t.Context())
 			// Verify the function doesn't panic with any input
 			warnKeyCaseConflicts(t.Context(), mockContext.Console, tt.dotEnv, tt.key)
 		})
@@ -142,7 +142,7 @@ func TestServiceNameWarningCheck(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			mockContext := mocks.NewMockContext(context.Background())
+			mockContext := mocks.NewMockContext(t.Context())
 			// Should not panic regardless of input
 			serviceNameWarningCheck(mockContext.Console, tt.serviceName, tt.commandName)
 		})
@@ -209,7 +209,7 @@ func TestWithBrowserOverride(t *testing.T) {
 	t.Run("sets_and_retrieves_override", func(t *testing.T) {
 		t.Parallel()
 		var capturedURL string
-		ctx := WithBrowserOverride(context.Background(),
+		ctx := WithBrowserOverride(t.Context(),
 			func(_ context.Context, _ input.Console, url string) {
 				capturedURL = url
 			})
@@ -227,7 +227,7 @@ func TestWithBrowserOverride(t *testing.T) {
 
 	t.Run("nil_context_value_without_override", func(t *testing.T) {
 		t.Parallel()
-		ctx := context.Background()
+		ctx := t.Context()
 		val := ctx.Value(browserOverrideKey{})
 		require.Nil(t, val)
 	})

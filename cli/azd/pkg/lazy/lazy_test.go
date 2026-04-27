@@ -111,6 +111,8 @@ func Test_Lazy_GetValue_Concurrent(t *testing.T) {
 
 	initFn := func() (string, error) {
 		callCount++
+		// justified: simulates a slow initializer so both goroutines are guaranteed to
+		// reach GetValue() before init completes, verifying only one runs the initFn.
 		time.Sleep(time.Millisecond * 200)
 		return expected, nil
 	}

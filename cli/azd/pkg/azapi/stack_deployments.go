@@ -16,10 +16,13 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeploymentstacks"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
@@ -250,7 +253,10 @@ func (d *StackDeployments) DeployToSubscription(
 	parameters azure.ArmParameters,
 	tags map[string]*string,
 	options map[string]any,
-) (*ResourceDeployment, error) {
+) (_ *ResourceDeployment, err error) {
+	ctx, span := tracing.Start(ctx, events.ArmStackDeploySubscriptionEvent)
+	defer func() { span.EndWithStatus(err) }()
+
 	client, err := d.createClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
@@ -266,7 +272,9 @@ func (d *StackDeployments) DeployToSubscription(
 		return nil, err
 	}
 
-	_, err = poller.PollUntilDone(ctx, nil)
+	_, err = poller.PollUntilDone(ctx, &runtime.PollUntilDoneOptions{
+		Frequency: deployPollFrequency,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("deploying to subscription: %w", createDeploymentError(err, DeploymentOperationDeploy))
 	}
@@ -324,7 +332,10 @@ func (d *StackDeployments) DeployToResourceGroup(
 	parameters azure.ArmParameters,
 	tags map[string]*string,
 	options map[string]any,
-) (*ResourceDeployment, error) {
+) (_ *ResourceDeployment, err error) {
+	ctx, span := tracing.Start(ctx, events.ArmStackDeployResourceGroupEvent)
+	defer func() { span.EndWithStatus(err) }()
+
 	client, err := d.createClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
@@ -340,7 +351,9 @@ func (d *StackDeployments) DeployToResourceGroup(
 		return nil, err
 	}
 
-	_, err = poller.PollUntilDone(ctx, nil)
+	_, err = poller.PollUntilDone(ctx, &runtime.PollUntilDoneOptions{
+		Frequency: deployPollFrequency,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("deploying to resource group: %w", createDeploymentError(err, DeploymentOperationDeploy))
 	}
@@ -489,7 +502,9 @@ func (d *StackDeployments) DeleteSubscriptionDeployment(
 		return err
 	}
 
-	_, err = poller.PollUntilDone(ctx, nil)
+	_, err = poller.PollUntilDone(ctx, &runtime.PollUntilDoneOptions{
+		Frequency: deployPollFrequency,
+	})
 	if err != nil {
 		progress.SetProgress(DeleteDeploymentProgress{
 			Name: deploymentName,
@@ -629,7 +644,9 @@ func (d *StackDeployments) DeleteResourceGroupDeployment(
 		return err
 	}
 
-	_, err = poller.PollUntilDone(ctx, nil)
+	_, err = poller.PollUntilDone(ctx, &runtime.PollUntilDoneOptions{
+		Frequency: deployPollFrequency,
+	})
 	if err != nil {
 		progress.SetProgress(DeleteDeploymentProgress{
 			Name: deploymentName,
@@ -666,7 +683,12 @@ func (d *StackDeployments) createClient(ctx context.Context, subscriptionId stri
 		return nil, err
 	}
 
-	return armdeploymentstacks.NewClient(subscriptionId, credential, d.armClientOptions)
+	client, err := armdeploymentstacks.NewClient(subscriptionId, credential, d.armClientOptions)
+	if err != nil {
+		return nil, fmt.Errorf("creating deployment stacks client: %w", err)
+	}
+
+	return client, nil
 }
 
 // Converts from an ARM Extended Deployment to Azd Generic deployment
@@ -795,7 +817,9 @@ func (d *StackDeployments) ValidatePreflightToResourceGroup(
 			createDeploymentError(err, DeploymentOperationValidate),
 		)
 	}
-	_, err = validateResult.PollUntilDone(ctx, nil)
+	_, err = validateResult.PollUntilDone(ctx, &runtime.PollUntilDoneOptions{
+		Frequency: slowPollFrequency,
+	})
 	if err != nil {
 		return fmt.Errorf(
 			"validating deployment to resource group: %w",
@@ -877,7 +901,9 @@ func (d *StackDeployments) ValidatePreflightToSubscription(
 			createDeploymentError(err, DeploymentOperationValidate),
 		)
 	}
-	_, err = validateResult.PollUntilDone(ctx, nil)
+	_, err = validateResult.PollUntilDone(ctx, &runtime.PollUntilDoneOptions{
+		Frequency: slowPollFrequency,
+	})
 	if err != nil {
 		return fmt.Errorf(
 			"validating deployment to subscription: %w",

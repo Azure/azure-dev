@@ -7,12 +7,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.extensions/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/ignore"
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/fatih/color"
 	"github.com/fsnotify/fsnotify"
@@ -28,6 +30,19 @@ func newWatchCommand() *cobra.Command {
 	watchCmd := &cobra.Command{
 		Use:   "watch",
 		Short: "Watches the azd extension project for file changes and rebuilds it.",
+		Long: `Watches the azd extension project for file changes and rebuilds it.
+
+Place a .azdxignore file in your project root to exclude paths from triggering
+rebuilds. It uses standard gitignore syntax (https://git-scm.com/docs/gitignore).
+Patterns from .gitignore are also respected. Both files are additive — a path is
+ignored if it matches either file.
+
+Example .azdxignore:
+  dist/
+  build/
+  *.tmp
+  coverage/
+  !.vscode/launch.json`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			internal.WriteCommandHeader(
 				"Watch and azd extension (azd x watch)",
@@ -71,6 +86,21 @@ func runWatchAction(ctx context.Context, flags *watchFlags) error {
 	}
 	defer watcher.Close()
 
+	// cwd is captured once and used as the immutable root for the entire watch session.
+	// All filepath.Rel calls reference this value so the root cannot drift.
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get current working directory: %w", err)
+	}
+
+	// Load ignore patterns from .azdxignore and .gitignore files.
+	ignoreMatcher, err := ignore.NewMatcher(cwd)
+	if err != nil {
+		return fmt.Errorf("failed to load ignore patterns: %w", err)
+	}
+
+	// Hardcoded folder ignores are kept as a fast-path default — they apply
+	// even when no .azdxignore or .gitignore file exists.
 	ignoredFolders := map[string]struct{}{
 		"bin":          {},
 		"obj":          {},
@@ -92,7 +122,7 @@ func runWatchAction(ctx context.Context, flags *watchFlags) error {
 		"package-lock.json", // Matches package-lock.json files
 	)
 
-	if err := watchRecursive(".", watcher, ignoredFolders); err != nil {
+	if err := watchRecursive(cwd, watcher, ignoredFolders, ignoreMatcher); err != nil {
 		return fmt.Errorf("Error watching for changes: %w", err)
 	}
 
@@ -112,7 +142,7 @@ func runWatchAction(ctx context.Context, flags *watchFlags) error {
 				return nil
 			}
 
-			// Ignore events matching glob patterns
+			// Fast path: ignore events matching hardcoded glob patterns.
 			shouldIgnore := false
 			for _, pattern := range globIgnorePaths {
 				matched, _ := doublestar.PathMatch(pattern, event.Name)
@@ -123,6 +153,25 @@ func runWatchAction(ctx context.Context, flags *watchFlags) error {
 			}
 			if shouldIgnore {
 				continue
+			}
+
+			// Check user-defined ignore patterns (.azdxignore / .gitignore).
+			// Use os.Stat once to determine if the path is a directory.
+			info, statErr := os.Stat(event.Name)
+			isDir := statErr == nil && info.IsDir()
+
+			if relPath, relErr := filepath.Rel(cwd, event.Name); relErr != nil {
+				log.Printf("debug: failed to compute relative path for %s: %v", event.Name, relErr)
+			} else {
+				if ignoreMatcher.IsIgnored(relPath, isDir) {
+					continue
+				}
+				// When the path no longer exists (e.g. Remove event), os.Stat fails
+				// and isDir defaults to false. Re-check as a directory so that
+				// directory-only patterns (trailing slash) still filter the event.
+				if statErr != nil && ignoreMatcher.IsIgnored(relPath, true) {
+					continue
+				}
 			}
 
 			// Collect unique changes
@@ -153,15 +202,31 @@ func runWatchAction(ctx context.Context, flags *watchFlags) error {
 	}
 }
 
-func watchRecursive(root string, watcher *fsnotify.Watcher, ignoredFolders map[string]struct{}) error {
+func watchRecursive(
+	root string,
+	watcher *fsnotify.Watcher,
+	ignoredFolders map[string]struct{},
+	ignoreMatcher *ignore.Matcher,
+) error {
 	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
 		if info.IsDir() {
+			// Check hardcoded folder ignores.
 			if _, has := ignoredFolders[info.Name()]; has {
 				return filepath.SkipDir
 			}
+
+			// Check user-defined ignore patterns (.azdxignore / .gitignore).
+			if relPath, relErr := filepath.Rel(root, path); relErr != nil {
+				log.Printf("debug: failed to compute relative path for %s: %v", path, relErr)
+			} else if relPath != "." {
+				if ignoreMatcher.IsIgnored(relPath, true) {
+					return filepath.SkipDir
+				}
+			}
+
 			err = watcher.Add(path)
 			if err != nil {
 				return fmt.Errorf("failed to watch directory %s: %w", path, err)

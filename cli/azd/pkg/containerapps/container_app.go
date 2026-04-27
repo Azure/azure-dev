@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -33,6 +34,12 @@ import (
 )
 
 const (
+	// containerAppPollFrequency is the polling interval for Container App create/update operations.
+	// Default SDK polling is 30s; Container App updates typically complete in 10-60s, so 5s polling
+	// reduces tail latency by up to 25s per operation while leaving headroom against the ARM
+	// read-rate limit (1200 reads/5min/subscription) during large parallel deployments.
+	containerAppPollFrequency = 5 * time.Second
+
 	pathLatestRevisionName                 = "properties.latestRevisionName"
 	pathTemplate                           = "properties.template"
 	pathTemplateRevisionSuffix             = "properties.template.revisionSuffix"
@@ -184,8 +191,7 @@ func (cas *containerAppService) persistSettings(
 	aca, err := cas.getContainerApp(ctx, subscriptionId, resourceGroupName, appName, options)
 	if err != nil {
 		// On first deploy the app doesn't exist yet (404) — proceed without persisting.
-		var respErr *azcore.ResponseError
-		if errors.As(err, &respErr) && respErr.StatusCode == http.StatusNotFound {
+		if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok && respErr.StatusCode == http.StatusNotFound {
 			return obj, nil
 		}
 
@@ -312,7 +318,9 @@ func (cas *containerAppService) DeployYaml(
 		poller = p
 	}
 
-	_, err = poller.PollUntilDone(ctx, nil)
+	_, err = poller.PollUntilDone(ctx, &runtime.PollUntilDoneOptions{
+		Frequency: containerAppPollFrequency,
+	})
 	if err != nil {
 		return fmt.Errorf("polling for container app update completion: %w", err)
 	}
@@ -535,7 +543,9 @@ func (cas *containerAppService) updateContainerApp(
 		return fmt.Errorf("begin updating ingress traffic: %w", err)
 	}
 
-	_, err = poller.PollUntilDone(ctx, nil)
+	_, err = poller.PollUntilDone(ctx, &runtime.PollUntilDoneOptions{
+		Frequency: containerAppPollFrequency,
+	})
 	if err != nil {
 		return fmt.Errorf("polling for container app update completion: %w", err)
 	}
@@ -767,7 +777,9 @@ func (cas *containerAppService) UpdateContainerAppJobImage(
 		)
 	}
 
-	_, err = poller.PollUntilDone(ctx, nil)
+	_, err = poller.PollUntilDone(ctx, &runtime.PollUntilDoneOptions{
+		Frequency: containerAppPollFrequency,
+	})
 	if err != nil {
 		return fmt.Errorf(
 			"waiting for container app job update: %w", err,

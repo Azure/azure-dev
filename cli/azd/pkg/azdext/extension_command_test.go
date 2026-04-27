@@ -61,7 +61,7 @@ func TestExtensionCommand_PersistentPreRunE_ReadsFlagsIntoContext(t *testing.T) 
 	sub := &cobra.Command{Use: "sub", RunE: func(cmd *cobra.Command, args []string) error { return nil }}
 	cmd.AddCommand(sub)
 
-	cmd.SetContext(context.Background())
+	cmd.SetContext(t.Context())
 	cmd.SetArgs([]string{"sub", "--debug", "--no-prompt", "--environment", "dev"})
 
 	err := cmd.Execute()
@@ -84,7 +84,7 @@ func TestExtensionCommand_EnvVarFallback(t *testing.T) {
 	sub := &cobra.Command{Use: "sub", RunE: func(cmd *cobra.Command, args []string) error { return nil }}
 	cmd.AddCommand(sub)
 
-	cmd.SetContext(context.Background())
+	cmd.SetContext(t.Context())
 	cmd.SetArgs([]string{"sub"})
 
 	err := cmd.Execute()
@@ -105,7 +105,7 @@ func TestExtensionCommand_FlagOverridesEnvVar(t *testing.T) {
 	sub := &cobra.Command{Use: "sub", RunE: func(cmd *cobra.Command, args []string) error { return nil }}
 	cmd.AddCommand(sub)
 
-	cmd.SetContext(context.Background())
+	cmd.SetContext(t.Context())
 	cmd.SetArgs([]string{"sub", "--environment", "from-flag"})
 
 	err := cmd.Execute()
@@ -126,7 +126,7 @@ func TestExtensionCommand_OTelTraceContextExtraction(t *testing.T) {
 	sub := &cobra.Command{Use: "sub", RunE: func(cmd *cobra.Command, args []string) error { return nil }}
 	cmd.AddCommand(sub)
 
-	cmd.SetContext(context.Background())
+	cmd.SetContext(t.Context())
 	cmd.SetArgs([]string{"sub"})
 
 	err := cmd.Execute()
@@ -162,7 +162,7 @@ func TestExtensionCommand_CwdEnvVarFallback(t *testing.T) {
 	sub := &cobra.Command{Use: "sub", RunE: func(cmd *cobra.Command, args []string) error { return nil }}
 	cmd.AddCommand(sub)
 
-	cmd.SetContext(context.Background())
+	cmd.SetContext(t.Context())
 	cmd.SetArgs([]string{"sub"})
 
 	err = cmd.Execute()

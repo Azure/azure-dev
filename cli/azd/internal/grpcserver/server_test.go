@@ -8,7 +8,6 @@
 package grpcserver
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"testing"
@@ -18,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -41,6 +41,7 @@ func Test_Server_Start(t *testing.T) {
 		azdext.UnimplementedAccountServiceServer{},
 		azdext.UnimplementedAiModelServiceServer{},
 		azdext.UnimplementedCopilotServiceServer{},
+		azdext.UnimplementedProvisioningServiceServer{},
 	)
 
 	serverInfo, err := server.Start()
@@ -64,7 +65,7 @@ func Test_Server_Start(t *testing.T) {
 		accessToken, err := GenerateExtensionToken(extension, serverInfo)
 		require.NoError(t, err)
 
-		ctx := azdext.WithAccessToken(context.Background(), accessToken)
+		ctx := azdext.WithAccessToken(t.Context(), accessToken)
 		client, err := azdext.NewAzdClient(azdext.WithAddress(serverInfo.Address))
 		require.NoError(t, err)
 
@@ -86,7 +87,7 @@ func Test_Server_Start(t *testing.T) {
 		accessToken, err := GenerateExtensionToken(extension, invalidServerInfo)
 		require.NoError(t, err)
 
-		ctx := azdext.WithAccessToken(context.Background(), accessToken)
+		ctx := azdext.WithAccessToken(t.Context(), accessToken)
 		client, err := azdext.NewAzdClient(azdext.WithAddress(serverInfo.Address))
 		require.NoError(t, err)
 
@@ -98,7 +99,7 @@ func Test_Server_Start(t *testing.T) {
 
 	t.Run("MissingToken", func(t *testing.T) {
 		// Test for missing authentication token: expect Unauthenticated error.
-		ctx := context.Background()
+		ctx := t.Context()
 		client, err := azdext.NewAzdClient(azdext.WithAddress(serverInfo.Address))
 		require.NoError(t, err)
 
@@ -128,6 +129,7 @@ func Test_Server_StreamInterceptor(t *testing.T) {
 		azdext.UnimplementedAccountServiceServer{},
 		azdext.UnimplementedAiModelServiceServer{},
 		azdext.UnimplementedCopilotServiceServer{},
+		azdext.UnimplementedProvisioningServiceServer{},
 	)
 
 	serverInfo, err := server.Start()
@@ -150,7 +152,7 @@ func Test_Server_StreamInterceptor(t *testing.T) {
 		accessToken, err := GenerateExtensionToken(extension, serverInfo)
 		require.NoError(t, err)
 
-		ctx := azdext.WithAccessToken(context.Background(), accessToken)
+		ctx := azdext.WithAccessToken(t.Context(), accessToken)
 		client, err := azdext.NewAzdClient(azdext.WithAddress(serverInfo.Address))
 		require.NoError(t, err)
 		defer client.Close()
@@ -179,7 +181,7 @@ func Test_Server_StreamInterceptor(t *testing.T) {
 	})
 
 	t.Run("MissingToken", func(t *testing.T) {
-		ctx := context.Background()
+		ctx := t.Context()
 		client, err := azdext.NewAzdClient(azdext.WithAddress(serverInfo.Address))
 		require.NoError(t, err)
 		defer client.Close()
@@ -208,7 +210,7 @@ func Test_Server_StreamInterceptor(t *testing.T) {
 		accessToken, err := GenerateExtensionToken(extension, invalidServerInfo)
 		require.NoError(t, err)
 
-		ctx := azdext.WithAccessToken(context.Background(), accessToken)
+		ctx := azdext.WithAccessToken(t.Context(), accessToken)
 		client, err := azdext.NewAzdClient(azdext.WithAddress(serverInfo.Address))
 		require.NoError(t, err)
 		defer client.Close()
@@ -237,6 +239,7 @@ func Test_wrapErrorWithSuggestion(t *testing.T) {
 		wantContain      string
 		wantSameInstance bool
 		wantGrpcCode     codes.Code
+		wantAuthReason   string
 	}{
 		{
 			name:    "nil error returns nil",
@@ -266,16 +269,18 @@ func Test_wrapErrorWithSuggestion(t *testing.T) {
 			wantContain: "azd auth login",
 		},
 		{
-			name:         "ErrNoCurrentUser returns Unauthenticated",
-			err:          auth.ErrNoCurrentUser,
-			wantContain:  "not logged in",
-			wantGrpcCode: codes.Unauthenticated,
+			name:           "ErrNoCurrentUser returns Unauthenticated",
+			err:            auth.ErrNoCurrentUser,
+			wantContain:    "not logged in",
+			wantGrpcCode:   codes.Unauthenticated,
+			wantAuthReason: azdext.AuthErrorReasonNotLoggedIn,
 		},
 		{
-			name:         "wrapped ErrNoCurrentUser returns Unauthenticated",
-			err:          fmt.Errorf("failed to list subscriptions: %w", auth.ErrNoCurrentUser),
-			wantContain:  "not logged in",
-			wantGrpcCode: codes.Unauthenticated,
+			name:           "wrapped ErrNoCurrentUser returns Unauthenticated",
+			err:            fmt.Errorf("failed to list subscriptions: %w", auth.ErrNoCurrentUser),
+			wantContain:    "not logged in",
+			wantGrpcCode:   codes.Unauthenticated,
+			wantAuthReason: azdext.AuthErrorReasonNotLoggedIn,
 		},
 		{
 			name: "ReLoginRequiredError with suggestion returns Unauthenticated",
@@ -283,8 +288,24 @@ func Test_wrapErrorWithSuggestion(t *testing.T) {
 				Err:        &auth.ReLoginRequiredError{},
 				Suggestion: "login expired, run `azd auth login` to acquire a new token.",
 			},
-			wantContain:  "azd auth login",
-			wantGrpcCode: codes.Unauthenticated,
+			wantContain:    "azd auth login",
+			wantGrpcCode:   codes.Unauthenticated,
+			wantAuthReason: azdext.AuthErrorReasonLoginRequired,
+		},
+		{
+			name: "TokenProtectionBlockedError with suggestion returns Unauthenticated",
+			err: &internal.ErrorWithSuggestion{
+				Err: &auth.AuthFailedError{
+					Parsed: &auth.AadErrorResponse{
+						Error:      "invalid_grant",
+						ErrorCodes: []int{530084},
+					},
+				},
+				Suggestion: "Contact your IT administrator or request a policy exception.",
+			},
+			wantContain:    "policy exception",
+			wantGrpcCode:   codes.Unauthenticated,
+			wantAuthReason: "AADSTS530084",
 		},
 	}
 
@@ -304,6 +325,14 @@ func Test_wrapErrorWithSuggestion(t *testing.T) {
 				st, ok := status.FromError(result)
 				require.True(t, ok, "expected gRPC status error")
 				require.Equal(t, tt.wantGrpcCode, st.Code())
+				if tt.wantAuthReason != "" {
+					details := st.Details()
+					require.Len(t, details, 1)
+					info, ok := details[0].(*errdetails.ErrorInfo)
+					require.True(t, ok, "expected ErrorInfo detail")
+					require.Equal(t, azdext.AuthErrorDomain, info.Domain)
+					require.Equal(t, tt.wantAuthReason, info.Reason)
+				}
 			}
 		})
 	}

@@ -4,7 +4,6 @@
 package azure
 
 import (
-	"context"
 	"testing"
 
 	"azure.ai.finetune/pkg/models"
@@ -91,7 +90,7 @@ func TestAzureProvider_DeployModel_Validation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := provider.DeployModel(context.Background(), tt.config)
+			result, err := provider.DeployModel(t.Context(), tt.config)
 
 			require.Error(t, err)
 			require.Nil(t, result)
@@ -107,7 +106,7 @@ func TestAzureProvider_DeployModel_ValidationOrder(t *testing.T) {
 	// Empty config should fail on model name first
 	emptyConfig := &models.DeploymentRequest{}
 
-	result, err := provider.DeployModel(context.Background(), emptyConfig)
+	result, err := provider.DeployModel(t.Context(), emptyConfig)
 
 	require.Error(t, err)
 	require.Nil(t, result)

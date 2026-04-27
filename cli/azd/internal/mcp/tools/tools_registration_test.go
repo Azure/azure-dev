@@ -4,7 +4,6 @@
 package tools
 
 import (
-	"context"
 	"encoding/json"
 	"testing"
 
@@ -83,7 +82,7 @@ func TestNewAzdYamlSchemaTool(t *testing.T) {
 
 func TestHandleAzdErrorTroubleShooting(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := t.Context()
 	req := mcp.CallToolRequest{}
 
 	result, err := handleAzdErrorTroubleShooting(ctx, req)
@@ -101,7 +100,7 @@ func TestHandleAzdErrorTroubleShooting(t *testing.T) {
 
 func TestHandleAzdProvisionCommonError(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := t.Context()
 	req := mcp.CallToolRequest{}
 
 	result, err := handleAzdProvisionCommonError(ctx, req)

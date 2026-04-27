@@ -4,7 +4,6 @@
 package git
 
 import (
-	"context"
 	"errors"
 	"slices"
 	"testing"
@@ -126,7 +125,7 @@ func TestIsDirty(t *testing.T) {
 			})
 
 			cli := NewCli(cmdRunner)
-			dirty, err := cli.IsDirty(context.Background(), ".")
+			dirty, err := cli.IsDirty(t.Context(), ".")
 
 			if tt.wantErr != nil {
 				require.ErrorIs(t, err, tt.wantErr)

@@ -1,0 +1,5 @@
+template:
+  kind: prompt
+  name: minimal-agent
+  model:
+    id: gpt-4o-mini

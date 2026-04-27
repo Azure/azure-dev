@@ -23,7 +23,11 @@
             ProductVersion=$(ProductVersion);
             ReleaseBuild=$(ReleaseBuild);
         </DefineConstants>
-        <SuppressIces Condition="'$(Platform)' == 'arm' Or '$(Platform)' == 'arm64'">ICE39</SuppressIces>
+        <!-- ICE40: REINSTALLMODE=amus is intentional — forces overwrite of unversioned files (azd.exe). -->
+        <!-- ICE105: Per-user default with optional per-machine (ALLUSERS=2) requires both HKCU and HKLM -->
+        <!--         registry entries — HKLM search (azd.wxs:74) and conditional HKLM write (azd.wxs:104-105). -->
+        <SuppressIces>ICE40;ICE105</SuppressIces>
+        <SuppressIces Condition="'$(Platform)' == 'arm' Or '$(Platform)' == 'arm64'">$(SuppressIces);ICE39</SuppressIces>
         <DefineSolutionProperties>false</DefineSolutionProperties>
         <WixTargetsPath Condition="'$(WixTargetsPath)' == ''">$(MSBuildExtensionsPath)\Microsoft\WiX\v3.x\Wix.targets</WixTargetsPath>
     </PropertyGroup>

@@ -53,7 +53,7 @@ Flags
     -C, --cwd string         	: Sets the current working directory.
         --debug              	: Enables debugging and diagnostics logging.
     -e, --environment string 	: The name of the environment to use.
-        --no-prompt          	: Accepts the default value instead of prompting, or it fails if there is no default.
+        --no-prompt          	: Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
 
 Global Flags
         --docs 	: Opens the documentation for azd in your web browser.

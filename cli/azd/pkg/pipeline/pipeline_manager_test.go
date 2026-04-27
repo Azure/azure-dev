@@ -36,7 +36,7 @@ import (
 
 func Test_PipelineManager_Initialize(t *testing.T) {
 	tempDir := t.TempDir()
-	ctx := context.Background()
+	ctx := t.Context()
 	azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
 	mockContext := resetContext(tempDir, ctx)
 
@@ -940,6 +940,11 @@ func (m *mockPrompter) PromptResourceGroupFrom(
 // PromptSubscription implements prompt.Prompter.
 func (m *mockPrompter) PromptSubscription(ctx context.Context, msg string) (subscriptionId string, err error) {
 	return "00000000-0000-0000-0000-000000000000", nil
+}
+
+// IsNoPromptMode implements prompt.Prompter.
+func (m *mockPrompter) IsNoPromptMode() bool {
+	return false
 }
 
 type mockUserConfigManager struct {

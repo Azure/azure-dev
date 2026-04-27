@@ -1,6 +1,12 @@
 # Release History
 
 
+## 0.0.18-preview (Unreleased)
+
+### Breaking Changes
+
+- Removed `-e` shorthand for `--project-endpoint`; use `--project-endpoint` instead. This resolves a collision with the azd global `-e/--environment` flag.
+
 ## 0.0.17-preview (2026-02-20)
 
 - Add multi-grader support for reinforcement fine-tuning

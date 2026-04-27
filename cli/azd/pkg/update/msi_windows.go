@@ -171,8 +171,16 @@ func buildInstallScriptArgs(channel Channel) []string {
 		scriptArgs = " -Version 'stable'"
 	}
 
+	// Reset PSModulePath to the Windows PowerShell 5.1 system modules directory.
+	// When launched via cmd.exe from a PowerShell 7 parent (e.g. VSCode or Windows Terminal),
+	// PS5.1 inherits PS7's PSModulePath which includes Core-edition modules that fail to load
+	// in the Desktop edition runtime, causing Get-AuthenticodeSignature to fail with
+	// "CouldNotAutoloadMatchingModule".
+	resetPSModulePath := "$env:PSModulePath = Join-Path $PSHOME 'Modules'; "
+
 	script := fmt.Sprintf(
-		"$tmpScript = Join-Path $env:TEMP 'azd-install.ps1'; "+
+		resetPSModulePath+
+			"$tmpScript = Join-Path $env:TEMP 'azd-install.ps1'; "+
 			"Invoke-RestMethod '%s' -OutFile $tmpScript; "+
 			"& $tmpScript%s; "+
 			"Remove-Item $tmpScript -Force -ErrorAction SilentlyContinue",

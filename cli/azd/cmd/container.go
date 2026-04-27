@@ -821,6 +821,9 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		language.HookKindBash:       bash.NewExecutor,
 		language.HookKindPowerShell: powershell.NewExecutor,
 		language.HookKindPython:     language.NewPythonExecutor,
+		language.HookKindJavaScript: language.NewJavaScriptExecutor,
+		language.HookKindTypeScript: language.NewTypeScriptExecutor,
+		language.HookKindDotNet:     language.NewDotNetExecutor,
 	}
 
 	for kind, constructor := range hookExecutorMap {
@@ -996,6 +999,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(grpcserver.NewExtensionService)
 	container.MustRegisterSingleton(grpcserver.NewServiceTargetService)
 	container.MustRegisterSingleton(grpcserver.NewFrameworkService)
+	container.MustRegisterSingleton(grpcserver.NewProvisioningService)
 	container.MustRegisterSingleton(grpcserver.NewAiModelService)
 	container.MustRegisterScoped(grpcserver.NewCopilotService)
 

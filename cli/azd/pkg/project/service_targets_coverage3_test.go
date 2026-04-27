@@ -41,6 +41,8 @@ func Test_slotEnvVarNameForService_Coverage3(t *testing.T) {
 		{"withHyphens", "my-web-app", "AZD_DEPLOY_MY_WEB_APP_SLOT_NAME"},
 		{"uppercase", "MyApp", "AZD_DEPLOY_MYAPP_SLOT_NAME"},
 		{"mixed", "my-App-2", "AZD_DEPLOY_MY_APP_2_SLOT_NAME"},
+		{"withSpaces", "api and frontend", "AZD_DEPLOY_API_AND_FRONTEND_SLOT_NAME"},
+		{"spacesAndHyphens", "my api-service", "AZD_DEPLOY_MY_API_SERVICE_SLOT_NAME"},
 	}
 
 	for _, tt := range tests {

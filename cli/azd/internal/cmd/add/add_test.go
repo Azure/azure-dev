@@ -4,7 +4,6 @@
 package add
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -207,7 +206,7 @@ func TestEnsureCompatibleProject(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			ctx := context.Background()
+			ctx := t.Context()
 			prjConfig := tt.setupFunc(t)
 
 			// Create a mock ImportManager with minimal setup

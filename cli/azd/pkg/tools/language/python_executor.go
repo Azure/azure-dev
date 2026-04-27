@@ -5,7 +5,6 @@ package language
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,26 +16,31 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/python"
 )
 
+// pythonHookConfig holds the executor-specific configuration
+// deserialized from the hook's "config" property bag.
+type pythonHookConfig struct {
+	// VirtualEnvName overrides the auto-detected virtual
+	// environment directory name (e.g. ".venv", "my_env").
+	// Must be a plain directory name with no path separators.
+	VirtualEnvName string `json:"virtualEnvName"`
+}
+
 // pythonTools abstracts the Python CLI operations needed by
 // pythonExecutor, decoupling it from the concrete [python.Cli]
 // for testability. [python.Cli] satisfies this interface.
 type pythonTools interface {
 	CheckInstalled(ctx context.Context) error
-	CreateVirtualEnv(
+	EnsureVirtualEnv(
 		ctx context.Context,
 		workingDir, name string,
 		env []string,
 	) error
-	InstallRequirements(
+	InstallDependencies(
 		ctx context.Context,
-		workingDir, environment, requirementFile string,
+		dir, venvName, depFile string,
 		env []string,
 	) error
-	InstallProject(
-		ctx context.Context,
-		workingDir, environment string,
-		env []string,
-	) error
+	ResolveCommand() (string, error)
 }
 
 // pythonExecutor implements [tools.HookExecutor] for Python scripts.
@@ -75,14 +79,16 @@ func newPythonExecutorInternal(
 // Prepare verifies that Python is installed and, when a project
 // file is found, creates a virtual environment and installs
 // dependencies. The venv naming convention follows
-// [framework_service_python.go]: {projectDirName}_env.
+// [python.VenvNameForDir]: {projectDirName}_env.
 //
-// Before creating a new venv, Prepare checks for an existing
-// virtual environment — either via the VIRTUAL_ENV environment
-// variable or well-known directory names (.venv, venv) in the
-// project path. When an existing venv is detected, creation is
-// skipped but dependency installation still runs when a Python
-// project file is present and the venv is inside the project.
+// An explicit virtualEnvName in the hook config always takes
+// precedence over auto-detection. When no config override is
+// set, Prepare checks for an existing virtual environment —
+// either via the VIRTUAL_ENV environment variable or well-known
+// directory names (.venv, venv) in the project path. When an
+// existing venv is detected, creation is skipped but dependency
+// installation still runs when a Python project file is present
+// and the venv is inside the project.
 func (e *pythonExecutor) Prepare(
 	ctx context.Context,
 	scriptPath string,
@@ -109,34 +115,59 @@ func (e *pythonExecutor) Prepare(
 		)
 	}
 
-	// 3. Detect existing virtual environment (VIRTUAL_ENV
-	//    env var or well-known directories).
-	if existing := detectExistingVenv(
-		execCtx, projCtx,
-	); existing != "" {
-		e.venvPath = existing
+	// 3. Parse config early — an explicit virtualEnvName
+	//    takes priority over auto-detected venvs.
+	cfg, err := tools.UnmarshalHookConfig[pythonHookConfig](
+		execCtx.Config,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"parsing python hook config: %w", err,
+		)
+	}
 
-		// Still install deps when a Python project file
-		// exists and the venv lives inside projectDir (so
-		// the python CLI can locate the activation script).
-		if projCtx != nil &&
-			projCtx.Language == HookKindPython {
-			if name, ok := relativeVenvName(
-				projCtx.ProjectDir, existing,
-			); ok {
-				depFile := filepath.Base(
-					projCtx.DependencyFile,
-				)
-				if err := e.installDeps(
-					ctx, projCtx.ProjectDir,
-					name, depFile,
-					execCtx.EnvVars,
-				); err != nil {
-					return err
+	hasConfigVenv := cfg.VirtualEnvName != ""
+	if hasConfigVenv {
+		if err := validateVenvName(
+			cfg.VirtualEnvName,
+		); err != nil {
+			return err
+		}
+	}
+
+	// 4. Detect existing virtual environment (VIRTUAL_ENV
+	//    env var or well-known directories). Skip when
+	//    config explicitly specifies a venv name — the
+	//    user's override should always win.
+	if !hasConfigVenv {
+		if existing := detectExistingVenv(
+			execCtx, projCtx,
+		); existing != "" {
+			e.venvPath = existing
+
+			// Still install deps when a Python project
+			// file exists and the venv lives inside
+			// projectDir (so the python CLI can locate
+			// the activation script).
+			if projCtx != nil &&
+				projCtx.Language == HookKindPython {
+				if name, ok := relativeVenvName(
+					projCtx.ProjectDir, existing,
+				); ok {
+					depFile := filepath.Base(
+						projCtx.DependencyFile,
+					)
+					if err := e.pythonCli.InstallDependencies(
+						ctx, projCtx.ProjectDir,
+						name, depFile,
+						execCtx.EnvVars,
+					); err != nil {
+						return err
+					}
 				}
 			}
+			return nil
 		}
-		return nil
 	}
 
 	// No project file — run with system Python directly.
@@ -151,102 +182,37 @@ func (e *pythonExecutor) Prepare(
 		return nil
 	}
 
-	// 4. Set up virtual environment.
-	venvName := venvNameForDir(projCtx.ProjectDir)
-	venvPath := filepath.Join(
-		projCtx.ProjectDir, venvName,
-	)
+	// 5. Resolve virtual environment name. Use the
+	//    config value if provided, otherwise fall back
+	//    to the directory-based default.
+	var venvName string
+	if hasConfigVenv {
+		venvName = cfg.VirtualEnvName
+	} else {
+		venvName = python.VenvNameForDir(
+			projCtx.ProjectDir,
+		)
+	}
 
-	if err := e.ensureVenv(
+	if err := e.pythonCli.EnsureVirtualEnv(
 		ctx, projCtx.ProjectDir,
-		venvName, venvPath, execCtx.EnvVars,
+		venvName, execCtx.EnvVars,
 	); err != nil {
 		return err
 	}
 
-	// 5. Install dependencies from the discovered file.
+	// 6. Install dependencies from the discovered file.
 	depFile := filepath.Base(projCtx.DependencyFile)
-	if err := e.installDeps(
+	if err := e.pythonCli.InstallDependencies(
 		ctx, projCtx.ProjectDir,
 		venvName, depFile, execCtx.EnvVars,
 	); err != nil {
 		return err
 	}
 
-	e.venvPath = venvPath
-	return nil
-}
-
-// ensureVenv creates the virtual environment if it does not
-// already exist. If the venv directory exists, creation is
-// skipped. Non-existence errors (e.g. permission denied) are
-// propagated immediately.
-func (e *pythonExecutor) ensureVenv(
-	ctx context.Context,
-	projectDir, venvName, venvPath string,
-	envVars []string,
-) error {
-	info, statErr := os.Stat(venvPath)
-	if statErr == nil {
-		if !info.IsDir() {
-			return fmt.Errorf(
-				"venv path %q exists but is not a directory",
-				venvPath,
-			)
-		}
-		// Venv directory already exists — skip creation.
-		return nil
-	}
-
-	if !errors.Is(statErr, os.ErrNotExist) {
-		return fmt.Errorf(
-			"virtual environment at %q is not accessible "+
-				"(check file permissions): %w",
-			venvPath, statErr,
-		)
-	}
-
-	if err := e.pythonCli.CreateVirtualEnv(
-		ctx, projectDir, venvName, envVars,
-	); err != nil {
-		return fmt.Errorf(
-			"creating python virtual environment at %q failed. "+
-				"Ensure Python 3.3+ is installed with the venv module: %w",
-			filepath.Join(projectDir, venvName), err,
-		)
-	}
-	return nil
-}
-
-// installDeps installs Python dependencies from the given file
-// into the virtual environment identified by venvName.
-func (e *pythonExecutor) installDeps(
-	ctx context.Context,
-	projectDir, venvName, depFile string,
-	envVars []string,
-) error {
-	switch depFile {
-	case "requirements.txt":
-		if err := e.pythonCli.InstallRequirements(
-			ctx, projectDir, venvName, depFile, envVars,
-		); err != nil {
-			return fmt.Errorf(
-				"installing python requirements from %s. "+
-					"Check that the file is valid and all packages are available: %w",
-				depFile, err,
-			)
-		}
-	case "pyproject.toml":
-		if err := e.pythonCli.InstallProject(
-			ctx, projectDir, venvName, envVars,
-		); err != nil {
-			return fmt.Errorf(
-				"installing python project from pyproject.toml. "+
-					"Check the [build-system] section and ensure pip >= 21.3: %w",
-				err,
-			)
-		}
-	}
+	e.venvPath = filepath.Join(
+		projCtx.ProjectDir, venvName,
+	)
 	return nil
 }
 
@@ -292,43 +258,24 @@ func (e *pythonExecutor) Cleanup(_ context.Context) error {
 
 // resolvePythonPath returns the path to the Python executable.
 // When a virtual environment was configured by [Prepare], it
-// returns the venv's Python binary; otherwise it falls back to
-// the system-level Python command.
+// returns the venv's Python binary via [python.VenvPythonPath];
+// otherwise it falls back to the system-level Python command
+// via [pythonTools.ResolveCommand].
 func (e *pythonExecutor) resolvePythonPath() string {
 	if e.venvPath != "" {
+		return python.VenvPythonPath(e.venvPath)
+	}
+	cmd, err := e.pythonCli.ResolveCommand()
+	if err != nil {
+		// Prepare() validates Python is installed, so
+		// this should be unreachable. Fall back to the
+		// platform-conventional command name.
 		if runtime.GOOS == "windows" {
-			return filepath.Join(
-				e.venvPath, "Scripts", "python.exe",
-			)
+			return "python"
 		}
-		return filepath.Join(e.venvPath, "bin", "python")
-	}
-	return resolvePythonCmd(e.commandRunner)
-}
-
-// resolvePythonCmd returns the platform-appropriate Python
-// command name, following the same resolution strategy as
-// [python.Cli]: on Windows it prefers "py" (PEP 397 launcher),
-// falling back to "python"; on other platforms it uses "python3".
-func resolvePythonCmd(
-	commandRunner exec.CommandRunner,
-) string {
-	if runtime.GOOS == "windows" {
-		// Try py launcher first (PEP 397), then python.
-		for _, cmd := range []string{"py", "python"} {
-			if commandRunner.ToolInPath(cmd) == nil {
-				return cmd
-			}
-		}
-		// Fallback even if not found — Prepare() will catch this.
-		return "python"
-	}
-	// Unix: python3 is the standard command.
-	if commandRunner.ToolInPath("python3") == nil {
 		return "python3"
 	}
-	// Fallback — Prepare() will catch missing Python.
-	return "python3"
+	return cmd
 }
 
 // detectExistingVenv checks for an active or pre-existing virtual
@@ -402,15 +349,27 @@ func relativeVenvName(
 	return rel, true
 }
 
-// venvNameForDir computes a virtual environment directory name
-// from the given project directory path. It follows the naming
-// convention in [framework_service_python.go]: {baseName}_env.
-func venvNameForDir(projectDir string) string {
-	trimmed := strings.TrimSpace(projectDir)
-	if len(trimmed) > 0 &&
-		trimmed[len(trimmed)-1] == os.PathSeparator {
-		trimmed = trimmed[:len(trimmed)-1]
+// validateVenvName checks that the user-supplied virtual
+// environment name is a plain directory name — no path
+// separators or traversal components are allowed.
+func validateVenvName(name string) error {
+	if strings.TrimSpace(name) == "" {
+		return fmt.Errorf(
+			"virtualEnvName must not be empty",
+		)
 	}
-	_, base := filepath.Split(trimmed)
-	return base + "_env"
+	if name == "." || name == ".." {
+		return fmt.Errorf(
+			"virtualEnvName %q is not a valid "+
+				"directory name", name,
+		)
+	}
+	if strings.ContainsAny(name, "/\\") ||
+		strings.ContainsRune(name, os.PathSeparator) {
+		return fmt.Errorf(
+			"virtualEnvName %q must not contain "+
+				"path separators", name,
+		)
+	}
+	return nil
 }

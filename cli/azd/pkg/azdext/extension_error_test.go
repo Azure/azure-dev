@@ -9,8 +9,10 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -53,11 +55,18 @@ func TestExtensionError_RoundTrip(t *testing.T) {
 				StatusCode:  429,
 				ServiceName: "openai.azure.com",
 				Suggestion:  "Retry with exponential backoff",
+				Links: []errorhandler.ErrorLink{{
+					URL:   "https://aka.ms/azd-errors#rate-limit",
+					Title: "Rate limit troubleshooting",
+				}},
 			},
 			verify: func(t *testing.T, protoErr *ExtensionError, goErr error) {
 				assert.Equal(t, "Rate limit exceeded", protoErr.GetMessage())
 				assert.Equal(t, "Retry with exponential backoff", protoErr.GetSuggestion())
 				assert.Equal(t, ErrorOrigin_ERROR_ORIGIN_SERVICE, protoErr.GetOrigin())
+				require.Len(t, protoErr.GetLinks(), 1)
+				assert.Equal(t, "https://aka.ms/azd-errors#rate-limit", protoErr.GetLinks()[0].GetUrl())
+				assert.Equal(t, "Rate limit troubleshooting", protoErr.GetLinks()[0].GetTitle())
 
 				svcDetail := protoErr.GetServiceError()
 				require.NotNil(t, svcDetail)
@@ -72,6 +81,9 @@ func TestExtensionError_RoundTrip(t *testing.T) {
 				assert.Equal(t, 429, svcErr.StatusCode)
 				assert.Equal(t, "openai.azure.com", svcErr.ServiceName)
 				assert.Equal(t, "Retry with exponential backoff", svcErr.Suggestion)
+				require.Len(t, svcErr.Links, 1)
+				assert.Equal(t, "https://aka.ms/azd-errors#rate-limit", svcErr.Links[0].URL)
+				assert.Equal(t, "Rate limit troubleshooting", svcErr.Links[0].Title)
 			},
 		},
 		{
@@ -81,10 +93,16 @@ func TestExtensionError_RoundTrip(t *testing.T) {
 				Code:       "invalid_config",
 				Category:   LocalErrorCategoryValidation,
 				Suggestion: "Add the missing required field",
+				Links: []errorhandler.ErrorLink{{
+					URL:   "https://aka.ms/azd-errors#invalid-config",
+					Title: "Invalid config reference",
+				}},
 			},
 			verify: func(t *testing.T, protoErr *ExtensionError, goErr error) {
 				assert.Equal(t, ErrorOrigin_ERROR_ORIGIN_LOCAL, protoErr.GetOrigin())
 				assert.Equal(t, "Add the missing required field", protoErr.GetSuggestion())
+				require.Len(t, protoErr.GetLinks(), 1)
+				assert.Equal(t, "https://aka.ms/azd-errors#invalid-config", protoErr.GetLinks()[0].GetUrl())
 
 				localDetail := protoErr.GetLocalError()
 				require.NotNil(t, localDetail)
@@ -96,6 +114,8 @@ func TestExtensionError_RoundTrip(t *testing.T) {
 				assert.Equal(t, "invalid_config", localErr.Code)
 				assert.Equal(t, LocalErrorCategoryValidation, localErr.Category)
 				assert.Equal(t, "Add the missing required field", localErr.Suggestion)
+				require.Len(t, localErr.Links, 1)
+				assert.Equal(t, "Invalid config reference", localErr.Links[0].Title)
 			},
 		},
 		{
@@ -119,11 +139,77 @@ func TestExtensionError_RoundTrip(t *testing.T) {
 			},
 		},
 		{
-			name:     "GrpcUnauthenticatedError",
-			inputErr: status.Error(codes.Unauthenticated, "not logged in, run `azd auth login` to login"),
+			name: "GrpcUnauthenticatedError",
+			inputErr: mustAuthStatusError(
+				codes.Unauthenticated,
+				AuthErrorReasonNotLoggedIn,
+				"not logged in, run `azd auth login` to login",
+			),
 			verify: func(t *testing.T, protoErr *ExtensionError, goErr error) {
 				assert.Equal(t, ErrorOrigin_ERROR_ORIGIN_LOCAL, protoErr.GetOrigin())
 				assert.Contains(t, protoErr.GetMessage(), "not logged in")
+
+				localDetail := protoErr.GetLocalError()
+				require.NotNil(t, localDetail)
+				assert.Equal(t, "not_logged_in", localDetail.GetCode())
+				assert.Equal(t, "auth", localDetail.GetCategory())
+
+				var localErr *LocalError
+				require.ErrorAs(t, goErr, &localErr)
+				assert.Equal(t, LocalErrorCategoryAuth, localErr.Category)
+				assert.Equal(t, "not_logged_in", localErr.Code)
+			},
+		},
+		{
+			name: "WrappedGrpcUnauthenticatedError",
+			inputErr: fmt.Errorf(
+				"failed to prompt: %w",
+				mustAuthStatusError(
+					codes.Unauthenticated,
+					"AADSTS530084",
+					"AADSTS530084: blocked by token protection",
+				),
+			),
+			verify: func(t *testing.T, protoErr *ExtensionError, goErr error) {
+				assert.Equal(t, ErrorOrigin_ERROR_ORIGIN_LOCAL, protoErr.GetOrigin())
+				assert.Equal(t, "AADSTS530084: blocked by token protection", protoErr.GetMessage())
+
+				localDetail := protoErr.GetLocalError()
+				require.NotNil(t, localDetail)
+				// AAD-originated reasons collapse to the generic "auth_failed" code; the raw
+				// "AADSTS530084" reason remains available to extensions via the gRPC ErrorInfo.
+				assert.Equal(t, "auth_failed", localDetail.GetCode())
+				assert.Equal(t, "auth", localDetail.GetCategory())
+			},
+		},
+		{
+			name: "GrpcUnauthenticatedLoginRequiredError",
+			inputErr: mustAuthStatusError(
+				codes.Unauthenticated,
+				AuthErrorReasonLoginRequired,
+				"AADSTS70043: token expired\nlogin expired, run `azd auth login`",
+			),
+			verify: func(t *testing.T, protoErr *ExtensionError, goErr error) {
+				assert.Equal(t, ErrorOrigin_ERROR_ORIGIN_LOCAL, protoErr.GetOrigin())
+				assert.Contains(t, protoErr.GetMessage(), "login expired")
+
+				localDetail := protoErr.GetLocalError()
+				require.NotNil(t, localDetail)
+				assert.Equal(t, "login_required", localDetail.GetCode())
+				assert.Equal(t, "auth", localDetail.GetCategory())
+
+				var localErr *LocalError
+				require.ErrorAs(t, goErr, &localErr)
+				assert.Equal(t, LocalErrorCategoryAuth, localErr.Category)
+				assert.Equal(t, "login_required", localErr.Code)
+			},
+		},
+		{
+			name:     "GrpcUnauthenticatedWithoutAuthDetailsFallsBackToAuthFailed",
+			inputErr: status.Error(codes.Unauthenticated, "generic auth problem"),
+			verify: func(t *testing.T, protoErr *ExtensionError, goErr error) {
+				assert.Equal(t, ErrorOrigin_ERROR_ORIGIN_LOCAL, protoErr.GetOrigin())
+				assert.Equal(t, "generic auth problem", protoErr.GetMessage())
 
 				localDetail := protoErr.GetLocalError()
 				require.NotNil(t, localDetail)
@@ -134,19 +220,6 @@ func TestExtensionError_RoundTrip(t *testing.T) {
 				require.ErrorAs(t, goErr, &localErr)
 				assert.Equal(t, LocalErrorCategoryAuth, localErr.Category)
 				assert.Equal(t, "auth_failed", localErr.Code)
-			},
-		},
-		{
-			name:     "WrappedGrpcUnauthenticatedError",
-			inputErr: fmt.Errorf("failed to prompt: %w", status.Error(codes.Unauthenticated, "login expired")),
-			verify: func(t *testing.T, protoErr *ExtensionError, goErr error) {
-				assert.Equal(t, ErrorOrigin_ERROR_ORIGIN_LOCAL, protoErr.GetOrigin())
-				assert.Equal(t, "login expired", protoErr.GetMessage())
-
-				localDetail := protoErr.GetLocalError()
-				require.NotNil(t, localDetail)
-				assert.Equal(t, "auth_failed", localDetail.GetCode())
-				assert.Equal(t, "auth", localDetail.GetCategory())
 			},
 		},
 	}
@@ -168,4 +241,46 @@ func TestExtensionError_RoundTrip(t *testing.T) {
 			tt.verify(t, protoErr, goErr)
 		})
 	}
+}
+
+func TestUnwrapError_EmptyMessagePreservesStructuredError(t *testing.T) {
+	protoErr := &ExtensionError{
+		Origin: ErrorOrigin_ERROR_ORIGIN_LOCAL,
+		Source: &ExtensionError_LocalError{
+			LocalError: &LocalErrorDetail{
+				Code:     "empty_message",
+				Category: "validation",
+			},
+		},
+		Suggestion: "Fill in the required setting",
+		Links: []*ErrorLink{{
+			Url:   "https://aka.ms/azd-errors#empty-message",
+			Title: "Validation troubleshooting",
+		}},
+	}
+
+	err := UnwrapError(protoErr)
+	require.Error(t, err)
+
+	localErr, ok := errors.AsType[*LocalError](err)
+	require.True(t, ok)
+	assert.Empty(t, localErr.Message)
+	assert.Equal(t, "empty_message", localErr.Code)
+	assert.Equal(t, LocalErrorCategoryValidation, localErr.Category)
+	assert.Equal(t, "Fill in the required setting", localErr.Suggestion)
+	require.Len(t, localErr.Links, 1)
+	assert.Equal(t, "Validation troubleshooting", localErr.Links[0].Title)
+}
+
+func mustAuthStatusError(code codes.Code, reason, message string) error {
+	st := status.New(code, message)
+	withDetails, err := st.WithDetails(&errdetails.ErrorInfo{
+		Reason: reason,
+		Domain: AuthErrorDomain,
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	return withDetails.Err()
 }

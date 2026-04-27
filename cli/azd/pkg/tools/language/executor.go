@@ -22,15 +22,12 @@ const (
 	// HookKindPowerShell identifies PowerShell scripts (.ps1 files).
 	HookKindPowerShell HookKind = "pwsh"
 	// HookKindJavaScript identifies JavaScript scripts (.js files).
-	// Not yet supported — IoC resolution will fail with a descriptive error.
 	HookKindJavaScript HookKind = "js"
 	// HookKindTypeScript identifies TypeScript scripts (.ts files).
-	// Not yet supported — IoC resolution will fail with a descriptive error.
 	HookKindTypeScript HookKind = "ts"
 	// HookKindPython identifies Python scripts (.py files).
 	HookKindPython HookKind = "python"
 	// HookKindDotNet identifies .NET (C#) scripts (.cs files).
-	// Not yet supported — IoC resolution will fail with a descriptive error.
 	HookKindDotNet HookKind = "dotnet"
 )
 

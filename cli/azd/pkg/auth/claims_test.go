@@ -12,8 +12,10 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -271,6 +273,36 @@ func TestMemoryCache_ReadAndSet(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, []byte("inner-val"), val)
 	})
+
+	t.Run("concurrent_read_and_set", func(t *testing.T) {
+		// Use an inner cache to exercise the full Set path (read old → inner.Set → map write).
+		inner := &memoryCache{cache: map[string][]byte{}}
+		mc := &memoryCache{cache: map[string][]byte{}, inner: inner}
+
+		var wg sync.WaitGroup
+		for i := range 8 {
+			writerID := i
+			wg.Go(func() {
+				for j := range 200 {
+					value := fmt.Appendf(nil, "value-%d-%d", writerID, j)
+					_ = mc.Set("shared-key", value)
+					_, _ = mc.Read("shared-key")
+				}
+			})
+		}
+
+		wg.Wait()
+
+		// Both the in-memory map and the inner cache must agree.
+		val, err := mc.Read("shared-key")
+		require.NoError(t, err)
+		assert.NotEmpty(t, val)
+
+		innerVal, err := inner.Read("shared-key")
+		require.NoError(t, err)
+		assert.Equal(t, val, innerVal)
+	})
+
 }
 
 // ---------- fixedMarshaller ----------
@@ -399,13 +431,13 @@ func TestReLoginRequiredError_NonRetriable(t *testing.T) {
 	e.NonRetriable() // marker — should not panic
 }
 
-func TestNewReLoginRequiredError(t *testing.T) {
+func TestNewActionableAuthError_ClaimsScenarios(t *testing.T) {
 	t.Parallel()
 
 	t.Run("nil_response_returns_false", func(t *testing.T) {
 		t.Parallel()
-		err, ok := newReLoginRequiredError(
-			nil, nil, cloud.AzurePublic())
+		err, ok := newActionableAuthError(
+			nil, nil, cloud.AzurePublic(), "", nil)
 		assert.Nil(t, err)
 		assert.False(t, ok)
 	})
@@ -416,8 +448,8 @@ func TestNewReLoginRequiredError(t *testing.T) {
 			Error:            "server_error",
 			ErrorDescription: "something else",
 		}
-		err, ok := newReLoginRequiredError(
-			resp, nil, cloud.AzurePublic())
+		err, ok := newActionableAuthError(
+			resp, nil, cloud.AzurePublic(), "", nil)
 		assert.Nil(t, err)
 		assert.False(t, ok)
 	})
@@ -428,10 +460,12 @@ func TestNewReLoginRequiredError(t *testing.T) {
 			Error:            "invalid_grant",
 			ErrorDescription: "AADSTS700082: expired",
 		}
-		err, ok := newReLoginRequiredError(
+		err, ok := newActionableAuthError(
 			resp,
 			[]string{"https://management.azure.com//.default"},
 			cloud.AzurePublic(),
+			"",
+			nil,
 		)
 		assert.True(t, ok)
 		require.Error(t, err)
@@ -444,10 +478,12 @@ func TestNewReLoginRequiredError(t *testing.T) {
 			Error:            "interaction_required",
 			ErrorDescription: "need consent",
 		}
-		err, ok := newReLoginRequiredError(
+		err, ok := newActionableAuthError(
 			resp,
 			[]string{"https://management.azure.com//.default"},
 			cloud.AzurePublic(),
+			"",
+			nil,
 		)
 		assert.True(t, ok)
 		require.Error(t, err)
@@ -459,13 +495,15 @@ func TestNewReLoginRequiredError(t *testing.T) {
 			Error:            "invalid_grant",
 			ErrorDescription: "expired",
 		}
-		err, ok := newReLoginRequiredError(
+		err, ok := newActionableAuthError(
 			resp,
 			[]string{
 				"https://management.azure.com//.default",
 				"https://graph.microsoft.com//.default",
 			},
 			cloud.AzurePublic(),
+			"",
+			nil,
 		)
 		assert.True(t, ok)
 		require.Error(t, err)
@@ -479,10 +517,27 @@ func TestNewReLoginRequiredError(t *testing.T) {
 			ErrorDescription: "AADSTS70043: expired",
 			ErrorCodes:       []int{70043},
 		}
-		err, ok := newReLoginRequiredError(
-			resp, nil, cloud.AzurePublic())
+		err, ok := newActionableAuthError(
+			resp, nil, cloud.AzurePublic(), "", nil)
 		assert.True(t, ok)
 		require.Error(t, err)
+	})
+
+	t.Run("error_code_700082_sets_login_expired", func(t *testing.T) {
+		t.Parallel()
+		resp := &AadErrorResponse{
+			Error:            "invalid_grant",
+			ErrorDescription: "AADSTS700082: expired",
+			ErrorCodes:       []int{700082},
+		}
+		err, ok := newActionableAuthError(resp, nil, cloud.AzurePublic(), "", nil)
+		assert.True(t, ok)
+		require.Error(t, err)
+
+		var errWithSuggestion *internal.ErrorWithSuggestion
+		require.True(t, errors.As(err, &errWithSuggestion))
+		assert.Equal(t, "Login expired.", errWithSuggestion.Message)
+		assert.Contains(t, errWithSuggestion.Suggestion, "login expired")
 	})
 
 	t.Run("error_code_50005_adds_device_code_flag", func(t *testing.T) {
@@ -492,10 +547,35 @@ func TestNewReLoginRequiredError(t *testing.T) {
 			ErrorDescription: "conditional access",
 			ErrorCodes:       []int{50005},
 		}
-		err, ok := newReLoginRequiredError(
-			resp, nil, cloud.AzurePublic())
+		err, ok := newActionableAuthError(
+			resp, nil, cloud.AzurePublic(), "", nil)
 		assert.True(t, ok)
 		require.Error(t, err)
+
+		errWithSuggestion, ok := errors.AsType[*internal.ErrorWithSuggestion](err)
+		require.True(t, ok)
+		assert.Equal(t, "Reauthentication required.", errWithSuggestion.Message)
+		require.Len(t, errWithSuggestion.Links, 1)
+		assert.Equal(t, "https://aka.ms/azd/troubleshoot/conditional-access-policy", errWithSuggestion.Links[0].URL)
+		assert.Equal(t, "Conditional Access policy troubleshooting", errWithSuggestion.Links[0].Title)
+	})
+
+	t.Run("tenant_id_included_in_suggestion", func(t *testing.T) {
+		t.Parallel()
+		resp := &AadErrorResponse{
+			Error:            "invalid_grant",
+			ErrorDescription: "AADSTS70043: expired",
+			ErrorCodes:       []int{70043},
+		}
+		tenantID := "72f988bf-86f1-41af-91ab-2d7cd011db47"
+		err, ok := newActionableAuthError(
+			resp, nil, cloud.AzurePublic(), tenantID, nil)
+		assert.True(t, ok)
+		require.Error(t, err)
+
+		errWithSuggestion, ok := errors.AsType[*internal.ErrorWithSuggestion](err)
+		require.True(t, ok)
+		assert.Contains(t, errWithSuggestion.Suggestion, "--tenant-id "+tenantID)
 	})
 }
 

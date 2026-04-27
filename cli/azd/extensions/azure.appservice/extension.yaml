@@ -5,7 +5,7 @@ displayName: Azure App Service
 description: Extension for managing Azure App Service resources.
 usage: azd appservice <command> [options]
 # NOTE: Make sure version.txt is in sync with this version.
-version: 0.1.0
+version: 0.1.1
 language: go
 capabilities:
   - custom-commands

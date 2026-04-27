@@ -5,8 +5,10 @@ package python
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -126,14 +128,7 @@ func (cli *Cli) Run(
 		return nil, err
 	}
 
-	var envActivationCmd string
-
-	// Windows & Posix have different activation scripts
-	if runtime.GOOS == "windows" {
-		envActivationCmd = filepath.Join(environment, "Scripts", "activate")
-	} else {
-		envActivationCmd = ". " + filepath.Join(environment, "bin", "activate")
-	}
+	envActivationCmd := VenvActivateCmd(environment)
 
 	runCmd := strings.Join(append([]string{pyString}, args...), " ")
 	// We need to ensure the virtual environment is activated before running the script
@@ -146,6 +141,14 @@ func (cli *Cli) Run(
 	}
 
 	return &runResult, nil
+}
+
+// ResolveCommand returns the platform-appropriate Python
+// command name. On Windows it prefers "py" (PEP 397 launcher),
+// falling back to "python"; on other platforms it uses
+// "python3".
+func (cli *Cli) ResolveCommand() (string, error) {
+	return cli.checkPath()
 }
 
 func (cli *Cli) checkPath() (string, error) {
@@ -170,4 +173,84 @@ func (cli *Cli) checkPath() (string, error) {
 		}
 		return "", err
 	}
+}
+
+// EnsureVirtualEnv creates the virtual environment if it does
+// not already exist. If the venv directory exists, creation is
+// skipped. Non-directory paths and inaccessible paths are
+// reported as errors.
+func (cli *Cli) EnsureVirtualEnv(
+	ctx context.Context,
+	workingDir, name string,
+	env []string,
+) error {
+	venvPath := filepath.Join(workingDir, name)
+	info, statErr := os.Stat(venvPath)
+	if statErr == nil {
+		if !info.IsDir() {
+			return fmt.Errorf(
+				"venv path %q exists but is not "+
+					"a directory",
+				venvPath,
+			)
+		}
+		return nil
+	}
+
+	if !errors.Is(statErr, os.ErrNotExist) {
+		return fmt.Errorf(
+			"virtual environment at %q is not "+
+				"accessible (check file "+
+				"permissions): %w",
+			venvPath, statErr,
+		)
+	}
+
+	if err := cli.CreateVirtualEnv(ctx, workingDir, name, env); err != nil {
+		return fmt.Errorf(
+			"%w — ensure Python 3.3+ is installed with the venv module",
+			err,
+		)
+	}
+	return nil
+}
+
+// InstallDependencies dispatches dependency installation based
+// on the given dependency file name. It calls
+// [Cli.InstallRequirements] for "requirements.txt" and
+// [Cli.InstallProject] for "pyproject.toml". Unrecognized file
+// names are logged and skipped.
+func (cli *Cli) InstallDependencies(
+	ctx context.Context,
+	dir, venvName, depFile string,
+	env []string,
+) error {
+	switch depFile {
+	case "requirements.txt":
+		if err := cli.InstallRequirements(
+			ctx, dir, venvName, depFile, env,
+		); err != nil {
+			return fmt.Errorf(
+				"%w — check that the file is valid and all packages are available",
+				err,
+			)
+		}
+		return nil
+	case "pyproject.toml":
+		if err := cli.InstallProject(
+			ctx, dir, venvName, env,
+		); err != nil {
+			return fmt.Errorf(
+				"%w — check the [build-system] section and ensure pip >= 21.3",
+				err,
+			)
+		}
+		return nil
+	default:
+		log.Printf(
+			"unsupported dependency file %q - skipping install",
+			depFile,
+		)
+	}
+	return nil
 }

@@ -92,7 +92,7 @@ func TestGetTelemetrySystem(t *testing.T) {
 				assert.NotNil(t, ts.GetTelemetryQueue())
 				assert.NotNil(t, ts.NewUploader(true))
 
-				err := ts.Shutdown(context.Background())
+				err := ts.Shutdown(t.Context())
 				assert.NoError(t, err)
 			}
 		})
@@ -113,9 +113,9 @@ func TestTelemetrySystem_RunBackgroundUpload(t *testing.T) {
 		simulateUploadInProgress bool
 		args                     args
 	}{
-		{"Debug", false, args{context.Background(), true}},
-		{"NonDebug", false, args{context.Background(), false}},
-		{"UploadInProgress", true, args{context.Background(), false}},
+		{"Debug", false, args{t.Context(), true}},
+		{"NonDebug", false, args{t.Context(), false}},
+		{"UploadInProgress", true, args{t.Context(), false}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

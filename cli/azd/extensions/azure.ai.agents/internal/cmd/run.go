@@ -89,6 +89,10 @@ func runRun(ctx context.Context, flags *runFlags) error {
 	}
 	projectDir := runCtx.ProjectDir
 
+	// Detect project type early — used for both start-command resolution and
+	// environment setup (e.g., setting ASPNETCORE_URLS for .NET).
+	pt := detectProjectType(projectDir)
+
 	// Resolve start command: --start-command flag > azure.yaml startupCommand > detect
 	startCmd := flags.startCommand
 	if startCmd == "" {
@@ -96,7 +100,6 @@ func runRun(ctx context.Context, flags *runFlags) error {
 	}
 
 	if startCmd == "" {
-		pt := detectProjectType(projectDir)
 		if pt.StartCmd != "" {
 			startCmd = pt.StartCmd
 			fmt.Printf("Detected %s project. Start command: %s\n", pt.Language, startCmd)
@@ -135,7 +138,7 @@ func runRun(ctx context.Context, flags *runFlags) error {
 	cmdParts = resolveVenvCommand(projectDir, cmdParts)
 
 	env := os.Environ()
-	env = append(env, fmt.Sprintf("PORT=%d", flags.port))
+	env = appendPortEnvVars(env, pt, flags.port)
 
 	// Load azd environment variables (e.g., AZURE_AI_PROJECT_ENDPOINT)
 	// so the agent can reach Azure services during local development.
@@ -198,6 +201,17 @@ func runRun(ctx context.Context, flags *runFlags) error {
 		return fmt.Errorf("agent exited: %w", err)
 	}
 	return nil
+}
+
+// appendPortEnvVars appends PORT and, for .NET projects, ASPNETCORE_URLS to the
+// environment slice so the agent listens on the correct port.
+// ASP.NET Core ignores PORT — it uses ASPNETCORE_URLS to configure Kestrel.
+func appendPortEnvVars(env []string, pt ProjectType, port int) []string {
+	env = append(env, fmt.Sprintf("PORT=%d", port))
+	if pt.Language == "dotnet" {
+		env = append(env, fmt.Sprintf("ASPNETCORE_URLS=http://localhost:%d", port))
+	}
+	return env
 }
 
 // --- Dependency installation ---

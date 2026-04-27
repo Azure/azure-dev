@@ -179,7 +179,7 @@ func TestProvisionAction_PreflightAborted(t *testing.T) {
 		portalUrlBase:       "https://portal.azure.com",
 	}
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	result, err := action.Run(*mockContext.Context)
 
 	// Must return ErrAbortedByUser (not nil, not a panic)

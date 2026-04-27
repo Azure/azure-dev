@@ -5,7 +5,6 @@ package azapi
 
 import (
 	"bytes"
-	"context"
 	"net/http"
 	"strings"
 	"testing"
@@ -20,7 +19,7 @@ import (
 func Test_GetFunctionAppProperties(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		ran := false
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		azCli := newAzureClientFromMockContext(mockContext)
 
 		mockContext.HttpClient.When(func(request *http.Request) bool {
@@ -66,7 +65,7 @@ func Test_GetFunctionAppProperties(t *testing.T) {
 
 	t.Run("Error", func(t *testing.T) {
 		ran := false
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		azCli := newAzureClientFromMockContext(mockContext)
 
 		mockContext.HttpClient.When(func(request *http.Request) bool {
@@ -108,7 +107,7 @@ func Test_DeployFunctionAppUsingZipFileRegular(t *testing.T) {
 
 	t.Run("Success", func(t *testing.T) {
 		ran := false
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		azCli := newAzureClientFromMockContext(mockContext)
 
 		registerDeployMocks(mockContext, &ran)
@@ -131,7 +130,7 @@ func Test_DeployFunctionAppUsingZipFileRegular(t *testing.T) {
 
 	t.Run("Error", func(t *testing.T) {
 		ran := false
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		azCli := newAzureClientFromMockContext(mockContext)
 
 		registerConflictMocks(mockContext, &ran)

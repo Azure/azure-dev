@@ -1,6 +1,6 @@
 var builder = DistributedApplication.CreateBuilder(args);
 
-// Use Aspire 9.4 to own the Azure Container App environment
+// Use Aspire to own the Azure Container App environment
 builder.AddAzureContainerAppEnvironment("appHostInfrastructure");
 
 // test param with default value

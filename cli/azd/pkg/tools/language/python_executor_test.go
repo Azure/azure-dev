@@ -23,21 +23,19 @@ import (
 
 type mockPythonTools struct {
 	checkInstalledErr error
-	createVenvErr     error
-	installReqErr     error
-	installProjErr    error
+	ensureVenvErr     error
+	installDepsErr    error
+	resolveCommandCmd string
+	resolveCommandErr error
 
-	createVenvCalled  bool
-	installReqCalled  bool
-	installProjCalled bool
+	ensureVenvCalled  bool
+	installDepsCalled bool
 
-	venvDir  string // CreateVirtualEnv workingDir
-	venvName string // CreateVirtualEnv name
-	reqDir   string // InstallRequirements workingDir
-	reqVenv  string // InstallRequirements environment
-	reqFile  string // InstallRequirements requirementFile
-	projDir  string // InstallProject workingDir
-	projVenv string // InstallProject environment
+	ensureVenvDir  string // EnsureVirtualEnv workingDir
+	ensureVenvName string // EnsureVirtualEnv name
+	depsDir        string // InstallDependencies dir
+	depsVenv       string // InstallDependencies venvName
+	depsFile       string // InstallDependencies depFile
 }
 
 func (m *mockPythonTools) CheckInstalled(
@@ -46,38 +44,40 @@ func (m *mockPythonTools) CheckInstalled(
 	return m.checkInstalledErr
 }
 
-func (m *mockPythonTools) CreateVirtualEnv(
+func (m *mockPythonTools) EnsureVirtualEnv(
 	_ context.Context,
 	workingDir, name string,
 	_ []string,
 ) error {
-	m.createVenvCalled = true
-	m.venvDir = workingDir
-	m.venvName = name
-	return m.createVenvErr
+	m.ensureVenvCalled = true
+	m.ensureVenvDir = workingDir
+	m.ensureVenvName = name
+	return m.ensureVenvErr
 }
 
-func (m *mockPythonTools) InstallRequirements(
+func (m *mockPythonTools) InstallDependencies(
 	_ context.Context,
-	workingDir, environment, requirementFile string,
+	dir, venvName, depFile string,
 	_ []string,
 ) error {
-	m.installReqCalled = true
-	m.reqDir = workingDir
-	m.reqVenv = environment
-	m.reqFile = requirementFile
-	return m.installReqErr
+	m.installDepsCalled = true
+	m.depsDir = dir
+	m.depsVenv = venvName
+	m.depsFile = depFile
+	return m.installDepsErr
 }
 
-func (m *mockPythonTools) InstallProject(
-	_ context.Context,
-	workingDir, environment string,
-	_ []string,
-) error {
-	m.installProjCalled = true
-	m.projDir = workingDir
-	m.projVenv = environment
-	return m.installProjErr
+func (m *mockPythonTools) ResolveCommand() (string, error) {
+	if m.resolveCommandErr != nil {
+		return "", m.resolveCommandErr
+	}
+	if m.resolveCommandCmd != "" {
+		return m.resolveCommandCmd, nil
+	}
+	if runtime.GOOS == "windows" {
+		return "py", nil
+	}
+	return "python3", nil
 }
 
 // mockCommandRunner is a minimal mock of [exec.CommandRunner]
@@ -131,8 +131,8 @@ func TestPythonPrepare_PythonNotInstalled(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "python 3 is required")
 	assert.ErrorIs(t, err, cli.checkInstalledErr)
-	assert.False(t, cli.createVenvCalled)
-	assert.False(t, cli.installReqCalled)
+	assert.False(t, cli.ensureVenvCalled)
+	assert.False(t, cli.installDepsCalled)
 }
 
 func TestPythonPrepare_NoProjectFile(t *testing.T) {
@@ -150,9 +150,8 @@ func TestPythonPrepare_NoProjectFile(t *testing.T) {
 	err := e.Prepare(t.Context(), scriptPath, execCtx)
 
 	require.NoError(t, err)
-	assert.False(t, cli.createVenvCalled)
-	assert.False(t, cli.installReqCalled)
-	assert.False(t, cli.installProjCalled)
+	assert.False(t, cli.ensureVenvCalled)
+	assert.False(t, cli.installDepsCalled)
 	assert.Empty(t, e.venvPath)
 }
 
@@ -178,19 +177,16 @@ func TestPythonPrepare_WithRequirementsTxt(t *testing.T) {
 
 	require.NoError(t, err)
 
-	// Virtual environment should be created.
-	assert.True(t, cli.createVenvCalled)
-	assert.Equal(t, projectDir, cli.venvDir)
-	assert.Equal(t, "myproject_env", cli.venvName)
+	// Virtual environment should be ensured.
+	assert.True(t, cli.ensureVenvCalled)
+	assert.Equal(t, projectDir, cli.ensureVenvDir)
+	assert.Equal(t, "myproject_env", cli.ensureVenvName)
 
 	// Requirements should be installed.
-	assert.True(t, cli.installReqCalled)
-	assert.Equal(t, projectDir, cli.reqDir)
-	assert.Equal(t, "myproject_env", cli.reqVenv)
-	assert.Equal(t, "requirements.txt", cli.reqFile)
-
-	// pyproject.toml path should NOT be used.
-	assert.False(t, cli.installProjCalled)
+	assert.True(t, cli.installDepsCalled)
+	assert.Equal(t, projectDir, cli.depsDir)
+	assert.Equal(t, "myproject_env", cli.depsVenv)
+	assert.Equal(t, "requirements.txt", cli.depsFile)
 
 	// venvPath should be recorded.
 	expected := filepath.Join(projectDir, "myproject_env")
@@ -218,14 +214,13 @@ func TestPythonPrepare_WithPyprojectToml(t *testing.T) {
 
 	require.NoError(t, err)
 
-	assert.True(t, cli.createVenvCalled)
-	assert.Equal(t, "myproject_env", cli.venvName)
+	assert.True(t, cli.ensureVenvCalled)
+	assert.Equal(t, "myproject_env", cli.ensureVenvName)
 
-	assert.True(t, cli.installProjCalled)
-	assert.Equal(t, projectDir, cli.projDir)
-	assert.Equal(t, "myproject_env", cli.projVenv)
-
-	assert.False(t, cli.installReqCalled)
+	assert.True(t, cli.installDepsCalled)
+	assert.Equal(t, projectDir, cli.depsDir)
+	assert.Equal(t, "myproject_env", cli.depsVenv)
+	assert.Equal(t, "pyproject.toml", cli.depsFile)
 }
 
 func TestPythonPrepare_VenvAlreadyExists(t *testing.T) {
@@ -252,12 +247,11 @@ func TestPythonPrepare_VenvAlreadyExists(t *testing.T) {
 	err := e.Prepare(t.Context(), scriptPath, execCtx)
 
 	require.NoError(t, err)
-	assert.False(
-		t, cli.createVenvCalled,
-		"should skip venv creation when directory exists",
-	)
+	// EnsureVirtualEnv is called — the shared helper
+	// handles skipping creation when the dir exists.
+	assert.True(t, cli.ensureVenvCalled)
 	assert.True(
-		t, cli.installReqCalled,
+		t, cli.installDepsCalled,
 		"should still install requirements",
 	)
 	assert.NotEmpty(t, e.venvPath)
@@ -330,7 +324,7 @@ func TestPythonExecute_WithoutVenv(t *testing.T) {
 
 	// With no venv, system Python should be used.
 	if runtime.GOOS == "windows" {
-		// Default mock returns nil for ToolInPath → "py".
+		// Default mock returns "py" via ResolveCommand.
 		assert.Equal(t, "py", runner.lastRunArgs.Cmd)
 	} else {
 		assert.Equal(t, "python3", runner.lastRunArgs.Cmd)
@@ -453,11 +447,11 @@ func TestPythonPrepare_VirtualEnvEnvVar(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, externalVenv, e.venvPath,
 		"should use VIRTUAL_ENV path")
-	assert.False(t, cli.createVenvCalled,
-		"should skip venv creation")
+	assert.False(t, cli.ensureVenvCalled,
+		"should skip venv ensure")
 	// External venv → dep installation is skipped because
 	// the venv is outside the project directory.
-	assert.False(t, cli.installReqCalled,
+	assert.False(t, cli.installDepsCalled,
 		"should skip dep install for external venv")
 }
 
@@ -496,11 +490,11 @@ func TestPythonPrepare_VirtualEnvInsideProject(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, localVenv, e.venvPath)
-	assert.False(t, cli.createVenvCalled,
-		"should skip venv creation")
-	assert.True(t, cli.installReqCalled,
+	assert.False(t, cli.ensureVenvCalled,
+		"should skip venv ensure")
+	assert.True(t, cli.installDepsCalled,
 		"should install deps for local venv")
-	assert.Equal(t, "my_env", cli.reqVenv,
+	assert.Equal(t, "my_env", cli.depsVenv,
 		"should pass relative venv name")
 }
 
@@ -535,11 +529,11 @@ func TestPythonPrepare_DotVenvDirectory(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, dotVenv, e.venvPath,
 		"should detect .venv directory")
-	assert.False(t, cli.createVenvCalled,
-		"should skip venv creation")
-	assert.True(t, cli.installReqCalled,
+	assert.False(t, cli.ensureVenvCalled,
+		"should skip venv ensure")
+	assert.True(t, cli.installDepsCalled,
 		"should still install requirements")
-	assert.Equal(t, ".venv", cli.reqVenv,
+	assert.Equal(t, ".venv", cli.depsVenv,
 		"should use .venv as venv name")
 }
 
@@ -568,10 +562,10 @@ func TestPythonPrepare_VenvDirWithoutPyvenvCfg(t *testing.T) {
 	err := e.Prepare(t.Context(), scriptPath, execCtx)
 
 	require.NoError(t, err)
-	// Falls through to normal venv creation flow.
-	assert.True(t, cli.createVenvCalled,
-		"should create venv when .venv has no pyvenv.cfg")
-	assert.Equal(t, "myproject_env", cli.venvName)
+	// Falls through to normal venv ensure flow.
+	assert.True(t, cli.ensureVenvCalled,
+		"should ensure venv when .venv has no pyvenv.cfg")
+	assert.Equal(t, "myproject_env", cli.ensureVenvName)
 }
 
 func TestPythonPrepare_VirtualEnvInvalid(t *testing.T) {
@@ -600,9 +594,9 @@ func TestPythonPrepare_VirtualEnvInvalid(t *testing.T) {
 	err := e.Prepare(t.Context(), scriptPath, execCtx)
 
 	require.NoError(t, err)
-	// Should fall through to normal venv creation.
-	assert.True(t, cli.createVenvCalled,
-		"should create venv when VIRTUAL_ENV is invalid")
+	// Should fall through to normal venv ensure.
+	assert.True(t, cli.ensureVenvCalled,
+		"should ensure venv when VIRTUAL_ENV is invalid")
 }
 
 func TestPythonPrepare_VirtualEnvNoProjectFile(t *testing.T) {
@@ -634,8 +628,8 @@ func TestPythonPrepare_VirtualEnvNoProjectFile(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, venvDir, e.venvPath,
 		"should use VIRTUAL_ENV even without project file")
-	assert.False(t, cli.createVenvCalled)
-	assert.False(t, cli.installReqCalled)
+	assert.False(t, cli.ensureVenvCalled)
+	assert.False(t, cli.installDepsCalled)
 }
 
 func TestPythonPrepare_VenvDirVenv(t *testing.T) {
@@ -671,8 +665,223 @@ func TestPythonPrepare_VenvDirVenv(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, venvDir, e.venvPath,
 		"should detect venv directory")
-	assert.False(t, cli.createVenvCalled)
-	assert.True(t, cli.installProjCalled,
+	assert.False(t, cli.ensureVenvCalled)
+	assert.True(t, cli.installDepsCalled,
 		"should install project deps")
-	assert.Equal(t, "venv", cli.projVenv)
+	assert.Equal(t, "venv", cli.depsVenv)
+	assert.Equal(t, "pyproject.toml", cli.depsFile)
+}
+
+// ---------------------------------------------------------------------------
+// virtualEnvName config tests
+// ---------------------------------------------------------------------------
+
+func TestPythonPrepare_VirtualEnvNameConfig(t *testing.T) {
+	tests := []struct {
+		name         string
+		config       map[string]any
+		wantVenvName string // expected EnsureVirtualEnv name
+		wantErr      string // substring of error, empty = no error
+	}{
+		{
+			name:         "DotVenvName",
+			config:       map[string]any{"virtualEnvName": ".venv"},
+			wantVenvName: ".venv",
+		},
+		{
+			name:         "CustomName",
+			config:       map[string]any{"virtualEnvName": "my_env"},
+			wantVenvName: "my_env",
+		},
+		{
+			name:         "NoConfig_FallsBackToAutoDetect",
+			config:       nil,
+			wantVenvName: "myproject_env",
+		},
+		{
+			name:         "EmptyConfig_FallsBackToAutoDetect",
+			config:       map[string]any{},
+			wantVenvName: "myproject_env",
+		},
+		{
+			name:    "EmptyString_Rejected",
+			config:  map[string]any{"virtualEnvName": "   "},
+			wantErr: "virtualEnvName must not be empty",
+		},
+		{
+			name:    "PathTraversal_Rejected",
+			config:  map[string]any{"virtualEnvName": "../evil"},
+			wantErr: "must not contain path separators",
+		},
+		{
+			name:    "ForwardSlash_Rejected",
+			config:  map[string]any{"virtualEnvName": "foo/bar"},
+			wantErr: "must not contain path separators",
+		},
+		{
+			name:    "BackSlash_Rejected",
+			config:  map[string]any{"virtualEnvName": `foo\bar`},
+			wantErr: "must not contain path separators",
+		},
+		{
+			name:    "Dot_Rejected",
+			config:  map[string]any{"virtualEnvName": "."},
+			wantErr: "is not a valid directory name",
+		},
+		{
+			name:    "DotDot_Rejected",
+			config:  map[string]any{"virtualEnvName": ".."},
+			wantErr: "is not a valid directory name",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			projectDir := filepath.Join(
+				root, "myproject",
+			)
+			hooksDir := filepath.Join(
+				projectDir, "hooks",
+			)
+			require.NoError(t,
+				os.MkdirAll(hooksDir, 0o700),
+			)
+			writeFile(t,
+				filepath.Join(
+					projectDir, "requirements.txt",
+				),
+				"flask\n",
+			)
+
+			cli := &mockPythonTools{}
+			e := newPythonExecutorInternal(
+				&mockCommandRunner{}, cli,
+			)
+
+			execCtx := tools.ExecutionContext{
+				BoundaryDir: root,
+				Config:      tt.config,
+			}
+			scriptPath := filepath.Join(
+				hooksDir, "deploy.py",
+			)
+			err := e.Prepare(
+				t.Context(), scriptPath, execCtx,
+			)
+
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+				assert.False(t, cli.ensureVenvCalled,
+					"should not create venv on error",
+				)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.True(t, cli.ensureVenvCalled)
+			assert.Equal(t,
+				tt.wantVenvName, cli.ensureVenvName,
+			)
+			assert.True(t, cli.installDepsCalled)
+			assert.Equal(t,
+				tt.wantVenvName, cli.depsVenv,
+			)
+			assert.Equal(t,
+				"requirements.txt", cli.depsFile,
+			)
+
+			expectedPath := filepath.Join(
+				projectDir, tt.wantVenvName,
+			)
+			assert.Equal(t, expectedPath, e.venvPath)
+		})
+	}
+}
+
+// TestPythonPrepare_ConfigOverridesDetectedVenv verifies that
+// an explicit virtualEnvName in the hook config takes priority
+// over a pre-existing .venv directory detected on disk.
+func TestPythonPrepare_ConfigOverridesDetectedVenv(t *testing.T) {
+	root := t.TempDir()
+	projectDir := filepath.Join(root, "myproject")
+	hooksDir := filepath.Join(projectDir, "hooks")
+	require.NoError(t, os.MkdirAll(hooksDir, 0o700))
+	writeFile(t,
+		filepath.Join(projectDir, "requirements.txt"),
+		"flask\n",
+	)
+
+	// Create a .venv directory with pyvenv.cfg — this
+	// would normally be auto-detected and used.
+	dotVenv := filepath.Join(projectDir, ".venv")
+	require.NoError(t, os.MkdirAll(dotVenv, 0o700))
+	writeFile(t,
+		filepath.Join(dotVenv, "pyvenv.cfg"),
+		"home = /usr/bin\n",
+	)
+
+	cli := &mockPythonTools{}
+	e := newPythonExecutorInternal(
+		&mockCommandRunner{}, cli,
+	)
+
+	// Config explicitly asks for "custom_env".
+	execCtx := tools.ExecutionContext{
+		BoundaryDir: root,
+		Config: map[string]any{
+			"virtualEnvName": "custom_env",
+		},
+	}
+	scriptPath := filepath.Join(hooksDir, "deploy.py")
+	err := e.Prepare(t.Context(), scriptPath, execCtx)
+
+	require.NoError(t, err)
+
+	// Config should win — EnsureVirtualEnv is called with
+	// the config-specified name, not the detected ".venv".
+	assert.True(t, cli.ensureVenvCalled,
+		"should create/ensure the config-specified venv")
+	assert.Equal(t, "custom_env", cli.ensureVenvName,
+		"should use config virtualEnvName, not detected .venv")
+
+	assert.True(t, cli.installDepsCalled)
+	assert.Equal(t, "custom_env", cli.depsVenv)
+	assert.Equal(t, "requirements.txt", cli.depsFile)
+
+	expectedPath := filepath.Join(projectDir, "custom_env")
+	assert.Equal(t, expectedPath, e.venvPath,
+		"venvPath should reflect the config-specified name")
+}
+
+func TestValidateVenvName(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		{"ValidDotVenv", ".venv", false},
+		{"ValidCustom", "my_env", false},
+		{"ValidWithDots", ".my.env", false},
+		{"Empty", "", true},
+		{"Whitespace", "   ", true},
+		{"Dot", ".", true},
+		{"DotDot", "..", true},
+		{"ForwardSlash", "foo/bar", true},
+		{"BackSlash", `foo\bar`, true},
+		{"TrailingSlash", "venv/", true},
+		{"LeadingSlash", "/venv", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateVenvName(tt.input)
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
 }

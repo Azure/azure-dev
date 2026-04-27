@@ -4,15 +4,10 @@
 package repository
 
 import (
-	"context"
-	"fmt"
-	"os"
-	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/stretchr/testify/require"
 )
 
@@ -217,24 +212,10 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			i := &Initializer{
-				console: input.NewConsole(
-					false,
-					false,
-					input.Writers{Output: os.Stdout},
-					input.ConsoleHandles{
-						Stderr: os.Stderr,
-						Stdin:  strings.NewReader(strings.Join(tt.interactions, "\n") + "\n"),
-						Stdout: os.Stdout,
-					},
-					nil,
-					nil),
+				console: newCapturedTestConsole(t, tt.interactions),
 			}
 
-			spec, err := i.infraSpecFromDetect(context.Background(), tt.detect)
-
-			// Print extra newline to avoid mangling `go test -v` final test result output while waiting for final stdin,
-			// which may result in incorrect `gotestsum` reporting
-			fmt.Println()
+			spec, err := i.infraSpecFromDetect(t.Context(), tt.detect)
 
 			require.NoError(t, err)
 			require.Equal(t, tt.want, spec)

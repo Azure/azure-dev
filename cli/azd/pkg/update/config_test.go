@@ -152,9 +152,9 @@ func TestUpdateConfigDefaultCheckInterval(t *testing.T) {
 func TestSaveAndLoadConfig(t *testing.T) {
 	cfg := config.NewConfig(map[string]any{})
 
-	require.NoError(t, SaveChannel(cfg, ChannelDaily))
-	require.NoError(t, SaveAutoUpdate(cfg, true))
-	require.NoError(t, SaveCheckIntervalHours(cfg, 6))
+	require.NoError(t, SetChannel(cfg, ChannelDaily))
+	require.NoError(t, SetAutoUpdate(cfg, true))
+	require.NoError(t, SetCheckIntervalHours(cfg, 6))
 
 	loaded := LoadUpdateConfig(cfg)
 	require.Equal(t, ChannelDaily, loaded.Channel)
@@ -254,10 +254,10 @@ func TestFirstUsePersistenceLogic(t *testing.T) {
 
 		// Simulate first-use: persist default channel
 		defaultChannel := LoadUpdateConfig(cfg).Channel
-		require.NoError(t, SaveChannel(cfg, defaultChannel))
+		require.NoError(t, SetChannel(cfg, defaultChannel))
 
 		// After persisting, HasUpdateConfig should return true
-		require.True(t, HasUpdateConfig(cfg), "config should have update config after SaveChannel")
+		require.True(t, HasUpdateConfig(cfg), "config should have update config after SetChannel")
 
 		// Subsequent runs should skip the notice
 		require.True(t, HasUpdateConfig(cfg))

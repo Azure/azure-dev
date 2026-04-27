@@ -11,10 +11,13 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
+	osExec "os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -68,9 +71,10 @@ type InitAction struct {
 	flags         *initFlags
 	models        *modelSelector
 
-	deploymentDetails []project.Deployment
-	containerSettings *project.ContainerSettings
-	httpClient        *http.Client
+	deploymentDetails   []project.Deployment
+	containerSettings   *project.ContainerSettings
+	httpClient          *http.Client
+	serviceNameOverride string // when set, addToProject uses this instead of the manifest name
 }
 
 // modelSelector encapsulates the dependencies needed for model selection and
@@ -126,6 +130,77 @@ func checkAiModelServiceAvailable(ctx context.Context, azdClient *azdext.AzdClie
 	}
 
 	return nil
+}
+
+// ensureLoggedIn verifies that the user is authenticated before any file-modifying
+// operations take place.
+//
+// We need to parse the JSON output of `azd auth status --output json` because the
+// Workflow API's Run method returns EmptyResponse and does not expose command output,
+// and `azd auth status` always exits 0 regardless of authentication state — it reports
+// the result in its output, not via its exit code or a gRPC error.
+// If the Workflow API is extended to return structured command results in the future,
+// this subprocess workaround can be replaced with a Workflow API call.
+//
+// getAuthStatusJSON is the function that runs the command and returns stdout. Production
+// callers pass authStatusFromCLI; tests inject a stub.
+func ensureLoggedIn(ctx context.Context, getAuthStatusJSON func(ctx context.Context) ([]byte, error)) error {
+	out, err := getAuthStatusJSON(ctx)
+
+	// Context cancellation / deadline always takes priority.
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	// Try to parse whatever output we got, even if the command returned a non-zero
+	// exit code (ExitError). azd auth status writes JSON to stdout regardless of
+	// exit code, so the output may still be usable.
+	if len(out) > 0 {
+		authStatus, parseErr := parseAuthStatusJSON(out)
+		if parseErr == nil {
+			if authStatus == "unauthenticated" {
+				return exterrors.Auth(
+					exterrors.CodeNotLoggedIn,
+					"not logged in",
+					"run `azd auth login` to authenticate before running init",
+				)
+			}
+
+			if authStatus == "authenticated" {
+				return nil
+			}
+
+			// Unrecognized status value — fall through to best-effort skip.
+		}
+	}
+
+	// No usable output. If the command itself failed, log and skip so unrelated
+	// issues (azd not in PATH, network blips) don't block init.
+	if err != nil {
+		log.Printf("auth status check skipped: %v", err)
+	}
+
+	return nil
+}
+
+// authStatusFromCLI runs `azd auth status --output json --no-prompt` as a subprocess
+// and returns the raw stdout bytes.
+func authStatusFromCLI(ctx context.Context) ([]byte, error) {
+	return osExec.CommandContext(ctx, "azd", "auth", "status", "--output", "json", "--no-prompt").Output()
+}
+
+// parseAuthStatusJSON extracts the "status" field from `azd auth status --output json`.
+func parseAuthStatusJSON(data []byte) (string, error) {
+	var result struct {
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(data, &result); err != nil {
+		return "", fmt.Errorf("unmarshal auth status: %w", err)
+	}
+	if result.Status == "" {
+		return "", fmt.Errorf("missing \"status\" field in auth status output")
+	}
+	return result.Status, nil
 }
 
 // runInitFromManifest sets up Azure context, credentials, console, and runs the
@@ -208,11 +283,18 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 	}
 
 	cmd := &cobra.Command{
-		Use:   "init [-m <manifest pointer>] [--src <source directory>]",
+		Use:   "init [<path>] [-m <manifest pointer>] [--src <source directory>]",
 		Short: fmt.Sprintf("Initialize a new AI agent project. %s", color.YellowString("(Preview)")),
-		Args:  cobra.NoArgs,
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			printBanner(cmd.OutOrStdout())
+
+			// Resolve optional positional argument into --manifest or --src
+			if len(args) == 1 {
+				if err := applyPositionalArg(args[0], flags, cmd); err != nil {
+					return err
+				}
+			}
 
 			ctx := azdext.WithAccessToken(cmd.Context())
 
@@ -235,6 +317,10 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 					return nil
 				}
 				return fmt.Errorf("failed waiting for debugger: %w", err)
+			}
+
+			if err := ensureLoggedIn(ctx, authStatusFromCLI); err != nil {
+				return err
 			}
 
 			var httpClient = &http.Client{
@@ -318,7 +404,7 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 					switch selectedTemplate.EffectiveType() {
 					case TemplateTypeAzd:
 						// Full azd template - dispatch azd init -t <repo>
-						initArgs := []string{"init", "-t", selectedTemplate.Source}
+						initArgs := []string{"init", "-t", selectedTemplate.Source, "."}
 						if flags.env != "" {
 							initArgs = append(initArgs, "--environment", flags.env)
 						} else {
@@ -429,7 +515,7 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 	cmd.Flags().StringVarP(&flags.src, "src", "s", "",
 		"Directory to download the agent definition to (defaults to 'src/<agent-id>')")
 
-	cmd.Flags().StringVarP(&flags.env, "environment", "e", "", "The name of the azd environment to use.")
+	cmd.Flags().StringVar(&flags.env, "environment", "", "The name of the azd environment to use.")
 
 	cmd.Flags().StringSliceVar(&flags.protocols, "protocol", nil,
 		"Protocols supported by the agent (e.g., 'responses', 'invocations'). Can be specified multiple times.")
@@ -507,6 +593,20 @@ func (a *InitAction) Run(ctx context.Context) error {
 			agentManifest.Template = hostedAgent
 		}
 
+		// Prompt for manifest parameters (e.g. tool credentials) after project selection
+		agentManifest, err = registry_api.ProcessManifestParameters(
+			ctx, agentManifest, a.azdClient, a.flags.NoPrompt,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to process manifest parameters: %w", err)
+		}
+
+		// Inject toolbox MCP endpoint env vars into hosted agent definitions
+		// so agent.yaml is self-documenting about what env vars will be set.
+		if err := injectToolboxEnvVarsIntoDefinition(agentManifest); err != nil {
+			return fmt.Errorf("injecting toolbox env vars: %w", err)
+		}
+
 		// Write the final agent.yaml to disk (after deployment names have been injected)
 		if err := writeAgentDefinitionFile(targetDir, agentManifest); err != nil {
 			return fmt.Errorf("writing agent definition: %w", err)
@@ -529,7 +629,7 @@ func ensureProject(ctx context.Context, flags *initFlags, azdClient *azdext.AzdC
 		fmt.Println("Let's get your project initialized.")
 
 		// Environment creation is handled separately in ensureEnvironment
-		initArgs := []string{"init", "-t", "Azure-Samples/azd-ai-starter-basic"}
+		initArgs := []string{"init", "-t", "Azure-Samples/azd-ai-starter-basic", "."}
 		if flags.env != "" {
 			initArgs = append(initArgs, "--environment", flags.env)
 		} else {
@@ -574,6 +674,22 @@ func ensureProject(ctx context.Context, flags *initFlags, azdClient *azdext.AzdC
 		}
 
 		fmt.Println()
+	} else if projectResponse.Project != nil {
+		// An existing azd project was found — tell the user so the skipped template
+		// download isn't a mystery. Also warn if the project lacks an infra/ directory,
+		// since deployment may require infrastructure scaffolding.
+		fmt.Println(output.WithGrayFormat(
+			"Found existing azd project at %q. Adding agent to it.", projectResponse.Project.Path,
+		))
+
+		infraDir := filepath.Join(projectResponse.Project.Path, "infra")
+		if _, statErr := os.Stat(infraDir); os.IsNotExist(statErr) {
+			fmt.Printf("%s", output.WithWarningFormat(
+				"No infra/ directory found in the project. If you need Azure infrastructure "+
+					"for deployment, run 'azd init -t Azure-Samples/azd-ai-starter-basic .' in an empty "+
+					"directory first, then re-run this command from there.\n",
+			))
+		}
 	}
 
 	if projectResponse.Project == nil {
@@ -630,8 +746,25 @@ func manifestHasModelResources(manifest *agent_yaml.AgentManifest) bool {
 func (a *InitAction) configureModelChoice(
 	ctx context.Context, agentManifest *agent_yaml.AgentManifest,
 ) (*agent_yaml.AgentManifest, error) {
-	// If --project-id is provided, validate the ARM format and extract the subscription ID
-	// so ensureSubscription can skip the prompt and just resolve the tenant
+	// When no --project-id flag was given, check whether the azd environment already
+	// has a Foundry project configured from a previous init. If so, reuse it so the
+	// user isn't prompted to select a project they already chose.
+	if a.flags.projectResourceId == "" {
+		if existing, err := a.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+			EnvName: a.environment.Name,
+			Key:     "AZURE_AI_PROJECT_ID",
+		}); err == nil && existing.Value != "" {
+			a.flags.projectResourceId = existing.Value
+			log.Printf("Reusing existing Foundry project from environment: %s", existing.Value)
+			fmt.Println(output.WithGrayFormat(
+				"Using Foundry project from environment: %s", existing.Value,
+			))
+		}
+	}
+
+	// If --project-id is provided (or reused from environment), validate the ARM
+	// format and extract the subscription ID so ensureSubscription can skip the
+	// prompt and just resolve the tenant.
 	if a.flags.projectResourceId != "" {
 		projectDetails, err := extractProjectDetails(a.flags.projectResourceId)
 		if err != nil {
@@ -671,6 +804,13 @@ func (a *InitAction) configureModelChoice(
 
 			if selectedProject == nil {
 				return nil, fmt.Errorf("foundry project not found: %s", a.flags.projectResourceId)
+			}
+
+			// Signal Bicep to skip project/role/connection provisioning for this existing project
+			if err := setEnvValue(
+				ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "true",
+			); err != nil {
+				return nil, err
 			}
 		} else {
 			// Prompt user to pick an existing Foundry project or create new resources
@@ -715,7 +855,19 @@ func (a *InitAction) configureModelChoice(
 					_, _ = color.New(color.Faint).Println(
 						"No existing Foundry project was selected. Falling back to creating new resources.",
 					)
+					if err := setEnvValue(
+						ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false",
+					); err != nil {
+						return nil, err
+					}
 					if err := ensureLocation(ctx, a.azdClient, a.azureContext, a.environment.Name); err != nil {
+						return nil, err
+					}
+				} else {
+					// Signal Bicep to skip project/role/connection provisioning for this existing project
+					if err := setEnvValue(
+						ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "true",
+					); err != nil {
 						return nil, err
 					}
 				}
@@ -728,6 +880,13 @@ func (a *InitAction) configureModelChoice(
 					return nil, err
 				}
 				a.credential = newCred
+
+				// Creating new resources — clear any stale existing-project flag
+				if err := setEnvValue(
+					ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false",
+				); err != nil {
+					return nil, err
+				}
 			}
 		}
 
@@ -783,11 +942,24 @@ func (a *InitAction) configureModelChoice(
 			return nil, err
 		}
 
-		if selectedProject == nil {
+		if selectedProject != nil {
+			// Signal Bicep to skip project/role/connection provisioning for this existing project
+			if err := setEnvValue(
+				ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "true",
+			); err != nil {
+				return nil, err
+			}
+		} else {
 			// No existing project selected (no projects found or user chose "Create new") → fall back to "deploy new" path
 			fmt.Println(output.WithGrayFormat(
 				"No existing Foundry project was selected. Falling back to deploying a new model.",
 			))
+			// Clear any stale existing-project flag from a previous init
+			if err := setEnvValue(
+				ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false",
+			); err != nil {
+				return nil, err
+			}
 			if err := ensureLocation(ctx, a.azdClient, a.azureContext, a.environment.Name); err != nil {
 				return nil, err
 			}
@@ -803,6 +975,13 @@ func (a *InitAction) configureModelChoice(
 			return nil, err
 		}
 		a.credential = newCred
+
+		// Deploying new resources — clear any stale existing-project flag
+		if err := setEnvValue(
+			ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false",
+		); err != nil {
+			return nil, err
+		}
 	}
 
 	// Now process models — getModelDeploymentDetails will branch based on AZURE_AI_PROJECT_ID
@@ -886,6 +1065,77 @@ func looksLikeManifest(path string) bool {
 
 	_, hasTemplate := top["template"]
 	return hasTemplate
+}
+
+// resolvePositionalArg classifies a positional argument as either a manifest
+// pointer (explicit URI or existing file) or a source directory (existing
+// directory). It returns (isManifest=true, isSrc=false) for explicit URIs and
+// files, (isManifest=false, isSrc=true) for directories, or an error for
+// unrecognized inputs.
+//
+// For non-existent paths, a heuristic is applied: .yaml/.yml extensions are
+// treated as manifest pointers, while all other paths are treated as source
+// directories (the downstream init flow creates them via MkdirAll).
+func resolvePositionalArg(arg string) (isManifest bool, isSrc bool, err error) {
+	// Check for an explicit URI form first. Requiring "://" avoids
+	// misclassifying Windows drive paths such as C:\...
+	if strings.Contains(arg, "://") {
+		if parsed, parseErr := url.Parse(arg); parseErr == nil && parsed.Scheme != "" {
+			return true, false, nil
+		}
+	}
+
+	info, statErr := os.Stat(arg)
+	if statErr == nil {
+		if info.IsDir() {
+			return false, true, nil
+		}
+		return true, false, nil
+	}
+
+	// Path does not exist — use file extension heuristic.
+	ext := strings.ToLower(filepath.Ext(arg))
+	if ext == ".yaml" || ext == ".yml" {
+		return true, false, nil
+	}
+
+	// Default to source directory; the downstream flow will create it via MkdirAll.
+	return false, true, nil
+}
+
+// applyPositionalArg resolves a positional argument and maps it to the
+// appropriate flag, returning an error if the flag was already set explicitly.
+func applyPositionalArg(arg string, flags *initFlags, cmd *cobra.Command) error {
+	isManifest, isSrc, err := resolvePositionalArg(arg)
+	if err != nil {
+		return err
+	}
+
+	if isManifest {
+		if cmd.Flags().Changed("manifest") {
+			return exterrors.Validation(
+				exterrors.CodeConflictingArguments,
+				"cannot pass both a positional argument and --manifest",
+				"use either 'azd ai agent init <path>' or "+
+					"'azd ai agent init -m <manifest>', not both",
+			)
+		}
+		flags.manifestPointer = arg
+	}
+
+	if isSrc {
+		if cmd.Flags().Changed("src") {
+			return exterrors.Validation(
+				exterrors.CodeConflictingArguments,
+				"cannot pass both a positional directory argument and --src",
+				"use either 'azd ai agent init <dir>' or "+
+					"'azd ai agent init --src <dir>', not both",
+			)
+		}
+		flags.src = arg
+	}
+
+	return nil
 }
 
 func (a *InitAction) isGitHubUrl(manifestPointer string) bool {
@@ -1213,11 +1463,27 @@ func (a *InitAction) downloadAgentYaml(
 	fmt.Println(output.WithGrayFormat("✓ Manifest validated successfully"))
 
 	agentId := agentManifest.Name
+	serviceName := strings.ReplaceAll(agentId, " ", "")
 
 	// Use targetDir if provided, otherwise default to "src/{agentId}"
-	if targetDir == "" {
+	autoDir := targetDir == ""
+	if autoDir {
 		targetDir = filepath.Join("src", agentId)
 	}
+
+	// When the target directory was auto-computed (no --src flag), check for
+	// collisions with an existing directory or an existing azure.yaml service.
+	// If a collision is found, prompt for a new service name (or auto-suffix
+	// in no-prompt mode).
+	if autoDir {
+		targetDir, serviceName, err = a.resolveCollisions(
+			ctx, agentId, targetDir, serviceName,
+		)
+		if err != nil {
+			return nil, "", err
+		}
+	}
+	a.serviceNameOverride = serviceName
 
 	// Safety checks for local container-based agents should happen before prompting for model SKU, etc.
 	if a.isLocalFilePath(manifestPointer) {
@@ -1226,11 +1492,6 @@ func (a *InitAction) downloadAgentYaml(
 				return nil, "", err
 			}
 		}
-	}
-
-	agentManifest, err = registry_api.ProcessManifestParameters(ctx, agentManifest, a.azdClient, a.flags.NoPrompt)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to process manifest parameters: %w", err)
 	}
 
 	_, isPromptAgent := agentManifest.Template.(agent_yaml.PromptAgent)
@@ -1383,6 +1644,44 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	agentConfig.Deployments = a.deploymentDetails
 	agentConfig.Resources = resourceDetails
 
+	// Process toolbox resources from the manifest
+	toolboxes, toolConnections, credEnvVars, err := extractToolboxAndConnectionConfigs(agentManifest)
+	if err != nil {
+		return err
+	}
+	agentConfig.Toolboxes = toolboxes
+	agentConfig.ToolConnections = toolConnections
+
+	// Persist credential values as azd environment variables so they are
+	// resolved at provision/deploy time instead of stored in azure.yaml.
+	for envKey, envVal := range credEnvVars {
+		if _, setErr := a.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+			EnvName: a.environment.Name,
+			Key:     envKey,
+			Value:   envVal,
+		}); setErr != nil {
+			return fmt.Errorf("storing credential env var %s: %w", envKey, setErr)
+		}
+	}
+
+	// Process connection resources from the manifest
+	connections, connCredEnvVars, err := extractConnectionConfigs(agentManifest)
+	if err != nil {
+		return err
+	}
+	agentConfig.Connections = connections
+
+	// Store connection credential env vars alongside toolbox ones
+	for envKey, envVal := range connCredEnvVars {
+		if _, setErr := a.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+			EnvName: a.environment.Name,
+			Key:     envKey,
+			Value:   envVal,
+		}); setErr != nil {
+			return fmt.Errorf("storing credential env var %s: %w", envKey, setErr)
+		}
+	}
+
 	// Detect startup command from the project source directory
 	startupCmd, err := resolveStartupCommandForInit(ctx, a.azdClient, a.projectConfig.Path, targetDir, a.flags.NoPrompt)
 	if err != nil {
@@ -1396,7 +1695,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	}
 
 	serviceConfig := &azdext.ServiceConfig{
-		Name:         strings.ReplaceAll(agentDef.Name, " ", ""),
+		Name:         a.serviceNameOverride,
 		RelativePath: targetDir,
 		Host:         AiAgentHost,
 		Language:     "docker",
@@ -1416,16 +1715,227 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		return fmt.Errorf("adding agent service to project: %w", err)
 	}
 
-	fmt.Printf("\nAdded your agent as a service entry named '%s' under the file azure.yaml.\n", agentDef.Name)
+	fmt.Printf(
+		"\nAdded your agent as a service entry named '%s' under the file azure.yaml.\n",
+		a.serviceNameOverride,
+	)
 	if projectID, _ := a.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 		EnvName: a.environment.Name,
 		Key:     "AZURE_AI_PROJECT_ID",
 	}); projectID != nil && projectID.Value != "" {
-		fmt.Printf("To deploy your agent, use %s.\n", color.HiBlueString("azd deploy %s", agentDef.Name))
+		fmt.Printf("To deploy your agent, use %s.\n",
+			color.HiBlueString("azd deploy %s", a.serviceNameOverride))
 	} else {
-		fmt.Printf("To provision and deploy the whole solution, use %s.\n", color.HiBlueString("azd up"))
+		fmt.Printf(
+			"To provision and deploy the whole solution, use %s.\n",
+			color.HiBlueString("azd up"),
+		)
 	}
 	return nil
+}
+
+// resolveCollisions checks whether the auto-computed target directory or
+// service name already exist. When a collision is detected, the user is
+// prompted for a new name (or a numeric suffix is appended in no-prompt
+// mode). Returns the (possibly adjusted) targetDir and serviceName.
+func (a *InitAction) resolveCollisions(
+	ctx context.Context,
+	agentId string,
+	targetDir string,
+	serviceName string,
+) (string, string, error) {
+	dirExists := fileExists(targetDir)
+
+	serviceExists := false
+	if a.projectConfig != nil {
+		for _, svc := range a.projectConfig.Services {
+			if svc.Name == serviceName {
+				serviceExists = true
+				break
+			}
+		}
+	}
+
+	if !dirExists && !serviceExists {
+		return targetDir, serviceName, nil
+	}
+
+	// Find the next available name for use as the default suggestion
+	// (interactive) or the final answer (no-prompt).
+	suggestion, suggestionDir, suggestionSvc, err :=
+		a.nextAvailableName(agentId)
+	if err != nil {
+		return "", "", err
+	}
+
+	if a.flags.NoPrompt {
+		log.Printf(
+			"Collision on %q; using %q", agentId, suggestion,
+		)
+		return suggestionDir, suggestionSvc, nil
+	}
+
+	// Build a collision message tailored to what actually collided.
+	collisionMsg := buildCollisionMessage(
+		dirExists, serviceExists, targetDir, serviceName,
+	)
+
+	// Interactive mode: let the user choose.
+	choices := []*azdext.SelectChoice{
+		{
+			Label: "Overwrite existing",
+			Value: "overwrite",
+		},
+		{
+			Label: "Use a different service name",
+			Value: "rename",
+		},
+	}
+
+	defaultIdx := int32(1)
+	resp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+		Options: &azdext.SelectOptions{
+			Message:       collisionMsg,
+			Choices:       choices,
+			SelectedIndex: &defaultIdx,
+		},
+	})
+	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return "", "", exterrors.Cancelled(
+				"initialization was cancelled",
+			)
+		}
+		return "", "", fmt.Errorf(
+			"prompting for collision resolution: %w", err,
+		)
+	}
+
+	if choices[*resp.Value].Value == "overwrite" {
+		return targetDir, serviceName, nil
+	}
+
+	// Prompt for a new name — default to the next available suffix.
+	nameResp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+		Options: &azdext.PromptOptions{
+			Message:        "Enter a new service name for this agent",
+			DefaultValue:   suggestion,
+			IgnoreHintKeys: true,
+		},
+	})
+	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return "", "", exterrors.Cancelled(
+				"initialization was cancelled",
+			)
+		}
+		return "", "", fmt.Errorf(
+			"prompting for new service name: %w", err,
+		)
+	}
+
+	newName := strings.TrimSpace(nameResp.Value)
+	if newName == "" {
+		newName = suggestion
+	}
+
+	newDir, newSvc, err := validateRenameInput(newName)
+	if err != nil {
+		return "", "", err
+	}
+	return newDir, newSvc, nil
+}
+
+// validateRenameInput validates a user-provided rename input and returns
+// the target directory and sanitized service name. It rejects names with
+// path separators, dot segments, or invalid service-name characters.
+func validateRenameInput(newName string) (string, string, error) {
+	if filepath.IsAbs(newName) ||
+		strings.ContainsAny(newName, `/\`) ||
+		newName == "." ||
+		newName == ".." {
+		return "", "", fmt.Errorf(
+			"invalid service name %q: name must be a single directory"+
+				" name without path separators or dot segments",
+			newName,
+		)
+	}
+
+	newSvc := strings.ReplaceAll(newName, " ", "")
+	if err := azdext.ValidateServiceName(newSvc); err != nil {
+		return "", "", fmt.Errorf(
+			"invalid service name %q: %w", newName, err,
+		)
+	}
+
+	newDir := filepath.Join("src", newName)
+	return newDir, newSvc, nil
+}
+
+// buildCollisionMessage returns a user-facing prompt string tailored to the
+// type of collision detected (directory, service name, or both).
+func buildCollisionMessage(
+	dirExists, serviceExists bool,
+	targetDir, serviceName string,
+) string {
+	switch {
+	case dirExists && serviceExists:
+		return fmt.Sprintf(
+			"A service named '%s' and its directory '%s' already exist."+
+				" Overwrite or use a different name?",
+			serviceName, targetDir,
+		)
+	case serviceExists:
+		return fmt.Sprintf(
+			"A service named '%s' already exists in your azure.yaml."+
+				" Overwrite it or use a different name?",
+			serviceName,
+		)
+	default: // dirExists only
+		return fmt.Sprintf(
+			"The directory '%s' already exists."+
+				" Overwrite it or use a different name?",
+			targetDir,
+		)
+	}
+}
+
+// nextAvailableName finds the next unused name by appending -2, -3, etc.
+// Returns the candidate name, directory, and service name.
+func (a *InitAction) nextAvailableName(
+	agentId string,
+) (string, string, string, error) {
+	const maxAttempts = 100
+	for i := 2; i <= maxAttempts; i++ {
+		candidate := fmt.Sprintf("%s-%d", agentId, i)
+		candidateDir := filepath.Join("src", candidate)
+		candidateSvc := strings.ReplaceAll(candidate, " ", "")
+
+		if fileExists(candidateDir) {
+			continue
+		}
+
+		svcTaken := false
+		if a.projectConfig != nil {
+			for _, svc := range a.projectConfig.Services {
+				if svc.Name == candidateSvc {
+					svcTaken = true
+					break
+				}
+			}
+		}
+		if svcTaken {
+			continue
+		}
+
+		return candidate, candidateDir, candidateSvc, nil
+	}
+
+	return "", "", "", fmt.Errorf(
+		"could not find a unique name after %d attempts "+
+			"(tried %s-2 through %s-%d)",
+		maxAttempts-1, agentId, agentId, maxAttempts,
+	)
 }
 
 func (a *InitAction) populateContainerSettings(
@@ -1468,13 +1978,6 @@ func (a *InitAction) populateContainerSettings(
 			Memory: selected.Memory,
 			Cpu:    selected.Cpu,
 		},
-	}
-
-	if !isVNextEnabled(ctx, a.azdClient) {
-		containerSettings.Scale = &project.ScaleSettings{
-			MinReplicas: project.DefaultMinReplicas,
-			MaxReplicas: project.DefaultMaxReplicas,
-		}
 	}
 
 	return containerSettings, nil
@@ -1808,4 +2311,272 @@ func downloadDirectoryContentsWithoutGhCli(
 	}
 
 	return nil
+}
+
+// extractToolboxAndConnectionConfigs extracts toolbox resource definitions from the agent manifest
+// and converts them into project.Toolbox config entries and project.ToolConnection entries.
+// Tools with a target/authType also produce connection entries for Bicep provisioning.
+// Built-in tools (bing_grounding, azure_ai_search, etc.) produce toolbox tools but no connections.
+func extractToolboxAndConnectionConfigs(
+	manifest *agent_yaml.AgentManifest,
+) ([]project.Toolbox, []project.ToolConnection, map[string]string, error) {
+	if manifest == nil || manifest.Resources == nil {
+		return nil, nil, nil, nil
+	}
+
+	var toolboxes []project.Toolbox
+	var connections []project.ToolConnection
+	// credentialEnvVars maps generated env var names to their raw values so
+	// the caller can persist them in the azd environment.
+	credentialEnvVars := map[string]string{}
+
+	for _, resource := range manifest.Resources {
+		tbResource, ok := resource.(agent_yaml.ToolboxResource)
+		if !ok {
+			continue
+		}
+
+		description := tbResource.Description
+
+		if len(tbResource.Tools) == 0 {
+			return nil, nil, nil, fmt.Errorf(
+				"toolbox resource '%s' is missing required 'tools'",
+				tbResource.Name,
+			)
+		}
+
+		var tools []map[string]any
+		for i, rawTool := range tbResource.Tools {
+			toolMap, ok := rawTool.(map[string]any)
+			if !ok {
+				return nil, nil, nil, fmt.Errorf(
+					"toolbox resource '%s' has invalid tool entry: expected object",
+					tbResource.Name,
+				)
+			}
+
+			// Manifest and API both use "type" for tool kind
+			toolType, _ := toolMap["type"].(string)
+
+			target, _ := toolMap["target"].(string)
+			if target == "" {
+				// No target — either a built-in tool or a pre-configured tool
+				// that already has project_connection_id. Pass through as-is.
+				result := make(map[string]any, len(toolMap))
+				maps.Copy(result, toolMap)
+				tools = append(tools, result)
+				continue
+			}
+
+			if toolType == "" {
+				return nil, nil, nil, fmt.Errorf(
+					"toolbox resource '%s': external tool at index %d has a 'target' but no 'type'",
+					tbResource.Name, i,
+				)
+			}
+
+			// External tools with target/authType need a connection
+			toolName, _ := toolMap["name"].(string)
+			authType, _ := toolMap["authType"].(string)
+			credentials, _ := toolMap["credentials"].(map[string]any)
+
+			connName := toolName
+			if connName == "" {
+				connName = fmt.Sprintf("%s-%s-%d", tbResource.Name, toolType, i)
+			}
+
+			conn := project.ToolConnection{
+				Name:     connName,
+				Category: "RemoteTool",
+				Target:   target,
+				AuthType: authType,
+			}
+
+			// Extract credentials, storing raw values as env vars and
+			// replacing them with ${VAR} references in the config.
+			if len(credentials) > 0 {
+				conn.Credentials = externalizeCredentials(
+					credentials, []string{connName}, credentialEnvVars,
+				)
+			}
+
+			connections = append(connections, conn)
+
+			// Preserve all tool fields, replacing consumed connection fields
+			// with the project_connection_id reference.
+			tool := make(map[string]any, len(toolMap))
+			maps.Copy(tool, toolMap)
+			tool["type"] = toolType
+			tool["project_connection_id"] = connName
+			delete(tool, "target")
+			delete(tool, "authType")
+			delete(tool, "credentials")
+			tools = append(tools, tool)
+		}
+
+		toolboxes = append(toolboxes, project.Toolbox{
+			Name:        tbResource.Name,
+			Description: description,
+			Tools:       tools,
+		})
+	}
+
+	return toolboxes, connections, credentialEnvVars, nil
+}
+
+// credentialEnvVarName builds a deterministic env var name for a connection
+// credential key, e.g. ("github-copilot", "clientSecret") → "PARAM_GITHUB_COPILOT_CLIENTSECRET".
+// All non-alphanumeric characters are replaced with underscores and consecutive
+// underscores are collapsed to produce a valid [A-Z0-9_]+ environment variable name.
+var nonAlphanumRe = regexp.MustCompile(`[^A-Z0-9]+`)
+
+func credentialEnvVarName(parts ...string) string {
+	s := "PARAM_" + strings.ToUpper(strings.Join(parts, "_"))
+	return nonAlphanumRe.ReplaceAllString(s, "_")
+}
+
+// externalizeCredentials recursively walks a credential map. String leaf values
+// are stored as env vars and replaced with ${VAR} references. Nested maps are
+// preserved structurally. keyPath accumulates segments for the env var name.
+func externalizeCredentials(
+	creds map[string]any,
+	keyPath []string,
+	envVars map[string]string,
+) map[string]any {
+	result := make(map[string]any, len(creds))
+	for k, v := range creds {
+		path := append(keyPath, k)
+		switch val := v.(type) {
+		case map[string]any:
+			result[k] = externalizeCredentials(val, path, envVars)
+		default:
+			envName := credentialEnvVarName(path...)
+			envVars[envName] = fmt.Sprintf("%v", val)
+			result[k] = fmt.Sprintf("${%s}", envName)
+		}
+	}
+	return result
+}
+
+// injectToolboxEnvVarsIntoDefinition adds TOOLBOX_{NAME}_MCP_ENDPOINT entries
+// to the environment_variables section of a hosted agent definition for each toolbox
+// resource in the manifest. Returns an error if two toolboxes produce the same
+// environment variable name or if the key already exists in the definition.
+func injectToolboxEnvVarsIntoDefinition(manifest *agent_yaml.AgentManifest) error {
+	if manifest == nil || manifest.Resources == nil {
+		return nil
+	}
+
+	containerAgent, ok := manifest.Template.(agent_yaml.ContainerAgent)
+	if !ok {
+		return nil
+	}
+
+	// Collect toolbox resource names
+	var toolboxNames []string
+	for _, resource := range manifest.Resources {
+		if tbResource, ok := resource.(agent_yaml.ToolboxResource); ok {
+			toolboxNames = append(toolboxNames, tbResource.Name)
+		}
+	}
+	if len(toolboxNames) == 0 {
+		return nil
+	}
+
+	if containerAgent.EnvironmentVariables == nil {
+		envVars := []agent_yaml.EnvironmentVariable{}
+		containerAgent.EnvironmentVariables = &envVars
+	}
+
+	existingNames := make(map[string]bool, len(*containerAgent.EnvironmentVariables))
+	for _, ev := range *containerAgent.EnvironmentVariables {
+		existingNames[ev.Name] = true
+	}
+
+	for _, tbName := range toolboxNames {
+		envKey := toolboxMCPEndpointEnvKey(tbName)
+		if existingNames[envKey] {
+			return fmt.Errorf(
+				"duplicate toolbox environment variable %q (from toolbox %q)",
+				envKey, tbName,
+			)
+		}
+		existingNames[envKey] = true
+		*containerAgent.EnvironmentVariables = append(
+			*containerAgent.EnvironmentVariables,
+			agent_yaml.EnvironmentVariable{
+				Name:  envKey,
+				Value: fmt.Sprintf("${%s}", envKey),
+			},
+		)
+	}
+
+	manifest.Template = containerAgent
+	return nil
+}
+
+// extractConnectionConfigs extracts connection resource definitions from the agent manifest
+// and converts them into project.Connection config entries. Credential values are externalized
+// to environment variables and replaced with ${VAR} references in the returned connections.
+func extractConnectionConfigs(
+	manifest *agent_yaml.AgentManifest,
+) ([]project.Connection, map[string]string, error) {
+	if manifest == nil || manifest.Resources == nil {
+		return nil, nil, nil
+	}
+
+	var connections []project.Connection
+	credentialEnvVars := map[string]string{}
+
+	for _, resource := range manifest.Resources {
+		connResource, ok := resource.(agent_yaml.ConnectionResource)
+		if !ok {
+			continue
+		}
+
+		creds := maps.Clone(connResource.Credentials)
+		authType := string(connResource.AuthType)
+
+		// Surface credentials.type to top-level authType when not explicitly set.
+		// This must happen before externalization so we capture the raw value.
+		if authType == "" && len(creds) > 0 {
+			if credType, ok := creds["type"].(string); ok && credType != "" {
+				authType = credType
+				delete(creds, "type")
+			}
+		}
+
+		// Externalize credential values to env vars and replace with ${VAR} references.
+		if len(creds) > 0 {
+			creds = externalizeCredentials(
+				creds, []string{connResource.Name}, credentialEnvVars,
+			)
+		}
+
+		conn := project.Connection{
+			Name:                        connResource.Name,
+			Category:                    string(connResource.Category),
+			Target:                      connResource.Target,
+			AuthType:                    authType,
+			Credentials:                 creds,
+			Metadata:                    connResource.Metadata,
+			ExpiryTime:                  connResource.ExpiryTime,
+			IsSharedToAll:               connResource.IsSharedToAll,
+			SharedUserList:              connResource.SharedUserList,
+			PeRequirement:               connResource.PeRequirement,
+			PeStatus:                    connResource.PeStatus,
+			UseWorkspaceManagedIdentity: connResource.UseWorkspaceManagedIdentity,
+			Error:                       connResource.Error,
+			AuthorizationUrl:            connResource.AuthorizationUrl,
+			TokenUrl:                    connResource.TokenUrl,
+			RefreshUrl:                  connResource.RefreshUrl,
+			Scopes:                      connResource.Scopes,
+			Audience:                    connResource.Audience,
+			ConnectorName:               connResource.ConnectorName,
+		}
+
+		connections = append(connections, conn)
+	}
+
+	return connections, credentialEnvVars, nil
 }

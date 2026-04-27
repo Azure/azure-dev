@@ -17,7 +17,7 @@ func TestDefaultRetryConfig(t *testing.T) {
 }
 
 func TestRetryOperation_Success(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	callCount := 0
 
 	err := RetryOperation(ctx, DefaultRetryConfig(), func() error {
@@ -30,7 +30,7 @@ func TestRetryOperation_Success(t *testing.T) {
 }
 
 func TestRetryOperation_FailsThenSucceeds(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	callCount := 0
 
 	err := RetryOperation(ctx, DefaultRetryConfig(), func() error {
@@ -46,7 +46,7 @@ func TestRetryOperation_FailsThenSucceeds(t *testing.T) {
 }
 
 func TestRetryOperation_AllAttemptsFail(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	callCount := 0
 	expectedError := errors.New("persistent error")
 
@@ -60,7 +60,7 @@ func TestRetryOperation_AllAttemptsFail(t *testing.T) {
 }
 
 func TestRetryOperation_ContextCancellation(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	callCount := 0
 
 	// Cancel immediately
@@ -78,7 +78,7 @@ func TestRetryOperation_ContextCancellation(t *testing.T) {
 
 func TestRetryOperation_ContextAlreadyCancelled(t *testing.T) {
 	// Test with already-cancelled context to avoid timing-dependent behavior
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel() // Cancel before starting
 
 	err := RetryOperation(ctx, DefaultRetryConfig(), func() error {
@@ -90,7 +90,7 @@ func TestRetryOperation_ContextAlreadyCancelled(t *testing.T) {
 }
 
 func TestRetryOperation_NilBackoff_UsesDefault(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	callCount := 0
 
 	err := RetryOperation(ctx, nil, func() error {
@@ -103,7 +103,7 @@ func TestRetryOperation_NilBackoff_UsesDefault(t *testing.T) {
 }
 
 func TestRetryOperation_SucceedsOnLastAttempt(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	callCount := 0
 
 	err := RetryOperation(ctx, DefaultRetryConfig(), func() error {
@@ -134,7 +134,7 @@ func TestRetryOperation_DifferentErrorTypes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx := context.Background()
+			ctx := t.Context()
 			callCount := 0
 
 			err := RetryOperation(ctx, DefaultRetryConfig(), func() error {

@@ -5,6 +5,7 @@ package provisioning_test
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -22,13 +23,14 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazapi"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/benbjohnson/clock"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
 func TestProvisionInitializesEnvironment(t *testing.T) {
 	env := environment.NewWithValues("test-env", nil)
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
 		return strings.Contains(options.Message, "Select an Azure Subscription to use")
 	}).RespondFn(func(options input.ConsoleOptions) (any, error) {
@@ -68,7 +70,7 @@ func TestManagerPreview(t *testing.T) {
 		"AZURE_LOCATION":        "eastus2",
 	})
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	registerContainerDependencies(mockContext, env)
 
 	envManager := &mockenv.MockEnvManager{}
@@ -97,7 +99,7 @@ func TestManagerGetState(t *testing.T) {
 		"AZURE_LOCATION":        "eastus2",
 	})
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	registerContainerDependencies(mockContext, env)
 
 	envManager := &mockenv.MockEnvManager{}
@@ -126,7 +128,7 @@ func TestManagerDeploy(t *testing.T) {
 		"AZURE_LOCATION":        "eastus2",
 	})
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	registerContainerDependencies(mockContext, env)
 
 	envManager := &mockenv.MockEnvManager{}
@@ -155,7 +157,7 @@ func TestManagerDestroyWithPositiveConfirmation(t *testing.T) {
 		"AZURE_LOCATION":        "eastus2",
 	})
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
 		return strings.Contains(options.Message, "Are you sure you want to destroy?")
 	}).Respond(true)
@@ -192,7 +194,7 @@ func TestManagerDestroyWithNegativeConfirmation(t *testing.T) {
 		"AZURE_LOCATION":        "eastus2",
 	})
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
 		return strings.Contains(options.Message, "Are you sure you want to destroy?")
@@ -220,6 +222,119 @@ func TestManagerDestroyWithNegativeConfirmation(t *testing.T) {
 	require.Nil(t, destroyResult)
 	require.NotNil(t, err)
 	require.Contains(t, mockContext.Console.Output(), "Are you sure you want to destroy?")
+}
+
+func TestEnsureSubscriptionAndLocation_NoPromptMissingSubscriptionReturnsPromptRequiredError(t *testing.T) {
+	env := environment.NewWithValues("test-env", nil)
+
+	err := provisioning.EnsureSubscriptionAndLocation(t.Context(), &mockenv.MockEnvManager{},
+		env,
+		noPromptPrompter{},
+		provisioning.EnsureSubscriptionAndLocationOptions{},
+	)
+	promptErr := requirePromptRequiredError(t, err, input.RequiredInput{
+		Name: "subscription",
+		Sources: []input.InputSource{
+			{
+				Kind: input.InputSourceEnvironment,
+				Name: environment.SubscriptionIdEnvVarName,
+			},
+		},
+	})
+
+	require.Contains(t, promptErr.ToString(""), environment.SubscriptionIdEnvVarName)
+}
+
+func TestEnsureSubscriptionAndLocation_NoPromptMissingLocationReturnsPromptRequiredError(t *testing.T) {
+	env := environment.NewWithValues("test-env", map[string]string{
+		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
+	})
+	envManager := &mockenv.MockEnvManager{}
+	envManager.On("Save", mock.Anything, env).Return(nil).Once()
+
+	err := provisioning.EnsureSubscriptionAndLocation(t.Context(), envManager,
+		env,
+		noPromptPrompter{},
+		provisioning.EnsureSubscriptionAndLocationOptions{},
+	)
+	promptErr := requirePromptRequiredError(t, err, input.RequiredInput{
+		Name: "location",
+		Sources: []input.InputSource{
+			{
+				Kind: input.InputSourceEnvironment,
+				Name: environment.LocationEnvVarName,
+			},
+		},
+	})
+
+	require.Contains(t, promptErr.ToString(""), environment.LocationEnvVarName)
+	envManager.AssertExpectations(t)
+}
+
+func TestEnsureSubscription_NoPromptMissingSubscriptionReturnsPromptRequiredError(t *testing.T) {
+	env := environment.NewWithValues("test-env", nil)
+
+	err := provisioning.EnsureSubscription(t.Context(), &mockenv.MockEnvManager{},
+		env,
+		noPromptPrompter{},
+	)
+	requirePromptRequiredError(t, err, input.RequiredInput{
+		Name: "subscription",
+		Sources: []input.InputSource{
+			{
+				Kind: input.InputSourceEnvironment,
+				Name: environment.SubscriptionIdEnvVarName,
+			},
+		},
+	})
+}
+
+type noPromptPrompter struct{}
+
+func (p noPromptPrompter) PromptSubscription(ctx context.Context, msg string) (string, error) {
+	panic("unexpected PromptSubscription call")
+}
+
+func (p noPromptPrompter) PromptLocation(
+	ctx context.Context,
+	subId string,
+	msg string,
+	filter prompt.LocationFilterPredicate,
+	defaultLocation *string,
+) (string, error) {
+	panic("unexpected PromptLocation call")
+}
+
+func (p noPromptPrompter) PromptResourceGroup(ctx context.Context, options prompt.PromptResourceOptions) (string, error) {
+	panic("unexpected PromptResourceGroup call")
+}
+
+func (p noPromptPrompter) PromptResourceGroupFrom(
+	ctx context.Context,
+	subscriptionId string,
+	location string,
+	options prompt.PromptResourceGroupFromOptions,
+) (string, error) {
+	panic("unexpected PromptResourceGroupFrom call")
+}
+
+func (p noPromptPrompter) IsNoPromptMode() bool {
+	return true
+}
+
+func requirePromptRequiredError(
+	t *testing.T,
+	err error,
+	expectedInput input.RequiredInput,
+) *input.PromptRequiredError {
+	t.Helper()
+
+	promptErr, ok := errors.AsType[*input.PromptRequiredError](err)
+	require.True(t, ok)
+	require.Equal(t, []input.RequiredInput{expectedInput}, promptErr.Inputs)
+	require.Contains(t, promptErr.ToString(""), input.DefaultPromptRequiredMessage)
+
+	return promptErr
 }
 
 func registerContainerDependencies(mockContext *mocks.MockContext, env *environment.Environment) {

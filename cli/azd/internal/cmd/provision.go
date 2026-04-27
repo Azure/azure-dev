@@ -535,7 +535,9 @@ func (p *ProvisionAction) runLayerProvisionWithHooks(
 		return actionFn()
 	}
 
-	hooksManager := ext.NewHooksManager(layerPath, p.commandRunner)
+	hooksManager := ext.NewHooksManager(ext.HooksManagerOptions{
+		Cwd: layerPath, ProjectDir: p.projectConfig.Path,
+	}, p.commandRunner)
 	hooksRunner := ext.NewHooksRunner(
 		hooksManager,
 		p.commandRunner,
@@ -549,7 +551,10 @@ func (p *ProvisionAction) runLayerProvisionWithHooks(
 
 	p.validateAndWarnLayerHooks(ctx, hooksManager, layer.Hooks)
 
-	if err := hooksRunner.Invoke(ctx, []string{string(project.ProjectEventProvision)}, actionFn); err != nil {
+	err := hooksRunner.Invoke(
+		ctx, []string{string(project.ProjectEventProvision)}, "layer", actionFn,
+	)
+	if err != nil {
 		if layer.Name == "" {
 			return err
 		}

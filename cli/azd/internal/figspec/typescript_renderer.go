@@ -22,7 +22,8 @@ const completionSpec: Fig.Spec = {
 {{.Options}}	],
 };
 
-export default completionSpec;`
+export default completionSpec;
+`
 
 	// TypeScript field names used in rendering
 	fieldName        = "name"

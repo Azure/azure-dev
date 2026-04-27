@@ -1,9 +1,11 @@
 @description('The location for the resource(s) to be deployed.')
 param location string = resourceGroup().location
 
-param userPrincipalId string
+param userPrincipalId string = ''
 
 param tags object = { }
+
+param apphostinfrastructure_acr_outputs_name string
 
 resource appHostInfrastructure_mi 'Microsoft.ManagedIdentity/userAssignedIdentities@2024-11-30' = {
   name: take('appHostInfrastructure_mi-${uniqueString(resourceGroup().id)}', 128)
@@ -11,13 +13,8 @@ resource appHostInfrastructure_mi 'Microsoft.ManagedIdentity/userAssignedIdentit
   tags: tags
 }
 
-resource appHostInfrastructure_acr 'Microsoft.ContainerRegistry/registries@2025-04-01' = {
-  name: take('appHostInfrastructureacr${uniqueString(resourceGroup().id)}', 50)
-  location: location
-  sku: {
-    name: 'Basic'
-  }
-  tags: tags
+resource appHostInfrastructure_acr 'Microsoft.ContainerRegistry/registries@2025-04-01' existing = {
+  name: apphostinfrastructure_acr_outputs_name
 }
 
 resource appHostInfrastructure_acr_appHostInfrastructure_mi_AcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {

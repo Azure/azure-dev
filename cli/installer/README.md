@@ -35,7 +35,7 @@ See [MSI configuration](#msi-configuration) for advanced install scenarios.
 #### Homebrew (recommended)
 
 ```bash
-brew install azure/azd/azd
+brew install --cask azure/azd/azd
 ```
 
 If using `brew` to upgrade `azd` from a version not installed using `brew`, remove the existing version of `azd` using the uninstall script (if installed to the default location) or by deleting the `azd` binary manually.
@@ -165,7 +165,7 @@ The `daily` feed is periodically updated with builds from the latest source code
 ##### Install
 
 ```pwsh
-powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/install-azd.ps1' -OutFile 'install-azd.ps1'; ./install-azd.ps1 -Version 'daily'"
+powershell -ex AllSigned -c "& ([scriptblock]::Create((Invoke-RestMethod 'https://aka.ms/install-azd.ps1'))) -Version 'daily'"
 ```
 
 ##### Uninstall or switch to another version

@@ -15,22 +15,22 @@ func TestPreflightCheckFn_SkipsWhenNoRoleAssignments(t *testing.T) {
 	checkFn := PreflightCheckFn(func(
 		ctx context.Context,
 		valCtx *validationContext,
-	) (*PreflightCheckResult, error) {
+	) ([]PreflightCheckResult, error) {
 		called = true
 		if !valCtx.Props.HasRoleAssignments {
 			return nil, nil
 		}
-		return &PreflightCheckResult{
+		return []PreflightCheckResult{{
 			Severity: PreflightCheckError,
 			Message:  "missing permissions",
-		}, nil
+		}}, nil
 	})
 
 	valCtx := &validationContext{
 		Props: resourcesProperties{HasRoleAssignments: false},
 	}
 
-	result, err := checkFn(context.Background(), valCtx)
+	result, err := checkFn(t.Context(), valCtx)
 	require.NoError(t, err)
 	require.True(t, called)
 	require.Nil(t, result)
@@ -40,23 +40,23 @@ func TestPreflightCheckFn_ReportsErrorWhenRoleAssignments(t *testing.T) {
 	checkFn := PreflightCheckFn(func(
 		ctx context.Context,
 		valCtx *validationContext,
-	) (*PreflightCheckResult, error) {
+	) ([]PreflightCheckResult, error) {
 		if !valCtx.Props.HasRoleAssignments {
 			return nil, nil
 		}
-		return &PreflightCheckResult{
+		return []PreflightCheckResult{{
 			Severity: PreflightCheckError,
 			Message:  "missing role assignment permissions",
-		}, nil
+		}}, nil
 	})
 
 	valCtx := &validationContext{
 		Props: resourcesProperties{HasRoleAssignments: true},
 	}
 
-	result, err := checkFn(context.Background(), valCtx)
+	results, err := checkFn(t.Context(), valCtx)
 	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.Equal(t, PreflightCheckError, result.Severity)
-	require.Contains(t, result.Message, "missing role assignment permissions")
+	require.Len(t, results, 1)
+	require.Equal(t, PreflightCheckError, results[0].Severity)
+	require.Contains(t, results[0].Message, "missing role assignment permissions")
 }

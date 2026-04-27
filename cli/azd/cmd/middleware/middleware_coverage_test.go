@@ -99,7 +99,7 @@ func TestExperimentationMiddleware_Run_AlwaysCallsNext(t *testing.T) {
 	m := &ExperimentationMiddleware{}
 	nextFn, count := nextCounter()
 
-	result, err := m.Run(context.Background(), nextFn)
+	result, err := m.Run(t.Context(), nextFn)
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -114,7 +114,7 @@ func TestExperimentationMiddleware_Run_OverrideEndpoint(t *testing.T) {
 	m := &ExperimentationMiddleware{}
 	nextFn, count := nextCounter()
 
-	result, err := m.Run(context.Background(), nextFn)
+	result, err := m.Run(t.Context(), nextFn)
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -130,7 +130,7 @@ func TestExperimentationMiddleware_Run_PropagatesNextError(t *testing.T) {
 		return nil, expectedErr
 	}
 
-	result, err := m.Run(context.Background(), nextFn)
+	result, err := m.Run(t.Context(), nextFn)
 
 	require.ErrorIs(t, err, expectedErr)
 	require.Nil(t, result)
@@ -142,7 +142,7 @@ func TestExperimentationMiddleware_Run_PropagatesNextError(t *testing.T) {
 
 func TestNewExtensionsMiddleware(t *testing.T) {
 	t.Parallel()
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	manager := createExtensionsManager(t, mockCtx, nil)
 	runner := extensions.NewRunner(exec.NewCommandRunner(nil))
 	console := mockinput.NewMockConsole()
@@ -175,7 +175,7 @@ func TestExtensionsMiddleware_Run_ChildAction_SkipsExtensions(t *testing.T) {
 		// extensionManager is intentionally nil – it must not be touched
 	}
 
-	ctx := WithChildAction(context.Background())
+	ctx := WithChildAction(t.Context())
 	nextFn, count := nextCounter()
 
 	result, err := m.Run(ctx, nextFn)
@@ -191,7 +191,7 @@ func TestExtensionsMiddleware_Run_ChildAction_SkipsExtensions(t *testing.T) {
 
 func TestExtensionsMiddleware_Run_NoInstalledExtensions(t *testing.T) {
 	t.Parallel()
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	manager := createExtensionsManager(t, mockCtx, nil)
 
 	flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
@@ -207,7 +207,7 @@ func TestExtensionsMiddleware_Run_NoInstalledExtensions(t *testing.T) {
 
 	nextFn, count := nextCounter()
 
-	result, err := m.Run(context.Background(), nextFn)
+	result, err := m.Run(t.Context(), nextFn)
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -231,7 +231,7 @@ func TestExtensionsMiddleware_Run_NoListenCapabilities(t *testing.T) {
 		},
 	}
 
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	manager := createExtensionsManager(t, mockCtx, installed)
 
 	flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
@@ -247,7 +247,7 @@ func TestExtensionsMiddleware_Run_NoListenCapabilities(t *testing.T) {
 
 	nextFn, count := nextCounter()
 
-	result, err := m.Run(context.Background(), nextFn)
+	result, err := m.Run(t.Context(), nextFn)
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -292,7 +292,7 @@ func TestGetReadyContext_DefaultTimeout(t *testing.T) {
 	t.Setenv("AZD_EXT_DEBUG", "")
 	t.Setenv("AZD_EXT_TIMEOUT", "")
 
-	ctx, cancel := getReadyContext(context.Background())
+	ctx, cancel := getReadyContext(t.Context())
 	defer cancel()
 
 	deadline, ok := ctx.Deadline()
@@ -307,7 +307,7 @@ func TestGetReadyContext_CustomTimeout(t *testing.T) {
 	t.Setenv("AZD_EXT_DEBUG", "")
 	t.Setenv("AZD_EXT_TIMEOUT", "5")
 
-	ctx, cancel := getReadyContext(context.Background())
+	ctx, cancel := getReadyContext(t.Context())
 	defer cancel()
 
 	deadline, ok := ctx.Deadline()
@@ -322,7 +322,7 @@ func TestGetReadyContext_InvalidTimeout_FallsBackToDefault(t *testing.T) {
 	t.Setenv("AZD_EXT_DEBUG", "")
 	t.Setenv("AZD_EXT_TIMEOUT", "not-a-number")
 
-	ctx, cancel := getReadyContext(context.Background())
+	ctx, cancel := getReadyContext(t.Context())
 	defer cancel()
 
 	deadline, ok := ctx.Deadline()
@@ -337,7 +337,7 @@ func TestGetReadyContext_NegativeTimeout_FallsBackToDefault(t *testing.T) {
 	t.Setenv("AZD_EXT_DEBUG", "")
 	t.Setenv("AZD_EXT_TIMEOUT", "-1")
 
-	ctx, cancel := getReadyContext(context.Background())
+	ctx, cancel := getReadyContext(t.Context())
 	defer cancel()
 
 	deadline, ok := ctx.Deadline()
@@ -352,7 +352,7 @@ func TestGetReadyContext_ZeroTimeout_FallsBackToDefault(t *testing.T) {
 	t.Setenv("AZD_EXT_DEBUG", "")
 	t.Setenv("AZD_EXT_TIMEOUT", "0")
 
-	ctx, cancel := getReadyContext(context.Background())
+	ctx, cancel := getReadyContext(t.Context())
 	defer cancel()
 
 	deadline, ok := ctx.Deadline()
@@ -368,7 +368,7 @@ func TestGetReadyContext_DebugMode_NoTimeout(t *testing.T) {
 	// without a deadline to allow indefinite debugger attachment.
 	t.Setenv("AZD_EXT_DEBUG", "true")
 
-	ctx, cancel := getReadyContext(context.Background())
+	ctx, cancel := getReadyContext(t.Context())
 	defer cancel()
 
 	_, ok := ctx.Deadline()
@@ -383,7 +383,7 @@ func TestExtensionsMiddleware_Run_ListInstalledError(t *testing.T) {
 	t.Parallel()
 	// Seed the config with an invalid value for the installed extensions
 	// section so that GetSection fails during unmarshalling.
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	userConfigManager := config.NewUserConfigManager(mockCtx.ConfigManager)
 
 	cfg, err := userConfigManager.Load()
@@ -411,7 +411,7 @@ func TestExtensionsMiddleware_Run_ListInstalledError(t *testing.T) {
 		globalOptions:    &internal.GlobalCommandOptions{},
 	}
 
-	_, err = m.Run(context.Background(), nextOK)
+	_, err = m.Run(t.Context(), nextOK)
 	require.Error(t, err, "should propagate ListInstalled error")
 }
 
@@ -431,7 +431,7 @@ func TestExtensionsMiddleware_Run_ListenCapabilities_ResolveGrpcFails(t *testing
 		},
 	}
 
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	manager := createExtensionsManager(t, mockCtx, installed)
 
 	flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
@@ -448,7 +448,7 @@ func TestExtensionsMiddleware_Run_ListenCapabilities_ResolveGrpcFails(t *testing
 		globalOptions:    &internal.GlobalCommandOptions{},
 	}
 
-	_, err := m.Run(context.Background(), nextOK)
+	_, err := m.Run(t.Context(), nextOK)
 	require.Error(t, err, "should fail when gRPC server cannot be resolved")
 }
 
@@ -467,7 +467,7 @@ func TestExtensionsMiddleware_Run_ServiceTargetProviderCapability(t *testing.T) 
 		},
 	}
 
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	manager := createExtensionsManager(t, mockCtx, installed)
 
 	flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
@@ -484,7 +484,7 @@ func TestExtensionsMiddleware_Run_ServiceTargetProviderCapability(t *testing.T) 
 		globalOptions:    &internal.GlobalCommandOptions{},
 	}
 
-	_, err := m.Run(context.Background(), nextOK)
+	_, err := m.Run(t.Context(), nextOK)
 	require.Error(t, err, "should fail — gRPC server not registered")
 }
 
@@ -503,7 +503,7 @@ func TestExtensionsMiddleware_Run_FrameworkServiceProviderCapability(t *testing.
 		},
 	}
 
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	manager := createExtensionsManager(t, mockCtx, installed)
 
 	flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
@@ -520,7 +520,7 @@ func TestExtensionsMiddleware_Run_FrameworkServiceProviderCapability(t *testing.
 		globalOptions:    &internal.GlobalCommandOptions{},
 	}
 
-	_, err := m.Run(context.Background(), nextOK)
+	_, err := m.Run(t.Context(), nextOK)
 	require.Error(t, err, "should fail — gRPC server not registered")
 }
 
@@ -545,7 +545,7 @@ func TestExtensionsMiddleware_Run_MixedCapabilities(t *testing.T) {
 		},
 	}
 
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	manager := createExtensionsManager(t, mockCtx, installed)
 
 	flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
@@ -563,7 +563,7 @@ func TestExtensionsMiddleware_Run_MixedCapabilities(t *testing.T) {
 	}
 
 	// Should attempt to start the listen extension and fail at gRPC resolution
-	_, err := m.Run(context.Background(), nextOK)
+	_, err := m.Run(t.Context(), nextOK)
 	require.Error(t, err, "should fail — gRPC server not registered")
 }
 
@@ -575,7 +575,7 @@ func TestExperimentationMiddleware_Run_CancelledContext(t *testing.T) {
 	t.Parallel()
 	m := &ExperimentationMiddleware{}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel() // cancel immediately
 
 	nextFn, count := nextCounter()
@@ -594,7 +594,7 @@ func TestExperimentationMiddleware_Run_CancelledContext(t *testing.T) {
 
 func TestExtensionsMiddleware_Run_NoExtensions_PropagatesNextResult(t *testing.T) {
 	t.Parallel()
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	manager := createExtensionsManager(t, mockCtx, nil)
 
 	flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
@@ -612,7 +612,7 @@ func TestExtensionsMiddleware_Run_NoExtensions_PropagatesNextResult(t *testing.T
 		Message: &actions.ResultMessage{Header: "custom-result"},
 	}
 
-	result, err := m.Run(context.Background(), func(_ context.Context) (*actions.ActionResult, error) {
+	result, err := m.Run(t.Context(), func(_ context.Context) (*actions.ActionResult, error) {
 		return expected, nil
 	})
 
@@ -622,7 +622,7 @@ func TestExtensionsMiddleware_Run_NoExtensions_PropagatesNextResult(t *testing.T
 
 func TestExtensionsMiddleware_Run_NoExtensions_PropagatesNextError(t *testing.T) {
 	t.Parallel()
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	manager := createExtensionsManager(t, mockCtx, nil)
 
 	flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
@@ -637,7 +637,7 @@ func TestExtensionsMiddleware_Run_NoExtensions_PropagatesNextError(t *testing.T)
 	}
 
 	expectedErr := context.DeadlineExceeded
-	result, err := m.Run(context.Background(), func(_ context.Context) (*actions.ActionResult, error) {
+	result, err := m.Run(t.Context(), func(_ context.Context) (*actions.ActionResult, error) {
 		return nil, expectedErr
 	})
 
@@ -654,7 +654,8 @@ func TestListenCapabilities_ContainsExpectedValues(t *testing.T) {
 	require.Contains(t, listenCapabilities, extensions.LifecycleEventsCapability)
 	require.Contains(t, listenCapabilities, extensions.ServiceTargetProviderCapability)
 	require.Contains(t, listenCapabilities, extensions.FrameworkServiceProviderCapability)
-	require.Len(t, listenCapabilities, 3)
+	require.Contains(t, listenCapabilities, extensions.ProvisioningProviderCapability)
+	require.Len(t, listenCapabilities, 4)
 }
 
 // ---------------------------------------------------------------------------
@@ -733,7 +734,7 @@ func TestTelemetryMiddleware_extensionCmdInfo_NilManager(t *testing.T) {
 func TestTelemetryMiddleware_extensionCmdInfo_ExtensionNotFound(t *testing.T) {
 	t.Parallel()
 	// Create a manager with no installed extensions so GetInstalled fails
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	manager := createExtensionsManager(t, mockCtx, nil)
 
 	m := &TelemetryMiddleware{
@@ -761,7 +762,7 @@ func TestTelemetryMiddleware_extensionCmdInfo_NoMetadataCapability(t *testing.T)
 		},
 	}
 
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	manager := createExtensionsManager(t, mockCtx, installed)
 
 	m := &TelemetryMiddleware{
@@ -855,7 +856,7 @@ func TestErrorMiddleware_displayUsageMetrics_WithTokens(t *testing.T) {
 
 	// Should not panic
 	require.NotPanics(t, func() {
-		e.displayUsageMetrics(context.Background(), result)
+		e.displayUsageMetrics(t.Context(), result)
 	})
 }
 
@@ -868,7 +869,7 @@ func TestErrorMiddleware_displayUsageMetrics_NilResult(t *testing.T) {
 
 	// Should not panic with nil result
 	require.NotPanics(t, func() {
-		e.displayUsageMetrics(context.Background(), nil)
+		e.displayUsageMetrics(t.Context(), nil)
 	})
 }
 
@@ -888,7 +889,7 @@ func TestErrorMiddleware_displayUsageMetrics_ZeroTokens(t *testing.T) {
 
 	// Should not panic, and should not print anything
 	require.NotPanics(t, func() {
-		e.displayUsageMetrics(context.Background(), result)
+		e.displayUsageMetrics(t.Context(), result)
 	})
 }
 
@@ -911,7 +912,7 @@ func TestErrorMiddleware_Run_NoError(t *testing.T) {
 		Message: &actions.ResultMessage{Header: "success"},
 	}
 
-	result, err := e.Run(context.Background(), func(_ context.Context) (*actions.ActionResult, error) {
+	result, err := e.Run(t.Context(), func(_ context.Context) (*actions.ActionResult, error) {
 		return expected, nil
 	})
 
@@ -934,7 +935,7 @@ func TestErrorMiddleware_Run_ChildAction_PassesError(t *testing.T) {
 		errorPipeline:   errorhandler.NewErrorHandlerPipeline(nil),
 	}
 
-	ctx := WithChildAction(context.Background())
+	ctx := WithChildAction(t.Context())
 	expectedErr := errors.New("child error")
 
 	result, err := e.Run(ctx, func(_ context.Context) (*actions.ActionResult, error) {
@@ -960,7 +961,7 @@ func TestErrorMiddleware_Run_SkippableError_NoPrompt(t *testing.T) {
 		errorPipeline:   errorhandler.NewErrorHandlerPipeline(nil),
 	}
 
-	result, err := e.Run(context.Background(), func(_ context.Context) (*actions.ActionResult, error) {
+	result, err := e.Run(t.Context(), func(_ context.Context) (*actions.ActionResult, error) {
 		return nil, context.Canceled
 	})
 
@@ -988,7 +989,7 @@ func TestErrorMiddleware_Run_ErrorWithSuggestion(t *testing.T) {
 		Suggestion: "try this fix",
 	}
 
-	result, err := e.Run(context.Background(), func(_ context.Context) (*actions.ActionResult, error) {
+	result, err := e.Run(t.Context(), func(_ context.Context) (*actions.ActionResult, error) {
 		return nil, sugErr
 	})
 
@@ -1033,7 +1034,7 @@ func TestErrorMiddleware_Run_RegularError_CopilotDisabled(t *testing.T) {
 	}
 
 	expectedErr := errors.New("deployment failed: resource not found")
-	result, err := e.Run(context.Background(), func(_ context.Context) (*actions.ActionResult, error) {
+	result, err := e.Run(t.Context(), func(_ context.Context) (*actions.ActionResult, error) {
 		return nil, expectedErr
 	})
 
@@ -1060,7 +1061,7 @@ func TestErrorMiddleware_Run_ErrorPipelineMatch(t *testing.T) {
 
 	// Use an error that might match a known pattern (e.g., Azure auth errors).
 	// Even if no pattern matches, the code path is exercised.
-	result, err := e.Run(context.Background(), func(_ context.Context) (*actions.ActionResult, error) {
+	result, err := e.Run(t.Context(), func(_ context.Context) (*actions.ActionResult, error) {
 		return nil, errors.New("some unmatched error")
 	})
 
@@ -1086,7 +1087,7 @@ func TestErrorMiddleware_Run_OnCI_ShortCircuits(t *testing.T) {
 	}
 
 	expectedErr := errors.New("some error in CI")
-	result, err := e.Run(context.Background(), func(_ context.Context) (*actions.ActionResult, error) {
+	result, err := e.Run(t.Context(), func(_ context.Context) (*actions.ActionResult, error) {
 		return nil, expectedErr
 	})
 
@@ -1109,7 +1110,7 @@ func TestErrorMiddleware_Run_SkippableError_CancelledInNonPrompt(t *testing.T) {
 		errorPipeline:   errorhandler.NewErrorHandlerPipeline(nil),
 	}
 
-	result, err := e.Run(context.Background(), func(_ context.Context) (*actions.ActionResult, error) {
+	result, err := e.Run(t.Context(), func(_ context.Context) (*actions.ActionResult, error) {
 		return nil, context.Canceled
 	})
 
@@ -1136,7 +1137,7 @@ func TestUxMiddleware_Run_ErrorWithSuggestion(t *testing.T) {
 		Suggestion: "Try running azd auth login",
 	}
 
-	result, err := m.Run(context.Background(), func(_ context.Context) (*actions.ActionResult, error) {
+	result, err := m.Run(t.Context(), func(_ context.Context) (*actions.ActionResult, error) {
 		return nil, sugErr
 	})
 
@@ -1162,7 +1163,7 @@ func TestUxMiddleware_Run_ErrorWithTraceId(t *testing.T) {
 		Err:     errors.New("azure deployment failed"),
 	}
 
-	result, err := m.Run(context.Background(), func(_ context.Context) (*actions.ActionResult, error) {
+	result, err := m.Run(t.Context(), func(_ context.Context) (*actions.ActionResult, error) {
 		return nil, traceErr
 	})
 
@@ -1183,7 +1184,7 @@ func TestUxMiddleware_Run_RegularError(t *testing.T) {
 		featuresManager: alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
 	}
 
-	result, err := m.Run(context.Background(), func(_ context.Context) (*actions.ActionResult, error) {
+	result, err := m.Run(t.Context(), func(_ context.Context) (*actions.ActionResult, error) {
 		return nil, errors.New("generic error")
 	})
 
@@ -1204,7 +1205,7 @@ func TestUxMiddleware_Run_NilResult(t *testing.T) {
 		featuresManager: alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
 	}
 
-	result, err := m.Run(context.Background(), func(_ context.Context) (*actions.ActionResult, error) {
+	result, err := m.Run(t.Context(), func(_ context.Context) (*actions.ActionResult, error) {
 		return nil, nil
 	})
 
@@ -1225,7 +1226,7 @@ func TestUxMiddleware_Run_SuccessWithFollowUp(t *testing.T) {
 		featuresManager: alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
 	}
 
-	result, err := m.Run(context.Background(), func(_ context.Context) (*actions.ActionResult, error) {
+	result, err := m.Run(t.Context(), func(_ context.Context) (*actions.ActionResult, error) {
 		return &actions.ActionResult{
 			Message: &actions.ResultMessage{
 				Header:   "Deployment complete",
@@ -1258,7 +1259,7 @@ func TestUxMiddleware_Run_LocalErrorWithSuggestion(t *testing.T) {
 		Suggestion: "Run azd config set defaults.subscription <id>",
 	}
 
-	result, err := m.Run(context.Background(), func(_ context.Context) (*actions.ActionResult, error) {
+	result, err := m.Run(t.Context(), func(_ context.Context) (*actions.ActionResult, error) {
 		return nil, localErr
 	})
 
@@ -1287,7 +1288,7 @@ func TestUxMiddleware_Run_ExtensionRunError(t *testing.T) {
 		},
 	}
 
-	result, err := m.Run(context.Background(), func(_ context.Context) (*actions.ActionResult, error) {
+	result, err := m.Run(t.Context(), func(_ context.Context) (*actions.ActionResult, error) {
 		return nil, extErr
 	})
 

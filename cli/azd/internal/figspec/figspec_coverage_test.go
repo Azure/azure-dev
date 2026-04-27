@@ -893,6 +893,7 @@ func TestToTypeScript(t *testing.T) {
 	require.Contains(t, ts, "'init'")
 	require.Contains(t, ts, "'--template'")
 	require.Contains(t, ts, "'--debug'")
+	require.True(t, strings.HasSuffix(ts, "\n"))
 }
 
 func TestToTypeScript_Empty(t *testing.T) {
@@ -903,6 +904,7 @@ func TestToTypeScript_Empty(t *testing.T) {
 	ts, err := spec.ToTypeScript()
 	require.NoError(t, err)
 	require.Contains(t, ts, "name: 'test'")
+	require.True(t, strings.HasSuffix(ts, "\n"))
 }
 
 // ============================================================================

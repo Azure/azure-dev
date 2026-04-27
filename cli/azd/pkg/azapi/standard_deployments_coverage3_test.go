@@ -125,6 +125,51 @@ func Test_StdDeployments_GetSubscriptionDeployment_Coverage3(t *testing.T) {
 	})
 }
 
+func Test_StdDeployments_ListSubscriptionDeploymentResources_OnlyCreatedResourceGroups_Coverage3(t *testing.T) {
+	mockCtx := mocks.NewMockContext(t.Context())
+	sd := newStdDeployments(mockCtx)
+
+	mockCtx.HttpClient.When(func(req *http.Request) bool {
+		return req.Method == http.MethodGet &&
+			strings.Contains(strings.ToLower(req.URL.Path), "/providers/microsoft.resources/deployments/deploy1")
+	}).RespondFn(func(req *http.Request) (*http.Response, error) {
+		dep := makeDeploymentExtended("deploy1", armresources.ProvisioningStateSucceeded)
+		dep.Properties.OutputResources = []*armresources.ResourceReference{
+			{ID: new("/subscriptions/SUB/resourceGroups/RG1")},
+			{ID: new("/subscriptions/SUB/resourceGroups/RG1/providers/Microsoft.Web/sites/app1")},
+			{ID: new("/subscriptions/SUB/resourceGroups/EXISTING/providers/Microsoft.Web/sites/app2")},
+		}
+
+		return mocks.CreateHttpResponseWithBody(req, http.StatusOK, dep)
+	})
+
+	listedRGs := []string{}
+	mockCtx.HttpClient.When(func(req *http.Request) bool {
+		return req.Method == http.MethodGet &&
+			strings.Contains(strings.ToLower(req.URL.Path), "/resourcegroups/rg1/resources")
+	}).RespondFn(func(req *http.Request) (*http.Response, error) {
+		listedRGs = append(listedRGs, "RG1")
+
+		return mocks.CreateHttpResponseWithBody(req, http.StatusOK, armresources.ResourceListResult{
+			Value: []*armresources.GenericResourceExpanded{
+				{
+					ID:       new("/subscriptions/SUB/resourceGroups/RG1/providers/Microsoft.Web/sites/app1"),
+					Name:     new("app1"),
+					Type:     new("Microsoft.Web/sites"),
+					Location: new("eastus"),
+				},
+			},
+		})
+	})
+
+	resources, err := sd.ListSubscriptionDeploymentResources(*mockCtx.Context, "SUB", "deploy1")
+	require.NoError(t, err)
+	require.Len(t, resources, 2)
+	assert.Equal(t, []string{"RG1"}, listedRGs)
+	assert.Equal(t, "/subscriptions/SUB/resourceGroups/RG1", *resources[0].ID)
+	assert.Equal(t, "/subscriptions/SUB/resourceGroups/RG1/providers/Microsoft.Web/sites/app1", *resources[1].ID)
+}
+
 func Test_StdDeployments_ListResourceGroupDeployments_Coverage3(t *testing.T) {
 	mockCtx := mocks.NewMockContext(t.Context())
 	sd := newStdDeployments(mockCtx)

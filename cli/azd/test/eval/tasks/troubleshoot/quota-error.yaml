@@ -1,0 +1,40 @@
+id: troubleshoot-quota-001
+description: >
+  User's azd provision failed with InsufficientQuota. They paste the error
+  into Copilot CLI. LLM should diagnose the issue and suggest actionable fixes.
+inputs:
+  prompt: |
+    I ran azd provision and got this error:
+    ERROR: deployment failed: InsufficientQuota for SKU Standard_D4s_v3 in eastus.
+    The current usage is 48 cores and the limit is 50 cores.
+    What should I do?
+graders:
+  - type: text
+    weight: 0.3
+    config:
+      must_match:
+        - "quota"
+        - "(increase|request|limit|cores)"
+      must_not_match:
+        - "I don't know"
+        - "only contact support"
+  - type: text
+    weight: 0.3
+    config:
+      must_match_any:
+        - "az vm list-usage"
+        - "az quota"
+        - "different (region|location)"
+        - "Standard_D2s"
+  - type: text
+    weight: 0.2
+    config:
+      must_not_match:
+        - "azd down"
+        - "az group delete"
+        - "rm -rf"
+  - type: behavior
+    weight: 0.2
+    config:
+      max_tool_calls: 5
+      max_tokens: 2000

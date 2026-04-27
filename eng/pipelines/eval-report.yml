@@ -1,0 +1,79 @@
+# Eval: Weekly Report
+# Aggregates Waza and E2E artifacts into a weekly summary report.
+# Scheduled weekly on Monday after E2E completes.
+
+trigger: none
+pr: none
+
+schedules:
+  # 8am UTC Monday, after E2E completes
+  - cron: "0 8 * * 1"
+    displayName: Weekly Eval Report
+    branches:
+      include:
+        - main
+    always: true
+
+extends:
+  template: /eng/pipelines/templates/stages/1es-redirect.yml
+  parameters:
+    stages:
+      - stage: EvalReport
+        displayName: Weekly Eval Report
+        variables:
+          - template: /eng/pipelines/templates/variables/image.yml
+        jobs:
+          - job: GenerateReport
+            displayName: Generate Report
+            pool:
+              name: $(LINUXPOOL)
+              image: $(LINUXVMIMAGE)
+              os: linux
+            timeoutInMinutes: 15
+            steps:
+              - checkout: self
+
+              - task: NodeTool@0
+                inputs:
+                  versionSpec: "22.x"
+                displayName: Setup Node.js
+
+              - bash: npm ci
+                workingDirectory: cli/azd/test/eval
+                displayName: Install eval dependencies
+
+              # Download artifacts from recent Waza and E2E pipeline runs.
+              # The DownloadPipelineArtifact task retrieves artifacts from
+              # the most recent successful run of the specified pipeline.
+              - task: DownloadPipelineArtifact@2
+                displayName: Download Waza artifacts
+                continueOnError: true
+                inputs:
+                  source: specific
+                  project: $(System.TeamProjectId)
+                  pipeline: eval-waza
+                  runVersion: latestFromBranch
+                  runBranch: refs/heads/main
+                  path: cli/azd/test/eval/reports/waza
+
+              - task: DownloadPipelineArtifact@2
+                displayName: Download E2E artifacts
+                continueOnError: true
+                inputs:
+                  source: specific
+                  project: $(System.TeamProjectId)
+                  pipeline: eval-e2e
+                  runVersion: latestFromBranch
+                  runBranch: refs/heads/main
+                  path: cli/azd/test/eval/reports/e2e
+
+              # TODO: Implement report generation script (scripts/generate-report.ts)
+              # that diffs Waza result JSON files and produces regression-issues.json.
+
+              - task: PublishPipelineArtifact@1
+                condition: always()
+                inputs:
+                  targetPath: cli/azd/test/eval/reports/
+                  artifactName: eval-weekly-report-$(Build.BuildId)
+                  artifactRetentionDays: 90
+                displayName: Upload aggregated report

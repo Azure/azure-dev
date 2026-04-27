@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/language"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
@@ -77,7 +78,7 @@ func Test_Hooks_Execute(t *testing.T) {
 		ranPreHook := false
 		ranPostHook := false
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		registerHookExecutors(mockContext)
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "precommand.sh")
@@ -93,7 +94,7 @@ func Test_Hooks_Execute(t *testing.T) {
 			return exec.NewRunResult(0, "", ""), nil
 		})
 
-		hooksManager := NewHooksManager(cwd, mockContext.CommandRunner)
+		hooksManager := NewHooksManager(HooksManagerOptions{Cwd: cwd, ProjectDir: cwd}, mockContext.CommandRunner)
 		runner := NewHooksRunner(
 			hooksManager,
 			mockContext.CommandRunner,
@@ -104,7 +105,7 @@ func Test_Hooks_Execute(t *testing.T) {
 			env,
 			mockContext.Container,
 		)
-		err := runner.RunHooks(*mockContext.Context, HookTypePre, nil, "command")
+		err := runner.RunHooks(*mockContext.Context, HookTypePre, "project", nil, "command")
 
 		require.True(t, ranPreHook)
 		require.False(t, ranPostHook)
@@ -115,7 +116,7 @@ func Test_Hooks_Execute(t *testing.T) {
 		ranPreHook := false
 		ranPostHook := false
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		registerHookExecutors(mockContext)
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "postcommand.sh")
@@ -131,7 +132,7 @@ func Test_Hooks_Execute(t *testing.T) {
 			return exec.NewRunResult(0, "", ""), nil
 		})
 
-		hooksManager := NewHooksManager(cwd, mockContext.CommandRunner)
+		hooksManager := NewHooksManager(HooksManagerOptions{Cwd: cwd, ProjectDir: cwd}, mockContext.CommandRunner)
 		runner := NewHooksRunner(
 			hooksManager,
 			mockContext.CommandRunner,
@@ -142,7 +143,7 @@ func Test_Hooks_Execute(t *testing.T) {
 			env,
 			mockContext.Container,
 		)
-		err := runner.RunHooks(*mockContext.Context, HookTypePost, nil, "command")
+		err := runner.RunHooks(*mockContext.Context, HookTypePost, "project", nil, "command")
 
 		require.False(t, ranPreHook)
 		require.True(t, ranPostHook)
@@ -153,7 +154,7 @@ func Test_Hooks_Execute(t *testing.T) {
 		ranPreHook := false
 		ranPostHook := false
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		registerHookExecutors(mockContext)
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "preinteractive.sh")
@@ -169,7 +170,7 @@ func Test_Hooks_Execute(t *testing.T) {
 			return exec.NewRunResult(0, "", ""), nil
 		})
 
-		hooksManager := NewHooksManager(cwd, mockContext.CommandRunner)
+		hooksManager := NewHooksManager(HooksManagerOptions{Cwd: cwd, ProjectDir: cwd}, mockContext.CommandRunner)
 		runner := NewHooksRunner(
 			hooksManager,
 			mockContext.CommandRunner,
@@ -180,7 +181,7 @@ func Test_Hooks_Execute(t *testing.T) {
 			env,
 			mockContext.Container,
 		)
-		err := runner.RunHooks(*mockContext.Context, HookTypePre, nil, "interactive")
+		err := runner.RunHooks(*mockContext.Context, HookTypePre, "project", nil, "interactive")
 
 		require.False(t, ranPreHook)
 		require.True(t, ranPostHook)
@@ -191,7 +192,7 @@ func Test_Hooks_Execute(t *testing.T) {
 		ranPreHook := false
 		ranPostHook := false
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		registerHookExecutors(mockContext)
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "preinline")
@@ -201,7 +202,7 @@ func Test_Hooks_Execute(t *testing.T) {
 			return exec.NewRunResult(0, "", ""), nil
 		})
 
-		hooksManager := NewHooksManager(cwd, mockContext.CommandRunner)
+		hooksManager := NewHooksManager(HooksManagerOptions{Cwd: cwd, ProjectDir: cwd}, mockContext.CommandRunner)
 		runner := NewHooksRunner(
 			hooksManager,
 			mockContext.CommandRunner,
@@ -212,7 +213,7 @@ func Test_Hooks_Execute(t *testing.T) {
 			env,
 			mockContext.Container,
 		)
-		err := runner.RunHooks(*mockContext.Context, HookTypePre, nil, "inline")
+		err := runner.RunHooks(*mockContext.Context, HookTypePre, "project", nil, "inline")
 
 		require.False(t, ranPreHook)
 		require.True(t, ranPostHook)
@@ -226,7 +227,7 @@ func Test_Hooks_Execute(t *testing.T) {
 
 		hookLog := []string{}
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		registerHookExecutors(mockContext)
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "precommand.sh")
@@ -252,7 +253,7 @@ func Test_Hooks_Execute(t *testing.T) {
 			return exec.NewRunResult(0, "", ""), nil
 		})
 
-		hooksManager := NewHooksManager(cwd, mockContext.CommandRunner)
+		hooksManager := NewHooksManager(HooksManagerOptions{Cwd: cwd, ProjectDir: cwd}, mockContext.CommandRunner)
 		runner := NewHooksRunner(
 			hooksManager,
 			mockContext.CommandRunner,
@@ -263,7 +264,7 @@ func Test_Hooks_Execute(t *testing.T) {
 			env,
 			mockContext.Container,
 		)
-		err := runner.Invoke(*mockContext.Context, []string{"command"}, func() error {
+		err := runner.Invoke(*mockContext.Context, []string{"command"}, "project", func() error {
 			ranAction = true
 			hookLog = append(hookLog, "action")
 			return nil
@@ -321,7 +322,7 @@ func Test_Hooks_Validation(t *testing.T) {
 		}
 
 		shellRan := false
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		registerHookExecutors(mockContext)
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "script.sh")
@@ -330,13 +331,13 @@ func Test_Hooks_Validation(t *testing.T) {
 			return exec.NewRunResult(0, "", ""), nil
 		})
 
-		hooksManager := NewHooksManager(cwd, mockContext.CommandRunner)
+		hooksManager := NewHooksManager(HooksManagerOptions{Cwd: cwd, ProjectDir: cwd}, mockContext.CommandRunner)
 		runner := NewHooksRunner(
 			hooksManager, mockContext.CommandRunner, envManager,
 			mockContext.Console, cwd, hooksMap, env, mockContext.Container,
 		)
 
-		err := runner.RunHooks(*mockContext.Context, HookTypePre, nil, "deploy")
+		err := runner.RunHooks(*mockContext.Context, HookTypePre, "project", nil, "deploy")
 		require.NoError(t, err)
 		require.True(t, shellRan)
 	})
@@ -350,7 +351,7 @@ func Test_Hooks_Validation(t *testing.T) {
 		}
 
 		shellRan := false
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		registerHookExecutors(mockContext)
 		mockContext.CommandRunner.MockToolInPath("pwsh", nil)
 
@@ -362,13 +363,13 @@ func Test_Hooks_Validation(t *testing.T) {
 			return exec.NewRunResult(0, "", ""), nil
 		})
 
-		hooksManager := NewHooksManager(cwd, mockContext.CommandRunner)
+		hooksManager := NewHooksManager(HooksManagerOptions{Cwd: cwd, ProjectDir: cwd}, mockContext.CommandRunner)
 		runner := NewHooksRunner(
 			hooksManager, mockContext.CommandRunner, envManager,
 			mockContext.Console, cwd, hooksMap, env, mockContext.Container,
 		)
 
-		err := runner.RunHooks(*mockContext.Context, HookTypePre, nil, "deploy")
+		err := runner.RunHooks(*mockContext.Context, HookTypePre, "project", nil, "deploy")
 		require.NoError(t, err)
 		require.True(t, shellRan)
 	})
@@ -383,7 +384,7 @@ func Test_Hooks_Validation(t *testing.T) {
 		}
 
 		inlineRan := false
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		registerHookExecutors(mockContext)
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "preinline")
@@ -392,13 +393,13 @@ func Test_Hooks_Validation(t *testing.T) {
 			return exec.NewRunResult(0, "", ""), nil
 		})
 
-		hooksManager := NewHooksManager(cwd, mockContext.CommandRunner)
+		hooksManager := NewHooksManager(HooksManagerOptions{Cwd: cwd, ProjectDir: cwd}, mockContext.CommandRunner)
 		runner := NewHooksRunner(
 			hooksManager, mockContext.CommandRunner, envManager,
 			mockContext.Console, cwd, hooksMap, env, mockContext.Container,
 		)
 
-		err := runner.RunHooks(*mockContext.Context, HookTypePre, nil, "inline")
+		err := runner.RunHooks(*mockContext.Context, HookTypePre, "project", nil, "inline")
 		require.NoError(t, err)
 		require.True(t, inlineRan)
 	})
@@ -411,15 +412,15 @@ func Test_Hooks_Validation(t *testing.T) {
 			}},
 		}
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		registerHookExecutors(mockContext)
-		hooksManager := NewHooksManager(cwd, mockContext.CommandRunner)
+		hooksManager := NewHooksManager(HooksManagerOptions{Cwd: cwd, ProjectDir: cwd}, mockContext.CommandRunner)
 		runner := NewHooksRunner(
 			hooksManager, mockContext.CommandRunner, envManager,
 			mockContext.Console, cwd, hooksMap, env, mockContext.Container,
 		)
 
-		err := runner.RunHooks(*mockContext.Context, HookTypePre, nil, "deploy")
+		err := runner.RunHooks(*mockContext.Context, HookTypePre, "project", nil, "deploy")
 		require.Error(t, err)
 		require.ErrorIs(t, err, ErrRunRequired)
 	})
@@ -457,7 +458,7 @@ func Test_ExecHook_NonShellHooks(t *testing.T) {
 		prepareRan := false
 		executeRan := false
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		registerHookExecutors(mockContext)
 
 		// Mock the Python version check issued by python.Cli.CheckInstalled
@@ -477,7 +478,7 @@ func Test_ExecHook_NonShellHooks(t *testing.T) {
 			return exec.NewRunResult(0, "", ""), nil
 		})
 
-		hooksManager := NewHooksManager(cwd, mockContext.CommandRunner)
+		hooksManager := NewHooksManager(HooksManagerOptions{Cwd: cwd, ProjectDir: cwd}, mockContext.CommandRunner)
 		runner := NewHooksRunner(
 			hooksManager,
 			mockContext.CommandRunner,
@@ -490,7 +491,7 @@ func Test_ExecHook_NonShellHooks(t *testing.T) {
 		)
 
 		err := runner.RunHooks(
-			*mockContext.Context, HookTypePre, nil, "deploy",
+			*mockContext.Context, HookTypePre, "project", nil, "deploy",
 		)
 
 		require.NoError(t, err)
@@ -520,7 +521,7 @@ func Test_ExecHook_NonShellHooks(t *testing.T) {
 
 		shellRan := false
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		registerHookExecutors(mockContext)
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "predeploy.sh")
@@ -533,7 +534,7 @@ func Test_ExecHook_NonShellHooks(t *testing.T) {
 			return exec.NewRunResult(0, "", ""), nil
 		})
 
-		hooksManager := NewHooksManager(cwd, mockContext.CommandRunner)
+		hooksManager := NewHooksManager(HooksManagerOptions{Cwd: cwd, ProjectDir: cwd}, mockContext.CommandRunner)
 		runner := NewHooksRunner(
 			hooksManager,
 			mockContext.CommandRunner,
@@ -546,7 +547,7 @@ func Test_ExecHook_NonShellHooks(t *testing.T) {
 		)
 
 		err := runner.RunHooks(
-			*mockContext.Context, HookTypePre, nil, "deploy",
+			*mockContext.Context, HookTypePre, "project", nil, "deploy",
 		)
 
 		require.NoError(t, err)
@@ -578,7 +579,7 @@ func Test_ExecHook_NonShellHooks(t *testing.T) {
 		envManager := &mockenv.MockEnvManager{}
 		envManager.On("Reload", mock.Anything, env).Return(nil)
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		registerHookExecutors(mockContext)
 
 		// Simulate Python not being installed — version check
@@ -589,7 +590,7 @@ func Test_ExecHook_NonShellHooks(t *testing.T) {
 			return exec.NewRunResult(1, "", ""), fmt.Errorf("python not found")
 		})
 
-		hooksManager := NewHooksManager(cwd, mockContext.CommandRunner)
+		hooksManager := NewHooksManager(HooksManagerOptions{Cwd: cwd, ProjectDir: cwd}, mockContext.CommandRunner)
 		runner := NewHooksRunner(
 			hooksManager,
 			mockContext.CommandRunner,
@@ -602,7 +603,7 @@ func Test_ExecHook_NonShellHooks(t *testing.T) {
 		)
 
 		err := runner.RunHooks(
-			*mockContext.Context, HookTypePre, nil, "deploy",
+			*mockContext.Context, HookTypePre, "project", nil, "deploy",
 		)
 
 		require.Error(t, err)
@@ -634,7 +635,7 @@ func Test_ExecHook_NonShellHooks(t *testing.T) {
 		envManager := &mockenv.MockEnvManager{}
 		envManager.On("Reload", mock.Anything, env).Return(nil)
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		registerHookExecutors(mockContext)
 
 		// Prepare succeeds (version check passes).
@@ -651,7 +652,7 @@ func Test_ExecHook_NonShellHooks(t *testing.T) {
 			return exec.NewRunResult(1, "", "error"), fmt.Errorf("script failed")
 		})
 
-		hooksManager := NewHooksManager(cwd, mockContext.CommandRunner)
+		hooksManager := NewHooksManager(HooksManagerOptions{Cwd: cwd, ProjectDir: cwd}, mockContext.CommandRunner)
 		runner := NewHooksRunner(
 			hooksManager,
 			mockContext.CommandRunner,
@@ -664,7 +665,7 @@ func Test_ExecHook_NonShellHooks(t *testing.T) {
 		)
 
 		err := runner.RunHooks(
-			*mockContext.Context, HookTypePre, nil, "deploy",
+			*mockContext.Context, HookTypePre, "project", nil, "deploy",
 		)
 
 		require.Error(t, err)
@@ -702,7 +703,7 @@ func Test_ExecHook_NonShellHooks(t *testing.T) {
 
 		var capturedEnv []string
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		registerHookExecutors(mockContext)
 
 		// Allow version check to pass.
@@ -720,7 +721,7 @@ func Test_ExecHook_NonShellHooks(t *testing.T) {
 			return exec.NewRunResult(0, "", ""), nil
 		})
 
-		hooksManager := NewHooksManager(cwd, mockContext.CommandRunner)
+		hooksManager := NewHooksManager(HooksManagerOptions{Cwd: cwd, ProjectDir: cwd}, mockContext.CommandRunner)
 		runner := NewHooksRunner(
 			hooksManager,
 			mockContext.CommandRunner,
@@ -733,7 +734,7 @@ func Test_ExecHook_NonShellHooks(t *testing.T) {
 		)
 
 		err := runner.RunHooks(
-			*mockContext.Context, HookTypePre, nil, "deploy",
+			*mockContext.Context, HookTypePre, "project", nil, "deploy",
 		)
 
 		require.NoError(t, err)
@@ -799,7 +800,7 @@ func Test_ExecHook_DirRunResolution(t *testing.T) {
 		var capturedScriptPath string
 		var capturedCwd string
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		registerHookExecutors(mockContext)
 
 		// Mock Python version check.
@@ -834,9 +835,7 @@ func Test_ExecHook_DirRunResolution(t *testing.T) {
 			},
 		)
 
-		hooksManager := NewHooksManager(
-			cwd, mockContext.CommandRunner,
-		)
+		hooksManager := NewHooksManager(HooksManagerOptions{Cwd: cwd, ProjectDir: cwd}, mockContext.CommandRunner)
 		runner := NewHooksRunner(
 			hooksManager,
 			mockContext.CommandRunner,
@@ -849,7 +848,7 @@ func Test_ExecHook_DirRunResolution(t *testing.T) {
 		)
 
 		err := runner.RunHooks(
-			*mockContext.Context, HookTypePre, nil,
+			*mockContext.Context, HookTypePre, "project", nil,
 			"provision",
 		)
 
@@ -908,7 +907,7 @@ func Test_ExecHook_DirRunResolution(t *testing.T) {
 		var capturedScriptArg string
 		shellRan := false
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		registerHookExecutors(mockContext)
 
 		mockContext.CommandRunner.When(
@@ -925,9 +924,7 @@ func Test_ExecHook_DirRunResolution(t *testing.T) {
 			},
 		)
 
-		hooksManager := NewHooksManager(
-			cwd, mockContext.CommandRunner,
-		)
+		hooksManager := NewHooksManager(HooksManagerOptions{Cwd: cwd, ProjectDir: cwd}, mockContext.CommandRunner)
 		runner := NewHooksRunner(
 			hooksManager,
 			mockContext.CommandRunner,
@@ -940,7 +937,7 @@ func Test_ExecHook_DirRunResolution(t *testing.T) {
 		)
 
 		err := runner.RunHooks(
-			*mockContext.Context, HookTypePre, nil, "deploy",
+			*mockContext.Context, HookTypePre, "project", nil, "deploy",
 		)
 
 		require.NoError(t, err)
@@ -994,7 +991,7 @@ func Test_ExecHook_DirRunResolution(t *testing.T) {
 
 		var capturedScriptPath string
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		registerHookExecutors(mockContext)
 
 		mockContext.CommandRunner.When(
@@ -1024,9 +1021,7 @@ func Test_ExecHook_DirRunResolution(t *testing.T) {
 			},
 		)
 
-		hooksManager := NewHooksManager(
-			cwd, mockContext.CommandRunner,
-		)
+		hooksManager := NewHooksManager(HooksManagerOptions{Cwd: cwd, ProjectDir: cwd}, mockContext.CommandRunner)
 		runner := NewHooksRunner(
 			hooksManager,
 			mockContext.CommandRunner,
@@ -1039,7 +1034,7 @@ func Test_ExecHook_DirRunResolution(t *testing.T) {
 		)
 
 		err := runner.RunHooks(
-			*mockContext.Context, HookTypePre, nil,
+			*mockContext.Context, HookTypePre, "project", nil,
 			"provision",
 		)
 
@@ -1053,5 +1048,344 @@ func Test_ExecHook_DirRunResolution(t *testing.T) {
 			t, expectedScript, capturedScriptPath,
 			"without Dir, path resolves from project root",
 		)
+	})
+}
+
+// configCaptureExecutor is a test-only [tools.HookExecutor] that
+// captures the [tools.ExecutionContext] passed to Execute so tests
+// can assert on it.
+type configCaptureExecutor struct {
+	onExecute func(tools.ExecutionContext)
+}
+
+func (e *configCaptureExecutor) Prepare(
+	_ context.Context, _ string, _ tools.ExecutionContext,
+) error {
+	return nil
+}
+
+func (e *configCaptureExecutor) Execute(
+	_ context.Context, _ string, execCtx tools.ExecutionContext,
+) (exec.RunResult, error) {
+	if e.onExecute != nil {
+		e.onExecute(execCtx)
+	}
+	return exec.NewRunResult(0, "", ""), nil
+}
+
+func (e *configCaptureExecutor) Cleanup(
+	_ context.Context,
+) error {
+	return nil
+}
+
+// Test_ExecHook_ConfigThreading verifies that HookConfig.Config is
+// threaded through to ExecutionContext.Config when executing a hook.
+func Test_ExecHook_ConfigThreading(t *testing.T) {
+	t.Run("ConfigPassedToExecutor", func(t *testing.T) {
+		cwd := t.TempDir()
+		ostest.Chdir(t, cwd)
+
+		env := environment.NewWithValues(
+			"test", map[string]string{},
+		)
+
+		// Create a script file so validate() resolves it.
+		require.NoError(t, os.MkdirAll(
+			filepath.Join(cwd, "scripts"),
+			osutil.PermissionDirectory,
+		))
+		require.NoError(t, os.WriteFile(
+			filepath.Join(cwd, "scripts", "hook.sh"),
+			nil, osutil.PermissionExecutableFile,
+		))
+
+		expectedConfig := map[string]any{
+			"key1":   "value1",
+			"number": 42,
+			"nested": map[string]any{"a": "b"},
+		}
+
+		hooksMap := map[string][]*HookConfig{
+			"predeploy": {
+				{
+					Name:   "predeploy",
+					Shell:  string(language.HookKindBash),
+					Run:    "scripts/hook.sh",
+					Config: expectedConfig,
+				},
+			},
+		}
+
+		envManager := &mockenv.MockEnvManager{}
+		envManager.On(
+			"Reload", mock.Anything, env,
+		).Return(nil)
+
+		var capturedCtx tools.ExecutionContext
+		mockContext := mocks.NewMockContext(
+			t.Context(),
+		)
+
+		// Register a capture executor instead of the real
+		// bash executor so we can inspect ExecutionContext.
+		mockContext.Container.MustRegisterNamedTransient(
+			string(language.HookKindBash),
+			func() tools.HookExecutor {
+				return &configCaptureExecutor{
+					onExecute: func(
+						ctx tools.ExecutionContext,
+					) {
+						capturedCtx = ctx
+					},
+				}
+			},
+		)
+
+		hooksManager := NewHooksManager(
+			HooksManagerOptions{Cwd: cwd}, mockContext.CommandRunner,
+		)
+		runner := NewHooksRunner(
+			hooksManager,
+			mockContext.CommandRunner,
+			envManager,
+			mockContext.Console,
+			cwd,
+			hooksMap,
+			env,
+			mockContext.Container,
+		)
+
+		err := runner.RunHooks(
+			*mockContext.Context, HookTypePre,
+			"project", nil,
+			"deploy",
+		)
+		require.NoError(t, err)
+
+		require.Equal(t, expectedConfig, capturedCtx.Config)
+		require.Equal(t, "predeploy", capturedCtx.HookName)
+	})
+
+	t.Run("NilConfigWhenNotSet", func(t *testing.T) {
+		cwd := t.TempDir()
+		ostest.Chdir(t, cwd)
+
+		env := environment.NewWithValues(
+			"test", map[string]string{},
+		)
+
+		require.NoError(t, os.MkdirAll(
+			filepath.Join(cwd, "scripts"),
+			osutil.PermissionDirectory,
+		))
+		require.NoError(t, os.WriteFile(
+			filepath.Join(cwd, "scripts", "hook.sh"),
+			nil, osutil.PermissionExecutableFile,
+		))
+
+		hooksMap := map[string][]*HookConfig{
+			"predeploy": {
+				{
+					Name:  "predeploy",
+					Shell: string(language.HookKindBash),
+					Run:   "scripts/hook.sh",
+					// No Config set.
+				},
+			},
+		}
+
+		envManager := &mockenv.MockEnvManager{}
+		envManager.On(
+			"Reload", mock.Anything, env,
+		).Return(nil)
+
+		var capturedCtx tools.ExecutionContext
+		mockContext := mocks.NewMockContext(
+			t.Context(),
+		)
+
+		mockContext.Container.MustRegisterNamedTransient(
+			string(language.HookKindBash),
+			func() tools.HookExecutor {
+				return &configCaptureExecutor{
+					onExecute: func(
+						ctx tools.ExecutionContext,
+					) {
+						capturedCtx = ctx
+					},
+				}
+			},
+		)
+
+		hooksManager := NewHooksManager(
+			HooksManagerOptions{Cwd: cwd}, mockContext.CommandRunner,
+		)
+		runner := NewHooksRunner(
+			hooksManager,
+			mockContext.CommandRunner,
+			envManager,
+			mockContext.Console,
+			cwd,
+			hooksMap,
+			env,
+			mockContext.Container,
+		)
+
+		err := runner.RunHooks(
+			*mockContext.Context, HookTypePre,
+			"project", nil,
+			"deploy",
+		)
+		require.NoError(t, err)
+
+		require.Nil(t, capturedCtx.Config)
+	})
+}
+
+// TestHooksRunner_Telemetry exercises the telemetry span creation and
+// attribute-setting code paths in execHook. The tests verify that the
+// telemetry instrumentation doesn't panic or error on success, error,
+// and validation-failure paths.
+func TestHooksRunner_Telemetry(t *testing.T) {
+	t.Run("Success", func(t *testing.T) {
+		cwd := t.TempDir()
+		ostest.Chdir(t, cwd)
+
+		env := environment.NewWithValues("test", map[string]string{})
+
+		require.NoError(t, os.MkdirAll(
+			filepath.Join(cwd, "scripts"), osutil.PermissionDirectory,
+		))
+		require.NoError(t, os.WriteFile(
+			filepath.Join(cwd, "scripts", "predeploy.sh"),
+			nil, osutil.PermissionExecutableFile,
+		))
+
+		hooksMap := map[string][]*HookConfig{
+			"predeploy": {{
+				Name:  "predeploy",
+				Shell: string(language.HookKindBash),
+				Run:   "scripts/predeploy.sh",
+			}},
+		}
+
+		envManager := &mockenv.MockEnvManager{}
+		envManager.On("Reload", mock.Anything, env).Return(nil)
+
+		mockContext := mocks.NewMockContext(t.Context())
+		registerHookExecutors(mockContext)
+		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+			return strings.Contains(command, "predeploy.sh")
+		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+			return exec.NewRunResult(0, "", ""), nil
+		})
+
+		hooksManager := NewHooksManager(
+			HooksManagerOptions{Cwd: cwd, ProjectDir: cwd},
+			mockContext.CommandRunner,
+		)
+		runner := NewHooksRunner(
+			hooksManager, mockContext.CommandRunner, envManager,
+			mockContext.Console, cwd, hooksMap, env,
+			mockContext.Container,
+		)
+
+		err := runner.RunHooks(
+			*mockContext.Context, HookTypePre,
+			"project", nil, "deploy",
+		)
+		require.NoError(t, err)
+	})
+
+	t.Run("Error", func(t *testing.T) {
+		cwd := t.TempDir()
+		ostest.Chdir(t, cwd)
+
+		env := environment.NewWithValues("test", map[string]string{})
+
+		require.NoError(t, os.MkdirAll(
+			filepath.Join(cwd, "scripts"), osutil.PermissionDirectory,
+		))
+		require.NoError(t, os.WriteFile(
+			filepath.Join(cwd, "scripts", "predeploy.sh"),
+			nil, osutil.PermissionExecutableFile,
+		))
+
+		hooksMap := map[string][]*HookConfig{
+			"predeploy": {{
+				Name:  "predeploy",
+				Shell: string(language.HookKindBash),
+				Run:   "scripts/predeploy.sh",
+			}},
+		}
+
+		envManager := &mockenv.MockEnvManager{}
+		envManager.On("Reload", mock.Anything, env).Return(nil)
+
+		mockContext := mocks.NewMockContext(t.Context())
+		registerHookExecutors(mockContext)
+		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+			return strings.Contains(command, "predeploy.sh")
+		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+			return exec.NewRunResult(1, "", "boom"),
+				fmt.Errorf("script failed")
+		})
+
+		hooksManager := NewHooksManager(
+			HooksManagerOptions{Cwd: cwd, ProjectDir: cwd},
+			mockContext.CommandRunner,
+		)
+		runner := NewHooksRunner(
+			hooksManager, mockContext.CommandRunner, envManager,
+			mockContext.Console, cwd, hooksMap, env,
+			mockContext.Container,
+		)
+
+		err := runner.RunHooks(
+			*mockContext.Context, HookTypePre,
+			"project", nil, "deploy",
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "'predeploy' hook failed")
+	})
+
+	t.Run("ValidationFailure", func(t *testing.T) {
+		cwd := t.TempDir()
+		ostest.Chdir(t, cwd)
+
+		env := environment.NewWithValues("test", map[string]string{})
+
+		// Hook with empty Run triggers ErrRunRequired in
+		// filterConfigs before execHook is called.
+		hooksMap := map[string][]*HookConfig{
+			"predeploy": {{
+				Name:  "predeploy",
+				Shell: string(language.HookKindBash),
+			}},
+		}
+
+		envManager := &mockenv.MockEnvManager{}
+		envManager.On("Reload", mock.Anything, env).Return(nil)
+
+		mockContext := mocks.NewMockContext(t.Context())
+		registerHookExecutors(mockContext)
+
+		hooksManager := NewHooksManager(
+			HooksManagerOptions{Cwd: cwd, ProjectDir: cwd},
+			mockContext.CommandRunner,
+		)
+		runner := NewHooksRunner(
+			hooksManager, mockContext.CommandRunner, envManager,
+			mockContext.Console, cwd, hooksMap, env,
+			mockContext.Container,
+		)
+
+		err := runner.RunHooks(
+			*mockContext.Context, HookTypePre,
+			"project", nil, "deploy",
+		)
+		require.Error(t, err)
+		require.ErrorIs(t, err, ErrRunRequired)
 	})
 }

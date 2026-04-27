@@ -1,0 +1,67 @@
+# Eval: Unit Tests (non-LLM)
+# Runs TypeScript unit tests and Python grader tests for the eval framework.
+# No secrets or Azure credentials required.
+
+trigger: none
+
+pr:
+  paths:
+    include:
+      - cli/azd/test/eval/**
+      - cli/azd/internal/mcp/**
+      - cli/azd/cmd/mcp.go
+      - cli/azd/cmd/root.go
+
+extends:
+  template: /eng/pipelines/templates/stages/1es-redirect.yml
+  parameters:
+    stages:
+      - stage: EvalUnit
+        displayName: Eval Unit Tests
+        variables:
+          - template: /eng/pipelines/templates/variables/image.yml
+        jobs:
+          - job: UnitTests
+            displayName: Unit Tests
+            pool:
+              name: $(LINUXPOOL)
+              image: $(LINUXVMIMAGE)
+              os: linux
+            timeoutInMinutes: 30
+            steps:
+              - checkout: self
+
+              - template: /eng/pipelines/templates/steps/setup-go.yml
+
+              - task: NodeTool@0
+                inputs:
+                  versionSpec: "22.x"
+                displayName: Setup Node.js
+
+              - task: UsePythonVersion@0
+                inputs:
+                  versionSpec: "3.12"
+                displayName: Setup Python
+
+              - pwsh: go build -o ./azd .
+                workingDirectory: cli/azd
+                displayName: Build azd
+
+              - bash: npm ci
+                workingDirectory: cli/azd/test/eval
+                displayName: Install eval dependencies
+
+              - bash: npm run test:unit -- --ci
+                workingDirectory: cli/azd/test/eval
+                displayName: Run unit tests
+
+              - bash: pip install pytest && python -m pytest test_graders.py -v
+                workingDirectory: cli/azd/test/eval/graders
+                displayName: Run grader tests
+
+              - task: PublishPipelineArtifact@1
+                condition: always()
+                inputs:
+                  targetPath: cli/azd/test/eval/reports/
+                  artifactName: eval-unit-results
+                displayName: Upload test results

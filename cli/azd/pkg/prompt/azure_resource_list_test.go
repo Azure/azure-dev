@@ -4,7 +4,6 @@
 package prompt
 
 import (
-	"context"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -87,7 +86,7 @@ func TestAzureResourceList_FindByTypeAndKind(t *testing.T) {
 	).Return(azapi.ResourceExtended{Kind: "testKind"}, nil)
 
 	resource, found := resourceList.FindByTypeAndKind(
-		context.Background(),
+		t.Context(),
 		"Microsoft.Compute/virtualMachines",
 		[]string{"testKind"},
 	)
@@ -110,7 +109,7 @@ func TestAzureResourceList_FindByTypeAndKind_NotFound(t *testing.T) {
 	).Return(azapi.ResourceExtended{Kind: "testKind"}, nil)
 
 	resource, found := resourceList.FindByTypeAndKind(
-		context.Background(),
+		t.Context(),
 		"Microsoft.Compute/virtualMachines",
 		[]string{"nonExistentKind"},
 	)

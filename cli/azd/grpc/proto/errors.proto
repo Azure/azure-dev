@@ -30,6 +30,12 @@ message LocalErrorDetail {
   string category = 2;  // Error category (e.g., "user", "validation", "dependency", "internal")
 }
 
+// ErrorLink contains a reference link with a URL and optional title.
+message ErrorLink {
+  string url = 1;    // Link target
+  string title = 2;  // Display text (falls back to the URL when empty)
+}
+
 // ExtensionError is a unified error message that can represent errors from different sources.
 // It provides structured error information for telemetry and error handling.
 message ExtensionError {
@@ -37,6 +43,7 @@ message ExtensionError {
   string message = 2;       // Human-readable error message
   ErrorOrigin origin = 4;   // Where the error originated from
   string suggestion = 5;    // Optional user-facing suggestion for resolving the error
+  repeated ErrorLink links = 6;  // Optional reference links rendered alongside the suggestion
 
   // Source-specific structured details. Only one should be set based on origin.
   oneof source {

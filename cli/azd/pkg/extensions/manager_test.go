@@ -148,7 +148,7 @@ func Test_ValidateChecksum_Failure_InvalidChecksumData(t *testing.T) {
 }
 
 func Test_List_Install_Uninstall_Flow(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	createRegistryMocks(mockContext)
 
@@ -195,7 +195,7 @@ func Test_List_Install_Uninstall_Flow(t *testing.T) {
 }
 
 func Test_Install_With_SemverConstraints(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	createRegistryMocks(mockContext)
 
@@ -297,7 +297,7 @@ func Test_Install_With_SemverConstraints(t *testing.T) {
 }
 
 func Test_DownloadArtifact_Remote(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	// Mock the HTTP client to simulate a remote download
 	mockContext.HttpClient.When(func(request *http.Request) bool {
@@ -323,7 +323,7 @@ func Test_DownloadArtifact_Remote(t *testing.T) {
 }
 
 func Test_DownloadArtifact_Local(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	// Create a temporary file to simulate a local artifact
 	content := []byte("local artifact content")
@@ -352,7 +352,7 @@ func Test_DownloadArtifact_Local(t *testing.T) {
 }
 
 func Test_DownloadArtifact_Local_Error(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
 	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
@@ -372,7 +372,7 @@ func Test_DownloadArtifact_Local_Error(t *testing.T) {
 }
 
 func Test_DownloadArtifact_Remote_Error(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	// Mock the HTTP client to simulate a failed remote download
 	mockContext.HttpClient.When(func(request *http.Request) bool {
@@ -634,7 +634,7 @@ func Test_FindArtifactForCurrentOS_ErrorMessage_Format(t *testing.T) {
 }
 
 func Test_FindExtensions_MultipleMatches_ErrorHandling(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
 	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
@@ -740,7 +740,7 @@ func (m *mockSource) GetExtension(ctx context.Context, extensionId string) (*Ext
 }
 
 func Test_Install_WithMcpConfig(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	// Use the existing registry mock setup
 	createRegistryMocks(mockContext)
@@ -807,7 +807,7 @@ func assertExtensionIds(t *testing.T, extensions []*ExtensionMetadata, expectedI
 
 // Test_FilterExtensions_ByCapabilityAndProvider tests the capability and provider filtering functionality
 func Test_FilterExtensions_ByCapabilityAndProvider(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	createRegistryMocks(mockContext)
 
 	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
@@ -819,7 +819,7 @@ func Test_FilterExtensions_ByCapabilityAndProvider(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("filter by service-target-provider capability", func(t *testing.T) {
-		extensions, err := manager.FindExtensions(context.Background(), &FilterOptions{
+		extensions, err := manager.FindExtensions(t.Context(), &FilterOptions{
 			Capability: ServiceTargetProviderCapability,
 		})
 		require.NoError(t, err)
@@ -831,7 +831,7 @@ func Test_FilterExtensions_ByCapabilityAndProvider(t *testing.T) {
 	})
 
 	t.Run("filter by MCP capability", func(t *testing.T) {
-		extensions, err := manager.FindExtensions(context.Background(), &FilterOptions{
+		extensions, err := manager.FindExtensions(t.Context(), &FilterOptions{
 			Capability: McpServerCapability,
 		})
 		require.NoError(t, err)
@@ -843,7 +843,7 @@ func Test_FilterExtensions_ByCapabilityAndProvider(t *testing.T) {
 	})
 
 	t.Run("find extension with containerapp provider", func(t *testing.T) {
-		extensions, err := manager.FindExtensions(context.Background(), &FilterOptions{
+		extensions, err := manager.FindExtensions(t.Context(), &FilterOptions{
 			Provider: "containerapp",
 		})
 		require.NoError(t, err)
@@ -855,7 +855,7 @@ func Test_FilterExtensions_ByCapabilityAndProvider(t *testing.T) {
 	})
 
 	t.Run("find extension with kubernetes provider", func(t *testing.T) {
-		extensions, err := manager.FindExtensions(context.Background(), &FilterOptions{
+		extensions, err := manager.FindExtensions(t.Context(), &FilterOptions{
 			Provider: "kubernetes",
 		})
 		require.NoError(t, err)
@@ -867,7 +867,7 @@ func Test_FilterExtensions_ByCapabilityAndProvider(t *testing.T) {
 	})
 
 	t.Run("find extension with azure.ai.agents provider", func(t *testing.T) {
-		extensions, err := manager.FindExtensions(context.Background(), &FilterOptions{
+		extensions, err := manager.FindExtensions(t.Context(), &FilterOptions{
 			Provider: "azure.ai.agents",
 		})
 		require.NoError(t, err)
@@ -879,7 +879,7 @@ func Test_FilterExtensions_ByCapabilityAndProvider(t *testing.T) {
 	})
 
 	t.Run("find service target extension for containerapp", func(t *testing.T) {
-		extensions, err := manager.FindExtensions(context.Background(), &FilterOptions{
+		extensions, err := manager.FindExtensions(t.Context(), &FilterOptions{
 			Capability: ServiceTargetProviderCapability,
 			Provider:   "containerapp",
 		})
@@ -892,7 +892,7 @@ func Test_FilterExtensions_ByCapabilityAndProvider(t *testing.T) {
 	})
 
 	t.Run("find service target extension for kubernetes", func(t *testing.T) {
-		extensions, err := manager.FindExtensions(context.Background(), &FilterOptions{
+		extensions, err := manager.FindExtensions(t.Context(), &FilterOptions{
 			Capability: ServiceTargetProviderCapability,
 			Provider:   "kubernetes",
 		})
@@ -905,7 +905,7 @@ func Test_FilterExtensions_ByCapabilityAndProvider(t *testing.T) {
 	})
 
 	t.Run("case-insensitive provider matching", func(t *testing.T) {
-		extensions, err := manager.FindExtensions(context.Background(), &FilterOptions{
+		extensions, err := manager.FindExtensions(t.Context(), &FilterOptions{
 			Provider: "KUBERNETES",
 		})
 		require.NoError(t, err)
@@ -917,7 +917,7 @@ func Test_FilterExtensions_ByCapabilityAndProvider(t *testing.T) {
 	})
 
 	t.Run("filter with no matches", func(t *testing.T) {
-		extensions, err := manager.FindExtensions(context.Background(), &FilterOptions{
+		extensions, err := manager.FindExtensions(t.Context(), &FilterOptions{
 			Provider: "nonexistent-provider",
 		})
 		require.NoError(t, err)
@@ -925,7 +925,7 @@ func Test_FilterExtensions_ByCapabilityAndProvider(t *testing.T) {
 	})
 
 	t.Run("combine capability and tag filters", func(t *testing.T) {
-		extensions, err := manager.FindExtensions(context.Background(), &FilterOptions{
+		extensions, err := manager.FindExtensions(t.Context(), &FilterOptions{
 			Capability: ServiceTargetProviderCapability,
 			Tags:       []string{"multi"},
 		})
@@ -938,7 +938,7 @@ func Test_FilterExtensions_ByCapabilityAndProvider(t *testing.T) {
 	})
 
 	t.Run("invalid capability and provider combination", func(t *testing.T) {
-		extensions, err := manager.FindExtensions(context.Background(), &FilterOptions{
+		extensions, err := manager.FindExtensions(t.Context(), &FilterOptions{
 			Capability: McpServerCapability,
 			Provider:   "containerapp",
 		})
@@ -948,7 +948,7 @@ func Test_FilterExtensions_ByCapabilityAndProvider(t *testing.T) {
 }
 
 func Test_FetchAndCacheMetadata(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	createRegistryMocks(mockContext)
 
 	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
@@ -1094,7 +1094,7 @@ func Test_FetchAndCacheMetadata(t *testing.T) {
 		require.NoError(t, err)
 
 		// Create a new mock context with isolated command runner
-		timeoutMockContext := mocks.NewMockContext(context.Background())
+		timeoutMockContext := mocks.NewMockContext(t.Context())
 
 		// Mock CommandRunner to simulate timeout for ANY metadata command
 		timeoutMockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -1130,7 +1130,7 @@ func Test_GetInstalled_WithSourceFilter(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Setenv("AZD_CONFIG_DIR", tempDir)
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	fileConfigManager := config.NewFileConfigManager(config.NewManager())
 	userConfigManager := config.NewUserConfigManager(fileConfigManager)
 

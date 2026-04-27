@@ -90,7 +90,7 @@ func TestCalculateTemplateHash(t *testing.T) {
 			}, nil, nil,
 		)
 		hash, err := dm.CalculateTemplateHash(
-			context.Background(),
+			t.Context(),
 			"sub-1",
 			azure.RawArmTemplate("{}"),
 		)
@@ -107,7 +107,7 @@ func TestCalculateTemplateHash(t *testing.T) {
 			}, nil, nil,
 		)
 		_, err := dm.CalculateTemplateHash(
-			context.Background(),
+			t.Context(),
 			"sub-1",
 			azure.RawArmTemplate("{}"),
 		)
@@ -213,7 +213,7 @@ func TestCompletedDeployments(t *testing.T) {
 			&fakeDeploymentService{}, nil, nil,
 		)
 		result, err := dm.CompletedDeployments(
-			context.Background(), scope, envName, "", "",
+			t.Context(), scope, envName, "", "",
 		)
 		require.NoError(t, err)
 		require.Len(t, result, 1)
@@ -244,7 +244,7 @@ func TestCompletedDeployments(t *testing.T) {
 			&fakeDeploymentService{}, nil, nil,
 		)
 		result, err := dm.CompletedDeployments(
-			context.Background(),
+			t.Context(),
 			scope, envName, layerName, "",
 		)
 		require.NoError(t, err)
@@ -271,7 +271,7 @@ func TestCompletedDeployments(t *testing.T) {
 				&fakeDeploymentService{}, nil, nil,
 			)
 			result, err := dm.CompletedDeployments(
-				context.Background(), scope, envName, "", "",
+				t.Context(), scope, envName, "", "",
 			)
 			require.NoError(t, err)
 			require.Len(t, result, 1)
@@ -308,7 +308,7 @@ func TestCompletedDeployments(t *testing.T) {
 				&fakeDeploymentService{}, nil, nil,
 			)
 			result, err := dm.CompletedDeployments(
-				context.Background(),
+				t.Context(),
 				scope, "myenv", "", "",
 			)
 			require.NoError(t, err)
@@ -332,7 +332,7 @@ func TestCompletedDeployments(t *testing.T) {
 			&fakeDeploymentService{}, nil, nil,
 		)
 		_, err := dm.CompletedDeployments(
-			context.Background(),
+			t.Context(),
 			scope, "myenv-running", "", "",
 		)
 		require.Error(t, err)
@@ -350,7 +350,7 @@ func TestCompletedDeployments(t *testing.T) {
 				&fakeDeploymentService{}, nil, nil,
 			)
 			_, err := dm.CompletedDeployments(
-				context.Background(),
+				t.Context(),
 				scope, "myenv", "", "",
 			)
 			require.Error(t, err)
@@ -367,7 +367,7 @@ func TestCompletedDeployments(t *testing.T) {
 			&fakeDeploymentService{}, nil, nil,
 		)
 		_, err := dm.CompletedDeployments(
-			context.Background(),
+			t.Context(),
 			scope, "myenv", "", "",
 		)
 		require.Error(t, err)

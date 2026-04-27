@@ -37,9 +37,6 @@ func TestNewNoopProgress(t *testing.T) {
 
 		// Clean up
 		progress.Done()
-
-		// Give a moment for the goroutine to finish draining
-		time.Sleep(10 * time.Millisecond)
 	})
 }
 
@@ -144,7 +141,6 @@ func TestProgress_Done(t *testing.T) {
 		progress := NewProgress[string]()
 
 		go func() {
-			time.Sleep(10 * time.Millisecond)
 			progress.Done()
 		}()
 
@@ -259,7 +255,8 @@ func TestRunWithProgress(t *testing.T) {
 
 		observer := func(p string) {
 			observedProgress = append(observedProgress, p)
-			// Simulate slow observer
+			// justified: intentionally simulates a slow observer to verify RunWithProgress
+			// waits for the observer goroutine to finish before returning.
 			time.Sleep(50 * time.Millisecond)
 			if p == "last" {
 				observerFinished = true

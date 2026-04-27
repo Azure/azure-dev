@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
@@ -59,6 +60,16 @@ func Run(rootCmd *cobra.Command, opts ...RunOption) {
 	var cfg runConfig
 	for _, o := range opts {
 		o(&cfg)
+	}
+
+	// Validate that extension-defined flags do not collide with azd reserved global flags.
+	// This check runs before execution so extension developers see the error immediately.
+	if err := ValidateNoReservedFlagConflicts(rootCmd); err != nil {
+		if reportErr := ReportError(ctx, err); reportErr != nil {
+			log.Printf("warning: failed to report structured error: %v", reportErr)
+			printError(err)
+		}
+		os.Exit(1)
 	}
 
 	if cfg.preExecute != nil {
@@ -121,4 +132,29 @@ func ErrorMessage(err error) string {
 	}
 
 	return ""
+}
+
+// ErrorLinks extracts the Links field from a [LocalError] or [ServiceError].
+// Returns nil if the error has no links.
+func ErrorLinks(err error) []errorhandler.ErrorLink {
+	if localErr, ok := errors.AsType[*LocalError](err); ok && len(localErr.Links) > 0 {
+		return localErr.Links
+	}
+
+	if svcErr, ok := errors.AsType[*ServiceError](err); ok && len(svcErr.Links) > 0 {
+		return svcErr.Links
+	}
+
+	return nil
+}
+
+// IsStructuredError reports whether err is an azd extension local or service error.
+func IsStructuredError(err error) bool {
+	_, localErr := errors.AsType[*LocalError](err)
+	if localErr {
+		return true
+	}
+
+	_, svcErr := errors.AsType[*ServiceError](err)
+	return svcErr
 }

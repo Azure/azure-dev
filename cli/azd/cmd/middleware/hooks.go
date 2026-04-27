@@ -84,7 +84,9 @@ func (m *HooksMiddleware) registerCommandHooks(
 		return next(ctx)
 	}
 
-	hooksManager := ext.NewHooksManager(m.projectConfig.Path, m.commandRunner)
+	hooksManager := ext.NewHooksManager(ext.HooksManagerOptions{
+		Cwd: m.projectConfig.Path, ProjectDir: m.projectConfig.Path,
+	}, m.commandRunner)
 	hooksRunner := ext.NewHooksRunner(
 		hooksManager,
 		m.commandRunner,
@@ -101,7 +103,7 @@ func (m *HooksMiddleware) registerCommandHooks(
 	commandNames := []string{m.options.CommandPath}
 	commandNames = append(commandNames, m.options.Aliases...)
 
-	err := hooksRunner.Invoke(ctx, commandNames, func() error {
+	err := hooksRunner.Invoke(ctx, commandNames, "project", func() error {
 		result, err := next(ctx)
 		if err != nil {
 			return err
@@ -142,7 +144,9 @@ func (m *HooksMiddleware) registerServiceHooks(ctx context.Context) error {
 			continue
 		}
 
-		serviceHooksManager := ext.NewHooksManager(service.Path(), m.commandRunner)
+		serviceHooksManager := ext.NewHooksManager(ext.HooksManagerOptions{
+			Cwd: service.Path(), ProjectDir: m.projectConfig.Path,
+		}, m.commandRunner)
 		serviceHooksRunner := ext.NewHooksRunner(
 			serviceHooksManager,
 			m.commandRunner,
@@ -194,7 +198,7 @@ func (m *HooksMiddleware) createServiceEventHandler(
 	hooksRunner *ext.HooksRunner,
 ) ext.EventHandlerFn[project.ServiceLifecycleEventArgs] {
 	return func(ctx context.Context, eventArgs project.ServiceLifecycleEventArgs) error {
-		return hooksRunner.RunHooks(ctx, hookType, nil, hookName)
+		return hooksRunner.RunHooks(ctx, hookType, "service", nil, hookName)
 	}
 }
 
@@ -206,7 +210,9 @@ func (m *HooksMiddleware) validateHooks(ctx context.Context, projectConfig *proj
 			return
 		}
 
-		hooksManager := ext.NewHooksManager(cwd, m.commandRunner)
+		hooksManager := ext.NewHooksManager(ext.HooksManagerOptions{
+			Cwd: cwd, ProjectDir: projectConfig.Path,
+		}, m.commandRunner)
 		validationResult := hooksManager.ValidateHooks(ctx, hooks)
 
 		for _, warning := range validationResult.Warnings {

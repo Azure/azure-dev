@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
@@ -38,7 +39,7 @@ import (
 
 func Test_ErrorMiddleware_SuccessNoError(t *testing.T) {
 	t.Parallel()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	cfg := config.NewConfig(map[string]any{
 		"alpha": map[string]any{
 			string(agentcopilot.FeatureCopilot): "on",
@@ -76,7 +77,7 @@ func Test_ErrorMiddleware_SuccessNoError(t *testing.T) {
 
 func Test_ErrorMiddleware_LLMAlphaFeatureDisabled(t *testing.T) {
 	t.Parallel()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	cfg := config.NewEmptyConfig()
 	featureManager := alpha.NewFeaturesManagerWithConfig(cfg)
 	global := &internal.GlobalCommandOptions{
@@ -109,7 +110,7 @@ func Test_ErrorMiddleware_LLMAlphaFeatureDisabled(t *testing.T) {
 
 func Test_ErrorMiddleware_ChildAction(t *testing.T) {
 	t.Parallel()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	cfg := config.NewConfig(map[string]any{
 		"alpha": map[string]any{
 			string(agentcopilot.FeatureCopilot): "on",
@@ -150,7 +151,7 @@ func Test_ErrorMiddleware_ErrorWithSuggestion(t *testing.T) {
 		t.Skip("Skipping test in CI/CD environment")
 	}
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	cfg := config.NewConfig(map[string]any{
 		"alpha": map[string]any{
 			string(agentcopilot.FeatureCopilot): "on",
@@ -195,7 +196,7 @@ func Test_ErrorMiddleware_ErrorWithSuggestion(t *testing.T) {
 
 func Test_ErrorMiddleware_PatternMatchingSuggestion(t *testing.T) {
 	t.Parallel()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	cfg := config.NewEmptyConfig()
 	featureManager := alpha.NewFeaturesManagerWithConfig(cfg)
 	global := &internal.GlobalCommandOptions{
@@ -231,9 +232,111 @@ func Test_ErrorMiddleware_PatternMatchingSuggestion(t *testing.T) {
 	require.NotEmpty(t, suggestionErr.Links, "Expected reference links")
 }
 
+// Test_ErrorMiddleware_ExtensionErrorWithSuggestion_BypassesPipeline verifies that
+// when an extension-supplied error (LocalError or ServiceError) already carries a
+// Suggestion, the YAML error-suggestion pipeline is short-circuited so it doesn't
+// override the extension's specific guidance with a generic one. Regression test
+// for https://github.com/Azure/azure-dev/issues/7706.
+func Test_ErrorMiddleware_ExtensionErrorWithSuggestion_BypassesPipeline(t *testing.T) {
+	t.Parallel()
+
+	mockContext := mocks.NewMockContext(t.Context())
+	cfg := config.NewEmptyConfig()
+	featureManager := alpha.NewFeaturesManagerWithConfig(cfg)
+	global := &internal.GlobalCommandOptions{
+		NoPrompt: true, // skip agentic handling
+	}
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	errorPipeline := errorhandler.NewErrorHandlerPipeline(nil)
+	middleware := NewErrorMiddleware(
+		&Options{Name: "test"},
+		mockContext.Console,
+		nil,
+		global,
+		featureManager,
+		userConfigManager,
+		errorPipeline,
+	)
+
+	// "QuotaExceeded" matches a known pattern in error_suggestions.yaml that would
+	// otherwise wrap into an *ErrorWithSuggestion (proven by
+	// Test_ErrorMiddleware_PatternMatchingSuggestion). The middleware must skip
+	// that wrapping when the extension already supplied a suggestion of its own.
+	extErr := &azdext.LocalError{
+		Message:    "Deployment failed: QuotaExceeded for resource",
+		Code:       "quota_exceeded",
+		Category:   azdext.LocalErrorCategoryUser,
+		Suggestion: "Extension-provided guidance: request a quota increase via the portal.",
+	}
+	nextFn := func(ctx context.Context) (*actions.ActionResult, error) {
+		return nil, extErr
+	}
+
+	result, err := middleware.Run(*mockContext.Context, nextFn)
+
+	require.Error(t, err)
+	require.Nil(t, result)
+
+	// The original LocalError must be returned unchanged — not wrapped in
+	// *ErrorWithSuggestion by the YAML pipeline.
+	var wrapped *internal.ErrorWithSuggestion
+	require.False(
+		t,
+		errors.As(err, &wrapped),
+		"YAML pipeline should not wrap an extension error that already has a Suggestion",
+	)
+	returned, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok, "expected the original *LocalError to be returned")
+	require.Same(t, extErr, returned)
+	require.Equal(t, extErr.Suggestion, azdext.ErrorSuggestion(err))
+}
+
+func Test_ErrorMiddleware_StructuredExtensionErrorWithoutSuggestion_BypassesPipeline(t *testing.T) {
+	t.Parallel()
+
+	mockContext := mocks.NewMockContext(t.Context())
+	cfg := config.NewEmptyConfig()
+	featureManager := alpha.NewFeaturesManagerWithConfig(cfg)
+	global := &internal.GlobalCommandOptions{
+		NoPrompt: true,
+	}
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	errorPipeline := errorhandler.NewErrorHandlerPipeline(nil)
+	middleware := NewErrorMiddleware(
+		&Options{Name: "test"},
+		mockContext.Console,
+		nil,
+		global,
+		featureManager,
+		userConfigManager,
+		errorPipeline,
+	)
+
+	extErr := &azdext.LocalError{
+		Message:  "Deployment failed: QuotaExceeded for resource",
+		Code:     "quota_exceeded",
+		Category: azdext.LocalErrorCategoryUser,
+	}
+	nextFn := func(ctx context.Context) (*actions.ActionResult, error) {
+		return nil, extErr
+	}
+
+	result, err := middleware.Run(*mockContext.Context, nextFn)
+
+	require.Error(t, err)
+	require.Nil(t, result)
+
+	var wrapped *internal.ErrorWithSuggestion
+	require.False(t, errors.As(err, &wrapped))
+	returned, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Same(t, extErr, returned)
+	require.Empty(t, azdext.ErrorSuggestion(err))
+}
+
 func Test_ErrorMiddleware_NoPatternMatch(t *testing.T) {
 	t.Parallel()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	cfg := config.NewEmptyConfig()
 	featureManager := alpha.NewFeaturesManagerWithConfig(cfg)
 	global := &internal.GlobalCommandOptions{
@@ -552,7 +655,7 @@ func Test_ShouldSkipAgentHandling_WrappedConfigValidationError(t *testing.T) {
 func Test_ErrorMiddleware_NonFixableError_SkipsAgentCreation(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	cfg := config.NewConfig(map[string]any{
 		"alpha": map[string]any{
 			string(agentcopilot.FeatureCopilot): "on",
@@ -718,7 +821,7 @@ func Test_ErrorMiddleware_MaxRetry_FirstIterationSkipsCounter(t *testing.T) {
 	require.NotNil(t, result)
 }
 
-func Test_PromptNextAction_SavedAllow_ReturnsFixOnly(t *testing.T) {
+func Test_PromptNextAction_SavedAllow_ReturnsFixAndRetry(t *testing.T) {
 	t.Parallel()
 
 	cfg := configWithKeys(agentcopilot.ConfigKeyErrorHandlingFix, "allow")
@@ -731,8 +834,8 @@ func Test_PromptNextAction_SavedAllow_ReturnsFixOnly(t *testing.T) {
 
 	action, err := m.promptNextAction(t.Context())
 	require.NoError(t, err)
-	require.Equal(t, actionFixOnly, action,
-		"saved 'allow' preference should return actionFixOnly, not actionFixAndRetry")
+	require.Equal(t, actionFixAndRetry, action,
+		"saved 'allow' preference should return actionFixAndRetry to auto-rerun the command")
 }
 
 func Test_PromptNextAction_ConfigLoadError(t *testing.T) {
@@ -749,4 +852,37 @@ func Test_PromptNextAction_ConfigLoadError(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "io error")
 	require.Equal(t, actionExit, action)
+}
+
+func Test_PromptRetryAfterFix_SavedAllow_ReturnsTrue(t *testing.T) {
+	t.Parallel()
+
+	cfg := configWithKeys(agentcopilot.ConfigKeyErrorHandlingFix, "allow")
+	ucm := &mockUserConfigManager{cfg: cfg}
+
+	m := &ErrorMiddleware{
+		console:           mockinput.NewMockConsole(),
+		userConfigManager: ucm,
+	}
+
+	shouldRetry, err := m.promptRetryAfterFix(t.Context())
+	require.NoError(t, err)
+	require.True(t, shouldRetry,
+		"saved 'allow' preference should bypass the retry prompt and auto-retry")
+}
+
+func Test_PromptRetryAfterFix_ConfigLoadError(t *testing.T) {
+	t.Parallel()
+
+	ucm := &mockUserConfigManager{cfg: nil, err: errors.New("io error")}
+
+	m := &ErrorMiddleware{
+		console:           mockinput.NewMockConsole(),
+		userConfigManager: ucm,
+	}
+
+	shouldRetry, err := m.promptRetryAfterFix(t.Context())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "io error")
+	require.False(t, shouldRetry)
 }

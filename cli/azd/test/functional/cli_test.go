@@ -66,14 +66,21 @@ type cliConfig struct {
 	// The client ID to use for live Azure tests.
 	ClientID string
 	// The tenant ID to use for live Azure tests.
+	// Resolution order (first non-empty wins):
+	//   1. AZD_TEST_TENANT_ID env var
+	//   2. azd config 'defaults.test.tenant' (only when CI is unset)
 	TenantID string
 	// The Azure subscription ID to use for live Azure tests.
-	// In non-CI environments with no additional environment variables set,
-	// the azd user config 'defaults.subscription' value is used.
+	// Resolution order (first non-empty wins):
+	//   1. AZD_TEST_AZURE_SUBSCRIPTION_ID env var
+	//   2. azd config 'defaults.test.subscription' (only when CI is unset)
+	//   3. azd config 'defaults.subscription'      (only when CI is unset)
 	SubscriptionID string
 	// The Azure location to use for live Azure tests.
-	// In non-CI environments with no additional environment variables set,
-	// the azd user config 'defaults.location' value is used.
+	// Resolution order (first non-empty wins):
+	//   1. AZD_TEST_AZURE_LOCATION env var
+	//   2. azd config 'defaults.test.location' (only when CI is unset)
+	//   3. azd config 'defaults.location'      (only when CI is unset)
 	Location string
 }
 
@@ -84,16 +91,31 @@ func (c *cliConfig) init() {
 	c.SubscriptionID = os.Getenv("AZD_TEST_AZURE_SUBSCRIPTION_ID")
 	c.Location = os.Getenv("AZD_TEST_AZURE_LOCATION")
 
-	if !c.CI && (c.SubscriptionID == "" || c.Location == "") {
+	if !c.CI && (c.SubscriptionID == "" || c.Location == "" || c.TenantID == "") {
 		userConfig := config.NewUserConfigManager(config.NewFileConfigManager(config.NewManager()))
 		cfg, err := userConfig.Load()
 		if err == nil {
-			if subId, ok := cfg.GetString("defaults.subscription"); ok && c.SubscriptionID == "" {
-				c.SubscriptionID = subId
+			// configFallback returns the first non-empty value from the given config keys.
+			// Test-specific keys (defaults.test.*) take precedence over general defaults.
+			configFallback := func(keys ...string) string {
+				for _, key := range keys {
+					if val, ok := cfg.GetString(key); ok && val != "" {
+						return val
+					}
+				}
+				return ""
 			}
 
-			if loc, ok := cfg.GetString("defaults.location"); ok && c.Location == "" {
-				c.Location = loc
+			if c.SubscriptionID == "" {
+				c.SubscriptionID = configFallback("defaults.test.subscription", "defaults.subscription")
+			}
+
+			if c.TenantID == "" {
+				c.TenantID = configFallback("defaults.test.tenant")
+			}
+
+			if c.Location == "" {
+				c.Location = configFallback("defaults.test.location", "defaults.location")
 			}
 		}
 
@@ -111,6 +133,11 @@ func TestMain(m *testing.M) {
 		log.Println("Skipping tests in short mode")
 		os.Exit(0)
 	}
+
+	// Disable MSBuild node reuse to prevent parallel dotnet builds from interfering with each other.
+	// Without this, shared MSBuild worker nodes cause "MSB4166: Child node exited prematurely" errors.
+	// CI sets this in the pipeline, but we also set it here for local development.
+	os.Setenv("MSBUILDDISABLENODEREUSE", "1")
 
 	exitVal := m.Run()
 	os.Exit(exitVal)
@@ -794,7 +821,7 @@ func Test_CLI_NoDebugSpewWhenHelpPassedWithoutDebug(t *testing.T) {
 	// Update checks are one of the things that can write to stderr. Disable it since it's not relevant to this test.
 	cli.Env = append(cli.Env, os.Environ()...)
 	cli.Env = append(cli.Env, "AZD_SKIP_UPDATE_CHECK=true")
-	ctx := context.Background()
+	ctx := t.Context()
 	result, err := cli.RunCommand(ctx, "--help")
 	require.NoError(t, err)
 
@@ -929,7 +956,7 @@ func getTestEnvPath(dir string, envName string) string {
 // the provided `testing.T` has a deadline applied, the returned context
 // respects the deadline.
 func newTestContext(t *testing.T) (context.Context, context.CancelFunc) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	if deadline, ok := t.Deadline(); ok {
 		return context.WithDeadline(ctx, deadline)
@@ -1037,9 +1064,7 @@ func logHandles(t *testing.T, path string) {
 func removeAllWithDiagnostics(t *testing.T, path string) error {
 	retryCount := 0
 	loggedOnce := false
-	return retry.Do(
-		context.Background(),
-		retry.WithMaxRetries(10, retry.NewConstant(1*time.Second)),
+	return retry.Do(context.Background(), retry.WithMaxRetries(10, retry.NewConstant(1*time.Second)),
 		func(_ context.Context) error {
 			removeErr := os.RemoveAll(path)
 			if removeErr == nil {

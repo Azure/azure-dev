@@ -55,7 +55,7 @@ func TestAuthToken(t *testing.T) {
 		cloud.AzurePublic(),
 	)
 
-	_, err := a.Run(context.Background())
+	_, err := a.Run(t.Context())
 	require.NoError(t, err)
 	require.True(t, wasCalled, "GetToken was not called on the credential")
 
@@ -127,7 +127,7 @@ func TestAuthTokenSysEnv(t *testing.T) {
 		cloud.AzurePublic(),
 	)
 
-	_, err := a.Run(context.Background())
+	_, err := a.Run(t.Context())
 	require.NoError(t, err)
 
 	var res contracts.AuthTokenResult
@@ -175,7 +175,7 @@ func TestAuthTokenSysEnvError(t *testing.T) {
 		cloud.AzurePublic(),
 	)
 
-	_, err := a.Run(context.Background())
+	_, err := a.Run(t.Context())
 	require.ErrorContains(
 		t,
 		err,
@@ -219,7 +219,7 @@ func TestAuthTokenAzdEnvError(t *testing.T) {
 		cloud.AzurePublic(),
 	)
 
-	_, err := a.Run(context.Background())
+	_, err := a.Run(t.Context())
 	require.ErrorContains(
 		t,
 		err,
@@ -260,7 +260,7 @@ func TestAuthTokenAzdEnv(t *testing.T) {
 		cloud.AzurePublic(),
 	)
 
-	_, err := a.Run(context.Background())
+	_, err := a.Run(t.Context())
 	require.NoError(t, err)
 
 	var res contracts.AuthTokenResult
@@ -301,7 +301,7 @@ func TestAuthTokenAzdEnvWithEmpty(t *testing.T) {
 		cloud.AzurePublic(),
 	)
 
-	_, err := a.Run(context.Background())
+	_, err := a.Run(t.Context())
 	require.NoError(t, err)
 
 	var res contracts.AuthTokenResult
@@ -338,7 +338,7 @@ func TestAuthTokenCustomScopes(t *testing.T) {
 		cloud.AzurePublic(),
 	)
 
-	_, err := a.Run(context.Background())
+	_, err := a.Run(t.Context())
 	require.NoError(t, err)
 	require.True(t, wasCalled, "GetToken was not called on the credential")
 }
@@ -360,7 +360,7 @@ func TestAuthTokenFailure(t *testing.T) {
 		cloud.AzurePublic(),
 	)
 
-	_, err := a.Run(context.Background())
+	_, err := a.Run(t.Context())
 	require.ErrorContains(t, err, "could not fetch token")
 }
 

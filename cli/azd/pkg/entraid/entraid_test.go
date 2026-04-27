@@ -4,7 +4,6 @@
 package entraid
 
 import (
-	"context"
 	"net/http"
 	"testing"
 
@@ -59,7 +58,7 @@ func Test_CreateOrUpdateServicePrincipal(t *testing.T) {
 
 	// Tests the use case for a brand new service principal
 	t.Run("NewServicePrincipal", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockgraphsdk.RegisterApplicationListMock(mockContext, http.StatusOK, []graphsdk.Application{})
 		mockgraphsdk.RegisterApplicationGetItemByAppIdMock(mockContext, http.StatusNotFound, "APPLICATION_NAME", nil)
 		mockgraphsdk.RegisterApplicationGetItemMock(mockContext, http.StatusNotFound, "APPLICATION_NAME", nil)
@@ -89,7 +88,7 @@ func Test_CreateOrUpdateServicePrincipal(t *testing.T) {
 
 	// Tests the use case for updating an existing service principal
 	t.Run("ExistingServicePrincipal", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockgraphsdk.RegisterApplicationListMock(
 			mockContext,
 			http.StatusOK,
@@ -136,7 +135,7 @@ func Test_CreateOrUpdateServicePrincipal(t *testing.T) {
 
 	// Tests the use case for an existing service principal that already has the required role assignment.
 	t.Run("RoleAssignmentExists", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockgraphsdk.RegisterApplicationListMock(mockContext, http.StatusOK, []graphsdk.Application{existingApplication})
 		mockgraphsdk.RegisterApplicationGetItemByAppIdMock(
 			mockContext,
@@ -179,7 +178,7 @@ func Test_CreateOrUpdateServicePrincipal(t *testing.T) {
 	})
 
 	t.Run("InvalidRole", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockgraphsdk.RegisterApplicationListMock(mockContext, http.StatusOK, []graphsdk.Application{})
 		mockgraphsdk.RegisterApplicationGetItemByAppIdMock(
 			mockContext,
@@ -218,7 +217,7 @@ func Test_CreateOrUpdateServicePrincipal(t *testing.T) {
 	})
 
 	t.Run("ErrorCreatingApplication", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockgraphsdk.RegisterApplicationListMock(mockContext, http.StatusOK, []graphsdk.Application{})
 		mockgraphsdk.RegisterApplicationGetItemByAppIdMock(mockContext, http.StatusNotFound, "APPLICATION_NAME", nil)
 		mockgraphsdk.RegisterApplicationGetItemMock(mockContext, http.StatusNotFound, "APPLICATION_NAME", nil)
@@ -254,7 +253,7 @@ func Test_ApplyFederatedCredentials(t *testing.T) {
 	}
 
 	t.Run("AppNotFound", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockgraphsdk.RegisterApplicationGetItemByAppIdMock(mockContext, http.StatusNotFound, *mockApplication.AppId, nil)
 		entraIdService := NewEntraIdService(
 			mockContext.SubscriptionCredentialProvider,
@@ -274,7 +273,7 @@ func Test_ApplyFederatedCredentials(t *testing.T) {
 		require.Nil(t, credentials)
 	})
 	t.Run("SingleBranch", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockCredentials := []graphsdk.FederatedIdentityCredential{
 			{
 				Id:          new("CREDENTIAL_ID"),
@@ -331,7 +330,7 @@ func Test_ApplyFederatedCredentials(t *testing.T) {
 	})
 
 	t.Run("MultipleBranches", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockCredentials := []graphsdk.FederatedIdentityCredential{
 			{
 				Id:          new("CREDENTIAL_ID"),
@@ -396,7 +395,7 @@ func Test_ApplyFederatedCredentials(t *testing.T) {
 	})
 
 	t.Run("CredentialsAlreadyExist", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockCredentials := []graphsdk.FederatedIdentityCredential{
 			{
 				Id:          new("CREDENTIAL_ID"),
@@ -470,7 +469,7 @@ func Test_ResetPasswordCredentials(t *testing.T) {
 	}
 
 	t.Run("Success", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockgraphsdk.RegisterApplicationGetItemByAppIdMock(
 			mockContext,
 			http.StatusOK,
@@ -505,7 +504,7 @@ func Test_ResetPasswordCredentials(t *testing.T) {
 	})
 
 	t.Run("AppNotFound", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockgraphsdk.RegisterApplicationGetItemByAppIdMock(mockContext, http.StatusOK, *mockApplication.AppId, nil)
 
 		entraIdService := NewEntraIdService(
@@ -524,7 +523,7 @@ func Test_ResetPasswordCredentials(t *testing.T) {
 	})
 
 	t.Run("RemovingOldPassword", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockgraphsdk.RegisterApplicationGetItemByAppIdMock(
 			mockContext,
 			http.StatusOK,
@@ -550,7 +549,7 @@ func Test_ResetPasswordCredentials(t *testing.T) {
 	})
 
 	t.Run("AddingNewPassword", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockgraphsdk.RegisterApplicationGetItemByAppIdMock(
 			mockContext,
 			http.StatusOK,

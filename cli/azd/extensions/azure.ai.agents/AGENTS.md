@@ -122,13 +122,21 @@ Define new codes in `internal/exterrors/codes.go`.
 
 ## Release preparation
 
-When bumping the extension version for a patch release, update **only** these files:
+A new extension release ships in two PRs:
+
+### PR 1 — Version bump
+
+Bumps the extension to the new version. Touches only:
 
 - `version.txt` — new semver string
 - `extension.yaml` — `version:` field
 - `CHANGELOG.md` — new release section at the top
 
-**Do NOT update `cli/azd/extensions/registry.json`.** The registry entry (checksums, artifact URLs) is generated automatically by CI after the release build produces the binaries. Editing it manually by hand will result in wrong or placeholder checksums that break installation.
+Once merged, the team triggers the CI release pipeline, which builds, signs, and publishes the extension binaries as a GitHub release.
+
+### PR 2 — Registry update
+
+After the GitHub release is live, a follow-up PR updates `cli/azd/extensions/registry.json` so azd users can install the new version. The contents of that file are produced by running `azd x publish` against the published release artifacts (which computes the artifact URLs and checksums). The resulting PR should contain only the regenerated `registry.json` entry for the extension, and in some cases updated test snapshots as well.
 
 ## Output: `log` vs `fmt`
 

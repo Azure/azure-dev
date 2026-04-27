@@ -4,7 +4,6 @@
 package graphsdk_test
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"testing"
@@ -46,7 +45,7 @@ func TestGetFederatedCredentialList(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		expected := append([]graphsdk.FederatedIdentityCredential{}, federatedCredentials...)
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockgraphsdk.RegisterFederatedCredentialsListMock(mockContext, *application.Id, http.StatusOK, expected)
 
 		client, err := mockgraphsdk.CreateGraphClient(mockContext)
@@ -63,7 +62,7 @@ func TestGetFederatedCredentialList(t *testing.T) {
 	})
 
 	t.Run("Error", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockgraphsdk.RegisterFederatedCredentialsListMock(mockContext, *application.Id, http.StatusUnauthorized, nil)
 
 		client, err := mockgraphsdk.CreateGraphClient(mockContext)
@@ -83,7 +82,7 @@ func TestGetFederatedCredentialById(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		expected := federatedCredentials[0]
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockgraphsdk.RegisterFederatedCredentialGetItemMock(
 			mockContext,
 			*application.Id,
@@ -108,7 +107,7 @@ func TestGetFederatedCredentialById(t *testing.T) {
 	})
 
 	t.Run("Error", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockgraphsdk.RegisterFederatedCredentialGetItemMock(
 			mockContext,
 			*application.Id,
@@ -134,7 +133,7 @@ func TestCreateFederatedCredential(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		expected := federatedCredentials[0]
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockgraphsdk.RegisterFederatedCredentialCreateItemMock(mockContext, *application.Id, http.StatusCreated, &expected)
 
 		client, err := mockgraphsdk.CreateGraphClient(mockContext)
@@ -151,7 +150,7 @@ func TestCreateFederatedCredential(t *testing.T) {
 	})
 
 	t.Run("Error", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockgraphsdk.RegisterFederatedCredentialCreateItemMock(mockContext, *application.Id, http.StatusBadRequest, nil)
 
 		client, err := mockgraphsdk.CreateGraphClient(mockContext)
@@ -171,7 +170,7 @@ func TestPatchFederatedCredential(t *testing.T) {
 	expected := federatedCredentials[0]
 
 	t.Run("Success", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockgraphsdk.RegisterFederatedCredentialPatchItemMock(
 			mockContext,
 			*application.Id,
@@ -191,7 +190,7 @@ func TestPatchFederatedCredential(t *testing.T) {
 	})
 
 	t.Run("Error", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockgraphsdk.RegisterFederatedCredentialPatchItemMock(
 			mockContext,
 			*application.Id,
@@ -216,7 +215,7 @@ func TestDeleteFederatedCredential(t *testing.T) {
 	credentialId := "credential-to-delete"
 
 	t.Run("Success", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockgraphsdk.RegisterFederatedCredentialDeleteItemMock(
 			mockContext,
 			*application.Id,
@@ -236,7 +235,7 @@ func TestDeleteFederatedCredential(t *testing.T) {
 	})
 
 	t.Run("Error", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockgraphsdk.RegisterFederatedCredentialDeleteItemMock(
 			mockContext,
 			*application.Id,

@@ -391,9 +391,9 @@ func (p *RustFrameworkServiceProvider) Initialize(ctx context.Context, serviceCo
 
 You can find a complete working example in the azd demo extension:
 
-- Extension manifest: [`extensions/microsoft.azd.demo/extension.yaml`](../extensions/microsoft.azd.demo/extension.yaml)
-- Framework service implementation: [`extensions/microsoft.azd.demo/internal/project/framework_service_demo.go`](../extensions/microsoft.azd.demo/internal/project/framework_service_demo.go)
-- Registration: [`extensions/microsoft.azd.demo/internal/cmd/listen.go`](../extensions/microsoft.azd.demo/internal/cmd/listen.go)
+- Extension manifest: [`extensions/microsoft.azd.demo/extension.yaml`](../../extensions/microsoft.azd.demo/extension.yaml)
+- Framework service implementation: [`extensions/microsoft.azd.demo/internal/project/framework_service_demo.go`](../../extensions/microsoft.azd.demo/internal/project/framework_service_demo.go)
+- Registration: [`extensions/microsoft.azd.demo/internal/cmd/listen.go`](../../extensions/microsoft.azd.demo/internal/cmd/listen.go)
 
 ## Troubleshooting
 

@@ -18,7 +18,9 @@ type apiVersionPolicy struct {
 	apiVersion string
 }
 
-// Policy to ensure the AZD custom user agent is set on all HTTP requests.
+// NewApiVersionPolicy returns a policy that sets the `api-version` query
+// parameter on all outgoing requests. If apiVersion is nil, the default
+// api-version is used.
 func NewApiVersionPolicy(apiVersion *string) policy.Policy {
 	if apiVersion == nil {
 		apiVersion = new(defaultApiVersion)
@@ -29,11 +31,11 @@ func NewApiVersionPolicy(apiVersion *string) policy.Policy {
 	}
 }
 
-// Sets the custom user-agent string on the underlying request
+// Sets the api-version query parameter on the underlying request
 func (p *apiVersionPolicy) Do(req *policy.Request) (*http.Response, error) {
 	rawRequest := req.Raw()
 	queryString := rawRequest.URL.Query()
-	queryString.Set(apiVersionName, defaultApiVersion)
+	queryString.Set(apiVersionName, p.apiVersion)
 	rawRequest.URL.RawQuery = queryString.Encode()
 
 	return req.Next()

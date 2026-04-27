@@ -90,6 +90,7 @@ type HttpClient interface {
 type Manager struct {
 	publicClient        publicClient
 	publicClientOptions []public.Option
+	msalCacheTracer     *msalCacheTracer
 	cloud               *cloud.Cloud
 	configManager       config.FileConfigManager
 	userConfigManager   config.UserConfigManager
@@ -142,9 +143,10 @@ func NewManager(
 	}
 
 	msalClient := newUserAgentClient(httpClient, string(userAgent))
+	msalCache := newMsalCacheStore(cacheRoot)
 
 	options := []public.Option{
-		public.WithCache(newCache(cacheRoot)),
+		public.WithCache(&msalCacheAdapter{cache: msalCache}),
 		public.WithAuthority(authorityUrl),
 		public.WithHTTPClient(msalClient),
 	}
@@ -157,6 +159,7 @@ func NewManager(
 	return &Manager{
 		publicClient:        &msalPublicClientAdapter{client: &publicClientApp},
 		publicClientOptions: options,
+		msalCacheTracer:     newMsalCacheTracer(msalCache),
 		cloud:               cloud,
 		configManager:       configManager,
 		userConfigManager:   userConfigManager,
@@ -325,7 +328,13 @@ func (m *Manager) CredentialForCurrentUser(
 		for i, account := range accounts {
 			if account.HomeAccountID == *currentUser.HomeAccountID {
 				if options.TenantID == "" {
-					return newAzdCredential(m.publicClient, &accounts[i], m.cloud, "" /* tenantID */), nil
+					return newAzdCredential(
+						m.publicClient,
+						&accounts[i],
+						m.cloud,
+						"", /* tenantID */
+						m.msalCacheTracer,
+					), nil
 				} else {
 					newAuthority := m.cloud.Configuration.ActiveDirectoryAuthorityHost + options.TenantID
 
@@ -343,7 +352,11 @@ func (m *Manager) CredentialForCurrentUser(
 
 					return newAzdCredential(
 						&msalPublicClientAdapter{client: &clientWithNewTenant},
-						&accounts[i], m.cloud, options.TenantID), nil
+						&accounts[i],
+						m.cloud,
+						options.TenantID,
+						m.msalCacheTracer,
+					), nil
 				}
 			}
 		}
@@ -696,6 +709,8 @@ func (m *Manager) LoginInteractive(
 		scopes = m.LoginScopes()
 	}
 
+	m.msalCacheTracer.LogSnapshot("before-login-interactive")
+
 	var claimsFile string
 	if claims == "" {
 		c, path, err := loadClaims()
@@ -734,6 +749,8 @@ func (m *Manager) LoginInteractive(
 		return nil, err
 	}
 
+	m.msalCacheTracer.LogSnapshot("after-login-interactive")
+
 	if err := m.saveLoginForPublicClient(res); err != nil {
 		return nil, err
 	}
@@ -742,7 +759,13 @@ func (m *Manager) LoginInteractive(
 		_ = os.Remove(claimsFile)
 	}
 
-	return newAzdCredential(m.publicClient, &res.Account, m.cloud, "" /* tenantID */), nil
+	return newAzdCredential(
+		m.publicClient,
+		&res.Account,
+		m.cloud,
+		"", /* tenantID */
+		m.msalCacheTracer,
+	), nil
 }
 
 // LoginWithBrokerAccount logs in an account provided by the system authentication broker via OneAuth.
@@ -784,6 +807,8 @@ func (m *Manager) LoginWithDeviceCode(
 	if scopes == nil {
 		scopes = m.LoginScopes()
 	}
+
+	m.msalCacheTracer.LogSnapshot("before-login-device-code")
 
 	var claimsFile string
 	if claims == "" {
@@ -844,6 +869,8 @@ func (m *Manager) LoginWithDeviceCode(
 	}
 	m.console.Message(ctx, "Device code authentication completed.")
 
+	m.msalCacheTracer.LogSnapshot("after-login-device-code")
+
 	if err := m.saveLoginForPublicClient(res); err != nil {
 		return nil, err
 	}
@@ -852,7 +879,13 @@ func (m *Manager) LoginWithDeviceCode(
 		_ = os.Remove(claimsFile)
 	}
 
-	return newAzdCredential(m.publicClient, &res.Account, m.cloud, "" /* tenantID */), nil
+	return newAzdCredential(
+		m.publicClient,
+		&res.Account,
+		m.cloud,
+		"", /* tenantID */
+		m.msalCacheTracer,
+	), nil
 
 }
 

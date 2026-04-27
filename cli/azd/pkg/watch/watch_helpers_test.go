@@ -4,6 +4,7 @@
 package watch
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -170,22 +171,12 @@ func TestFileChanges_String_PreservesOrder(t *testing.T) {
 	}
 	s := fc.String()
 
-	firstIdx := indexOf(s, "first.txt")
-	secondIdx := indexOf(s, "second.txt")
-	thirdIdx := indexOf(s, "third.txt")
+	firstIdx := strings.Index(s, "first.txt")
+	secondIdx := strings.Index(s, "second.txt")
+	thirdIdx := strings.Index(s, "third.txt")
 
 	require.Greater(t, secondIdx, firstIdx,
 		"second should appear after first")
 	require.Greater(t, thirdIdx, secondIdx,
 		"third should appear after second")
-}
-
-// indexOf returns the position of substr in s, or -1.
-func indexOf(s, substr string) int {
-	for i := 0; i+len(substr) <= len(s); i++ {
-		if s[i:i+len(substr)] == substr {
-			return i
-		}
-	}
-	return -1
 }

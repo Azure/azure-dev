@@ -52,7 +52,11 @@ func MapError(err error, span tracing.Span) {
 		errDetails = append(errDetails, fields.ErrCategory.String("auth"))
 	} else if errWithSuggestion, ok := errors.AsType[*internal.ErrorWithSuggestion](err); ok {
 		errCode = "error.suggestion"
-		span.SetAttributes(fields.ErrType.String(classifySuggestionType(errWithSuggestion.Unwrap())))
+		innerErr := errWithSuggestion.Unwrap()
+		span.SetAttributes(fields.ErrType.String(classifySuggestionType(innerErr)))
+		if authFailedErr, ok := errors.AsType[*auth.AuthFailedError](innerErr); ok {
+			errDetails = append(errDetails, authFailedTelemetryDetails(authFailedErr)...)
+		}
 	} else if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
 		serviceName := "other"
 		statusCode := -1
@@ -173,18 +177,7 @@ func MapError(err error, span tracing.Span) {
 			errDetails = append(errDetails, fields.ToolName.String(strings.Join(toolCheckErr.ToolNames, ",")))
 		}
 	} else if authFailedErr, ok := errors.AsType[*auth.AuthFailedError](err); ok {
-		errDetails = append(errDetails, fields.ServiceName.String("aad"))
-		if authFailedErr.Parsed != nil {
-			codes := make([]string, 0, len(authFailedErr.Parsed.ErrorCodes))
-			for _, code := range authFailedErr.Parsed.ErrorCodes {
-				codes = append(codes, fmt.Sprintf("%d", code))
-			}
-			serviceErr := strings.Join(codes, ",")
-			errDetails = append(errDetails,
-				fields.ServiceStatusCode.String(authFailedErr.Parsed.Error),
-				fields.ServiceErrorCode.String(serviceErr),
-				fields.ServiceCorrelationId.String(authFailedErr.Parsed.CorrelationId))
-		}
+		errDetails = append(errDetails, authFailedTelemetryDetails(authFailedErr)...)
 		errCode = "service.aad.failed"
 	} else if errors.Is(err, auth.ErrNoCurrentUser) {
 		errCode = "auth.not_logged_in"
@@ -214,6 +207,24 @@ func MapError(err error, span tracing.Span) {
 	}
 
 	span.SetStatus(codes.Error, errCode)
+}
+
+func authFailedTelemetryDetails(authFailedErr *auth.AuthFailedError) []attribute.KeyValue {
+	errDetails := []attribute.KeyValue{fields.ServiceName.String("aad")}
+	if authFailedErr == nil || authFailedErr.Parsed == nil {
+		return errDetails
+	}
+
+	codes := make([]string, 0, len(authFailedErr.Parsed.ErrorCodes))
+	for _, code := range authFailedErr.Parsed.ErrorCodes {
+		codes = append(codes, fmt.Sprintf("%d", code))
+	}
+
+	return append(errDetails,
+		fields.ServiceStatusCode.String(authFailedErr.Parsed.Error),
+		fields.ServiceErrorCode.String(strings.Join(codes, ",")),
+		fields.ServiceCorrelationId.String(authFailedErr.Parsed.CorrelationId),
+	)
 }
 
 // classifySentinel checks if the error matches a known sentinel

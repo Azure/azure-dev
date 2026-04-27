@@ -1,0 +1,42 @@
+id: deploy-node-api-001
+description: >
+  User asks Copilot CLI to deploy an existing Node.js API to Azure.
+  LLM should suggest azd init (possibly with --from-code) then azd up
+  or azd provision + azd deploy.
+inputs:
+  prompt: "I have a Node.js Express API and I want to deploy it to Azure using azd"
+  context: |
+    The user already has a Node.js Express API project locally but has not
+    initialized it with azd yet. There is no azure.yaml in the project.
+graders:
+  - type: text
+    weight: 0.3
+    config:
+      must_match:
+        - "azd init"
+        - "azd (up|deploy)"
+      must_not_match:
+        - "azd down"
+        - "az group delete"
+  - type: action_sequence
+    weight: 0.3
+    config:
+      expected_order:
+        - "azd init"
+        - "azd provision"
+        - "azd deploy"
+      alternate_sequences:
+        - - "azd init"
+          - "azd up"
+  - type: behavior
+    weight: 0.2
+    config:
+      max_tool_calls: 10
+      max_tokens: 3000
+  - type: text
+    weight: 0.2
+    config:
+      must_match_any:
+        - "--from-code"
+        - "azd up"
+        - "azd init"

@@ -36,6 +36,7 @@ type invokeFlags struct {
 	newSession      bool
 	conversation    string
 	newConversation bool
+	protocol        string
 }
 
 type InvokeAction struct {
@@ -69,6 +70,9 @@ session automatically. Pass --new-session to force a reset.`,
 
   # Invoke a specific remote agent by name
   azd ai agent invoke my-agent "Hello!"
+
+  # Invoke using a specific protocol
+  azd ai agent invoke --protocol invocations "Hello!"
 
   # Invoke with a file as the request body
   azd ai agent invoke -f request.json
@@ -125,6 +129,20 @@ session automatically. Pass --new-session to force a reset.`,
 				)
 			}
 
+			if flags.protocol != "" {
+				switch agent_api.AgentProtocol(flags.protocol) {
+				case agent_api.AgentProtocolResponses,
+					agent_api.AgentProtocolInvocations:
+					// valid
+				default:
+					return exterrors.Validation(
+						exterrors.CodeInvalidParameter,
+						fmt.Sprintf("unsupported protocol %q", flags.protocol),
+						"supported protocols are: responses, invocations",
+					)
+				}
+			}
+
 			action := &InvokeAction{flags: flags}
 			return action.Run(ctx)
 		},
@@ -132,6 +150,7 @@ session automatically. Pass --new-session to force a reset.`,
 
 	cmd.Flags().BoolVarP(&flags.local, "local", "l", false, "Invoke on localhost instead of Foundry")
 	cmd.Flags().StringVarP(&flags.inputFile, "input-file", "f", "", "Path to a file whose contents are sent as the request body")
+	cmd.Flags().StringVarP(&flags.protocol, "protocol", "p", "", "Protocol to use: responses (default) or invocations")
 	cmd.Flags().IntVar(&flags.port, "port", DefaultPort, "Local server port")
 	cmd.Flags().IntVarP(&flags.timeout, "timeout", "t", 120, "Request timeout in seconds (0 for no timeout)")
 	cmd.Flags().StringVarP(&flags.session, "session-id", "s", "", "Explicit session ID override")
@@ -143,8 +162,12 @@ session automatically. Pass --new-session to force a reset.`,
 }
 
 func (a *InvokeAction) Run(ctx context.Context) error {
+	protocol, err := a.resolveProtocol(ctx)
+	if err != nil {
+		return err
+	}
+
 	if a.flags.local {
-		protocol := a.resolveLocalProtocol(ctx)
 		switch protocol {
 		case agent_api.AgentProtocolInvocations:
 			return a.invocationsLocal(ctx)
@@ -153,36 +176,37 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 		}
 	}
 
-	// Remote: only allow the invocations protocol when vnext is enabled.
-	if isVNextEnabled(ctx) {
-		protocol := a.resolveRemoteProtocol(ctx)
-		if protocol == agent_api.AgentProtocolInvocations {
-			return a.invocationsRemote(ctx)
-		}
+	// Remote: route by protocol.
+	if protocol == agent_api.AgentProtocolInvocations {
+		return a.invocationsRemote(ctx)
 	}
 	return a.responsesRemote(ctx)
 }
 
-// resolveRemoteProtocol determines the protocol for remote invocation from agent.yaml.
-func (a *InvokeAction) resolveRemoteProtocol(ctx context.Context) agent_api.AgentProtocol {
+// resolveProtocol returns the protocol to use for this invocation.
+// The explicit --protocol flag takes priority; otherwise the protocol
+// is auto-detected from agent.yaml (local or remote).
+func (a *InvokeAction) resolveProtocol(
+	ctx context.Context,
+) (agent_api.AgentProtocol, error) {
+	if a.flags.protocol != "" {
+		return agent_api.AgentProtocol(a.flags.protocol), nil
+	}
+
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
-		return agent_api.AgentProtocolResponses
+		return "", fmt.Errorf("failed to create azd client: %w", err)
 	}
 	defer azdClient.Close()
 
-	return resolveAgentProtocol(ctx, azdClient, a.flags.name, rootFlags.NoPrompt)
-}
-
-// resolveLocalProtocol determines the protocol for local invocation from agent.yaml.
-func (a *InvokeAction) resolveLocalProtocol(ctx context.Context) agent_api.AgentProtocol {
-	azdClient, err := azdext.NewAzdClient()
-	if err != nil {
-		return agent_api.AgentProtocolResponses
+	if a.flags.local {
+		return resolveAgentProtocol(
+			ctx, azdClient, "", rootFlags.NoPrompt,
+		)
 	}
-	defer azdClient.Close()
-
-	return resolveAgentProtocol(ctx, azdClient, "", rootFlags.NoPrompt)
+	return resolveAgentProtocol(
+		ctx, azdClient, a.flags.name, rootFlags.NoPrompt,
+	)
 }
 
 func (a *InvokeAction) httpTimeout() time.Duration {
@@ -328,7 +352,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 		return fmt.Errorf("agent name is required; provide as the first argument or define an azure.ai.agent service in azure.yaml")
 	}
 
-	endpoint, err := resolveAgentEndpoint(ctx, "", "")
+	projectEndpoint, err := resolveAgentEndpoint(ctx, "", "")
 	if err != nil {
 		return err
 	}
@@ -344,16 +368,6 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	reqBody := map[string]any{
 		"input":  msg,
 		"stream": true,
-	}
-
-	vnext := isVNextEnabled(ctx)
-
-	// The non-vnext /openai/responses endpoint requires an agent reference in the body.
-	if !vnext {
-		reqBody["agent"] = map[string]string{
-			"name": name,
-			"type": "agent_reference",
-		}
 	}
 
 	// Session ID — routes to the same microVM container instance.
@@ -386,7 +400,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 		name,
 		a.flags.conversation,
 		a.flags.newConversation,
-		endpoint,
+		projectEndpoint,
 		token.Token,
 	)
 	if err != nil {
@@ -405,15 +419,10 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	var url string
-	if vnext {
-		url = fmt.Sprintf(
-			"%s/agents/%s/endpoint/protocols/openai/responses?api-version=%s",
-			endpoint, name, DefaultAgentAPIVersion,
-		)
-	} else {
-		url = fmt.Sprintf("%s/openai/responses?api-version=%s", endpoint, DefaultAgentAPIVersion)
-	}
+	url := fmt.Sprintf(
+		"%s/agents/%s/endpoint/protocols/openai/responses?api-version=%s",
+		projectEndpoint, name, DefaultAgentAPIVersion,
+	)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
@@ -880,8 +889,11 @@ func handleInvocationLRO(
 }
 
 // createConversation creates a new Foundry conversation for multi-turn memory.
-func createConversation(ctx context.Context, endpoint string, bearerToken string) (string, error) {
-	url := fmt.Sprintf("%s/openai/conversations?api-version=%s", endpoint, DefaultAgentAPIVersion)
+func createConversation(ctx context.Context, projectEndpoint, agentName, bearerToken string) (string, error) {
+	url := fmt.Sprintf(
+		"%s/agents/%s/endpoint/protocols/openai/conversations?api-version=%s",
+		projectEndpoint, agentName, ConversationsAPIVersion,
+	)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader([]byte("{}")))
 	if err != nil {
 		return "", err

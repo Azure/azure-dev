@@ -4,7 +4,6 @@
 package graphsdk_test
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"testing"
@@ -35,7 +34,7 @@ func TestGetApplicationList(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		expected := append([]graphsdk.Application{}, applications...)
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockgraphsdk.RegisterApplicationListMock(mockContext, http.StatusOK, expected)
 
 		client, err := mockgraphsdk.CreateGraphClient(mockContext)
@@ -48,7 +47,7 @@ func TestGetApplicationList(t *testing.T) {
 	})
 
 	t.Run("Error", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockgraphsdk.RegisterApplicationListMock(mockContext, http.StatusUnauthorized, nil)
 
 		client, err := mockgraphsdk.CreateGraphClient(mockContext)
@@ -67,7 +66,7 @@ func TestGetApplicationById(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		expected := applications[0]
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockgraphsdk.RegisterApplicationGetItemMock(mockContext, http.StatusOK, *expected.Id, &expected)
 
 		client, err := mockgraphsdk.CreateGraphClient(mockContext)
@@ -85,7 +84,7 @@ func TestGetApplicationById(t *testing.T) {
 	})
 
 	t.Run("Error", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockgraphsdk.RegisterApplicationGetItemMock(mockContext, http.StatusNotFound, "bad-id", nil)
 
 		client, err := mockgraphsdk.CreateGraphClient(mockContext)
@@ -104,7 +103,7 @@ func TestCreateApplication(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		expected := applications[0]
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockgraphsdk.RegisterApplicationCreateItemMock(mockContext, http.StatusCreated, &expected)
 
 		client, err := mockgraphsdk.CreateGraphClient(mockContext)
@@ -122,7 +121,7 @@ func TestCreateApplication(t *testing.T) {
 	})
 
 	t.Run("Error", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockgraphsdk.RegisterApplicationCreateItemMock(mockContext, http.StatusBadRequest, nil)
 
 		client, err := mockgraphsdk.CreateGraphClient(mockContext)
@@ -141,7 +140,7 @@ func TestDeleteApplication(t *testing.T) {
 	applicationId := "app-to-delete"
 
 	t.Run("Success", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockgraphsdk.RegisterApplicationDeleteItemMock(mockContext, applicationId, http.StatusNoContent)
 
 		client, err := mockgraphsdk.CreateGraphClient(mockContext)
@@ -155,7 +154,7 @@ func TestDeleteApplication(t *testing.T) {
 	})
 
 	t.Run("Error", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockgraphsdk.RegisterApplicationDeleteItemMock(mockContext, applicationId, http.StatusNotFound)
 
 		client, err := mockgraphsdk.CreateGraphClient(mockContext)
@@ -182,7 +181,7 @@ func TestApplicationAddPassword(t *testing.T) {
 			SecretText:  new("foobar"),
 		}
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockgraphsdk.RegisterApplicationAddPasswordMock(mockContext, http.StatusOK, *application.Id, &mockCredential)
 
 		client, err := mockgraphsdk.CreateGraphClient(mockContext)
@@ -200,7 +199,7 @@ func TestApplicationAddPassword(t *testing.T) {
 	})
 
 	t.Run("Error", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockgraphsdk.RegisterApplicationAddPasswordMock(mockContext, http.StatusNotFound, "bad-app-id", nil)
 
 		client, err := mockgraphsdk.CreateGraphClient(mockContext)
@@ -219,7 +218,7 @@ func TestApplicationRemovePassword(t *testing.T) {
 	application := applications[0]
 
 	t.Run("Success", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockgraphsdk.RegisterApplicationRemovePasswordMock(mockContext, http.StatusNoContent, *application.Id)
 
 		client, err := mockgraphsdk.CreateGraphClient(mockContext)
@@ -233,7 +232,7 @@ func TestApplicationRemovePassword(t *testing.T) {
 	})
 
 	t.Run("Error", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockgraphsdk.RegisterApplicationRemovePasswordMock(mockContext, http.StatusNotFound, *application.Id)
 
 		client, err := mockgraphsdk.CreateGraphClient(mockContext)

@@ -65,6 +65,114 @@ const (
 	apiVersionResourceGroupExistence = "2025-03-01"
 )
 
+// Azure reserved resource name words.
+// See https://learn.microsoft.com/azure/azure-resource-manager/templates/error-reserved-resource-name
+var azureReservedResourceNameExactMatches = map[string]struct{}{
+	"ACCESS":              {},
+	"APP_BROWSERS":        {},
+	"APP_CODE":            {},
+	"APP_DATA":            {},
+	"APP_GLOBALRESOURCES": {},
+	"APP_LOCALRESOURCES":  {},
+	"APP_THEMES":          {},
+	"APP_WEBREFERENCES":   {},
+	"AZURE":               {},
+	"BING":                {},
+	"BIZSPARK":            {},
+	"BIZTALK":             {},
+	"CORTANA":             {},
+	"DIRECTX":             {},
+	"DOTNET":              {},
+	"DYNAMICS":            {},
+	"EXCEL":               {},
+	"EXCHANGE":            {},
+	"FOREFRONT":           {},
+	"GROOVE":              {},
+	"HOLOLENS":            {},
+	"HYPERV":              {},
+	"KINECT":              {},
+	"LYNC":                {},
+	"MSDN":                {},
+	"O365":                {},
+	"OFFICE":              {},
+	"OFFICE365":           {},
+	"ONEDRIVE":            {},
+	"ONENOTE":             {},
+	"OUTLOOK":             {},
+	"POWERPOINT":          {},
+	"SHAREPOINT":          {},
+	"SKYPE":               {},
+	"VISIO":               {},
+	"VISUALSTUDIO":        {},
+	"WEB.CONFIG":          {},
+	"XBOX":                {},
+}
+
+var azureReservedResourceNameContainsMatches = []string{
+	"MICROSOFT",
+	"WINDOWS",
+}
+
+const azureReservedResourceNamePrefixMatch = "LOGIN"
+
+// azureReservedResourceNameExemptTypes lists resource type prefixes for which
+// the reserved-word check is skipped. ARM does not enforce the reserved-word
+// rule on these types — either because they have no public endpoint, or because
+// their names are FQDN/convention-shaped by design (e.g. DNS zones, VM
+// extensions named "Publisher.Type").
+//
+// Each entry matches the exact type or any descendant child type
+// (case-insensitive). One entry like "Microsoft.Network/privateDnsZones"
+// covers the parent zone plus every record/link child without enumerating them.
+var azureReservedResourceNameExemptTypes = []string{
+	// FQDN-shaped names.
+	"Microsoft.Network/privateDnsZones",
+	"Microsoft.Network/dnsZones",
+	"Microsoft.Network/dnsForwardingRulesets",
+	"Microsoft.Network/dnsResolvers",
+	"Microsoft.Network/firewallPolicies",
+
+	// Internal-only names (no public endpoint).
+	"Microsoft.Resources/resourceGroups",
+	"Microsoft.Resources/deployments",
+	"Microsoft.Resources/deploymentScripts",
+	"Microsoft.Authorization/roleAssignments",
+	"Microsoft.Authorization/roleDefinitions",
+	"Microsoft.Authorization/policyAssignments",
+	"Microsoft.Authorization/policyDefinitions",
+	"Microsoft.Authorization/policySetDefinitions",
+	"Microsoft.Authorization/locks",
+	"Microsoft.Insights/diagnosticSettings",
+
+	// User-labeled child resources (e.g. NSG rule "AllowMicrosoftContainerRegistryOutbound").
+	"Microsoft.Network/networkSecurityGroups",
+	"Microsoft.KeyVault/vaults/secrets",
+	"Microsoft.KeyVault/vaults/keys",
+	"Microsoft.KeyVault/vaults/certificates",
+	"Microsoft.KeyVault/vaults/accessPolicies",
+	"Microsoft.OperationalInsights/workspaces/dataSources",
+
+	// Convention-named resources (names mirror a publisher, connector, or service tag).
+	"Microsoft.Compute/virtualMachines/extensions", // e.g. "Microsoft.Insights.LogAnalyticsAgent"
+	"Microsoft.Compute/virtualMachineScaleSets/extensions",
+	"Microsoft.Web/connections",                             // e.g. "office365", "sharepointonline"
+	"Microsoft.Network/virtualNetworks/subnets/delegations", // e.g. "Microsoft.Web/serverFarms"
+}
+
+// isReservedNameCheckExempt reports whether the reserved-word check should be
+// skipped for the given resource type. Matching is case-insensitive and applies
+// to the type itself or any descendant child type.
+func isReservedNameCheckExempt(resourceType string) bool {
+	normalized := strings.ToLower(resourceType)
+	for _, exempt := range azureReservedResourceNameExemptTypes {
+		exemptLower := strings.ToLower(exempt)
+		if normalized == exemptLower || strings.HasPrefix(normalized, exemptLower+"/") {
+			return true
+		}
+	}
+	return false
+}
+
 // BicepProvider exposes infrastructure provisioning using Azure Bicep templates
 type BicepProvider struct {
 	// Options that are available after Initialize()
@@ -2203,7 +2311,15 @@ func (p *BicepProvider) validatePreflight(
 
 	// Run local preflight validation before sending to Azure.
 	// Local validation catches common issues without requiring a network round-trip.
-	localPreflight := newLocalArmPreflight(modulePath, p.bicepCli, target)
+	// Resolve the environment location for RG-scoped deployments: prefer the actual
+	// resource group location (if the RG already exists), then fall back to AZURE_LOCATION.
+	envLocation := p.resolveResourceGroupLocation(
+		ctx, p.env.GetSubscriptionId())
+	if envLocation == "" {
+		envLocation = strings.ToLower(p.env.GetLocation())
+	}
+	localPreflight := newLocalArmPreflight(
+		modulePath, p.bicepCli, target, envLocation)
 
 	// Register the role assignment permission check so it runs as part of the
 	// local preflight pipeline. The check inspects whether the template contains
@@ -2212,6 +2328,16 @@ func (p *BicepProvider) validatePreflight(
 	localPreflight.AddCheck(PreflightCheck{
 		RuleID: "role_assignment_permissions",
 		Fn:     p.checkRoleAssignmentPermissions,
+	})
+
+	localPreflight.AddCheck(PreflightCheck{
+		RuleID: "ai_model_quota",
+		Fn:     p.checkAiModelQuota,
+	})
+
+	localPreflight.AddCheck(PreflightCheck{
+		RuleID: "reserved_resource_names",
+		Fn:     p.checkReservedResourceNames,
 	})
 
 	results, err := localPreflight.validate(ctx, p.console, armTemplate, armParameters)
@@ -2274,6 +2400,7 @@ func (p *BicepProvider) validatePreflight(
 		}
 
 		if report.HasWarnings() {
+			p.console.Message(ctx, "")
 			continueDeployment, promptErr := p.console.Confirm(ctx, input.ConsoleOptions{
 				Message: "Preflight validation found warnings that may cause the " +
 					"deployment to fail. Do you want to continue?",
@@ -2331,7 +2458,7 @@ func (p *BicepProvider) setPreflightOutcome(
 // See https://github.com/Azure/azure-dev/issues/7173 for the broader fix.
 func (p *BicepProvider) checkRoleAssignmentPermissions(
 	ctx context.Context, valCtx *validationContext,
-) (*PreflightCheckResult, error) {
+) ([]PreflightCheckResult, error) {
 	if !valCtx.Props.HasRoleAssignments {
 		return nil, nil
 	}
@@ -2370,40 +2497,367 @@ func (p *BicepProvider) checkRoleAssignmentPermissions(
 	}
 
 	if !hasPermission.HasPermission {
-		return &PreflightCheckResult{
+		return []PreflightCheckResult{{
 			Severity:     PreflightCheckWarning,
 			DiagnosticID: "role_assignment_missing",
 			Message: fmt.Sprintf(
-				"the current principal (%s) does not have permission to create role assignments "+
-					"(Microsoft.Authorization/roleAssignments/write) on subscription %s. "+
+				"the current principal %s does not have permission to create role assignments "+
+					"%s on subscription %s. "+
 					"The deployment includes role assignments and will fail without this permission. "+
 					"Ensure you have the 'Role Based Access Control Administrator', "+
 					"'User Access Administrator', 'Owner', or a custom role with "+
 					"'Microsoft.Authorization/roleAssignments/write' assigned to your account.",
-				principalId,
-				subscriptionId,
+				output.WithHighLightFormat("(%s)", principalId),
+				output.WithGrayFormat("(Microsoft.Authorization/roleAssignments/write)"),
+				output.WithHighLightFormat(subscriptionId),
 			),
-		}, nil
+		}}, nil
 	}
 
 	if hasPermission.Conditional {
-		return &PreflightCheckResult{
+		return []PreflightCheckResult{{
 			Severity:     PreflightCheckWarning,
 			DiagnosticID: "role_assignment_conditional",
 			Message: fmt.Sprintf(
-				"the current principal (%s) has conditional permission to create role "+
-					"assignments (Microsoft.Authorization/roleAssignments/write) on "+
+				"the current principal %s has conditional permission to create role "+
+					"assignments %s on "+
 					"subscription %s. The role assignment that grants this permission "+
 					"has an ABAC condition that may restrict which roles can be assigned. "+
 					"The deployment may fail if the condition does not permit the "+
 					"specific role assignments in the template.",
-				principalId,
-				subscriptionId,
+				output.WithHighLightFormat("(%s)", principalId),
+				output.WithGrayFormat("(Microsoft.Authorization/roleAssignments/write)"),
+				output.WithHighLightFormat(subscriptionId),
 			),
-		}, nil
+		}}, nil
 	}
 
 	return nil, nil
+}
+
+// checkReservedResourceNames inspects predicted resource names and warns when a
+// resource name segment matches Azure's published reserved-word restrictions.
+// All violations are reported so users can resolve them in a single pass
+// instead of rediscovering new violations on each preflight re-run.
+func (p *BicepProvider) checkReservedResourceNames(
+	_ context.Context, valCtx *validationContext,
+) ([]PreflightCheckResult, error) {
+	var results []PreflightCheckResult
+
+	const docsLink = "https://learn.microsoft.com/azure/azure-resource-manager/templates/error-reserved-resource-name"
+
+	for _, resource := range valCtx.SnapshotResources {
+		if isReservedNameCheckExempt(resource.Type) {
+			continue
+		}
+		for _, v := range findReservedResourceNameViolations(resource.Name) {
+			resourceName := output.WithHighLightFormat("%q", resource.Name)
+			resourceType := output.WithGrayFormat("(%s)", resource.Type)
+			link := output.WithLinkFormat(docsLink)
+
+			results = append(results, PreflightCheckResult{
+				Severity:     PreflightCheckWarning,
+				DiagnosticID: "reserved_resource_name",
+				Message: fmt.Sprintf(
+					"resource %s %s %s the reserved word %q. See %s.",
+					resourceName, resourceType, v.matchType, v.reservedWord, link,
+				),
+			})
+		}
+	}
+
+	return results, nil
+}
+
+// checkAiModelQuota inspects the Bicep snapshot for cognitive services model deployments
+// and validates that the subscription has sufficient quota at each deployment location.
+// Returns a warning for each deployment that would exceed the available quota.
+func (p *BicepProvider) checkAiModelQuota(
+	ctx context.Context, valCtx *validationContext,
+) ([]PreflightCheckResult, error) {
+	if len(valCtx.Props.CognitiveDeployments) == 0 {
+		return nil, nil
+	}
+
+	if p.aiModelService == nil {
+		log.Printf("AI model service not configured, skipping quota check")
+		return nil, nil
+	}
+
+	subscriptionId := p.env.GetSubscriptionId()
+	if subscriptionId == "" {
+		log.Printf("no subscription ID set, skipping AI model quota check")
+		return nil, nil
+	}
+
+	// Use the pre-resolved fallback location from the validation context.
+	// This was already resolved in validatePreflight from the actual RG
+	// location or AZURE_LOCATION, so we avoid a duplicate API call.
+	fallbackLocation := strings.ToLower(valCtx.EnvLocation)
+
+	// Group deployments by location to minimize API calls.
+	byLocation := map[string][]cognitiveDeploymentInfo{}
+	for _, dep := range valCtx.Props.CognitiveDeployments {
+		loc := strings.ToLower(dep.Location)
+		if loc == "" {
+			loc = fallbackLocation
+		}
+		if loc == "" {
+			log.Printf(
+				"skipping quota check for deployment %q: "+
+					"could not determine location",
+				dep.Name)
+			continue
+		}
+		byLocation[loc] = append(byLocation[loc], dep)
+	}
+
+	var results []PreflightCheckResult
+
+	for _, loc := range slices.Sorted(maps.Keys(byLocation)) {
+		deps := byLocation[loc]
+		usages, err := p.aiModelService.ListUsages(ctx, subscriptionId, loc)
+		if err != nil {
+			log.Printf("failed to fetch AI quota for location %s, skipping: %v", loc, err)
+			continue
+		}
+
+		// Build a lookup map from usage name → remaining quota.
+		usageMap := map[string]float64{}
+		for _, u := range usages {
+			usageMap[u.Name] = u.Limit - u.CurrentValue
+		}
+
+		// Fetch the model catalog for this location to resolve usage names.
+		// The usage name (e.g. "OpenAI.GlobalStandard.gpt-4.1-mini") comes from the Azure
+		// model catalog — it cannot be reliably constructed from template data because the
+		// naming convention isn't a simple "{Format}.{SkuName}.{ModelName}" concatenation.
+		catalogModels, catalogErr := p.aiModelService.ListModels(ctx, subscriptionId, []string{loc})
+		if catalogErr != nil {
+			log.Printf("failed to fetch AI model catalog for %s, skipping: %v", loc, catalogErr)
+			continue
+		}
+
+		// Aggregate required capacity per usage name so that multiple deployments
+		// sharing the same quota pool are checked against their combined demand.
+		requiredByUsage := map[string]float64{}
+		type depWithUsage struct {
+			dep       cognitiveDeploymentInfo
+			usageName string
+			capacity  float64
+		}
+		var resolved []depWithUsage
+
+		for _, dep := range deps {
+			usageName := resolveUsageName(catalogModels, dep)
+			if usageName == "" {
+				// Model/SKU/version combo not found in the catalog — warn the user.
+				var detailParts []string
+				if dep.SkuName != "" {
+					detailParts = append(detailParts,
+						fmt.Sprintf("SKU: %s", dep.SkuName))
+				}
+				if dep.ModelVersion != "" {
+					detailParts = append(detailParts,
+						fmt.Sprintf("version %q", dep.ModelVersion))
+				}
+				details := ""
+				if len(detailParts) > 0 {
+					details = fmt.Sprintf(
+						" (%s)", strings.Join(detailParts, ", "))
+				}
+				results = append(results, PreflightCheckResult{
+					Severity:     PreflightCheckWarning,
+					DiagnosticID: "ai_model_not_found",
+					Message: fmt.Sprintf(
+						"model %s%s was not found in the AI model "+
+							"catalog for %s. The deployment may fail "+
+							"if this model is not available. Verify "+
+							"the model name, SKU, and version are "+
+							"correct. See %s for supported models and regions.",
+						output.WithHighLightFormat(fmt.Sprintf("%q", dep.ModelName)),
+						output.WithGrayFormat(details),
+						output.WithHighLightFormat(loc),
+						output.WithLinkFormat("https://learn.microsoft.com/azure/ai-services/openai/concepts/models"),
+					),
+				})
+				continue
+			}
+
+			effectiveCapacity := float64(dep.Capacity)
+			if effectiveCapacity <= 0 {
+				effectiveCapacity = 1
+			}
+
+			requiredByUsage[usageName] += effectiveCapacity
+			resolved = append(resolved, depWithUsage{
+				dep:       dep,
+				usageName: usageName,
+				capacity:  effectiveCapacity,
+			})
+		}
+
+		// Check aggregated capacity against remaining quota.
+		reportedUsage := map[string]bool{}
+		for _, r := range resolved {
+			if reportedUsage[r.usageName] {
+				continue // already reported for this usage name
+			}
+
+			remaining, found := usageMap[r.usageName]
+			if !found {
+				// Usage entry not returned by the API — treat as zero remaining
+				// to avoid silently skipping quota validation.
+				remaining = 0
+			}
+
+			totalRequired := requiredByUsage[r.usageName]
+			if remaining < totalRequired {
+				reportedUsage[r.usageName] = true
+				results = append(results, PreflightCheckResult{
+					Severity:     PreflightCheckWarning,
+					DiagnosticID: "ai_model_quota_exceeded",
+					Message: fmt.Sprintf(
+						"insufficient quota for model %s %s in %s. "+
+							"Requested capacity: %.0f, remaining quota: %.0f. "+
+							"The deployment may fail. Consider reducing capacity, "+
+							"selecting a different model, or requesting a quota increase.",
+						output.WithHighLightFormat("%q", r.dep.ModelName),
+						output.WithGrayFormat("(SKU: %s)", r.dep.SkuName),
+						output.WithHighLightFormat(loc),
+						totalRequired,
+						remaining,
+					),
+				})
+			}
+		}
+	}
+
+	return results, nil
+}
+
+// resolveUsageName looks up the authoritative usage name from the Azure model catalog
+// for a cognitive deployment. The usage name is a quota API identifier (e.g.
+// "OpenAI.GlobalStandard.gpt-4.1-mini") that may differ from a naive concatenation
+// of the template's model format, SKU, and model name.
+func resolveUsageName(catalogModels []ai.AiModel, dep cognitiveDeploymentInfo) string {
+	for _, model := range catalogModels {
+		if !strings.EqualFold(model.Name, dep.ModelName) {
+			continue
+		}
+		if dep.ModelFormat != "" && !strings.EqualFold(model.Format, dep.ModelFormat) {
+			continue
+		}
+		for _, version := range model.Versions {
+			// If the template specifies a version, match it; otherwise accept any version.
+			if dep.ModelVersion != "" &&
+				!strings.EqualFold(version.Version, dep.ModelVersion) {
+				continue
+			}
+			for _, sku := range version.Skus {
+				if strings.EqualFold(sku.Name, dep.SkuName) {
+					return sku.UsageName
+				}
+			}
+		}
+	}
+	return ""
+}
+
+// reservedNameViolation describes a single reserved-word match against a
+// resource name segment.
+type reservedNameViolation struct {
+	segment      string
+	reservedWord string
+	matchType    string
+}
+
+// findReservedResourceNameViolations returns every reserved-word violation
+// found in resourceName. A single resource can produce multiple violations
+// (for example "LoginMicrosoftApp" triggers both the LOGIN prefix and the
+// MICROSOFT substring rule), so all matches are returned to avoid fix-rerun
+// cycles during preflight.
+//
+// Only the trailing `/`-delimited segment of the name is evaluated. For child
+// resources, ARM emits the name as `<parent>/<child>` (and `<grandparent>/...`
+// for deeper children), but the parent is also enumerated separately in the
+// snapshot and is checked on its own pass — re-scanning the parent prefix
+// under each child would duplicate warnings whenever a parent name contains a
+// reserved word.
+func findReservedResourceNameViolations(resourceName string) []reservedNameViolation {
+	// Skip names that are unresolved ARM template expressions (e.g. "[guid(...)]").
+	// These are evaluated at deployment time and the literal text inside the expression
+	// (which often contains provider namespaces like "Microsoft.ContainerRegistry") is
+	// not the actual resource name.
+	if strings.HasPrefix(resourceName, "[") {
+		return nil
+	}
+
+	// Evaluate only the trailing path segment so child resources don't re-flag
+	// reserved words already reported on their parents.
+	segment := resourceName
+	if idx := strings.LastIndex(resourceName, "/"); idx >= 0 {
+		segment = resourceName[idx+1:]
+	}
+	if segment == "" {
+		return nil
+	}
+
+	var violations []reservedNameViolation
+	normalized := strings.ToUpper(segment)
+	if _, found := azureReservedResourceNameExactMatches[normalized]; found {
+		// An exact match subsumes any prefix/substring match on the same segment,
+		// so skip the remaining checks to avoid duplicate reports.
+		return []reservedNameViolation{{
+			segment:      segment,
+			reservedWord: normalized,
+			matchType:    "exactly matches",
+		}}
+	}
+
+	if strings.HasPrefix(normalized, azureReservedResourceNamePrefixMatch) {
+		violations = append(violations, reservedNameViolation{
+			segment:      segment,
+			reservedWord: azureReservedResourceNamePrefixMatch,
+			matchType:    "starts with",
+		})
+	}
+
+	for _, reservedWord := range azureReservedResourceNameContainsMatches {
+		if strings.Contains(normalized, reservedWord) {
+			violations = append(violations, reservedNameViolation{
+				segment:      segment,
+				reservedWord: reservedWord,
+				matchType:    "contains",
+			})
+		}
+	}
+
+	return violations
+}
+
+// resolveResourceGroupLocation returns the Azure location of the resource group specified
+// in AZURE_RESOURCE_GROUP. Returns empty string if the env var is not set or the lookup fails.
+func (p *BicepProvider) resolveResourceGroupLocation(ctx context.Context, subscriptionId string) string {
+	if subscriptionId == "" {
+		return ""
+	}
+
+	rgName, has := p.env.LookupEnv(environment.ResourceGroupEnvVarName)
+	if !has || rgName == "" {
+		return ""
+	}
+
+	rg, err := p.resourceService.GetResourceGroup(
+		ctx, subscriptionId, rgName)
+	if err != nil {
+		log.Printf(
+			"could not get resource group %q location: %v",
+			rgName, err)
+		return ""
+	}
+
+	return strings.ToLower(rg.Location)
 }
 
 // resolveResourceTenantPrincipalId returns the current user's object ID as seen in the

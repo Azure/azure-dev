@@ -20,6 +20,8 @@ const (
 	CodeInvalidAiProjectId        = "invalid_ai_project_id"
 	CodeInvalidServiceConfig      = "invalid_service_config"
 	CodeInvalidAgentRequest       = "invalid_agent_request"
+	CodeInvalidAgentName          = "invalid_agent_name"
+	CodeInvalidAgentVersion       = "invalid_agent_version"
 	CodeInvalidSessionId          = "invalid_session_id"
 	CodeInvalidParameter          = "invalid_parameter"
 	CodeUnsupportedHost           = "unsupported_host"
@@ -31,6 +33,8 @@ const (
 	CodeTenantMismatch            = "tenant_mismatch"
 	CodeMissingPublishedContainer = "missing_published_container_artifact"
 	CodeModelDeploymentNotFound   = "model_deployment_not_found"
+	CodeConflictingArguments      = "conflicting_arguments"
+	CodeInvalidPositionalArg      = "invalid_positional_arg"
 )
 
 // Error codes commonly used for dependency errors.
@@ -44,6 +48,7 @@ const (
 	CodeEnvironmentCreationFailed = "environment_creation_failed"
 	CodeEnvironmentValuesFailed   = "environment_values_failed"
 	CodeMissingAiProjectEndpoint  = "missing_ai_project_endpoint"
+	CodeMissingAzureTenantId      = "missing_azure_tenant_id"
 	CodeMissingAiProjectId        = "missing_ai_project_id"
 	CodeMissingAzureSubscription  = "missing_azure_subscription_id"
 	CodeMissingAgentEnvVars       = "missing_agent_env_vars"
@@ -61,6 +66,7 @@ const (
 	CodeTenantLookupFailed       = "tenant_lookup_failed"
 	CodeNotLoggedIn              = "not_logged_in"
 	CodeLoginExpired             = "login_expired"
+	CodeTokenProtectionBlocked   = "token_protection_blocked"
 	CodeAuthFailed               = "auth_failed"
 )
 
@@ -80,11 +86,43 @@ const (
 	CodeModelResolutionFailed = "model_resolution_failed"
 )
 
+// Error codes for session errors.
+const (
+	CodeSessionNotFound = "session_not_found"
+)
+
 // Error codes for file operation errors.
 const (
 	CodeFileNotFound     = "file_not_found"
 	CodeFileUploadFailed = "file_upload_failed"
 	CodeInvalidFilePath  = "invalid_file_path"
+)
+
+// Error codes for toolbox operations.
+const (
+	CodeInvalidToolbox             = "invalid_toolbox"
+	CodeCreateToolboxVersionFailed = "create_toolbox_version_failed"
+)
+
+// Error codes for connection operations.
+const (
+	CodeInvalidConnection      = "invalid_connection"
+	CodeConnectionCreationFail = "connection_creation_failed"
+	CodeMissingConnectionField = "missing_connection_field"
+)
+
+// Error codes for agent identity RBAC operations.
+const (
+	CodeAgentIdentityNotFound   = "agent_identity_not_found"
+	CodeAgentIdentityRBACFailed = "agent_identity_rbac_failed"
+)
+
+// Error codes for developer RBAC pre-flight checks.
+const (
+	CodeDeveloperMissingAIUserRole          = "developer_missing_ai_user_role"
+	CodeDeveloperMissingRoleAssignWriteRole = "developer_missing_role_assign_write_role"
+	CodeDeveloperMissingACRRole             = "developer_missing_acr_role"
+	CodeACRResolutionFailed                 = "acr_resolution_failed"
 )
 
 // Error codes commonly used for internal errors.
@@ -108,4 +146,10 @@ const (
 	OpCreateAgent           = "create_agent"
 	OpStartContainer        = "start_container"
 	OpGetContainerOperation = "get_container_operation"
+	OpCreateSession         = "create_session"
+	OpGetSession            = "get_session"
+	OpDeleteSession         = "delete_session"
+	OpListSessions          = "list_sessions"
+	OpCreateToolboxVersion  = "create_toolbox_version"
+	OpGetToolbox            = "get_toolbox"
 )

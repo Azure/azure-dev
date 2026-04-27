@@ -16,19 +16,19 @@ import (
 )
 
 func Test_Name_ReturnsTerraformCli(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	cli := NewCli(mockContext.CommandRunner)
 	require.Equal(t, "Terraform CLI", cli.Name())
 }
 
 func Test_InstallUrl_ReturnsExpectedUrl(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	cli := NewCli(mockContext.CommandRunner)
 	require.Equal(t, "https://aka.ms/azure-dev/terraform-install", cli.InstallUrl())
 }
 
 func Test_VersionInfo_ReturnsMinimumVersion(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	cli := NewCli(mockContext.CommandRunner)
 
 	info := cli.versionInfo()
@@ -42,7 +42,7 @@ func Test_CheckInstalled(t *testing.T) {
 	validVersionJSON := `{"terraform_version":"1.5.0","platform":"linux_amd64"}`
 
 	t.Run("Success", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.MockToolInPath("terraform", nil)
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return args.Cmd == "terraform"
@@ -54,7 +54,7 @@ func Test_CheckInstalled(t *testing.T) {
 	})
 
 	t.Run("ExactMinimumVersion", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.MockToolInPath("terraform", nil)
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return args.Cmd == "terraform"
@@ -66,7 +66,7 @@ func Test_CheckInstalled(t *testing.T) {
 	})
 
 	t.Run("NotInPath", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.MockToolInPath("terraform", errors.New("terraform not found in PATH"))
 
 		cli := NewCli(mockContext.CommandRunner)
@@ -76,7 +76,7 @@ func Test_CheckInstalled(t *testing.T) {
 	})
 
 	t.Run("VersionCommandFails", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.MockToolInPath("terraform", nil)
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return args.Cmd == "terraform"
@@ -89,7 +89,7 @@ func Test_CheckInstalled(t *testing.T) {
 	})
 
 	t.Run("InvalidJSON", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.MockToolInPath("terraform", nil)
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return args.Cmd == "terraform"
@@ -102,7 +102,7 @@ func Test_CheckInstalled(t *testing.T) {
 	})
 
 	t.Run("MissingVersionComponent", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.MockToolInPath("terraform", nil)
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return args.Cmd == "terraform"
@@ -115,7 +115,7 @@ func Test_CheckInstalled(t *testing.T) {
 	})
 
 	t.Run("NonStringVersionComponent", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.MockToolInPath("terraform", nil)
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return args.Cmd == "terraform"
@@ -128,7 +128,7 @@ func Test_CheckInstalled(t *testing.T) {
 	})
 
 	t.Run("InvalidSemver", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.MockToolInPath("terraform", nil)
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return args.Cmd == "terraform"
@@ -141,7 +141,7 @@ func Test_CheckInstalled(t *testing.T) {
 	})
 
 	t.Run("VersionTooOld", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.MockToolInPath("terraform", nil)
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return args.Cmd == "terraform"
@@ -157,7 +157,7 @@ func Test_CheckInstalled(t *testing.T) {
 	})
 
 	t.Run("VersionJustBelowMinimum", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.MockToolInPath("terraform", nil)
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return args.Cmd == "terraform"
@@ -174,7 +174,7 @@ func Test_CheckInstalled(t *testing.T) {
 
 func Test_UnmarshalCliVersion(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return args.Cmd == "terraform"
 		}).Respond(exec.NewRunResult(0, `{"terraform_version":"1.5.0","platform":"linux_amd64"}`, ""))
@@ -186,7 +186,7 @@ func Test_UnmarshalCliVersion(t *testing.T) {
 	})
 
 	t.Run("DifferentComponent", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return args.Cmd == "terraform"
 		}).Respond(exec.NewRunResult(0, `{"terraform_version":"1.5.0","platform":"linux_amd64"}`, ""))
@@ -198,7 +198,7 @@ func Test_UnmarshalCliVersion(t *testing.T) {
 	})
 
 	t.Run("CommandError", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return args.Cmd == "terraform"
 		}).SetError(fmt.Errorf("terraform not available"))
@@ -210,7 +210,7 @@ func Test_UnmarshalCliVersion(t *testing.T) {
 	})
 
 	t.Run("InvalidJSON", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return args.Cmd == "terraform"
 		}).Respond(exec.NewRunResult(0, "{invalid", ""))
@@ -221,7 +221,7 @@ func Test_UnmarshalCliVersion(t *testing.T) {
 	})
 
 	t.Run("MissingComponent", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return args.Cmd == "terraform"
 		}).Respond(exec.NewRunResult(0, `{"terraform_version":"1.5.0"}`, ""))
@@ -233,7 +233,7 @@ func Test_UnmarshalCliVersion(t *testing.T) {
 	})
 
 	t.Run("NonStringComponent", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return args.Cmd == "terraform"
 		}).Respond(exec.NewRunResult(0, `{"terraform_version":42}`, ""))
@@ -325,7 +325,7 @@ func getCommandTestCases() []commandTestCase {
 func Test_Commands_Success(t *testing.T) {
 	for _, tc := range getCommandTestCases() {
 		t.Run(tc.name, func(t *testing.T) {
-			mockContext := mocks.NewMockContext(context.Background())
+			mockContext := mocks.NewMockContext(t.Context())
 			var capturedArgs exec.RunArgs
 
 			mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -350,7 +350,7 @@ func Test_Commands_Success(t *testing.T) {
 func Test_Commands_Error(t *testing.T) {
 	for _, tc := range getCommandTestCases() {
 		t.Run(tc.name, func(t *testing.T) {
-			mockContext := mocks.NewMockContext(context.Background())
+			mockContext := mocks.NewMockContext(t.Context())
 
 			mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 				return args.Cmd == "terraform"
@@ -372,7 +372,7 @@ func Test_Commands_Error(t *testing.T) {
 
 func Test_Commands_AdditionalArgs(t *testing.T) {
 	t.Run("Init_WithBackendConfig", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		var capturedArgs exec.RunArgs
 
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -392,7 +392,7 @@ func Test_Commands_AdditionalArgs(t *testing.T) {
 	})
 
 	t.Run("Plan_WithVar", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		var capturedArgs exec.RunArgs
 
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -412,7 +412,7 @@ func Test_Commands_AdditionalArgs(t *testing.T) {
 	})
 
 	t.Run("Apply_WithAutoApprove", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		var capturedArgs exec.RunArgs
 
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -432,7 +432,7 @@ func Test_Commands_AdditionalArgs(t *testing.T) {
 	})
 
 	t.Run("Output_WithNoColor", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		var capturedArgs exec.RunArgs
 
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -452,7 +452,7 @@ func Test_Commands_AdditionalArgs(t *testing.T) {
 	})
 
 	t.Run("Show_WithPlanFile", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		var capturedArgs exec.RunArgs
 
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -472,7 +472,7 @@ func Test_Commands_AdditionalArgs(t *testing.T) {
 	})
 
 	t.Run("Destroy_WithAutoApprove", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		var capturedArgs exec.RunArgs
 
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -497,7 +497,7 @@ func Test_Commands_EnvPropagation(t *testing.T) {
 
 	// Test env propagation for a non-interactive command (runCommand path)
 	t.Run("NonInteractive_Validate", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		var capturedArgs exec.RunArgs
 
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -518,7 +518,7 @@ func Test_Commands_EnvPropagation(t *testing.T) {
 
 	// Test env propagation for an interactive command (runInteractive path)
 	t.Run("Interactive_Apply", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		var capturedArgs exec.RunArgs
 
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -539,7 +539,7 @@ func Test_Commands_EnvPropagation(t *testing.T) {
 
 	// Test that nil env is propagated when SetEnv is not called
 	t.Run("NilEnvByDefault", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		var capturedArgs exec.RunArgs
 
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -558,7 +558,7 @@ func Test_Commands_EnvPropagation(t *testing.T) {
 }
 
 func Test_SetEnv(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	cli := NewCli(mockContext.CommandRunner)
 
 	require.Nil(t, cli.env)
@@ -574,7 +574,7 @@ func Test_SetEnv(t *testing.T) {
 }
 
 func Test_NewCli(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	cli := NewCli(mockContext.CommandRunner)
 
 	require.NotNil(t, cli)
@@ -583,7 +583,7 @@ func Test_NewCli(t *testing.T) {
 }
 
 func Test_ImplementsExternalTool(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	cli := NewCli(mockContext.CommandRunner)
 
 	// Verify the Cli type satisfies the tools.ExternalTool interface

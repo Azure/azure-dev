@@ -1,6 +1,6 @@
 # Release History
 
-## 1.24.0-beta.1 (Unreleased)
+## 1.25.0-beta.1 (Unreleased)
 
 ### Features Added
 
@@ -9,6 +9,87 @@
 ### Bugs Fixed
 
 ### Other Changes
+
+## 1.24.2 (2026-04-24)
+
+### Features Added
+
+- [[#7482]](https://github.com/Azure/azure-dev/pull/7482) Add custom provisioning provider support to the extension framework; extension authors can register alternative infrastructure providers via `WithProvisioningProvider("name", factory)` on the `ExtensionHost`, and users set `infra: { provider: name }` in `azure.yaml` to use them.
+- [[#7841]](https://github.com/Azure/azure-dev/pull/7841) Improve `azd extension upgrade` with intelligent registry source resolution: extensions upgrade from their installed source by default, are auto-promoted from a dev registry to the main registry when a newer version is available there, and `--all` or `--no-prompt` batch upgrades proceed non-interactively without prompts.
+- [[#7825]](https://github.com/Azure/azure-dev/pull/7825) Standardize `--no-prompt` behavior to consistently fail with a structured error when required input (subscription, location, or resource group) cannot be resolved automatically, enabling reliable non-interactive use in CI pipelines and AI agents.
+
+### Bugs Fixed
+
+- [[#7797]](https://github.com/Azure/azure-dev/pull/7797) Fix error handling for `AADSTS530084` token protection errors to display clear guidance and documentation links instead of an opaque authentication failure message.
+- [[#7819]](https://github.com/Azure/azure-dev/pull/7819) Fix local Bicep preflight reserved-name check to skip ARM-allow-listed resource types (e.g., Private Link DNS zones, resource groups, role assignments) that accept reserved names server-side, and fix compound child resource names generating duplicate warnings.
+- [[#7723]](https://github.com/Azure/azure-dev/pull/7723) Fix service names containing spaces in `azure.yaml` generating invalid environment variable names (e.g., `SERVICE_API AND FRONTEND_IMAGE_NAME` → `SERVICE_API_AND_FRONTEND_IMAGE_NAME`). Thanks @spboyer for the contribution!
+
+### Other Changes
+
+- [[#7767]](https://github.com/Azure/azure-dev/pull/7767) Update the "update available" banner to a shorter, more actionable format that includes a link to release notes (stable channel) or recent changes (daily channel).
+
+## 1.24.1 (2026-04-17)
+
+### Features Added
+
+- [[#7697]](https://github.com/Azure/azure-dev/pull/7697) Add `.azdxignore` support for `azd x watch`; create a `.azdxignore` file in the project root (gitignore syntax) to exclude directories such as `node_modules/` and `dist/` from triggering unnecessary rebuilds. The watcher also respects existing `.gitignore` patterns.
+- [[#7746]](https://github.com/Azure/azure-dev/pull/7746) Add local Bicep preflight check that warns before provisioning when predicted resource names contain Azure reserved words (e.g., names with `MICROSOFT`, `WINDOWS`, or prefixed with `LOGIN`), with color-highlighted output for readability.
+
+### Bugs Fixed
+
+- [[#7768]](https://github.com/Azure/azure-dev/pull/7768) Fix Copilot error-handling saved preference (`copilot.errorHandling.fix=allow`) to automatically retry the failed command after applying a fix, instead of only applying the fix without retrying.
+- [[#7600]](https://github.com/Azure/azure-dev/pull/7600) Fix `docker.path` and `docker.context` in `azure.yaml` being resolved relative to the service directory instead of the project root when user-specified values are provided.
+- [[#7698]](https://github.com/Azure/azure-dev/pull/7698) Fix subscription-scope deployments incorrectly treating pre-existing resource groups as deployment-owned during cleanup; only resource groups explicitly created by the deployment are now returned.
+- [[#7707]](https://github.com/Azure/azure-dev/pull/7707) Fix `azd pipeline config --provider azdo` failing when no agent queue named "Default" exists; azd now queries available queues, auto-selects when only one is present, and prompts the user to choose when multiple queues are available.
+
+### Other Changes
+
+- [[#7600]](https://github.com/Azure/azure-dev/pull/7600) Improve `azd up` and `azd deploy` performance with HTTP connection pooling, adaptive ARM poll frequency (5s for deployments, 15s for WhatIf/Validate), per-registry ACR login caching, and Container App revision poll frequency (5s).
+- [[#7721]](https://github.com/Azure/azure-dev/pull/7721) Add telemetry instrumentation for hook executions, recording hook event, level (project or service), kind (shell, JavaScript, TypeScript, .NET), and result across all hook-enabled commands.
+
+## 1.24.0 (2026-04-14)
+
+### Features Added
+
+- [[#7290]](https://github.com/Azure/azure-dev/pull/7290) Add auto-created project directory for `azd init -t`; running `azd init -t <template>` now creates a project directory named after the template (like `git clone`), with an optional `[directory]` positional argument to override the name.
+- [[#7652]](https://github.com/Azure/azure-dev/pull/7652) Add C#/.NET hook support in `azure.yaml`; hooks pointing to `.cs` files are auto-detected and executed using `dotnet run`, with automatic project discovery and support for single-file scripts on .NET 10+.
+- [[#7690]](https://github.com/Azure/azure-dev/pull/7690) Add executor-specific `config:` block for hooks in `azure.yaml`; configure `packageManager` for JS/TS hooks, `virtualEnvName` for Python hooks, and `configuration`/`framework` for .NET hooks.
+- [[#7685]](https://github.com/Azure/azure-dev/pull/7685) Add `.azdignore` support for `azd init`; template authors can create a `.azdignore` file in the template root to exclude contributor-only files (e.g., `SECURITY.md`, `.github/`) from being copied to consumer projects.
+- [[#7672]](https://github.com/Azure/azure-dev/pull/7672) Add AI model quota preflight check; `azd provision` now detects Azure Cognitive Services model deployments in the Bicep snapshot and validates quota availability before provisioning, warning on exceeded quota or unrecognized model names.
+
+### Bugs Fixed
+
+- [[#7689]](https://github.com/Azure/azure-dev/pull/7689) Fix service-level hooks referencing shared scripts via relative paths (e.g., `../../hooks/script.ps1`) failing with "hook script path escapes project root"; the containment boundary is now the project root instead of the service directory (regression in 1.23.15).
+- [[#7642]](https://github.com/Azure/azure-dev/pull/7642) Fix arrow keys printing escape sequence characters (`[A`, `[B`, `[C`, `[D`) in the filter text of select and multi-select prompts when running azd in PowerShell.
+- [[#7703]](https://github.com/Azure/azure-dev/pull/7703) Fix `azd update` on Windows failing when PowerShell 7 and 5.1 are both installed; reset `PSModulePath` before invoking the MSI installer to prevent module path conflicts.
+
+## 1.23.15 (2026-04-10)
+
+### Features Added
+
+- [[#7451]](https://github.com/Azure/azure-dev/pull/7451) Add Python hook support in `azure.yaml`; hooks pointing to a `.py` script are auto-detected and executed. When `requirements.txt` or `pyproject.toml` is present, a virtual environment is created and dependencies are installed automatically.
+- [[#7626]](https://github.com/Azure/azure-dev/pull/7626) Add JavaScript and TypeScript hook support in `azure.yaml`; hooks pointing to `.js` or `.ts` scripts are auto-detected, with automatic `npm install` from `package.json` when present. TypeScript scripts execute via `npx tsx` with no compile step required.
+
+### Breaking Changes
+
+- [[#7630]](https://github.com/Azure/azure-dev/pull/7630) Replace App Service slot auto-selection heuristics with explicit slot targeting: use `AZD_DEPLOY_{SERVICE}_SLOT_NAME=production` to deploy to the main app, or `AZD_DEPLOY_{SERVICE}_SLOT_NAME=<name>` for a specific slot. The previous auto-pick behavior (single slot present, no `SLOT_NAME` set, `--no-prompt`) and first-deploy push-to-all-slots behavior have been removed; `azd deploy` will now prompt interactively or error in non-interactive mode when slots are present and `SLOT_NAME` is not set.
+
+### Bugs Fixed
+
+- [[#7618]](https://github.com/Azure/azure-dev/pull/7618) Fix `azure.yaml` hook parsing failure when mixing single-hook (map) and multi-hook (list) formats in the same `hooks:` block.
+- [[#7629]](https://github.com/Azure/azure-dev/pull/7629) Fix `azd auth token` being killed by the background update check when invoked as a subprocess by extension credential providers; `azd auth token` and other fast-exit commands now skip the update check entirely.
+- [[#7578]](https://github.com/Azure/azure-dev/pull/7578) Fix tenant-specific re-authentication guidance for `AADSTS70043` and `AADSTS700082` errors; azd now returns guidance targeting the correct subscription tenant when a credential fails due to a stale refresh token.
+- [[#7549]](https://github.com/Azure/azure-dev/pull/7549) Fix `AZURE_PRINCIPAL_ID` resolution for guest and B2B users by resolving the principal identity in the subscription's resource tenant, and prefer the ARM token `oid` claim over a Microsoft Graph call to avoid incorrect RBAC assignments.
+- [[#7562]](https://github.com/Azure/azure-dev/pull/7562) Fix extension lifecycle event handlers being silently dropped when multiple extensions subscribe to the same lifecycle event.
+- [[#7501]](https://github.com/Azure/azure-dev/pull/7501) Fix AKS service target `postprovision` hook to skip gracefully when the AKS cluster has not been provisioned yet in a multi-phase workflow, instead of failing fatally.
+- [[#7555]](https://github.com/Azure/azure-dev/pull/7555) Fix Copilot error troubleshooting to skip AI analysis for timeout errors, mark Bicep missing-input and `azure.yaml` config validation errors as non-fixable, and apply a 5-minute guard timeout to AI analysis requests.
+
+### Other Changes
+
+- [[#7557]](https://github.com/Azure/azure-dev/pull/7557) Update bundled Bicep CLI to v0.42.1.
+- [[#7591]](https://github.com/Azure/azure-dev/pull/7591) Update `azd update` success message to a shorter, more actionable format.
+- [[#7536]](https://github.com/Azure/azure-dev/pull/7536) Filter deprecated AI model versions and retired SKUs from model selection prompts in the AI model service.
+- [[#7588]](https://github.com/Azure/azure-dev/pull/7588) Fix `copilot consent list` and `copilot consent revoke` `--action` flag to display correct valid values (`all`, `readonly`) in shell completion suggestions.
 
 ## 1.23.14 (2026-04-03)
 

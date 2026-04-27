@@ -4,7 +4,6 @@
 package swa
 
 import (
-	"context"
 	"errors"
 	"path/filepath"
 	"strings"
@@ -21,7 +20,7 @@ func Test_SwaBuild(t *testing.T) {
 	ran := false
 
 	t.Run("NoErrors", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		swacli := NewCli(mockContext.CommandRunner)
 
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -45,13 +44,13 @@ func Test_SwaBuild(t *testing.T) {
 			}, nil
 		})
 
-		err := swacli.Build(context.Background(), testPath, nil, nil)
+		err := swacli.Build(t.Context(), testPath, nil, nil)
 		require.NoError(t, err)
 		require.True(t, ran)
 	})
 
 	t.Run("Error", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		swacli := NewCli(mockContext.CommandRunner)
 
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -72,7 +71,7 @@ func Test_SwaBuild(t *testing.T) {
 			}, errors.New("exit code: 1")
 		})
 
-		err := swacli.Build(context.Background(), testPath, nil, nil)
+		err := swacli.Build(t.Context(), testPath, nil, nil)
 		require.True(t, ran)
 		require.EqualError(
 			t,
@@ -83,7 +82,7 @@ func Test_SwaBuild(t *testing.T) {
 }
 
 func Test_SwaBuild_PassesEnvVars(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	swacli := NewCli(mockContext.CommandRunner)
 
 	var capturedArgs exec.RunArgs
@@ -95,7 +94,7 @@ func Test_SwaBuild_PassesEnvVars(t *testing.T) {
 	})
 
 	env := []string{"VITE_API_URL=https://api.example.com", "NODE_ENV=production"}
-	err := swacli.Build(context.Background(), testPath, nil, env)
+	err := swacli.Build(t.Context(), testPath, nil, env)
 	require.NoError(t, err)
 	require.Equal(t, env, capturedArgs.Env)
 }
@@ -104,7 +103,7 @@ func Test_SwaDeploy(t *testing.T) {
 	ran := false
 
 	t.Run("NoErrors", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		swacli := NewCli(mockContext.CommandRunner)
 
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -136,7 +135,7 @@ func Test_SwaDeploy(t *testing.T) {
 		})
 
 		_, err := swacli.Deploy(
-			context.Background(),
+			t.Context(),
 			testPath,
 			"tenantID",
 			"subscriptionID",
@@ -152,7 +151,7 @@ func Test_SwaDeploy(t *testing.T) {
 	})
 
 	t.Run("NoErrorsNoConfig", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		swacli := NewCli(mockContext.CommandRunner)
 
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -186,7 +185,7 @@ func Test_SwaDeploy(t *testing.T) {
 		})
 
 		_, err := swacli.Deploy(
-			context.Background(),
+			t.Context(),
 			testPath,
 			"tenantID",
 			"subscriptionID",
@@ -205,7 +204,7 @@ func Test_SwaDeploy(t *testing.T) {
 	})
 
 	t.Run("Error", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		swacli := NewCli(mockContext.CommandRunner)
 
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -234,7 +233,7 @@ func Test_SwaDeploy(t *testing.T) {
 		})
 
 		_, err := swacli.Deploy(
-			context.Background(),
+			t.Context(),
 			testPath,
 			"tenantID",
 			"subscriptionID",

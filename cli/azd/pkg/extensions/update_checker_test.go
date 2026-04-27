@@ -4,7 +4,6 @@
 package extensions
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -18,7 +17,7 @@ func Test_UpdateChecker_CheckForUpdate(t *testing.T) {
 	cacheManager, err := NewRegistryCacheManager()
 	require.NoError(t, err)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	sourceName := "test-source"
 
 	// Set cache with extension version 2.0.0
@@ -73,7 +72,7 @@ func Test_UpdateChecker_CheckForUpdate_CacheMiss(t *testing.T) {
 
 	updateChecker := NewUpdateChecker(cacheManager)
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Extension from source with no cache
 	extension := &Extension{
@@ -180,7 +179,7 @@ func Test_UpdateChecker_PrereleaseVersions(t *testing.T) {
 	cacheManager, err := NewRegistryCacheManager()
 	require.NoError(t, err)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	sourceName := "test-source"
 
 	// Set cache with prerelease version
@@ -220,7 +219,7 @@ func Test_UpdateChecker_InvalidVersions(t *testing.T) {
 	cacheManager, err := NewRegistryCacheManager()
 	require.NoError(t, err)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	sourceName := "test-source"
 
 	// Set cache with valid version

@@ -43,6 +43,8 @@ type Options struct {
 	Name             string         `yaml:"name,omitempty"`
 	Hooks            HooksConfig    `yaml:"hooks,omitempty"`
 	DeploymentStacks map[string]any `yaml:"deploymentStacks,omitempty"`
+	// Config holds provider-specific configuration options
+	Config map[string]any `yaml:"config,omitempty"`
 	// Provisioning options for each individually defined layer.
 	Layers []Options `yaml:"layers,omitempty"`
 

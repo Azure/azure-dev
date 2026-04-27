@@ -5,7 +5,6 @@ package bicep
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -28,7 +27,7 @@ func TestNewBicepCli(t *testing.T) {
 	configRoot := t.TempDir()
 	t.Setenv("AZD_CONFIG_DIR", configRoot)
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet && request.URL.Host == "downloads.bicep.azure.com"
@@ -91,7 +90,7 @@ func TestNewBicepCliWillUpgrade(t *testing.T) {
 	err = os.WriteFile(bicepPath, []byte(OLD_FILE_CONTENTS), osutil.PermissionExecutableFile)
 	require.NoError(t, err)
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet && request.URL.Host == "downloads.bicep.azure.com"

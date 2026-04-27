@@ -4,7 +4,6 @@
 package templates
 
 import (
-	"context"
 	"net/http"
 	"testing"
 
@@ -13,7 +12,7 @@ import (
 )
 
 func Test_NewUrlTemplateSource_ValidUrl(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	name := "test"
 	url := "https://example.com/templates.json"
@@ -24,14 +23,14 @@ func Test_NewUrlTemplateSource_ValidUrl(t *testing.T) {
 		return mocks.CreateHttpResponseWithBody(req, http.StatusOK, testTemplates)
 	})
 
-	source, err := newUrlTemplateSource(context.Background(), name, url, mockContext.HttpClient)
+	source, err := newUrlTemplateSource(t.Context(), name, url, mockContext.HttpClient)
 	require.Nil(t, err)
 
 	require.Equal(t, name, source.Name())
 }
 
 func Test_NewUrlTemplateSource_ValidUrl_InvalidJson(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	name := "test"
 	url := "https://example.com/templates.json"
@@ -42,13 +41,13 @@ func Test_NewUrlTemplateSource_ValidUrl_InvalidJson(t *testing.T) {
 		return mocks.CreateHttpResponseWithBody(req, http.StatusOK, "invalid json")
 	})
 
-	source, err := newUrlTemplateSource(context.Background(), name, url, mockContext.HttpClient)
+	source, err := newUrlTemplateSource(t.Context(), name, url, mockContext.HttpClient)
 	require.Nil(t, source)
 	require.Error(t, err)
 }
 
 func Test_NewUrlTemplateSource_InvalidUrl(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	name := "test"
 	url := "https://example.com/templates.json"
@@ -59,7 +58,7 @@ func Test_NewUrlTemplateSource_InvalidUrl(t *testing.T) {
 		return mocks.CreateEmptyHttpResponse(req, http.StatusNotFound)
 	})
 
-	source, err := newUrlTemplateSource(context.Background(), name, url, mockContext.HttpClient)
+	source, err := newUrlTemplateSource(t.Context(), name, url, mockContext.HttpClient)
 	require.Nil(t, source)
 	require.Error(t, err)
 }

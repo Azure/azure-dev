@@ -44,6 +44,8 @@ const (
 	FrameworkServiceProviderCapability CapabilityType = "framework-service-provider"
 	// Metadata capability enables extensions to provide comprehensive metadata about their commands and capabilities
 	MetadataCapability CapabilityType = "metadata"
+	// Provision provider enables extensions to provide a custom provisioning experience
+	ProvisioningProviderCapability CapabilityType = "provisioning-provider"
 )
 
 type ProviderType string

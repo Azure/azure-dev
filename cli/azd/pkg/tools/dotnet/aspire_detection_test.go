@@ -4,7 +4,6 @@
 package dotnet
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -207,7 +206,7 @@ builder.Build().Run();`
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockCtx := mocks.NewMockContext(context.Background())
+			mockCtx := mocks.NewMockContext(t.Context())
 			cli := NewCli(mockCtx.CommandRunner)
 
 			filePath := tt.setupDir(t)
@@ -454,7 +453,7 @@ builder.Build().Run();`
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockCtx := mocks.NewMockContext(context.Background())
+			mockCtx := mocks.NewMockContext(t.Context())
 			cli := NewCli(mockCtx.CommandRunner)
 
 			projectPath := tt.setupDir(t)

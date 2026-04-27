@@ -204,7 +204,7 @@ func TestAzdCredentialGetToken_ClaimsReLoginPath(t *testing.T) {
 	}
 
 	acct := public.Account{HomeAccountID: "home-a"}
-	cred := newAzdCredential(client, &acct, c, "")
+	cred := newAzdCredential(client, &acct, c, "", nil)
 
 	opts := tokenRequestOpts(c, "my-claims")
 	_, err := cred.GetToken(t.Context(), opts)

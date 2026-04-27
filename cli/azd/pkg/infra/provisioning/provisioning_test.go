@@ -98,10 +98,9 @@ func TestNewEnvRefreshResultFromState(t *testing.T) {
 
 func TestParseProvider(t *testing.T) {
 	tests := []struct {
-		name      string
-		kind      ProviderKind
-		expected  ProviderKind
-		expectErr bool
+		name     string
+		kind     ProviderKind
+		expected ProviderKind
 	}{
 		{
 			name:     "empty defaults to NotSpecified",
@@ -124,34 +123,27 @@ func TestParseProvider(t *testing.T) {
 			expected: Test,
 		},
 		{
-			name:      "unsupported provider",
-			kind:      ProviderKind("invalid"),
-			expectErr: true,
+			name:     "custom provider is accepted",
+			kind:     ProviderKind("custom-ext"),
+			expected: ProviderKind("custom-ext"),
 		},
 		{
-			name:      "pulumi is unsupported",
-			kind:      Pulumi,
-			expectErr: true,
+			name:     "pulumi is accepted",
+			kind:     Pulumi,
+			expected: Pulumi,
 		},
 		{
-			name:      "arm is unsupported",
-			kind:      Arm,
-			expectErr: true,
+			name:     "arm is accepted",
+			kind:     Arm,
+			expected: Arm,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := ParseProvider(tt.kind)
-			if tt.expectErr {
-				require.Error(t, err)
-				assert.Contains(
-					t, err.Error(), "unsupported IaC provider",
-				)
-			} else {
-				require.NoError(t, err)
-				assert.Equal(t, tt.expected, result)
-			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, result)
 		})
 	}
 }

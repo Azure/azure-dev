@@ -16,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ai"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
@@ -54,7 +55,9 @@ func (s *promptService) Confirm(ctx context.Context, req *azdext.ConfirmRequest)
 
 	if s.globalOptions.NoPrompt {
 		if req.Options.DefaultValue == nil {
-			return nil, fmt.Errorf("no default response for prompt '%s'", req.Options.Message)
+			return nil, &input.PromptRequiredError{
+				PromptMessage: req.Options.Message,
+			}
 		} else {
 			return &azdext.ConfirmResponse{
 				Value: req.Options.DefaultValue,
@@ -91,7 +94,9 @@ func (s *promptService) Select(ctx context.Context, req *azdext.SelectRequest) (
 
 	if s.globalOptions.NoPrompt {
 		if req.Options.SelectedIndex == nil {
-			return nil, fmt.Errorf("no default selection for prompt '%s'", req.Options.Message)
+			return nil, &input.PromptRequiredError{
+				PromptMessage: req.Options.Message,
+			}
 		} else {
 			return &azdext.SelectResponse{
 				Value: req.Options.SelectedIndex,
@@ -196,7 +201,9 @@ func (s *promptService) MultiSelect(
 func (s *promptService) Prompt(ctx context.Context, req *azdext.PromptRequest) (*azdext.PromptResponse, error) {
 	if s.globalOptions.NoPrompt {
 		if req.Options.Required && req.Options.DefaultValue == "" {
-			return nil, fmt.Errorf("no default response for prompt '%s'", req.Options.Message)
+			return nil, &input.PromptRequiredError{
+				PromptMessage: req.Options.Message,
+			}
 		} else {
 			return &azdext.PromptResponse{
 				Value: req.Options.DefaultValue,
@@ -235,7 +242,10 @@ func (s *promptService) PromptSubscription(
 	ctx context.Context,
 	req *azdext.PromptSubscriptionRequest,
 ) (*azdext.PromptSubscriptionResponse, error) {
-	// Delegate to prompt service which handles --no-prompt mode
+	if s.globalOptions.NoPrompt {
+		return nil, &input.PromptRequiredError{PromptMessage: promptSubscriptionMessage(req)}
+	}
+
 	release, err := s.acquirePromptLock(ctx)
 	if err != nil {
 		return nil, err
@@ -267,7 +277,10 @@ func (s *promptService) PromptLocation(
 	ctx context.Context,
 	req *azdext.PromptLocationRequest,
 ) (*azdext.PromptLocationResponse, error) {
-	// Delegate to prompt service which handles --no-prompt mode
+	if s.globalOptions.NoPrompt {
+		return nil, &input.PromptRequiredError{PromptMessage: "Select location"}
+	}
+
 	release, err := s.acquirePromptLock(ctx)
 	if err != nil {
 		return nil, err
@@ -306,7 +319,10 @@ func (s *promptService) PromptResourceGroup(
 	ctx context.Context,
 	req *azdext.PromptResourceGroupRequest,
 ) (*azdext.PromptResourceGroupResponse, error) {
-	// Delegate to prompt service which handles --no-prompt mode
+	if s.globalOptions.NoPrompt {
+		return nil, &input.PromptRequiredError{PromptMessage: promptResourceGroupMessage(req)}
+	}
+
 	release, err := s.acquirePromptLock(ctx)
 	if err != nil {
 		return nil, err
@@ -340,7 +356,10 @@ func (s *promptService) PromptSubscriptionResource(
 	ctx context.Context,
 	req *azdext.PromptSubscriptionResourceRequest,
 ) (*azdext.PromptSubscriptionResourceResponse, error) {
-	// Delegate to prompt service which handles --no-prompt mode
+	if s.globalOptions.NoPrompt {
+		return nil, &input.PromptRequiredError{PromptMessage: promptResourceMessage(req.Options)}
+	}
+
 	release, err := s.acquirePromptLock(ctx)
 	if err != nil {
 		return nil, err
@@ -374,7 +393,10 @@ func (s *promptService) PromptResourceGroupResource(
 	ctx context.Context,
 	req *azdext.PromptResourceGroupResourceRequest,
 ) (*azdext.PromptResourceGroupResourceResponse, error) {
-	// Delegate to prompt service which handles --no-prompt mode
+	if s.globalOptions.NoPrompt {
+		return nil, &input.PromptRequiredError{PromptMessage: promptResourceMessage(req.Options)}
+	}
+
 	release, err := s.acquirePromptLock(ctx)
 	if err != nil {
 		return nil, err
@@ -432,7 +454,7 @@ func (s *promptService) createAzureContext(wire *azdext.AzureContext) (*prompt.A
 
 	resourceList := prompt.NewAzureResourceList(s.resourceService, resources)
 
-	return prompt.NewAzureContext(s.prompter, scope, resourceList), nil
+	return prompt.NewAzureContext(s.prompter, scope, resourceList, s.globalOptions.NoPrompt), nil
 }
 
 func createResourceOptions(options *azdext.PromptResourceOptions) prompt.ResourceOptions {
@@ -470,6 +492,44 @@ func createResourceOptions(options *azdext.PromptResourceOptions) prompt.Resourc
 	}
 
 	return resourceOptions
+}
+
+func promptSubscriptionMessage(req *azdext.PromptSubscriptionRequest) string {
+	if req != nil && req.Message != "" {
+		return req.Message
+	}
+
+	return "Select subscription"
+}
+
+func promptResourceGroupMessage(req *azdext.PromptResourceGroupRequest) string {
+	if req != nil &&
+		req.Options != nil &&
+		req.Options.SelectOptions != nil &&
+		req.Options.SelectOptions.Message != "" {
+		return req.Options.SelectOptions.Message
+	}
+
+	return "Select resource group"
+}
+
+func promptResourceMessage(options *azdext.PromptResourceOptions) string {
+	if options != nil &&
+		options.SelectOptions != nil &&
+		options.SelectOptions.Message != "" {
+		return options.SelectOptions.Message
+	}
+
+	resourceName := "resource"
+	if options != nil {
+		if options.ResourceTypeDisplayName != "" {
+			resourceName = options.ResourceTypeDisplayName
+		} else if options.ResourceType != "" {
+			resourceName = options.ResourceType
+		}
+	}
+
+	return fmt.Sprintf("Select %s", resourceName)
 }
 
 func createResourceGroupOptions(options *azdext.PromptResourceGroupOptions) *prompt.ResourceGroupOptions {

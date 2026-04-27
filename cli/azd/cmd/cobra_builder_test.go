@@ -47,7 +47,7 @@ func Test_BuildAndRunSimpleCommand(t *testing.T) {
 
 	// Disable args processing from os:args
 	cmd.SetArgs([]string{})
-	err = cmd.ExecuteContext(context.Background())
+	err = cmd.ExecuteContext(t.Context())
 
 	require.NoError(t, err)
 	require.True(t, ran)
@@ -70,7 +70,7 @@ func Test_BuildAndRunSimpleAction(t *testing.T) {
 	require.NoError(t, err)
 
 	cmd.SetArgs([]string{"-r"})
-	err = cmd.ExecuteContext(context.Background())
+	err = cmd.ExecuteContext(t.Context())
 
 	require.NoError(t, err)
 }
@@ -94,7 +94,7 @@ func Test_BuildAndRunSimpleActionWithMiddleware(t *testing.T) {
 	actionRan := false
 	middlewareRan := false
 
-	ctx := context.Background()
+	ctx := t.Context()
 	ctx = context.WithValue(ctx, actionName, &actionRan)
 	ctx = context.WithValue(ctx, middlewareAName, &middlewareRan)
 
@@ -129,7 +129,7 @@ func Test_BuildAndRunActionWithNestedMiddleware(t *testing.T) {
 	middlewareARan := false
 	middlewareBRan := false
 
-	ctx := context.Background()
+	ctx := t.Context()
 	ctx = context.WithValue(ctx, actionName, &actionRan)
 	ctx = context.WithValue(ctx, middlewareAName, &middlewareARan)
 	ctx = context.WithValue(ctx, middlewareBName, &middlewareBRan)
@@ -172,7 +172,7 @@ func Test_BuildAndRunActionWithNestedAndConditionalMiddleware(t *testing.T) {
 	middlewareARan := false
 	middlewareBRan := false
 
-	ctx := context.Background()
+	ctx := t.Context()
 	ctx = context.WithValue(ctx, actionName, &actionRan)
 	ctx = context.WithValue(ctx, middlewareAName, &middlewareARan)
 	ctx = context.WithValue(ctx, middlewareBName, &middlewareBRan)
@@ -229,7 +229,7 @@ func Test_BuildCommandsWithAutomaticHelpAndOutputFlags(t *testing.T) {
 func Test_RunDocsFlow(t *testing.T) {
 	t.Parallel()
 	container := ioc.NewNestedContainer(nil)
-	testCtx := mocks.NewMockContext(context.Background())
+	testCtx := mocks.NewMockContext(t.Context())
 	container.MustRegisterSingleton(func() input.Console {
 		return testCtx.Console
 	})
@@ -264,7 +264,7 @@ func Test_RunDocsFlow(t *testing.T) {
 func Test_RunDocsAndHelpFlow(t *testing.T) {
 	t.Parallel()
 	container := ioc.NewNestedContainer(nil)
-	testCtx := mocks.NewMockContext(context.Background())
+	testCtx := mocks.NewMockContext(t.Context())
 	container.MustRegisterSingleton(func() input.Console {
 		return testCtx.Console
 	})
@@ -380,4 +380,42 @@ func (m *testMiddlewareB) Run(ctx context.Context, nextFn middleware.NextFn) (*a
 	}
 
 	return nextFn(ctx)
+}
+
+func Test_LightspeedAnnotation(t *testing.T) {
+	t.Parallel()
+
+	container := ioc.NewNestedContainer(nil)
+	ioc.RegisterInstance(container, &internal.GlobalCommandOptions{})
+	builder := NewCobraBuilder(container)
+
+	root := actions.NewActionDescriptor("root", &actions.ActionDescriptorOptions{
+		Command: &cobra.Command{Use: "root"},
+	})
+
+	// Add a lightspeed child command
+	root.Add("fast", &actions.ActionDescriptorOptions{
+		Command:        &cobra.Command{Use: "fast"},
+		ActionResolver: newTestAction,
+		Lightspeed:     true,
+	})
+
+	// Add a normal child command
+	root.Add("normal", &actions.ActionDescriptorOptions{
+		Command:        &cobra.Command{Use: "normal"},
+		ActionResolver: newTestAction,
+	})
+
+	rootCmd, err := builder.BuildCommand(root)
+	require.NoError(t, err)
+
+	// Verify lightspeed annotation is set on the fast command
+	fastCmd, _, err := rootCmd.Find([]string{"fast"})
+	require.NoError(t, err)
+	require.Equal(t, "true", fastCmd.Annotations[actions.AnnotationLightspeed])
+
+	// Verify lightspeed annotation is NOT set on the normal command
+	normalCmd, _, err := rootCmd.Find([]string{"normal"})
+	require.NoError(t, err)
+	require.NotEqual(t, "true", normalCmd.Annotations[actions.AnnotationLightspeed])
 }

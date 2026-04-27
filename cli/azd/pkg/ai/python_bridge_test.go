@@ -4,7 +4,6 @@
 package ai
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,7 +19,7 @@ import (
 
 func Test_PythonBridge_Init(t *testing.T) {
 	tempDir := t.TempDir()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	pythonCli := python.NewCli(mockContext.CommandRunner)
 	azdCtx := azdcontext.NewAzdContextWithDirectory(tempDir)
 
@@ -58,7 +57,7 @@ func Test_PythonBridge_Init(t *testing.T) {
 }
 
 func Test_PythonBridge_Run(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	pythonCli := python.NewCli(mockContext.CommandRunner)
 	azdCtx := azdcontext.NewAzdContextWithDirectory(t.TempDir())
 

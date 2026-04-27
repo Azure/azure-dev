@@ -4,7 +4,6 @@
 package grpcserver
 
 import (
-	"context"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -23,7 +22,7 @@ import (
 // the GetCurrent method returns an error and List returns an empty list.
 func Test_EnvironmentService_NoEnvironment(t *testing.T) {
 	// Setup a mock context and temporary project directory.
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	temp := t.TempDir()
 
 	// Initialize AzdContext.
@@ -64,7 +63,7 @@ func Test_EnvironmentService_NoEnvironment(t *testing.T) {
 // environment creation, setting a default and verifying get, list, value retrieval, and selection.
 func Test_EnvironmentService_Flow(t *testing.T) {
 	// Setup a mock context and temporary project directory.
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	temp := t.TempDir()
 
 	// Initialize AzdContext.
@@ -154,7 +153,7 @@ func Test_EnvironmentService_Flow(t *testing.T) {
 // Test_EnvironmentService_ResolveEnvironment validates that methods use the default environment
 // when env_name is empty and the specified environment when env_name is provided.
 func Test_EnvironmentService_ResolveEnvironment(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	temp := t.TempDir()
 
 	azdContext := azdcontext.NewAzdContextWithDirectory(temp)
@@ -338,7 +337,7 @@ func Test_EnvironmentService_ResolveEnvironment(t *testing.T) {
 // Test_EnvironmentService_EmptyKeyValidation verifies that GetValue and SetValue
 // return InvalidArgument when called with an empty key.
 func Test_EnvironmentService_EmptyKeyValidation(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	temp := t.TempDir()
 
 	azdContext := azdcontext.NewAzdContextWithDirectory(temp)

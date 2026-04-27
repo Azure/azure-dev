@@ -4,7 +4,6 @@
 package ext
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -73,7 +72,7 @@ func buildRunner(
 	envManager.On("Reload", mock.Anything, env).Return(nil)
 
 	hooksManager := NewHooksManager(
-		cwd, mockCtx.CommandRunner,
+		HooksManagerOptions{Cwd: cwd, ProjectDir: cwd}, mockCtx.CommandRunner,
 	)
 
 	return NewHooksRunner(
@@ -129,7 +128,7 @@ func TestPythonHook_AutoDetectFromExtension(t *testing.T) {
 		}},
 	}
 
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockCtx)
 	stubPythonVersionCheck(mockCtx)
 
@@ -149,7 +148,7 @@ func TestPythonHook_AutoDetectFromExtension(t *testing.T) {
 		t, mockCtx, cwd, hooksMap, env,
 	)
 	err := runner.RunHooks(
-		*mockCtx.Context, HookTypePre, nil, "deploy",
+		*mockCtx.Context, HookTypePre, "project", nil, "deploy",
 	)
 
 	require.NoError(t, err)
@@ -185,7 +184,7 @@ func TestPythonHook_ExplicitKind(t *testing.T) {
 		}},
 	}
 
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockCtx)
 	stubPythonVersionCheck(mockCtx)
 
@@ -205,7 +204,7 @@ func TestPythonHook_ExplicitKind(t *testing.T) {
 		t, mockCtx, cwd, hooksMap, env,
 	)
 	err := runner.RunHooks(
-		*mockCtx.Context, HookTypePre, nil, "deploy",
+		*mockCtx.Context, HookTypePre, "project", nil, "deploy",
 	)
 
 	require.NoError(t, err)
@@ -234,7 +233,7 @@ func TestPythonHook_EnvVarsPassthrough(t *testing.T) {
 		}},
 	}
 
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockCtx)
 	stubPythonVersionCheck(mockCtx)
 
@@ -254,7 +253,7 @@ func TestPythonHook_EnvVarsPassthrough(t *testing.T) {
 		t, mockCtx, cwd, hooksMap, env,
 	)
 	err := runner.RunHooks(
-		*mockCtx.Context, HookTypePre, nil, "deploy",
+		*mockCtx.Context, HookTypePre, "project", nil, "deploy",
 	)
 
 	require.NoError(t, err)
@@ -284,7 +283,7 @@ func TestPythonHook_WithRequirementsTxt(t *testing.T) {
 		}},
 	}
 
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockCtx)
 	stubPythonVersionCheck(mockCtx)
 
@@ -340,7 +339,7 @@ func TestPythonHook_WithRequirementsTxt(t *testing.T) {
 		t, mockCtx, cwd, hooksMap, env,
 	)
 	err := runner.RunHooks(
-		*mockCtx.Context, HookTypePre, nil, "deploy",
+		*mockCtx.Context, HookTypePre, "project", nil, "deploy",
 	)
 
 	require.NoError(t, err)
@@ -368,7 +367,7 @@ func TestPythonHook_StdoutCapture(t *testing.T) {
 		}},
 	}
 
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockCtx)
 	stubPythonVersionCheck(mockCtx)
 
@@ -392,7 +391,7 @@ func TestPythonHook_StdoutCapture(t *testing.T) {
 	// the pipeline completes without error confirming the
 	// execution path ran and stdout was handled.
 	err := runner.RunHooks(
-		*mockCtx.Context, HookTypePre, nil, "deploy",
+		*mockCtx.Context, HookTypePre, "project", nil, "deploy",
 	)
 	require.NoError(t, err)
 }
@@ -415,7 +414,7 @@ func TestPythonHook_NonZeroExitCode(t *testing.T) {
 		}},
 	}
 
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockCtx)
 	stubPythonVersionCheck(mockCtx)
 
@@ -434,7 +433,7 @@ func TestPythonHook_NonZeroExitCode(t *testing.T) {
 		t, mockCtx, cwd, hooksMap, env,
 	)
 	err := runner.RunHooks(
-		*mockCtx.Context, HookTypePre, nil, "deploy",
+		*mockCtx.Context, HookTypePre, "project", nil, "deploy",
 	)
 
 	require.Error(t, err)
@@ -461,7 +460,7 @@ func TestPythonHook_ContinueOnError(t *testing.T) {
 		}},
 	}
 
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockCtx)
 	stubPythonVersionCheck(mockCtx)
 
@@ -480,7 +479,7 @@ func TestPythonHook_ContinueOnError(t *testing.T) {
 		t, mockCtx, cwd, hooksMap, env,
 	)
 	err := runner.RunHooks(
-		*mockCtx.Context, HookTypePre, nil, "deploy",
+		*mockCtx.Context, HookTypePre, "project", nil, "deploy",
 	)
 
 	// ContinueOnError should suppress the error.
@@ -505,7 +504,7 @@ func TestPythonHook_ProjectLevel(t *testing.T) {
 		}},
 	}
 
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockCtx)
 	stubPythonVersionCheck(mockCtx)
 
@@ -525,7 +524,7 @@ func TestPythonHook_ProjectLevel(t *testing.T) {
 		t, mockCtx, cwd, hooksMap, env,
 	)
 	err := runner.RunHooks(
-		*mockCtx.Context, HookTypePre, nil, "provision",
+		*mockCtx.Context, HookTypePre, "project", nil, "provision",
 	)
 
 	require.NoError(t, err)
@@ -556,7 +555,7 @@ func TestPythonHook_ServiceLevel(t *testing.T) {
 		}},
 	}
 
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockCtx)
 	stubPythonVersionCheck(mockCtx)
 
@@ -576,7 +575,7 @@ func TestPythonHook_ServiceLevel(t *testing.T) {
 		t, mockCtx, cwd, hooksMap, env,
 	)
 	err := runner.RunHooks(
-		*mockCtx.Context, HookTypePost, nil, "deploy",
+		*mockCtx.Context, HookTypePost, "project", nil, "deploy",
 	)
 
 	require.NoError(t, err)
@@ -627,7 +626,7 @@ func TestPythonHook_ShellHookUnaffected(t *testing.T) {
 		}},
 	}
 
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockCtx)
 	stubPythonVersionCheck(mockCtx)
 
@@ -670,7 +669,7 @@ func TestPythonHook_ShellHookUnaffected(t *testing.T) {
 
 	// Run the shell hook.
 	err := runner.RunHooks(
-		*mockCtx.Context, HookTypePre, nil, "build",
+		*mockCtx.Context, HookTypePre, "project", nil, "build",
 	)
 	require.NoError(t, err)
 	require.True(
@@ -680,7 +679,7 @@ func TestPythonHook_ShellHookUnaffected(t *testing.T) {
 
 	// Run the Python hook.
 	err = runner.RunHooks(
-		*mockCtx.Context, HookTypePre, nil, "deploy",
+		*mockCtx.Context, HookTypePre, "project", nil, "deploy",
 	)
 	require.NoError(t, err)
 	require.True(
@@ -761,7 +760,7 @@ func TestPythonHook_ExecutionPipeline(t *testing.T) {
 			}
 
 			mockCtx := mocks.NewMockContext(
-				context.Background(),
+				t.Context(),
 			)
 			registerHookExecutors(mockCtx)
 			stubPythonVersionCheck(mockCtx)
@@ -787,7 +786,7 @@ func TestPythonHook_ExecutionPipeline(t *testing.T) {
 			)
 			err := runner.RunHooks(
 				*mockCtx.Context,
-				HookTypePre, nil, "deploy",
+				HookTypePre, "project", nil, "deploy",
 			)
 
 			if tt.wantErr {
@@ -821,7 +820,7 @@ func TestPythonHook_PythonBinaryResolution(t *testing.T) {
 		}},
 	}
 
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockCtx)
 	stubPythonVersionCheck(mockCtx)
 
@@ -841,7 +840,7 @@ func TestPythonHook_PythonBinaryResolution(t *testing.T) {
 		t, mockCtx, cwd, hooksMap, env,
 	)
 	err := runner.RunHooks(
-		*mockCtx.Context, HookTypePre, nil, "deploy",
+		*mockCtx.Context, HookTypePre, "project", nil, "deploy",
 	)
 
 	require.NoError(t, err)
@@ -895,7 +894,7 @@ func TestPythonHook_ExplicitDirOverridesCwd(t *testing.T) {
 		}},
 	}
 
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockCtx)
 	stubPythonVersionCheck(mockCtx)
 
@@ -915,7 +914,7 @@ func TestPythonHook_ExplicitDirOverridesCwd(t *testing.T) {
 		t, mockCtx, cwd, hooksMap, env,
 	)
 	err := runner.RunHooks(
-		*mockCtx.Context, HookTypePre, nil, "deploy",
+		*mockCtx.Context, HookTypePre, "project", nil, "deploy",
 	)
 
 	require.NoError(t, err)
@@ -944,14 +943,14 @@ func TestPythonHook_InlineScriptRejected(t *testing.T) {
 		}},
 	}
 
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockCtx)
 
 	runner := buildRunner(
 		t, mockCtx, cwd, hooksMap, env,
 	)
 	err := runner.RunHooks(
-		*mockCtx.Context, HookTypePre, nil, "deploy",
+		*mockCtx.Context, HookTypePre, "project", nil, "deploy",
 	)
 
 	require.Error(t, err)

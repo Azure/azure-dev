@@ -67,6 +67,8 @@ func TestLazyRetryInit_ConcurrentSuccess(t *testing.T) {
 		wg.Go(func() {
 			_ = l.Do(func() error {
 				atomic.AddInt32(&callCount, 1)
+				// justified: simulates a slow initializer so multiple goroutines queue
+				// on the internal mutex, exercising the "first caller wins" behaviour.
 				time.Sleep(10 * time.Millisecond)
 				return nil
 			})
@@ -89,6 +91,8 @@ func TestLazyRetryInit_ConcurrentFailureRetry(t *testing.T) {
 		wg.Go(func() {
 			err := l.Do(func() error {
 				atomic.AddInt32(&callCount, 1)
+				// justified: simulates a slow, failing initializer so multiple goroutines
+				// queue on the internal mutex and each observes the failure.
 				time.Sleep(5 * time.Millisecond)
 				return errTemporary
 			})

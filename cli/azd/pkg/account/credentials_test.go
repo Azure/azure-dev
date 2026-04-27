@@ -6,6 +6,8 @@ package account
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,6 +15,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSubscriptionCredentialProvider(t *testing.T) {
@@ -55,17 +58,17 @@ func TestSubscriptionCredentialProvider(t *testing.T) {
 	)
 
 	t.Run("Success", func(t *testing.T) {
-		cred1, err := provider.CredentialForSubscription(context.Background(), sub1)
+		cred1, err := provider.CredentialForSubscription(t.Context(), sub1)
 		assert.NoError(t, err)
 		assert.Equal(t, tenantToCred[tenant1], cred1)
 
-		cred2, err := provider.CredentialForSubscription(context.Background(), sub2)
+		cred2, err := provider.CredentialForSubscription(t.Context(), sub2)
 		assert.NoError(t, err)
 		assert.Equal(t, tenantToCred[tenant2], cred2)
 	})
 
 	t.Run("Failure", func(t *testing.T) {
-		_, err := provider.CredentialForSubscription(context.Background(), "11111111-1111-1111-1111-111111111111")
+		_, err := provider.CredentialForSubscription(t.Context(), "11111111-1111-1111-1111-111111111111")
 		assert.Error(t, err)
 	})
 }
@@ -90,7 +93,7 @@ func TestSubscriptionCredentialProvider_AADSTSErrors(t *testing.T) {
 			}),
 		)
 
-		_, err := provider.CredentialForSubscription(context.Background(), subscriptionId)
+		_, err := provider.CredentialForSubscription(t.Context(), subscriptionId)
 		assert.Error(t, err)
 
 		// The error should be wrapped in an ErrorWithSuggestion
@@ -100,6 +103,7 @@ func TestSubscriptionCredentialProvider_AADSTSErrors(t *testing.T) {
 		// Check that the suggestion includes tenant-specific guidance
 		assert.Contains(t, errWithSuggestion.Suggestion, tenantId)
 		assert.Contains(t, errWithSuggestion.Suggestion, "azd auth login --tenant-id")
+		assert.Contains(t, errWithSuggestion.Message, tenantId)
 
 		// The underlying error should contain AADSTS70043
 		assert.Contains(t, errWithSuggestion.Error(), "AADSTS70043")
@@ -119,7 +123,7 @@ func TestSubscriptionCredentialProvider_AADSTSErrors(t *testing.T) {
 			}),
 		)
 
-		_, err := provider.CredentialForSubscription(context.Background(), subscriptionId)
+		_, err := provider.CredentialForSubscription(t.Context(), subscriptionId)
 		assert.Error(t, err)
 
 		// The error should be wrapped in an ErrorWithSuggestion
@@ -129,9 +133,66 @@ func TestSubscriptionCredentialProvider_AADSTSErrors(t *testing.T) {
 		// Check that the suggestion includes tenant-specific guidance
 		assert.Contains(t, errWithSuggestion.Suggestion, tenantId)
 		assert.Contains(t, errWithSuggestion.Suggestion, "azd auth login --tenant-id")
+		assert.Contains(t, errWithSuggestion.Message, tenantId)
 
 		// The underlying error should contain AADSTS700082
 		assert.Contains(t, errWithSuggestion.Error(), "AADSTS700082")
+	})
+
+	t.Run("AADSTS700082_WithExistingSuggestion_PreservesWrappedFields", func(t *testing.T) {
+		provider := NewSubscriptionCredentialProvider(
+			subscriptionResolverFunc(func(ctx context.Context, subId string) (*Subscription, error) {
+				return &Subscription{
+					Id:                 subId,
+					TenantId:           "resource-" + tenantId,
+					UserAccessTenantId: tenantId,
+				}, nil
+			}),
+			multiTenantCredentialProviderFunc(func(ctx context.Context, tid string) (azcore.TokenCredential, error) {
+				return nil, &internal.ErrorWithSuggestion{
+					Err:        errors.New("AADSTS700082: The refresh token has expired"),
+					Message:    "Login expired for the current account.",
+					Suggestion: "Run `azd auth login` to acquire a new token.",
+				}
+			}),
+		)
+
+		_, err := provider.CredentialForSubscription(t.Context(), subscriptionId)
+		assert.Error(t, err)
+
+		errWithSuggestion, ok := errors.AsType[*internal.ErrorWithSuggestion](err)
+		assert.True(t, ok, "error should be wrapped in ErrorWithSuggestion")
+		assert.Equal(t, "Login expired for the current account.", errWithSuggestion.Message)
+		assert.Contains(t, errWithSuggestion.Suggestion, "Run `azd auth login` to acquire a new token.")
+		assert.Contains(t, errWithSuggestion.Suggestion, tenantId)
+	})
+
+	t.Run("AADSTS700082_SuggestionAlreadyHasTenantID_NoRedundantAppend", func(t *testing.T) {
+		provider := NewSubscriptionCredentialProvider(
+			subscriptionResolverFunc(func(ctx context.Context, subId string) (*Subscription, error) {
+				return &Subscription{
+					Id:                 subId,
+					TenantId:           "resource-" + tenantId,
+					UserAccessTenantId: tenantId,
+				}, nil
+			}),
+			multiTenantCredentialProviderFunc(func(ctx context.Context, tid string) (azcore.TokenCredential, error) {
+				return nil, &internal.ErrorWithSuggestion{
+					Err:     errors.New("AADSTS700082: The refresh token has expired"),
+					Message: "Login expired for the current account.",
+					Suggestion: fmt.Sprintf(
+						"login expired, run `azd auth login --tenant-id %s` to acquire a new token.", tenantId),
+				}
+			}),
+		)
+
+		_, err := provider.CredentialForSubscription(t.Context(), subscriptionId)
+		assert.Error(t, err)
+
+		errWithSuggestion, ok := errors.AsType[*internal.ErrorWithSuggestion](err)
+		require.True(t, ok)
+		// Should NOT duplicate the --tenant-id guidance
+		assert.Equal(t, 1, strings.Count(errWithSuggestion.Suggestion, "--tenant-id"))
 	})
 
 	t.Run("TenantLookupFailure_EnhancedError", func(t *testing.T) {
@@ -144,7 +205,7 @@ func TestSubscriptionCredentialProvider_AADSTSErrors(t *testing.T) {
 			}),
 		)
 
-		_, err := provider.CredentialForSubscription(context.Background(), subscriptionId)
+		_, err := provider.CredentialForSubscription(t.Context(), subscriptionId)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "AZURE_TENANT_ID")
 		assert.Contains(t, err.Error(), "manually set the subscription ID")

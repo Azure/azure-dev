@@ -135,6 +135,136 @@ func discoverInDirectory(dir string) (*ProjectContext, error) {
 	return nil, nil
 }
 
+// DiscoverNodeProject walks up the directory tree from the directory
+// containing scriptPath, looking specifically for package.json.
+//
+// Unlike [DiscoverProjectFile] which searches for all known project
+// files in priority order, this function only matches package.json.
+// This avoids false negatives in mixed-language directories where a
+// Python project file (higher priority in the generic list) would
+// shadow the Node.js project file.
+//
+// The search stops at boundaryDir. Returns nil without error when
+// no package.json is found.
+func DiscoverNodeProject(
+	scriptPath string, boundaryDir string,
+) (*ProjectContext, error) {
+	scriptDir := filepath.Dir(scriptPath)
+
+	absScript, err := filepath.Abs(scriptDir)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"resolving script directory %q: %w", scriptDir, err,
+		)
+	}
+
+	absBoundary, err := filepath.Abs(boundaryDir)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"resolving boundary directory %q: %w",
+			boundaryDir, err,
+		)
+	}
+
+	current := absScript
+	for {
+		candidate := filepath.Join(current, "package.json")
+		info, err := os.Stat(candidate)
+		if err == nil && !info.IsDir() {
+			return &ProjectContext{
+				ProjectDir:     current,
+				DependencyFile: candidate,
+				Language:       HookKindJavaScript,
+			}, nil
+		}
+
+		// Stop when we've reached the boundary directory.
+		if pathsEqual(current, absBoundary) {
+			return nil, nil
+		}
+
+		parent := filepath.Dir(current)
+		// Stop at filesystem root (parent == current).
+		if parent == current {
+			return nil, nil
+		}
+		current = parent
+	}
+}
+
+// DiscoverDotNetProject walks up the directory tree from the directory
+// containing scriptPath, looking specifically for .NET project files
+// (*.*proj: .csproj, .fsproj, .vbproj).
+//
+// Unlike [DiscoverProjectFile] which searches for all known project
+// files in priority order, this function only matches .NET project
+// files. This avoids false negatives in mixed-language directories
+// where a Python or Node.js project file (higher priority in the
+// generic list) would shadow the .NET project file.
+//
+// The search stops at boundaryDir. Returns nil without error when
+// no project file is found.
+func DiscoverDotNetProject(
+	scriptPath string, boundaryDir string,
+) (*ProjectContext, error) {
+	scriptDir := filepath.Dir(scriptPath)
+
+	absScript, err := filepath.Abs(scriptDir)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"resolving script directory %q: %w", scriptDir, err,
+		)
+	}
+
+	absBoundary, err := filepath.Abs(boundaryDir)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"resolving boundary directory %q: %w",
+			boundaryDir, err,
+		)
+	}
+
+	current := absScript
+	for {
+		pattern := filepath.Join(current, "*.*proj")
+		matches, err := filepath.Glob(pattern)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"glob %q in %q: %w",
+				"*.*proj", current, err,
+			)
+		}
+		if len(matches) == 1 {
+			return &ProjectContext{
+				ProjectDir:     current,
+				DependencyFile: matches[0],
+				Language:       HookKindDotNet,
+			}, nil
+		}
+		if len(matches) > 1 {
+			return nil, fmt.Errorf(
+				"found %d .NET project files in %q; "+
+					"set the hook 'dir' field to the "+
+					"directory containing the intended "+
+					"project file",
+				len(matches), current,
+			)
+		}
+
+		// Stop when we've reached the boundary directory.
+		if pathsEqual(current, absBoundary) {
+			return nil, nil
+		}
+
+		parent := filepath.Dir(current)
+		// Stop at filesystem root (parent == current).
+		if parent == current {
+			return nil, nil
+		}
+		current = parent
+	}
+}
+
 // pathsEqual compares two cleaned absolute paths for equality.
 // On Windows the comparison is case-insensitive to match the
 // filesystem behavior.

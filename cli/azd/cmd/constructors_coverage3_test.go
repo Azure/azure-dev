@@ -218,6 +218,7 @@ func Test_NewInitAction(t *testing.T) {
 		mockinput.NewMockConsole(),
 		nil, // gitCli
 		&initFlags{},
+		nil, // args
 		nil, // repoInitializer
 		nil, // templateManager
 		nil, // featuresManager

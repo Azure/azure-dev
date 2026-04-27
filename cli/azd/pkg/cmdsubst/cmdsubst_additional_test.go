@@ -83,7 +83,7 @@ func Test_SecretOrRandomPassword_WrongCommand(t *testing.T) {
 	executor := NewSecretOrRandomPasswordExecutor(svc, "sub1")
 
 	ran, result, err := executor.Run(
-		context.Background(), "otherCommand", nil,
+		t.Context(), "otherCommand", nil,
 	)
 	require.NoError(t, err)
 	require.False(t, ran)
@@ -95,7 +95,7 @@ func Test_SecretOrRandomPassword_NoArgs(t *testing.T) {
 	executor := NewSecretOrRandomPasswordExecutor(svc, "sub1")
 
 	ran, result, err := executor.Run(
-		context.Background(),
+		t.Context(),
 		SecretOrRandomPasswordCommandName, nil,
 	)
 	require.NoError(t, err)
@@ -110,7 +110,7 @@ func Test_SecretOrRandomPassword_OneArg(t *testing.T) {
 	executor := NewSecretOrRandomPasswordExecutor(svc, "sub1")
 
 	ran, result, err := executor.Run(
-		context.Background(),
+		t.Context(),
 		SecretOrRandomPasswordCommandName,
 		[]string{"vaultOnly"},
 	)
@@ -132,7 +132,7 @@ func Test_SecretOrRandomPassword_SecretFound(t *testing.T) {
 	executor := NewSecretOrRandomPasswordExecutor(svc, "sub1")
 
 	ran, result, err := executor.Run(
-		context.Background(),
+		t.Context(),
 		SecretOrRandomPasswordCommandName,
 		[]string{"myVault", "mySecret"},
 	)
@@ -152,7 +152,7 @@ func Test_SecretOrRandomPassword_SecretNotFound(t *testing.T) {
 	executor := NewSecretOrRandomPasswordExecutor(svc, "sub1")
 
 	ran, result, err := executor.Run(
-		context.Background(),
+		t.Context(),
 		SecretOrRandomPasswordCommandName,
 		[]string{"myVault", "missingSecret"},
 	)
@@ -173,7 +173,7 @@ func Test_SecretOrRandomPassword_EmptySecret(t *testing.T) {
 	executor := NewSecretOrRandomPasswordExecutor(svc, "sub1")
 
 	ran, result, err := executor.Run(
-		context.Background(),
+		t.Context(),
 		SecretOrRandomPasswordCommandName,
 		[]string{"vault", "secret"},
 	)
@@ -194,7 +194,7 @@ func Test_SecretOrRandomPassword_WhitespaceSecret(t *testing.T) {
 	executor := NewSecretOrRandomPasswordExecutor(svc, "sub1")
 
 	ran, result, err := executor.Run(
-		context.Background(),
+		t.Context(),
 		SecretOrRandomPasswordCommandName,
 		[]string{"vault", "secret"},
 	)
@@ -215,7 +215,7 @@ func Test_SecretOrRandomPassword_VaultError(t *testing.T) {
 	executor := NewSecretOrRandomPasswordExecutor(svc, "sub1")
 
 	ran, result, err := executor.Run(
-		context.Background(),
+		t.Context(),
 		SecretOrRandomPasswordCommandName,
 		[]string{"vault", "secret"},
 	)
@@ -243,7 +243,7 @@ func Test_Eval_MultipleMixedCommands(t *testing.T) {
 	expected := "a result b $(unknown y) c"
 
 	result, err := Eval(
-		context.Background(), input,
+		t.Context(), input,
 		testCommandExecutor{
 			runImpl: func(
 				name string, args []string,
@@ -262,7 +262,7 @@ func Test_Eval_MultipleMixedCommands(t *testing.T) {
 func Test_Eval_CommandWithNoArgs(t *testing.T) {
 	input := "$(noargs)"
 	result, err := Eval(
-		context.Background(), input,
+		t.Context(), input,
 		testCommandExecutor{
 			runImpl: func(
 				name string, args []string,
@@ -280,7 +280,7 @@ func Test_Eval_CommandWithNoArgs(t *testing.T) {
 func Test_Eval_AdjacentSubstitutions(t *testing.T) {
 	input := "$(a)$(b)"
 	result, err := Eval(
-		context.Background(), input,
+		t.Context(), input,
 		testCommandExecutor{
 			runImpl: func(
 				name string, _ []string,
@@ -296,7 +296,7 @@ func Test_Eval_AdjacentSubstitutions(t *testing.T) {
 func Test_Eval_ErrorOnFirstOfMultiple(t *testing.T) {
 	input := "$(fail) $(ok)"
 	_, err := Eval(
-		context.Background(), input,
+		t.Context(), input,
 		testCommandExecutor{
 			runImpl: func(
 				name string, _ []string,

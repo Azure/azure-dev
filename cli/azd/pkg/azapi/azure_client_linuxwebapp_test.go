@@ -5,7 +5,6 @@ package azapi
 
 import (
 	"bytes"
-	"context"
 	"net/http"
 	"strings"
 	"testing"
@@ -21,7 +20,7 @@ import (
 func Test_DeployTrackLinuxWebAppStatus(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		ran := false
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		azCli := newAzureClientFromMockContext(mockContext)
 
 		registerIsLinuxWebAppMocks(mockContext, &ran)
@@ -46,7 +45,7 @@ func Test_DeployTrackLinuxWebAppStatus(t *testing.T) {
 
 	t.Run("Error", func(t *testing.T) {
 		ran := false
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		azCli := newAzureClientFromMockContext(mockContext)
 
 		registerIsLinuxWebAppMocks(mockContext, &ran)
@@ -71,7 +70,7 @@ func Test_DeployTrackLinuxWebAppStatus(t *testing.T) {
 
 	t.Run("InternalServerError", func(t *testing.T) {
 		ran := false
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		azCli := newAzureClientFromMockContext(mockContext)
 
 		registerIsLinuxWebAppMocks(mockContext, &ran)
@@ -96,7 +95,7 @@ func Test_DeployTrackLinuxWebAppStatus(t *testing.T) {
 
 	t.Run("Logic App Success", func(t *testing.T) {
 		ran := false
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		azCli := newAzureClientFromMockContext(mockContext)
 
 		registerLogicAppMocks(mockContext, &ran)

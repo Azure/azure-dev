@@ -278,6 +278,7 @@ stdbool
 stdlib
 stdouttrace
 struct
+stretchr
 structs
 subst
 substr

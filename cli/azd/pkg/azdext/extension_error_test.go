@@ -357,3 +357,85 @@ func mustStatusErrorWithDetails(code codes.Code, message string, details ...prot
 
 	return withDetails.Err()
 }
+
+func TestGRPCStatusFromError(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil error returns false", func(t *testing.T) {
+		st, ok := GRPCStatusFromError(nil)
+		assert.False(t, ok)
+		assert.Nil(t, st)
+	})
+
+	t.Run("non-gRPC error returns false", func(t *testing.T) {
+		st, ok := GRPCStatusFromError(errors.New("plain error"))
+		assert.False(t, ok)
+		assert.Nil(t, st)
+	})
+
+	t.Run("status error returns status", func(t *testing.T) {
+		original := status.New(codes.NotFound, "missing").Err()
+		st, ok := GRPCStatusFromError(original)
+		require.True(t, ok)
+		require.NotNil(t, st)
+		assert.Equal(t, codes.NotFound, st.Code())
+		assert.Equal(t, "missing", st.Message())
+	})
+
+	t.Run("status error wrapped with fmt.Errorf is unwrapped", func(t *testing.T) {
+		original := status.New(codes.NotFound, "missing").Err()
+		wrapped := fmt.Errorf("context: %w", original)
+		st, ok := GRPCStatusFromError(wrapped)
+		require.True(t, ok)
+		assert.Equal(t, codes.NotFound, st.Code())
+	})
+}
+
+func TestActionableErrorDetailFromStatus(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil status returns nil", func(t *testing.T) {
+		assert.Nil(t, ActionableErrorDetailFromStatus(nil))
+	})
+
+	t.Run("status without ActionableErrorDetail returns nil", func(t *testing.T) {
+		st := status.New(codes.Unknown, "no details")
+		assert.Nil(t, ActionableErrorDetailFromStatus(st))
+	})
+
+	t.Run("status with ActionableErrorDetail returns it", func(t *testing.T) {
+		err := mustStatusErrorWithDetails(codes.Unknown, "boom", &ActionableErrorDetail{
+			Suggestion: "try harder",
+		})
+		st, _ := status.FromError(err)
+		actionable := ActionableErrorDetailFromStatus(st)
+		require.NotNil(t, actionable)
+		assert.Equal(t, "try harder", actionable.GetSuggestion())
+	})
+}
+
+func TestActionableErrorDetailFromError(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil error returns nil", func(t *testing.T) {
+		assert.Nil(t, ActionableErrorDetailFromError(nil))
+	})
+
+	t.Run("non-gRPC error returns nil", func(t *testing.T) {
+		assert.Nil(t, ActionableErrorDetailFromError(errors.New("plain")))
+	})
+
+	t.Run("status error without detail returns nil", func(t *testing.T) {
+		assert.Nil(t, ActionableErrorDetailFromError(status.New(codes.Unknown, "no details").Err()))
+	})
+
+	t.Run("status error with detail returns it (even when wrapped)", func(t *testing.T) {
+		statusErr := mustStatusErrorWithDetails(codes.Unknown, "boom", &ActionableErrorDetail{
+			Suggestion: "try harder",
+		})
+		wrapped := fmt.Errorf("context: %w", statusErr)
+		actionable := ActionableErrorDetailFromError(wrapped)
+		require.NotNil(t, actionable)
+		assert.Equal(t, "try harder", actionable.GetSuggestion())
+	})
+}

@@ -310,6 +310,9 @@ func (x *ActionableErrorDetail) GetLinks() []*ErrorLink {
 
 // ExtensionError is a unified error message that can represent errors from different sources.
 // It provides structured error information for telemetry and error handling.
+//
+// Direction: extension -> host only. Counterpart of host's ActionableErrorDetail, which carries
+// host-originated remediation metadata in the opposite direction.
 type ExtensionError struct {
 	state      protoimpl.MessageState `protogen:"open.v1"`
 	Message    string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`                        // Human-readable error message

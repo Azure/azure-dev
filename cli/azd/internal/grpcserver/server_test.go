@@ -245,6 +245,8 @@ func Test_mapHostError(t *testing.T) {
 		wantAuthReason   string
 		wantSuggestion   string
 		wantLinks        int
+		wantLinkURL      string
+		wantLinkTitle    string
 	}{
 		{
 			name:    "nil error returns nil",
@@ -326,6 +328,8 @@ func Test_mapHostError(t *testing.T) {
 			wantAuthReason: "AADSTS530084",
 			wantSuggestion: "Contact your IT administrator or request a policy exception.",
 			wantLinks:      1,
+			wantLinkURL:    "https://aka.ms/TokenProtectionFAQ#troubleshooting",
+			wantLinkTitle:  "Token protection FAQ",
 		},
 	}
 
@@ -362,6 +366,10 @@ func Test_mapHostError(t *testing.T) {
 				require.NotNil(t, actionable, "expected ActionableErrorDetail")
 				require.Equal(t, tt.wantSuggestion, actionable.GetSuggestion())
 				require.Len(t, actionable.GetLinks(), tt.wantLinks)
+				if tt.wantLinkURL != "" {
+					require.Equal(t, tt.wantLinkURL, actionable.GetLinks()[0].GetUrl())
+					require.Equal(t, tt.wantLinkTitle, actionable.GetLinks()[0].GetTitle())
+				}
 			}
 		})
 	}

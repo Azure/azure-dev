@@ -6,6 +6,7 @@ package grpcserver
 import (
 	"errors"
 	"fmt"
+	"log"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
@@ -98,6 +99,7 @@ func withAuthErrorInfo(st *status.Status, err error) *status.Status {
 		Domain: azdext.AuthErrorDomain,
 	})
 	if detailErr != nil {
+		log.Printf("failed to attach auth ErrorInfo to gRPC status: %v", detailErr)
 		return st
 	}
 
@@ -114,6 +116,7 @@ func withActionableErrorDetail(st *status.Status, err *internal.ErrorWithSuggest
 		Links:      azdext.WrapErrorLinks(err.Links),
 	})
 	if detailErr != nil {
+		log.Printf("failed to attach ActionableErrorDetail to gRPC status: %v", detailErr)
 		return st
 	}
 

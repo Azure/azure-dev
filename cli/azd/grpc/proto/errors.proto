@@ -52,6 +52,9 @@ message ActionableErrorDetail {
 
 // ExtensionError is a unified error message that can represent errors from different sources.
 // It provides structured error information for telemetry and error handling.
+//
+// Direction: extension -> host only. Counterpart of host's ActionableErrorDetail, which carries
+// host-originated remediation metadata in the opposite direction.
 message ExtensionError {
   reserved 1, 3;            // Reserved for future use; do not reuse.
   string message = 2;       // Human-readable error message

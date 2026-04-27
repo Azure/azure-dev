@@ -1,0 +1,6 @@
+import: ../../.vscode/cspell.yaml
+words:
+  - akvs
+  - pwsh
+  - envsubst
+  - teardown

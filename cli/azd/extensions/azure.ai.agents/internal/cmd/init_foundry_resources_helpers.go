@@ -735,7 +735,10 @@ func ensureLocation(
 	azureContext *azdext.AzureContext,
 	envName string,
 ) error {
-	allowedLocations := supportedRegionsForInit()
+	allowedLocations, err := supportedRegionsForInit(ctx)
+	if err != nil {
+		return err
+	}
 
 	if azureContext.Scope.Location != "" && locationAllowed(azureContext.Scope.Location, allowedLocations) {
 		return nil

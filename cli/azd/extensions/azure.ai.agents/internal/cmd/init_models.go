@@ -621,11 +621,15 @@ func (a *modelSelector) promptForModelLocationMismatch(
 		}
 
 		if selectedChoice == "location" {
+			allowedLocations, err := supportedModelLocations(ctx, currentModel.Locations)
+			if err != nil {
+				return nil, "", err
+			}
 			locationResp, err := a.azdClient.Prompt().PromptAiModelLocationWithQuota(ctx,
 				&azdext.PromptAiModelLocationWithQuotaRequest{
 					AzureContext:     a.azureContext,
 					ModelName:        currentModel.Name,
-					AllowedLocations: supportedModelLocations(currentModel.Locations),
+					AllowedLocations: allowedLocations,
 					Quota: &azdext.QuotaCheckOptions{
 						MinRemainingCapacity: 1,
 					},
@@ -672,11 +676,15 @@ func (a *modelSelector) promptForModelLocationMismatch(
 			}
 
 			selectedModel := modelResp.Model
+			allowedLocations, err := supportedModelLocations(ctx, selectedModel.Locations)
+			if err != nil {
+				return nil, "", err
+			}
 			locationResp, err := a.azdClient.Prompt().PromptAiModelLocationWithQuota(ctx,
 				&azdext.PromptAiModelLocationWithQuotaRequest{
 					AzureContext:     a.azureContext,
 					ModelName:        selectedModel.Name,
-					AllowedLocations: supportedModelLocations(selectedModel.Locations),
+					AllowedLocations: allowedLocations,
 					Quota: &azdext.QuotaCheckOptions{
 						MinRemainingCapacity: 1,
 					},

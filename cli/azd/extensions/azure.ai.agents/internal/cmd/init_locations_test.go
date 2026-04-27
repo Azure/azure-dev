@@ -4,78 +4,169 @@
 package cmd
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"slices"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
 
+func TestFetchHostedAgentRegionsFromURL_Success(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"regions": ["eastus2", "westus3", "swedencentral"]}`))
+	}))
+	t.Cleanup(server.Close)
+
+	regions, err := fetchHostedAgentRegionsFromURL(t.Context(), http.DefaultClient, server.URL)
+	require.NoError(t, err)
+	require.Equal(t, []string{"eastus2", "westus3", "swedencentral"}, regions)
+}
+
+func TestFetchHostedAgentRegionsFromURL_NormalizesEntries(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"regions": ["  EastUS2 ", "westus3", "", "  "]}`))
+	}))
+	t.Cleanup(server.Close)
+
+	regions, err := fetchHostedAgentRegionsFromURL(t.Context(), http.DefaultClient, server.URL)
+	require.NoError(t, err)
+	require.Equal(t, []string{"eastus2", "westus3"}, regions)
+}
+
+func TestFetchHostedAgentRegionsFromURL_HTTPError(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "boom", http.StatusInternalServerError)
+	}))
+	t.Cleanup(server.Close)
+
+	_, err := fetchHostedAgentRegionsFromURL(t.Context(), http.DefaultClient, server.URL)
+	require.Error(t, err)
+}
+
+func TestFetchHostedAgentRegionsFromURL_MalformedJSON(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{not json`))
+	}))
+	t.Cleanup(server.Close)
+
+	_, err := fetchHostedAgentRegionsFromURL(t.Context(), http.DefaultClient, server.URL)
+	require.Error(t, err)
+}
+
+func TestFetchHostedAgentRegionsFromURL_EmptyManifest(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"regions": []}`))
+	}))
+	t.Cleanup(server.Close)
+
+	_, err := fetchHostedAgentRegionsFromURL(t.Context(), http.DefaultClient, server.URL)
+	require.Error(t, err)
+}
+
+func TestFetchHostedAgentRegionsFromURL_RespectsTimeout(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(hostedAgentRegionsFetchTimeout + 2*time.Second)
+	}))
+	t.Cleanup(server.Close)
+
+	start := time.Now()
+	_, err := fetchHostedAgentRegionsFromURL(t.Context(), http.DefaultClient, server.URL)
+	elapsed := time.Since(start)
+
+	require.Error(t, err)
+	require.Less(t, elapsed, hostedAgentRegionsFetchTimeout+1*time.Second)
+}
+
 func TestSupportedModelLocations(t *testing.T) {
 	t.Parallel()
+
+	resetRegionsCache(t, []string{"eastus2", "westus3"})
 
 	tests := []struct {
 		name           string
 		modelLocations []string
-		wantSubset     bool
-		wantLen        int
+		want           []string
 	}{
-		{
-			name:           "AllSupported",
-			modelLocations: []string{"eastus", "westus"},
-			wantSubset:     true,
-			wantLen:        2,
-		},
-		{
-			name:           "SomeUnsupported",
-			modelLocations: []string{"eastus", "unsupportedregion"},
-			wantSubset:     true,
-			wantLen:        1,
-		},
-		{
-			name:           "NoneSupported",
-			modelLocations: []string{"unsupportedregion1", "unsupportedregion2"},
-			wantSubset:     true,
-			wantLen:        0,
-		},
-		{
-			name:           "EmptyInput",
-			modelLocations: []string{},
-			wantSubset:     true,
-			wantLen:        0,
-		},
-		{
-			name:           "NilInput",
-			modelLocations: nil,
-			wantSubset:     true,
-			wantLen:        0,
-		},
+		{"AllSupported", []string{"eastus2", "westus3"}, []string{"eastus2", "westus3"}},
+		{"SomeUnsupported", []string{"eastus2", "unsupported"}, []string{"eastus2"}},
+		{"NoneSupported", []string{"unsupported1", "unsupported2"}, []string{}},
+		{"EmptyInput", []string{}, []string{}},
+		{"NilInput", nil, []string{}},
 	}
-
-	supported := supportedRegionsForInit()
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			result := supportedModelLocations(tt.modelLocations)
-			require.Len(t, result, tt.wantLen)
-
-			// Every returned location must be in the supported regions list
-			for _, loc := range result {
-				require.True(t, locationAllowed(loc, supported),
-					"returned location %q should be in supported regions", loc)
-			}
+			result, err := supportedModelLocations(t.Context(), tt.modelLocations)
+			require.NoError(t, err)
+			require.ElementsMatch(t, tt.want, result)
 		})
 	}
 }
 
-func TestSupportedModelLocationsDoesNotMutateInput(t *testing.T) {
+func TestSupportedModelLocations_DoesNotMutateInput(t *testing.T) {
 	t.Parallel()
 
-	input := []string{"eastus", "unsupportedregion", "westus"}
-	original := make([]string, len(input))
-	copy(original, input)
+	resetRegionsCache(t, []string{"eastus2", "westus3"})
 
-	_ = supportedModelLocations(input)
+	input := []string{"eastus2", "unsupported", "westus3"}
+	original := slices.Clone(input)
 
-	require.Equal(t, original, input, "input slice should not be mutated")
+	_, err := supportedModelLocations(t.Context(), input)
+	require.NoError(t, err)
+	require.Equal(t, original, input)
+}
+
+func TestSupportedRegionsForInit_CachesAfterFirstFetch(t *testing.T) {
+	resetRegionsCache(t, nil)
+
+	hits := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		_, _ = w.Write([]byte(`{"regions": ["eastus2"]}`))
+	}))
+	t.Cleanup(server.Close)
+
+	regions, err := fetchHostedAgentRegionsFromURL(t.Context(), http.DefaultClient, server.URL)
+	require.NoError(t, err)
+	regionsCache.mu.Lock()
+	regionsCache.regions = regions
+	regionsCache.mu.Unlock()
+
+	for range 3 {
+		got, err := supportedRegionsForInit(t.Context())
+		require.NoError(t, err)
+		require.Equal(t, []string{"eastus2"}, got)
+	}
+	require.Equal(t, 1, hits)
+}
+
+func resetRegionsCache(t *testing.T, regions []string) {
+	t.Helper()
+
+	regionsCache.mu.Lock()
+	prev := regionsCache.regions
+	regionsCache.regions = regions
+	regionsCache.mu.Unlock()
+
+	t.Cleanup(func() {
+		regionsCache.mu.Lock()
+		regionsCache.regions = prev
+		regionsCache.mu.Unlock()
+	})
 }

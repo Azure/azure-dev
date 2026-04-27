@@ -3,49 +3,116 @@
 
 package cmd
 
-import "slices"
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"slices"
+	"sync"
+	"time"
 
-// No API available to query supported regions for hosted agents, so keep hardcoded list based on public documentation:
-// https://learn.microsoft.com/azure/foundry/agents/concepts/hosted-agents#region-availability
-var supportedHostedAgentRegions = []string{
-	"australiaeast",
-	"brazilsouth",
-	"canadacentral",
-	"canadaeast",
-	"centralus",
-	"eastus",
-	"eastus2",
-	"francecentral",
-	"germanywestcentral",
-	"italynorth",
-	"japaneast",
-	"koreacentral",
-	"northcentralus",
-	"norwayeast",
-	"polandcentral",
-	"southafricanorth",
-	"southcentralus",
-	"southeastasia",
-	"southindia",
-	"spaincentral",
-	"swedencentral",
-	"switzerlandnorth",
-	"uaenorth",
-	"uksouth",
-	"westeurope",
-	"westus",
-	"westus3",
+	"azureaiagent/internal/exterrors"
+)
+
+// hostedAgentRegionsURL points at the supported-regions manifest.
+// TODO: switch to an aka.ms link once provisioned.
+const hostedAgentRegionsURL = "https://raw.githubusercontent.com/Azure/azure-dev/main/" +
+	"cli/azd/extensions/azure.ai.agents/hosted-agent-regions.json"
+
+const hostedAgentRegionsFetchTimeout = 5 * time.Second
+
+type hostedAgentRegionsManifest struct {
+	Regions []string `json:"regions"`
 }
 
-func supportedRegionsForInit() []string {
-	return slices.Clone(supportedHostedAgentRegions)
+var regionsCache struct {
+	mu      sync.Mutex
+	regions []string
 }
 
-// supportedModelLocations returns the intersection of a model's available locations
-// with the supported hosted agent regions.
-func supportedModelLocations(modelLocations []string) []string {
-	supported := supportedRegionsForInit()
+// supportedRegionsForInit returns the list of Azure regions supported for hosted agents.
+// The result is cached for the process after the first successful fetch.
+func supportedRegionsForInit(ctx context.Context) ([]string, error) {
+	regionsCache.mu.Lock()
+	defer regionsCache.mu.Unlock()
+
+	if regionsCache.regions != nil {
+		return slices.Clone(regionsCache.regions), nil
+	}
+
+	regions, err := fetchHostedAgentRegionsFromURL(ctx, http.DefaultClient, hostedAgentRegionsURL)
+	if err != nil {
+		return nil, err
+	}
+
+	regionsCache.regions = regions
+	return slices.Clone(regions), nil
+}
+
+// supportedModelLocations returns the intersection of a model's available locations with
+// the supported hosted-agent regions.
+func supportedModelLocations(ctx context.Context, modelLocations []string) ([]string, error) {
+	supported, err := supportedRegionsForInit(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	return slices.DeleteFunc(slices.Clone(modelLocations), func(loc string) bool {
 		return !locationAllowed(loc, supported)
-	})
+	}), nil
+}
+
+func fetchHostedAgentRegionsFromURL(ctx context.Context, httpClient *http.Client, url string) ([]string, error) {
+	fetchCtx, cancel := context.WithTimeout(ctx, hostedAgentRegionsFetchTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(fetchCtx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, regionsFetchError(err)
+	}
+
+	//nolint:gosec // URL is the hardcoded hostedAgentRegionsURL constant or test override
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, regionsFetchError(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, regionsFetchError(fmt.Errorf("unexpected HTTP status %d", resp.StatusCode))
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, regionsFetchError(err)
+	}
+
+	var manifest hostedAgentRegionsManifest
+	if err := json.Unmarshal(body, &manifest); err != nil {
+		return nil, regionsFetchError(err)
+	}
+
+	regions := make([]string, 0, len(manifest.Regions))
+	for _, r := range manifest.Regions {
+		if normalized := normalizeLocationName(r); normalized != "" {
+			regions = append(regions, normalized)
+		}
+	}
+
+	if len(regions) == 0 {
+		return nil, regionsFetchError(fmt.Errorf("manifest contained no valid regions"))
+	}
+
+	return regions, nil
+}
+
+func regionsFetchError(err error) error {
+	return exterrors.Dependency(
+		exterrors.CodeRegionsFetchFailed,
+		fmt.Sprintf("could not retrieve the list of supported Azure regions: %v", err),
+		"check your network connection and try again. "+
+			"If the issue persists, file an issue at https://github.com/Azure/azure-dev/issues",
+	)
 }

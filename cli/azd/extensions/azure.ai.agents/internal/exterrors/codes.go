@@ -84,6 +84,7 @@ const (
 const (
 	CodeModelCatalogFailed    = "model_catalog_failed"
 	CodeModelResolutionFailed = "model_resolution_failed"
+	CodeRegionsFetchFailed    = "regions_fetch_failed"
 )
 
 // Error codes for session errors.

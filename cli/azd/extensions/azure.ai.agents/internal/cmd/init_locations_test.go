@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -128,7 +129,7 @@ func TestSupportedModelLocations_EmptyIntersectionReturnsStructuredError(t *test
 
 	_, err := supportedModelLocations(t.Context(), []string{"unsupported"})
 	require.Error(t, err)
-	localErr, ok := err.(*azdext.LocalError)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok, "expected *azdext.LocalError, got %T", err)
 	require.Equal(t, exterrors.CodeNoSupportedModelLocations, localErr.Code)
 }

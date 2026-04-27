@@ -6,16 +6,12 @@ package grpcserver
 import (
 	"context"
 	"crypto/rand"
-	"errors"
 	"fmt"
 	"log"
 	"net"
 
-	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
-	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -159,9 +155,9 @@ func (s *Server) Stop() error {
 	return nil
 }
 
-// errorWrappingInterceptor wraps ErrorWithSuggestion errors to include their suggestion text
-// in the error message. This ensures that helpful suggestions (like "run azd auth login")
-// are preserved when errors are transmitted over gRPC, where only the error message string is sent.
+// errorWrappingInterceptor maps host errors into gRPC status errors with structured details
+// (auth ErrorInfo, ActionableErrorDetail) so extensions can preserve actionable guidance
+// without parsing status message text. See [mapHostError] for the contract.
 func (s *Server) errorWrappingInterceptor() grpc.UnaryServerInterceptor {
 	return func(
 		ctx context.Context,
@@ -171,15 +167,13 @@ func (s *Server) errorWrappingInterceptor() grpc.UnaryServerInterceptor {
 	) (any, error) {
 		resp, err := handler(ctx, req)
 		if err != nil {
-			err = wrapErrorWithSuggestion(err)
+			err = mapHostError(err)
 		}
 		return resp, err
 	}
 }
 
 // errorWrappingStreamInterceptor is the streaming counterpart of errorWrappingInterceptor.
-// It wraps ErrorWithSuggestion errors from stream handlers so that actionable suggestions
-// are preserved in gRPC stream error responses.
 func (s *Server) errorWrappingStreamInterceptor() grpc.StreamServerInterceptor {
 	return func(
 		srv any,
@@ -189,7 +183,7 @@ func (s *Server) errorWrappingStreamInterceptor() grpc.StreamServerInterceptor {
 	) error {
 		err := handler(srv, ss)
 		if err != nil {
-			err = wrapErrorWithSuggestion(err)
+			err = mapHostError(err)
 		}
 		return err
 	}
@@ -266,89 +260,6 @@ type authenticatedStream struct {
 
 func (s *authenticatedStream) Context() context.Context {
 	return s.ctx
-}
-
-// wrapErrorWithSuggestion checks if the error contains an ErrorWithSuggestion and if so,
-// returns a new error that includes the suggestion text in the error message.
-// This ensures that helpful suggestions (like "run azd auth login") are preserved
-// when errors are transmitted over gRPC, where only the error message string is sent.
-//
-// Auth-related errors are returned with codes.Unauthenticated and a structured
-// ErrorInfo reason so extensions can reliably classify them as auth failures
-// while still distinguishing the remediation path.
-func wrapErrorWithSuggestion(err error) error {
-	if err == nil {
-		return nil
-	}
-
-	isAuthErr := isAuthError(err)
-
-	if suggestionErr, ok := errors.AsType[*internal.ErrorWithSuggestion](err); ok {
-		msg := fmt.Sprintf("%s\n%s", err.Error(), suggestionErr.Suggestion)
-		if isAuthErr {
-			return grpcAuthStatus(err, msg)
-		}
-		return fmt.Errorf("%w\n%s", err, suggestionErr.Suggestion)
-	}
-
-	if isAuthErr {
-		return grpcAuthStatus(err, err.Error())
-	}
-
-	return err
-}
-
-// isAuthError reports whether err's chain contains a known auth-failure type that should be
-// surfaced over gRPC as codes.Unauthenticated.
-func isAuthError(err error) bool {
-	if errors.Is(err, auth.ErrNoCurrentUser) {
-		return true
-	}
-	if _, ok := errors.AsType[*auth.ReLoginRequiredError](err); ok {
-		return true
-	}
-	if _, ok := errors.AsType[*auth.AuthFailedError](err); ok {
-		return true
-	}
-	return false
-}
-
-func grpcAuthStatus(err error, msg string) error {
-	st := status.New(codes.Unauthenticated, msg)
-	reason := grpcAuthReason(err)
-	if reason == "" {
-		return st.Err()
-	}
-
-	withDetails, detailErr := st.WithDetails(&errdetails.ErrorInfo{
-		Reason: reason,
-		Domain: azdext.AuthErrorDomain,
-	})
-	if detailErr != nil {
-		return st.Err()
-	}
-
-	return withDetails.Err()
-}
-
-func grpcAuthReason(err error) string {
-	if errors.Is(err, auth.ErrNoCurrentUser) {
-		return azdext.AuthErrorReasonNotLoggedIn
-	}
-
-	// Pass through the originating AAD error code (e.g., "AADSTS530084") when available.
-	// This preserves Entra's own semantics rather than redefining them on azd's side.
-	if authFailed, ok := errors.AsType[*auth.AuthFailedError](err); ok {
-		if authFailed.Parsed != nil && len(authFailed.Parsed.ErrorCodes) > 0 {
-			return fmt.Sprintf("AADSTS%d", authFailed.Parsed.ErrorCodes[0])
-		}
-	}
-
-	if _, ok := errors.AsType[*auth.ReLoginRequiredError](err); ok {
-		return azdext.AuthErrorReasonLoginRequired
-	}
-
-	return ""
 }
 
 func generateSigningKey() ([]byte, error) {

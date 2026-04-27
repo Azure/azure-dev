@@ -36,8 +36,25 @@ message ErrorLink {
   string title = 2;  // Display text (falls back to the URL when empty)
 }
 
+// ActionableErrorDetail carries user-facing remediation metadata in gRPC status details.
+// It is used for host-originated errors so clients can preserve suggestions and links
+// without parsing status message text.
+//
+// Direction: host -> extension only. Extensions returning errors to the host should use
+// LocalError / ServiceError (transported via ExtensionError) instead.
+//
+// The user-facing error message lives in google.rpc.Status.message; this detail does not
+// duplicate it.
+message ActionableErrorDetail {
+  string suggestion = 1;         // Optional user-facing suggestion for resolving the error
+  repeated ErrorLink links = 2;  // Optional reference links rendered alongside the suggestion
+}
+
 // ExtensionError is a unified error message that can represent errors from different sources.
 // It provides structured error information for telemetry and error handling.
+//
+// Direction: extension -> host only. Counterpart of host's ActionableErrorDetail, which carries
+// host-originated remediation metadata in the opposite direction.
 message ExtensionError {
   reserved 1, 3;            // Reserved for future use; do not reuse.
   string message = 2;       // Human-readable error message

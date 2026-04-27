@@ -70,15 +70,19 @@ type ExtensionCommandOptions struct {
 //   - Sets up OpenTelemetry trace context from TRACEPARENT/TRACESTATE env vars
 //   - Calls WithAccessToken() on the command context
 //
-// The returned command has PersistentPreRunE configured to set up the ExtensionContext
-// and to apply per-command overrides registered via [RegisterFlagOptions]. Extensions
-// must not replace PersistentPreRunE on the root or these behaviors will be lost.
+// Sets [cobra.EnableTraverseRunHooks] = true so the SDK's PersistentPreRunE runs
+// even when subcommands define their own. Per-command flag overrides registered
+// via [RegisterFlagOptions] are applied before subcommand pre-runs see them.
 //
 // NOTE: This function and its companion helpers ([NewListenCommand], [NewMetadataCommand],
 // [NewVersionCommand]) depend on [github.com/spf13/cobra]. If non-cobra CLI frameworks
 // gain adoption among extension authors, these symbols are candidates for extraction into
 // an azdext/cobra sub-package so the core SDK remains framework-agnostic.
 func NewExtensionRootCommand(opts ExtensionCommandOptions) (*cobra.Command, *ExtensionContext) {
+	// Run every PersistentPreRunE in the chain (root → leaf) so subcommands
+	// can add their own without losing SDK setup.
+	cobra.EnableTraverseRunHooks = true
+
 	extCtx := &ExtensionContext{}
 
 	use := opts.Use
@@ -213,13 +217,13 @@ type FlagOptions struct {
 
 	// AllowedValues, when non-empty, restricts accepted values, drives
 	// "(supported: ...)" help text, populates metadata ValidValues, and
-	// powers shell completion.
+	// powers shell completion. Matched case-sensitively; order is preserved.
 	AllowedValues []string
 
 	// Default, when non-empty, becomes the per-subcommand default: shown in
 	// help, surfaced in metadata, and substituted into the bound variable
 	// (e.g. [ExtensionContext.OutputFormat]) when the user does not pass
-	// the flag.
+	// the flag. Substitution preserves cmd.Flags().Changed(name) == false.
 	Default string
 }
 
@@ -239,10 +243,12 @@ type FlagOptions struct {
 //
 // Empty AllowedValues skips validation/completion. Empty Default leaves the
 // SDK default in place. Repeat calls for the same flag overwrite. A nil
-// command or empty Name is a no-op.
+// command is a no-op.
 //
-// Panics if Default is set but not in a non-empty AllowedValues, since this
-// would silently bypass validation.
+// Panics if Name is empty, or if Default is set but not in a non-empty
+// AllowedValues. Returns an error from PersistentPreRunE if Name does not
+// match any flag visible to the executing command (typo guard; inherited
+// flags only become visible after the command is attached to its parent).
 //
 // Typical usage:
 //
@@ -253,8 +259,11 @@ type FlagOptions struct {
 //	    Default:       "json",
 //	})
 func RegisterFlagOptions(cmd *cobra.Command, opts FlagOptions) *cobra.Command {
-	if cmd == nil || opts.Name == "" {
+	if cmd == nil {
 		return cmd
+	}
+	if opts.Name == "" {
+		panic("azdext.RegisterFlagOptions: FlagOptions.Name is required")
 	}
 	if opts.Default != "" && len(opts.AllowedValues) > 0 && !slices.Contains(opts.AllowedValues, opts.Default) {
 		panic(fmt.Sprintf(
@@ -339,6 +348,7 @@ func flagOverridesForCommand(cmd *cobra.Command) map[string]flagOverride {
 // applyFlagOverridesForCommand transiently mutates flag Usage/DefValue so
 // help/usage rendering reflects cmd's per-command [RegisterFlagOptions]
 // overrides. Returns a restore func that callers must defer.
+// Not safe for concurrent UsageFunc invocations; cobra renders help serially.
 func applyFlagOverridesForCommand(cmd *cobra.Command) func() {
 	overrides := flagOverridesForCommand(cmd)
 	if len(overrides) == 0 || cmd == nil {
@@ -380,7 +390,11 @@ func applyFlagOptionsForCommand(cmd *cobra.Command) error {
 	for name, ov := range overrides {
 		flag := cmd.Flags().Lookup(name)
 		if flag == nil {
-			continue
+			// Typo guard: inherited flags only become visible after the
+			// command is attached to its parent, so we check at execute time.
+			return fmt.Errorf(
+				"azdext.RegisterFlagOptions: flag %q is not defined on command %q", name, cmd.CommandPath(),
+			)
 		}
 		if cmd.Flags().Changed(name) {
 			if len(ov.AllowedValues) == 0 {
@@ -396,9 +410,8 @@ func applyFlagOptionsForCommand(cmd *cobra.Command) error {
 			continue
 		}
 		if ov.Default != "" {
-			// Use flag.Value.Set directly and preserve flag.Changed so callers
-			// of cmd.Flags().Changed(name) can still distinguish "user-supplied"
-			// from "SDK-substituted default".
+			// Set the value directly and preserve flag.Changed so callers
+			// can still distinguish user-supplied from SDK-substituted.
 			wasChanged := flag.Changed
 			if err := flag.Value.Set(ov.Default); err != nil {
 				return fmt.Errorf("apply default for --%s: %w", name, err)

@@ -149,6 +149,31 @@ func TestRegisterFlagOptions_NilCommandIsNoOp(t *testing.T) {
 	})
 }
 
+func TestRegisterFlagOptions_PanicsOnEmptyName(t *testing.T) {
+	require.PanicsWithValue(t,
+		"azdext.RegisterFlagOptions: FlagOptions.Name is required",
+		func() {
+			RegisterFlagOptions(&cobra.Command{Use: "list"}, FlagOptions{Name: ""})
+		},
+	)
+}
+
+func TestRegisterFlagOptions_RejectsUnknownFlagAtExecute(t *testing.T) {
+	root, _ := NewExtensionRootCommand(ExtensionCommandOptions{Name: "test"})
+	root.SilenceUsage = true
+	root.SilenceErrors = true
+
+	root.AddCommand(RegisterFlagOptions(&cobra.Command{
+		Use:  "list",
+		RunE: func(cmd *cobra.Command, args []string) error { return nil },
+	}, FlagOptions{Name: "ouput", AllowedValues: []string{"json"}, Default: "json"})) // typo
+
+	root.SetArgs([]string{"list"})
+	err := root.Execute()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), `flag "ouput" is not defined`)
+}
+
 func TestRegisterFlagOptions_PanicsOnDefaultNotInAllowed(t *testing.T) {
 	require.PanicsWithValue(t,
 		`azdext.RegisterFlagOptions: default "yaml" for flag "output" is not in allowed values [json table]`,
@@ -180,6 +205,29 @@ func TestRegisterFlagOptions_OnlyDefaultStillSubstitutes(t *testing.T) {
 	root.SetArgs([]string{"list", "--output", "anything"})
 	require.NoError(t, root.Execute())
 	require.Equal(t, "anything", extCtx.OutputFormat)
+}
+
+func TestRegisterFlagOptions_RunsAlongsideSubcommandPersistentPreRunE(t *testing.T) {
+	// EnableTraverseRunHooks contract: subcommand PersistentPreRunE coexists with the SDK's.
+	root, extCtx := NewExtensionRootCommand(ExtensionCommandOptions{Name: "test"})
+	root.SilenceUsage = true
+	root.SilenceErrors = true
+
+	subRan := false
+	listCmd := RegisterFlagOptions(&cobra.Command{
+		Use: "list",
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			subRan = true
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error { return nil },
+	}, FlagOptions{Name: "output", AllowedValues: []string{"json", "table"}, Default: "json"})
+	root.AddCommand(listCmd)
+
+	root.SetArgs([]string{"list"})
+	require.NoError(t, root.Execute())
+	require.True(t, subRan, "subcommand PersistentPreRunE must still run")
+	require.Equal(t, "json", extCtx.OutputFormat, "SDK default substitution must still happen")
 }
 
 func TestExtensionCommands_NewListenCommand(t *testing.T) {

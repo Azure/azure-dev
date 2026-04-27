@@ -5,6 +5,7 @@ package templates
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -682,4 +683,62 @@ func Test_ParseGitHubUrl_NotAuthenticated(t *testing.T) {
 	require.Equal(t, "owner/repo", urlInfo.RepoSlug)
 	require.Equal(t, "main", urlInfo.Branch)
 	require.Equal(t, "path/to/file.yaml", urlInfo.FilePath)
+}
+
+// Test_ParseGitHubUrl_AccessErrorShortCircuits verifies that when the
+// GitHub API returns a typed access failure (e.g., 403 SAML enforcement),
+// resolveBranchAndPath returns the underlying *github.ApiError immediately
+// instead of walking every candidate branch and emitting the misleading
+// "could not find a valid branch in the URL path" message. The error
+// surface is the typed error so the YAML error-suggestion pipeline can
+// attach an actionable message.
+func Test_ParseGitHubUrl_AccessErrorShortCircuits(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, string(filepath.Separator)+"gh") &&
+			args.Args[0] == "--version"
+	}).Respond(exec.RunResult{Stdout: github.Version.String()})
+
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, string(filepath.Separator)+"gh") &&
+			args.Args[0] == "auth" && args.Args[1] == "status"
+	}).Respond(exec.RunResult{Stdout: "Logged in to"})
+
+	// Track number of branch lookups so we can assert short-circuit.
+	callCount := 0
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, string(filepath.Separator)+"gh") &&
+			args.Args[0] == "api"
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		callCount++
+		// Real gh CLI emits stderr in this format; parseApiError reads it.
+		stderr := "gh: Resource protected by organization SAML enforcement. " +
+			"You must grant your OAuth token access to this organization. (HTTP 403)"
+		return exec.RunResult{Stdout: "", Stderr: stderr, ExitCode: 1},
+			fmt.Errorf("exit code: 1, stdout: , stderr: %s", stderr)
+	})
+
+	ghCli := github.NewGitHubCli(mockContext.Console, mockContext.CommandRunner)
+
+	_, err := ParseGitHubUrl(
+		*mockContext.Context,
+		"https://github.com/org/repo/blob/feature/sub/path/file.yaml",
+		ghCli,
+	)
+	require.Error(t, err)
+
+	// Must surface as the typed *github.ApiError so the YAML pipeline
+	// can map it to a SAML-specific suggestion.
+	apiErr, ok := errors.AsType[*github.ApiError](err)
+	require.True(t, ok, "expected *github.ApiError, got %T: %v", err, err)
+	require.Equal(t, github.KindSAMLBlocked, apiErr.Kind)
+	require.Equal(t, 403, apiErr.StatusCode)
+
+	// The walk must short-circuit on the first auth failure rather than
+	// trying every candidate branch (would be 4 calls for "feature/sub/path/file.yaml").
+	require.Equal(t, 1, callCount, "expected branch walk to short-circuit on first access error")
+
+	// And the misleading "could not find a valid branch" message must NOT appear.
+	require.NotContains(t, err.Error(), "could not find a valid branch")
 }

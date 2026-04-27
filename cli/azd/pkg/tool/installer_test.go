@@ -618,6 +618,29 @@ func TestValidateChecksum_UnsupportedAlgorithm(t *testing.T) {
 	assert.Contains(t, err.Error(), "unsupported checksum algorithm")
 }
 
+func TestValidateChecksum_PartialConfig_AlgorithmOnly(t *testing.T) {
+	t.Parallel()
+
+	err := validateChecksum("/nonexistent", Checksum{
+		Algorithm: "sha256",
+		Value:     "",
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "value is empty")
+	assert.Contains(t, err.Error(), "sha256")
+}
+
+func TestValidateChecksum_PartialConfig_ValueOnly(t *testing.T) {
+	t.Parallel()
+
+	err := validateChecksum("/nonexistent", Checksum{
+		Algorithm: "",
+		Value:     "abc123",
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "algorithm is empty")
+}
+
 // ---------------------------------------------------------------------------
 // Direct download tests
 // ---------------------------------------------------------------------------

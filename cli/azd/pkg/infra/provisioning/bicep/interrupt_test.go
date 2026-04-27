@@ -286,6 +286,44 @@ func TestCancelAndAwaitTerminal_CancelFailed_ButDeploymentAlreadyTerminal(t *tes
 	require.Equal(t, "cancel_too_late", outcome.telemetryValue)
 }
 
+func TestCancelAndAwaitTerminal_FirstGetIsImmediate(t *testing.T) {
+	// Use a very long poll interval so that if the impl regresses to
+	// "tick-then-Get", this test would block far longer than the deadline.
+	t.Helper()
+	prevReq, prevTerm, prevPoll := cancelRequestTimeout, cancelTerminalTimeout, cancelPollInterval
+	cancelRequestTimeout = 100 * time.Millisecond
+	cancelTerminalTimeout = 5 * time.Second
+	cancelPollInterval = 5 * time.Second
+	t.Cleanup(func() {
+		cancelRequestTimeout = prevReq
+		cancelTerminalTimeout = prevTerm
+		cancelPollInterval = prevPoll
+	})
+
+	mockContext := mocks.NewMockContext(context.Background())
+	provider := newTestProvider(mockContext)
+
+	deployment := &fakeDeployment{
+		// First Get already returns Canceled — no poll-interval wait needed.
+		getFn: func(ctx context.Context, n int32) (*azapi.ResourceDeployment, error) {
+			require.Equal(t, int32(1), n,
+				"first Get must be issued before any poll-interval wait")
+			return &azapi.ResourceDeployment{
+				ProvisioningState: azapi.DeploymentProvisioningStateCanceled,
+			}, nil
+		},
+	}
+
+	start := time.Now()
+	outcome := provider.cancelAndAwaitTerminal(t.Context(), deployment, "https://portal/x")
+	elapsed := time.Since(start)
+
+	require.ErrorIs(t, outcome.err, provisioning.ErrDeploymentCanceledByUser)
+	require.Less(t, elapsed, time.Second,
+		"fast-path cancellation should not wait a full poll interval; took %s", elapsed)
+	require.Equal(t, int32(1), deployment.getCalls.Load())
+}
+
 func TestCancelAndAwaitTerminal_PollsUntilCanceled(t *testing.T) {
 	withFastInterruptPolling(t)
 	mockContext := mocks.NewMockContext(context.Background())

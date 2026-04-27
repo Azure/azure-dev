@@ -288,17 +288,28 @@ func (p *BicepProvider) cancelAndAwaitTerminal(
 	p.console.StopSpinner(ctx, "", input.Step)
 	p.console.ShowSpinner(ctx, "Waiting for Azure to confirm cancellation", input.Step)
 
-	// Poll until terminal or until our wait budget elapses. Wait for the
-	// poll interval BEFORE each Get so that a slow Get cannot push the loop
-	// into back-to-back ARM calls (and trigger throttling).
+	// Poll until terminal or until our wait budget elapses.
 	pollCtx, pollDone := context.WithTimeout(
 		context.WithoutCancel(ctx), cancelTerminalTimeout)
 	defer pollDone()
 
+	// Issue the first Get immediately after the cancel request was accepted
+	// — Azure can transition to a terminal state very quickly for deployments
+	// that were just starting, and we don't want to make the user wait a full
+	// poll interval for that fast path.
+	if state, err := deployment.Get(pollCtx); err == nil {
+		if isTerminalProvisioningState(state.ProvisioningState) {
+			return p.terminalToOutcome(ctx, state.ProvisioningState, portalUrl)
+		}
+	} else {
+		log.Printf("interrupt handler: initial poll Get failed (will retry): %v", err)
+	}
+
+	// Subsequent polls are ticker-driven so a slow Get cannot push the loop
+	// into back-to-back ARM calls (and trigger throttling).
 	ticker := time.NewTicker(cancelPollInterval)
 	defer ticker.Stop()
 
-	var lastState azapi.DeploymentProvisioningState
 	for {
 		select {
 		case <-pollCtx.Done():
@@ -318,9 +329,8 @@ func (p *BicepProvider) cancelAndAwaitTerminal(
 
 		state, err := deployment.Get(pollCtx)
 		if err == nil {
-			lastState = state.ProvisioningState
-			if isTerminalProvisioningState(lastState) {
-				return p.terminalToOutcome(ctx, lastState, portalUrl)
+			if isTerminalProvisioningState(state.ProvisioningState) {
+				return p.terminalToOutcome(ctx, state.ProvisioningState, portalUrl)
 			}
 		} else {
 			// Don't fail the whole flow on a transient Get error — keep

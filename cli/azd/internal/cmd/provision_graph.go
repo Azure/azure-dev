@@ -489,7 +489,9 @@ func (p *ProvisionAction) graphRunOptions(ctx context.Context, quiet bool) exegr
 	}
 
 	if v, ok := os.LookupEnv("AZD_PROVISION_CONCURRENCY"); ok {
-		if n, parseErr := strconv.Atoi(v); parseErr == nil && n > 0 {
+		if n, parseErr := strconv.Atoi(v); parseErr != nil {
+			log.Printf("warning: ignoring invalid AZD_PROVISION_CONCURRENCY=%q: %v", v, parseErr)
+		} else if n > 0 {
 			clamped := min(n, 64)
 			if clamped < n {
 				log.Printf("clamping provision concurrency from %d to %d", n, clamped)

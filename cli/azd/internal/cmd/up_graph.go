@@ -651,7 +651,9 @@ func (u *UpGraphAction) runOptions() exegraph.RunOptions {
 	// fallback so that users who already tuned `azd deploy` parallelism don't
 	// get unlimited concurrency when they switch to `azd up`.
 	if v, ok := os.LookupEnv("AZD_UP_CONCURRENCY"); ok {
-		if n, parseErr := strconv.Atoi(v); parseErr == nil && n > 0 {
+		if n, parseErr := strconv.Atoi(v); parseErr != nil {
+			log.Printf("warning: ignoring invalid AZD_UP_CONCURRENCY=%q: %v", v, parseErr)
+		} else if n > 0 {
 			clamped := min(n, 64)
 			if clamped < n {
 				log.Printf("clamping up concurrency from %d to %d", n, clamped)
@@ -659,7 +661,9 @@ func (u *UpGraphAction) runOptions() exegraph.RunOptions {
 			opts.MaxConcurrency = clamped
 		}
 	} else if v, ok := os.LookupEnv("AZD_DEPLOY_CONCURRENCY"); ok {
-		if n, parseErr := strconv.Atoi(v); parseErr == nil && n > 0 {
+		if n, parseErr := strconv.Atoi(v); parseErr != nil {
+			log.Printf("warning: ignoring invalid AZD_DEPLOY_CONCURRENCY=%q: %v", v, parseErr)
+		} else if n > 0 {
 			clamped := min(n, 64)
 			if clamped < n {
 				log.Printf("clamping deploy concurrency from %d to %d", n, clamped)

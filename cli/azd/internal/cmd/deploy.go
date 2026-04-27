@@ -479,7 +479,9 @@ func (da *DeployAction) deployServicesGraph(
 // Returns 0 (unlimited) if the variable is unset or invalid.
 func (da *DeployAction) resolveDAGConcurrency() int {
 	if envVal, ok := os.LookupEnv("AZD_DEPLOY_CONCURRENCY"); ok {
-		if n, err := strconv.Atoi(envVal); err == nil && n > 0 {
+		if n, err := strconv.Atoi(envVal); err != nil {
+			log.Printf("warning: ignoring invalid AZD_DEPLOY_CONCURRENCY=%q: %v", envVal, err)
+		} else if n > 0 {
 			clamped := min(n, 64)
 			if clamped < n {
 				log.Printf("clamping deploy concurrency from %d to %d", n, clamped)

@@ -19,8 +19,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
-// Default timeouts for interrupt-driven cancellation.
-const (
+// Default timeouts for interrupt-driven cancellation. They are package-level
+// vars (not consts) so tests can override them to keep poll/timeout-driven
+// flows fast.
+var (
 	// cancelRequestTimeout bounds the time spent waiting for the ARM Cancel
 	// API call itself to return.
 	cancelRequestTimeout = 30 * time.Second
@@ -263,6 +265,11 @@ func (p *BicepProvider) cancelAndAwaitTerminal(
 		if state, getErr := deployment.Get(getCtx); getErr == nil &&
 			isTerminalProvisioningState(state.ProvisioningState) {
 			return p.terminalToOutcome(ctx, state.ProvisioningState, portalUrl)
+		} else if getErr != nil {
+			// Don't drop this — it's useful for diagnosing the cancel-failed
+			// path in production logs (the user-facing error is still the
+			// original cancel failure).
+			log.Printf("interrupt handler: post-cancel Get failed: %v", getErr)
 		}
 		p.console.StopSpinner(ctx, "Cancel request failed", input.StepFailed)
 		log.Printf("interrupt handler: cancel request failed: %v", err)

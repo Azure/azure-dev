@@ -103,3 +103,17 @@ func incrementForceExitCounter() bool {
 	forceExitPending = true
 	return false
 }
+
+// SnapshotInterruptStack returns a copy of the current interrupt-handler stack
+// in push order (oldest first). This exists exclusively to let tests in other
+// packages observe and invoke the handler that they pushed via
+// PushInterruptHandler without having to install the real OS signal pipeline.
+//
+// It is NOT a stable API and must not be used by production code.
+func SnapshotInterruptStack() []InterruptHandler {
+	interruptMu.Lock()
+	defer interruptMu.Unlock()
+	out := make([]InterruptHandler, len(interruptStack))
+	copy(out, interruptStack)
+	return out
+}

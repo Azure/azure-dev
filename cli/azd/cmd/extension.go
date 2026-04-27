@@ -1710,12 +1710,29 @@ func (a *extensionSourceValidateAction) Run(ctx context.Context) (*actions.Actio
 
 	if len(extensionList) == 0 {
 		return nil, &internal.ErrorWithSuggestion{
-			Err:        fmt.Errorf("source contains no extensions: %w", internal.ErrValidationFailed),
-			Suggestion: "Verify the source configuration contains valid extension definitions.",
+			Err: fmt.Errorf(
+				"source contains no extensions: %w",
+				internal.ErrValidationFailed,
+			),
+			Suggestion: "Verify the source configuration " +
+				"contains valid extension definitions.",
 		}
 	}
 
-	result := extensions.ValidateExtensions(extensionList, a.flags.strict)
+	var result *extensions.RegistryValidationResult
+
+	// When the source exposes a full Registry (including
+	// schemaVersion), validate at the registry level.
+	// Otherwise fall back to extension-only validation.
+	if rp, ok := source.(extensions.RegistryProvider); ok {
+		result = extensions.ValidateRegistry(
+			rp.GetRegistry(), a.flags.strict,
+		)
+	} else {
+		result = extensions.ValidateExtensions(
+			extensionList, a.flags.strict,
+		)
+	}
 
 	if a.formatter.Kind() == output.JsonFormat {
 		if err := a.formatter.Format(result, a.writer, nil); err != nil {
@@ -1727,15 +1744,40 @@ func (a *extensionSourceValidateAction) Run(ctx context.Context) (*actions.Actio
 
 	if !result.Valid {
 		return nil, &internal.ErrorWithSuggestion{
-			Err:        fmt.Errorf("one or more extensions have errors: %w", internal.ErrValidationFailed),
-			Suggestion: "Review the validation output above and fix the reported errors.",
+			Err: fmt.Errorf(
+				"registry validation failed: %w",
+				internal.ErrValidationFailed,
+			),
+			Suggestion: "Review the validation output " +
+				"above and fix the reported errors.",
 		}
 	}
 
 	return nil, nil
 }
 
-func displayValidationResult(console input.Console, ctx context.Context, result *extensions.RegistryValidationResult) {
+func displayValidationResult(
+	console input.Console,
+	ctx context.Context,
+	result *extensions.RegistryValidationResult,
+) {
+	// Display registry-level issues (e.g. schemaVersion problems)
+	for _, issue := range result.Issues {
+		if issue.Severity == extensions.ValidationError {
+			console.Message(ctx, fmt.Sprintf(
+				"  %s %s",
+				output.WithErrorFormat("ERROR:"), issue.Message,
+			))
+		} else {
+			console.Message(ctx, fmt.Sprintf(
+				"  %s %s",
+				output.WithWarningFormat("WARNING:"),
+				issue.Message,
+			))
+		}
+	}
+
+	// Display per-extension issues
 	for _, ext := range result.Extensions {
 		id := ext.Id
 		if id == "" {

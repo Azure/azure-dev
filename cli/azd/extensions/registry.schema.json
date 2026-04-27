@@ -266,6 +266,10 @@
         }
     },
     "properties": {
+        "schemaVersion": {
+            "type": "string",
+            "description": "Semantic version string for the registry format (e.g., '1.0', '1.0.0')."
+        },
         "extensions": {
             "$comment": "Each extension must have a unique 'id' within the array.",
             "type": "array",

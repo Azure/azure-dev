@@ -23,8 +23,16 @@ type Provider struct {
 	Description string `json:"description"`
 }
 
+// CurrentRegistrySchemaVersion is the current registry schema version that azd produces.
+const CurrentRegistrySchemaVersion = "1.0"
+
+// MaxSupportedMajorVersion is the highest major schema version this version of azd can consume.
+const MaxSupportedMajorVersion = 1
+
 // Registry represents the registry.json structure
 type Registry struct {
+	// SchemaVersion is the version of the registry schema format (e.g. "1.0").
+	SchemaVersion string `json:"schemaVersion,omitempty"`
 	// Extensions is a list of extensions in the registry
 	Extensions []*ExtensionMetadata `json:"extensions"`
 }

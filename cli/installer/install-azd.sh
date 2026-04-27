@@ -150,6 +150,7 @@ symlink_folder="/usr/local/bin"
 install_folder="/opt/microsoft/azd"
 no_telemetry=0
 verbose=false
+install_extensions=""
 
 while [[ $# -ne 0 ]];
 do
@@ -196,6 +197,14 @@ do
     -v|--verbose)
         verbose=true
         ;;
+    --install-extensions)
+        shift
+        if [[ $# -eq 0 ]]; then
+            say_error "--install-extensions requires a comma-separated list of extension IDs"
+            exit 1
+        fi
+        install_extensions="$1"
+        ;;
     -h|-?|--help)
         script_name="$(basename "$0")"
         echo "Azure Dev CLI Installer"
@@ -237,6 +246,10 @@ do
         echo "                                be sent and no prompt will be issued."
         echo ""
         echo "  --verbose                     Enable verbose logging"
+        echo ""
+        echo "  --install-extensions <LIST>    Comma-separated list of azd extensions to"
+        echo "                                install after azd is set up. e.g."
+        echo "                                --install-extensions azure.foundry"
         exit 0
         ;;
     *)
@@ -353,3 +366,31 @@ say "The Azure Developer CLI collects usage data and sends that usage data to Mi
 say "You can opt-out of telemetry by setting the AZURE_DEV_COLLECT_TELEMETRY environment variable to 'no' in the shell you use."
 say ""
 say "Read more about Azure Developer CLI telemetry: https://github.com/Azure/azure-dev#data-collection"
+
+# Install extensions if requested
+if [ -n "$install_extensions" ]; then
+    azd_bin="$install_folder/$bin_name"
+    say ""
+    say "Installing requested extensions..."
+
+    install_ext_failed=0
+    IFS=',' read -ra ext_list <<< "$install_extensions"
+    for ext_id in "${ext_list[@]}"; do
+        ext_id="${ext_id#"${ext_id%%[![:space:]]*}"}"
+        ext_id="${ext_id%"${ext_id##*[![:space:]]}"}"
+        if [ -n "$ext_id" ]; then
+            say "Installing extension: $ext_id"
+            if ! "$azd_bin" extension install "$ext_id"; then
+                say_error "Failed to install extension: $ext_id"
+                say_error "You can retry later with: azd extension install $ext_id"
+                install_ext_failed=1
+            else
+                say "Extension $ext_id installed successfully"
+            fi
+        fi
+    done
+
+    if [ "$install_ext_failed" = 1 ]; then
+        exit 1
+    fi
+fi

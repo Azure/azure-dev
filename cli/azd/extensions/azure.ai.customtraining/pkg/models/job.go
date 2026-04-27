@@ -22,6 +22,7 @@ type CommandJob struct {
 	EnvironmentImageReference string                 `json:"environmentImageReference,omitempty"`
 	CodeID                    string                 `json:"codeId,omitempty"`
 	ComputeID                 string                 `json:"computeId,omitempty"`
+	UserAssignedIdentityID    string                 `json:"userAssignedIdentityId,omitempty"`
 	Inputs                    map[string]JobInput    `json:"inputs,omitempty"`
 	Outputs                   map[string]JobOutput   `json:"outputs,omitempty"`
 	Distribution              *Distribution          `json:"distribution,omitempty"`

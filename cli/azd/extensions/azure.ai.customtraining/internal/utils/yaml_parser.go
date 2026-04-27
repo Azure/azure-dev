@@ -30,6 +30,7 @@ type JobDefinition struct {
 	InstanceCount        int                         `yaml:"instance_count"`
 	ProcessPerNode       int                         `yaml:"process_per_node"`
 	EnvironmentVariables map[string]string           `yaml:"environment_variables"`
+	Identity             string                      `yaml:"identity"`
 	Timeout              string                      `yaml:"timeout"`
 	Tags                 map[string]string           `yaml:"tags"`
 }

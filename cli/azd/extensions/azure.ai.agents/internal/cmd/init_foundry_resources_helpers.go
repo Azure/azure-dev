@@ -654,11 +654,18 @@ func loadAzureContext(
 		envValueMap[value.Key] = value.Value
 	}
 
+	// Use AZURE_AI_DEPLOYMENTS_LOCATION for Scope.Location (used for model filtering).
+	// Fall back to AZURE_LOCATION for backward compatibility with older environments.
+	location := envValueMap["AZURE_AI_DEPLOYMENTS_LOCATION"]
+	if location == "" {
+		location = envValueMap["AZURE_LOCATION"]
+	}
+
 	return &azdext.AzureContext{
 		Scope: &azdext.AzureScope{
 			TenantId:       envValueMap["AZURE_TENANT_ID"],
 			SubscriptionId: envValueMap["AZURE_SUBSCRIPTION_ID"],
-			Location:       envValueMap["AZURE_LOCATION"],
+			Location:       location,
 		},
 		Resources: []string{},
 	}, nil
@@ -728,7 +735,9 @@ func ensureSubscription(
 }
 
 // ensureLocation prompts for an Azure location if not already set in the AzureContext.
-// Both init flows use this.
+// Both init flows use this. Sets both AZURE_LOCATION (resource group) and
+// AZURE_AI_DEPLOYMENTS_LOCATION (AI/model resources) to the same value as a default.
+// If the user later picks a different model region, only AZURE_AI_DEPLOYMENTS_LOCATION changes.
 func ensureLocation(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -738,7 +747,8 @@ func ensureLocation(
 	allowedLocations := supportedRegionsForInit()
 
 	if azureContext.Scope.Location != "" && locationAllowed(azureContext.Scope.Location, allowedLocations) {
-		return nil
+		// Location already set and valid — ensure AZURE_AI_DEPLOYMENTS_LOCATION is also set
+		return setEnvValue(ctx, azdClient, envName, "AZURE_AI_DEPLOYMENTS_LOCATION", azureContext.Scope.Location)
 	}
 	if azureContext.Scope.Location != "" {
 		fmt.Printf("%s", output.WithWarningFormat(
@@ -757,7 +767,11 @@ func ensureLocation(
 
 	azureContext.Scope.Location = locationName
 
-	return setEnvValue(ctx, azdClient, envName, "AZURE_LOCATION", azureContext.Scope.Location)
+	if err := setEnvValue(ctx, azdClient, envName, "AZURE_LOCATION", azureContext.Scope.Location); err != nil {
+		return err
+	}
+
+	return setEnvValue(ctx, azdClient, envName, "AZURE_AI_DEPLOYMENTS_LOCATION", azureContext.Scope.Location)
 }
 
 // ensureSubscriptionAndLocation ensures both subscription and location are set.
@@ -1085,10 +1099,22 @@ func selectFoundryProject(
 
 	selectedProject := projects[selectedIdx]
 
-	// Set location from the selected project
+	// Set AI deployments location from the selected project.
+	// The project's location determines where AI models and resources are deployed.
+	previousLocation := azureContext.Scope.Location
 	azureContext.Scope.Location = selectedProject.Location
-	if err := setEnvValue(ctx, azdClient, envName, "AZURE_LOCATION", selectedProject.Location); err != nil {
-		return nil, fmt.Errorf("failed to set AZURE_LOCATION: %w", err)
+	if err := setEnvValue(
+		ctx, azdClient, envName, "AZURE_AI_DEPLOYMENTS_LOCATION", selectedProject.Location,
+	); err != nil {
+		return nil, fmt.Errorf("failed to set AZURE_AI_DEPLOYMENTS_LOCATION: %w", err)
+	}
+
+	// Seed AZURE_LOCATION (resource group location) if not already set.
+	// Default to co-locating with the project; user can override before deploying.
+	if previousLocation == "" {
+		if err := setEnvValue(ctx, azdClient, envName, "AZURE_LOCATION", selectedProject.Location); err != nil {
+			return nil, fmt.Errorf("failed to set AZURE_LOCATION: %w", err)
+		}
 	}
 
 	// Configure all Foundry project environment variables

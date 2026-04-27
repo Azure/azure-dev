@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -270,4 +271,86 @@ func (p *serviceHealthProber) probe(t *testing.T, ctx context.Context, url strin
 
 		return nil
 	})
+}
+
+// Test_CLI_Deploy_StoppedWebApp tests that deploying to a stopped Linux web app
+// succeeds without hanging. This verifies the fix for https://github.com/Azure/azure-dev/issues/7708
+// where azd deploy would poll indefinitely when the web app had 0 running instances.
+func Test_CLI_Deploy_StoppedWebApp(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
+
+	session := recording.Start(t)
+
+	// This test requires live Azure resources and uses az CLI calls (webapp stop/show)
+	// that bypass the recording proxy, so it cannot be replayed from recordings.
+	if session != nil && session.Playback {
+		t.Skip("Skipping test in playback mode. This test is live only.")
+	}
+
+	envName := randomOrStoredEnvName(session)
+	t.Logf("AZURE_ENV_NAME: %s", envName)
+
+	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
+	cli.WorkingDirectory = dir
+	cli.Env = append(cli.Env, os.Environ()...)
+	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
+
+	t.Cleanup(func() {
+		cleanupRg(context.Background(), t, cli, session, "rg-"+envName)
+	})
+
+	err := copySample(dir, "webapp-stopped")
+	require.NoError(t, err, "failed expanding sample")
+
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
+	require.NoError(t, err)
+
+	// Provision the web app
+	t.Logf("Running azd provision\n")
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
+	require.NoError(t, err)
+
+	// Get the web app name and resource group from environment
+	result, err := cli.RunCommand(ctx, "env", "get-values", "-o", "json", "--cwd", dir)
+	require.NoError(t, err)
+
+	var envValues map[string]any
+	err = json.Unmarshal([]byte(result.Stdout), &envValues)
+	require.NoError(t, err)
+
+	webAppName, ok := envValues["AZURE_WEB_APP_NAME"].(string)
+	require.True(t, ok, "AZURE_WEB_APP_NAME should be in environment")
+	resourceGroup, ok := envValues["AZURE_RESOURCE_GROUP"].(string)
+	require.True(t, ok, "AZURE_RESOURCE_GROUP should be in environment")
+	t.Logf("Web app: %s, Resource group: %s", webAppName, resourceGroup)
+
+	// Stop the web app using az CLI
+	t.Logf("Stopping web app %s\n", webAppName)
+	//nolint:gosec // test-only: arguments come from test infrastructure, not user input
+	cmd := exec.CommandContext(ctx, "az", "webapp", "stop",
+		"--name", webAppName,
+		"--resource-group", resourceGroup)
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "az webapp stop failed: %s", string(out))
+
+	// Verify app is stopped
+	//nolint:gosec // test-only: arguments come from test infrastructure, not user input
+	cmd = exec.CommandContext(ctx, "az", "webapp", "show",
+		"--name", webAppName,
+		"--resource-group", resourceGroup,
+		"--query", "state", "-o", "tsv")
+	stateOut, err := cmd.CombinedOutput()
+	require.NoError(t, err, "az webapp show failed: %s", string(stateOut))
+	state := strings.TrimSpace(string(stateOut))
+	require.Equal(t, "Stopped", state, "web app should be in Stopped state")
+
+	// Deploy to the stopped web app — this should succeed without hanging
+	t.Logf("Running azd deploy to stopped web app\n")
+	_, err = cli.RunCommand(ctx, "deploy")
+	require.NoError(t, err, "azd deploy to a stopped web app should succeed")
 }

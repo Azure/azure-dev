@@ -991,12 +991,59 @@ func watchTerminalInterrupt(c *AskerConsole) {
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, os.Interrupt)
 	go func() {
-		<-signalChan
+		for range signalChan {
+			// Reserve the running slot first so re-entrant Ctrl+C signals are
+			// suppressed even in the brief window where a handler has been
+			// popped from the stack but is still executing (e.g. a prompt is
+			// up while Deploy has already torn the registration down).
+			if !tryStartInterruptHandler() {
+				// A handler is already running. Subsequent Ctrl+C presses
+				// allow the user to force-exit if the handler appears stuck:
+				// the first additional press arms the force-exit latch and
+				// is suppressed; the next press triggers the exit (standard
+				// POSIX convention: kubectl, terraform, docker, etc.).
+				if incrementForceExitCounter() {
+					_ = c.spinner.Stop()
+					os.Exit(130) // 128 + SIGINT
+				}
+				continue
+			}
 
-		// unhide the cursor if applicable
-		_ = c.spinner.Stop()
+			handler := currentInterruptHandler()
+			if handler == nil {
+				// No handler registered → default behavior. Release the slot
+				// before exiting so future signals would behave correctly if
+				// we did not exit (defensive).
+				finishInterruptHandler()
+				_ = c.spinner.Stop()
+				os.Exit(1)
+			}
 
-		os.Exit(1)
+			// Run the handler inline on the signal goroutine so any "interrupt
+			// started" side-effects (e.g. closing a started channel, cancelling
+			// the deploy context) take effect synchronously after the signal
+			// is received — no scheduling window where the deploy goroutine
+			// could complete naturally and silently drop the Ctrl+C.
+			var handled bool
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						buf := make([]byte, 4096)
+						n := runtime.Stack(buf, false)
+						log.Printf(
+							"interrupt handler panic: %v\n%s", r, buf[:n])
+					}
+				}()
+				handled = handler()
+			}()
+			finishInterruptHandler()
+			if !handled {
+				// Handler declined to take ownership of shutdown — fall back
+				// to default behavior.
+				_ = c.spinner.Stop()
+				os.Exit(1)
+			}
+		}
 	}()
 }
 

@@ -32,6 +32,11 @@ const (
 
 var ErrPreviewNotSupported = errors.New("preview not supported")
 
+// ErrCancelNotSupported indicates that the deployment provider does not support
+// cancelling an in-flight deployment (e.g. deployment stacks). Callers can use
+// errors.Is to detect this case and fall back to "leave running" behavior.
+var ErrCancelNotSupported = errors.New("cancel not supported for this deployment kind")
+
 const emptySubscriptionArmTemplate = `{
 	"$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
 	"contentVersion": "1.0.0.0",
@@ -225,6 +230,25 @@ type DeploymentService interface {
 		deploymentName string,
 		options map[string]any,
 		progress *async.Progress[DeleteDeploymentProgress],
+	) error
+	// CancelSubscriptionDeployment requests Azure to cancel a running
+	// subscription-scoped deployment. The call returns immediately after the
+	// cancel request is accepted; callers should poll the deployment to observe
+	// the terminal state (Canceled, Failed, or Succeeded).
+	CancelSubscriptionDeployment(
+		ctx context.Context,
+		subscriptionId string,
+		deploymentName string,
+	) error
+	// CancelResourceGroupDeployment requests Azure to cancel a running
+	// resource-group-scoped deployment. The call returns immediately after the
+	// cancel request is accepted; callers should poll the deployment to observe
+	// the terminal state (Canceled, Failed, or Succeeded).
+	CancelResourceGroupDeployment(
+		ctx context.Context,
+		subscriptionId string,
+		resourceGroupName string,
+		deploymentName string,
 	) error
 }
 

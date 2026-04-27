@@ -454,6 +454,27 @@ var (
 	}
 )
 
+// Provision-related fields
+var (
+	// ProvisionCancellationKey records how a Ctrl+C interrupt during
+	// `azd provision` / `azd up` was handled.
+	//
+	// Example: "none" (no interrupt observed), "leave_running" (user chose to
+	// keep the Azure deployment running), "canceled" (Azure confirmed the
+	// deployment reached the Canceled state), "cancel_timed_out" (cancel was
+	// submitted but azd stopped waiting for the top-level terminal state),
+	// "cancel_timed_out_nested" (top-level was canceled, but one or more
+	// descendant deployments did not reach terminal state within the global
+	// budget), "cancel_too_late" (Azure finished the deployment before the
+	// cancel took effect), "cancel_failed" (the cancel request itself returned
+	// an error).
+	ProvisionCancellationKey = AttributeKey{
+		Key:            attribute.Key("provision.cancellation"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+)
+
 // The value used for ServiceNameKey
 const ServiceNameAzd = "azd"
 

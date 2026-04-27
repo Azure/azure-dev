@@ -875,17 +875,45 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 	// Start the deployment
 	p.console.ShowSpinner(ctx, "Creating/Updating resources", input.Step)
 
+	deployCtx, interruptStarted, interruptCh, markDeployCompleted, interruptCleanup :=
+		p.installDeploymentInterruptHandler(ctx, deployment, cancelProgress)
+	cleanupOnce := sync.OnceFunc(interruptCleanup)
+	defer cleanupOnce()
+
 	deployResult, err := p.deployModule(
-		ctx,
+		deployCtx,
 		deployment,
 		planned.RawArmTemplate,
 		planned.Parameters,
 		deploymentTags,
 		optionsMap,
 	)
+
+	// Try to atomically claim the "completed" state. If the interrupt
+	// handler already claimed "interrupting", the CAS fails and we must
+	// wait for the handler's outcome so the user's Ctrl+C is never
+	// silently dropped.
+	if !markDeployCompleted() {
+		// Handler has claimed the interrupt — wait for its outcome.
+		<-interruptStarted
+		outcome := <-interruptCh
+		cleanupOnce()
+		tracing.SetUsageAttributes(
+			fields.ProvisionCancellationKey.String(outcome.telemetryValue))
+		return nil, applyInterruptOutcome(outcome, err)
+	}
+
+	// Deploy completed naturally — tear the handler down before
+	// post-processing to avoid resurfacing the cancel/leave prompt over
+	// subsequent output.
+	cleanupOnce()
+
 	if err != nil {
+		tracing.SetUsageAttributes(fields.ProvisionCancellationKey.String("none"))
 		return nil, err
 	}
+
+	tracing.SetUsageAttributes(fields.ProvisionCancellationKey.String("none"))
 
 	result.Outputs = provisioning.OutputParametersFromArmOutputs(
 		planned.Template.Outputs,

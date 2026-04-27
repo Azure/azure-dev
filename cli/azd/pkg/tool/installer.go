@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 )
@@ -444,10 +445,27 @@ func (i *installer) executeDirectDownload(
 
 // validateChecksum verifies the file at filePath against the
 // expected checksum. When the checksum is empty (both Algorithm and
-// Value are ""), validation is silently skipped.
+// Value are ""), validation is silently skipped. If only one of
+// Algorithm or Value is set the configuration is treated as an error
+// to prevent silent misconfiguration.
 func validateChecksum(filePath string, checksum Checksum) error {
 	if checksum.Algorithm == "" && checksum.Value == "" {
 		return nil
+	}
+
+	// Reject partial checksum configuration.
+	if checksum.Algorithm == "" {
+		return fmt.Errorf(
+			"checksum value is set but algorithm is empty" +
+				" — specify both algorithm and value, or neither",
+		)
+	}
+	if checksum.Value == "" {
+		return fmt.Errorf(
+			"checksum algorithm %q is set but value is empty"+
+				" — specify both algorithm and value, or neither",
+			checksum.Algorithm,
+		)
 	}
 
 	var hashAlgo hash.Hash
@@ -492,13 +510,15 @@ func validateChecksum(filePath string, checksum Checksum) error {
 }
 
 // toolInstallDir returns the directory where directly downloaded
-// tools are placed. It defaults to ~/.azd/tools/.
+// tools are placed. It respects the AZD_CONFIG_DIR environment
+// variable via [config.GetUserConfigDir], falling back to
+// ~/.azd/tools/ when the variable is unset.
 func toolInstallDir() (string, error) {
-	home, err := os.UserHomeDir()
+	configDir, err := config.GetUserConfigDir()
 	if err != nil {
-		return "", fmt.Errorf("user home dir: %w", err)
+		return "", fmt.Errorf("getting user config dir: %w", err)
 	}
-	return filepath.Join(home, ".azd", "tools"), nil
+	return filepath.Join(configDir, "tools"), nil
 }
 
 // copyFilePath copies a file from src to dst using a byte stream.

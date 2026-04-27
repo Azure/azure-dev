@@ -312,9 +312,8 @@ func (a *InvokeAction) responsesLocal(ctx context.Context) error {
 	}
 
 	if resp.StatusCode >= 400 {
-		requestID := resp.Header.Get("apim-request-id")
-		if requestID != "" {
-			fmt.Printf("Trace ID: %s\n", requestID)
+		if traceID := responseTraceID(resp); traceID != "" {
+			fmt.Printf("Trace ID:     %s\n", traceID)
 		}
 		return fmt.Errorf(
 			"POST %s failed with HTTP %d: %s\n%s",
@@ -437,9 +436,8 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	}
 	defer resp.Body.Close()
 
-	requestID := resp.Header.Get("apim-request-id")
-	if requestID != "" {
-		fmt.Printf("Trace ID: %s\n", requestID)
+	if traceID := responseTraceID(resp); traceID != "" {
+		fmt.Printf("Trace ID:     %s\n", traceID)
 	}
 
 	captureResponseSession(ctx, azdClient, name, sid, resp, "Session:      ")
@@ -620,9 +618,8 @@ func handleInvocationResponse(
 	agentName string,
 	timeout time.Duration,
 ) error {
-	requestID := resp.Header.Get("apim-request-id")
-	if requestID != "" {
-		fmt.Printf("Trace ID: %s\n", requestID)
+	if traceID := responseTraceID(resp); traceID != "" {
+		fmt.Printf("Trace ID:     %s\n", traceID)
 	}
 
 	if resp.StatusCode >= 400 {
@@ -927,6 +924,15 @@ func createConversation(ctx context.Context, projectEndpoint, agentName, bearerT
 		return id, nil
 	}
 	return "", fmt.Errorf("conversation response missing 'id' field")
+}
+
+// responseTraceID returns the trace ID from the response, preferring x-request-id
+// and falling back to apim-request-id.
+func responseTraceID(resp *http.Response) string {
+	if id := resp.Header.Get("x-request-id"); id != "" {
+		return id
+	}
+	return resp.Header.Get("apim-request-id")
 }
 
 // readSSEStream reads a Server-Sent Events stream from the Foundry Responses API,

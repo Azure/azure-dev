@@ -4,10 +4,7 @@
 package cmd
 
 import (
-	"context"
 	"encoding/json"
-	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -89,25 +86,41 @@ func TestEffectiveType(t *testing.T) {
 func TestFetchAgentTemplates(t *testing.T) {
 	t.Parallel()
 
-	t.Run("success", func(t *testing.T) {
+	t.Run("success filters by templateType", func(t *testing.T) {
 		t.Parallel()
 
-		templates := []AgentTemplate{
+		// Manifest mixes gallery entries (no templateType / wrong templateType)
+		// with agent-init entries. Only the latter should survive.
+		manifest := []map[string]any{
 			{
-				Title:     "Echo Agent",
-				Language:  "python",
-				Framework: "Agent Framework",
-				Source:    "https://github.com/org/repo/blob/main/echo-agent/agent.yaml",
+				"title":              "Echo Agent",
+				"languages":          []string{"python"},
+				"extensionFramework": "Agent Framework",
+				"source":             "https://github.com/org/repo/blob/main/echo-agent/agent.yaml",
+				"templateType":       "extension.ai.agent",
 			},
 			{
-				Title:     "Calculator Agent",
-				Language:  "csharp",
-				Framework: "LangGraph",
-				Source:    "Azure-Samples/calculator-agent",
+				"title":              "Calculator Agent",
+				"languages":          []string{"dotnetCsharp"},
+				"extensionFramework": "LangGraph",
+				"source":             "Azure-Samples/calculator-agent",
+				"templateType":       "extension.ai.agent",
+			},
+			{
+				"title":     "Some gallery template",
+				"languages": []string{"python"},
+				"source":    "Azure-Samples/some-template",
+				// no templateType -> standard awesome-azd gallery entry
+			},
+			{
+				"title":        "Future extension category",
+				"languages":    []string{"python"},
+				"source":       "Azure-Samples/some-other-extension",
+				"templateType": "extension.something.else",
 			},
 		}
 
-		data, err := json.Marshal(templates)
+		data, err := json.Marshal(manifest)
 		require.NoError(t, err)
 
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -117,14 +130,15 @@ func TestFetchAgentTemplates(t *testing.T) {
 		}))
 		defer server.Close()
 
-		// Use a custom URL by overriding the HTTP client to redirect
 		result, err := fetchAgentTemplatesFromURL(t.Context(), server.Client(), server.URL)
 		require.NoError(t, err)
 		require.Len(t, result, 2)
 		require.Equal(t, "Echo Agent", result[0].Title)
-		require.Equal(t, "python", result[0].Language)
+		require.Equal(t, []string{"python"}, result[0].Languages)
+		require.Equal(t, "Agent Framework", result[0].ExtensionFramework)
+		require.Equal(t, "extension.ai.agent", result[0].TemplateType)
 		require.Equal(t, "Calculator Agent", result[1].Title)
-		require.Equal(t, "csharp", result[1].Language)
+		require.Equal(t, []string{"dotnetCsharp"}, result[1].Languages)
 	})
 
 	t.Run("HTTP error", func(t *testing.T) {
@@ -167,41 +181,30 @@ func TestFetchAgentTemplates(t *testing.T) {
 		require.NoError(t, err)
 		require.Empty(t, result)
 	})
-}
 
-// fetchAgentTemplatesFromURL is a test helper that fetches templates from a custom URL.
-func fetchAgentTemplatesFromURL(
-	ctx context.Context,
-	httpClient *http.Client,
-	url string,
-) ([]AgentTemplate, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
-	}
+	t.Run("manifest with only gallery entries returns empty", func(t *testing.T) {
+		t.Parallel()
 
-	//nolint:gosec // URL points to a local httptest server, not user input
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
+		manifest := []map[string]any{
+			{
+				"title":     "Some gallery template",
+				"languages": []string{"python"},
+				"source":    "Azure-Samples/some-template",
+			},
+		}
+		data, err := json.Marshal(manifest)
+		require.NoError(t, err)
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to fetch agent templates: HTTP %d", resp.StatusCode)
-	}
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(data)
+		}))
+		defer server.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	var templates []AgentTemplate
-	if err := json.Unmarshal(body, &templates); err != nil {
-		return nil, fmt.Errorf("failed to parse agent templates: %w", err)
-	}
-
-	return templates, nil
+		result, err := fetchAgentTemplatesFromURL(t.Context(), server.Client(), server.URL)
+		require.NoError(t, err)
+		require.Empty(t, result)
+	})
 }
 
 func TestFindAgentManifest(t *testing.T) {

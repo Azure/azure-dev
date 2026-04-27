@@ -37,6 +37,7 @@ type invokeFlags struct {
 	conversation    string
 	newConversation bool
 	protocol        string
+	agentEndpoint   string
 }
 
 type InvokeAction struct {
@@ -63,8 +64,13 @@ or large payloads with the invocations protocol.
 Use --local to target a locally running agent (started via 'azd ai agent run')
 instead of Foundry.
 
+Use --agent-endpoint to invoke a deployed agent from any directory without an
+azd project. Pass the endpoint printed by 'azd up' / 'azd deploy', for example:
+  https://<account>.services.ai.azure.com/api/projects/<project>/agents/<name>/versions/<v>
+
 Sessions are persisted per-agent — consecutive invokes reuse the same
-session automatically. Pass --new-session to force a reset.`,
+session automatically. Pass --new-session to force a reset. Per-agent
+persistence is disabled when --agent-endpoint is used (no azd project).`,
 		Example: `  # Invoke the remote agent on Foundry (auto-detects agent from azure.yaml)
   azd ai agent invoke "Hello!"
 
@@ -84,7 +90,13 @@ session automatically. Pass --new-session to force a reset.`,
   azd ai agent invoke --local "Hello!"
 
   # Start a new session (discard conversation history)
-  azd ai agent invoke --new-session "Hello!"`,
+  azd ai agent invoke --new-session "Hello!"
+
+  # Invoke a deployed agent from any directory using its endpoint URL
+  azd ai agent invoke \
+    --agent-endpoint https://acct.services.ai.azure.com/api/projects/proj/agents/my-agent/versions/1 \
+    --protocol responses \
+    "Hello!"`,
 		Args: cobra.RangeArgs(0, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
@@ -129,6 +141,41 @@ session automatically. Pass --new-session to force a reset.`,
 				)
 			}
 
+			if flags.agentEndpoint != "" {
+				if flags.local {
+					return exterrors.Validation(
+						exterrors.CodeInvalidParameter,
+						"cannot use --agent-endpoint with --local",
+						"use --agent-endpoint for a deployed agent, or --local for a locally running agent",
+					)
+				}
+				if flags.name != "" {
+					return exterrors.Validation(
+						exterrors.CodeInvalidParameter,
+						"cannot use --agent-endpoint with a positional agent name",
+						"the agent name is parsed from --agent-endpoint; remove the positional name argument",
+					)
+				}
+				if cmd.Flags().Changed("port") {
+					return exterrors.Validation(
+						exterrors.CodeInvalidParameter,
+						"cannot use --agent-endpoint with --port",
+						"--port only applies to local invocation; omit --port for remote agents",
+					)
+				}
+				if _, _, err := parseAgentEndpoint(flags.agentEndpoint); err != nil {
+					return exterrors.Validation(
+						exterrors.CodeInvalidParameter,
+						err.Error(),
+						"pass the agent endpoint printed after deploy, e.g. "+
+							"https://<acct>.services.ai.azure.com/api/projects/<proj>/agents/<name>/versions/<v>",
+					)
+				}
+				if flags.protocol == "" {
+					flags.protocol = string(agent_api.AgentProtocolResponses)
+				}
+			}
+
 			if flags.protocol != "" {
 				switch agent_api.AgentProtocol(flags.protocol) {
 				case agent_api.AgentProtocolResponses,
@@ -157,6 +204,8 @@ session automatically. Pass --new-session to force a reset.`,
 	cmd.Flags().BoolVar(&flags.newSession, "new-session", false, "Force a new session (discard saved one)")
 	cmd.Flags().StringVar(&flags.conversation, "conversation-id", "", "Explicit conversation ID override")
 	cmd.Flags().BoolVar(&flags.newConversation, "new-conversation", false, "Force a new conversation (discard saved one)")
+	cmd.Flags().StringVar(&flags.agentEndpoint, "agent-endpoint", "",
+		"Full endpoint URL of a deployed agent (enables invoking from any directory without an azd project)")
 
 	return cmd
 }
@@ -333,28 +382,49 @@ func (a *InvokeAction) responsesLocal(ctx context.Context) error {
 }
 
 func (a *InvokeAction) responsesRemote(ctx context.Context) error {
-	azdClient, err := azdext.NewAzdClient()
-	if err != nil {
-		return fmt.Errorf("failed to create azd client: %w", err)
-	}
-	defer azdClient.Close()
+	var (
+		azdClient       *azdext.AzdClient
+		name            string
+		projectEndpoint string
+	)
 
-	name := a.flags.name
-
-	// Auto-resolve agent name from azure.yaml
-	if info, err := resolveAgentServiceFromProject(ctx, azdClient, name, rootFlags.NoPrompt); err == nil {
-		if name == "" && info.AgentName != "" {
-			name = info.AgentName
+	if a.flags.agentEndpoint != "" {
+		// Ephemeral mode: skip azd project / environment lookups entirely so
+		// the command runs from any directory.
+		ep, agentName, err := parseAgentEndpoint(a.flags.agentEndpoint)
+		if err != nil {
+			return err
 		}
-	}
+		projectEndpoint = ep
+		name = agentName
+	} else {
+		client, err := azdext.NewAzdClient()
+		if err != nil {
+			return fmt.Errorf("failed to create azd client: %w", err)
+		}
+		azdClient = client
+		defer azdClient.Close()
 
-	if name == "" {
-		return fmt.Errorf("agent name is required; provide as the first argument or define an azure.ai.agent service in azure.yaml")
-	}
+		name = a.flags.name
 
-	projectEndpoint, err := resolveAgentEndpoint(ctx, "", "")
-	if err != nil {
-		return err
+		// Auto-resolve agent name from azure.yaml
+		if info, err := resolveAgentServiceFromProject(ctx, azdClient, name, rootFlags.NoPrompt); err == nil {
+			if name == "" && info.AgentName != "" {
+				name = info.AgentName
+			}
+		}
+
+		if name == "" {
+			return fmt.Errorf(
+				"agent name is required; provide as the first argument, " +
+					"define an azure.ai.agent service in azure.yaml, or use --agent-endpoint",
+			)
+		}
+
+		projectEndpoint, err = resolveAgentEndpoint(ctx, "", "")
+		if err != nil {
+			return err
+		}
 	}
 
 	body, bodyLabel, err := a.resolveBody()
@@ -372,9 +442,14 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 
 	// Session ID — routes to the same microVM container instance.
 	// When empty, let the server assign one.
-	sid, err := resolveStoredID(ctx, azdClient, name, a.flags.session, a.flags.newSession, "sessions", false)
-	if err != nil {
-		return err
+	var sid string
+	if azdClient != nil {
+		sid, err = resolveStoredID(ctx, azdClient, name, a.flags.session, a.flags.newSession, "sessions", false)
+		if err != nil {
+			return err
+		}
+	} else {
+		sid = a.flags.session
 	}
 	if sid != "" {
 		reqBody["session_id"] = sid
@@ -393,18 +468,30 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 		return fmt.Errorf("failed to get auth token: %w", err)
 	}
 
-	// Conversation ID — enables multi-turn memory via Foundry Conversations API
-	convID, err := resolveConversationID(
-		ctx,
-		azdClient,
-		name,
-		a.flags.conversation,
-		a.flags.newConversation,
-		projectEndpoint,
-		token.Token,
-	)
-	if err != nil {
-		return err
+	// Conversation ID — enables multi-turn memory via Foundry Conversations API.
+	// In ephemeral mode (--agent-endpoint) we don't persist locally, so we use the
+	// explicit value if provided or create a fresh server-side conversation.
+	var convID string
+	if azdClient != nil {
+		convID, err = resolveConversationID(
+			ctx,
+			azdClient,
+			name,
+			a.flags.conversation,
+			a.flags.newConversation,
+			projectEndpoint,
+			token.Token,
+		)
+		if err != nil {
+			return err
+		}
+	} else if a.flags.conversation != "" {
+		convID = a.flags.conversation
+	} else {
+		convID, err = createConversation(ctx, projectEndpoint, name, token.Token)
+		if err != nil {
+			return fmt.Errorf("failed to create conversation: %w", err)
+		}
 	}
 	reqBody["conversation"] = map[string]string{"id": convID}
 
@@ -412,6 +499,9 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	fmt.Printf("Message:      %s\n", bodyLabel)
 	printSessionStatus("Session:      ", sid)
 	fmt.Printf("Conversation: %s\n", convID)
+	if azdClient == nil && a.flags.conversation == "" {
+		fmt.Println("              (Pass --conversation-id to continue this conversation on the next invoke.)")
+	}
 	fmt.Println()
 
 	payload, err := json.Marshal(reqBody)
@@ -443,6 +533,9 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	}
 
 	captureResponseSession(ctx, azdClient, name, sid, resp, "Session:      ")
+	if azdClient == nil {
+		printEphemeralSessionHint(sid, resp)
+	}
 
 	if resp.StatusCode >= 400 {
 		respBody, _ := io.ReadAll(resp.Body)
@@ -521,30 +614,47 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 // invocationsRemote sends the user's message to Foundry using
 // the invocations protocol (POST /agents/{name}/endpoint/protocols/invocations).
 func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
-	azdClient, err := azdext.NewAzdClient()
-	if err != nil {
-		return fmt.Errorf("failed to create azd client: %w", err)
-	}
-	defer azdClient.Close()
+	var (
+		azdClient *azdext.AzdClient
+		name      string
+		endpoint  string
+	)
 
-	name := a.flags.name
-
-	// Auto-resolve agent name from azure.yaml / azd environment
-	if info, err := resolveAgentServiceFromProject(ctx, azdClient, name, rootFlags.NoPrompt); err == nil {
-		if name == "" && info.AgentName != "" {
-			name = info.AgentName
+	if a.flags.agentEndpoint != "" {
+		ep, agentName, err := parseAgentEndpoint(a.flags.agentEndpoint)
+		if err != nil {
+			return err
 		}
-	}
+		endpoint = ep
+		name = agentName
+	} else {
+		client, err := azdext.NewAzdClient()
+		if err != nil {
+			return fmt.Errorf("failed to create azd client: %w", err)
+		}
+		azdClient = client
+		defer azdClient.Close()
 
-	if name == "" {
-		return fmt.Errorf(
-			"agent name is required; provide as the first argument or define an azure.ai.agent service in azure.yaml",
-		)
-	}
+		name = a.flags.name
 
-	endpoint, err := resolveAgentEndpoint(ctx, "", "")
-	if err != nil {
-		return err
+		// Auto-resolve agent name from azure.yaml / azd environment
+		if info, err := resolveAgentServiceFromProject(ctx, azdClient, name, rootFlags.NoPrompt); err == nil {
+			if name == "" && info.AgentName != "" {
+				name = info.AgentName
+			}
+		}
+
+		if name == "" {
+			return fmt.Errorf(
+				"agent name is required; provide as the first argument, " +
+					"define an azure.ai.agent service in azure.yaml, or use --agent-endpoint",
+			)
+		}
+
+		endpoint, err = resolveAgentEndpoint(ctx, "", "")
+		if err != nil {
+			return err
+		}
 	}
 
 	body, bodyLabel, err := a.resolveBody()
@@ -552,10 +662,16 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 		return err
 	}
 
-	// Session ID — routes to the same container instance
-	sid, err := resolveStoredID(ctx, azdClient, name, a.flags.session, a.flags.newSession, "sessions", false)
-	if err != nil {
-		return err
+	// Session ID — routes to the same container instance.
+	// In ephemeral mode (--agent-endpoint) we don't persist locally.
+	var sid string
+	if azdClient != nil {
+		sid, err = resolveStoredID(ctx, azdClient, name, a.flags.session, a.flags.newSession, "sessions", false)
+		if err != nil {
+			return err
+		}
+	} else {
+		sid = a.flags.session
 	}
 
 	// Acquire credential and token
@@ -579,7 +695,9 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	remoteBaseURL := fmt.Sprintf("%s/agents/%s/endpoint/protocols", endpoint, name)
 
 	// Fetch and cache the agent's OpenAPI spec (skip if already cached).
-	fetchOpenAPISpec(ctx, azdClient, remoteBaseURL, name, "remote", token.Token, false)
+	if azdClient != nil {
+		fetchOpenAPISpec(ctx, azdClient, remoteBaseURL, name, "remote", token.Token, false)
+	}
 
 	invURL := fmt.Sprintf("%s/invocations?api-version=%s", remoteBaseURL, DefaultAgentAPIVersion)
 	if sid != "" {
@@ -601,11 +719,14 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	defer resp.Body.Close()
 
 	// Persist the most recent invocation ID for this agent.
-	if invID := resp.Header.Get("x-agent-invocation-id"); invID != "" {
+	if invID := resp.Header.Get("x-agent-invocation-id"); invID != "" && azdClient != nil {
 		saveContextValue(ctx, azdClient, name, invID, "invocations")
 	}
 
 	captureResponseSession(ctx, azdClient, name, sid, resp, "Session:  ")
+	if azdClient == nil {
+		printEphemeralSessionHint(sid, resp)
+	}
 
 	return handleInvocationResponse(ctx, resp, endpoint, token.Token, name, a.httpTimeout())
 }

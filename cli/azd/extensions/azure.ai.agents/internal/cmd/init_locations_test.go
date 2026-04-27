@@ -8,6 +8,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -167,17 +170,66 @@ func TestSupportedRegionsForInit_FetchesOnceAndCaches(t *testing.T) {
 	require.Equal(t, 1, hits)
 }
 
+func TestFetchHostedAgentRegionsFromURL_RejectsOversizedManifest(t *testing.T) {
+	t.Parallel()
+
+	huge := strings.Repeat("a", hostedAgentRegionsManifestMaxBytes+1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"regions":["` + huge + `"]}`))
+	}))
+	t.Cleanup(server.Close)
+
+	_, err := fetchHostedAgentRegionsFromURL(t.Context(), http.DefaultClient, server.URL)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "byte limit")
+}
+
+func TestSupportedRegionsForInit_ConcurrentCallersFetchOnce(t *testing.T) {
+	resetRegionsCache(t, nil)
+
+	var hits atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		// Brief delay so concurrent callers genuinely overlap on the in-flight fetch.
+		time.Sleep(50 * time.Millisecond)
+		_, _ = w.Write([]byte(`{"regions": ["eastus2"]}`))
+	}))
+	t.Cleanup(server.Close)
+
+	prev := hostedAgentRegionsURL
+	hostedAgentRegionsURL = server.URL
+	t.Cleanup(func() { hostedAgentRegionsURL = prev })
+
+	const callers = 8
+	var wg sync.WaitGroup
+	wg.Add(callers)
+	for range callers {
+		go func() {
+			defer wg.Done()
+			got, err := supportedRegionsForInit(t.Context())
+			require.NoError(t, err)
+			require.Equal(t, []string{"eastus2"}, got)
+		}()
+	}
+	wg.Wait()
+
+	require.Equal(t, int32(1), hits.Load())
+}
+
 func resetRegionsCache(t *testing.T, regions []string) {
 	t.Helper()
 
 	regionsCache.mu.Lock()
 	prev := regionsCache.regions
+	prevInflight := regionsCache.inflight
 	regionsCache.regions = regions
+	regionsCache.inflight = nil
 	regionsCache.mu.Unlock()
 
 	t.Cleanup(func() {
 		regionsCache.mu.Lock()
 		regionsCache.regions = prev
+		regionsCache.inflight = prevInflight
 		regionsCache.mu.Unlock()
 	})
 }

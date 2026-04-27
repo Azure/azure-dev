@@ -23,34 +23,83 @@ import (
 // It is a var so tests can override it.
 var hostedAgentRegionsURL = "https://aka.ms/azd-ai-agents/regions"
 
-const hostedAgentRegionsFetchTimeout = 5 * time.Second
+const (
+	hostedAgentRegionsFetchTimeout = 5 * time.Second
+	// hostedAgentRegionsManifestMaxBytes caps the manifest body to guard against
+	// unexpectedly large responses from the source URL.
+	hostedAgentRegionsManifestMaxBytes = 1 << 20 // 1 MiB
+)
 
 type hostedAgentRegionsManifest struct {
 	Regions []string `json:"regions"`
 }
 
 var regionsCache struct {
-	mu      sync.Mutex
+	mu       sync.Mutex
+	regions  []string
+	inflight *regionsFetch
+}
+
+// regionsFetch coordinates concurrent callers waiting on the same in-flight fetch
+// so the package-level mutex can be released while the network call is running.
+type regionsFetch struct {
+	done    chan struct{}
 	regions []string
+	err     error
 }
 
 // supportedRegionsForInit returns the list of Azure regions supported for hosted agents.
 // The result is cached for the process after the first successful fetch.
+//
+// The fetch itself is performed without holding regionsCache.mu so callers whose
+// context is canceled can return promptly even if another goroutine is mid-fetch.
 func supportedRegionsForInit(ctx context.Context) ([]string, error) {
 	regionsCache.mu.Lock()
-	defer regionsCache.mu.Unlock()
-
 	if regionsCache.regions != nil {
-		return slices.Clone(regionsCache.regions), nil
+		regions := slices.Clone(regionsCache.regions)
+		regionsCache.mu.Unlock()
+		return regions, nil
 	}
 
-	regions, err := fetchHostedAgentRegionsFromURL(ctx, http.DefaultClient, hostedAgentRegionsURL)
-	if err != nil {
-		return nil, err
+	fetch := regionsCache.inflight
+	if fetch == nil {
+		fetch = &regionsFetch{done: make(chan struct{})}
+		regionsCache.inflight = fetch
+		go runRegionsFetch(fetch)
 	}
+	regionsCache.mu.Unlock()
 
-	regionsCache.regions = regions
-	return slices.Clone(regions), nil
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-fetch.done:
+		if fetch.err != nil {
+			return nil, fetch.err
+		}
+		return slices.Clone(fetch.regions), nil
+	}
+}
+
+// runRegionsFetch performs the network fetch, populates the cache on success, and
+// signals all waiters via fetch.done. A failed fetch clears the inflight slot so
+// subsequent callers retry instead of latching the error forever.
+func runRegionsFetch(fetch *regionsFetch) {
+	// The fetch uses its own timeout (hostedAgentRegionsFetchTimeout) and is
+	// independent of any single caller's context, since the result is shared.
+	regions, err := fetchHostedAgentRegionsFromURL(
+		context.Background(), http.DefaultClient, hostedAgentRegionsURL,
+	)
+
+	regionsCache.mu.Lock()
+	if err == nil {
+		regionsCache.regions = regions
+	}
+	regionsCache.inflight = nil
+	regionsCache.mu.Unlock()
+
+	fetch.regions = regions
+	fetch.err = err
+	close(fetch.done)
 }
 
 // supportedModelLocations returns the intersection of a model's available locations with
@@ -98,9 +147,14 @@ func fetchHostedAgentRegionsFromURL(ctx context.Context, httpClient *http.Client
 		return nil, regionsFetchError(fmt.Errorf("unexpected HTTP status %d", resp.StatusCode))
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, hostedAgentRegionsManifestMaxBytes+1))
 	if err != nil {
 		return nil, regionsFetchError(err)
+	}
+	if len(body) > hostedAgentRegionsManifestMaxBytes {
+		return nil, regionsFetchError(fmt.Errorf(
+			"manifest exceeds %d byte limit", hostedAgentRegionsManifestMaxBytes,
+		))
 	}
 
 	var manifest hostedAgentRegionsManifest

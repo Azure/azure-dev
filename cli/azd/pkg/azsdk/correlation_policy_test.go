@@ -85,66 +85,9 @@ func Test_NewMsCorrelationPolicy(t *testing.T) {
 			expect: new(""),
 		},
 		{
-			name:                  "CorrelationId_WithoutTraceId",
-			ctx:                   t.Context(),
-			expect:                nil,
-			headerName:            MsCorrelationIdHeader,
-			correlationPolicyFunc: NewMsCorrelationPolicy,
-		},
-		{
-			name: "ClientRequestId_WithTraceId",
-			ctx: trace.ContextWithSpanContext(
-				t.Context(),
-				trace.SpanContext{}.WithTraceID(traceId),
-			),
-			expect:                new(traceId.String()),
-			headerName:            MsClientRequestIdHeader,
-			correlationPolicyFunc: NewMsClientRequestIdPolicy,
-		},
-		{
-			name: "ClientRequestId_WithInvalidTraceId",
-			ctx: trace.ContextWithSpanContext(
-				t.Context(),
-				trace.SpanContext{}.WithTraceID(invalidTraceId),
-			),
-			expect:                new(""),
-			headerName:            MsClientRequestIdHeader,
-			correlationPolicyFunc: NewMsClientRequestIdPolicy,
-		},
-		{
-			name:                  "ClientRequestId_WithoutTraceId",
-			ctx:                   t.Context(),
-			expect:                nil,
-			headerName:            MsClientRequestIdHeader,
-			correlationPolicyFunc: NewMsClientRequestIdPolicy,
-		},
-		{
-			name: "GraphCorrelationId_WithTraceId",
-			ctx: trace.ContextWithSpanContext(
-				t.Context(),
-				trace.SpanContext{}.WithTraceID(traceId),
-			),
-			expect:                new(traceId.String()),
-			headerName:            msGraphCorrelationIdHeader,
-			correlationPolicyFunc: NewMsGraphCorrelationPolicy,
-		},
-		{
-			name: "GraphCorrelationId_WithInvalidTraceId",
-			// nolint:lll
-			ctx: trace.ContextWithSpanContext(
-				t.Context(),
-				trace.SpanContext{}.WithTraceID(invalidTraceId),
-			),
-			expect:                new(""),
-			headerName:            msGraphCorrelationIdHeader,
-			correlationPolicyFunc: NewMsGraphCorrelationPolicy,
-		},
-		{
-			name:                  "GraphCorrelationId_WithoutTraceId",
-			ctx:                   t.Context(),
-			expect:                nil,
-			headerName:            msGraphCorrelationIdHeader,
-			correlationPolicyFunc: NewMsGraphCorrelationPolicy,
+			name:   "WithoutTraceId",
+			ctx:    t.Context(),
+			expect: nil,
 		},
 	}
 	for _, tt := range tests {

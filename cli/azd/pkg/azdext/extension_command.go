@@ -5,6 +5,7 @@ package azdext
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -19,8 +20,8 @@ import (
 
 const (
 	// flagAllowedValuesAnnotationPrefix prefixes cobra annotation keys that
-	// record per-command allowed values for an inherited flag. The value is
-	// a comma-joined list. See [RegisterFlagOptions].
+	// record per-command allowed values for an inherited flag. The value is a
+	// JSON-encoded []string. See [RegisterFlagOptions].
 	flagAllowedValuesAnnotationPrefix = "azdext.allowed-values/"
 	// flagDefaultAnnotationPrefix prefixes cobra annotation keys that record
 	// the per-command default for an inherited flag. See [RegisterFlagOptions].
@@ -265,7 +266,11 @@ func RegisterFlagOptions(cmd *cobra.Command, opts FlagOptions) *cobra.Command {
 		cmd.Annotations = map[string]string{}
 	}
 	if len(opts.AllowedValues) > 0 {
-		cmd.Annotations[flagAllowedValuesAnnotationPrefix+opts.Name] = strings.Join(opts.AllowedValues, ",")
+		encoded, err := json.Marshal(opts.AllowedValues)
+		if err != nil {
+			panic(fmt.Sprintf("azdext.RegisterFlagOptions: encode allowed values for flag %q: %v", opts.Name, err))
+		}
+		cmd.Annotations[flagAllowedValuesAnnotationPrefix+opts.Name] = string(encoded)
 	} else {
 		delete(cmd.Annotations, flagAllowedValuesAnnotationPrefix+opts.Name)
 	}
@@ -312,7 +317,10 @@ func flagOverridesForCommand(cmd *cobra.Command) map[string]flagOverride {
 			name := strings.TrimPrefix(key, flagAllowedValuesAnnotationPrefix)
 			o := out[name]
 			if val != "" {
-				o.AllowedValues = strings.Split(val, ",")
+				var values []string
+				if err := json.Unmarshal([]byte(val), &values); err == nil {
+					o.AllowedValues = values
+				}
 			}
 			out[name] = o
 		case strings.HasPrefix(key, flagDefaultAnnotationPrefix):
@@ -388,9 +396,14 @@ func applyFlagOptionsForCommand(cmd *cobra.Command) error {
 			continue
 		}
 		if ov.Default != "" {
-			if err := cmd.Flags().Set(name, ov.Default); err != nil {
+			// Use flag.Value.Set directly and preserve flag.Changed so callers
+			// of cmd.Flags().Changed(name) can still distinguish "user-supplied"
+			// from "SDK-substituted default".
+			wasChanged := flag.Changed
+			if err := flag.Value.Set(ov.Default); err != nil {
 				return fmt.Errorf("apply default for --%s: %w", name, err)
 			}
+			flag.Changed = wasChanged
 		}
 	}
 	return nil

@@ -81,18 +81,32 @@ func TestRegisterFlagOptions_AppliesPerCommandDefault(t *testing.T) {
 	root.SilenceErrors = true
 
 	var observed string
-	root.AddCommand(RegisterFlagOptions(&cobra.Command{
+	var changedAfterDefault, changedAfterExplicit bool
+	listCmd := RegisterFlagOptions(&cobra.Command{
 		Use: "list",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			observed = extCtx.OutputFormat
+			changedAfterDefault = cmd.Flags().Changed("output")
 			return nil
 		},
-	}, FlagOptions{Name: "output", AllowedValues: []string{"json", "table"}, Default: "json"}))
+	}, FlagOptions{Name: "output", AllowedValues: []string{"json", "table"}, Default: "json"})
+	root.AddCommand(listCmd)
 
 	root.SetArgs([]string{"list"})
 	require.NoError(t, root.Execute())
 	require.Equal(t, "json", observed)
 	require.Equal(t, "json", extCtx.OutputFormat)
+	// Substituting the default must not flip Changed; callers rely on it to
+	// distinguish user-supplied values from SDK defaults.
+	require.False(t, changedAfterDefault, "Changed must remain false when SDK substituted the default")
+
+	listCmd.RunE = func(cmd *cobra.Command, args []string) error {
+		changedAfterExplicit = cmd.Flags().Changed("output")
+		return nil
+	}
+	root.SetArgs([]string{"list", "--output", "table"})
+	require.NoError(t, root.Execute())
+	require.True(t, changedAfterExplicit, "Changed must be true when user supplied the flag")
 }
 
 func TestRegisterFlagOptions_AcceptsExplicitAllowedValue(t *testing.T) {

@@ -229,11 +229,11 @@ func (sc *ServiceConfig) CopyRuntimeStateTo(target *ServiceConfig) {
 
 	srcGuard := sc.ensureHookGuard()
 	srcGuard.mu.Lock()
+	defer srcGuard.mu.Unlock()
 	registration := srcGuard.registration
-	srcGuard.mu.Unlock()
 
 	dstGuard := target.ensureHookGuard()
 	dstGuard.mu.Lock()
+	defer dstGuard.mu.Unlock()
 	dstGuard.registration = registration
-	dstGuard.mu.Unlock()
 }

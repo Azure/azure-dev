@@ -48,8 +48,8 @@ func newDeployGraphState(services []*project.ServiceConfig) *deployGraphState {
 // StoreContext records the ServiceContext produced by a package step.
 func (s *deployGraphState) StoreContext(name string, ctx *project.ServiceContext) {
 	s.ctxMu.Lock()
+	defer s.ctxMu.Unlock()
 	s.contexts[name] = ctx
-	s.ctxMu.Unlock()
 }
 
 // LoadContext retrieves the ServiceContext for a service (nil if not yet stored).
@@ -62,8 +62,8 @@ func (s *deployGraphState) LoadContext(name string) *project.ServiceContext {
 // StoreResult records the ServiceDeployResult produced by a deploy step.
 func (s *deployGraphState) StoreResult(name string, result *project.ServiceDeployResult) {
 	s.resMu.Lock()
+	defer s.resMu.Unlock()
 	s.results[name] = result
-	s.resMu.Unlock()
 }
 
 // GetResult retrieves the ServiceDeployResult for a service (nil if not yet stored).

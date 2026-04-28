@@ -333,7 +333,7 @@ func (uc *UpdateChecker) HasUpdatesAvailable(
 	count := 0
 	for _, s := range statuses {
 		latest, ok := candidates[s.Tool.Id]
-		if ok && latest != s.InstalledVersion {
+		if ok && s.Installed && latest != s.InstalledVersion {
 			count++
 		}
 	}

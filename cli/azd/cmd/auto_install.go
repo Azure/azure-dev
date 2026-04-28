@@ -463,7 +463,7 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 	if err := ParseGlobalFlags(os.Args[1:], globalOpts); err != nil {
 		// main.go only exits on result.Err — print here so users see pre-cobra parse failures.
 		fmt.Fprintln(os.Stderr, output.WithErrorFormat("ERROR: %s", err.Error()))
-		result.Err = fmt.Errorf("failed to parse global flags: %w", err)
+		result.Err = err
 		return result
 	}
 
@@ -768,7 +768,7 @@ func ParseGlobalFlags(args []string, opts *internal.GlobalCommandOptions) error 
 	// Register --output/-o on the pre-parse set only (not in CreateGlobalFlagSet, which
 	// would shadow per-command output.AddOutputParam and cause GetCommandFormatter to reject
 	// the empty default). Without this, pflag's UnknownFlags allowlist walks attached short
-	// values like "-otable" char-by-char and trips on "-e" (a known string flag), failing
+	// values like "-o<value>" char-by-char and trips on "-e" (a known string flag), failing
 	// with `flag needs an argument: 'e' in -e`.
 	globalFlagSet.StringP("output", "o", "", "The output format (json, table, none).")
 

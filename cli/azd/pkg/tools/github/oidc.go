@@ -157,11 +157,15 @@ func BuildOIDCSubject(
 				fmt.Sprintf("repository_id:%d", repoInfo.ID),
 			)
 		case "repository_owner":
-			// repoSlug is always "owner/repo" — constructed by the caller
-			// from gitRepositoryDetails.owner + "/" + repoDetails.repoName.
-			owner := strings.SplitN(repoSlug, "/", 2)
+			ownerParts := strings.SplitN(repoSlug, "/", 2)
+			if len(ownerParts) != 2 || ownerParts[0] == "" || ownerParts[1] == "" {
+				return "", fmt.Errorf(
+					"invalid repoSlug format: expected 'owner/repo', got %q",
+					repoSlug,
+				)
+			}
 			parts = append(parts,
-				fmt.Sprintf("repository_owner:%s", owner[0]),
+				fmt.Sprintf("repository_owner:%s", ownerParts[0]),
 			)
 		case "repository":
 			parts = append(parts,

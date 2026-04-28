@@ -486,14 +486,9 @@ func (p *GitHubCiProvider) detectOIDCConfig(
 ) (*github.OIDCSubjectConfig, *github.RepoInfo, error) {
 	oidcConfig, err := p.ghCli.GetOIDCSubjectConfig(ctx, repoSlug)
 	if err != nil {
-		p.console.MessageUxItem(ctx, &ux.WarningMessage{
-			Description: fmt.Sprintf(
-				"Unable to query OIDC subject claim config;"+
-					" using default format. %v",
-				err,
-			),
-		})
-		return &github.OIDCSubjectConfig{UseDefault: true}, nil, nil
+		return nil, nil, fmt.Errorf(
+			"failed to query OIDC config for %s: %w", repoSlug, err,
+		)
 	}
 
 	var repoInfo *github.RepoInfo

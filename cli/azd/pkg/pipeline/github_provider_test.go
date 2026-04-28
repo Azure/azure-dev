@@ -242,7 +242,7 @@ func Test_credentialOptions_withOIDCCustomSubject(t *testing.T) {
 		)
 	})
 
-	t.Run("graceful fallback on OIDC API error", func(t *testing.T) {
+	t.Run("error on OIDC API failure", func(t *testing.T) {
 		mockContext := setupMock(t)
 
 		mockContext.CommandRunner.When(func(args exec.RunArgs, cmd string) bool {
@@ -253,21 +253,15 @@ func Test_credentialOptions_withOIDCCustomSubject(t *testing.T) {
 		})
 
 		provider := createGitHubCiProvider(t, mockContext).(*GitHubCiProvider)
-		opts, err := provider.credentialOptions(
+		_, err := provider.credentialOptions(
 			t.Context(),
 			repoDetails,
 			provisioning.Options{},
 			AuthTypeFederated,
 			nil,
 		)
-		require.NoError(t, err)
-		require.True(t, opts.EnableFederatedCredentials)
-
-		prCred := opts.FederatedCredentialOptions[0]
-		require.Equal(t,
-			"repo:Azure-Samples/my-repo:pull_request",
-			prCred.Subject,
-		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to query")
 	})
 
 	t.Run("multiple branches with custom OIDC", func(t *testing.T) {

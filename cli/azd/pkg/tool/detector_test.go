@@ -457,6 +457,26 @@ func TestDetectTool_CommandBased(t *testing.T) {
 			expectErrContain: "checking PATH",
 		},
 		{
+			name: "VersionRegexSetButNoMatch",
+			tool: &ToolDefinition{
+				Id:            "strict-server",
+				Category:      ToolCategoryServer,
+				DetectCommand: "strict-server",
+				VersionArgs:   []string{"--version"},
+				VersionRegex:  `strict-server\s+(\d+\.\d+\.\d+)`,
+			},
+			setup: func(runner *mockexec.MockCommandRunner) {
+				runner.MockToolInPath("strict-server", nil)
+				runner.When(func(args exec.RunArgs, _ string) bool {
+					return args.Cmd == "strict-server"
+				}).Respond(exec.RunResult{
+					ExitCode: 0,
+					Stdout:   "no version here",
+				})
+			},
+			expectInstalled: false,
+		},
+		{
 			name: "NotFoundOnRunReturnsNotInstalled",
 			tool: &ToolDefinition{
 				Id:            "transient",

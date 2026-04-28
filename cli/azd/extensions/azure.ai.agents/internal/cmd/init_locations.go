@@ -72,7 +72,10 @@ func supportedRegionsForInit(ctx context.Context) ([]string, error) {
 	if fetch == nil {
 		fetch = &regionsFetch{done: make(chan struct{})}
 		regionsCache.inflight = fetch
-		go runRegionsFetch(fetch)
+		// context.WithoutCancel keeps any context values but drops cancellation,
+		// because the fetch result is shared across all waiters and must not be
+		// aborted by a single caller's cancellation.
+		go runRegionsFetch(context.WithoutCancel(ctx), fetch)
 	}
 	regionsCache.mu.Unlock()
 
@@ -90,12 +93,12 @@ func supportedRegionsForInit(ctx context.Context) ([]string, error) {
 // runRegionsFetch performs the network fetch, populates the cache on success, and
 // signals all waiters via fetch.done. If the fetch fails, the embedded build-time
 // manifest is used as a fallback so a transient network issue doesn't halt init.
-func runRegionsFetch(fetch *regionsFetch) {
-	// The fetch uses its own timeout (hostedAgentRegionsFetchTimeout) and is
-	// independent of any single caller's context, since the result is shared.
-	regions, err := fetchHostedAgentRegionsFromURL(
-		context.Background(), http.DefaultClient, hostedAgentRegionsURL,
-	)
+//
+// ctx must not carry a cancellation that any single caller can trigger, since the
+// fetch result is shared. Callers pass context.WithoutCancel(callerCtx).
+func runRegionsFetch(ctx context.Context, fetch *regionsFetch) {
+	// The fetch applies its own timeout (hostedAgentRegionsFetchTimeout).
+	regions, err := fetchHostedAgentRegionsFromURL(ctx, http.DefaultClient, hostedAgentRegionsURL)
 
 	if err != nil {
 		if fallback, fbErr := parseEmbeddedHostedAgentRegions(); fbErr == nil && len(fallback) > 0 {

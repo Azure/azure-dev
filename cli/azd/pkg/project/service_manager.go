@@ -820,10 +820,21 @@ func (sm *serviceManager) cachedTargetResource(
 	}
 	sm.mu.Unlock()
 
+	log.Printf(
+		"resolving target resource for service %q (no cache hit)",
+		serviceConfig.Name)
 	resource, err := sm.GetTargetResource(ctx, serviceConfig, serviceTarget)
 	if err != nil {
+		log.Printf(
+			"target resource resolution failed for service %q: %v",
+			serviceConfig.Name, err)
 		return nil, err
 	}
+	log.Printf(
+		"target resource resolved for service %q: rg=%s name=%s",
+		serviceConfig.Name,
+		resource.ResourceGroupName(),
+		resource.ResourceName())
 
 	sm.mu.Lock()
 	sm.operationCache[cacheKey] = resource

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -96,10 +97,17 @@ func (rm *resourceManager) GetResourceGroupName(
 		return envResourceGroupName, nil
 	}
 
-	resourceGroupName, err := rm.azureResourceManager.FindResourceGroupForEnvironment(ctx, subscriptionId, rm.env.Name())
+	log.Printf(
+		"AZURE_RESOURCE_GROUP not set; searching Azure for"+
+			" environment %q resource group",
+		rm.env.Name())
+	resourceGroupName, err := rm.azureResourceManager.FindResourceGroupForEnvironment(
+		ctx, subscriptionId, rm.env.Name())
 	if err != nil {
 		return "", err
 	}
+	log.Printf("found resource group %q for environment %q",
+		resourceGroupName, rm.env.Name())
 
 	return resourceGroupName, nil
 }

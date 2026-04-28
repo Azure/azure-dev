@@ -384,7 +384,7 @@ func addServiceStepsToGraph(g *exegraph.Graph, opts serviceGraphOptions) (*servi
 			Name:      publishStepName,
 			DependsOn: publishDeps,
 			Tags:      []string{"publish"},
-			Action: func(ctx context.Context) error {
+			Action: func(stepCtx context.Context) error {
 				sc := opts.state.LoadContext(pubSvc.Name)
 
 				if sc == nil {
@@ -394,13 +394,34 @@ func addServiceStepsToGraph(g *exegraph.Graph, opts serviceGraphOptions) (*servi
 					)
 				}
 
+				// Apply the same timeout as the deploy step. The publish
+				// action resolves the Azure target resource (API calls to
+				// find the resource group and service resource) and can
+				// block indefinitely without a bound — especially right
+				// after provisioning when Azure resources may not yet be
+				// visible due to eventual consistency.
+				pubCtx, pubCancel := context.WithTimeout(
+					stepCtx, opts.deployTimeout)
+				defer pubCancel()
+
 				progress := newPhaseProgress(pubSvc.Name, phasePublish)
 				defer progress.Wait()
 				defer progress.Done()
 				if _, pubErr := opts.serviceManager.Publish(
-					ctx, pubSvc, sc, progress.Progress, nil,
+					pubCtx, pubSvc, sc, progress.Progress, nil,
 				); pubErr != nil {
-					return fmt.Errorf("publishing service %s: %w", pubSvc.Name, pubErr)
+					if errors.Is(pubCtx.Err(),
+						context.DeadlineExceeded) {
+						return fmt.Errorf(
+							"publishing service '%s' timed out"+
+								" after %d seconds",
+							pubSvc.Name,
+							int(opts.deployTimeout.Seconds()),
+						)
+					}
+					return fmt.Errorf(
+						"publishing service %s: %w",
+						pubSvc.Name, pubErr)
 				}
 				return nil
 			},

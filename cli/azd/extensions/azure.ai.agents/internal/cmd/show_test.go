@@ -4,7 +4,10 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
+	"os"
 	"testing"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
@@ -12,6 +15,25 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func captureStdout(t *testing.T, fn func() error) string {
+	t.Helper()
+	orig := os.Stdout
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	os.Stdout = w
+
+	runErr := fn()
+
+	require.NoError(t, w.Close())
+	os.Stdout = orig
+
+	var buf bytes.Buffer
+	_, err = io.Copy(&buf, r)
+	require.NoError(t, err)
+	require.NoError(t, runErr)
+	return buf.String()
+}
 
 func TestShowCommand_AcceptsPositionalArg(t *testing.T) {
 	cmd := newShowCommand()
@@ -83,7 +105,7 @@ func TestPrintAgentVersionJSON(t *testing.T) {
 		CreatedAt: 1735689600, // 2025-01-01T00:00:00Z
 	}
 
-	err := printAgentVersionJSON(version)
+	err := printAgentVersionJSON(version, nil)
 	require.NoError(t, err)
 }
 
@@ -165,8 +187,83 @@ func TestPrintAgentVersionTable(t *testing.T) {
 		},
 	}
 
-	err := printAgentVersionTable(version)
+	err := printAgentVersionTable(version, nil)
 	require.NoError(t, err)
+}
+
+func TestPrintAgentVersionJSON_WithEndpoint(t *testing.T) {
+	version := &agent_api.AgentVersionObject{
+		Object:  "agent.version",
+		ID:      "ver-ep",
+		Name:    "ep-agent",
+		Version: "1",
+	}
+	endpoint := &agent_api.AgentEndpointInfo{
+		Protocols: []string{"responses", "a2a"},
+		AuthorizationSchemes: []agent_api.AuthorizationScheme{
+			{
+				Type: "EntraIDAuth",
+				IsolationKeySource: &agent_api.IsolationKeySource{Kind: "ProjectScopedManagedIdentity"},
+			},
+		},
+	}
+
+	out := captureStdout(t, func() error { return printAgentVersionJSON(version, endpoint) })
+
+	var result map[string]any
+	require.NoError(t, json.Unmarshal([]byte(out), &result))
+
+	ep, ok := result["agent_endpoint"].(map[string]any)
+	require.True(t, ok, "agent_endpoint missing in JSON output")
+	protocols := ep["protocols"].([]any)
+	assert.ElementsMatch(t, []any{"responses", "a2a"}, protocols)
+	schemes := ep["authorization_schemes"].([]any)
+	require.Len(t, schemes, 1)
+	scheme := schemes[0].(map[string]any)
+	assert.Equal(t, "EntraIDAuth", scheme["type"])
+	assert.Equal(t, "ProjectScopedManagedIdentity", scheme["isolation_key_source"].(map[string]any)["kind"])
+}
+
+func TestPrintAgentVersionJSON_NilEndpointOmitsField(t *testing.T) {
+	version := &agent_api.AgentVersionObject{
+		Object:  "agent.version",
+		ID:      "ver-no-ep",
+		Name:    "no-ep-agent",
+		Version: "1",
+	}
+
+	out := captureStdout(t, func() error { return printAgentVersionJSON(version, nil) })
+
+	var result map[string]any
+	require.NoError(t, json.Unmarshal([]byte(out), &result))
+	_, hasEndpoint := result["agent_endpoint"]
+	assert.False(t, hasEndpoint, "agent_endpoint should be omitted when nil")
+}
+
+func TestPrintAgentVersionTable_WithEndpoint(t *testing.T) {
+	version := &agent_api.AgentVersionObject{
+		Object:  "agent.version",
+		ID:      "ver-ep",
+		Name:    "ep-agent",
+		Version: "1",
+	}
+	endpoint := &agent_api.AgentEndpointInfo{
+		Protocols: []string{"responses", "a2a"},
+		AuthorizationSchemes: []agent_api.AuthorizationScheme{
+			{Type: "EntraIDAuth", IsolationKeySource: &agent_api.IsolationKeySource{Kind: "ProjectScopedManagedIdentity"}},
+			{Type: "ApiKeyAuth"},
+		},
+	}
+
+	out := captureStdout(t, func() error { return printAgentVersionTable(version, endpoint) })
+
+	assert.Contains(t, out, "Endpoint Protocols")
+	assert.Contains(t, out, "responses, a2a")
+	assert.Contains(t, out, "Endpoint Auth[0]")
+	assert.Contains(t, out, "EntraIDAuth")
+	assert.Contains(t, out, "isolation: ProjectScopedManagedIdentity")
+	assert.Contains(t, out, "Endpoint Auth[1]")
+	assert.Contains(t, out, "ApiKeyAuth")
 }
 
 func TestPrintAgentVersionTable_MinimalFields(t *testing.T) {
@@ -177,6 +274,6 @@ func TestPrintAgentVersionTable_MinimalFields(t *testing.T) {
 		Version: "1",
 	}
 
-	err := printAgentVersionTable(version)
+	err := printAgentVersionTable(version, nil)
 	require.NoError(t, err)
 }

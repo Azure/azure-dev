@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -108,23 +109,32 @@ func (a *ShowAction) Run(ctx context.Context) error {
 		return err
 	}
 
-	version, err := agentClient.GetAgentVersion(
-		ctx, a.Name, a.Version, DefaultAgentAPIVersion,
-	)
+	version, err := agentClient.GetAgentVersion(ctx, a.Name, a.Version, DefaultAgentAPIVersion)
 	if err != nil {
 		return fmt.Errorf("failed to get agent version: %w", err)
 	}
 
+	var endpoint *agent_api.AgentEndpointInfo
+	if agent, err := agentClient.GetAgent(ctx, a.Name, DefaultAgentAPIVersion); err == nil {
+		endpoint = agent.AgentEndpoint
+	}
+
 	switch a.flags.output {
 	case "table":
-		return printAgentVersionTable(version)
+		return printAgentVersionTable(version, endpoint)
 	default:
-		return printAgentVersionJSON(version)
+		return printAgentVersionJSON(version, endpoint)
 	}
 }
 
-func printAgentVersionJSON(version *agent_api.AgentVersionObject) error {
-	jsonBytes, err := json.MarshalIndent(version, "", "  ")
+type agentShowOutput struct {
+	*agent_api.AgentVersionObject
+	AgentEndpoint *agent_api.AgentEndpointInfo `json:"agent_endpoint,omitempty"`
+}
+
+func printAgentVersionJSON(version *agent_api.AgentVersionObject, endpoint *agent_api.AgentEndpointInfo) error {
+	out := agentShowOutput{AgentVersionObject: version, AgentEndpoint: endpoint}
+	jsonBytes, err := json.MarshalIndent(out, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal agent version to JSON: %w", err)
 	}
@@ -132,7 +142,7 @@ func printAgentVersionJSON(version *agent_api.AgentVersionObject) error {
 	return nil
 }
 
-func printAgentVersionTable(version *agent_api.AgentVersionObject) error {
+func printAgentVersionTable(version *agent_api.AgentVersionObject, endpoint *agent_api.AgentEndpointInfo) error {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "FIELD\tVALUE")
 	fmt.Fprintln(w, "-----\t-----")
@@ -167,6 +177,19 @@ func printAgentVersionTable(version *agent_api.AgentVersionObject) error {
 	}
 	for k, v := range version.Metadata {
 		fmt.Fprintf(w, "Metadata[%s]\t%s\n", k, v)
+	}
+	if endpoint != nil {
+		if len(endpoint.Protocols) > 0 {
+			fmt.Fprintf(w, "Endpoint Protocols\t%s\n", strings.Join(endpoint.Protocols, ", "))
+		}
+		for i, scheme := range endpoint.AuthorizationSchemes {
+			label := fmt.Sprintf("Endpoint Auth[%d]", i)
+			if scheme.IsolationKeySource != nil {
+				fmt.Fprintf(w, "%s\t%s (isolation: %s)\n", label, scheme.Type, scheme.IsolationKeySource.Kind)
+			} else {
+				fmt.Fprintf(w, "%s\t%s\n", label, scheme.Type)
+			}
+		}
 	}
 
 	return w.Flush()

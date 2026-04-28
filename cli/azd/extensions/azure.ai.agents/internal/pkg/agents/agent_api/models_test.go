@@ -5,6 +5,7 @@ package agent_api
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -79,6 +80,12 @@ func TestAgentObject_RoundTrip(t *testing.T) {
 				CreatedAt:   1700000000,
 			},
 		},
+		AgentEndpoint: &AgentEndpointInfo{
+			Protocols: []string{"responses", "a2a"},
+			AuthorizationSchemes: []AuthorizationScheme{
+				{Type: "Entra", IsolationKeySource: &IsolationKeySource{Kind: "Entra"}},
+			},
+		},
 	}
 
 	data, err := json.Marshal(original)
@@ -87,7 +94,10 @@ func TestAgentObject_RoundTrip(t *testing.T) {
 	}
 
 	s := string(data)
-	for _, field := range []string{`"object"`, `"id"`, `"name"`, `"versions"`, `"latest"`} {
+	for _, field := range []string{
+		`"object"`, `"id"`, `"name"`, `"versions"`, `"latest"`,
+		`"agent_endpoint"`, `"protocols"`, `"authorization_schemes"`,
+	} {
 		if !strings.Contains(s, field) {
 			t.Errorf("expected JSON to contain %s", field)
 		}
@@ -106,6 +116,17 @@ func TestAgentObject_RoundTrip(t *testing.T) {
 	}
 	if got.Versions.Latest.CreatedAt != 1700000000 {
 		t.Errorf("Latest.CreatedAt = %d, want %d", got.Versions.Latest.CreatedAt, int64(1700000000))
+	}
+	if got.AgentEndpoint == nil {
+		t.Fatalf("AgentEndpoint = nil, want non-nil")
+	}
+	if !slices.Contains(got.AgentEndpoint.Protocols, "responses") {
+		t.Errorf("AgentEndpoint.Protocols = %v, want to contain %q", got.AgentEndpoint.Protocols, "responses")
+	}
+	if len(got.AgentEndpoint.AuthorizationSchemes) != 1 ||
+		got.AgentEndpoint.AuthorizationSchemes[0].Type != "Entra" {
+		t.Errorf("AgentEndpoint.AuthorizationSchemes = %+v, want one entry of type Entra",
+			got.AgentEndpoint.AuthorizationSchemes)
 	}
 }
 

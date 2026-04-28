@@ -192,6 +192,24 @@ type AgentObject struct {
 	Versions struct {
 		Latest AgentVersionObject `json:"latest"`
 	} `json:"versions"`
+	AgentEndpoint *AgentEndpointInfo `json:"agent_endpoint,omitempty"`
+}
+
+// AgentEndpointInfo describes the public endpoint of an agent.
+type AgentEndpointInfo struct {
+	Protocols            []string              `json:"protocols,omitempty"`
+	AuthorizationSchemes []AuthorizationScheme `json:"authorization_schemes,omitempty"`
+}
+
+// AuthorizationScheme describes one authentication mechanism accepted by an agent endpoint.
+type AuthorizationScheme struct {
+	Type               string              `json:"type"`
+	IsolationKeySource *IsolationKeySource `json:"isolation_key_source,omitempty"`
+}
+
+// IsolationKeySource indicates how per-caller isolation keys are derived.
+type IsolationKeySource struct {
+	Kind string `json:"kind"`
 }
 
 // CommonListObjectProperties represents common properties for list responses

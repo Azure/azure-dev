@@ -182,7 +182,7 @@ func TestFetchAgentTemplates(t *testing.T) {
 		require.Empty(t, result)
 	})
 
-	t.Run("manifest with only gallery entries returns empty", func(t *testing.T) {
+	t.Run("manifest with only gallery entries returns error", func(t *testing.T) {
 		t.Parallel()
 
 		manifest := []map[string]any{
@@ -202,8 +202,10 @@ func TestFetchAgentTemplates(t *testing.T) {
 		defer server.Close()
 
 		result, err := fetchAgentTemplatesFromURL(t.Context(), server.Client(), server.URL)
-		require.NoError(t, err)
-		require.Empty(t, result)
+		require.Error(t, err)
+		require.Nil(t, result)
+		require.Contains(t, err.Error(), "extension.ai.agent")
+		require.Contains(t, err.Error(), "1 entries")
 	})
 }
 

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -48,7 +49,7 @@ type AgentTemplate struct {
 	Languages          []string `json:"languages"`
 	ExtensionFramework string   `json:"extensionFramework"`
 	Source             string   `json:"source"`
-	Tags               []string `json:"extensionTags"`
+	ExtensionTags      []string `json:"extensionTags"`
 	TemplateType       string   `json:"templateType"`
 }
 
@@ -138,7 +139,6 @@ func fetchAgentTemplatesFromURL(
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	//nolint:gosec // URL is supplied by the caller from a trusted constant or a test server
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch agent templates: %w", err)
@@ -166,6 +166,24 @@ func fetchAgentTemplatesFromURL(
 		if t.TemplateType == templateTypeExtensionAIAgent {
 			filtered = append(filtered, t)
 		}
+	}
+
+	// Always emit the fetched/matched counts to make transition-period and
+	// misconfiguration issues debuggable.
+	log.Printf(
+		"agent templates manifest: fetched %d templateType=%q (source=%s)",
+		len(filtered), templateTypeExtensionAIAgent, url,
+	)
+
+	// If we received entries but filtered them all out, the manifest is
+	// almost certainly in the legacy format or the discriminator value has
+	// changed. Surface that explicitly instead of returning an empty list,
+	// which the caller cannot distinguish from an intentionally empty manifest.
+	if len(all) > 0 && len(filtered) == 0 {
+		return nil, fmt.Errorf(
+			"agent templates manifest at %s contained %d entries but none had templateType=%q",
+			url, len(all), templateTypeExtensionAIAgent,
+		)
 	}
 
 	return filtered, nil
@@ -222,7 +240,7 @@ func promptAgentTemplate(
 	selectedLanguage := languageChoices[*langResp.Value].Value
 
 	// Filter templates by selected language (entries can declare multiple).
-	var filtered []AgentTemplate
+	filtered := make([]AgentTemplate, 0, len(templates))
 	for _, t := range templates {
 		if slices.Contains(t.Languages, selectedLanguage) {
 			filtered = append(filtered, t)

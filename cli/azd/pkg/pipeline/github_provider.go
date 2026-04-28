@@ -468,7 +468,27 @@ func (p *GitHubCiProvider) resolveOIDCSubjects(
 		repoSlug, repoInfo, oidcConfig, branches,
 	)
 	if err != nil {
-		return nil, err
+		// In non-interactive mode, fail hard on unsupported claim keys
+		if p.console.IsNoPromptMode() {
+			return nil, err
+		}
+
+		// In interactive mode, warn and fall through to manual prompt
+		// with default-format pre-fills so the user can enter correct subjects
+		p.console.MessageUxItem(ctx, &ux.WarningMessage{
+			Description: fmt.Sprintf(
+				"Unable to build OIDC subjects from detected config: %v."+
+					" Falling back to default format for manual entry.",
+				err,
+			),
+		})
+		defaultConfig := &github.OIDCSubjectConfig{UseDefault: true}
+		subjects, err = buildAllSubjects(
+			repoSlug, nil, defaultConfig, branches,
+		)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// In non-interactive mode, use detected subjects without prompting

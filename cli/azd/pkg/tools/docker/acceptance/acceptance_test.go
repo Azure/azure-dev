@@ -37,7 +37,7 @@ func Test_DockerAcceptance(t *testing.T) {
 		t.Skip("Skipping Docker acceptance test. Set AZD_TEST_DOCKER_E2E=1 to enable.")
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	cli := docker.NewCli(exec.NewCommandRunner(nil))
 
 	// 1. CheckInstalled - validates runtime is available

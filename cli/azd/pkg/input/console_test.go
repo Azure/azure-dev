@@ -4,12 +4,12 @@
 package input
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -19,10 +19,21 @@ import (
 )
 
 type lineCapturer struct {
+	mu       sync.Mutex
 	captured []string
 }
 
+func (l *lineCapturer) lines() []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	out := make([]string, len(l.captured))
+	copy(out, l.captured)
+	return out
+}
+
 func (l *lineCapturer) Write(bytes []byte) (n int, err error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	var sb strings.Builder
 	for i, b := range bytes {
 		if b == '\n' {
@@ -43,8 +54,9 @@ func (l *lineCapturer) Write(bytes []byte) (n int, err error) {
 // Verifies no extra output is printed in non-tty scenarios for the spinner.
 func TestAskerConsole_Spinner_NonTty(t *testing.T) {
 	// The underlying spinner relies on non-blocking channels for paint updates.
-	// We need to give it some time to paint.
-	const waitTime = 50 * time.Millisecond
+	// Poll until the expected output is painted instead of using fixed sleeps.
+	const waitTimeout = 2 * time.Second
+	const pollInterval = 5 * time.Millisecond
 
 	formatter, err := output.NewFormatter(string(output.NoneFormat))
 	require.NoError(t, err)
@@ -63,37 +75,33 @@ func TestAskerConsole_Spinner_NonTty(t *testing.T) {
 		nil,
 	)
 
-	ctx := context.Background()
-	require.Len(t, lines.captured, 0)
+	ctx := t.Context()
+	require.Len(t, lines.lines(), 0)
 	c.ShowSpinner(ctx, "Some title.", Step)
 
-	time.Sleep(waitTime)
-	require.Len(t, lines.captured, 1)
-	require.Equal(t, lines.captured[0], "Some title.")
+	require.Eventually(t, func() bool { return len(lines.lines()) == 1 }, waitTimeout, pollInterval)
+	require.Equal(t, lines.lines()[0], "Some title.")
 
 	c.ShowSpinner(ctx, "Some title 2.", Step)
-	time.Sleep(waitTime)
-	require.Len(t, lines.captured, 2)
-	require.Equal(t, lines.captured[1], "Some title 2.")
+	require.Eventually(t, func() bool { return len(lines.lines()) == 2 }, waitTimeout, pollInterval)
+	require.Equal(t, lines.lines()[1], "Some title 2.")
 
 	c.StopSpinner(ctx, "", StepDone)
-	time.Sleep(waitTime)
-	require.Len(t, lines.captured, 2)
-	require.Equal(t, lines.captured[1], "Some title 2.")
+	// StopSpinner with empty message should not add a new line; give the spinner a
+	// chance to paint and assert count is still 2.
+	require.Never(t, func() bool { return len(lines.lines()) != 2 }, 100*time.Millisecond, pollInterval)
+	require.Equal(t, lines.lines()[1], "Some title 2.")
 
 	c.ShowSpinner(ctx, "Some title 3.", Step)
-	time.Sleep(waitTime)
-	require.Len(t, lines.captured, 3)
-	require.Equal(t, lines.captured[2], "Some title 3.")
+	require.Eventually(t, func() bool { return len(lines.lines()) == 3 }, waitTimeout, pollInterval)
+	require.Equal(t, lines.lines()[2], "Some title 3.")
 
 	c.Message(ctx, "Some message.")
-	time.Sleep(waitTime)
-	require.Len(t, lines.captured, 4)
-	require.Equal(t, lines.captured[3], "Some message.")
+	require.Eventually(t, func() bool { return len(lines.lines()) == 4 }, waitTimeout, pollInterval)
+	require.Equal(t, lines.lines()[3], "Some message.")
 
 	c.StopSpinner(ctx, "Done.", StepDone)
-	time.Sleep(waitTime)
-	require.Len(t, lines.captured, 5)
+	require.Eventually(t, func() bool { return len(lines.lines()) == 5 }, waitTimeout, pollInterval)
 }
 
 func TestAskerConsoleExternalPrompt(t *testing.T) {
@@ -133,7 +141,7 @@ func TestAskerConsoleExternalPrompt(t *testing.T) {
 
 		c := newConsole(externalPromptCfg)
 
-		res, err := c.Confirm(context.Background(), ConsoleOptions{Message: "Are you sure?", DefaultValue: true})
+		res, err := c.Confirm(t.Context(), ConsoleOptions{Message: "Are you sure?", DefaultValue: true})
 		require.NoError(t, err)
 		require.False(t, res)
 	})
@@ -156,7 +164,7 @@ func TestAskerConsoleExternalPrompt(t *testing.T) {
 
 		c := newConsole(externalPromptCfg)
 
-		res, err := c.Prompt(context.Background(), ConsoleOptions{Message: "What is your name?"})
+		res, err := c.Prompt(t.Context(), ConsoleOptions{Message: "What is your name?"})
 		require.NoError(t, err)
 		require.Equal(t, "John Doe", res)
 	})
@@ -191,7 +199,7 @@ func TestAskerConsoleExternalPrompt(t *testing.T) {
 		c := newConsole(externalPromptCfg)
 
 		res, err := c.Select(
-			context.Background(),
+			t.Context(),
 			ConsoleOptions{
 				Message:       "What is your favorite color?",
 				Options:       []string{"Red", "Green", "Blue"},
@@ -232,7 +240,7 @@ func TestAskerConsoleExternalPrompt(t *testing.T) {
 		c := newConsole(externalPromptCfg)
 
 		res, err := c.MultiSelect(
-			context.Background(),
+			t.Context(),
 			ConsoleOptions{
 				Message:       "What are your favorite colors?",
 				Options:       []string{"Red", "Green", "Blue"},
@@ -332,7 +340,7 @@ func TestAskerConsole_Message_JsonQueryFilter(t *testing.T) {
 				nil,
 			)
 
-			c.Message(context.Background(), "hello world")
+			c.Message(t.Context(), "hello world")
 
 			tc.assert(t, buf.String())
 		})
@@ -357,7 +365,7 @@ func TestAskerConsole_Message_InvalidQuery_FallsBack(t *testing.T) {
 	)
 
 	// Should not panic; falls back to unfiltered output
-	c.Message(context.Background(), "hello world")
+	c.Message(t.Context(), "hello world")
 
 	got := buf.String()
 	require.Contains(t, got, `"consoleMessage"`,
@@ -382,11 +390,11 @@ func TestAskerConsole_Message_EmptySkippedInJson(t *testing.T) {
 	)
 
 	// An empty message should produce no JSON output (it's just a visual separator in text mode)
-	c.Message(context.Background(), "")
+	c.Message(t.Context(), "")
 	require.Empty(t, buf.String(), "empty message should not emit any JSON output")
 
 	// A non-empty message should still produce JSON output
-	c.Message(context.Background(), "hello")
+	c.Message(t.Context(), "hello")
 	require.NotEmpty(t, buf.String(), "non-empty message should emit JSON output")
 	require.Contains(t, buf.String(), `"consoleMessage"`)
 }

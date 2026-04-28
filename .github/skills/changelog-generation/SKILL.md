@@ -50,7 +50,7 @@ Auto-detect scope from the current working directory:
 
 For version derivation rules, see [references/scope-rules.md](references/scope-rules.md) § Version Files.
 
-- **Core**: derive version from the existing unreleased header (strip `-beta.*` and `(Unreleased)`), use today's date. Update `cli/version.txt` and `cli/azd/pkg/azdext/version.go` (`Version` constant) to the released version.
+- **Core**: use the version specified in the triggering issue or user request if explicit (e.g., "Create changelog for 1.24.2"); otherwise derive from the existing unreleased header (strip `-beta.*` and `(Unreleased)`), use today's date. Update `cli/version.txt` and `cli/azd/pkg/azdext/version.go` (`Version` constant) to the released version.
 - **Extension**: ask the user for the new version number via `ask_user`. Update both `version.txt` and `extension.yaml` — they must match exactly.
 
 Present the version and date to the user for confirmation before writing any files.

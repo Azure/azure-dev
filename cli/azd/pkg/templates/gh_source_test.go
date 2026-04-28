@@ -4,7 +4,6 @@
 package templates
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"path/filepath"
@@ -19,7 +18,7 @@ import (
 
 func Test_GhSourceRawFile(t *testing.T) {
 	name := "test"
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, string(filepath.Separator)+"gh") && args.Args[0] == "--version"
@@ -53,7 +52,7 @@ func Test_GhSourceRawFile(t *testing.T) {
 
 func Test_GhSourceApiFile(t *testing.T) {
 	name := "test"
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, string(filepath.Separator)+"gh") && args.Args[0] == "--version"
@@ -87,7 +86,7 @@ func Test_GhSourceApiFile(t *testing.T) {
 
 func Test_GhSourceUrl(t *testing.T) {
 	name := "test"
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, string(filepath.Separator)+"gh") && args.Args[0] == "--version"
@@ -122,7 +121,7 @@ func Test_GhSourceUrl(t *testing.T) {
 // Test_GhSourceUrlWithBlobAndBranchSlashes tests GitHub URLs with "blob" segment and branch names containing slashes
 func Test_GhSourceUrlWithBlobAndBranchSlashes(t *testing.T) {
 	name := "test"
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, string(filepath.Separator)+"gh") && args.Args[0] == "--version"
@@ -185,7 +184,7 @@ func Test_GhSourceUrlWithBlobAndBranchSlashes(t *testing.T) {
 // Test_GhSourceUrlWithTreeAndBranchSlashes tests GitHub URLs with "tree" segment and branch names containing slashes
 func Test_GhSourceUrlWithTreeAndBranchSlashes(t *testing.T) {
 	name := "test"
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, string(filepath.Separator)+"gh") && args.Args[0] == "--version"
@@ -247,7 +246,7 @@ func Test_GhSourceUrlWithTreeAndBranchSlashes(t *testing.T) {
 // Test_GhSourceRawFileWithBranchSlashes tests raw GitHub URLs with branch names containing multiple slashes
 func Test_GhSourceRawFileWithBranchSlashes(t *testing.T) {
 	name := "test"
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, string(filepath.Separator)+"gh") && args.Args[0] == "--version"
@@ -308,7 +307,7 @@ func Test_GhSourceRawFileWithBranchSlashes(t *testing.T) {
 // Test_GhSourceApiFileWithRefParameter tests API URLs with ref query parameter containing slashes
 func Test_GhSourceApiFileWithRefParameter(t *testing.T) {
 	name := "test"
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, string(filepath.Separator)+"gh") && args.Args[0] == "--version"
@@ -351,7 +350,7 @@ func Test_GhSourceApiFileWithRefParameter(t *testing.T) {
 
 // Test_ParseGitHubUrl_RawUrl tests parsing raw.githubusercontent.com URLs
 func Test_ParseGitHubUrl_RawUrl(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, string(filepath.Separator)+"gh") && args.Args[0] == "--version"
@@ -396,7 +395,7 @@ func Test_ParseGitHubUrl_RawUrl(t *testing.T) {
 
 // Test_ParseGitHubUrl_BlobUrl tests parsing github.com/blob URLs
 func Test_ParseGitHubUrl_BlobUrl(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, string(filepath.Separator)+"gh") && args.Args[0] == "--version"
@@ -436,7 +435,7 @@ func Test_ParseGitHubUrl_BlobUrl(t *testing.T) {
 
 // Test_ParseGitHubUrl_TreeUrl tests parsing github.com/tree URLs
 func Test_ParseGitHubUrl_TreeUrl(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, string(filepath.Separator)+"gh") && args.Args[0] == "--version"
@@ -480,7 +479,7 @@ func Test_ParseGitHubUrl_TreeUrl(t *testing.T) {
 
 // Test_ParseGitHubUrl_ApiUrl tests parsing api.github.com URLs
 func Test_ParseGitHubUrl_ApiUrl(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, string(filepath.Separator)+"gh") && args.Args[0] == "--version"
@@ -505,7 +504,7 @@ func Test_ParseGitHubUrl_ApiUrl(t *testing.T) {
 
 // Test_ParseGitHubUrl_BranchWithSlashes tests parsing URLs with branch names containing slashes
 func Test_ParseGitHubUrl_BranchWithSlashes(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, string(filepath.Separator)+"gh") && args.Args[0] == "--version"
@@ -555,7 +554,7 @@ func Test_ParseGitHubUrl_BranchWithSlashes(t *testing.T) {
 
 // Test_ParseGitHubUrl_EnterpriseUrl tests parsing GitHub Enterprise URLs
 func Test_ParseGitHubUrl_EnterpriseUrl(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, string(filepath.Separator)+"gh") && args.Args[0] == "--version"
@@ -610,7 +609,7 @@ func Test_ParseGitHubUrl_InvalidUrl(t *testing.T) {
 		{"invalid api format", "https://api.github.com/repos/owner"},
 	}
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, string(filepath.Separator)+"gh") && args.Args[0] == "--version"
@@ -630,7 +629,7 @@ func Test_ParseGitHubUrl_InvalidUrl(t *testing.T) {
 
 // Test_ParseGitHubUrl_NotAuthenticated tests that ParseGitHubUrl properly handles unauthenticated scenarios
 func Test_ParseGitHubUrl_NotAuthenticated(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, string(filepath.Separator)+"gh") && args.Args[0] == "--version"

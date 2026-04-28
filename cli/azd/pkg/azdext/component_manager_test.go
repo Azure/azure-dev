@@ -86,7 +86,7 @@ func TestComponentManager_GetOrCreateInstance_Success(t *testing.T) {
 	}
 	manager.RegisterFactory("go", factory)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	serviceConfig := createTestServiceConfig("web-service", "go")
 
 	// First call should create a new instance
@@ -108,7 +108,7 @@ func TestComponentManager_GetOrCreateInstance_NilServiceConfig(t *testing.T) {
 	t.Parallel()
 
 	manager := NewComponentManager[*MockProvider](mockFactoryKeyProvider, "test")
-	ctx := context.Background()
+	ctx := t.Context()
 
 	instance, err := manager.GetOrCreateInstance(ctx, nil)
 	assert.Error(t, err)
@@ -120,7 +120,7 @@ func TestComponentManager_GetOrCreateInstance_NoFactory(t *testing.T) {
 	t.Parallel()
 
 	manager := NewComponentManager[*MockProvider](mockFactoryKeyProvider, "test")
-	ctx := context.Background()
+	ctx := t.Context()
 	serviceConfig := createTestServiceConfig("web-service", "unknown-language")
 
 	instance, err := manager.GetOrCreateInstance(ctx, serviceConfig)
@@ -143,7 +143,7 @@ func TestComponentManager_GetOrCreateInstance_InitializationError(t *testing.T) 
 	}
 	manager.RegisterFactory("go", factory)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	serviceConfig := createTestServiceConfig("web-service", "go")
 
 	instance, err := manager.GetOrCreateInstance(ctx, serviceConfig)
@@ -166,7 +166,7 @@ func TestComponentManager_GetOrCreateInstance_ConcurrentAccess(t *testing.T) {
 	}
 	manager.RegisterFactory("go", factory)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	serviceConfig := createTestServiceConfig("web-service", "go")
 
 	// Create multiple goroutines that try to get the same instance
@@ -217,7 +217,7 @@ func TestComponentManager_GetInstance_Success(t *testing.T) {
 	}
 	manager.RegisterFactory("go", factory)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	serviceConfig := createTestServiceConfig("web-service", "go")
 
 	// Create the instance first
@@ -255,7 +255,7 @@ func TestComponentManager_GetAnyInstance_Success(t *testing.T) {
 	}
 	manager.RegisterFactory("go", factory)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	serviceConfig := createTestServiceConfig("web-service", "go")
 
 	// Create the instance first
@@ -293,7 +293,7 @@ func TestComponentManager_GetAnyInstance_MultipleInstances(t *testing.T) {
 	}
 	manager.RegisterFactory("go", factory)
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Create multiple instances
 	serviceConfig1 := createTestServiceConfig("web-service-1", "go")
@@ -346,7 +346,7 @@ func TestComponentManager_Close(t *testing.T) {
 	}
 	manager.RegisterFactory("go", factory)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	serviceConfig := createTestServiceConfig("web-service", "go")
 
 	// Create an instance
@@ -418,7 +418,7 @@ func TestComponentManager_DifferentServices_SameFactory(t *testing.T) {
 	}
 	manager.RegisterFactory("go", factory)
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Create instances for different services using the same factory
 	serviceConfig1 := createTestServiceConfig("web-service", "go")

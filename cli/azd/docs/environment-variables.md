@@ -52,6 +52,7 @@ integration.
 | `AZD_BUILDER_IMAGE` | The builder docker image used to perform Dockerfile-less builds. |
 | `AZD_DEPLOY_TIMEOUT` | Timeout for deployment operations, parsed as an integer number of seconds (for example, `1200`). Defaults to `1200` seconds (20 minutes). |
 | `AZD_DEPLOY_{SERVICE}_SLOT_NAME` | Sets the App Service deployment slot target for a service. Replace `{SERVICE}` with the uppercase service name (hyphens become underscores). Set to `production` to deploy to the main app, or a slot name (e.g., `staging`). When slots exist and this is not set, `--no-prompt` mode fails with an error listing available targets. |
+| `AZD_DEPLOY_{SERVICE}_SKIP_STATUS_CHECK` | If `true`, skips runtime deployment status tracking for the named Linux App Service after zip deploy. Useful when the target web app is intentionally stopped. Parsed as a boolean (`true`/`false`/`1`/`0`). `{SERVICE}` follows the same naming rules as `AZD_DEPLOY_{SERVICE}_SLOT_NAME`. |
 
 ## Extension Variables
 
@@ -230,13 +231,28 @@ These variables are used by the Terraform provider integration to authenticate w
 ## Test Variables
 
 > **Warning**: Test variables are used by the `azd` test suite only and are not intended for end users.
+>
+> **Tip**: Instead of setting environment variables for every session, you can persist test defaults
+> in your user-level `azd` config. These config keys act as fallbacks when the corresponding
+> environment variable is not set:
+>
+> ```bash
+> azd config set defaults.test.subscription <SUBSCRIPTION_ID>
+> azd config set defaults.test.tenant <TENANT_ID>
+> azd config set defaults.test.location <LOCATION>
+> ```
+>
+> Resolution order: environment variable → `defaults.test.*` → `defaults.*` (global default).
+> Note: `AZD_TEST_TENANT_ID` only falls back to `defaults.test.tenant` (no
+> `defaults.tenant` global fallback). Config fallbacks are only consulted when
+> the `CI` environment variable is unset.
 
-| Variable | Description |
-| --- | --- |
-| `AZD_TEST_CLIENT_ID` | The client ID for test authentication. |
-| `AZD_TEST_TENANT_ID` | The tenant ID for test authentication. |
-| `AZD_TEST_AZURE_SUBSCRIPTION_ID` | The Azure subscription ID for tests. |
-| `AZD_TEST_AZURE_LOCATION` | The Azure location for tests. |
+| Variable | Description | Config Fallback |
+| --- | --- | --- |
+| `AZD_TEST_CLIENT_ID` | The client ID for test authentication. | — |
+| `AZD_TEST_TENANT_ID` | The tenant ID for test authentication. | `defaults.test.tenant` |
+| `AZD_TEST_AZURE_SUBSCRIPTION_ID` | The Azure subscription ID for tests. | `defaults.test.subscription` |
+| `AZD_TEST_AZURE_LOCATION` | The Azure location for tests. | `defaults.test.location` |
 | `AZD_TEST_CLI_VERSION` | Overrides the CLI version reported during tests. |
 | `AZD_TEST_FIXED_CLOCK_UNIX_TIME` | Sets a fixed clock time (Unix epoch) for deterministic tests. |
 | `AZD_TEST_HTTPS_PROXY` | The HTTPS proxy URL for tests. |

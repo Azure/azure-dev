@@ -4,7 +4,6 @@
 package node
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -73,7 +72,7 @@ func TestInstall_UsesCorrectBinaryAndFlags(t *testing.T) {
 			}).Respond(exec.RunResult{})
 
 			cli := NewCliWithPackageManager(runner, tt.pm)
-			err := cli.Install(context.Background(), "/project", nil)
+			err := cli.Install(t.Context(), "/project", nil)
 			require.NoError(t, err)
 		})
 	}
@@ -89,7 +88,7 @@ func TestRunScript_NpmUsesIfPresent(t *testing.T) {
 	}).Respond(exec.RunResult{})
 
 	cli := NewCliWithPackageManager(runner, PackageManagerNpm)
-	err := cli.RunScript(context.Background(), "/project", "build", nil)
+	err := cli.RunScript(t.Context(), "/project", "build", nil)
 	require.NoError(t, err)
 }
 
@@ -103,7 +102,7 @@ func TestRunScript_PnpmUsesIfPresentBeforeScript(t *testing.T) {
 	}).Respond(exec.RunResult{})
 
 	cli := NewCliWithPackageManager(runner, PackageManagerPnpm)
-	err := cli.RunScript(context.Background(), "/project", "build", nil)
+	err := cli.RunScript(t.Context(), "/project", "build", nil)
 	require.NoError(t, err)
 }
 
@@ -122,7 +121,7 @@ func TestRunScript_YarnChecksScriptExists(t *testing.T) {
 	}).Respond(exec.RunResult{})
 
 	cli := NewCliWithPackageManager(runner, PackageManagerYarn)
-	err = cli.RunScript(context.Background(), dir, "build", nil)
+	err = cli.RunScript(t.Context(), dir, "build", nil)
 	require.NoError(t, err)
 }
 
@@ -137,7 +136,7 @@ func TestRunScript_YarnSkipsWhenScriptMissing(t *testing.T) {
 	// No mock for yarn run — it should NOT be called
 
 	cli := NewCliWithPackageManager(runner, PackageManagerYarn)
-	err = cli.RunScript(context.Background(), dir, "build", nil)
+	err = cli.RunScript(t.Context(), dir, "build", nil)
 	require.NoError(t, err) // should silently succeed
 }
 
@@ -150,7 +149,7 @@ func TestPrune_PnpmUsesProdFlag(t *testing.T) {
 	}).Respond(exec.RunResult{})
 
 	cli := NewCliWithPackageManager(runner, PackageManagerPnpm)
-	err := cli.Prune(context.Background(), "/project", true, nil)
+	err := cli.Prune(t.Context(), "/project", true, nil)
 	require.NoError(t, err)
 }
 
@@ -163,7 +162,7 @@ func TestPrune_NpmUsesProductionFlag(t *testing.T) {
 	}).Respond(exec.RunResult{})
 
 	cli := NewCliWithPackageManager(runner, PackageManagerNpm)
-	err := cli.Prune(context.Background(), "/project", true, nil)
+	err := cli.Prune(t.Context(), "/project", true, nil)
 	require.NoError(t, err)
 }
 
@@ -177,7 +176,7 @@ func TestPrune_YarnUsesInstallProduction(t *testing.T) {
 	}).Respond(exec.RunResult{})
 
 	cli := NewCliWithPackageManager(runner, PackageManagerYarn)
-	err := cli.Prune(context.Background(), "/project", true, nil)
+	err := cli.Prune(t.Context(), "/project", true, nil)
 	require.NoError(t, err)
 }
 
@@ -188,7 +187,7 @@ func TestInstall_ReturnsError(t *testing.T) {
 	}).SetError(fmt.Errorf("command failed"))
 
 	cli := NewCliWithPackageManager(runner, PackageManagerPnpm)
-	err := cli.Install(context.Background(), "/project", nil)
+	err := cli.Install(t.Context(), "/project", nil)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "pnpm")
 }
@@ -200,7 +199,7 @@ func TestRunScript_ReturnsError(t *testing.T) {
 	}).SetError(fmt.Errorf("script failed"))
 
 	cli := NewCli(runner)
-	err := cli.RunScript(context.Background(), "/project", "build", nil)
+	err := cli.RunScript(t.Context(), "/project", "build", nil)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "npm")
 }
@@ -215,7 +214,7 @@ func TestInstall_PassesEnvVars(t *testing.T) {
 
 	cli := NewCliWithPackageManager(runner, PackageManagerNpm)
 	env := []string{"VITE_API_URL=https://api.example.com", "NODE_ENV=production"}
-	err := cli.Install(context.Background(), "/project", env)
+	err := cli.Install(t.Context(), "/project", env)
 	require.NoError(t, err)
 	require.Equal(t, env, capturedArgs.Env)
 }
@@ -230,7 +229,7 @@ func TestRunScript_PassesEnvVars(t *testing.T) {
 
 	cli := NewCliWithPackageManager(runner, PackageManagerNpm)
 	env := []string{"VITE_API_URL=https://api.example.com"}
-	err := cli.RunScript(context.Background(), "/project", "build", env)
+	err := cli.RunScript(t.Context(), "/project", "build", env)
 	require.NoError(t, err)
 	require.Equal(t, env, capturedArgs.Env)
 }
@@ -244,6 +243,6 @@ func TestPrune_WithoutProduction(t *testing.T) {
 	}).Respond(exec.RunResult{})
 
 	cli := NewCli(runner)
-	err := cli.Prune(context.Background(), "/project", false, nil)
+	err := cli.Prune(t.Context(), "/project", false, nil)
 	require.NoError(t, err)
 }

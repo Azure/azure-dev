@@ -4,7 +4,6 @@
 package devcenter
 
 import (
-	"context"
 	"strings"
 	"testing"
 
@@ -20,7 +19,7 @@ import (
 
 func Test_Prompt_Project(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		selectedDevCenter := mockDevCenterList[0]
 		selectedProjectIndex := 1
 
@@ -43,7 +42,7 @@ func Test_Prompt_Project(t *testing.T) {
 	})
 
 	t.Run("NoProjects", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 
 		manager := &mockDevCenterManager{}
 		manager.
@@ -60,7 +59,7 @@ func Test_Prompt_Project(t *testing.T) {
 
 func Test_Prompt_EnvironmentType(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		selectedDevCenter := mockDevCenterList[0]
 		selectedProject := mockProjects[1]
 
@@ -92,7 +91,7 @@ func Test_Prompt_EnvironmentType(t *testing.T) {
 	})
 
 	t.Run("NoEnvironmentTypes", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		selectedDevCenter := mockDevCenterList[0]
 		selectedProject := mockProjects[1]
 
@@ -126,7 +125,7 @@ func Test_Prompt_EnvironmentType(t *testing.T) {
 
 func Test_Prompt_EnvironmentDefinitions(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		selectedDevCenter := mockDevCenterList[0]
 		selectedProject := mockProjects[1]
 
@@ -158,7 +157,7 @@ func Test_Prompt_EnvironmentDefinitions(t *testing.T) {
 	})
 
 	t.Run("NoEnvironmentDefinitions", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		selectedDevCenter := mockDevCenterList[0]
 		selectedProject := mockProjects[1]
 
@@ -188,7 +187,7 @@ func Test_Prompt_EnvironmentDefinitions(t *testing.T) {
 
 func Test_Prompt_Config(t *testing.T) {
 	t.Run("AllValuesSet", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		selectedDevCenter := mockDevCenterList[0]
 		selectedProject := mockProjects[1]
 		selectedEnvDefinition := mockEnvDefinitions[2]
@@ -211,7 +210,7 @@ func Test_Prompt_Config(t *testing.T) {
 	})
 
 	t.Run("NoValuesSet", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		selectedDevCenter := mockDevCenterList[0]
 		selectedProject := mockProjects[1]
 		selectedEnvDefinition := mockEnvDefinitions[2]
@@ -257,7 +256,7 @@ func Test_Prompt_Parameters(t *testing.T) {
 	}
 
 	t.Run("MultipleParameters", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		promptedParams := map[string]bool{}
 
 		expectedValues := map[string]paramWithValue{
@@ -341,7 +340,7 @@ func Test_Prompt_Parameters(t *testing.T) {
 	})
 
 	t.Run("WithSomeSetValues", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		prompter := newPrompterForTest(t, mockContext, nil)
 		promptCalled := false
 
@@ -386,7 +385,7 @@ func Test_Prompt_Parameters(t *testing.T) {
 	})
 
 	t.Run("WithAllSetValues", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		prompter := newPrompterForTest(t, mockContext, nil)
 
 		env := environment.New("Test")

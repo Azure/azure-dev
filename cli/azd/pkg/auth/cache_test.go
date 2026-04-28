@@ -4,7 +4,6 @@
 package auth
 
 import (
-	"context"
 	"encoding/json"
 	"math/rand"
 	"testing"
@@ -25,7 +24,7 @@ func randSeq(n int, rng rand.Rand) string {
 
 func TestCache(t *testing.T) {
 	root := t.TempDir()
-	ctx := context.Background()
+	ctx := t.Context()
 	c := newCache(root)
 	// weak rng is fine for testing
 	//nolint:gosec
@@ -187,7 +186,7 @@ func TestKeyNormalization(t *testing.T) {
 		},
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	c := msalCacheAdapter{&memoryCache{
 		cache: map[string][]byte{},
 		inner: nil,

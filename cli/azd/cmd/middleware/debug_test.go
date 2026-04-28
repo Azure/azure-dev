@@ -41,7 +41,7 @@ func TestDebugMiddleware_Run_ChildAction(t *testing.T) {
 		return &actions.ActionResult{}, nil
 	}
 
-	ctx := WithChildAction(context.Background())
+	ctx := WithChildAction(t.Context())
 	result, err := m.Run(ctx, nextFn)
 
 	require.NoError(t, err)
@@ -68,7 +68,7 @@ func TestDebugMiddleware_Run_NoEnvVar(t *testing.T) {
 		return &actions.ActionResult{}, nil
 	}
 
-	result, err := m.Run(context.Background(), nextFn)
+	result, err := m.Run(t.Context(), nextFn)
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -93,7 +93,7 @@ func TestDebugMiddleware_Run_EnvVarFalse(t *testing.T) {
 		return &actions.ActionResult{}, nil
 	}
 
-	result, err := m.Run(context.Background(), nextFn)
+	result, err := m.Run(t.Context(), nextFn)
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -117,7 +117,7 @@ func TestDebugMiddleware_Run_EnvVarInvalid(t *testing.T) {
 		return &actions.ActionResult{}, nil
 	}
 
-	result, err := m.Run(context.Background(), nextFn)
+	result, err := m.Run(t.Context(), nextFn)
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -147,7 +147,7 @@ func TestDebugMiddleware_Run_TelemetryCommand(t *testing.T) {
 		return &actions.ActionResult{}, nil
 	}
 
-	result, err := m.Run(context.Background(), nextFn)
+	result, err := m.Run(t.Context(), nextFn)
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -156,7 +156,7 @@ func TestDebugMiddleware_Run_TelemetryCommand(t *testing.T) {
 }
 
 func TestDebugMiddleware_Run_ConfirmDeclined(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.Console.
 		WhenConfirm(func(options input.ConsoleOptions) bool {
 			return true
@@ -184,7 +184,7 @@ func TestDebugMiddleware_Run_ConfirmDeclined(t *testing.T) {
 }
 
 func TestDebugMiddleware_Run_ConfirmAccepted(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.Console.
 		WhenConfirm(func(options input.ConsoleOptions) bool {
 			return true

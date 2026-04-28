@@ -79,7 +79,7 @@ func newManagerForTest(
 
 func Test_EnvManager_PromptEnvironmentName(t *testing.T) {
 	t.Run("valid name", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
 			return strings.Contains(options.Message, "would you like to create it?")
 		}).Respond(true)
@@ -103,7 +103,7 @@ func Test_EnvManager_PromptEnvironmentName(t *testing.T) {
 	t.Run("empty name gets prompted", func(t *testing.T) {
 		expected := "someEnv"
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
 			return strings.Contains(options.Message, "Select an environment to use")
 		}).RespondFn(func(options input.ConsoleOptions) (any, error) {
@@ -138,7 +138,7 @@ func Test_EnvManager_CreateAndInitEnvironment(t *testing.T) {
 	t.Run("invalid name", func(t *testing.T) {
 		invalidEnvName := "*!33"
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
 			return strings.Contains(options.Message, "would you like to create it?")
 		}).Respond(true)
@@ -152,7 +152,7 @@ func Test_EnvManager_CreateAndInitEnvironment(t *testing.T) {
 }
 
 func Test_EnvManager_List(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
 
 	t.Run("LocalOnly", func(t *testing.T) {
@@ -214,7 +214,7 @@ func Test_EnvManager_List(t *testing.T) {
 }
 
 func Test_EnvManager_Get(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
 
 	t.Run("ExistsLocally", func(t *testing.T) {
@@ -287,7 +287,7 @@ func Test_EnvManager_Get(t *testing.T) {
 }
 
 func Test_EnvManager_Save(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
 
 	t.Run("Success", func(t *testing.T) {
@@ -330,7 +330,7 @@ func Test_EnvManager_Save(t *testing.T) {
 
 func Test_EnvManager_CreateFromContainer(t *testing.T) {
 	t.Run("WithRemoteConfig", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		registerContainerComponents(t, mockContext)
 
 		mockContext.Container.MustRegisterSingleton(func() *state.RemoteConfig {
@@ -351,7 +351,7 @@ func Test_EnvManager_CreateFromContainer(t *testing.T) {
 	})
 
 	t.Run("WithoutRemoteConfig", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		registerContainerComponents(t, mockContext)
 
 		mockContext.Container.MustRegisterSingleton(func() *state.RemoteConfig {
@@ -481,7 +481,7 @@ func (m *MockDataStore) Delete(ctx context.Context, name string) error {
 
 func Test_EnvManager_InstanceCaching(t *testing.T) {
 	t.Run("Get returns same instance for same name", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
 		localDataStore := &MockDataStore{}
 
@@ -522,7 +522,7 @@ func Test_EnvManager_InstanceCaching(t *testing.T) {
 	})
 
 	t.Run("Cached instance is reloaded on each Get", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
 		localDataStore := &MockDataStore{}
 
@@ -565,7 +565,7 @@ func Test_EnvManager_InstanceCaching(t *testing.T) {
 	})
 
 	t.Run("Reload failure returns error", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
 		localDataStore := &MockDataStore{}
 
@@ -607,7 +607,7 @@ func Test_EnvManager_InstanceCaching(t *testing.T) {
 	})
 
 	t.Run("Delete removes from cache", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
 		localDataStore := &MockDataStore{}
 
@@ -657,7 +657,7 @@ func Test_EnvManager_InstanceCaching(t *testing.T) {
 	})
 
 	t.Run("Different environment names get different instances", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
 		localDataStore := &MockDataStore{}
 
@@ -697,7 +697,7 @@ func Test_EnvManager_InstanceCaching(t *testing.T) {
 	})
 
 	t.Run("Save does not affect cache", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
 		localDataStore := &MockDataStore{}
 
@@ -733,7 +733,7 @@ func Test_EnvManager_InstanceCaching(t *testing.T) {
 
 func Test_EnvManager_Create_NoPrompt_AutoName(t *testing.T) {
 	t.Run("generates name from working directory", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.Console.SetNoPromptMode(true)
 
 		// Use a known directory name so we can assert the generated env name
@@ -752,7 +752,7 @@ func Test_EnvManager_Create_NoPrompt_AutoName(t *testing.T) {
 	})
 
 	t.Run("cleans special characters in directory name", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.Console.SetNoPromptMode(true)
 
 		tmpDir := t.TempDir()
@@ -770,7 +770,7 @@ func Test_EnvManager_Create_NoPrompt_AutoName(t *testing.T) {
 	})
 
 	t.Run("truncates long directory names", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.Console.SetNoPromptMode(true)
 
 		tmpDir := t.TempDir()
@@ -790,7 +790,7 @@ func Test_EnvManager_Create_NoPrompt_AutoName(t *testing.T) {
 	})
 
 	t.Run("uses provided name even in no-prompt mode", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.Console.SetNoPromptMode(true)
 
 		envManager := createEnvManagerForManagerTest(t, mockContext)

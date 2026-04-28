@@ -4,7 +4,6 @@
 package kubectl
 
 import (
-	"context"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -16,7 +15,7 @@ import (
 )
 
 func Test_MergeKubeConfig(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "kubectl config view")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {

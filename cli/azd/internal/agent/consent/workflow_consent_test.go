@@ -4,7 +4,6 @@
 package consent
 
 import (
-	"context"
 	"fmt"
 	"testing"
 
@@ -17,7 +16,7 @@ import (
 
 func TestPromptWorkflowConsent_SkipsWhenAllServersTrusted(t *testing.T) {
 	mgr := newTestConsentManager(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	servers := []string{"copilot", "azure", "azd"}
 
 	// Pre-grant server-level rules for all three servers
@@ -38,14 +37,14 @@ func TestPromptWorkflowConsent_SkipsWhenAllServersTrusted(t *testing.T) {
 
 func TestAllServersTrusted_FalseWhenNoRules(t *testing.T) {
 	mgr := newTestConsentManager(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	require.False(t, allServersTrusted(ctx, mgr, []string{"copilot", "azure", "azd"}))
 }
 
 func TestAllServersTrusted_FalseWhenPartiallyTrusted(t *testing.T) {
 	mgr := newTestConsentManager(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Only grant trust to one of three servers
 	err := mgr.GrantConsent(ctx, ConsentRule{
@@ -62,7 +61,7 @@ func TestAllServersTrusted_FalseWhenPartiallyTrusted(t *testing.T) {
 
 func TestAllServersTrusted_TrueWithGlobalWildcard(t *testing.T) {
 	mgr := newTestConsentManager(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// A global wildcard (*/*) should cover all servers
 	err := mgr.GrantConsent(ctx, ConsentRule{
@@ -79,7 +78,7 @@ func TestAllServersTrusted_TrueWithGlobalWildcard(t *testing.T) {
 
 func TestAllServersTrusted_ReadOnlyRuleNotSufficient(t *testing.T) {
 	mgr := newTestConsentManager(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Grant only read-only access — should NOT count as full trust
 	for _, server := range []string{"copilot", "azure", "azd"} {
@@ -98,7 +97,7 @@ func TestAllServersTrusted_ReadOnlyRuleNotSufficient(t *testing.T) {
 
 func TestGrantWorkflowRules_SessionScope(t *testing.T) {
 	mgr := newTestConsentManager(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	servers := []string{"copilot", "azure", "azd"}
 
 	err := grantWorkflowRules(ctx, mgr, servers, ScopeSession)
@@ -136,7 +135,7 @@ func TestGrantWorkflowRules_GlobalScope(t *testing.T) {
 		sessionRules:      make([]ConsentRule, 0),
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	servers := []string{"copilot", "azure", "azd"}
 
 	err := grantWorkflowRules(ctx, mgr, servers, ScopeGlobal)
@@ -164,7 +163,7 @@ func TestGrantWorkflowRules_GlobalScope(t *testing.T) {
 
 func TestGrantWorkflowRules_SessionScope_DoesNotSurviveReload(t *testing.T) {
 	mgr := newTestConsentManager(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	err := grantWorkflowRules(ctx, mgr, []string{"copilot"}, ScopeSession)
 	require.NoError(t, err)

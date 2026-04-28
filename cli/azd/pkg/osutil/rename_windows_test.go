@@ -6,7 +6,6 @@
 package osutil
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -24,12 +23,15 @@ func TestRename(t *testing.T) {
 
 		// Wait for a moment before closing the file. This allows Rename to exercise the retry logic for a sharing violation
 		// since while we hold the file open, os.Rename will fail.
+		// justified: platform-specific Windows filesystem behaviour — the sleep holds the
+		// file handle open long enough for os.Rename's retry loop to observe a sharing
+		// violation before the handle is released.
 		go func() {
 			time.Sleep(1 * time.Second)
 			file.Close()
 		}()
 
-		err = Rename(context.Background(), filepath.Join(dir, "old"), filepath.Join(dir, "new"))
+		err = Rename(t.Context(), filepath.Join(dir, "old"), filepath.Join(dir, "new"))
 		assert.NoError(t, err)
 	})
 
@@ -45,13 +47,16 @@ func TestRename(t *testing.T) {
 
 		// Wait for a moment before closing the target. This allows Rename to exercise the retry logic for an access is
 		// denied error since we hold the file open, os.Rename will fail.
+		// justified: platform-specific Windows filesystem behaviour — the sleep holds the
+		// destination file handle open long enough for os.Rename's retry loop to observe
+		// the access-denied error before the handle is released.
 
 		go func() {
 			time.Sleep(1 * time.Second)
 			file.Close()
 		}()
 
-		err = Rename(context.Background(), filepath.Join(dir, "old"), filepath.Join(dir, "new"))
+		err = Rename(t.Context(), filepath.Join(dir, "old"), filepath.Join(dir, "new"))
 
 		assert.NoError(t, err)
 	})

@@ -4,7 +4,6 @@
 package graphsdk_test
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"testing"
@@ -17,7 +16,7 @@ import (
 // Testing simulates requests that have a pre-flight error like
 // acquiring token or DNS issues (host not found)
 func Test_GraphClientRequest_With_Preflight_Error(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	client, err := mockgraphsdk.CreateGraphClient(mockContext)
 	require.NoError(t, err)
 	require.NotNil(t, client)

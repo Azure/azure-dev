@@ -5,7 +5,6 @@ package show
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -147,7 +146,7 @@ func TestShowContainerApp_SingleContainer(t *testing.T) {
 		},
 	}
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContainerAppGetResponse(mockContext, appName, app)
 
 	id := newContainerAppResourceID(appName)
@@ -198,7 +197,7 @@ func TestShowContainerApp_SecretRef_NoShowSecrets(t *testing.T) {
 		},
 	}
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContainerAppGetResponse(mockContext, appName, app)
 
 	id := newContainerAppResourceID(appName)
@@ -228,7 +227,7 @@ func TestShowContainerApp_EmptyContainers(t *testing.T) {
 		},
 	}
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContainerAppGetResponse(mockContext, appName, app)
 
 	id := newContainerAppResourceID(appName)
@@ -281,7 +280,7 @@ func TestShowContainerApp_MultiContainer_MatchByName(t *testing.T) {
 		},
 	}
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContainerAppGetResponse(mockContext, appName, app)
 
 	id := newContainerAppResourceID(appName)
@@ -322,7 +321,7 @@ func TestShowContainerApp_MultiContainer_NoMatch(t *testing.T) {
 		},
 	}
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContainerAppGetResponse(mockContext, appName, app)
 
 	id := newContainerAppResourceID(appName)
@@ -368,7 +367,7 @@ func TestShowContainerApp_NilEnvName(t *testing.T) {
 		},
 	}
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContainerAppGetResponse(mockContext, appName, app)
 
 	id := newContainerAppResourceID(appName)
@@ -465,7 +464,7 @@ func TestShowAppService_BasicSettings(t *testing.T) {
 		"PORT":    new("3000"),
 	}
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockAppServiceGetResponse(mockContext, appName, site)
 	mockAppServiceListSettings(mockContext, appName, settings)
 
@@ -500,7 +499,7 @@ func TestShowAppService_SecretsAreMasked(t *testing.T) {
 		"KEY_VAULT_REF_SETTING": new("@Microsoft.KeyVault(SecretUri=https://myvault.vault.azure.net/secrets/mysecret)"),
 	}
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockAppServiceGetResponse(mockContext, appName, site)
 	mockAppServiceListSettings(mockContext, appName, settings)
 
@@ -537,7 +536,7 @@ func TestShowAppService_ShowSecretsRevealsValues(t *testing.T) {
 		"NORMAL_SETTING":    new("visible"),
 	}
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockAppServiceGetResponse(mockContext, appName, site)
 	mockAppServiceListSettings(mockContext, appName, settings)
 
@@ -570,7 +569,7 @@ func TestShowAppService_NilSettingValue(t *testing.T) {
 		"NIL_VAL_KEY": nil,
 	}
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockAppServiceGetResponse(mockContext, appName, site)
 	mockAppServiceListSettings(mockContext, appName, settings)
 
@@ -600,7 +599,7 @@ func TestShowAppService_NoHostName(t *testing.T) {
 
 	settings := map[string]*string{}
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockAppServiceGetResponse(mockContext, appName, site)
 	mockAppServiceListSettings(mockContext, appName, settings)
 
@@ -641,7 +640,7 @@ func TestShowAppService_AllKnownSecretKeys(t *testing.T) {
 	}
 	settings["SAFE_KEY"] = new("not-a-secret")
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockAppServiceGetResponse(mockContext, appName, site)
 	mockAppServiceListSettings(mockContext, appName, settings)
 
@@ -677,7 +676,7 @@ func TestServiceEndpoint_LazyResourceManagerError(t *testing.T) {
 		lazyResourceManager: lazyRM,
 	}
 
-	result := s.serviceEndpoint(context.Background(), "sub123", &project.ServiceConfig{}, nil)
+	result := s.serviceEndpoint(t.Context(), "sub123", &project.ServiceConfig{}, nil)
 	assert.Empty(t, result)
 }
 
@@ -694,7 +693,7 @@ func TestServiceEndpoint_LazyServiceManagerError(t *testing.T) {
 		lazyServiceManager:  lazySM,
 	}
 
-	result := s.serviceEndpoint(context.Background(), "sub123", &project.ServiceConfig{}, nil)
+	result := s.serviceEndpoint(t.Context(), "sub123", &project.ServiceConfig{}, nil)
 	assert.Empty(t, result)
 }
 

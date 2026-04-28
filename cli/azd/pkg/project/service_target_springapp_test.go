@@ -4,7 +4,6 @@
 package project
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -14,7 +13,7 @@ func Test_springAppTarget_Initialize_ReturnsDeprecated(
 	t *testing.T,
 ) {
 	target := NewSpringAppTarget(nil, nil)
-	err := target.Initialize(context.Background(), nil)
+	err := target.Initialize(t.Context(), nil)
 
 	require.Error(t, err)
 	require.ErrorIs(t, err, errSpringAppDeprecated)
@@ -26,7 +25,7 @@ func Test_springAppTarget_Package_ReturnsDeprecated(
 ) {
 	target := NewSpringAppTarget(nil, nil)
 	result, err := target.Package(
-		context.Background(), nil, nil, nil,
+		t.Context(), nil, nil, nil,
 	)
 
 	require.Nil(t, result)
@@ -38,7 +37,7 @@ func Test_springAppTarget_Deploy_ReturnsDeprecated(
 ) {
 	target := NewSpringAppTarget(nil, nil)
 	result, err := target.Deploy(
-		context.Background(), nil, nil, nil, nil,
+		t.Context(), nil, nil, nil, nil,
 	)
 
 	require.Nil(t, result)
@@ -50,7 +49,7 @@ func Test_springAppTarget_Publish_ReturnsDeprecated(
 ) {
 	target := NewSpringAppTarget(nil, nil)
 	result, err := target.Publish(
-		context.Background(), nil, nil, nil, nil, nil,
+		t.Context(), nil, nil, nil, nil, nil,
 	)
 
 	require.Nil(t, result)
@@ -62,7 +61,7 @@ func Test_springAppTarget_Endpoints_ReturnsDeprecated(
 ) {
 	target := NewSpringAppTarget(nil, nil)
 	endpoints, err := target.Endpoints(
-		context.Background(), nil, nil,
+		t.Context(), nil, nil,
 	)
 
 	require.Nil(t, endpoints)
@@ -74,7 +73,7 @@ func Test_springAppTarget_RequiredExternalTools_Empty(
 ) {
 	target := NewSpringAppTarget(nil, nil)
 	tools := target.RequiredExternalTools(
-		context.Background(), nil,
+		t.Context(), nil,
 	)
 
 	require.NotNil(t, tools)

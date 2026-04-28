@@ -4,7 +4,6 @@
 package grpcserver
 
 import (
-	"context"
 	"crypto/rand"
 	"encoding/json"
 	"math/big"
@@ -23,7 +22,7 @@ import (
 )
 
 func Test_ComposeService_AddResource(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	temp := t.TempDir()
 	azdCtx := azdcontext.NewAzdContextWithDirectory(temp)
 	projectConfig := project.ProjectConfig{
@@ -80,7 +79,7 @@ func Test_ComposeService_AddResource(t *testing.T) {
 }
 
 func Test_ComposeService_GetResource(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	temp := t.TempDir()
 	azdCtx := azdcontext.NewAzdContextWithDirectory(temp)
 	projectConfig := project.ProjectConfig{
@@ -132,7 +131,7 @@ func Test_ComposeService_GetResource(t *testing.T) {
 }
 
 func Test_ComposeService_ListResources(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	t.Run("success", func(t *testing.T) {
 		temp := t.TempDir()
@@ -200,7 +199,7 @@ func Test_ComposeService_ListResources(t *testing.T) {
 
 func Test_Test_ComposeService_ListResourceTypes(t *testing.T) {
 	// Setup a mock context.
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	lazyAzdContext := lazy.NewLazy(func() (*azdcontext.AzdContext, error) {
 		return nil, azdcontext.ErrNoProject
 	})
@@ -233,7 +232,7 @@ func Test_Test_ComposeService_ListResourceTypes(t *testing.T) {
 }
 
 func Test_ComposeService_GetResourceType_Unimplemented(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	lazyAzdContext := lazy.NewLazy(func() (*azdcontext.AzdContext, error) {
 		return nil, azdcontext.ErrNoProject
 	})

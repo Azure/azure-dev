@@ -5,7 +5,6 @@ package python
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -23,19 +22,19 @@ import (
 )
 
 func Test_Name(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	cli := NewCli(mockContext.CommandRunner)
 	require.Equal(t, "Python CLI", cli.Name())
 }
 
 func Test_InstallUrl(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	cli := NewCli(mockContext.CommandRunner)
 	require.Equal(t, "https://wiki.python.org/moin/BeginnersGuide/Download", cli.InstallUrl())
 }
 
 func Test_VersionInfo(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	cli := NewCli(mockContext.CommandRunner)
 
 	vi := cli.versionInfo()
@@ -66,7 +65,7 @@ func mockPythonNotInPath(mockContext *mocks.MockContext) {
 }
 
 func Test_CheckInstalled_Success(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	pyCmd := mockPythonInPath(mockContext)
 	cli := NewCli(mockContext.CommandRunner)
 
@@ -81,7 +80,7 @@ func Test_CheckInstalled_Success(t *testing.T) {
 }
 
 func Test_CheckInstalled_ExactMinimumVersion(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockPythonInPath(mockContext)
 	cli := NewCli(mockContext.CommandRunner)
 
@@ -97,7 +96,7 @@ func Test_CheckInstalled_ExactMinimumVersion(t *testing.T) {
 }
 
 func Test_CheckInstalled_VersionTooOld(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockPythonInPath(mockContext)
 	cli := NewCli(mockContext.CommandRunner)
 
@@ -117,7 +116,7 @@ func Test_CheckInstalled_VersionTooOld(t *testing.T) {
 }
 
 func Test_CheckInstalled_NotInstalled(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockPythonNotInPath(mockContext)
 	cli := NewCli(mockContext.CommandRunner)
 
@@ -127,7 +126,7 @@ func Test_CheckInstalled_NotInstalled(t *testing.T) {
 }
 
 func Test_CheckInstalled_VersionCommandFails(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockPythonInPath(mockContext)
 	cli := NewCli(mockContext.CommandRunner)
 
@@ -143,7 +142,7 @@ func Test_CheckInstalled_VersionCommandFails(t *testing.T) {
 }
 
 func Test_CheckInstalled_GarbageVersionOutput(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockPythonInPath(mockContext)
 	cli := NewCli(mockContext.CommandRunner)
 
@@ -160,7 +159,7 @@ func Test_CheckInstalled_GarbageVersionOutput(t *testing.T) {
 
 func Test_InstallProject_Success(t *testing.T) {
 	tempDir := t.TempDir()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	pyCmd := mockPythonInPath(mockContext)
 	cli := NewCli(mockContext.CommandRunner)
 
@@ -181,7 +180,7 @@ func Test_InstallProject_Success(t *testing.T) {
 
 func Test_InstallProject_Error(t *testing.T) {
 	tempDir := t.TempDir()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockPythonInPath(mockContext)
 	cli := NewCli(mockContext.CommandRunner)
 
@@ -198,7 +197,7 @@ func Test_InstallProject_Error(t *testing.T) {
 
 func Test_InstallProject_PassesEnvVars(t *testing.T) {
 	tempDir := t.TempDir()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockPythonInPath(mockContext)
 	cli := NewCli(mockContext.CommandRunner)
 
@@ -216,7 +215,7 @@ func Test_InstallProject_PassesEnvVars(t *testing.T) {
 
 func Test_Run_Error(t *testing.T) {
 	tempDir := t.TempDir()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockPythonInPath(mockContext)
 	cli := NewCli(mockContext.CommandRunner)
 
@@ -234,7 +233,7 @@ func Test_Run_Error(t *testing.T) {
 
 func Test_Run_WithEnvVars(t *testing.T) {
 	tempDir := t.TempDir()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockPythonInPath(mockContext)
 	cli := NewCli(mockContext.CommandRunner)
 
@@ -254,7 +253,7 @@ func Test_Run_WithEnvVars(t *testing.T) {
 
 func Test_Run_NotInstalled(t *testing.T) {
 	tempDir := t.TempDir()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockPythonNotInPath(mockContext)
 	cli := NewCli(mockContext.CommandRunner)
 
@@ -265,7 +264,7 @@ func Test_Run_NotInstalled(t *testing.T) {
 
 func Test_InstallRequirements_Error(t *testing.T) {
 	tempDir := t.TempDir()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockPythonInPath(mockContext)
 	cli := NewCli(mockContext.CommandRunner)
 
@@ -282,7 +281,7 @@ func Test_InstallRequirements_Error(t *testing.T) {
 
 func Test_CreateVirtualEnv_Error(t *testing.T) {
 	tempDir := t.TempDir()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockPythonInPath(mockContext)
 	cli := NewCli(mockContext.CommandRunner)
 
@@ -299,7 +298,7 @@ func Test_CreateVirtualEnv_Error(t *testing.T) {
 
 func Test_CreateVirtualEnv_NotInstalled(t *testing.T) {
 	tempDir := t.TempDir()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockPythonNotInPath(mockContext)
 	cli := NewCli(mockContext.CommandRunner)
 
@@ -312,7 +311,7 @@ func Test_CheckPath_WindowsFallback(t *testing.T) {
 		t.Skip("Windows-specific test")
 	}
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	cli := NewCli(mockContext.CommandRunner)
 
 	// "py" not found, but "python" is available → should fall back to "python"
@@ -329,7 +328,7 @@ func Test_CheckPath_WindowsBothNotFound(t *testing.T) {
 		t.Skip("Windows-specific test")
 	}
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	cli := NewCli(mockContext.CommandRunner)
 
 	mockContext.CommandRunner.MockToolInPath("py", errors.New("py not found"))
@@ -346,7 +345,7 @@ func Test_CheckPath_WindowsPrefersPy(t *testing.T) {
 		t.Skip("Windows-specific test")
 	}
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	cli := NewCli(mockContext.CommandRunner)
 
 	// Both available, but "py" should be preferred
@@ -360,7 +359,7 @@ func Test_CheckPath_WindowsPrefersPy(t *testing.T) {
 
 func Test_CreateVirtualEnv_WithEnvVars(t *testing.T) {
 	tempDir := t.TempDir()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockPythonInPath(mockContext)
 	cli := NewCli(mockContext.CommandRunner)
 
@@ -381,7 +380,7 @@ func Test_CreateVirtualEnv_WithEnvVars(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func Test_ResolveCommand_Success(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	pyCmd := mockPythonInPath(mockContext)
 	cli := NewCli(mockContext.CommandRunner)
 
@@ -391,7 +390,7 @@ func Test_ResolveCommand_Success(t *testing.T) {
 }
 
 func Test_ResolveCommand_NotInstalled(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockPythonNotInPath(mockContext)
 	cli := NewCli(mockContext.CommandRunner)
 
@@ -405,7 +404,7 @@ func Test_ResolveCommand_NotInstalled(t *testing.T) {
 
 func Test_EnsureVirtualEnv_CreatesWhenMissing(t *testing.T) {
 	tempDir := t.TempDir()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockPythonInPath(mockContext)
 	cli := NewCli(mockContext.CommandRunner)
 
@@ -426,7 +425,7 @@ func Test_EnsureVirtualEnv_SkipsWhenExists(t *testing.T) {
 	venvDir := filepath.Join(tempDir, ".venv")
 	require.NoError(t, os.MkdirAll(venvDir, 0o700))
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	cli := NewCli(mockContext.CommandRunner)
 
 	// No mock for CreateVirtualEnv — must not be called.
@@ -443,7 +442,7 @@ func Test_EnsureVirtualEnv_ErrorWhenFileNotDir(t *testing.T) {
 		venvPath, []byte("file"), 0o600,
 	))
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	cli := NewCli(mockContext.CommandRunner)
 
 	err := cli.EnsureVirtualEnv(
@@ -455,7 +454,7 @@ func Test_EnsureVirtualEnv_ErrorWhenFileNotDir(t *testing.T) {
 
 func Test_EnsureVirtualEnv_CreateFails(t *testing.T) {
 	tempDir := t.TempDir()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockPythonInPath(mockContext)
 	cli := NewCli(mockContext.CommandRunner)
 
@@ -483,7 +482,7 @@ func Test_EnsureVirtualEnv_CreateFails(t *testing.T) {
 
 func Test_InstallDependencies_Requirements(t *testing.T) {
 	tempDir := t.TempDir()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockPythonInPath(mockContext)
 	cli := NewCli(mockContext.CommandRunner)
 
@@ -507,7 +506,7 @@ func Test_InstallDependencies_Requirements(t *testing.T) {
 
 func Test_InstallDependencies_Pyproject(t *testing.T) {
 	tempDir := t.TempDir()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockPythonInPath(mockContext)
 	cli := NewCli(mockContext.CommandRunner)
 
@@ -527,7 +526,7 @@ func Test_InstallDependencies_Pyproject(t *testing.T) {
 }
 
 func Test_InstallDependencies_UnknownFile(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	cli := NewCli(mockContext.CommandRunner)
 
 	// Capture log output to verify the default-case message.

@@ -4,7 +4,6 @@
 package project
 
 import (
-	"context"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -32,7 +31,7 @@ services:
     condition: ${DEPLOY_WORKER}
 `
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	projectConfig, err := Parse(*mockContext.Context, testProj)
 	require.Nil(t, err)
 	require.NotNil(t, projectConfig)
@@ -93,7 +92,7 @@ services:
     condition: ${DEPLOY_SERVICE}
 `
 
-			mockContext := mocks.NewMockContext(context.Background())
+			mockContext := mocks.NewMockContext(t.Context())
 			projectConfig, err := Parse(*mockContext.Context, testProj)
 			require.Nil(t, err)
 

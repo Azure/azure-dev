@@ -28,7 +28,7 @@ import (
 )
 
 func Test_AiHelper_Init(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	env := environment.NewWithValues("test", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 	})
@@ -41,7 +41,7 @@ func Test_AiHelper_Init(t *testing.T) {
 }
 
 func Test_AiHelper_ValidateWorkspace(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	env := environment.NewWithValues("test", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 		environment.ResourceGroupEnvVarName:  "RESOURCE_GROUP",
@@ -57,7 +57,7 @@ func Test_AiHelper_ValidateWorkspace(t *testing.T) {
 }
 
 func Test_AiHelper_CreateEnvironmentVersion(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	testDir := t.TempDir()
 	env := environment.NewWithValues("test", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
@@ -105,7 +105,7 @@ func Test_AiHelper_CreateEnvironmentVersion(t *testing.T) {
 }
 
 func Test_AiHelper_CreateModelVersion(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	testDir := t.TempDir()
 	env := environment.NewWithValues("test", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
@@ -153,7 +153,7 @@ func Test_AiHelper_CreateModelVersion(t *testing.T) {
 }
 
 func Test_AiHelper_GetEndpoint(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	env := environment.NewWithValues("test", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 		environment.ResourceGroupEnvVarName:  "RESOURCE_GROUP",
@@ -173,7 +173,7 @@ func Test_AiHelper_GetEndpoint(t *testing.T) {
 }
 
 func Test_AiHelper_CreateFlow(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	testDir := t.TempDir()
 	env := environment.NewWithValues("test", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
@@ -231,7 +231,7 @@ func Test_AiHelper_CreateFlow(t *testing.T) {
 }
 
 func Test_AiHelper_DeployToEndpoint(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	testDir := t.TempDir()
 	env := environment.NewWithValues("test", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
@@ -319,7 +319,7 @@ func Test_AiHelper_DeployToEndpoint(t *testing.T) {
 }
 
 func Test_AiHelper_UpdateTraffic(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	env := environment.NewWithValues("test", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 		environment.ResourceGroupEnvVarName:  "RESOURCE_GROUP",
@@ -357,7 +357,7 @@ func Test_AiHelper_UpdateTraffic(t *testing.T) {
 }
 
 func Test_AiHelper_DeletePreviousDeployments(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	env := environment.NewWithValues("test", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 		environment.ResourceGroupEnvVarName:  "RESOURCE_GROUP",

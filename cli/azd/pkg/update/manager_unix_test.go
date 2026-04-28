@@ -6,7 +6,6 @@
 package update
 
 import (
-	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -52,7 +51,7 @@ func TestReplaceBinary_CreatesNewInode(t *testing.T) {
 	defer oldFile.Close()
 
 	m := &Manager{}
-	require.NoError(t, m.replaceBinary(context.Background(), src, dst))
+	require.NoError(t, m.replaceBinary(t.Context(), src, dst))
 
 	// After replacement, dst should have a NEW inode (remove+create, not truncate)
 	newInfo, err := os.Stat(dst)

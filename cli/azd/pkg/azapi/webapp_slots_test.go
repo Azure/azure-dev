@@ -5,7 +5,6 @@ package azapi
 
 import (
 	"bytes"
-	"context"
 	"net/http"
 	"strings"
 	"testing"
@@ -20,7 +19,7 @@ import (
 // Test GetAppServiceSlots
 func Test_GetAppServiceSlots(t *testing.T) {
 	t.Run("WithSlots", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		azCli := newAzureClientFromMockContext(mockContext)
 
 		mockContext.HttpClient.When(func(request *http.Request) bool {
@@ -56,7 +55,7 @@ func Test_GetAppServiceSlots(t *testing.T) {
 	})
 
 	t.Run("NoSlots", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		azCli := newAzureClientFromMockContext(mockContext)
 
 		mockContext.HttpClient.When(func(request *http.Request) bool {
@@ -86,7 +85,7 @@ func Test_GetAppServiceSlots(t *testing.T) {
 // Test DeployAppServiceSlotZip
 func Test_DeployAppServiceSlotZip(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		azCli := newAzureClientFromMockContext(mockContext)
 
 		// Mock GetSlot call
@@ -161,7 +160,7 @@ func Test_DeployAppServiceSlotZip(t *testing.T) {
 	})
 
 	t.Run("SlotNotFound", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		azCli := newAzureClientFromMockContext(mockContext)
 
 		// Mock GetSlot call to return 404

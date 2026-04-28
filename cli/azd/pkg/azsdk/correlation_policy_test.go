@@ -42,7 +42,7 @@ func Test_simpleCorrelationPolicy_Do(t *testing.T) {
 		{
 			name: "CorrelationId_WithTraceId",
 			ctx: trace.ContextWithSpanContext(
-				context.Background(),
+				t.Context(),
 				trace.SpanContext{}.WithTraceID(traceId),
 			),
 			expect:                new(traceId.String()),
@@ -53,7 +53,7 @@ func Test_simpleCorrelationPolicy_Do(t *testing.T) {
 			name: "CorrelationId_WithInvalidTraceId",
 			// nolint:lll
 			ctx: trace.ContextWithSpanContext(
-				context.Background(),
+				t.Context(),
 				trace.SpanContext{}.WithTraceID(invalidTraceId),
 			),
 			expect:                new(""),
@@ -62,7 +62,7 @@ func Test_simpleCorrelationPolicy_Do(t *testing.T) {
 		},
 		{
 			name:                  "CorrelationId_WithoutTraceId",
-			ctx:                   context.Background(),
+			ctx:                   t.Context(),
 			expect:                nil,
 			headerName:            MsCorrelationIdHeader,
 			correlationPolicyFunc: NewMsCorrelationPolicy,
@@ -70,7 +70,7 @@ func Test_simpleCorrelationPolicy_Do(t *testing.T) {
 		{
 			name: "ClientRequestId_WithTraceId",
 			ctx: trace.ContextWithSpanContext(
-				context.Background(),
+				t.Context(),
 				trace.SpanContext{}.WithTraceID(traceId),
 			),
 			expect:                new(traceId.String()),
@@ -80,7 +80,7 @@ func Test_simpleCorrelationPolicy_Do(t *testing.T) {
 		{
 			name: "ClientRequestId_WithInvalidTraceId",
 			ctx: trace.ContextWithSpanContext(
-				context.Background(),
+				t.Context(),
 				trace.SpanContext{}.WithTraceID(invalidTraceId),
 			),
 			expect:                new(""),
@@ -89,7 +89,7 @@ func Test_simpleCorrelationPolicy_Do(t *testing.T) {
 		},
 		{
 			name:                  "ClientRequestId_WithoutTraceId",
-			ctx:                   context.Background(),
+			ctx:                   t.Context(),
 			expect:                nil,
 			headerName:            MsClientRequestIdHeader,
 			correlationPolicyFunc: NewMsClientRequestIdPolicy,
@@ -97,7 +97,7 @@ func Test_simpleCorrelationPolicy_Do(t *testing.T) {
 		{
 			name: "GraphCorrelationId_WithTraceId",
 			ctx: trace.ContextWithSpanContext(
-				context.Background(),
+				t.Context(),
 				trace.SpanContext{}.WithTraceID(traceId),
 			),
 			expect:                new(traceId.String()),
@@ -108,7 +108,7 @@ func Test_simpleCorrelationPolicy_Do(t *testing.T) {
 			name: "GraphCorrelationId_WithInvalidTraceId",
 			// nolint:lll
 			ctx: trace.ContextWithSpanContext(
-				context.Background(),
+				t.Context(),
 				trace.SpanContext{}.WithTraceID(invalidTraceId),
 			),
 			expect:                new(""),
@@ -117,7 +117,7 @@ func Test_simpleCorrelationPolicy_Do(t *testing.T) {
 		},
 		{
 			name:                  "GraphCorrelationId_WithoutTraceId",
-			ctx:                   context.Background(),
+			ctx:                   t.Context(),
 			expect:                nil,
 			headerName:            msGraphCorrelationIdHeader,
 			correlationPolicyFunc: NewMsGraphCorrelationPolicy,

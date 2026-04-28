@@ -33,7 +33,7 @@ func (f *fakeSubscriptionResolver) GetSubscription(
 func TestPrincipalIDProvider_CurrentPrincipalIdUsesSubscriptionTenant(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	userProfileService := azapi.NewUserProfileService(
 		&mocks.MockMultiTenantCredentialProvider{
 			TokenMap: map[string]mocks.MockCredentials{

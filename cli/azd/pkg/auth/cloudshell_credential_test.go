@@ -5,7 +5,6 @@ package auth
 
 import (
 	"bytes"
-	"context"
 	"io"
 	"net/http"
 	"testing"
@@ -32,7 +31,7 @@ func requireDefaultToken(t *testing.T, token azcore.AccessToken) {
 }
 
 func TestCloudShellCredentialGetToken(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	cred := NewCloudShellCredential(mockContext.HttpClient)
 

@@ -4,7 +4,6 @@
 package kubectl
 
 import (
-	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -25,7 +24,7 @@ func Test_ApplyFiles(t *testing.T) {
 	ran := false
 	var runArgs exec.RunArgs
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "kubectl apply -f")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -55,7 +54,7 @@ func Test_Command_Args(t *testing.T) {
 	tempDir := t.TempDir()
 	ostest.Chdir(t, tempDir)
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	cli := NewCli(mockContext.CommandRunner)
 
 	tests := map[string]*kubeCliTestConfig{
@@ -174,7 +173,7 @@ type kubeCliTestConfig struct {
 }
 
 func TestGetClientVersion(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "kubectl version")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -196,7 +195,7 @@ func TestGetClientVersion(t *testing.T) {
 
 	cli := NewCli(mockContext.CommandRunner)
 
-	ver, err := cli.getClientVersion(context.Background())
+	ver, err := cli.getClientVersion(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, "v1.25.4", ver)
 }
@@ -204,7 +203,7 @@ func TestGetClientVersion(t *testing.T) {
 func Test_Apply_Template(t *testing.T) {
 	var runArgs exec.RunArgs
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "kubectl apply")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {

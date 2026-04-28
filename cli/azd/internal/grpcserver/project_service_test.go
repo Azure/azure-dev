@@ -28,7 +28,7 @@ import (
 // the service returns an error.
 func Test_ProjectService_NoProject(t *testing.T) {
 	// Setup a mock context.
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	// Mock GitHub CLI version check.
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -62,7 +62,7 @@ func Test_ProjectService_NoProject(t *testing.T) {
 // creating a project, setting environment variables and retrieving project details.
 func Test_ProjectService_Flow(t *testing.T) {
 	// Setup a mock context and temporary project directory.
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	temp := t.TempDir()
 
 	// Mock GitHub CLI version check.
@@ -120,7 +120,7 @@ func Test_ProjectService_Flow(t *testing.T) {
 
 func Test_ProjectService_AddService(t *testing.T) {
 	// Setup a mock context and temporary project directory.
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	temp := t.TempDir()
 
 	// Mock GitHub CLI version check.
@@ -188,7 +188,7 @@ func Test_ProjectService_AddService(t *testing.T) {
 
 func Test_ProjectService_ConfigSection(t *testing.T) {
 	// Setup mock context and temporary project directory
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	temp := t.TempDir()
 	azdContext := azdcontext.NewAzdContextWithDirectory(temp)
 
@@ -262,7 +262,7 @@ func Test_ProjectService_ConfigSection(t *testing.T) {
 
 func Test_ProjectService_ConfigValue(t *testing.T) {
 	// Setup mock context and temporary project directory
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	temp := t.TempDir()
 	azdContext := azdcontext.NewAzdContextWithDirectory(temp)
 
@@ -341,7 +341,7 @@ func Test_ProjectService_ConfigValue(t *testing.T) {
 
 func Test_ProjectService_SetConfigSection(t *testing.T) {
 	// Setup mock context and temporary project directory
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	temp := t.TempDir()
 	azdContext := azdcontext.NewAzdContextWithDirectory(temp)
 
@@ -424,7 +424,7 @@ func Test_ProjectService_SetConfigSection(t *testing.T) {
 
 func Test_ProjectService_SetConfigValue(t *testing.T) {
 	// Setup mock context and temporary project directory
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	temp := t.TempDir()
 	azdContext := azdcontext.NewAzdContextWithDirectory(temp)
 
@@ -510,7 +510,7 @@ func Test_ProjectService_SetConfigValue(t *testing.T) {
 
 func Test_ProjectService_UnsetConfig(t *testing.T) {
 	// Setup mock context and temporary project directory
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	temp := t.TempDir()
 	azdContext := azdcontext.NewAzdContextWithDirectory(temp)
 
@@ -593,7 +593,7 @@ func Test_ProjectService_UnsetConfig(t *testing.T) {
 
 func Test_ProjectService_ConfigNilAdditionalProperties(t *testing.T) {
 	// Test behavior when AdditionalProperties is nil
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	temp := t.TempDir()
 	azdContext := azdcontext.NewAzdContextWithDirectory(temp)
 
@@ -648,7 +648,7 @@ func Test_ProjectService_ConfigNilAdditionalProperties(t *testing.T) {
 // Test_ProjectService_ServiceConfiguration validates service-level configuration operations.
 func Test_ProjectService_ServiceConfiguration(t *testing.T) {
 	// Setup a mock context and temporary project directory.
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	temp := t.TempDir()
 
 	// Initialize project configuration with a service.
@@ -941,7 +941,7 @@ func Test_ProjectService_ServiceConfiguration(t *testing.T) {
 // operations when AdditionalProperties is nil.
 func Test_ProjectService_ServiceConfiguration_NilAdditionalProperties(t *testing.T) {
 	// Setup a mock context and temporary project directory.
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	temp := t.TempDir()
 
 	// Initialize project configuration with a service that has nil AdditionalProperties.
@@ -1025,7 +1025,7 @@ func Test_ProjectService_ServiceConfiguration_NilAdditionalProperties(t *testing
 // (like "host") can be retrieved and modified using the config methods after migrating
 // to the unified LoadConfig/SaveConfig approach.
 func Test_ProjectService_ChangeServiceHost(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	temp := t.TempDir()
 	azdContext := azdcontext.NewAzdContextWithDirectory(temp)
 
@@ -1097,7 +1097,7 @@ func Test_ProjectService_ChangeServiceHost(t *testing.T) {
 // Test_ProjectService_TypeValidation_InvalidChangesNotPersisted tests that invalid type changes
 // fail validation and are not persisted to disk.
 func Test_ProjectService_TypeValidation_InvalidChangesNotPersisted(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	temp := t.TempDir()
 
 	azdContext := azdcontext.NewAzdContextWithDirectory(temp)
@@ -1298,7 +1298,7 @@ func Test_ProjectService_TypeValidation_InvalidChangesNotPersisted(t *testing.T)
 
 // Test_ProjectService_TypeValidation_CoercedValues tests YAML type coercion behavior
 func Test_ProjectService_TypeValidation_CoercedValues(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	temp := t.TempDir()
 
 	azdContext := azdcontext.NewAzdContextWithDirectory(temp)
@@ -1376,7 +1376,7 @@ func Test_ProjectService_TypeValidation_CoercedValues(t *testing.T) {
 // This ensures that event handlers registered by azure.yaml hooks and azd extensions
 // continue to work after configuration modifications.
 func Test_ProjectService_EventDispatcherPreservation(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	temp := t.TempDir()
 
 	azdContext := azdcontext.NewAzdContextWithDirectory(temp)
@@ -1589,7 +1589,7 @@ func Test_ProjectService_EventDispatcherPreservation(t *testing.T) {
 // Test_ProjectService_EventDispatcherPreservation_MultipleUpdates tests that event dispatchers
 // remain functional after multiple sequential configuration updates.
 func Test_ProjectService_EventDispatcherPreservation_MultipleUpdates(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	temp := t.TempDir()
 
 	azdContext := azdcontext.NewAzdContextWithDirectory(temp)
@@ -1676,7 +1676,7 @@ func Test_ProjectService_EventDispatcherPreservation_MultipleUpdates(t *testing.
 }
 
 func Test_ProjectService_ServiceConfigValue_EmptyPath(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	temp := t.TempDir()
 
 	// Initialize AzdContext with the temporary directory
@@ -1741,7 +1741,7 @@ func Test_ProjectService_ServiceConfigValue_EmptyPath(t *testing.T) {
 }
 
 func Test_ProjectService_EmptyStringValidation(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	temp := t.TempDir()
 
 	// Initialize AzdContext with the temporary directory

@@ -182,7 +182,7 @@ func TestDeployActionRunAppliesResolvedTimeout(t *testing.T) {
 			action, serviceManager := newDeployActionForTimeoutTest(t, tt.flagTimeout, deployErr, false)
 			startTime := time.Now()
 
-			_, err := action.Run(context.Background())
+			_, err := action.Run(t.Context())
 			require.ErrorIs(t, err, deployErr)
 
 			require.True(t, serviceManager.deployHasDeadline, "deploy should run with a deadline")
@@ -196,7 +196,7 @@ func TestDeployActionRunTimeoutWarningAndErrorMessage(t *testing.T) {
 	t.Parallel()
 	action, serviceManager := newDeployActionForTimeoutTest(t, new(1), nil, true)
 
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.EqualError(
 		t,
 		err,
@@ -230,7 +230,7 @@ func TestDeployActionRunDoesNotTreatInternalDeadlineExceededAsDeployTimeout(t *t
 	t.Parallel()
 	action, serviceManager := newDeployActionForTimeoutTest(t, new(30), context.DeadlineExceeded, false)
 
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 	require.Equal(t, context.DeadlineExceeded, err)
 	serviceManager.AssertExpectations(t)
@@ -447,7 +447,7 @@ func deployTimeoutTestProjectConfig(t *testing.T) *project.ProjectConfig {
 	projectYaml := "name: test-proj\nservices:\n  api:\n    project: src/api\n    language: js\n    host: containerapp\n"
 
 	projectConfig, err := project.Parse(
-		context.Background(),
+		t.Context(),
 		projectYaml,
 	)
 	require.NoError(t, err)

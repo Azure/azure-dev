@@ -4,7 +4,6 @@
 package templates
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"testing"
@@ -25,7 +24,7 @@ var defaultTemplateSourceData = map[string]any{
 }
 
 func Test_Templates_NewTemplateManager(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	addGhMocks(mockContext)
 
 	templateManager, err := NewTemplateManager(
@@ -42,7 +41,7 @@ func Test_Templates_NewTemplateManager(t *testing.T) {
 }
 
 func Test_Templates_ListTemplates(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockAwesomeAzdTemplateSource(mockContext)
 
 	configManager := &mockUserConfigManager{}
@@ -67,7 +66,7 @@ func Test_Templates_ListTemplates(t *testing.T) {
 }
 
 func Test_Templates_ListTemplates_WithTagFilter(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockAwesomeAzdTemplateSource(mockContext)
 
 	configManager := &mockUserConfigManager{}
@@ -100,7 +99,7 @@ func Test_Templates_ListTemplates_WithTagFilter(t *testing.T) {
 }
 
 func Test_Templates_ListTemplates_SourceError(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	invalidUrl := "https://www.example.com/invalid.json"
 
@@ -137,7 +136,7 @@ func Test_Templates_ListTemplates_SourceError(t *testing.T) {
 }
 
 func Test_Templates_GetTemplate_WithValidPath(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	configManager := &mockUserConfigManager{}
 	configManager.On("Load").Return(config.NewConfig(defaultTemplateSourceData), nil)
 	addGhMocks(mockContext)
@@ -160,7 +159,7 @@ func Test_Templates_GetTemplate_WithValidPath(t *testing.T) {
 }
 
 func Test_Templates_GetTemplate_WithInvalidPath(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	configManager := &mockUserConfigManager{}
 	configManager.On("Load").Return(config.NewConfig(defaultTemplateSourceData), nil)
 	addGhMocks(mockContext)
@@ -179,7 +178,7 @@ func Test_Templates_GetTemplate_WithInvalidPath(t *testing.T) {
 }
 
 func Test_Templates_GetTemplate_WithNotFoundPath(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	configManager := &mockUserConfigManager{}
 	configManager.On("Load").Return(config.NewConfig(defaultTemplateSourceData), nil)
 	addGhMocks(mockContext)

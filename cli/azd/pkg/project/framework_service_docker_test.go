@@ -4,7 +4,6 @@
 package project
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -52,7 +51,7 @@ services:
 	env := environment.NewWithValues("test-env", nil)
 	env.SetSubscriptionId("sub")
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	envManager := &mockenv.MockEnvManager{}
 	envManager.On("Get", mock.Anything, "test-env").Return(env, nil)
 
@@ -168,7 +167,7 @@ services:
 	// Create service temp dir upfront so the mock closure can reference it.
 	serviceDir := t.TempDir()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	envManager := &mockenv.MockEnvManager{}
 	envManager.On("Get", mock.Anything, "test-env").Return(env, nil)
 
@@ -451,7 +450,7 @@ func Test_DockerProject_Build(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var dockerBuildArgs exec.RunArgs
-			mockContext := mocks.NewMockContext(context.Background())
+			mockContext := mocks.NewMockContext(t.Context())
 			envManager := &mockenv.MockEnvManager{}
 
 			// Set up env based on test case or default
@@ -694,7 +693,7 @@ func Test_DockerProject_Package(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockContext := mocks.NewMockContext(context.Background())
+			mockContext := mocks.NewMockContext(t.Context())
 			mockResults := setupDockerMocks(mockContext)
 			envManager := &mockenv.MockEnvManager{}
 

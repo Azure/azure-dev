@@ -49,7 +49,7 @@ import (
 )
 
 func TestBicepPlan(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	prepareBicepMocks(mockContext)
 	infraProvider := createBicepProvider(t, mockContext)
 
@@ -68,7 +68,7 @@ func TestBicepPlan(t *testing.T) {
 }
 
 func TestBicepPlanKeyVaultRef(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	prepareBicepMocks(mockContext)
 	infraProvider := createBicepProvider(t, mockContext)
 
@@ -85,7 +85,7 @@ func TestBicepPlanKeyVaultRef(t *testing.T) {
 }
 
 func TestBicepPlanParameterTypes(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	prepareBicepMocks(mockContext)
 	infraProvider := createBicepProvider(t, mockContext)
 
@@ -126,7 +126,7 @@ const paramsArmJson = `{
   }`
 
 func TestBicepPlanPrompt(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(args.Cmd, "bicep") && args.Args[0] == "--version"
@@ -161,7 +161,7 @@ func TestBicepPlanPrompt(t *testing.T) {
 func TestBicepState(t *testing.T) {
 	expectedWebsiteUrl := "http://myapp.azurewebsites.net"
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	prepareBicepMocks(mockContext)
 	prepareStateMocks(mockContext)
 
@@ -176,7 +176,7 @@ func TestBicepState(t *testing.T) {
 
 func TestBicepDestroy(t *testing.T) {
 	t.Run("Interactive", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		prepareBicepMocks(mockContext)
 		prepareStateMocks(mockContext)
 		prepareDestroyMocks(mockContext)
@@ -207,7 +207,7 @@ func TestBicepDestroy(t *testing.T) {
 	})
 
 	t.Run("InteractiveForceAndPurge", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		prepareBicepMocks(mockContext)
 		prepareStateMocks(mockContext)
 		prepareDestroyMocks(mockContext)
@@ -230,7 +230,7 @@ func TestBicepDestroy(t *testing.T) {
 
 func TestBicepDestroyLogAnalyticsWorkspace(t *testing.T) {
 	t.Run("WithPurge", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		prepareBicepMocks(mockContext)
 		prepareStateMocks(mockContext)
 		prepareLogAnalyticsDestroyMocks(mockContext)
@@ -251,7 +251,7 @@ func TestBicepDestroyLogAnalyticsWorkspace(t *testing.T) {
 }
 
 func TestDeploymentForResourceGroup(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(args.Cmd, "bicep") && strings.Contains(command, "--version")
@@ -959,7 +959,7 @@ func httpRespondFn(request *http.Request) (*http.Response, error) {
 // From a mocked list of deployments where there are multiple deployments with the matching tag, expect to pick the most
 // recent one.
 func TestFindCompletedDeployments(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(args.Cmd, "bicep") && strings.Contains(command, "--version")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -1091,7 +1091,7 @@ func (m *mockedScope) ListDeployments(ctx context.Context) ([]*azapi.ResourceDep
 }
 
 func TestUserDefinedTypes(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(args.Cmd, "bicep") && args.Args[0] == "--version"
 	}).Respond(exec.RunResult{
@@ -1575,7 +1575,7 @@ func TestDefaultLocationToSelectFn(t *testing.T) {
 }
 
 func TestPreviewWithNilResourceState(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	prepareBicepMocks(mockContext)
 
 	// Setup the WhatIf endpoint mock to return changes with nil After (simulating Delete)
@@ -1849,7 +1849,7 @@ func TestParameterTypeFromArmTypeIdentification(t *testing.T) {
 }
 
 func TestUnsetEnvVarForArrayParameter(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	// Create a template with optional array parameter (has a default value)
 	armTemplate := azure.ArmTemplate{
@@ -1877,7 +1877,7 @@ func TestUnsetEnvVarForArrayParameter(t *testing.T) {
 }
 
 func TestStructuredArrayWithNestedEnvVars(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	armTemplate := azure.ArmTemplate{
 		Schema:         "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
@@ -2088,7 +2088,7 @@ func TestParameters_IncludesRealEnvMappingsForMixedRefs(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			mockContext := mocks.NewMockContext(context.Background())
+			mockContext := mocks.NewMockContext(t.Context())
 
 			armTemplate := azure.ArmTemplate{
 				// nolint: lll
@@ -2154,7 +2154,7 @@ func TestParameters_IncludesRealEnvMappingsForMixedRefs(t *testing.T) {
 }
 
 func TestEnsureParametersSkipsVirtualEnvMappedRequiredParameters(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	armTemplate := azure.ArmTemplate{
 		Schema:         "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
@@ -2215,7 +2215,7 @@ func TestEnsureParametersSkipsVirtualEnvMappedRequiredParameters(t *testing.T) {
 }
 
 func TestPlannedOutputsSkipsSecureOutputs(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	armTemplate := azure.ArmTemplate{
 		Schema:         "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",

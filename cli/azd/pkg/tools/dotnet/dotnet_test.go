@@ -4,7 +4,6 @@
 package dotnet
 
 import (
-	"context"
 	_ "embed"
 	"testing"
 
@@ -16,7 +15,7 @@ import (
 var publishWithWorkloadUpdate string
 
 func Test_getTargetPort(t *testing.T) {
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 
 	cli := &Cli{
 		commandRunner: mockCtx.CommandRunner,

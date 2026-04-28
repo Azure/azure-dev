@@ -4,7 +4,6 @@
 package telemetry
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -31,7 +30,7 @@ func TestExportSpans(t *testing.T) {
 	spans = append(spans, GetSpanStub().Snapshot())
 	spans = append(spans, GetSpanStub().Snapshot())
 
-	err := exporter.ExportSpans(context.Background(), spans)
+	err := exporter.ExportSpans(t.Context(), spans)
 	assert.NoError(t, err)
 	assert.Len(t, queue.queue, 1)
 	assert.True(t, exporter.ExportedAny())

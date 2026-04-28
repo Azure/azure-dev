@@ -6,7 +6,6 @@ package containerregistry
 import (
 	"archive/tar"
 	"compress/gzip"
-	"context"
 	"errors"
 	"io"
 	"os"
@@ -55,7 +54,7 @@ func TestPackRemoteBuildSource_BasicContext(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(root, "main.go"), []byte("package main"), 0600))
 
 	archivePath, dockerfilePath, err := PackRemoteBuildSource(
-		context.Background(), root, filepath.Join(root, "Dockerfile"),
+		t.Context(), root, filepath.Join(root, "Dockerfile"),
 	)
 	if archivePath != "" {
 		defer os.Remove(archivePath)
@@ -81,7 +80,7 @@ func TestPackRemoteBuildSource_ExcludesGitDirectory(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(root, "app.go"), []byte("package app"), 0600))
 
 	archivePath, _, err := PackRemoteBuildSource(
-		context.Background(), root, filepath.Join(root, "Dockerfile"),
+		t.Context(), root, filepath.Join(root, "Dockerfile"),
 	)
 	if archivePath != "" {
 		defer os.Remove(archivePath)
@@ -108,7 +107,7 @@ func TestPackRemoteBuildSource_DockerignoreExcludesFiles(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(root, ".dockerignore"), []byte("*.env\n"), 0600))
 
 	archivePath, _, err := PackRemoteBuildSource(
-		context.Background(), root, filepath.Join(root, "Dockerfile"),
+		t.Context(), root, filepath.Join(root, "Dockerfile"),
 	)
 	if archivePath != "" {
 		defer os.Remove(archivePath)
@@ -135,7 +134,7 @@ func TestPackRemoteBuildSource_DockerfileSpecificDockerignore(t *testing.T) {
 	// Root .dockerignore would exclude main.go — but should NOT be used when dockerfile-specific exists
 	require.NoError(t, os.WriteFile(filepath.Join(root, ".dockerignore"), []byte("main.go\n"), 0600))
 
-	archivePath, _, err := PackRemoteBuildSource(context.Background(), root, dockerfilePath)
+	archivePath, _, err := PackRemoteBuildSource(t.Context(), root, dockerfilePath)
 	if archivePath != "" {
 		defer os.Remove(archivePath)
 	}
@@ -157,7 +156,7 @@ func TestPackRemoteBuildSource_DockerfileOutsideContext(t *testing.T) {
 	require.NoError(t, os.WriteFile(externalDockerfile, []byte("FROM ubuntu"), 0600))
 
 	archivePath, dockerfileArchivePath, err := PackRemoteBuildSource(
-		context.Background(), root, externalDockerfile,
+		t.Context(), root, externalDockerfile,
 	)
 	if archivePath != "" {
 		defer os.Remove(archivePath)
@@ -183,7 +182,7 @@ func TestPackRemoteBuildSource_SubdirectoriesIncluded(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(root, "src", "pkg", "util.go"), []byte("package pkg"), 0600))
 
 	archivePath, _, err := PackRemoteBuildSource(
-		context.Background(), root, filepath.Join(root, "Dockerfile"),
+		t.Context(), root, filepath.Join(root, "Dockerfile"),
 	)
 	if archivePath != "" {
 		defer os.Remove(archivePath)
@@ -203,7 +202,7 @@ func TestPackRemoteBuildSource_EmptyContextWithDockerfileOnly(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(root, "Dockerfile"), []byte("FROM scratch"), 0600))
 
 	archivePath, dockerfilePath, err := PackRemoteBuildSource(
-		context.Background(), root, filepath.Join(root, "Dockerfile"),
+		t.Context(), root, filepath.Join(root, "Dockerfile"),
 	)
 	if archivePath != "" {
 		defer os.Remove(archivePath)

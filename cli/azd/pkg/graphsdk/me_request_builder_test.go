@@ -4,7 +4,6 @@
 package graphsdk_test
 
 import (
-	"context"
 	"net/http"
 	"testing"
 
@@ -25,7 +24,7 @@ func TestGetMe(t *testing.T) {
 			UserPrincipalName: "john.doe@contoso.com",
 		}
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockgraphsdk.RegisterMeGetMock(mockContext, http.StatusOK, &expected)
 
 		client, err := mockgraphsdk.CreateGraphClient(mockContext)
@@ -38,7 +37,7 @@ func TestGetMe(t *testing.T) {
 	})
 
 	t.Run("Error", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockgraphsdk.RegisterMeGetMock(mockContext, http.StatusUnauthorized, nil)
 
 		client, err := mockgraphsdk.CreateGraphClient(mockContext)

@@ -21,7 +21,7 @@ func (tc testCommandExecutor) Run(ctx context.Context, name string, args []strin
 
 func TestEvalWorksWithEmptyInput(t *testing.T) {
 	evaluatorCalled := false
-	result, err := Eval(context.Background(), "", testCommandExecutor{
+	result, err := Eval(t.Context(), "", testCommandExecutor{
 		runImpl: func(name string, args []string) (bool, string, error) {
 			evaluatorCalled = true
 			return false, "", nil
@@ -36,7 +36,7 @@ func TestEvalWorksWithEmptyInput(t *testing.T) {
 func TestEmptyInvocation(t *testing.T) {
 	// This is not a valid command, so it should be left alone
 	evaluatorCalled := false
-	result, err := Eval(context.Background(), " $()  ", testCommandExecutor{
+	result, err := Eval(t.Context(), " $()  ", testCommandExecutor{
 		runImpl: func(name string, args []string) (bool, string, error) {
 			evaluatorCalled = true
 			return false, "", nil
@@ -66,7 +66,7 @@ func TestEvalNoSubstitution(t *testing.T) {
 	  }`
 
 	evaluatorCalled := false
-	result, err := Eval(context.Background(), input, testCommandExecutor{
+	result, err := Eval(t.Context(), input, testCommandExecutor{
 		runImpl: func(name string, args []string) (bool, string, error) {
 			evaluatorCalled = true
 			return false, "", nil
@@ -104,7 +104,7 @@ func TestSubstitution(t *testing.T) {
 		}
 	  }`
 
-	result, err := Eval(context.Background(), input, testCommandExecutor{
+	result, err := Eval(t.Context(), input, testCommandExecutor{
 		runImpl: func(name string, args []string) (bool, string, error) {
 			if name == "randomPassword" {
 				return true, "very-secret", nil
@@ -133,7 +133,7 @@ func TestEvaluatorReportingUnknownCommand(t *testing.T) {
 	  }`
 
 	evaluatorCalled := false
-	result, err := Eval(context.Background(), input, testCommandExecutor{
+	result, err := Eval(t.Context(), input, testCommandExecutor{
 		runImpl: func(name string, args []string) (bool, string, error) {
 			evaluatorCalled = true
 			return false, "", nil
@@ -160,7 +160,7 @@ func TestEvaluatorError(t *testing.T) {
 	  }`
 
 	evaluatorErr := fmt.Errorf("Something bad happened")
-	_, err := Eval(context.Background(), input, testCommandExecutor{
+	_, err := Eval(t.Context(), input, testCommandExecutor{
 		runImpl: func(name string, args []string) (bool, string, error) {
 			return false, "", evaluatorErr
 		},
@@ -197,7 +197,7 @@ func TestParameterExtraction(t *testing.T) {
 		}
 	  }`
 
-	result, err := Eval(context.Background(), input, testCommandExecutor{
+	result, err := Eval(t.Context(), input, testCommandExecutor{
 		runImpl: func(name string, args []string) (bool, string, error) {
 			if name == "randomPassword" {
 				return true, fmt.Sprintf("%s called with %v", name, args), nil
@@ -220,7 +220,7 @@ func TestMultipleSubstitutions(t *testing.T) {
 	delta echo
 	foxtrot golf hotel`
 
-	result, err := Eval(context.Background(), input, testCommandExecutor{
+	result, err := Eval(t.Context(), input, testCommandExecutor{
 		runImpl: func(name string, args []string) (bool, string, error) {
 			if name == "say" {
 				return true, args[0], nil
@@ -248,21 +248,21 @@ func TestFullSubstitution(t *testing.T) {
 	// The whole input needs to be substituted
 	var input = `$(say alpha)`
 	var expected = `alpha`
-	result, err := Eval(context.Background(), input, cmd)
+	result, err := Eval(t.Context(), input, cmd)
 	require.NoError(t, err)
 	require.Equal(t, expected, result)
 
 	// Special case that is important for us
 	input = `"$(say alpha)"`
 	expected = `"alpha"`
-	result, err = Eval(context.Background(), input, cmd)
+	result, err = Eval(t.Context(), input, cmd)
 	require.NoError(t, err)
 	require.Equal(t, expected, result)
 
 	// Once more, with whitespace, which should be preserved
 	input = ` " $(say alpha)"  `
 	expected = ` " alpha"  `
-	result, err = Eval(context.Background(), input, cmd)
+	result, err = Eval(t.Context(), input, cmd)
 	require.NoError(t, err)
 	require.Equal(t, expected, result)
 }

@@ -28,7 +28,7 @@ import (
 func Test_StorageBlobClient(t *testing.T) {
 	runTestWithRemoteState(t, func(storageConfig *storage.AccountConfig) {
 		t.Run("Crud", func(t *testing.T) {
-			mockContext := mocks.NewMockContext(context.Background())
+			mockContext := mocks.NewMockContext(t.Context())
 			session := recording.Start(t)
 
 			// Use the session proxy client when recording or in playback

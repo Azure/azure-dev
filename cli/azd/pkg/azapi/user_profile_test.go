@@ -30,7 +30,7 @@ func Test_GetUserAccessToken(t *testing.T) {
 		},
 	}
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	userProfile := NewUserProfileService(
 		&mocks.MockMultiTenantCredentialProvider{
 			TokenMap: map[string]mocks.MockCredentials{
@@ -59,7 +59,7 @@ func Test_GetSignedInUserId(t *testing.T) {
 			UserPrincipalName: "john.doe@contoso.com",
 		}
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		registerGetMeGraphMock(mockContext, http.StatusOK, &mockUserProfile)
 
 		userProfile := NewUserProfileService(
@@ -76,7 +76,7 @@ func Test_GetSignedInUserId(t *testing.T) {
 	})
 
 	t.Run("Error", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		registerGetMeGraphMock(mockContext, http.StatusBadRequest, nil)
 
 		userProfile := NewUserProfileService(

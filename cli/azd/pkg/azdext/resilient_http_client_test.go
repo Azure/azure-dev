@@ -46,7 +46,7 @@ func TestResilientClient_Success(t *testing.T) {
 
 	rc := NewResilientClient(nil, &ResilientClientOptions{Transport: transport})
 
-	resp, err := rc.Do(context.Background(), http.MethodGet, "https://example.com/api", nil)
+	resp, err := rc.Do(t.Context(), http.MethodGet, "https://example.com/api", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -85,7 +85,7 @@ func TestResilientClient_RetriesTransientFailures(t *testing.T) {
 		MaxDelay:     10 * time.Millisecond,
 	})
 
-	resp, err := rc.Do(context.Background(), http.MethodGet, "https://example.com/api", nil)
+	resp, err := rc.Do(t.Context(), http.MethodGet, "https://example.com/api", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -118,7 +118,7 @@ func TestResilientClient_ExhaustsRetries(t *testing.T) {
 		MaxDelay:     5 * time.Millisecond,
 	})
 
-	_, err := rc.Do(context.Background(), http.MethodGet, "https://example.com/api", nil)
+	_, err := rc.Do(t.Context(), http.MethodGet, "https://example.com/api", nil)
 	if err == nil {
 		t.Fatal("expected error after exhausting retries")
 	}
@@ -152,7 +152,7 @@ func TestResilientClient_NoRetryOn4xx(t *testing.T) {
 		InitialDelay: time.Millisecond,
 	})
 
-	resp, err := rc.Do(context.Background(), http.MethodGet, "https://example.com/api", nil)
+	resp, err := rc.Do(t.Context(), http.MethodGet, "https://example.com/api", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -177,7 +177,7 @@ func TestResilientClient_NetworkError(t *testing.T) {
 		MaxDelay:     5 * time.Millisecond,
 	})
 
-	_, err := rc.Do(context.Background(), http.MethodGet, "https://example.com/api", nil)
+	_, err := rc.Do(t.Context(), http.MethodGet, "https://example.com/api", nil)
 	if err == nil {
 		t.Fatal("expected error for network failure")
 	}
@@ -194,7 +194,7 @@ func TestResilientClient_ContextCancelled(t *testing.T) {
 		}, nil
 	})
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel() // cancel immediately
 
 	rc := NewResilientClient(nil, &ResilientClientOptions{
@@ -227,7 +227,7 @@ func TestResilientClient_BearerTokenInjection(t *testing.T) {
 	rc := NewResilientClient(cred, &ResilientClientOptions{Transport: transport})
 
 	// URL must match a known scope for the detector.
-	resp, err := rc.Do(context.Background(), http.MethodGet, "https://management.azure.com/subscriptions", nil)
+	resp, err := rc.Do(t.Context(), http.MethodGet, "https://management.azure.com/subscriptions", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -250,7 +250,7 @@ func TestResilientClient_TokenProviderError(t *testing.T) {
 
 	rc := NewResilientClient(cred, &ResilientClientOptions{Transport: transport})
 
-	_, err := rc.Do(context.Background(), http.MethodGet, "https://management.azure.com/subs", nil)
+	_, err := rc.Do(t.Context(), http.MethodGet, "https://management.azure.com/subs", nil)
 	if err == nil {
 		t.Fatal("expected error when token provider fails")
 	}
@@ -291,7 +291,7 @@ func TestResilientClient_BodyRewind(t *testing.T) {
 	})
 
 	body := bytes.NewReader([]byte("payload"))
-	resp, err := rc.Do(context.Background(), http.MethodPost, "https://example.com/api", body)
+	resp, err := rc.Do(t.Context(), http.MethodPost, "https://example.com/api", body)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -331,7 +331,7 @@ func TestResilientClient_RetryAfterHeader(t *testing.T) {
 		InitialDelay: time.Millisecond,
 	})
 
-	resp, err := rc.Do(context.Background(), http.MethodGet, "https://example.com/api", nil)
+	resp, err := rc.Do(t.Context(), http.MethodGet, "https://example.com/api", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -487,7 +487,7 @@ func TestResilientClient_AllRetryableStatusCodes(t *testing.T) {
 				InitialDelay: time.Millisecond,
 			})
 
-			_, err := rc.Do(context.Background(), http.MethodGet, "https://example.com/api", nil)
+			_, err := rc.Do(t.Context(), http.MethodGet, "https://example.com/api", nil)
 			if err == nil {
 				t.Fatal("expected error after retries exhausted")
 			}
@@ -521,7 +521,7 @@ func TestResilientClient_NonSeekableBodyRetryError(t *testing.T) {
 
 	// io.NopCloser wrapping strings.NewReader is NOT an io.ReadSeeker.
 	body := io.NopCloser(strings.NewReader("payload"))
-	_, err := rc.Do(context.Background(), http.MethodPost, "https://example.com/api", body)
+	_, err := rc.Do(t.Context(), http.MethodPost, "https://example.com/api", body)
 	if err == nil {
 		t.Fatal("expected error for non-seekable body on retry")
 	}
@@ -547,7 +547,7 @@ func TestResilientClient_TokenOverHTTP(t *testing.T) {
 	cred := &fakeTokenCredential{token: "secret-token"}
 	rc := NewResilientClient(cred, &ResilientClientOptions{Transport: transport})
 
-	_, err := rc.Do(context.Background(), http.MethodGet, "http://example.com/api", nil)
+	_, err := rc.Do(t.Context(), http.MethodGet, "http://example.com/api", nil)
 	if err == nil {
 		t.Fatal("expected error for HTTP URL with token provider")
 	}
@@ -587,7 +587,7 @@ func TestResilientClient_RetryAfterReplacesBackoff(t *testing.T) {
 	})
 
 	start := time.Now()
-	resp, err := rc.Do(context.Background(), http.MethodGet, "https://example.com/api", nil)
+	resp, err := rc.Do(t.Context(), http.MethodGet, "https://example.com/api", nil)
 	elapsed := time.Since(start)
 
 	if err != nil {
@@ -663,7 +663,7 @@ func TestResilientClient_NonSeekableBodyFailsFast(t *testing.T) {
 	})
 
 	body := io.NopCloser(strings.NewReader("payload"))
-	_, err := rc.Do(context.Background(), http.MethodPost, "https://example.com/api", body)
+	_, err := rc.Do(t.Context(), http.MethodPost, "https://example.com/api", body)
 	if err == nil {
 		t.Fatal("expected non-seekable body error")
 	}
@@ -705,7 +705,7 @@ func TestResilientClient_RetryAfterCappedInDo(t *testing.T) {
 		MaxRetries: 1,
 	})
 
-	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
+	ctx, cancel := context.WithTimeout(t.Context(), 25*time.Millisecond)
 	defer cancel()
 
 	_, err := rc.Do(ctx, http.MethodGet, "https://example.com/api", nil)

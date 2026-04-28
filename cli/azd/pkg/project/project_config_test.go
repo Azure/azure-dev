@@ -60,7 +60,7 @@ func TestProjectConfigParse_Invalid(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx := context.Background()
+			ctx := t.Context()
 			_, err := Parse(ctx, tt.projectConfig)
 			require.Error(t, err)
 		})
@@ -88,7 +88,7 @@ services:
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 	})
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	projectConfig, err := Parse(*mockContext.Context, testProj)
 	require.Nil(t, err)
 	require.NotNil(t, projectConfig)
@@ -123,7 +123,7 @@ services:
         - 'bar'
 `
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	projectConfig, err := Parse(*mockContext.Context, testProj)
 
 	require.NotNil(t, projectConfig)
@@ -168,7 +168,7 @@ func TestProjectWithExpandableDockerArgs(t *testing.T) {
 }
 
 func TestProjectConfigAddHandler(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	project := getProjectConfig()
 	handlerCalled := false
 
@@ -186,7 +186,7 @@ func TestProjectConfigAddHandler(t *testing.T) {
 }
 
 func TestProjectConfigRemoveHandler(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	project := getProjectConfig()
 	handler1Called := false
 
@@ -212,7 +212,7 @@ func TestProjectConfigRemoveHandler(t *testing.T) {
 }
 
 func TestProjectConfigWithMultipleEventHandlers(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	project := getProjectConfig()
 	handlerCalled1 := false
 	handlerCalled2 := false
@@ -241,7 +241,7 @@ func TestProjectConfigWithMultipleEventHandlers(t *testing.T) {
 }
 
 func TestProjectConfigWithMultipleEvents(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	project := getProjectConfig()
 
 	provisionHandlerCalled := false
@@ -270,7 +270,7 @@ func TestProjectConfigWithMultipleEvents(t *testing.T) {
 }
 
 func TestProjectConfigWithEventHandlerErrors(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	project := getProjectConfig()
 
 	handler1 := func(ctx context.Context, args ProjectLifecycleEventArgs) error {
@@ -312,7 +312,7 @@ services:
 }
 
 func TestProjectConfigRaiseEventWithoutArgs(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	project := getProjectConfig()
 	handlerCalled := false
 
@@ -331,7 +331,7 @@ func TestProjectConfigRaiseEventWithoutArgs(t *testing.T) {
 }
 
 func TestProjectConfigRaiseEventWithArgs(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	project := getProjectConfig()
 	handlerCalled := false
 	eventArgs := ProjectLifecycleEventArgs{
@@ -367,7 +367,7 @@ services:
     host: containerapp
     `
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	projectConfig, err := Parse(*mockContext.Context, testProj)
 	require.NoError(t, err)
 
@@ -410,7 +410,7 @@ metadata:
 	t.Run("noVersion", func(t *testing.T) {
 		internal.Version = "0.6.0-beta.3 (commit 0000000000000000000000000000000000000000)"
 
-		_, err := Parse(context.Background(), testProjWithoutVersion)
+		_, err := Parse(t.Context(), testProjWithoutVersion)
 		require.NoError(t, err)
 	})
 
@@ -418,33 +418,33 @@ metadata:
 		// Exact match of minimum version.
 		internal.Version = "0.6.0-beta.3 (commit 0000000000000000000000000000000000000000)"
 
-		_, err := Parse(context.Background(), testProjWithMinVersion)
+		_, err := Parse(t.Context(), testProjWithMinVersion)
 		require.NoError(t, err)
 
 		// Newer version than minimum.
 		internal.Version = "0.6.0 (commit 0000000000000000000000000000000000000000)"
 
-		_, err = Parse(context.Background(), testProjWithMinVersion)
+		_, err = Parse(t.Context(), testProjWithMinVersion)
 		require.NoError(t, err)
 	})
 
 	t.Run("unsupportedVersion", func(t *testing.T) {
 		internal.Version = "0.6.0-beta.2 (commit 0000000000000000000000000000000000000000)"
 
-		_, err := Parse(context.Background(), testProjWithMinVersion)
+		_, err := Parse(t.Context(), testProjWithMinVersion)
 		require.Error(t, err)
 
-		_, err = Parse(context.Background(), testProjWithMaxVersion)
+		_, err = Parse(t.Context(), testProjWithMaxVersion)
 		require.Error(t, err)
 	})
 
 	t.Run("devVersionAllowsAll", func(t *testing.T) {
 		internal.Version = "0.0.0-dev.0 (commit 0000000000000000000000000000000000000000)"
 
-		_, err := Parse(context.Background(), testProjWithMinVersion)
+		_, err := Parse(t.Context(), testProjWithMinVersion)
 		require.NoError(t, err)
 
-		_, err = Parse(context.Background(), testProjWithoutVersion)
+		_, err = Parse(t.Context(), testProjWithoutVersion)
 		require.NoError(t, err)
 	})
 }
@@ -466,7 +466,7 @@ func Test_Hooks_Config_Yaml_Marshalling(t *testing.T) {
 		require.NoError(t, err)
 		snapshot.SnapshotT(t, string(yamlBytes))
 
-		actual, err := Parse(context.Background(), string(yamlBytes))
+		actual, err := Parse(t.Context(), string(yamlBytes))
 		require.NoError(t, err)
 		require.Equal(t, expected.Hooks, actual.Hooks)
 	})
@@ -503,7 +503,7 @@ func Test_Hooks_Config_Yaml_Marshalling(t *testing.T) {
 		require.NoError(t, err)
 		snapshot.SnapshotT(t, string(yamlBytes))
 
-		actual, err := Parse(context.Background(), string(yamlBytes))
+		actual, err := Parse(t.Context(), string(yamlBytes))
 		require.NoError(t, err)
 		require.Equal(t, expected.Hooks, actual.Hooks)
 		require.Equal(t, expected.Services["api"].Hooks, actual.Services["api"].Hooks)
@@ -549,7 +549,7 @@ func Test_Hooks_Config_Yaml_Marshalling(t *testing.T) {
 		require.NoError(t, err)
 		snapshot.SnapshotT(t, string(yamlBytes))
 
-		actual, err := Parse(context.Background(), string(yamlBytes))
+		actual, err := Parse(t.Context(), string(yamlBytes))
 		require.NoError(t, err)
 		require.Equal(t, expected.Hooks, actual.Hooks)
 		require.Equal(t, expected.Services["api"].Hooks, actual.Services["api"].Hooks)

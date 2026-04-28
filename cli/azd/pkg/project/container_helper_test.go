@@ -32,7 +32,7 @@ import (
 )
 
 func Test_ContainerHelper_LocalImageTag(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockClock := clock.NewMock()
 	envName := "dev"
 	projectName := "my-app"
@@ -117,7 +117,7 @@ func Test_ContainerHelper_RemoteImageTag(t *testing.T) {
 		},
 	}
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	env := environment.NewWithValues("dev", map[string]string{})
 
 	containerHelper := NewContainerHelper(
@@ -354,7 +354,7 @@ func Test_ContainerHelper_RemoteImageTag_WithImageOverride(t *testing.T) {
 		},
 	}
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	env := environment.NewWithValues("dev", map[string]string{})
 
 	containerHelper := NewContainerHelper(
@@ -382,7 +382,7 @@ func Test_ContainerHelper_RemoteImageTag_WithImageOverride(t *testing.T) {
 
 func Test_ContainerHelper_Resolve_RegistryName(t *testing.T) {
 	t.Run("Default EnvVar", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		env := environment.NewWithValues("dev", map[string]string{
 			environment.ContainerRegistryEndpointEnvVarName: "contoso.azurecr.io",
 		})
@@ -398,7 +398,7 @@ func Test_ContainerHelper_Resolve_RegistryName(t *testing.T) {
 	})
 
 	t.Run("Azure Yaml with simple string", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		env := environment.NewWithValues("dev", map[string]string{})
 
 		containerHelper := NewContainerHelper(
@@ -413,7 +413,7 @@ func Test_ContainerHelper_Resolve_RegistryName(t *testing.T) {
 	})
 
 	t.Run("Azure Yaml with expandable string", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		env := environment.NewWithValues("dev", map[string]string{})
 		env.DotenvSet("MY_CUSTOM_REGISTRY", "custom.azurecr.io")
 
@@ -429,7 +429,7 @@ func Test_ContainerHelper_Resolve_RegistryName(t *testing.T) {
 	})
 
 	t.Run("No registry name", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		env := environment.NewWithValues("dev", map[string]string{})
 
 		containerHelper := NewContainerHelper(
@@ -607,7 +607,7 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockContext := mocks.NewMockContext(context.Background())
+			mockContext := mocks.NewMockContext(t.Context())
 			mockResults := setupDockerMocks(mockContext)
 			env := environment.NewWithValues("dev", map[string]string{})
 			dockerCli := docker.NewCli(mockContext.CommandRunner)
@@ -706,7 +706,7 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 }
 
 func Test_ContainerHelper_ConfiguredImage(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	env := environment.NewWithValues("dev", map[string]string{})
 
 	containerHelper := NewContainerHelper(
@@ -895,7 +895,7 @@ func (m *mockContainerRegistryServiceForRetry) FindContainerRegistryResourceGrou
 
 func Test_ContainerHelper_Credential_Retry(t *testing.T) {
 	t.Run("Retry on 404 on time", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		env := environment.NewWithValues("dev", map[string]string{})
 
 		mockContainerService := &mockContainerRegistryServiceForRetry{
@@ -1171,7 +1171,7 @@ func Test_ContainerHelper_Publish(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockContext := mocks.NewMockContext(context.Background())
+			mockContext := mocks.NewMockContext(t.Context())
 			mockResults := setupDockerMocks(mockContext)
 			env := environment.NewWithValues("dev", map[string]string{})
 			dockerCli := docker.NewCli(mockContext.CommandRunner)
@@ -1273,7 +1273,7 @@ func Test_ContainerHelper_Publish(t *testing.T) {
 }
 
 func Test_ContainerHelper_Publish_RemoteBuildLocalFallback(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockResults := setupDockerMocks(mockContext)
 	env := environment.NewWithValues("dev", map[string]string{})
 	dockerCli := docker.NewCli(mockContext.CommandRunner)

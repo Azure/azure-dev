@@ -22,7 +22,7 @@ import (
 func TestGetCurrentPrincipalId_PrefersOidFromAccessToken(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	userProfile := azapi.NewUserProfileService(
 		&mocks.MockMultiTenantCredentialProvider{
 			TokenMap: map[string]mocks.MockCredentials{
@@ -52,7 +52,7 @@ func TestGetCurrentPrincipalId_PrefersOidFromAccessToken(t *testing.T) {
 func TestGetCurrentPrincipalId_FallsBackToGraphWhenOidMissing(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/me")
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
@@ -90,7 +90,7 @@ func TestGetCurrentPrincipalId_FallsBackToGraphWhenOidMissing(t *testing.T) {
 func TestGetCurrentPrincipalId_ReturnsJoinedErrorWhenTokenAndGraphFail(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/me")
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {

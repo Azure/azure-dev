@@ -12,7 +12,7 @@ import (
 )
 
 func Test_getBuildType(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	t.Run("getPolicyTypesArgs contains projectId", func(t *testing.T) {
 		//arrange

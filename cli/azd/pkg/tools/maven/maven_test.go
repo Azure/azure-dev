@@ -4,7 +4,6 @@
 package maven
 
 import (
-	"context"
 	"log"
 	"os"
 	"path/filepath"
@@ -126,7 +125,7 @@ func Test_extractVersion(t *testing.T) {
 
 	mvn := NewCli(execMock)
 	placeExecutable(t, mvnwWithExt(), mvn.projectPath)
-	ver, err := mvn.extractVersion(context.Background())
+	ver, err := mvn.extractVersion(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, "3.9.1", ver)
 }

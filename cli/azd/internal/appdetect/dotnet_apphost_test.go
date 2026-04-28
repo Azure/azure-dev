@@ -4,7 +4,6 @@
 package appdetect
 
 import (
-	"context"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -214,7 +213,7 @@ builder.Build().Run();`
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			mockCtx := mocks.NewMockContext(context.Background())
+			mockCtx := mocks.NewMockContext(t.Context())
 
 			// Mock msbuild calls to return false for non-Aspire projects
 			mockCtx.CommandRunner.When(func(args exec.RunArgs, command string) bool {

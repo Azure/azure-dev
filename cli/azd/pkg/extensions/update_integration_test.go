@@ -4,7 +4,6 @@
 package extensions
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -36,7 +35,7 @@ func Test_Integration_UpdateCheck_FullFlow(t *testing.T) {
 		cacheManager: cacheManager,
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Step 1: Cache miss scenario
 	t.Run("cache_miss_returns_no_update", func(t *testing.T) {
@@ -183,7 +182,7 @@ func Test_Integration_PerSourceIsolation(t *testing.T) {
 		ttl:      4 * time.Hour,
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Create two different sources
 	source1 := "https://registry1.example.com/registry.json"
@@ -239,7 +238,7 @@ func Test_Integration_CacheExpiration(t *testing.T) {
 		ttl:      1 * time.Millisecond,
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	sourceName := "https://example.com/registry.json"
 
 	// Write cache
@@ -251,7 +250,9 @@ func Test_Integration_CacheExpiration(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// Wait for expiration
+	// Wait for expiration.
+	// justified: legitimate TTL expiration test — the cache manager reads wall-clock
+	// time internally, so a real sleep is required to observe expiration.
 	time.Sleep(10 * time.Millisecond)
 
 	// Cache should be expired
@@ -305,7 +306,7 @@ func Test_Integration_NetworkFailureGraceful(t *testing.T) {
 		cacheManager: cacheManager,
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Extension with source that has no cache (simulates network failure)
 	extension := &Extension{

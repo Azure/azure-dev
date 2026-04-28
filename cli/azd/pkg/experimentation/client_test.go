@@ -5,7 +5,6 @@ package experimentation
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -62,7 +61,7 @@ func TestGetVariantAssignments(t *testing.T) {
 		RequiredVariants: []string{"variant1", "variant2"},
 		BlockedVariants:  []string{"variant3", "variant4"},
 	}
-	resp, err := client.GetVariantAssignments(context.Background(), &request)
+	resp, err := client.GetVariantAssignments(t.Context(), &request)
 	require.NoError(t, err)
 	require.Equal(t, "context:393182", resp.AssignmentContext)
 	require.Equal(t, int64(1), resp.FlightingVersion)

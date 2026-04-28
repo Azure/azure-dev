@@ -4,7 +4,6 @@
 package mcp
 
 import (
-	"context"
 	"testing"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -89,7 +88,7 @@ func TestProxySamplingHandler_CreateMessage_NilHost(t *testing.T) {
 	// ensureMcpProxy dereferences host without a nil check,
 	// so a nil host is a programming error that panics.
 	handler := &ProxySamplingHandler{}
-	ctx := context.Background()
+	ctx := t.Context()
 	req := mcp.CreateMessageRequest{}
 
 	assert.Panics(t, func() {
@@ -101,7 +100,7 @@ func TestProxySamplingHandler_CreateMessage_NoProxyServer(t *testing.T) {
 	host := NewMcpHost()
 	handler := &ProxySamplingHandler{host: host}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	req := mcp.CreateMessageRequest{}
 
 	result, err := handler.CreateMessage(ctx, req)
@@ -115,7 +114,7 @@ func TestProxySamplingHandler_CreateMessage_NoSession(t *testing.T) {
 	host.proxyServer = &server.MCPServer{}
 	handler := &ProxySamplingHandler{host: host}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	req := mcp.CreateMessageRequest{}
 
 	result, err := handler.CreateMessage(ctx, req)
@@ -128,7 +127,7 @@ func TestProxyElicitationHandler_Elicit_NilHost(t *testing.T) {
 	// ensureMcpProxy dereferences host without a nil check,
 	// so a nil host is a programming error that panics.
 	handler := &ProxyElicitationHandler{}
-	ctx := context.Background()
+	ctx := t.Context()
 	req := mcp.ElicitationRequest{}
 
 	assert.Panics(t, func() {
@@ -140,7 +139,7 @@ func TestProxyElicitationHandler_Elicit_NoProxyServer(t *testing.T) {
 	host := NewMcpHost()
 	handler := &ProxyElicitationHandler{host: host}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	req := mcp.ElicitationRequest{}
 
 	result, err := handler.Elicit(ctx, req)
@@ -154,7 +153,7 @@ func TestProxyElicitationHandler_Elicit_NoSession(t *testing.T) {
 	host.proxyServer = &server.MCPServer{}
 	handler := &ProxyElicitationHandler{host: host}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	req := mcp.ElicitationRequest{}
 
 	result, err := handler.Elicit(ctx, req)

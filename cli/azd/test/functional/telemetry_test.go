@@ -6,7 +6,6 @@ package cli_test
 import (
 	"bufio"
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -356,7 +355,7 @@ func Test_CLI_Telemetry_NestedCommands(t *testing.T) {
 }
 
 func Test_Telemetry_AlphaFeatures_Enabled(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	t.Setenv("AZD_ALPHA_ENABLE_AKS_HELM", "false")
 
@@ -395,7 +394,7 @@ func attributesMap(attributes []Attribute) map[attribute.Key]any {
 func getEnvSubscriptionId(t *testing.T, dir string, envName string) string {
 	azdCtx := azdcontext.NewAzdContextWithDirectory(dir)
 	localDataStore := environment.NewLocalFileDataStore(azdCtx, config.NewFileConfigManager(config.NewManager()))
-	env, err := localDataStore.Get(context.Background(), envName)
+	env, err := localDataStore.Get(t.Context(), envName)
 	require.NoError(t, err)
 
 	return env.GetSubscriptionId()

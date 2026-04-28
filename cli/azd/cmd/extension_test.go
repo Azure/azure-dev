@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"bytes"
-	"context"
 	"testing"
 
 	"github.com/Masterminds/semver/v3"
@@ -337,7 +336,7 @@ func TestCurrentAzdSemver(t *testing.T) {
 func TestDisplayValidationResult(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	t.Run("valid_extension", func(t *testing.T) {
 		result := &extensions.RegistryValidationResult{
@@ -397,7 +396,7 @@ func TestDisplayValidationResult(t *testing.T) {
 func TestDisplayExtensionUsageAndExamples(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	version := &extensions.ExtensionVersion{
 		Usage: "azd my-ext [options]",
@@ -414,7 +413,7 @@ func TestDisplayExtensionUsageAndExamples(t *testing.T) {
 func TestDisplayVersionCompatibilityWarning(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	azdVersion, err := semver.NewVersion("1.24.0")
 	require.NoError(t, err)
 

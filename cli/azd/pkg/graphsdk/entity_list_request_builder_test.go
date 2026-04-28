@@ -4,7 +4,6 @@
 package graphsdk_test
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"testing"
@@ -29,7 +28,7 @@ func TestEntityListRequestBuilder(t *testing.T) {
 	}
 
 	t.Run("WithProperties", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockgraphsdk.RegisterApplicationListMock(mockContext, http.StatusOK, applications)
 
 		graphClient, err := mockgraphsdk.CreateGraphClient(mockContext)
@@ -52,7 +51,7 @@ func TestEntityListRequestBuilder(t *testing.T) {
 	})
 
 	t.Run("NoProperties", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockgraphsdk.RegisterApplicationListMock(mockContext, http.StatusOK, applications)
 
 		graphClient, err := mockgraphsdk.CreateGraphClient(mockContext)

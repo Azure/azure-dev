@@ -239,7 +239,7 @@ func createBrokerForEventHandler(
 ) (*grpcbroker.MessageBroker[azdext.EventMessage], context.Context, func()) {
 	t.Helper()
 
-	streamCtx := extensions.WithClaimsContext(context.Background(), &extensions.ExtensionClaims{
+	streamCtx := extensions.WithClaimsContext(t.Context(), &extensions.ExtensionClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject: extensionID,
 		},
@@ -277,7 +277,7 @@ func createBrokerForEventHandler(
 func TestEventService_handleSubscribeProjectEvent(t *testing.T) {
 	service, _ := createTestEventService()
 	extension := createTestExtension()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	tests := []struct {
 		name         string
@@ -330,7 +330,7 @@ func TestEventService_handleSubscribeProjectEvent(t *testing.T) {
 func TestEventService_handleSubscribeServiceEvent(t *testing.T) {
 	service, _ := createTestEventService()
 	extension := createTestExtension()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	tests := []struct {
 		name         string
@@ -413,7 +413,7 @@ func TestEventService_createProjectEventHandler(t *testing.T) {
 	md := metadata.New(map[string]string{
 		"authorization": "fake-token", // Extension claims would normally be in this token
 	})
-	streamCtx := metadata.NewIncomingContext(context.Background(), md)
+	streamCtx := metadata.NewIncomingContext(t.Context(), md)
 
 	// Create a mock broker (nil is acceptable since we're not executing the handler)
 	var mockBroker *grpcbroker.MessageBroker[azdext.EventMessage]
@@ -443,7 +443,7 @@ func TestEventService_createServiceEventHandler(t *testing.T) {
 	md := metadata.New(map[string]string{
 		"authorization": "fake-token", // Extension claims would normally be in this token
 	})
-	streamCtx := metadata.NewIncomingContext(context.Background(), md)
+	streamCtx := metadata.NewIncomingContext(t.Context(), md)
 
 	// Create a mock broker (nil is acceptable since we're not executing the handler)
 	var mockBroker *grpcbroker.MessageBroker[azdext.EventMessage]

@@ -84,7 +84,7 @@ func TestResourceNotAvailableHandler_WithLocationAndResourceType(t *testing.T) {
 			{URL: "https://example.com/docs", Title: "SKU availability"},
 		},
 	}
-	result := handler.Handle(context.Background(), err, rule)
+	result := handler.Handle(t.Context(), err, rule)
 
 	require.NotNil(t, result)
 	assert.Contains(t, result.Message, "Microsoft.Web/staticSites")
@@ -100,7 +100,7 @@ func TestResourceNotAvailableHandler_WithoutLocation(t *testing.T) {
 	err := errors.New(
 		"SkuNotAvailable: Microsoft.Compute/virtualMachines Standard_D2s_v3",
 	)
-	result := handler.Handle(context.Background(), err, ErrorSuggestionRule{})
+	result := handler.Handle(t.Context(), err, ErrorSuggestionRule{})
 
 	require.NotNil(t, result)
 	assert.Contains(t, result.Message, "Microsoft.Compute/virtualMachines")
@@ -114,7 +114,7 @@ func TestResourceNotAvailableHandler_NoResourceType(t *testing.T) {
 		}},
 	}
 	err := errors.New("LocationIsOfferRestricted: offer restricted in this region")
-	result := handler.Handle(context.Background(), err, ErrorSuggestionRule{})
+	result := handler.Handle(t.Context(), err, ErrorSuggestionRule{})
 
 	require.NotNil(t, result)
 	assert.Equal(t, "A resource type is not available in the current region.",
@@ -186,7 +186,7 @@ func TestResourceNotAvailableHandler_LocationNotAvailableForResourceType(t *test
 			{URL: "https://example.com/docs", Title: "Region availability"},
 		},
 	}
-	result := handler.Handle(context.Background(), realError, rule)
+	result := handler.Handle(t.Context(), realError, rule)
 
 	require.NotNil(t, result)
 	assert.Contains(t, result.Message, "Microsoft.Web/staticSites")

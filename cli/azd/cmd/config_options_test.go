@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"testing"
 
@@ -19,7 +18,7 @@ import (
 func TestConfigOptionsAction_JSON(t *testing.T) {
 	t.Parallel()
 	buf := &bytes.Buffer{}
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	console := mockContext.Console
 
 	// Create a temporary config file
@@ -95,7 +94,7 @@ func TestConfigOptionsAction_JSON(t *testing.T) {
 func TestConfigOptionsAction_Table(t *testing.T) {
 	t.Parallel()
 	buf := &bytes.Buffer{}
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	console := mockContext.Console
 
 	tempDir := t.TempDir()
@@ -133,7 +132,7 @@ func TestConfigOptionsAction_Table(t *testing.T) {
 func TestConfigOptionsAction_DefaultFormat(t *testing.T) {
 	t.Parallel()
 	buf := &bytes.Buffer{}
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	console := mockContext.Console
 
 	tempDir := t.TempDir()

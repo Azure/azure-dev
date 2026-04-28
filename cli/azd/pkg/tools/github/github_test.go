@@ -8,7 +8,6 @@ import (
 	"archive/zip"
 	"bytes"
 	"compress/gzip"
-	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -36,25 +35,25 @@ func TestGithubCLIDeploymentEnvironments(t *testing.T) {
 	repoSlug := "richardpark-msft/copilot-auth-tests"
 	envName := "copilot2"
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	cli := NewGitHubCli(mockContext.Console, commandRunner)
-	err := cli.EnsureInstalled(context.Background())
+	err := cli.EnsureInstalled(t.Context())
 	require.NoError(t, err)
 
-	err = cli.CreateEnvironmentIfNotExist(context.Background(), repoSlug, envName)
+	err = cli.CreateEnvironmentIfNotExist(t.Context(), repoSlug, envName)
 	require.NoError(t, err)
 
 	t.Cleanup(func() {
-		err = cli.DeleteEnvironment(context.Background(), repoSlug, envName)
+		err = cli.DeleteEnvironment(t.Context(), repoSlug, envName)
 		require.NoError(t, err)
 	})
 
-	err = cli.SetVariable(context.Background(), repoSlug, "hello", "world", &SetVariableOptions{
+	err = cli.SetVariable(t.Context(), repoSlug, "hello", "world", &SetVariableOptions{
 		Environment: envName,
 	})
 	require.NoError(t, err)
 
-	values, err := cli.ListVariables(context.Background(), repoSlug, &ListVariablesOptions{
+	values, err := cli.ListVariables(t.Context(), repoSlug, &ListVariablesOptions{
 		Environment: envName,
 	})
 	require.NoError(t, err)
@@ -125,7 +124,7 @@ func TestNewGitHubCli(t *testing.T) {
 	configRoot := t.TempDir()
 	t.Setenv("AZD_CONFIG_DIR", configRoot)
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet && request.URL.Host == "github.com"
@@ -144,7 +143,7 @@ func TestNewGitHubCli(t *testing.T) {
 
 	mockExtract := func(src, dst string) (string, error) {
 		exp, _ := azdGithubCliPath()
-		_ = osutil.Rename(context.Background(), src, exp)
+		_ = osutil.Rename(t.Context(), src, exp)
 		return src, nil
 	}
 
@@ -175,13 +174,13 @@ func TestNewGitHubCli(t *testing.T) {
 
 	require.Equal(t, []byte("this is github cli"), contents)
 
-	ver, err := cli.extractVersion(context.Background())
+	ver, err := cli.extractVersion(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, Version.String(), ver)
 }
 
 func TestGetAuthStatus(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet && request.URL.Host == "github.com"
@@ -206,7 +205,7 @@ func TestGetAuthStatus(t *testing.T) {
 
 	mockExtract := func(src, dst string) (string, error) {
 		exp, _ := azdGithubCliPath()
-		_ = osutil.Rename(context.Background(), src, exp)
+		_ = osutil.Rename(t.Context(), src, exp)
 		return src, nil
 	}
 
@@ -230,7 +229,7 @@ func TestNewGitHubCliUpdate(t *testing.T) {
 	configRoot := t.TempDir()
 	t.Setenv("AZD_CONFIG_DIR", configRoot)
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet && request.URL.Host == "github.com"
@@ -249,7 +248,7 @@ func TestNewGitHubCliUpdate(t *testing.T) {
 
 	mockExtract := func(src, dst string) (string, error) {
 		exp, _ := azdGithubCliPath()
-		_ = osutil.Rename(context.Background(), src, exp)
+		_ = osutil.Rename(t.Context(), src, exp)
 		return src, nil
 	}
 

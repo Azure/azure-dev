@@ -4,14 +4,13 @@
 package azdo
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
 
 func Test_getAzdoConnection(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	t.Run("empty organization name error", func(t *testing.T) {
 		_, err := GetConnection(ctx, "", "")
 		assert.EqualError(t, err, "organization name is required")

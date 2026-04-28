@@ -4,7 +4,6 @@
 package ext
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -129,7 +128,7 @@ func TestPythonHook_AutoDetectFromExtension(t *testing.T) {
 		}},
 	}
 
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockCtx)
 	stubPythonVersionCheck(mockCtx)
 
@@ -185,7 +184,7 @@ func TestPythonHook_ExplicitKind(t *testing.T) {
 		}},
 	}
 
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockCtx)
 	stubPythonVersionCheck(mockCtx)
 
@@ -234,7 +233,7 @@ func TestPythonHook_EnvVarsPassthrough(t *testing.T) {
 		}},
 	}
 
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockCtx)
 	stubPythonVersionCheck(mockCtx)
 
@@ -284,7 +283,7 @@ func TestPythonHook_WithRequirementsTxt(t *testing.T) {
 		}},
 	}
 
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockCtx)
 	stubPythonVersionCheck(mockCtx)
 
@@ -368,7 +367,7 @@ func TestPythonHook_StdoutCapture(t *testing.T) {
 		}},
 	}
 
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockCtx)
 	stubPythonVersionCheck(mockCtx)
 
@@ -415,7 +414,7 @@ func TestPythonHook_NonZeroExitCode(t *testing.T) {
 		}},
 	}
 
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockCtx)
 	stubPythonVersionCheck(mockCtx)
 
@@ -461,7 +460,7 @@ func TestPythonHook_ContinueOnError(t *testing.T) {
 		}},
 	}
 
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockCtx)
 	stubPythonVersionCheck(mockCtx)
 
@@ -505,7 +504,7 @@ func TestPythonHook_ProjectLevel(t *testing.T) {
 		}},
 	}
 
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockCtx)
 	stubPythonVersionCheck(mockCtx)
 
@@ -556,7 +555,7 @@ func TestPythonHook_ServiceLevel(t *testing.T) {
 		}},
 	}
 
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockCtx)
 	stubPythonVersionCheck(mockCtx)
 
@@ -627,7 +626,7 @@ func TestPythonHook_ShellHookUnaffected(t *testing.T) {
 		}},
 	}
 
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockCtx)
 	stubPythonVersionCheck(mockCtx)
 
@@ -761,7 +760,7 @@ func TestPythonHook_ExecutionPipeline(t *testing.T) {
 			}
 
 			mockCtx := mocks.NewMockContext(
-				context.Background(),
+				t.Context(),
 			)
 			registerHookExecutors(mockCtx)
 			stubPythonVersionCheck(mockCtx)
@@ -821,7 +820,7 @@ func TestPythonHook_PythonBinaryResolution(t *testing.T) {
 		}},
 	}
 
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockCtx)
 	stubPythonVersionCheck(mockCtx)
 
@@ -895,7 +894,7 @@ func TestPythonHook_ExplicitDirOverridesCwd(t *testing.T) {
 		}},
 	}
 
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockCtx)
 	stubPythonVersionCheck(mockCtx)
 
@@ -944,7 +943,7 @@ func TestPythonHook_InlineScriptRejected(t *testing.T) {
 		}},
 	}
 
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockCtx)
 
 	runner := buildRunner(

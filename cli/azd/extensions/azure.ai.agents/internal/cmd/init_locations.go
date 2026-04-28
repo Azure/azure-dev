@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,6 +23,12 @@ import (
 // hostedAgentRegionsURL points at the supported-regions manifest.
 // It is a var so tests can override it.
 var hostedAgentRegionsURL = "https://aka.ms/azd-ai-agents/regions"
+
+// embeddedHostedAgentRegionsJSON is the build-time fallback used when the live
+// manifest fetch fails (e.g. transient network issues, restrictive proxies).
+//
+//go:embed hosted-agent-regions.json
+var embeddedHostedAgentRegionsJSON []byte
 
 const (
 	hostedAgentRegionsFetchTimeout = 5 * time.Second
@@ -81,14 +88,21 @@ func supportedRegionsForInit(ctx context.Context) ([]string, error) {
 }
 
 // runRegionsFetch performs the network fetch, populates the cache on success, and
-// signals all waiters via fetch.done. A failed fetch clears the inflight slot so
-// subsequent callers retry instead of latching the error forever.
+// signals all waiters via fetch.done. If the fetch fails, the embedded build-time
+// manifest is used as a fallback so a transient network issue doesn't halt init.
 func runRegionsFetch(fetch *regionsFetch) {
 	// The fetch uses its own timeout (hostedAgentRegionsFetchTimeout) and is
 	// independent of any single caller's context, since the result is shared.
 	regions, err := fetchHostedAgentRegionsFromURL(
 		context.Background(), http.DefaultClient, hostedAgentRegionsURL,
 	)
+
+	if err != nil {
+		if fallback, fbErr := parseEmbeddedHostedAgentRegions(); fbErr == nil && len(fallback) > 0 {
+			regions = fallback
+			err = nil
+		}
+	}
 
 	regionsCache.mu.Lock()
 	if err == nil {
@@ -100,6 +114,22 @@ func runRegionsFetch(fetch *regionsFetch) {
 	fetch.regions = regions
 	fetch.err = err
 	close(fetch.done)
+}
+
+// parseEmbeddedHostedAgentRegions decodes the embedded build-time manifest used
+// as a fallback when the live fetch fails.
+func parseEmbeddedHostedAgentRegions() ([]string, error) {
+	var manifest hostedAgentRegionsManifest
+	if err := json.Unmarshal(embeddedHostedAgentRegionsJSON, &manifest); err != nil {
+		return nil, err
+	}
+	regions := make([]string, 0, len(manifest.Regions))
+	for _, r := range manifest.Regions {
+		if normalized := normalizeLocationName(r); normalized != "" {
+			regions = append(regions, normalized)
+		}
+	}
+	return regions, nil
 }
 
 // supportedModelLocations returns the intersection of a model's available locations with

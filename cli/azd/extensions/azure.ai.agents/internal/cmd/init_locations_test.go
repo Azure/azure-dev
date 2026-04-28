@@ -216,6 +216,35 @@ func TestSupportedRegionsForInit_ConcurrentCallersFetchOnce(t *testing.T) {
 	require.Equal(t, int32(1), hits.Load())
 }
 
+func TestSupportedRegionsForInit_FallsBackToEmbeddedOnFetchError(t *testing.T) {
+	resetRegionsCache(t, nil)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "boom", http.StatusInternalServerError)
+	}))
+	t.Cleanup(server.Close)
+
+	prev := hostedAgentRegionsURL
+	hostedAgentRegionsURL = server.URL
+	t.Cleanup(func() { hostedAgentRegionsURL = prev })
+
+	got, err := supportedRegionsForInit(t.Context())
+	require.NoError(t, err)
+
+	want, err := parseEmbeddedHostedAgentRegions()
+	require.NoError(t, err)
+	require.NotEmpty(t, want)
+	require.Equal(t, want, got)
+}
+
+func TestParseEmbeddedHostedAgentRegions_NotEmpty(t *testing.T) {
+	t.Parallel()
+
+	regions, err := parseEmbeddedHostedAgentRegions()
+	require.NoError(t, err)
+	require.NotEmpty(t, regions, "embedded fallback manifest must contain at least one region")
+}
+
 func resetRegionsCache(t *testing.T, regions []string) {
 	t.Helper()
 

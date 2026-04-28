@@ -26,8 +26,9 @@ type runFlags struct {
 	startCommand string
 }
 
-func newRunCommand() *cobra.Command {
+func newRunCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &runFlags{}
+	extCtx = ensureExtensionContext(extCtx)
 
 	cmd := &cobra.Command{
 		Use:   "run [name]",
@@ -65,7 +66,7 @@ Use a separate terminal to invoke the running agent:
 			ctx := azdext.WithAccessToken(cmd.Context())
 			logCleanup := setupDebugLogging(cmd.Flags())
 			defer logCleanup()
-			return runRun(ctx, flags)
+			return runRun(ctx, flags, extCtx.NoPrompt)
 		},
 	}
 
@@ -76,7 +77,7 @@ Use a separate terminal to invoke the running agent:
 	return cmd
 }
 
-func runRun(ctx context.Context, flags *runFlags) error {
+func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
 		return fmt.Errorf("failed to create azd client: %w", err)
@@ -84,7 +85,7 @@ func runRun(ctx context.Context, flags *runFlags) error {
 	defer azdClient.Close()
 
 	// Resolve the service source directory and startup command from azure.yaml
-	runCtx, err := resolveServiceRunContext(ctx, azdClient, flags.name, rootFlags.NoPrompt)
+	runCtx, err := resolveServiceRunContext(ctx, azdClient, flags.name, noPrompt)
 	if err != nil {
 		return err
 	}

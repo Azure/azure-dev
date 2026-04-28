@@ -43,7 +43,6 @@ import (
 )
 
 type initFlags struct {
-	*rootFlagsDefinition
 	projectResourceId string
 	modelDeployment   string
 	model             string
@@ -51,6 +50,9 @@ type initFlags struct {
 	src               string
 	env               string
 	protocols         []string
+	// noPrompt is resolved from the extension context (--no-prompt / AZD_NO_PROMPT)
+	// and is not registered as a CLI flag on the init command itself.
+	noPrompt bool
 }
 
 // AiProjectResourceConfig represents the configuration for an AI project resource
@@ -276,16 +278,20 @@ func runInitFromManifest(
 	return action.Run(ctx)
 }
 
-func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
-	flags := &initFlags{
-		rootFlagsDefinition: rootFlags,
-	}
+func newInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
+	flags := &initFlags{}
+	extCtx = ensureExtensionContext(extCtx)
 
 	cmd := &cobra.Command{
 		Use:   "init [<path>] [-m <manifest pointer>] [--src <source directory>]",
 		Short: fmt.Sprintf("Initialize a new AI agent project. %s", color.YellowString("(Preview)")),
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			flags.noPrompt = extCtx.NoPrompt
+			if flags.env == "" {
+				flags.env = extCtx.Environment
+			}
+
 			printBanner(cmd.OutOrStdout())
 
 			// Resolve optional positional argument into --manifest or --src
@@ -338,8 +344,8 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 					return fmt.Errorf("checking for existing manifest: %w", detectErr)
 				}
 				if detected != "" {
-					useExisting := flags.NoPrompt
-					if !flags.NoPrompt {
+					useExisting := flags.noPrompt
+					if !flags.noPrompt {
 						confirmResp, promptErr := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
 							Options: &azdext.ConfirmOptions{
 								Message: fmt.Sprintf(
@@ -392,7 +398,7 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 				switch initMode {
 				case initModeTemplate:
 					// User chose to start from a template - select one
-					selectedTemplate, err := promptAgentTemplate(ctx, azdClient, httpClient, flags.NoPrompt)
+					selectedTemplate, err := promptAgentTemplate(ctx, azdClient, httpClient, flags.noPrompt)
 					if err != nil {
 						if exterrors.IsCancellation(err) {
 							return exterrors.Cancelled("initialization was cancelled")
@@ -514,8 +520,6 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 	cmd.Flags().StringVarP(&flags.src, "src", "s", "",
 		"Directory to download the agent definition to (defaults to 'src/<agent-id>')")
 
-	cmd.Flags().StringVar(&flags.env, "environment", "", "The name of the azd environment to use.")
-
 	cmd.Flags().StringSliceVar(&flags.protocols, "protocol", nil,
 		"Protocols supported by the agent (e.g., 'responses', 'invocations'). Can be specified multiple times.")
 
@@ -594,7 +598,7 @@ func (a *InitAction) Run(ctx context.Context) error {
 
 		// Prompt for manifest parameters (e.g. tool credentials) after project selection
 		agentManifest, err = agent_yaml.ProcessManifestParameters(
-			ctx, agentManifest, a.azdClient, a.flags.NoPrompt,
+			ctx, agentManifest, a.azdClient, a.flags.noPrompt,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to process manifest parameters: %w", err)
@@ -1557,7 +1561,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	}
 
 	// Detect startup command from the project source directory
-	startupCmd, err := resolveStartupCommandForInit(ctx, a.azdClient, a.projectConfig.Path, targetDir, a.flags.NoPrompt)
+	startupCmd, err := resolveStartupCommandForInit(ctx, a.azdClient, a.projectConfig.Path, targetDir, a.flags.noPrompt)
 	if err != nil {
 		return err
 	}
@@ -1642,7 +1646,7 @@ func (a *InitAction) resolveCollisions(
 		return "", "", err
 	}
 
-	if a.flags.NoPrompt {
+	if a.flags.noPrompt {
 		log.Printf(
 			"Collision on %q; using %q", agentId, suggestion,
 		)

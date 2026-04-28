@@ -41,11 +41,13 @@ type invokeFlags struct {
 }
 
 type InvokeAction struct {
-	flags *invokeFlags
+	flags    *invokeFlags
+	noPrompt bool
 }
 
-func newInvokeCommand() *cobra.Command {
+func newInvokeCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &invokeFlags{}
+	extCtx = ensureExtensionContext(extCtx)
 
 	cmd := &cobra.Command{
 		Use:   "invoke [name] [message]",
@@ -144,7 +146,10 @@ session automatically. Pass --new-session to force a reset.`,
 				}
 			}
 
-			action := &InvokeAction{flags: flags}
+			action := &InvokeAction{
+				flags:    flags,
+				noPrompt: extCtx.NoPrompt,
+			}
 			return action.Run(ctx)
 		},
 	}
@@ -202,11 +207,11 @@ func (a *InvokeAction) resolveProtocol(
 
 	if a.flags.local {
 		return resolveAgentProtocol(
-			ctx, azdClient, "", rootFlags.NoPrompt,
+			ctx, azdClient, "", a.noPrompt,
 		)
 	}
 	return resolveAgentProtocol(
-		ctx, azdClient, a.flags.name, rootFlags.NoPrompt,
+		ctx, azdClient, a.flags.name, a.noPrompt,
 	)
 }
 
@@ -257,7 +262,7 @@ func (a *InvokeAction) responsesLocal(ctx context.Context) error {
 		defer azdClient.Close()
 	}
 
-	agentKey := resolveLocalAgentKey(ctx, azdClient, a.flags.name, rootFlags.NoPrompt)
+	agentKey := resolveLocalAgentKey(ctx, azdClient, a.flags.name, a.noPrompt)
 
 	// Resolve local session and conversation IDs (always generated locally).
 	var sid, convID string
@@ -350,7 +355,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	var agentEndpoint string
 
 	// Auto-resolve agent name and version from azure.yaml
-	if info, err := resolveAgentServiceFromProject(ctx, azdClient, name, rootFlags.NoPrompt); err == nil {
+	if info, err := resolveAgentServiceFromProject(ctx, azdClient, name, a.noPrompt); err == nil {
 		if name == "" && info.AgentName != "" {
 			name = info.AgentName
 		}
@@ -495,7 +500,7 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 		defer azdClient.Close()
 	}
 
-	agentKey := resolveLocalAgentKey(ctx, azdClient, a.flags.name, rootFlags.NoPrompt)
+	agentKey := resolveLocalAgentKey(ctx, azdClient, a.flags.name, a.noPrompt)
 
 	// Resolve local session ID (generated locally, not server-assigned).
 	var sid string
@@ -562,7 +567,7 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	var agentEndpoint string
 
 	// Auto-resolve agent name from azure.yaml / azd environment
-	if info, err := resolveAgentServiceFromProject(ctx, azdClient, name, rootFlags.NoPrompt); err == nil {
+	if info, err := resolveAgentServiceFromProject(ctx, azdClient, name, a.noPrompt); err == nil {
 		if name == "" && info.AgentName != "" {
 			name = info.AgentName
 		}

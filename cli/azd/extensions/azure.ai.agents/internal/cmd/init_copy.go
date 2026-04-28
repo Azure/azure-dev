@@ -60,7 +60,7 @@ func (a *InitAction) validateLocalContainerAgentCopy(ctx context.Context, manife
 		return nil
 	}
 
-	if a.flags.NoPrompt {
+	if a.flags.noPrompt {
 		return nil
 	}
 

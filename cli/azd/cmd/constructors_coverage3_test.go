@@ -76,6 +76,8 @@ func Test_NewExtensionUpgradeAction(t *testing.T) {
 	action := newExtensionUpgradeAction(
 		[]string{"test-ext"},
 		&extensionUpgradeFlags{},
+		&output.NoneFormatter{},
+		&bytes.Buffer{},
 		mockinput.NewMockConsole(),
 		nil, // extensionManager
 	)

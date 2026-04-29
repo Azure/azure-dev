@@ -1,5 +1,9 @@
 # Release History
 
+## 0.1.28-preview (2026-04-28)
+
+- [[#7930]](https://github.com/Azure/azure-dev/pull/7930) Fetch the hosted-agent supported regions list at runtime from a remote JSON manifest with an embedded fallback, replacing the hardcoded list; region data can now be updated without cutting an extension release.
+
 ## 0.1.27-preview (2026-04-22)
 
 - [[#7880]](https://github.com/Azure/azure-dev/pull/7880) Remove ACR endpoint pre-check from the package step; packaging no longer fails early when `AZURE_CONTAINER_REGISTRY_ENDPOINT` is absent, allowing provisioning to create the registry first for new projects.

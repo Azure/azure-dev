@@ -665,9 +665,15 @@ func Test_PromptService_PromptSubscription_ErrorWithSuggestion(t *testing.T) {
 	})
 
 	require.Error(t, err)
-	// Verify that the suggestion text is included in the error message (wrapped by interceptor)
-	require.Contains(t, err.Error(), "azd auth login")
+	// Status message carries only the underlying error; suggestion travels via ActionableErrorDetail.
 	require.Contains(t, err.Error(), "AADSTS70043")
+	require.NotContains(t, err.Error(), "azd auth login",
+		"suggestion text must not be concatenated into status.Message")
+	st, ok := status.FromError(err)
+	require.True(t, ok)
+	actionable := azdext.ActionableErrorDetailFromStatus(st)
+	require.NotNil(t, actionable)
+	require.Contains(t, actionable.GetSuggestion(), "azd auth login")
 	mockPrompter.AssertExpectations(t)
 }
 
@@ -697,9 +703,15 @@ func Test_PromptService_PromptResourceGroup_ErrorWithSuggestion(t *testing.T) {
 	})
 
 	require.Error(t, err)
-	// Verify that the suggestion text is included in the error message (wrapped by interceptor)
-	require.Contains(t, err.Error(), "azd auth login")
+	// Status message carries only the underlying error; suggestion travels via ActionableErrorDetail.
 	require.Contains(t, err.Error(), "AADSTS70043")
+	require.NotContains(t, err.Error(), "azd auth login",
+		"suggestion text must not be concatenated into status.Message")
+	st, ok := status.FromError(err)
+	require.True(t, ok)
+	actionable := azdext.ActionableErrorDetailFromStatus(st)
+	require.NotNil(t, actionable)
+	require.Contains(t, actionable.GetSuggestion(), "azd auth login")
 	mockPrompter.AssertExpectations(t)
 }
 

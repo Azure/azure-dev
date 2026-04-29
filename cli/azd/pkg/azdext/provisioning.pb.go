@@ -523,6 +523,10 @@ func (*RegisterProvisioningProviderResponse) Descriptor() ([]byte, []int) {
 	return file_provisioning_proto_rawDescGZIP(), []int{2}
 }
 
+// ProvisioningInitializeRequest does not include a separate provider_name field.
+// provider_name is extracted from ProvisioningOptions.provider because Initialize
+// is the first call and Options always contains the provider identity. This
+// matches how the core Manager.newProvider() resolves by Options.Provider.
 type ProvisioningInitializeRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ProjectPath   string                 `protobuf:"bytes,1,opt,name=project_path,json=projectPath,proto3" json:"project_path,omitempty"`

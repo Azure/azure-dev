@@ -11,6 +11,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
 )
 
 func TestErrorSuggestion(t *testing.T) {
@@ -75,6 +76,13 @@ func TestErrorSuggestion(t *testing.T) {
 			}),
 			expected: "Request a quota increase",
 		},
+		{
+			name: "GrpcActionableError",
+			err: mustStatusErrorWithDetails(codes.InvalidArgument, "invalid config", &ActionableErrorDetail{
+				Suggestion: "Fix the extension config and retry.",
+			}),
+			expected: "Fix the extension config and retry.",
+		},
 	}
 
 	for _, tt := range tests {
@@ -136,6 +144,14 @@ func TestErrorMessage(t *testing.T) {
 			}),
 			expected: "wrapped service",
 		},
+		{
+			name: "GrpcActionableError",
+			err: mustStatusErrorWithDetails(codes.InvalidArgument, "The extension configuration is invalid.",
+				&ActionableErrorDetail{
+					Suggestion: "Fix the extension config and retry.",
+				}),
+			expected: "The extension configuration is invalid.",
+		},
 	}
 
 	for _, tt := range tests {
@@ -180,6 +196,19 @@ func TestErrorLinks(t *testing.T) {
 			name:     "GenericError",
 			err:      errors.New("generic"),
 			expected: nil,
+		},
+		{
+			name: "GrpcActionableError",
+			err: mustStatusErrorWithDetails(codes.InvalidArgument, "invalid config", &ActionableErrorDetail{
+				Links: []*ErrorLink{{
+					Url:   "https://aka.ms/azd-errors#invalid-config",
+					Title: "Invalid config reference",
+				}},
+			}),
+			expected: []errorhandler.ErrorLink{{
+				URL:   "https://aka.ms/azd-errors#invalid-config",
+				Title: "Invalid config reference",
+			}},
 		},
 	}
 

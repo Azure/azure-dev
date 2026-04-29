@@ -247,8 +247,72 @@ func (x *ErrorLink) GetTitle() string {
 	return ""
 }
 
+// ActionableErrorDetail carries user-facing remediation metadata in gRPC status details.
+// It is used for host-originated errors so clients can preserve suggestions and links
+// without parsing status message text.
+//
+// Direction: host -> extension only. Extensions returning errors to the host should use
+// LocalError / ServiceError (transported via ExtensionError) instead.
+//
+// The user-facing error message lives in google.rpc.Status.message; this detail does not
+// duplicate it.
+type ActionableErrorDetail struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Suggestion    string                 `protobuf:"bytes,1,opt,name=suggestion,proto3" json:"suggestion,omitempty"` // Optional user-facing suggestion for resolving the error
+	Links         []*ErrorLink           `protobuf:"bytes,2,rep,name=links,proto3" json:"links,omitempty"`           // Optional reference links rendered alongside the suggestion
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ActionableErrorDetail) Reset() {
+	*x = ActionableErrorDetail{}
+	mi := &file_errors_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ActionableErrorDetail) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ActionableErrorDetail) ProtoMessage() {}
+
+func (x *ActionableErrorDetail) ProtoReflect() protoreflect.Message {
+	mi := &file_errors_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ActionableErrorDetail.ProtoReflect.Descriptor instead.
+func (*ActionableErrorDetail) Descriptor() ([]byte, []int) {
+	return file_errors_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *ActionableErrorDetail) GetSuggestion() string {
+	if x != nil {
+		return x.Suggestion
+	}
+	return ""
+}
+
+func (x *ActionableErrorDetail) GetLinks() []*ErrorLink {
+	if x != nil {
+		return x.Links
+	}
+	return nil
+}
+
 // ExtensionError is a unified error message that can represent errors from different sources.
 // It provides structured error information for telemetry and error handling.
+//
+// Direction: extension -> host only. Counterpart of host's ActionableErrorDetail, which carries
+// host-originated remediation metadata in the opposite direction.
 type ExtensionError struct {
 	state      protoimpl.MessageState `protogen:"open.v1"`
 	Message    string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`                        // Human-readable error message
@@ -268,7 +332,7 @@ type ExtensionError struct {
 
 func (x *ExtensionError) Reset() {
 	*x = ExtensionError{}
-	mi := &file_errors_proto_msgTypes[3]
+	mi := &file_errors_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -280,7 +344,7 @@ func (x *ExtensionError) String() string {
 func (*ExtensionError) ProtoMessage() {}
 
 func (x *ExtensionError) ProtoReflect() protoreflect.Message {
-	mi := &file_errors_proto_msgTypes[3]
+	mi := &file_errors_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -293,7 +357,7 @@ func (x *ExtensionError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExtensionError.ProtoReflect.Descriptor instead.
 func (*ExtensionError) Descriptor() ([]byte, []int) {
-	return file_errors_proto_rawDescGZIP(), []int{3}
+	return file_errors_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ExtensionError) GetMessage() string {
@@ -381,7 +445,12 @@ const file_errors_proto_rawDesc = "" +
 	"\bcategory\x18\x02 \x01(\tR\bcategory\"3\n" +
 	"\tErrorLink\x12\x10\n" +
 	"\x03url\x18\x01 \x01(\tR\x03url\x12\x14\n" +
-	"\x05title\x18\x02 \x01(\tR\x05title\"\xb6\x02\n" +
+	"\x05title\x18\x02 \x01(\tR\x05title\"`\n" +
+	"\x15ActionableErrorDetail\x12\x1e\n" +
+	"\n" +
+	"suggestion\x18\x01 \x01(\tR\n" +
+	"suggestion\x12'\n" +
+	"\x05links\x18\x02 \x03(\v2\x11.azdext.ErrorLinkR\x05links\"\xb6\x02\n" +
 	"\x0eExtensionError\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12+\n" +
 	"\x06origin\x18\x04 \x01(\x0e2\x13.azdext.ErrorOriginR\x06origin\x12\x1e\n" +
@@ -413,24 +482,26 @@ func file_errors_proto_rawDescGZIP() []byte {
 }
 
 var file_errors_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_errors_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_errors_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_errors_proto_goTypes = []any{
-	(ErrorOrigin)(0),           // 0: azdext.ErrorOrigin
-	(*ServiceErrorDetail)(nil), // 1: azdext.ServiceErrorDetail
-	(*LocalErrorDetail)(nil),   // 2: azdext.LocalErrorDetail
-	(*ErrorLink)(nil),          // 3: azdext.ErrorLink
-	(*ExtensionError)(nil),     // 4: azdext.ExtensionError
+	(ErrorOrigin)(0),              // 0: azdext.ErrorOrigin
+	(*ServiceErrorDetail)(nil),    // 1: azdext.ServiceErrorDetail
+	(*LocalErrorDetail)(nil),      // 2: azdext.LocalErrorDetail
+	(*ErrorLink)(nil),             // 3: azdext.ErrorLink
+	(*ActionableErrorDetail)(nil), // 4: azdext.ActionableErrorDetail
+	(*ExtensionError)(nil),        // 5: azdext.ExtensionError
 }
 var file_errors_proto_depIdxs = []int32{
-	0, // 0: azdext.ExtensionError.origin:type_name -> azdext.ErrorOrigin
-	3, // 1: azdext.ExtensionError.links:type_name -> azdext.ErrorLink
-	1, // 2: azdext.ExtensionError.service_error:type_name -> azdext.ServiceErrorDetail
-	2, // 3: azdext.ExtensionError.local_error:type_name -> azdext.LocalErrorDetail
-	4, // [4:4] is the sub-list for method output_type
-	4, // [4:4] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	3, // 0: azdext.ActionableErrorDetail.links:type_name -> azdext.ErrorLink
+	0, // 1: azdext.ExtensionError.origin:type_name -> azdext.ErrorOrigin
+	3, // 2: azdext.ExtensionError.links:type_name -> azdext.ErrorLink
+	1, // 3: azdext.ExtensionError.service_error:type_name -> azdext.ServiceErrorDetail
+	2, // 4: azdext.ExtensionError.local_error:type_name -> azdext.LocalErrorDetail
+	5, // [5:5] is the sub-list for method output_type
+	5, // [5:5] is the sub-list for method input_type
+	5, // [5:5] is the sub-list for extension type_name
+	5, // [5:5] is the sub-list for extension extendee
+	0, // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_errors_proto_init() }
@@ -438,7 +509,7 @@ func file_errors_proto_init() {
 	if File_errors_proto != nil {
 		return
 	}
-	file_errors_proto_msgTypes[3].OneofWrappers = []any{
+	file_errors_proto_msgTypes[4].OneofWrappers = []any{
 		(*ExtensionError_ServiceError)(nil),
 		(*ExtensionError_LocalError)(nil),
 	}
@@ -448,7 +519,7 @@ func file_errors_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_errors_proto_rawDesc), len(file_errors_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   4,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

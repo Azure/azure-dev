@@ -91,6 +91,15 @@ func isLinuxWebApp(response *armappservice.WebAppsClientGetResponse) bool {
 	return false
 }
 
+// isAppStopped returns true when the web app is in the "Stopped" state.
+// This is used to skip deployment status tracking for stopped apps, which
+// would otherwise poll indefinitely with 0 instances.
+func isAppStopped(response *armappservice.WebAppsClientGetResponse) bool {
+	return response.Properties != nil &&
+		response.Properties.State != nil &&
+		*response.Properties.State == "Stopped"
+}
+
 func appServiceRepositoryHost(
 	response *armappservice.WebAppsClientGetResponse,
 	appName string,
@@ -158,6 +167,7 @@ func (cli *AzureClient) DeployAppServiceZip(
 	appName string,
 	deployZipFile io.ReadSeeker,
 	progressLog func(string),
+	skipStatusCheck bool,
 ) (_ *string, err error) {
 	ctx, span := tracing.Start(ctx, events.DeployAppServiceZipEvent)
 	defer func() { span.EndWithStatus(err) }()
@@ -181,7 +191,7 @@ func (cli *AzureClient) DeployAppServiceZip(
 	span.SetAttributes(fields.DeployLinuxKey.Key.Bool(isLinux))
 
 	// Deployment Status API only support linux web app for now
-	if isLinux {
+	if isLinux && !skipStatusCheck && !isAppStopped(app) {
 		// Build failures can be caused by an SCM container restart triggered by ARM
 		// applying site config (app settings) shortly after the site is created.
 		// Due to eventual consistency in the Azure platform, the SCM container may
@@ -236,6 +246,10 @@ func (cli *AzureClient) DeployAppServiceZip(
 			}
 			break
 		}
+	}
+
+	if isLinux && isAppStopped(app) {
+		progressLog("Web app is stopped — skipping runtime deployment status tracking")
 	}
 
 	// Rewind the zip file before the fallback deploy — the tracked deploy consumed it.

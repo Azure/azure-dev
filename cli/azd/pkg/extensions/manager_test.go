@@ -1183,6 +1183,148 @@ func Test_GetInstalled_WithSourceFilter(t *testing.T) {
 	})
 }
 
+func Test_CreateSourcesFromConfig_PartialSchemaFailure(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Create a compatible registry file (schema 1.0)
+	compatibleRegistry := Registry{
+		SchemaVersion: "1.0",
+		Extensions: []*ExtensionMetadata{
+			{
+				Id:          "compat.extension",
+				Namespace:   "compat",
+				DisplayName: "Compatible Extension",
+				Description: "An extension from a compatible source",
+				Versions: []ExtensionVersion{{
+					Version:   "1.0.0",
+					Artifacts: sampleArtifacts,
+				}},
+			},
+		},
+	}
+	compatData, err := json.Marshal(compatibleRegistry)
+	require.NoError(t, err)
+	compatFile := filepath.Join(tempDir, "compat-registry.json")
+	require.NoError(t, os.WriteFile(compatFile, compatData, 0600))
+
+	// Create an incompatible registry file (schema 2.0)
+	incompatibleRegistry := map[string]any{
+		"schemaVersion": "2.0",
+		"extensions":    []any{},
+	}
+	incompatData, err := json.Marshal(incompatibleRegistry)
+	require.NoError(t, err)
+	incompatFile := filepath.Join(tempDir, "incompat-registry.json")
+	require.NoError(t, os.WriteFile(
+		incompatFile, incompatData, 0600,
+	))
+
+	mockContext := mocks.NewMockContext(context.Background())
+
+	// Pre-populate config with only our file sources so the
+	// default "azd" URL source is never auto-created.
+	cfg, _ := mockContext.ConfigManager.Load("")
+	require.NoError(t, cfg.Set("extension.sources.compatible",
+		&SourceConfig{
+			Name:     "compatible",
+			Type:     SourceKindFile,
+			Location: compatFile,
+		},
+	))
+	require.NoError(t, cfg.Set("extension.sources.incompatible",
+		&SourceConfig{
+			Name:     "incompatible",
+			Type:     SourceKindFile,
+			Location: incompatFile,
+		},
+	))
+
+	userConfigManager := config.NewUserConfigManager(
+		mockContext.ConfigManager,
+	)
+	sourceManager := NewSourceManager(
+		mockContext.Container,
+		userConfigManager,
+		mockContext.HttpClient,
+	)
+	lazyRunner := lazy.NewLazy(func() (*Runner, error) {
+		return NewRunner(mockContext.CommandRunner), nil
+	})
+	manager, err := NewManager(
+		userConfigManager, sourceManager,
+		lazyRunner, mockContext.HttpClient,
+	)
+	require.NoError(t, err)
+
+	// FindExtensions should succeed — the compatible source works
+	extensions, err := manager.FindExtensions(
+		*mockContext.Context, nil,
+	)
+	require.NoError(t, err)
+	require.Len(t, extensions, 1)
+	require.Equal(t, "compat.extension", extensions[0].Id)
+}
+
+func Test_CreateSourcesFromConfig_AllSchemasIncompatible(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Create two incompatible registry files
+	for _, name := range []string{
+		"incompat1.json", "incompat2.json",
+	} {
+		registry := map[string]any{
+			"schemaVersion": "2.0",
+			"extensions":    []any{},
+		}
+		data, err := json.Marshal(registry)
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(
+			filepath.Join(tempDir, name), data, 0600,
+		))
+	}
+
+	mockContext := mocks.NewMockContext(context.Background())
+
+	// Pre-populate config with only incompatible file sources.
+	cfg, _ := mockContext.ConfigManager.Load("")
+	require.NoError(t, cfg.Set("extension.sources.src1",
+		&SourceConfig{
+			Name:     "src1",
+			Type:     SourceKindFile,
+			Location: filepath.Join(tempDir, "incompat1.json"),
+		},
+	))
+	require.NoError(t, cfg.Set("extension.sources.src2",
+		&SourceConfig{
+			Name:     "src2",
+			Type:     SourceKindFile,
+			Location: filepath.Join(tempDir, "incompat2.json"),
+		},
+	))
+
+	userConfigManager := config.NewUserConfigManager(
+		mockContext.ConfigManager,
+	)
+	sourceManager := NewSourceManager(
+		mockContext.Container,
+		userConfigManager,
+		mockContext.HttpClient,
+	)
+	lazyRunner := lazy.NewLazy(func() (*Runner, error) {
+		return NewRunner(mockContext.CommandRunner), nil
+	})
+	manager, err := NewManager(
+		userConfigManager, sourceManager,
+		lazyRunner, mockContext.HttpClient,
+	)
+	require.NoError(t, err)
+
+	// FindExtensions should fail — all sources are incompatible
+	_, err = manager.FindExtensions(*mockContext.Context, nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "not supported")
+}
+
 func Test_EntryPoint_PathTraversal_Blocked(t *testing.T) {
 	// Test that path traversal in entryPoint is detected via the shared IsPathContained utility
 	testCases := []struct {

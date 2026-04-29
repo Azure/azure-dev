@@ -163,14 +163,13 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 	// Skip when the project has no hosted agent services. `postdeploy` fires on every
 	// `azd deploy`, so without this guard the AZURE_AI_PROJECT_ENDPOINT/AZURE_TENANT_ID
 	// reads below would fail for projects that don't use this extension. See #7373.
-	hasHostedAgent := false
+	var hostedAgents []*azdext.ServiceConfig
 	for _, svc := range args.Project.Services {
 		if svc.Host == AiAgentHost && isHostedAgentService(svc, args.Project) {
-			hasHostedAgent = true
-			break
+			hostedAgents = append(hostedAgents, svc)
 		}
 	}
-	if !hasHostedAgent {
+	if len(hostedAgents) == 0 {
 		return nil
 	}
 
@@ -223,10 +222,7 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 
 	// Build name→principalID map by fetching the agent version for each hosted service.
 	agentIdentities := make(map[string]string)
-	for _, svc := range args.Project.Services {
-		if svc.Host != AiAgentHost || !isHostedAgentService(svc, args.Project) {
-			continue
-		}
+	for _, svc := range hostedAgents {
 		serviceKey := toServiceKey(svc.Name)
 
 		versionResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{

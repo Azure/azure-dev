@@ -17,10 +17,13 @@ import (
 func TestPostdeployHandler_NoAgentService_NoOp(t *testing.T) {
 	t.Parallel()
 
+	// Use a temp dir + explicit RelativePath so isHostedAgentService deterministically
+	// returns false (no agent.yaml present) regardless of the test working directory.
 	args := &azdext.ProjectEventArgs{
 		Project: &azdext.ProjectConfig{
+			Path: t.TempDir(),
 			Services: map[string]*azdext.ServiceConfig{
-				"teams-bot": {Name: "teams-bot", Host: "containerapp"},
+				"teams-bot": {Name: "teams-bot", Host: "containerapp", RelativePath: "."},
 			},
 		},
 	}

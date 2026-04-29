@@ -167,8 +167,11 @@ In-memory `sync.Map` cache keyed by SHA-256 of the full Bicep file tree:
 Activates unconditionally. Per service, creates three steps:
 
 1. **`package-<svc>`** — no dependencies; runs `serviceManager.Package` or uses `--from-package`
-2. **`publish-<svc>`** — depends on `package-<svc>`; runs `serviceManager.Publish`
-3. **`deploy-<svc>`** — depends on `publish-<svc>`; runs `serviceManager.Deploy`
+2. **`publish-<svc>`** — depends on `package-<svc>`; runs `serviceManager.Publish` with
+   `deployTimeout` context deadline (resolves target resource via Azure API calls that can
+   block due to eventual consistency after provisioning)
+3. **`deploy-<svc>`** — depends on `publish-<svc>`; runs `serviceManager.Deploy` with
+   `deployTimeout` context deadline
 
 **Build gate (soft serialization)**: `serviceGraphOptions.buildGateKey` is an
 optional callback that returns an opaque string grouping for each service.

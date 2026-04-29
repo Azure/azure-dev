@@ -11,12 +11,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
-// TestPostdeployHandler_NoAgentService_NoOp verifies that postdeployHandler returns nil
-// without making any azd RPC calls when the project does not include any hosted agent
-// services. This guards against the regression described in
-// https://github.com/Azure/azure-dev/pull/7373 where projects that don't use the agents
-// extension would surface confusing errors (e.g. AZURE_AI_PROJECT_ENDPOINT not set)
-// from the postdeploy hook.
+// TestPostdeployHandler_NoAgentService_NoOp verifies postdeployHandler returns nil
+// without any RPC calls when the project has no hosted agent services. Regression
+// guard for #7373.
 func TestPostdeployHandler_NoAgentService_NoOp(t *testing.T) {
 	t.Parallel()
 
@@ -28,7 +25,7 @@ func TestPostdeployHandler_NoAgentService_NoOp(t *testing.T) {
 		},
 	}
 
-	// azdClient is intentionally nil — the early return must fire before any RPC call.
+	// nil azdClient — the early return must fire before any RPC call.
 	if err := postdeployHandler(t.Context(), nil, args); err != nil {
 		t.Fatalf("expected no error for project without agent services, got: %v", err)
 	}

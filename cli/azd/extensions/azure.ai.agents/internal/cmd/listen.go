@@ -160,14 +160,9 @@ func isHostedAgentService(svc *azdext.ServiceConfig, proj *azdext.ProjectConfig)
 }
 
 func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
-	// IMPORTANT: This guard must remain at the top of postdeployHandler.
-	// The extension subscribes to the global `postdeploy` project event, which fires for
-	// every `azd deploy`/`azd up` regardless of whether the project has any hosted agent
-	// services. Without this early return, projects that don't use the agents extension
-	// (e.g. plain container apps) hit the AZURE_AI_PROJECT_ENDPOINT/AZURE_TENANT_ID checks
-	// below and surface confusing errors. See https://github.com/Azure/azure-dev/pull/7373
-	// (and the regression that brought this back) for context — do not remove without
-	// providing an equivalent no-op short-circuit for non-hosted-agent projects.
+	// Skip when the project has no hosted agent services. `postdeploy` fires on every
+	// `azd deploy`, so without this guard the AZURE_AI_PROJECT_ENDPOINT/AZURE_TENANT_ID
+	// reads below would fail for projects that don't use this extension. See #7373.
 	hasHostedAgent := false
 	for _, svc := range args.Project.Services {
 		if svc.Host == AiAgentHost && isHostedAgentService(svc, args.Project) {

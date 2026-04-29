@@ -8,6 +8,8 @@ import (
 	"io"
 	"log"
 	"os"
+	"strings"
+	"unicode/utf8"
 
 	"dario.cat/mergo"
 	surveyterm "github.com/AlecAivazis/survey/v2/terminal"
@@ -46,6 +48,11 @@ type PromptOptions struct {
 	IgnoreHintKeys bool
 	// The optional help message that displays on the next line (default: "")
 	HelpMessageOnNextLine string
+	// Whether or not the input represents a secret value (default: false).
+	// When true, the typed value is masked in the terminal (rendered as
+	// asterisks) and hint keys ('?' / escape) are treated as input characters
+	// rather than triggers, so they can be part of the secret.
+	Secret bool
 }
 
 var DefaultPromptOptions PromptOptions = PromptOptions{
@@ -92,6 +99,12 @@ func NewPrompt(options *PromptOptions) *Prompt {
 	// Auto-generate hint text only when a help message is available
 	if mergedOptions.Hint == "" && mergedOptions.HelpMessage != "" {
 		mergedOptions.Hint = "[Type ? for hint]"
+	}
+
+	// When prompting for a secret, treat hint keys ('?' / escape) as regular
+	// input so they can be part of the secret value.
+	if mergedOptions.Secret {
+		mergedOptions.IgnoreHintKeys = true
 	}
 
 	return &Prompt{
@@ -225,9 +238,14 @@ func (p *Prompt) Render(printer Printer) error {
 	// Value
 	if p.value != "" {
 		valueOutput := p.value
+		if p.options.Secret {
+			// Mask each rune of the secret with an asterisk so the actual
+			// characters are never written to the terminal.
+			valueOutput = strings.Repeat("*", utf8.RuneCountInString(p.value))
+		}
 
 		if p.complete || p.value == p.options.DefaultValue {
-			valueOutput = output.WithHighLightFormat(p.value)
+			valueOutput = output.WithHighLightFormat(valueOutput)
 		}
 
 		printer.Fprintf("%s", valueOutput)

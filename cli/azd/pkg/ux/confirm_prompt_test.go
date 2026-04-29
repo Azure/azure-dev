@@ -5,6 +5,7 @@ package ux
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -361,4 +362,88 @@ func TestPrompt_WithCanvas(t *testing.T) {
 
 	result := p.WithCanvas(c)
 	assert.Equal(t, p, result)
+}
+
+func TestNewPrompt_secret_forces_ignore_hint_keys(t *testing.T) {
+	// When Secret is true, '?' and escape should be treated as input characters
+	// rather than hint triggers, so IgnoreHintKeys must be implicitly enabled.
+	p := NewPrompt(&PromptOptions{
+		Message: "Password",
+		Secret:  true,
+	})
+	assert.True(t, p.options.Secret)
+	assert.True(t, p.options.IgnoreHintKeys)
+}
+
+func TestPrompt_Render_secret_masks_value_in_progress(t *testing.T) {
+	var buf bytes.Buffer
+	printer := NewPrinter(&buf)
+
+	p := NewPrompt(&PromptOptions{
+		Message: "Password",
+		Secret:  true,
+	})
+	p.value = "hunter2"
+
+	err := p.Render(printer)
+	require.NoError(t, err)
+
+	output := buf.String()
+	assert.Contains(t, output, "Password")
+	// Each rune of the secret value must be masked with an asterisk and the
+	// original characters must never be written to the terminal.
+	assert.Contains(t, output, strings.Repeat("*", len("hunter2")))
+	assert.NotContains(t, output, "hunter2")
+}
+
+func TestPrompt_Render_secret_masks_value_on_completion(t *testing.T) {
+	var buf bytes.Buffer
+	printer := NewPrinter(&buf)
+
+	p := NewPrompt(&PromptOptions{
+		Message: "Password",
+		Secret:  true,
+	})
+	p.value = "s3cret!"
+	p.complete = true
+
+	err := p.Render(printer)
+	require.NoError(t, err)
+
+	output := buf.String()
+	assert.Contains(t, output, strings.Repeat("*", len("s3cret!")))
+	assert.NotContains(t, output, "s3cret!")
+}
+
+func TestPrompt_Render_secret_masks_unicode_by_rune_count(t *testing.T) {
+	var buf bytes.Buffer
+	printer := NewPrinter(&buf)
+
+	p := NewPrompt(&PromptOptions{
+		Message: "Password",
+		Secret:  true,
+	})
+	// 5 runes but 15 bytes in UTF-8 — masking must be by rune count.
+	p.value = "こんにちは"
+
+	err := p.Render(printer)
+	require.NoError(t, err)
+
+	output := buf.String()
+	assert.Contains(t, output, strings.Repeat("*", 5))
+	assert.NotContains(t, output, "こんにちは")
+}
+
+func TestPrompt_Render_non_secret_shows_value(t *testing.T) {
+	// Sanity check: when Secret is not set, the value is shown as-is.
+	var buf bytes.Buffer
+	printer := NewPrinter(&buf)
+
+	p := NewPrompt(&PromptOptions{Message: "Name"})
+	p.value = "hunter2"
+
+	err := p.Render(printer)
+	require.NoError(t, err)
+
+	assert.Contains(t, buf.String(), "hunter2")
 }

@@ -779,6 +779,10 @@ func TestParseGlobalFlags_OutputAttachedShortForm(t *testing.T) {
 			t.Parallel()
 			opts := &internal.GlobalCommandOptions{}
 			err := ParseGlobalFlags(tc.args, opts)
+			// We only assert no error here. The -o/--output flag is registered on the
+			// pre-parse FlagSet solely to prevent pflag from walking attached short
+			// values char-by-char and failing on "-e"; the parsed value is intentionally
+			// not captured into GlobalCommandOptions (Cobra handles --output per command).
 			require.NoError(t, err, "ParseGlobalFlags must not error for args: %v", tc.args)
 		})
 	}

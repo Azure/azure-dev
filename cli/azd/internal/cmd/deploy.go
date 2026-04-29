@@ -308,6 +308,13 @@ func (da *DeployAction) deployServicesGraph(
 			serviceNames,
 		)
 		da.console = &silentSpinnerConsole{syncConsole: sc}
+		// Suppress previewer output at the shared console level so that
+		// DI-injected consumers (e.g. ContainerHelper's Docker output)
+		// don't corrupt the progress table display.
+		if ps, ok := origConsole.(input.PreviewerSuppressor); ok {
+			ps.SuppressPreviewer()
+			defer ps.UnsuppressPreviewer()
+		}
 	} else {
 		// Still wrap the console for thread-safety without suppressing spinners.
 		da.console = sc
@@ -624,3 +631,12 @@ func (*silentSpinnerConsole) StopSpinner(_ context.Context, title string, _ inpu
 }
 
 func (*silentSpinnerConsole) IsSpinnerRunning(_ context.Context) bool { return false }
+
+func (*silentSpinnerConsole) ShowPreviewer(_ context.Context, _ *input.ShowPreviewerOptions) io.Writer {
+	log.Printf("silentSpinnerConsole: dropped ShowPreviewer — progress table active")
+	return io.Discard
+}
+
+func (*silentSpinnerConsole) StopPreviewer(_ context.Context, _ bool) {
+	log.Printf("silentSpinnerConsole: dropped StopPreviewer — progress table active")
+}

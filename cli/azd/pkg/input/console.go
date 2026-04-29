@@ -62,6 +62,14 @@ type ShowPreviewerOptions struct {
 	Title        string
 }
 
+// PreviewerSuppressor is an optional interface that Console implementations
+// may support. When the progress table is active, callers can suppress
+// previewer output to prevent terminal corruption.
+type PreviewerSuppressor interface {
+	SuppressPreviewer()
+	UnsuppressPreviewer()
+}
+
 type PromptDialog struct {
 	Title       string
 	Description string
@@ -166,8 +174,9 @@ type AskerConsole struct {
 	spinnerTerminalMode yacspin.TerminalMode
 	spinnerCurrentTitle string
 
-	previewer         syncatomic.Pointer[progressLog]
-	previewerRefCount int // tracks concurrent ShowPreviewer callers; only stop when it reaches 0
+	previewer           syncatomic.Pointer[progressLog]
+	previewerRefCount   int // tracks concurrent ShowPreviewer callers; only stop when it reaches 0
+	previewerSuppressed syncatomic.Bool
 
 	currentIndent *atomic.String
 	// consoleWidth is the width of the underlying console window. The value is updated as the window resized. Nil when
@@ -333,6 +342,11 @@ func defaultShowPreviewerOptions() *ShowPreviewerOptions {
 }
 
 func (c *AskerConsole) ShowPreviewer(ctx context.Context, options *ShowPreviewerOptions) io.Writer {
+	if c.previewerSuppressed.Load() {
+		log.Printf("ShowPreviewer suppressed — progress table active")
+		return io.Discard
+	}
+
 	c.showProgressMu.Lock()
 	defer c.showProgressMu.Unlock()
 
@@ -378,6 +392,10 @@ func (c *AskerConsole) ShowPreviewer(ctx context.Context, options *ShowPreviewer
 }
 
 func (c *AskerConsole) StopPreviewer(ctx context.Context, keepLogs bool) {
+	if c.previewerSuppressed.Load() {
+		return
+	}
+
 	c.showProgressMu.Lock()
 	defer c.showProgressMu.Unlock()
 
@@ -397,6 +415,18 @@ func (c *AskerConsole) StopPreviewer(ctx context.Context, keepLogs bool) {
 	c.writer = c.defaultWriter
 
 	_ = c.spinner.Unpause()
+}
+
+// SuppressPreviewer prevents ShowPreviewer from rendering until UnsuppressPreviewer
+// is called. Use this when a progress table owns the terminal output and previewer
+// content would corrupt the display.
+func (c *AskerConsole) SuppressPreviewer() {
+	c.previewerSuppressed.Store(true)
+}
+
+// UnsuppressPreviewer re-enables previewer rendering.
+func (c *AskerConsole) UnsuppressPreviewer() {
+	c.previewerSuppressed.Store(false)
 }
 
 // truncationDots is the text we use to indicate that text has been truncated.

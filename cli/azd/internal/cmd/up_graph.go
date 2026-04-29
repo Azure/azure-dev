@@ -337,6 +337,13 @@ func (u *UpGraphAction) Run(
 			serviceNames[i] = svc.Name
 		}
 		deployTracker = newDeployProgressTracker(w, u.console.IsSpinnerInteractive(), serviceNames)
+		// Suppress previewer output at the shared console level so that
+		// DI-injected consumers (e.g. ContainerHelper's Docker output)
+		// don't corrupt the progress table display.
+		if ps, ok := u.console.(input.PreviewerSuppressor); ok {
+			ps.SuppressPreviewer()
+			defer ps.UnsuppressPreviewer()
+		}
 	}
 
 	updateDeployProgress := func(svcName string, phase deployPhase, detail string) {

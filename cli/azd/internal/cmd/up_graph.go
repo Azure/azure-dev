@@ -5,12 +5,14 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"os"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -325,6 +327,24 @@ func (u *UpGraphAction) Run(
 		return nil, fmt.Errorf("building %s step: %w", prePackageEventStep, err)
 	}
 
+	// Create a deploy progress tracker so users see real-time feedback
+	// during the package → publish → deploy phase (after provisioning).
+	// In JSON output mode or when no writer is available, skip the tracker.
+	var deployTracker *deployProgressTracker
+	if w := u.console.GetWriter(); u.formatter.Kind() != output.JsonFormat && w != nil {
+		serviceNames := make([]string, len(stableServices))
+		for i, svc := range stableServices {
+			serviceNames[i] = svc.Name
+		}
+		deployTracker = newDeployProgressTracker(w, u.console.IsSpinnerInteractive(), serviceNames)
+	}
+
+	updateDeployProgress := func(svcName string, phase deployPhase, detail string) {
+		if deployTracker != nil {
+			deployTracker.Update(svcName, phase, detail)
+		}
+	}
+
 	handles, err := addServiceStepsToGraph(g, serviceGraphOptions{
 		services:       stableServices,
 		serviceManager: u.serviceManager,
@@ -338,6 +358,9 @@ func (u *UpGraphAction) Run(
 			safeCon.MessageUxItem(cbCtx, deployTimeoutWarning(svc.Name, deployTimeout))
 		},
 		buildGateKey: aspireBuildGateKey,
+		onPhaseProgress: func(svcName string, phase deployPhase, detail string) {
+			updateDeployProgress(svcName, phase, detail)
+		},
 	})
 	if err != nil {
 		return nil, err
@@ -448,7 +471,85 @@ func (u *UpGraphAction) Run(
 		TitleNote: "Packaging overlaps with provisioning for faster execution",
 	})
 
-	result := exegraph.RunWithResult(ctx, g, u.runOptions())
+	// Start the deploy progress ticker lazily — only when the first
+	// deploy-phase step (package/publish/deploy) begins. This avoids
+	// conflicting with the provisioning progress display.
+	var (
+		tickerOnce sync.Once
+		stopTicker func()
+	)
+	if deployTracker != nil {
+		stopTicker = func() {} // no-op until started
+	}
+
+	opts := u.runOptions()
+	baseOnStepStart := opts.OnStepStart
+	baseOnStepDone := opts.OnStepDone
+
+	opts.OnStepStart = func(stepName string) {
+		if baseOnStepStart != nil {
+			baseOnStepStart(stepName)
+		}
+		// Update deploy progress tracker for service steps.
+		// Packaging runs in parallel with provisioning, so only update the
+		// data model silently. Start the visual ticker when the first
+		// publish or deploy step begins — these gate on provision completion,
+		// avoiding conflicts with the provisioning progress display.
+		if svc, ok := strings.CutPrefix(stepName, "package-"); ok {
+			updateDeployProgress(svc, phasePackaging, "")
+		} else if svc, ok := strings.CutPrefix(stepName, "publish-"); ok {
+			tickerOnce.Do(func() {
+				if deployTracker != nil {
+					stopTicker = deployTracker.StartTicker(ctx)
+				}
+			})
+			updateDeployProgress(svc, phasePublish, "")
+		} else if svc, ok := strings.CutPrefix(stepName, "deploy-"); ok {
+			tickerOnce.Do(func() {
+				if deployTracker != nil {
+					stopTicker = deployTracker.StartTicker(ctx)
+				}
+			})
+			updateDeployProgress(svc, phaseDeploying, "")
+		}
+	}
+	opts.OnStepDone = func(stepName string, err error) {
+		if baseOnStepDone != nil {
+			baseOnStepDone(stepName, err)
+		}
+		// Update deploy progress tracker on step completion.
+		if err != nil {
+			phase := phaseFailed
+			detail := err.Error()
+			switch {
+			case exegraph.IsStepSkipped(err):
+				phase = phaseSkipped
+				detail = ""
+			case errors.Is(err, context.Canceled):
+				phase = phaseSkipped
+				detail = "canceled"
+			}
+			for _, prefix := range []string{"deploy-", "publish-", "package-"} {
+				if svc, ok := strings.CutPrefix(stepName, prefix); ok {
+					updateDeployProgress(svc, phase, detail)
+					return
+				}
+			}
+		}
+		if svc, ok := strings.CutPrefix(stepName, "deploy-"); ok {
+			updateDeployProgress(svc, phaseDone, "")
+		}
+	}
+
+	result := exegraph.RunWithResult(ctx, g, opts)
+
+	// Stop the progress ticker and render a final summary table.
+	if stopTicker != nil {
+		stopTicker()
+	}
+	if deployTracker != nil {
+		deployTracker.RenderFinal()
+	}
 
 	// Clean up temporary package artifacts regardless of success/failure.
 	state.CleanupTempArtifacts()

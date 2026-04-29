@@ -213,7 +213,14 @@ func (fs *LocalFileDataStore) Save(ctx context.Context, env *Environment, option
 	// own keys, then truncate-and-write — the last writer silently clobbers
 	// the first writer's keys. The lock also covers the sibling config.json
 	// write, which is similarly subject to torn reads on concurrent saves.
-	fl, err := fs.acquireEnvLock(ctx, env)
+	//
+	// Use WithoutCancel so that a canceled parent context (e.g. Ctrl-C during
+	// first-run init) doesn't abort the save mid-flight — losing persisted
+	// state is worse than a brief delay. The 30s timeout below bounds the wait
+	// so we never hang indefinitely.
+	saveCtx, saveCancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer saveCancel()
+	fl, err := fs.acquireEnvLock(saveCtx, env)
 	if err != nil {
 		return err
 	}

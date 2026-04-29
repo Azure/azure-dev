@@ -102,7 +102,7 @@ func (t *deployProgressTracker) Update(
 	}
 	svc := t.services[i]
 
-	if svc.startedAt.IsZero() && phase != phaseWaiting {
+	if svc.startedAt.IsZero() && phase != phaseWaiting && phase != phasePackaging {
 		svc.startedAt = time.Now()
 	}
 	if phase == phaseDone || phase == phaseFailed || phase == phaseSkipped {

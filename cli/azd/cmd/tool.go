@@ -24,12 +24,29 @@ import (
 
 // toolActions registers the "azd tool" command group and all of its subcommands.
 func toolActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
+	toolCmd := &cobra.Command{
+		Use:   "tool",
+		Short: "Manage Azure development tools.",
+		Long:  "Discover, install, upgrade, and check status of Azure development tools.",
+	}
+
+	// Hide global flags that are not relevant to tool commands.
+	// Tool commands manage local development tools and never need
+	// environment selection or working directory overrides.
+	// PersistentPreRun applies to this command and all subcommands.
+	toolCmd.PersistentPreRun = func(cmd *cobra.Command, _ []string) {
+		for _, name := range []string{
+			internal.EnvironmentNameFlagName,
+			"cwd",
+		} {
+			if f := cmd.Root().PersistentFlags().Lookup(name); f != nil {
+				f.Hidden = true
+			}
+		}
+	}
+
 	group := root.Add("tool", &actions.ActionDescriptorOptions{
-		Command: &cobra.Command{
-			Use:   "tool",
-			Short: "Manage Azure development tools.",
-			Long:  "Discover, install, upgrade, and check status of Azure development tools.",
-		},
+		Command: toolCmd,
 		GroupingOptions: actions.CommandGroupOptions{
 			RootLevelHelp: actions.CmdGroupManage,
 		},

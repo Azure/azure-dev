@@ -862,10 +862,10 @@ func runProvisionSingleLayer(
 	// Snapshot the shared environment so this layer resolves parameters
 	// from current values (including outputs from prior phases).
 	envMu.Lock()
-	defer envMu.Unlock()
 	layerEnv := environment.NewWithValues(
 		deps.env.Name(), deps.env.Dotenv(),
 	)
+	envMu.Unlock()
 
 	// Use a noop-save env manager for the per-layer manager. Saves happen
 	// against the shared environment after outputs are merged.

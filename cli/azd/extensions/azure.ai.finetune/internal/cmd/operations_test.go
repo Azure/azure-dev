@@ -12,7 +12,7 @@ import (
 
 // TestNewOperationCommand verifies the jobs command structure
 func TestNewOperationCommand(t *testing.T) {
-	cmd := newOperationCommand()
+	cmd := newOperationCommand(nil)
 
 	require.NotNil(t, cmd)
 	require.Equal(t, "jobs", cmd.Use)
@@ -21,7 +21,7 @@ func TestNewOperationCommand(t *testing.T) {
 }
 
 func TestNewOperationCommand_HasAllSubcommands(t *testing.T) {
-	cmd := newOperationCommand()
+	cmd := newOperationCommand(nil)
 
 	// Get all subcommand names
 	subcommands := make(map[string]bool)
@@ -84,7 +84,7 @@ func TestNewOperationSubmitCommand_Flags(t *testing.T) {
 }
 
 func TestNewOperationShowCommand(t *testing.T) {
-	cmd := newOperationShowCommand()
+	cmd := newOperationShowCommand(nil)
 
 	require.NotNil(t, cmd)
 	require.Equal(t, "show", cmd.Use)
@@ -93,7 +93,7 @@ func TestNewOperationShowCommand(t *testing.T) {
 }
 
 func TestNewOperationShowCommand_Flags(t *testing.T) {
-	cmd := newOperationShowCommand()
+	cmd := newOperationShowCommand(nil)
 
 	expectedFlags := []struct {
 		name         string
@@ -101,7 +101,6 @@ func TestNewOperationShowCommand_Flags(t *testing.T) {
 		defaultValue string
 	}{
 		{"id", "i", ""},
-		{"output", "o", "table"},
 	}
 
 	for _, flag := range expectedFlags {
@@ -117,10 +116,16 @@ func TestNewOperationShowCommand_Flags(t *testing.T) {
 	logsFlag := cmd.Flags().Lookup("logs")
 	require.NotNil(t, logsFlag)
 	require.Equal(t, "false", logsFlag.DefValue)
+
+	// --output is registered as flag options for the SDK-managed inherited flag
+	t.Run("output", func(t *testing.T) {
+		require.Equal(t, "table", cmd.Annotations["azdext.default/output"])
+		require.Equal(t, `["table","json","yaml"]`, cmd.Annotations["azdext.allowed-values/output"])
+	})
 }
 
 func TestNewOperationListCommand(t *testing.T) {
-	cmd := newOperationListCommand()
+	cmd := newOperationListCommand(nil)
 
 	require.NotNil(t, cmd)
 	require.Equal(t, "list", cmd.Use)
@@ -129,7 +134,7 @@ func TestNewOperationListCommand(t *testing.T) {
 }
 
 func TestNewOperationListCommand_Flags(t *testing.T) {
-	cmd := newOperationListCommand()
+	cmd := newOperationListCommand(nil)
 
 	// top flag (limit)
 	topFlag := cmd.Flags().Lookup("top")
@@ -142,11 +147,9 @@ func TestNewOperationListCommand_Flags(t *testing.T) {
 	require.NotNil(t, afterFlag)
 	require.Equal(t, "", afterFlag.DefValue)
 
-	// output flag
-	outputFlag := cmd.Flags().Lookup("output")
-	require.NotNil(t, outputFlag)
-	require.Equal(t, "o", outputFlag.Shorthand)
-	require.Equal(t, "table", outputFlag.DefValue)
+	// --output is registered as flag options for the SDK-managed inherited flag
+	require.Equal(t, "table", cmd.Annotations["azdext.default/output"])
+	require.Equal(t, `["table","json"]`, cmd.Annotations["azdext.allowed-values/output"])
 }
 
 func TestNewOperationPauseCommand(t *testing.T) {
@@ -275,8 +278,8 @@ func TestCommandsHaveDescriptions(t *testing.T) {
 		cmdFunc func() *cobra.Command
 	}{
 		{"submit", func() *cobra.Command { return newOperationSubmitCommand() }},
-		{"show", func() *cobra.Command { return newOperationShowCommand() }},
-		{"list", func() *cobra.Command { return newOperationListCommand() }},
+		{"show", func() *cobra.Command { return newOperationShowCommand(nil) }},
+		{"list", func() *cobra.Command { return newOperationListCommand(nil) }},
 		{"pause", func() *cobra.Command { return newOperationPauseCommand() }},
 		{"resume", func() *cobra.Command { return newOperationResumeCommand() }},
 		{"cancel", func() *cobra.Command { return newOperationCancelCommand() }},

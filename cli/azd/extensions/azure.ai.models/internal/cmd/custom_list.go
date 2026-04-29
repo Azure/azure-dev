@@ -18,9 +18,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-type customListFlags struct {
-	Output string
-}
+type customListFlags struct{}
 
 func newCustomListCommand(parentFlags *customFlags) *cobra.Command {
 	flags := &customListFlags{}
@@ -35,7 +33,11 @@ func newCustomListCommand(parentFlags *customFlags) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVarP(&flags.Output, "output", "o", "table", "Output format (table, json)")
+	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
+		Name:          "output",
+		AllowedValues: []string{"table", "json"},
+		Default:       "table",
+	})
 
 	return cmd
 }
@@ -86,7 +88,7 @@ func runCustomList(ctx context.Context, parentFlags *customFlags, flags *customL
 		return err
 	}
 
-	switch flags.Output {
+	switch outputFormat(parentFlags) {
 	case "json":
 		if err := utils.PrintObject(result.Value, utils.FormatJSON); err != nil {
 			return err
@@ -100,7 +102,7 @@ func runCustomList(ctx context.Context, parentFlags *customFlags, flags *customL
 			return err
 		}
 	default:
-		return fmt.Errorf("unsupported output format: %s (supported: table, json)", flags.Output)
+		return fmt.Errorf("unsupported output format: %s (supported: table, json)", outputFormat(parentFlags))
 	}
 
 	fmt.Printf("\n%d custom model(s) found\n", len(result.Value))

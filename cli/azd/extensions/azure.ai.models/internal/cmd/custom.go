@@ -19,11 +19,14 @@ import (
 type customFlags struct {
 	subscriptionId  string
 	projectEndpoint string
+	// extCtx exposes parsed azd global flags (--debug, --no-prompt, --output, etc.)
+	// to subcommands without each one needing to register the inherited flags.
+	extCtx *azdext.ExtensionContext
 }
 
 // newCustomCommand creates the "custom" command group for custom model operations.
-func newCustomCommand() *cobra.Command {
-	flags := &customFlags{}
+func newCustomCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
+	flags := &customFlags{extCtx: extCtx}
 
 	customCmd := &cobra.Command{
 		Use:   "custom",
@@ -45,6 +48,24 @@ func newCustomCommand() *cobra.Command {
 	customCmd.AddCommand(newCustomDeleteCommand(flags))
 
 	return customCmd
+}
+
+// outputFormat returns the resolved --output flag value for custom subcommands,
+// reading from the SDK-managed extension context. Returns "" when not set.
+func outputFormat(parentFlags *customFlags) string {
+	if parentFlags == nil || parentFlags.extCtx == nil {
+		return ""
+	}
+	return parentFlags.extCtx.OutputFormat
+}
+
+// noPrompt returns the resolved --no-prompt flag value for custom subcommands,
+// reading from the SDK-managed extension context.
+func noPromptValue(parentFlags *customFlags) bool {
+	if parentFlags == nil || parentFlags.extCtx == nil {
+		return false
+	}
+	return parentFlags.extCtx.NoPrompt
 }
 
 // resolveProjectEndpoint resolves the project endpoint using this priority:

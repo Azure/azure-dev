@@ -102,16 +102,10 @@ func setupFlags(commandFlags *pflag.FlagSet) *flagValues {
 		"The hostname to use with GitHub commands",
 	)
 
-	commandFlags.BoolVar(
-		&flagValues.Debug,
-		"debug",
-		false,
-		"Enables debugging and diagnostics logging.")
-
 	return flagValues
 }
 
-func newConfigCommand() *cobra.Command {
+func newConfigCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	cc := &cobra.Command{
 		Use:   "config",
 		Short: "Configure the GitHub Copilot coding agent to access Azure resources via the Azure MCP",
@@ -123,6 +117,10 @@ func newConfigCommand() *cobra.Command {
 	flagValues := setupFlags(cc.Flags())
 
 	cc.RunE = func(cmd *cobra.Command, args []string) error {
+		// Inherit --debug from the SDK-managed root flag (--debug / AZD_DEBUG).
+		if extCtx != nil {
+			flagValues.Debug = extCtx.Debug
+		}
 		if err := runConfigCommand(cmd, flagValues); err != nil {
 			message := fmt.Sprintf("(!) An error occurred, see the readme for troubleshooting and prerequisites:\n    %s", ux.Hyperlink(readmeURL)) //nolint:lll
 			fmt.Println(ux.BoldString(message))

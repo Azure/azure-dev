@@ -191,7 +191,7 @@ func validateOrInitEnvironment(ctx context.Context, subscriptionId, projectEndpo
 		projectEndpoint: projectEndpoint,
 		env:             envName,
 	}
-	initFlags.NoPrompt = true // Run in non-interactive mode
+	initFlags.noPrompt = true // Run in non-interactive mode
 
 	// Ensure project exists first (required before creating environment)
 	_, err = ensureProject(ctx, initFlags, azdClient)

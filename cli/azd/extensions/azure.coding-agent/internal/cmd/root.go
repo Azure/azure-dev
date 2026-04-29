@@ -4,24 +4,23 @@
 package cmd
 
 import (
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
 
 func NewRootCommand() *cobra.Command {
-	rootCmd := &cobra.Command{
-		Use:           "azd coding-agent <command> [options]",
-		Short:         "Copilot Coding Agent",
-		SilenceUsage:  true,
-		SilenceErrors: true,
-		CompletionOptions: cobra.CompletionOptions{
-			DisableDefaultCmd: true,
-		},
-	}
+	rootCmd, extCtx := azdext.NewExtensionRootCommand(azdext.ExtensionCommandOptions{
+		Name:  "coding-agent",
+		Use:   "azd coding-agent <command> [options]",
+		Short: "Copilot Coding Agent",
+	})
+	rootCmd.SilenceUsage = true
+	rootCmd.SilenceErrors = true
+	rootCmd.CompletionOptions.DisableDefaultCmd = true
 
 	rootCmd.SetHelpCommand(&cobra.Command{Hidden: true})
-	rootCmd.PersistentFlags().Bool("debug", false, "Enable debug mode")
 
-	rootCmd.AddCommand(newConfigCommand())
+	rootCmd.AddCommand(newConfigCommand(extCtx))
 	rootCmd.AddCommand(newVersionCommand())
 	rootCmd.AddCommand(newMetadataCommand())
 

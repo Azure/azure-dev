@@ -4,48 +4,26 @@
 package cmd
 
 import (
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
 
-type rootFlagsDefinition struct {
-	Debug    bool
-	NoPrompt bool
-}
-
-// Enable access to the global command flags
-var rootFlags rootFlagsDefinition
-
 func NewRootCommand() *cobra.Command {
-	rootCmd := &cobra.Command{
-		Use:           "models <command> [options]",
-		Short:         "Extension for managing custom models in Azure AI Foundry. (Preview)",
-		SilenceUsage:  true,
-		SilenceErrors: true,
-		CompletionOptions: cobra.CompletionOptions{
-			DisableDefaultCmd: true,
-		},
-	}
+	rootCmd, extCtx := azdext.NewExtensionRootCommand(azdext.ExtensionCommandOptions{
+		Name:  "models",
+		Use:   "models <command> [options]",
+		Short: "Extension for managing custom models in Azure AI Foundry. (Preview)",
+	})
+	rootCmd.SilenceUsage = true
+	rootCmd.SilenceErrors = true
+	rootCmd.CompletionOptions.DisableDefaultCmd = true
 
 	rootCmd.SetHelpCommand(&cobra.Command{Hidden: true})
-	rootCmd.PersistentFlags().BoolVar(
-		&rootFlags.Debug,
-		"debug",
-		false,
-		"Enable debug mode",
-	)
-
-	rootCmd.PersistentFlags().BoolVar(
-		&rootFlags.NoPrompt,
-		"no-prompt",
-		false,
-		"Runs without prompts. Uses existing values; "+
-			"fails if any required value or decision cannot be resolved automatically.",
-	)
 
 	rootCmd.AddCommand(newVersionCommand())
 	rootCmd.AddCommand(newMetadataCommand())
-	rootCmd.AddCommand(newInitCommand())
-	rootCmd.AddCommand(newCustomCommand())
+	rootCmd.AddCommand(newInitCommand(extCtx))
+	rootCmd.AddCommand(newCustomCommand(extCtx))
 
 	return rootCmd
 }

@@ -60,17 +60,18 @@ func (bw *buildGateWriter) Write(p []byte) (n int, err error) {
 	return n, err
 }
 
-func newUpCommand() *cobra.Command {
+func newUpCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "up",
 		Short: "Runs azd up in concurrent mode",
-		RunE:  runUpCommand,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runUpCommand(cmd, args, extCtx)
+		},
 	}
-	cmd.Flags().Bool("debug", false, "Enable debug logging for azd commands")
 	return cmd
 }
 
-func runUpCommand(cmd *cobra.Command, args []string) error {
+func runUpCommand(cmd *cobra.Command, args []string, extCtx *azdext.ExtensionContext) error {
 	ctx := azdext.WithAccessToken(cmd.Context())
 
 	// Create cancellable context for handling Ctrl+C in UI
@@ -84,8 +85,11 @@ func runUpCommand(cmd *cobra.Command, args []string) error {
 	}
 	defer cleanup()
 
-	// Get debug flag
-	debug, _ := cmd.Flags().GetBool("debug")
+	// Get debug flag from inherited --debug global (parsed by the SDK root)
+	debug := false
+	if extCtx != nil {
+		debug = extCtx.Debug
+	}
 
 	// Create prompt server for external prompting
 	promptServer, err := NewPromptServer(ctx)

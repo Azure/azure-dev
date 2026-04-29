@@ -25,6 +25,9 @@ type initFlags struct {
 	projectEndpoint   string
 	projectResourceId string
 	env               string
+	// noPrompt is resolved from the extension context (--no-prompt / AZD_NO_PROMPT)
+	// and is not registered as a CLI flag on the init command itself.
+	noPrompt bool
 }
 
 // FoundryProject stores the resolved Azure resource details for the Foundry project.
@@ -37,7 +40,7 @@ type FoundryProject struct {
 	AiProjectName     string
 }
 
-func newInitCommand() *cobra.Command {
+func newInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &initFlags{}
 
 	cmd := &cobra.Command{
@@ -53,6 +56,13 @@ The init command will:
   4. Store all settings as environment variables for use by other commands`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if extCtx != nil {
+				flags.noPrompt = extCtx.NoPrompt
+				if flags.env == "" {
+					flags.env = extCtx.Environment
+				}
+			}
+
 			ctx := azdext.WithAccessToken(cmd.Context())
 
 			azdClient, err := azdext.NewAzdClient()
@@ -98,8 +108,6 @@ The init command will:
 	cmd.Flags().StringVarP(&flags.projectResourceId, "project-resource-id", "p", "",
 		"ARM resource ID of the Foundry project")
 
-	cmd.Flags().StringVarP(&flags.env, "environment", "n", "", "The name of the azd environment to use")
-
 	return cmd
 }
 
@@ -137,7 +145,7 @@ func ensureProject(ctx context.Context, flags *initFlags, azdClient *azdext.AzdC
 		fmt.Println("Let's get your project initialized.")
 
 		initArgs := []string{"init", "--minimal"}
-		if rootFlags.NoPrompt {
+		if flags.noPrompt {
 			initArgs = append(initArgs, "--no-prompt")
 		}
 
@@ -275,7 +283,7 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 			envArgs = append(envArgs, "--subscription", foundryProject.SubscriptionId)
 			envArgs = append(envArgs, "--location", foundryProject.Location)
 		}
-		if rootFlags.NoPrompt {
+		if flags.noPrompt {
 			envArgs = append(envArgs, "--no-prompt")
 		}
 

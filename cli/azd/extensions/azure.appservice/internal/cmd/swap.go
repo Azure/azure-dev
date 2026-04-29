@@ -27,7 +27,7 @@ type swapFlags struct {
 	dst     string
 }
 
-func newSwapCommand(rootFlags rootFlagsDefinition) *cobra.Command {
+func newSwapCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &swapFlags{}
 
 	cmd := &cobra.Command{
@@ -40,7 +40,7 @@ or between a slot and the production environment.
 
 Use "production" to refer to the main app (production slot).`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runSwap(cmd.Context(), flags, rootFlags)
+			return runSwap(cmd.Context(), flags, extCtx)
 		},
 	}
 
@@ -51,7 +51,7 @@ Use "production" to refer to the main app (production slot).`,
 	return cmd
 }
 
-func runSwap(ctx context.Context, flags *swapFlags, rootFlags rootFlagsDefinition) error {
+func runSwap(ctx context.Context, flags *swapFlags, extCtx *azdext.ExtensionContext) error {
 	// Create a new context that includes the AZD access token
 	ctx = azdext.WithAccessToken(ctx)
 
@@ -334,7 +334,11 @@ func runSwap(ctx context.Context, flags *swapFlags, rootFlags rootFlagsDefinitio
 	}
 
 	// Confirm the swap unless --no-prompt is set
-	if !rootFlags.NoPrompt {
+	noPrompt := false
+	if extCtx != nil {
+		noPrompt = extCtx.NoPrompt
+	}
+	if !noPrompt {
 		defaultValue := true
 		confirmPrompt, err := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
 			Options: &azdext.ConfirmOptions{

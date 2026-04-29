@@ -23,7 +23,6 @@ import (
 type customShowFlags struct {
 	Name    string
 	Version string
-	Output  string
 }
 
 func newCustomShowCommand(parentFlags *customFlags) *cobra.Command {
@@ -41,7 +40,11 @@ func newCustomShowCommand(parentFlags *customFlags) *cobra.Command {
 
 	cmd.Flags().StringVarP(&flags.Name, "name", "n", "", "Model name (required)")
 	cmd.Flags().StringVar(&flags.Version, "version", "", "Model version (defaults to latest)")
-	cmd.Flags().StringVarP(&flags.Output, "output", "o", "table", "Output format (table, json)")
+	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
+		Name:          "output",
+		AllowedValues: []string{"table", "json"},
+		Default:       "table",
+	})
 
 	_ = cmd.MarkFlagRequired("name")
 
@@ -125,7 +128,7 @@ func runCustomShow(ctx context.Context, parentFlags *customFlags, flags *customS
 		return err
 	}
 
-	switch flags.Output {
+	switch outputFormat(parentFlags) {
 	case "json":
 		if err := utils.PrintObject(model, utils.FormatJSON); err != nil {
 			return err
@@ -176,7 +179,7 @@ func runCustomShow(ctx context.Context, parentFlags *customFlags, flags *customS
 
 		fmt.Println(strings.Repeat("─", 50))
 	default:
-		return fmt.Errorf("unsupported output format: %s (supported: table, json)", flags.Output)
+		return fmt.Errorf("unsupported output format: %s (supported: table, json)", outputFormat(parentFlags))
 	}
 
 	return nil

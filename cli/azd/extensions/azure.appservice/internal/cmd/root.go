@@ -4,47 +4,23 @@
 package cmd
 
 import (
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
 
-type rootFlagsDefinition struct {
-	Debug    bool
-	NoPrompt bool
-}
-
-// Enable access to the global command flags
-var rootFlags rootFlagsDefinition
-
 func NewRootCommand() *cobra.Command {
-	rootCmd := &cobra.Command{
-		Use:           "appservice <command> [options]",
-		Short:         "Extension for managing Azure App Service resources.",
-		SilenceUsage:  true,
-		SilenceErrors: true,
-		CompletionOptions: cobra.CompletionOptions{
-			DisableDefaultCmd: true,
-		},
-	}
+	rootCmd, extCtx := azdext.NewExtensionRootCommand(azdext.ExtensionCommandOptions{
+		Name:  "appservice",
+		Use:   "appservice <command> [options]",
+		Short: "Extension for managing Azure App Service resources.",
+	})
+	rootCmd.SilenceUsage = true
+	rootCmd.SilenceErrors = true
+	rootCmd.CompletionOptions.DisableDefaultCmd = true
 
 	rootCmd.SetHelpCommand(&cobra.Command{Hidden: true})
-	rootCmd.PersistentFlags().BoolVar(
-		&rootFlags.Debug,
-		"debug",
-		false,
-		"Enable debug mode",
-	)
 
-	// Adds support for `--no-prompt` global flag in azd
-	// Without this the extension command will error when the flag is provided
-	rootCmd.PersistentFlags().BoolVar(
-		&rootFlags.NoPrompt,
-		"no-prompt",
-		false,
-		"Runs without prompts. Uses existing values; "+
-			"fails if any required value or decision cannot be resolved automatically.",
-	)
-
-	rootCmd.AddCommand(newSwapCommand(rootFlags))
+	rootCmd.AddCommand(newSwapCommand(extCtx))
 	rootCmd.AddCommand(newVersionCommand())
 	rootCmd.AddCommand(newMetadataCommand())
 

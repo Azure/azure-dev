@@ -30,7 +30,6 @@ import (
 )
 
 type initFlags struct {
-	rootFlagsDefinition
 	template          string
 	projectResourceId string
 	subscriptionId    string
@@ -38,6 +37,9 @@ type initFlags struct {
 	jobId             string
 	src               string
 	env               string
+	// noPrompt is resolved from the extension context (--no-prompt / AZD_NO_PROMPT)
+	// and is not registered as a CLI flag on the init command itself.
+	noPrompt bool
 }
 
 // AiProjectResourceConfig represents the configuration for an AI project resource
@@ -67,16 +69,21 @@ type GitHubUrlInfo struct {
 
 const AiFineTuningHost = "azure.ai.finetune"
 
-func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
-	flags := &initFlags{
-		rootFlagsDefinition: rootFlags,
-	}
+func newInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
+	flags := &initFlags{}
 
 	cmd := &cobra.Command{
 		Use:   "init [-t <fine tuning job template>] [-p <foundry project arm id>]",
 		Short: fmt.Sprintf("Initialize a new AI Fine-tuning project. %s", color.YellowString("(Preview)")),
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if extCtx != nil {
+				flags.noPrompt = extCtx.NoPrompt
+				if flags.env == "" {
+					flags.env = extCtx.Environment
+				}
+			}
+
 			ctx := azdext.WithAccessToken(cmd.Context())
 
 			azdClient, err := azdext.NewAzdClient()
@@ -154,8 +161,6 @@ func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
 
 	cmd.Flags().StringVarP(&flags.jobId, "from-job", "j", "",
 		"Clone configuration from an existing job ID")
-
-	cmd.Flags().StringVarP(&flags.env, "environment", "n", "", "The name of the azd environment to use.")
 
 	return cmd
 }
@@ -420,7 +425,7 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 		}
 
 		// Add --no-prompt flag if non-interactive mode is requested
-		if flags.NoPrompt {
+		if flags.noPrompt {
 			envArgs = append(envArgs, "--no-prompt")
 		}
 
@@ -517,7 +522,7 @@ func ensureProject(ctx context.Context, flags *initFlags, azdClient *azdext.AzdC
 		initArgs := []string{"init", "--minimal"}
 
 		// Add --no-prompt flag if non-interactive mode is requested
-		if flags.NoPrompt {
+		if flags.noPrompt {
 			initArgs = append(initArgs, "--no-prompt")
 		}
 		// Dispatch a workflow to init the project

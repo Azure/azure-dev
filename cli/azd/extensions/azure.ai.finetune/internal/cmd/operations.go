@@ -28,7 +28,7 @@ type jobsFlags struct {
 	projectEndpoint string
 }
 
-func newOperationCommand() *cobra.Command {
+func newOperationCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &jobsFlags{}
 
 	cmd := &cobra.Command{
@@ -45,8 +45,8 @@ func newOperationCommand() *cobra.Command {
 		"Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)")
 
 	cmd.AddCommand(newOperationSubmitCommand())
-	cmd.AddCommand(newOperationShowCommand())
-	cmd.AddCommand(newOperationListCommand())
+	cmd.AddCommand(newOperationShowCommand(extCtx))
+	cmd.AddCommand(newOperationListCommand(extCtx))
 	cmd.AddCommand(newOperationPauseCommand())
 	cmd.AddCommand(newOperationResumeCommand())
 	cmd.AddCommand(newOperationCancelCommand())
@@ -171,10 +171,9 @@ func newOperationSubmitCommand() *cobra.Command {
 }
 
 // newOperationShowCommand creates a command to show the fine-tuning job details
-func newOperationShowCommand() *cobra.Command {
+func newOperationShowCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	var jobID string
 	var logs bool
-	var output string
 	requiredFlag := "id"
 
 	cmd := &cobra.Command{
@@ -221,6 +220,10 @@ func newOperationShowCommand() *cobra.Command {
 				return err
 			}
 
+			output := ""
+			if extCtx != nil {
+				output = extCtx.OutputFormat
+			}
 			switch output {
 			case "json":
 				_ = utils.PrintObject(job, utils.FormatJSON)
@@ -275,17 +278,20 @@ func newOperationShowCommand() *cobra.Command {
 
 	cmd.Flags().StringVarP(&jobID, "id", "i", "", "Job ID (required)")
 	cmd.Flags().BoolVar(&logs, "logs", false, "Include recent training logs")
-	cmd.Flags().StringVarP(&output, "output", "o", "table", "Output format: table, json, yaml")
+	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
+		Name:          "output",
+		AllowedValues: []string{"table", "json", "yaml"},
+		Default:       "table",
+	})
 	_ = cmd.MarkFlagRequired(requiredFlag)
 
 	return cmd
 }
 
 // newOperationListCommand creates a command to list fine-tuning jobs
-func newOperationListCommand() *cobra.Command {
+func newOperationListCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	var limit int
 	var after string
-	var output string
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List fine-tuning jobs.",
@@ -328,6 +334,10 @@ func newOperationListCommand() *cobra.Command {
 				return err
 			}
 
+			output := ""
+			if extCtx != nil {
+				output = extCtx.OutputFormat
+			}
 			switch output {
 			case "json":
 				_ = utils.PrintObject(jobs, utils.FormatJSON)
@@ -342,7 +352,11 @@ func newOperationListCommand() *cobra.Command {
 
 	cmd.Flags().IntVarP(&limit, "top", "t", 10, "Number of jobs to return")
 	cmd.Flags().StringVar(&after, "after", "", "Pagination cursor")
-	cmd.Flags().StringVarP(&output, "output", "o", "table", "Output format: table, json")
+	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
+		Name:          "output",
+		AllowedValues: []string{"table", "json"},
+		Default:       "table",
+	})
 	return cmd
 }
 

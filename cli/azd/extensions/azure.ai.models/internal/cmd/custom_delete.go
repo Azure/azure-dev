@@ -63,7 +63,7 @@ func runCustomDelete(ctx context.Context, parentFlags *customFlags, flags *custo
 	}
 
 	// Confirmation prompt unless --force
-	if !flags.Force && !rootFlags.NoPrompt {
+	if !flags.Force && !noPromptValue(parentFlags) {
 		fmt.Printf("Delete custom model '%s' (version %s)? This action cannot be undone.\n", flags.Name, flags.Version)
 		fmt.Print("Type the model name to confirm: ")
 		reader := bufio.NewReader(os.Stdin)

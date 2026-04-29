@@ -30,21 +30,6 @@ func toolActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 		Long:  "Discover, install, upgrade, and check status of Azure development tools.",
 	}
 
-	// Hide global flags that are not relevant to tool commands.
-	// Tool commands manage local development tools and never need
-	// environment selection or working directory overrides.
-	// PersistentPreRun applies to this command and all subcommands.
-	toolCmd.PersistentPreRun = func(cmd *cobra.Command, _ []string) {
-		for _, name := range []string{
-			internal.EnvironmentNameFlagName,
-			"cwd",
-		} {
-			if f := cmd.Root().PersistentFlags().Lookup(name); f != nil {
-				f.Hidden = true
-			}
-		}
-	}
-
 	group := root.Add("tool", &actions.ActionDescriptorOptions{
 		Command: toolCmd,
 		GroupingOptions: actions.CommandGroupOptions{

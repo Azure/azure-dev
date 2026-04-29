@@ -141,9 +141,10 @@ func (m *ToolUpdateCheckMiddleware) isToolCommand() bool {
 
 // triggerBackgroundCheckIfNeeded spawns a non-blocking goroutine that
 // performs a full tool update check when the configured check interval
-// has elapsed.  The goroutine uses [context.WithoutCancel] so that it
-// survives command completion, and includes a recover guard to prevent
-// panics from crashing the CLI.
+// has elapsed.  The goroutine uses [context.Background] with a 30-second
+// timeout so that it survives command completion while guaranteeing
+// termination, and includes a recover guard to prevent panics from
+// crashing the CLI.
 func (m *ToolUpdateCheckMiddleware) triggerBackgroundCheckIfNeeded(ctx context.Context) {
 	// Honour the same opt-out signal used by the first-run experience.
 	if skip, _ := strconv.ParseBool(os.Getenv(envKeySkipFirstRun)); skip {

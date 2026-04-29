@@ -646,7 +646,7 @@ func splitCommand(command string) (string, []string) {
 // shell metacharacters (pipes, redirects, background operators, or
 // command chaining) that require execution through a system shell.
 func containsShellOperators(cmd string) bool {
-	return strings.ContainsAny(cmd, "|><&;")
+	return strings.ContainsAny(cmd, "|><;") || strings.Contains(cmd, "&&")
 }
 
 // executeShellCommand runs a command string through the system shell

@@ -133,6 +133,8 @@ func (m *ToolFirstRunMiddleware) runFirstRunExperience(ctx context.Context) erro
 	// Opt-in prompt
 	// ---------------------------------------------------------------
 	confirm := uxlib.NewConfirm(&uxlib.ConfirmOptions{
+		Writer:       m.console.Handles().Stdout,
+		Reader:       m.console.Handles().Stdin,
 		Message:      "Would you like to check your Azure development tools?",
 		DefaultValue: new(true),
 	})
@@ -239,6 +241,8 @@ func (m *ToolFirstRunMiddleware) offerInstall(
 	}
 
 	multiSelect := uxlib.NewMultiSelect(&uxlib.MultiSelectOptions{
+		Writer:  m.console.Handles().Stdout,
+		Reader:  m.console.Handles().Stdin,
 		Message: "Select recommended tools to install:",
 		Choices: choices,
 	})

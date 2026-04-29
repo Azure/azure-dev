@@ -358,15 +358,26 @@ func hashBicepFileTree(file string, h io.Writer, visited map[string]bool, depth 
 			continue
 		}
 
+		// Reject absolute paths (including UNC paths like \\server\share\...) before joining.
+		if filepath.IsAbs(modulePath) {
+			log.Printf(
+				"warning: absolute bicep module path %q, skipping",
+				modulePath)
+			continue
+		}
+
 		resolved := filepath.Join(dir, modulePath)
 
 		// Validate that the resolved module path stays within the project
 		// directory tree (the directory containing the root Bicep file).
-		if rel, relErr := filepath.Rel(dir, resolved); relErr == nil {
-			if strings.HasPrefix(rel, "..") {
-				log.Printf("warning: bicep module path %q resolves outside project directory, skipping", modulePath)
-				continue
-			}
+		// When Rel returns an error (e.g. cross-volume paths on Windows),
+		// treat it as an escape and skip.
+		rel, relErr := filepath.Rel(dir, resolved)
+		if relErr != nil || strings.HasPrefix(rel, "..") {
+			log.Printf(
+				"warning: bicep module path %q resolves outside project directory, skipping",
+				modulePath)
+			continue
 		}
 
 		if err := hashBicepFileTree(resolved, h, visited, depth+1); err != nil {

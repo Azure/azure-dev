@@ -16,11 +16,11 @@ import (
 type StepStatus int
 
 const (
-	StepPending StepStatus = iota
-	StepRunning
-	StepDone
-	StepFailed
-	StepSkipped
+	StepPending StepStatus = iota // StepPending means the step has not yet started.
+	StepRunning                   // StepRunning means the step is currently executing.
+	StepDone                      // StepDone means the step completed successfully.
+	StepFailed                    // StepFailed means the step completed with an error.
+	StepSkipped                   // StepSkipped means the step was not executed (e.g. due to upstream failure).
 )
 
 // String returns the string representation of the StepStatus.

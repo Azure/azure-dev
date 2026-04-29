@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 
+	"golang.org/x/sync/singleflight"
+
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
@@ -155,6 +157,7 @@ type serviceManager struct {
 	alphaFeatureManager *alpha.FeatureManager
 	initialized         map[*ServiceConfig]map[any]bool
 	mu                  sync.Mutex
+	resolveGroup        singleflight.Group
 }
 
 // NewServiceManager creates a new instance of the ServiceManager component
@@ -779,68 +782,101 @@ func (sm *serviceManager) setOperationResult(serviceConfig *ServiceConfig, event
 }
 
 // cachedServiceTarget returns a cached ServiceTarget for the given service config, or resolves and caches it.
-// ServiceTarget resolution goes through the IoC container; caching avoids repeated lookups within the same lifecycle.
+// Uses singleflight to deduplicate concurrent lookups for the same service.
 func (sm *serviceManager) cachedServiceTarget(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 ) (ServiceTarget, error) {
-	sm.mu.Lock()
 	cacheKey := fmt.Sprintf("%s:%s:serviceTarget", sm.env.Name(), serviceConfig.Name)
+
+	sm.mu.Lock()
 	if cached, ok := sm.operationCache[cacheKey]; ok {
 		sm.mu.Unlock()
 		return cached.(ServiceTarget), nil
 	}
 	sm.mu.Unlock()
 
-	target, err := sm.GetServiceTarget(ctx, serviceConfig)
+	result, err, _ := sm.resolveGroup.Do(cacheKey, func() (any, error) {
+		// Double-check after winning the singleflight race.
+		sm.mu.Lock()
+		if cached, ok := sm.operationCache[cacheKey]; ok {
+			sm.mu.Unlock()
+			return cached, nil
+		}
+		sm.mu.Unlock()
+
+		target, err := sm.GetServiceTarget(ctx, serviceConfig)
+		if err != nil {
+			return nil, err
+		}
+
+		sm.mu.Lock()
+		sm.operationCache[cacheKey] = target
+		sm.mu.Unlock()
+
+		return target, nil
+	})
+
 	if err != nil {
 		return nil, err
 	}
 
-	sm.mu.Lock()
-	sm.operationCache[cacheKey] = target
-	sm.mu.Unlock()
-
-	return target, nil
+	return result.(ServiceTarget), nil
 }
 
 // cachedTargetResource returns a cached TargetResource for the given service config and target, or resolves and caches it.
-// TargetResource resolution requires ARM API calls; caching avoids redundant network round-trips when
-// Package, Publish, and Deploy call it for the same service.
+// Uses singleflight to deduplicate concurrent ARM API calls for the same service.
 func (sm *serviceManager) cachedTargetResource(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	serviceTarget ServiceTarget,
 ) (*environment.TargetResource, error) {
-	sm.mu.Lock()
 	cacheKey := fmt.Sprintf("%s:%s:targetResource", sm.env.Name(), serviceConfig.Name)
+
+	sm.mu.Lock()
 	if cached, ok := sm.operationCache[cacheKey]; ok {
 		sm.mu.Unlock()
 		return cached.(*environment.TargetResource), nil
 	}
 	sm.mu.Unlock()
 
-	log.Printf(
-		"resolving target resource for service %q (no cache hit)",
-		serviceConfig.Name)
-	resource, err := sm.GetTargetResource(ctx, serviceConfig, serviceTarget)
-	if err != nil {
+	result, err, _ := sm.resolveGroup.Do(cacheKey, func() (any, error) {
+		// Double-check after winning the singleflight race.
+		sm.mu.Lock()
+		if cached, ok := sm.operationCache[cacheKey]; ok {
+			sm.mu.Unlock()
+			return cached, nil
+		}
+		sm.mu.Unlock()
+
 		log.Printf(
-			"target resource resolution failed for service %q: %v",
-			serviceConfig.Name, err)
+			"resolving target resource for service %q (no cache hit)",
+			serviceConfig.Name)
+		resource, err := sm.GetTargetResource(ctx, serviceConfig, serviceTarget)
+		if err != nil {
+			log.Printf(
+				"target resource resolution failed for service %q: %v",
+				serviceConfig.Name, err)
+			return nil, err
+		}
+		log.Printf(
+			"target resource resolved for service %q: rg=%s name=%s",
+			serviceConfig.Name,
+			resource.ResourceGroupName(),
+			resource.ResourceName())
+
+		sm.mu.Lock()
+		sm.operationCache[cacheKey] = resource
+		sm.mu.Unlock()
+
+		return resource, nil
+	})
+
+	if err != nil {
 		return nil, err
 	}
-	log.Printf(
-		"target resource resolved for service %q: rg=%s name=%s",
-		serviceConfig.Name,
-		resource.ResourceGroupName(),
-		resource.ResourceName())
 
-	sm.mu.Lock()
-	sm.operationCache[cacheKey] = resource
-	sm.mu.Unlock()
-
-	return resource, nil
+	return result.(*environment.TargetResource), nil
 }
 
 // isComponentInitialized Checks if a component has been initialized for a service configuration

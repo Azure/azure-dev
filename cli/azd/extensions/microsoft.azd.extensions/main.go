@@ -22,22 +22,11 @@ func init() {
 }
 
 func main() {
-	// Execute the root command
+	// Execute the root command. The SDK's NewExtensionRootCommand handles
+	// --cwd / AZD_CWD by changing the working directory in PersistentPreRunE,
+	// so no manual chdir is required here.
 	ctx := context.Background()
 	rootCmd := cmd.NewRootCommand()
-
-	cwd, err := rootCmd.PersistentFlags().GetString("cwd")
-	if err != nil {
-		color.Red("Error: %v", err)
-		os.Exit(1)
-	}
-
-	if cwd != "." {
-		if err := os.Chdir(cwd); err != nil {
-			color.Red("Error: failed to change directory to %s: %v", cwd, err)
-			os.Exit(1)
-		}
-	}
 
 	if err := rootCmd.ExecuteContext(ctx); err != nil {
 		// Check if this is our custom UserFriendlyError type

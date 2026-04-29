@@ -4,40 +4,30 @@
 package cmd
 
 import (
-	"os"
-
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
 
-type rootFlags struct {
-	cwd string
-}
-
 func NewRootCommand() *cobra.Command {
-	flags := &rootFlags{}
+	// Build the root command using the SDK helper so the extension picks up
+	// azd's standard persistent flags (--debug, --no-prompt, -C/--cwd,
+	// -e/--environment, -o/--output) and avoids name collisions with azd's
+	// reserved global flags. The SDK's --cwd already changes the working
+	// directory in PersistentPreRunE, which matches the previous custom flag's
+	// purpose of pointing at the extension project directory.
+	rootCmd, _ := azdext.NewExtensionRootCommand(azdext.ExtensionCommandOptions{
+		Name:  "x",
+		Use:   "x <command> [options]",
+		Short: "Runs azd developer extension commands",
+	})
 
-	rootCmd := &cobra.Command{
-		Use:           "x <command> [options]",
-		Short:         "Runs azd developer extension commands",
-		SilenceUsage:  true,
-		SilenceErrors: true,
-		CompletionOptions: cobra.CompletionOptions{
-			DisableDefaultCmd: true,
-		},
-		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-			// Set the working directory to the one specified in the flags
-			if flags.cwd != "." {
-				if err := os.Chdir(flags.cwd); err != nil {
-					return err
-				}
-			}
-
-			return nil
-		},
+	rootCmd.SilenceUsage = true
+	rootCmd.SilenceErrors = true
+	rootCmd.CompletionOptions = cobra.CompletionOptions{
+		DisableDefaultCmd: true,
 	}
 
 	rootCmd.SetHelpCommand(&cobra.Command{Hidden: true})
-	rootCmd.PersistentFlags().Bool("debug", false, "Enable debug mode")
 
 	rootCmd.AddCommand(newInitCommand())
 	rootCmd.AddCommand(newBuildCommand())
@@ -47,12 +37,6 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newPublishCommand())
 	rootCmd.AddCommand(newVersionCommand())
 	rootCmd.AddCommand(newMetadataCommand())
-
-	rootCmd.PersistentFlags().StringVar(
-		&flags.cwd,
-		"cwd", ".",
-		"Path to the azd extension project",
-	)
 
 	return rootCmd
 }

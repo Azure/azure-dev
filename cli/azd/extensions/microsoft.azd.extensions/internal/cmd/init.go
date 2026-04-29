@@ -112,7 +112,8 @@ func newInitCommand() *cobra.Command {
 		&flags.capabilities,
 		"capabilities", []string{},
 		"The list of capabilities for the extension "+
-			"(e.g., custom-commands,lifecycle-events,mcp-server,service-target-provider).",
+			"(e.g., custom-commands,lifecycle-events,mcp-server,"+
+			"service-target-provider,framework-service-provider,provisioning-provider,metadata).",
 	)
 
 	initCmd.Flags().StringVar(
@@ -391,20 +392,22 @@ func collectExtensionMetadataFromFlags(flags *initFlags) (*models.ExtensionSchem
 		)
 	}
 
-	// Validate capabilities
-	validCapabilities := map[string]bool{
-		"custom-commands":         true,
-		"lifecycle-events":        true,
-		"mcp-server":              true,
-		"service-target-provider": true,
+	// Validate capabilities against the canonical list defined in the
+	// extensions package so this command stays in sync as new capabilities
+	// (e.g. provisioning-provider) are added.
+	validCapabilities := make(map[string]bool, len(extensions.ValidCapabilities))
+	supportedNames := make([]string, 0, len(extensions.ValidCapabilities))
+	for _, cap := range extensions.ValidCapabilities {
+		validCapabilities[string(cap)] = true
+		supportedNames = append(supportedNames, string(cap))
 	}
 
 	for _, cap := range flags.capabilities {
 		if !validCapabilities[cap] {
 			return nil, fmt.Errorf(
-				"invalid capability '%s', supported capabilities are: "+
-					"custom-commands, lifecycle-events, mcp-server, service-target-provider",
+				"invalid capability '%s', supported capabilities are: %s",
 				cap,
+				strings.Join(supportedNames, ", "),
 			)
 		}
 	}
@@ -549,6 +552,10 @@ func collectExtensionMetadata(ctx context.Context, azdClient *azdext.AzdClient) 
 					Label: "Service Target Provider",
 					Value: "service-target-provider",
 				},
+				{
+					Label: "Provisioning Provider",
+					Value: "provisioning-provider",
+				},
 			},
 			EnableFiltering: new(false),
 			DisplayNumbers:  new(false),
@@ -655,6 +662,7 @@ func createExtensionDirectory(
 			Namespace: internal.ToPascalCase(extensionMetadata.Id),
 			ExeName:   extensionMetadata.SafeDashId(),
 		},
+		SdkVersion: azdext.Version,
 	}
 
 	templatePath := path.Join("languages", extensionMetadata.Language)
@@ -736,8 +744,9 @@ func copyAndProcessTemplates(srcFS fs.FS, srcDir, destDir string, data any) erro
 }
 
 type ExtensionTemplate struct {
-	Metadata *models.ExtensionSchema
-	DotNet   *DotNetTemplate
+	Metadata   *models.ExtensionSchema
+	DotNet     *DotNetTemplate
+	SdkVersion string
 }
 
 type DotNetTemplate struct {

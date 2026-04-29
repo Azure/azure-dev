@@ -4,22 +4,29 @@
 package cmd
 
 import (
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
 
 func NewRootCommand() *cobra.Command {
-	rootCmd := &cobra.Command{
-		Use:           "azd {{.Metadata.Namespace}} <command> [options]",
-		Short:         "{{.Metadata.Description}}",
-		SilenceUsage:  true,
-		SilenceErrors: true,
-		CompletionOptions: cobra.CompletionOptions{
-			DisableDefaultCmd: true,
-		},
+	// Build the root command using the SDK helper. This registers azd's
+	// standard persistent flags (--debug, --no-prompt, -C/--cwd,
+	// -e/--environment, -o/--output) and avoids name collisions with azd's
+	// reserved global flags. Read shared values from extCtx in subcommands
+	// rather than declaring them again on each subcommand.
+	rootCmd, _ := azdext.NewExtensionRootCommand(azdext.ExtensionCommandOptions{
+		Name:  "{{.Metadata.Namespace}}",
+		Use:   "azd {{.Metadata.Namespace}} <command> [options]",
+		Short: "{{.Metadata.Description}}",
+	})
+
+	rootCmd.SilenceUsage = true
+	rootCmd.SilenceErrors = true
+	rootCmd.CompletionOptions = cobra.CompletionOptions{
+		DisableDefaultCmd: true,
 	}
 
 	rootCmd.SetHelpCommand(&cobra.Command{Hidden: true})
-	rootCmd.PersistentFlags().Bool("debug", false, "Enable debug mode")
 
 	rootCmd.AddCommand(newListenCommand())
 	rootCmd.AddCommand(newContextCommand())

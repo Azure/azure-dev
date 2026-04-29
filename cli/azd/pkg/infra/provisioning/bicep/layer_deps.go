@@ -192,6 +192,11 @@ func AnalyzeLayerDependencies(
 		// layer's outputs and add edges to all earlier layers. This
 		// trades parallelism for correctness on under-analyzed inputs.
 		if hasUnknown {
+			log.Printf(
+				"layer %d: could not resolve all env-var references statically; "+
+					"falling back to serial execution (depends on all earlier layers)",
+				i,
+			)
 			safeFallback = append(safeFallback, i)
 			for j := range i {
 				g.edges[i] = append(g.edges[i], j)

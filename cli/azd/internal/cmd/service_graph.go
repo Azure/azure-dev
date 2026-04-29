@@ -179,6 +179,9 @@ type serviceGraphOptions struct {
 	// Callers wire this to a deployProgressTracker so the table's "Detail"
 	// column reflects what each step is doing in real time, not just which
 	// phase it is in. When nil, progress messages are silently drained.
+	//
+	// IMPORTANT: This callback is invoked from worker goroutines and must
+	// not block. Blocking implementations stall the graph scheduler.
 	onPhaseProgress func(serviceName string, phase deployPhase, detail string)
 }
 
@@ -455,6 +458,10 @@ func addServiceStepsToGraph(g *exegraph.Graph, opts serviceGraphOptions) (*servi
 				continue
 			}
 			if _, ok := serviceNames[dep]; !ok {
+				log.Printf(
+					"debug: service %q declares uses: %q — not a known service name",
+					svc.Name, dep,
+				)
 				continue
 			}
 			depStep := "deploy-" + dep

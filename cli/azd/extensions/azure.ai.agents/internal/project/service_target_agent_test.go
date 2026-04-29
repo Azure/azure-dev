@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/pkg/agents/agent_yaml"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
@@ -146,6 +147,155 @@ func newContainerTestClient(t *testing.T, containerSrv azdext.ContainerServiceSe
 	t.Cleanup(func() { client.Close() })
 
 	return client
+}
+
+func TestProtocolPath(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		protocol string
+		expected string
+	}{
+		{"responses", "responses", "openai/responses"},
+		{"invocations", "invocations", "invocations"},
+		{"activity_protocol excluded", "activity_protocol", ""},
+		{"unknown excluded", "unknown_proto", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := protocolPath(tt.protocol)
+			require.Equal(t, tt.expected, got)
+		})
+	}
+}
+
+func TestAgentInvocationEndpoints(t *testing.T) {
+	t.Parallel()
+
+	const endpoint = "https://myproject.services.ai.azure.com"
+	const agentName = "my-agent"
+
+	tests := []struct {
+		name      string
+		protocols []agent_yaml.ProtocolVersionRecord
+		expected  []protocolEndpointInfo
+	}{
+		{
+			name: "single responses protocol",
+			protocols: []agent_yaml.ProtocolVersionRecord{
+				{Protocol: "responses", Version: "1.0.0"},
+			},
+			expected: []protocolEndpointInfo{
+				{
+					Protocol: "responses",
+					URL:      endpoint + "/agents/my-agent/endpoint/protocols/openai/responses?api-version=" + agentAPIVersion,
+				},
+			},
+		},
+		{
+			name: "single invocations protocol",
+			protocols: []agent_yaml.ProtocolVersionRecord{
+				{Protocol: "invocations", Version: "1.0.0"},
+			},
+			expected: []protocolEndpointInfo{
+				{
+					Protocol: "invocations",
+					URL:      endpoint + "/agents/my-agent/endpoint/protocols/invocations?api-version=" + agentAPIVersion,
+				},
+			},
+		},
+		{
+			name: "multiple protocols with activity_protocol excluded",
+			protocols: []agent_yaml.ProtocolVersionRecord{
+				{Protocol: "responses", Version: "1.0.0"},
+				{Protocol: "activity_protocol", Version: "1.0.0"},
+				{Protocol: "invocations", Version: "1.0.0"},
+			},
+			expected: []protocolEndpointInfo{
+				{
+					Protocol: "responses",
+					URL:      endpoint + "/agents/my-agent/endpoint/protocols/openai/responses?api-version=" + agentAPIVersion,
+				},
+				{
+					Protocol: "invocations",
+					URL:      endpoint + "/agents/my-agent/endpoint/protocols/invocations?api-version=" + agentAPIVersion,
+				},
+			},
+		},
+		{
+			name: "only activity_protocol yields empty",
+			protocols: []agent_yaml.ProtocolVersionRecord{
+				{Protocol: "activity_protocol", Version: "1.0.0"},
+			},
+			expected: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := agentInvocationEndpoints(endpoint, agentName, tt.protocols)
+			require.Equal(t, tt.expected, got)
+		})
+	}
+}
+
+func TestDeployArtifacts_HostedAgent_ProtocolEndpoints(t *testing.T) {
+	t.Parallel()
+
+	p := &AgentServiceTargetProvider{}
+
+	protocols := []agent_yaml.ProtocolVersionRecord{
+		{Protocol: "responses", Version: "1.0.0"},
+		{Protocol: "invocations", Version: "1.0.0"},
+	}
+
+	artifacts := p.deployArtifacts(
+		"test-agent", "1.0.0",
+		"", // no project resource ID — skip playground
+		"https://myproject.services.ai.azure.com",
+		protocols,
+	)
+
+	// Should have 2 endpoint artifacts (one per displayable protocol)
+	require.Len(t, artifacts, 2)
+
+	require.Equal(t,
+		"https://myproject.services.ai.azure.com/agents/test-agent/endpoint/protocols/openai/responses?api-version="+agentAPIVersion,
+		artifacts[0].Location)
+	require.Equal(t, "Agent endpoint (responses)", artifacts[0].Metadata["label"])
+	require.Empty(t, artifacts[0].Metadata["note"], "note should only appear on the last endpoint")
+
+	require.Equal(t,
+		"https://myproject.services.ai.azure.com/agents/test-agent/endpoint/protocols/invocations?api-version="+agentAPIVersion,
+		artifacts[1].Location)
+	require.Equal(t, "Agent endpoint (invocations)", artifacts[1].Metadata["label"])
+	require.Contains(t, artifacts[1].Metadata["note"], "invoking the agent")
+}
+
+func TestDeployArtifacts_PromptAgent_ResponsesProtocol(t *testing.T) {
+	t.Parallel()
+
+	p := &AgentServiceTargetProvider{}
+
+	protocols := []agent_yaml.ProtocolVersionRecord{
+		{Protocol: "responses", Version: "1.0.0"},
+	}
+
+	artifacts := p.deployArtifacts(
+		"prompt-agent", "2.0.0",
+		"", // no project resource ID — skip playground
+		"https://myproject.services.ai.azure.com",
+		protocols,
+	)
+
+	require.Len(t, artifacts, 1)
+	require.Equal(t,
+		"https://myproject.services.ai.azure.com/agents/prompt-agent/endpoint/protocols/openai/responses?api-version="+agentAPIVersion,
+		artifacts[0].Location)
+	require.Equal(t, "Agent endpoint (responses)", artifacts[0].Metadata["label"])
+	require.Contains(t, artifacts[0].Metadata["note"], "invoking the agent")
 }
 
 // TestPackage_NoEarlyFailureWithoutACR is a regression test ensuring that

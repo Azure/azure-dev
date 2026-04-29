@@ -120,13 +120,17 @@ func (m *ToolFirstRunMiddleware) shouldSkip(ctx context.Context) bool {
 // runFirstRunExperience drives the interactive welcome flow.
 func (m *ToolFirstRunMiddleware) runFirstRunExperience(ctx context.Context) error {
 	// ---------------------------------------------------------------
-	// Welcome banner
+	// Tool check banner
 	// ---------------------------------------------------------------
 	m.console.Message(ctx, "")
-	m.console.Message(ctx, output.WithBold("Welcome to Azure Developer CLI! 🚀"))
+	m.console.Message(ctx, output.WithBold("Checking your Azure development tools..."))
 	m.console.Message(ctx, "")
-	m.console.Message(ctx, "azd can help you set up your Azure development")
-	m.console.Message(ctx, "environment with the right tools.")
+	m.console.Message(ctx, "Let's make sure your development environment is up to date.")
+	m.console.Message(ctx, output.WithGrayFormat(
+		"To skip this check, set %s or run %s.",
+		output.WithHighLightFormat("AZD_SKIP_FIRST_RUN=true"),
+		output.WithHighLightFormat("azd config set tool.firstRunCompleted true"),
+	))
 	m.console.Message(ctx, "")
 
 	// ---------------------------------------------------------------

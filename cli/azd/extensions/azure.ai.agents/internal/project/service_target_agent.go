@@ -33,6 +33,20 @@ import (
 // agentAPIVersion is the API version used for agent endpoint invocation URLs.
 const agentAPIVersion = "2025-11-15-preview"
 
+// displayableProtocolEntry defines a protocol that produces user-visible invocation endpoints.
+type displayableProtocolEntry struct {
+	Protocol  agent_api.AgentProtocol
+	URLPath   string // path suffix in the invocation URL
+	EnvSuffix string // suffix used in AGENT_{KEY}_{SUFFIX}_ENDPOINT env vars
+}
+
+// displayableProtocols is the single source of truth for protocols that produce
+// user-facing invocation endpoints and env vars.
+var displayableProtocols = []displayableProtocolEntry{
+	{Protocol: agent_api.AgentProtocolResponses, URLPath: "openai/responses", EnvSuffix: "RESPONSES"},
+	{Protocol: agent_api.AgentProtocolInvocations, URLPath: "invocations", EnvSuffix: "INVOCATIONS"},
+}
+
 // Ensure AgentServiceTargetProvider implements ServiceTargetProvider interface
 var _ azdext.ServiceTargetProvider = &AgentServiceTargetProvider{}
 
@@ -236,11 +250,19 @@ func (p *AgentServiceTargetProvider) Endpoints(
 
 	// Collect per-protocol endpoint env vars
 	var endpoints []string
-	for _, suffix := range []string{"RESPONSES", "INVOCATIONS"} {
-		key := fmt.Sprintf("AGENT_%s_%s_ENDPOINT", serviceKey, suffix)
+	for _, dp := range displayableProtocols {
+		key := fmt.Sprintf("AGENT_%s_%s_ENDPOINT", serviceKey, dp.EnvSuffix)
 		if val := azdEnv[key]; val != "" {
 			endpoints = append(endpoints, val)
 		}
+	}
+
+	if len(endpoints) == 0 {
+		return nil, exterrors.Dependency(
+			exterrors.CodeMissingAgentEnvVars,
+			fmt.Sprintf("no agent endpoint variables found for service %s", serviceKey),
+			"run 'azd deploy' to deploy the agent and set these variables",
+		)
 	}
 
 	return endpoints, nil
@@ -600,7 +622,7 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 	}, nil
 }
 
-
+// deployHostedAgent deploys a container-based hosted agent to the Foundry service.
 func (p *AgentServiceTargetProvider) deployHostedAgent(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,
@@ -705,7 +727,16 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 
 	// Register agent info in environment
 	progress("Registering agent environment variables")
-	err = p.registerAgentEnvironmentVariables(ctx, azdEnv, serviceConfig, agentVersionResponse, agentDef.Protocols)
+
+	// Default to "responses" protocol when none specified in agent.yaml.
+	protocols := agentDef.Protocols
+	if len(protocols) == 0 {
+		protocols = []agent_yaml.ProtocolVersionRecord{
+			{Protocol: string(agent_api.AgentProtocolResponses), Version: "1.0.0"},
+		}
+	}
+
+	err = p.registerAgentEnvironmentVariables(ctx, azdEnv, serviceConfig, agentVersionResponse, protocols)
 	if err != nil {
 		return nil, err
 	}
@@ -715,7 +746,7 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		agentVersionResponse.Version,
 		azdEnv["AZURE_AI_PROJECT_ID"],
 		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
-		agentDef.Protocols,
+		protocols,
 	)
 
 	return &azdext.ServiceDeployResult{
@@ -788,14 +819,12 @@ type protocolEndpointInfo struct {
 // protocolPath maps an agent protocol to its URL path suffix.
 // Returns empty string for protocols that should not be displayed.
 func protocolPath(protocol string) string {
-	switch agent_api.AgentProtocol(protocol) {
-	case agent_api.AgentProtocolResponses:
-		return "openai/responses"
-	case agent_api.AgentProtocolInvocations:
-		return "invocations"
-	default:
-		return ""
+	for _, dp := range displayableProtocols {
+		if agent_api.AgentProtocol(protocol) == dp.Protocol {
+			return dp.URLPath
+		}
 	}
+	return ""
 }
 
 // agentInvocationEndpoints builds the list of displayable invocation endpoints
@@ -915,6 +944,7 @@ func (p *AgentServiceTargetProvider) displayAgentInfo(request *agent_api.CreateA
 
 // registerAgentEnvironmentVariables registers agent information as azd environment variables.
 // Per-protocol endpoint vars are set (e.g. AGENT_{KEY}_RESPONSES_ENDPOINT).
+// The legacy single-endpoint var (AGENT_{KEY}_ENDPOINT) is cleared to avoid stale data.
 func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 	ctx context.Context,
 	azdEnv map[string]string,
@@ -928,13 +958,18 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 		fmt.Sprintf("AGENT_%s_VERSION", serviceKey): agentVersionResponse.Version,
 	}
 
+	// Clear legacy single-endpoint var so upgraded environments don't retain stale URLs.
+	legacyKey := fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey)
+	envVars[legacyKey] = ""
+
 	endpoints := agentInvocationEndpoints(
 		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
 		agentVersionResponse.Name,
 		protocols,
 	)
 	for _, ep := range endpoints {
-		key := fmt.Sprintf("AGENT_%s_%s_ENDPOINT", serviceKey, strings.ToUpper(ep.Protocol))
+		suffix := strings.ToUpper(ep.Protocol)
+		key := fmt.Sprintf("AGENT_%s_%s_ENDPOINT", serviceKey, suffix)
 		envVars[key] = ep.URL
 	}
 

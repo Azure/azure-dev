@@ -149,6 +149,102 @@ func newContainerTestClient(t *testing.T, containerSrv azdext.ContainerServiceSe
 	return client
 }
 
+// stubEnvServer records SetValue calls for testing registerAgentEnvironmentVariables.
+type stubEnvServer struct {
+	azdext.UnimplementedEnvironmentServiceServer
+	values map[string]string
+}
+
+func (s *stubEnvServer) SetValue(
+	_ context.Context, req *azdext.SetEnvRequest,
+) (*azdext.EmptyResponse, error) {
+	if s.values == nil {
+		s.values = make(map[string]string)
+	}
+	s.values[req.Key] = req.Value
+	return &azdext.EmptyResponse{}, nil
+}
+
+// newEnvTestClient spins up a gRPC server with the given environment
+// service stub and returns an AzdClient connected to it.
+func newEnvTestClient(
+	t *testing.T, envSrv azdext.EnvironmentServiceServer,
+) *azdext.AzdClient {
+	t.Helper()
+
+	srv := grpc.NewServer()
+	azdext.RegisterEnvironmentServiceServer(srv, envSrv)
+
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	go func() { _ = srv.Serve(lis) }()
+	t.Cleanup(func() {
+		srv.Stop()
+		_ = lis.Close()
+	})
+
+	client, err := azdext.NewAzdClient(
+		azdext.WithAddress(lis.Addr().String()),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { client.Close() })
+
+	return client
+}
+
+func TestRegisterAgentEnvironmentVariables(t *testing.T) {
+	t.Parallel()
+
+	envStub := &stubEnvServer{}
+	client := newEnvTestClient(t, envStub)
+
+	provider := &AgentServiceTargetProvider{
+		azdClient: client,
+		env:       &azdext.Environment{Name: "test-env"},
+	}
+
+	azdEnv := map[string]string{
+		"AZURE_AI_PROJECT_ENDPOINT": "https://proj.azure.com",
+	}
+	protocols := []agent_yaml.ProtocolVersionRecord{
+		{Protocol: "responses", Version: "1.0.0"},
+		{Protocol: "invocations", Version: "1.0.0"},
+	}
+	agentVersion := &agent_api.AgentVersionObject{
+		Name:    "my-agent",
+		Version: "1.0.0",
+	}
+
+	err := provider.registerAgentEnvironmentVariables(
+		t.Context(), azdEnv,
+		&azdext.ServiceConfig{Name: "my-svc"},
+		agentVersion,
+		protocols,
+	)
+	require.NoError(t, err)
+
+	// Verify per-protocol env vars
+	require.Contains(t, envStub.values, "AGENT_MY_SVC_NAME")
+	require.Equal(t, "my-agent", envStub.values["AGENT_MY_SVC_NAME"])
+	require.Contains(t, envStub.values, "AGENT_MY_SVC_VERSION")
+	require.Equal(t, "1.0.0", envStub.values["AGENT_MY_SVC_VERSION"])
+
+	// Per-protocol endpoints
+	require.Contains(t, envStub.values, "AGENT_MY_SVC_RESPONSES_ENDPOINT")
+	require.Contains(t,
+		envStub.values["AGENT_MY_SVC_RESPONSES_ENDPOINT"],
+		"/agents/my-agent/endpoint/protocols/openai/responses")
+	require.Contains(t, envStub.values, "AGENT_MY_SVC_INVOCATIONS_ENDPOINT")
+	require.Contains(t,
+		envStub.values["AGENT_MY_SVC_INVOCATIONS_ENDPOINT"],
+		"/agents/my-agent/endpoint/protocols/invocations")
+
+	// Legacy env var cleared
+	require.Contains(t, envStub.values, "AGENT_MY_SVC_ENDPOINT")
+	require.Empty(t, envStub.values["AGENT_MY_SVC_ENDPOINT"])
+}
+
 func TestProtocolPath(t *testing.T) {
 	t.Parallel()
 
@@ -176,6 +272,7 @@ func TestAgentInvocationEndpoints(t *testing.T) {
 
 	const endpoint = "https://myproject.services.ai.azure.com"
 	const agentName = "my-agent"
+	baseURL := endpoint + "/agents/" + agentName + "/endpoint/protocols/"
 
 	tests := []struct {
 		name      string
@@ -190,7 +287,7 @@ func TestAgentInvocationEndpoints(t *testing.T) {
 			expected: []protocolEndpointInfo{
 				{
 					Protocol: "responses",
-					URL:      endpoint + "/agents/my-agent/endpoint/protocols/openai/responses?api-version=" + agentAPIVersion,
+					URL:      baseURL + "openai/responses?api-version=" + agentAPIVersion,
 				},
 			},
 		},
@@ -202,7 +299,7 @@ func TestAgentInvocationEndpoints(t *testing.T) {
 			expected: []protocolEndpointInfo{
 				{
 					Protocol: "invocations",
-					URL:      endpoint + "/agents/my-agent/endpoint/protocols/invocations?api-version=" + agentAPIVersion,
+					URL:      baseURL + "invocations?api-version=" + agentAPIVersion,
 				},
 			},
 		},
@@ -216,11 +313,11 @@ func TestAgentInvocationEndpoints(t *testing.T) {
 			expected: []protocolEndpointInfo{
 				{
 					Protocol: "responses",
-					URL:      endpoint + "/agents/my-agent/endpoint/protocols/openai/responses?api-version=" + agentAPIVersion,
+					URL:      baseURL + "openai/responses?api-version=" + agentAPIVersion,
 				},
 				{
 					Protocol: "invocations",
-					URL:      endpoint + "/agents/my-agent/endpoint/protocols/invocations?api-version=" + agentAPIVersion,
+					URL:      baseURL + "invocations?api-version=" + agentAPIVersion,
 				},
 			},
 		},
@@ -230,6 +327,11 @@ func TestAgentInvocationEndpoints(t *testing.T) {
 				{Protocol: "activity_protocol", Version: "1.0.0"},
 			},
 			expected: nil,
+		},
+		{
+			name:      "nil protocols yields empty",
+			protocols: nil,
+			expected:  nil,
 		},
 	}
 
@@ -245,6 +347,7 @@ func TestDeployArtifacts_HostedAgent_ProtocolEndpoints(t *testing.T) {
 	t.Parallel()
 
 	p := &AgentServiceTargetProvider{}
+	const ep = "https://myproject.services.ai.azure.com"
 
 	protocols := []agent_yaml.ProtocolVersionRecord{
 		{Protocol: "responses", Version: "1.0.0"},
@@ -254,22 +357,25 @@ func TestDeployArtifacts_HostedAgent_ProtocolEndpoints(t *testing.T) {
 	artifacts := p.deployArtifacts(
 		"test-agent", "1.0.0",
 		"", // no project resource ID — skip playground
-		"https://myproject.services.ai.azure.com",
+		ep,
 		protocols,
 	)
 
 	// Should have 2 endpoint artifacts (one per displayable protocol)
 	require.Len(t, artifacts, 2)
 
-	require.Equal(t,
-		"https://myproject.services.ai.azure.com/agents/test-agent/endpoint/protocols/openai/responses?api-version="+agentAPIVersion,
-		artifacts[0].Location)
+	wantResponses := ep +
+		"/agents/test-agent/endpoint/protocols/openai/responses" +
+		"?api-version=" + agentAPIVersion
+	require.Equal(t, wantResponses, artifacts[0].Location)
 	require.Equal(t, "Agent endpoint (responses)", artifacts[0].Metadata["label"])
-	require.Empty(t, artifacts[0].Metadata["note"], "note should only appear on the last endpoint")
+	require.Empty(t, artifacts[0].Metadata["note"],
+		"note should only appear on the last endpoint")
 
-	require.Equal(t,
-		"https://myproject.services.ai.azure.com/agents/test-agent/endpoint/protocols/invocations?api-version="+agentAPIVersion,
-		artifacts[1].Location)
+	wantInvocations := ep +
+		"/agents/test-agent/endpoint/protocols/invocations" +
+		"?api-version=" + agentAPIVersion
+	require.Equal(t, wantInvocations, artifacts[1].Location)
 	require.Equal(t, "Agent endpoint (invocations)", artifacts[1].Metadata["label"])
 	require.Contains(t, artifacts[1].Metadata["note"], "invoking the agent")
 }
@@ -278,6 +384,7 @@ func TestDeployArtifacts_PromptAgent_ResponsesProtocol(t *testing.T) {
 	t.Parallel()
 
 	p := &AgentServiceTargetProvider{}
+	const ep = "https://myproject.services.ai.azure.com"
 
 	protocols := []agent_yaml.ProtocolVersionRecord{
 		{Protocol: "responses", Version: "1.0.0"},
@@ -286,16 +393,31 @@ func TestDeployArtifacts_PromptAgent_ResponsesProtocol(t *testing.T) {
 	artifacts := p.deployArtifacts(
 		"prompt-agent", "2.0.0",
 		"", // no project resource ID — skip playground
-		"https://myproject.services.ai.azure.com",
+		ep,
 		protocols,
 	)
 
 	require.Len(t, artifacts, 1)
-	require.Equal(t,
-		"https://myproject.services.ai.azure.com/agents/prompt-agent/endpoint/protocols/openai/responses?api-version="+agentAPIVersion,
-		artifacts[0].Location)
+	wantURL := ep +
+		"/agents/prompt-agent/endpoint/protocols/openai/responses" +
+		"?api-version=" + agentAPIVersion
+	require.Equal(t, wantURL, artifacts[0].Location)
 	require.Equal(t, "Agent endpoint (responses)", artifacts[0].Metadata["label"])
 	require.Contains(t, artifacts[0].Metadata["note"], "invoking the agent")
+}
+
+func TestDeployArtifacts_EmptyProtocols_NoEndpoints(t *testing.T) {
+	t.Parallel()
+
+	p := &AgentServiceTargetProvider{}
+
+	// When protocols is empty, no endpoint artifacts are produced.
+	artifacts := p.deployArtifacts(
+		"agent", "1.0.0",
+		"", "https://ep.azure.com",
+		nil,
+	)
+	require.Empty(t, artifacts)
 }
 
 // TestPackage_NoEarlyFailureWithoutACR is a regression test ensuring that

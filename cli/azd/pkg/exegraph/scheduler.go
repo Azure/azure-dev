@@ -236,23 +236,7 @@ func execute(ctx context.Context, g *Graph, opts RunOptions) *RunResult {
 		comp := <-completions
 		inflight--
 
-		// Record step timing.
-		status := StepDone
-		if comp.err != nil {
-			switch {
-			case IsStepSkipped(comp.err):
-				status = StepSkipped
-			case (errors.Is(comp.err, context.Canceled) || errors.Is(comp.err, context.DeadlineExceeded)) &&
-				comp.schedulerCanceled:
-				// Parent cancellation or FailFast tear-down from another step's
-				// failure — never ran this Action to completion on its own.
-				// Record as skipped. A per-step timeout (StepTimeout) where
-				// runCtx was NOT canceled at completion time is still a real failure.
-				status = StepSkipped
-			default:
-				status = StepFailed
-			}
-		}
+		status, isRealFailure := classifyStepResult(comp.err, comp.schedulerCanceled)
 		timingMu.Lock()
 		result.Steps = append(result.Steps, StepTiming{
 			Name:     comp.name,
@@ -266,38 +250,19 @@ func execute(ctx context.Context, g *Graph, opts RunOptions) *RunResult {
 		timingMu.Unlock()
 
 		if comp.err != nil {
-			// Align aggregation with the drain loop below: steps canceled by
-			// the scheduler (parent ctx or FailFast tear-down) are not real
-			// failures — don't add them to allErrors and don't mark them as
-			// failed. A per-step StepTimeout where runCtx is NOT canceled is
-			// still a genuine failure.
-			isSchedulerCancel := (errors.Is(comp.err, context.Canceled) ||
-				errors.Is(comp.err, context.DeadlineExceeded)) && comp.schedulerCanceled
-			if !isSchedulerCancel {
+			if isRealFailure {
 				failed[comp.name] = true
 				allErrors = append(allErrors, comp.err)
 			}
 
-			if !isSchedulerCancel && opts.ErrorPolicy == FailFast {
+			if isRealFailure && opts.ErrorPolicy == FailFast {
 				runCancel()
 				// Drain remaining in-flight work.
 				for inflight > 0 {
 					r := <-completions
 					inflight--
-					var drainStatus StepStatus
-					switch {
-					case r.err == nil:
-						drainStatus = StepDone
-					case (errors.Is(r.err, context.Canceled) ||
-						errors.Is(r.err, context.DeadlineExceeded)) && r.schedulerCanceled:
-						// Steps cancelled by the scheduler's own FailFast cancellation
-						// are recorded as skipped, not failed — they never ran their
-						// Action to completion on their own. A step whose *own*
-						// per-step timeout fired before the scheduler tear-down reached
-						// it (schedulerCanceled=false) is still a genuine StepFailed.
-						drainStatus = StepSkipped
-					default:
-						drainStatus = StepFailed
+					drainStatus, drainIsReal := classifyStepResult(r.err, r.schedulerCanceled)
+					if drainIsReal {
 						allErrors = append(allErrors, r.err)
 					}
 					timingMu.Lock()
@@ -501,6 +466,26 @@ func hasFailedDep(s *Step, failed map[string]bool) bool {
 		}
 	}
 	return false
+}
+
+// classifyStepResult determines the execution status for a completed step.
+// It returns the status and whether the error is a real failure (as opposed to
+// a scheduler cancellation that should not count toward the failure set).
+//
+// A step whose own per-step timeout (StepTimeout) fired but whose parent context
+// (runCtx) was NOT canceled is classified as StepFailed — the timeout is a
+// genuine step-level failure, not a scheduler tear-down side effect.
+func classifyStepResult(err error, schedulerCanceled bool) (StepStatus, bool) {
+	if err == nil {
+		return StepDone, false
+	}
+	if IsStepSkipped(err) {
+		return StepSkipped, true
+	}
+	if (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) && schedulerCanceled {
+		return StepSkipped, false
+	}
+	return StepFailed, true
 }
 
 func notifyStart(opts RunOptions, name string) {

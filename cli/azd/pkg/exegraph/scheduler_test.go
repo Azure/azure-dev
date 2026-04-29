@@ -6,6 +6,8 @@ package exegraph
 import (
 	"context"
 	"errors"
+	"fmt"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -105,6 +107,11 @@ func TestRun_FanOut(t *testing.T) {
 	var concurrent atomic.Int32
 	var maxConcurrent atomic.Int32
 
+	// Barrier: all fan-out steps signal arrival, then wait for release.
+	const fanOutCount = 4
+	arrived := make(chan struct{}, fanOutCount)
+	release := make(chan struct{})
+
 	require.NoError(t, g.AddStep(&Step{
 		Name:   "a",
 		Action: func(_ context.Context) error { return nil },
@@ -123,12 +130,21 @@ func TestRun_FanOut(t *testing.T) {
 						break
 					}
 				}
-				time.Sleep(50 * time.Millisecond)
+				arrived <- struct{}{}
+				<-release
 				concurrent.Add(-1)
 				return nil
 			},
 		}))
 	}
+
+	// Release all steps once enough have arrived (proves concurrency).
+	go func() {
+		// Wait for at least 2 steps to prove parallel execution.
+		<-arrived
+		<-arrived
+		close(release)
+	}()
 
 	require.NoError(t, Run(t.Context(), g, RunOptions{}))
 	assert.GreaterOrEqual(t, maxConcurrent.Load(), int32(2),
@@ -321,6 +337,9 @@ func TestRun_MaxConcurrency(t *testing.T) {
 	var concurrent atomic.Int32
 	var maxConcurrent atomic.Int32
 
+	// Use a channel barrier to hold steps until we can measure concurrency.
+	release := make(chan struct{})
+
 	for i := range 6 {
 		name := string(rune('a' + i))
 		require.NoError(t, g.AddStep(&Step{
@@ -333,12 +352,18 @@ func TestRun_MaxConcurrency(t *testing.T) {
 						break
 					}
 				}
-				time.Sleep(30 * time.Millisecond)
+				<-release
 				concurrent.Add(-1)
 				return nil
 			},
 		}))
 	}
+
+	// Release all steps after a brief moment to let workers arrive at barrier.
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		close(release)
+	}()
 
 	require.NoError(t, Run(t.Context(), g, RunOptions{MaxConcurrency: 2}))
 	assert.LessOrEqual(t, maxConcurrent.Load(), int32(2),
@@ -510,7 +535,8 @@ func TestRun_MaxConcurrency_One_IsSerial(t *testing.T) {
 						break
 					}
 				}
-				time.Sleep(10 * time.Millisecond)
+				// Brief yield to ensure scheduler could dispatch another if it violated the cap.
+				runtime.Gosched()
 				concurrent.Add(-1)
 				return nil
 			},
@@ -998,4 +1024,138 @@ func TestContinueOnError_JoinsMultipleFailures(t *testing.T) {
 	unwrapped := joined.Unwrap()
 	assert.GreaterOrEqual(t, len(unwrapped), 2,
 		"at least 2 errors from the 2 failed steps")
+}
+
+// --- classifyStepResult tests ---
+
+func TestClassifyStepResult(t *testing.T) {
+	tests := []struct {
+		name              string
+		err               error
+		schedulerCanceled bool
+		wantStatus        StepStatus
+		wantRealFailure   bool
+	}{
+		{
+			name:            "nil error is done",
+			err:             nil,
+			wantStatus:      StepDone,
+			wantRealFailure: false,
+		},
+		{
+			name:            "step skipped error",
+			err:             &StepSkippedError{StepName: "x"},
+			wantStatus:      StepSkipped,
+			wantRealFailure: true,
+		},
+		{
+			name:              "context.Canceled with scheduler cancel",
+			err:               context.Canceled,
+			schedulerCanceled: true,
+			wantStatus:        StepSkipped,
+			wantRealFailure:   false,
+		},
+		{
+			name:              "context.DeadlineExceeded with scheduler cancel",
+			err:               context.DeadlineExceeded,
+			schedulerCanceled: true,
+			wantStatus:        StepSkipped,
+			wantRealFailure:   false,
+		},
+		{
+			name:              "context.Canceled without scheduler cancel is real failure (per-step timeout)",
+			err:               context.Canceled,
+			schedulerCanceled: false,
+			wantStatus:        StepFailed,
+			wantRealFailure:   true,
+		},
+		{
+			name:              "context.DeadlineExceeded without scheduler cancel is real failure",
+			err:               context.DeadlineExceeded,
+			schedulerCanceled: false,
+			wantStatus:        StepFailed,
+			wantRealFailure:   true,
+		},
+		{
+			name:            "generic error is failed",
+			err:             errors.New("boom"),
+			wantStatus:      StepFailed,
+			wantRealFailure: true,
+		},
+		{
+			name:              "wrapped canceled with scheduler cancel",
+			err:               fmt.Errorf("step failed: %w", context.Canceled),
+			schedulerCanceled: true,
+			wantStatus:        StepSkipped,
+			wantRealFailure:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			status, isReal := classifyStepResult(tt.err, tt.schedulerCanceled)
+			assert.Equal(t, tt.wantStatus, status)
+			assert.Equal(t, tt.wantRealFailure, isReal)
+		})
+	}
+}
+
+func TestRunWithResult_StepTimeout_ClassifiedAsFailed(t *testing.T) {
+	// A per-step timeout should be classified as StepFailed (not StepSkipped)
+	// because the scheduler itself was NOT canceled — only the step's own
+	// context deadline expired.
+	g := NewGraph()
+	require.NoError(t, g.AddStep(&Step{
+		Name: "slow",
+		Action: func(ctx context.Context) error {
+			<-ctx.Done()
+			return ctx.Err()
+		},
+	}))
+
+	result := RunWithResult(t.Context(), g, RunOptions{StepTimeout: 50 * time.Millisecond})
+	require.Error(t, result.Error)
+	require.Len(t, result.Steps, 1)
+	assert.Equal(t, StepFailed, result.Steps[0].Status,
+		"per-step timeout must be classified as failed, not skipped")
+}
+
+func TestRunWithResult_FailFast_DrainClassifiesCorrectly(t *testing.T) {
+	// When FailFast fires and drains in-flight steps, those steps should be
+	// classified as StepSkipped (scheduler cancellation), not StepFailed.
+	g := NewGraph()
+
+	// Both steps are roots (no deps), so both start immediately.
+	started := make(chan struct{})
+	require.NoError(t, g.AddStep(&Step{
+		Name: "failer",
+		Action: func(_ context.Context) error {
+			<-started
+			return errors.New("kaboom")
+		},
+	}))
+	require.NoError(t, g.AddStep(&Step{
+		Name: "blocker",
+		Action: func(ctx context.Context) error {
+			close(started) // let failer proceed
+			<-ctx.Done()
+			return ctx.Err()
+		},
+	}))
+
+	result := RunWithResult(t.Context(), g, RunOptions{ErrorPolicy: FailFast})
+	require.Error(t, result.Error)
+	assert.Contains(t, result.Error.Error(), "kaboom")
+
+	// Find the blocker step's status.
+	var blockerTiming *StepTiming
+	for i := range result.Steps {
+		if result.Steps[i].Name == "blocker" {
+			blockerTiming = &result.Steps[i]
+			break
+		}
+	}
+	require.NotNil(t, blockerTiming, "blocker should appear in results")
+	assert.Equal(t, StepSkipped, blockerTiming.Status,
+		"in-flight step canceled by FailFast should be skipped, not failed")
 }

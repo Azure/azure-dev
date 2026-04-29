@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
@@ -33,6 +34,7 @@ func NewFileConfigManager(configManager Manager) FileConfigManager {
 }
 
 type fileConfigManager struct {
+	mu      sync.Mutex
 	manager Manager
 }
 
@@ -75,44 +77,30 @@ func (m *fileConfigManager) Load(filePath string) (Config, error) {
 }
 
 func (m *fileConfigManager) Save(c Config, filePath string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	return m.saveLocked(c, filePath)
+}
+
+// saveLocked performs the actual save logic. It must be called while m.mu is held.
+// This is separated from Save to allow the recursive vault save without deadlocking
+// on the non-reentrant mutex.
+func (m *fileConfigManager) saveLocked(c Config, filePath string) error {
 	folderPath := filepath.Dir(filePath)
 	if err := os.MkdirAll(folderPath, osutil.PermissionDirectory); err != nil {
 		return fmt.Errorf("failed creating config directory: %w", err)
 	}
 
-	// Atomic write: write to a temp file in the same directory then rename.
-	// This prevents corruption if the process is interrupted mid-write.
-	tmpFile, err := os.CreateTemp(folderPath, ".azd-config-*.tmp")
+	file, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, osutil.PermissionFile)
 	if err != nil {
-		return fmt.Errorf("failed creating temp config file: %w", err)
+		return fmt.Errorf("saving file config: %w", err)
 	}
-	tmpPath := tmpFile.Name()
+	defer file.Close()
 
-	// On any failure path, clean up the temp file.
-	success := false
-	defer func() {
-		if !success {
-			_ = tmpFile.Close()
-			_ = os.Remove(tmpPath)
-		}
-	}()
-
-	if err := m.manager.Save(c, tmpFile); err != nil {
-		return err
+	if err := m.manager.Save(c, file); err != nil {
+		return fmt.Errorf("saving file config: %w", err)
 	}
-
-	// Flush and close before rename to ensure all data is on disk.
-	if err := tmpFile.Sync(); err != nil {
-		return fmt.Errorf("failed syncing temp config file: %w", err)
-	}
-	if err := tmpFile.Close(); err != nil {
-		return fmt.Errorf("failed closing temp config file: %w", err)
-	}
-
-	if err := os.Rename(tmpPath, filePath); err != nil {
-		return fmt.Errorf("failed renaming temp config file: %w", err)
-	}
-	success = true
 
 	baseConfig, ok := c.(*config)
 	if !ok {
@@ -131,7 +119,7 @@ func (m *fileConfigManager) Save(c Config, filePath string) error {
 			return fmt.Errorf("failed creating vaults directory: %w", err)
 		}
 
-		return m.Save(baseConfig.vault, vaultPath)
+		return m.saveLocked(baseConfig.vault, vaultPath)
 	}
 
 	return nil

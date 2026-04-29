@@ -1564,18 +1564,7 @@ func isNetworkError(err error) bool {
 		return true
 	}
 
-	var dnsErr *net.DNSError
-	if errors.As(err, &dnsErr) {
-		return true
-	}
-
-	var opErr *net.OpError
-	if errors.As(err, &opErr) {
-		return true
-	}
-
-	// Check for common network-related error messages from the
-	// HTTP transport layer that may not implement net.Error.
+	// String-matching fallback for wrapped errors that may not implement net.Error.
 	msg := err.Error()
 	networkKeywords := []string{
 		"connection refused",

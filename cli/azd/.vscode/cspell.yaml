@@ -107,6 +107,7 @@ words:
   - mintty
   - dockerenv
   - dedup
+  - delisted
   - exfiltration
   - Fprintf
   - gocritic

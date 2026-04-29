@@ -24,7 +24,7 @@ azd (host)
 Extensions are discovered from registries — JSON manifests that list available extensions with their versions, capabilities, and download URLs.
 
 - **Official registry:** `https://aka.ms/azd/extensions/registry`
-- **Dev registry:** `https://aka.ms/azd/extensions/registry/dev` (unsigned builds)
+- **Dev registry:** `https://aka.ms/azd/extensions/registry/dev` (unsigned builds, backed by `cli/azd/extensions/registry.dev.json`)
 - **Local sources:** File-based manifests for development
 
 ### Lifecycle

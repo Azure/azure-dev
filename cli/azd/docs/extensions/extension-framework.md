@@ -73,6 +73,7 @@ azd extension source add -n azd -t url -l "https://aka.ms/azd/extensions/registr
 
 A shared development registry can be added to your `azd` configuration.
 This registry contains extensions that are experiments and also used for internal testing before shipping official extensions.
+The registry is hosted in the [`azd` github repo](https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/registry.dev.json).
 
 To opt-in for the development registry run the following command:
 

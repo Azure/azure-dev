@@ -778,32 +778,37 @@ func protocolFromAgentYaml(
 		// Exactly one invocable protocol — but if the agent declares
 		// multiple protocols overall, require --protocol to be explicit.
 		if len(hosted.Protocols) > 1 {
-			names := make([]string, len(hosted.Protocols))
-			for i, p := range hosted.Protocols {
-				names[i] = p.Protocol
-			}
-			return "", exterrors.Validation(
-				exterrors.CodeInvalidParameter,
-				fmt.Sprintf(
-					"agent.yaml declares multiple protocols (%s)",
-					strings.Join(names, ", "),
-				),
-				"use --protocol to specify which protocol to use for invocation",
-			)
+			return "", multiProtocolError(hosted.Protocols)
 		}
 		return invocable[0], nil
 	default:
-		names := make([]string, len(hosted.Protocols))
-		for i, p := range hosted.Protocols {
-			names[i] = p.Protocol
-		}
-		return "", exterrors.Validation(
-			exterrors.CodeInvalidParameter,
-			fmt.Sprintf(
-				"agent.yaml declares multiple protocols (%s)",
-				strings.Join(names, ", "),
-			),
-			"use --protocol to specify which protocol to use for invocation",
-		)
+		return "", multiProtocolError(hosted.Protocols)
 	}
+}
+
+// multiProtocolError builds a validation error for agents that declare
+// multiple protocols, listing the valid invocable choices.
+func multiProtocolError(
+	protocols []agent_yaml.ProtocolVersionRecord,
+) error {
+	names := make([]string, len(protocols))
+	for i, p := range protocols {
+		names[i] = p.Protocol
+	}
+	supported := make([]string, len(agent_api.InvocableProtocols()))
+	for i, p := range agent_api.InvocableProtocols() {
+		supported[i] = string(p)
+	}
+	return exterrors.Validation(
+		exterrors.CodeInvalidParameter,
+		fmt.Sprintf(
+			"agent.yaml declares multiple protocols (%s)",
+			strings.Join(names, ", "),
+		),
+		fmt.Sprintf(
+			"use --protocol to specify which invocable protocol "+
+				"to use (supported: %s)",
+			strings.Join(supported, ", "),
+		),
+	)
 }

@@ -914,12 +914,24 @@ func (p *AgentServiceTargetProvider) createAgent(
 			AgentCard:     request.AgentCard,
 		}
 
-		_, err := agentClient.PatchAgent(ctx, request.Name, patchRequest, agentAPIVersion)
+		_, err := agentClient.PatchAgent(
+			ctx, request.Name, patchRequest, agentAPIVersion,
+		)
 		if err != nil {
-			return nil, exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
+			fmt.Fprintf(os.Stderr,
+				"WARNING: Agent version '%s' (version %s) was created, "+
+					"but updating agent endpoint/card failed.\n",
+				agentVersionResponse.Name,
+				agentVersionResponse.Version,
+			)
+			return nil, exterrors.ServiceFromAzure(
+				err, exterrors.OpCreateAgent,
+			)
 		}
 
-		fmt.Fprintf(os.Stderr, "Agent endpoint and card updated successfully!\n")
+		fmt.Fprintf(os.Stderr,
+			"Agent endpoint and card updated successfully!\n",
+		)
 	}
 
 	return agentVersionResponse, nil

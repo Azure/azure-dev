@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"slices"
 	"time"
 )
 
@@ -33,7 +32,12 @@ func InvocableProtocols() []AgentProtocol {
 
 // IsInvocable reports whether the protocol can be used for invocation through azd.
 func (p AgentProtocol) IsInvocable() bool {
-	return slices.Contains(InvocableProtocols(), p)
+	switch p {
+	case AgentProtocolResponses, AgentProtocolInvocations:
+		return true
+	default:
+		return false
+	}
 }
 
 // AgentKind represents the different types of agents

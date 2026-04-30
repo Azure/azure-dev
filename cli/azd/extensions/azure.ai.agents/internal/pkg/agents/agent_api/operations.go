@@ -178,7 +178,12 @@ func (c *AgentClient) UpdateAgent(ctx context.Context, agentName string, request
 
 // PatchAgent performs a partial update on an agent using HTTP PATCH.
 // Only the fields set in the request body are updated.
-func (c *AgentClient) PatchAgent(ctx context.Context, agentName string, request *PatchAgentRequest, apiVersion string) (*AgentObject, error) {
+func (c *AgentClient) PatchAgent(
+	ctx context.Context,
+	agentName string,
+	request *PatchAgentRequest,
+	apiVersion string,
+) (*AgentObject, error) {
 	url := fmt.Sprintf("%s/agents/%s?api-version=%s", c.endpoint, agentName, apiVersion)
 
 	payload, err := json.Marshal(request)

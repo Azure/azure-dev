@@ -340,12 +340,14 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	defer azdClient.Close()
 
 	name := a.flags.name
+	var version string
 
-	// Auto-resolve agent name from azure.yaml
+	// Auto-resolve agent name and version from azure.yaml
 	if info, err := resolveAgentServiceFromProject(ctx, azdClient, name, rootFlags.NoPrompt); err == nil {
 		if name == "" && info.AgentName != "" {
 			name = info.AgentName
 		}
+		version = info.Version
 	}
 
 	if name == "" {
@@ -356,6 +358,9 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
+	// Build the structured agent key for config store lookups.
+	agentKey := buildRemoteAgentKey(projectEndpoint, name, version)
 
 	body, bodyLabel, err := a.resolveBody()
 	if err != nil {
@@ -372,7 +377,10 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 
 	// Session ID — routes to the same microVM container instance.
 	// When empty, let the server assign one.
-	sid, err := resolveStoredID(ctx, azdClient, name, a.flags.session, a.flags.newSession, "sessions", false)
+	sid, err := resolveStoredID(
+		ctx, azdClient, agentKey, a.flags.session, a.flags.newSession, "sessions", false,
+		legacyKeysForRemote(name)...,
+	)
 	if err != nil {
 		return err
 	}
@@ -397,11 +405,13 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	convID, err := resolveConversationID(
 		ctx,
 		azdClient,
-		name,
+		agentKey,
 		a.flags.conversation,
 		a.flags.newConversation,
 		projectEndpoint,
 		token.Token,
+		name,
+		legacyKeysForRemote(name)...,
 	)
 	if err != nil {
 		return err
@@ -442,7 +452,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 		fmt.Printf("Trace ID: %s\n", requestID)
 	}
 
-	captureResponseSession(ctx, azdClient, name, sid, resp, "Session:      ")
+	captureResponseSession(ctx, azdClient, agentKey, sid, resp, "Session:      ")
 
 	if resp.StatusCode >= 400 {
 		respBody, _ := io.ReadAll(resp.Body)

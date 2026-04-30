@@ -280,7 +280,7 @@ func (a *SessionCreateAction) Run(ctx context.Context) error {
 		)
 	}
 
-	persistSessionID(ctx, sc.agentName, session.AgentSessionID)
+	persistSessionID(ctx, buildRemoteAgentKey(sc.endpoint, sc.agentName, version), session.AgentSessionID)
 
 	return printSession(session, a.flags.output)
 }
@@ -688,8 +688,8 @@ func formatUnixTimestamp(epoch int64) string {
 	return time.Unix(epoch, 0).UTC().Format(time.RFC3339)
 }
 
-// persistSessionID saves the session ID to .foundry-agent.json for reuse.
-func persistSessionID(ctx context.Context, agentName, sessionID string) {
+// persistSessionID saves the session ID to the config store for reuse.
+func persistSessionID(ctx context.Context, agentKey, sessionID string) {
 	if sessionID == "" {
 		return
 	}
@@ -700,5 +700,5 @@ func persistSessionID(ctx context.Context, agentName, sessionID string) {
 	}
 	defer azdClient.Close()
 
-	saveContextValue(ctx, azdClient, agentName, sessionID, "sessions")
+	saveContextValue(ctx, azdClient, agentKey, sessionID, "sessions")
 }

@@ -1,5 +1,12 @@
 # Release History
 
+## 0.1.29-preview (2026-04-30)
+
+- [[#7984]](https://github.com/Azure/azure-dev/pull/7984) Fix `postdeployHandler` to skip post-deploy processing when the project has no hosted agent services, preventing errors on non-agent projects.
+- [[#7974]](https://github.com/Azure/azure-dev/pull/7974) Update post-deploy output to display the agent invocation endpoint URL.
+- [[#7966]](https://github.com/Azure/azure-dev/pull/7966) Update the `aka.ms` redirect URL used to fetch the agent templates list.
+- [[#7921]](https://github.com/Azure/azure-dev/pull/7921) Update `azd ai agent init` to load agent templates from the unified awesome-azd `templates.json` manifest, filtered by the `extension.ai.agent` type discriminator.
+
 ## 0.1.28-preview (2026-04-28)
 
 - [[#7930]](https://github.com/Azure/azure-dev/pull/7930) Fetch the hosted-agent supported regions list at runtime from a remote JSON manifest with an embedded fallback, replacing the hardcoded list; region data can now be updated without cutting an extension release.

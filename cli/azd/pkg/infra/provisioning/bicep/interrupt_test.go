@@ -294,7 +294,7 @@ func TestCancelAndAwaitTerminal_CancelFailed_ButDeploymentAlreadyTerminal(t *tes
 
 	outcome := provider.cancelAndAwaitTerminal(t.Context(), deployment, "https://portal/x")
 	require.ErrorIs(t, outcome.err, provisioning.ErrDeploymentCancelTooLate)
-	require.Equal(t, "cancel_too_late", outcome.telemetryValue)
+	require.Equal(t, "cancel_raced_succeeded", outcome.telemetryValue)
 }
 
 func TestCancelAndAwaitTerminal_FirstGetIsImmediate(t *testing.T) {

@@ -29,9 +29,11 @@ finish, azd will pause and ask what to do instead of exiting immediately.
 | Outcome | When |
 |---------|------|
 | Cancellation confirmed | Azure transitions the deployment to `Canceled` within the wait budget. azd exits non-zero with a clear message. |
-| Cancel arrived too late | Azure reports the deployment finished (`Succeeded` / `Failed`) before the cancel request took effect. azd surfaces the final state plus the portal URL. |
-| Cancel still pending | Azure does not reach a terminal state within the wait budget. azd warns that cancellation is still in progress and prints the portal URL. |
-| Cancel request failed | The ARM `Cancel` API itself returned an error. azd prints the error and the portal URL. |
+| Cancel raced succeeded | Azure reached `Succeeded` before cancel took effect. azd surfaces this as a success-toned message — resources *are* deployed. |
+| Cancel raced failed | Azure reached `Failed` before cancel took effect. azd surfaces the failure plus the portal URL. |
+| Cancel raced deleted | The deployment record was deleted before cancel took effect (unusual; suggests an external actor). |
+| Cancel still pending | Azure does not reach a terminal state within the wait budget. azd warns that cancellation may still complete and prints the portal URL. |
+| Cancel request failed | The ARM `Cancel` API itself returned an error. azd surfaces that the deployment is still running and prints the portal URL. |
 
 When the deployment URL is available, azd prints it so the user can follow
 up manually from the browser. The URL is omitted if azd was unable to
@@ -54,8 +56,15 @@ with one of:
 - `none` — provisioning completed normally without an interrupt.
 - `leave_running` — user chose to let the Azure deployment continue.
 - `canceled` — cancel request succeeded and Azure reached `Canceled`.
-- `cancel_too_late` — Azure reached `Succeeded` / `Failed` before cancel
-  took effect.
+- `cancel_raced_succeeded` — Azure reached `Succeeded` before cancel took
+  effect (resources are deployed; we surface this as a success-toned message
+  rather than a failure).
+- `cancel_raced_failed` — Azure reached `Failed` before cancel took effect.
+- `cancel_raced_deleted` — the deployment record was deleted before cancel
+  could take effect (unusual; suggests an external actor).
+- `cancel_too_late` — fallback for unexpected terminal states (kept for
+  backwards-compat; the three `cancel_raced_*` values cover the documented
+  terminal states).
 - `cancel_timed_out` — top-level deployment did not reach a terminal state
   within the wait budget (5 minutes).
 - `cancel_timed_out_nested` — top-level reached `Canceled`, but one or

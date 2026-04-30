@@ -441,9 +441,12 @@ var (
 	// submitted but azd stopped waiting for the top-level terminal state),
 	// "cancel_timed_out_nested" (top-level was canceled, but one or more
 	// descendant deployments did not reach terminal state within the global
-	// budget), "cancel_too_late" (Azure finished the deployment before the
-	// cancel took effect), "cancel_failed" (the cancel request itself returned
-	// an error).
+	// budget), "cancel_raced_succeeded" / "cancel_raced_failed" /
+	// "cancel_raced_deleted" (Azure reached the corresponding terminal state
+	// before the cancel took effect — split from the legacy "cancel_too_late"
+	// so dashboards can answer "how often does cancel race a *successful*
+	// deployment?"), "cancel_too_late" (fallback for unexpected terminal
+	// states), "cancel_failed" (the cancel request itself returned an error).
 	ProvisionCancellationKey = AttributeKey{
 		Key:            attribute.Key("provision.cancellation"),
 		Classification: SystemMetadata,

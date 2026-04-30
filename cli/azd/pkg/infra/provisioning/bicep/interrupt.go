@@ -161,14 +161,36 @@ func (p *BicepProvider) installDeploymentInterruptHandler(
 }
 
 // printLeaveRunningMessage emits the standard "Azure deployment will continue
-// running" message with a clickable portal link. No-op when portalUrl is empty.
-func (p *BicepProvider) printLeaveRunningMessage(ctx context.Context, portalUrl string) {
-	if portalUrl == "" {
-		return
+// running" message with a clickable portal link and a hint for cancelling
+// later from the CLI. Always emits at least one line so non-interactive runs
+// (CI logs) record a breadcrumb to the abandoned deployment.
+func (p *BicepProvider) printLeaveRunningMessage(
+	ctx context.Context,
+	deployment infra.Deployment,
+	portalUrl string,
+) {
+	if portalUrl != "" {
+		p.console.Message(ctx,
+			output.WithHighLightFormat("The Azure deployment will continue running. Track it here:\n  %s",
+				output.WithLinkFormat(portalUrl)))
+	} else {
+		// Fallback breadcrumb when the portal URL fetch failed — the user
+		// still needs *some* pointer to find the running deployment.
+		p.console.Message(ctx,
+			output.WithHighLightFormat(
+				"The Azure deployment will continue running. "+
+					"Find it in the Azure Portal under "+
+					"Subscription → Deployments (look for %q).",
+				deployment.Name()))
 	}
+	// Hint for cancelling from another shell — works for both subscription
+	// and resource-group scopes (the CLI sub-command differs but the hint
+	// is short enough to mention both).
 	p.console.Message(ctx,
-		output.WithHighLightFormat("The Azure deployment will continue running. Track it here:\n  %s",
-			output.WithLinkFormat(portalUrl)))
+		output.WithGrayFormat(
+			"To cancel later: az deployment sub cancel --name %s "+
+				"(or `az deployment group cancel --name %s --resource-group <rg>`)",
+			deployment.Name(), deployment.Name()))
 }
 
 // runInterruptPrompt presents the user with the choice of cancelling the
@@ -192,10 +214,13 @@ func (p *BicepProvider) runInterruptPrompt(
 	help := "An Azure deployment is currently in progress."
 	if portalUrl != "" {
 		help = fmt.Sprintf("%s\nPortal: %s", help, portalUrl)
+	} else {
+		help = fmt.Sprintf("%s\nFind it in the Azure Portal under "+
+			"Subscription → Deployments (look for %q).", help, deployment.Name())
 	}
 
 	choice, err := p.console.Select(ctx, input.ConsoleOptions{
-		Message: "azd was interrupted. What would you like to do?",
+		Message: "You pressed Ctrl+C. An Azure deployment is still running — what do you want to do?",
 		Help:    help,
 		Options: []string{
 			interruptOptionLeaveRunning,
@@ -206,9 +231,11 @@ func (p *BicepProvider) runInterruptPrompt(
 	if err != nil {
 		// If we can't even show the prompt (e.g. non-interactive), fall back
 		// to the safer "leave running" behavior so the user can decide
-		// manually via the portal.
+		// manually via the portal. We still log a breadcrumb to stderr so
+		// CI runs (the most common non-interactive case) record an explicit
+		// trace of the abandoned deployment instead of silently leaking it.
 		log.Printf("interrupt handler: failed to show prompt, defaulting to leave-running: %v", err)
-		p.printLeaveRunningMessage(ctx, portalUrl)
+		p.printLeaveRunningMessage(ctx, deployment, portalUrl)
 		return interruptOutcome{
 			err:            provisioning.ErrDeploymentInterruptedLeaveRunning,
 			telemetryValue: "leave_running",
@@ -217,7 +244,7 @@ func (p *BicepProvider) runInterruptPrompt(
 
 	switch choice {
 	case 0: // leave running
-		p.printLeaveRunningMessage(ctx, portalUrl)
+		p.printLeaveRunningMessage(ctx, deployment, portalUrl)
 		return interruptOutcome{
 			err:            provisioning.ErrDeploymentInterruptedLeaveRunning,
 			telemetryValue: "leave_running",
@@ -256,7 +283,7 @@ func (p *BicepProvider) cancelAndAwaitTerminal(
 		// the documented provider behavior.
 		if errors.Is(err, azapi.ErrCancelNotSupported) {
 			p.console.StopSpinner(ctx, "Cancel is not supported for this deployment kind", input.StepWarning)
-			p.printLeaveRunningMessage(ctx, portalUrl)
+			p.printLeaveRunningMessage(ctx, deployment, portalUrl)
 			return interruptOutcome{
 				err:            provisioning.ErrDeploymentInterruptedLeaveRunning,
 				telemetryValue: "leave_running",
@@ -278,13 +305,20 @@ func (p *BicepProvider) cancelAndAwaitTerminal(
 			// original cancel failure).
 			log.Printf("interrupt handler: post-cancel Get failed: %v", getErr)
 		}
-		p.console.StopSpinner(ctx, "Cancel request failed", input.StepFailed)
+		p.console.StopSpinner(ctx,
+			"Couldn't cancel — Azure deployment is still running", input.StepFailed)
 		log.Printf("interrupt handler: cancel request failed: %v", err)
 		if portalUrl != "" {
 			p.console.Message(ctx,
 				output.WithWarningFormat(
-					"Azure cancel request failed. Track the deployment here:\n  %s",
+					"The cancel request was rejected by Azure. The deployment will continue. Track it here:\n  %s",
 					output.WithLinkFormat(portalUrl)))
+		} else {
+			p.console.Message(ctx,
+				output.WithWarningFormat(
+					"The cancel request was rejected by Azure. The deployment will continue. "+
+						"Find it in the Azure Portal under Subscription → Deployments (look for %q).",
+					deployment.Name()))
 		}
 		return interruptOutcome{
 			err: fmt.Errorf("%w: %w",
@@ -306,12 +340,14 @@ func (p *BicepProvider) cancelAndAwaitTerminal(
 
 	state, timedOut := p.awaitTopLevelTerminal(pollCtx, deployment)
 	if timedOut {
-		p.console.StopSpinner(ctx, "Cancellation still in progress on Azure", input.StepWarning)
+		p.console.StopSpinner(ctx,
+			"Azure is still canceling — azd will exit", input.StepWarning)
 		if portalUrl != "" {
 			p.console.Message(ctx,
 				output.WithWarningFormat(
-					"Azure has not confirmed cancellation within %s. Track the deployment here:\n  %s",
-					cancelOverallTimeout, output.WithLinkFormat(portalUrl)))
+					"Azure didn't confirm cancellation within 5 minutes. "+
+						"Cancellation may still complete. Track:\n  %s",
+					output.WithLinkFormat(portalUrl)))
 		}
 		return interruptOutcome{
 			err:            provisioning.ErrDeploymentCancelTimeout,
@@ -387,7 +423,11 @@ func (p *BicepProvider) awaitTopLevelTerminal(
 }
 
 // terminalToOutcome maps a terminal provisioning state to the interrupt outcome
-// that should be propagated back to Deploy.
+// that should be propagated back to Deploy. Copy and telemetry value are both
+// branched per state so users can tell apart "we canceled it" vs "Azure
+// finished it before we could cancel" vs "the deployment record was deleted",
+// and so dashboards can answer "how often does cancel race a *successful*
+// deployment?".
 func (p *BicepProvider) terminalToOutcome(
 	ctx context.Context,
 	state azapi.DeploymentProvisioningState,
@@ -406,33 +446,57 @@ func (p *BicepProvider) terminalToOutcome(
 			err:            provisioning.ErrDeploymentCanceledByUser,
 			telemetryValue: "canceled",
 		}
-	case azapi.DeploymentProvisioningStateSucceeded,
-		azapi.DeploymentProvisioningStateFailed:
+	case azapi.DeploymentProvisioningStateSucceeded:
+		// Cancel arrived after the deployment had already succeeded. Frame
+		// this as a *success* (resources are deployed) rather than a
+		// failure — the user pressed Ctrl+C suspecting a hang and needs to
+		// know their resources are live.
 		p.console.StopSpinner(ctx,
-			"Deployment finished before cancel could take effect", input.StepWarning)
+			"Azure deployment completed successfully before cancellation took effect",
+			input.StepDone)
 		if portalUrl != "" {
 			p.console.Message(ctx,
-				output.WithWarningFormat(
-					"The Azure deployment reached %q before the cancel "+
-						"request took effect. Review:\n  %s",
-					string(state), output.WithLinkFormat(portalUrl)))
+				output.WithHighLightFormat(
+					"Your resources are deployed. Details:\n  %s",
+					output.WithLinkFormat(portalUrl)))
 		}
 		return interruptOutcome{
 			err:            provisioning.ErrDeploymentCancelTooLate,
-			telemetryValue: "cancel_too_late",
+			telemetryValue: "cancel_raced_succeeded",
+		}
+	case azapi.DeploymentProvisioningStateFailed:
+		p.console.StopSpinner(ctx,
+			"Azure deployment failed before cancellation took effect",
+			input.StepFailed)
+		if portalUrl != "" {
+			p.console.Message(ctx,
+				output.WithErrorFormat(
+					"Review the failure:\n  %s",
+					output.WithLinkFormat(portalUrl)))
+		}
+		return interruptOutcome{
+			err:            provisioning.ErrDeploymentCancelTooLate,
+			telemetryValue: "cancel_raced_failed",
 		}
 	case azapi.DeploymentProvisioningStateDeleted:
 		p.console.StopSpinner(ctx, "Deployment was deleted", input.StepWarning)
 		if portalUrl != "" {
 			p.console.Message(ctx,
 				output.WithWarningFormat(
-					"The Azure deployment was deleted before the cancel "+
-						"request could take effect. Review:\n  %s",
+					"Someone or something deleted the Azure deployment record "+
+						"before cancellation could take effect (unusual — check "+
+						"audit logs if unexpected). Review:\n  %s",
 					output.WithLinkFormat(portalUrl)))
+		} else {
+			p.console.Message(ctx,
+				output.WithWarningFormat(
+					"Someone or something deleted the Azure deployment record "+
+						"before cancellation could take effect (unusual — check "+
+						"audit logs if unexpected)."))
 		}
 		return interruptOutcome{
 			err:            provisioning.ErrDeploymentCancelTooLate,
-			telemetryValue: "cancel_too_late",
+			telemetryValue: "cancel_raced_deleted",
 		}
 	default:
 		// isTerminalProvisioningState should prevent reaching here, but be

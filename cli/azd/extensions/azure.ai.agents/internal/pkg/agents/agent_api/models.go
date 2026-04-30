@@ -175,16 +175,16 @@ type PromptAgentDefinition struct {
 
 // CreateAgentVersionRequest represents a request to create an agent version
 type CreateAgentVersionRequest struct {
-	Description   *string           `json:"description,omitempty"`
-	Metadata      map[string]string `json:"metadata,omitempty"`
-	Definition    any               `json:"definition"` // Can be any of the agent definition types
-	AgentEndpoint *AgentEndpoint    `json:"agent_endpoint,omitempty"`
-	AgentCard     *AgentCard        `json:"agent_card,omitempty"`
+	Description *string           `json:"description,omitempty"`
+	Metadata    map[string]string `json:"metadata,omitempty"`
+	Definition  any               `json:"definition"` // Can be any of the agent definition types
 }
 
 // CreateAgentRequest represents a request to create an agent
 type CreateAgentRequest struct {
-	Name string `json:"name"`
+	Name          string         `json:"name"`
+	AgentEndpoint *AgentEndpoint `json:"agent_endpoint,omitempty"`
+	AgentCard     *AgentCard     `json:"agent_card,omitempty"`
 	CreateAgentVersionRequest
 }
 

@@ -1199,20 +1199,20 @@ func TestCreateAgentRequest_WithEndpointAndCard(t *testing.T) {
 
 	original := CreateAgentRequest{
 		Name: "a2a-agent",
+		AgentEndpoint: &AgentEndpoint{
+			Protocols: []AgentProtocol{AgentProtocolResponses, AgentProtocolA2A},
+		},
+		AgentCard: &AgentCard{
+			Description: "test a2a agent",
+			Skills: []AgentCardSkill{
+				{ID: "skill1", Name: "greet", Description: "provides a greeting"},
+			},
+		},
 		CreateAgentVersionRequest: CreateAgentVersionRequest{
 			Description: new("An A2A agent"),
 			Definition: PromptAgentDefinition{
 				AgentDefinition: AgentDefinition{Kind: AgentKindPrompt},
 				Model:           "gpt-4o",
-			},
-			AgentEndpoint: &AgentEndpoint{
-				Protocols: []AgentProtocol{AgentProtocolResponses, AgentProtocolA2A},
-			},
-			AgentCard: &AgentCard{
-				Description: "test a2a agent",
-				Skills: []AgentCardSkill{
-					{ID: "skill1", Name: "greet", Description: "provides a greeting"},
-				},
 			},
 		},
 	}

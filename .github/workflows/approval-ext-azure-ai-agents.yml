@@ -1,0 +1,96 @@
+name: ext-azure-ai-agents-approval
+
+on:
+  pull_request:
+    paths:
+      - "cli/azd/extensions/azure.ai.agents/**"
+      - ".github/workflows/approval-ext-azure-ai-agents.yml"
+    branches: [main]
+    types: [opened, synchronize, reopened]
+  pull_request_review:
+    types: [submitted]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  required-approval:
+    name: Required Approval
+    # Only run for PRs that touch the agents extension.
+    # pull_request is already path-filtered; pull_request_review is not, so we
+    # check at runtime whether the PR has files in the extension path.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check for required team approval
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const requiredApprovers = [
+              'trangevi',
+              'trrwilson',
+              'therealjohn',
+              'glharper',
+            ];
+
+            const prNumber =
+              context.payload.pull_request?.number ??
+              context.payload.review?.pull_request?.number;
+
+            if (!prNumber) {
+              core.setFailed('Could not determine PR number from event payload.');
+              return;
+            }
+
+            // For pull_request_review events (no path filter), check whether the
+            // PR actually touches the agents extension before enforcing approval.
+            if (context.eventName === 'pull_request_review') {
+              const files = await github.paginate(
+                github.rest.pulls.listFiles,
+                { owner: context.repo.owner, repo: context.repo.repo, pull_number: prNumber }
+              );
+              const touchesExtension = files.some(f =>
+                f.filename.startsWith('cli/azd/extensions/azure.ai.agents/')
+              );
+              if (!touchesExtension) {
+                core.info('PR does not touch agents extension — skipping approval check.');
+                return;
+              }
+            }
+
+            // Fetch all reviews on the PR.
+            const reviews = await github.paginate(
+              github.rest.pulls.listReviews,
+              { owner: context.repo.owner, repo: context.repo.repo, pull_number: prNumber }
+            );
+
+            // Get the HEAD SHA so we can verify the approval is current.
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber,
+            });
+            const headSha = pr.head.sha;
+
+            // Find approvals from required reviewers on the current HEAD commit.
+            const validApprovals = reviews.filter(
+              r =>
+                r.state === 'APPROVED' &&
+                r.commit_id === headSha &&
+                requiredApprovers.includes(r.user.login.toLowerCase())
+            );
+
+            if (validApprovals.length > 0) {
+              const names = validApprovals.map(r => r.user.login).join(', ');
+              core.info(`Approved by: ${names}`);
+            } else {
+              core.setFailed(
+                `Requires approval from at least one of: ${requiredApprovers.join(', ')}. ` +
+                'No qualifying approval found on the current commit.'
+              );
+            }

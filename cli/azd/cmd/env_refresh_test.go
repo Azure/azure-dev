@@ -167,7 +167,7 @@ func TestEnvRefreshAction_SucceedsWhenProjectInitFails(t *testing.T) {
 
 // TestEnvRefreshAction_RaisesServiceEventsOnSuccess verifies that when
 // project initialization succeeds, ServiceEventEnvUpdated events are raised
-// for each service.
+// for each service with the correct deployment outputs.
 func TestEnvRefreshAction_RaisesServiceEventsOnSuccess(t *testing.T) {
 	t.Parallel()
 
@@ -209,6 +209,25 @@ func TestEnvRefreshAction_RaisesServiceEventsOnSuccess(t *testing.T) {
 	pm := &mockProjectManager{}
 	pm.On("Initialize", mock.Anything, mock.Anything).Return(nil)
 
+	svcConfig := &project.ServiceConfig{
+		Name: "web",
+		EventDispatcher: ext.NewEventDispatcher[project.ServiceLifecycleEventArgs](
+			project.ServiceEvents...,
+		),
+	}
+
+	// Register a handler on the service's EventDispatcher to capture the event
+	eventFired := false
+	var capturedOutputs map[string]provisioning.OutputParameter
+	err := svcConfig.AddHandler(t.Context(), project.ServiceEventEnvUpdated,
+		func(ctx context.Context, args project.ServiceLifecycleEventArgs) error {
+			eventFired = true
+			capturedOutputs, _ = args.Args["bicepOutput"].(map[string]provisioning.OutputParameter)
+			return nil
+		},
+	)
+	require.NoError(t, err)
+
 	projectConfig := &project.ProjectConfig{
 		Name: "test-project",
 		Path: projectDir,
@@ -218,12 +237,7 @@ func TestEnvRefreshAction_RaisesServiceEventsOnSuccess(t *testing.T) {
 			Module:   "main",
 		},
 		Services: map[string]*project.ServiceConfig{
-			"web": {
-				Name: "web",
-				EventDispatcher: ext.NewEventDispatcher[project.ServiceLifecycleEventArgs](
-					project.ServiceEvents...,
-				),
-			},
+			"web": svcConfig,
 		},
 	}
 
@@ -247,6 +261,11 @@ func TestEnvRefreshAction_RaisesServiceEventsOnSuccess(t *testing.T) {
 	require.NotNil(t, result)
 	require.Equal(t, "Environment refresh completed", result.Message.Header)
 
-	// Verify that project initialization was called
-	pm.AssertCalled(t, "Initialize", mock.Anything, mock.Anything)
+	// Verify the ServiceEventEnvUpdated handler was invoked
+	require.True(t, eventFired, "ServiceEventEnvUpdated handler should have been invoked")
+
+	// Verify the handler received the correct deployment outputs
+	require.NotNil(t, capturedOutputs)
+	require.Contains(t, capturedOutputs, "WEBSITE_URL")
+	require.Equal(t, "https://example.com", capturedOutputs["WEBSITE_URL"].Value)
 }

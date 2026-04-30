@@ -311,9 +311,9 @@ func (da *DeployAction) deployServicesGraph(
 		// Suppress previewer output at the shared console level so that
 		// DI-injected consumers (e.g. ContainerHelper's Docker output)
 		// don't corrupt the progress table display.
-		if ps, ok := origConsole.(input.PreviewerSuppressor); ok {
-			ps.SuppressPreviewer()
-			defer ps.UnsuppressPreviewer()
+		if ps, ok := origConsole.(input.PreviewerPauser); ok {
+			ps.PausePreviewer()
+			defer ps.ResumePreviewer()
 		}
 	} else {
 		// Still wrap the console for thread-safety without suppressing spinners.

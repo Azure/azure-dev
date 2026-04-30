@@ -62,12 +62,12 @@ type ShowPreviewerOptions struct {
 	Title        string
 }
 
-// PreviewerSuppressor is an optional interface that Console implementations
-// may support. When the progress table is active, callers can suppress
+// PreviewerPauser is an optional interface that Console implementations
+// may support. When the progress table is active, callers can pause
 // previewer output to prevent terminal corruption.
-type PreviewerSuppressor interface {
-	SuppressPreviewer()
-	UnsuppressPreviewer()
+type PreviewerPauser interface {
+	PausePreviewer()
+	ResumePreviewer()
 }
 
 type PromptDialog struct {
@@ -417,15 +417,15 @@ func (c *AskerConsole) StopPreviewer(ctx context.Context, keepLogs bool) {
 	_ = c.spinner.Unpause()
 }
 
-// SuppressPreviewer prevents ShowPreviewer from rendering until UnsuppressPreviewer
+// PausePreviewer prevents ShowPreviewer from rendering until ResumePreviewer
 // is called. Use this when a progress table owns the terminal output and previewer
 // content would corrupt the display.
-func (c *AskerConsole) SuppressPreviewer() {
+func (c *AskerConsole) PausePreviewer() {
 	c.previewerSuppressed.Store(true)
 }
 
-// UnsuppressPreviewer re-enables previewer rendering.
-func (c *AskerConsole) UnsuppressPreviewer() {
+// ResumePreviewer re-enables previewer rendering.
+func (c *AskerConsole) ResumePreviewer() {
 	c.previewerSuppressed.Store(false)
 }
 

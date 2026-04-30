@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "cli/azd/extensions/azure.ai.agents/**"
+      - ".github/workflows/approval-ext-azure-ai-agents.yml"
     branches: [main]
     types: [opened, synchronize, reopened]
   pull_request_review:

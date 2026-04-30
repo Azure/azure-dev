@@ -234,6 +234,8 @@ func (p *ProvisionAction) provisionLayersGraph(
 		for i, layer := range layers {
 			if layer.Name != "" {
 				stepNames[i] = layer.Name
+			} else if len(layers) == 1 {
+				stepNames[i] = "provision"
 			} else {
 				stepNames[i] = fmt.Sprintf("provision-layer-%d", i)
 			}

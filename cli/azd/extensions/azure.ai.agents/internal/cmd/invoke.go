@@ -131,7 +131,7 @@ session automatically. Pass --new-session to force a reset.`,
 
 			if flags.protocol != "" {
 				p := agent_api.AgentProtocol(flags.protocol)
-				if !p.IsInvokable() {
+				if !p.IsInvocable() {
 					return exterrors.Validation(
 						exterrors.CodeInvalidParameter,
 						fmt.Sprintf("unsupported protocol %q for invocation", flags.protocol),

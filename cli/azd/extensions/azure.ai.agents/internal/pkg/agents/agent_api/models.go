@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"slices"
 	"time"
 )
 
@@ -20,24 +21,19 @@ const (
 	AgentProtocolA2A              AgentProtocol = "a2a"
 )
 
-// InvokableProtocols returns the set of protocols that azd can invoke directly.
+// InvocableProtocols returns the set of protocols that azd can invoke directly.
 // A2A and activity_protocol are deployment-only — they cannot be used for local
 // or remote invocation through azd.
-func InvokableProtocols() []AgentProtocol {
+func InvocableProtocols() []AgentProtocol {
 	return []AgentProtocol{
 		AgentProtocolResponses,
 		AgentProtocolInvocations,
 	}
 }
 
-// IsInvokable reports whether the protocol can be used for invocation through azd.
-func (p AgentProtocol) IsInvokable() bool {
-	for _, ip := range InvokableProtocols() {
-		if p == ip {
-			return true
-		}
-	}
-	return false
+// IsInvocable reports whether the protocol can be used for invocation through azd.
+func (p AgentProtocol) IsInvocable() bool {
+	return slices.Contains(InvocableProtocols(), p)
 }
 
 // AgentKind represents the different types of agents
@@ -191,6 +187,14 @@ type CreateAgentRequest struct {
 // UpdateAgentRequest represents a request to update an agent
 type UpdateAgentRequest struct {
 	CreateAgentVersionRequest
+}
+
+// PatchAgentRequest represents a partial update to agent-level fields.
+// Only the fields set here are sent; Definition is intentionally excluded
+// to avoid accidentally clearing it.
+type PatchAgentRequest struct {
+	AgentEndpoint *AgentEndpoint `json:"agent_endpoint,omitempty"`
+	AgentCard     *AgentCard     `json:"agent_card,omitempty"`
 }
 
 // AgentIdentityInfo represents the instance identity assigned to an agent version.

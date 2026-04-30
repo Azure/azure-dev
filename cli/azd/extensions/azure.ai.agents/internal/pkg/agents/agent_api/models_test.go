@@ -1248,7 +1248,7 @@ func TestCreateAgentRequest_WithEndpointAndCard(t *testing.T) {
 	}
 }
 
-func TestIsInvokable(t *testing.T) {
+func TestIsInvocable(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -1265,8 +1265,8 @@ func TestIsInvokable(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(string(tt.protocol), func(t *testing.T) {
 			t.Parallel()
-			if got := tt.protocol.IsInvokable(); got != tt.want {
-				t.Errorf("IsInvokable() = %v, want %v", got, tt.want)
+			if got := tt.protocol.IsInvocable(); got != tt.want {
+				t.Errorf("IsInvocable() = %v, want %v", got, tt.want)
 			}
 		})
 	}

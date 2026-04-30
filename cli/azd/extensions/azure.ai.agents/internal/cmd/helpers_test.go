@@ -254,10 +254,10 @@ func TestProtocolFromAgentYaml(t *testing.T) {
 			errContain: "declares multiple protocols",
 		},
 		{
-			name:       "a2a only is not invokable",
+			name:       "a2a only is not invocable",
 			yaml:       "protocols:\n  - protocol: a2a\n    version: \"1.0\"\n",
 			wantErr:    true,
-			errContain: "non-invokable protocols",
+			errContain: "non-invocable protocols",
 		},
 	}
 

@@ -263,27 +263,47 @@ func addServiceStepsToGraph(g *exegraph.Graph, opts serviceGraphOptions) (*servi
 		serviceNames[svc.Name] = struct{}{}
 	}
 
-	// hasServiceDeps is true when at least one service declares a `uses:`
-	// entry targeting another service in this graph. When false, no service
-	// has declared explicit deploy ordering, so we fall back to sequential
+	// hasExplicitOrdering is true when the graph has an explicit execution
+	// policy — either:
+	//   (a) at least one service declares `uses: [otherService]`, OR
+	//   (b) a buildGateKey policy applies (e.g. Aspire's shared AppHost
+	//       build serialization).
+	//
+	// When false, no service has declared explicit deploy ordering and no
+	// build-gate policy is in effect, so we fall back to sequential
 	// deployment in azure.yaml slice order to preserve backward
 	// compatibility with templates that relied on implicit ordering.
-	hasServiceDeps := false
+	hasExplicitOrdering := false
+
+	// Check (a): service-to-service `uses:` edges.
 	for _, svc := range opts.services {
 		for _, dep := range svc.Uses {
 			if dep != svc.Name {
 				if _, ok := serviceNames[dep]; ok {
-					hasServiceDeps = true
+					hasExplicitOrdering = true
 					break
 				}
 			}
 		}
-		if hasServiceDeps {
+		if hasExplicitOrdering {
 			break
 		}
 	}
 
-	if !hasServiceDeps && len(opts.services) > 1 {
+	// Check (b): buildGateKey policy — when any service produces a
+	// non-empty gate key, the gate itself provides the ordering constraint
+	// (first service builds, rest wait). The sequential fallback would be
+	// redundant and would prevent parallelism for non-gated services.
+	if !hasExplicitOrdering && opts.buildGateKey != nil {
+		for _, svc := range opts.services {
+			if opts.buildGateKey(svc) != "" {
+				hasExplicitOrdering = true
+				break
+			}
+		}
+	}
+
+	if !hasExplicitOrdering && len(opts.services) > 1 {
 		log.Printf(
 			"deploying %d services sequentially (no uses: edges declared; "+
 				"add uses: to azure.yaml to enable parallel deployment)",
@@ -477,7 +497,7 @@ func addServiceStepsToGraph(g *exegraph.Graph, opts serviceGraphOptions) (*servi
 		// templates while still
 		// allowing parallel deployment for templates that opt in via
 		// `uses:`. Package and publish steps remain parallel regardless.
-		if !hasServiceDeps && len(handles.DeploySteps) >= 2 {
+		if !hasExplicitOrdering && len(handles.DeploySteps) >= 2 {
 			prevDeploy := handles.DeploySteps[len(handles.DeploySteps)-2]
 			if !slices.Contains(deployDeps, prevDeploy) {
 				deployDeps = append(deployDeps, prevDeploy)

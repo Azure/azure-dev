@@ -191,6 +191,8 @@ type ContainerAgent struct {
 	Protocols            []ProtocolVersionRecord `json:"protocols" yaml:"protocols"`
 	Resources            *ContainerResources     `json:"resources,omitempty" yaml:"resources,omitempty"`
 	EnvironmentVariables *[]EnvironmentVariable  `json:"environmentVariables,omitempty" yaml:"environment_variables,omitempty"`
+	AgentEndpoint        *AgentEndpoint          `json:"agentEndpoint,omitempty" yaml:"agentEndpoint,omitempty"`
+	AgentCard            *AgentCard              `json:"agentCard,omitempty" yaml:"agentCard,omitempty"`
 }
 
 // AgentManifest The following represents a manifest that can be used to create agents dynamically.
@@ -609,6 +611,27 @@ func (ps PropertySchema) MarshalYAML() (any, error) {
 type ProtocolVersionRecord struct {
 	Protocol string `json:"protocol" yaml:"protocol"`
 	Version  string `json:"version" yaml:"version"`
+}
+
+// AgentEndpoint describes the endpoint protocols an agent supports in agent.yaml.
+type AgentEndpoint struct {
+	Protocols []string `json:"protocols" yaml:"protocols"`
+}
+
+// AgentCardSkill describes a single capability that an agent can perform.
+type AgentCardSkill struct {
+	ID          string   `json:"id" yaml:"id"`
+	Name        string   `json:"name" yaml:"name"`
+	Description string   `json:"description" yaml:"description"`
+	Tags        []string `json:"tags,omitempty" yaml:"tags,omitempty"`
+	Examples    []string `json:"examples,omitempty" yaml:"examples,omitempty"`
+}
+
+// AgentCard is the A2A agent card that advertises an agent's capabilities.
+type AgentCard struct {
+	Description string           `json:"description" yaml:"description"`
+	Version     *string          `json:"version,omitempty" yaml:"version,omitempty"`
+	Skills      []AgentCardSkill `json:"skills" yaml:"skills"`
 }
 
 // Resource Represents a resource required by the agent.

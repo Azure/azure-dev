@@ -17,7 +17,28 @@ const (
 	AgentProtocolActivityProtocol AgentProtocol = "activity_protocol"
 	AgentProtocolInvocations      AgentProtocol = "invocations"
 	AgentProtocolResponses        AgentProtocol = "responses"
+	AgentProtocolA2A              AgentProtocol = "a2a"
 )
+
+// InvokableProtocols returns the set of protocols that azd can invoke directly.
+// A2A and activity_protocol are deployment-only — they cannot be used for local
+// or remote invocation through azd.
+func InvokableProtocols() []AgentProtocol {
+	return []AgentProtocol{
+		AgentProtocolResponses,
+		AgentProtocolInvocations,
+	}
+}
+
+// IsInvokable reports whether the protocol can be used for invocation through azd.
+func (p AgentProtocol) IsInvokable() bool {
+	for _, ip := range InvokableProtocols() {
+		if p == ip {
+			return true
+		}
+	}
+	return false
+}
 
 // AgentKind represents the different types of agents
 type AgentKind string
@@ -58,6 +79,27 @@ type AgentDefinition struct {
 type ProtocolVersionRecord struct {
 	Protocol AgentProtocol `json:"protocol"`
 	Version  string        `json:"version"`
+}
+
+// AgentEndpoint describes the endpoint protocols an agent supports.
+type AgentEndpoint struct {
+	Protocols []AgentProtocol `json:"protocols"`
+}
+
+// AgentCardSkill describes a single capability that an agent can perform.
+type AgentCardSkill struct {
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Tags        []string `json:"tags,omitempty"`
+	Examples    []string `json:"examples,omitempty"`
+}
+
+// AgentCard is the A2A agent card that advertises an agent's capabilities.
+type AgentCard struct {
+	Description string           `json:"description"`
+	Version     *string          `json:"version,omitempty"`
+	Skills      []AgentCardSkill `json:"skills"`
 }
 
 // WorkflowDefinition represents a workflow agent
@@ -133,9 +175,11 @@ type PromptAgentDefinition struct {
 
 // CreateAgentVersionRequest represents a request to create an agent version
 type CreateAgentVersionRequest struct {
-	Description *string           `json:"description,omitempty"`
-	Metadata    map[string]string `json:"metadata,omitempty"`
-	Definition  any               `json:"definition"` // Can be any of the agent definition types
+	Description   *string           `json:"description,omitempty"`
+	Metadata      map[string]string `json:"metadata,omitempty"`
+	Definition    any               `json:"definition"` // Can be any of the agent definition types
+	AgentEndpoint *AgentEndpoint    `json:"agent_endpoint,omitempty"`
+	AgentCard     *AgentCard        `json:"agent_card,omitempty"`
 }
 
 // CreateAgentRequest represents a request to create an agent

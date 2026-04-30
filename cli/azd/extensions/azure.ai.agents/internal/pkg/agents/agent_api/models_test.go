@@ -1064,3 +1064,210 @@ func TestCommonListObjectProperties_RoundTrip(t *testing.T) {
 		t.Error("HasMore = true, want false")
 	}
 }
+
+func TestAgentEndpoint_RoundTrip(t *testing.T) {
+	t.Parallel()
+
+	original := AgentEndpoint{
+		Protocols: []AgentProtocol{AgentProtocolResponses, AgentProtocolA2A},
+	}
+
+	data, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	s := string(data)
+	for _, field := range []string{`"protocols"`, `"responses"`, `"a2a"`} {
+		if !strings.Contains(s, field) {
+			t.Errorf("expected JSON to contain %s, got: %s", field, s)
+		}
+	}
+
+	var got AgentEndpoint
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if len(got.Protocols) != 2 {
+		t.Fatalf("Protocols length = %d, want 2", len(got.Protocols))
+	}
+	if got.Protocols[0] != AgentProtocolResponses {
+		t.Errorf("Protocols[0] = %q, want %q", got.Protocols[0], AgentProtocolResponses)
+	}
+	if got.Protocols[1] != AgentProtocolA2A {
+		t.Errorf("Protocols[1] = %q, want %q", got.Protocols[1], AgentProtocolA2A)
+	}
+}
+
+func TestAgentCard_RoundTrip(t *testing.T) {
+	t.Parallel()
+
+	original := AgentCard{
+		Description: "test a2a agent",
+		Version:     new("1.0"),
+		Skills: []AgentCardSkill{
+			{
+				ID:          "skill1",
+				Name:        "greet",
+				Description: "provides a greeting to the user",
+				Tags:        []string{"greeting", "hello"},
+				Examples:    []string{"Say hello", "Greet the user"},
+			},
+			{
+				ID:          "skill2",
+				Name:        "farewell",
+				Description: "says goodbye",
+			},
+		},
+	}
+
+	data, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	s := string(data)
+	for _, field := range []string{
+		`"description"`, `"version"`, `"skills"`,
+		`"id"`, `"name"`, `"tags"`, `"examples"`,
+	} {
+		if !strings.Contains(s, field) {
+			t.Errorf("expected JSON to contain %s, got: %s", field, s)
+		}
+	}
+
+	var got AgentCard
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if got.Description != "test a2a agent" {
+		t.Errorf("Description = %q, want %q", got.Description, "test a2a agent")
+	}
+	if got.Version == nil || *got.Version != "1.0" {
+		t.Error("Version mismatch")
+	}
+	if len(got.Skills) != 2 {
+		t.Fatalf("Skills length = %d, want 2", len(got.Skills))
+	}
+	if got.Skills[0].ID != "skill1" {
+		t.Errorf("Skills[0].ID = %q, want %q", got.Skills[0].ID, "skill1")
+	}
+	if len(got.Skills[0].Tags) != 2 {
+		t.Errorf("Skills[0].Tags length = %d, want 2", len(got.Skills[0].Tags))
+	}
+	if len(got.Skills[0].Examples) != 2 {
+		t.Errorf("Skills[0].Examples length = %d, want 2", len(got.Skills[0].Examples))
+	}
+	// Second skill has no tags/examples — verify they are omitted/empty.
+	if len(got.Skills[1].Tags) != 0 {
+		t.Errorf("Skills[1].Tags length = %d, want 0", len(got.Skills[1].Tags))
+	}
+}
+
+func TestAgentCard_NoVersion(t *testing.T) {
+	t.Parallel()
+
+	original := AgentCard{
+		Description: "agent without version",
+		Skills: []AgentCardSkill{
+			{ID: "s1", Name: "do-stuff", Description: "does stuff"},
+		},
+	}
+
+	data, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	if strings.Contains(string(data), `"version"`) {
+		t.Error("version should be omitted when nil")
+	}
+
+	var got AgentCard
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got.Version != nil {
+		t.Errorf("Version = %v, want nil", got.Version)
+	}
+}
+
+func TestCreateAgentRequest_WithEndpointAndCard(t *testing.T) {
+	t.Parallel()
+
+	original := CreateAgentRequest{
+		Name: "a2a-agent",
+		CreateAgentVersionRequest: CreateAgentVersionRequest{
+			Description: new("An A2A agent"),
+			Definition: PromptAgentDefinition{
+				AgentDefinition: AgentDefinition{Kind: AgentKindPrompt},
+				Model:           "gpt-4o",
+			},
+			AgentEndpoint: &AgentEndpoint{
+				Protocols: []AgentProtocol{AgentProtocolResponses, AgentProtocolA2A},
+			},
+			AgentCard: &AgentCard{
+				Description: "test a2a agent",
+				Skills: []AgentCardSkill{
+					{ID: "skill1", Name: "greet", Description: "provides a greeting"},
+				},
+			},
+		},
+	}
+
+	data, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	s := string(data)
+	for _, field := range []string{`"agent_endpoint"`, `"agent_card"`, `"a2a"`} {
+		if !strings.Contains(s, field) {
+			t.Errorf("expected JSON to contain %s, got: %s", field, s)
+		}
+	}
+
+	var got CreateAgentRequest
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if got.AgentEndpoint == nil {
+		t.Fatal("AgentEndpoint is nil")
+	}
+	if len(got.AgentEndpoint.Protocols) != 2 {
+		t.Fatalf("AgentEndpoint.Protocols length = %d, want 2", len(got.AgentEndpoint.Protocols))
+	}
+	if got.AgentCard == nil {
+		t.Fatal("AgentCard is nil")
+	}
+	if got.AgentCard.Description != "test a2a agent" {
+		t.Errorf("AgentCard.Description = %q, want %q", got.AgentCard.Description, "test a2a agent")
+	}
+}
+
+func TestIsInvokable(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		protocol AgentProtocol
+		want     bool
+	}{
+		{AgentProtocolResponses, true},
+		{AgentProtocolInvocations, true},
+		{AgentProtocolA2A, false},
+		{AgentProtocolActivityProtocol, false},
+		{AgentProtocol("unknown"), false},
+	}
+
+	for _, tt := range tests {
+		t.Run(string(tt.protocol), func(t *testing.T) {
+			t.Parallel()
+			if got := tt.protocol.IsInvokable(); got != tt.want {
+				t.Errorf("IsInvokable() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

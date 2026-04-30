@@ -702,8 +702,12 @@ func resolveAgentProtocol(
 }
 
 // protocolFromAgentYaml reads and parses the agent.yaml file at the given path
-// and extracts the protocol. Returns an error with a contextual suggestion when
-// the file cannot be read, parsed, or does not declare exactly one protocol.
+// and extracts the protocol to use for invocation. Returns an error with a
+// contextual suggestion when the file cannot be read, parsed, or does not
+// declare exactly one invokable protocol.
+//
+// When multiple protocols are declared (e.g. "responses" + "a2a"), the caller
+// must use --protocol to disambiguate.
 func protocolFromAgentYaml(
 	agentYamlPath string,
 ) (agent_api.AgentProtocol, error) {
@@ -731,15 +735,18 @@ func protocolFromAgentYaml(
 		)
 	}
 
-	switch len(hosted.Protocols) {
-	case 0:
+	if len(hosted.Protocols) == 0 {
 		return "", exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			"agent.yaml does not declare any protocols",
 			"add a protocols section to agent.yaml",
 		)
-	case 1:
-		p := strings.TrimSpace(hosted.Protocols[0].Protocol)
+	}
+
+	// Validate that no protocol entry has an empty value, and collect invokable ones.
+	var invokable []agent_api.AgentProtocol
+	for _, rec := range hosted.Protocols {
+		p := agent_api.AgentProtocol(strings.TrimSpace(rec.Protocol))
 		if p == "" {
 			return "", exterrors.Validation(
 				exterrors.CodeInvalidParameter,
@@ -748,7 +755,43 @@ func protocolFromAgentYaml(
 				"set a non-empty protocol value in agent.yaml",
 			)
 		}
-		return agent_api.AgentProtocol(p), nil
+		if p.IsInvokable() {
+			invokable = append(invokable, p)
+		}
+	}
+
+	switch len(invokable) {
+	case 0:
+		names := make([]string, len(hosted.Protocols))
+		for i, p := range hosted.Protocols {
+			names[i] = p.Protocol
+		}
+		return "", exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf(
+				"agent.yaml declares only non-invokable protocols: %s",
+				strings.Join(names, ", "),
+			),
+			"azd can only invoke agents using the responses or invocations protocols",
+		)
+	case 1:
+		// Exactly one invokable protocol — but if the agent declares
+		// multiple protocols overall, require --protocol to be explicit.
+		if len(hosted.Protocols) > 1 {
+			names := make([]string, len(hosted.Protocols))
+			for i, p := range hosted.Protocols {
+				names[i] = p.Protocol
+			}
+			return "", exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				fmt.Sprintf(
+					"agent.yaml declares multiple protocols (%s)",
+					strings.Join(names, ", "),
+				),
+				"use --protocol to specify which protocol to use for invocation",
+			)
+		}
+		return invokable[0], nil
 	default:
 		names := make([]string, len(hosted.Protocols))
 		for i, p := range hosted.Protocols {
@@ -757,10 +800,10 @@ func protocolFromAgentYaml(
 		return "", exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			fmt.Sprintf(
-				"agent.yaml declares multiple protocols: %s",
+				"agent.yaml declares multiple protocols (%s)",
 				strings.Join(names, ", "),
 			),
-			"use --protocol to specify which protocol to use",
+			"use --protocol to specify which protocol to use for invocation",
 		)
 	}
 }

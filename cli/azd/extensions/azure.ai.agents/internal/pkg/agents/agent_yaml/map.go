@@ -173,7 +173,7 @@ func CreatePromptAgentAPIRequest(promptAgent PromptAgent, buildConfig *AgentBuil
 		// StructuredInputs: mapInputSchemaToStructuredInputs(promptAgent.InputSchema),
 	}
 
-	return createAgentAPIRequest(promptAgent.AgentDefinition, promptDef)
+	return createAgentAPIRequest(promptAgent.AgentDefinition, promptDef, nil, nil)
 }
 
 // convertYamlToolsToApiTools converts agent_yaml tools to agent_api tools
@@ -438,11 +438,19 @@ func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentB
 		Image:                 imageURL,
 	}
 
-	return createAgentAPIRequest(hostedAgent.AgentDefinition, imageHostedDef)
+	return createAgentAPIRequest(hostedAgent.AgentDefinition, imageHostedDef,
+		hostedAgent.AgentEndpoint, hostedAgent.AgentCard)
 }
 
-// createAgentAPIRequest is a helper function to create the final request with common fields
-func createAgentAPIRequest(agentDefinition AgentDefinition, agentDef any) (*agent_api.CreateAgentRequest, error) {
+// createAgentAPIRequest is a helper function to create the final request with common fields.
+// The optional agentEndpoint and agentCard parameters are mapped to the corresponding
+// request-level fields when non-nil.
+func createAgentAPIRequest(
+	agentDefinition AgentDefinition,
+	agentDef any,
+	agentEndpoint *AgentEndpoint,
+	agentCard *AgentCard,
+) (*agent_api.CreateAgentRequest, error) {
 	// Prepare metadata
 	metadata := make(map[string]string)
 	if agentDefinition.Metadata != nil {
@@ -488,6 +496,35 @@ func createAgentAPIRequest(agentDefinition AgentDefinition, agentDef any) (*agen
 
 	if len(metadata) > 0 {
 		request.Metadata = metadata
+	}
+
+	// Map optional agent endpoint and card fields.
+	if agentEndpoint != nil {
+		protocols := make([]agent_api.AgentProtocol, len(agentEndpoint.Protocols))
+		for i, p := range agentEndpoint.Protocols {
+			protocols[i] = agent_api.AgentProtocol(p)
+		}
+		request.AgentEndpoint = &agent_api.AgentEndpoint{
+			Protocols: protocols,
+		}
+	}
+
+	if agentCard != nil {
+		skills := make([]agent_api.AgentCardSkill, len(agentCard.Skills))
+		for i, s := range agentCard.Skills {
+			skills[i] = agent_api.AgentCardSkill{
+				ID:          s.ID,
+				Name:        s.Name,
+				Description: s.Description,
+				Tags:        s.Tags,
+				Examples:    s.Examples,
+			}
+		}
+		request.AgentCard = &agent_api.AgentCard{
+			Description: agentCard.Description,
+			Version:     agentCard.Version,
+			Skills:      skills,
+		}
 	}
 
 	return request, nil

@@ -130,14 +130,11 @@ session automatically. Pass --new-session to force a reset.`,
 			}
 
 			if flags.protocol != "" {
-				switch agent_api.AgentProtocol(flags.protocol) {
-				case agent_api.AgentProtocolResponses,
-					agent_api.AgentProtocolInvocations:
-					// valid
-				default:
+				p := agent_api.AgentProtocol(flags.protocol)
+				if !p.IsInvokable() {
 					return exterrors.Validation(
 						exterrors.CodeInvalidParameter,
-						fmt.Sprintf("unsupported protocol %q", flags.protocol),
+						fmt.Sprintf("unsupported protocol %q for invocation", flags.protocol),
 						"supported protocols are: responses, invocations",
 					)
 				}

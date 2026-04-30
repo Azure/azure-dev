@@ -245,6 +245,20 @@ func TestProtocolFromAgentYaml(t *testing.T) {
 			wantErr:    true,
 			errContain: "declares multiple protocols",
 		},
+		{
+			name: "responses plus a2a requires --protocol",
+			yaml: "protocols:\n  - protocol: responses\n" +
+				"    version: \"1.0\"\n  - protocol: a2a\n" +
+				"    version: \"1.0\"\n",
+			wantErr:    true,
+			errContain: "declares multiple protocols",
+		},
+		{
+			name:       "a2a only is not invokable",
+			yaml:       "protocols:\n  - protocol: a2a\n    version: \"1.0\"\n",
+			wantErr:    true,
+			errContain: "non-invokable protocols",
+		},
 	}
 
 	for _, tt := range tests {

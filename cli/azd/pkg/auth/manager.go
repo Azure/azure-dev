@@ -1402,26 +1402,19 @@ type LogInDetails struct {
 // return the account name from the az CLI.
 func (m *Manager) LogInDetails(ctx context.Context) (*LogInDetails, error) {
 	if m.UseExternalAuth() {
-		cred, err := m.CredentialForCurrentUser(ctx, nil)
+		claims, err := m.ClaimsForCurrentUser(ctx, nil)
 		if err != nil {
-			return nil, fmt.Errorf("getting credential for external auth: %w", err)
+			return nil, fmt.Errorf("fetching claims for external auth: %w", err)
 		}
 
-		accessToken, err := cred.GetToken(ctx, policy.TokenRequestOptions{
-			Scopes: LoginScopes(m.cloud),
-		})
-		if err != nil {
-			return nil, fmt.Errorf("acquiring token from external auth: %w", err)
-		}
-
-		claims, err := GetClaimsFromAccessToken(accessToken.Token)
-		if err != nil {
-			return nil, fmt.Errorf("extracting claims from external auth token: %w", err)
+		accountName := strings.TrimSpace(claims.DisplayUsername())
+		if accountName == "" {
+			return nil, fmt.Errorf("external auth token did not contain a usable account identifier: %w", ErrNoCurrentUser)
 		}
 
 		return &LogInDetails{
 			LoginType: EmailLoginType,
-			Account:   claims.DisplayUsername(),
+			Account:   accountName,
 		}, nil
 	}
 

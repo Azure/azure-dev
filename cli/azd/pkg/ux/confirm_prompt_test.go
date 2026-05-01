@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -461,7 +462,7 @@ func TestPrompt_Render_secret_masks_value_in_progress(t *testing.T) {
 	assert.Contains(t, output, "Password")
 	// Each rune of the secret value must be masked with an asterisk and the
 	// original characters must never be written to the terminal.
-	assert.Contains(t, output, strings.Repeat("*", len("hunter2")))
+	assert.Contains(t, output, strings.Repeat("*", utf8.RuneCountInString("hunter2")))
 	assert.NotContains(t, output, "hunter2")
 }
 
@@ -480,7 +481,7 @@ func TestPrompt_Render_secret_masks_value_on_completion(t *testing.T) {
 	require.NoError(t, err)
 
 	output := buf.String()
-	assert.Contains(t, output, strings.Repeat("*", len("s3cret!")))
+	assert.Contains(t, output, strings.Repeat("*", utf8.RuneCountInString("s3cret!")))
 	assert.NotContains(t, output, "s3cret!")
 }
 

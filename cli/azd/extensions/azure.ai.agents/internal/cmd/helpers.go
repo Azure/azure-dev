@@ -121,11 +121,6 @@ func migrateFromLegacyFile(ctx context.Context, azdClient *azdext.AzdClient) {
 			migrated = true
 		}
 	}
-	for key, val := range agentCtx.Invocations {
-		if err := setAgentSpecificContextValue(ctx, azdClient, "invocations", key, val); err == nil {
-			migrated = true
-		}
-	}
 
 	if migrated {
 		if err := os.Remove(configFilePath); err != nil {
@@ -137,7 +132,7 @@ func migrateFromLegacyFile(ctx context.Context, azdClient *azdext.AzdClient) {
 }
 
 // saveContextValue persists a value into the named field of the config store.
-// storeField selects the map: "sessions", "conversations", or "invocations".
+// storeField selects the map: "sessions" or "conversations".
 func saveContextValue(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,

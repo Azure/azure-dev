@@ -520,9 +520,9 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 	}
 	defer resp.Body.Close()
 
-	// Persist the most recent invocation ID for this agent (best-effort).
-	if invID := resp.Header.Get("x-agent-invocation-id"); invID != "" && azdClient != nil {
-		saveContextValue(ctx, azdClient, agentKey, invID, "invocations")
+	// Print the invocation ID if the agent returned one.
+	if invID := resp.Header.Get("x-agent-invocation-id"); invID != "" {
+		fmt.Printf("Invocation:   %s\n", invID)
 	}
 
 	return handleInvocationResponse(ctx, resp, "", "", agentKey, a.httpTimeout())
@@ -610,9 +610,9 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	}
 	defer resp.Body.Close()
 
-	// Persist the most recent invocation ID for this agent.
+	// Print the invocation ID if the agent returned one.
 	if invID := resp.Header.Get("x-agent-invocation-id"); invID != "" {
-		saveContextValue(ctx, azdClient, name, invID, "invocations")
+		fmt.Printf("Invocation: %s\n", invID)
 	}
 
 	captureResponseSession(ctx, azdClient, name, sid, resp, "Session:  ")

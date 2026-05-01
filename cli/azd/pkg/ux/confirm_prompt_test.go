@@ -400,8 +400,8 @@ func TestPrompt_WithCanvas(t *testing.T) {
 }
 
 func TestNewPrompt_secret_forces_ignore_hint_keys(t *testing.T) {
-	// When Secret is true, '?' and escape should be treated as input characters
-	// rather than hint triggers, so IgnoreHintKeys must be implicitly enabled.
+	// When Secret is true, '?' should be treated as an input character rather
+	// than a hint trigger, so IgnoreHintKeys must be implicitly enabled.
 	p := NewPrompt(&PromptOptions{
 		Message: "Password",
 		Secret:  true,
@@ -410,16 +410,16 @@ func TestNewPrompt_secret_forces_ignore_hint_keys(t *testing.T) {
 	assert.True(t, p.options.IgnoreHintKeys)
 }
 
-func TestNewPrompt_secret_suppresses_help_message(t *testing.T) {
-	// HelpMessage is unreachable for secret prompts (the trigger key is
-	// captured as input), so it must be cleared along with any auto-generated
-	// "[Type ? for hint]" affordance.
+func TestNewPrompt_secret_suppresses_auto_hint(t *testing.T) {
+	// The auto-generated "[Type ? for hint]" affordance is misleading for
+	// secret prompts because '?' is captured as input, so it must not be
+	// generated when Secret is true. HelpMessage is left untouched (it can
+	// never render anyway because the help trigger is disabled).
 	p := NewPrompt(&PromptOptions{
 		Message:     "Password",
 		HelpMessage: "Some help that can never be shown.",
 		Secret:      true,
 	})
-	assert.Empty(t, p.options.HelpMessage)
 	assert.Empty(t, p.options.Hint)
 }
 

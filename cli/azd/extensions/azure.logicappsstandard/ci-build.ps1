@@ -46,7 +46,7 @@ $tagsFlag = "-tags=cfi,cfg,osusergo"
 # -w: Omit DWARF symbol table
 # -X: Set variable at link time. Used to set the version in source.
 
-$ldFlag = "-ldflags=-s -w -X 'azure.logicappsstandard/internal/version.Version=$Version' -X 'azure.logicappsstandard/internal/version.Commit=$SourceVersion' -X 'azure.logicappsstandard/internal/version.BuildDate=$(Get-Date -Format o)' "
+$ldFlag = "-ldflags=-s -w -X 'azurelogicappsstandard/internal/version.Version=$Version' -X 'azurelogicappsstandard/internal/version.Commit=$SourceVersion' -X 'azurelogicappsstandard/internal/version.BuildDate=$(Get-Date -Format o)' "
 
 if ($IsWindows) {
     $msg = "Building for Windows"

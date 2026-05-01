@@ -6,7 +6,7 @@ package cmd
 import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 
-	"azure.logicappsstandard/internal/project"
+	"azurelogicappsstandard/internal/project"
 )
 
 // configureListen is called by NewListenCommand to register event handlers.

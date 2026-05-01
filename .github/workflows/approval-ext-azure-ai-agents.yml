@@ -7,8 +7,10 @@
 # - This check is ADDITIVE to GitHub CODEOWNERS — both must be satisfied to merge.
 # - Approval must come from a member of the requiredApprovers list on the current
 #   HEAD commit (stale approvals are rejected after new pushes).
-# - Override: Any user can post "/agents-extension-approval override" as a PR
-#   comment to bypass the approval requirement.
+# - Override (break-glass): A member of the requiredApprovers list can post
+#   "/agents-extension-approval override" as a PR comment to bypass the approval
+#   requirement. The override must be posted after the latest push to be valid.
+#   This is intended as an emergency escape hatch, not routine workflow.
 # - Fork PRs: External contributors from forks have restricted token permissions.
 #   If API calls fail with 403, the check reports a clear error rather than crashing.
 #
@@ -42,8 +44,9 @@ jobs:
   required-approval:
     name: Required Approval
     # For issue_comment, only run if the comment is on a PR and contains the
-    # override phrase. For pull_request_review, run on all PRs (runtime filter
-    # below skips non-extension PRs).
+    # override phrase. The job-level `contains()` is a coarse pre-filter to avoid
+    # spinning up the runner for irrelevant comments; the script enforces exact
+    # match and authorization checks.
     if: |
       github.event_name == 'pull_request' ||
       github.event_name == 'pull_request_review' ||
@@ -75,10 +78,17 @@ jobs:
               return;
             }
 
-            // Check for override comment.
+            // Check for override comment (break-glass, restricted to requiredApprovers).
             if (context.eventName === 'issue_comment') {
               const comment = (context.payload.comment.body || '').trim();
               if (comment === '/agents-extension-approval override') {
+                const commenter = context.payload.comment.user.login.toLowerCase();
+                if (!requiredApprovers.includes(commenter)) {
+                  core.setFailed(
+                    `Override denied: ${context.payload.comment.user.login} is not in the required approvers list.`
+                  );
+                  return;
+                }
                 // issue_comment runs don't update PR status checks automatically.
                 // Write a commit status directly to the PR head SHA.
                 const { data: pr } = await github.rest.pulls.get({
@@ -92,7 +102,7 @@ jobs:
                   sha: pr.head.sha,
                   state: 'success',
                   context: 'Required Approval',
-                  description: `Override by ${context.payload.comment.user.login}`,
+                  description: `Override (break-glass) by ${context.payload.comment.user.login}`,
                 });
                 core.info(
                   `Override granted via comment by ${context.payload.comment.user.login}. ` +
@@ -130,7 +140,8 @@ jobs:
               }
             }
 
-            // Check for an override comment on the PR.
+            // Check for an override comment on the PR (break-glass).
+            // Only honor overrides from required approvers, posted after the latest push.
             let comments;
             try {
               comments = await github.paginate(
@@ -148,15 +159,29 @@ jobs:
               throw err;
             }
 
-            const hasOverride = comments.some(c =>
-              (c.body || '').trim() === '/agents-extension-approval override'
+            // Get the HEAD SHA and commit date for staleness checks.
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber,
+            });
+            const headSha = pr.head.sha;
+
+            const { data: headCommit } = await github.rest.repos.getCommit({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: headSha,
+            });
+            const lastPushDate = new Date(headCommit.commit.committer.date);
+
+            const validOverride = comments.find(c =>
+              (c.body || '').trim() === '/agents-extension-approval override' &&
+              requiredApprovers.includes(c.user.login.toLowerCase()) &&
+              new Date(c.created_at) > lastPushDate
             );
-            if (hasOverride) {
-              const overrideComment = comments.find(c =>
-                (c.body || '').trim() === '/agents-extension-approval override'
-              );
+            if (validOverride) {
               core.info(
-                `Override granted via comment by ${overrideComment.user.login}.`
+                `Override (break-glass) granted via comment by ${validOverride.user.login}.`
               );
               return;
             }
@@ -179,20 +204,19 @@ jobs:
               throw err;
             }
 
-            // Get the HEAD SHA so we can verify the approval is current.
-            const { data: pr } = await github.rest.pulls.get({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: prNumber,
-            });
-            const headSha = pr.head.sha;
-
-            // Find approvals from required reviewers on the current HEAD commit.
-            const validApprovals = reviews.filter(
-              r =>
-                r.state === 'APPROVED' &&
-                r.commit_id === headSha &&
-                requiredApprovers.includes(r.user.login.toLowerCase())
+            // Collapse reviews per user to the latest state on the current HEAD.
+            // This ensures a CHANGES_REQUESTED after an APPROVED invalidates
+            // the earlier approval (matching GitHub's effective review state).
+            const latestByUser = new Map();
+            for (const r of reviews.filter(r => r.commit_id === headSha)) {
+              const key = r.user.login.toLowerCase();
+              const prev = latestByUser.get(key);
+              if (!prev || new Date(r.submitted_at) > new Date(prev.submitted_at)) {
+                latestByUser.set(key, r);
+              }
+            }
+            const validApprovals = [...latestByUser.values()].filter(
+              r => r.state === 'APPROVED' && requiredApprovers.includes(r.user.login.toLowerCase())
             );
 
             if (validApprovals.length > 0) {
@@ -202,6 +226,6 @@ jobs:
               core.setFailed(
                 `Requires approval from at least one of: ${requiredApprovers.join(', ')}. ` +
                 'No qualifying approval found on the current commit. ' +
-                'To bypass, post a comment containing "/agents-extension-approval override".'
+                'Break-glass: a required approver can post exactly "/agents-extension-approval override" to bypass.'
               );
             }

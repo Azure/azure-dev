@@ -14,6 +14,7 @@ const (
 	extensionID = "azure.logicappsstandard"
 )
 
+// NewRootCommand creates the root command for the Logic Apps Standard extension.
 func NewRootCommand() *cobra.Command {
 	rootCmd, extCtx := azdext.NewExtensionRootCommand(azdext.ExtensionCommandOptions{
 		Name:    extensionID,

@@ -1401,6 +1401,30 @@ type LogInDetails struct {
 // and the account identifier. When legacy authentication is used, it will
 // return the account name from the az CLI.
 func (m *Manager) LogInDetails(ctx context.Context) (*LogInDetails, error) {
+	if m.UseExternalAuth() {
+		cred, err := m.CredentialForCurrentUser(ctx, nil)
+		if err != nil {
+			return nil, fmt.Errorf("getting credential for external auth: %w", err)
+		}
+
+		accessToken, err := cred.GetToken(ctx, policy.TokenRequestOptions{
+			Scopes: LoginScopes(m.cloud),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("acquiring token from external auth: %w", err)
+		}
+
+		claims, err := GetClaimsFromAccessToken(accessToken.Token)
+		if err != nil {
+			return nil, fmt.Errorf("extracting claims from external auth token: %w", err)
+		}
+
+		return &LogInDetails{
+			LoginType: EmailLoginType,
+			Account:   claims.DisplayUsername(),
+		}, nil
+	}
+
 	userConfig, err := m.userConfigManager.Load()
 	if err != nil {
 		return nil, fmt.Errorf("reading user config: %w", err)

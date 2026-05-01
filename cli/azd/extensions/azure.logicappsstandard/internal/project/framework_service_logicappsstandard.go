@@ -143,7 +143,7 @@ func (p *LogicAppsStandardFrameworkServiceProvider) Package(
 
 	// Return a DIRECTORY artifact pointing to the project root.
 	// azd's packaging pipeline will handle creating the zip archive from this directory.
-	// By specifying an absolute path, azd will use the .funcignore file to exclude unnecessary files from the package.
+	// By specifying an absolute path, azd will use the host specific ignore file (e.g. .funcignore) for exclusions.
 	return &azdext.ServicePackageResult{
 		Artifacts: []*azdext.Artifact{
 			{

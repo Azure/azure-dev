@@ -225,10 +225,10 @@ func (p *Prompt) Render(printer Printer) error {
 		printer.Fprintf("%s ", output.WithHighLightFormat(p.options.Hint))
 	}
 
-	// Always capture cursor position for input, used for SecondLineMessage
-	if p.cursorPosition == nil {
-		p.cursorPosition = new(printer.CursorPosition())
-	}
+	// Recapture each render so the position stays accurate when the value
+	// transitions back to empty (e.g. after backspacing the last character).
+	// The value block below overrides this when there's a value to display.
+	p.cursorPosition = new(printer.CursorPosition())
 
 	// Placeholder
 	if p.value == "" && p.options.PlaceHolder != "" {

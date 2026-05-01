@@ -22,6 +22,7 @@ type LogicAppsStandardFrameworkServiceProvider struct {
 	serviceConfig *azdext.ServiceConfig
 }
 
+// NewLogicAppsStandardFrameworkServiceProvider creates a Logic Apps Standard framework service provider.
 func NewLogicAppsStandardFrameworkServiceProvider() azdext.FrameworkServiceProvider {
 	return &LogicAppsStandardFrameworkServiceProvider{}
 }

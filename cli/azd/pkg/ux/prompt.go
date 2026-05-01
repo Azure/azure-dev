@@ -48,10 +48,9 @@ type PromptOptions struct {
 	IgnoreHintKeys bool
 	// The optional help message that displays on the next line (default: "")
 	HelpMessageOnNextLine string
-	// Whether or not the input represents a secret value (default: false).
-	// When true, the typed value is masked in the terminal (rendered as
-	// asterisks) and hint keys ('?' / escape) are treated as input characters
-	// rather than triggers, so they can be part of the secret.
+	// When true, the typed value is masked as asterisks, hint keys
+	// ('?' / escape) are treated as input characters, and HelpMessage is
+	// suppressed (unreachable since the trigger key is captured as input).
 	Secret bool
 }
 
@@ -96,15 +95,17 @@ func NewPrompt(options *PromptOptions) *Prompt {
 		panic(err)
 	}
 
+	// In secret mode, '?' / escape are typed as input characters and the
+	// help message is unreachable. Clear it so the auto-hint block below
+	// doesn't generate the misleading "[Type ? for hint]" affordance.
+	if mergedOptions.Secret {
+		mergedOptions.IgnoreHintKeys = true
+		mergedOptions.HelpMessage = ""
+	}
+
 	// Auto-generate hint text only when a help message is available
 	if mergedOptions.Hint == "" && mergedOptions.HelpMessage != "" {
 		mergedOptions.Hint = "[Type ? for hint]"
-	}
-
-	// When prompting for a secret, treat hint keys ('?' / escape) as regular
-	// input so they can be part of the secret value.
-	if mergedOptions.Secret {
-		mergedOptions.IgnoreHintKeys = true
 	}
 
 	return &Prompt{

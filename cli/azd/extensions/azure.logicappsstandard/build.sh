@@ -33,7 +33,7 @@ else
     )
 fi
 
-APP_PATH="$EXTENSION_ID/internal/cmd"
+APP_PATH="$EXTENSION_ID/internal/version"
 
 # Loop through platforms and build
 for PLATFORM in "${PLATFORMS[@]}"; do

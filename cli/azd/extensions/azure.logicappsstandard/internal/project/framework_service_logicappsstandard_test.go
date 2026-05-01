@@ -131,7 +131,7 @@ func TestInitializeValidatesCustomCodeProjectPath(t *testing.T) {
 			"customCodeProject": "Functions",
 		})
 
-		err := os.MkdirAll(filepath.Join(projectDir, "src/logicApp/Functions"), 0o755)
+		err := os.MkdirAll(filepath.Join(projectDir, "src/logicApp/Functions"), 0o750)
 		require.NoError(t, err)
 
 		withEnv(t, "AZD_EXEC_PROJECT_DIR", projectDir, func() {
@@ -210,6 +210,7 @@ func TestRestoreAndBuildInvokeDotNetForCustomCodeProject(t *testing.T) {
 		})
 	})
 
+	// #nosec G304 -- logFile points to a test-controlled file under t.TempDir().
 	contents, err := os.ReadFile(logFile)
 	require.NoError(t, err)
 	normalized := strings.ReplaceAll(string(contents), "\r\n", "\n")
@@ -241,6 +242,7 @@ func TestRestoreAndBuildSkipDotNetWhenNoCustomCodeProject(t *testing.T) {
 	})
 
 	if _, statErr := os.Stat(logFile); statErr == nil {
+		// #nosec G304 -- logFile points to a test-controlled file under t.TempDir().
 		contents, readErr := os.ReadFile(logFile)
 		require.NoError(t, readErr)
 		assert.Empty(
@@ -306,7 +308,7 @@ func createFakeDotnetStub(t *testing.T, fakeBinDir string) {
 
 func createFile(t *testing.T, filePath, content string) {
 	t.Helper()
-	err := os.MkdirAll(filepath.Dir(filePath), 0o755)
+	err := os.MkdirAll(filepath.Dir(filePath), 0o750)
 	require.NoError(t, err, "failed creating directory %q", filepath.Dir(filePath))
 	err = os.WriteFile(filePath, []byte(content), 0o600)
 	require.NoError(t, err, "failed writing file %q", filePath)

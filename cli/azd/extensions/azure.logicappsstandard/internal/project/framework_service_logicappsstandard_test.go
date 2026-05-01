@@ -6,6 +6,7 @@ package project
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -191,10 +192,7 @@ func TestRestoreAndBuildInvokeDotNetForCustomCodeProject(t *testing.T) {
 
 	logFile := filepath.Join(t.TempDir(), "dotnet.log")
 	fakeBinDir := t.TempDir()
-	fakeDotnetPath := filepath.Join(fakeBinDir, "dotnet")
-	createFile(t, fakeDotnetPath, "#!/bin/sh\nprintf '%s\n' \"$*\" >> \"$DOTNET_ARGS_LOG\"\n")
-	err := os.Chmod(fakeDotnetPath, 0o755)
-	require.NoError(t, err)
+	createFakeDotnetStub(t, fakeBinDir)
 
 	svc := newServiceConfig("logicApp", "src/logicApp", map[string]any{
 		"customCodeProject": "Functions/Functions.csproj",
@@ -214,7 +212,8 @@ func TestRestoreAndBuildInvokeDotNetForCustomCodeProject(t *testing.T) {
 
 	contents, err := os.ReadFile(logFile)
 	require.NoError(t, err)
-	logLines := strings.Split(strings.TrimSpace(string(contents)), "\n")
+	normalized := strings.ReplaceAll(string(contents), "\r\n", "\n")
+	logLines := strings.Split(strings.TrimSpace(normalized), "\n")
 	require.Len(t, logLines, 2, "expected two dotnet invocations: %q", string(contents))
 
 	expectedRestore := "restore " + csprojPath
@@ -227,10 +226,7 @@ func TestRestoreAndBuildInvokeDotNetForCustomCodeProject(t *testing.T) {
 func TestRestoreAndBuildSkipDotNetWhenNoCustomCodeProject(t *testing.T) {
 	logFile := filepath.Join(t.TempDir(), "dotnet.log")
 	fakeBinDir := t.TempDir()
-	fakeDotnetPath := filepath.Join(fakeBinDir, "dotnet")
-	createFile(t, fakeDotnetPath, "#!/bin/sh\nprintf '%s\n' \"$*\" >> \"$DOTNET_ARGS_LOG\"\n")
-	err := os.Chmod(fakeDotnetPath, 0o755)
-	require.NoError(t, err)
+	createFakeDotnetStub(t, fakeBinDir)
 
 	provider := &LogicAppsStandardFrameworkServiceProvider{}
 	svc := newServiceConfig("logicApp", "src/logicApp", nil)
@@ -287,6 +283,25 @@ func withEnv(t *testing.T, key, value string, fn func()) {
 	})
 
 	fn()
+}
+
+// createFakeDotnetStub places a fake dotnet executable in fakeBinDir.
+// On Windows it creates dotnet.cmd (a batch file) so that cmd.exe can find
+// and execute it via PATHEXT; on Unix it creates a dotnet shell script.
+// Both stubs append their arguments to the file named by DOTNET_ARGS_LOG.
+func createFakeDotnetStub(t *testing.T, fakeBinDir string) {
+	t.Helper()
+	stubName := "dotnet"
+	stubContent := "#!/bin/sh\nprintf '%s\n' \"$*\" >> \"$DOTNET_ARGS_LOG\"\n"
+	stubMode := os.FileMode(0o755)
+	if runtime.GOOS == "windows" {
+		stubName = "dotnet.cmd"
+		stubContent = "@echo off\r\necho %* >> %DOTNET_ARGS_LOG%\r\n"
+		stubMode = 0o644
+	}
+	stubPath := filepath.Join(fakeBinDir, stubName)
+	err := os.WriteFile(stubPath, []byte(stubContent), stubMode)
+	require.NoError(t, err, "failed writing fake dotnet stub %q", stubPath)
 }
 
 func createFile(t *testing.T, filePath, content string) {

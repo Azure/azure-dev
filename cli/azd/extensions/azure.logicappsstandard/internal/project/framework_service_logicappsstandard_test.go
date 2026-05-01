@@ -43,7 +43,7 @@ func TestHasCustomCodeProjectConfigured(t *testing.T) {
 }
 
 func TestRequiredExternalTools(t *testing.T) {
-	provider := &LogicAppsStandardPackagingFrameworkServiceProvider{}
+	provider := &LogicAppsStandardFrameworkServiceProvider{}
 
 	t.Run("returns nil when custom code is not configured", func(t *testing.T) {
 		tools, err := provider.RequiredExternalTools(t.Context(), newServiceConfig("logicApp", "src/logicApp", nil))
@@ -64,7 +64,7 @@ func TestRequiredExternalTools(t *testing.T) {
 
 func TestRequirements(t *testing.T) {
 	t.Run("disables restore and build when service config is not initialized", func(t *testing.T) {
-		provider := &LogicAppsStandardPackagingFrameworkServiceProvider{}
+		provider := &LogicAppsStandardFrameworkServiceProvider{}
 		reqs, err := provider.Requirements()
 		require.NoError(t, err)
 		require.NotNil(t, reqs.Package)
@@ -73,7 +73,7 @@ func TestRequirements(t *testing.T) {
 	})
 
 	t.Run("disables restore and build when initialized without customCodeProject", func(t *testing.T) {
-		provider := &LogicAppsStandardPackagingFrameworkServiceProvider{}
+		provider := &LogicAppsStandardFrameworkServiceProvider{}
 		provider.serviceConfig = newServiceConfig("logicApp", "src/logicApp", nil)
 		reqs, err := provider.Requirements()
 		require.NoError(t, err)
@@ -83,7 +83,7 @@ func TestRequirements(t *testing.T) {
 	})
 
 	t.Run("enables restore and build when customCodeProject is configured", func(t *testing.T) {
-		provider := &LogicAppsStandardPackagingFrameworkServiceProvider{}
+		provider := &LogicAppsStandardFrameworkServiceProvider{}
 		provider.serviceConfig = newServiceConfig("logicApp", "src/logicApp", map[string]any{
 			"customCodeProject": "Functions/Functions.csproj",
 		})
@@ -100,7 +100,7 @@ func TestInitializeValidatesCustomCodeProjectPath(t *testing.T) {
 	createFile(t, filepath.Join(projectDir, "azure.yaml"), "name: test-project\n")
 
 	t.Run("succeeds without customCodeProject and sets serviceConfig", func(t *testing.T) {
-		provider := &LogicAppsStandardPackagingFrameworkServiceProvider{}
+		provider := &LogicAppsStandardFrameworkServiceProvider{}
 		svc := newServiceConfig("logicApp", "src/logicApp", nil)
 
 		err := provider.Initialize(t.Context(), svc)
@@ -109,7 +109,7 @@ func TestInitializeValidatesCustomCodeProjectPath(t *testing.T) {
 	})
 
 	t.Run("succeeds when custom code project file exists", func(t *testing.T) {
-		provider := &LogicAppsStandardPackagingFrameworkServiceProvider{}
+		provider := &LogicAppsStandardFrameworkServiceProvider{}
 		svc := newServiceConfig("logicApp", "src/logicApp", map[string]any{
 			"customCodeProject": "Functions/Functions.csproj",
 		})
@@ -123,7 +123,7 @@ func TestInitializeValidatesCustomCodeProjectPath(t *testing.T) {
 	})
 
 	t.Run("fails when custom code project is a directory", func(t *testing.T) {
-		provider := &LogicAppsStandardPackagingFrameworkServiceProvider{}
+		provider := &LogicAppsStandardFrameworkServiceProvider{}
 		svc := newServiceConfig("logicApp", "src/logicApp", map[string]any{
 			"customCodeProject": "Functions",
 		})
@@ -139,7 +139,7 @@ func TestInitializeValidatesCustomCodeProjectPath(t *testing.T) {
 	})
 
 	t.Run("fails when custom code project file is missing", func(t *testing.T) {
-		provider := &LogicAppsStandardPackagingFrameworkServiceProvider{}
+		provider := &LogicAppsStandardFrameworkServiceProvider{}
 		svc := newServiceConfig("logicApp", "src/logicApp", map[string]any{
 			"customCodeProject": "Functions/Missing.csproj",
 		})
@@ -153,7 +153,7 @@ func TestInitializeValidatesCustomCodeProjectPath(t *testing.T) {
 }
 
 func TestPackageUsesProjectAndOutputPaths(t *testing.T) {
-	provider := &LogicAppsStandardPackagingFrameworkServiceProvider{}
+	provider := &LogicAppsStandardFrameworkServiceProvider{}
 	projectDir := t.TempDir()
 	createFile(t, filepath.Join(projectDir, "azure.yaml"), "name: test-project\n")
 
@@ -197,7 +197,7 @@ func TestRestoreAndBuildInvokeDotNetForCustomCodeProject(t *testing.T) {
 	svc := newServiceConfig("logicApp", "src/logicApp", map[string]any{
 		"customCodeProject": "Functions/Functions.csproj",
 	})
-	provider := &LogicAppsStandardPackagingFrameworkServiceProvider{}
+	provider := &LogicAppsStandardFrameworkServiceProvider{}
 
 	withEnv(t, "AZD_EXEC_PROJECT_DIR", projectDir, func() {
 		withEnv(t, "DOTNET_ARGS_LOG", logFile, func() {
@@ -230,7 +230,7 @@ func TestRestoreAndBuildSkipDotNetWhenNoCustomCodeProject(t *testing.T) {
 	err := os.Chmod(fakeDotnetPath, 0o755)
 	require.NoError(t, err)
 
-	provider := &LogicAppsStandardPackagingFrameworkServiceProvider{}
+	provider := &LogicAppsStandardFrameworkServiceProvider{}
 	svc := newServiceConfig("logicApp", "src/logicApp", nil)
 
 	withEnv(t, "DOTNET_ARGS_LOG", logFile, func() {

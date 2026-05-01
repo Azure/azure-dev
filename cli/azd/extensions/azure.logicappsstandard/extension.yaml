@@ -3,7 +3,7 @@ id: azure.logicappsstandard
 namespace: logicappsstandard
 displayName: Azure Logic Apps Standard
 description: Extension for packaging Logic Apps Standard projects, including support for custom code projects
-usage: Use 'language: logicappsstandard' in your service configuration to package the service as a Logic Apps Standard project. Use the customCodeProject property to specify a custom code project to include in the package. E.g. 'customCodeProject: Functions/Functions.csproj'
+usage: Use logicappsstandard as language in your service configuration. If your Logic App has a custom code project, configure that path to the .csproj file using the customCodeProject property.
 # NOTE: Make sure version.txt is in sync with this version.
 version: 0.0.1
 language: go

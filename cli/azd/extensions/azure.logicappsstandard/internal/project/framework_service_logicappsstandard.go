@@ -12,21 +12,21 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
-// Ensure LogicAppsStandardPackagingFrameworkServiceProvider implements FrameworkServiceProvider interface
-var _ azdext.FrameworkServiceProvider = &LogicAppsStandardPackagingFrameworkServiceProvider{}
+// Ensure LogicAppsStandardFrameworkServiceProvider implements FrameworkServiceProvider interface
+var _ azdext.FrameworkServiceProvider = &LogicAppsStandardFrameworkServiceProvider{}
 
-// LogicAppsStandardPackagingFrameworkServiceProvider introduces the custom language 'logicappsstandard' to the framework service provider,
-// enabling it to handle packaging for Logic Apps Standard projects, including those with custom code components.
-type LogicAppsStandardPackagingFrameworkServiceProvider struct {
+// LogicAppsStandardFrameworkServiceProvider introduces the custom language 'logicappsstandard',
+// which makes it possible to package Logic Apps Standard projects, including those with custom code components.
+type LogicAppsStandardFrameworkServiceProvider struct {
 	serviceConfig *azdext.ServiceConfig
 }
 
-func NewLogicAppsStandardPackagingFrameworkServiceProvider() azdext.FrameworkServiceProvider {
-	return &LogicAppsStandardPackagingFrameworkServiceProvider{}
+func NewLogicAppsStandardFrameworkServiceProvider() azdext.FrameworkServiceProvider {
+	return &LogicAppsStandardFrameworkServiceProvider{}
 }
 
 // Initialize initializes the framework service provider with service configuration
-func (p *LogicAppsStandardPackagingFrameworkServiceProvider) Initialize(ctx context.Context, serviceConfig *azdext.ServiceConfig) error {
+func (p *LogicAppsStandardFrameworkServiceProvider) Initialize(ctx context.Context, serviceConfig *azdext.ServiceConfig) error {
 	fmt.Printf("Initializing Logic Apps Standard framework for service: %s\n", serviceConfig.GetName())
 	p.serviceConfig = serviceConfig
 
@@ -48,7 +48,7 @@ func (p *LogicAppsStandardPackagingFrameworkServiceProvider) Initialize(ctx cont
 }
 
 // Returns dotnet as required external tool if a custom code project is configured
-func (p *LogicAppsStandardPackagingFrameworkServiceProvider) RequiredExternalTools(
+func (p *LogicAppsStandardFrameworkServiceProvider) RequiredExternalTools(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,
 ) ([]*azdext.ExternalTool, error) {
@@ -64,7 +64,7 @@ func (p *LogicAppsStandardPackagingFrameworkServiceProvider) RequiredExternalToo
 }
 
 // Requirements returns the framework requirements (whether restore/build are needed)
-func (p *LogicAppsStandardPackagingFrameworkServiceProvider) Requirements() (*azdext.FrameworkRequirements, error) {
+func (p *LogicAppsStandardFrameworkServiceProvider) Requirements() (*azdext.FrameworkRequirements, error) {
 	hasCustomCodeProject := p.serviceConfig != nil && hasCustomCodeProjectConfigured(p.serviceConfig)
 	return &azdext.FrameworkRequirements{
 		Package: &azdext.FrameworkPackageRequirements{
@@ -75,7 +75,7 @@ func (p *LogicAppsStandardPackagingFrameworkServiceProvider) Requirements() (*az
 }
 
 // Restores the dependencies for the custom code project if specified in the service configuration.
-func (p *LogicAppsStandardPackagingFrameworkServiceProvider) Restore(
+func (p *LogicAppsStandardFrameworkServiceProvider) Restore(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,
 	serviceContext *azdext.ServiceContext,
@@ -95,7 +95,7 @@ func (p *LogicAppsStandardPackagingFrameworkServiceProvider) Restore(
 }
 
 // Builds the custom code project if specified in the service configuration.
-func (p *LogicAppsStandardPackagingFrameworkServiceProvider) Build(
+func (p *LogicAppsStandardFrameworkServiceProvider) Build(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,
 	serviceContext *azdext.ServiceContext,
@@ -115,7 +115,7 @@ func (p *LogicAppsStandardPackagingFrameworkServiceProvider) Build(
 }
 
 // Packages the Logic Apps Standard project, including any custom code components, into a deployable artifact.
-func (p *LogicAppsStandardPackagingFrameworkServiceProvider) Package(
+func (p *LogicAppsStandardFrameworkServiceProvider) Package(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,
 	serviceContext *azdext.ServiceContext,
@@ -152,7 +152,7 @@ func (p *LogicAppsStandardPackagingFrameworkServiceProvider) Package(
 	}, nil
 }
 
-func (p *LogicAppsStandardPackagingFrameworkServiceProvider) resolveCustomCodeProjectPath(
+func (p *LogicAppsStandardFrameworkServiceProvider) resolveCustomCodeProjectPath(
 	serviceConfig *azdext.ServiceConfig,
 ) (string, error) {
 	projectDir, err := azdext.GetProjectDir()

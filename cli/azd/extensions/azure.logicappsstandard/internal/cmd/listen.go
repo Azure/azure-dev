@@ -12,6 +12,6 @@ import (
 // configureListen is called by NewListenCommand to register event handlers.
 func configureListen(host *azdext.ExtensionHost) {
 	host.WithFrameworkService("logicappsstandard", func() azdext.FrameworkServiceProvider {
-		return project.NewLogicAppsStandardPackagingFrameworkServiceProvider()
+		return project.NewLogicAppsStandardFrameworkServiceProvider()
 	})
 }

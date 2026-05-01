@@ -205,11 +205,15 @@ func resolvePathWithinBase(baseDir string, pathParts ...string) (string, error) 
 
 // getAdditionalProperty retrieves a custom property from the service configuration's additional properties.
 func getAdditionalProperty(serviceConfig *azdext.ServiceConfig, key string) string {
+	if serviceConfig == nil {
+		return ""
+	}
+
 	props := serviceConfig.GetAdditionalProperties()
 	if props == nil {
 		return ""
 	}
-	if v, ok := props.Fields[key]; ok {
+	if v, ok := props.Fields[key]; ok && v != nil {
 		return v.GetStringValue()
 	}
 	return ""

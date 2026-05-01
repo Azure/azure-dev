@@ -17,6 +17,10 @@ import (
 )
 
 func TestGetAdditionalProperty(t *testing.T) {
+	t.Run("returns empty for nil service config", func(t *testing.T) {
+		assert.Equal(t, "", getAdditionalProperty(nil, "customCodeProject"))
+	})
+
 	t.Run("returns empty for nil additional properties", func(t *testing.T) {
 		svc := &azdext.ServiceConfig{}
 		assert.Equal(t, "", getAdditionalProperty(svc, "customCodeProject"))
@@ -32,6 +36,10 @@ func TestGetAdditionalProperty(t *testing.T) {
 }
 
 func TestHasCustomCodeProjectConfigured(t *testing.T) {
+	t.Run("returns false for nil service config", func(t *testing.T) {
+		assert.False(t, hasCustomCodeProjectConfigured(nil))
+	})
+
 	t.Run("returns false when customCodeProject is absent", func(t *testing.T) {
 		assert.False(t, hasCustomCodeProjectConfigured(newServiceConfig("logicApp", "src/logicApp", nil)))
 	})
@@ -166,6 +174,19 @@ func TestInitializeValidatesCustomCodeProjectPath(t *testing.T) {
 			assert.Contains(t, err.Error(), "outside project directory")
 		})
 	})
+
+	t.Run("fails when custom code project path is invalid", func(t *testing.T) {
+		provider := &LogicAppsStandardFrameworkServiceProvider{}
+		svc := newServiceConfig("logicApp", "src/logicApp", map[string]any{
+			"customCodeProject": "Functions/Bad\x00Name.csproj",
+		})
+
+		withEnv(t, "AZD_EXEC_PROJECT_DIR", projectDir, func() {
+			err := provider.Initialize(t.Context(), svc)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "custom code project")
+		})
+	})
 }
 
 func TestPackageUsesProjectAndOutputPaths(t *testing.T) {
@@ -276,6 +297,35 @@ func TestRestoreAndBuildSkipDotNetWhenNoCustomCodeProject(t *testing.T) {
 	}
 }
 
+func TestRestoreAndBuildReturnErrorWhenDotNetFails(t *testing.T) {
+	projectDir := t.TempDir()
+	createFile(t, filepath.Join(projectDir, "azure.yaml"), "name: test-project\n")
+	csprojPath := filepath.Join(projectDir, "src/logicApp/Functions/Functions.csproj")
+	createFile(t, csprojPath, "<Project />\n")
+
+	fakeBinDir := t.TempDir()
+	createFailingFakeDotnetStub(t, fakeBinDir)
+
+	svc := newServiceConfig("logicApp", "src/logicApp", map[string]any{
+		"customCodeProject": "Functions/Functions.csproj",
+	})
+	provider := &LogicAppsStandardFrameworkServiceProvider{}
+
+	withEnv(t, "AZD_EXEC_PROJECT_DIR", projectDir, func() {
+		withEnv(t, "PATH", fakeBinDir+string(os.PathListSeparator)+os.Getenv("PATH"), func() {
+			_, err := provider.Restore(t.Context(), svc, nil, func(string) {})
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "restoring custom code project")
+			assert.Contains(t, err.Error(), csprojPath)
+
+			_, err = provider.Build(t.Context(), svc, nil, func(string) {})
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "building custom code project")
+			assert.Contains(t, err.Error(), csprojPath)
+		})
+	})
+}
+
 func newServiceConfig(name, relativePath string, additionalProps map[string]any) *azdext.ServiceConfig {
 	svc := &azdext.ServiceConfig{
 		Name:         name,
@@ -326,6 +376,21 @@ func createFakeDotnetStub(t *testing.T, fakeBinDir string) {
 	stubPath := filepath.Join(fakeBinDir, stubName)
 	err := os.WriteFile(stubPath, []byte(stubContent), stubMode)
 	require.NoError(t, err, "failed writing fake dotnet stub %q", stubPath)
+}
+
+func createFailingFakeDotnetStub(t *testing.T, fakeBinDir string) {
+	t.Helper()
+	stubName := "dotnet"
+	stubContent := "#!/bin/sh\nexit 1\n"
+	stubMode := os.FileMode(0o755)
+	if runtime.GOOS == "windows" {
+		stubName = "dotnet.cmd"
+		stubContent = "@echo off\r\nexit /b 1\r\n"
+		stubMode = 0o644
+	}
+	stubPath := filepath.Join(fakeBinDir, stubName)
+	err := os.WriteFile(stubPath, []byte(stubContent), stubMode)
+	require.NoError(t, err, "failed writing failing fake dotnet stub %q", stubPath)
 }
 
 func createFile(t *testing.T, filePath, content string) {

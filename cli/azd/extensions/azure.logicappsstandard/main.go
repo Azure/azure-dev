@@ -6,7 +6,7 @@ package main
 import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 
-	"azure.logicappsstandard/internal/cmd"
+	"azurelogicappsstandard/internal/cmd"
 )
 
 func main() {

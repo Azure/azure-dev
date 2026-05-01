@@ -1,4 +1,4 @@
-module azure.logicappsstandard
+module azurelogicappsstandard
 
 go 1.26.1
 

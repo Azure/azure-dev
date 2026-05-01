@@ -1,4 +1,5 @@
 import: ../../.vscode/cspell.yaml
 words:
+  - azurelogicappsstandard
   - logicappsstandard
   

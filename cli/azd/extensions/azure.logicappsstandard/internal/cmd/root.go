@@ -10,14 +10,12 @@ import (
 
 const (
 	extensionID = "azure.logicappsstandard"
-	version     = "0.0.1"
 )
 
 func NewRootCommand() *cobra.Command {
 	rootCmd, extCtx := azdext.NewExtensionRootCommand(azdext.ExtensionCommandOptions{
-		Name:    extensionID,
-		Version: version,
-		Short:   "Extension for packaging Logic Apps Standard projects, including support for custom code projects",
+		Name:  extensionID,
+		Short: "Extension for packaging Logic Apps Standard projects, including support for custom code projects",
 	})
 
 	// Standard lifecycle, metadata, and version commands

@@ -30,7 +30,6 @@ func (p *LogicAppsStandardFrameworkServiceProvider) Initialize(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,
 ) error {
-	fmt.Printf("Initializing Logic Apps Standard framework for service: %s\n", serviceConfig.GetName())
 	p.serviceConfig = serviceConfig
 
 	if hasCustomCodeProjectConfigured(serviceConfig) {

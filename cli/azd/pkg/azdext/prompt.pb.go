@@ -944,6 +944,7 @@ type PromptOptions struct {
 	DefaultValue      string                 `protobuf:"bytes,8,opt,name=default_value,json=defaultValue,proto3" json:"default_value,omitempty"`
 	ClearOnCompletion bool                   `protobuf:"varint,9,opt,name=clear_on_completion,json=clearOnCompletion,proto3" json:"clear_on_completion,omitempty"`
 	IgnoreHintKeys    bool                   `protobuf:"varint,10,opt,name=ignore_hint_keys,json=ignoreHintKeys,proto3" json:"ignore_hint_keys,omitempty"`
+	Secret            bool                   `protobuf:"varint,11,opt,name=secret,proto3" json:"secret,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -1044,6 +1045,13 @@ func (x *PromptOptions) GetClearOnCompletion() bool {
 func (x *PromptOptions) GetIgnoreHintKeys() bool {
 	if x != nil {
 		return x.IgnoreHintKeys
+	}
+	return false
+}
+
+func (x *PromptOptions) GetSecret() bool {
+	if x != nil {
+		return x.Secret
 	}
 	return false
 }
@@ -2184,7 +2192,7 @@ const file_prompt_proto_rawDesc = "" +
 	"\fhelp_message\x18\x03 \x01(\tR\vhelpMessage\x12\x12\n" +
 	"\x04hint\x18\x04 \x01(\tR\x04hint\x12 \n" +
 	"\vplaceholder\x18\x05 \x01(\tR\vplaceholderB\x10\n" +
-	"\x0e_default_value\"\xf7\x02\n" +
+	"\x0e_default_value\"\x8f\x03\n" +
 	"\rPromptOptions\x12\x18\n" +
 	"\amessage\x18\x01 \x01(\tR\amessage\x12!\n" +
 	"\fhelp_message\x18\x02 \x01(\tR\vhelpMessage\x12\x12\n" +
@@ -2196,7 +2204,8 @@ const file_prompt_proto_rawDesc = "" +
 	"\rdefault_value\x18\b \x01(\tR\fdefaultValue\x12.\n" +
 	"\x13clear_on_completion\x18\t \x01(\bR\x11clearOnCompletion\x12(\n" +
 	"\x10ignore_hint_keys\x18\n" +
-	" \x01(\bR\x0eignoreHintKeys\":\n" +
+	" \x01(\bR\x0eignoreHintKeys\x12\x16\n" +
+	"\x06secret\x18\v \x01(\bR\x06secret\":\n" +
 	"\fSelectChoice\x12\x14\n" +
 	"\x05value\x18\x01 \x01(\tR\x05value\x12\x14\n" +
 	"\x05label\x18\x02 \x01(\tR\x05label\"[\n" +

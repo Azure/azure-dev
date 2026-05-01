@@ -228,6 +228,7 @@ func (s *promptService) Prompt(ctx context.Context, req *azdext.PromptRequest) (
 		Required:          req.Options.Required,
 		ClearOnCompletion: req.Options.ClearOnCompletion,
 		IgnoreHintKeys:    req.Options.IgnoreHintKeys,
+		Secret:            req.Options.Secret,
 	}
 
 	prompt := ux.NewPrompt(options)

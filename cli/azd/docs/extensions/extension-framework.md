@@ -1886,6 +1886,7 @@ Prompts the user for text input.
     - `defaultValue` (string)
     - `clear_on_completion` (bool)
     - `ignore_hint_keys` (bool)
+    - `secret` (bool): When true, the typed value is masked as `*` in the terminal. Any `help_message` / auto-generated `[Type ? for hint]` affordance is suppressed (the trigger key is captured as input). Use this for passwords, API keys, and other sensitive input.
 - **Response:** _PromptResponse_
   - Contains `value` (string)
 

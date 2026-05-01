@@ -242,6 +242,40 @@ func TestPrompt_Render_initial(t *testing.T) {
 	assert.Contains(t, output, "Name")
 }
 
+// Regression: when the value is fully cleared (e.g. by backspacing the last
+// character) and there is no placeholder, the cached cursor position must be
+// recaptured to point right after "Message: " — not left at the stale
+// post-character position from the previous render.
+func TestPrompt_Render_cursor_recaptures_after_value_cleared(t *testing.T) {
+	p := NewPrompt(&PromptOptions{Message: "Name"})
+
+	// Use a fresh printer per render to mimic production, where the canvas
+	// calls ClearCanvas between renders so column counts don't accumulate.
+	render := func() CursorPosition {
+		t.Helper()
+		var buf bytes.Buffer
+		require.NoError(t, p.Render(NewPrinter(&buf)))
+		require.NotNil(t, p.cursorPosition)
+		return *p.cursorPosition
+	}
+
+	// Initial render with empty value captures the input-area position.
+	emptyPos := render()
+
+	// Type a character — cursor advances one column.
+	p.value = "a"
+	typedPos := render()
+	assert.Equal(t, emptyPos.Col+1, typedPos.Col,
+		"cursor should advance one column when a character is typed")
+
+	// Backspace clears the value. The cursor must snap back to the
+	// input-area start, not stay at the previous post-character column.
+	p.value = ""
+	clearedPos := render()
+	assert.Equal(t, emptyPos, clearedPos,
+		"cursor should return to the input-area start when value is cleared")
+}
+
 func TestPrompt_Render_with_placeholder(t *testing.T) {
 	var buf bytes.Buffer
 	printer := NewPrinter(&buf)
@@ -373,6 +407,41 @@ func TestNewPrompt_secret_forces_ignore_hint_keys(t *testing.T) {
 	})
 	assert.True(t, p.options.Secret)
 	assert.True(t, p.options.IgnoreHintKeys)
+}
+
+func TestNewPrompt_secret_suppresses_help_message(t *testing.T) {
+	// HelpMessage is unreachable for secret prompts (the trigger key is
+	// captured as input), so it must be cleared along with any auto-generated
+	// "[Type ? for hint]" affordance.
+	p := NewPrompt(&PromptOptions{
+		Message:     "Password",
+		HelpMessage: "Some help that can never be shown.",
+		Secret:      true,
+	})
+	assert.Empty(t, p.options.HelpMessage)
+	assert.Empty(t, p.options.Hint)
+}
+
+func TestNewPrompt_secret_preserves_custom_hint(t *testing.T) {
+	// A caller-supplied Hint that is *not* the auto-generated affordance is
+	// purely informational and should be preserved even for secret prompts.
+	p := NewPrompt(&PromptOptions{
+		Message: "Password",
+		Hint:    "(min 8 chars)",
+		Secret:  true,
+	})
+	assert.Equal(t, "(min 8 chars)", p.options.Hint)
+}
+
+func TestNewPrompt_non_secret_keeps_help_message(t *testing.T) {
+	// Sanity check: HelpMessage and the auto-generated hint affordance are
+	// preserved when Secret is not set.
+	p := NewPrompt(&PromptOptions{
+		Message:     "Name",
+		HelpMessage: "Your full name.",
+	})
+	assert.Equal(t, "Your full name.", p.options.HelpMessage)
+	assert.Equal(t, "[Type ? for hint]", p.options.Hint)
 }
 
 func TestPrompt_Render_secret_masks_value_in_progress(t *testing.T) {

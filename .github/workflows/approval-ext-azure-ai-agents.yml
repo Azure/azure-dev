@@ -1,3 +1,19 @@
+# Required Approval Gate for azure.ai.agents Extension
+#
+# Purpose: Ensures at least one designated team member approves PRs that modify
+# the azure.ai.agents extension before they can merge.
+#
+# Behavior:
+# - This check is ADDITIVE to GitHub CODEOWNERS — both must be satisfied to merge.
+# - Approval must come from a member of the requiredApprovers list on the current
+#   HEAD commit (stale approvals are rejected after new pushes).
+# - Override: Any user can post "/agents-extension-approval override" as a PR
+#   comment to bypass the approval requirement.
+# - Fork PRs: External contributors from forks have restricted token permissions.
+#   If API calls fail with 403, the check reports a clear error rather than crashing.
+#
+# To change the required approvers list, update the requiredApprovers array below.
+
 name: ext-azure-ai-agents-approval
 
 on:
@@ -6,29 +22,37 @@ on:
       - "cli/azd/extensions/azure.ai.agents/**"
       - ".github/workflows/approval-ext-azure-ai-agents.yml"
     branches: [main]
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, ready_for_review]
   pull_request_review:
     types: [submitted]
+  issue_comment:
+    types: [created]
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
   pull-requests: read
+  issues: read
+  statuses: write
 
 jobs:
   required-approval:
     name: Required Approval
-    # Only run for PRs that touch the agents extension.
-    # pull_request is already path-filtered; pull_request_review is not, so we
-    # check at runtime whether the PR has files in the extension path.
+    # For issue_comment, only run if the comment is on a PR and contains the
+    # override phrase. For pull_request_review, run on all PRs (runtime filter
+    # below skips non-extension PRs).
+    if: |
+      github.event_name == 'pull_request' ||
+      github.event_name == 'pull_request_review' ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request && contains(github.event.comment.body, '/agents-extension-approval override'))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Check for required team approval
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
           script: |
             const requiredApprovers = [
@@ -38,24 +62,67 @@ jobs:
               'glharper',
             ];
 
+            const EXTENSION_PATH = 'cli/azd/extensions/azure.ai.agents/';
+            const WORKFLOW_PATH = '.github/workflows/approval-ext-azure-ai-agents.yml';
+
             const prNumber =
               context.payload.pull_request?.number ??
-              context.payload.review?.pull_request?.number;
+              context.payload.review?.pull_request?.number ??
+              context.payload.issue?.number;
 
             if (!prNumber) {
               core.setFailed('Could not determine PR number from event payload.');
               return;
             }
 
+            // Check for override comment.
+            if (context.eventName === 'issue_comment') {
+              const comment = (context.payload.comment.body || '').trim();
+              if (comment === '/agents-extension-approval override') {
+                // issue_comment runs don't update PR status checks automatically.
+                // Write a commit status directly to the PR head SHA.
+                const { data: pr } = await github.rest.pulls.get({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: prNumber,
+                });
+                await github.rest.repos.createCommitStatus({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  sha: pr.head.sha,
+                  state: 'success',
+                  context: 'Required Approval',
+                  description: `Override by ${context.payload.comment.user.login}`,
+                });
+                core.info(
+                  `Override granted via comment by ${context.payload.comment.user.login}. ` +
+                  `Status set on ${pr.head.sha}.`
+                );
+                return;
+              }
+            }
+
             // For pull_request_review events (no path filter), check whether the
             // PR actually touches the agents extension before enforcing approval.
             if (context.eventName === 'pull_request_review') {
-              const files = await github.paginate(
-                github.rest.pulls.listFiles,
-                { owner: context.repo.owner, repo: context.repo.repo, pull_number: prNumber }
-              );
+              let files;
+              try {
+                files = await github.paginate(
+                  github.rest.pulls.listFiles,
+                  { owner: context.repo.owner, repo: context.repo.repo, pull_number: prNumber }
+                );
+              } catch (err) {
+                if (err.status === 403) {
+                  core.setFailed(
+                    'Insufficient permissions to list PR files. ' +
+                    'Fork PRs may not have the required token permissions for this check.'
+                  );
+                  return;
+                }
+                throw err;
+              }
               const touchesExtension = files.some(f =>
-                f.filename.startsWith('cli/azd/extensions/azure.ai.agents/')
+                f.filename.startsWith(EXTENSION_PATH) || f.filename === WORKFLOW_PATH
               );
               if (!touchesExtension) {
                 core.info('PR does not touch agents extension — skipping approval check.');
@@ -63,11 +130,54 @@ jobs:
               }
             }
 
-            // Fetch all reviews on the PR.
-            const reviews = await github.paginate(
-              github.rest.pulls.listReviews,
-              { owner: context.repo.owner, repo: context.repo.repo, pull_number: prNumber }
+            // Check for an override comment on the PR.
+            let comments;
+            try {
+              comments = await github.paginate(
+                github.rest.issues.listComments,
+                { owner: context.repo.owner, repo: context.repo.repo, issue_number: prNumber }
+              );
+            } catch (err) {
+              if (err.status === 403) {
+                core.setFailed(
+                  'Insufficient permissions to list PR comments. ' +
+                  'Fork PRs may not have the required token permissions for this check.'
+                );
+                return;
+              }
+              throw err;
+            }
+
+            const hasOverride = comments.some(c =>
+              (c.body || '').trim() === '/agents-extension-approval override'
             );
+            if (hasOverride) {
+              const overrideComment = comments.find(c =>
+                (c.body || '').trim() === '/agents-extension-approval override'
+              );
+              core.info(
+                `Override granted via comment by ${overrideComment.user.login}.`
+              );
+              return;
+            }
+
+            // Fetch all reviews on the PR.
+            let reviews;
+            try {
+              reviews = await github.paginate(
+                github.rest.pulls.listReviews,
+                { owner: context.repo.owner, repo: context.repo.repo, pull_number: prNumber }
+              );
+            } catch (err) {
+              if (err.status === 403) {
+                core.setFailed(
+                  'Insufficient permissions to list PR reviews. ' +
+                  'Fork PRs may not have the required token permissions for this check.'
+                );
+                return;
+              }
+              throw err;
+            }
 
             // Get the HEAD SHA so we can verify the approval is current.
             const { data: pr } = await github.rest.pulls.get({
@@ -91,6 +201,7 @@ jobs:
             } else {
               core.setFailed(
                 `Requires approval from at least one of: ${requiredApprovers.join(', ')}. ` +
-                'No qualifying approval found on the current commit.'
+                'No qualifying approval found on the current commit. ' +
+                'To bypass, post a comment containing "/agents-extension-approval override".'
               );
             }

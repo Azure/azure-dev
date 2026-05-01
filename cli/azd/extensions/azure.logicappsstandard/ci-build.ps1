@@ -6,7 +6,6 @@ param(
     [string] $MSYS2Shell, # path to msys2_shell.cmd
     [string] $OutputFileName
 )
-$PSNativeCommandArgumentPassing = 'Legacy'
 
 # Remove any previously built binaries
 go clean
@@ -47,7 +46,7 @@ $tagsFlag = "-tags=cfi,cfg,osusergo"
 # -w: Omit DWARF symbol table
 # -X: Set variable at link time. Used to set the version in source.
 
-$ldFlag = "-ldflags=-s -w -X 'logicappsstandard/internal/version.Version=$Version'"
+$ldFlag = "-ldflags=-s -w -X 'azure.logicappsstandard/internal/version.Version=$Version' -X 'azure.logicappsstandard/internal/version.Commit=$SourceVersion' -X 'azure.logicappsstandard/internal/version.BuildDate=$(Get-Date -Format o)' "
 
 if ($IsWindows) {
     $msg = "Building for Windows"
@@ -55,13 +54,6 @@ if ($IsWindows) {
 }
 elseif ($IsLinux) {
     Write-Host "Building for linux"
-    
-    # Disable cgo in the x64 Linux build. This will also statically
-    # link the resulting binary which increases backwards 
-    # compatibility with older versions of Linux.
-    if ($env:GOARCH -ne "arm64") {
-        $env:CGO_ENABLED = "0"
-    }
 }
 elseif ($IsMacOS) {
     Write-Host "Building for macOS"

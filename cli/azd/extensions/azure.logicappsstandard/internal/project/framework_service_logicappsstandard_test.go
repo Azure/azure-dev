@@ -4,7 +4,6 @@
 package project
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -47,13 +46,13 @@ func TestRequiredExternalTools(t *testing.T) {
 	provider := &LogicAppsStandardPackagingFrameworkServiceProvider{}
 
 	t.Run("returns nil when custom code is not configured", func(t *testing.T) {
-		tools, err := provider.RequiredExternalTools(context.Background(), newServiceConfig("logicApp", "src/logicApp", nil))
+		tools, err := provider.RequiredExternalTools(t.Context(), newServiceConfig("logicApp", "src/logicApp", nil))
 		require.NoError(t, err)
 		assert.Nil(t, tools)
 	})
 
 	t.Run("returns dotnet when custom code is configured", func(t *testing.T) {
-		tools, err := provider.RequiredExternalTools(context.Background(), newServiceConfig("logicApp", "src/logicApp", map[string]any{
+		tools, err := provider.RequiredExternalTools(t.Context(), newServiceConfig("logicApp", "src/logicApp", map[string]any{
 			"customCodeProject": "Functions/Functions.csproj",
 		}))
 		require.NoError(t, err)
@@ -104,7 +103,7 @@ func TestInitializeValidatesCustomCodeProjectPath(t *testing.T) {
 		provider := &LogicAppsStandardPackagingFrameworkServiceProvider{}
 		svc := newServiceConfig("logicApp", "src/logicApp", nil)
 
-		err := provider.Initialize(context.Background(), svc)
+		err := provider.Initialize(t.Context(), svc)
 		require.NoError(t, err)
 		assert.Equal(t, svc, provider.serviceConfig)
 	})
@@ -118,7 +117,7 @@ func TestInitializeValidatesCustomCodeProjectPath(t *testing.T) {
 		createFile(t, filepath.Join(projectDir, "src/logicApp/Functions/Functions.csproj"), "<Project />\n")
 
 		withEnv(t, "AZD_EXEC_PROJECT_DIR", projectDir, func() {
-			err := provider.Initialize(context.Background(), svc)
+			err := provider.Initialize(t.Context(), svc)
 			require.NoError(t, err)
 		})
 	})
@@ -133,7 +132,7 @@ func TestInitializeValidatesCustomCodeProjectPath(t *testing.T) {
 		require.NoError(t, err)
 
 		withEnv(t, "AZD_EXEC_PROJECT_DIR", projectDir, func() {
-			err := provider.Initialize(context.Background(), svc)
+			err := provider.Initialize(t.Context(), svc)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "must point to a file")
 		})
@@ -146,7 +145,7 @@ func TestInitializeValidatesCustomCodeProjectPath(t *testing.T) {
 		})
 
 		withEnv(t, "AZD_EXEC_PROJECT_DIR", projectDir, func() {
-			err := provider.Initialize(context.Background(), svc)
+			err := provider.Initialize(t.Context(), svc)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "custom code project not found")
 		})
@@ -159,7 +158,7 @@ func TestPackageUsesProjectAndOutputPaths(t *testing.T) {
 	createFile(t, filepath.Join(projectDir, "azure.yaml"), "name: test-project\n")
 
 	withEnv(t, "AZD_EXEC_PROJECT_DIR", projectDir, func() {
-		result, err := provider.Package(context.Background(), newServiceConfig("logicApp", "src/logicApp", nil), nil, func(string) {})
+		result, err := provider.Package(t.Context(), newServiceConfig("logicApp", "src/logicApp", nil), nil, func(string) {})
 		require.NoError(t, err)
 		require.Len(t, result.Artifacts, 1)
 
@@ -174,7 +173,7 @@ func TestPackageUsesProjectAndOutputPaths(t *testing.T) {
 		svc := newServiceConfig("logicApp", "src/logicApp", nil)
 		svc.OutputPath = "Workflows"
 
-		result, err := provider.Package(context.Background(), svc, nil, func(string) {})
+		result, err := provider.Package(t.Context(), svc, nil, func(string) {})
 		require.NoError(t, err)
 		expectedPath := filepath.Join(projectDir, "src/logicApp", "Workflows")
 		require.NotEmpty(t, result.Artifacts)
@@ -203,9 +202,9 @@ func TestRestoreAndBuildInvokeDotNetForCustomCodeProject(t *testing.T) {
 	withEnv(t, "AZD_EXEC_PROJECT_DIR", projectDir, func() {
 		withEnv(t, "DOTNET_ARGS_LOG", logFile, func() {
 			withEnv(t, "PATH", fakeBinDir+string(os.PathListSeparator)+os.Getenv("PATH"), func() {
-				_, err := provider.Restore(context.Background(), svc, nil, func(string) {})
+				_, err := provider.Restore(t.Context(), svc, nil, func(string) {})
 				require.NoError(t, err)
-				_, err = provider.Build(context.Background(), svc, nil, func(string) {})
+				_, err = provider.Build(t.Context(), svc, nil, func(string) {})
 				require.NoError(t, err)
 			})
 		})
@@ -236,9 +235,9 @@ func TestRestoreAndBuildSkipDotNetWhenNoCustomCodeProject(t *testing.T) {
 
 	withEnv(t, "DOTNET_ARGS_LOG", logFile, func() {
 		withEnv(t, "PATH", fakeBinDir+string(os.PathListSeparator)+os.Getenv("PATH"), func() {
-			_, err := provider.Restore(context.Background(), svc, nil, func(string) {})
+			_, err := provider.Restore(t.Context(), svc, nil, func(string) {})
 			require.NoError(t, err)
-			_, err = provider.Build(context.Background(), svc, nil, func(string) {})
+			_, err = provider.Build(t.Context(), svc, nil, func(string) {})
 			require.NoError(t, err)
 		})
 	})

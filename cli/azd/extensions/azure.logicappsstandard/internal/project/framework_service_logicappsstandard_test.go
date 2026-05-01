@@ -153,6 +153,19 @@ func TestInitializeValidatesCustomCodeProjectPath(t *testing.T) {
 			assert.Contains(t, err.Error(), "custom code project not found")
 		})
 	})
+
+	t.Run("fails when custom code project escapes project directory", func(t *testing.T) {
+		provider := &LogicAppsStandardFrameworkServiceProvider{}
+		svc := newServiceConfig("logicApp", "src/logicApp", map[string]any{
+			"customCodeProject": "../../../outside.csproj",
+		})
+
+		withEnv(t, "AZD_EXEC_PROJECT_DIR", projectDir, func() {
+			err := provider.Initialize(t.Context(), svc)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "outside project directory")
+		})
+	})
 }
 
 func TestPackageUsesProjectAndOutputPaths(t *testing.T) {
@@ -181,6 +194,15 @@ func TestPackageUsesProjectAndOutputPaths(t *testing.T) {
 		expectedPath := filepath.Join(projectDir, "src/logicApp", "Workflows")
 		require.NotEmpty(t, result.Artifacts)
 		assert.Equal(t, expectedPath, result.Artifacts[0].Location)
+	})
+
+	withEnv(t, "AZD_EXEC_PROJECT_DIR", projectDir, func() {
+		svc := newServiceConfig("logicApp", "src/logicApp", nil)
+		svc.OutputPath = "../../../outside"
+
+		_, err := provider.Package(t.Context(), svc, nil, func(string) {})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "outside project directory")
 	})
 }
 

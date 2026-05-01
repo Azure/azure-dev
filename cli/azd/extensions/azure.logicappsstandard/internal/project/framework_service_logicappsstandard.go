@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
@@ -130,14 +131,17 @@ func (p *LogicAppsStandardFrameworkServiceProvider) Package(
 		return nil, fmt.Errorf("getting project directory: %w", err)
 	}
 
-	// Determine the absolute path to the Logic Apps Standard project based on the project directory
-	// and the relative path specified in the service configuration.
-	packagePath := filepath.Join(projectDir, serviceConfig.RelativePath)
+	packageParts := []string{serviceConfig.RelativePath}
 
-	// If an output path (dist) is specified, append it to the package path
-	// This allows for subdirectories like "Workflows" to be the root of the zip
+	// If an output path is specified, append it to the package path.
+	// This allows for subdirectories like "Workflows" to be the root of the zip.
 	if serviceConfig.OutputPath != "" {
-		packagePath = filepath.Join(packagePath, serviceConfig.OutputPath)
+		packageParts = append(packageParts, serviceConfig.OutputPath)
+	}
+
+	packagePath, err := resolvePathWithinBase(projectDir, packageParts...)
+	if err != nil {
+		return nil, fmt.Errorf("resolving package path: %w", err)
 	}
 
 	// Return a DIRECTORY artifact pointing to the project root.
@@ -162,11 +166,41 @@ func (p *LogicAppsStandardFrameworkServiceProvider) resolveCustomCodeProjectPath
 		return "", fmt.Errorf("getting project directory: %w", err)
 	}
 
-	return filepath.Join(
+	customCodeProjectPath, err := resolvePathWithinBase(
 		projectDir,
 		serviceConfig.RelativePath,
 		getAdditionalProperty(serviceConfig, "customCodeProject"),
-	), nil
+	)
+	if err != nil {
+		return "", fmt.Errorf("resolving custom code project path: %w", err)
+	}
+
+	return customCodeProjectPath, nil
+}
+
+// resolvePathWithinBase joins path parts and validates the resolved path remains under baseDir.
+func resolvePathWithinBase(baseDir string, pathParts ...string) (string, error) {
+	baseAbs, err := filepath.Abs(baseDir)
+	if err != nil {
+		return "", fmt.Errorf("resolving base directory '%s': %w", baseDir, err)
+	}
+
+	resolvedPath := filepath.Join(append([]string{baseAbs}, pathParts...)...)
+	resolvedAbs, err := filepath.Abs(resolvedPath)
+	if err != nil {
+		return "", fmt.Errorf("resolving path '%s': %w", resolvedPath, err)
+	}
+
+	rel, err := filepath.Rel(baseAbs, resolvedAbs)
+	if err != nil {
+		return "", fmt.Errorf("getting relative path from '%s' to '%s': %w", baseAbs, resolvedAbs, err)
+	}
+
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("path '%s' is outside project directory '%s'", resolvedAbs, baseAbs)
+	}
+
+	return resolvedAbs, nil
 }
 
 // getAdditionalProperty retrieves a custom property from the service configuration's additional properties.

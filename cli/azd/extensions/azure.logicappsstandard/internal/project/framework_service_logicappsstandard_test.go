@@ -52,9 +52,11 @@ func TestRequiredExternalTools(t *testing.T) {
 	})
 
 	t.Run("returns dotnet when custom code is configured", func(t *testing.T) {
-		tools, err := provider.RequiredExternalTools(t.Context(), newServiceConfig("logicApp", "src/logicApp", map[string]any{
-			"customCodeProject": "Functions/Functions.csproj",
-		}))
+		tools, err := provider.RequiredExternalTools(
+			t.Context(),
+			newServiceConfig("logicApp", "src/logicApp", map[string]any{
+				"customCodeProject": "Functions/Functions.csproj",
+			}))
 		require.NoError(t, err)
 		require.Len(t, tools, 1)
 		assert.Equal(t, "dotnet", tools[0].Name)
@@ -245,7 +247,10 @@ func TestRestoreAndBuildSkipDotNetWhenNoCustomCodeProject(t *testing.T) {
 	if _, statErr := os.Stat(logFile); statErr == nil {
 		contents, readErr := os.ReadFile(logFile)
 		require.NoError(t, readErr)
-		assert.Empty(t, strings.TrimSpace(string(contents)), "dotnet should not be invoked when customCodeProject is not configured")
+		assert.Empty(
+			t,
+			strings.TrimSpace(string(contents)),
+			"dotnet should not be invoked when customCodeProject is not configured")
 	} else {
 		require.ErrorIs(t, statErr, os.ErrNotExist)
 	}
@@ -288,6 +293,6 @@ func createFile(t *testing.T, filePath, content string) {
 	t.Helper()
 	err := os.MkdirAll(filepath.Dir(filePath), 0o755)
 	require.NoError(t, err, "failed creating directory %q", filepath.Dir(filePath))
-	err = os.WriteFile(filePath, []byte(content), 0o644)
+	err = os.WriteFile(filePath, []byte(content), 0o600)
 	require.NoError(t, err, "failed writing file %q", filePath)
 }

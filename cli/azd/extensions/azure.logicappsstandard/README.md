@@ -8,18 +8,18 @@ This azd extension makes it possible to package Logic Apps Standard projects and
 Assuming 'azd' is in your path, run the following commands to install the extension for the first time:
 
 ```shell
-azd extension install azure.logicappsstandard
+azd ext install azure.logicappsstandard
 ```
 
-Or, if you already the `azure.logicappsstandard` extension installed, and you want to upgrade to the latest version:
+Or, if you already have the `azure.logicappsstandard` extension installed, and you want to upgrade to the latest version:
 
 ```shell
-azd extension upgrade azure.logicappsstandard
+azd ext upgrade azure.logicappsstandard
 ```
 
 ## Usage
 
-This extension introduces the `logicappsstandard` language wich can package Logic Apps Standard projects.
+This extension introduces the `logicappsstandard` language which can package Logic Apps Standard projects.
 
 For example, if your template has a Logic App Standard project with the following structure:
 
@@ -64,7 +64,7 @@ The extension also supports Logic App Standard projects with a .NET 8 or .NET Fr
         └── Workflows
             ├── SampleWorkflow1
             │   └── workflow.json
-            ├── SampleWorkflow1
+            ├── SampleWorkflow2
             │   └── workflow.json
             ├── host.json
             └── ...
@@ -84,10 +84,23 @@ services:
 
 This will first build the custom code project and then package the Logic App Standard artifacts.
 
-- The `project` property contains the rootfolder of the Logic App Standard project.
+> [!NOTE]
+> When using `customCodeProject`, make sure the required build toolchain is installed: .NET 8 SDK for .NET 8 projects, or .NET Framework/MSBuild tools for .NET Framework projects.
+
+- The `project` property contains the root folder of the Logic App Standard project.
 - The `dist` property is the relative path to the folder with the Logic App Standard files that will be packaged.
 - The `customCodeProject` property is the path to the custom code project's `.csproj` file.
 
+
+## Troubleshooting
+
+### Language 'logicappsstandard' is not supported
+
+If you see the following error while packaging a Logic App Standard project, azd could not find an installed extension that provides the `logicappsstandard` language. Make sure to install the `azure.logicappsstandard` extension.
+
+```
+ERROR: initializing service '...', getting framework service: language 'logicappsstandard' is not supported by built-in framework services and no extensions are currently providing it
+```
 
 ## Local Development
 

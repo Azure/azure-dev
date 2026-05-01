@@ -10,6 +10,30 @@
 
 ### Other Changes
 
+## 1.24.3 (2026-05-01)
+
+### Features Added
+
+- [[#7795]](https://github.com/Azure/azure-dev/pull/7795) Add interactive cancel prompt when Ctrl+C is pressed during `azd provision`/`azd up` with Bicep; choose to leave the Azure deployment running or cancel it via the ARM Cancel API with status feedback; non-interactive mode defaults to leaving the deployment running.
+- [[#7852]](https://github.com/Azure/azure-dev/pull/7852) Improve `azd extension upgrade --all` with continue-on-error batch orchestration: per-extension status display (Upgraded/Skipped/Promoted/Failed) with before→after version, a batch summary line, and `--output json` for machine-readable CI output.
+- [[#7826]](https://github.com/Azure/azure-dev/pull/7826) Add `RegisterFlagOptions` to the extension SDK for declaring per-subcommand allowed values, defaults, and validation for inherited persistent flags; drives help text, shell completion, and parse-time validation automatically.
+- [[#7837]](https://github.com/Azure/azure-dev/pull/7837) Add extension registry schema versioning: extension registries now carry a `schemaVersion` field and azd shows a clear upgrade-required message when an incompatible registry schema version is encountered.
+
+### Bugs Fixed
+
+- [[#7705]](https://github.com/Azure/azure-dev/pull/7705) Fix `azd pipeline config` always using the default OIDC subject format when creating GitHub federated credentials, causing `AADSTS700213` mismatches for organizations with customized OIDC subject claims; azd now queries the GitHub OIDC customization API and constructs the correct subject string.
+- [[#7773]](https://github.com/Azure/azure-dev/pull/7773) Fix `azd deploy` polling indefinitely when deploying to a stopped Linux web app; after 3 consecutive polls with zero running instances, the deployment is treated as complete.
+- [[#7922]](https://github.com/Azure/azure-dev/pull/7922) Fix GitHub URL resolution surfacing a misleading "could not find a valid branch" error for SAML SSO blocks, rate limiting, private repos, and server errors; azd now identifies the actual failure mode and shows actionable suggestions with relevant documentation links.
+- [[#7948]](https://github.com/Azure/azure-dev/pull/7948) Fix `-ojson`/`-otable` (short `-o` flag with attached value) being rejected with a confusing error; fix pre-cobra parse errors showing nothing on stderr.
+- [[#7997]](https://github.com/Azure/azure-dev/pull/7997) Fix `buildArgs` and `buildEnv` in `azure.yaml` being silently dropped when `docker.remoteBuild: true`; build arguments are now forwarded to the ACR remote build task.
+- [[#8004]](https://github.com/Azure/azure-dev/pull/8004) Fix `azd auth status` (and provisioning commands) reporting "not logged in" when `AZD_AUTH_ENDPOINT`/`AZD_AUTH_KEY` external auth is active but `azd auth logout` was previously run.
+
+### Other Changes
+
+- [[#7853]](https://github.com/Azure/azure-dev/pull/7853) Improve `azd extension upgrade` edge case handling: delisted extensions report "no longer available" and continue the batch; network failures show actionable retry guidance; extension config writes are now atomic to prevent corruption if interrupted.
+- [[#7919]](https://github.com/Azure/azure-dev/pull/7919) Improve extension SDK gRPC error transport: host-returned errors now carry structured suggestion and link data via `ActionableErrorDetail`, so extensions can surface the full error-suggestion UX to users.
+- [[#7946]](https://github.com/Azure/azure-dev/pull/7946) Update bundled GitHub CLI to v2.92.0.
+
 ## 1.24.2 (2026-04-24)
 
 ### Features Added

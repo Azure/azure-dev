@@ -145,7 +145,7 @@ func (p *LogicAppsStandardFrameworkServiceProvider) Package(
 		return nil, fmt.Errorf("resolving package path: %w", err)
 	}
 
-	// Return a DIRECTORY artifact pointing to the project root.
+	// Return a DIRECTORY artifact pointing to the resolved package directory for the service.
 	// azd's packaging pipeline will handle creating the zip archive from this directory.
 	// By specifying an absolute path, azd will use the host specific ignore file (e.g. .funcignore) for exclusions.
 	return &azdext.ServicePackageResult{

@@ -25,13 +25,13 @@ For example, if your template has a Logic App Standard project with the followin
 
 ```
 └── src
-    └── logicApp
+    └── logicapp
         ├── .vscode
-        ├── Artifacts
+        ├── artifacts
         ├── lib
-        ├── SampleWorkflow1
+        ├── workflow1
         │   └── workflow.json
-        ├── SampleWorkflow2
+        ├── workflow2
         │   └── workflow.json
         ├── workflow-designtime
         ├── .funcignore
@@ -44,27 +44,27 @@ Use the following snippet in your `azure.yaml` file to configure the Logic App:
 
 ```yaml
 services:
-  logicApp:
-    project: ./src/logicApp
+  logicapp:
+    project: ./src/logicapp
     host: function
     language: logicappsstandard
 ```
 
-This will package everything under the `src/logicApp` folder in a .zip file. Because `function` is used as the host, the exclusions in `.funcignore` are respected and only the relevant files are packaged.
+This will package everything under the `src/logicapp` folder in a .zip file. Because `function` is used as the host, the exclusions in `.funcignore` are respected and only the relevant files are packaged.
 
 The extension also supports Logic App Standard projects with a .NET 8 or .NET Framework custom code project. For example, if your template has a Logic App Standard project with custom code project following this structure:
 
 ```
 └── src
-    └── logicApp
+    └── logicapp
         ├── Functions
         │   ├── MyFunctions.cs
         │   ├── Functions.csproj
         │   └── ...
         └── Workflows
-            ├── SampleWorkflow1
+            ├── workflow1
             │   └── workflow.json
-            ├── SampleWorkflow2
+            ├── workflow2
             │   └── workflow.json
             ├── host.json
             └── ...
@@ -74,8 +74,8 @@ You can use the following snippet in your `azure.yaml` file to configure the Log
 
 ```yaml
 services:
-  logicAppSample2:
-    project: ./src/logicApp
+  logicapp:
+    project: ./src/logicapp
     dist: Workflows
     host: function
     language: logicappsstandard

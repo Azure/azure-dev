@@ -163,6 +163,26 @@ func (c *FoundryProjectsClient) GetPagedConnections(ctx context.Context) (*Paged
 
 // GetConnectionWithCredentials retrieves a specific connection with its credentials
 func (c *FoundryProjectsClient) GetConnectionWithCredentials(ctx context.Context, name string) (*Connection, error) {
+	body, err := c.getConnectionWithCredentialsRaw(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+
+	var connection Connection
+	if err := json.Unmarshal(body, &connection); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal connection response: %w", err)
+	}
+
+	return &connection, nil
+}
+
+// getConnectionWithCredentialsRaw returns the raw JSON response body from the
+// data-plane getConnectionWithCredentials endpoint. This is used by ConnectionManager
+// to parse arbitrary credential fields that the typed Connection struct doesn't capture
+// (e.g., custom key names in CustomKeys auth type).
+func (c *FoundryProjectsClient) getConnectionWithCredentialsRaw(
+	ctx context.Context, name string,
+) ([]byte, error) {
 	targetEndpoint := fmt.Sprintf(
 		"%s/connections/%s/getConnectionWithCredentials?api-version=%s",
 		c.baseEndpoint, url.PathEscape(name), c.apiVersion)
@@ -187,12 +207,7 @@ func (c *FoundryProjectsClient) GetConnectionWithCredentials(ctx context.Context
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	var connection Connection
-	if err := json.Unmarshal(body, &connection); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal connection response: %w", err)
-	}
-
-	return &connection, nil
+	return body, nil
 }
 
 // GetAllConnections retrieves all connections from the project, handling pagination

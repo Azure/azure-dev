@@ -14,7 +14,8 @@
 # - Fork PRs: External contributors from forks have restricted token permissions.
 #   If API calls fail with 403, the check reports a clear error rather than crashing.
 #
-# To change the required approvers list, update the requiredApprovers array below.
+# To change the required approvers list, update the array in
+# .github/scripts/approval-ext-azure-ai-agents.js.
 
 name: ext-azure-ai-agents-approval
 
@@ -23,8 +24,11 @@ on:
     paths:
       - "cli/azd/extensions/azure.ai.agents/**"
       - ".github/workflows/approval-ext-azure-ai-agents.yml"
+      - ".github/scripts/approval-ext-azure-ai-agents.js"
     branches: [main]
     types: [opened, synchronize, reopened, ready_for_review]
+  # GitHub Actions does not support `paths:` filters on pull_request_review or
+  # issue_comment events. The script performs a runtime path check to compensate.
   pull_request_review:
     types: [submitted]
   issue_comment:
@@ -54,178 +58,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Check for required team approval
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
           script: |
-            const requiredApprovers = [
-              'trangevi',
-              'trrwilson',
-              'therealjohn',
-              'glharper',
-            ];
-
-            const EXTENSION_PATH = 'cli/azd/extensions/azure.ai.agents/';
-            const WORKFLOW_PATH = '.github/workflows/approval-ext-azure-ai-agents.yml';
-
-            const prNumber =
-              context.payload.pull_request?.number ??
-              context.payload.review?.pull_request?.number ??
-              context.payload.issue?.number;
-
-            if (!prNumber) {
-              core.setFailed('Could not determine PR number from event payload.');
-              return;
-            }
-
-            // Check for override comment (break-glass, restricted to requiredApprovers).
-            if (context.eventName === 'issue_comment') {
-              const comment = (context.payload.comment.body || '').trim();
-              if (comment === '/agents-extension-approval override') {
-                const commenter = context.payload.comment.user.login.toLowerCase();
-                if (!requiredApprovers.includes(commenter)) {
-                  core.setFailed(
-                    `Override denied: ${context.payload.comment.user.login} is not in the required approvers list.`
-                  );
-                  return;
-                }
-                // issue_comment runs don't update PR status checks automatically.
-                // Write a commit status directly to the PR head SHA.
-                const { data: pr } = await github.rest.pulls.get({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  pull_number: prNumber,
-                });
-                await github.rest.repos.createCommitStatus({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  sha: pr.head.sha,
-                  state: 'success',
-                  context: 'Required Approval',
-                  description: `Override (break-glass) by ${context.payload.comment.user.login}`,
-                });
-                core.info(
-                  `Override granted via comment by ${context.payload.comment.user.login}. ` +
-                  `Status set on ${pr.head.sha}.`
-                );
-                return;
-              }
-            }
-
-            // For pull_request_review events (no path filter), check whether the
-            // PR actually touches the agents extension before enforcing approval.
-            if (context.eventName === 'pull_request_review') {
-              let files;
-              try {
-                files = await github.paginate(
-                  github.rest.pulls.listFiles,
-                  { owner: context.repo.owner, repo: context.repo.repo, pull_number: prNumber }
-                );
-              } catch (err) {
-                if (err.status === 403) {
-                  core.setFailed(
-                    'Insufficient permissions to list PR files. ' +
-                    'Fork PRs may not have the required token permissions for this check.'
-                  );
-                  return;
-                }
-                throw err;
-              }
-              const touchesExtension = files.some(f =>
-                f.filename.startsWith(EXTENSION_PATH) || f.filename === WORKFLOW_PATH
-              );
-              if (!touchesExtension) {
-                core.info('PR does not touch agents extension — skipping approval check.');
-                return;
-              }
-            }
-
-            // Check for an override comment on the PR (break-glass).
-            // Only honor overrides from required approvers, posted after the latest push.
-            let comments;
-            try {
-              comments = await github.paginate(
-                github.rest.issues.listComments,
-                { owner: context.repo.owner, repo: context.repo.repo, issue_number: prNumber }
-              );
-            } catch (err) {
-              if (err.status === 403) {
-                core.setFailed(
-                  'Insufficient permissions to list PR comments. ' +
-                  'Fork PRs may not have the required token permissions for this check.'
-                );
-                return;
-              }
-              throw err;
-            }
-
-            // Get the HEAD SHA and commit date for staleness checks.
-            const { data: pr } = await github.rest.pulls.get({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: prNumber,
-            });
-            const headSha = pr.head.sha;
-
-            const { data: headCommit } = await github.rest.repos.getCommit({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              ref: headSha,
-            });
-            const lastPushDate = new Date(headCommit.commit.committer.date);
-
-            const validOverride = comments.find(c =>
-              (c.body || '').trim() === '/agents-extension-approval override' &&
-              requiredApprovers.includes(c.user.login.toLowerCase()) &&
-              new Date(c.created_at) > lastPushDate
-            );
-            if (validOverride) {
-              core.info(
-                `Override (break-glass) granted via comment by ${validOverride.user.login}.`
-              );
-              return;
-            }
-
-            // Fetch all reviews on the PR.
-            let reviews;
-            try {
-              reviews = await github.paginate(
-                github.rest.pulls.listReviews,
-                { owner: context.repo.owner, repo: context.repo.repo, pull_number: prNumber }
-              );
-            } catch (err) {
-              if (err.status === 403) {
-                core.setFailed(
-                  'Insufficient permissions to list PR reviews. ' +
-                  'Fork PRs may not have the required token permissions for this check.'
-                );
-                return;
-              }
-              throw err;
-            }
-
-            // Collapse reviews per user to the latest state on the current HEAD.
-            // This ensures a CHANGES_REQUESTED after an APPROVED invalidates
-            // the earlier approval (matching GitHub's effective review state).
-            const latestByUser = new Map();
-            for (const r of reviews.filter(r => r.commit_id === headSha)) {
-              const key = r.user.login.toLowerCase();
-              const prev = latestByUser.get(key);
-              if (!prev || new Date(r.submitted_at) > new Date(prev.submitted_at)) {
-                latestByUser.set(key, r);
-              }
-            }
-            const validApprovals = [...latestByUser.values()].filter(
-              r => r.state === 'APPROVED' && requiredApprovers.includes(r.user.login.toLowerCase())
-            );
-
-            if (validApprovals.length > 0) {
-              const names = validApprovals.map(r => r.user.login).join(', ');
-              core.info(`Approved by: ${names}`);
-            } else {
-              core.setFailed(
-                `Requires approval from at least one of: ${requiredApprovers.join(', ')}. ` +
-                'No qualifying approval found on the current commit. ' +
-                'Break-glass: a required approver can post exactly "/agents-extension-approval override" to bypass.'
-              );
-            }
+            const script = require('./.github/scripts/approval-ext-azure-ai-agents.js');
+            await script({ github, context, core });

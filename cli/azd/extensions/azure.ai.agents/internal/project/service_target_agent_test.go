@@ -380,7 +380,7 @@ func TestDeployArtifacts_HostedAgent_ProtocolEndpoints(t *testing.T) {
 	require.Contains(t, artifacts[1].Metadata["note"], "invoking the agent")
 }
 
-func TestDeployArtifacts_PromptAgent_ResponsesProtocol(t *testing.T) {
+func TestDeployArtifacts_ResponsesProtocol(t *testing.T) {
 	t.Parallel()
 
 	p := &AgentServiceTargetProvider{}

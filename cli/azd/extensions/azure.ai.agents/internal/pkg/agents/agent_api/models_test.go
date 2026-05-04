@@ -17,15 +17,13 @@ func TestCreateAgentRequest_RoundTrip(t *testing.T) {
 		CreateAgentVersionRequest: CreateAgentVersionRequest{
 			Description: new("A test agent"),
 			Metadata:    map[string]string{"env": "test"},
-			Definition: PromptAgentDefinition{
+			Definition: HostedAgentDefinition{
 				AgentDefinition: AgentDefinition{
-					Kind:      AgentKindPrompt,
+					Kind:      AgentKindHosted,
 					RaiConfig: &RaiConfig{RaiPolicyName: "default"},
 				},
-				Model:        "gpt-4o",
-				Instructions: new("You are helpful"),
-				Temperature:  new(float32(0.7)),
-				TopP:         new(float32(0.9)),
+				CPU:    "1",
+				Memory: "2Gi",
 			},
 		},
 	}
@@ -106,69 +104,6 @@ func TestAgentObject_RoundTrip(t *testing.T) {
 	}
 	if got.Versions.Latest.CreatedAt != 1700000000 {
 		t.Errorf("Latest.CreatedAt = %d, want %d", got.Versions.Latest.CreatedAt, int64(1700000000))
-	}
-}
-
-func TestPromptAgentDefinition_RoundTrip(t *testing.T) {
-	t.Parallel()
-
-	original := PromptAgentDefinition{
-		AgentDefinition: AgentDefinition{
-			Kind:      AgentKindPrompt,
-			RaiConfig: &RaiConfig{RaiPolicyName: "strict"},
-		},
-		Model:        "gpt-4o",
-		Instructions: new("Be concise"),
-		Temperature:  new(float32(0.5)),
-		TopP:         new(float32(0.95)),
-		Reasoning:    &Reasoning{Effort: "high"},
-		Text:         &ResponseTextFormatConfiguration{Type: "text"},
-		StructuredInputs: map[string]StructuredInputDefinition{
-			"query": {
-				Description: new("user query"),
-				Required:    new(true),
-			},
-		},
-	}
-
-	data, err := json.Marshal(original)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-
-	s := string(data)
-	for _, field := range []string{
-		`"kind"`, `"model"`, `"instructions"`, `"temperature"`,
-		`"top_p"`, `"reasoning"`, `"text"`, `"structured_inputs"`,
-		`"rai_config"`, `"rai_policy_name"`,
-	} {
-		if !strings.Contains(s, field) {
-			t.Errorf("expected JSON to contain %s", field)
-		}
-	}
-
-	var got PromptAgentDefinition
-	if err := json.Unmarshal(data, &got); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-
-	if got.Kind != AgentKindPrompt {
-		t.Errorf("Kind = %q, want %q", got.Kind, AgentKindPrompt)
-	}
-	if got.Model != "gpt-4o" {
-		t.Errorf("Model = %q, want %q", got.Model, "gpt-4o")
-	}
-	if got.Instructions == nil || *got.Instructions != "Be concise" {
-		t.Error("Instructions mismatch")
-	}
-	if got.Temperature == nil || *got.Temperature != 0.5 {
-		t.Error("Temperature mismatch")
-	}
-	if got.Reasoning == nil || got.Reasoning.Effort != "high" {
-		t.Error("Reasoning mismatch")
-	}
-	if si, ok := got.StructuredInputs["query"]; !ok || si.Description == nil || *si.Description != "user query" {
-		t.Error("StructuredInputs mismatch")
 	}
 }
 
@@ -952,45 +887,6 @@ func TestEvalsDestination_RoundTrip(t *testing.T) {
 	}
 	if got.MaxHourlyRuns == nil || *got.MaxHourlyRuns != 10 {
 		t.Error("MaxHourlyRuns mismatch")
-	}
-}
-
-func TestContainerAppAgentDefinition_RoundTrip(t *testing.T) {
-	t.Parallel()
-
-	original := ContainerAppAgentDefinition{
-		AgentDefinition: AgentDefinition{Kind: AgentKindContainerApp},
-		ContainerProtocolVersions: []ProtocolVersionRecord{
-			{Protocol: AgentProtocolInvocations, Version: "2024-01-01"},
-		},
-		ContainerAppResourceID: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.App/containerApps/app",
-		IngressSubdomainSuffix: "myapp",
-	}
-
-	data, err := json.Marshal(original)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-
-	s := string(data)
-	for _, field := range []string{
-		`"container_app_resource_id"`, `"ingress_subdomain_suffix"`, `"container_protocol_versions"`,
-	} {
-		if !strings.Contains(s, field) {
-			t.Errorf("expected JSON to contain %s", field)
-		}
-	}
-
-	var got ContainerAppAgentDefinition
-	if err := json.Unmarshal(data, &got); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-
-	if got.Kind != AgentKindContainerApp {
-		t.Errorf("Kind = %q, want %q", got.Kind, AgentKindContainerApp)
-	}
-	if got.ContainerAppResourceID != original.ContainerAppResourceID {
-		t.Errorf("ContainerAppResourceID mismatch")
 	}
 }
 

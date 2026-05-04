@@ -11,7 +11,6 @@ import (
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
-	"azureaiagent/internal/pkg/agents/registry_api"
 	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -773,17 +772,8 @@ func (a *InitAction) ProcessModels(ctx context.Context, manifest *agent_yaml.Age
 	}
 
 	deploymentDetails := []project.Deployment{}
-	paramValues := registry_api.ParameterValues{}
+	paramValues := agent_yaml.ParameterValues{}
 	switch agentDef.Kind {
-	case agent_yaml.AgentKindPrompt:
-		agentDef := manifest.Template.(agent_yaml.PromptAgent)
-
-		modelDeployment, err := a.getModelDeploymentDetails(ctx, agentDef.Model)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to get model deployment details: %w", err)
-		}
-		deploymentDetails = append(deploymentDetails, *modelDeployment)
-		paramValues["deploymentName"] = modelDeployment.Name
 	case agent_yaml.AgentKindHosted:
 		for _, resource := range manifest.Resources {
 			resourceBytes, err := yaml.Marshal(resource)
@@ -809,7 +799,7 @@ func (a *InitAction) ProcessModels(ctx context.Context, manifest *agent_yaml.Age
 		}
 	}
 
-	updatedManifest, err := registry_api.InjectParameterValuesIntoManifest(manifest, paramValues)
+	updatedManifest, err := agent_yaml.InjectParameterValuesIntoManifest(manifest, paramValues)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to inject deployment names into manifest: %w", err)
 	}

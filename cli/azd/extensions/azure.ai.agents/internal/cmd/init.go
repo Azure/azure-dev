@@ -23,7 +23,6 @@ import (
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
-	"azureaiagent/internal/pkg/agents/registry_api"
 	"azureaiagent/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -594,7 +593,7 @@ func (a *InitAction) Run(ctx context.Context) error {
 		}
 
 		// Prompt for manifest parameters (e.g. tool credentials) after project selection
-		agentManifest, err = registry_api.ProcessManifestParameters(
+		agentManifest, err = agent_yaml.ProcessManifestParameters(
 			ctx, agentManifest, a.azdClient, a.flags.NoPrompt,
 		)
 		if err != nil {
@@ -724,10 +723,6 @@ func getExistingEnvironment(ctx context.Context, envName string, azdClient *azde
 // that need deployment configuration. Prompt agents always have a model. Hosted agents
 // only need model config if they have resources with kind "model".
 func manifestHasModelResources(manifest *agent_yaml.AgentManifest) bool {
-	if _, ok := manifest.Template.(agent_yaml.PromptAgent); ok {
-		return true
-	}
-
 	if manifest.Resources != nil {
 		for _, resource := range manifest.Resources {
 			if _, ok := resource.(agent_yaml.ModelResource); ok {
@@ -1152,67 +1147,6 @@ func (a *InitAction) isGitHubUrl(manifestPointer string) bool {
 		strings.Contains(hostname, "github")
 }
 
-type RegistryManifest struct {
-	registryName    string
-	manifestName    string
-	manifestVersion string // Defaults to "" if not specified in URL
-}
-
-func (a *InitAction) isRegistryUrl(manifestPointer string) (bool, *RegistryManifest) {
-	// Check if it matches the format "azureml://registries/{registryName}/agentmanifests/{manifestName}[/versions/{manifestVersion}]"
-	if !strings.HasPrefix(manifestPointer, "azureml://") {
-		return false, nil
-	}
-
-	// Remove the "azureml://" prefix
-	path := strings.TrimPrefix(manifestPointer, "azureml://")
-
-	// Split by "/" to get all path components
-	parts := strings.Split(path, "/")
-
-	// Should have either 4 parts (without version) or 6 parts (with version)
-	// Format 1: "registries", registryName, "agentmanifests", manifestName
-	// Format 2: "registries", registryName, "agentmanifests", manifestName, "versions", manifestVersion
-	if len(parts) != 4 && len(parts) != 6 {
-		return false, nil
-	}
-
-	// Validate the expected path structure for the first 4 parts
-	if parts[0] != "registries" || parts[2] != "agentmanifests" {
-		return false, nil
-	}
-
-	// All basic parts should be non-empty
-	registryName := strings.TrimSpace(parts[1])
-	manifestName := strings.TrimSpace(parts[3])
-
-	if registryName == "" || manifestName == "" {
-		return false, nil
-	}
-
-	var manifestVersion string
-
-	// If we have 6 parts, validate the version structure
-	if len(parts) == 6 {
-		if parts[4] != "versions" {
-			return false, nil
-		}
-		manifestVersion = strings.TrimSpace(parts[5])
-		if manifestVersion == "" {
-			return false, nil
-		}
-	} else {
-		// If no version specified, default to ""
-		manifestVersion = ""
-	}
-
-	return true, &RegistryManifest{
-		registryName:    registryName,
-		manifestName:    manifestName,
-		manifestVersion: manifestVersion,
-	}
-}
-
 func (a *InitAction) downloadAgentYaml(
 	ctx context.Context, manifestPointer string, targetDir string) (*agent_yaml.AgentManifest, string, error) {
 	if manifestPointer == "" {
@@ -1394,62 +1328,11 @@ func (a *InitAction) downloadAgentYaml(
 		}
 
 		content = []byte(contentStr)
-	} else if isRegistry, registryManifest := a.isRegistryUrl(manifestPointer); isRegistry {
-		// Handle registry URLs
-		manifestClient := registry_api.NewRegistryAgentManifestClient(registryManifest.registryName, a.credential)
-
-		var versionResult *registry_api.Manifest
-		if registryManifest.manifestVersion == "" {
-			// No version specified, get latest version from GetAllLatest
-			log.Printf("No version provided for manifest '%s', retrieving latest version", registryManifest.manifestName)
-
-			allManifests, err := manifestClient.GetAllLatest(ctx)
-			if err != nil {
-				return nil, "", fmt.Errorf("getting latest manifests: %w", err)
-			}
-
-			// Find the manifest with matching name
-			for _, manifest := range allManifests {
-				if manifest.Name == registryManifest.manifestName {
-					versionResult = &manifest
-					break
-				}
-			}
-
-			if versionResult == nil {
-				return nil, "", fmt.Errorf("manifest '%s' not found in registry '%s'", registryManifest.manifestName, registryManifest.registryName)
-			}
-		} else {
-			// Specific version requested
-			fmt.Println(output.WithGrayFormat("Downloading manifest from registry..."))
-			log.Printf("Downloading manifest from registry: %s", manifestPointer)
-
-			manifest, err := manifestClient.GetManifest(ctx, registryManifest.manifestName, registryManifest.manifestVersion)
-			if err != nil {
-				return nil, "", fmt.Errorf("getting materialized manifest: %w", err)
-			}
-			versionResult = manifest
-		}
-
-		// Process the manifest into a maml format
-		processedManifest, err := registry_api.ProcessRegistryManifest(ctx, versionResult, a.azdClient)
-		if err != nil {
-			return nil, "", fmt.Errorf("processing manifest with parameters: %w", err)
-		}
-
-		log.Print("Retrieved and processed manifest from registry")
-
-		// Convert to YAML bytes for the content variable
-		manifestBytes, err := yaml.Marshal(processedManifest)
-		if err != nil {
-			return nil, "", fmt.Errorf("marshaling agent manifest to YAML: %w", err)
-		}
-		content = manifestBytes
 	} else {
 		// If we reach here, the manifest pointer didn't match any known type
 		return nil, "", exterrors.Validation(
 			exterrors.CodeInvalidManifestPointer,
-			fmt.Sprintf("manifest pointer '%s' is not a valid local file path, GitHub URL, or registry URL", manifestPointer),
+			fmt.Sprintf("manifest pointer '%s' is not a valid local file path or GitHub URL", manifestPointer),
 			"provide a valid URL or an existing local agent.yaml/agent.yml path",
 		)
 	}
@@ -1491,14 +1374,6 @@ func (a *InitAction) downloadAgentYaml(
 			if err := a.validateLocalContainerAgentCopy(ctx, manifestPointer, targetDir); err != nil {
 				return nil, "", err
 			}
-		}
-	}
-
-	_, isPromptAgent := agentManifest.Template.(agent_yaml.PromptAgent)
-	if isPromptAgent {
-		agentManifest, err = agent_yaml.ProcessPromptAgentToolsConnections(ctx, agentManifest, a.azdClient)
-		if err != nil {
-			return nil, "", fmt.Errorf("failed to process prompt agent tools connections: %w", err)
 		}
 	}
 

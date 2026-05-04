@@ -14,7 +14,6 @@ import (
 type AgentKind string
 
 const (
-	AgentKindPrompt   AgentKind = "prompt"
 	AgentKindHosted   AgentKind = "hosted"
 	AgentKindWorkflow AgentKind = "workflow"
 )
@@ -27,7 +26,6 @@ func IsValidAgentKind(kind AgentKind) bool {
 // ValidAgentKinds returns a slice of all valid AgentKind values
 func ValidAgentKinds() []AgentKind {
 	return []AgentKind{
-		AgentKindPrompt,
 		AgentKindHosted,
 		AgentKindWorkflow,
 	}
@@ -149,18 +147,6 @@ type AgentDefinition struct {
 	Metadata     *map[string]any `json:"metadata,omitempty" yaml:"metadata,omitempty"`
 	InputSchema  *PropertySchema `json:"inputSchema,omitempty" yaml:"inputSchema,omitempty"`
 	OutputSchema *PropertySchema `json:"outputSchema,omitempty" yaml:"outputSchema,omitempty"`
-}
-
-// PromptAgent Prompt based agent definition. Used to create agents that can be executed directly.
-// These agents can leverage tools, input parameters, and templates to generate responses.
-// They are designed to be straightforward and easy to use for various applications.
-type PromptAgent struct {
-	AgentDefinition        `json:",inline" yaml:",inline"`
-	Model                  Model     `json:"model" yaml:"model"`
-	Tools                  *[]any    `json:"tools,omitempty" yaml:"tools,omitempty"` // Will be a type of Tool
-	Template               *Template `json:"template,omitempty" yaml:"template,omitempty"`
-	Instructions           *string   `json:"instructions,omitempty" yaml:"instructions,omitempty"`
-	AdditionalInstructions *string   `json:"additionalInstructions,omitempty" yaml:"additionalInstructions,omitempty"`
 }
 
 // Workflow A workflow agent that can orchestrate multiple steps and actions.

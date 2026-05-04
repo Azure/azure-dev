@@ -686,7 +686,7 @@ func TestCreateAgentAPIRequest_AllFields(t *testing.T) {
 		"version": "1.0",
 	}
 	agentDef := AgentDefinition{
-		Kind:        AgentKindPrompt,
+		Kind:        AgentKindHosted,
 		Name:        "my-agent",
 		Description: &desc,
 		Metadata:    &meta,
@@ -715,7 +715,7 @@ func TestCreateAgentAPIRequest_AllFields(t *testing.T) {
 
 func TestCreateAgentAPIRequest_DefaultName(t *testing.T) {
 	t.Parallel()
-	agentDef := AgentDefinition{Kind: AgentKindPrompt}
+	agentDef := AgentDefinition{Kind: AgentKindHosted}
 
 	req, err := createAgentAPIRequest(agentDef, nil)
 	if err != nil {
@@ -728,7 +728,7 @@ func TestCreateAgentAPIRequest_DefaultName(t *testing.T) {
 
 func TestCreateAgentAPIRequest_NilMetadata(t *testing.T) {
 	t.Parallel()
-	agentDef := AgentDefinition{Kind: AgentKindPrompt, Name: "test"}
+	agentDef := AgentDefinition{Kind: AgentKindHosted, Name: "test"}
 
 	req, err := createAgentAPIRequest(agentDef, nil)
 	if err != nil {
@@ -743,7 +743,7 @@ func TestCreateAgentAPIRequest_EmptyDescription(t *testing.T) {
 	t.Parallel()
 	empty := ""
 	agentDef := AgentDefinition{
-		Kind:        AgentKindPrompt,
+		Kind:        AgentKindHosted,
 		Name:        "test",
 		Description: &empty,
 	}
@@ -764,7 +764,7 @@ func TestCreateAgentAPIRequest_MetadataWithNonStringValues(t *testing.T) {
 		"numeric": 42, // non-string value should be skipped
 	}
 	agentDef := AgentDefinition{
-		Kind:     AgentKindPrompt,
+		Kind:     AgentKindHosted,
 		Name:     "test",
 		Metadata: &meta,
 	}
@@ -787,7 +787,7 @@ func TestCreateAgentAPIRequest_AuthorsSingleAuthor(t *testing.T) {
 		"authors": []any{"Solo"},
 	}
 	agentDef := AgentDefinition{
-		Kind:     AgentKindPrompt,
+		Kind:     AgentKindHosted,
 		Name:     "test",
 		Metadata: &meta,
 	}
@@ -799,170 +799,6 @@ func TestCreateAgentAPIRequest_AuthorsSingleAuthor(t *testing.T) {
 	if req.Metadata["authors"] != "Solo" {
 		t.Errorf("authors = %q, want %q", req.Metadata["authors"], "Solo")
 	}
-}
-
-// ---------------------------------------------------------------------------
-// CreatePromptAgentAPIRequest
-// ---------------------------------------------------------------------------
-
-func TestCreatePromptAgentAPIRequest_FullConfig(t *testing.T) {
-	t.Parallel()
-	desc := "prompt agent"
-	instructions := "You are a helpful assistant."
-	temp := 0.7
-	topP := 0.9
-
-	agent := PromptAgent{
-		AgentDefinition: AgentDefinition{
-			Kind:        AgentKindPrompt,
-			Name:        "my-prompt-agent",
-			Description: &desc,
-		},
-		Model: Model{
-			Id: "gpt-4o",
-			Options: &ModelOptions{
-				Temperature: &temp,
-				TopP:        &topP,
-			},
-		},
-		Instructions: &instructions,
-		Tools: &[]any{
-			FunctionTool{
-				Tool:       Tool{Name: "calc", Kind: ToolKindFunction},
-				Parameters: PropertySchema{},
-			},
-		},
-	}
-
-	req, err := CreatePromptAgentAPIRequest(agent, nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if req.Name != "my-prompt-agent" {
-		t.Errorf("Name = %q", req.Name)
-	}
-	if req.Description == nil || *req.Description != desc {
-		t.Errorf("Description mismatch")
-	}
-
-	promptDef, ok := req.Definition.(agent_api.PromptAgentDefinition)
-	if !ok {
-		t.Fatalf("Definition should be PromptAgentDefinition, got %T", req.Definition)
-	}
-	if promptDef.Kind != agent_api.AgentKindPrompt {
-		t.Errorf("Kind = %q", promptDef.Kind)
-	}
-	if promptDef.Model != "gpt-4o" {
-		t.Errorf("Model = %q", promptDef.Model)
-	}
-	if promptDef.Instructions == nil || *promptDef.Instructions != instructions {
-		t.Errorf("Instructions mismatch")
-	}
-	if promptDef.Temperature == nil || *promptDef.Temperature != float32(0.7) {
-		t.Errorf("Temperature mismatch")
-	}
-	if promptDef.TopP == nil || *promptDef.TopP != float32(0.9) {
-		t.Errorf("TopP mismatch")
-	}
-	if len(promptDef.Tools) != 1 {
-		t.Fatalf("expected 1 tool, got %d", len(promptDef.Tools))
-	}
-}
-
-func TestCreatePromptAgentAPIRequest_MissingModelId(t *testing.T) {
-	t.Parallel()
-	agent := PromptAgent{
-		AgentDefinition: AgentDefinition{
-			Kind: AgentKindPrompt,
-			Name: "bad-agent",
-		},
-		Model: Model{Id: ""},
-		Tools: &[]any{},
-	}
-
-	_, err := CreatePromptAgentAPIRequest(agent, nil)
-	if err == nil {
-		t.Fatal("expected error for missing model.id")
-	}
-	if !strings.Contains(err.Error(), "model.id") {
-		t.Errorf("error should mention model.id, got: %s", err.Error())
-	}
-}
-
-func TestCreatePromptAgentAPIRequest_NoOptions(t *testing.T) {
-	t.Parallel()
-	agent := PromptAgent{
-		AgentDefinition: AgentDefinition{
-			Kind: AgentKindPrompt,
-			Name: "simple-agent",
-		},
-		Model: Model{Id: "gpt-4o-mini"},
-		Tools: &[]any{},
-	}
-
-	req, err := CreatePromptAgentAPIRequest(agent, nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	promptDef := req.Definition.(agent_api.PromptAgentDefinition)
-	if promptDef.Temperature != nil {
-		t.Errorf("expected nil Temperature, got %v", *promptDef.Temperature)
-	}
-	if promptDef.TopP != nil {
-		t.Errorf("expected nil TopP, got %v", *promptDef.TopP)
-	}
-	if promptDef.Instructions != nil {
-		t.Errorf("expected nil Instructions")
-	}
-}
-
-func TestCreatePromptAgentAPIRequest_NilToolsSlice(t *testing.T) {
-	t.Parallel()
-	emptyTools := []any{}
-	agent := PromptAgent{
-		AgentDefinition: AgentDefinition{
-			Kind: AgentKindPrompt,
-			Name: "no-tools",
-		},
-		Model: Model{Id: "gpt-4o"},
-		Tools: &emptyTools,
-	}
-
-	req, err := CreatePromptAgentAPIRequest(agent, nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	promptDef := req.Definition.(agent_api.PromptAgentDefinition)
-	if promptDef.Tools != nil {
-		t.Errorf("expected nil Tools for empty input, got %v", promptDef.Tools)
-	}
-}
-
-// TestCreatePromptAgentAPIRequest_NilToolsPanics documents that passing a PromptAgent
-// with a nil Tools pointer causes a panic in the production code (map.go:169
-// dereferences *promptAgent.Tools without a nil guard).
-// TODO: Add a nil check in CreatePromptAgentAPIRequest so this returns an error
-// or treats nil Tools the same as an empty slice.
-func TestCreatePromptAgentAPIRequest_NilToolsPanics(t *testing.T) {
-	t.Parallel()
-	agent := PromptAgent{
-		AgentDefinition: AgentDefinition{
-			Kind: AgentKindPrompt,
-			Name: "nil-tools",
-		},
-		Model: Model{Id: "gpt-4o"},
-		// Tools is nil (not set)
-	}
-
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("expected panic when Tools is nil, but no panic occurred")
-		}
-	}()
-
-	_, _ = CreatePromptAgentAPIRequest(agent, nil)
 }
 
 // ---------------------------------------------------------------------------
@@ -1121,31 +957,6 @@ func TestCreateHostedAgentAPIRequest_NilBuildConfig(t *testing.T) {
 // ---------------------------------------------------------------------------
 // CreateAgentAPIRequestFromDefinition (routing)
 // ---------------------------------------------------------------------------
-
-func TestCreateAgentAPIRequestFromDefinition_PromptAgent(t *testing.T) {
-	t.Parallel()
-	agent := PromptAgent{
-		AgentDefinition: AgentDefinition{
-			Kind: AgentKindPrompt,
-			Name: "prompt-routed",
-		},
-		Model: Model{Id: "gpt-4o"},
-		Tools: &[]any{},
-	}
-
-	req, err := CreateAgentAPIRequestFromDefinition(agent)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if req.Name != "prompt-routed" {
-		t.Errorf("Name = %q", req.Name)
-	}
-
-	_, ok := req.Definition.(agent_api.PromptAgentDefinition)
-	if !ok {
-		t.Fatalf("expected PromptAgentDefinition, got %T", req.Definition)
-	}
-}
 
 func TestCreateAgentAPIRequestFromDefinition_HostedAgent(t *testing.T) {
 	t.Parallel()

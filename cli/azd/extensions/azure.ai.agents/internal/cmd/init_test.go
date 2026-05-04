@@ -775,34 +775,6 @@ func TestInjectToolboxEnvVarsIntoDefinition_NoopForNilManifest(t *testing.T) {
 	}
 }
 
-func TestInjectToolboxEnvVarsIntoDefinition_NoopForPromptAgent(t *testing.T) {
-	t.Parallel()
-
-	manifest := &agent_yaml.AgentManifest{
-		Template: agent_yaml.PromptAgent{
-			AgentDefinition: agent_yaml.AgentDefinition{
-				Kind: agent_yaml.AgentKindPrompt,
-				Name: "prompt-agent",
-			},
-		},
-		Resources: []any{
-			agent_yaml.ToolboxResource{
-				Resource: agent_yaml.Resource{Name: "tools", Kind: agent_yaml.ResourceKindToolbox},
-				Tools:    []any{map[string]any{"type": "bing_grounding"}},
-			},
-		},
-	}
-
-	if err := injectToolboxEnvVarsIntoDefinition(manifest); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	// Template should be unchanged (still a PromptAgent, no EnvironmentVariables field)
-	if _, ok := manifest.Template.(agent_yaml.PromptAgent); !ok {
-		t.Error("Expected template to remain a PromptAgent")
-	}
-}
-
 func TestInjectToolboxEnvVarsIntoDefinition_NoopWithoutToolboxes(t *testing.T) {
 	t.Parallel()
 
@@ -1066,14 +1038,6 @@ func TestManifestHasModelResources(t *testing.T) {
 		manifest *agent_yaml.AgentManifest
 		expected bool
 	}{
-		{
-			name: "prompt agent always has model resources",
-			manifest: &agent_yaml.AgentManifest{
-				Name:     "test-prompt",
-				Template: agent_yaml.PromptAgent{},
-			},
-			expected: true,
-		},
 		{
 			name: "hosted agent with model resource",
 			manifest: &agent_yaml.AgentManifest{

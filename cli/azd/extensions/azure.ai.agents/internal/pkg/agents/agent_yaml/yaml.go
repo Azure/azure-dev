@@ -132,6 +132,7 @@ type ConnectionKind string
 const (
 	ConnectionKindReference ConnectionKind = "reference"
 	ConnectionKindRemote    ConnectionKind = "remote"
+	ConnectionKindFoundry   ConnectionKind = "foundry"
 	ConnectionKindApiKey    ConnectionKind = "apiKey"
 	ConnectionKindAnonymous ConnectionKind = "anonymous"
 )
@@ -236,6 +237,13 @@ type ReferenceConnection struct {
 
 // RemoteConnection Connection configuration for AI services using named connections.
 type RemoteConnection struct {
+	Connection `json:",inline" yaml:",inline"`
+	Name       string `json:"name" yaml:"name"`
+	Endpoint   string `json:"endpoint" yaml:"endpoint"`
+}
+
+// FoundryConnection Connection configuration for Foundry project connections.
+type FoundryConnection struct {
 	Connection `json:",inline" yaml:",inline"`
 	Name       string `json:"name" yaml:"name"`
 	Endpoint   string `json:"endpoint" yaml:"endpoint"`
@@ -749,6 +757,7 @@ type McpTool struct {
 	Connection        any                   `json:"connection" yaml:"connection"` // Must be a type of Connection
 	ServerName        string                `json:"serverName" yaml:"serverName"`
 	ServerDescription *string               `json:"serverDescription,omitempty" yaml:"serverDescription,omitempty"`
+	Url               string                `json:"url,omitempty" yaml:"url,omitempty"`
 	ApprovalMode      McpServerApprovalMode `json:"approvalMode" yaml:"approvalMode"`
 	AllowedTools      *[]string             `json:"allowedTools,omitempty" yaml:"allowedTools,omitempty"`
 	Options           map[string]any        `json:"options" yaml:"options"`

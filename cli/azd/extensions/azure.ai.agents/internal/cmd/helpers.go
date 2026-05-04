@@ -250,17 +250,6 @@ func resolveStoredID(
 	return newID, nil
 }
 
-// persistExplicitID saves a user-provided explicit ID to the config store.
-// Errors are logged for debug visibility but do not block the caller.
-func persistExplicitID(
-	ctx context.Context,
-	azdClient *azdext.AzdClient,
-	agentKey string,
-	value string,
-	storeField string,
-) {
-	saveContextValue(ctx, azdClient, agentKey, value, storeField)
-}
 
 // resolveStoredIDFromPath is a testable variant of resolveStoredID that operates on the
 // config store directly. The configPath parameter is ignored (kept for API compat in tests)

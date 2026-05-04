@@ -249,15 +249,6 @@ func projectHash(projectPath string) string {
 	return hex.EncodeToString(h[:8])
 }
 
-// legacyLocalKey returns the old-style key used before this migration.
-// Format was "{serviceName}-local" or "local".
-func legacyLocalKey(serviceName string) string {
-	if serviceName == "" {
-		return "local"
-	}
-	return serviceName + "-local"
-}
-
 // setContextValueSafe wraps setContextValue with error logging (non-fatal).
 // Use this for fire-and-forget persistence where failure should not block the caller.
 func setContextValueSafe(

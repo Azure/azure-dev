@@ -720,8 +720,7 @@ func getExistingEnvironment(ctx context.Context, envName string, azdClient *azde
 }
 
 // manifestHasModelResources returns true if the manifest contains any model resources
-// that need deployment configuration. Prompt agents always have a model. Hosted agents
-// only need model config if they have resources with kind "model".
+// that need deployment configuration (i.e. resources with kind "model").
 func manifestHasModelResources(manifest *agent_yaml.AgentManifest) bool {
 	if manifest.Resources != nil {
 		for _, resource := range manifest.Resources {

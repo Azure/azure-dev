@@ -87,20 +87,6 @@ type ContainerAppAgentDefinition struct {
 	IngressSubdomainSuffix    string                  `json:"ingress_subdomain_suffix"`
 }
 
-// ResponseTextFormatConfiguration represents text format configuration
-type ResponseTextFormatConfiguration struct {
-	// Implementation depends on OpenAI package structure
-	// This is a placeholder for the actual OpenAI response format configuration
-	Type string `json:"type,omitempty"`
-}
-
-// Reasoning represents OpenAI reasoning configuration
-type Reasoning struct {
-	// Implementation depends on OpenAI package structure
-	// This is a placeholder for the actual OpenAI reasoning structure
-	Effort string `json:"effort,omitempty"`
-}
-
 // CreateAgentVersionRequest represents a request to create an agent version
 type CreateAgentVersionRequest struct {
 	Description *string           `json:"description,omitempty"`

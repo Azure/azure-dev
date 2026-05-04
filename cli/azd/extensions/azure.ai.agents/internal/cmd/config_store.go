@@ -88,6 +88,10 @@ func getContextValueWithFallback(
 	primaryKey string,
 	legacyKeys []string,
 ) (string, error) {
+	if primaryKey == "" {
+		return "", nil
+	}
+
 	// Try primary key first.
 	val, err := getAgentSpecificContextValue(ctx, azdClient, storeField, primaryKey)
 	if err != nil {
@@ -214,6 +218,13 @@ func normalizeEndpoint(endpoint string) string {
 // buildAgentKey constructs the structured agent key used as a map key in the config store.
 // Format: <endpoint>/agents/<name>/versions/<version>/{local|remote}
 func buildAgentKey(endpoint, agentName, version string, local bool) string {
+	if err := validateKeySegment("agentName", agentName); err != nil {
+		log.Printf("buildAgentKey: %v", err)
+	}
+	if err := validateKeySegment("version", version); err != nil {
+		log.Printf("buildAgentKey: %v", err)
+	}
+
 	if version == "" {
 		version = "latest"
 	}

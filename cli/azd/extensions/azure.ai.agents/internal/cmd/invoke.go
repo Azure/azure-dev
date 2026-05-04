@@ -367,7 +367,13 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	}
 
 	// Build the structured agent key for config store lookups.
-	agentKey := buildRemoteAgentKeyFromEndpoint(agentEndpoint)
+	// When the endpoint is unavailable (pre-deploy), skip session/conversation persistence.
+	var agentKey string
+	if agentEndpoint != "" {
+		agentKey = buildRemoteAgentKeyFromEndpoint(agentEndpoint)
+	} else {
+		log.Printf("warning: agent endpoint not available, session state will not be persisted")
+	}
 
 	body, bodyLabel, err := a.resolveBody()
 	if err != nil {
@@ -384,12 +390,17 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 
 	// Session ID — routes to the same microVM container instance.
 	// When empty, let the server assign one.
-	sid, err := resolveStoredID(
-		ctx, azdClient, agentKey, a.flags.session, a.flags.newSession, "sessions", false,
-		legacyKeysForRemote(name)...,
-	)
-	if err != nil {
-		return err
+	var sid string
+	if agentKey != "" {
+		sid, err = resolveStoredID(
+			ctx, azdClient, agentKey, a.flags.session, a.flags.newSession, "sessions", false,
+			legacyKeysForRemote(name)...,
+		)
+		if err != nil {
+			return err
+		}
+	} else if a.flags.session != "" {
+		sid = a.flags.session
 	}
 	if sid != "" {
 		reqBody["session_id"] = sid
@@ -569,7 +580,12 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 		return err
 	}
 
-	agentKey := buildRemoteAgentKeyFromEndpoint(agentEndpoint)
+	var agentKey string
+	if agentEndpoint != "" {
+		agentKey = buildRemoteAgentKeyFromEndpoint(agentEndpoint)
+	} else {
+		log.Printf("warning: agent endpoint not available, session state will not be persisted")
+	}
 
 	body, bodyLabel, err := a.resolveBody()
 	if err != nil {
@@ -577,9 +593,14 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	}
 
 	// Session ID — routes to the same container instance
-	sid, err := resolveStoredID(ctx, azdClient, agentKey, a.flags.session, a.flags.newSession, "sessions", false)
-	if err != nil {
-		return err
+	var sid string
+	if agentKey != "" {
+		sid, err = resolveStoredID(ctx, azdClient, agentKey, a.flags.session, a.flags.newSession, "sessions", false)
+		if err != nil {
+			return err
+		}
+	} else if a.flags.session != "" {
+		sid = a.flags.session
 	}
 
 	// Acquire credential and token

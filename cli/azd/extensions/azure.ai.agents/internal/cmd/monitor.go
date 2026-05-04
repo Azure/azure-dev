@@ -102,11 +102,14 @@ configuration and the current azd environment. Optionally specify the service na
 
 			// Resolve session ID for session-based logstream.
 			if flags.sessionID == "" {
-				sessionID := resolveMonitorSession(
-					ctx,
-					buildRemoteAgentKeyFromEndpoint(info.AgentEndpoint),
-					legacyKeysForRemote(info.AgentName)...,
-				)
+				var sessionID string
+				if info.AgentEndpoint != "" {
+					sessionID = resolveMonitorSession(
+						ctx,
+						buildRemoteAgentKeyFromEndpoint(info.AgentEndpoint),
+						legacyKeysForRemote(info.AgentName)...,
+					)
+				}
 				if sessionID == "" {
 					return exterrors.Validation(
 						exterrors.CodeInvalidSessionId,

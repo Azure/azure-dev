@@ -287,7 +287,9 @@ func (a *SessionCreateAction) Run(ctx context.Context) error {
 		)
 	}
 
-	persistSessionID(ctx, buildRemoteAgentKeyFromEndpoint(sc.agentEndpoint), session.AgentSessionID)
+	if sc.agentEndpoint != "" {
+		persistSessionID(ctx, buildRemoteAgentKeyFromEndpoint(sc.agentEndpoint), session.AgentSessionID)
+	}
 
 	return printSession(session, a.flags.output)
 }

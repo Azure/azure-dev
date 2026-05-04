@@ -143,7 +143,7 @@ func saveContextValue(
 	value string,
 	storeField string,
 ) {
-	if value == "" {
+	if agentKey == "" || value == "" {
 		return
 	}
 	setContextValueSafe(ctx, azdClient, storeField, agentKey, value)
@@ -249,7 +249,6 @@ func resolveStoredID(
 
 	return newID, nil
 }
-
 
 // resolveStoredIDFromPath is a testable variant of resolveStoredID that operates on the
 // config store directly. The configPath parameter is ignored (kept for API compat in tests)

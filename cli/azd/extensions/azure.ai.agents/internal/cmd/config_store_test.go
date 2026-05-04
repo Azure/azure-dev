@@ -130,6 +130,9 @@ func TestNormalizeEndpoint_StripScheme(t *testing.T) {
 		{"no-scheme.com/path", "no-scheme.com/path"},
 		{"localhost:8080", "localhost:8080"},
 		{"https://host.com/Path/With/Case", "host.com/Path/With/Case"},
+		{"", ""},
+		{"https://host-only.com", "host-only.com"},
+		{"HOST-ONLY", "host-only"},
 	}
 
 	for _, tt := range tests {

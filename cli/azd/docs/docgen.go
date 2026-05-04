@@ -134,11 +134,11 @@ func formatCommandLine(line string) string {
 	return precedingDollarRegexp.ReplaceAllString(line, "$1$2")
 }
 
-// escapeAngleBracketPlaceholders replaces <word> with {word} in text that will appear
+// escapePlaceholders replaces <word> with {word} in text that will appear
 // outside code fences, to avoid being parsed as HTML tags by the docs build system.
 var angleBracketPlaceholder = regexp.MustCompile(`<(\w+)>`)
 
-func escapeAngleBracketPlaceholders(s string) string {
+func escapePlaceholders(s string) string {
 	return angleBracketPlaceholder.ReplaceAllString(s, "{$1}")
 }
 
@@ -216,7 +216,7 @@ func genMarkdownCustom(cmd *cobra.Command, w io.Writer, linkHandler func(string)
 	name := cmd.CommandPath()
 
 	buf.WriteString("## " + name + "\n\n")
-	buf.WriteString(escapeAngleBracketPlaceholders(cmd.Short) + "\n\n")
+	buf.WriteString(escapePlaceholders(cmd.Short) + "\n\n")
 	if len(cmd.Long) > 0 {
 		buf.WriteString("### Synopsis\n\n")
 		buf.WriteString(convertLinksToMarkdown(addCodeFencesToSampleCommands(cmd.Long)) + "\n\n")
@@ -250,7 +250,7 @@ func genMarkdownCustom(cmd *cobra.Command, w io.Writer, linkHandler func(string)
 				pname := parent.CommandPath()
 				link := pname + ".md"
 				link = strings.ReplaceAll(link, " ", "_")
-				buf.WriteString(fmt.Sprintf("* [%s](%s): %s\n", pname, linkHandler(link), escapeAngleBracketPlaceholders(parent.Short)))
+				buf.WriteString(fmt.Sprintf("* [%s](%s): %s\n", pname, linkHandler(link), escapePlaceholders(parent.Short)))
 			}
 			cmd.VisitParents(func(c *cobra.Command) {
 				if c.DisableAutoGenTag {
@@ -269,7 +269,7 @@ func genMarkdownCustom(cmd *cobra.Command, w io.Writer, linkHandler func(string)
 			cname := name + " " + child.Name()
 			link := cname + ".md"
 			link = strings.ReplaceAll(link, " ", "_")
-			buf.WriteString(fmt.Sprintf("* [%s](%s): %s\n", cname, linkHandler(link), escapeAngleBracketPlaceholders(child.Short)))
+			buf.WriteString(fmt.Sprintf("* [%s](%s): %s\n", cname, linkHandler(link), escapePlaceholders(child.Short)))
 		}
 
 		// for child commands, write a link back to the root command with the text "Back to top".

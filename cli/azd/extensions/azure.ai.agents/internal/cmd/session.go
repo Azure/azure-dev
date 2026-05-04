@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"text/tabwriter"
@@ -471,6 +472,19 @@ func (a *SessionDeleteAction) Run(ctx context.Context) error {
 		"Session %q deleted from agent %q.\n",
 		a.sessionID, sc.agentName,
 	)
+
+	// Best-effort: clear stored session if it matches the one we just deleted.
+	if azdClient, err := azdext.NewAzdClient(); err == nil {
+		defer azdClient.Close()
+		agentKey := buildRemoteAgentKey(sc.endpoint, sc.agentName, sc.version)
+		if stored, err := getAgentSpecificContextValue(ctx, azdClient, "sessions", agentKey); err == nil &&
+			stored == a.sessionID {
+			if err := deleteContextValue(ctx, azdClient, "sessions", agentKey); err != nil {
+				log.Printf("session delete: failed to clear stored session: %v", err)
+			}
+		}
+	}
+
 	return nil
 }
 

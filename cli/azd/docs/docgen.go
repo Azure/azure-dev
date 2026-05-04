@@ -134,12 +134,13 @@ func formatCommandLine(line string) string {
 	return precedingDollarRegexp.ReplaceAllString(line, "$1$2")
 }
 
-// escapePlaceholders replaces <word> with {word} in text that will appear
-// outside code fences, to avoid being parsed as HTML tags by the docs build system.
-var angleBracketPlaceholder = regexp.MustCompile(`<(\w+)>`)
+// escapePlaceholders replaces <word> or <hyphenated-word> with {word} or {hyphenated-word}
+// in text that will appear outside code fences, to avoid being parsed as HTML tags by the
+// docs build system.
+var angleBracketPlaceholderRegexp = regexp.MustCompile(`<([\w-]+)>`)
 
 func escapePlaceholders(s string) string {
-	return angleBracketPlaceholder.ReplaceAllString(s, "{$1}")
+	return angleBracketPlaceholderRegexp.ReplaceAllString(s, "{$1}")
 }
 
 // genMarkdownFile writes the help document for a single command (and all sub commands) to an
@@ -219,7 +220,8 @@ func genMarkdownCustom(cmd *cobra.Command, w io.Writer, linkHandler func(string)
 	buf.WriteString(escapePlaceholders(cmd.Short) + "\n\n")
 	if len(cmd.Long) > 0 {
 		buf.WriteString("### Synopsis\n\n")
-		buf.WriteString(convertLinksToMarkdown(addCodeFencesToSampleCommands(cmd.Long)) + "\n\n")
+		long := convertLinksToMarkdown(addCodeFencesToSampleCommands(cmd.Long))
+		buf.WriteString(escapePlaceholders(long) + "\n\n")
 	}
 
 	if cmd.Runnable() {

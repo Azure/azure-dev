@@ -97,7 +97,9 @@ func (e *Executor) ExecuteDirect(ctx context.Context, command string, args []str
 	cmd := exec.CommandContext(ctx, command, args...) //nolint:gosec
 	cmd.Dir = workingDir
 	cmd.Env = e.childEnv()
-	cmd.Stdin = os.Stdin
+	if e.config.Interactive {
+		cmd.Stdin = os.Stdin
+	}
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 

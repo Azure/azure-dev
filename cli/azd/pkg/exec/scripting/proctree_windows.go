@@ -16,11 +16,15 @@ import (
 
 // setupProcessTree merges CREATE_NEW_PROCESS_GROUP into the command's
 // SysProcAttr (preserving CmdLine if already set by setCmdLineOverride).
-func setupProcessTree(cmd *exec.Cmd, _ bool) {
+// Interactive mode skips the flag because CREATE_NEW_PROCESS_GROUP disables
+// Ctrl-C delivery to the child — matching the Unix behavior that skips Setpgid.
+func setupProcessTree(cmd *exec.Cmd, interactive bool) {
 	if cmd.SysProcAttr == nil {
 		cmd.SysProcAttr = &syscall.SysProcAttr{}
 	}
-	cmd.SysProcAttr.CreationFlags |= syscall.CREATE_NEW_PROCESS_GROUP
+	if !interactive {
+		cmd.SysProcAttr.CreationFlags |= syscall.CREATE_NEW_PROCESS_GROUP
+	}
 }
 
 // startProcessTree starts the command, creates a Windows Job Object with
@@ -86,5 +90,6 @@ func startProcessTree(cmd *exec.Cmd) (kill func(), _ error) {
 		if err := windows.TerminateJobObject(handle, 1); err != nil {
 			log.Printf("scripting: failed to terminate job object: %s\n", err)
 		}
+		_ = windows.CloseHandle(handle)
 	}, nil
 }

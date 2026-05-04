@@ -47,6 +47,9 @@ func (e *Executor) buildCommand(
 			cmdWrapOuter = false
 		} else {
 			escaped := strings.ReplaceAll(scriptOrPath, `"`, `""`)
+			// Neutralize %VAR% expansion — cmd.exe expands environment variables
+			// in the path before executing, which is a security risk (CVE-2024-24576 class).
+			escaped = strings.ReplaceAll(escaped, "%", "%%")
 			cmdArgs = []string{shellBin, "/c", `"` + escaped + `"`}
 			cmdWrapOuter = true
 		}
@@ -94,6 +97,9 @@ func quoteCmdArg(arg string) string {
 	}
 	cleaned := stripControlChars(arg)
 	escaped := strings.ReplaceAll(cleaned, `"`, `""`)
+	// Neutralize %VAR% expansion — cmd.exe expands environment variables
+	// even inside double quotes.
+	escaped = strings.ReplaceAll(escaped, "%", "%%")
 	if strings.ContainsAny(escaped, " \t&|<>^%\"") {
 		return `"` + escaped + `"`
 	}

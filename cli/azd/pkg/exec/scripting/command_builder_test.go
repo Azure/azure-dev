@@ -24,7 +24,7 @@ func TestQuoteCmdArg(t *testing.T) {
 		{"arg with pipe", "a|b", `"a|b"`},
 		{"arg with angle brackets", "<out>", `"<out>"`},
 		{"arg with caret", "a^b", `"a^b"`},
-		{"arg with percent", "%PATH%", `"%PATH%"`},
+		{"arg with percent", "%PATH%", `"%%PATH%%"`},
 		{"safe path", `C:\scripts\run.bat`, `C:\scripts\run.bat`},
 		{
 			"path with spaces",

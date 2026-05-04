@@ -6,11 +6,15 @@ package cmd
 import (
 	"context"
 	"errors"
+	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec/scripting"
 	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -256,31 +260,36 @@ func TestExecAction_ResolvesKeyVaultReferenceFormat(t *testing.T) {
 
 func TestExecAction_ExitCodePropagation(t *testing.T) {
 	env := environment.NewWithValues("test", nil)
-	kvMock := &mockExecKeyVaultService{}
 
-	// Run a command that exits with code 42.
-	action := &execAction{
-		env:             env,
-		keyvaultService: kvMock,
-		flags:           &execFlags{global: &internal.GlobalCommandOptions{}},
-		args:            []string{"go", "run", "-e", "exit 42"},
+	// Build a tiny Go program that calls os.Exit(42) — this is portable across
+	// all platforms and gives us a real exit code to verify propagation.
+	exitBin := filepath.Join(t.TempDir(), "exit42")
+	if runtime.GOOS == "windows" {
+		exitBin += ".exe"
 	}
+	buildCmd := exec.Command("go", "build", "-o", exitBin, "testdata/exit42.go")
+	buildCmd.Dir = "."
+	out, err := buildCmd.CombinedOutput()
+	require.NoError(t, err, "failed to build exit42: %s", string(out))
 
-	// We can't easily invoke a process that exits 42 portably here,
-	// but we can verify the ExitCodeError type is returned by testing
-	// the action against a command that fails with a known exit code.
-	// Use a non-existent script path that falls through to inline mode
-	// with an exit-code-producing shell command.
-	action.args = []string{"exit 42"}
-	_, err := action.Run(t.Context())
-	require.Error(t, err)
+	// Test exit code propagation through ExecuteDirect path by using the
+	// scripting package directly. This avoids the Execute() shell-dispatch
+	// path which doesn't handle raw binaries.
+	executor, err := scripting.New(scripting.Config{
+		Interactive: false,
+		Env:         env.Environ(),
+	})
+	require.NoError(t, err)
 
-	var exitCodeErr *internal.ExitCodeError
-	if errors.As(err, &exitCodeErr) {
-		assert.Equal(t, 42, exitCodeErr.ExitCode)
+	execErr := executor.ExecuteDirect(t.Context(), exitBin, []string{})
+	require.Error(t, execErr)
+
+	var scriptExecErr *scripting.ExecutionError
+	if errors.As(execErr, &scriptExecErr) {
+		assert.Equal(t, 42, scriptExecErr.ExitCode)
+	} else {
+		t.Fatalf("expected ExecutionError with exit code 42, got %T: %v", execErr, execErr)
 	}
-	// If the shell doesn't support 'exit 42' inline (e.g. on Windows without bash),
-	// the error may be of a different type — that's acceptable for this test.
 }
 
 func TestLooksLikeFilePath(t *testing.T) {

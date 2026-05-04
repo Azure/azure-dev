@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -88,6 +89,14 @@ func runRun(ctx context.Context, flags *runFlags) error {
 		return err
 	}
 	projectDir := runCtx.ProjectDir
+
+	// Clean up stored local session when the agent process exits.
+	localAgentKey := resolveLocalAgentKeyWithPort(ctx, azdClient, runCtx.ServiceName, rootFlags.NoPrompt, flags.port)
+	defer func() {
+		if err := deleteContextValue(ctx, azdClient, "sessions", localAgentKey); err != nil {
+			log.Printf("run: failed to clear stored local session: %v", err)
+		}
+	}()
 
 	// Detect project type early — used for both start-command resolution and
 	// environment setup (e.g., setting ASPNETCORE_URLS for .NET).

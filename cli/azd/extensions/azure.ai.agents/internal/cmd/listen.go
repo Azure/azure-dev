@@ -292,14 +292,19 @@ func postdownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azd
 		agentKey := buildRemoteAgentKeyFromEndpoint(endpointResp.Value)
 
 		// Remove stored sessions and conversations for this agent.
+		var failed bool
 		if err := deleteContextValue(ctx, azdClient, "sessions", agentKey); err != nil {
 			log.Printf("postdown: failed to clean sessions for %s: %v", agentKey, err)
+			failed = true
 		}
 		if err := deleteContextValue(ctx, azdClient, "conversations", agentKey); err != nil {
 			log.Printf("postdown: failed to clean conversations for %s: %v", agentKey, err)
+			failed = true
 		}
 
-		fmt.Printf("Cleaned up saved session and conversation for agent %q\n", svc.Name)
+		if !failed {
+			fmt.Printf("Cleaned up saved session and conversation for agent %q\n", svc.Name)
+		}
 	}
 
 	return nil

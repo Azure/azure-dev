@@ -19,6 +19,29 @@ const (
 	configPathPrefix = "extensions.ai-agents"
 )
 
+// validStoreFields is the allow-list of store fields that can be used as config map names.
+var validStoreFields = map[string]bool{
+	"sessions":      true,
+	"conversations": true,
+}
+
+// validateStoreField returns an error if the field is not in the allow-list.
+func validateStoreField(field string) error {
+	if !validStoreFields[field] {
+		return fmt.Errorf("invalid store field %q: must be one of sessions, conversations", field)
+	}
+	return nil
+}
+
+// validateKeySegment returns an error if the segment contains path separators
+// that could produce malformed config keys.
+func validateKeySegment(name, value string) error {
+	if strings.ContainsAny(value, "/\\") {
+		return fmt.Errorf("invalid %s %q: must not contain path separators", name, value)
+	}
+	return nil
+}
+
 // configPath builds the full UserConfig path for a given store field.
 func configPath(storeField string) string {
 	return configPathPrefix + "." + storeField
@@ -34,6 +57,10 @@ func getAgentSpecificContextValue(
 	storeField string,
 	agentKey string,
 ) (string, error) {
+	if err := validateStoreField(storeField); err != nil {
+		return "", err
+	}
+
 	ch, err := azdext.NewConfigHelper(azdClient)
 	if err != nil {
 		return "", fmt.Errorf("getAgentSpecificContextValue: %w", err)
@@ -81,7 +108,9 @@ func getContextValueWithFallback(
 		}
 		if val != "" {
 			// Rewrite under primary key for future lookups.
-			_ = setAgentSpecificContextValue(ctx, azdClient, storeField, primaryKey, val)
+			if err := setAgentSpecificContextValue(ctx, azdClient, storeField, primaryKey, val); err != nil {
+				log.Printf("getContextValueWithFallback: failed to rewrite %q under primary key: %v", legacyKey, err)
+			}
 			return val, nil
 		}
 	}
@@ -90,9 +119,9 @@ func getContextValueWithFallback(
 }
 
 // setAgentSpecificContextValue persists a value into the named store field map in UserConfig.
-// It performs a read-modify-write on the map.
-// The JSON path for the property to store is constructed like "extensions.ai-agents.<storeField>.<agentKey>",
-// where <agentKey> is a structured key representing the agent (e.g. "<project endpoint>/agents/<agent name>/version/<agent version>/{local|remote}").
+// It performs a read-modify-write on the map. This is not safe for concurrent updates to
+// different keys (last writer wins), which is acceptable for CLI use where only one command
+// runs at a time.
 func setAgentSpecificContextValue(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -100,6 +129,10 @@ func setAgentSpecificContextValue(
 	agentKey string,
 	value string,
 ) error {
+	if err := validateStoreField(storeField); err != nil {
+		return err
+	}
+
 	ch, err := azdext.NewConfigHelper(azdClient)
 	if err != nil {
 		return fmt.Errorf("setAgentSpecificContextValue: %w", err)
@@ -131,6 +164,10 @@ func deleteContextValue(
 	storeField string,
 	agentKey string,
 ) error {
+	if err := validateStoreField(storeField); err != nil {
+		return err
+	}
+
 	ch, err := azdext.NewConfigHelper(azdClient)
 	if err != nil {
 		return fmt.Errorf("deleteContextValue: %w", err)
@@ -175,7 +212,7 @@ func normalizeEndpoint(endpoint string) string {
 }
 
 // buildAgentKey constructs the structured agent key used as a map key in the config store.
-// Format: <endpoint>/agents/<name>/version/<version>/{local|remote}
+// Format: <endpoint>/agents/<name>/versions/<version>/{local|remote}
 func buildAgentKey(endpoint, agentName, version string, local bool) string {
 	if version == "" {
 		version = "latest"
@@ -201,11 +238,6 @@ func buildRemoteAgentKeyFromEndpoint(agentEndpoint string) string {
 func buildLocalAgentKey(port int, agentName, version, projectPath string) string {
 	endpoint := fmt.Sprintf("localhost:%d/%s", port, projectHash(projectPath))
 	return buildAgentKey(endpoint, agentName, version, true)
-}
-
-// buildRemoteAgentKey is a convenience for remote mode keys.
-func buildRemoteAgentKey(projectEndpoint, agentName, version string) string {
-	return buildAgentKey(projectEndpoint, agentName, version, false)
 }
 
 // projectHash returns a short hash of the project path for key isolation.

@@ -313,9 +313,9 @@ func TestNormalizeEndpoint(t *testing.T) {
 		input string
 		want  string
 	}{
-		{"https://Example.COM/path/", "https://example.com/path"},
-		{"https://example.com/path", "https://example.com/path"},
-		{"HTTP://HOST.COM/", "http://host.com"},
+		{"https://Example.COM/path/", "example.com/path"},
+		{"https://example.com/path", "example.com/path"},
+		{"HTTP://HOST.COM/", "host.com"},
 		{"localhost:8088", "localhost:8088"},
 	}
 

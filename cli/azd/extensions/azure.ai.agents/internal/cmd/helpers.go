@@ -110,19 +110,22 @@ func migrateFromLegacyFile(ctx context.Context, azdClient *azdext.AzdClient) {
 
 	agentCtx := loadLocalContext(configFilePath)
 
-	migrated := false
+	allSucceeded := true
+	anyData := len(agentCtx.Sessions) > 0 || len(agentCtx.Conversations) > 0
 	for key, val := range agentCtx.Sessions {
-		if err := setAgentSpecificContextValue(ctx, azdClient, "sessions", key, val); err == nil {
-			migrated = true
+		if err := setAgentSpecificContextValue(ctx, azdClient, "sessions", key, val); err != nil {
+			log.Printf("migrateFromLegacyFile: failed to migrate session %q: %v", key, err)
+			allSucceeded = false
 		}
 	}
 	for key, val := range agentCtx.Conversations {
-		if err := setAgentSpecificContextValue(ctx, azdClient, "conversations", key, val); err == nil {
-			migrated = true
+		if err := setAgentSpecificContextValue(ctx, azdClient, "conversations", key, val); err != nil {
+			log.Printf("migrateFromLegacyFile: failed to migrate conversation %q: %v", key, err)
+			allSucceeded = false
 		}
 	}
 
-	if migrated {
+	if anyData && allSucceeded {
 		if err := os.Remove(configFilePath); err != nil {
 			log.Printf("migrateFromLegacyFile: failed to delete legacy file %s: %v", configFilePath, err)
 		} else {
@@ -157,12 +160,10 @@ func resolveLocalAgentKeyWithPort(
 	ctx context.Context, azdClient *azdext.AzdClient, name string, noPrompt bool, port int,
 ) string {
 	agentName := name
-	var serviceName string
 
 	if azdClient != nil {
 		info, err := resolveAgentServiceFromProject(ctx, azdClient, name, noPrompt)
 		if err == nil && info.ServiceName != "" {
-			serviceName = info.ServiceName
 			if agentName == "" {
 				agentName = info.ServiceName
 			}
@@ -174,11 +175,7 @@ func resolveLocalAgentKeyWithPort(
 	}
 
 	projectPath := resolveProjectPath(ctx, azdClient)
-	key := buildLocalAgentKey(port, agentName, "", projectPath)
-
-	// Store legacy key for fallback lookups.
-	_ = serviceName
-	return key
+	return buildLocalAgentKey(port, agentName, "", projectPath)
 }
 
 // legacyKeysForLocal returns the legacy keys that the old code would have used
@@ -475,9 +472,10 @@ func fileExists(path string) bool {
 
 // AgentServiceInfo holds the resolved name and version for an agent service.
 type AgentServiceInfo struct {
-	ServiceName string // azure.yaml service key
-	AgentName   string // deployed agent name from env
-	Version     string // deployed agent version from env
+	ServiceName   string // azure.yaml service key
+	AgentName     string // deployed agent name from env
+	Version       string // deployed agent version from env
+	AgentEndpoint string // full AGENT_{SVC}_ENDPOINT URL (includes name + version)
 }
 
 // promptForAgentService prompts the user to select one of multiple azure.ai.agent services.
@@ -618,6 +616,14 @@ func resolveAgentServiceFromProject(ctx context.Context, azdClient *azdext.AzdCl
 		Key:     versionKey,
 	}); err == nil && v.Value != "" {
 		info.Version = v.Value
+	}
+
+	endpointKey := fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey)
+	if v, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envResponse.Environment.Name,
+		Key:     endpointKey,
+	}); err == nil && v.Value != "" {
+		info.AgentEndpoint = v.Value
 	}
 
 	return info, nil

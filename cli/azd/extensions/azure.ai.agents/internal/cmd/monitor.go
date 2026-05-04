@@ -104,7 +104,7 @@ configuration and the current azd environment. Optionally specify the service na
 			if flags.sessionID == "" {
 				sessionID := resolveMonitorSession(
 					ctx,
-					buildRemoteAgentKey(agentContext.ProjectEndpoint, info.AgentName, info.Version),
+					buildRemoteAgentKeyFromEndpoint(info.AgentEndpoint),
 					legacyKeysForRemote(info.AgentName)...,
 				)
 				if sessionID == "" {

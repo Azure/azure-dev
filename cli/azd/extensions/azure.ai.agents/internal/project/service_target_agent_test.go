@@ -449,3 +449,50 @@ func TestPackage_NoEarlyFailureWithoutACR(t *testing.T) {
 	require.NotNil(t, result)
 	require.NotEmpty(t, result.Artifacts, "expected container artifacts from Package")
 }
+
+func TestAgentPlaygroundURL_Valid(t *testing.T) {
+	t.Parallel()
+
+	// A valid ARM resource ID for a Foundry project
+	projectResourceID := "/subscriptions/00000000-0000-0000-0000-000000000001/" +
+		"resourceGroups/my-rg/providers/Microsoft.CognitiveServices/" +
+		"accounts/my-account/projects/my-project"
+
+	url, err := AgentPlaygroundURL(projectResourceID, "test-agent", "3")
+	require.NoError(t, err)
+	require.NotEmpty(t, url)
+	require.Contains(t, url, "ai.azure.com/nextgen/r/")
+	require.Contains(t, url, "my-rg")
+	require.Contains(t, url, "my-account")
+	require.Contains(t, url, "my-project")
+	require.Contains(t, url, "test-agent")
+	require.Contains(t, url, "version=3")
+}
+
+func TestAgentPlaygroundURL_InvalidResourceID(t *testing.T) {
+	t.Parallel()
+
+	_, err := AgentPlaygroundURL("not-a-valid-resource-id", "agent", "1")
+	require.Error(t, err)
+}
+
+func TestAgentPlaygroundURL_EmptyInput(t *testing.T) {
+	t.Parallel()
+
+	// An empty string should fail ARM parsing
+	_, err := AgentPlaygroundURL("", "agent", "1")
+	require.Error(t, err)
+}
+
+func TestAgentPlaygroundURL_AccountLevelID(t *testing.T) {
+	t.Parallel()
+
+	// An account-level resource ID (no /projects/ child) should be rejected
+	// because it would produce a malformed playground URL.
+	resourceID := "/subscriptions/00000000-0000-0000-0000-000000000001/" +
+		"resourceGroups/my-rg/providers/Microsoft.CognitiveServices/accounts/my-account"
+
+	_, err := AgentPlaygroundURL(resourceID, "agent", "1")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "missing parent account")
+}

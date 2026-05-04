@@ -7,11 +7,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
+	"slices"
 	"text/tabwriter"
 	"time"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
+	projectpkg "azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
@@ -25,7 +28,12 @@ type showFlags struct {
 // ShowAction handles the execution of the show command.
 type ShowAction struct {
 	*AgentContext
-	flags *showFlags
+	flags     *showFlags
+	azdClient *azdext.AzdClient
+	envName   string
+	// serviceKey is the uppercase/underscored form of the service name,
+	// used to look up per-service env vars (e.g. AGENT_{KEY}_RESPONSES_ENDPOINT).
+	serviceKey string
 }
 
 func newShowCommand() *cobra.Command {
@@ -87,9 +95,18 @@ configuration and the current azd environment. Optionally specify the service na
 				return err
 			}
 
+			// Resolve the current environment name for env var lookups
+			var envName string
+			if envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{}); err == nil {
+				envName = envResp.Environment.Name
+			}
+
 			action := &ShowAction{
 				AgentContext: agentContext,
 				flags:        flags,
+				azdClient:    azdClient,
+				envName:      envName,
+				serviceKey:   toServiceKey(info.ServiceName),
 			}
 
 			return action.Run(ctx)
@@ -99,6 +116,13 @@ configuration and the current azd environment. Optionally specify the service na
 	cmd.Flags().StringVarP(&flags.output, "output", "o", "json", "Output format (json or table)")
 
 	return cmd
+}
+
+// showResult wraps the API response with additional computed links.
+type showResult struct {
+	*agent_api.AgentVersionObject
+	PlaygroundURL string            `json:"playground_url,omitempty"`
+	Endpoints     map[string]string `json:"agent_endpoints,omitempty"`
 }
 
 // Run executes the show command logic.
@@ -115,27 +139,107 @@ func (a *ShowAction) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to get agent version: %w", err)
 	}
 
+	result := &showResult{AgentVersionObject: version}
+
+	// Resolve playground URL (best-effort)
+	result.PlaygroundURL = a.resolvePlaygroundURL(ctx)
+
+	// Resolve deployed endpoint URLs from env vars (best-effort)
+	result.Endpoints = a.resolveEndpointURLs(ctx)
+
 	switch a.flags.output {
 	case "table":
-		return printAgentVersionTable(version)
+		return printShowResultTable(result)
 	default:
-		return printAgentVersionJSON(version)
+		return printShowResultJSON(result)
 	}
 }
 
-func printAgentVersionJSON(version *agent_api.AgentVersionObject) error {
-	jsonBytes, err := json.MarshalIndent(version, "", "  ")
+// resolvePlaygroundURL reads AZURE_AI_PROJECT_ID from the azd environment
+// and constructs the Foundry portal playground URL. Returns empty string on failure.
+func (a *ShowAction) resolvePlaygroundURL(ctx context.Context) string {
+	if a.azdClient == nil || a.envName == "" {
+		return ""
+	}
+
+	v, err := a.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: a.envName,
+		Key:     "AZURE_AI_PROJECT_ID",
+	})
 	if err != nil {
-		return fmt.Errorf("failed to marshal agent version to JSON: %w", err)
+		return ""
+	}
+	if v.Value == "" {
+		return ""
+	}
+
+	playgroundURL, err := projectpkg.AgentPlaygroundURL(v.Value, a.Name, a.Version)
+	if err != nil {
+		return ""
+	}
+
+	return playgroundURL
+}
+
+// resolveEndpointURLs reads per-protocol endpoint env vars
+// (e.g. AGENT_{KEY}_RESPONSES_ENDPOINT) from the azd environment.
+// Falls back to the legacy single-endpoint var (AGENT_{KEY}_ENDPOINT)
+// for environments deployed before per-protocol vars were introduced.
+// Returns a map of protocol label to URL for endpoints that are set.
+func (a *ShowAction) resolveEndpointURLs(ctx context.Context) map[string]string {
+	if a.azdClient == nil || a.envName == "" || a.serviceKey == "" {
+		return nil
+	}
+
+	// Use the canonical protocol list from the project package
+	protocolSuffixes := projectpkg.DisplayableProtocolEnvSuffixes()
+
+	endpoints := make(map[string]string)
+	for _, ps := range protocolSuffixes {
+		key := fmt.Sprintf("AGENT_%s_%s_ENDPOINT", a.serviceKey, ps.Suffix)
+		v, err := a.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+			EnvName: a.envName,
+			Key:     key,
+		})
+		if err != nil || v.Value == "" {
+			continue
+		}
+		endpoints[ps.Label] = v.Value
+	}
+
+	// Fall back to legacy single-endpoint var for older deployments
+	if len(endpoints) == 0 {
+		legacyKey := fmt.Sprintf("AGENT_%s_ENDPOINT", a.serviceKey)
+		v, err := a.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+			EnvName: a.envName,
+			Key:     legacyKey,
+		})
+		if err == nil && v.Value != "" {
+			endpoints["Agent"] = v.Value
+		}
+	}
+
+	if len(endpoints) == 0 {
+		return nil
+	}
+	return endpoints
+}
+
+func printShowResultJSON(result *showResult) error {
+	jsonBytes, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal show result to JSON: %w", err)
 	}
 	fmt.Println(string(jsonBytes))
 	return nil
 }
 
-func printAgentVersionTable(version *agent_api.AgentVersionObject) error {
+func printShowResultTable(result *showResult) error {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "FIELD\tVALUE")
 	fmt.Fprintln(w, "-----\t-----")
+
+	version := result.AgentVersionObject
 
 	fmt.Fprintf(w, "ID\t%s\n", version.ID)
 	fmt.Fprintf(w, "Name\t%s\n", version.Name)
@@ -167,6 +271,14 @@ func printAgentVersionTable(version *agent_api.AgentVersionObject) error {
 	}
 	for k, v := range version.Metadata {
 		fmt.Fprintf(w, "Metadata[%s]\t%s\n", k, v)
+	}
+
+	// Display playground and endpoint links
+	if result.PlaygroundURL != "" {
+		fmt.Fprintf(w, "Playground URL\t%s\n", result.PlaygroundURL)
+	}
+	for _, label := range slices.Sorted(maps.Keys(result.Endpoints)) {
+		fmt.Fprintf(w, "Endpoint (%s)\t%s\n", label, result.Endpoints[label])
 	}
 
 	return w.Flush()

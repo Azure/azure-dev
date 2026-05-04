@@ -47,6 +47,27 @@ var displayableProtocols = []displayableProtocolEntry{
 	{Protocol: agent_api.AgentProtocolInvocations, URLPath: "invocations", EnvSuffix: "INVOCATIONS"},
 }
 
+// ProtocolEnvSuffix pairs a user-facing label with the env var suffix
+// used in AGENT_{KEY}_{SUFFIX}_ENDPOINT variables.
+type ProtocolEnvSuffix struct {
+	Label  string // e.g. "Responses"
+	Suffix string // e.g. "RESPONSES"
+}
+
+// DisplayableProtocolEnvSuffixes returns the label/suffix pairs for all
+// displayable protocols. This is the single source of truth shared by
+// deployment (registerAgentEnvironmentVariables) and the show command.
+func DisplayableProtocolEnvSuffixes() []ProtocolEnvSuffix {
+	result := make([]ProtocolEnvSuffix, len(displayableProtocols))
+	for i, dp := range displayableProtocols {
+		result[i] = ProtocolEnvSuffix{
+			Label:  string(dp.Protocol),
+			Suffix: dp.EnvSuffix,
+		}
+	}
+	return result
+}
+
 // Ensure AgentServiceTargetProvider implements ServiceTargetProvider interface
 var _ azdext.ServiceTargetProvider = &AgentServiceTargetProvider{}
 
@@ -767,7 +788,7 @@ func (p *AgentServiceTargetProvider) deployArtifacts(
 
 	// Add playground URL
 	if projectResourceID != "" {
-		playgroundUrl, err := p.agentPlaygroundUrl(projectResourceID, agentName, agentVersion)
+		playgroundUrl, err := AgentPlaygroundURL(projectResourceID, agentName, agentVersion)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "failed to generate agent playground link")
 		} else if playgroundUrl != "" {
@@ -850,11 +871,12 @@ func agentInvocationEndpoints(
 	return endpoints
 }
 
-// agentPlaygroundUrl constructs a URL to the agent playground in the Foundry portal
-func (p *AgentServiceTargetProvider) agentPlaygroundUrl(projectResourceId, agentName, agentVersion string) (string, error) {
-	resourceId, err := arm.ParseResourceID(projectResourceId)
+// AgentPlaygroundURL constructs a URL to the agent playground in the Foundry portal.
+// It parses the ARM resource ID to extract subscription, resource group, account, and project info.
+func AgentPlaygroundURL(projectResourceID, agentName, agentVersion string) (string, error) {
+	resourceId, err := arm.ParseResourceID(projectResourceID)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to parse project resource ID: %w", err)
 	}
 
 	// Encode subscription ID as base64 without padding for URL
@@ -865,8 +887,17 @@ func (p *AgentServiceTargetProvider) agentPlaygroundUrl(projectResourceId, agent
 	}
 
 	resourceGroup := resourceId.ResourceGroupName
-	if resourceId.Parent == nil {
-		return "", fmt.Errorf("invalid Microsoft Foundry project ID: %s", projectResourceId)
+
+	// Validate that the resource ID represents a Foundry project (has a parent account).
+	// Account-level IDs (no /projects/ child) would produce malformed playground URLs.
+	// For project-level IDs, Parent.Name is the account; for account-level IDs,
+	// Parent.Name is the resource group — we distinguish by checking ResourceType.
+	if resourceId.Parent == nil ||
+		!strings.Contains(string(resourceId.ResourceType.Type), "/") {
+		return "", fmt.Errorf(
+			"resource ID does not represent a Foundry project (missing parent account): %s",
+			projectResourceID,
+		)
 	}
 
 	accountName := resourceId.Parent.Name
@@ -874,7 +905,9 @@ func (p *AgentServiceTargetProvider) agentPlaygroundUrl(projectResourceId, agent
 
 	url := fmt.Sprintf(
 		"https://ai.azure.com/nextgen/r/%s,%s,,%s,%s/build/agents/%s/build?version=%s",
-		encodedSubscriptionId, resourceGroup, accountName, projectName, agentName, agentVersion)
+		encodedSubscriptionId, resourceGroup, accountName, projectName,
+		agentName, agentVersion,
+	)
 	return url, nil
 }
 

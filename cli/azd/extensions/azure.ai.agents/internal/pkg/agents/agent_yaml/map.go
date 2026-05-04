@@ -286,7 +286,7 @@ func convertYamlToolToApiTool(yamlTool any) (any, error) {
 				Type: agent_api.ToolTypeMCP,
 			},
 			ServerLabel: serverLabel,
-			ServerURL:   tool.Url,
+			ServerURL:   tool.URL,
 		}
 		if projectConnectionID := projectConnectionIDFromMcpConnection(tool.Connection); projectConnectionID != "" {
 			apiTool.ProjectConnectionID = &projectConnectionID
@@ -314,6 +314,12 @@ func convertYamlToolToApiTool(yamlTool any) (any, error) {
 				if id, ok := projectConnectionId.(string); ok {
 					apiTool.ProjectConnectionID = &id
 				}
+			}
+		}
+		// Fall back to connection endpoint when ServerURL has not been set by any other source.
+		if apiTool.ServerURL == "" {
+			if endpoint := endpointFromMcpConnection(tool.Connection); endpoint != "" {
+				apiTool.ServerURL = endpoint
 			}
 		}
 		return apiTool, nil
@@ -369,6 +375,13 @@ func projectConnectionIDFromMcpConnection(connection any) string {
 		}
 	}
 
+	return ""
+}
+
+func endpointFromMcpConnection(connection any) string {
+	if conn, ok := connection.(FoundryConnection); ok {
+		return conn.Endpoint
+	}
 	return ""
 }
 

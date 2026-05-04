@@ -161,15 +161,15 @@ func deleteContextValue(
 // Removes trailing slashes and lowercases the host portion.
 func normalizeEndpoint(endpoint string) string {
 	endpoint = strings.TrimRight(endpoint, "/")
-	// Lowercase the scheme+host portion (before the first path segment).
+	// Strip the scheme (https://, http://) — it's unnecessary noise in the key.
 	if idx := strings.Index(endpoint, "://"); idx != -1 {
-		hostEnd := strings.Index(endpoint[idx+3:], "/")
-		if hostEnd == -1 {
-			endpoint = strings.ToLower(endpoint)
-		} else {
-			hostEnd += idx + 3
-			endpoint = strings.ToLower(endpoint[:hostEnd]) + endpoint[hostEnd:]
-		}
+		endpoint = endpoint[idx+3:]
+	}
+	// Lowercase the host portion (before the first path segment).
+	if hostEnd := strings.Index(endpoint, "/"); hostEnd == -1 {
+		endpoint = strings.ToLower(endpoint)
+	} else {
+		endpoint = strings.ToLower(endpoint[:hostEnd]) + endpoint[hostEnd:]
 	}
 	return endpoint
 }
@@ -186,7 +186,14 @@ func buildAgentKey(endpoint, agentName, version string, local bool) string {
 		mode = "local"
 	}
 
-	return fmt.Sprintf("%s/agents/%s/version/%s/%s", normalizeEndpoint(endpoint), agentName, version, mode)
+	return fmt.Sprintf("%s/agents/%s/versions/%s/%s", normalizeEndpoint(endpoint), agentName, version, mode)
+}
+
+// buildRemoteAgentKeyFromEndpoint constructs a remote agent key directly from
+// an AGENT_{SVC}_ENDPOINT value (format: <projectEndpoint>/agents/<name>/versions/<ver>).
+// It simply appends "/remote" to the normalized endpoint.
+func buildRemoteAgentKeyFromEndpoint(agentEndpoint string) string {
+	return normalizeEndpoint(agentEndpoint) + "/remote"
 }
 
 // buildLocalAgentKey constructs a key for local mode.

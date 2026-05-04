@@ -147,7 +147,7 @@ func saveContextValue(
 }
 
 // resolveLocalAgentKey builds the storage key for local mode from the azd project config.
-// Returns the new structured key format: localhost:<port>/<projectHash>/agents/<name>/version/latest/local
+// Returns the new structured key format: localhost:<port>/<projectHash>/agents/<name>/versions/latest/local
 func resolveLocalAgentKey(ctx context.Context, azdClient *azdext.AzdClient, name string, noPrompt bool) string {
 	return resolveLocalAgentKeyWithPort(ctx, azdClient, name, noPrompt, DefaultPort)
 }

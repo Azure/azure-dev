@@ -269,7 +269,7 @@ func TestBuildAgentKey(t *testing.T) {
 			agent:    "my-agent",
 			version:  "3",
 			local:    false,
-			want:     "https://myaccount.services.ai.azure.com/api/projects/myproject/agents/my-agent/version/3/remote",
+			want:     "myaccount.services.ai.azure.com/api/projects/myproject/agents/my-agent/versions/3/remote",
 		},
 		{
 			name:     "remote without version defaults to latest",
@@ -277,7 +277,7 @@ func TestBuildAgentKey(t *testing.T) {
 			agent:    "my-agent",
 			version:  "",
 			local:    false,
-			want:     "https://myaccount.services.ai.azure.com/api/projects/myproject/agents/my-agent/version/latest/remote",
+			want:     "myaccount.services.ai.azure.com/api/projects/myproject/agents/my-agent/versions/latest/remote",
 		},
 		{
 			name:     "local mode",
@@ -285,7 +285,7 @@ func TestBuildAgentKey(t *testing.T) {
 			agent:    "test-agent",
 			version:  "latest",
 			local:    true,
-			want:     "localhost:8088/agents/test-agent/version/latest/local",
+			want:     "localhost:8088/agents/test-agent/versions/latest/local",
 		},
 		{
 			name:     "trailing slash trimmed from endpoint",
@@ -293,7 +293,7 @@ func TestBuildAgentKey(t *testing.T) {
 			agent:    "agent",
 			version:  "1",
 			local:    false,
-			want:     "https://example.com/agents/agent/version/1/remote",
+			want:     "example.com/agents/agent/versions/1/remote",
 		},
 	}
 

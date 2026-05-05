@@ -62,6 +62,23 @@ go build
 
 For first-party extensions, add an entry to `cli/azd/extensions/registry.json` with version, capabilities, and download URLs.
 
+### 6. Publish to the Dev Registry First (Recommended)
+
+Before submitting to the main registry, consider publishing to the **dev (experimental) registry** to gather feedback and validate your extension in the wild:
+
+1. Add your extension entry to `cli/azd/extensions/registry.dev.json` in a PR to the [azure-dev](https://github.com/Azure/azure-dev) repository.
+2. Your entry must pass schema validation (CI checks this automatically) and include all required metadata — `id`, `namespace`, `displayName`, `versions` with artifacts and SHA256/SHA512 checksums.
+3. Users can then install your extension by adding the dev source and installing from it:
+
+   ```bash
+   azd extension source add -n dev -t url -l "https://aka.ms/azd/extensions/registry/dev"
+   azd extension install my.extension --source dev
+   ```
+
+4. Once your extension is stable and meets the quality bar, submit a follow-up PR to add it to `cli/azd/extensions/registry.json`. Users who installed from the dev registry will be **automatically promoted** to the main registry on their next `azd extension upgrade`.
+
+> **Note:** Extensions in the dev registry have no stability guarantees, are unsigned, and are not covered by Azure support. This is expected and appropriate for pre-release testing. See the [Dev/Experimental Extension Registry](../../cli/azd/docs/extensions/extension-resolution-and-versioning.md#devexperimental-extension-registry) guide for full details.
+
 ## Extension Design Guidelines
 
 - **Extend existing command categories** — Use verb-first structure (e.g., `azd add <resource>`)

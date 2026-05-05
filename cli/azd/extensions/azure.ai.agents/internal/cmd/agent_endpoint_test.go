@@ -104,6 +104,12 @@ func TestParseAgentEndpoint(t *testing.T) {
 			errContains: "agent name",
 		},
 		{
+			name:        "encoded slash in project segment rejected",
+			raw:         "https://acct.services.ai.azure.com/api/projects/proj%2Fother/agents/hello/endpoint/protocols/invocations",
+			wantErr:     true,
+			errContains: "project segment is invalid",
+		},
+		{
 			name:        "malformed url",
 			raw:         "https://%zz/foo",
 			wantErr:     true,

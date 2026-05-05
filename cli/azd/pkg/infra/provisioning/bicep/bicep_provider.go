@@ -2763,16 +2763,25 @@ func (p *BicepProvider) checkRoleAssignmentPermissions(
 			Severity:     PreflightCheckWarning,
 			DiagnosticID: "role_assignment_missing",
 			Message: fmt.Sprintf(
-				"the current principal %s does not have permission to create role assignments "+
-					"%s on subscription %s. "+
-					"The deployment includes role assignments and will fail without this permission. "+
-					"Ensure you have the 'Role Based Access Control Administrator', "+
-					"'User Access Administrator', 'Owner', or a custom role with "+
-					"'Microsoft.Authorization/roleAssignments/write' assigned to your account.",
-				output.WithHighLightFormat("(%s)", principalId),
-				output.WithGrayFormat("(Microsoft.Authorization/roleAssignments/write)"),
+				"Principal %s lacks role assignment"+
+					" permissions on subscription %s\n"+
+					"The deployment includes role assignments"+
+					" and will fail without %s permission.",
+				output.WithHighLightFormat(
+					"(%s)", principalId),
 				output.WithHighLightFormat(subscriptionId),
+				output.WithGrayFormat(
+					"Microsoft.Authorization/"+
+						"roleAssignments/write"),
 			),
+			Suggestion: "Ensure you have the" +
+				" 'Role Based Access Control" +
+				" Administrator'," +
+				" 'User Access Administrator'," +
+				" 'Owner', or a custom role with" +
+				" 'Microsoft.Authorization/" +
+				"roleAssignments/write' assigned" +
+				" to your account.",
 		}}, nil
 	}
 
@@ -2781,14 +2790,17 @@ func (p *BicepProvider) checkRoleAssignmentPermissions(
 			Severity:     PreflightCheckWarning,
 			DiagnosticID: "role_assignment_conditional",
 			Message: fmt.Sprintf(
-				"the current principal %s has conditional permission to create role "+
-					"assignments %s on "+
-					"subscription %s. The role assignment that grants this permission "+
-					"has an ABAC condition that may restrict which roles can be assigned. "+
-					"The deployment may fail if the condition does not permit the "+
-					"specific role assignments in the template.",
-				output.WithHighLightFormat("(%s)", principalId),
-				output.WithGrayFormat("(Microsoft.Authorization/roleAssignments/write)"),
+				"Principal %s has conditional role"+
+					" assignment permissions on"+
+					" subscription %s\n"+
+					"An ABAC condition may restrict"+
+					" which roles can be assigned."+
+					" The deployment may fail if the"+
+					" condition does not permit the"+
+					" specific role assignments in"+
+					" the template.",
+				output.WithHighLightFormat(
+					"(%s)", principalId),
 				output.WithHighLightFormat(subscriptionId),
 			),
 		}}, nil
@@ -2813,17 +2825,29 @@ func (p *BicepProvider) checkReservedResourceNames(
 			continue
 		}
 		for _, v := range findReservedResourceNameViolations(resource.Name) {
-			resourceName := output.WithHighLightFormat("%q", resource.Name)
-			resourceType := output.WithGrayFormat("(%s)", resource.Type)
-			link := output.WithLinkFormat(docsLink)
+			resourceName := output.WithHighLightFormat(
+				"%q", resource.Name)
+			resourceType := output.WithGrayFormat(
+				"(%s)", resource.Type)
 
 			results = append(results, PreflightCheckResult{
 				Severity:     PreflightCheckWarning,
 				DiagnosticID: "reserved_resource_name",
 				Message: fmt.Sprintf(
-					"resource %s %s %s the reserved word %q. See %s.",
-					resourceName, resourceType, v.matchType, v.reservedWord, link,
+					"Resource %s %s %s the"+
+						" reserved word %q\n"+
+						"Azure does not allow reserved"+
+						" words in resource names."+
+						" The deployment will fail.",
+					resourceName, resourceType,
+					v.matchType, v.reservedWord,
 				),
+				Links: []PreflightCheckLink{
+					{
+						URL:   docsLink,
+						Title: "Reserved resource name errors",
+					},
+				},
 			})
 		}
 	}
@@ -2932,18 +2956,23 @@ func (p *BicepProvider) checkAiModelQuota(
 					Severity:     PreflightCheckWarning,
 					DiagnosticID: "ai_model_not_found",
 					Message: fmt.Sprintf(
-						"model %s%s was not found in the AI model "+
-							"catalog for %s.",
-						output.WithHighLightFormat(fmt.Sprintf("%q", dep.ModelName)),
+						"Model %s%s not found in %s\n"+
+							"Model not found in AI model catalog."+
+							" Provisioning will likely fail.",
+						output.WithHighLightFormat(
+							"%q", dep.ModelName),
 						output.WithGrayFormat(details),
 						output.WithHighLightFormat(loc),
 					),
-					Suggestion: "Verify the model name, SKU, and version are correct. " +
-						"The deployment will likely fail if this model is not available in this region.",
+					Suggestion: "Verify the model name, SKU," +
+						" and version are correct.",
 					Links: []PreflightCheckLink{
 						{
-							URL:   "https://learn.microsoft.com/azure/ai-services/openai/concepts/models",
-							Title: "Azure OpenAI supported models and regions",
+							URL: "https://learn.microsoft.com/" +
+								"azure/ai-services/openai/" +
+								"concepts/models",
+							Title: "Azure OpenAI supported" +
+								" models and regions",
 						},
 					},
 				})
@@ -2994,10 +3023,13 @@ func (p *BicepProvider) checkAiModelQuota(
 					Severity:     PreflightCheckWarning,
 					DiagnosticID: "ai_model_quota_exceeded",
 					Message: fmt.Sprintf(
-						"insufficient quota for model %s %s in %s."+
-							" Requested capacity: %.0f, remaining quota: %.0f.",
-						output.WithHighLightFormat("%q", r.dep.ModelName),
-						output.WithGrayFormat("(SKU: %s)", r.dep.SkuName),
+						"Insufficient quota for model %s %s"+
+							" in %s\n"+
+							"Requested: %.0f · Available: %.0f",
+						output.WithHighLightFormat(
+							"%q", r.dep.ModelName),
+						output.WithGrayFormat(
+							"(SKU: %s)", r.dep.SkuName),
 						output.WithHighLightFormat(loc),
 						totalRequired,
 						remaining,

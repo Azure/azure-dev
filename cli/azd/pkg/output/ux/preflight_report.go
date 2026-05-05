@@ -52,8 +52,7 @@ func (r *PreflightReport) ToString(currentIndentation string) string {
 		if i > 0 {
 			sb.WriteString("\n")
 		}
-		sb.WriteString(fmt.Sprintf("%s%s %s", currentIndentation, warningPrefix, w.Message))
-		writeItemSuggestion(&sb, currentIndentation, w)
+		writeItem(&sb, currentIndentation, warningPrefix, w)
 	}
 
 	if len(warnings) > 0 && len(errors) > 0 {
@@ -64,28 +63,37 @@ func (r *PreflightReport) ToString(currentIndentation string) string {
 		if i > 0 {
 			sb.WriteString("\n")
 		}
-		sb.WriteString(fmt.Sprintf("%s%s %s", currentIndentation, failedPrefix, e.Message))
-		writeItemSuggestion(&sb, currentIndentation, e)
+		writeItem(&sb, currentIndentation, failedPrefix, e)
 	}
 
 	return sb.String()
 }
 
-// writeItemSuggestion appends the suggestion and links for a report item, if present.
-func writeItemSuggestion(sb *strings.Builder, indent string, item PreflightReportItem) {
+// writeItem renders a single report item with proper indentation for multi-line
+// messages, suggestions, and links. Continuation lines in the message are
+// indented to align with the first line's text (after the prefix).
+func writeItem(
+	sb *strings.Builder, indent string, prefix string, item PreflightReportItem,
+) {
+	lines := strings.Split(item.Message, "\n")
+	sb.WriteString(fmt.Sprintf("%s%s %s", indent, prefix, lines[0]))
+	for _, line := range lines[1:] {
+		sb.WriteString(fmt.Sprintf("\n%s%s", indent, line))
+	}
+
 	if item.Suggestion != "" {
-		sb.WriteString(fmt.Sprintf("\n%s  %s %s",
+		sb.WriteString(fmt.Sprintf("\n%s%s %s",
 			indent,
 			output.WithHighLightFormat("Suggestion:"),
 			item.Suggestion))
 	}
 	for _, link := range item.Links {
 		if link.Title != "" {
-			sb.WriteString(fmt.Sprintf("\n%s  • %s",
+			sb.WriteString(fmt.Sprintf("\n%s• %s",
 				indent,
 				output.WithHyperlink(link.URL, link.Title)))
 		} else {
-			sb.WriteString(fmt.Sprintf("\n%s  • %s",
+			sb.WriteString(fmt.Sprintf("\n%s• %s",
 				indent,
 				output.WithLinkFormat(link.URL)))
 		}

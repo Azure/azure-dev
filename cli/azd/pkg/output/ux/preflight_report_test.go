@@ -5,6 +5,7 @@ package ux
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -203,6 +204,52 @@ func TestPreflightReport_Indentation(t *testing.T) {
 	result := report.ToString("  ")
 	require.Contains(t, result, "  ")
 	require.Contains(t, result, "indented warning")
+}
+
+func TestPreflightReport_MultiLineMessageIndentation(t *testing.T) {
+	report := &PreflightReport{
+		Items: []PreflightReportItem{
+			{
+				IsError: false,
+				Message: "Model \"gpt-4o\" not found in eastus2\n" +
+					"Model not found in AI model catalog.",
+			},
+		},
+	}
+
+	result := report.ToString("  ")
+	lines := strings.Split(result, "\n")
+	require.Len(t, lines, 2)
+	// First line has the warning prefix
+	require.Contains(t, lines[0], "(!) Warning:")
+	require.Contains(t, lines[0], "Model \"gpt-4o\" not found")
+	// Second line is indented at the same level
+	require.True(t, strings.HasPrefix(lines[1], "  "),
+		"continuation line should be indented")
+	require.Contains(t, lines[1], "Model not found in AI model catalog.")
+}
+
+func TestPreflightReport_MultiLineWithSuggestion(t *testing.T) {
+	report := &PreflightReport{
+		Items: []PreflightReportItem{
+			{
+				IsError: false,
+				Message: "Insufficient quota for model \"gpt-4o\" in eastus2\n" +
+					"Requested: 99999 · Available: 140",
+				Suggestion: "Reduce capacity to 140.",
+			},
+		},
+	}
+
+	result := report.ToString("  ")
+	// All three parts should be present in order
+	msgIdx := indexOf(result, "Insufficient quota")
+	detailIdx := indexOf(result, "Requested: 99999")
+	suggIdx := indexOf(result, "Reduce capacity")
+	require.Greater(t, detailIdx, msgIdx,
+		"detail should appear after title")
+	require.Greater(t, suggIdx, detailIdx,
+		"suggestion should appear after detail")
 }
 
 // indexOf returns the byte offset of substr in s, or -1 if not found.

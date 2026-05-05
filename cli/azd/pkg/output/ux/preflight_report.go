@@ -4,11 +4,14 @@
 package ux
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/mattn/go-colorable"
 )
 
 // PreflightReportItem represents a single finding from preflight validation.
@@ -69,9 +72,9 @@ func (r *PreflightReport) ToString(currentIndentation string) string {
 	return sb.String()
 }
 
-// writeItem renders a single report item with proper indentation for multi-line
-// messages, suggestions, and links. Continuation lines in the message are
-// indented to align with the first line's text (after the prefix).
+// writeItem renders a single report item with multi-line support.
+// The first line is prefixed with the status indicator (e.g. "(!) Warning:").
+// Continuation lines in the message are indented at the same level as the prefix.
 func writeItem(
 	sb *strings.Builder, indent string, prefix string, item PreflightReportItem,
 ) {
@@ -115,8 +118,15 @@ func (r *PreflightReport) MarshalJSON() ([]byte, error) {
 		Links        []jsonLink `json:"links,omitempty"`
 	}
 
-	items := make([]jsonItem, 0, len(r.Items))
-	for _, item := range r.Items {
+	// Use partition ordering (warnings first, then errors)
+	// to match ToString() output order.
+	ordered := make(
+		[]PreflightReportItem, 0, len(warnings)+len(errors))
+	ordered = append(ordered, warnings...)
+	ordered = append(ordered, errors...)
+
+	items := make([]jsonItem, 0, len(ordered))
+	for _, item := range ordered {
 		severity := "warning"
 		if item.IsError {
 			severity = "error"
@@ -124,8 +134,8 @@ func (r *PreflightReport) MarshalJSON() ([]byte, error) {
 		ji := jsonItem{
 			Severity:     severity,
 			DiagnosticID: item.DiagnosticID,
-			Message:      item.Message,
-			Suggestion:   item.Suggestion,
+			Message:      stripAnsi(item.Message),
+			Suggestion:   stripAnsi(item.Suggestion),
 		}
 		for _, link := range item.Links {
 			ji.Links = append(ji.Links, jsonLink(link))
@@ -177,4 +187,21 @@ func (r *PreflightReport) partition() (warnings, errors []PreflightReportItem) {
 		}
 	}
 	return warnings, errors
+}
+
+// stripAnsi removes ANSI escape sequences from a string for
+// machine-readable output (e.g. JSON).
+func stripAnsi(s string) string {
+	if s == "" {
+		return s
+	}
+	var buf bytes.Buffer
+	// colorable.NewNonColorable strips ANSI sequences.
+	if _, err := io.Copy(
+		colorable.NewNonColorable(&buf),
+		strings.NewReader(s),
+	); err != nil {
+		return s
+	}
+	return buf.String()
 }

@@ -142,7 +142,10 @@ func TestPreflightReport_NoSuggestion(t *testing.T) {
 
 func TestPreflightReport_MarshalJSON_WithSuggestions(t *testing.T) {
 	report := &PreflightReport{
+		// Insert error first, then warning — JSON should reorder
+		// to warnings-first (matching ToString behavior).
 		Items: []PreflightReportItem{
+			{IsError: true, DiagnosticID: "role_error", Message: "role missing"},
 			{
 				IsError:      false,
 				DiagnosticID: "ai_model_quota_exceeded",
@@ -152,7 +155,6 @@ func TestPreflightReport_MarshalJSON_WithSuggestions(t *testing.T) {
 					{URL: "https://example.com/quotas", Title: "Quota docs"},
 				},
 			},
-			{IsError: true, DiagnosticID: "role_error", Message: "role missing"},
 		},
 	}
 
@@ -180,7 +182,7 @@ func TestPreflightReport_MarshalJSON_WithSuggestions(t *testing.T) {
 	require.Contains(t, parsed.Summary, "1 error(s)")
 	require.Len(t, parsed.Items, 2)
 
-	// First item: warning with suggestion and links
+	// First item should be warning (partition ordering)
 	require.Equal(t, "warning", parsed.Items[0].Severity)
 	require.Equal(t, "ai_model_quota_exceeded", parsed.Items[0].DiagnosticID)
 	require.Equal(t, "Reduce capacity to 140.", parsed.Items[0].Suggestion)
@@ -192,6 +194,32 @@ func TestPreflightReport_MarshalJSON_WithSuggestions(t *testing.T) {
 	require.Equal(t, "error", parsed.Items[1].Severity)
 	require.Empty(t, parsed.Items[1].Suggestion)
 	require.Empty(t, parsed.Items[1].Links)
+}
+
+func TestPreflightReport_MarshalJSON_StripsAnsi(t *testing.T) {
+	// Simulate ANSI-formatted message (like output.WithHighLightFormat)
+	ansiMsg := "\x1b[36mmodel\x1b[0m not found in \x1b[36meastus2\x1b[0m"
+	ansiSugg := "Run \x1b[36mazd env set AZURE_LOCATION\x1b[0m"
+
+	report := &PreflightReport{
+		Items: []PreflightReportItem{
+			{
+				IsError:    false,
+				Message:    ansiMsg,
+				Suggestion: ansiSugg,
+			},
+		},
+	}
+
+	data, err := json.Marshal(report)
+	require.NoError(t, err)
+
+	raw := string(data)
+	// JSON output should not contain ANSI escape sequences
+	require.NotContains(t, raw, "\x1b[",
+		"JSON output should not contain ANSI escapes")
+	require.Contains(t, raw, "model not found in eastus2")
+	require.Contains(t, raw, "Run azd env set AZURE_LOCATION")
 }
 
 func TestPreflightReport_Indentation(t *testing.T) {

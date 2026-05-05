@@ -89,7 +89,7 @@ func TestParseAgentEndpoint(t *testing.T) {
 			name:        "unknown protocol tail",
 			raw:         "https://acct.services.ai.azure.com/api/projects/proj/agents/hello/endpoint/protocols/grpc",
 			wantErr:     true,
-			errContains: "protocol path",
+			errContains: "path must match",
 		},
 		{
 			name:        "missing protocol tail",

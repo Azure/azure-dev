@@ -89,7 +89,7 @@ session automatically. Pass --new-session to force a reset.`,
   # Start a new session (discard conversation history)
   azd ai agent invoke --new-session "Hello!"
 
-  # Invoke a deployed agent from any directory using the endpoint URL printed by 'azd up'
+  # Invoke a deployed agent from any directory using the endpoint URL shown by 'azd ai agent show'
   azd ai agent invoke \
       --agent-endpoint https://<acct>.services.ai.azure.com/api/projects/<proj>/agents/<name>/endpoint/protocols/invocations?api-version=2025-11-15-preview \
       "Hello!"`,
@@ -185,7 +185,7 @@ session automatically. Pass --new-session to force a reset.`,
 		&flags.agentEndpoint,
 		"agent-endpoint",
 		"",
-		"Full endpoint URL of a deployed agent (printed by 'azd up' / 'azd deploy'). "+
+		"Full endpoint URL of a deployed agent (run 'azd ai agent show' to see it). "+
 			"Invokes without requiring an azd project; protocol is derived from the URL.",
 	)
 
@@ -195,45 +195,43 @@ session automatically. Pass --new-session to force a reset.`,
 // validateAgentEndpointFlags rejects flags that have no effect (or conflict) when --agent-endpoint
 // is used. Ephemeral mode has no project, no local persistence, and no localhost target.
 func validateAgentEndpointFlags(cmd *cobra.Command, flags *invokeFlags) error {
-	switch {
-	case flags.local:
-		return exterrors.Validation(
-			exterrors.CodeInvalidParameter,
-			"--agent-endpoint cannot be combined with --local",
-			"omit --local to invoke the deployed agent at the given URL",
-		)
-	case flags.name != "":
-		return exterrors.Validation(
-			exterrors.CodeInvalidParameter,
-			"--agent-endpoint cannot be combined with a positional agent name",
+	// Disallowed companion flags for --agent-endpoint, in the order checked.
+	// `set` is true when the flag is meaningfully present on the command line.
+	checks := []struct {
+		name       string
+		set        bool
+		suggestion string
+	}{
+		{"--local", flags.local, "omit --local to invoke the deployed agent at the given URL"},
+		{
+			"a positional agent name",
+			flags.name != "",
 			"the agent name is read from the --agent-endpoint URL; remove the positional argument",
-		)
-	case cmd.Flags().Changed("port"):
-		return exterrors.Validation(
-			exterrors.CodeInvalidParameter,
-			"--agent-endpoint cannot be combined with --port",
-			"--port targets a local agent; omit it when using --agent-endpoint",
-		)
-	case cmd.Flags().Changed("protocol"):
-		return exterrors.Validation(
-			exterrors.CodeInvalidParameter,
-			"--agent-endpoint cannot be combined with --protocol",
-			"the protocol is read from the --agent-endpoint URL; omit --protocol",
-		)
-	case flags.newSession:
-		return exterrors.Validation(
-			exterrors.CodeInvalidParameter,
-			"--agent-endpoint cannot be combined with --new-session",
-			"ephemeral invokes do not persist session IDs; omit --new-session "+
+		},
+		{"--port", cmd.Flags().Changed("port"), "--port targets a local agent; omit it when using --agent-endpoint"},
+		{"--protocol", cmd.Flags().Changed("protocol"), "the protocol is read from the --agent-endpoint URL; omit --protocol"},
+		{
+			"--new-session",
+			flags.newSession,
+			"ephemeral invokes do not persist session IDs; omit --new-session " +
 				"or pass --session-id to continue a known session",
-		)
-	case flags.newConversation:
-		return exterrors.Validation(
-			exterrors.CodeInvalidParameter,
-			"--agent-endpoint cannot be combined with --new-conversation",
-			"ephemeral invokes do not persist conversation IDs; omit --new-conversation "+
+		},
+		{
+			"--new-conversation",
+			flags.newConversation,
+			"ephemeral invokes do not persist conversation IDs; omit --new-conversation " +
 				"or pass --conversation-id to continue a known conversation",
-		)
+		},
+	}
+
+	for _, c := range checks {
+		if c.set {
+			return exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				fmt.Sprintf("--agent-endpoint cannot be combined with %s", c.name),
+				c.suggestion,
+			)
+		}
 	}
 	return nil
 }

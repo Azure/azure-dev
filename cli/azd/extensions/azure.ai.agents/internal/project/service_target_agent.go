@@ -751,8 +751,14 @@ func (p *AgentServiceTargetProvider) deployArtifacts(
 		// Attach the informational note to the last endpoint only, to avoid repetition.
 		if len(endpoints) > 0 {
 			last := artifacts[len(artifacts)-1]
-			last.Metadata["note"] = "For information on invoking the agent, see " + output.WithLinkFormat(
-				"https://aka.ms/azd-agents-invoke")
+			// The artifact renderer prefixes the first line of the note
+			// with the parent indent + "  " (4 spaces). Match that
+			// indent on subsequent lines so the doctor pointer aligns.
+			noteIndent := "    "
+			last.Metadata["note"] = "For information on invoking the agent, see " +
+				output.WithLinkFormat("https://aka.ms/azd-agents-invoke") +
+				"\n" + noteIndent + "Run " + output.WithHighLightFormat("azd ai agent doctor") +
+				" for next-step suggestions"
 		}
 	}
 

@@ -14,7 +14,6 @@ import (
 	"regexp"
 	"strings"
 
-	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
@@ -248,60 +247,7 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 		return fmt.Errorf("agent identity RBAC setup failed: %w", err)
 	}
 
-	emitPostDeployNextSteps(ctx, azdClient, hostedAgents)
-
 	return nil
-}
-
-// emitPostDeployNextSteps prints a Next: block after the deploy hook
-// completes so users see what to do next (test + monitor) without
-// needing to run ``azd ai agent doctor``. Best-effort — failures to
-// assemble state are silently swallowed so the deploy succeeds even
-// if the suggestion engine can't run.
-func emitPostDeployNextSteps(
-	ctx context.Context,
-	azdClient *azdext.AzdClient,
-	hostedAgents []*azdext.ServiceConfig,
-) {
-	if len(hostedAgents) == 0 {
-		return
-	}
-	state, err := nextstep.AssembleState(ctx, azdClient)
-	if err != nil || state == nil {
-		return
-	}
-	primary := state.PrimaryAgent()
-	if primary == nil || !primary.IsDeployed {
-		return
-	}
-	name := primary.DeployedName
-	if name == "" {
-		name = primary.ServiceName
-	}
-	suggestions := []nextstep.Suggestion{
-		{
-			Command:     fmt.Sprintf("azd ai agent show %s", name),
-			Description: "inspect agent status, version, and metadata",
-		},
-		{
-			Command:     "azd ai agent invoke <payload>",
-			Description: "test the deployed agent end-to-end",
-		},
-	}
-	if state.HasProjectEndpoint {
-		suggestions = append(suggestions, nextstep.Suggestion{
-			Command:     "azd ai agent monitor --follow",
-			Description: "stream live invocation logs",
-		})
-	}
-	hint := ""
-	if rel := strings.TrimSpace(primary.RelativePath); rel != "" {
-		hint = fmt.Sprintf(
-			"See %s/README.md for a sample payload appropriate for this agent.",
-			filepath.ToSlash(rel),
-		)
-	}
-	nextstep.PrintNextWithHint(os.Stdout, suggestions, hint)
 }
 
 // postdownHandler cleans up config store entries (sessions, conversations) for agent services

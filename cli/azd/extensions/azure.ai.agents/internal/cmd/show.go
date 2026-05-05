@@ -13,6 +13,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	projectpkg "azureaiagent/internal/project"
 
@@ -154,10 +155,29 @@ func (a *ShowAction) Run(ctx context.Context) error {
 
 	switch a.flags.output {
 	case "table":
-		return printShowResultTable(result)
+		if err := printShowResultTable(result); err != nil {
+			return err
+		}
+		a.printNextSteps(ctx, version)
+		return nil
 	default:
 		return printShowResultJSON(result)
 	}
+}
+
+// printNextSteps emits a context-aware "Next:" block after a successful
+// show in table mode. Errors are silently swallowed — guidance is
+// purely additive and must never break the command.
+func (a *ShowAction) printNextSteps(ctx context.Context, version *agent_api.AgentVersionObject) {
+	if a.azdClient == nil || version == nil {
+		return
+	}
+	state, err := nextstep.AssembleState(ctx, a.azdClient)
+	if err != nil {
+		return
+	}
+	suggestions := nextstep.ResolveAfterShow(state, a.Name, version.Status)
+	nextstep.PrintNext(os.Stdout, suggestions)
 }
 
 // resolvePlaygroundURL reads AZURE_AI_PROJECT_ID from the azd environment

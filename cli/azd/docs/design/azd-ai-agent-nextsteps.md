@@ -278,7 +278,7 @@ All failures are silent. The fetch itself is best-effort and already cached — 
 | 10 (post-MVP) | RBAC sufficient | role list | `az role assignment create …` |
 | 11 (post-MVP) | Agent status (if deployed) | `active (vN)` | `azd ai agent monitor --follow` |
 
-Checks 7–11 are listed in the issue but pulled into a follow-up to keep the MVP shippable. Checks 1–6 are pure local reads; 7–11 require Foundry control-plane calls and RBAC introspection that need their own design pass.
+Checks 7–11 are listed in the issue but pulled into a follow-up to keep the MVP shippable. Checks 1–6 are pure local reads; 7–11 require Foundry control-plane calls and RBAC introspection that need their own design pass — see [`azd-ai-agent-doctor-remote-checks.md`](./azd-ai-agent-doctor-remote-checks.md).
 
 ### Doctor output shape
 
@@ -325,7 +325,7 @@ All tests run under `go test -short -timeout 180s ./internal/...`. No live Azure
 2. **Wire success paths** — `init`, `run`, `invoke`, `show`. Resolver per command.
 3. **Deploy hook** — attach Next: block to the returned `azdext.Artifact` (same SDK field already used for endpoint URLs in `service_target_agent.go`). README-on-disk verification.
 4. **`doctor` command** — checks 1–6 (local-only). Wire trailing Next: through resolver.
-5. **(Follow-up)** Doctor checks 7–11 (auth, reachability, RBAC, deployments, agent status). Separate design.
+5. **(Follow-up)** Doctor checks 7–11 (auth, reachability, RBAC, deployments, agent status). See [`azd-ai-agent-doctor-remote-checks.md`](./azd-ai-agent-doctor-remote-checks.md).
 
 Each phase is independently shippable and reviewable. Phases 1–4 are the MVP for #7975.
 

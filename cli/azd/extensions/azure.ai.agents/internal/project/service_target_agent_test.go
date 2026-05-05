@@ -499,3 +499,46 @@ func TestAgentPlaygroundURL_AccountLevelID(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "missing parent account")
 }
+
+func TestDeployArtifacts_NoReadme_OmitsHintLine(t *testing.T) {
+t.Parallel()
+p := &AgentServiceTargetProvider{}
+const ep = "https://myproject.services.ai.azure.com"
+protocols := []agent_yaml.ProtocolVersionRecord{
+{Protocol: "invocations", Version: "1.0.0"},
+}
+// Empty readmeRelativePath simulates "no README found on disk".
+artifacts := p.deployArtifacts(
+"agent", "1.0.0",
+"", ep,
+protocols,
+"",
+)
+require.Len(t, artifacts, 1)
+note := artifacts[0].Metadata["note"]
+require.NotEmpty(t, note)
+require.Contains(t, note, "azd ai agent show agent")
+require.Contains(t, note, "invoking the agent")
+// No README hint should leak in.
+require.NotContains(t, note, "README")
+require.NotContains(t, note, "sample payload")
+}
+
+func TestDeployArtifacts_WithReadme_IncludesHintLine(t *testing.T) {
+t.Parallel()
+p := &AgentServiceTargetProvider{}
+const ep = "https://myproject.services.ai.azure.com"
+protocols := []agent_yaml.ProtocolVersionRecord{
+{Protocol: "invocations", Version: "1.0.0"},
+}
+artifacts := p.deployArtifacts(
+"agent", "1.0.0",
+"", ep,
+protocols,
+"src/agent/README.md",
+)
+require.Len(t, artifacts, 1)
+note := artifacts[0].Metadata["note"]
+require.Contains(t, note, "src/agent/README.md")
+require.Contains(t, note, "sample payload")
+}

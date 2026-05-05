@@ -119,3 +119,61 @@ func TestState_HasMultipleAgents(t *testing.T) {
 		t.Error("two services should be multiple")
 	}
 }
+
+func TestFormatNextForNote(t *testing.T) {
+suggestions := []Suggestion{
+{Command: "azd ai agent show foo", Description: "inspect"},
+{Command: "azd ai agent invoke <payload>", Description: "test it"},
+}
+
+t.Run("no hint: omits trailing line", func(t *testing.T) {
+got := FormatNextForNote(suggestions, "")
+if got == "" {
+t.Fatal("expected non-empty Next: block")
+}
+if strings.Contains(got, "README.md") {
+t.Errorf("expected no README hint, got:\n%s", got)
+}
+if strings.Contains(got, "See ") {
+t.Errorf("hint marker leaked into output:\n%s", got)
+}
+})
+
+t.Run("blank hint also omits trailing line", func(t *testing.T) {
+got := FormatNextForNote(suggestions, "   ")
+if strings.Contains(got, "See ") {
+t.Errorf("whitespace hint should be ignored, got:\n%s", got)
+}
+})
+
+t.Run("with hint: appends dim line", func(t *testing.T) {
+got := FormatNextForNote(suggestions, "See src/foo/README.md for a sample payload.")
+if !strings.Contains(got, "src/foo/README.md") {
+t.Errorf("expected hint to be present, got:\n%s", got)
+}
+})
+
+t.Run("subsequent lines are indented for note rendering", func(t *testing.T) {
+got := FormatNextForNote(suggestions, "")
+lines := strings.Split(got, "\n")
+if len(lines) < 2 {
+t.Fatalf("expected >=2 lines, got %d", len(lines))
+}
+// First line should NOT be indented (artifact renderer prefixes it).
+if strings.HasPrefix(lines[0], "    ") {
+t.Errorf("first line should not be pre-indented: %q", lines[0])
+}
+// Subsequent lines MUST be indented with 4 spaces.
+for i := 1; i < len(lines); i++ {
+if !strings.HasPrefix(lines[i], "    ") {
+t.Errorf("line %d not indented: %q", i, lines[i])
+}
+}
+})
+
+t.Run("empty suggestions and empty hint: empty string", func(t *testing.T) {
+if got := FormatNextForNote(nil, ""); got != "" {
+t.Errorf("expected empty, got %q", got)
+}
+})
+}

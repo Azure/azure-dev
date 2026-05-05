@@ -694,7 +694,7 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		azdEnv["AZURE_AI_PROJECT_ID"],
 		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
 		protocols,
-		serviceConfig.RelativePath,
+		p.findServiceReadme(ctx, serviceConfig),
 	)
 
 	return &azdext.ServiceDeployResult{
@@ -706,16 +706,18 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 // It produces one endpoint artifact per displayable protocol.
 //
 // The note attached to the last endpoint includes a Next: block with
-// show / invoke / monitor suggestions and (when serviceRelativePath is
+// show / invoke / monitor suggestions and (when readmeRelativePath is
 // non-empty) a hint pointing at the service's README so users know
-// where to find a sample invocation payload.
+// where to find a sample invocation payload. Callers are expected to
+// pass an already-verified relative path (see findServiceReadme); this
+// function does no file IO of its own.
 func (p *AgentServiceTargetProvider) deployArtifacts(
 	agentName string,
 	agentVersion string,
 	projectResourceID string,
 	projectEndpoint string,
 	protocols []agent_yaml.ProtocolVersionRecord,
-	serviceRelativePath string,
+	readmeRelativePath string,
 ) []*azdext.Artifact {
 	artifacts := []*azdext.Artifact{}
 
@@ -762,9 +764,9 @@ func (p *AgentServiceTargetProvider) deployArtifacts(
 			// Build a Next: block with show / invoke / monitor.
 			suggestions := nextstep.ResolveAfterDeployOne(agentName)
 			hint := ""
-			if rel := strings.TrimSpace(serviceRelativePath); rel != "" {
+			if rel := strings.TrimSpace(readmeRelativePath); rel != "" {
 				hint = fmt.Sprintf(
-					"See %s/README.md for a sample payload appropriate for this agent.",
+					"See %s for a sample payload appropriate for this agent.",
 					filepath.ToSlash(rel),
 				)
 			}
@@ -785,6 +787,38 @@ func (p *AgentServiceTargetProvider) deployArtifacts(
 	}
 
 	return artifacts
+}
+
+// findServiceReadme returns a path (relative to the project root, slash-
+// separated) to a README file inside the service directory if one
+// exists, or "" otherwise. The result is suitable for direct display
+// in user-facing output. Common variants are checked in order:
+// README.md, readme.md, README.MD. Any file IO error (project not
+// resolvable, stat failure) silently produces "" so the deploy never
+// fails because of a hint lookup.
+func (p *AgentServiceTargetProvider) findServiceReadme(
+	ctx context.Context,
+	serviceConfig *azdext.ServiceConfig,
+) string {
+	if serviceConfig == nil {
+		return ""
+	}
+	rel := strings.TrimSpace(serviceConfig.RelativePath)
+	if rel == "" {
+		return ""
+	}
+	proj, err := p.azdClient.Project().Get(ctx, nil)
+	if err != nil || proj == nil || proj.Project == nil {
+		return ""
+	}
+	serviceDir := filepath.Join(proj.Project.Path, rel)
+	for _, name := range []string{"README.md", "readme.md", "README.MD"} {
+		full := filepath.Join(serviceDir, name)
+		if info, err := os.Stat(full); err == nil && !info.IsDir() {
+			return filepath.ToSlash(filepath.Join(rel, name))
+		}
+	}
+	return ""
 }
 
 // protocolEndpointInfo holds a displayable protocol label and its invocation URL.

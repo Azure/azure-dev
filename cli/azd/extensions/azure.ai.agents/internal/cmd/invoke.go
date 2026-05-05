@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 
@@ -227,20 +228,52 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 		return err
 	}
 
+	var invokeErr error
 	if a.flags.local {
 		switch protocol {
 		case agent_api.AgentProtocolInvocations:
-			return a.invocationsLocal(ctx)
+			invokeErr = a.invocationsLocal(ctx)
 		default:
-			return a.responsesLocal(ctx)
+			invokeErr = a.responsesLocal(ctx)
 		}
+	} else if protocol == agent_api.AgentProtocolInvocations {
+		// Remote invocations protocol.
+		invokeErr = a.invocationsRemote(ctx)
+	} else {
+		// Remote responses protocol.
+		invokeErr = a.responsesRemote(ctx)
 	}
 
-	// Remote: route by protocol.
-	if protocol == agent_api.AgentProtocolInvocations {
-		return a.invocationsRemote(ctx)
+	if invokeErr != nil {
+		return invokeErr
 	}
-	return a.responsesRemote(ctx)
+
+	a.printNextSteps(ctx)
+	return nil
+}
+
+// printNextSteps emits a context-aware "Next:" block after a successful
+// invocation. Errors during state assembly are silently swallowed —
+// guidance is purely additive and must never break the command.
+func (a *InvokeAction) printNextSteps(ctx context.Context) {
+	azdClient, err := azdext.NewAzdClient()
+	if err != nil {
+		return
+	}
+	defer azdClient.Close()
+
+	state, err := nextstep.AssembleState(ctx, azdClient)
+	if err != nil {
+		return
+	}
+
+	var suggestions []nextstep.Suggestion
+	if a.flags.local {
+		suggestions = nextstep.ResolveAfterInvokeLocal(state)
+	} else {
+		suggestions = nextstep.ResolveAfterInvokeRemote(state, a.flags.name)
+	}
+	nextstep.PrintNext(os.Stdout, suggestions)
 }
 
 // resolveProtocol returns the protocol to use for this invocation.

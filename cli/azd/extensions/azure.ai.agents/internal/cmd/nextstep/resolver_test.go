@@ -8,6 +8,74 @@ import (
 	"testing"
 )
 
+func TestResolveAfterInit(t *testing.T) {
+	tests := []struct {
+		name        string
+		state       *State
+		service     string
+		wantPrimary string // prefix the first suggestion must start with
+	}{
+		{
+			name:        "no project endpoint -> provision",
+			state:       &State{},
+			service:     "calculator",
+			wantPrimary: "azd provision",
+		},
+		{
+			name: "endpoint set + no manual vars -> run",
+			state: &State{
+				HasProjectEndpoint: true,
+			},
+			service:     "calculator",
+			wantPrimary: "azd ai agent run calculator",
+		},
+		{
+			name: "endpoint + manual vars -> azd env set per var",
+			state: &State{
+				HasProjectEndpoint:   true,
+				UnresolvedManualVars: []string{"OPENAI_API_KEY"},
+			},
+			service:     "calc",
+			wantPrimary: "azd env set OPENAI_API_KEY",
+		},
+		{
+			name:        "nil state defaults to provision",
+			state:       nil,
+			service:     "",
+			wantPrimary: "azd provision",
+		},
+		{
+			name: "endpoint set + no service name -> bare run command",
+			state: &State{
+				HasProjectEndpoint: true,
+			},
+			service:     "",
+			wantPrimary: "azd ai agent run",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ResolveAfterInit(tc.state, tc.service)
+			if len(got) == 0 {
+				t.Fatalf("expected at least one suggestion, got none")
+			}
+			if !strings.HasPrefix(got[0].Command, tc.wantPrimary) {
+				t.Errorf("first command = %q, want prefix %q", got[0].Command, tc.wantPrimary)
+			}
+		})
+	}
+}
+
+func TestResolveAfterInit_RunHasInvokeFollowup(t *testing.T) {
+	got := ResolveAfterInit(&State{HasProjectEndpoint: true}, "calc")
+	if len(got) != 2 {
+		t.Fatalf("expected 2 suggestions for ready state, got %d: %#v", len(got), got)
+	}
+	if !strings.Contains(got[1].Command, "invoke --local") {
+		t.Errorf("expected invoke --local as second suggestion, got %q", got[1].Command)
+	}
+}
+
 func TestResolveAfterInvokeLocal(t *testing.T) {
 	tests := []struct {
 		name           string

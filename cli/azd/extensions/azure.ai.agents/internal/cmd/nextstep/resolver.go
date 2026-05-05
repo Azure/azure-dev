@@ -172,3 +172,58 @@ func agentDisplayName(svc *ServiceState) string {
 	}
 	return svc.ServiceName
 }
+
+// ResolveAfterInit returns suggestions to show after a successful
+// `azd ai agent init` (or `init from-code`).
+//
+// The decision tree (from issue #7975):
+//
+//	IF HasUnresolvedInfraVars      -> azd provision
+//	ELSE IF HasUnresolvedManualVars -> azd env set <KEY> <value> (one per var)
+//	ELSE                           -> azd ai agent run + azd ai agent invoke --local "Hello!"
+//
+// We approximate "HasUnresolvedInfraVars" with `!HasProjectEndpoint` —
+// when AZURE_AI_PROJECT_ENDPOINT is missing, infra has not been
+// provisioned yet, so `azd provision` is the right next step.
+//
+// serviceName is the azure.yaml service key just added by `init`. It
+// scopes the run/invoke suggestions where helpful. Pass an empty
+// string to emit the unscoped form.
+func ResolveAfterInit(s *State, serviceName string) []Suggestion {
+	if s == nil {
+		s = &State{}
+	}
+
+	// Stage 1: infra not provisioned yet.
+	if !s.HasProjectEndpoint {
+		return []Suggestion{{
+			Command:     "azd provision",
+			Description: "provision the Azure resources required to deploy and run your agent",
+		}}
+	}
+
+	// Stage 2: infra is up but the user still has manual env vars to fill.
+	if len(s.UnresolvedManualVars) > 0 {
+		out := make([]Suggestion, 0, len(s.UnresolvedManualVars))
+		for _, v := range s.UnresolvedManualVars {
+			out = append(out, Suggestion{
+				Command:     fmt.Sprintf("azd env set %s <value>", v),
+				Description: fmt.Sprintf("provide a value for the %s setting", v),
+			})
+		}
+		return out
+	}
+
+	// Stage 3: ready to run + invoke locally.
+	runCmd := "azd ai agent run"
+	if serviceName != "" {
+		runCmd = fmt.Sprintf("azd ai agent run %s", serviceName)
+	}
+	return []Suggestion{
+		{Command: runCmd, Description: "start the agent locally"},
+		{
+			Command:     "azd ai agent invoke --local \"Hello!\"",
+			Description: "test it in another terminal",
+		},
+	}
+}

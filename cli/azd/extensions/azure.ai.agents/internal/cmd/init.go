@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
@@ -1594,18 +1595,9 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		"\nAdded your agent as a service entry named '%s' under the file azure.yaml.\n",
 		a.serviceNameOverride,
 	)
-	if projectID, _ := a.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-		EnvName: a.environment.Name,
-		Key:     "AZURE_AI_PROJECT_ID",
-	}); projectID != nil && projectID.Value != "" {
-		fmt.Printf("To deploy your agent, use %s.\n",
-			color.HiBlueString("azd deploy %s", a.serviceNameOverride))
-	} else {
-		fmt.Printf(
-			"To provision and deploy the whole solution, use %s.\n",
-			color.HiBlueString("azd up"),
-		)
-	}
+
+	state, _ := nextstep.AssembleState(ctx, a.azdClient)
+	nextstep.PrintNext(os.Stdout, nextstep.ResolveAfterInit(state, a.serviceNameOverride))
 	return nil
 }
 

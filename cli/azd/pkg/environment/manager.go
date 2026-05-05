@@ -107,6 +107,23 @@ type manager struct {
 	// parallel services running publish/deploy/hooks against the same
 	// *Environment cannot corrupt the on-disk .env file or interleave a
 	// partial Reload with another goroutine's writes.
+	//
+	// Lock acquisition order (MUST be consistent across all call sites):
+	//
+	//   1. manager.saveMu       (in-process sync.Mutex, serializes goroutines)
+	//   2. local flock           (cross-process OS file lock via gofrs/flock)
+	//   3. env.mu               (per-Environment sync.RWMutex, protects in-memory map)
+	//
+	// Subprocess hooks (`azd env set`) spawn a separate azd process that
+	// acquires flock independently (no saveMu — that's per-process). The
+	// in-process saveMu prevents concurrent Save/Reload within the SAME
+	// process; the cross-process flock prevents concurrent file I/O across
+	// DIFFERENT processes (e.g., parallel hook subprocesses). No deadlock
+	// is possible because saveMu is never held cross-process: each OS
+	// process has its own saveMu instance, and flock handles inter-process
+	// serialization.
+	//
+	// See also: docs/concurrency-model.md "Lock Acquisition Order" section.
 	saveMu sync.Mutex
 
 	// State cache manager for managing cached Azure resource information

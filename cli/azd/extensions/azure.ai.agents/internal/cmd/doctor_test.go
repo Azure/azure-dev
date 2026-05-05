@@ -8,6 +8,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"azureaiagent/internal/cmd/nextstep"
 )
 
 func TestDoctorStatusBadge(t *testing.T) {
@@ -38,7 +40,7 @@ func TestPrintDoctorReport_ShowsRows(t *testing.T) {
 		{Title: "First check", Status: doctorOK, Detail: "all good"},
 		{Title: "Second check", Status: doctorFail, Detail: "broken", Fix: "azd provision"},
 	}
-	printDoctorReport(&buf, results)
+	printDoctorReport(&buf, results, nil)
 	out := buf.String()
 
 	for _, want := range []string{
@@ -55,15 +57,41 @@ func TestPrintDoctorReport_ShowsRows(t *testing.T) {
 	}
 }
 
-func TestPrintDoctorReport_NoFixSkipsNextBlock(t *testing.T) {
+func TestPrintDoctorReport_AllPassFallsBackToInitGuidance(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	var buf bytes.Buffer
+	// State with a project endpoint and a single agent service => post-init Stage 3:
+	// run locally, invoke local, deploy.
+	state := &nextstep.State{
+		HasProjectEndpoint: true,
+		AgentServices: []nextstep.ServiceState{
+			{ServiceName: "calc", Protocol: "responses"},
+		},
+	}
+	printDoctorReport(&buf, []doctorResult{
+		{Title: "Only OK", Status: doctorOK, Detail: "fine"},
+	}, state)
+	out := buf.String()
+	if !strings.Contains(out, "Next:") {
+		t.Errorf("expected Next block when state has actionable next steps, got:\n%s", out)
+	}
+	for _, want := range []string{"azd ai agent run calc", "azd deploy"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected suggestion %q in output, got:\n%s", want, out)
+		}
+	}
+}
+
+func TestPrintDoctorReport_AllPassNoStatePrintsNothingExtra(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	var buf bytes.Buffer
 	printDoctorReport(&buf, []doctorResult{
-		{Title: "Only OK", Status: doctorOK, Detail: "everything fine"},
-	})
+		{Title: "Only OK", Status: doctorOK, Detail: "fine"},
+	}, nil)
 	out := buf.String()
-	if strings.Contains(out, "Next:") {
-		t.Errorf("expected no Next block when nothing has Fix, got:\n%s", out)
+	// With nil state, ResolveAfterInit returns the provision suggestion as Stage 1.
+	if !strings.Contains(out, "azd provision") {
+		t.Errorf("expected provision suggestion when state is nil, got:\n%s", out)
 	}
 }
 

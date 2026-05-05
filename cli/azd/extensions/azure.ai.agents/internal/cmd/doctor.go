@@ -80,7 +80,8 @@ func newDoctorCommand() *cobra.Command {
 // run executes all checks and prints a summary plus follow-up suggestions.
 func (a *doctorAction) run(ctx context.Context) error {
 	results := a.runChecks(ctx)
-	printDoctorReport(a.out, results)
+	state, _ := nextstep.AssembleState(ctx, a.azdClient)
+	printDoctorReport(a.out, results, state)
 	return nil
 }
 
@@ -284,8 +285,10 @@ func (a *doctorAction) checkAgentManifest(projectPath string, services []*azdext
 //	  azd provision   -- provision Azure resources
 //
 // The "Next:" tail is built from each non-passing result's Fix command,
-// reusing the nextstep formatter for visual consistency.
-func printDoctorReport(w io.Writer, results []doctorResult) {
+// reusing the nextstep formatter for visual consistency. When every
+// check passes, the Next: block falls back to the post-init resolver so
+// the user always sees the next logical action (run/invoke/deploy).
+func printDoctorReport(w io.Writer, results []doctorResult, state *nextstep.State) {
 	fmt.Fprintln(w, color.New(color.Bold).Sprint("azd ai agent doctor"))
 	for _, r := range results {
 		fmt.Fprintf(w, "  %s  %s\n", r.Status.badge(), r.Title)
@@ -308,5 +311,25 @@ func printDoctorReport(w io.Writer, results []doctorResult) {
 			Description: desc,
 		})
 	}
+
+	// All checks passed (or only had non-fixable warnings/skips):
+	// fall back to the post-init guidance so the user always sees the
+	// next logical action — run locally, invoke locally, or deploy.
+	if len(suggestions) == 0 {
+		serviceName := ""
+		if state != nil {
+			if primary := state.PrimaryAgent(); primary != nil {
+				serviceName = primary.ServiceName
+				if primary.IsDeployed {
+					// Already deployed — suggest remote-invoke flow.
+					nextstep.PrintNext(w, nextstep.ResolveAfterInvokeRemote(state, primary.DeployedName))
+					return
+				}
+			}
+		}
+		nextstep.PrintNext(w, nextstep.ResolveAfterInit(state, serviceName))
+		return
+	}
+
 	nextstep.PrintNext(w, suggestions)
 }

@@ -268,7 +268,7 @@ func ResolveAfterInit(s *State, serviceName string) []Suggestion {
 		return out
 	}
 
-	// Stage 3: ready to run + invoke locally.
+	// Stage 3: ready to run + invoke locally, then deploy to Foundry.
 	runCmd := "azd ai agent run"
 	if serviceName != "" {
 		runCmd = fmt.Sprintf("azd ai agent run %s", serviceName)
@@ -276,8 +276,12 @@ func ResolveAfterInit(s *State, serviceName string) []Suggestion {
 	return []Suggestion{
 		{Command: runCmd, Description: "start the agent locally"},
 		{
-			Command:     "azd ai agent invoke --local \"Hello!\"",
-			Description: "test it in another terminal",
+			Command:     "azd ai agent invoke --local <payload>",
+			Description: "test it in another terminal (use a payload appropriate for your agent)",
+		},
+		{
+			Command:     "azd deploy",
+			Description: "ship the agent to Microsoft Foundry once local testing succeeds",
 		},
 	}
 }

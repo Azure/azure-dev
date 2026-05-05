@@ -68,11 +68,14 @@ func TestResolveAfterInit(t *testing.T) {
 
 func TestResolveAfterInit_RunHasInvokeFollowup(t *testing.T) {
 	got := ResolveAfterInit(&State{HasProjectEndpoint: true}, "calc")
-	if len(got) != 2 {
-		t.Fatalf("expected 2 suggestions for ready state, got %d: %#v", len(got), got)
+	if len(got) != 3 {
+		t.Fatalf("expected 3 suggestions for ready state, got %d: %#v", len(got), got)
 	}
 	if !strings.Contains(got[1].Command, "invoke --local") {
 		t.Errorf("expected invoke --local as second suggestion, got %q", got[1].Command)
+	}
+	if got[2].Command != "azd deploy" {
+		t.Errorf("expected 'azd deploy' as third suggestion, got %q", got[2].Command)
 	}
 }
 

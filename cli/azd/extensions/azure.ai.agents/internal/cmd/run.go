@@ -64,8 +64,6 @@ Use a separate terminal to invoke the running agent:
 				flags.name = args[0]
 			}
 			ctx := azdext.WithAccessToken(cmd.Context())
-			logCleanup := setupDebugLogging(cmd.Flags())
-			defer logCleanup()
 			return runRun(ctx, flags, extCtx.NoPrompt)
 		},
 	}

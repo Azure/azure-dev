@@ -74,8 +74,6 @@ configuration and the current azd environment. Optionally specify the service na
 			}
 
 			ctx := azdext.WithAccessToken(cmd.Context())
-			logCleanup := setupDebugLogging(cmd.Flags())
-			defer logCleanup()
 
 			azdClient, err := azdext.NewAzdClient()
 			if err != nil {

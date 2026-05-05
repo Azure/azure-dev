@@ -21,6 +21,21 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.SilenceErrors = true
 	rootCmd.CompletionOptions.DisableDefaultCmd = true
 
+	// Configure debug logging once on the root command so every subcommand
+	// inherits it (cobra.EnableTraverseRunHooks, set by the SDK, ensures this
+	// runs alongside any subcommand pre-runs). The cleanup func is intentionally
+	// discarded: log writes are unbuffered and the OS closes the file on exit.
+	sdkPreRun := rootCmd.PersistentPreRunE
+	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		if sdkPreRun != nil {
+			if err := sdkPreRun(cmd, args); err != nil {
+				return err
+			}
+		}
+		setupDebugLogging(cmd.Flags())
+		return nil
+	}
+
 	// Show the ASCII art banner above the default help text for the root command
 	defaultHelp := rootCmd.HelpFunc()
 	rootCmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
@@ -32,13 +47,15 @@ func NewRootCommand() *cobra.Command {
 
 	rootCmd.SetHelpCommand(&cobra.Command{Hidden: true})
 
-	rootCmd.AddCommand(newListenCommand())
+	rootCmd.AddCommand(azdext.NewListenCommand(configureExtensionHost))
 	rootCmd.AddCommand(newVersionCommand())
 	rootCmd.AddCommand(newInitCommand(extCtx))
 	rootCmd.AddCommand(newRunCommand(extCtx))
 	rootCmd.AddCommand(newInvokeCommand(extCtx))
 	rootCmd.AddCommand(newMcpCommand())
-	rootCmd.AddCommand(newMetadataCommand())
+	rootCmd.AddCommand(azdext.NewMetadataCommand("1.0", "azure.ai.agents", func() *cobra.Command {
+		return rootCmd
+	}))
 	rootCmd.AddCommand(newShowCommand(extCtx))
 	rootCmd.AddCommand(newMonitorCommand(extCtx))
 	rootCmd.AddCommand(newFilesCommand(extCtx))

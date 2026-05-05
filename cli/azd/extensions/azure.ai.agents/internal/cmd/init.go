@@ -303,9 +303,6 @@ func newInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
 			ctx := azdext.WithAccessToken(cmd.Context())
 
-			logCleanup := setupDebugLogging(cmd.Flags())
-			defer logCleanup()
-
 			azdClient, err := azdext.NewAzdClient()
 			if err != nil {
 				return exterrors.Internal(exterrors.CodeAzdClientFailed, fmt.Sprintf("failed to create azd client: %s", err))

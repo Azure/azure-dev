@@ -152,8 +152,6 @@ Agent details are automatically resolved from the azd environment.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
-			logCleanup := setupDebugLogging(cmd.Flags())
-			defer logCleanup()
 
 			if len(args) > 0 && flags.file == "" {
 				flags.file = args[0]
@@ -262,8 +260,6 @@ Agent details are automatically resolved from the azd environment.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
-			logCleanup := setupDebugLogging(cmd.Flags())
-			defer logCleanup()
 
 			if len(args) > 0 && flags.file == "" {
 				flags.file = args[0]
@@ -381,8 +377,6 @@ Agent details are automatically resolved from the azd environment.`,
 			flags.output = extCtx.OutputFormat
 
 			ctx := azdext.WithAccessToken(cmd.Context())
-			logCleanup := setupDebugLogging(cmd.Flags())
-			defer logCleanup()
 
 			fc, err := resolveFilesContext(ctx, &flags.filesFlags, extCtx.NoPrompt)
 			if err != nil {
@@ -511,8 +505,6 @@ Agent details are automatically resolved from the azd environment.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
-			logCleanup := setupDebugLogging(cmd.Flags())
-			defer logCleanup()
 
 			if len(args) > 0 && filePath == "" {
 				filePath = args[0]
@@ -601,8 +593,6 @@ Agent details are automatically resolved from the azd environment.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
-			logCleanup := setupDebugLogging(cmd.Flags())
-			defer logCleanup()
 
 			if len(args) > 0 && dirPath == "" {
 				dirPath = args[0]
@@ -697,8 +687,6 @@ Agent details are automatically resolved from the azd environment.`,
 			flags.output = extCtx.OutputFormat
 
 			ctx := azdext.WithAccessToken(cmd.Context())
-			logCleanup := setupDebugLogging(cmd.Flags())
-			defer logCleanup()
 
 			fc, err := resolveFilesContext(ctx, &flags.filesFlags, extCtx.NoPrompt)
 			if err != nil {

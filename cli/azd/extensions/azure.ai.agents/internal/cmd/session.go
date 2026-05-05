@@ -172,7 +172,6 @@ Positional arguments can be used instead of flags:
 			flags.output = extCtx.OutputFormat
 
 			ctx := azdext.WithAccessToken(cmd.Context())
-			setupDebugLogging(cmd.Flags())
 
 			// Positional args fill in missing flags
 			switch len(args) {
@@ -316,7 +315,6 @@ specified session.`,
 			flags.output = extCtx.OutputFormat
 
 			ctx := azdext.WithAccessToken(cmd.Context())
-			setupDebugLogging(cmd.Flags())
 
 			action.sessionID = args[0]
 			return action.Run(ctx)
@@ -412,7 +410,6 @@ The isolation key is derived from the Entra token by default.`,
 			flags.noPrompt = extCtx.NoPrompt
 
 			ctx := azdext.WithAccessToken(cmd.Context())
-			setupDebugLogging(cmd.Flags())
 
 			action.sessionID = args[0]
 			return action.Run(ctx)
@@ -535,7 +532,6 @@ Returns a paged list of sessions with their status, version, and timestamps.`,
 			flags.output = extCtx.OutputFormat
 
 			ctx := azdext.WithAccessToken(cmd.Context())
-			setupDebugLogging(cmd.Flags())
 
 			action.limitChanged = cmd.Flags().Changed("limit")
 			return action.Run(ctx)

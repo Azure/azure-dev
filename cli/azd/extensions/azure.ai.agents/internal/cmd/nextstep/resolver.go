@@ -152,22 +152,32 @@ func ResolveAfterShow(s *State, agentName, agentStatus string) []Suggestion {
 // agentName should be the deployed Foundry name when known; otherwise
 // pass the azure.yaml service name. An empty string falls back to the
 // unscoped invoke form ("azd ai agent invoke").
+//
+// Convention: in the single-agent case ``invoke`` is emitted without
+// the agent name (matches the README sample) since there is only one
+// agent to target. ``show`` keeps the name so users can copy-paste the
+// command unambiguously.
 func ResolveAfterDeployOne(agentName string) []Suggestion {
 	name := strings.TrimSpace(agentName)
 	if name == "" {
 		return []Suggestion{
-			{Command: "azd ai agent show", Description: "inspect the deployed agent"},
-			{Command: "azd ai agent invoke \"Hello!\"", Description: "test it end-to-end"},
+			{Command: "azd ai agent show", Description: "inspect agent status, version, and metadata"},
+			{Command: "azd ai agent invoke <payload>", Description: "test the deployed agent end-to-end"},
+			{Command: "azd ai agent monitor --follow", Description: "stream live invocation logs"},
 		}
 	}
 	return []Suggestion{
 		{
 			Command:     fmt.Sprintf("azd ai agent show %s", name),
-			Description: "inspect the deployed agent",
+			Description: "inspect agent status, version, and metadata",
 		},
 		{
-			Command:     fmt.Sprintf("azd ai agent invoke %s \"Hello!\"", name),
-			Description: "test it end-to-end",
+			Command:     "azd ai agent invoke <payload>",
+			Description: "test the deployed agent end-to-end",
+		},
+		{
+			Command:     "azd ai agent monitor --follow",
+			Description: "stream live invocation logs",
 		},
 	}
 }

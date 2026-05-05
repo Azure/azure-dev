@@ -65,6 +65,36 @@ func PrintNext(w io.Writer, suggestions []Suggestion) {
 	}
 }
 
+// FormatNextForNote returns the same "Next: …" block PrintNext would
+// emit, indented so it can be embedded inside an artifact's
+// Metadata["note"] field. The artifact renderer prefixes only the
+// first line of a note with the parent indent + "  " (4 spaces);
+// FormatNextForNote prepends the same 4-space indent to every other
+// line so the block stays visually aligned in the deploy output.
+//
+// When hint is non-empty, a trailing dim hint line is appended.
+// Returns an empty string if suggestions is empty and hint is blank.
+func FormatNextForNote(suggestions []Suggestion, hint string) string {
+	var buf strings.Builder
+	PrintNextWithHint(&buf, suggestions, hint)
+	out := buf.String()
+	if out == "" {
+		return ""
+	}
+	const noteIndent = "    "
+	// Trim the leading blank line PrintNext writes — the artifact
+	// renderer already produces a newline before the note.
+	out = strings.TrimPrefix(out, "\n")
+	// Trim a trailing newline so the note doesn't introduce an extra
+	// blank line in the deploy output.
+	out = strings.TrimRight(out, "\n")
+	lines := strings.Split(out, "\n")
+	for i := 1; i < len(lines); i++ {
+		lines[i] = noteIndent + lines[i]
+	}
+	return strings.Join(lines, "\n")
+}
+
 // PrintNextWithHint behaves like PrintNext but appends a trailing dim
 // hint line (e.g., a path to a README) after the Next: block. Pass an
 // empty hint to fall back to PrintNext behavior.

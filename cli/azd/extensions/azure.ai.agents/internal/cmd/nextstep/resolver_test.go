@@ -234,19 +234,24 @@ func TestResolveAfterShow(t *testing.T) {
 
 func TestResolveAfterDeployOne(t *testing.T) {
 	got := ResolveAfterDeployOne("calculator-prompt")
-	if len(got) != 2 {
-		t.Fatalf("expected 2 suggestions, got %d", len(got))
+	if len(got) != 3 {
+		t.Fatalf("expected 3 suggestions, got %d", len(got))
 	}
 	if got[0].Command != "azd ai agent show calculator-prompt" {
 		t.Errorf("show cmd = %q", got[0].Command)
 	}
-	if got[1].Command != `azd ai agent invoke calculator-prompt "Hello!"` {
+	// Single-agent invoke is bare (no agent name) — matches the
+	// README sample and avoids confusion when only one agent exists.
+	if got[1].Command != "azd ai agent invoke <payload>" {
 		t.Errorf("invoke cmd = %q", got[1].Command)
+	}
+	if got[2].Command != "azd ai agent monitor --follow" {
+		t.Errorf("monitor cmd = %q", got[2].Command)
 	}
 
 	empty := ResolveAfterDeployOne("")
-	if len(empty) != 2 {
-		t.Fatalf("expected fallback 2 suggestions, got %d", len(empty))
+	if len(empty) != 3 {
+		t.Fatalf("expected fallback 3 suggestions, got %d", len(empty))
 	}
 	if empty[0].Command != "azd ai agent show" {
 		t.Errorf("fallback show = %q", empty[0].Command)

@@ -694,9 +694,8 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		azdEnv["AZURE_AI_PROJECT_ID"],
 		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
 		protocols,
+		serviceConfig.RelativePath,
 	)
-
-	nextstep.PrintNext(os.Stdout, nextstep.ResolveAfterDeployOne(agentVersionResponse.Name))
 
 	return &azdext.ServiceDeployResult{
 		Artifacts: artifacts,
@@ -705,12 +704,18 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 
 // deployArtifacts constructs the artifacts list for deployment results.
 // It produces one endpoint artifact per displayable protocol.
+//
+// The note attached to the last endpoint includes a Next: block with
+// show / invoke / monitor suggestions and (when serviceRelativePath is
+// non-empty) a hint pointing at the service's README so users know
+// where to find a sample invocation payload.
 func (p *AgentServiceTargetProvider) deployArtifacts(
 	agentName string,
 	agentVersion string,
 	projectResourceID string,
 	projectEndpoint string,
 	protocols []agent_yaml.ProtocolVersionRecord,
+	serviceRelativePath string,
 ) []*azdext.Artifact {
 	artifacts := []*azdext.Artifact{}
 
@@ -751,14 +756,31 @@ func (p *AgentServiceTargetProvider) deployArtifacts(
 		// Attach the informational note to the last endpoint only, to avoid repetition.
 		if len(endpoints) > 0 {
 			last := artifacts[len(artifacts)-1]
-			// The artifact renderer prefixes the first line of the note
-			// with the parent indent + "  " (4 spaces). Match that
-			// indent on subsequent lines so the doctor pointer aligns.
-			noteIndent := "    "
-			last.Metadata["note"] = "For information on invoking the agent, see " +
-				output.WithLinkFormat("https://aka.ms/azd-agents-invoke") +
-				"\n" + noteIndent + "Run " + output.WithHighLightFormat("azd ai agent doctor") +
-				" for next-step suggestions"
+			intro := "For information on invoking the agent, see " +
+				output.WithLinkFormat("https://aka.ms/azd-agents-invoke")
+
+			// Build a Next: block with show / invoke / monitor.
+			suggestions := nextstep.ResolveAfterDeployOne(agentName)
+			hint := ""
+			if rel := strings.TrimSpace(serviceRelativePath); rel != "" {
+				hint = fmt.Sprintf(
+					"See %s/README.md for a sample payload appropriate for this agent.",
+					filepath.ToSlash(rel),
+				)
+			}
+			nextBlock := nextstep.FormatNextForNote(suggestions, hint)
+
+			note := intro
+			if nextBlock != "" {
+				// The artifact renderer prefixes only the first line of
+				// a note with the parent indent + "  " (4 spaces).
+				// FormatNextForNote already aligns subsequent lines, so
+				// prepend a newline + the same 4-space indent for the
+				// Next: block to start a fresh visual section under
+				// the link.
+				note = note + "\n    " + nextBlock
+			}
+			last.Metadata["note"] = note
 		}
 	}
 

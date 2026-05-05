@@ -359,6 +359,7 @@ func TestDeployArtifacts_HostedAgent_ProtocolEndpoints(t *testing.T) {
 		"", // no project resource ID — skip playground
 		ep,
 		protocols,
+		"",
 	)
 
 	// Should have 2 endpoint artifacts (one per displayable protocol)
@@ -395,6 +396,7 @@ func TestDeployArtifacts_ResponsesProtocol(t *testing.T) {
 		"", // no project resource ID — skip playground
 		ep,
 		protocols,
+		"",
 	)
 
 	require.Len(t, artifacts, 1)
@@ -416,6 +418,7 @@ func TestDeployArtifacts_EmptyProtocols_NoEndpoints(t *testing.T) {
 		"agent", "1.0.0",
 		"", "https://ep.azure.com",
 		nil,
+		"",
 	)
 	require.Empty(t, artifacts)
 }

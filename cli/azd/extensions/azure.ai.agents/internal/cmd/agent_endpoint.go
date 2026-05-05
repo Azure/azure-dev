@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 
 	"azureaiagent/internal/exterrors"
@@ -15,6 +16,20 @@ import (
 
 // agentEndpointHostSuffix is the required Foundry host suffix for endpoint URLs.
 const agentEndpointHostSuffix = ".services.ai.azure.com"
+
+// agentEndpointHint is the suggestion appended to most --agent-endpoint validation errors.
+// `azd ai agent show` persistently prints the agent endpoint URL, so it's the right
+// thing to point users at any time after a deploy.
+const agentEndpointHint = "run `azd ai agent show` to see the agent endpoint URL"
+
+// agentEndpointPathRegex matches the full Foundry agent-endpoint path. Captures:
+//
+//	[1] project name (URL-escaped),
+//	[2] agent name (URL-escaped),
+//	[3] protocol tail ("invocations" or "openai/responses").
+var agentEndpointPathRegex = regexp.MustCompile(
+	`^/api/projects/([^/]+)/agents/([^/]+)/endpoint/protocols/(invocations|openai/responses)/?$`,
+)
 
 // parsedAgentEndpoint describes a deployed agent invocation endpoint.
 type parsedAgentEndpoint struct {
@@ -26,7 +41,7 @@ type parsedAgentEndpoint struct {
 	APIVersion string
 }
 
-// parseAgentEndpoint parses the full agent invocation URL printed by `azd up` / `azd deploy`.
+// parseAgentEndpoint parses the full agent invocation URL printed by `azd ai agent show`.
 //
 // Accepted shapes:
 //
@@ -40,7 +55,7 @@ func parseAgentEndpoint(rawURL string) (*parsedAgentEndpoint, error) {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			"--agent-endpoint requires a non-empty URL",
-			"pass the agent endpoint printed by `azd up` or `azd deploy`",
+			agentEndpointHint,
 		)
 	}
 
@@ -49,7 +64,7 @@ func parseAgentEndpoint(rawURL string) (*parsedAgentEndpoint, error) {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			fmt.Sprintf("invalid --agent-endpoint URL: %v", err),
-			"pass the agent endpoint printed by `azd up` or `azd deploy`",
+			agentEndpointHint,
 		)
 	}
 
@@ -57,7 +72,7 @@ func parseAgentEndpoint(rawURL string) (*parsedAgentEndpoint, error) {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			"--agent-endpoint must use https",
-			"pass the agent endpoint printed by `azd up` or `azd deploy`",
+			agentEndpointHint,
 		)
 	}
 
@@ -66,7 +81,7 @@ func parseAgentEndpoint(rawURL string) (*parsedAgentEndpoint, error) {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			fmt.Sprintf("--agent-endpoint host %q is not a Foundry host (*%s)", u.Hostname(), agentEndpointHostSuffix),
-			"pass the agent endpoint printed by `azd up` or `azd deploy`",
+			agentEndpointHint,
 		)
 	}
 
@@ -76,61 +91,46 @@ func parseAgentEndpoint(rawURL string) (*parsedAgentEndpoint, error) {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			fmt.Sprintf("--agent-endpoint host %q must not include a port", u.Host),
-			"pass the agent endpoint printed by `azd up` or `azd deploy` (no explicit port)",
+			agentEndpointHint+" (no explicit port)",
 		)
 	}
 
-	path := strings.TrimSuffix(u.EscapedPath(), "/")
-	segments := strings.Split(strings.TrimPrefix(path, "/"), "/")
-
-	// Required prefix: api/projects/<proj>/agents/<name>/endpoint/protocols/<tail…>
-	// Minimum 8 segments (invocations); responses has 9 (openai/responses tail).
-	if len(segments) < 8 ||
-		segments[0] != "api" ||
-		segments[1] != "projects" ||
-		segments[2] == "" ||
-		segments[3] != "agents" ||
-		segments[4] == "" ||
-		segments[5] != "endpoint" ||
-		segments[6] != "protocols" {
+	// Match the full path against the canonical Foundry agent-endpoint shape and pull
+	// the project name, agent name, and protocol tail out in one pass.
+	matches := agentEndpointPathRegex.FindStringSubmatch(u.EscapedPath())
+	if matches == nil {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			"--agent-endpoint path must match /api/projects/<project>/agents/<name>/endpoint/protocols/<protocol>",
-			"pass the agent endpoint printed by `azd up` or `azd deploy`",
+			agentEndpointHint,
 		)
 	}
+	projectSegment, agentSegment, protocolTail := matches[1], matches[2], matches[3]
 
-	projectName, err := url.PathUnescape(segments[2])
+	projectName, err := url.PathUnescape(projectSegment)
 	if err != nil || projectName == "" {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			"--agent-endpoint project segment is invalid",
-			"pass the agent endpoint printed by `azd up` or `azd deploy`",
+			agentEndpointHint,
 		)
 	}
 
-	agentName, err := url.PathUnescape(segments[4])
+	agentName, err := url.PathUnescape(agentSegment)
 	if err != nil || !isValidAgentNameSegment(agentName) {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidAgentName,
-			fmt.Sprintf("--agent-endpoint agent name %q is invalid", segments[4]),
+			fmt.Sprintf("--agent-endpoint agent name %q is invalid", agentSegment),
 			"agent names may only contain letters, digits, '-' and '_'",
 		)
 	}
 
-	tail := segments[7:]
 	var protocol agent_api.AgentProtocol
-	switch {
-	case len(tail) == 1 && tail[0] == "invocations":
+	switch protocolTail {
+	case "invocations":
 		protocol = agent_api.AgentProtocolInvocations
-	case len(tail) == 2 && tail[0] == "openai" && tail[1] == "responses":
+	case "openai/responses":
 		protocol = agent_api.AgentProtocolResponses
-	default:
-		return nil, exterrors.Validation(
-			exterrors.CodeInvalidParameter,
-			fmt.Sprintf("--agent-endpoint protocol path %q is not recognized", strings.Join(tail, "/")),
-			"expected '/endpoint/protocols/invocations' or '/endpoint/protocols/openai/responses'",
-		)
 	}
 
 	// Reject an explicit but empty api-version query parameter; the default fallback would
@@ -148,7 +148,7 @@ func parseAgentEndpoint(rawURL string) (*parsedAgentEndpoint, error) {
 		apiVersion = values[0]
 	}
 
-	projectEndpoint := fmt.Sprintf("https://%s/api/projects/%s", host, segments[2])
+	projectEndpoint := fmt.Sprintf("https://%s/api/projects/%s", host, projectSegment)
 
 	return &parsedAgentEndpoint{
 		ProjectEndpoint: projectEndpoint,

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -66,6 +67,52 @@ func TestWriteDeploymentIdFile(t *testing.T) {
 		t.Setenv(deploymentIdFileEnvVar, filepath.Join(t.TempDir(), "missing-dir", "deployment-id.json"))
 
 		writeDeploymentIdFile(subDeployment)
+	})
+
+	t.Run("RelativePath_Rejected", func(t *testing.T) {
+		// Relative paths are rejected because callers (e.g. IDE integrations) cannot
+		// reasonably predict the process working directory; the file would land in an
+		// unexpected location. The function must not write anything in that case.
+		dir := t.TempDir()
+		t.Chdir(dir)
+
+		t.Setenv(deploymentIdFileEnvVar, "deployment-id.json")
+		writeDeploymentIdFile(subDeployment)
+
+		_, err := os.Stat(filepath.Join(dir, "deployment-id.json"))
+		require.ErrorIs(t, err, os.ErrNotExist,
+			"relative paths must be ignored, not written to the working directory")
+	})
+
+	t.Run("ConcurrentWrites_ProduceCompleteDocument", func(t *testing.T) {
+		// Multiple sibling provisioning layers may invoke writeDeploymentIdFile
+		// concurrently against the same path. Atomic temp-file + rename plus the
+		// internal mutex must guarantee the file always parses as a complete JSON
+		// document containing one of the deployment IDs (never a torn write).
+		path := filepath.Join(t.TempDir(), "deployment-id.json")
+		t.Setenv(deploymentIdFileEnvVar, path)
+
+		const writers = 8
+		var wg sync.WaitGroup
+		wg.Add(writers)
+		for i := range writers {
+			var deployment infra.Deployment = subDeployment
+			if i%2 == 0 {
+				deployment = rgDeployment
+			}
+			go func() {
+				defer wg.Done()
+				writeDeploymentIdFile(deployment)
+			}()
+		}
+		wg.Wait()
+
+		data, err := os.ReadFile(path)
+		require.NoError(t, err)
+		var doc deploymentIdFile
+		require.NoError(t, json.Unmarshal(data, &doc),
+			"file must be a complete JSON document under concurrent writers")
+		require.Contains(t, []string{subID, rgID}, doc.DeploymentId)
 	})
 }
 

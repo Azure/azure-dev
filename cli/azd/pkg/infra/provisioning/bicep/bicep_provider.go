@@ -811,11 +811,6 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 		return nil, err
 	}
 
-	// If AZD_DEPLOYMENT_ID_FILE is set, expose the ARM deployment ID to the caller as
-	// soon as the deployment name/scope is known so external tooling (such as IDE
-	// extensions) can begin tracking the deployment without parsing console output.
-	writeDeploymentIdFile(deployment)
-
 	result := p.convertToDeployment(planned.Template)
 
 	// parameters hash is required for doing deployment state validation check but also to set the hash
@@ -996,6 +991,13 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 
 	// Start the deployment
 	p.console.ShowSpinner(ctx, "Creating/Updating resources", input.Step)
+
+	// If AZD_DEPLOYMENT_ID_FILE is set, expose the ARM deployment ID to the caller now
+	// that we are actually about to start the ARM deployment. Doing this here (rather
+	// than immediately after generating the deployment object) avoids advertising a
+	// deployment ID that never exists in Azure when the run short-circuits via the
+	// deployment-state cache or is aborted by preflight validation.
+	writeDeploymentIdFile(deployment)
 
 	deployCtx, interruptStarted, interruptCh, markDeployCompleted, interruptCleanup :=
 		p.installDeploymentInterruptHandler(ctx, deployment, cancelProgress)

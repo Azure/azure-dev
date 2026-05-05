@@ -230,7 +230,7 @@ func (a *doctorAction) checkAgentManifest(projectPath string, services []*azdext
 	for _, svc := range services {
 		title := fmt.Sprintf("agent.yaml for service %q is valid", svc.Name)
 		manifestPath := filepath.Join(projectPath, svc.RelativePath, "agent.yaml")
-		data, err := os.ReadFile(manifestPath)
+		data, err := os.ReadFile(manifestPath) //nolint:gosec // G304: path constructed from azd project root
 		if err != nil {
 			if os.IsNotExist(err) {
 				out = append(out, doctorResult{

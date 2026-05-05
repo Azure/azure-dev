@@ -52,7 +52,7 @@ func ExtractInvokeExample(specPath string) (string, error) {
 	if specPath == "" {
 		return "", nil
 	}
-	data, err := os.ReadFile(specPath)
+	data, err := os.ReadFile(specPath) //nolint:gosec // G304: specPath is resolved under the azd config root
 	if err != nil {
 		if os.IsNotExist(err) {
 			return "", nil

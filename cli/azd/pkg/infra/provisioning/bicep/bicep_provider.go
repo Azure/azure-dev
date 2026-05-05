@@ -811,6 +811,11 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 		return nil, err
 	}
 
+	// If AZD_DEPLOYMENT_ID_FILE is set, expose the ARM deployment ID to the caller as
+	// soon as the deployment name/scope is known so external tooling (such as IDE
+	// extensions) can begin tracking the deployment without parsing console output.
+	writeDeploymentIdFile(deployment)
+
 	result := p.convertToDeployment(planned.Template)
 
 	// parameters hash is required for doing deployment state validation check but also to set the hash

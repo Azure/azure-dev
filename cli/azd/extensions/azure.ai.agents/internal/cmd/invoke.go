@@ -210,18 +210,6 @@ func validateAgentEndpointFlags(cmd *cobra.Command, flags *invokeFlags) error {
 		},
 		{"--port", cmd.Flags().Changed("port"), "--port targets a local agent; omit it when using --agent-endpoint"},
 		{"--protocol", cmd.Flags().Changed("protocol"), "the protocol is read from the --agent-endpoint URL; omit --protocol"},
-		{
-			"--new-session",
-			flags.newSession,
-			"ephemeral invokes do not persist session IDs; omit --new-session " +
-				"or pass --session-id to continue a known session",
-		},
-		{
-			"--new-conversation",
-			flags.newConversation,
-			"ephemeral invokes do not persist conversation IDs; omit --new-conversation " +
-				"or pass --conversation-id to continue a known conversation",
-		},
 	}
 
 	for _, c := range checks {
@@ -234,6 +222,21 @@ func validateAgentEndpointFlags(cmd *cobra.Command, flags *invokeFlags) error {
 		}
 	}
 	return nil
+}
+
+// warnIneffectiveResetFlags logs when --new-session / --new-conversation were
+// requested but persistence is not active (standalone mode without a parent azd
+// daemon). The flags only have an effect when the extension can read/write the
+// stored IDs, so silently accepting them would be misleading.
+func warnIneffectiveResetFlags(flags *invokeFlags) {
+	if flags.newSession {
+		log.Printf("warning: --new-session has no effect without a parent azd daemon (session ID is not persisted)")
+	}
+	if flags.newConversation {
+		log.Printf(
+			"warning: --new-conversation has no effect without a parent azd daemon (conversation ID is not persisted)",
+		)
+	}
 }
 
 func (a *InvokeAction) Run(ctx context.Context) error {
@@ -414,11 +417,21 @@ func (a *InvokeAction) responsesLocal(ctx context.Context) error {
 }
 
 // remoteContext holds the resolved inputs for a remote (Foundry) invoke.
-// In ephemeral mode (--agent-endpoint), AzdClient is nil and the project endpoint /
-// agent name / api-version come from the parsed URL.
+// In ephemeral mode (--agent-endpoint) the project endpoint / agent name /
+// api-version come from the parsed URL.
+//
+// agentKey is the persistence key used by the global UserConfig store. It is
+// non-empty whenever session/conversation IDs should be saved or resumed:
+//   - project mode: derived from AGENT_{SVC}_ENDPOINT
+//   - ephemeral mode: derived from the parsed --agent-endpoint URL
+//     (independent of api-version / trailing slash / fragment)
+//
+// In standalone mode (no parent azd daemon, e.g. running the extension binary
+// directly outside an azd command) azdClient is nil and persistence helpers
+// no-op. agentKey may still be non-empty in that case.
 type remoteContext struct {
 	name            string
-	agentEndpoint   string // full Foundry agent endpoint URL; used to derive the global-config agentKey
+	agentKey        string
 	projectEndpoint string
 	apiVersion      string
 	azdClient       *azdext.AzdClient
@@ -440,6 +453,13 @@ func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext
 		if a.endpoint.APIVersion != "" {
 			rc.apiVersion = a.endpoint.APIVersion
 		}
+		rc.agentKey = buildEphemeralAgentKey(a.endpoint.ProjectEndpoint, a.endpoint.AgentName)
+		// Best-effort attach to the parent azd daemon so session/conversation IDs
+		// persist across invokes via global UserConfig. When running the extension
+		// binary directly (standalone), this fails and we proceed without persistence.
+		if azdClient, err := azdext.NewAzdClient(); err == nil {
+			rc.azdClient = azdClient
+		}
 		return rc, nil
 	}
 
@@ -454,7 +474,9 @@ func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext
 		if rc.name == "" && info.AgentName != "" {
 			rc.name = info.AgentName
 		}
-		rc.agentEndpoint = info.AgentEndpoint
+		if info.AgentEndpoint != "" {
+			rc.agentKey = buildRemoteAgentKeyFromEndpoint(info.AgentEndpoint)
+		}
 	}
 	if rc.name == "" {
 		azdClient.Close()
@@ -517,13 +539,15 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 		return err
 	}
 
-	// Build the structured agent key for config store lookups.
-	// When the endpoint is unavailable (pre-deploy), skip session/conversation persistence.
-	var agentKey string
-	if rc.agentEndpoint != "" {
-		agentKey = buildRemoteAgentKeyFromEndpoint(rc.agentEndpoint)
-	} else if rc.azdClient != nil {
+	// agentKey is set by resolveRemoteContext when persistence is applicable.
+	// In ephemeral mode without a parent azd daemon we still set it for clarity,
+	// but the helpers below early-return when azdClient is nil.
+	agentKey := rc.agentKey
+	if agentKey == "" && rc.azdClient != nil {
 		log.Printf("warning: agent endpoint not available, session state will not be persisted")
+	}
+	if a.endpoint != nil && rc.azdClient == nil {
+		warnIneffectiveResetFlags(a.flags)
 	}
 
 	// Acquire the bearer token after body validation so a local input error
@@ -620,14 +644,18 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	}
 
 	captureResponseSession(ctx, rc.azdClient, agentKey, sid, resp, "Session:      ")
-	if rc.azdClient == nil {
-		printEphemeralSessionHint(sid, resp)
-		printEphemeralConversationHint(a.flags.conversation, convID)
-	}
 
 	if resp.StatusCode >= 400 {
 		respBody, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("POST %s failed with HTTP %d: %s\n%s", url, resp.StatusCode, resp.Status, string(respBody))
+	}
+
+	// Continuation hints are only emitted on success: a failed invoke would not
+	// have produced a usable conversation to continue. Persistence still happens
+	// above (captureResponseSession) so a successful retry can resume.
+	if agentKey == "" || rc.azdClient == nil {
+		printEphemeralSessionHint(sid, resp)
+		printEphemeralConversationHint(a.flags.conversation, convID)
 	}
 
 	// Parse SSE stream for agent output
@@ -713,11 +741,12 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 		defer rc.azdClient.Close()
 	}
 
-	var agentKey string
-	if rc.agentEndpoint != "" {
-		agentKey = buildRemoteAgentKeyFromEndpoint(rc.agentEndpoint)
-	} else if rc.azdClient != nil {
+	agentKey := rc.agentKey
+	if agentKey == "" && rc.azdClient != nil {
 		log.Printf("warning: agent endpoint not available, session state will not be persisted")
+	}
+	if a.endpoint != nil && rc.azdClient == nil {
+		warnIneffectiveResetFlags(a.flags)
 	}
 
 	body, bodyLabel, err := a.resolveBody()
@@ -754,8 +783,10 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 
 	remoteBaseURL := fmt.Sprintf("%s/agents/%s/endpoint/protocols", rc.projectEndpoint, rc.name)
 
-	// Fetch and cache the agent's OpenAPI spec (skip if already cached, no-op without azd client).
-	if rc.azdClient != nil {
+	// Fetch and cache the agent's OpenAPI spec only in project mode. In ephemeral
+	// mode (--agent-endpoint) we deliberately avoid the on-disk side effect since
+	// the user is one-off targeting a remote endpoint.
+	if rc.azdClient != nil && a.endpoint == nil {
 		fetchOpenAPISpec(ctx, rc.azdClient, remoteBaseURL, rc.name, "remote", rc.bearerToken, false)
 	}
 
@@ -785,7 +816,8 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	}
 
 	captureResponseSession(ctx, rc.azdClient, agentKey, sid, resp, "Session:  ")
-	if rc.azdClient == nil {
+	// Continuation hint is only emitted on success; see comment in responsesRemote.
+	if (agentKey == "" || rc.azdClient == nil) && resp.StatusCode < 400 {
 		printEphemeralSessionHint(sid, resp)
 	}
 

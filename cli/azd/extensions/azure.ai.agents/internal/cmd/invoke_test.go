@@ -380,18 +380,6 @@ func TestAgentEndpointFlagValidation(t *testing.T) {
 			errSub:  "cannot be combined with --port",
 		},
 		{
-			name:    "rejects --new-session",
-			args:    []string{"--agent-endpoint", validURL, "--new-session", "hi"},
-			wantErr: true,
-			errSub:  "cannot be combined with --new-session",
-		},
-		{
-			name:    "rejects --new-conversation",
-			args:    []string{"--agent-endpoint", validURL, "--new-conversation", "hi"},
-			wantErr: true,
-			errSub:  "cannot be combined with --new-conversation",
-		},
-		{
 			name:    "rejects --protocol",
 			args:    []string{"--agent-endpoint", validURL, "--protocol", "responses", "hi"},
 			wantErr: true,

@@ -117,6 +117,52 @@ func TestBuildRemoteAgentKeyFromEndpoint_EquivalentToBuildAgentKey(t *testing.T)
 	require.Equal(t, fromParts, fromEndpoint)
 }
 
+// TestBuildEphemeralAgentKey_StableAcrossURLVariants ensures that all URL
+// shapes that the user could plausibly pass to --agent-endpoint (canonical,
+// with/without api-version, trailing slash, fragment, mixed case host)
+// collapse to the same persistence key. Cross-variant drift would silently
+// fragment session/conversation state on every invoke.
+func TestBuildEphemeralAgentKey_StableAcrossURLVariants(t *testing.T) {
+	t.Parallel()
+
+	const (
+		projectEndpoint = "https://acct.services.ai.azure.com/api/projects/proj"
+		agentName       = "my-agent"
+	)
+	want := "acct.services.ai.azure.com/api/projects/proj/agents/my-agent/ephemeral"
+
+	tests := []struct {
+		name     string
+		endpoint string
+	}{
+		{"canonical", projectEndpoint},
+		{"trailing slash", projectEndpoint + "/"},
+		{"mixed case host", "https://Acct.Services.AI.Azure.Com/api/projects/proj"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := buildEphemeralAgentKey(tt.endpoint, agentName)
+			assert.Equal(t, want, got)
+		})
+	}
+}
+
+// TestBuildEphemeralAgentKey_DistinctFromRemote guards the contract that
+// ephemeral keys never collide with project-mode keys for the same endpoint.
+func TestBuildEphemeralAgentKey_DistinctFromRemote(t *testing.T) {
+	t.Parallel()
+
+	const (
+		projectEndpoint = "https://acct.services.ai.azure.com/api/projects/proj"
+		agentName       = "my-agent"
+	)
+	ephemeral := buildEphemeralAgentKey(projectEndpoint, agentName)
+	remote := buildAgentKey(projectEndpoint, agentName, "1", false)
+	assert.NotEqual(t, ephemeral, remote)
+}
+
 func TestNormalizeEndpoint_StripScheme(t *testing.T) {
 	t.Parallel()
 

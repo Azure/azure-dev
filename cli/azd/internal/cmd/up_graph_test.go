@@ -34,17 +34,32 @@ func TestPhaseTimingBreakdown(t *testing.T) {
 		{
 			name: "deploy only",
 			steps: []exegraph.StepTiming{
-				{Name: "package-web", Status: exegraph.StepDone, Start: base, End: base.Add(30 * time.Second)},
-				{Name: "deploy-web", Status: exegraph.StepDone, Start: base.Add(30 * time.Second), End: base.Add(90 * time.Second)},
+				{
+					Name: "package-web", Status: exegraph.StepDone,
+					Start: base, End: base.Add(30 * time.Second),
+				},
+				{
+					Name: "deploy-web", Status: exegraph.StepDone,
+					Start: base.Add(30 * time.Second), End: base.Add(90 * time.Second),
+				},
 			},
 			want: "  Deploying:    1 minute 30 seconds",
 		},
 		{
 			name: "both phases",
 			steps: []exegraph.StepTiming{
-				{Name: "provision-infra", Status: exegraph.StepDone, Start: base, End: base.Add(9 * time.Minute)},
-				{Name: "package-web", Status: exegraph.StepDone, Start: base.Add(9 * time.Minute), End: base.Add(10 * time.Minute)},
-				{Name: "deploy-web", Status: exegraph.StepDone, Start: base.Add(10 * time.Minute), End: base.Add(11 * time.Minute)},
+				{
+					Name: "provision-infra", Status: exegraph.StepDone,
+					Start: base, End: base.Add(9 * time.Minute),
+				},
+				{
+					Name: "package-web", Status: exegraph.StepDone,
+					Start: base.Add(9 * time.Minute), End: base.Add(10 * time.Minute),
+				},
+				{
+					Name: "deploy-web", Status: exegraph.StepDone,
+					Start: base.Add(10 * time.Minute), End: base.Add(11 * time.Minute),
+				},
 			},
 			want: "  Provisioning: 9 minutes\n  Deploying:    2 minutes",
 		},

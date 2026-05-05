@@ -394,7 +394,7 @@ Agent details are automatically resolved from the azd environment.`,
 				return err
 			}
 
-			remotePath := ""
+			remotePath := "/"
 			if len(args) > 0 {
 				remotePath = args[0]
 			}

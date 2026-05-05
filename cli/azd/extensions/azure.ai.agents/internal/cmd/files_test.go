@@ -100,6 +100,14 @@ func TestFilesListCommand_OptionalRemotePath(t *testing.T) {
 	assert.NotNil(t, cmd.Args)
 }
 
+func TestFilesListCommand_DefaultPathIsRoot(t *testing.T) {
+	cmd := newFilesListCommand()
+
+	// The Use line should show [remote-path] as optional with "/" as default behavior.
+	assert.Equal(t, "list [remote-path]", cmd.Use)
+	assert.Contains(t, cmd.Long, "lists the root directory")
+}
+
 func TestFilesDeleteCommand_MissingFile(t *testing.T) {
 	cmd := newFilesRemoveCommand()
 

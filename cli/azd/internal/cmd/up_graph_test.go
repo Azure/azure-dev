@@ -43,7 +43,7 @@ func TestPhaseTimingBreakdown(t *testing.T) {
 					Start: base.Add(30 * time.Second), End: base.Add(90 * time.Second),
 				},
 			},
-			want: "  Deploying:    1 minute 30 seconds",
+			want: "  Deploying:    1 minute",
 		},
 		{
 			name: "both phases",
@@ -61,7 +61,7 @@ func TestPhaseTimingBreakdown(t *testing.T) {
 					Start: base.Add(10 * time.Minute), End: base.Add(11 * time.Minute),
 				},
 			},
-			want: "  Provisioning: 9 minutes\n  Deploying:    2 minutes",
+			want: "  Provisioning: 9 minutes\n  Deploying:    1 minute",
 		},
 		{
 			name: "skipped steps excluded",

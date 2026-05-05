@@ -597,6 +597,17 @@ func (u *UpGraphAction) Run(
 		log.Printf("warning: failed to invalidate state cache: %v", cacheErr)
 	}
 
+	// Emit per-phase duration telemetry for backend performance tracking.
+	totalMs := since(startTime).Milliseconds()
+	tracing.SetUsageAttributes(fields.PerfTotalDurationMs.Int64(totalMs))
+	provDur, deployDur := phaseDurations(result.Steps)
+	if provDur > 0 {
+		tracing.SetUsageAttributes(fields.PerfProvisionDurationMs.Int64(provDur.Milliseconds()))
+	}
+	if deployDur > 0 {
+		tracing.SetUsageAttributes(fields.PerfDeployDurationMs.Int64(deployDur.Milliseconds()))
+	}
+
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header: fmt.Sprintf(
@@ -610,7 +621,28 @@ func (u *UpGraphAction) Run(
 
 // phaseTimingBreakdown computes wall-clock durations for provisioning and deploying phases
 // by finding the earliest start and latest end among matching steps.
+// Package/publish steps run concurrently with provisioning, so they are excluded from the
+// deploy window to avoid showing a deploy duration that exceeds the total.
 func phaseTimingBreakdown(steps []exegraph.StepTiming) string {
+	provDur, deployDur := phaseDurations(steps)
+
+	var lines []string
+	if provDur > 0 {
+		lines = append(lines, fmt.Sprintf("  Provisioning: %s", ux.DurationAsText(provDur)))
+	}
+	if deployDur > 0 {
+		lines = append(lines, fmt.Sprintf("  Deploying:    %s", ux.DurationAsText(deployDur)))
+	}
+
+	if len(lines) == 0 {
+		return ""
+	}
+	return strings.Join(lines, "\n")
+}
+
+// phaseDurations computes the wall-clock duration for provisioning and deploying phases.
+// Returns zero durations for phases that were not executed.
+func phaseDurations(steps []exegraph.StepTiming) (provision, deploy time.Duration) {
 	var provStart, deployStart time.Time
 	var provEnd, deployEnd time.Time
 
@@ -628,9 +660,7 @@ func phaseTimingBreakdown(steps []exegraph.StepTiming) string {
 			if st.End.After(provEnd) {
 				provEnd = st.End
 			}
-		case strings.HasPrefix(st.Name, "package-") ||
-			strings.HasPrefix(st.Name, "publish-") ||
-			strings.HasPrefix(st.Name, "deploy-") ||
+		case strings.HasPrefix(st.Name, "deploy-") ||
 			strings.HasPrefix(st.Name, "cmdhook-predeploy") ||
 			strings.HasPrefix(st.Name, "cmdhook-postdeploy"):
 			if deployStart.IsZero() || st.Start.Before(deployStart) {
@@ -642,18 +672,13 @@ func phaseTimingBreakdown(steps []exegraph.StepTiming) string {
 		}
 	}
 
-	var lines []string
 	if !provStart.IsZero() {
-		lines = append(lines, fmt.Sprintf("  Provisioning: %s", ux.DurationAsText(provEnd.Sub(provStart))))
+		provision = provEnd.Sub(provStart)
 	}
 	if !deployStart.IsZero() {
-		lines = append(lines, fmt.Sprintf("  Deploying:    %s", ux.DurationAsText(deployEnd.Sub(deployStart))))
+		deploy = deployEnd.Sub(deployStart)
 	}
-
-	if len(lines) == 0 {
-		return ""
-	}
-	return strings.Join(lines, "\n")
+	return provision, deploy
 }
 
 // changedFlagNames returns the names of flags that were explicitly set on

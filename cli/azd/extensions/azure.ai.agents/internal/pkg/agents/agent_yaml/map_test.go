@@ -551,9 +551,6 @@ func TestConvertYamlToolToApiTool_MCPTopLevelUrlAndConnection(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected agent_api.MCPTool, got %T", result)
 	}
-	if mcp.ServerLabel != "github-mcp-remote" {
-		t.Errorf("ServerLabel = %q", mcp.ServerLabel)
-	}
 	if mcp.ServerURL != "https://api.githubcopilot.com/mcp/" {
 		t.Errorf("ServerURL = %q", mcp.ServerURL)
 	}
@@ -561,49 +558,6 @@ func TestConvertYamlToolToApiTool_MCPTopLevelUrlAndConnection(t *testing.T) {
 		t.Errorf("ProjectConnectionID mismatch")
 	}
 }
-
-func TestConvertYamlToolToApiTool_MCPFoundryConnectionEndpointFallback(t *testing.T) {
-	t.Parallel()
-	// When no top-level url is set, the mapper should fall back to the FoundryConnection endpoint.
-	template := map[string]any{
-		"tools": []any{
-			map[string]any{
-				"kind": "mcp",
-				"name": "foundry-mcp",
-				"connection": map[string]any{
-					"kind":     "foundry",
-					"endpoint": "https://foundry.example.com/mcp/",
-					"name":     "foundry-conn",
-				},
-				// no top-level "url" field
-			},
-		},
-	}
-
-	tools, err := ExtractToolsDefinitions(template)
-	if err != nil {
-		t.Fatalf("ExtractToolsDefinitions failed: %v", err)
-	}
-	if len(tools) != 1 {
-		t.Fatalf("expected 1 tool, got %d", len(tools))
-	}
-
-	result, err := convertYamlToolToApiTool(tools[0])
-	if err != nil {
-		t.Fatalf("convertYamlToolToApiTool failed: %v", err)
-	}
-	mcp, ok := result.(agent_api.MCPTool)
-	if !ok {
-		t.Fatalf("expected agent_api.MCPTool, got %T", result)
-	}
-	if mcp.ServerURL != "https://foundry.example.com/mcp/" {
-		t.Errorf("ServerURL = %q, want %q", mcp.ServerURL, "https://foundry.example.com/mcp/")
-	}
-	if mcp.ProjectConnectionID == nil || *mcp.ProjectConnectionID != "foundry-conn" {
-		t.Errorf("ProjectConnectionID mismatch")
-	}
-}
-
 func TestConvertYamlToolToApiTool_MCPNoOptions(t *testing.T) {
 	t.Parallel()
 	yamlTool := McpTool{

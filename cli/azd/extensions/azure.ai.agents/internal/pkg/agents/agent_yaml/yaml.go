@@ -242,13 +242,6 @@ type RemoteConnection struct {
 	Endpoint   string `json:"endpoint" yaml:"endpoint"`
 }
 
-// FoundryConnection Connection configuration for Foundry project connections.
-type FoundryConnection struct {
-	Connection `json:",inline" yaml:",inline"`
-	Name       string `json:"name" yaml:"name"`
-	Endpoint   string `json:"endpoint" yaml:"endpoint"`
-}
-
 // ApiKeyConnection Connection configuration for AI services using API keys.
 type ApiKeyConnection struct {
 	Connection `json:",inline" yaml:",inline"`

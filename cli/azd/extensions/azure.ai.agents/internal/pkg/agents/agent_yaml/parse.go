@@ -359,11 +359,11 @@ func ExtractConnectionDefinition(connectionBytes []byte) (any, error) {
 		}
 		return remoteConn, nil
 	case ConnectionKindFoundry:
-		var foundryConn FoundryConnection
-		if err := yaml.Unmarshal(connectionBytes, &foundryConn); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal to FoundryConnection: %w", err)
+		var remoteConn RemoteConnection
+		if err := yaml.Unmarshal(connectionBytes, &remoteConn); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal to RemoteConnection: %w", err)
 		}
-		return foundryConn, nil
+		return remoteConn, nil
 	case ConnectionKindApiKey:
 		var apiKeyConn ApiKeyConnection
 		if err := yaml.Unmarshal(connectionBytes, &apiKeyConn); err != nil {

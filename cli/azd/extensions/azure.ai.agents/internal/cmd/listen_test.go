@@ -140,6 +140,51 @@ func TestResolveToolboxConnectionIDs(t *testing.T) {
 	}
 }
 
+func TestEnrichToolboxFromConnectionsUsesAllConnectionTypes(t *testing.T) {
+	t.Parallel()
+
+	config := &project.ServiceTargetAgentConfig{
+		Connections: []project.Connection{
+			{
+				Name:   "shared-mcp",
+				Target: "https://shared.example.com/mcp/",
+			},
+		},
+		ToolConnections: []project.ToolConnection{
+			{
+				Name:   "tool-mcp",
+				Target: "https://tool.example.com/mcp/",
+			},
+		},
+	}
+	testToolbox := project.Toolbox{
+		Name: "test",
+		Tools: []map[string]any{
+			{"type": "mcp", "project_connection_id": "shared-mcp"},
+			{"type": "mcp", "project_connection_id": "tool-mcp"},
+			{"type": "mcp", "project_connection_id": "missing-mcp"},
+		},
+	}
+
+	enrichToolboxFromConnections(&testToolbox, toolboxConnectionsByName(config))
+
+	if testToolbox.Tools[0]["server_url"] != "https://shared.example.com/mcp/" {
+		t.Errorf("tool 0 server_url = %v", testToolbox.Tools[0]["server_url"])
+	}
+	if testToolbox.Tools[0]["server_label"] != "shared-mcp" {
+		t.Errorf("tool 0 server_label = %v", testToolbox.Tools[0]["server_label"])
+	}
+	if testToolbox.Tools[1]["server_url"] != "https://tool.example.com/mcp/" {
+		t.Errorf("tool 1 server_url = %v", testToolbox.Tools[1]["server_url"])
+	}
+	if testToolbox.Tools[1]["server_label"] != "tool-mcp" {
+		t.Errorf("tool 1 server_label = %v", testToolbox.Tools[1]["server_label"])
+	}
+	if _, has := testToolbox.Tools[2]["server_url"]; has {
+		t.Errorf("tool 2 should not have server_url")
+	}
+}
+
 func TestResolveTemplateRef(t *testing.T) {
 	t.Parallel()
 

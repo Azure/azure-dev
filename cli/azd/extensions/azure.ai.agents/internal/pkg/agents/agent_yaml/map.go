@@ -277,15 +277,11 @@ func convertYamlToolToApiTool(yamlTool any) (any, error) {
 		return apiTool, nil
 
 	case McpTool:
-		serverLabel := tool.ServerName
-		if serverLabel == "" {
-			serverLabel = tool.Name
-		}
 		apiTool := agent_api.MCPTool{
 			Tool: agent_api.Tool{
 				Type: agent_api.ToolTypeMCP,
 			},
-			ServerLabel: serverLabel,
+			ServerLabel: tool.ServerName,
 			ServerURL:   tool.URL,
 		}
 		if projectConnectionID := projectConnectionIDFromMcpConnection(tool.Connection); projectConnectionID != "" {
@@ -314,12 +310,6 @@ func convertYamlToolToApiTool(yamlTool any) (any, error) {
 				if id, ok := projectConnectionId.(string); ok {
 					apiTool.ProjectConnectionID = &id
 				}
-			}
-		}
-		// Fall back to connection endpoint when ServerURL has not been set by any other source.
-		if apiTool.ServerURL == "" {
-			if endpoint := endpointFromMcpConnection(tool.Connection); endpoint != "" {
-				apiTool.ServerURL = endpoint
 			}
 		}
 		return apiTool, nil
@@ -367,21 +357,12 @@ func projectConnectionIDFromMcpConnection(connection any) string {
 		return conn.Name
 	case RemoteConnection:
 		return conn.Name
-	case FoundryConnection:
-		return conn.Name
 	case map[string]any:
 		if name, ok := conn["name"].(string); ok {
 			return name
 		}
 	}
 
-	return ""
-}
-
-func endpointFromMcpConnection(connection any) string {
-	if conn, ok := connection.(FoundryConnection); ok {
-		return conn.Endpoint
-	}
 	return ""
 }
 

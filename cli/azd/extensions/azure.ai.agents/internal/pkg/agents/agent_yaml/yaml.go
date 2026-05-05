@@ -183,7 +183,7 @@ type ContainerAgent struct {
 // It includes parameters that can be used to configure the agent's behavior.
 // These parameters include values that can be used as publisher parameters that can
 // be used to describe additional variables that have been tested and are known to work.
-// Variables described here are then used to project into a prompt agent that can be executed.
+// Variables described here are used to configure the agent dynamically at init time.
 // Once parameters are provided, these can be referenced in the manifest using the following notation:
 // `{{myParameter}}`
 // This allows for dynamic configuration of the agent based on the provided parameters.

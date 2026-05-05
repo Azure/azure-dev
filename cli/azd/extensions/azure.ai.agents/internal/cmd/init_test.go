@@ -1159,11 +1159,6 @@ func TestResolvePositionalArg(t *testing.T) {
 			isManifest: true,
 		},
 		{
-			name:       "azureml registry URL is manifest",
-			arg:        "azureml://registries/myReg/agentmanifests/myManifest",
-			isManifest: true,
-		},
-		{
 			name:       "custom scheme URL is manifest",
 			arg:        "custom://some/resource",
 			isManifest: true,

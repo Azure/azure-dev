@@ -110,6 +110,16 @@ func TestInitializeValidatesCustomCodeProjectPath(t *testing.T) {
 	projectDir := t.TempDir()
 	createFile(t, filepath.Join(projectDir, "azure.yaml"), "name: test-project\n")
 
+	t.Run("fails when host is not function", func(t *testing.T) {
+		provider := &LogicAppsStandardFrameworkServiceProvider{}
+		svc := newServiceConfig("logicApp", "src/logicApp", nil)
+		svc.Host = "appservice"
+
+		err := provider.Initialize(t.Context(), svc)
+		require.Error(t, err)
+		assert.Equal(t, "Logic Apps Standard requires the host to be 'function', but found 'appservice'", err.Error())
+	})
+
 	t.Run("succeeds without customCodeProject and sets serviceConfig", func(t *testing.T) {
 		provider := &LogicAppsStandardFrameworkServiceProvider{}
 		svc := newServiceConfig("logicApp", "src/logicApp", nil)
@@ -330,6 +340,7 @@ func newServiceConfig(name, relativePath string, additionalProps map[string]any)
 	svc := &azdext.ServiceConfig{
 		Name:         name,
 		RelativePath: relativePath,
+		Host:         "function",
 	}
 
 	if additionalProps != nil {

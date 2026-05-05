@@ -34,6 +34,10 @@ func (p *LogicAppsStandardFrameworkServiceProvider) Initialize(
 ) error {
 	p.serviceConfig = serviceConfig
 
+	if serviceConfig.Host != "function" {
+		return fmt.Errorf("Logic Apps Standard requires the host to be 'function', but found '%s'", serviceConfig.Host)
+	}
+
 	if hasCustomCodeProjectConfigured(serviceConfig) {
 		csProjPath, err := p.resolveCustomCodeProjectPath(serviceConfig)
 		if err != nil {

@@ -156,29 +156,29 @@ func TestParseAgentEndpoint(t *testing.T) {
 	}
 }
 
-func TestIsValidAgentNameSegment(t *testing.T) {
-	tests := []struct {
-		in   string
-		want bool
-	}{
-		{"hello", true},
-		{"hello-world", true},
-		{"agent_v2", true},
-		{"AGENT123", true},
-		{"", false},
-		{"hello world", false},
-		{"hello/world", false},
-		{"hello.world", false},
-		{"agent@v1", false},
-		{"agent:v1", false},
-		{"agent*", false},
-		{"agent!", false},
-		{"héllo", false},
+// TestParseAgentEndpoint_RejectsInvalidAgentNames covers names that pass the
+// regex's `[^/]+` capture but fail the canonical agent_yaml.ValidateAgentName
+// check (which enforces the deployable-name format). Without this delegation
+// these inputs would previously have been accepted locally and only failed
+// later as 404s on the wire.
+func TestParseAgentEndpoint_RejectsInvalidAgentNames(t *testing.T) {
+	cases := []string{
+		// underscore — disallowed by the canonical validator
+		"agent_v2",
+		// 64 characters — exceeds the 63-char limit
+		strings.Repeat("a", 64),
+		// trailing hyphen — must end alphanumeric
+		"agent-",
+		// leading hyphen — must start alphanumeric
+		"-agent",
 	}
-	for _, tt := range tests {
-		t.Run(tt.in, func(t *testing.T) {
-			if got := isValidAgentNameSegment(tt.in); got != tt.want {
-				t.Errorf("isValidAgentNameSegment(%q) = %v, want %v", tt.in, got, tt.want)
+	for _, name := range cases {
+		t.Run(name, func(t *testing.T) {
+			endpoint := "https://acct.services.ai.azure.com/api/projects/proj/agents/" +
+				name + "/endpoint/protocols/invocations?api-version=2025-11-15-preview"
+			_, err := parseAgentEndpoint(endpoint)
+			if err == nil {
+				t.Fatalf("parseAgentEndpoint(%q) = nil, want error", name)
 			}
 		})
 	}

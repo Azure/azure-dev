@@ -11,6 +11,7 @@ import (
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/pkg/agents/agent_yaml"
 )
 
 // agentEndpointHostSuffix is the required Foundry host suffix for endpoint URLs.
@@ -116,11 +117,12 @@ func parseAgentEndpoint(rawURL string) (*parsedAgentEndpoint, error) {
 	}
 
 	agentName, err := url.PathUnescape(agentSegment)
-	if err != nil || !isValidAgentNameSegment(agentName) {
+	if err != nil || agent_yaml.ValidateAgentName(agentName) != nil {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidAgentName,
 			fmt.Sprintf("--agent-endpoint agent name %q is invalid", agentSegment),
-			"agent names may only contain letters, digits, '-' and '_'",
+			"agent names must start and end with an alphanumeric character, "+
+				"may contain hyphens in the middle, and be 1-63 characters long",
 		)
 	}
 
@@ -179,21 +181,6 @@ func buildInvocationsURL(projectEndpoint, agentName, apiVersion, sid string) str
 	return invURL
 }
 
-// isValidAgentNameSegment reports whether s is safe to use as a URL path segment
-// without escaping. Allowed characters: ASCII letters, digits, '-' and '_'.
-func isValidAgentNameSegment(s string) bool {
-	if s == "" {
-		return false
-	}
-	for _, r := range s {
-		switch {
-		case r >= 'a' && r <= 'z',
-			r >= 'A' && r <= 'Z',
-			r >= '0' && r <= '9',
-			r == '-', r == '_':
-		default:
-			return false
-		}
-	}
-	return true
-}
+// (isValidAgentNameSegment was removed — agent name validation now delegates
+// to agent_yaml.ValidateAgentName so --agent-endpoint enforces the same
+// deployable-name format as the rest of the extension.)

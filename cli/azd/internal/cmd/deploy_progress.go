@@ -72,7 +72,7 @@ type deployProgressTracker struct {
 }
 
 // ansiEscapeRe matches ANSI escape sequences (CSI and OSC).
-var ansiEscapeRe = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]|\x1b\][^\x07]*\x07`)
+var ansiEscapeRe = regexp.MustCompile(`\x1b\[[0-9;]*[A-Za-z~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)`)
 
 // sanitizeServiceName strips ANSI escape sequences and non-printable characters
 // from a service name to prevent terminal output manipulation.

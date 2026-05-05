@@ -190,9 +190,9 @@ subprocesses concurrently. Each subprocess is a separate OS process with its **o
 `manager.saveMu` instance — in-process mutexes are not shared across processes.
 
 Cross-process serialization is handled entirely by **flock** (the OS-level file
-lock on the `.env.lock` file). Because each process independently acquires only
-flock → env.mu (steps 2–3) and never holds another process's saveMu, circular
-wait is impossible.
+lock on the `.env.lock` file). Within each subprocess the same acquisition order
+applies (saveMu → flock → env.mu), but since saveMu is per-process and never
+shared across process boundaries, circular wait is impossible.
 
 ```text
 ┌─────────────────────────────────────────────┐

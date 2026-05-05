@@ -93,7 +93,7 @@ session automatically. Pass --new-session to force a reset.`,
 
   # Invoke a deployed agent from any directory using the endpoint URL shown by 'azd ai agent show'
   azd ai agent invoke \
-      --agent-endpoint https://<acct>.services.ai.azure.com/api/projects/<proj>/agents/<name>/endpoint/protocols/invocations?api-version=2025-11-15-preview \
+      --agent-endpoint https://<acct>.services.ai.azure.com/api/projects/<proj>/agents/<name>/endpoint/protocols/openai/responses?api-version=2025-11-15-preview \
       "Hello!"`,
 		Args: cobra.RangeArgs(0, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {

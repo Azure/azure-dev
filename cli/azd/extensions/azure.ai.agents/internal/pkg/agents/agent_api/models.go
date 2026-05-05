@@ -79,14 +79,6 @@ type ImageBasedHostedAgentDefinition struct {
 	Image string `json:"image"`
 }
 
-// ContainerAppAgentDefinition represents a container app agent
-type ContainerAppAgentDefinition struct {
-	AgentDefinition
-	ContainerProtocolVersions []ProtocolVersionRecord `json:"container_protocol_versions"`
-	ContainerAppResourceID    string                  `json:"container_app_resource_id"`
-	IngressSubdomainSuffix    string                  `json:"ingress_subdomain_suffix"`
-}
-
 // CreateAgentVersionRequest represents a request to create an agent version
 type CreateAgentVersionRequest struct {
 	Description *string           `json:"description,omitempty"`

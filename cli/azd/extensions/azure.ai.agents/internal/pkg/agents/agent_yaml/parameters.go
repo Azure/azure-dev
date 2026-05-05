@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/braydonk/yaml"
+	"go.yaml.in/yaml/v3"
 )
 
 // ParameterValues represents the user-provided values for manifest parameters

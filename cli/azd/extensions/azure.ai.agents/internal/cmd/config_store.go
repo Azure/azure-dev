@@ -250,7 +250,7 @@ func buildRemoteAgentKeyFromEndpoint(agentEndpoint string) string {
 // trailing slash, fragment, host casing) collapse to the same key.
 //
 // The "/ephemeral" suffix is intentionally distinct from project-mode "/remote"
-// keys: the two have different lifecycles (ephemeral is anchored at endpoint+name
+// keys: the two have different scopes (ephemeral is anchored at endpoint+name
 // only and never embeds a deploy version/api-version).
 func buildEphemeralAgentKey(projectEndpoint, agentName string) string {
 	return fmt.Sprintf("%s/agents/%s/ephemeral", normalizeEndpoint(projectEndpoint), agentName)

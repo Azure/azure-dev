@@ -224,18 +224,21 @@ func validateAgentEndpointFlags(cmd *cobra.Command, flags *invokeFlags) error {
 	return nil
 }
 
-// warnIneffectiveResetFlags logs when --new-session / --new-conversation were
-// requested but persistence is not active (standalone mode without a parent azd
-// daemon). The flags only have an effect when the extension can read/write the
-// stored IDs, so silently accepting them would be misleading.
+// warnIneffectiveResetFlags prints to stderr when --new-session /
+// --new-conversation were requested but persistence is not active (standalone
+// mode without a parent azd daemon). The flags only have an effect when the
+// extension can read/write the stored IDs, so silently accepting them would be
+// misleading. We use stderr (not the std logger) because the extension
+// silences `log` output unless debug mode is enabled.
 func warnIneffectiveResetFlags(flags *invokeFlags) {
 	if flags.newSession {
-		log.Printf("warning: --new-session has no effect without a parent azd daemon (session ID is not persisted)")
+		fmt.Fprintln(os.Stderr,
+			"warning: --new-session has no effect without a parent azd daemon (session ID is not persisted)")
 	}
 	if flags.newConversation {
-		log.Printf(
-			"warning: --new-conversation has no effect without a parent azd daemon (conversation ID is not persisted)",
-		)
+		fmt.Fprintln(os.Stderr,
+			"warning: --new-conversation has no effect without a parent azd daemon "+
+				"(conversation ID is not persisted)")
 	}
 }
 
@@ -812,12 +815,13 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	}
 	defer resp.Body.Close()
 
-	// Print the invocation ID if the agent returned one, and persist it in project mode.
+	// Print the invocation ID if the agent returned one. We do not persist it
+	// to the per-user config: the config store only supports the "sessions"
+	// and "conversations" maps (see validateStoreField), and invocation IDs
+	// are not used to drive any subsequent invoke — they are emitted purely
+	// for trace correlation.
 	if invID := resp.Header.Get("x-agent-invocation-id"); invID != "" {
 		fmt.Printf("Invocation:   %s\n", invID)
-		if agentKey != "" && rc.azdClient != nil {
-			saveContextValue(ctx, rc.azdClient, agentKey, invID, "invocations")
-		}
 	}
 
 	captureResponseSession(ctx, rc.azdClient, agentKey, sid, resp, "Session:  ")

@@ -81,7 +81,7 @@ adding new events for extension and hook lifecycle telemetry.
 | Event | Lifecycle | Attributes to expect | Sample row |
 | ----- | --------- | -------------------- | ---------- |
 | `ext.run` | Running an installed extension command through `azd`. | Command attributes such as `cmd.entry`, `cmd.flags`, `cmd.args.count`, plus `extension.installed` on the root span. | `name=ext.run`, `cmd.entry=cmd.ai.chat`, `cmd.flags=["model"]`, `cmd.args.count=0` |
-| `ext.install` | Installing one extension version. | `extension.id` (set as soon as installation begins); `extension.version` (set after the version is resolved). On failure the span uses OpenTelemetry status `Error` with the underlying error message as the description. | `name=ext.install`, `extension.id=microsoft.azd.ai`, `extension.version=1.2.0`, `status=Ok` |
+| `ext.install` | Installing one extension version. | `extension.id` (set as soon as installation begins); `extension.version` (set after the version is resolved). On failure the span uses OpenTelemetry status `Error`; `EndWithStatus` derives the status description from the error type. | `name=ext.install`, `extension.id=microsoft.azd.ai`, `extension.version=1.2.0`, `status=Ok` |
 | `ext.upgrade` | Upgrading one extension attempt. | `extension.id`, `extension.version.from`, `extension.version.to`, `extension.source`, `extension.upgrade.duration_ms`, `extension.upgrade.outcome`. | `name=ext.upgrade`, `extension.id=microsoft.azd.ai`, `extension.version.from=1.1.0`, `extension.version.to=1.2.0`, `extension.upgrade.outcome=upgraded` |
 | `ext.promote` | Promoting an extension registry entry, such as dev to main. | `extension.id`, `extension.version.from`, `extension.version.to`, `extension.source.from`, `extension.source.to`. | `name=ext.promote`, `extension.id=microsoft.azd.ai`, `extension.source.from=dev`, `extension.source.to=main`, `status=Ok` |
 | `hooks.exec` | Executing a project, layer, or service lifecycle hook. | `hooks.name`, `hooks.type`, `hooks.kind`; status description uses hook-specific codes such as `hook.validation_failed`. | `name=hooks.exec`, `hooks.name=predeploy`, `hooks.type=service`, `hooks.kind=sh`, `status=Ok` |
@@ -110,7 +110,7 @@ validation succeeds.
 
 | Attribute | Description | Example |
 | --------- | ----------- | ------- |
-| `hooks.name` | Hook name. Known built-in hook names may be recorded raw; unknown names should be hashed before root usage. | `predeploy` |
+| `hooks.name` | Hook name. The `azd hooks run` root command hashes unknown hook names before recording usage attributes; `hooks.exec` child spans record the resolved hook name. | `predeploy` |
 | `hooks.type` | Hook run scope. | `project`, `layer`, or `service` |
 | `hooks.kind` | Executor kind used to run the hook. | `sh`, `pwsh`, `python`, `js`, `ts`, or `dotnet` |
 
@@ -121,7 +121,7 @@ agent spans so that error status and attributes stay consistent.
 
 | Convention | Description | Example |
 | ---------- | ----------- | ------- |
-| Span status | Failed spans set OpenTelemetry status `Error`; the status description is the primary error code. Codes use stable families such as `auth.*`, `ext.*`, `internal.*`, `service.*`, `tool.*`, or `user.*`. | `ext.run.failed`, `service.arm.deployment.failed`, `user.canceled` |
+| Span status | Failed spans mapped through `MapError` set OpenTelemetry status `Error`; the status description is the primary error code. Codes use stable families such as `auth.*`, `ext.*`, `internal.*`, `service.*`, `tool.*`, or `user.*`. | `ext.run.failed`, `service.arm.deployment.failed`, `user.canceled` |
 | `error.category` | Broad local error category, used when the error is local rather than returned by an external service. | `auth` |
 | `error.code` | Normalized local or extension error code. | `invalid_payload` |
 | `error.type` | Go error type for unclassified or suggestion-wrapped errors. | `*os.PathError` |

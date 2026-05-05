@@ -456,7 +456,7 @@ func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext
 		if a.endpoint.APIVersion != "" {
 			rc.apiVersion = a.endpoint.APIVersion
 		}
-		rc.agentKey = buildEphemeralAgentKey(a.endpoint.ProjectEndpoint, a.endpoint.AgentName)
+		rc.agentKey = buildAgentKey(a.endpoint.ProjectEndpoint, a.endpoint.AgentName, "", false)
 		// Best-effort attach to the parent azd daemon so session/conversation IDs
 		// persist across invokes via global UserConfig. When running the extension
 		// binary directly (standalone), this fails and we proceed without persistence.

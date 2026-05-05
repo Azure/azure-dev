@@ -244,6 +244,18 @@ func buildRemoteAgentKeyFromEndpoint(agentEndpoint string) string {
 	return normalizeEndpoint(agentEndpoint) + "/remote"
 }
 
+// buildEphemeralAgentKey constructs a stable persistence key for --agent-endpoint
+// invokes. It is derived from the parsed endpoint components rather than the raw
+// URL so that variants of the same logical endpoint (with/without ?api-version,
+// trailing slash, fragment, host casing) collapse to the same key.
+//
+// The "/ephemeral" suffix is intentionally distinct from project-mode "/remote"
+// keys: the two have different lifecycles (ephemeral is anchored at endpoint+name
+// only and never embeds a deploy version/api-version).
+func buildEphemeralAgentKey(projectEndpoint, agentName string) string {
+	return fmt.Sprintf("%s/agents/%s/ephemeral", normalizeEndpoint(projectEndpoint), agentName)
+}
+
 // buildLocalAgentKey constructs a key for local mode.
 // projectPath is used to disambiguate across different projects using the same port.
 func buildLocalAgentKey(port int, agentName, version, projectPath string) string {

@@ -603,8 +603,57 @@ func (u *UpGraphAction) Run(
 				"Your application was provisioned and deployed to Azure in %s.",
 				ux.DurationAsText(since(startTime)),
 			),
+			FollowUp: phaseTimingBreakdown(result.Steps),
 		},
 	}, nil
+}
+
+// phaseTimingBreakdown computes wall-clock durations for provisioning and deploying phases
+// by finding the earliest start and latest end among matching steps.
+func phaseTimingBreakdown(steps []exegraph.StepTiming) string {
+	var provStart, deployStart time.Time
+	var provEnd, deployEnd time.Time
+
+	for _, st := range steps {
+		if st.Status == exegraph.StepSkipped {
+			continue
+		}
+		switch {
+		case strings.HasPrefix(st.Name, "provision-") ||
+			strings.HasPrefix(st.Name, "cmdhook-preprovision") ||
+			strings.HasPrefix(st.Name, "cmdhook-postprovision"):
+			if provStart.IsZero() || st.Start.Before(provStart) {
+				provStart = st.Start
+			}
+			if st.End.After(provEnd) {
+				provEnd = st.End
+			}
+		case strings.HasPrefix(st.Name, "package-") ||
+			strings.HasPrefix(st.Name, "publish-") ||
+			strings.HasPrefix(st.Name, "deploy-") ||
+			strings.HasPrefix(st.Name, "cmdhook-predeploy") ||
+			strings.HasPrefix(st.Name, "cmdhook-postdeploy"):
+			if deployStart.IsZero() || st.Start.Before(deployStart) {
+				deployStart = st.Start
+			}
+			if st.End.After(deployEnd) {
+				deployEnd = st.End
+			}
+		}
+	}
+
+	var lines []string
+	if !provStart.IsZero() {
+		lines = append(lines, fmt.Sprintf("  Provisioning: %s", ux.DurationAsText(provEnd.Sub(provStart))))
+	}
+	if !deployStart.IsZero() {
+		lines = append(lines, fmt.Sprintf("  Deploying:    %s", ux.DurationAsText(deployEnd.Sub(deployStart))))
+	}
+
+	if len(lines) == 0 {
+		return ""
+	}
+	return strings.Join(lines, "\n")
 }
 
 // changedFlagNames returns the names of flags that were explicitly set on

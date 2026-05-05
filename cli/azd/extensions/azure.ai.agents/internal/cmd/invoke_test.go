@@ -342,6 +342,93 @@ func TestProtocolFlagValidation(t *testing.T) {
 	}
 }
 
+// TestAgentEndpointFlagValidation covers the up-front validation rules for --agent-endpoint.
+// These run before any network call, so they exercise the cobra RunE error path directly.
+func TestAgentEndpointFlagValidation(t *testing.T) {
+	t.Parallel()
+
+	const validURL = "https://acct.services.ai.azure.com/api/projects/proj/agents/hello/endpoint/protocols/invocations?api-version=2025-11-15-preview"
+
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr bool
+		errSub  string
+	}{
+		{
+			name:    "rejects --local",
+			args:    []string{"--agent-endpoint", validURL, "--local", "hi"},
+			wantErr: true,
+			errSub:  "cannot be combined with --local",
+		},
+		{
+			name:    "rejects positional name",
+			args:    []string{"--agent-endpoint", validURL, "myagent", "hi"},
+			wantErr: true,
+			errSub:  "positional agent name",
+		},
+		{
+			name:    "rejects --port",
+			args:    []string{"--agent-endpoint", validURL, "--port", "9999", "hi"},
+			wantErr: true,
+			errSub:  "cannot be combined with --port",
+		},
+		{
+			name:    "rejects explicit --port at default value",
+			args:    []string{"--agent-endpoint", validURL, "--port", "8088", "hi"},
+			wantErr: true,
+			errSub:  "cannot be combined with --port",
+		},
+		{
+			name:    "rejects --new-session",
+			args:    []string{"--agent-endpoint", validURL, "--new-session", "hi"},
+			wantErr: true,
+			errSub:  "cannot be combined with --new-session",
+		},
+		{
+			name:    "rejects --new-conversation",
+			args:    []string{"--agent-endpoint", validURL, "--new-conversation", "hi"},
+			wantErr: true,
+			errSub:  "cannot be combined with --new-conversation",
+		},
+		{
+			name:    "rejects --protocol",
+			args:    []string{"--agent-endpoint", validURL, "--protocol", "responses", "hi"},
+			wantErr: true,
+			errSub:  "cannot be combined with --protocol",
+		},
+		{
+			name:    "rejects --protocol even when matching",
+			args:    []string{"--agent-endpoint", validURL, "--protocol", "invocations", "hi"},
+			wantErr: true,
+			errSub:  "cannot be combined with --protocol",
+		},
+		{
+			name:    "rejects malformed url",
+			args:    []string{"--agent-endpoint", "https://evil.com/foo", "hi"},
+			wantErr: true,
+			errSub:  "Foundry host",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cmd := newInvokeCommand(nil)
+			cmd.SetArgs(tt.args)
+			err := cmd.Execute()
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if tt.errSub != "" && !strings.Contains(err.Error(), tt.errSub) {
+					t.Errorf("error %q should contain %q", err.Error(), tt.errSub)
+				}
+			}
+		})
+	}
+}
+
 func TestHandleInvocationSync(t *testing.T) {
 	t.Parallel()
 
@@ -927,9 +1014,7 @@ func TestCreateConversation(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			id, err := createConversation(
-				t.Context(), srv.URL, tt.agentName, "test-token",
-			)
+			id, err := createConversation(t.Context(), srv.URL, tt.agentName, "test-token")
 
 			if tt.wantErr {
 				if err == nil {

@@ -748,6 +748,12 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 		warnIneffectiveResetFlags(a.flags)
 	}
 
+	if a.flags.newConversation {
+		fmt.Fprintln(os.Stderr,
+			"note: --new-conversation has no effect for the invocations protocol "+
+				"(memory is bound to the session; use --new-session to reset).")
+	}
+
 	body, bodyLabel, err := a.resolveBody()
 	if err != nil {
 		return err
@@ -821,7 +827,7 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	}
 
 	if agentKey != "" && rc.azdClient != nil {
-		fmt.Println("\n(tip: pass --new-session or --new-conversation to reset; see `azd ai agent invoke --help`)")
+		fmt.Println("\n(tip: pass --new-session to reset; see `azd ai agent invoke --help`)")
 	}
 	return nil
 }

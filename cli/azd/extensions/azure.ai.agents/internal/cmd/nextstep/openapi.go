@@ -4,11 +4,14 @@
 package nextstep
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
 // CachedOpenAPISpecPath returns the on-disk path where helpers.go writes
@@ -161,6 +164,45 @@ func getMap(parent map[string]any, key string) map[string]any {
 	}
 	m, _ := v.(map[string]any)
 	return m
+}
+
+// LoadInvokeExample combines config-path resolution with OpenAPI spec
+// reading to produce a JSON example payload for the named agent. It is
+// a convenience wrapper around CachedOpenAPISpecPath +
+// ExtractInvokeExample.
+//
+// suffix should be "local" or "remote" matching the cached filename
+// produced by helpers.go fetchOpenAPISpec. Returns an empty string
+// (with no error) when:
+//   - azdClient or agentName is empty
+//   - no project / environment is selected
+//   - the spec file does not exist
+//   - the spec contains no usable example
+//
+// Errors are only returned for unexpected I/O or parse failures.
+func LoadInvokeExample(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	agentName string,
+	suffix string,
+) (string, error) {
+	if azdClient == nil || agentName == "" {
+		return "", nil
+	}
+
+	projectResp, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if err != nil || projectResp == nil || projectResp.Project == nil {
+		return "", nil
+	}
+
+	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err != nil || envResp == nil || envResp.Environment == nil || envResp.Environment.Name == "" {
+		return "", nil
+	}
+
+	configDir := filepath.Join(projectResp.Project.Path, ".azure", envResp.Environment.Name)
+	specPath := CachedOpenAPISpecPath(configDir, agentName, suffix)
+	return ExtractInvokeExample(specPath)
 }
 
 func marshalCompact(v any) (string, error) {

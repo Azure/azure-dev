@@ -76,6 +76,44 @@ func TestResolveAfterInit_RunHasInvokeFollowup(t *testing.T) {
 	}
 }
 
+func TestResolveAfterRun(t *testing.T) {
+	tests := []struct {
+		name    string
+		state   *State
+		svc     string
+		payload string
+		wantCmd string
+	}{
+		{name: "empty payload falls back to Hello", wantCmd: `azd ai agent invoke --local "Hello!"`},
+		{
+			name:    "uses provided JSON payload",
+			payload: `{"prompt":"Hi"}`,
+			wantCmd: `azd ai agent invoke --local {"prompt":"Hi"}`,
+		},
+		{
+			name:    "service name is reflected in description",
+			svc:     "calc",
+			payload: `"Greet"`,
+			wantCmd: `azd ai agent invoke --local "Greet"`,
+		},
+		{name: "whitespace-only payload uses fallback", payload: "   ", wantCmd: `azd ai agent invoke --local "Hello!"`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ResolveAfterRun(tc.state, tc.svc, tc.payload)
+			if len(got) != 1 {
+				t.Fatalf("expected 1 suggestion, got %d", len(got))
+			}
+			if got[0].Command != tc.wantCmd {
+				t.Errorf("cmd = %q, want %q", got[0].Command, tc.wantCmd)
+			}
+			if tc.svc != "" && !strings.Contains(got[0].Description, tc.svc) {
+				t.Errorf("description %q should contain %q", got[0].Description, tc.svc)
+			}
+		})
+	}
+}
+
 func TestResolveAfterInvokeLocal(t *testing.T) {
 	tests := []struct {
 		name           string

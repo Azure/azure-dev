@@ -8,6 +8,32 @@ import (
 	"strings"
 )
 
+// ResolveAfterRun returns suggestions to print before/around `azd ai
+// agent run` startup. Because the agent process is long-lived, the
+// caller prints these suggestions before invoking the child process.
+//
+// When examplePayload is non-empty, it is used verbatim (already
+// JSON-encoded). Otherwise we fall back to a generic "Hello!" payload.
+//
+// serviceName scopes the description for multi-agent projects.
+func ResolveAfterRun(s *State, serviceName string, examplePayload string) []Suggestion {
+	if s == nil {
+		s = &State{}
+	}
+	payload := strings.TrimSpace(examplePayload)
+	if payload == "" {
+		payload = `"Hello!"`
+	}
+	desc := "send your first request once the agent is listening"
+	if serviceName != "" {
+		desc = fmt.Sprintf("send your first request to %s once it is listening", serviceName)
+	}
+	return []Suggestion{{
+		Command:     fmt.Sprintf("azd ai agent invoke --local %s", payload),
+		Description: desc,
+	}}
+}
+
 // ResolveAfterInvokeLocal returns suggestions to show after a
 // successful `azd ai agent invoke --local ...` call.
 //

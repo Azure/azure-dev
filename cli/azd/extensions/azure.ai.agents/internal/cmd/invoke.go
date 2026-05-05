@@ -650,16 +650,15 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 		return fmt.Errorf("POST %s failed with HTTP %d: %s\n%s", url, resp.StatusCode, resp.Status, string(respBody))
 	}
 
-	// Continuation hints are only emitted on success: a failed invoke would not
-	// have produced a usable conversation to continue. Persistence still happens
-	// above (captureResponseSession) so a successful retry can resume.
-	if agentKey == "" || rc.azdClient == nil {
-		printEphemeralSessionHint(sid, resp)
-		printEphemeralConversationHint(a.flags.conversation, convID)
+	// Parse SSE stream for agent output
+	if err := readSSEStream(resp.Body, rc.name); err != nil {
+		return err
 	}
 
-	// Parse SSE stream for agent output
-	return readSSEStream(resp.Body, rc.name)
+	if agentKey != "" && rc.azdClient != nil {
+		fmt.Println("\n(tip: pass --new-session or --new-conversation to reset; see `azd ai agent invoke --help`)")
+	}
+	return nil
 }
 
 func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
@@ -816,12 +815,15 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	}
 
 	captureResponseSession(ctx, rc.azdClient, agentKey, sid, resp, "Session:  ")
-	// Continuation hint is only emitted on success; see comment in responsesRemote.
-	if (agentKey == "" || rc.azdClient == nil) && resp.StatusCode < 400 {
-		printEphemeralSessionHint(sid, resp)
+
+	if err := handleInvocationResponse(ctx, resp, rc.projectEndpoint, rc.bearerToken, rc.name, a.httpTimeout()); err != nil {
+		return err
 	}
 
-	return handleInvocationResponse(ctx, resp, rc.projectEndpoint, rc.bearerToken, rc.name, a.httpTimeout())
+	if agentKey != "" && rc.azdClient != nil {
+		fmt.Println("\n(tip: pass --new-session or --new-conversation to reset; see `azd ai agent invoke --help`)")
+	}
+	return nil
 }
 
 // handleInvocationResponse dispatches the response from a POST /invocations call

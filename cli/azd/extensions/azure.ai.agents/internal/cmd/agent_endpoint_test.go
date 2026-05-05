@@ -4,10 +4,6 @@
 package cmd
 
 import (
-	"io"
-	"net/http"
-	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 
@@ -186,98 +182,6 @@ func TestIsValidAgentNameSegment(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestPrintEphemeralSessionHint(t *testing.T) {
-	t.Run("no current sid, server returns sid -> hint", func(t *testing.T) {
-		resp := &http.Response{Header: http.Header{"X-Agent-Session-Id": []string{"sess-123"}}}
-		out := captureStdout(t, func() { printEphemeralSessionHint("", resp) })
-		if !strings.Contains(out, "Server assigned session: sess-123") {
-			t.Errorf("missing 'Server assigned session' line in output: %q", out)
-		}
-		if !strings.Contains(out, "--session-id sess-123") {
-			t.Errorf("missing '--session-id sess-123' continuation hint in output: %q", out)
-		}
-	})
-	t.Run("with existing sid -> no hint", func(t *testing.T) {
-		resp := &http.Response{Header: http.Header{"X-Agent-Session-Id": []string{"sess-123"}}}
-		out := captureStdout(t, func() { printEphemeralSessionHint("user-sid", resp) })
-		if out != "" {
-			t.Errorf("expected no output when caller already has a session id, got %q", out)
-		}
-	})
-	t.Run("nil response -> no hint", func(t *testing.T) {
-		out := captureStdout(t, func() { printEphemeralSessionHint("", nil) })
-		if out != "" {
-			t.Errorf("expected no output for nil response, got %q", out)
-		}
-	})
-	t.Run("response without session header -> no hint", func(t *testing.T) {
-		resp := &http.Response{Header: http.Header{}}
-		out := captureStdout(t, func() { printEphemeralSessionHint("", resp) })
-		if out != "" {
-			t.Errorf("expected no output when server returns no session id, got %q", out)
-		}
-	})
-	t.Run("via http test server", func(t *testing.T) {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("x-agent-session-id", "real-server-sid")
-			w.WriteHeader(http.StatusOK)
-		}))
-		defer srv.Close()
-		resp, err := http.Get(srv.URL) //nolint:gosec // test server
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer resp.Body.Close()
-		out := captureStdout(t, func() { printEphemeralSessionHint("", resp) })
-		if !strings.Contains(out, "real-server-sid") {
-			t.Errorf("expected hint to include server-assigned sid, got %q", out)
-		}
-	})
-}
-
-func TestPrintEphemeralConversationHint(t *testing.T) {
-	t.Run("auto-created conversation -> hint", func(t *testing.T) {
-		out := captureStdout(t, func() { printEphemeralConversationHint("", "conv-abc") })
-		if !strings.Contains(out, "--conversation-id conv-abc") {
-			t.Errorf("missing '--conversation-id conv-abc' continuation hint in output: %q", out)
-		}
-	})
-	t.Run("user supplied --conversation-id -> no hint", func(t *testing.T) {
-		out := captureStdout(t, func() { printEphemeralConversationHint("user-conv", "conv-abc") })
-		if out != "" {
-			t.Errorf("expected no output when caller already has a conversation id, got %q", out)
-		}
-	})
-	t.Run("no created conversation -> no hint", func(t *testing.T) {
-		out := captureStdout(t, func() { printEphemeralConversationHint("", "") })
-		if out != "" {
-			t.Errorf("expected no output when no conversation id was created, got %q", out)
-		}
-	})
-}
-
-// captureStdout runs fn while redirecting os.Stdout and returns whatever was written.
-func captureStdout(t *testing.T, fn func()) string {
-	t.Helper()
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("os.Pipe: %v", err)
-	}
-	orig := os.Stdout
-	os.Stdout = w
-	defer func() { os.Stdout = orig }()
-
-	done := make(chan string, 1)
-	go func() {
-		b, _ := io.ReadAll(r)
-		done <- string(b)
-	}()
-
-	fn()
-	_ = w.Close()
-	return <-done
 }
 
 // TestBuildResponsesURL verifies that the responses URL builder uses the parsed

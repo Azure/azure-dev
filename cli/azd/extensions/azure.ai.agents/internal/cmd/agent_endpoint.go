@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"fmt"
-	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
@@ -197,30 +196,4 @@ func isValidAgentNameSegment(s string) bool {
 		}
 	}
 	return true
-}
-
-// printEphemeralSessionHint prints a continuation hint after an ephemeral invoke
-// when the server assigned a new session ID. It tells the user how to keep the
-// next call on the same session.
-func printEphemeralSessionHint(currentSid string, resp *http.Response) {
-	if currentSid != "" || resp == nil {
-		return
-	}
-	newSid := resp.Header.Get("x-agent-session-id")
-	if newSid == "" {
-		return
-	}
-	fmt.Printf("\nServer assigned session: %s\n", newSid)
-	fmt.Printf("To continue this session on the next invoke, pass: --session-id %s\n", newSid)
-}
-
-// printEphemeralConversationHint prints a continuation hint after an ephemeral
-// invoke when the CLI auto-created a Foundry conversation. It tells the user
-// how to keep multi-turn memory on the next invoke, since ephemeral mode does
-// not persist conversation state anywhere.
-func printEphemeralConversationHint(currentConvID, createdConvID string) {
-	if currentConvID != "" || createdConvID == "" {
-		return
-	}
-	fmt.Printf("To continue this conversation on the next invoke, pass: --conversation-id %s\n", createdConvID)
 }

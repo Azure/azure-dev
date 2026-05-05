@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -261,12 +262,18 @@ func (a *InvokeAction) responsesLocal(ctx context.Context) error {
 	// Resolve local session and conversation IDs (always generated locally).
 	var sid, convID string
 	if azdClient != nil {
-		sid, _ = resolveStoredID(
+		sid, err = resolveStoredID(
 			ctx, azdClient, agentKey, a.flags.session, a.flags.newSession, "sessions", true,
 		)
-		convID, _ = resolveStoredID(
+		if err != nil {
+			log.Printf("invoke local: failed to resolve session ID: %v", err)
+		}
+		convID, err = resolveStoredID(
 			ctx, azdClient, agentKey, a.flags.conversation, a.flags.newConversation, "conversations", true,
 		)
+		if err != nil {
+			log.Printf("invoke local: failed to resolve conversation ID: %v", err)
+		}
 	}
 
 	fmt.Printf("Target:       localhost:%d (local)\n", port)
@@ -340,12 +347,14 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	defer azdClient.Close()
 
 	name := a.flags.name
+	var agentEndpoint string
 
-	// Auto-resolve agent name from azure.yaml
+	// Auto-resolve agent name and version from azure.yaml
 	if info, err := resolveAgentServiceFromProject(ctx, azdClient, name, rootFlags.NoPrompt); err == nil {
 		if name == "" && info.AgentName != "" {
 			name = info.AgentName
 		}
+		agentEndpoint = info.AgentEndpoint
 	}
 
 	if name == "" {
@@ -355,6 +364,15 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	projectEndpoint, err := resolveAgentEndpoint(ctx, "", "")
 	if err != nil {
 		return err
+	}
+
+	// Build the structured agent key for config store lookups.
+	// When the endpoint is unavailable (pre-deploy), skip session/conversation persistence.
+	var agentKey string
+	if agentEndpoint != "" {
+		agentKey = buildRemoteAgentKeyFromEndpoint(agentEndpoint)
+	} else {
+		log.Printf("warning: agent endpoint not available, session state will not be persisted")
 	}
 
 	body, bodyLabel, err := a.resolveBody()
@@ -372,9 +390,17 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 
 	// Session ID — routes to the same microVM container instance.
 	// When empty, let the server assign one.
-	sid, err := resolveStoredID(ctx, azdClient, name, a.flags.session, a.flags.newSession, "sessions", false)
-	if err != nil {
-		return err
+	var sid string
+	if agentKey != "" {
+		sid, err = resolveStoredID(
+			ctx, azdClient, agentKey, a.flags.session, a.flags.newSession, "sessions", false,
+			legacyKeysForRemote(name)...,
+		)
+		if err != nil {
+			return err
+		}
+	} else if a.flags.session != "" {
+		sid = a.flags.session
 	}
 	if sid != "" {
 		reqBody["session_id"] = sid
@@ -397,11 +423,13 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	convID, err := resolveConversationID(
 		ctx,
 		azdClient,
-		name,
+		agentKey,
 		a.flags.conversation,
 		a.flags.newConversation,
 		projectEndpoint,
 		token.Token,
+		name,
+		legacyKeysForRemote(name)...,
 	)
 	if err != nil {
 		return err
@@ -442,7 +470,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 		fmt.Printf("Trace ID: %s\n", requestID)
 	}
 
-	captureResponseSession(ctx, azdClient, name, sid, resp, "Session:      ")
+	captureResponseSession(ctx, azdClient, agentKey, sid, resp, "Session:      ")
 
 	if resp.StatusCode >= 400 {
 		respBody, _ := io.ReadAll(resp.Body)
@@ -472,9 +500,12 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 	// Resolve local session ID (generated locally, not server-assigned).
 	var sid string
 	if azdClient != nil {
-		sid, _ = resolveStoredID(
+		sid, err = resolveStoredID(
 			ctx, azdClient, agentKey, a.flags.session, a.flags.newSession, "sessions", true,
 		)
+		if err != nil {
+			log.Printf("invoke local: failed to resolve session ID: %v", err)
+		}
 	}
 
 	fmt.Printf("Target:   localhost:%d (local, invocations protocol)\n", port)
@@ -510,9 +541,9 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 	}
 	defer resp.Body.Close()
 
-	// Persist the most recent invocation ID for this agent (best-effort).
-	if invID := resp.Header.Get("x-agent-invocation-id"); invID != "" && azdClient != nil {
-		saveContextValue(ctx, azdClient, agentKey, invID, "invocations")
+	// Print the invocation ID if the agent returned one.
+	if invID := resp.Header.Get("x-agent-invocation-id"); invID != "" {
+		fmt.Printf("Invocation:   %s\n", invID)
 	}
 
 	return handleInvocationResponse(ctx, resp, "", "", agentKey, a.httpTimeout())
@@ -528,12 +559,14 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	defer azdClient.Close()
 
 	name := a.flags.name
+	var agentEndpoint string
 
 	// Auto-resolve agent name from azure.yaml / azd environment
 	if info, err := resolveAgentServiceFromProject(ctx, azdClient, name, rootFlags.NoPrompt); err == nil {
 		if name == "" && info.AgentName != "" {
 			name = info.AgentName
 		}
+		agentEndpoint = info.AgentEndpoint
 	}
 
 	if name == "" {
@@ -547,15 +580,27 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 		return err
 	}
 
+	var agentKey string
+	if agentEndpoint != "" {
+		agentKey = buildRemoteAgentKeyFromEndpoint(agentEndpoint)
+	} else {
+		log.Printf("warning: agent endpoint not available, session state will not be persisted")
+	}
+
 	body, bodyLabel, err := a.resolveBody()
 	if err != nil {
 		return err
 	}
 
 	// Session ID — routes to the same container instance
-	sid, err := resolveStoredID(ctx, azdClient, name, a.flags.session, a.flags.newSession, "sessions", false)
-	if err != nil {
-		return err
+	var sid string
+	if agentKey != "" {
+		sid, err = resolveStoredID(ctx, azdClient, agentKey, a.flags.session, a.flags.newSession, "sessions", false)
+		if err != nil {
+			return err
+		}
+	} else if a.flags.session != "" {
+		sid = a.flags.session
 	}
 
 	// Acquire credential and token
@@ -600,12 +645,12 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	}
 	defer resp.Body.Close()
 
-	// Persist the most recent invocation ID for this agent.
+	// Print the invocation ID if the agent returned one.
 	if invID := resp.Header.Get("x-agent-invocation-id"); invID != "" {
-		saveContextValue(ctx, azdClient, name, invID, "invocations")
+		fmt.Printf("Invocation: %s\n", invID)
 	}
 
-	captureResponseSession(ctx, azdClient, name, sid, resp, "Session:  ")
+	captureResponseSession(ctx, azdClient, agentKey, sid, resp, "Session:  ")
 
 	return handleInvocationResponse(ctx, resp, endpoint, token.Token, name, a.httpTimeout())
 }

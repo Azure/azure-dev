@@ -102,7 +102,14 @@ configuration and the current azd environment. Optionally specify the service na
 
 			// Resolve session ID for session-based logstream.
 			if flags.sessionID == "" {
-				sessionID := resolveMonitorSession(ctx, info.AgentName)
+				var sessionID string
+				if info.AgentEndpoint != "" {
+					sessionID = resolveMonitorSession(
+						ctx,
+						buildRemoteAgentKeyFromEndpoint(info.AgentEndpoint),
+						legacyKeysForRemote(info.AgentName)...,
+					)
+				}
 				if sessionID == "" {
 					return exterrors.Validation(
 						exterrors.CodeInvalidSessionId,
@@ -186,26 +193,25 @@ func validateMonitorFlags(flags *monitorFlags) error {
 	return nil
 }
 
-// resolveMonitorSession resolves the session ID from the .foundry-agent.json file.
+// resolveMonitorSession resolves the session ID from the config store.
 // Returns the session ID if available, or empty string if not found.
-func resolveMonitorSession(ctx context.Context, agentName string) string {
+func resolveMonitorSession(ctx context.Context, agentKey string, legacyKeys ...string) string {
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
 		return ""
 	}
 	defer azdClient.Close()
 
-	// Resolve session ID from .foundry-agent.json
-	configPath, err := resolveConfigPath(ctx, azdClient)
-	if err != nil {
+	// Try to trigger migration from legacy file if it exists.
+	migrateFromLegacyFile(ctx, azdClient)
+
+	// Look up session using the agent key (with legacy fallback).
+	val, err := getContextValueWithFallback(
+		ctx, azdClient, "sessions", agentKey, legacyKeys,
+	)
+	if err != nil || val == "" {
 		return ""
 	}
-	agentCtx := loadLocalContext(configPath)
-	if agentCtx.Sessions != nil {
-		if sid, ok := agentCtx.Sessions[agentName]; ok {
-			return sid
-		}
-	}
 
-	return ""
+	return val
 }

@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -66,6 +67,9 @@ func newListenCommand() *cobra.Command {
 				}).
 				WithProjectEventHandler("postdeploy", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 					return postdeployHandler(ctx, azdClient, args)
+				}).
+				WithProjectEventHandler("postdown", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+					return postdownHandler(ctx, azdClient, args)
 				})
 
 			// Start listening for events
@@ -264,6 +268,53 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 
 	if err := project.EnsureAgentIdentityRBAC(ctx, azdClient, agentIdentities); err != nil {
 		return fmt.Errorf("agent identity RBAC setup failed: %w", err)
+	}
+
+	return nil
+}
+
+// postdownHandler cleans up config store entries (sessions, conversations) for agent services
+// that were torn down. This is best-effort — failures are logged but do not block azd down.
+func postdownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
+	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		log.Printf("postdown: failed to get current environment: %v", err)
+		return nil
+	}
+
+	envName := envResp.Environment.Name
+
+	for _, svc := range args.Project.Services {
+		if svc.Host != AiAgentHost {
+			continue
+		}
+
+		serviceKey := toServiceKey(svc.Name)
+
+		endpointResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+			EnvName: envName,
+			Key:     fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey),
+		})
+		if err != nil || endpointResp.Value == "" {
+			continue
+		}
+
+		agentKey := buildRemoteAgentKeyFromEndpoint(endpointResp.Value)
+
+		// Remove stored sessions and conversations for this agent.
+		var failed bool
+		if err := deleteContextValue(ctx, azdClient, "sessions", agentKey); err != nil {
+			log.Printf("postdown: failed to clean sessions for %s: %v", agentKey, err)
+			failed = true
+		}
+		if err := deleteContextValue(ctx, azdClient, "conversations", agentKey); err != nil {
+			log.Printf("postdown: failed to clean conversations for %s: %v", agentKey, err)
+			failed = true
+		}
+
+		if !failed {
+			fmt.Printf("Cleaned up saved session and conversation for agent %q\n", svc.Name)
+		}
 	}
 
 	return nil

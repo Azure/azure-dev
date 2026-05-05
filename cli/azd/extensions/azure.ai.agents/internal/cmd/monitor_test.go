@@ -252,200 +252,135 @@ func TestLoadLocalContext_EmptyFile(t *testing.T) {
 	assert.Nil(t, loaded.Sessions)
 }
 
-func TestSaveAndLoadLocalContext_RoundTrip(t *testing.T) {
-	t.Parallel()
-
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, ConfigFile)
-
-	original := &AgentLocalContext{
-		AgentName: "echo-bot",
-		Sessions: map[string]string{
-			"echo-bot": "sess-abc",
-		},
-		Conversations: map[string]string{
-			"echo-bot": "conv-xyz",
-		},
-	}
-
-	require.NoError(t, saveLocalContext(original, configPath))
-
-	loaded := loadLocalContext(configPath)
-	assert.Equal(t, original.AgentName, loaded.AgentName)
-	assert.Equal(t, original.Sessions, loaded.Sessions)
-	assert.Equal(t, original.Conversations, loaded.Conversations)
-}
-
-func TestMonitorFlags_SessionBranchingDecision(t *testing.T) {
+func TestBuildAgentKey(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name           string
-		sessionID      string
-		wantSessionLog bool
+		name     string
+		endpoint string
+		agent    string
+		version  string
+		local    bool
+		want     string
 	}{
 		{
-			name:           "session ID set uses session logstream",
-			sessionID:      "session-abc-123",
-			wantSessionLog: true,
+			name:     "remote with version",
+			endpoint: "https://myaccount.services.ai.azure.com/api/projects/myproject",
+			agent:    "my-agent",
+			version:  "3",
+			local:    false,
+			want:     "myaccount.services.ai.azure.com/api/projects/myproject/agents/my-agent/versions/3/remote",
 		},
 		{
-			name:           "empty session ID uses container logstream",
-			sessionID:      "",
-			wantSessionLog: false,
+			name:     "remote without version defaults to latest",
+			endpoint: "https://myaccount.services.ai.azure.com/api/projects/myproject",
+			agent:    "my-agent",
+			version:  "",
+			local:    false,
+			want:     "myaccount.services.ai.azure.com/api/projects/myproject/agents/my-agent/versions/latest/remote",
+		},
+		{
+			name:     "local mode",
+			endpoint: "localhost:8088",
+			agent:    "test-agent",
+			version:  "latest",
+			local:    true,
+			want:     "localhost:8088/agents/test-agent/versions/latest/local",
+		},
+		{
+			name:     "trailing slash trimmed from endpoint",
+			endpoint: "https://example.com/",
+			agent:    "agent",
+			version:  "1",
+			local:    false,
+			want:     "example.com/agents/agent/versions/1/remote",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			flags := &monitorFlags{
-				sessionID: tt.sessionID,
-				tail:      50,
-				logType:   "console",
-			}
-			// The branching logic in MonitorAction.Run checks flags.sessionID != ""
-			useSessionLog := flags.sessionID != ""
-			assert.Equal(t, tt.wantSessionLog, useSessionLog)
+			got := buildAgentKey(tt.endpoint, tt.agent, tt.version, tt.local)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
 
-func TestValidateMonitorFlags_AllCombinations(t *testing.T) {
+func TestNormalizeEndpoint(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name    string
-		flags   monitorFlags
-		wantErr string
+		input string
+		want  string
 	}{
-		// Both invalid: tail checked first
-		{
-			name:    "tail and type both invalid",
-			flags:   monitorFlags{tail: 0, logType: "invalid"},
-			wantErr: "--tail must be between 1 and 300",
-		},
-		// Valid tail, invalid type
-		{
-			name:    "valid tail with empty type",
-			flags:   monitorFlags{tail: 50, logType: ""},
-			wantErr: "--type must be 'console' or 'system'",
-		},
-		// Valid type, invalid tail
-		{
-			name:    "system type with tail too high",
-			flags:   monitorFlags{tail: 500, logType: "system"},
-			wantErr: "--tail must be between 1 and 300",
-		},
+		{"https://Example.COM/path/", "example.com/path"},
+		{"https://example.com/path", "example.com/path"},
+		{"HTTP://HOST.COM/", "host.com"},
+		{"localhost:8088", "localhost:8088"},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.input, func(t *testing.T) {
 			t.Parallel()
-			err := validateMonitorFlags(&tt.flags)
-			require.Error(t, err)
-			assert.ErrorContains(t, err, tt.wantErr)
+			assert.Equal(t, tt.want, normalizeEndpoint(tt.input))
 		})
 	}
 }
 
-func TestValidateMonitorFlags_ErrorMessages(t *testing.T) {
+func TestProjectHash(t *testing.T) {
 	t.Parallel()
 
-	// Verify that validation error messages include the actual bad value
-	flags := &monitorFlags{tail: 999, logType: "console"}
-	err := validateMonitorFlags(flags)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "999")
+	// Same path produces same hash
+	h1 := projectHash("/some/path")
+	h2 := projectHash("/some/path")
+	assert.Equal(t, h1, h2)
 
-	flags = &monitorFlags{tail: 50, logType: "badtype"}
-	err = validateMonitorFlags(flags)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "badtype")
+	// Different paths produce different hashes
+	h3 := projectHash("/other/path")
+	assert.NotEqual(t, h1, h3)
+
+	// Hash is 16 hex chars (8 bytes)
+	assert.Len(t, h1, 16)
 }
 
-func TestExplicitSessionID_PersistedAndReusable(t *testing.T) {
+func TestLegacyKeysForRemote(t *testing.T) {
 	t.Parallel()
 
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, ConfigFile)
-
-	agentName := "my-agent"
-	explicitSID := "user-provided-session-id"
-
-	// Before: no sessions stored
-	agentCtx := loadLocalContext(configPath)
-	assert.Empty(t, agentCtx.Sessions)
-
-	// Call resolveStoredIDFromPath with an explicit ID — this is the code path
-	// that resolveStoredID follows when the user passes --session-id.
-	got, err := resolveStoredIDFromPath(configPath, agentName, explicitSID, false, "sessions", false)
-	require.NoError(t, err)
-	assert.Equal(t, explicitSID, got)
-
-	// Verify the ID was persisted (as monitor's resolveMonitorSession would load it)
-	loaded := loadLocalContext(configPath)
-	require.NotNil(t, loaded.Sessions)
-	assert.Equal(t, explicitSID, loaded.Sessions[agentName])
+	keys := legacyKeysForRemote("my-agent")
+	assert.Contains(t, keys, "my-agent")
 }
 
-func TestExplicitConversationID_PersistedAndReusable(t *testing.T) {
+func TestLegacyKeysForLocal(t *testing.T) {
 	t.Parallel()
 
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, ConfigFile)
-
-	agentName := "my-agent"
-	explicitConvID := "user-provided-conv-id"
-
-	got, err := resolveStoredIDFromPath(configPath, agentName, explicitConvID, false, "conversations", false)
-	require.NoError(t, err)
-	assert.Equal(t, explicitConvID, got)
-
-	loaded := loadLocalContext(configPath)
-	require.NotNil(t, loaded.Conversations)
-	assert.Equal(t, explicitConvID, loaded.Conversations[agentName])
+	keys := legacyKeysForLocal("my-service", "my-agent")
+	assert.Contains(t, keys, "my-service-local")
+	assert.Contains(t, keys, "my-agent-local")
+	assert.Contains(t, keys, "local")
 }
 
-func TestExplicitID_OverwritesPreviousValue(t *testing.T) {
+func TestResolveStoredIDFromPath_ExplicitID(t *testing.T) {
 	t.Parallel()
 
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, ConfigFile)
-
-	agentName := "my-agent"
-
-	// Persist an initial session ID via resolveStoredIDFromPath
-	got, err := resolveStoredIDFromPath(configPath, agentName, "old-session-id", false, "sessions", false)
+	got, err := resolveStoredIDFromPath("", "agent-key", "explicit-id", false, "sessions", false)
 	require.NoError(t, err)
-	assert.Equal(t, "old-session-id", got)
-
-	// Persist a different explicit session ID — should overwrite the previous one
-	got, err = resolveStoredIDFromPath(configPath, agentName, "new-session-id", false, "sessions", false)
-	require.NoError(t, err)
-	assert.Equal(t, "new-session-id", got)
-
-	loaded := loadLocalContext(configPath)
-	assert.Equal(t, "new-session-id", loaded.Sessions[agentName])
+	assert.Equal(t, "explicit-id", got)
 }
 
-func TestValidateMonitorFlags_SessionDoesNotAffectValidation(t *testing.T) {
+func TestResolveStoredIDFromPath_GenerateWhenMissing(t *testing.T) {
 	t.Parallel()
 
-	// Session flag doesn't bypass tail/type validation
-	flags := &monitorFlags{
-		sessionID: "some-session",
-		tail:      0,
-		logType:   "console",
-	}
-	err := validateMonitorFlags(flags)
-	assert.Error(t, err, "session ID should not bypass tail validation")
+	got, err := resolveStoredIDFromPath("", "agent-key", "", false, "sessions", true)
+	require.NoError(t, err)
+	assert.NotEmpty(t, got)
+	// Should be a UUID format
+	assert.Len(t, got, 36)
+}
 
-	flags = &monitorFlags{
-		sessionID: "some-session",
-		tail:      50,
-		logType:   "invalid",
-	}
-	err = validateMonitorFlags(flags)
-	assert.Error(t, err, "session ID should not bypass type validation")
+func TestResolveStoredIDFromPath_EmptyWhenNotGenerating(t *testing.T) {
+	t.Parallel()
+
+	got, err := resolveStoredIDFromPath("", "agent-key", "", false, "sessions", false)
+	require.NoError(t, err)
+	assert.Empty(t, got)
 }

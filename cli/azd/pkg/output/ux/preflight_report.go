@@ -20,6 +20,18 @@ type PreflightReportItem struct {
 	DiagnosticID string
 	// Message describes the finding.
 	Message string
+	// Suggestion is an optional actionable recommendation for resolving the issue.
+	Suggestion string
+	// Links is an optional list of reference links related to the finding.
+	Links []PreflightReportLink
+}
+
+// PreflightReportLink represents a reference link attached to a preflight report item.
+type PreflightReportLink struct {
+	// URL is the link target.
+	URL string
+	// Title is the display text (optional — if empty, the URL is shown).
+	Title string
 }
 
 // PreflightReport displays the results of local preflight validation.
@@ -41,6 +53,7 @@ func (r *PreflightReport) ToString(currentIndentation string) string {
 			sb.WriteString("\n")
 		}
 		sb.WriteString(fmt.Sprintf("%s%s %s", currentIndentation, warningPrefix, w.Message))
+		writeItemSuggestion(&sb, currentIndentation, w)
 	}
 
 	if len(warnings) > 0 && len(errors) > 0 {
@@ -52,17 +65,78 @@ func (r *PreflightReport) ToString(currentIndentation string) string {
 			sb.WriteString("\n")
 		}
 		sb.WriteString(fmt.Sprintf("%s%s %s", currentIndentation, failedPrefix, e.Message))
+		writeItemSuggestion(&sb, currentIndentation, e)
 	}
 
 	return sb.String()
 }
 
+// writeItemSuggestion appends the suggestion and links for a report item, if present.
+func writeItemSuggestion(sb *strings.Builder, indent string, item PreflightReportItem) {
+	if item.Suggestion != "" {
+		sb.WriteString(fmt.Sprintf("\n%s  %s %s",
+			indent,
+			output.WithHighLightFormat("Suggestion:"),
+			item.Suggestion))
+	}
+	for _, link := range item.Links {
+		if link.Title != "" {
+			sb.WriteString(fmt.Sprintf("\n%s  • %s",
+				indent,
+				output.WithHyperlink(link.URL, link.Title)))
+		} else {
+			sb.WriteString(fmt.Sprintf("\n%s  • %s",
+				indent,
+				output.WithLinkFormat(link.URL)))
+		}
+	}
+}
+
 func (r *PreflightReport) MarshalJSON() ([]byte, error) {
 	warnings, errors := r.partition()
 
-	return json.Marshal(output.EventForMessage(
-		fmt.Sprintf("preflight: %d warning(s), %d error(s)",
-			len(warnings), len(errors))))
+	type jsonLink struct {
+		URL   string `json:"url"`
+		Title string `json:"title,omitempty"`
+	}
+	type jsonItem struct {
+		Severity     string     `json:"severity"`
+		DiagnosticID string     `json:"diagnosticId,omitempty"`
+		Message      string     `json:"message"`
+		Suggestion   string     `json:"suggestion,omitempty"`
+		Links        []jsonLink `json:"links,omitempty"`
+	}
+
+	items := make([]jsonItem, 0, len(r.Items))
+	for _, item := range r.Items {
+		severity := "warning"
+		if item.IsError {
+			severity = "error"
+		}
+		ji := jsonItem{
+			Severity:     severity,
+			DiagnosticID: item.DiagnosticID,
+			Message:      item.Message,
+			Suggestion:   item.Suggestion,
+		}
+		for _, link := range item.Links {
+			ji.Links = append(ji.Links, jsonLink(link))
+		}
+		items = append(items, ji)
+	}
+
+	result := struct {
+		Type    string     `json:"type"`
+		Summary string     `json:"summary"`
+		Items   []jsonItem `json:"items"`
+	}{
+		Type: "preflight",
+		Summary: fmt.Sprintf("preflight: %d warning(s), %d error(s)",
+			len(warnings), len(errors)),
+		Items: items,
+	}
+
+	return json.Marshal(result)
 }
 
 // HasErrors returns true if the report contains at least one error-level item.

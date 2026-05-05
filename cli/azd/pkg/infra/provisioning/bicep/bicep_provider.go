@@ -2636,10 +2636,19 @@ func (p *BicepProvider) validatePreflight(
 	if len(results) > 0 {
 		report := &ux.PreflightReport{}
 		for _, result := range results {
+			var links []ux.PreflightReportLink
+			for _, l := range result.Links {
+				links = append(links, ux.PreflightReportLink{
+					URL:   l.URL,
+					Title: l.Title,
+				})
+			}
 			report.Items = append(report.Items, ux.PreflightReportItem{
 				IsError:      result.Severity == PreflightCheckError,
 				DiagnosticID: result.DiagnosticID,
 				Message:      result.Message,
+				Suggestion:   result.Suggestion,
+				Links:        links,
 			})
 		}
 		p.console.MessageUxItem(ctx, report)
@@ -2656,8 +2665,7 @@ func (p *BicepProvider) validatePreflight(
 		if report.HasWarnings() {
 			p.console.Message(ctx, "")
 			continueDeployment, promptErr := p.console.Confirm(ctx, input.ConsoleOptions{
-				Message: "Preflight validation found warnings that may cause the " +
-					"deployment to fail. Do you want to continue?",
+				Message:      "Proceed with deployment despite the warnings above?",
 				DefaultValue: true,
 			})
 			if promptErr != nil {
@@ -2925,15 +2933,19 @@ func (p *BicepProvider) checkAiModelQuota(
 					DiagnosticID: "ai_model_not_found",
 					Message: fmt.Sprintf(
 						"model %s%s was not found in the AI model "+
-							"catalog for %s. The deployment may fail "+
-							"if this model is not available. Verify "+
-							"the model name, SKU, and version are "+
-							"correct. See %s for supported models and regions.",
+							"catalog for %s.",
 						output.WithHighLightFormat(fmt.Sprintf("%q", dep.ModelName)),
 						output.WithGrayFormat(details),
 						output.WithHighLightFormat(loc),
-						output.WithLinkFormat("https://learn.microsoft.com/azure/ai-services/openai/concepts/models"),
 					),
+					Suggestion: "Verify the model name, SKU, and version are correct. " +
+						"The deployment will likely fail if this model is not available in this region.",
+					Links: []PreflightCheckLink{
+						{
+							URL:   "https://learn.microsoft.com/azure/ai-services/openai/concepts/models",
+							Title: "Azure OpenAI supported models and regions",
+						},
+					},
 				})
 				continue
 			}
@@ -2968,20 +2980,35 @@ func (p *BicepProvider) checkAiModelQuota(
 			totalRequired := requiredByUsage[r.usageName]
 			if remaining < totalRequired {
 				reportedUsage[r.usageName] = true
+
+				suggestion := fmt.Sprintf(
+					"Reduce the requested capacity to %.0f"+
+						" or change your deployment location via %s."+
+						" You can also request a quota increase in the Azure portal.",
+					remaining,
+					output.WithHighLightFormat(
+						"azd env set AZURE_LOCATION <location>"),
+				)
+
 				results = append(results, PreflightCheckResult{
 					Severity:     PreflightCheckWarning,
 					DiagnosticID: "ai_model_quota_exceeded",
 					Message: fmt.Sprintf(
-						"insufficient quota for model %s %s in %s. "+
-							"Requested capacity: %.0f, remaining quota: %.0f. "+
-							"The deployment may fail. Consider reducing capacity, "+
-							"selecting a different model, or requesting a quota increase.",
+						"insufficient quota for model %s %s in %s."+
+							" Requested capacity: %.0f, remaining quota: %.0f.",
 						output.WithHighLightFormat("%q", r.dep.ModelName),
 						output.WithGrayFormat("(SKU: %s)", r.dep.SkuName),
 						output.WithHighLightFormat(loc),
 						totalRequired,
 						remaining,
 					),
+					Suggestion: suggestion,
+					Links: []PreflightCheckLink{
+						{
+							URL:   "https://learn.microsoft.com/azure/quotas/quickstart-increase-quota-portal",
+							Title: "Increase Azure subscription quotas",
+						},
+					},
 				})
 			}
 		}

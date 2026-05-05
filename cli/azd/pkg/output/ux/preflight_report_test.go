@@ -81,6 +81,118 @@ func TestPreflightReport_MarshalJSON(t *testing.T) {
 	require.Contains(t, string(data), "1 error(s)")
 }
 
+func TestPreflightReport_WarningWithSuggestion(t *testing.T) {
+	report := &PreflightReport{
+		Items: []PreflightReportItem{
+			{
+				IsError:    false,
+				Message:    "insufficient quota for model gpt-4o",
+				Suggestion: "Reduce capacity to 140 or change location.",
+			},
+		},
+	}
+
+	result := report.ToString("  ")
+	require.Contains(t, result, "insufficient quota for model gpt-4o")
+	require.Contains(t, result, "Suggestion:")
+	require.Contains(t, result, "Reduce capacity to 140 or change location.")
+
+	// Suggestion should appear after the warning message
+	warnIdx := indexOf(result, "insufficient quota")
+	suggIdx := indexOf(result, "Reduce capacity")
+	require.Greater(t, suggIdx, warnIdx, "suggestion should appear after warning message")
+}
+
+func TestPreflightReport_WarningWithLinks(t *testing.T) {
+	report := &PreflightReport{
+		Items: []PreflightReportItem{
+			{
+				IsError:    false,
+				Message:    "model not found",
+				Suggestion: "Verify the model name.",
+				Links: []PreflightReportLink{
+					{URL: "https://example.com/models", Title: "Supported models"},
+					{URL: "https://example.com/raw-link"},
+				},
+			},
+		},
+	}
+
+	result := report.ToString("  ")
+	require.Contains(t, result, "model not found")
+	require.Contains(t, result, "Suggestion:")
+	require.Contains(t, result, "Verify the model name.")
+	// In non-terminal mode, WithHyperlink falls back to plain URL
+	require.Contains(t, result, "https://example.com/models")
+	require.Contains(t, result, "https://example.com/raw-link")
+}
+
+func TestPreflightReport_NoSuggestion(t *testing.T) {
+	report := &PreflightReport{
+		Items: []PreflightReportItem{
+			{IsError: false, Message: "simple warning"},
+		},
+	}
+
+	result := report.ToString("")
+	require.Contains(t, result, "simple warning")
+	require.NotContains(t, result, "Suggestion:")
+}
+
+func TestPreflightReport_MarshalJSON_WithSuggestions(t *testing.T) {
+	report := &PreflightReport{
+		Items: []PreflightReportItem{
+			{
+				IsError:      false,
+				DiagnosticID: "ai_model_quota_exceeded",
+				Message:      "insufficient quota",
+				Suggestion:   "Reduce capacity to 140.",
+				Links: []PreflightReportLink{
+					{URL: "https://example.com/quotas", Title: "Quota docs"},
+				},
+			},
+			{IsError: true, DiagnosticID: "role_error", Message: "role missing"},
+		},
+	}
+
+	data, err := json.Marshal(report)
+	require.NoError(t, err)
+
+	var parsed struct {
+		Type    string `json:"type"`
+		Summary string `json:"summary"`
+		Items   []struct {
+			Severity     string `json:"severity"`
+			DiagnosticID string `json:"diagnosticId"`
+			Message      string `json:"message"`
+			Suggestion   string `json:"suggestion"`
+			Links        []struct {
+				URL   string `json:"url"`
+				Title string `json:"title"`
+			} `json:"links"`
+		} `json:"items"`
+	}
+	require.NoError(t, json.Unmarshal(data, &parsed))
+
+	require.Equal(t, "preflight", parsed.Type)
+	require.Contains(t, parsed.Summary, "1 warning(s)")
+	require.Contains(t, parsed.Summary, "1 error(s)")
+	require.Len(t, parsed.Items, 2)
+
+	// First item: warning with suggestion and links
+	require.Equal(t, "warning", parsed.Items[0].Severity)
+	require.Equal(t, "ai_model_quota_exceeded", parsed.Items[0].DiagnosticID)
+	require.Equal(t, "Reduce capacity to 140.", parsed.Items[0].Suggestion)
+	require.Len(t, parsed.Items[0].Links, 1)
+	require.Equal(t, "https://example.com/quotas", parsed.Items[0].Links[0].URL)
+	require.Equal(t, "Quota docs", parsed.Items[0].Links[0].Title)
+
+	// Second item: error without suggestion
+	require.Equal(t, "error", parsed.Items[1].Severity)
+	require.Empty(t, parsed.Items[1].Suggestion)
+	require.Empty(t, parsed.Items[1].Links)
+}
+
 func TestPreflightReport_Indentation(t *testing.T) {
 	report := &PreflightReport{
 		Items: []PreflightReportItem{

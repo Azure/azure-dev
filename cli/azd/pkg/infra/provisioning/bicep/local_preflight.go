@@ -271,6 +271,19 @@ type PreflightCheckResult struct {
 	DiagnosticID string
 	// Message is a human-readable description of the finding.
 	Message string
+	// Suggestion is an optional actionable recommendation for resolving the issue.
+	// It should be dynamically generated with context-specific advice when possible.
+	Suggestion string
+	// Links is an optional list of reference links related to the finding.
+	Links []PreflightCheckLink
+}
+
+// PreflightCheckLink represents a reference link attached to a preflight check result.
+type PreflightCheckLink struct {
+	// URL is the link target.
+	URL string
+	// Title is the display text (optional — if empty, the URL is shown).
+	Title string
 }
 
 // validationContext provides the data and utilities available to preflight check functions.

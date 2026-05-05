@@ -443,6 +443,10 @@ overrides:
   - filename: pkg/tool/manifest.go
     words:
       - azureresourcegroups
+  - filename: pkg/tool/installer.go
+    words:
+      - filesystems
+      - redirections
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

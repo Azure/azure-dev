@@ -1128,6 +1128,13 @@ func runToolOperation(
 
 	// Build per-tool result items and a TaskList for display.
 	resultItems := make([]*toolInstallResultItem, 0, len(tools))
+
+	// Identify IDs of the originally requested tools for dependency detection.
+	requestedIDs := make(map[string]bool, len(tools))
+	for _, t := range tools {
+		requestedIDs[t.Id] = true
+	}
+
 	taskList := uxlib.NewTaskList(
 		&uxlib.TaskListOptions{ContinueOnError: true},
 	)
@@ -1196,6 +1203,47 @@ func runToolOperation(
 					Success:          true,
 					InstalledVersion: r.InstalledVersion,
 				})
+				return uxlib.Success, nil
+			},
+		})
+	}
+
+	// Add dependency results (tools returned by the batch operation but not
+	// explicitly requested by the user).
+	for _, r := range results {
+		if r.Tool == nil || requestedIDs[r.Tool.Id] {
+			continue
+		}
+		depResult := r
+		taskList.AddTask(uxlib.TaskOptions{
+			Title: fmt.Sprintf("%s %s (dependency)", title, depResult.Tool.Name),
+			Action: func(setProgress uxlib.SetProgressFunc) (uxlib.TaskState, error) {
+				if depResult.Error != nil {
+					resultItems = append(resultItems, &toolInstallResultItem{
+						Id:      depResult.Tool.Id,
+						Name:    depResult.Tool.Name + " (dependency)",
+						Action:  action,
+						Success: false,
+						Error:   depResult.Error.Error(),
+					})
+					return uxlib.Error, depResult.Error
+				}
+
+				if depResult.InstalledVersion != "" {
+					setProgress(depResult.InstalledVersion)
+				}
+
+				resultItems = append(resultItems, &toolInstallResultItem{
+					Id:               depResult.Tool.Id,
+					Name:             depResult.Tool.Name + " (dependency)",
+					Action:           action,
+					Success:          depResult.Success,
+					InstalledVersion: depResult.InstalledVersion,
+				})
+
+				if !depResult.Success {
+					return uxlib.Warning, fmt.Errorf("%s did not succeed", action)
+				}
 				return uxlib.Success, nil
 			},
 		})

@@ -733,6 +733,24 @@ func TestDetectTool_Library(t *testing.T) {
 			},
 			expectInstalled: false,
 		},
+		{
+			name: "NonExitErrorReturnsError",
+			tool: &ToolDefinition{
+				Id:            "azure.ai.agents",
+				Category:      ToolCategoryLibrary,
+				DetectCommand: "azd",
+				VersionArgs:   []string{"extension", "list", "--installed", "--output", "json"},
+			},
+			setup: func(runner *mockexec.MockCommandRunner) {
+				runner.MockToolInPath("azd", nil)
+				runner.When(func(args exec.RunArgs, _ string) bool {
+					return args.Cmd == "azd"
+				}).SetError(errors.New("signal: killed"))
+			},
+			expectInstalled:  false,
+			expectError:      true,
+			expectErrContain: "running azd",
+		},
 	}
 
 	for _, tt := range tests {

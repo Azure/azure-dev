@@ -86,9 +86,8 @@ type UpdateChecker struct {
 	detector      Detector
 	configDirFn   func() (string, error)
 
-	cachePathOnce sync.Once
-	cachePath     string
-	cachePathErr  error
+	cachePathMu sync.Mutex
+	cachePath   string
 }
 
 // NewUpdateChecker creates an [UpdateChecker] that resolves its cache
@@ -107,17 +106,22 @@ func NewUpdateChecker(
 }
 
 // getCacheFilePath returns the resolved path to the on-disk cache file,
-// computing it once on first call.
+// computing it once on first successful call.
 func (uc *UpdateChecker) getCacheFilePath() (string, error) {
-	uc.cachePathOnce.Do(func() {
-		dir, err := uc.configDirFn()
-		if err != nil {
-			uc.cachePathErr = fmt.Errorf("resolving config directory: %w", err)
-			return
-		}
-		uc.cachePath = filepath.Join(dir, toolCheckCacheFileName)
-	})
-	return uc.cachePath, uc.cachePathErr
+	uc.cachePathMu.Lock()
+	defer uc.cachePathMu.Unlock()
+
+	if uc.cachePath != "" {
+		return uc.cachePath, nil
+	}
+
+	dir, err := uc.configDirFn()
+	if err != nil {
+		return "", fmt.Errorf("resolving config directory: %w", err)
+	}
+
+	uc.cachePath = filepath.Join(dir, toolCheckCacheFileName)
+	return uc.cachePath, nil
 }
 
 // ShouldCheck returns true when enough time has elapsed since the last

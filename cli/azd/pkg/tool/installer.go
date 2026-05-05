@@ -70,8 +70,8 @@ type installer struct {
 	platformDetector *PlatformDetector
 	detector         Detector
 	httpClient       httpDoer
-	platformMu sync.Mutex
-	platform   *Platform // lazily populated by ensurePlatform
+	platformMu       sync.Mutex
+	platform         *Platform // lazily populated by ensurePlatform
 }
 
 // httpDoer is an interface satisfied by [*http.Client] for testing.
@@ -466,6 +466,9 @@ func (i *installer) executeDirectDownload(
 		return fmt.Errorf("parsing download URL: %w", err)
 	}
 	fileName := filepath.Base(u.Path)
+	if fileName == "." || fileName == "/" || fileName == "" {
+		return fmt.Errorf("cannot determine filename from download URL: %s", strategy.DirectDownloadUrl)
+	}
 	destPath := filepath.Join(destDir, fileName)
 
 	if err := os.MkdirAll(destDir, 0o755); err != nil {

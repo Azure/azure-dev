@@ -297,7 +297,10 @@ func (m *Manager) buildInstallOrder(
 			}
 
 			if len(dep.Dependencies) > 0 {
-				return nil, fmt.Errorf("tool %q has transitive dependencies via %q; only single-level dependencies are supported", tool.Id, depID)
+				return nil, fmt.Errorf(
+					"tool %q has transitive dependencies via %q; only single-level dependencies are supported",
+					tool.Id, depID,
+				)
 			}
 
 			// Only add the dependency if it is not already

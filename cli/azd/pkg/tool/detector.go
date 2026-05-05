@@ -406,6 +406,14 @@ func (d *detector) detectLibrary(
 			return status
 		}
 
+		var exitErr *osexec.ExitError
+		if !errors.As(err, &exitErr) {
+			status.Error = fmt.Errorf(
+				"running %s: %w", tool.DetectCommand, err,
+			)
+			return status
+		}
+
 		// Non-zero exit: try to parse any captured output.
 	}
 

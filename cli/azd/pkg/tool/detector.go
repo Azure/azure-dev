@@ -167,6 +167,18 @@ func (d *detector) detectCLI(
 			return status
 		}
 
+		// Only treat as installed if the error is an exit error
+		// (non-zero exit code). Other errors (permission denied,
+		// missing shared libraries, etc.) are recorded and returned
+		// without marking installed.
+		var exitErr *osexec.ExitError
+		if !errors.As(err, &exitErr) {
+			status.Error = fmt.Errorf(
+				"running %s: %w", tool.DetectCommand, err,
+			)
+			return status
+		}
+
 		// Non-zero exit: the binary exists, so try to parse
 		// the version from whatever output was captured.
 	}
@@ -219,6 +231,16 @@ func (d *detector) detectExtension(
 		}
 
 		if isContextErr(err) {
+			status.Error = fmt.Errorf(
+				"listing VS Code extensions: %w", err,
+			)
+			return status
+		}
+
+		// Only treat as potentially installed if the error is an
+		// exit error. Other errors are recorded without marking installed.
+		var exitErr *osexec.ExitError
+		if !errors.As(err, &exitErr) {
 			status.Error = fmt.Errorf(
 				"listing VS Code extensions: %w", err,
 			)
@@ -286,6 +308,16 @@ func (d *detector) detectCommandBased(
 		}
 
 		if isContextErr(err) {
+			status.Error = fmt.Errorf(
+				"running %s: %w", tool.DetectCommand, err,
+			)
+			return status
+		}
+
+		// Only treat as potentially installed if the error is an
+		// exit error. Other errors are recorded without marking installed.
+		var exitErr *osexec.ExitError
+		if !errors.As(err, &exitErr) {
 			status.Error = fmt.Errorf(
 				"running %s: %w", tool.DetectCommand, err,
 			)
@@ -400,17 +432,28 @@ func (d *detector) detectLibrary(
 // Helpers
 // ---------------------------------------------------------------------------
 
-// matchVersion compiles the regex pattern and returns the first
-// capture-group match from output. Returns "" when the pattern is
+// regexCache stores compiled regular expressions to avoid recompilation
+// on every detection call.
+var regexCache sync.Map
+
+// matchVersion looks up or compiles the regex pattern and returns the
+// first capture-group match from output. Returns "" when the pattern is
 // empty, the regex is invalid, or no match is found.
 func matchVersion(output, pattern string) string {
 	if pattern == "" || output == "" {
 		return ""
 	}
 
-	re, err := regexp.Compile(pattern)
-	if err != nil {
-		return ""
+	var re *regexp.Regexp
+	if cached, ok := regexCache.Load(pattern); ok {
+		re = cached.(*regexp.Regexp)
+	} else {
+		compiled, err := regexp.Compile(pattern)
+		if err != nil {
+			return ""
+		}
+		regexCache.Store(pattern, compiled)
+		re = compiled
 	}
 
 	m := re.FindStringSubmatch(output)

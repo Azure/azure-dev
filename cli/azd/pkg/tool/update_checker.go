@@ -288,8 +288,11 @@ func (uc *UpdateChecker) SaveCache(cache *UpdateCheckCache) error {
 // version differs from the currently installed version.
 // It returns whether any updates exist, how many, and any error
 // encountered while reading the cache or detecting versions.
+// The caller provides the tool definitions to resolve cached IDs against,
+// avoiding a dependency on the package-level manifest.
 func (uc *UpdateChecker) HasUpdatesAvailable(
 	ctx context.Context,
+	tools []*ToolDefinition,
 ) (bool, int, error) {
 	cache, err := uc.GetCachedResults()
 	if err != nil {
@@ -313,10 +316,10 @@ func (uc *UpdateChecker) HasUpdatesAvailable(
 		return false, 0, nil
 	}
 
-	// Resolve tool definitions so we can detect installed versions.
+	// Filter the provided tool definitions to those with cached candidates.
 	var toolDefs []*ToolDefinition
-	for id := range candidates {
-		if t := FindTool(id); t != nil {
+	for _, t := range tools {
+		if _, ok := candidates[t.Id]; ok {
 			toolDefs = append(toolDefs, t)
 		}
 	}

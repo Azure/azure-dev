@@ -230,7 +230,7 @@ func (m *Manager) ShouldCheckForUpdates(
 func (m *Manager) HasUpdatesAvailable(
 	ctx context.Context,
 ) (bool, int, error) {
-	return m.updateChecker.HasUpdatesAvailable(ctx)
+	return m.updateChecker.HasUpdatesAvailable(ctx, m.manifest)
 }
 
 // ShouldShowNotification reports whether an update notification should
@@ -294,6 +294,10 @@ func (m *Manager) buildInstallOrder(
 					"resolving dependency %q for tool %q: %w",
 					depID, tool.Id, err,
 				)
+			}
+
+			if len(dep.Dependencies) > 0 {
+				return nil, fmt.Errorf("tool %q has transitive dependencies via %q; only single-level dependencies are supported", tool.Id, depID)
 			}
 
 			// Only add the dependency if it is not already

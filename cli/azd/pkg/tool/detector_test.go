@@ -107,7 +107,7 @@ func TestDetectTool_CLI(t *testing.T) {
 						return exec.RunResult{
 							ExitCode: 1,
 							Stderr:   "quirky 1.2.3",
-						}, errors.New("exit status 1")
+						}, &osexec.ExitError{}
 					},
 				)
 			},

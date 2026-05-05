@@ -487,7 +487,7 @@ func TestHasUpdatesAvailable(t *testing.T) {
 		det := &mockDetector{}
 		uc := NewUpdateChecker(mgr, det, staticDir(tmpDir))
 
-		hasUpdates, count, err := uc.HasUpdatesAvailable(t.Context())
+		hasUpdates, count, err := uc.HasUpdatesAvailable(t.Context(), BuiltInTools())
 		require.NoError(t, err)
 		assert.False(t, hasUpdates)
 		assert.Equal(t, 0, count)
@@ -508,7 +508,7 @@ func TestHasUpdatesAvailable(t *testing.T) {
 		}
 		require.NoError(t, uc.SaveCache(cache))
 
-		hasUpdates, count, err := uc.HasUpdatesAvailable(t.Context())
+		hasUpdates, count, err := uc.HasUpdatesAvailable(t.Context(), BuiltInTools())
 		require.NoError(t, err)
 		assert.False(t, hasUpdates)
 		assert.Equal(t, 0, count)

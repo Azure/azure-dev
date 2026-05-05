@@ -220,43 +220,23 @@ func (a *toolAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, nil
 	}
 
-	taskList := uxlib.NewTaskList(
-		&uxlib.TaskListOptions{ContinueOnError: true},
-	)
-
+	tools := make([]*tool.ToolDefinition, 0, len(ids))
 	for _, id := range ids {
-		capturedID := id
-		toolDef, findErr := a.manager.FindTool(capturedID)
+		toolDef, findErr := a.manager.FindTool(id)
 		if findErr != nil {
 			return nil, findErr
 		}
-
-		taskList.AddTask(uxlib.TaskOptions{
-			Title: fmt.Sprintf("Installing %s", toolDef.Name),
-			Action: func(setProgress uxlib.SetProgressFunc) (uxlib.TaskState, error) {
-				results, installErr := a.manager.InstallTools(ctx, []string{capturedID})
-				if installErr != nil {
-					return uxlib.Error, installErr
-				}
-				// Find the result for the specific tool we requested
-				// (dependency results may precede it in the slice).
-				for _, r := range results {
-					if r.Tool != nil && r.Tool.Id == capturedID {
-						if !r.Success {
-							return uxlib.Error, r.Error
-						}
-						break
-					}
-				}
-				return uxlib.Success, nil
-			},
-		})
+		tools = append(tools, toolDef)
 	}
 
-	if err := taskList.Run(); err != nil {
-		a.console.Message(ctx, output.WithWarningFormat(
-			"\nSome tools could not be installed. Run 'azd tool list' for details.",
-		))
+	operationFn := func(ctx context.Context, allIDs []string) ([]*tool.InstallResult, error) {
+		return a.manager.InstallTools(ctx, allIDs)
+	}
+
+	_, err = runToolOperation(ctx, tools, operationFn, "Installing", "install", a.console)
+	if err != nil {
+		// runToolOperation already displayed warnings; swallow the task-list error.
+		_ = err
 	}
 
 	return &actions.ActionResult{
@@ -438,79 +418,20 @@ func (a *toolInstallAction) Run(ctx context.Context) (*actions.ActionResult, err
 		TitleNote: "Installs specified tools onto the local machine",
 	})
 
-	taskList := uxlib.NewTaskList(
-		&uxlib.TaskListOptions{ContinueOnError: true},
-	)
-
-	var installResults []*toolInstallResultItem
-
+	tools := make([]*tool.ToolDefinition, 0, len(ids))
 	for _, id := range ids {
-		capturedID := id
-		toolDef, findErr := a.manager.FindTool(capturedID)
+		toolDef, findErr := a.manager.FindTool(id)
 		if findErr != nil {
 			return nil, findErr
 		}
-
-		taskList.AddTask(uxlib.TaskOptions{
-			Title: fmt.Sprintf("Installing %s", toolDef.Name),
-			Action: func(setProgress uxlib.SetProgressFunc) (uxlib.TaskState, error) {
-				results, installErr := a.manager.InstallTools(
-					ctx, []string{capturedID},
-				)
-				if installErr != nil {
-					installResults = append(installResults, &toolInstallResultItem{
-						Id:      capturedID,
-						Name:    toolDef.Name,
-						Action:  "install",
-						Success: false,
-						Error:   installErr.Error(),
-					})
-					return uxlib.Error, installErr
-				}
-				// Find the result for the specific tool we requested
-				// (dependency results may precede it in the slice).
-				var matched *tool.InstallResult
-				for _, r := range results {
-					if r.Tool != nil && r.Tool.Id == capturedID {
-						matched = r
-						break
-					}
-				}
-				if matched != nil && !matched.Success {
-					errMsg := ""
-					if matched.Error != nil {
-						errMsg = matched.Error.Error()
-					}
-					installResults = append(installResults, &toolInstallResultItem{
-						Id:      capturedID,
-						Name:    toolDef.Name,
-						Action:  "install",
-						Success: false,
-						Error:   errMsg,
-					})
-					return uxlib.Error, matched.Error
-				}
-				version := ""
-				if matched != nil {
-					version = matched.InstalledVersion
-				}
-				installResults = append(installResults, &toolInstallResultItem{
-					Id:               capturedID,
-					Name:             toolDef.Name,
-					Action:           "install",
-					Success:          true,
-					InstalledVersion: version,
-				})
-				return uxlib.Success, nil
-			},
-		})
+		tools = append(tools, toolDef)
 	}
 
-	if err := taskList.Run(); err != nil {
-		a.console.Message(ctx, output.WithWarningFormat(
-			"\nSome tools could not be installed. Run 'azd tool list' for details.",
-		))
+	operationFn := func(ctx context.Context, allIDs []string) ([]*tool.InstallResult, error) {
+		return a.manager.InstallTools(ctx, allIDs)
 	}
+
+	installResults, _ := runToolOperation(ctx, tools, operationFn, "Installing", "install", a.console)
 
 	if a.formatter.Kind() == output.JsonFormat {
 		return nil, a.formatter.Format(installResults, a.writer, nil)
@@ -755,83 +676,11 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 		TitleNote: "Upgrades installed tools to their latest versions",
 	})
 
-	taskList := uxlib.NewTaskList(
-		&uxlib.TaskListOptions{ContinueOnError: true},
-	)
-
-	var upgradeResults []*toolInstallResultItem
-
-	for _, t := range toolsToUpgrade {
-		capturedTool := t
-		taskList.AddTask(uxlib.TaskOptions{
-			Title: fmt.Sprintf("Upgrading %s", capturedTool.Name),
-			Action: func(setProgress uxlib.SetProgressFunc) (uxlib.TaskState, error) {
-				results, upgradeErr := a.manager.UpgradeTools(
-					ctx, []string{capturedTool.Id},
-				)
-				if upgradeErr != nil {
-					upgradeResults = append(
-						upgradeResults, &toolInstallResultItem{
-							Id:      capturedTool.Id,
-							Name:    capturedTool.Name,
-							Action:  "upgrade",
-							Success: false,
-							Error:   upgradeErr.Error(),
-						},
-					)
-					return uxlib.Error, upgradeErr
-				}
-				if len(results) > 0 {
-					r := results[0]
-					if r.Error != nil {
-						upgradeResults = append(
-							upgradeResults, &toolInstallResultItem{
-								Id:      capturedTool.Id,
-								Name:    capturedTool.Name,
-								Action:  "upgrade",
-								Success: false,
-								Error:   r.Error.Error(),
-							},
-						)
-						return uxlib.Error, r.Error
-					}
-					if !r.Success {
-						upgradeResults = append(
-							upgradeResults, &toolInstallResultItem{
-								Id:      capturedTool.Id,
-								Name:    capturedTool.Name,
-								Action:  "upgrade",
-								Success: false,
-							},
-						)
-						return uxlib.Warning, fmt.Errorf(
-							"upgrade did not succeed: %w",
-							internal.ErrToolUpgradeFailed,
-						)
-					}
-					if r.InstalledVersion != "" {
-						setProgress(r.InstalledVersion)
-					}
-					upgradeResults = append(
-						upgradeResults, &toolInstallResultItem{
-							Id:               capturedTool.Id,
-							Name:             capturedTool.Name,
-							Action:           "upgrade",
-							Success:          true,
-							InstalledVersion: r.InstalledVersion,
-						},
-					)
-				}
-				return uxlib.Success, nil
-			},
-		})
+	operationFn := func(ctx context.Context, allIDs []string) ([]*tool.InstallResult, error) {
+		return a.manager.UpgradeTools(ctx, allIDs)
 	}
 
-	if err := taskList.Run(); err != nil {
-		a.console.Message(ctx, output.WithWarningFormat(
-			"\nSome tools could not be upgraded. Run 'azd tool check' for details.",
-		))
-	}
+	upgradeResults, _ := runToolOperation(ctx, toolsToUpgrade, operationFn, "Upgrading", "upgrade", a.console)
 
 	if a.formatter.Kind() == output.JsonFormat {
 		return nil, a.formatter.Format(upgradeResults, a.writer, nil)
@@ -1236,6 +1085,130 @@ type toolShowItem struct {
 	Website     string `json:"website"`
 	Installed   bool   `json:"installed"`
 	Version     string `json:"version"`
+}
+
+// toolOperationFn abstracts InstallTools and UpgradeTools so that
+// runToolOperation can handle both operations uniformly.
+type toolOperationFn func(ctx context.Context, ids []string) ([]*tool.InstallResult, error)
+
+// runToolOperation executes a batch tool operation (install or upgrade) with a
+// single call to operationFn, then maps the results to per-tool TaskList entries
+// for user-visible progress. This avoids the N+1 problem of calling the
+// operation once per tool (which triggers redundant dependency resolution).
+//
+// Parameters:
+//   - tools: the resolved ToolDefinition slice to operate on
+//   - operationFn: either InstallTools or UpgradeTools
+//   - title: verb for task titles (e.g. "Installing", "Upgrading")
+//   - action: action label for result items (e.g. "install", "upgrade")
+//   - console: for displaying warnings on partial failure
+func runToolOperation(
+	ctx context.Context,
+	tools []*tool.ToolDefinition,
+	operationFn toolOperationFn,
+	title string,
+	action string,
+	console input.Console,
+) ([]*toolInstallResultItem, error) {
+	// Collect all IDs and run the operation once.
+	ids := make([]string, len(tools))
+	for i, t := range tools {
+		ids[i] = t.Id
+	}
+
+	results, opErr := operationFn(ctx, ids)
+
+	// Index results by tool ID for O(1) lookup.
+	resultsByID := make(map[string]*tool.InstallResult, len(results))
+	for _, r := range results {
+		if r.Tool != nil {
+			resultsByID[r.Tool.Id] = r
+		}
+	}
+
+	// Build per-tool result items and a TaskList for display.
+	resultItems := make([]*toolInstallResultItem, 0, len(tools))
+	taskList := uxlib.NewTaskList(
+		&uxlib.TaskListOptions{ContinueOnError: true},
+	)
+
+	for _, t := range tools {
+		capturedTool := t
+		r := resultsByID[capturedTool.Id]
+
+		taskList.AddTask(uxlib.TaskOptions{
+			Title: fmt.Sprintf("%s %s", title, capturedTool.Name),
+			Action: func(setProgress uxlib.SetProgressFunc) (uxlib.TaskState, error) {
+				// If the batch call itself failed, every tool is an error.
+				if opErr != nil {
+					resultItems = append(resultItems, &toolInstallResultItem{
+						Id:      capturedTool.Id,
+						Name:    capturedTool.Name,
+						Action:  action,
+						Success: false,
+						Error:   opErr.Error(),
+					})
+					return uxlib.Error, opErr
+				}
+
+				if r == nil {
+					resultItems = append(resultItems, &toolInstallResultItem{
+						Id:      capturedTool.Id,
+						Name:    capturedTool.Name,
+						Action:  action,
+						Success: false,
+						Error:   "no result returned",
+					})
+					return uxlib.Error, fmt.Errorf("no result returned for %s", capturedTool.Id)
+				}
+
+				if r.Error != nil {
+					resultItems = append(resultItems, &toolInstallResultItem{
+						Id:      capturedTool.Id,
+						Name:    capturedTool.Name,
+						Action:  action,
+						Success: false,
+						Error:   r.Error.Error(),
+					})
+					return uxlib.Error, r.Error
+				}
+
+				if !r.Success {
+					resultItems = append(resultItems, &toolInstallResultItem{
+						Id:      capturedTool.Id,
+						Name:    capturedTool.Name,
+						Action:  action,
+						Success: false,
+					})
+					return uxlib.Warning, fmt.Errorf(
+						"%s did not succeed", action,
+					)
+				}
+
+				if r.InstalledVersion != "" {
+					setProgress(r.InstalledVersion)
+				}
+
+				resultItems = append(resultItems, &toolInstallResultItem{
+					Id:               capturedTool.Id,
+					Name:             capturedTool.Name,
+					Action:           action,
+					Success:          true,
+					InstalledVersion: r.InstalledVersion,
+				})
+				return uxlib.Success, nil
+			},
+		})
+	}
+
+	taskErr := taskList.Run()
+	if taskErr != nil {
+		console.Message(ctx, output.WithWarningFormat(
+			"\nSome tools could not be %sd. Run 'azd tool list' for details.", action,
+		))
+	}
+
+	return resultItems, taskErr
 }
 
 // writeDryRunTable renders a dry-run results table using tabwriter.

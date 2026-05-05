@@ -12,6 +12,7 @@ import (
 	"hash"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -69,9 +70,8 @@ type installer struct {
 	platformDetector *PlatformDetector
 	detector         Detector
 	httpClient       httpDoer
-	platformOnce     sync.Once
-	platform         *Platform // lazily populated by ensurePlatform
-	platformErr      error
+	platformMu sync.Mutex
+	platform   *Platform // lazily populated by ensurePlatform
 }
 
 // httpDoer is an interface satisfied by [*http.Client] for testing.
@@ -278,22 +278,23 @@ func (i *installer) run(
 	return result, nil
 }
 
-// ensurePlatform lazily detects the current platform using sync.Once
-// to guarantee thread-safe initialization. The first context passed
-// wins, which is acceptable since platform detection is OS-level and
-// does not depend on request-scoped context.
+// ensurePlatform lazily detects the current platform using a mutex
+// to guarantee thread-safe initialization. Only successful results
+// are cached so that transient errors can be retried.
 func (i *installer) ensurePlatform(
 	ctx context.Context,
 ) (*Platform, error) {
-	i.platformOnce.Do(func() {
-		p, err := i.platformDetector.Detect(ctx)
-		if err != nil {
-			i.platformErr = fmt.Errorf("platform detection: %w", err)
-			return
-		}
-		i.platform = p
-	})
-	return i.platform, i.platformErr
+	i.platformMu.Lock()
+	defer i.platformMu.Unlock()
+	if i.platform != nil {
+		return i.platform, nil
+	}
+	p, err := i.platformDetector.Detect(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("platform detection: %w", err)
+	}
+	i.platform = p
+	return p, nil
 }
 
 // executeStrategy runs the command described by the given strategy.
@@ -460,7 +461,11 @@ func (i *installer) executeDirectDownload(
 		return fmt.Errorf("install dir: %w", err)
 	}
 
-	fileName := filepath.Base(strategy.DirectDownloadUrl)
+	u, err := url.Parse(strategy.DirectDownloadUrl)
+	if err != nil {
+		return fmt.Errorf("parsing download URL: %w", err)
+	}
+	fileName := filepath.Base(u.Path)
 	destPath := filepath.Join(destDir, fileName)
 
 	if err := os.MkdirAll(destDir, 0o755); err != nil {
@@ -539,7 +544,7 @@ func validateChecksum(filePath string, checksum Checksum) error {
 
 	actual := hex.EncodeToString(hashAlgo.Sum(nil))
 
-	if actual != checksum.Value {
+	if !strings.EqualFold(actual, checksum.Value) {
 		return fmt.Errorf(
 			"checksum verification failed. "+
 				"Expected: %s, Got: %s. "+
@@ -674,8 +679,11 @@ func buildCodeCommand(
 // Helpers
 // -----------------------------------------------------------------------
 
-// splitCommand splits a whitespace-delimited command string into the
-// executable name and its arguments.
+// splitCommand splits a whitespace-delimited command string into the executable
+// name and its arguments. Note: this uses strings.Fields which does not handle
+// quoted arguments (e.g., --path "Program Files"). Commands requiring shell
+// features like quoting, pipes, or redirections are routed through the shell
+// via containsShellOperators, bypassing this function.
 func splitCommand(command string) (string, []string) {
 	parts := strings.Fields(command)
 	if len(parts) == 0 {

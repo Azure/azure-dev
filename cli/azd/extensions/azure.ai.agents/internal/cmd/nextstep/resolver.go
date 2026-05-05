@@ -144,6 +144,34 @@ func ResolveAfterShow(s *State, agentName, agentStatus string) []Suggestion {
 	return out
 }
 
+// ResolveAfterDeployOne returns suggestions to print after a single
+// agent deploy completes. Unlike ResolveAfterDeploy (which fans out
+// over all agents in the project state), this resolver is scoped to
+// the agent that was just deployed.
+//
+// agentName should be the deployed Foundry name when known; otherwise
+// pass the azure.yaml service name. An empty string falls back to the
+// unscoped invoke form ("azd ai agent invoke").
+func ResolveAfterDeployOne(agentName string) []Suggestion {
+	name := strings.TrimSpace(agentName)
+	if name == "" {
+		return []Suggestion{
+			{Command: "azd ai agent show", Description: "inspect the deployed agent"},
+			{Command: "azd ai agent invoke \"Hello!\"", Description: "test it end-to-end"},
+		}
+	}
+	return []Suggestion{
+		{
+			Command:     fmt.Sprintf("azd ai agent show %s", name),
+			Description: "inspect the deployed agent",
+		},
+		{
+			Command:     fmt.Sprintf("azd ai agent invoke %s \"Hello!\"", name),
+			Description: "test it end-to-end",
+		},
+	}
+}
+
 // ResolveAfterDeploy returns suggestions to show after a successful
 // post-deploy hook for the agent service target.
 //

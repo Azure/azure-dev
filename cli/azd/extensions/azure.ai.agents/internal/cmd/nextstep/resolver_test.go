@@ -229,6 +229,33 @@ func TestResolveAfterShow(t *testing.T) {
 	})
 }
 
+func TestResolveAfterDeployOne(t *testing.T) {
+	got := ResolveAfterDeployOne("calculator-prompt")
+	if len(got) != 2 {
+		t.Fatalf("expected 2 suggestions, got %d", len(got))
+	}
+	if got[0].Command != "azd ai agent show calculator-prompt" {
+		t.Errorf("show cmd = %q", got[0].Command)
+	}
+	if got[1].Command != `azd ai agent invoke calculator-prompt "Hello!"` {
+		t.Errorf("invoke cmd = %q", got[1].Command)
+	}
+
+	empty := ResolveAfterDeployOne("")
+	if len(empty) != 2 {
+		t.Fatalf("expected fallback 2 suggestions, got %d", len(empty))
+	}
+	if empty[0].Command != "azd ai agent show" {
+		t.Errorf("fallback show = %q", empty[0].Command)
+	}
+
+	// Whitespace should be treated as empty.
+	ws := ResolveAfterDeployOne("   ")
+	if ws[0].Command != "azd ai agent show" {
+		t.Errorf("whitespace-only should fall back, got %q", ws[0].Command)
+	}
+}
+
 func TestResolveAfterDeploy(t *testing.T) {
 	t.Run("nil state -> nothing", func(t *testing.T) {
 		if got := ResolveAfterDeploy(nil); len(got) != 0 {

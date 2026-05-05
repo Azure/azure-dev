@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
@@ -694,6 +695,8 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
 		protocols,
 	)
+
+	nextstep.PrintNext(os.Stdout, nextstep.ResolveAfterDeployOne(agentVersionResponse.Name))
 
 	return &azdext.ServiceDeployResult{
 		Artifacts: artifacts,

@@ -224,24 +224,6 @@ func validateAgentEndpointFlags(cmd *cobra.Command, flags *invokeFlags) error {
 	return nil
 }
 
-// warnIneffectiveResetFlags prints to stderr when --new-session /
-// --new-conversation were requested but persistence is not active (standalone
-// mode without a parent azd daemon). The flags only have an effect when the
-// extension can read/write the stored IDs, so silently accepting them would be
-// misleading. We use stderr (not the std logger) because the extension
-// silences `log` output unless debug mode is enabled.
-func warnIneffectiveResetFlags(flags *invokeFlags) {
-	if flags.newSession {
-		fmt.Fprintln(os.Stderr,
-			"warning: --new-session has no effect without a parent azd daemon (session ID is not persisted)")
-	}
-	if flags.newConversation {
-		fmt.Fprintln(os.Stderr,
-			"warning: --new-conversation has no effect without a parent azd daemon "+
-				"(conversation ID is not persisted)")
-	}
-}
-
 func (a *InvokeAction) Run(ctx context.Context) error {
 	protocol, err := a.resolveProtocol(ctx)
 	if err != nil {
@@ -542,15 +524,9 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 		return err
 	}
 
-	// agentKey is set by resolveRemoteContext when persistence is applicable.
-	// In ephemeral mode without a parent azd daemon we still set it for clarity,
-	// but the helpers below early-return when azdClient is nil.
 	agentKey := rc.agentKey
 	if agentKey == "" && rc.azdClient != nil {
 		log.Printf("warning: agent endpoint not available, session state will not be persisted")
-	}
-	if a.endpoint != nil && rc.azdClient == nil {
-		warnIneffectiveResetFlags(a.flags)
 	}
 
 	// Acquire the bearer token after body validation so a local input error
@@ -746,9 +722,6 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	agentKey := rc.agentKey
 	if agentKey == "" && rc.azdClient != nil {
 		log.Printf("warning: agent endpoint not available, session state will not be persisted")
-	}
-	if a.endpoint != nil && rc.azdClient == nil {
-		warnIneffectiveResetFlags(a.flags)
 	}
 
 	if a.flags.newConversation {

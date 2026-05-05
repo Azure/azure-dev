@@ -108,7 +108,7 @@ func parseAgentEndpoint(rawURL string) (*parsedAgentEndpoint, error) {
 	projectSegment, agentSegment, protocolTail := matches[1], matches[2], matches[3]
 
 	projectName, err := url.PathUnescape(projectSegment)
-	if err != nil || projectName == "" {
+	if err != nil || projectName == "" || strings.ContainsAny(projectName, "/\\") {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			"--agent-endpoint project segment is invalid",

@@ -776,9 +776,10 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	}
 	defer resp.Body.Close()
 
-	// Persist the most recent invocation ID for this agent (project mode only).
-	if agentKey != "" && rc.azdClient != nil {
-		if invID := resp.Header.Get("x-agent-invocation-id"); invID != "" {
+	// Print the invocation ID if the agent returned one, and persist it in project mode.
+	if invID := resp.Header.Get("x-agent-invocation-id"); invID != "" {
+		fmt.Printf("Invocation:   %s\n", invID)
+		if agentKey != "" && rc.azdClient != nil {
 			saveContextValue(ctx, rc.azdClient, agentKey, invID, "invocations")
 		}
 	}

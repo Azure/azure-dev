@@ -5,6 +5,7 @@ package tool
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	osexec "os/exec"
@@ -74,8 +75,10 @@ func (d *detector) DetectTool(
 		return d.detectCLI(ctx, tool), nil
 	case ToolCategoryExtension:
 		return d.detectExtension(ctx, tool), nil
-	case ToolCategoryServer, ToolCategoryLibrary:
+	case ToolCategoryServer:
 		return d.detectCommandBased(ctx, tool), nil
+	case ToolCategoryLibrary:
+		return d.detectLibrary(ctx, tool), nil
 	default:
 		return &ToolStatus{Tool: tool}, nil
 	}
@@ -237,7 +240,7 @@ func (d *detector) detectExtension(
 	return status
 }
 
-// detectCommandBased handles server and library tools that specify a
+// detectCommandBased handles server tools that specify a
 // DetectCommand. If no DetectCommand is configured the tool is
 // reported as not installed.
 func (d *detector) detectCommandBased(
@@ -304,6 +307,90 @@ func (d *detector) detectCommandBased(
 		// No regex configured — the command ran successfully,
 		// so treat the binary as installed.
 		status.Installed = true
+	}
+
+	return status
+}
+
+// ---------------------------------------------------------------------------
+// JSON-based library detection
+// ---------------------------------------------------------------------------
+
+// azdExtensionEntry represents a single entry in the JSON output of
+// `azd extension list --installed --output json`.
+type azdExtensionEntry struct {
+	ID               string `json:"id"`
+	InstalledVersion string `json:"installedVersion"`
+}
+
+// detectLibrary handles azd extension (library) tools by parsing JSON
+// output from `azd extension list --installed --output json`. It
+// looks for an entry whose `id` matches the tool's [ToolDefinition.Id]
+// and extracts the `installedVersion`.
+func (d *detector) detectLibrary(
+	ctx context.Context,
+	tool *ToolDefinition,
+) *ToolStatus {
+	status := &ToolStatus{Tool: tool}
+
+	if tool.DetectCommand == "" {
+		return status
+	}
+
+	if err := d.commandRunner.ToolInPath(
+		tool.DetectCommand,
+	); err != nil {
+		if errors.Is(err, osexec.ErrNotFound) {
+			return status
+		}
+
+		status.Error = fmt.Errorf(
+			"checking PATH for %s: %w",
+			tool.DetectCommand, err,
+		)
+
+		return status
+	}
+
+	if len(tool.VersionArgs) == 0 {
+		status.Installed = true
+		return status
+	}
+
+	result, err := d.commandRunner.Run(ctx, exec.RunArgs{
+		Cmd:  tool.DetectCommand,
+		Args: tool.VersionArgs,
+	})
+
+	if err != nil {
+		if isNotFoundErr(err) {
+			return status
+		}
+
+		if isContextErr(err) {
+			status.Error = fmt.Errorf(
+				"running %s: %w", tool.DetectCommand, err,
+			)
+			return status
+		}
+
+		// Non-zero exit: try to parse any captured output.
+	}
+
+	var extensions []azdExtensionEntry
+	if jsonErr := json.Unmarshal(
+		[]byte(result.Stdout), &extensions,
+	); jsonErr != nil {
+		// JSON parsing failed — fall back to not installed.
+		return status
+	}
+
+	for _, ext := range extensions {
+		if ext.ID == tool.Id {
+			status.Installed = true
+			status.InstalledVersion = ext.InstalledVersion
+			return status
+		}
 	}
 
 	return status

@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sync/atomic"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
@@ -317,6 +318,248 @@ func TestInstall_VerificationFails(t *testing.T) {
 	require.NotNil(t, result)
 	assert.False(t, result.Success)
 	assert.Contains(t, result.Error.Error(), "verification failed")
+}
+
+// ---------------------------------------------------------------------------
+// Verification retry tests (non-CLI tools)
+// ---------------------------------------------------------------------------
+
+func TestInstall_NonCLI_RetriesVerification(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+
+	// Platform detection: npm available.
+	for _, managers := range platformManagers {
+		for _, mgr := range managers {
+			runner.MockToolInPath(mgr, errors.New("not found"))
+		}
+	}
+	runner.MockToolInPath("npm", nil)
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" &&
+			slices.Contains(args.Args, "--version")
+	}).Respond(exec.RunResult{ExitCode: 0, Stdout: "10.2.0"})
+
+	// Install command succeeds.
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" &&
+			slices.Contains(args.Args, "install")
+	}).Respond(exec.RunResult{ExitCode: 0})
+
+	// Detection fails twice, then succeeds on third attempt.
+	var callCount atomic.Int32
+	det := &mockDetector{
+		detectToolFn: func(
+			_ context.Context, tool *ToolDefinition,
+		) (*ToolStatus, error) {
+			n := callCount.Add(1)
+			if n <= 2 {
+				return &ToolStatus{
+					Tool:      tool,
+					Installed: false,
+				}, nil
+			}
+			return &ToolStatus{
+				Tool:             tool,
+				Installed:        true,
+				InstalledVersion: "1.0.0",
+			}, nil
+		},
+	}
+
+	pd := NewPlatformDetector(runner)
+	inst := NewInstaller(runner, pd, det)
+
+	tool := &ToolDefinition{
+		Id:       "mcp-server",
+		Name:     "MCP Server",
+		Category: ToolCategoryServer,
+		InstallStrategies: allPlatforms(InstallStrategy{
+			PackageManager: "npm",
+			PackageId:      "@azure/mcp-server",
+		}),
+	}
+
+	result, err := inst.Install(t.Context(), tool)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.Success)
+	assert.Equal(t, "1.0.0", result.InstalledVersion)
+	assert.Equal(t, int32(3), callCount.Load(),
+		"expected 3 detect calls (2 failures + 1 success)")
+}
+
+func TestInstall_NonCLI_ExhaustsRetries(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+
+	for _, managers := range platformManagers {
+		for _, mgr := range managers {
+			runner.MockToolInPath(mgr, errors.New("not found"))
+		}
+	}
+	runner.MockToolInPath("npm", nil)
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" &&
+			slices.Contains(args.Args, "--version")
+	}).Respond(exec.RunResult{ExitCode: 0, Stdout: "10.2.0"})
+
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" &&
+			slices.Contains(args.Args, "install")
+	}).Respond(exec.RunResult{ExitCode: 0})
+
+	// Detection always fails.
+	var callCount atomic.Int32
+	det := &mockDetector{
+		detectToolFn: func(
+			_ context.Context, tool *ToolDefinition,
+		) (*ToolStatus, error) {
+			callCount.Add(1)
+			return &ToolStatus{
+				Tool:      tool,
+				Installed: false,
+			}, nil
+		},
+	}
+
+	pd := NewPlatformDetector(runner)
+	inst := NewInstaller(runner, pd, det)
+
+	tool := &ToolDefinition{
+		Id:       "ext-tool",
+		Name:     "VS Code Extension",
+		Category: ToolCategoryExtension,
+		InstallStrategies: allPlatforms(InstallStrategy{
+			PackageManager: "npm",
+			PackageId:      "@test/ext",
+		}),
+	}
+
+	result, err := inst.Install(t.Context(), tool)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.Success)
+	assert.Contains(t, result.Error.Error(), "verification failed")
+	assert.Equal(t, int32(4), callCount.Load(),
+		"expected 4 detect calls (1 initial + 3 retries)")
+}
+
+func TestInstall_NonCLI_RespectsContextCancellation(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+
+	for _, managers := range platformManagers {
+		for _, mgr := range managers {
+			runner.MockToolInPath(mgr, errors.New("not found"))
+		}
+	}
+	runner.MockToolInPath("npm", nil)
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" &&
+			slices.Contains(args.Args, "--version")
+	}).Respond(exec.RunResult{ExitCode: 0, Stdout: "10.2.0"})
+
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "npm" &&
+			slices.Contains(args.Args, "install")
+	}).Respond(exec.RunResult{ExitCode: 0})
+
+	// Detection always fails — but context will be cancelled.
+	var callCount atomic.Int32
+	det := &mockDetector{
+		detectToolFn: func(
+			_ context.Context, tool *ToolDefinition,
+		) (*ToolStatus, error) {
+			callCount.Add(1)
+			return &ToolStatus{
+				Tool:      tool,
+				Installed: false,
+			}, nil
+		},
+	}
+
+	pd := NewPlatformDetector(runner)
+	inst := NewInstaller(runner, pd, det)
+
+	tool := &ToolDefinition{
+		Id:       "lib-tool",
+		Name:     "Lib Tool",
+		Category: ToolCategoryLibrary,
+		InstallStrategies: allPlatforms(InstallStrategy{
+			PackageManager: "npm",
+			PackageId:      "@test/lib",
+		}),
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel() // cancel immediately
+
+	result, err := inst.Install(ctx, tool)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.Success)
+	// Should have detected once, then ctx was cancelled before retry sleep.
+	assert.Equal(t, int32(1), callCount.Load(),
+		"expected only 1 detect call before context cancellation")
+	assert.Contains(t, result.Error.Error(), "context canceled")
+}
+
+func TestInstall_CLI_NoRetry(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+
+	for _, managers := range platformManagers {
+		for _, mgr := range managers {
+			runner.MockToolInPath(mgr, errors.New("not found"))
+		}
+	}
+
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "curl"
+	}).Respond(exec.RunResult{ExitCode: 0})
+
+	// Detection always fails.
+	var callCount atomic.Int32
+	det := &mockDetector{
+		detectToolFn: func(
+			_ context.Context, tool *ToolDefinition,
+		) (*ToolStatus, error) {
+			callCount.Add(1)
+			return &ToolStatus{
+				Tool:      tool,
+				Installed: false,
+			}, nil
+		},
+	}
+
+	pd := NewPlatformDetector(runner)
+	inst := NewInstaller(runner, pd, det)
+
+	tool := &ToolDefinition{
+		Id:       "cli-tool",
+		Name:     "CLI Tool",
+		Category: ToolCategoryCLI,
+		InstallStrategies: allPlatforms(InstallStrategy{
+			InstallCommand: "curl -sL https://example.com/install.sh",
+		}),
+	}
+
+	result, err := inst.Install(t.Context(), tool)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.Success)
+	assert.Contains(t, result.Error.Error(), "verification failed")
+	assert.Equal(t, int32(1), callCount.Load(),
+		"CLI tools should not retry — expected exactly 1 detect call")
 }
 
 // ---------------------------------------------------------------------------

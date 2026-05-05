@@ -19,6 +19,8 @@ import (
 	"sync"
 	"time"
 
+	"log"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -209,14 +211,54 @@ func (i *installer) run(
 	}
 
 	// 5. Verify installation by detecting the tool again.
-	status, err := i.detector.DetectTool(ctx, tool)
-	if err != nil {
-		result.Error = fmt.Errorf(
-			"verifying installation of %s: %w",
-			tool.Name, err,
+	//    Non-CLI tools (extensions, servers, libraries) may need
+	//    a brief delay before the package manager reports the new
+	//    version, so we retry with exponential backoff.
+	maxAttempts := 1
+	if tool.Category != ToolCategoryCLI {
+		maxAttempts = 4 // 1 initial + 3 retries
+	}
+
+	var status *ToolStatus
+	backoff := 1 * time.Second
+
+	for attempt := range maxAttempts {
+		status, err = i.detector.DetectTool(ctx, tool)
+		if err != nil {
+			result.Error = fmt.Errorf(
+				"verifying installation of %s: %w",
+				tool.Name, err,
+			)
+			result.Duration = time.Since(start)
+			return result, nil
+		}
+
+		if status.Installed {
+			break
+		}
+
+		// No more retries left — fall through to the failure path.
+		if attempt >= maxAttempts-1 {
+			break
+		}
+
+		log.Printf(
+			"installer: %s not yet detected, retrying in %s (attempt %d/%d)",
+			tool.Name, backoff, attempt+1, maxAttempts-1,
 		)
-		result.Duration = time.Since(start)
-		return result, nil
+
+		select {
+		case <-ctx.Done():
+			result.Error = fmt.Errorf(
+				"verifying installation of %s: %w",
+				tool.Name, ctx.Err(),
+			)
+			result.Duration = time.Since(start)
+			return result, nil
+		case <-time.After(backoff):
+		}
+
+		backoff *= 2
 	}
 
 	if !status.Installed {

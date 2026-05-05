@@ -124,8 +124,16 @@ func (a *toolAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	})
 
 	// 1. Detect all tools.
-	statuses, err := a.manager.DetectAll(ctx)
-	if err != nil {
+	var statuses []*tool.ToolStatus
+	spinner := uxlib.NewSpinner(&uxlib.SpinnerOptions{
+		Text:        "Detecting tools...",
+		ClearOnStop: true,
+	})
+	if err := spinner.Run(ctx, func(ctx context.Context) error {
+		var detectErr error
+		statuses, detectErr = a.manager.DetectAll(ctx)
+		return detectErr
+	}); err != nil {
 		return nil, fmt.Errorf("detecting tools: %w", err)
 	}
 
@@ -293,9 +301,25 @@ func newToolListAction(
 }
 
 func (a *toolListAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	statuses, err := a.manager.DetectAll(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("detecting tools: %w", err)
+	var statuses []*tool.ToolStatus
+	if a.formatter.Kind() != output.JsonFormat {
+		spinner := uxlib.NewSpinner(&uxlib.SpinnerOptions{
+			Text:        "Checking tool status...",
+			ClearOnStop: true,
+		})
+		if err := spinner.Run(ctx, func(ctx context.Context) error {
+			var detectErr error
+			statuses, detectErr = a.manager.DetectAll(ctx)
+			return detectErr
+		}); err != nil {
+			return nil, fmt.Errorf("detecting tools: %w", err)
+		}
+	} else {
+		var err error
+		statuses, err = a.manager.DetectAll(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("detecting tools: %w", err)
+		}
 	}
 
 	rows := make([]toolListItem, 0, len(statuses))
@@ -553,8 +577,16 @@ func (a *toolInstallAction) dryRun(
 func (a *toolInstallAction) resolveToolIds(ctx context.Context) ([]string, error) {
 	// --all: install all recommended tools that are not already installed.
 	if a.flags.all {
-		statuses, err := a.manager.DetectAll(ctx)
-		if err != nil {
+		var statuses []*tool.ToolStatus
+		spinner := uxlib.NewSpinner(&uxlib.SpinnerOptions{
+			Text:        "Detecting tool status...",
+			ClearOnStop: true,
+		})
+		if err := spinner.Run(ctx, func(ctx context.Context) error {
+			var detectErr error
+			statuses, detectErr = a.manager.DetectAll(ctx)
+			return detectErr
+		}); err != nil {
 			return nil, fmt.Errorf("detecting tools: %w", err)
 		}
 
@@ -573,8 +605,16 @@ func (a *toolInstallAction) resolveToolIds(ctx context.Context) ([]string, error
 	}
 
 	// Interactive: let the user pick from uninstalled tools.
-	statuses, err := a.manager.DetectAll(ctx)
-	if err != nil {
+	var statuses []*tool.ToolStatus
+	spinner := uxlib.NewSpinner(&uxlib.SpinnerOptions{
+		Text:        "Detecting tool status...",
+		ClearOnStop: true,
+	})
+	if err := spinner.Run(ctx, func(ctx context.Context) error {
+		var detectErr error
+		statuses, detectErr = a.manager.DetectAll(ctx)
+		return detectErr
+	}); err != nil {
 		return nil, fmt.Errorf("detecting tools: %w", err)
 	}
 
@@ -678,9 +718,17 @@ func (a *toolUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, err
 			toolsToUpgrade = append(toolsToUpgrade, toolDef)
 		}
 	} else {
-		statuses, detectErr := a.manager.DetectAll(ctx)
-		if detectErr != nil {
-			return nil, fmt.Errorf("detecting installed tools: %w", detectErr)
+		var statuses []*tool.ToolStatus
+		spinner := uxlib.NewSpinner(&uxlib.SpinnerOptions{
+			Text:        "Detecting installed tools...",
+			ClearOnStop: true,
+		})
+		if err := spinner.Run(ctx, func(ctx context.Context) error {
+			var detectErr error
+			statuses, detectErr = a.manager.DetectAll(ctx)
+			return detectErr
+		}); err != nil {
+			return nil, fmt.Errorf("detecting installed tools: %w", err)
 		}
 		for _, s := range statuses {
 			if s.Installed {
@@ -878,9 +926,25 @@ func newToolCheckAction(
 }
 
 func (a *toolCheckAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	results, err := a.manager.CheckForUpdates(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("checking for updates: %w", err)
+	var results []*tool.UpdateCheckResult
+	if a.formatter.Kind() != output.JsonFormat {
+		spinner := uxlib.NewSpinner(&uxlib.SpinnerOptions{
+			Text:        "Checking for updates...",
+			ClearOnStop: true,
+		})
+		if err := spinner.Run(ctx, func(ctx context.Context) error {
+			var detectErr error
+			results, detectErr = a.manager.CheckForUpdates(ctx)
+			return detectErr
+		}); err != nil {
+			return nil, fmt.Errorf("checking for updates: %w", err)
+		}
+	} else {
+		var err error
+		results, err = a.manager.CheckForUpdates(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("checking for updates: %w", err)
+		}
 	}
 
 	rows := make([]toolCheckItem, 0, len(results))
@@ -994,9 +1058,25 @@ func (a *toolShowAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		return nil, fmt.Errorf("finding tool: %w", err)
 	}
 
-	status, err := a.manager.DetectTool(ctx, toolID)
-	if err != nil {
-		return nil, fmt.Errorf("detecting tool: %w", err)
+	var status *tool.ToolStatus
+	if a.formatter.Kind() != output.JsonFormat {
+		spinner := uxlib.NewSpinner(&uxlib.SpinnerOptions{
+			Text:        fmt.Sprintf("Checking %s...", toolDef.Name),
+			ClearOnStop: true,
+		})
+		if err := spinner.Run(ctx, func(ctx context.Context) error {
+			var detectErr error
+			status, detectErr = a.manager.DetectTool(ctx, toolID)
+			return detectErr
+		}); err != nil {
+			return nil, fmt.Errorf("detecting tool: %w", err)
+		}
+	} else {
+		var err error
+		status, err = a.manager.DetectTool(ctx, toolID)
+		if err != nil {
+			return nil, fmt.Errorf("detecting tool: %w", err)
+		}
 	}
 
 	// JSON output: return structured data.

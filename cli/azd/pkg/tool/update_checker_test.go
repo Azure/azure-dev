@@ -150,8 +150,8 @@ func TestSaveCacheAndGetCachedResults(t *testing.T) {
 			CheckedAt: now,
 			ExpiresAt: now.Add(168 * time.Hour),
 			Tools: map[string]CachedToolVersion{
-				"az-cli": {LatestVersion: "2.65.0"},
-				"vscode-bicep": {
+				"az": {LatestVersion: "2.65.0"},
+				"ms-azuretools.vscode-bicep": {
 					LatestVersion: "0.30.0",
 				},
 			},
@@ -170,9 +170,9 @@ func TestSaveCacheAndGetCachedResults(t *testing.T) {
 		)
 		assert.Len(t, loaded.Tools, 2)
 		assert.Equal(t, "2.65.0",
-			loaded.Tools["az-cli"].LatestVersion)
+			loaded.Tools["az"].LatestVersion)
 		assert.Equal(t, "0.30.0",
-			loaded.Tools["vscode-bicep"].LatestVersion)
+			loaded.Tools["ms-azuretools.vscode-bicep"].LatestVersion)
 	})
 
 	t.Run("NoCacheFileReturnsNilNil", func(t *testing.T) {

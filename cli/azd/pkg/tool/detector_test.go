@@ -35,7 +35,7 @@ func TestDetectTool_CLI(t *testing.T) {
 		{
 			name: "InstalledWithVersion",
 			tool: &ToolDefinition{
-				Id:            "az-cli",
+				Id:            "az",
 				Category:      ToolCategoryCLI,
 				DetectCommand: "az",
 				VersionArgs:   []string{"--version"},
@@ -57,7 +57,7 @@ func TestDetectTool_CLI(t *testing.T) {
 		{
 			name: "NotInstalledWhenNotOnPATH",
 			tool: &ToolDefinition{
-				Id:            "az-cli",
+				Id:            "az",
 				Category:      ToolCategoryCLI,
 				DetectCommand: "az",
 				VersionArgs:   []string{"--version"},
@@ -213,7 +213,7 @@ func TestDetectTool_Extension(t *testing.T) {
 		{
 			name: "ExtensionFoundInList",
 			tool: &ToolDefinition{
-				Id:            "vscode-bicep",
+				Id:            "ms-azuretools.vscode-bicep",
 				Category:      ToolCategoryExtension,
 				DetectCommand: "code",
 				VersionArgs: []string{
@@ -238,7 +238,7 @@ func TestDetectTool_Extension(t *testing.T) {
 		{
 			name: "ExtensionNotInList",
 			tool: &ToolDefinition{
-				Id:            "vscode-bicep",
+				Id:            "ms-azuretools.vscode-bicep",
 				Category:      ToolCategoryExtension,
 				DetectCommand: "code",
 				VersionArgs: []string{
@@ -261,7 +261,7 @@ func TestDetectTool_Extension(t *testing.T) {
 		{
 			name: "CodeNotOnPATH",
 			tool: &ToolDefinition{
-				Id:            "vscode-bicep",
+				Id:            "ms-azuretools.vscode-bicep",
 				Category:      ToolCategoryExtension,
 				DetectCommand: "code",
 				VersionArgs: []string{
@@ -364,7 +364,7 @@ func TestDetectTool_Extension(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// DetectTool — Server / Library (commandBased)
+// DetectTool — Server (commandBased)
 // ---------------------------------------------------------------------------
 
 func TestDetectTool_CommandBased(t *testing.T) {
@@ -382,7 +382,7 @@ func TestDetectTool_CommandBased(t *testing.T) {
 		{
 			name: "ServerToolDetected",
 			tool: &ToolDefinition{
-				Id:            "azure-mcp-server",
+				Id:            "@azure/mcp",
 				Category:      ToolCategoryServer,
 				DetectCommand: "npx",
 				VersionArgs:   []string{"@azure/mcp@latest", "--version"},
@@ -399,19 +399,6 @@ func TestDetectTool_CommandBased(t *testing.T) {
 			},
 			expectInstalled: true,
 			expectVersion:   "1.0.0",
-		},
-		{
-			name: "LibraryToolWithNoVersionArgs",
-			tool: &ToolDefinition{
-				Id:            "simple-lib",
-				Category:      ToolCategoryLibrary,
-				DetectCommand: "simple",
-			},
-			setup: func(runner *mockexec.MockCommandRunner) {
-				runner.MockToolInPath("simple", nil)
-			},
-			expectInstalled: true,
-			expectVersion:   "",
 		},
 		{
 			name: "NoDetectCommandReturnsNotInstalled",
@@ -480,9 +467,263 @@ func TestDetectTool_CommandBased(t *testing.T) {
 			name: "NotFoundOnRunReturnsNotInstalled",
 			tool: &ToolDefinition{
 				Id:            "transient",
-				Category:      ToolCategoryLibrary,
+				Category:      ToolCategoryServer,
 				DetectCommand: "transient",
 				VersionArgs:   []string{"--version"},
+			},
+			setup: func(runner *mockexec.MockCommandRunner) {
+				runner.MockToolInPath("transient", nil)
+				runner.When(func(args exec.RunArgs, _ string) bool {
+					return args.Cmd == "transient"
+				}).SetError(osexec.ErrNotFound)
+			},
+			expectInstalled: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			runner := mockexec.NewMockCommandRunner()
+			tt.setup(runner)
+
+			d := NewDetector(runner)
+			status, err := d.DetectTool(t.Context(), tt.tool)
+
+			require.NoError(t, err)
+			require.NotNil(t, status)
+			assert.Equal(t, tt.expectInstalled, status.Installed)
+			assert.Equal(t, tt.expectVersion, status.InstalledVersion)
+
+			if tt.expectError {
+				require.Error(t, status.Error)
+				if tt.expectErrContain != "" {
+					assert.Contains(t, status.Error.Error(),
+						tt.expectErrContain)
+				}
+			} else {
+				assert.NoError(t, status.Error)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// DetectTool — Library (JSON-based detection)
+// ---------------------------------------------------------------------------
+
+func TestDetectTool_Library(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name             string
+		tool             *ToolDefinition
+		setup            func(*mockexec.MockCommandRunner)
+		expectInstalled  bool
+		expectVersion    string
+		expectError      bool
+		expectErrContain string
+	}{
+		{
+			name: "ExtensionFoundInJSON",
+			tool: &ToolDefinition{
+				Id:            "azure.ai.agents",
+				Category:      ToolCategoryLibrary,
+				DetectCommand: "azd",
+				VersionArgs:   []string{"extension", "list", "--installed", "--output", "json"},
+			},
+			setup: func(runner *mockexec.MockCommandRunner) {
+				runner.MockToolInPath("azd", nil)
+				runner.When(func(args exec.RunArgs, _ string) bool {
+					return args.Cmd == "azd" &&
+						slices.Contains(args.Args, "--output")
+				}).Respond(exec.RunResult{
+					ExitCode: 0,
+					Stdout: `[{"id":"azure.ai.agents","version":"0.6.0",` +
+						`"installedVersion":"0.6.0","updateAvailable":false}]`,
+				})
+			},
+			expectInstalled: true,
+			expectVersion:   "0.6.0",
+		},
+		{
+			name: "ExtensionFoundAmongMultiple",
+			tool: &ToolDefinition{
+				Id:            "azure.ai.agents",
+				Category:      ToolCategoryLibrary,
+				DetectCommand: "azd",
+				VersionArgs:   []string{"extension", "list", "--installed", "--output", "json"},
+			},
+			setup: func(runner *mockexec.MockCommandRunner) {
+				runner.MockToolInPath("azd", nil)
+				runner.When(func(args exec.RunArgs, _ string) bool {
+					return args.Cmd == "azd"
+				}).Respond(exec.RunResult{
+					ExitCode: 0,
+					Stdout: `[{"id":"microsoft.azd.demo","version":"0.6.0",` +
+						`"installedVersion":"0.6.0","updateAvailable":false},` +
+						`{"id":"azure.ai.agents","version":"1.2.3",` +
+						`"installedVersion":"1.2.3","updateAvailable":false}]`,
+				})
+			},
+			expectInstalled: true,
+			expectVersion:   "1.2.3",
+		},
+		{
+			name: "ExtensionNotInJSON",
+			tool: &ToolDefinition{
+				Id:            "azure.ai.agents",
+				Category:      ToolCategoryLibrary,
+				DetectCommand: "azd",
+				VersionArgs:   []string{"extension", "list", "--installed", "--output", "json"},
+			},
+			setup: func(runner *mockexec.MockCommandRunner) {
+				runner.MockToolInPath("azd", nil)
+				runner.When(func(args exec.RunArgs, _ string) bool {
+					return args.Cmd == "azd"
+				}).Respond(exec.RunResult{
+					ExitCode: 0,
+					Stdout: `[{"id":"microsoft.azd.demo","version":"0.6.0",` +
+						`"installedVersion":"0.6.0","updateAvailable":false}]`,
+				})
+			},
+			expectInstalled: false,
+		},
+		{
+			name: "EmptyJSONArray",
+			tool: &ToolDefinition{
+				Id:            "azure.ai.agents",
+				Category:      ToolCategoryLibrary,
+				DetectCommand: "azd",
+				VersionArgs:   []string{"extension", "list", "--installed", "--output", "json"},
+			},
+			setup: func(runner *mockexec.MockCommandRunner) {
+				runner.MockToolInPath("azd", nil)
+				runner.When(func(args exec.RunArgs, _ string) bool {
+					return args.Cmd == "azd"
+				}).Respond(exec.RunResult{
+					ExitCode: 0,
+					Stdout:   `[]`,
+				})
+			},
+			expectInstalled: false,
+		},
+		{
+			name: "InvalidJSONReturnsNotInstalled",
+			tool: &ToolDefinition{
+				Id:            "azure.ai.agents",
+				Category:      ToolCategoryLibrary,
+				DetectCommand: "azd",
+				VersionArgs:   []string{"extension", "list", "--installed", "--output", "json"},
+			},
+			setup: func(runner *mockexec.MockCommandRunner) {
+				runner.MockToolInPath("azd", nil)
+				runner.When(func(args exec.RunArgs, _ string) bool {
+					return args.Cmd == "azd"
+				}).Respond(exec.RunResult{
+					ExitCode: 0,
+					Stdout:   `not valid json`,
+				})
+			},
+			expectInstalled: false,
+		},
+		{
+			name: "PreReleaseSuffix",
+			tool: &ToolDefinition{
+				Id:            "azure.ai.agents",
+				Category:      ToolCategoryLibrary,
+				DetectCommand: "azd",
+				VersionArgs:   []string{"extension", "list", "--installed", "--output", "json"},
+			},
+			setup: func(runner *mockexec.MockCommandRunner) {
+				runner.MockToolInPath("azd", nil)
+				runner.When(func(args exec.RunArgs, _ string) bool {
+					return args.Cmd == "azd"
+				}).Respond(exec.RunResult{
+					ExitCode: 0,
+					Stdout: `[{"id":"azure.ai.agents","version":"1.0.0-beta.1",` +
+						`"installedVersion":"1.0.0-beta.1","updateAvailable":false}]`,
+				})
+			},
+			expectInstalled: true,
+			expectVersion:   "1.0.0-beta.1",
+		},
+		{
+			name: "LibraryWithNoVersionArgs",
+			tool: &ToolDefinition{
+				Id:            "simple-lib",
+				Category:      ToolCategoryLibrary,
+				DetectCommand: "simple",
+			},
+			setup: func(runner *mockexec.MockCommandRunner) {
+				runner.MockToolInPath("simple", nil)
+			},
+			expectInstalled: true,
+			expectVersion:   "",
+		},
+		{
+			name: "NoDetectCommandReturnsNotInstalled",
+			tool: &ToolDefinition{
+				Id:       "no-cmd",
+				Category: ToolCategoryLibrary,
+			},
+			setup:           func(_ *mockexec.MockCommandRunner) {},
+			expectInstalled: false,
+		},
+		{
+			name: "AzdNotOnPATH",
+			tool: &ToolDefinition{
+				Id:            "azure.ai.agents",
+				Category:      ToolCategoryLibrary,
+				DetectCommand: "azd",
+				VersionArgs:   []string{"extension", "list", "--installed", "--output", "json"},
+			},
+			setup: func(runner *mockexec.MockCommandRunner) {
+				runner.MockToolInPath("azd", osexec.ErrNotFound)
+			},
+			expectInstalled: false,
+		},
+		{
+			name: "ContextCancelledReturnsError",
+			tool: &ToolDefinition{
+				Id:            "azure.ai.agents",
+				Category:      ToolCategoryLibrary,
+				DetectCommand: "azd",
+				VersionArgs:   []string{"extension", "list", "--installed", "--output", "json"},
+			},
+			setup: func(runner *mockexec.MockCommandRunner) {
+				runner.MockToolInPath("azd", nil)
+				runner.When(func(args exec.RunArgs, _ string) bool {
+					return args.Cmd == "azd"
+				}).SetError(context.DeadlineExceeded)
+			},
+			expectInstalled:  false,
+			expectError:      true,
+			expectErrContain: "running azd",
+		},
+		{
+			name: "NonErrNotFoundPathError",
+			tool: &ToolDefinition{
+				Id:            "azure.ai.agents",
+				Category:      ToolCategoryLibrary,
+				DetectCommand: "azd",
+			},
+			setup: func(runner *mockexec.MockCommandRunner) {
+				runner.MockToolInPath("azd",
+					errors.New("permission denied"))
+			},
+			expectInstalled:  false,
+			expectError:      true,
+			expectErrContain: "checking PATH",
+		},
+		{
+			name: "NotFoundOnRunReturnsNotInstalled",
+			tool: &ToolDefinition{
+				Id:            "transient-lib",
+				Category:      ToolCategoryLibrary,
+				DetectCommand: "transient",
+				VersionArgs:   []string{"--list"},
 			},
 			setup: func(runner *mockexec.MockCommandRunner) {
 				runner.MockToolInPath("transient", nil)

@@ -340,7 +340,7 @@ func printDoctorReport(w io.Writer, results []doctorResult, state *nextstep.Stat
 							Description: "inspect agent status, version, and metadata",
 						},
 						{
-							Command:     fmt.Sprintf("azd ai agent invoke %s <payload>", name),
+							Command:     "azd ai agent invoke <payload>",
 							Description: "test the deployed agent end-to-end",
 						},
 					}

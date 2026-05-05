@@ -48,6 +48,7 @@ type doctorResult struct {
 	Status doctorStatus
 	Detail string
 	Fix    string // optional follow-up command (rendered via nextstep)
+	Reason string // optional human-friendly "why" caption for the fix; falls back to Title
 }
 
 // doctorAction implements `azd ai agent doctor`.
@@ -130,7 +131,8 @@ func (a *doctorAction) checkProject(ctx context.Context) (string, doctorResult, 
 			Title:  "Project loaded from azure.yaml",
 			Status: doctorFail,
 			Detail: "no azure.yaml could be loaded from the working directory",
-			Fix:    "azd init",
+			Fix:    "azd ai agent init",
+			Reason: "scaffold an agent project in the current directory",
 		}, ""
 	}
 	return resp.Project.Path, doctorResult{
@@ -148,6 +150,7 @@ func (a *doctorAction) checkEnvironment(ctx context.Context) (string, doctorResu
 			Status: doctorFail,
 			Detail: "no environment is set; provisioned values cannot be read",
 			Fix:    "azd env select <name>",
+			Reason: "select an existing environment, or run `azd env new <name>` to create one",
 		}
 	}
 	return resp.Environment.Name, doctorResult{
@@ -182,6 +185,7 @@ func (a *doctorAction) checkAgentService(ctx context.Context) ([]*azdext.Service
 			Status: doctorWarn,
 			Detail: "no service with host 'azure.ai.agent' or 'azure.ai.toolbox'",
 			Fix:    "azd ai agent init",
+			Reason: "add an agent service to azure.yaml",
 		}
 	}
 	names := make([]string, 0, len(agents))
@@ -213,6 +217,7 @@ func (a *doctorAction) checkProjectEndpoint(ctx context.Context, envName string)
 			Status: doctorFail,
 			Detail: "value missing from azd environment — agent cannot reach Foundry",
 			Fix:    "azd provision",
+			Reason: "deploy Azure resources to populate AZURE_AI_PROJECT_ENDPOINT",
 		}
 	}
 	return doctorResult{
@@ -253,6 +258,7 @@ func (a *doctorAction) checkAgentManifest(projectPath string, services []*azdext
 				Status: doctorFail,
 				Detail: fmt.Sprintf("schema validation failed: %s", err),
 				Fix:    fmt.Sprintf("edit %s", manifestPath),
+				Reason: "fix the agent.yaml schema errors above",
 			})
 			continue
 		}
@@ -293,9 +299,13 @@ func printDoctorReport(w io.Writer, results []doctorResult) {
 		if r.Fix == "" {
 			continue
 		}
+		desc := r.Reason
+		if desc == "" {
+			desc = r.Title
+		}
 		suggestions = append(suggestions, nextstep.Suggestion{
 			Command:     r.Fix,
-			Description: r.Title,
+			Description: desc,
 		})
 	}
 	nextstep.PrintNext(w, suggestions)

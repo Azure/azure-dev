@@ -1597,7 +1597,13 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	)
 
 	state, _ := nextstep.AssembleState(ctx, a.azdClient)
-	nextstep.PrintNext(os.Stdout, nextstep.ResolveAfterInit(state, a.serviceNameOverride))
+	hint := ""
+	if targetDir != "" {
+		hint = fmt.Sprintf("See %s for a sample payload appropriate for this agent.",
+			filepath.ToSlash(filepath.Join(targetDir, "README.md")))
+	}
+	nextstep.PrintNextWithHint(
+		os.Stdout, nextstep.ResolveAfterInit(state, a.serviceNameOverride), hint)
 	return nil
 }
 

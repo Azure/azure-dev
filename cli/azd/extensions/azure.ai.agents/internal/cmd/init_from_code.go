@@ -132,7 +132,16 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 		fmt.Println("\nYou can customize environment variables and other settings in the agent.yaml.")
 
 		state, _ := nextstep.AssembleState(ctx, a.azdClient)
-		nextstep.PrintNext(os.Stdout, nextstep.ResolveAfterInit(state, localDefinition.Name))
+		hint := ""
+		if srcDir != "" {
+			readmePath := "README.md"
+			if srcDir != "." {
+				readmePath = filepath.ToSlash(filepath.Join(srcDir, "README.md"))
+			}
+			hint = fmt.Sprintf("See %s for a sample payload appropriate for this agent.", readmePath)
+		}
+		nextstep.PrintNextWithHint(
+			os.Stdout, nextstep.ResolveAfterInit(state, localDefinition.Name), hint)
 	}
 
 	return nil

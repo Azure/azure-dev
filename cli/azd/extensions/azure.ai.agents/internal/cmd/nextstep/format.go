@@ -64,3 +64,18 @@ func PrintNext(w io.Writer, suggestions []Suggestion) {
 		fmt.Fprintf(w, "%s%s%s  -- %s\n", prefix, colored, padding, s.Description)
 	}
 }
+
+// PrintNextWithHint behaves like PrintNext but appends a trailing dim
+// hint line (e.g., a path to a README) after the Next: block. Pass an
+// empty hint to fall back to PrintNext behavior.
+func PrintNextWithHint(w io.Writer, suggestions []Suggestion, hint string) {
+	PrintNext(w, suggestions)
+	if strings.TrimSpace(hint) == "" {
+		return
+	}
+	if len(suggestions) == 0 {
+		// PrintNext wrote nothing; still need a leading blank line.
+		fmt.Fprintln(w)
+	}
+	fmt.Fprintln(w, color.HiBlackString(hint))
+}

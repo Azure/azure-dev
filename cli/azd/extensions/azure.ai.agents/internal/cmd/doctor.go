@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
@@ -317,17 +318,44 @@ func printDoctorReport(w io.Writer, results []doctorResult, state *nextstep.Stat
 	// next logical action — run locally, invoke locally, or deploy.
 	if len(suggestions) == 0 {
 		serviceName := ""
+		readmeHint := ""
 		if state != nil {
 			if primary := state.PrimaryAgent(); primary != nil {
 				serviceName = primary.ServiceName
+				if rel := strings.TrimSpace(primary.RelativePath); rel != "" {
+					readmeHint = fmt.Sprintf(
+						"See %s/README.md for a sample payload appropriate for this agent.",
+						filepath.ToSlash(rel),
+					)
+				}
 				if primary.IsDeployed {
-					// Already deployed — suggest remote-invoke flow.
-					nextstep.PrintNext(w, nextstep.ResolveAfterInvokeRemote(state, primary.DeployedName))
+					// Already deployed — suggest test + monitor + redeploy.
+					name := primary.DeployedName
+					if name == "" {
+						name = primary.ServiceName
+					}
+					deployedSuggestions := []nextstep.Suggestion{
+						{
+							Command:     fmt.Sprintf("azd ai agent show %s", name),
+							Description: "inspect agent status, version, and metadata",
+						},
+						{
+							Command:     fmt.Sprintf("azd ai agent invoke %s <payload>", name),
+							Description: "test the deployed agent end-to-end",
+						},
+					}
+					if state.HasProjectEndpoint {
+						deployedSuggestions = append(deployedSuggestions, nextstep.Suggestion{
+							Command:     "azd ai agent monitor --follow",
+							Description: "stream live invocation logs",
+						})
+					}
+					nextstep.PrintNextWithHint(w, deployedSuggestions, readmeHint)
 					return
 				}
 			}
 		}
-		nextstep.PrintNext(w, nextstep.ResolveAfterInit(state, serviceName))
+		nextstep.PrintNextWithHint(w, nextstep.ResolveAfterInit(state, serviceName), readmeHint)
 		return
 	}
 

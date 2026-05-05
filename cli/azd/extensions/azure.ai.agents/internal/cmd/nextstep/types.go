@@ -92,6 +92,10 @@ type ServiceState struct {
 
 	// IsDeployed reports whether DeployedName is set.
 	IsDeployed bool
+
+	// RelativePath is the azure.yaml service `project` directory
+	// (relative to the azd project root). Empty when not declared.
+	RelativePath string
 }
 
 // PrimaryAgent returns the single agent service when there is exactly

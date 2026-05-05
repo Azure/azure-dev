@@ -67,7 +67,8 @@ func populateServices(state *State, project *azdext.ProjectConfig) {
 		switch svc.Host {
 		case AiAgentHost:
 			state.AgentServices = append(state.AgentServices, ServiceState{
-				ServiceName: svc.Name,
+				ServiceName:  svc.Name,
+				RelativePath: svc.RelativePath,
 			})
 		case AiToolboxHost:
 			state.ToolboxNames = append(state.ToolboxNames, svc.Name)

@@ -81,7 +81,7 @@ adding new events for extension and hook lifecycle telemetry.
 | Event | Lifecycle | Attributes to expect | Sample row |
 | ----- | --------- | -------------------- | ---------- |
 | `ext.run` | Running an installed extension command through `azd`. | Command attributes such as `cmd.entry`, `cmd.flags`, `cmd.args.count`, plus `extension.installed` on the root span. | `name=ext.run`, `cmd.entry=cmd.ai.chat`, `cmd.flags=["model"]`, `cmd.args.count=0` |
-| `ext.install` | Installing one extension version. | `extension.id`, `extension.version`; failures use normal error status and attributes. | `name=ext.install`, `extension.id=microsoft.azd.ai`, `extension.version=1.2.0`, `status=Ok` |
+| `ext.install` | Installing one extension version. | `extension.id` (set as soon as installation begins); `extension.version` (set after the version is resolved). On failure the span uses OpenTelemetry status `Error` with the underlying error message as the description. | `name=ext.install`, `extension.id=microsoft.azd.ai`, `extension.version=1.2.0`, `status=Ok` |
 | `ext.upgrade` | Upgrading one extension attempt. | `extension.id`, `extension.version.from`, `extension.version.to`, `extension.source`, `extension.upgrade.duration_ms`, `extension.upgrade.outcome`. | `name=ext.upgrade`, `extension.id=microsoft.azd.ai`, `extension.version.from=1.1.0`, `extension.version.to=1.2.0`, `extension.upgrade.outcome=upgraded` |
 | `ext.promote` | Promoting an extension registry entry, such as dev to main. | `extension.id`, `extension.version.from`, `extension.version.to`, `extension.source.from`, `extension.source.to`. | `name=ext.promote`, `extension.id=microsoft.azd.ai`, `extension.source.from=dev`, `extension.source.to=main`, `status=Ok` |
 | `hooks.exec` | Executing a project, layer, or service lifecycle hook. | `hooks.name`, `hooks.type`, `hooks.kind`; status description uses hook-specific codes such as `hook.validation_failed`. | `name=hooks.exec`, `hooks.name=predeploy`, `hooks.type=service`, `hooks.kind=sh`, `status=Ok` |
@@ -125,11 +125,20 @@ agent spans so that error status and attributes stay consistent.
 | `error.category` | Broad local error category, used when the error is local rather than returned by an external service. | `auth` |
 | `error.code` | Normalized local or extension error code. | `invalid_payload` |
 | `error.type` | Go error type for unclassified or suggestion-wrapped errors. | `*os.PathError` |
-| `error.inner` | Inner error detail when a mapper includes nested error information. | `InvalidTemplateDeployment` |
-| `error.frame` | Frame number for nested deployment error details. | `1` |
 | `error.service.name` | External service name after `fields.ErrorKey` prefixes `service.name` for error details. Only set this when an external service returned the error. | `arm`, `aad`, `storage` |
-| `error.service.errorCode` | Error code returned by an external service, after `fields.ErrorKey` prefixes `service.errorCode`. | `AuthorizationFailed` |
+| `error.service.errorCode` | Error code returned by an external service, after `fields.ErrorKey` prefixes `service.errorCode`. For ARM deployment errors this is a JSON array describing the nested error chain (see below). | `AuthorizationFailed` |
 | `error.service.statusCode` | Status code returned by an external service, after `fields.ErrorKey` prefixes `service.statusCode`. | `403` |
+
+For nested ARM deployment failures, `MapError` walks the inner error tree and encodes each level as an entry in the
+JSON array stored on `error.service.errorCode`. Each entry has the shape `{"error.code": "<code>", "error.frame": <n>}`,
+where `error.frame` is the depth in the nested chain (0 for the outermost error). For example:
+
+```json
+[
+  {"error.code": "InvalidTemplateDeployment", "error.frame": 0},
+  {"error.code": "AuthorizationFailed", "error.frame": 1}
+]
+```
 
 Do not attach arbitrary user input or secrets to `error.*` attributes. Prefer the standardized field constants from
 `fields.go`; if you need to include a service-related field on an error span, pass it through `fields.ErrorKey` so it is

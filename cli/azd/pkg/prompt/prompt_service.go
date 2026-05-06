@@ -284,11 +284,12 @@ func (ps *promptService) PromptSubscription(
 		subscriptions[i] = &subscriptionList[i]
 	}
 
-	// Skip the inner spinner since data is already loaded
-	mergedOptions.SkipLoadingSpinner = true
+	// Create selector options with spinner disabled since data is already loaded
+	resourceSelectorOptions := *mergedOptions
+	resourceSelectorOptions.SkipLoadingSpinner = true
 
 	return PromptCustomResource(ctx, CustomResourceOptions[account.Subscription]{
-		SelectorOptions: mergedOptions,
+		SelectorOptions: &resourceSelectorOptions,
 		LoadData: func(ctx context.Context) ([]*account.Subscription, error) {
 			return subscriptions, nil
 		},

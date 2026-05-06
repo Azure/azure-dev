@@ -10,7 +10,6 @@ import (
 	"log"
 	"os"
 	"slices"
-	"strconv"
 
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
@@ -73,7 +72,7 @@ func NewDefaultPrompter(
 func (p *DefaultPrompter) PromptSubscription(ctx context.Context, msg string) (subscriptionId string, err error) {
 	subscriptionInfos, err := p.accountManager.GetSubscriptions(ctx)
 	if err != nil {
-		return "", fmt.Errorf("listing accounts: %w", err)
+		return "", fmt.Errorf("listing subscriptions: %w", err)
 	}
 
 	if len(subscriptionInfos) == 0 {
@@ -144,11 +143,14 @@ func formatSubscriptionOptions(
 	options = make([]string, len(subscriptionInfos))
 	ids = make([]string, len(subscriptionInfos))
 
+	hideId := isDemoModeEnabled()
+
 	for index, info := range subscriptionInfos {
-		if v, err := strconv.ParseBool(os.Getenv("AZD_DEMO_MODE")); err == nil && v {
+		if hideId {
 			options[index] = fmt.Sprintf("%2d. %s", index+1, info.Name)
 		} else {
-			options[index] = fmt.Sprintf("%2d. %s (%s)", index+1, info.Name, info.Id)
+			options[index] = fmt.Sprintf(
+				"%2d. %s (%s)", index+1, info.Name, info.Id)
 		}
 
 		ids[index] = info.Id

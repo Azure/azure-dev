@@ -101,12 +101,14 @@ func (a *MockAccountManager) SetDefaultLocation(
 }
 
 func (a *MockAccountManager) GetTenantDisplayNames(ctx context.Context) (map[string]string, error) {
-	// Build display names from the subscriptions' tenant IDs
 	result := make(map[string]string)
 	for _, sub := range a.Subscriptions {
 		tid := sub.UserAccessTenantId
 		if tid == "" {
 			tid = sub.TenantId
+		}
+		if tid == "" {
+			continue
 		}
 		if _, exists := result[tid]; !exists {
 			result[tid] = tid

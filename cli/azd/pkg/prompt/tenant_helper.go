@@ -180,10 +180,14 @@ func promptAndFilterByTenant(
 	}
 
 	// Only fetch tenant display names when we actually need to prompt
-	tenantNames, err := getTenantNames(ctx)
-	if err != nil {
-		log.Printf("failed to fetch tenant display names, using tenant IDs: %v", err)
-		tenantNames = map[string]string{}
+	var tenantNames map[string]string
+	if getTenantNames != nil {
+		var err error
+		tenantNames, err = getTenantNames(ctx)
+		if err != nil {
+			log.Printf("failed to fetch tenant display names: %v", err)
+			tenantNames = nil
+		}
 	}
 
 	tenants = extractUniqueTenants(subscriptions, tenantNames)

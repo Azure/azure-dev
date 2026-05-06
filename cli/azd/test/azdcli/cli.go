@@ -102,7 +102,10 @@ func NewCLI(t *testing.T, opts ...Options) *CLI {
 				credentialServer.Close()
 			})
 
-			cli.Env = append(cli.Env, fmt.Sprintf("AZD_AUTH_ENDPOINT=%s", credentialServer.URL))
+			cli.Env = append(cli.Env,
+				fmt.Sprintf("AZD_AUTH_ENDPOINT=%s", credentialServer.URL),
+				"AZD_AUTH_KEY=playback-test-key",
+			)
 		}
 	}
 

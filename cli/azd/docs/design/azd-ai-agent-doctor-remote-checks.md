@@ -100,9 +100,9 @@ We considered `--quick` / `--full` naming but `--remote` describes the actual si
 |---|---|---|
 | 7 — Auth | check 3 (env selected) | Skip with "select an env first" |
 | 8 — Reachability | 5 (`AZURE_AI_PROJECT_ENDPOINT` set), 7 (auth) | Skip |
-| 9 — Models | 6 (`agent.yaml` valid), 8 (reachability) | Skip |
-| 10 — RBAC | 7 (auth), 8 (reachability) | Skip |
-| 11 — Agent status | 8, 9, 10 | Skip |
+| 9 — Models | 6 (service stanza valid), 8 (reachability) | Skip |
+| 10 — RBAC | 7 (auth) | Skip — RBAC reads ARM, not Foundry data plane, so it does **not** depend on check 8 |
+| 11 — Agent status | 7 (auth), 8 (reachability) | Skip — agents-list is a Reader-level Foundry call and does not require check 10's deploy/invoke roles |
 
 Skips are explicit in the rendered report. We never quietly drop a check.
 
@@ -120,11 +120,12 @@ Skips are explicit in the rendered report. We never quietly drop a check.
 
 ### Check 8 — Foundry project reachability
 
-**What it does:** issues a single `GET <AZURE_AI_PROJECT_ENDPOINT>/agents?api-version=…&$top=1` with the credential from check 7.
+**What it does:** issues a single `GET <AZURE_AI_PROJECT_ENDPOINT>/agents?api-version=<DefaultAgentAPIVersion>&$top=1` with the credential from check 7. The api-version is read from the `DefaultAgentAPIVersion` constant in `internal/cmd/agent_context.go` (currently `2025-11-15-preview`) — never a doc-side literal — so a single source of truth governs which Foundry surface we probe.
 
 **Pass:** "endpoint reachable (HTTP 200)"
 **Fail:** maps the HTTP status to one of:
-- `403` → check 10 (RBAC) will explain. Fix: see check 10 output.
+- `401` → token expired or scope mismatch. Fix: `azd auth login`; if the issue persists, see check 7.
+- `403` → wrong tenant **or** insufficient RBAC. Fix: confirm the active subscription/tenant matches the Foundry project; if it does, see check 10's role-assignment fix.
 - `404` → endpoint is wrong or project is gone. Fix: `azd provision` or fix env var.
 - network/DNS/TLS → "verify VPN / firewall / typo in `AZURE_AI_PROJECT_ENDPOINT`".
 
@@ -151,13 +152,15 @@ The single-shot probe avoids paging and works on tiny test projects. Timeout: 10
 **Warn:** has invoke role but not deploy role → user can run agents but not `azd deploy`. Surfaces as "you can invoke but not deploy" with the exact `az role assignment create` command for the missing role.
 **Fail:** missing both → command + portal link.
 
-The fix command is templated with the actual principal ID and scope so the user can paste it directly. Example:
+The fix command is templated with the actual principal ID and scope so the user can paste it directly. Example (interactive TTY):
 ```
 fix:  az role assignment create \
         --role "Azure AI Developer" \
         --assignee <principal-id> \
         --scope <project-resource-id>
 ```
+
+**Redaction in non-interactive output.** When stdout is piped or `--output json` is set, principal IDs, scope ARNs, and full UPNs in both `detail` and `fix` strings are replaced with `<redacted>`. The JSON envelope sets `"redacted": true` so callers know they're getting the safe variant (see [`Exit codes & JSON output`](./azd-ai-agent-nextsteps.md#exit-codes--json-output) in the companion doc). An interactive-only `--unredacted` flag exists for users who need the raw values in a JSON pipeline.
 
 **Why we don't auto-create the assignment:** doctor is read-only. RBAC changes are the kind of action that should be explicit and audited.
 
@@ -221,7 +224,9 @@ Worst-case `--remote` walltime: ~30s with a sick endpoint. Each check has its ow
 
 ## Testing Strategy
 
-- **Unit tests per check** with a fake `agentClient` interface. Cover pass / warn / fail / skip paths and HTTP status mapping (especially 401/403/404 disambiguation in check 8).
+- **Unit tests per check** with a fake `agentClient` interface. Cover pass / warn / fail / skip paths and HTTP status mapping (especially 401/403/404 disambiguation in check 8 — including the "wrong tenant or insufficient RBAC" wording for 403).
+- **Skip-cascade test.** For each dependency edge in the matrix above, assert the dependent check returns `Status: Skip` with the expected detail string when its dependency returns `Status: Fail`. Run as a table-driven test over the matrix so adding/removing edges automatically widens coverage.
+- **Redaction test.** Snapshot the rendered RBAC fix string in interactive (full values) and non-interactive (`<redacted>`) modes, plus the JSON envelope's `redacted` field.
 - **Snapshot test** for the rendered report in mixed pass/fail/skip configurations — same harness as MVP doctor's local-checks snapshot test.
 - **Functional test** (recorded cassette via `mage record`) covering one happy-path full run.
 - No live tests in CI for `--remote` — replay-only. Cassette refresh is a manual maintainer step.
@@ -232,9 +237,10 @@ Worst-case `--remote` walltime: ~30s with a sick endpoint. Each check has its ow
 |---|---|
 | Auth prompt during `--remote` surprises users in CI | Detect non-interactive (`!isTerminal`) and refuse the auth refresh; emit a clear "skipped: non-interactive" instead of hanging. |
 | RBAC list call requires a permission users may also lack | If the role-assignments call itself 403s, render the check as Warn, not Fail — give the user the role-assignment command anyway and let them try. |
-| Foundry API drift breaks the reachability probe | Pin the api-version explicitly. Failure renders as "API not understood" with a doc link rather than a stack trace. |
-| Slow tenant or VPN turns `--remote` into a 30s wait | Strict per-check timeouts, parallel fan-out for independent checks (8 + 10 can run concurrently). |
+| Foundry API drift breaks the reachability probe | Pin the api-version to `DefaultAgentAPIVersion` (`internal/cmd/agent_context.go`), not a doc literal. Failure renders as "API not understood" with a doc link rather than a stack trace. |
+| Slow tenant or VPN turns `--remote` into a 30s wait | Strict per-check timeouts. After the dependency-matrix simplification above, **independent checks 8 and 10 can run concurrently** once their shared dependency (check 7) passes. Check 9 still waits on 8; check 11 waits on 8. |
 | User runs `--remote` against a fresh project before `azd provision` | Checks 8–11 short-circuit to Skip via the dependency matrix; check 5 (env var missing) tells them to provision. |
+| Sensitive identifiers (principal IDs, scope ARNs) leak into shared CI logs | See [Output Format](#output-format) and the redaction rule in check 10: non-interactive output replaces values with `<redacted>` and the JSON envelope flags `"redacted": true`. |
 
 ## Performance Budget
 

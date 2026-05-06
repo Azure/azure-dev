@@ -29,6 +29,7 @@ type JobDefinition struct {
 	Distribution         string                       `yaml:"distribution"`
 	Resources            *ResourceDefinition          `yaml:"resources"`
 	InstanceCount        int                          `yaml:"instance_count"`
+	GPUCount             int                          `yaml:"gpu_count"`
 	ProcessPerNode       int                          `yaml:"process_per_node"`
 	EnvironmentVariables map[string]string            `yaml:"environment_variables"`
 	Identity             string                       `yaml:"identity"`

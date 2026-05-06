@@ -97,6 +97,7 @@ func newJobShowCommand() *cobra.Command {
 			details.Job = job
 
 			_ = spinner.Stop(ctx)
+			fmt.Println()
 			printJobDetails(details)
 			return nil
 		},
@@ -343,8 +344,10 @@ func printJobDetails(d *jobDetails) {
 		w.Flush()
 	}
 
-	// Resources
-	if props.Resources != nil {
+	// Resources — only show when the user did NOT submit gpuCount.
+	// When gpuCount is set, the backend ignores the resources block (it picks the
+	// SKU based on the compute target), so showing it here would be misleading.
+	if props.GPUCount == 0 && props.Resources != nil {
 		fmt.Println()
 		w = tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 		if props.Resources.InstanceCount > 0 {
@@ -443,7 +446,12 @@ func printComputeSection(d *jobDetails) {
 		if c.InstanceCount > 0 {
 			fmt.Fprintf(w, "Nodes:\t%d\n", c.InstanceCount)
 		}
-		if c.GPUCount > 0 {
+		// Prefer the user-submitted gpuCount (from Get Job) when present — for
+		// partial-SKU jobs it reflects the actual allocation. Otherwise fall back
+		// to the SKU GPU count reported by run history.
+		if d.Job.Properties.GPUCount > 0 {
+			fmt.Fprintf(w, "GPUs:\t%d\n", d.Job.Properties.GPUCount)
+		} else if c.GPUCount > 0 {
 			fmt.Fprintf(w, "GPUs:\t%d\n", c.GPUCount)
 		}
 		if c.Priority != "" {

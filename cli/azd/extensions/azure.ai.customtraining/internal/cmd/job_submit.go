@@ -137,6 +137,7 @@ func buildJobResource(def *utils.JobDefinition) *models.JobResource {
 		Command:                   def.Command,
 		EnvironmentImageReference: def.Environment,
 		ComputeID:                 def.Compute,
+		GPUCount:                  def.GPUCount,
 		UserAssignedIdentityID:    def.Identity,
 		CodeID:                    def.Code,
 		EnvironmentVariables:      def.EnvironmentVariables,

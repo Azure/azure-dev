@@ -551,16 +551,16 @@ func newRootCmd(
 // config, env, extension, etc.) are excluded to avoid blocking and to
 // prevent recursive subprocess issues when the tool check spawns
 // `azd extension list` (#8052).
-var workflowCommands = map[string]bool{
-	"init":      true,
-	"up":        true,
-	"provision": true,
-	"deploy":    true,
-	"down":      true,
-	"publish":   true,
-	"build":     true,
-	"package":   true,
-	"restore":   true,
+var workflowCommands = map[string]struct{}{
+	"init":      {},
+	"up":        {},
+	"provision": {},
+	"deploy":    {},
+	"down":      {},
+	"publish":   {},
+	"build":     {},
+	"package":   {},
+	"restore":   {},
 }
 
 // isWorkflowCommand reports whether the command is a primary workflow
@@ -576,13 +576,10 @@ func isWorkflowCommand(descriptor *actions.ActionDescriptor) bool {
 		return false
 	}
 
-	// Extract the command name (first word of Use field).
-	name := current.Options.Command.Use
-	if i := strings.IndexByte(name, ' '); i > 0 {
-		name = name[:i]
-	}
+	name := current.Options.Command.Name()
 
-	return workflowCommands[name]
+	_, ok := workflowCommands[name]
+	return ok
 }
 
 func getCmdRootHelpFooter(cmd *cobra.Command) string {

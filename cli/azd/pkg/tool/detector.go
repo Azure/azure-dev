@@ -392,10 +392,10 @@ func (d *detector) detectLibrary(
 	result, err := d.commandRunner.Run(ctx, exec.RunArgs{
 		Cmd:  tool.DetectCommand,
 		Args: tool.VersionArgs,
-		// Prevent the child azd process from re-triggering the
-		// first-run tool check, which would cause recursion (#8052).
-		// NO_COLOR suppresses ANSI escape codes that would break
-		// JSON parsing.
+		// Env vars are appended to the current process environment by the command runner
+		// (via appendEnv in exec/command_runner.go), so the child inherits all parent vars.
+		// AZD_SKIP_FIRST_RUN prevents recursive first-run checks in the child process (#8052).
+		// NO_COLOR suppresses ANSI escape codes that would contaminate JSON output.
 		Env: []string{"AZD_SKIP_FIRST_RUN=true", "NO_COLOR=1"},
 	})
 

@@ -824,8 +824,9 @@ func TestDetectTool_LibraryEnvVars(t *testing.T) {
 	runner.MockToolInPath("azd", nil)
 
 	var capturedEnv []string
+	expectedArgs := []string{"extension", "list", "--installed", "--output", "json"}
 	runner.When(func(args exec.RunArgs, _ string) bool {
-		return args.Cmd == "azd"
+		return args.Cmd == "azd" && slices.Equal(args.Args, expectedArgs)
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		capturedEnv = args.Env
 		return exec.RunResult{

@@ -25,10 +25,13 @@ import (
 // sessionFlags holds common flags shared by all session subcommands.
 type sessionFlags struct {
 	agentName string
+	noPrompt  bool
 	output    string
 }
 
-func newSessionCommand() *cobra.Command {
+func newSessionCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
+	extCtx = ensureExtensionContext(extCtx)
+
 	cmd := &cobra.Command{
 		Use:   "sessions",
 		Short: "Manage sessions for a hosted agent endpoint.",
@@ -43,27 +46,10 @@ Use --agent-name to select a specific agent when the project has
 multiple azure.ai.agent services.`,
 	}
 
-	// PersistentPreRunE is set outside the struct literal so the closure
-	// captures the outer cmd variable. When a subcommand runs (e.g.
-	// "sessions create"), Cobra passes the leaf command as the function
-	// parameter. Using cmd.Parent() here reaches the root command;
-	// using the parameter's Parent() would return this session command
-	// itself, causing infinite recursion.
-	cmd.PersistentPreRunE = func(childCmd *cobra.Command, args []string) error {
-		if parent := cmd.Parent(); parent != nil &&
-			parent.PersistentPreRunE != nil {
-			if err := parent.PersistentPreRunE(childCmd, args); err != nil {
-				return err
-			}
-		}
-
-		return nil
-	}
-
-	cmd.AddCommand(newSessionCreateCommand())
-	cmd.AddCommand(newSessionShowCommand())
-	cmd.AddCommand(newSessionDeleteCommand())
-	cmd.AddCommand(newSessionListCommand())
+	cmd.AddCommand(newSessionCreateCommand(extCtx))
+	cmd.AddCommand(newSessionShowCommand(extCtx))
+	cmd.AddCommand(newSessionDeleteCommand(extCtx))
+	cmd.AddCommand(newSessionListCommand(extCtx))
 
 	return cmd
 }
@@ -74,10 +60,6 @@ func addSessionFlags(cmd *cobra.Command, flags *sessionFlags) {
 		&flags.agentName, "agent-name", "n", "",
 		"Agent name (matches azure.yaml service name; "+
 			"auto-detected when only one exists)",
-	)
-	cmd.Flags().StringVarP(
-		&flags.output, "output", "o", "json",
-		"Output format (json or table)",
 	)
 }
 
@@ -91,7 +73,7 @@ type sessionContext struct {
 
 // resolveSessionContext resolves the agent name, version, and project endpoint.
 func resolveSessionContext(
-	ctx context.Context, agentName string,
+	ctx context.Context, agentName string, noPrompt bool,
 ) (*sessionContext, error) {
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
@@ -104,7 +86,7 @@ func resolveSessionContext(
 	var agentEndpoint string
 
 	if info, err := resolveAgentServiceFromProject(
-		ctx, azdClient, name, rootFlags.NoPrompt,
+		ctx, azdClient, name, noPrompt,
 	); err == nil {
 		if name == "" && info.AgentName != "" {
 			name = info.AgentName
@@ -150,9 +132,10 @@ type sessionCreateFlags struct {
 	isolationKey string
 }
 
-func newSessionCreateCommand() *cobra.Command {
+func newSessionCreateCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &sessionCreateFlags{}
 	action := &SessionCreateAction{flags: flags}
+	extCtx = ensureExtensionContext(extCtx)
 
 	cmd := &cobra.Command{
 		Use:   "create [agent-name] [version] [isolation-key]",
@@ -185,8 +168,10 @@ Positional arguments can be used instead of flags:
   azd ai agent sessions create --session-id my-session`,
 		Args: cobra.MaximumNArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			flags.noPrompt = extCtx.NoPrompt
+			flags.output = extCtx.OutputFormat
+
 			ctx := azdext.WithAccessToken(cmd.Context())
-			setupDebugLogging(cmd.Flags())
 
 			// Positional args fill in missing flags
 			switch len(args) {
@@ -211,6 +196,11 @@ Positional arguments can be used instead of flags:
 	}
 
 	addSessionFlags(cmd, &flags.sessionFlags)
+	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
+		Name:          "output",
+		AllowedValues: []string{"json", "table"},
+		Default:       "json",
+	})
 	cmd.Flags().StringVar(
 		&flags.sessionID, "session-id", "",
 		"Optional caller-provided session ID "+
@@ -236,7 +226,7 @@ type SessionCreateAction struct {
 }
 
 func (a *SessionCreateAction) Run(ctx context.Context) error {
-	sc, err := resolveSessionContext(ctx, a.flags.agentName)
+	sc, err := resolveSessionContext(ctx, a.flags.agentName, a.flags.noPrompt)
 	if err != nil {
 		return err
 	}
@@ -302,9 +292,10 @@ type sessionShowFlags struct {
 	sessionFlags
 }
 
-func newSessionShowCommand() *cobra.Command {
+func newSessionShowCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &sessionShowFlags{}
 	action := &SessionShowAction{flags: flags}
+	extCtx = ensureExtensionContext(extCtx)
 
 	cmd := &cobra.Command{
 		Use:   "show <session-id>",
@@ -320,8 +311,10 @@ specified session.`,
   azd ai agent sessions show my-session --output table`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			flags.noPrompt = extCtx.NoPrompt
+			flags.output = extCtx.OutputFormat
+
 			ctx := azdext.WithAccessToken(cmd.Context())
-			setupDebugLogging(cmd.Flags())
 
 			action.sessionID = args[0]
 			return action.Run(ctx)
@@ -329,6 +322,11 @@ specified session.`,
 	}
 
 	addSessionFlags(cmd, &flags.sessionFlags)
+	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
+		Name:          "output",
+		AllowedValues: []string{"json", "table"},
+		Default:       "json",
+	})
 
 	return cmd
 }
@@ -340,7 +338,7 @@ type SessionShowAction struct {
 }
 
 func (a *SessionShowAction) Run(ctx context.Context) error {
-	sc, err := resolveSessionContext(ctx, a.flags.agentName)
+	sc, err := resolveSessionContext(ctx, a.flags.agentName, a.flags.noPrompt)
 	if err != nil {
 		return err
 	}
@@ -388,9 +386,10 @@ type sessionDeleteFlags struct {
 	isolationKey string
 }
 
-func newSessionDeleteCommand() *cobra.Command {
+func newSessionDeleteCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &sessionDeleteFlags{}
 	action := &SessionDeleteAction{flags: flags}
+	extCtx = ensureExtensionContext(extCtx)
 
 	cmd := &cobra.Command{
 		Use:   "delete <session-id>",
@@ -408,8 +407,9 @@ The isolation key is derived from the Entra token by default.`,
   azd ai agent sessions delete my-session --isolation-key sk-abc123`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			flags.noPrompt = extCtx.NoPrompt
+
 			ctx := azdext.WithAccessToken(cmd.Context())
-			setupDebugLogging(cmd.Flags())
 
 			action.sessionID = args[0]
 			return action.Run(ctx)
@@ -439,7 +439,7 @@ type SessionDeleteAction struct {
 }
 
 func (a *SessionDeleteAction) Run(ctx context.Context) error {
-	sc, err := resolveSessionContext(ctx, a.flags.agentName)
+	sc, err := resolveSessionContext(ctx, a.flags.agentName, a.flags.noPrompt)
 	if err != nil {
 		return err
 	}
@@ -508,9 +508,10 @@ type sessionListFlags struct {
 	paginationToken string
 }
 
-func newSessionListCommand() *cobra.Command {
+func newSessionListCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &sessionListFlags{}
 	action := &SessionListAction{flags: flags}
+	extCtx = ensureExtensionContext(extCtx)
 
 	cmd := &cobra.Command{
 		Use:   "list",
@@ -527,8 +528,10 @@ Returns a paged list of sessions with their status, version, and timestamps.`,
   # List in table format
   azd ai agent sessions list --output table`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			flags.noPrompt = extCtx.NoPrompt
+			flags.output = extCtx.OutputFormat
+
 			ctx := azdext.WithAccessToken(cmd.Context())
-			setupDebugLogging(cmd.Flags())
 
 			action.limitChanged = cmd.Flags().Changed("limit")
 			return action.Run(ctx)
@@ -536,6 +539,11 @@ Returns a paged list of sessions with their status, version, and timestamps.`,
 	}
 
 	addSessionFlags(cmd, &flags.sessionFlags)
+	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
+		Name:          "output",
+		AllowedValues: []string{"json", "table"},
+		Default:       "json",
+	})
 	cmd.Flags().Int32Var(
 		&flags.limit, "limit", 0,
 		"Maximum number of sessions to return",
@@ -555,7 +563,7 @@ type SessionListAction struct {
 }
 
 func (a *SessionListAction) Run(ctx context.Context) error {
-	sc, err := resolveSessionContext(ctx, a.flags.agentName)
+	sc, err := resolveSessionContext(ctx, a.flags.agentName, a.flags.noPrompt)
 	if err != nil {
 		return err
 	}

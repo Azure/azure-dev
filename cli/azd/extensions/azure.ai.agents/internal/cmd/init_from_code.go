@@ -81,7 +81,7 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 	// doesn't complete the full agent configuration only to have it discarded.
 	agentYamlPath := filepath.Join(srcDir, "agent.yaml")
 	if _, statErr := os.Stat(agentYamlPath); statErr == nil {
-		if a.flags.NoPrompt {
+		if a.flags.noPrompt {
 			return exterrors.Cancelled("agent.yaml already exists; overwrite declined in no-prompt mode")
 		}
 
@@ -469,7 +469,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 	agentKind := agent_yaml.AgentKindHosted
 
 	// Prompt user for supported protocols
-	protocols, err := promptProtocols(ctx, a.azdClient.Prompt(), a.flags.NoPrompt, a.flags.protocols)
+	protocols, err := promptProtocols(ctx, a.azdClient.Prompt(), a.flags.noPrompt, a.flags.protocols)
 	if err != nil {
 		return nil, err
 	}
@@ -806,7 +806,7 @@ func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string,
 	agentConfig.Deployments = a.deploymentDetails
 
 	// Detect startup command from the project source directory
-	startupCmd, err := resolveStartupCommandForInit(ctx, a.azdClient, a.projectConfig.Path, targetDir, a.flags.NoPrompt)
+	startupCmd, err := resolveStartupCommandForInit(ctx, a.azdClient, a.projectConfig.Path, targetDir, a.flags.noPrompt)
 	if err != nil {
 		return err
 	}

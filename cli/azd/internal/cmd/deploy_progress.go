@@ -7,9 +7,11 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 )
 
 // Column widths for the progress table.
@@ -69,6 +71,21 @@ type deployProgressTracker struct {
 	lastLines   int // how many lines we rendered last time (for ANSI overwrite)
 }
 
+// ansiEscapeRe matches ANSI escape sequences (CSI and OSC).
+var ansiEscapeRe = regexp.MustCompile(`\x1b\[[0-9;]*[A-Za-z~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)`)
+
+// sanitizeServiceName strips ANSI escape sequences and non-printable characters
+// from a service name to prevent terminal output manipulation.
+func sanitizeServiceName(name string) string {
+	name = ansiEscapeRe.ReplaceAllString(name, "")
+	return strings.Map(func(r rune) rune {
+		if r == '\t' || (unicode.IsPrint(r) && !unicode.IsControl(r)) {
+			return r
+		}
+		return -1
+	}, name)
+}
+
 func newDeployProgressTracker(
 	writer io.Writer, interactive bool, serviceNames []string,
 ) *deployProgressTracker {
@@ -76,7 +93,7 @@ func newDeployProgressTracker(
 	idx := make(map[string]int, len(serviceNames))
 	for i, name := range serviceNames {
 		services[i] = &serviceStatus{
-			name:  name,
+			name:  sanitizeServiceName(name),
 			phase: phaseWaiting,
 		}
 		idx[name] = i
@@ -115,7 +132,7 @@ func (t *deployProgressTracker) Update(
 	if !t.interactive {
 		// Non-interactive (CI): one line per event
 		elapsed := svc.elapsed()
-		line := fmt.Sprintf("  %s: %s", serviceName, phase)
+		line := fmt.Sprintf("  %s: %s", svc.name, phase)
 		if detail != "" {
 			line += fmt.Sprintf(" (%s)", detail)
 		}

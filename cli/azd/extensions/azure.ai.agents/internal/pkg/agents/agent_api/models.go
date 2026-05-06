@@ -17,16 +17,35 @@ const (
 	AgentProtocolActivityProtocol AgentProtocol = "activity_protocol"
 	AgentProtocolInvocations      AgentProtocol = "invocations"
 	AgentProtocolResponses        AgentProtocol = "responses"
+	AgentProtocolA2A              AgentProtocol = "a2a"
 )
+
+// InvocableProtocols returns the set of protocols that azd can invoke directly.
+// A2A and activity_protocol are deployment-only — they cannot be used for local
+// or remote invocation through azd.
+func InvocableProtocols() []AgentProtocol {
+	return []AgentProtocol{
+		AgentProtocolResponses,
+		AgentProtocolInvocations,
+	}
+}
+
+// IsInvocable reports whether the protocol can be used for invocation through azd.
+func (p AgentProtocol) IsInvocable() bool {
+	switch p {
+	case AgentProtocolResponses, AgentProtocolInvocations:
+		return true
+	default:
+		return false
+	}
+}
 
 // AgentKind represents the different types of agents
 type AgentKind string
 
 const (
-	AgentKindPrompt       AgentKind = "prompt"
-	AgentKindHosted       AgentKind = "hosted"
-	AgentKindContainerApp AgentKind = "container_app"
-	AgentKindWorkflow     AgentKind = "workflow"
+	AgentKindHosted   AgentKind = "hosted"
+	AgentKindWorkflow AgentKind = "workflow"
 )
 
 // AgentEventType represents the types of events that can be handled
@@ -60,6 +79,27 @@ type ProtocolVersionRecord struct {
 	Version  string        `json:"version"`
 }
 
+// AgentEndpoint describes the endpoint protocols an agent supports.
+type AgentEndpoint struct {
+	Protocols []AgentProtocol `json:"protocols"`
+}
+
+// AgentCardSkill describes a single capability that an agent can perform.
+type AgentCardSkill struct {
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Tags        []string `json:"tags,omitempty"`
+	Examples    []string `json:"examples,omitempty"`
+}
+
+// AgentCard is the A2A agent card that advertises an agent's capabilities.
+type AgentCard struct {
+	Description string           `json:"description"`
+	Version     *string          `json:"version,omitempty"`
+	Skills      []AgentCardSkill `json:"skills"`
+}
+
 // WorkflowDefinition represents a workflow agent
 type WorkflowDefinition struct {
 	AgentDefinition
@@ -81,56 +121,6 @@ type ImageBasedHostedAgentDefinition struct {
 	Image string `json:"image"`
 }
 
-// ContainerAppAgentDefinition represents a container app agent
-type ContainerAppAgentDefinition struct {
-	AgentDefinition
-	ContainerProtocolVersions []ProtocolVersionRecord `json:"container_protocol_versions"`
-	ContainerAppResourceID    string                  `json:"container_app_resource_id"`
-	IngressSubdomainSuffix    string                  `json:"ingress_subdomain_suffix"`
-}
-
-// ResponseTextFormatConfiguration represents text format configuration
-type ResponseTextFormatConfiguration struct {
-	// Implementation depends on OpenAI package structure
-	// This is a placeholder for the actual OpenAI response format configuration
-	Type string `json:"type,omitempty"`
-}
-
-// Reasoning represents OpenAI reasoning configuration
-type Reasoning struct {
-	// Implementation depends on OpenAI package structure
-	// This is a placeholder for the actual OpenAI reasoning structure
-	Effort string `json:"effort,omitempty"`
-}
-
-// ToolArgumentBinding represents binding configuration for tool arguments
-type ToolArgumentBinding struct {
-	ToolName     *string `json:"tool_name,omitempty"`
-	ArgumentName string  `json:"argument_name"`
-}
-
-// StructuredInputDefinition represents a structured input definition
-type StructuredInputDefinition struct {
-	Description          *string               `json:"description,omitempty"`
-	DefaultValue         any                   `json:"default_value,omitempty"`
-	ToolArgumentBindings []ToolArgumentBinding `json:"tool_argument_bindings,omitempty"`
-	Schema               any                   `json:"schema,omitempty"`
-	Required             *bool                 `json:"required,omitempty"`
-}
-
-// PromptAgentDefinition represents a prompt-based agent
-type PromptAgentDefinition struct {
-	AgentDefinition
-	Model            string                               `json:"model"`
-	Instructions     *string                              `json:"instructions,omitempty"`
-	Temperature      *float32                             `json:"temperature,omitempty"`
-	TopP             *float32                             `json:"top_p,omitempty"`
-	Reasoning        *Reasoning                           `json:"reasoning,omitempty"`
-	Tools            []any                                `json:"tools,omitempty"` // Must be a type of Tool
-	Text             *ResponseTextFormatConfiguration     `json:"text,omitempty"`
-	StructuredInputs map[string]StructuredInputDefinition `json:"structured_inputs,omitempty"`
-}
-
 // CreateAgentVersionRequest represents a request to create an agent version
 type CreateAgentVersionRequest struct {
 	Description *string           `json:"description,omitempty"`
@@ -140,13 +130,23 @@ type CreateAgentVersionRequest struct {
 
 // CreateAgentRequest represents a request to create an agent
 type CreateAgentRequest struct {
-	Name string `json:"name"`
+	Name          string         `json:"name"`
+	AgentEndpoint *AgentEndpoint `json:"agent_endpoint,omitempty"`
+	AgentCard     *AgentCard     `json:"agent_card,omitempty"`
 	CreateAgentVersionRequest
 }
 
 // UpdateAgentRequest represents a request to update an agent
 type UpdateAgentRequest struct {
 	CreateAgentVersionRequest
+}
+
+// PatchAgentRequest represents a partial update to agent-level fields.
+// Only the fields set here are sent; Definition is intentionally excluded
+// to avoid accidentally clearing it.
+type PatchAgentRequest struct {
+	AgentEndpoint *AgentEndpoint `json:"agent_endpoint,omitempty"`
+	AgentCard     *AgentCard     `json:"agent_card,omitempty"`
 }
 
 // AgentIdentityInfo represents the instance identity assigned to an agent version.

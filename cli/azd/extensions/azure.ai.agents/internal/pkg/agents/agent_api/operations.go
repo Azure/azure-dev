@@ -176,6 +176,53 @@ func (c *AgentClient) UpdateAgent(ctx context.Context, agentName string, request
 	return &agent, nil
 }
 
+// PatchAgent performs a partial update on an agent using HTTP PATCH.
+// Only the fields set in the request body are updated.
+func (c *AgentClient) PatchAgent(
+	ctx context.Context,
+	agentName string,
+	request *PatchAgentRequest,
+	apiVersion string,
+) (*AgentObject, error) {
+	url := fmt.Sprintf("%s/agents/%s?api-version=%s", c.endpoint, agentName, apiVersion)
+
+	payload, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := runtime.NewRequest(ctx, http.MethodPatch, url)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	if err := req.SetBody(streaming.NopCloser(bytes.NewReader(payload)), "application/json"); err != nil {
+		return nil, fmt.Errorf("failed to set request body: %w", err)
+	}
+
+	resp, err := c.pipeline.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if !runtime.HasStatusCode(resp, http.StatusOK) {
+		return nil, runtime.NewResponseError(resp)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	var agent AgentObject
+	if err := json.Unmarshal(body, &agent); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &agent, nil
+}
+
 // DeleteAgent deletes an agent
 func (c *AgentClient) DeleteAgent(ctx context.Context, agentName, apiVersion string) (*DeleteAgentResponse, error) {
 	url := fmt.Sprintf("%s/agents/%s?api-version=%s", c.endpoint, agentName, apiVersion)

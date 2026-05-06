@@ -14,33 +14,6 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-/*
-MAPPING QUESTIONS TO RESOLVE:
-
-1. TYPE ARCHITECTURE:
-   - Should we work with specific types (PromptAgent, ContainerAgent) instead of base AgentDefinition?
-   - ContainerAgent has Protocol and Options fields that might be relevant for hosted agents
-
-2. MODEL MAPPING (for prompt agents):
-   - How to extract Temperature, TopP from Model.Options?
-   - Model.Options.Kind seems to be required - what values are expected?
-   - Are agent_yaml.Tool and agent_api.Tool compatible or need conversion?
-
-3. ADVANCED PROMPT FEATURES:
-   - How to map InputSchema to StructuredInputs?
-   - How to map OutputSchema to Text response format?
-   - Where does Reasoning configuration come from?
-
-4. HOSTED AGENT CONFIGURATION:
-   - Should CPU/Memory/EnvironmentVariables come from YAML (ContainerAgent.Options) or only build config?
-   - Should Protocol versions be configurable or always default to "responses/v1"?
-   - How to handle ContainerAgent.Protocol field if present?
-
-5. BUILD VS YAML PRECEDENCE:
-   - When both YAML and build config specify the same thing, which takes precedence?
-   - Should build config override YAML values or complement them?
-*/
-
 // AgentBuildOption represents an option for building agent definitions
 type AgentBuildOption func(*AgentBuildConfig)
 
@@ -115,65 +88,12 @@ func CreateAgentAPIRequestFromDefinition(agentTemplate any, options ...AgentBuil
 
 	// Route to appropriate handler based on agent kind
 	switch agentDef.Kind {
-	case AgentKindPrompt:
-		promptDef := agentTemplate.(PromptAgent)
-		return CreatePromptAgentAPIRequest(promptDef, buildConfig)
 	case AgentKindHosted:
 		hostedDef := agentTemplate.(ContainerAgent)
 		return CreateHostedAgentAPIRequest(hostedDef, buildConfig)
 	default:
-		return nil, fmt.Errorf("unsupported agent kind: %s. Supported kinds are: prompt, hosted", agentDef.Kind)
+		return nil, fmt.Errorf("unsupported agent kind: %s. Supported kinds are: hosted", agentDef.Kind)
 	}
-}
-
-// CreatePromptAgentAPIRequest creates a CreateAgentRequest for prompt-based agents
-func CreatePromptAgentAPIRequest(promptAgent PromptAgent, buildConfig *AgentBuildConfig) (*agent_api.CreateAgentRequest, error) {
-	// Extract model information from the prompt agent
-	var modelId string
-	var instructions *string
-	var temperature *float32
-	var topP *float32
-
-	// Get model ID
-	if promptAgent.Model.Id != "" {
-		modelId = promptAgent.Model.Id
-	} else {
-		return nil, fmt.Errorf("model.id is required for prompt agents")
-	}
-
-	// Get instructions
-	if promptAgent.Instructions != nil {
-		instructions = promptAgent.Instructions
-	}
-
-	// Extract temperature and topP from model options if available
-	if promptAgent.Model.Options != nil {
-		if promptAgent.Model.Options.Temperature != nil {
-			tempFloat32 := float32(*promptAgent.Model.Options.Temperature)
-			temperature = &tempFloat32
-		}
-		if promptAgent.Model.Options.TopP != nil {
-			tpFloat32 := float32(*promptAgent.Model.Options.TopP)
-			topP = &tpFloat32
-		}
-	}
-
-	promptDef := agent_api.PromptAgentDefinition{
-		AgentDefinition: agent_api.AgentDefinition{
-			Kind: agent_api.AgentKindPrompt,
-		},
-		Model:        modelId,
-		Instructions: instructions,
-		Temperature:  temperature,
-		TopP:         topP,
-		Tools:        convertYamlToolsToApiTools(*promptAgent.Tools),
-
-		// TODO: Handle additional fields like Tools, Reasoning, etc.
-		// Text: mapOutputSchemaToTextFormat(promptAgent.OutputSchema),
-		// StructuredInputs: mapInputSchemaToStructuredInputs(promptAgent.InputSchema),
-	}
-
-	return createAgentAPIRequest(promptAgent.AgentDefinition, promptDef)
 }
 
 // convertYamlToolsToApiTools converts agent_yaml tools to agent_api tools
@@ -456,11 +376,19 @@ func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentB
 		Image:                 imageURL,
 	}
 
-	return createAgentAPIRequest(hostedAgent.AgentDefinition, imageHostedDef)
+	return createAgentAPIRequest(hostedAgent.AgentDefinition, imageHostedDef,
+		hostedAgent.AgentEndpoint, hostedAgent.AgentCard)
 }
 
-// createAgentAPIRequest is a helper function to create the final request with common fields
-func createAgentAPIRequest(agentDefinition AgentDefinition, agentDef any) (*agent_api.CreateAgentRequest, error) {
+// createAgentAPIRequest is a helper function to create the final request with common fields.
+// The optional agentEndpoint and agentCard parameters are mapped to the corresponding
+// request-level fields when non-nil.
+func createAgentAPIRequest(
+	agentDefinition AgentDefinition,
+	agentDef any,
+	agentEndpoint *AgentEndpoint,
+	agentCard *AgentCard,
+) (*agent_api.CreateAgentRequest, error) {
 	// Prepare metadata
 	metadata := make(map[string]string)
 	if agentDefinition.Metadata != nil {
@@ -506,6 +434,68 @@ func createAgentAPIRequest(agentDefinition AgentDefinition, agentDef any) (*agen
 
 	if len(metadata) > 0 {
 		request.Metadata = metadata
+	}
+
+	// Map optional agent endpoint and card fields.
+	if agentEndpoint != nil {
+		protocols := make(
+			[]agent_api.AgentProtocol, 0, len(agentEndpoint.Protocols),
+		)
+		for _, p := range agentEndpoint.Protocols {
+			trimmed := strings.TrimSpace(p)
+			if trimmed == "" {
+				return nil, fmt.Errorf(
+					"agentEndpoint contains an empty protocol value",
+				)
+			}
+			protocols = append(protocols, agent_api.AgentProtocol(trimmed))
+		}
+		request.AgentEndpoint = &agent_api.AgentEndpoint{
+			Protocols: protocols,
+		}
+	}
+
+	if agentCard != nil {
+		if strings.TrimSpace(agentCard.Description) == "" {
+			return nil, fmt.Errorf(
+				"agentCard.description is required",
+			)
+		}
+		if len(agentCard.Skills) == 0 {
+			return nil, fmt.Errorf(
+				"agentCard.skills must contain at least one skill",
+			)
+		}
+		skills := make([]agent_api.AgentCardSkill, len(agentCard.Skills))
+		for i, s := range agentCard.Skills {
+			if strings.TrimSpace(s.ID) == "" {
+				return nil, fmt.Errorf(
+					"agentCard.skills[%d].id is required", i,
+				)
+			}
+			if strings.TrimSpace(s.Name) == "" {
+				return nil, fmt.Errorf(
+					"agentCard.skills[%d].name is required", i,
+				)
+			}
+			if strings.TrimSpace(s.Description) == "" {
+				return nil, fmt.Errorf(
+					"agentCard.skills[%d].description is required", i,
+				)
+			}
+			skills[i] = agent_api.AgentCardSkill{
+				ID:          s.ID,
+				Name:        s.Name,
+				Description: s.Description,
+				Tags:        s.Tags,
+				Examples:    s.Examples,
+			}
+		}
+		request.AgentCard = &agent_api.AgentCard{
+			Description: agentCard.Description,
+			Version:     agentCard.Version,
+			Skills:      skills,
+		}
 	}
 
 	return request, nil

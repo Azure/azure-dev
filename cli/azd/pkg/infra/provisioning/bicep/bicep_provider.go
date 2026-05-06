@@ -43,6 +43,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -1301,9 +1302,38 @@ func (p *BicepProvider) Destroy(
 
 		p.console.StopSpinner(ctx, "", input.StepDone)
 
-		// Prompt for confirmation before deleting resources
-		if err := p.promptDeletion(ctx, options, groupedResources, len(resourcesToDelete)); err != nil {
-			return nil, err
+		// For resource-group-scoped deployments, check if the resource group was created by azd.
+		// If not, warn the user that deleting the RG will remove ALL resources, including those
+		// not deployed by azd.
+		if targetScope == azure.DeploymentScopeResourceGroup {
+			rgName := p.env.Getenv(environment.ResourceGroupEnvVarName)
+			// warnExternalResourceGroup returns (userAlreadyConfirmed, error).
+			// When true, user confirmed via the external-RG warning so we skip promptDeletion.
+			// When false with nil error, the RG is azd-owned and normal prompt applies.
+			userAlreadyConfirmed, err := p.warnExternalResourceGroup(
+				ctx, options, rgName, groupedResources, len(resourcesToDelete),
+			)
+			if err != nil {
+				return nil, fmt.Errorf("checking resource group ownership: %w", err)
+			}
+
+			// If the external-RG warning was already confirmed, skip the regular
+			// deletion prompt to avoid double-prompting the user.
+			if !userAlreadyConfirmed {
+				// Prompt for confirmation before deleting resources
+				if err := p.promptDeletion(
+					ctx, options, groupedResources, len(resourcesToDelete),
+				); err != nil {
+					return nil, err
+				}
+			}
+		} else {
+			// Prompt for confirmation before deleting resources
+			if err := p.promptDeletion(
+				ctx, options, groupedResources, len(resourcesToDelete),
+			); err != nil {
+				return nil, err
+			}
 		}
 
 		p.console.Message(ctx, output.WithGrayFormat("Deleting your resources can take some time.\n"))
@@ -1513,6 +1543,85 @@ func (p *BicepProvider) promptDeletion(
 	}
 
 	return nil
+}
+
+// warnExternalResourceGroup checks if a resource group was created by azd (has azd-env-name tag
+// matching the current environment). If the RG was not created by azd, it warns the user and asks
+// for explicit confirmation before proceeding with deletion, since deleting the RG will remove ALL
+// resources inside it, including any that were not deployed by azd.
+//
+// Returns (userAlreadyConfirmed=true, nil) if the user confirmed deletion through this warning
+// or if --force is set — the caller should skip promptDeletion to avoid double-prompting.
+// Returns (false, nil) if no warning was needed (RG is azd-owned).
+// Returns (false, error) if the user denied or an error occurred.
+func (p *BicepProvider) warnExternalResourceGroup(
+	ctx context.Context,
+	options provisioning.DestroyOptions,
+	resourceGroupName string,
+	groupedResources map[string][]*azapi.Resource,
+	resourceCount int,
+) (bool, error) {
+	if options.Force() {
+		return true, nil
+	}
+
+	if resourceGroupName == "" {
+		return false, nil
+	}
+
+	rg, err := p.resourceService.GetResourceGroup(ctx, p.env.GetSubscriptionId(), resourceGroupName)
+	if err != nil {
+		// Fail closed: if we can't determine ownership, treat it as external and warn.
+		// This prevents accidental deletion when the API call fails transiently.
+		log.Printf(
+			"warnExternalResourceGroup: failed to get resource group %q, treating as external: %v",
+			resourceGroupName, err,
+		)
+	}
+
+	// If the RG has the azd-env-name tag matching the current environment, azd created it
+	if rg != nil {
+		if envTag, hasTag := rg.Tags[azure.TagKeyAzdEnvName]; hasTag && envTag == p.env.Name() {
+			return false, nil
+		}
+	}
+
+	p.console.MessageUxItem(ctx, &ux.WarningMessage{
+		Description: fmt.Sprintf(
+			"Resource group %s was not created by azd.",
+			output.WithHighLightFormat(resourceGroupName),
+		),
+	})
+	p.console.Message(ctx, fmt.Sprintf(
+		"  Deleting this resource group will remove %s inside it,\n"+
+			"  including any that were not deployed by azd.\n",
+		output.WithErrorFormat("ALL resources"),
+	))
+
+	p.console.MessageUxItem(ctx, &ux.MultilineMessage{
+		Lines: p.generateResourcesToDelete(ctx, groupedResources)},
+	)
+
+	confirmDelete, err := p.console.Confirm(ctx, input.ConsoleOptions{
+		Message: fmt.Sprintf(
+			"Do you still want to delete the entire resource group %s?",
+			output.WithHighLightFormat(resourceGroupName),
+		),
+		DefaultValue: false,
+	})
+	if err != nil {
+		return false, fmt.Errorf("prompting for resource group deletion: %w", err)
+	}
+
+	if !confirmDelete {
+		return false, &errorhandler.ErrorWithSuggestion{
+			Err:        errors.New("user denied delete confirmation"),
+			Message:    "Resource group was not deleted.",
+			Suggestion: "Re-run with --force to skip this check, or delete resources manually in the Azure Portal.",
+		}
+	}
+
+	return true, nil
 }
 
 // destroyDeployment deletes the azure resources within the deployment and voids the deployment state.

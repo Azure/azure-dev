@@ -116,3 +116,8 @@ var (
 var (
 	ErrMcpToolsLoadFailed = errors.New("failed to load MCP host tools")
 )
+
+// Tool command errors
+var (
+	ErrToolUpgradeFailed = errors.New("tool upgrade did not succeed")
+)

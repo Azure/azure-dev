@@ -14,19 +14,19 @@ import (
 )
 
 func TestMonitorCommand_AcceptsPositionalArg(t *testing.T) {
-	cmd := newMonitorCommand()
+	cmd := newMonitorCommand(nil)
 	err := cmd.Args(cmd, []string{"my-agent"})
 	assert.NoError(t, err)
 }
 
 func TestMonitorCommand_AcceptsNoArgs(t *testing.T) {
-	cmd := newMonitorCommand()
+	cmd := newMonitorCommand(nil)
 	err := cmd.Args(cmd, []string{})
 	assert.NoError(t, err)
 }
 
 func TestMonitorCommand_RejectsMultipleArgs(t *testing.T) {
-	cmd := newMonitorCommand()
+	cmd := newMonitorCommand(nil)
 	err := cmd.Args(cmd, []string{"svc1", "svc2"})
 	assert.Error(t, err)
 }
@@ -88,7 +88,7 @@ func TestValidateMonitorFlags_InvalidType(t *testing.T) {
 }
 
 func TestMonitorCommand_DefaultValues(t *testing.T) {
-	cmd := newMonitorCommand()
+	cmd := newMonitorCommand(nil)
 
 	// Verify default flag values
 	tail, _ := cmd.Flags().GetInt("tail")
@@ -105,7 +105,7 @@ func TestMonitorCommand_DefaultValues(t *testing.T) {
 }
 
 func TestMonitorCommand_SessionFlagRegistered(t *testing.T) {
-	cmd := newMonitorCommand()
+	cmd := newMonitorCommand(nil)
 
 	// The --session-id / -s flag must be defined
 	f := cmd.Flags().Lookup("session-id")
@@ -114,7 +114,7 @@ func TestMonitorCommand_SessionFlagRegistered(t *testing.T) {
 }
 
 func TestMonitorCommand_FollowFlagRegistered(t *testing.T) {
-	cmd := newMonitorCommand()
+	cmd := newMonitorCommand(nil)
 
 	f := cmd.Flags().Lookup("follow")
 	require.NotNil(t, f, "--follow flag should be registered")

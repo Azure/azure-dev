@@ -139,6 +139,53 @@ func Test_ResourceService_ListResourceGroupResources_Coverage3(t *testing.T) {
 	})
 }
 
+func Test_ResourceService_GetResourceGroup_Tags(t *testing.T) {
+	t.Run("WithTags", func(t *testing.T) {
+		mockCtx := mocks.NewMockContext(t.Context())
+		rs := NewResourceService(mockCtx.SubscriptionCredentialProvider, mockCtx.ArmClientOptions)
+		mockCtx.HttpClient.When(func(req *http.Request) bool {
+			return req.Method == http.MethodGet && strings.Contains(req.URL.Path, "/resourcegroups/my-rg")
+		}).RespondFn(func(req *http.Request) (*http.Response, error) {
+			return mocks.CreateHttpResponseWithBody(req, http.StatusOK,
+				armresources.ResourceGroup{
+					ID:       new("/subscriptions/SUB/resourceGroups/my-rg"),
+					Name:     new("my-rg"),
+					Location: new("eastus"),
+					Tags: map[string]*string{
+						"azd-env-name": new("my-env"),
+						"other-tag":    new("value"),
+					},
+				})
+		})
+
+		rg, err := rs.GetResourceGroup(*mockCtx.Context, "SUB", "my-rg")
+		require.NoError(t, err)
+		assert.Equal(t, "my-rg", rg.Name)
+		assert.Equal(t, "my-env", rg.Tags["azd-env-name"])
+		assert.Equal(t, "value", rg.Tags["other-tag"])
+	})
+
+	t.Run("WithoutTags", func(t *testing.T) {
+		mockCtx := mocks.NewMockContext(t.Context())
+		rs := NewResourceService(mockCtx.SubscriptionCredentialProvider, mockCtx.ArmClientOptions)
+		mockCtx.HttpClient.When(func(req *http.Request) bool {
+			return req.Method == http.MethodGet && strings.Contains(req.URL.Path, "/resourcegroups/no-tags")
+		}).RespondFn(func(req *http.Request) (*http.Response, error) {
+			return mocks.CreateHttpResponseWithBody(req, http.StatusOK,
+				armresources.ResourceGroup{
+					ID:       new("/subscriptions/SUB/resourceGroups/no-tags"),
+					Name:     new("no-tags"),
+					Location: new("eastus"),
+				})
+		})
+
+		rg, err := rs.GetResourceGroup(*mockCtx.Context, "SUB", "no-tags")
+		require.NoError(t, err)
+		assert.Equal(t, "no-tags", rg.Name)
+		assert.Nil(t, rg.Tags)
+	})
+}
+
 func Test_ResourceService_ListResourceGroup_Coverage3(t *testing.T) {
 	t.Run("WithTagFilter", func(t *testing.T) {
 		mockCtx := mocks.NewMockContext(t.Context())

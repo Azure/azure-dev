@@ -268,7 +268,6 @@ func TestShowResult_JSON(t *testing.T) {
 					ResourceIds: []string{"/subscriptions/sub1/resourceGroups/rg1"},
 				},
 				IngresUrl: "https://api.example.com",
-				IngressUrl: "https://api.example.com",
 			},
 		},
 	}

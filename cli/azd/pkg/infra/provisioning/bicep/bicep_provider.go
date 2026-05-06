@@ -3011,14 +3011,31 @@ func (p *BicepProvider) checkAiModelQuota(
 			if remaining < totalRequired {
 				reportedUsage[r.usageName] = true
 
-				suggestion := fmt.Sprintf(
-					"Reduce the requested capacity to %.0f"+
-						" or change your deployment location via %s."+
-						" You can also request a quota increase in the Azure portal.",
-					remaining,
-					output.WithHighLightFormat(
-						"azd env set AZURE_LOCATION <location>"),
-				)
+				var suggestion string
+				if remaining > 0 {
+					suggestion = fmt.Sprintf(
+						"Reduce the requested capacity"+
+							" to %.0f or change your"+
+							" deployment location via %s."+
+							" You can also request a quota"+
+							" increase in the Azure portal.",
+						remaining,
+						output.WithHighLightFormat(
+							"azd env set"+
+								" AZURE_LOCATION <location>"),
+					)
+				} else {
+					suggestion = fmt.Sprintf(
+						"No quota is available."+
+							" Change your deployment"+
+							" location via %s or request"+
+							" a quota increase in the"+
+							" Azure portal.",
+						output.WithHighLightFormat(
+							"azd env set"+
+								" AZURE_LOCATION <location>"),
+					)
+				}
 
 				results = append(results, PreflightCheckResult{
 					Severity:     PreflightCheckWarning,

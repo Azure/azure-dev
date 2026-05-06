@@ -8,8 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/test/snapshot"
 	"github.com/stretchr/testify/require"
+
+	"github.com/azure/azure-dev/cli/azd/test/snapshot"
 )
 
 func TestPreflightReport_EmptyItems(t *testing.T) {

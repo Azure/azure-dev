@@ -91,13 +91,17 @@ func filterSubscriptionsByTenant(
 		return subscriptions
 	}
 
-	return slices.DeleteFunc(slices.Clone(subscriptions), func(sub account.Subscription) bool {
+	filtered := make([]account.Subscription, 0, len(subscriptions))
+	for _, sub := range subscriptions {
 		accessTenant := sub.UserAccessTenantId
 		if accessTenant == "" {
 			accessTenant = sub.TenantId
 		}
-		return accessTenant != tenantId
-	})
+		if accessTenant == tenantId {
+			filtered = append(filtered, sub)
+		}
+	}
+	return filtered
 }
 
 // filterByTenantEnvVar filters subscriptions by AZURE_TENANT_ID if set.

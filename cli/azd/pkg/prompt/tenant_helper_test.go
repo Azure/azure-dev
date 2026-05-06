@@ -271,9 +271,9 @@ func TestPromptSubscription_NoPromptMode_SkipsTenantPicker(t *testing.T) {
 
 	p, _ := newTestPrompterWithCtx(t, mockAccount, mockContext)
 
-	// In no-prompt mode with default subscription set, PromptSubscription should
-	// filter by AZURE_TENANT_ID and select the default without prompting.
-	// Set up the subscription select to pick first.
+	// In no-prompt mode the tenant picker is skipped, but AZURE_TENANT_ID
+	// filtering still applies. Subscription selection still goes through
+	// Console.Select (not bypassed by no-prompt in this legacy prompter path).
 	mockContext.Console.WhenSelect(func(opts input.ConsoleOptions) bool {
 		return strings.Contains(opts.Message, "Select a subscription")
 	}).Respond(0)

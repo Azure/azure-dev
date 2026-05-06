@@ -601,8 +601,8 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	url := buildResponsesURL(rc.projectEndpoint, rc.name, rc.apiVersion)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
+	respURL := buildResponsesURL(rc.projectEndpoint, rc.name, rc.apiVersion)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, respURL, bytes.NewReader(payload))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -613,7 +613,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	//nolint:gosec // G704: URL is built from a validated Foundry endpoint (env or --agent-endpoint)
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("POST %s failed: %w", url, err)
+		return fmt.Errorf("POST %s failed: %w", respURL, err)
 	}
 	defer resp.Body.Close()
 
@@ -626,7 +626,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 
 	if resp.StatusCode >= 400 {
 		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("POST %s failed with HTTP %d: %s\n%s", url, resp.StatusCode, resp.Status, string(respBody))
+		return fmt.Errorf("POST %s failed with HTTP %d: %s\n%s", respURL, resp.StatusCode, resp.Status, string(respBody))
 	}
 
 	// Parse SSE stream for agent output
@@ -1089,11 +1089,11 @@ func handleInvocationLRO(
 
 // createConversation creates a new Foundry conversation for multi-turn memory.
 func createConversation(ctx context.Context, projectEndpoint, agentName, bearerToken string) (string, error) {
-	url := fmt.Sprintf(
+	convURL := fmt.Sprintf(
 		"%s/agents/%s/endpoint/protocols/openai/conversations?api-version=%s",
 		projectEndpoint, agentName, ConversationsAPIVersion,
 	)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader([]byte("{}")))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, convURL, bytes.NewReader([]byte("{}")))
 	if err != nil {
 		return "", err
 	}
@@ -1103,13 +1103,13 @@ func createConversation(ctx context.Context, projectEndpoint, agentName, bearerT
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req) //nolint:gosec // G704: endpoint is resolved from azd environment configuration
 	if err != nil {
-		return "", fmt.Errorf("POST %s failed: %w", url, err)
+		return "", fmt.Errorf("POST %s failed: %w", convURL, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
 		respBody, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("POST %s failed with HTTP %d: %s\n%s", url, resp.StatusCode, resp.Status, string(respBody))
+		return "", fmt.Errorf("POST %s failed with HTTP %d: %s\n%s", convURL, resp.StatusCode, resp.Status, string(respBody))
 	}
 
 	body, err := io.ReadAll(resp.Body)

@@ -11,6 +11,7 @@ import (
 )
 
 func TestParseAgentEndpoint(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name        string
 		raw         string
@@ -162,6 +163,7 @@ func TestParseAgentEndpoint(t *testing.T) {
 // these inputs would previously have been accepted locally and only failed
 // later as 404s on the wire.
 func TestParseAgentEndpoint_RejectsInvalidAgentNames(t *testing.T) {
+	t.Parallel()
 	cases := []string{
 		// underscore — disallowed by the canonical validator
 		"agent_v2",
@@ -187,6 +189,7 @@ func TestParseAgentEndpoint_RejectsInvalidAgentNames(t *testing.T) {
 // TestBuildResponsesURL verifies that the responses URL builder uses the parsed
 // api-version (rather than the default fallback) and URL-encodes it.
 func TestBuildResponsesURL(t *testing.T) {
+	t.Parallel()
 	parsed, err := parseAgentEndpoint(
 		"https://acct.services.ai.azure.com/api/projects/proj/agents/echo/endpoint/protocols/openai/responses?api-version=2025-11-15-preview",
 	)
@@ -209,6 +212,7 @@ func TestBuildResponsesURL(t *testing.T) {
 // TestBuildInvocationsURL verifies that the invocations URL builder propagates
 // the parsed api-version, URL-encodes it, and URL-encodes any session id.
 func TestBuildInvocationsURL(t *testing.T) {
+	t.Parallel()
 	parsed, err := parseAgentEndpoint(
 		"https://acct.services.ai.azure.com/api/projects/proj/agents/hello/endpoint/protocols/invocations?api-version=2025-11-15-preview",
 	)
@@ -237,4 +241,74 @@ func TestBuildInvocationsURL(t *testing.T) {
 			t.Errorf("buildInvocationsURL did not escape api-version: %q", got)
 		}
 	})
+}
+
+// TestResolveRemoteContext_EphemeralMode exercises the ephemeral branch of
+// resolveRemoteContext (--agent-endpoint path). It pins the api-version
+// fallback (default applied when the URL omits the parameter) and the
+// override (parsed value used when present), plus verifies that name,
+// projectEndpoint, and agentKey are populated from the parsed endpoint.
+//
+// The project-mode branch is intentionally not covered here: it depends on
+// the azd gRPC client and is exercised end-to-end by the functional/live
+// tests in this PR's verification.
+func TestResolveRemoteContext_EphemeralMode(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		raw            string
+		wantAPIVersion string
+		wantName       string
+		wantProject    string
+	}{
+		{
+			name: "api-version omitted falls back to default",
+			raw: "https://acct.services.ai.azure.com/api/projects/proj/agents/" +
+				"hello/endpoint/protocols/openai/responses",
+			wantAPIVersion: DefaultAgentAPIVersion,
+			wantName:       "hello",
+			wantProject:    "https://acct.services.ai.azure.com/api/projects/proj",
+		},
+		{
+			name: "explicit api-version overrides the default",
+			raw: "https://acct.services.ai.azure.com/api/projects/proj/agents/" +
+				"hello/endpoint/protocols/invocations?api-version=2025-09-01-preview",
+			wantAPIVersion: "2025-09-01-preview",
+			wantName:       "hello",
+			wantProject:    "https://acct.services.ai.azure.com/api/projects/proj",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			parsed, err := parseAgentEndpoint(tc.raw)
+			if err != nil {
+				t.Fatalf("parseAgentEndpoint: %v", err)
+			}
+			a := &InvokeAction{flags: &invokeFlags{}, endpoint: parsed}
+
+			rc, err := a.resolveRemoteContext(t.Context())
+			if err != nil {
+				t.Fatalf("resolveRemoteContext: %v", err)
+			}
+			if rc.azdClient != nil {
+				defer rc.azdClient.Close()
+			}
+
+			if rc.apiVersion != tc.wantAPIVersion {
+				t.Errorf("apiVersion = %q, want %q", rc.apiVersion, tc.wantAPIVersion)
+			}
+			if rc.name != tc.wantName {
+				t.Errorf("name = %q, want %q", rc.name, tc.wantName)
+			}
+			if rc.projectEndpoint != tc.wantProject {
+				t.Errorf("projectEndpoint = %q, want %q", rc.projectEndpoint, tc.wantProject)
+			}
+			if rc.agentKey == "" {
+				t.Errorf("agentKey is empty; should be populated for ephemeral persistence")
+			}
+		})
+	}
 }

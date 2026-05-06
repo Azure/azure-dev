@@ -275,7 +275,10 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 		if installed {
 			installedVersion = installedExtension.Version
 
-			// Compare versions to determine if an update is available
+			// Compare versions to determine if an update is available.
+			// If either version string fails semver parsing (e.g., non-standard build tags),
+			// we silently fall back to showing "✓ Up to date" rather than erroring,
+			// since the list command should remain best-effort.
 			installedSemver, installedErr := semver.NewVersion(installedExtension.Version)
 			latestSemver, latestErr := semver.NewVersion(latestVersion)
 			if installedErr == nil && latestErr == nil {
@@ -311,6 +314,8 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 	}
 
 	if len(extensionRows) == 0 {
+		// NOTE: When no extensions found, we display a formatted message even for JSON output.
+		// This is existing azd behavior.
 		if a.flags.installed {
 			a.console.Message(ctx, output.WithWarningFormat("WARNING: No extensions installed.\n"))
 			a.console.Message(ctx, fmt.Sprintf(
@@ -338,16 +343,14 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 					Heading:       "ID",
 					ValueTemplate: "{{.Id}}",
 				},
-				Priority:    1,
-				Truncatable: true,
+				Priority: 1,
 			},
 			{
 				Column: output.Column{
 					Heading:       "NAME",
 					ValueTemplate: "{{.Name}}",
 				},
-				Priority:    3,
-				Truncatable: true,
+				Priority: 3,
 			},
 			{
 				Column: output.Column{
@@ -361,7 +364,7 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 					Heading:       "STATUS",
 					ValueTemplate: "{{.Status}}",
 				},
-				Priority:           2,
+				Priority:           1,
 				ShortValueTemplate: "{{.StatusSymbol}}",
 				ColorFunc:          extensionStatusColor,
 			},
@@ -370,7 +373,7 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 					Heading:       "SOURCE",
 					ValueTemplate: "{{.Source}}",
 				},
-				Priority: 4,
+				Priority: 1,
 			},
 		}
 

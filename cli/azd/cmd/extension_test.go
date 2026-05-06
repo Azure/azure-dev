@@ -12,6 +12,7 @@ import (
 	"github.com/Masterminds/semver/v3"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/fatih/color"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -648,6 +649,12 @@ func TestExtensionStatusSymbol(t *testing.T) {
 
 func TestExtensionStatusColor(t *testing.T) {
 	t.Parallel()
+
+	// Force color output on — fatih/color disables in non-TTY environments.
+	originalNoColor := color.NoColor
+	color.NoColor = false
+	defer func() { color.NoColor = originalNoColor }()
+
 	// Verify no panics and non-empty output for each status (full and symbol forms)
 	for _, s := range []string{
 		statusUpToDate, statusUpdate, statusIncompat, statusNotInstall,
@@ -655,5 +662,6 @@ func TestExtensionStatusColor(t *testing.T) {
 	} {
 		result := extensionStatusColor(s)
 		assert.NotEmpty(t, result, "color function should return non-empty for %q", s)
+		assert.Contains(t, result, "\x1b[", "expected ANSI color codes in output for %q", s)
 	}
 }

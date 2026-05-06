@@ -551,27 +551,68 @@ func TestPrettyUngroupedCards(t *testing.T) {
 	require.Contains(t, output, "Extension B")
 }
 
-func TestTruncateWithEllipsis(t *testing.T) {
-	tests := []struct {
-		input  string
-		maxLen int
-		want   string
-	}{
-		{"hello", 10, "hello"},
-		{"hello world", 5, "hell…"},
-		{"ab", 1, "…"},
-		{"abc", 3, "abc"},
-		{"abcd", 3, "ab…"},
-		{"", 5, ""},
-		{"日本語テスト", 4, "日本語…"},
+func TestPrettyEmptyData(t *testing.T) {
+	formatter := &PrettyTableFormatter{
+		ConsoleWidthFn: func() int { return 120 },
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			got := truncateWithEllipsis(tt.input, tt.maxLen)
-			require.Equal(t, tt.want, got)
-		})
+	buf := &bytes.Buffer{}
+	err := formatter.Format([]prettyInput{}, buf, PrettyTableFormatterOptions{
+		Columns: []PrettyColumn{
+			{Column: Column{Heading: "ID", ValueTemplate: "{{.Id}}"}, Priority: 1},
+			{Column: Column{Heading: "NAME", ValueTemplate: "{{.Name}}"}, Priority: 1},
+		},
+	})
+
+	require.NoError(t, err)
+	output := buf.String()
+
+	// Should produce header and underline but no data rows
+	require.Contains(t, output, "ID")
+	lines := strings.Split(strings.TrimRight(output, "\n"), "\n")
+	require.LessOrEqual(t, len(lines), 2, "expected at most header + underline for empty data")
+}
+
+func TestPrettySingleGroupCards(t *testing.T) {
+	rows := []prettyInput{
+		{Id: "ext-1", Name: "First", Version: "1.0", Status: "✓", Source: "azd"},
+		{Id: "ext-2", Name: "Second", Version: "2.0", Status: "✓", Source: "azd"},
+		{Id: "ext-3", Name: "Third", Version: "3.0", Status: "✓", Source: "azd"},
 	}
+
+	formatter := &PrettyTableFormatter{
+		ConsoleWidthFn: func() int { return 40 },
+	}
+
+	buf := &bytes.Buffer{}
+	err := formatter.Format(rows, buf, PrettyTableFormatterOptions{
+		Columns: []PrettyColumn{
+			{Column: Column{Heading: "NAME", ValueTemplate: "{{.Name}}"}, Priority: 1},
+			{Column: Column{Heading: "VERSION", ValueTemplate: "{{.Version}}"}, Priority: 1},
+			{Column: Column{Heading: "SOURCE", ValueTemplate: "{{.Source}}"}, Priority: 4},
+		},
+		CardGroupColumn: "SOURCE",
+	})
+
+	require.NoError(t, err)
+	output := buf.String()
+
+	// Only one group header should appear
+	require.Equal(t, 1, strings.Count(output, "── azd "), "expected exactly one group header")
+
+	// All items should be present
+	require.Contains(t, output, "First")
+	require.Contains(t, output, "Second")
+	require.Contains(t, output, "Third")
+
+	// No extra group separators (only one "──" line at the top)
+	headerLines := 0
+	for _, line := range strings.Split(output, "\n") {
+		if strings.HasPrefix(line, "── ") {
+			headerLines++
+		}
+	}
+	require.Equal(t, 1, headerLines, "expected exactly one group header line")
 }
 
 func TestPrettyTableANSIAlignment(t *testing.T) {

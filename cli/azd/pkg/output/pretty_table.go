@@ -291,6 +291,9 @@ func (f *PrettyTableFormatter) formatGroupedCards(
 				break
 			}
 		}
+		if groupColIdx < 0 {
+			return fmt.Errorf("CardGroupColumn %q does not match any column heading", options.CardGroupColumn)
+		}
 	}
 
 	// Resolve all row values
@@ -304,7 +307,7 @@ func (f *PrettyTableFormatter) formatGroupedCards(
 		for _, pc := range parsed {
 			val, err := prettyExecTemplate(pc.tmpl, row)
 			if err != nil {
-				return err
+				return fmt.Errorf("row %d, column %q: %w", ri, pc.col.Heading, err)
 			}
 			if pc.col.Transformer != nil {
 				val = pc.col.Transformer(val)
@@ -359,7 +362,10 @@ func (f *PrettyTableFormatter) formatGroupedCards(
 
 		for gi, group := range groupOrder {
 			// Group header: "── {value} ────────"
-			headerText := "── " + group + " "
+			// Strip ANSI codes from group value — it comes from template execution
+			// and may contain color codes if the column has a ColorFunc.
+			strippedGroup := ansiRegex.ReplaceAllString(group, "")
+			headerText := "── " + strippedGroup + " "
 			remaining := termWidth - displayWidth(headerText)
 			if remaining < 1 {
 				remaining = 1
@@ -460,19 +466,6 @@ func prettyExecTemplate(tmpl *template.Template, data any) (string, error) {
 		return "", err
 	}
 	return buf.String(), nil
-}
-
-// truncateWithEllipsis truncates s to maxLen characters, replacing the last char with "…".
-// It uses rune-based slicing to avoid splitting multi-byte Unicode characters.
-func truncateWithEllipsis(s string, maxLen int) string {
-	runes := []rune(s)
-	if len(runes) <= maxLen {
-		return s
-	}
-	if maxLen <= 1 {
-		return "…"
-	}
-	return string(runes[:maxLen-1]) + "…"
 }
 
 func sumWidths(widths []int) int {

@@ -275,11 +275,14 @@ func (ps *promptService) PromptSubscription(
 
 	hideId := isDemoModeEnabled()
 
-	// Use PromptCustomResource with pre-loaded data (no LoadData spinner needed)
+	// Use PromptCustomResource with pre-loaded data
 	subscriptions := make([]*account.Subscription, len(subscriptionList))
-	for i, subscription := range subscriptionList {
-		subscriptions[i] = &subscription
+	for i := range subscriptionList {
+		subscriptions[i] = &subscriptionList[i]
 	}
+
+	// Clear loading message since data is already loaded (avoids a redundant spinner)
+	mergedOptions.LoadingMessage = ""
 
 	return PromptCustomResource(ctx, CustomResourceOptions[account.Subscription]{
 		SelectorOptions: mergedOptions,

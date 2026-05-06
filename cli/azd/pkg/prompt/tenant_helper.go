@@ -93,7 +93,9 @@ func filterSubscriptionsByTenant(
 }
 
 // filterByTenantEnvVar filters subscriptions by AZURE_TENANT_ID if set.
-// This is applied in both prompt and no-prompt modes to ensure env var is authoritative.
+// This is applied in both prompt and no-prompt modes.
+// If the env var is set but no subscriptions match (e.g. stale tenant ID),
+// the filter is a no-op and returns all subscriptions to avoid blocking the user.
 func filterByTenantEnvVar(subscriptions []account.Subscription) []account.Subscription {
 	tenantId := os.Getenv(environment.TenantIdEnvVarName)
 	if tenantId == "" {

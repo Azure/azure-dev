@@ -1,0 +1,69 @@
+# Required Approval Gate for azure.ai.agents Extension
+#
+# Purpose: Ensures at least one designated team member approves PRs that modify
+# the azure.ai.agents extension before they can merge.
+#
+# Behavior:
+# - This check is ADDITIVE to GitHub CODEOWNERS — both must be satisfied to merge.
+# - Approval must come from a member of the requiredApprovers list on the current
+#   HEAD commit (stale approvals are rejected after new pushes).
+# - Override (break-glass): A member of the requiredApprovers list can post
+#   "/agents-extension-approval override" as a PR comment to bypass the approval
+#   requirement. The override must be posted after the latest push to be valid.
+#   This is intended as an emergency escape hatch, not routine workflow.
+# - Fork PRs: External contributors from forks have restricted token permissions.
+#   If API calls fail with 403, the check reports a clear error rather than crashing.
+#
+# To change the required approvers list, update the array in
+# .github/scripts/approval-ext-azure-ai-agents.js.
+
+name: ext-azure-ai-agents-approval
+
+on:
+  pull_request:
+    paths:
+      - "cli/azd/extensions/azure.ai.agents/**"
+      - ".github/workflows/approval-ext-azure-ai-agents.yml"
+      - ".github/scripts/approval-ext-azure-ai-agents.js"
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  # GitHub Actions does not support `paths:` filters on pull_request_review or
+  # issue_comment events. The script performs a runtime path check to compensate.
+  pull_request_review:
+    types: [submitted]
+  issue_comment:
+    types: [created]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+  statuses: write
+
+jobs:
+  required-approval:
+    name: Required Approval
+    # For issue_comment, only run if the comment is on a PR and contains the
+    # override phrase. The job-level `contains()` is a coarse pre-filter to avoid
+    # spinning up the runner for irrelevant comments; the script enforces exact
+    # match and authorization checks.
+    if: |
+      github.event_name == 'pull_request' ||
+      github.event_name == 'pull_request_review' ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request && contains(github.event.comment.body, '/agents-extension-approval override'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check for required team approval
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const script = require('./.github/scripts/approval-ext-azure-ai-agents.js');
+            await script({ github, context, core });

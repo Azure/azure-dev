@@ -34,6 +34,8 @@ words:
   # CDN host name
   - gfgac2cmf7b8cuay
   - Getenv
+  - GOWORK
+  - Gowork
   - goversioninfo
   - OPENCODE
   - opencode
@@ -438,6 +440,13 @@ overrides:
       - VISIO
       - WEBREFERENCES
       - sharepointonline
+  - filename: pkg/tool/manifest.go
+    words:
+      - azureresourcegroups
+  - filename: pkg/tool/installer.go
+    words:
+      - filesystems
+      - redirections
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

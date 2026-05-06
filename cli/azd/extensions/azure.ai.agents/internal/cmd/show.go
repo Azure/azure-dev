@@ -36,8 +36,9 @@ type ShowAction struct {
 	serviceKey string
 }
 
-func newShowCommand() *cobra.Command {
+func newShowCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &showFlags{}
+	extCtx = ensureExtensionContext(extCtx)
 
 	cmd := &cobra.Command{
 		Use:   "show [name]",
@@ -60,9 +61,9 @@ configuration and the current azd environment. Optionally specify the service na
 			if len(args) > 0 {
 				flags.name = args[0]
 			}
+			flags.output = extCtx.OutputFormat
+
 			ctx := azdext.WithAccessToken(cmd.Context())
-			logCleanup := setupDebugLogging(cmd.Flags())
-			defer logCleanup()
 
 			azdClient, err := azdext.NewAzdClient()
 			if err != nil {
@@ -70,7 +71,7 @@ configuration and the current azd environment. Optionally specify the service na
 			}
 			defer azdClient.Close()
 
-			info, err := resolveAgentServiceFromProject(ctx, azdClient, flags.name, rootFlags.NoPrompt)
+			info, err := resolveAgentServiceFromProject(ctx, azdClient, flags.name, extCtx.NoPrompt)
 			if err != nil {
 				return err
 			}
@@ -113,7 +114,11 @@ configuration and the current azd environment. Optionally specify the service na
 		},
 	}
 
-	cmd.Flags().StringVarP(&flags.output, "output", "o", "json", "Output format (json or table)")
+	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
+		Name:          "output",
+		AllowedValues: []string{"json", "table"},
+		Default:       "json",
+	})
 
 	return cmd
 }

@@ -24,7 +24,9 @@ type filesFlags struct {
 	session   string // optional: explicit session ID override
 }
 
-func newFilesCommand() *cobra.Command {
+func newFilesCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
+	extCtx = ensureExtensionContext(extCtx)
+
 	cmd := &cobra.Command{
 		Use:   "files",
 		Short: "Manage files in a hosted agent session.",
@@ -37,26 +39,14 @@ Agent details (name, endpoint) are automatically resolved from the
 azd environment. Use --agent-name to select a specific agent when the project
 has multiple azure.ai.agent services. The session ID is automatically resolved
 from the last invoke session, or can be overridden with --session-id.`,
-		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-			// Chain with root's PersistentPreRunE (root sets NoPrompt).
-			// Note: cmd.Parent() would return the "files" command itself when
-			// a subcommand runs, causing infinite recursion.
-			if root := cmd.Root(); root != nil && root.PersistentPreRunE != nil {
-				if err := root.PersistentPreRunE(cmd, args); err != nil {
-					return err
-				}
-			}
-
-			return nil
-		},
 	}
 
-	cmd.AddCommand(newFilesUploadCommand())
-	cmd.AddCommand(newFilesDownloadCommand())
-	cmd.AddCommand(newFilesListCommand())
-	cmd.AddCommand(newFilesRemoveCommand())
-	cmd.AddCommand(newFilesMkdirCommand())
-	cmd.AddCommand(newFilesStatCommand())
+	cmd.AddCommand(newFilesUploadCommand(extCtx))
+	cmd.AddCommand(newFilesDownloadCommand(extCtx))
+	cmd.AddCommand(newFilesListCommand(extCtx))
+	cmd.AddCommand(newFilesRemoveCommand(extCtx))
+	cmd.AddCommand(newFilesMkdirCommand(extCtx))
+	cmd.AddCommand(newFilesStatCommand(extCtx))
 
 	return cmd
 }
@@ -74,14 +64,14 @@ type filesContext struct {
 }
 
 // resolveFilesContext resolves agent details and session from the azd environment.
-func resolveFilesContext(ctx context.Context, flags *filesFlags) (*filesContext, error) {
+func resolveFilesContext(ctx context.Context, flags *filesFlags, noPrompt bool) (*filesContext, error) {
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create azd client: %w", err)
 	}
 	defer azdClient.Close()
 
-	info, err := resolveAgentServiceFromProject(ctx, azdClient, flags.agentName, rootFlags.NoPrompt)
+	info, err := resolveAgentServiceFromProject(ctx, azdClient, flags.agentName, noPrompt)
 	if err != nil {
 		return nil, err
 	}
@@ -137,8 +127,9 @@ type FilesUploadAction struct {
 	sessionID string
 }
 
-func newFilesUploadCommand() *cobra.Command {
+func newFilesUploadCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &filesUploadFlags{}
+	extCtx = ensureExtensionContext(extCtx)
 
 	cmd := &cobra.Command{
 		Use:   "upload [file]",
@@ -161,8 +152,6 @@ Agent details are automatically resolved from the azd environment.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
-			logCleanup := setupDebugLogging(cmd.Flags())
-			defer logCleanup()
 
 			if len(args) > 0 && flags.file == "" {
 				flags.file = args[0]
@@ -174,7 +163,7 @@ Agent details are automatically resolved from the azd environment.`,
 				)
 			}
 
-			fc, err := resolveFilesContext(ctx, &flags.filesFlags)
+			fc, err := resolveFilesContext(ctx, &flags.filesFlags, extCtx.NoPrompt)
 			if err != nil {
 				return err
 			}
@@ -246,8 +235,9 @@ type FilesDownloadAction struct {
 	sessionID string
 }
 
-func newFilesDownloadCommand() *cobra.Command {
+func newFilesDownloadCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &filesDownloadFlags{}
+	extCtx = ensureExtensionContext(extCtx)
 
 	cmd := &cobra.Command{
 		Use:   "download [file]",
@@ -270,8 +260,6 @@ Agent details are automatically resolved from the azd environment.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
-			logCleanup := setupDebugLogging(cmd.Flags())
-			defer logCleanup()
 
 			if len(args) > 0 && flags.file == "" {
 				flags.file = args[0]
@@ -283,7 +271,7 @@ Agent details are automatically resolved from the azd environment.`,
 				)
 			}
 
-			fc, err := resolveFilesContext(ctx, &flags.filesFlags)
+			fc, err := resolveFilesContext(ctx, &flags.filesFlags, extCtx.NoPrompt)
 			if err != nil {
 				return err
 			}
@@ -359,8 +347,9 @@ type FilesListAction struct {
 	remotePath string
 }
 
-func newFilesListCommand() *cobra.Command {
+func newFilesListCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &filesListFlags{}
+	extCtx = ensureExtensionContext(extCtx)
 
 	cmd := &cobra.Command{
 		Use:     "list [remote-path]",
@@ -385,11 +374,11 @@ Agent details are automatically resolved from the azd environment.`,
   azd ai agent files list --session-id <session-id>`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := azdext.WithAccessToken(cmd.Context())
-			logCleanup := setupDebugLogging(cmd.Flags())
-			defer logCleanup()
+			flags.output = extCtx.OutputFormat
 
-			fc, err := resolveFilesContext(ctx, &flags.filesFlags)
+			ctx := azdext.WithAccessToken(cmd.Context())
+
+			fc, err := resolveFilesContext(ctx, &flags.filesFlags, extCtx.NoPrompt)
 			if err != nil {
 				return err
 			}
@@ -411,7 +400,11 @@ Agent details are automatically resolved from the azd environment.`,
 	}
 
 	addFilesFlags(cmd, &flags.filesFlags)
-	cmd.Flags().StringVar(&flags.output, "output", "json", "Output format (json or table)")
+	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
+		Name:          "output",
+		AllowedValues: []string{"json", "table"},
+		Default:       "json",
+	})
 
 	return cmd
 }
@@ -486,9 +479,10 @@ type FilesRemoveAction struct {
 	remotePath string
 }
 
-func newFilesRemoveCommand() *cobra.Command {
+func newFilesRemoveCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &filesRemoveFlags{}
 	var filePath string
+	extCtx = ensureExtensionContext(extCtx)
 
 	cmd := &cobra.Command{
 		Use:     "delete [file]",
@@ -511,8 +505,6 @@ Agent details are automatically resolved from the azd environment.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
-			logCleanup := setupDebugLogging(cmd.Flags())
-			defer logCleanup()
 
 			if len(args) > 0 && filePath == "" {
 				filePath = args[0]
@@ -524,7 +516,7 @@ Agent details are automatically resolved from the azd environment.`,
 				)
 			}
 
-			fc, err := resolveFilesContext(ctx, &flags.filesFlags)
+			fc, err := resolveFilesContext(ctx, &flags.filesFlags, extCtx.NoPrompt)
 			if err != nil {
 				return err
 			}
@@ -579,9 +571,10 @@ type FilesMkdirAction struct {
 	remotePath string
 }
 
-func newFilesMkdirCommand() *cobra.Command {
+func newFilesMkdirCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &filesFlags{}
 	var dirPath string
+	extCtx = ensureExtensionContext(extCtx)
 
 	cmd := &cobra.Command{
 		Use:   "mkdir [dir]",
@@ -600,8 +593,6 @@ Agent details are automatically resolved from the azd environment.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
-			logCleanup := setupDebugLogging(cmd.Flags())
-			defer logCleanup()
 
 			if len(args) > 0 && dirPath == "" {
 				dirPath = args[0]
@@ -613,7 +604,7 @@ Agent details are automatically resolved from the azd environment.`,
 				)
 			}
 
-			fc, err := resolveFilesContext(ctx, flags)
+			fc, err := resolveFilesContext(ctx, flags, extCtx.NoPrompt)
 			if err != nil {
 				return err
 			}
@@ -671,8 +662,9 @@ type FilesStatAction struct {
 	remotePath string
 }
 
-func newFilesStatCommand() *cobra.Command {
+func newFilesStatCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &filesStatFlags{}
+	extCtx = ensureExtensionContext(extCtx)
 
 	cmd := &cobra.Command{
 		Use:   "stat <remote-path>",
@@ -692,11 +684,11 @@ Agent details are automatically resolved from the azd environment.`,
   azd ai agent files stat /data/output.csv --session-id <session-id>`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := azdext.WithAccessToken(cmd.Context())
-			logCleanup := setupDebugLogging(cmd.Flags())
-			defer logCleanup()
+			flags.output = extCtx.OutputFormat
 
-			fc, err := resolveFilesContext(ctx, &flags.filesFlags)
+			ctx := azdext.WithAccessToken(cmd.Context())
+
+			fc, err := resolveFilesContext(ctx, &flags.filesFlags, extCtx.NoPrompt)
 			if err != nil {
 				return err
 			}
@@ -713,7 +705,11 @@ Agent details are automatically resolved from the azd environment.`,
 	}
 
 	addFilesFlags(cmd, &flags.filesFlags)
-	cmd.Flags().StringVarP(&flags.output, "output", "o", "json", "Output format (json or table)")
+	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
+		Name:          "output",
+		AllowedValues: []string{"json", "table"},
+		Default:       "json",
+	})
 
 	return cmd
 }

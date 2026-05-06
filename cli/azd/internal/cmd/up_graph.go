@@ -597,14 +597,88 @@ func (u *UpGraphAction) Run(
 		log.Printf("warning: failed to invalidate state cache: %v", cacheErr)
 	}
 
+	// Emit per-phase duration telemetry for backend performance tracking.
+	totalMs := since(startTime).Milliseconds()
+	tracing.SetUsageAttributes(fields.PerfTotalDurationMs.Int64(totalMs))
+	provDur, deployDur := phaseDurations(result.Steps)
+	if provDur > 0 {
+		tracing.SetUsageAttributes(fields.PerfProvisionDurationMs.Int64(provDur.Milliseconds()))
+	}
+	if deployDur > 0 {
+		tracing.SetUsageAttributes(fields.PerfDeployDurationMs.Int64(deployDur.Milliseconds()))
+	}
+
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header: fmt.Sprintf(
 				"Your application was provisioned and deployed to Azure in %s.",
 				ux.DurationAsText(since(startTime)),
 			),
+			FollowUp: phaseTimingBreakdown(result.Steps),
 		},
 	}, nil
+}
+
+// phaseTimingBreakdown computes wall-clock durations for provisioning and deploying phases
+// by finding the earliest start and latest end among matching steps.
+// Package/publish steps run concurrently with provisioning, so they are excluded from the
+// deploy window to avoid showing a deploy duration that exceeds the total.
+func phaseTimingBreakdown(steps []exegraph.StepTiming) string {
+	provDur, deployDur := phaseDurations(steps)
+
+	var lines []string
+	if provDur > 0 {
+		lines = append(lines, fmt.Sprintf("  Provisioning: %s", ux.DurationAsText(provDur)))
+	}
+	if deployDur > 0 {
+		lines = append(lines, fmt.Sprintf("  Deploying:    %s", ux.DurationAsText(deployDur)))
+	}
+
+	if len(lines) == 0 {
+		return ""
+	}
+	return strings.Join(lines, "\n")
+}
+
+// phaseDurations computes the wall-clock duration for provisioning and deploying phases.
+// Returns zero durations for phases that were not executed.
+func phaseDurations(steps []exegraph.StepTiming) (provision, deploy time.Duration) {
+	var provStart, deployStart time.Time
+	var provEnd, deployEnd time.Time
+
+	for _, st := range steps {
+		if st.Status == exegraph.StepSkipped {
+			continue
+		}
+		switch {
+		case strings.HasPrefix(st.Name, "provision-") ||
+			strings.HasPrefix(st.Name, "cmdhook-preprovision") ||
+			strings.HasPrefix(st.Name, "cmdhook-postprovision"):
+			if provStart.IsZero() || st.Start.Before(provStart) {
+				provStart = st.Start
+			}
+			if st.End.After(provEnd) {
+				provEnd = st.End
+			}
+		case strings.HasPrefix(st.Name, "deploy-") ||
+			strings.HasPrefix(st.Name, "cmdhook-predeploy") ||
+			strings.HasPrefix(st.Name, "cmdhook-postdeploy"):
+			if deployStart.IsZero() || st.Start.Before(deployStart) {
+				deployStart = st.Start
+			}
+			if st.End.After(deployEnd) {
+				deployEnd = st.End
+			}
+		}
+	}
+
+	if !provStart.IsZero() {
+		provision = provEnd.Sub(provStart)
+	}
+	if !deployStart.IsZero() {
+		deploy = deployEnd.Sub(deployStart)
+	}
+	return provision, deploy
 }
 
 // changedFlagNames returns the names of flags that were explicitly set on

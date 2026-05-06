@@ -23,10 +23,8 @@ const (
 type AgentKind string
 
 const (
-	AgentKindPrompt       AgentKind = "prompt"
-	AgentKindHosted       AgentKind = "hosted"
-	AgentKindContainerApp AgentKind = "container_app"
-	AgentKindWorkflow     AgentKind = "workflow"
+	AgentKindHosted   AgentKind = "hosted"
+	AgentKindWorkflow AgentKind = "workflow"
 )
 
 // AgentEventType represents the types of events that can be handled
@@ -79,56 +77,6 @@ type HostedAgentDefinition struct {
 type ImageBasedHostedAgentDefinition struct {
 	HostedAgentDefinition
 	Image string `json:"image"`
-}
-
-// ContainerAppAgentDefinition represents a container app agent
-type ContainerAppAgentDefinition struct {
-	AgentDefinition
-	ContainerProtocolVersions []ProtocolVersionRecord `json:"container_protocol_versions"`
-	ContainerAppResourceID    string                  `json:"container_app_resource_id"`
-	IngressSubdomainSuffix    string                  `json:"ingress_subdomain_suffix"`
-}
-
-// ResponseTextFormatConfiguration represents text format configuration
-type ResponseTextFormatConfiguration struct {
-	// Implementation depends on OpenAI package structure
-	// This is a placeholder for the actual OpenAI response format configuration
-	Type string `json:"type,omitempty"`
-}
-
-// Reasoning represents OpenAI reasoning configuration
-type Reasoning struct {
-	// Implementation depends on OpenAI package structure
-	// This is a placeholder for the actual OpenAI reasoning structure
-	Effort string `json:"effort,omitempty"`
-}
-
-// ToolArgumentBinding represents binding configuration for tool arguments
-type ToolArgumentBinding struct {
-	ToolName     *string `json:"tool_name,omitempty"`
-	ArgumentName string  `json:"argument_name"`
-}
-
-// StructuredInputDefinition represents a structured input definition
-type StructuredInputDefinition struct {
-	Description          *string               `json:"description,omitempty"`
-	DefaultValue         any                   `json:"default_value,omitempty"`
-	ToolArgumentBindings []ToolArgumentBinding `json:"tool_argument_bindings,omitempty"`
-	Schema               any                   `json:"schema,omitempty"`
-	Required             *bool                 `json:"required,omitempty"`
-}
-
-// PromptAgentDefinition represents a prompt-based agent
-type PromptAgentDefinition struct {
-	AgentDefinition
-	Model            string                               `json:"model"`
-	Instructions     *string                              `json:"instructions,omitempty"`
-	Temperature      *float32                             `json:"temperature,omitempty"`
-	TopP             *float32                             `json:"top_p,omitempty"`
-	Reasoning        *Reasoning                           `json:"reasoning,omitempty"`
-	Tools            []any                                `json:"tools,omitempty"` // Must be a type of Tool
-	Text             *ResponseTextFormatConfiguration     `json:"text,omitempty"`
-	StructuredInputs map[string]StructuredInputDefinition `json:"structured_inputs,omitempty"`
 }
 
 // CreateAgentVersionRequest represents a request to create an agent version

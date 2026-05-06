@@ -250,6 +250,144 @@ func TestBicepDestroyLogAnalyticsWorkspace(t *testing.T) {
 	})
 }
 
+func TestWarnExternalResourceGroup(t *testing.T) {
+	setupProvider := func(t *testing.T, mockContext *mocks.MockContext) *BicepProvider {
+		t.Helper()
+		env := environment.NewWithValues("test-env", map[string]string{
+			environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
+		})
+		resourceService := azapi.NewResourceService(
+			mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions,
+		)
+		return &BicepProvider{
+			env:             env,
+			console:         mockContext.Console,
+			resourceService: resourceService,
+		}
+	}
+
+	mockRGResponse := func(
+		mockContext *mocks.MockContext, rgName string, tags map[string]*string,
+	) {
+		mockContext.HttpClient.When(func(req *http.Request) bool {
+			return req.Method == http.MethodGet &&
+				strings.Contains(req.URL.Path, "/resourcegroups/"+rgName)
+		}).RespondFn(func(req *http.Request) (*http.Response, error) {
+			return mocks.CreateHttpResponseWithBody(req, http.StatusOK,
+				armresources.ResourceGroup{
+					ID:       new("/subscriptions/SUBSCRIPTION_ID/resourceGroups/" + rgName),
+					Name:     new(rgName),
+					Location: new("eastus"),
+					Tags:     tags,
+				})
+		})
+	}
+
+	t.Run("SkipsWhenForced", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(t.Context())
+		provider := setupProvider(t, mockContext)
+		options := provisioning.NewDestroyOptions(true, false)
+
+		confirmed, err := provider.warnExternalResourceGroup(
+			*mockContext.Context, options, "my-rg", nil, 0,
+		)
+		require.NoError(t, err)
+		assert.True(t, confirmed)
+	})
+
+	t.Run("NoWarningWhenRGHasMatchingTag", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(t.Context())
+		mockRGResponse(mockContext, "my-rg", map[string]*string{
+			"azd-env-name": new("test-env"),
+		})
+		provider := setupProvider(t, mockContext)
+		options := provisioning.NewDestroyOptions(false, false)
+
+		confirmed, err := provider.warnExternalResourceGroup(
+			*mockContext.Context, options, "my-rg", nil, 0,
+		)
+		require.NoError(t, err)
+		assert.False(t, confirmed)
+	})
+
+	t.Run("WarnsWhenRGHasMismatchedTag", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(t.Context())
+		mockRGResponse(mockContext, "my-rg", map[string]*string{
+			"azd-env-name": new("other-env"),
+		})
+		provider := setupProvider(t, mockContext)
+		options := provisioning.NewDestroyOptions(false, false)
+
+		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
+			return true
+		}).Respond(false)
+
+		_, err := provider.warnExternalResourceGroup(
+			*mockContext.Context, options, "my-rg", nil, 0,
+		)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "user denied delete confirmation")
+	})
+
+	t.Run("WarnsAndDeniesWhenRGHasNoTag", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(t.Context())
+		mockRGResponse(mockContext, "my-rg", nil)
+		provider := setupProvider(t, mockContext)
+		options := provisioning.NewDestroyOptions(false, false)
+
+		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
+			// Verify DefaultValue is false — this is what --no-prompt uses to deny by default
+			assert.False(t, options.DefaultValue.(bool))
+			return true
+		}).Respond(false)
+
+		_, err := provider.warnExternalResourceGroup(
+			*mockContext.Context, options, "my-rg", nil, 0,
+		)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "user denied delete confirmation")
+	})
+
+	t.Run("ProceedsWhenUserConfirms", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(t.Context())
+		mockRGResponse(mockContext, "my-rg", nil)
+		provider := setupProvider(t, mockContext)
+		options := provisioning.NewDestroyOptions(false, false)
+
+		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
+			return true
+		}).Respond(true)
+
+		confirmed, err := provider.warnExternalResourceGroup(
+			*mockContext.Context, options, "my-rg", nil, 0,
+		)
+		require.NoError(t, err)
+		assert.True(t, confirmed)
+	})
+
+	t.Run("FailsClosedWhenGetRGErrors", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(t.Context())
+		mockContext.HttpClient.When(func(req *http.Request) bool {
+			return req.Method == http.MethodGet &&
+				strings.Contains(req.URL.Path, "/resourcegroups/my-rg")
+		}).RespondFn(func(req *http.Request) (*http.Response, error) {
+			return mocks.CreateEmptyHttpResponse(req, http.StatusInternalServerError)
+		})
+		provider := setupProvider(t, mockContext)
+		options := provisioning.NewDestroyOptions(false, false)
+
+		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
+			return true
+		}).Respond(false)
+
+		_, err := provider.warnExternalResourceGroup(
+			*mockContext.Context, options, "my-rg", nil, 0,
+		)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "user denied delete confirmation")
+	})
+}
+
 func TestDeploymentForResourceGroup(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
 

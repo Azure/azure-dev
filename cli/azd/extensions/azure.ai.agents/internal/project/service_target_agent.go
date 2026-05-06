@@ -519,21 +519,11 @@ func (p *AgentServiceTargetProvider) Deploy(
 		return nil, exterrors.Validation(
 			exterrors.CodeMissingAgentKind,
 			"kind field is missing or not a valid string in agent.yaml",
-			"add a valid 'kind' field (e.g., 'prompt' or 'hosted') to agent.yaml",
+			"add a valid 'kind' field (e.g., 'hosted') to agent.yaml",
 		)
 	}
 
 	switch kind {
-	case string(agent_yaml.AgentKindPrompt):
-		var agentDef agent_yaml.PromptAgent
-		if err := yaml.Unmarshal(data, &agentDef); err != nil {
-			return nil, exterrors.Validation(
-				exterrors.CodeInvalidAgentManifest,
-				fmt.Sprintf("YAML content is not valid for prompt agent deploy: %s", err),
-				"fix the agent.yaml to match the prompt agent schema",
-			)
-		}
-		return p.deployPromptAgent(ctx, serviceConfig, agentDef, azdEnv)
 	case string(agent_yaml.AgentKindHosted):
 		var agentDef agent_yaml.ContainerAgent
 		if err := yaml.Unmarshal(data, &agentDef); err != nil {
@@ -548,7 +538,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 		return nil, exterrors.Validation(
 			exterrors.CodeUnsupportedAgentKind,
 			fmt.Sprintf("unsupported agent kind: %s", kind),
-			"use a supported kind: 'prompt' or 'hosted'",
+			"use a supported kind: 'hosted'",
 		)
 	}
 }
@@ -576,71 +566,6 @@ func (p *AgentServiceTargetProvider) isContainerAgent() bool {
 	}
 
 	return kind == string(agent_yaml.AgentKindHosted)
-}
-
-// deployPromptAgent handles deployment of prompt-based agents
-func (p *AgentServiceTargetProvider) deployPromptAgent(
-	ctx context.Context,
-	serviceConfig *azdext.ServiceConfig,
-	agentDef agent_yaml.PromptAgent,
-	azdEnv map[string]string,
-) (*azdext.ServiceDeployResult, error) {
-	// Check if environment variable is set
-	if azdEnv["AZURE_AI_PROJECT_ENDPOINT"] == "" {
-		return nil, exterrors.Dependency(
-			exterrors.CodeMissingAiProjectEndpoint,
-			"AZURE_AI_PROJECT_ENDPOINT is required: environment variable was not found in the current azd environment",
-			"run 'azd provision' or connect to an existing project via 'azd ai agent init --project-id <resource-id>'",
-		)
-	}
-
-	fmt.Fprintf(os.Stderr, "Deploying Prompt Agent\n")
-	fmt.Fprintf(os.Stderr, "======================\n")
-	fmt.Fprintf(os.Stderr, "Loaded configuration from: %s\n", p.agentDefinitionPath)
-	fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["AZURE_AI_PROJECT_ENDPOINT"])
-	fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentDef.Name)
-
-	// Create agent request (no image URL needed for prompt agents)
-	request, err := agent_yaml.CreateAgentAPIRequestFromDefinition(agentDef)
-	if err != nil {
-		return nil, exterrors.Validation(
-			exterrors.CodeInvalidAgentRequest,
-			fmt.Sprintf("failed to create agent request from definition: %s", err),
-			"verify the agent.yaml definition is correct",
-		)
-	}
-
-	// Display agent information
-	p.displayAgentInfo(request)
-
-	// Create and deploy agent
-	agentVersionResponse, err := p.createAgent(ctx, request, azdEnv)
-	if err != nil {
-		return nil, err
-	}
-
-	// Register agent info in environment (prompt agents use the responses protocol)
-	promptProtocols := []agent_yaml.ProtocolVersionRecord{
-		{Protocol: string(agent_api.AgentProtocolResponses), Version: "1.0.0"},
-	}
-	err = p.registerAgentEnvironmentVariables(ctx, azdEnv, serviceConfig, agentVersionResponse, promptProtocols)
-	if err != nil {
-		return nil, err
-	}
-
-	fmt.Fprintf(os.Stderr, "Prompt agent '%s' deployed successfully!\n", agentVersionResponse.Name)
-
-	artifacts := p.deployArtifacts(
-		agentVersionResponse.Name,
-		agentVersionResponse.Version,
-		azdEnv["AZURE_AI_PROJECT_ID"],
-		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
-		promptProtocols,
-	)
-
-	return &azdext.ServiceDeployResult{
-		Artifacts: artifacts,
-	}, nil
 }
 
 // deployHostedAgent deploys a container-based hosted agent to the Foundry service.
@@ -954,19 +879,7 @@ func (p *AgentServiceTargetProvider) displayAgentInfo(request *agent_api.CreateA
 	fmt.Fprintf(os.Stderr, "Description: %s\n", description)
 
 	// Display agent-specific information
-	if promptDef, ok := request.Definition.(agent_api.PromptAgentDefinition); ok {
-		fmt.Fprintf(os.Stderr, "Model: %s\n", promptDef.Model)
-		instructions := "No instructions"
-		if promptDef.Instructions != nil {
-			inst := *promptDef.Instructions
-			if len(inst) > 50 {
-				instructions = inst[:50] + "..."
-			} else {
-				instructions = inst
-			}
-		}
-		fmt.Fprintf(os.Stderr, "Instructions: %s\n", instructions)
-	} else if imageHostedDef, ok := request.Definition.(agent_api.ImageBasedHostedAgentDefinition); ok {
+	if imageHostedDef, ok := request.Definition.(agent_api.ImageBasedHostedAgentDefinition); ok {
 		fmt.Fprintf(os.Stderr, "Image: %s\n", imageHostedDef.Image)
 		fmt.Fprintf(os.Stderr, "CPU: %s\n", imageHostedDef.CPU)
 		fmt.Fprintf(os.Stderr, "Memory: %s\n", imageHostedDef.Memory)

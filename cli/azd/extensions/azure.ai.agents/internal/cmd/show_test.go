@@ -14,19 +14,19 @@ import (
 )
 
 func TestShowCommand_AcceptsPositionalArg(t *testing.T) {
-	cmd := newShowCommand()
+	cmd := newShowCommand(nil)
 	err := cmd.Args(cmd, []string{"my-agent"})
 	assert.NoError(t, err)
 }
 
 func TestShowCommand_AcceptsNoArgs(t *testing.T) {
-	cmd := newShowCommand()
+	cmd := newShowCommand(nil)
 	err := cmd.Args(cmd, []string{})
 	assert.NoError(t, err)
 }
 
 func TestShowCommand_RejectsMultipleArgs(t *testing.T) {
-	cmd := newShowCommand()
+	cmd := newShowCommand(nil)
 	err := cmd.Args(cmd, []string{"svc1", "svc2"})
 	assert.Error(t, err)
 }
@@ -67,11 +67,9 @@ func TestNewAgentContext_PartialFlags(t *testing.T) {
 	assert.Contains(t, err.Error(), "both --account-name and --project-name must be provided together")
 }
 
-func TestShowCommand_DefaultOutputFlag(t *testing.T) {
-	cmd := newShowCommand()
-
-	output, _ := cmd.Flags().GetString("output")
-	assert.Equal(t, "json", output)
+func TestShowCommand_DefaultOutputFormat(t *testing.T) {
+	cmd := newShowCommand(nil)
+	assertOutputFlagOptions(t, cmd, "json", []string{"json", "table"})
 }
 
 func TestPrintAgentVersionJSON(t *testing.T) {

@@ -168,17 +168,40 @@ func TestDeployProgressTracker_DetailTruncation(t *testing.T) {
 func TestDeployProgressTracker_ServiceNameWithANSI(t *testing.T) {
 	// Security: service names come from azure.yaml and could contain
 	// ANSI escape codes that hijack terminal output. The progress
-	// tracker should not crash or produce malformed output with such
-	// names. This is a defense-in-depth test—injection requires a
-	// malicious azure.yaml the user already controls.
+	// tracker should strip them to prevent terminal manipulation.
 	ansiName := "\033[31mevil\033[0m"
 	var buf bytes.Buffer
 	tracker := newDeployProgressTracker(&buf, false, []string{ansiName})
 
-	// Should not panic
 	tracker.Update(ansiName, phasePackaging, "building")
 	output := buf.String()
-	assert.Contains(t, output, "Packaging")
+	assert.Contains(t, output, "evil: Packaging")
+	assert.NotContains(t, output, "\033[")
+}
+
+func TestSanitizeServiceName(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"plain", "web-api", "web-api"},
+		{"ansi_color", "\033[31mred\033[0m", "red"},
+		{"ansi_csi_bold", "\033[1mbold\033[22m", "bold"},
+		{"csi_tilde_final", "\033[15~keypress", "keypress"},
+		{"osc_title", "\033]0;title\x07rest", "rest"},
+		{"osc_st_terminator", "\033]0;title\033\\rest", "rest"},
+		{"null_bytes", "svc\x00name", "svcname"},
+		{"control_chars", "hello\x01\x02world", "helloworld"},
+		{"tab_preserved", "svc\tname", "svc\tname"},
+		{"unicode_printable", "café-svc", "café-svc"},
+		{"empty", "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, sanitizeServiceName(tt.in))
+		})
+	}
 }
 
 func TestDeployProgressTracker_EmptyServiceList(t *testing.T) {

@@ -24,7 +24,7 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestSessionCommand_HasSubcommands(t *testing.T) {
-	cmd := newSessionCommand()
+	cmd := newSessionCommand(nil)
 
 	names := make([]string, 0, len(cmd.Commands()))
 	for _, sub := range cmd.Commands() {
@@ -38,7 +38,7 @@ func TestSessionCommand_HasSubcommands(t *testing.T) {
 }
 
 func TestSessionShowCommand_RequiresOneArg(t *testing.T) {
-	cmd := newSessionShowCommand()
+	cmd := newSessionShowCommand(nil)
 
 	assert.NoError(t, cmd.Args(cmd, []string{"my-session"}))
 	assert.Error(t, cmd.Args(cmd, []string{}))
@@ -46,7 +46,7 @@ func TestSessionShowCommand_RequiresOneArg(t *testing.T) {
 }
 
 func TestSessionDeleteCommand_RequiresOneArg(t *testing.T) {
-	cmd := newSessionDeleteCommand()
+	cmd := newSessionDeleteCommand(nil)
 
 	assert.NoError(t, cmd.Args(cmd, []string{"my-session"}))
 	assert.Error(t, cmd.Args(cmd, []string{}))
@@ -54,10 +54,9 @@ func TestSessionDeleteCommand_RequiresOneArg(t *testing.T) {
 }
 
 func TestSessionCreateCommand_DefaultFlags(t *testing.T) {
-	cmd := newSessionCreateCommand()
+	cmd := newSessionCreateCommand(nil)
 
-	output, _ := cmd.Flags().GetString("output")
-	assert.Equal(t, "json", output)
+	assertOutputFlagOptions(t, cmd, "json", []string{"json", "table"})
 
 	sessionID, _ := cmd.Flags().GetString("session-id")
 	assert.Equal(t, "", sessionID)
@@ -70,7 +69,7 @@ func TestSessionCreateCommand_DefaultFlags(t *testing.T) {
 }
 
 func TestSessionCreateCommand_AcceptsPositionalArgs(t *testing.T) {
-	cmd := newSessionCreateCommand()
+	cmd := newSessionCreateCommand(nil)
 
 	assert.NoError(t, cmd.Args(cmd, []string{}))
 	assert.NoError(t, cmd.Args(cmd, []string{"my-agent"}))
@@ -80,10 +79,9 @@ func TestSessionCreateCommand_AcceptsPositionalArgs(t *testing.T) {
 }
 
 func TestSessionListCommand_DefaultFlags(t *testing.T) {
-	cmd := newSessionListCommand()
+	cmd := newSessionListCommand(nil)
 
-	output, _ := cmd.Flags().GetString("output")
-	assert.Equal(t, "json", output)
+	assertOutputFlagOptions(t, cmd, "json", []string{"json", "table"})
 
 	limit, _ := cmd.Flags().GetInt32("limit")
 	assert.Equal(t, int32(0), limit)

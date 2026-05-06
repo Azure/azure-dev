@@ -169,6 +169,64 @@ both attempt initialization; the lock ensures only one succeeds.
 
 ---
 
+## Lock Acquisition Order
+
+Consistent lock ordering prevents deadlocks. The environment persistence path
+uses a three-level hierarchy:
+
+```text
+1. manager.saveMu        (in-process sync.Mutex — serializes goroutines)
+2. local flock            (cross-process OS file lock — serializes processes)
+3. env.mu                 (per-Environment sync.RWMutex — protects in-memory map)
+```
+
+Every code path that persists or reloads environment state acquires these locks
+**in the order above**. Never acquire an outer lock while holding an inner one.
+
+### Why subprocess hooks cannot deadlock
+
+Parallel service hooks (pre/post-deploy, pre/post-package) may spawn `azd env set`
+subprocesses concurrently. Each subprocess is a separate OS process with its **own**
+`manager.saveMu` instance — in-process mutexes are not shared across processes.
+
+Cross-process serialization is handled entirely by **flock** (the OS-level file
+lock on the `.env.lock` file). Within each subprocess the same acquisition order
+applies (saveMu → flock → env.mu), but since saveMu is per-process and never
+shared across process boundaries, circular wait is impossible.
+
+```text
+┌─────────────────────────────────────────────┐
+│ Parent azd process                          │
+│                                             │
+│  goroutine A: saveMu → flock → env.mu      │
+│  goroutine B: saveMu → flock → env.mu      │
+│  (saveMu serializes A and B)               │
+└─────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────┐
+│ Hook subprocess 1 (`azd env set FOO=bar`)   │
+│  main goroutine: saveMu → flock → env.mu   │
+└─────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────┐
+│ Hook subprocess 2 (`azd env set BAZ=qux`)   │
+│  main goroutine: saveMu → flock → env.mu   │
+└─────────────────────────────────────────────┘
+
+Across processes, only flock provides mutual exclusion.
+Within a process, saveMu prevents goroutine interleaving.
+```
+
+### What is held during subprocess invocations
+
+When the parent process launches hook subprocesses, it does **not** hold saveMu
+or flock during the subprocess lifetime. The hook runner starts the subprocess
+and waits for it to exit — locks are only acquired when the subprocess (or the
+parent) calls `Save`/`Reload`. This means hook subprocesses never contend with
+locks held by the parent's hook-launch path.
+
+---
+
 ## Adding new concurrent state
 
 When you introduce a new field on one of the types above (or a new type that

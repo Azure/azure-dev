@@ -703,6 +703,33 @@ var (
 		Purpose:        PerformanceAndHealth,
 		IsMeasurement:  true,
 	}
+
+	// PerfProvisionDurationMs is the wall-clock provisioning phase duration in milliseconds.
+	// Measured from the earliest provision step start to the latest provision step end.
+	PerfProvisionDurationMs = AttributeKey{
+		Key:            attribute.Key("perf.provision_duration_ms"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
+	}
+
+	// PerfDeployDurationMs is the wall-clock deploying phase duration in milliseconds.
+	// Measured from the earliest deploy step start to the latest deploy step end.
+	// Package and publish steps are excluded (they run concurrently with provisioning).
+	PerfDeployDurationMs = AttributeKey{
+		Key:            attribute.Key("perf.deploy_duration_ms"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
+	}
+
+	// PerfTotalDurationMs is the total wall-clock duration for the entire up-graph execution.
+	PerfTotalDurationMs = AttributeKey{
+		Key:            attribute.Key("perf.total_duration_ms"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
+	}
 )
 
 // Pack related fields

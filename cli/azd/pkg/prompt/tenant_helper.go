@@ -119,23 +119,12 @@ func promptTenantSelection(
 	ctx context.Context,
 	console input.Console,
 	tenants []TenantInfo,
-	preSelectedTenantId string,
 ) (string, error) {
 	if len(tenants) <= 1 {
 		if len(tenants) == 1 {
 			return tenants[0].Id, nil
 		}
 		return "", nil
-	}
-
-	// If a tenant is already pre-selected (e.g. from AZURE_TENANT_ID), use it directly
-	if preSelectedTenantId != "" {
-		for _, t := range tenants {
-			if t.Id == preSelectedTenantId {
-				return t.Id, nil
-			}
-		}
-		// Pre-selected tenant not found in available tenants; fall through to prompt
 	}
 
 	allTenantsLabel := fmt.Sprintf(

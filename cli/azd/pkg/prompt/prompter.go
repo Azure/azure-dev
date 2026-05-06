@@ -155,7 +155,7 @@ func (p *DefaultPrompter) promptAndFilterByTenant(
 
 	tenants = extractUniqueTenants(subscriptions, tenantNames)
 
-	selectedTenantId, err := promptTenantSelection(ctx, p.console, tenants, "")
+	selectedTenantId, err := promptTenantSelection(ctx, p.console, tenants)
 	if err != nil {
 		return nil, err
 	}

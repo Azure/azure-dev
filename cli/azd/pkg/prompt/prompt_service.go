@@ -317,7 +317,7 @@ func (ps *promptService) promptAndFilterByTenant(
 
 	tenants = extractUniqueTenants(subscriptions, tenantNames)
 
-	selectedTenantId, err := promptTenantSelection(ctx, ps.console, tenants, "")
+	selectedTenantId, err := promptTenantSelection(ctx, ps.console, tenants)
 	if err != nil {
 		return nil, err
 	}
@@ -822,21 +822,29 @@ func PromptCustomResource[T any](ctx context.Context, options CustomResourceOpti
 		allowNewResource = true
 		selectedIndex = new(0)
 	} else {
-		loadingSpinner := ux.NewSpinner(&ux.SpinnerOptions{
-			Text: options.SelectorOptions.LoadingMessage,
-		})
-
-		err := loadingSpinner.Run(ctx, func(ctx context.Context) error {
+		loadData := func(ctx context.Context) error {
 			resourceList, err := options.LoadData(ctx)
 			if err != nil {
 				return err
 			}
-
 			resources = resourceList
 			return nil
-		})
-		if err != nil {
-			return nil, err
+		}
+
+		// Skip the spinner when loading message is empty (data is pre-loaded)
+		if mergedSelectorOptions.LoadingMessage != "" {
+			loadingSpinner := ux.NewSpinner(&ux.SpinnerOptions{
+				Text: mergedSelectorOptions.LoadingMessage,
+			})
+			if err := loadingSpinner.Run(ctx, func(ctx context.Context) error {
+				return loadData(ctx)
+			}); err != nil {
+				return nil, err
+			}
+		} else {
+			if err := loadData(ctx); err != nil {
+				return nil, err
+			}
 		}
 
 		if !allowNewResource && len(resources) == 0 {

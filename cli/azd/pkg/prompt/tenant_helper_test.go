@@ -154,7 +154,7 @@ func TestPromptTenantSelection_SingleTenant(t *testing.T) {
 		{Id: "tid-1", DisplayName: "Contoso", SubscriptionCount: 3},
 	}
 
-	selected, err := promptTenantSelection(t.Context(), mockContext.Console, tenants, "")
+	selected, err := promptTenantSelection(t.Context(), mockContext.Console, tenants)
 	require.NoError(t, err)
 	require.Equal(t, "tid-1", selected)
 }
@@ -171,7 +171,7 @@ func TestPromptTenantSelection_MultipleTenants_SelectFirst(t *testing.T) {
 		{Id: "tid-2", DisplayName: "Fabrikam", SubscriptionCount: 1},
 	}
 
-	selected, err := promptTenantSelection(t.Context(), mockContext.Console, tenants, "")
+	selected, err := promptTenantSelection(t.Context(), mockContext.Console, tenants)
 	require.NoError(t, err)
 	require.Equal(t, "tid-1", selected)
 }
@@ -188,47 +188,15 @@ func TestPromptTenantSelection_MultipleTenants_SelectAllTenants(t *testing.T) {
 		{Id: "tid-2", DisplayName: "Fabrikam", SubscriptionCount: 1},
 	}
 
-	selected, err := promptTenantSelection(t.Context(), mockContext.Console, tenants, "")
+	selected, err := promptTenantSelection(t.Context(), mockContext.Console, tenants)
 	require.NoError(t, err)
 	require.Empty(t, selected) // empty string = all tenants
-}
-
-func TestPromptTenantSelection_PreSelected(t *testing.T) {
-	mockContext := mocks.NewMockContext(t.Context())
-
-	tenants := []TenantInfo{
-		{Id: "tid-1", DisplayName: "Contoso", SubscriptionCount: 3},
-		{Id: "tid-2", DisplayName: "Fabrikam", SubscriptionCount: 1},
-	}
-
-	// Pre-selected tenant skips the prompt entirely
-	selected, err := promptTenantSelection(t.Context(), mockContext.Console, tenants, "tid-2")
-	require.NoError(t, err)
-	require.Equal(t, "tid-2", selected)
-}
-
-func TestPromptTenantSelection_PreSelectedNotFound(t *testing.T) {
-	mockContext := mocks.NewMockContext(t.Context())
-
-	mockContext.Console.WhenSelect(func(opts input.ConsoleOptions) bool {
-		return strings.Contains(opts.Message, "Select a tenant")
-	}).Respond(0)
-
-	tenants := []TenantInfo{
-		{Id: "tid-1", DisplayName: "Contoso", SubscriptionCount: 3},
-		{Id: "tid-2", DisplayName: "Fabrikam", SubscriptionCount: 1},
-	}
-
-	// Pre-selected tenant not found, falls through to prompt
-	selected, err := promptTenantSelection(t.Context(), mockContext.Console, tenants, "tid-unknown")
-	require.NoError(t, err)
-	require.Equal(t, "tid-1", selected)
 }
 
 func TestPromptTenantSelection_NoTenants(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
 
-	selected, err := promptTenantSelection(t.Context(), mockContext.Console, nil, "")
+	selected, err := promptTenantSelection(t.Context(), mockContext.Console, nil)
 	require.NoError(t, err)
 	require.Empty(t, selected)
 }

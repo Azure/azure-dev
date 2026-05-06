@@ -30,7 +30,8 @@ type PreflightReportItem struct {
 type PreflightReportLink struct {
 	// URL is the link target.
 	URL string
-	// Title is the display text (optional — if empty, the URL is shown).
+	// Title is the display text for terminal hyperlinks (optional).
+	// In non-terminal output the URL is shown regardless of Title.
 	Title string
 }
 

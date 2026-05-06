@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -75,6 +76,8 @@ func (p *PackageManagerVersionProvider) GetLatestVersion(
 		return p.queryWinget(ctx, strategy.PackageId)
 	case "brew":
 		return p.queryBrew(ctx, strategy.PackageId)
+	case "apt":
+		return p.queryApt(ctx, strategy.PackageId)
 	default:
 		return "", fmt.Errorf(
 			"unsupported package manager %q for version query",
@@ -194,6 +197,66 @@ func (p *PackageManagerVersionProvider) queryBrew(
 	return info.Formulae[0].Versions.Stable, nil
 }
 
+// queryApt runs `apt-cache policy <pkg>` and parses the Candidate
+// version from the output.
+func (p *PackageManagerVersionProvider) queryApt(
+	ctx context.Context,
+	packageID string,
+) (string, error) {
+	result, err := p.commandRunner.Run(ctx, exec.RunArgs{
+		Cmd:  "apt-cache",
+		Args: []string{"policy", packageID},
+	})
+	if err != nil {
+		return "", fmt.Errorf(
+			"apt-cache policy %s: %w", packageID, err,
+		)
+	}
+
+	return parseAptCandidate(result.Stdout)
+}
+
+// parseAptCandidate extracts the upstream version from apt-cache
+// policy output. The output looks like:
+//
+//	azure-cli:
+//	  Installed: 2.65.0-1~noble
+//	  Candidate: 2.67.0-1~noble
+//	  Version table:
+//	    ...
+//
+// The Debian revision suffix (everything from the first hyphen
+// following at least one digit) is stripped so that "2.67.0-1~noble"
+// becomes "2.67.0".
+func parseAptCandidate(output string) (string, error) {
+	for _, line := range strings.Split(output, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "Candidate:") {
+			continue
+		}
+
+		version := strings.TrimSpace(
+			strings.TrimPrefix(trimmed, "Candidate:"),
+		)
+		if version == "" || version == "(none)" {
+			return "", fmt.Errorf(
+				"no candidate version available in apt",
+			)
+		}
+
+		// Strip Debian revision suffix (e.g. "-1~noble").
+		if idx := strings.Index(version, "-"); idx > 0 {
+			version = version[:idx]
+		}
+
+		return version, nil
+	}
+
+	return "", fmt.Errorf(
+		"could not find Candidate field in apt-cache output",
+	)
+}
+
 // ---------------------------------------------------------------------------
 // ExtensionRegistryVersionProvider
 // ---------------------------------------------------------------------------
@@ -214,10 +277,6 @@ func NewExtensionRegistryVersionProvider(
 	}
 }
 
-// defaultExtensionSource is the registry source name used for
-// built-in azd extensions.
-const defaultExtensionSource = "default"
-
 // GetLatestVersion returns the latest version of the azd extension
 // identified by the tool's Id.
 func (p *ExtensionRegistryVersionProvider) GetLatestVersion(
@@ -225,9 +284,17 @@ func (p *ExtensionRegistryVersionProvider) GetLatestVersion(
 	tool *ToolDefinition,
 ) (string, error) {
 	version, err := p.cacheManager.GetExtensionLatestVersion(
-		ctx, defaultExtensionSource, tool.Id,
+		ctx, extensions.MainRegistryName, tool.Id,
 	)
 	if err != nil {
+		if errors.Is(err, extensions.ErrCacheNotFound) ||
+			errors.Is(err, extensions.ErrCacheExpired) {
+			return "", fmt.Errorf(
+				"extension registry cache is stale or missing for %s;"+
+					" run 'azd extension list' to refresh: %w",
+				tool.Id, err,
+			)
+		}
 		return "", fmt.Errorf(
 			"extension registry lookup for %s: %w", tool.Id, err,
 		)
@@ -244,10 +311,26 @@ func (p *ExtensionRegistryVersionProvider) GetLatestVersion(
 const vsMarketplaceURL = "https://marketplace.visualstudio.com/" +
 	"_apis/public/gallery/extensionquery"
 
+const (
+	// vsMarketplaceFilterByName is the filter type for searching
+	// by extension identifier (e.g. "ms-azuretools.vscode-bicep").
+	vsMarketplaceFilterByName = 7
+
+	// vsMarketplaceQueryFlags is a bitmask requesting:
+	//   0x002 IncludeFiles
+	//   0x010 IncludeVersionProperties
+	//   0x080 IncludeStatistics
+	//   0x100 IncludeVersions
+	//   0x200 IncludeLatestVersionOnly
+	//   0x080 + 0x200 + 0x100 + 0x010 + 0x002 + 0x004 = 0x392 = 914
+	vsMarketplaceQueryFlags = 914
+)
+
 // MarketplaceVersionProvider queries the VS Code Marketplace for the
 // latest version of a VS Code extension.
 type MarketplaceVersionProvider struct {
 	httpClient httpDoer
+	baseURL    string
 }
 
 // NewMarketplaceVersionProvider creates a provider that uses the
@@ -255,7 +338,10 @@ type MarketplaceVersionProvider struct {
 func NewMarketplaceVersionProvider(
 	httpClient httpDoer,
 ) *MarketplaceVersionProvider {
-	return &MarketplaceVersionProvider{httpClient: httpClient}
+	return &MarketplaceVersionProvider{
+		httpClient: httpClient,
+		baseURL:    vsMarketplaceURL,
+	}
 }
 
 // marketplaceQuery is the request body for the VS Code Marketplace
@@ -297,11 +383,11 @@ func (p *MarketplaceVersionProvider) GetLatestVersion(
 	query := marketplaceQuery{
 		Filters: []marketplaceFilter{{
 			Criteria: []marketplaceCriteria{{
-				FilterType: 7,
+				FilterType: vsMarketplaceFilterByName,
 				Value:      tool.Id,
 			}},
 		}},
-		Flags: 914,
+		Flags: vsMarketplaceQueryFlags,
 	}
 
 	payloadBytes, err := json.Marshal(query)
@@ -310,7 +396,7 @@ func (p *MarketplaceVersionProvider) GetLatestVersion(
 	}
 
 	req, err := http.NewRequestWithContext(
-		ctx, http.MethodPost, vsMarketplaceURL,
+		ctx, http.MethodPost, p.baseURL,
 		bytes.NewReader(payloadBytes),
 	)
 	if err != nil {
@@ -395,6 +481,13 @@ func SelectVersionProvider(
 				)
 			}
 		}
+		// Tools installed via InstallCommand only (e.g. az on
+		// Linux) have no queryable package manager, so update
+		// detection is not supported on this platform.
+		log.Printf(
+			"version-provider: no queryable provider for %s on %s",
+			tool.Id, runtime.GOOS,
+		)
 		return nil
 	}
 }
@@ -403,7 +496,7 @@ func SelectVersionProvider(
 // supports version queries via SelectVersionProvider.
 func isQueryableManager(name string) bool {
 	switch name {
-	case "npm", "winget", "brew":
+	case "npm", "winget", "brew", "apt":
 		return true
 	default:
 		return false

@@ -4,14 +4,12 @@
 package tool
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"runtime"
-	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -280,7 +278,7 @@ func TestPackageManagerVersionProvider_UnsupportedManager(
 		Id: "test",
 		InstallStrategies: map[string]InstallStrategy{
 			runtime.GOOS: {
-				PackageManager: "apt",
+				PackageManager: "snap",
 				PackageId:      "some-pkg",
 			},
 		},
@@ -289,6 +287,99 @@ func TestPackageManagerVersionProvider_UnsupportedManager(
 	_, err := provider.GetLatestVersion(t.Context(), tool)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unsupported package manager")
+}
+
+// ---------------------------------------------------------------------------
+// PackageManagerVersionProvider — apt
+// ---------------------------------------------------------------------------
+
+func TestPackageManagerVersionProvider_Apt(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Success", func(t *testing.T) {
+		t.Parallel()
+
+		runner := mockexec.NewMockCommandRunner()
+		runner.When(func(args exec.RunArgs, _ string) bool {
+			return args.Cmd == "apt-cache" &&
+				len(args.Args) >= 2 &&
+				args.Args[0] == "policy"
+		}).Respond(exec.RunResult{
+			Stdout: "azure-cli:\n" +
+				"  Installed: 2.65.0-1~noble\n" +
+				"  Candidate: 2.67.0-1~noble\n" +
+				"  Version table:\n",
+		})
+
+		provider := NewPackageManagerVersionProvider(runner)
+		tool := &ToolDefinition{
+			Id: "az",
+			InstallStrategies: map[string]InstallStrategy{
+				runtime.GOOS: {
+					PackageManager: "apt",
+					PackageId:      "azure-cli",
+				},
+			},
+		}
+
+		version, err := provider.GetLatestVersion(
+			t.Context(), tool,
+		)
+		require.NoError(t, err)
+		assert.Equal(t, "2.67.0", version)
+	})
+
+	t.Run("CandidateNone", func(t *testing.T) {
+		t.Parallel()
+
+		runner := mockexec.NewMockCommandRunner()
+		runner.When(func(args exec.RunArgs, _ string) bool {
+			return args.Cmd == "apt-cache"
+		}).Respond(exec.RunResult{
+			Stdout: "unknown-pkg:\n" +
+				"  Installed: (none)\n" +
+				"  Candidate: (none)\n",
+		})
+
+		provider := NewPackageManagerVersionProvider(runner)
+		tool := &ToolDefinition{
+			Id: "unknown",
+			InstallStrategies: map[string]InstallStrategy{
+				runtime.GOOS: {
+					PackageManager: "apt",
+					PackageId:      "unknown-pkg",
+				},
+			},
+		}
+
+		_, err := provider.GetLatestVersion(t.Context(), tool)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "no candidate version")
+	})
+
+	t.Run("CommandFailure", func(t *testing.T) {
+		t.Parallel()
+
+		runner := mockexec.NewMockCommandRunner()
+		runner.When(func(args exec.RunArgs, _ string) bool {
+			return args.Cmd == "apt-cache"
+		}).SetError(errors.New("apt-cache not found"))
+
+		provider := NewPackageManagerVersionProvider(runner)
+		tool := &ToolDefinition{
+			Id: "az",
+			InstallStrategies: map[string]InstallStrategy{
+				runtime.GOOS: {
+					PackageManager: "apt",
+					PackageId:      "azure-cli",
+				},
+			},
+		}
+
+		_, err := provider.GetLatestVersion(t.Context(), tool)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "apt-cache policy")
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -334,92 +425,17 @@ func TestMarketplaceVersionProvider_Success(t *testing.T) {
 	// Override the marketplace URL for testing.
 	provider := &MarketplaceVersionProvider{
 		httpClient: server.Client(),
+		baseURL:    server.URL,
 	}
 
-	// Build the tool to use the test server URL.
 	tool := &ToolDefinition{
 		Id:       "ms-azuretools.vscode-bicep",
 		Category: ToolCategoryExtension,
 	}
 
-	// Patch the URL by using a custom provider that hits the test
-	// server. We test the JSON parsing logic here.
-	req, _ := http.NewRequestWithContext(
-		t.Context(), http.MethodPost, server.URL,
-		nil,
-	)
-	resp, err := provider.httpClient.Do(req)
-	require.NoError(t, err)
-	defer resp.Body.Close()
-
-	var body vsMarketplaceResponse
-	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
-	require.Len(t, body.Results, 1)
-	require.Len(t, body.Results[0].Extensions, 1)
-	require.Len(t, body.Results[0].Extensions[0].Versions, 1)
-	assert.Equal(t, "0.30.23",
-		body.Results[0].Extensions[0].Versions[0].Version)
-
-	// Also test the full provider with a mock that rewrites the URL.
-	testProvider := &testMarketplaceProvider{
-		baseURL:    server.URL,
-		httpClient: server.Client(),
-	}
-	version, err := testProvider.GetLatestVersion(t.Context(), tool)
+	version, err := provider.GetLatestVersion(t.Context(), tool)
 	require.NoError(t, err)
 	assert.Equal(t, "0.30.23", version)
-}
-
-// testMarketplaceProvider wraps MarketplaceVersionProvider to use a
-// test server URL instead of the real marketplace API.
-type testMarketplaceProvider struct {
-	baseURL    string
-	httpClient httpDoer
-}
-
-func (p *testMarketplaceProvider) GetLatestVersion(
-	ctx context.Context,
-	tool *ToolDefinition,
-) (string, error) {
-	payload := fmt.Sprintf(
-		`{"filters":[{"criteria":[{"filterType":7,"value":"%s"}]}`+
-			`],"flags":914}`,
-		tool.Id,
-	)
-
-	req, err := http.NewRequestWithContext(
-		ctx, http.MethodPost, p.baseURL,
-		strings.NewReader(payload),
-	)
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept",
-		"application/json;api-version=6.0-preview.1")
-
-	resp, err := p.httpClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
-	}
-
-	var body vsMarketplaceResponse
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return "", err
-	}
-
-	if len(body.Results) == 0 ||
-		len(body.Results[0].Extensions) == 0 ||
-		len(body.Results[0].Extensions[0].Versions) == 0 {
-		return "", fmt.Errorf("no versions found")
-	}
-
-	return body.Results[0].Extensions[0].Versions[0].Version, nil
 }
 
 func TestMarketplaceVersionProvider_HTTPError(t *testing.T) {
@@ -432,7 +448,7 @@ func TestMarketplaceVersionProvider_HTTPError(t *testing.T) {
 	)
 	defer server.Close()
 
-	provider := &testMarketplaceProvider{
+	provider := &MarketplaceVersionProvider{
 		baseURL:    server.URL,
 		httpClient: server.Client(),
 	}
@@ -458,7 +474,7 @@ func TestMarketplaceVersionProvider_EmptyResults(t *testing.T) {
 	)
 	defer server.Close()
 
-	provider := &testMarketplaceProvider{
+	provider := &MarketplaceVersionProvider{
 		baseURL:    server.URL,
 		httpClient: server.Client(),
 	}
@@ -636,6 +652,68 @@ func TestParseWingetVersion(t *testing.T) {
 			t.Parallel()
 
 			got, err := parseWingetVersion(tt.output)
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, tt.want, got)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// parseAptCandidate
+// ---------------------------------------------------------------------------
+
+func TestParseAptCandidate(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		output  string
+		want    string
+		wantErr bool
+	}{
+		{
+			name: "StandardOutput",
+			output: "azure-cli:\n" +
+				"  Installed: 2.65.0-1~noble\n" +
+				"  Candidate: 2.67.0-1~noble\n" +
+				"  Version table:\n",
+			want: "2.67.0",
+		},
+		{
+			name: "VersionWithoutSuffix",
+			output: "some-pkg:\n" +
+				"  Installed: (none)\n" +
+				"  Candidate: 1.2.3\n",
+			want: "1.2.3",
+		},
+		{
+			name: "CandidateNone",
+			output: "unknown-pkg:\n" +
+				"  Installed: (none)\n" +
+				"  Candidate: (none)\n",
+			wantErr: true,
+		},
+		{
+			name:    "NoCandidateField",
+			output:  "azure-cli:\n  Installed: 2.65.0\n",
+			wantErr: true,
+		},
+		{
+			name:    "EmptyOutput",
+			output:  "",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := parseAptCandidate(tt.output)
 			if tt.wantErr {
 				assert.Error(t, err)
 			} else {

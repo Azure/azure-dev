@@ -255,6 +255,35 @@ func TestPromptSubscription_MultiTenant_AllTenantsOption(t *testing.T) {
 	require.Equal(t, "sub-1", subId) // Alpha is first alphabetically
 }
 
+func TestPromptSubscription_NoPromptMode_SkipsTenantPicker(t *testing.T) {
+	t.Setenv("AZURE_TENANT_ID", "tid-1")
+
+	mockContext := mocks.NewMockContext(t.Context())
+	mockContext.Console.SetNoPromptMode(true)
+
+	mockAccount := &mockaccount.MockAccountManager{
+		Subscriptions: []account.Subscription{
+			{Id: "sub-1", Name: "Alpha", UserAccessTenantId: "tid-1"},
+			{Id: "sub-2", Name: "Bravo", UserAccessTenantId: "tid-2"},
+			{Id: "sub-3", Name: "Charlie", UserAccessTenantId: "tid-1"},
+		},
+	}
+
+	p, _ := newTestPrompterWithCtx(t, mockAccount, mockContext)
+
+	// In no-prompt mode with default subscription set, PromptSubscription should
+	// filter by AZURE_TENANT_ID and select the default without prompting.
+	// Set up the subscription select to pick first.
+	mockContext.Console.WhenSelect(func(opts input.ConsoleOptions) bool {
+		return strings.Contains(opts.Message, "Select a subscription")
+	}).Respond(0)
+
+	subId, err := p.PromptSubscription(t.Context(), "Select a subscription")
+	require.NoError(t, err)
+	// Should be filtered to tid-1 only: Alpha and Charlie
+	require.Equal(t, "sub-1", subId)
+}
+
 func newTestPrompterWithCtx(
 	t *testing.T,
 	mockAccount *mockaccount.MockAccountManager,

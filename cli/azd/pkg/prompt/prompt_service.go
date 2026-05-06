@@ -253,7 +253,7 @@ func (ps *promptService) PromptSubscription(
 		return loadErr
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("listing subscriptions: %w", err)
 	}
 
 	// Apply tenant filtering (after spinner is done so the prompt doesn't overlap)

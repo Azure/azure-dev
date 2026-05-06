@@ -8,50 +8,39 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
-	"slices"
+	"regexp"
 	"strings"
 	"text/template"
 
 	"github.com/fatih/color"
+	"github.com/mattn/go-runewidth"
 )
 
 // Width breakpoint constants for responsive layout selection.
 const (
-	// DefaultWideThreshold is the terminal width at or above which all columns
+	// DefaultFullThreshold is the terminal width at or above which all columns
 	// are shown with full text values.
-	DefaultWideThreshold = 110
+	DefaultFullThreshold = 100
 
-	// DefaultMediumThreshold is the terminal width at or above which all columns
-	// are shown but truncatable columns are shortened and ShortValueTemplate is used.
-	DefaultMediumThreshold = 80
-
-	// DefaultNarrowThreshold is the terminal width at or above which only
-	// high-priority columns (Priority ≤ 2) are shown in a table.
-	// Below this value the card/stacked layout is used.
-	DefaultNarrowThreshold = 50
+	// DefaultCompactThreshold is the terminal width at or above which only
+	// high-priority columns (Priority ≤ 2) are shown with ShortValueTemplate.
+	// Below this value the card layout is used.
+	DefaultCompactThreshold = 60
 
 	// columnPadding is the whitespace gap between columns (no box-drawing separators).
 	columnPadding = 3
-
-	// minTruncLen is the minimum number of visible characters before adding "…".
-	minTruncLen = 15
 )
 
 // PrettyColumn extends Column with priority for responsive column dropping.
 type PrettyColumn struct {
 	Column
 
-	// Priority controls column visibility and drop order.
-	// 1 = always shown, 2 = dropped third, 3 = dropped second, 4 = dropped first.
-	// 0 is treated as 1 (always shown).
+	// Priority controls column visibility at compact widths.
+	// 1 = always shown in compact, 2 = always shown in compact,
+	// 3+ = full table only. 0 is treated as 1.
 	Priority int
 
-	// Truncatable indicates this column's values can be truncated with "…"
-	// at medium/narrow widths to fit the terminal.
-	Truncatable bool
-
-	// ShortValueTemplate is an alternative Go template used at medium and narrow
+	// ShortValueTemplate is an alternative Go template used at compact
 	// widths. If empty, the regular ValueTemplate is used.
 	ShortValueTemplate string
 
@@ -65,22 +54,19 @@ type PrettyTableFormatterOptions struct {
 	Columns []PrettyColumn
 
 	// CardGroupColumn is the heading name of the column to group cards by
-	// in the very-narrow card layout. Each distinct value becomes a section header.
+	// in the card layout. Each distinct value becomes a section header.
 	// If empty, cards are rendered ungrouped with the first column as card title.
 	CardGroupColumn string
 
-	// WideThreshold is the terminal width at or above which the wide layout
-	// is used (all columns, full text). Defaults to DefaultWideThreshold (110).
-	WideThreshold int
+	// FullThreshold is the terminal width at or above which the full layout
+	// is used (all columns, full text). Defaults to DefaultFullThreshold (100).
+	FullThreshold int
 
-	// MediumThreshold is the terminal width at or above which the medium layout
-	// is used (all columns, truncated text). Defaults to DefaultMediumThreshold (80).
-	MediumThreshold int
-
-	// NarrowThreshold is the terminal width at or above which the narrow table
-	// layout is used (Priority ≤ 2 columns only). Below this the card layout is used.
-	// Defaults to DefaultNarrowThreshold (50).
-	NarrowThreshold int
+	// CompactThreshold is the terminal width at or above which the compact
+	// layout is used (Priority ≤ 2 columns, ShortValueTemplate).
+	// Below this the card layout is used.
+	// Defaults to DefaultCompactThreshold (60).
+	CompactThreshold int
 }
 
 // parsedCol pairs a PrettyColumn with its compiled templates.
@@ -91,8 +77,8 @@ type parsedCol struct {
 }
 
 // PrettyTableFormatter renders tabular data with responsive breakpoints.
-// It supports 4 layout modes based on terminal width: wide table, medium table
-// (with truncation), narrow table (fewer columns), and card layout.
+// It supports 3 layout modes based on terminal width: full table,
+// compact table (fewer columns), and card layout.
 type PrettyTableFormatter struct {
 	// ConsoleWidthFn returns the current terminal width. Defaults to getConsoleWidth.
 	ConsoleWidthFn func() int
@@ -119,16 +105,22 @@ func (f *PrettyTableFormatter) Format(obj any, writer io.Writer, opts any) error
 
 	// Parse templates upfront
 	parsed := make([]parsedCol, len(options.Columns))
+	seenHeadings := make(map[string]bool, len(options.Columns))
 	for i, c := range options.Columns {
+		if seenHeadings[c.Heading] {
+			return fmt.Errorf("duplicate column heading %q", c.Heading)
+		}
+		seenHeadings[c.Heading] = true
+
 		t, err := template.New(c.Heading).Parse(c.ValueTemplate)
 		if err != nil {
-			return err
+			return fmt.Errorf("column %q: %w", c.Heading, err)
 		}
 		pc := parsedCol{col: c, tmpl: t}
 		if c.ShortValueTemplate != "" {
 			st, err := template.New(c.Heading + "_short").Parse(c.ShortValueTemplate)
 			if err != nil {
-				return err
+				return fmt.Errorf("column %q short template: %w", c.Heading, err)
 			}
 			pc.shortTmpl = st
 		}
@@ -141,48 +133,34 @@ func (f *PrettyTableFormatter) Format(obj any, writer io.Writer, opts any) error
 	}
 	termWidth := widthFn()
 
-	wideT := options.WideThreshold
-	if wideT <= 0 {
-		wideT = DefaultWideThreshold
+	fullT := options.FullThreshold
+	if fullT <= 0 {
+		fullT = DefaultFullThreshold
 	}
-	medT := options.MediumThreshold
-	if medT <= 0 {
-		medT = DefaultMediumThreshold
-	}
-	narrowT := options.NarrowThreshold
-	if narrowT <= 0 {
-		narrowT = DefaultNarrowThreshold
+	compactT := options.CompactThreshold
+	if compactT <= 0 {
+		compactT = DefaultCompactThreshold
 	}
 
 	switch {
-	case termWidth >= wideT:
-		return f.formatWideTable(parsed, rows, termWidth, writer)
-	case termWidth >= medT:
-		return f.formatMediumTable(parsed, rows, termWidth, writer)
-	case termWidth >= narrowT:
-		return f.formatNarrowTable(parsed, rows, termWidth, writer)
+	case termWidth >= fullT:
+		return f.renderFullTable(parsed, rows, termWidth, writer)
+	case termWidth >= compactT:
+		return f.renderCompactTable(parsed, rows, termWidth, writer)
 	default:
 		return f.formatGroupedCards(parsed, rows, termWidth, writer, options)
 	}
 }
 
-// formatWideTable renders all columns with full text values and whitespace padding.
-func (f *PrettyTableFormatter) formatWideTable(
+// renderFullTable renders all columns with full text values and whitespace padding.
+func (f *PrettyTableFormatter) renderFullTable(
 	parsed []parsedCol, rows []any, termWidth int, writer io.Writer,
 ) error {
 	return f.renderPaddedTable(parsed, rows, termWidth, writer, false)
 }
 
-// formatMediumTable renders all columns; truncatable columns are shortened and
-// ShortValueTemplate is used where available.
-func (f *PrettyTableFormatter) formatMediumTable(
-	parsed []parsedCol, rows []any, termWidth int, writer io.Writer,
-) error {
-	return f.renderPaddedTable(parsed, rows, termWidth, writer, true)
-}
-
-// formatNarrowTable renders only Priority ≤ 2 columns with ShortValueTemplate.
-func (f *PrettyTableFormatter) formatNarrowTable(
+// renderCompactTable renders only Priority ≤ 2 columns with ShortValueTemplate.
+func (f *PrettyTableFormatter) renderCompactTable(
 	parsed []parsedCol, rows []any, termWidth int, writer io.Writer,
 ) error {
 	filtered := make([]parsedCol, 0, len(parsed))
@@ -218,7 +196,7 @@ func (f *PrettyTableFormatter) renderPaddedTable(
 			}
 			val, err := prettyExecTemplate(tmpl, row)
 			if err != nil {
-				return err
+				return fmt.Errorf("row %d, column %q: %w", ri, pc.col.Heading, err)
 			}
 			if pc.col.Transformer != nil {
 				val = pc.col.Transformer(val)
@@ -230,22 +208,13 @@ func (f *PrettyTableFormatter) renderPaddedTable(
 	// Compute natural column widths (max of heading and all cell values)
 	colWidths := make([]int, len(cols))
 	for ci, pc := range cols {
-		colWidths[ci] = len(pc.col.Heading)
+		colWidths[ci] = displayWidth(pc.col.Heading)
 	}
 	for _, rowVals := range grid.values {
 		for ci, val := range rowVals {
-			if len(val) > colWidths[ci] {
-				colWidths[ci] = len(val)
+			if dw := displayWidth(val); dw > colWidths[ci] {
+				colWidths[ci] = dw
 			}
-		}
-	}
-
-	// If useShort, truncate truncatable columns to fit within termWidth
-	if useShort {
-		totalWidth := sumWidths(colWidths) + (len(cols)-1)*columnPadding
-		if totalWidth > termWidth {
-			truncatableSpace := truncateColumnsToFit(cols, colWidths, totalWidth, termWidth)
-			_ = truncatableSpace
 		}
 	}
 
@@ -258,7 +227,15 @@ func (f *PrettyTableFormatter) renderPaddedTable(
 			buf.WriteString(strings.Repeat(" ", columnPadding))
 		}
 		heading := pc.col.Heading
-		buf.WriteString(boldHeader.Sprintf("%-*s", colWidths[ci], heading))
+		hdw := displayWidth(heading)
+		padNeeded := colWidths[ci] - hdw
+		if padNeeded < 0 {
+			padNeeded = 0
+		}
+		buf.WriteString(boldHeader.Sprint(heading))
+		if ci < len(cols)-1 {
+			buf.WriteString(strings.Repeat(" ", padNeeded))
+		}
 	}
 	buf.WriteByte('\n')
 
@@ -271,25 +248,20 @@ func (f *PrettyTableFormatter) renderPaddedTable(
 	buf.WriteByte('\n')
 
 	// Data rows
-	for ri, rowVals := range grid.values {
+	for _, rowVals := range grid.values {
 		for ci, val := range rowVals {
 			if ci > 0 {
 				buf.WriteString(strings.Repeat(" ", columnPadding))
 			}
-			// Truncate if needed
-			displayVal := val
-			if useShort && cols[ci].col.Truncatable && len(val) > colWidths[ci] {
-				displayVal = truncateWithEllipsis(val, colWidths[ci])
-			}
 
-			// Apply color after truncation so ANSI codes don't get clipped
-			colored := displayVal
+			// Apply color
+			colored := val
 			if cols[ci].col.ColorFunc != nil {
-				colored = cols[ci].col.ColorFunc(displayVal)
+				colored = cols[ci].col.ColorFunc(val)
 			}
 
-			// Pad based on plain-text width, not colored width
-			padNeeded := colWidths[ci] - len(displayVal)
+			// Pad based on display width, not byte length
+			padNeeded := colWidths[ci] - displayWidth(val)
 			if padNeeded < 0 {
 				padNeeded = 0
 			}
@@ -299,12 +271,7 @@ func (f *PrettyTableFormatter) renderPaddedTable(
 				buf.WriteString(strings.Repeat(" ", padNeeded))
 			}
 		}
-		// No trailing newline after the very last row — let the caller decide
-		if ri < len(grid.values)-1 {
-			buf.WriteByte('\n')
-		} else {
-			buf.WriteByte('\n')
-		}
+		buf.WriteByte('\n')
 	}
 
 	_, err := fmt.Fprint(writer, buf.String())
@@ -393,7 +360,7 @@ func (f *PrettyTableFormatter) formatGroupedCards(
 		for gi, group := range groupOrder {
 			// Group header: "── {value} ────────"
 			headerText := "── " + group + " "
-			remaining := termWidth - len(headerText)
+			remaining := termWidth - displayWidth(headerText)
 			if remaining < 1 {
 				remaining = 1
 			}
@@ -417,8 +384,7 @@ func (f *PrettyTableFormatter) formatGroupedCards(
 					padding := maxHeadingLen - len(cf.heading)
 					buf.WriteString(cf.heading)
 					buf.WriteString(":")
-					buf.WriteString(strings.Repeat(" ", padding+1))
-					buf.WriteString(" ")
+					buf.WriteString(strings.Repeat(" ", padding+2))
 					buf.WriteString(displayVal)
 					buf.WriteByte('\n')
 				}
@@ -487,7 +453,7 @@ func (f *PrettyTableFormatter) formatGroupedCards(
 	return err
 }
 
-// prettyExecTemplaterenders a template against a data row and returns the string result.
+// prettyExecTemplate renders a template against a data row and returns the string result.
 func prettyExecTemplate(tmpl *template.Template, data any) (string, error) {
 	var buf bytes.Buffer
 	if err := tmpl.Execute(&buf, data); err != nil {
@@ -497,114 +463,16 @@ func prettyExecTemplate(tmpl *template.Template, data any) (string, error) {
 }
 
 // truncateWithEllipsis truncates s to maxLen characters, replacing the last char with "…".
+// It uses rune-based slicing to avoid splitting multi-byte Unicode characters.
 func truncateWithEllipsis(s string, maxLen int) string {
-	if len(s) <= maxLen {
+	runes := []rune(s)
+	if len(runes) <= maxLen {
 		return s
 	}
 	if maxLen <= 1 {
 		return "…"
 	}
-	return s[:maxLen-1] + "…"
-}
-
-// truncateColumnsToFit reduces colWidths for truncatable columns to make the
-// total table width fit within termWidth. Returns total space reclaimed.
-func truncateColumnsToFit(
-	cols []parsedCol, colWidths []int, totalWidth, termWidth int,
-) int {
-	excess := totalWidth - termWidth
-	if excess <= 0 {
-		return 0
-	}
-
-	reclaimed := 0
-	// Find truncatable columns sorted by current width descending (shrink widest first)
-	type truncIdx struct {
-		idx   int
-		width int
-	}
-	var truncatable []truncIdx
-	for i, pc := range cols {
-		if pc.col.Truncatable && colWidths[i] > minTruncLen {
-			truncatable = append(truncatable, truncIdx{idx: i, width: colWidths[i]})
-		}
-	}
-	slices.SortFunc(truncatable, func(a, b truncIdx) int {
-		return b.width - a.width // descending
-	})
-
-	for _, ti := range truncatable {
-		if reclaimed >= excess {
-			break
-		}
-		canShrink := colWidths[ti.idx] - minTruncLen
-		needed := excess - reclaimed
-		shrink := min(canShrink, needed)
-		colWidths[ti.idx] -= shrink
-		reclaimed += shrink
-	}
-
-	return reclaimed
-}
-
-// responsiveFilter drops the highest-Priority-number columns one at a time until
-// the estimated table width fits within termWidth, or no more droppable columns remain.
-func responsiveFilter(cols []parsedCol, rows []any, termWidth int) []parsedCol {
-	visible := slices.Clone(cols)
-
-	for {
-		width := estimateTableWidth(visible, rows)
-		if width <= termWidth {
-			break
-		}
-
-		// Find the column with the highest priority number to drop first
-		dropIdx := -1
-		dropPriority := math.MinInt
-		for i, pc := range visible {
-			if pc.col.Priority > 0 && pc.col.Priority > dropPriority {
-				dropPriority = pc.col.Priority
-				dropIdx = i
-			}
-		}
-
-		if dropIdx < 0 {
-			break
-		}
-
-		visible = append(visible[:dropIdx], visible[dropIdx+1:]...)
-	}
-
-	return visible
-}
-
-// estimateTableWidth computes the minimum table width by measuring the max content
-// width of each column plus inter-column padding.
-func estimateTableWidth(cols []parsedCol, rows []any) int {
-	colWidths := make([]int, len(cols))
-
-	for i, pc := range cols {
-		colWidths[i] = len(pc.col.Heading)
-	}
-
-	for _, row := range rows {
-		for i, pc := range cols {
-			val, err := prettyExecTemplate(pc.tmpl, row)
-			if err != nil {
-				continue
-			}
-			if len(val) > colWidths[i] {
-				colWidths[i] = len(val)
-			}
-		}
-	}
-
-	total := sumWidths(colWidths)
-	if len(cols) > 1 {
-		total += (len(cols) - 1) * columnPadding
-	}
-
-	return total
+	return string(runes[:maxLen-1]) + "…"
 }
 
 func sumWidths(widths []int) int {
@@ -613,6 +481,16 @@ func sumWidths(widths []int) int {
 		total += w
 	}
 	return total
+}
+
+// ansiRegex matches ANSI escape codes used for terminal coloring.
+var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
+// displayWidth returns the visible column width of s, ignoring ANSI escape
+// codes and accounting for wide Unicode characters (e.g. CJK).
+func displayWidth(s string) int {
+	stripped := ansiRegex.ReplaceAllString(s, "")
+	return runewidth.StringWidth(stripped)
 }
 
 var _ Formatter = (*PrettyTableFormatter)(nil)

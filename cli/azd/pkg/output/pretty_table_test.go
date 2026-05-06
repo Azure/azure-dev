@@ -36,8 +36,8 @@ func TestPrettyTableFormatterBasic(t *testing.T) {
 			{Column: Column{Heading: "ID", ValueTemplate: "{{.Id}}"}, Priority: 1},
 			{Column: Column{Heading: "NAME", ValueTemplate: "{{.Name}}"}, Priority: 3},
 			{Column: Column{Heading: "VERSION", ValueTemplate: "{{.Version}}"}, Priority: 1},
-			{Column: Column{Heading: "STATUS", ValueTemplate: "{{.Status}}"}, Priority: 2},
-			{Column: Column{Heading: "SOURCE", ValueTemplate: "{{.Source}}"}, Priority: 4},
+			{Column: Column{Heading: "STATUS", ValueTemplate: "{{.Status}}"}, Priority: 1},
+			{Column: Column{Heading: "SOURCE", ValueTemplate: "{{.Source}}"}, Priority: 1},
 		},
 	})
 
@@ -221,7 +221,7 @@ func TestPrettyHeaderUnderline(t *testing.T) {
 
 // Breakpoint tests
 
-func TestPrettyWideBreakpoint(t *testing.T) {
+func TestPrettyFullBreakpoint(t *testing.T) {
 	rows := []prettyInput{
 		{Id: "azure.ai.agents", Name: "Foundry agents (Preview)", Version: "0.1.18-preview",
 			Status: "✓ Up to date", StatusSymbol: "✓", Source: "azd"},
@@ -239,7 +239,7 @@ func TestPrettyWideBreakpoint(t *testing.T) {
 	require.NoError(t, err)
 	output := buf.String()
 
-	// Wide: all columns shown, full status text
+	// Full: all columns shown, full status text
 	require.Contains(t, output, "ID")
 	require.Contains(t, output, "NAME")
 	require.Contains(t, output, "VERSION")
@@ -249,14 +249,14 @@ func TestPrettyWideBreakpoint(t *testing.T) {
 	require.Contains(t, output, "Foundry agents (Preview)")
 }
 
-func TestPrettyMediumBreakpoint(t *testing.T) {
+func TestPrettyCompactBreakpoint(t *testing.T) {
 	rows := []prettyInput{
 		{Id: "azure.ai.agents", Name: "Foundry agents (Preview)", Version: "0.1.18-preview",
 			Status: "✓ Up to date", StatusSymbol: "✓", Source: "azd"},
 	}
 
 	formatter := &PrettyTableFormatter{
-		ConsoleWidthFn: func() int { return 95 },
+		ConsoleWidthFn: func() int { return 80 },
 	}
 
 	buf := &bytes.Buffer{}
@@ -267,39 +267,15 @@ func TestPrettyMediumBreakpoint(t *testing.T) {
 	require.NoError(t, err)
 	output := buf.String()
 
-	// Medium: all columns shown, status uses ShortValueTemplate (symbol only)
-	require.Contains(t, output, "ID")
-	require.Contains(t, output, "NAME")
-	require.Contains(t, output, "SOURCE")
-	// Should use short status template (symbol only)
-	require.NotContains(t, output, "Up to date")
-}
-
-func TestPrettyNarrowBreakpoint(t *testing.T) {
-	rows := []prettyInput{
-		{Id: "azure.ai.agents", Name: "Foundry agents (Preview)", Version: "0.1.18-preview",
-			Status: "✓ Up to date", StatusSymbol: "✓", Source: "azd"},
-	}
-
-	formatter := &PrettyTableFormatter{
-		ConsoleWidthFn: func() int { return 60 },
-	}
-
-	buf := &bytes.Buffer{}
-	err := formatter.Format(rows, buf, PrettyTableFormatterOptions{
-		Columns: extListTestColumns(),
-	})
-
-	require.NoError(t, err)
-	output := buf.String()
-
-	// Narrow: only Priority ≤ 2 columns (ID, VERSION, STATUS)
+	// Compact: Priority ≤ 2 columns, status uses ShortValueTemplate (symbol only)
 	require.Contains(t, output, "ID")
 	require.Contains(t, output, "VERSION")
 	require.Contains(t, output, "STATUS")
-	// NAME (priority 3) and SOURCE (priority 4) dropped
+	require.Contains(t, output, "SOURCE")
+	// NAME (priority 3) dropped
 	require.NotContains(t, output, "NAME")
-	require.NotContains(t, output, "SOURCE")
+	// Should use short status template (symbol only)
+	require.NotContains(t, output, "Up to date")
 }
 
 func TestPrettyCardBreakpoint(t *testing.T) {
@@ -368,44 +344,14 @@ func TestPrettyCardGroupingOrder(t *testing.T) {
 	require.Contains(t, output, "Third")
 }
 
-func TestPrettyTruncation(t *testing.T) {
-	rows := []prettyInput{
-		{Id: "ext-a", Name: "A Very Long Extension Name That Should Get Truncated Here", Version: "1.0.0",
-			Status: "ok", StatusSymbol: "✓", Source: "azd"},
-	}
-
-	// Use width 80 (medium) — content is wider than 80 so truncation is needed
-	formatter := &PrettyTableFormatter{
-		ConsoleWidthFn: func() int { return 80 },
-	}
-
-	buf := &bytes.Buffer{}
-	err := formatter.Format(rows, buf, PrettyTableFormatterOptions{
-		Columns: []PrettyColumn{
-			{Column: Column{Heading: "ID", ValueTemplate: "{{.Id}}"}, Priority: 1},
-			{Column: Column{Heading: "NAME", ValueTemplate: "{{.Name}}"}, Priority: 3, Truncatable: true},
-			{Column: Column{Heading: "VERSION", ValueTemplate: "{{.Version}}"}, Priority: 1},
-			{Column: Column{Heading: "STATUS", ValueTemplate: "{{.Status}}"}, Priority: 2},
-			{Column: Column{Heading: "SOURCE", ValueTemplate: "{{.Source}}"}, Priority: 4},
-		},
-	})
-
-	require.NoError(t, err)
-	output := buf.String()
-
-	// Name should be truncated with ellipsis at medium width
-	require.Contains(t, output, "…", "truncated name should contain ellipsis")
-	// The full name should NOT appear
-	require.NotContains(t, output, "A Very Long Extension Name That Should Get Truncated Here")
-}
-
 func TestPrettyShortValueTemplate(t *testing.T) {
 	rows := []prettyInput{
 		{Id: "ext-a", Status: "✓ Up to date", StatusSymbol: "✓"},
 	}
 
+	// Width 70 is in compact range (60-99), should use short template
 	formatter := &PrettyTableFormatter{
-		ConsoleWidthFn: func() int { return 90 },
+		ConsoleWidthFn: func() int { return 70 },
 	}
 
 	buf := &bytes.Buffer{}
@@ -414,7 +360,7 @@ func TestPrettyShortValueTemplate(t *testing.T) {
 			{Column: Column{Heading: "ID", ValueTemplate: "{{.Id}}"}, Priority: 1},
 			{
 				Column:             Column{Heading: "STATUS", ValueTemplate: "{{.Status}}"},
-				Priority:           2,
+				Priority:           1,
 				ShortValueTemplate: "{{.StatusSymbol}}",
 			},
 		},
@@ -423,11 +369,11 @@ func TestPrettyShortValueTemplate(t *testing.T) {
 	require.NoError(t, err)
 	output := buf.String()
 
-	// At medium width, should use short template (symbol only)
+	// At compact width, should use short template (symbol only)
 	require.NotContains(t, output, "Up to date")
 }
 
-func TestPrettyShortValueTemplateNotUsedAtWideWidth(t *testing.T) {
+func TestPrettyShortValueTemplateNotUsedAtFullWidth(t *testing.T) {
 	rows := []prettyInput{
 		{Id: "ext-a", Status: "✓ Up to date", StatusSymbol: "✓"},
 	}
@@ -442,7 +388,7 @@ func TestPrettyShortValueTemplateNotUsedAtWideWidth(t *testing.T) {
 			{Column: Column{Heading: "ID", ValueTemplate: "{{.Id}}"}, Priority: 1},
 			{
 				Column:             Column{Heading: "STATUS", ValueTemplate: "{{.Status}}"},
-				Priority:           2,
+				Priority:           1,
 				ShortValueTemplate: "{{.StatusSymbol}}",
 			},
 		},
@@ -451,8 +397,43 @@ func TestPrettyShortValueTemplateNotUsedAtWideWidth(t *testing.T) {
 	require.NoError(t, err)
 	output := buf.String()
 
-	// At wide width, should use full template
+	// At full width, should use full template
 	require.Contains(t, output, "✓ Up to date")
+}
+
+func TestPrettyColorFuncWithShortValueTemplate(t *testing.T) {
+	rows := []prettyInput{
+		{Id: "ext-a", Status: "✓ Up to date", StatusSymbol: "✓"},
+	}
+
+	colorApplied := false
+	// Width 70 is compact range
+	formatter := &PrettyTableFormatter{
+		ConsoleWidthFn: func() int { return 70 },
+	}
+
+	buf := &bytes.Buffer{}
+	err := formatter.Format(rows, buf, PrettyTableFormatterOptions{
+		Columns: []PrettyColumn{
+			{Column: Column{Heading: "ID", ValueTemplate: "{{.Id}}"}, Priority: 1},
+			{
+				Column:             Column{Heading: "STATUS", ValueTemplate: "{{.Status}}"},
+				Priority:           1,
+				ShortValueTemplate: "{{.StatusSymbol}}",
+				ColorFunc: func(s string) string {
+					colorApplied = true
+					return "[" + s + "]"
+				},
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.True(t, colorApplied, "ColorFunc should be applied to short value")
+	output := buf.String()
+	// At compact width, should use short template AND apply color
+	require.NotContains(t, output, "Up to date")
+	require.Contains(t, output, "[✓]")
 }
 
 // Breakpoint boundary transition tests
@@ -466,18 +447,17 @@ func TestPrettyBreakpointTransitions(t *testing.T) {
 	columns := extListTestColumns()
 
 	tests := []struct {
-		name       string
-		width      int
-		wantCard   bool
-		wantNAME   bool
-		wantSOURCE bool
+		name     string
+		width    int
+		wantCard bool
+		wantNAME bool
 	}{
-		{"wide at 110", 110, false, true, true},
-		{"medium at 109", 109, false, true, true},
-		{"medium at 80", 80, false, true, true},
-		{"narrow at 79", 79, false, false, false},
-		{"narrow at 50", 50, false, false, false},
-		{"card at 49", 49, true, false, false},
+		{"full at 120", 120, false, true},
+		{"full at 100", 100, false, true},
+		{"compact at 99", 99, false, false},
+		{"compact at 60", 60, false, false},
+		{"card at 59", 59, true, false},
+		{"card at 40", 40, true, false},
 	}
 
 	for _, tt := range tests {
@@ -505,12 +485,6 @@ func TestPrettyBreakpointTransitions(t *testing.T) {
 					require.Contains(t, output, "NAME", "expected NAME column for width %d", tt.width)
 				} else {
 					require.NotContains(t, output, "NAME", "expected no NAME column for width %d", tt.width)
-				}
-				if tt.wantSOURCE {
-					require.Contains(t, output, "SOURCE", "expected SOURCE column for width %d", tt.width)
-				} else {
-					require.NotContains(t, output, "SOURCE",
-						"expected no SOURCE column for width %d", tt.width)
 				}
 			}
 		})
@@ -588,6 +562,8 @@ func TestTruncateWithEllipsis(t *testing.T) {
 		{"ab", 1, "…"},
 		{"abc", 3, "abc"},
 		{"abcd", 3, "ab…"},
+		{"", 5, ""},
+		{"日本語テスト", 4, "日本語…"},
 	}
 
 	for _, tt := range tests {
@@ -598,61 +574,109 @@ func TestTruncateWithEllipsis(t *testing.T) {
 	}
 }
 
-func TestEstimateTableWidth(t *testing.T) {
-	cols := []parsedCol{
-		{col: PrettyColumn{Column: Column{Heading: "Name"}}},
-		{col: PrettyColumn{Column: Column{Heading: "Version"}}},
+func TestPrettyTableANSIAlignment(t *testing.T) {
+	// Simulate ANSI color codes with varying lengths to verify
+	// that column alignment uses display width, not byte length.
+	green := func(s string) string { return "\033[32m" + s + "\033[0m" }
+	gray := func(s string) string { return "\033[90m" + s + "\033[0m" }
+
+	rows := []prettyInput{
+		{Id: "ext-a", Status: "✓ Up to date", Source: "azd"},
+		{Id: "ext-b", Status: "-", Source: "local"},
 	}
 
-	// No rows: width = len("Name") + len("Version") + 3 (padding) = 4 + 7 + 3 = 14
-	width := estimateTableWidth(cols, nil)
-	require.Equal(t, 14, width)
-}
-
-func TestResponsiveFilterDropsHighestPriorityNumber(t *testing.T) {
-	cols := []parsedCol{
-		{col: PrettyColumn{Column: Column{Heading: "Id", ValueTemplate: "{{.Name}}"}, Priority: 1}},
-		{col: PrettyColumn{Column: Column{Heading: "Source-Column", ValueTemplate: "{{.Name}}"}, Priority: 4}},
-		{col: PrettyColumn{Column: Column{Heading: "Name-Column", ValueTemplate: "{{.Name}}"}, Priority: 3}},
+	formatter := &PrettyTableFormatter{
+		ConsoleWidthFn: func() int { return 120 },
 	}
 
-	// Width so narrow that it can't fit all 3 columns
-	result := responsiveFilter(cols, nil, 20)
+	buf := &bytes.Buffer{}
+	err := formatter.Format(rows, buf, PrettyTableFormatterOptions{
+		Columns: []PrettyColumn{
+			{Column: Column{Heading: "ID", ValueTemplate: "{{.Id}}"}, Priority: 1},
+			{
+				Column:   Column{Heading: "STATUS", ValueTemplate: "{{.Status}}"},
+				Priority: 1,
+				ColorFunc: func(s string) string {
+					if s == "-" {
+						return gray(s)
+					}
+					return green(s)
+				},
+			},
+			{Column: Column{Heading: "SOURCE", ValueTemplate: "{{.Source}}"}, Priority: 1},
+		},
+	})
 
-	require.Less(t, len(result), 3)
+	require.NoError(t, err)
+	output := buf.String()
 
-	// Id (priority 1) should always remain
-	hasId := false
-	for _, c := range result {
-		if c.col.Heading == "Id" {
-			hasId = true
+	// Parse data rows (skip header and underline)
+	lines := strings.Split(output, "\n")
+	require.GreaterOrEqual(t, len(lines), 4, "expected header + underline + 2 data rows")
+
+	// Strip ANSI codes to find the visual position of SOURCE column
+	strip := func(s string) string {
+		return ansiRegex.ReplaceAllString(s, "")
+	}
+
+	// displayIndex returns the display-column position of substr within s,
+	// where s has already been stripped of ANSI codes.
+	displayIndex := func(s, substr string) int {
+		byteIdx := strings.Index(s, substr)
+		if byteIdx < 0 {
+			return -1
 		}
-	}
-	require.True(t, hasId, "Priority 1 columns should be kept the longest")
-}
-
-func TestResponsiveFilterKeepsAllWhenFits(t *testing.T) {
-	cols := []parsedCol{
-		{col: PrettyColumn{Column: Column{Heading: "Id", ValueTemplate: "{{.Name}}"}, Priority: 1}},
-		{col: PrettyColumn{Column: Column{Heading: "Source", ValueTemplate: "{{.Name}}"}, Priority: 4}},
+		return displayWidth(s[:byteIdx])
 	}
 
-	result := responsiveFilter(cols, nil, 200)
-	require.Len(t, result, 2)
+	row1Stripped := strip(lines[2])
+	row2Stripped := strip(lines[3])
+
+	// Both SOURCE values should start at the same display column.
+	sourcePos1 := displayIndex(row1Stripped, "azd")
+	sourcePos2 := displayIndex(row2Stripped, "local")
+
+	require.Greater(t, sourcePos1, 0, "SOURCE value 'azd' not found in row 1")
+	require.Greater(t, sourcePos2, 0, "SOURCE value 'local' not found in row 2")
+	require.Equal(t, sourcePos1, sourcePos2,
+		"SOURCE column should start at the same position in both rows;\n"+
+			"row1: %q\nrow2: %q", row1Stripped, row2Stripped)
 }
 
-// extListTestColumns returns the standard 5-column config matching the hybrid UX spec.
+func TestDisplayWidth(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  int
+	}{
+		{"ascii", "hello", 5},
+		{"empty", "", 0},
+		{"checkmark", "✓ Up to date", 12},
+		{"dash", "-", 1},
+		{"ansi green", "\033[32m✓ Up to date\033[0m", 12},
+		{"ansi gray", "\033[90m-\033[0m", 1},
+		{"no ansi unicode", "日本語", 6},
+		{"ansi with unicode", "\033[31m日本語\033[0m", 6},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := displayWidth(tt.input)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+// extListTestColumns returns the standard 5-column config matching the 2-threshold spec.
 func extListTestColumns() []PrettyColumn {
 	return []PrettyColumn{
 		{
-			Column:      Column{Heading: "ID", ValueTemplate: "{{.Id}}"},
-			Priority:    1,
-			Truncatable: true,
+			Column:   Column{Heading: "ID", ValueTemplate: "{{.Id}}"},
+			Priority: 1,
 		},
 		{
-			Column:      Column{Heading: "NAME", ValueTemplate: "{{.Name}}"},
-			Priority:    3,
-			Truncatable: true,
+			Column:   Column{Heading: "NAME", ValueTemplate: "{{.Name}}"},
+			Priority: 3,
 		},
 		{
 			Column:   Column{Heading: "VERSION", ValueTemplate: "{{.Version}}"},
@@ -665,7 +689,7 @@ func extListTestColumns() []PrettyColumn {
 		},
 		{
 			Column:   Column{Heading: "SOURCE", ValueTemplate: "{{.Source}}"},
-			Priority: 4,
+			Priority: 1,
 		},
 	}
 }

@@ -195,7 +195,7 @@ func TestToolUpdateCheckMiddleware_NotificationGating(t *testing.T) {
 	// exists → no notification is displayed.
 	uc := tool.NewUpdateChecker(ucm, nil, func() (string, error) {
 		return t.TempDir(), nil
-	})
+	}, nil)
 	mgr := tool.NewManager(nil, nil, uc)
 
 	m := newUpdateCheckMiddleware(

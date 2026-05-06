@@ -26,8 +26,14 @@ type ShowService struct {
 	Project ShowServiceProject `json:"project"`
 	// Target contains information about the resource that the service is deployed
 	// to.
-	Target    *ShowTargetArm `json:"target,omitempty"`
-	IngresUrl string         `json:"-"`
+	Target *ShowTargetArm `json:"target,omitempty"`
+	// IngresUrl is the deployed service's ingress URL. Retained (with the
+	// historical misspelling) for backward compatibility with existing
+	// consumers of `azd show -o json`. Prefer IngressUrl in new code.
+	IngresUrl string `json:"ingresUrl,omitempty"`
+	// IngressUrl is the deployed service's ingress URL. Mirrors IngresUrl
+	// and is the correctly spelled, preferred key.
+	IngressUrl string `json:"ingressUrl,omitempty"`
 }
 
 // ShowServiceProject is the contract for a service's project as returned by `azd show`

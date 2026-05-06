@@ -229,6 +229,7 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 							}
 						}
 						resSvc.IngresUrl = cachedSvc.IngressUrl
+					resSvc.IngressUrl = cachedSvc.IngressUrl
 						res.Services[svcName] = resSvc
 					}
 				}
@@ -264,6 +265,7 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 								ResourceIds: resourceIds,
 							}
 							resSvc.IngresUrl = ingressUrl
+						resSvc.IngressUrl = ingressUrl
 							res.Services[svcName] = resSvc
 
 							// Add to cache

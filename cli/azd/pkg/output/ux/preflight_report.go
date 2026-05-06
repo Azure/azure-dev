@@ -76,6 +76,9 @@ func (r *PreflightReport) ToString(currentIndentation string) string {
 func writeItem(
 	sb *strings.Builder, indent string, prefix string, item PreflightReportItem,
 ) {
+	if item.Message == "" {
+		return
+	}
 	lines := strings.Split(item.Message, "\n")
 	sb.WriteString(fmt.Sprintf("%s%s %s", indent, prefix, lines[0]))
 	for _, line := range lines[1:] {

@@ -814,6 +814,41 @@ func TestDetectTool_UnknownCategory(t *testing.T) {
 	assert.False(t, status.Installed)
 }
 
+// TestDetectTool_LibraryEnvVars verifies that detectLibrary sets
+// AZD_SKIP_FIRST_RUN and NO_COLOR in the child process environment
+// to prevent recursion and ANSI contamination (#8052).
+func TestDetectTool_LibraryEnvVars(t *testing.T) {
+	t.Parallel()
+
+	runner := mockexec.NewMockCommandRunner()
+	runner.MockToolInPath("azd", nil)
+
+	var capturedEnv []string
+	runner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "azd"
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		capturedEnv = args.Env
+		return exec.RunResult{
+			ExitCode: 0,
+			Stdout:   `[{"id":"my.ext","installedVersion":"1.0.0"}]`,
+		}, nil
+	})
+
+	d := NewDetector(runner)
+	_, err := d.DetectTool(t.Context(), &ToolDefinition{
+		Id:            "my.ext",
+		Category:      ToolCategoryLibrary,
+		DetectCommand: "azd",
+		VersionArgs:   []string{"extension", "list", "--installed", "--output", "json"},
+	})
+
+	require.NoError(t, err)
+	assert.Contains(t, capturedEnv, "AZD_SKIP_FIRST_RUN=true",
+		"child process must skip first-run check")
+	assert.Contains(t, capturedEnv, "NO_COLOR=1",
+		"child process must suppress ANSI codes")
+}
+
 // ---------------------------------------------------------------------------
 // DetectAll
 // ---------------------------------------------------------------------------

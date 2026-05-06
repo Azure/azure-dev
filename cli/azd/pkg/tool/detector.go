@@ -392,6 +392,11 @@ func (d *detector) detectLibrary(
 	result, err := d.commandRunner.Run(ctx, exec.RunArgs{
 		Cmd:  tool.DetectCommand,
 		Args: tool.VersionArgs,
+		// Prevent the child azd process from re-triggering the
+		// first-run tool check, which would cause recursion (#8052).
+		// NO_COLOR suppresses ANSI escape codes that would break
+		// JSON parsing.
+		Env: []string{"AZD_SKIP_FIRST_RUN=true", "NO_COLOR=1"},
 	})
 
 	if err != nil {

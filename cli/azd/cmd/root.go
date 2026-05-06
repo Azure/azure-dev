@@ -546,14 +546,25 @@ func newRootCmd(
 	return cmd
 }
 
+// workflowCommands lists root-level commands where the first-run tool
+// check and update notifications add value.  Utility commands (auth,
+// config, env, extension, etc.) are excluded to avoid blocking and to
+// prevent recursive subprocess issues when the tool check spawns
+// `azd extension list` (#8052).
+var workflowCommands = map[string]bool{
+	"init":      true,
+	"up":        true,
+	"provision": true,
+	"deploy":    true,
+	"down":      true,
+	"publish":   true,
+	"build":     true,
+	"package":   true,
+	"restore":   true,
+}
+
 // isWorkflowCommand reports whether the command is a primary workflow
-// command where a first-run tool check adds value.  Utility commands
-// (auth, config, env, show, etc.) are excluded so they are never
-// blocked by the first-run experience or update notifications.
-//
-// Instead of maintaining a hard-coded allowlist, we rely on the
-// RootLevelHelpOption group annotation so that any new command added
-// to a workflow group is automatically covered.
+// command where a first-run tool check adds value.
 func isWorkflowCommand(descriptor *actions.ActionDescriptor) bool {
 	// Walk up to the root-level subcommand (first segment after "azd").
 	current := descriptor
@@ -561,14 +572,17 @@ func isWorkflowCommand(descriptor *actions.ActionDescriptor) bool {
 		current = current.Parent()
 	}
 
-	if current.Options == nil {
+	if current.Options == nil || current.Options.Command == nil {
 		return false
 	}
 
-	group := current.Options.GroupingOptions.RootLevelHelp
-	return group == actions.CmdGroupStart ||
-		group == actions.CmdGroupAzure ||
-		group == actions.CmdGroupBeta
+	// Extract the command name (first word of Use field).
+	name := current.Options.Command.Use
+	if i := strings.IndexByte(name, ' '); i > 0 {
+		name = name[:i]
+	}
+
+	return workflowCommands[name]
 }
 
 func getCmdRootHelpFooter(cmd *cobra.Command) string {

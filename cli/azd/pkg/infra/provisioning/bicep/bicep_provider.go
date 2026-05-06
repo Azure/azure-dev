@@ -2636,12 +2636,13 @@ func (p *BicepProvider) validatePreflight(
 	if len(results) > 0 {
 		report := &ux.PreflightReport{}
 		for _, result := range results {
-			var links []ux.PreflightReportLink
-			for _, l := range result.Links {
-				links = append(links, ux.PreflightReportLink{
+			links := make(
+				[]ux.PreflightReportLink, len(result.Links))
+			for i, l := range result.Links {
+				links[i] = ux.PreflightReportLink{
 					URL:   l.URL,
 					Title: l.Title,
-				})
+				}
 			}
 			report.Items = append(report.Items, ux.PreflightReportItem{
 				IsError:      result.Severity == PreflightCheckError,

@@ -4,14 +4,11 @@
 package ux
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/mattn/go-colorable"
 )
 
 // PreflightReportItem represents a single finding from preflight validation.
@@ -106,55 +103,9 @@ func writeItem(
 func (r *PreflightReport) MarshalJSON() ([]byte, error) {
 	warnings, errors := r.partition()
 
-	type jsonLink struct {
-		URL   string `json:"url"`
-		Title string `json:"title,omitempty"`
-	}
-	type jsonItem struct {
-		Severity     string     `json:"severity"`
-		DiagnosticID string     `json:"diagnosticId,omitempty"`
-		Message      string     `json:"message"`
-		Suggestion   string     `json:"suggestion,omitempty"`
-		Links        []jsonLink `json:"links,omitempty"`
-	}
-
-	// Use partition ordering (warnings first, then errors)
-	// to match ToString() output order.
-	ordered := make(
-		[]PreflightReportItem, 0, len(warnings)+len(errors))
-	ordered = append(ordered, warnings...)
-	ordered = append(ordered, errors...)
-
-	items := make([]jsonItem, 0, len(ordered))
-	for _, item := range ordered {
-		severity := "warning"
-		if item.IsError {
-			severity = "error"
-		}
-		ji := jsonItem{
-			Severity:     severity,
-			DiagnosticID: item.DiagnosticID,
-			Message:      stripAnsi(item.Message),
-			Suggestion:   stripAnsi(item.Suggestion),
-		}
-		for _, link := range item.Links {
-			ji.Links = append(ji.Links, jsonLink(link))
-		}
-		items = append(items, ji)
-	}
-
-	result := struct {
-		Type    string     `json:"type"`
-		Summary string     `json:"summary"`
-		Items   []jsonItem `json:"items"`
-	}{
-		Type: "preflight",
-		Summary: fmt.Sprintf("preflight: %d warning(s), %d error(s)",
-			len(warnings), len(errors)),
-		Items: items,
-	}
-
-	return json.Marshal(result)
+	return json.Marshal(output.EventForMessage(
+		fmt.Sprintf("preflight: %d warning(s), %d error(s)",
+			len(warnings), len(errors))))
 }
 
 // HasErrors returns true if the report contains at least one error-level item.
@@ -187,21 +138,4 @@ func (r *PreflightReport) partition() (warnings, errors []PreflightReportItem) {
 		}
 	}
 	return warnings, errors
-}
-
-// stripAnsi removes ANSI escape sequences from a string for
-// machine-readable output (e.g. JSON).
-func stripAnsi(s string) string {
-	if s == "" {
-		return s
-	}
-	var buf bytes.Buffer
-	// colorable.NewNonColorable strips ANSI sequences.
-	if _, err := io.Copy(
-		colorable.NewNonColorable(&buf),
-		strings.NewReader(s),
-	); err != nil {
-		return s
-	}
-	return buf.String()
 }

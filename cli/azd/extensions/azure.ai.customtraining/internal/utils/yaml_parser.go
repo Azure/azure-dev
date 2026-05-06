@@ -84,10 +84,6 @@ func ParseJobFile(path string) (*JobDefinition, error) {
 		return nil, fmt.Errorf("failed to parse job YAML: %w", err)
 	}
 
-	if err := ValidateJobDefinition(&job); err != nil {
-		return nil, err
-	}
-
 	return &job, nil
 }
 
@@ -113,26 +109,4 @@ func IsRemoteURI(s string) bool {
 		strings.HasPrefix(lower, "http://") ||
 		strings.HasPrefix(lower, "git://") ||
 		strings.HasPrefix(lower, "git+")
-}
-
-// ValidateJobDefinition checks that required fields are present.
-func ValidateJobDefinition(job *JobDefinition) error {
-	if job.Command == "" {
-		return fmt.Errorf("job YAML validation: 'command' is required")
-	}
-	if job.Environment == "" {
-		return fmt.Errorf("job YAML validation: 'environment' is required")
-	}
-	if job.Compute == "" {
-		return fmt.Errorf("job YAML validation: 'compute' is required")
-	}
-	for name, svc := range job.Services {
-		if !strings.EqualFold(svc.Type, "ssh") {
-			return fmt.Errorf("job YAML validation: services.%s.type=%q is not supported; only 'ssh' is allowed", name, svc.Type)
-		}
-		if strings.TrimSpace(svc.SshPublicKeys) == "" {
-			return fmt.Errorf("job YAML validation: services.%s.ssh_public_keys is required when type is 'ssh'", name)
-		}
-	}
-	return nil
 }

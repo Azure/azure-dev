@@ -10,6 +10,8 @@ import (
 	"reflect"
 	"regexp"
 	"strings"
+
+	"github.com/fatih/color"
 )
 
 // FindingSeverity indicates whether a finding is an error or a warning.
@@ -100,11 +102,21 @@ func ValidateJobOffline(job *JobDefinition, yamlDir string) *ValidationResult {
 		}
 	}
 
-	// 5. Local path existence checks
+	// 5. Local path existence checks + input type required.
+	// Inputs with `value:` are literals (type defaults to "literal" at submit
+	// time); inputs without `value:` carry a path/URI and must declare a type
+	// — otherwise the backend rejects with "Unexpected JobInputType in request body: []".
 	validateLocalPath(result, "code", job.Code, yamlDir)
 	for name, input := range job.Inputs {
 		if input.Value == "" {
 			validateLocalPath(result, fmt.Sprintf("inputs.%s.path", name), input.Path, yamlDir)
+			if strings.TrimSpace(input.Type) == "" {
+				result.Findings = append(result.Findings, ValidationFinding{
+					Field:    fmt.Sprintf("inputs.%s.type", name),
+					Severity: SeverityError,
+					Message:  "type is required (e.g. uri_folder, uri_file etc)",
+				})
+			}
 		}
 	}
 
@@ -116,7 +128,90 @@ func ValidateJobOffline(job *JobDefinition, yamlDir string) *ValidationResult {
 		validateInputOutputDefinitions(result, job, optionalInputs)
 	}
 
+	// 9. Outputs:
+	//    a) "default" is reserved by the backend and rejected at submit time
+	//       with a 400 ("Name of the output \"default\" is reserved by the system").
+	//    b) Each declared output must have a non-empty type — the backend rejects
+	//       missing/empty type with "Unexpected JobOutputType in request body: []".
+	//    Catch both offline so users don't have to wait for the backend round-trip.
+	for name, output := range job.Outputs {
+		if strings.EqualFold(name, "default") {
+			result.Findings = append(result.Findings, ValidationFinding{
+				Field:    fmt.Sprintf("outputs.%s", name),
+				Severity: SeverityError,
+				Message:  "output name 'default' is reserved by the system; use a different name",
+			})
+		}
+		if strings.TrimSpace(output.Type) == "" {
+			result.Findings = append(result.Findings, ValidationFinding{
+				Field:    fmt.Sprintf("outputs.%s.type", name),
+				Severity: SeverityError,
+				Message:  "type is required (e.g. uri_folder, uri_file etc)",
+			})
+		}
+	}
+
+	// 10. Services: only "ssh" is supported, and ssh_public_keys is required.
+	// The backend currently does not enforce key presence — without keys the SSH
+	// service is provisioned but unusable, and users hit the failure later.
+	for name, svc := range job.Services {
+		if !strings.EqualFold(svc.Type, "ssh") {
+			result.Findings = append(result.Findings, ValidationFinding{
+				Field:    fmt.Sprintf("services.%s.type", name),
+				Severity: SeverityError,
+				Message:  fmt.Sprintf("type %q is not supported; only 'ssh' is allowed", svc.Type),
+			})
+			continue
+		}
+		if strings.TrimSpace(svc.SshPublicKeys) == "" {
+			result.Findings = append(result.Findings, ValidationFinding{
+				Field:    fmt.Sprintf("services.%s.ssh_public_keys", name),
+				Severity: SeverityError,
+				Message:  "ssh_public_keys is required when type is 'ssh'",
+			})
+		}
+	}
+
 	return result
+}
+
+// ReportValidationResult prints findings to stdout and returns an error if any
+// finding has Error severity. Shared by the `job validate` command (which calls
+// it as the entire command body) and the `job submit` command (which calls it
+// as a pre-flight check before any network or upload work).
+//
+// When printSuccess is true, a green success line is printed for clean and
+// warnings-only results. Submit passes false so the success message doesn't
+// clutter its own "Submitting command job…" output flow.
+func ReportValidationResult(filePath string, result *ValidationResult, printSuccess bool) error {
+	if len(result.Findings) == 0 {
+		if printSuccess {
+			color.Green("✓ Validation passed: %s\n", filePath)
+		}
+		return nil
+	}
+
+	fmt.Printf("Validation results for: %s\n\n", filePath)
+
+	for _, f := range result.Findings {
+		prefix := "⚠"
+		if f.Severity == SeverityError {
+			prefix = "✗"
+		}
+		fmt.Printf("  %s [%s] %s: %s\n", prefix, f.Severity, f.Field, f.Message)
+	}
+
+	fmt.Println()
+	fmt.Printf("  Errors: %d, Warnings: %d\n", result.ErrorCount(), result.WarningCount())
+
+	if result.HasErrors() {
+		return fmt.Errorf("validation failed with %d error(s)", result.ErrorCount())
+	}
+
+	if printSuccess {
+		color.Green("\n✓ Validation passed with warnings.\n")
+	}
+	return nil
 }
 
 // validateLocalPath checks that a local path exists on disk.
@@ -252,9 +347,10 @@ func validateSingleBracePlaceholders(result *ValidationResult, command string) {
 }
 
 // validateInputOutputDefinitions checks that inputs/outputs referenced in command
+// validateInputOutputDefinitions verifies that inputs referenced in the command
 // are not empty/nil definitions (all fields zero-valued).
-// Empty inputs are errors; empty outputs are warnings (backend uses defaults).
 // Inputs inside [...] optional blocks are skipped — empty definitions are valid for optional inputs.
+// Outputs are validated separately in ValidateJobOffline (rule 9).
 func validateInputOutputDefinitions(result *ValidationResult, job *JobDefinition, optionalInputs map[string]bool) {
 	command := job.Command
 	seen := make(map[string]bool)
@@ -263,34 +359,26 @@ func validateInputOutputDefinitions(result *ValidationResult, job *JobDefinition
 		kind := match[1]
 		key := match[2]
 
+		if kind != "inputs" || job.Inputs == nil {
+			continue
+		}
+
 		dedupeKey := kind + "." + key
 		if seen[dedupeKey] {
 			continue
 		}
 		seen[dedupeKey] = true
 
-		if kind == "inputs" && job.Inputs != nil {
-			if optionalInputs[key] {
-				continue
-			}
-			if input, exists := job.Inputs[key]; exists {
-				if (input == InputDefinition{}) {
-					result.Findings = append(result.Findings, ValidationFinding{
-						Field:    fmt.Sprintf("inputs.%s", key),
-						Severity: SeverityError,
-						Message:  fmt.Sprintf("input '%s' is referenced in command but has an empty definition", key),
-					})
-				}
-			}
-		} else if kind == "outputs" && job.Outputs != nil {
-			if output, exists := job.Outputs[key]; exists {
-				if (output == OutputDefinition{}) {
-					result.Findings = append(result.Findings, ValidationFinding{
-						Field:    fmt.Sprintf("outputs.%s", key),
-						Severity: SeverityWarning,
-						Message:  fmt.Sprintf("output '%s' has an empty definition — default values will be used", key),
-					})
-				}
+		if optionalInputs[key] {
+			continue
+		}
+		if input, exists := job.Inputs[key]; exists {
+			if (input == InputDefinition{}) {
+				result.Findings = append(result.Findings, ValidationFinding{
+					Field:    fmt.Sprintf("inputs.%s", key),
+					Severity: SeverityError,
+					Message:  fmt.Sprintf("input '%s' is referenced in command but has an empty definition", key),
+				})
 			}
 		}
 	}

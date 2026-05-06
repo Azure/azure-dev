@@ -35,10 +35,21 @@ func newJobSubmitCommand() *cobra.Command {
 				return fmt.Errorf("--file (-f) is required: provide a path to a YAML job definition file")
 			}
 
-			// Parse and validate the YAML job definition
+			// Parse the YAML job definition
 			jobDef, err := utils.ParseJobFile(filePath)
 			if err != nil {
 				return err
+			}
+
+			// Run shared offline validation up-front (same checks as `job validate`).
+			// On any error finding, abort before doing any network or upload work.
+			yamlDir := filepath.Dir(filePath)
+			validation := utils.ValidateJobOffline(jobDef, yamlDir)
+			if len(validation.Findings) > 0 {
+				if err := utils.ReportValidationResult(filePath, validation, false); err != nil {
+					return err
+				}
+				fmt.Println()
 			}
 
 			azdClient, err := azdext.NewAzdClient()
@@ -207,7 +218,7 @@ func buildJobResource(def *utils.JobDefinition) *models.JobResource {
 		}
 	}
 
-	// Services (e.g., SSH). Validation in ValidateJobDefinition restricts type to "ssh"
+	// Services (e.g., SSH). ValidateJobOffline restricts type to "ssh"
 	// and ensures ssh_public_keys is non-empty.
 	if len(def.Services) > 0 {
 		job.Services = make(map[string]interface{}, len(def.Services))
@@ -223,7 +234,7 @@ func buildJobResource(def *utils.JobDefinition) *models.JobResource {
 }
 
 // buildServiceRequest translates an AML YAML ServiceDefinition into the API request shape.
-// Currently only SSH is supported (enforced by ValidateJobDefinition).
+// Currently only SSH is supported (enforced by ValidateJobOffline).
 func buildServiceRequest(svc utils.ServiceDefinition) *models.JobServiceRequest {
 	req := &models.JobServiceRequest{
 		JobServiceType: mapServiceType(svc.Type),

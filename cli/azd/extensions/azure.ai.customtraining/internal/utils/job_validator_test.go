@@ -303,13 +303,13 @@ func TestValidate_EmptyDefinitions(t *testing.T) {
 	// YAML — output key exists but has no properties (None):
 	//   command: python train.py --out ${{outputs.model}}
 	//   outputs:
-	//     model:              ← empty definition → warning (backend uses defaults)
+	//     model:              ← empty definition → error (backend rejects empty type)
 	job = validJob()
 	job.Command = "python train.py --out ${{outputs.model}}"
 	job.Outputs = map[string]OutputDefinition{"model": {}}
 	result = ValidateJobOffline(job, ".")
-	if f := findFindingByMessage(result, "default values will be used"); f == nil || f.Severity != SeverityWarning {
-		t.Error("expected warning for empty output definition")
+	if f := findFindingByMessage(result, "type is required"); f == nil || f.Severity != SeverityError {
+		t.Error("expected error for empty output definition (missing type)")
 	}
 }
 
@@ -330,6 +330,150 @@ func TestValidate_MultilineCommand(t *testing.T) {
 	result := ValidateJobOffline(job, ".")
 	if f := findFindingByMessage(result, "not defined"); f != nil {
 		t.Errorf("did not expect error for multiline command: %s", f.Message)
+	}
+}
+
+// Tests services block validation:
+//   - non-ssh service type → error
+//   - ssh service missing ssh_public_keys → error
+//   - ssh service with keys → no findings for that service
+func TestValidate_Services(t *testing.T) {
+	// Unsupported service type:
+	//   services:
+	//     jupyter:
+	//       type: jupyter_lab
+	//       ssh_public_keys: ssh-rsa AAA...
+	job := validJob()
+	job.Services = map[string]ServiceDefinition{
+		"jupyter": {Type: "jupyter_lab", SshPublicKeys: "ssh-rsa AAA..."},
+	}
+	result := ValidateJobOffline(job, ".")
+	if f := findFindingByMessage(result, "is not supported"); f == nil {
+		t.Error("expected error for unsupported service type")
+	} else if f.Severity != SeverityError {
+		t.Errorf("expected SeverityError for unsupported service type, got %s", f.Severity)
+	}
+
+	// SSH service missing ssh_public_keys:
+	//   services:
+	//     my_ssh:
+	//       type: ssh
+	job = validJob()
+	job.Services = map[string]ServiceDefinition{
+		"my_ssh": {Type: "ssh"},
+	}
+	result = ValidateJobOffline(job, ".")
+	if f := findFindingByMessage(result, "ssh_public_keys is required"); f == nil {
+		t.Error("expected error for missing ssh_public_keys")
+	} else if f.Severity != SeverityError {
+		t.Errorf("expected SeverityError for missing ssh_public_keys, got %s", f.Severity)
+	}
+
+	// Whitespace-only ssh_public_keys also counts as missing:
+	job = validJob()
+	job.Services = map[string]ServiceDefinition{
+		"my_ssh": {Type: "ssh", SshPublicKeys: "   \n  "},
+	}
+	result = ValidateJobOffline(job, ".")
+	if f := findFindingByMessage(result, "ssh_public_keys is required"); f == nil {
+		t.Error("expected error for whitespace-only ssh_public_keys")
+	}
+
+	// Valid SSH service — no service-related findings:
+	job = validJob()
+	job.Services = map[string]ServiceDefinition{
+		"my_ssh": {Type: "ssh", SshPublicKeys: "ssh-rsa AAA..."},
+	}
+	result = ValidateJobOffline(job, ".")
+	if f := findFindingByMessage(result, "ssh_public_keys"); f != nil {
+		t.Errorf("did not expect ssh_public_keys finding for valid SSH service: %s", f.Message)
+	}
+	if f := findFindingByMessage(result, "is not supported"); f != nil {
+		t.Errorf("did not expect type-not-supported finding for valid SSH service: %s", f.Message)
+	}
+}
+
+// Tests that the reserved output name "default" is rejected. The backend rejects
+// it at submit time with a 400; we catch it offline so users don't have to wait
+// for the round-trip.
+func TestValidate_ReservedOutputName(t *testing.T) {
+	// Lowercase "default":
+	//   outputs:
+	//     default:
+	//       type: uri_folder
+	job := validJob()
+	job.Outputs = map[string]OutputDefinition{"default": {Type: "uri_folder"}}
+	result := ValidateJobOffline(job, ".")
+	if f := findFindingByMessage(result, "reserved by the system"); f == nil {
+		t.Error("expected error for output named 'default'")
+	} else if f.Severity != SeverityError {
+		t.Errorf("expected SeverityError for reserved output name, got %s", f.Severity)
+	}
+
+	// Case-insensitive — "Default" should also be rejected:
+	job = validJob()
+	job.Outputs = map[string]OutputDefinition{"Default": {Type: "uri_folder"}}
+	result = ValidateJobOffline(job, ".")
+	if f := findFindingByMessage(result, "reserved by the system"); f == nil {
+		t.Error("expected error for output named 'Default' (case-insensitive)")
+	}
+
+	// Non-reserved name — no reserved-name finding:
+	job = validJob()
+	job.Outputs = map[string]OutputDefinition{"model": {Type: "uri_folder"}}
+	result = ValidateJobOffline(job, ".")
+	if f := findFindingByMessage(result, "reserved by the system"); f != nil {
+		t.Errorf("did not expect reserved-name finding for output 'model': %s", f.Message)
+	}
+
+	// Inputs named "default" are NOT reserved — should be allowed:
+	job = validJob()
+	job.Inputs = map[string]InputDefinition{"default": {Type: "uri_folder", Path: "azureml://datastore/x"}}
+	result = ValidateJobOffline(job, ".")
+	if f := findFindingByMessage(result, "reserved by the system"); f != nil {
+		t.Errorf("did not expect reserved-name finding for input 'default': %s", f.Message)
+	}
+}
+
+// Tests that path-style inputs (no `value:`) must declare a type. The backend
+// rejects missing/empty input type with "Unexpected JobInputType in request body: []".
+func TestValidate_InputTypeRequired(t *testing.T) {
+	// Path input missing type:
+	//   inputs:
+	//     train_data:
+	//       path: azureml://datastore/x   ← no type → error
+	job := validJob()
+	job.Inputs = map[string]InputDefinition{
+		"train_data": {Path: "azureml://datastore/x"},
+	}
+	result := ValidateJobOffline(job, ".")
+	if f := findFindingByMessage(result, "type is required"); f == nil {
+		t.Error("expected error for path input missing type")
+	} else if f.Severity != SeverityError {
+		t.Errorf("expected SeverityError for path input missing type, got %s", f.Severity)
+	}
+
+	// Literal input (value: set) — type defaults to "literal", no error expected:
+	//   inputs:
+	//     epochs:
+	//       value: "10"
+	job = validJob()
+	job.Inputs = map[string]InputDefinition{
+		"epochs": {Value: "10"},
+	}
+	result = ValidateJobOffline(job, ".")
+	if f := findFindingByMessage(result, "type is required"); f != nil {
+		t.Errorf("did not expect type-required finding for literal input: %s", f.Message)
+	}
+
+	// Path input with type — no finding:
+	job = validJob()
+	job.Inputs = map[string]InputDefinition{
+		"train_data": {Type: "uri_folder", Path: "azureml://datastore/x"},
+	}
+	result = ValidateJobOffline(job, ".")
+	if f := findFindingByMessage(result, "type is required"); f != nil {
+		t.Errorf("did not expect type-required finding for valid path input: %s", f.Message)
 	}
 }
 

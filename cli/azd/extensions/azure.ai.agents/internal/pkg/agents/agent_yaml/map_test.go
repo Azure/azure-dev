@@ -526,7 +526,7 @@ func TestConvertYamlToolToApiTool_MCPTopLevelUrlAndConnection(t *testing.T) {
 				"kind": "mcp",
 				"name": "github-mcp-remote",
 				"connection": map[string]any{
-					"kind":     "foundry",
+					"kind":     "remote",
 					"endpoint": "https://api.githubcopilot.com/mcp/",
 					"name":     "github-mcp-oauth",
 				},

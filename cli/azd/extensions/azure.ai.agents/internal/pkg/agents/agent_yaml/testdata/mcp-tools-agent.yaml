@@ -8,7 +8,7 @@ template:
     - kind: mcp
       name: github-mcp
       connection:
-        kind: foundry
+        kind: remote
         endpoint: https://api.githubcopilot.com/mcp/
         name: github-mcp-conn
       url: https://api.githubcopilot.com/mcp/

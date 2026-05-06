@@ -20,7 +20,7 @@ template:
   tools:
     - kind: mcp
       connection:
-        kind: foundry
+        kind: remote
         endpoint: https://api.githubcopilot.com/mcp/
         name: github-mcp-oauth
       name: github-mcp-remote

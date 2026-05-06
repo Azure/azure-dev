@@ -132,7 +132,6 @@ type ConnectionKind string
 const (
 	ConnectionKindReference ConnectionKind = "reference"
 	ConnectionKindRemote    ConnectionKind = "remote"
-	ConnectionKindFoundry   ConnectionKind = "foundry"
 	ConnectionKindApiKey    ConnectionKind = "apiKey"
 	ConnectionKindAnonymous ConnectionKind = "anonymous"
 )

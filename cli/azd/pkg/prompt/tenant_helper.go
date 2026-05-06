@@ -18,8 +18,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
-// TenantInfo holds display metadata for a tenant extracted from the subscription list.
-type TenantInfo struct {
+// tenantInfo holds display metadata for a tenant extracted from the subscription list.
+type tenantInfo struct {
 	// Id is the tenant ID (GUID).
 	Id string
 	// DisplayName is the friendly name of the tenant, or the ID if no name is available.
@@ -29,14 +29,15 @@ type TenantInfo struct {
 }
 
 // extractUniqueTenants extracts unique tenants from a list of subscriptions,
-// grouped by UserAccessTenantId. The returned list is sorted by DisplayName.
+// grouped by UserAccessTenantId (falling back to TenantId when UserAccessTenantId is empty).
+// The returned list is sorted by DisplayName.
 // Tenant display names are resolved from the provided tenantDisplayNames map;
 // if a tenant ID is not in the map, the ID itself is used as the display name.
 func extractUniqueTenants(
 	subscriptions []account.Subscription,
 	tenantDisplayNames map[string]string,
-) []TenantInfo {
-	tenantMap := make(map[string]*TenantInfo)
+) []tenantInfo {
+	tenantMap := make(map[string]*tenantInfo)
 
 	for _, sub := range subscriptions {
 		tid := sub.UserAccessTenantId
@@ -51,7 +52,7 @@ func extractUniqueTenants(
 			if name, ok := tenantDisplayNames[tid]; ok && name != "" {
 				displayName = name
 			}
-			tenantMap[tid] = &TenantInfo{
+			tenantMap[tid] = &tenantInfo{
 				Id:                tid,
 				DisplayName:       displayName,
 				SubscriptionCount: 1,
@@ -59,12 +60,12 @@ func extractUniqueTenants(
 		}
 	}
 
-	tenants := make([]TenantInfo, 0, len(tenantMap))
+	tenants := make([]tenantInfo, 0, len(tenantMap))
 	for _, info := range tenantMap {
 		tenants = append(tenants, *info)
 	}
 
-	slices.SortFunc(tenants, func(a, b TenantInfo) int {
+	slices.SortFunc(tenants, func(a, b tenantInfo) int {
 		return cmp.Compare(
 			strings.ToLower(a.DisplayName),
 			strings.ToLower(b.DisplayName),
@@ -119,7 +120,7 @@ func filterByTenantEnvVar(subscriptions []account.Subscription) []account.Subscr
 func promptTenantSelection(
 	ctx context.Context,
 	console input.Console,
-	tenants []TenantInfo,
+	tenants []tenantInfo,
 ) (string, error) {
 	if len(tenants) <= 1 {
 		if len(tenants) == 1 {
@@ -189,7 +190,7 @@ func promptAndFilterByTenant(
 	return filterSubscriptionsByTenant(subscriptions, selectedTenantId), nil
 }
 
-func formatTenantOption(index int, t TenantInfo) string {
+func formatTenantOption(index int, t tenantInfo) string {
 	subCountLabel := fmt.Sprintf(
 		"%d subscription", t.SubscriptionCount,
 	)

@@ -150,7 +150,7 @@ func TestFilterByTenantEnvVar_NoMatchFallsBack(t *testing.T) {
 func TestPromptTenantSelection_SingleTenant(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
 
-	tenants := []TenantInfo{
+	tenants := []tenantInfo{
 		{Id: "tid-1", DisplayName: "Contoso", SubscriptionCount: 3},
 	}
 
@@ -166,7 +166,7 @@ func TestPromptTenantSelection_MultipleTenants_SelectFirst(t *testing.T) {
 		return strings.Contains(opts.Message, "Select a tenant")
 	}).Respond(0) // pick first tenant
 
-	tenants := []TenantInfo{
+	tenants := []tenantInfo{
 		{Id: "tid-1", DisplayName: "Contoso", SubscriptionCount: 3},
 		{Id: "tid-2", DisplayName: "Fabrikam", SubscriptionCount: 1},
 	}
@@ -183,7 +183,7 @@ func TestPromptTenantSelection_MultipleTenants_SelectAllTenants(t *testing.T) {
 		return strings.Contains(opts.Message, "Select a tenant")
 	}).Respond(2) // pick "All tenants" (third option with 2 tenants)
 
-	tenants := []TenantInfo{
+	tenants := []tenantInfo{
 		{Id: "tid-1", DisplayName: "Contoso", SubscriptionCount: 3},
 		{Id: "tid-2", DisplayName: "Fabrikam", SubscriptionCount: 1},
 	}

@@ -408,6 +408,28 @@ func (m *SubscriptionsManager) getSubscription(ctx context.Context, subscription
 	return &sub, nil
 }
 
+// GetTenantDisplayNames returns a map of tenant ID to display name for all tenants
+// accessible by the current account.
+func (m *SubscriptionsManager) GetTenantDisplayNames(ctx context.Context) (map[string]string, error) {
+	tenants, err := m.service.ListTenants(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listing tenants: %w", err)
+	}
+
+	result := make(map[string]string, len(tenants))
+	for _, t := range tenants {
+		if t.TenantID != nil {
+			name := *t.TenantID
+			if t.DisplayName != nil && *t.DisplayName != "" {
+				name = *t.DisplayName
+			}
+			result[*t.TenantID] = name
+		}
+	}
+
+	return result, nil
+}
+
 func toSubscriptions(azSubs []*armsubscriptions.Subscription, userAccessTenantId string) []Subscription {
 	if azSubs == nil {
 		return nil

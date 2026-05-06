@@ -1,0 +1,180 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package prompt
+
+import (
+	"cmp"
+	"context"
+	"fmt"
+	"os"
+	"slices"
+	"strings"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
+)
+
+// TenantInfo holds display metadata for a tenant extracted from the subscription list.
+type TenantInfo struct {
+	// Id is the tenant ID (GUID).
+	Id string
+	// DisplayName is the friendly name of the tenant, or the ID if no name is available.
+	DisplayName string
+	// SubscriptionCount is the number of subscriptions accessible via this tenant.
+	SubscriptionCount int
+}
+
+// extractUniqueTenants extracts unique tenants from a list of subscriptions,
+// grouped by UserAccessTenantId. The returned list is sorted by DisplayName.
+// Tenant display names are resolved from the provided tenantDisplayNames map;
+// if a tenant ID is not in the map, the ID itself is used as the display name.
+func extractUniqueTenants(
+	subscriptions []account.Subscription,
+	tenantDisplayNames map[string]string,
+) []TenantInfo {
+	tenantMap := make(map[string]*TenantInfo)
+
+	for _, sub := range subscriptions {
+		tid := sub.UserAccessTenantId
+		if tid == "" {
+			tid = sub.TenantId
+		}
+
+		if info, exists := tenantMap[tid]; exists {
+			info.SubscriptionCount++
+		} else {
+			displayName := tid
+			if name, ok := tenantDisplayNames[tid]; ok && name != "" {
+				displayName = name
+			}
+			tenantMap[tid] = &TenantInfo{
+				Id:                tid,
+				DisplayName:       displayName,
+				SubscriptionCount: 1,
+			}
+		}
+	}
+
+	tenants := make([]TenantInfo, 0, len(tenantMap))
+	for _, info := range tenantMap {
+		tenants = append(tenants, *info)
+	}
+
+	slices.SortFunc(tenants, func(a, b TenantInfo) int {
+		return cmp.Compare(
+			strings.ToLower(a.DisplayName),
+			strings.ToLower(b.DisplayName),
+		)
+	})
+
+	return tenants
+}
+
+// filterSubscriptionsByTenant filters subscriptions to only those accessible
+// through the specified tenant ID. If tenantId is empty, all subscriptions are returned.
+func filterSubscriptionsByTenant(
+	subscriptions []account.Subscription,
+	tenantId string,
+) []account.Subscription {
+	if tenantId == "" {
+		return subscriptions
+	}
+
+	return slices.DeleteFunc(slices.Clone(subscriptions), func(sub account.Subscription) bool {
+		accessTenant := sub.UserAccessTenantId
+		if accessTenant == "" {
+			accessTenant = sub.TenantId
+		}
+		return accessTenant != tenantId
+	})
+}
+
+// filterByTenantEnvVar filters subscriptions by AZURE_TENANT_ID if set.
+// This is applied in both prompt and no-prompt modes to ensure env var is authoritative.
+func filterByTenantEnvVar(subscriptions []account.Subscription) []account.Subscription {
+	tenantId := os.Getenv(environment.TenantIdEnvVarName)
+	if tenantId == "" {
+		return subscriptions
+	}
+
+	filtered := filterSubscriptionsByTenant(subscriptions, tenantId)
+	// If filtering produces no results, fall back to showing all subscriptions
+	// rather than erroring out — the tenant ID may be stale
+	if len(filtered) == 0 {
+		return subscriptions
+	}
+
+	return filtered
+}
+
+// promptTenantSelection prompts the user to select a tenant when multiple tenants are available.
+// Returns the selected tenant ID, or empty string if the user chose "All tenants".
+// If there is only one tenant, it is returned automatically without prompting.
+func promptTenantSelection(
+	ctx context.Context,
+	console input.Console,
+	tenants []TenantInfo,
+	preSelectedTenantId string,
+) (string, error) {
+	if len(tenants) <= 1 {
+		if len(tenants) == 1 {
+			return tenants[0].Id, nil
+		}
+		return "", nil
+	}
+
+	// If a tenant is already pre-selected (e.g. from AZURE_TENANT_ID), use it directly
+	if preSelectedTenantId != "" {
+		for _, t := range tenants {
+			if t.Id == preSelectedTenantId {
+				return t.Id, nil
+			}
+		}
+		// Pre-selected tenant not found in available tenants; fall through to prompt
+	}
+
+	allTenantsLabel := fmt.Sprintf(
+		"%2d. All tenants",
+		len(tenants)+1,
+	)
+
+	options := make([]string, len(tenants)+1)
+	for i, t := range tenants {
+		options[i] = formatTenantOption(i+1, t)
+	}
+	options[len(tenants)] = allTenantsLabel
+
+	selectedIndex, err := console.Select(ctx, input.ConsoleOptions{
+		Message: "Select a tenant",
+		Options: options,
+	})
+	if err != nil {
+		return "", fmt.Errorf("selecting tenant: %w", err)
+	}
+
+	// Last option = "All tenants"
+	if selectedIndex == len(tenants) {
+		return "", nil
+	}
+
+	return tenants[selectedIndex].Id, nil
+}
+
+func formatTenantOption(index int, t TenantInfo) string {
+	subCountLabel := fmt.Sprintf(
+		"%d subscription", t.SubscriptionCount,
+	)
+	if t.SubscriptionCount != 1 {
+		subCountLabel += "s"
+	}
+
+	return fmt.Sprintf(
+		"%2d. %s %s",
+		index,
+		t.DisplayName,
+		output.WithGrayFormat("(%s)", subCountLabel),
+	)
+}

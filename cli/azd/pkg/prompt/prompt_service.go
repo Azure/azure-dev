@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"slices"
 	"strconv"
@@ -157,6 +158,7 @@ type ResourceService interface {
 type SubscriptionManager interface {
 	GetSubscriptions(ctx context.Context) ([]account.Subscription, error)
 	GetLocations(ctx context.Context, subscriptionId string) ([]account.Location, error)
+	GetTenantDisplayNames(ctx context.Context) (map[string]string, error)
 }
 
 // PromptServiceInterface defines the methods that the PromptService must implement.
@@ -211,6 +213,8 @@ func NewPromptService(
 }
 
 // PromptSubscription prompts the user to select an Azure subscription.
+// If the user has access to multiple tenants, a tenant selection prompt is shown first
+// to scope down the subscription list.
 func (ps *promptService) PromptSubscription(
 	ctx context.Context,
 	selectorOptions *SelectOptions,
@@ -235,6 +239,30 @@ func (ps *promptService) PromptSubscription(
 		return nil, err
 	}
 
+	// Load subscriptions under a spinner first
+	var subscriptionList []account.Subscription
+	loadingSpinner := ux.NewSpinner(&ux.SpinnerOptions{
+		Text: mergedOptions.LoadingMessage,
+	})
+
+	err := loadingSpinner.Run(ctx, func(ctx context.Context) error {
+		var loadErr error
+		subscriptionList, loadErr = ps.subscriptionManager.GetSubscriptions(ctx)
+		return loadErr
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Apply tenant filtering (after spinner is done so the prompt doesn't overlap)
+	subscriptionList = filterByTenantEnvVar(subscriptionList)
+	if !ps.console.IsNoPromptMode() {
+		subscriptionList, err = ps.promptAndFilterByTenant(ctx, subscriptionList)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	// Get default subscription from user config
 	var defaultSubscriptionId = ""
 	userConfig, err := ps.userConfigManager.Load()
@@ -247,19 +275,15 @@ func (ps *promptService) PromptSubscription(
 
 	hideId := isDemoModeEnabled()
 
+	// Use PromptCustomResource with pre-loaded data (no LoadData spinner needed)
+	subscriptions := make([]*account.Subscription, len(subscriptionList))
+	for i, subscription := range subscriptionList {
+		subscriptions[i] = &subscription
+	}
+
 	return PromptCustomResource(ctx, CustomResourceOptions[account.Subscription]{
 		SelectorOptions: mergedOptions,
 		LoadData: func(ctx context.Context) ([]*account.Subscription, error) {
-			subscriptionList, err := ps.subscriptionManager.GetSubscriptions(ctx)
-			if err != nil {
-				return nil, err
-			}
-
-			subscriptions := make([]*account.Subscription, len(subscriptionList))
-			for i, subscription := range subscriptionList {
-				subscriptions[i] = &subscription
-			}
-
 			return subscriptions, nil
 		},
 		DisplayResource: func(subscription *account.Subscription) (string, error) {
@@ -269,6 +293,33 @@ func (ps *promptService) PromptSubscription(
 			return strings.EqualFold(subscription.Id, defaultSubscriptionId)
 		},
 	})
+}
+
+// promptAndFilterByTenant prompts the user to select a tenant when subscriptions span multiple tenants.
+func (ps *promptService) promptAndFilterByTenant(
+	ctx context.Context,
+	subscriptions []account.Subscription,
+) ([]account.Subscription, error) {
+	tenants := extractUniqueTenants(subscriptions, nil)
+	if len(tenants) <= 1 {
+		return subscriptions, nil
+	}
+
+	// Only fetch tenant display names when we actually need to prompt
+	tenantNames, err := ps.subscriptionManager.GetTenantDisplayNames(ctx)
+	if err != nil {
+		log.Printf("failed to fetch tenant display names, using tenant IDs: %v", err)
+		tenantNames = map[string]string{}
+	}
+
+	tenants = extractUniqueTenants(subscriptions, tenantNames)
+
+	selectedTenantId, err := promptTenantSelection(ctx, ps.console, tenants, "")
+	if err != nil {
+		return nil, err
+	}
+
+	return filterSubscriptionsByTenant(subscriptions, selectedTenantId), nil
 }
 
 // PromptLocation prompts the user to select an Azure location.

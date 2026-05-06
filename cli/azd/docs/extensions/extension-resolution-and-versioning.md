@@ -395,7 +395,8 @@ When you run `azd extension upgrade`, extensions installed from the dev registry
 
 When promotion happens, the extension's stored source switches from `dev` to `azd`. This is a one-way operation — extensions are never demoted from the main registry back to the dev registry.
 
-> **Note:** If the main and dev registries have the **same** latest version, the extension stays on its current (dev) source. Equal versions are source-sticky.
+> [!NOTE]
+> If the main and dev registries have the **same** latest version, the extension stays on its current (dev) source. Equal versions are source-sticky.
 
 The upgrade priority chain is:
 
@@ -458,6 +459,13 @@ Your extension entry must:
           "checksum": {
             "algorithm": "sha256",
             "value": "abc123..."
+          }
+        },
+        "darwin/amd64": {
+          "url": "https://github.com/my-org/my-ext/releases/download/v0.1.0/my-ext-darwin-amd64.tar.gz",
+          "checksum": {
+            "algorithm": "sha256",
+            "value": "bcd234..."
           }
         },
         "darwin/arm64": {

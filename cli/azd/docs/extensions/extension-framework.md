@@ -66,7 +66,7 @@ azd extension source add -n azd -t url -l "https://aka.ms/azd/extensions/registr
 
 > **Note:** When the `registry.json` file is modified, CI automatically runs snapshot tests to ensure extension commands are properly documented in CLI help output and VS Code IntelliSense. See [Snapshot Testing for Extensions](#snapshot-testing-for-extensions) for details.
 
-#### Development Registry
+#### Dev (Experimental) Registry
 
 > [!CAUTION]
 > Extensions hosted in the dev registry DO NOT contain signed binaries at the moment. They come with **no stability guarantees** and are **not covered by Azure support**. Expect breaking changes, rough edges, and possible removal without notice.
@@ -605,7 +605,7 @@ The easiest way to get started building extensions is to install the `azd` Devel
 > [!IMPORTANT]
 > Ensure you have added the `dev` extension source to your `azd` configuration
 >
-> [Configure dev extension source](#development-registry)
+> [Configure dev extension source](#dev-experimental-registry)
 
 ```bash
 # Install the `azd` developer extension

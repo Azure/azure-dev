@@ -7,6 +7,7 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"slices"
 	"strings"
@@ -152,6 +153,40 @@ func promptTenantSelection(
 	}
 
 	return tenants[selectedIndex].Id, nil
+}
+
+// TenantDisplayNameProvider is a function that fetches tenant display names.
+type TenantDisplayNameProvider func(ctx context.Context) (map[string]string, error)
+
+// promptAndFilterByTenant prompts the user to select a tenant when subscriptions span multiple tenants.
+// It extracts unique tenants, fetches display names only when needed, and returns filtered subscriptions.
+func promptAndFilterByTenant(
+	ctx context.Context,
+	console input.Console,
+	subscriptions []account.Subscription,
+	getTenantNames TenantDisplayNameProvider,
+) ([]account.Subscription, error) {
+	// Quick check without display names to avoid unnecessary API call
+	tenants := extractUniqueTenants(subscriptions, nil)
+	if len(tenants) <= 1 {
+		return subscriptions, nil
+	}
+
+	// Only fetch tenant display names when we actually need to prompt
+	tenantNames, err := getTenantNames(ctx)
+	if err != nil {
+		log.Printf("failed to fetch tenant display names, using tenant IDs: %v", err)
+		tenantNames = map[string]string{}
+	}
+
+	tenants = extractUniqueTenants(subscriptions, tenantNames)
+
+	selectedTenantId, err := promptTenantSelection(ctx, console, tenants)
+	if err != nil {
+		return nil, err
+	}
+
+	return filterSubscriptionsByTenant(subscriptions, selectedTenantId), nil
 }
 
 func formatTenantOption(index int, t TenantInfo) string {

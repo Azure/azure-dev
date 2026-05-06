@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"slices"
 	"strconv"
@@ -102,6 +101,9 @@ type SelectOptions struct {
 	HelpMessage string
 	// LoadingMessage is the loading message to display to the user.
 	LoadingMessage string
+	// SkipLoadingSpinner skips the loading spinner in PromptCustomResource.
+	// Use this when data is pre-loaded and LoadData returns immediately.
+	SkipLoadingSpinner bool
 	// DisplayNumbers specifies whether to display numbers next to the choices.
 	DisplayNumbers *bool
 	// DisplayCount is the number of choices to display at a time.
@@ -257,7 +259,8 @@ func (ps *promptService) PromptSubscription(
 	// Apply tenant filtering (after spinner is done so the prompt doesn't overlap)
 	subscriptionList = filterByTenantEnvVar(subscriptionList)
 	if !ps.console.IsNoPromptMode() {
-		subscriptionList, err = ps.promptAndFilterByTenant(ctx, subscriptionList)
+		subscriptionList, err = promptAndFilterByTenant(
+			ctx, ps.console, subscriptionList, ps.subscriptionManager.GetTenantDisplayNames)
 		if err != nil {
 			return nil, err
 		}
@@ -281,8 +284,8 @@ func (ps *promptService) PromptSubscription(
 		subscriptions[i] = &subscriptionList[i]
 	}
 
-	// Clear loading message since data is already loaded (avoids a redundant spinner)
-	mergedOptions.LoadingMessage = ""
+	// Skip the inner spinner since data is already loaded
+	mergedOptions.SkipLoadingSpinner = true
 
 	return PromptCustomResource(ctx, CustomResourceOptions[account.Subscription]{
 		SelectorOptions: mergedOptions,
@@ -296,33 +299,6 @@ func (ps *promptService) PromptSubscription(
 			return strings.EqualFold(subscription.Id, defaultSubscriptionId)
 		},
 	})
-}
-
-// promptAndFilterByTenant prompts the user to select a tenant when subscriptions span multiple tenants.
-func (ps *promptService) promptAndFilterByTenant(
-	ctx context.Context,
-	subscriptions []account.Subscription,
-) ([]account.Subscription, error) {
-	tenants := extractUniqueTenants(subscriptions, nil)
-	if len(tenants) <= 1 {
-		return subscriptions, nil
-	}
-
-	// Only fetch tenant display names when we actually need to prompt
-	tenantNames, err := ps.subscriptionManager.GetTenantDisplayNames(ctx)
-	if err != nil {
-		log.Printf("failed to fetch tenant display names, using tenant IDs: %v", err)
-		tenantNames = map[string]string{}
-	}
-
-	tenants = extractUniqueTenants(subscriptions, tenantNames)
-
-	selectedTenantId, err := promptTenantSelection(ctx, ps.console, tenants)
-	if err != nil {
-		return nil, err
-	}
-
-	return filterSubscriptionsByTenant(subscriptions, selectedTenantId), nil
 }
 
 // PromptLocation prompts the user to select an Azure location.
@@ -831,18 +807,18 @@ func PromptCustomResource[T any](ctx context.Context, options CustomResourceOpti
 			return nil
 		}
 
-		// Skip the spinner when loading message is empty (data is pre-loaded)
-		if mergedSelectorOptions.LoadingMessage != "" {
+		// Skip the spinner when data is pre-loaded
+		if mergedSelectorOptions.SkipLoadingSpinner {
+			if err := loadData(ctx); err != nil {
+				return nil, err
+			}
+		} else {
 			loadingSpinner := ux.NewSpinner(&ux.SpinnerOptions{
 				Text: mergedSelectorOptions.LoadingMessage,
 			})
 			if err := loadingSpinner.Run(ctx, func(ctx context.Context) error {
 				return loadData(ctx)
 			}); err != nil {
-				return nil, err
-			}
-		} else {
-			if err := loadData(ctx); err != nil {
 				return nil, err
 			}
 		}

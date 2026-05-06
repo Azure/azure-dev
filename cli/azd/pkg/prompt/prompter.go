@@ -92,7 +92,8 @@ func (p *DefaultPrompter) PromptSubscription(ctx context.Context, msg string) (s
 
 	// Tenant selection: if multiple tenants, prompt user to pick one
 	if !p.console.IsNoPromptMode() {
-		subscriptionInfos, err = p.promptAndFilterByTenant(ctx, subscriptionInfos)
+		subscriptionInfos, err = promptAndFilterByTenant(
+			ctx, p.console, subscriptionInfos, p.accountManager.GetTenantDisplayNames)
 		if err != nil {
 			return "", err
 		}
@@ -133,34 +134,6 @@ func (p *DefaultPrompter) PromptSubscription(ctx context.Context, msg string) (s
 	}
 
 	return subscriptionId, nil
-}
-
-// promptAndFilterByTenant prompts the user to select a tenant when subscriptions span multiple tenants.
-func (p *DefaultPrompter) promptAndFilterByTenant(
-	ctx context.Context,
-	subscriptions []account.Subscription,
-) ([]account.Subscription, error) {
-	// Quick check without display names to avoid unnecessary API call
-	tenants := extractUniqueTenants(subscriptions, nil)
-	if len(tenants) <= 1 {
-		return subscriptions, nil
-	}
-
-	// Only fetch tenant display names when we actually need to prompt
-	tenantNames, err := p.accountManager.GetTenantDisplayNames(ctx)
-	if err != nil {
-		log.Printf("failed to fetch tenant display names, using tenant IDs: %v", err)
-		tenantNames = map[string]string{}
-	}
-
-	tenants = extractUniqueTenants(subscriptions, tenantNames)
-
-	selectedTenantId, err := promptTenantSelection(ctx, p.console, tenants)
-	if err != nil {
-		return nil, err
-	}
-
-	return filterSubscriptionsByTenant(subscriptions, selectedTenantId), nil
 }
 
 // formatSubscriptionOptions formats subscription infos into display options.

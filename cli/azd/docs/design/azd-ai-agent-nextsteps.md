@@ -112,9 +112,9 @@ type State struct {
     MissingManualVars  []string  // ${...} → user-supplied vars not set
     Services           []ServiceState
     AgentStatus        string    // optional (Foundry API), empty if unknown
-    HasOpenAPI         bool      // populated only when AssembleState is called from `run` or `doctor --remote`
-    OpenAPIPayload     string    // populated only when AssembleState is called from `run` or `doctor --remote`
-    IsAuthenticated    AuthState // populated only when AssembleState is called from `doctor --remote`
+    HasOpenAPI         bool      // populated only when AssembleState is called from `run` or `doctor` (any mode that contacts the agent)
+    OpenAPIPayload     string    // populated only when AssembleState is called from `run` or `doctor` (any mode that contacts the agent)
+    IsAuthenticated    AuthState // populated only when AssembleState is called from `doctor` (full sweep, i.e. not `--local-only`)
 }
 
 type ServiceState struct {
@@ -134,7 +134,7 @@ type Suggestion struct {
 
 State is **assembled fresh on each call**. No singleton, no cache across commands. `azure.yaml` parsing inside one call is cached by `azdClient` already. The base cost is one gRPC round-trip per resolver invocation, which is negligible.
 
-The `IsAuthenticated` probe is **not** part of the base assembly: it requires a token-introspection call which is network-bound and would regress the perf claim above for every command. `AssembleState` accepts an option (`WithAuthProbe`) that defaults to false; the `doctor --remote` path is the only caller that sets it. Every other resolver receives `IsAuthenticated == AuthUnknown` and treats auth-conditional suggestions as "skip advice that needs a confirmed login state" rather than "tell user to log in" — i.e., we never produce login-prompt noise in success paths.
+The `IsAuthenticated` probe is **not** part of the base assembly: it requires a token-introspection call which is network-bound and would regress the perf claim above for every command. `AssembleState` accepts an option (`WithAuthProbe`) that defaults to false; the full-sweep `doctor` path is the only caller that sets it (`--local-only` runs leave it false). Every other resolver receives `IsAuthenticated == AuthUnknown` and treats auth-conditional suggestions as "skip advice that needs a confirmed login state" rather than "tell user to log in" — i.e., we never produce login-prompt noise in success paths.
 
 ### Layered sources
 
@@ -302,10 +302,11 @@ All failures are silent. The fetch itself is best-effort and already cached — 
 | 7 (post-MVP) | Authentication via `azidentity.NewAzureDeveloperCLICredential` (the credential `agent_context.go` already uses) | signed-in user + token validity | `azd auth login` |
 | 8 (post-MVP) | Foundry project reachable | endpoint probe OK | network/firewall |
 | 9 (post-MVP) | Model deployments exist | name + version | `azd provision` |
-| 10 (post-MVP) | RBAC sufficient | role list | `az role assignment create …` |
+| 10 (post-MVP) | User RBAC sufficient | role list | `az role assignment create …` |
 | 11 (post-MVP) | Agent status (if deployed) | `active (vN)` | `azd ai agent monitor --follow` |
+| 12 (post-MVP) | Agent identity role assignments | roles on project / account / RG | `az role assignment create --assignee <mi-id> …` |
 
-Checks 7–11 are listed in the issue but pulled into a follow-up to keep the MVP shippable. Checks 1–6 are pure local reads; 7–11 require Foundry control-plane calls and RBAC introspection that need their own design pass — see [`azd-ai-agent-doctor-remote-checks.md`](./azd-ai-agent-doctor-remote-checks.md).
+Checks 7–12 are listed in the issue (and surfaced in review feedback) but pulled into a follow-up to keep the MVP shippable. Checks 1–6 are pure local reads; 7–12 require Foundry control-plane calls and RBAC introspection that need their own design pass — see [`azd-ai-agent-doctor-remote-checks.md`](./azd-ai-agent-doctor-remote-checks.md).
 
 ### Doctor output shape
 
@@ -328,7 +329,7 @@ When all checks pass, the trailing Next: block is the resolver's `ResolveAfterIn
 |---|---|
 | All checks pass (or pass+skip with no fail) — and at least one check ran | 0 |
 | Any check returns `Status: Fail` | 1 |
-| All checks ran were skipped (e.g., `--remote` against a project missing prerequisites) | 2 |
+| All checks ran were skipped (e.g., full sweep against a project missing prerequisites, or `--local-only` with all local prereqs short-circuited) | 2 |
 
 Precedence: any `Fail` always wins (exit 1). Skip-only without any pass is the dependency-cascade case (exit 2). All-pass or pass+skip with at least one pass is exit 0.
 
@@ -387,7 +388,7 @@ The Next: block is purely additive; no existing exit code, error type, or stdout
 
 - Success-path JSON output (`--output json` on `init`/`run`/`invoke`/`show`) is unchanged — the human `Next:` block is suppressed in that mode (see [Output discipline](#output-discipline)).
 - The deploy hook adds a `Metadata["note"]` value to artifacts that already exist; the artifact `Kind` stays `ArtifactKindEndpoint`. Tools parsing artifacts by kind see no change.
-- `azd ai agent doctor` is a new command — its addition cannot break existing scripts. The new `--remote` and `--output json` flags are opt-in.
+- `azd ai agent doctor` is a new command — its addition cannot break existing scripts. The new `--local-only` and `--output json` flags are opt-in.
 - `nextstep` and `doctor` are new internal packages under the extension. No public Go API surface is added.
 - Existing extension-side env vars and behaviors (e.g., `AZD_AGENT_NO_NEXTSTEPS`, if shipped — see Open Questions) are documented in `cli/azd/docs/environment-variables.md` per repo convention.
 

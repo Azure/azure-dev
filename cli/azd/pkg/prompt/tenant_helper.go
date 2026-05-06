@@ -44,6 +44,9 @@ func extractUniqueTenants(
 		if tid == "" {
 			tid = sub.TenantId
 		}
+		if tid == "" {
+			continue
+		}
 
 		if info, exists := tenantMap[tid]; exists {
 			info.SubscriptionCount++
@@ -66,10 +69,13 @@ func extractUniqueTenants(
 	}
 
 	slices.SortFunc(tenants, func(a, b tenantInfo) int {
-		return cmp.Compare(
+		if c := cmp.Compare(
 			strings.ToLower(a.DisplayName),
 			strings.ToLower(b.DisplayName),
-		)
+		); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.Id, b.Id)
 	})
 
 	return tenants

@@ -430,17 +430,17 @@ func (da *DeployAction) deployServicesGraph(
 		state.CleanupTempArtifacts()
 	}
 
+	if err != nil {
+		return nil, err
+	}
+
 	// Display service endpoint artifacts collected during deploy steps.
 	if da.formatter.Kind() != output.JsonFormat {
 		for _, svc := range stableServices {
-			if dr := state.GetResult(svc.Name); dr != nil {
+			if dr := state.GetResult(svc.Name); dr != nil && len(dr.Artifacts) > 0 {
 				da.console.MessageUxItem(ctx, dr.Artifacts)
 			}
 		}
-	}
-
-	if err != nil {
-		return nil, err
 	}
 
 	aspireDashboardUrl := apphost.AspireDashboardUrl(ctx, da.env, da.alphaFeatureManager)

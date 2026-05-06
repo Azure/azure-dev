@@ -190,3 +190,23 @@ func TestDeployProgressTracker_EmptyServiceList(t *testing.T) {
 	tracker.RenderFinal()
 	// No panic = pass
 }
+
+func TestDeployProgressTracker_HasActivity(t *testing.T) {
+	var buf bytes.Buffer
+	tracker := newDeployProgressTracker(&buf, true, []string{"web", "api"})
+
+	// Initially no activity — all services are in Waiting.
+	assert.False(t, tracker.HasActivity())
+
+	// Moving a service to Packaging counts as activity.
+	tracker.Update("web", phasePackaging, "")
+	assert.True(t, tracker.HasActivity())
+}
+
+func TestDeployProgressTracker_HasActivity_NoServices(t *testing.T) {
+	var buf bytes.Buffer
+	tracker := newDeployProgressTracker(&buf, true, []string{})
+
+	// Empty tracker has no activity.
+	assert.False(t, tracker.HasActivity())
+}

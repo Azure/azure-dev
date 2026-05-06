@@ -126,6 +126,22 @@ func (t *deployProgressTracker) Update(
 	}
 }
 
+// HasActivity reports whether any service has moved beyond the initial
+// "Waiting" phase. Used to suppress the final summary table when no
+// deploy-phase work was attempted (e.g., provision failed before deploy
+// started).
+func (t *deployProgressTracker) HasActivity() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	for _, svc := range t.services {
+		if svc.phase != phaseWaiting {
+			return true
+		}
+	}
+	return false
+}
+
 // Render draws the full progress table. In interactive mode, it overwrites
 // the previous render. Call periodically (e.g., every 1s) from a ticker goroutine.
 func (t *deployProgressTracker) Render() {

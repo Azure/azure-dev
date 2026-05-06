@@ -479,8 +479,9 @@ func (u *UpGraphAction) Run(
 	})
 
 	// Start the deploy progress ticker lazily — only when the first
-	// deploy-phase step (package/publish/deploy) begins. This avoids
-	// conflicting with the provisioning progress display.
+	// publish or deploy step begins (not package, which runs silently
+	// in parallel with provisioning). This avoids conflicting with
+	// the provisioning progress display.
 	var (
 		tickerOnce sync.Once
 		stopTicker func()
@@ -554,7 +555,7 @@ func (u *UpGraphAction) Run(
 	if stopTicker != nil {
 		stopTicker()
 	}
-	if deployTracker != nil {
+	if deployTracker != nil && deployTracker.HasActivity() {
 		deployTracker.RenderFinal()
 	}
 
@@ -587,7 +588,7 @@ func (u *UpGraphAction) Run(
 
 	// Display service endpoint artifacts collected during deploy steps.
 	for _, svc := range stableServices {
-		if dr := state.GetResult(svc.Name); dr != nil && dr.Artifacts != nil {
+		if dr := state.GetResult(svc.Name); dr != nil && len(dr.Artifacts) > 0 {
 			u.console.MessageUxItem(ctx, dr.Artifacts)
 		}
 	}

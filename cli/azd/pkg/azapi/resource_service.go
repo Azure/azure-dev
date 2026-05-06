@@ -27,9 +27,10 @@ type Resource struct {
 }
 
 type ResourceGroup struct {
-	Id       string `json:"id"`
-	Name     string `json:"name"`
-	Location string `json:"location"`
+	Id       string            `json:"id"`
+	Name     string            `json:"name"`
+	Location string            `json:"location"`
+	Tags     map[string]string `json:"tags,omitempty"`
 }
 
 type ResourceExtended struct {
@@ -336,10 +337,21 @@ func (rs *ResourceService) GetResourceGroup(
 		return nil, fmt.Errorf("getting resource group %q in subscription %q: %w", resourceGroupName, subscriptionId, err)
 	}
 
+	var tags map[string]string
+	if len(resp.Tags) > 0 {
+		tags = make(map[string]string, len(resp.Tags))
+		for k, v := range resp.Tags {
+			if v != nil {
+				tags[k] = *v
+			}
+		}
+	}
+
 	return &ResourceGroup{
 		Id:       convert.ToValueWithDefault(resp.ID, ""),
 		Name:     convert.ToValueWithDefault(resp.Name, ""),
 		Location: convert.ToValueWithDefault(resp.Location, ""),
+		Tags:     tags,
 	}, nil
 }
 

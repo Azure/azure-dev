@@ -545,6 +545,16 @@ rules:
         title: "azure.yaml schema reference"
 
   # ============================================================================
+  # GitHub API Errors (gh api)
+  # Suggestions for *github.ApiError (SAML/rate-limit/401/403) and
+  # *RepoNotAccessibleError are emitted directly as *internal.ErrorWithSuggestion
+  # by pkg/templates/gh_errors.go, so they don't need YAML rules here. This
+  # keeps the suggestion text co-located with the code that classifies the
+  # failure and lets the actionable text survive boundaries (e.g., gRPC) where
+  # the YAML pipeline doesn't run.
+  # ============================================================================
+
+  # ============================================================================
   # Text Pattern Rules — Specific patterns first
   # These are fallbacks for errors without typed Go structs.
   # ============================================================================

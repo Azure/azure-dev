@@ -24,7 +24,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
-const agentTemplatesURL = "https://raw.githubusercontent.com/Azure/awesome-azd/refs/heads/main/website/static/templates.json"
+const agentTemplatesURL = "https://aka.ms/foundry-agents-samples"
 
 // Template type constants
 const (

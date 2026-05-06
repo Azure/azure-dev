@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -23,7 +24,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/braydonk/yaml"
 	"github.com/drone/envsubst"
-	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -31,52 +31,33 @@ import (
 // digit, used to sanitize environment variable key segments.
 var nonAlphanumEnvKeyRe = regexp.MustCompile(`[^A-Z0-9]+`)
 
-func newListenCommand() *cobra.Command {
-	return &cobra.Command{
-		Use:    "listen",
-		Short:  "Starts the extension and listens for events.",
-		Hidden: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			// Create a new context that includes the AZD access token.
-			ctx := azdext.WithAccessToken(cmd.Context())
+// configureExtensionHost wires the service target and event handlers on the
+// supplied [azdext.ExtensionHost]. It is passed to [azdext.NewListenCommand]
+// from the root command, which handles the surrounding setup (access token,
+// AzdClient creation, and host.Run lifecycle).
+func configureExtensionHost(host *azdext.ExtensionHost) {
+	azdClient := host.Client()
 
-			logCleanup := setupDebugLogging(cmd.Flags())
-			defer logCleanup()
-
-			// Create a new AZD client.
-			azdClient, err := azdext.NewAzdClient()
-			if err != nil {
-				return fmt.Errorf("failed to create azd client: %w", err)
-			}
-			defer azdClient.Close()
-
-			// IMPORTANT: service target name here must match the name used in the extension manifest.
-			host := azdext.NewExtensionHost(azdClient).
-				WithServiceTarget(AiAgentHost, func() azdext.ServiceTargetProvider {
-					return project.NewAgentServiceTargetProvider(azdClient)
-				}).
-				WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
-					return preprovisionHandler(ctx, azdClient, args)
-				}).
-				WithProjectEventHandler("postprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
-					return postprovisionHandler(ctx, azdClient, args)
-				}).
-				WithProjectEventHandler("predeploy", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
-					return predeployHandler(ctx, azdClient, args)
-				}).
-				WithProjectEventHandler("postdeploy", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
-					return postdeployHandler(ctx, azdClient, args)
-				})
-
-			// Start listening for events
-			// This is a blocking call and will not return until the server connection is closed.
-			if err := host.Run(ctx); err != nil {
-				return fmt.Errorf("failed to run extension: %w", err)
-			}
-
-			return nil
-		},
-	}
+	// IMPORTANT: service target name here must match the name used in the extension manifest.
+	host.
+		WithServiceTarget(AiAgentHost, func() azdext.ServiceTargetProvider {
+			return project.NewAgentServiceTargetProvider(azdClient)
+		}).
+		WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+			return preprovisionHandler(ctx, azdClient, args)
+		}).
+		WithProjectEventHandler("postprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+			return postprovisionHandler(ctx, azdClient, args)
+		}).
+		WithProjectEventHandler("predeploy", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+			return predeployHandler(ctx, azdClient, args)
+		}).
+		WithProjectEventHandler("postdeploy", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+			return postdeployHandler(ctx, azdClient, args)
+		}).
+		WithProjectEventHandler("postdown", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+			return postdownHandler(ctx, azdClient, args)
+		})
 }
 
 func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
@@ -264,6 +245,53 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 
 	if err := project.EnsureAgentIdentityRBAC(ctx, azdClient, agentIdentities); err != nil {
 		return fmt.Errorf("agent identity RBAC setup failed: %w", err)
+	}
+
+	return nil
+}
+
+// postdownHandler cleans up config store entries (sessions, conversations) for agent services
+// that were torn down. This is best-effort — failures are logged but do not block azd down.
+func postdownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
+	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		log.Printf("postdown: failed to get current environment: %v", err)
+		return nil
+	}
+
+	envName := envResp.Environment.Name
+
+	for _, svc := range args.Project.Services {
+		if svc.Host != AiAgentHost {
+			continue
+		}
+
+		serviceKey := toServiceKey(svc.Name)
+
+		endpointResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+			EnvName: envName,
+			Key:     fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey),
+		})
+		if err != nil || endpointResp.Value == "" {
+			continue
+		}
+
+		agentKey := buildRemoteAgentKeyFromEndpoint(endpointResp.Value)
+
+		// Remove stored sessions and conversations for this agent.
+		var failed bool
+		if err := deleteContextValue(ctx, azdClient, "sessions", agentKey); err != nil {
+			log.Printf("postdown: failed to clean sessions for %s: %v", agentKey, err)
+			failed = true
+		}
+		if err := deleteContextValue(ctx, azdClient, "conversations", agentKey); err != nil {
+			log.Printf("postdown: failed to clean conversations for %s: %v", agentKey, err)
+			failed = true
+		}
+
+		if !failed {
+			fmt.Printf("Cleaned up saved session and conversation for agent %q\n", svc.Name)
+		}
 	}
 
 	return nil

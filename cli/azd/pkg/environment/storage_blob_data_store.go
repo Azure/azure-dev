@@ -158,11 +158,9 @@ func (sbd *StorageBlobDataStore) Reload(ctx context.Context, env *Environment) e
 
 	envMap, err := godotenv.Parse(dotEnvBuffer)
 	if err != nil {
-		env.dotenv = make(map[string]string)
-		env.deletedKeys = make(map[string]struct{})
+		env.replaceState(make(map[string]string), make(map[string]struct{}))
 	} else {
-		env.dotenv = envMap
-		env.deletedKeys = make(map[string]struct{})
+		env.replaceState(envMap, make(map[string]struct{}))
 	}
 
 	// Reload config file

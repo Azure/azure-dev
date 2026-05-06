@@ -47,6 +47,27 @@ var displayableProtocols = []displayableProtocolEntry{
 	{Protocol: agent_api.AgentProtocolInvocations, URLPath: "invocations", EnvSuffix: "INVOCATIONS"},
 }
 
+// ProtocolEnvSuffix pairs a user-facing label with the env var suffix
+// used in AGENT_{KEY}_{SUFFIX}_ENDPOINT variables.
+type ProtocolEnvSuffix struct {
+	Label  string // e.g. "Responses"
+	Suffix string // e.g. "RESPONSES"
+}
+
+// DisplayableProtocolEnvSuffixes returns the label/suffix pairs for all
+// displayable protocols. This is the single source of truth shared by
+// deployment (registerAgentEnvironmentVariables) and the show command.
+func DisplayableProtocolEnvSuffixes() []ProtocolEnvSuffix {
+	result := make([]ProtocolEnvSuffix, len(displayableProtocols))
+	for i, dp := range displayableProtocols {
+		result[i] = ProtocolEnvSuffix{
+			Label:  string(dp.Protocol),
+			Suffix: dp.EnvSuffix,
+		}
+	}
+	return result
+}
+
 // Ensure AgentServiceTargetProvider implements ServiceTargetProvider interface
 var _ azdext.ServiceTargetProvider = &AgentServiceTargetProvider{}
 
@@ -498,21 +519,11 @@ func (p *AgentServiceTargetProvider) Deploy(
 		return nil, exterrors.Validation(
 			exterrors.CodeMissingAgentKind,
 			"kind field is missing or not a valid string in agent.yaml",
-			"add a valid 'kind' field (e.g., 'prompt' or 'hosted') to agent.yaml",
+			"add a valid 'kind' field (e.g., 'hosted') to agent.yaml",
 		)
 	}
 
 	switch kind {
-	case string(agent_yaml.AgentKindPrompt):
-		var agentDef agent_yaml.PromptAgent
-		if err := yaml.Unmarshal(data, &agentDef); err != nil {
-			return nil, exterrors.Validation(
-				exterrors.CodeInvalidAgentManifest,
-				fmt.Sprintf("YAML content is not valid for prompt agent deploy: %s", err),
-				"fix the agent.yaml to match the prompt agent schema",
-			)
-		}
-		return p.deployPromptAgent(ctx, serviceConfig, agentDef, azdEnv)
 	case string(agent_yaml.AgentKindHosted):
 		var agentDef agent_yaml.ContainerAgent
 		if err := yaml.Unmarshal(data, &agentDef); err != nil {
@@ -527,7 +538,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 		return nil, exterrors.Validation(
 			exterrors.CodeUnsupportedAgentKind,
 			fmt.Sprintf("unsupported agent kind: %s", kind),
-			"use a supported kind: 'prompt' or 'hosted'",
+			"use a supported kind: 'hosted'",
 		)
 	}
 }
@@ -555,71 +566,6 @@ func (p *AgentServiceTargetProvider) isContainerAgent() bool {
 	}
 
 	return kind == string(agent_yaml.AgentKindHosted)
-}
-
-// deployPromptAgent handles deployment of prompt-based agents
-func (p *AgentServiceTargetProvider) deployPromptAgent(
-	ctx context.Context,
-	serviceConfig *azdext.ServiceConfig,
-	agentDef agent_yaml.PromptAgent,
-	azdEnv map[string]string,
-) (*azdext.ServiceDeployResult, error) {
-	// Check if environment variable is set
-	if azdEnv["AZURE_AI_PROJECT_ENDPOINT"] == "" {
-		return nil, exterrors.Dependency(
-			exterrors.CodeMissingAiProjectEndpoint,
-			"AZURE_AI_PROJECT_ENDPOINT is required: environment variable was not found in the current azd environment",
-			"run 'azd provision' or connect to an existing project via 'azd ai agent init --project-id <resource-id>'",
-		)
-	}
-
-	fmt.Fprintf(os.Stderr, "Deploying Prompt Agent\n")
-	fmt.Fprintf(os.Stderr, "======================\n")
-	fmt.Fprintf(os.Stderr, "Loaded configuration from: %s\n", p.agentDefinitionPath)
-	fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["AZURE_AI_PROJECT_ENDPOINT"])
-	fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentDef.Name)
-
-	// Create agent request (no image URL needed for prompt agents)
-	request, err := agent_yaml.CreateAgentAPIRequestFromDefinition(agentDef)
-	if err != nil {
-		return nil, exterrors.Validation(
-			exterrors.CodeInvalidAgentRequest,
-			fmt.Sprintf("failed to create agent request from definition: %s", err),
-			"verify the agent.yaml definition is correct",
-		)
-	}
-
-	// Display agent information
-	p.displayAgentInfo(request)
-
-	// Create and deploy agent
-	agentVersionResponse, err := p.createAgent(ctx, request, azdEnv)
-	if err != nil {
-		return nil, err
-	}
-
-	// Register agent info in environment (prompt agents use the responses protocol)
-	promptProtocols := []agent_yaml.ProtocolVersionRecord{
-		{Protocol: string(agent_api.AgentProtocolResponses), Version: "1.0.0"},
-	}
-	err = p.registerAgentEnvironmentVariables(ctx, azdEnv, serviceConfig, agentVersionResponse, promptProtocols)
-	if err != nil {
-		return nil, err
-	}
-
-	fmt.Fprintf(os.Stderr, "Prompt agent '%s' deployed successfully!\n", agentVersionResponse.Name)
-
-	artifacts := p.deployArtifacts(
-		agentVersionResponse.Name,
-		agentVersionResponse.Version,
-		azdEnv["AZURE_AI_PROJECT_ID"],
-		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
-		promptProtocols,
-	)
-
-	return &azdext.ServiceDeployResult{
-		Artifacts: artifacts,
-	}, nil
 }
 
 // deployHostedAgent deploys a container-based hosted agent to the Foundry service.
@@ -767,7 +713,7 @@ func (p *AgentServiceTargetProvider) deployArtifacts(
 
 	// Add playground URL
 	if projectResourceID != "" {
-		playgroundUrl, err := p.agentPlaygroundUrl(projectResourceID, agentName, agentVersion)
+		playgroundUrl, err := AgentPlaygroundURL(projectResourceID, agentName, agentVersion)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "failed to generate agent playground link")
 		} else if playgroundUrl != "" {
@@ -850,11 +796,12 @@ func agentInvocationEndpoints(
 	return endpoints
 }
 
-// agentPlaygroundUrl constructs a URL to the agent playground in the Foundry portal
-func (p *AgentServiceTargetProvider) agentPlaygroundUrl(projectResourceId, agentName, agentVersion string) (string, error) {
-	resourceId, err := arm.ParseResourceID(projectResourceId)
+// AgentPlaygroundURL constructs a URL to the agent playground in the Foundry portal.
+// It parses the ARM resource ID to extract subscription, resource group, account, and project info.
+func AgentPlaygroundURL(projectResourceID, agentName, agentVersion string) (string, error) {
+	resourceId, err := arm.ParseResourceID(projectResourceID)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to parse project resource ID: %w", err)
 	}
 
 	// Encode subscription ID as base64 without padding for URL
@@ -865,8 +812,17 @@ func (p *AgentServiceTargetProvider) agentPlaygroundUrl(projectResourceId, agent
 	}
 
 	resourceGroup := resourceId.ResourceGroupName
-	if resourceId.Parent == nil {
-		return "", fmt.Errorf("invalid Microsoft Foundry project ID: %s", projectResourceId)
+
+	// Validate that the resource ID represents a Foundry project (has a parent account).
+	// Account-level IDs (no /projects/ child) would produce malformed playground URLs.
+	// For project-level IDs, Parent.Name is the account; for account-level IDs,
+	// Parent.Name is the resource group — we distinguish by checking ResourceType.
+	if resourceId.Parent == nil ||
+		!strings.Contains(string(resourceId.ResourceType.Type), "/") {
+		return "", fmt.Errorf(
+			"resource ID does not represent a Foundry project (missing parent account): %s",
+			projectResourceID,
+		)
 	}
 
 	accountName := resourceId.Parent.Name
@@ -874,7 +830,9 @@ func (p *AgentServiceTargetProvider) agentPlaygroundUrl(projectResourceId, agent
 
 	url := fmt.Sprintf(
 		"https://ai.azure.com/nextgen/r/%s,%s,,%s,%s/build/agents/%s/build?version=%s",
-		encodedSubscriptionId, resourceGroup, accountName, projectName, agentName, agentVersion)
+		encodedSubscriptionId, resourceGroup, accountName, projectName,
+		agentName, agentVersion,
+	)
 	return url, nil
 }
 
@@ -951,19 +909,7 @@ func (p *AgentServiceTargetProvider) displayAgentInfo(request *agent_api.CreateA
 	fmt.Fprintf(os.Stderr, "Description: %s\n", description)
 
 	// Display agent-specific information
-	if promptDef, ok := request.Definition.(agent_api.PromptAgentDefinition); ok {
-		fmt.Fprintf(os.Stderr, "Model: %s\n", promptDef.Model)
-		instructions := "No instructions"
-		if promptDef.Instructions != nil {
-			inst := *promptDef.Instructions
-			if len(inst) > 50 {
-				instructions = inst[:50] + "..."
-			} else {
-				instructions = inst
-			}
-		}
-		fmt.Fprintf(os.Stderr, "Instructions: %s\n", instructions)
-	} else if imageHostedDef, ok := request.Definition.(agent_api.ImageBasedHostedAgentDefinition); ok {
+	if imageHostedDef, ok := request.Definition.(agent_api.ImageBasedHostedAgentDefinition); ok {
 		fmt.Fprintf(os.Stderr, "Image: %s\n", imageHostedDef.Image)
 		fmt.Fprintf(os.Stderr, "CPU: %s\n", imageHostedDef.CPU)
 		fmt.Fprintf(os.Stderr, "Memory: %s\n", imageHostedDef.Memory)

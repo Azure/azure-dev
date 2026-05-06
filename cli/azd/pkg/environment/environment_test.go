@@ -4,9 +4,12 @@
 package environment
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -312,4 +315,68 @@ func TestServicePropertyRoundTripWithSpaces(t *testing.T) {
 	// Verify no space-containing key exists
 	rawBadVal := env.Getenv("SERVICE_API AND FRONTEND_IMAGE_NAME")
 	require.Empty(t, rawBadVal)
+}
+
+func TestEnvironment_ConcurrentDotenvSet(t *testing.T) {
+	// Regression: parallel service deploys/hooks all writing SERVICE_<svc>_*
+	// keys against the same *Environment must not panic with "concurrent map
+	// writes" or lose updates. Without the internal mutex on Environment, this
+	// test panics under -race within the first few goroutines.
+	env := NewWithValues("test", nil)
+
+	const goroutines = 32
+	const writesPerG = 200
+
+	var wg sync.WaitGroup
+	for i := range goroutines {
+		wg.Go(func() {
+			for j := range writesPerG {
+				env.SetServiceProperty(fmt.Sprintf("svc%d", i), "KEY", fmt.Sprintf("v%d", j))
+				_ = env.GetServiceProperty(fmt.Sprintf("svc%d", i), "KEY")
+				_ = env.Dotenv()
+				_ = env.Environ()
+			}
+		})
+	}
+	wg.Wait()
+
+	for i := range goroutines {
+		got := env.GetServiceProperty(fmt.Sprintf("svc%d", i), "KEY")
+		require.Equal(t, fmt.Sprintf("v%d", writesPerG-1), got, "lost-update for svc%d", i)
+	}
+}
+
+// --- Test 10: Dotenv special characters round-trip ---
+
+func TestDotenvSpecialCharacters_RoundTrip(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	envManager, _ := createEnvManager(mockContext, t.TempDir())
+
+	env := New("special-chars")
+
+	// Values with tricky characters.
+	cases := map[string]string{
+		"WITH_NEWLINE":   "line1\nline2\nline3",
+		"WITH_EQUALS":    "key=value=extra",
+		"WITH_QUOTES":    `he said "hello" and 'goodbye'`,
+		"WITH_BACKSLASH": `C:\Users\test\path`,
+		"WITH_MIXED":     "a=b\nc=\"d\"\ne\\f",
+	}
+
+	for k, v := range cases {
+		env.DotenvSet(k, v)
+	}
+
+	err := envManager.Save(*mockContext.Context, env)
+	require.NoError(t, err)
+
+	// Reload into a fresh environment.
+	reloaded, err := envManager.Get(*mockContext.Context, "special-chars")
+	require.NoError(t, err)
+
+	for k, want := range cases {
+		got, ok := reloaded.LookupEnv(k)
+		require.True(t, ok, "key %s should exist after reload", k)
+		require.Equal(t, want, got, "round-trip mismatch for key %s", k)
+	}
 }

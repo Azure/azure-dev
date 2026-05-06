@@ -14,19 +14,19 @@ import (
 )
 
 func TestShowCommand_AcceptsPositionalArg(t *testing.T) {
-	cmd := newShowCommand()
+	cmd := newShowCommand(nil)
 	err := cmd.Args(cmd, []string{"my-agent"})
 	assert.NoError(t, err)
 }
 
 func TestShowCommand_AcceptsNoArgs(t *testing.T) {
-	cmd := newShowCommand()
+	cmd := newShowCommand(nil)
 	err := cmd.Args(cmd, []string{})
 	assert.NoError(t, err)
 }
 
 func TestShowCommand_RejectsMultipleArgs(t *testing.T) {
-	cmd := newShowCommand()
+	cmd := newShowCommand(nil)
 	err := cmd.Args(cmd, []string{"svc1", "svc2"})
 	assert.Error(t, err)
 }
@@ -67,11 +67,9 @@ func TestNewAgentContext_PartialFlags(t *testing.T) {
 	assert.Contains(t, err.Error(), "both --account-name and --project-name must be provided together")
 }
 
-func TestShowCommand_DefaultOutputFlag(t *testing.T) {
-	cmd := newShowCommand()
-
-	output, _ := cmd.Flags().GetString("output")
-	assert.Equal(t, "json", output)
+func TestShowCommand_DefaultOutputFormat(t *testing.T) {
+	cmd := newShowCommand(nil)
+	assertOutputFlagOptions(t, cmd, "json", []string{"json", "table"})
 }
 
 func TestPrintAgentVersionJSON(t *testing.T) {
@@ -83,7 +81,8 @@ func TestPrintAgentVersionJSON(t *testing.T) {
 		CreatedAt: 1735689600, // 2025-01-01T00:00:00Z
 	}
 
-	err := printAgentVersionJSON(version)
+	result := &showResult{AgentVersionObject: version}
+	err := printShowResultJSON(result)
 	require.NoError(t, err)
 }
 
@@ -113,30 +112,69 @@ func TestPrintAgentVersionJSON_Format(t *testing.T) {
 		AgentGUID: "guid-1234",
 	}
 
-	jsonBytes, err := json.MarshalIndent(version, "", "  ")
+	result := &showResult{
+		AgentVersionObject: version,
+		PlaygroundURL:      "https://ai.azure.com/nextgen/r/test/build/agents/test-agent/build?version=2",
+		Endpoints: map[string]string{
+			"Responses": "https://acct.services.ai.azure.com/api/projects/proj/agents/test-agent/endpoint/protocols/openai/responses?api-version=2025-11-15-preview",
+		},
+	}
+
+	jsonBytes, err := json.MarshalIndent(result, "", "  ")
 	require.NoError(t, err)
 
-	var result map[string]any
-	err = json.Unmarshal(jsonBytes, &result)
+	var raw map[string]any
+	err = json.Unmarshal(jsonBytes, &raw)
 	require.NoError(t, err)
 
-	assert.Equal(t, "agent.version", result["object"])
-	assert.Equal(t, "ver-456", result["id"])
-	assert.Equal(t, "test-agent", result["name"])
-	assert.Equal(t, "2", result["version"])
-	assert.Equal(t, "A test agent", result["description"])
-	assert.Equal(t, "active", result["status"])
-	assert.Equal(t, "guid-1234", result["agent_guid"])
-	metadata := result["metadata"].(map[string]any)
+	assert.Equal(t, "agent.version", raw["object"])
+	assert.Equal(t, "ver-456", raw["id"])
+	assert.Equal(t, "test-agent", raw["name"])
+	assert.Equal(t, "2", raw["version"])
+	assert.Equal(t, "A test agent", raw["description"])
+	assert.Equal(t, "active", raw["status"])
+	assert.Equal(t, "guid-1234", raw["agent_guid"])
+	metadata := raw["metadata"].(map[string]any)
 	assert.Equal(t, "prod", metadata["env"])
-	instanceIdentity := result["instance_identity"].(map[string]any)
+	instanceIdentity := raw["instance_identity"].(map[string]any)
 	assert.Equal(t, "inst-pid", instanceIdentity["principal_id"])
 	assert.Equal(t, "inst-cid", instanceIdentity["client_id"])
-	blueprint := result["blueprint"].(map[string]any)
+	blueprint := raw["blueprint"].(map[string]any)
 	assert.Equal(t, "bp-pid", blueprint["principal_id"])
-	blueprintRef := result["blueprint_reference"].(map[string]any)
+	blueprintRef := raw["blueprint_reference"].(map[string]any)
 	assert.Equal(t, "ManagedAgentIdentityBlueprint", blueprintRef["type"])
 	assert.Equal(t, "test-agent-abc12", blueprintRef["blueprint_id"])
+
+	// Verify new fields
+	assert.Equal(t,
+		"https://ai.azure.com/nextgen/r/test/build/agents/test-agent/build?version=2",
+		raw["playground_url"],
+	)
+	endpoints := raw["agent_endpoints"].(map[string]any)
+	assert.Contains(t, endpoints, "Responses")
+}
+
+func TestPrintAgentVersionJSON_NoLinks(t *testing.T) {
+	version := &agent_api.AgentVersionObject{
+		Object:  "agent.version",
+		ID:      "ver-789",
+		Name:    "my-agent",
+		Version: "1",
+	}
+
+	result := &showResult{AgentVersionObject: version}
+	jsonBytes, err := json.MarshalIndent(result, "", "  ")
+	require.NoError(t, err)
+
+	var raw map[string]any
+	err = json.Unmarshal(jsonBytes, &raw)
+	require.NoError(t, err)
+
+	// playground_url and endpoints should be absent when empty
+	_, hasPlayground := raw["playground_url"]
+	assert.False(t, hasPlayground, "playground_url should be omitted when empty")
+	_, hasEndpoints := raw["agent_endpoints"]
+	assert.False(t, hasEndpoints, "agent_endpoints should be omitted when nil")
 }
 
 func TestPrintAgentVersionTable(t *testing.T) {
@@ -165,7 +203,15 @@ func TestPrintAgentVersionTable(t *testing.T) {
 		},
 	}
 
-	err := printAgentVersionTable(version)
+	result := &showResult{
+		AgentVersionObject: version,
+		PlaygroundURL:      "https://ai.azure.com/playground",
+		Endpoints: map[string]string{
+			"Responses": "https://example.com/responses",
+		},
+	}
+
+	err := printShowResultTable(result)
 	require.NoError(t, err)
 }
 
@@ -177,6 +223,7 @@ func TestPrintAgentVersionTable_MinimalFields(t *testing.T) {
 		Version: "1",
 	}
 
-	err := printAgentVersionTable(version)
+	result := &showResult{AgentVersionObject: version}
+	err := printShowResultTable(result)
 	require.NoError(t, err)
 }

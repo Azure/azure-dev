@@ -754,3 +754,36 @@ func TestParseGlobalFlags_ExtensionCompatibility(t *testing.T) {
 		})
 	}
 }
+
+// TestParseGlobalFlags_OutputAttachedShortForm verifies that all common -o / --output
+// attachment forms are accepted without error. Before the fix, pflag's UnknownFlags
+// allowlist walked "-otable" char-by-char and tripped on the known string flag "-e",
+// returning `flag needs an argument: 'e' in -e`.
+func TestParseGlobalFlags_OutputAttachedShortForm(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		args []string
+	}{
+		{"attached", []string{"-otable"}},
+		{"attached-json", []string{"-ojson"}},
+		{"space-separated", []string{"-o", "table"}},
+		{"equals", []string{"-o=table"}},
+		{"long-space", []string{"--output", "table"}},
+		{"long-equals", []string{"--output=table"}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			opts := &internal.GlobalCommandOptions{}
+			err := ParseGlobalFlags(tc.args, opts)
+			// We only assert no error here. The -o/--output flag is registered on the
+			// pre-parse FlagSet solely to prevent pflag from walking attached short
+			// values char-by-char and failing on "-e"; the parsed value is intentionally
+			// not captured into GlobalCommandOptions (Cobra handles --output per command).
+			require.NoError(t, err, "ParseGlobalFlags must not error for args: %v", tc.args)
+		})
+	}
+}

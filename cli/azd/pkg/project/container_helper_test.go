@@ -5,9 +5,13 @@ package project
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +21,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
+	"github.com/azure/azure-dev/cli/azd/pkg/containerregistry"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -378,6 +383,256 @@ func Test_ContainerHelper_RemoteImageTag_WithImageOverride(t *testing.T) {
 			}
 		})
 	}
+}
+
+func Test_ResolveDockerBuildArgs(t *testing.T) {
+	env := environment.NewWithValues("dev", map[string]string{
+		"FROM_ENV": "env-value",
+	})
+	require.NoError(t, env.Config.Set("infra.parameters.param", "param-value"))
+
+	args, err := resolveDockerBuildArgs([]osutil.ExpandableString{
+		osutil.NewExpandableString("FROM_ENV=${FROM_ENV}"),
+		osutil.NewExpandableString("FROM_PARAM={infra.parameters.param}"),
+	}, env)
+
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		"FROM_ENV=env-value",
+		"FROM_PARAM=param-value",
+	}, args)
+}
+
+func Test_DockerBuildArgsToAcrArguments(t *testing.T) {
+	lookupEnv := func(key string) (string, bool) {
+		values := map[string]string{
+			"FROM_ENV": "env-value",
+		}
+		value, ok := values[key]
+		return value, ok
+	}
+
+	args, err := dockerBuildArgsToAcrArguments([]string{
+		"EXPLICIT=value",
+		"MULTI=a=b",
+		"FROM_ENV",
+	}, lookupEnv)
+
+	require.NoError(t, err)
+	require.Len(t, args, 3)
+	require.Equal(t, map[string]string{
+		"EXPLICIT": "value",
+		"MULTI":    "a=b",
+		"FROM_ENV": "env-value",
+	}, acrArgumentsToMap(t, args))
+	for _, arg := range args {
+		require.NotNil(t, arg.IsSecret)
+		require.False(t, *arg.IsSecret)
+	}
+}
+
+func Test_DockerBuildArgsToAcrArguments_MissingShorthandEnv(t *testing.T) {
+	_, err := dockerBuildArgsToAcrArguments([]string{"MISSING"}, func(string) (string, bool) {
+		return "", false
+	})
+
+	require.ErrorContains(t, err, `environment variable is not set`)
+	require.ErrorContains(t, err, `MISSING=<value>`)
+}
+
+func Test_DockerBuildArgsToAcrArguments_EmptyName(t *testing.T) {
+	_, err := dockerBuildArgsToAcrArguments([]string{"=value"}, func(string) (string, bool) {
+		return "", false
+	})
+
+	require.ErrorContains(t, err, "empty name")
+}
+
+func Test_DockerBuildArgEnvResolver(t *testing.T) {
+	t.Setenv("FROM_OS", "os-value")
+	t.Setenv("OVERRIDDEN", "os-value")
+
+	env := environment.NewWithValues("dev", map[string]string{
+		"FROM_ENV":   "env-value",
+		"OVERRIDDEN": "env-value",
+	})
+
+	lookup := dockerBuildArgEnvResolver(env, []string{
+		"FROM_BUILD_ENV=build-env-value",
+		"OVERRIDDEN=build-env-value",
+		"EMPTY=",
+	})
+
+	value, ok := lookup("FROM_OS")
+	require.True(t, ok)
+	require.Equal(t, "os-value", value)
+
+	value, ok = lookup("FROM_ENV")
+	require.True(t, ok)
+	require.Equal(t, "env-value", value)
+
+	value, ok = lookup("FROM_BUILD_ENV")
+	require.True(t, ok)
+	require.Equal(t, "build-env-value", value)
+
+	value, ok = lookup("OVERRIDDEN")
+	require.True(t, ok)
+	require.Equal(t, "build-env-value", value)
+
+	value, ok = lookup("EMPTY")
+	require.True(t, ok)
+	require.Equal(t, "", value)
+}
+
+func Test_ContainerHelper_RunRemoteBuild_PassesBuildArgs(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+	env := environment.NewWithValues("dev", map[string]string{
+		"FROM_ENV": "env-value",
+	})
+	require.NoError(t, env.Config.Set("infra.parameters.param", "param-value"))
+
+	var scheduleRunBody []byte
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return strings.Contains(request.URL.Path, "listBuildSourceUploadUrl")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		uploadURL := "https://upload.example.com/container/source.tar.gz?sig=abc"
+		return mocks.CreateHttpResponseWithBody(
+			request, http.StatusOK, armcontainerregistry.SourceUploadDefinition{
+				UploadURL:    &uploadURL,
+				RelativePath: new("source.tar.gz"),
+			},
+		)
+	})
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return strings.Contains(request.URL.Path, "/container/source.tar.gz")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		_, _ = io.Copy(io.Discard, request.Body)
+		response, err := mocks.CreateEmptyHttpResponse(request, http.StatusCreated)
+		if err != nil {
+			return nil, err
+		}
+		response.Header.Set("ETag", `"0x8D4BCC2E4835CD0"`)
+		return response, nil
+	})
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return strings.Contains(request.URL.Path, "scheduleRun")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		var err error
+		scheduleRunBody, err = io.ReadAll(request.Body)
+		require.NoError(t, err)
+
+		return mocks.CreateHttpResponseWithBody(
+			request, http.StatusBadRequest, map[string]any{
+				"error": map[string]string{
+					"code":    "BadRequest",
+					"message": "stop after capturing request",
+				},
+			},
+		)
+	})
+
+	mockContainerRegistryService := &mockContainerRegistryService{}
+	mockContainerRegistryService.On(
+		"FindContainerRegistryResourceGroup",
+		mock.Anything,
+		"SUBSCRIPTION_ID",
+		"contoso",
+	).Return("REGISTRY_RG", nil)
+
+	dockerCli := docker.NewCli(mockContext.CommandRunner)
+	dotnetCli := dotnet.NewCli(mockContext.CommandRunner)
+	containerHelper := NewContainerHelper(
+		clock.NewMock(),
+		mockContainerRegistryService,
+		containerregistry.NewRemoteBuildManager(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions),
+		mockContext.CommandRunner,
+		dockerCli,
+		dotnetCli,
+		mockContext.Console,
+		cloud.AzurePublic(),
+	)
+
+	projectRoot := t.TempDir()
+	servicePath := filepath.Join(projectRoot, "src", "api")
+	require.NoError(t, os.MkdirAll(servicePath, osutil.PermissionDirectory))
+	require.NoError(t, os.WriteFile(filepath.Join(servicePath, "Dockerfile"), []byte("FROM scratch"), 0600))
+
+	serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
+	serviceConfig.Project.Path = projectRoot
+	serviceConfig.Docker.Registry = osutil.NewExpandableString("contoso.azurecr.io")
+	serviceConfig.Docker.RemoteBuild = true
+	serviceConfig.Docker.BuildArgs = []osutil.ExpandableString{
+		osutil.NewExpandableString("EXPLICIT=value"),
+		osutil.NewExpandableString("MULTI=a=b"),
+		osutil.NewExpandableString("FROM_ENV"),
+		osutil.NewExpandableString("FROM_BUILD_ENV"),
+		osutil.NewExpandableString("FROM_PARAM={infra.parameters.param}"),
+	}
+	serviceConfig.Docker.BuildEnv = []string{
+		"FROM_BUILD_ENV=build-env-value",
+	}
+
+	targetResource := environment.NewTargetResource(
+		"SUBSCRIPTION_ID",
+		"RESOURCE_GROUP",
+		"CONTAINER_APP",
+		"Microsoft.App/containerApps",
+	)
+
+	_, err := logProgress(
+		t, func(progress *async.Progress[ServiceProgress]) (string, error) {
+			return containerHelper.runRemoteBuild(
+				*mockContext.Context, serviceConfig, targetResource, env, progress, &imageOverride{})
+		},
+	)
+
+	require.Error(t, err)
+	require.NotEmpty(t, scheduleRunBody)
+
+	var requestBody struct {
+		Arguments []struct {
+			Name     string `json:"name"`
+			Value    string `json:"value"`
+			IsSecret bool   `json:"isSecret"`
+		} `json:"arguments"`
+	}
+	require.NoError(t, json.Unmarshal(scheduleRunBody, &requestBody))
+	require.Equal(t, map[string]string{
+		"EXPLICIT":       "value",
+		"MULTI":          "a=b",
+		"FROM_ENV":       "env-value",
+		"FROM_BUILD_ENV": "build-env-value",
+		"FROM_PARAM":     "param-value",
+	}, acrRequestArgumentsToMap(requestBody.Arguments))
+	for _, arg := range requestBody.Arguments {
+		require.False(t, arg.IsSecret)
+	}
+}
+
+func acrArgumentsToMap(t *testing.T, args []*armcontainerregistry.Argument) map[string]string {
+	t.Helper()
+
+	result := map[string]string{}
+	for _, arg := range args {
+		require.NotNil(t, arg.Name)
+		require.NotNil(t, arg.Value)
+		result[*arg.Name] = *arg.Value
+	}
+
+	return result
+}
+
+func acrRequestArgumentsToMap(args []struct {
+	Name     string `json:"name"`
+	Value    string `json:"value"`
+	IsSecret bool   `json:"isSecret"`
+}) map[string]string {
+	result := map[string]string{}
+	for _, arg := range args {
+		result[arg.Name] = arg.Value
+	}
+
+	return result
 }
 
 func Test_ContainerHelper_Resolve_RegistryName(t *testing.T) {

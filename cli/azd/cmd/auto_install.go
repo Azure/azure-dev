@@ -24,6 +24,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/update"
@@ -460,7 +461,9 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 	// This also enables the global options to be set in the container for support during extension framework callbacks.
 	globalOpts := &internal.GlobalCommandOptions{}
 	if err := ParseGlobalFlags(os.Args[1:], globalOpts); err != nil {
-		result.Err = fmt.Errorf("Warning: failed to parse global flags: %w", err)
+		// main.go only exits on result.Err — print here so users see pre-cobra parse failures.
+		fmt.Fprintln(os.Stderr, output.WithErrorFormat("ERROR: %s", err.Error()))
+		result.Err = err
 		return result
 	}
 
@@ -761,6 +764,13 @@ func ParseGlobalFlags(args []string, opts *internal.GlobalCommandOptions) error 
 	// where extension-specific flags are not yet known and will be handled by the extension's
 	// command parser after the extension is loaded.
 	globalFlagSet.ParseErrorsAllowlist = pflag.ParseErrorsAllowlist{UnknownFlags: true}
+
+	// Register --output/-o on the pre-parse set only (not in CreateGlobalFlagSet, which
+	// would shadow per-command output.AddOutputParam and cause GetCommandFormatter to reject
+	// the empty default). Without this, pflag's UnknownFlags allowlist walks attached short
+	// values like "-o<value>" char-by-char and trips on "-e" (a known string flag), failing
+	// with `flag needs an argument: 'e' in -e`.
+	globalFlagSet.StringP("output", "o", "", "The output format (json, table, none).")
 
 	// Parse the arguments - unknown flags will be silently ignored
 	err := globalFlagSet.Parse(args)

@@ -764,7 +764,7 @@ func (p *AzdoCiProvider) credentialOptions(
 			return nil, err
 		}
 		sConnection, err := azdo.CreateServiceConnection(
-			ctx, connection, details.projectId, details.projectName, *p.Env, p.credentials, p.console)
+			ctx, connection, details.projectId, details.projectName, p.Env, p.credentials, p.console)
 		if err != nil {
 			return nil, err
 		}
@@ -817,7 +817,7 @@ func (p *AzdoCiProvider) configureConnection(
 		return err
 	}
 	_, err = azdo.CreateServiceConnection(
-		ctx, connection, details.projectId, details.projectName, *p.Env, p.credentials, p.console)
+		ctx, connection, details.projectId, details.projectName, p.Env, p.credentials, p.console)
 	return err
 }
 

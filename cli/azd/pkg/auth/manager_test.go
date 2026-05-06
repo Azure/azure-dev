@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
@@ -378,6 +379,63 @@ func TestLogInDetails(t *testing.T) {
 		}
 
 		_, err = m.LogInDetails(t.Context())
+		require.Error(t, err)
+		require.ErrorIs(t, err, ErrNoCurrentUser)
+	})
+
+	t.Run("external auth - returns email login type with upn from token", func(t *testing.T) {
+		// Build a JWT token with a preferred_username claim
+		token := buildTestJWT(t, map[string]any{
+			"preferred_username": "user@contoso.com",
+			"oid":                "oid-abc",
+			"tid":                "tenant-xyz",
+		})
+
+		// Set up a mock HTTP server that returns the token
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, `{"status":"success","token":"`+token+`","expiresOn":"2030-01-01T00:00:00Z"}`)
+		}))
+		defer srv.Close()
+
+		m := Manager{
+			externalAuthCfg: ExternalAuthConfiguration{
+				Endpoint:    srv.URL,
+				Key:         "test-key",
+				Transporter: srv.Client(),
+			},
+			cloud: cloud.AzurePublic(),
+		}
+
+		details, err := m.LogInDetails(t.Context())
+		require.NoError(t, err)
+		require.Equal(t, EmailLoginType, details.LoginType)
+		require.Equal(t, "user@contoso.com", details.Account)
+	})
+
+	t.Run("external auth - error when token has no usable account identifier", func(t *testing.T) {
+		// Build a JWT token with no username claims
+		token := buildTestJWT(t, map[string]any{
+			"oid": "oid-abc",
+			"tid": "tenant-xyz",
+		})
+
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, `{"status":"success","token":"`+token+`","expiresOn":"2030-01-01T00:00:00Z"}`)
+		}))
+		defer srv.Close()
+
+		m := Manager{
+			externalAuthCfg: ExternalAuthConfiguration{
+				Endpoint:    srv.URL,
+				Key:         "test-key",
+				Transporter: srv.Client(),
+			},
+			cloud: cloud.AzurePublic(),
+		}
+
+		_, err := m.LogInDetails(t.Context())
 		require.Error(t, err)
 		require.ErrorIs(t, err, ErrNoCurrentUser)
 	})

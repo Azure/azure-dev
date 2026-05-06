@@ -356,42 +356,13 @@ func (ch *ContainerHelper) Build(
 	dockerOptions := getDockerOptionsWithDefaults(serviceConfig.Docker)
 	resolveDockerPaths(serviceConfig, &dockerOptions)
 
-	resolveParameters := func(source []string) ([]string, error) {
-		result := make([]string, len(source))
-		for i, arg := range source {
-			evaluatedString, err := apphost.EvalString(arg, func(match string) (string, error) {
-				path := match
-				value, has := env.Config.GetString(path)
-				if !has {
-					return "", fmt.Errorf("parameter %s not found", path)
-				}
-				return value, nil
-			})
-			if err != nil {
-				return nil, err
-			}
-			result[i] = evaluatedString
-		}
-		return result, nil
-	}
-
-	dockerBuildArgs := []string{}
-	for _, arg := range dockerOptions.BuildArgs {
-		buildArgValue, err := arg.Envsubst(env.Getenv)
-		if err != nil {
-			return nil, fmt.Errorf("substituting environment variables in build args: %w", err)
-		}
-
-		dockerBuildArgs = append(dockerBuildArgs, buildArgValue)
-	}
-
-	// resolve parameters for build args and secrets
-	resolvedBuildArgs, err := resolveParameters(dockerBuildArgs)
+	resolvedBuildArgs, err := resolveDockerBuildArgs(dockerOptions.BuildArgs, env)
 	if err != nil {
 		return nil, err
 	}
 
-	resolvedBuildEnv, err := resolveParameters(dockerOptions.BuildEnv)
+	// resolve parameters for build env
+	resolvedBuildEnv, err := resolveDockerParameters(dockerOptions.BuildEnv, env)
 	if err != nil {
 		return nil, err
 	}
@@ -523,6 +494,40 @@ func (ch *ContainerHelper) Build(
 			},
 		}},
 	}, nil
+}
+
+func resolveDockerBuildArgs(buildArgs []osutil.ExpandableString, env *environment.Environment) ([]string, error) {
+	dockerBuildArgs := make([]string, 0, len(buildArgs))
+	for _, arg := range buildArgs {
+		buildArgValue, err := arg.Envsubst(env.Getenv)
+		if err != nil {
+			return nil, fmt.Errorf("substituting environment variables in build args: %w", err)
+		}
+
+		dockerBuildArgs = append(dockerBuildArgs, buildArgValue)
+	}
+
+	return resolveDockerParameters(dockerBuildArgs, env)
+}
+
+func resolveDockerParameters(source []string, env *environment.Environment) ([]string, error) {
+	result := make([]string, len(source))
+	for i, arg := range source {
+		evaluatedString, err := apphost.EvalString(arg, func(match string) (string, error) {
+			path := match
+			value, has := env.Config.GetString(path)
+			if !has {
+				return "", fmt.Errorf("parameter %s not found", path)
+			}
+			return value, nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		result[i] = evaluatedString
+	}
+
+	return result, nil
 }
 
 func (ch *ContainerHelper) Package(
@@ -812,6 +817,24 @@ func (ch *ContainerHelper) runRemoteBuild(
 		return "", fmt.Errorf("remote build only supports the linux/amd64 platform")
 	}
 
+	resolvedBuildArgs, err := resolveDockerBuildArgs(dockerOptions.BuildArgs, env)
+	if err != nil {
+		return "", err
+	}
+
+	resolvedBuildEnv, err := resolveDockerParameters(dockerOptions.BuildEnv, env)
+	if err != nil {
+		return "", err
+	}
+
+	acrBuildArgs, err := dockerBuildArgsToAcrArguments(
+		resolvedBuildArgs,
+		dockerBuildArgEnvResolver(env, resolvedBuildEnv),
+	)
+	if err != nil {
+		return "", err
+	}
+
 	progress.SetProgress(NewServiceProgress("Packing remote build context"))
 
 	contextPath, dockerPath, err := containerregistry.PackRemoteBuildSource(ctx, dockerOptions.Context, dockerOptions.Path)
@@ -872,6 +895,9 @@ func (ch *ContainerHelper) runRemoteBuild(
 			Architecture: to.Ptr(armcontainerregistry.ArchitectureAmd64),
 		},
 	}
+	if len(acrBuildArgs) > 0 {
+		buildRequest.Arguments = acrBuildArgs
+	}
 
 	previewerWriter := ch.console.ShowPreviewer(ctx,
 		&input.ShowPreviewerOptions{
@@ -887,6 +913,75 @@ func (ch *ContainerHelper) runRemoteBuild(
 	}
 
 	return imageName, nil
+}
+
+func dockerBuildArgsToAcrArguments(
+	buildArgs []string,
+	lookupEnv func(string) (string, bool),
+) ([]*armcontainerregistry.Argument, error) {
+	if len(buildArgs) == 0 {
+		return nil, nil
+	}
+
+	acrArgs := make([]*armcontainerregistry.Argument, 0, len(buildArgs))
+	for i, arg := range buildArgs {
+		name, value, hasValue := strings.Cut(arg, "=")
+		if name == "" {
+			return nil, fmt.Errorf("docker build arg at index %d has an empty name", i)
+		}
+
+		if !hasValue {
+			var ok bool
+			value, ok = lookupEnv(name)
+			if !ok {
+				return nil, fmt.Errorf(
+					"resolving docker build arg %q for remote build: environment variable is not set; "+
+						"use %s=<value> or set environment variable %s",
+					name,
+					name,
+					name,
+				)
+			}
+		}
+
+		acrArgs = append(acrArgs, &armcontainerregistry.Argument{
+			Name:     new(name),
+			Value:    new(value),
+			IsSecret: new(false),
+		})
+	}
+
+	return acrArgs, nil
+}
+
+func dockerBuildArgEnvResolver(
+	env *environment.Environment,
+	buildEnv []string,
+) func(string) (string, bool) {
+	effectiveEnv := map[string]string{}
+	for _, envVar := range os.Environ() {
+		key, value, ok := strings.Cut(envVar, "=")
+		if ok {
+			effectiveEnv[key] = value
+		}
+	}
+	for _, envVar := range env.Environ() {
+		key, value, ok := strings.Cut(envVar, "=")
+		if ok {
+			effectiveEnv[key] = value
+		}
+	}
+	for _, envVar := range buildEnv {
+		key, value, ok := strings.Cut(envVar, "=")
+		if ok {
+			effectiveEnv[key] = value
+		}
+	}
+
+	return func(key string) (string, bool) {
+		value, ok := effectiveEnv[key]
+		return value, ok
+	}
 }
 
 // runDotnetPublish builds and publishes the container image using `dotnet publish`. It returns the full remote image name.

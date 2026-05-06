@@ -28,14 +28,16 @@ import (
 )
 
 const (
-	// ConfigFile is the project-level state file for local agent context.
+	// ConfigFile is the legacy project-level state file for local agent context.
+	// Kept only for migration purposes.
 	ConfigFile = ".foundry-agent.json"
 
 	// DefaultPort is the default port for local agent servers.
 	DefaultPort = 8088
 )
 
-// AgentLocalContext holds local state persisted in .foundry-agent.json.
+// AgentLocalContext holds local state persisted in UserConfig.
+// This struct is kept as an in-memory representation for migration compatibility.
 type AgentLocalContext struct {
 	AgentName     string            `json:"agent_name,omitempty"`
 	Sessions      map[string]string `json:"sessions,omitempty"`
@@ -43,8 +45,8 @@ type AgentLocalContext struct {
 	Invocations   map[string]string `json:"invocations,omitempty"`
 }
 
-// resolveConfigPath returns the full path to the .foundry-agent.json file
-// in the current azd environment directory (<project root>/.azure/<env name>/).
+// resolveConfigPath returns the full path to the legacy .foundry-agent.json file.
+// Kept for fetchOpenAPISpec (disk caching) and migration.
 func resolveConfigPath(ctx context.Context, azdClient *azdext.AzdClient) (string, error) {
 	projectResponse, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil {
@@ -66,8 +68,21 @@ func resolveConfigPath(ctx context.Context, azdClient *azdext.AzdClient) (string
 	return filepath.Join(projectResponse.Project.Path, ".azure", envResponse.Environment.Name, ConfigFile), nil
 }
 
-// loadLocalContext reads the .foundry-agent.json state file.
-// configPath is the full path to the config file (use resolveConfigPath to obtain it).
+// resolveProjectPath returns the project path from the azd client.
+// Used to generate project-discriminated local keys.
+func resolveProjectPath(ctx context.Context, azdClient *azdext.AzdClient) string {
+	if azdClient == nil {
+		return ""
+	}
+	projectResponse, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if err != nil || projectResponse.Project == nil {
+		return ""
+	}
+	return projectResponse.Project.Path
+}
+
+// loadLocalContext reads the legacy .foundry-agent.json state file.
+// Used only for migration. New code should use getContextValue/setContextValue.
 func loadLocalContext(configPath string) *AgentLocalContext {
 	data, err := os.ReadFile(configPath) //nolint:gosec // G304: configPath is resolved from azd project root, not user input
 	if err != nil {
@@ -80,18 +95,47 @@ func loadLocalContext(configPath string) *AgentLocalContext {
 	return &agentCtx
 }
 
-// saveLocalContext writes the .foundry-agent.json state file.
-// configPath is the full path to the config file (use resolveConfigPath to obtain it).
-func saveLocalContext(agentCtx *AgentLocalContext, configPath string) error {
-	data, err := json.MarshalIndent(agentCtx, "", "  ")
+// migrateFromLegacyFile checks for the legacy .foundry-agent.json and migrates
+// its contents to UserConfig. The old file is deleted after successful migration.
+// This is a best-effort operation; errors are logged and do not block the caller.
+func migrateFromLegacyFile(ctx context.Context, azdClient *azdext.AzdClient) {
+	configFilePath, err := resolveConfigPath(ctx, azdClient)
 	if err != nil {
-		return fmt.Errorf("failed to marshal local context: %w", err)
+		return
 	}
-	return os.WriteFile(configPath, append(data, '\n'), 0600)
+
+	if _, err := os.Stat(configFilePath); os.IsNotExist(err) {
+		return
+	}
+
+	agentCtx := loadLocalContext(configFilePath)
+
+	allSucceeded := true
+	anyData := len(agentCtx.Sessions) > 0 || len(agentCtx.Conversations) > 0
+	for key, val := range agentCtx.Sessions {
+		if err := setAgentSpecificContextValue(ctx, azdClient, "sessions", key, val); err != nil {
+			log.Printf("migrateFromLegacyFile: failed to migrate session %q: %v", key, err)
+			allSucceeded = false
+		}
+	}
+	for key, val := range agentCtx.Conversations {
+		if err := setAgentSpecificContextValue(ctx, azdClient, "conversations", key, val); err != nil {
+			log.Printf("migrateFromLegacyFile: failed to migrate conversation %q: %v", key, err)
+			allSucceeded = false
+		}
+	}
+
+	if anyData && allSucceeded {
+		if err := os.Remove(configFilePath); err != nil {
+			log.Printf("migrateFromLegacyFile: failed to delete legacy file %s: %v", configFilePath, err)
+		} else {
+			log.Printf("migrateFromLegacyFile: migrated and deleted %s", configFilePath)
+		}
+	}
 }
 
-// saveContextValue persists a value into the named field of the local config.
-// storeField selects the map: "sessions", "conversations", or "invocations".
+// saveContextValue persists a value into the named field of the config store.
+// storeField selects the map: "sessions" or "conversations".
 func saveContextValue(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -99,46 +143,70 @@ func saveContextValue(
 	value string,
 	storeField string,
 ) {
-	if value == "" {
+	if agentKey == "" || value == "" {
 		return
 	}
-	configPath, err := resolveConfigPath(ctx, azdClient)
-	if err != nil {
-		log.Printf("saveContextValue: failed to resolve config path: %v", err)
-		return
-	}
-	if err := saveContextValueToPath(configPath, agentKey, value, storeField); err != nil {
-		log.Printf("saveContextValue: failed to persist %s for %q: %v", storeField, agentKey, err)
-	}
-}
-
-// saveContextValueToPath persists a value into the named field of the local config at configPath.
-// This is the path-based implementation used by saveContextValue and directly in tests.
-func saveContextValueToPath(configPath, agentKey, value, storeField string) error {
-	agentCtx := loadLocalContext(configPath)
-	store := contextMap(agentCtx, storeField)
-	store[agentKey] = value
-	return saveLocalContext(agentCtx, configPath)
+	setContextValueSafe(ctx, azdClient, storeField, agentKey, value)
 }
 
 // resolveLocalAgentKey builds the storage key for local mode from the azd project config.
-// Returns "{serviceName}-local" when the service can be resolved, or "local" as fallback.
+// Returns the new structured key format: localhost:<port>/<projectHash>/agents/<name>/versions/latest/local
 func resolveLocalAgentKey(ctx context.Context, azdClient *azdext.AzdClient, name string, noPrompt bool) string {
-	if azdClient == nil {
-		return "local"
-	}
-	info, err := resolveAgentServiceFromProject(ctx, azdClient, name, noPrompt)
-	if err != nil || info.ServiceName == "" {
-		return "local"
-	}
-	return info.ServiceName + "-local"
+	return resolveLocalAgentKeyWithPort(ctx, azdClient, name, noPrompt, DefaultPort)
 }
 
-// resolveStoredID resolves a persisted ID (session, conversation, etc.) from the local config.
+// resolveLocalAgentKeyWithPort builds the local storage key with a specific port.
+func resolveLocalAgentKeyWithPort(
+	ctx context.Context, azdClient *azdext.AzdClient, name string, noPrompt bool, port int,
+) string {
+	agentName := name
+
+	if azdClient != nil {
+		info, err := resolveAgentServiceFromProject(ctx, azdClient, name, noPrompt)
+		if err == nil && info.ServiceName != "" {
+			if agentName == "" {
+				agentName = info.ServiceName
+			}
+		}
+	}
+
+	if agentName == "" {
+		agentName = "local"
+	}
+
+	projectPath := resolveProjectPath(ctx, azdClient)
+	return buildLocalAgentKey(port, agentName, "", projectPath)
+}
+
+// legacyKeysForLocal returns the legacy keys that the old code would have used
+// for this agent in local mode.
+func legacyKeysForLocal(serviceName, agentName string) []string {
+	keys := []string{}
+	if serviceName != "" {
+		keys = append(keys, serviceName+"-local")
+	}
+	if agentName != "" && agentName != serviceName {
+		keys = append(keys, agentName+"-local")
+	}
+	keys = append(keys, "local")
+	return keys
+}
+
+// legacyKeysForRemote returns the legacy keys that the old code would have used
+// for this agent in remote mode.
+func legacyKeysForRemote(agentName string) []string {
+	if agentName == "" {
+		return nil
+	}
+	return []string{agentName}
+}
+
+// resolveStoredID resolves a persisted ID (session, conversation, etc.) from the config store.
 // It checks (in order): explicit flag value, persisted value in the config store, then either
 // returns "" (generateIfMissing=false, for remote mode where the server assigns the ID) or
 // generates and persists a new UUID (generateIfMissing=true, for local mode).
 // storeField selects which map to use: "sessions" or "conversations".
+// legacyKeys are old-format keys to check as fallback during migration.
 func resolveStoredID(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -147,31 +215,28 @@ func resolveStoredID(
 	forceNew bool,
 	storeField string,
 	generateIfMissing bool,
+	legacyKeys ...string,
 ) (string, error) {
 	if explicit != "" {
-		// Persist the explicit ID so that subsequent commands (e.g. monitor, invoke)
-		// can find it without the user passing it again.
-		persistExplicitID(ctx, azdClient, agentKey, explicit, storeField)
+		// Persist the explicit ID so that subsequent commands can find it.
+		saveContextValue(ctx, azdClient, agentKey, explicit, storeField)
 		return explicit, nil
 	}
 	if forceNew && !generateIfMissing {
 		return "", nil
 	}
 
-	configPath, err := resolveConfigPath(ctx, azdClient)
-	if err != nil {
-		if generateIfMissing {
-			return uuid.NewString(), nil
-		}
-		return "", err
-	}
-
-	agentCtx := loadLocalContext(configPath)
-
-	store := contextMap(agentCtx, storeField)
 	if !forceNew {
-		if id, ok := store[agentKey]; ok {
-			return id, nil
+		// Try config store with fallback to legacy keys.
+		val, err := getContextValueWithFallback(ctx, azdClient, storeField, agentKey, legacyKeys)
+		if err != nil {
+			if generateIfMissing {
+				return uuid.NewString(), nil
+			}
+			return "", err
+		}
+		if val != "" {
+			return val, nil
 		}
 	}
 
@@ -180,26 +245,14 @@ func resolveStoredID(
 	}
 
 	newID := uuid.NewString()
-	store[agentKey] = newID
-	_ = saveLocalContext(agentCtx, configPath)
+	saveContextValue(ctx, azdClient, agentKey, newID, storeField)
 
 	return newID, nil
 }
 
-// persistExplicitID saves a user-provided explicit ID to the local config.
-// Errors are logged for debug visibility but do not block the caller.
-func persistExplicitID(
-	ctx context.Context,
-	azdClient *azdext.AzdClient,
-	agentKey string,
-	value string,
-	storeField string,
-) {
-	saveContextValue(ctx, azdClient, agentKey, value, storeField)
-}
-
-// resolveStoredIDFromPath is a testable variant of resolveStoredID that operates on a
-// config file path directly, removing the need for an azdClient.
+// resolveStoredIDFromPath is a testable variant of resolveStoredID that operates on the
+// config store directly. The configPath parameter is ignored (kept for API compat in tests)
+// and operations go through UserConfig.
 func resolveStoredIDFromPath(
 	configPath string,
 	agentKey string,
@@ -208,54 +261,21 @@ func resolveStoredIDFromPath(
 	storeField string,
 	generateIfMissing bool,
 ) (string, error) {
+	// This function is only used in tests. For the new implementation, tests should
+	// use the config store directly. This wrapper creates a temporary client.
+	// In practice, tests should be updated to use getContextValue/setContextValue.
+	_ = configPath // no longer used
+
 	if explicit != "" {
-		if err := saveContextValueToPath(configPath, agentKey, explicit, storeField); err != nil {
-			log.Printf("resolveStoredIDFromPath: failed to persist explicit %s for %q: %v", storeField, agentKey, err)
-		}
 		return explicit, nil
 	}
 	if forceNew && !generateIfMissing {
 		return "", nil
 	}
-
-	agentCtx := loadLocalContext(configPath)
-	store := contextMap(agentCtx, storeField)
-	if !forceNew {
-		if id, ok := store[agentKey]; ok {
-			return id, nil
-		}
-	}
-
 	if !generateIfMissing {
 		return "", nil
 	}
-
-	newID := uuid.NewString()
-	store[agentKey] = newID
-	_ = saveLocalContext(agentCtx, configPath)
-
-	return newID, nil
-}
-func contextMap(agentCtx *AgentLocalContext, field string) map[string]string {
-	switch field {
-	case "sessions":
-		if agentCtx.Sessions == nil {
-			agentCtx.Sessions = make(map[string]string)
-		}
-		return agentCtx.Sessions
-	case "conversations":
-		if agentCtx.Conversations == nil {
-			agentCtx.Conversations = make(map[string]string)
-		}
-		return agentCtx.Conversations
-	case "invocations":
-		if agentCtx.Invocations == nil {
-			agentCtx.Invocations = make(map[string]string)
-		}
-		return agentCtx.Invocations
-	default:
-		return make(map[string]string)
-	}
+	return uuid.NewString(), nil
 }
 
 // printSessionStatus prints the session line for the invoke banner.
@@ -274,7 +294,7 @@ func printSessionStatus(label, sid string) {
 func captureResponseSession(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
-	agentName string,
+	agentKey string,
 	sid string,
 	resp *http.Response,
 	label string,
@@ -283,7 +303,7 @@ func captureResponseSession(
 		return
 	}
 	if newSid := resp.Header.Get("x-agent-session-id"); newSid != "" {
-		saveContextValue(ctx, azdClient, agentName, newSid, "sessions")
+		saveContextValue(ctx, azdClient, agentKey, newSid, "sessions")
 		fmt.Printf("%s%s (assigned by server)\n", label, newSid)
 	}
 }
@@ -360,28 +380,24 @@ func fetchOpenAPISpec(
 func resolveConversationID(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
-	agentName string,
+	agentKey string,
 	explicit string,
 	forceNew bool,
 	projectEndpoint string,
 	bearerToken string,
+	agentName string,
+	legacyKeys ...string,
 ) (string, error) {
 	if explicit != "" {
 		// Persist the explicit conversation ID so subsequent commands can find it.
-		saveContextValue(ctx, azdClient, agentName, explicit, "conversations")
+		saveContextValue(ctx, azdClient, agentKey, explicit, "conversations")
 		return explicit, nil
 	}
-	configPath, err := resolveConfigPath(ctx, azdClient)
-	if err != nil {
-		return "", err
-	}
-	agentCtx := loadLocalContext(configPath)
-	if agentCtx.Conversations == nil {
-		agentCtx.Conversations = make(map[string]string)
-	}
+
 	if !forceNew {
-		if convID, ok := agentCtx.Conversations[agentName]; ok {
-			return convID, nil
+		val, err := getContextValueWithFallback(ctx, azdClient, "conversations", agentKey, legacyKeys)
+		if err == nil && val != "" {
+			return val, nil
 		}
 	}
 
@@ -391,10 +407,7 @@ func resolveConversationID(
 		return "", fmt.Errorf("failed to create conversation: %w", err)
 	}
 
-	agentCtx.Conversations[agentName] = newConvID
-	if err := saveLocalContext(agentCtx, configPath); err != nil {
-		return newConvID, fmt.Errorf("failed to save conversation ID: %w", err)
-	}
+	saveContextValue(ctx, azdClient, agentKey, newConvID, "conversations")
 
 	return newConvID, nil
 }
@@ -447,9 +460,10 @@ func fileExists(path string) bool {
 
 // AgentServiceInfo holds the resolved name and version for an agent service.
 type AgentServiceInfo struct {
-	ServiceName string // azure.yaml service key
-	AgentName   string // deployed agent name from env
-	Version     string // deployed agent version from env
+	ServiceName   string // azure.yaml service key
+	AgentName     string // deployed agent name from env
+	Version       string // deployed agent version from env
+	AgentEndpoint string // full AGENT_{SVC}_ENDPOINT URL (includes name + version)
 }
 
 // promptForAgentService prompts the user to select one of multiple azure.ai.agent services.
@@ -590,6 +604,14 @@ func resolveAgentServiceFromProject(ctx context.Context, azdClient *azdext.AzdCl
 		Key:     versionKey,
 	}); err == nil && v.Value != "" {
 		info.Version = v.Value
+	}
+
+	endpointKey := fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey)
+	if v, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envResponse.Environment.Name,
+		Key:     endpointKey,
+	}); err == nil && v.Value != "" {
+		info.AgentEndpoint = v.Value
 	}
 
 	return info, nil

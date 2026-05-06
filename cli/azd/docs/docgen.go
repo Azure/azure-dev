@@ -111,6 +111,13 @@ func addCodeFencesToSampleCommands(s string) string {
 			if inBlock && strings.HasPrefix(line, "\t$") {
 				line = formatCommandLine(line)
 			}
+			// Convert lines starting with "# " to bold text when outside code fences,
+			// to prevent them from becoming H1 headings in the generated markdown.
+			if !inBlock && strings.HasPrefix(strings.TrimSpace(line), "# ") {
+				trimmed := strings.TrimSpace(line)
+				trimmed = strings.TrimPrefix(trimmed, "# ")
+				line = "**" + trimmed + "**"
+			}
 			newLines = append(newLines, line)
 		}
 	}
@@ -125,6 +132,15 @@ var precedingDollarRegexp = regexp.MustCompile(`^([\s]*)\$ (.*)$`)
 
 func formatCommandLine(line string) string {
 	return precedingDollarRegexp.ReplaceAllString(line, "$1$2")
+}
+
+// escapePlaceholders replaces <word> or <hyphenated-word> with {word} or {hyphenated-word}
+// in text that will appear outside code fences, to avoid being parsed as HTML tags by the
+// docs build system.
+var angleBracketPlaceholderRegexp = regexp.MustCompile(`<([\w-]+)>`)
+
+func escapePlaceholders(s string) string {
+	return angleBracketPlaceholderRegexp.ReplaceAllString(s, "{$1}")
 }
 
 // genMarkdownFile writes the help document for a single command (and all sub commands) to an
@@ -201,10 +217,11 @@ func genMarkdownCustom(cmd *cobra.Command, w io.Writer, linkHandler func(string)
 	name := cmd.CommandPath()
 
 	buf.WriteString("## " + name + "\n\n")
-	buf.WriteString(cmd.Short + "\n\n")
+	buf.WriteString(escapePlaceholders(cmd.Short) + "\n\n")
 	if len(cmd.Long) > 0 {
 		buf.WriteString("### Synopsis\n\n")
-		buf.WriteString(convertLinksToMarkdown(addCodeFencesToSampleCommands(cmd.Long)) + "\n\n")
+		long := convertLinksToMarkdown(addCodeFencesToSampleCommands(cmd.Long))
+		buf.WriteString(escapePlaceholders(long) + "\n\n")
 	}
 
 	if cmd.Runnable() {
@@ -235,7 +252,7 @@ func genMarkdownCustom(cmd *cobra.Command, w io.Writer, linkHandler func(string)
 				pname := parent.CommandPath()
 				link := pname + ".md"
 				link = strings.ReplaceAll(link, " ", "_")
-				buf.WriteString(fmt.Sprintf("* [%s](%s): %s\n", pname, linkHandler(link), parent.Short))
+				buf.WriteString(fmt.Sprintf("* [%s](%s): %s\n", pname, linkHandler(link), escapePlaceholders(parent.Short)))
 			}
 			cmd.VisitParents(func(c *cobra.Command) {
 				if c.DisableAutoGenTag {
@@ -254,7 +271,7 @@ func genMarkdownCustom(cmd *cobra.Command, w io.Writer, linkHandler func(string)
 			cname := name + " " + child.Name()
 			link := cname + ".md"
 			link = strings.ReplaceAll(link, " ", "_")
-			buf.WriteString(fmt.Sprintf("* [%s](%s): %s\n", cname, linkHandler(link), child.Short))
+			buf.WriteString(fmt.Sprintf("* [%s](%s): %s\n", cname, linkHandler(link), escapePlaceholders(child.Short)))
 		}
 
 		// for child commands, write a link back to the root command with the text "Back to top".

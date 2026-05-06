@@ -8,6 +8,8 @@ import (
 	"io"
 	"log"
 	"os"
+	"strings"
+	"unicode/utf8"
 
 	"dario.cat/mergo"
 	surveyterm "github.com/AlecAivazis/survey/v2/terminal"
@@ -46,6 +48,10 @@ type PromptOptions struct {
 	IgnoreHintKeys bool
 	// The optional help message that displays on the next line (default: "")
 	HelpMessageOnNextLine string
+	// When true, the typed value is masked as asterisks and '?' is treated
+	// as an input character (so it can be part of the secret) instead of
+	// triggering the help message.
+	Secret bool
 }
 
 var DefaultPromptOptions PromptOptions = PromptOptions{
@@ -89,8 +95,13 @@ func NewPrompt(options *PromptOptions) *Prompt {
 		panic(err)
 	}
 
-	// Auto-generate hint text only when a help message is available
-	if mergedOptions.Hint == "" && mergedOptions.HelpMessage != "" {
+	// In secret mode '?' is treated as input rather than a help trigger.
+	if mergedOptions.Secret {
+		mergedOptions.IgnoreHintKeys = true
+	}
+
+	// Auto-generate hint text only when a help message is reachable.
+	if mergedOptions.Hint == "" && mergedOptions.HelpMessage != "" && !mergedOptions.Secret {
 		mergedOptions.Hint = "[Type ? for hint]"
 	}
 
@@ -211,10 +222,10 @@ func (p *Prompt) Render(printer Printer) error {
 		printer.Fprintf("%s ", output.WithHighLightFormat(p.options.Hint))
 	}
 
-	// Always capture cursor position for input, used for SecondLineMessage
-	if p.cursorPosition == nil {
-		p.cursorPosition = new(printer.CursorPosition())
-	}
+	// Recapture each render so the position stays accurate when the value
+	// transitions back to empty (e.g. after backspacing the last character).
+	// The value block below overrides this when there's a value to display.
+	p.cursorPosition = new(printer.CursorPosition())
 
 	// Placeholder
 	if p.value == "" && p.options.PlaceHolder != "" {
@@ -225,9 +236,14 @@ func (p *Prompt) Render(printer Printer) error {
 	// Value
 	if p.value != "" {
 		valueOutput := p.value
+		if p.options.Secret {
+			// Mask each rune of the secret with an asterisk so the actual
+			// characters are never written to the terminal.
+			valueOutput = strings.Repeat("*", utf8.RuneCountInString(p.value))
+		}
 
 		if p.complete || p.value == p.options.DefaultValue {
-			valueOutput = output.WithHighLightFormat(p.value)
+			valueOutput = output.WithHighLightFormat(valueOutput)
 		}
 
 		printer.Fprintf("%s", valueOutput)

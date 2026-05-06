@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/test/snapshot"
 	"github.com/stretchr/testify/require"
 )
 
@@ -288,4 +289,184 @@ func indexOf(s, substr string) int {
 		}
 	}
 	return -1
+}
+
+// Snapshot tests — one per diagnostic type, plus one combined report.
+// Update snapshots with: UPDATE_SNAPSHOTS=true go test ./pkg/output/ux/...
+
+func TestPreflightReport_Snapshot_RoleAssignmentMissing(t *testing.T) {
+	report := &PreflightReport{
+		Items: []PreflightReportItem{
+			{
+				IsError:      false,
+				DiagnosticID: "role_assignment_missing",
+				Message: "Principal (5a3acce7-bcc4-4ebc-b4b3-c3b9f17535cb)" +
+					" lacks role assignment permissions on" +
+					" subscription 3819cb9d-0f7c-4284-9e93-220e7fb2367a\n" +
+					"The deployment includes role assignments" +
+					" and will fail without" +
+					" Microsoft.Authorization/roleAssignments/write" +
+					" permission.",
+				Suggestion: "Ensure you have the" +
+					" 'Role Based Access Control Administrator'," +
+					" 'User Access Administrator'," +
+					" 'Owner', or a custom role with" +
+					" 'Microsoft.Authorization/roleAssignments/write'" +
+					" assigned to your account.",
+			},
+		},
+	}
+	snapshot.SnapshotT(t, report.ToString("  "))
+}
+
+func TestPreflightReport_Snapshot_RoleAssignmentConditional(t *testing.T) {
+	report := &PreflightReport{
+		Items: []PreflightReportItem{
+			{
+				IsError:      false,
+				DiagnosticID: "role_assignment_conditional",
+				Message: "Principal (5a3acce7-bcc4-4ebc-b4b3-c3b9f17535cb)" +
+					" has conditional role assignment permissions on" +
+					" subscription 3819cb9d-0f7c-4284-9e93-220e7fb2367a\n" +
+					"An ABAC condition may restrict which roles can be assigned." +
+					" The deployment may fail if the condition does not permit" +
+					" the specific role assignments in the template.",
+			},
+		},
+	}
+	snapshot.SnapshotT(t, report.ToString("  "))
+}
+
+func TestPreflightReport_Snapshot_ReservedResourceName(t *testing.T) {
+	report := &PreflightReport{
+		Items: []PreflightReportItem{
+			{
+				IsError:      false,
+				DiagnosticID: "reserved_resource_name",
+				Message: "Resource \"login-server\"" +
+					" (Microsoft.Web/sites)" +
+					" contains the reserved word \"login\"\n" +
+					"Azure does not allow reserved words in" +
+					" resource names. The deployment will fail.",
+				Links: []PreflightReportLink{
+					{
+						URL: "https://learn.microsoft.com/azure/" +
+							"azure-resource-manager/templates/" +
+							"error-reserved-resource-name",
+						Title: "Reserved resource name errors",
+					},
+				},
+			},
+		},
+	}
+	snapshot.SnapshotT(t, report.ToString("  "))
+}
+
+func TestPreflightReport_Snapshot_AiModelNotFound(t *testing.T) {
+	report := &PreflightReport{
+		Items: []PreflightReportItem{
+			{
+				IsError:      false,
+				DiagnosticID: "ai_model_not_found",
+				Message: "Model \"no-model\" (SKU: GlobalStandard)" +
+					" not found in eastus2\n" +
+					"Model not found in AI model catalog." +
+					" Provisioning will likely fail.",
+				Suggestion: "Verify the model name, SKU," +
+					" and version are correct.",
+				Links: []PreflightReportLink{
+					{
+						URL:   "https://learn.microsoft.com/azure/ai-services/openai/concepts/models",
+						Title: "Azure OpenAI supported models and regions",
+					},
+				},
+			},
+		},
+	}
+	snapshot.SnapshotT(t, report.ToString("  "))
+}
+
+func TestPreflightReport_Snapshot_AiModelQuotaExceeded(t *testing.T) {
+	report := &PreflightReport{
+		Items: []PreflightReportItem{
+			{
+				IsError:      false,
+				DiagnosticID: "ai_model_quota_exceeded",
+				Message: "Insufficient quota for model \"gpt-4o\"" +
+					" (SKU: GlobalStandard) in eastus2\n" +
+					"Requested: 99999 · Available: 140",
+				Suggestion: "Reduce the requested capacity to 140" +
+					" or change your deployment location via" +
+					" azd env set AZURE_LOCATION <location>." +
+					" You can also request a quota increase" +
+					" in the Azure portal.",
+				Links: []PreflightReportLink{
+					{
+						URL:   "https://learn.microsoft.com/azure/quotas/quickstart-increase-quota-portal",
+						Title: "Increase Azure subscription quotas",
+					},
+				},
+			},
+		},
+	}
+	snapshot.SnapshotT(t, report.ToString("  "))
+}
+
+func TestPreflightReport_Snapshot_AllWarningsCombined(t *testing.T) {
+	report := &PreflightReport{
+		Items: []PreflightReportItem{
+			{
+				IsError:      false,
+				DiagnosticID: "role_assignment_missing",
+				Message: "Principal (5a3acce7-bcc4-4ebc-b4b3-c3b9f17535cb)" +
+					" lacks role assignment permissions on" +
+					" subscription 3819cb9d-0f7c-4284-9e93-220e7fb2367a\n" +
+					"The deployment includes role assignments" +
+					" and will fail without" +
+					" Microsoft.Authorization/roleAssignments/write" +
+					" permission.",
+				Suggestion: "Ensure you have the" +
+					" 'Role Based Access Control Administrator'," +
+					" 'User Access Administrator'," +
+					" 'Owner', or a custom role with" +
+					" 'Microsoft.Authorization/roleAssignments/write'" +
+					" assigned to your account.",
+			},
+			{
+				IsError:      false,
+				DiagnosticID: "ai_model_not_found",
+				Message: "Model \"no-model\" (SKU: GlobalStandard)" +
+					" not found in eastus2\n" +
+					"Model not found in AI model catalog." +
+					" Provisioning will likely fail.",
+				Suggestion: "Verify the model name, SKU," +
+					" and version are correct.",
+				Links: []PreflightReportLink{
+					{
+						URL:   "https://learn.microsoft.com/azure/ai-services/openai/concepts/models",
+						Title: "Azure OpenAI supported models and regions",
+					},
+				},
+			},
+			{
+				IsError:      false,
+				DiagnosticID: "ai_model_quota_exceeded",
+				Message: "Insufficient quota for model \"gpt-4o\"" +
+					" (SKU: GlobalStandard) in eastus2\n" +
+					"Requested: 99999 · Available: 140",
+				Suggestion: "Reduce the requested capacity to 140" +
+					" or change your deployment location via" +
+					" azd env set AZURE_LOCATION <location>." +
+					" You can also request a quota increase" +
+					" in the Azure portal.",
+				Links: []PreflightReportLink{
+					{
+						URL:   "https://learn.microsoft.com/azure/quotas/quickstart-increase-quota-portal",
+						Title: "Increase Azure subscription quotas",
+					},
+				},
+			},
+		},
+	}
+	snapshot.SnapshotT(t, report.ToString("  "))
 }

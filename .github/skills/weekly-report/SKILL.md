@@ -81,10 +81,6 @@ Save reports to the session files directory as `weekly-report-{month}{startday}-
 
 {{ references/SECTION-RULES.md }}
 
-## Tone and Style
-
-{{ references/TONE-RULES.md }}
-
 ## Example Report
 
 Use the latest completed report in the session files as a format reference.

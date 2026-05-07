@@ -1,5 +1,10 @@
 # Release History
 
+## 0.1.31-preview (2026-05-07)
+
+- [[#8096]](https://github.com/Azure/azure-dev/pull/8096) Fix session persistence by storing last-used session and conversation IDs per project root in user config, restoring shared-session behavior within each project while isolating state across different projects.
+- [[#8038]](https://github.com/Azure/azure-dev/pull/8038) Fix MCP tool field mapping to correctly include `url` and `require_approval` values from tool definitions.
+
 ## 0.1.30-preview (2026-05-06)
 
 - [[#8028]](https://github.com/Azure/azure-dev/pull/8028) Add `--agent-endpoint` flag to `azd ai agent invoke` to invoke a deployed agent from any directory without needing an azd project or environment. Thanks @antriksh30 for the contribution!

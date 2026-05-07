@@ -88,9 +88,7 @@ func newJobDownloadCommand() *cobra.Command {
 			}
 
 			// Determine mode
-			wantNamed := outputName != "" && outputName != defaultOutputName
-			wantAll := all
-			wantDefault := !wantAll && !wantNamed // covers no flags and output-name=default
+			wantNamed, wantAll, wantDefault := selectDownloadMode(outputName, all)
 
 			azRunner, err := azcopy.NewRunner(ctx, "")
 			if err != nil {
@@ -437,6 +435,23 @@ func fetchContentInfosParallel(
 		}
 	}
 	return infos, nil
+}
+
+// selectDownloadMode resolves the three mutually-related download modes
+// from the user-provided flags. Cobra already enforces that --all and
+// --output-name are mutually exclusive, so this function only encodes the
+// downstream rules:
+//
+//   - --output-name=<name> (anything other than "default")    → named only
+//   - --all                                                   → every named output + default
+//   - no flags / --output-name=default / --output-name=""     → default artifacts only
+//
+// Returns (wantNamed, wantAll, wantDefault).
+func selectDownloadMode(outputName string, all bool) (bool, bool, bool) {
+	wantNamed := outputName != "" && outputName != defaultOutputName
+	wantAll := all
+	wantDefault := !wantAll && !wantNamed
+	return wantNamed, wantAll, wantDefault
 }
 
 // extractTrackingEndpoint pulls properties.services.Tracking.endpoint from the job response.

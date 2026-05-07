@@ -128,20 +128,9 @@ func DownloadArtifacts(
 // downloadOne performs a retryable GET on contentURI and writes the body to destDir/relPath.
 // Parent directories are created as needed.
 func downloadOne(ctx context.Context, contentURI, destDir, relPath string) (int64, error) {
-	outPath := filepath.Join(destDir, filepath.FromSlash(relPath))
-	// Defense-in-depth: relPath comes from the API response. Reject any path
-	// that resolves outside destDir (e.g., "../../etc/foo" or an absolute path
-	// on Windows like "C:\foo") to prevent path-traversal / Zip-Slip writes.
-	absDest, err := filepath.Abs(destDir)
+	outPath, err := safeJoin(destDir, relPath)
 	if err != nil {
-		return 0, fmt.Errorf("resolve dest dir: %w", err)
-	}
-	absOut, err := filepath.Abs(outPath)
-	if err != nil {
-		return 0, fmt.Errorf("resolve artifact path: %w", err)
-	}
-	if absOut != absDest && !strings.HasPrefix(absOut, absDest+string(filepath.Separator)) {
-		return 0, fmt.Errorf("artifact path %q escapes destination directory", relPath)
+		return 0, err
 	}
 	if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
 		return 0, fmt.Errorf("create dir: %w", err)
@@ -195,4 +184,24 @@ func downloadOne(ctx context.Context, contentURI, destDir, relPath string) (int6
 		return 0, err
 	}
 	return written, nil
+}
+
+// safeJoin joins relPath onto destDir while rejecting any path that resolves
+// outside destDir (e.g., "../../etc/foo" or, on Windows, "C:\foo"). This
+// guards against path-traversal / Zip-Slip writes when relPath comes from an
+// untrusted source such as an API response.
+func safeJoin(destDir, relPath string) (string, error) {
+	outPath := filepath.Join(destDir, filepath.FromSlash(relPath))
+	absDest, err := filepath.Abs(destDir)
+	if err != nil {
+		return "", fmt.Errorf("resolve dest dir: %w", err)
+	}
+	absOut, err := filepath.Abs(outPath)
+	if err != nil {
+		return "", fmt.Errorf("resolve artifact path: %w", err)
+	}
+	if absOut != absDest && !strings.HasPrefix(absOut, absDest+string(filepath.Separator)) {
+		return "", fmt.Errorf("artifact path %q escapes destination directory", relPath)
+	}
+	return outPath, nil
 }

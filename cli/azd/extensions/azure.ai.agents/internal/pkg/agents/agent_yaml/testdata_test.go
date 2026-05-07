@@ -31,23 +31,6 @@ func TestFixtures_ValidYAML(t *testing.T) {
 			wantKind: AgentKindHosted,
 			wantName: "hosted-test-agent",
 		},
-		{
-			// Prompt agents are not currently supported by ExtractAgentDefinition.
-			// This test documents the current expected behavior.
-			name:         "prompt agent minimal",
-			file:         filepath.Join("testdata", "prompt-agent-minimal.yaml"),
-			wantErrSubst: "prompt agents not currently supported",
-		},
-		{
-			name:         "prompt agent full",
-			file:         filepath.Join("testdata", "prompt-agent-full.yaml"),
-			wantErrSubst: "prompt agents not currently supported",
-		},
-		{
-			name:         "mcp tools agent",
-			file:         filepath.Join("testdata", "mcp-tools-agent.yaml"),
-			wantErrSubst: "prompt agents not currently supported",
-		},
 	}
 
 	for _, tc := range tests {
@@ -90,44 +73,6 @@ func TestFixtures_ValidYAML(t *testing.T) {
 	}
 }
 
-// TestFixtures_ValidatePromptAgents uses ValidateAgentDefinition to confirm
-// that prompt agent fixtures have a structurally valid YAML schema, even though
-// ExtractAgentDefinition does not yet support prompt agents.
-func TestFixtures_ValidatePromptAgents(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name string
-		file string
-	}{
-		{name: "prompt agent minimal", file: filepath.Join("testdata", "prompt-agent-minimal.yaml")},
-		{name: "prompt agent full", file: filepath.Join("testdata", "prompt-agent-full.yaml")},
-		{name: "mcp tools agent", file: filepath.Join("testdata", "mcp-tools-agent.yaml")},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			data, err := os.ReadFile(tc.file)
-			if err != nil {
-				t.Fatalf("failed to read fixture %s: %v", tc.file, err)
-			}
-
-			// Extract the template section to pass to ValidateAgentDefinition,
-			// which operates on template bytes rather than the full manifest.
-			templateBytes, err := extractTemplateBytes(data)
-			if err != nil {
-				t.Fatalf("failed to extract template bytes: %v", err)
-			}
-
-			if err := ValidateAgentDefinition(templateBytes); err != nil {
-				t.Fatalf("ValidateAgentDefinition failed for valid fixture: %v", err)
-			}
-		})
-	}
-}
-
 // TestFixtures_InvalidYAML verifies that invalid YAML fixtures return appropriate errors.
 func TestFixtures_InvalidYAML(t *testing.T) {
 	t.Parallel()
@@ -141,11 +86,6 @@ func TestFixtures_InvalidYAML(t *testing.T) {
 			name:         "missing kind field",
 			file:         filepath.Join("testdata", "invalid-no-kind.yaml"),
 			wantErrSubst: "template.kind must be one of",
-		},
-		{
-			name:         "prompt agent missing model",
-			file:         filepath.Join("testdata", "invalid-no-model.yaml"),
-			wantErrSubst: "template.model.id is required",
 		},
 		{
 			name:         "empty template",
@@ -189,77 +129,6 @@ func TestFixtures_InvalidYAML(t *testing.T) {
 			}
 			if !strings.Contains(validateErr.Error(), tc.wantErrSubst) {
 				t.Fatalf("expected error containing %q, got %q", tc.wantErrSubst, validateErr.Error())
-			}
-		})
-	}
-}
-
-// TestFixtures_SampleAgents is a regression test that ensures the sample agent
-// YAML files in tests/samples/ continue to parse correctly.
-func TestFixtures_SampleAgents(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name     string
-		file     string
-		wantName string
-	}{
-		{
-			name:     "declarativeNoTools sample",
-			file:     filepath.Join("..", "..", "..", "..", "tests", "samples", "declarativeNoTools", "agent.yaml"),
-			wantName: "Learn French Agent",
-		},
-		{
-			name:     "githubMcpAgent sample",
-			file:     filepath.Join("..", "..", "..", "..", "tests", "samples", "githubMcpAgent", "agent.yaml"),
-			wantName: "github-agent",
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			data, err := os.ReadFile(tc.file)
-			if err != nil {
-				t.Fatalf("failed to read sample %s: %v", tc.file, err)
-			}
-
-			// Both samples are prompt agents, so ExtractAgentDefinition returns
-			// "prompt agents not currently supported". Validate structure instead.
-			_, extractErr := ExtractAgentDefinition(data)
-			if extractErr == nil {
-				t.Fatal("expected error for prompt agent sample, got nil")
-			}
-			if !strings.Contains(extractErr.Error(), "prompt agents not currently supported") {
-				t.Fatalf("unexpected error: %v", extractErr)
-			}
-
-			// Validate that the YAML structure is well-formed by unmarshaling
-			// the template section into the typed structs.
-			templateBytes, err := extractTemplateBytes(data)
-			if err != nil {
-				t.Fatalf("failed to extract template bytes: %v", err)
-			}
-
-			var agentDef AgentDefinition
-			if err := yaml.Unmarshal(templateBytes, &agentDef); err != nil {
-				t.Fatalf("failed to unmarshal AgentDefinition: %v", err)
-			}
-			if agentDef.Name != tc.wantName {
-				t.Errorf("name: got %q, want %q", agentDef.Name, tc.wantName)
-			}
-			if agentDef.Kind != AgentKindPrompt {
-				t.Errorf("kind: got %q, want %q", agentDef.Kind, AgentKindPrompt)
-			}
-
-			// Also confirm the model is present for these prompt agents.
-			var promptAgent PromptAgent
-			if err := yaml.Unmarshal(templateBytes, &promptAgent); err != nil {
-				t.Fatalf("failed to unmarshal PromptAgent: %v", err)
-			}
-			if promptAgent.Model.Id == "" {
-				t.Error("expected non-empty model.id in sample agent")
 			}
 		})
 	}

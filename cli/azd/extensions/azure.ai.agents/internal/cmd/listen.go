@@ -24,7 +24,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/braydonk/yaml"
 	"github.com/drone/envsubst"
-	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -32,55 +31,33 @@ import (
 // digit, used to sanitize environment variable key segments.
 var nonAlphanumEnvKeyRe = regexp.MustCompile(`[^A-Z0-9]+`)
 
-func newListenCommand() *cobra.Command {
-	return &cobra.Command{
-		Use:    "listen",
-		Short:  "Starts the extension and listens for events.",
-		Hidden: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			// Create a new context that includes the AZD access token.
-			ctx := azdext.WithAccessToken(cmd.Context())
+// configureExtensionHost wires the service target and event handlers on the
+// supplied [azdext.ExtensionHost]. It is passed to [azdext.NewListenCommand]
+// from the root command, which handles the surrounding setup (access token,
+// AzdClient creation, and host.Run lifecycle).
+func configureExtensionHost(host *azdext.ExtensionHost) {
+	azdClient := host.Client()
 
-			logCleanup := setupDebugLogging(cmd.Flags())
-			defer logCleanup()
-
-			// Create a new AZD client.
-			azdClient, err := azdext.NewAzdClient()
-			if err != nil {
-				return fmt.Errorf("failed to create azd client: %w", err)
-			}
-			defer azdClient.Close()
-
-			// IMPORTANT: service target name here must match the name used in the extension manifest.
-			host := azdext.NewExtensionHost(azdClient).
-				WithServiceTarget(AiAgentHost, func() azdext.ServiceTargetProvider {
-					return project.NewAgentServiceTargetProvider(azdClient)
-				}).
-				WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
-					return preprovisionHandler(ctx, azdClient, args)
-				}).
-				WithProjectEventHandler("postprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
-					return postprovisionHandler(ctx, azdClient, args)
-				}).
-				WithProjectEventHandler("predeploy", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
-					return predeployHandler(ctx, azdClient, args)
-				}).
-				WithProjectEventHandler("postdeploy", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
-					return postdeployHandler(ctx, azdClient, args)
-				}).
-				WithProjectEventHandler("postdown", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
-					return postdownHandler(ctx, azdClient, args)
-				})
-
-			// Start listening for events
-			// This is a blocking call and will not return until the server connection is closed.
-			if err := host.Run(ctx); err != nil {
-				return fmt.Errorf("failed to run extension: %w", err)
-			}
-
-			return nil
-		},
-	}
+	// IMPORTANT: service target name here must match the name used in the extension manifest.
+	host.
+		WithServiceTarget(AiAgentHost, func() azdext.ServiceTargetProvider {
+			return project.NewAgentServiceTargetProvider(azdClient)
+		}).
+		WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+			return preprovisionHandler(ctx, azdClient, args)
+		}).
+		WithProjectEventHandler("postprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+			return postprovisionHandler(ctx, azdClient, args)
+		}).
+		WithProjectEventHandler("predeploy", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+			return predeployHandler(ctx, azdClient, args)
+		}).
+		WithProjectEventHandler("postdeploy", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+			return postdeployHandler(ctx, azdClient, args)
+		}).
+		WithProjectEventHandler("postdown", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+			return postdownHandler(ctx, azdClient, args)
+		})
 }
 
 func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
@@ -681,10 +658,7 @@ func provisionToolboxes(
 	}
 
 	// Build connection lookup for enriching tool entries with server_url/server_label
-	connByName := map[string]project.ToolConnection{}
-	for _, c := range config.ToolConnections {
-		connByName[c.Name] = c
-	}
+	connByName := toolboxConnectionsByName(config)
 
 	for _, toolbox := range config.Toolboxes {
 		fmt.Fprintf(
@@ -791,7 +765,7 @@ func resolveToolboxEnvVars(toolbox *project.Toolbox, azdEnv map[string]string) {
 // azure.yaml toolbox entries minimal while sending complete data to the API.
 func enrichToolboxFromConnections(
 	toolbox *project.Toolbox,
-	connByName map[string]project.ToolConnection,
+	connByName map[string]toolboxConnection,
 ) {
 	for i, tool := range toolbox.Tools {
 		connID, _ := tool["project_connection_id"].(string)
@@ -810,6 +784,27 @@ func enrichToolboxFromConnections(
 			toolbox.Tools[i]["server_label"] = conn.Name
 		}
 	}
+}
+
+type toolboxConnection struct {
+	Name   string
+	Target string
+}
+
+func toolboxConnectionsByName(config *project.ServiceTargetAgentConfig) map[string]toolboxConnection {
+	connByName := map[string]toolboxConnection{}
+	if config == nil {
+		return connByName
+	}
+
+	for _, c := range config.Connections {
+		connByName[c.Name] = toolboxConnection{Name: c.Name, Target: c.Target}
+	}
+	for _, c := range config.ToolConnections {
+		connByName[c.Name] = toolboxConnection{Name: c.Name, Target: c.Target}
+	}
+
+	return connByName
 }
 
 // parseConnectionIDs parses the AI_PROJECT_CONNECTION_IDS_JSON env var

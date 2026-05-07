@@ -23,7 +23,7 @@ jobs:
     environment:
       name: deploy-devcontainer-feature
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: "Publish Features"
         uses: devcontainers/action@v1

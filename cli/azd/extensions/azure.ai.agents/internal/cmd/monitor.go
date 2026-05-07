@@ -31,8 +31,9 @@ type MonitorAction struct {
 	flags *monitorFlags
 }
 
-func newMonitorCommand() *cobra.Command {
+func newMonitorCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &monitorFlags{}
+	extCtx = ensureExtensionContext(extCtx)
 
 	cmd := &cobra.Command{
 		Use:   "monitor [name]",
@@ -73,8 +74,6 @@ configuration and the current azd environment. Optionally specify the service na
 			}
 
 			ctx := azdext.WithAccessToken(cmd.Context())
-			logCleanup := setupDebugLogging(cmd.Flags())
-			defer logCleanup()
 
 			azdClient, err := azdext.NewAzdClient()
 			if err != nil {
@@ -82,7 +81,7 @@ configuration and the current azd environment. Optionally specify the service na
 			}
 			defer azdClient.Close()
 
-			info, err := resolveAgentServiceFromProject(ctx, azdClient, flags.name, rootFlags.NoPrompt)
+			info, err := resolveAgentServiceFromProject(ctx, azdClient, flags.name, extCtx.NoPrompt)
 			if err != nil {
 				return err
 			}

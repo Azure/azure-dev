@@ -519,21 +519,11 @@ func (p *AgentServiceTargetProvider) Deploy(
 		return nil, exterrors.Validation(
 			exterrors.CodeMissingAgentKind,
 			"kind field is missing or not a valid string in agent.yaml",
-			"add a valid 'kind' field (e.g., 'prompt' or 'hosted') to agent.yaml",
+			"add a valid 'kind' field (e.g., 'hosted') to agent.yaml",
 		)
 	}
 
 	switch kind {
-	case string(agent_yaml.AgentKindPrompt):
-		var agentDef agent_yaml.PromptAgent
-		if err := yaml.Unmarshal(data, &agentDef); err != nil {
-			return nil, exterrors.Validation(
-				exterrors.CodeInvalidAgentManifest,
-				fmt.Sprintf("YAML content is not valid for prompt agent deploy: %s", err),
-				"fix the agent.yaml to match the prompt agent schema",
-			)
-		}
-		return p.deployPromptAgent(ctx, serviceConfig, agentDef, azdEnv)
 	case string(agent_yaml.AgentKindHosted):
 		var agentDef agent_yaml.ContainerAgent
 		if err := yaml.Unmarshal(data, &agentDef); err != nil {
@@ -548,7 +538,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 		return nil, exterrors.Validation(
 			exterrors.CodeUnsupportedAgentKind,
 			fmt.Sprintf("unsupported agent kind: %s", kind),
-			"use a supported kind: 'prompt' or 'hosted'",
+			"use a supported kind: 'hosted'",
 		)
 	}
 }
@@ -576,71 +566,6 @@ func (p *AgentServiceTargetProvider) isContainerAgent() bool {
 	}
 
 	return kind == string(agent_yaml.AgentKindHosted)
-}
-
-// deployPromptAgent handles deployment of prompt-based agents
-func (p *AgentServiceTargetProvider) deployPromptAgent(
-	ctx context.Context,
-	serviceConfig *azdext.ServiceConfig,
-	agentDef agent_yaml.PromptAgent,
-	azdEnv map[string]string,
-) (*azdext.ServiceDeployResult, error) {
-	// Check if environment variable is set
-	if azdEnv["AZURE_AI_PROJECT_ENDPOINT"] == "" {
-		return nil, exterrors.Dependency(
-			exterrors.CodeMissingAiProjectEndpoint,
-			"AZURE_AI_PROJECT_ENDPOINT is required: environment variable was not found in the current azd environment",
-			"run 'azd provision' or connect to an existing project via 'azd ai agent init --project-id <resource-id>'",
-		)
-	}
-
-	fmt.Fprintf(os.Stderr, "Deploying Prompt Agent\n")
-	fmt.Fprintf(os.Stderr, "======================\n")
-	fmt.Fprintf(os.Stderr, "Loaded configuration from: %s\n", p.agentDefinitionPath)
-	fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["AZURE_AI_PROJECT_ENDPOINT"])
-	fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentDef.Name)
-
-	// Create agent request (no image URL needed for prompt agents)
-	request, err := agent_yaml.CreateAgentAPIRequestFromDefinition(agentDef)
-	if err != nil {
-		return nil, exterrors.Validation(
-			exterrors.CodeInvalidAgentRequest,
-			fmt.Sprintf("failed to create agent request from definition: %s", err),
-			"verify the agent.yaml definition is correct",
-		)
-	}
-
-	// Display agent information
-	p.displayAgentInfo(request)
-
-	// Create and deploy agent
-	agentVersionResponse, err := p.createAgent(ctx, request, azdEnv)
-	if err != nil {
-		return nil, err
-	}
-
-	// Register agent info in environment (prompt agents use the responses protocol)
-	promptProtocols := []agent_yaml.ProtocolVersionRecord{
-		{Protocol: string(agent_api.AgentProtocolResponses), Version: "1.0.0"},
-	}
-	err = p.registerAgentEnvironmentVariables(ctx, azdEnv, serviceConfig, agentVersionResponse, promptProtocols)
-	if err != nil {
-		return nil, err
-	}
-
-	fmt.Fprintf(os.Stderr, "Prompt agent '%s' deployed successfully!\n", agentVersionResponse.Name)
-
-	artifacts := p.deployArtifacts(
-		agentVersionResponse.Name,
-		agentVersionResponse.Version,
-		azdEnv["AZURE_AI_PROJECT_ID"],
-		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
-		promptProtocols,
-	)
-
-	return &azdext.ServiceDeployResult{
-		Artifacts: artifacts,
-	}, nil
 }
 
 // deployHostedAgent deploys a container-based hosted agent to the Foundry service.
@@ -937,6 +862,36 @@ func (p *AgentServiceTargetProvider) createAgent(
 	}
 
 	fmt.Fprintf(os.Stderr, "Agent version '%s' created successfully!\n", agentVersionResponse.Name)
+
+	// Patch agent-level fields (agent_endpoint, agent_card) if present.
+	// These are agent-level properties, not version-level, so they require
+	// a separate PatchAgent call after version creation.
+	if request.AgentEndpoint != nil || request.AgentCard != nil {
+		patchRequest := &agent_api.PatchAgentRequest{
+			AgentEndpoint: request.AgentEndpoint,
+			AgentCard:     request.AgentCard,
+		}
+
+		_, err := agentClient.PatchAgent(
+			ctx, request.Name, patchRequest, agentAPIVersion,
+		)
+		if err != nil {
+			fmt.Fprintf(os.Stderr,
+				"WARNING: Agent version '%s' (version %s) was created, "+
+					"but updating agent endpoint/card failed.\n",
+				agentVersionResponse.Name,
+				agentVersionResponse.Version,
+			)
+			return nil, exterrors.ServiceFromAzure(
+				err, exterrors.OpCreateAgent,
+			)
+		}
+
+		fmt.Fprintf(os.Stderr,
+			"Agent endpoint and card updated successfully!\n",
+		)
+	}
+
 	return agentVersionResponse, nil
 }
 
@@ -954,19 +909,7 @@ func (p *AgentServiceTargetProvider) displayAgentInfo(request *agent_api.CreateA
 	fmt.Fprintf(os.Stderr, "Description: %s\n", description)
 
 	// Display agent-specific information
-	if promptDef, ok := request.Definition.(agent_api.PromptAgentDefinition); ok {
-		fmt.Fprintf(os.Stderr, "Model: %s\n", promptDef.Model)
-		instructions := "No instructions"
-		if promptDef.Instructions != nil {
-			inst := *promptDef.Instructions
-			if len(inst) > 50 {
-				instructions = inst[:50] + "..."
-			} else {
-				instructions = inst
-			}
-		}
-		fmt.Fprintf(os.Stderr, "Instructions: %s\n", instructions)
-	} else if imageHostedDef, ok := request.Definition.(agent_api.ImageBasedHostedAgentDefinition); ok {
+	if imageHostedDef, ok := request.Definition.(agent_api.ImageBasedHostedAgentDefinition); ok {
 		fmt.Fprintf(os.Stderr, "Image: %s\n", imageHostedDef.Image)
 		fmt.Fprintf(os.Stderr, "CPU: %s\n", imageHostedDef.CPU)
 		fmt.Fprintf(os.Stderr, "Memory: %s\n", imageHostedDef.Memory)
@@ -977,7 +920,8 @@ func (p *AgentServiceTargetProvider) displayAgentInfo(request *agent_api.CreateA
 
 // registerAgentEnvironmentVariables registers agent information as azd environment variables.
 // Per-protocol endpoint vars are set (e.g. AGENT_{KEY}_RESPONSES_ENDPOINT).
-// The legacy single-endpoint var (AGENT_{KEY}_ENDPOINT) is cleared to avoid stale data.
+// The base agent endpoint (AGENT_{KEY}_ENDPOINT) is set to <projectEndpoint>/agents/<agentName>
+// for session management.
 func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 	ctx context.Context,
 	azdEnv map[string]string,
@@ -985,15 +929,25 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 	agentVersionResponse *agent_api.AgentVersionObject,
 	protocols []agent_yaml.ProtocolVersionRecord,
 ) error {
+	if agentVersionResponse.Name == "" {
+		return fmt.Errorf("agent name is empty; cannot register environment variables")
+	}
+	if agentVersionResponse.Version == "" {
+		return fmt.Errorf("agent version is empty; cannot register environment variables")
+	}
+
 	serviceKey := p.getServiceKey(serviceConfig.Name)
 	envVars := map[string]string{
 		fmt.Sprintf("AGENT_%s_NAME", serviceKey):    agentVersionResponse.Name,
 		fmt.Sprintf("AGENT_%s_VERSION", serviceKey): agentVersionResponse.Version,
 	}
 
-	// Clear legacy single-endpoint var so upgraded environments don't retain stale URLs.
-	legacyKey := fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey)
-	envVars[legacyKey] = ""
+	// Set the base agent endpoint used for session management (not protocol-specific).
+	baseEndpointKey := fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey)
+	projectEndpoint := strings.TrimRight(azdEnv["AZURE_AI_PROJECT_ENDPOINT"], "/")
+	envVars[baseEndpointKey] = fmt.Sprintf(
+		"%s/agents/%s/versions/%s", projectEndpoint, agentVersionResponse.Name, agentVersionResponse.Version,
+	)
 
 	endpoints := agentInvocationEndpoints(
 		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],

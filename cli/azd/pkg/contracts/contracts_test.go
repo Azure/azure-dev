@@ -281,10 +281,11 @@ func TestShowResult_JSON(t *testing.T) {
 
 	assert.Equal(t, "my-app", parsed["name"])
 
-	// IngresUrl should be excluded (json:"-")
+	// ingresUrl and ingressUrl should both be present and equal the input value
 	services := parsed["services"].(map[string]any)
 	api := services["api"].(map[string]any)
-	assert.NotContains(t, api, "ingresUrl")
+	assert.Equal(t, "https://api.example.com", api["ingresUrl"])
+	assert.Equal(t, "https://api.example.com", api["ingressUrl"])
 	assert.NotContains(t, api, "IngresUrl")
 
 	// Project fields should be present
@@ -296,6 +297,19 @@ func TestShowResult_JSON(t *testing.T) {
 	target := api["target"].(map[string]any)
 	resourceIds := target["resourceIds"].([]any)
 	assert.Len(t, resourceIds, 1)
+}
+
+func TestShowResult_JSON_ingress_omitted_when_empty(t *testing.T) {
+	svc := ShowService{
+		Project: ShowServiceProject{Path: "./src/web", Type: ShowTypeNode},
+	}
+	data, err := json.Marshal(svc)
+	require.NoError(t, err)
+
+	var parsed map[string]any
+	require.NoError(t, json.Unmarshal(data, &parsed))
+	assert.NotContains(t, parsed, "ingresUrl")
+	assert.NotContains(t, parsed, "ingressUrl")
 }
 
 func TestShowService_JSON_nil_target(t *testing.T) {

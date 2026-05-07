@@ -4,6 +4,7 @@
 package agent_api
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
@@ -171,4 +172,118 @@ func TestListSessions_Returns200WithPagination(t *testing.T) {
 	require.Equal(t, "sess-1", result.Data[0].AgentSessionID)
 	require.NotNil(t, result.PaginationToken)
 	require.Equal(t, "next-page-abc", *result.PaginationToken)
+}
+
+func TestPatchAgent_Success(t *testing.T) {
+	body := `{
+		"object": "agent",
+		"id": "my-agent",
+		"name": "my-agent",
+		"versions": {
+			"latest": {
+				"object": "agent_version",
+				"id": "my-agent:1",
+				"name": "my-agent",
+				"version": "1",
+				"created_at": 1700000000
+			}
+		}
+	}`
+	client := newTestClient(
+		"https://test.example.com/api/projects/proj",
+		&fakeBodyTransport{
+			statusCode: http.StatusOK,
+			body:       body,
+		},
+	)
+
+	req := &PatchAgentRequest{
+		AgentEndpoint: &AgentEndpoint{
+			Protocols: []AgentProtocol{
+				AgentProtocolResponses, AgentProtocolA2A,
+			},
+		},
+		AgentCard: &AgentCard{
+			Description: "test agent",
+			Skills: []AgentCardSkill{
+				{
+					ID:          "s1",
+					Name:        "greet",
+					Description: "greets user",
+				},
+			},
+		},
+	}
+
+	result, err := client.PatchAgent(
+		t.Context(), "my-agent", req, "2025-11-15-preview",
+	)
+	require.NoError(t, err)
+	require.Equal(t, "my-agent", result.Name)
+}
+
+func TestPatchAgent_400ReturnsError(t *testing.T) {
+	client := newTestClient(
+		"https://test.example.com/api/projects/proj",
+		&fakeTransport{statusCode: http.StatusBadRequest},
+	)
+
+	req := &PatchAgentRequest{
+		AgentEndpoint: &AgentEndpoint{
+			Protocols: []AgentProtocol{AgentProtocolA2A},
+		},
+	}
+
+	_, err := client.PatchAgent(
+		t.Context(), "my-agent", req, "2025-11-15-preview",
+	)
+	require.Error(t, err, "400 should be an error")
+}
+
+func TestPatchAgent_404ReturnsError(t *testing.T) {
+	client := newTestClient(
+		"https://test.example.com/api/projects/proj",
+		&fakeTransport{statusCode: http.StatusNotFound},
+	)
+
+	req := &PatchAgentRequest{}
+
+	_, err := client.PatchAgent(
+		t.Context(), "no-such-agent", req, "2025-11-15-preview",
+	)
+	require.Error(t, err, "404 should be an error")
+}
+
+func TestPatchAgent_500ReturnsError(t *testing.T) {
+	client := newTestClient(
+		"https://test.example.com/api/projects/proj",
+		&fakeTransport{
+			statusCode: http.StatusInternalServerError,
+		},
+	)
+
+	req := &PatchAgentRequest{}
+
+	_, err := client.PatchAgent(
+		t.Context(), "my-agent", req, "2025-11-15-preview",
+	)
+	require.Error(t, err, "500 should be an error")
+}
+
+func TestPatchAgent_OmitsNilFields(t *testing.T) {
+	// Verify that a PatchAgentRequest with only AgentEndpoint
+	// does not serialize agent_card in the JSON body.
+	req := &PatchAgentRequest{
+		AgentEndpoint: &AgentEndpoint{
+			Protocols: []AgentProtocol{AgentProtocolResponses},
+		},
+	}
+
+	data, err := json.Marshal(req)
+	require.NoError(t, err)
+
+	s := string(data)
+	require.Contains(t, s, `"agent_endpoint"`)
+	require.NotContains(t, s, `"agent_card"`)
+	require.NotContains(t, s, `"definition"`)
 }

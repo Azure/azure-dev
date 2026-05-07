@@ -35,7 +35,7 @@ func TestDetectTool_CLI(t *testing.T) {
 		{
 			name: "InstalledWithVersion",
 			tool: &ToolDefinition{
-				Id:            "az",
+				Id:            "az-cli",
 				Category:      ToolCategoryCLI,
 				DetectCommand: "az",
 				VersionArgs:   []string{"--version"},
@@ -57,7 +57,7 @@ func TestDetectTool_CLI(t *testing.T) {
 		{
 			name: "NotInstalledWhenNotOnPATH",
 			tool: &ToolDefinition{
-				Id:            "az",
+				Id:            "az-cli",
 				Category:      ToolCategoryCLI,
 				DetectCommand: "az",
 				VersionArgs:   []string{"--version"},
@@ -213,7 +213,7 @@ func TestDetectTool_Extension(t *testing.T) {
 		{
 			name: "ExtensionFoundInList",
 			tool: &ToolDefinition{
-				Id:            "ms-azuretools.vscode-bicep",
+				Id:            "vscode-bicep",
 				Category:      ToolCategoryExtension,
 				DetectCommand: "code",
 				VersionArgs: []string{
@@ -238,7 +238,7 @@ func TestDetectTool_Extension(t *testing.T) {
 		{
 			name: "ExtensionNotInList",
 			tool: &ToolDefinition{
-				Id:            "ms-azuretools.vscode-bicep",
+				Id:            "vscode-bicep",
 				Category:      ToolCategoryExtension,
 				DetectCommand: "code",
 				VersionArgs: []string{
@@ -261,7 +261,7 @@ func TestDetectTool_Extension(t *testing.T) {
 		{
 			name: "CodeNotOnPATH",
 			tool: &ToolDefinition{
-				Id:            "ms-azuretools.vscode-bicep",
+				Id:            "vscode-bicep",
 				Category:      ToolCategoryExtension,
 				DetectCommand: "code",
 				VersionArgs: []string{
@@ -333,6 +333,77 @@ func TestDetectTool_Extension(t *testing.T) {
 			expectError:      true,
 			expectErrContain: "checking PATH",
 		},
+		{
+			name: "CopilotChatFoundCaseInsensitive",
+			tool: &ToolDefinition{
+				Id:            "GitHub.copilot-chat",
+				Category:      ToolCategoryExtension,
+				DetectCommand: "code",
+				VersionArgs: []string{
+					"--list-extensions", "--show-versions",
+				},
+				VersionRegex: `(?i)github\.copilot-chat@(\d+\.\d+\.\d+)`,
+			},
+			setup: func(runner *mockexec.MockCommandRunner) {
+				runner.MockToolInPath("code", nil)
+				runner.When(func(args exec.RunArgs, _ string) bool {
+					return args.Cmd == "code" &&
+						slices.Contains(args.Args, "--list-extensions")
+				}).Respond(exec.RunResult{
+					ExitCode: 0,
+					Stdout: "GitHub.copilot-chat@1.2.3\n" +
+						"ms-python.python@2024.0.1\n",
+				})
+			},
+			expectInstalled: true,
+			expectVersion:   "1.2.3",
+		},
+		{
+			name: "CopilotChatFoundLowerCase",
+			tool: &ToolDefinition{
+				Id:            "GitHub.copilot-chat",
+				Category:      ToolCategoryExtension,
+				DetectCommand: "code",
+				VersionArgs: []string{
+					"--list-extensions", "--show-versions",
+				},
+				VersionRegex: `(?i)github\.copilot-chat@(\d+\.\d+\.\d+)`,
+			},
+			setup: func(runner *mockexec.MockCommandRunner) {
+				runner.MockToolInPath("code", nil)
+				runner.When(func(args exec.RunArgs, _ string) bool {
+					return args.Cmd == "code"
+				}).Respond(exec.RunResult{
+					ExitCode: 0,
+					Stdout:   "github.copilot-chat@0.27.1\n",
+				})
+			},
+			expectInstalled: true,
+			expectVersion:   "0.27.1",
+		},
+		{
+			name: "CopilotChatNotInstalled",
+			tool: &ToolDefinition{
+				Id:            "GitHub.copilot-chat",
+				Category:      ToolCategoryExtension,
+				DetectCommand: "code",
+				VersionArgs: []string{
+					"--list-extensions", "--show-versions",
+				},
+				VersionRegex: `(?i)github\.copilot-chat@(\d+\.\d+\.\d+)`,
+			},
+			setup: func(runner *mockexec.MockCommandRunner) {
+				runner.MockToolInPath("code", nil)
+				runner.When(func(args exec.RunArgs, _ string) bool {
+					return args.Cmd == "code"
+				}).Respond(exec.RunResult{
+					ExitCode: 0,
+					Stdout:   "ms-python.python@2024.0.1\n",
+				})
+			},
+			expectInstalled: false,
+			expectVersion:   "",
+		},
 	}
 
 	for _, tt := range tests {
@@ -364,7 +435,7 @@ func TestDetectTool_Extension(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// DetectTool — Server (commandBased)
+// DetectTool — Server / Library (commandBased)
 // ---------------------------------------------------------------------------
 
 func TestDetectTool_CommandBased(t *testing.T) {
@@ -382,7 +453,7 @@ func TestDetectTool_CommandBased(t *testing.T) {
 		{
 			name: "ServerToolDetected",
 			tool: &ToolDefinition{
-				Id:            "@azure/mcp",
+				Id:            "azure-mcp-server",
 				Category:      ToolCategoryServer,
 				DetectCommand: "npx",
 				VersionArgs:   []string{"@azure/mcp@latest", "--version"},

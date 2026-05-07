@@ -59,10 +59,10 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Check for required team approval
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        uses: actions/github-script@v9
         with:
           script: |
             const script = require('./.github/scripts/approval-ext-azure-ai-agents.js');

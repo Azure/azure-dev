@@ -14,7 +14,6 @@ import (
 type AgentKind string
 
 const (
-	AgentKindPrompt   AgentKind = "prompt"
 	AgentKindHosted   AgentKind = "hosted"
 	AgentKindWorkflow AgentKind = "workflow"
 )
@@ -27,7 +26,6 @@ func IsValidAgentKind(kind AgentKind) bool {
 // ValidAgentKinds returns a slice of all valid AgentKind values
 func ValidAgentKinds() []AgentKind {
 	return []AgentKind{
-		AgentKindPrompt,
 		AgentKindHosted,
 		AgentKindWorkflow,
 	}
@@ -151,18 +149,6 @@ type AgentDefinition struct {
 	OutputSchema *PropertySchema `json:"outputSchema,omitempty" yaml:"outputSchema,omitempty"`
 }
 
-// PromptAgent Prompt based agent definition. Used to create agents that can be executed directly.
-// These agents can leverage tools, input parameters, and templates to generate responses.
-// They are designed to be straightforward and easy to use for various applications.
-type PromptAgent struct {
-	AgentDefinition        `json:",inline" yaml:",inline"`
-	Model                  Model     `json:"model" yaml:"model"`
-	Tools                  *[]any    `json:"tools,omitempty" yaml:"tools,omitempty"` // Will be a type of Tool
-	Template               *Template `json:"template,omitempty" yaml:"template,omitempty"`
-	Instructions           *string   `json:"instructions,omitempty" yaml:"instructions,omitempty"`
-	AdditionalInstructions *string   `json:"additionalInstructions,omitempty" yaml:"additionalInstructions,omitempty"`
-}
-
 // Workflow A workflow agent that can orchestrate multiple steps and actions.
 // This agent type is designed to handle complex workflows that may involve
 // multiple tools, models, and decision points.
@@ -191,13 +177,15 @@ type ContainerAgent struct {
 	Protocols            []ProtocolVersionRecord `json:"protocols" yaml:"protocols"`
 	Resources            *ContainerResources     `json:"resources,omitempty" yaml:"resources,omitempty"`
 	EnvironmentVariables *[]EnvironmentVariable  `json:"environmentVariables,omitempty" yaml:"environment_variables,omitempty"`
+	AgentEndpoint        *AgentEndpoint          `json:"agentEndpoint,omitempty" yaml:"agentEndpoint,omitempty"`
+	AgentCard            *AgentCard              `json:"agentCard,omitempty" yaml:"agentCard,omitempty"`
 }
 
 // AgentManifest The following represents a manifest that can be used to create agents dynamically.
 // It includes parameters that can be used to configure the agent's behavior.
 // These parameters include values that can be used as publisher parameters that can
 // be used to describe additional variables that have been tested and are known to work.
-// Variables described here are then used to project into a prompt agent that can be executed.
+// Variables described here are used to configure the agent dynamically at init time.
 // Once parameters are provided, these can be referenced in the manifest using the following notation:
 // `{{myParameter}}`
 // This allows for dynamic configuration of the agent based on the provided parameters.
@@ -611,6 +599,27 @@ type ProtocolVersionRecord struct {
 	Version  string `json:"version" yaml:"version"`
 }
 
+// AgentEndpoint describes the endpoint protocols an agent supports in agent.yaml.
+type AgentEndpoint struct {
+	Protocols []string `json:"protocols" yaml:"protocols"`
+}
+
+// AgentCardSkill describes a single capability that an agent can perform.
+type AgentCardSkill struct {
+	ID          string   `json:"id" yaml:"id"`
+	Name        string   `json:"name" yaml:"name"`
+	Description string   `json:"description" yaml:"description"`
+	Tags        []string `json:"tags,omitempty" yaml:"tags,omitempty"`
+	Examples    []string `json:"examples,omitempty" yaml:"examples,omitempty"`
+}
+
+// AgentCard is the A2A agent card that advertises an agent's capabilities.
+type AgentCard struct {
+	Description string           `json:"description" yaml:"description"`
+	Version     *string          `json:"version,omitempty" yaml:"version,omitempty"`
+	Skills      []AgentCardSkill `json:"skills" yaml:"skills"`
+}
+
 // Resource Represents a resource required by the agent.
 // Resources can include databases, APIs, or other external systems
 // that the agent needs to interact with to perform its tasks
@@ -749,6 +758,7 @@ type McpTool struct {
 	Connection        any                   `json:"connection" yaml:"connection"` // Must be a type of Connection
 	ServerName        string                `json:"serverName" yaml:"serverName"`
 	ServerDescription *string               `json:"serverDescription,omitempty" yaml:"serverDescription,omitempty"`
+	URL               string                `json:"url,omitempty" yaml:"url,omitempty"`
 	ApprovalMode      McpServerApprovalMode `json:"approvalMode" yaml:"approvalMode"`
 	AllowedTools      *[]string             `json:"allowedTools,omitempty" yaml:"allowedTools,omitempty"`
 	Options           map[string]any        `json:"options" yaml:"options"`

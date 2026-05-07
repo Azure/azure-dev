@@ -249,6 +249,15 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+												},
+											],
+										},
+										{
 											name: ['--recursive'],
 											description: 'Recursively delete directories and their contents',
 										},
@@ -286,6 +295,15 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+												},
+											],
+										},
+										{
 											name: ['--session-id', '-s'],
 											description: 'Session ID override (defaults to last invoke session)',
 											args: [
@@ -319,11 +337,12 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
-											name: ['--output'],
-											description: 'Output format (json or table)',
+											name: ['--output', '-o'],
+											description: 'The output format',
 											args: [
 												{
 													name: 'output',
+													suggestions: ['json', 'table'],
 												},
 											],
 										},
@@ -361,6 +380,15 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+												},
+											],
+										},
+										{
 											name: ['--session-id', '-s'],
 											description: 'Session ID override (defaults to last invoke session)',
 											args: [
@@ -386,10 +414,11 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['--output', '-o'],
-											description: 'Output format (json or table)',
+											description: 'The output format',
 											args: [
 												{
 													name: 'output',
+													suggestions: ['json', 'table'],
 												},
 											],
 										},
@@ -427,6 +456,15 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+												},
+											],
+										},
+										{
 											name: ['--session-id', '-s'],
 											description: 'Session ID override (defaults to last invoke session)',
 											args: [
@@ -443,6 +481,17 @@ const completionSpec: Fig.Spec = {
 													name: 'target-path',
 												},
 											],
+										},
+									],
+								},
+							],
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
 										},
 									],
 								},
@@ -476,6 +525,15 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'model-deployment',
+										},
+									],
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
 										},
 									],
 								},
@@ -514,6 +572,15 @@ const completionSpec: Fig.Spec = {
 							description: 'Send a message to your agent.',
 							options: [
 								{
+									name: ['--agent-endpoint'],
+									description: 'Full endpoint URL of a deployed agent (run \'azd ai agent show\' to see it). Invokes without requiring an azd project; protocol is derived from the URL.',
+									args: [
+										{
+											name: 'agent-endpoint',
+										},
+									],
+								},
+								{
 									name: ['--conversation-id'],
 									description: 'Explicit conversation ID override',
 									args: [
@@ -542,6 +609,15 @@ const completionSpec: Fig.Spec = {
 								{
 									name: ['--new-session'],
 									description: 'Force a new session (discard saved one)',
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
 								},
 								{
 									name: ['--port'],
@@ -590,6 +666,15 @@ const completionSpec: Fig.Spec = {
 									description: 'Stream logs in real-time',
 								},
 								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+								{
 									name: ['--raw'],
 									description: 'Print the raw SSE stream without formatting',
 								},
@@ -630,6 +715,15 @@ const completionSpec: Fig.Spec = {
 							name: ['run'],
 							description: 'Run your agent locally for development.',
 							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
 								{
 									name: ['--port', '-p'],
 									description: 'Port to listen on',
@@ -678,10 +772,11 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['--output', '-o'],
-											description: 'Output format (json or table)',
+											description: 'The output format',
 											args: [
 												{
 													name: 'output',
+													suggestions: ['json', 'table'],
 												},
 											],
 										},
@@ -727,6 +822,15 @@ const completionSpec: Fig.Spec = {
 												},
 											],
 										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+												},
+											],
+										},
 									],
 								},
 								{
@@ -753,10 +857,11 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['--output', '-o'],
-											description: 'Output format (json or table)',
+											description: 'The output format',
 											args: [
 												{
 													name: 'output',
+													suggestions: ['json', 'table'],
 												},
 											],
 										},
@@ -786,12 +891,24 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['--output', '-o'],
-											description: 'Output format (json or table)',
+											description: 'The output format',
 											args: [
 												{
 													name: 'output',
+													suggestions: ['json', 'table'],
 												},
 											],
+										},
+									],
+								},
+							],
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
 										},
 									],
 								},
@@ -803,10 +920,11 @@ const completionSpec: Fig.Spec = {
 							options: [
 								{
 									name: ['--output', '-o'],
-									description: 'Output format (json or table)',
+									description: 'The output format',
 									args: [
 										{
 											name: 'output',
+											suggestions: ['json', 'table'],
 										},
 									],
 								},
@@ -815,6 +933,17 @@ const completionSpec: Fig.Spec = {
 						{
 							name: ['version'],
 							description: 'Prints the version of the application',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+							],
 						},
 					],
 				},

@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 )
 
@@ -275,16 +276,7 @@ type PreflightCheckResult struct {
 	// It should be dynamically generated with context-specific advice when possible.
 	Suggestion string
 	// Links is an optional list of reference links related to the finding.
-	Links []PreflightCheckLink
-}
-
-// PreflightCheckLink represents a reference link attached to a preflight check result.
-type PreflightCheckLink struct {
-	// URL is the link target.
-	URL string
-	// Title is the display text for terminal hyperlinks (optional).
-	// In non-terminal output the URL is shown regardless of Title.
-	Title string
+	Links []ux.PreflightReportLink
 }
 
 // validationContext provides the data and utilities available to preflight check functions.

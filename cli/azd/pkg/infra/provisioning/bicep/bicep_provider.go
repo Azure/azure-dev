@@ -2636,20 +2636,12 @@ func (p *BicepProvider) validatePreflight(
 	if len(results) > 0 {
 		report := &ux.PreflightReport{}
 		for _, result := range results {
-			links := make(
-				[]ux.PreflightReportLink, len(result.Links))
-			for i, l := range result.Links {
-				links[i] = ux.PreflightReportLink{
-					URL:   l.URL,
-					Title: l.Title,
-				}
-			}
 			report.Items = append(report.Items, ux.PreflightReportItem{
 				IsError:      result.Severity == PreflightCheckError,
 				DiagnosticID: result.DiagnosticID,
 				Message:      result.Message,
 				Suggestion:   result.Suggestion,
-				Links:        links,
+				Links:        result.Links,
 			})
 		}
 		p.console.MessageUxItem(ctx, report)
@@ -2843,7 +2835,7 @@ func (p *BicepProvider) checkReservedResourceNames(
 					resourceName, resourceType,
 					v.matchType, v.reservedWord,
 				),
-				Links: []PreflightCheckLink{
+				Links: []ux.PreflightReportLink{
 					{
 						URL:   docsLink,
 						Title: "Reserved resource name errors",
@@ -2967,7 +2959,7 @@ func (p *BicepProvider) checkAiModelQuota(
 					),
 					Suggestion: "Verify the model name, SKU," +
 						" and version are correct.",
-					Links: []PreflightCheckLink{
+					Links: []ux.PreflightReportLink{
 						{
 							URL: "https://learn.microsoft.com/" +
 								"azure/ai-services/openai/" +
@@ -3053,7 +3045,7 @@ func (p *BicepProvider) checkAiModelQuota(
 						remaining,
 					),
 					Suggestion: suggestion,
-					Links: []PreflightCheckLink{
+					Links: []ux.PreflightReportLink{
 						{
 							URL:   "https://learn.microsoft.com/azure/quotas/quickstart-increase-quota-portal",
 							Title: "Increase Azure subscription quotas",

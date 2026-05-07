@@ -56,6 +56,8 @@ func Test_CLI_PreflightQuota_RG_DefaultCapacity(t *testing.T) {
 	output := result.Stdout + result.Stderr
 	require.Contains(t, output, "Insufficient quota",
 		"expected quota exceeded warning in output")
+	require.Contains(t, output, "Suggestion:",
+		"expected actionable suggestion in output")
 }
 
 // Test_CLI_PreflightQuota_RG_InvalidModelName verifies a warning when the model name

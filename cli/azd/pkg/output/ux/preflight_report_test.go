@@ -234,6 +234,84 @@ func indexOf(s, substr string) int {
 	return -1
 }
 
+func TestPreflightReport_WriteItem_EdgeCases(t *testing.T) {
+	tests := []struct {
+		name     string
+		item     PreflightReportItem
+		contains []string
+		excludes []string
+	}{
+		{
+			name:     "empty message",
+			item:     PreflightReportItem{Message: ""},
+			excludes: []string{"Warning"},
+		},
+		{
+			name: "trailing newline in message",
+			item: PreflightReportItem{
+				Message: "title line\n",
+			},
+			contains: []string{"title line"},
+		},
+		{
+			name: "consecutive newlines in message",
+			item: PreflightReportItem{
+				Message: "first\n\nthird",
+			},
+			contains: []string{"first", "third"},
+		},
+		{
+			name: "nil links slice",
+			item: PreflightReportItem{
+				Message: "msg",
+				Links:   nil,
+			},
+			contains: []string{"msg"},
+			excludes: []string{"•"},
+		},
+		{
+			name: "empty links slice",
+			item: PreflightReportItem{
+				Message: "msg",
+				Links:   []PreflightReportLink{},
+			},
+			contains: []string{"msg"},
+			excludes: []string{"•"},
+		},
+		{
+			name: "empty suggestion string",
+			item: PreflightReportItem{
+				Message:    "msg",
+				Suggestion: "",
+			},
+			contains: []string{"msg"},
+			excludes: []string{"Suggestion:"},
+		},
+		{
+			name: "message with leading newline",
+			item: PreflightReportItem{
+				Message: "\nleading newline",
+			},
+			contains: []string{"leading newline"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			report := &PreflightReport{
+				Items: []PreflightReportItem{tt.item},
+			}
+			result := report.ToString("  ")
+			for _, s := range tt.contains {
+				require.Contains(t, result, s)
+			}
+			for _, s := range tt.excludes {
+				require.NotContains(t, result, s)
+			}
+		})
+	}
+}
+
 // Snapshot tests — one per diagnostic type, plus one combined report.
 // Update snapshots with: UPDATE_SNAPSHOTS=true go test ./pkg/output/ux/...
 

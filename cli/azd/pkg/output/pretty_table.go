@@ -402,10 +402,7 @@ func (f *PrettyTableFormatter) formatGroupedCards(
 			titleHeading := parsed[0].col.Heading
 			titleVal := rd.values[titleHeading]
 
-			borderWidth := max(termWidth-2, 20)
-			if borderWidth > 76 {
-				borderWidth = 76
-			}
+			borderWidth := min(max(termWidth-2, 20), 76)
 
 			buf.WriteString("┌" + strings.Repeat("─", borderWidth))
 			buf.WriteByte('\n')

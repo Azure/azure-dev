@@ -50,14 +50,19 @@ func newJobDownloadCommand() *cobra.Command {
 				return fmt.Errorf("--name (-n) is required")
 			}
 
-			// Resolve destination root
+			// Resolve destination root.
+			//   --download-path / -p provided → used verbatim, exactly as the
+			//     user specified (we don't append the job name; the user is in
+			//     control of the directory layout).
+			//   --download-path / -p omitted   → default to ./<job-name>/ so
+			//     repeated downloads of different jobs don't collide in cwd.
 			destRoot := downloadPath
 			if destRoot == "" {
 				cwd, err := os.Getwd()
 				if err != nil {
 					return fmt.Errorf("failed to resolve current directory: %w", err)
 				}
-				destRoot = cwd
+				destRoot = filepath.Join(cwd, name)
 			}
 			if err := os.MkdirAll(destRoot, 0o755); err != nil {
 				return fmt.Errorf("failed to create download path: %w", err)
@@ -145,7 +150,7 @@ func newJobDownloadCommand() *cobra.Command {
 	cmd.Flags().StringVarP(&name, "name", "n", "", "Job name (required)")
 	cmd.Flags().BoolVar(&all, "all", false, "Download all named outputs and default artifacts")
 	cmd.Flags().StringVarP(&downloadPath, "download-path", "p", "",
-		"Path to download files to (defaults to the current directory)")
+		"Path to download files to (used as-is when provided; defaults to ./<job-name>/ in the current directory)")
 	cmd.Flags().StringVar(&outputName, "output-name", "",
 		"Name of the user-defined output to download. If omitted (or set to \"default\"), the default artifacts are downloaded")
 

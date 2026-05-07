@@ -290,9 +290,9 @@ func (c *FoundryClient) PollOperation(ctx context.Context, operationURL string, 
 			return nil, fmt.Errorf("failed to create poll request: %w", err)
 		}
 
-		// The operations endpoint on api.azureml.ms expects tokens with ml.azure.com audience
+		// The operations endpoint on api.azureml.ms accepts the same AI scope as the data plane
 		token, err := c.credential.GetToken(ctx, policy.TokenRequestOptions{
-			Scopes: []string{MLTokenScope},
+			Scopes: []string{TokenScope},
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to get ARM access token: %w", err)

@@ -447,6 +447,10 @@ overrides:
     words:
       - filesystems
       - redirections
+  - filename: pkg/tool/version_provider.go
+    words:
+      - extensionquery
+      - bitmask
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

@@ -136,12 +136,10 @@ func (p *PackageManagerVersionProvider) queryWinget(
 // parseWingetVersion extracts the version from winget show output.
 // The output contains lines like "Version: 2.65.0".
 func parseWingetVersion(output string) (string, error) {
-	for _, line := range strings.Split(output, "\n") {
+	for line := range strings.SplitSeq(output, "\n") {
 		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "Version:") {
-			version := strings.TrimSpace(
-				strings.TrimPrefix(trimmed, "Version:"),
-			)
+		if after, ok := strings.CutPrefix(trimmed, "Version:"); ok {
+			version := strings.TrimSpace(after)
 			if version != "" {
 				return version, nil
 			}
@@ -229,15 +227,14 @@ func (p *PackageManagerVersionProvider) queryApt(
 // following at least one digit) is stripped so that "2.67.0-1~noble"
 // becomes "2.67.0".
 func parseAptCandidate(output string) (string, error) {
-	for _, line := range strings.Split(output, "\n") {
+	for line := range strings.SplitSeq(output, "\n") {
 		trimmed := strings.TrimSpace(line)
-		if !strings.HasPrefix(trimmed, "Candidate:") {
+		after, ok := strings.CutPrefix(trimmed, "Candidate:")
+		if !ok {
 			continue
 		}
 
-		version := strings.TrimSpace(
-			strings.TrimPrefix(trimmed, "Candidate:"),
-		)
+		version := strings.TrimSpace(after)
 		if version == "" || version == "(none)" {
 			return "", fmt.Errorf(
 				"no candidate version available in apt",

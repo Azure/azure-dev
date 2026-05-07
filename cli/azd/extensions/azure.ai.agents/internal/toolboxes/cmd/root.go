@@ -8,13 +8,19 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewToolboxesCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
+func NewToolboxesRootCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	extCtx = ensureExtensionContext(extCtx)
 
 	cmd := &cobra.Command{
 		Use:   "toolboxes",
 		Short: "Manage AI toolboxes.",
 	}
+
+	// cmd.AddCommand(azdext.NewListenCommand(configureExtensionHost))
+	cmd.AddCommand(newVersionCommand())
+	cmd.AddCommand(azdext.NewMetadataCommand("1.0", "azure.ai.agents", func() *cobra.Command {
+		return cmd
+	}))
 
 	cmd.AddCommand(newCreateCommand(extCtx))
 

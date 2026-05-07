@@ -4,11 +4,11 @@
 package main
 
 import (
-	"azureaiagent/internal/agents/cmd"
+	"azureaiagent/internal"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
 func main() {
-	azdext.Run(cmd.NewRootCommand())
+	azdext.Run(internal.NewRootCommand())
 }

@@ -49,6 +49,8 @@ words:
   - projectpkg
   - protocolversionrecord
   - Qdrant
+  - svcs
   - Toolsets
+  - unredacted
   - Vnext
   - webp

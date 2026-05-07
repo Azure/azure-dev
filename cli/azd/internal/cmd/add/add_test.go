@@ -4,7 +4,6 @@
 package add
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -16,6 +15,7 @@ import (
 )
 
 func TestEnsureCompatibleProject(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name                   string
 		setupFunc              func(t *testing.T) *project.ProjectConfig
@@ -205,7 +205,8 @@ func TestEnsureCompatibleProject(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx := context.Background()
+			t.Parallel()
+			ctx := t.Context()
 			prjConfig := tt.setupFunc(t)
 
 			// Create a mock ImportManager with minimal setup
@@ -226,6 +227,7 @@ func TestEnsureCompatibleProject(t *testing.T) {
 }
 
 func TestPathHasInfraModule(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name           string
 		setupFunc      func(t *testing.T) (string, string)
@@ -316,6 +318,7 @@ func TestPathHasInfraModule(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			path, module := tt.setupFunc(t)
 
 			result, err := pathHasInfraModule(path, module)

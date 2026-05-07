@@ -401,6 +401,7 @@ func TestDockerProjectOptionsMapping(t *testing.T) {
 		Context:     ".",
 		Platform:    "linux/amd64",
 		Target:      "production",
+		Network:     "host",
 		RemoteBuild: true,
 	}
 
@@ -412,6 +413,7 @@ func TestDockerProjectOptionsMapping(t *testing.T) {
 	require.Equal(t, ".", protoOptions.Context)
 	require.Equal(t, "linux/amd64", protoOptions.Platform)
 	require.Equal(t, "production", protoOptions.Target)
+	require.Equal(t, "host", protoOptions.Network)
 	require.True(t, protoOptions.RemoteBuild)
 }
 
@@ -669,6 +671,7 @@ func TestFromProtoDockerProjectOptionsMapping(t *testing.T) {
 		Context:     "..",
 		Platform:    "linux/arm64",
 		Target:      "test",
+		Network:     "host",
 		Registry:    "testregistry.azurecr.io",
 		Image:       "testimage",
 		Tag:         "v2.0.0",
@@ -684,6 +687,7 @@ func TestFromProtoDockerProjectOptionsMapping(t *testing.T) {
 	require.Equal(t, "..", dockerOptions.Context)
 	require.Equal(t, "linux/arm64", dockerOptions.Platform)
 	require.Equal(t, "test", dockerOptions.Target)
+	require.Equal(t, "host", dockerOptions.Network)
 	require.Equal(t, "testregistry.azurecr.io", dockerOptions.Registry.MustEnvsubst(func(string) string { return "" }))
 	require.Equal(t, "testimage", dockerOptions.Image.MustEnvsubst(func(string) string { return "" }))
 	require.Equal(t, "v2.0.0", dockerOptions.Tag.MustEnvsubst(func(string) string { return "" }))

@@ -12,6 +12,8 @@ import (
 	"io"
 	"maps"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -22,6 +24,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appconfiguration/armappconfiguration"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
@@ -38,13 +41,15 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazapi"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mocktracing"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 func TestBicepPlan(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	prepareBicepMocks(mockContext)
 	infraProvider := createBicepProvider(t, mockContext)
 
@@ -63,7 +68,7 @@ func TestBicepPlan(t *testing.T) {
 }
 
 func TestBicepPlanKeyVaultRef(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	prepareBicepMocks(mockContext)
 	infraProvider := createBicepProvider(t, mockContext)
 
@@ -80,7 +85,7 @@ func TestBicepPlanKeyVaultRef(t *testing.T) {
 }
 
 func TestBicepPlanParameterTypes(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	prepareBicepMocks(mockContext)
 	infraProvider := createBicepProvider(t, mockContext)
 
@@ -121,7 +126,7 @@ const paramsArmJson = `{
   }`
 
 func TestBicepPlanPrompt(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(args.Cmd, "bicep") && args.Args[0] == "--version"
@@ -156,7 +161,7 @@ func TestBicepPlanPrompt(t *testing.T) {
 func TestBicepState(t *testing.T) {
 	expectedWebsiteUrl := "http://myapp.azurewebsites.net"
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	prepareBicepMocks(mockContext)
 	prepareStateMocks(mockContext)
 
@@ -171,7 +176,7 @@ func TestBicepState(t *testing.T) {
 
 func TestBicepDestroy(t *testing.T) {
 	t.Run("Interactive", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		prepareBicepMocks(mockContext)
 		prepareStateMocks(mockContext)
 		prepareDestroyMocks(mockContext)
@@ -202,7 +207,7 @@ func TestBicepDestroy(t *testing.T) {
 	})
 
 	t.Run("InteractiveForceAndPurge", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		prepareBicepMocks(mockContext)
 		prepareStateMocks(mockContext)
 		prepareDestroyMocks(mockContext)
@@ -225,7 +230,7 @@ func TestBicepDestroy(t *testing.T) {
 
 func TestBicepDestroyLogAnalyticsWorkspace(t *testing.T) {
 	t.Run("WithPurge", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		prepareBicepMocks(mockContext)
 		prepareStateMocks(mockContext)
 		prepareLogAnalyticsDestroyMocks(mockContext)
@@ -245,8 +250,146 @@ func TestBicepDestroyLogAnalyticsWorkspace(t *testing.T) {
 	})
 }
 
+func TestWarnExternalResourceGroup(t *testing.T) {
+	setupProvider := func(t *testing.T, mockContext *mocks.MockContext) *BicepProvider {
+		t.Helper()
+		env := environment.NewWithValues("test-env", map[string]string{
+			environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
+		})
+		resourceService := azapi.NewResourceService(
+			mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions,
+		)
+		return &BicepProvider{
+			env:             env,
+			console:         mockContext.Console,
+			resourceService: resourceService,
+		}
+	}
+
+	mockRGResponse := func(
+		mockContext *mocks.MockContext, rgName string, tags map[string]*string,
+	) {
+		mockContext.HttpClient.When(func(req *http.Request) bool {
+			return req.Method == http.MethodGet &&
+				strings.Contains(req.URL.Path, "/resourcegroups/"+rgName)
+		}).RespondFn(func(req *http.Request) (*http.Response, error) {
+			return mocks.CreateHttpResponseWithBody(req, http.StatusOK,
+				armresources.ResourceGroup{
+					ID:       new("/subscriptions/SUBSCRIPTION_ID/resourceGroups/" + rgName),
+					Name:     new(rgName),
+					Location: new("eastus"),
+					Tags:     tags,
+				})
+		})
+	}
+
+	t.Run("SkipsWhenForced", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(t.Context())
+		provider := setupProvider(t, mockContext)
+		options := provisioning.NewDestroyOptions(true, false)
+
+		confirmed, err := provider.warnExternalResourceGroup(
+			*mockContext.Context, options, "my-rg", nil, 0,
+		)
+		require.NoError(t, err)
+		assert.True(t, confirmed)
+	})
+
+	t.Run("NoWarningWhenRGHasMatchingTag", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(t.Context())
+		mockRGResponse(mockContext, "my-rg", map[string]*string{
+			"azd-env-name": new("test-env"),
+		})
+		provider := setupProvider(t, mockContext)
+		options := provisioning.NewDestroyOptions(false, false)
+
+		confirmed, err := provider.warnExternalResourceGroup(
+			*mockContext.Context, options, "my-rg", nil, 0,
+		)
+		require.NoError(t, err)
+		assert.False(t, confirmed)
+	})
+
+	t.Run("WarnsWhenRGHasMismatchedTag", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(t.Context())
+		mockRGResponse(mockContext, "my-rg", map[string]*string{
+			"azd-env-name": new("other-env"),
+		})
+		provider := setupProvider(t, mockContext)
+		options := provisioning.NewDestroyOptions(false, false)
+
+		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
+			return true
+		}).Respond(false)
+
+		_, err := provider.warnExternalResourceGroup(
+			*mockContext.Context, options, "my-rg", nil, 0,
+		)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "user denied delete confirmation")
+	})
+
+	t.Run("WarnsAndDeniesWhenRGHasNoTag", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(t.Context())
+		mockRGResponse(mockContext, "my-rg", nil)
+		provider := setupProvider(t, mockContext)
+		options := provisioning.NewDestroyOptions(false, false)
+
+		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
+			// Verify DefaultValue is false — this is what --no-prompt uses to deny by default
+			assert.False(t, options.DefaultValue.(bool))
+			return true
+		}).Respond(false)
+
+		_, err := provider.warnExternalResourceGroup(
+			*mockContext.Context, options, "my-rg", nil, 0,
+		)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "user denied delete confirmation")
+	})
+
+	t.Run("ProceedsWhenUserConfirms", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(t.Context())
+		mockRGResponse(mockContext, "my-rg", nil)
+		provider := setupProvider(t, mockContext)
+		options := provisioning.NewDestroyOptions(false, false)
+
+		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
+			return true
+		}).Respond(true)
+
+		confirmed, err := provider.warnExternalResourceGroup(
+			*mockContext.Context, options, "my-rg", nil, 0,
+		)
+		require.NoError(t, err)
+		assert.True(t, confirmed)
+	})
+
+	t.Run("FailsClosedWhenGetRGErrors", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(t.Context())
+		mockContext.HttpClient.When(func(req *http.Request) bool {
+			return req.Method == http.MethodGet &&
+				strings.Contains(req.URL.Path, "/resourcegroups/my-rg")
+		}).RespondFn(func(req *http.Request) (*http.Response, error) {
+			return mocks.CreateEmptyHttpResponse(req, http.StatusInternalServerError)
+		})
+		provider := setupProvider(t, mockContext)
+		options := provisioning.NewDestroyOptions(false, false)
+
+		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
+			return true
+		}).Respond(false)
+
+		_, err := provider.warnExternalResourceGroup(
+			*mockContext.Context, options, "my-rg", nil, 0,
+		)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "user denied delete confirmation")
+	})
+}
+
 func TestDeploymentForResourceGroup(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(args.Cmd, "bicep") && strings.Contains(command, "--version")
@@ -954,7 +1097,7 @@ func httpRespondFn(request *http.Request) (*http.Response, error) {
 // From a mocked list of deployments where there are multiple deployments with the matching tag, expect to pick the most
 // recent one.
 func TestFindCompletedDeployments(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(args.Cmd, "bicep") && strings.Contains(command, "--version")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -1086,7 +1229,7 @@ func (m *mockedScope) ListDeployments(ctx context.Context) ([]*azapi.ResourceDep
 }
 
 func TestUserDefinedTypes(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(args.Cmd, "bicep") && args.Args[0] == "--version"
 	}).Respond(exec.RunResult{
@@ -1570,7 +1713,7 @@ func TestDefaultLocationToSelectFn(t *testing.T) {
 }
 
 func TestPreviewWithNilResourceState(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	prepareBicepMocks(mockContext)
 
 	// Setup the WhatIf endpoint mock to return changes with nil After (simulating Delete)
@@ -1691,6 +1834,7 @@ func TestArrayParameterViaEnvVarSimple(t *testing.T) {
 		"ServicePrincipal",
 		"testParam",
 		env,
+		nil,
 	)
 
 	require.Nil(t, err)
@@ -1701,6 +1845,18 @@ func TestArrayParameterViaEnvVarSimple(t *testing.T) {
 
 func createBicepProviderWithEnv(
 	t *testing.T, mockContext *mocks.MockContext, armTemplate azure.ArmTemplate, envVars map[string]string) *BicepProvider {
+	return createBicepProviderWithEnvAndMode(t, mockContext, armTemplate, envVars, provisioning.ModeDeploy)
+}
+
+func createBicepProviderWithEnvAndMode(
+	t *testing.T,
+	mockContext *mocks.MockContext,
+	armTemplate azure.ArmTemplate,
+	envVars map[string]string,
+	mode provisioning.Mode,
+) *BicepProvider {
+	t.Helper()
+
 	bicepBytes, _ := json.Marshal(armTemplate)
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -1721,6 +1877,7 @@ func createBicepProviderWithEnv(
 	options := provisioning.Options{
 		Path:   "infra",
 		Module: "main",
+		Mode:   mode,
 	}
 
 	baseEnvVars := map[string]string{
@@ -1802,6 +1959,7 @@ func TestObjectParameterEnvSubst(t *testing.T) {
 		"ServicePrincipal",
 		"testParam",
 		env,
+		nil,
 	)
 
 	require.Nil(t, err)
@@ -1829,7 +1987,7 @@ func TestParameterTypeFromArmTypeIdentification(t *testing.T) {
 }
 
 func TestUnsetEnvVarForArrayParameter(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	// Create a template with optional array parameter (has a default value)
 	armTemplate := azure.ArmTemplate{
@@ -1857,7 +2015,7 @@ func TestUnsetEnvVarForArrayParameter(t *testing.T) {
 }
 
 func TestStructuredArrayWithNestedEnvVars(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	armTemplate := azure.ArmTemplate{
 		Schema:         "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
@@ -1901,6 +2059,7 @@ func TestHelperEvalParamEnvSubst(t *testing.T) {
 		"ServicePrincipal",
 		"testParam",
 		env,
+		nil,
 	)
 
 	require.Nil(t, err)
@@ -1909,4 +2068,318 @@ func TestHelperEvalParamEnvSubst(t *testing.T) {
 	require.Contains(t, substResult.mappedEnvVars, "VAR1")
 	require.Contains(t, substResult.mappedEnvVars, "VAR2")
 	require.False(t, substResult.hasUnsetEnvVar)
+}
+func TestSetPreflightOutcome_SetsSpanAndUsageAttributes(t *testing.T) {
+	span := &mocktracing.Span{}
+	provider := &BicepProvider{}
+
+	diagnosticIDs := []string{"role_assignment_missing", "role_assignment_conditional"}
+	provider.setPreflightOutcome(span, preflightOutcomeWarningsAccepted, diagnosticIDs)
+
+	// Verify outcome is set on the span directly.
+	outcomeAttr := findSpanAttribute(span.Attributes, "validation.preflight.outcome")
+	require.NotNil(t, outcomeAttr, "expected outcome attribute on span")
+	require.Equal(t, preflightOutcomeWarningsAccepted, outcomeAttr.Value.AsString())
+
+	// Verify usage-level attributes are set for parent command span correlation.
+	usageAttrs := tracing.GetUsageAttributes()
+	usageOutcome := findSpanAttribute(usageAttrs, "validation.preflight.outcome")
+	require.NotNil(t, usageOutcome, "expected outcome in usage attributes")
+	require.Equal(t, preflightOutcomeWarningsAccepted, usageOutcome.Value.AsString())
+
+	usageDiag := findSpanAttribute(
+		usageAttrs, "validation.preflight.diagnostics",
+	)
+	require.NotNil(t, usageDiag, "expected diagnostics in usage attributes")
+	require.Equal(t, diagnosticIDs, usageDiag.Value.AsStringSlice())
+}
+
+func TestSetPreflightOutcome_AllOutcomeValues(t *testing.T) {
+	tests := []struct {
+		name          string
+		outcome       string
+		diagnosticIDs []string
+	}{
+		{
+			name:          "passed",
+			outcome:       preflightOutcomePassed,
+			diagnosticIDs: nil,
+		},
+		{
+			name:          "warnings accepted",
+			outcome:       preflightOutcomeWarningsAccepted,
+			diagnosticIDs: []string{"role_assignment_missing"},
+		},
+		{
+			name:          "aborted by errors",
+			outcome:       preflightOutcomeAbortedByErrors,
+			diagnosticIDs: []string{"role_assignment_missing"},
+		},
+		{
+			name:          "aborted by user",
+			outcome:       preflightOutcomeAbortedByUser,
+			diagnosticIDs: []string{"role_assignment_conditional"},
+		},
+		{
+			name:          "skipped",
+			outcome:       preflightOutcomeSkipped,
+			diagnosticIDs: nil,
+		},
+		{
+			name:          "error",
+			outcome:       preflightOutcomeError,
+			diagnosticIDs: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			span := &mocktracing.Span{}
+			provider := &BicepProvider{}
+
+			provider.setPreflightOutcome(span, tt.outcome, tt.diagnosticIDs)
+
+			outcomeAttr := findSpanAttribute(
+				span.Attributes, "validation.preflight.outcome",
+			)
+			require.NotNil(t, outcomeAttr)
+			require.Equal(t, tt.outcome, outcomeAttr.Value.AsString())
+		})
+	}
+}
+
+// findSpanAttribute searches for an attribute by key and returns a pointer to it, or nil.
+func findSpanAttribute(
+	attrs []attribute.KeyValue,
+	key attribute.Key,
+) *attribute.KeyValue {
+	for i := range attrs {
+		if attrs[i].Key == key {
+			return &attrs[i]
+		}
+	}
+	return nil
+}
+
+func TestEvalParamEnvSubstUsesVirtualEnv(t *testing.T) {
+	env := environment.NewWithValues("test-env", map[string]string{})
+	virtualKey := "AZD_TEST_VIRTUAL_LAYER_OUTPUT"
+	virtualValue := "layer1--WEBSITE_URL"
+	virtualEnv := map[string]string{virtualKey: virtualValue}
+
+	testCases := []struct {
+		name  string
+		value string
+		want  string
+	}{
+		{
+			name:  "simple substitution",
+			value: "${AZD_TEST_VIRTUAL_LAYER_OUTPUT}",
+			want:  "layer1--WEBSITE_URL",
+		},
+		{
+			name:  "mixed expression substitution",
+			value: "prefix-${AZD_TEST_VIRTUAL_LAYER_OUTPUT}-suffix",
+			want:  "prefix-layer1--WEBSITE_URL-suffix",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result, substResult, err := evalParamEnvSubst(
+				tc.value,
+				"principal-id",
+				"ServicePrincipal",
+				"testParam",
+				env,
+				virtualEnv,
+			)
+
+			require.NoError(t, err)
+			require.Equal(t, tc.want, result)
+			require.True(t, substResult.hasVirtualEnvVar)
+			require.False(t, substResult.hasUnsetEnvVar)
+			require.Empty(t, substResult.mappedEnvVars)
+		})
+	}
+}
+
+func TestParameters_IncludesRealEnvMappingsForMixedRefs(t *testing.T) {
+	const (
+		realEnvVarName = "AZD_TEST_REAL_SECRET"
+		virtualEnvKey  = "AZD_TEST_VIRTUAL_LAYER_OUTPUT"
+	)
+
+	testCases := []struct {
+		name    string
+		envVars map[string]string
+	}{
+		{
+			name:    "set real env var",
+			envVars: map[string]string{realEnvVarName: "secret-value"},
+		},
+		{
+			name:    "unset real env var",
+			envVars: map[string]string{},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mockContext := mocks.NewMockContext(t.Context())
+
+			armTemplate := azure.ArmTemplate{
+				// nolint: lll
+				Schema:         "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+				ContentVersion: "1.0.0.0",
+				Parameters: azure.ArmTemplateParameterDefinitions{
+					"environmentName": {Type: "string", DefaultValue: "test-env"},
+					"location":        {Type: "string", DefaultValue: "westus2"},
+					"mixedValue":      {Type: "string"},
+				},
+				Outputs: azure.ArmTemplateOutputs{},
+			}
+
+			infraProvider := createBicepProviderWithEnvAndMode(
+				t,
+				mockContext,
+				armTemplate,
+				tc.envVars,
+				provisioning.ModeDestroy,
+			)
+
+			tmpInfraDir := filepath.Join(t.TempDir(), "infra")
+			require.NoError(t, os.MkdirAll(tmpInfraDir, 0o755))
+
+			require.NoError(t, os.WriteFile(filepath.Join(tmpInfraDir, "main.parameters.json"), []byte(`{
+				"$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+				"contentVersion": "1.0.0.0",
+				"parameters": {
+					"mixedValue": {
+						"value": "${AZD_TEST_VIRTUAL_LAYER_OUTPUT}/${AZD_TEST_REAL_SECRET}"
+					}
+				}
+			}`), 0o600))
+
+			infraProvider.path = filepath.Join(tmpInfraDir, "main.bicep")
+			infraProvider.options.VirtualEnv = map[string]string{
+				virtualEnvKey: "layer1--WEBSITE_URL",
+			}
+
+			compileResult, err := infraProvider.compileBicep(*mockContext.Context)
+			require.NoError(t, err)
+
+			loadResult, err := infraProvider.loadParameters(*mockContext.Context, &compileResult.Template)
+			require.NoError(t, err)
+			require.Contains(t, loadResult.virtualMapping, "mixedValue")
+			require.Equal(t, []string{realEnvVarName}, loadResult.envMapping["mixedValue"])
+			require.NotContains(t, loadResult.envMapping["mixedValue"], virtualEnvKey)
+			require.NotContains(t, loadResult.parameters, "mixedValue")
+
+			parameters, err := infraProvider.Parameters(*mockContext.Context)
+			require.NoError(t, err)
+			require.Len(t, parameters, 1)
+			require.Equal(t, provisioning.Parameter{
+				Name:               "mixedValue",
+				Secret:             false,
+				Value:              nil,
+				EnvVarMapping:      []string{realEnvVarName},
+				LocalPrompt:        false,
+				UsingEnvVarMapping: true,
+			}, parameters[0])
+		})
+	}
+}
+
+func TestEnsureParametersSkipsVirtualEnvMappedRequiredParameters(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+
+	armTemplate := azure.ArmTemplate{
+		Schema:         "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+		ContentVersion: "1.0.0.0",
+		Parameters: azure.ArmTemplateParameterDefinitions{
+			"environmentName": {Type: "string", DefaultValue: "test-env"},
+			"location":        {Type: "string", DefaultValue: "westus2"},
+			"dependentValue":  {Type: "string"},
+			"compositeValue":  {Type: "string"},
+		},
+		Outputs: azure.ArmTemplateOutputs{},
+	}
+
+	infraProvider := createBicepProviderWithEnvAndMode(
+		t,
+		mockContext,
+		armTemplate,
+		map[string]string{},
+		provisioning.ModeDestroy,
+	)
+
+	tmpInfraDir := filepath.Join(t.TempDir(), "infra")
+	require.NoError(t, os.MkdirAll(tmpInfraDir, 0o755))
+
+	const virtualEnvKey = "AZD_TEST_VIRTUAL_LAYER_OUTPUT"
+	require.NoError(t, os.WriteFile(filepath.Join(tmpInfraDir, "main.parameters.json"), []byte(`{
+		"$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+		"contentVersion": "1.0.0.0",
+		"parameters": {
+			"dependentValue": {
+				"value": "${AZD_TEST_VIRTUAL_LAYER_OUTPUT}"
+			},
+			"compositeValue": {
+				"value": "prefix-${AZD_TEST_VIRTUAL_LAYER_OUTPUT}-suffix"
+			}
+		}
+	}`), 0o600))
+
+	infraProvider.path = filepath.Join(tmpInfraDir, "main.bicep")
+	infraProvider.options.VirtualEnv = map[string]string{
+		virtualEnvKey: "layer1--WEBSITE_URL",
+	}
+
+	compileResult, err := infraProvider.compileBicep(*mockContext.Context)
+	require.NoError(t, err)
+
+	loadResult, err := infraProvider.loadParameters(*mockContext.Context, &compileResult.Template)
+	require.NoError(t, err)
+	require.Contains(t, loadResult.virtualMapping, "dependentValue")
+	require.Contains(t, loadResult.virtualMapping, "compositeValue")
+	require.NotContains(t, loadResult.parameters, "dependentValue")
+	require.NotContains(t, loadResult.parameters, "compositeValue")
+
+	configuredParameters, err := infraProvider.ensureParameters(*mockContext.Context, compileResult.Template)
+	require.NoError(t, err)
+	require.NotContains(t, configuredParameters, "dependentValue")
+	require.NotContains(t, configuredParameters, "compositeValue")
+}
+
+func TestPlannedOutputsSkipsSecureOutputs(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+
+	armTemplate := azure.ArmTemplate{
+		Schema:         "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+		ContentVersion: "1.0.0.0",
+		Outputs: azure.ArmTemplateOutputs{
+			"publicUrl": {
+				Type: "string",
+			},
+			"connectionString": {
+				Type: "secureString",
+			},
+			"config": {
+				Type: "object",
+			},
+			"secretConfig": {
+				Type: "secureObject",
+			},
+		},
+	}
+
+	infraProvider := createBicepProviderWithEnv(t, mockContext, armTemplate, map[string]string{})
+
+	outputs, err := infraProvider.PlannedOutputs(*mockContext.Context)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []provisioning.PlannedOutput{
+		{Name: "publicUrl"},
+		{Name: "config"},
+	}, outputs)
 }

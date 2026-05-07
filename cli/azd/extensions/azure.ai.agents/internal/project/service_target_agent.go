@@ -7,12 +7,9 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"math"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
-	"time"
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
@@ -28,9 +25,48 @@ import (
 	"github.com/drone/envsubst"
 	"github.com/fatih/color"
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 // Reference implementation
+
+// agentAPIVersion is the API version used for agent endpoint invocation URLs.
+const agentAPIVersion = "2025-11-15-preview"
+
+// displayableProtocolEntry defines a protocol that produces user-visible invocation endpoints.
+type displayableProtocolEntry struct {
+	Protocol  agent_api.AgentProtocol
+	URLPath   string // path suffix in the invocation URL
+	EnvSuffix string // suffix used in AGENT_{KEY}_{SUFFIX}_ENDPOINT env vars
+}
+
+// displayableProtocols is the single source of truth for protocols that produce
+// user-facing invocation endpoints and env vars.
+var displayableProtocols = []displayableProtocolEntry{
+	{Protocol: agent_api.AgentProtocolResponses, URLPath: "openai/responses", EnvSuffix: "RESPONSES"},
+	{Protocol: agent_api.AgentProtocolInvocations, URLPath: "invocations", EnvSuffix: "INVOCATIONS"},
+}
+
+// ProtocolEnvSuffix pairs a user-facing label with the env var suffix
+// used in AGENT_{KEY}_{SUFFIX}_ENDPOINT variables.
+type ProtocolEnvSuffix struct {
+	Label  string // e.g. "Responses"
+	Suffix string // e.g. "RESPONSES"
+}
+
+// DisplayableProtocolEnvSuffixes returns the label/suffix pairs for all
+// displayable protocols. This is the single source of truth shared by
+// deployment (registerAgentEnvironmentVariables) and the show command.
+func DisplayableProtocolEnvSuffixes() []ProtocolEnvSuffix {
+	result := make([]ProtocolEnvSuffix, len(displayableProtocols))
+	for i, dp := range displayableProtocols {
+		result[i] = ProtocolEnvSuffix{
+			Label:  string(dp.Protocol),
+			Suffix: dp.EnvSuffix,
+		}
+	}
+	return result
+}
 
 // Ensure AgentServiceTargetProvider implements ServiceTargetProvider interface
 var _ azdext.ServiceTargetProvider = &AgentServiceTargetProvider{}
@@ -233,9 +269,24 @@ func (p *AgentServiceTargetProvider) Endpoints(
 		)
 	}
 
-	endpoint := p.agentEndpoint(azdEnv["AZURE_AI_PROJECT_ENDPOINT"], azdEnv[agentNameKey], azdEnv[agentVersionKey])
+	// Collect per-protocol endpoint env vars
+	var endpoints []string
+	for _, dp := range displayableProtocols {
+		key := fmt.Sprintf("AGENT_%s_%s_ENDPOINT", serviceKey, dp.EnvSuffix)
+		if val := azdEnv[key]; val != "" {
+			endpoints = append(endpoints, val)
+		}
+	}
 
-	return []string{endpoint}, nil
+	if len(endpoints) == 0 {
+		return nil, exterrors.Dependency(
+			exterrors.CodeMissingAgentEnvVars,
+			fmt.Sprintf("no agent endpoint variables found for service %s", serviceKey),
+			"run 'azd deploy' to deploy the agent and set these variables",
+		)
+	}
+
+	return endpoints, nil
 }
 
 // GetTargetResource returns a custom target resource for the agent service
@@ -433,6 +484,8 @@ func (p *AgentServiceTargetProvider) Deploy(
 		fmt.Println("Loaded custom service target configuration")
 	}
 
+	warnDeprecatedScaleSettings(serviceConfig.Config)
+
 	// Load and validate the agent manifest
 	data, err := os.ReadFile(p.agentDefinitionPath)
 	if err != nil {
@@ -466,21 +519,11 @@ func (p *AgentServiceTargetProvider) Deploy(
 		return nil, exterrors.Validation(
 			exterrors.CodeMissingAgentKind,
 			"kind field is missing or not a valid string in agent.yaml",
-			"add a valid 'kind' field (e.g., 'prompt' or 'hosted') to agent.yaml",
+			"add a valid 'kind' field (e.g., 'hosted') to agent.yaml",
 		)
 	}
 
 	switch kind {
-	case string(agent_yaml.AgentKindPrompt):
-		var agentDef agent_yaml.PromptAgent
-		if err := yaml.Unmarshal(data, &agentDef); err != nil {
-			return nil, exterrors.Validation(
-				exterrors.CodeInvalidAgentManifest,
-				fmt.Sprintf("YAML content is not valid for prompt agent deploy: %s", err),
-				"fix the agent.yaml to match the prompt agent schema",
-			)
-		}
-		return p.deployPromptAgent(ctx, serviceConfig, agentDef, azdEnv)
 	case string(agent_yaml.AgentKindHosted):
 		var agentDef agent_yaml.ContainerAgent
 		if err := yaml.Unmarshal(data, &agentDef); err != nil {
@@ -495,7 +538,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 		return nil, exterrors.Validation(
 			exterrors.CodeUnsupportedAgentKind,
 			fmt.Sprintf("unsupported agent kind: %s", kind),
-			"use a supported kind: 'prompt' or 'hosted'",
+			"use a supported kind: 'hosted'",
 		)
 	}
 }
@@ -525,68 +568,7 @@ func (p *AgentServiceTargetProvider) isContainerAgent() bool {
 	return kind == string(agent_yaml.AgentKindHosted)
 }
 
-// deployPromptAgent handles deployment of prompt-based agents
-func (p *AgentServiceTargetProvider) deployPromptAgent(
-	ctx context.Context,
-	serviceConfig *azdext.ServiceConfig,
-	agentDef agent_yaml.PromptAgent,
-	azdEnv map[string]string,
-) (*azdext.ServiceDeployResult, error) {
-	// Check if environment variable is set
-	if azdEnv["AZURE_AI_PROJECT_ENDPOINT"] == "" {
-		return nil, exterrors.Dependency(
-			exterrors.CodeMissingAiProjectEndpoint,
-			"AZURE_AI_PROJECT_ENDPOINT is required: environment variable was not found in the current azd environment",
-			"run 'azd provision' or connect to an existing project via 'azd ai agent init --project-id <resource-id>'",
-		)
-	}
-
-	fmt.Fprintf(os.Stderr, "Deploying Prompt Agent\n")
-	fmt.Fprintf(os.Stderr, "======================\n")
-	fmt.Fprintf(os.Stderr, "Loaded configuration from: %s\n", p.agentDefinitionPath)
-	fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["AZURE_AI_PROJECT_ENDPOINT"])
-	fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentDef.Name)
-
-	// Create agent request (no image URL needed for prompt agents)
-	request, err := agent_yaml.CreateAgentAPIRequestFromDefinition(agentDef)
-	if err != nil {
-		return nil, exterrors.Validation(
-			exterrors.CodeInvalidAgentRequest,
-			fmt.Sprintf("failed to create agent request from definition: %s", err),
-			"verify the agent.yaml definition is correct",
-		)
-	}
-
-	// Display agent information
-	p.displayAgentInfo(request)
-
-	// Create and deploy agent
-	agentVersionResponse, err := p.createAgent(ctx, request, azdEnv)
-	if err != nil {
-		return nil, err
-	}
-
-	// Register agent info in environment
-	err = p.registerAgentEnvironmentVariables(ctx, azdEnv, serviceConfig, agentVersionResponse)
-	if err != nil {
-		return nil, err
-	}
-
-	fmt.Fprintf(os.Stderr, "Prompt agent '%s' deployed successfully!\n", agentVersionResponse.Name)
-
-	artifacts := p.deployArtifacts(
-		agentVersionResponse.Name,
-		agentVersionResponse.Version,
-		azdEnv["AZURE_AI_PROJECT_ID"],
-		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
-	)
-
-	return &azdext.ServiceDeployResult{
-		Artifacts: artifacts,
-	}, nil
-}
-
-// deployHostedAgent handles deployment of hosted container agents
+// deployHostedAgent deploys a container-based hosted agent to the Foundry service.
 func (p *AgentServiceTargetProvider) deployHostedAgent(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,
@@ -645,6 +627,8 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		)
 	}
 
+	warnDeprecatedScaleSettings(serviceConfig.Config)
+
 	var cpu, memory string
 	if foundryAgentConfig.Container != nil && foundryAgentConfig.Container.Resources != nil {
 		cpu = foundryAgentConfig.Container.Resources.Cpu
@@ -674,8 +658,8 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		)
 	}
 
-	// Check enableHostedAgentVNext from azd env first, then OS env
-	applyVnextMetadata(request, azdEnv)
+	// Set experience metadata on the request
+	applyAgentMetadata(request)
 
 	// Display agent information
 	p.displayAgentInfo(request)
@@ -687,18 +671,18 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		return nil, err
 	}
 
-	// Step 5: Start agent container (skip in vnext — the platform manages the container lifecycle)
-	if !isVnextEnabled(azdEnv) {
-		progress("Starting agent container")
-		err = p.startAgentContainer(ctx, foundryAgentConfig, agentVersionResponse, azdEnv)
-		if err != nil {
-			return nil, err
+	// Register agent info in environment
+	progress("Registering agent environment variables")
+
+	// Default to "responses" protocol when none specified in agent.yaml.
+	protocols := agentDef.Protocols
+	if len(protocols) == 0 {
+		protocols = []agent_yaml.ProtocolVersionRecord{
+			{Protocol: string(agent_api.AgentProtocolResponses), Version: "1.0.0"},
 		}
 	}
 
-	// Register agent info in environment
-	progress("Registering agent environment variables")
-	err = p.registerAgentEnvironmentVariables(ctx, azdEnv, serviceConfig, agentVersionResponse)
+	err = p.registerAgentEnvironmentVariables(ctx, azdEnv, serviceConfig, agentVersionResponse, protocols)
 	if err != nil {
 		return nil, err
 	}
@@ -708,6 +692,7 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		agentVersionResponse.Version,
 		azdEnv["AZURE_AI_PROJECT_ID"],
 		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
+		protocols,
 	)
 
 	return &azdext.ServiceDeployResult{
@@ -715,18 +700,20 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 	}, nil
 }
 
-// deployArtifacts constructs the artifacts list for deployment results
+// deployArtifacts constructs the artifacts list for deployment results.
+// It produces one endpoint artifact per displayable protocol.
 func (p *AgentServiceTargetProvider) deployArtifacts(
 	agentName string,
 	agentVersion string,
 	projectResourceID string,
 	projectEndpoint string,
+	protocols []agent_yaml.ProtocolVersionRecord,
 ) []*azdext.Artifact {
 	artifacts := []*azdext.Artifact{}
 
 	// Add playground URL
 	if projectResourceID != "" {
-		playgroundUrl, err := p.agentPlaygroundUrl(projectResourceID, agentName, agentVersion)
+		playgroundUrl, err := AgentPlaygroundURL(projectResourceID, agentName, agentVersion)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "failed to generate agent playground link")
 		} else if playgroundUrl != "" {
@@ -741,37 +728,80 @@ func (p *AgentServiceTargetProvider) deployArtifacts(
 		}
 	}
 
-	// Add agent endpoint
+	// Add agent endpoint(s) — one per displayable protocol
 	if projectEndpoint != "" {
-		agentEndpoint := p.agentEndpoint(projectEndpoint, agentName, agentVersion)
-		artifacts = append(artifacts, &azdext.Artifact{
-			Kind:         azdext.ArtifactKind_ARTIFACT_KIND_ENDPOINT,
-			Location:     agentEndpoint,
-			LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
-			Metadata: map[string]string{
-				"agentName":    agentName,
-				"agentVersion": agentVersion,
-				"label":        "Agent endpoint",
-				"clickable":    "false",
-				"note": "For information on invoking the agent, see " + output.WithLinkFormat(
-					"https://aka.ms/azd-agents-invoke"),
-			},
-		})
+		endpoints := agentInvocationEndpoints(projectEndpoint, agentName, protocols)
+		for _, ep := range endpoints {
+			artifacts = append(artifacts, &azdext.Artifact{
+				Kind:         azdext.ArtifactKind_ARTIFACT_KIND_ENDPOINT,
+				Location:     ep.URL,
+				LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
+				Metadata: map[string]string{
+					"agentName":    agentName,
+					"agentVersion": agentVersion,
+					"label":        fmt.Sprintf("Agent endpoint (%s)", ep.Protocol),
+					"clickable":    "false",
+				},
+			})
+		}
+
+		// Attach the informational note to the last endpoint only, to avoid repetition.
+		if len(endpoints) > 0 {
+			last := artifacts[len(artifacts)-1]
+			last.Metadata["note"] = "For information on invoking the agent, see " + output.WithLinkFormat(
+				"https://aka.ms/azd-agents-invoke")
+		}
 	}
 
 	return artifacts
 }
 
-// agentEndpoint constructs the agent endpoint URL from the provided parameters
-func (p *AgentServiceTargetProvider) agentEndpoint(projectEndpoint, agentName, agentVersion string) string {
-	return fmt.Sprintf("%s/agents/%s/versions/%s", projectEndpoint, agentName, agentVersion)
+// protocolEndpointInfo holds a displayable protocol label and its invocation URL.
+type protocolEndpointInfo struct {
+	Protocol string
+	URL      string
 }
 
-// agentPlaygroundUrl constructs a URL to the agent playground in the Foundry portal
-func (p *AgentServiceTargetProvider) agentPlaygroundUrl(projectResourceId, agentName, agentVersion string) (string, error) {
-	resourceId, err := arm.ParseResourceID(projectResourceId)
+// protocolPath maps an agent protocol to its URL path suffix.
+// Returns empty string for protocols that should not be displayed.
+func protocolPath(protocol string) string {
+	for _, dp := range displayableProtocols {
+		if agent_api.AgentProtocol(protocol) == dp.Protocol {
+			return dp.URLPath
+		}
+	}
+	return ""
+}
+
+// agentInvocationEndpoints builds the list of displayable invocation endpoints
+// from the agent's protocols.
+func agentInvocationEndpoints(
+	projectEndpoint string,
+	agentName string,
+	protocols []agent_yaml.ProtocolVersionRecord,
+) []protocolEndpointInfo {
+	var endpoints []protocolEndpointInfo
+	for _, p := range protocols {
+		path := protocolPath(p.Protocol)
+		if path == "" {
+			continue
+		}
+		endpoints = append(endpoints, protocolEndpointInfo{
+			Protocol: p.Protocol,
+			URL: fmt.Sprintf(
+				"%s/agents/%s/endpoint/protocols/%s?api-version=%s",
+				projectEndpoint, agentName, path, agentAPIVersion),
+		})
+	}
+	return endpoints
+}
+
+// AgentPlaygroundURL constructs a URL to the agent playground in the Foundry portal.
+// It parses the ARM resource ID to extract subscription, resource group, account, and project info.
+func AgentPlaygroundURL(projectResourceID, agentName, agentVersion string) (string, error) {
+	resourceId, err := arm.ParseResourceID(projectResourceID)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to parse project resource ID: %w", err)
 	}
 
 	// Encode subscription ID as base64 without padding for URL
@@ -782,8 +812,17 @@ func (p *AgentServiceTargetProvider) agentPlaygroundUrl(projectResourceId, agent
 	}
 
 	resourceGroup := resourceId.ResourceGroupName
-	if resourceId.Parent == nil {
-		return "", fmt.Errorf("invalid Microsoft Foundry project ID: %s", projectResourceId)
+
+	// Validate that the resource ID represents a Foundry project (has a parent account).
+	// Account-level IDs (no /projects/ child) would produce malformed playground URLs.
+	// For project-level IDs, Parent.Name is the account; for account-level IDs,
+	// Parent.Name is the resource group — we distinguish by checking ResourceType.
+	if resourceId.Parent == nil ||
+		!strings.Contains(string(resourceId.ResourceType.Type), "/") {
+		return "", fmt.Errorf(
+			"resource ID does not represent a Foundry project (missing parent account): %s",
+			projectResourceID,
+		)
 	}
 
 	accountName := resourceId.Parent.Name
@@ -791,7 +830,9 @@ func (p *AgentServiceTargetProvider) agentPlaygroundUrl(projectResourceId, agent
 
 	url := fmt.Sprintf(
 		"https://ai.azure.com/nextgen/r/%s,%s,,%s,%s/build/agents/%s/build?version=%s",
-		encodedSubscriptionId, resourceGroup, accountName, projectName, agentName, agentVersion)
+		encodedSubscriptionId, resourceGroup, accountName, projectName,
+		agentName, agentVersion,
+	)
 	return url, nil
 }
 
@@ -807,9 +848,6 @@ func (p *AgentServiceTargetProvider) createAgent(
 		p.credential,
 	)
 
-	// Use constant API version
-	const apiVersion = "2025-05-15-preview"
-
 	// Extract CreateAgentVersionRequest from CreateAgentRequest
 	versionRequest := &agent_api.CreateAgentVersionRequest{
 		Description: request.Description,
@@ -818,178 +856,43 @@ func (p *AgentServiceTargetProvider) createAgent(
 	}
 
 	// Create agent version
-	agentVersionResponse, err := agentClient.CreateAgentVersion(ctx, request.Name, versionRequest, apiVersion)
+	agentVersionResponse, err := agentClient.CreateAgentVersion(ctx, request.Name, versionRequest, agentAPIVersion)
 	if err != nil {
 		return nil, exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
 	}
 
 	fmt.Fprintf(os.Stderr, "Agent version '%s' created successfully!\n", agentVersionResponse.Name)
+
+	// Patch agent-level fields (agent_endpoint, agent_card) if present.
+	// These are agent-level properties, not version-level, so they require
+	// a separate PatchAgent call after version creation.
+	if request.AgentEndpoint != nil || request.AgentCard != nil {
+		patchRequest := &agent_api.PatchAgentRequest{
+			AgentEndpoint: request.AgentEndpoint,
+			AgentCard:     request.AgentCard,
+		}
+
+		_, err := agentClient.PatchAgent(
+			ctx, request.Name, patchRequest, agentAPIVersion,
+		)
+		if err != nil {
+			fmt.Fprintf(os.Stderr,
+				"WARNING: Agent version '%s' (version %s) was created, "+
+					"but updating agent endpoint/card failed.\n",
+				agentVersionResponse.Name,
+				agentVersionResponse.Version,
+			)
+			return nil, exterrors.ServiceFromAzure(
+				err, exterrors.OpCreateAgent,
+			)
+		}
+
+		fmt.Fprintf(os.Stderr,
+			"Agent endpoint and card updated successfully!\n",
+		)
+	}
+
 	return agentVersionResponse, nil
-}
-
-// startAgentContainer starts the hosted agent container
-func (p *AgentServiceTargetProvider) startAgentContainer(
-	ctx context.Context,
-	foundryAgentConfig *ServiceTargetAgentConfig,
-	agentVersionResponse *agent_api.AgentVersionObject,
-	azdEnv map[string]string,
-) error {
-	fmt.Fprintln(os.Stderr, "Starting Agent Container")
-	fmt.Fprintln(os.Stderr, "=======================")
-
-	// Use constants for wait configuration
-	const waitForReady = true
-	const maxWaitTime = 10 * time.Minute
-	const apiVersion = "2025-05-15-preview"
-
-	fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["AZURE_AI_PROJECT_ENDPOINT"])
-	fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentVersionResponse.Name)
-	fmt.Fprintf(os.Stderr, "Agent Version: %s\n", agentVersionResponse.Version)
-	fmt.Fprintf(os.Stderr, "Wait for Ready: %t\n", waitForReady)
-	if waitForReady {
-		fmt.Fprintf(os.Stderr, "Max Wait Time: %v\n", maxWaitTime)
-	}
-	fmt.Fprintln(os.Stderr)
-
-	// Create agent client
-	agentClient := agent_api.NewAgentClient(
-		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
-		p.credential,
-	)
-
-	var minReplicas, maxReplicas *int32
-	if foundryAgentConfig.Container != nil && foundryAgentConfig.Container.Scale != nil {
-		if foundryAgentConfig.Container.Scale.MinReplicas > 0 {
-			if foundryAgentConfig.Container.Scale.MinReplicas > math.MaxInt32 {
-				return exterrors.Validation(
-					exterrors.CodeInvalidServiceConfig,
-					fmt.Sprintf("minReplicas exceeds int32 range: %d", foundryAgentConfig.Container.Scale.MinReplicas),
-					fmt.Sprintf("set container.scale.minReplicas to a value <= %d", math.MaxInt32),
-				)
-			}
-			minReplicasInt32 := int32(foundryAgentConfig.Container.Scale.MinReplicas)
-			minReplicas = &minReplicasInt32
-		}
-		if foundryAgentConfig.Container.Scale.MaxReplicas > 0 {
-			if foundryAgentConfig.Container.Scale.MaxReplicas > math.MaxInt32 {
-				return exterrors.Validation(
-					exterrors.CodeInvalidServiceConfig,
-					fmt.Sprintf("maxReplicas exceeds int32 range: %d", foundryAgentConfig.Container.Scale.MaxReplicas),
-					fmt.Sprintf("set container.scale.maxReplicas to a value <= %d", math.MaxInt32),
-				)
-			}
-			maxReplicasInt32 := int32(foundryAgentConfig.Container.Scale.MaxReplicas)
-			maxReplicas = &maxReplicasInt32
-		}
-	}
-
-	// Build StartAgentContainerOptions
-	options := &agent_api.StartAgentContainerOptions{
-		MinReplicas: minReplicas,
-		MaxReplicas: maxReplicas,
-	}
-
-	// Start agent container
-	operation, err := agentClient.StartAgentContainer(
-		ctx, agentVersionResponse.Name, agentVersionResponse.Version, options, apiVersion)
-	if err != nil {
-		return exterrors.ServiceFromAzure(err, exterrors.OpStartContainer)
-	}
-
-	fmt.Fprintf(os.Stderr, "Agent container start operation initiated successfully!\n")
-
-	// Wait for operation to complete if requested
-	if waitForReady {
-		fmt.Fprintf(os.Stderr, "Waiting for operation to complete (timeout: %v)...\n", maxWaitTime)
-
-		// Poll the operation status
-		ticker := time.NewTicker(5 * time.Second)
-		defer ticker.Stop()
-
-		timeout := time.After(maxWaitTime)
-
-		for {
-			select {
-			case <-timeout:
-				return exterrors.Internal(
-					exterrors.CodeContainerStartTimeout,
-					fmt.Sprintf(
-						"timeout waiting for operation (id: %s) to complete after %v",
-						operation.Body.ID,
-						maxWaitTime,
-					),
-				)
-			case <-ticker.C:
-				completedOperation, err := agentClient.GetAgentContainerOperation(
-					ctx, agentVersionResponse.Name, operation.Body.ID, apiVersion)
-				if err != nil {
-					return exterrors.ServiceFromAzure(err, exterrors.OpGetContainerOperation)
-				}
-
-				// Check if operation is complete
-				if completedOperation.Status == "Failed" {
-					// Try to get reason for failure by querying container API
-					containerInfo, containerErr := agentClient.GetAgentContainer(
-						ctx, agentVersionResponse.Name, agentVersionResponse.Version, apiVersion)
-					if containerErr != nil {
-						return exterrors.Internal(
-							exterrors.CodeContainerStartFailed,
-							fmt.Sprintf(
-								"operation failed (id: %s): failed to retrieve container details: %s",
-								operation.Body.ID,
-								containerErr,
-							),
-						)
-					}
-
-					var errorMsg string
-					if containerInfo.ErrorMessage != nil && *containerInfo.ErrorMessage != "" {
-						errorMsg = fmt.Sprintf(
-							"operation failed (id: %s): container status is %q with error: %s",
-							operation.Body.ID,
-							containerInfo.Status,
-							*containerInfo.ErrorMessage,
-						)
-					} else {
-						errorMsg = fmt.Sprintf(
-							"operation failed (id: %s): container status is %q with no error details",
-							operation.Body.ID,
-							containerInfo.Status)
-					}
-
-					return exterrors.Internal(exterrors.CodeContainerStartFailed, errorMsg)
-				}
-
-				if completedOperation.Status == "Succeeded" {
-					if completedOperation.Container != nil {
-						fmt.Fprintf(
-							os.Stderr,
-							"Agent container '%s' (version: %s) operation completed! Container status: %s\n",
-							agentVersionResponse.Name,
-							agentVersionResponse.Version,
-							completedOperation.Container.Status,
-						)
-					} else {
-						fmt.Fprintf(
-							os.Stderr,
-							"Agent container '%s' (version: %s) operation completed successfully!\n",
-							agentVersionResponse.Name, agentVersionResponse.Version)
-					}
-					return nil
-				}
-
-				// Still in progress, continue polling
-				fmt.Fprintf(os.Stderr, "Operation status: %s\n", completedOperation.Status)
-			}
-		}
-	} else {
-		fmt.Fprintf(
-			os.Stderr,
-			"Agent container '%s' (version: %s) start operation initiated (ID: %s).\n",
-			agentVersionResponse.Name, agentVersionResponse.Version, operation.Body.ID)
-	}
-
-	return nil
 }
 
 // displayAgentInfo displays information about the agent being deployed
@@ -1006,19 +909,7 @@ func (p *AgentServiceTargetProvider) displayAgentInfo(request *agent_api.CreateA
 	fmt.Fprintf(os.Stderr, "Description: %s\n", description)
 
 	// Display agent-specific information
-	if promptDef, ok := request.Definition.(agent_api.PromptAgentDefinition); ok {
-		fmt.Fprintf(os.Stderr, "Model: %s\n", promptDef.Model)
-		instructions := "No instructions"
-		if promptDef.Instructions != nil {
-			inst := *promptDef.Instructions
-			if len(inst) > 50 {
-				instructions = inst[:50] + "..."
-			} else {
-				instructions = inst
-			}
-		}
-		fmt.Fprintf(os.Stderr, "Instructions: %s\n", instructions)
-	} else if imageHostedDef, ok := request.Definition.(agent_api.ImageBasedHostedAgentDefinition); ok {
+	if imageHostedDef, ok := request.Definition.(agent_api.ImageBasedHostedAgentDefinition); ok {
 		fmt.Fprintf(os.Stderr, "Image: %s\n", imageHostedDef.Image)
 		fmt.Fprintf(os.Stderr, "CPU: %s\n", imageHostedDef.CPU)
 		fmt.Fprintf(os.Stderr, "Memory: %s\n", imageHostedDef.Memory)
@@ -1027,25 +918,35 @@ func (p *AgentServiceTargetProvider) displayAgentInfo(request *agent_api.CreateA
 	fmt.Fprintln(os.Stderr)
 }
 
-// registerAgentEnvironmentVariables registers agent information as azd environment variables
+// registerAgentEnvironmentVariables registers agent information as azd environment variables.
+// Per-protocol endpoint vars are set (e.g. AGENT_{KEY}_RESPONSES_ENDPOINT).
+// The legacy single-endpoint var (AGENT_{KEY}_ENDPOINT) is cleared to avoid stale data.
 func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 	ctx context.Context,
 	azdEnv map[string]string,
 	serviceConfig *azdext.ServiceConfig,
 	agentVersionResponse *agent_api.AgentVersionObject,
+	protocols []agent_yaml.ProtocolVersionRecord,
 ) error {
-
-	endpoint := p.agentEndpoint(
-		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
-		agentVersionResponse.Name,
-		agentVersionResponse.Version,
-	)
-
 	serviceKey := p.getServiceKey(serviceConfig.Name)
 	envVars := map[string]string{
-		fmt.Sprintf("AGENT_%s_NAME", serviceKey):     agentVersionResponse.Name,
-		fmt.Sprintf("AGENT_%s_VERSION", serviceKey):  agentVersionResponse.Version,
-		fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey): endpoint,
+		fmt.Sprintf("AGENT_%s_NAME", serviceKey):    agentVersionResponse.Name,
+		fmt.Sprintf("AGENT_%s_VERSION", serviceKey): agentVersionResponse.Version,
+	}
+
+	// Clear legacy single-endpoint var so upgraded environments don't retain stale URLs.
+	legacyKey := fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey)
+	envVars[legacyKey] = ""
+
+	endpoints := agentInvocationEndpoints(
+		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
+		agentVersionResponse.Name,
+		protocols,
+	)
+	for _, ep := range endpoints {
+		suffix := strings.ToUpper(ep.Protocol)
+		key := fmt.Sprintf("AGENT_%s_%s_ENDPOINT", serviceKey, suffix)
+		envVars[key] = ep.URL
 	}
 
 	for key, value := range envVars {
@@ -1134,17 +1035,29 @@ func encodeSubscriptionID(subscriptionID string) (string, error) {
 	return strings.TrimRight(encoded, "="), nil
 }
 
-// applyVnextMetadata checks enableHostedAgentVNext from azdEnv then OS env,
-// and if truthy, sets the enableVnextExperience metadata on the request.
-func applyVnextMetadata(request *agent_api.CreateAgentRequest, azdEnv map[string]string) {
-	vnextValue := azdEnv["enableHostedAgentVNext"]
-	if vnextValue == "" {
-		vnextValue = os.Getenv("enableHostedAgentVNext")
+// applyAgentMetadata sets the enableVnextExperience metadata on the request.
+// The "enableVnextExperience" key is a server-side API contract.
+func applyAgentMetadata(request *agent_api.CreateAgentRequest) {
+	if request.Metadata == nil {
+		request.Metadata = make(map[string]string)
 	}
-	if enabled, err := strconv.ParseBool(vnextValue); err == nil && enabled {
-		if request.Metadata == nil {
-			request.Metadata = make(map[string]string)
-		}
-		request.Metadata["enableVnextExperience"] = "true"
+	request.Metadata["enableVnextExperience"] = "true"
+}
+
+// warnDeprecatedScaleSettings prints a user-visible warning if the raw service config
+// contains a container.scale section, which is no longer supported.
+func warnDeprecatedScaleSettings(config *structpb.Struct) {
+	if config == nil {
+		return
+	}
+	containerVal, ok := config.Fields["container"]
+	if !ok || containerVal.GetStructValue() == nil {
+		return
+	}
+	if _, hasScale := containerVal.GetStructValue().Fields["scale"]; hasScale {
+		fmt.Printf("%s\n", output.WithWarningFormat(
+			"WARNING: container.scale settings (minReplicas/maxReplicas) are no longer supported and will be ignored. "+
+				"Remove the container.scale section from your azure.yaml service configuration.",
+		))
 	}
 }

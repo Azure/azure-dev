@@ -4,7 +4,7 @@
 package state
 
 import (
-	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -16,7 +16,7 @@ import (
 func TestStateCacheManager_SaveAndLoad(t *testing.T) {
 	tempDir := t.TempDir()
 	manager := NewStateCacheManager(tempDir)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	cache := &StateCache{
 		SubscriptionId:    "sub-123",
@@ -46,7 +46,7 @@ func TestStateCacheManager_SaveAndLoad(t *testing.T) {
 func TestStateCacheManager_LoadNonExistent(t *testing.T) {
 	tempDir := t.TempDir()
 	manager := NewStateCacheManager(tempDir)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Load non-existent cache
 	loaded, err := manager.Load(ctx, "non-existent")
@@ -57,7 +57,7 @@ func TestStateCacheManager_LoadNonExistent(t *testing.T) {
 func TestStateCacheManager_Invalidate(t *testing.T) {
 	tempDir := t.TempDir()
 	manager := NewStateCacheManager(tempDir)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	cache := &StateCache{
 		SubscriptionId:    "sub-123",
@@ -81,8 +81,8 @@ func TestStateCacheManager_Invalidate(t *testing.T) {
 func TestStateCacheManager_TTL(t *testing.T) {
 	tempDir := t.TempDir()
 	manager := NewStateCacheManager(tempDir)
-	manager.SetTTL(500 * time.Millisecond) // Short TTL for testing (not too short to be flaky)
-	ctx := context.Background()
+	manager.SetTTL(1 * time.Hour) // Use a large TTL — we test expiration by backdating, not sleeping
+	ctx := t.Context()
 
 	cache := &StateCache{
 		SubscriptionId:    "sub-123",
@@ -93,15 +93,20 @@ func TestStateCacheManager_TTL(t *testing.T) {
 	err := manager.Save(ctx, "test-env", cache)
 	require.NoError(t, err)
 
-	// Load immediately should work
+	// Load immediately should work (cache just created, TTL is 1 hour)
 	loaded, err := manager.Load(ctx, "test-env")
 	require.NoError(t, err)
 	require.NotNil(t, loaded)
 
-	// Wait for TTL to expire
-	time.Sleep(600 * time.Millisecond)
+	// Backdate the cache's UpdatedAt to simulate TTL expiration deterministically
+	// (avoids flaky time.Sleep-based expiration that depends on wall clock behavior)
+	loaded.UpdatedAt = time.Now().Add(-2 * time.Hour)
+	data, err := json.MarshalIndent(loaded, "", "  ")
+	require.NoError(t, err)
+	err = os.WriteFile(manager.GetCachePath("test-env"), data, 0600)
+	require.NoError(t, err)
 
-	// Load after TTL should return nil
+	// Load after backdating should return nil (TTL expired)
 	loaded, err = manager.Load(ctx, "test-env")
 	require.NoError(t, err)
 	require.Nil(t, loaded)
@@ -110,7 +115,7 @@ func TestStateCacheManager_TTL(t *testing.T) {
 func TestStateCacheManager_StateChangeFile(t *testing.T) {
 	tempDir := t.TempDir()
 	manager := NewStateCacheManager(tempDir)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	cache := &StateCache{
 		SubscriptionId:    "sub-123",
@@ -130,7 +135,9 @@ func TestStateCacheManager_StateChangeFile(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, changeTime.IsZero())
 
-	// Wait a bit and invalidate to update the timestamp
+	// justified: a tiny sleep here ensures that when Invalidate writes the state-change
+	// file, its mtime may differ from the initial Save's mtime on filesystems with
+	// coarse timestamp granularity. The assertion below tolerates equal timestamps too.
 	time.Sleep(100 * time.Millisecond)
 	err = manager.Invalidate(ctx, "test-env")
 	require.NoError(t, err)

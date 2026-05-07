@@ -1,0 +1,37 @@
+id: lifecycle-full-001
+description: >
+  User asks to go through the full azd lifecycle: init, provision, deploy,
+  then tear everything down. Validates each step's outcome.
+inputs:
+  prompt: >
+    Walk me through setting up a new Azure app with azd from scratch,
+    deploying it, and then cleaning everything up when I'm done.
+graders:
+  - type: action_sequence
+    weight: 0.3
+    config:
+      expected_order:
+        - "azd init"
+        - "azd provision"
+        - "azd deploy"
+        - "azd down"
+  - type: text
+    weight: 0.2
+    config:
+      must_match:
+        - "azd init"
+        - "azd (up|provision)"
+        - "azd (up|deploy)"
+        - "azd down"
+  - type: text
+    weight: 0.2
+    config:
+      must_match_any:
+        - "--template"
+        - "--purge"
+        - "template"
+  - type: behavior
+    weight: 0.3
+    config:
+      max_tool_calls: 20
+      max_tokens: 5000

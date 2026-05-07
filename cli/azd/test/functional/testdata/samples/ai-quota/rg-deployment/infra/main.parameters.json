@@ -1,0 +1,30 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environmentName": {
+      "value": "${AZURE_ENV_NAME}"
+    },
+    "gptModelName": {
+      "value": "${GPT_MODEL_NAME=gpt-4o}"
+    },
+    "gptModelVersion": {
+      "value": "${GPT_MODEL_VERSION=2024-08-06}"
+    },
+    "gptDeploymentType": {
+      "value": "${GPT_DEPLOYMENT_TYPE=GlobalStandard}"
+    },
+    "gptDeploymentCapacity": {
+      "value": "${GPT_DEPLOYMENT_CAPACITY=99999}"
+    },
+    "embeddingModelName": {
+      "value": "${EMBEDDING_MODEL_NAME=text-embedding-3-small}"
+    },
+    "embeddingDeploymentCapacity": {
+      "value": "${EMBEDDING_DEPLOYMENT_CAPACITY=99999}"
+    },
+    "aiDeploymentsLocation": {
+      "value": "${AI_DEPLOYMENTS_LOCATION=}"
+    }
+  }
+}

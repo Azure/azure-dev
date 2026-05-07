@@ -1,6 +1,12 @@
 # Release History
 
 
+## 0.0.18-preview (Unreleased)
+
+### Breaking Changes
+
+- Removed `-e` shorthand for `--project-endpoint`; use `--project-endpoint` instead. This resolves a collision with the azd global `-e/--environment` flag.
+
 ## 0.0.17-preview (2026-02-20)
 
 - Add multi-grader support for reinforcement fine-tuning
@@ -10,7 +16,7 @@
 ## 0.0.16-preview (2026-02-03)
 
 - Simplified init flow: reduced prompts from 4 to 2 for faster setup
-- Added implicit init to all job commands: use `--subscription` (`-s`) and `--project-endpoint` (`-e`) flags to configure and run in a single command
+- Added implicit init to all job commands: use `--subscription` (`-s`) and `--project-endpoint` flags to configure and run in a single command
 
 ## 0.0.14-preview (2026-01-28)
 

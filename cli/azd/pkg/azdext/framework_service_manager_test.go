@@ -119,7 +119,7 @@ func TestFrameworkServiceManager_InitializeRequest_Success(t *testing.T) {
 	t.Parallel()
 
 	manager := createTestFrameworkServiceManager()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Set up mock provider
 	mockProvider := &MockFrameworkServiceProvider{}
@@ -152,7 +152,7 @@ func TestFrameworkServiceManager_InitializeRequest_NilServiceConfig(t *testing.T
 	t.Parallel()
 
 	manager := createTestFrameworkServiceManager()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	req := &FrameworkServiceInitializeRequest{
 		ServiceConfig: nil, // Nil service config
@@ -171,7 +171,7 @@ func TestFrameworkServiceManager_InitializeRequest_ProviderInitializationError(t
 	t.Parallel()
 
 	manager := createTestFrameworkServiceManager()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Set up mock provider with initialization error
 	expectedError := errors.New("initialization failed")
@@ -207,7 +207,7 @@ func TestFrameworkServiceManager_RequiredExternalToolsRequest_Success(t *testing
 	t.Parallel()
 
 	manager := createTestFrameworkServiceManager()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Set up mock provider
 	mockProvider := &MockFrameworkServiceProvider{}
@@ -251,7 +251,7 @@ func TestFrameworkServiceManager_RequiredExternalToolsRequest_NoProvider(t *test
 	t.Parallel()
 
 	manager := createTestFrameworkServiceManager()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Create request without initializing any provider
 	serviceConfig := createTestServiceConfigForFramework("web-service", "go")
@@ -272,7 +272,7 @@ func TestFrameworkServiceManager_RequirementsRequest_Success(t *testing.T) {
 	t.Parallel()
 
 	manager := createTestFrameworkServiceManager()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Set up mock provider
 	mockProvider := &MockFrameworkServiceProvider{}
@@ -316,7 +316,7 @@ func TestFrameworkServiceManager_RequirementsRequest_NoProvider(t *testing.T) {
 	t.Parallel()
 
 	manager := createTestFrameworkServiceManager()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Create requirements request (it has no fields)
 	req := &FrameworkServiceRequirementsRequest{}
@@ -334,7 +334,7 @@ func TestFrameworkServiceManager_RestoreRequest_NilServiceConfig(t *testing.T) {
 	t.Parallel()
 
 	manager := createTestFrameworkServiceManager()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	req := &FrameworkServiceRestoreRequest{
 		ServiceConfig:  nil, // Nil service config
@@ -354,7 +354,7 @@ func TestFrameworkServiceManager_BuildRequest_NilServiceConfig(t *testing.T) {
 	t.Parallel()
 
 	manager := createTestFrameworkServiceManager()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	req := &FrameworkServiceBuildRequest{
 		ServiceConfig:  nil, // Nil service config
@@ -374,7 +374,7 @@ func TestFrameworkServiceManager_PackageRequest_NilServiceConfig(t *testing.T) {
 	t.Parallel()
 
 	manager := createTestFrameworkServiceManager()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	req := &FrameworkServicePackageRequest{
 		ServiceConfig:  nil, // Nil service config
@@ -404,7 +404,7 @@ func TestFrameworkServiceManager_Close_ComponentManagerIntegration(t *testing.T)
 	}
 	manager.componentManager.RegisterFactory("go", factory)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	serviceConfig := createTestServiceConfigForFramework("web-service", "go")
 	_, err := manager.componentManager.GetOrCreateInstance(ctx, serviceConfig)
 	require.NoError(t, err)

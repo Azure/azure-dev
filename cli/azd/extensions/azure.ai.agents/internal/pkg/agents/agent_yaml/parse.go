@@ -4,13 +4,13 @@
 package agent_yaml
 
 import (
-	"context"
 	"fmt"
 	"regexp"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"go.yaml.in/yaml/v3"
+
+	"azureaiagent/internal/exterrors"
 )
 
 // LoadAndValidateAgentManifest parses YAML content and validates it as an AgentManifest
@@ -18,7 +18,13 @@ import (
 func LoadAndValidateAgentManifest(manifestYamlContent []byte) (*AgentManifest, error) {
 	var manifest AgentManifest
 	if err := yaml.Unmarshal(manifestYamlContent, &manifest); err != nil {
-		return nil, fmt.Errorf("YAML content does not conform to AgentManifest format: %w", err)
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			"YAML content does not conform to AgentManifest format",
+			"Ensure the agent manifest is valid YAML and conforms to the AgentManifest schema. "+
+				"An easy first check is whether the YAML contains a 'template' field. "+
+				"See https://github.com/microsoft/AgentSchema for the expected format.",
+		)
 	}
 
 	agentDef, err := ExtractAgentDefinition(manifestYamlContent)
@@ -101,23 +107,6 @@ func ExtractAgentDefinition(manifestYamlContent []byte) (any, error) {
 	}
 
 	switch agentDef.Kind {
-	case AgentKindPrompt:
-		return nil, fmt.Errorf("prompt agents not currently supported")
-
-		// var agent PromptAgent
-		// if err := yaml.Unmarshal(templateBytes, &agent); err != nil {
-		// 	return nil, fmt.Errorf("failed to unmarshal to PromptAgent: %w", err)
-		// }
-
-		// agent.AgentDefinition = agentDef
-
-		// tools, err := ExtractToolsDefinitions(template)
-		// if err != nil {
-		// 	return nil, fmt.Errorf("failed to extract tools definitions: %w", err)
-		// }
-
-		// agent.Tools = &tools
-		// return agent, nil
 	case AgentKindHosted:
 		var agent ContainerAgent
 		if err := yaml.Unmarshal(templateBytes, &agent); err != nil {
@@ -170,6 +159,18 @@ func ExtractResourceDefinitions(manifestYamlContent []byte) ([]any, error) {
 				return nil, fmt.Errorf("failed to unmarshal to ToolResource: %w", err)
 			}
 			resourceDefs = append(resourceDefs, toolDef)
+		case ResourceKindToolbox:
+			var toolboxDef ToolboxResource
+			if err := yaml.Unmarshal(resourceBytes, &toolboxDef); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal to ToolboxResource: %w", err)
+			}
+			resourceDefs = append(resourceDefs, toolboxDef)
+		case ResourceKindConnection:
+			var connDef ConnectionResource
+			if err := yaml.Unmarshal(resourceBytes, &connDef); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal to ConnectionResource: %w", err)
+			}
+			resourceDefs = append(resourceDefs, connDef)
 		default:
 			return nil, fmt.Errorf("unrecognized resource kind: %s", resourceDef.Kind)
 		}
@@ -195,6 +196,8 @@ func ExtractToolsDefinitions(template map[string]any) ([]any, error) {
 			if err := yaml.Unmarshal(toolBytes, &toolDef); err != nil {
 				return nil, fmt.Errorf("failed to unmarshal to Tool: %w", err)
 			}
+
+			toolDef.Kind = NormalizeToolKind(toolDef.Kind)
 
 			switch toolDef.Kind {
 			case ToolKindFunction:
@@ -296,6 +299,18 @@ func ExtractToolsDefinitions(template map[string]any) ([]any, error) {
 					return nil, fmt.Errorf("failed to unmarshal to CodeInterpreterTool: %w", err)
 				}
 				tools = append(tools, codeInterpreterTool)
+			case ToolKindAzureAiSearch:
+				var azureAiSearchTool AzureAISearchTool
+				if err := yaml.Unmarshal(toolBytes, &azureAiSearchTool); err != nil {
+					return nil, fmt.Errorf("failed to unmarshal to AzureAISearchTool: %w", err)
+				}
+				tools = append(tools, azureAiSearchTool)
+			case ToolKindA2APreview:
+				var a2aTool A2APreviewTool
+				if err := yaml.Unmarshal(toolBytes, &a2aTool); err != nil {
+					return nil, fmt.Errorf("failed to unmarshal to A2APreviewTool: %w", err)
+				}
+				tools = append(tools, a2aTool)
 			default:
 				return nil, fmt.Errorf("unrecognized tool kind: %s", toolDef.Kind)
 			}
@@ -364,15 +379,6 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 			}
 
 			switch AgentKind(agentDef.Kind) {
-			case AgentKindPrompt:
-				var agent PromptAgent
-				if err := yaml.Unmarshal(templateBytes, &agent); err == nil {
-					if agent.Model.Id == "" {
-						errors = append(errors, "template.model.id is required")
-					}
-				} else {
-					errors = append(errors, fmt.Sprintf("failed to unmarshal to PromptAgent: %v", err))
-				}
 			case AgentKindHosted:
 				var agent ContainerAgent
 				if err := yaml.Unmarshal(templateBytes, &agent); err == nil {
@@ -427,243 +433,4 @@ func ValidateAgentName(name string) error {
 	}
 
 	return nil
-}
-
-func ProcessPromptAgentToolsConnections(ctx context.Context, manifest *AgentManifest, azdClient *azdext.AzdClient) (*AgentManifest, error) {
-	agentDef, ok := manifest.Template.(PromptAgent)
-	if !ok {
-		return nil, fmt.Errorf("agent template is not a PromptAgent")
-	}
-
-	if agentDef.Tools != nil {
-		var tools []any
-		for _, tool := range *agentDef.Tools {
-			toolBytes, _ := yaml.Marshal(tool)
-
-			var toolDef Tool
-			if err := yaml.Unmarshal(toolBytes, &toolDef); err != nil {
-				return nil, fmt.Errorf("failed to unmarshal to Tool: %w", err)
-			}
-
-			switch toolDef.Kind {
-			case ToolKindCustom:
-				tool := tool.(CustomTool)
-
-				if tool.Connection == nil {
-					var connectionName string
-
-					// Check if ProjectConnectionID is provided in options
-					if tool.Options != nil {
-						if projectConnID, exists := tool.Options["projectConnectionId"]; exists {
-							if connIDStr, ok := projectConnID.(string); ok {
-								connectionName = connIDStr
-							}
-						}
-					}
-
-					// If no ProjectConnectionID found in options, prompt the user
-					if connectionName == "" {
-						promptResult, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-							Options: &azdext.PromptOptions{
-								Message:        fmt.Sprintf("Connection for tool %s not provided. Please enter connection name", tool.Name),
-								IgnoreHintKeys: true,
-								Required:       true,
-								DefaultValue:   string(tool.Tool.Kind),
-							},
-						})
-						if err != nil {
-							return nil, fmt.Errorf("failed to prompt for text value: %w", err)
-						}
-						connectionName = promptResult.Value
-					}
-
-					// Create a ReferenceConnection using the connectionName
-					refConnection := ReferenceConnection{
-						Connection: Connection{
-							Kind: ConnectionKindReference,
-						},
-						Name: connectionName,
-					}
-					tool.Connection = refConnection
-				}
-
-				tools = append(tools, tool)
-			case ToolKindBingGrounding:
-				tool := tool.(BingGroundingTool)
-
-				if tool.Connection == nil {
-					var connectionName string
-
-					// Check if ProjectConnectionID is provided in options
-					if tool.Options != nil {
-						if projectConnID, exists := tool.Options["projectConnectionId"]; exists {
-							if connIDStr, ok := projectConnID.(string); ok {
-								connectionName = connIDStr
-							}
-						}
-					}
-
-					// If no ProjectConnectionID found in options, prompt the user
-					if connectionName == "" {
-						promptResult, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-							Options: &azdext.PromptOptions{
-								Message:        fmt.Sprintf("Connection for tool %s not provided. Please enter connection name", tool.Name),
-								IgnoreHintKeys: true,
-								Required:       true,
-								DefaultValue:   string(tool.Tool.Kind),
-							},
-						})
-						if err != nil {
-							return nil, fmt.Errorf("failed to prompt for text value: %w", err)
-						}
-						connectionName = promptResult.Value
-					}
-
-					// Create a ReferenceConnection using the connectionName
-					refConnection := ReferenceConnection{
-						Connection: Connection{
-							Kind: ConnectionKindReference,
-						},
-						Name: connectionName,
-					}
-					tool.Connection = refConnection
-				}
-
-				tools = append(tools, tool)
-			case ToolKindFileSearch:
-				tool := tool.(FileSearchTool)
-
-				if tool.Connection == nil {
-					var connectionName string
-
-					// Check if ProjectConnectionID is provided in options
-					if tool.Options != nil {
-						if projectConnID, exists := tool.Options["projectConnectionId"]; exists {
-							if connIDStr, ok := projectConnID.(string); ok {
-								connectionName = connIDStr
-							}
-						}
-					}
-
-					// If no ProjectConnectionID found in options, prompt the user
-					if connectionName == "" {
-						promptResult, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-							Options: &azdext.PromptOptions{
-								Message:        fmt.Sprintf("Connection for tool %s not provided. Please enter connection name", tool.Name),
-								IgnoreHintKeys: true,
-								Required:       true,
-								DefaultValue:   string(tool.Tool.Kind),
-							},
-						})
-						if err != nil {
-							return nil, fmt.Errorf("failed to prompt for text value: %w", err)
-						}
-						connectionName = promptResult.Value
-					}
-
-					// Create a ReferenceConnection using the connectionName
-					refConnection := ReferenceConnection{
-						Connection: Connection{
-							Kind: ConnectionKindReference,
-						},
-						Name: connectionName,
-					}
-					tool.Connection = refConnection
-				}
-
-				tools = append(tools, tool)
-			case ToolKindMcp:
-				tool := tool.(McpTool)
-
-				if tool.Connection == nil {
-					var connectionName string
-
-					// Check if ProjectConnectionID is provided in options
-					if tool.Options != nil {
-						if projectConnID, exists := tool.Options["projectConnectionId"]; exists {
-							if connIDStr, ok := projectConnID.(string); ok {
-								connectionName = connIDStr
-							}
-						}
-					}
-
-					// If no ProjectConnectionID found in options, prompt the user
-					if connectionName == "" {
-						promptResult, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-							Options: &azdext.PromptOptions{
-								Message:        fmt.Sprintf("Connection for tool %s not provided. Please enter connection name", tool.Name),
-								IgnoreHintKeys: true,
-								Required:       true,
-								DefaultValue:   string(tool.Tool.Kind),
-							},
-						})
-						if err != nil {
-							return nil, fmt.Errorf("failed to prompt for text value: %w", err)
-						}
-						connectionName = promptResult.Value
-					}
-
-					// Create a ReferenceConnection using the connectionName
-					refConnection := ReferenceConnection{
-						Connection: Connection{
-							Kind: ConnectionKindReference,
-						},
-						Name: connectionName,
-					}
-					tool.Connection = refConnection
-				}
-
-				tools = append(tools, tool)
-			case ToolKindOpenApi:
-				tool := tool.(OpenApiTool)
-
-				if tool.Connection == nil {
-					var connectionName string
-
-					// Check if ProjectConnectionID is provided in options
-					if tool.Options != nil {
-						if projectConnID, exists := tool.Options["projectConnectionId"]; exists {
-							if connIDStr, ok := projectConnID.(string); ok {
-								connectionName = connIDStr
-							}
-						}
-					}
-
-					// If no ProjectConnectionID found in options, prompt the user
-					if connectionName == "" {
-						promptResult, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-							Options: &azdext.PromptOptions{
-								Message:        fmt.Sprintf("Connection for tool %s not provided. Please enter connection name", tool.Name),
-								IgnoreHintKeys: true,
-								Required:       true,
-								DefaultValue:   string(tool.Tool.Kind),
-							},
-						})
-						if err != nil {
-							return nil, fmt.Errorf("failed to prompt for text value: %w", err)
-						}
-						connectionName = promptResult.Value
-					}
-
-					// Create a ReferenceConnection using the connectionName
-					refConnection := ReferenceConnection{
-						Connection: Connection{
-							Kind: ConnectionKindReference,
-						},
-						Name: connectionName,
-					}
-					tool.Connection = refConnection
-				}
-
-				tools = append(tools, tool)
-			default:
-				tools = append(tools, tool)
-			}
-		}
-
-		agentDef.Tools = &tools
-		manifest.Template = agentDef
-	}
-
-	return manifest, nil
 }

@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -39,11 +38,11 @@ func setupTestEnvironment(t *testing.T, envName string, configData map[string]an
 	localDataStore := environment.NewLocalFileDataStore(azdCtx, configManager)
 
 	// Save environment
-	err := localDataStore.Save(context.Background(), env, &environment.SaveOptions{IsNew: true})
+	err := localDataStore.Save(t.Context(), env, &environment.SaveOptions{IsNew: true})
 	require.NoError(t, err)
 
 	// Create mock context and register environment manager
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.Container.MustRegisterSingleton(func() *azdcontext.AzdContext {
 		return azdCtx
 	})
@@ -65,6 +64,7 @@ func setupTestEnvironment(t *testing.T, envName string, configData map[string]an
 
 // TestEnvConfigGet tests the azd env config get command
 func TestEnvConfigGet(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name          string
 		configData    map[string]any
@@ -134,6 +134,7 @@ func TestEnvConfigGet(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			envName := "test-env"
 			azdCtx, envManager, _ := setupTestEnvironment(t, envName, tt.configData)
 
@@ -151,7 +152,7 @@ func TestEnvConfigGet(t *testing.T) {
 			)
 
 			// Run action
-			_, err := action.Run(context.Background())
+			_, err := action.Run(t.Context())
 
 			// Verify results
 			if tt.expectError {
@@ -173,6 +174,7 @@ func TestEnvConfigGet(t *testing.T) {
 
 // TestEnvConfigSet tests the azd env config set command
 func TestEnvConfigSet(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name           string
 		initialConfig  map[string]any
@@ -356,6 +358,7 @@ func TestEnvConfigSet(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			envName := "test-env"
 			azdCtx, envManager, _ := setupTestEnvironment(t, envName, tt.initialConfig)
 
@@ -370,7 +373,7 @@ func TestEnvConfigSet(t *testing.T) {
 			)
 
 			// Run action
-			_, err := action.Run(context.Background())
+			_, err := action.Run(t.Context())
 
 			// Verify results
 			if tt.expectError {
@@ -379,7 +382,7 @@ func TestEnvConfigSet(t *testing.T) {
 				require.NoError(t, err)
 
 				// Reload environment and verify config
-				reloadedEnv, err := envManager.Get(context.Background(), envName)
+				reloadedEnv, err := envManager.Get(t.Context(), envName)
 				require.NoError(t, err)
 
 				require.Equal(t, tt.expectedConfig, reloadedEnv.Config.Raw())
@@ -390,6 +393,7 @@ func TestEnvConfigSet(t *testing.T) {
 
 // TestEnvConfigUnset tests the azd env config unset command
 func TestEnvConfigUnset(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name           string
 		initialConfig  map[string]any
@@ -472,6 +476,7 @@ func TestEnvConfigUnset(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			envName := "test-env"
 			azdCtx, envManager, _ := setupTestEnvironment(t, envName, tt.initialConfig)
 
@@ -486,7 +491,7 @@ func TestEnvConfigUnset(t *testing.T) {
 			)
 
 			// Run action
-			_, err := action.Run(context.Background())
+			_, err := action.Run(t.Context())
 
 			// Verify results
 			if tt.expectError {
@@ -495,7 +500,7 @@ func TestEnvConfigUnset(t *testing.T) {
 				require.NoError(t, err)
 
 				// Reload environment and verify config
-				reloadedEnv, err := envManager.Get(context.Background(), envName)
+				reloadedEnv, err := envManager.Get(t.Context(), envName)
 				require.NoError(t, err)
 
 				require.Equal(t, tt.expectedConfig, reloadedEnv.Config.Raw())
@@ -506,13 +511,14 @@ func TestEnvConfigUnset(t *testing.T) {
 
 // TestEnvConfigNonExistentEnvironment tests error handling when environment doesn't exist
 func TestEnvConfigNonExistentEnvironment(t *testing.T) {
+	t.Parallel()
 	tempDir := t.TempDir()
 	azdCtx := azdcontext.NewAzdContextWithDirectory(tempDir)
 
 	configManager := config.NewFileConfigManager(config.NewManager())
 	localDataStore := environment.NewLocalFileDataStore(azdCtx, configManager)
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.Container.MustRegisterSingleton(func() *azdcontext.AzdContext {
 		return azdCtx
 	})
@@ -529,6 +535,7 @@ func TestEnvConfigNonExistentEnvironment(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("GetWithNonExistentEnv", func(t *testing.T) {
+		t.Parallel()
 		buf := &bytes.Buffer{}
 		flags := &envConfigGetFlags{}
 		flags.EnvironmentName = "nonexistent"
@@ -541,12 +548,13 @@ func TestEnvConfigNonExistentEnvironment(t *testing.T) {
 			[]string{"key"},
 		)
 
-		_, err := action.Run(context.Background())
+		_, err := action.Run(t.Context())
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "does not exist")
 	})
 
 	t.Run("SetWithNonExistentEnv", func(t *testing.T) {
+		t.Parallel()
 		flags := &envConfigSetFlags{}
 		flags.EnvironmentName = "nonexistent"
 		action := newEnvConfigSetAction(
@@ -556,12 +564,13 @@ func TestEnvConfigNonExistentEnvironment(t *testing.T) {
 			[]string{"key", "value"},
 		)
 
-		_, err := action.Run(context.Background())
+		_, err := action.Run(t.Context())
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "does not exist")
 	})
 
 	t.Run("UnsetWithNonExistentEnv", func(t *testing.T) {
+		t.Parallel()
 		flags := &envConfigUnsetFlags{}
 		flags.EnvironmentName = "nonexistent"
 		action := newEnvConfigUnsetAction(
@@ -571,7 +580,7 @@ func TestEnvConfigNonExistentEnvironment(t *testing.T) {
 			[]string{"key"},
 		)
 
-		_, err := action.Run(context.Background())
+		_, err := action.Run(t.Context())
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "does not exist")
 	})
@@ -579,6 +588,7 @@ func TestEnvConfigNonExistentEnvironment(t *testing.T) {
 
 // TestEnvConfigWithDefaultEnvironment tests commands work with default environment
 func TestEnvConfigWithDefaultEnvironment(t *testing.T) {
+	t.Parallel()
 	envName := "default-env"
 	azdCtx, envManager, _ := setupTestEnvironment(t, envName, map[string]any{
 		"test": "value",
@@ -589,6 +599,7 @@ func TestEnvConfigWithDefaultEnvironment(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("GetWithDefaultEnv", func(t *testing.T) {
+		t.Parallel()
 		buf := &bytes.Buffer{}
 		flags := &envConfigGetFlags{}
 		flags.EnvironmentName = "" // Use default
@@ -601,7 +612,7 @@ func TestEnvConfigWithDefaultEnvironment(t *testing.T) {
 			[]string{"test"},
 		)
 
-		_, err := action.Run(context.Background())
+		_, err := action.Run(t.Context())
 		require.NoError(t, err)
 
 		var result any
@@ -613,6 +624,7 @@ func TestEnvConfigWithDefaultEnvironment(t *testing.T) {
 
 // TestEnvConfigMultipleOperations tests multiple operations on the same environment
 func TestEnvConfigMultipleOperations(t *testing.T) {
+	t.Parallel()
 	envName := "multi-op-env"
 	azdCtx, envManager, _ := setupTestEnvironment(t, envName, map[string]any{})
 
@@ -625,7 +637,7 @@ func TestEnvConfigMultipleOperations(t *testing.T) {
 		setFlags1,
 		[]string{"app.endpoint", "https://example.com"},
 	)
-	_, err := setAction1.Run(context.Background())
+	_, err := setAction1.Run(t.Context())
 	require.NoError(t, err)
 
 	setFlags2 := &envConfigSetFlags{}
@@ -636,7 +648,7 @@ func TestEnvConfigMultipleOperations(t *testing.T) {
 		setFlags2,
 		[]string{"app.port", "8080"},
 	)
-	_, err = setAction2.Run(context.Background())
+	_, err = setAction2.Run(t.Context())
 	require.NoError(t, err)
 
 	// Verify both values exist
@@ -651,7 +663,7 @@ func TestEnvConfigMultipleOperations(t *testing.T) {
 		getFlags1,
 		[]string{"app"},
 	)
-	_, err = getAction.Run(context.Background())
+	_, err = getAction.Run(t.Context())
 	require.NoError(t, err)
 
 	var result map[string]any
@@ -669,7 +681,7 @@ func TestEnvConfigMultipleOperations(t *testing.T) {
 		unsetFlags,
 		[]string{"app.endpoint"},
 	)
-	_, err = unsetAction.Run(context.Background())
+	_, err = unsetAction.Run(t.Context())
 	require.NoError(t, err)
 
 	// Verify only port remains
@@ -684,7 +696,7 @@ func TestEnvConfigMultipleOperations(t *testing.T) {
 		getFlags2,
 		[]string{"app"},
 	)
-	_, err = getAction2.Run(context.Background())
+	_, err = getAction2.Run(t.Context())
 	require.NoError(t, err)
 
 	var result2 map[string]any

@@ -30,6 +30,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/rzip"
@@ -750,6 +751,7 @@ func (tm *Manager) createSourcesFromConfig(
 	filter sourceFilterPredicate,
 ) ([]Source, error) {
 	sources := []Source{}
+	var schemaErrors []*ErrUnsupportedRegistrySchema
 
 	for _, config := range configs {
 		if filter != nil && !filter(config) {
@@ -758,11 +760,35 @@ func (tm *Manager) createSourcesFromConfig(
 
 		source, err := tm.sourceManager.CreateSource(ctx, config)
 		if err != nil {
+			if schemaErr, ok := errors.AsType[*ErrUnsupportedRegistrySchema](err); ok {
+				log.Printf(
+					"WARNING: source '%s' has incompatible "+
+						"schema version %s, skipping",
+					config.Name, schemaErr.SchemaVersion,
+				)
+				schemaErrors = append(schemaErrors, schemaErr)
+				continue
+			}
 			log.Printf("failed to create source: %v", err)
 			continue
 		}
 
 		sources = append(sources, source)
+	}
+
+	// Only hard-fail when every source had an incompatible schema and
+	// no usable sources remain.
+	if len(sources) == 0 && len(schemaErrors) > 0 {
+		return nil, &errorhandler.ErrorWithSuggestion{
+			Err:     schemaErrors[0],
+			Message: schemaErrors[0].Error(),
+			Suggestion: "Upgrade azd to the latest version " +
+				"to use this registry",
+			Links: []errorhandler.ErrorLink{{
+				URL:   "https://aka.ms/azd/install",
+				Title: "Install/upgrade azd",
+			}},
+		}
 	}
 
 	return sources, nil

@@ -1,7 +1,8 @@
-# Design: `azd update`, Auto-Update & Channel Management
+# Design: `azd update` & Channel Management
 
 **Epic**: [#6721](https://github.com/Azure/azure-dev/issues/6721)
-**Status**: Draft
+**Status**: In Progress (once confirmed with team, will update to Final)
+**Decisions**: [#7002](https://github.com/Azure/azure-dev/issues/7002)
 
 ---
 
@@ -10,21 +11,19 @@
 Today, when a new version of `azd` is available, users see a warning message with copy/paste instructions to update manually. This design introduces:
 
 1. **`azd update`** — a command that performs the update for the user
-2. **Auto-update** — opt-in background updates applied at next startup
-3. **Channel management** — ability to switch between `stable` and `daily` builds
+2. **Channel management** — ability to switch between `stable` and `daily` builds
 
-The feature ships as a hidden command behind an alpha feature toggle (`alpha.update`) for safe rollout. When the toggle is off, there are zero changes to existing behavior — `azd version`, update notifications, everything stays exactly as it is today.
+The feature ships as a command currently in Beta. On first use, a notice is displayed. The `azd update` command is always available.
 
 ---
 
 ## Goals
 
 - Make it easy for users to update `azd` intentionally
-- Support opt-in auto-update for both stable and daily channels
-- Preserve user control (opt-out, channel selection, check interval)
+- Preserve user control (channel selection, check interval)
 - Avoid disruption to CI/CD pipelines
-- Respect platform install methods (Homebrew, winget, choco, scripts)
-- Ship safely behind a feature flag with zero impact when off
+- Respect platform install methods (MSI, Install Scripts, Homebrew, winget, choco)
+- Ship safely as a beta feature while gathering feedback
 
 ---
 
@@ -114,15 +113,14 @@ The extension manager (`pkg/extensions/manager.go`) already implements a nearly 
 
 ### 1. Configuration
 
-Three config keys via `azd config`:
+Two config keys via `azd config`:
 
 ```bash
-azd config set updates.autoUpdate on     # or "off" (default: off)
+azd config set updates.channel daily     # "stable" (default) or "daily"
+azd config set updates.checkIntervalHours 4
 ```
 
 Channel is set via `azd update --channel <stable|daily>` (which persists the choice to `updates.channel` config). Default channel is `stable`.
-
-These follow the existing convention of `"on"/"off"` for boolean-like config values (consistent with alpha features).
 
 ### 2. Daily Build Version Tracking
 
@@ -159,19 +157,16 @@ A new command (initially hidden) that updates the azd binary.
 azd update                                        # Update to latest version on current channel
 azd update --channel daily                        # Switch channel to daily and update now
 azd update --channel stable                       # Switch channel to stable and update now
-azd update --auto-update on                       # Enable auto-update
-azd update --auto-update off                      # Disable auto-update
 azd update --check-interval-hours 4               # Override check interval
 ```
 
-Flags can be combined: `azd update --channel daily --auto-update on --check-interval-hours 2`
+Flags can be combined: `azd update --channel daily --check-interval-hours 2`
 
 **Defaults**:
 
 | Flag | Config Key | Default | Values |
 |------|-----------|---------|--------|
 | `--channel` | `updates.channel` | `stable` | `stable`, `daily` |
-| `--auto-update` | `updates.autoUpdate` | `off` | `on`, `off` |
 | `--check-interval-hours` | `updates.checkIntervalHours` | `24` (stable), `4` (daily) | Any positive integer |
 
 All flags persist their values to config, which can also be set directly via `azd config set`.
@@ -180,14 +175,16 @@ All flags persist their values to config, which can also be set directly via `az
 
 | Install Method | Strategy |
 |----------------|----------|
-| `brew` | Shell out: `brew upgrade azure/azd/azd` |
+| `brew` | Homebrew cask: `brew install/upgrade --cask azure/azd/azd` (stable) or `azure/azd/azd@daily` (daily). Handles channel switching by uninstalling the current formula or cask and installing the target. |
 | `winget` | Shell out: `winget upgrade Microsoft.Azd` |
 | `choco` | Shell out: `choco upgrade azd` |
-| `install-azd.sh`, `install-azd.ps1`, `msi`, `deb`, `rpm` | Direct binary download + replace |
+| `install-azd.ps1`, `msi` (Windows) | Shell out: `install-azd.ps1` with backup/restore of running executable |
+| `install-azd.sh` (Linux/macOS) | Shell out: `install-azd.sh` with channel and install folder arguments |
+| `deb`, `rpm` | Direct binary download + replace |
 
 > **Note**: Linux `deb`/`rpm` packages are standalone files from GitHub Releases — there is no managed apt/dnf repository. These users are treated the same as script-installed users for update purposes.
 
-#### Direct Binary Update Flow (Script/MSI Users)
+#### Update Flow
 
 ```
 1. Check current channel config (stable or daily)
@@ -198,89 +195,76 @@ All flags persist their values to config, which can also be set directly via `az
    - Stable: semver comparison (blang/semver)
    - Daily: build number comparison (extracted from the daily.N suffix)
 4. If no update available → "You're up to date"
-5. Download update (with progress bar)
-   - macOS/Linux: download archive to temp dir, extract binary
-   - Windows: download MSI to temp dir
-6. Verify code signature (macOS: codesign, Windows: Get-AuthenticodeSignature)
-7. Install update
-   - macOS/Linux: replace binary at install location (sudo if needed)
-   - Windows: run MSI silently via `msiexec /i <path> /qn`
-8. Done — new version takes effect on next invocation
+5. Dispatch to the appropriate update method based on install type (see below)
 ```
 
-#### Code Signing Verification
+#### Windows Update Flow (MSI via `install-azd.ps1`)
 
-Before installing, the downloaded binary's code signature is verified:
-- **macOS**: `codesign -v --strict <binary>` — checks Apple notarization
-- **Windows**: `Get-AuthenticodeSignature` via PowerShell — checks Authenticode signature
-- **Linux**: Skipped (no standard code signing mechanism)
+Windows updates (for `install-azd.ps1`, `msi`, and other Windows install types) use the official PowerShell install script:
 
-The check is fail-safe: if `codesign` or PowerShell isn't available (unlikely), the update proceeds. But if the tool runs and the signature is explicitly invalid, the update is blocked.
+```
+1. Verify standard per-user MSI install location
+   - install-azd.ps1 installs with ALLUSERS=2 to %LOCALAPPDATA%\Programs\Azure Dev CLI
+   - If non-standard install detected → abort with guidance to reinstall
+2. Backup running executable (rename + safety copy)
+   - Rename running azd.exe to a temp backup location (frees the path; process continues via OS handle)
+   - Copy the backup back as an unlocked safety net at the original path
+   - If update fails at any point → restore original from backup automatically
+3. Run install-azd.ps1 with channel-specific arguments
+   - Script handles MSI download, verification, and installation
+4. Verify the binary was actually replaced (SHA-256 hash comparison pre vs post)
+   - If hashes match → MSI failed silently → abort and restore backup
+5. Clean up backup on success
+```
+
+#### Linux/macOS Update Flow (via `install-azd.sh`)
+
+For script-based installs (`install-azd.sh`) on Linux/macOS:
+
+```
+1. Download install-azd.sh to a temp directory with restrictive permissions (0700)
+2. Make the script executable (0500)
+3. Run: bash install-azd.sh --version <channel> --install-folder <current-install-dir> --symlink-folder ""
+   - The script handles download, checksum verification, and binary placement
+   - Passes through stdin/stdout for sudo prompts if elevation is needed
+4. Done — new version takes effect on next invocation
+```
+
+#### Homebrew Update Flow (via cask)
+
+Homebrew updates use cask operations for both stable and daily channels:
+
+```
+1. Check which cask is currently installed via `brew list --cask`
+   - `azd` = stable cask, `azd@daily` = daily cask
+2. If no cask installed (formula or other install) → uninstall and reinstall as correct cask
+3. If switching channels → uninstall current cask, install target cask
+   - daily→stable: `brew uninstall --cask azd@daily` then `brew install --cask azure/azd/azd`
+   - stable→daily: `brew uninstall --cask azd` then `brew install --cask azure/azd/azd@daily`
+4. If same channel → `brew upgrade --cask azure/azd/azd` (or `azure/azd/azd@daily`)
+```
 
 #### Elevation Handling
 
-Most install methods write to system directories requiring elevation:
-
 | Location | Needs Elevation | Update Method |
 |----------|----------------|---------------|
-| `/opt/microsoft/azd/` (Linux script) | Yes — `sudo cp` | Direct binary replacement |
-| `C:\Program Files\` (Windows MSI) | Yes — handled by MSI installer | MSI via `msiexec /i` |
-| `~/.azd/bin/` (Windows PowerShell script) | No — user-writable | MSI via `msiexec /i` |
-| Homebrew prefix | No — user-writable | Delegates to `brew upgrade azure/azd/azd` |
-| User home dirs | No | Direct binary replacement |
+| `/opt/microsoft/azd/` (Linux script) | Yes — handled by `install-azd.sh` via `sudo` | Install script |
+| `%LOCALAPPDATA%\Programs\Azure Dev CLI\` (Windows MSI) | No — per-user install | `install-azd.ps1` |
+| Homebrew prefix | No — user-writable | `brew install/upgrade --cask` |
 
-**Windows**: Updates always use the MSI installer (`msiexec /i <path> /qn`), which handles UAC elevation when installing to protected locations like `C:\Program Files\`. Downgrades between GA versions are not supported via MSI.
+**Windows**: The default per-user MSI install (`install-azd.ps1`) writes to `%LOCALAPPDATA%\Programs\Azure Dev CLI\` which does not require elevation. Non-standard installs (e.g., `C:\Program Files\`) are detected and rejected with guidance to reinstall using the standard method.
 
-**macOS/Linux (brew)**: Homebrew tracks installed assets, so azd never overwrites brew-managed binaries directly. Same-channel updates delegate to `brew upgrade azure/azd/azd`. Channel switching (stable ↔ daily) currently requires uninstalling brew and reinstalling via script. A future brew pre-release formula could enable `brew` to handle daily builds natively.
+**macOS/Linux (brew)**: Homebrew manages its own assets. Channel switching is fully supported via cask uninstall/install operations.
 
-**macOS/Linux (script)**: For `sudo`, azd passes through stdin/stdout so the user sees the standard OS password prompt. Uses `CommandRunner` (`pkg/exec/command_runner.go`) for exec.
+**macOS/Linux (script)**: The install script handles elevation internally. azd passes through stdin/stdout via `CommandRunner` (`pkg/exec/command_runner.go`) so the user sees the standard OS password prompt when `sudo` is needed.
 
-### 4. Auto-Update
+**CI/Non-Interactive Detection**: The startup version check is skipped in CI/CD environments. Uses `resource.IsRunningOnCI()` (supports GitHub Actions, Azure Pipelines, Jenkins, GitLab CI, CircleCI, etc.) and `AZD_SKIP_UPDATE_CHECK`.
 
-**Auto-update is off by default.** Background downloading and staged apply only happen when the user explicitly opts in via `azd config set updates.autoUpdate on` or `azd update --auto-update on`. Without opt-in, the only background activity is the existing version check (cheap HTTP GET) that shows a banner — no downloads occur.
-
-Additionally, auto-update is gated behind the `update` alpha feature flag during the rollout phase.
-
-When `updates.autoUpdate` is set to `on`:
-
-**Cache TTL** (channel-dependent):
-- Stable: 24h (releases are infrequent)
-- Daily: 4h (builds land frequently)
-
-Downloads only happen when a newer version exists.
-
-**Flow (two-phase: stage in background, apply on next startup)**:
-
-```
-Phase 1 — Stage (background goroutine during any azd invocation):
-1. Check AZD_SKIP_UPDATE_CHECK / CI env vars → skip if set
-2. Check version (respecting channel-dependent cache TTL)
-3. If newer version available → download to ~/.azd/staging/azd
-4. Verify checksum + code signature on the staged binary
-
-Phase 2 — Apply (on NEXT startup, before command execution):
-1. Detect staged binary at ~/.azd/staging/azd
-2. Verify staged binary integrity (macOS: codesign check — unsigned is OK, corrupted/truncated is rejected)
-3. Try to copy over current binary (with fsync to flush data to disk)
-   - If writable (user home, homebrew prefix) → swap, re-exec, show success banner
-   - If permission denied (system dir like /opt/microsoft/azd/) → skip, show warning
-   - If staged binary is invalid (e.g. truncated download) → clean up, skip silently
-4. On success: write marker file, re-exec with same args, display banner
-5. On permission denied: show "WARNING: azd version X.Y.Z has been downloaded. Run 'azd update' to apply it."
-   (The "out of date" banner is suppressed when this elevation warning is shown, to avoid duplicate warnings.)
-```
-
-The re-exec approach (`syscall.Exec` on Unix, spawn-and-exit on Windows) means the user's command runs seamlessly on the new binary — they just see a one-line success banner before their normal output.
-
-**Staged binary verification**: Before applying, `verifyStagedBinary()` checks the staged binary's integrity. On macOS, it runs `codesign -v --strict`. On Windows, it checks Authenticode signature via `Get-AuthenticodeSignature`. **Unsigned or invalid binaries are rejected** — verification hard-fails with `CodeSignatureInvalid` error and the staged binary is cleaned up. A minimum file size check (1MB) catches truncated downloads on all platforms.
-
-**Elevation-aware behavior**: Auto-update doesn't prompt for passwords. If the install location requires elevation, it gracefully falls back to a warning and the staged binary stays around for `azd update` to apply (which has the sudo fallback with an interactive prompt).
-
-**CI/Non-Interactive Detection**: Auto-update staging is skipped when running in CI/CD. Uses `resource.IsRunningOnCI()` (supports GitHub Actions, Azure Pipelines, Jenkins, GitLab CI, CircleCI, etc.) and `AZD_SKIP_UPDATE_CHECK`.
-
-Skip auto-update when:
+Skip update check when:
 - `resource.IsRunningOnCI()` returns true
 - `AZD_SKIP_UPDATE_CHECK=true`
+
+> **Note on auto-update**: Background download and auto-apply (stage in background, apply on next startup) is deferred to a future iteration. Currently, users must run `azd update` manually. See [#7002 decision](https://github.com/Azure/azure-dev/issues/7002#issuecomment-4114386136).
 
 ### 5. Channel Switching
 
@@ -298,7 +282,7 @@ azd update --channel daily
 ? Switch from daily channel (1.24.0-beta.1-daily.5935787) to stable channel (1.23.6)? [Y/n]
 ```
 
-If the user declines, the command prints "Channel switch cancelled." (no SUCCESS banner) and exits without modifying config or downloading anything. The channel config is only persisted after confirmation.
+If the user declines, the command prints "Channel switch cancelled." (no SUCCESS banner) and exits without modifying config or downloading anything. The channel config is only persisted after a successful update. If the update succeeds but the channel config save fails, a warning is shown with a remediation command (`azd config set updates.channel <channel>`) — the update itself is not rolled back.
 
 #### Cross Install Method
 
@@ -306,10 +290,12 @@ Switching between a package manager and direct installs is **not supported** via
 
 | Scenario | Guidance |
 |----------|----------|
-| Package manager → daily | Show: "Daily builds aren't available via {brew/winget/choco}. Uninstall with `{uninstall command}`, then install daily with `curl -fsSL https://aka.ms/install-azd.sh \| bash -s -- --version daily`" |
+| Package manager → daily | Show: "Daily builds aren't available via {winget/choco}. Uninstall with `{uninstall command}`, then install daily with the platform-appropriate daily install command (`install-azd.ps1` on Windows, `install-azd.sh` on Linux/macOS)" |
 | Script/daily → package manager | Show: "To switch to {brew/winget/choco}, first uninstall the current version, then install via your package manager." |
 
 This avoids the silent symlink overwrite problem that exists today with conflicting install methods.
+
+**Homebrew users**: Channel switching between stable and daily is fully supported via cask operations (see Homebrew Update Flow above). Homebrew is not treated as an external package manager — azd handles cask operations directly.
 
 **Package manager users on stable**: `azd update` delegates to the package manager. No channel switching complexity — daily isn't available through package managers.
 
@@ -326,8 +312,6 @@ azd version 1.24.0-beta.1-daily.5935787 (commit abc1234) (daily)
 ```
 
 The channel suffix is derived from the running binary's version string (presence of `daily.` pattern), not the configured channel. This means the output always reflects what the binary actually is.
-
-When the feature toggle is off, `azd version` output stays unchanged — no suffix, no channel info.
 
 ### 7. Telemetry
 
@@ -358,23 +342,21 @@ Uses the existing azd telemetry infrastructure (OpenTelemetry). New telemetry fi
 | `update.unsupportedInstallMethod` | Unknown or unsupported install method |
 | `update.channelSwitchDowngrade` | User declined when switching channels |
 | `update.skippedCI` | Skipped due to CI/non-interactive environment |
+| `update.nonStandardInstall` | Non-standard install location detected |
+| `update.configFailed` | Failed to read or persist user config |
+| `update.invalidInput` | Invalid flag value (e.g., unrecognized channel) |
 
 These codes are integrated into azd's `MapError` pipeline, so update failures show up properly in telemetry dashboards alongside other command errors.
 
-### 8. Feature Toggle (Alpha Gate)
+### 8. Feature Stage (Beta)
 
-The entire update feature ships behind `alpha.update` (default: off). This means:
+The update command is listed as **Beta** in [`feature-stages.md`](../feature-stages.md).
 
-- **Toggle off** (default): Zero behavior changes. `azd version` output is the same. Update notification shows the existing platform-specific install instructions. `azd update` returns an error telling the user to enable the feature.
-- **Toggle on** (`azd config set alpha.update on`): All update features are active — `azd update` works, auto-update stages/applies, `azd version` shows the channel suffix, notifications say "run `azd update`."
-
-This lets us roll out to internal users first, gather feedback, and fix issues before broader availability. Once stable, the toggle can be removed and the feature enabled by default.
+- `azd update` works without needing any config toggle.
+- On first use, when no `updates.*` configuration exists, a notice is displayed and a default channel is persisted so the notice only appears once.
 
 ### 9. Update Banner Suppression
 
 The startup "out of date" warning banner is suppressed during `azd update` (stale version is in-process and about to be replaced) and `azd config` (user is managing settings — showing a warning alongside config changes is noise). This is handled by `suppressUpdateBanner()` in `main.go`.
 
-When the auto-update elevation warning is shown ("azd version X.Y.Z has been downloaded. Run 'azd update' to apply it."), the "out of date" warning is also suppressed to avoid showing two redundant warnings about the same condition.
-
 ---
-

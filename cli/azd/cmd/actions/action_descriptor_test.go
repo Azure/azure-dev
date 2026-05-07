@@ -14,6 +14,7 @@ import (
 )
 
 func Test_SingleAction(t *testing.T) {
+	t.Parallel()
 	ad := actions.NewActionDescriptor("single", &actions.ActionDescriptorOptions{})
 
 	require.Nil(t, ad.Parent())
@@ -23,12 +24,14 @@ func Test_SingleAction(t *testing.T) {
 }
 
 func Test_SingleActionWithoutOptions(t *testing.T) {
+	t.Parallel()
 	ad := actions.NewActionDescriptor("single", nil)
 	require.Equal(t, "single", ad.Name)
 	require.Equal(t, "single", ad.Options.Command.Use)
 }
 
 func Test_ActionGroup(t *testing.T) {
+	t.Parallel()
 	group := actions.NewActionDescriptor("group", &actions.ActionDescriptorOptions{})
 	child := group.Add("child", &actions.ActionDescriptorOptions{})
 
@@ -40,6 +43,7 @@ func Test_ActionGroup(t *testing.T) {
 }
 
 func Test_NestedActionGroup(t *testing.T) {
+	t.Parallel()
 	root := actions.NewActionDescriptor("root", &actions.ActionDescriptorOptions{})
 	group := root.Add("group", &actions.ActionDescriptorOptions{})
 	child := group.Add("child", &actions.ActionDescriptorOptions{})
@@ -53,6 +57,7 @@ func Test_NestedActionGroup(t *testing.T) {
 }
 
 func Test_MiddlewareRegistration(t *testing.T) {
+	t.Parallel()
 	middlewarePredicate := func(descriptor *actions.ActionDescriptor) bool {
 		return !descriptor.Options.DisableTelemetry
 	}
@@ -72,6 +77,7 @@ func Test_MiddlewareRegistration(t *testing.T) {
 }
 
 func Test_CompletionRegistration(t *testing.T) {
+	t.Parallel()
 	root := actions.NewActionDescriptor("root", &actions.ActionDescriptorOptions{})
 	root.AddFlagCompletion(
 		"template",

@@ -31,14 +31,12 @@ func newServerService(server *Server) *serverService {
 func (s *serverService) InitializeAsync(
 	ctx context.Context, rootPath string, options InitializeServerOptions,
 ) (*Session, error) {
-	// TODO(azure/azure-dev#3288): Ideally the Chdir would be be something we injected into components instead of it being
-	// ambient authority. We'll get there, but for now let's also just Chdir into the root folder so places where we use
-	// a relative path will work.
-	//
-	// In practice we do not expect multiple clients with different root paths to be calling into the same server. If you
-	// need that today, launch a new server for each root path...
-	if err := os.Chdir(rootPath); err != nil {
-		return nil, err
+	if rootPath != "" {
+		if fi, err := os.Stat(rootPath); err != nil {
+			return nil, fmt.Errorf("invalid root path %q: %w", rootPath, err)
+		} else if !fi.IsDir() {
+			return nil, fmt.Errorf("root path %q is not a directory", rootPath)
+		}
 	}
 
 	id, session, err := s.server.newSession()

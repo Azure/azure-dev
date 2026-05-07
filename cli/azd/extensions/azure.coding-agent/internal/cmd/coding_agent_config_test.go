@@ -53,7 +53,7 @@ func TestCodingAgent_setCopilotEnvVars(t *testing.T) {
 		SetVariable(gomock.Any(), repoSlugForTests, "AZURE_SUBSCRIPTION_ID", "subscription-id", GitHubEnvMatcher{}).
 		Return(nil)
 
-	err := setCopilotEnvVars(context.Background(), githubCLI, repoSlugForTests, authConfiguration{
+	err := setCopilotEnvVars(t.Context(), githubCLI, repoSlugForTests, authConfiguration{
 		ClientId:       "client-id",
 		SubscriptionId: "subscription-id",
 		TenantId:       "tenant-id",
@@ -86,8 +86,7 @@ func TestCodingAgent_createFederatedCredential(t *testing.T) {
 		},
 	)
 
-	err := createFederatedCredential(context.Background(),
-		msiService,
+	err := createFederatedCredential(t.Context(), msiService,
 		repoSlugForTests,
 		"copilot-hi",
 		subscriptionID,
@@ -101,7 +100,7 @@ func TestCodingAgent_promptForRepoSlug(t *testing.T) {
 		promptClient := NewMockPromptServiceClient(ctrl)
 		gitCLI := NewMockgitCLI(ctrl)
 
-		slug, err := promptForCodingAgentRepoSlug(context.Background(), promptClient, gitCLI, "repo-root-ignored", repoSlugForTests) //nolint:lll
+		slug, err := promptForCodingAgentRepoSlug(t.Context(), promptClient, gitCLI, "repo-root-ignored", repoSlugForTests) //nolint:lll
 
 		require.Equal(t, slug, repoSlugForTests)
 		require.NoError(t, err)
@@ -123,7 +122,7 @@ func TestCodingAgent_promptForRepoSlug(t *testing.T) {
 			Value: new(int32(1)),
 		}, nil)
 
-		slug, err := promptForCodingAgentRepoSlug(context.Background(), promptClient, gitCLI, "repo-root-used", "")
+		slug, err := promptForCodingAgentRepoSlug(t.Context(), promptClient, gitCLI, "repo-root-used", "")
 
 		require.Equal(t, slug, "slugs/tawnygardenslug")
 		require.NoError(t, err)
@@ -139,7 +138,7 @@ func TestCodingAgent_loginToGitHubIfNeeded(t *testing.T) {
 			LoggedIn: true,
 		}, nil)
 
-		err := loginToGitHubIfNeeded(context.Background(), "example.com",
+		err := loginToGitHubIfNeeded(t.Context(), "example.com",
 			func(showOutput bool) (exec.CommandRunner, input.Console) {
 				require.True(t, showOutput, "we must allow showing output for `gh auth login`")
 
@@ -162,7 +161,7 @@ func TestCodingAgent_loginToGitHubIfNeeded(t *testing.T) {
 
 		ghCLIMock.EXPECT().Login(gomock.Any(), "example.com").Return(nil)
 
-		err := loginToGitHubIfNeeded(context.Background(), "example.com",
+		err := loginToGitHubIfNeeded(t.Context(), "example.com",
 			func(showOutput bool) (exec.CommandRunner, input.Console) {
 				require.True(t, showOutput, "we must allow showing output for `gh auth login`")
 
@@ -242,8 +241,7 @@ func TestCodingAgent_pickOrCreateMSI(t *testing.T) {
 			}, gomock.Any()).
 			Return(nil)
 
-		authConfig, err := pickOrCreateMSI(context.Background(),
-			promptService,
+		authConfig, err := pickOrCreateMSI(t.Context(), promptService,
 			msiService,
 			entraService,
 			resourceService,
@@ -282,8 +280,7 @@ func TestCodingAgent_pickOrCreateMSI(t *testing.T) {
 		}, gomock.Any()).
 			Return(nil)
 
-		authConfig, err := pickOrCreateMSI(context.Background(),
-			promptService,
+		authConfig, err := pickOrCreateMSI(t.Context(), promptService,
 			msiService,
 			entraService,
 			resourceService,
@@ -338,8 +335,7 @@ func TestCodingAgent_pickOrCreateMSI(t *testing.T) {
 			}, gomock.Any()).
 			Return(nil)
 
-		authConfig, err := pickOrCreateMSI(context.Background(),
-			promptService,
+		authConfig, err := pickOrCreateMSI(t.Context(), promptService,
 			msiService,
 			entraService,
 			resourceService,

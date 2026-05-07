@@ -1,3 +1,4 @@
+import: ../../.vscode/cspell.yaml
 words:
   - azureprovider
   - finetune

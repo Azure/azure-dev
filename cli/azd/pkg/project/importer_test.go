@@ -4,7 +4,6 @@
 package project
 
 import (
-	"context"
 	_ "embed"
 	"os"
 	"path/filepath"
@@ -30,7 +29,7 @@ import (
 )
 
 func TestImportManagerHasService(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockEnv := &mockenv.MockEnvManager{}
 	mockEnv.On("Save", mock.Anything, mock.Anything).Return(nil)
 
@@ -71,7 +70,7 @@ func TestImportManagerHasService(t *testing.T) {
 }
 
 func TestImportManagerHasServiceErrorNoMultipleServicesWithAppHost(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockEnv := &mockenv.MockEnvManager{}
 	mockEnv.On("Save", mock.Anything, mock.Anything).Return(nil)
 
@@ -124,7 +123,7 @@ func TestImportManagerHasServiceErrorNoMultipleServicesWithAppHost(t *testing.T)
 }
 
 func TestImportManagerHasServiceErrorAppHostMustTargetContainerApp(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockEnv := &mockenv.MockEnvManager{}
 	mockEnv.On("Save", mock.Anything, mock.Anything).Return(nil)
 
@@ -170,7 +169,7 @@ func TestImportManagerHasServiceErrorAppHostMustTargetContainerApp(t *testing.T)
 }
 
 func TestImportManagerProjectInfrastructureDefaults(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockEnv := &mockenv.MockEnvManager{}
 	mockEnv.On("Save", mock.Anything, mock.Anything).Return(nil)
 
@@ -214,7 +213,7 @@ func TestImportManagerProjectInfrastructureDefaults(t *testing.T) {
 }
 
 func TestImportManagerProjectInfrastructure(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockEnv := &mockenv.MockEnvManager{}
 	mockEnv.On("Save", mock.Anything, mock.Anything).Return(nil)
 
@@ -263,7 +262,7 @@ var aspireSimpleManifest []byte
 func TestImportManagerProjectInfrastructureAspire(t *testing.T) {
 	manifestInvokeCount := 0
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockEnv := &mockenv.MockEnvManager{}
 	mockEnv.On("Save", mock.Anything, mock.Anything).Return(nil)
 
@@ -403,7 +402,7 @@ func Test_ImportManager_ProjectInfrastructure_FromResources(t *testing.T) {
 	err := yaml.Unmarshal([]byte(prjWithResources), prjConfig)
 	require.NoError(t, err)
 
-	infra, err := im.ProjectInfrastructure(context.Background(), prjConfig)
+	infra, err := im.ProjectInfrastructure(t.Context(), prjConfig)
 	assert.NoError(t, err)
 
 	assert.NotNil(t, infra.cleanupDir, "should be a temp dir")
@@ -425,7 +424,7 @@ func TestImportManager_GenerateAllInfrastructure_FromResources(t *testing.T) {
 	err := yaml.Unmarshal([]byte(prjWithResources), prjConfig)
 	require.NoError(t, err)
 
-	projectFs, err := im.GenerateAllInfrastructure(context.Background(), prjConfig)
+	projectFs, err := im.GenerateAllInfrastructure(t.Context(), prjConfig)
 	require.NoError(t, err)
 
 	files := []string{
@@ -489,7 +488,7 @@ var aspireAppHostSniffResult string = `{
 }`
 
 func TestImportManagerServiceStableWithDependencyOrdering(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockEnv := &mockenv.MockEnvManager{}
 	mockEnv.On("Save", mock.Anything, mock.Anything).Return(nil)
 
@@ -629,7 +628,7 @@ func TestImportManagerServiceStableWithDependencyOrdering(t *testing.T) {
 }
 
 func TestImportManagerServiceStableValidation(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockEnv := &mockenv.MockEnvManager{}
 
 	manager := NewImportManager(&DotNetImporter{
@@ -710,7 +709,7 @@ func TestImportManagerServiceStableValidation(t *testing.T) {
 }
 
 func TestImportManagerServiceStableWithDependencies(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockEnv := &mockenv.MockEnvManager{}
 	mockEnv.On("Save", mock.Anything, mock.Anything).Return(nil)
 

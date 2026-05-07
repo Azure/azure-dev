@@ -4,7 +4,6 @@
 package project
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"os"
@@ -24,7 +23,7 @@ import (
 )
 
 func TestBicepOutputsWithDoubleUnderscoresAreConverted(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	var secrets map[string]string
 
@@ -79,7 +78,7 @@ func Test_DotNetProject_Init(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, file.Close())
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "dotnet user-secrets init")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -137,7 +136,7 @@ func Test_DotNetProject_Restore(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, file2.Close())
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.CommandRunner.
 		When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "dotnet restore")
@@ -178,7 +177,7 @@ func Test_DotNetProject_Build(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, file.Close())
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.CommandRunner.
 		When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "dotnet build")
@@ -234,7 +233,7 @@ func Test_DotNetProject_Package(t *testing.T) {
 
 	var packageDest string
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.CommandRunner.
 		When(func(args exec.RunArgs, command string) bool {
 			packageDest = args.Args[5]

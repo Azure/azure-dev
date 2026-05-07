@@ -4,7 +4,6 @@
 package azapi
 
 import (
-	"context"
 	"sort"
 	"testing"
 	"time"
@@ -17,7 +16,7 @@ import (
 )
 
 func Test_StandardDeployments_GenerateDeploymentName(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.Clock.Set(time.Unix(1683303710, 0))
 
 	deploymentService := NewStandardDeployments(
@@ -49,7 +48,7 @@ func Test_StandardDeployments_GenerateDeploymentName(t *testing.T) {
 	}
 }
 
-func TestResourceGroupsFromDeployment(t *testing.T) {
+func TestCreatedResourceGroupsFromDeployment(t *testing.T) {
 	t.Parallel()
 
 	t.Run("references used when no output resources", func(t *testing.T) {
@@ -87,10 +86,10 @@ func TestResourceGroupsFromDeployment(t *testing.T) {
 			},
 		}
 
-		require.Equal(t, []string{"matell-2508-rg"}, resourceGroupsFromDeployment(mockDeployment))
+		require.Equal(t, []string{"matell-2508-rg"}, createdResourceGroupsFromDeployment(mockDeployment))
 	})
 
-	t.Run("duplicate resource groups ignored", func(t *testing.T) {
+	t.Run("succeeded deployment only returns created resource groups", func(t *testing.T) {
 
 		mockDeployment := ResourceDeployment{
 			Id:   "DEPLOYMENT_ID",
@@ -101,26 +100,32 @@ func TestResourceGroupsFromDeployment(t *testing.T) {
 				},
 				{
 					ID: new(
-						"/subscriptions/sub-id/resourceGroups/groupA/Microsoft.Storage/storageAccounts/storageAccount",
+						"/subscriptions/sub-id/resourceGroups/groupA/providers/" +
+							"Microsoft.Storage/storageAccounts/storageAccount",
 					),
 				},
 				{
 					ID: new("/subscriptions/sub-id/resourceGroups/groupB"),
 				},
 				{
-					ID: new("/subscriptions/sub-id/resourceGroups/groupB/Microsoft.web/sites/test"),
+					ID: new(
+						"/subscriptions/sub-id/resourceGroups/groupB/providers/Microsoft.Web/sites/test",
+					),
 				},
 				{
-					ID: new("/subscriptions/sub-id/resourceGroups/groupC"),
+					ID: new(
+						"/subscriptions/sub-id/resourceGroups/groupExisting/providers/" +
+							"Microsoft.Storage/storageAccounts/storageAccount",
+					),
 				},
 			},
 			ProvisioningState: DeploymentProvisioningStateSucceeded,
 			Timestamp:         time.Now(),
 		}
 
-		groups := resourceGroupsFromDeployment(&mockDeployment)
+		groups := createdResourceGroupsFromDeployment(&mockDeployment)
 
 		sort.Strings(groups)
-		require.Equal(t, []string{"groupA", "groupB", "groupC"}, groups)
+		require.Equal(t, []string{"groupA", "groupB"}, groups)
 	})
 }

@@ -4,7 +4,6 @@
 package grpcserver
 
 import (
-	"context"
 	"encoding/json"
 	"testing"
 
@@ -20,7 +19,7 @@ import (
 // 3. Unsetting the value removes it.
 func Test_UserConfigService_GetSetUnset(t *testing.T) {
 	// Setup context and config manager using mocks.
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	configManager := config.NewUserConfigManager(mockContext.ConfigManager)
 	mockConfig := config.NewEmptyConfig()
 	mockContext.ConfigManager.WithConfig(mockConfig)
@@ -68,7 +67,7 @@ func Test_UserConfigService_GetSetUnset(t *testing.T) {
 // It confirms proper marshalling and unmarshalling for string config.
 func Test_UserConfigService_GetSetUnset_String(t *testing.T) {
 	// Setup context and config manager using mocks.
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	configManager := config.NewUserConfigManager(mockContext.ConfigManager)
 	mockConfig := config.NewEmptyConfig()
 	mockContext.ConfigManager.WithConfig(mockConfig)
@@ -112,7 +111,7 @@ func Test_UserConfigService_GetSetUnset_String(t *testing.T) {
 // It ensures that JSON marshalling correctly handles section data.
 func Test_UserConfigService_GetSetUnset_Section(t *testing.T) {
 	// Setup context and config manager using mocks.
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	configManager := config.NewUserConfigManager(mockContext.ConfigManager)
 	mockConfig := config.NewEmptyConfig()
 	mockContext.ConfigManager.WithConfig(mockConfig)

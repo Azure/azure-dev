@@ -10,7 +10,9 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -101,8 +103,8 @@ func Test_CLI_DeployInvalidFlags(t *testing.T) {
 }
 
 // Test_CLI_Deploy_SlotDeployment tests the deployment slot feature where:
-// - First deployment (via `azd up`) deploys to both main app and slot
-// - Subsequent deployments (via `azd deploy`) deploy only to the slot when using env var
+// - Initial deployment (via `azd up`) deploys to main app using SLOT_NAME=production
+// - Subsequent deployment (via `azd deploy`) deploys only to the staging slot using env var
 // - The main app retains the original version while slot gets the update
 func Test_CLI_Deploy_SlotDeployment(t *testing.T) {
 	t.Parallel()
@@ -122,6 +124,9 @@ func Test_CLI_Deploy_SlotDeployment(t *testing.T) {
 	cli.Env = append(cli.Env, os.Environ()...)
 	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
 
+	// Deploy to main app on initial `azd up` — explicit targeting required when slots exist
+	cli.Env = append(cli.Env, "AZD_DEPLOY_API_SLOT_NAME=production")
+
 	// Defer cleanup to delete resource group regardless of test outcome
 	// The resource group name follows the pattern: rg-{envName}
 	t.Cleanup(func() {
@@ -134,8 +139,8 @@ func Test_CLI_Deploy_SlotDeployment(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
 	require.NoError(t, err)
 
-	// Run azd up - this will provision and deploy to both main app and slot
-	t.Logf("Running azd up (provision + initial deploy)\n")
+	// Run azd up - provision and deploy to main app (SLOT_NAME=production)
+	t.Logf("Running azd up (provision + deploy to main app)\n")
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "up")
 	require.NoError(t, err)
 
@@ -172,14 +177,10 @@ func Test_CLI_Deploy_SlotDeployment(t *testing.T) {
 	// Create service health prober with session-aware retry delay
 	prober := newServiceHealthProber(httpClient, session)
 
-	// Verify both main app and slot return the original response after first deployment
+	// Verify main app returns the original response after initial deployment
 	t.Logf("Verifying main app returns original response\n")
 	err = prober.probe(t, ctx, websiteURL, originalResponse)
 	require.NoError(t, err, "main app should return original response after azd up")
-
-	t.Logf("Verifying slot returns original response\n")
-	err = prober.probe(t, ctx, slotURL, originalResponse)
-	require.NoError(t, err, "slot should return original response after azd up")
 
 	// Update the data.json file with new content
 	t.Logf("Updating data.json with new content\n")
@@ -187,10 +188,14 @@ func Test_CLI_Deploy_SlotDeployment(t *testing.T) {
 	err = os.WriteFile(dataJSONPath, []byte(updatedResponse), osutil.PermissionFile)
 	require.NoError(t, err, "failed to update data.json")
 
-	// Run azd deploy with the slot environment variable set
-	// This should deploy only to the staging slot
+	// Switch to deploying to the staging slot by replacing the env var value
 	t.Logf("Running azd deploy with AZD_DEPLOY_API_SLOT_NAME=staging\n")
-	cli.Env = append(cli.Env, "AZD_DEPLOY_API_SLOT_NAME=staging")
+	for i, e := range cli.Env {
+		if strings.HasPrefix(e, "AZD_DEPLOY_API_SLOT_NAME=") {
+			cli.Env[i] = "AZD_DEPLOY_API_SLOT_NAME=staging"
+			break
+		}
+	}
 	_, err = cli.RunCommand(ctx, "deploy", "--cwd", dir)
 	require.NoError(t, err)
 
@@ -266,4 +271,86 @@ func (p *serviceHealthProber) probe(t *testing.T, ctx context.Context, url strin
 
 		return nil
 	})
+}
+
+// Test_CLI_Deploy_StoppedWebApp tests that deploying to a stopped Linux web app
+// succeeds without hanging. This verifies the fix for https://github.com/Azure/azure-dev/issues/7708
+// where azd deploy would poll indefinitely when the web app had 0 running instances.
+func Test_CLI_Deploy_StoppedWebApp(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
+
+	session := recording.Start(t)
+
+	// This test requires live Azure resources and uses az CLI calls (webapp stop/show)
+	// that bypass the recording proxy, so it cannot be replayed from recordings.
+	if session != nil && session.Playback {
+		t.Skip("Skipping test in playback mode. This test is live only.")
+	}
+
+	envName := randomOrStoredEnvName(session)
+	t.Logf("AZURE_ENV_NAME: %s", envName)
+
+	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
+	cli.WorkingDirectory = dir
+	cli.Env = append(cli.Env, os.Environ()...)
+	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
+
+	t.Cleanup(func() {
+		cleanupRg(context.Background(), t, cli, session, "rg-"+envName)
+	})
+
+	err := copySample(dir, "webapp-stopped")
+	require.NoError(t, err, "failed expanding sample")
+
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
+	require.NoError(t, err)
+
+	// Provision the web app
+	t.Logf("Running azd provision\n")
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
+	require.NoError(t, err)
+
+	// Get the web app name and resource group from environment
+	result, err := cli.RunCommand(ctx, "env", "get-values", "-o", "json", "--cwd", dir)
+	require.NoError(t, err)
+
+	var envValues map[string]any
+	err = json.Unmarshal([]byte(result.Stdout), &envValues)
+	require.NoError(t, err)
+
+	webAppName, ok := envValues["AZURE_WEB_APP_NAME"].(string)
+	require.True(t, ok, "AZURE_WEB_APP_NAME should be in environment")
+	resourceGroup, ok := envValues["AZURE_RESOURCE_GROUP"].(string)
+	require.True(t, ok, "AZURE_RESOURCE_GROUP should be in environment")
+	t.Logf("Web app: %s, Resource group: %s", webAppName, resourceGroup)
+
+	// Stop the web app using az CLI
+	t.Logf("Stopping web app %s\n", webAppName)
+	//nolint:gosec // test-only: arguments come from test infrastructure, not user input
+	cmd := exec.CommandContext(ctx, "az", "webapp", "stop",
+		"--name", webAppName,
+		"--resource-group", resourceGroup)
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "az webapp stop failed: %s", string(out))
+
+	// Verify app is stopped
+	//nolint:gosec // test-only: arguments come from test infrastructure, not user input
+	cmd = exec.CommandContext(ctx, "az", "webapp", "show",
+		"--name", webAppName,
+		"--resource-group", resourceGroup,
+		"--query", "state", "-o", "tsv")
+	stateOut, err := cmd.CombinedOutput()
+	require.NoError(t, err, "az webapp show failed: %s", string(stateOut))
+	state := strings.TrimSpace(string(stateOut))
+	require.Equal(t, "Stopped", state, "web app should be in Stopped state")
+
+	// Deploy to the stopped web app — this should succeed without hanging
+	t.Logf("Running azd deploy to stopped web app\n")
+	_, err = cli.RunCommand(ctx, "deploy")
+	require.NoError(t, err, "azd deploy to a stopped web app should succeed")
 }

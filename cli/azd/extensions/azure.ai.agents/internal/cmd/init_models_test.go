@@ -4,10 +4,14 @@
 package cmd
 
 import (
+	"azureaiagent/internal/project"
+	"context"
+	"errors"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestResolveNoPromptCapacity(t *testing.T) {
@@ -169,6 +173,92 @@ func TestSkuPriority(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got := skuPriority(tt.skuName)
 			assert.Equal(t, tt.wantPrio, got)
+		})
+	}
+}
+
+func TestPersistFirstDeploymentName(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		deployments []project.Deployment
+		setEnvErr   error
+		wantCalled  bool
+		wantKey     string
+		wantValue   string
+		wantErr     bool
+	}{
+		{
+			name:        "empty deployments does not call setter",
+			deployments: []project.Deployment{},
+			wantCalled:  false,
+		},
+		{
+			name:        "nil deployments does not call setter",
+			deployments: nil,
+			wantCalled:  false,
+		},
+		{
+			name: "single deployment persists its name",
+			deployments: []project.Deployment{
+				{Name: "gpt-4o"},
+			},
+			wantCalled: true,
+			wantKey:    "AZURE_AI_MODEL_DEPLOYMENT_NAME",
+			wantValue:  "gpt-4o",
+		},
+		{
+			name: "multiple deployments persists first name only",
+			deployments: []project.Deployment{
+				{Name: "gpt-4o"},
+				{Name: "text-embedding-ada-002"},
+			},
+			wantCalled: true,
+			wantKey:    "AZURE_AI_MODEL_DEPLOYMENT_NAME",
+			wantValue:  "gpt-4o",
+		},
+		{
+			name: "setter error is propagated",
+			deployments: []project.Deployment{
+				{Name: "gpt-4o"},
+			},
+			setEnvErr:  errors.New("grpc unavailable"),
+			wantCalled: true,
+			wantKey:    "AZURE_AI_MODEL_DEPLOYMENT_NAME",
+			wantValue:  "gpt-4o",
+			wantErr:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var called bool
+			var gotKey, gotValue string
+
+			setter := func(_ context.Context, key, value string) error {
+				called = true
+				gotKey = key
+				gotValue = value
+				return tt.setEnvErr
+			}
+
+			err := persistFirstDeploymentName(t.Context(), setter, tt.deployments)
+
+			assert.Equal(t, tt.wantCalled, called, "setter call expectation mismatch")
+
+			if tt.wantCalled {
+				assert.Equal(t, tt.wantKey, gotKey)
+				assert.Equal(t, tt.wantValue, gotValue)
+			}
+
+			if tt.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
 		})
 	}
 }

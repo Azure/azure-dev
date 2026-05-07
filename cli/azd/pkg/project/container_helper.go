@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -39,6 +41,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/pack"
 	"github.com/benbjohnson/clock"
 	"github.com/sethvargo/go-retry"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -281,14 +284,17 @@ func (ch *ContainerHelper) Login(
 	return registryName, nil
 }
 
-var defaultCredentialsRetryDelay = 20 * time.Second
+var defaultCredentialsRetryInitialDelay = 2 * time.Second
 
 func (ch *ContainerHelper) Credentials(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
 	env *environment.Environment,
-) (*azapi.DockerCredentials, error) {
+) (_ *azapi.DockerCredentials, err error) {
+	ctx, span := tracing.Start(ctx, events.ContainerCredentialsEvent)
+	defer func() { span.EndWithStatus(err) }()
+
 	loginServer, err := ch.RegistryName(ctx, serviceConfig, env)
 	if err != nil {
 		return nil, err
@@ -297,15 +303,33 @@ func (ch *ContainerHelper) Credentials(
 	var credential *azapi.DockerCredentials
 	credentialsError := retry.Do(
 		ctx,
-		// will retry just once after 1 minute based on:
-		// https://learn.microsoft.com/en-us/azure/dns/dns-faq#how-long-does-it-take-for-dns-changes-to-take-effect-
-		retry.WithMaxRetries(3, retry.NewConstant(defaultCredentialsRetryDelay)),
+		// Use exponential backoff (2s → 4s → 8s → 16s → 32s = 62s worst case) instead of
+		// constant 20s delay. ACR credentials are typically available within seconds after
+		// resource creation, so aggressive early retries resolve most 404s quickly while
+		// preserving roughly the same total retry window for slow DNS propagation.
+		retry.WithMaxRetries(5, retry.NewExponential(defaultCredentialsRetryInitialDelay)),
 		func(ctx context.Context) error {
 			cred, err := ch.containerRegistryService.Credentials(ctx, targetResource.SubscriptionId(), loginServer)
 			if err != nil {
 				if httpErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
+					// Only retry 404 — the ACR resource may not have propagated yet.
+					// Do NOT retry 429 or 5xx here: the Azure SDK's built-in retry
+					// policy already handles those, so retrying at this layer would
+					// cause retry amplification (outer × inner).
 					if httpErr.StatusCode == 404 {
-						// Retry if the registry is not found while logging in
+						return retry.RetryableError(err)
+					}
+				}
+				// Retry transient network/DNS errors (e.g. "no such host"
+				// during DNS propagation after ACR creation). Only retry
+				// genuinely transient errors, not permanent URL/TLS failures.
+				if _, ok := errors.AsType[*url.Error](err); ok {
+					if netErr, ok := errors.AsType[net.Error](err); ok && netErr.Timeout() {
+						return retry.RetryableError(err)
+					}
+					msg := err.Error()
+					if strings.Contains(msg, "no such host") ||
+						strings.Contains(msg, "connection refused") {
 						return retry.RetryableError(err)
 					}
 				}
@@ -330,43 +354,15 @@ func (ch *ContainerHelper) Build(
 	}
 
 	dockerOptions := getDockerOptionsWithDefaults(serviceConfig.Docker)
+	resolveDockerPaths(serviceConfig, &dockerOptions)
 
-	resolveParameters := func(source []string) ([]string, error) {
-		result := make([]string, len(source))
-		for i, arg := range source {
-			evaluatedString, err := apphost.EvalString(arg, func(match string) (string, error) {
-				path := match
-				value, has := env.Config.GetString(path)
-				if !has {
-					return "", fmt.Errorf("parameter %s not found", path)
-				}
-				return value, nil
-			})
-			if err != nil {
-				return nil, err
-			}
-			result[i] = evaluatedString
-		}
-		return result, nil
-	}
-
-	dockerBuildArgs := []string{}
-	for _, arg := range dockerOptions.BuildArgs {
-		buildArgValue, err := arg.Envsubst(env.Getenv)
-		if err != nil {
-			return nil, fmt.Errorf("substituting environment variables in build args: %w", err)
-		}
-
-		dockerBuildArgs = append(dockerBuildArgs, buildArgValue)
-	}
-
-	// resolve parameters for build args and secrets
-	resolvedBuildArgs, err := resolveParameters(dockerBuildArgs)
+	resolvedBuildArgs, err := resolveDockerBuildArgs(dockerOptions.BuildArgs, env)
 	if err != nil {
 		return nil, err
 	}
 
-	resolvedBuildEnv, err := resolveParameters(dockerOptions.BuildEnv)
+	// resolve parameters for build env
+	resolvedBuildEnv, err := resolveDockerParameters(dockerOptions.BuildEnv, env)
 	if err != nil {
 		return nil, err
 	}
@@ -401,10 +397,8 @@ func (ch *ContainerHelper) Build(
 		strings.ToLower(serviceConfig.Name),
 	)
 
+	// dockerOptions.Path is already resolved to absolute by resolveDockerPaths
 	dockerfilePath := dockerOptions.Path
-	if !filepath.IsAbs(dockerfilePath) {
-		dockerfilePath = filepath.Join(serviceConfig.Path(), dockerfilePath)
-	}
 
 	_, err = os.Stat(dockerfilePath)
 	if errors.Is(err, os.ErrNotExist) && serviceConfig.Docker.Path == "" {
@@ -452,7 +446,7 @@ func (ch *ContainerHelper) Build(
 			return nil, fmt.Errorf("writing dockerfile for service %s: %w", serviceConfig.Name, err)
 		}
 		dockerFilePath = dockerfilePath
-		if dockerOptions.Context == "" || dockerOptions.Context == "." {
+		if serviceConfig.Docker.Context == "" || serviceConfig.Docker.Context == "." {
 			dockerOptions.Context = tempDir
 		}
 
@@ -477,6 +471,7 @@ func (ch *ContainerHelper) Build(
 		resolvedBuildArgs,
 		dockerOptions.BuildSecrets,
 		dockerEnv,
+		dockerOptions.Network,
 		previewerWriter,
 	)
 	ch.console.StopPreviewer(ctx, false)
@@ -499,6 +494,40 @@ func (ch *ContainerHelper) Build(
 			},
 		}},
 	}, nil
+}
+
+func resolveDockerBuildArgs(buildArgs []osutil.ExpandableString, env *environment.Environment) ([]string, error) {
+	dockerBuildArgs := make([]string, 0, len(buildArgs))
+	for _, arg := range buildArgs {
+		buildArgValue, err := arg.Envsubst(env.Getenv)
+		if err != nil {
+			return nil, fmt.Errorf("substituting environment variables in build args: %w", err)
+		}
+
+		dockerBuildArgs = append(dockerBuildArgs, buildArgValue)
+	}
+
+	return resolveDockerParameters(dockerBuildArgs, env)
+}
+
+func resolveDockerParameters(source []string, env *environment.Environment) ([]string, error) {
+	result := make([]string, len(source))
+	for i, arg := range source {
+		evaluatedString, err := apphost.EvalString(arg, func(match string) (string, error) {
+			path := match
+			value, has := env.Config.GetString(path)
+			if !has {
+				return "", fmt.Errorf("parameter %s not found", path)
+			}
+			return value, nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		result[i] = evaluatedString
+	}
+
+	return result, nil
 }
 
 func (ch *ContainerHelper) Package(
@@ -587,9 +616,14 @@ func (ch *ContainerHelper) Publish(
 	env *environment.Environment,
 	progress *async.Progress[ServiceProgress],
 	options *PublishOptions,
-) (*ServicePublishResult, error) {
+) (_ *ServicePublishResult, err error) {
+	ctx, span := tracing.Start(ctx, events.ContainerPublishEvent)
+	defer func() { span.EndWithStatus(err) }()
+	span.SetAttributes(
+		attribute.Bool("container.remotebuild", serviceConfig.Docker.RemoteBuild),
+	)
+
 	var remoteImage string
-	var err error
 
 	// Parse PublishOptions into ImageOverride
 	imageOverride, err := parseImageOverride(options)
@@ -772,19 +806,33 @@ func (ch *ContainerHelper) runRemoteBuild(
 	env *environment.Environment,
 	progress *async.Progress[ServiceProgress],
 	imageOverride *imageOverride,
-) (string, error) {
+) (_ string, err error) {
+	ctx, span := tracing.Start(ctx, events.ContainerRemoteBuildEvent)
+	defer func() { span.EndWithStatus(err) }()
+
 	dockerOptions := getDockerOptionsWithDefaults(serviceConfig.Docker)
-
-	if !filepath.IsAbs(dockerOptions.Path) {
-		dockerOptions.Path = filepath.Join(serviceConfig.Path(), dockerOptions.Path)
-	}
-
-	if !filepath.IsAbs(dockerOptions.Context) {
-		dockerOptions.Context = filepath.Join(serviceConfig.Path(), dockerOptions.Context)
-	}
+	resolveDockerPaths(serviceConfig, &dockerOptions)
 
 	if dockerOptions.Platform != "linux/amd64" {
 		return "", fmt.Errorf("remote build only supports the linux/amd64 platform")
+	}
+
+	resolvedBuildArgs, err := resolveDockerBuildArgs(dockerOptions.BuildArgs, env)
+	if err != nil {
+		return "", err
+	}
+
+	resolvedBuildEnv, err := resolveDockerParameters(dockerOptions.BuildEnv, env)
+	if err != nil {
+		return "", err
+	}
+
+	acrBuildArgs, err := dockerBuildArgsToAcrArguments(
+		resolvedBuildArgs,
+		dockerBuildArgEnvResolver(env, resolvedBuildEnv),
+	)
+	if err != nil {
+		return "", err
 	}
 
 	progress.SetProgress(NewServiceProgress("Packing remote build context"))
@@ -847,6 +895,9 @@ func (ch *ContainerHelper) runRemoteBuild(
 			Architecture: to.Ptr(armcontainerregistry.ArchitectureAmd64),
 		},
 	}
+	if len(acrBuildArgs) > 0 {
+		buildRequest.Arguments = acrBuildArgs
+	}
 
 	previewerWriter := ch.console.ShowPreviewer(ctx,
 		&input.ShowPreviewerOptions{
@@ -862,6 +913,75 @@ func (ch *ContainerHelper) runRemoteBuild(
 	}
 
 	return imageName, nil
+}
+
+func dockerBuildArgsToAcrArguments(
+	buildArgs []string,
+	lookupEnv func(string) (string, bool),
+) ([]*armcontainerregistry.Argument, error) {
+	if len(buildArgs) == 0 {
+		return nil, nil
+	}
+
+	acrArgs := make([]*armcontainerregistry.Argument, 0, len(buildArgs))
+	for i, arg := range buildArgs {
+		name, value, hasValue := strings.Cut(arg, "=")
+		if name == "" {
+			return nil, fmt.Errorf("docker build arg at index %d has an empty name", i)
+		}
+
+		if !hasValue {
+			var ok bool
+			value, ok = lookupEnv(name)
+			if !ok {
+				return nil, fmt.Errorf(
+					"resolving docker build arg %q for remote build: environment variable is not set; "+
+						"use %s=<value> or set environment variable %s",
+					name,
+					name,
+					name,
+				)
+			}
+		}
+
+		acrArgs = append(acrArgs, &armcontainerregistry.Argument{
+			Name:     new(name),
+			Value:    new(value),
+			IsSecret: new(false),
+		})
+	}
+
+	return acrArgs, nil
+}
+
+func dockerBuildArgEnvResolver(
+	env *environment.Environment,
+	buildEnv []string,
+) func(string) (string, bool) {
+	effectiveEnv := map[string]string{}
+	for _, envVar := range os.Environ() {
+		key, value, ok := strings.Cut(envVar, "=")
+		if ok {
+			effectiveEnv[key] = value
+		}
+	}
+	for _, envVar := range env.Environ() {
+		key, value, ok := strings.Cut(envVar, "=")
+		if ok {
+			effectiveEnv[key] = value
+		}
+	}
+	for _, envVar := range buildEnv {
+		key, value, ok := strings.Cut(envVar, "=")
+		if ok {
+			effectiveEnv[key] = value
+		}
+	}
+
+	return func(key string) (string, bool) {
+		value, ok := effectiveEnv[key]
+		return value, ok
+	}
 }
 
 // runDotnetPublish builds and publishes the container image using `dotnet publish`. It returns the full remote image name.
@@ -1127,4 +1247,32 @@ func getDockerOptionsWithDefaults(options DockerProjectOptions) DockerProjectOpt
 	}
 
 	return options
+}
+
+// resolveServiceDir returns the directory for the service. ServiceConfig.Path()
+// may return a file path (e.g., .csproj for Aspire/project.v1), so we check
+// whether the path is a directory and fall back to filepath.Dir if it is not.
+func resolveServiceDir(serviceConfig *ServiceConfig) string {
+	servicePath := serviceConfig.Path()
+	if info, err := os.Stat(servicePath); err == nil && info.IsDir() {
+		return servicePath
+	}
+	return filepath.Dir(servicePath)
+}
+
+// resolveDockerPaths resolves docker.path and docker.context to absolute paths.
+// Both user-specified and default paths are resolved relative to the service
+// directory to preserve backward compatibility.
+func resolveDockerPaths(serviceConfig *ServiceConfig, opts *DockerProjectOptions) {
+	serviceDir := resolveServiceDir(serviceConfig)
+	if !filepath.IsAbs(opts.Path) {
+		opts.Path = filepath.Join(serviceDir, opts.Path)
+	}
+	if !filepath.IsAbs(opts.Context) {
+		opts.Context = filepath.Join(serviceDir, opts.Context)
+	}
+	// Clean resolved paths to eliminate ".." components and normalize separators,
+	// preventing path traversal outside the expected directory tree.
+	opts.Path = filepath.Clean(opts.Path)
+	opts.Context = filepath.Clean(opts.Context)
 }

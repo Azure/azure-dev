@@ -4,7 +4,11 @@
 package auth
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"log"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,6 +17,26 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/stretchr/testify/require"
 )
+
+type sequentialSilentClient struct {
+	mockPublicClient
+	results []struct {
+		result public.AuthResult
+		err    error
+	}
+	calls int
+}
+
+func (s *sequentialSilentClient) AcquireTokenSilent(
+	_ context.Context,
+	_ []string,
+	_ ...public.AcquireSilentOption,
+) (public.AuthResult, error) {
+	step := s.results[s.calls]
+	s.calls++
+
+	return step.result, step.err
+}
 
 // spyPublicClient records the options passed to AcquireTokenSilent so tests can
 // verify that GetToken forwards TenantID correctly.
@@ -72,7 +96,7 @@ func TestAzdCredential_GetToken_ForwardsTenantID(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			spy := &spyPublicClient{}
 			account := &public.Account{HomeAccountID: "test.id"}
-			cred := newAzdCredential(spy, account, cloud.AzurePublic(), tt.credTID)
+			cred := newAzdCredential(spy, account, cloud.AzurePublic(), tt.credTID, nil)
 
 			_, err := cred.GetToken(t.Context(), policy.TokenRequestOptions{
 				Scopes:   []string{"https://graph.microsoft.com/.default"},
@@ -100,4 +124,91 @@ func TestAzdCredential_GetToken_ForwardsTenantID(t *testing.T) {
 				"resolved tenant ID should match expected value")
 		})
 	}
+}
+
+func TestAzdCredential_GetToken_LogsSuccessSnapshotAfterFailure(t *testing.T) {
+	t.Setenv(azdDebugMsalCacheEnv, "true")
+
+	cacheJSON := []byte(`{
+		"RefreshToken": {
+			"rt-key": {
+				"home_account_id": "home-1",
+				"environment": "login.microsoftonline.com",
+				"client_id": "client-1",
+				"family_id": "",
+				"secret": "super-secret-refresh-token"
+			}
+		},
+		"AccessToken": {
+			"at-key": {
+				"home_account_id": "home-1",
+				"realm": "tenant-1",
+				"cached_at": 100,
+				"expires_on": 200
+			}
+		},
+		"Account": {
+			"acct-key": {
+				"home_account_id": "home-1",
+				"realm": "tenant-1",
+				"username": "user@example.com"
+			}
+		}
+	}`)
+
+	cache := &memoryCache{
+		cache: map[string][]byte{currentUserCacheKey: cacheJSON},
+	}
+	tracer := newMsalCacheTracer(cache)
+
+	var buf bytes.Buffer
+	originalWriter := log.Writer()
+	log.SetOutput(&buf)
+	t.Cleanup(func() {
+		log.SetOutput(originalWriter)
+	})
+
+	client := &sequentialSilentClient{
+		results: []struct {
+			result public.AuthResult
+			err    error
+		}{
+			{err: errors.New("temporary failure")},
+			{
+				result: public.AuthResult{
+					AccessToken: "test-token",
+					ExpiresOn:   time.Now().Add(time.Hour),
+				},
+			},
+		},
+	}
+
+	cred := newAzdCredential(
+		client,
+		&public.Account{HomeAccountID: "test.id"},
+		cloud.AzurePublic(),
+		"",
+		tracer,
+	)
+
+	_, err := cred.GetToken(t.Context(), policy.TokenRequestOptions{
+		Scopes: []string{"https://graph.microsoft.com/.default"},
+	})
+	require.Error(t, err)
+
+	_, err = cred.GetToken(t.Context(), policy.TokenRequestOptions{
+		Scopes: []string{"https://graph.microsoft.com/.default"},
+	})
+	require.NoError(t, err)
+
+	output := buf.String()
+	require.NotEmpty(t, output)
+	require.Equal(t, 1, strings.Count(
+		output,
+		"msal-cache[after-first-acquire-token-silent-failure]: refresh_tokens=1 access_tokens=1 accounts=1",
+	))
+	require.Equal(t, 1, strings.Count(
+		output,
+		"msal-cache[after-first-acquire-token-silent]: refresh_tokens=1 access_tokens=1 accounts=1",
+	))
 }

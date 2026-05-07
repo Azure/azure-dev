@@ -28,8 +28,16 @@ module appHostInfrastructure 'appHostInfrastructure/appHostInfrastructure.module
   name: 'appHostInfrastructure'
   scope: rg
   params: {
+    apphostinfrastructure_acr_outputs_name: appHostInfrastructure_acr.outputs.name
     location: location
     userPrincipalId: principalId
+  }
+}
+module appHostInfrastructure_acr 'appHostInfrastructure-acr/appHostInfrastructure-acr.module.bicep' = {
+  name: 'appHostInfrastructure-acr'
+  scope: rg
+  params: {
+    location: location
   }
 }
 output APPHOSTINFRASTRUCTURE_AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = appHostInfrastructure.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN

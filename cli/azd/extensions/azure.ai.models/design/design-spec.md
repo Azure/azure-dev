@@ -242,7 +242,7 @@ The `create` command performs three sequential steps internally:
 Sets up an azd environment and configures the Azure AI Foundry project connection.
 
 ```bash
-azd ai models init [-e <endpoint>] [-s <subscription>] [-p <resource-id>] [-n <env-name>]
+azd ai models init [--project-endpoint <endpoint>] [-s <subscription>] [-p <resource-id>] [-n <env-name>]
 ```
 
 **Flow:**
@@ -268,7 +268,7 @@ azd ai models init [-e <endpoint>] [-s <subscription>] [-p <resource-id>] [-n <e
 | Flag | Required | Description |
 |------|----------|-------------|
 | `--subscription, -s` | No | Azure subscription ID |
-| `--project-endpoint, -e` | No | Foundry project endpoint URL |
+| `--project-endpoint` | No | Foundry project endpoint URL |
 | `--project-resource-id, -p` | No | ARM resource ID of the Foundry project |
 | `--environment, -n` | No | Name of the azd environment to use |
 
@@ -338,7 +338,7 @@ azd ai models custom create --name my-model --source ./model-weights/ --base-mod
 | `--description` | No | Human-readable description |
 | `--base-model` | No | Base model architecture tag (e.g., FW-DeepSeek-v3.1) |
 | `--azcopy-path` | No | Explicit path to azcopy binary |
-| `--project-endpoint, -e` | No | Override project endpoint (reads from env if not set) |
+| `--project-endpoint` | No | Override project endpoint (reads from env if not set) |
 | `--subscription, -s` | No | Override subscription ID |
 
 *Either `--source` or `--source-file` is required.
@@ -482,7 +482,7 @@ Custom commands resolve the project endpoint using a 3-tier priority:
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                     Project Endpoint Resolution                             │
 │                                                                             │
-│   Priority 1: Explicit --project-endpoint (-e) flag                         │
+│   Priority 1: Explicit --project-endpoint flag                              │
 │              └─► Use directly, highest priority                             │
 │                                                                             │
 │   Priority 2: azd environment variables                                     │

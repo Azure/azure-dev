@@ -12,7 +12,7 @@ Global Flags
         --debug      	: Enables debugging and diagnostics logging.
         --docs       	: Opens the documentation for azd env config set in your web browser.
     -h, --help       	: Gets help for set.
-        --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
+        --no-prompt  	: Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
 
 Find a bug? Want to let us know how we're doing? Fill out this brief survey: https://aka.ms/azure-dev/hats.
 

@@ -359,6 +359,13 @@ func convertFileChangeType(ct watch.FileChangeType) azdext.CopilotFileChangeType
 // convertSessionEvent converts a Copilot SDK SessionEvent to the proto representation.
 // Event data is marshaled to JSON then converted to google.protobuf.Struct for
 // dynamic, schema-free transport.
+//
+// Errors during data conversion are intentionally logged and swallowed rather than propagated.
+// This function feeds into a streaming response, and its signature intentionally omits an error
+// return to support graceful degradation: callers always receive a valid event with at least
+// the Type and Timestamp fields populated, even when the Data payload cannot be converted.
+// Failing the entire stream for a single malformed event would be worse than delivering
+// partial data.
 func convertSessionEvent(event agent.SessionEvent) *azdext.CopilotSessionEvent {
 	protoEvent := &azdext.CopilotSessionEvent{
 		Type:      string(event.Type),
@@ -368,19 +375,28 @@ func convertSessionEvent(event agent.SessionEvent) *azdext.CopilotSessionEvent {
 	// Marshal event.Data to JSON, then to protobuf Struct
 	jsonBytes, err := json.Marshal(event.Data)
 	if err != nil {
-		log.Printf("[copilot-service] failed to marshal event data: %v", err)
+		log.Printf(
+			"[copilot-service] failed to marshal event data for event type %q: %v",
+			event.Type, err,
+		)
 		return protoEvent
 	}
 
 	var dataMap map[string]any
 	if err := json.Unmarshal(jsonBytes, &dataMap); err != nil {
-		log.Printf("[copilot-service] failed to unmarshal event data to map: %v", err)
+		log.Printf(
+			"[copilot-service] failed to unmarshal event data to map for event type %q: %v",
+			event.Type, err,
+		)
 		return protoEvent
 	}
 
 	protoStruct, err := structpb.NewStruct(dataMap)
 	if err != nil {
-		log.Printf("[copilot-service] failed to create protobuf struct: %v", err)
+		log.Printf(
+			"[copilot-service] failed to create protobuf struct for event type %q: %v",
+			event.Type, err,
+		)
 		return protoEvent
 	}
 

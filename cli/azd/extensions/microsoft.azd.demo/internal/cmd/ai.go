@@ -104,7 +104,6 @@ func printAiModelDetails(model *azdext.AiModel) {
 	color.HiWhite("Model Details")
 	fmt.Printf("  Name: %s\n", color.CyanString(model.Name))
 	fmt.Printf("  Format: %s\n", model.Format)
-	fmt.Printf("  Status: %s\n", model.LifecycleStatus)
 
 	if len(model.Capabilities) > 0 {
 		capabilities := slices.Clone(model.Capabilities)
@@ -138,6 +137,9 @@ func printAiModelDetails(model *azdext.AiModel) {
 			defaultLabel = color.YellowString(" (default)")
 		}
 		fmt.Printf("    - Version: %s%s\n", version.Version, defaultLabel)
+		if version.LifecycleStatus != "" {
+			fmt.Printf("      Status: %s\n", version.LifecycleStatus)
+		}
 
 		skus := slices.Clone(version.Skus)
 		slices.SortFunc(skus, func(a, b *azdext.AiModelSku) int {

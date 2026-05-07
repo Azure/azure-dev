@@ -128,7 +128,7 @@ func TestServiceTargetManager_InitializeRequest_Success(t *testing.T) {
 	t.Parallel()
 
 	manager := createTestServiceTargetManager()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Set up mock provider
 	mockProvider := &MockServiceTargetProvider{}
@@ -161,7 +161,7 @@ func TestServiceTargetManager_InitializeRequest_NilServiceConfig(t *testing.T) {
 	t.Parallel()
 
 	manager := createTestServiceTargetManager()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	req := &ServiceTargetInitializeRequest{
 		ServiceConfig: nil, // Nil service config
@@ -180,7 +180,7 @@ func TestServiceTargetManager_InitializeRequest_ProviderInitializationError(t *t
 	t.Parallel()
 
 	manager := createTestServiceTargetManager()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Set up mock provider with initialization error
 	expectedError := errors.New("initialization failed")
@@ -216,7 +216,7 @@ func TestServiceTargetManager_GetTargetResourceRequest_Success(t *testing.T) {
 	t.Parallel()
 
 	manager := createTestServiceTargetManager()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Set up mock provider
 	mockProvider := &MockServiceTargetProvider{}
@@ -266,7 +266,7 @@ func TestServiceTargetManager_GetTargetResourceRequest_NoProvider(t *testing.T) 
 	t.Parallel()
 
 	manager := createTestServiceTargetManager()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Create request without initializing any provider
 	serviceConfig := createTestServiceConfigForServiceTarget("web-service", "containerapp")
@@ -291,7 +291,7 @@ func TestServiceTargetManager_EndpointsRequest_Success(t *testing.T) {
 	t.Parallel()
 
 	manager := createTestServiceTargetManager()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Set up mock provider
 	mockProvider := &MockServiceTargetProvider{}
@@ -340,7 +340,7 @@ func TestServiceTargetManager_PackageRequest_NilServiceConfig(t *testing.T) {
 	t.Parallel()
 
 	manager := createTestServiceTargetManager()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	req := &ServiceTargetPackageRequest{
 		ServiceConfig:  nil, // Nil service config
@@ -360,7 +360,7 @@ func TestServiceTargetManager_PublishRequest_NilServiceConfig(t *testing.T) {
 	t.Parallel()
 
 	manager := createTestServiceTargetManager()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	req := &ServiceTargetPublishRequest{
 		ServiceConfig:  nil, // Nil service config
@@ -382,7 +382,7 @@ func TestServiceTargetManager_DeployRequest_NilServiceConfig(t *testing.T) {
 	t.Parallel()
 
 	manager := createTestServiceTargetManager()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	req := &ServiceTargetDeployRequest{
 		ServiceConfig:  nil, // Nil service config
@@ -421,7 +421,7 @@ func TestServiceTargetManager_Close_ComponentManagerIntegration(t *testing.T) {
 	}
 	manager.componentManager.RegisterFactory("containerapp", factory)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	serviceConfig := createTestServiceConfigForServiceTarget("web-service", "containerapp")
 	_, err := manager.componentManager.GetOrCreateInstance(ctx, serviceConfig)
 	require.NoError(t, err)
@@ -445,7 +445,7 @@ func TestServiceTargetManager_MultipleRequestTypes_SameProvider(t *testing.T) {
 	t.Parallel()
 
 	manager := createTestServiceTargetManager()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Set up mock provider with multiple method expectations
 	mockProvider := &MockServiceTargetProvider{}

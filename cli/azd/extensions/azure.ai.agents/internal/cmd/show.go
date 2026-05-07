@@ -7,10 +7,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
+	"slices"
 	"text/tabwriter"
+	"time"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
+	projectpkg "azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
@@ -24,19 +28,22 @@ type showFlags struct {
 // ShowAction handles the execution of the show command.
 type ShowAction struct {
 	*AgentContext
-	flags *showFlags
+	flags     *showFlags
+	azdClient *azdext.AzdClient
+	envName   string
+	// serviceKey is the uppercase/underscored form of the service name,
+	// used to look up per-service env vars (e.g. AGENT_{KEY}_RESPONSES_ENDPOINT).
+	serviceKey string
 }
 
-func newShowCommand() *cobra.Command {
+func newShowCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &showFlags{}
+	extCtx = ensureExtensionContext(extCtx)
 
 	cmd := &cobra.Command{
 		Use:   "show [name]",
-		Short: "Show the status of a hosted agent deployment.",
-		Long: `Show the status of a hosted agent deployment.
-
-Retrieves the runtime status of a hosted agent container, including its current state,
-replica configuration, and any error messages.
+		Short: "Show the status of a hosted agent.",
+		Long: `Show the status of a hosted agent.
 
 The agent name and version are resolved automatically from the azure.yaml service
 configuration and the current azd environment. Optionally specify the service name
@@ -54,8 +61,9 @@ configuration and the current azd environment. Optionally specify the service na
 			if len(args) > 0 {
 				flags.name = args[0]
 			}
+			flags.output = extCtx.OutputFormat
+
 			ctx := azdext.WithAccessToken(cmd.Context())
-			setupDebugLogging(cmd.Flags())
 
 			azdClient, err := azdext.NewAzdClient()
 			if err != nil {
@@ -63,7 +71,7 @@ configuration and the current azd environment. Optionally specify the service na
 			}
 			defer azdClient.Close()
 
-			info, err := resolveAgentServiceFromProject(ctx, azdClient, flags.name, rootFlags.NoPrompt)
+			info, err := resolveAgentServiceFromProject(ctx, azdClient, flags.name, extCtx.NoPrompt)
 			if err != nil {
 				return err
 			}
@@ -88,18 +96,38 @@ configuration and the current azd environment. Optionally specify the service na
 				return err
 			}
 
+			// Resolve the current environment name for env var lookups
+			var envName string
+			if envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{}); err == nil {
+				envName = envResp.Environment.Name
+			}
+
 			action := &ShowAction{
 				AgentContext: agentContext,
 				flags:        flags,
+				azdClient:    azdClient,
+				envName:      envName,
+				serviceKey:   toServiceKey(info.ServiceName),
 			}
 
 			return action.Run(ctx)
 		},
 	}
 
-	cmd.Flags().StringVarP(&flags.output, "output", "o", "json", "Output format (json or table)")
+	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
+		Name:          "output",
+		AllowedValues: []string{"json", "table"},
+		Default:       "json",
+	})
 
 	return cmd
+}
+
+// showResult wraps the API response with additional computed links.
+type showResult struct {
+	*agent_api.AgentVersionObject
+	PlaygroundURL string            `json:"playground_url,omitempty"`
+	Endpoints     map[string]string `json:"agent_endpoints,omitempty"`
 }
 
 // Run executes the show command logic.
@@ -109,60 +137,153 @@ func (a *ShowAction) Run(ctx context.Context) error {
 		return err
 	}
 
-	container, err := agentClient.GetAgentContainer(ctx, a.Name, a.Version, DefaultAgentAPIVersion)
+	version, err := agentClient.GetAgentVersion(
+		ctx, a.Name, a.Version, DefaultAgentAPIVersion,
+	)
 	if err != nil {
-		return fmt.Errorf("failed to get agent container status: %w", err)
+		return fmt.Errorf("failed to get agent version: %w", err)
 	}
+
+	result := &showResult{AgentVersionObject: version}
+
+	// Resolve playground URL (best-effort)
+	result.PlaygroundURL = a.resolvePlaygroundURL(ctx)
+
+	// Resolve deployed endpoint URLs from env vars (best-effort)
+	result.Endpoints = a.resolveEndpointURLs(ctx)
 
 	switch a.flags.output {
 	case "table":
-		return printStatusTable(container)
+		return printShowResultTable(result)
 	default:
-		return printStatusJSON(container)
+		return printShowResultJSON(result)
 	}
 }
 
-func printStatusJSON(container *agent_api.AgentContainerObject) error {
-	jsonBytes, err := json.MarshalIndent(container, "", "  ")
+// resolvePlaygroundURL reads AZURE_AI_PROJECT_ID from the azd environment
+// and constructs the Foundry portal playground URL. Returns empty string on failure.
+func (a *ShowAction) resolvePlaygroundURL(ctx context.Context) string {
+	if a.azdClient == nil || a.envName == "" {
+		return ""
+	}
+
+	v, err := a.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: a.envName,
+		Key:     "AZURE_AI_PROJECT_ID",
+	})
 	if err != nil {
-		return fmt.Errorf("failed to marshal status to JSON: %w", err)
+		return ""
+	}
+	if v.Value == "" {
+		return ""
+	}
+
+	playgroundURL, err := projectpkg.AgentPlaygroundURL(v.Value, a.Name, a.Version)
+	if err != nil {
+		return ""
+	}
+
+	return playgroundURL
+}
+
+// resolveEndpointURLs reads per-protocol endpoint env vars
+// (e.g. AGENT_{KEY}_RESPONSES_ENDPOINT) from the azd environment.
+// Falls back to the legacy single-endpoint var (AGENT_{KEY}_ENDPOINT)
+// for environments deployed before per-protocol vars were introduced.
+// Returns a map of protocol label to URL for endpoints that are set.
+func (a *ShowAction) resolveEndpointURLs(ctx context.Context) map[string]string {
+	if a.azdClient == nil || a.envName == "" || a.serviceKey == "" {
+		return nil
+	}
+
+	// Use the canonical protocol list from the project package
+	protocolSuffixes := projectpkg.DisplayableProtocolEnvSuffixes()
+
+	endpoints := make(map[string]string)
+	for _, ps := range protocolSuffixes {
+		key := fmt.Sprintf("AGENT_%s_%s_ENDPOINT", a.serviceKey, ps.Suffix)
+		v, err := a.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+			EnvName: a.envName,
+			Key:     key,
+		})
+		if err != nil || v.Value == "" {
+			continue
+		}
+		endpoints[ps.Label] = v.Value
+	}
+
+	// Fall back to legacy single-endpoint var for older deployments
+	if len(endpoints) == 0 {
+		legacyKey := fmt.Sprintf("AGENT_%s_ENDPOINT", a.serviceKey)
+		v, err := a.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+			EnvName: a.envName,
+			Key:     legacyKey,
+		})
+		if err == nil && v.Value != "" {
+			endpoints["Agent"] = v.Value
+		}
+	}
+
+	if len(endpoints) == 0 {
+		return nil
+	}
+	return endpoints
+}
+
+func printShowResultJSON(result *showResult) error {
+	jsonBytes, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal show result to JSON: %w", err)
 	}
 	fmt.Println(string(jsonBytes))
 	return nil
 }
 
-func printStatusTable(container *agent_api.AgentContainerObject) error {
+func printShowResultTable(result *showResult) error {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "FIELD\tVALUE")
 	fmt.Fprintln(w, "-----\t-----")
 
-	fmt.Fprintf(w, "ID\t%s\n", container.ID)
-	fmt.Fprintf(w, "Status\t%s\n", container.Status)
-	if container.MinReplicas != nil {
-		fmt.Fprintf(w, "Min Replicas\t%d\n", *container.MinReplicas)
+	version := result.AgentVersionObject
+
+	fmt.Fprintf(w, "ID\t%s\n", version.ID)
+	fmt.Fprintf(w, "Name\t%s\n", version.Name)
+	fmt.Fprintf(w, "Version\t%s\n", version.Version)
+	if version.Status != "" {
+		fmt.Fprintf(w, "Status\t%s\n", version.Status)
 	}
-	if container.MaxReplicas != nil {
-		fmt.Fprintf(w, "Max Replicas\t%d\n", *container.MaxReplicas)
+	if version.Description != nil {
+		fmt.Fprintf(w, "Description\t%s\n", *version.Description)
 	}
-	fmt.Fprintf(w, "Created At\t%s\n", container.CreatedAt)
-	fmt.Fprintf(w, "Updated At\t%s\n", container.UpdatedAt)
-	if container.ErrorMessage != nil {
-		fmt.Fprintf(w, "Error Message\t%s\n", *container.ErrorMessage)
+	if version.CreatedAt != 0 {
+		ts := time.Unix(version.CreatedAt, 0).UTC().Format(time.RFC3339)
+		fmt.Fprintf(w, "Created At\t%s\n", ts)
+	}
+	if version.AgentGUID != "" {
+		fmt.Fprintf(w, "Agent GUID\t%s\n", version.AgentGUID)
+	}
+	if version.InstanceIdentity != nil {
+		fmt.Fprintf(w, "Instance Identity Principal ID\t%s\n", version.InstanceIdentity.PrincipalID)
+		fmt.Fprintf(w, "Instance Identity Client ID\t%s\n", version.InstanceIdentity.ClientID)
+	}
+	if version.Blueprint != nil {
+		fmt.Fprintf(w, "Blueprint Principal ID\t%s\n", version.Blueprint.PrincipalID)
+		fmt.Fprintf(w, "Blueprint Client ID\t%s\n", version.Blueprint.ClientID)
+	}
+	if version.BlueprintReference != nil {
+		fmt.Fprintf(w, "Blueprint Reference Type\t%s\n", version.BlueprintReference.Type)
+		fmt.Fprintf(w, "Blueprint Reference ID\t%s\n", version.BlueprintReference.BlueprintID)
+	}
+	for k, v := range version.Metadata {
+		fmt.Fprintf(w, "Metadata[%s]\t%s\n", k, v)
 	}
 
-	if container.Container != nil {
-		c := container.Container
-		fmt.Fprintf(w, "Health State\t%s\n", c.HealthState)
-		fmt.Fprintf(w, "Provisioning State\t%s\n", c.ProvisioningState)
-		fmt.Fprintf(w, "Container State\t%s\n", c.State)
-		fmt.Fprintf(w, "Container Updated On\t%s\n", c.UpdatedOn)
-		for i, r := range c.Replicas {
-			fmt.Fprintf(w, "Replica %d Name\t%s\n", i+1, r.Name)
-			fmt.Fprintf(w, "Replica %d State\t%s\n", i+1, r.State)
-			if r.ContainerState != "" {
-				fmt.Fprintf(w, "Replica %d Container State\t%s\n", i+1, r.ContainerState)
-			}
-		}
+	// Display playground and endpoint links
+	if result.PlaygroundURL != "" {
+		fmt.Fprintf(w, "Playground URL\t%s\n", result.PlaygroundURL)
+	}
+	for _, label := range slices.Sorted(maps.Keys(result.Endpoints)) {
+		fmt.Fprintf(w, "Endpoint (%s)\t%s\n", label, result.Endpoints[label])
 	}
 
 	return w.Flush()

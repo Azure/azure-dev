@@ -1,10 +1,14 @@
 {
-  "$schema": "https://json.schemastore.org/aspire-8.0.json",
   "resources": {
+    "appHostInfrastructure-acr": {
+      "type": "azure.bicep.v0",
+      "path": "appHostInfrastructure-acr.module.bicep"
+    },
     "appHostInfrastructure": {
       "type": "azure.bicep.v0",
       "path": "appHostInfrastructure.module.bicep",
       "params": {
+        "apphostinfrastructure_acr_outputs_name": "{appHostInfrastructure-acr.outputs.name}",
         "userPrincipalId": ""
       }
     },
@@ -25,7 +29,7 @@
       "path": "../AspireAzdTests.ApiService/AspireAzdTests.ApiService.csproj",
       "deployment": {
         "type": "azure.bicep.v0",
-        "path": "apiservice.module.bicep",
+        "path": "apiservice-containerapp.module.bicep",
         "params": {
           "apphostinfrastructure_outputs_azure_container_apps_environment_default_domain": "{appHostInfrastructure.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN}",
           "apphostinfrastructure_outputs_azure_container_apps_environment_id": "{appHostInfrastructure.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_ID}",
@@ -36,8 +40,6 @@
         }
       },
       "env": {
-        "OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EXCEPTION_LOG_ATTRIBUTES": "true",
-        "OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EVENT_LOG_ATTRIBUTES": "true",
         "OTEL_DOTNET_EXPERIMENTAL_OTLP_RETRY": "in_memory",
         "ASPNETCORE_FORWARDEDHEADERS_ENABLED": "true",
         "HTTP_PORTS": "{apiservice.bindings.http.targetPort}"
@@ -60,7 +62,7 @@
       "path": "../AspireAzdTests.Worker/AspireAzdTests.Worker.csproj",
       "deployment": {
         "type": "azure.bicep.v0",
-        "path": "worker.module.bicep",
+        "path": "worker-containerapp.module.bicep",
         "params": {
           "apphostinfrastructure_outputs_azure_container_apps_environment_default_domain": "{appHostInfrastructure.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN}",
           "apphostinfrastructure_outputs_azure_container_apps_environment_id": "{appHostInfrastructure.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_ID}",
@@ -70,8 +72,6 @@
         }
       },
       "env": {
-        "OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EXCEPTION_LOG_ATTRIBUTES": "true",
-        "OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EVENT_LOG_ATTRIBUTES": "true",
         "OTEL_DOTNET_EXPERIMENTAL_OTLP_RETRY": "in_memory"
       }
     },
@@ -80,7 +80,7 @@
       "path": "../AspireAzdTests.Web/AspireAzdTests.Web.csproj",
       "deployment": {
         "type": "azure.bicep.v0",
-        "path": "webfrontend.module.bicep",
+        "path": "webfrontend-containerapp.module.bicep",
         "params": {
           "apphostinfrastructure_outputs_azure_container_apps_environment_default_domain": "{appHostInfrastructure.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN}",
           "apphostinfrastructure_outputs_azure_container_apps_environment_id": "{appHostInfrastructure.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_ID}",
@@ -92,12 +92,12 @@
         }
       },
       "env": {
-        "OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EXCEPTION_LOG_ATTRIBUTES": "true",
-        "OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EVENT_LOG_ATTRIBUTES": "true",
         "OTEL_DOTNET_EXPERIMENTAL_OTLP_RETRY": "in_memory",
         "ASPNETCORE_FORWARDEDHEADERS_ENABLED": "true",
         "HTTP_PORTS": "{webfrontend.bindings.http.targetPort}",
+        "APISERVICE_HTTP": "{apiservice.bindings.http.url}",
         "services__apiservice__http__0": "{apiservice.bindings.http.url}",
+        "APISERVICE_HTTPS": "{apiservice.bindings.https.url}",
         "services__apiservice__https__0": "{apiservice.bindings.https.url}",
         "GOVERSION": "{goversion.value}"
       },

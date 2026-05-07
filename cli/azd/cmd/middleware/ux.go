@@ -44,6 +44,12 @@ func (m *UxMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionRes
 	// Stop the spinner always to un-hide cursor
 	m.console.StopSpinner(ctx, "", input.Step)
 
+	// User intentionally aborted — not a failure.
+	// The action already printed a message; swallow the error so the CLI exits with code 0.
+	if errors.Is(err, internal.ErrAbortedByUser) {
+		return actionResult, nil
+	}
+
 	if err != nil {
 		// Use ErrorWithSuggestion for errors with suggestions (better UX).
 		// This catches errors wrapped by the error pipeline's YAML rules
@@ -62,7 +68,7 @@ func (m *UxMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionRes
 
 		// Bridge extension errors (LocalError/ServiceError) with suggestions to rich UX.
 		// Covers both CLI extension commands and gRPC service target errors.
-		if suggestion := azdext.ErrorSuggestion(err); suggestion != "" {
+		if suggestion := azdext.ErrorSuggestion(err); suggestion != "" || len(azdext.ErrorLinks(err)) > 0 {
 			message := azdext.ErrorMessage(err)
 			if message == "" {
 				message = err.Error()
@@ -70,6 +76,7 @@ func (m *UxMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionRes
 			displayErr := &ux.ErrorWithSuggestion{
 				Message:    message,
 				Suggestion: suggestion,
+				Links:      azdext.ErrorLinks(err),
 			}
 			m.console.Message(ctx, "")
 			m.console.MessageUxItem(ctx, displayErr)

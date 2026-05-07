@@ -13,8 +13,8 @@ jobs:
   schema-lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: "20"
       - run: npm install -g jsonlint
@@ -22,7 +22,7 @@ jobs:
         run: jsonlint schemas/**/*.json -c
 # NOTE: Using jsonschema2md here to ensure the schemas are valid for documentation generation.
 #       Since we use jsonschema2md for CI pipelines, any changes to the schemas should make sure to keep the tool happy.
-      - uses: actions/setup-python@v4
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.x'
       - run: pip install jsonschema2md==1.5.2

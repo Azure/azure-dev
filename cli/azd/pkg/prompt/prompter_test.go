@@ -4,7 +4,6 @@
 package prompt
 
 import (
-	"context"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
@@ -18,7 +17,7 @@ import (
 
 func Test_getSubscriptionOptions(t *testing.T) {
 	t.Run("no default config set", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		env := environment.New("test")
 		resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
 		mockAccount := &mockaccount.MockAccountManager{
@@ -51,7 +50,7 @@ func Test_getSubscriptionOptions(t *testing.T) {
 	t.Run("default value set", func(t *testing.T) {
 		// mocked config
 		defaultSubId := "SUBSCRIPTION_DEFAULT"
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		env := environment.New("test")
 		resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
 		mockAccount := &mockaccount.MockAccountManager{

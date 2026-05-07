@@ -89,15 +89,21 @@ func since(t time.Time) time.Duration {
 	return time.Since(t) - time.Duration(userInteractTime)*time.Millisecond
 }
 
-// BrowseUrl allow users to override the default browser from the cmd package with some external implementation.
+// browseUrl defines a function signature for opening URLs in a browser.
 type browseUrl func(ctx context.Context, console input.Console, url string)
 
-// OverrideBrowser allows users to set their own implementation for browsing urls.
-var overrideBrowser browseUrl
+// browserOverrideKey is the context key for per-request browser override functions.
+type browserOverrideKey struct{}
+
+// WithBrowserOverride returns a context carrying a custom browser-opening function.
+// Tests use this to capture URLs without launching a real browser.
+func WithBrowserOverride(ctx context.Context, fn browseUrl) context.Context {
+	return context.WithValue(ctx, browserOverrideKey{}, fn)
+}
 
 func openWithDefaultBrowser(ctx context.Context, console input.Console, url string) {
-	if overrideBrowser != nil {
-		overrideBrowser(ctx, console, url)
+	if fn, ok := ctx.Value(browserOverrideKey{}).(browseUrl); ok && fn != nil {
+		fn(ctx, console, url)
 		return
 	}
 

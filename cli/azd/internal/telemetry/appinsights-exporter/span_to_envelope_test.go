@@ -21,6 +21,7 @@ import (
 )
 
 func TestSpanToEnvelope(t *testing.T) {
+	t.Parallel()
 	spanStub := getDefaultSpanStub()
 	success := spanStub.Snapshot()
 

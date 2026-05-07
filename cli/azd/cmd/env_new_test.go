@@ -4,7 +4,6 @@
 package cmd
 
 import (
-	"context"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -17,8 +16,10 @@ import (
 )
 
 func TestEnvNewAction_NoPrompt_AutoSetsDefault(t *testing.T) {
+	t.Parallel()
 	t.Run("auto-sets default when multiple envs exist", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		t.Parallel()
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.Console.SetNoPromptMode(true)
 
 		azdCtx := azdcontext.NewAzdContextWithDirectory(t.TempDir())

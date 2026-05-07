@@ -6,9 +6,11 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -16,12 +18,13 @@ import (
 	"strings"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents/agent_yaml"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/fatih/color"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
-const agentTemplatesURL = "https://aka.ms/foundry-agents"
+const agentTemplatesURL = "https://aka.ms/foundry-agents-samples"
 
 // Template type constants
 const (
@@ -30,16 +33,24 @@ const (
 
 	// TemplateTypeAzd is a full azd template repository.
 	TemplateTypeAzd = "azd"
+
+	// templateTypeExtensionAIAgent is the discriminator value in the unified
+	// awesome-azd templates.json manifest that identifies an agent-init
+	// template. Entries with any other (or empty) templateType belong to the
+	// standard awesome-azd gallery and are filtered out.
+	templateTypeExtensionAIAgent = "extension.ai.agent"
 )
 
 // AgentTemplate represents an agent template entry from the remote JSON catalog.
+// Field names mirror the awesome-azd templates.json schema.
 type AgentTemplate struct {
-	Title       string   `json:"title"`
-	Description string   `json:"description"`
-	Language    string   `json:"language"`
-	Framework   string   `json:"framework"`
-	Source      string   `json:"source"`
-	Tags        []string `json:"tags"`
+	Title              string   `json:"title"`
+	Description        string   `json:"description"`
+	Languages          []string `json:"languages"`
+	ExtensionFramework string   `json:"extensionFramework"`
+	Source             string   `json:"source"`
+	ExtensionTags      []string `json:"extensionTags"`
+	TemplateType       string   `json:"templateType"`
 }
 
 // EffectiveType determines the template type by inspecting the source URL.
@@ -108,14 +119,26 @@ func dirIsEmpty(dir string) (bool, error) {
 	return len(entries) == 0, nil
 }
 
-// fetchAgentTemplates retrieves the agent template catalog from the remote JSON URL.
+// fetchAgentTemplates retrieves the agent template catalog from the remote
+// awesome-azd manifest URL.
 func fetchAgentTemplates(ctx context.Context, httpClient *http.Client) ([]AgentTemplate, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, agentTemplatesURL, nil)
+	return fetchAgentTemplatesFromURL(ctx, httpClient, agentTemplatesURL)
+}
+
+// fetchAgentTemplatesFromURL retrieves the awesome-azd templates manifest from
+// the given URL and returns only entries whose templateType marks them as
+// agent-init templates. The URL is parameterized to keep this function
+// directly testable against an httptest server.
+func fetchAgentTemplatesFromURL(
+	ctx context.Context,
+	httpClient *http.Client,
+	url string,
+) ([]AgentTemplate, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	//nolint:gosec // URL is the hard-coded agentTemplatesURL constant, not user input
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch agent templates: %w", err)
@@ -131,12 +154,39 @@ func fetchAgentTemplates(ctx context.Context, httpClient *http.Client) ([]AgentT
 		return nil, fmt.Errorf("failed to read agent templates response: %w", err)
 	}
 
-	var templates []AgentTemplate
-	if err := json.Unmarshal(body, &templates); err != nil {
+	var all []AgentTemplate
+	if err := json.Unmarshal(body, &all); err != nil {
 		return nil, fmt.Errorf("failed to parse agent templates: %w", err)
 	}
 
-	return templates, nil
+	// Keep only agent-init entries. The shared templates.json manifest also
+	// carries the awesome-azd gallery; those entries must not surface here.
+	filtered := make([]AgentTemplate, 0, len(all))
+	for _, t := range all {
+		if t.TemplateType == templateTypeExtensionAIAgent {
+			filtered = append(filtered, t)
+		}
+	}
+
+	// Always emit the fetched/matched counts to make transition-period and
+	// misconfiguration issues debuggable.
+	log.Printf(
+		"agent templates manifest: fetched %d templateType=%q (source=%s)",
+		len(filtered), templateTypeExtensionAIAgent, url,
+	)
+
+	// If we received entries but filtered them all out, the manifest is
+	// almost certainly in the legacy format or the discriminator value has
+	// changed. Surface that explicitly instead of returning an empty list,
+	// which the caller cannot distinguish from an intentionally empty manifest.
+	if len(all) > 0 && len(filtered) == 0 {
+		return nil, fmt.Errorf(
+			"agent templates manifest at %s contained %d entries but none had templateType=%q",
+			url, len(all), templateTypeExtensionAIAgent,
+		)
+	}
+
+	return filtered, nil
 }
 
 // promptAgentTemplate guides the user through language selection and template selection.
@@ -156,7 +206,7 @@ func promptAgentTemplate(
 		)
 	}
 
-	_, _ = color.New(color.Faint).Println("Retrieving agent templates...")
+	fmt.Println(output.WithGrayFormat("Retrieving agent templates..."))
 
 	templates, err := fetchAgentTemplates(ctx, httpClient)
 	if err != nil {
@@ -167,10 +217,11 @@ func promptAgentTemplate(
 		return nil, fmt.Errorf("no agent templates available")
 	}
 
-	// Prompt for language
+	// Prompt for language. Values must match the language tokens used in
+	// the awesome-azd templates.json `languages` field (e.g. "dotnetCsharp").
 	languageChoices := []*azdext.SelectChoice{
 		{Label: "Python", Value: "python"},
-		{Label: "C#", Value: "csharp"},
+		{Label: "C#", Value: "dotnetCsharp"},
 	}
 
 	langResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
@@ -188,10 +239,10 @@ func promptAgentTemplate(
 
 	selectedLanguage := languageChoices[*langResp.Value].Value
 
-	// Filter templates by selected language
-	var filtered []AgentTemplate
+	// Filter templates by selected language (entries can declare multiple).
+	filtered := make([]AgentTemplate, 0, len(templates))
 	for _, t := range templates {
-		if t.Language == selectedLanguage {
+		if slices.Contains(t.Languages, selectedLanguage) {
 			filtered = append(filtered, t)
 		}
 	}
@@ -208,7 +259,7 @@ func promptAgentTemplate(
 	// Build template choices with framework in label
 	templateChoices := make([]*azdext.SelectChoice, len(filtered))
 	for i, t := range filtered {
-		label := fmt.Sprintf("%s (%s)", t.Title, t.Framework)
+		label := fmt.Sprintf("%s (%s)", t.Title, t.ExtensionFramework)
 		templateChoices[i] = &azdext.SelectChoice{
 			Label: label,
 			Value: fmt.Sprintf("%d", i),
@@ -259,4 +310,45 @@ func findAgentManifest(dir string) (string, error) {
 	}
 
 	return found, nil
+}
+
+// detectLocalManifest checks only the immediate directory for an agent manifest file.
+// Returns the path to the found manifest (preferring agent.manifest.yaml over agent.yaml,
+// then .yml variants), or an empty string if none contain valid manifest content.
+// Returns a non-nil error for unexpected I/O failures (e.g. permission errors).
+func detectLocalManifest(dir string) (string, error) {
+	candidates := []string{
+		"agent.manifest.yaml",
+		"agent.yaml",
+		"agent.manifest.yml",
+		"agent.yml",
+	}
+
+	for _, name := range candidates {
+		candidate := filepath.Join(dir, name)
+		_, err := os.Stat(candidate)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return "", fmt.Errorf("checking for manifest %s: %w", candidate, err)
+		}
+		if isValidManifestFile(candidate) {
+			return candidate, nil
+		}
+	}
+	return "", nil
+}
+
+// isValidManifestFile reads the file and checks whether it can be loaded as
+// a valid AgentManifest via LoadAndValidateAgentManifest.
+func isValidManifestFile(path string) bool {
+	//nolint:gosec // path comes from a known filename in a user-controlled directory
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+
+	_, err = agent_yaml.LoadAndValidateAgentManifest(content)
+	return err == nil
 }

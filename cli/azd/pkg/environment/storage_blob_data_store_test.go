@@ -37,7 +37,7 @@ var validBlobItems []*storage.Blob = []*storage.Blob{
 }
 
 func Test_StorageBlobDataStore_List(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	configManager := config.NewManager()
 
 	t.Run("List", func(t *testing.T) {
@@ -66,7 +66,7 @@ func Test_StorageBlobDataStore_List(t *testing.T) {
 }
 
 func Test_StorageBlobDataStore_SaveAndGet(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	configManager := config.NewManager()
 	blobClient := &MockBlobClient{}
 	dataStore := NewStorageBlobDataStore(configManager, blobClient)

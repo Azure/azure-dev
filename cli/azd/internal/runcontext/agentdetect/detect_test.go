@@ -304,6 +304,19 @@ func TestIsRunningInAgent(t *testing.T) {
 	assert.True(t, IsRunningInAgent())
 }
 
+func TestDisableAgentDetect(t *testing.T) {
+	// Even when an agent env var is set, detection should be disabled
+	// when AZD_DISABLE_AGENT_DETECT is set.
+	t.Setenv("CLAUDE_CODE", "1")
+	t.Setenv(DisableAgentDetectEnvVar, "1")
+	ResetDetection()
+
+	assert.False(t, IsRunningInAgent(), "Agent detection should be suppressed by %s", DisableAgentDetectEnvVar)
+
+	agent := GetCallingAgent()
+	assert.False(t, agent.Detected)
+}
+
 // clearAgentEnvVars clears all environment variables that could trigger agent detection.
 // This list must be kept in sync with knownEnvVarPatterns in detect_env.go.
 func clearAgentEnvVars(t *testing.T) {

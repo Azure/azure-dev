@@ -4,10 +4,7 @@
 package cmd
 
 import (
-	"context"
 	"encoding/json"
-	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -89,25 +86,41 @@ func TestEffectiveType(t *testing.T) {
 func TestFetchAgentTemplates(t *testing.T) {
 	t.Parallel()
 
-	t.Run("success", func(t *testing.T) {
+	t.Run("success filters by templateType", func(t *testing.T) {
 		t.Parallel()
 
-		templates := []AgentTemplate{
+		// Manifest mixes gallery entries (no templateType / wrong templateType)
+		// with agent-init entries. Only the latter should survive.
+		manifest := []map[string]any{
 			{
-				Title:     "Echo Agent",
-				Language:  "python",
-				Framework: "Agent Framework",
-				Source:    "https://github.com/org/repo/blob/main/echo-agent/agent.yaml",
+				"title":              "Echo Agent",
+				"languages":          []string{"python"},
+				"extensionFramework": "Agent Framework",
+				"source":             "https://github.com/org/repo/blob/main/echo-agent/agent.yaml",
+				"templateType":       "extension.ai.agent",
 			},
 			{
-				Title:     "Calculator Agent",
-				Language:  "csharp",
-				Framework: "LangGraph",
-				Source:    "Azure-Samples/calculator-agent",
+				"title":              "Calculator Agent",
+				"languages":          []string{"dotnetCsharp"},
+				"extensionFramework": "LangGraph",
+				"source":             "Azure-Samples/calculator-agent",
+				"templateType":       "extension.ai.agent",
+			},
+			{
+				"title":     "Some gallery template",
+				"languages": []string{"python"},
+				"source":    "Azure-Samples/some-template",
+				// no templateType -> standard awesome-azd gallery entry
+			},
+			{
+				"title":        "Future extension category",
+				"languages":    []string{"python"},
+				"source":       "Azure-Samples/some-other-extension",
+				"templateType": "extension.something.else",
 			},
 		}
 
-		data, err := json.Marshal(templates)
+		data, err := json.Marshal(manifest)
 		require.NoError(t, err)
 
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -117,14 +130,15 @@ func TestFetchAgentTemplates(t *testing.T) {
 		}))
 		defer server.Close()
 
-		// Use a custom URL by overriding the HTTP client to redirect
 		result, err := fetchAgentTemplatesFromURL(t.Context(), server.Client(), server.URL)
 		require.NoError(t, err)
 		require.Len(t, result, 2)
 		require.Equal(t, "Echo Agent", result[0].Title)
-		require.Equal(t, "python", result[0].Language)
+		require.Equal(t, []string{"python"}, result[0].Languages)
+		require.Equal(t, "Agent Framework", result[0].ExtensionFramework)
+		require.Equal(t, "extension.ai.agent", result[0].TemplateType)
 		require.Equal(t, "Calculator Agent", result[1].Title)
-		require.Equal(t, "csharp", result[1].Language)
+		require.Equal(t, []string{"dotnetCsharp"}, result[1].Languages)
 	})
 
 	t.Run("HTTP error", func(t *testing.T) {
@@ -167,41 +181,32 @@ func TestFetchAgentTemplates(t *testing.T) {
 		require.NoError(t, err)
 		require.Empty(t, result)
 	})
-}
 
-// fetchAgentTemplatesFromURL is a test helper that fetches templates from a custom URL.
-func fetchAgentTemplatesFromURL(
-	ctx context.Context,
-	httpClient *http.Client,
-	url string,
-) ([]AgentTemplate, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
-	}
+	t.Run("manifest with only gallery entries returns error", func(t *testing.T) {
+		t.Parallel()
 
-	//nolint:gosec // URL points to a local httptest server, not user input
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
+		manifest := []map[string]any{
+			{
+				"title":     "Some gallery template",
+				"languages": []string{"python"},
+				"source":    "Azure-Samples/some-template",
+			},
+		}
+		data, err := json.Marshal(manifest)
+		require.NoError(t, err)
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to fetch agent templates: HTTP %d", resp.StatusCode)
-	}
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(data)
+		}))
+		defer server.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	var templates []AgentTemplate
-	if err := json.Unmarshal(body, &templates); err != nil {
-		return nil, fmt.Errorf("failed to parse agent templates: %w", err)
-	}
-
-	return templates, nil
+		result, err := fetchAgentTemplatesFromURL(t.Context(), server.Client(), server.URL)
+		require.Error(t, err)
+		require.Nil(t, result)
+		require.Contains(t, err.Error(), "extension.ai.agent")
+		require.Contains(t, err.Error(), "1 entries")
+	})
 }
 
 func TestFindAgentManifest(t *testing.T) {
@@ -296,5 +301,143 @@ func TestDirIsEmpty(t *testing.T) {
 		empty, err := dirIsEmpty(dir)
 		require.NoError(t, err)
 		require.False(t, empty)
+	})
+}
+
+func TestDetectLocalManifest(t *testing.T) {
+	t.Parallel()
+
+	// Valid agent manifest content (has template with kind + name)
+	validManifest := `name: test-agent
+template:
+  kind: hosted
+  name: test-agent
+  protocols:
+    - protocol: responses
+      version: v1
+`
+
+	t.Run("no manifest files", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "main.py"), []byte("print()"), 0600))
+
+		result, err := detectLocalManifest(dir)
+		require.NoError(t, err)
+		require.Empty(t, result)
+	})
+
+	t.Run("valid agent.yaml", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte(validManifest), 0600))
+
+		result, err := detectLocalManifest(dir)
+		require.NoError(t, err)
+		require.Equal(t, filepath.Join(dir, "agent.yaml"), result)
+	})
+
+	t.Run("valid agent.manifest.yaml", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.manifest.yaml"), []byte(validManifest), 0600))
+
+		result, err := detectLocalManifest(dir)
+		require.NoError(t, err)
+		require.Equal(t, filepath.Join(dir, "agent.manifest.yaml"), result)
+	})
+
+	t.Run("both files prefers agent.manifest.yaml", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte(validManifest), 0600))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.manifest.yaml"), []byte(validManifest), 0600))
+
+		result, err := detectLocalManifest(dir)
+		require.NoError(t, err)
+		require.Equal(t, filepath.Join(dir, "agent.manifest.yaml"), result)
+	})
+
+	t.Run("does not search subdirectories", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		subDir := filepath.Join(dir, "src")
+		require.NoError(t, os.MkdirAll(subDir, 0700))
+		require.NoError(t, os.WriteFile(filepath.Join(subDir, "agent.yaml"), []byte(validManifest), 0600))
+
+		result, err := detectLocalManifest(dir)
+		require.NoError(t, err)
+		require.Empty(t, result)
+	})
+
+	t.Run("empty directory", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+
+		result, err := detectLocalManifest(dir)
+		require.NoError(t, err)
+		require.Empty(t, result)
+	})
+
+	t.Run("invalid YAML content is skipped", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte("not: valid: yaml: ["), 0600))
+
+		result, err := detectLocalManifest(dir)
+		require.NoError(t, err)
+		require.Empty(t, result)
+	})
+
+	t.Run("YAML without template is skipped", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte("foo: bar\n"), 0600))
+
+		result, err := detectLocalManifest(dir)
+		require.NoError(t, err)
+		require.Empty(t, result)
+	})
+
+	t.Run("falls back to agent.yaml when manifest.yaml is invalid", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.manifest.yaml"), []byte("foo: bar\n"), 0600))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte(validManifest), 0600))
+
+		result, err := detectLocalManifest(dir)
+		require.NoError(t, err)
+		require.Equal(t, filepath.Join(dir, "agent.yaml"), result)
+	})
+
+	t.Run("detects agent.yml variant", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.yml"), []byte(validManifest), 0600))
+
+		result, err := detectLocalManifest(dir)
+		require.NoError(t, err)
+		require.Equal(t, filepath.Join(dir, "agent.yml"), result)
+	})
+
+	t.Run("detects agent.manifest.yml variant", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.manifest.yml"), []byte(validManifest), 0600))
+
+		result, err := detectLocalManifest(dir)
+		require.NoError(t, err)
+		require.Equal(t, filepath.Join(dir, "agent.manifest.yml"), result)
+	})
+
+	t.Run("prefers yaml over yml", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte(validManifest), 0600))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.yml"), []byte(validManifest), 0600))
+
+		result, err := detectLocalManifest(dir)
+		require.NoError(t, err)
+		require.Equal(t, filepath.Join(dir, "agent.yaml"), result)
 	})
 }

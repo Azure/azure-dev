@@ -6,7 +6,6 @@ package recording
 import (
 	"bytes"
 	"compress/gzip"
-	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -95,7 +94,7 @@ func TestBlobClientGetProperties(t *testing.T) {
 	})
 	assert.NoError(t, err)
 
-	props, err := blobClient.GetProperties(context.Background(), nil)
+	props, err := blobClient.GetProperties(t.Context(), nil)
 	assert.NoError(t, err)
 	assert.NotNil(t, props.ContentLength)
 	assert.Equal(t, int64(len(msg)), *props.ContentLength)

@@ -20,24 +20,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// symlinkAvailable reports whether the OS supports creating symlinks.
+// On Windows without Developer Mode, os.Symlink fails with a privilege error.
+func symlinkAvailable(t *testing.T) bool {
+	t.Helper()
+	tmp := t.TempDir()
+	err := os.Symlink(".", filepath.Join(tmp, "testlink"))
+	return err == nil
+}
+
 func TestCreateFromDirectory(t *testing.T) {
 	require := require.New(t)
 	tempDir := t.TempDir()
-
-	// ASCII representation of the filesystem structure inside tempDir
-	/*
-		tempDir/
-		├── file1.txt
-		├── a/b/c/d/deep.txt
-		├── empty/
-		├── subdir/
-		│   ├── file2.txt
-		│   └── file3.txt
-		├── symlink_to_file1.txt -> file1.txt
-		├── symlink_to_subdir -> subdir/
-		├── symlink_to_symlink_to_file1.txt -> symlink_to_file1.txt
-		└── symlink_to_symlink_to_subdir -> symlink_to_subdir/
-	*/
+	hasSymlinks := symlinkAvailable(t)
 
 	files := map[string]string{
 		"file1.txt":        "Content of file1",
@@ -58,19 +53,24 @@ func TestCreateFromDirectory(t *testing.T) {
 	err := os.Mkdir(filepath.Join(tempDir, "empty"), 0755)
 	require.NoError(err)
 
-	// Create symlinks -- both relative and absolute links
-	err = os.Symlink(filepath.Join(".", "file1.txt"), filepath.Join(tempDir, "symlink_to_file1.txt"))
-	require.NoError(err)
-	//nolint:lll
-	err = os.Symlink(
-		filepath.Join(tempDir, "symlink_to_file1.txt"),
-		filepath.Join(tempDir, "symlink_to_symlink_to_file1.txt"),
-	)
-	require.NoError(err)
-	err = os.Symlink(filepath.Join(".", "subdir"), filepath.Join(tempDir, "symlink_to_subdir"))
-	require.NoError(err)
-	err = os.Symlink(filepath.Join(tempDir, "symlink_to_subdir"), filepath.Join(tempDir, "symlink_to_symlink_to_subdir"))
-	require.NoError(err)
+	// Create symlinks when available -- both relative and absolute links.
+	if hasSymlinks {
+		err = os.Symlink(filepath.Join(".", "file1.txt"), filepath.Join(tempDir, "symlink_to_file1.txt"))
+		require.NoError(err)
+		//nolint:lll
+		err = os.Symlink(
+			filepath.Join(tempDir, "symlink_to_file1.txt"),
+			filepath.Join(tempDir, "symlink_to_symlink_to_file1.txt"),
+		)
+		require.NoError(err)
+		err = os.Symlink(filepath.Join(".", "subdir"), filepath.Join(tempDir, "symlink_to_subdir"))
+		require.NoError(err)
+		err = os.Symlink(
+			filepath.Join(tempDir, "symlink_to_subdir"),
+			filepath.Join(tempDir, "symlink_to_symlink_to_subdir"),
+		)
+		require.NoError(err)
+	}
 
 	// Create zip file
 	zipFile, err := os.CreateTemp("", "test_archive_*.zip")
@@ -82,23 +82,25 @@ func TestCreateFromDirectory(t *testing.T) {
 	err = rzip.CreateFromDirectory(tempDir, zipFile, nil)
 	require.NoError(err)
 
-	// Check zip contents
+	// Check zip contents — expected files depend on symlink availability.
 	expectedFiles := map[string]string{
-		"file1.txt":                              "Content of file1",
-		"a/b/c/d/deep.txt":                       "Content of deep",
-		"subdir/file2.txt":                       "Content of file2",
-		"subdir/file3.txt":                       "Content of file3",
-		"symlink_to_file1.txt":                   "Content of file1",
-		"symlink_to_symlink_to_file1.txt":        "Content of file1",
-		"symlink_to_subdir/file2.txt":            "Content of file2",
-		"symlink_to_subdir/file3.txt":            "Content of file3",
-		"symlink_to_symlink_to_subdir/file2.txt": "Content of file2",
-		"symlink_to_symlink_to_subdir/file3.txt": "Content of file3",
+		"file1.txt":        "Content of file1",
+		"a/b/c/d/deep.txt": "Content of deep",
+		"subdir/file2.txt": "Content of file2",
+		"subdir/file3.txt": "Content of file3",
+	}
+	if hasSymlinks {
+		expectedFiles["symlink_to_file1.txt"] = "Content of file1"
+		expectedFiles["symlink_to_symlink_to_file1.txt"] = "Content of file1"
+		expectedFiles["symlink_to_subdir/file2.txt"] = "Content of file2"
+		expectedFiles["symlink_to_subdir/file3.txt"] = "Content of file3"
+		expectedFiles["symlink_to_symlink_to_subdir/file2.txt"] = "Content of file2"
+		expectedFiles["symlink_to_symlink_to_subdir/file3.txt"] = "Content of file3"
 	}
 
 	checkFiles(t, expectedFiles, zipFile)
 
-	// skip specific files and directories
+	// Test with filter callback — skip specific files and directories.
 	onZip := func(src string, info os.FileInfo) (bool, error) {
 		name := info.Name()
 		isDir := info.IsDir()
@@ -130,15 +132,17 @@ func TestCreateFromDirectory(t *testing.T) {
 	err = rzip.CreateFromDirectory(tempDir, zipFile, onZip)
 	require.NoError(err)
 
-	// Check zip contents
+	// Check zip contents with filter applied.
 	expectedFiles = map[string]string{
-		"file1.txt":                              "Content of file1",
-		"subdir/file2.txt":                       "Content of file2",
-		"subdir/file3.txt":                       "Content of file3",
-		"symlink_to_file1.txt":                   "Content of file1",
-		"symlink_to_symlink_to_file1.txt":        "Content of file1",
-		"symlink_to_symlink_to_subdir/file2.txt": "Content of file2",
-		"symlink_to_symlink_to_subdir/file3.txt": "Content of file3",
+		"file1.txt":        "Content of file1",
+		"subdir/file2.txt": "Content of file2",
+		"subdir/file3.txt": "Content of file3",
+	}
+	if hasSymlinks {
+		expectedFiles["symlink_to_file1.txt"] = "Content of file1"
+		expectedFiles["symlink_to_symlink_to_file1.txt"] = "Content of file1"
+		expectedFiles["symlink_to_symlink_to_subdir/file2.txt"] = "Content of file2"
+		expectedFiles["symlink_to_symlink_to_subdir/file3.txt"] = "Content of file3"
 	}
 
 	checkFiles(t, expectedFiles, zipFile)
@@ -191,8 +195,14 @@ func TestCreateFromDirectory_SymlinkRecursive(t *testing.T) {
 	err := os.Mkdir(filepath.Join(tmp, "dir"), 0755)
 	require.NoError(t, err)
 
-	err = os.Symlink("../", filepath.Join(tmp, "dir", "dir_symlink"))
-	require.NoError(t, err)
+	// When symlinks are available, verify that a recursive symlink (dir →
+	// parent) doesn't cause infinite recursion during zip creation.
+	// When symlinks aren't available (e.g. Windows without Developer Mode),
+	// still verify that a plain directory zips correctly.
+	if symlinkAvailable(t) {
+		err = os.Symlink("../", filepath.Join(tmp, "dir", "dir_symlink"))
+		require.NoError(t, err)
+	}
 
 	// Create zip file
 	zipFile, err := os.CreateTemp("", "test_archive_*.zip")
@@ -200,7 +210,7 @@ func TestCreateFromDirectory_SymlinkRecursive(t *testing.T) {
 	defer os.Remove(zipFile.Name())
 	defer zipFile.Close()
 
-	// zip the directory
+	// zip the directory — must not hang or error regardless of symlink support
 	err = rzip.CreateFromDirectory(tmp, zipFile, nil)
 	require.NoError(t, err)
 }

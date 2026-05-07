@@ -11,7 +11,7 @@ import (
 )
 
 func Test_EnsureInstalledOnlyOnceWhenCached(t *testing.T) {
-	ctx := WithInstalledCheckCache(context.Background())
+	ctx := WithInstalledCheckCache(t.Context())
 	tool := TestTool{}
 
 	_ = EnsureInstalled(ctx, &tool)

@@ -4,14 +4,13 @@
 package extensions
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
 func TestListExtensions(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	registry := &Registry{
 		Extensions: []*ExtensionMetadata{
@@ -31,7 +30,7 @@ func TestListExtensions(t *testing.T) {
 }
 
 func TestGetExtension(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	registry := &Registry{
 		Extensions: []*ExtensionMetadata{

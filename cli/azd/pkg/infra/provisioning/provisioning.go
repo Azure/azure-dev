@@ -50,15 +50,8 @@ func NewEnvRefreshResultFromState(state *State) contracts.EnvRefreshResult {
 	return result
 }
 
-// Parses the specified IaC Provider to ensure whether it is valid or not
-// Defaults to `Bicep` if no provider is specified
+// ParseProvider returns the specified IaC provider unchanged.
+// Defaulting for NotSpecified is handled later during provider creation.
 func ParseProvider(kind ProviderKind) (ProviderKind, error) {
-	switch kind {
-	// For the time being we need to include `Test` here for the unit tests to work as expected
-	// App builds will pass this test but fail resolving the provider since `Test` won't be registered in the container
-	case NotSpecified, Bicep, Terraform, Test:
-		return kind, nil
-	}
-
-	return ProviderKind(""), fmt.Errorf("unsupported IaC provider '%s'", kind)
+	return kind, nil
 }

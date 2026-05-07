@@ -1,0 +1,7 @@
+import: ../../.vscode/cspell.yaml
+overrides:
+  - filename: internal/cmd/start.go
+    words:
+      - dall
+      - datasource
+      - vectorizing

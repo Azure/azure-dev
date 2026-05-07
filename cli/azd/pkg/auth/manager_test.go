@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
@@ -68,22 +69,22 @@ func TestServicePrincipalLoginClientSecret(t *testing.T) {
 	}
 
 	cred, err := m.LoginWithServicePrincipalSecret(
-		context.Background(), "testClientId", "testTenantId", "testClientSecret",
+		t.Context(), "testClientId", "testTenantId", "testClientSecret",
 	)
 
 	require.NoError(t, err)
 	require.IsType(t, new(azidentity.ClientSecretCredential), cred)
 
-	cred, err = m.CredentialForCurrentUser(context.Background(), nil)
+	cred, err = m.CredentialForCurrentUser(t.Context(), nil)
 
 	require.NoError(t, err)
 	require.IsType(t, new(azidentity.ClientSecretCredential), cred)
 
-	err = m.Logout(context.Background())
+	err = m.Logout(t.Context())
 
 	require.NoError(t, err)
 
-	_, err = m.CredentialForCurrentUser(context.Background(), nil)
+	_, err = m.CredentialForCurrentUser(t.Context(), nil)
 
 	require.True(t, errors.Is(err, ErrNoCurrentUser))
 }
@@ -104,22 +105,22 @@ func TestServicePrincipalLoginClientCertificate(t *testing.T) {
 	}
 
 	cred, err := m.LoginWithServicePrincipalCertificate(
-		context.Background(), "testClientId", "testTenantId", testClientCertificate,
+		t.Context(), "testClientId", "testTenantId", testClientCertificate,
 	)
 
 	require.NoError(t, err)
 	require.IsType(t, new(azidentity.ClientCertificateCredential), cred)
 
-	cred, err = m.CredentialForCurrentUser(context.Background(), nil)
+	cred, err = m.CredentialForCurrentUser(t.Context(), nil)
 
 	require.NoError(t, err)
 	require.IsType(t, new(azidentity.ClientCertificateCredential), cred)
 
-	err = m.Logout(context.Background())
+	err = m.Logout(t.Context())
 
 	require.NoError(t, err)
 
-	_, err = m.CredentialForCurrentUser(context.Background(), nil)
+	_, err = m.CredentialForCurrentUser(t.Context(), nil)
 
 	require.True(t, errors.Is(err, ErrNoCurrentUser))
 }
@@ -132,7 +133,7 @@ func TestServicePrincipalLoginFederatedTokenProvider(t *testing.T) {
 	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_URL", "http://fakehost/api/get-token")
 	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "fake-token")
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return true
 	}).Respond(&http.Response{
@@ -148,21 +149,21 @@ func TestServicePrincipalLoginFederatedTokenProvider(t *testing.T) {
 		cloud:             cloud.AzurePublic(),
 	}
 
-	cred, err := m.LoginWithGitHubFederatedTokenProvider(context.Background(), "testClientId", "testTenantId")
+	cred, err := m.LoginWithGitHubFederatedTokenProvider(t.Context(), "testClientId", "testTenantId")
 
 	require.NoError(t, err)
 	require.IsType(t, new(azidentity.ClientAssertionCredential), cred)
 
-	cred, err = m.CredentialForCurrentUser(context.Background(), nil)
+	cred, err = m.CredentialForCurrentUser(t.Context(), nil)
 
 	require.NoError(t, err)
 	require.IsType(t, new(azidentity.ClientAssertionCredential), cred)
 
-	err = m.Logout(context.Background())
+	err = m.Logout(t.Context())
 
 	require.NoError(t, err)
 
-	_, err = m.CredentialForCurrentUser(context.Background(), nil)
+	_, err = m.CredentialForCurrentUser(t.Context(), nil)
 
 	require.True(t, errors.Is(err, ErrNoCurrentUser))
 }
@@ -183,7 +184,7 @@ func TestLegacyAzCliCredentialSupport(t *testing.T) {
 		userConfigManager: mgr,
 	}
 
-	cred, err := m.CredentialForCurrentUser(context.Background(), nil)
+	cred, err := m.CredentialForCurrentUser(t.Context(), nil)
 
 	require.NoError(t, err)
 	require.IsType(t, new(azidentity.AzureCLICredential), cred)
@@ -196,7 +197,7 @@ func TestCloudShellCredentialSupport(t *testing.T) {
 		userConfigManager: newMemoryUserConfigManager(),
 	}
 
-	cred, err := m.CredentialForCurrentUser(context.Background(), nil)
+	cred, err := m.CredentialForCurrentUser(t.Context(), nil)
 	require.NoError(t, err)
 	require.IsType(t, new(CloudShellCredential), cred)
 }
@@ -209,21 +210,21 @@ func TestLoginInteractive(t *testing.T) {
 		cloud:             cloud.AzurePublic(),
 	}
 
-	cred, err := m.LoginInteractive(context.Background(), nil, "", nil)
+	cred, err := m.LoginInteractive(t.Context(), nil, "", nil)
 
 	require.NoError(t, err)
 	require.IsType(t, new(azdCredential), cred)
 
-	cred, err = m.CredentialForCurrentUser(context.Background(), nil)
+	cred, err = m.CredentialForCurrentUser(t.Context(), nil)
 
 	require.NoError(t, err)
 	require.IsType(t, new(azdCredential), cred)
 
-	err = m.Logout(context.Background())
+	err = m.Logout(t.Context())
 
 	require.NoError(t, err)
 
-	_, err = m.CredentialForCurrentUser(context.Background(), nil)
+	_, err = m.CredentialForCurrentUser(t.Context(), nil)
 
 	require.True(t, errors.Is(err, ErrNoCurrentUser))
 }
@@ -238,23 +239,23 @@ func TestLoginDeviceCode(t *testing.T) {
 		cloud:             cloud.AzurePublic(),
 	}
 
-	cred, err := m.LoginWithDeviceCode(context.Background(), "", nil, "", func(url string) error { return nil })
+	cred, err := m.LoginWithDeviceCode(t.Context(), "", nil, "", func(url string) error { return nil })
 
 	require.Regexp(t, "Start by copying the next code: 123-456", console.Output())
 
 	require.NoError(t, err)
 	require.IsType(t, new(azdCredential), cred)
 
-	cred, err = m.CredentialForCurrentUser(context.Background(), nil)
+	cred, err = m.CredentialForCurrentUser(t.Context(), nil)
 
 	require.NoError(t, err)
 	require.IsType(t, new(azdCredential), cred)
 
-	err = m.Logout(context.Background())
+	err = m.Logout(t.Context())
 
 	require.NoError(t, err)
 
-	_, err = m.CredentialForCurrentUser(context.Background(), nil)
+	_, err = m.CredentialForCurrentUser(t.Context(), nil)
 
 	require.True(t, errors.Is(err, ErrNoCurrentUser))
 }
@@ -302,7 +303,7 @@ func TestLogInDetails(t *testing.T) {
 		require.NoError(t, mgr.Save(cfg))
 
 		// mock command runner to return a user account
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.When(func(args exec.RunArgs, cmd string) bool {
 			return strings.Contains(cmd, "az account show")
 		}).Respond(exec.RunResult{
@@ -317,7 +318,7 @@ func TestLogInDetails(t *testing.T) {
 			azCli:             mockAzCli,
 		}
 
-		details, err := m.LogInDetails(context.Background())
+		details, err := m.LogInDetails(t.Context())
 		require.NoError(t, err)
 		require.Equal(t, EmailLoginType, details.LoginType)
 		require.Equal(t, "test@example.com", details.Account)
@@ -332,7 +333,7 @@ func TestLogInDetails(t *testing.T) {
 		require.NoError(t, mgr.Save(cfg))
 
 		// mock command runner to return a user account
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.When(func(args exec.RunArgs, cmd string) bool {
 			return strings.Contains(cmd, "az account show")
 		}).Respond(exec.RunResult{
@@ -347,7 +348,7 @@ func TestLogInDetails(t *testing.T) {
 			azCli:             mockAzCli,
 		}
 
-		details, err := m.LogInDetails(context.Background())
+		details, err := m.LogInDetails(t.Context())
 		require.NoError(t, err)
 		require.Equal(t, ClientIdLoginType, details.LoginType)
 		require.Equal(t, "12345678-1234-1234-1234-123456789012", details.Account)
@@ -362,7 +363,7 @@ func TestLogInDetails(t *testing.T) {
 		require.NoError(t, mgr.Save(cfg))
 
 		// mock command runner to return an exit error with "az login" message
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.When(func(args exec.RunArgs, cmd string) bool {
 			return strings.Contains(cmd, "az account show")
 		}).SetError(fmt.Errorf(
@@ -377,7 +378,64 @@ func TestLogInDetails(t *testing.T) {
 			azCli:             mockAzCli,
 		}
 
-		_, err = m.LogInDetails(context.Background())
+		_, err = m.LogInDetails(t.Context())
+		require.Error(t, err)
+		require.ErrorIs(t, err, ErrNoCurrentUser)
+	})
+
+	t.Run("external auth - returns email login type with upn from token", func(t *testing.T) {
+		// Build a JWT token with a preferred_username claim
+		token := buildTestJWT(t, map[string]any{
+			"preferred_username": "user@contoso.com",
+			"oid":                "oid-abc",
+			"tid":                "tenant-xyz",
+		})
+
+		// Set up a mock HTTP server that returns the token
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, `{"status":"success","token":"`+token+`","expiresOn":"2030-01-01T00:00:00Z"}`)
+		}))
+		defer srv.Close()
+
+		m := Manager{
+			externalAuthCfg: ExternalAuthConfiguration{
+				Endpoint:    srv.URL,
+				Key:         "test-key",
+				Transporter: srv.Client(),
+			},
+			cloud: cloud.AzurePublic(),
+		}
+
+		details, err := m.LogInDetails(t.Context())
+		require.NoError(t, err)
+		require.Equal(t, EmailLoginType, details.LoginType)
+		require.Equal(t, "user@contoso.com", details.Account)
+	})
+
+	t.Run("external auth - error when token has no usable account identifier", func(t *testing.T) {
+		// Build a JWT token with no username claims
+		token := buildTestJWT(t, map[string]any{
+			"oid": "oid-abc",
+			"tid": "tenant-xyz",
+		})
+
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, `{"status":"success","token":"`+token+`","expiresOn":"2030-01-01T00:00:00Z"}`)
+		}))
+		defer srv.Close()
+
+		m := Manager{
+			externalAuthCfg: ExternalAuthConfiguration{
+				Endpoint:    srv.URL,
+				Key:         "test-key",
+				Transporter: srv.Client(),
+			},
+			cloud: cloud.AzurePublic(),
+		}
+
+		_, err := m.LogInDetails(t.Context())
 		require.Error(t, err)
 		require.ErrorIs(t, err, ErrNoCurrentUser)
 	})

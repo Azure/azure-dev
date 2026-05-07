@@ -27,7 +27,7 @@
 
 ## 🤖 AI Agents
 
-**Contributing to this repo?** See [AGENTS.md](cli/azd/AGENTS.md) for coding standards and guidelines.
+**Contributing to this repo?** See [AGENTS.md](AGENTS.md) for coding standards and [docs/](docs/README.md) for contributor documentation.
 
 **Using `azd` with an AI coding assistant?** Check out the [docs](https://aka.ms/azd) and [templates](https://azure.github.io/awesome-azd/).
 
@@ -53,7 +53,7 @@ powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/install-azd.ps1' 
 ### macOS
 
 ```bash
-brew install azure/azd/azd
+brew install --cask azure/azd/azd
 ```
 
 > **Note:** If upgrading from a non-Homebrew installation, remove the existing `azd` binary first.

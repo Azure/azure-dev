@@ -127,6 +127,7 @@ message PromptOptions {
   string default_value = 8;
   bool clear_on_completion = 9;
   bool ignore_hint_keys = 10;
+  bool secret = 11;
 }
 
 message SelectChoice {

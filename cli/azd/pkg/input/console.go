@@ -17,6 +17,7 @@ import (
 	"slices"
 	"strconv"
 	"sync"
+	syncatomic "sync/atomic"
 	"syscall"
 	"time"
 
@@ -59,6 +60,14 @@ type ShowPreviewerOptions struct {
 	Prefix       string
 	MaxLineCount int
 	Title        string
+}
+
+// PreviewerPauser is an optional interface that Console implementations
+// may support. When the progress table is active, callers can pause
+// previewer output to prevent terminal corruption.
+type PreviewerPauser interface {
+	PausePreviewer()
+	ResumePreviewer()
 }
 
 type PromptDialog struct {
@@ -165,7 +174,9 @@ type AskerConsole struct {
 	spinnerTerminalMode yacspin.TerminalMode
 	spinnerCurrentTitle string
 
-	previewer *progressLog
+	previewer           syncatomic.Pointer[progressLog]
+	previewerRefCount   int // tracks concurrent ShowPreviewer callers; only stop when it reaches 0
+	previewerSuppressed syncatomic.Bool
 
 	currentIndent *atomic.String
 	// consoleWidth is the width of the underlying console window. The value is updated as the window resized. Nil when
@@ -215,8 +226,14 @@ func (c *AskerConsole) IsUnformatted() bool {
 
 // Prints out a message to the underlying console write
 func (c *AskerConsole) Message(ctx context.Context, message string) {
-	// Disable output when formatting is enabled
+	// In JSON mode, emit structured event output instead of plain text.
 	if c.formatter != nil && c.formatter.Kind() == output.JsonFormat {
+		// Empty messages are visual separators (blank lines) in text mode.
+		// In JSON mode they have no semantic value, so skip them.
+		if message == "" {
+			return
+		}
+
 		// we call json.Marshal directly, because the formatter marshalls using indentation, and we would prefer
 		// these objects be written on a single line.
 		var obj any = output.EventForMessage(message)
@@ -325,18 +342,35 @@ func defaultShowPreviewerOptions() *ShowPreviewerOptions {
 }
 
 func (c *AskerConsole) ShowPreviewer(ctx context.Context, options *ShowPreviewerOptions) io.Writer {
+	if c.previewerSuppressed.Load() {
+		log.Printf("ShowPreviewer suppressed — progress table active")
+		return io.Discard
+	}
+
 	c.showProgressMu.Lock()
 	defer c.showProgressMu.Unlock()
 
+	if c.previewer.Load() != nil {
+		// Previewer already active from a concurrent caller (e.g. concurrent graph steps).
+		// Reuse the existing previewer and increment the reference count so that
+		// StopPreviewer only tears it down when the last user is done.
+		c.previewerRefCount++
+		return &consolePreviewerWriter{
+			previewer: &c.previewer,
+		}
+	}
+
 	// Pause any active spinner
+	c.spinnerLineMu.Lock()
 	currentMsg := c.spinnerCurrentTitle
+	c.spinnerLineMu.Unlock()
 	_ = c.spinner.Pause()
 
 	if options == nil {
 		options = defaultShowPreviewerOptions()
 	}
 
-	c.previewer = newProgressLogWithWidthFn(
+	p := newProgressLogWithWidthFn(
 		options.MaxLineCount,
 		options.Prefix,
 		options.Title,
@@ -348,19 +382,51 @@ func (c *AskerConsole) ShowPreviewer(ctx context.Context, options *ShowPreviewer
 
 			return int(c.consoleWidth.Load())
 		})
-	c.previewer.Start()
-	c.writer = c.previewer
+	p.Start()
+	c.previewer.Store(p)
+	c.writer = p
+	c.previewerRefCount = 1
 	return &consolePreviewerWriter{
 		previewer: &c.previewer,
 	}
 }
 
 func (c *AskerConsole) StopPreviewer(ctx context.Context, keepLogs bool) {
-	c.previewer.Stop(keepLogs)
-	c.previewer = nil
+	if c.previewerSuppressed.Load() {
+		return
+	}
+
+	c.showProgressMu.Lock()
+	defer c.showProgressMu.Unlock()
+
+	if c.previewerRefCount <= 0 {
+		// Already fully stopped or never started. No-op.
+		return
+	}
+
+	c.previewerRefCount--
+	if c.previewerRefCount > 0 {
+		// Other concurrent callers are still using the previewer.
+		return
+	}
+
+	c.previewer.Load().Stop(keepLogs)
+	c.previewer.Store(nil)
 	c.writer = c.defaultWriter
 
 	_ = c.spinner.Unpause()
+}
+
+// PausePreviewer prevents ShowPreviewer from rendering until ResumePreviewer
+// is called. Use this when a progress table owns the terminal output and previewer
+// content would corrupt the display.
+func (c *AskerConsole) PausePreviewer() {
+	c.previewerSuppressed.Store(true)
+}
+
+// ResumePreviewer re-enables previewer rendering.
+func (c *AskerConsole) ResumePreviewer() {
+	c.previewerSuppressed.Store(false)
 }
 
 // truncationDots is the text we use to indicate that text has been truncated.
@@ -423,9 +489,9 @@ func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format Spi
 		return
 	}
 
-	if c.previewer != nil {
+	if p := c.previewer.Load(); p != nil {
 		// spinner is not compatible with previewer.
-		c.previewer.Header(c.currentIndent.Load() + title)
+		p.Header(c.currentIndent.Load() + title)
 		return
 	}
 
@@ -985,12 +1051,59 @@ func watchTerminalInterrupt(c *AskerConsole) {
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, os.Interrupt)
 	go func() {
-		<-signalChan
+		for range signalChan {
+			// Reserve the running slot first so re-entrant Ctrl+C signals are
+			// suppressed even in the brief window where a handler has been
+			// popped from the stack but is still executing (e.g. a prompt is
+			// up while Deploy has already torn the registration down).
+			if !tryStartInterruptHandler() {
+				// A handler is already running. Subsequent Ctrl+C presses
+				// allow the user to force-exit if the handler appears stuck:
+				// the first additional press arms the force-exit latch and
+				// is suppressed; the next press triggers the exit (standard
+				// POSIX convention: kubectl, terraform, docker, etc.).
+				if incrementForceExitCounter() {
+					_ = c.spinner.Stop()
+					os.Exit(130) // 128 + SIGINT
+				}
+				continue
+			}
 
-		// unhide the cursor if applicable
-		_ = c.spinner.Stop()
+			handler := currentInterruptHandler()
+			if handler == nil {
+				// No handler registered → default behavior. Release the slot
+				// before exiting so future signals would behave correctly if
+				// we did not exit (defensive).
+				finishInterruptHandler()
+				_ = c.spinner.Stop()
+				os.Exit(1)
+			}
 
-		os.Exit(1)
+			// Run the handler inline on the signal goroutine so any "interrupt
+			// started" side-effects (e.g. closing a started channel, cancelling
+			// the deploy context) take effect synchronously after the signal
+			// is received — no scheduling window where the deploy goroutine
+			// could complete naturally and silently drop the Ctrl+C.
+			var handled bool
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						buf := make([]byte, 4096)
+						n := runtime.Stack(buf, false)
+						log.Printf(
+							"interrupt handler panic: %v\n%s", r, buf[:n])
+					}
+				}()
+				handled = handler()
+			}()
+			finishInterruptHandler()
+			if !handled {
+				// Handler declined to take ownership of shutdown — fall back
+				// to default behavior.
+				_ = c.spinner.Stop()
+				os.Exit(1)
+			}
+		}
 	}()
 }
 

@@ -262,7 +262,42 @@ This helper (from `test/functional/aspire_test.go`) deletes subscription deploym
 
 ## Re-recording an Existing Test
 
-### Local Development
+> **Note**: Re-recording is typically a core-maintainer workflow. External contributors generally do not need to re-record cassettes; the default playback mode replays stored interactions and requires no Azure access. Open an issue if a cassette appears stale.
+
+### Using `mage record` (Recommended)
+
+The easiest way to re-record tests is the `mage record` target:
+
+```bash
+cd cli/azd
+mage record -filter=Test_CLI_MyNewFeature   # re-record a specific test
+mage record                                  # re-record all playback tests
+```
+
+`mage record` handles building the `azd-record` binary, setting `AZURE_RECORD_MODE=record`, and running the test with a 30-minute timeout.
+
+#### Configuring the Test Subscription
+
+Tests need an Azure subscription and tenant. Any subscription you have access to works — the `defaults.test.*` keys are a separate namespace so test configuration does not affect regular `azd` defaults. Configure them once with `azd config` (persists across sessions):
+
+```bash
+azd config set defaults.test.subscription <SUBSCRIPTION_ID>
+azd config set defaults.test.tenant <TENANT_ID>
+```
+
+The resolution order is: environment variable → `defaults.test.*` config → `defaults.*` config.
+Note: tenant only falls back to `defaults.test.tenant` (no `defaults.tenant` global fallback).
+Config fallbacks are only consulted when the `CI` environment variable is unset.
+
+| Setting | Environment Variable | Config Key |
+|---------|---------------------|------------|
+| Subscription | `AZD_TEST_AZURE_SUBSCRIPTION_ID` | `defaults.test.subscription` |
+| Tenant | `AZD_TEST_TENANT_ID` | `defaults.test.tenant` |
+| Location | `AZD_TEST_AZURE_LOCATION` | `defaults.test.location` |
+
+### Manual Re-recording
+
+If you prefer manual control:
 
 1. **Delete existing recording**:
    ```bash

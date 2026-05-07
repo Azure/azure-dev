@@ -1,0 +1,26 @@
+id: negative-not-azure-001
+description: >
+  User asks a question that has nothing to do with Azure or azd.
+  The LLM should answer helpfully but NOT suggest any azd commands.
+inputs:
+  prompt: "How do I reverse a string in Python?"
+graders:
+  - type: text
+    weight: 0.5
+    config:
+      must_not_match:
+        - "azd "
+        - "azure\\.yaml"
+        - "az login"
+        - "azd init"
+        - "azd provision"
+        - "azd deploy"
+  - type: text
+    weight: 0.3
+    config:
+      must_match:
+        - "(def |\\[::-1\\]|reversed|reverse)"
+  - type: behavior
+    weight: 0.2
+    config:
+      max_tool_calls: 0

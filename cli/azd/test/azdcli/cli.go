@@ -30,6 +30,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/internal/runcontext/agentdetect"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -164,6 +165,16 @@ func (cli *CLI) RunCommandWithStdIn(ctx context.Context, stdin string, args ...s
 	}
 
 	cmd.Env = cli.Env
+
+	// Disable agent detection in the child azd process so that the test's parent process tree
+	// (which may include an AI agent like Copilot CLI) does not auto-enable --no-prompt mode.
+	// This ensures functional tests that pipe stdin for interactive prompts work correctly.
+	// When cmd.Env is nil, the child inherits the parent's environment. We must preserve that
+	// by explicitly copying os.Environ() before appending.
+	if cmd.Env == nil {
+		cmd.Env = os.Environ()
+	}
+	cmd.Env = append(cmd.Env, agentdetect.DisableAgentDetectEnvVar+"=1")
 
 	// Collect all PATH variables, appending in the order it was added, to form a single PATH variable
 	pathString := ostest.CombinedPaths(cmd.Env)

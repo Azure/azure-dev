@@ -536,3 +536,8 @@ func (p *ProvisionProvider) Parameters(ctx context.Context) ([]provisioning.Para
 	// not supported (no-op)
 	return nil, nil
 }
+
+func (p *ProvisionProvider) PlannedOutputs(ctx context.Context) ([]provisioning.PlannedOutput, error) {
+	// not supported (no-op)
+	return nil, nil
+}

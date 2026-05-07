@@ -78,6 +78,10 @@ var (
 	ErrNoArgsProvided     = errors.New("required arguments not provided")
 	ErrInvalidArgValue    = errors.New("invalid argument value")
 	ErrOperationCancelled = errors.New("operation cancelled by user")
+
+	// ErrAbortedByUser indicates the user intentionally declined to proceed (e.g. preflight warnings).
+	// This is not a failure — the CLI should exit with code 0.
+	ErrAbortedByUser = errors.New("operation aborted by user")
 )
 
 // Config errors
@@ -111,4 +115,9 @@ var (
 // MCP errors
 var (
 	ErrMcpToolsLoadFailed = errors.New("failed to load MCP host tools")
+)
+
+// Tool command errors
+var (
+	ErrToolUpgradeFailed = errors.New("tool upgrade did not succeed")
 )

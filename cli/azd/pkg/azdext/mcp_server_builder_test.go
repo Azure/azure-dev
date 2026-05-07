@@ -77,7 +77,7 @@ func TestMCPServerBuilder_HandlerReceivesParsedToolArgs(t *testing.T) {
 		"message": "hello world",
 	}
 
-	result, err := wrappedHandler(context.Background(), request)
+	result, err := wrappedHandler(t.Context(), request)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 
@@ -104,13 +104,13 @@ func TestMCPServerBuilder_RateLimiting(t *testing.T) {
 	request.Params.Arguments = map[string]any{}
 
 	// First call should succeed (consumes the 1 burst token)
-	result1, err1 := wrappedHandler(context.Background(), request)
+	result1, err1 := wrappedHandler(t.Context(), request)
 	require.NoError(t, err1)
 	require.NotNil(t, result1)
 	assert.Equal(t, 1, callCount)
 
 	// Second call immediately should be rate limited
-	result2, err2 := wrappedHandler(context.Background(), request)
+	result2, err2 := wrappedHandler(t.Context(), request)
 	require.NoError(t, err2)
 	require.NotNil(t, result2)
 	assert.Equal(t, 1, callCount, "handler should not have been called again due to rate limiting")
@@ -140,7 +140,7 @@ func TestMCPServerBuilder_NoRateLimit(t *testing.T) {
 
 	// Multiple rapid calls should all succeed
 	for range 5 {
-		result, err := wrappedHandler(context.Background(), request)
+		result, err := wrappedHandler(t.Context(), request)
 		require.NoError(t, err)
 		require.NotNil(t, result)
 	}

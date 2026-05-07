@@ -25,13 +25,14 @@ const (
 )
 
 type AiModel struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	Name            string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`                                              // e.g. "gpt-4o"
-	Format          string                 `protobuf:"bytes,2,opt,name=format,proto3" json:"format,omitempty"`                                          // e.g. "OpenAI"
-	LifecycleStatus string                 `protobuf:"bytes,3,opt,name=lifecycle_status,json=lifecycleStatus,proto3" json:"lifecycle_status,omitempty"` // e.g. "preview", "stable"
-	Capabilities    []string               `protobuf:"bytes,4,rep,name=capabilities,proto3" json:"capabilities,omitempty"`                              // e.g. ["chat", "embeddings"]
-	Versions        []*AiModelVersion      `protobuf:"bytes,5,rep,name=versions,proto3" json:"versions,omitempty"`
-	Locations       []string               `protobuf:"bytes,6,rep,name=locations,proto3" json:"locations,omitempty"` // canonical locations where available
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Name   string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`     // e.g. "gpt-4o"
+	Format string                 `protobuf:"bytes,2,opt,name=format,proto3" json:"format,omitempty"` // e.g. "OpenAI"
+	// Deprecated: Marked as deprecated in ai_model.proto.
+	LifecycleStatus string            `protobuf:"bytes,3,opt,name=lifecycle_status,json=lifecycleStatus,proto3" json:"lifecycle_status,omitempty"` // deprecated; always empty; use AiModelVersion.lifecycle_status
+	Capabilities    []string          `protobuf:"bytes,4,rep,name=capabilities,proto3" json:"capabilities,omitempty"`                              // e.g. ["chat", "embeddings"]
+	Versions        []*AiModelVersion `protobuf:"bytes,5,rep,name=versions,proto3" json:"versions,omitempty"`
+	Locations       []string          `protobuf:"bytes,6,rep,name=locations,proto3" json:"locations,omitempty"` // canonical locations where available
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -80,6 +81,7 @@ func (x *AiModel) GetFormat() string {
 	return ""
 }
 
+// Deprecated: Marked as deprecated in ai_model.proto.
 func (x *AiModel) GetLifecycleStatus() string {
 	if x != nil {
 		return x.LifecycleStatus
@@ -109,12 +111,13 @@ func (x *AiModel) GetLocations() []string {
 }
 
 type AiModelVersion struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Version       string                 `protobuf:"bytes,1,opt,name=version,proto3" json:"version,omitempty"`
-	IsDefault     bool                   `protobuf:"varint,2,opt,name=is_default,json=isDefault,proto3" json:"is_default,omitempty"`
-	Skus          []*AiModelSku          `protobuf:"bytes,3,rep,name=skus,proto3" json:"skus,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Version         string                 `protobuf:"bytes,1,opt,name=version,proto3" json:"version,omitempty"`
+	IsDefault       bool                   `protobuf:"varint,2,opt,name=is_default,json=isDefault,proto3" json:"is_default,omitempty"`
+	Skus            []*AiModelSku          `protobuf:"bytes,3,rep,name=skus,proto3" json:"skus,omitempty"`
+	LifecycleStatus string                 `protobuf:"bytes,4,opt,name=lifecycle_status,json=lifecycleStatus,proto3" json:"lifecycle_status,omitempty"` // e.g. "GenerallyAvailable", "Preview"
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *AiModelVersion) Reset() {
@@ -166,6 +169,13 @@ func (x *AiModelVersion) GetSkus() []*AiModelSku {
 		return x.Skus
 	}
 	return nil
+}
+
+func (x *AiModelVersion) GetLifecycleStatus() string {
+	if x != nil {
+		return x.LifecycleStatus
+	}
+	return ""
 }
 
 // AiModelSku represents a deployment SKU with capacity constraints.
@@ -518,8 +528,9 @@ type AiModelFilterOptions struct {
 	// Include models whose format matches one of these values.
 	// Matches AiModel.format exactly (for example: "OpenAI", "Microsoft").
 	Formats []string `protobuf:"bytes,3,rep,name=formats,proto3" json:"formats,omitempty"`
-	// Include models whose lifecycle status matches one of these values.
-	// Matches AiModel.lifecycle_status exactly (for example: "Stable", "Preview").
+	// Include model versions whose lifecycle status matches one of these values.
+	// Filtering is applied before aggregation, so returned versions, derived
+	// AiModel.lifecycle_status, and locations reflect only matching versions.
 	Statuses []string `protobuf:"bytes,4,rep,name=statuses,proto3" json:"statuses,omitempty"`
 	// Exclude models by exact model name (for example: "gpt-4o-mini").
 	ExcludeModelNames []string `protobuf:"bytes,5,rep,name=exclude_model_names,json=excludeModelNames,proto3" json:"exclude_model_names,omitempty"`
@@ -1272,19 +1283,20 @@ var File_ai_model_proto protoreflect.FileDescriptor
 
 const file_ai_model_proto_rawDesc = "" +
 	"\n" +
-	"\x0eai_model.proto\x12\x06azdext\x1a\fmodels.proto\"\xd6\x01\n" +
+	"\x0eai_model.proto\x12\x06azdext\x1a\fmodels.proto\"\xda\x01\n" +
 	"\aAiModel\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
-	"\x06format\x18\x02 \x01(\tR\x06format\x12)\n" +
-	"\x10lifecycle_status\x18\x03 \x01(\tR\x0flifecycleStatus\x12\"\n" +
+	"\x06format\x18\x02 \x01(\tR\x06format\x12-\n" +
+	"\x10lifecycle_status\x18\x03 \x01(\tB\x02\x18\x01R\x0flifecycleStatus\x12\"\n" +
 	"\fcapabilities\x18\x04 \x03(\tR\fcapabilities\x122\n" +
 	"\bversions\x18\x05 \x03(\v2\x16.azdext.AiModelVersionR\bversions\x12\x1c\n" +
-	"\tlocations\x18\x06 \x03(\tR\tlocations\"q\n" +
+	"\tlocations\x18\x06 \x03(\tR\tlocations\"\x9c\x01\n" +
 	"\x0eAiModelVersion\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12\x1d\n" +
 	"\n" +
 	"is_default\x18\x02 \x01(\bR\tisDefault\x12&\n" +
-	"\x04skus\x18\x03 \x03(\v2\x12.azdext.AiModelSkuR\x04skus\"\xd5\x01\n" +
+	"\x04skus\x18\x03 \x03(\v2\x12.azdext.AiModelSkuR\x04skus\x12)\n" +
+	"\x10lifecycle_status\x18\x04 \x01(\tR\x0flifecycleStatus\"\xd5\x01\n" +
 	"\n" +
 	"AiModelSku\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1d\n" +

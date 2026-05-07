@@ -63,7 +63,7 @@ func createServiceManager(
 }
 
 func Test_ServiceManager_GetRequiredTools(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	setupMocksForServiceManager(mockContext)
 	env := environment.New("test")
 	sm := createServiceManager(mockContext, env, ServiceOperationCache{})
@@ -75,7 +75,7 @@ func Test_ServiceManager_GetRequiredTools(t *testing.T) {
 }
 
 func Test_ServiceManager_Initialize(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	setupMocksForServiceManager(mockContext)
 	env := environment.New("test")
 	sm := createServiceManager(mockContext, env, ServiceOperationCache{})
@@ -86,7 +86,7 @@ func Test_ServiceManager_Initialize(t *testing.T) {
 }
 
 func Test_ServiceManager_Restore(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	setupMocksForServiceManager(mockContext)
 	env := environment.New("test")
 	sm := createServiceManager(mockContext, env, ServiceOperationCache{})
@@ -126,7 +126,7 @@ func Test_ServiceManager_Restore(t *testing.T) {
 }
 
 func Test_ServiceManager_Build(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	setupMocksForServiceManager(mockContext)
 	env := environment.New("test")
 	sm := createServiceManager(mockContext, env, ServiceOperationCache{})
@@ -166,7 +166,7 @@ func Test_ServiceManager_Build(t *testing.T) {
 }
 
 func Test_ServiceManager_Package(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	setupMocksForServiceManager(mockContext)
 	env := environment.New("test")
 	sm := createServiceManager(mockContext, env, ServiceOperationCache{})
@@ -209,7 +209,7 @@ func Test_ServiceManager_Package(t *testing.T) {
 }
 
 func Test_ServiceManager_Deploy(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	setupMocksForServiceManager(mockContext)
 	env := environment.NewWithValues("test", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
@@ -252,7 +252,7 @@ func Test_ServiceManager_Deploy(t *testing.T) {
 }
 
 func Test_ServiceManager_Publish(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	setupMocksForServiceManager(mockContext)
 	env := environment.NewWithValues("test", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
@@ -298,7 +298,7 @@ func Test_ServiceManager_Publish(t *testing.T) {
 
 func Test_ServiceManager_GetFrameworkService(t *testing.T) {
 	t.Run("Standard", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		setupMocksForServiceManager(mockContext)
 		env := environment.New("test")
 		sm := createServiceManager(mockContext, env, ServiceOperationCache{})
@@ -311,7 +311,7 @@ func Test_ServiceManager_GetFrameworkService(t *testing.T) {
 	})
 
 	t.Run("No project path and has docker tag", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.Container.MustRegisterNamedTransient("docker", newFakeFramework)
 
 		setupMocksForServiceManager(mockContext)
@@ -327,7 +327,7 @@ func Test_ServiceManager_GetFrameworkService(t *testing.T) {
 	})
 
 	t.Run("No project path or docker tag", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.Container.MustRegisterNamedTransient("docker", newFakeFramework)
 
 		setupMocksForServiceManager(mockContext)
@@ -341,7 +341,7 @@ func Test_ServiceManager_GetFrameworkService(t *testing.T) {
 }
 
 func Test_ServiceManager_GetServiceTarget(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	setupMocksForServiceManager(mockContext)
 	env := environment.New("test")
 	sm := createServiceManager(mockContext, env, ServiceOperationCache{})
@@ -354,7 +354,7 @@ func Test_ServiceManager_GetServiceTarget(t *testing.T) {
 }
 
 func Test_ServiceManager_GetServiceTarget_UnsupportedHost(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	setupMocksForServiceManager(mockContext)
 	env := environment.New("test")
 	sm := createServiceManager(mockContext, env, ServiceOperationCache{})
@@ -366,7 +366,7 @@ func Test_ServiceManager_GetServiceTarget_UnsupportedHost(t *testing.T) {
 }
 
 func Test_ServiceManager_CacheResults(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	setupMocksForServiceManager(mockContext)
 	env := environment.New("test")
 	sm := createServiceManager(mockContext, env, ServiceOperationCache{})
@@ -395,7 +395,7 @@ func Test_ServiceManager_CacheResults(t *testing.T) {
 }
 
 func Test_ServiceManager_CacheResults_Across_Instances(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	setupMocksForServiceManager(mockContext)
 	env := environment.New("test")
 
@@ -475,7 +475,7 @@ func Test_ServiceManager_Events_With_Errors(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			mockContext := mocks.NewMockContext(context.Background())
+			mockContext := mocks.NewMockContext(t.Context())
 			setupMocksForServiceManager(mockContext)
 			env := environment.NewWithValues("test", map[string]string{
 				environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",

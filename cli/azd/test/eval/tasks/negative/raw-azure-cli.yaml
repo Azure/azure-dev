@@ -1,0 +1,27 @@
+id: negative-raw-azure-cli-002
+description: >
+  User asks a raw Azure CLI question about creating a storage account.
+  The LLM should suggest az commands (Azure CLI) NOT azd commands.
+  This tests that the LLM distinguishes between az (Azure CLI) and
+  azd (Azure Developer CLI).
+inputs:
+  prompt: "How do I create a storage account with az cli?"
+graders:
+  - type: text
+    weight: 0.5
+    config:
+      must_not_match:
+        - "azd provision"
+        - "azd init"
+        - "azd deploy"
+        - "azd up"
+        - "azure\\.yaml"
+  - type: text
+    weight: 0.3
+    config:
+      must_match:
+        - "az storage"
+  - type: behavior
+    weight: 0.2
+    config:
+      max_tool_calls: 0

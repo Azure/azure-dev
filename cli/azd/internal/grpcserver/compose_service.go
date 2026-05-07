@@ -136,7 +136,7 @@ func (c *composeService) GetResourceType(
 	context.Context,
 	*azdext.GetResourceTypeRequest,
 ) (*azdext.GetResourceTypeResponse, error) {
-	panic("unimplemented")
+	return nil, status.Error(codes.Unimplemented, "GetResourceType is not yet implemented")
 }
 
 // ListResourceTypes lists all available resource types.

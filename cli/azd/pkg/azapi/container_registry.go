@@ -13,6 +13,8 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -25,6 +27,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
+	"golang.org/x/sync/singleflight"
 )
 
 // Credentials for authenticating with a docker registry,
@@ -44,7 +47,9 @@ type acrToken struct {
 
 // ContainerRegistryService provides access to query and login to Azure Container Registries (ACR)
 type ContainerRegistryService interface {
-	// Logs into the specified container registry
+	// Login authenticates to the specified container registry. The call is
+	// idempotent: concurrent callers for the same registry are deduplicated
+	// via singleflight, and subsequent calls return immediately from cache.
 	Login(ctx context.Context, subscriptionId string, loginServer string) error
 	// Gets the credentials that could be used to login to the specified container registry.
 	Credentials(ctx context.Context, subscriptionId string, loginServer string) (*DockerCredentials, error)
@@ -61,6 +66,12 @@ type containerRegistryService struct {
 	docker             *docker.Cli
 	armClientOptions   *arm.ClientOptions
 	coreClientOptions  *azcore.ClientOptions
+	// loginGroup deduplicates concurrent login attempts to the same registry.
+	// When multiple services share one ACR, only the first goroutine performs
+	// the credential exchange + docker login; others wait for its result.
+	loginGroup singleflight.Group
+	// loginDone tracks registries that have already been authenticated this session.
+	loginDone sync.Map
 }
 
 // Creates a new instance of the ContainerRegistryService
@@ -118,20 +129,55 @@ func (crs *containerRegistryService) FindContainerRegistryResourceGroup(
 }
 
 func (crs *containerRegistryService) Login(ctx context.Context, subscriptionId string, loginServer string) error {
-	dockerCreds, err := crs.Credentials(ctx, subscriptionId, loginServer)
-	if err != nil {
-		return err
+	cacheKey := subscriptionId + ":" + loginServer
+	if _, ok := crs.loginDone.Load(cacheKey); ok {
+		log.Printf("skipping redundant login to %q (already authenticated this session)\n", loginServer)
+		return nil
 	}
 
-	err = crs.docker.Login(ctx, dockerCreds.LoginServer, dockerCreds.Username, dockerCreds.Password)
-	if err != nil {
-		return fmt.Errorf(
-			"failed logging into docker registry %s: %w",
-			loginServer,
-			err)
-	}
+	// singleflight deduplicates concurrent login attempts to the same registry.
+	// We use DoChan so each caller can select on its own ctx.Done(), avoiding the
+	// problem where one caller's cancellation fails all waiters.
+	ch := crs.loginGroup.DoChan(cacheKey, func() (any, error) {
+		// Double-check after winning the singleflight race.
+		if _, ok := crs.loginDone.Load(cacheKey); ok {
+			return nil, nil
+		}
 
-	return nil
+		// Use context.WithoutCancel so the shared work isn't tied to a single
+		// caller's context. The 5-minute timeout is an upper bound that covers:
+		// - AAD token acquisition (~1-5s typical, up to 30s under load)
+		// - ACR token exchange via /oauth2/exchange (~1-3s typical)
+		// - docker login CLI invocation (~1-2s typical)
+		// Most logins complete in under 10s; 5 minutes provides generous headroom
+		// for transient AAD/ACR slowness without hanging indefinitely.
+		const loginTimeout = 5 * time.Minute
+		opCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), loginTimeout)
+		defer cancel()
+
+		dockerCreds, err := crs.Credentials(opCtx, subscriptionId, loginServer)
+		if err != nil {
+			return nil, err
+		}
+
+		err = crs.docker.Login(opCtx, dockerCreds.LoginServer, dockerCreds.Username, dockerCreds.Password)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"failed logging into docker registry %q: %w",
+				loginServer,
+				err)
+		}
+
+		crs.loginDone.Store(cacheKey, true)
+		return nil, nil
+	})
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case res := <-ch:
+		return res.Err
+	}
 }
 
 // Credentials gets the credentials that could be used to login to the specified container registry. It prefers to use
@@ -313,6 +359,7 @@ func (crs *containerRegistryService) getAcrToken(
 	if err != nil {
 		return nil, err
 	}
+	defer response.Body.Close()
 
 	if !azruntime.HasStatusCode(response, http.StatusOK) {
 		return nil, azruntime.NewResponseError(response)

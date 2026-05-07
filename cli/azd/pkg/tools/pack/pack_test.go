@@ -5,7 +5,6 @@ package pack
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -151,7 +150,7 @@ func TestNewPackCliInstall(t *testing.T) {
 	configRoot := t.TempDir()
 	t.Setenv("AZD_CONFIG_DIR", configRoot)
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet && request.URL.Host == "github.com"
@@ -170,7 +169,7 @@ func TestNewPackCliInstall(t *testing.T) {
 
 	mockExtract := func(src, dst string) (string, error) {
 		exp, _ := packCliPath()
-		_ = osutil.Rename(context.Background(), src, exp)
+		_ = osutil.Rename(t.Context(), src, exp)
 		return src, nil
 	}
 
@@ -205,7 +204,7 @@ func TestNewPackCliUpgrade(t *testing.T) {
 	err = os.WriteFile(cliPath, []byte("old pack cli"), 0600)
 	require.NoError(t, err)
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet && request.URL.Host == "github.com"
@@ -224,7 +223,7 @@ func TestNewPackCliUpgrade(t *testing.T) {
 
 	mockExtract := func(src, dst string) (string, error) {
 		exp, _ := packCliPath()
-		_ = osutil.Rename(context.Background(), src, exp)
+		_ = osutil.Rename(t.Context(), src, exp)
 		return src, nil
 	}
 

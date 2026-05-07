@@ -12,11 +12,15 @@ capabilities:
   - mcp-server
   - service-target-provider
   - framework-service-provider
+  - provisioning-provider
   - metadata
 providers:
   - name: demo
     type: service-target
     description: Deploys application components to demo
+  - name: demo
+    type: provisioning-provider
+    description: Provisions infrastructure using the demo provider
 examples:
   - name: context
     description: Displays the current `azd` project & environment context.

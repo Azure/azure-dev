@@ -61,6 +61,9 @@ func (m *HooksMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		}
 	}
 
+	// Service hooks must be available for both top-level commands and child workflow steps.
+	// Registration is idempotent per service hook signature, so repeated middleware runs
+	// (retries, azd up steps, workflow service execution) do not append duplicate handlers.
 	if err := m.registerServiceHooks(ctx); err != nil {
 		return nil, fmt.Errorf("failed registering service hooks, %w", err)
 	}
@@ -81,7 +84,9 @@ func (m *HooksMiddleware) registerCommandHooks(
 		return next(ctx)
 	}
 
-	hooksManager := ext.NewHooksManager(m.projectConfig.Path, m.commandRunner)
+	hooksManager := ext.NewHooksManager(ext.HooksManagerOptions{
+		Cwd: m.projectConfig.Path, ProjectDir: m.projectConfig.Path,
+	}, m.commandRunner)
 	hooksRunner := ext.NewHooksRunner(
 		hooksManager,
 		m.commandRunner,
@@ -98,7 +103,7 @@ func (m *HooksMiddleware) registerCommandHooks(
 	commandNames := []string{m.options.CommandPath}
 	commandNames = append(commandNames, m.options.Aliases...)
 
-	err := hooksRunner.Invoke(ctx, commandNames, func() error {
+	err := hooksRunner.Invoke(ctx, commandNames, "project", func() error {
 		result, err := next(ctx)
 		if err != nil {
 			return err
@@ -127,11 +132,21 @@ func (m *HooksMiddleware) registerServiceHooks(ctx context.Context) error {
 		serviceName := service.Name
 		// If the service hasn't configured any hooks we can continue on.
 		if len(service.Hooks) == 0 {
+			service.ResetHookRegistration()
 			log.Printf("service '%s' does not require any command hooks.\n", serviceName)
 			continue
 		}
 
-		serviceHooksManager := ext.NewHooksManager(service.Path(), m.commandRunner)
+		signature := ext.HooksConfigSignature(service.Hooks)
+		registrationCtx, shouldRegister := service.EnsureHooksRegistered(ctx, signature)
+		if !shouldRegister {
+			log.Printf("service '%s' command hooks already registered for current signature.\n", serviceName)
+			continue
+		}
+
+		serviceHooksManager := ext.NewHooksManager(ext.HooksManagerOptions{
+			Cwd: service.Path(), ProjectDir: m.projectConfig.Path,
+		}, m.commandRunner)
 		serviceHooksRunner := ext.NewHooksRunner(
 			serviceHooksManager,
 			m.commandRunner,
@@ -143,25 +158,33 @@ func (m *HooksMiddleware) registerServiceHooks(ctx context.Context) error {
 			m.serviceLocator,
 		)
 
-		for hookName := range service.Hooks {
-			hookType, eventName := ext.InferHookType(hookName)
-			// If not a pre or post hook we can continue on.
-			if hookType == ext.HookTypeNone {
-				continue
-			}
+		if err := m.registerServiceHookHandlers(registrationCtx, service, serviceHooksRunner); err != nil {
+			service.RollbackHookRegistration(signature)
+			return fmt.Errorf("failed registering event handlers for service '%s': %w", serviceName, err)
+		}
+	}
 
-			if err := service.AddHandler(
-				ctx,
-				ext.Event(hookName),
-				m.createServiceEventHandler(hookType, eventName, serviceHooksRunner),
-			); err != nil {
-				return fmt.Errorf(
-					"failed registering event handler for service '%s' and event '%s', %w",
-					serviceName,
-					hookName,
-					err,
-				)
-			}
+	return nil
+}
+
+func (m *HooksMiddleware) registerServiceHookHandlers(
+	ctx context.Context,
+	service *project.ServiceConfig,
+	serviceHooksRunner *ext.HooksRunner,
+) error {
+	for hookName := range service.Hooks {
+		hookType, eventName := ext.InferHookType(hookName)
+		// If not a pre or post hook we can continue on.
+		if hookType == ext.HookTypeNone {
+			continue
+		}
+
+		if err := service.AddHandler(
+			ctx,
+			ext.Event(hookName),
+			m.createServiceEventHandler(hookType, eventName, serviceHooksRunner),
+		); err != nil {
+			return fmt.Errorf("event '%s': %w", hookName, err)
 		}
 	}
 
@@ -175,51 +198,49 @@ func (m *HooksMiddleware) createServiceEventHandler(
 	hooksRunner *ext.HooksRunner,
 ) ext.EventHandlerFn[project.ServiceLifecycleEventArgs] {
 	return func(ctx context.Context, eventArgs project.ServiceLifecycleEventArgs) error {
-		return hooksRunner.RunHooks(ctx, hookType, nil, hookName)
+		return hooksRunner.RunHooks(ctx, hookType, "service", nil, hookName)
 	}
 }
 
 // validateHooks validates hook configurations and displays any warnings
 func (m *HooksMiddleware) validateHooks(ctx context.Context, projectConfig *project.ProjectConfig) error {
-	// Get service hooks for validation
-	var serviceHooks []map[string][]*ext.HookConfig
+	warningKeys := map[string]struct{}{}
+	validateAndWarn := func(cwd string, hooks map[string][]*ext.HookConfig) {
+		if len(hooks) == 0 {
+			return
+		}
+
+		hooksManager := ext.NewHooksManager(ext.HooksManagerOptions{
+			Cwd: cwd, ProjectDir: projectConfig.Path,
+		}, m.commandRunner)
+		validationResult := hooksManager.ValidateHooks(ctx, hooks)
+
+		for _, warning := range validationResult.Warnings {
+			key := warning.Message + "\x00" + warning.Suggestion
+			if _, has := warningKeys[key]; has {
+				continue
+			}
+
+			warningKeys[key] = struct{}{}
+			m.console.MessageUxItem(ctx, &ux.WarningMessage{
+				Description: warning.Message,
+			})
+			if warning.Suggestion != "" {
+				m.console.Message(ctx, warning.Suggestion)
+			}
+			m.console.Message(ctx, "")
+		}
+	}
+
+	validateAndWarn(projectConfig.Path, projectConfig.Hooks)
+
 	stableServices, err := m.importManager.ServiceStable(ctx, projectConfig)
 	if err != nil {
 		return fmt.Errorf("failed getting services for hook validation: %w", err)
 	}
 
 	for _, service := range stableServices {
-		serviceHooks = append(serviceHooks, service.Hooks)
-	}
-
-	// Combine project and service hooks into a single map
-	allHooks := make(map[string][]*ext.HookConfig)
-
-	// Add project hooks
-	for hookName, hookConfigs := range projectConfig.Hooks {
-		allHooks[hookName] = append(allHooks[hookName], hookConfigs...)
-	}
-
-	// Add service hooks
-	for _, serviceHookMap := range serviceHooks {
-		for hookName, hookConfigs := range serviceHookMap {
-			allHooks[hookName] = append(allHooks[hookName], hookConfigs...)
-		}
-	}
-
-	// Create hooks manager and validate
-	hooksManager := ext.NewHooksManager(projectConfig.Path, m.commandRunner)
-	validationResult := hooksManager.ValidateHooks(ctx, allHooks)
-
-	// Display any warnings
-	for _, warning := range validationResult.Warnings {
-		m.console.MessageUxItem(ctx, &ux.WarningMessage{
-			Description: warning.Message,
-		})
-		if warning.Suggestion != "" {
-			m.console.Message(ctx, warning.Suggestion)
-		}
-		m.console.Message(ctx, "")
+		validateAndWarn(service.Path(), service.Hooks)
 	}
 
 	return nil

@@ -69,9 +69,7 @@ func defaultRules() []scopeRule {
 		{match: suffix(".file.core.windows.net"), scope: "https://storage.azure.com/.default"},
 		{match: suffix(".dfs.core.windows.net"), scope: "https://storage.azure.com/.default"},
 
-		// Azure Container Registry (control-plane operations).
-		// Data-plane operations may require a different scope, so extensions can
-		// override this mapping via CustomRules.
+		// Azure Container Registry
 		{match: suffix(".azurecr.io"), scope: "https://management.azure.com/.default"},
 
 		// Azure Cognitive Services / OpenAI
@@ -94,10 +92,7 @@ func defaultRules() []scopeRule {
 		// Azure Cosmos DB
 		{match: suffix(".documents.azure.com"), scope: "https://cosmos.azure.com/.default"},
 
-		// Azure Event Hubs / Service Bus host suffix ambiguity:
-		// both services use .servicebus.windows.net. The default maps to Event Hubs;
-		// extensions targeting Service Bus should override with CustomRules:
-		// ".servicebus.windows.net" -> "https://servicebus.azure.net/.default".
+		// Azure Event Hubs
 		{match: suffix(".servicebus.windows.net"), scope: "https://eventhubs.azure.net/.default"},
 
 		// Azure App Configuration
@@ -107,10 +102,9 @@ func defaultRules() []scopeRule {
 
 // NewScopeDetector creates a [ScopeDetector] with the built-in Azure endpoint
 // mappings. Additional custom rules can be supplied via opts.
-// Custom rules take precedence over defaults, allowing callers to override
-// built-in mappings (e.g. Service Bus vs Event Hubs on .servicebus.windows.net).
+// Custom rules are evaluated before defaults, so they can override built-in mappings.
 func NewScopeDetector(opts *ScopeDetectorOptions) *ScopeDetector {
-	var custom []scopeRule
+	var customRules []scopeRule
 
 	if opts != nil {
 		// Sort keys for deterministic rule evaluation order.
@@ -126,14 +120,14 @@ func NewScopeDetector(opts *ScopeDetectorOptions) *ScopeDetector {
 
 			if strings.HasPrefix(hs, ".") {
 				// Dot-prefixed: suffix match (subdomain matching).
-				custom = append(custom, scopeRule{
+				customRules = append(customRules, scopeRule{
 					match: func(host string) bool { return strings.HasSuffix(host, hs) },
 					scope: scope,
 				})
 			} else {
 				// No dot prefix: exact host match to prevent partial-host
 				// matching (e.g. "azure.com" matching "fakeazure.com").
-				custom = append(custom, scopeRule{
+				customRules = append(customRules, scopeRule{
 					match: func(host string) bool { return host == hs },
 					scope: scope,
 				})
@@ -141,8 +135,8 @@ func NewScopeDetector(opts *ScopeDetectorOptions) *ScopeDetector {
 		}
 	}
 
-	// Prepend custom rules before defaults so they take precedence.
-	rules := append(custom, defaultRules()...)
+	// Custom rules first so they take precedence over built-in defaults.
+	rules := append(customRules, defaultRules()...) //nolint:gocritic
 
 	return &ScopeDetector{rules: rules}
 }

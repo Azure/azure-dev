@@ -15,7 +15,7 @@ Global Flags
         --debug      	: Enables debugging and diagnostics logging.
         --docs       	: Opens the documentation for azd monitor in your web browser.
     -h, --help       	: Gets help for monitor.
-        --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
+        --no-prompt  	: Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
 
 Examples
   Open Application Insights Live Metrics.

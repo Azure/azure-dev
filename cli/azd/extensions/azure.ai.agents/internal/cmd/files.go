@@ -10,7 +10,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 	"text/tabwriter"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
@@ -25,75 +24,29 @@ type filesFlags struct {
 	session   string // optional: explicit session ID override
 }
 
-// isVNextEnabled checks whether hosted agent vnext is enabled
-// by looking at both the OS environment and the azd environment.
-func isVNextEnabled(ctx context.Context) bool {
-	if v := os.Getenv("enableHostedAgentVNext"); v != "" {
-		if enabled, err := strconv.ParseBool(v); err == nil && enabled {
-			return true
-		}
-	}
+func newFilesCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
+	extCtx = ensureExtensionContext(extCtx)
 
-	// Best-effort check of azd environment
-	azdClient, err := azdext.NewAzdClient()
-	if err != nil {
-		return false
-	}
-	defer azdClient.Close()
-
-	azdEnv, err := loadAzdEnvironment(ctx, azdClient)
-	if err != nil {
-		return false
-	}
-
-	if v := azdEnv["enableHostedAgentVNext"]; v != "" {
-		if enabled, err := strconv.ParseBool(v); err == nil && enabled {
-			return true
-		}
-	}
-
-	return false
-}
-
-func newFilesCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:    "files",
-		Short:  "Manage files in a hosted agent session.",
-		Hidden: !isVNextEnabled(context.Background()),
+		Use:   "files",
+		Short: "Manage files in a hosted agent session.",
 		Long: `Manage files in a hosted agent session.
 
-Upload, download, list, and remove files in the session-scoped filesystem
+Upload, download, list, and delete files in the session-scoped filesystem
 of a hosted agent. This is useful for debugging, seeding data, and agent setup.
 
-Agent details (name, version, endpoint) are automatically resolved from the
+Agent details (name, endpoint) are automatically resolved from the
 azd environment. Use --agent-name to select a specific agent when the project
 has multiple azure.ai.agent services. The session ID is automatically resolved
-from the last invoke session, or can be overridden with --session.`,
-		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-			// Chain with parent's PersistentPreRunE (root sets NoPrompt)
-			if parent := cmd.Parent(); parent != nil && parent.PersistentPreRunE != nil {
-				if err := parent.PersistentPreRunE(cmd, args); err != nil {
-					return err
-				}
-			}
-
-			ctx := azdext.WithAccessToken(cmd.Context())
-			if !isVNextEnabled(ctx) {
-				return fmt.Errorf(
-					"files commands require hosted agent vnext to be enabled\n\n" +
-						"Set 'enableHostedAgentVNext' to 'true' in your azd environment or as an OS environment variable.",
-				)
-			}
-			return nil
-		},
+from the last invoke session, or can be overridden with --session-id.`,
 	}
 
-	cmd.AddCommand(newFilesUploadCommand())
-	cmd.AddCommand(newFilesDownloadCommand())
-	cmd.AddCommand(newFilesListCommand())
-	cmd.AddCommand(newFilesRemoveCommand())
-	cmd.AddCommand(newFilesMkdirCommand())
-	cmd.AddCommand(newFilesStatCommand())
+	cmd.AddCommand(newFilesUploadCommand(extCtx))
+	cmd.AddCommand(newFilesDownloadCommand(extCtx))
+	cmd.AddCommand(newFilesListCommand(extCtx))
+	cmd.AddCommand(newFilesRemoveCommand(extCtx))
+	cmd.AddCommand(newFilesMkdirCommand(extCtx))
+	cmd.AddCommand(newFilesStatCommand(extCtx))
 
 	return cmd
 }
@@ -101,7 +54,7 @@ from the last invoke session, or can be overridden with --session.`,
 // addFilesFlags registers the common flags on a cobra command.
 func addFilesFlags(cmd *cobra.Command, flags *filesFlags) {
 	cmd.Flags().StringVarP(&flags.agentName, "agent-name", "n", "", "Agent name (matches azure.yaml service name; auto-detected when only one exists)")
-	cmd.Flags().StringVarP(&flags.session, "session", "s", "", "Session ID override (defaults to last invoke session)")
+	cmd.Flags().StringVarP(&flags.session, "session-id", "s", "", "Session ID override (defaults to last invoke session)")
 }
 
 // filesContext holds the resolved agent context and session for file operations.
@@ -111,14 +64,14 @@ type filesContext struct {
 }
 
 // resolveFilesContext resolves agent details and session from the azd environment.
-func resolveFilesContext(ctx context.Context, flags *filesFlags) (*filesContext, error) {
+func resolveFilesContext(ctx context.Context, flags *filesFlags, noPrompt bool) (*filesContext, error) {
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create azd client: %w", err)
 	}
 	defer azdClient.Close()
 
-	info, err := resolveAgentServiceFromProject(ctx, azdClient, flags.agentName, rootFlags.NoPrompt)
+	info, err := resolveAgentServiceFromProject(ctx, azdClient, flags.agentName, noPrompt)
 	if err != nil {
 		return nil, err
 	}
@@ -130,29 +83,30 @@ func resolveFilesContext(ctx context.Context, flags *filesFlags) (*filesContext,
 			info.ServiceName,
 		)
 	}
-	if info.Version == "" {
-		return nil, fmt.Errorf(
-			"agent version not found in azd environment for service %q\n\n"+
-				"Run 'azd deploy' to deploy the agent, or check that the service is configured in azure.yaml",
-			info.ServiceName,
-		)
-	}
 
 	endpoint, err := resolveAgentEndpoint(ctx, "", "")
 	if err != nil {
 		return nil, err
 	}
 
-	sessionID, err := resolveSessionID(ctx, azdClient, info.AgentName, flags.session, false)
-	if err != nil {
-		return nil, err
+	var sessionID string
+	if info.AgentEndpoint != "" {
+		sessionID, err = resolveStoredID(
+			ctx, azdClient, buildRemoteAgentKeyFromEndpoint(info.AgentEndpoint),
+			flags.session, false, "sessions", false,
+			legacyKeysForRemote(info.AgentName)...,
+		)
+		if err != nil {
+			return nil, err
+		}
+	} else if flags.session != "" {
+		sessionID = flags.session
 	}
 
 	return &filesContext{
 		AgentContext: &AgentContext{
 			ProjectEndpoint: endpoint,
 			Name:            info.AgentName,
-			Version:         info.Version,
 		},
 		sessionID: sessionID,
 	}, nil
@@ -173,32 +127,43 @@ type FilesUploadAction struct {
 	sessionID string
 }
 
-func newFilesUploadCommand() *cobra.Command {
+func newFilesUploadCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &filesUploadFlags{}
+	extCtx = ensureExtensionContext(extCtx)
 
 	cmd := &cobra.Command{
-		Use:   "upload",
+		Use:   "upload [file]",
 		Short: "Upload a file to a hosted agent session.",
 		Long: `Upload a file to a hosted agent session.
 
 Reads a local file and uploads it to the specified remote path
 in the session's filesystem. If --target-path is not provided,
-the remote path defaults to the local file path.
+the remote path defaults to the local filename.
 
 Agent details are automatically resolved from the azd environment.`,
-		Example: `  # Upload a file (remote path defaults to local path)
-  azd ai agent files upload --file ./data/input.csv
+		Example: `  # Upload a file (remote path defaults to filename)
+  azd ai agent files upload ./data/input.csv
 
   # Upload to a specific remote path
-  azd ai agent files upload --file ./input.csv --target-path /data/input.csv
+  azd ai agent files upload ./input.csv --target-path /data/input.csv
 
-  # Upload with explicit agent name and session
-  azd ai agent files upload --file ./input.csv --agent-name my-agent --session <session-id>`,
+  # Upload with flags
+  azd ai agent files upload --file ./input.csv --agent-name my-agent`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
-			setupDebugLogging(cmd.Flags())
 
-			fc, err := resolveFilesContext(ctx, &flags.filesFlags)
+			if len(args) > 0 && flags.file == "" {
+				flags.file = args[0]
+			}
+			if flags.file == "" {
+				return fmt.Errorf(
+					"file path is required as a positional argument " +
+						"or via --file",
+				)
+			}
+
+			fc, err := resolveFilesContext(ctx, &flags.filesFlags, extCtx.NoPrompt)
 			if err != nil {
 				return err
 			}
@@ -214,9 +179,8 @@ Agent details are automatically resolved from the azd environment.`,
 	}
 
 	addFilesFlags(cmd, &flags.filesFlags)
-	cmd.Flags().StringVarP(&flags.file, "file", "f", "", "Local file path to upload (required)")
-	cmd.Flags().StringVarP(&flags.targetPath, "target-path", "t", "", "Remote destination path (defaults to local file path)")
-	_ = cmd.MarkFlagRequired("file")
+	cmd.Flags().StringVarP(&flags.file, "file", "f", "", "Local file path to upload")
+	cmd.Flags().StringVarP(&flags.targetPath, "target-path", "t", "", "Remote destination path (defaults to local filename)")
 
 	return cmd
 }
@@ -225,7 +189,7 @@ Agent details are automatically resolved from the azd environment.`,
 func (a *FilesUploadAction) Run(ctx context.Context) error {
 	remotePath := a.flags.targetPath
 	if remotePath == "" {
-		remotePath = a.flags.file
+		remotePath = filepath.Base(a.flags.file)
 	}
 
 	//nolint:gosec // G304: file path is provided by the user via CLI flag
@@ -243,17 +207,16 @@ func (a *FilesUploadAction) Run(ctx context.Context) error {
 	err = agentClient.UploadSessionFile(
 		ctx,
 		a.Name,
-		a.Version,
 		a.sessionID,
 		remotePath,
-		DefaultVNextAgentAPIVersion,
+		DefaultAgentAPIVersion,
 		file,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to upload file: %w", err)
 	}
 
-	fmt.Printf("Uploaded %s → %s\n", a.flags.file, remotePath)
+	fmt.Printf("Uploaded %s -> %s\n", a.flags.file, remotePath)
 	return nil
 }
 
@@ -272,11 +235,12 @@ type FilesDownloadAction struct {
 	sessionID string
 }
 
-func newFilesDownloadCommand() *cobra.Command {
+func newFilesDownloadCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &filesDownloadFlags{}
+	extCtx = ensureExtensionContext(extCtx)
 
 	cmd := &cobra.Command{
-		Use:   "download",
+		Use:   "download [file]",
 		Short: "Download a file from a hosted agent session.",
 		Long: `Download a file from a hosted agent session.
 
@@ -286,18 +250,28 @@ the local path defaults to the basename of the remote file.
 
 Agent details are automatically resolved from the azd environment.`,
 		Example: `  # Download a file (local path defaults to remote filename)
-  azd ai agent files download --file /data/output.csv
+  azd ai agent files download /data/output.csv
 
   # Download to a specific local path
-  azd ai agent files download --file /data/output.csv --target-path ./output.csv
+  azd ai agent files download /data/output.csv --target-path ./output.csv
 
-  # Download with explicit session
-  azd ai agent files download --file /data/output.csv --session <session-id>`,
+  # Download with flags
+  azd ai agent files download --file /data/output.csv --session-id <session-id>`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
-			setupDebugLogging(cmd.Flags())
 
-			fc, err := resolveFilesContext(ctx, &flags.filesFlags)
+			if len(args) > 0 && flags.file == "" {
+				flags.file = args[0]
+			}
+			if flags.file == "" {
+				return fmt.Errorf(
+					"file path is required as a positional argument " +
+						"or via --file",
+				)
+			}
+
+			fc, err := resolveFilesContext(ctx, &flags.filesFlags, extCtx.NoPrompt)
 			if err != nil {
 				return err
 			}
@@ -313,9 +287,8 @@ Agent details are automatically resolved from the azd environment.`,
 	}
 
 	addFilesFlags(cmd, &flags.filesFlags)
-	cmd.Flags().StringVarP(&flags.file, "file", "f", "", "Remote file path to download (required)")
+	cmd.Flags().StringVarP(&flags.file, "file", "f", "", "Remote file path to download")
 	cmd.Flags().StringVarP(&flags.targetPath, "target-path", "t", "", "Local destination path (defaults to remote filename)")
-	_ = cmd.MarkFlagRequired("file")
 
 	return cmd
 }
@@ -330,10 +303,9 @@ func (a *FilesDownloadAction) Run(ctx context.Context) error {
 	body, err := agentClient.DownloadSessionFile(
 		ctx,
 		a.Name,
-		a.Version,
 		a.sessionID,
 		a.flags.file,
-		DefaultVNextAgentAPIVersion,
+		DefaultAgentAPIVersion,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to download file: %w", err)
@@ -356,7 +328,7 @@ func (a *FilesDownloadAction) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to write file: %w", err)
 	}
 
-	fmt.Printf("Downloaded %s → %s\n", a.flags.file, targetPath)
+	fmt.Printf("Downloaded %s -> %s\n", a.flags.file, targetPath)
 	return nil
 }
 
@@ -375,12 +347,14 @@ type FilesListAction struct {
 	remotePath string
 }
 
-func newFilesListCommand() *cobra.Command {
+func newFilesListCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &filesListFlags{}
+	extCtx = ensureExtensionContext(extCtx)
 
 	cmd := &cobra.Command{
-		Use:   "list [remote-path]",
-		Short: "List files in a hosted agent session.",
+		Use:     "list [remote-path]",
+		Aliases: []string{"ls"},
+		Short:   "List files in a hosted agent session.",
 		Long: `List files in a hosted agent session.
 
 Lists files and directories at the specified path in the session's filesystem.
@@ -397,13 +371,14 @@ Agent details are automatically resolved from the azd environment.`,
   azd ai agent files list /data --output table
 
   # List with explicit session
-  azd ai agent files list --session <session-id>`,
+  azd ai agent files list --session-id <session-id>`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := azdext.WithAccessToken(cmd.Context())
-			setupDebugLogging(cmd.Flags())
+			flags.output = extCtx.OutputFormat
 
-			fc, err := resolveFilesContext(ctx, &flags.filesFlags)
+			ctx := azdext.WithAccessToken(cmd.Context())
+
+			fc, err := resolveFilesContext(ctx, &flags.filesFlags, extCtx.NoPrompt)
 			if err != nil {
 				return err
 			}
@@ -425,7 +400,11 @@ Agent details are automatically resolved from the azd environment.`,
 	}
 
 	addFilesFlags(cmd, &flags.filesFlags)
-	cmd.Flags().StringVar(&flags.output, "output", "json", "Output format (json or table)")
+	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
+		Name:          "output",
+		AllowedValues: []string{"json", "table"},
+		Default:       "json",
+	})
 
 	return cmd
 }
@@ -440,10 +419,9 @@ func (a *FilesListAction) Run(ctx context.Context) error {
 	fileList, err := agentClient.ListSessionFiles(
 		ctx,
 		a.Name,
-		a.Version,
 		a.sessionID,
 		a.remotePath,
-		DefaultVNextAgentAPIVersion,
+		DefaultAgentAPIVersion,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to list files: %w", err)
@@ -478,7 +456,7 @@ func printFileListTable(fileList *agent_api.SessionFileList) error {
 		}
 		modified := ""
 		if f.LastModified != nil {
-			modified = *f.LastModified
+			modified = f.LastModified.String()
 		}
 		fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%s\n", f.Name, f.Path, fileType, f.Size, modified)
 	}
@@ -501,32 +479,44 @@ type FilesRemoveAction struct {
 	remotePath string
 }
 
-func newFilesRemoveCommand() *cobra.Command {
+func newFilesRemoveCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &filesRemoveFlags{}
 	var filePath string
+	extCtx = ensureExtensionContext(extCtx)
 
 	cmd := &cobra.Command{
-		Use:   "remove",
-		Short: "Remove a file or directory from a hosted agent session.",
-		Long: `Remove a file or directory from a hosted agent session.
+		Use:     "delete [file]",
+		Aliases: []string{"remove", "rm"},
+		Short:   "Delete a file or directory from a hosted agent session.",
+		Long: `Delete a file or directory from a hosted agent session.
 
-Removes the specified file or directory from the session's filesystem.
-Use --recursive to remove directories and their contents.
+Deletes the specified file or directory from the session's filesystem.
+Use --recursive to delete directories and their contents.
 
 Agent details are automatically resolved from the azd environment.`,
-		Example: `  # Remove a file (agent auto-detected)
-  azd ai agent files remove --file /data/old-file.csv
+		Example: `  # Delete a file (agent auto-detected)
+  azd ai agent files delete /data/old-file.csv
 
-  # Remove a directory recursively
-  azd ai agent files remove --file /data/temp --recursive
+  # Delete a directory recursively
+  azd ai agent files delete /data/temp --recursive
 
-  # Remove with explicit session
-  azd ai agent files remove --file /data/old-file.csv --session <session-id>`,
+  # Delete with flags
+  azd ai agent files delete --file /data/old-file.csv --session-id <session-id>`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
-			setupDebugLogging(cmd.Flags())
 
-			fc, err := resolveFilesContext(ctx, &flags.filesFlags)
+			if len(args) > 0 && filePath == "" {
+				filePath = args[0]
+			}
+			if filePath == "" {
+				return fmt.Errorf(
+					"file path is required as a positional argument " +
+						"or via --file",
+				)
+			}
+
+			fc, err := resolveFilesContext(ctx, &flags.filesFlags, extCtx.NoPrompt)
 			if err != nil {
 				return err
 			}
@@ -543,9 +533,8 @@ Agent details are automatically resolved from the azd environment.`,
 	}
 
 	addFilesFlags(cmd, &flags.filesFlags)
-	cmd.Flags().StringVarP(&filePath, "file", "f", "", "Remote file or directory path to remove")
-	_ = cmd.MarkFlagRequired("file")
-	cmd.Flags().BoolVar(&flags.recursive, "recursive", false, "Recursively remove directories and their contents")
+	cmd.Flags().StringVarP(&filePath, "file", "f", "", "Remote file or directory path to delete")
+	cmd.Flags().BoolVar(&flags.recursive, "recursive", false, "Recursively delete directories and their contents")
 
 	return cmd
 }
@@ -560,11 +549,10 @@ func (a *FilesRemoveAction) Run(ctx context.Context) error {
 	err = agentClient.RemoveSessionFile(
 		ctx,
 		a.Name,
-		a.Version,
 		a.sessionID,
 		a.remotePath,
 		a.flags.recursive,
-		DefaultVNextAgentAPIVersion,
+		DefaultAgentAPIVersion,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to remove file: %w", err)
@@ -583,12 +571,13 @@ type FilesMkdirAction struct {
 	remotePath string
 }
 
-func newFilesMkdirCommand() *cobra.Command {
+func newFilesMkdirCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &filesFlags{}
 	var dirPath string
+	extCtx = ensureExtensionContext(extCtx)
 
 	cmd := &cobra.Command{
-		Use:   "mkdir",
+		Use:   "mkdir [dir]",
 		Short: "Create a directory in a hosted agent session.",
 		Long: `Create a directory in a hosted agent session.
 
@@ -597,15 +586,25 @@ Parent directories are created as needed.
 
 Agent details are automatically resolved from the azd environment.`,
 		Example: `  # Create a directory (agent auto-detected)
-  azd ai agent files mkdir --dir /data/output
+  azd ai agent files mkdir /data/output
 
-  # Create with explicit session
-  azd ai agent files mkdir --dir /data/output --session <session-id>`,
+  # Create with flags
+  azd ai agent files mkdir --dir /data/output --session-id <session-id>`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
-			setupDebugLogging(cmd.Flags())
 
-			fc, err := resolveFilesContext(ctx, flags)
+			if len(args) > 0 && dirPath == "" {
+				dirPath = args[0]
+			}
+			if dirPath == "" {
+				return fmt.Errorf(
+					"directory path is required as a positional " +
+						"argument or via --dir",
+				)
+			}
+
+			fc, err := resolveFilesContext(ctx, flags, extCtx.NoPrompt)
 			if err != nil {
 				return err
 			}
@@ -622,7 +621,6 @@ Agent details are automatically resolved from the azd environment.`,
 
 	addFilesFlags(cmd, flags)
 	cmd.Flags().StringVarP(&dirPath, "dir", "d", "", "Remote directory path to create")
-	_ = cmd.MarkFlagRequired("dir")
 
 	return cmd
 }
@@ -637,10 +635,9 @@ func (a *FilesMkdirAction) Run(ctx context.Context) error {
 	err = agentClient.MkdirSessionFile(
 		ctx,
 		a.Name,
-		a.Version,
 		a.sessionID,
 		a.remotePath,
-		DefaultVNextAgentAPIVersion,
+		DefaultAgentAPIVersion,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
@@ -665,8 +662,9 @@ type FilesStatAction struct {
 	remotePath string
 }
 
-func newFilesStatCommand() *cobra.Command {
+func newFilesStatCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &filesStatFlags{}
+	extCtx = ensureExtensionContext(extCtx)
 
 	cmd := &cobra.Command{
 		Use:   "stat <remote-path>",
@@ -683,13 +681,14 @@ Agent details are automatically resolved from the azd environment.`,
   azd ai agent files stat /data/output.csv --output table
 
   # Get metadata with explicit session
-  azd ai agent files stat /data/output.csv --session <session-id>`,
+  azd ai agent files stat /data/output.csv --session-id <session-id>`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := azdext.WithAccessToken(cmd.Context())
-			setupDebugLogging(cmd.Flags())
+			flags.output = extCtx.OutputFormat
 
-			fc, err := resolveFilesContext(ctx, &flags.filesFlags)
+			ctx := azdext.WithAccessToken(cmd.Context())
+
+			fc, err := resolveFilesContext(ctx, &flags.filesFlags, extCtx.NoPrompt)
 			if err != nil {
 				return err
 			}
@@ -706,7 +705,11 @@ Agent details are automatically resolved from the azd environment.`,
 	}
 
 	addFilesFlags(cmd, &flags.filesFlags)
-	cmd.Flags().StringVarP(&flags.output, "output", "o", "json", "Output format (json or table)")
+	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
+		Name:          "output",
+		AllowedValues: []string{"json", "table"},
+		Default:       "json",
+	})
 
 	return cmd
 }
@@ -721,10 +724,9 @@ func (a *FilesStatAction) Run(ctx context.Context) error {
 	fileInfo, err := agentClient.StatSessionFile(
 		ctx,
 		a.Name,
-		a.Version,
 		a.sessionID,
 		a.remotePath,
-		DefaultVNextAgentAPIVersion,
+		DefaultAgentAPIVersion,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to stat file: %w", err)
@@ -754,7 +756,7 @@ func printFileInfoTable(f *agent_api.SessionFileInfo) error {
 	}
 	modified := ""
 	if f.LastModified != nil {
-		modified = *f.LastModified
+		modified = f.LastModified.String()
 	}
 	fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%s\n", f.Name, f.Path, fileType, f.Size, modified)
 

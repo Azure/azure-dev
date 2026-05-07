@@ -19,6 +19,7 @@ import (
 
 	"github.com/AlecAivazis/survey/v2/terminal"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
@@ -48,9 +49,14 @@ func MapError(err error, span tracing.Span) {
 		errCode = updateErr.Code
 	} else if _, ok := errors.AsType[*auth.ReLoginRequiredError](err); ok {
 		errCode = "auth.login_required"
+		errDetails = append(errDetails, fields.ErrCategory.String("auth"))
 	} else if errWithSuggestion, ok := errors.AsType[*internal.ErrorWithSuggestion](err); ok {
 		errCode = "error.suggestion"
-		span.SetAttributes(fields.ErrType.String(classifySuggestionType(errWithSuggestion.Unwrap())))
+		innerErr := errWithSuggestion.Unwrap()
+		span.SetAttributes(fields.ErrType.String(classifySuggestionType(innerErr)))
+		if authFailedErr, ok := errors.AsType[*auth.AuthFailedError](innerErr); ok {
+			errDetails = append(errDetails, authFailedTelemetryDetails(authFailedErr)...)
+		}
 	} else if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
 		serviceName := "other"
 		statusCode := -1
@@ -171,19 +177,14 @@ func MapError(err error, span tracing.Span) {
 			errDetails = append(errDetails, fields.ToolName.String(strings.Join(toolCheckErr.ToolNames, ",")))
 		}
 	} else if authFailedErr, ok := errors.AsType[*auth.AuthFailedError](err); ok {
-		errDetails = append(errDetails, fields.ServiceName.String("aad"))
-		if authFailedErr.Parsed != nil {
-			codes := make([]string, 0, len(authFailedErr.Parsed.ErrorCodes))
-			for _, code := range authFailedErr.Parsed.ErrorCodes {
-				codes = append(codes, fmt.Sprintf("%d", code))
-			}
-			serviceErr := strings.Join(codes, ",")
-			errDetails = append(errDetails,
-				fields.ServiceStatusCode.String(authFailedErr.Parsed.Error),
-				fields.ServiceErrorCode.String(serviceErr),
-				fields.ServiceCorrelationId.String(authFailedErr.Parsed.CorrelationId))
-		}
+		errDetails = append(errDetails, authFailedTelemetryDetails(authFailedErr)...)
 		errCode = "service.aad.failed"
+	} else if errors.Is(err, auth.ErrNoCurrentUser) {
+		errCode = "auth.not_logged_in"
+		errDetails = append(errDetails, fields.ErrCategory.String("auth"))
+	} else if _, ok := errors.AsType[*azidentity.AuthenticationFailedError](err); ok {
+		errCode = "auth.identity_failed"
+		errDetails = append(errDetails, fields.ErrCategory.String("auth"))
 	} else if code := classifySentinel(err); code != "" {
 		errCode = code
 	} else if isNetworkError(err) {
@@ -206,6 +207,24 @@ func MapError(err error, span tracing.Span) {
 	}
 
 	span.SetStatus(codes.Error, errCode)
+}
+
+func authFailedTelemetryDetails(authFailedErr *auth.AuthFailedError) []attribute.KeyValue {
+	errDetails := []attribute.KeyValue{fields.ServiceName.String("aad")}
+	if authFailedErr == nil || authFailedErr.Parsed == nil {
+		return errDetails
+	}
+
+	codes := make([]string, 0, len(authFailedErr.Parsed.ErrorCodes))
+	for _, code := range authFailedErr.Parsed.ErrorCodes {
+		codes = append(codes, fmt.Sprintf("%d", code))
+	}
+
+	return append(errDetails,
+		fields.ServiceStatusCode.String(authFailedErr.Parsed.Error),
+		fields.ServiceErrorCode.String(strings.Join(codes, ",")),
+		fields.ServiceCorrelationId.String(authFailedErr.Parsed.CorrelationId),
+	)
 }
 
 // classifySentinel checks if the error matches a known sentinel
@@ -263,25 +282,39 @@ func classifySentinel(err error) string {
 		return "internal.resource_not_found"
 	case errors.Is(err, internal.ErrOperationCancelled):
 		return "internal.operation_cancelled"
+	case errors.Is(err, internal.ErrAbortedByUser):
+		return "internal.operation_aborted"
 	case errors.Is(err, terminal.InterruptErr),
 		errors.Is(err, context.Canceled):
 		return "user.canceled"
 	case errors.Is(err, context.DeadlineExceeded):
 		return "internal.timeout"
-	case errors.Is(err, auth.ErrNoCurrentUser):
-		return "auth.not_logged_in"
 	case errors.Is(err, consent.ErrToolExecutionDenied):
 		return "user.tool_denied"
 	case errors.Is(err, git.ErrNotRepository):
 		return "internal.not_git_repo"
 	case errors.Is(err, azapi.ErrPreviewNotSupported):
 		return "internal.preview_not_supported"
+	case errors.Is(err, azapi.ErrCancelNotSupported):
+		return "internal.cancel_not_supported"
 	case errors.Is(err, provisioning.ErrBindMountOperationDisabled):
 		return "internal.bind_mount_disabled"
+	case errors.Is(err, provisioning.ErrDeploymentInterruptedLeaveRunning):
+		return "user.canceled.leave_running"
+	case errors.Is(err, provisioning.ErrDeploymentCanceledByUser):
+		return "user.canceled.deployment_canceled"
+	case errors.Is(err, provisioning.ErrDeploymentCancelTimeout):
+		return "user.canceled.cancel_timed_out"
+	case errors.Is(err, provisioning.ErrDeploymentCancelTooLate):
+		return "user.canceled.cancel_too_late"
+	case errors.Is(err, provisioning.ErrDeploymentCancelFailed):
+		return "user.canceled.cancel_failed"
 	case errors.Is(err, update.ErrNeedsElevation):
 		return "update.elevationRequired"
 	case errors.Is(err, pipeline.ErrRemoteHostIsNotAzDo):
 		return "internal.remote_not_azdo"
+	case errors.Is(err, internal.ErrToolUpgradeFailed):
+		return "internal.tool_upgrade_failed"
 	default:
 		return ""
 	}
@@ -372,6 +405,14 @@ func classifySuggestionType(err error) string {
 
 	if _, ok := errors.AsType[*auth.AuthFailedError](err); ok {
 		return "service.aad.failed"
+	}
+
+	if errors.Is(err, auth.ErrNoCurrentUser) {
+		return "auth.not_logged_in"
+	}
+
+	if _, ok := errors.AsType[*azidentity.AuthenticationFailedError](err); ok {
+		return "auth.identity_failed"
 	}
 
 	if code := classifySentinel(err); code != "" {

@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -202,7 +201,7 @@ func TestCallReady(t *testing.T) {
 			tt.setupMock(mockClient)
 
 			client := &AzdClient{extensionClient: mockClient}
-			err := callReady(context.Background(), client)
+			err := callReady(t.Context(), client)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -238,9 +237,11 @@ func TestExtensionHost_ServiceTargetOnly(t *testing.T) {
 		}).
 		Return(nil)
 	// Mock Ready to return immediately and Receive to block until context is cancelled
+	receiveStarted := make(chan struct{})
 	mockServiceTargetManager.On("Ready", mock.Anything).Return(nil)
 	mockServiceTargetManager.On("Receive", mock.Anything).Run(func(args mock.Arguments) {
 		ctx := args.Get(0).(context.Context)
+		close(receiveStarted)
 		<-ctx.Done()
 	}).Return(nil)
 	mockServiceTargetManager.On("Close").Return(nil)
@@ -257,7 +258,7 @@ func TestExtensionHost_ServiceTargetOnly(t *testing.T) {
 	})
 
 	// Run test
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	// Run in goroutine and collect result
@@ -266,10 +267,9 @@ func TestExtensionHost_ServiceTargetOnly(t *testing.T) {
 		done <- runner.Run(ctx)
 	}()
 
-	// Wait for registration to complete, then cancel
+	// Wait for registration to complete, then wait for Receive() to start, then cancel.
 	<-registrationComplete
-	// Give a brief moment for Receive() to start
-	time.Sleep(100 * time.Millisecond)
+	<-receiveStarted
 	cancel()
 
 	// Wait for completion
@@ -302,9 +302,11 @@ func TestExtensionHost_EventHandlersOnly(t *testing.T) {
 		wg.Done()
 	}).Return(nil)
 	// Mock Ready to return immediately and Receive to block until context is cancelled
+	receiveStarted := make(chan struct{})
 	mockEventManager.On("Ready", mock.Anything).Return(nil)
 	mockEventManager.On("Receive", mock.Anything).Run(func(args mock.Arguments) {
 		ctx := args.Get(0).(context.Context)
+		close(receiveStarted)
 		<-ctx.Done()
 	}).Return(nil)
 	mockEventManager.On("Close").Return(nil)
@@ -323,7 +325,7 @@ func TestExtensionHost_EventHandlersOnly(t *testing.T) {
 	}, nil)
 
 	// Run test
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	// Run in goroutine and collect result
@@ -332,10 +334,9 @@ func TestExtensionHost_EventHandlersOnly(t *testing.T) {
 		done <- runner.Run(ctx)
 	}()
 
-	// Wait for all registrations to complete, then cancel
+	// Wait for all registrations to complete, wait for Receive() to start, then cancel.
 	<-registrationComplete
-	// Give a brief moment for Receive() to start
-	time.Sleep(100 * time.Millisecond)
+	<-receiveStarted
 	cancel()
 
 	// Wait for completion
@@ -364,9 +365,17 @@ func TestExtensionHost_ServiceTargetsAndEvents(t *testing.T) {
 		}).
 		Return(nil)
 	// Mock Ready and Receive to support new interface
+	var receiveWg sync.WaitGroup
+	receiveWg.Add(2)
+	receiveStarted := make(chan struct{})
+	go func() {
+		receiveWg.Wait()
+		close(receiveStarted)
+	}()
 	mockServiceTargetManager.On("Ready", mock.Anything).Return(nil)
 	mockServiceTargetManager.On("Receive", mock.Anything).Run(func(args mock.Arguments) {
 		ctx := args.Get(0).(context.Context)
+		receiveWg.Done()
 		<-ctx.Done()
 	}).Return(nil)
 	mockServiceTargetManager.On("Close").Return(nil)
@@ -381,6 +390,7 @@ func TestExtensionHost_ServiceTargetsAndEvents(t *testing.T) {
 	mockEventManager.On("Ready", mock.Anything).Return(nil)
 	mockEventManager.On("Receive", mock.Anything).Run(func(args mock.Arguments) {
 		ctx := args.Get(0).(context.Context)
+		receiveWg.Done()
 		<-ctx.Done()
 	}).Return(nil)
 	mockEventManager.On("Close").Return(nil)
@@ -400,7 +410,7 @@ func TestExtensionHost_ServiceTargetsAndEvents(t *testing.T) {
 	})
 
 	// Run test
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	// Run in goroutine and collect result
@@ -409,10 +419,9 @@ func TestExtensionHost_ServiceTargetsAndEvents(t *testing.T) {
 		done <- runner.Run(ctx)
 	}()
 
-	// Wait for all registrations to complete, then cancel
+	// Wait for all registrations to complete, wait for Receive() to start, then cancel.
 	<-registrationComplete
-	// Give a brief moment for Receive() to start
-	time.Sleep(100 * time.Millisecond)
+	<-receiveStarted
 	cancel()
 
 	// Wait for completion
@@ -482,9 +491,11 @@ func TestExtensionHost_WithFrameworkService(t *testing.T) {
 		}).
 		Return(nil)
 	// Mock Ready and Receive to support new interface
+	receiveStarted := make(chan struct{})
 	mockFrameworkServiceManager.On("Ready", mock.Anything).Return(nil)
 	mockFrameworkServiceManager.On("Receive", mock.Anything).Run(func(args mock.Arguments) {
 		ctx := args.Get(0).(context.Context)
+		close(receiveStarted)
 		<-ctx.Done()
 	}).Return(nil)
 	mockFrameworkServiceManager.On("Close").Return(nil)
@@ -501,7 +512,7 @@ func TestExtensionHost_WithFrameworkService(t *testing.T) {
 	})
 
 	// Run test
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	// Run in goroutine and collect result
@@ -510,10 +521,9 @@ func TestExtensionHost_WithFrameworkService(t *testing.T) {
 		done <- runner.Run(ctx)
 	}()
 
-	// Wait for registration to complete, then cancel
+	// Wait for registration to complete, wait for Receive() to start, then cancel.
 	<-registrationComplete
-	// Give a brief moment for Receive() to start
-	time.Sleep(100 * time.Millisecond)
+	<-receiveStarted
 	cancel()
 
 	// Wait for completion
@@ -541,10 +551,19 @@ func TestExtensionHost_MultipleServiceTypes(t *testing.T) {
 		Run(func(args mock.Arguments) {
 			wg.Done()
 		}).Return(nil)
-	// Mock Ready and Receive to support new interface
+	// Mock Ready and Receive to support new interface.
+	// Use a WaitGroup to track when all three Receive() calls have started.
+	var receiveWg sync.WaitGroup
+	receiveWg.Add(3)
+	receiveStarted := make(chan struct{})
+	go func() {
+		receiveWg.Wait()
+		close(receiveStarted)
+	}()
 	mockServiceTargetManager.On("Ready", mock.Anything).Return(nil)
 	mockServiceTargetManager.On("Receive", mock.Anything).Run(func(args mock.Arguments) {
 		ctx := args.Get(0).(context.Context)
+		receiveWg.Done()
 		<-ctx.Done()
 	}).Return(nil)
 	mockServiceTargetManager.On("Close").Return(nil)
@@ -559,6 +578,7 @@ func TestExtensionHost_MultipleServiceTypes(t *testing.T) {
 	mockFrameworkServiceManager.On("Ready", mock.Anything).Return(nil)
 	mockFrameworkServiceManager.On("Receive", mock.Anything).Run(func(args mock.Arguments) {
 		ctx := args.Get(0).(context.Context)
+		receiveWg.Done()
 		<-ctx.Done()
 	}).Return(nil)
 	mockFrameworkServiceManager.On("Close").Return(nil)
@@ -571,6 +591,7 @@ func TestExtensionHost_MultipleServiceTypes(t *testing.T) {
 	mockEventManager.On("Ready", mock.Anything).Return(nil)
 	mockEventManager.On("Receive", mock.Anything).Run(func(args mock.Arguments) {
 		ctx := args.Get(0).(context.Context)
+		receiveWg.Done()
 		<-ctx.Done()
 	}).Return(nil)
 	mockEventManager.On("Close").Return(nil)
@@ -594,7 +615,7 @@ func TestExtensionHost_MultipleServiceTypes(t *testing.T) {
 	})
 
 	// Run test
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	// Run in goroutine and collect result
@@ -603,10 +624,9 @@ func TestExtensionHost_MultipleServiceTypes(t *testing.T) {
 		done <- runner.Run(ctx)
 	}()
 
-	// Wait for all registrations to complete, then cancel
+	// Wait for all registrations to complete, wait for all Receive() methods to start, then cancel.
 	<-registrationComplete
-	// Give a brief moment for all Receive() methods to start
-	time.Sleep(100 * time.Millisecond)
+	<-receiveStarted
 	cancel()
 
 	// Wait for completion
@@ -627,8 +647,16 @@ func TestExtensionHost_MultipleRegistrationErrors(t *testing.T) {
 	error2 := status.Error(codes.Internal, "framework service error")
 
 	mockServiceTargetManager := &MockServiceTargetRegistrar{}
+	var receiveWg sync.WaitGroup
+	receiveWg.Add(2)
+	receiveStarted := make(chan struct{})
+	go func() {
+		receiveWg.Wait()
+		close(receiveStarted)
+	}()
 	mockServiceTargetManager.On("Receive", mock.Anything).Run(func(args mock.Arguments) {
 		ctx := args.Get(0).(context.Context)
+		receiveWg.Done()
 		<-ctx.Done()
 	}).Return(nil)
 	mockServiceTargetManager.On("Ready", mock.Anything).Return(nil)
@@ -638,6 +666,7 @@ func TestExtensionHost_MultipleRegistrationErrors(t *testing.T) {
 	mockFrameworkServiceManager := &MockFrameworkServiceRegistrar{}
 	mockFrameworkServiceManager.On("Receive", mock.Anything).Run(func(args mock.Arguments) {
 		ctx := args.Get(0).(context.Context)
+		receiveWg.Done()
 		<-ctx.Done()
 	}).Return(nil)
 	mockFrameworkServiceManager.On("Ready", mock.Anything).Return(nil)
@@ -659,7 +688,7 @@ func TestExtensionHost_MultipleRegistrationErrors(t *testing.T) {
 	})
 
 	// Run test
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	// Run in goroutine and collect result
@@ -668,8 +697,9 @@ func TestExtensionHost_MultipleRegistrationErrors(t *testing.T) {
 		done <- runner.Run(ctx)
 	}()
 
-	// For error tests, give a brief moment for Receive() to start, then cancel
-	time.Sleep(100 * time.Millisecond) // Slightly longer for error case
+	// Wait for both Receive() methods to start before cancelling, so the mock
+	// expectations are satisfied.
+	<-receiveStarted
 	cancel()
 
 	// Wait for completion
@@ -710,8 +740,9 @@ func TestExtensionHost_BrokerLogging(t *testing.T) {
 				t.Setenv("AZD_EXT_DEBUG", tt.envValue)
 			} else {
 				// Ensure the variable is not inherited from the outer process.
+				// t.Setenv handles cleanup automatically; do not use os.Unsetenv
+				// as it is not parallel-safe.
 				t.Setenv("AZD_EXT_DEBUG", "")
-				os.Unsetenv("AZD_EXT_DEBUG")
 			}
 
 			// Exercise the same strconv.ParseBool logic that Run() uses.
@@ -726,6 +757,56 @@ func TestExtensionHost_BrokerLogging(t *testing.T) {
 			host.initManagers("test-ext", brokerLogger)
 
 			// Verify all three managers received the expected logger value.
+			stm := host.serviceTargetManager.(*ServiceTargetManager)
+			fsm := host.frameworkServiceManager.(*FrameworkServiceManager)
+			em := host.eventManager.(*EventManager)
+
+			if tt.wantNil {
+				assert.Nil(t, stm.brokerLogger, "service target manager broker logger")
+				assert.Nil(t, fsm.brokerLogger, "framework service manager broker logger")
+				assert.Nil(t, em.brokerLogger, "event manager broker logger")
+			} else {
+				assert.NotNil(t, stm.brokerLogger, "service target manager broker logger")
+				assert.NotNil(t, fsm.brokerLogger, "framework service manager broker logger")
+				assert.NotNil(t, em.brokerLogger, "event manager broker logger")
+			}
+		})
+	}
+}
+
+// TestExtensionHost_BrokerLogging_AZD_DEBUG_Fallback verifies that AZD_DEBUG
+// is used as a fallback when AZD_EXT_DEBUG is not set, matching the behavior
+// in Run() where --debug propagates via AZD_DEBUG.
+func TestExtensionHost_BrokerLogging_AZD_DEBUG_Fallback(t *testing.T) {
+	tests := []struct {
+		name     string
+		envValue string // value for AZD_DEBUG; AZD_EXT_DEBUG is always unset
+		wantNil  bool
+	}{
+		{name: "AZD_DEBUG=true enables broker logging as fallback", envValue: "true", wantNil: false},
+		{name: "AZD_DEBUG=1 enables broker logging as fallback", envValue: "1", wantNil: false},
+		{name: "AZD_DEBUG=false does not enable broker logging", envValue: "false", wantNil: true},
+		{name: "AZD_DEBUG=0 does not enable broker logging", envValue: "0", wantNil: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Ensure AZD_EXT_DEBUG is unset so AZD_DEBUG fallback is exercised.
+			t.Setenv("AZD_EXT_DEBUG", "")
+			t.Setenv("AZD_DEBUG", tt.envValue)
+
+			// Replicate the same fallback logic from Run().
+			var brokerLogger *log.Logger
+			if isDebug, err := strconv.ParseBool(os.Getenv("AZD_EXT_DEBUG")); err == nil && isDebug {
+				brokerLogger = log.New(os.Stderr, "", log.LstdFlags)
+			} else if isDebug, err := strconv.ParseBool(os.Getenv("AZD_DEBUG")); err == nil && isDebug {
+				brokerLogger = log.New(os.Stderr, "", log.LstdFlags)
+			}
+
+			client := newTestAzdClient()
+			host := NewExtensionHost(client)
+			host.initManagers("test-ext", brokerLogger)
+
 			stm := host.serviceTargetManager.(*ServiceTargetManager)
 			fsm := host.frameworkServiceManager.(*FrameworkServiceManager)
 			em := host.eventManager.(*EventManager)

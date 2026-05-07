@@ -6,11 +6,13 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"syscall"
 
@@ -24,8 +26,9 @@ type runFlags struct {
 	startCommand string
 }
 
-func newRunCommand() *cobra.Command {
+func newRunCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &runFlags{}
+	extCtx = ensureExtensionContext(extCtx)
 
 	cmd := &cobra.Command{
 		Use:   "run [name]",
@@ -61,8 +64,7 @@ Use a separate terminal to invoke the running agent:
 				flags.name = args[0]
 			}
 			ctx := azdext.WithAccessToken(cmd.Context())
-			setupDebugLogging(cmd.Flags())
-			return runRun(ctx, flags)
+			return runRun(ctx, flags, extCtx.NoPrompt)
 		},
 	}
 
@@ -73,7 +75,7 @@ Use a separate terminal to invoke the running agent:
 	return cmd
 }
 
-func runRun(ctx context.Context, flags *runFlags) error {
+func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
 		return fmt.Errorf("failed to create azd client: %w", err)
@@ -81,11 +83,23 @@ func runRun(ctx context.Context, flags *runFlags) error {
 	defer azdClient.Close()
 
 	// Resolve the service source directory and startup command from azure.yaml
-	runCtx, err := resolveServiceRunContext(ctx, azdClient, flags.name, rootFlags.NoPrompt)
+	runCtx, err := resolveServiceRunContext(ctx, azdClient, flags.name, noPrompt)
 	if err != nil {
 		return err
 	}
 	projectDir := runCtx.ProjectDir
+
+	// Clean up stored local session when the agent process exits.
+	localAgentKey := resolveLocalAgentKeyWithPort(ctx, azdClient, runCtx.ServiceName, noPrompt, flags.port)
+	defer func() {
+		if err := deleteContextValue(ctx, azdClient, "sessions", localAgentKey); err != nil {
+			log.Printf("run: failed to clear stored local session: %v", err)
+		}
+	}()
+
+	// Detect project type early — used for both start-command resolution and
+	// environment setup (e.g., setting ASPNETCORE_URLS for .NET).
+	pt := detectProjectType(projectDir)
 
 	// Resolve start command: --start-command flag > azure.yaml startupCommand > detect
 	startCmd := flags.startCommand
@@ -94,7 +108,6 @@ func runRun(ctx context.Context, flags *runFlags) error {
 	}
 
 	if startCmd == "" {
-		pt := detectProjectType(projectDir)
 		if pt.StartCmd != "" {
 			startCmd = pt.StartCmd
 			fmt.Printf("Detected %s project. Start command: %s\n", pt.Language, startCmd)
@@ -133,14 +146,18 @@ func runRun(ctx context.Context, flags *runFlags) error {
 	cmdParts = resolveVenvCommand(projectDir, cmdParts)
 
 	env := os.Environ()
-	env = append(env, fmt.Sprintf("PORT=%d", flags.port))
+	env = appendPortEnvVars(env, pt, flags.port)
 
 	// Load azd environment variables (e.g., AZURE_AI_PROJECT_ENDPOINT)
-	// so the agent can reach Azure services during local development
+	// so the agent can reach Azure services during local development.
+	// Also translate azd env keys to FOUNDRY_* env vars so the agent code
+	// works identically whether running locally or in a hosted container
+	// (where the platform automatically injects FOUNDRY_* env vars).
 	if azdEnvVars, err := loadAzdEnvironment(ctx, azdClient); err == nil {
 		for k, v := range azdEnvVars {
 			env = append(env, fmt.Sprintf("%s=%s", k, v))
 		}
+		env = appendFoundryEnvVars(env, azdEnvVars, runCtx.ServiceName)
 	}
 
 	url := fmt.Sprintf("http://localhost:%d", flags.port)
@@ -192,6 +209,17 @@ func runRun(ctx context.Context, flags *runFlags) error {
 		return fmt.Errorf("agent exited: %w", err)
 	}
 	return nil
+}
+
+// appendPortEnvVars appends PORT and, for .NET projects, ASPNETCORE_URLS to the
+// environment slice so the agent listens on the correct port.
+// ASP.NET Core ignores PORT — it uses ASPNETCORE_URLS to configure Kestrel.
+func appendPortEnvVars(env []string, pt ProjectType, port int) []string {
+	env = append(env, fmt.Sprintf("PORT=%d", port))
+	if pt.Language == "dotnet" {
+		env = append(env, fmt.Sprintf("ASPNETCORE_URLS=http://localhost:%d", port))
+	}
+	return env
 }
 
 // --- Dependency installation ---
@@ -359,6 +387,67 @@ func venvBinDir(venvDir string) string {
 		return filepath.Join(venvDir, "Scripts")
 	}
 	return filepath.Join(venvDir, "bin")
+}
+
+// appendFoundryEnvVars translates azd environment keys to FOUNDRY_* env vars that hosted
+// agent containers receive automatically from the platform. This ensures the agent code
+// works identically whether running locally (via azd ai agent run) or in a hosted container.
+//
+// The mapping is:
+//
+//	AZURE_AI_PROJECT_ENDPOINT          → FOUNDRY_PROJECT_ENDPOINT
+//	AZURE_AI_PROJECT_ID                → FOUNDRY_PROJECT_ARM_ID
+//	AGENT_{SVC}_NAME                   → FOUNDRY_AGENT_NAME
+//	AGENT_{SVC}_VERSION                → FOUNDRY_AGENT_VERSION
+//	APPLICATIONINSIGHTS_CONNECTION_STRING (unchanged — already matches platform name)
+func appendFoundryEnvVars(env []string, azdEnv map[string]string, serviceName string) []string {
+	// Static mappings from azd env key names to FOUNDRY_* env var names
+	staticMappings := []struct {
+		azdKey     string
+		foundryKey string
+	}{
+		{"AZURE_AI_PROJECT_ENDPOINT", "FOUNDRY_PROJECT_ENDPOINT"},
+		{"AZURE_AI_PROJECT_ID", "FOUNDRY_PROJECT_ARM_ID"},
+	}
+
+	for _, m := range staticMappings {
+		if v := azdEnv[m.azdKey]; v != "" {
+			if _, exists := azdEnv[m.foundryKey]; !exists && !envSliceHasKey(env, m.foundryKey) {
+				env = append(env, fmt.Sprintf("%s=%s", m.foundryKey, v))
+			}
+		}
+	}
+
+	// Service-specific mappings (AGENT_{SVC}_NAME → FOUNDRY_AGENT_NAME, etc.)
+	if serviceName != "" {
+		serviceKey := toServiceKey(serviceName)
+		agentMappings := []struct {
+			azdKeyFmt  string
+			foundryKey string
+		}{
+			{"AGENT_%s_NAME", "FOUNDRY_AGENT_NAME"},
+			{"AGENT_%s_VERSION", "FOUNDRY_AGENT_VERSION"},
+		}
+
+		for _, m := range agentMappings {
+			azdKey := fmt.Sprintf(m.azdKeyFmt, serviceKey)
+			if v := azdEnv[azdKey]; v != "" {
+				if _, exists := azdEnv[m.foundryKey]; !exists && !envSliceHasKey(env, m.foundryKey) {
+					env = append(env, fmt.Sprintf("%s=%s", m.foundryKey, v))
+				}
+			}
+		}
+	}
+
+	return env
+}
+
+// envSliceHasKey reports whether the env slice already contains an entry for the given key.
+func envSliceHasKey(env []string, key string) bool {
+	prefix := key + "="
+	return slices.ContainsFunc(env, func(entry string) bool {
+		return strings.HasPrefix(entry, prefix)
+	})
 }
 
 // loadAzdEnvironment reads all key-value pairs from the current azd environment.

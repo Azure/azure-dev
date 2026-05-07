@@ -67,7 +67,7 @@ func GetCommandFormatter(cmd *cobra.Command) (Formatter, error) {
 
 	supported := slices.Contains(supportedFormatters, desiredFormatter)
 	if !supported {
-		return nil, fmt.Errorf("unsupported format '%s'", desiredFormatter)
+		return nil, fmt.Errorf("unsupported format '%s' for --output", desiredFormatter)
 	}
 
 	// Check for --query flag and validate it requires JSON output

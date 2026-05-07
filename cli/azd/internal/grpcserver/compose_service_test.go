@@ -4,7 +4,6 @@
 package grpcserver
 
 import (
-	"context"
 	"crypto/rand"
 	"encoding/json"
 	"math/big"
@@ -18,10 +17,12 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func Test_ComposeService_AddResource(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	temp := t.TempDir()
 	azdCtx := azdcontext.NewAzdContextWithDirectory(temp)
 	projectConfig := project.ProjectConfig{
@@ -78,7 +79,7 @@ func Test_ComposeService_AddResource(t *testing.T) {
 }
 
 func Test_ComposeService_GetResource(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	temp := t.TempDir()
 	azdCtx := azdcontext.NewAzdContextWithDirectory(temp)
 	projectConfig := project.ProjectConfig{
@@ -130,7 +131,7 @@ func Test_ComposeService_GetResource(t *testing.T) {
 }
 
 func Test_ComposeService_ListResources(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	t.Run("success", func(t *testing.T) {
 		temp := t.TempDir()
@@ -198,7 +199,7 @@ func Test_ComposeService_ListResources(t *testing.T) {
 
 func Test_Test_ComposeService_ListResourceTypes(t *testing.T) {
 	// Setup a mock context.
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	lazyAzdContext := lazy.NewLazy(func() (*azdcontext.AzdContext, error) {
 		return nil, azdcontext.ErrNoProject
 	})
@@ -228,4 +229,28 @@ func Test_Test_ComposeService_ListResourceTypes(t *testing.T) {
 	require.NotEmpty(t, randomResource.Name)
 	require.NotEmpty(t, randomResource.DisplayName)
 	require.NotEmpty(t, randomResource.Type)
+}
+
+func Test_ComposeService_GetResourceType_Unimplemented(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+	lazyAzdContext := lazy.NewLazy(func() (*azdcontext.AzdContext, error) {
+		return nil, azdcontext.ErrNoProject
+	})
+	env := environment.New("test")
+	envManager := &mockenv.MockEnvManager{}
+	lazyEnvManager := lazy.NewLazy(func() (environment.Manager, error) {
+		return envManager, nil
+	})
+	lazyEnv := lazy.NewLazy(func() (*environment.Environment, error) {
+		return env, nil
+	})
+	service := NewComposeService(lazyAzdContext, lazyEnv, lazyEnvManager)
+
+	_, err := service.GetResourceType(*mockContext.Context, &azdext.GetResourceTypeRequest{})
+	require.Error(t, err)
+
+	st, ok := status.FromError(err)
+	require.True(t, ok)
+	require.Equal(t, codes.Unimplemented, st.Code())
+	require.Contains(t, st.Message(), "not yet implemented")
 }

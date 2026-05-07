@@ -4,7 +4,6 @@
 package python
 
 import (
-	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -16,7 +15,7 @@ import (
 
 func Test_Python_Run(t *testing.T) {
 	tempDir := t.TempDir()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	cli := NewCli(mockContext.CommandRunner)
 	pyString, err := cli.checkPath()
@@ -43,7 +42,7 @@ func Test_Python_Run(t *testing.T) {
 
 func Test_Python_InstallRequirements(t *testing.T) {
 	tempDir := t.TempDir()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	cli := NewCli(mockContext.CommandRunner)
 	pyString, err := cli.checkPath()
@@ -68,7 +67,7 @@ func Test_Python_InstallRequirements(t *testing.T) {
 
 func Test_Python_InstallRequirements_PassesEnvVars(t *testing.T) {
 	tempDir := t.TempDir()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	cli := NewCli(mockContext.CommandRunner)
 	pyString, err := cli.checkPath()
@@ -90,7 +89,7 @@ func Test_Python_InstallRequirements_PassesEnvVars(t *testing.T) {
 
 func Test_Python_CreateVirtualEnv(t *testing.T) {
 	tempDir := t.TempDir()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	cli := NewCli(mockContext.CommandRunner)
 	pyString, err := cli.checkPath()

@@ -5,6 +5,7 @@ package pipeline
 import (
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -153,4 +154,61 @@ func Test_escapeValuesForPipeline(t *testing.T) {
 			assert.Equal(t, tt.expected, values["test"])
 		})
 	}
+}
+
+func Test_ConfigOptions_ProviderParameterWithNilValueUsesMappedEnvVar(t *testing.T) {
+	initialVariables := map[string]string{}
+	initialSecrets := map[string]string{}
+	providerParameters := []provisioning.Parameter{
+		{
+			Name:               "mixedValue",
+			Secret:             true,
+			EnvVarMapping:      []string{"REAL_SECRET"},
+			LocalPrompt:        false,
+			UsingEnvVarMapping: true,
+		},
+	}
+	env := map[string]string{
+		"REAL_SECRET": "secret-value",
+	}
+
+	variables, secrets, err := mergeProjectVariablesAndSecrets(
+		nil,
+		nil,
+		initialVariables,
+		initialSecrets,
+		providerParameters,
+		env,
+	)
+	require.NoError(t, err)
+	assert.Empty(t, variables)
+	assert.Equal(t, map[string]string{"REAL_SECRET": "secret-value"}, secrets)
+}
+
+func Test_ConfigOptions_ProviderParameterWithNilValueSkipsUnsetMappedEnvVar(t *testing.T) {
+	const envVarName = "AZD_TEST_UNSET_REAL_SECRET"
+
+	t.Setenv(envVarName, "")
+
+	providerParameters := []provisioning.Parameter{
+		{
+			Name:               "mixedValue",
+			Secret:             true,
+			EnvVarMapping:      []string{envVarName},
+			LocalPrompt:        false,
+			UsingEnvVarMapping: true,
+		},
+	}
+
+	variables, secrets, err := mergeProjectVariablesAndSecrets(
+		nil,
+		nil,
+		map[string]string{},
+		map[string]string{},
+		providerParameters,
+		map[string]string{},
+	)
+	require.NoError(t, err)
+	assert.Empty(t, variables)
+	assert.Empty(t, secrets)
 }

@@ -16,13 +16,9 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
-
-// FeatureUpdate is the alpha feature key for the azd update command.
-var FeatureUpdate = alpha.MustFeatureKey("update")
 
 // Channel represents the update channel for azd builds.
 type Channel string
@@ -132,13 +128,13 @@ func LoadUpdateConfig(cfg config.Config) *UpdateConfig {
 	return uc
 }
 
-// SaveChannel persists the channel to user config.
-func SaveChannel(cfg config.Config, channel Channel) error {
+// SetChannel persists the channel to user config.
+func SetChannel(cfg config.Config, channel Channel) error {
 	return cfg.Set(configKeyChannel, string(channel))
 }
 
-// SaveAutoUpdate persists the auto-update setting to user config.
-func SaveAutoUpdate(cfg config.Config, enabled bool) error {
+// SetAutoUpdate persists the auto-update setting to user config.
+func SetAutoUpdate(cfg config.Config, enabled bool) error {
 	value := "off"
 	if enabled {
 		value = "on"
@@ -146,9 +142,21 @@ func SaveAutoUpdate(cfg config.Config, enabled bool) error {
 	return cfg.Set(configKeyAutoUpdate, value)
 }
 
-// SaveCheckIntervalHours persists the check interval to user config.
-func SaveCheckIntervalHours(cfg config.Config, hours int) error {
+// SetCheckIntervalHours persists the check interval to user config.
+func SetCheckIntervalHours(cfg config.Config, hours int) error {
 	return cfg.Set(configKeyCheckIntervalHours, hours)
+}
+
+// HasUpdateConfig returns true if the user has any update configuration set.
+// Also returns true for the legacy alpha.update key so that users who previously
+// enabled the alpha feature are treated as having update config (skipping the
+// first-use notice and showing the "azd update" hint).
+func HasUpdateConfig(cfg config.Config) bool {
+	_, hasChannel := cfg.Get(configKeyChannel)
+	_, hasAutoUpdate := cfg.Get(configKeyAutoUpdate)
+	_, hasInterval := cfg.Get(configKeyCheckIntervalHours)
+	_, hasLegacyAlpha := cfg.Get("alpha.update")
+	return hasChannel || hasAutoUpdate || hasInterval || hasLegacyAlpha
 }
 
 // CacheFile represents the cached version check result.

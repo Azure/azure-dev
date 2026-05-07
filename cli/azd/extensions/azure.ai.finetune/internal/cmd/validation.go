@@ -170,7 +170,7 @@ func validateOrInitEnvironment(ctx context.Context, subscriptionId, projectEndpo
 
 	// Environment not configured - check if we have flags for implicit init
 	if projectEndpoint == "" || subscriptionId == "" {
-		return fmt.Errorf("required environment variables not set. Either run 'azd ai finetuning init' or provide both --subscription (-s) and --project-endpoint (-e) flags")
+		return fmt.Errorf("required environment variables not set. Either run 'azd ai finetuning init' or provide both --subscription (-s) and --project-endpoint flags")
 	}
 
 	// Perform implicit initialization

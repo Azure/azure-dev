@@ -6,6 +6,7 @@ package grpcserver
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -14,18 +15,21 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockprompt"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func Test_PromptService_Confirm_NoPromptWithDefault(t *testing.T) {
 	globalOptions := &internal.GlobalCommandOptions{NoPrompt: true}
 	service := NewPromptService(nil, nil, nil, globalOptions)
 
-	resp, err := service.Confirm(context.Background(), &azdext.ConfirmRequest{
+	resp, err := service.Confirm(t.Context(), &azdext.ConfirmRequest{
 		Options: &azdext.ConfirmOptions{
 			Message:      "Continue?",
 			DefaultValue: new(true),
@@ -41,21 +45,21 @@ func Test_PromptService_Confirm_NoPromptWithoutDefault(t *testing.T) {
 	globalOptions := &internal.GlobalCommandOptions{NoPrompt: true}
 	service := NewPromptService(nil, nil, nil, globalOptions)
 
-	_, err := service.Confirm(context.Background(), &azdext.ConfirmRequest{
+	_, err := service.Confirm(t.Context(), &azdext.ConfirmRequest{
 		Options: &azdext.ConfirmOptions{
 			Message: "Continue?",
 		},
 	})
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "no default response")
+	requirePromptRequiredError(t, err, "Continue?")
 }
 
 func Test_PromptService_Select_NoPromptWithDefault(t *testing.T) {
 	globalOptions := &internal.GlobalCommandOptions{NoPrompt: true}
 	service := NewPromptService(nil, nil, nil, globalOptions)
 
-	resp, err := service.Select(context.Background(), &azdext.SelectRequest{
+	resp, err := service.Select(t.Context(), &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
 			Message:       "Choose option:",
 			SelectedIndex: new(int32(1)),
@@ -75,7 +79,7 @@ func Test_PromptService_Select_NoPromptWithoutDefault(t *testing.T) {
 	globalOptions := &internal.GlobalCommandOptions{NoPrompt: true}
 	service := NewPromptService(nil, nil, nil, globalOptions)
 
-	_, err := service.Select(context.Background(), &azdext.SelectRequest{
+	_, err := service.Select(t.Context(), &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
 			Message: "Choose option:",
 			Choices: []*azdext.SelectChoice{
@@ -85,14 +89,14 @@ func Test_PromptService_Select_NoPromptWithoutDefault(t *testing.T) {
 	})
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "no default selection")
+	requirePromptRequiredError(t, err, "Choose option:")
 }
 
 func Test_PromptService_MultiSelect_NoPrompt(t *testing.T) {
 	globalOptions := &internal.GlobalCommandOptions{NoPrompt: true}
 	service := NewPromptService(nil, nil, nil, globalOptions)
 
-	resp, err := service.MultiSelect(context.Background(), &azdext.MultiSelectRequest{
+	resp, err := service.MultiSelect(t.Context(), &azdext.MultiSelectRequest{
 		Options: &azdext.MultiSelectOptions{
 			Message: "Select items:",
 			Choices: []*azdext.MultiSelectChoice{
@@ -113,7 +117,7 @@ func Test_PromptService_Prompt_NoPromptWithDefault(t *testing.T) {
 	globalOptions := &internal.GlobalCommandOptions{NoPrompt: true}
 	service := NewPromptService(nil, nil, nil, globalOptions)
 
-	resp, err := service.Prompt(context.Background(), &azdext.PromptRequest{
+	resp, err := service.Prompt(t.Context(), &azdext.PromptRequest{
 		Options: &azdext.PromptOptions{
 			Message:      "Enter name:",
 			DefaultValue: "default-name",
@@ -129,7 +133,7 @@ func Test_PromptService_Prompt_NoPromptRequiredWithoutDefault(t *testing.T) {
 	globalOptions := &internal.GlobalCommandOptions{NoPrompt: true}
 	service := NewPromptService(nil, nil, nil, globalOptions)
 
-	_, err := service.Prompt(context.Background(), &azdext.PromptRequest{
+	_, err := service.Prompt(t.Context(), &azdext.PromptRequest{
 		Options: &azdext.PromptOptions{
 			Message:  "Enter name:",
 			Required: true,
@@ -137,14 +141,14 @@ func Test_PromptService_Prompt_NoPromptRequiredWithoutDefault(t *testing.T) {
 	})
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "no default response")
+	requirePromptRequiredError(t, err, "Enter name:")
 }
 
 func Test_PromptService_Prompt_NoPromptNotRequiredWithoutDefault(t *testing.T) {
 	globalOptions := &internal.GlobalCommandOptions{NoPrompt: true}
 	service := NewPromptService(nil, nil, nil, globalOptions)
 
-	resp, err := service.Prompt(context.Background(), &azdext.PromptRequest{
+	resp, err := service.Prompt(t.Context(), &azdext.PromptRequest{
 		Options: &azdext.PromptOptions{
 			Message:  "Enter name:",
 			Required: false,
@@ -153,6 +157,17 @@ func Test_PromptService_Prompt_NoPromptNotRequiredWithoutDefault(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, "", resp.Value)
+}
+
+func requirePromptRequiredError(t *testing.T, err error, expectedPromptMessage string) *input.PromptRequiredError {
+	t.Helper()
+
+	promptErr, ok := errors.AsType[*input.PromptRequiredError](err)
+	require.True(t, ok)
+	require.Empty(t, promptErr.Inputs)
+	require.Equal(t, expectedPromptMessage, promptErr.PromptMessage)
+
+	return promptErr
 }
 
 func Test_PromptService_PromptSubscription(t *testing.T) {
@@ -171,7 +186,7 @@ func Test_PromptService_PromptSubscription(t *testing.T) {
 
 	service := NewPromptService(mockPrompter, nil, nil, globalOptions)
 
-	resp, err := service.PromptSubscription(context.Background(), &azdext.PromptSubscriptionRequest{
+	resp, err := service.PromptSubscription(t.Context(), &azdext.PromptSubscriptionRequest{
 		Message:     "Select subscription:",
 		HelpMessage: "Choose your subscription",
 	})
@@ -200,7 +215,7 @@ func Test_PromptService_PromptLocation(t *testing.T) {
 
 	service := NewPromptService(mockPrompter, nil, nil, globalOptions)
 
-	resp, err := service.PromptLocation(context.Background(), &azdext.PromptLocationRequest{
+	resp, err := service.PromptLocation(t.Context(), &azdext.PromptLocationRequest{
 		AzureContext: &azdext.AzureContext{
 			Scope: &azdext.AzureScope{
 				SubscriptionId: "sub-123",
@@ -213,6 +228,39 @@ func Test_PromptService_PromptLocation(t *testing.T) {
 	require.Equal(t, expectedLocation.Name, resp.Location.Name)
 	require.Equal(t, expectedLocation.DisplayName, resp.Location.DisplayName)
 	require.Equal(t, expectedLocation.RegionalDisplayName, resp.Location.RegionalDisplayName)
+	mockPrompter.AssertExpectations(t)
+}
+
+func Test_PromptService_PromptLocation_WithAllowedLocations(t *testing.T) {
+	mockPrompter := &mockprompt.MockPromptService{}
+	globalOptions := &internal.GlobalCommandOptions{NoPrompt: false}
+
+	expectedLocation := &account.Location{
+		Name:                "westus3",
+		DisplayName:         "West US 3",
+		RegionalDisplayName: "(US) West US 3",
+	}
+
+	mockPrompter.
+		On("PromptLocation", mock.Anything, mock.Anything, mock.MatchedBy(func(opts *prompt.SelectOptions) bool {
+			return opts != nil && slices.Equal(opts.AllowedValues, []string{"westus3", "eastus2"})
+		})).
+		Return(expectedLocation, nil)
+
+	service := NewPromptService(mockPrompter, nil, nil, globalOptions)
+
+	resp, err := service.PromptLocation(t.Context(), &azdext.PromptLocationRequest{
+		AzureContext: &azdext.AzureContext{
+			Scope: &azdext.AzureScope{
+				SubscriptionId: "sub-123",
+			},
+		},
+		AllowedLocations: []string{"westus3", "eastus2"},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, resp.Location)
+	require.Equal(t, expectedLocation.Name, resp.Location.Name)
 	mockPrompter.AssertExpectations(t)
 }
 
@@ -240,7 +288,7 @@ func Test_PromptService_PromptResourceGroup(t *testing.T) {
 
 	service := NewPromptService(mockPrompter, nil, nil, globalOptions)
 
-	resp, err := service.PromptResourceGroup(context.Background(), &azdext.PromptResourceGroupRequest{
+	resp, err := service.PromptResourceGroup(t.Context(), &azdext.PromptResourceGroupRequest{
 		AzureContext: &azdext.AzureContext{
 			Scope: &azdext.AzureScope{
 				SubscriptionId: "sub-123",
@@ -279,7 +327,7 @@ func Test_PromptService_PromptResourceGroup_NilOptions(t *testing.T) {
 
 	service := NewPromptService(mockPrompter, nil, nil, globalOptions)
 
-	resp, err := service.PromptResourceGroup(context.Background(), &azdext.PromptResourceGroupRequest{
+	resp, err := service.PromptResourceGroup(t.Context(), &azdext.PromptResourceGroupRequest{
 		AzureContext: &azdext.AzureContext{
 			Scope: &azdext.AzureScope{
 				SubscriptionId: "sub-123",
@@ -326,7 +374,7 @@ func Test_PromptService_PromptSubscriptionResource(t *testing.T) {
 
 	service := NewPromptService(mockPrompter, nil, nil, globalOptions)
 
-	resp, err := service.PromptSubscriptionResource(context.Background(), &azdext.PromptSubscriptionResourceRequest{
+	resp, err := service.PromptSubscriptionResource(t.Context(), &azdext.PromptSubscriptionResourceRequest{
 		AzureContext: &azdext.AzureContext{
 			Scope: &azdext.AzureScope{
 				SubscriptionId: "sub-123",
@@ -384,7 +432,7 @@ func Test_PromptService_PromptResourceGroupResource(t *testing.T) {
 
 	service := NewPromptService(mockPrompter, nil, nil, globalOptions)
 
-	resp, err := service.PromptResourceGroupResource(context.Background(), &azdext.PromptResourceGroupResourceRequest{
+	resp, err := service.PromptResourceGroupResource(t.Context(), &azdext.PromptResourceGroupResourceRequest{
 		AzureContext: &azdext.AzureContext{
 			Scope: &azdext.AzureScope{
 				SubscriptionId: "sub-123",
@@ -565,6 +613,7 @@ func setupTestServer(t *testing.T, promptSvc azdext.PromptServiceServer) (
 		azdext.UnimplementedAccountServiceServer{},
 		azdext.UnimplementedAiModelServiceServer{},
 		azdext.UnimplementedCopilotServiceServer{},
+		azdext.UnimplementedProvisioningServiceServer{},
 	)
 
 	serverInfo, err := server.Start()
@@ -581,7 +630,7 @@ func setupTestServer(t *testing.T, promptSvc azdext.PromptServiceServer) (
 	accessToken, err := GenerateExtensionToken(extension, serverInfo)
 	require.NoError(t, err)
 
-	ctx := azdext.WithAccessToken(context.Background(), accessToken)
+	ctx := azdext.WithAccessToken(t.Context(), accessToken)
 	client, err := azdext.NewAzdClient(azdext.WithAddress(serverInfo.Address))
 	require.NoError(t, err)
 
@@ -616,9 +665,15 @@ func Test_PromptService_PromptSubscription_ErrorWithSuggestion(t *testing.T) {
 	})
 
 	require.Error(t, err)
-	// Verify that the suggestion text is included in the error message (wrapped by interceptor)
-	require.Contains(t, err.Error(), "azd auth login")
+	// Status message carries only the underlying error; suggestion travels via ActionableErrorDetail.
 	require.Contains(t, err.Error(), "AADSTS70043")
+	require.NotContains(t, err.Error(), "azd auth login",
+		"suggestion text must not be concatenated into status.Message")
+	st, ok := status.FromError(err)
+	require.True(t, ok)
+	actionable := azdext.ActionableErrorDetailFromStatus(st)
+	require.NotNil(t, actionable)
+	require.Contains(t, actionable.GetSuggestion(), "azd auth login")
 	mockPrompter.AssertExpectations(t)
 }
 
@@ -648,9 +703,15 @@ func Test_PromptService_PromptResourceGroup_ErrorWithSuggestion(t *testing.T) {
 	})
 
 	require.Error(t, err)
-	// Verify that the suggestion text is included in the error message (wrapped by interceptor)
-	require.Contains(t, err.Error(), "azd auth login")
+	// Status message carries only the underlying error; suggestion travels via ActionableErrorDetail.
 	require.Contains(t, err.Error(), "AADSTS70043")
+	require.NotContains(t, err.Error(), "azd auth login",
+		"suggestion text must not be concatenated into status.Message")
+	st, ok := status.FromError(err)
+	require.True(t, ok)
+	actionable := azdext.ActionableErrorDetailFromStatus(st)
+	require.NotNil(t, actionable)
+	require.Contains(t, actionable.GetSuggestion(), "azd auth login")
 	mockPrompter.AssertExpectations(t)
 }
 
@@ -826,6 +887,38 @@ func Test_buildSkuCandidatesForVersion(t *testing.T) {
 		require.NotNil(t, candidates[0].remaining)
 		require.Equal(t, float64(10), *candidates[0].remaining)
 	})
+
+	t.Run("falls back to lower capacity that fits remaining quota", func(t *testing.T) {
+		deepSeekVersion := ai.AiModelVersion{
+			Version: "1",
+			Skus: []ai.AiModelSku{
+				{
+					Name:            "GlobalStandard",
+					UsageName:       "AIServices.GlobalStandard.DeepSeek-R1-0528",
+					DefaultCapacity: 5000,
+					MinCapacity:     0,
+					MaxCapacity:     5000,
+					CapacityStep:    0,
+				},
+			},
+		}
+		quota := &azdext.QuotaCheckOptions{
+			MinRemainingCapacity: 1,
+		}
+		usageMap := map[string]ai.AiModelUsage{
+			"AIServices.GlobalStandard.DeepSeek-R1-0528": {
+				Name:         "AIServices.GlobalStandard.DeepSeek-R1-0528",
+				CurrentValue: 0,
+				Limit:        1000,
+			},
+		}
+
+		candidates := buildSkuCandidatesForVersion(deepSeekVersion, nil, quota, usageMap, false)
+		require.Len(t, candidates, 1)
+		require.Equal(t, "AIServices.GlobalStandard.DeepSeek-R1-0528", candidates[0].sku.UsageName)
+		require.NotNil(t, candidates[0].remaining)
+		require.Equal(t, float64(1000), *candidates[0].remaining)
+	})
 }
 
 func Test_maxSkuCandidateRemaining(t *testing.T) {
@@ -997,6 +1090,83 @@ func Test_selectModelNoPrompt(t *testing.T) {
 			require.NotNil(t, resp)
 			require.NotNil(t, resp.Model)
 			require.Equal(t, tt.wantModel, resp.Model.Name)
+		})
+	}
+}
+
+func Test_PromptService_NilOptions_Validation(t *testing.T) {
+	globalOptions := &internal.GlobalCommandOptions{NoPrompt: true}
+	service := NewPromptService(nil, nil, nil, globalOptions)
+
+	tests := []struct {
+		name   string
+		method string
+	}{
+		{"Confirm_nil_options", "Confirm"},
+		{"Select_nil_options", "Select"},
+		{"MultiSelect_nil_options", "MultiSelect"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var err error
+			switch tt.method {
+			case "Confirm":
+				_, err = service.Confirm(
+					t.Context(),
+					&azdext.ConfirmRequest{Options: nil},
+				)
+			case "Select":
+				_, err = service.Select(
+					t.Context(),
+					&azdext.SelectRequest{Options: nil},
+				)
+			case "MultiSelect":
+				_, err = service.MultiSelect(
+					t.Context(),
+					&azdext.MultiSelectRequest{Options: nil},
+				)
+			}
+
+			require.Error(t, err)
+			st, ok := status.FromError(err)
+			require.True(t, ok)
+			require.Equal(t, codes.InvalidArgument, st.Code())
+			require.Contains(t, st.Message(), "options are required")
+		})
+	}
+}
+
+func Test_PromptService_CreateAzureContext_NilScope(t *testing.T) {
+	globalOptions := &internal.GlobalCommandOptions{NoPrompt: false}
+	svc := NewPromptService(nil, nil, nil, globalOptions)
+	ps := svc.(*promptService)
+
+	tests := []struct {
+		name        string
+		wire        *azdext.AzureContext
+		errContains string
+	}{
+		{
+			name:        "nil_azure_context",
+			wire:        nil,
+			errContains: "azure context is required",
+		},
+		{
+			name:        "nil_scope",
+			wire:        &azdext.AzureContext{Scope: nil},
+			errContains: "azure context scope is required",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ps.createAzureContext(tt.wire)
+			require.Error(t, err)
+			st, ok := status.FromError(err)
+			require.True(t, ok)
+			require.Equal(t, codes.InvalidArgument, st.Code())
+			require.Contains(t, st.Message(), tt.errContains)
 		})
 	}
 }

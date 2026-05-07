@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"os"
-	"path/filepath"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
@@ -28,6 +27,7 @@ type DockerProjectOptions struct {
 	Image       osutil.ExpandableString   `yaml:"image,omitempty"       json:"image"`
 	Tag         osutil.ExpandableString   `yaml:"tag,omitempty"         json:"tag"`
 	RemoteBuild bool                      `yaml:"remoteBuild,omitempty"  json:"remoteBuild,omitempty"`
+	Network     string                    `yaml:"network,omitempty"     json:"network,omitempty"`
 	BuildArgs   []osutil.ExpandableString `yaml:"buildArgs,omitempty"   json:"buildArgs,omitempty"`
 	// not supported from azure.yaml directly yet. Adding it for Aspire to use it, initially.
 	// Aspire would pass the secret keys, which are env vars that azd will set just to run docker build.
@@ -170,21 +170,10 @@ func useDotnetPublishForDockerBuild(serviceConfig *ServiceConfig) bool {
 	serviceConfig.useDotNetPublishForDockerBuild = new(false)
 
 	if serviceConfig.Language.IsDotNet() {
-		projectPath := serviceConfig.Path()
-
 		dockerOptions := getDockerOptionsWithDefaults(serviceConfig.Docker)
+		resolveDockerPaths(serviceConfig, &dockerOptions)
 
-		dockerfilePath := dockerOptions.Path
-		if !filepath.IsAbs(dockerfilePath) {
-			s, err := os.Stat(projectPath)
-			if err == nil && s.IsDir() {
-				dockerfilePath = filepath.Join(projectPath, dockerfilePath)
-			} else {
-				dockerfilePath = filepath.Join(filepath.Dir(projectPath), dockerfilePath)
-			}
-		}
-
-		if _, err := os.Stat(dockerfilePath); errors.Is(err, os.ErrNotExist) {
+		if _, err := os.Stat(dockerOptions.Path); errors.Is(err, os.ErrNotExist) {
 			serviceConfig.useDotNetPublishForDockerBuild = new(true)
 		}
 	}

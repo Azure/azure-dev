@@ -90,6 +90,7 @@ func (s *Server) Serve(l net.Listener) error {
 	}
 
 	// Run upload periodically in the background while the server is running.
+	//nolint:gosec // G118: cancel is stored on the server and invoked later by StopAsync.
 	ctx, cancel := context.WithCancel(context.Background())
 	ts := telemetry.GetTelemetrySystem()
 	backgroundTelemetry := func() {
@@ -213,8 +214,9 @@ func serveRpc(w http.ResponseWriter, r *http.Request, handlers map[string]Handle
 			call, isCall := req.(*jsonrpc2.Call)
 			if isCall {
 				span.SetAttributes(fields.JsonRpcId.String(fmt.Sprint(call.ID())))
-				ctx, cancel := context.WithCancel(ctx)
-				childCtx = ctx
+				var cancel context.CancelFunc
+				//nolint:gosec // G118: cancel is stored in cancelers and invoked later by request cancellation handling.
+				childCtx, cancel = context.WithCancel(childCtx)
 				cancelersMu.Lock()
 				cancelers[call.ID()] = cancel
 				cancelersMu.Unlock()

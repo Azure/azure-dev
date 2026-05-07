@@ -4,6 +4,7 @@
 package cli_test
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -17,6 +18,19 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// buildFakeJWT constructs a minimal unsigned JWT with the provided claims.
+// It is sufficient for tests that only need azd to parse claims out of the
+// token; the signature is not verified.
+func buildFakeJWT(t *testing.T, claims map[string]any) string {
+	t.Helper()
+	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"none","typ":"JWT"}`))
+	body, err := json.Marshal(claims)
+	require.NoError(t, err)
+	payload := base64.RawURLEncoding.EncodeToString(body)
+	sig := base64.RawURLEncoding.EncodeToString([]byte("fakesig"))
+	return fmt.Sprintf("%s.%s.%s", header, payload, sig)
+}
 
 func Test_CLI_Auth_ExternalAuth(t *testing.T) {
 	// running this test in parallel is ok as it uses a t.TempDir()
@@ -35,7 +49,9 @@ func Test_CLI_Auth_ExternalAuth(t *testing.T) {
 	// what we handed back.
 
 	// nolint:gosec
-	expectedToken := "THIS-IS-A-FAKE-TOKEN"
+	expectedToken := buildFakeJWT(t, map[string]any{
+		"preferred_username": "user@contoso.com",
+	})
 	expectedExpiresOn := time.Now().UTC().Add(time.Hour).Format(time.RFC3339)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

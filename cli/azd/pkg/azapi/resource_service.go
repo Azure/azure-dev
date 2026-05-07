@@ -27,9 +27,10 @@ type Resource struct {
 }
 
 type ResourceGroup struct {
-	Id       string `json:"id"`
-	Name     string `json:"name"`
-	Location string `json:"location"`
+	Id       string            `json:"id"`
+	Name     string            `json:"name"`
+	Location string            `json:"location"`
+	Tags     map[string]string `json:"tags,omitempty"`
 }
 
 type ResourceExtended struct {
@@ -317,6 +318,41 @@ func (rs *ResourceService) DeleteResourceGroup(ctx context.Context, subscription
 	}
 
 	return nil
+}
+
+// GetResourceGroup retrieves a single resource group by name, returning its metadata
+// including location.
+func (rs *ResourceService) GetResourceGroup(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroupName string,
+) (*ResourceGroup, error) {
+	client, err := rs.createResourceGroupClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.Get(ctx, resourceGroupName, nil)
+	if err != nil {
+		return nil, fmt.Errorf("getting resource group %q in subscription %q: %w", resourceGroupName, subscriptionId, err)
+	}
+
+	var tags map[string]string
+	if len(resp.Tags) > 0 {
+		tags = make(map[string]string, len(resp.Tags))
+		for k, v := range resp.Tags {
+			if v != nil {
+				tags[k] = *v
+			}
+		}
+	}
+
+	return &ResourceGroup{
+		Id:       convert.ToValueWithDefault(resp.ID, ""),
+		Name:     convert.ToValueWithDefault(resp.Name, ""),
+		Location: convert.ToValueWithDefault(resp.Location, ""),
+		Tags:     tags,
+	}, nil
 }
 
 func (rs *ResourceService) createResourcesClient(ctx context.Context, subscriptionId string) (*armresources.Client, error) {

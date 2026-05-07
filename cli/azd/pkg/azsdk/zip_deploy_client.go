@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -186,20 +187,39 @@ func (c *ZipDeployClient) BeginDeployTrackStatus(
 	return poller, nil
 }
 
+// deploymentStatusResult holds the result of evaluating a deployment status response.
+type deploymentStatusResult struct {
+	// err is set when the deployment has failed.
+	err error
+}
+
 func logWebAppDeploymentStatus(
 	res armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse,
 	traceId string,
 	progressLog func(string),
-) error {
+) deploymentStatusResult {
 	if (res == armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse{} ||
 		res.CsmDeploymentStatus == armappservice.CsmDeploymentStatus{} ||
 		res.CsmDeploymentStatus.Properties == nil) {
-		return fmt.Errorf("response or its properties are empty")
+		return deploymentStatusResult{err: fmt.Errorf("response or its properties are empty")}
 	}
 	properties := res.CsmDeploymentStatus.Properties
-	inProgressNumber := int(*properties.NumberOfInstancesInProgress)
-	successNumber := int(*properties.NumberOfInstancesSuccessful)
-	failNumber := int(*properties.NumberOfInstancesFailed)
+
+	if properties.Status == nil {
+		return deploymentStatusResult{err: fmt.Errorf("response or its properties are empty")}
+	}
+
+	var inProgressNumber, successNumber, failNumber int
+	if properties.NumberOfInstancesInProgress != nil {
+		inProgressNumber = int(*properties.NumberOfInstancesInProgress)
+	}
+	if properties.NumberOfInstancesSuccessful != nil {
+		successNumber = int(*properties.NumberOfInstancesSuccessful)
+	}
+	if properties.NumberOfInstancesFailed != nil {
+		failNumber = int(*properties.NumberOfInstancesFailed)
+	}
+
 	errorString := ""
 	logErrorFunction := func(properties *armappservice.CsmDeploymentStatusProperties, message string) {
 		for _, err := range properties.Errors {
@@ -223,16 +243,16 @@ func logWebAppDeploymentStatus(
 	switch status {
 	case armappservice.DeploymentBuildStatusBuildRequestReceived:
 		progressLog("Received build request, starting build process")
-		return nil
+		return deploymentStatusResult{}
 	case armappservice.DeploymentBuildStatusBuildInProgress:
 		progressLog("Running build process")
-		return nil
+		return deploymentStatusResult{}
 	case armappservice.DeploymentBuildStatusRuntimeStarting:
 		progressLog(fmt.Sprintf("Starting runtime process, %d in progress instances, %d successful instances",
 			inProgressNumber, successNumber))
-		return nil
+		return deploymentStatusResult{}
 	case armappservice.DeploymentBuildStatusRuntimeSuccessful, armappservice.DeploymentBuildStatusBuildSuccessful:
-		return nil
+		return deploymentStatusResult{}
 	case armappservice.DeploymentBuildStatusRuntimeFailed:
 		totalNumber := inProgressNumber + successNumber + failNumber
 
@@ -245,17 +265,17 @@ func logWebAppDeploymentStatus(
 		}
 
 		logErrorFunction(properties, "runtime ")
-		return errors.New(errorString)
+		return deploymentStatusResult{err: errors.New(errorString)}
 	case armappservice.DeploymentBuildStatusBuildFailed:
 		errorString += "Deployment failed because the build process failed\n"
 		logErrorFunction(properties, "build ")
-		return errors.New(errorString)
+		return deploymentStatusResult{err: errors.New(errorString)}
 	// Progress Log for other states
 	default:
 		if len(status) > 0 {
 			progressLog(fmt.Sprintf("Running deployment status api in stage %s", status))
 		}
-		return nil
+		return deploymentStatusResult{}
 	}
 }
 
@@ -292,8 +312,12 @@ func (c *ZipDeployClient) DeployTrackStatus(
 		}
 
 		if poller.Done() {
+			if response.Properties == nil || response.Properties.Status == nil {
+				return fmt.Errorf("response or its properties are empty")
+			}
 			status := *response.Properties.Status
 			if status != armappservice.DeploymentBuildStatusRuntimeSuccessful &&
+				status != armappservice.DeploymentBuildStatusBuildSuccessful &&
 				status != armappservice.DeploymentBuildStatusBuildFailed &&
 				status != armappservice.DeploymentBuildStatusRuntimeFailed {
 				return fmt.Errorf("deployment status API unexpectedly terminated at stage %s",
@@ -301,14 +325,16 @@ func (c *ZipDeployClient) DeployTrackStatus(
 			}
 			spanCtx := trace.SpanContextFromContext(ctx)
 			traceId := spanCtx.TraceID().String()
-			if err = logWebAppDeploymentStatus(response, traceId, progressLog); err != nil {
-				return err
+			result := logWebAppDeploymentStatus(response, traceId, progressLog)
+			if result.err != nil {
+				return result.err
 			}
 			break
 		}
 
-		if err = logWebAppDeploymentStatus(response, "", progressLog); err != nil {
-			return err
+		result := logWebAppDeploymentStatus(response, "", progressLog)
+		if result.err != nil {
+			return result.err
 		}
 
 		// Wait longer after a few initial tries
@@ -431,4 +457,47 @@ func (h *deployPollingHandler) Result(ctx context.Context, out **DeployResponse)
 	}
 
 	return nil
+}
+
+// IsScmReady pings the SCM /api/deployments endpoint to check if the Kudu
+// service is responsive. Returns true when the endpoint responds with HTTP 200,
+// false for transient errors (503, connection refused, etc.), or an error for
+// unexpected failures. This is used to detect SCM container restarts that occur
+// when ARM applies site configuration changes after provisioning.
+func (c *ZipDeployClient) IsScmReady(ctx context.Context) (bool, error) {
+	endpoint := fmt.Sprintf("https://%s/api/deployments", c.hostName)
+	req, err := runtime.NewRequest(ctx, http.MethodGet, endpoint)
+	if err != nil {
+		return false, fmt.Errorf("creating SCM readiness request: %w", err)
+	}
+
+	resp, err := c.pipeline.Do(req)
+	if err != nil {
+		// Propagate context cancellation / deadline so callers (and Ctrl+C) react immediately.
+		if ctx.Err() != nil {
+			return false, ctx.Err()
+		}
+		// Only suppress clearly transient transport errors that indicate the SCM
+		// container is still restarting. Propagate unexpected errors (e.g. offline,
+		// TLS failures, bad proxy) so callers can surface meaningful diagnostics.
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "connection refused") ||
+			strings.Contains(errMsg, "no such host") {
+			return false, nil
+		}
+		if netErr, ok := errors.AsType[net.Error](err); ok && netErr.Timeout() {
+			return false, nil
+		}
+		return false, fmt.Errorf("SCM readiness probe: %w", err)
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return true, nil
+	case http.StatusBadGateway, http.StatusServiceUnavailable:
+		return false, nil
+	default:
+		return false, runtime.NewResponseError(resp)
+	}
 }

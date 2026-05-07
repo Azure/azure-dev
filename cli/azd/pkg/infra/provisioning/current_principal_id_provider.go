@@ -24,7 +24,7 @@ type CurrentPrincipalIdProvider interface {
 func NewPrincipalIdProvider(
 	env *environment.Environment,
 	userProfileService *azapi.UserProfileService,
-	subResolver account.SubscriptionTenantResolver,
+	subResolver account.SubscriptionResolver,
 	authManager *auth.Manager,
 ) CurrentPrincipalIdProvider {
 	return &principalIDProvider{
@@ -38,17 +38,18 @@ func NewPrincipalIdProvider(
 type principalIDProvider struct {
 	env                *environment.Environment
 	userProfileService *azapi.UserProfileService
-	subResolver        account.SubscriptionTenantResolver
+	subResolver        account.SubscriptionResolver
 	authManager        *auth.Manager
 }
 
 func (p *principalIDProvider) CurrentPrincipalId(ctx context.Context) (string, error) {
-	tenantId, err := p.subResolver.LookupTenant(ctx, p.env.GetSubscriptionId())
+	subscriptionId := p.env.GetSubscriptionId()
+	subscription, err := p.subResolver.GetSubscription(ctx, subscriptionId)
 	if err != nil {
-		return "", fmt.Errorf("getting tenant id for subscription %s. Error: %w", p.env.GetSubscriptionId(), err)
+		return "", fmt.Errorf("getting subscription %s: %w", subscriptionId, err)
 	}
 
-	principalId, err := azureutil.GetCurrentPrincipalId(ctx, p.userProfileService, tenantId)
+	principalId, err := azureutil.GetCurrentPrincipalId(ctx, p.userProfileService, subscription.TenantId)
 	if err != nil {
 		return "", fmt.Errorf("fetching current user information: %w", err)
 	}

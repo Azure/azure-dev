@@ -4,8 +4,8 @@
 package tools
 
 import (
-	"context"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -22,26 +22,17 @@ func getText(result *mcp.CallToolResult) string {
 }
 
 func TestHandleAzdYamlSchema_ValidYaml(t *testing.T) {
+	t.Parallel()
 	// Arrange
 	tmpDir := t.TempDir()
-	tmpFile, err := os.CreateTemp(tmpDir, "azure.yaml")
-	require.NoError(t, err)
-
-	validYaml := []byte("name: testapp\n")
-	_, err = tmpFile.Write(validYaml)
-	require.NoError(t, err)
-	tmpFile.Close()
-	yamlPath := tmpFile.Name()
-
-	t.Chdir(tmpDir)
-	os.Rename(yamlPath, "azure.yaml") //nolint:gosec // G703: test file rename with controlled paths
-	defer os.Remove("azure.yaml")
+	yamlPath := filepath.Join(tmpDir, "azure.yaml")
+	require.NoError(t, os.WriteFile(yamlPath, []byte("name: testapp\n"), 0600))
 
 	req := mcp.CallToolRequest{}
-	req.Params.Arguments = map[string]any{"path": "azure.yaml"}
+	req.Params.Arguments = map[string]any{"path": yamlPath}
 
 	// Act
-	result, err := HandleAzdYamlSchema(context.Background(), req)
+	result, err := HandleAzdYamlSchema(t.Context(), req)
 
 	// Assert
 	require.NoError(t, err)
@@ -50,15 +41,16 @@ func TestHandleAzdYamlSchema_ValidYaml(t *testing.T) {
 }
 
 func TestHandleAzdYamlSchema_MissingYaml(t *testing.T) {
+	t.Parallel()
 	// Arrange
 	tmpDir := t.TempDir()
-	t.Chdir(tmpDir)
+	yamlPath := filepath.Join(tmpDir, "azure.yaml")
 
 	req := mcp.CallToolRequest{}
-	req.Params.Arguments = map[string]any{"path": "azure.yaml"}
+	req.Params.Arguments = map[string]any{"path": yamlPath}
 
 	// Act
-	result, err := HandleAzdYamlSchema(context.Background(), req)
+	result, err := HandleAzdYamlSchema(t.Context(), req)
 
 	// Assert
 	require.NoError(t, err)
@@ -67,26 +59,17 @@ func TestHandleAzdYamlSchema_MissingYaml(t *testing.T) {
 }
 
 func TestHandleAzdYamlSchema_InvalidYaml(t *testing.T) {
+	t.Parallel()
 	// Arrange
 	tmpDir := t.TempDir()
-	tmpFile, err := os.CreateTemp(tmpDir, "azure.yaml")
-	require.NoError(t, err)
-
-	invalidYaml := []byte("name: !@#$\n")
-	_, err = tmpFile.Write(invalidYaml)
-	require.NoError(t, err)
-	tmpFile.Close()
-	yamlPath := tmpFile.Name()
-
-	t.Chdir(tmpDir)
-	os.Rename(yamlPath, "azure.yaml") //nolint:gosec // G703: test file rename with controlled paths
-	defer os.Remove("azure.yaml")
+	yamlPath := filepath.Join(tmpDir, "azure.yaml")
+	require.NoError(t, os.WriteFile(yamlPath, []byte("name: !@#$\n"), 0600))
 
 	req := mcp.CallToolRequest{}
-	req.Params.Arguments = map[string]any{"path": "azure.yaml"}
+	req.Params.Arguments = map[string]any{"path": yamlPath}
 
 	// Act
-	result, err := HandleAzdYamlSchema(context.Background(), req)
+	result, err := HandleAzdYamlSchema(t.Context(), req)
 
 	// Assert
 	require.NoError(t, err)
@@ -95,26 +78,17 @@ func TestHandleAzdYamlSchema_InvalidYaml(t *testing.T) {
 }
 
 func TestHandleAzdYamlSchema_YamlNotValidSyntax(t *testing.T) {
+	t.Parallel()
 	// Arrange
 	tmpDir := t.TempDir()
-	tmpFile, err := os.CreateTemp(tmpDir, "azure.yaml")
-	require.NoError(t, err)
-
-	invalidYaml := []byte("name: !@#$\n:bad") // not valid YAML syntax
-	_, err = tmpFile.Write(invalidYaml)
-	require.NoError(t, err)
-	tmpFile.Close()
-	yamlPath := tmpFile.Name()
-
-	t.Chdir(tmpDir)
-	os.Rename(yamlPath, "azure.yaml") //nolint:gosec // G703: test file rename with controlled paths
-	defer os.Remove("azure.yaml")
+	yamlPath := filepath.Join(tmpDir, "azure.yaml")
+	require.NoError(t, os.WriteFile(yamlPath, []byte("name: !@#$\n:bad"), 0600)) // not valid YAML syntax
 
 	req := mcp.CallToolRequest{}
-	req.Params.Arguments = map[string]any{"path": "azure.yaml"}
+	req.Params.Arguments = map[string]any{"path": yamlPath}
 
 	// Act
-	result, err := HandleAzdYamlSchema(context.Background(), req)
+	result, err := HandleAzdYamlSchema(t.Context(), req)
 
 	// Assert
 	require.NoError(t, err)
@@ -123,27 +97,18 @@ func TestHandleAzdYamlSchema_YamlNotValidSyntax(t *testing.T) {
 }
 
 func TestHandleAzdYamlSchema_YamlValidButSchemaInvalid(t *testing.T) {
+	t.Parallel()
 	// Arrange
 	tmpDir := t.TempDir()
-	tmpFile, err := os.CreateTemp(tmpDir, "azure.yaml")
-	require.NoError(t, err)
-
+	yamlPath := filepath.Join(tmpDir, "azure.yaml")
 	// Valid YAML syntax, but missing required 'name' field for schema validation
-	invalidSchemaYaml := []byte("some_field: value\n")
-	_, err = tmpFile.Write(invalidSchemaYaml)
-	require.NoError(t, err)
-	tmpFile.Close()
-	yamlPath := tmpFile.Name()
-
-	t.Chdir(tmpDir)
-	os.Rename(yamlPath, "azure.yaml") //nolint:gosec // G703: test file rename with controlled paths
-	defer os.Remove("azure.yaml")
+	require.NoError(t, os.WriteFile(yamlPath, []byte("some_field: value\n"), 0600))
 
 	req := mcp.CallToolRequest{}
-	req.Params.Arguments = map[string]any{"path": "azure.yaml"}
+	req.Params.Arguments = map[string]any{"path": yamlPath}
 
 	// Act
-	result, err := HandleAzdYamlSchema(context.Background(), req)
+	result, err := HandleAzdYamlSchema(t.Context(), req)
 
 	// Assert
 	require.NoError(t, err)
@@ -152,26 +117,17 @@ func TestHandleAzdYamlSchema_YamlValidButSchemaInvalid(t *testing.T) {
 }
 
 func TestHandleAzdYamlSchema_InvalidYaml_Structural(t *testing.T) {
+	t.Parallel()
 	// Arrange
 	tmpDir := t.TempDir()
-	tmpFile, err := os.CreateTemp(tmpDir, "azure.yaml")
-	require.NoError(t, err)
-
-	invalidYaml := []byte("name: 123\n") // valid YAML, but not valid type for schema
-	_, err = tmpFile.Write(invalidYaml)
-	require.NoError(t, err)
-	tmpFile.Close()
-	yamlPath := tmpFile.Name()
-
-	t.Chdir(tmpDir)
-	os.Rename(yamlPath, "azure.yaml") //nolint:gosec // G703: test file rename with controlled paths
-	defer os.Remove("azure.yaml")
+	yamlPath := filepath.Join(tmpDir, "azure.yaml")
+	require.NoError(t, os.WriteFile(yamlPath, []byte("name: 123\n"), 0600)) // valid YAML, but not valid type for schema
 
 	req := mcp.CallToolRequest{}
-	req.Params.Arguments = map[string]any{"path": "azure.yaml"}
+	req.Params.Arguments = map[string]any{"path": yamlPath}
 
 	// Act
-	result, err := HandleAzdYamlSchema(context.Background(), req)
+	result, err := HandleAzdYamlSchema(t.Context(), req)
 
 	// Assert
 	require.NoError(t, err)

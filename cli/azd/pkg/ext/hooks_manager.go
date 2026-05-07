@@ -10,29 +10,43 @@ import (
 	"log"
 	"os"
 	osexec "os/exec"
-	"path/filepath"
 	"runtime"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/language"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/python"
 )
 
 type HookFilterPredicateFn func(scriptName string, hookConfig *HookConfig) bool
 
-// Hooks enable support to invoke integration scripts before & after commands
-// Scripts can be invoked at the project or service level or
+// HooksManagerOptions configures a new [HooksManager].
+type HooksManagerOptions struct {
+	Cwd        string // Working directory for resolving relative hook paths
+	ProjectDir string // Project root (azure.yaml location) for security boundary
+}
+
+// HooksManager enables support to invoke lifecycle hooks before & after
+// commands. Hooks can be invoked at the project or service level.
 type HooksManager struct {
 	cwd           string
+	projectDir    string
 	commandRunner exec.CommandRunner
 }
 
-// NewHooks creates a new instance of CommandHooks
-// When `cwd` is empty defaults to current shell working directory
+// NewHooksManager creates a new [HooksManager] instance.
+// When [HooksManagerOptions.Cwd] is empty defaults to current shell
+// working directory.
+// [HooksManagerOptions.ProjectDir] is the project root directory
+// (where azure.yaml lives), used as the security boundary for path
+// containment. When empty, Cwd is used as the boundary.
 func NewHooksManager(
-	cwd string,
+	options HooksManagerOptions,
 	commandRunner exec.CommandRunner,
 ) *HooksManager {
+	cwd := options.Cwd
 	if cwd == "" {
 		osWd, err := os.Getwd()
 		if err != nil {
@@ -42,8 +56,14 @@ func NewHooksManager(
 		cwd = osWd
 	}
 
+	projectDir := options.ProjectDir
+	if projectDir == "" {
+		projectDir = cwd
+	}
+
 	return &HooksManager{
 		cwd:           cwd,
+		projectDir:    projectDir,
 		commandRunner: commandRunner,
 	}
 }
@@ -112,7 +132,8 @@ func (h *HooksManager) filterConfigs(
 			}
 
 			hook.Name = scriptName
-			hook.cwd = h.cwd
+			hook.inputCwd = h.cwd
+			hook.projectDir = h.projectDir
 
 			if err := hook.validate(); err != nil {
 				return nil, fmt.Errorf("hook configuration for '%s' is invalid, %w", scriptName, err)
@@ -134,6 +155,7 @@ type HookValidationResult struct {
 type HookWarning struct {
 	Message    string
 	Suggestion string
+	URL        string
 }
 
 // ValidateHooks validates hook configurations and returns any warnings
@@ -145,53 +167,48 @@ func (h *HooksManager) ValidateHooks(ctx context.Context, allHooks map[string][]
 	hasPowerShellHooks := false
 	hasDefaultShellHooks := false
 
-	// Two-pass validation is required because:
-	// 1. First pass: Set shell defaults and detect inline scripts for each hook configuration
-	// 2. Second pass: Generate warnings only after all hooks have been processed and we know
-	//    the complete state (e.g., whether ANY hook uses PowerShell or default shell)
-	// We cannot merge these loops because warnings depend on global state across all hooks.
-
-	// First pass: perform lightweight validation to set flags like usingDefaultShell
-	// without creating temporary files (which full validation does)
-	for _, hookConfigs := range allHooks {
+	// validate() is the sole authority for Kind assignment.
+	// Run it on every hook first, then read the resolved
+	// state for warning purposes.
+	for hookName, hookConfigs := range allHooks {
 		for _, hookConfig := range hookConfigs {
-			// Set the working directory for validation
-			if hookConfig.cwd == "" {
-				hookConfig.cwd = h.cwd
+			if hookConfig == nil {
+				continue
 			}
 
-			// Only perform shell detection for warning purposes, not full validation
-			if !hookConfig.validated && hookConfig.Run != "" {
-				// Check if it's an inline script (no file exists)
-				relativeCheckPath := strings.ReplaceAll(hookConfig.Run, "/", string(os.PathSeparator))
-				fullCheckPath := relativeCheckPath
-				if hookConfig.cwd != "" {
-					fullCheckPath = filepath.Join(hookConfig.cwd, hookConfig.Run)
-				}
-
-				_, err := os.Stat(fullCheckPath)
-				isInlineScript := err != nil // File doesn't exist, so it's inline
-
-				// If shell is not specified and it's an inline script, set default for warning
-				if hookConfig.Shell == ScriptTypeUnknown && isInlineScript {
-					if runtime.GOOS == "windows" {
-						hookConfig.Shell = ShellTypePowershell
-					} else {
-						hookConfig.Shell = ShellTypeBash
-					}
-					hookConfig.usingDefaultShell = true
-				}
+			// Apply OS-specific override if present.
+			cfg := hookConfig
+			if runtime.GOOS == "windows" &&
+				cfg.Windows != nil {
+				cfg = cfg.Windows
+			} else if (runtime.GOOS == "linux" ||
+				runtime.GOOS == "darwin") &&
+				cfg.Posix != nil {
+				cfg = cfg.Posix
 			}
-		}
-	}
 
-	// Second pass: check all hooks for warning conditions using the state set in first pass
-	for _, hookConfigs := range allHooks {
-		for _, hookConfig := range hookConfigs {
-			if hookConfig.IsPowerShellHook() {
+			if cfg.inputCwd == "" {
+				cfg.inputCwd = h.cwd
+			}
+			if cfg.projectDir == "" {
+				cfg.projectDir = h.projectDir
+			}
+			if cfg.Name == "" {
+				cfg.Name = hookName
+			}
+
+			// validate() resolves Kind from file extension,
+			// explicit config, or OS default for inline
+			// scripts. Validation errors are surfaced by
+			// GetAll / GetByParams; skip the hook here.
+			if err := cfg.validate(); err != nil {
+				continue
+			}
+
+			if cfg.IsPowerShellHook() {
 				hasPowerShellHooks = true
 			}
-			if hookConfig.IsUsingDefaultShell() {
+			if cfg.IsUsingDefaultShell() {
 				hasDefaultShellHooks = true
 			}
 		}
@@ -246,5 +263,138 @@ func (h *HooksManager) ValidateHooks(ctx context.Context, allHooks map[string][]
 		log.Println(warningMessage)
 	}
 
+	// Check runtime availability for hooks that require external runtimes.
+	langWarnings := h.validateRuntimes(ctx, allHooks)
+	result.Warnings = append(result.Warnings, langWarnings...)
+
 	return result
+}
+
+// validateRuntimes inspects all hook configurations and verifies that
+// required runtimes are installed. It returns warnings for each missing
+// runtime, following the same pattern used for the PowerShell 7
+// validation above.
+//
+// Currently only Python hooks are validated (Phase 1). JavaScript,
+// TypeScript, and DotNet hooks are deferred to later phases.
+func (h *HooksManager) validateRuntimes(
+	ctx context.Context,
+	allHooks map[string][]*HookConfig,
+) []HookWarning {
+	var warnings []HookWarning
+
+	// Collect unique non-shell hook kinds required across all hooks.
+	// Track the first hook name per kind for actionable messages.
+	requiredLangs := map[language.HookKind]string{}
+
+	for hookName, hookConfigs := range allHooks {
+		for _, hookConfig := range hookConfigs {
+			if hookConfig == nil {
+				continue
+			}
+
+			// Apply OS-specific override if present.
+			cfg := hookConfig
+			if runtime.GOOS == "windows" && cfg.Windows != nil {
+				cfg = cfg.Windows
+			} else if (runtime.GOOS == "linux" ||
+				runtime.GOOS == "darwin") && cfg.Posix != nil {
+				cfg = cfg.Posix
+			}
+
+			if cfg.inputCwd == "" {
+				cfg.inputCwd = h.cwd
+			}
+			if cfg.projectDir == "" {
+				cfg.projectDir = h.projectDir
+			}
+
+			// Set the hook name so that any temp scripts
+			// created by validate() use the correct name
+			// pattern (e.g. azd-predeploy-*.sh).
+			if cfg.Name == "" {
+				cfg.Name = hookName
+			}
+
+			// Run validate to resolve the Kind field from
+			// file extension / explicit config.
+			if err := cfg.validate(); err != nil {
+				// Validation errors are surfaced by GetAll /
+				// GetByParams; skip the hook here.
+				continue
+			}
+
+			// Non-shell hooks need runtime validation
+			// (e.g. Python must be installed). Bash and
+			// PowerShell hooks are validated separately above.
+			if !cfg.Kind.IsShell() {
+				if _, seen := requiredLangs[cfg.Kind]; !seen {
+					requiredLangs[cfg.Kind] = hookName
+				}
+			}
+		}
+	}
+
+	// Phase 1: validate Python runtime.
+	if hookName, ok := requiredLangs[language.HookKindPython]; ok {
+		pythonCli := python.NewCli(h.commandRunner)
+		if err := pythonCli.CheckInstalled(ctx); err != nil {
+			warnings = append(warnings, HookWarning{
+				Message: fmt.Sprintf(
+					"Python 3 is required to run hook '%s' "+
+						"but is not installed",
+					hookName,
+				),
+				Suggestion: fmt.Sprintf(
+					"Install Python 3 from %s",
+					output.WithHyperlink(
+						pythonCli.InstallUrl(),
+						"Python Downloads",
+					),
+				),
+				URL: pythonCli.InstallUrl(),
+			})
+		}
+	}
+
+	// Phase 2: JS/TS — not yet validated.
+	// Phase 4: DotNet — not yet validated.
+
+	return warnings
+}
+
+// ValidateRuntimesErr is a convenience wrapper around ValidateHooks
+// that returns an [errorhandler.ErrorWithSuggestion] when any required
+// runtime is missing. Callers that need a hard early failure (e.g.
+// before starting a long deployment) should use this instead of
+// inspecting warnings manually.
+func (h *HooksManager) ValidateRuntimesErr(
+	ctx context.Context,
+	allHooks map[string][]*HookConfig,
+) error {
+	warnings := h.validateRuntimes(ctx, allHooks)
+	if len(warnings) == 0 {
+		return nil
+	}
+
+	// Use the first warning for the primary error; additional
+	// warnings are appended as links.
+	first := warnings[0]
+	links := make([]errorhandler.ErrorLink, 0, len(warnings))
+	for _, w := range warnings {
+		links = append(links, errorhandler.ErrorLink{
+			URL:   w.URL,
+			Title: w.Message,
+		})
+	}
+
+	return &errorhandler.ErrorWithSuggestion{
+		Err: fmt.Errorf(
+			"missing required runtime: %s",
+			first.Message,
+		),
+		Message:    first.Message,
+		Suggestion: first.Suggestion,
+		Links:      links,
+	}
 }

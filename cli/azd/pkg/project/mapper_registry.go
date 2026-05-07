@@ -200,6 +200,7 @@ func registerProjectMappings() {
 			Tag:         tag,
 			RemoteBuild: src.RemoteBuild,
 			BuildArgs:   buildArgs,
+			Network:     src.Network,
 		}, nil
 	})
 
@@ -413,6 +414,7 @@ func registerProjectMappings() {
 			Image:       osutil.NewExpandableString(src.Image),
 			Tag:         osutil.NewExpandableString(src.Tag),
 			RemoteBuild: src.RemoteBuild,
+			Network:     src.Network,
 		}
 
 		if len(src.BuildArgs) > 0 {
@@ -440,6 +442,7 @@ func registerProjectMappings() {
 			Image:       osutil.NewExpandableString(src.Image),
 			Tag:         osutil.NewExpandableString(src.Tag),
 			RemoteBuild: src.RemoteBuild,
+			Network:     src.Network,
 		}
 
 		if len(src.BuildArgs) > 0 {

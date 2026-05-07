@@ -122,13 +122,43 @@ Define new codes in `internal/exterrors/codes.go`.
 
 ## Release preparation
 
-When bumping the extension version for a patch release, update **only** these files:
+A new extension release ships in two PRs:
+
+### PR 1 — Version bump
+
+Bumps the extension to the new version. Touches only:
 
 - `version.txt` — new semver string
 - `extension.yaml` — `version:` field
 - `CHANGELOG.md` — new release section at the top
 
-**Do NOT update `cli/azd/extensions/registry.json`.** The registry entry (checksums, artifact URLs) is generated automatically by CI after the release build produces the binaries. Editing it manually by hand will result in wrong or placeholder checksums that break installation.
+Once merged, the team triggers the CI release pipeline, which builds, signs, and publishes the extension binaries as a GitHub release.
+
+### PR 2 — Registry update
+
+After the GitHub release is live, a follow-up PR updates `cli/azd/extensions/registry.json` so azd users can install the new version. The contents of that file are produced by running `azd x publish` against the published release artifacts (which computes the artifact URLs and checksums). The resulting PR should contain only the regenerated `registry.json` entry for the extension, and in some cases updated test snapshots as well.
+
+## Output: `log` vs `fmt`
+
+Extensions write directly to stdout/stderr — there is no `Console` abstraction from azd core.
+
+- **`fmt.Print*`** — user-facing output (stdout). Pair with `output.With*Format` helpers for styled text.
+- **`log.Print*`** — developer diagnostics (stderr). Hidden unless `--debug` is set. Never use `log` for anything the user needs to see.
+- Do not use `log.Fatal` or `log.Panic` for expected failures — return a structured error via `exterrors` instead.
+
+```go
+// ✅ log — internal detail the user doesn't need to see
+log.Printf("ARM response: status=%d, id=%s", resp.StatusCode, resourceId)
+
+// ✅ fmt — user-facing status and results
+fmt.Println(output.WithSuccessFormat("Agent deployed to %s", endpoint))
+
+// ❌ fmt used for debug noise — user sees internal details they can't act on
+fmt.Printf("Parsed resource ID: sub=%s, rg=%s\n", subId, rg)    // use log.Printf
+
+// ❌ log used for user-facing info — user never sees it without --debug
+log.Printf("No Foundry projects found in subscription")          // use fmt + output helper
+```
 
 ## Other extension conventions
 

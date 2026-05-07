@@ -4,7 +4,6 @@
 package appdetect
 
 import (
-	"context"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -18,6 +17,7 @@ import (
 )
 
 func TestDotNetAppHostDetector_DetectProject(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name         string
 		setupDir     func(t *testing.T) (string, []fs.DirEntry)
@@ -212,7 +212,8 @@ builder.Build().Run();`
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockCtx := mocks.NewMockContext(context.Background())
+			t.Parallel()
+			mockCtx := mocks.NewMockContext(t.Context())
 
 			// Mock msbuild calls to return false for non-Aspire projects
 			mockCtx.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -244,6 +245,7 @@ builder.Build().Run();`
 }
 
 func TestDotNetAppHostDetector_Language(t *testing.T) {
+	t.Parallel()
 	detector := &dotNetAppHostDetector{}
 	require.Equal(t, DotNetAppHost, detector.Language())
 }

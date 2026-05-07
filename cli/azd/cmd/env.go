@@ -17,6 +17,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -357,7 +359,7 @@ type envSetSecretAction struct {
 	prompter            prompt.Prompter
 	kvService           keyvault.KeyVaultService
 	entraIdService      entraid.EntraIdService
-	subResolver         account.SubscriptionTenantResolver
+	subResolver         account.SubscriptionResolver
 	userProfileService  *azapi.UserProfileService
 	alphaFeatureManager *alpha.FeatureManager
 	projectConfig       *project.ProjectConfig
@@ -496,10 +498,11 @@ func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, er
 	if err != nil {
 		return nil, fmt.Errorf("prompting for subscription: %w", err)
 	}
-	tenantId, err := e.subResolver.LookupTenant(ctx, subId)
+	subscription, err := e.subResolver.GetSubscription(ctx, subId)
 	if err != nil {
-		return nil, fmt.Errorf("looking up tenant for subscription: %w", err)
+		return nil, fmt.Errorf("getting subscription %s: %w", subId, err)
 	}
+	resourceTenantId := subscription.TenantId
 
 	e.console.ShowSpinner(ctx, "Finding Key Vaults from the selected subscription", input.Step)
 	vaultsList, err := e.kvService.ListSubscriptionVaults(ctx, subId)
@@ -600,7 +603,7 @@ func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, er
 		}
 
 		e.console.ShowSpinner(ctx, "Creating Key Vault", input.Step)
-		vault, err := e.kvService.CreateVault(ctx, tenantId, subId, rg, location, kvAccountName)
+		vault, err := e.kvService.CreateVault(ctx, resourceTenantId, subId, rg, location, kvAccountName)
 		e.console.StopSpinner(ctx, "", input.Step)
 		if err != nil {
 			return nil, fmt.Errorf("error creating Key Vault: %w", err)
@@ -609,7 +612,7 @@ func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, er
 
 		// RBAC role assignment
 		e.console.ShowSpinner(ctx, "Adding Administrator Role", input.Step)
-		principalId, err := azureutil.GetCurrentPrincipalId(ctx, e.userProfileService, tenantId)
+		principalId, err := azureutil.GetCurrentPrincipalId(ctx, e.userProfileService, resourceTenantId)
 		if err != nil {
 			return nil, fmt.Errorf("getting current principal ID: %w", err)
 		}
@@ -732,7 +735,7 @@ func newEnvSetSecretAction(
 	prompter prompt.Prompter,
 	kvService keyvault.KeyVaultService,
 	entraIdService entraid.EntraIdService,
-	subResolver account.SubscriptionTenantResolver,
+	subResolver account.SubscriptionResolver,
 	userProfileService *azapi.UserProfileService,
 	alphaFeatureManager *alpha.FeatureManager,
 	projectConfig *project.ProjectConfig,
@@ -873,6 +876,8 @@ func (e *envListAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	if err != nil {
 		return nil, fmt.Errorf("listing environments: %w", err)
 	}
+
+	tracing.SetUsageAttributes(fields.EnvCountKey.Int(len(envs)))
 
 	if e.formatter.Kind() == output.TableFormat {
 		columns := []output.Column{

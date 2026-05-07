@@ -4,16 +4,12 @@
 package repository
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -35,7 +31,7 @@ func Test_detectConfirm_confirm(t *testing.T) {
 	err = os.MkdirAll(javaDir, 0700)
 	require.NoError(t, err)
 
-	ostest.Chdir(t, dir)
+	t.Chdir(dir)
 
 	tests := []struct {
 		name         string
@@ -49,7 +45,7 @@ func Test_detectConfirm_confirm(t *testing.T) {
 			interactions: []string{
 				"Add an undetected service",
 				fmt.Sprintf("%s\t%s", appdetect.Java.Display(), "[Language]"),
-				"java-dir",
+				javaDir,
 				"Confirm and continue initializing my app",
 			},
 			want: []appdetect.Project{
@@ -89,7 +85,7 @@ func Test_detectConfirm_confirm(t *testing.T) {
 			interactions: []string{
 				"Add an undetected service",
 				fmt.Sprintf("%s\t%s", appdetect.Java.Display(), "[Language]"),
-				"java-dir",
+				javaDir,
 				"Confirm and continue initializing my app",
 			},
 			want: []appdetect.Project{
@@ -115,7 +111,7 @@ func Test_detectConfirm_confirm(t *testing.T) {
 			interactions: []string{
 				"Add an undetected service",
 				fmt.Sprintf("%s\t%s", appdetect.JsReact.Display(), "[Framework]"),
-				"java-dir",
+				javaDir,
 				"Confirm and continue initializing my app",
 			},
 			want: []appdetect.Project{
@@ -145,7 +141,7 @@ func Test_detectConfirm_confirm(t *testing.T) {
 				"y",
 				"Add an undetected service",
 				fmt.Sprintf("%s\t%s", appdetect.Java.Display(), "[Language]"),
-				"java-dir",
+				javaDir,
 				"Confirm and continue initializing my app",
 			},
 			want: []appdetect.Project{
@@ -211,25 +207,11 @@ func Test_detectConfirm_confirm(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			d := &detectConfirm{
-				console: input.NewConsole(
-					false,
-					false,
-					input.Writers{Output: os.Stdout},
-					input.ConsoleHandles{
-						Stderr: os.Stderr,
-						Stdin:  strings.NewReader(strings.Join(tt.interactions, "\n") + "\n"),
-						Stdout: os.Stdout,
-					},
-					nil,
-					nil),
+				console: newCapturedTestConsole(t, tt.interactions),
 			}
 			d.Init(tt.detection, dir)
 
-			err = d.Confirm(context.Background())
-
-			// Print extra newline to avoid mangling `go test -v` final test result output while waiting for final stdin,
-			// which may result in incorrect `gotestsum` reporting
-			fmt.Println()
+			err = d.Confirm(t.Context())
 
 			require.NoError(t, err)
 			require.Equal(t, tt.want, d.Services)

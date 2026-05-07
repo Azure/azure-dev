@@ -4,12 +4,14 @@
 package cmd
 
 import (
+	"io"
 	"os"
 	"slices"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/runcontext/agentdetect"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -75,6 +77,108 @@ func TestExecuteWithAutoInstallIntegration(t *testing.T) {
 
 	// Restore original args
 	os.Args = originalArgs
+}
+
+func TestExecuteWithAutoInstall_ReturnsCommandErrorWithoutPanicForOutputFlags(t *testing.T) {
+	originalArgs := os.Args
+	defer func() {
+		os.Args = originalArgs
+	}()
+
+	clearAgentEnvVarsForTest(t)
+	agentdetect.ResetDetection()
+	defer agentdetect.ResetDetection()
+
+	os.Args = []string{
+		"azd",
+		"auth",
+		"token",
+		"--scope",
+		"https://graph.microsoft.com/.default",
+		"--tenant-id",
+		"00000000-0000-0000-0000-000000000000",
+		"--output",
+		"unknown",
+	}
+
+	rootContainer := ioc.NewNestedContainer(nil)
+	stderrReader, stderrWriter, err := os.Pipe()
+	require.NoError(t, err)
+
+	originalStderr := os.Stderr
+	os.Stderr = stderrWriter
+	defer func() {
+		os.Stderr = originalStderr
+	}()
+
+	var execResult *ExecuteResult
+	require.NotPanics(t, func() {
+		execResult = ExecuteWithAutoInstall(t.Context(), rootContainer)
+	})
+
+	require.NoError(t, stderrWriter.Close())
+
+	stderrBytes, err := io.ReadAll(stderrReader)
+	require.NoError(t, err)
+
+	require.ErrorContains(t, execResult.Err, "unsupported format 'unknown'")
+	require.NotContains(t, string(stderrBytes), "panic:")
+	require.Contains(t, string(stderrBytes), "Error: unsupported format 'unknown'")
+
+	// auth token is a lightspeed command — verify the flag is set even when the command fails
+	require.True(t, execResult.IsLightspeed, "auth token should be detected as a lightspeed command")
+}
+
+func TestExecuteWithAutoInstall_LightspeedDetection(t *testing.T) {
+	originalArgs := os.Args
+	defer func() {
+		os.Args = originalArgs
+	}()
+
+	clearAgentEnvVarsForTest(t)
+	agentdetect.ResetDetection()
+	defer agentdetect.ResetDetection()
+
+	tests := []struct {
+		name             string
+		args             []string
+		expectLightspeed bool
+	}{
+		{
+			name: "auth_token_is_lightspeed",
+			// Use --output unknown to fail before touching the credential stack.
+			// We only care about IsLightspeed detection, not actual token acquisition.
+			args:             []string{"azd", "auth", "token", "--output", "unknown"},
+			expectLightspeed: true,
+		},
+		{
+			name:             "version_is_not_lightspeed",
+			args:             []string{"azd", "version"},
+			expectLightspeed: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Prevent non-lightspeed commands from making real HTTP update check calls.
+			t.Setenv("AZD_SKIP_UPDATE_CHECK", "true")
+			os.Args = tt.args
+			rootContainer := ioc.NewNestedContainer(nil)
+			result := ExecuteWithAutoInstall(t.Context(), rootContainer)
+			require.Equal(t, tt.expectLightspeed, result.IsLightspeed)
+
+			if tt.expectLightspeed {
+				// Lightspeed commands must NOT start the update check goroutine.
+				require.Nil(t, result.LatestVersion,
+					"lightspeed commands should not start the update check")
+			} else {
+				// Non-lightspeed commands should always start the update check
+				// (even when AZD_SKIP_UPDATE_CHECK short-circuits it).
+				require.NotNil(t, result.LatestVersion,
+					"non-lightspeed commands should start the update check")
+			}
+		})
+	}
 }
 
 // TestAgentDetectionIntegration tests the full agent detection integration flow.
@@ -198,6 +302,8 @@ func clearAgentEnvVarsForTest(t *testing.T) {
 		"GEMINI_CLI", "GEMINI_CLI_NO_RELAUNCH",
 		// OpenCode
 		"OPENCODE",
+		// Non-interactive env var
+		"AZD_NON_INTERACTIVE",
 		// User agent
 		internal.AzdUserAgentEnvVar,
 	}

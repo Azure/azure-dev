@@ -4,7 +4,6 @@
 package devcentersdk
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"testing"
@@ -23,7 +22,7 @@ func Test_DevCenter_Client(t *testing.T) {
 	t.Skip("azure/azure-dev#2944")
 
 	publicCloud := cloud.AzurePublic()
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	azCli, err := az.NewCli(mockContext.CommandRunner)
 	require.NoError(t, err)
 

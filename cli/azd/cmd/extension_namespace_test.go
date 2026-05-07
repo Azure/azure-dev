@@ -12,6 +12,7 @@ import (
 )
 
 func TestNamespacesConflict(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		ns1      string
@@ -113,6 +114,7 @@ func TestNamespacesConflict(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			conflict, msg := namespacesConflict(tt.ns1, tt.ns2)
 			require.Equal(t, tt.conflict, conflict)
 			if tt.conflict {
@@ -123,12 +125,15 @@ func TestNamespacesConflict(t *testing.T) {
 }
 
 func TestCheckNamespaceConflict(t *testing.T) {
+	t.Parallel()
 	t.Run("no conflict with empty installed extensions", func(t *testing.T) {
+		t.Parallel()
 		err := checkNamespaceConflict("new.ext", "demo", map[string]*extensions.Extension{})
 		require.NoError(t, err)
 	})
 
 	t.Run("no conflict with different namespaces", func(t *testing.T) {
+		t.Parallel()
 		installed := map[string]*extensions.Extension{
 			"existing.ext": {Id: "existing.ext", Namespace: "other"},
 		}
@@ -137,6 +142,7 @@ func TestCheckNamespaceConflict(t *testing.T) {
 	})
 
 	t.Run("conflict with installed extension - same namespace", func(t *testing.T) {
+		t.Parallel()
 		installed := map[string]*extensions.Extension{
 			"existing.ext": {Id: "existing.ext", Namespace: "demo"},
 		}
@@ -152,6 +158,7 @@ func TestCheckNamespaceConflict(t *testing.T) {
 	})
 
 	t.Run("conflict with installed extension - overlapping namespace", func(t *testing.T) {
+		t.Parallel()
 		installed := map[string]*extensions.Extension{
 			"microsoft.azd.ai.builder": {Id: "microsoft.azd.ai.builder", Namespace: "ai"},
 		}
@@ -165,6 +172,7 @@ func TestCheckNamespaceConflict(t *testing.T) {
 	})
 
 	t.Run("no conflict when checking against self (upgrade case)", func(t *testing.T) {
+		t.Parallel()
 		installed := map[string]*extensions.Extension{
 			"my.ext": {Id: "my.ext", Namespace: "demo"},
 		}
@@ -173,6 +181,7 @@ func TestCheckNamespaceConflict(t *testing.T) {
 	})
 
 	t.Run("no conflict with empty namespace for new extension", func(t *testing.T) {
+		t.Parallel()
 		installed := map[string]*extensions.Extension{
 			"existing.ext": {Id: "existing.ext", Namespace: "demo"},
 		}
@@ -181,6 +190,7 @@ func TestCheckNamespaceConflict(t *testing.T) {
 	})
 
 	t.Run("skips installed extensions with empty namespace", func(t *testing.T) {
+		t.Parallel()
 		installed := map[string]*extensions.Extension{
 			"existing.ext": {Id: "existing.ext", Namespace: ""},
 		}
@@ -189,6 +199,7 @@ func TestCheckNamespaceConflict(t *testing.T) {
 	})
 
 	t.Run("case insensitive conflict detection", func(t *testing.T) {
+		t.Parallel()
 		installed := map[string]*extensions.Extension{
 			"existing.ext": {Id: "existing.ext", Namespace: "AI.Agent"},
 		}
@@ -200,6 +211,7 @@ func TestCheckNamespaceConflict(t *testing.T) {
 	})
 
 	t.Run("multiple installed - finds conflict", func(t *testing.T) {
+		t.Parallel()
 		installed := map[string]*extensions.Extension{
 			"safe.ext":        {Id: "safe.ext", Namespace: "demo"},
 			"conflicting.ext": {Id: "conflicting.ext", Namespace: "ai.models"},

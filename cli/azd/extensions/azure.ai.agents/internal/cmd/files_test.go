@@ -13,7 +13,7 @@ import (
 )
 
 func TestFilesCommand_HasSubcommands(t *testing.T) {
-	cmd := newFilesCommand()
+	cmd := newFilesCommand(nil)
 
 	subcommands := cmd.Commands()
 	names := make([]string, len(subcommands))
@@ -24,11 +24,11 @@ func TestFilesCommand_HasSubcommands(t *testing.T) {
 	assert.Contains(t, names, "upload")
 	assert.Contains(t, names, "download")
 	assert.Contains(t, names, "list")
-	assert.Contains(t, names, "remove")
+	assert.Contains(t, names, "delete")
 }
 
 func TestFilesUploadCommand_MissingFile(t *testing.T) {
-	cmd := newFilesUploadCommand()
+	cmd := newFilesUploadCommand(nil)
 
 	// Missing required --file flag
 	cmd.SetArgs([]string{})
@@ -38,9 +38,9 @@ func TestFilesUploadCommand_MissingFile(t *testing.T) {
 }
 
 func TestFilesUploadCommand_HasFlags(t *testing.T) {
-	cmd := newFilesUploadCommand()
+	cmd := newFilesUploadCommand(nil)
 
-	for _, name := range []string{"file", "target-path", "agent-name", "session"} {
+	for _, name := range []string{"file", "target-path", "agent-name", "session-id"} {
 		f := cmd.Flags().Lookup(name)
 		require.NotNil(t, f, "expected flag %q", name)
 		assert.Equal(t, "", f.DefValue)
@@ -48,7 +48,7 @@ func TestFilesUploadCommand_HasFlags(t *testing.T) {
 }
 
 func TestFilesDownloadCommand_MissingFile(t *testing.T) {
-	cmd := newFilesDownloadCommand()
+	cmd := newFilesDownloadCommand(nil)
 
 	// Missing required --file flag
 	cmd.SetArgs([]string{})
@@ -58,9 +58,9 @@ func TestFilesDownloadCommand_MissingFile(t *testing.T) {
 }
 
 func TestFilesDownloadCommand_HasFlags(t *testing.T) {
-	cmd := newFilesDownloadCommand()
+	cmd := newFilesDownloadCommand(nil)
 
-	for _, name := range []string{"file", "target-path", "agent-name", "session"} {
+	for _, name := range []string{"file", "target-path", "agent-name", "session-id"} {
 		f := cmd.Flags().Lookup(name)
 		require.NotNil(t, f, "expected flag %q", name)
 		assert.Equal(t, "", f.DefValue)
@@ -68,21 +68,19 @@ func TestFilesDownloadCommand_HasFlags(t *testing.T) {
 }
 
 func TestFilesListCommand_DefaultOutputFormat(t *testing.T) {
-	cmd := newFilesListCommand()
-
-	output, _ := cmd.Flags().GetString("output")
-	assert.Equal(t, "json", output)
+	cmd := newFilesListCommand(nil)
+	assertOutputFlagOptions(t, cmd, "json", []string{"json", "table"})
 }
 
 func TestFilesListCommand_OptionalRemotePath(t *testing.T) {
-	cmd := newFilesListCommand()
+	cmd := newFilesListCommand(nil)
 
 	// Verify the command accepts 0 or 1 args
 	assert.NotNil(t, cmd.Args)
 }
 
-func TestFilesRemoveCommand_MissingFile(t *testing.T) {
-	cmd := newFilesRemoveCommand()
+func TestFilesDeleteCommand_MissingFile(t *testing.T) {
+	cmd := newFilesRemoveCommand(nil)
 
 	// Missing required --file flag
 	cmd.SetArgs([]string{})
@@ -91,10 +89,10 @@ func TestFilesRemoveCommand_MissingFile(t *testing.T) {
 	assert.Contains(t, err.Error(), "file")
 }
 
-func TestFilesRemoveCommand_HasFlags(t *testing.T) {
-	cmd := newFilesRemoveCommand()
+func TestFilesDeleteCommand_HasFlags(t *testing.T) {
+	cmd := newFilesRemoveCommand(nil)
 
-	for _, name := range []string{"file", "recursive", "agent-name", "session"} {
+	for _, name := range []string{"file", "recursive", "agent-name", "session-id"} {
 		f := cmd.Flags().Lookup(name)
 		require.NotNil(t, f, "expected flag %q", name)
 	}
@@ -104,7 +102,7 @@ func TestFilesRemoveCommand_HasFlags(t *testing.T) {
 }
 
 func TestFilesMkdirCommand_MissingDir(t *testing.T) {
-	cmd := newFilesMkdirCommand()
+	cmd := newFilesMkdirCommand(nil)
 
 	// Missing required --dir flag
 	cmd.SetArgs([]string{})
@@ -114,9 +112,9 @@ func TestFilesMkdirCommand_MissingDir(t *testing.T) {
 }
 
 func TestFilesMkdirCommand_HasFlags(t *testing.T) {
-	cmd := newFilesMkdirCommand()
+	cmd := newFilesMkdirCommand(nil)
 
-	for _, name := range []string{"dir", "agent-name", "session"} {
+	for _, name := range []string{"dir", "agent-name", "session-id"} {
 		f := cmd.Flags().Lookup(name)
 		require.NotNil(t, f, "expected flag %q", name)
 		assert.Equal(t, "", f.DefValue)
@@ -124,7 +122,7 @@ func TestFilesMkdirCommand_HasFlags(t *testing.T) {
 }
 
 func TestPrintFileListJSON(t *testing.T) {
-	modified := "2025-01-01T00:00:00Z"
+	modified := agent_api.FlexibleTimestamp("2025-01-01T00:00:00Z")
 	fileList := &agent_api.SessionFileList{
 		Path: "/data",
 		Entries: []agent_api.SessionFileInfo{
@@ -148,7 +146,7 @@ func TestPrintFileListJSON(t *testing.T) {
 }
 
 func TestPrintFileListTable(t *testing.T) {
-	modified := "2025-01-01T00:00:00Z"
+	modified := agent_api.FlexibleTimestamp("2025-01-01T00:00:00Z")
 	fileList := &agent_api.SessionFileList{
 		Path: "/data",
 		Entries: []agent_api.SessionFileInfo{

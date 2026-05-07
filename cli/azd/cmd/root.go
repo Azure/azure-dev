@@ -196,6 +196,7 @@ func newRootCmd(
 	hooksActions(root)
 	mcpActions(root)
 	copilotActions(root)
+	toolActions(root)
 
 	root.Add("version", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
@@ -217,6 +218,9 @@ func newRootCmd(
 		ActionResolver: newUpdateAction,
 		OutputFormats:  []output.Format{output.NoneFormat},
 		DefaultFormat:  output.NoneFormat,
+		GroupingOptions: actions.CommandGroupOptions{
+			RootLevelHelp: actions.CmdGroupBeta,
+		},
 	})
 
 	root.Add("vs-server", &actions.ActionDescriptorOptions{
@@ -278,6 +282,9 @@ func newRootCmd(
 			ActionResolver: newBuildAction,
 			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 			DefaultFormat:  output.NoneFormat,
+			GroupingOptions: actions.CommandGroupOptions{
+				RootLevelHelp: actions.CmdGroupBeta,
+			},
 		}).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware).
 		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
@@ -450,7 +457,21 @@ func newRootCmd(
 			}
 
 			return false
-		})
+		}).
+		UseMiddlewareWhen(
+			"toolFirstRun",
+			middleware.NewToolFirstRunMiddleware,
+			func(descriptor *actions.ActionDescriptor) bool {
+				return isWorkflowCommand(descriptor)
+			},
+		).
+		UseMiddlewareWhen(
+			"toolUpdateCheck",
+			middleware.NewToolUpdateCheckMiddleware,
+			func(descriptor *actions.ActionDescriptor) bool {
+				return isWorkflowCommand(descriptor)
+			},
+		)
 
 	ioc.RegisterNamedInstance(rootContainer, "root-cmd", rootCmd)
 
@@ -523,6 +544,31 @@ func newRootCmd(
 		}))
 
 	return cmd
+}
+
+// isWorkflowCommand reports whether the command is a primary workflow
+// command where a first-run tool check adds value.  Utility commands
+// (auth, config, env, show, etc.) are excluded so they are never
+// blocked by the first-run experience or update notifications.
+//
+// Instead of maintaining a hard-coded allowlist, we rely on the
+// RootLevelHelpOption group annotation so that any new command added
+// to a workflow group is automatically covered.
+func isWorkflowCommand(descriptor *actions.ActionDescriptor) bool {
+	// Walk up to the root-level subcommand (first segment after "azd").
+	current := descriptor
+	for current.Parent() != nil && current.Parent().Parent() != nil {
+		current = current.Parent()
+	}
+
+	if current.Options == nil {
+		return false
+	}
+
+	group := current.Options.GroupingOptions.RootLevelHelp
+	return group == actions.CmdGroupStart ||
+		group == actions.CmdGroupAzure ||
+		group == actions.CmdGroupBeta
 }
 
 func getCmdRootHelpFooter(cmd *cobra.Command) string {

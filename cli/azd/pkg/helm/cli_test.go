@@ -4,7 +4,6 @@
 package helm
 
 import (
-	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -24,7 +23,7 @@ func Test_Cli_AddRepo(t *testing.T) {
 		ran := false
 		var runArgs exec.RunArgs
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.
 			When(func(args exec.RunArgs, command string) bool {
 				return strings.Contains(command, "helm repo add")
@@ -52,7 +51,7 @@ func Test_Cli_AddRepo(t *testing.T) {
 	t.Run("Failure", func(t *testing.T) {
 		ran := false
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.
 			When(func(args exec.RunArgs, command string) bool {
 				return strings.Contains(command, "helm repo add")
@@ -76,7 +75,7 @@ func Test_Cli_UpdateRepo(t *testing.T) {
 		ran := false
 		var runArgs exec.RunArgs
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.
 			When(func(args exec.RunArgs, command string) bool {
 				return strings.Contains(command, "helm repo update")
@@ -103,7 +102,7 @@ func Test_Cli_UpdateRepo(t *testing.T) {
 	t.Run("Failure", func(t *testing.T) {
 		ran := false
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.
 			When(func(args exec.RunArgs, command string) bool {
 				return strings.Contains(command, "helm repo update")
@@ -133,7 +132,7 @@ func Test_Cli_Install(t *testing.T) {
 		ran := false
 		var runArgs exec.RunArgs
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.
 			When(func(args exec.RunArgs, command string) bool {
 				return strings.Contains(command, "helm install")
@@ -164,7 +163,7 @@ func Test_Cli_Install(t *testing.T) {
 		releaseWithValues := *release
 		releaseWithValues.Values = "values.yaml"
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.
 			When(func(args exec.RunArgs, command string) bool {
 				return strings.Contains(command, "helm install")
@@ -193,7 +192,7 @@ func Test_Cli_Install(t *testing.T) {
 	t.Run("Failure", func(t *testing.T) {
 		ran := false
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.
 			When(func(args exec.RunArgs, command string) bool {
 				return strings.Contains(command, "helm install")
@@ -222,7 +221,7 @@ func Test_Cli_Upgrade(t *testing.T) {
 		ran := false
 		var runArgs exec.RunArgs
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.
 			When(func(args exec.RunArgs, command string) bool {
 				return strings.Contains(command, "helm upgrade")
@@ -255,7 +254,7 @@ func Test_Cli_Upgrade(t *testing.T) {
 		releaseWithValues := *release
 		releaseWithValues.Values = "values.yaml"
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.
 			When(func(args exec.RunArgs, command string) bool {
 				return strings.Contains(command, "helm upgrade")
@@ -290,7 +289,7 @@ func Test_Cli_Upgrade(t *testing.T) {
 		releaseWithVersion := *release
 		releaseWithVersion.Version = "1.0.0"
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.
 			When(func(args exec.RunArgs, command string) bool {
 				return strings.Contains(command, "helm upgrade")
@@ -325,7 +324,7 @@ func Test_Cli_Upgrade(t *testing.T) {
 		releaseWithNamespace := *release
 		releaseWithNamespace.Namespace = "test-namespace"
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.
 			When(func(args exec.RunArgs, command string) bool {
 				return strings.Contains(command, "helm upgrade")
@@ -357,7 +356,7 @@ func Test_Cli_Upgrade(t *testing.T) {
 	t.Run("Failure", func(t *testing.T) {
 		ran := false
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.
 			When(func(args exec.RunArgs, command string) bool {
 				return strings.Contains(command, "helm upgrade")
@@ -385,7 +384,7 @@ func Test_Cli_Status(t *testing.T) {
 		ran := false
 		var runArgs exec.RunArgs
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.
 			When(func(args exec.RunArgs, command string) bool {
 				return strings.Contains(command, "helm status")
@@ -422,7 +421,7 @@ func Test_Cli_Status(t *testing.T) {
 		releaseWithNamespace := *release
 		releaseWithNamespace.Namespace = "test-namespace"
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.
 			When(func(args exec.RunArgs, command string) bool {
 				return strings.Contains(command, "helm status")
@@ -457,7 +456,7 @@ func Test_Cli_Status(t *testing.T) {
 	t.Run("Failure", func(t *testing.T) {
 		ran := false
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.
 			When(func(args exec.RunArgs, command string) bool {
 				return strings.Contains(command, "helm status")

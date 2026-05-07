@@ -11,7 +11,6 @@ import (
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
-	"azureaiagent/internal/pkg/agents/registry_api"
 	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -26,7 +25,7 @@ import (
 
 var defaultSkuPriority = []string{"GlobalStandard", "DataZoneStandard", "Standard"}
 
-func (a *InitAction) loadAiCatalog(ctx context.Context) error {
+func (a *modelSelector) loadAiCatalog(ctx context.Context) error {
 	if a.modelCatalog != nil {
 		return nil
 	}
@@ -42,6 +41,7 @@ func (a *InitAction) loadAiCatalog(ctx context.Context) error {
 
 	modelResp, err := a.azdClient.Ai().ListModels(ctx, &azdext.ListModelsRequest{
 		AzureContext: a.azureContext,
+		Filter:       agentModelFilter(nil, nil),
 	})
 	stopErr := spinner.Stop(ctx)
 	if err != nil {
@@ -68,14 +68,20 @@ func mapModelsByName(models []*azdext.AiModel) map[string]*azdext.AiModel {
 	return modelMap
 }
 
-func (a *InitAction) updateEnvLocation(ctx context.Context, selectedLocation string) error {
-	envResponse, err := a.azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-	if err != nil {
-		return fmt.Errorf("failed to get current azd environment: %w", err)
+func (a *modelSelector) updateEnvLocation(ctx context.Context, selectedLocation string) error {
+	envName := ""
+	if a.environment != nil {
+		envName = a.environment.Name
+	} else {
+		envResponse, err := a.azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+		if err != nil {
+			return fmt.Errorf("failed to get current azd environment: %w", err)
+		}
+		envName = envResponse.Environment.Name
 	}
 
-	_, err = a.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
-		EnvName: envResponse.Environment.Name,
+	_, err := a.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+		EnvName: envName,
 		Key:     "AZURE_LOCATION",
 		Value:   selectedLocation,
 	})
@@ -110,7 +116,7 @@ func (a *InitAction) selectFromList(
 		defaultStr = defaultOpt
 	}
 
-	if a.flags.NoPrompt {
+	if a.flags.noPrompt {
 		fmt.Printf("No prompt mode enabled, selecting default %s: %s\n", property, defaultStr)
 		return defaultStr, nil
 	}
@@ -280,7 +286,7 @@ func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_
 		}
 	}
 
-	modelDetails, err := a.getModelDetails(ctx, model.Id)
+	modelDetails, err := a.getModelSelector().getModelDetails(ctx, model.Id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get model details: %w", err)
 	}
@@ -314,7 +320,7 @@ func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_
 	}, nil
 }
 
-func (a *InitAction) getModelDetails(ctx context.Context, modelName string) (*azdext.AiModelDeployment, error) {
+func (a *modelSelector) getModelDetails(ctx context.Context, modelName string) (*azdext.AiModelDeployment, error) {
 	if err := a.loadAiCatalog(ctx); err != nil {
 		return nil, err
 	}
@@ -350,7 +356,7 @@ func (a *InitAction) getModelDetails(ctx context.Context, modelName string) (*az
 		currentLocation = resolvedLocation
 	}
 
-	if a.flags.NoPrompt {
+	if a.flags.noPrompt {
 		fmt.Println("No prompt mode enabled, automatically selecting a model deployment based on availability and quota...")
 		return resolveModelDeployment(ctx, a.azdClient, a.azureContext, model, currentLocation)
 	}
@@ -493,7 +499,7 @@ const (
 		"2) Create a new Foundry project after changing regions."
 )
 
-func (a *InitAction) promptForAlternativeModel(
+func (a *modelSelector) promptForAlternativeModel(
 	ctx context.Context,
 	originalModelName string,
 ) (*azdext.AiModel, error) {
@@ -539,15 +545,14 @@ func (a *InitAction) promptForAlternativeModel(
 
 	promptReq := &azdext.PromptAiModelRequest{
 		AzureContext: a.azureContext,
+		Filter:       agentModelFilter(nil, nil),
 		SelectOptions: &azdext.SelectOptions{
 			Message: "Select a model",
 		},
 	}
 
 	if regionChoices[*regionResp.Value].Value == "region" {
-		promptReq.Filter = &azdext.AiModelFilterOptions{
-			Locations: []string{a.azureContext.Scope.Location},
-		}
+		promptReq.Filter = agentModelFilter([]string{a.azureContext.Scope.Location}, nil)
 	}
 
 	modelResp, err := a.azdClient.Prompt().PromptAiModel(ctx, promptReq)
@@ -558,7 +563,7 @@ func (a *InitAction) promptForAlternativeModel(
 	return modelResp.Model, nil
 }
 
-func (a *InitAction) promptForModelLocationMismatch(
+func (a *modelSelector) promptForModelLocationMismatch(
 	ctx context.Context,
 	model *azdext.AiModel,
 	currentLocation string,
@@ -615,11 +620,22 @@ func (a *InitAction) promptForModelLocationMismatch(
 		}
 
 		if selectedChoice == "location" {
+			allowedLocations, err := supportedModelLocations(ctx, currentModel.Locations)
+			if err != nil {
+				if isNoSupportedLocationsError(err) {
+					message = fmt.Sprintf(
+						"Model '%s' is not available in any region supported for hosted agents.",
+						currentModel.Name,
+					)
+					continue
+				}
+				return nil, "", err
+			}
 			locationResp, err := a.azdClient.Prompt().PromptAiModelLocationWithQuota(ctx,
 				&azdext.PromptAiModelLocationWithQuotaRequest{
 					AzureContext:     a.azureContext,
 					ModelName:        currentModel.Name,
-					AllowedLocations: currentModel.Locations,
+					AllowedLocations: allowedLocations,
 					Quota: &azdext.QuotaCheckOptions{
 						MinRemainingCapacity: 1,
 					},
@@ -648,9 +664,7 @@ func (a *InitAction) promptForModelLocationMismatch(
 		if selectedChoice == "model_all_regions" {
 			modelResp, err := a.azdClient.Prompt().PromptAiModel(ctx, &azdext.PromptAiModelRequest{
 				AzureContext: a.azureContext,
-				Filter: &azdext.AiModelFilterOptions{
-					ExcludeModelNames: []string{currentModel.Name},
-				},
+				Filter:       agentModelFilter(nil, []string{currentModel.Name}),
 				Quota: &azdext.QuotaCheckOptions{
 					MinRemainingCapacity: 1,
 				},
@@ -668,11 +682,23 @@ func (a *InitAction) promptForModelLocationMismatch(
 			}
 
 			selectedModel := modelResp.Model
+			allowedLocations, err := supportedModelLocations(ctx, selectedModel.Locations)
+			if err != nil {
+				if isNoSupportedLocationsError(err) {
+					currentModel = selectedModel
+					message = fmt.Sprintf(
+						"Model '%s' is not available in any region supported for hosted agents.",
+						selectedModel.Name,
+					)
+					continue
+				}
+				return nil, "", err
+			}
 			locationResp, err := a.azdClient.Prompt().PromptAiModelLocationWithQuota(ctx,
 				&azdext.PromptAiModelLocationWithQuotaRequest{
 					AzureContext:     a.azureContext,
 					ModelName:        selectedModel.Name,
-					AllowedLocations: selectedModel.Locations,
+					AllowedLocations: allowedLocations,
 					Quota: &azdext.QuotaCheckOptions{
 						MinRemainingCapacity: 1,
 					},
@@ -701,9 +727,7 @@ func (a *InitAction) promptForModelLocationMismatch(
 
 		promptReq := &azdext.PromptAiModelRequest{
 			AzureContext: a.azureContext,
-			Filter: &azdext.AiModelFilterOptions{
-				Locations: []string{currentLocation},
-			},
+			Filter:       agentModelFilter([]string{currentLocation}, nil),
 			SelectOptions: &azdext.SelectOptions{
 				Message: fmt.Sprintf("Select a model available in '%s'", currentLocation),
 			},
@@ -748,17 +772,8 @@ func (a *InitAction) ProcessModels(ctx context.Context, manifest *agent_yaml.Age
 	}
 
 	deploymentDetails := []project.Deployment{}
-	paramValues := registry_api.ParameterValues{}
+	paramValues := agent_yaml.ParameterValues{}
 	switch agentDef.Kind {
-	case agent_yaml.AgentKindPrompt:
-		agentDef := manifest.Template.(agent_yaml.PromptAgent)
-
-		modelDeployment, err := a.getModelDeploymentDetails(ctx, agentDef.Model)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to get model deployment details: %w", err)
-		}
-		deploymentDetails = append(deploymentDetails, *modelDeployment)
-		paramValues["deploymentName"] = modelDeployment.Name
 	case agent_yaml.AgentKindHosted:
 		for _, resource := range manifest.Resources {
 			resourceBytes, err := yaml.Marshal(resource)
@@ -784,12 +799,37 @@ func (a *InitAction) ProcessModels(ctx context.Context, manifest *agent_yaml.Age
 		}
 	}
 
-	updatedManifest, err := registry_api.InjectParameterValuesIntoManifest(manifest, paramValues)
+	updatedManifest, err := agent_yaml.InjectParameterValuesIntoManifest(manifest, paramValues)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to inject deployment names into manifest: %w", err)
+	}
+
+	setEnv := func(ctx context.Context, key, value string) error {
+		return setEnvValue(ctx, a.azdClient, a.environment.Name, key, value)
+	}
+	if err := persistFirstDeploymentName(ctx, setEnv, deploymentDetails); err != nil {
+		return nil, nil, fmt.Errorf("failed to set AZURE_AI_MODEL_DEPLOYMENT_NAME: %w", err)
 	}
 
 	fmt.Println("Model deployment details processed and injected into agent definition. Deployment details can also be found in the JSON formatted AI_PROJECT_DEPLOYMENTS environment variable.")
 
 	return updatedManifest, deploymentDetails, nil
+}
+
+// envValueSetter writes a single key-value pair to the azd environment.
+type envValueSetter func(ctx context.Context, key, value string) error
+
+// persistFirstDeploymentName persists the first deployment's name as
+// AZURE_AI_MODEL_DEPLOYMENT_NAME so templates and agent code can reference it.
+// It is a no-op when the deployments slice is empty.
+func persistFirstDeploymentName(
+	ctx context.Context,
+	setEnv envValueSetter,
+	deployments []project.Deployment,
+) error {
+	if len(deployments) == 0 {
+		return nil
+	}
+
+	return setEnv(ctx, "AZURE_AI_MODEL_DEPLOYMENT_NAME", deployments[0].Name)
 }

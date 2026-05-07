@@ -11,6 +11,8 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
+	"unicode"
 
 	"maps"
 
@@ -59,6 +61,14 @@ const PlatformTypeEnvVarName = "AZD_PLATFORM_TYPE"
 
 // The zero value of an Environment is not valid. Use [New] to create one. When writing tests,
 // [Ephemeral] and [EphemeralWithValues] are useful to create environments which are not persisted to disk.
+//
+// Environment is safe for concurrent use: dotenv and deletedKeys map access is
+// guarded by an internal RWMutex. This protects against `concurrent map writes`
+// panics when multiple services run hooks or write SERVICE_<name>_* keys in
+// parallel under `azd up` / `azd deploy`. Note: callers that perform a
+// read-modify-write-and-Save sequence and require atomicity across the whole
+// sequence still need their own coordination (the manager package serializes
+// Save/Reload via its own mutex, but that does not extend to surrounding logic).
 type Environment struct {
 	name string
 
@@ -68,6 +78,10 @@ type Environment struct {
 	// deletedKeys keeps track of deleted keys from the `.env` to be reapplied before a merge operation
 	// happens in Save
 	deletedKeys map[string]struct{}
+
+	// mu guards dotenv and deletedKeys against concurrent access from multiple
+	// goroutines (parallel service hooks, parallel deploy/publish, etc.).
+	mu sync.RWMutex
 
 	// Config is environment specific config
 	Config config.Config
@@ -140,6 +154,14 @@ func IsValidEnvironmentName(name string) bool {
 	return EnvironmentNameRegexp.MatchString(name)
 }
 
+// InvalidEnvironmentNameError returns a standardized error for an invalid environment name.
+func InvalidEnvironmentNameError(name string) error {
+	return fmt.Errorf(
+		"environment name '%s' is invalid (it should contain only alphanumeric characters and hyphens)",
+		name,
+	)
+}
+
 // CleanName returns a version of [name] where all characters not allowed in an environment name have been replaced
 // with hyphens
 func CleanName(name string) string {
@@ -166,7 +188,10 @@ func CleanName(name string) string {
 // Getenv behaves like os.Getenv, except that any keys in the `.env` file associated with this environment are considered
 // first.
 func (e *Environment) Getenv(key string) string {
-	if v, has := e.dotenv[key]; has {
+	e.mu.RLock()
+	v, has := e.dotenv[key]
+	e.mu.RUnlock()
+	if has {
 		return v
 	}
 
@@ -176,7 +201,10 @@ func (e *Environment) Getenv(key string) string {
 // LookupEnv behaves like os.LookupEnv, except that any keys in the `.env` file associated with this environment are
 // considered first.
 func (e *Environment) LookupEnv(key string) (string, bool) {
-	if v, has := e.dotenv[key]; has {
+	e.mu.RLock()
+	v, has := e.dotenv[key]
+	e.mu.RUnlock()
+	if has {
 		return v, true
 	}
 
@@ -186,20 +214,36 @@ func (e *Environment) LookupEnv(key string) (string, bool) {
 // DotenvDelete removes the given key from the .env file in the environment, it is a no-op if the key
 // does not exist. [Save] should be called to ensure this change is persisted.
 func (e *Environment) DotenvDelete(key string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	delete(e.dotenv, key)
 	e.deletedKeys[key] = struct{}{}
 }
 
 // Dotenv returns a copy of the key value pairs from the .env file in the environment.
 func (e *Environment) Dotenv() map[string]string {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
 	return maps.Clone(e.dotenv)
 }
 
 // DotenvSet sets the value of [key] to [value] in the .env file associated with the environment. [Save] should be
 // called to ensure this change is persisted.
 func (e *Environment) DotenvSet(key string, value string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	e.dotenv[key] = value
 	delete(e.deletedKeys, key)
+}
+
+// replaceState atomically replaces the dotenv and deletedKeys maps. Used by
+// data stores during Reload so that concurrent readers (Getenv, Dotenv) never
+// observe a partially-loaded state and never race with the assignment itself.
+func (e *Environment) replaceState(dotenv map[string]string, deletedKeys map[string]struct{}) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.dotenv = dotenv
+	e.deletedKeys = deletedKeys
 }
 
 // Name gets the name of the environment
@@ -238,8 +282,19 @@ func (e *Environment) SetLocation(location string) {
 }
 
 // Key returns the environment key name for the given name.
+// The name is converted to uppercase, and whitespace (including tabs and Unicode spaces)
+// and hyphens are replaced with underscores. Other characters (e.g., dots,
+// slashes) are passed through unchanged.
 func Key(name string) string {
-	return strings.ReplaceAll(strings.ToUpper(name), "-", "_")
+	upper := strings.ToUpper(name)
+	upper = strings.Map(func(r rune) rune {
+		if unicode.IsSpace(r) {
+			return '_'
+		}
+		return r
+	}, upper)
+	upper = strings.ReplaceAll(upper, "-", "_")
+	return upper
 }
 
 // GetServiceProperty is shorthand for Getenv(SERVICE_$SERVICE_NAME_$PROPERTY_NAME)
@@ -255,6 +310,8 @@ func (e *Environment) SetServiceProperty(serviceName string, propertyName string
 // Creates a slice of key value pairs, based on the entries in the `.env` file like `KEY=VALUE` that
 // can be used to pass into command runner or similar constructs.
 func (e *Environment) Environ() []string {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
 	envVars := []string{}
 	for k, v := range e.dotenv {
 		envVars = append(envVars, fmt.Sprintf("%s=%s", k, v))
@@ -302,10 +359,16 @@ func fixupUnquotedDotenv(values map[string]string, dotenv string) string {
 // Instead of calling `godotenv.Write` directly, we need to save the file ourselves, so we can fixup any numeric values
 // that were incorrectly unquoted.
 func marshallDotEnv(env *Environment) (string, error) {
-	marshalled, err := godotenv.Marshal(env.dotenv)
+	// Snapshot under read lock so a concurrent DotenvSet/Delete can't tear the
+	// map mid-iteration inside godotenv.Marshal (which range-iterates).
+	env.mu.RLock()
+	snapshot := maps.Clone(env.dotenv)
+	env.mu.RUnlock()
+
+	marshalled, err := godotenv.Marshal(snapshot)
 	if err != nil {
 		return "", fmt.Errorf("marshalling .env: %w", err)
 	}
 
-	return fixupUnquotedDotenv(env.dotenv, marshalled), nil
+	return fixupUnquotedDotenv(snapshot, marshalled), nil
 }

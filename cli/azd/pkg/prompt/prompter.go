@@ -41,6 +41,9 @@ type Prompter interface {
 	// PromptResourceGroupFrom is like PromptResourceGroup, but it takes an existing subscription ID and location.
 	PromptResourceGroupFrom(
 		ctx context.Context, subscriptionId string, location string, options PromptResourceGroupFromOptions) (string, error)
+
+	// IsNoPromptMode returns true when --no-prompt is active and interactive prompts are disabled.
+	IsNoPromptMode() bool
 }
 
 type DefaultPrompter struct {
@@ -279,4 +282,8 @@ func (p *DefaultPrompter) getSubscriptionOptions(ctx context.Context) ([]string,
 	}
 
 	return subscriptionOptions, subscriptions, defaultSubscription, nil
+}
+
+func (p *DefaultPrompter) IsNoPromptMode() bool {
+	return p.console.IsNoPromptMode()
 }

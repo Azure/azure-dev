@@ -16,10 +16,12 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ai"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type promptService struct {
@@ -47,9 +49,15 @@ func NewPromptService(
 }
 
 func (s *promptService) Confirm(ctx context.Context, req *azdext.ConfirmRequest) (*azdext.ConfirmResponse, error) {
+	if req == nil || req.Options == nil {
+		return nil, status.Error(codes.InvalidArgument, "request and options are required")
+	}
+
 	if s.globalOptions.NoPrompt {
 		if req.Options.DefaultValue == nil {
-			return nil, fmt.Errorf("no default response for prompt '%s'", req.Options.Message)
+			return nil, &input.PromptRequiredError{
+				PromptMessage: req.Options.Message,
+			}
 		} else {
 			return &azdext.ConfirmResponse{
 				Value: req.Options.DefaultValue,
@@ -80,9 +88,15 @@ func (s *promptService) Confirm(ctx context.Context, req *azdext.ConfirmRequest)
 }
 
 func (s *promptService) Select(ctx context.Context, req *azdext.SelectRequest) (*azdext.SelectResponse, error) {
+	if req == nil || req.Options == nil {
+		return nil, status.Error(codes.InvalidArgument, "request and options are required")
+	}
+
 	if s.globalOptions.NoPrompt {
 		if req.Options.SelectedIndex == nil {
-			return nil, fmt.Errorf("no default selection for prompt '%s'", req.Options.Message)
+			return nil, &input.PromptRequiredError{
+				PromptMessage: req.Options.Message,
+			}
 		} else {
 			return &azdext.SelectResponse{
 				Value: req.Options.SelectedIndex,
@@ -126,6 +140,10 @@ func (s *promptService) MultiSelect(
 	ctx context.Context,
 	req *azdext.MultiSelectRequest,
 ) (*azdext.MultiSelectResponse, error) {
+	if req == nil || req.Options == nil {
+		return nil, status.Error(codes.InvalidArgument, "request and options are required")
+	}
+
 	if s.globalOptions.NoPrompt {
 		var selectedChoices []*azdext.MultiSelectChoice
 		for _, choice := range req.Options.Choices {
@@ -181,9 +199,15 @@ func (s *promptService) MultiSelect(
 }
 
 func (s *promptService) Prompt(ctx context.Context, req *azdext.PromptRequest) (*azdext.PromptResponse, error) {
+	if req == nil || req.Options == nil {
+		return nil, status.Error(codes.InvalidArgument, "request and options are required")
+	}
+
 	if s.globalOptions.NoPrompt {
 		if req.Options.Required && req.Options.DefaultValue == "" {
-			return nil, fmt.Errorf("no default response for prompt '%s'", req.Options.Message)
+			return nil, &input.PromptRequiredError{
+				PromptMessage: req.Options.Message,
+			}
 		} else {
 			return &azdext.PromptResponse{
 				Value: req.Options.DefaultValue,
@@ -208,6 +232,7 @@ func (s *promptService) Prompt(ctx context.Context, req *azdext.PromptRequest) (
 		Required:          req.Options.Required,
 		ClearOnCompletion: req.Options.ClearOnCompletion,
 		IgnoreHintKeys:    req.Options.IgnoreHintKeys,
+		Secret:            req.Options.Secret,
 	}
 
 	prompt := ux.NewPrompt(options)
@@ -222,7 +247,10 @@ func (s *promptService) PromptSubscription(
 	ctx context.Context,
 	req *azdext.PromptSubscriptionRequest,
 ) (*azdext.PromptSubscriptionResponse, error) {
-	// Delegate to prompt service which handles --no-prompt mode
+	if s.globalOptions.NoPrompt {
+		return nil, &input.PromptRequiredError{PromptMessage: promptSubscriptionMessage(req)}
+	}
+
 	release, err := s.acquirePromptLock(ctx)
 	if err != nil {
 		return nil, err
@@ -254,7 +282,10 @@ func (s *promptService) PromptLocation(
 	ctx context.Context,
 	req *azdext.PromptLocationRequest,
 ) (*azdext.PromptLocationResponse, error) {
-	// Delegate to prompt service which handles --no-prompt mode
+	if s.globalOptions.NoPrompt {
+		return nil, &input.PromptRequiredError{PromptMessage: "Select location"}
+	}
+
 	release, err := s.acquirePromptLock(ctx)
 	if err != nil {
 		return nil, err
@@ -266,7 +297,14 @@ func (s *promptService) PromptLocation(
 		return nil, err
 	}
 
-	selectedLocation, err := s.prompter.PromptLocation(ctx, azureContext, nil)
+	var selectorOptions *prompt.SelectOptions
+	if len(req.AllowedLocations) > 0 {
+		selectorOptions = &prompt.SelectOptions{
+			AllowedValues: req.AllowedLocations,
+		}
+	}
+
+	selectedLocation, err := s.prompter.PromptLocation(ctx, azureContext, selectorOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -286,7 +324,10 @@ func (s *promptService) PromptResourceGroup(
 	ctx context.Context,
 	req *azdext.PromptResourceGroupRequest,
 ) (*azdext.PromptResourceGroupResponse, error) {
-	// Delegate to prompt service which handles --no-prompt mode
+	if s.globalOptions.NoPrompt {
+		return nil, &input.PromptRequiredError{PromptMessage: promptResourceGroupMessage(req)}
+	}
+
 	release, err := s.acquirePromptLock(ctx)
 	if err != nil {
 		return nil, err
@@ -320,7 +361,10 @@ func (s *promptService) PromptSubscriptionResource(
 	ctx context.Context,
 	req *azdext.PromptSubscriptionResourceRequest,
 ) (*azdext.PromptSubscriptionResourceResponse, error) {
-	// Delegate to prompt service which handles --no-prompt mode
+	if s.globalOptions.NoPrompt {
+		return nil, &input.PromptRequiredError{PromptMessage: promptResourceMessage(req.Options)}
+	}
+
 	release, err := s.acquirePromptLock(ctx)
 	if err != nil {
 		return nil, err
@@ -354,7 +398,10 @@ func (s *promptService) PromptResourceGroupResource(
 	ctx context.Context,
 	req *azdext.PromptResourceGroupResourceRequest,
 ) (*azdext.PromptResourceGroupResourceResponse, error) {
-	// Delegate to prompt service which handles --no-prompt mode
+	if s.globalOptions.NoPrompt {
+		return nil, &input.PromptRequiredError{PromptMessage: promptResourceMessage(req.Options)}
+	}
+
 	release, err := s.acquirePromptLock(ctx)
 	if err != nil {
 		return nil, err
@@ -385,6 +432,13 @@ func (s *promptService) PromptResourceGroupResource(
 }
 
 func (s *promptService) createAzureContext(wire *azdext.AzureContext) (*prompt.AzureContext, error) {
+	if wire == nil {
+		return nil, status.Error(codes.InvalidArgument, "azure context is required")
+	}
+	if wire.Scope == nil {
+		return nil, status.Error(codes.InvalidArgument, "azure context scope is required")
+	}
+
 	scope := prompt.AzureScope{
 		TenantId:       wire.Scope.TenantId,
 		SubscriptionId: wire.Scope.SubscriptionId,
@@ -396,7 +450,8 @@ func (s *promptService) createAzureContext(wire *azdext.AzureContext) (*prompt.A
 	for _, resourceId := range wire.Resources {
 		parsedResource, err := arm.ParseResourceID(resourceId)
 		if err != nil {
-			return nil, err
+			return nil, status.Errorf(codes.InvalidArgument,
+				"invalid resource ID %q: %v", resourceId, err)
 		}
 
 		resources = append(resources, parsedResource)
@@ -404,7 +459,7 @@ func (s *promptService) createAzureContext(wire *azdext.AzureContext) (*prompt.A
 
 	resourceList := prompt.NewAzureResourceList(s.resourceService, resources)
 
-	return prompt.NewAzureContext(s.prompter, scope, resourceList), nil
+	return prompt.NewAzureContext(s.prompter, scope, resourceList, s.globalOptions.NoPrompt), nil
 }
 
 func createResourceOptions(options *azdext.PromptResourceOptions) prompt.ResourceOptions {
@@ -442,6 +497,44 @@ func createResourceOptions(options *azdext.PromptResourceOptions) prompt.Resourc
 	}
 
 	return resourceOptions
+}
+
+func promptSubscriptionMessage(req *azdext.PromptSubscriptionRequest) string {
+	if req != nil && req.Message != "" {
+		return req.Message
+	}
+
+	return "Select subscription"
+}
+
+func promptResourceGroupMessage(req *azdext.PromptResourceGroupRequest) string {
+	if req != nil &&
+		req.Options != nil &&
+		req.Options.SelectOptions != nil &&
+		req.Options.SelectOptions.Message != "" {
+		return req.Options.SelectOptions.Message
+	}
+
+	return "Select resource group"
+}
+
+func promptResourceMessage(options *azdext.PromptResourceOptions) string {
+	if options != nil &&
+		options.SelectOptions != nil &&
+		options.SelectOptions.Message != "" {
+		return options.SelectOptions.Message
+	}
+
+	resourceName := "resource"
+	if options != nil {
+		if options.ResourceTypeDisplayName != "" {
+			resourceName = options.ResourceTypeDisplayName
+		} else if options.ResourceType != "" {
+			resourceName = options.ResourceType
+		}
+	}
+
+	return fmt.Sprintf("Select %s", resourceName)
 }
 
 func createResourceGroupOptions(options *azdext.PromptResourceGroupOptions) *prompt.ResourceGroupOptions {
@@ -843,6 +936,18 @@ func (s *promptService) PromptAiDeployment(
 
 	// --- Step 3: Resolve capacity, optionally prompting ---
 	capacity := ai.ResolveCapacity(selectedSku.sku, options.Capacity)
+	if req.Quota != nil && selectedSku.remaining != nil {
+		resolvedCapacity, ok := ai.ResolveCapacityWithQuota(selectedSku.sku, options.Capacity, *selectedSku.remaining)
+		if !ok {
+			return nil, aiStatusError(
+				codes.FailedPrecondition,
+				azdext.AiErrorReasonNoDeploymentMatch,
+				fmt.Sprintf("no deployment match for model %q with the selected SKU and quota", req.ModelName),
+				map[string]string{"model_name": req.ModelName},
+			)
+		}
+		capacity = resolvedCapacity
+	}
 
 	if !req.UseDefaultCapacity {
 		sku := selectedSku.sku
@@ -1229,8 +1334,6 @@ func buildSkuCandidatesForVersion(
 			continue
 		}
 
-		capacity := ai.ResolveCapacity(sku, options.Capacity)
-
 		var remaining *float64
 		if quota != nil {
 			if usageMap == nil {
@@ -1244,7 +1347,11 @@ func buildSkuCandidatesForVersion(
 
 			rem := usage.Limit - usage.CurrentValue
 			remaining = &rem
-			if rem < minReq || (capacity > 0 && float64(capacity) > rem) {
+			if rem < minReq {
+				continue
+			}
+
+			if _, ok := ai.ResolveCapacityWithQuota(sku, options.Capacity, rem); !ok {
 				continue
 			}
 		}

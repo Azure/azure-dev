@@ -103,6 +103,30 @@ type manager struct {
 	cacheMu  sync.RWMutex
 	envCache map[string]*Environment
 
+	// saveMu serializes Save and Reload operations across goroutines so that
+	// parallel services running publish/deploy/hooks against the same
+	// *Environment cannot corrupt the on-disk .env file or interleave a
+	// partial Reload with another goroutine's writes.
+	//
+	// Lock acquisition order (MUST be consistent across all call sites):
+	//
+	//   1. manager.saveMu       (in-process sync.Mutex, serializes goroutines)
+	//   2. local flock           (cross-process OS file lock via gofrs/flock)
+	//   3. env.mu               (per-Environment sync.RWMutex, protects in-memory map)
+	//
+	// Subprocess hooks (`azd env set`) spawn a separate azd process with
+	// its own saveMu instance (in-process mutexes are not shared across
+	// process boundaries). Within the subprocess, the same acquisition
+	// order applies: saveMu → flock → env.mu. The in-process saveMu
+	// prevents concurrent Save/Reload within the SAME process; the
+	// cross-process flock prevents concurrent file I/O across DIFFERENT
+	// processes (e.g., parallel hook subprocesses). No deadlock is
+	// possible because saveMu is never shared cross-process and flock
+	// handles inter-process serialization.
+	//
+	// See also: docs/concurrency-model.md "Lock Acquisition Order" section.
+	saveMu sync.Mutex
+
 	// State cache manager for managing cached Azure resource information
 	stateCacheManager *state.StateCacheManager
 }
@@ -154,9 +178,9 @@ func NewManager(
 
 func (m *manager) Create(ctx context.Context, spec Spec) (*Environment, error) {
 	if spec.Name != "" && !IsValidEnvironmentName(spec.Name) {
-		errMsg := invalidEnvironmentNameMsg(spec.Name)
-		m.console.Message(ctx, errMsg)
-		return nil, errors.New(errMsg)
+		err := InvalidEnvironmentNameError(spec.Name)
+		m.console.Message(ctx, err.Error())
+		return nil, err
 	}
 
 	if err := m.ensureValidEnvironmentName(ctx, &spec); err != nil {
@@ -170,7 +194,7 @@ func (m *manager) Create(ctx context.Context, spec Spec) (*Environment, error) {
 	case err != nil:
 		return nil, fmt.Errorf("checking for existing environment: %w", err)
 	default:
-		return nil, fmt.Errorf("environment '%s' already exists", spec.Name)
+		return nil, fmt.Errorf("%w: '%s'", ErrExists, spec.Name)
 	}
 
 	env := New(spec.Name)
@@ -287,13 +311,9 @@ func (m *manager) loadOrInitEnvironment(ctx context.Context, environmentName str
 	// - The user has specified an environment name, but the named environment didn't exist and they told us they would
 	//   like us to create it.
 	if environmentName != "" && !IsValidEnvironmentName(environmentName) {
-		fmt.Fprintf(
-			m.console.Handles().Stdout,
-			"environment name '%s' is invalid (it should contain only alphanumeric characters and hyphens)\n",
-			environmentName)
-		return nil, false, fmt.Errorf(
-			"environment name '%s' is invalid (it should contain only alphanumeric characters and hyphens)",
-			environmentName)
+		err := InvalidEnvironmentNameError(environmentName)
+		fmt.Fprintln(m.console.Handles().Stdout, err.Error())
+		return nil, false, err
 	}
 
 	// No environment name, no default environment set.
@@ -440,7 +460,15 @@ func (m *manager) Get(ctx context.Context, name string) (*Environment, error) {
 			return nil, err
 		}
 
-		if err := m.local.Save(ctx, remoteEnv, nil); err != nil {
+		// Use the same in-process lock that public Save acquires so a
+		// concurrent Save from another goroutine can't interleave with
+		// this remote-fallback hydration. Cross-process safety still
+		// comes from the flock inside local.Save.
+		if err := func() error {
+			m.saveMu.Lock()
+			defer m.saveMu.Unlock()
+			return m.local.Save(ctx, remoteEnv, nil)
+		}(); err != nil {
 			return nil, err
 		}
 
@@ -495,6 +523,13 @@ func (m *manager) SaveWithOptions(ctx context.Context, env *Environment, options
 		options = &SaveOptions{}
 	}
 
+	// Serialize Save calls so that parallel services writing different
+	// SERVICE_<name>_* keys into the same env can't race on the .env file
+	// (the local data store reads-merges-writes the file, and the env's
+	// internal mutex protects the in-memory map but not the file I/O).
+	m.saveMu.Lock()
+	defer m.saveMu.Unlock()
+
 	if err := m.local.Save(ctx, env, options); err != nil {
 		return fmt.Errorf("saving local environment, %w", err)
 	}
@@ -512,6 +547,11 @@ func (m *manager) SaveWithOptions(ctx context.Context, env *Environment, options
 
 // Reload reloads the environment from the persistent data store
 func (m *manager) Reload(ctx context.Context, env *Environment) error {
+	// Reload swaps the in-memory dotenv map; serialize against Save so that
+	// a Reload triggered by a hook in service A doesn't observe a half-written
+	// .env file produced by service B's concurrent Save.
+	m.saveMu.Lock()
+	defer m.saveMu.Unlock()
 	return m.local.Reload(ctx, env)
 }
 
@@ -620,7 +660,7 @@ func (m *manager) ensureValidEnvironmentName(ctx context.Context, spec *Spec) er
 		spec.Name = userInput
 
 		if !IsValidEnvironmentName(spec.Name) {
-			m.console.Message(ctx, invalidEnvironmentNameMsg(spec.Name))
+			m.console.Message(ctx, InvalidEnvironmentNameError(spec.Name).Error())
 		}
 	}
 
@@ -635,11 +675,4 @@ func (m *manager) InvalidateEnvCache(ctx context.Context, envName string) error 
 // GetStateCacheManager returns the state cache manager for accessing cached state
 func (m *manager) GetStateCacheManager() *state.StateCacheManager {
 	return m.stateCacheManager
-}
-
-func invalidEnvironmentNameMsg(environmentName string) string {
-	return fmt.Sprintf(
-		"environment name '%s' is invalid (it should contain only alphanumeric characters and hyphens)\n",
-		environmentName,
-	)
 }

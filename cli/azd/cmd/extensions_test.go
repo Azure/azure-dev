@@ -32,6 +32,7 @@ func newTestRoot() *actions.ActionDescriptor {
 }
 
 func TestBindExtension_SharedNamespacePrefix(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name                      string
 		extensions                []*extensions.Extension
@@ -87,6 +88,7 @@ func TestBindExtension_SharedNamespacePrefix(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			root := newTestRoot()
 
 			for _, ext := range tt.extensions {
@@ -104,6 +106,7 @@ func TestBindExtension_SharedNamespacePrefix(t *testing.T) {
 }
 
 func TestBindExtension_DeterministicOrder(t *testing.T) {
+	t.Parallel()
 	ext1 := &extensions.Extension{
 		Id:          "azure.ai.agents",
 		Namespace:   "ai.agents",
@@ -139,6 +142,7 @@ func TestBindExtension_DeterministicOrder(t *testing.T) {
 }
 
 func TestBindExtension_DeeplyNestedNamespace(t *testing.T) {
+	t.Parallel()
 	ext1 := &extensions.Extension{
 		Id:          "azure.ai.models.finetune",
 		Namespace:   "ai.models.finetune",

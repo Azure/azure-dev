@@ -22,7 +22,7 @@ import (
 
 func Test_LoginGuard_Run(t *testing.T) {
 	t.Run("LoggedIn", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 
 		mockAuthManager := &mockCurrentUserAuthManager{}
 		mockAuthManager.On("Cloud").Return(cloud.AzurePublic())
@@ -41,7 +41,7 @@ func Test_LoginGuard_Run(t *testing.T) {
 		require.NotNil(t, result)
 	})
 	t.Run("NotLoggedIn", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.Console.
 			WhenConfirm(func(options input.ConsoleOptions) bool {
 				return strings.Contains(options.Message, "Would you like to log in now?")
@@ -90,7 +90,7 @@ func Test_LoginGuard_Run(t *testing.T) {
 					}
 				}()
 
-				mockContext := mocks.NewMockContext(context.Background())
+				mockContext := mocks.NewMockContext(t.Context())
 				// In CI, we should NOT get a console confirmation prompt
 				// The test will fail if console.Confirm is called
 				mockContext.Console.

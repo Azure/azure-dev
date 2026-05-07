@@ -894,7 +894,7 @@ env *environment.Environment
 
 // Azure services
 accountManager account.Manager
-subscriptionResolver account.SubscriptionTenantResolver
+subscriptionResolver account.SubscriptionResolver
 resourceManager infra.ResourceManager
 resourceService *azapi.ResourceService
 

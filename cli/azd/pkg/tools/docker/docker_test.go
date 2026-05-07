@@ -4,7 +4,6 @@
 package docker
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -29,7 +28,7 @@ func Test_DockerBuild(t *testing.T) {
 	t.Run("NoError", func(t *testing.T) {
 		ran := false
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		docker := NewCli(mockContext.CommandRunner)
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "docker build")
@@ -62,7 +61,7 @@ func Test_DockerBuild(t *testing.T) {
 		})
 
 		result, err := docker.Build(
-			context.Background(),
+			t.Context(),
 			cwd,
 			dockerFile,
 			platform,
@@ -72,6 +71,7 @@ func Test_DockerBuild(t *testing.T) {
 			buildArgs,
 			nil,
 			nil,
+			"",
 			nil,
 		)
 
@@ -87,7 +87,7 @@ func Test_DockerBuild(t *testing.T) {
 		imageName := "IMAGE_NAME"
 		buildArgs := []string{"foo=bar"}
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		docker := NewCli(mockContext.CommandRunner)
 
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -121,7 +121,7 @@ func Test_DockerBuild(t *testing.T) {
 		})
 
 		result, err := docker.Build(
-			context.Background(),
+			t.Context(),
 			cwd,
 			dockerFile,
 			platform,
@@ -131,6 +131,7 @@ func Test_DockerBuild(t *testing.T) {
 			buildArgs,
 			nil,
 			nil,
+			"",
 			nil,
 		)
 
@@ -154,7 +155,7 @@ func Test_DockerBuildEmptyPlatform(t *testing.T) {
 	imageName := "IMAGE_NAME"
 	buildArgs := []string{"foo=bar"}
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	docker := NewCli(mockContext.CommandRunner)
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -188,7 +189,7 @@ func Test_DockerBuildEmptyPlatform(t *testing.T) {
 	})
 
 	result, err := docker.Build(
-		context.Background(), cwd, dockerFile, "", "", dockerContext, imageName, buildArgs, nil, nil, nil)
+		t.Context(), cwd, dockerFile, "", "", dockerContext, imageName, buildArgs, nil, nil, "", nil)
 
 	require.Equal(t, true, ran)
 	require.Nil(t, err)
@@ -204,7 +205,7 @@ func Test_DockerBuildArgsEmpty(t *testing.T) {
 	imageName := "IMAGE_NAME"
 	buildArgs := []string{}
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	docker := NewCli(mockContext.CommandRunner)
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -237,7 +238,7 @@ func Test_DockerBuildArgsEmpty(t *testing.T) {
 	})
 
 	result, err := docker.Build(
-		context.Background(), cwd, dockerFile, "", "", dockerContext, imageName, buildArgs, nil, nil, nil)
+		t.Context(), cwd, dockerFile, "", "", dockerContext, imageName, buildArgs, nil, nil, "", nil)
 
 	require.Equal(t, true, ran)
 	require.Nil(t, err)
@@ -253,7 +254,7 @@ func Test_DockerBuildArgsMultiple(t *testing.T) {
 	imageName := "IMAGE_NAME"
 	buildArgs := []string{"foo=bar", "bar=baz"}
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	docker := NewCli(mockContext.CommandRunner)
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -288,11 +289,71 @@ func Test_DockerBuildArgsMultiple(t *testing.T) {
 	})
 
 	result, err := docker.Build(
-		context.Background(), cwd, dockerFile, "", "", dockerContext, imageName, buildArgs, nil, nil, nil)
+		t.Context(), cwd, dockerFile, "", "", dockerContext, imageName, buildArgs, nil, nil, "", nil)
 
 	require.Equal(t, true, ran)
 	require.Nil(t, err)
 	require.Equal(t, mockedDockerImgId, result)
+}
+
+func Test_DockerBuildNetwork(t *testing.T) {
+	tests := []struct {
+		name     string
+		network  string
+		expectIn bool
+	}{
+		{"WithHostNetwork", "host", true},
+		{"WithEmptyNetwork", "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ran := false
+			cwd := "."
+			dockerFile := "./Dockerfile"
+			dockerContext := "../"
+			imageName := "IMAGE_NAME"
+
+			mockContext := mocks.NewMockContext(t.Context())
+			docker := NewCli(mockContext.CommandRunner)
+
+			mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+				return strings.Contains(command, "docker build")
+			}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+				ran = true
+
+				argsNoFile := args.Args[:len(args.Args)-2]
+				value := args.Args[len(args.Args)-1]
+
+				if tt.expectIn {
+					require.Contains(t, argsNoFile, "--network")
+					require.Contains(t, argsNoFile, tt.network)
+				} else {
+					require.NotContains(t, argsNoFile, "--network")
+				}
+
+				err := os.WriteFile(value, []byte(mockedDockerImgId), 0600)
+				require.NoError(t, err)
+
+				return exec.RunResult{
+					Stdout:   mockedDockerImgId,
+					ExitCode: 0,
+				}, nil
+			})
+
+			result, err := docker.Build(
+				t.Context(),
+				cwd, dockerFile, "", "",
+				dockerContext, imageName,
+				nil, nil, nil,
+				tt.network, nil,
+			)
+
+			require.True(t, ran)
+			require.NoError(t, err)
+			require.Equal(t, mockedDockerImgId, result)
+		})
+	}
 }
 
 func Test_DockerTag(t *testing.T) {
@@ -303,7 +364,7 @@ func Test_DockerTag(t *testing.T) {
 	t.Run("NoError", func(t *testing.T) {
 		ran := false
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		docker := NewCli(mockContext.CommandRunner)
 
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -326,7 +387,7 @@ func Test_DockerTag(t *testing.T) {
 			}, nil
 		})
 
-		err := docker.Tag(context.Background(), cwd, imageName, tag)
+		err := docker.Tag(t.Context(), cwd, imageName, tag)
 
 		require.Equal(t, true, ran)
 		require.Nil(t, err)
@@ -337,7 +398,7 @@ func Test_DockerTag(t *testing.T) {
 		stdErr := "Error tagging DockerFile"
 		customErrorMessage := "example error message"
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		docker := NewCli(mockContext.CommandRunner)
 
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -360,7 +421,7 @@ func Test_DockerTag(t *testing.T) {
 			}, errors.New(customErrorMessage)
 		})
 
-		err := docker.Tag(context.Background(), cwd, imageName, tag)
+		err := docker.Tag(t.Context(), cwd, imageName, tag)
 
 		require.Equal(t, true, ran)
 		require.NotNil(t, err)
@@ -379,7 +440,7 @@ func Test_DockerPush(t *testing.T) {
 	t.Run("NoError", func(t *testing.T) {
 		ran := false
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		docker := NewCli(mockContext.CommandRunner)
 
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -401,7 +462,7 @@ func Test_DockerPush(t *testing.T) {
 			}, nil
 		})
 
-		err := docker.Push(context.Background(), cwd, tag)
+		err := docker.Push(t.Context(), cwd, tag)
 
 		require.Equal(t, true, ran)
 		require.Nil(t, err)
@@ -412,7 +473,7 @@ func Test_DockerPush(t *testing.T) {
 		stdErr := "Error pushing DockerFile"
 		customErrorMessage := "example error message"
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		docker := NewCli(mockContext.CommandRunner)
 
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -434,7 +495,7 @@ func Test_DockerPush(t *testing.T) {
 			}, errors.New(customErrorMessage)
 		})
 
-		err := docker.Push(context.Background(), cwd, tag)
+		err := docker.Push(t.Context(), cwd, tag)
 
 		require.Equal(t, true, ran)
 		require.NotNil(t, err)
@@ -450,7 +511,7 @@ func Test_DockerLogin(t *testing.T) {
 	t.Run("NoError", func(t *testing.T) {
 		ran := false
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		docker := NewCli(mockContext.CommandRunner)
 
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -473,7 +534,7 @@ func Test_DockerLogin(t *testing.T) {
 			}, nil
 		})
 
-		err := docker.Login(context.Background(), "LOGIN_SERVER", "USERNAME", "PASSWORD")
+		err := docker.Login(t.Context(), "LOGIN_SERVER", "USERNAME", "PASSWORD")
 
 		require.Equal(t, true, ran)
 		require.Nil(t, err)
@@ -484,7 +545,7 @@ func Test_DockerLogin(t *testing.T) {
 		stdErr := "Error logging into docker"
 		customErrorMessage := "example error message"
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		docker := NewCli(mockContext.CommandRunner)
 
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -507,7 +568,7 @@ func Test_DockerLogin(t *testing.T) {
 			}, errors.New(customErrorMessage)
 		})
 
-		err := docker.Login(context.Background(), "LOGIN_SERVER", "USERNAME", "PASSWORD")
+		err := docker.Login(t.Context(), "LOGIN_SERVER", "USERNAME", "PASSWORD")
 
 		require.Equal(t, true, ran)
 		require.NotNil(t, err)
@@ -650,7 +711,7 @@ func Test_IsSupportedPodmanVersion(t *testing.T) {
 }
 
 func Test_CheckInstalled_Docker(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	docker := NewCli(mockContext.CommandRunner)
 
 	// Mock ToolInPath for docker
@@ -676,14 +737,14 @@ func Test_CheckInstalled_Docker(t *testing.T) {
 		}, nil
 	})
 
-	err := docker.CheckInstalled(context.Background())
+	err := docker.CheckInstalled(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, "docker", docker.containerEngine)
 	require.Equal(t, "Docker", docker.Name())
 }
 
 func Test_CheckInstalled_Podman(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	docker := NewCli(mockContext.CommandRunner)
 
 	// Mock ToolInPath - docker fails, podman succeeds
@@ -710,7 +771,7 @@ func Test_CheckInstalled_Podman(t *testing.T) {
 		}, nil
 	})
 
-	err := docker.CheckInstalled(context.Background())
+	err := docker.CheckInstalled(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, "podman", docker.containerEngine)
 	require.Equal(t, "Podman", docker.Name())
@@ -720,7 +781,7 @@ func Test_CheckInstalled_EnvVarOverride(t *testing.T) {
 	t.Run("DockerOverride", func(t *testing.T) {
 		t.Setenv("AZD_CONTAINER_RUNTIME", "docker")
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		docker := NewCli(mockContext.CommandRunner)
 
 		mockContext.CommandRunner.MockToolInPath("docker", nil)
@@ -743,7 +804,7 @@ func Test_CheckInstalled_EnvVarOverride(t *testing.T) {
 			}, nil
 		})
 
-		err := docker.CheckInstalled(context.Background())
+		err := docker.CheckInstalled(t.Context())
 		require.NoError(t, err)
 		require.Equal(t, "docker", docker.containerEngine)
 	})
@@ -751,7 +812,7 @@ func Test_CheckInstalled_EnvVarOverride(t *testing.T) {
 	t.Run("PodmanOverride", func(t *testing.T) {
 		t.Setenv("AZD_CONTAINER_RUNTIME", "podman")
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		docker := NewCli(mockContext.CommandRunner)
 
 		mockContext.CommandRunner.MockToolInPath("podman", nil)
@@ -774,7 +835,7 @@ func Test_CheckInstalled_EnvVarOverride(t *testing.T) {
 			}, nil
 		})
 
-		err := docker.CheckInstalled(context.Background())
+		err := docker.CheckInstalled(t.Context())
 		require.NoError(t, err)
 		require.Equal(t, "podman", docker.containerEngine)
 	})
@@ -782,24 +843,24 @@ func Test_CheckInstalled_EnvVarOverride(t *testing.T) {
 	t.Run("InvalidOverride", func(t *testing.T) {
 		t.Setenv("AZD_CONTAINER_RUNTIME", "invalid")
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		docker := NewCli(mockContext.CommandRunner)
 
-		err := docker.CheckInstalled(context.Background())
+		err := docker.CheckInstalled(t.Context())
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "unsupported container runtime")
 	})
 }
 
 func Test_CheckInstalled_NeitherAvailable(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	docker := NewCli(mockContext.CommandRunner)
 
 	// Mock both docker and podman as not available
 	mockContext.CommandRunner.MockToolInPath("docker", errors.New("docker not found"))
 	mockContext.CommandRunner.MockToolInPath("podman", errors.New("podman not found"))
 
-	err := docker.CheckInstalled(context.Background())
+	err := docker.CheckInstalled(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "neither docker nor podman is installed")
 }
@@ -885,7 +946,7 @@ func TestIsContainerdEnabled(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockContext := mocks.NewMockContext(context.Background())
+			mockContext := mocks.NewMockContext(t.Context())
 			docker := NewCli(mockContext.CommandRunner)
 
 			mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -905,7 +966,7 @@ func TestIsContainerdEnabled(t *testing.T) {
 				}, nil
 			})
 
-			enabled, err := docker.IsContainerdEnabled(context.Background())
+			enabled, err := docker.IsContainerdEnabled(t.Context())
 
 			if tt.expectError {
 				require.Error(t, err)

@@ -167,11 +167,7 @@ func runConfigCommand(cmd *cobra.Command, flagValues *flagValues) error {
 	// the defaults follow along with whatever the user has chosen for --debug. So if --debug is
 	// _off_ then you don't see all the console output from sub-commands.
 	defaultCommandRunner, defaultConsole := newCommandRunner(flagValues.Debug)
-	defaultGitHubCLI, err := azd_tools_github.NewGitHubCli(ctx, defaultConsole, defaultCommandRunner)
-
-	if err != nil {
-		return fmt.Errorf("failed to get the github CLI: %w", err)
-	}
+	defaultGitHubCLI := azd_tools_github.NewGitHubCli(defaultConsole, defaultCommandRunner)
 
 	gitCLI := newInternalGitCLI(defaultCommandRunner)
 	gitRepoRoot, err := gitCLI.GetRepoRoot(ctx, ".")
@@ -412,9 +408,9 @@ func writeCopilotSetupStepsYaml(gitRepoRoot string) error {
 }
 
 // newGitHubCLI is a thin wrapper around [azd_tools_github.NewGitHubCli], for testing
-func newGitHubCLI(ctx context.Context, console input.Console, commandRunner azd_exec.CommandRunner) (githubCLI, error) {
-	cli, err := azd_tools_github.NewGitHubCli(ctx, console, commandRunner)
-	return cli, err
+func newGitHubCLI(_ context.Context, console input.Console, commandRunner azd_exec.CommandRunner) (githubCLI, error) {
+	cli := azd_tools_github.NewGitHubCli(console, commandRunner)
+	return cli, nil
 }
 
 func newCommandRunner(showOutput bool) (azd_exec.CommandRunner, input.Console) {

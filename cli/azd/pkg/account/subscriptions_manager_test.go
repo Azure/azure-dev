@@ -115,7 +115,7 @@ func TestSubscriptionsManager_ListSubscriptions(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			ctx := context.Background()
+			ctx := t.Context()
 			mockHttp := mockhttp.NewMockHttpUtil()
 			mockarmresources.MockListTenants(mockHttp, armsubscriptions.TenantListResult{
 				Value: tt.args.tenants,
@@ -175,6 +175,54 @@ func TestSubscriptionsManager_ListSubscriptions(t *testing.T) {
 			require.Equal(t, tt.want, got)
 		})
 	}
+}
+
+type staticSubCache struct {
+	subscriptions []Subscription
+}
+
+func (c *staticSubCache) Load(ctx context.Context, key string) ([]Subscription, error) {
+	return c.subscriptions, nil
+}
+
+func (c *staticSubCache) Save(ctx context.Context, key string, save []Subscription) error {
+	return nil
+}
+
+func (c *staticSubCache) Merge(ctx context.Context, key string, save []Subscription) error {
+	return nil
+}
+
+func (c *staticSubCache) Clear(ctx context.Context) error {
+	return nil
+}
+
+func TestSubscriptionsManager_GetSubscription_PreservesTenantFields(t *testing.T) {
+	t.Parallel()
+
+	subManager := &SubscriptionsManager{
+		cache: &staticSubCache{
+			subscriptions: []Subscription{
+				{
+					Id:                 "sub-123",
+					Name:               "Subscription 123",
+					TenantId:           "resource-tenant",
+					UserAccessTenantId: "access-tenant",
+				},
+			},
+		},
+		principalInfo: &principalInfoProviderMock{},
+		console:       mockinput.NewMockConsole(),
+	}
+
+	subscription, err := subManager.GetSubscription(t.Context(), "sub-123")
+	require.NoError(t, err)
+	require.Equal(t, &Subscription{
+		Id:                 "sub-123",
+		Name:               "Subscription 123",
+		TenantId:           "resource-tenant",
+		UserAccessTenantId: "access-tenant",
+	}, subscription)
 }
 
 func generateTenants(total int) []*armsubscriptions.TenantIDDescription {

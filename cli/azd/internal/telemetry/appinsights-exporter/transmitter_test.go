@@ -6,7 +6,6 @@ package appinsightsexporter
 import (
 	"bytes"
 	"compress/gzip"
-	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -91,12 +90,14 @@ func newTestTlsClientServer() (Transmitter, *testServer) {
 }
 
 func TestBasicTransitTls(t *testing.T) {
+	t.Parallel()
 	client, server := newTestTlsClientServer()
 
 	doBasicTransmit(client, server, t)
 }
 
 func TestBasicTransmit(t *testing.T) {
+	t.Parallel()
 	client, server := newTestClientServer()
 
 	doBasicTransmit(client, server, t)
@@ -107,7 +108,7 @@ func doBasicTransmit(client Transmitter, server *testServer, t *testing.T) {
 
 	server.responseData = []byte(`{"itemsReceived":3, "itemsAccepted":5, "errors":[]}`)
 	server.responseHeaders["Content-type"] = "application/json"
-	result, err := client.Transmit(context.Background(), []byte("foobar"), make(TelemetryItems, 0))
+	result, err := client.Transmit(t.Context(), []byte("foobar"), make(TelemetryItems, 0))
 	if err != nil {
 		t.Log(err.Error())
 	}
@@ -178,6 +179,7 @@ func doBasicTransmit(client Transmitter, server *testServer, t *testing.T) {
 }
 
 func TestFailedTransmit(t *testing.T) {
+	t.Parallel()
 	client, server := newTestClientServer()
 	defer server.Close()
 
@@ -186,7 +188,7 @@ func TestFailedTransmit(t *testing.T) {
 		`{"itemsReceived":3, "itemsAccepted":0, "errors":[{"index": 2, "statusCode": 500, "message": "Hello"}]}`,
 	)
 	server.responseHeaders["Content-type"] = "application/json"
-	result, err := client.Transmit(context.Background(), []byte("foobar"), make(TelemetryItems, 0))
+	result, err := client.Transmit(t.Context(), []byte("foobar"), make(TelemetryItems, 0))
 	server.waitForRequest(t)
 
 	if err != nil {
@@ -231,6 +233,7 @@ func TestFailedTransmit(t *testing.T) {
 }
 
 func TestThrottledTransmit(t *testing.T) {
+	t.Parallel()
 	client, server := newTestClientServer()
 	defer server.Close()
 
@@ -238,7 +241,7 @@ func TestThrottledTransmit(t *testing.T) {
 	server.responseData = make([]byte, 0)
 	server.responseHeaders["Content-type"] = "application/json"
 	server.responseHeaders["retry-after"] = "Wed, 09 Aug 2017 23:43:57 UTC"
-	result, err := client.Transmit(context.Background(), []byte("foobar"), make(TelemetryItems, 0))
+	result, err := client.Transmit(t.Context(), []byte("foobar"), make(TelemetryItems, 0))
 	server.waitForRequest(t)
 
 	if err != nil {
@@ -318,6 +321,7 @@ func checkTransmitResult(t *testing.T, result *TransmissionResult, expected *res
 }
 
 func TestTransmitResults(t *testing.T) {
+	t.Parallel()
 	retryAfter := time.Unix(1502322237, 0)
 	partialNoRetries := &BackendResponse{
 		ItemsAccepted: 3,
@@ -388,6 +392,7 @@ func TestTransmitResults(t *testing.T) {
 }
 
 func TestGetRetryItems(t *testing.T) {
+	t.Parallel()
 	// Keep a pristine copy.
 	originalPayload, originalItems := makePayload()
 

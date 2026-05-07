@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log"
 	"text/template"
+	"time"
 
 	surveyterm "github.com/AlecAivazis/survey/v2/terminal"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -23,21 +24,21 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
-	"github.com/azure/azure-dev/cli/azd/pkg/auth"
-	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/pipeline"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/maven"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/pack"
+	"github.com/azure/azure-dev/cli/azd/pkg/update"
 	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"go.opentelemetry.io/otel/codes"
 )
@@ -53,6 +54,9 @@ var troubleshootManualTmpl string
 
 //go:embed templates/fix.tmpl
 var fixTmpl string
+
+// agentCallTimeout is the maximum time to wait for a single LLM agent call.
+const agentCallTimeout = 5 * time.Minute
 
 var (
 	explainTemplate            = template.Must(template.New("explain").Parse(explainTmpl))
@@ -71,55 +75,24 @@ type ErrorMiddleware struct {
 	errorPipeline     *errorhandler.ErrorHandlerPipeline
 }
 
-// ErrorCategory represents the classification of an error for determining
-// the appropriate agent mode behavior.
-type ErrorCategory int
+// shouldSkipAgentHandling returns true for errors that should not be processed
+// by the AI agent — either because they are normal control-flow signals or
+// because they belong to error types the agent cannot fix.
+func shouldSkipAgentHandling(err error) bool {
+	if errors.Is(err, context.Canceled) ||
+		errors.Is(err, context.DeadlineExceeded) ||
+		errors.Is(err, surveyterm.InterruptErr) ||
+		errors.Is(err, azdcontext.ErrNoProject) ||
+		errors.Is(err, consent.ErrToolExecutionDenied) ||
+		errors.Is(err, consent.ErrElicitationDenied) ||
+		errors.Is(err, consent.ErrSamplingDenied) ||
+		errors.Is(err, internal.ErrAbortedByUser) ||
+		errors.Is(err, provisioning.ErrDeploymentInterruptedLeaveRunning) ||
+		errors.Is(err, provisioning.ErrDeploymentCanceledByUser) ||
+		errors.Is(err, provisioning.ErrDeploymentCancelTimeout) ||
+		errors.Is(err, provisioning.ErrDeploymentCancelTooLate) ||
+		errors.Is(err, provisioning.ErrDeploymentCancelFailed) ||
 
-const (
-	// AzureContextAndOtherError represents errors originating from Azure service interactions
-	// or any other unclassified errors. These are eligible for full agentic analysis and automated fix.
-	AzureContextAndOtherError ErrorCategory = iota
-
-	// MachineContextError represents errors caused by the local machine environment,
-	// such as missing tools, incompatible tool versions, extension failures, or build-tool issues.
-	MachineContextError
-
-	// UserContextError represents errors caused by user actions or configuration,
-	// such as authentication failures, missing credentials, or invalid project/environment settings.
-	UserContextError
-)
-
-// classifyError categorizes an error into one of three buckets:
-// AzureContextAndOtherError, MachineContextError, or UserContextError
-func classifyError(err error) ErrorCategory {
-	// --- Machine context: typed errors ---
-	_, toolCheckErr := errors.AsType[*tools.MissingToolErrors](err)
-	_, semverErr := errors.AsType[*tools.ErrSemver](err)
-	_, extRunErr := errors.AsType[*extensions.ExtensionRunError](err)
-	_, packStatusErr := errors.AsType[*pack.StatusCodeError](err)
-
-	if toolCheckErr || semverErr || extRunErr || packStatusErr {
-		return MachineContextError
-	}
-
-	if errors.Is(err, maven.ErrPropertyNotFound) {
-		return MachineContextError
-	}
-
-	// --- User context: typed errors ---
-	_, loginErr := errors.AsType[*auth.ReLoginRequiredError](err)
-	_, authFailedErr := errors.AsType[*auth.AuthFailedError](err)
-
-	if loginErr || authFailedErr {
-		return UserContextError
-	}
-
-	if errors.Is(err, auth.ErrNoCurrentUser) ||
-		errors.Is(err, azapi.ErrAzCliNotLoggedIn) ||
-		errors.Is(err, azapi.ErrAzCliRefreshTokenExpired) ||
-		errors.Is(err, github.ErrGitHubCliNotLoggedIn) ||
-		errors.Is(err, github.ErrUserNotAuthorized) ||
-		errors.Is(err, github.ErrRepositoryNameInUse) ||
 		errors.Is(err, environment.ErrNotFound) ||
 		errors.Is(err, environment.ErrNameNotSpecified) ||
 		errors.Is(err, environment.ErrDefaultEnvironmentNotFound) ||
@@ -129,10 +102,21 @@ func classifyError(err error) ErrorCategory {
 		errors.Is(err, pipeline.ErrSSHNotSupported) ||
 		errors.Is(err, pipeline.ErrRemoteHostIsNotGitHub) ||
 		errors.Is(err, project.ErrNoDefaultService) {
-		return UserContextError
+		return true
 	}
 
-	return AzureContextAndOtherError
+	_, extRunErr := errors.AsType[*extensions.ExtensionRunError](err)
+	_, envErr := errors.AsType[*environment.EnvironmentInitError](err)
+	_, updateErr := errors.AsType[*update.UpdateError](err)
+	_, packStatusErr := errors.AsType[*pack.StatusCodeError](err)
+	_, missingInputsErr := errors.AsType[*bicep.MissingInputsError](err)
+	_, configValidErr := errors.AsType[*project.ConfigValidationError](err)
+
+	if extRunErr || packStatusErr || missingInputsErr || configValidErr || updateErr || envErr {
+		return true
+	}
+
+	return false
 }
 
 // troubleshootCategory represents the user's chosen troubleshooting scope.
@@ -145,26 +129,23 @@ const (
 	categoryGuidance troubleshootCategory = "guidance"
 	// categoryTroubleshoot shows both explanation and guidance.
 	categoryTroubleshoot troubleshootCategory = "troubleshoot"
+	// categoryFix skips explanation and jumps directly to agent-driven fix.
+	categoryFix troubleshootCategory = "fix"
 	// categorySkip skips troubleshooting entirely.
 	categorySkip troubleshootCategory = "skip"
 )
 
-// shouldSkipErrorAnalysis returns true for control-flow errors that should not
-// be sent to AI analysis
-func shouldSkipErrorAnalysis(err error) bool {
-	if errors.Is(err, context.Canceled) ||
-		errors.Is(err, surveyterm.InterruptErr) ||
-		errors.Is(err, azdcontext.ErrNoProject) ||
-		errors.Is(err, consent.ErrToolExecutionDenied) ||
-		errors.Is(err, consent.ErrElicitationDenied) ||
-		errors.Is(err, consent.ErrSamplingDenied) {
-		return true
-	}
+// nextAction represents what the user wants after an explanation/guidance.
+type nextAction string
 
-	// Environment was already initialized
-	_, ok := errors.AsType[*environment.EnvironmentInitError](err)
-	return ok
-}
+const (
+	// actionFixAndRetry fixes the error and retries the command.
+	actionFixAndRetry nextAction = "fix_and_retry"
+	// actionFixOnly fixes the error but does not retry.
+	actionFixOnly nextAction = "fix_only"
+	// actionExit exits without fixing.
+	actionExit nextAction = "exit"
+)
 
 func NewErrorMiddleware(
 	options *Options, console input.Console,
@@ -201,6 +182,12 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		return actionResult, err
 	}
 
+	// Skip the YAML pipeline for typed extension errors so host-side rules don't
+	// override the extension's structured classification or user guidance.
+	if azdext.IsStructuredError(err) {
+		return actionResult, err
+	}
+
 	// Try to match error against known patterns and wrap with suggestion
 	if suggestion := e.errorPipeline.Process(ctx, err); suggestion != nil {
 		return actionResult, suggestion
@@ -210,12 +197,11 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 	// - LLM feature is disabled
 	// - User specified --no-prompt (non-interactive mode)
 	// - Running in CI/CD environment where user interaction is not possible
-	if !e.featuresManager.IsEnabled(agentcopilot.FeatureCopilot) || e.global.NoPrompt || resource.IsRunningOnCI() {
-		return actionResult, err
-	}
-
-	// Skip control-flow errors that don't benefit from AI analysis
-	if shouldSkipErrorAnalysis(err) {
+	// - Errors that don't benefit from agent handling
+	if !e.featuresManager.IsEnabled(agentcopilot.FeatureCopilot) ||
+		e.global.NoPrompt ||
+		resource.IsRunningOnCI() ||
+		shouldSkipAgentHandling(err) {
 		return actionResult, err
 	}
 
@@ -226,14 +212,17 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 	defer span.End()
 
 	originalError := err
+	createCtx, createCancel := context.WithTimeout(ctx, agentCallTimeout)
+	defer createCancel()
 	azdAgent, err := e.agentFactory.Create(
-		ctx,
+		createCtx,
 		agent.WithMode(agent.AgentModePlan),
 		agent.WithDebug(e.global.EnableDebugLogging),
 	)
 	if err != nil {
 		span.SetStatus(codes.Error, "agent.creation.failed")
-		return nil, err
+		return actionResult, fmt.Errorf(
+			"%w\n\nAgent error: %s", originalError, err.Error())
 	}
 
 	defer azdAgent.Stop()
@@ -269,56 +258,92 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		category, err := e.promptTroubleshootCategory(ctx)
 		if err != nil {
 			span.SetStatus(codes.Error, "agent.category.failed")
-			return nil, fmt.Errorf("prompting for troubleshoot category: %w", err)
+			return actionResult, fmt.Errorf(
+				"%w\n\nPrompted for troubleshoot category: %s", originalError, err.Error())
 		}
 
 		if category == categorySkip {
 			span.SetStatus(codes.Error, "agent.troubleshoot.skip")
 			return actionResult, originalError
-		} else {
-			// Step 2: Execute the selected category prompt
-			categoryPrompt := e.buildPromptForCategory(category, originalError)
-			e.console.Message(ctx, output.WithHintFormat(
-				"Preparing %s to %s error...", agentcopilot.DisplayTitle, category))
-			agentResult, err := azdAgent.SendMessage(ctx, categoryPrompt)
+		}
+
+		// Step 2: Execute the selected category prompt
+		categoryPrompt := e.buildPromptForCategory(category, originalError)
+		e.console.Message(ctx, output.WithHintFormat(
+			"Preparing %s to %s error...", agentcopilot.DisplayTitle, category))
+
+		callCtx, callCancel := context.WithTimeout(ctx, agentCallTimeout)
+		defer callCancel()
+		agentResult, err := azdAgent.SendMessageWithRetry(callCtx, categoryPrompt)
+		if err != nil {
+			span.SetStatus(codes.Error, "agent.send_message.failed")
+			return actionResult, fmt.Errorf(
+				"%w\n\nAgent error: %s", originalError, err.Error())
+		}
+
+		span.SetStatus(codes.Ok, fmt.Sprintf("agent.%s.completed", category))
+		e.displayUsageMetrics(ctx, agentResult)
+
+		previousError = originalError
+
+		if category != categoryFix {
+			// Step 3: Ask user how to proceed after analysis
+			action, err := e.promptNextAction(ctx)
 			if err != nil {
-				span.SetStatus(codes.Error, "agent.send_message.failed")
-				return nil, err
+				span.SetStatus(codes.Error, "agent.prompt.failed")
+				return actionResult, fmt.Errorf(
+					"%w\n\nPrompted for next action: %s", originalError, err.Error())
 			}
 
-			span.SetStatus(codes.Ok, fmt.Sprintf("agent.%s.completed", category))
-			e.displayUsageMetrics(ctx, agentResult)
-		}
+			if action == actionExit {
+				span.SetStatus(codes.Ok, "agent.fix.declined")
+				return actionResult, originalError
+			}
 
-		// Step 3: Ask if user wants the agent to fix the error
-		wantFix, err := e.promptForFix(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("prompting for fix: %w", err)
-		}
+			// Step 4: Agent applies the fix
+			fixPrompt, err := e.buildFixPrompt(originalError)
+			if err != nil {
+				span.SetStatus(codes.Error, "agent.fix.template_failed")
+				return actionResult, fmt.Errorf(
+					"%w\n\nFailed to build fix prompt: %s", originalError, err.Error())
+			}
+			e.console.Message(ctx, output.WithHintFormat(
+				"Preparing %s to fix error...", agentcopilot.DisplayTitle))
 
-		if !wantFix {
-			span.SetStatus(codes.Ok, "agent.fix.declined")
-			return actionResult, originalError
-		}
+			fixCtx, fixCancel := context.WithTimeout(ctx, agentCallTimeout)
+			defer fixCancel()
+			fixResult, err := azdAgent.SendMessageWithRetry(fixCtx, fixPrompt)
+			if err != nil {
+				span.SetStatus(codes.Error, "agent.fix.failed")
+				return actionResult, fmt.Errorf(
+					"%w\n\nAgent error: %s", originalError, err.Error())
+			}
 
-		// Step 4: Agent applies the fix
-		fixPrompt := e.buildFixPrompt(originalError)
-		previousError = originalError
-		e.console.Message(ctx, output.WithHintFormat(
-			"Preparing %s to fix error...", agentcopilot.DisplayTitle))
-		fixResult, err := azdAgent.SendMessage(ctx, fixPrompt)
-		if err != nil {
-			span.SetStatus(codes.Error, "agent.fix.failed")
-			return nil, err
-		}
+			span.SetStatus(codes.Ok, "agent.fix.completed")
+			e.displayUsageMetrics(ctx, fixResult)
 
-		span.SetStatus(codes.Ok, "agent.fix.completed")
-		e.displayUsageMetrics(ctx, fixResult)
-
-		// Step 5: Ask user if they want to retry the command
-		shouldRetry, err := e.promptRetryAfterFix(ctx)
-		if err != nil || !shouldRetry {
-			return actionResult, originalError
+			// Fix-only: skip retry
+			if action == actionFixOnly {
+				return actionResult, originalError
+			}
+			// actionFixAndRetry: user explicitly chose to retry, so fall
+			// through to re-run the command without an extra confirmation prompt.
+		} else {
+			// Category "fix" already applied the fix in step 2.
+			// Unlike the explain/guidance path (which auto-retries when the user
+			// explicitly chose actionFixAndRetry), the category-fix path asks for
+			// retry confirmation because the user only chose "fix" — not "fix and retry".
+			// The saved copilot.errorHandling.fix=allow preference bypasses this prompt
+			// and auto-retries.
+			shouldRetry, err := e.promptRetryAfterFix(ctx)
+			if err != nil {
+				span.SetStatus(codes.Error, "agent.retry.failed")
+				return actionResult, fmt.Errorf(
+					"%w\n\nRetry prompt failed: %s", originalError, err.Error())
+			}
+			if !shouldRetry {
+				return actionResult, originalError
+			}
 		}
 
 		// Re-run the original command to check if the fix worked
@@ -326,7 +351,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		actionResult, err = next(ctx)
 		originalError = err
 
-		if shouldSkipErrorAnalysis(err) {
+		if shouldSkipAgentHandling(err) {
 			return actionResult, err
 		}
 	}
@@ -355,6 +380,8 @@ func (e *ErrorMiddleware) buildPromptForCategory(category troubleshootCategory, 
 		tmpl = guidanceTemplate
 	case categoryTroubleshoot:
 		tmpl = troubleshootManualTemplate
+	case categoryFix:
+		tmpl = fixTemplate
 	default:
 		tmpl = troubleshootManualTemplate
 	}
@@ -370,7 +397,7 @@ func (e *ErrorMiddleware) buildPromptForCategory(category troubleshootCategory, 
 }
 
 // buildFixPrompt renders the fix prompt template.
-func (e *ErrorMiddleware) buildFixPrompt(err error) string {
+func (e *ErrorMiddleware) buildFixPrompt(err error) (string, error) {
 	data := errorPromptData{
 		Command:      e.options.CommandPath,
 		ErrorMessage: err.Error(),
@@ -378,12 +405,11 @@ func (e *ErrorMiddleware) buildFixPrompt(err error) string {
 
 	var buf bytes.Buffer
 	if execErr := fixTemplate.Execute(&buf, data); execErr != nil {
-		log.Printf("[copilot] Failed to execute fix template: %v", execErr)
-		return fmt.Sprintf("An error occurred while fixing `%s`: %v\n",
-			data.ErrorMessage, execErr)
+		return "", fmt.Errorf(
+			"executing fix template: %w", execErr)
 	}
 
-	return buf.String()
+	return buf.String(), nil
 }
 
 // displayUsageMetrics shows token usage metrics after an agent interaction.
@@ -396,7 +422,7 @@ func (e *ErrorMiddleware) displayUsageMetrics(ctx context.Context, result *agent
 
 // promptTroubleshootCategory asks the user to select a troubleshooting scope.
 // Checks saved category preference; if set, auto-selects and prints a message.
-// Otherwise presents: Explain, Guidance, Troubleshoot (explain + guidance), Skip.
+// Otherwise presents: Diagnose and guide, Fix (default), Skip, Explain, Guidance.
 func (e *ErrorMiddleware) promptTroubleshootCategory(ctx context.Context) (troubleshootCategory, error) {
 	userConfig, err := e.userConfigManager.Load()
 	if err != nil {
@@ -407,7 +433,7 @@ func (e *ErrorMiddleware) promptTroubleshootCategory(ctx context.Context) (troub
 	if val, ok := userConfig.GetString(agentcopilot.ConfigKeyErrorHandlingCategory); ok && val != "" {
 		saved := troubleshootCategory(val)
 		switch saved {
-		case categoryExplain, categoryGuidance, categoryTroubleshoot, categorySkip:
+		case categoryExplain, categoryGuidance, categoryTroubleshoot, categoryFix, categorySkip:
 			e.console.Message(ctx, output.WithWarningFormat(
 				"\n%s troubleshooting is set to always use '%s'. To change, run %s.",
 				agentcopilot.DisplayTitle,
@@ -421,20 +447,25 @@ func (e *ErrorMiddleware) promptTroubleshootCategory(ctx context.Context) (troub
 	}
 
 	choices := []*uxlib.SelectChoice{
+		{Value: string(categoryTroubleshoot), Label: "Diagnose and guide"},
+		{Value: string(categoryFix), Label: "Fix this error"},
+		{Value: string(categorySkip), Label: "Skip"},
 		{Value: string(categoryExplain), Label: "Explain this error"},
 		{Value: string(categoryGuidance), Label: "Show fix guidance"},
-		{Value: string(categoryTroubleshoot), Label: "Troubleshoot with explanation and guidance"},
-		{Value: string(categorySkip), Label: "Skip"},
 	}
-
 	selector := uxlib.NewSelect(&uxlib.SelectOptions{
-		Message: fmt.Sprintf("How would you like %s to help?", agentcopilot.DisplayTitle),
+		Message: fmt.Sprintf(
+			"How would you like %s to help?",
+			agentcopilot.DisplayTitle),
 		HelpMessage: fmt.Sprintf(
 			"Choose the level of assistance. "+
 				"To always use a specific choice, run %s.",
 			output.WithHighLightFormat(
-				fmt.Sprintf("azd config set %s <category>", agentcopilot.ConfigKeyErrorHandlingCategory))),
+				fmt.Sprintf(
+					"azd config set %s <category>",
+					agentcopilot.ConfigKeyErrorHandlingCategory))),
 		Choices:         choices,
+		SelectedIndex:   new(1),
 		EnableFiltering: new(false),
 		DisplayCount:    len(choices),
 	})
@@ -461,37 +492,50 @@ func (e *ErrorMiddleware) promptTroubleshootCategory(ctx context.Context) (troub
 	return selected, nil
 }
 
-// promptForFix asks the user if they want the agent to attempt to fix the error.
-// Checks saved preferences for auto-approval.
-func (e *ErrorMiddleware) promptForFix(ctx context.Context) (bool, error) {
+// promptNextAction asks the user how to proceed after an explanation or guidance.
+// Offers fix-and-retry, fix-only, or exit. Checks saved fix preference for auto-approval.
+func (e *ErrorMiddleware) promptNextAction(
+	ctx context.Context,
+) (nextAction, error) {
 	userConfig, err := e.userConfigManager.Load()
 	if err != nil {
-		return false, fmt.Errorf("failed to load user config: %w", err)
+		return actionExit, fmt.Errorf(
+			"failed to load user config: %w", err)
 	}
 
-	// Check for saved "always fix" preference
-	if val, ok := userConfig.GetString(agentcopilot.ConfigKeyErrorHandlingFix); ok && val == "allow" {
+	// Saved "always fix" preference → auto-approve fix and rerun the command.
+	if val, ok := userConfig.GetString(
+		agentcopilot.ConfigKeyErrorHandlingFix); ok && val == "allow" {
 		e.console.Message(ctx, output.WithWarningFormat(
-			"\n%s auto-fix is enabled. To change, run %s.",
+			"\n%s auto-fix and retry is enabled. To change, run %s.",
 			agentcopilot.DisplayTitle,
 			output.WithHighLightFormat(
-				fmt.Sprintf("azd config unset %s", agentcopilot.ConfigKeyErrorHandlingFix)),
+				fmt.Sprintf("azd config unset %s",
+					agentcopilot.ConfigKeyErrorHandlingFix)),
 		))
-		return true, nil
+		return actionFixAndRetry, nil
 	}
 
 	choices := []*uxlib.SelectChoice{
-		{Value: "yes", Label: fmt.Sprintf("Yes, let %s fix it", agentcopilot.DisplayTitle)},
-		{Value: "no", Label: "No, I'll fix it myself"},
+		{Value: string(actionFixAndRetry),
+			Label: fmt.Sprintf(
+				"Fix with %s and retry command",
+				agentcopilot.DisplayTitle)},
+		{Value: string(actionFixOnly),
+			Label: fmt.Sprintf(
+				"Fix with %s",
+				agentcopilot.DisplayTitle)},
+		{Value: string(actionExit),
+			Label: "Exit"},
 	}
 
 	selector := uxlib.NewSelect(&uxlib.SelectOptions{
-		Message: fmt.Sprintf("Would you like %s to fix this error?", agentcopilot.DisplayTitle),
+		Message: "How would you like to proceed?",
 		HelpMessage: fmt.Sprintf(
-			"The agent will fix the error. "+
-				"To always allow fixes, run %s.",
+			"To always auto-fix and retry, run %s.",
 			output.WithHighLightFormat(
-				fmt.Sprintf("azd config set %s allow", agentcopilot.ConfigKeyErrorHandlingFix))),
+				fmt.Sprintf("azd config set %s allow",
+					agentcopilot.ConfigKeyErrorHandlingFix))),
 		Choices:         choices,
 		EnableFiltering: new(false),
 		DisplayCount:    len(choices),
@@ -500,25 +544,61 @@ func (e *ErrorMiddleware) promptForFix(ctx context.Context) (bool, error) {
 	e.console.Message(ctx, "")
 	choiceIndex, err := selector.Ask(ctx)
 	if err != nil {
-		return false, err
+		return actionExit, err
 	}
 
-	if choiceIndex == nil || *choiceIndex < 0 || *choiceIndex >= len(choices) {
-		return false, fmt.Errorf("invalid fix choice selected")
+	if choiceIndex == nil ||
+		*choiceIndex < 0 ||
+		*choiceIndex >= len(choices) {
+		return actionExit, fmt.Errorf("invalid choice selected")
 	}
 
-	return choices[*choiceIndex].Value == "yes", nil
+	selected := nextAction(choices[*choiceIndex].Value)
+
+	// Print hint about persisting the choice (only fix_and_retry has a saved equivalent).
+	if selected == actionFixAndRetry {
+		e.console.Message(ctx, output.WithGrayFormat(
+			"Tip: To always auto-fix and retry, run: %s",
+			output.WithHighLightFormat(
+				fmt.Sprintf("azd config set %s allow", agentcopilot.ConfigKeyErrorHandlingFix)),
+		))
+	}
+
+	return selected, nil
 }
 
 // promptRetryAfterFix asks the user if the agent applied a fix and they want to retry the command.
 func (e *ErrorMiddleware) promptRetryAfterFix(ctx context.Context) (bool, error) {
+	userConfig, err := e.userConfigManager.Load()
+	if err != nil {
+		return false, fmt.Errorf("failed to load user config: %w", err)
+	}
+
+	// Saved "always fix" preference → auto-retry the command after fix.
+	if val, ok := userConfig.GetString(
+		agentcopilot.ConfigKeyErrorHandlingFix); ok && val == "allow" {
+		e.console.Message(ctx, output.WithWarningFormat(
+			"\n%s auto-fix and retry is enabled. To change, run %s.",
+			agentcopilot.DisplayTitle,
+			output.WithHighLightFormat(
+				fmt.Sprintf("azd config unset %s",
+					agentcopilot.ConfigKeyErrorHandlingFix)),
+		))
+		return true, nil
+	}
+
 	choices := []*uxlib.SelectChoice{
 		{Value: "retry", Label: "Retry the command"},
 		{Value: "exit", Label: "Exit"},
 	}
 
 	selector := uxlib.NewSelect(&uxlib.SelectOptions{
-		Message:         "How would you like to proceed?",
+		Message: "How would you like to proceed?",
+		HelpMessage: fmt.Sprintf(
+			"To always auto-fix and retry, run %s.",
+			output.WithHighLightFormat(
+				fmt.Sprintf("azd config set %s allow",
+					agentcopilot.ConfigKeyErrorHandlingFix))),
 		Choices:         choices,
 		EnableFiltering: new(false),
 		DisplayCount:    len(choices),
@@ -534,5 +614,16 @@ func (e *ErrorMiddleware) promptRetryAfterFix(ctx context.Context) (bool, error)
 		return false, fmt.Errorf("invalid retry choice selected")
 	}
 
-	return choices[*choiceIndex].Value == "retry", nil
+	shouldRetry := choices[*choiceIndex].Value == "retry"
+
+	// Print hint about persisting the choice (only retry has a saved equivalent).
+	if shouldRetry {
+		e.console.Message(ctx, output.WithGrayFormat(
+			"Tip: To always auto retry after fix, run: %s",
+			output.WithHighLightFormat(
+				fmt.Sprintf("azd config set %s allow", agentcopilot.ConfigKeyErrorHandlingFix)),
+		))
+	}
+
+	return shouldRetry, nil
 }

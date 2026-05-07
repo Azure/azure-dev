@@ -8,6 +8,7 @@ import (
 	"errors"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -16,7 +17,7 @@ import (
 )
 
 func TestServiceConfigAddHandler(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	service := getServiceConfig()
 	handlerCalled := false
 
@@ -37,44 +38,35 @@ func TestServiceConfigAddHandler(t *testing.T) {
 }
 
 func TestServiceConfigRemoveHandler(t *testing.T) {
-	ctx := context.Background()
 	service := getServiceConfig()
 	handler1Called := false
-	handler2Called := false
 
 	handler1 := func(ctx context.Context, args ServiceLifecycleEventArgs) error {
 		handler1Called = true
 		return nil
 	}
 
-	handler2 := func(ctx context.Context, args ServiceLifecycleEventArgs) error {
-		handler2Called = true
-		return nil
-	}
-
-	// Only handler 1 was registered
+	// Register handler with a cancellable context
+	ctx, cancel := context.WithCancel(t.Context())
 	err := service.AddHandler(ctx, ServiceEventDeploy, handler1)
 	require.Nil(t, err)
 
-	err = service.RemoveHandler(ctx, ServiceEventDeploy, handler1)
-	require.Nil(t, err)
+	// Cancel context to trigger removal
+	cancel()
 
-	// Handler 2 wasn't registered so should error on remove
-	err = service.RemoveHandler(ctx, ServiceEventDeploy, handler2)
-	require.NotNil(t, err)
-
-	// No events are registered at the time event was raised
-	err = service.RaiseEvent(ctx, ServiceEventDeploy, ServiceLifecycleEventArgs{
-		Service:        service,
-		ServiceContext: NewServiceContext(),
-	})
-	require.Nil(t, err)
-	require.False(t, handler1Called)
-	require.False(t, handler2Called)
+	require.Eventually(t, func() bool {
+		// Handler should not be called after context cancellation
+		handler1Called = false
+		err = service.RaiseEvent(t.Context(), ServiceEventDeploy, ServiceLifecycleEventArgs{
+			Service:        service,
+			ServiceContext: NewServiceContext(),
+		})
+		return err == nil && !handler1Called
+	}, time.Second, 10*time.Millisecond, "Handler should not fire after context cancellation")
 }
 
 func TestServiceConfigWithMultipleEventHandlers(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	service := getServiceConfig()
 	handlerCalled1 := false
 	handlerCalled2 := false
@@ -109,7 +101,7 @@ func TestServiceConfigWithMultipleEventHandlers(t *testing.T) {
 }
 
 func TestServiceConfigWithMultipleEvents(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	service := getServiceConfig()
 
 	provisionHandlerCalled := false
@@ -141,7 +133,7 @@ func TestServiceConfigWithMultipleEvents(t *testing.T) {
 }
 
 func TestServiceConfigWithEventHandlerErrors(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	service := getServiceConfig()
 
 	handler1 := func(ctx context.Context, args ServiceLifecycleEventArgs) error {
@@ -186,7 +178,7 @@ services:
 }
 
 func TestServiceConfigRaiseEventWithoutArgs(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	service := getServiceConfig()
 	handlerCalled := false
 
@@ -208,7 +200,7 @@ func TestServiceConfigRaiseEventWithoutArgs(t *testing.T) {
 }
 
 func TestServiceConfigRaiseEventWithArgs(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	service := getServiceConfig()
 	handlerCalled := false
 	eventArgs := ServiceLifecycleEventArgs{
@@ -232,7 +224,7 @@ func TestServiceConfigRaiseEventWithArgs(t *testing.T) {
 }
 
 func TestServiceConfigEventHandlerReceivesServiceContext(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	service := getServiceConfig()
 	handlerCalled := false
 
@@ -488,7 +480,7 @@ services:
     host: appservice
 `
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	projectConfig, err := Parse(*mockContext.Context, testProj)
 	require.Nil(t, err)
 	require.NotNil(t, projectConfig)

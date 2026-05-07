@@ -4,7 +4,6 @@
 package containerapps
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -189,7 +188,7 @@ func Test_AddRevision_ARMCallCount(t *testing.T) {
 				},
 			}
 
-			mockContext := mocks.NewMockContext(context.Background())
+			mockContext := mocks.NewMockContext(t.Context())
 
 			// Register counted mocks
 			mockContainerAppGetCounted(mockContext, subscriptionId, resourceGroup, appName,
@@ -277,7 +276,7 @@ func Test_AddRevision_MultiRevision_CombinedPatch(t *testing.T) {
 		},
 	}
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockazsdk.MockContainerAppGet(mockContext, subscriptionId, resourceGroup, appName, containerApp)
 	updateReq := mockContainerAppUpdateCounted(mockContext, subscriptionId, resourceGroup,
 		appName, &updateCalls)
@@ -351,7 +350,7 @@ func Benchmark_AddRevision(b *testing.B) {
 		},
 	}
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(b.Context())
 	mockazsdk.MockContainerAppGet(mockContext, subscriptionId, resourceGroup, appName, containerApp)
 	mockazsdk.MockContainerAppSecretsList(mockContext, subscriptionId, resourceGroup, appName, secrets)
 	mockazsdk.MockContainerAppUpdate(mockContext, subscriptionId, resourceGroup, appName, containerApp)

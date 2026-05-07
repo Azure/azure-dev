@@ -14,123 +14,21 @@ import (
 )
 
 func TestShowCommand_AcceptsPositionalArg(t *testing.T) {
-	cmd := newShowCommand()
+	cmd := newShowCommand(nil)
 	err := cmd.Args(cmd, []string{"my-agent"})
 	assert.NoError(t, err)
 }
 
 func TestShowCommand_AcceptsNoArgs(t *testing.T) {
-	cmd := newShowCommand()
+	cmd := newShowCommand(nil)
 	err := cmd.Args(cmd, []string{})
 	assert.NoError(t, err)
 }
 
 func TestShowCommand_RejectsMultipleArgs(t *testing.T) {
-	cmd := newShowCommand()
+	cmd := newShowCommand(nil)
 	err := cmd.Args(cmd, []string{"svc1", "svc2"})
 	assert.Error(t, err)
-}
-
-func TestPrintStatusJSON(t *testing.T) {
-	container := &agent_api.AgentContainerObject{
-		Object: "agent.container",
-		ID:     "test-agent-1",
-		Status: agent_api.AgentContainerStatusRunning,
-	}
-
-	// Should not error
-	err := printStatusJSON(container)
-	require.NoError(t, err)
-}
-
-func TestPrintStatusTable(t *testing.T) {
-	minReplicas := int32(1)
-	maxReplicas := int32(3)
-	container := &agent_api.AgentContainerObject{
-		Object:      "agent.container",
-		ID:          "test-agent-1",
-		Status:      agent_api.AgentContainerStatusRunning,
-		MinReplicas: &minReplicas,
-		MaxReplicas: &maxReplicas,
-		CreatedAt:   "2025-01-01T00:00:00Z",
-		UpdatedAt:   "2025-01-01T01:00:00Z",
-		Container: &agent_api.AgentContainerDetails{
-			HealthState:       "Healthy",
-			ProvisioningState: "Succeeded",
-			State:             "Running",
-			UpdatedOn:         "2025-01-01T01:00:00Z",
-			Replicas: []agent_api.AgentContainerReplicaState{
-				{Name: "replica-1", State: "Running", ContainerState: "Running"},
-			},
-		},
-	}
-
-	// Should not error
-	err := printStatusTable(container)
-	require.NoError(t, err)
-}
-
-func TestPrintStatusTable_NoContainer(t *testing.T) {
-	container := &agent_api.AgentContainerObject{
-		Object:    "agent.container",
-		ID:        "test-agent-1",
-		Status:    agent_api.AgentContainerStatusRunning,
-		CreatedAt: "2025-01-01T00:00:00Z",
-		UpdatedAt: "2025-01-01T01:00:00Z",
-	}
-
-	// Should not error even without nested container details
-	err := printStatusTable(container)
-	require.NoError(t, err)
-}
-
-func TestPrintStatusJSON_Format(t *testing.T) {
-	container := &agent_api.AgentContainerObject{
-		Object: "agent.container",
-		ID:     "test-agent-1",
-		Status: agent_api.AgentContainerStatusRunning,
-	}
-
-	jsonBytes, err := json.MarshalIndent(container, "", "  ")
-	require.NoError(t, err)
-
-	var result map[string]any
-	err = json.Unmarshal(jsonBytes, &result)
-	require.NoError(t, err)
-
-	assert.Equal(t, "Running", result["status"])
-	assert.Equal(t, "agent.container", result["object"])
-	assert.Equal(t, "test-agent-1", result["id"])
-}
-
-func TestPrintStatusJSON_WithContainerDetails(t *testing.T) {
-	container := &agent_api.AgentContainerObject{
-		Object: "agent.container",
-		ID:     "basic-sample-1",
-		Status: agent_api.AgentContainerStatusFailed,
-		Container: &agent_api.AgentContainerDetails{
-			HealthState:       "Unhealthy",
-			ProvisioningState: "Succeeded",
-			State:             "ActivationFailed",
-			Replicas: []agent_api.AgentContainerReplicaState{
-				{Name: "replica-abc", State: "NotRunning", ContainerState: "Waiting"},
-			},
-		},
-	}
-
-	jsonBytes, err := json.MarshalIndent(container, "", "  ")
-	require.NoError(t, err)
-
-	var result map[string]any
-	err = json.Unmarshal(jsonBytes, &result)
-	require.NoError(t, err)
-
-	assert.Equal(t, "Failed", result["status"])
-	containerMap := result["container"].(map[string]any)
-	assert.Equal(t, "Unhealthy", containerMap["health_state"])
-	assert.Equal(t, "ActivationFailed", containerMap["state"])
-	replicas := containerMap["replicas"].([]any)
-	assert.Len(t, replicas, 1)
 }
 
 func TestBuildAgentEndpoint(t *testing.T) {
@@ -169,9 +67,163 @@ func TestNewAgentContext_PartialFlags(t *testing.T) {
 	assert.Contains(t, err.Error(), "both --account-name and --project-name must be provided together")
 }
 
-func TestShowCommand_DefaultOutputFlag(t *testing.T) {
-	cmd := newShowCommand()
+func TestShowCommand_DefaultOutputFormat(t *testing.T) {
+	cmd := newShowCommand(nil)
+	assertOutputFlagOptions(t, cmd, "json", []string{"json", "table"})
+}
 
-	output, _ := cmd.Flags().GetString("output")
-	assert.Equal(t, "json", output)
+func TestPrintAgentVersionJSON(t *testing.T) {
+	version := &agent_api.AgentVersionObject{
+		Object:    "agent.version",
+		ID:        "ver-123",
+		Name:      "my-agent",
+		Version:   "1",
+		CreatedAt: 1735689600, // 2025-01-01T00:00:00Z
+	}
+
+	result := &showResult{AgentVersionObject: version}
+	err := printShowResultJSON(result)
+	require.NoError(t, err)
+}
+
+func TestPrintAgentVersionJSON_Format(t *testing.T) {
+	desc := "A test agent"
+	version := &agent_api.AgentVersionObject{
+		Object:      "agent.version",
+		ID:          "ver-456",
+		Name:        "test-agent",
+		Version:     "2",
+		Description: &desc,
+		Metadata:    map[string]string{"env": "prod"},
+		CreatedAt:   1735689600,
+		Status:      "active",
+		InstanceIdentity: &agent_api.AgentIdentityInfo{
+			PrincipalID: "inst-pid",
+			ClientID:    "inst-cid",
+		},
+		Blueprint: &agent_api.BlueprintInfo{
+			PrincipalID: "bp-pid",
+			ClientID:    "bp-cid",
+		},
+		BlueprintReference: &agent_api.BlueprintReference{
+			Type:        "ManagedAgentIdentityBlueprint",
+			BlueprintID: "test-agent-abc12",
+		},
+		AgentGUID: "guid-1234",
+	}
+
+	result := &showResult{
+		AgentVersionObject: version,
+		PlaygroundURL:      "https://ai.azure.com/nextgen/r/test/build/agents/test-agent/build?version=2",
+		Endpoints: map[string]string{
+			"Responses": "https://acct.services.ai.azure.com/api/projects/proj/agents/test-agent/endpoint/protocols/openai/responses?api-version=2025-11-15-preview",
+		},
+	}
+
+	jsonBytes, err := json.MarshalIndent(result, "", "  ")
+	require.NoError(t, err)
+
+	var raw map[string]any
+	err = json.Unmarshal(jsonBytes, &raw)
+	require.NoError(t, err)
+
+	assert.Equal(t, "agent.version", raw["object"])
+	assert.Equal(t, "ver-456", raw["id"])
+	assert.Equal(t, "test-agent", raw["name"])
+	assert.Equal(t, "2", raw["version"])
+	assert.Equal(t, "A test agent", raw["description"])
+	assert.Equal(t, "active", raw["status"])
+	assert.Equal(t, "guid-1234", raw["agent_guid"])
+	metadata := raw["metadata"].(map[string]any)
+	assert.Equal(t, "prod", metadata["env"])
+	instanceIdentity := raw["instance_identity"].(map[string]any)
+	assert.Equal(t, "inst-pid", instanceIdentity["principal_id"])
+	assert.Equal(t, "inst-cid", instanceIdentity["client_id"])
+	blueprint := raw["blueprint"].(map[string]any)
+	assert.Equal(t, "bp-pid", blueprint["principal_id"])
+	blueprintRef := raw["blueprint_reference"].(map[string]any)
+	assert.Equal(t, "ManagedAgentIdentityBlueprint", blueprintRef["type"])
+	assert.Equal(t, "test-agent-abc12", blueprintRef["blueprint_id"])
+
+	// Verify new fields
+	assert.Equal(t,
+		"https://ai.azure.com/nextgen/r/test/build/agents/test-agent/build?version=2",
+		raw["playground_url"],
+	)
+	endpoints := raw["agent_endpoints"].(map[string]any)
+	assert.Contains(t, endpoints, "Responses")
+}
+
+func TestPrintAgentVersionJSON_NoLinks(t *testing.T) {
+	version := &agent_api.AgentVersionObject{
+		Object:  "agent.version",
+		ID:      "ver-789",
+		Name:    "my-agent",
+		Version: "1",
+	}
+
+	result := &showResult{AgentVersionObject: version}
+	jsonBytes, err := json.MarshalIndent(result, "", "  ")
+	require.NoError(t, err)
+
+	var raw map[string]any
+	err = json.Unmarshal(jsonBytes, &raw)
+	require.NoError(t, err)
+
+	// playground_url and endpoints should be absent when empty
+	_, hasPlayground := raw["playground_url"]
+	assert.False(t, hasPlayground, "playground_url should be omitted when empty")
+	_, hasEndpoints := raw["agent_endpoints"]
+	assert.False(t, hasEndpoints, "agent_endpoints should be omitted when nil")
+}
+
+func TestPrintAgentVersionTable(t *testing.T) {
+	desc := "A test agent"
+	version := &agent_api.AgentVersionObject{
+		Object:      "agent.version",
+		ID:          "ver-789",
+		Name:        "my-agent",
+		Version:     "3",
+		Description: &desc,
+		Metadata:    map[string]string{"env": "staging"},
+		CreatedAt:   1735689600,
+		Status:      "active",
+		AgentGUID:   "guid-5678",
+		InstanceIdentity: &agent_api.AgentIdentityInfo{
+			PrincipalID: "inst-pid",
+			ClientID:    "inst-cid",
+		},
+		Blueprint: &agent_api.BlueprintInfo{
+			PrincipalID: "bp-pid",
+			ClientID:    "bp-cid",
+		},
+		BlueprintReference: &agent_api.BlueprintReference{
+			Type:        "ManagedAgentIdentityBlueprint",
+			BlueprintID: "my-agent-abc12",
+		},
+	}
+
+	result := &showResult{
+		AgentVersionObject: version,
+		PlaygroundURL:      "https://ai.azure.com/playground",
+		Endpoints: map[string]string{
+			"Responses": "https://example.com/responses",
+		},
+	}
+
+	err := printShowResultTable(result)
+	require.NoError(t, err)
+}
+
+func TestPrintAgentVersionTable_MinimalFields(t *testing.T) {
+	version := &agent_api.AgentVersionObject{
+		Object:  "agent.version",
+		ID:      "ver-min",
+		Name:    "minimal-agent",
+		Version: "1",
+	}
+
+	result := &showResult{AgentVersionObject: version}
+	err := printShowResultTable(result)
+	require.NoError(t, err)
 }

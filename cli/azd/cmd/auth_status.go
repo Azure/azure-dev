@@ -81,10 +81,12 @@ func (a *authStatusAction) Run(ctx context.Context) (*actions.ActionResult, erro
 
 	// get user account information
 	details, err := a.authManager.LogInDetails(ctx)
-	_, loginExpiryError := errors.AsType[*auth.ReLoginRequiredError](err)
+	// An *internal.ErrorWithSuggestion already carries actionable, user-facing guidance
+	// surfaced through the status result; avoid double-printing the raw error.
+	_, hasSuggestion := errors.AsType[*internal.ErrorWithSuggestion](err)
 	if err != nil {
 		if !errors.Is(err, auth.ErrNoCurrentUser) &&
-			!loginExpiryError {
+			!hasSuggestion {
 			// print a useful message for unknown errors
 			fmt.Fprintln(a.console.Handles().Stderr, err.Error())
 		}
@@ -96,10 +98,13 @@ func (a *authStatusAction) Run(ctx context.Context) (*actions.ActionResult, erro
 		res.Status = contracts.AuthStatusUnauthenticated
 	} else {
 		res.Status = contracts.AuthStatusAuthenticated
-		_, err := a.verifyLoggedIn(ctx, scopes)
+		token, err := a.verifyLoggedIn(ctx, scopes)
 		if err != nil {
 			res.Status = contracts.AuthStatusUnauthenticated
 			log.Printf("error: verifying logged in status: %v", err)
+		} else if token != nil {
+			expiresOn := contracts.RFC3339Time(token.ExpiresOn)
+			res.ExpiresOn = &expiresOn
 		}
 
 		switch details.LoginType {

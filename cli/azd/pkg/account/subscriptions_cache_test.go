@@ -4,7 +4,6 @@
 package account
 
 import (
-	"context"
 	"os"
 	"sort"
 	"testing"
@@ -18,7 +17,7 @@ func TestSubscriptionsCache(t *testing.T) {
 		cacheDir:     dir,
 		inMemoryCopy: map[string][]Subscription{},
 	}
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Empty state
 	// Load items returns "not exist"
@@ -75,7 +74,7 @@ func TestSubscriptionsCache_Merge(t *testing.T) {
 			cacheDir:     dir,
 			inMemoryCopy: map[string][]Subscription{},
 		}
-		ctx := context.Background()
+		ctx := t.Context()
 
 		// Merge into empty cache should add all subscriptions
 		err := s.Merge(ctx, "key1", []Subscription{
@@ -100,7 +99,7 @@ func TestSubscriptionsCache_Merge(t *testing.T) {
 			cacheDir:     dir,
 			inMemoryCopy: map[string][]Subscription{},
 		}
-		ctx := context.Background()
+		ctx := t.Context()
 
 		// Initial cache state
 		err := s.Save(ctx, "key1", []Subscription{
@@ -133,7 +132,7 @@ func TestSubscriptionsCache_Merge(t *testing.T) {
 			cacheDir:     dir,
 			inMemoryCopy: map[string][]Subscription{},
 		}
-		ctx := context.Background()
+		ctx := t.Context()
 
 		// Initial cache with subscriptions from two tenants
 		err := s.Save(ctx, "key1", []Subscription{
@@ -172,7 +171,7 @@ func TestSubscriptionsCache_Merge(t *testing.T) {
 			cacheDir:     dir,
 			inMemoryCopy: map[string][]Subscription{},
 		}
-		ctx := context.Background()
+		ctx := t.Context()
 
 		// Initial cache with one subscription
 		err := s.Save(ctx, "key1", []Subscription{
@@ -203,7 +202,7 @@ func TestSubscriptionsCache_Merge(t *testing.T) {
 			cacheDir:     dir,
 			inMemoryCopy: map[string][]Subscription{},
 		}
-		ctx := context.Background()
+		ctx := t.Context()
 
 		// Initial cache with subscriptions
 		err := s.Save(ctx, "key1", []Subscription{
@@ -228,7 +227,7 @@ func TestSubscriptionsCache_Merge(t *testing.T) {
 			cacheDir:     dir,
 			inMemoryCopy: map[string][]Subscription{},
 		}
-		ctx := context.Background()
+		ctx := t.Context()
 
 		// Save subscriptions for key1
 		err := s.Save(ctx, "key1", []Subscription{

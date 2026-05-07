@@ -5,9 +5,11 @@ package middleware
 
 import (
 	"context"
+	"errors"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
@@ -53,6 +55,14 @@ func (l *LoginGuardMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 
 	_, err = auth.EnsureLoggedInCredential(ctx, cred, l.authManager.Cloud())
 	if err != nil {
+		// Only wrap auth-specific errors with login guidance.
+		// Let cancellations, network errors, and transient failures propagate unchanged.
+		if errors.Is(err, auth.ErrNoCurrentUser) {
+			return nil, &internal.ErrorWithSuggestion{
+				Err:        err,
+				Suggestion: "Run 'azd auth login' to sign in before running this command.",
+			}
+		}
 		return nil, err
 	}
 

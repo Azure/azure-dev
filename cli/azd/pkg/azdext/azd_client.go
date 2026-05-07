@@ -34,6 +34,7 @@ type AzdClient struct {
 	accountClient       AccountServiceClient
 	aiClient            AiModelServiceClient
 	copilotClient       CopilotServiceClient
+	provisioningClient  ProvisioningServiceClient
 }
 
 // WithAddress sets the address of the `azd` gRPC server.
@@ -44,7 +45,7 @@ func WithAddress(address string) AzdClientOption {
 		if isLocalhostAddress(address) {
 			opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		} else {
-			// For non-localhost connections, require TLS to prevent MITM attacks
+			// For non-localhost connections, require TLS to prevent man-in-the-middle attacks.
 			opts = append(opts, grpc.WithTransportCredentials(credentials.NewTLS(nil)))
 		}
 
@@ -240,4 +241,13 @@ func (c *AzdClient) Copilot() CopilotServiceClient {
 	}
 
 	return c.copilotClient
+}
+
+// Provisioning returns the provisioning service client.
+func (c *AzdClient) Provisioning() ProvisioningServiceClient {
+	if c.provisioningClient == nil {
+		c.provisioningClient = NewProvisioningServiceClient(c.connection)
+	}
+
+	return c.provisioningClient
 }

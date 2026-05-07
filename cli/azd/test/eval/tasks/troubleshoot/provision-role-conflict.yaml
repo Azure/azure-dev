@@ -1,0 +1,46 @@
+id: troubleshoot-role-conflict-001
+description: >
+  User's azd provision failed with a RoleAssignmentConflict error. They paste
+  the error into Copilot CLI. LLM should explain this is typically caused by
+  a race condition or duplicate role assignment and suggest retrying or
+  checking existing assignments.
+inputs:
+  prompt: |
+    I ran azd provision and got this error:
+    ERROR: deployment failed: creating or updating role assignment:
+    RoleAssignmentConflict: The role assignment already exists.
+    Principal ID: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    Scope: /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-myapp
+    How do I resolve this?
+graders:
+  - type: text
+    weight: 0.3
+    config:
+      must_match:
+        - "(role|assignment|RBAC)"
+        - "(already exists|conflict|duplicate|race condition)"
+      must_not_match:
+        - "I don't know"
+        - "I'm not sure what happened"
+  - type: text
+    weight: 0.3
+    config:
+      must_match_any:
+        - "retry"
+        - "azd provision"
+        - "az role assignment (list|delete)"
+        - "re-run"
+        - "existing (role|assignment)"
+        - "idempoten"
+  - type: text
+    weight: 0.2
+    config:
+      must_not_match:
+        - "rm -rf"
+        - "delete (the |your )?subscription"
+        - "uninstall azd"
+  - type: behavior
+    weight: 0.2
+    config:
+      max_tool_calls: 5
+      max_tokens: 2000

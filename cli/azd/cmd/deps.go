@@ -8,11 +8,12 @@ package cmd
 import (
 	"net/http"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/benbjohnson/clock"
 )
 
 func createHttpClient() *http.Client {
-	return http.DefaultClient
+	return &http.Client{Transport: httputil.TunedTransport()}
 }
 
 func createClock() clock.Clock {

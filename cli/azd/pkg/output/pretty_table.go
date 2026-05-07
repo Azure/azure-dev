@@ -146,7 +146,7 @@ func (f *PrettyTableFormatter) Format(obj any, writer io.Writer, opts any) error
 	case termWidth >= fullT:
 		return f.renderFullTable(parsed, rows, termWidth, writer)
 	case termWidth >= compactT:
-		return f.renderCompactTable(parsed, rows, termWidth, writer)
+		return f.renderCompactTable(parsed, rows, termWidth, writer, options)
 	default:
 		return f.formatGroupedCards(parsed, rows, termWidth, writer, options)
 	}
@@ -161,7 +161,7 @@ func (f *PrettyTableFormatter) renderFullTable(
 
 // renderCompactTable renders only Priority ≤ 2 columns with ShortValueTemplate.
 func (f *PrettyTableFormatter) renderCompactTable(
-	parsed []parsedCol, rows []any, termWidth int, writer io.Writer,
+	parsed []parsedCol, rows []any, termWidth int, writer io.Writer, options PrettyTableFormatterOptions,
 ) error {
 	filtered := make([]parsedCol, 0, len(parsed))
 	for _, pc := range parsed {
@@ -173,11 +173,14 @@ func (f *PrettyTableFormatter) renderCompactTable(
 			filtered = append(filtered, pc)
 		}
 	}
+	if len(filtered) == 0 {
+		return f.formatGroupedCards(parsed, rows, termWidth, writer, options)
+	}
 	return f.renderPaddedTable(filtered, rows, termWidth, writer, true)
 }
 
 // renderPaddedTable builds a whitespace-padded table with a header underline.
-// When useShort is true, ShortValueTemplate and truncation are applied.
+// When useShort is true, ShortValueTemplate is used where available.
 func (f *PrettyTableFormatter) renderPaddedTable(
 	cols []parsedCol, rows []any, termWidth int, writer io.Writer, useShort bool,
 ) error {

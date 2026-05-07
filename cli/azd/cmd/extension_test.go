@@ -10,11 +10,12 @@ import (
 	"testing"
 
 	"github.com/Masterminds/semver/v3"
-	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
-	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/fatih/color"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/azure/azure-dev/cli/azd/test/mocks"
 )
 
 func TestNamespacesConflictCases(t *testing.T) {
@@ -648,8 +649,6 @@ func TestExtensionStatusSymbol(t *testing.T) {
 }
 
 func TestExtensionStatusColor(t *testing.T) {
-	t.Parallel()
-
 	// Force color output on — fatih/color disables in non-TTY environments.
 	originalNoColor := color.NoColor
 	color.NoColor = false

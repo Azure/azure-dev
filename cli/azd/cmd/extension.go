@@ -406,7 +406,7 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 					a.console.Message(ctx, "")
 				}
 				a.console.Message(ctx, output.WithWarningFormat(
-					"⚠ Some updates are incompatible with your current azd version"))
+					"WARNING: Some updates are incompatible with your current azd version"))
 			}
 		}
 	} else {

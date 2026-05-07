@@ -114,6 +114,23 @@ func TestWriteDeploymentIdFile(t *testing.T) {
 			"file must be a complete JSON document under concurrent writers")
 		require.Contains(t, []string{subID, rgID}, doc.DeploymentId)
 	})
+
+	t.Run("PathIsDirectory_DoesNotPanic", func(t *testing.T) {
+		// If the path points to an existing directory rather than a file,
+		// os.Rename will fail. The function must handle this gracefully without
+		// panicking or aborting provisioning.
+		dir := t.TempDir()
+		target := filepath.Join(dir, "subdir")
+		require.NoError(t, os.Mkdir(target, 0o755))
+		t.Setenv(deploymentIdFileEnvVar, target)
+
+		writeDeploymentIdFile(subDeployment)
+
+		// The directory should still exist and not be replaced by a file.
+		info, err := os.Stat(target)
+		require.NoError(t, err)
+		require.True(t, info.IsDir(), "the directory must not be replaced")
+	})
 }
 
 func TestDeploymentResourceID(t *testing.T) {
@@ -131,6 +148,15 @@ func TestDeploymentResourceID(t *testing.T) {
 		id, err := deploymentResourceID(dep)
 		require.NoError(t, err)
 		require.Equal(t, "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Resources/deployments/name", id)
+	})
+
+	t.Run("UnsupportedType_ReturnsError", func(t *testing.T) {
+		// fakeDeployment (from interrupt_test.go) implements infra.Deployment but is
+		// neither *infra.SubscriptionDeployment nor *infra.ResourceGroupDeployment,
+		// so it exercises the default error branch.
+		_, err := deploymentResourceID(&fakeDeployment{})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "unsupported deployment type")
 	})
 }
 

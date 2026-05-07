@@ -31,7 +31,13 @@ Ensure these tools are installed:
 | ffmpeg | Video/audio stitch |
 | edge-tts | Neural TTS (`pip install edge-tts`) |
 
-Check: `python3 -c "from PIL import Image; print('ok')" && ffmpeg -version >/dev/null 2>&1 && edge-tts --list-voices >/dev/null 2>&1`
+Verify prerequisites (bash):
+
+```bash
+python3 -c "from PIL import Image; print('ok')"
+ffmpeg -version
+edge-tts --list-voices > /dev/null
+```
 
 ## Execution Flow
 
@@ -44,9 +50,10 @@ git checkout main && git pull --rebase
 
 ### Step 2: Find commits for the week
 
+Replace the dates below with the actual week range:
+
 ```bash
-# Example: Thursday May 1 to Thursday May 8
-git log --oneline --since="2026-05-01" --until="2026-05-08" --no-merges
+git log --oneline --since="YYYY-MM-DD" --until="YYYY-MM-DD" --no-merges
 ```
 
 Use the current week window (7 days). For sprint demos, use a 2-week window.
@@ -81,6 +88,8 @@ List generated videos with filenames and durations. Offer short descriptions for
 ## Output
 
 All videos go to: `<repo-root>/demo-video/`
+
+> **Note:** `demo-video/` is listed in `.gitignore` to prevent accidental commits.
 
 ## Demo Naming
 

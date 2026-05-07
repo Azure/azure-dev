@@ -47,11 +47,9 @@ Generates weekly executive reports for the Azure Developer CLI (azd) team leader
 
 Cadence is **Thursday to Thursday**. Confirm with the user if unclear.
 
-```
-# Example: Thursday May 1 to Thursday May 8, 2026
-```
-
 ### Step 2: Pull repo data
+
+Replace `START` and `END` below with the dates from Step 1.
 
 ```bash
 cd <repo-root>  # the azure-dev repository root
@@ -60,17 +58,17 @@ git checkout main && git pull --rebase
 
 **PRs merged:**
 ```bash
-gh pr list --repo Azure/azure-dev --state merged --search "merged:2026-05-01..2026-05-08" --limit 200 --json number,title,mergedAt
+gh pr list --repo Azure/azure-dev --state merged --search "merged:START..END" --limit 200 --json number,title,mergedAt
 ```
 
 **Issues closed:**
 ```bash
-gh issue list --repo Azure/azure-dev --state closed --search "closed:2026-05-01..2026-05-08" --limit 200 --json number,title,closedAt
+gh issue list --repo Azure/azure-dev --state closed --search "closed:START..END" --limit 200 --json number,title,closedAt
 ```
 
 **Releases:**
 ```bash
-gh api repos/Azure/azure-dev/releases --paginate | jq '[.[] | select(.published_at >= "2026-05-01" and .published_at <= "2026-05-08") | {name, tag_name, published_at}]'
+gh api repos/Azure/azure-dev/releases --paginate | jq '[.[] | select(.published_at >= "START" and .published_at <= "END") | {name, tag_name, published_at}]'
 ```
 
 ### Step 3: Read changelogs

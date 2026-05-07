@@ -85,3 +85,6 @@ cli/azd/cover_*
 review-*.diff
 
 .playwright-mcp/
+
+# Demo video output
+demo-video/

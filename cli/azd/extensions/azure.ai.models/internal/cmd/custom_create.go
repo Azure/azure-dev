@@ -29,6 +29,7 @@ type customCreateFlags struct {
 	SourceFile  string
 	Description string
 	BaseModel   string
+	WeightType  string
 	Publisher   string
 	AzcopyPath  string
 	NoWait      bool
@@ -86,7 +87,8 @@ provide a file containing the URL instead.`,
 	cmd.Flags().StringVar(&flags.Version, "version", "1", "Model version")
 	cmd.Flags().StringVar(&flags.Description, "description", "", "Model description")
 	cmd.Flags().StringVar(&flags.BaseModel, "base-model", "", "Base model identifier (e.g., FW-GPT-OSS-120B or full azureml:// URI)")
-	cmd.Flags().StringVar(&flags.Publisher, "publisher", "Fireworks", "Model publisher ID for catalog info")
+	cmd.Flags().StringVar(&flags.WeightType, "weight-type", "FullWeight", "Weight type (e.g., FullWeight, LoRA)")
+	cmd.Flags().StringVar(&flags.Publisher, "publisher", "", "Model publisher ID for catalog info (e.g., Fireworks)")
 	cmd.Flags().StringVar(&flags.AzcopyPath, "azcopy-path", "", "Path to azcopy binary (auto-detected if not provided)")
 	cmd.Flags().BoolVar(&flags.NoWait, "no-wait", false, "Start async registration and return immediately with the operation URL")
 
@@ -216,10 +218,8 @@ func runCustomCreate(ctx context.Context, parentFlags *customFlags, flags *custo
 	derivedURI := buildDerivedModelURI(flags.BaseModel)
 	regReq := &models.RegisterModelRequest{
 		BlobURI:     blob.BlobURI,
+		WeightType:  flags.WeightType,
 		Description: flags.Description,
-		CatalogInfo: &models.CatalogInfo{
-			PublisherID: flags.Publisher,
-		},
 		DerivedModelInformation: &models.DerivedModelInformation{
 			BaseModel: &derivedURI,
 		},
@@ -227,6 +227,12 @@ func runCustomCreate(ctx context.Context, parentFlags *customFlags, flags *custo
 
 	regReq.Tags = map[string]string{
 		"baseArchitecture": extractBaseModelName(flags.BaseModel),
+	}
+
+	if flags.Publisher != "" {
+		regReq.CatalogInfo = &models.CatalogInfo{
+			PublisherID: flags.Publisher,
+		}
 	}
 
 	operationURL, err := foundryClient.RegisterModelAsync(ctx, flags.Name, flags.Version, regReq)

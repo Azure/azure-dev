@@ -76,9 +76,32 @@ func NewFoundryClient(projectEndpoint string, credential azcore.TokenCredential)
 	}, nil
 }
 
+// listModelsOptions holds optional parameters for ListModels.
+type listModelsOptions struct {
+	sourceJobID string
+}
+
+// ListModelsOption configures the ListModels call.
+type ListModelsOption func(*listModelsOptions)
+
+// WithSourceJobID filters models by the training job that created them.
+func WithSourceJobID(jobID string) ListModelsOption {
+	return func(o *listModelsOptions) {
+		o.sourceJobID = jobID
+	}
+}
+
 // ListModels lists all custom models in the project.
-func (c *FoundryClient) ListModels(ctx context.Context) (*models.ListModelsResponse, error) {
+func (c *FoundryClient) ListModels(ctx context.Context, opts ...ListModelsOption) (*models.ListModelsResponse, error) {
+	options := &listModelsOptions{}
+	for _, opt := range opts {
+		opt(options)
+	}
+
 	reqURL := fmt.Sprintf("%s%s/models?api-version=%s", c.baseURL, c.subPath, c.apiVersion)
+	if options.sourceJobID != "" {
+		reqURL += "&source.jobId=" + url.QueryEscape(options.sourceJobID)
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
@@ -118,7 +141,8 @@ func (c *FoundryClient) StartPendingUpload(ctx context.Context, modelName, versi
 		c.apiVersion,
 	)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, strings.NewReader("{}"))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL,
+		strings.NewReader(`{"pendingUploadType":"TemporaryBlobReference"}`))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}

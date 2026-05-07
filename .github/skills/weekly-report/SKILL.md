@@ -102,6 +102,10 @@ Save reports to the Copilot CLI session workspace (`~/.copilot/session-state/<se
 
 {{ references/SECTION-RULES.md }}
 
+## Tone and Style
+
+{{ references/TONE-RULES.md }}
+
 ## Example Report
 
 Use the latest completed report in the session files as a format reference.

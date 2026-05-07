@@ -58,7 +58,8 @@ type doctorAction struct {
 	out       io.Writer
 }
 
-func newDoctorCommand() *cobra.Command {
+func newDoctorCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
+	_ = ensureExtensionContext(extCtx)
 	return &cobra.Command{
 		Use:   "doctor",
 		Short: "Diagnose your Azure AI Agent project setup",
@@ -66,7 +67,7 @@ func newDoctorCommand() *cobra.Command {
 			"and AI Agent configuration. Reports pass / warn / fail per check along with the " +
 			"recommended follow-up command for any non-passing item.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := cmd.Context()
+			ctx := azdext.WithAccessToken(cmd.Context())
 			client, err := azdext.NewAzdClient()
 			if err != nil {
 				return fmt.Errorf("failed to create azd client: %w", err)

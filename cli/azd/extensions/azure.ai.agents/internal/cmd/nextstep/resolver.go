@@ -153,9 +153,9 @@ func ResolveAfterShow(s *State, agentName, agentStatus string) []Suggestion {
 // pass the azure.yaml service name. An empty string falls back to the
 // unscoped invoke form ("azd ai agent invoke").
 //
-// Convention: in the single-agent case ``invoke`` is emitted without
+// Convention: in the single-agent case “invoke“ is emitted without
 // the agent name (matches the README sample) since there is only one
-// agent to target. ``show`` keeps the name so users can copy-paste the
+// agent to target. “show“ keeps the name so users can copy-paste the
 // command unambiguously.
 func ResolveAfterDeployOne(agentName string) []Suggestion {
 	name := strings.TrimSpace(agentName)

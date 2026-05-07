@@ -147,8 +147,10 @@ func writeDeploymentIdFile(deployment infra.Deployment, layer string) {
 		}
 	}
 	if deploymentIdFileTruncateErr != nil {
-		log.Printf("failed to truncate %s=%q: %v",
-			deploymentIdFileEnvVar, path, deploymentIdFileTruncateErr) //nolint:gosec
+		//nolint:gosec // G706: path comes from operator-provided env var
+		log.Printf(
+			"failed to truncate %s=%q: %v",
+			deploymentIdFileEnvVar, path, deploymentIdFileTruncateErr)
 		return
 	}
 

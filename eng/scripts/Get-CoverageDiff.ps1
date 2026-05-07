@@ -14,30 +14,42 @@
     report. The report is designed to be read directly in pipeline logs;
     no Markdown or HTML is emitted and no PR comment is posted.
 
-    Two modes are supported:
+    Two gates run when -FailOnGate is set:
+      1. Per-package decrease beyond -MaxPackageDecrease percentage
+         points (scoped to PR-touched packages in changed-file mode,
+         all packages otherwise).
+      2. Absolute floor: overall coverage must stay at or above
+         -MinOverallCoverage.
+    Either breach exits the script with code 2 so the CI stage fails
+    and merge is blocked. The gate intentionally does NOT enforce a
+    per-file floor or an overall-decrease tolerance — small, isolated
+    drops in untouched packages are ignored, and a PR that only
+    rebalances coverage between packages is fine.
+
+    Two reporting modes are supported:
 
       * Changed-file mode (recommended for CI)
-        Provide -ChangedFiles or -ChangedFilesFromFile. The script reports per-
-        file deltas only for files touched by the PR and enforces a per-
-        file coverage floor (-MinFloor, default 60%). Any touched file
-        whose coverage drops below the floor is marked FAIL and, if
-        -FailOnFloorBreach is set, the script exits with code 2 so the
-        CI stage fails and merge is blocked.
+        Provide -ChangedFiles or -ChangedFilesFromFile. The script reports
+        per-package deltas only for packages that contain a file touched
+        by the PR (Go files, *_test.go and *.pb.go excluded). The
+        per-package gate is scoped to those PR-touched packages.
 
       * Package mode (fallback / local exploration)
-        Without -ChangedFiles, the script lists the most-changed packages.
-        No floor is enforced and the script always exits 0.
+        Without -ChangedFiles, the script lists the most-changed packages
+        across the whole module and the per-package gate considers every
+        package.
 
-    Status values used in output:
-      FAIL      — touched file is below the floor
-      improved  — touched file coverage went up
-      new       — touched file is new and meets / exceeds floor
-      ok        — touched file is at or above floor and not changed enough
-                  to call out otherwise
+    In both modes, the absolute floor gate runs identically.
+
+    Status values used in package output:
+      improved  — package coverage went up
+      regress   — package coverage went down
+      new       — package has no baseline entry
+      ok        — package coverage unchanged (or below MinDelta)
 
     Exit codes:
       0 — success / no breach
-      2 — floor breach detected and -FailOnFloorBreach was set
+      2 — at least one gate breached and -FailOnGate was set
       (any other non-zero exit indicates a script error)
 
     See cli/azd/docs/code-coverage-guide.md for context on coverage modes.
@@ -52,8 +64,8 @@
     Array of file paths touched by the PR (newline- or comma-delimited
     when passed as a single string). Paths may be repo-relative
     (e.g. "cli/azd/pkg/foo/bar.go") or module-relative
-    (e.g. "pkg/foo/bar.go"); the script tries both. Non-Go files and
-    test files (*_test.go) are ignored.
+    (e.g. "pkg/foo/bar.go"); the script tries both. Non-Go files,
+    test files (*_test.go) and generated *.pb.go files are ignored.
 
 .PARAMETER ChangedFilesFromFile
     Path to a plain newline-delimited file listing changed files.
@@ -62,21 +74,21 @@
     avoid command-line length limits. Mutually compatible with
     -ChangedFiles — both may be supplied and the union is used.
 
-.PARAMETER MinFloor
-    Per-file coverage floor (percent). Touched files at or above this
-    value pass; any file below is marked FAIL regardless of baseline.
-    Default: 60.
+.PARAMETER MaxPackageDecrease
+    Maximum tolerated per-package coverage decrease in percentage points.
+    For example, with the default 0.5, a package at 80.0% may drop to
+    79.5% without failing; 79.4% (-0.6 pp) trips the gate. In
+    changed-file mode this only considers PR-touched packages.
+    Default: 0.5.
 
-.PARAMETER MinNewFileStatements
-    A new file (no baseline coverage entry) is only checked against the
-    floor when it has at least this many executable statements. Smaller
-    files (e.g. tiny helpers, scaffolding, 3-line additions) are reported
-    as "new" but never fail the build. Default: 10.
+.PARAMETER MinOverallCoverage
+    Absolute floor (in percent) for overall coverage. CI fails if the
+    current overall is below this value. Default: 65.0.
 
-.PARAMETER FailOnFloorBreach
-    Exit with code 2 if any touched file is marked FAIL. CI sets this
-    explicitly so a regression blocks merge; local runs leave it off
-    by default for advisory output.
+.PARAMETER FailOnGate
+    Exit with code 2 if any gate (per-package decrease or absolute
+    floor) is breached. CI sets this explicitly so a regression blocks
+    merge; local runs leave it off by default for advisory output.
 
 .PARAMETER BaselineLabel
     Free-form label describing the baseline (e.g. "main build 123456").
@@ -95,17 +107,19 @@
     for readability. Auto-detected from go.mod when possible.
 
 .EXAMPLE
-    # Local: package-level diff to terminal (no floor check)
+    # Local: package-level diff to terminal (advisory, no gate)
     ./Get-CoverageDiff.ps1 -BaselineFile cover-main.out -CurrentFile cover.out
 
 .EXAMPLE
-    # CI: per-file check against changed files, fail on floor breach
+    # CI: per-package report scoped to changed files, fail on per-package regression or floor
     ./Get-CoverageDiff.ps1 `
         -BaselineFile cover-baseline.out `
         -CurrentFile cover.out `
         -ChangedFilesFromFile changed-files.txt `
         -BaselineLabel "main build 123456 / commit abcdef" `
-        -FailOnFloorBreach
+        -MaxPackageDecrease 0.5 `
+        -MinOverallCoverage 65 `
+        -FailOnGate
 #>
 
 param(
@@ -120,12 +134,12 @@ param(
     [string]$ChangedFilesFromFile,
 
     [ValidateRange(0, 100)]
-    [double]$MinFloor = 60.0,
+    [double]$MaxPackageDecrease = 0.5,
 
-    [ValidateRange(0, [int]::MaxValue)]
-    [int]$MinNewFileStatements = 10,
+    [ValidateRange(0, 100)]
+    [double]$MinOverallCoverage = 65.0,
 
-    [switch]$FailOnFloorBreach,
+    [switch]$FailOnGate,
 
     [string]$BaselineLabel = 'baseline',
 
@@ -300,12 +314,16 @@ function ConvertTo-ModuleRelative {
 }
 
 # ---------------------------------------------------------------------------
-# Compute coverage percentage with one decimal of precision.
+# Compute coverage percentage as a raw double. Display sites format with
+# {0:F1} for one-decimal output; gate comparisons use the raw value to
+# avoid threshold false negatives at boundaries (e.g. 64.96% rounding up
+# to 65.0% and passing a 65 floor, or a 0.54 pp drop rounding to 0.5 pp
+# and passing a 0.5 tolerance).
 # ---------------------------------------------------------------------------
 function Get-Percent {
     param([int]$Covered, [int]$Statements)
     if ($Statements -le 0) { return 0.0 }
-    return [math]::Round(($Covered / $Statements) * 100, 1)
+    return ($Covered / $Statements) * 100
 }
 
 # ---------------------------------------------------------------------------
@@ -369,13 +387,14 @@ foreach ($raw in $changedRaw) {
     if ($rel) { [void]$changedSet.Add($rel) }
 }
 
-# If the user explicitly supplied a changed-files input we stay in file mode
-# even when the filtered set is empty (e.g. PR only touched docs / test files).
-# Falling back to package mode in that case would surface unrelated package
-# noise that has nothing to do with the PR.
+# If the user explicitly supplied a changed-files input we narrow the
+# per-package report to packages that contain a touched file. The overall-
+# decrease gate is computed identically in both modes; the changed-file
+# list only affects which packages are *displayed*, never which packages
+# are *enforced*.
 $changedFilesSupplied = ($null -ne $ChangedFiles -and $ChangedFiles.Count -gt 0) -or `
                        (-not [string]::IsNullOrWhiteSpace($ChangedFilesFromFile))
-$useFileMode = $changedFilesSupplied
+$useChangedFileMode = $changedFilesSupplied
 
 # ---------------------------------------------------------------------------
 # Build report
@@ -393,82 +412,104 @@ $deltaSign = if ($overallDelta -ge 0) { '+' } else { '' }
 [void]$sb.AppendLine(
     ('Overall: {0:F1}% -> {1:F1}% ({2}{3:F1}%)' -f $baseTotal, $currTotal, $deltaSign, $overallDelta)
 )
+[void]$sb.AppendLine(
+    ('  Tolerance: -{0:F1} pp per package before failing the gate' -f $MaxPackageDecrease)
+)
+[void]$sb.AppendLine(
+    ('  Floor: overall coverage must stay >= {0:F1}%' -f $MinOverallCoverage)
+)
 [void]$sb.AppendLine()
 
-$failures = [System.Collections.Generic.List[PSCustomObject]]::new()
+# ---------------------------------------------------------------------------
+# Determine which packages to report on.
+# ---------------------------------------------------------------------------
+function Get-PackageRow {
+    param(
+        [string]$Pkg,
+        [hashtable]$Baseline,
+        [hashtable]$Current,
+        [int]$TouchedFileCount
+    )
 
-if ($useFileMode) {
+    $bPkg = $Baseline.Packages[$Pkg]
+    $cPkg = $Current.Packages[$Pkg]
+
+    $bStmts = if ($bPkg) { $bPkg.Statements } else { 0 }
+    $bCov   = if ($bPkg) { $bPkg.Covered } else { 0 }
+    $cStmts = if ($cPkg) { $cPkg.Statements } else { 0 }
+    $cCov   = if ($cPkg) { $cPkg.Covered } else { 0 }
+
+    $bPct = if ($bPkg) { Get-Percent $bCov $bStmts } else { -1.0 }
+    $cPct = Get-Percent $cCov $cStmts
+    $delta = if ($bPkg) { $cPct - $bPct } else { 0.0 }
+
+    $status = 'ok'
+    $note = if ($TouchedFileCount -gt 0) {
+        "$TouchedFileCount file$(if ($TouchedFileCount -ne 1) { 's' }) touched"
+    } else { '' }
+
+    if (-not $bPkg)        { $status = 'new' }
+    elseif (-not $cPkg)    { $status = 'deleted' }
+    elseif ($delta -gt 0)  { $status = 'improved' }
+    elseif ($delta -lt 0)  { $status = 'regress' }
+
+    return [PSCustomObject]@{
+        Package = $Pkg
+        Before  = $bPct
+        After   = $cPct
+        Delta   = $delta
+        Status  = $status
+        Note    = $note
+        Stmts   = [math]::Max($bStmts, $cStmts)
+    }
+}
+
+if ($useChangedFileMode) {
     # -----------------------------------------------------------------------
-    # Per-file mode: walk the changed-file set and check the floor.
+    # Per-package mode scoped to packages containing PR-touched files.
     # -----------------------------------------------------------------------
-    $rows = [System.Collections.Generic.List[PSCustomObject]]::new()
-
-    foreach ($rel in ($changedSet | Sort-Object)) {
-        $bFile = $baseline.Files[$rel]
-        $cFile = $current.Files[$rel]
-
-        # File was deleted in the current branch (no current entry); skip.
-        if (-not $cFile) { continue }
-
-        $bStmts = if ($bFile) { $bFile.Statements } else { 0 }
-        $bCov   = if ($bFile) { $bFile.Covered } else { 0 }
-        $cStmts = $cFile.Statements
-        $cCov   = $cFile.Covered
-
-        if ($cStmts -le 0) { continue }  # file has no executable statements
-
-        $bPct = if ($bFile) { Get-Percent $bCov $bStmts } else { -1.0 }
-        $cPct = Get-Percent $cCov $cStmts
-        $delta = if ($bFile) { [math]::Round($cPct - $bPct, 1) } else { 0.0 }
-
-        $isNew = -not $bFile
-        $belowFloor = $cPct -lt $MinFloor
-        $isSmallNewFile = $isNew -and ($cStmts -lt $MinNewFileStatements)
-
-        $status = 'ok'
-        $note = ''
-
-        if ($isSmallNewFile) {
-            $status = 'new'
-            $note = "small file ($cStmts stmts)"
-        } elseif ($belowFloor) {
-            $status = 'FAIL'
-            if ($isNew) {
-                $note = "new file below floor (${MinFloor}%)"
-            } else {
-                $note = "below floor (${MinFloor}%)"
-            }
-            $failures.Add([PSCustomObject]@{ Path = $rel; Reason = $note })
-        } elseif ($isNew) {
-            $status = 'new'
-        } elseif ($delta -gt 0) {
-            $status = 'improved'
+    $touchedByPackage = @{}
+    foreach ($rel in $changedSet) {
+        $lastSlash = $rel.LastIndexOf('/')
+        $pkg = if ($lastSlash -ge 0) { $rel.Substring(0, $lastSlash) } else { '.' }
+        # Include the package if EITHER (a) this file appears in coverage data
+        # directly, OR (b) the file's inferred package has any coverage entries
+        # in either profile. (b) ensures touched-but-uncovered files (constants,
+        # build-tagged, generated stubs) still count their package toward the
+        # per-package gate when the package itself is tracked. Truly orphan
+        # paths (no coverage anywhere in the package) are still skipped.
+        if (-not $baseline.Files.ContainsKey($rel) -and `
+            -not $current.Files.ContainsKey($rel) -and `
+            -not $baseline.Packages.ContainsKey($pkg) -and `
+            -not $current.Packages.ContainsKey($pkg)) {
+            continue
         }
-
-        $rows.Add([PSCustomObject]@{
-            Path   = $rel
-            Before = $bPct
-            After  = $cPct
-            Delta  = $delta
-            Status = $status
-            Note   = $note
-            Stmts  = $cStmts
-        })
+        if (-not $touchedByPackage.ContainsKey($pkg)) {
+            $touchedByPackage[$pkg] = 0
+        }
+        $touchedByPackage[$pkg] += 1
     }
 
-    if ($rows.Count -eq 0) {
-        [void]$sb.AppendLine("PR-touched Go files: none with coverage data.")
+    if ($touchedByPackage.Count -eq 0) {
+        [void]$sb.AppendLine('PR-touched packages: none with coverage data.')
         [void]$sb.AppendLine()
     } else {
-        [void]$sb.AppendLine("PR-touched files ($($rows.Count) file$(if ($rows.Count -ne 1) { 's' })):")
-        # Sort: failures first, then improvements/regressions by abs delta, then ok.
+        $rows = foreach ($pkg in ($touchedByPackage.Keys | Sort-Object)) {
+            Get-PackageRow -Pkg $pkg -Baseline $baseline -Current $current `
+                -TouchedFileCount $touchedByPackage[$pkg]
+        }
+
+        [void]$sb.AppendLine(
+            "PR-touched packages ($($rows.Count) package$(if ($rows.Count -ne 1) { 's' })):"
+        )
+        # Sort: regressions first by absolute delta, then improvements, then ok/new.
         $sorted = $rows | Sort-Object `
-            @{ Expression = { switch ($_.Status) { 'FAIL' { 0 } 'info' { 1 } 'improved' { 2 } 'new' { 3 } default { 4 } } } }, `
+            @{ Expression = { switch ($_.Status) { 'regress' { 0 } 'improved' { 1 } 'new' { 2 } default { 3 } } } }, `
             @{ Expression = { -[math]::Abs($_.Delta) } }, `
-            Path
+            Package
         foreach ($row in $sorted) {
             [void]$sb.AppendLine((Format-FileRow `
-                -Path $row.Path `
+                -Path $row.Package `
                 -Before $row.Before `
                 -After $row.After `
                 -Delta $row.Delta `
@@ -487,26 +528,9 @@ if ($useFileMode) {
     $allDiffs = [System.Collections.Generic.List[PSCustomObject]]::new()
 
     foreach ($pkg in $allPackages) {
-        $bPkg = $baseline.Packages[$pkg]
-        $cPkg = $current.Packages[$pkg]
-
-        $bStmts = if ($bPkg) { $bPkg.Statements } else { 0 }
-        $bCov   = if ($bPkg) { $bPkg.Covered } else { 0 }
-        $cStmts = if ($cPkg) { $cPkg.Statements } else { 0 }
-        $cCov   = if ($cPkg) { $cPkg.Covered } else { 0 }
-
-        $bPct = Get-Percent $bCov $bStmts
-        $cPct = Get-Percent $cCov $cStmts
-        $delta = [math]::Round($cPct - $bPct, 1)
-
-        if ([math]::Abs($delta) -ge $MinDelta -and $delta -ne 0) {
-            $allDiffs.Add([PSCustomObject]@{
-                Package = $pkg
-                Before  = $bPct
-                After   = $cPct
-                Delta   = $delta
-                Stmts   = [math]::Max($bStmts, $cStmts)
-            })
+        $row = Get-PackageRow -Pkg $pkg -Baseline $baseline -Current $current -TouchedFileCount 0
+        if ([math]::Abs($row.Delta) -ge $MinDelta -and $row.Delta -ne 0) {
+            $allDiffs.Add($row)
         }
     }
 
@@ -526,7 +550,7 @@ if ($useFileMode) {
                 -Before $d.Before `
                 -After $d.After `
                 -Delta $d.Delta `
-                -Status '' `
+                -Status $d.Status `
                 -Note ''))
         }
         if ($changedPackageCount -gt $TopN) {
@@ -537,22 +561,78 @@ if ($useFileMode) {
 }
 
 # ---------------------------------------------------------------------------
-# Result banner
+# Multi-gate evaluation
 # ---------------------------------------------------------------------------
+# Two independent breach types — any one breach fails the build when
+# -FailOnGate is set:
+#   1. Overall coverage below -MinOverallCoverage absolute floor
+#   2. Any package decrease beyond -MaxPackageDecrease
+#
+# Per-package gate scope: in changed-file mode we only consider PR-touched
+# packages (developers shouldn't be blamed for unrelated package movement
+# from baseline drift); in package mode we consider every package present
+# in either profile (full scan).
+$overallFloorBreached = $currTotal -lt $MinOverallCoverage
+
+# Determine per-package breach set
+$pkgGateScope = if ($useChangedFileMode) {
+    @($touchedByPackage.Keys)
+} else {
+    @(@($baseline.Packages.Keys) + @($current.Packages.Keys)) | Sort-Object -Unique
+}
+
+$packageBreaches = [System.Collections.Generic.List[PSCustomObject]]::new()
+foreach ($pkg in $pkgGateScope) {
+    $row = Get-PackageRow -Pkg $pkg -Baseline $baseline -Current $current -TouchedFileCount 0
+    # Only existing packages with a real regression count toward the gate;
+    # 'new' packages (no baseline) and packages absent from current with
+    # 0 statements aren't comparable.
+    if ($row.Status -ne 'regress') { continue }
+    # Use raw delta (no rounding) to avoid boundary false negatives:
+    # a 0.54 pp drop must NOT round down to 0.5 pp and pass a 0.5 tolerance.
+    $pkgDecrease = -$row.Delta
+    if ($pkgDecrease -gt $MaxPackageDecrease) {
+        $packageBreaches.Add([PSCustomObject]@{
+            Package  = $pkg
+            Before   = $row.Before
+            After    = $row.After
+            Decrease = $pkgDecrease
+        })
+    }
+}
+$packageGateBreached = $packageBreaches.Count -gt 0
+
+$gateBreached = $overallFloorBreached -or $packageGateBreached
+
 [void]$sb.AppendLine($bar)
 
-if ($failures.Count -gt 0) {
-    $msg = "RESULT: FAIL — $($failures.Count) touched file$(if ($failures.Count -ne 1) { 's' }) below ${MinFloor}% floor"
-    [void]$sb.AppendLine($msg)
+if ($gateBreached) {
+    [void]$sb.AppendLine('RESULT: FAIL')
+    [void]$sb.AppendLine($bar)
+    [void]$sb.AppendLine('Breached gate(s):')
+    if ($overallFloorBreached) {
+        [void]$sb.AppendLine(
+            ('  - Overall coverage {0:F1}% is below floor of {1:F1}%' -f $currTotal, $MinOverallCoverage)
+        )
+    }
+    if ($packageGateBreached) {
+        [void]$sb.AppendLine(
+            ('  - {0} package(s) dropped more than {1:F1} pp:' -f $packageBreaches.Count, $MaxPackageDecrease)
+        )
+        $sortedBreaches = $packageBreaches | Sort-Object -Property Decrease -Descending
+        foreach ($pb in $sortedBreaches) {
+            [void]$sb.AppendLine(
+                ('      {0}: {1:F1}% -> {2:F1}% (-{3:F1} pp)' -f $pb.Package, $pb.Before, $pb.After, $pb.Decrease)
+            )
+        }
+    }
     [void]$sb.AppendLine($bar)
     [void]$sb.AppendLine('How to fix:')
-    $i = 1
-    foreach ($f in $failures) {
-        [void]$sb.AppendLine("  $i. Add tests for $($f.Path) to cover at least ${MinFloor}% of statements,")
-        [void]$sb.AppendLine("     or refactor it to remove untested code paths.")
-        $i++
-    }
-    [void]$sb.AppendLine("  $i. Re-run locally:  mage coverage:unit && mage coverage:diff")
+    [void]$sb.AppendLine('  1. Add tests for the regressing packages listed above.')
+    [void]$sb.AppendLine('  2. Re-run locally:  mage coverage:unit && mage coverage:diff')
+    [void]$sb.AppendLine(
+        ('  3. CI fails when overall falls below {0:F1}% or any package drops more than {1:F1} pp.' -f $MinOverallCoverage, $MaxPackageDecrease)
+    )
 } else {
     [void]$sb.AppendLine('RESULT: PASS')
     [void]$sb.AppendLine($bar)
@@ -566,12 +646,17 @@ Write-Output $report
 # ---------------------------------------------------------------------------
 # Exit code
 # ---------------------------------------------------------------------------
-if ($failures.Count -gt 0 -and $FailOnFloorBreach) {
-    # Surface a clickable error in the ADO PR check summary. Harmless under
-    # GitHub Actions / local pwsh — the line is written verbatim and the
-    # build-server-only renderer just treats it as plain text elsewhere.
-    $failPaths = ($failures | ForEach-Object { $_.Path }) -join ', '
-    Write-Host "##vso[task.logissue type=error]Coverage floor breach: $($failures.Count) PR-touched file(s) below ${MinFloor}%: $failPaths"
+if ($gateBreached -and $FailOnGate) {
+    if ($overallFloorBreached) {
+        Write-Host ('##vso[task.logissue type=error]Overall coverage {0:F1}% is below floor of {1:F1}%.' -f $currTotal, $MinOverallCoverage)
+    }
+    if ($packageGateBreached) {
+        $sortedBreaches = $packageBreaches | Sort-Object -Property Decrease -Descending
+        foreach ($pb in $sortedBreaches) {
+            Write-Host ('##vso[task.logissue type=error]Package {0} dropped {1:F1} pp (max allowed: -{2:F1} pp).' -f $pb.Package, $pb.Decrease, $MaxPackageDecrease)
+        }
+    }
     exit 2
 }
+
 exit 0

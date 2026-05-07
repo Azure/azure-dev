@@ -1090,10 +1090,17 @@ func (Coverage) Check() error {
 // Uses cover-local.out as the current profile (run coverage:unit first) and downloads
 // the main baseline from CI when needed.
 //
+// By default this is purely advisory: it prints a per-package report without enforcing
+// any gates, so local invocations like `mage coverage:diff` don't show noisy
+// "RESULT: FAIL" lines just because a single package drifted past CI's 0.5 pp tolerance
+// during exploration. To preview the CI gate locally, either set
+// COVERAGE_FAIL_ON_DECREASE=1 (which activates CI defaults: 0.5 pp per package +
+// 65% floor) or use `mage coverage:pr`.
+//
 // On a feature branch (not main / detached HEAD), Diff resolves PR-touched .go files
-// via `git merge-base origin/main HEAD` + `git diff` and passes them to the underlying
-// script so the per-file floor (when set) only enforces against changed files —
-// matching the CI gate run by code-coverage-upload.yml.
+// via `git fetch origin main` + `git diff origin/main...HEAD` and passes them to the
+// underlying script so the per-package report is scoped to packages containing
+// touched files — matching the CI gate run by code-coverage-upload.yml.
 //
 // To avoid the CI download (which requires 'az login'), run coverage on main first
 // and point to it:
@@ -1102,10 +1109,14 @@ func (Coverage) Check() error {
 //
 // Environment variables (optional):
 //
-//	COVERAGE_BASELINE         — path to baseline coverage profile (default: cover-ci-combined.out or download from CI)
-//	COVERAGE_CURRENT          — path to current coverage profile (default: cover-local.out)
-//	COVERAGE_FLOOR            — per-file coverage floor in percent (advisory unless COVERAGE_FAIL_ON_BREACH is set)
-//	COVERAGE_FAIL_ON_BREACH   — "1" or "true" to exit non-zero when any changed file drops below the floor
+//	COVERAGE_BASELINE                   — path to baseline coverage profile (default: cover-ci-combined.out or download from CI)
+//	COVERAGE_CURRENT                    — path to current coverage profile (default: cover-local.out)
+//	COVERAGE_MAX_PACKAGE_DECREASE       — per-package coverage decrease tolerance in percentage points
+//	                                      (defaults: 0.5 when COVERAGE_FAIL_ON_DECREASE=1; gate disabled otherwise)
+//	COVERAGE_MIN_OVERALL                — absolute floor for overall coverage in percent
+//	                                      (defaults: 65.0 when COVERAGE_FAIL_ON_DECREASE=1; gate disabled otherwise)
+//	COVERAGE_FAIL_ON_DECREASE           — "1" or "true" to exit non-zero when EITHER gate is breached
+//	                                      (per-package decrease or absolute floor); also activates default thresholds
 //
 // Usage: mage coverage:diff
 func (Coverage) Diff() error {
@@ -1133,12 +1144,12 @@ func (Coverage) Diff() error {
 		"-CurrentFile", currentFile,
 	}
 
-	failOnBreach := false
-	if fail := os.Getenv("COVERAGE_FAIL_ON_BREACH"); fail == "1" || strings.EqualFold(fail, "true") {
-		failOnBreach = true
+	failOnDecrease := false
+	if fail := os.Getenv("COVERAGE_FAIL_ON_DECREASE"); fail == "1" || strings.EqualFold(fail, "true") {
+		failOnDecrease = true
 	}
 
-	changedFiles, err := resolveChangedFilesForDiff(azdDir, failOnBreach)
+	changedFiles, err := resolveChangedFilesForDiff(azdDir, failOnDecrease)
 	if err != nil {
 		return err
 	}
@@ -1146,33 +1157,59 @@ func (Coverage) Diff() error {
 		args = append(args, "-ChangedFilesFromFile", changedFiles)
 	}
 
-	if floor := os.Getenv("COVERAGE_FLOOR"); floor != "" {
-		args = append(args, "-MinFloor", floor)
+	// Pass user-supplied thresholds explicitly. When the user opts into
+	// fail-loud mode (COVERAGE_FAIL_ON_DECREASE=1) and hasn't set a
+	// threshold, fall back to CI defaults so local previews mirror CI.
+	// Otherwise, neutralize the gates (max=100 / min=0) so advisory runs
+	// don't print "RESULT: FAIL" noise just from CI defaults drifting
+	// during local exploration.
+	maxPkg := os.Getenv("COVERAGE_MAX_PACKAGE_DECREASE")
+	if maxPkg == "" {
+		if failOnDecrease {
+			maxPkg = "0.5"
+		} else {
+			maxPkg = "100"
+		}
 	}
-	if failOnBreach {
-		args = append(args, "-FailOnFloorBreach")
+	args = append(args, "-MaxPackageDecrease", maxPkg)
+
+	minOverall := os.Getenv("COVERAGE_MIN_OVERALL")
+	if minOverall == "" {
+		if failOnDecrease {
+			minOverall = "65.0"
+		} else {
+			minOverall = "0"
+		}
+	}
+	args = append(args, "-MinOverallCoverage", minOverall)
+
+	if failOnDecrease {
+		args = append(args, "-FailOnGate")
 	}
 
 	diffScript := filepath.Join(repoRoot, "eng", "scripts", "Get-CoverageDiff.ps1")
 	return runPwshScript(azdDir, diffScript, args...)
 }
 
-// PR previews the CI PR coverage gate locally: same fail-loud per-file floor
-// enforcement that code-coverage-upload.yml runs against PR-touched .go files.
-// No PR comment is posted (the CI gate surfaces breaches in the build log;
-// this target lets contributors repro the gate locally before pushing).
+// PR previews the CI PR coverage gate locally: same fail-loud per-package
+// decrease and absolute-floor gates that code-coverage-upload.yml runs
+// against the latest successful main build. No PR comment is posted (the CI
+// gate surfaces breaches in the build log; this target lets contributors
+// repro the gate locally before pushing).
 //
 // Resolves changed files via `git fetch origin main` + `git merge-base origin/main HEAD`
-// + `git diff`. Requires a feature branch with origin/main reachable; on main or
-// detached HEAD, or when git resolution fails (e.g. no remote / shallow clone),
-// the target returns an actionable error rather than silently passing — the
-// "preview" guarantee depends on the same file set CI checks against.
+// + `git diff` so the per-package report is scoped to packages containing PR-touched
+// files. Requires a feature branch with origin/main reachable; on main or detached
+// HEAD, or when git resolution fails (e.g. no remote / shallow clone), the target
+// returns an actionable error rather than silently passing — the "preview"
+// guarantee depends on the same package set CI displays.
 //
 // Environment variables (optional):
 //
-//	COVERAGE_BASELINE — path to baseline coverage profile (default: cover-ci-combined.out or download from CI)
-//	COVERAGE_CURRENT  — path to current coverage profile (default: cover-local.out)
-//	COVERAGE_FLOOR    — per-file coverage floor in percent (default: 60, matches CI)
+//	COVERAGE_BASELINE             — path to baseline coverage profile (default: cover-ci-combined.out or download from CI)
+//	COVERAGE_CURRENT              — path to current coverage profile (default: cover-local.out)
+//	COVERAGE_MAX_PACKAGE_DECREASE — per-package coverage decrease tolerance in pp (default: 0.5, matches CI)
+//	COVERAGE_MIN_OVERALL          — absolute floor for overall coverage in percent (default: 65.0, matches CI)
 //
 // Usage: mage coverage:pr
 func (Coverage) PR() error {
@@ -1195,9 +1232,13 @@ func (Coverage) PR() error {
 		return err
 	}
 
-	floor := "60"
-	if v := os.Getenv("COVERAGE_FLOOR"); v != "" {
-		floor = v
+	maxPkgDecrease := "0.5"
+	if v := os.Getenv("COVERAGE_MAX_PACKAGE_DECREASE"); v != "" {
+		maxPkgDecrease = v
+	}
+	minOverall := "65.0"
+	if v := os.Getenv("COVERAGE_MIN_OVERALL"); v != "" {
+		minOverall = v
 	}
 
 	changedFiles, err := resolveChangedFilesForDiff(azdDir, true)
@@ -1214,13 +1255,112 @@ func (Coverage) PR() error {
 	args := []string{
 		"-BaselineFile", baselineFile,
 		"-CurrentFile", currentFile,
-		"-MinFloor", floor,
-		"-FailOnFloorBreach",
+		"-MaxPackageDecrease", maxPkgDecrease,
+		"-MinOverallCoverage", minOverall,
+		"-FailOnGate",
 		"-ChangedFilesFromFile", changedFiles,
 	}
 
 	diffScript := filepath.Join(repoRoot, "eng", "scripts", "Get-CoverageDiff.ps1")
 	return runPwshScript(azdDir, diffScript, args...)
+}
+
+// Report merges Go cover-data inputs and writes a textfmt cover.out, mirroring
+// the same `go tool covdata merge` + `go tool covdata textfmt` plumbing that
+// `mage coverage:ci` uses internally. CI invokes this target so the upload
+// stage and the local `mage coverage:*` targets share one coverage-reporting
+// path — no second source of truth.
+//
+// Environment variables:
+//
+//	COVERAGE_REPORT_UNIT_INPUTS — comma-separated paths to per-platform unit covdata directories (required)
+//	COVERAGE_REPORT_INT_INPUTS  — comma-separated paths to per-platform integration covdata directories (optional)
+//	COVERAGE_REPORT_OUTPUT      — path to the textfmt output file (required, e.g. cover.out)
+//	COVERAGE_REPORT_MERGED_DIR  — directory to write the merged covdata into (default: <azdDir>/cover-merged)
+//
+// Usage: mage coverage:report
+func (Coverage) Report() error {
+	unitInputs := os.Getenv("COVERAGE_REPORT_UNIT_INPUTS")
+	if unitInputs == "" {
+		return fmt.Errorf("COVERAGE_REPORT_UNIT_INPUTS is required (comma-separated covdata directories)")
+	}
+	output := os.Getenv("COVERAGE_REPORT_OUTPUT")
+	if output == "" {
+		return fmt.Errorf("COVERAGE_REPORT_OUTPUT is required (path to textfmt cover.out)")
+	}
+
+	repoRoot, err := findRepoRoot()
+	if err != nil {
+		return err
+	}
+	azdDir := filepath.Join(repoRoot, "cli", "azd")
+
+	mergedDir := os.Getenv("COVERAGE_REPORT_MERGED_DIR")
+	if mergedDir == "" {
+		mergedDir = filepath.Join(azdDir, "cover-merged")
+	}
+
+	if err := os.MkdirAll(mergedDir, 0o755); err != nil {
+		return fmt.Errorf("creating merged dir %q: %w", mergedDir, err)
+	}
+
+	intInputs := os.Getenv("COVERAGE_REPORT_INT_INPUTS")
+
+	// Per-stream merge: when integration inputs are provided we merge each
+	// stream individually first so the final merge can combine both streams.
+	// Place intermediate dirs INSIDE mergedDir so concurrent invocations
+	// with different mergedDir values (e.g. PR pipeline merging current and
+	// baseline coverage in the same job) don't share intermediate paths and
+	// contaminate each other's covdata.
+	tmpUnit := filepath.Join(mergedDir, "unit-tmp")
+	tmpInt := filepath.Join(mergedDir, "int-tmp")
+
+	if intInputs != "" {
+		// Clean any stale intermediate dir from a prior run before merging
+		// to avoid mixing previous covcounters/covmeta into this run.
+		_ = os.RemoveAll(tmpUnit)
+		_ = os.RemoveAll(tmpInt)
+		if err := os.MkdirAll(tmpUnit, 0o755); err != nil {
+			return fmt.Errorf("creating unit merge dir: %w", err)
+		}
+		if err := os.MkdirAll(tmpInt, 0o755); err != nil {
+			return fmt.Errorf("creating int merge dir: %w", err)
+		}
+		if err := runGoTool(azdDir, "covdata", "merge", "-i="+unitInputs, "-o="+tmpUnit); err != nil {
+			return fmt.Errorf("merging unit covdata: %w", err)
+		}
+		if err := runGoTool(azdDir, "covdata", "merge", "-i="+intInputs, "-o="+tmpInt); err != nil {
+			return fmt.Errorf("merging integration covdata: %w", err)
+		}
+		combined := tmpUnit + "," + tmpInt
+		if err := runGoTool(azdDir, "covdata", "merge", "-i="+combined, "-o="+mergedDir); err != nil {
+			return fmt.Errorf("merging combined covdata: %w", err)
+		}
+	} else {
+		if err := runGoTool(azdDir, "covdata", "merge", "-i="+unitInputs, "-o="+mergedDir); err != nil {
+			return fmt.Errorf("merging unit covdata: %w", err)
+		}
+	}
+
+	if err := runGoTool(azdDir, "covdata", "textfmt", "-i="+mergedDir, "-o="+output); err != nil {
+		return fmt.Errorf("converting covdata to textfmt: %w", err)
+	}
+
+	fmt.Printf("Wrote merged textfmt coverage profile to %s\n", output)
+	return nil
+}
+
+// runGoTool runs `go tool <args...>` inside the given directory and streams
+// stdout/stderr through the parent process. Used by Coverage.Report to wrap
+// `go tool covdata` invocations so the same pipeline plumbing is exercised
+// in CI and locally.
+func runGoTool(dir string, args ...string) error {
+	full := append([]string{"tool"}, args...)
+	cmd := exec.Command("go", full...)
+	cmd.Dir = dir
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
 }
 
 // resolveChangedFilesForDiff returns the path to a file listing PR-touched

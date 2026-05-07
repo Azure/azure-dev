@@ -8,11 +8,19 @@ parameters:
   - name: MinimumCoveragePercent
     type: number
     default: 0
-  - name: ChangedFileCoverageFloor
-    # Per-file coverage floor (percent) enforced on PRs against changed files.
-    # Set to 0 to disable the floor check (advisory output only).
+  - name: PackageCoverageDecreaseTolerance
+    # Maximum tolerated per-package coverage decrease (percentage points) on PRs.
+    # The PR fails when any single package's coverage drops by more than this
+    # many pp from the baseline. Scoped to PR-touched packages when changed
+    # files can be resolved; otherwise applies to all packages. Set to -1 to
+    # disable both this gate and the absolute-floor gate (advisory output only).
     type: number
-    default: 60
+    default: 0.5
+  - name: MinimumOverallCoverage
+    # Absolute floor for overall coverage on PRs. The PR fails when current
+    # overall coverage is below this percentage, regardless of baseline.
+    type: number
+    default: 65
   - name: MaxPackageTestSeconds
     type: number
     default: 0
@@ -48,21 +56,20 @@ stages:
           $unitCoverage = (Get-ChildItem cover-*/unit).FullName -join ","
           $integrationCoverage = (Get-ChildItem cover-*/int).FullName -join ","
 
-          # Merge unit test coverage across platforms
-          go tool covdata merge -i="$unitCoverage" -o cover-unit
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-          # Merge integration test coverage across platforms
-          go tool covdata merge -i="$integrationCoverage" -o cover-int
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-          # Merge unit and integration code coverage
-          go tool covdata merge -i="cover-unit,cover-int" -o cover
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-          # Convert to text format
-          go tool covdata textfmt -i=cover -o cover.out
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # Merge platform coverage and emit cover.out via the shared mage
+          # target so CI uses the same coverage reporting plumbing as
+          # `mage coverage:ci` does locally — avoids a second source of truth.
+          Push-Location $(Build.SourcesDirectory)/cli/azd
+          try {
+              $env:COVERAGE_REPORT_UNIT_INPUTS = $unitCoverage
+              $env:COVERAGE_REPORT_INT_INPUTS = $integrationCoverage
+              $env:COVERAGE_REPORT_OUTPUT = "$(Build.SourcesDirectory)/cover.out"
+              $env:COVERAGE_REPORT_MERGED_DIR = "$(Build.SourcesDirectory)/cover"
+              mage coverage:report
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } finally {
+              Pop-Location
+          }
 
           # Filter generated code (e.g. protobuf *.pb.go) from coverage profile
           # so that coverage percentages reflect only hand-written source code.
@@ -187,23 +194,34 @@ stages:
                 Remove-Item "baseline-tmp/$artifactName.zip"
             }
 
-            # Resolve nested artifact paths (pipeline artifacts nest under artifact name)
-            $unitPath = "baseline-tmp/cover-unit/cover-unit"
-            $intPath = "baseline-tmp/cover-int/cover-int"
-            if (-not (Test-Path $unitPath)) { $unitPath = "baseline-tmp/cover-unit" }
-            if (-not (Test-Path $intPath)) { $intPath = "baseline-tmp/cover-int" }
+            # Resolve nested artifact paths (pipeline artifacts nest under artifact name).
+            # Convert to absolute paths BEFORE Push-Location so `mage coverage:report`
+            # (which runs with cwd = cli/azd) can still find the inputs.
+            $unitPath = (Resolve-Path "baseline-tmp/cover-unit/cover-unit" -ErrorAction SilentlyContinue) `
+                ?? (Resolve-Path "baseline-tmp/cover-unit" -ErrorAction SilentlyContinue)
+            $intPath = (Resolve-Path "baseline-tmp/cover-int/cover-int" -ErrorAction SilentlyContinue) `
+                ?? (Resolve-Path "baseline-tmp/cover-int" -ErrorAction SilentlyContinue)
+            if (-not $unitPath -or -not $intPath) {
+                Write-Host "##vso[task.logissue type=error]Baseline artifact layout unexpected: unit=$unitPath int=$intPath"
+                exit 1
+            }
+            $unitPath = $unitPath.Path
+            $intPath = $intPath.Path
 
             New-Item -ItemType Directory -Force -Path baseline-merged | Out-Null
-            go tool covdata merge -i="$unitPath,$intPath" -o baseline-merged
-            if ($LASTEXITCODE -ne 0) {
-                Write-Warning "Failed to merge baseline coverage. Skipping diff."
-                exit 0
-            }
-
-            go tool covdata textfmt -i=baseline-merged -o cover-baseline.out
-            if ($LASTEXITCODE -ne 0) {
-                Write-Warning "Failed to convert baseline coverage. Skipping diff."
-                exit 0
+            Push-Location $(Build.SourcesDirectory)/cli/azd
+            try {
+                $env:COVERAGE_REPORT_UNIT_INPUTS = $unitPath
+                $env:COVERAGE_REPORT_INT_INPUTS = $intPath
+                $env:COVERAGE_REPORT_OUTPUT = "$(Build.SourcesDirectory)/cover-baseline.out"
+                $env:COVERAGE_REPORT_MERGED_DIR = "$(Build.SourcesDirectory)/baseline-merged"
+                mage coverage:report
+                if ($LASTEXITCODE -ne 0) {
+                    Write-Host "##vso[task.logissue type=error]Failed to merge baseline coverage (mage coverage:report exit $LASTEXITCODE). Cannot run PR coverage diff."
+                    exit 1
+                }
+            } finally {
+                Pop-Location
             }
 
             # Filter generated code from baseline (same as current)
@@ -214,14 +232,19 @@ stages:
 
             # ---------------------------------------------------------------
             # Resolve PR-changed files via `git diff` against the PR target
-            # branch. If the floor is enabled and we cannot resolve changed
-            # files, fail loud rather than silently degrading to package-mode
-            # where the per-file floor does not apply.
+            # branch. The triple-dot syntax `base...HEAD` implicitly uses the
+            # merge-base, so we don't need a separate `git merge-base` call.
+            # The list scopes the per-package report and per-package gate to
+            # packages that contain a touched file. If diff resolution fails
+            # (shallow clone, missing remote ref, etc.) we fall back to
+            # package mode (full scan of every package) — fail closed, never
+            # silently disable the per-package gate.
             # ---------------------------------------------------------------
             $changedFilesPath = "changed-files.txt"
-            New-Item -ItemType File -Force -Path $changedFilesPath | Out-Null
+            $changedFilesResolved = $false
 
-            $floor = ${{ parameters.ChangedFileCoverageFloor }}
+            $packageTolerance = ${{ parameters.PackageCoverageDecreaseTolerance }}
+            $minOverall = ${{ parameters.MinimumOverallCoverage }}
 
             $targetRef = $env:SYSTEM_PULLREQUEST_TARGETBRANCH
             $targetBranch = if ($targetRef) { $targetRef -replace '^refs/heads/', '' } else { 'main' }
@@ -229,34 +252,28 @@ stages:
             Write-Host "Fetching target branch for changed-file resolution: $targetBranch"
             git fetch --no-tags origin "+refs/heads/${targetBranch}:refs/remotes/origin/${targetBranch}" --depth=200 2>&1 | Write-Host
 
-            $base = git merge-base HEAD "origin/$targetBranch" 2>&1
-            if ($LASTEXITCODE -ne 0 -or -not $base) {
-                Write-Warning "git merge-base failed: $base"
-                if ($floor -gt 0) {
-                    Write-Host "##vso[task.logissue type=error]Unable to resolve PR changed files for coverage floor enforcement."
-                    exit 1
-                }
+            # `git diff base...HEAD` does its own merge-base resolution; if the
+            # remote ref or merge-base isn't reachable, this fails non-zero.
+            $diffOutput = git diff --name-only --diff-filter=AMR "origin/${targetBranch}...HEAD" 2>&1
+            if ($LASTEXITCODE -eq 0) {
+                # Empty output is a valid result (docs-only PR, no Go changes);
+                # mark as resolved so the per-package gate scopes to "none".
+                Set-Content -Path $changedFilesPath -Value ($diffOutput -join "`n") -Encoding UTF8
+                $changedFilesResolved = $true
             } else {
-                $diffOutput = git diff --name-only --diff-filter=AMR "$base...HEAD" 2>&1
-                if ($LASTEXITCODE -ne 0) {
-                    Write-Warning "git diff failed: $diffOutput"
-                    if ($floor -gt 0) {
-                        Write-Host "##vso[task.logissue type=error]Unable to resolve PR changed files for coverage floor enforcement."
-                        exit 1
-                    }
-                } elseif ($diffOutput) {
-                    Set-Content -Path $changedFilesPath -Value $diffOutput -Encoding UTF8
-                }
+                Write-Warning "git diff against origin/$targetBranch failed: $diffOutput — falling back to package mode (full per-package scan)."
             }
 
-            $changedCount = if (Test-Path $changedFilesPath) {
+            $changedCount = if ($changedFilesResolved -and (Test-Path $changedFilesPath)) {
                 @(Get-Content $changedFilesPath | Where-Object { $_ -match '\S' }).Count
             } else { 0 }
-            Write-Host "Changed files for coverage check: $changedCount"
+            Write-Host "Changed files for coverage report scope: $changedCount (resolved=$changedFilesResolved)"
 
             # ---------------------------------------------------------------
             # Generate plain-text coverage report (logged inline) and fail
-            # the stage on per-file floor breach.
+            # the stage on either gate breach: overall coverage below the
+            # absolute floor, or any PR-touched package dropping beyond the
+            # per-package tolerance.
             # ---------------------------------------------------------------
             $diffArgs = @(
                 '-NoProfile', '-NonInteractive',
@@ -266,35 +283,40 @@ stages:
                 '-BaselineLabel', "main build $mainBuildNum / commit $shortCommit"
             )
 
-            # Always pass the (possibly empty) changed-files list to the
-            # script so it reports "PR-touched Go files: none" rather than
-            # silently falling back to package-mode aggregation. Keeps the
-            # gate's signal predictable on docs/yml-only PRs.
-            $diffArgs += @('-ChangedFilesFromFile', $changedFilesPath)
-
-            if ($floor -gt 0) {
-                $diffArgs += @('-MinFloor', $floor, '-FailOnFloorBreach')
-            } else {
-                # Floor disabled: pass 0 explicitly so the script does not
-                # apply its built-in default (60%). Output stays advisory.
-                $diffArgs += @('-MinFloor', 0)
+            # Pass the changed-files list ONLY when git diff resolution
+            # succeeded. On failure we omit -ChangedFilesFromFile so the
+            # script falls into package mode (full per-package scan) instead
+            # of receiving an empty list (which would silently scope the
+            # per-package gate to zero packages → false negative).
+            if ($changedFilesResolved) {
+                $diffArgs += @('-ChangedFilesFromFile', $changedFilesPath)
             }
+
+            if ($packageTolerance -ge 0) {
+                $diffArgs += @(
+                    '-MaxPackageDecrease', $packageTolerance,
+                    '-MinOverallCoverage', $minOverall,
+                    '-FailOnGate'
+                )
+            }
+            # PackageCoverageDecreaseTolerance < 0 disables BOTH gates (advisory output only).
 
             pwsh @diffArgs
             $diffExit = $LASTEXITCODE
             Write-Host ""
             Write-Host "Get-CoverageDiff.ps1 exit code: $diffExit"
             if ($diffExit -eq 2) {
-                # Floor breach: Get-CoverageDiff.ps1 already emitted a
-                # ##vso[task.logissue] with the offending paths. Just
-                # propagate the exit code without duplicating the annotation.
+                # Gate breach (per-package decrease and/or absolute-floor):
+                # Get-CoverageDiff.ps1 already emitted ##vso[task.logissue]
+                # entries for each breached gate. Just propagate the exit code
+                # without duplicating the annotation.
                 exit 2
             }
             if ($diffExit -ne 0) {
                 Write-Host "##vso[task.logissue type=error]Coverage diff failed with exit code $diffExit. See log above."
                 exit $diffExit
             }
-          displayName: PR coverage diff (fail on floor breach)
+          displayName: PR coverage diff (fail on per-package decrease or floor breach)
           condition: succeeded()
           env:
             SYSTEM_ACCESSTOKEN: $(System.AccessToken)

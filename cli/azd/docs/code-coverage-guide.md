@@ -192,8 +192,9 @@ All modes are also available as `mage` targets (from `cli/azd/`):
 | `mage coverage:ci` | CI baseline report | `az login` |
 | `mage coverage:html` | HTML report (unit only by default) | Go 1.26 |
 | `mage coverage:check` | Enforce 50% threshold (unit only; CI gate is 55% combined) | Go 1.26 |
-| `mage coverage:diff` | Compare current branch coverage vs main baseline (advisory; honors `COVERAGE_FLOOR` / `COVERAGE_FAIL_ON_BREACH`) | Go 1.26 |
-| `mage coverage:pr` | Preview the CI PR coverage gate locally (fail-loud, default floor 60%) | Go 1.26 |
+| `mage coverage:diff` | Compare current branch coverage vs main baseline (advisory; honors `COVERAGE_MAX_PACKAGE_DECREASE` / `COVERAGE_MIN_OVERALL` / `COVERAGE_FAIL_ON_DECREASE`) | Go 1.26 |
+| `mage coverage:pr` | Preview the CI PR coverage gate locally (fail-loud on either: per-package regression > 0.5 pp, or overall < 65%) | Go 1.26 |
+| `mage coverage:report` | Merge raw covdata input directories into a single `cover.out` (used by CI; honors `COVERAGE_REPORT_*` env vars) | Go 1.26 |
 
 Environment variables for optional overrides:
 
@@ -203,28 +204,40 @@ Environment variables for optional overrides:
 | `COVERAGE_BUILD_ID` | `hybrid`, `ci` | Target a specific ADO build ID |
 | `COVERAGE_MODE` | `html` | Set to `full` or `hybrid` (default: `unit`) |
 | `COVERAGE_MIN` | `check` | Override threshold (default: `55`) |
-| `COVERAGE_FLOOR` | `diff`, `pr` | Per-file coverage floor in percent (`pr` defaults to `60`; `diff` is advisory unless set) |
-| `COVERAGE_FAIL_ON_BREACH` | `diff` | Set to `1` / `true` to exit non-zero when any changed file drops below `COVERAGE_FLOOR` (`pr` always fails loud) |
+| `COVERAGE_MAX_PACKAGE_DECREASE` | `diff`, `pr` | Maximum tolerated per-package coverage drop in percentage points (`pr` defaults to `0.5`; PR-touched packages only when changed-files can be resolved). |
+| `COVERAGE_MIN_OVERALL` | `diff`, `pr` | Absolute floor for overall coverage in percent (`pr` defaults to `65`). |
+| `COVERAGE_FAIL_ON_DECREASE` | `diff` | Set to `1` / `true` to exit non-zero when EITHER gate is breached (`pr` always fails loud). |
 | `COVERAGE_BASELINE` | `diff`, `pr` | Path to baseline coverage profile (default: `cover-ci-combined.out` or download from CI) |
 | `COVERAGE_CURRENT` | `diff`, `pr` | Path to current coverage profile (default: `cover-local.out`) |
+| `COVERAGE_REPORT_UNIT_INPUTS` | `report` | Comma-separated list of unit-test covdata input directories. |
+| `COVERAGE_REPORT_INT_INPUTS` | `report` | Comma-separated list of integration-test covdata input directories (optional). |
+| `COVERAGE_REPORT_OUTPUT` | `report` | Output `cover.out` path (textfmt). |
+| `COVERAGE_REPORT_MERGED_DIR` | `report` | Optional intermediate merged covdata directory. Created if absent. |
 
 ## PR Coverage Check (Fail-Loud)
 
-PRs run a per-file coverage gate as part of the `code-coverage-upload.yml`
-Azure DevOps stage. After unit + integration coverage is merged, the pipeline:
+PRs run a **two-gate** coverage check as part of the
+`code-coverage-upload.yml` Azure DevOps stage. After unit + integration
+coverage is merged via `mage coverage:report`, the pipeline:
 
 1. Resolves the list of `.go` files touched by the PR via
-   `git merge-base origin/<target> HEAD` + `git diff --name-only --diff-filter=AMR`.
+   `gh api .../pulls/N/files` (with `git diff` fallback) so per-package
+   results are scoped to the packages this PR touches.
 2. Runs `eng/scripts/Get-CoverageDiff.ps1` against the merged baseline
    (latest successful `main` build) and the PR's `cover.out`.
-3. For every PR-touched `.go` file, fails the build (`exit 2`) if its
-   statement coverage drops below the configured floor (default **60%**).
-4. Surfaces the breach via `##vso[task.logissue type=error]` so the offending
-   paths show up in the PR check summary.
+3. Prints a per-package report (regressions first), the overall delta,
+   and the configured tolerances.
+4. **Fails the build (`exit 2`) when EITHER of the following is true:**
+   - **Per-package decrease**: any single PR-touched package drops by
+     more than `PackageCoverageDecreaseTolerance` pp (default **0.5 pp**).
+   - **Absolute floor**: overall coverage falls below
+     `MinimumOverallCoverage` percent (default **65%**).
+5. Surfaces every breach via `##vso[task.logissue type=error]` so each
+   one shows up in the PR check summary.
 
-There is intentionally **no PR comment**. The diff lives in the build log to
-avoid PR-comment noise; the `##vso[task.logissue]` annotations are sufficient
-for the PR check summary.
+Per-package results outside the PR-touched set are advisory; they appear
+in the report but do not gate the build. There is intentionally **no PR
+comment**; the build log is the source of truth.
 
 ### Reproducing the gate locally
 
@@ -237,45 +250,66 @@ mage coverage:pr
 ```
 
 `mage coverage:pr` runs `git fetch --no-tags --depth=200 origin main` (best-effort),
-resolves changed files via `git merge-base origin/main HEAD`, applies a 60% floor,
-and exits non-zero when a touched file drops below it. The target requires a feature
-branch with `origin/main` reachable — on `main`, in detached-HEAD state, or when git
-resolution fails, it returns an error rather than silently passing (the "preview"
-guarantee depends on running against the same file set CI checks). For an advisory
-run on `main`, use `mage coverage:diff` instead.
+resolves changed files via `git merge-base origin/main HEAD` for the
+per-package report, applies the default 0.5 pp per-package tolerance and
+65% absolute floor, and exits non-zero when either is breached. On `main`,
+in detached-HEAD state, or when git resolution fails, the target returns
+an error rather than silently passing (the "preview" guarantee depends on
+running against the same inputs CI uses). For an advisory run on `main`,
+use `mage coverage:diff` instead.
 
-### Configuring the floor
+### Configuring the tolerance
 
 Override per run:
 
 ```powershell
-$env:COVERAGE_FLOOR = "70"; mage coverage:pr
+$env:COVERAGE_MAX_PACKAGE_DECREASE = "1.0"; mage coverage:pr
 ```
 
 Or use the advisory `coverage:diff` target with explicit opt-in:
 
 ```powershell
-$env:COVERAGE_FLOOR = "60"
-$env:COVERAGE_FAIL_ON_BREACH = "1"
+$env:COVERAGE_MAX_PACKAGE_DECREASE = "0.5"
+$env:COVERAGE_MIN_OVERALL = "65"
+$env:COVERAGE_FAIL_ON_DECREASE = "1"
 mage coverage:diff
 ```
 
 ### Worked example
 
-Suppose `cli/azd/pkg/auth/login.go` is modified by the PR and its statement
-coverage falls from 72% → 48%. The CI step prints:
+Suppose this PR touches `pkg/auth` and drops its coverage from 72.0% → 48.0% (a
+24.0 pp drop, well past the 0.5 pp tolerance). Overall coverage stays at 65.0%
+(at the floor — passes). The CI step prints:
 
 ```
-FAIL  pkg/auth/login.go         48.0%  (was 72.0%)  threshold 60.0%
+============================================================
+Coverage Report
+============================================================
+Baseline: baseline
+Overall: 65.4% -> 65.0% (-0.4%)
+  Tolerance: -0.5 pp per package before failing the gate
+  Floor: overall coverage must stay >= 65.0%
+PR-touched packages (2 packages):
+  pkg/auth                  72.0% ->  48.0%  ( -24.0%)  regress  (1 file touched)
+  pkg/project               81.0% ->  82.0%  (  +1.0%)  improved (2 files touched)
+============================================================
+RESULT: FAIL
+============================================================
+Breached gate(s):
+  - 1 package(s) dropped more than 0.5 pp:
+      pkg/auth: 72.0% -> 48.0% (-24.0 pp)
+============================================================
 ```
 
 …then emits:
 
 ```
-##vso[task.logissue type=error]Coverage floor breach in: pkg/auth/login.go
+##vso[task.logissue type=error]Package pkg/auth dropped 24.0 pp (max allowed: -0.5 pp).
 ```
 
-…and exits 2. The PR check summary shows the error, and the build fails.
+…and exits 2. The PR check summary shows the error, and the build fails. If
+overall coverage had also fallen below 65.0%, a second `##vso[task.logissue]`
+line would name the floor breach (both gates report independently).
 
 ## Troubleshooting
 

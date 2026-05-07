@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"text/template"
 
@@ -111,9 +112,10 @@ func newInitCommand() *cobra.Command {
 	initCmd.Flags().StringSliceVar(
 		&flags.capabilities,
 		"capabilities", []string{},
-		"The list of capabilities for the extension "+
-			"(e.g., custom-commands,lifecycle-events,mcp-server,"+
-			"service-target-provider,framework-service-provider,provisioning-provider,metadata).",
+		fmt.Sprintf(
+			"The list of capabilities for the extension (e.g., %s).",
+			strings.Join(validCapabilityNames(), ","),
+		),
 	)
 
 	initCmd.Flags().StringVar(
@@ -392,18 +394,9 @@ func collectExtensionMetadataFromFlags(flags *initFlags) (*models.ExtensionSchem
 		)
 	}
 
-	// Validate capabilities against the canonical list defined in the
-	// extensions package so this command stays in sync as new capabilities
-	// (e.g. provisioning-provider) are added.
-	validCapabilities := make(map[string]bool, len(extensions.ValidCapabilities))
-	supportedNames := make([]string, 0, len(extensions.ValidCapabilities))
-	for _, cap := range extensions.ValidCapabilities {
-		validCapabilities[string(cap)] = true
-		supportedNames = append(supportedNames, string(cap))
-	}
-
+	supportedNames := validCapabilityNames()
 	for _, cap := range flags.capabilities {
-		if !validCapabilities[cap] {
+		if !slices.Contains(extensions.ValidCapabilities, extensions.CapabilityType(cap)) {
 			return nil, fmt.Errorf(
 				"invalid capability '%s', supported capabilities are: %s",
 				cap,
@@ -526,37 +519,8 @@ func collectExtensionMetadata(ctx context.Context, azdClient *azdext.AzdClient) 
 
 	capabilitiesPrompt, err := azdClient.Prompt().MultiSelect(ctx, &azdext.MultiSelectRequest{
 		Options: &azdext.MultiSelectOptions{
-			Message: "Select capabilities for your extension",
-			Choices: []*azdext.MultiSelectChoice{
-				{
-					Label: "Custom Commands",
-					Value: "custom-commands",
-				},
-				{
-					Label: "Framework Service Provider",
-					Value: "framework-service-provider",
-				},
-				{
-					Label: "Lifecycle Events",
-					Value: "lifecycle-events",
-				},
-				{
-					Label: "Metadata",
-					Value: "metadata",
-				},
-				{
-					Label: "MCP Server",
-					Value: "mcp-server",
-				},
-				{
-					Label: "Service Target Provider",
-					Value: "service-target-provider",
-				},
-				{
-					Label: "Provisioning Provider",
-					Value: "provisioning-provider",
-				},
-			},
+			Message:         "Select capabilities for your extension",
+			Choices:         capabilityPromptChoices(),
 			EnableFiltering: new(false),
 			DisplayNumbers:  new(false),
 			HelpMessage: "Capabilities define the features and functionalities of your extension. " +
@@ -631,6 +595,45 @@ func collectExtensionMetadata(ctx context.Context, azdClient *azdext.AzdClient) 
 		Version:      "0.0.1",
 		Path:         absExtensionPath,
 	}, nil
+}
+
+func validCapabilityNames() []string {
+	names := make([]string, len(extensions.ValidCapabilities))
+	for i, cap := range extensions.ValidCapabilities {
+		names[i] = string(cap)
+	}
+
+	return names
+}
+
+func capabilityPromptChoices() []*azdext.MultiSelectChoice {
+	choices := make([]*azdext.MultiSelectChoice, len(extensions.ValidCapabilities))
+	for i, cap := range extensions.ValidCapabilities {
+		choices[i] = &azdext.MultiSelectChoice{
+			Label: capabilityLabel(cap),
+			Value: string(cap),
+		}
+	}
+
+	return choices
+}
+
+func capabilityLabel(cap extensions.CapabilityType) string {
+	words := strings.Split(string(cap), "-")
+	for i, word := range words {
+		if word == "" {
+			continue
+		}
+
+		switch strings.ToLower(word) {
+		case "mcp":
+			words[i] = "MCP"
+		default:
+			words[i] = strings.ToUpper(word[:1]) + word[1:]
+		}
+	}
+
+	return strings.Join(words, " ")
 }
 
 func createExtensionDirectory(

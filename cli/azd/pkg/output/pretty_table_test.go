@@ -607,7 +607,7 @@ func TestPrettySingleGroupCards(t *testing.T) {
 
 	// No extra group separators (only one "──" line at the top)
 	headerLines := 0
-	for _, line := range strings.Split(output, "\n") {
+	for line := range strings.SplitSeq(output, "\n") {
 		if strings.HasPrefix(line, "── ") {
 			headerLines++
 		}
@@ -663,11 +663,11 @@ func TestPrettyTableANSIAlignment(t *testing.T) {
 	// displayIndex returns the display-column position of substr within s,
 	// where s has already been stripped of ANSI codes.
 	displayIndex := func(s, substr string) int {
-		byteIdx := strings.Index(s, substr)
-		if byteIdx < 0 {
+		before, _, ok := strings.Cut(s, substr)
+		if !ok {
 			return -1
 		}
-		return displayWidth(s[:byteIdx])
+		return displayWidth(before)
 	}
 
 	row1Stripped := strip(lines[2])

@@ -231,10 +231,7 @@ func (f *PrettyTableFormatter) renderPaddedTable(
 		}
 		heading := pc.col.Heading
 		hdw := displayWidth(heading)
-		padNeeded := colWidths[ci] - hdw
-		if padNeeded < 0 {
-			padNeeded = 0
-		}
+		padNeeded := max(colWidths[ci]-hdw, 0)
 		buf.WriteString(boldHeader.Sprint(heading))
 		if ci < len(cols)-1 {
 			buf.WriteString(strings.Repeat(" ", padNeeded))
@@ -243,10 +240,7 @@ func (f *PrettyTableFormatter) renderPaddedTable(
 	buf.WriteByte('\n')
 
 	// Header underline
-	lineWidth := sumWidths(colWidths) + max(0, len(cols)-1)*columnPadding
-	if lineWidth > termWidth {
-		lineWidth = termWidth
-	}
+	lineWidth := min(sumWidths(colWidths)+max(0, len(cols)-1)*columnPadding, termWidth)
 	buf.WriteString(strings.Repeat("─", lineWidth))
 	buf.WriteByte('\n')
 
@@ -264,10 +258,7 @@ func (f *PrettyTableFormatter) renderPaddedTable(
 			}
 
 			// Pad based on display width, not byte length
-			padNeeded := colWidths[ci] - displayWidth(val)
-			if padNeeded < 0 {
-				padNeeded = 0
-			}
+			padNeeded := max(colWidths[ci]-displayWidth(val), 0)
 			buf.WriteString(colored)
 			// Don't pad the last column
 			if ci < len(cols)-1 {
@@ -369,10 +360,7 @@ func (f *PrettyTableFormatter) formatGroupedCards(
 			// and may contain color codes if the column has a ColorFunc.
 			strippedGroup := ansiRegex.ReplaceAllString(group, "")
 			headerText := "── " + strippedGroup + " "
-			remaining := termWidth - displayWidth(headerText)
-			if remaining < 1 {
-				remaining = 1
-			}
+			remaining := max(termWidth-displayWidth(headerText), 1)
 			buf.WriteString(headerText)
 			buf.WriteString(strings.Repeat("─", remaining))
 			buf.WriteByte('\n')
@@ -414,10 +402,7 @@ func (f *PrettyTableFormatter) formatGroupedCards(
 			titleHeading := parsed[0].col.Heading
 			titleVal := rd.values[titleHeading]
 
-			borderWidth := termWidth - 2
-			if borderWidth < 20 {
-				borderWidth = 20
-			}
+			borderWidth := max(termWidth-2, 20)
 			if borderWidth > 76 {
 				borderWidth = 76
 			}

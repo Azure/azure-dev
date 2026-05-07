@@ -68,7 +68,7 @@ type InstallStrategy struct {
 
 // ToolDefinition is the complete metadata for a single tool in the registry.
 type ToolDefinition struct {
-	// Id is the unique identifier for the tool (e.g. "az").
+	// Id is the unique, kebab-case identifier for the tool (e.g. "az-cli").
 	Id string
 	// Name is the human-readable display name.
 	Name string
@@ -141,7 +141,7 @@ var builtInTools = []*ToolDefinition{
 
 func azCLI() *ToolDefinition {
 	return &ToolDefinition{
-		Id:            "az",
+		Id:            "az-cli",
 		Name:          "Azure CLI",
 		Description:   "The Azure command-line interface for managing Azure resources.",
 		Category:      ToolCategoryCLI,
@@ -169,12 +169,12 @@ func azCLI() *ToolDefinition {
 
 func githubCopilotCLI() *ToolDefinition {
 	return &ToolDefinition{
-		Id:            "copilot",
+		Id:            "github-copilot-cli",
 		Name:          "GitHub Copilot CLI",
 		Description:   "AI-powered CLI assistant from GitHub Copilot.",
 		Category:      ToolCategoryCLI,
 		Priority:      ToolPriorityRecommended,
-		Website:       "https://docs.github.com/copilot/github-copilot-in-the-cli",
+		Website:       "https://docs.github.com/copilot/how-tos/set-up/install-copilot-cli",
 		DetectCommand: "copilot",
 		VersionArgs:   []string{"--version"},
 		VersionRegex:  `(\d+\.\d+\.\d+)`,
@@ -198,7 +198,7 @@ func githubCopilotCLI() *ToolDefinition {
 
 func vscodeAzureTools() *ToolDefinition {
 	return &ToolDefinition{
-		Id:   "ms-azuretools.vscode-azureresourcegroups",
+		Id:   "vscode-azure-tools",
 		Name: "Azure Tools VS Code Extension",
 		Description: "VS Code extension for browsing and managing " +
 			"Azure resources.",
@@ -217,7 +217,7 @@ func vscodeAzureTools() *ToolDefinition {
 
 func vscodeBicep() *ToolDefinition {
 	return &ToolDefinition{
-		Id:            "ms-azuretools.vscode-bicep",
+		Id:            "vscode-bicep",
 		Name:          "Bicep VS Code Extension",
 		Description:   "VS Code extension providing language support for Azure Bicep.",
 		Category:      ToolCategoryExtension,
@@ -235,25 +235,26 @@ func vscodeBicep() *ToolDefinition {
 
 func vscodeGitHubCopilot() *ToolDefinition {
 	return &ToolDefinition{
-		Id:            "GitHub.copilot",
-		Name:          "GitHub Copilot VS Code Extension",
-		Description:   "VS Code extension for AI-powered code completions.",
+		Id:            "GitHub.copilot-chat",
+		Name:          "GitHub Copilot Chat VS Code Extension",
+		Description:   "VS Code extension for AI-powered code completions, chat, and agent mode.",
 		Category:      ToolCategoryExtension,
 		Priority:      ToolPriorityOptional,
-		Website:       "https://marketplace.visualstudio.com/items?itemName=GitHub.copilot",
+		Website:       "https://marketplace.visualstudio.com/items?itemName=GitHub.copilot-chat",
 		DetectCommand: "code",
 		VersionArgs:   []string{"--list-extensions", "--show-versions"},
-		VersionRegex:  `(?i)github\.copilot(?:-chat)?@(\d+\.\d+\.\d+)`,
+		VersionRegex:  `(?i)github\.copilot-chat@(\d+\.\d+\.\d+)`,
 		InstallStrategies: allPlatforms(InstallStrategy{
 			PackageManager: "code",
-			PackageId:      "GitHub.copilot",
+			PackageId:      "GitHub.copilot-chat",
+			FallbackUrl:    "https://marketplace.visualstudio.com/items?itemName=GitHub.copilot-chat",
 		}),
 	}
 }
 
 func azureMCPServer() *ToolDefinition {
 	return &ToolDefinition{
-		Id:            "@azure/mcp",
+		Id:            "azure-mcp-server",
 		Name:          "Azure MCP Server",
 		Description:   "Model Context Protocol server for Azure resource interaction.",
 		Category:      ToolCategoryServer,
@@ -272,7 +273,7 @@ func azureMCPServer() *ToolDefinition {
 
 func azdAIExtensions() *ToolDefinition {
 	return &ToolDefinition{
-		Id:            "azure.ai.agents",
+		Id:            "azd-ai-extensions",
 		Name:          "azd AI Extensions",
 		Description:   "Azure Developer CLI extensions for AI agent workflows.",
 		Category:      ToolCategoryLibrary,
@@ -283,7 +284,7 @@ func azdAIExtensions() *ToolDefinition {
 		InstallStrategies: allPlatforms(InstallStrategy{
 			InstallCommand: "azd extension install azure.ai.agents",
 		}),
-		Dependencies: []string{"az"},
+		Dependencies: []string{"az-cli"},
 	}
 }
 

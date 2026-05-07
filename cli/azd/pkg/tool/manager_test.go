@@ -101,10 +101,10 @@ func TestManager_FindTool(t *testing.T) {
 			&mockDetector{}, &mockInstaller{}, nil,
 		)
 
-		tool, err := mgr.FindTool("az")
+		tool, err := mgr.FindTool("az-cli")
 		require.NoError(t, err)
 		require.NotNil(t, tool)
-		assert.Equal(t, "az", tool.Id)
+		assert.Equal(t, "az-cli", tool.Id)
 	})
 
 	t.Run("NotFound", func(t *testing.T) {
@@ -171,7 +171,7 @@ func TestManager_DetectTool(t *testing.T) {
 		}
 
 		mgr := NewManager(det, &mockInstaller{}, nil)
-		status, err := mgr.DetectTool(t.Context(), "az")
+		status, err := mgr.DetectTool(t.Context(), "az-cli")
 
 		require.NoError(t, err)
 		require.NotNil(t, status)
@@ -232,13 +232,13 @@ func TestManager_InstallTools(t *testing.T) {
 		mgr := NewManager(det, inst, nil)
 		results, err := mgr.InstallTools(
 			t.Context(),
-			[]string{"az"},
+			[]string{"az-cli"},
 		)
 
 		require.NoError(t, err)
 		require.Len(t, results, 1)
 		assert.True(t, results[0].Success)
-		assert.Contains(t, installedIDs, "az")
+		assert.Contains(t, installedIDs, "az-cli")
 	})
 
 	t.Run("UnknownIDReturnsError", func(t *testing.T) {
@@ -279,9 +279,9 @@ func TestManager_InstallTools(t *testing.T) {
 				_ context.Context,
 				tool *ToolDefinition,
 			) (*ToolStatus, error) {
-				// az is NOT installed yet, triggering
+				// az-cli is NOT installed yet, triggering
 				// dependency resolution.
-				if tool.Id == "az" {
+				if tool.Id == "az-cli" {
 					return &ToolStatus{
 						Tool:      tool,
 						Installed: false,
@@ -296,19 +296,19 @@ func TestManager_InstallTools(t *testing.T) {
 
 		mgr := NewManager(det, inst, nil)
 
-		// azure.ai.agents depends on az.
+		// azd-ai-extensions depends on az-cli.
 		results, err := mgr.InstallTools(
 			t.Context(),
-			[]string{"azure.ai.agents"},
+			[]string{"azd-ai-extensions"},
 		)
 
 		require.NoError(t, err)
 		require.Len(t, results, 2,
 			"should install dep + requested tool")
 
-		// az should be first (dependency).
-		assert.Equal(t, "az", installedIDs[0])
-		assert.Equal(t, "azure.ai.agents", installedIDs[1])
+		// az-cli should be first (dependency).
+		assert.Equal(t, "az-cli", installedIDs[0])
+		assert.Equal(t, "azd-ai-extensions", installedIDs[1])
 	})
 
 	t.Run("SkipsDependencyAlreadyInstalled", func(t *testing.T) {
@@ -344,13 +344,13 @@ func TestManager_InstallTools(t *testing.T) {
 		mgr := NewManager(det, inst, nil)
 		results, err := mgr.InstallTools(
 			t.Context(),
-			[]string{"azure.ai.agents"},
+			[]string{"azd-ai-extensions"},
 		)
 
 		require.NoError(t, err)
 		// Only 1 result: the requested tool (dep skipped).
 		require.Len(t, results, 1)
-		assert.Equal(t, "azure.ai.agents", results[0].Tool.Id)
+		assert.Equal(t, "azd-ai-extensions", results[0].Tool.Id)
 	})
 
 	t.Run("FailedDependencySkipsDependent", func(t *testing.T) {
@@ -361,7 +361,7 @@ func TestManager_InstallTools(t *testing.T) {
 				_ context.Context,
 				tool *ToolDefinition,
 			) (*InstallResult, error) {
-				if tool.Id == "az" {
+				if tool.Id == "az-cli" {
 					return &InstallResult{
 						Tool:    tool,
 						Success: false,
@@ -380,8 +380,8 @@ func TestManager_InstallTools(t *testing.T) {
 				_ context.Context,
 				tool *ToolDefinition,
 			) (*ToolStatus, error) {
-				// az not installed => triggers dep install.
-				if tool.Id == "az" {
+				// az-cli not installed => triggers dep install.
+				if tool.Id == "az-cli" {
 					return &ToolStatus{
 						Tool:      tool,
 						Installed: false,
@@ -397,7 +397,7 @@ func TestManager_InstallTools(t *testing.T) {
 		mgr := NewManager(det, inst, nil)
 		results, err := mgr.InstallTools(
 			t.Context(),
-			[]string{"azure.ai.agents"},
+			[]string{"azd-ai-extensions"},
 		)
 
 		require.NoError(t, err)
@@ -441,13 +441,13 @@ func TestManager_UpgradeTools(t *testing.T) {
 
 		results, err := mgr.UpgradeTools(
 			t.Context(),
-			[]string{"az", "copilot"},
+			[]string{"az-cli", "github-copilot-cli"},
 		)
 
 		require.NoError(t, err)
 		require.Len(t, results, 2)
-		assert.Contains(t, upgradedIDs, "az")
-		assert.Contains(t, upgradedIDs, "copilot")
+		assert.Contains(t, upgradedIDs, "az-cli")
+		assert.Contains(t, upgradedIDs, "github-copilot-cli")
 	})
 
 	t.Run("UnknownIDReturnsError", func(t *testing.T) {

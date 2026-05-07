@@ -301,7 +301,7 @@ func TestSelectStrategy(t *testing.T) {
 	t.Run("WorksWithBuiltInToolDefinitions", func(t *testing.T) {
 		t.Parallel()
 
-		azTool := FindTool("az")
+		azTool := FindTool("az-cli")
 		require.NotNil(t, azTool)
 
 		platform := &Platform{

@@ -24,13 +24,13 @@ func TestBuiltInTools(t *testing.T) {
 		t.Parallel()
 
 		expectedIDs := []string{
-			"az",
-			"copilot",
-			"ms-azuretools.vscode-azureresourcegroups",
-			"ms-azuretools.vscode-bicep",
-			"GitHub.copilot",
-			"@azure/mcp",
-			"azure.ai.agents",
+			"az-cli",
+			"github-copilot-cli",
+			"vscode-azure-tools",
+			"vscode-bicep",
+			"GitHub.copilot-chat",
+			"azure-mcp-server",
+			"azd-ai-extensions",
 		}
 
 		tools := BuiltInTools()
@@ -146,28 +146,28 @@ func TestFindTool(t *testing.T) {
 	}{
 		{
 			name:     "FindsAzCLI",
-			id:       "az",
-			expectId: "az",
+			id:       "az-cli",
+			expectId: "az-cli",
 		},
 		{
 			name:     "FindsGitHubCopilotCLI",
-			id:       "copilot",
-			expectId: "copilot",
+			id:       "github-copilot-cli",
+			expectId: "github-copilot-cli",
 		},
 		{
 			name:     "FindsVSCodeExtension",
-			id:       "ms-azuretools.vscode-azureresourcegroups",
-			expectId: "ms-azuretools.vscode-azureresourcegroups",
+			id:       "vscode-azure-tools",
+			expectId: "vscode-azure-tools",
 		},
 		{
 			name:     "FindsMCPServer",
-			id:       "@azure/mcp",
-			expectId: "@azure/mcp",
+			id:       "azure-mcp-server",
+			expectId: "azure-mcp-server",
 		},
 		{
 			name:     "FindsAzdAIExtensions",
-			id:       "azure.ai.agents",
-			expectId: "azure.ai.agents",
+			id:       "azd-ai-extensions",
+			expectId: "azd-ai-extensions",
 		},
 		{
 			name:      "ReturnsNilForUnknownID",
@@ -209,13 +209,13 @@ func TestFindToolsByCategory(t *testing.T) {
 			assert.Equal(t, ToolCategoryCLI, tool.Category)
 		}
 
-		// Known CLI tools: az, copilot
+		// Known CLI tools: az-cli, github-copilot-cli
 		ids := make([]string, len(tools))
 		for i, tool := range tools {
 			ids[i] = tool.Id
 		}
-		assert.Contains(t, ids, "az")
-		assert.Contains(t, ids, "copilot")
+		assert.Contains(t, ids, "az-cli")
+		assert.Contains(t, ids, "github-copilot-cli")
 	})
 
 	t.Run("ReturnsExtensionTools", func(t *testing.T) {
@@ -279,7 +279,7 @@ func TestSpecificToolDefinitions(t *testing.T) {
 	t.Run("AzCLIHasCorrectFields", func(t *testing.T) {
 		t.Parallel()
 
-		tool := FindTool("az")
+		tool := FindTool("az-cli")
 		require.NotNil(t, tool)
 
 		assert.Equal(t, "Azure CLI", tool.Name)
@@ -301,10 +301,10 @@ func TestSpecificToolDefinitions(t *testing.T) {
 	t.Run("AzdAIExtensionsHasDependency", func(t *testing.T) {
 		t.Parallel()
 
-		tool := FindTool("azure.ai.agents")
+		tool := FindTool("azd-ai-extensions")
 		require.NotNil(t, tool)
 
-		assert.Contains(t, tool.Dependencies, "az")
+		assert.Contains(t, tool.Dependencies, "az-cli")
 	})
 
 	t.Run("VSCodeExtensionsUseCodeDetectCommand", func(t *testing.T) {

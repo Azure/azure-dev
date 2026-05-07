@@ -1,0 +1,9 @@
+template:
+  kind: hosted
+  name: hosted-test-agent
+  description: A hosted container agent for testing
+  protocols:
+    - protocol: responses
+      version: "1.0.0"
+    - protocol: invocations
+      version: "1.0.0"

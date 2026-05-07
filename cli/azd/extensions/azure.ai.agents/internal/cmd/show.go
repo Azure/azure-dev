@@ -212,12 +212,12 @@ func (a *ShowAction) resolveEndpointURLs(ctx context.Context) map[string]string 
 		endpoints[ps.Label] = v.Value
 	}
 
-	// Fall back to legacy single-endpoint var for older deployments
+	// Fall back to single-endpoint var for older deployments
 	if len(endpoints) == 0 {
-		legacyKey := fmt.Sprintf("AGENT_%s_ENDPOINT", a.serviceKey)
+		singleEndpointKey := fmt.Sprintf("AGENT_%s_ENDPOINT", a.serviceKey)
 		v, err := a.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 			EnvName: a.envName,
-			Key:     legacyKey,
+			Key:     singleEndpointKey,
 		})
 		if err == nil && v.Value != "" {
 			endpoints["Agent"] = v.Value

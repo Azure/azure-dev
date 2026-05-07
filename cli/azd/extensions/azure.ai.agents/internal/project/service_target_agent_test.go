@@ -240,9 +240,9 @@ func TestRegisterAgentEnvironmentVariables(t *testing.T) {
 		envStub.values["AGENT_MY_SVC_INVOCATIONS_ENDPOINT"],
 		"/agents/my-agent/endpoint/protocols/invocations")
 
-	// Legacy env var cleared
+	// Base agent endpoint for session management
 	require.Contains(t, envStub.values, "AGENT_MY_SVC_ENDPOINT")
-	require.Empty(t, envStub.values["AGENT_MY_SVC_ENDPOINT"])
+	require.Equal(t, "https://proj.azure.com/agents/my-agent", envStub.values["AGENT_MY_SVC_ENDPOINT"])
 }
 
 func TestProtocolPath(t *testing.T) {

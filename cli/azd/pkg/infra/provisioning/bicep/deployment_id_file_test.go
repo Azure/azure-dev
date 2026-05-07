@@ -179,6 +179,34 @@ func TestWriteDeploymentIdFile(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, info.IsDir(), "the directory must not be replaced")
 	})
+
+	t.Run("TruncationFailure_BlocksSubsequentAppends", func(t *testing.T) {
+		// Regression test: if the first call's truncation fails, a second call must
+		// NOT silently append to a file that still holds stale content from a prior
+		// run. The persisted truncation error must block every subsequent caller.
+		resetDeploymentIdFileTruncation()
+		path := filepath.Join(t.TempDir(), "deployment-id.json")
+		require.NoError(t, os.WriteFile(path, []byte("stale\n"), 0o600))
+		t.Setenv(deploymentIdFileEnvVar, path)
+
+		// Simulate a truncation failure (e.g. permission denied) being observed by
+		// the first writer in this process. The flag/error are package-scoped so we
+		// can seed them directly without relying on platform-specific FS behavior.
+		deploymentIdFileMu.Lock()
+		deploymentIdFileTruncateAttempted = true
+		deploymentIdFileTruncateErr = os.ErrPermission
+		deploymentIdFileMu.Unlock()
+
+		writeDeploymentIdFile(subDeployment, "main")
+		writeDeploymentIdFile(rgDeployment, "storage")
+
+		// The original stale content must still be present and untouched — no new
+		// NDJSON lines should have been appended.
+		got, err := os.ReadFile(path)
+		require.NoError(t, err)
+		require.Equal(t, "stale\n", string(got),
+			"writes must be blocked when truncation has previously failed")
+	})
 }
 
 func TestDeploymentResourceID(t *testing.T) {

@@ -31,19 +31,32 @@ const deploymentIdFileEnvVar = "AZD_DEPLOYMENT_ID_FILE"
 
 // deploymentIdFileMu serializes writes from sibling provisioning layers that may run
 // concurrently and target the same path. This ensures each NDJSON line is written
-// atomically without interleaving with other layers' writes.
+// atomically without interleaving with other layers' writes. It also guards the
+// truncation-state fields below.
 var deploymentIdFileMu sync.Mutex
 
-// deploymentIdFileTruncated tracks whether the file has been truncated in this
-// process invocation. The first write truncates the file; subsequent writes append.
-var deploymentIdFileTruncated sync.Once
+// deploymentIdFileTruncateAttempted is true once the truncation step has been run
+// in this process invocation (regardless of whether it succeeded). The first write
+// attempts truncation; subsequent writes do not.
+//
+// Both this flag and deploymentIdFileTruncateErr MUST only be read or written while
+// holding deploymentIdFileMu so concurrent layers observe a consistent state.
+var deploymentIdFileTruncateAttempted bool
+
+// deploymentIdFileTruncateErr persists the result of the truncation attempt so that
+// every subsequent caller sees the same outcome. If the first attempt failed we must
+// not silently append to a file that was never truncated (which would mix stale
+// content from a previous run with current-run lines).
+var deploymentIdFileTruncateErr error
 
 // resetDeploymentIdFileTruncation resets the truncation state so subsequent calls
-// to writeDeploymentIdFile will truncate the file again. This is only used by tests
-// (called sequentially between subtests) to ensure each test case starts fresh.
-// It must NOT be called concurrently with writeDeploymentIdFile.
+// to writeDeploymentIdFile will truncate the file again. Used by tests to ensure
+// each subtest starts fresh.
 func resetDeploymentIdFileTruncation() {
-	deploymentIdFileTruncated = sync.Once{}
+	deploymentIdFileMu.Lock()
+	defer deploymentIdFileMu.Unlock()
+	deploymentIdFileTruncateAttempted = false
+	deploymentIdFileTruncateErr = nil
 }
 
 // deploymentIdLine is a single NDJSON line written to the file identified by
@@ -119,19 +132,23 @@ func writeDeploymentIdFile(deployment infra.Deployment, layer string) {
 	defer deploymentIdFileMu.Unlock()
 
 	// Truncate on first write in this process so the file only contains deployments
-	// from the current provisioning run.
-	var truncateErr error
-	deploymentIdFileTruncated.Do(func() {
+	// from the current provisioning run. We persist both the attempted flag and the
+	// error so that if truncation fails on the first call, every subsequent caller
+	// observes the failure and bails out — preventing appends to a file that still
+	// holds stale content from a previous run.
+	if !deploymentIdFileTruncateAttempted {
+		deploymentIdFileTruncateAttempted = true
 		// The path comes from an environment variable that the operator explicitly sets to opt
 		// in to this feature, so trusting the value is by design (G304).
-		truncateErr = os.Truncate(path, 0) //nolint:gosec // G304: operator-provided env var
-		if os.IsNotExist(truncateErr) {
+		err := os.Truncate(path, 0) //nolint:gosec // G304: operator-provided env var
+		if err != nil && !os.IsNotExist(err) {
 			// File doesn't exist yet — that's fine, we'll create it on append.
-			truncateErr = nil
+			deploymentIdFileTruncateErr = err
 		}
-	})
-	if truncateErr != nil {
-		log.Printf("failed to truncate %s=%q: %v", deploymentIdFileEnvVar, path, truncateErr) //nolint:gosec
+	}
+	if deploymentIdFileTruncateErr != nil {
+		log.Printf("failed to truncate %s=%q: %v",
+			deploymentIdFileEnvVar, path, deploymentIdFileTruncateErr) //nolint:gosec
 		return
 	}
 

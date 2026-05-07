@@ -124,12 +124,26 @@ func DownloadArtifacts(
 // Parent directories are created as needed.
 func downloadOne(ctx context.Context, contentURI, destDir, relPath string) (int64, error) {
 	outPath := filepath.Join(destDir, filepath.FromSlash(relPath))
+	// Defense-in-depth: relPath comes from the API response. Reject any path
+	// that resolves outside destDir (e.g., "../../etc/foo" or an absolute path
+	// on Windows like "C:\foo") to prevent path-traversal / Zip-Slip writes.
+	absDest, err := filepath.Abs(destDir)
+	if err != nil {
+		return 0, fmt.Errorf("resolve dest dir: %w", err)
+	}
+	absOut, err := filepath.Abs(outPath)
+	if err != nil {
+		return 0, fmt.Errorf("resolve artifact path: %w", err)
+	}
+	if absOut != absDest && !strings.HasPrefix(absOut, absDest+string(filepath.Separator)) {
+		return 0, fmt.Errorf("artifact path %q escapes destination directory", relPath)
+	}
 	if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
 		return 0, fmt.Errorf("create dir: %w", err)
 	}
 
 	var written int64
-	err := WithRetry(ctx, func() (int, error) {
+	err = WithRetry(ctx, func() (int, error) {
 		written = 0
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, contentURI, nil)
 		if err != nil {

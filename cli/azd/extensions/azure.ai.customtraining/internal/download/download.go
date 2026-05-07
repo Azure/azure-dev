@@ -145,13 +145,28 @@ func downloadOne(ctx context.Context, contentURI, destDir, relPath string) (int6
 			return resp.StatusCode, fmt.Errorf("download %s: HTTP %d: %s",
 				relPath, resp.StatusCode, strings.TrimSpace(string(body)))
 		}
-		f, err := os.Create(outPath)
+		// Write to a sibling .tmp file and atomically rename on success so a
+		// partial/interrupted download (network drop, ctx canceled, disk full)
+		// never leaves a truncated file at outPath that callers might mistake
+		// for a successful download. os.Rename is atomic on the same filesystem
+		// across Linux, macOS, and Windows; tmp + final live in the same dir.
+		tmpPath := outPath + ".tmp"
+		f, err := os.Create(tmpPath)
 		if err != nil {
 			return 0, err
 		}
-		defer f.Close()
-		n, err := io.Copy(f, resp.Body)
-		if err != nil {
+		n, copyErr := io.Copy(f, resp.Body)
+		closeErr := f.Close()
+		if copyErr != nil {
+			os.Remove(tmpPath)
+			return 0, copyErr
+		}
+		if closeErr != nil {
+			os.Remove(tmpPath)
+			return 0, closeErr
+		}
+		if err := os.Rename(tmpPath, outPath); err != nil {
+			os.Remove(tmpPath)
 			return 0, err
 		}
 		written = n

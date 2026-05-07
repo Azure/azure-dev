@@ -148,6 +148,10 @@ overrides:
     words:
       - compatResult
       - compatCopy
+      - Incompat
+  - filename: pkg/output/pretty_table.go
+    words:
+      - runewidth
   - filename: pkg/azdext/config_helper.go
     words:
       - myext

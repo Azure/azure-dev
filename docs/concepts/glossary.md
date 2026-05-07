@@ -62,7 +62,7 @@ A JSON manifest that lists available extensions, their versions, capabilities, a
 
 ### Extension Capabilities
 
-The set of features an extension provides. Valid capabilities are: `custom-commands`, `lifecycle-events`, `mcp-server`, `service-target-provider`, `framework-service-provider`, and `metadata`. See [Extension Framework](../architecture/extension-framework.md) for details.
+The set of features an extension provides. Valid capabilities are: `custom-commands`, `lifecycle-events`, `mcp-server`, `service-target-provider`, `framework-service-provider`, `provisioning-provider`, and `metadata`. See [Extension Framework](../architecture/extension-framework.md) for details.
 
 ## Architecture
 

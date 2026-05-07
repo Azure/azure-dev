@@ -665,7 +665,6 @@ func createExtensionDirectory(
 			Namespace: internal.ToPascalCase(extensionMetadata.Id),
 			ExeName:   extensionMetadata.SafeDashId(),
 		},
-		SdkVersion: azdext.Version,
 	}
 
 	templatePath := path.Join("languages", extensionMetadata.Language)
@@ -747,9 +746,8 @@ func copyAndProcessTemplates(srcFS fs.FS, srcDir, destDir string, data any) erro
 }
 
 type ExtensionTemplate struct {
-	Metadata   *models.ExtensionSchema
-	DotNet     *DotNetTemplate
-	SdkVersion string
+	Metadata *models.ExtensionSchema
+	DotNet   *DotNetTemplate
 }
 
 type DotNetTemplate struct {

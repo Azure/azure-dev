@@ -9,12 +9,7 @@ import (
 )
 
 func NewRootCommand() *cobra.Command {
-	// Build the root command using the SDK helper. This registers azd's
-	// standard persistent flags (--debug, --no-prompt, -C/--cwd,
-	// -e/--environment, -o/--output) and avoids name collisions with azd's
-	// reserved global flags. Read shared values from extCtx in subcommands
-	// rather than declaring them again on each subcommand.
-	rootCmd, _ := azdext.NewExtensionRootCommand(azdext.ExtensionCommandOptions{
+	rootCmd, extCtx := azdext.NewExtensionRootCommand(azdext.ExtensionCommandOptions{
 		Name:  "{{.Metadata.Namespace}}",
 		Use:   "azd {{.Metadata.Namespace}} <command> [options]",
 		Short: "{{.Metadata.Description}}",
@@ -31,8 +26,8 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newListenCommand())
 	rootCmd.AddCommand(newContextCommand())
 	rootCmd.AddCommand(newPromptCommand())
-	rootCmd.AddCommand(newVersionCommand())
-	rootCmd.AddCommand(newMetadataCommand())
+	rootCmd.AddCommand(newVersionCommand(&extCtx.OutputFormat))
+	rootCmd.AddCommand(newMetadataCommand(rootCmd))
 
 	return rootCmd
 }

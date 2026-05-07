@@ -60,6 +60,7 @@ words:
   - protoreflect
   - SNAPPROCESS
   - structpb
+  - subtest
   - subtests
   - syncmap
   - syscall

@@ -31,20 +31,25 @@ const initialBackoff = 500 * time.Millisecond
 var retryHTTPClient = &http.Client{Timeout: 5 * time.Minute}
 
 // IsRetryable reports whether an error or response status warrants another attempt.
+// Only transient failures retry: transport errors (DNS/connection/timeout),
+// HTTP 429, and 5xx. Auth failures, 4xx, and context cancellation/deadline
+// are non-retryable so we don't waste time or ignore user cancel.
 func IsRetryable(err error, statusCode int) bool {
-	if err != nil {
-		// Transport errors (network, timeout, DNS) are retryable
-		var urlErr *url.Error
-		if errors.As(err, &urlErr) {
-			return true
-		}
-		return true
+	// Never retry on context cancellation/deadline.
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
 	}
+	// Retry transient HTTP statuses.
 	if statusCode == http.StatusTooManyRequests {
 		return true
 	}
 	if statusCode >= 500 && statusCode <= 599 {
 		return true
+	}
+	// Retry transport-layer errors (surfaced as *url.Error by net/http).
+	if err != nil {
+		var urlErr *url.Error
+		return errors.As(err, &urlErr)
 	}
 	return false
 }

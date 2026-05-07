@@ -2,8 +2,8 @@
 
 ## 0.1.31-preview (2026-05-07)
 
-- [[#8096]](https://github.com/Azure/azure-dev/pull/8096) Fix session persistence by storing last-used session and conversation IDs per project root in user config, restoring shared-session behavior within each project while isolating state across different projects.
-- [[#8038]](https://github.com/Azure/azure-dev/pull/8038) Fix MCP tool field mapping to correctly include `url` and `require_approval` values from tool definitions.
+- [[#8096]](https://github.com/Azure/azure-dev/pull/8096) Fix for bug introduced with #8034. Properly storing root agent endpoint since sessions are independent of protocol.
+- [[#8038]](https://github.com/Azure/azure-dev/pull/8038) Fix MCP tool field mapping to correctly include `url` values from tool definitions. Fixes mapping for toolbox tools to connections.
 
 ## 0.1.30-preview (2026-05-06)
 

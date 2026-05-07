@@ -4,8 +4,8 @@
 package cmd
 
 import (
-	"azureaiagent/internal/exterrors"
-	"azureaiagent/internal/pkg/azure"
+	"azureaiagent/internal/agents/exterrors"
+	"azureaiagent/internal/agents/pkg/azure"
 	"context"
 	"fmt"
 	"regexp"

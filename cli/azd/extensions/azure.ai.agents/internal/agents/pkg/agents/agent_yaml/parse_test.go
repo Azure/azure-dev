@@ -11,7 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"go.yaml.in/yaml/v3"
 
-	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/agents/exterrors"
 )
 
 // TestExtractAgentDefinition_WithTemplateField tests parsing YAML with a template field (manifest format)

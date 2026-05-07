@@ -4,7 +4,7 @@
 package azure
 
 import (
-	"azureaiagent/internal/version"
+	"azureaiagent/internal/agents/version"
 	"context"
 	"encoding/json"
 	"fmt"

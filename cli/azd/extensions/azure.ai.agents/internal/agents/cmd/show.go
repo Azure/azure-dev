@@ -13,8 +13,8 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"azureaiagent/internal/pkg/agents/agent_api"
-	projectpkg "azureaiagent/internal/project"
+	"azureaiagent/internal/agents/pkg/agents/agent_api"
+	projectpkg "azureaiagent/internal/agents/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"

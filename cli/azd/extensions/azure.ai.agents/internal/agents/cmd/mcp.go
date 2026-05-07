@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"os"
 
-	"azureaiagent/internal/tools"
+	"azureaiagent/internal/agents/tools"
 
 	"github.com/fatih/color"
 	"github.com/mark3labs/mcp-go/server"

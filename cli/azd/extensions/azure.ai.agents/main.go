@@ -4,7 +4,7 @@
 package main
 
 import (
-	"azureaiagent/internal/cmd"
+	"azureaiagent/internal/agents/cmd"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/agents/pkg/agents/agent_api"
 )
 
 func TestParseAgentEndpoint(t *testing.T) {

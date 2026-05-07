@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"os"
 
-	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/agents/exterrors"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"

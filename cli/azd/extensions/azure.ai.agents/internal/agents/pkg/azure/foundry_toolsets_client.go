@@ -19,7 +19,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/streaming"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 
-	"azureaiagent/internal/version"
+	"azureaiagent/internal/agents/version"
 )
 
 const (

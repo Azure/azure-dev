@@ -4,7 +4,7 @@
 package cmd
 
 import (
-	"azureaiagent/internal/project"
+	"azureaiagent/internal/agents/project"
 	"context"
 	"errors"
 	"testing"

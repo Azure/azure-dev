@@ -17,7 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
 
-	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/agents/exterrors"
 )
 
 func TestFetchHostedAgentRegionsFromURL_Success(t *testing.T) {

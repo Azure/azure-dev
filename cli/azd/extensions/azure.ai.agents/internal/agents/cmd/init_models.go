@@ -9,9 +9,9 @@ import (
 	"slices"
 	"strings"
 
-	"azureaiagent/internal/exterrors"
-	"azureaiagent/internal/pkg/agents/agent_yaml"
-	"azureaiagent/internal/project"
+	"azureaiagent/internal/agents/exterrors"
+	"azureaiagent/internal/agents/pkg/agents/agent_yaml"
+	"azureaiagent/internal/agents/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"

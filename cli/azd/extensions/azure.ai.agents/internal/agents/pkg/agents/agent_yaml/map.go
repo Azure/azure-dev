@@ -9,7 +9,7 @@ import (
 	"math"
 	"strings"
 
-	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/agents/pkg/agents/agent_api"
 
 	"go.yaml.in/yaml/v3"
 )

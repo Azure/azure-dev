@@ -4,7 +4,7 @@
 package cmd
 
 import (
-	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/agents/pkg/agents/agent_yaml"
 	"context"
 	"os"
 	"path/filepath"

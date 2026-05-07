@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 	"text/tabwriter"
 
-	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/agents/pkg/agents/agent_api"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"

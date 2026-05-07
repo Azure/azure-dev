@@ -11,10 +11,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"azureaiagent/internal/exterrors"
-	"azureaiagent/internal/pkg/agents/agent_api"
-	"azureaiagent/internal/pkg/agents/agent_yaml"
-	"azureaiagent/internal/pkg/azure"
+	"azureaiagent/internal/agents/exterrors"
+	"azureaiagent/internal/agents/pkg/agents/agent_api"
+	"azureaiagent/internal/agents/pkg/agents/agent_yaml"
+	"azureaiagent/internal/agents/pkg/azure"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"

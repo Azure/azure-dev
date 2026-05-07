@@ -10,7 +10,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
-	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/agents/exterrors"
 )
 
 // LoadAndValidateAgentManifest parses YAML content and validates it as an AgentManifest

@@ -9,9 +9,9 @@ import (
 	"regexp"
 	"strings"
 
-	"azureaiagent/internal/exterrors"
-	"azureaiagent/internal/pkg/agents/agent_api"
-	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/agents/exterrors"
+	"azureaiagent/internal/agents/pkg/agents/agent_api"
+	"azureaiagent/internal/agents/pkg/agents/agent_yaml"
 )
 
 // agentEndpointHostSuffix is the required Foundry host suffix for endpoint URLs.

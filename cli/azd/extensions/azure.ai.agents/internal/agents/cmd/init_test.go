@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"azureaiagent/internal/exterrors"
-	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/agents/exterrors"
+	"azureaiagent/internal/agents/pkg/agents/agent_yaml"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"

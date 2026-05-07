@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/agents/exterrors"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )

@@ -18,8 +18,8 @@ import (
 	"strings"
 	"time"
 
-	"azureaiagent/internal/exterrors"
-	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/agents/exterrors"
+	"azureaiagent/internal/agents/pkg/agents/agent_api"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"

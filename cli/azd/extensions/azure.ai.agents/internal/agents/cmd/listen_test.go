@@ -6,7 +6,7 @@ package cmd
 import (
 	"testing"
 
-	"azureaiagent/internal/project"
+	"azureaiagent/internal/agents/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )

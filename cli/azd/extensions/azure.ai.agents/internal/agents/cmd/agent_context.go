@@ -7,7 +7,7 @@ import (
 	"context"
 	"fmt"
 
-	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/agents/pkg/agents/agent_api"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"

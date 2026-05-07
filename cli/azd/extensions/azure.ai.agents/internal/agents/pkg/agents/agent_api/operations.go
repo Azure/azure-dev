@@ -14,7 +14,7 @@ import (
 	"strconv"
 	"time"
 
-	"azureaiagent/internal/version"
+	"azureaiagent/internal/agents/version"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"

@@ -4,9 +4,9 @@
 package cmd
 
 import (
-	"azureaiagent/internal/exterrors"
-	"azureaiagent/internal/pkg/agents/agent_yaml"
-	"azureaiagent/internal/project"
+	"azureaiagent/internal/agents/exterrors"
+	"azureaiagent/internal/agents/pkg/agents/agent_yaml"
+	"azureaiagent/internal/agents/project"
 	"context"
 	"encoding/json"
 	"fmt"

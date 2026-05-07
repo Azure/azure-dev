@@ -4,7 +4,7 @@
 package azure
 
 import (
-	"azureaiagent/internal/version"
+	"azureaiagent/internal/agents/version"
 	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"

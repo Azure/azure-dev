@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/agents/pkg/agents/agent_api"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

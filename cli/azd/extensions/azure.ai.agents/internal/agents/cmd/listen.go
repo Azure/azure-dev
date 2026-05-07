@@ -14,11 +14,11 @@ import (
 	"regexp"
 	"strings"
 
-	"azureaiagent/internal/exterrors"
-	"azureaiagent/internal/pkg/agents/agent_api"
-	"azureaiagent/internal/pkg/agents/agent_yaml"
-	"azureaiagent/internal/pkg/azure"
-	"azureaiagent/internal/project"
+	"azureaiagent/internal/agents/exterrors"
+	"azureaiagent/internal/agents/pkg/agents/agent_api"
+	"azureaiagent/internal/agents/pkg/agents/agent_yaml"
+	"azureaiagent/internal/agents/pkg/azure"
+	"azureaiagent/internal/agents/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"

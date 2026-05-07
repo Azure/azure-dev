@@ -6,7 +6,7 @@ package cmd
 import (
 	"fmt"
 
-	"azureaiagent/internal/version"
+	"azureaiagent/internal/agents/version"
 
 	"github.com/spf13/cobra"
 )

@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/agents/pkg/agents/agent_api"
 )
 
 func TestReadSSEStream(t *testing.T) {

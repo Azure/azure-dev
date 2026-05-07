@@ -8,7 +8,7 @@ import (
 	"io"
 	"strings"
 
-	"azureaiagent/internal/version"
+	"azureaiagent/internal/agents/version"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/fatih/color"

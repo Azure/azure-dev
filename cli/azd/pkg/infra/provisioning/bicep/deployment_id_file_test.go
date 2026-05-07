@@ -4,9 +4,11 @@
 package bicep
 
 import (
+	"bufio"
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -27,49 +29,92 @@ func TestWriteDeploymentIdFile(t *testing.T) {
 		"/providers/Microsoft.Resources/deployments/my-env-1234567890"
 
 	t.Run("EnvVarUnset_NoOp", func(t *testing.T) {
+		resetDeploymentIdFileTruncation()
 		t.Setenv(deploymentIdFileEnvVar, "")
 
 		// Should not panic, should not create any file (path is empty).
-		writeDeploymentIdFile(subDeployment)
+		writeDeploymentIdFile(subDeployment, "")
 	})
 
-	t.Run("Subscription_WritesId", func(t *testing.T) {
+	t.Run("Subscription_WritesNDJSON", func(t *testing.T) {
+		resetDeploymentIdFileTruncation()
 		path := filepath.Join(t.TempDir(), "deployment-id.json")
 		t.Setenv(deploymentIdFileEnvVar, path)
 
-		writeDeploymentIdFile(subDeployment)
+		writeDeploymentIdFile(subDeployment, "main")
 
-		assertDeploymentIdFile(t, path, subID)
+		lines := readNDJSONLines(t, path)
+		require.Len(t, lines, 1)
+		require.Equal(t, subID, lines[0].DeploymentId)
+		require.Equal(t, "main", lines[0].Layer)
 	})
 
-	t.Run("ResourceGroup_WritesId", func(t *testing.T) {
+	t.Run("ResourceGroup_WritesNDJSON", func(t *testing.T) {
+		resetDeploymentIdFileTruncation()
 		path := filepath.Join(t.TempDir(), "deployment-id.json")
 		t.Setenv(deploymentIdFileEnvVar, path)
 
-		writeDeploymentIdFile(rgDeployment)
+		writeDeploymentIdFile(rgDeployment, "storage")
 
-		assertDeploymentIdFile(t, path, rgID)
+		lines := readNDJSONLines(t, path)
+		require.Len(t, lines, 1)
+		require.Equal(t, rgID, lines[0].DeploymentId)
+		require.Equal(t, "storage", lines[0].Layer)
 	})
 
-	t.Run("Overwrites_ExistingFile", func(t *testing.T) {
+	t.Run("EmptyLayer_WritesEmptyString", func(t *testing.T) {
+		resetDeploymentIdFileTruncation()
 		path := filepath.Join(t.TempDir(), "deployment-id.json")
-		require.NoError(t, os.WriteFile(path, []byte("stale contents"), 0o600))
 		t.Setenv(deploymentIdFileEnvVar, path)
 
-		writeDeploymentIdFile(subDeployment)
+		writeDeploymentIdFile(subDeployment, "")
 
-		assertDeploymentIdFile(t, path, subID)
+		lines := readNDJSONLines(t, path)
+		require.Len(t, lines, 1)
+		require.Equal(t, subID, lines[0].DeploymentId)
+		require.Equal(t, "", lines[0].Layer)
+	})
+
+	t.Run("MultipleLayers_AppendsLines", func(t *testing.T) {
+		resetDeploymentIdFileTruncation()
+		path := filepath.Join(t.TempDir(), "deployment-id.json")
+		t.Setenv(deploymentIdFileEnvVar, path)
+
+		writeDeploymentIdFile(subDeployment, "main")
+		writeDeploymentIdFile(rgDeployment, "storage")
+
+		lines := readNDJSONLines(t, path)
+		require.Len(t, lines, 2)
+		require.Equal(t, subID, lines[0].DeploymentId)
+		require.Equal(t, "main", lines[0].Layer)
+		require.Equal(t, rgID, lines[1].DeploymentId)
+		require.Equal(t, "storage", lines[1].Layer)
+	})
+
+	t.Run("TruncatesExistingFile_OnFirstWrite", func(t *testing.T) {
+		resetDeploymentIdFileTruncation()
+		path := filepath.Join(t.TempDir(), "deployment-id.json")
+		require.NoError(t, os.WriteFile(path, []byte("stale contents from previous run\n"), 0o600))
+		t.Setenv(deploymentIdFileEnvVar, path)
+
+		writeDeploymentIdFile(subDeployment, "main")
+
+		lines := readNDJSONLines(t, path)
+		require.Len(t, lines, 1, "stale content must be gone after truncation")
+		require.Equal(t, subID, lines[0].DeploymentId)
 	})
 
 	t.Run("UnwritablePath_DoesNotPanic", func(t *testing.T) {
+		resetDeploymentIdFileTruncation()
 		// Pointing the env var at a path whose parent doesn't exist should fail to
 		// write, but must not abort provisioning (the function swallows the error).
 		t.Setenv(deploymentIdFileEnvVar, filepath.Join(t.TempDir(), "missing-dir", "deployment-id.json"))
 
-		writeDeploymentIdFile(subDeployment)
+		writeDeploymentIdFile(subDeployment, "main")
 	})
 
 	t.Run("RelativePath_Rejected", func(t *testing.T) {
+		resetDeploymentIdFileTruncation()
 		// Relative paths are rejected because callers (e.g. IDE integrations) cannot
 		// reasonably predict the process working directory; the file would land in an
 		// unexpected location. The function must not write anything in that case.
@@ -77,18 +122,18 @@ func TestWriteDeploymentIdFile(t *testing.T) {
 		t.Chdir(dir)
 
 		t.Setenv(deploymentIdFileEnvVar, "deployment-id.json")
-		writeDeploymentIdFile(subDeployment)
+		writeDeploymentIdFile(subDeployment, "main")
 
 		_, err := os.Stat(filepath.Join(dir, "deployment-id.json"))
 		require.ErrorIs(t, err, os.ErrNotExist,
 			"relative paths must be ignored, not written to the working directory")
 	})
 
-	t.Run("ConcurrentWrites_ProduceCompleteDocument", func(t *testing.T) {
+	t.Run("ConcurrentWrites_ProduceCompleteLines", func(t *testing.T) {
+		resetDeploymentIdFileTruncation()
 		// Multiple sibling provisioning layers may invoke writeDeploymentIdFile
-		// concurrently against the same path. Atomic temp-file + rename plus the
-		// internal mutex must guarantee the file always parses as a complete JSON
-		// document containing one of the deployment IDs (never a torn write).
+		// concurrently against the same path. The internal mutex must guarantee each
+		// NDJSON line is complete (never a torn write).
 		path := filepath.Join(t.TempDir(), "deployment-id.json")
 		t.Setenv(deploymentIdFileEnvVar, path)
 
@@ -97,34 +142,37 @@ func TestWriteDeploymentIdFile(t *testing.T) {
 		wg.Add(writers)
 		for i := range writers {
 			var deployment infra.Deployment = subDeployment
+			layer := "layer-sub"
 			if i%2 == 0 {
 				deployment = rgDeployment
+				layer = "layer-rg"
 			}
 			go func() {
 				defer wg.Done()
-				writeDeploymentIdFile(deployment)
+				writeDeploymentIdFile(deployment, layer)
 			}()
 		}
 		wg.Wait()
 
-		data, err := os.ReadFile(path)
-		require.NoError(t, err)
-		var doc deploymentIdFile
-		require.NoError(t, json.Unmarshal(data, &doc),
-			"file must be a complete JSON document under concurrent writers")
-		require.Contains(t, []string{subID, rgID}, doc.DeploymentId)
+		lines := readNDJSONLines(t, path)
+		require.Len(t, lines, writers)
+		for _, line := range lines {
+			require.Contains(t, []string{subID, rgID}, line.DeploymentId)
+			require.Contains(t, []string{"layer-sub", "layer-rg"}, line.Layer)
+		}
 	})
 
 	t.Run("PathIsDirectory_DoesNotPanic", func(t *testing.T) {
+		resetDeploymentIdFileTruncation()
 		// If the path points to an existing directory rather than a file,
-		// os.Rename will fail. The function must handle this gracefully without
+		// the open/write will fail. The function must handle this gracefully without
 		// panicking or aborting provisioning.
 		dir := t.TempDir()
 		target := filepath.Join(dir, "subdir")
 		require.NoError(t, os.Mkdir(target, 0o755))
 		t.Setenv(deploymentIdFileEnvVar, target)
 
-		writeDeploymentIdFile(subDeployment)
+		writeDeploymentIdFile(subDeployment, "main")
 
 		// The directory should still exist and not be replaced by a file.
 		info, err := os.Stat(target)
@@ -160,13 +208,25 @@ func TestDeploymentResourceID(t *testing.T) {
 	})
 }
 
-func assertDeploymentIdFile(t *testing.T, path, expectedId string) {
+// readNDJSONLines reads all NDJSON lines from the given file path.
+func readNDJSONLines(t *testing.T, path string) []deploymentIdLine {
 	t.Helper()
 
 	data, err := os.ReadFile(path)
 	require.NoError(t, err)
 
-	var doc deploymentIdFile
-	require.NoError(t, json.Unmarshal(data, &doc))
-	require.Equal(t, expectedId, doc.DeploymentId)
+	var lines []deploymentIdLine
+	scanner := bufio.NewScanner(strings.NewReader(string(data)))
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" {
+			continue
+		}
+		var doc deploymentIdLine
+		require.NoError(t, json.Unmarshal([]byte(line), &doc),
+			"each line must be valid JSON: %q", line)
+		lines = append(lines, doc)
+	}
+	require.NoError(t, scanner.Err())
+	return lines
 }

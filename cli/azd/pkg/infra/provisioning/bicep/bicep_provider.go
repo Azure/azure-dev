@@ -998,7 +998,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 	// than immediately after generating the deployment object) avoids advertising a
 	// deployment ID that never exists in Azure when the run short-circuits via the
 	// deployment-state cache or is aborted by preflight validation.
-	writeDeploymentIdFile(deployment)
+	writeDeploymentIdFile(deployment, p.layer)
 
 	deployCtx, interruptStarted, interruptCh, markDeployCompleted, interruptCleanup :=
 		p.installDeploymentInterruptHandler(ctx, deployment, cancelProgress)

@@ -16,31 +16,45 @@ import (
 )
 
 // deploymentIdFileEnvVar is the name of the environment variable consumers can set to
-// receive the ARM deployment ID as soon as it is available during `azd provision`
-// (or `azd up`). The value is the absolute path of a file that azd will write/overwrite
-// with a JSON document describing the deployment.
+// receive ARM deployment IDs as they become available during `azd provision`
+// (or `azd up`). The value is the absolute path of a file that azd will write
+// NDJSON (newline-delimited JSON) lines to — one per layer deployment.
 //
-// The current document shape is intentionally minimal so it can be extended in a
-// backwards compatible way:
+// Each line has the shape:
 //
-//	{ "deploymentId": "/subscriptions/.../providers/Microsoft.Resources/deployments/<name>" }
+//	{"deploymentId":"/subscriptions/.../providers/Microsoft.Resources/deployments/<name>","layer":"<name>"}
+//
+// The file is truncated at the start of each provisioning run so it only contains
+// deployments from the current invocation. Consumers should tail/watch the file and
+// parse each line independently.
 const deploymentIdFileEnvVar = "AZD_DEPLOYMENT_ID_FILE"
 
 // deploymentIdFileMu serializes writes from sibling provisioning layers that may run
-// concurrently and target the same path. Without this, partial/interleaved writes
-// could corrupt the JSON document (for example when one deployment ID is shorter
-// than another). Combined with a temp-file-then-rename strategy, readers either see
-// the previous file or a complete new one, never a torn document.
+// concurrently and target the same path. This ensures each NDJSON line is written
+// atomically without interleaving with other layers' writes.
 var deploymentIdFileMu sync.Mutex
 
-// deploymentIdFile is the JSON document written to the path identified by
+// deploymentIdFileTruncated tracks whether the file has been truncated in this
+// process invocation. The first write truncates the file; subsequent writes append.
+var deploymentIdFileTruncated sync.Once
+
+// resetDeploymentIdFileTruncation resets the truncation state. This is only used
+// by tests to ensure each test case starts fresh.
+func resetDeploymentIdFileTruncation() {
+	deploymentIdFileTruncated = sync.Once{}
+}
+
+// deploymentIdLine is a single NDJSON line written to the file identified by
 // AZD_DEPLOYMENT_ID_FILE. New fields may be added in the future; consumers MUST
 // ignore unknown fields.
-type deploymentIdFile struct {
+type deploymentIdLine struct {
 	// DeploymentId is the ARM resource ID of the deployment, for example
 	// /subscriptions/{sub}/providers/Microsoft.Resources/deployments/{name}
 	// or /subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.Resources/deployments/{name}.
 	DeploymentId string `json:"deploymentId"`
+	// Layer is the provisioning layer name that produced this deployment. It is
+	// empty for single-layer (non-layered) provisioning.
+	Layer string `json:"layer"`
 }
 
 // deploymentResourceID returns the ARM resource ID for the supplied deployment, or
@@ -56,20 +70,23 @@ func deploymentResourceID(d infra.Deployment) (string, error) {
 	}
 }
 
-// writeDeploymentIdFile writes the ARM deployment ID for the supplied deployment to
-// the path identified by AZD_DEPLOYMENT_ID_FILE. If the environment variable is not
-// set, the function is a no-op.
+// writeDeploymentIdFile appends an NDJSON line containing the ARM deployment ID and
+// layer name to the file identified by AZD_DEPLOYMENT_ID_FILE. If the environment
+// variable is not set, the function is a no-op.
 //
 // The path must be absolute; relative paths are rejected to avoid writing the file
 // to an unexpected location relative to the process working directory. The
-// containing directory is assumed to exist and be writable. If the target file
-// already exists it is overwritten atomically (temp-file + rename) so concurrent
-// readers always observe either the previous content or a complete new document.
+// containing directory is assumed to exist and be writable.
+//
+// On the first invocation in a process, the file is truncated so it only contains
+// deployments from the current provisioning run. Subsequent invocations (e.g., from
+// parallel layers) append to the file. A process-wide mutex serializes writes so
+// each NDJSON line is always complete.
 //
 // Failures are not returned because the file is purely informational and must not
 // abort provisioning. They are written via the standard log package, which only
 // surfaces output when --debug or AZD_DEBUG_LOG is enabled.
-func writeDeploymentIdFile(deployment infra.Deployment) {
+func writeDeploymentIdFile(deployment infra.Deployment, layer string) {
 	path := os.Getenv(deploymentIdFileEnvVar)
 	if path == "" {
 		return
@@ -86,49 +103,49 @@ func writeDeploymentIdFile(deployment infra.Deployment) {
 		return
 	}
 
-	data, err := json.Marshal(deploymentIdFile{DeploymentId: id})
+	data, err := json.Marshal(deploymentIdLine{DeploymentId: id, Layer: layer})
 	if err != nil {
 		log.Printf("failed to marshal %s payload: %v", deploymentIdFileEnvVar, err)
 		return
 	}
 
-	// Trailing newline keeps the file well-formed for line-based tooling.
+	// Trailing newline makes this a valid NDJSON line.
 	data = append(data, '\n')
 
-	// Serialize across sibling provisioning layers in this process, then write to a
-	// temp file in the same directory and rename into place so the swap is atomic on
-	// POSIX (and best-effort on Windows). Readers therefore never observe a partially
-	// written or interleaved document.
+	// Serialize across sibling provisioning layers in this process.
 	deploymentIdFileMu.Lock()
 	defer deploymentIdFileMu.Unlock()
 
-	dir := filepath.Dir(path)
+	// Truncate on first write in this process so the file only contains deployments
+	// from the current provisioning run.
+	var truncateErr error
+	deploymentIdFileTruncated.Do(func() {
+		// The path comes from an environment variable that the operator explicitly sets to opt
+		// in to this feature, so trusting the value is by design (G304).
+		truncateErr = os.Truncate(path, 0) //nolint:gosec // G304: operator-provided env var
+		if os.IsNotExist(truncateErr) {
+			// File doesn't exist yet — that's fine, we'll create it on append.
+			truncateErr = nil
+		}
+	})
+	if truncateErr != nil {
+		log.Printf("failed to truncate %s=%q: %v", deploymentIdFileEnvVar, path, truncateErr) //nolint:gosec
+		return
+	}
+
+	// Append the NDJSON line. O_APPEND ensures the write is atomic at the OS level
+	// even without the mutex (but we keep the mutex for the truncate-then-append
+	// sequencing on the first call).
 	// The path comes from an environment variable that the operator explicitly sets to opt
-	// in to this feature, so trusting the value is by design (G304/G706). The directory is
-	// expected to exist and be writable per the documented contract.
-	tmp, err := os.CreateTemp(dir, ".azd-deployment-id-*.json.tmp") //nolint:gosec // G304: operator-provided env var
+	// in to this feature, so trusting the value is by design (G304).
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600) //nolint:gosec // G304: operator-provided env var
 	if err != nil {
-		log.Printf("failed to create temp file for %s=%q: %v", deploymentIdFileEnvVar, path, err) //nolint:gosec
+		log.Printf("failed to open %s=%q: %v", deploymentIdFileEnvVar, path, err) //nolint:gosec
 		return
 	}
-	tmpPath := tmp.Name()
-	cleanup := func() {
-		_ = os.Remove(tmpPath) //nolint:gosec // G304: tmpPath was just created above by os.CreateTemp.
-	}
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		cleanup()
+	defer f.Close()
+
+	if _, err := f.Write(data); err != nil {
 		log.Printf("failed to write %s=%q: %v", deploymentIdFileEnvVar, path, err) //nolint:gosec
-		return
-	}
-	if err := tmp.Close(); err != nil {
-		cleanup()
-		log.Printf("failed to close %s temp file for %q: %v", deploymentIdFileEnvVar, path, err) //nolint:gosec
-		return
-	}
-	if err := os.Rename(tmpPath, path); err != nil { //nolint:gosec // G304: paths are operator-provided env var
-		cleanup()
-		log.Printf("failed to rename %s temp file into %q: %v", deploymentIdFileEnvVar, path, err) //nolint:gosec
-		return
 	}
 }

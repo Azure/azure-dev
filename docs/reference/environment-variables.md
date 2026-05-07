@@ -45,7 +45,7 @@ Override the path to external tools that azd invokes:
 
 | Variable | Description |
 |---|---|
-| `AZD_DEPLOYMENT_ID_FILE` | Absolute path to a file where `azd` writes the ARM deployment resource ID (as JSON) just before submitting a Bicep deployment. Enables external tooling (e.g., VS Code extension) to track in-flight deployments without scraping console output. See [cli/azd/docs/environment-variables.md](../../cli/azd/docs/environment-variables.md) for the full contract. |
+| `AZD_DEPLOYMENT_ID_FILE` | Absolute path to a file where `azd` writes ARM deployment resource IDs in NDJSON format (one JSON line per layer) during Bicep provisioning. The file is truncated at the start of each run; each layer appends `{"deploymentId":"...","layer":"<name>"}`. Enables external tooling (e.g., VS Code extension) to track all in-flight deployments without scraping console output. See [cli/azd/docs/environment-variables.md](../../cli/azd/docs/environment-variables.md) for the full contract. |
 
 ## IDE Integration
 

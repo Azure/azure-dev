@@ -69,7 +69,7 @@ azd extension source add -n azd -t url -l "https://aka.ms/azd/extensions/registr
 #### Dev (Experimental) Registry
 
 > [!CAUTION]
-> Extensions hosted in the dev registry DO NOT contain signed binaries at the moment. They come with **no stability guarantees** and are **not covered by Azure support**. Expect breaking changes, rough edges, and possible removal without notice.
+> Extensions hosted in the dev registry are unsigned. They come with **no stability guarantees** and are **not covered by Azure support**. Expect breaking changes, rough edges, and possible removal without notice.
 
 A shared development registry can be added to your `azd` configuration.
 This registry contains experimental extensions, community contributions not yet vetted, pre-release builds, and extensions used for internal testing before shipping to the official registry.

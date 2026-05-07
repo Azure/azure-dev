@@ -307,13 +307,13 @@ When `latest` is specified (or the version is omitted), `azd` selects the **high
 
 ## Dev/Experimental Extension Registry
 
-The dev (experimental) registry is a separate extension source for bleeding-edge, pre-release, and community-contributed extensions that have not yet been promoted to the official `azd` registry. It lives alongside the main registry in the `azure-dev` repository and is served via a dedicated aka.ms link.
+The dev (experimental) registry is a separate extension source for bleeding-edge, pre-release, and community-contributed extensions that have not yet been promoted to the official `azd` registry. It lives alongside the main registry in the `azure-dev` repository and is served via a dedicated aka.ms link. While `azd` and `dev` are the official source names, the extension source system supports adding custom sources with any name via `azd extension source add`.
 
 | Property | Main Registry | Dev Registry |
 |----------|---------------|--------------|
 | URL | `https://aka.ms/azd/extensions/registry` | `https://aka.ms/azd/extensions/registry/dev` |
 | Source file | `cli/azd/extensions/registry.json` | `cli/azd/extensions/registry.dev.json` |
-| Source name | `azd` (built-in default) | `dev` (user-added) |
+| Source name | `azd` (built-in default) | `dev` (official dev registry) |
 | Signed binaries | Yes | **No** |
 | Support | Covered by Azure support | **Not covered** |
 
@@ -321,13 +321,13 @@ The dev (experimental) registry is a separate extension source for bleeding-edge
 
 The following criteria determine whether an extension belongs in the dev registry or the main registry:
 
-| Criteria | Experimental (dev) | Main (azd) |
-|----------|-------------------|------------|
-| **Binary signing** | Unsigned builds | Signed builds |
-| **Stability** | Preview, alpha, beta, or pre-release versions | Stable releases |
-| **Vetting** | Community contributions not yet reviewed; internal experiments | Vetted by the azd team; meets quality bar |
-| **API surface** | May change between versions without notice | Follows [semver guidance](#semantic-versioning-guidance) |
-| **Availability** | May be removed without notice | Maintained with deprecation process |
+| Criteria | Main (azd) | Experimental (dev) |
+|----------|------------|-------------------|
+| **Binary signing** | Signed builds | Unsigned builds |
+| **Stability** | Stable releases | Preview, alpha, beta, or pre-release versions |
+| **Vetting** | Vetted by the azd team; meets quality bar | Community contributions not yet reviewed; internal experiments |
+| **API surface** | Follows [semver guidance](#semantic-versioning-guidance) | May change between versions without notice |
+| **Availability** | Maintained with deprecation process | May be removed without notice |
 
 An extension can exist in **both** registries simultaneously. For example, the main registry may contain version `1.2.0` while the dev registry contains `2.0.0-beta.1`. This allows authors to publish stable releases through the main registry while testing upcoming versions through the dev registry.
 
@@ -448,11 +448,14 @@ Your extension entry must:
     {
       "version": "0.1.0",
       "capabilities": ["custom-commands"],
-      "usage": {
-        "description": "Adds experimental commands to azd.",
-        "examples": ["azd my-command --flag value"]
-      },
-      "examples": ["azd my-command --flag value"],
+      "usage": "azd my-command [options]",
+      "examples": [
+        {
+          "name": "basic-usage",
+          "description": "Run my-command with a flag.",
+          "usage": "azd my-command --flag value"
+        }
+      ],
       "artifacts": {
         "linux/amd64": {
           "url": "https://github.com/my-org/my-ext/releases/download/v0.1.0/my-ext-linux-amd64.tar.gz",

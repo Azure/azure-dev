@@ -566,15 +566,15 @@ var excludedPlaybackTests = map[string]string{
 	// Recordings affected by feat/exegraph: the graph-driven up/provision path
 	// introduces legitimate new HTTP interactions (layer hash probes, resource-group
 	// existence checks). Must be re-recorded with live Azure credentials before merge.
-	"Test_DeploymentStacks":                  "needs re-record for feat/exegraph graph-driven provision",
-	"Test_CLI_ProvisionState":                "needs re-record for feat/exegraph graph-driven provision",
-	"Test_CLI_InfraCreateAndDeleteUpperCase":       "needs re-record for feat/exegraph graph-driven provision",
-	"Test_CLI_PreflightQuota_Sub_DefaultCapacity":  "stale recording; missing extension registry + resource group interactions",
-	"Test_CLI_PreflightQuota_Sub_InvalidModelName": "stale recording; missing extension registry + resource group interactions",
+	"Test_DeploymentStacks":                         "needs re-record for feat/exegraph graph-driven provision",
+	"Test_CLI_ProvisionState":                       "needs re-record for feat/exegraph graph-driven provision",
+	"Test_CLI_InfraCreateAndDeleteUpperCase":        "needs re-record for feat/exegraph graph-driven provision",
+	"Test_CLI_PreflightQuota_Sub_DefaultCapacity":   "stale recording; missing extension registry + resource group interactions",
+	"Test_CLI_PreflightQuota_Sub_InvalidModelName":  "stale recording; missing extension registry + resource group interactions",
 	"Test_CLI_PreflightQuota_Sub_DifferentLocation": "stale recording; missing extension registry + resource group interactions",
-	"Test_CLI_PreflightQuota_RG_DefaultCapacity":   "stale recording; missing extension registry + resource group interactions",
-	"Test_CLI_PreflightQuota_RG_InvalidVersion":    "stale recording; missing extension registry + resource group interactions",
-	"Test_CLI_PreflightQuota_RG_InvalidModelName":  "stale recording; missing extension registry + resource group interactions",
+	"Test_CLI_PreflightQuota_RG_DefaultCapacity":    "stale recording; missing extension registry + resource group interactions",
+	"Test_CLI_PreflightQuota_RG_InvalidVersion":     "stale recording; missing extension registry + resource group interactions",
+	"Test_CLI_PreflightQuota_RG_InvalidModelName":   "stale recording; missing extension registry + resource group interactions",
 }
 
 // discoverPlaybackTests scans the recordings directory for .yaml files and
@@ -986,7 +986,7 @@ func addToPathUnix(dir string) error {
 //	mage coverage:html    — generate and open an HTML report
 //	mage coverage:check   — enforce minimum coverage threshold
 //	mage coverage:diff    — compare current branch vs main baseline
-//	mage coverage:pr      — diff + post as PR comment
+//	mage coverage:pr      — preview the CI PR coverage gate (fail-loud)
 //
 // See cli/azd/docs/code-coverage-guide.md for prerequisites and details.
 type Coverage mg.Namespace
@@ -1090,6 +1090,11 @@ func (Coverage) Check() error {
 // Uses cover-local.out as the current profile (run coverage:unit first) and downloads
 // the main baseline from CI when needed.
 //
+// On a feature branch (not main / detached HEAD), Diff resolves PR-touched .go files
+// via `git merge-base origin/main HEAD` + `git diff` and passes them to the underlying
+// script so the per-file floor (when set) only enforces against changed files —
+// matching the CI gate run by code-coverage-upload.yml.
+//
 // To avoid the CI download (which requires 'az login'), run coverage on main first
 // and point to it:
 //
@@ -1097,8 +1102,10 @@ func (Coverage) Check() error {
 //
 // Environment variables (optional):
 //
-//	COVERAGE_BASELINE — path to baseline coverage profile (default: cover-ci-combined.out or download from CI)
-//	COVERAGE_CURRENT  — path to current coverage profile (default: cover-local.out)
+//	COVERAGE_BASELINE         — path to baseline coverage profile (default: cover-ci-combined.out or download from CI)
+//	COVERAGE_CURRENT          — path to current coverage profile (default: cover-local.out)
+//	COVERAGE_FLOOR            — per-file coverage floor in percent (advisory unless COVERAGE_FAIL_ON_BREACH is set)
+//	COVERAGE_FAIL_ON_BREACH   — "1" or "true" to exit non-zero when any changed file drops below the floor
 //
 // Usage: mage coverage:diff
 func (Coverage) Diff() error {
@@ -1121,22 +1128,51 @@ func (Coverage) Diff() error {
 		return err
 	}
 
-	diffScript := filepath.Join(repoRoot, "eng", "scripts", "Get-CoverageDiff.ps1")
-	return runPwshScript(azdDir, diffScript,
+	args := []string{
 		"-BaselineFile", baselineFile,
 		"-CurrentFile", currentFile,
-	)
+	}
+
+	failOnBreach := false
+	if fail := os.Getenv("COVERAGE_FAIL_ON_BREACH"); fail == "1" || strings.EqualFold(fail, "true") {
+		failOnBreach = true
+	}
+
+	changedFiles, err := resolveChangedFilesForDiff(azdDir, failOnBreach)
+	if err != nil {
+		return err
+	}
+	if changedFiles != "" {
+		args = append(args, "-ChangedFilesFromFile", changedFiles)
+	}
+
+	if floor := os.Getenv("COVERAGE_FLOOR"); floor != "" {
+		args = append(args, "-MinFloor", floor)
+	}
+	if failOnBreach {
+		args = append(args, "-FailOnFloorBreach")
+	}
+
+	diffScript := filepath.Join(repoRoot, "eng", "scripts", "Get-CoverageDiff.ps1")
+	return runPwshScript(azdDir, diffScript, args...)
 }
 
-// PR generates a coverage diff and posts it as a comment on the current pull request.
-// Requires: gh CLI authenticated, current branch must have an open PR.
+// PR previews the CI PR coverage gate locally: same fail-loud per-file floor
+// enforcement that code-coverage-upload.yml runs against PR-touched .go files.
+// No PR comment is posted (the CI gate surfaces breaches in the build log;
+// this target lets contributors repro the gate locally before pushing).
 //
-// Re-running replaces the previous coverage comment (uses a tag for replacement).
+// Resolves changed files via `git fetch origin main` + `git merge-base origin/main HEAD`
+// + `git diff`. Requires a feature branch with origin/main reachable; on main or
+// detached HEAD, or when git resolution fails (e.g. no remote / shallow clone),
+// the target returns an actionable error rather than silently passing — the
+// "preview" guarantee depends on the same file set CI checks against.
 //
 // Environment variables (optional):
 //
 //	COVERAGE_BASELINE — path to baseline coverage profile (default: cover-ci-combined.out or download from CI)
 //	COVERAGE_CURRENT  — path to current coverage profile (default: cover-local.out)
+//	COVERAGE_FLOOR    — per-file coverage floor in percent (default: 60, matches CI)
 //
 // Usage: mage coverage:pr
 func (Coverage) PR() error {
@@ -1159,40 +1195,94 @@ func (Coverage) PR() error {
 		return err
 	}
 
-	// Generate diff markdown to a file
-	diffFile := filepath.Join(azdDir, "coverage-diff.md")
-	diffScript := filepath.Join(repoRoot, "eng", "scripts", "Get-CoverageDiff.ps1")
-	if err := runPwshScript(azdDir, diffScript,
-		"-BaselineFile", baselineFile,
-		"-CurrentFile", currentFile,
-		"-OutputFile", diffFile,
-	); err != nil {
+	floor := "60"
+	if v := os.Getenv("COVERAGE_FLOOR"); v != "" {
+		floor = v
+	}
+
+	changedFiles, err := resolveChangedFilesForDiff(azdDir, true)
+	if err != nil {
 		return err
 	}
-
-	// Determine PR number from current branch
-	prNumRaw, err := runCapture(azdDir, "gh", "pr", "view", "--json", "number", "--jq", ".number")
-	if err != nil {
-		return fmt.Errorf("no open PR for current branch (is 'gh' authenticated?): %w", err)
+	if changedFiles == "" {
+		return fmt.Errorf(
+			"coverage:pr requires a feature branch with origin/main reachable; " +
+				"run on a feature branch and ensure 'git fetch origin main' succeeds",
+		)
 	}
-	prNum := strings.TrimSpace(prNumRaw)
 
-	// Determine repository slug (owner/repo)
-	repoRaw, err := runCapture(azdDir, "gh", "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner")
-	if err != nil {
-		return fmt.Errorf("cannot determine repository: %w", err)
+	args := []string{
+		"-BaselineFile", baselineFile,
+		"-CurrentFile", currentFile,
+		"-MinFloor", floor,
+		"-FailOnFloorBreach",
+		"-ChangedFilesFromFile", changedFiles,
 	}
-	repo := strings.TrimSpace(repoRaw)
 
-	// Post coverage diff as a PR comment (replaces previous tagged comment)
-	fmt.Printf("Posting coverage diff to %s#%s...\n", repo, prNum)
-	updateScript := filepath.Join(repoRoot, "eng", "scripts", "Update-PRComment.ps1")
-	return runPwshScript(azdDir, updateScript,
-		"-Repo", repo,
-		"-PRNumber", prNum,
-		"-BodyFile", diffFile,
-		"-Tag", "<!-- coverage-diff -->",
-	)
+	diffScript := filepath.Join(repoRoot, "eng", "scripts", "Get-CoverageDiff.ps1")
+	return runPwshScript(azdDir, diffScript, args...)
+}
+
+// resolveChangedFilesForDiff returns the path to a file listing PR-touched
+// files (one per line) for the per-file coverage floor, or empty string when
+// changed-file mode should be skipped (on main, detached HEAD, or when git
+// resolution fails).
+//
+// When strict is false, git resolution failures degrade silently to advisory
+// mode. When strict is true, failures return an actionable error so the caller
+// (e.g. `mage coverage:pr`, which always enforces the floor) doesn't pass with
+// a green-when-CI-is-red false positive.
+//
+// Mirrors the resolution done by code-coverage-upload.yml so local
+// `mage coverage:diff` / `coverage:pr` runs against the same file set CI checks.
+func resolveChangedFilesForDiff(azdDir string, strict bool) (string, error) {
+	skipOrFail := func(reason string) (string, error) {
+		if strict {
+			return "", fmt.Errorf("cannot resolve changed files for coverage floor: %s", reason)
+		}
+		return "", nil
+	}
+
+	branch, err := runCapture(azdDir, "git", "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		return skipOrFail(fmt.Sprintf("git rev-parse failed: %v", err))
+	}
+	branch = strings.TrimSpace(branch)
+	if branch == "" || branch == "HEAD" {
+		return skipOrFail("detached HEAD or empty branch name")
+	}
+	if branch == "main" {
+		return skipOrFail("on main branch (no PR diff to compute)")
+	}
+
+	// Best-effort fetch so origin/main is fresh; mirrors code-coverage-upload.yml.
+	// Any error here is non-fatal — the next step will surface a usable error if
+	// origin/main truly isn't reachable.
+	_, _ = runCapture(azdDir, "git", "fetch", "--no-tags", "--depth=200", "origin", "main")
+
+	base, err := runCapture(azdDir, "git", "merge-base", "origin/main", "HEAD")
+	if err != nil {
+		return skipOrFail(fmt.Sprintf("git merge-base origin/main HEAD failed: %v", err))
+	}
+	base = strings.TrimSpace(base)
+	if base == "" {
+		return skipOrFail("empty merge-base result")
+	}
+
+	diff, err := runCapture(azdDir, "git", "diff", "--name-only", "--diff-filter=AMR", base+"...HEAD")
+	if err != nil {
+		return skipOrFail(fmt.Sprintf("git diff failed: %v", err))
+	}
+	diff = strings.TrimSpace(diff)
+	if diff == "" {
+		return skipOrFail("no files changed vs origin/main")
+	}
+
+	out := filepath.Join(azdDir, "coverage-changed-files.txt")
+	if err := os.WriteFile(out, []byte(diff+"\n"), 0o644); err != nil {
+		return "", fmt.Errorf("writing changed files list: %w", err)
+	}
+	return out, nil
 }
 
 // resolveCoverageFile returns envOverride if non-empty and existing,

@@ -78,6 +78,7 @@ When writing tests, prefer table-driven tests. Use testify/mock for mocking.
 Additional mage targets:
 
 - `mage record` — re-record functional test cassettes against a live Azure subscription. Accepts an optional `-filter=TestName` flag to re-record specific tests. Typically only core maintainers need to run this; external contributors can rely on playback mode (the default) which requires no Azure access. Requires `azd auth login` and a configured test subscription (see `docs/recording-functional-tests-guide.md`).
+- `mage coverage:pr` — preview the CI PR coverage gate locally before pushing. Resolves PR-touched `.go` files via `git merge-base origin/main HEAD`, runs the diff against the latest `main` baseline, and fails (exit 2) if any touched file drops below the per-file floor (default 60%, matches CI). See `docs/code-coverage-guide.md` for details.
 
 ```bash
 gofmt -s -w .

@@ -192,8 +192,8 @@ All modes are also available as `mage` targets (from `cli/azd/`):
 | `mage coverage:ci` | CI baseline report | `az login` |
 | `mage coverage:html` | HTML report (unit only by default) | Go 1.26 |
 | `mage coverage:check` | Enforce 50% threshold (unit only; CI gate is 55% combined) | Go 1.26 |
-| `mage coverage:diff` | Compare current branch coverage vs main baseline | Go 1.26 |
-| `mage coverage:pr` | Diff + post results as a PR comment | Go 1.26, `gh` CLI |
+| `mage coverage:diff` | Compare current branch coverage vs main baseline (advisory; honors `COVERAGE_FLOOR` / `COVERAGE_FAIL_ON_BREACH`) | Go 1.26 |
+| `mage coverage:pr` | Preview the CI PR coverage gate locally (fail-loud, default floor 60%) | Go 1.26 |
 
 Environment variables for optional overrides:
 
@@ -203,6 +203,79 @@ Environment variables for optional overrides:
 | `COVERAGE_BUILD_ID` | `hybrid`, `ci` | Target a specific ADO build ID |
 | `COVERAGE_MODE` | `html` | Set to `full` or `hybrid` (default: `unit`) |
 | `COVERAGE_MIN` | `check` | Override threshold (default: `55`) |
+| `COVERAGE_FLOOR` | `diff`, `pr` | Per-file coverage floor in percent (`pr` defaults to `60`; `diff` is advisory unless set) |
+| `COVERAGE_FAIL_ON_BREACH` | `diff` | Set to `1` / `true` to exit non-zero when any changed file drops below `COVERAGE_FLOOR` (`pr` always fails loud) |
+| `COVERAGE_BASELINE` | `diff`, `pr` | Path to baseline coverage profile (default: `cover-ci-combined.out` or download from CI) |
+| `COVERAGE_CURRENT` | `diff`, `pr` | Path to current coverage profile (default: `cover-local.out`) |
+
+## PR Coverage Check (Fail-Loud)
+
+PRs run a per-file coverage gate as part of the `code-coverage-upload.yml`
+Azure DevOps stage. After unit + integration coverage is merged, the pipeline:
+
+1. Resolves the list of `.go` files touched by the PR via
+   `git merge-base origin/<target> HEAD` + `git diff --name-only --diff-filter=AMR`.
+2. Runs `eng/scripts/Get-CoverageDiff.ps1` against the merged baseline
+   (latest successful `main` build) and the PR's `cover.out`.
+3. For every PR-touched `.go` file, fails the build (`exit 2`) if its
+   statement coverage drops below the configured floor (default **60%**).
+4. Surfaces the breach via `##vso[task.logissue type=error]` so the offending
+   paths show up in the PR check summary.
+
+There is intentionally **no PR comment**. The diff lives in the build log to
+avoid PR-comment noise; the `##vso[task.logissue]` annotations are sufficient
+for the PR check summary.
+
+### Reproducing the gate locally
+
+```powershell
+# 1. Build the unit-only profile for your branch
+mage coverage:unit
+
+# 2. Run the same gate CI runs
+mage coverage:pr
+```
+
+`mage coverage:pr` runs `git fetch --no-tags --depth=200 origin main` (best-effort),
+resolves changed files via `git merge-base origin/main HEAD`, applies a 60% floor,
+and exits non-zero when a touched file drops below it. The target requires a feature
+branch with `origin/main` reachable — on `main`, in detached-HEAD state, or when git
+resolution fails, it returns an error rather than silently passing (the "preview"
+guarantee depends on running against the same file set CI checks). For an advisory
+run on `main`, use `mage coverage:diff` instead.
+
+### Configuring the floor
+
+Override per run:
+
+```powershell
+$env:COVERAGE_FLOOR = "70"; mage coverage:pr
+```
+
+Or use the advisory `coverage:diff` target with explicit opt-in:
+
+```powershell
+$env:COVERAGE_FLOOR = "60"
+$env:COVERAGE_FAIL_ON_BREACH = "1"
+mage coverage:diff
+```
+
+### Worked example
+
+Suppose `cli/azd/pkg/auth/login.go` is modified by the PR and its statement
+coverage falls from 72% → 48%. The CI step prints:
+
+```
+FAIL  pkg/auth/login.go         48.0%  (was 72.0%)  threshold 60.0%
+```
+
+…then emits:
+
+```
+##vso[task.logissue type=error]Coverage floor breach in: pkg/auth/login.go
+```
+
+…and exits 2. The PR check summary shows the error, and the build fails.
 
 ## Troubleshooting
 

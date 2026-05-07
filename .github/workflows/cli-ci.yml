@@ -6,6 +6,7 @@ on:
       - "cli/**"
       - "!cli/azd/extensions/**"
       - ".github/workflows/cli-ci.yml"
+      - "eng/scripts/Get-CoverageDiff*.ps1"
     branches: [main]
 
 # If two events are triggered within a short time in the same PR, cancel the run of the oldest event
@@ -44,3 +45,18 @@ jobs:
 
   bicep-lint:
     uses: ./.github/workflows/lint-bicep.yml
+
+  coverage-script-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Run Pester tests for coverage scripts
+        shell: pwsh
+        run: |
+          Install-Module -Name Pester -MinimumVersion 5.5.0 -Force -SkipPublisherCheck -Scope CurrentUser
+          Import-Module Pester -MinimumVersion 5.0.0
+          $config = New-PesterConfiguration
+          $config.Run.Path = './eng/scripts/Get-CoverageDiff.Tests.ps1'
+          $config.Run.Exit = $true
+          $config.Output.Verbosity = 'Detailed'
+          Invoke-Pester -Configuration $config

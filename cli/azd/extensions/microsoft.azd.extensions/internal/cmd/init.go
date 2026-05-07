@@ -39,7 +39,7 @@ type initFlags struct {
 	namespace      string
 }
 
-func newInitCommand() *cobra.Command {
+func newInitCommand(noPrompt *bool) *cobra.Command {
 	flags := &initFlags{}
 
 	initCmd := &cobra.Command{
@@ -50,6 +50,10 @@ func newInitCommand() *cobra.Command {
 				"Initialize a new azd extension project (azd x init)",
 				"Initializes a new azd extension project from a template",
 			)
+
+			if noPrompt != nil {
+				flags.noPrompt = *noPrompt
+			}
 
 			// Validate required parameters when in headless mode
 			if flags.noPrompt {
@@ -89,12 +93,6 @@ func newInitCommand() *cobra.Command {
 		&flags.createRegistry,
 		"registry", "r", false,
 		"When set will create a local extension source registry.",
-	)
-
-	initCmd.Flags().BoolVar(
-		&flags.noPrompt,
-		"no-prompt", false,
-		"Skip all prompts by providing all required parameters via command-line flags.",
 	)
 
 	initCmd.Flags().StringVar(

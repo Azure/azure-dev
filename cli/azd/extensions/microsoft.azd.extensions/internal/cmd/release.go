@@ -188,9 +188,8 @@ func runReleaseAction(ctx context.Context, flags *releaseFlags) error {
 		return fmt.Errorf("failed to initialize GitHub CLI: %w", err)
 	}
 
-	// Check if GitHub CLI is installed using the new method that returns UserFriendlyError
 	if err := ghCli.CheckAndGetInstallError(); err != nil {
-		return err // Pass the UserFriendlyError through
+		return err
 	}
 
 	repo, err := ghCli.ViewRepository(absExtensionPath, flags.repository)
@@ -294,8 +293,11 @@ func runReleaseAction(ctx context.Context, flags *releaseFlags) error {
 					releaseResult, err := ghCli.CreateRelease(absExtensionPath, tagName, releaseOptions, files)
 					if err != nil {
 						if errors.Is(err, github.ErrReleaseAlreadyExists) {
-							err = internal.NewUserFriendlyError("Release already exists",
-								strings.Join([]string{
+							err = &azdext.LocalError{
+								Message:  "Release already exists",
+								Code:     "github_release_already_exists",
+								Category: azdext.LocalErrorCategoryValidation,
+								Suggestion: strings.Join([]string{
 									fmt.Sprintf(
 										"The %s extension already has been released with version %s",
 										output.WithHighLightFormat(extensionMetadata.Id),
@@ -303,7 +305,7 @@ func runReleaseAction(ctx context.Context, flags *releaseFlags) error {
 									),
 									"Please update the version number or delete the existing release before trying again.",
 								}, "\n"),
-							)
+							}
 						}
 
 						return ux.Error, common.NewDetailedError("Release failed", err)

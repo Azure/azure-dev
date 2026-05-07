@@ -28,7 +28,7 @@ type packageFlags struct {
 	rebuild    bool
 }
 
-func newPackCommand() *cobra.Command {
+func newPackCommand(outputPath *string) *cobra.Command {
 	flags := &packageFlags{}
 
 	packageCmd := &cobra.Command{
@@ -40,6 +40,9 @@ func newPackCommand() *cobra.Command {
 				"Packages the azd extension project and updates the registry",
 			)
 
+			if outputPath != nil && cmd.Flags().Changed("output") {
+				flags.outputPath = *outputPath
+			}
 			defaultPackageFlags(flags)
 			err := runPackageAction(cmd.Context(), flags)
 			if err != nil {
@@ -51,11 +54,11 @@ func newPackCommand() *cobra.Command {
 		},
 	}
 
-	packageCmd.Flags().StringVarP(
-		&flags.outputPath,
-		"output", "o", "",
-		"Path to the artifacts output directory. If not provided, will use local registry artifacts path.",
-	)
+	azdext.RegisterFlagOptions(packageCmd, azdext.FlagOptions{
+		Name:        "output",
+		Usage:       "Path to the artifacts output directory. If omitted, uses the local registry artifacts path.",
+		HideDefault: true,
+	})
 
 	packageCmd.Flags().StringVarP(
 		&flags.inputPath,

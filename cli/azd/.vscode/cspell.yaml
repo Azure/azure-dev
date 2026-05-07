@@ -1,6 +1,5 @@
 import: ../../../.vscode/cspell.global.yaml
 words:
-  - subtests
   - agentcopilot
   - agentdetect
   - Authenticode
@@ -61,6 +60,7 @@ words:
   - protoreflect
   - SNAPPROCESS
   - structpb
+  - subtests
   - syncmap
   - syscall
   - tsx

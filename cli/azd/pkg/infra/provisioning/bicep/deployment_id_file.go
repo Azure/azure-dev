@@ -38,8 +38,10 @@ var deploymentIdFileMu sync.Mutex
 // process invocation. The first write truncates the file; subsequent writes append.
 var deploymentIdFileTruncated sync.Once
 
-// resetDeploymentIdFileTruncation resets the truncation state. This is only used
-// by tests to ensure each test case starts fresh.
+// resetDeploymentIdFileTruncation resets the truncation state so subsequent calls
+// to writeDeploymentIdFile will truncate the file again. This is only used by tests
+// (called sequentially between subtests) to ensure each test case starts fresh.
+// It must NOT be called concurrently with writeDeploymentIdFile.
 func resetDeploymentIdFileTruncation() {
 	deploymentIdFileTruncated = sync.Once{}
 }

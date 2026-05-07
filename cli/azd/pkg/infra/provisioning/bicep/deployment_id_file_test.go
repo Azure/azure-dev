@@ -5,10 +5,10 @@ package bicep
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"testing"
 
@@ -216,7 +216,7 @@ func readNDJSONLines(t *testing.T, path string) []deploymentIdLine {
 	require.NoError(t, err)
 
 	var lines []deploymentIdLine
-	scanner := bufio.NewScanner(strings.NewReader(string(data)))
+	scanner := bufio.NewScanner(bytes.NewReader(data))
 	for scanner.Scan() {
 		line := scanner.Text()
 		if line == "" {

@@ -15,6 +15,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"azure.ai.customtraining/internal/utils"
 )
 
 // Runner manages azcopy execution.
@@ -220,30 +222,11 @@ func printProgress(transferred, total int64, percent float64, startTime time.Tim
 		etaStr = "calculating..."
 	}
 
-	transferredStr := formatBytes(transferred)
-	totalStr := formatBytes(total)
+	transferredStr := utils.FormatBytes(transferred)
+	totalStr := utils.FormatBytes(total)
 
 	fmt.Fprintf(os.Stdout, "\r  %s %.1f%% (%s / %s) | %s | Elapsed: %s | ETA: %s   ",
 		bar, percent, transferredStr, totalStr, speedStr, formatDuration(elapsed), etaStr)
-}
-
-func formatBytes(b int64) string {
-	const (
-		KB = 1024
-		MB = KB * 1024
-		GB = MB * 1024
-	)
-
-	switch {
-	case b >= GB:
-		return fmt.Sprintf("%.1f GB", float64(b)/float64(GB))
-	case b >= MB:
-		return fmt.Sprintf("%.1f MB", float64(b)/float64(MB))
-	case b >= KB:
-		return fmt.Sprintf("%.1f KB", float64(b)/float64(KB))
-	default:
-		return fmt.Sprintf("%d B", b)
-	}
 }
 
 func formatDuration(d time.Duration) string {

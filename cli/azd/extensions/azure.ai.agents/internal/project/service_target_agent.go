@@ -937,7 +937,9 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 
 	// Set the base agent endpoint used for session management (not protocol-specific).
 	baseEndpointKey := fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey)
-	envVars[baseEndpointKey] = fmt.Sprintf("%s/agents/%s", azdEnv["AZURE_AI_PROJECT_ENDPOINT"], agentVersionResponse.Name)
+	envVars[baseEndpointKey] = fmt.Sprintf(
+		"%s/agents/%s/versions/%s", azdEnv["AZURE_AI_PROJECT_ENDPOINT"], agentVersionResponse.Name, agentVersionResponse.Version,
+	)
 
 	endpoints := agentInvocationEndpoints(
 		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],

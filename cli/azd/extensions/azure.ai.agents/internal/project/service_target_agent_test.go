@@ -242,7 +242,7 @@ func TestRegisterAgentEnvironmentVariables(t *testing.T) {
 
 	// Base agent endpoint for session management
 	require.Contains(t, envStub.values, "AGENT_MY_SVC_ENDPOINT")
-	require.Equal(t, "https://proj.azure.com/agents/my-agent", envStub.values["AGENT_MY_SVC_ENDPOINT"])
+	require.Equal(t, "https://proj.azure.com/agents/my-agent/versions/1.0.0", envStub.values["AGENT_MY_SVC_ENDPOINT"])
 }
 
 func TestProtocolPath(t *testing.T) {

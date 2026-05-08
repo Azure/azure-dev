@@ -8,7 +8,7 @@ trigger: none
 
 pr:
   branches:
-    include: ['*']
+    include: ['pipelinev3*']
   paths:
     include:
       - cli/
@@ -37,23 +37,19 @@ extends:
                 fetchDepth: 1
 
               - pwsh: |
-                  # Fetch the target branch for diffing
+                  # Shallow-fetch the target branch so get-changedfiles.ps1 can diff against it
                   $targetBranch = "$(System.PullRequest.TargetBranchName)"
-                  if (-not $targetBranch) {
-                    $targetBranch = "main"
-                  }
+                  if (-not $targetBranch) { $targetBranch = "main" }
                   git fetch --no-tags --depth=1 origin $targetBranch
+                displayName: Fetch target branch
 
-                  # Get changed files using three-dot diff (same as GitHub PR diff)
-                  $sourceCommit = "$(Build.SourceVersion)"
-                  $changedFiles = git -c core.quotepath=off diff --name-only "origin/$targetBranch...$sourceCommit"
+              - pwsh: |
+                  # Get changed files using the shared helper (uses ADO PR env vars automatically)
+                  $changedFiles = & "$(Build.SourcesDirectory)/eng/common/scripts/get-changedfiles.ps1"
 
                   if (-not $changedFiles) {
                     Write-Host "No changed files detected."
                     $changedFiles = @()
-                  } else {
-                    Write-Host "Changed files:"
-                    $changedFiles | ForEach-Object { Write-Host "  $_" }
                   }
 
                   # ---- Helper: test if any changed file matches a set of path prefixes ----

@@ -50,6 +50,12 @@ func newJobDownloadCommand() *cobra.Command {
 			if name == "" {
 				return fmt.Errorf("--name (-n) is required")
 			}
+			if all && outputName != "" {
+				return fmt.Errorf(
+					"--all and --output-name cannot be used together. " +
+						"Use --all to download every named output plus default artifacts, " +
+						"or --output-name <name> to download a single output")
+			}
 
 			// Resolve destination root.
 			//   --download-path / -p provided → used verbatim, exactly as the
@@ -152,8 +158,6 @@ func newJobDownloadCommand() *cobra.Command {
 		"Path to download files to (used as-is when provided; defaults to ./<job-name>/ in the current directory)")
 	cmd.Flags().StringVar(&outputName, "output-name", "",
 		"Name of the user-defined output to download. If omitted (or set to \"default\"), the default artifacts are downloaded")
-
-	cmd.MarkFlagsMutuallyExclusive("all", "output-name")
 
 	return cmd
 }

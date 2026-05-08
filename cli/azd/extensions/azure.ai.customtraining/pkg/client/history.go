@@ -15,9 +15,9 @@ import (
 )
 
 // GetRunHistory retrieves run history details for a specific job.
-// GET .../history/{runId}
+// GET .../history/runs/{runId}
 func (c *Client) GetRunHistory(ctx context.Context, runID string) (*models.RunHistory, error) {
-	resp, err := c.doDataPlane(ctx, http.MethodGet, fmt.Sprintf("history/%s", runID), nil)
+	resp, err := c.doDataPlane(ctx, http.MethodGet, fmt.Sprintf("history/runs/%s", runID), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get run history: %w", err)
 	}

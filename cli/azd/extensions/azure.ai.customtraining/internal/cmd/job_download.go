@@ -334,10 +334,10 @@ func downloadDefaultArtifacts(
 		history = h
 		return 200, nil
 	}); err != nil {
-		return fmt.Errorf("failed to get run history: %w", err)
+		return fmt.Errorf("could not retrieve run metadata for job %q, please retry: %w", jobName, err)
 	}
-	if history == nil || history.ExperimentID == "" {
-		return fmt.Errorf("run history response missing experimentId for job %q", jobName)
+	if history == nil {
+		return fmt.Errorf("run metadata not found for job %q", jobName)
 	}
 	experimentID := history.ExperimentID
 

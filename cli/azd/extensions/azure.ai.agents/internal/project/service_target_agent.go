@@ -628,7 +628,8 @@ func (p *AgentServiceTargetProvider) shouldUsePreBuiltImage(
 	}
 
 	usePreBuilt := resp.Value != nil && *resp.Value == 0
-	p.usePreBuiltImage = &usePreBuilt
+	p.usePreBuiltImage = new(bool)
+	*p.usePreBuiltImage = usePreBuilt
 	return usePreBuilt, nil
 }
 

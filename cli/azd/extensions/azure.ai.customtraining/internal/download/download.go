@@ -23,6 +23,10 @@ import (
 // MaxAttempts is the number of attempts for retryable API calls (initial + retries).
 const MaxAttempts = 3
 
+// DefaultParallelism is the default number of concurrent downloads when the
+// caller doesn't specify one.
+const DefaultParallelism = 8
+
 // initialBackoff is the delay before the first retry; subsequent retries double it.
 const initialBackoff = 500 * time.Millisecond
 
@@ -99,12 +103,18 @@ func DownloadArtifacts(
 	parallelism int,
 ) []ArtifactDownloadResult {
 	if parallelism <= 0 {
-		parallelism = 8
+		parallelism = DefaultParallelism
 	}
 
 	results := make([]ArtifactDownloadResult, len(infos))
 	sem := make(chan struct{}, parallelism)
 	var wg sync.WaitGroup
+
+	// Dedupe by destination path. The history service should not normally
+	// return duplicate artifact paths, but if it does, two goroutines would
+	// race on the same .tmp file and final rename — risking corrupt output.
+	// Keep the first occurrence; mark subsequent duplicates as skipped.
+	seen := make(map[string]struct{}, len(infos))
 
 	for i, info := range infos {
 		i, info := i, info
@@ -112,6 +122,14 @@ func DownloadArtifacts(
 			results[i] = ArtifactDownloadResult{Path: "", Err: fmt.Errorf("missing content uri or path")}
 			continue
 		}
+		if _, dup := seen[info.Path]; dup {
+			results[i] = ArtifactDownloadResult{
+				Path: info.Path,
+				Err:  fmt.Errorf("duplicate artifact path %q in response; skipped", info.Path),
+			}
+			continue
+		}
+		seen[info.Path] = struct{}{}
 		wg.Add(1)
 		sem <- struct{}{}
 		go func() {
@@ -149,9 +167,11 @@ func downloadOne(ctx context.Context, contentURI, destDir, relPath string) (int6
 		}
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-			return resp.StatusCode, fmt.Errorf("download %s: HTTP %d: %s",
-				relPath, resp.StatusCode, strings.TrimSpace(string(body)))
+			// Don't echo the response body in user-facing errors: Azure Blob
+			// Storage XML error responses can include request URLs, signature
+			// fragments, or other server-echoed content that may leak SAS
+			// tokens / credentials. Status code alone is enough for triage.
+			return resp.StatusCode, fmt.Errorf("download %s: HTTP %d", relPath, resp.StatusCode)
 		}
 		// Write to a sibling .tmp file and atomically rename on success so a
 		// partial/interrupted download (network drop, ctx canceled, disk full)

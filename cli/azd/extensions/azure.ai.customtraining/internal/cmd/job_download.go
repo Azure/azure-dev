@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"azure.ai.customtraining/internal/azcopy"
 	"azure.ai.customtraining/internal/download"
@@ -82,8 +83,8 @@ func newJobDownloadCommand() *cobra.Command {
 			status := job.Properties.Status
 			if !isTerminalStatus(status) {
 				return fmt.Errorf(
-					"This job is in state %s. Download is allowed only in states %v",
-					status, terminalStatuses,
+					"This job is in state %s. Download is allowed only in states: %s",
+					status, strings.Join(terminalStatuses, ", "),
 				)
 			}
 
@@ -245,6 +246,9 @@ func downloadModelAsset(
 	}); err != nil {
 		return fmt.Errorf("failed to get model version: %w", err)
 	}
+	if modelVer == nil {
+		return fmt.Errorf("model %s/v%s: empty response from API", assetName, assetVersion)
+	}
 	if modelVer.BlobURI == "" {
 		return fmt.Errorf("model %s/v%s response missing blobUri", assetName, assetVersion)
 	}
@@ -353,6 +357,9 @@ func downloadDefaultArtifacts(
 		}); err != nil {
 			return fmt.Errorf("failed to list run artifacts: %w", err)
 		}
+		if page == nil {
+			break
+		}
 		artifacts = append(artifacts, page.Value...)
 		if page.ContinuationToken == "" {
 			break
@@ -367,7 +374,7 @@ func downloadDefaultArtifacts(
 
 	fmt.Printf("  artifacts: fetching content info for %d artifact(s)...\n", len(artifacts))
 
-	const parallelism = 8
+	const parallelism = download.DefaultParallelism
 	infos, err := fetchContentInfosParallel(ctx, apiClient, trackingEndpoint, experimentID, jobName, artifacts, parallelism)
 	if err != nil {
 		return err

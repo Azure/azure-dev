@@ -5,6 +5,7 @@ package project
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -132,6 +133,44 @@ func newContainerTestClient(t *testing.T, containerSrv azdext.ContainerServiceSe
 
 	srv := grpc.NewServer()
 	azdext.RegisterContainerServiceServer(srv, containerSrv)
+
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	go func() { _ = srv.Serve(lis) }()
+	t.Cleanup(func() {
+		srv.Stop()
+		_ = lis.Close()
+	})
+
+	client, err := azdext.NewAzdClient(azdext.WithAddress(lis.Addr().String()))
+	require.NoError(t, err)
+	t.Cleanup(func() { client.Close() })
+
+	return client
+}
+
+type stubPromptServer struct {
+	azdext.UnimplementedPromptServiceServer
+	selectedIndex int32
+	selectCalls   int
+	lastSelect    *azdext.SelectRequest
+}
+
+func (s *stubPromptServer) Select(
+	_ context.Context,
+	req *azdext.SelectRequest,
+) (*azdext.SelectResponse, error) {
+	s.selectCalls++
+	s.lastSelect = req
+	return &azdext.SelectResponse{Value: &s.selectedIndex}, nil
+}
+
+func newPromptTestClient(t *testing.T, promptSrv azdext.PromptServiceServer) *azdext.AzdClient {
+	t.Helper()
+
+	srv := grpc.NewServer()
+	azdext.RegisterPromptServiceServer(srv, promptSrv)
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -573,4 +612,200 @@ func TestAgentPlaygroundURL_AccountLevelID(t *testing.T) {
 	_, err := AgentPlaygroundURL(resourceID, "agent", "1")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "missing parent account")
+}
+
+// writeHostedAgentYAMLWithImage creates a hosted agent.yaml with a pre-built image field.
+func writeHostedAgentYAMLWithImage(t *testing.T, dir, image string) string {
+	t.Helper()
+	p := filepath.Join(dir, "agent.yaml")
+	content := fmt.Sprintf("kind: hosted\nname: test-agent\nimage: %s\n", image)
+	require.NoError(t, os.WriteFile(p, []byte(content), 0o600))
+	return p
+}
+
+func TestGetPreBuiltImageURL_FromAgentYAML(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	agentPath := writeHostedAgentYAMLWithImage(t, dir, "agent-yaml-image.azurecr.io/img:v1")
+
+	provider := &AgentServiceTargetProvider{agentDefinitionPath: agentPath}
+
+	result := provider.getPreBuiltImageURL()
+	require.Equal(t, "agent-yaml-image.azurecr.io/img:v1", result)
+}
+
+func TestGetPreBuiltImageURL_EmptyWhenNoImage(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	agentPath := writeHostedAgentYAML(t, dir)
+
+	provider := &AgentServiceTargetProvider{agentDefinitionPath: agentPath}
+
+	result := provider.getPreBuiltImageURL()
+	require.Empty(t, result)
+}
+
+func TestResolvePreBuiltImage_RespectsUserChoice(t *testing.T) {
+	t.Parallel()
+
+	agentDef := agent_yaml.ContainerAgent{
+		Image: "myregistry.azurecr.io/img:v1",
+	}
+
+	// User chose pre-built image
+	provider := &AgentServiceTargetProvider{usePreBuiltImage: new(true)}
+	result := provider.resolvePreBuiltImage(agentDef)
+	require.Equal(t, "myregistry.azurecr.io/img:v1", result)
+
+	// User chose to build from Dockerfile
+	provider2 := &AgentServiceTargetProvider{usePreBuiltImage: new(false)}
+	result2 := provider2.resolvePreBuiltImage(agentDef)
+	require.Empty(t, result2)
+}
+
+func TestShouldUsePreBuiltImage_CachesDecision(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	agentPath := writeHostedAgentYAMLWithImage(t, dir, "myregistry.azurecr.io/myimage:v1")
+
+	// Pre-set the decision to avoid needing a prompt server
+	provider := &AgentServiceTargetProvider{
+		agentDefinitionPath: agentPath,
+		usePreBuiltImage:    new(true),
+	}
+
+	// Should return cached value without prompting
+	result, err := provider.shouldUsePreBuiltImage(t.Context())
+	require.NoError(t, err)
+	require.True(t, result)
+}
+
+func TestShouldUsePreBuiltImage_NoImageDefaultsToBuild(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	agentPath := writeHostedAgentYAML(t, dir) // no image field
+
+	provider := &AgentServiceTargetProvider{
+		agentDefinitionPath: agentPath,
+	}
+
+	result, err := provider.shouldUsePreBuiltImage(t.Context())
+	require.NoError(t, err)
+	require.False(t, result, "should default to build when no image is configured")
+}
+
+func TestShouldUsePreBuiltImage_PromptsForConfiguredImage(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	imageURL := "myregistry.azurecr.io/myimage:v1"
+	agentPath := writeHostedAgentYAMLWithImage(t, dir, imageURL)
+
+	promptStub := &stubPromptServer{selectedIndex: 1}
+	client := newPromptTestClient(t, promptStub)
+
+	provider := &AgentServiceTargetProvider{
+		azdClient:           client,
+		agentDefinitionPath: agentPath,
+	}
+
+	result, err := provider.shouldUsePreBuiltImage(t.Context())
+	require.NoError(t, err)
+	require.False(t, result)
+	require.Equal(t, 1, promptStub.selectCalls)
+	require.NotNil(t, promptStub.lastSelect)
+	require.NotNil(t, promptStub.lastSelect.Options)
+	require.Len(t, promptStub.lastSelect.Options.Choices, 2)
+	require.Equal(t, "Create hosted agent from "+imageURL, promptStub.lastSelect.Options.Choices[0].Label)
+	require.Equal(t, "Build it for me", promptStub.lastSelect.Options.Choices[1].Label)
+
+	cachedResult, err := provider.shouldUsePreBuiltImage(t.Context())
+	require.NoError(t, err)
+	require.False(t, cachedResult)
+	require.Equal(t, 1, promptStub.selectCalls, "expected prompt decision to be cached")
+}
+
+func TestPackage_SkipsWhenPreBuiltImageChosen(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	agentPath := writeHostedAgentYAMLWithImage(t, dir, "myregistry.azurecr.io/myimage:v1")
+
+	provider := &AgentServiceTargetProvider{
+		agentDefinitionPath: agentPath,
+		env:                 &azdext.Environment{Name: "test-env"},
+		usePreBuiltImage:    new(true), // simulate user chose pre-built
+	}
+
+	var progressMessages []string
+	result, err := provider.Package(
+		t.Context(),
+		&azdext.ServiceConfig{Name: "test-svc"},
+		&azdext.ServiceContext{},
+		func(msg string) { progressMessages = append(progressMessages, msg) },
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Empty(t, result.Artifacts, "expected no artifacts when using pre-built image")
+	require.Contains(t, progressMessages, "Using pre-built container image, skipping package")
+}
+
+func TestPackage_BuildsWhenUserChoseDockerfile(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	agentPath := writeHostedAgentYAMLWithImage(t, dir, "myregistry.azurecr.io/myimage:v1")
+
+	client := newContainerTestClient(t, &stubContainerServer{})
+
+	provider := &AgentServiceTargetProvider{
+		azdClient:           client,
+		agentDefinitionPath: agentPath,
+		env:                 &azdext.Environment{Name: "test-env"},
+		usePreBuiltImage:    new(false), // simulate user chose "Build from Dockerfile"
+	}
+
+	result, err := provider.Package(
+		t.Context(),
+		&azdext.ServiceConfig{Name: "test-svc"},
+		&azdext.ServiceContext{},
+		func(string) {},
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotEmpty(t, result.Artifacts, "expected container artifacts when building from Dockerfile")
+}
+
+func TestPublish_SkipsWhenPreBuiltImageChosen(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	agentPath := writeHostedAgentYAMLWithImage(t, dir, "myregistry.azurecr.io/myimage:v1")
+
+	provider := &AgentServiceTargetProvider{
+		agentDefinitionPath: agentPath,
+		env:                 &azdext.Environment{Name: "test-env"},
+		usePreBuiltImage:    new(true), // simulate user chose pre-built
+	}
+
+	var progressMessages []string
+	result, err := provider.Publish(
+		t.Context(),
+		&azdext.ServiceConfig{Name: "test-svc"},
+		&azdext.ServiceContext{},
+		&azdext.TargetResource{},
+		&azdext.PublishOptions{},
+		func(msg string) { progressMessages = append(progressMessages, msg) },
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Empty(t, result.Artifacts, "expected no artifacts when using pre-built image")
+	require.Contains(t, progressMessages, "Using pre-built container image, skipping publish")
 }

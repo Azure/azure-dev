@@ -80,6 +80,7 @@ type AgentServiceTargetProvider struct {
 	tenantId            string
 	env                 *azdext.Environment
 	foundryProject      *arm.ResourceID
+	usePreBuiltImage    *bool // nil = not yet prompted, true = use pre-built, false = build from Dockerfile
 }
 
 // NewAgentServiceTargetProvider creates a new AgentServiceTargetProvider instance
@@ -359,6 +360,17 @@ func (p *AgentServiceTargetProvider) Package(
 		return &azdext.ServicePackageResult{}, nil
 	}
 
+	// When a pre-built image is configured, prompt the user to choose.
+	// If no image is configured, proceed with build.
+	usePreBuiltImage, err := p.shouldUsePreBuiltImage(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if usePreBuiltImage {
+		progress("Using pre-built container image, skipping package")
+		return &azdext.ServicePackageResult{}, nil
+	}
+
 	var packageArtifact *azdext.Artifact
 	var newArtifacts []*azdext.Artifact
 
@@ -421,6 +433,16 @@ func (p *AgentServiceTargetProvider) Publish(
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePublishResult, error) {
 	if !p.isContainerAgent() {
+		return &azdext.ServicePublishResult{}, nil
+	}
+
+	// Skip publishing when user chose to use a pre-built image
+	usePreBuiltImage, err := p.shouldUsePreBuiltImage(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if usePreBuiltImage {
+		progress("Using pre-built container image, skipping publish")
 		return &azdext.ServicePublishResult{}, nil
 	}
 
@@ -568,6 +590,79 @@ func (p *AgentServiceTargetProvider) isContainerAgent() bool {
 	return kind == string(agent_yaml.AgentKindHosted)
 }
 
+// shouldUsePreBuiltImage determines whether to use a pre-built image.
+// When an image URL is configured, it prompts the user to choose between
+// using the pre-built image or building from a Dockerfile.
+// The decision is cached so the prompt only appears once per deploy.
+func (p *AgentServiceTargetProvider) shouldUsePreBuiltImage(
+	ctx context.Context,
+) (bool, error) {
+	// Return cached decision if already prompted
+	if p.usePreBuiltImage != nil {
+		return *p.usePreBuiltImage, nil
+	}
+
+	imageURL := p.getPreBuiltImageURL()
+	if imageURL == "" {
+		// No image configured, build from Dockerfile.
+		p.usePreBuiltImage = new(false)
+		return false, nil
+	}
+
+	// Prompt the user to choose
+	choices := []*azdext.SelectChoice{
+		{Value: "prebuilt", Label: fmt.Sprintf("Create hosted agent from %s", imageURL)},
+		{Value: "build", Label: "Build it for me"},
+	}
+
+	defaultIndex := int32(0)
+	resp, err := p.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+		Options: &azdext.SelectOptions{
+			Message:       "A container image is configured. How would you like to deploy?",
+			Choices:       choices,
+			SelectedIndex: &defaultIndex,
+		},
+	})
+	if err != nil {
+		return false, exterrors.FromPrompt(err, "failed to select hosted agent container image source")
+	}
+
+	usePreBuilt := resp.Value != nil && *resp.Value == 0
+	p.usePreBuiltImage = &usePreBuilt
+	return usePreBuilt, nil
+}
+
+// getPreBuiltImageURL returns the configured pre-built image URL from
+// agent.yaml (image field).
+// Returns empty string if no pre-built image is specified.
+func (p *AgentServiceTargetProvider) getPreBuiltImageURL() string {
+	data, err := os.ReadFile(p.agentDefinitionPath)
+	if err != nil {
+		return ""
+	}
+
+	var agentDef agent_yaml.ContainerAgent
+	if err := yaml.Unmarshal(data, &agentDef); err != nil {
+		return ""
+	}
+
+	return agentDef.Image
+}
+
+// resolvePreBuiltImage returns the pre-built container image URL if one is configured
+// in agent.yaml and the user chose to use it.
+// Returns empty string if no pre-built image is specified.
+func (p *AgentServiceTargetProvider) resolvePreBuiltImage(
+	agentDef agent_yaml.ContainerAgent,
+) string {
+	// Only return an image URL if the user chose to use the pre-built image.
+	if p.usePreBuiltImage == nil || !*p.usePreBuiltImage {
+		return ""
+	}
+
+	return agentDef.Image
+}
+
 // deployHostedAgent deploys a container-based hosted agent to the Foundry service.
 func (p *AgentServiceTargetProvider) deployHostedAgent(
 	ctx context.Context,
@@ -588,21 +683,36 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 
 	progress("Deploying hosted agent")
 
-	// Step 1: Build container image
-	var fullImageURL string
-	for _, artifact := range serviceContext.Publish {
-		if artifact.Kind == azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER &&
-			artifact.LocationKind == azdext.LocationKind_LOCATION_KIND_REMOTE {
-			fullImageURL = artifact.Location
-			break
-		}
+	// Step 1: Resolve container image URL.
+	// Priority: agent.yaml image chosen by the user > published artifact.
+	usePreBuiltImage, err := p.shouldUsePreBuiltImage(ctx)
+	if err != nil {
+		return nil, err
 	}
-	if fullImageURL == "" {
-		return nil, exterrors.Dependency(
-			exterrors.CodeMissingPublishedContainer,
-			"published container artifact not found: no remote container artifact was found in service publish artifacts",
-			"run 'azd package' and 'azd publish' (or 'azd deploy') to produce container artifacts",
-		)
+	if !usePreBuiltImage && agentDef.Image != "" {
+		fmt.Fprintf(os.Stderr, "Building container image instead of using pre-built image: %s\n", agentDef.Image)
+	}
+
+	fullImageURL := p.resolvePreBuiltImage(agentDef)
+	if fullImageURL != "" {
+		fmt.Fprintf(os.Stderr, "Using pre-built container image: %s\n", fullImageURL)
+	} else {
+		for _, artifact := range serviceContext.Publish {
+			if artifact.Kind == azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER &&
+				artifact.LocationKind == azdext.LocationKind_LOCATION_KIND_REMOTE {
+				fullImageURL = artifact.Location
+				break
+			}
+		}
+		if fullImageURL == "" {
+			return nil, exterrors.Dependency(
+				exterrors.CodeMissingPublishedContainer,
+				"published container artifact not found: no remote container artifact was found in service "+
+					"publish artifacts and no pre-built image was specified",
+				"either set 'image' in agent.yaml, "+
+					"or run 'azd package' and 'azd publish' to build from a Dockerfile",
+			)
+		}
 	}
 
 	fmt.Fprintf(os.Stderr, "Loaded configuration from: %s\n", p.agentDefinitionPath)

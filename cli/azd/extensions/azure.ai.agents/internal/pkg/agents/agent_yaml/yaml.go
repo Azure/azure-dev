@@ -172,8 +172,11 @@ type ContainerResources struct {
 // ContainerAgent This represents a container based agent hosted by the provider/publisher.
 // The intent is to represent a container application that the user wants to run
 // in a hosted environment that the provider manages.
+// When Image is set, the agent uses a pre-built container image (e.g. from ACR)
+// and skips the Dockerfile build and push steps.
 type ContainerAgent struct {
 	AgentDefinition      `json:",inline" yaml:",inline"`
+	Image                string                  `json:"image,omitempty" yaml:"image,omitempty"`
 	Protocols            []ProtocolVersionRecord `json:"protocols" yaml:"protocols"`
 	Resources            *ContainerResources     `json:"resources,omitempty" yaml:"resources,omitempty"`
 	EnvironmentVariables *[]EnvironmentVariable  `json:"environmentVariables,omitempty" yaml:"environment_variables,omitempty"`

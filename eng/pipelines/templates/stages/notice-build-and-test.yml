@@ -40,6 +40,12 @@ stages:
           name: azsdk-pool
           demands: ImageOverride -equals ubuntu-22.04
 
+        templateContext:
+          outputs:
+            - output: pipelineArtifact
+              targetPath: $(Build.SourcesDirectory)/NOTICE.txt
+              artifactName: notice
+
         steps:
           - task: ComponentGovernanceComponentDetection@0
 
@@ -48,6 +54,3 @@ stages:
             inputs:
               outputfile: $(Build.SourcesDirectory)/NOTICE.txt
               outputformat: text
-
-          - publish: NOTICE.txt
-            artifact: notice

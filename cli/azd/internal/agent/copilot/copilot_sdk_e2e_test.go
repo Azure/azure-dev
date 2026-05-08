@@ -107,11 +107,11 @@ func TestCopilotSDK_E2E(t *testing.T) {
 	// 7. Validate response
 	t.Logf("Received %d events total", len(events))
 	if response != nil {
-		if data, ok := response.Data.(*copilot.AssistantMessageData); ok {
-			t.Logf("Response content: %s", data.Content)
-			require.Contains(t, data.Content, "4",
-				"expected response to contain '4'")
-		}
+		data, ok := response.Data.(*copilot.AssistantMessageData)
+		require.True(t, ok, "expected response.Data to be *copilot.AssistantMessageData, got %T", response.Data)
+		t.Logf("Response content: %s", data.Content)
+		require.Contains(t, data.Content, "4",
+			"expected response to contain '4'")
 	} else {
 		// If SendAndWait returned nil, check events for assistant message
 		var found bool

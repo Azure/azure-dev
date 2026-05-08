@@ -18,16 +18,15 @@ func TestHeadlessCollector_HandleEvent_Usage(t *testing.T) {
 	outputTokens := float64(50)
 	cost := float64(1.5)
 	duration := float64(1000)
-	model := "gpt-4o"
 
 	collector.HandleEvent(copilot.SessionEvent{
-		Type: copilot.AssistantUsage,
-		Data: copilot.Data{
+		Type: copilot.SessionEventTypeAssistantUsage,
+		Data: &copilot.AssistantUsageData{
 			InputTokens:  &inputTokens,
 			OutputTokens: &outputTokens,
 			Cost:         &cost,
 			Duration:     &duration,
-			Model:        &model,
+			Model:        "gpt-4o",
 		},
 	})
 
@@ -47,12 +46,12 @@ func TestHeadlessCollector_HandleEvent_AccumulatesUsage(t *testing.T) {
 	tokens2 := float64(200)
 
 	collector.HandleEvent(copilot.SessionEvent{
-		Type: copilot.AssistantUsage,
-		Data: copilot.Data{InputTokens: &tokens1},
+		Type: copilot.SessionEventTypeAssistantUsage,
+		Data: &copilot.AssistantUsageData{InputTokens: &tokens1},
 	})
 	collector.HandleEvent(copilot.SessionEvent{
-		Type: copilot.AssistantUsage,
-		Data: copilot.Data{InputTokens: &tokens2},
+		Type: copilot.SessionEventTypeAssistantUsage,
+		Data: &copilot.AssistantUsageData{InputTokens: &tokens2},
 	})
 
 	usage := collector.GetUsageMetrics()
@@ -64,9 +63,12 @@ func TestHeadlessCollector_WaitForIdle_WithMessage(t *testing.T) {
 	collector := NewHeadlessCollector()
 
 	// Simulate turn start → message → idle
-	collector.HandleEvent(copilot.SessionEvent{Type: copilot.AssistantTurnStart})
-	collector.HandleEvent(copilot.SessionEvent{Type: copilot.AssistantMessage, Data: copilot.Data{}})
-	collector.HandleEvent(copilot.SessionEvent{Type: copilot.SessionIdle})
+	collector.HandleEvent(copilot.SessionEvent{Type: copilot.SessionEventTypeAssistantTurnStart})
+	collector.HandleEvent(copilot.SessionEvent{
+		Type: copilot.SessionEventTypeAssistantMessage,
+		Data: &copilot.AssistantMessageData{},
+	})
+	collector.HandleEvent(copilot.SessionEvent{Type: copilot.SessionEventTypeSessionIdle})
 
 	ctx := t.Context()
 	err := collector.WaitForIdle(ctx)
@@ -77,7 +79,7 @@ func TestHeadlessCollector_WaitForIdle_TaskComplete(t *testing.T) {
 	t.Parallel()
 	collector := NewHeadlessCollector()
 
-	collector.HandleEvent(copilot.SessionEvent{Type: copilot.SessionTaskComplete})
+	collector.HandleEvent(copilot.SessionEvent{Type: copilot.SessionEventTypeSessionTaskComplete})
 
 	ctx := t.Context()
 	err := collector.WaitForIdle(ctx)
@@ -89,11 +91,14 @@ func TestHeadlessCollector_WaitForIdle_DeferredIdle(t *testing.T) {
 	collector := NewHeadlessCollector()
 
 	// Idle arrives before message → should be deferred
-	collector.HandleEvent(copilot.SessionEvent{Type: copilot.AssistantTurnStart})
-	collector.HandleEvent(copilot.SessionEvent{Type: copilot.SessionIdle})
+	collector.HandleEvent(copilot.SessionEvent{Type: copilot.SessionEventTypeAssistantTurnStart})
+	collector.HandleEvent(copilot.SessionEvent{Type: copilot.SessionEventTypeSessionIdle})
 
 	// Message arrives → should flush deferred idle
-	collector.HandleEvent(copilot.SessionEvent{Type: copilot.AssistantMessage, Data: copilot.Data{}})
+	collector.HandleEvent(copilot.SessionEvent{
+		Type: copilot.SessionEventTypeAssistantMessage,
+		Data: &copilot.AssistantMessageData{},
+	})
 
 	ctx := t.Context()
 	err := collector.WaitForIdle(ctx)
@@ -104,10 +109,9 @@ func TestHeadlessCollector_PremiumRequests(t *testing.T) {
 	t.Parallel()
 	collector := NewHeadlessCollector()
 
-	premium := float64(5)
 	collector.HandleEvent(copilot.SessionEvent{
-		Type: copilot.SessionUsageInfo,
-		Data: copilot.Data{TotalPremiumRequests: &premium},
+		Type: copilot.SessionEventTypeSessionShutdown,
+		Data: &copilot.SessionShutdownData{TotalPremiumRequests: 5},
 	})
 
 	usage := collector.GetUsageMetrics()

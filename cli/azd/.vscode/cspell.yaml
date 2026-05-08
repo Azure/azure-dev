@@ -457,6 +457,10 @@ overrides:
   - filename: internal/agent/copilot/session_config.go
     words:
       - MCPHTTP
+  - filename: pkg/tool/version_provider.go
+    words:
+      - extensionquery
+      - bitmask
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

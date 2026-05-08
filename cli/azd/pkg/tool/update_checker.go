@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Masterminds/semver/v3"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
@@ -82,9 +83,10 @@ type UpdateCheckResult struct {
 // caching results to disk so that expensive remote lookups are amortized
 // across CLI invocations.
 type UpdateChecker struct {
-	configManager config.UserConfigManager
-	detector      Detector
-	configDirFn   func() (string, error)
+	configManager    config.UserConfigManager
+	detector         Detector
+	configDirFn      func() (string, error)
+	versionProviders map[string]LatestVersionProvider
 
 	cachePathMu sync.Mutex
 	cachePath   string
@@ -97,11 +99,16 @@ func NewUpdateChecker(
 	configManager config.UserConfigManager,
 	detector Detector,
 	configDirFn func() (string, error),
+	versionProviders map[string]LatestVersionProvider,
 ) *UpdateChecker {
+	if versionProviders == nil {
+		versionProviders = make(map[string]LatestVersionProvider)
+	}
 	return &UpdateChecker{
-		configManager: configManager,
-		detector:      detector,
-		configDirFn:   configDirFn,
+		configManager:    configManager,
+		detector:         detector,
+		configDirFn:      configDirFn,
+		versionProviders: versionProviders,
 	}
 }
 
@@ -162,12 +169,14 @@ func (uc *UpdateChecker) ShouldCheck(ctx context.Context) bool {
 	)
 }
 
+// providerTimeout is the maximum time allowed for a single provider
+// call when fetching the latest version of a tool.
+const providerTimeout = 15 * time.Second
+
 // Check runs the update check for the supplied tools. It detects the
-// currently installed versions, compares them against cached remote
-// data, persists the results, and updates the last-check timestamp.
-//
-// In this POC implementation there is no remote version API; the
-// latest-version field comes solely from any previously cached data.
+// currently installed versions, queries version providers for the
+// latest available versions (using cached data when not expired),
+// persists the results, and updates the last-check timestamp.
 func (uc *UpdateChecker) Check(
 	ctx context.Context,
 	tools []*ToolDefinition,
@@ -192,6 +201,9 @@ func (uc *UpdateChecker) Check(
 		Tools:     make(map[string]CachedToolVersion, len(tools)),
 	}
 
+	// Determine if the existing cache is still valid.
+	cacheValid := existing != nil && now.Before(existing.ExpiresAt)
+
 	results := make([]*UpdateCheckResult, 0, len(tools))
 	for _, t := range tools {
 		status := statusByID[t.Id]
@@ -201,13 +213,9 @@ func (uc *UpdateChecker) Check(
 			currentVer = status.InstalledVersion
 		}
 
-		// POC: carry forward any previously cached latest version.
-		var latestVer string
-		if existing != nil {
-			if cached, ok := existing.Tools[t.Id]; ok {
-				latestVer = cached.LatestVersion
-			}
-		}
+		latestVer := uc.resolveLatestVersion(
+			ctx, t, existing, cacheValid,
+		)
 
 		cache.Tools[t.Id] = CachedToolVersion{
 			LatestVersion: latestVer,
@@ -217,7 +225,7 @@ func (uc *UpdateChecker) Check(
 			Tool:            t,
 			CurrentVersion:  currentVer,
 			LatestVersion:   latestVer,
-			UpdateAvailable: latestVer != "" && latestVer != currentVer,
+			UpdateAvailable: isNewerVersion(latestVer, currentVer),
 		})
 	}
 
@@ -226,10 +234,92 @@ func (uc *UpdateChecker) Check(
 	}
 
 	if err := uc.recordCheckTimestamp(); err != nil {
-		return results, fmt.Errorf("recording check timestamp: %w", err)
+		return results, fmt.Errorf(
+			"recording check timestamp: %w", err,
+		)
 	}
 
 	return results, nil
+}
+
+// resolveLatestVersion returns the latest version for a tool. It
+// uses the cache when valid, otherwise queries the version provider.
+func (uc *UpdateChecker) resolveLatestVersion(
+	ctx context.Context,
+	tool *ToolDefinition,
+	existing *UpdateCheckCache,
+	cacheValid bool,
+) string {
+	// Cache hit: use the cached value if the cache is not expired.
+	if cacheValid && existing != nil {
+		if cached, ok := existing.Tools[tool.Id]; ok &&
+			cached.LatestVersion != "" {
+			return cached.LatestVersion
+		}
+	}
+
+	// Query the version provider.
+	provider, ok := uc.versionProviders[tool.Id]
+	if !ok || provider == nil {
+		// No provider — carry forward any previously cached value.
+		if existing != nil {
+			if cached, ok := existing.Tools[tool.Id]; ok {
+				return cached.LatestVersion
+			}
+		}
+		return ""
+	}
+
+	providerCtx, cancel := context.WithTimeout(
+		ctx, providerTimeout,
+	)
+	defer cancel()
+
+	version, err := provider.GetLatestVersion(providerCtx, tool)
+	if err != nil {
+		log.Printf(
+			"update-checker: provider error for %s: %v",
+			tool.Id, err,
+		)
+		// Fall back to cached version on error.
+		if existing != nil {
+			if cached, ok := existing.Tools[tool.Id]; ok {
+				return cached.LatestVersion
+			}
+		}
+		return ""
+	}
+
+	return version
+}
+
+// isNewerVersion reports whether latest is a newer semantic version
+// than current. Returns false when either string is empty, unparsable,
+// or when latest <= current.
+func isNewerVersion(latest, current string) bool {
+	if latest == "" || current == "" {
+		return false
+	}
+
+	latestSV, err := semver.NewVersion(latest)
+	if err != nil {
+		log.Printf(
+			"update-checker: cannot parse latest version %q: %v",
+			latest, err,
+		)
+		return false
+	}
+
+	currentSV, err := semver.NewVersion(current)
+	if err != nil {
+		log.Printf(
+			"update-checker: cannot parse current version %q: %v",
+			current, err,
+		)
+		return false
+	}
+
+	return latestSV.GreaterThan(currentSV)
 }
 
 // GetCachedResults reads and returns the on-disk update check cache.
@@ -340,7 +430,7 @@ func (uc *UpdateChecker) HasUpdatesAvailable(
 	count := 0
 	for _, s := range statuses {
 		latest, ok := candidates[s.Tool.Id]
-		if ok && s.Installed && latest != s.InstalledVersion {
+		if ok && s.Installed && isNewerVersion(latest, s.InstalledVersion) {
 			count++
 		}
 	}

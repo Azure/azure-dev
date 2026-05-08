@@ -25,6 +25,12 @@
 - [[#7776]](https://github.com/Azure/azure-dev/pull/7776) `azd up` honors `AZD_DEPLOY_CONCURRENCY` as a fallback when `AZD_UP_CONCURRENCY` is unset, so existing deploy-tuning configurations carry over to the unified up workflow.
 - [[#7776]](https://github.com/Azure/azure-dev/pull/7776) `FailFast` semantics in the parallel scheduler: when a step fails, the scheduler cancels the run context to interrupt in-flight work, but steps that don't honor context cancellation (e.g., long-running ARM operations) will run to completion before the run returns. This is a behavior change versus the previous strictly-sequential `azd up`, which never started a later step after a prior failure.
 
+## 1.24.4 (2026-05-08)
+
+### Features Added
+
+- [[#8111]](https://github.com/Azure/azure-dev/pull/8111) Gate the `azd tool` command group and associated middleware (first-run tool check and background update check) behind the `alpha.tool` feature flag.
+
 ## 1.24.3 (2026-05-01)
 
 ### Features Added

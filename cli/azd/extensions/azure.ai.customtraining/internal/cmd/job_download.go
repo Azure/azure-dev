@@ -385,6 +385,9 @@ func downloadDefaultArtifacts(
 	}
 
 	fmt.Printf("  artifacts: downloading %d artifact(s) to %s...\n", len(infos), dest)
+	// Sweep any leftover .tmp files from a previously interrupted run so
+	// users don't see stale scratch files alongside their downloads.
+	download.SweepTempFiles(dest)
 	results := download.DownloadArtifacts(ctx, infos, dest, parallelism)
 
 	var failed int

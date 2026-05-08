@@ -144,7 +144,8 @@ func (c *Client) getToken(ctx context.Context, scope string) (string, error) {
 		Scopes: []string{scope},
 	})
 	if err != nil {
-		return "", fmt.Errorf("failed to get access token: %w", err)
+		return "", fmt.Errorf(
+			"authentication failed; check your network connection or run 'azd auth login' and retry: %w", err)
 	}
 	return token.Token, nil
 }

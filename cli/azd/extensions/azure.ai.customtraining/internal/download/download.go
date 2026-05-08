@@ -183,20 +183,28 @@ func downloadOne(ctx context.Context, contentURI, destDir, relPath string) (int6
 		if err != nil {
 			return 0, err
 		}
+		// Always remove the tmp file unless we successfully rename it. This
+		// covers ctx cancellation mid-Copy, transport errors, and any other
+		// soft-failure path. (Hard process kill on Windows ctrl+C bypasses
+		// defers; SweepTempFiles handles that case on the next run.)
+		renamed := false
+		defer func() {
+			if !renamed {
+				_ = os.Remove(tmpPath)
+			}
+		}()
 		n, copyErr := io.Copy(f, resp.Body)
 		closeErr := f.Close()
 		if copyErr != nil {
-			os.Remove(tmpPath)
 			return 0, copyErr
 		}
 		if closeErr != nil {
-			os.Remove(tmpPath)
 			return 0, closeErr
 		}
 		if err := os.Rename(tmpPath, outPath); err != nil {
-			os.Remove(tmpPath)
 			return 0, err
 		}
+		renamed = true
 		written = n
 		return resp.StatusCode, nil
 	})
@@ -204,6 +212,23 @@ func downloadOne(ctx context.Context, contentURI, destDir, relPath string) (int6
 		return 0, err
 	}
 	return written, nil
+}
+
+// SweepTempFiles removes any leftover *.tmp files under root. We use these as
+// scratch files for atomic download writes; they should never survive a
+// successful run. They can linger if the process is hard-killed (e.g. ctrl+C
+// on Windows bypasses Go defers), so we sweep them at the start of each run
+// to keep the destination tree clean.
+func SweepTempFiles(root string) {
+	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil // best-effort; ignore unreadable dirs
+		}
+		if !d.IsDir() && strings.HasSuffix(path, ".tmp") {
+			_ = os.Remove(path)
+		}
+		return nil
+	})
 }
 
 // safeJoin joins relPath onto destDir while rejecting any path that resolves

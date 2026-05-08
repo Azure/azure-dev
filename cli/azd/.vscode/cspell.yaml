@@ -401,6 +401,15 @@ overrides:
     words:
       - covdata
       - GOWORK
+      - textfmt
+      - logissue
+      - runbook
+  - filename: magefile.go
+    words:
+      - textfmt
+      - covcounters
+      - covmeta
+      - AMRD
   - filename: test/eval/README.md
     words:
       - Waza

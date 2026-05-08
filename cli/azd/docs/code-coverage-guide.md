@@ -39,8 +39,10 @@ The CI pipeline collects coverage in several stages:
 6. **Filter**: `Filter-GeneratedCoverage.ps1` removes auto-generated files
    (e.g., `*.pb.go`) so coverage reflects only hand-written code.
 
-7. **Threshold**: `Test-CodeCoverageThreshold.ps1` enforces the minimum
-   coverage gate, failing the build if coverage drops below the threshold.
+7. **PR gate** (PR builds only): `Get-CoverageDiff.ps1` compares the merged
+   profile against the latest successful `main` baseline and fails the build
+   on either a per-package decrease > 0.5 pp or overall coverage below the
+   floor. Release/main builds skip this step and only publish artifacts.
 
 ## Developer Modes
 
@@ -159,14 +161,22 @@ additional code generators are introduced.
 
 ## CI Gate
 
-The CI pipeline enforces a minimum coverage threshold using
-`Test-CodeCoverageThreshold.ps1` in the `release-cli.yml` pipeline.
+The CI pipeline enforces a two-gate coverage check on **PR builds only**
+using `Get-CoverageDiff.ps1` (invoked from
+`eng/pipelines/templates/stages/code-coverage-upload.yml`):
 
-- **Current threshold**: Check the pipeline definition for the latest value.
-- **Ratchet policy**: The threshold is periodically raised as coverage improves.
-  PRs that reduce coverage below the threshold will fail the coverage gate.
-- **Enforcement**: The threshold script parses `go tool cover -func` output and
-  exits non-zero if the total statement coverage is below the minimum.
+- **Per-package gate**: any PR-touched package that drops more than
+  `MaxPackageDecrease` percentage points (default **0.5 pp**) versus the
+  latest successful `main` baseline fails the build.
+- **Overall floor gate**: if the PR's overall coverage falls below
+  `MinOverallCoverage` (default **69%**), the build fails.
+- **Failure mode**: the script emits `##vso[task.logissue type=error]`
+  for each breached gate and exits with code `2`, which fails the ADO job.
+- **Scope**: release, scheduled, and `main` builds **do not** enforce
+  these gates — they only publish coverage artifacts. A coverage dip on
+  `main` will surface on the next PR rather than block a release.
+- **Ratchet policy**: see the *Adjusting the absolute floor* runbook
+  below.
 
 ## Scripts Reference
 
@@ -175,7 +185,8 @@ The CI pipeline enforces a minimum coverage threshold using
 | `Get-LocalCoverageReport.ps1` | `eng/scripts/` | Developer-facing: runs coverage locally in any of the 4 modes |
 | `Get-CICoverageReport.ps1` | `eng/scripts/` | Downloads combined coverage from Azure DevOps CI builds |
 | `Filter-GeneratedCoverage.ps1` | `eng/scripts/` | Strips auto-generated files (`.pb.go`) from coverage profiles |
-| `Test-CodeCoverageThreshold.ps1` | `eng/scripts/` | Enforces minimum coverage gate; used by CI and `-MinCoverage` |
+| `Get-CoverageDiff.ps1` | `eng/scripts/` | PR coverage gate: two-gate check (per-package decrease + overall floor) used by CI and `mage coverage:pr` |
+| `Test-CodeCoverageThreshold.ps1` | `eng/scripts/` | Local minimum-coverage helper used by `Get-LocalCoverageReport.ps1 -MinCoverage` (no longer wired into CI) |
 | `Convert-GoCoverageToCobertura.ps1` | `eng/scripts/` | Converts Go coverage to Cobertura XML for ADO reporting (CI only) |
 | `ci-build.ps1` | `eng/scripts/` | CI: builds azd binary with `-cover` instrumentation |
 | `ci-test.ps1` | `eng/scripts/` | CI: runs unit and integration tests with coverage collection |

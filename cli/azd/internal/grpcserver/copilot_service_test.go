@@ -416,12 +416,12 @@ func TestCopilotService_GetMessages_ValidSession(t *testing.T) {
 		{
 			Type:      copilot.SessionEventTypeAssistantMessage,
 			Timestamp: now,
-			Data: &copilot.AssistantMessageData{Content: content},
+			Data:      &copilot.AssistantMessageData{Content: content},
 		},
 		{
 			Type:      copilot.SessionEventTypeToolExecutionStart,
 			Timestamp: now.Add(time.Second),
-			Data: &copilot.ToolExecutionStartData{ToolName: toolName},
+			Data:      &copilot.ToolExecutionStartData{ToolName: toolName},
 		},
 	}, nil)
 
@@ -476,7 +476,7 @@ func TestCopilotService_GetMessages_RoundTrip(t *testing.T) {
 			ID:        "evt-1",
 			Type:      copilot.SessionEventTypeAssistantMessage,
 			Timestamp: time.Date(2026, 3, 18, 12, 0, 0, 0, time.UTC),
-			Data: &copilot.AssistantMessageData{Content: content},
+			Data:      &copilot.AssistantMessageData{Content: content},
 		},
 		{
 			ID:        "evt-2",

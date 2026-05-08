@@ -336,7 +336,7 @@ func TestConvertSessionEvent_BasicFields(t *testing.T) {
 	event := agent.SessionEvent{
 		Type:      copilot.SessionEventTypeAssistantMessage,
 		Timestamp: ts,
-		Data: &copilot.AssistantMessageData{Content: "hello"},
+		Data:      &copilot.AssistantMessageData{Content: "hello"},
 	}
 	result := convertSessionEvent(event)
 	require.Equal(t, "assistant.message", result.Type)

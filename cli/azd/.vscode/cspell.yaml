@@ -454,6 +454,9 @@ overrides:
     words:
       - filesystems
       - redirections
+  - filename: internal/agent/copilot/session_config.go
+    words:
+      - MCPHTTP
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

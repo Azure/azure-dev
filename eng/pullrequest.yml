@@ -26,6 +26,7 @@ extends:
       - stage: Detect
         variables:
           - template: /eng/pipelines/templates/variables/globals.yml
+          - template: /eng/pipelines/templates/variables/image.yml
         jobs:
           - job: DiffAnalysis
             pool:

@@ -23,6 +23,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/platform"
+	"github.com/azure/azure-dev/cli/azd/pkg/tool"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/cmd"
@@ -202,7 +203,7 @@ func newRootCmd(
 	// Create a FeatureManager for command-tree gating.
 	// User config is loaded best-effort; env vars (AZD_ALPHA_ENABLE_TOOL) always work.
 	alphaManager := newAlphaManagerForCommandTree()
-	if alphaManager.IsEnabled(alpha.FeatureId("tool")) {
+	if alphaManager.IsEnabled(tool.FeatureAlphaTool) {
 		toolActions(root)
 	}
 

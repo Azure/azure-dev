@@ -57,7 +57,7 @@ func NewToolUpdateCheckMiddleware(
 // check interval has elapsed.
 func (m *ToolUpdateCheckMiddleware) Run(ctx context.Context, nextFn NextFn) (*actions.ActionResult, error) {
 	// Skip when the tool alpha feature is not enabled.
-	if !m.alphaManager.IsEnabled(alpha.FeatureId("tool")) {
+	if !m.alphaManager.IsEnabled(tool.FeatureAlphaTool) {
 		return nextFn(ctx)
 	}
 

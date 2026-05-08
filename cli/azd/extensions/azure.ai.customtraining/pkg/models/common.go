@@ -13,9 +13,11 @@ type JobInput struct {
 
 // JobOutput represents a discriminated union for job outputs.
 type JobOutput struct {
-	JobOutputType string `json:"jobOutputType"` // "uri_folder", "uri_file"
+	JobOutputType string `json:"jobOutputType"` // "uri_folder", "uri_file", "safetensors_model"
 	URI           string `json:"uri,omitempty"`
 	Mode          string `json:"mode,omitempty"` // "rw_mount", "upload"
+	AssetName     string `json:"assetName,omitempty"`
+	AssetVersion  string `json:"assetVersion,omitempty"`
 }
 
 // Distribution represents distributed training configuration.

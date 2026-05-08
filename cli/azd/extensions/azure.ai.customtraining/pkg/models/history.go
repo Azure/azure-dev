@@ -8,6 +8,7 @@ type RunHistory struct {
 	RunID           string                     `json:"runId,omitempty"`
 	RunUUID         string                     `json:"runUuid,omitempty"`
 	RootRunID       string                     `json:"rootRunId,omitempty"`
+	ExperimentID    string                     `json:"experimentId,omitempty"`
 	Status          string                     `json:"status,omitempty"`
 	StartTimeUTC    string                     `json:"startTimeUtc,omitempty"`
 	EndTimeUTC      string                     `json:"endTimeUtc,omitempty"`

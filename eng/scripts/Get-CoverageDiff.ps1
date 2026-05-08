@@ -83,7 +83,7 @@
 
 .PARAMETER MinOverallCoverage
     Absolute floor (in percent) for overall coverage. CI fails if the
-    current overall is below this value. Default: 65.0.
+    current overall is below this value. Default: 70.0.
 
 .PARAMETER FailOnGate
     Exit with code 2 if any gate (per-package decrease or absolute
@@ -118,7 +118,7 @@
         -ChangedFilesFromFile changed-files.txt `
         -BaselineLabel "main build 123456 / commit abcdef" `
         -MaxPackageDecrease 0.5 `
-        -MinOverallCoverage 65 `
+        -MinOverallCoverage 70 `
         -FailOnGate
 #>
 
@@ -133,11 +133,13 @@ param(
 
     [string]$ChangedFilesFromFile,
 
-    [ValidateRange(0, 100)]
+    [ValidateScript({ $_ -ge 0 -and $_ -le 100 -or $_ -eq -1 }, ErrorMessage =
+        '-MaxPackageDecrease must be between 0 and 100, or -1 to disable the gate.')]
     [double]$MaxPackageDecrease = 0.5,
 
-    [ValidateRange(0, 100)]
-    [double]$MinOverallCoverage = 65.0,
+    [ValidateScript({ $_ -ge 0 -and $_ -le 100 -or $_ -eq -1 }, ErrorMessage =
+        '-MinOverallCoverage must be between 0 and 100, or -1 to disable the floor gate.')]
+    [double]$MinOverallCoverage = 70.0,
 
     [switch]$FailOnGate,
 
@@ -220,8 +222,10 @@ $inv = [System.Globalization.CultureInfo]::InvariantCulture
 function Read-CoverageProfile {
     param([string]$FilePath)
 
-    $lines = @(Get-Content -LiteralPath $FilePath -Encoding UTF8)
-    if ($lines.Count -eq 0) {
+    # ReadAllLines is ~2-5x faster than Get-Content for large profiles
+    # (45k+ lines) because it bypasses PowerShell's per-line pipeline overhead.
+    $lines = [System.IO.File]::ReadAllLines($FilePath, [System.Text.Encoding]::UTF8)
+    if ($lines.Length -eq 0) {
         throw "Coverage file is empty: $FilePath"
     }
 
@@ -235,7 +239,7 @@ function Read-CoverageProfile {
     $totalCovered = 0
     $skippedLines = 0
 
-    for ($i = 1; $i -lt $lines.Count; $i++) {
+    for ($i = 1; $i -lt $lines.Length; $i++) {
         $line = $lines[$i]
         if ([string]::IsNullOrWhiteSpace($line)) { continue }
 
@@ -316,8 +320,8 @@ function ConvertTo-ModuleRelative {
 # ---------------------------------------------------------------------------
 # Compute coverage percentage as a raw double. Display sites format with
 # {0:F1} for one-decimal output; gate comparisons use the raw value to
-# avoid threshold false negatives at boundaries (e.g. 64.96% rounding up
-# to 65.0% and passing a 65 floor, or a 0.54 pp drop rounding to 0.5 pp
+# avoid threshold false negatives at boundaries (e.g. 69.96% rounding up
+# to 70.0% and passing a 70 floor, or a 0.54 pp drop rounding to 0.5 pp
 # and passing a 0.5 tolerance).
 # ---------------------------------------------------------------------------
 function Get-Percent {
@@ -339,9 +343,9 @@ function Format-FileRow {
         [string]$Note
     )
     $sign = if ($Delta -ge 0) { '+' } else { '' }
-    $beforeStr = if ($Before -lt 0) { '   -' } else { ('{0,5:F1}%' -f $Before) }
-    $afterStr  = ('{0,5:F1}%' -f $After)
-    $deltaStr  = ('{0}{1:F1}%' -f $sign, $Delta)
+    $beforeStr = if ($Before -lt 0) { '   -' } else { ('{0,5}%' -f $Before.ToString('F1', $script:inv)) }
+    $afterStr  = ('{0,5}%' -f $After.ToString('F1', $script:inv))
+    $deltaStr  = ('{0}{1}%' -f $sign, $Delta.ToString('F1', $script:inv))
     $line = ('  {0,-60}  {1} -> {2}  ({3,8})  {4,-8}' -f $Path, $beforeStr, $afterStr, $deltaStr, $Status)
     if ($Note) { $line += "  $Note" }
     return $line
@@ -360,9 +364,9 @@ $baseTotal = Get-Percent $baseline.TotalCovered $baseline.TotalStatements
 $currTotal = Get-Percent $current.TotalCovered $current.TotalStatements
 $overallDelta = [math]::Round($currTotal - $baseTotal, 1)
 
-Write-Host "  Baseline: $baseTotal% ($($baseline.TotalCovered)/$($baseline.TotalStatements) stmts)"
-Write-Host "  Current:  $currTotal% ($($current.TotalCovered)/$($current.TotalStatements) stmts)"
-Write-Host "  Delta:    $overallDelta pp"
+Write-Host ("  Baseline: {0}% ({1}/{2} stmts)" -f $baseTotal.ToString('F1', $inv), $baseline.TotalCovered, $baseline.TotalStatements)
+Write-Host ("  Current:  {0}% ({1}/{2} stmts)" -f $currTotal.ToString('F1', $inv), $current.TotalCovered, $current.TotalStatements)
+Write-Host ("  Delta:    {0} pp" -f $overallDelta.ToString('F1', $inv))
 
 # ---------------------------------------------------------------------------
 # Collect changed files (union of -ChangedFiles and -ChangedFilesFromFile)
@@ -378,7 +382,7 @@ if ($ChangedFilesFromFile) {
     if (-not (Test-Path -LiteralPath $ChangedFilesFromFile)) {
         throw "Changed-files file not found: $ChangedFilesFromFile"
     }
-    $changedRaw += @(Get-Content -LiteralPath $ChangedFilesFromFile -Encoding UTF8)
+    $changedRaw += @([System.IO.File]::ReadAllLines($ChangedFilesFromFile, [System.Text.Encoding]::UTF8))
 }
 
 $changedSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
@@ -410,13 +414,17 @@ $bar = '=' * 60
 
 $deltaSign = if ($overallDelta -ge 0) { '+' } else { '' }
 [void]$sb.AppendLine(
-    ('Overall: {0:F1}% -> {1:F1}% ({2}{3:F1}%)' -f $baseTotal, $currTotal, $deltaSign, $overallDelta)
+    ('Overall: {0}% -> {1}% ({2}{3}%)' -f `
+        $baseTotal.ToString('F1', $inv), `
+        $currTotal.ToString('F1', $inv), `
+        $deltaSign, `
+        $overallDelta.ToString('F1', $inv))
 )
 [void]$sb.AppendLine(
-    ('  Tolerance: -{0:F1} pp per package before failing the gate' -f $MaxPackageDecrease)
+    ('  Tolerance: -{0} pp per package before failing the gate' -f $MaxPackageDecrease.ToString('F1', $inv))
 )
 [void]$sb.AppendLine(
-    ('  Floor: overall coverage must stay >= {0:F1}%' -f $MinOverallCoverage)
+    ('  Floor: overall coverage must stay >= {0}%' -f $MinOverallCoverage.ToString('F1', $inv))
 )
 [void]$sb.AppendLine()
 
@@ -454,16 +462,19 @@ function Get-PackageRow {
     elseif ($delta -lt 0)  { $status = 'regress' }
 
     return [PSCustomObject]@{
-        Package = $Pkg
-        Before  = $bPct
-        After   = $cPct
-        Delta   = $delta
-        Status  = $status
-        Note    = $note
-        Stmts   = [math]::Max($bStmts, $cStmts)
+        Package     = $Pkg
+        Before      = $bPct
+        After       = $cPct
+        Delta       = $delta
+        Status      = $status
+        Note        = $note
+        Stmts       = [math]::Max($bStmts, $cStmts)
+        AbsDelta    = [math]::Abs($delta)
+        StatusOrder = switch ($status) { 'regress' { 0 } 'improved' { 1 } 'new' { 2 } default { 3 } }
     }
 }
 
+$script:packageRowMap = @{}
 if ($useChangedFileMode) {
     # -----------------------------------------------------------------------
     # Per-package mode scoped to packages containing PR-touched files.
@@ -494,19 +505,21 @@ if ($useChangedFileMode) {
         [void]$sb.AppendLine('PR-touched packages: none with coverage data.')
         [void]$sb.AppendLine()
     } else {
+        # Build rows once and cache by package — reused by the gate loop below.
         $rows = foreach ($pkg in ($touchedByPackage.Keys | Sort-Object)) {
-            Get-PackageRow -Pkg $pkg -Baseline $baseline -Current $current `
+            $row = Get-PackageRow -Pkg $pkg -Baseline $baseline -Current $current `
                 -TouchedFileCount $touchedByPackage[$pkg]
+            $script:packageRowMap[$pkg] = $row
+            $row
         }
 
         [void]$sb.AppendLine(
             "PR-touched packages ($($rows.Count) package$(if ($rows.Count -ne 1) { 's' })):"
         )
         # Sort: regressions first by absolute delta, then improvements, then ok/new.
-        $sorted = $rows | Sort-Object `
-            @{ Expression = { switch ($_.Status) { 'regress' { 0 } 'improved' { 1 } 'new' { 2 } default { 3 } } } }, `
-            @{ Expression = { -[math]::Abs($_.Delta) } }, `
-            Package
+        # Uses precomputed StatusOrder/AbsDelta properties so each row is sorted by
+        # property lookup rather than re-evaluating a scriptblock per comparison.
+        $sorted = $rows | Sort-Object -Property StatusOrder, @{Expression='AbsDelta'; Descending=$true}, Package
         foreach ($row in $sorted) {
             [void]$sb.AppendLine((Format-FileRow `
                 -Path $row.Package `
@@ -525,18 +538,20 @@ if ($useChangedFileMode) {
     $allPackages = @(@($baseline.Packages.Keys) + @($current.Packages.Keys)) |
         Sort-Object -Unique
 
+    # Build rows once and cache by package — reused by the gate loop below.
     $allDiffs = [System.Collections.Generic.List[PSCustomObject]]::new()
 
     foreach ($pkg in $allPackages) {
         $row = Get-PackageRow -Pkg $pkg -Baseline $baseline -Current $current -TouchedFileCount 0
-        if ([math]::Abs($row.Delta) -ge $MinDelta -and $row.Delta -ne 0) {
+        $script:packageRowMap[$pkg] = $row
+        if ($row.AbsDelta -ge $MinDelta -and $row.Delta -ne 0) {
             $allDiffs.Add($row)
         }
     }
 
     $changedPackageCount = $allDiffs.Count
     $tableDiffs = @($allDiffs |
-        Sort-Object { -[math]::Abs($_.Delta) } |
+        Sort-Object -Property @{Expression='AbsDelta'; Descending=$true} |
         Select-Object -First $TopN)
 
     if ($tableDiffs.Count -eq 0) {
@@ -572,10 +587,14 @@ if ($useChangedFileMode) {
 # packages (developers shouldn't be blamed for unrelated package movement
 # from baseline drift); in package mode we consider every package present
 # in either profile (full scan).
-$overallFloorBreached = $currTotal -lt $MinOverallCoverage
+$overallFloorBreached = ($MinOverallCoverage -ge 0) -and ($currTotal -lt $MinOverallCoverage)
 
-# Determine per-package breach set
-$pkgGateScope = if ($useChangedFileMode) {
+# Determine per-package breach set. -MaxPackageDecrease < 0 disables the
+# per-package gate (advisory output only); skip the loop entirely so a
+# disabled gate can never report breaches.
+$pkgGateScope = if ($MaxPackageDecrease -lt 0) {
+    @()
+} elseif ($useChangedFileMode) {
     @($touchedByPackage.Keys)
 } else {
     @(@($baseline.Packages.Keys) + @($current.Packages.Keys)) | Sort-Object -Unique
@@ -583,7 +602,14 @@ $pkgGateScope = if ($useChangedFileMode) {
 
 $packageBreaches = [System.Collections.Generic.List[PSCustomObject]]::new()
 foreach ($pkg in $pkgGateScope) {
-    $row = Get-PackageRow -Pkg $pkg -Baseline $baseline -Current $current -TouchedFileCount 0
+    # Reuse the row computed during display rather than recomputing — avoids
+    # the duplicate Get-PackageRow call per package that the original
+    # implementation made (one for display, one for the gate).
+    if ($script:packageRowMap.ContainsKey($pkg)) {
+        $row = $script:packageRowMap[$pkg]
+    } else {
+        $row = Get-PackageRow -Pkg $pkg -Baseline $baseline -Current $current -TouchedFileCount 0
+    }
     # Only existing packages with a real regression count toward the gate;
     # 'new' packages (no baseline) and packages absent from current with
     # 0 statements aren't comparable.
@@ -612,17 +638,17 @@ if ($gateBreached) {
     [void]$sb.AppendLine('Breached gate(s):')
     if ($overallFloorBreached) {
         [void]$sb.AppendLine(
-            ('  - Overall coverage {0:F1}% is below floor of {1:F1}%' -f $currTotal, $MinOverallCoverage)
+            ('  - Overall coverage {0}% is below floor of {1}%' -f $currTotal.ToString('F1', $inv), $MinOverallCoverage.ToString('F1', $inv))
         )
     }
     if ($packageGateBreached) {
         [void]$sb.AppendLine(
-            ('  - {0} package(s) dropped more than {1:F1} pp:' -f $packageBreaches.Count, $MaxPackageDecrease)
+            ('  - {0} package(s) dropped more than {1} pp:' -f $packageBreaches.Count, $MaxPackageDecrease.ToString('F1', $inv))
         )
         $sortedBreaches = $packageBreaches | Sort-Object -Property Decrease -Descending
         foreach ($pb in $sortedBreaches) {
             [void]$sb.AppendLine(
-                ('      {0}: {1:F1}% -> {2:F1}% (-{3:F1} pp)' -f $pb.Package, $pb.Before, $pb.After, $pb.Decrease)
+                ('      {0}: {1}% -> {2}% (-{3} pp)' -f $pb.Package, $pb.Before.ToString('F1', $inv), $pb.After.ToString('F1', $inv), $pb.Decrease.ToString('F1', $inv))
             )
         }
     }
@@ -631,7 +657,7 @@ if ($gateBreached) {
     [void]$sb.AppendLine('  1. Add tests for the regressing packages listed above.')
     [void]$sb.AppendLine('  2. Re-run locally:  mage coverage:unit && mage coverage:diff')
     [void]$sb.AppendLine(
-        ('  3. CI fails when overall falls below {0:F1}% or any package drops more than {1:F1} pp.' -f $MinOverallCoverage, $MaxPackageDecrease)
+        ('  3. CI fails when overall falls below {0}% or any package drops more than {1} pp.' -f $MinOverallCoverage.ToString('F1', $inv), $MaxPackageDecrease.ToString('F1', $inv))
     )
 } else {
     [void]$sb.AppendLine('RESULT: PASS')
@@ -648,12 +674,12 @@ Write-Output $report
 # ---------------------------------------------------------------------------
 if ($gateBreached -and $FailOnGate) {
     if ($overallFloorBreached) {
-        Write-Host ('##vso[task.logissue type=error]Overall coverage {0:F1}% is below floor of {1:F1}%.' -f $currTotal, $MinOverallCoverage)
+        Write-Host ('##vso[task.logissue type=error]Overall coverage {0}% is below floor of {1}%.' -f $currTotal.ToString('F1', $inv), $MinOverallCoverage.ToString('F1', $inv))
     }
     if ($packageGateBreached) {
         $sortedBreaches = $packageBreaches | Sort-Object -Property Decrease -Descending
         foreach ($pb in $sortedBreaches) {
-            Write-Host ('##vso[task.logissue type=error]Package {0} dropped {1:F1} pp (max allowed: -{2:F1} pp).' -f $pb.Package, $pb.Decrease, $MaxPackageDecrease)
+            Write-Host ('##vso[task.logissue type=error]Package {0} dropped {1} pp (max allowed: -{2} pp).' -f $pb.Package, $pb.Decrease.ToString('F1', $inv), $MaxPackageDecrease.ToString('F1', $inv))
         }
     }
     exit 2

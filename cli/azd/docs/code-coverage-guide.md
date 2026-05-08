@@ -193,7 +193,7 @@ All modes are also available as `mage` targets (from `cli/azd/`):
 | `mage coverage:html` | HTML report (unit only by default) | Go 1.26 |
 | `mage coverage:check` | Enforce 50% threshold (unit only; CI gate is 55% combined) | Go 1.26 |
 | `mage coverage:diff` | Compare current branch coverage vs main baseline (advisory; honors `COVERAGE_MAX_PACKAGE_DECREASE` / `COVERAGE_MIN_OVERALL` / `COVERAGE_FAIL_ON_DECREASE`) | Go 1.26 |
-| `mage coverage:pr` | Preview the CI PR coverage gate locally (fail-loud on either: per-package regression > 0.5 pp, or overall < 65%) | Go 1.26 |
+| `mage coverage:pr` | Preview the CI PR coverage gate locally (fail-loud on either: per-package regression > 0.5 pp, or overall < 70%) | Go 1.26 |
 | `mage coverage:report` | Merge raw covdata input directories into a single `cover.out` (used by CI; honors `COVERAGE_REPORT_*` env vars) | Go 1.26 |
 
 Environment variables for optional overrides:
@@ -204,9 +204,9 @@ Environment variables for optional overrides:
 | `COVERAGE_BUILD_ID` | `hybrid`, `ci` | Target a specific ADO build ID |
 | `COVERAGE_MODE` | `html` | Set to `full` or `hybrid` (default: `unit`) |
 | `COVERAGE_MIN` | `check` | Override threshold (default: `55`) |
-| `COVERAGE_MAX_PACKAGE_DECREASE` | `diff`, `pr` | Maximum tolerated per-package coverage drop in percentage points (`pr` defaults to `0.5`; PR-touched packages only when changed-files can be resolved). |
-| `COVERAGE_MIN_OVERALL` | `diff`, `pr` | Absolute floor for overall coverage in percent (`pr` defaults to `65`). |
-| `COVERAGE_FAIL_ON_DECREASE` | `diff` | Set to `1` / `true` to exit non-zero when EITHER gate is breached (`pr` always fails loud). |
+| `COVERAGE_MAX_PACKAGE_DECREASE` | `diff`, `pr` | Maximum tolerated per-package coverage drop in percentage points (defaults come from `Get-CoverageDiff.ps1`, currently `0.5`; PR-touched packages only when changed-files can be resolved). Set to `-1` to disable both gates (advisory output only). |
+| `COVERAGE_MIN_OVERALL` | `diff`, `pr` | Absolute floor for overall coverage in percent (defaults come from `Get-CoverageDiff.ps1`, currently `70`). Set to `-1` to disable the floor gate. |
+| `COVERAGE_FAIL_ON_DECREASE` | `diff` | Set to `1` / `true` to exit non-zero when EITHER gate is breached (`pr` always fails loud). **Note:** setting `COVERAGE_MAX_PACKAGE_DECREASE` alone does NOT enable fail-loud mode for `mage coverage:diff` — you must also set `COVERAGE_FAIL_ON_DECREASE=1` (or use `mage coverage:pr`, which always fails loud). |
 | `COVERAGE_BASELINE` | `diff`, `pr` | Path to baseline coverage profile (default: `cover-ci-combined.out` or download from CI) |
 | `COVERAGE_CURRENT` | `diff`, `pr` | Path to current coverage profile (default: `cover-local.out`) |
 | `COVERAGE_REPORT_UNIT_INPUTS` | `report` | Comma-separated list of unit-test covdata input directories. |
@@ -231,7 +231,7 @@ coverage is merged via `mage coverage:report`, the pipeline:
    - **Per-package decrease**: any single PR-touched package drops by
      more than `PackageCoverageDecreaseTolerance` pp (default **0.5 pp**).
    - **Absolute floor**: overall coverage falls below
-     `MinimumOverallCoverage` percent (default **65%**).
+     `MinimumOverallCoverage` percent (default **70%**).
 5. Surfaces every breach via `##vso[task.logissue type=error]` so each
    one shows up in the PR check summary.
 
@@ -252,7 +252,7 @@ mage coverage:pr
 `mage coverage:pr` runs `git fetch --no-tags --depth=200 origin main` (best-effort),
 resolves changed files via `git merge-base origin/main HEAD` for the
 per-package report, applies the default 0.5 pp per-package tolerance and
-65% absolute floor, and exits non-zero when either is breached. On `main`,
+70% absolute floor, and exits non-zero when either is breached. On `main`,
 in detached-HEAD state, or when git resolution fails, the target returns
 an error rather than silently passing (the "preview" guarantee depends on
 running against the same inputs CI uses). For an advisory run on `main`,
@@ -270,15 +270,77 @@ Or use the advisory `coverage:diff` target with explicit opt-in:
 
 ```powershell
 $env:COVERAGE_MAX_PACKAGE_DECREASE = "0.5"
-$env:COVERAGE_MIN_OVERALL = "65"
+$env:COVERAGE_MIN_OVERALL = "70"
 $env:COVERAGE_FAIL_ON_DECREASE = "1"
 mage coverage:diff
 ```
 
+### Adjusting the absolute floor (`MinOverallCoverage`)
+
+The PR pipeline fails when overall coverage falls below
+`MinOverallCoverage` (default **70%**). The floor is calibrated just below
+the observed main overall coverage so it ratchets quality up while leaving
+a small safety margin for normal churn. The release / `main` / scheduled
+pipelines do not enforce the floor — `CodeCoverage_Upload` runs there only
+to publish coverage artifacts. When a wave of refactors or generated-code
+changes shifts overall coverage below the floor, follow this runbook so
+PRs don't get jammed:
+
+1. **Confirm the dip is real** — pull the latest combined profile and read
+   the overall number:
+
+   ```powershell
+   mage coverage:ci
+   go tool cover "-func=cover-ci-combined.out" | Select-String "^total:"
+   ```
+
+   If the dip is genuine (not a flaky platform leg producing artifact gaps),
+   continue.
+
+2. **Lower the floor temporarily** in
+   `eng/pipelines/templates/stages/code-coverage-upload.yml` — find the
+   `MinOverallCoverage` parameter and set `default:` to **1pp below** the new
+   observed overall (e.g. observed 62.5% → set 61). This unblocks `main`.
+
+3. **File a coverage-debt issue** capturing: the package(s) responsible for
+   the regression, the floor delta you applied, and a target date to ratchet
+   back. Without this step the floor silently stays loose forever.
+
+4. **Ratchet the floor back up** once the responsible package(s) regain
+   coverage. Bump `default:` to **1pp below the new observed overall**.
+   Avoid moving the floor in increments larger than 2pp at a time so that a
+   single flaky monthly measurement can't lock in an artificially-high
+   floor.
+
+> ⚠️ **Branch-protection note (one-time setup, repo admin):** the gate's
+> exit code is only enforced on merges if the `CodeCoverage_Upload` stage
+> is configured as a **required status check** on `main` in the repo's
+> branch-protection rules. Without this, a PR can merge while the coverage
+> check is red.
+>
+> A repo admin can confirm or add the rule via the GitHub UI
+> (`Settings → Branches → Branch protection rules → main → Require status
+> checks to pass before merging`), selecting the
+> `azure-dev - ci - CodeCoverage_Upload` check.
+>
+> Equivalent `gh` CLI command (run by an admin once after the first
+> successful build of this PR):
+>
+> ```bash
+> gh api -X PATCH repos/Azure/azure-dev/branches/main/protection \
+>     -f 'required_status_checks[strict]=true' \
+>     -f 'required_status_checks[contexts][]=azure-dev - ci - CodeCoverage_Upload'
+> ```
+>
+> The exact context name comes from the GitHub Checks tab on a PR build —
+> verify the string before applying. The check appears only after the
+> stage has run on at least one PR, so seed it by opening a draft PR
+> first.
+
 ### Worked example
 
 Suppose this PR touches `pkg/auth` and drops its coverage from 72.0% → 48.0% (a
-24.0 pp drop, well past the 0.5 pp tolerance). Overall coverage stays at 65.0%
+24.0 pp drop, well past the 0.5 pp tolerance). Overall coverage stays at 70.0%
 (at the floor — passes). The CI step prints:
 
 ```
@@ -286,9 +348,9 @@ Suppose this PR touches `pkg/auth` and drops its coverage from 72.0% → 48.0% (
 Coverage Report
 ============================================================
 Baseline: baseline
-Overall: 65.4% -> 65.0% (-0.4%)
+Overall: 70.4% -> 70.0% (-0.4%)
   Tolerance: -0.5 pp per package before failing the gate
-  Floor: overall coverage must stay >= 65.0%
+  Floor: overall coverage must stay >= 70.0%
 PR-touched packages (2 packages):
   pkg/auth                  72.0% ->  48.0%  ( -24.0%)  regress  (1 file touched)
   pkg/project               81.0% ->  82.0%  (  +1.0%)  improved (2 files touched)
@@ -308,7 +370,7 @@ Breached gate(s):
 ```
 
 …and exits 2. The PR check summary shows the error, and the build fails. If
-overall coverage had also fallen below 65.0%, a second `##vso[task.logissue]`
+overall coverage had also fallen below 70.0%, a second `##vso[task.logissue]`
 line would name the floor breach (both gates report independently).
 
 ## Troubleshooting

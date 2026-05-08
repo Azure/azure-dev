@@ -60,6 +60,41 @@ BeforeAll {
         New-Item -ItemType Directory -Path $dir | Out-Null
         return $dir
     }
+
+    # Invoke the script with a forced thread culture (e.g. 'de-DE' or 'fr-FR').
+    # Used to verify F1 number formatting stays invariant ('.' decimal) on
+    # locales where '{0:F1}' would otherwise emit ',' (the locale-bug guard).
+    # Writes a wrapper .ps1 that sets the culture and dot-sources the script,
+    # which avoids fragile -Command quoting across platforms.
+    function Invoke-ScriptInCulture {
+        param(
+            [Parameter(Mandatory)][string]$Culture,
+            [Parameter(Mandatory)][string]$BaselineFile,
+            [Parameter(Mandatory)][string]$CurrentFile,
+            [Nullable[double]]$MaxPackageDecrease = $null,
+            [Nullable[double]]$MinOverallCoverage = $null,
+            [switch]$FailOnGate
+        )
+        $wrapperDir = Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $wrapperDir | Out-Null
+        $wrapper = Join-Path $wrapperDir 'invoke.ps1'
+
+        $extra = ''
+        if ($null -ne $MaxPackageDecrease) { $extra += " -MaxPackageDecrease $MaxPackageDecrease" }
+        if ($null -ne $MinOverallCoverage) { $extra += " -MinOverallCoverage $MinOverallCoverage" }
+        if ($FailOnGate) { $extra += ' -FailOnGate' }
+
+        $body = @"
+[System.Threading.Thread]::CurrentThread.CurrentCulture   = [System.Globalization.CultureInfo]::new('$Culture')
+[System.Threading.Thread]::CurrentThread.CurrentUICulture = [System.Globalization.CultureInfo]::new('$Culture')
+& '$script:scriptPath' -BaselineFile '$BaselineFile' -CurrentFile '$CurrentFile' -ModulePrefix '$script:modPrefix'$extra
+exit `$LASTEXITCODE
+"@
+        Set-Content -Path $wrapper -Value $body -Encoding UTF8
+
+        $stdout = & pwsh -NoProfile -NonInteractive -File $wrapper 2>&1
+        return @{ ExitCode = $LASTEXITCODE; Output = ($stdout -join "`n") }
+    }
 }
 
 Describe 'Get-CoverageDiff: per-package report scoping' {
@@ -519,5 +554,304 @@ Describe 'Get-CoverageDiff: combined multi-gate behavior' {
         $r.Output   | Should -Match 'RESULT: FAIL'
         $r.Output   | Should -Match 'Overall coverage 50\.0% is below floor of 65\.0%'
         $r.Output   | Should -Match '2 package\(s\) dropped more than 0\.5 pp'
+    }
+}
+
+Describe 'Get-CoverageDiff: locale-invariant number formatting' {
+    BeforeAll {
+        $script:tmp = New-TempDir
+        # Baseline 80%, current 50% — guarantees overall floor breach + per-pkg
+        # decrease, so both gate-breach annotations format numbers.
+        New-Profile -Path "$script:tmp/base.out" -Entries @(
+            @{ File = 'pkg/a/x.go'; Stmts = 80; Hits = 1 }
+            @{ File = 'pkg/a/x.go'; Stmts = 20; Hits = 0 }
+        )
+        New-Profile -Path "$script:tmp/curr.out" -Entries @(
+            @{ File = 'pkg/a/x.go'; Stmts = 50; Hits = 1 }
+            @{ File = 'pkg/a/x.go'; Stmts = 50; Hits = 0 }
+        )
+    }
+
+    # de-DE / fr-FR use ',' as the decimal separator. If the script formatted
+    # numbers with '{0:F1}' (which honors CurrentCulture), the report would
+    # contain '50,0%' on these machines — breaking the regex assertions used
+    # by tests AND breaking downstream tools that parse the output.
+    foreach ($culture in @('de-DE', 'fr-FR')) {
+        It "uses '.' decimal separator on $culture (no comma decimals leak through)" -TestCases @(@{ Culture = $culture }) {
+            param($Culture)
+            $r = Invoke-ScriptInCulture `
+                -Culture             $Culture `
+                -BaselineFile        "$script:tmp/base.out" `
+                -CurrentFile         "$script:tmp/curr.out" `
+                -MaxPackageDecrease  0.5 `
+                -MinOverallCoverage  65 `
+                -FailOnGate
+
+            $r.ExitCode | Should -Be 2
+            # All percentage values must use '.' decimal — never ','.
+            $r.Output   | Should -Match 'Overall: 80\.0% -> 50\.0%'
+            $r.Output   | Should -Match 'Overall coverage 50\.0% is below floor of 65\.0%'
+            $r.Output   | Should -Match 'Package pkg/a dropped 30\.0 pp'
+            # Specifically NOT a German-formatted decimal anywhere in numeric output.
+            $r.Output   | Should -Not -Match '\d+,\d+%'
+        }
+    }
+}
+
+Describe 'Get-CoverageDiff: per-package gate boundary (raw delta)' {
+    BeforeAll {
+        $script:tmp = New-TempDir
+        # Baseline pkg/a: 80% (200 stmts, 160 covered).
+        New-Profile -Path "$script:tmp/base.out" -Entries @(
+            @{ File = 'pkg/a/x.go'; Stmts = 160; Hits = 1 }
+            @{ File = 'pkg/a/x.go'; Stmts = 40;  Hits = 0 }
+        )
+        # Current pkg/a: 79.49% (200 stmts, 158.98 ~ 159 covered) → -0.51 pp.
+        # 159/200 = 0.795 → 79.5% rounded; we need raw 79.49 to exercise the
+        # raw-delta-no-rounding code path. Use 1000 stmts: 794/1000 = 79.4%
+        # → still 0.6 pp drop. Easier: 158/200 = 79.0% (1.0 pp drop). Use 1000:
+        # baseline 800/1000=80, current 794/1000=79.4 → -0.6 pp.
+        New-Profile -Path "$script:tmp/curr-051.out" -Entries @(
+            @{ File = 'pkg/a/x.go'; Stmts = 794; Hits = 1 }
+            @{ File = 'pkg/a/x.go'; Stmts = 206; Hits = 0 }
+        )
+        # Baseline 800/1000 = 80%
+        New-Profile -Path "$script:tmp/base-1000.out" -Entries @(
+            @{ File = 'pkg/a/x.go'; Stmts = 800; Hits = 1 }
+            @{ File = 'pkg/a/x.go'; Stmts = 200; Hits = 0 }
+        )
+    }
+
+    It 'FAILs when package drops 0.6pp against 0.5pp tolerance (raw delta, no rounding)' {
+        $r = Invoke-Script `
+            -BaselineFile        "$script:tmp/base-1000.out" `
+            -CurrentFile         "$script:tmp/curr-051.out" `
+            -MaxPackageDecrease  0.5 `
+            -MinOverallCoverage  0 `
+            -FailOnGate
+
+        $r.ExitCode | Should -Be 2
+        $r.Output   | Should -Match 'RESULT: FAIL'
+        # 80.0 -> 79.4 = -0.6 pp drop, must exceed 0.5 tolerance.
+        $r.Output   | Should -Match 'Package pkg/a dropped 0\.6 pp'
+    }
+}
+
+Describe 'Get-CoverageDiff: -1 sentinel disables both gates' {
+    BeforeAll {
+        $script:tmp = New-TempDir
+        # Catastrophic regression: 80% -> 10% (would fail ALL gates).
+        New-Profile -Path "$script:tmp/base.out" -Entries @(
+            @{ File = 'pkg/a/x.go'; Stmts = 80; Hits = 1 }
+            @{ File = 'pkg/a/x.go'; Stmts = 20; Hits = 0 }
+        )
+        New-Profile -Path "$script:tmp/curr.out" -Entries @(
+            @{ File = 'pkg/a/x.go'; Stmts = 10; Hits = 1 }
+            @{ File = 'pkg/a/x.go'; Stmts = 90; Hits = 0 }
+        )
+    }
+
+    It 'PASSes when -MaxPackageDecrease -1 disables the per-package gate even with -FailOnGate' {
+        $r = Invoke-Script `
+            -BaselineFile        "$script:tmp/base.out" `
+            -CurrentFile         "$script:tmp/curr.out" `
+            -MaxPackageDecrease  -1 `
+            -MinOverallCoverage  0 `
+            -FailOnGate
+
+        $r.ExitCode | Should -Be 0
+        $r.Output   | Should -Match 'RESULT: PASS'
+    }
+
+    It 'PASSes when -MinOverallCoverage -1 disables the floor gate even with -FailOnGate' {
+        $r = Invoke-Script `
+            -BaselineFile        "$script:tmp/base.out" `
+            -CurrentFile         "$script:tmp/curr.out" `
+            -MaxPackageDecrease  100 `
+            -MinOverallCoverage  -1 `
+            -FailOnGate
+
+        $r.ExitCode | Should -Be 0
+        $r.Output   | Should -Match 'RESULT: PASS'
+    }
+
+    It 'rejects values like -0.5 with a clear error (only -1 is the disable sentinel)' {
+        $r = Invoke-Script `
+            -BaselineFile        "$script:tmp/base.out" `
+            -CurrentFile         "$script:tmp/curr.out" `
+            -MaxPackageDecrease  -0.5 `
+            -MinOverallCoverage  0
+        # ValidateScript rejects -0.5 → script exits non-zero with a
+        # parameter-validation error from PowerShell.
+        $r.ExitCode | Should -Not -Be 0
+    }
+}
+
+Describe 'Get-CoverageDiff: deletion-only PR (AMRD scope)' {
+    BeforeAll {
+        $script:tmp = New-TempDir
+        # Baseline: pkg/a has two files (one heavily covered, one lightly).
+        New-Profile -Path "$script:tmp/base.out" -Entries @(
+            @{ File = 'pkg/a/keep.go';   Stmts = 50; Hits = 1 }
+            @{ File = 'pkg/a/keep.go';   Stmts = 50; Hits = 0 }
+            @{ File = 'pkg/a/delete.go'; Stmts = 100; Hits = 1 }
+        )
+        # Current: delete.go removed → pkg/a now only has keep.go (50% cov).
+        # Package coverage drops from 100/200=50%? Wait, baseline:
+        # 50 covered + 100 covered = 150 / 200 = 75%
+        # Current: 50 covered / 100 = 50% → -25pp drop.
+        New-Profile -Path "$script:tmp/curr.out" -Entries @(
+            @{ File = 'pkg/a/keep.go'; Stmts = 50; Hits = 1 }
+            @{ File = 'pkg/a/keep.go'; Stmts = 50; Hits = 0 }
+        )
+    }
+
+    # The YAML/magefile use --diff-filter=AMRD so deletion-only PRs still
+    # produce a changed-files list. The script's job is to scope the
+    # per-package gate to the package containing the deleted file. This
+    # asserts the script uses the inferred package even though the file
+    # itself is absent from current profile.
+    It 'still triggers per-package gate when a deleted file regresses its package coverage' {
+        $r = Invoke-Script `
+            -BaselineFile        "$script:tmp/base.out" `
+            -CurrentFile         "$script:tmp/curr.out" `
+            -ChangedFiles        'cli/azd/pkg/a/delete.go' `
+            -MaxPackageDecrease  0.5 `
+            -MinOverallCoverage  0 `
+            -FailOnGate
+
+        $r.ExitCode | Should -Be 2
+        $r.Output   | Should -Match 'PR-touched packages \(1 package\)'
+        $r.Output   | Should -Match 'Package pkg/a dropped 25\.0 pp'
+    }
+}
+
+Describe 'Get-CoverageDiff: TopN and MinDelta in package mode' {
+    BeforeAll {
+        $script:tmp = New-TempDir
+        # 5 packages with varying deltas. Use 100-stmt buckets so percentages
+        # are easy to reason about.
+        New-Profile -Path "$script:tmp/base.out" -Entries @(
+            @{ File = 'pkg/big/a.go';    Stmts = 80; Hits = 1 }; @{ File = 'pkg/big/a.go';    Stmts = 20; Hits = 0 }
+            @{ File = 'pkg/medium/b.go'; Stmts = 60; Hits = 1 }; @{ File = 'pkg/medium/b.go'; Stmts = 40; Hits = 0 }
+            @{ File = 'pkg/small/c.go';  Stmts = 50; Hits = 1 }; @{ File = 'pkg/small/c.go';  Stmts = 50; Hits = 0 }
+            @{ File = 'pkg/tiny/d.go';   Stmts = 70; Hits = 1 }; @{ File = 'pkg/tiny/d.go';   Stmts = 30; Hits = 0 }
+            @{ File = 'pkg/none/e.go';   Stmts = 90; Hits = 1 }; @{ File = 'pkg/none/e.go';   Stmts = 10; Hits = 0 }
+        )
+        # Current produces these deltas:
+        #   pkg/big:    80 -> 30 = -50pp
+        #   pkg/medium: 60 -> 50 = -10pp
+        #   pkg/small:  50 -> 49 = -1pp
+        #   pkg/tiny:   70 -> 69.95 = -0.05pp (below default MinDelta=0.1)
+        #   pkg/none:   90 -> 90 (no change)
+        New-Profile -Path "$script:tmp/curr.out" -Entries @(
+            @{ File = 'pkg/big/a.go';    Stmts = 30;   Hits = 1 }; @{ File = 'pkg/big/a.go';    Stmts = 70;   Hits = 0 }
+            @{ File = 'pkg/medium/b.go'; Stmts = 50;   Hits = 1 }; @{ File = 'pkg/medium/b.go'; Stmts = 50;   Hits = 0 }
+            @{ File = 'pkg/small/c.go';  Stmts = 49;   Hits = 1 }; @{ File = 'pkg/small/c.go';  Stmts = 51;   Hits = 0 }
+            @{ File = 'pkg/tiny/d.go';   Stmts = 1399; Hits = 1 }; @{ File = 'pkg/tiny/d.go';   Stmts = 601;  Hits = 0 }
+            @{ File = 'pkg/none/e.go';   Stmts = 90;   Hits = 1 }; @{ File = 'pkg/none/e.go';   Stmts = 10;   Hits = 0 }
+        )
+    }
+
+    It '-TopN limits the number of packages shown in the report' {
+        # Disable gates (-1 sentinel) — this test asserts display behavior only.
+        # Without disabling, pkg/small (-1pp) appears in the gate-breach listing
+        # regardless of -TopN, which limits the changed-packages *table* only.
+        $r = & pwsh -NoProfile -NonInteractive -File $script:scriptPath `
+            -BaselineFile        "$script:tmp/base.out" `
+            -CurrentFile         "$script:tmp/curr.out" `
+            -ModulePrefix        $script:modPrefix `
+            -MaxPackageDecrease  -1 `
+            -MinOverallCoverage  -1 `
+            -TopN                2 2>&1
+        $output = ($r -join "`n")
+
+        $output | Should -Match 'Top 2 changed packages'
+        # Top 2 by absolute delta = pkg/big (-50pp) and pkg/medium (-10pp).
+        $output | Should -Match '\bpkg/big\b'
+        $output | Should -Match '\bpkg/medium\b'
+        # pkg/small (-1pp) is in the changed list but past TopN=2 → not shown.
+        $output | Should -Not -Match '\bpkg/small\b'
+        $output | Should -Match '\.\.\. and \d+ more packages'
+    }
+
+    It '-MinDelta filters packages with sub-threshold changes' {
+        $r = & pwsh -NoProfile -NonInteractive -File $script:scriptPath `
+            -BaselineFile        "$script:tmp/base.out" `
+            -CurrentFile         "$script:tmp/curr.out" `
+            -ModulePrefix        $script:modPrefix `
+            -MaxPackageDecrease  -1 `
+            -MinOverallCoverage  -1 `
+            -MinDelta            5 2>&1
+        $output = ($r -join "`n")
+
+        # Only pkg/big (50pp) and pkg/medium (10pp) exceed 5pp. pkg/small (1pp)
+        # falls below the threshold and must NOT appear in the changed list.
+        $output | Should -Match '\bpkg/big\b'
+        $output | Should -Match '\bpkg/medium\b'
+        $output | Should -Not -Match '\bpkg/small\b'
+        $output | Should -Not -Match '\bpkg/tiny\b'
+    }
+}
+
+Describe 'Get-CoverageDiff: input validation' {
+    BeforeAll {
+        $script:tmp = New-TempDir
+        New-Profile -Path "$script:tmp/base.out" -Entries @(
+            @{ File = 'pkg/a/x.go'; Stmts = 50; Hits = 1 }
+            @{ File = 'pkg/a/x.go'; Stmts = 50; Hits = 0 }
+        )
+    }
+
+    It 'throws a clear error when -BaselineFile does not exist' {
+        $r = Invoke-Script `
+            -BaselineFile "$script:tmp/does-not-exist.out" `
+            -CurrentFile  "$script:tmp/base.out"
+
+        $r.ExitCode | Should -Not -Be 0
+        $r.Output   | Should -Match 'Baseline coverage file not found'
+    }
+
+    It 'throws a clear error when -CurrentFile does not exist' {
+        $r = Invoke-Script `
+            -BaselineFile "$script:tmp/base.out" `
+            -CurrentFile  "$script:tmp/does-not-exist.out"
+
+        $r.ExitCode | Should -Not -Be 0
+        $r.Output   | Should -Match 'Current coverage file not found'
+    }
+}
+
+Describe 'Get-CoverageDiff: -ModulePrefix override' {
+    BeforeAll {
+        $script:tmp = New-TempDir
+        # Build profiles with a non-default module prefix.
+        $custom = 'github.com/example/my-module/'
+        $sb = [System.Text.StringBuilder]::new()
+        [void]$sb.AppendLine('mode: set')
+        [void]$sb.AppendLine("${custom}internal/foo.go:1.0,2.0 50 1")
+        [void]$sb.AppendLine("${custom}internal/foo.go:2.0,3.0 50 0")
+        Set-Content -Path "$script:tmp/base.out" -Value $sb.ToString() -Encoding ASCII
+
+        $sb2 = [System.Text.StringBuilder]::new()
+        [void]$sb2.AppendLine('mode: set')
+        [void]$sb2.AppendLine("${custom}internal/foo.go:1.0,2.0 70 1")
+        [void]$sb2.AppendLine("${custom}internal/foo.go:2.0,3.0 30 0")
+        Set-Content -Path "$script:tmp/curr.out" -Value $sb2.ToString() -Encoding ASCII
+
+        $script:customPrefix = $custom
+    }
+
+    It 'strips a custom -ModulePrefix so package names appear module-relative' {
+        $r = & pwsh -NoProfile -NonInteractive -File $script:scriptPath `
+            -BaselineFile  "$script:tmp/base.out" `
+            -CurrentFile   "$script:tmp/curr.out" `
+            -ModulePrefix  $script:customPrefix 2>&1
+        $output = ($r -join "`n")
+
+        # With prefix stripped, the package shows as 'internal' (not the
+        # full 'github.com/example/my-module/internal').
+        $output | Should -Match '\binternal\b'
+        $output | Should -Not -Match 'github\.com/example/my-module/internal'
     }
 }

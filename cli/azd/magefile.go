@@ -1095,7 +1095,7 @@ func (Coverage) Check() error {
 // "RESULT: FAIL" lines just because a single package drifted past CI's 0.5 pp tolerance
 // during exploration. To preview the CI gate locally, either set
 // COVERAGE_FAIL_ON_DECREASE=1 (which activates CI defaults: 0.5 pp per package +
-// 65% floor) or use `mage coverage:pr`.
+// 70% floor) or use `mage coverage:pr`.
 //
 // On a feature branch (not main / detached HEAD), Diff resolves PR-touched .go files
 // via `git fetch origin main` + `git diff origin/main...HEAD` and passes them to the
@@ -1114,7 +1114,7 @@ func (Coverage) Check() error {
 //	COVERAGE_MAX_PACKAGE_DECREASE       — per-package coverage decrease tolerance in percentage points
 //	                                      (defaults: 0.5 when COVERAGE_FAIL_ON_DECREASE=1; gate disabled otherwise)
 //	COVERAGE_MIN_OVERALL                — absolute floor for overall coverage in percent
-//	                                      (defaults: 65.0 when COVERAGE_FAIL_ON_DECREASE=1; gate disabled otherwise)
+//	                                      (defaults: 70.0 when COVERAGE_FAIL_ON_DECREASE=1; gate disabled otherwise)
 //	COVERAGE_FAIL_ON_DECREASE           — "1" or "true" to exit non-zero when EITHER gate is breached
 //	                                      (per-package decrease or absolute floor); also activates default thresholds
 //
@@ -1159,29 +1159,23 @@ func (Coverage) Diff() error {
 
 	// Pass user-supplied thresholds explicitly. When the user opts into
 	// fail-loud mode (COVERAGE_FAIL_ON_DECREASE=1) and hasn't set a
-	// threshold, fall back to CI defaults so local previews mirror CI.
-	// Otherwise, neutralize the gates (max=100 / min=0) so advisory runs
-	// don't print "RESULT: FAIL" noise just from CI defaults drifting
-	// during local exploration.
-	maxPkg := os.Getenv("COVERAGE_MAX_PACKAGE_DECREASE")
-	if maxPkg == "" {
-		if failOnDecrease {
-			maxPkg = "0.5"
-		} else {
-			maxPkg = "100"
-		}
+	// threshold, omit the flag entirely so the script's own defaults rule —
+	// keeps a single source of truth (Get-CoverageDiff.ps1) and prevents
+	// drift between mage and CI.
+	// In advisory mode (default), neutralize the gates (max=100 / min=0) so
+	// local exploration runs don't print "RESULT: FAIL" noise just because
+	// a single package drifted past CI's defaults during exploration.
+	if maxPkg := os.Getenv("COVERAGE_MAX_PACKAGE_DECREASE"); maxPkg != "" {
+		args = append(args, "-MaxPackageDecrease", maxPkg)
+	} else if !failOnDecrease {
+		args = append(args, "-MaxPackageDecrease", "100")
 	}
-	args = append(args, "-MaxPackageDecrease", maxPkg)
 
-	minOverall := os.Getenv("COVERAGE_MIN_OVERALL")
-	if minOverall == "" {
-		if failOnDecrease {
-			minOverall = "65.0"
-		} else {
-			minOverall = "0"
-		}
+	if minOverall := os.Getenv("COVERAGE_MIN_OVERALL"); minOverall != "" {
+		args = append(args, "-MinOverallCoverage", minOverall)
+	} else if !failOnDecrease {
+		args = append(args, "-MinOverallCoverage", "0")
 	}
-	args = append(args, "-MinOverallCoverage", minOverall)
 
 	if failOnDecrease {
 		args = append(args, "-FailOnGate")
@@ -1208,8 +1202,11 @@ func (Coverage) Diff() error {
 //
 //	COVERAGE_BASELINE             — path to baseline coverage profile (default: cover-ci-combined.out or download from CI)
 //	COVERAGE_CURRENT              — path to current coverage profile (default: cover-local.out)
-//	COVERAGE_MAX_PACKAGE_DECREASE — per-package coverage decrease tolerance in pp (default: 0.5, matches CI)
-//	COVERAGE_MIN_OVERALL          — absolute floor for overall coverage in percent (default: 65.0, matches CI)
+//	COVERAGE_MAX_PACKAGE_DECREASE — per-package coverage decrease tolerance in pp (default: from Get-CoverageDiff.ps1, currently 0.5)
+//	COVERAGE_MIN_OVERALL          — absolute floor for overall coverage in percent (default: from Get-CoverageDiff.ps1, currently 70)
+//
+// Defaults intentionally come from the underlying script so both `mage coverage:pr`
+// and the CI pipeline read from a single source of truth.
 //
 // Usage: mage coverage:pr
 func (Coverage) PR() error {
@@ -1232,15 +1229,6 @@ func (Coverage) PR() error {
 		return err
 	}
 
-	maxPkgDecrease := "0.5"
-	if v := os.Getenv("COVERAGE_MAX_PACKAGE_DECREASE"); v != "" {
-		maxPkgDecrease = v
-	}
-	minOverall := "65.0"
-	if v := os.Getenv("COVERAGE_MIN_OVERALL"); v != "" {
-		minOverall = v
-	}
-
 	changedFiles, err := resolveChangedFilesForDiff(azdDir, true)
 	if err != nil {
 		return err
@@ -1255,10 +1243,18 @@ func (Coverage) PR() error {
 	args := []string{
 		"-BaselineFile", baselineFile,
 		"-CurrentFile", currentFile,
-		"-MaxPackageDecrease", maxPkgDecrease,
-		"-MinOverallCoverage", minOverall,
 		"-FailOnGate",
 		"-ChangedFilesFromFile", changedFiles,
+	}
+
+	// Only forward thresholds when the user explicitly set them. Otherwise
+	// let Get-CoverageDiff.ps1's own defaults rule so there's a single
+	// source of truth shared between mage and CI.
+	if v := os.Getenv("COVERAGE_MAX_PACKAGE_DECREASE"); v != "" {
+		args = append(args, "-MaxPackageDecrease", v)
+	}
+	if v := os.Getenv("COVERAGE_MIN_OVERALL"); v != "" {
+		args = append(args, "-MinOverallCoverage", v)
 	}
 
 	diffScript := filepath.Join(repoRoot, "eng", "scripts", "Get-CoverageDiff.ps1")
@@ -1409,7 +1405,7 @@ func resolveChangedFilesForDiff(azdDir string, strict bool) (string, error) {
 		return skipOrFail("empty merge-base result")
 	}
 
-	diff, err := runCapture(azdDir, "git", "diff", "--name-only", "--diff-filter=AMR", base+"...HEAD")
+	diff, err := runCapture(azdDir, "git", "diff", "--name-only", "--no-renames", "--diff-filter=AMRD", base+"...HEAD")
 	if err != nil {
 		return skipOrFail(fmt.Sprintf("git diff failed: %v", err))
 	}
@@ -1418,7 +1414,7 @@ func resolveChangedFilesForDiff(azdDir string, strict bool) (string, error) {
 		return skipOrFail("no files changed vs origin/main")
 	}
 
-	out := filepath.Join(azdDir, "coverage-changed-files.txt")
+	out := filepath.Join(os.TempDir(), "azd-coverage-changed-files.txt")
 	if err := os.WriteFile(out, []byte(diff+"\n"), 0o644); err != nil {
 		return "", fmt.Errorf("writing changed files list: %w", err)
 	}

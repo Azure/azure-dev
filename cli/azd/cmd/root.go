@@ -202,7 +202,9 @@ func newRootCmd(
 	// Create a FeatureManager for command-tree gating.
 	// User config is loaded best-effort; env vars (AZD_ALPHA_ENABLE_TOOL) always work.
 	alphaManager := newAlphaManagerForCommandTree()
-	toolActions(root, alphaManager)
+	if alphaManager.IsEnabled(alpha.FeatureId("tool")) {
+		toolActions(root)
+	}
 
 	root.Add("version", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
@@ -577,6 +579,7 @@ func newAlphaManagerForCommandTree() *alpha.FeatureManager {
 	ucm := config.NewUserConfigManager(config.NewFileConfigManager(config.NewManager()))
 	cfg, err := ucm.Load()
 	if err != nil {
+		log.Printf("warning: failed to load user config for alpha feature gating: %v", err)
 		cfg = config.NewEmptyConfig()
 	}
 	return alpha.NewFeaturesManagerWithConfig(cfg)

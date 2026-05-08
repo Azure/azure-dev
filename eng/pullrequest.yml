@@ -35,14 +35,6 @@ extends:
               os: linux
             steps:
               - checkout: self
-                fetchDepth: 1
-
-              - pwsh: |
-                  # Shallow-fetch the target branch so get-changedfiles.ps1 can diff against it
-                  $targetBranch = "$(System.PullRequest.TargetBranchName)"
-                  if (-not $targetBranch) { $targetBranch = "main" }
-                  git fetch --no-tags --depth=1 origin $targetBranch
-                displayName: Fetch target branch
 
               - pwsh: |
                   # Get changed files using the shared helper (uses ADO PR env vars automatically)

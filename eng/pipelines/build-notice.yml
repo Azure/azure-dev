@@ -10,41 +10,8 @@ trigger:
   branches:
     include: [main]
 
-
-variables:
-  - template: /eng/pipelines/templates/variables/globals.yml
-  - name: EnableGoCliScan
-    value: true
-
-jobs:
-  - job: PoliCheck
-    pool:
-      name: azsdk-pool
-      demands: ImageOverride -equals windows-2022
-    timeoutInMinutes: 120
-    steps:
-      - template: /eng/common/pipelines/templates/steps/policheck.yml
-        parameters:
-          ExclusionDataBaseFileName: AzDevPoliCheckExclusion
-          PublishAnalysisLogs: false
-
-  - template: /eng/pipelines/templates/jobs/build-scan-cli.yml
-
-  - template: /eng/pipelines/templates/jobs/build-scan-vscode.yml
-
-  - job: GenerateNoticeTxt
-    pool:
-      name: azsdk-pool
-      demands: ImageOverride -equals ubuntu-22.04
-
-    steps:
-      - task: ComponentGovernanceComponentDetection@0
-
-      - task: notice@0
-        displayName: Generate NOTICE.txt file
-        inputs:
-          outputfile: $(Build.SourcesDirectory)/NOTICE.txt
-          outputformat: text
-
-      - publish: NOTICE.txt
-        artifact: notice
+extends:
+  template: /eng/pipelines/templates/stages/1es-redirect.yml
+  parameters:
+    stages:
+      - template: /eng/pipelines/templates/stages/notice-build-and-test.yml

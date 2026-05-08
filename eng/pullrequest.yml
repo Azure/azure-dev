@@ -1,0 +1,430 @@
+# Consolidated PR validation pipeline for Azure/azure-dev.
+#
+# This pipeline replaces the individual PR triggers on the release pipelines.
+# A thin Detect stage calculates which legs to run based on the PR diff, then
+# each leg runs in parallel, gated by the corresponding output variable.
+
+trigger: none
+
+pr:
+  branches:
+    include: ['*']
+  paths:
+    include:
+      - cli/
+      - ext/
+      - eng/
+      - go.mod
+
+extends:
+  template: /eng/pipelines/templates/stages/1es-redirect.yml
+  parameters:
+    stages:
+      # ================================================================
+      # Stage: Detect — analyse the PR diff and set leg variables
+      # ================================================================
+      - stage: Detect
+        variables:
+          - template: /eng/pipelines/templates/variables/globals.yml
+        jobs:
+          - job: DiffAnalysis
+            pool:
+              name: $(LINUXPOOL)
+              image: $(LINUXVMIMAGE)
+              os: linux
+            steps:
+              - checkout: self
+                fetchDepth: 1
+
+              - pwsh: |
+                  # Fetch the target branch for diffing
+                  $targetBranch = "$(System.PullRequest.TargetBranchName)"
+                  if (-not $targetBranch) {
+                    $targetBranch = "main"
+                  }
+                  git fetch --no-tags --depth=1 origin $targetBranch
+
+                  # Get changed files using three-dot diff (same as GitHub PR diff)
+                  $sourceCommit = "$(Build.SourceVersion)"
+                  $changedFiles = git -c core.quotepath=off diff --name-only "origin/$targetBranch...$sourceCommit"
+
+                  if (-not $changedFiles) {
+                    Write-Host "No changed files detected."
+                    $changedFiles = @()
+                  } else {
+                    Write-Host "Changed files:"
+                    $changedFiles | ForEach-Object { Write-Host "  $_" }
+                  }
+
+                  # ---- Helper: test if any changed file matches a set of path prefixes ----
+                  function Test-PathMatch {
+                    param(
+                      [string[]]$Files,
+                      [string[]]$IncludePrefixes,
+                      [string[]]$ExcludePrefixes = @()
+                    )
+                    foreach ($file in $Files) {
+                      $excluded = $false
+                      foreach ($ex in $ExcludePrefixes) {
+                        if ($file -like "$ex*") { $excluded = $true; break }
+                      }
+                      if ($excluded) { continue }
+
+                      foreach ($inc in $IncludePrefixes) {
+                        if ($file -like "$inc*") { return $true }
+                      }
+                    }
+                    return $false
+                  }
+
+                  # ---- Helper: test if any changed file matches an exact path ----
+                  function Test-ExactMatch {
+                    param([string[]]$Files, [string[]]$Paths)
+                    foreach ($file in $Files) {
+                      foreach ($p in $Paths) {
+                        if ($file -eq $p) { return $true }
+                      }
+                    }
+                    return $false
+                  }
+
+                  # ================================================================
+                  # Shared template changes that fan out to multiple legs
+                  # ================================================================
+                  $sharedExtTemplatePaths = @(
+                    "eng/pipelines/templates/stages/release-azd-extension.yml",
+                    "eng/pipelines/templates/stages/build-and-test-azd-extension.yml",
+                    "eng/pipelines/templates/jobs/build-azd-extension.yml",
+                    "eng/pipelines/templates/jobs/cross-build-azd-extension.yml"
+                  )
+                  $sharedAllPaths = @(
+                    "eng/pipelines/templates/steps/publish-cli.yml",
+                    "eng/pipelines/templates/variables/image.yml"
+                  )
+
+                  $sharedExtChanged = Test-ExactMatch -Files $changedFiles -Paths $sharedExtTemplatePaths
+                  $sharedAllChanged = Test-ExactMatch -Files $changedFiles -Paths $sharedAllPaths
+                  $goModChanged = Test-ExactMatch -Files $changedFiles -Paths @("go.mod")
+
+                  # ================================================================
+                  # CLI leg
+                  # ================================================================
+                  $cliSpecific = Test-PathMatch -Files $changedFiles `
+                    -IncludePrefixes @("cli/", "eng/pipelines/release-cli.yml", "eng/pipelines/templates/jobs/build-cli.yml", "eng/pipelines/templates/jobs/cross-build-cli.yml") `
+                    -ExcludePrefixes @("cli/azd/extensions/", "cli/azd/docs/", "cli/azd/.vscode/cspell", "cli/azd/AGENTS.md", "cli/azd/cmd/testdata/TestFigSpec.ts")
+                  $runCli = $cliSpecific -or $sharedAllChanged -or $goModChanged
+                  Write-Host "RunCli = $runCli"
+
+                  # ================================================================
+                  # Notice leg
+                  # ================================================================
+                  $runNotice = Test-ExactMatch -Files $changedFiles -Paths @("eng/pipelines/build-notice.yml")
+                  Write-Host "RunNotice = $runNotice"
+
+                  # ================================================================
+                  # VS Code extension leg
+                  # ================================================================
+                  $runVscode = Test-PathMatch -Files $changedFiles `
+                    -IncludePrefixes @("ext/vscode/", "eng/pipelines/release-vscode.yml")
+                  Write-Host "RunVscode = $runVscode"
+
+                  # ================================================================
+                  # Azure DevOps extension leg
+                  # ================================================================
+                  $runAzDevOps = Test-PathMatch -Files $changedFiles `
+                    -IncludePrefixes @("ext/azuredevops/", "eng/pipelines/release-azuredevops.yml")
+                  Write-Host "RunAzDevOps = $runAzDevOps"
+
+                  # ================================================================
+                  # Extension legs
+                  # ================================================================
+                  $extensions = @(
+                    @{ Var = "RunExt_AzureAiAgents";    Path = "cli/azd/extensions/azure.ai.agents/";         Yml = "eng/pipelines/release-ext-azure-ai-agents.yml";              GoMod = $true  },
+                    @{ Var = "RunExt_AzureAiFinetune";  Path = "cli/azd/extensions/azure.ai.finetune/";       Yml = "eng/pipelines/release-ext-azure-ai-finetune.yml";            GoMod = $true  },
+                    @{ Var = "RunExt_AzureAiModels";    Path = "cli/azd/extensions/azure.ai.models/";         Yml = "eng/pipelines/release-ext-azure-ai-models.yml";              GoMod = $true  },
+                    @{ Var = "RunExt_AzureAppservice";  Path = "cli/azd/extensions/azure.appservice/";        Yml = "eng/pipelines/release-ext-azure-appservice.yml";             GoMod = $true  },
+                    @{ Var = "RunExt_AzureCodingAgent"; Path = "cli/azd/extensions/azure.coding-agent/";      Yml = "eng/pipelines/release-ext-azure-coding-agent.yml";           GoMod = $false },
+                    @{ Var = "RunExt_MsAzdAiBuilder";   Path = "cli/azd/extensions/microsoft.azd.ai.builder/";Yml = "eng/pipelines/release-ext-microsoft-azd-ai-builder.yml";     GoMod = $true  },
+                    @{ Var = "RunExt_MsAzdConcurx";     Path = "cli/azd/extensions/microsoft.azd.concurx/";   Yml = "eng/pipelines/release-ext-microsoft-azd-concurx.yml";        GoMod = $false },
+                    @{ Var = "RunExt_MsAzdDemo";        Path = "cli/azd/extensions/microsoft.azd.demo/";      Yml = "eng/pipelines/release-ext-microsoft-azd-demo.yml";           GoMod = $true  },
+                    @{ Var = "RunExt_MsAzdExtensions";  Path = "cli/azd/extensions/microsoft.azd.extensions/";Yml = "eng/pipelines/release-ext-microsoft-azd-extensions.yml";     GoMod = $false }
+                  )
+
+                  foreach ($ext in $extensions) {
+                    $extSpecific = Test-PathMatch -Files $changedFiles `
+                      -IncludePrefixes @($ext.Path) `
+                      -ExcludePrefixes @("cli/azd/docs/")
+                    $extYml = Test-ExactMatch -Files $changedFiles -Paths @($ext.Yml)
+                    $extGoMod = $ext.GoMod -and $goModChanged
+
+                    $run = $extSpecific -or $extYml -or $sharedExtChanged -or $sharedAllChanged -or $extGoMod
+                    Write-Host "$($ext.Var) = $run"
+                    Write-Host "##vso[task.setvariable variable=$($ext.Var);isOutput=true]$run"
+                  }
+
+                  # Set core leg variables
+                  Write-Host "##vso[task.setvariable variable=RunCli;isOutput=true]$runCli"
+                  Write-Host "##vso[task.setvariable variable=RunNotice;isOutput=true]$runNotice"
+                  Write-Host "##vso[task.setvariable variable=RunVscode;isOutput=true]$runVscode"
+                  Write-Host "##vso[task.setvariable variable=RunAzDevOps;isOutput=true]$runAzDevOps"
+                name: diff
+                displayName: Analyze PR diff and set leg variables
+
+      # ================================================================
+      # Leg: CLI build + test (playback mode)
+      # ================================================================
+      - template: /eng/pipelines/templates/stages/build-and-test.yml
+        parameters:
+          StageName: CLI_BuildAndTest
+          StageDependsOn:
+            - Detect
+          StageCondition: >-
+            and(
+              not(canceled()),
+              eq(stageDependencies.Detect.DiffAnalysis.outputs['diff.RunCli'], 'True')
+            )
+          AzureRecordMode: playback
+          BuildMatrix:
+            Windows:
+              Pool: $(WINDOWSPOOL)
+              OSVmImage: $(WINDOWSVMIMAGE)
+              OS: windows
+              ImageKey: image
+              UploadArtifact: true
+              Variables:
+                BuildTarget: azd-windows-amd64.exe
+                BuildOutputName: azd.exe
+                BuildTestMsi: true
+                AZURE_DEV_CI_OS: win
+                Codeql.Enabled: true
+                Codeql.SkipTaskAutoInjection: false
+                Codeql.BuildIdentifier: cli_windows
+            Linux:
+              Pool: $(LINUXPOOL)
+              OSVmImage: $(LINUXVMIMAGE)
+              OS: linux
+              ImageKey: image
+              UploadArtifact: true
+              Variables:
+                BuildTarget: azd-linux-amd64
+                BuildOutputName: azd
+                SetExecutableBit: true
+                SetShieldInfo: true
+                BuildLinuxPackages: true
+                AZURE_DEV_CI_OS: lin
+                Codeql.Enabled: true
+                Codeql.SkipTaskAutoInjection: false
+                Codeql.BuildIdentifier: cli_linux
+                CGO_ENABLED: 0
+                DOCKER_TMPDIR: $(Agent.TempDirectory)
+                TMPDIR: $(Agent.TempDirectory)
+                NUGET_PACKAGES: $(Agent.TempDirectory)/nuget
+                GOCACHE: $(Agent.TempDirectory)/go-cache
+            Mac:
+              Pool: Azure Pipelines
+              OSVmImage: $(MACVMIMAGE)
+              OS: macOS
+              ImageKey: vmImage
+              UploadArtifact: true
+              Variables:
+                BuildTarget: azd-darwin-amd64
+                BuildOutputName: azd
+                MacLocalSign: false
+                SetExecutableBit: true
+                AZURE_DEV_CI_OS: mac
+
+      # CLI code coverage upload
+      - template: /eng/pipelines/templates/stages/code-coverage-upload.yml
+        parameters:
+          DependsOnStage: CLI_BuildAndTest
+          MinimumCoveragePercent: 65
+          DownloadArtifacts:
+            - cover-win
+            - cover-lin
+            - cover-mac
+
+      # ================================================================
+      # Leg: NOTICE generation
+      # ================================================================
+      - template: /eng/pipelines/templates/stages/notice-build-and-test.yml
+        parameters:
+          StageName: Notice_BuildAndTest
+          StageDependsOn:
+            - Detect
+          StageCondition: >-
+            and(
+              not(canceled()),
+              eq(stageDependencies.Detect.DiffAnalysis.outputs['diff.RunNotice'], 'True')
+            )
+
+      # ================================================================
+      # Leg: VS Code extension
+      # ================================================================
+      - template: /eng/pipelines/templates/stages/vscode-build-and-test.yml
+        parameters:
+          StageName: VSCode_BuildAndTest
+          StageDependsOn:
+            - Detect
+          StageCondition: >-
+            and(
+              not(canceled()),
+              eq(stageDependencies.Detect.DiffAnalysis.outputs['diff.RunVscode'], 'True')
+            )
+
+      # ================================================================
+      # Leg: Azure DevOps extension
+      # ================================================================
+      - template: /eng/pipelines/templates/stages/azuredevops-build-and-test.yml
+        parameters:
+          StageName: AzDevOps_BuildAndTest
+          StageDependsOn:
+            - Detect
+          StageCondition: >-
+            and(
+              not(canceled()),
+              eq(stageDependencies.Detect.DiffAnalysis.outputs['diff.RunAzDevOps'], 'True')
+            )
+
+      # ================================================================
+      # Leg: Extension — azure.ai.agents
+      # ================================================================
+      - template: /eng/pipelines/templates/stages/build-and-test-azd-extension.yml
+        parameters:
+          StageName: Ext_AzureAiAgents_BuildAndTest
+          StageDependsOn:
+            - Detect
+          StageCondition: >-
+            and(
+              not(canceled()),
+              eq(stageDependencies.Detect.DiffAnalysis.outputs['diff.RunExt_AzureAiAgents'], 'True')
+            )
+          AzdExtensionId: azure.ai.agents
+          AzdExtensionDirectory: cli/azd/extensions/azure.ai.agents
+
+      # ================================================================
+      # Leg: Extension — azure.ai.finetune
+      # ================================================================
+      - template: /eng/pipelines/templates/stages/build-and-test-azd-extension.yml
+        parameters:
+          StageName: Ext_AzureAiFinetune_BuildAndTest
+          StageDependsOn:
+            - Detect
+          StageCondition: >-
+            and(
+              not(canceled()),
+              eq(stageDependencies.Detect.DiffAnalysis.outputs['diff.RunExt_AzureAiFinetune'], 'True')
+            )
+          AzdExtensionId: azure.ai.finetune
+          AzdExtensionDirectory: cli/azd/extensions/azure.ai.finetune
+
+      # ================================================================
+      # Leg: Extension — azure.ai.models
+      # ================================================================
+      - template: /eng/pipelines/templates/stages/build-and-test-azd-extension.yml
+        parameters:
+          StageName: Ext_AzureAiModels_BuildAndTest
+          StageDependsOn:
+            - Detect
+          StageCondition: >-
+            and(
+              not(canceled()),
+              eq(stageDependencies.Detect.DiffAnalysis.outputs['diff.RunExt_AzureAiModels'], 'True')
+            )
+          AzdExtensionId: azure.ai.models
+          AzdExtensionDirectory: cli/azd/extensions/azure.ai.models
+
+      # ================================================================
+      # Leg: Extension — azure.appservice
+      # ================================================================
+      - template: /eng/pipelines/templates/stages/build-and-test-azd-extension.yml
+        parameters:
+          StageName: Ext_AzureAppservice_BuildAndTest
+          StageDependsOn:
+            - Detect
+          StageCondition: >-
+            and(
+              not(canceled()),
+              eq(stageDependencies.Detect.DiffAnalysis.outputs['diff.RunExt_AzureAppservice'], 'True')
+            )
+          AzdExtensionId: azure.appservice
+          AzdExtensionDirectory: cli/azd/extensions/azure.appservice
+
+      # ================================================================
+      # Leg: Extension — azure.coding-agent
+      # ================================================================
+      - template: /eng/pipelines/templates/stages/build-and-test-azd-extension.yml
+        parameters:
+          StageName: Ext_AzureCodingAgent_BuildAndTest
+          StageDependsOn:
+            - Detect
+          StageCondition: >-
+            and(
+              not(canceled()),
+              eq(stageDependencies.Detect.DiffAnalysis.outputs['diff.RunExt_AzureCodingAgent'], 'True')
+            )
+          AzdExtensionId: azure.coding-agent
+          AzdExtensionDirectory: cli/azd/extensions/azure.coding-agent
+
+      # ================================================================
+      # Leg: Extension — microsoft.azd.ai.builder
+      # ================================================================
+      - template: /eng/pipelines/templates/stages/build-and-test-azd-extension.yml
+        parameters:
+          StageName: Ext_MsAzdAiBuilder_BuildAndTest
+          StageDependsOn:
+            - Detect
+          StageCondition: >-
+            and(
+              not(canceled()),
+              eq(stageDependencies.Detect.DiffAnalysis.outputs['diff.RunExt_MsAzdAiBuilder'], 'True')
+            )
+          AzdExtensionId: microsoft.azd.ai.builder
+          AzdExtensionDirectory: cli/azd/extensions/microsoft.azd.ai.builder
+
+      # ================================================================
+      # Leg: Extension — microsoft.azd.concurx
+      # ================================================================
+      - template: /eng/pipelines/templates/stages/build-and-test-azd-extension.yml
+        parameters:
+          StageName: Ext_MsAzdConcurx_BuildAndTest
+          StageDependsOn:
+            - Detect
+          StageCondition: >-
+            and(
+              not(canceled()),
+              eq(stageDependencies.Detect.DiffAnalysis.outputs['diff.RunExt_MsAzdConcurx'], 'True')
+            )
+          AzdExtensionId: microsoft.azd.concurx
+          AzdExtensionDirectory: cli/azd/extensions/microsoft.azd.concurx
+
+      # ================================================================
+      # Leg: Extension — microsoft.azd.demo
+      # ================================================================
+      - template: /eng/pipelines/templates/stages/build-and-test-azd-extension.yml
+        parameters:
+          StageName: Ext_MsAzdDemo_BuildAndTest
+          StageDependsOn:
+            - Detect
+          StageCondition: >-
+            and(
+              not(canceled()),
+              eq(stageDependencies.Detect.DiffAnalysis.outputs['diff.RunExt_MsAzdDemo'], 'True')
+            )
+          AzdExtensionId: microsoft.azd.demo
+          AzdExtensionDirectory: cli/azd/extensions/microsoft.azd.demo
+
+      # ================================================================
+      # Leg: Extension — microsoft.azd.extensions
+      # ================================================================
+      - template: /eng/pipelines/templates/stages/build-and-test-azd-extension.yml
+        parameters:
+          StageName: Ext_MsAzdExtensions_BuildAndTest
+          StageDependsOn:
+            - Detect
+          StageCondition: >-
+            and(
+              not(canceled()),
+              eq(stageDependencies.Detect.DiffAnalysis.outputs['diff.RunExt_MsAzdExtensions'], 'True')
+            )
+          AzdExtensionId: microsoft.azd.extensions
+          AzdExtensionDirectory: cli/azd/extensions/microsoft.azd.extensions

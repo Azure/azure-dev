@@ -14,10 +14,13 @@ parameters:
   - name: MaxTotalTestSeconds
     type: number
     default: 0
+  - name: DependsOnStage
+    type: string
+    default: BuildAndTest
 stages: 
 - stage: CodeCoverage_Upload
   condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
-  dependsOn: BuildAndTest
+  dependsOn: ${{ parameters.DependsOnStage }}
 
   variables:
     - template: /eng/pipelines/templates/variables/globals.yml

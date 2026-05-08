@@ -8,10 +8,22 @@ parameters:
   - name: SkipTests
     type: boolean
     default: false
+  - name: StageName
+    type: string
+    default: BuildAndTest
+  - name: StageDependsOn
+    type: object
+    default: []
+  - name: StageCondition
+    type: string
+    default: ''
 
 stages: 
   - template: /eng/pipelines/templates/stages/build-and-test-azd-extension.yml
     parameters:
+      StageName: ${{ parameters.StageName }}
+      StageDependsOn: ${{ parameters.StageDependsOn }}
+      StageCondition: ${{ parameters.StageCondition }}
       AzdExtensionId: ${{ parameters.AzdExtensionId }}
       AzdExtensionDirectory: ${{ parameters.AzdExtensionDirectory }}
       SkipTests: ${{ parameters.SkipTests }}

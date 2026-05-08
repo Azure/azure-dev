@@ -1,4 +1,13 @@
 parameters:
+  - name: StageName
+    type: string
+    default: BuildAndTest
+  - name: StageDependsOn
+    type: object
+    default: []
+  - name: StageCondition
+    type: string
+    default: ''
   - name: BuildMatrix
     type: object
     default:
@@ -28,7 +37,10 @@ parameters:
         Variables: {}
 
 stages:
-  - stage: BuildAndTest
+  - stage: ${{ parameters.StageName }}
+    dependsOn: ${{ parameters.StageDependsOn }}
+    ${{ if ne(parameters.StageCondition, '') }}:
+      condition: ${{ parameters.StageCondition }}
     variables: 
       - template: /eng/pipelines/templates/variables/globals.yml
       - template: /eng/pipelines/templates/variables/image.yml

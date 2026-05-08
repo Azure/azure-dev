@@ -86,7 +86,28 @@ func (r *Runner) Path() string {
 
 // Copy runs azcopy copy from source to sasURI with real-time progress display.
 // Source can be a local file/directory path or a remote URL (e.g., blob URL with SAS token).
+//
+// Use this when the source is a single blob, a single local file, or when you
+// want azcopy's default folder-preserving behavior. For remote folders/containers
+// where you want the *contents* extracted directly into the destination (no
+// container-name directory wrapping), use CopyContents instead.
 func (r *Runner) Copy(ctx context.Context, source string, sasURI string) error {
+	return r.copy(ctx, source, sasURI, false /*forceContents*/)
+}
+
+// CopyContents runs azcopy copy from a remote folder/container source to sasURI,
+// rewriting the source URL so azcopy copies the *contents* rather than the
+// folder itself. Use this for blob containers (URLs of shape
+// https://account.blob.core.windows.net/<container>?<sas>) so the destination
+// doesn't end up nested under a container-name directory.
+//
+// For local sources or single-blob URLs, use Copy instead.
+func (r *Runner) CopyContents(ctx context.Context, source string, sasURI string) error {
+	return r.copy(ctx, source, sasURI, true /*forceContents*/)
+}
+
+// copy is the shared implementation behind Copy and CopyContents.
+func (r *Runner) copy(ctx context.Context, source, sasURI string, forceContents bool) error {
 	sourceArg := source
 
 	// Only do local path handling for non-URL sources
@@ -98,6 +119,11 @@ func (r *Runner) Copy(ctx context.Context, source string, sasURI string) error {
 		if info.IsDir() {
 			sourceArg = filepath.Join(source, "*")
 		}
+	} else if forceContents {
+		// Caller explicitly asked for contents-of-folder semantics: ensure the
+		// path has a wildcard so azcopy doesn't preserve the container name as
+		// a directory under the destination.
+		sourceArg = forceWildcardRemoteSource(source)
 	} else {
 		// For remote URLs ending with "/" (directory-like), append "*" before the query
 		// string so azcopy copies the contents rather than the folder itself.
@@ -292,6 +318,32 @@ func normalizeRemoteSourceURL(source string) string {
 	if strings.HasSuffix(path, "/") {
 		path += "*"
 	}
+
+	if len(parts) == 2 {
+		return path + "?" + parts[1]
+	}
+	return path
+}
+
+// forceWildcardRemoteSource rewrites a remote source URL to ensure azcopy
+// copies the *contents* of the referenced container/folder rather than
+// preserving the folder/container name as a directory under the destination.
+//
+// Behavior:
+//   - If the URL already contains a wildcard ("/*"), return as-is.
+//   - Otherwise, ensure the path ends with "/*" before any query string.
+//
+// Example:
+//
+//	in:  https://acct.blob.core.windows.net/container?sig=abc
+//	out: https://acct.blob.core.windows.net/container/*?sig=abc
+func forceWildcardRemoteSource(source string) string {
+	if strings.Contains(source, "/*") {
+		return source
+	}
+
+	parts := strings.SplitN(source, "?", 2)
+	path := strings.TrimSuffix(parts[0], "/") + "/*"
 
 	if len(parts) == 2 {
 		return path + "?" + parts[1]

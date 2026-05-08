@@ -272,7 +272,7 @@ func downloadModelAsset(
 	}
 
 	fmt.Printf("  %s: downloading model contents...\n", outputName)
-	if err := azRunner.Copy(ctx, sasURI, dest); err != nil {
+	if err := azRunner.CopyContents(ctx, sasURI, dest); err != nil {
 		return fmt.Errorf("azcopy failed for output %q: %w", outputName, err)
 	}
 	return nil
@@ -306,7 +306,7 @@ func downloadDataAsset(
 	}
 
 	fmt.Printf("  %s: downloading data contents...\n", outputName)
-	if err := azRunner.Copy(ctx, sasURI, dest); err != nil {
+	if err := azRunner.CopyContents(ctx, sasURI, dest); err != nil {
 		return fmt.Errorf("azcopy failed for output %q: %w", outputName, err)
 	}
 	return nil

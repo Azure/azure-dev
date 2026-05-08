@@ -284,7 +284,7 @@ extends:
       # ================================================================
       # Leg: Extension — azure.ai.agents
       # ================================================================
-      - template: /eng/pipelines/templates/stages/build-and-test-azd-extension.yml
+      - template: /eng/pipelines/templates/stages/release-azd-extension.yml
         parameters:
           StageName: Ext_AzureAiAgents_BuildAndTest
           StageDependsOn:
@@ -295,12 +295,13 @@ extends:
               eq(stageDependencies.Detect.DiffAnalysis.outputs['diff.RunExt_AzureAiAgents'], 'True')
             )
           AzdExtensionId: azure.ai.agents
+          SanitizedExtensionId: azure-ai-agents
           AzdExtensionDirectory: cli/azd/extensions/azure.ai.agents
 
       # ================================================================
       # Leg: Extension — azure.ai.finetune
       # ================================================================
-      - template: /eng/pipelines/templates/stages/build-and-test-azd-extension.yml
+      - template: /eng/pipelines/templates/stages/release-azd-extension.yml
         parameters:
           StageName: Ext_AzureAiFinetune_BuildAndTest
           StageDependsOn:
@@ -311,12 +312,13 @@ extends:
               eq(stageDependencies.Detect.DiffAnalysis.outputs['diff.RunExt_AzureAiFinetune'], 'True')
             )
           AzdExtensionId: azure.ai.finetune
+          SanitizedExtensionId: azure-ai-finetune
           AzdExtensionDirectory: cli/azd/extensions/azure.ai.finetune
 
       # ================================================================
       # Leg: Extension — azure.ai.models
       # ================================================================
-      - template: /eng/pipelines/templates/stages/build-and-test-azd-extension.yml
+      - template: /eng/pipelines/templates/stages/release-azd-extension.yml
         parameters:
           StageName: Ext_AzureAiModels_BuildAndTest
           StageDependsOn:
@@ -327,12 +329,13 @@ extends:
               eq(stageDependencies.Detect.DiffAnalysis.outputs['diff.RunExt_AzureAiModels'], 'True')
             )
           AzdExtensionId: azure.ai.models
+          SanitizedExtensionId: azure-ai-models
           AzdExtensionDirectory: cli/azd/extensions/azure.ai.models
 
       # ================================================================
       # Leg: Extension — azure.appservice
       # ================================================================
-      - template: /eng/pipelines/templates/stages/build-and-test-azd-extension.yml
+      - template: /eng/pipelines/templates/stages/release-azd-extension.yml
         parameters:
           StageName: Ext_AzureAppservice_BuildAndTest
           StageDependsOn:
@@ -343,12 +346,13 @@ extends:
               eq(stageDependencies.Detect.DiffAnalysis.outputs['diff.RunExt_AzureAppservice'], 'True')
             )
           AzdExtensionId: azure.appservice
+          SanitizedExtensionId: azure-appservice
           AzdExtensionDirectory: cli/azd/extensions/azure.appservice
 
       # ================================================================
       # Leg: Extension — azure.coding-agent
       # ================================================================
-      - template: /eng/pipelines/templates/stages/build-and-test-azd-extension.yml
+      - template: /eng/pipelines/templates/stages/release-azd-extension.yml
         parameters:
           StageName: Ext_AzureCodingAgent_BuildAndTest
           StageDependsOn:
@@ -359,12 +363,13 @@ extends:
               eq(stageDependencies.Detect.DiffAnalysis.outputs['diff.RunExt_AzureCodingAgent'], 'True')
             )
           AzdExtensionId: azure.coding-agent
+          SanitizedExtensionId: azure-coding-agent
           AzdExtensionDirectory: cli/azd/extensions/azure.coding-agent
 
       # ================================================================
       # Leg: Extension — microsoft.azd.ai.builder
       # ================================================================
-      - template: /eng/pipelines/templates/stages/build-and-test-azd-extension.yml
+      - template: /eng/pipelines/templates/stages/release-azd-extension.yml
         parameters:
           StageName: Ext_MsAzdAiBuilder_BuildAndTest
           StageDependsOn:
@@ -375,12 +380,13 @@ extends:
               eq(stageDependencies.Detect.DiffAnalysis.outputs['diff.RunExt_MsAzdAiBuilder'], 'True')
             )
           AzdExtensionId: microsoft.azd.ai.builder
+          SanitizedExtensionId: microsoft-azd-ai-builder
           AzdExtensionDirectory: cli/azd/extensions/microsoft.azd.ai.builder
 
       # ================================================================
       # Leg: Extension — microsoft.azd.concurx
       # ================================================================
-      - template: /eng/pipelines/templates/stages/build-and-test-azd-extension.yml
+      - template: /eng/pipelines/templates/stages/release-azd-extension.yml
         parameters:
           StageName: Ext_MsAzdConcurx_BuildAndTest
           StageDependsOn:
@@ -391,12 +397,13 @@ extends:
               eq(stageDependencies.Detect.DiffAnalysis.outputs['diff.RunExt_MsAzdConcurx'], 'True')
             )
           AzdExtensionId: microsoft.azd.concurx
+          SanitizedExtensionId: microsoft-azd-concurx
           AzdExtensionDirectory: cli/azd/extensions/microsoft.azd.concurx
 
       # ================================================================
       # Leg: Extension — microsoft.azd.demo
       # ================================================================
-      - template: /eng/pipelines/templates/stages/build-and-test-azd-extension.yml
+      - template: /eng/pipelines/templates/stages/release-azd-extension.yml
         parameters:
           StageName: Ext_MsAzdDemo_BuildAndTest
           StageDependsOn:
@@ -407,12 +414,13 @@ extends:
               eq(stageDependencies.Detect.DiffAnalysis.outputs['diff.RunExt_MsAzdDemo'], 'True')
             )
           AzdExtensionId: microsoft.azd.demo
+          SanitizedExtensionId: microsoft-azd-demo
           AzdExtensionDirectory: cli/azd/extensions/microsoft.azd.demo
 
       # ================================================================
       # Leg: Extension — microsoft.azd.extensions
       # ================================================================
-      - template: /eng/pipelines/templates/stages/build-and-test-azd-extension.yml
+      - template: /eng/pipelines/templates/stages/release-azd-extension.yml
         parameters:
           StageName: Ext_MsAzdExtensions_BuildAndTest
           StageDependsOn:
@@ -423,4 +431,5 @@ extends:
               eq(stageDependencies.Detect.DiffAnalysis.outputs['diff.RunExt_MsAzdExtensions'], 'True')
             )
           AzdExtensionId: microsoft.azd.extensions
+          SanitizedExtensionId: microsoft-azd-extensions
           AzdExtensionDirectory: cli/azd/extensions/microsoft.azd.extensions

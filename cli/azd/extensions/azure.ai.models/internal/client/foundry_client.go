@@ -21,7 +21,7 @@ import (
 
 const (
 	DefaultAPIVersion = "2025-11-15-preview"
-	TokenScope        = "https://ai.azure.com/.default"         //nolint:gosec // not credentials, OAuth scope URL
+	TokenScope        = "https://ai.azure.com/.default" //nolint:gosec // not credentials, OAuth scope URL
 )
 
 // FoundryClient is an HTTP client for Azure AI Foundry project APIs.

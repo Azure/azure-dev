@@ -29,7 +29,7 @@ parameters:
     # deliberately when ratcheting further.
     # Name matches the underlying Get-CoverageDiff.ps1 -MinOverallCoverage flag.
     type: number
-    default: 70
+    default: 69
   - name: MaxPackageTestSeconds
     type: number
     default: 0

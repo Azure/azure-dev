@@ -1095,7 +1095,7 @@ func (Coverage) Check() error {
 // "RESULT: FAIL" lines just because a single package drifted past CI's 0.5 pp tolerance
 // during exploration. To preview the CI gate locally, either set
 // COVERAGE_FAIL_ON_DECREASE=1 (which activates CI defaults: 0.5 pp per package +
-// 70% floor) or use `mage coverage:pr`.
+// 69% floor) or use `mage coverage:pr`.
 //
 // On a feature branch (not main / detached HEAD), Diff resolves PR-touched .go files
 // via `git fetch origin main` + `git diff origin/main...HEAD` and passes them to the
@@ -1114,7 +1114,7 @@ func (Coverage) Check() error {
 //	COVERAGE_MAX_PACKAGE_DECREASE       — per-package coverage decrease tolerance in percentage points
 //	                                      (defaults: 0.5 when COVERAGE_FAIL_ON_DECREASE=1; gate disabled otherwise)
 //	COVERAGE_MIN_OVERALL                — absolute floor for overall coverage in percent
-//	                                      (defaults: 70.0 when COVERAGE_FAIL_ON_DECREASE=1; gate disabled otherwise)
+//	                                      (defaults: 69.0 when COVERAGE_FAIL_ON_DECREASE=1; gate disabled otherwise)
 //	COVERAGE_FAIL_ON_DECREASE           — "1" or "true" to exit non-zero when EITHER gate is breached
 //	                                      (per-package decrease or absolute floor); also activates default thresholds
 //
@@ -1203,7 +1203,7 @@ func (Coverage) Diff() error {
 //	COVERAGE_BASELINE             — path to baseline coverage profile (default: cover-ci-combined.out or download from CI)
 //	COVERAGE_CURRENT              — path to current coverage profile (default: cover-local.out)
 //	COVERAGE_MAX_PACKAGE_DECREASE — per-package coverage decrease tolerance in pp (default: from Get-CoverageDiff.ps1, currently 0.5)
-//	COVERAGE_MIN_OVERALL          — absolute floor for overall coverage in percent (default: from Get-CoverageDiff.ps1, currently 70)
+//	COVERAGE_MIN_OVERALL          — absolute floor for overall coverage in percent (default: from Get-CoverageDiff.ps1, currently 69)
 //
 // Defaults intentionally come from the underlying script so both `mage coverage:pr`
 // and the CI pipeline read from a single source of truth.

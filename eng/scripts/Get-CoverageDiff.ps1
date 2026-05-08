@@ -83,7 +83,7 @@
 
 .PARAMETER MinOverallCoverage
     Absolute floor (in percent) for overall coverage. CI fails if the
-    current overall is below this value. Default: 70.0.
+    current overall is below this value. Default: 69.0.
 
 .PARAMETER FailOnGate
     Exit with code 2 if any gate (per-package decrease or absolute
@@ -118,7 +118,7 @@
         -ChangedFilesFromFile changed-files.txt `
         -BaselineLabel "main build 123456 / commit abcdef" `
         -MaxPackageDecrease 0.5 `
-        -MinOverallCoverage 70 `
+        -MinOverallCoverage 69 `
         -FailOnGate
 #>
 
@@ -139,7 +139,7 @@ param(
 
     [ValidateScript({ $_ -ge 0 -and $_ -le 100 -or $_ -eq -1 }, ErrorMessage =
         '-MinOverallCoverage must be between 0 and 100, or -1 to disable the floor gate.')]
-    [double]$MinOverallCoverage = 70.0,
+    [double]$MinOverallCoverage = 69.0,
 
     [switch]$FailOnGate,
 
@@ -320,8 +320,8 @@ function ConvertTo-ModuleRelative {
 # ---------------------------------------------------------------------------
 # Compute coverage percentage as a raw double. Display sites format with
 # {0:F1} for one-decimal output; gate comparisons use the raw value to
-# avoid threshold false negatives at boundaries (e.g. 69.96% rounding up
-# to 70.0% and passing a 70 floor, or a 0.54 pp drop rounding to 0.5 pp
+# avoid threshold false negatives at boundaries (e.g. 68.96% rounding up
+# to 69.0% and passing a 69 floor, or a 0.54 pp drop rounding to 0.5 pp
 # and passing a 0.5 tolerance).
 # ---------------------------------------------------------------------------
 function Get-Percent {

@@ -38,7 +38,7 @@ func newCustomUpdateCommand(parentFlags *customFlags) *cobra.Command {
 		Long: `Update the description or tags of a custom model version.
 
 Uses JSON Merge Patch (RFC 7396) semantics:
-  - Tags are merged per-key: --set-tag upserts, --remove-tag deletes
+  - Tags are merged per-key: --set-tag adds or updates, --remove-tag deletes
   - Absent keys are left unchanged`,
 		Example: `  # Update description
   azd ai models update --name my-model --version 1 --description "Updated description"

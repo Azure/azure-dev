@@ -104,7 +104,14 @@ func runCustomShow(ctx context.Context, parentFlags *customFlags, flags *customS
 			if !strings.EqualFold(m.Name, flags.Name) {
 				continue
 			}
-			v, _ := strconv.Atoi(m.Version)
+			v, err := strconv.Atoi(m.Version)
+			if err != nil {
+				// Non-numeric version; treat as candidate if we have no latest yet
+				if latest == nil {
+					latest = m
+				}
+				continue
+			}
 			if latest == nil || v > latestVersion {
 				latest = m
 				latestVersion = v

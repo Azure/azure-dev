@@ -22,8 +22,6 @@ import (
 const (
 	DefaultAPIVersion = "2025-11-15-preview"
 	TokenScope        = "https://ai.azure.com/.default"         //nolint:gosec // not credentials, OAuth scope URL
-	ARMTokenScope     = "https://management.azure.com/.default" //nolint:gosec // not credentials, OAuth scope URL
-	MLTokenScope      = "https://ml.azure.com/.default"         //nolint:gosec // not credentials, OAuth scope URL
 )
 
 // FoundryClient is an HTTP client for Azure AI Foundry project APIs.
@@ -520,7 +518,21 @@ func (c *FoundryClient) addAuth(ctx context.Context, req *http.Request) error {
 	return nil
 }
 
-// handleError reads the error body and returns a formatted error.
+// APIError represents an error response from the Foundry API with a status code.
+type APIError struct {
+	StatusCode int
+	Code       string
+	Message    string
+}
+
+func (e *APIError) Error() string {
+	if e.Message != "" {
+		return fmt.Sprintf("API error (%d): %s - %s", e.StatusCode, e.Code, e.Message)
+	}
+	return fmt.Sprintf("API error (%d): %s", e.StatusCode, e.Code)
+}
+
+// handleError reads the error body and returns an *APIError.
 func (c *FoundryClient) handleError(resp *http.Response) error {
 	body, _ := io.ReadAll(resp.Body)
 
@@ -532,8 +544,15 @@ func (c *FoundryClient) handleError(resp *http.Response) error {
 	}
 
 	if json.Unmarshal(body, &apiErr) == nil && apiErr.Error.Message != "" {
-		return fmt.Errorf("API error (%d): %s - %s", resp.StatusCode, apiErr.Error.Code, apiErr.Error.Message)
+		return &APIError{
+			StatusCode: resp.StatusCode,
+			Code:       apiErr.Error.Code,
+			Message:    apiErr.Error.Message,
+		}
 	}
 
-	return fmt.Errorf("API error (%d): %s", resp.StatusCode, string(body))
+	return &APIError{
+		StatusCode: resp.StatusCode,
+		Code:       string(body),
+	}
 }

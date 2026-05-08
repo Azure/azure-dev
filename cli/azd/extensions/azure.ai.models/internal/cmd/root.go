@@ -71,16 +71,23 @@ func newTopLevelCustomCommands() []*cobra.Command {
 	}
 
 	for _, cmd := range cmds {
-		cmd.PersistentFlags().StringVarP(&flags.subscriptionId, "subscription", "s", "",
+		cmd.Flags().StringVarP(&flags.subscriptionId, "subscription", "s", "",
 			"Azure subscription ID")
-		cmd.PersistentFlags().StringVar(&flags.projectEndpoint, "project-endpoint", "",
+		cmd.Flags().StringVar(&flags.projectEndpoint, "project-endpoint", "",
 			"Azure AI Foundry project endpoint URL "+
 				"(e.g., https://account.services.ai.azure.com/api/projects/project-name)")
 
 		// Resolve project endpoint before running the command
-		cmd.PreRunE = func(cmd *cobra.Command, _ []string) error {
+		origPreRunE := cmd.PreRunE
+		cmd.PreRunE = func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
-			return resolveProjectEndpoint(ctx, flags)
+			if err := resolveProjectEndpoint(ctx, flags); err != nil {
+				return err
+			}
+			if origPreRunE != nil {
+				return origPreRunE(cmd, args)
+			}
+			return nil
 		}
 	}
 

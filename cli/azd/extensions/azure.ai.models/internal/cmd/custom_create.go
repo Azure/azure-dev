@@ -147,17 +147,18 @@ func runCustomCreate(ctx context.Context, parentFlags *customFlags, flags *custo
 	fmt.Println()
 
 	if err != nil {
-		if strings.Contains(err.Error(), "409") || strings.Contains(err.Error(), "already exists") {
+		var apiErr *client.APIError
+		if errors.As(err, &apiErr) && apiErr.StatusCode == 409 {
 			fmt.Println()
 			color.Red("✗ Model '%s' version '%s' already exists.", flags.Name, flags.Version)
 			fmt.Println()
 			color.Yellow("To fetch the latest version, use show without --version:")
-			fmt.Printf("  azd ai models custom show --name %s\n\n", flags.Name)
+			fmt.Printf("  azd ai models show --name %s\n\n", flags.Name)
 			color.Yellow("Then create with a new version:")
-			fmt.Printf("  azd ai models custom create --name %s --version <next-version> ...\n", flags.Name)
+			fmt.Printf("  azd ai models create --name %s --version <next-version> ...\n", flags.Name)
 			return fmt.Errorf("model version already exists")
 		}
-		if strings.Contains(err.Error(), "403") {
+		if errors.As(err, &apiErr) && apiErr.StatusCode == 403 {
 			fmt.Println()
 			color.Red("✗ Permission denied: you do not have the required role to upload custom models.")
 			fmt.Println()
@@ -215,18 +216,22 @@ func runCustomCreate(ctx context.Context, parentFlags *customFlags, flags *custo
 		fmt.Printf("failed to start spinner: %v\n", err)
 	}
 
-	derivedURI := buildDerivedModelURI(flags.BaseModel)
 	regReq := &models.RegisterModelRequest{
 		BlobURI:     blob.BlobURI,
 		WeightType:  flags.WeightType,
 		Description: flags.Description,
-		DerivedModelInformation: &models.DerivedModelInformation{
-			BaseModel: &derivedURI,
-		},
 	}
 
-	regReq.Tags = map[string]string{
-		"baseArchitecture": extractBaseModelName(flags.BaseModel),
+	if flags.BaseModel != "" {
+		derivedURI := buildDerivedModelURI(flags.BaseModel)
+		regReq.DerivedModelInformation = &models.DerivedModelInformation{
+			BaseModel: &derivedURI,
+		}
+		regReq.Tags = map[string]string{
+			"baseArchitecture": extractBaseModelName(flags.BaseModel),
+		}
+	} else {
+		regReq.Tags = map[string]string{}
 	}
 
 	if flags.Publisher != "" {

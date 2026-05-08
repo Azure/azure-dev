@@ -121,7 +121,7 @@ func promptForProject(ctx context.Context, flags *customFlags, azdClient *azdext
 		azdClient, err = azdext.NewAzdClient()
 		if err != nil {
 			return fmt.Errorf("--project-endpoint is required when azd is not available.\n\n" +
-				"Example: azd ai models custom list " +
+				"Example: azd ai models list " +
 				"--project-endpoint https://<account>.services.ai.azure.com/api/projects/<project>\n\n" +
 				"Or run 'azd ai models init' to set up your project first")
 		}

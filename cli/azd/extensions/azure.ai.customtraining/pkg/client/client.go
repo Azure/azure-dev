@@ -160,8 +160,21 @@ func (c *Client) HandleError(resp *http.Response) error {
 			Message string `json:"message"`
 		} `json:"error"`
 	}
+	parsed := json.Unmarshal(body, &apiErr) == nil && apiErr.Error.Message != ""
 
-	if json.Unmarshal(body, &apiErr) == nil && apiErr.Error.Message != "" {
+	// 5xx → service-side issue. The server-provided code/message ("ServiceError",
+	// "InternalServerError") is rarely actionable for end-users, so prefer a
+	// retry hint. Keep server detail in -v / debug paths.
+	if resp.StatusCode >= 500 && resp.StatusCode <= 599 {
+		if parsed && c.debugBody {
+			return fmt.Errorf("the service is currently unavailable (HTTP %d), please retry in a moment: %s",
+				resp.StatusCode, apiErr.Error.Message)
+		}
+		return fmt.Errorf("the service is currently unavailable (HTTP %d), please retry in a moment",
+			resp.StatusCode)
+	}
+
+	if parsed {
 		return fmt.Errorf("API error (%d): %s - %s", resp.StatusCode, apiErr.Error.Code, apiErr.Error.Message)
 	}
 

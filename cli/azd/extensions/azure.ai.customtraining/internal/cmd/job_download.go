@@ -359,7 +359,7 @@ func downloadDefaultArtifacts(
 			page = p
 			return 200, nil
 		}); err != nil {
-			return fmt.Errorf("failed to list run artifacts: %w", err)
+			return fmt.Errorf("could not list artifacts for job %q: %w", jobName, err)
 		}
 		if page == nil {
 			break

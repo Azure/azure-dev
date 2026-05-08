@@ -14,6 +14,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
@@ -23,7 +24,12 @@ import (
 )
 
 // toolActions registers the "azd tool" command group and all of its subcommands.
-func toolActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
+// The entire command group is gated behind the "tool" alpha feature flag.
+func toolActions(root *actions.ActionDescriptor, alphaManager *alpha.FeatureManager) *actions.ActionDescriptor {
+	if !alphaManager.IsEnabled(alpha.FeatureId("tool")) {
+		return nil
+	}
+
 	toolCmd := &cobra.Command{
 		Use:   "tool",
 		Short: "Manage Azure development tools.",

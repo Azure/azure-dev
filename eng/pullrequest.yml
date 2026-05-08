@@ -37,6 +37,13 @@ extends:
               - checkout: self
 
               - pwsh: |
+                  $targetBranch = "$(System.PullRequest.TargetBranchName)"
+                  if (-not $targetBranch) { $targetBranch = "main" }
+                  Write-Host "Fetching target branch ref: $targetBranch"
+                  git fetch --no-tags origin $targetBranch
+                displayName: Fetch target branch
+
+              - pwsh: |
                   # Get changed files using the shared helper (uses ADO PR env vars automatically)
                   $changedFiles = & "$(Build.SourcesDirectory)/eng/common/scripts/get-changedfiles.ps1"
 

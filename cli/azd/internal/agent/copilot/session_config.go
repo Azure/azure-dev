@@ -146,21 +146,10 @@ func (b *SessionConfigBuilder) buildMCPServers(
 // convertServerConfig converts an azd mcp.ServerConfig to a copilot.MCPServerConfig.
 func convertServerConfig(srv *mcp.ServerConfig) copilot.MCPServerConfig {
 	if srv.Type == "http" {
-		return copilot.MCPServerConfig{
-			"type":  "http",
-			"url":   srv.Url,
-			"tools": []string{"*"},
+		return copilot.MCPHTTPServerConfig{
+			Tools: []string{"*"},
+			URL:   srv.Url,
 		}
-	}
-
-	result := copilot.MCPServerConfig{
-		"type":    "local",
-		"command": srv.Command,
-		"tools":   []string{"*"},
-	}
-
-	if len(srv.Args) > 0 {
-		result["args"] = srv.Args
 	}
 
 	envMap := make(map[string]string)
@@ -169,11 +158,13 @@ func convertServerConfig(srv *mcp.ServerConfig) copilot.MCPServerConfig {
 			envMap[e[:idx]] = e[idx+1:]
 		}
 	}
-	if len(envMap) > 0 {
-		result["env"] = envMap
-	}
 
-	return result
+	return copilot.MCPStdioServerConfig{
+		Tools:   []string{"*"},
+		Command: srv.Command,
+		Args:    srv.Args,
+		Env:     envMap,
+	}
 }
 
 // getUserMCPServers reads user-configured MCP servers from the copilot.mcp.servers config key.
@@ -194,7 +185,7 @@ func getUserMCPServers(userConfig config.Config) map[string]copilot.MCPServerCon
 		if err := json.Unmarshal(data, &serverConfig); err != nil {
 			continue
 		}
-		result[name] = copilot.MCPServerConfig(serverConfig)
+		result[name] = mapToMCPServerConfig(serverConfig)
 	}
 
 	return result
@@ -224,6 +215,65 @@ func indexOf(s string, c byte) int {
 		}
 	}
 	return -1
+}
+
+// mapToMCPServerConfig converts a generic map to the appropriate typed MCPServerConfig.
+// HTTP/SSE servers become MCPHTTPServerConfig; all others become MCPStdioServerConfig.
+func mapToMCPServerConfig(m map[string]any) copilot.MCPServerConfig {
+	serverType, _ := m["type"].(string)
+
+	if serverType == "http" || serverType == "sse" {
+		cfg := copilot.MCPHTTPServerConfig{}
+		if u, ok := m["url"].(string); ok {
+			cfg.URL = u
+		}
+		cfg.Tools = extractStringSlice(m["tools"])
+		if h, ok := m["headers"].(map[string]any); ok {
+			cfg.Headers = make(map[string]string)
+			for k, v := range h {
+				if s, ok := v.(string); ok {
+					cfg.Headers[k] = s
+				}
+			}
+		}
+		return cfg
+	}
+
+	cfg := copilot.MCPStdioServerConfig{}
+	if cmd, ok := m["command"].(string); ok {
+		cfg.Command = cmd
+	}
+	cfg.Args = extractStringSlice(m["args"])
+	cfg.Tools = extractStringSlice(m["tools"])
+	if e, ok := m["env"].(map[string]any); ok {
+		cfg.Env = make(map[string]string)
+		for k, v := range e {
+			if s, ok := v.(string); ok {
+				cfg.Env[k] = s
+			}
+		}
+	}
+	return cfg
+}
+
+// extractStringSlice converts an any value to a string slice.
+func extractStringSlice(v any) []string {
+	if v == nil {
+		return nil
+	}
+	switch s := v.(type) {
+	case []string:
+		return s
+	case []any:
+		result := make([]string, 0, len(s))
+		for _, item := range s {
+			if str, ok := item.(string); ok {
+				result = append(result, str)
+			}
+		}
+		return result
+	}
+	return nil
 }
 
 // discoverAzurePluginSkillDirs finds the skills directory from the installed
@@ -282,25 +332,23 @@ func loadAzurePluginMCPServers() map[string]copilot.MCPServerConfig {
 
 		result := make(map[string]copilot.MCPServerConfig)
 		for name, srv := range pluginConfig.MCPServers {
-			cfg := copilot.MCPServerConfig(srv)
-
-			// Normalize: ensure tools field is set to expose all tools
-			if _, hasTools := cfg["tools"]; !hasTools {
-				cfg["tools"] = []string{"*"}
-			}
-
 			// Normalize: use "local" instead of "stdio" for local servers
-			if t, ok := cfg["type"].(string); ok && t == "stdio" {
-				cfg["type"] = "local"
+			if t, ok := srv["type"].(string); ok && t == "stdio" {
+				srv["type"] = "local"
 			}
 			// Default type to "local" for command-based servers
-			if _, hasType := cfg["type"]; !hasType {
-				if _, hasCmd := cfg["command"]; hasCmd {
-					cfg["type"] = "local"
+			if _, hasType := srv["type"]; !hasType {
+				if _, hasCmd := srv["command"]; hasCmd {
+					srv["type"] = "local"
 				}
 			}
 
-			result[name] = cfg
+			// Normalize: ensure tools field is set to expose all tools
+			if _, hasTools := srv["tools"]; !hasTools {
+				srv["tools"] = []string{"*"}
+			}
+
+			result[name] = mapToMCPServerConfig(srv)
 		}
 
 		log.Printf("[copilot-config] Loaded %d MCP servers from Azure plugin", len(result))

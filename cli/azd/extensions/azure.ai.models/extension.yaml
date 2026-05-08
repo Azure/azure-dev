@@ -21,6 +21,9 @@ examples:
     - name: show
       description: Show details of a custom model.
       usage: azd ai models show --name my-model
+    - name: update
+      description: Update description or tags of a custom model.
+      usage: azd ai models update --name my-model --description "New description" --set-tag env=prod
     - name: delete
       description: Delete a custom model.
       usage: azd ai models delete --name my-model

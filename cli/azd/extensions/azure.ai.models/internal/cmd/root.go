@@ -66,6 +66,7 @@ func newTopLevelCustomCommands() []*cobra.Command {
 		newCustomCreateCommand(flags),
 		newCustomListCommand(flags),
 		newCustomShowCommand(flags),
+		newCustomUpdateCommand(flags),
 		newCustomDeleteCommand(flags),
 	}
 

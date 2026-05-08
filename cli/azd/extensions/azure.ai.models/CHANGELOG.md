@@ -8,6 +8,7 @@
 - Added top-level `azd ai models create`, `list`, `show`, `delete` commands as the preferred surface; the `custom` subgroup is now deprecated
 - Added `--weight-type` flag to `create` command (default: `FullWeight`)
 - Added `--source-job-id` filter to `list` command for querying models by training job lineage
+- Added `azd ai models update` command for updating model description and tags (JSON Merge Patch)
 - `show` command now displays weight type, provisioning state, source lineage, and artifact profile when available
 - `--publisher` flag is now optional (previously defaulted to `Fireworks`); only sent when explicitly provided
 

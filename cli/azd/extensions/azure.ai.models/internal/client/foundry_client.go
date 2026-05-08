@@ -463,6 +463,51 @@ func (c *FoundryClient) GetModel(ctx context.Context, modelName, version string)
 	return &result, nil
 }
 
+// UpdateModel applies a JSON Merge Patch (RFC 7396) to an existing model version.
+// PATCH {subPath}/models/{modelName}/versions/{version}
+func (c *FoundryClient) UpdateModel(
+	ctx context.Context, modelName, version string, req *models.UpdateModelRequest,
+) (*models.CustomModel, error) {
+	reqURL := fmt.Sprintf("%s%s/models/%s/versions/%s?api-version=%s",
+		c.baseURL, c.subPath,
+		url.PathEscape(modelName), url.PathEscape(version),
+		c.apiVersion,
+	)
+
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPatch, reqURL, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	if err := c.addAuth(ctx, httpReq); err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/merge-patch+json")
+
+	//nolint:gosec // URL is constructed from validated project endpoint
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, c.handleError(resp)
+	}
+
+	var result models.CustomModel
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
 func (c *FoundryClient) addAuth(ctx context.Context, req *http.Request) error {
 	token, err := c.credential.GetToken(ctx, policy.TokenRequestOptions{
 		Scopes: []string{TokenScope},

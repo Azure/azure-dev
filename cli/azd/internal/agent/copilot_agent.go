@@ -767,7 +767,7 @@ func (a *CopilotAgent) createPermissionHandler() copilot.PermissionHandlerFunc {
 				if errors.Is(promptErr, consent.ErrToolExecutionSkipped) {
 					// Skip — deny this tool but let the agent continue
 					a.consentDeniedCount++
-					return copilot.PermissionRequestResult{Kind: copilot.PermissionRequestResultKindUserNotAvailable}, nil
+					return copilot.PermissionRequestResult{Kind: copilot.PermissionRequestResultKindRejected}, nil
 				}
 				if errors.Is(promptErr, consent.ErrToolExecutionDenied) {
 					// Deny — block and exit the interaction
@@ -783,7 +783,7 @@ func (a *CopilotAgent) createPermissionHandler() copilot.PermissionHandlerFunc {
 		}
 
 		a.consentDeniedCount++
-		return copilot.PermissionRequestResult{Kind: copilot.PermissionRequestResultKindUserNotAvailable}, nil
+		return copilot.PermissionRequestResult{Kind: copilot.PermissionRequestResultKindRejected}, nil
 	}
 }
 

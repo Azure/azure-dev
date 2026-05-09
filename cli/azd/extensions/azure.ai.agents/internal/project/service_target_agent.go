@@ -629,61 +629,19 @@ func (p *AgentServiceTargetProvider) Deploy(
 
 	warnDeprecatedScaleSettings(serviceConfig.Config)
 
-	// Load and validate the agent manifest
-	data, err := os.ReadFile(p.agentDefinitionPath)
+	agentDef, isContainerAgent, err := p.loadContainerAgentDefinition()
 	if err != nil {
-		return nil, exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("failed to read agent manifest file: %s", err),
-			"verify the agent.yaml file exists and is readable",
-		)
+		return nil, err
 	}
-
-	err = agent_yaml.ValidateAgentDefinition(data)
-	if err != nil {
-		return nil, exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("agent.yaml is not valid: %s", err),
-			"fix the agent.yaml file according to the schema",
-		)
-	}
-
-	var genericTemplate map[string]any
-	if err := yaml.Unmarshal(data, &genericTemplate); err != nil {
-		return nil, exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("YAML content is not valid for deploy: %s", err),
-			"verify the agent.yaml has valid YAML syntax",
-		)
-	}
-
-	kind, ok := genericTemplate["kind"].(string)
-	if !ok {
-		return nil, exterrors.Validation(
-			exterrors.CodeMissingAgentKind,
-			"kind field is missing or not a valid string in agent.yaml",
-			"add a valid 'kind' field (e.g., 'hosted') to agent.yaml",
-		)
-	}
-
-	switch kind {
-	case string(agent_yaml.AgentKindHosted):
-		var agentDef agent_yaml.ContainerAgent
-		if err := yaml.Unmarshal(data, &agentDef); err != nil {
-			return nil, exterrors.Validation(
-				exterrors.CodeInvalidAgentManifest,
-				fmt.Sprintf("YAML content is not valid for hosted agent deploy: %s", err),
-				"fix the agent.yaml to match the hosted agent schema",
-			)
-		}
-		return p.deployHostedAgent(ctx, serviceConfig, serviceContext, progress, agentDef, azdEnv)
-	default:
+	if !isContainerAgent {
 		return nil, exterrors.Validation(
 			exterrors.CodeUnsupportedAgentKind,
-			fmt.Sprintf("unsupported agent kind: %s", kind),
+			"unsupported agent kind in agent.yaml",
 			"use a supported kind: 'hosted'",
 		)
 	}
+
+	return p.deployHostedAgent(ctx, serviceConfig, serviceContext, progress, agentDef, azdEnv)
 }
 
 // shouldUsePreBuiltImage determines whether to use a pre-built image.
@@ -764,7 +722,7 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 	}
 
 	if fullImageURL != "" {
-		fmt.Fprintf(os.Stderr, "Using pre-built container image: %s\n", fullImageURL)
+		progress(fmt.Sprintf("Using pre-built container image: %s", fullImageURL))
 	} else {
 		for _, artifact := range serviceContext.Publish {
 			if artifact.Kind == azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER &&

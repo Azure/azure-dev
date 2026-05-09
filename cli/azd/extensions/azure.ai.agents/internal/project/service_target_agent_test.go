@@ -764,6 +764,7 @@ func TestShouldUsePreBuiltImage_NoPromptHonorsImageField(t *testing.T) {
 }
 
 func TestShouldUsePreBuiltImage_NoPromptWithoutImageBuilds(t *testing.T) {
+	// Cannot use t.Parallel() because t.Setenv mutates process env.
 	t.Setenv("AZD_NO_PROMPT", "true")
 
 	provider := &AgentServiceTargetProvider{}

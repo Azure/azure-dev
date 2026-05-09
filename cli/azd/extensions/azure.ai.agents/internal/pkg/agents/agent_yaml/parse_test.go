@@ -142,8 +142,8 @@ template:
 		t.Fatalf("Failed to marshal ContainerAgent: %v", err)
 	}
 
-	if !strings.Contains(string(marshaled), "image:") {
-		t.Errorf("Marshaled YAML should contain image, got:\n%s", string(marshaled))
+	if !strings.Contains(string(marshaled), "myregistry.azurecr.io/myimage:v1") {
+		t.Errorf("Marshaled YAML should contain image value, got:\n%s", string(marshaled))
 	}
 }
 

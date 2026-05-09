@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"azureaiagent/internal/exterrors"
@@ -80,8 +81,12 @@ type AgentServiceTargetProvider struct {
 	tenantId            string
 	env                 *azdext.Environment
 	foundryProject      *arm.ResourceID
-	usePreBuiltImage    *bool // nil = not yet prompted, true = use pre-built, false = build from Dockerfile
 }
+
+const (
+	preBuiltImageArtifactSourceKey = "azure.ai.agents.imageSource"
+	preBuiltImageArtifactSource    = "agent.yaml"
+)
 
 // NewAgentServiceTargetProvider creates a new AgentServiceTargetProvider instance
 func NewAgentServiceTargetProvider(azdClient *azdext.AzdClient) azdext.ServiceTargetProvider {
@@ -356,19 +361,23 @@ func (p *AgentServiceTargetProvider) Package(
 	serviceContext *azdext.ServiceContext,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePackageResult, error) {
-	if !p.isContainerAgent() {
+	agentDef, isContainerAgent, err := p.loadContainerAgentDefinition()
+	if err != nil {
+		return nil, err
+	}
+	if !isContainerAgent {
 		return &azdext.ServicePackageResult{}, nil
 	}
 
-	// When a pre-built image is configured, prompt the user to choose.
-	// If no image is configured, proceed with build.
-	usePreBuiltImage, err := p.shouldUsePreBuiltImage(ctx)
+	usePreBuiltImage, err := p.shouldUsePreBuiltImage(ctx, agentDef)
 	if err != nil {
 		return nil, err
 	}
 	if usePreBuiltImage {
 		progress("Using pre-built container image, skipping package")
-		return &azdext.ServicePackageResult{}, nil
+		return &azdext.ServicePackageResult{
+			Artifacts: []*azdext.Artifact{preBuiltImageArtifact(agentDef.Image)},
+		}, nil
 	}
 
 	var packageArtifact *azdext.Artifact
@@ -432,18 +441,32 @@ func (p *AgentServiceTargetProvider) Publish(
 	publishOptions *azdext.PublishOptions,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePublishResult, error) {
-	if !p.isContainerAgent() {
-		return &azdext.ServicePublishResult{}, nil
+	if preBuiltArtifact := findPreBuiltImageArtifact(serviceContext.Package); preBuiltArtifact != nil {
+		progress("Using pre-built container image, skipping publish")
+		return &azdext.ServicePublishResult{
+			Artifacts: []*azdext.Artifact{preBuiltArtifact},
+		}, nil
 	}
 
-	// Skip publishing when user chose to use a pre-built image
-	usePreBuiltImage, err := p.shouldUsePreBuiltImage(ctx)
+	agentDef, isContainerAgent, err := p.loadContainerAgentDefinition()
 	if err != nil {
 		return nil, err
 	}
-	if usePreBuiltImage {
-		progress("Using pre-built container image, skipping publish")
+	if !isContainerAgent {
 		return &azdext.ServicePublishResult{}, nil
+	}
+
+	if !hasContainerArtifact(serviceContext.Package) {
+		usePreBuiltImage, err := p.shouldUsePreBuiltImage(ctx, agentDef)
+		if err != nil {
+			return nil, err
+		}
+		if usePreBuiltImage {
+			progress("Using pre-built container image, skipping publish")
+			return &azdext.ServicePublishResult{
+				Artifacts: []*azdext.Artifact{preBuiltImageArtifact(agentDef.Image)},
+			}, nil
+		}
 	}
 
 	progress("Publishing container")
@@ -461,6 +484,104 @@ func (p *AgentServiceTargetProvider) Publish(
 	return &azdext.ServicePublishResult{
 		Artifacts: publishResponse.Result.Artifacts,
 	}, nil
+}
+
+func preBuiltImageArtifact(imageURL string) *azdext.Artifact {
+	return &azdext.Artifact{
+		Kind:         azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER,
+		Location:     imageURL,
+		LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
+		Metadata: map[string]string{
+			preBuiltImageArtifactSourceKey: preBuiltImageArtifactSource,
+		},
+	}
+}
+
+func findPreBuiltImageArtifact(artifacts []*azdext.Artifact) *azdext.Artifact {
+	for _, artifact := range artifacts {
+		if artifact.Kind == azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER &&
+			artifact.LocationKind == azdext.LocationKind_LOCATION_KIND_REMOTE &&
+			artifact.Location != "" &&
+			artifact.Metadata[preBuiltImageArtifactSourceKey] == preBuiltImageArtifactSource {
+			return artifact
+		}
+	}
+
+	return nil
+}
+
+func findPreBuiltImageArtifactInContext(serviceContext *azdext.ServiceContext) *azdext.Artifact {
+	if serviceContext == nil {
+		return nil
+	}
+
+	if artifact := findPreBuiltImageArtifact(serviceContext.Publish); artifact != nil {
+		return artifact
+	}
+
+	return findPreBuiltImageArtifact(serviceContext.Package)
+}
+
+func hasContainerArtifact(artifacts []*azdext.Artifact) bool {
+	for _, artifact := range artifacts {
+		if artifact.Kind == azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (p *AgentServiceTargetProvider) loadContainerAgentDefinition() (agent_yaml.ContainerAgent, bool, error) {
+	data, err := os.ReadFile(p.agentDefinitionPath)
+	if err != nil {
+		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("failed to read agent manifest file: %s", err),
+			"verify the agent.yaml file exists and is readable",
+		)
+	}
+
+	if err := agent_yaml.ValidateAgentDefinition(data); err != nil {
+		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("agent.yaml is not valid: %s", err),
+			"fix the agent.yaml file according to the schema",
+		)
+	}
+
+	var genericTemplate map[string]any
+	if err := yaml.Unmarshal(data, &genericTemplate); err != nil {
+		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("YAML content is not valid: %s", err),
+			"verify the agent.yaml has valid YAML syntax",
+		)
+	}
+
+	kind, ok := genericTemplate["kind"].(string)
+	if !ok {
+		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
+			exterrors.CodeMissingAgentKind,
+			"kind field is missing or not a valid string in agent.yaml",
+			"add a valid 'kind' field (e.g., 'hosted') to agent.yaml",
+		)
+	}
+
+	if kind != string(agent_yaml.AgentKindHosted) {
+		return agent_yaml.ContainerAgent{}, false, nil
+	}
+
+	var agentDef agent_yaml.ContainerAgent
+	if err := yaml.Unmarshal(data, &agentDef); err != nil {
+		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("YAML content is not valid for hosted agent: %s", err),
+			"fix the agent.yaml to match the hosted agent schema",
+		)
+	}
+
+	return agentDef, true, nil
 }
 
 // Deploy performs the deployment operation for the agent service
@@ -565,56 +686,35 @@ func (p *AgentServiceTargetProvider) Deploy(
 	}
 }
 
-func (p *AgentServiceTargetProvider) isContainerAgent() bool {
-	// Load and validate the agent manifest
-	data, err := os.ReadFile(p.agentDefinitionPath)
-	if err != nil {
-		return false
-	}
-
-	err = agent_yaml.ValidateAgentDefinition(data)
-	if err != nil {
-		return false
-	}
-
-	var genericTemplate map[string]any
-	if err := yaml.Unmarshal(data, &genericTemplate); err != nil {
-		return false
-	}
-
-	kind, ok := genericTemplate["kind"].(string)
-	if !ok {
-		return false
-	}
-
-	return kind == string(agent_yaml.AgentKindHosted)
-}
-
 // shouldUsePreBuiltImage determines whether to use a pre-built image.
-// When an image URL is configured, it prompts the user to choose between
-// using the pre-built image or building from a Dockerfile.
-// The decision is cached so the prompt only appears once per deploy.
+//
+// Behavior:
+//   - If no image is configured in agent.yaml, always build from Dockerfile.
+//   - In non-interactive mode (AZD_NO_PROMPT=true), honor the declarative image
+//     field directly: the user explicitly opted in by writing it in agent.yaml,
+//     so CI/CD can deploy without an extra flag.
+//   - In interactive mode, prompt the user. The default is to build, so users
+//     who happen to have an image in agent.yaml are not silently switched onto
+//     the pre-built path.
 func (p *AgentServiceTargetProvider) shouldUsePreBuiltImage(
 	ctx context.Context,
+	agentDef agent_yaml.ContainerAgent,
 ) (bool, error) {
-	// Return cached decision if already prompted
-	if p.usePreBuiltImage != nil {
-		return *p.usePreBuiltImage, nil
-	}
-
-	imageURL := p.getPreBuiltImageURL()
+	imageURL := agentDef.Image
 	if imageURL == "" {
-		// No image configured, build from Dockerfile.
-		p.usePreBuiltImage = new(false)
 		return false, nil
 	}
 
-	// Prompt the user to choose
-	choices := []*azdext.SelectChoice{
-		{Value: "prebuilt", Label: fmt.Sprintf("Create hosted agent from %s", imageURL)},
-		{Value: "build", Label: "Build it for me"},
+	// Non-interactive (CI/CD): honor the configured image without prompting.
+	if noPrompt, _ := strconv.ParseBool(os.Getenv("AZD_NO_PROMPT")); noPrompt {
+		return true, nil
 	}
 
+	// Interactive: default to build so the pre-built path requires an explicit choice.
+	choices := []*azdext.SelectChoice{
+		{Value: "build", Label: "Build it for me"},
+		{Value: "prebuilt", Label: fmt.Sprintf("Create hosted agent from %s", imageURL)},
+	}
 	defaultIndex := int32(0)
 	resp, err := p.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
@@ -627,41 +727,7 @@ func (p *AgentServiceTargetProvider) shouldUsePreBuiltImage(
 		return false, exterrors.FromPrompt(err, "failed to select hosted agent container image source")
 	}
 
-	usePreBuilt := resp.Value != nil && *resp.Value == 0
-	p.usePreBuiltImage = new(bool)
-	*p.usePreBuiltImage = usePreBuilt
-	return usePreBuilt, nil
-}
-
-// getPreBuiltImageURL returns the configured pre-built image URL from
-// agent.yaml (image field).
-// Returns empty string if no pre-built image is specified.
-func (p *AgentServiceTargetProvider) getPreBuiltImageURL() string {
-	data, err := os.ReadFile(p.agentDefinitionPath)
-	if err != nil {
-		return ""
-	}
-
-	var agentDef agent_yaml.ContainerAgent
-	if err := yaml.Unmarshal(data, &agentDef); err != nil {
-		return ""
-	}
-
-	return agentDef.Image
-}
-
-// resolvePreBuiltImage returns the pre-built container image URL if one is configured
-// in agent.yaml and the user chose to use it.
-// Returns empty string if no pre-built image is specified.
-func (p *AgentServiceTargetProvider) resolvePreBuiltImage(
-	agentDef agent_yaml.ContainerAgent,
-) string {
-	// Only return an image URL if the user chose to use the pre-built image.
-	if p.usePreBuiltImage == nil || !*p.usePreBuiltImage {
-		return ""
-	}
-
-	return agentDef.Image
+	return resp.Value != nil && *resp.Value == 1, nil
 }
 
 // deployHostedAgent deploys a container-based hosted agent to the Foundry service.
@@ -684,17 +750,19 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 
 	progress("Deploying hosted agent")
 
-	// Step 1: Resolve container image URL.
-	// Priority: agent.yaml image chosen by the user > published artifact.
-	usePreBuiltImage, err := p.shouldUsePreBuiltImage(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if !usePreBuiltImage && agentDef.Image != "" {
-		fmt.Fprintf(os.Stderr, "Building container image instead of using pre-built image: %s\n", agentDef.Image)
+	fullImageURL := ""
+	if preBuiltArtifact := findPreBuiltImageArtifactInContext(serviceContext); preBuiltArtifact != nil {
+		fullImageURL = preBuiltArtifact.Location
+	} else if !hasContainerArtifact(serviceContext.Publish) {
+		usePreBuiltImage, err := p.shouldUsePreBuiltImage(ctx, agentDef)
+		if err != nil {
+			return nil, err
+		}
+		if usePreBuiltImage {
+			fullImageURL = agentDef.Image
+		}
 	}
 
-	fullImageURL := p.resolvePreBuiltImage(agentDef)
 	if fullImageURL != "" {
 		fmt.Fprintf(os.Stderr, "Using pre-built container image: %s\n", fullImageURL)
 	} else {
@@ -1046,6 +1114,10 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 	if agentVersionResponse.Version == "" {
 		return fmt.Errorf("agent version is empty; cannot register environment variables")
 	}
+	projectEndpoint := strings.TrimRight(azdEnv["AZURE_AI_PROJECT_ENDPOINT"], "/")
+	if projectEndpoint == "" {
+		return fmt.Errorf("AZURE_AI_PROJECT_ENDPOINT is empty; cannot register environment variables")
+	}
 
 	serviceKey := p.getServiceKey(serviceConfig.Name)
 	envVars := map[string]string{
@@ -1055,7 +1127,6 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 
 	// Set the base agent endpoint used for session management (not protocol-specific).
 	baseEndpointKey := fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey)
-	projectEndpoint := strings.TrimRight(azdEnv["AZURE_AI_PROJECT_ENDPOINT"], "/")
 	envVars[baseEndpointKey] = fmt.Sprintf(
 		"%s/agents/%s/versions/%s", projectEndpoint, agentVersionResponse.Name, agentVersionResponse.Version,
 	)

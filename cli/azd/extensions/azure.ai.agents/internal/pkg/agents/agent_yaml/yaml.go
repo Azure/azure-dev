@@ -172,9 +172,13 @@ type ContainerResources struct {
 // ContainerAgent This represents a container based agent hosted by the provider/publisher.
 // The intent is to represent a container application that the user wants to run
 // in a hosted environment that the provider manages.
-// When Image is set, the agent can use a pre-built container image (e.g. from ACR).
-// Dockerfile build and publish steps are skipped only when that option is selected
-// in the deploy flow.
+//
+// When Image is set, deploy can use the pre-built container image instead of
+// building from a Dockerfile:
+//   - Interactive mode: the user is prompted whether to use the configured
+//     image or build from a Dockerfile. The default is to build.
+//   - Non-interactive mode (AZD_NO_PROMPT=true / `--no-prompt`): the configured
+//     image is used directly so CI/CD can deploy without extra flags.
 type ContainerAgent struct {
 	AgentDefinition      `json:",inline" yaml:",inline"`
 	Image                string                  `json:"image,omitempty" yaml:"image,omitempty"`

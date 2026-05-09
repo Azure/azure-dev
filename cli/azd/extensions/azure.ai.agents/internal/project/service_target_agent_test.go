@@ -99,12 +99,19 @@ func writeHostedAgentYAML(t *testing.T, dir string) string {
 }
 
 // stubContainerServer is a minimal ContainerServiceServer that returns
-// success responses for Build and Package.
+// success responses for Build, Package, and Publish.
 type stubContainerServer struct {
 	azdext.UnimplementedContainerServiceServer
+	buildCalls   int
+	packageCalls int
+	publishCalls int
 }
 
-func (s *stubContainerServer) Build(_ context.Context, _ *azdext.ContainerBuildRequest) (*azdext.ContainerBuildResponse, error) {
+func (s *stubContainerServer) Build(
+	_ context.Context,
+	_ *azdext.ContainerBuildRequest,
+) (*azdext.ContainerBuildResponse, error) {
+	s.buildCalls++
 	return &azdext.ContainerBuildResponse{
 		Result: &azdext.ServiceBuildResult{
 			Artifacts: []*azdext.Artifact{{
@@ -115,7 +122,11 @@ func (s *stubContainerServer) Build(_ context.Context, _ *azdext.ContainerBuildR
 	}, nil
 }
 
-func (s *stubContainerServer) Package(_ context.Context, _ *azdext.ContainerPackageRequest) (*azdext.ContainerPackageResponse, error) {
+func (s *stubContainerServer) Package(
+	_ context.Context,
+	_ *azdext.ContainerPackageRequest,
+) (*azdext.ContainerPackageResponse, error) {
+	s.packageCalls++
 	return &azdext.ContainerPackageResponse{
 		Result: &azdext.ServicePackageResult{
 			Artifacts: []*azdext.Artifact{{
@@ -126,13 +137,43 @@ func (s *stubContainerServer) Package(_ context.Context, _ *azdext.ContainerPack
 	}, nil
 }
 
+func (s *stubContainerServer) Publish(
+	_ context.Context,
+	_ *azdext.ContainerPublishRequest,
+) (*azdext.ContainerPublishResponse, error) {
+	s.publishCalls++
+	return &azdext.ContainerPublishResponse{
+		Result: &azdext.ServicePublishResult{
+			Artifacts: []*azdext.Artifact{{
+				Kind:         azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER,
+				Location:     "myregistry.azurecr.io/test-image:latest",
+				LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
+			}},
+		},
+	}, nil
+}
+
 // newContainerTestClient spins up a gRPC server with the given container
 // service and returns an AzdClient connected to it.
 func newContainerTestClient(t *testing.T, containerSrv azdext.ContainerServiceServer) *azdext.AzdClient {
 	t.Helper()
+	return newServiceTargetTestClient(t, containerSrv, nil)
+}
+
+func newServiceTargetTestClient(
+	t *testing.T,
+	containerSrv azdext.ContainerServiceServer,
+	promptSrv azdext.PromptServiceServer,
+) *azdext.AzdClient {
+	t.Helper()
 
 	srv := grpc.NewServer()
-	azdext.RegisterContainerServiceServer(srv, containerSrv)
+	if containerSrv != nil {
+		azdext.RegisterContainerServiceServer(srv, containerSrv)
+	}
+	if promptSrv != nil {
+		azdext.RegisterPromptServiceServer(srv, promptSrv)
+	}
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -155,6 +196,7 @@ type stubPromptServer struct {
 	selectedIndex int32
 	selectCalls   int
 	lastSelect    *azdext.SelectRequest
+	err           error
 }
 
 func (s *stubPromptServer) Select(
@@ -163,29 +205,15 @@ func (s *stubPromptServer) Select(
 ) (*azdext.SelectResponse, error) {
 	s.selectCalls++
 	s.lastSelect = req
+	if s.err != nil {
+		return nil, s.err
+	}
 	return &azdext.SelectResponse{Value: &s.selectedIndex}, nil
 }
 
 func newPromptTestClient(t *testing.T, promptSrv azdext.PromptServiceServer) *azdext.AzdClient {
 	t.Helper()
-
-	srv := grpc.NewServer()
-	azdext.RegisterPromptServiceServer(srv, promptSrv)
-
-	lis, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-
-	go func() { _ = srv.Serve(lis) }()
-	t.Cleanup(func() {
-		srv.Stop()
-		_ = lis.Close()
-	})
-
-	client, err := azdext.NewAzdClient(azdext.WithAddress(lis.Addr().String()))
-	require.NoError(t, err)
-	t.Cleanup(func() { client.Close() })
-
-	return client
+	return newServiceTargetTestClient(t, nil, promptSrv)
 }
 
 // stubEnvServer records SetValue calls for testing registerAgentEnvironmentVariables.
@@ -360,6 +388,28 @@ func TestRegisterAgentEnvironmentVariables_EmptyVersion(t *testing.T) {
 	)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "agent version is empty")
+}
+
+func TestRegisterAgentEnvironmentVariables_EmptyEndpoint(t *testing.T) {
+	t.Parallel()
+
+	envStub := &stubEnvServer{}
+	client := newEnvTestClient(t, envStub)
+
+	provider := &AgentServiceTargetProvider{
+		azdClient: client,
+		env:       &azdext.Environment{Name: "test-env"},
+	}
+
+	err := provider.registerAgentEnvironmentVariables(
+		t.Context(),
+		map[string]string{},
+		&azdext.ServiceConfig{Name: "my-svc"},
+		&agent_api.AgentVersionObject{Name: "my-agent", Version: "1.0.0"},
+		nil,
+	)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "AZURE_AI_PROJECT_ENDPOINT is empty")
 }
 
 func TestProtocolPath(t *testing.T) {
@@ -623,122 +673,139 @@ func writeHostedAgentYAMLWithImage(t *testing.T, dir, image string) string {
 	return p
 }
 
-func TestGetPreBuiltImageURL_FromAgentYAML(t *testing.T) {
+func TestLoadContainerAgentDefinition_MalformedYAMLReturnsError(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	agentPath := writeHostedAgentYAMLWithImage(t, dir, "agent-yaml-image.azurecr.io/img:v1")
+	agentPath := filepath.Join(dir, "agent.yaml")
+	require.NoError(t, os.WriteFile(agentPath, []byte("kind: hosted\nname: [\n"), 0o600))
 
-	provider := &AgentServiceTargetProvider{agentDefinitionPath: agentPath}
-
-	result := provider.getPreBuiltImageURL()
-	require.Equal(t, "agent-yaml-image.azurecr.io/img:v1", result)
-}
-
-func TestGetPreBuiltImageURL_EmptyWhenNoImage(t *testing.T) {
-	t.Parallel()
-
-	dir := t.TempDir()
-	agentPath := writeHostedAgentYAML(t, dir)
-
-	provider := &AgentServiceTargetProvider{agentDefinitionPath: agentPath}
-
-	result := provider.getPreBuiltImageURL()
-	require.Empty(t, result)
-}
-
-func TestResolvePreBuiltImage_RespectsUserChoice(t *testing.T) {
-	t.Parallel()
-
-	agentDef := agent_yaml.ContainerAgent{
-		Image: "myregistry.azurecr.io/img:v1",
-	}
-
-	// User chose pre-built image
-	provider := &AgentServiceTargetProvider{usePreBuiltImage: new(true)}
-	result := provider.resolvePreBuiltImage(agentDef)
-	require.Equal(t, "myregistry.azurecr.io/img:v1", result)
-
-	// User chose to build from Dockerfile
-	provider2 := &AgentServiceTargetProvider{usePreBuiltImage: new(false)}
-	result2 := provider2.resolvePreBuiltImage(agentDef)
-	require.Empty(t, result2)
-}
-
-func TestShouldUsePreBuiltImage_CachesDecision(t *testing.T) {
-	t.Parallel()
-
-	dir := t.TempDir()
-	agentPath := writeHostedAgentYAMLWithImage(t, dir, "myregistry.azurecr.io/myimage:v1")
-
-	// Pre-set the decision to avoid needing a prompt server
 	provider := &AgentServiceTargetProvider{
 		agentDefinitionPath: agentPath,
-		usePreBuiltImage:    new(true),
 	}
 
-	// Should return cached value without prompting
-	result, err := provider.shouldUsePreBuiltImage(t.Context())
-	require.NoError(t, err)
-	require.True(t, result)
+	_, _, err := provider.loadContainerAgentDefinition()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "agent.yaml is not valid")
 }
 
 func TestShouldUsePreBuiltImage_NoImageDefaultsToBuild(t *testing.T) {
 	t.Parallel()
 
-	dir := t.TempDir()
-	agentPath := writeHostedAgentYAML(t, dir) // no image field
+	provider := &AgentServiceTargetProvider{}
 
-	provider := &AgentServiceTargetProvider{
-		agentDefinitionPath: agentPath,
-	}
-
-	result, err := provider.shouldUsePreBuiltImage(t.Context())
+	result, err := provider.shouldUsePreBuiltImage(t.Context(), agent_yaml.ContainerAgent{})
 	require.NoError(t, err)
 	require.False(t, result, "should default to build when no image is configured")
 }
 
-func TestShouldUsePreBuiltImage_PromptsForConfiguredImage(t *testing.T) {
+func TestShouldUsePreBuiltImage_PromptsForPreBuiltImage(t *testing.T) {
 	t.Parallel()
 
-	dir := t.TempDir()
 	imageURL := "myregistry.azurecr.io/myimage:v1"
-	agentPath := writeHostedAgentYAMLWithImage(t, dir, imageURL)
 
 	promptStub := &stubPromptServer{selectedIndex: 1}
 	client := newPromptTestClient(t, promptStub)
 
 	provider := &AgentServiceTargetProvider{
-		azdClient:           client,
-		agentDefinitionPath: agentPath,
+		azdClient: client,
 	}
 
-	result, err := provider.shouldUsePreBuiltImage(t.Context())
+	result, err := provider.shouldUsePreBuiltImage(t.Context(), agent_yaml.ContainerAgent{Image: imageURL})
 	require.NoError(t, err)
-	require.False(t, result)
+	require.True(t, result)
 	require.Equal(t, 1, promptStub.selectCalls)
 	require.NotNil(t, promptStub.lastSelect)
 	require.NotNil(t, promptStub.lastSelect.Options)
 	require.Len(t, promptStub.lastSelect.Options.Choices, 2)
-	require.Equal(t, "Create hosted agent from "+imageURL, promptStub.lastSelect.Options.Choices[0].Label)
-	require.Equal(t, "Build it for me", promptStub.lastSelect.Options.Choices[1].Label)
+	require.NotNil(t, promptStub.lastSelect.Options.SelectedIndex)
+	require.Equal(t, int32(0), *promptStub.lastSelect.Options.SelectedIndex)
+	require.Equal(t, "Build it for me", promptStub.lastSelect.Options.Choices[0].Label)
+	require.Equal(t, "Create hosted agent from "+imageURL, promptStub.lastSelect.Options.Choices[1].Label)
+}
 
-	cachedResult, err := provider.shouldUsePreBuiltImage(t.Context())
+func TestShouldUsePreBuiltImage_PromptsForDockerfile(t *testing.T) {
+	t.Parallel()
+
+	promptStub := &stubPromptServer{selectedIndex: 0}
+	client := newPromptTestClient(t, promptStub)
+
+	provider := &AgentServiceTargetProvider{
+		azdClient: client,
+	}
+
+	result, err := provider.shouldUsePreBuiltImage(
+		t.Context(),
+		agent_yaml.ContainerAgent{Image: "myregistry.azurecr.io/myimage:v1"},
+	)
 	require.NoError(t, err)
-	require.False(t, cachedResult)
-	require.Equal(t, 1, promptStub.selectCalls, "expected prompt decision to be cached")
+	require.False(t, result)
+	require.Equal(t, 1, promptStub.selectCalls)
+}
+
+func TestShouldUsePreBuiltImage_NoPromptHonorsImageField(t *testing.T) {
+	// Cannot use t.Parallel() because t.Setenv mutates process env.
+	t.Setenv("AZD_NO_PROMPT", "true")
+
+	promptStub := &stubPromptServer{}
+	client := newPromptTestClient(t, promptStub)
+
+	provider := &AgentServiceTargetProvider{
+		azdClient: client,
+	}
+
+	result, err := provider.shouldUsePreBuiltImage(
+		t.Context(),
+		agent_yaml.ContainerAgent{Image: "myregistry.azurecr.io/myimage:v1"},
+	)
+	require.NoError(t, err)
+	require.True(t, result, "non-interactive mode should honor configured image")
+	require.Equal(t, 0, promptStub.selectCalls, "prompt should not be invoked in --no-prompt mode")
+}
+
+func TestShouldUsePreBuiltImage_NoPromptWithoutImageBuilds(t *testing.T) {
+	t.Setenv("AZD_NO_PROMPT", "true")
+
+	provider := &AgentServiceTargetProvider{}
+
+	result, err := provider.shouldUsePreBuiltImage(t.Context(), agent_yaml.ContainerAgent{})
+	require.NoError(t, err)
+	require.False(t, result, "non-interactive mode without image should default to build")
+}
+
+func TestShouldUsePreBuiltImage_PromptErrorCanRetry(t *testing.T) {
+	t.Parallel()
+
+	promptStub := &stubPromptServer{err: fmt.Errorf("prompt failed")}
+	client := newPromptTestClient(t, promptStub)
+
+	provider := &AgentServiceTargetProvider{
+		azdClient: client,
+	}
+	agentDef := agent_yaml.ContainerAgent{Image: "myregistry.azurecr.io/myimage:v1"}
+
+	_, err := provider.shouldUsePreBuiltImage(t.Context(), agentDef)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to select hosted agent container image source")
+
+	_, err = provider.shouldUsePreBuiltImage(t.Context(), agentDef)
+	require.Error(t, err)
+	require.Equal(t, 2, promptStub.selectCalls)
 }
 
 func TestPackage_SkipsWhenPreBuiltImageChosen(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	agentPath := writeHostedAgentYAMLWithImage(t, dir, "myregistry.azurecr.io/myimage:v1")
+	imageURL := "myregistry.azurecr.io/myimage:v1"
+	agentPath := writeHostedAgentYAMLWithImage(t, dir, imageURL)
+	promptStub := &stubPromptServer{selectedIndex: 1}
+	client := newPromptTestClient(t, promptStub)
 
 	provider := &AgentServiceTargetProvider{
+		azdClient:           client,
 		agentDefinitionPath: agentPath,
 		env:                 &azdext.Environment{Name: "test-env"},
-		usePreBuiltImage:    new(true), // simulate user chose pre-built
 	}
 
 	var progressMessages []string
@@ -751,7 +818,10 @@ func TestPackage_SkipsWhenPreBuiltImageChosen(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	require.Empty(t, result.Artifacts, "expected no artifacts when using pre-built image")
+	require.Len(t, result.Artifacts, 1)
+	require.Equal(t, imageURL, result.Artifacts[0].Location)
+	require.Equal(t, azdext.LocationKind_LOCATION_KIND_REMOTE, result.Artifacts[0].LocationKind)
+	require.Equal(t, preBuiltImageArtifactSource, result.Artifacts[0].Metadata[preBuiltImageArtifactSourceKey])
 	require.Contains(t, progressMessages, "Using pre-built container image, skipping package")
 }
 
@@ -761,13 +831,14 @@ func TestPackage_BuildsWhenUserChoseDockerfile(t *testing.T) {
 	dir := t.TempDir()
 	agentPath := writeHostedAgentYAMLWithImage(t, dir, "myregistry.azurecr.io/myimage:v1")
 
-	client := newContainerTestClient(t, &stubContainerServer{})
+	containerStub := &stubContainerServer{}
+	promptStub := &stubPromptServer{selectedIndex: 0}
+	client := newServiceTargetTestClient(t, containerStub, promptStub)
 
 	provider := &AgentServiceTargetProvider{
 		azdClient:           client,
 		agentDefinitionPath: agentPath,
 		env:                 &azdext.Environment{Name: "test-env"},
-		usePreBuiltImage:    new(false), // simulate user chose "Build from Dockerfile"
 	}
 
 	result, err := provider.Package(
@@ -780,25 +851,25 @@ func TestPackage_BuildsWhenUserChoseDockerfile(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotEmpty(t, result.Artifacts, "expected container artifacts when building from Dockerfile")
+	require.Equal(t, 1, promptStub.selectCalls)
+	require.Equal(t, 1, containerStub.buildCalls)
+	require.Equal(t, 1, containerStub.packageCalls)
 }
 
 func TestPublish_SkipsWhenPreBuiltImageChosen(t *testing.T) {
 	t.Parallel()
 
-	dir := t.TempDir()
-	agentPath := writeHostedAgentYAMLWithImage(t, dir, "myregistry.azurecr.io/myimage:v1")
+	imageURL := "myregistry.azurecr.io/myimage:v1"
 
 	provider := &AgentServiceTargetProvider{
-		agentDefinitionPath: agentPath,
-		env:                 &azdext.Environment{Name: "test-env"},
-		usePreBuiltImage:    new(true), // simulate user chose pre-built
+		env: &azdext.Environment{Name: "test-env"},
 	}
 
 	var progressMessages []string
 	result, err := provider.Publish(
 		t.Context(),
 		&azdext.ServiceConfig{Name: "test-svc"},
-		&azdext.ServiceContext{},
+		&azdext.ServiceContext{Package: []*azdext.Artifact{preBuiltImageArtifact(imageURL)}},
 		&azdext.TargetResource{},
 		&azdext.PublishOptions{},
 		func(msg string) { progressMessages = append(progressMessages, msg) },
@@ -806,6 +877,40 @@ func TestPublish_SkipsWhenPreBuiltImageChosen(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	require.Empty(t, result.Artifacts, "expected no artifacts when using pre-built image")
+	require.Len(t, result.Artifacts, 1)
+	require.Equal(t, imageURL, result.Artifacts[0].Location)
 	require.Contains(t, progressMessages, "Using pre-built container image, skipping publish")
+}
+
+func TestPublish_PublishesWhenPackageBuiltFromDockerfile(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	agentPath := writeHostedAgentYAMLWithImage(t, dir, "myregistry.azurecr.io/myimage:v1")
+	containerStub := &stubContainerServer{}
+	client := newContainerTestClient(t, containerStub)
+
+	provider := &AgentServiceTargetProvider{
+		azdClient:           client,
+		agentDefinitionPath: agentPath,
+		env:                 &azdext.Environment{Name: "test-env"},
+	}
+
+	result, err := provider.Publish(
+		t.Context(),
+		&azdext.ServiceConfig{Name: "test-svc"},
+		&azdext.ServiceContext{Package: []*azdext.Artifact{{
+			Kind:         azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER,
+			Location:     "test-image:latest",
+			LocationKind: azdext.LocationKind_LOCATION_KIND_LOCAL,
+		}}},
+		&azdext.TargetResource{},
+		&azdext.PublishOptions{},
+		func(string) {},
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotEmpty(t, result.Artifacts, "expected published container artifacts")
+	require.Equal(t, 1, containerStub.publishCalls)
 }

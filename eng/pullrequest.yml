@@ -35,6 +35,7 @@ extends:
               os: linux
             steps:
               - checkout: self
+                fetchDepth: 0
 
               - pwsh: |
                   # ADO checkout doesn't configure remote tracking refspecs, so a

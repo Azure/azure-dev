@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -81,11 +82,18 @@ type AgentServiceTargetProvider struct {
 	tenantId            string
 	env                 *azdext.Environment
 	foundryProject      *arm.ResourceID
+	usePreBuiltImage    *bool // cached prompt decision; nil means not yet asked
 }
 
 const (
 	preBuiltImageArtifactSourceKey = "azure.ai.agents.imageSource"
 	preBuiltImageArtifactSource    = "agent.yaml"
+)
+
+// containerImageRefRe is a basic pattern for container image references:
+// [registry/]repository[:tag|@digest]
+var containerImageRefRe = regexp.MustCompile(
+	`^[a-zA-Z0-9]([a-zA-Z0-9._-]*/)*[a-zA-Z0-9][a-zA-Z0-9._-]*(:[a-zA-Z0-9._-]+|@sha256:[0-9a-fA-F]{64})?$`,
 )
 
 // NewAgentServiceTargetProvider creates a new AgentServiceTargetProvider instance
@@ -581,6 +589,14 @@ func (p *AgentServiceTargetProvider) loadContainerAgentDefinition() (agent_yaml.
 		)
 	}
 
+	if agentDef.Image != "" && !containerImageRefRe.MatchString(agentDef.Image) {
+		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("invalid container image reference in agent.yaml: %q", agentDef.Image),
+			"use a valid image reference, e.g. 'myregistry.azurecr.io/myimage:v1'",
+		)
+	}
+
 	return agentDef, true, nil
 }
 
@@ -663,8 +679,14 @@ func (p *AgentServiceTargetProvider) shouldUsePreBuiltImage(
 		return false, nil
 	}
 
+	// Return cached decision if already prompted.
+	if p.usePreBuiltImage != nil {
+		return *p.usePreBuiltImage, nil
+	}
+
 	// Non-interactive (CI/CD): honor the configured image without prompting.
 	if noPrompt, _ := strconv.ParseBool(os.Getenv("AZD_NO_PROMPT")); noPrompt {
+		p.usePreBuiltImage = new(true)
 		return true, nil
 	}
 
@@ -685,7 +707,9 @@ func (p *AgentServiceTargetProvider) shouldUsePreBuiltImage(
 		return false, exterrors.FromPrompt(err, "failed to select hosted agent container image source")
 	}
 
-	return resp.Value != nil && *resp.Value == 1, nil
+	selected := resp.Value != nil && choices[*resp.Value].Value == "prebuilt"
+	p.usePreBuiltImage = &selected
+	return selected, nil
 }
 
 // deployHostedAgent deploys a container-based hosted agent to the Foundry service.

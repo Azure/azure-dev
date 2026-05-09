@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
@@ -102,16 +103,16 @@ func writeHostedAgentYAML(t *testing.T, dir string) string {
 // success responses for Build, Package, and Publish.
 type stubContainerServer struct {
 	azdext.UnimplementedContainerServiceServer
-	buildCalls   int
-	packageCalls int
-	publishCalls int
+	buildCalls   atomic.Int32
+	packageCalls atomic.Int32
+	publishCalls atomic.Int32
 }
 
 func (s *stubContainerServer) Build(
 	_ context.Context,
 	_ *azdext.ContainerBuildRequest,
 ) (*azdext.ContainerBuildResponse, error) {
-	s.buildCalls++
+	s.buildCalls.Add(1)
 	return &azdext.ContainerBuildResponse{
 		Result: &azdext.ServiceBuildResult{
 			Artifacts: []*azdext.Artifact{{
@@ -126,7 +127,7 @@ func (s *stubContainerServer) Package(
 	_ context.Context,
 	_ *azdext.ContainerPackageRequest,
 ) (*azdext.ContainerPackageResponse, error) {
-	s.packageCalls++
+	s.packageCalls.Add(1)
 	return &azdext.ContainerPackageResponse{
 		Result: &azdext.ServicePackageResult{
 			Artifacts: []*azdext.Artifact{{
@@ -141,7 +142,7 @@ func (s *stubContainerServer) Publish(
 	_ context.Context,
 	_ *azdext.ContainerPublishRequest,
 ) (*azdext.ContainerPublishResponse, error) {
-	s.publishCalls++
+	s.publishCalls.Add(1)
 	return &azdext.ContainerPublishResponse{
 		Result: &azdext.ServicePublishResult{
 			Artifacts: []*azdext.Artifact{{
@@ -194,7 +195,7 @@ func newServiceTargetTestClient(
 type stubPromptServer struct {
 	azdext.UnimplementedPromptServiceServer
 	selectedIndex int32
-	selectCalls   int
+	selectCalls   atomic.Int32
 	lastSelect    *azdext.SelectRequest
 	err           error
 }
@@ -203,7 +204,7 @@ func (s *stubPromptServer) Select(
 	_ context.Context,
 	req *azdext.SelectRequest,
 ) (*azdext.SelectResponse, error) {
-	s.selectCalls++
+	s.selectCalls.Add(1)
 	s.lastSelect = req
 	if s.err != nil {
 		return nil, s.err
@@ -646,7 +647,10 @@ func TestAgentPlaygroundURL_AccountLevelID(t *testing.T) {
 func writeHostedAgentYAMLWithImage(t *testing.T, dir, image string) string {
 	t.Helper()
 	p := filepath.Join(dir, "agent.yaml")
-	content := fmt.Sprintf("kind: hosted\nname: test-agent\nimage: %s\n", image)
+	content := fmt.Sprintf(
+		"kind: hosted\nname: test-agent\nimage: %s\nprotocols:\n  - protocol: invocations\n    version: 1.0.0\n",
+		image,
+	)
 	require.NoError(t, os.WriteFile(p, []byte(content), 0o600))
 	return p
 }
@@ -692,7 +696,7 @@ func TestShouldUsePreBuiltImage_PromptsForPreBuiltImage(t *testing.T) {
 	result, err := provider.shouldUsePreBuiltImage(t.Context(), agent_yaml.ContainerAgent{Image: imageURL})
 	require.NoError(t, err)
 	require.True(t, result)
-	require.Equal(t, 1, promptStub.selectCalls)
+	require.Equal(t, int32(1), promptStub.selectCalls.Load())
 	require.NotNil(t, promptStub.lastSelect)
 	require.NotNil(t, promptStub.lastSelect.Options)
 	require.Len(t, promptStub.lastSelect.Options.Choices, 2)
@@ -718,7 +722,7 @@ func TestShouldUsePreBuiltImage_PromptsForDockerfile(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.False(t, result)
-	require.Equal(t, 1, promptStub.selectCalls)
+	require.Equal(t, int32(1), promptStub.selectCalls.Load())
 }
 
 func TestShouldUsePreBuiltImage_NoPromptHonorsImageField(t *testing.T) {
@@ -738,7 +742,7 @@ func TestShouldUsePreBuiltImage_NoPromptHonorsImageField(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.True(t, result, "non-interactive mode should honor configured image")
-	require.Equal(t, 0, promptStub.selectCalls, "prompt should not be invoked in --no-prompt mode")
+	require.Equal(t, int32(0), promptStub.selectCalls.Load(), "prompt should not be invoked in --no-prompt mode")
 }
 
 func TestShouldUsePreBuiltImage_NoPromptWithoutImageBuilds(t *testing.T) {
@@ -769,7 +773,7 @@ func TestShouldUsePreBuiltImage_PromptErrorCanRetry(t *testing.T) {
 
 	_, err = provider.shouldUsePreBuiltImage(t.Context(), agentDef)
 	require.Error(t, err)
-	require.Equal(t, 2, promptStub.selectCalls)
+	require.Equal(t, int32(2), promptStub.selectCalls.Load())
 }
 
 func TestPackage_SkipsWhenPreBuiltImageChosen(t *testing.T) {
@@ -830,9 +834,9 @@ func TestPackage_BuildsWhenUserChoseDockerfile(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotEmpty(t, result.Artifacts, "expected container artifacts when building from Dockerfile")
-	require.Equal(t, 1, promptStub.selectCalls)
-	require.Equal(t, 1, containerStub.buildCalls)
-	require.Equal(t, 1, containerStub.packageCalls)
+	require.Equal(t, int32(1), promptStub.selectCalls.Load())
+	require.Equal(t, int32(1), containerStub.buildCalls.Load())
+	require.Equal(t, int32(1), containerStub.packageCalls.Load())
 }
 
 func TestPublish_SkipsWhenPreBuiltImageChosen(t *testing.T) {
@@ -891,5 +895,5 @@ func TestPublish_PublishesWhenPackageBuiltFromDockerfile(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotEmpty(t, result.Artifacts, "expected published container artifacts")
-	require.Equal(t, 1, containerStub.publishCalls)
+	require.Equal(t, int32(1), containerStub.publishCalls.Load())
 }

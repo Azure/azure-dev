@@ -37,10 +37,15 @@ extends:
               - checkout: self
 
               - pwsh: |
+                  # ADO checkout doesn't configure remote tracking refspecs, so a
+                  # plain "git fetch origin <branch>" writes to FETCH_HEAD instead
+                  # of creating origin/<branch>.  Use an explicit refspec so that
+                  # get-changedfiles.ps1 can resolve "origin/<branch>" in its
+                  # three-dot diff.
                   $targetBranch = "$(System.PullRequest.TargetBranchName)"
                   if (-not $targetBranch) { $targetBranch = "main" }
                   Write-Host "Fetching target branch ref: $targetBranch"
-                  git fetch --no-tags origin $targetBranch
+                  git fetch --no-tags origin "+refs/heads/${targetBranch}:refs/remotes/origin/${targetBranch}"
                 displayName: Fetch target branch
 
               - pwsh: |

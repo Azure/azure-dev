@@ -17,6 +17,13 @@ const (
 	EnvAzureLocation       = "AZURE_LOCATION"
 	EnvAzureAccountName    = "AZURE_ACCOUNT_NAME"
 	EnvAzureProjectName    = "AZURE_PROJECT_NAME"
+	// EnvAzureHasUAMI caches whether the project has a User-Assigned Managed
+	// Identity assigned. Set to "true" or "false" by 'init' and the -e/-s
+	// override path; consumed by 'job submit' to gate execution. Empty means
+	// the value hasn't been determined yet (typically because the ARM call
+	// failed during init/override) and 'job submit' should attempt to
+	// resolve it lazily.
+	EnvAzureHasUAMI = "AZURE_AI_TRAINING_HAS_UAMI"
 )
 
 // GetEnvironmentValues retrieves Azure environment configuration from azd client.

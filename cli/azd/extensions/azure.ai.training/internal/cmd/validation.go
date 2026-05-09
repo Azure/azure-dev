@@ -195,6 +195,7 @@ func overrideEnvWithFlags(
 		utils.EnvAzureLocation:       project.Location,
 		utils.EnvAzureAccountName:    project.AiAccountName,
 		utils.EnvAzureProjectName:    project.AiProjectName,
+		utils.EnvAzureHasUAMI:        utils.BoolEnv(project.HasUAMI),
 	}); err != nil {
 		return fmt.Errorf("failed to update azd environment %q: %w", envName, err)
 	}
@@ -206,6 +207,7 @@ func overrideEnvWithFlags(
 			"Run 'azd ai training init' to reconfigure interactively.\n",
 		envName,
 	)
+	utils.WarnIfNoUAMI(project.AiProjectName, project.HasUAMI)
 	return nil
 }
 

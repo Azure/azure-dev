@@ -79,6 +79,12 @@ func newJobSubmitCommand() *cobra.Command {
 				return fmt.Errorf("failed to create azure credential: %w", err)
 			}
 
+			// Gate on User-Assigned Managed Identity. Use cached value when
+			// available; otherwise make a single ARM call to populate it.
+			if err := ensureUAMIBeforeSubmit(ctx, azdClient, envValues, credential); err != nil {
+				return err
+			}
+
 			endpoint := buildProjectEndpoint(accountName, projectName)
 			apiClient, err := client.NewClient(endpoint, credential)
 			if err != nil {

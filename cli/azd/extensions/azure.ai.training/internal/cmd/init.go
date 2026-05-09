@@ -37,6 +37,10 @@ type FoundryProject struct {
 	ResourceGroupName string
 	AiAccountName     string
 	AiProjectName     string
+	// HasUAMI is true when the project has at least one user-assigned
+	// managed identity attached (identity.type contains "UserAssigned" and
+	// identity.userAssignedIdentities is non-empty).
+	HasUAMI bool
 }
 
 func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
@@ -106,11 +110,13 @@ func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
 					utils.EnvAzureLocation:       project.Location,
 					utils.EnvAzureAccountName:    project.AiAccountName,
 					utils.EnvAzureProjectName:    project.AiProjectName,
+					utils.EnvAzureHasUAMI:        utils.BoolEnv(project.HasUAMI),
 				}); err != nil {
 					return err
 				}
 
 				fmt.Printf("\n✓ Environment configured for project '%s'\n", projectName)
+				utils.WarnIfNoUAMI(projectName, project.HasUAMI)
 				return nil
 			}
 
@@ -165,11 +171,13 @@ func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
 				utils.EnvAzureLocation:       project.Location,
 				utils.EnvAzureAccountName:    project.AiAccountName,
 				utils.EnvAzureProjectName:    project.AiProjectName,
+				utils.EnvAzureHasUAMI:        utils.BoolEnv(project.HasUAMI),
 			}); err != nil {
 				return err
 			}
 
 			fmt.Printf("\n✓ Environment configured for project '%s'\n", projectName)
+			utils.WarnIfNoUAMI(projectName, project.HasUAMI)
 			return nil
 		},
 	}
@@ -237,6 +245,7 @@ func findProjectByEndpoint(
 		AiAccountName:     accountName,
 		AiProjectName:     projectName,
 		Location:          *projectResp.Location,
+		HasUAMI:           utils.ProjectHasUAMI(projectResp.Identity),
 	}, nil
 }
 

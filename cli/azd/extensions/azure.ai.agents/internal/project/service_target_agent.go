@@ -82,7 +82,6 @@ type AgentServiceTargetProvider struct {
 	tenantId            string
 	env                 *azdext.Environment
 	foundryProject      *arm.ResourceID
-	usePreBuiltImage    *bool // cached prompt decision; nil means not yet asked
 }
 
 const (
@@ -677,14 +676,8 @@ func (p *AgentServiceTargetProvider) shouldUsePreBuiltImage(
 		return false, nil
 	}
 
-	// Return cached decision if already prompted.
-	if p.usePreBuiltImage != nil {
-		return *p.usePreBuiltImage, nil
-	}
-
 	// Non-interactive (CI/CD): always build from Dockerfile.
 	if noPrompt, _ := strconv.ParseBool(os.Getenv("AZD_NO_PROMPT")); noPrompt {
-		p.usePreBuiltImage = new(false)
 		return false, nil
 	}
 
@@ -705,9 +698,7 @@ func (p *AgentServiceTargetProvider) shouldUsePreBuiltImage(
 		return false, exterrors.FromPrompt(err, "failed to select hosted agent container image source")
 	}
 
-	selected := resp.Value != nil && choices[*resp.Value].Value == "prebuilt"
-	p.usePreBuiltImage = &selected
-	return selected, nil
+	return resp.Value != nil && choices[*resp.Value].Value == "prebuilt", nil
 }
 
 // deployHostedAgent deploys a container-based hosted agent to the Foundry service.

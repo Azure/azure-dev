@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -73,6 +74,65 @@ func (c *Client) GetServiceInstance(
 	}
 
 	return &result, nil
+}
+
+// GetServiceInstanceRaw is like GetServiceInstance but returns the raw JSON
+// response body so the caller can pass it through to output without losing
+// any fields (e.g. nullable values, fields not modeled in Go structs).
+// Returns nil with no error when the node does not exist (404).
+func (c *Client) GetServiceInstanceRaw(
+	ctx context.Context,
+	trackingEndpoint string,
+	runID string,
+	nodeIndex int,
+) (json.RawMessage, error) {
+	baseURL, workspacePath, err := parseTrackingEndpoint(trackingEndpoint)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse tracking endpoint: %w", err)
+	}
+
+	reqURL := fmt.Sprintf(
+		"%s/history/v1.0%s/runs/%s/serviceinstances/%s",
+		baseURL,
+		workspacePath,
+		url.PathEscape(runID),
+		strconv.Itoa(nodeIndex),
+	)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	if err := c.addAuth(ctx, req, DataPlaneScope); err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	if c.debugBody {
+		fmt.Printf("[DEBUG] GET %s\n", reqURL)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, nil
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, c.HandleError(resp)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read service instance response: %w", err)
+	}
+
+	return json.RawMessage(body), nil
 }
 
 // GetARMToken returns a bearer token scoped for ARM (management.azure.com).

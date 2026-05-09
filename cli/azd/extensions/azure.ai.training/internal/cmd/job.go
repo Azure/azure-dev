@@ -39,6 +39,7 @@ func newJobCommand() *cobra.Command {
 	cmd.AddCommand(newJobConnectSSHCommand())
 	cmd.AddCommand(newJobSSHProxyCommand())
 	cmd.AddCommand(newJobDownloadCommand())
+	cmd.AddCommand(newJobShowServicesCommand())
 
 	return cmd
 }

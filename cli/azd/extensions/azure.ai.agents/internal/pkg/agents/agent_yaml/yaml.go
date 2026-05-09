@@ -177,8 +177,8 @@ type ContainerResources struct {
 // building from a Dockerfile:
 //   - Interactive mode: the user is prompted whether to use the configured
 //     image or build from a Dockerfile. The default is to build.
-//   - Non-interactive mode (AZD_NO_PROMPT=true / `--no-prompt`): the configured
-//     image is used directly so CI/CD can deploy without extra flags.
+//   - Non-interactive mode (AZD_NO_PROMPT=true / `--no-prompt`): always builds
+//     from Dockerfile.
 type ContainerAgent struct {
 	AgentDefinition      `json:",inline" yaml:",inline"`
 	Image                string                  `json:"image,omitempty" yaml:"image,omitempty"`

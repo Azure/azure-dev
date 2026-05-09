@@ -664,9 +664,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 //
 // Behavior:
 //   - If no image is configured in agent.yaml, always build from Dockerfile.
-//   - In non-interactive mode (AZD_NO_PROMPT=true), honor the declarative image
-//     field directly: the user explicitly opted in by writing it in agent.yaml,
-//     so CI/CD can deploy without an extra flag.
+//   - In non-interactive mode (AZD_NO_PROMPT=true), always build from Dockerfile.
 //   - In interactive mode, prompt the user. The default is to build, so users
 //     who happen to have an image in agent.yaml are not silently switched onto
 //     the pre-built path.
@@ -684,10 +682,10 @@ func (p *AgentServiceTargetProvider) shouldUsePreBuiltImage(
 		return *p.usePreBuiltImage, nil
 	}
 
-	// Non-interactive (CI/CD): honor the configured image without prompting.
+	// Non-interactive (CI/CD): always build from Dockerfile.
 	if noPrompt, _ := strconv.ParseBool(os.Getenv("AZD_NO_PROMPT")); noPrompt {
-		p.usePreBuiltImage = new(true)
-		return true, nil
+		p.usePreBuiltImage = new(false)
+		return false, nil
 	}
 
 	// Interactive: default to build so the pre-built path requires an explicit choice.

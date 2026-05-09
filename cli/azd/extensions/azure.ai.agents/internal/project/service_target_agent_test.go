@@ -681,7 +681,7 @@ func TestShouldUsePreBuiltImage_NoImageDefaultsToBuild(t *testing.T) {
 	require.False(t, result, "should default to build when no image is configured")
 }
 
-func TestShouldUsePreBuiltImage_PromptsForPreBuiltImage(t *testing.T) {
+func TestShouldUsePreBuiltImage_SelectsPreBuiltImage(t *testing.T) {
 	t.Parallel()
 
 	imageURL := "myregistry.azurecr.io/myimage:v1"
@@ -706,7 +706,7 @@ func TestShouldUsePreBuiltImage_PromptsForPreBuiltImage(t *testing.T) {
 	require.Equal(t, "Create hosted agent from "+imageURL, promptStub.lastSelect.Options.Choices[1].Label)
 }
 
-func TestShouldUsePreBuiltImage_PromptsForDockerfile(t *testing.T) {
+func TestShouldUsePreBuiltImage_SelectsDockerfileBuild(t *testing.T) {
 	t.Parallel()
 
 	promptStub := &stubPromptServer{selectedIndex: 0}
@@ -725,7 +725,7 @@ func TestShouldUsePreBuiltImage_PromptsForDockerfile(t *testing.T) {
 	require.Equal(t, int32(1), promptStub.selectCalls.Load())
 }
 
-func TestShouldUsePreBuiltImage_NoPromptHonorsImageField(t *testing.T) {
+func TestShouldUsePreBuiltImage_NoPromptDefaultsToBuild(t *testing.T) {
 	// Cannot use t.Parallel() because t.Setenv mutates process env.
 	t.Setenv("AZD_NO_PROMPT", "true")
 
@@ -741,7 +741,7 @@ func TestShouldUsePreBuiltImage_NoPromptHonorsImageField(t *testing.T) {
 		agent_yaml.ContainerAgent{Image: "myregistry.azurecr.io/myimage:v1"},
 	)
 	require.NoError(t, err)
-	require.True(t, result, "non-interactive mode should honor configured image")
+	require.False(t, result, "non-interactive mode should always default to build")
 	require.Equal(t, int32(0), promptStub.selectCalls.Load(), "prompt should not be invoked in --no-prompt mode")
 }
 

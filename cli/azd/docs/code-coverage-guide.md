@@ -215,9 +215,9 @@ Environment variables for optional overrides:
 | `COVERAGE_BUILD_ID` | `hybrid`, `ci` | Target a specific ADO build ID |
 | `COVERAGE_MODE` | `html` | Set to `full` or `hybrid` (default: `unit`) |
 | `COVERAGE_MIN` | `check` | Override threshold (default: `55`) |
-| `COVERAGE_MAX_PACKAGE_DECREASE` | `diff`, `pr` | Maximum tolerated per-package coverage drop in percentage points (defaults come from `Get-CoverageDiff.ps1`, currently `0.5`; PR-touched packages only when changed-files can be resolved). Set to `-1` to disable both gates (advisory output only). |
+| `COVERAGE_MAX_PACKAGE_DECREASE` | `diff`, `pr` | Maximum tolerated per-package coverage drop in percentage points (defaults come from `Get-CoverageDiff.ps1`, currently `0.5`; PR-touched packages only when changed-files can be resolved). Set to `-1` to disable the per-package gate (the floor gate stays active unless `COVERAGE_MIN_OVERALL` is also set to `-1`). |
 | `COVERAGE_MIN_OVERALL` | `diff`, `pr` | Absolute floor for overall coverage in percent (defaults come from `Get-CoverageDiff.ps1`, currently `69`). Set to `-1` to disable the floor gate. |
-| `COVERAGE_FAIL_ON_DECREASE` | `diff` | Set to `1` / `true` to exit non-zero when EITHER gate is breached (`pr` always fails loud). **Note:** setting `COVERAGE_MAX_PACKAGE_DECREASE` alone does NOT enable fail-loud mode for `mage coverage:diff` — you must also set `COVERAGE_FAIL_ON_DECREASE=1` (or use `mage coverage:pr`, which always fails loud). |
+| `COVERAGE_FAIL_ON_DECREASE` | `diff` | Set to `1` / `true` to exit `2` when EITHER gate is breached (`pr` always fails loud). Any other non-zero exit indicates a script/infra error, not a gate breach. **Note:** setting `COVERAGE_MAX_PACKAGE_DECREASE` alone does NOT enable fail-loud mode for `mage coverage:diff` — you must also set `COVERAGE_FAIL_ON_DECREASE=1` (or use `mage coverage:pr`, which always fails loud). |
 | `COVERAGE_BASELINE` | `diff`, `pr` | Path to baseline coverage profile (default: `cover-ci-combined.out` or download from CI) |
 | `COVERAGE_CURRENT` | `diff`, `pr` | Path to current coverage profile (default: `cover-local.out`) |
 | `COVERAGE_REPORT_UNIT_INPUTS` | `report` | Comma-separated list of unit-test covdata input directories. |
@@ -232,17 +232,17 @@ PRs run a **two-gate** coverage check as part of the
 coverage is merged via `mage coverage:report`, the pipeline:
 
 1. Resolves the list of `.go` files touched by the PR via
-   `gh api .../pulls/N/files` (with `git diff` fallback) so per-package
-   results are scoped to the packages this PR touches.
+   `git diff --name-only --no-renames --diff-filter=AMRD origin/<targetBranch>...HEAD`,
+   so per-package results are scoped to the packages this PR touches.
 2. Runs `eng/scripts/Get-CoverageDiff.ps1` against the merged baseline
-   (latest successful `main` build) and the PR's `cover.out`.
+   from the latest successful build of the PR target branch and the PR's `cover.out`.
 3. Prints a per-package report (regressions first), the overall delta,
    and the configured tolerances.
 4. **Fails the build (`exit 2`) when EITHER of the following is true:**
    - **Per-package decrease**: any single PR-touched package drops by
-     more than `PackageCoverageDecreaseTolerance` pp (default **0.5 pp**).
+     more than `MaxPackageDecrease` pp (default **0.5 pp**).
    - **Absolute floor**: overall coverage falls below
-     `MinimumOverallCoverage` percent (default **69%**).
+     `MinOverallCoverage` percent (default **69%**).
 5. Surfaces every breach via `##vso[task.logissue type=error]` so each
    one shows up in the PR check summary.
 
@@ -263,7 +263,8 @@ mage coverage:pr
 `mage coverage:pr` runs `git fetch --no-tags --depth=200 origin main` (best-effort),
 resolves changed files via `git merge-base origin/main HEAD` for the
 per-package report, applies the default 0.5 pp per-package tolerance and
-69% absolute floor, and exits non-zero when either is breached. On `main`,
+69% absolute floor, and exits with code `2` when either is breached (any
+other non-zero exit indicates a script/infra error). On `main`,
 in detached-HEAD state, or when git resolution fails, the target returns
 an error rather than silently passing (the "preview" guarantee depends on
 running against the same inputs CI uses). For an advisory run on `main`,

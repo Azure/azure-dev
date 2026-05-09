@@ -345,8 +345,8 @@ function Format-FileRow {
     $sign = if ($Delta -ge 0) { '+' } else { '' }
     $beforeStr = if ($Before -lt 0) { '   -' } else { ('{0,5}%' -f $Before.ToString('F1', $script:inv)) }
     $afterStr  = ('{0,5}%' -f $After.ToString('F1', $script:inv))
-    $deltaStr  = ('{0}{1}%' -f $sign, $Delta.ToString('F1', $script:inv))
-    $line = ('  {0,-60}  {1} -> {2}  ({3,8})  {4,-8}' -f $Path, $beforeStr, $afterStr, $deltaStr, $Status)
+    $deltaStr  = ('{0}{1} pp' -f $sign, $Delta.ToString('F1', $script:inv))
+    $line = ('  {0,-60}  {1} -> {2}  ({3,9})  {4,-8}' -f $Path, $beforeStr, $afterStr, $deltaStr, $Status)
     if ($Note) { $line += "  $Note" }
     return $line
 }
@@ -391,11 +391,12 @@ foreach ($raw in $changedRaw) {
     if ($rel) { [void]$changedSet.Add($rel) }
 }
 
-# If the user explicitly supplied a changed-files input we narrow the
-# per-package report to packages that contain a touched file. The overall-
-# decrease gate is computed identically in both modes; the changed-file
-# list only affects which packages are *displayed*, never which packages
-# are *enforced*.
+# If the user explicitly supplied a changed-files input we enter
+# "changed-file mode": the per-package report AND the per-package gate
+# (-MaxPackageDecrease) are both scoped to packages that contain at least
+# one touched file. The absolute floor gate (-MinOverallCoverage) is
+# always computed against the full repository total — it is not affected
+# by changed-file scope.
 $changedFilesSupplied = ($null -ne $ChangedFiles -and $ChangedFiles.Count -gt 0) -or `
                        (-not [string]::IsNullOrWhiteSpace($ChangedFilesFromFile))
 $useChangedFileMode = $changedFilesSupplied
@@ -414,7 +415,7 @@ $bar = '=' * 60
 
 $deltaSign = if ($overallDelta -ge 0) { '+' } else { '' }
 [void]$sb.AppendLine(
-    ('Overall: {0}% -> {1}% ({2}{3}%)' -f `
+    ('Overall: {0}% -> {1}% ({2}{3} pp)' -f `
         $baseTotal.ToString('F1', $inv), `
         $currTotal.ToString('F1', $inv), `
         $deltaSign, `

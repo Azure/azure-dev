@@ -53,7 +53,7 @@ require (
 	github.com/invopop/jsonschema v0.13.0
 	github.com/jmespath-community/go-jmespath v1.1.1
 	github.com/joho/godotenv v1.5.1
-	github.com/magefile/mage v1.16.0
+	github.com/magefile/mage v1.17.2
 	github.com/mark3labs/mcp-go v0.41.1
 	github.com/mattn/go-colorable v0.1.14
 	github.com/mattn/go-isatty v0.0.20
@@ -81,6 +81,7 @@ require (
 	go.uber.org/atomic v1.11.0
 	go.uber.org/multierr v1.11.0
 	go.yaml.in/yaml/v3 v3.0.4
+	golang.org/x/sync v0.20.0
 	golang.org/x/sys v0.42.0
 	golang.org/x/term v0.41.0
 	golang.org/x/time v0.9.0
@@ -148,7 +149,6 @@ require (
 	golang.org/x/crypto v0.49.0 // indirect
 	golang.org/x/exp v0.0.0-20250911091902-df9299821621 // indirect
 	golang.org/x/net v0.52.0 // indirect
-	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/text v0.35.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260401024825-9d38bb4040a9 // indirect
 )

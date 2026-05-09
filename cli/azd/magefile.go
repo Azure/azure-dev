@@ -1314,8 +1314,12 @@ func (Coverage) Report() error {
 	if intInputs != "" {
 		// Clean any stale intermediate dir from a prior run before merging
 		// to avoid mixing previous covcounters/covmeta into this run.
-		_ = os.RemoveAll(tmpUnit)
-		_ = os.RemoveAll(tmpInt)
+		if err := os.RemoveAll(tmpUnit); err != nil {
+			return fmt.Errorf("cleaning stale unit merge dir %q: %w", tmpUnit, err)
+		}
+		if err := os.RemoveAll(tmpInt); err != nil {
+			return fmt.Errorf("cleaning stale int merge dir %q: %w", tmpInt, err)
+		}
 		if err := os.MkdirAll(tmpUnit, 0o755); err != nil {
 			return fmt.Errorf("creating unit merge dir: %w", err)
 		}
@@ -1360,9 +1364,9 @@ func runGoTool(dir string, args ...string) error {
 }
 
 // resolveChangedFilesForDiff returns the path to a file listing PR-touched
-// files (one per line) for the per-file coverage floor, or empty string when
-// changed-file mode should be skipped (on main, detached HEAD, or when git
-// resolution fails).
+// files used to scope the per-package coverage gate, or an
+// empty string when changed-file mode should be skipped (on main, detached
+// HEAD, or when git resolution fails).
 //
 // When strict is false, git resolution failures degrade silently to advisory
 // mode. When strict is true, failures return an actionable error so the caller
@@ -1374,7 +1378,7 @@ func runGoTool(dir string, args ...string) error {
 func resolveChangedFilesForDiff(azdDir string, strict bool) (string, error) {
 	skipOrFail := func(reason string) (string, error) {
 		if strict {
-			return "", fmt.Errorf("cannot resolve changed files for coverage floor: %s", reason)
+			return "", fmt.Errorf("cannot resolve changed files for coverage gate: %s", reason)
 		}
 		return "", nil
 	}
@@ -1414,7 +1418,15 @@ func resolveChangedFilesForDiff(azdDir string, strict bool) (string, error) {
 		return skipOrFail("no files changed vs origin/main")
 	}
 
-	out := filepath.Join(os.TempDir(), "azd-coverage-changed-files.txt")
+	// Use os.CreateTemp (not a fixed name in TempDir) so two concurrent
+	// `mage coverage:diff` / `coverage:pr` runs on the same machine can't
+	// clobber each other's file list and silently produce wrong gate results.
+	f, err := os.CreateTemp("", "azd-coverage-changed-files-*.txt")
+	if err != nil {
+		return "", fmt.Errorf("creating changed-files temp file: %w", err)
+	}
+	out := f.Name()
+	f.Close()
 	if err := os.WriteFile(out, []byte(diff+"\n"), 0o644); err != nil {
 		return "", fmt.Errorf("writing changed files list: %w", err)
 	}

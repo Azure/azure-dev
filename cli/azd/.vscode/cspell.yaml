@@ -404,6 +404,7 @@ overrides:
       - textfmt
       - logissue
       - runbook
+      - AMRD
   - filename: magefile.go
     words:
       - textfmt

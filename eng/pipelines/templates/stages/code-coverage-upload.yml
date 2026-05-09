@@ -57,7 +57,10 @@ stages:
           # Install mage so `mage coverage:report` (used both for the merged
           # current profile below and for the baseline merge in the PR-diff
           # step) is available on the build agent.
-          go install github.com/magefile/mage@latest
+          # Pinned for deterministic, supply-chain-safe installs (avoid
+          # `@latest` drift between builds). Keep this in sync with the
+          # `github.com/magefile/mage` version in `cli/azd/go.mod`.
+          go install github.com/magefile/mage@v1.17.2
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           # Ensure $(go env GOPATH)/bin is on PATH for subsequent steps.
           $goBin = (& go env GOPATH) + "/bin"
@@ -84,12 +87,20 @@ stages:
 
           $missing = @()
           foreach ($p in $expectedPlatforms) {
-            if (-not (Test-Path "$p/unit") -or -not (Test-Path "$p/int")) {
+            # Test-Path returns true for empty dirs; require at least one file
+            # under each unit/ + int/ subtree so a partial-publish leg (empty
+            # dir) fails fast here instead of silently shrinking the merged
+            # coverage total downstream.
+            $unitOk = (Test-Path "$p/unit") -and `
+              @(Get-ChildItem "$p/unit" -File -Recurse -ErrorAction SilentlyContinue).Count -gt 0
+            $intOk = (Test-Path "$p/int") -and `
+              @(Get-ChildItem "$p/int" -File -Recurse -ErrorAction SilentlyContinue).Count -gt 0
+            if (-not $unitOk -or -not $intOk) {
               $missing += $p
             }
           }
           if ($missing.Count -gt 0) {
-            Write-Host "##vso[task.logissue type=error]Missing coverage artifacts for platform(s): $($missing -join ', '). Expected $($expectedPlatforms.Count) platform(s) ($($expectedPlatforms -join ', ')). This is an infra/build issue (a platform leg likely failed or skipped publish) and would silently shrink the merged coverage total — failing fast to avoid a false-positive coverage regression."
+            Write-Host "##vso[task.logissue type=error]Missing or empty coverage artifacts for platform(s): $($missing -join ', '). Expected $($expectedPlatforms.Count) platform(s) ($($expectedPlatforms -join ', ')). This is an infra/build issue (a platform leg likely failed, skipped publish, or published an empty dir) and would silently shrink the merged coverage total — failing fast to avoid a false-positive coverage regression."
             exit 1
           }
 
@@ -251,10 +262,20 @@ stages:
             $shortCommit = if ($mainCommit) { $mainCommit.Substring(0, [math]::Min(8, $mainCommit.Length)) } else { 'unknown' }
             Write-Host "Using $targetBranch build $mainBuildId ($mainBuildNum) commit $shortCommit for baseline"
 
-            # Download and merge target-branch coverage artifacts
+            # Download and merge target-branch coverage artifacts. The baseline
+            # uses the SAME per-platform `cover-<os>` artifact list as the
+            # current-build merge above (driven by the DownloadArtifacts
+            # template parameter). Each platform artifact contains `unit/` and
+            # `int/` subdirs (see eng/pipelines/templates/jobs/build-cli.yml
+            # `path: cli/azd/cover-$(AZURE_DEV_CI_OS)`); merging the same shape
+            # ensures the baseline profile is comparable with the current one.
             New-Item -ItemType Directory -Force -Path baseline-tmp | Out-Null
 
-            foreach ($artifactName in @('cover-unit', 'cover-int')) {
+            $baselinePlatforms = @'
+            ${{ convertToJson(parameters.DownloadArtifacts) }}
+            '@ | ConvertFrom-Json
+
+            foreach ($artifactName in $baselinePlatforms) {
                 $url = "$adoOrg/$adoProject/_apis/build/builds/$mainBuildId/artifacts?artifactName=$artifactName&api-version=7.1"
                 try {
                     $resp = Invoke-WithRetry -Operation "Get $artifactName metadata" -ScriptBlock {
@@ -292,19 +313,42 @@ stages:
                 Remove-Item "baseline-tmp/$artifactName.zip"
             }
 
-            # Resolve nested artifact paths (pipeline artifacts nest under artifact name).
-            # Convert to absolute paths BEFORE Push-Location so `mage coverage:report`
-            # (which runs with cwd = cli/azd) can still find the inputs.
-            $unitPath = (Resolve-Path "baseline-tmp/cover-unit/cover-unit" -ErrorAction SilentlyContinue) `
-                ?? (Resolve-Path "baseline-tmp/cover-unit" -ErrorAction SilentlyContinue)
-            $intPath = (Resolve-Path "baseline-tmp/cover-int/cover-int" -ErrorAction SilentlyContinue) `
-                ?? (Resolve-Path "baseline-tmp/cover-int" -ErrorAction SilentlyContinue)
-            if (-not $unitPath -or -not $intPath) {
-                Write-Host "##vso[task.logissue type=error]Baseline artifact layout unexpected: unit=$unitPath int=$intPath"
-                exit 1
+            # Collect unit/int subdirs from every downloaded platform artifact.
+            # Pipeline artifacts can land flat (`<art>/unit`) or nested under
+            # the artifact name (`<art>/<art>/unit`) depending on publish
+            # settings; handle both. The resulting comma-joined paths feed
+            # `mage coverage:report` exactly like the current-build merge,
+            # producing a baseline profile with matching package coverage.
+            $unitDirs = @()
+            $intDirs = @()
+            # Helper: returns the resolved path only if the dir exists AND
+            # contains at least one file. Resolve-Path alone passes empty
+            # dirs, which would silently shrink the baseline merge.
+            function Test-NonEmptyCoverDir($candidate) {
+                $rp = Resolve-Path $candidate -ErrorAction SilentlyContinue
+                if (-not $rp) { return $null }
+                $hasFiles = @(Get-ChildItem $rp.Path -File -Recurse -ErrorAction SilentlyContinue).Count -gt 0
+                if (-not $hasFiles) { return $null }
+                return $rp
             }
-            $unitPath = $unitPath.Path
-            $intPath = $intPath.Path
+            foreach ($p in $baselinePlatforms) {
+                $unit = (Test-NonEmptyCoverDir "baseline-tmp/$p/$p/unit") `
+                    ?? (Test-NonEmptyCoverDir "baseline-tmp/$p/unit")
+                $int = (Test-NonEmptyCoverDir "baseline-tmp/$p/$p/int") `
+                    ?? (Test-NonEmptyCoverDir "baseline-tmp/$p/int")
+                if (-not $unit -or -not $int) {
+                    Write-Host "##vso[task.logissue type=warning]Baseline artifact $p missing or empty unit/int subdirs (unit=$unit int=$int); excluding this platform from baseline merge. The PR-side merge would also have flagged this as a missing-platform error, so this likely indicates the baseline build's matrix differs from the current build's matrix, or that baseline platform published an empty dir."
+                    continue
+                }
+                $unitDirs += $unit.Path
+                $intDirs += $int.Path
+            }
+            if ($unitDirs.Count -eq 0 -or $intDirs.Count -eq 0) {
+                Write-Host "##vso[task.logissue type=warning]Baseline build $mainBuildId contained no usable coverage data after layout resolution; coverage diff skipped (advisory)."
+                exit 0
+            }
+            $unitPath = $unitDirs -join ','
+            $intPath = $intDirs -join ','
 
             New-Item -ItemType Directory -Force -Path baseline-merged | Out-Null
             Push-Location $(Build.SourcesDirectory)/cli/azd
@@ -388,7 +432,7 @@ stages:
                 '-File', "$(Build.SourcesDirectory)/eng/scripts/Get-CoverageDiff.ps1",
                 '-BaselineFile', 'cover-baseline.out',
                 '-CurrentFile',  'cover.out',
-                '-BaselineLabel', "main build $mainBuildNum / commit $shortCommit"
+                '-BaselineLabel', "$targetBranch build $mainBuildNum / commit $shortCommit"
             )
 
             # Pass the changed-files list ONLY when git diff resolution
@@ -430,4 +474,3 @@ stages:
           condition: succeeded()
           env:
             SYSTEM_ACCESSTOKEN: $(System.AccessToken)
-            GH_TOKEN: $(GitHubToken)

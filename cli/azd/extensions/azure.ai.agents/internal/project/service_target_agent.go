@@ -1072,10 +1072,6 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 	if agentVersionResponse.Version == "" {
 		return fmt.Errorf("agent version is empty; cannot register environment variables")
 	}
-	projectEndpoint := strings.TrimRight(azdEnv["AZURE_AI_PROJECT_ENDPOINT"], "/")
-	if projectEndpoint == "" {
-		return fmt.Errorf("AZURE_AI_PROJECT_ENDPOINT is empty; cannot register environment variables")
-	}
 
 	serviceKey := p.getServiceKey(serviceConfig.Name)
 	envVars := map[string]string{
@@ -1085,6 +1081,7 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 
 	// Set the base agent endpoint used for session management (not protocol-specific).
 	baseEndpointKey := fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey)
+	projectEndpoint := strings.TrimRight(azdEnv["AZURE_AI_PROJECT_ENDPOINT"], "/")
 	envVars[baseEndpointKey] = fmt.Sprintf(
 		"%s/agents/%s/versions/%s", projectEndpoint, agentVersionResponse.Name, agentVersionResponse.Version,
 	)

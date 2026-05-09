@@ -390,28 +390,6 @@ func TestRegisterAgentEnvironmentVariables_EmptyVersion(t *testing.T) {
 	require.Contains(t, err.Error(), "agent version is empty")
 }
 
-func TestRegisterAgentEnvironmentVariables_EmptyEndpoint(t *testing.T) {
-	t.Parallel()
-
-	envStub := &stubEnvServer{}
-	client := newEnvTestClient(t, envStub)
-
-	provider := &AgentServiceTargetProvider{
-		azdClient: client,
-		env:       &azdext.Environment{Name: "test-env"},
-	}
-
-	err := provider.registerAgentEnvironmentVariables(
-		t.Context(),
-		map[string]string{},
-		&azdext.ServiceConfig{Name: "my-svc"},
-		&agent_api.AgentVersionObject{Name: "my-agent", Version: "1.0.0"},
-		nil,
-	)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "AZURE_AI_PROJECT_ENDPOINT is empty")
-}
-
 func TestProtocolPath(t *testing.T) {
 	t.Parallel()
 

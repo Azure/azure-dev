@@ -25,9 +25,11 @@ import (
 
 type initFlags struct {
 	rootFlagsDefinition
-	subscriptionId  string
-	projectEndpoint string
-	env             string
+	subscriptionId   string
+	projectEndpoint  string
+	env              string
+	template         string
+	workingDirectory string
 }
 
 type FoundryProject struct {
@@ -117,6 +119,9 @@ func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
 
 				fmt.Printf("\n✓ Environment configured for project '%s'\n", projectName)
 				utils.WarnIfNoUAMI(projectName, project.HasUAMI)
+				if err := scaffoldTrainingProject(ctx, azdClient, flags.template, flags.workingDirectory); err != nil {
+					return err
+				}
 				return nil
 			}
 
@@ -178,6 +183,9 @@ func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
 
 			fmt.Printf("\n✓ Environment configured for project '%s'\n", projectName)
 			utils.WarnIfNoUAMI(projectName, project.HasUAMI)
+			if err := scaffoldTrainingProject(ctx, azdClient, flags.template, flags.workingDirectory); err != nil {
+				return err
+			}
 			return nil
 		},
 	}
@@ -186,6 +194,11 @@ func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
 	cmd.Flags().StringVarP(&flags.projectEndpoint, "project-endpoint", "e", "",
 		"Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)")
 	cmd.Flags().StringVarP(&flags.env, "environment", "n", "", "The name of the azd environment to use.")
+	cmd.Flags().StringVarP(&flags.template, "template", "t", "",
+		"GitHub URL or local directory path to a training job template. "+
+			"If omitted, a minimal job.yaml is scaffolded interactively.")
+	cmd.Flags().StringVarP(&flags.workingDirectory, "working-directory", "w", "",
+		"Local directory where the training job template will be written. Defaults to the current directory.")
 
 	return cmd
 }

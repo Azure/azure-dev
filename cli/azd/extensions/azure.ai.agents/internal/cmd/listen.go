@@ -658,10 +658,7 @@ func provisionToolboxes(
 	}
 
 	// Build connection lookup for enriching tool entries with server_url/server_label
-	connByName := map[string]project.ToolConnection{}
-	for _, c := range config.ToolConnections {
-		connByName[c.Name] = c
-	}
+	connByName := toolboxConnectionsByName(config)
 
 	for _, toolbox := range config.Toolboxes {
 		fmt.Fprintf(
@@ -768,7 +765,7 @@ func resolveToolboxEnvVars(toolbox *project.Toolbox, azdEnv map[string]string) {
 // azure.yaml toolbox entries minimal while sending complete data to the API.
 func enrichToolboxFromConnections(
 	toolbox *project.Toolbox,
-	connByName map[string]project.ToolConnection,
+	connByName map[string]toolboxConnection,
 ) {
 	for i, tool := range toolbox.Tools {
 		connID, _ := tool["project_connection_id"].(string)
@@ -787,6 +784,27 @@ func enrichToolboxFromConnections(
 			toolbox.Tools[i]["server_label"] = conn.Name
 		}
 	}
+}
+
+type toolboxConnection struct {
+	Name   string
+	Target string
+}
+
+func toolboxConnectionsByName(config *project.ServiceTargetAgentConfig) map[string]toolboxConnection {
+	connByName := map[string]toolboxConnection{}
+	if config == nil {
+		return connByName
+	}
+
+	for _, c := range config.Connections {
+		connByName[c.Name] = toolboxConnection{Name: c.Name, Target: c.Target}
+	}
+	for _, c := range config.ToolConnections {
+		connByName[c.Name] = toolboxConnection{Name: c.Name, Target: c.Target}
+	}
+
+	return connByName
 }
 
 // parseConnectionIDs parses the AI_PROJECT_CONNECTION_IDS_JSON env var

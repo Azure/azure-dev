@@ -240,9 +240,87 @@ func TestRegisterAgentEnvironmentVariables(t *testing.T) {
 		envStub.values["AGENT_MY_SVC_INVOCATIONS_ENDPOINT"],
 		"/agents/my-agent/endpoint/protocols/invocations")
 
-	// Legacy env var cleared
+	// Base agent endpoint for session management
 	require.Contains(t, envStub.values, "AGENT_MY_SVC_ENDPOINT")
-	require.Empty(t, envStub.values["AGENT_MY_SVC_ENDPOINT"])
+	require.Equal(t, "https://proj.azure.com/agents/my-agent/versions/1.0.0", envStub.values["AGENT_MY_SVC_ENDPOINT"])
+}
+
+func TestRegisterAgentEnvironmentVariables_TrailingSlash(t *testing.T) {
+	t.Parallel()
+
+	envStub := &stubEnvServer{}
+	client := newEnvTestClient(t, envStub)
+
+	provider := &AgentServiceTargetProvider{
+		azdClient: client,
+		env:       &azdext.Environment{Name: "test-env"},
+	}
+
+	azdEnv := map[string]string{
+		"AZURE_AI_PROJECT_ENDPOINT": "https://proj.azure.com/",
+	}
+	protocols := []agent_yaml.ProtocolVersionRecord{
+		{Protocol: "responses", Version: "1.0.0"},
+	}
+	agentVersion := &agent_api.AgentVersionObject{
+		Name:    "my-agent",
+		Version: "2.0.0",
+	}
+
+	err := provider.registerAgentEnvironmentVariables(
+		t.Context(), azdEnv,
+		&azdext.ServiceConfig{Name: "my-svc"},
+		agentVersion,
+		protocols,
+	)
+	require.NoError(t, err)
+
+	// Trailing slash must not produce a double-slash in the base endpoint
+	require.Equal(t, "https://proj.azure.com/agents/my-agent/versions/2.0.0", envStub.values["AGENT_MY_SVC_ENDPOINT"])
+}
+
+func TestRegisterAgentEnvironmentVariables_EmptyName(t *testing.T) {
+	t.Parallel()
+
+	envStub := &stubEnvServer{}
+	client := newEnvTestClient(t, envStub)
+
+	provider := &AgentServiceTargetProvider{
+		azdClient: client,
+		env:       &azdext.Environment{Name: "test-env"},
+	}
+
+	err := provider.registerAgentEnvironmentVariables(
+		t.Context(),
+		map[string]string{"AZURE_AI_PROJECT_ENDPOINT": "https://proj.azure.com"},
+		&azdext.ServiceConfig{Name: "my-svc"},
+		&agent_api.AgentVersionObject{Name: "", Version: "1.0.0"},
+		nil,
+	)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "agent name is empty")
+}
+
+func TestRegisterAgentEnvironmentVariables_EmptyVersion(t *testing.T) {
+	t.Parallel()
+
+	envStub := &stubEnvServer{}
+	client := newEnvTestClient(t, envStub)
+
+	provider := &AgentServiceTargetProvider{
+		azdClient: client,
+		env:       &azdext.Environment{Name: "test-env"},
+	}
+
+	err := provider.registerAgentEnvironmentVariables(
+		t.Context(),
+		map[string]string{"AZURE_AI_PROJECT_ENDPOINT": "https://proj.azure.com"},
+		&azdext.ServiceConfig{Name: "my-svc"},
+		&agent_api.AgentVersionObject{Name: "my-agent", Version: ""},
+		nil,
+	)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "agent version is empty")
 }
 
 func TestProtocolPath(t *testing.T) {

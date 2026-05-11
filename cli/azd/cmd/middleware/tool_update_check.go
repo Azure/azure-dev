@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tool"
@@ -25,6 +26,7 @@ import (
 // interactive and the current command is not a tool-management
 // subcommand.
 type ToolUpdateCheckMiddleware struct {
+	alphaManager  *alpha.FeatureManager
 	manager       *tool.Manager
 	console       input.Console
 	options       *Options
@@ -34,12 +36,14 @@ type ToolUpdateCheckMiddleware struct {
 // NewToolUpdateCheckMiddleware creates a new [ToolUpdateCheckMiddleware].
 // All dependencies are resolved by the IoC container.
 func NewToolUpdateCheckMiddleware(
+	alphaManager *alpha.FeatureManager,
 	manager *tool.Manager,
 	console input.Console,
 	options *Options,
 	globalOptions *internal.GlobalCommandOptions,
 ) Middleware {
 	return &ToolUpdateCheckMiddleware{
+		alphaManager:  alphaManager,
 		manager:       manager,
 		console:       console,
 		options:       options,
@@ -52,6 +56,11 @@ func NewToolUpdateCheckMiddleware(
 // completes it triggers a background update check when the configured
 // check interval has elapsed.
 func (m *ToolUpdateCheckMiddleware) Run(ctx context.Context, nextFn NextFn) (*actions.ActionResult, error) {
+	// Skip when the tool alpha feature is not enabled.
+	if !m.alphaManager.IsEnabled(tool.FeatureAlphaTool) {
+		return nextFn(ctx)
+	}
+
 	// Skip all notification and background-check logic for child
 	// actions (e.g. workflow steps invoked by a parent command).
 	if !IsChildAction(ctx) {

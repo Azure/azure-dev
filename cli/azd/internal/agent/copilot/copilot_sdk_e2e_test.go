@@ -106,26 +106,30 @@ func TestCopilotSDK_E2E(t *testing.T) {
 
 	// 7. Validate response
 	t.Logf("Received %d events total", len(events))
-	if response != nil && response.Data.Content != nil {
-		t.Logf("Response content: %s", *response.Data.Content)
-		require.Contains(t, *response.Data.Content, "4",
+	if response != nil {
+		data, ok := response.Data.(*copilot.AssistantMessageData)
+		require.True(t, ok, "expected response.Data to be *copilot.AssistantMessageData, got %T", response.Data)
+		t.Logf("Response content: %s", data.Content)
+		require.Contains(t, data.Content, "4",
 			"expected response to contain '4'")
 	} else {
 		// If SendAndWait returned nil, check events for assistant message
 		var found bool
 		for _, e := range events {
-			if e.Type == copilot.AssistantMessage && e.Data.Content != nil {
-				t.Logf("Found assistant message in events: %s", *e.Data.Content)
-				found = true
-				break
+			if e.Type == copilot.SessionEventTypeAssistantMessage {
+				if data, ok := e.Data.(*copilot.AssistantMessageData); ok {
+					t.Logf("Found assistant message in events: %s", data.Content)
+					found = true
+					break
+				}
 			}
 		}
 		if !found {
 			// Log all event types for debugging
 			for _, e := range events {
 				detail := ""
-				if e.Data.Content != nil {
-					detail = fmt.Sprintf(" content=%s", truncateForLog(*e.Data.Content, 100))
+				if data, ok := e.Data.(*copilot.AssistantMessageData); ok {
+					detail = fmt.Sprintf(" content=%s", truncateForLog(data.Content, 100))
 				}
 				t.Logf("  event: type=%s%s", e.Type, detail)
 			}

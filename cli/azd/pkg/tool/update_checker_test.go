@@ -5,6 +5,7 @@ package tool
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -52,7 +53,7 @@ func TestShouldCheck(t *testing.T) {
 		t.Parallel()
 
 		mgr := newMockUserConfigManager()
-		uc := NewUpdateChecker(mgr, nil, staticDir(t.TempDir()))
+		uc := NewUpdateChecker(mgr, nil, staticDir(t.TempDir()), nil)
 
 		assert.True(t, uc.ShouldCheck(t.Context()))
 	})
@@ -68,7 +69,7 @@ func TestShouldCheck(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		uc := NewUpdateChecker(mgr, nil, staticDir(t.TempDir()))
+		uc := NewUpdateChecker(mgr, nil, staticDir(t.TempDir()), nil)
 		assert.False(t, uc.ShouldCheck(t.Context()))
 	})
 
@@ -83,7 +84,7 @@ func TestShouldCheck(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		uc := NewUpdateChecker(mgr, nil, staticDir(t.TempDir()))
+		uc := NewUpdateChecker(mgr, nil, staticDir(t.TempDir()), nil)
 		assert.True(t, uc.ShouldCheck(t.Context()))
 	})
 
@@ -94,7 +95,7 @@ func TestShouldCheck(t *testing.T) {
 		err := mgr.cfg.Set(configKeyUpdateChecks, "off")
 		require.NoError(t, err)
 
-		uc := NewUpdateChecker(mgr, nil, staticDir(t.TempDir()))
+		uc := NewUpdateChecker(mgr, nil, staticDir(t.TempDir()), nil)
 		assert.False(t, uc.ShouldCheck(t.Context()))
 	})
 
@@ -107,7 +108,7 @@ func TestShouldCheck(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		uc := NewUpdateChecker(mgr, nil, staticDir(t.TempDir()))
+		uc := NewUpdateChecker(mgr, nil, staticDir(t.TempDir()), nil)
 		assert.True(t, uc.ShouldCheck(t.Context()))
 	})
 
@@ -126,7 +127,7 @@ func TestShouldCheck(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		uc := NewUpdateChecker(mgr, nil, staticDir(t.TempDir()))
+		uc := NewUpdateChecker(mgr, nil, staticDir(t.TempDir()), nil)
 		assert.True(t, uc.ShouldCheck(t.Context()))
 	})
 }
@@ -143,7 +144,7 @@ func TestSaveCacheAndGetCachedResults(t *testing.T) {
 
 		tmpDir := t.TempDir()
 		mgr := newMockUserConfigManager()
-		uc := NewUpdateChecker(mgr, nil, staticDir(tmpDir))
+		uc := NewUpdateChecker(mgr, nil, staticDir(tmpDir), nil)
 
 		now := time.Now().UTC().Truncate(time.Second)
 		cache := &UpdateCheckCache{
@@ -180,7 +181,7 @@ func TestSaveCacheAndGetCachedResults(t *testing.T) {
 
 		tmpDir := t.TempDir()
 		mgr := newMockUserConfigManager()
-		uc := NewUpdateChecker(mgr, nil, staticDir(tmpDir))
+		uc := NewUpdateChecker(mgr, nil, staticDir(tmpDir), nil)
 
 		cache, err := uc.GetCachedResults()
 		assert.NoError(t, err)
@@ -192,7 +193,7 @@ func TestSaveCacheAndGetCachedResults(t *testing.T) {
 
 		tmpDir := t.TempDir()
 		mgr := newMockUserConfigManager()
-		uc := NewUpdateChecker(mgr, nil, staticDir(tmpDir))
+		uc := NewUpdateChecker(mgr, nil, staticDir(tmpDir), nil)
 
 		cache := &UpdateCheckCache{
 			CheckedAt: time.Now().UTC(),
@@ -220,7 +221,7 @@ func TestShouldShowNotification(t *testing.T) {
 		t.Parallel()
 
 		mgr := newMockUserConfigManager()
-		uc := NewUpdateChecker(mgr, nil, staticDir(t.TempDir()))
+		uc := NewUpdateChecker(mgr, nil, staticDir(t.TempDir()), nil)
 
 		assert.False(t, uc.ShouldShowNotification(t.Context()))
 	})
@@ -235,7 +236,7 @@ func TestShouldShowNotification(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		uc := NewUpdateChecker(mgr, nil, staticDir(t.TempDir()))
+		uc := NewUpdateChecker(mgr, nil, staticDir(t.TempDir()), nil)
 		assert.True(t, uc.ShouldShowNotification(t.Context()))
 	})
 
@@ -258,7 +259,7 @@ func TestShouldShowNotification(t *testing.T) {
 			)
 			require.NoError(t, err)
 
-			uc := NewUpdateChecker(mgr, nil, staticDir(t.TempDir()))
+			uc := NewUpdateChecker(mgr, nil, staticDir(t.TempDir()), nil)
 			assert.False(t,
 				uc.ShouldShowNotification(t.Context()))
 		},
@@ -283,7 +284,7 @@ func TestShouldShowNotification(t *testing.T) {
 			)
 			require.NoError(t, err)
 
-			uc := NewUpdateChecker(mgr, nil, staticDir(t.TempDir()))
+			uc := NewUpdateChecker(mgr, nil, staticDir(t.TempDir()), nil)
 			assert.True(t,
 				uc.ShouldShowNotification(t.Context()))
 		},
@@ -298,7 +299,7 @@ func TestMarkNotificationShown(t *testing.T) {
 	t.Parallel()
 
 	mgr := newMockUserConfigManager()
-	uc := NewUpdateChecker(mgr, nil, staticDir(t.TempDir()))
+	uc := NewUpdateChecker(mgr, nil, staticDir(t.TempDir()), nil)
 
 	err := uc.MarkNotificationShown(t.Context())
 	require.NoError(t, err)
@@ -396,7 +397,7 @@ func TestCheck(t *testing.T) {
 			},
 		}
 
-		uc := NewUpdateChecker(mgr, det, staticDir(tmpDir))
+		uc := NewUpdateChecker(mgr, det, staticDir(tmpDir), nil)
 
 		tools := []*ToolDefinition{
 			{Id: "tool-a", Name: "Tool A"},
@@ -446,7 +447,7 @@ func TestCheck(t *testing.T) {
 			},
 		}
 
-		uc := NewUpdateChecker(mgr, det, staticDir(tmpDir))
+		uc := NewUpdateChecker(mgr, det, staticDir(tmpDir), nil)
 
 		// Seed a cache with a known latest version.
 		seedCache := &UpdateCheckCache{
@@ -485,7 +486,7 @@ func TestHasUpdatesAvailable(t *testing.T) {
 		tmpDir := t.TempDir()
 		mgr := newMockUserConfigManager()
 		det := &mockDetector{}
-		uc := NewUpdateChecker(mgr, det, staticDir(tmpDir))
+		uc := NewUpdateChecker(mgr, det, staticDir(tmpDir), nil)
 
 		hasUpdates, count, err := uc.HasUpdatesAvailable(t.Context(), BuiltInTools())
 		require.NoError(t, err)
@@ -499,7 +500,7 @@ func TestHasUpdatesAvailable(t *testing.T) {
 		tmpDir := t.TempDir()
 		mgr := newMockUserConfigManager()
 		det := &mockDetector{}
-		uc := NewUpdateChecker(mgr, det, staticDir(tmpDir))
+		uc := NewUpdateChecker(mgr, det, staticDir(tmpDir), nil)
 
 		cache := &UpdateCheckCache{
 			CheckedAt: time.Now().UTC(),
@@ -512,5 +513,269 @@ func TestHasUpdatesAvailable(t *testing.T) {
 		require.NoError(t, err)
 		assert.False(t, hasUpdates)
 		assert.Equal(t, 0, count)
+	})
+}
+
+// ---------------------------------------------------------------------------
+// mockVersionProvider — in-package mock for LatestVersionProvider
+// ---------------------------------------------------------------------------
+
+type mockVersionProvider struct {
+	version string
+	err     error
+	called  bool
+}
+
+func (m *mockVersionProvider) GetLatestVersion(
+	_ context.Context,
+	_ *ToolDefinition,
+) (string, error) {
+	m.called = true
+	return m.version, m.err
+}
+
+// ---------------------------------------------------------------------------
+// Check with version providers
+// ---------------------------------------------------------------------------
+
+func TestCheck_WithProvider(t *testing.T) {
+	t.Parallel()
+
+	newDetector := func(version string) *mockDetector {
+		return &mockDetector{
+			detectAllFn: func(
+				_ context.Context, tools []*ToolDefinition,
+			) ([]*ToolStatus, error) {
+				results := make([]*ToolStatus, len(tools))
+				for i, tool := range tools {
+					results[i] = &ToolStatus{
+						Tool:             tool,
+						Installed:        true,
+						InstalledVersion: version,
+					}
+				}
+				return results, nil
+			},
+		}
+	}
+
+	t.Run("NewerVersionAvailable", func(t *testing.T) {
+		t.Parallel()
+
+		tmpDir := t.TempDir()
+		mgr := newMockUserConfigManager()
+		det := newDetector("1.0.0")
+
+		providers := map[string]LatestVersionProvider{
+			"tool-a": &mockVersionProvider{version: "2.0.0"},
+		}
+
+		uc := NewUpdateChecker(
+			mgr, det, staticDir(tmpDir), providers,
+		)
+
+		tools := []*ToolDefinition{
+			{Id: "tool-a", Name: "Tool A"},
+		}
+
+		results, err := uc.Check(t.Context(), tools)
+		require.NoError(t, err)
+		require.Len(t, results, 1)
+
+		assert.Equal(t, "1.0.0", results[0].CurrentVersion)
+		assert.Equal(t, "2.0.0", results[0].LatestVersion)
+		assert.True(t, results[0].UpdateAvailable)
+	})
+
+	t.Run("SameVersion", func(t *testing.T) {
+		t.Parallel()
+
+		tmpDir := t.TempDir()
+		mgr := newMockUserConfigManager()
+		det := newDetector("1.0.0")
+
+		providers := map[string]LatestVersionProvider{
+			"tool-a": &mockVersionProvider{version: "1.0.0"},
+		}
+
+		uc := NewUpdateChecker(
+			mgr, det, staticDir(tmpDir), providers,
+		)
+
+		tools := []*ToolDefinition{
+			{Id: "tool-a", Name: "Tool A"},
+		}
+
+		results, err := uc.Check(t.Context(), tools)
+		require.NoError(t, err)
+		require.Len(t, results, 1)
+
+		assert.Equal(t, "1.0.0", results[0].LatestVersion)
+		assert.False(t, results[0].UpdateAvailable)
+	})
+
+	t.Run("OlderVersion", func(t *testing.T) {
+		t.Parallel()
+
+		tmpDir := t.TempDir()
+		mgr := newMockUserConfigManager()
+		det := newDetector("2.0.0")
+
+		providers := map[string]LatestVersionProvider{
+			"tool-a": &mockVersionProvider{version: "1.0.0"},
+		}
+
+		uc := NewUpdateChecker(
+			mgr, det, staticDir(tmpDir), providers,
+		)
+
+		tools := []*ToolDefinition{
+			{Id: "tool-a", Name: "Tool A"},
+		}
+
+		results, err := uc.Check(t.Context(), tools)
+		require.NoError(t, err)
+		require.Len(t, results, 1)
+
+		assert.False(t, results[0].UpdateAvailable)
+	})
+
+	t.Run("ProviderErrorFallsBackGracefully", func(t *testing.T) {
+		t.Parallel()
+
+		tmpDir := t.TempDir()
+		mgr := newMockUserConfigManager()
+		det := newDetector("1.0.0")
+
+		providers := map[string]LatestVersionProvider{
+			"tool-a": &mockVersionProvider{
+				err: errors.New("network error"),
+			},
+		}
+
+		uc := NewUpdateChecker(
+			mgr, det, staticDir(tmpDir), providers,
+		)
+
+		tools := []*ToolDefinition{
+			{Id: "tool-a", Name: "Tool A"},
+		}
+
+		results, err := uc.Check(t.Context(), tools)
+		require.NoError(t, err)
+		require.Len(t, results, 1)
+
+		assert.False(t, results[0].UpdateAvailable)
+		assert.Equal(t, "", results[0].LatestVersion)
+	})
+
+	t.Run("SemverPreReleaseComparison", func(t *testing.T) {
+		t.Parallel()
+
+		tmpDir := t.TempDir()
+		mgr := newMockUserConfigManager()
+		det := newDetector("0.1.6-preview")
+
+		providers := map[string]LatestVersionProvider{
+			"tool-a": &mockVersionProvider{
+				version: "0.1.29-preview",
+			},
+		}
+
+		uc := NewUpdateChecker(
+			mgr, det, staticDir(tmpDir), providers,
+		)
+
+		tools := []*ToolDefinition{
+			{Id: "tool-a", Name: "Tool A"},
+		}
+
+		results, err := uc.Check(t.Context(), tools)
+		require.NoError(t, err)
+		require.Len(t, results, 1)
+
+		assert.True(t, results[0].UpdateAvailable,
+			"0.1.29-preview should be newer than 0.1.6-preview")
+	})
+
+	t.Run("CacheHitSkipsProvider", func(t *testing.T) {
+		t.Parallel()
+
+		tmpDir := t.TempDir()
+		mgr := newMockUserConfigManager()
+		det := newDetector("1.0.0")
+
+		provider := &mockVersionProvider{version: "3.0.0"}
+		providers := map[string]LatestVersionProvider{
+			"tool-a": provider,
+		}
+
+		uc := NewUpdateChecker(
+			mgr, det, staticDir(tmpDir), providers,
+		)
+
+		// Seed a valid (non-expired) cache.
+		seedCache := &UpdateCheckCache{
+			CheckedAt: time.Now().UTC(),
+			ExpiresAt: time.Now().UTC().Add(time.Hour),
+			Tools: map[string]CachedToolVersion{
+				"tool-a": {LatestVersion: "2.0.0"},
+			},
+		}
+		require.NoError(t, uc.SaveCache(seedCache))
+
+		tools := []*ToolDefinition{
+			{Id: "tool-a", Name: "Tool A"},
+		}
+
+		results, err := uc.Check(t.Context(), tools)
+		require.NoError(t, err)
+		require.Len(t, results, 1)
+
+		// Should use cached version, not the provider's.
+		assert.Equal(t, "2.0.0", results[0].LatestVersion)
+		assert.False(t, provider.called,
+			"provider should not be called when cache is valid")
+	})
+
+	t.Run("ExpiredCacheCallsProvider", func(t *testing.T) {
+		t.Parallel()
+
+		tmpDir := t.TempDir()
+		mgr := newMockUserConfigManager()
+		det := newDetector("1.0.0")
+
+		provider := &mockVersionProvider{version: "3.0.0"}
+		providers := map[string]LatestVersionProvider{
+			"tool-a": provider,
+		}
+
+		uc := NewUpdateChecker(
+			mgr, det, staticDir(tmpDir), providers,
+		)
+
+		// Seed an expired cache.
+		seedCache := &UpdateCheckCache{
+			CheckedAt: time.Now().UTC().Add(-2 * time.Hour),
+			ExpiresAt: time.Now().UTC().Add(-1 * time.Hour),
+			Tools: map[string]CachedToolVersion{
+				"tool-a": {LatestVersion: "2.0.0"},
+			},
+		}
+		require.NoError(t, uc.SaveCache(seedCache))
+
+		tools := []*ToolDefinition{
+			{Id: "tool-a", Name: "Tool A"},
+		}
+
+		results, err := uc.Check(t.Context(), tools)
+		require.NoError(t, err)
+		require.Len(t, results, 1)
+
+		// Should use provider's version since cache is expired.
+		assert.Equal(t, "3.0.0", results[0].LatestVersion)
+		assert.True(t, provider.called,
+			"provider should be called when cache is expired")
+		assert.True(t, results[0].UpdateAvailable)
 	})
 }

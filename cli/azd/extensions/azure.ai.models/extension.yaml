@@ -3,7 +3,7 @@ namespace: ai.models
 displayName: Foundry Custom Models (Preview)
 description: Extension for managing custom models in Azure AI Foundry. (Preview)
 usage: azd ai models <command> [options]
-version: 0.0.5-preview
+version: 0.0.6-preview
 language: go
 capabilities:
     - custom-commands
@@ -14,13 +14,16 @@ examples:
       usage: azd ai models init
     - name: create
       description: Upload and register a custom model.
-      usage: azd ai models custom create --source ./model.safetensors --name my-model
+      usage: azd ai models create --source ./model.safetensors --name my-model --base-model FW-DeepSeek-V3.1
     - name: list
       description: List all custom models.
-      usage: azd ai models custom list
+      usage: azd ai models list
     - name: show
       description: Show details of a custom model.
-      usage: azd ai models custom show --name my-model
+      usage: azd ai models show --name my-model
+    - name: update
+      description: Update description or tags of a custom model.
+      usage: azd ai models update --name my-model --description "New description" --set-tag env=prod
     - name: delete
       description: Delete a custom model.
-      usage: azd ai models custom delete --name my-model
+      usage: azd ai models delete --name my-model

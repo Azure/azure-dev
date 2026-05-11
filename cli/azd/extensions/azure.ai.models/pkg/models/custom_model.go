@@ -11,12 +11,17 @@ type CustomModel struct {
 	Description string            `json:"description,omitempty"`
 	Version     string            `json:"version" table:"Version"`
 	BlobURI     string            `json:"blobUri,omitempty"`
+	WeightType  string            `json:"weightType,omitempty"`
+	BaseModel   string            `json:"baseModel,omitempty"`
 	SystemData  *SystemData       `json:"systemData,omitempty"`
 	Properties  map[string]any    `json:"properties,omitempty"`
 	Tags        map[string]string `json:"tags,omitempty"`
 	CatalogInfo *CatalogInfo      `json:"catalogInfo,omitempty"`
 
 	DerivedModelInformation *DerivedModelInformation `json:"derivedModelInformation,omitempty"`
+	Source                  *ModelSource             `json:"source,omitempty"`
+	ArtifactProfile         *ArtifactProfile         `json:"artifactProfile,omitempty"`
+	ProvisioningState       string                   `json:"provisioningState,omitempty"`
 }
 
 // SystemData contains Azure system metadata for a resource.
@@ -36,6 +41,20 @@ type CatalogInfo struct {
 // DerivedModelInformation contains information about the base model.
 type DerivedModelInformation struct {
 	BaseModel *string `json:"baseModel,omitempty"`
+}
+
+// ModelSource describes where a model originated from.
+type ModelSource struct {
+	SourceType        string `json:"sourceType,omitempty"`
+	JobID             string `json:"jobId,omitempty"`
+	HuggingFaceRepoID string `json:"huggingFaceRepoId,omitempty"`
+	Revision          string `json:"revision,omitempty"`
+}
+
+// ArtifactProfile contains classification information about model artifacts.
+type ArtifactProfile struct {
+	Category string   `json:"category,omitempty"`
+	Signals  []string `json:"signals,omitempty"`
 }
 
 // ListModelsResponse is the API response for listing custom models.

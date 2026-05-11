@@ -414,14 +414,14 @@ func TestCopilotService_GetMessages_ValidSession(t *testing.T) {
 	}, nil)
 	mockAgent.On("GetMessages", mock.Anything).Return([]agent.SessionEvent{
 		{
-			Type:      copilot.AssistantMessage,
+			Type:      copilot.SessionEventTypeAssistantMessage,
 			Timestamp: now,
-			Data:      copilot.Data{Content: &content},
+			Data:      &copilot.AssistantMessageData{Content: content},
 		},
 		{
-			Type:      copilot.ToolExecutionStart,
+			Type:      copilot.SessionEventTypeToolExecutionStart,
 			Timestamp: now.Add(time.Second),
-			Data:      copilot.Data{ToolName: &toolName},
+			Data:      &copilot.ToolExecutionStartData{ToolName: toolName},
 		},
 	}, nil)
 
@@ -470,34 +470,30 @@ func TestCopilotService_GetMessages_RoundTrip(t *testing.T) {
 	inputTokens := float64(500)
 	outputTokens := float64(200)
 	toolName := "write"
-	filePath := "infra/main.bicep"
-	intent := "Creating infrastructure"
 
 	originalEvents := []agent.SessionEvent{
 		{
 			ID:        "evt-1",
-			Type:      copilot.AssistantMessage,
+			Type:      copilot.SessionEventTypeAssistantMessage,
 			Timestamp: time.Date(2026, 3, 18, 12, 0, 0, 0, time.UTC),
-			Data:      copilot.Data{Content: &content},
+			Data:      &copilot.AssistantMessageData{Content: content},
 		},
 		{
 			ID:        "evt-2",
-			Type:      copilot.AssistantUsage,
+			Type:      copilot.SessionEventTypeAssistantUsage,
 			Timestamp: time.Date(2026, 3, 18, 12, 0, 1, 0, time.UTC),
-			Data: copilot.Data{
-				Model:        &model,
+			Data: &copilot.AssistantUsageData{
+				Model:        model,
 				InputTokens:  &inputTokens,
 				OutputTokens: &outputTokens,
 			},
 		},
 		{
 			ID:        "evt-3",
-			Type:      copilot.ToolExecutionStart,
+			Type:      copilot.SessionEventTypeToolExecutionStart,
 			Timestamp: time.Date(2026, 3, 18, 12, 0, 2, 0, time.UTC),
-			Data: copilot.Data{
-				ToolName: &toolName,
-				Path:     &filePath,
-				Intent:   &intent,
+			Data: &copilot.ToolExecutionStartData{
+				ToolName: toolName,
 			},
 		},
 	}
@@ -513,36 +509,29 @@ func TestCopilotService_GetMessages_RoundTrip(t *testing.T) {
 	require.Equal(t, "assistant.usage", protoEvents[1].Type)
 	require.Equal(t, "tool.execution_start", protoEvents[2].Type)
 
-	// Round-trip: convert proto Struct back to SDK Data type
+	// Round-trip: convert proto Struct back to JSON and verify key fields
 	for i, protoEvent := range protoEvents {
 		// Marshal proto Struct to JSON
 		jsonBytes, err := protojson.Marshal(protoEvent.Data)
 		require.NoError(t, err, "failed to marshal proto struct for event %d", i)
 
-		// Unmarshal JSON into SDK Data type
-		var roundTripped copilot.Data
+		// Unmarshal JSON into a generic map for verification (copilot.Data no longer exists)
+		var roundTripped map[string]any
 		err = json.Unmarshal(jsonBytes, &roundTripped)
-		require.NoError(t, err, "failed to unmarshal to SDK Data for event %d", i)
+		require.NoError(t, err, "failed to unmarshal to map for event %d", i)
 
 		// Verify the round-tripped data matches the original
 		switch originalEvents[i].Type {
-		case copilot.AssistantMessage:
-			require.NotNil(t, roundTripped.Content)
-			require.Equal(t, *originalEvents[i].Data.Content, *roundTripped.Content)
+		case copilot.SessionEventTypeAssistantMessage:
+			require.Equal(t, content, roundTripped["content"])
 
-		case copilot.AssistantUsage:
-			require.NotNil(t, roundTripped.Model)
-			require.Equal(t, *originalEvents[i].Data.Model, *roundTripped.Model)
-			require.NotNil(t, roundTripped.InputTokens)
-			require.Equal(t, *originalEvents[i].Data.InputTokens, *roundTripped.InputTokens)
-			require.NotNil(t, roundTripped.OutputTokens)
-			require.Equal(t, *originalEvents[i].Data.OutputTokens, *roundTripped.OutputTokens)
+		case copilot.SessionEventTypeAssistantUsage:
+			require.Equal(t, model, roundTripped["model"])
+			require.Equal(t, inputTokens, roundTripped["inputTokens"])
+			require.Equal(t, outputTokens, roundTripped["outputTokens"])
 
-		case copilot.ToolExecutionStart:
-			require.NotNil(t, roundTripped.ToolName)
-			require.Equal(t, *originalEvents[i].Data.ToolName, *roundTripped.ToolName)
-			require.NotNil(t, roundTripped.Path)
-			require.Equal(t, *originalEvents[i].Data.Path, *roundTripped.Path)
+		case copilot.SessionEventTypeToolExecutionStart:
+			require.Equal(t, toolName, roundTripped["toolName"])
 		}
 	}
 }

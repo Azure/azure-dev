@@ -611,16 +611,11 @@ var (
 		Purpose:        PerformanceAndHealth,
 	}
 
-	// Inner error.
-	ErrInner = AttributeKey{
-		Key:            attribute.Key("error.inner"),
-		Classification: SystemMetadata,
-		Purpose:        PerformanceAndHealth,
-	}
-
-	// The frame of the error.
-	ErrFrame = AttributeKey{
-		Key:            attribute.Key("error.frame"),
+	// ErrChainTypes records the wrapped-error type chain (outermost
+	// first). Type names are code-defined and PII-free, so they're
+	// emitted as system metadata for triaging the catch-all bucket.
+	ErrChainTypes = AttributeKey{
+		Key:            attribute.Key("error.chain.types"),
 		Classification: SystemMetadata,
 		Purpose:        PerformanceAndHealth,
 	}

@@ -66,13 +66,13 @@ azd extension source add -n azd -t url -l "https://aka.ms/azd/extensions/registr
 
 > **Note:** When the `registry.json` file is modified, CI automatically runs snapshot tests to ensure extension commands are properly documented in CLI help output and VS Code IntelliSense. See [Snapshot Testing for Extensions](#snapshot-testing-for-extensions) for details.
 
-#### Development Registry
+#### Dev (Experimental) Registry
 
 > [!CAUTION]
-> Extensions hosted in the dev registry DO NOT contain signed binaries at the moment.
+> Extensions hosted in the dev registry are unsigned. They come with **no stability guarantees** and are **not covered by Azure support**. Expect breaking changes, rough edges, and possible removal without notice.
 
 A shared development registry can be added to your `azd` configuration.
-This registry contains extensions that are experiments and also used for internal testing before shipping official extensions.
+This registry contains experimental extensions, community contributions not yet vetted, pre-release builds, and extensions used for internal testing before shipping to the official registry.
 The registry is hosted in the [`azd` GitHub repo](https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/registry.dev.json).
 
 To opt-in for the development registry run the following command:
@@ -81,6 +81,8 @@ To opt-in for the development registry run the following command:
 # Add a new extension source name 'dev' to your `azd` configuration.
 azd extension source add -n dev -t url -l "https://aka.ms/azd/extensions/registry/dev"
 ```
+
+Extensions installed from the dev registry are automatically promoted to the main registry when a newer version becomes available there. See the [Dev/Experimental Extension Registry](./extension-resolution-and-versioning.md#devexperimental-extension-registry) section for full details on stability expectations, submission guidelines, promotion behavior, and troubleshooting.
 
 #### `azd extension source list`
 
@@ -603,7 +605,7 @@ The easiest way to get started building extensions is to install the `azd` Devel
 > [!IMPORTANT]
 > Ensure you have added the `dev` extension source to your `azd` configuration
 >
-> [Configure dev extension source](#development-registry)
+> [Configure dev extension source](#dev-experimental-registry)
 
 ```bash
 # Install the `azd` developer extension

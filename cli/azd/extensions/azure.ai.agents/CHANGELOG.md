@@ -1,5 +1,10 @@
 # Release History
 
+## 0.1.31-preview (2026-05-07)
+
+- [[#8096]](https://github.com/Azure/azure-dev/pull/8096) Fix for bug introduced with #8034. Properly storing root agent endpoint since sessions are independent of protocol.
+- [[#8038]](https://github.com/Azure/azure-dev/pull/8038) Fix MCP tool field mapping to correctly include `url` values from tool definitions. Fixes mapping for toolbox tools to connections.
+
 ## 0.1.30-preview (2026-05-06)
 
 - [[#8028]](https://github.com/Azure/azure-dev/pull/8028) Add `--agent-endpoint` flag to `azd ai agent invoke` to invoke a deployed agent from any directory without needing an azd project or environment. Thanks @antriksh30 for the contribution!

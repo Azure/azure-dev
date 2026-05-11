@@ -202,7 +202,10 @@ func convertYamlToolToApiTool(yamlTool any) (any, error) {
 				Type: agent_api.ToolTypeMCP,
 			},
 			ServerLabel: tool.ServerName,
-			ServerURL:   "", // Not directly available from YAML, would need to extract from connection
+			ServerURL:   tool.URL,
+		}
+		if projectConnectionID := projectConnectionIDFromMcpConnection(tool.Connection); projectConnectionID != "" {
+			apiTool.ProjectConnectionID = &projectConnectionID
 		}
 
 		// Extract options back to specific fields
@@ -266,6 +269,21 @@ func convertYamlToolToApiTool(yamlTool any) (any, error) {
 	default:
 		return nil, fmt.Errorf("unsupported YAML tool type: %T", yamlTool)
 	}
+}
+
+func projectConnectionIDFromMcpConnection(connection any) string {
+	switch conn := connection.(type) {
+	case ReferenceConnection:
+		return conn.Name
+	case RemoteConnection:
+		return conn.Name
+	case map[string]any:
+		if name, ok := conn["name"].(string); ok {
+			return name
+		}
+	}
+
+	return ""
 }
 
 // Helper function to convert PropertySchema to interface{} for agent_api

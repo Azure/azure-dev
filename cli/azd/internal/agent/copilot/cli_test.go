@@ -49,7 +49,7 @@ func TestDownloadURL(t *testing.T) {
 
 func TestCLIVersionPinned(t *testing.T) {
 	require.NotEmpty(t, cliVersion)
-	require.Regexp(t, `^\d+\.\d+\.\d+$`, cliVersion)
+	require.Regexp(t, `^\d+\.\d+\.\d+(-[a-zA-Z0-9.]+)?$`, cliVersion)
 }
 
 func TestCopilotCLI_ExternalToolInterface(t *testing.T) {

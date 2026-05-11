@@ -920,7 +920,8 @@ func (p *AgentServiceTargetProvider) displayAgentInfo(request *agent_api.CreateA
 
 // registerAgentEnvironmentVariables registers agent information as azd environment variables.
 // Per-protocol endpoint vars are set (e.g. AGENT_{KEY}_RESPONSES_ENDPOINT).
-// The legacy single-endpoint var (AGENT_{KEY}_ENDPOINT) is cleared to avoid stale data.
+// The base agent endpoint (AGENT_{KEY}_ENDPOINT) is set to <projectEndpoint>/agents/<agentName>
+// for session management.
 func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 	ctx context.Context,
 	azdEnv map[string]string,
@@ -928,15 +929,25 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 	agentVersionResponse *agent_api.AgentVersionObject,
 	protocols []agent_yaml.ProtocolVersionRecord,
 ) error {
+	if agentVersionResponse.Name == "" {
+		return fmt.Errorf("agent name is empty; cannot register environment variables")
+	}
+	if agentVersionResponse.Version == "" {
+		return fmt.Errorf("agent version is empty; cannot register environment variables")
+	}
+
 	serviceKey := p.getServiceKey(serviceConfig.Name)
 	envVars := map[string]string{
 		fmt.Sprintf("AGENT_%s_NAME", serviceKey):    agentVersionResponse.Name,
 		fmt.Sprintf("AGENT_%s_VERSION", serviceKey): agentVersionResponse.Version,
 	}
 
-	// Clear legacy single-endpoint var so upgraded environments don't retain stale URLs.
-	legacyKey := fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey)
-	envVars[legacyKey] = ""
+	// Set the base agent endpoint used for session management (not protocol-specific).
+	baseEndpointKey := fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey)
+	projectEndpoint := strings.TrimRight(azdEnv["AZURE_AI_PROJECT_ENDPOINT"], "/")
+	envVars[baseEndpointKey] = fmt.Sprintf(
+		"%s/agents/%s/versions/%s", projectEndpoint, agentVersionResponse.Name, agentVersionResponse.Version,
+	)
 
 	endpoints := agentInvocationEndpoints(
 		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],

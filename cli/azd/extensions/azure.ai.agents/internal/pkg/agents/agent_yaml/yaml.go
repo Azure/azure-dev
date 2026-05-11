@@ -758,6 +758,7 @@ type McpTool struct {
 	Connection        any                   `json:"connection" yaml:"connection"` // Must be a type of Connection
 	ServerName        string                `json:"serverName" yaml:"serverName"`
 	ServerDescription *string               `json:"serverDescription,omitempty" yaml:"serverDescription,omitempty"`
+	URL               string                `json:"url,omitempty" yaml:"url,omitempty"`
 	ApprovalMode      McpServerApprovalMode `json:"approvalMode" yaml:"approvalMode"`
 	AllowedTools      *[]string             `json:"allowedTools,omitempty" yaml:"allowedTools,omitempty"`
 	Options           map[string]any        `json:"options" yaml:"options"`

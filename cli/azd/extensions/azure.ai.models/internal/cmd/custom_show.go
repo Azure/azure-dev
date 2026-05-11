@@ -104,7 +104,14 @@ func runCustomShow(ctx context.Context, parentFlags *customFlags, flags *customS
 			if !strings.EqualFold(m.Name, flags.Name) {
 				continue
 			}
-			v, _ := strconv.Atoi(m.Version)
+			v, err := strconv.Atoi(m.Version)
+			if err != nil {
+				// Non-numeric version; treat as candidate if we have no latest yet
+				if latest == nil {
+					latest = m
+				}
+				continue
+			}
 			if latest == nil || v > latestVersion {
 				latest = m
 				latestVersion = v
@@ -143,6 +150,34 @@ func runCustomShow(ctx context.Context, parentFlags *customFlags, flags *customS
 		if model.Description != "" {
 			fmt.Printf("  Description:  %s\n", model.Description)
 		}
+		if model.WeightType != "" {
+			fmt.Printf("  Weight Type:  %s\n", model.WeightType)
+		}
+		if model.ProvisioningState != "" {
+			fmt.Printf("  Status:       %s\n", model.ProvisioningState)
+		}
+
+		if model.BaseModel != "" {
+			fmt.Println("\nBase Model:")
+			fmt.Printf("  URI: %s\n", model.BaseModel)
+		} else if model.DerivedModelInformation != nil && model.DerivedModelInformation.BaseModel != nil {
+			fmt.Println("\nBase Model:")
+			fmt.Printf("  URI: %s\n", *model.DerivedModelInformation.BaseModel)
+		}
+
+		if model.Source != nil {
+			fmt.Println("\nSource:")
+			fmt.Printf("  Type: %s\n", model.Source.SourceType)
+			if model.Source.JobID != "" {
+				fmt.Printf("  Job ID: %s\n", model.Source.JobID)
+			}
+			if model.Source.HuggingFaceRepoID != "" {
+				fmt.Printf("  HF Repo: %s\n", model.Source.HuggingFaceRepoID)
+			}
+			if model.Source.Revision != "" {
+				fmt.Printf("  Revision: %s\n", model.Source.Revision)
+			}
+		}
 
 		if model.SystemData != nil {
 			fmt.Println("\nSystem Data:")
@@ -162,9 +197,12 @@ func runCustomShow(ctx context.Context, parentFlags *customFlags, flags *customS
 			fmt.Printf("  Blob URI: %s\n", model.BlobURI)
 		}
 
-		if model.DerivedModelInformation != nil && model.DerivedModelInformation.BaseModel != nil {
-			fmt.Println("\nDerived Model:")
-			fmt.Printf("  Base Model: %s\n", *model.DerivedModelInformation.BaseModel)
+		if model.ArtifactProfile != nil {
+			fmt.Println("\nArtifact Profile:")
+			fmt.Printf("  Category: %s\n", model.ArtifactProfile.Category)
+			if len(model.ArtifactProfile.Signals) > 0 {
+				fmt.Printf("  Signals:  %s\n", strings.Join(model.ArtifactProfile.Signals, ", "))
+			}
 		}
 
 		if len(model.Tags) > 0 {

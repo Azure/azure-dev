@@ -4,15 +4,33 @@
 
 ### Features Added
 
-- [[#8071]](https://github.com/Azure/azure-dev/pull/8071) `azd show -o json` now includes the deployed ingress URL for each service. The value is emitted under both `ingresUrl` (preserved for back-compat with existing consumers) and `ingressUrl` (correctly spelled, preferred going forward). Both keys are omitted when no ingress URL is available (e.g. for Container App Jobs).
-- [[#7776]](https://github.com/Azure/azure-dev/pull/7776) Layer dependency analysis for `infra.layers` is now safe-by-default: when the static analyzer encounters a syntax pattern it cannot resolve to a literal env-var name (non-literal `readEnvironmentVariable(varName)` in `.bicepparam`, ARM template expressions like `[parameters('foo')]` in `.parameters.json`, or `param x = readEnvironmentVariable('Y')` defaults inside `.bicep`), the consuming layer is forced to depend on all earlier layers. This trades parallelism for correctness on under-analyzed inputs.
-- [[#7776]](https://github.com/Azure/azure-dev/pull/7776) New `infra.layers[].dependsOn` field in `azure.yaml` lets authors declare hook-mediated edges (for example, when a postprovision hook in another layer writes an env var that this layer's bicepparam reads at provision time) that no static analyzer can infer from `.bicep` / `.bicepparam` / `.parameters.json` contents alone. Explicit edges union with detected edges and are validated for unknown layer names, self-references, and cycles.
-- [[#7776]](https://github.com/Azure/azure-dev/pull/7776) Add `provision.layer.*` telemetry attributes (`count`, `max_parallel`, `safe_fallback_count`, `explicit_dependson_count`) on the ambient command span for multi-layer `azd provision` / `azd up` runs so the team can measure adoption and detect when the safe-by-default detector fallback engages on real templates.
 
 ### Breaking Changes
 
 ### Bugs Fixed
 
+
+### Other Changes
+
+
+## 1.25.0 (2026-05-08)
+
+### Features Added
+
+- [[#7450]](https://github.com/Azure/azure-dev/pull/7450) Add `azd tool` command group for discovering, installing, checking, and upgrading Azure development tools, including first-run tooling guidance in core workflows.
+- [[#7982]](https://github.com/Azure/azure-dev/pull/7982) Add `Secret` prompt option in core azd and extension gRPC prompts so sensitive values are masked during input.
+- [[#8071]](https://github.com/Azure/azure-dev/pull/8071) `azd show -o json` now includes the deployed ingress URL for each service. The value is emitted under both `ingresUrl` (preserved for back-compat with existing consumers) and `ingressUrl` (correctly spelled, preferred going forward). Both keys are omitted when no ingress URL is available (e.g. for Container App Jobs).
+- [[#8085]](https://github.com/Azure/azure-dev/pull/8085) Improve `azd tool check` to detect update availability by querying package managers, extension registries, and the VS Code Marketplace instead of relying only on cached values.
+- [[#7776]](https://github.com/Azure/azure-dev/pull/7776) Layer dependency analysis for `infra.layers` is now safe-by-default: when the static analyzer encounters a syntax pattern it cannot resolve to a literal env-var name (non-literal `readEnvironmentVariable(varName)` in `.bicepparam`, ARM template expressions like `[parameters('foo')]` in `.parameters.json`, or `param x = readEnvironmentVariable('Y')` defaults inside `.bicep`), the consuming layer is forced to depend on all earlier layers. This trades parallelism for correctness on under-analyzed inputs.
+- [[#7776]](https://github.com/Azure/azure-dev/pull/7776) New `infra.layers[].dependsOn` field in `azure.yaml` lets authors declare hook-mediated edges (for example, when a postprovision hook in another layer writes an env var that this layer's bicepparam reads at provision time) that no static analyzer can infer from `.bicep` / `.bicepparam` / `.parameters.json` contents alone. Explicit edges union with detected edges and are validated for unknown layer names, self-references, and cycles.
+- [[#7776]](https://github.com/Azure/azure-dev/pull/7776) Add `provision.layer.*` telemetry attributes (`count`, `max_parallel`, `safe_fallback_count`, `explicit_dependson_count`) on the ambient command span for multi-layer `azd provision` / `azd up` runs so the team can measure adoption and detect when the safe-by-default detector fallback engages on real templates.
+
+### Bugs Fixed
+
+- [[#7998]](https://github.com/Azure/azure-dev/pull/7998) Add a safeguard prompt before `azd down` deletes a resource group that was not created by azd; `--no-prompt` now fails closed for this scenario unless `--force` is supplied.
+- [[#8074]](https://github.com/Azure/azure-dev/pull/8074) Fix `azd up` rendering an empty deploy progress summary when provisioning fails before deploy starts.
+- [[#8084]](https://github.com/Azure/azure-dev/pull/8084) Fix first-run tool checks recursively re-invoking `azd extension list` and leaking ANSI output into JSON command output.
+- [[#8086]](https://github.com/Azure/azure-dev/pull/8086) Fix `azd tool` Copilot metadata to use the current VS Code extension and up-to-date Copilot CLI install documentation links.
 - [[#7776]](https://github.com/Azure/azure-dev/pull/7776) Fix `concurrent map writes` panics when running `azd up` or `azd deploy` against multi-service projects: `*environment.Environment` now serializes all `dotenv` map access with an internal `sync.RWMutex`, the environment manager serializes `Save`/`Reload` calls, the singleton `kubectl.Cli` and `kustomize.Cli` are concurrency-safe, and AKS service publish/deploy updates to `SERVICE_<name>_IMAGE_NAME`/`ENDPOINT_URL` are wrapped in a package-level mutex (mirroring the Container Apps pattern).
 - [[#7776]](https://github.com/Azure/azure-dev/pull/7776) Restore intra-phase progress detail (e.g. `"Pushing image"`, `"Updating container app"`) in the per-service progress tracker during `azd deploy` and `azd up`. The graph-driven engine previously dropped sub-phase `ServiceProgress.Message` updates, leaving the tracker's "Detail" column blank between phase transitions.
 - [[#7776]](https://github.com/Azure/azure-dev/pull/7776) Make `x-ms-client-request-id` unique per HTTP request (previously derived from the shared OpenTelemetry trace id, which duplicated the header across every call in a single `azd` invocation). The Azure ARM common-types spec requires this header to be unique per request so Azure services can use it as a deduplication / idempotency / log-correlation key for individual calls — a shared value broke that contract and could cause collisions in parallel deploy / provision scheduling. Microsoft Graph's `client-request-id` header now uses the same per-request UUID for the same reason.
@@ -20,6 +38,9 @@
 
 ### Other Changes
 
+- [[#8050]](https://github.com/Azure/azure-dev/pull/8050) Add per-phase timing breakdown to the `azd up` success output and sanitize deploy progress service names to prevent terminal escape-sequence injection in rendered output.
+- [[#8087]](https://github.com/Azure/azure-dev/pull/8087) Improve error telemetry classification by including wrapped error-chain type metadata and using a shared classifier path for diagnostics.
+- [[#8091]](https://github.com/Azure/azure-dev/pull/8091) Improve `azd ext list` readability with responsive table/card layouts and clearer status indicators across terminal widths.
 - [[#7776]](https://github.com/Azure/azure-dev/pull/7776) **Security:** environment `.env` files are now persisted with mode `0600` (owner read/write only) on Unix-like systems. Previously they inherited the process umask (typically `0644`). The change tightens default permissions for files that may contain subscription IDs and values written via `azd env set`.
 - [[#7776]](https://github.com/Azure/azure-dev/pull/7776) `azd up` now emits a single `"Provisioning and deploying (azd up)"` title and consolidated final message instead of the legacy `"Packaging services (azd package)"` / `"Provisioning Azure resources (azd provision)"` / `"Deploying services (azd deploy)"` banners and the `"Your up workflow to provision and deploy to Azure completed in …"` footer. CI/automation that grep-matches the legacy strings on stdout will need to update its expected output.
 - [[#7776]](https://github.com/Azure/azure-dev/pull/7776) `azd up` honors `AZD_DEPLOY_CONCURRENCY` as a fallback when `AZD_UP_CONCURRENCY` is unset, so existing deploy-tuning configurations carry over to the unified up workflow.

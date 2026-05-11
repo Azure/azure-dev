@@ -219,6 +219,13 @@ type extensionListItem struct {
 	UpdateAvailable  bool   `json:"updateAvailable"`
 	Incompatible     bool   `json:"-"`
 	Source           string `json:"source"`
+	// DisplayVersion is installed version or "Not installed" for table rendering.
+	DisplayVersion string `json:"-"`
+	// Status is a human-readable installation/update status indicator.
+	// Populated only for pretty-table rendering; omitted from JSON.
+	Status string `json:"-"`
+	// StatusSymbol is the symbol-only status (✓, ↑, ⚠, -) for medium/narrow widths.
+	StatusSymbol string `json:"-"`
 }
 
 func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, error) {
@@ -268,7 +275,10 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 		if installed {
 			installedVersion = installedExtension.Version
 
-			// Compare versions to determine if an update is available
+			// Compare versions to determine if an update is available.
+			// If either version string fails semver parsing (e.g., non-standard build tags),
+			// we silently fall back to showing "✓ Up to date" rather than erroring,
+			// since the list command should remain best-effort.
 			installedSemver, installedErr := semver.NewVersion(installedExtension.Version)
 			latestSemver, latestErr := semver.NewVersion(latestVersion)
 			if installedErr == nil && latestErr == nil {
@@ -282,6 +292,12 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 			}
 		}
 
+		status := extensionStatus(installed, updateAvailable && !updateIncompatible, updateIncompatible)
+		displayVersion := installedVersion
+		if displayVersion == "" {
+			displayVersion = "Not installed"
+		}
+
 		extensionRows = append(extensionRows, extensionListItem{
 			Id:               extension.Id,
 			Name:             extension.DisplayName,
@@ -291,10 +307,15 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 			UpdateAvailable:  updateAvailable && !updateIncompatible,
 			Incompatible:     updateIncompatible,
 			Source:           extension.Source,
+			DisplayVersion:   displayVersion,
+			Status:           status,
+			StatusSymbol:     extensionStatusSymbol(status),
 		})
 	}
 
 	if len(extensionRows) == 0 {
+		// NOTE: When no extensions found, we display a formatted message even for JSON output.
+		// This is existing azd behavior.
 		if a.flags.installed {
 			a.console.Message(ctx, output.WithWarningFormat("WARNING: No extensions installed.\n"))
 			a.console.Message(ctx, fmt.Sprintf(
@@ -315,31 +336,50 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 	var formatErr error
 
 	if a.formatter.Kind() == output.TableFormat {
-		columns := []output.Column{
+		prettyFormatter := &output.PrettyTableFormatter{}
+		columns := []output.PrettyColumn{
 			{
-				Heading:       "Id",
-				ValueTemplate: "{{.Id}}",
+				Column: output.Column{
+					Heading:       "ID",
+					ValueTemplate: "{{.Id}}",
+				},
+				Priority: 1,
 			},
 			{
-				Heading:       "Name",
-				ValueTemplate: "{{.Name}}",
+				Column: output.Column{
+					Heading:       "NAME",
+					ValueTemplate: "{{.Name}}",
+				},
+				Priority: 3,
 			},
 			{
-				Heading:       "Latest Version",
-				ValueTemplate: `{{.Version}}`,
+				Column: output.Column{
+					Heading:       "VERSION",
+					ValueTemplate: "{{.DisplayVersion}}",
+				},
+				Priority: 1,
 			},
 			{
-				Heading:       "Installed Version",
-				ValueTemplate: `{{.InstalledVersion}}{{if .UpdateAvailable}}*{{else if .Incompatible}}!{{end}}`,
+				Column: output.Column{
+					Heading:       "STATUS",
+					ValueTemplate: "{{.Status}}",
+				},
+				Priority:           1,
+				ShortValueTemplate: "{{.StatusSymbol}}",
+				ColorFunc:          extensionStatusColor,
 			},
 			{
-				Heading:       "Source",
-				ValueTemplate: `{{.Source}}`,
+				Column: output.Column{
+					Heading:       "SOURCE",
+					ValueTemplate: "{{.Source}}",
+				},
+				Priority: 1,
 			},
 		}
 
-		formatErr = a.formatter.Format(extensionRows, a.writer, output.TableFormatterOptions{
-			Columns: columns,
+		formatErr = prettyFormatter.Format(extensionRows, a.writer, output.PrettyTableFormatterOptions{
+			Columns:         columns,
+			CardGroupColumn: "SOURCE",
 		})
 
 		if formatErr == nil {
@@ -355,18 +395,18 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 			}
 
 			if hasCompatibleUpdates {
-				a.console.Message(ctx, "(*) Update available")
 				a.console.Message(ctx, fmt.Sprintf(
-					"    To upgrade: %s", output.WithHighLightFormat("azd extension upgrade <extension-id>")))
+					"To upgrade: %s", output.WithHighLightFormat("azd extension upgrade <extension-id>")))
 				a.console.Message(ctx, fmt.Sprintf(
-					"    To upgrade all: %s", output.WithHighLightFormat("azd extension upgrade --all")))
+					"To upgrade all: %s", output.WithHighLightFormat("azd extension upgrade --all")))
 			}
 
 			if hasIncompatibleUpdates {
 				if hasCompatibleUpdates {
 					a.console.Message(ctx, "")
 				}
-				a.console.Message(ctx, "(!) Update available but incompatible with current azd version")
+				a.console.Message(ctx, output.WithWarningFormat(
+					"WARNING: Some updates are incompatible with your current azd version"))
 			}
 		}
 	} else {
@@ -374,6 +414,64 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 	}
 
 	return nil, formatErr
+}
+
+// Status indicator constants for extension list display.
+const (
+	statusUpToDate   = "✓ Up to date"
+	statusUpdate     = "↑ Update available"
+	statusIncompat   = "⚠ Incompatible"
+	statusNotInstall = "-"
+)
+
+// extensionStatus returns a human-readable status string for the extension list table.
+func extensionStatus(installed, updateAvailable, incompatible bool) string {
+	switch {
+	case incompatible:
+		return statusIncompat
+	case updateAvailable:
+		return statusUpdate
+	case installed:
+		return statusUpToDate
+	default:
+		return statusNotInstall
+	}
+}
+
+// Status symbol constants for medium/narrow display.
+const (
+	symbolUpToDate   = "✓"
+	symbolUpdate     = "↑"
+	symbolIncompat   = "⚠"
+	symbolNotInstall = "-"
+)
+
+// extensionStatusSymbol returns the symbol-only version of a status string.
+func extensionStatusSymbol(status string) string {
+	switch status {
+	case statusUpToDate:
+		return symbolUpToDate
+	case statusUpdate:
+		return symbolUpdate
+	case statusIncompat:
+		return symbolIncompat
+	default:
+		return symbolNotInstall
+	}
+}
+
+// extensionStatusColor applies color formatting based on the status indicator text.
+func extensionStatusColor(s string) string {
+	switch s {
+	case statusUpToDate, symbolUpToDate:
+		return output.WithSuccessFormat(s)
+	case statusUpdate, symbolUpdate:
+		return output.WithWarningFormat(s)
+	case statusIncompat, symbolIncompat:
+		return output.WithErrorFormat(s)
+	default:
+		return output.WithGrayFormat(s)
+	}
 }
 
 // azd extension show

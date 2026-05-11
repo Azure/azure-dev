@@ -27,6 +27,7 @@ words:
   - cooldown
   - customtype
   - devcontainers
+  - errchain
   - errgroup
   - errorhandler
   - extendee
@@ -63,6 +64,7 @@ words:
   - syncmap
   - syscall
   - tsx
+  - triaging
   - Retryable
   - runcontext
   - surveyterm
@@ -115,6 +117,7 @@ words:
   - exfiltration
   - Fprintf
   - gocritic
+  - gocyclo
   - gradlew
   - IMDS
   - managedhsm
@@ -148,6 +151,10 @@ overrides:
     words:
       - compatResult
       - compatCopy
+      - Incompat
+  - filename: pkg/output/pretty_table.go
+    words:
+      - runewidth
   - filename: pkg/azdext/config_helper.go
     words:
       - myext
@@ -447,6 +454,13 @@ overrides:
     words:
       - filesystems
       - redirections
+  - filename: internal/agent/copilot/session_config.go
+    words:
+      - MCPHTTP
+  - filename: pkg/tool/version_provider.go
+    words:
+      - extensionquery
+      - bitmask
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

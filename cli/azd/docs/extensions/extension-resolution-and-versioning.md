@@ -305,6 +305,248 @@ When `latest` is specified (or the version is omitted), `azd` selects the **high
    azd extension install <extension-id> --source <source-name>
    ```
 
+## Dev/Experimental Extension Registry
+
+The dev (experimental) registry is a separate extension source for bleeding-edge, pre-release, and community-contributed extensions that have not yet been promoted to the official `azd` registry. It lives alongside the main registry in the `azure-dev` repository and is served via a dedicated aka.ms link. While `azd` and `dev` are the official source names, the extension source system supports adding custom sources with any name via `azd extension source add`.
+
+| Property | Main Registry | Dev Registry |
+|----------|---------------|--------------|
+| URL | `https://aka.ms/azd/extensions/registry` | `https://aka.ms/azd/extensions/registry/dev` |
+| Source file | `cli/azd/extensions/registry.json` | `cli/azd/extensions/registry.dev.json` |
+| Source name | `azd` (built-in default) | `dev` (official dev registry) |
+| Signed binaries | Yes | **No** |
+| Support | Covered by Azure support | **Not covered** |
+
+### Experimental vs. Main Registry Criteria
+
+The following criteria determine whether an extension belongs in the dev registry or the main registry:
+
+| Criteria | Main (azd) | Experimental (dev) |
+|----------|------------|-------------------|
+| **Binary signing** | Signed builds | Unsigned builds |
+| **Stability** | Stable releases | Preview, alpha, beta, or pre-release versions |
+| **Vetting** | Vetted by the azd team; meets quality bar | Community contributions not yet reviewed; internal experiments |
+| **API surface** | Follows [semver guidance](#semantic-versioning-guidance) | May change between versions without notice |
+| **Availability** | Maintained with deprecation process | May be removed without notice |
+
+An extension can exist in **both** registries simultaneously. For example, the main registry may contain version `1.2.0` while the dev registry contains `2.0.0-beta.1`. This allows authors to publish stable releases through the main registry while testing upcoming versions through the dev registry.
+
+### Stability Expectations
+
+> [!CAUTION]
+> Extensions in the dev registry come with **no stability guarantees**.
+
+When using experimental extensions, expect:
+
+- **Breaking changes** between versions without prior notice
+- **Removal** of extensions from the registry without deprecation
+- **No Azure support** — experimental extensions are not covered by any Azure support plan
+- **Unsigned binaries** — your system may show security warnings when running them
+- **Rough edges** — incomplete documentation, missing error messages, and untested edge cases
+
+The dev registry is intended for early adopters, extension authors testing pre-release builds, and internal teams validating extensions before official publication.
+
+### Adding the Dev Registry
+
+The dev registry is **not** configured by default. To opt in:
+
+```bash
+# Add the dev registry as a source named "dev"
+azd extension source add -n dev -t url -l "https://aka.ms/azd/extensions/registry/dev"
+```
+
+Verify it was added:
+
+```bash
+azd extension source list
+```
+
+You should see both `azd` (the built-in default) and `dev` listed.
+
+To remove the dev registry later:
+
+```bash
+azd extension source remove dev
+```
+
+### Installing Experimental Extensions
+
+Once the dev source is configured, you can browse and install experimental extensions:
+
+```bash
+# List all available extensions (from all configured sources)
+azd extension list --available
+
+# Install an extension from the dev registry explicitly
+azd extension install my.experimental.extension --source dev
+
+# Install a specific pre-release version
+azd extension install my.experimental.extension --version 2.0.0-beta.1 --source dev
+```
+
+If an extension exists in both the `azd` and `dev` sources and you do not specify `--source`, `azd` will prompt you to choose (in interactive mode) or return an error (in non-interactive mode). See [Handle Conflicts](#3-handle-conflicts) for details.
+
+### Upgrade and Dev→Main Promotion
+
+When you run `azd extension upgrade`, extensions installed from the dev registry are evaluated for **one-way promotion** to the main registry. Promotion occurs automatically when:
+
+1. **The extension is no longer in the dev registry** — it was removed from `registry.dev.json` after being promoted to `registry.json`.
+2. **The main registry has a newer version** — the latest version in the main registry is strictly greater than the latest version in the dev registry.
+
+When promotion happens, the extension's stored source switches from `dev` to `azd`. This is a one-way operation — extensions are never demoted from the main registry back to the dev registry.
+
+> [!NOTE]
+> If the main and dev registries have the **same** latest version, the extension stays on its current (dev) source. Equal versions are source-sticky.
+
+The upgrade priority chain is:
+
+1. **Explicit `--source` flag** — always wins if provided
+2. **Stored source** — the source the extension was originally installed from
+3. **Main registry fallback** — `azd` checks the main registry for promotion opportunities
+
+Promotion events are tracked via `ext.promote` telemetry. Upgrade events (regardless of promotion) are tracked via `ext.upgrade`.
+
+#### Example: Dev→Main Promotion in Action
+
+```bash
+# Install from dev registry
+azd extension install my.extension --source dev
+
+# Later, the extension graduates to the main registry with a newer version.
+# Running upgrade will auto-promote:
+azd extension upgrade my.extension
+# Output: my.extension upgraded from 1.0.0-beta.2 (dev) → 1.0.0 (azd)
+```
+
+### Submitting an Extension to the Dev Registry
+
+To publish an extension to the dev registry, submit a pull request to the [azure-dev](https://github.com/Azure/azure-dev) repository that adds your extension entry to `cli/azd/extensions/registry.dev.json`.
+
+#### Requirements
+
+Your extension entry must:
+
+1. **Pass schema validation** — The entry must conform to the [registry schema](https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/registry.schema.json). CI validates this automatically via `ext-registry-ci.yml`.
+2. **Include all required metadata:**
+   - `id` — Unique identifier (lowercase, alphanumeric, dots, and hyphens: `^[a-z0-9-.]+$`)
+   - `namespace` — Classification namespace
+   - `displayName` — Human-readable name
+   - `description` — Brief description of the extension's purpose
+   - `versions` — At least one version entry with `version`, `capabilities`, `usage`, `examples`, and `artifacts`
+3. **Include checksums for all artifacts** — Each artifact must declare a `checksum` with an `algorithm` (`sha256` or `sha512`) and `value`.
+4. **Provide platform artifacts** — At minimum, include artifacts for `linux/amd64`, `darwin/amd64`, `darwin/arm64`, and `windows/amd64`.
+
+#### Example Entry
+
+```json
+{
+  "id": "my.experimental.extension",
+  "namespace": "my",
+  "displayName": "My Experimental Extension",
+  "description": "An experimental extension for testing new features.",
+  "versions": [
+    {
+      "version": "0.1.0",
+      "capabilities": ["custom-commands"],
+      "usage": "azd my-command [options]",
+      "examples": [
+        {
+          "name": "basic-usage",
+          "description": "Run my-command with a flag.",
+          "usage": "azd my-command --flag value"
+        }
+      ],
+      "artifacts": {
+        "linux/amd64": {
+          "url": "https://github.com/my-org/my-ext/releases/download/v0.1.0/my-ext-linux-amd64.tar.gz",
+          "checksum": {
+            "algorithm": "sha256",
+            "value": "abc123..."
+          }
+        },
+        "darwin/amd64": {
+          "url": "https://github.com/my-org/my-ext/releases/download/v0.1.0/my-ext-darwin-amd64.tar.gz",
+          "checksum": {
+            "algorithm": "sha256",
+            "value": "bcd234..."
+          }
+        },
+        "darwin/arm64": {
+          "url": "https://github.com/my-org/my-ext/releases/download/v0.1.0/my-ext-darwin-arm64.tar.gz",
+          "checksum": {
+            "algorithm": "sha256",
+            "value": "def456..."
+          }
+        },
+        "windows/amd64": {
+          "url": "https://github.com/my-org/my-ext/releases/download/v0.1.0/my-ext-windows-amd64.zip",
+          "checksum": {
+            "algorithm": "sha256",
+            "value": "789ghi..."
+          }
+        }
+      }
+    }
+  ]
+}
+```
+
+#### Review Process
+
+- A maintainer will review your PR for schema compliance, metadata completeness, and artifact accessibility.
+- There is no formal quality gate for the dev registry — it is intentionally lower-friction than the main registry.
+- Extensions that mature and meet the [main registry criteria](#experimental-vs-main-registry-criteria) can be promoted via a separate PR to `registry.json`.
+
+### Troubleshooting Multi-Registry Scenarios
+
+#### Extension exists in both registries
+
+When the same extension ID is present in both `azd` and `dev`:
+
+- **Interactive mode** — `azd` prompts you to choose which source to install from.
+- **Non-interactive mode** — `azd` fails with `"found in multiple sources"`.
+- **Resolution** — Use `--source` to specify explicitly:
+
+  ```bash
+  azd extension install my.extension --source dev
+  azd extension install my.extension --source azd
+  ```
+
+#### Source ordering affects resolution
+
+Sources are sorted **alphabetically by name**. With the default naming (`azd` and `dev`), `azd` is consulted first because `"azd"` sorts before `"dev"`. If you name your dev source `"aaa-dev"`, it would be consulted first. The name only affects the order in which sources are searched — it does not affect upgrade or promotion behavior.
+
+#### Stale cache after registry updates
+
+If a recently published extension does not appear, the local cache may not have expired yet:
+
+```bash
+# Force a fresh fetch by setting TTL to zero
+export AZD_EXTENSION_CACHE_TTL=0s       # Linux/macOS
+$env:AZD_EXTENSION_CACHE_TTL = "0s"     # PowerShell
+
+# Then retry
+azd extension list --available
+```
+
+Or clear the cache manually:
+
+```bash
+# Linux/macOS
+rm -rf ~/.azd/cache/extensions/
+
+# PowerShell
+Remove-Item -Recurse -Force "$env:USERPROFILE\.azd\cache\extensions\"
+```
+
+#### Unreachable dev source blocks all operations
+
+If the dev registry URL is unreachable (network issue, DNS failure), operations that load sources will **fail** rather than skip the unreachable source. To unblock yourself, remove the dev source temporarily:
+
+```bash
+azd extension source remove dev
+```
+
 ## Related Documentation
 
 | Document | Description |

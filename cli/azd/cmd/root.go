@@ -17,10 +17,13 @@ import (
 
 	// Importing for infrastructure provider plugin registrations
 
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azd"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/platform"
+	"github.com/azure/azure-dev/cli/azd/pkg/tool"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/cmd"
@@ -196,7 +199,13 @@ func newRootCmd(
 	hooksActions(root)
 	mcpActions(root)
 	copilotActions(root)
-	toolActions(root)
+
+	// Create a FeatureManager for command-tree gating.
+	// User config is loaded best-effort; env vars (AZD_ALPHA_ENABLE_TOOL) always work.
+	alphaManager := newAlphaManagerForCommandTree()
+	if alphaManager.IsEnabled(tool.FeatureAlphaTool) {
+		toolActions(root)
+	}
 
 	root.Add("version", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
@@ -546,14 +555,39 @@ func newRootCmd(
 	return cmd
 }
 
+// workflowCommands lists root-level commands where the first-run tool
+// check and update notifications add value.  Utility commands (auth,
+// config, env, extension, etc.) are excluded to avoid blocking and to
+// prevent recursive subprocess issues when the tool check spawns
+// `azd extension list` (#8052).
+var workflowCommands = map[string]struct{}{
+	"init":      {},
+	"up":        {},
+	"provision": {},
+	"deploy":    {},
+	"down":      {},
+	"publish":   {},
+	"build":     {},
+	"package":   {},
+	"restore":   {},
+}
+
+// newAlphaManagerForCommandTree creates a FeatureManager for use during
+// command-tree construction (before DI is available).  It loads the
+// user config best-effort so that `azd config set alpha.tool on` works;
+// env-var overrides (AZD_ALPHA_ENABLE_TOOL) always work regardless.
+func newAlphaManagerForCommandTree() *alpha.FeatureManager {
+	ucm := config.NewUserConfigManager(config.NewFileConfigManager(config.NewManager()))
+	cfg, err := ucm.Load()
+	if err != nil {
+		log.Printf("warning: failed to load user config for alpha feature gating: %v", err)
+		cfg = config.NewEmptyConfig()
+	}
+	return alpha.NewFeaturesManagerWithConfig(cfg)
+}
+
 // isWorkflowCommand reports whether the command is a primary workflow
-// command where a first-run tool check adds value.  Utility commands
-// (auth, config, env, show, etc.) are excluded so they are never
-// blocked by the first-run experience or update notifications.
-//
-// Instead of maintaining a hard-coded allowlist, we rely on the
-// RootLevelHelpOption group annotation so that any new command added
-// to a workflow group is automatically covered.
+// command where a first-run tool check adds value.
 func isWorkflowCommand(descriptor *actions.ActionDescriptor) bool {
 	// Walk up to the root-level subcommand (first segment after "azd").
 	current := descriptor
@@ -561,14 +595,14 @@ func isWorkflowCommand(descriptor *actions.ActionDescriptor) bool {
 		current = current.Parent()
 	}
 
-	if current.Options == nil {
+	if current.Options == nil || current.Options.Command == nil {
 		return false
 	}
 
-	group := current.Options.GroupingOptions.RootLevelHelp
-	return group == actions.CmdGroupStart ||
-		group == actions.CmdGroupAzure ||
-		group == actions.CmdGroupBeta
+	name := current.Options.Command.Name()
+
+	_, ok := workflowCommands[name]
+	return ok
 }
 
 func getCmdRootHelpFooter(cmd *cobra.Command) string {

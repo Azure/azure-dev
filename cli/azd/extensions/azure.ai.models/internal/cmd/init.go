@@ -82,8 +82,8 @@ The init command will:
 			fmt.Printf("  Resource Group: %s\n", azureContext.Scope.ResourceGroup)
 			fmt.Println()
 			fmt.Println("You can now use commands like:")
-			fmt.Println("  azd ai models custom list")
-			fmt.Println("  azd ai models custom create --name <model-name> --model <path>")
+			fmt.Println("  azd ai models list")
+			fmt.Println("  azd ai models create --name <model-name> --model <path>")
 
 			return nil
 		},

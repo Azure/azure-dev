@@ -15,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -35,6 +36,7 @@ const envKeySkipFirstRun = "AZD_SKIP_FIRST_RUN"
 // installed Azure development tools and optionally offers to
 // install any missing recommended tools.
 type ToolFirstRunMiddleware struct {
+	alphaManager  *alpha.FeatureManager
 	configManager config.UserConfigManager
 	console       input.Console
 	manager       *tool.Manager
@@ -43,12 +45,14 @@ type ToolFirstRunMiddleware struct {
 
 // NewToolFirstRunMiddleware creates a new [ToolFirstRunMiddleware].
 func NewToolFirstRunMiddleware(
+	alphaManager *alpha.FeatureManager,
 	configManager config.UserConfigManager,
 	console input.Console,
 	manager *tool.Manager,
 	options *internal.GlobalCommandOptions,
 ) Middleware {
 	return &ToolFirstRunMiddleware{
+		alphaManager:  alphaManager,
 		configManager: configManager,
 		console:       console,
 		manager:       manager,
@@ -61,6 +65,11 @@ func NewToolFirstRunMiddleware(
 // always delegates to nextFn so the user's intended command is
 // never blocked.
 func (m *ToolFirstRunMiddleware) Run(ctx context.Context, nextFn NextFn) (*actions.ActionResult, error) {
+	// Skip when the tool alpha feature is not enabled.
+	if !m.alphaManager.IsEnabled(tool.FeatureAlphaTool) {
+		return nextFn(ctx)
+	}
+
 	// Skip for child actions (e.g. workflow steps).
 	if IsChildAction(ctx) {
 		return nextFn(ctx)

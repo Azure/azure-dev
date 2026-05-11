@@ -43,6 +43,7 @@ words:
   - msiexec
   - nextstep
   - hostedagents
+  - unredacted
   - nosec
   - npx
   - oneof

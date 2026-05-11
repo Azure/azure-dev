@@ -143,3 +143,97 @@ func TestPrintNext_EmptyInputSkipsWrite(t *testing.T) {
 	// must short-circuit before any write.
 	require.NoError(t, PrintNext(failingWriter{}, nil))
 }
+
+func TestFormatNextForNote(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		suggestions []Suggestion
+		want        string
+	}{
+		{
+			name:        "empty input produces empty string",
+			suggestions: nil,
+			want:        "",
+		},
+		{
+			name: "single suggestion has no leading newline and no trailing newline",
+			suggestions: []Suggestion{
+				{Command: "azd ai agent invoke 'hello'", Description: "send a test request", Priority: 10},
+			},
+			want: "Next:  azd ai agent invoke 'hello'  -- send a test request",
+		},
+		{
+			name: "multi-line block pre-indents lines 2+ with 4 spaces",
+			suggestions: []Suggestion{
+				{Command: "azd ai agent show", Description: "verify deployment", Priority: 10},
+				{Command: "azd ai agent invoke 'hi'", Description: "send a request", Priority: 11},
+			},
+			want: "Next:  azd ai agent show         -- verify deployment\n" +
+				"           azd ai agent invoke 'hi'  -- send a request",
+		},
+		{
+			name: "uncapped — third suggestion is preserved (unlike PrintNext)",
+			suggestions: []Suggestion{
+				{Command: "azd ai agent show", Description: "verify deployment", Priority: 10},
+				{Command: "azd ai agent invoke 'hi'", Description: "send a request", Priority: 11},
+				{Command: "see ./agent/README.md", Description: "more sample requests", Priority: 12},
+			},
+			want: "Next:  azd ai agent show         -- verify deployment\n" +
+				"           azd ai agent invoke 'hi'  -- send a request\n" +
+				"           see ./agent/README.md     -- more sample requests",
+		},
+		{
+			name: "trailing entry surfaces even when not the lowest priority",
+			suggestions: []Suggestion{
+				{Command: "azd ai agent show", Description: "verify deployment", Priority: 10},
+				{Command: "azd deploy", Description: "redeploy after changes", Priority: 90, Trailing: true},
+				{Command: "azd ai agent invoke 'hi'", Description: "send a request", Priority: 11},
+			},
+			want: "Next:  azd ai agent show         -- verify deployment\n" +
+				"           azd ai agent invoke 'hi'  -- send a request\n" +
+				"           azd deploy                -- redeploy after changes",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := FormatNextForNote(tc.suggestions)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+// TestFormatNextForNote_HostArtifactAlignment verifies the 4-space
+// pre-indent matches the alignment core azd's artifact renderer produces
+// when called with the typical caller indent (currentIndentation == "  ").
+// Core azd's artifact.go writes the note as:
+//
+//	{indent}- {label}: ...
+//	{indent}  {note}             <- only line 1 of the note gets the
+//	                                indent+"  " prefix; lines 2+ are
+//	                                flush-left in the output stream.
+//
+// FormatNextForNote pre-indents lines 2+ by 4 spaces, which equals
+// indent("  ") + "  " — i.e. the columns align so the rendered "Next:"
+// header on line 1 sits directly above the continuation indent on line 2.
+func TestFormatNextForNote_HostArtifactAlignment(t *testing.T) {
+	t.Parallel()
+
+	note := FormatNextForNote([]Suggestion{
+		{Command: "azd ai agent show", Description: "verify deployment", Priority: 10},
+		{Command: "azd ai agent invoke 'hi'", Description: "send a request", Priority: 11},
+	})
+
+	// Simulate core azd's render: "  - label: location\n  " + note + "\n".
+	const callerIndent = "  "
+	rendered := callerIndent + "- endpoint: https://example/agents/foo/endpoint\n" +
+		callerIndent + "  " + note + "\n"
+
+	want := "  - endpoint: https://example/agents/foo/endpoint\n" +
+		"    Next:  azd ai agent show         -- verify deployment\n" +
+		"           azd ai agent invoke 'hi'  -- send a request\n"
+	assert.Equal(t, want, rendered)
+}

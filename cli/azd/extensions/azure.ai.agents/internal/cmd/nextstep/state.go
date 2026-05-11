@@ -7,8 +7,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -32,7 +34,21 @@ const (
 	// projectEndpointVar is the env-var that carries the Foundry project
 	// endpoint URL produced by `azd ai agent init`.
 	projectEndpointVar = "AZURE_AI_PROJECT_ENDPOINT"
+
+	// azureInfraPrefix tags an env-var name as an azd-infra output rather
+	// than a user-supplied manual variable. Outputs of `azd provision`
+	// in the AI Foundry templates uniformly start with this prefix
+	// (AZURE_AI_PROJECT_*, AZURE_OPENAI_*, AZURE_SUBSCRIPTION_*, etc.),
+	// so the prefix doubles as the classification heuristic.
+	azureInfraPrefix = "AZURE_"
 )
+
+// envVarRefPattern captures ${VAR} references inside YAML string values.
+// The optional non-capturing tail (`(?::-[^}]*)?`) tolerates POSIX-style
+// default values (`${VAR:-default}`) without including them in the match.
+// Variable names follow the standard shell convention: leading letter or
+// underscore, then alphanumeric or underscore.
+var envVarRefPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-[^}]*)?\}`)
 
 // Source is the read-only view of azd that AssembleState needs.
 //
@@ -180,6 +196,9 @@ func assembleState(ctx context.Context, src Source, opts ...Option) (*State, []e
 	state.Services = collectServices(ctx, src, envName, project, &errs)
 
 	if project != nil && envName != "" {
+		state.MissingInfraVars, state.MissingManualVars = detectMissingVars(
+			ctx, src, envName, project.Path, state.Services, &errs,
+		)
 		populateOpenAPIPayload(cfg, project.Path, envName, state)
 	}
 
@@ -278,6 +297,106 @@ func loadServiceProtocol(projectPath, relativePath string) string {
 		return ProtocolInvocations
 	}
 	return ""
+}
+
+// detectMissingVars walks each service's agent.yaml environment_variables
+// section, extracts ${VAR} references, and partitions the unset names
+// into infra-output and manual-input lists.
+//
+// Classification heuristic: variable names starting with "AZURE_" are
+// treated as `azd provision` outputs (the AI Foundry templates produce
+// names like AZURE_AI_PROJECT_ENDPOINT, AZURE_OPENAI_ENDPOINT, etc.);
+// everything else is treated as a user-supplied manual variable. The
+// heuristic is deliberately coarse — over-classifying a manual variable
+// as infra at worst points the user at `azd provision` instead of
+// `azd env set`, and the inverse misclassification still yields a
+// usable hint.
+//
+// Both result lists are deduplicated and sorted ascending. Read errors
+// on individual agent.yaml files are silent: the resolver should fall
+// back to the default branch rather than emit guidance that mentions
+// variables we cannot prove are needed. Transport errors from
+// src.EnvValue are appended to errs so AssembleState's caller can
+// surface them in --debug logs without aborting the snapshot.
+func detectMissingVars(
+	ctx context.Context,
+	src Source,
+	envName, projectPath string,
+	services []ServiceState,
+	errs *[]error,
+) (infra, manual []string) {
+	if envName == "" || projectPath == "" || len(services) == 0 {
+		return nil, nil
+	}
+
+	seenInfra := make(map[string]struct{})
+	seenManual := make(map[string]struct{})
+
+	for _, svc := range services {
+		refs := extractAgentYamlEnvRefs(projectPath, svc.RelativePath)
+		for _, name := range refs {
+			if _, ok := seenInfra[name]; ok {
+				continue
+			}
+			if _, ok := seenManual[name]; ok {
+				continue
+			}
+			value, err := src.EnvValue(ctx, envName, name)
+			if err != nil {
+				*errs = append(*errs, fmt.Errorf("read %s: %w", name, err))
+				continue
+			}
+			if value != "" {
+				continue
+			}
+			if strings.HasPrefix(name, azureInfraPrefix) {
+				seenInfra[name] = struct{}{}
+			} else {
+				seenManual[name] = struct{}{}
+			}
+		}
+	}
+
+	infra = slices.Sorted(maps.Keys(seenInfra))
+	manual = slices.Sorted(maps.Keys(seenManual))
+	return infra, manual
+}
+
+// extractAgentYamlEnvRefs returns the unique ${VAR} names referenced in
+// the service's agent.yaml environment_variables block. Order matches
+// first appearance in the file. Missing or malformed manifests return
+// nil — consistent with loadServiceProtocol's best-effort contract.
+func extractAgentYamlEnvRefs(projectPath, relativePath string) []string {
+	if projectPath == "" || relativePath == "" {
+		return nil
+	}
+	manifestPath := filepath.Join(projectPath, relativePath, "agent.yaml")
+	//nolint:gosec // G304: path constructed from azd project root, not user input.
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return nil
+	}
+	var hosted agent_yaml.ContainerAgent
+	if err := yaml.Unmarshal(data, &hosted); err != nil {
+		return nil
+	}
+	if hosted.EnvironmentVariables == nil {
+		return nil
+	}
+
+	seen := make(map[string]struct{})
+	var out []string
+	for _, ev := range *hosted.EnvironmentVariables {
+		for _, m := range envVarRefPattern.FindAllStringSubmatch(ev.Value, -1) {
+			name := m[1]
+			if _, ok := seen[name]; ok {
+				continue
+			}
+			seen[name] = struct{}{}
+			out = append(out, name)
+		}
+	}
+	return out
 }
 
 func isDeployed(

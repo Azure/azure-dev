@@ -118,7 +118,8 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 		}
 
 		// Add the agent to the azd project (azure.yaml) services
-		if err := a.addToProject(ctx, srcDir, localDefinition.Name); err != nil {
+		isCodeDeploy := localDefinition.CodeConfiguration != nil
+		if err := a.addToProject(ctx, srcDir, localDefinition.Name, isCodeDeploy); err != nil {
 			return fmt.Errorf("failed to add agent to azure.yaml: %w", err)
 		}
 
@@ -468,6 +469,42 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 	// TODO: Prompt user for agent kind
 	agentKind := agent_yaml.AgentKindHosted
 
+	// Prompt user for deploy mode (container vs code)
+	deployModeChoices := []*azdext.SelectChoice{
+		{Label: "Code (ZIP upload - no Docker required)", Value: "code"},
+		{Label: "Container (Dockerfile + ACR)", Value: "container"},
+	}
+
+	var deployMode string
+	if a.flags.noPrompt {
+		deployMode = "code" // default to code deploy
+	} else {
+		defaultIdx := int32(0)
+		deployModeResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+			Options: &azdext.SelectOptions{
+				Message:       "How would you like to deploy your agent?",
+				Choices:       deployModeChoices,
+				SelectedIndex: &defaultIdx,
+			},
+		})
+		if err != nil {
+			if exterrors.IsCancellation(err) {
+				return nil, exterrors.Cancelled("deploy mode selection was cancelled")
+			}
+			return nil, fmt.Errorf("failed to prompt for deploy mode: %w", err)
+		}
+		deployMode = deployModeChoices[*deployModeResp.Value].Value
+	}
+
+	// If code deploy, prompt for code configuration details
+	var codeConfig *agent_yaml.CodeConfiguration
+	if deployMode == "code" {
+		codeConfig, err = a.promptCodeConfiguration(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	// Prompt user for supported protocols
 	protocols, err := promptProtocols(ctx, a.azdClient.Prompt(), a.flags.noPrompt, a.flags.protocols)
 	if err != nil {
@@ -587,7 +624,8 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 			Name: agentName,
 			Kind: agentKind,
 		},
-		Protocols: protocols,
+		Protocols:         protocols,
+		CodeConfiguration: codeConfig,
 	}
 
 	// Add model resource if a model was selected
@@ -793,41 +831,53 @@ func (a *InitFromCodeAction) writeDefinitionToSrcDir(definition *agent_yaml.Cont
 	return definitionPath, nil
 }
 
-func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string, agentName string) error {
+func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string, agentName string, isCodeDeploy bool) error {
 	var agentConfig = project.ServiceTargetAgentConfig{}
 
-	agentConfig.Container = &project.ContainerSettings{
-		Resources: &project.ResourceSettings{
-			Memory: project.DefaultMemory,
-			Cpu:    project.DefaultCpu,
-		},
+	if !isCodeDeploy {
+		agentConfig.Container = &project.ContainerSettings{
+			Resources: &project.ResourceSettings{
+				Memory: project.DefaultMemory,
+				Cpu:    project.DefaultCpu,
+			},
+		}
 	}
 
 	agentConfig.Deployments = a.deploymentDetails
 
-	// Detect startup command from the project source directory
-	startupCmd, err := resolveStartupCommandForInit(ctx, a.azdClient, a.projectConfig.Path, targetDir, a.flags.noPrompt)
-	if err != nil {
-		return err
+	// Detect startup command from the project source directory (container mode only)
+	if !isCodeDeploy {
+		startupCmd, err := resolveStartupCommandForInit(ctx, a.azdClient, a.projectConfig.Path, targetDir, a.flags.noPrompt)
+		if err != nil {
+			return err
+		}
+		agentConfig.StartupCommand = startupCmd
 	}
-	agentConfig.StartupCommand = startupCmd
 
 	var agentConfigStruct *structpb.Struct
+	var err error
 	if agentConfigStruct, err = project.MarshalStruct(&agentConfig); err != nil {
 		return fmt.Errorf("failed to marshal agent config: %w", err)
+	}
+
+	language := "python"
+	if !isCodeDeploy {
+		language = "docker"
 	}
 
 	serviceConfig := &azdext.ServiceConfig{
 		Name:         strings.ReplaceAll(agentName, " ", ""),
 		RelativePath: targetDir,
 		Host:         AiAgentHost,
-		Language:     "docker",
+		Language:     language,
 		Config:       agentConfigStruct,
 	}
 
-	// For hosted (container-based) agents, set remoteBuild to true by default
-	serviceConfig.Docker = &azdext.DockerProjectOptions{
-		RemoteBuild: true,
+	// For hosted container-based agents, set remoteBuild to true by default
+	if !isCodeDeploy {
+		serviceConfig.Docker = &azdext.DockerProjectOptions{
+			RemoteBuild: true,
+		}
 	}
 
 	req := &azdext.AddServiceRequest{Service: serviceConfig}
@@ -838,6 +888,95 @@ func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string,
 
 	fmt.Printf("\nAdded your agent as a service entry named '%s' under the file azure.yaml.\n", agentName)
 	return nil
+}
+
+// promptCodeConfiguration prompts the user for code deploy configuration settings.
+func (a *InitFromCodeAction) promptCodeConfiguration(ctx context.Context) (*agent_yaml.CodeConfiguration, error) {
+	// Prompt for runtime
+	runtimeChoices := []*azdext.SelectChoice{
+		{Label: "Python 3.11", Value: "python_3_11"},
+		{Label: "Python 3.10", Value: "python_3_10"},
+	}
+
+	var runtime string
+	if a.flags.noPrompt {
+		runtime = "python_3_11"
+	} else {
+		defaultIdx := int32(0)
+		runtimeResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+			Options: &azdext.SelectOptions{
+				Message:       "Select the runtime for your agent",
+				Choices:       runtimeChoices,
+				SelectedIndex: &defaultIdx,
+			},
+		})
+		if err != nil {
+			if exterrors.IsCancellation(err) {
+				return nil, exterrors.Cancelled("runtime selection was cancelled")
+			}
+			return nil, fmt.Errorf("failed to prompt for runtime: %w", err)
+		}
+		runtime = runtimeChoices[*runtimeResp.Value].Value
+	}
+
+	// Prompt for entry point
+	defaultEntryPoint := "main.py"
+	// Try to detect entry point from common patterns
+	if _, err := os.Stat("app.py"); err == nil {
+		defaultEntryPoint = "app.py"
+	}
+
+	var entryPoint string
+	if a.flags.noPrompt {
+		entryPoint = defaultEntryPoint
+	} else {
+		entryPointResp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+			Options: &azdext.PromptOptions{
+				Message:      "Enter the entry point file for your agent",
+				DefaultValue: defaultEntryPoint,
+			},
+		})
+		if err != nil {
+			if exterrors.IsCancellation(err) {
+				return nil, exterrors.Cancelled("entry point prompt was cancelled")
+			}
+			return nil, fmt.Errorf("failed to prompt for entry point: %w", err)
+		}
+		entryPoint = entryPointResp.Value
+	}
+
+	// Prompt for dependency resolution
+	depResChoices := []*azdext.SelectChoice{
+		{Label: "Remote build (server installs dependencies)", Value: "remote_build"},
+		{Label: "Bundled (pre-install dependencies locally)", Value: "bundled"},
+	}
+
+	var depResolution string
+	if a.flags.noPrompt {
+		depResolution = "remote_build"
+	} else {
+		defaultIdx := int32(0)
+		depResResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+			Options: &azdext.SelectOptions{
+				Message:       "How should dependencies be resolved?",
+				Choices:       depResChoices,
+				SelectedIndex: &defaultIdx,
+			},
+		})
+		if err != nil {
+			if exterrors.IsCancellation(err) {
+				return nil, exterrors.Cancelled("dependency resolution selection was cancelled")
+			}
+			return nil, fmt.Errorf("failed to prompt for dependency resolution: %w", err)
+		}
+		depResolution = depResChoices[*depResResp.Value].Value
+	}
+
+	return &agent_yaml.CodeConfiguration{
+		Runtime:              runtime,
+		EntryPoint:           entryPoint,
+		DependencyResolution: &depResolution,
+	}, nil
 }
 
 // protocolInfo pairs a protocol name with the default version used when generating agent.yaml.

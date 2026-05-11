@@ -59,7 +59,7 @@ func runHandlerSuite(t *testing.T, newHandler newHandlerForCaseFunc, params []an
 			call, err := jsonrpc2.NewCall(jsonrpc2.NewNumberID(1), "Test", tc.params)
 			require.NoError(t, err)
 
-			ctx := context.Background()
+			ctx := t.Context()
 			if tc.err != nil {
 				_ = h(ctx, nil, validateError(t, tc.err), call)
 			} else if tc.cancel {

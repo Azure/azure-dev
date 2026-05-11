@@ -201,7 +201,7 @@ func TestFineTuningService_CreateFineTuningJob_NilRequest(t *testing.T) {
 	mockProvider := &MockFineTuningProvider{}
 	service := newTestFineTuningService(mockProvider, nil)
 
-	job, err := service.CreateFineTuningJob(context.Background(), nil)
+	job, err := service.CreateFineTuningJob(t.Context(), nil)
 
 	require.Error(t, err)
 	require.Nil(t, job)
@@ -216,7 +216,7 @@ func TestFineTuningService_CreateFineTuningJob_MissingBaseModel(t *testing.T) {
 		TrainingFile: "file-abc123",
 	}
 
-	job, err := service.CreateFineTuningJob(context.Background(), req)
+	job, err := service.CreateFineTuningJob(t.Context(), req)
 
 	require.Error(t, err)
 	require.Nil(t, job)
@@ -231,7 +231,7 @@ func TestFineTuningService_CreateFineTuningJob_MissingTrainingFile(t *testing.T)
 		BaseModel: "gpt-4o-mini",
 	}
 
-	job, err := service.CreateFineTuningJob(context.Background(), req)
+	job, err := service.CreateFineTuningJob(t.Context(), req)
 
 	require.Error(t, err)
 	require.Nil(t, job)
@@ -257,7 +257,7 @@ func TestFineTuningService_CreateFineTuningJob_Success(t *testing.T) {
 		TrainingFile: "file-abc123",
 	}
 
-	job, err := service.CreateFineTuningJob(context.Background(), req)
+	job, err := service.CreateFineTuningJob(t.Context(), req)
 
 	require.NoError(t, err)
 	require.NotNil(t, job)
@@ -295,7 +295,7 @@ func TestFineTuningService_CreateFineTuningJob_WithStateStore(t *testing.T) {
 		TrainingFile: "file-xyz789",
 	}
 
-	job, err := service.CreateFineTuningJob(context.Background(), req)
+	job, err := service.CreateFineTuningJob(t.Context(), req)
 
 	require.NoError(t, err)
 	require.NotNil(t, job)
@@ -329,7 +329,7 @@ func TestFineTuningService_CreateFineTuningJob_StateStoreFails(t *testing.T) {
 		TrainingFile: "file-abc123",
 	}
 
-	job, err := service.CreateFineTuningJob(context.Background(), req)
+	job, err := service.CreateFineTuningJob(t.Context(), req)
 
 	require.Error(t, err)
 	require.Nil(t, job)
@@ -349,7 +349,7 @@ func TestFineTuningService_ListFineTuningJobs_Success(t *testing.T) {
 	}
 	service := newTestFineTuningService(mockProvider, nil)
 
-	jobs, err := service.ListFineTuningJobs(context.Background(), 10, "")
+	jobs, err := service.ListFineTuningJobs(t.Context(), 10, "")
 
 	require.NoError(t, err)
 	require.Len(t, jobs, 2)
@@ -365,7 +365,7 @@ func TestFineTuningService_ListFineTuningJobs_Error(t *testing.T) {
 	}
 	service := newTestFineTuningService(mockProvider, nil)
 
-	jobs, err := service.ListFineTuningJobs(context.Background(), 10, "")
+	jobs, err := service.ListFineTuningJobs(t.Context(), 10, "")
 
 	require.Error(t, err)
 	require.Nil(t, jobs)
@@ -388,7 +388,7 @@ func TestFineTuningService_GetFineTuningJobDetails_Success(t *testing.T) {
 	}
 	service := newTestFineTuningService(mockProvider, nil)
 
-	detail, err := service.GetFineTuningJobDetails(context.Background(), "job-123")
+	detail, err := service.GetFineTuningJobDetails(t.Context(), "job-123")
 
 	require.NoError(t, err)
 	require.NotNil(t, detail)
@@ -403,7 +403,7 @@ func TestFineTuningService_GetFineTuningJobDetails_Error(t *testing.T) {
 	}
 	service := newTestFineTuningService(mockProvider, nil)
 
-	detail, err := service.GetFineTuningJobDetails(context.Background(), "nonexistent")
+	detail, err := service.GetFineTuningJobDetails(t.Context(), "nonexistent")
 
 	require.Error(t, err)
 	require.Nil(t, detail)
@@ -426,7 +426,7 @@ func TestFineTuningService_GetJobEvents_Success(t *testing.T) {
 	}
 	service := newTestFineTuningService(mockProvider, nil)
 
-	events, err := service.GetJobEvents(context.Background(), "job-123")
+	events, err := service.GetJobEvents(t.Context(), "job-123")
 
 	require.NoError(t, err)
 	require.NotNil(t, events)
@@ -450,7 +450,7 @@ func TestFineTuningService_GetJobCheckpoints_Success(t *testing.T) {
 	}
 	service := newTestFineTuningService(mockProvider, nil)
 
-	checkpoints, err := service.GetJobCheckpoints(context.Background(), "job-123")
+	checkpoints, err := service.GetJobCheckpoints(t.Context(), "job-123")
 
 	require.NoError(t, err)
 	require.NotNil(t, checkpoints)
@@ -471,7 +471,7 @@ func TestFineTuningService_PauseJob_Success(t *testing.T) {
 	}
 	service := newTestFineTuningService(mockProvider, nil)
 
-	job, err := service.PauseJob(context.Background(), "job-123")
+	job, err := service.PauseJob(t.Context(), "job-123")
 
 	require.NoError(t, err)
 	require.NotNil(t, job)
@@ -491,7 +491,7 @@ func TestFineTuningService_ResumeJob_Success(t *testing.T) {
 	}
 	service := newTestFineTuningService(mockProvider, nil)
 
-	job, err := service.ResumeJob(context.Background(), "job-123")
+	job, err := service.ResumeJob(t.Context(), "job-123")
 
 	require.NoError(t, err)
 	require.NotNil(t, job)
@@ -511,7 +511,7 @@ func TestFineTuningService_CancelJob_Success(t *testing.T) {
 	}
 	service := newTestFineTuningService(mockProvider, nil)
 
-	job, err := service.CancelJob(context.Background(), "job-123")
+	job, err := service.CancelJob(t.Context(), "job-123")
 
 	require.NoError(t, err)
 	require.NotNil(t, job)
@@ -522,7 +522,7 @@ func TestFineTuningService_UploadFile_EmptyPath(t *testing.T) {
 	mockProvider := &MockFineTuningProvider{}
 	service := newTestFineTuningService(mockProvider, nil)
 
-	fileID, err := service.UploadFile(context.Background(), "")
+	fileID, err := service.UploadFile(t.Context(), "")
 
 	require.Error(t, err)
 	require.Empty(t, fileID)

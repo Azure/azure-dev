@@ -72,7 +72,7 @@ func newTestDeploymentService(
 func TestDeploymentService_DeployModel_NilRequest(t *testing.T) {
 	service := newTestDeploymentService(nil, nil, nil)
 
-	result, err := service.DeployModel(context.Background(), nil)
+	result, err := service.DeployModel(t.Context(), nil)
 
 	require.Error(t, err)
 	require.Nil(t, result)
@@ -86,7 +86,7 @@ func TestDeploymentService_DeployModel_MissingJobID(t *testing.T) {
 		DeploymentName: "my-deployment",
 	}
 
-	result, err := service.DeployModel(context.Background(), req)
+	result, err := service.DeployModel(t.Context(), req)
 
 	require.Error(t, err)
 	require.Nil(t, result)
@@ -100,7 +100,7 @@ func TestDeploymentService_DeployModel_MissingDeploymentName(t *testing.T) {
 		JobID: "job-123",
 	}
 
-	result, err := service.DeployModel(context.Background(), req)
+	result, err := service.DeployModel(t.Context(), req)
 
 	require.Error(t, err)
 	require.Nil(t, result)
@@ -114,7 +114,7 @@ func TestDeploymentService_DeployModel_BothRequired(t *testing.T) {
 		// Both JobID and DeploymentName are empty
 	}
 
-	result, err := service.DeployModel(context.Background(), req)
+	result, err := service.DeployModel(t.Context(), req)
 
 	require.Error(t, err)
 	require.Nil(t, result)
@@ -134,7 +134,7 @@ func TestDeploymentService_DeployModel_JobDetailsError(t *testing.T) {
 		DeploymentName: "my-deployment",
 	}
 
-	result, err := service.DeployModel(context.Background(), req)
+	result, err := service.DeployModel(t.Context(), req)
 
 	require.Error(t, err)
 	require.Nil(t, result)
@@ -154,7 +154,7 @@ func TestDeploymentService_DeployModel_NilJobDetails(t *testing.T) {
 		DeploymentName: "my-deployment",
 	}
 
-	result, err := service.DeployModel(context.Background(), req)
+	result, err := service.DeployModel(t.Context(), req)
 
 	require.Error(t, err)
 	require.Nil(t, result)
@@ -177,7 +177,7 @@ func TestDeploymentService_DeployModel_EmptyFineTunedModel(t *testing.T) {
 		DeploymentName: "my-deployment",
 	}
 
-	result, err := service.DeployModel(context.Background(), req)
+	result, err := service.DeployModel(t.Context(), req)
 
 	require.Error(t, err)
 	require.Nil(t, result)
@@ -205,7 +205,7 @@ func TestDeploymentService_DeployModel_ProviderError(t *testing.T) {
 		DeploymentName: "my-deployment",
 	}
 
-	result, err := service.DeployModel(context.Background(), req)
+	result, err := service.DeployModel(t.Context(), req)
 
 	require.Error(t, err)
 	require.Nil(t, result)
@@ -252,7 +252,7 @@ func TestDeploymentService_DeployModel_Success(t *testing.T) {
 		Capacity:       10,
 	}
 
-	result, err := service.DeployModel(context.Background(), req)
+	result, err := service.DeployModel(t.Context(), req)
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -293,7 +293,7 @@ func TestDeploymentService_DeployModel_PassesAllConfigFields(t *testing.T) {
 		WaitForCompletion: true,
 	}
 
-	_, err := service.DeployModel(context.Background(), req)
+	_, err := service.DeployModel(t.Context(), req)
 
 	require.NoError(t, err)
 	require.NotNil(t, capturedRequest)
@@ -350,7 +350,7 @@ func TestDeploymentService_DeployModel_WaitForCompletionFalse(t *testing.T) {
 		WaitForCompletion: false, // Explicitly set to false
 	}
 
-	result, err := service.DeployModel(context.Background(), req)
+	result, err := service.DeployModel(t.Context(), req)
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -384,7 +384,7 @@ func TestDeploymentService_DeployModel_DefaultConfigValues(t *testing.T) {
 		DeploymentName: "minimal-deployment",
 	}
 
-	_, err := service.DeployModel(context.Background(), req)
+	_, err := service.DeployModel(t.Context(), req)
 
 	require.NoError(t, err)
 	require.NotNil(t, capturedRequest)
@@ -413,7 +413,7 @@ func TestDeploymentService_DeployModel_JobNotSucceeded(t *testing.T) {
 		DeploymentName: "my-deployment",
 	}
 
-	result, err := service.DeployModel(context.Background(), req)
+	result, err := service.DeployModel(t.Context(), req)
 
 	require.Error(t, err)
 	require.Nil(t, result)

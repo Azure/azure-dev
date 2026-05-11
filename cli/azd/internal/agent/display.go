@@ -238,7 +238,7 @@ func (d *AgentDisplay) Start(ctx context.Context) (func(), error) {
 // This is called synchronously by the SDK for each event.
 func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 	switch event.Type {
-	case copilot.AssistantTurnStart:
+	case copilot.SessionEventTypeAssistantTurnStart:
 		d.mu.Lock()
 		intent := d.lastIntent
 		d.activeTools = make(map[string]*toolState)
@@ -253,45 +253,53 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 			d.spinner.UpdateText("Thinking...")
 		}
 
-	case copilot.AssistantIntent:
-		if event.Data.Intent != nil && *event.Data.Intent != "" {
-			intent := logging.TruncateString(*event.Data.Intent, 80)
-			d.mu.Lock()
-			d.lastIntent = intent
-			d.mu.Unlock()
-			d.spinner.UpdateText(intent)
-		}
-
-	case copilot.AssistantReasoning:
-		if event.Data.ReasoningText != nil && *event.Data.ReasoningText != "" {
-			d.mu.Lock()
-			d.reasoningBuf.WriteString(*event.Data.ReasoningText)
-			d.mu.Unlock()
-			d.canvas.Update()
-		}
-
-	case copilot.AssistantReasoningDelta:
-		if event.Data.DeltaContent != nil && *event.Data.DeltaContent != "" {
-			d.mu.Lock()
-			d.reasoningBuf.WriteString(*event.Data.DeltaContent)
-			d.mu.Unlock()
-			d.canvas.Update()
-		}
-
-	case copilot.AssistantStreamingDelta:
-		// Some models emit reasoning via streaming delta with phase="thinking"
-		if event.Data.Phase != nil && *event.Data.Phase == "thinking" {
-			if event.Data.DeltaContent != nil && *event.Data.DeltaContent != "" {
+	case copilot.SessionEventTypeAssistantIntent:
+		if data, ok := event.Data.(*copilot.AssistantIntentData); ok {
+			if data.Intent != "" {
+				intent := logging.TruncateString(data.Intent, 80)
 				d.mu.Lock()
-				d.reasoningBuf.WriteString(*event.Data.DeltaContent)
+				d.lastIntent = intent
+				d.mu.Unlock()
+				d.spinner.UpdateText(intent)
+			}
+		}
+
+	case copilot.SessionEventTypeAssistantReasoning:
+		if data, ok := event.Data.(*copilot.AssistantReasoningData); ok {
+			if data.Content != "" {
+				d.mu.Lock()
+				d.reasoningBuf.WriteString(data.Content)
 				d.mu.Unlock()
 				d.canvas.Update()
 			}
 		}
 
-	case copilot.AssistantMessage:
-		if event.Data.Content != nil {
-			content := strings.TrimSpace(*event.Data.Content)
+	case copilot.SessionEventTypeAssistantReasoningDelta:
+		if data, ok := event.Data.(*copilot.AssistantReasoningDeltaData); ok {
+			if data.DeltaContent != "" {
+				d.mu.Lock()
+				d.reasoningBuf.WriteString(data.DeltaContent)
+				d.mu.Unlock()
+				d.canvas.Update()
+			}
+		}
+
+	case copilot.SessionEventTypeAssistantMessageDelta:
+		// Some models emit reasoning via message delta with phase information;
+		// AssistantStreamingDelta in SDK v0.3.0 only carries TotalResponseSizeBytes
+		// and no longer includes phase/deltaContent, so reasoning deltas now arrive here.
+		if data, ok := event.Data.(*copilot.AssistantMessageDeltaData); ok {
+			// Message deltas don't carry phase info in the new SDK, so we just
+			// append to reasoning if we're in thinking mode. However, since we
+			// can't distinguish thinking vs response deltas here, we skip reasoning
+			// capture from message deltas. Reasoning is handled by the dedicated
+			// AssistantReasoning and AssistantReasoningDelta events above.
+			_ = data
+		}
+
+	case copilot.SessionEventTypeAssistantMessage:
+		if data, ok := event.Data.(*copilot.AssistantMessageData); ok {
+			content := strings.TrimSpace(data.Content)
 			log.Printf("[copilot-display] assistant.message received (%d chars)", len(content))
 			if content != "" {
 				d.canvas.Clear()
@@ -313,40 +321,49 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 					log.Println("[copilot-display] idleCh already full (deferred)")
 				}
 			}
-		} else {
-			log.Println("[copilot-display] assistant.message received with nil content")
 		}
 
-	case copilot.AssistantUsage:
-		d.mu.Lock()
-		if event.Data.InputTokens != nil {
-			d.totalInputTokens += *event.Data.InputTokens
+	case copilot.SessionEventTypeAssistantUsage:
+		if data, ok := event.Data.(*copilot.AssistantUsageData); ok {
+			d.mu.Lock()
+			if data.InputTokens != nil {
+				d.totalInputTokens += *data.InputTokens
+			}
+			if data.OutputTokens != nil {
+				d.totalOutputTokens += *data.OutputTokens
+			}
+			if data.Cost != nil {
+				d.billingRate = *data.Cost // per-request multiplier, not cumulative
+			}
+			if data.Duration != nil {
+				d.totalDurationMS += *data.Duration
+			}
+			if data.Model != "" {
+				d.lastModel = data.Model
+			}
+			d.mu.Unlock()
 		}
-		if event.Data.OutputTokens != nil {
-			d.totalOutputTokens += *event.Data.OutputTokens
-		}
-		if event.Data.Cost != nil {
-			d.billingRate = *event.Data.Cost // per-request multiplier, not cumulative
-		}
-		if event.Data.Duration != nil {
-			d.totalDurationMS += *event.Data.Duration
-		}
-		if event.Data.Model != nil {
-			d.lastModel = *event.Data.Model
-		}
-		d.mu.Unlock()
 
-	case copilot.SessionUsageInfo, copilot.SessionShutdown:
-		d.mu.Lock()
-		if event.Data.TotalPremiumRequests != nil {
-			d.premiumRequests = *event.Data.TotalPremiumRequests
-		}
-		d.mu.Unlock()
+	case copilot.SessionEventTypeSessionUsageInfo:
+		// SessionUsageInfoData doesn't carry TotalPremiumRequests; no-op here.
 
-	case copilot.ToolExecutionStart:
-		toolName := derefStr(event.Data.ToolName)
+	case copilot.SessionEventTypeSessionShutdown:
+		if data, ok := event.Data.(*copilot.SessionShutdownData); ok {
+			d.mu.Lock()
+			d.premiumRequests = data.TotalPremiumRequests
+			d.mu.Unlock()
+		}
+
+	case copilot.SessionEventTypeToolExecutionStart:
+		data, ok := event.Data.(*copilot.ToolExecutionStartData)
+		if !ok {
+			return
+		}
+		toolName := data.ToolName
 		if toolName == "" {
-			toolName = derefStr(event.Data.MCPToolName)
+			if data.McpToolName != nil {
+				toolName = *data.McpToolName
+			}
 		}
 		if toolName == "" {
 			return
@@ -362,7 +379,7 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 
 		// The report_intent tool carries the agent's current intent as its argument.
 		if toolName == "report_intent" {
-			if intent := extractIntentFromArgs(event.Data.Arguments); intent != "" {
+			if intent := extractIntentFromArgs(data.Arguments); intent != "" {
 				d.mu.Lock()
 				d.lastIntent = intent
 				d.mu.Unlock()
@@ -378,12 +395,9 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 
 		d.flushReasoning()
 
-		toolInput := extractToolInputSummary(event.Data.Arguments)
-		toolDetail, toolSubDetail := extractToolDetail(toolName, event.Data.Arguments)
-		toolID := ""
-		if event.Data.ToolCallID != nil {
-			toolID = *event.Data.ToolCallID
-		}
+		toolInput := extractToolInputSummary(data.Arguments)
+		toolDetail, toolSubDetail := extractToolDetail(toolName, data.Arguments)
+		toolID := data.ToolCallID
 
 		d.mu.Lock()
 		if toolID == "" {
@@ -409,45 +423,34 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 		text += color.HiBlackString("...")
 		d.spinner.UpdateText(text)
 
-	case copilot.ToolExecutionProgress:
-		if event.Data.ProgressMessage != nil && *event.Data.ProgressMessage != "" {
-			d.mu.Lock()
-			ts := d.activeTools[d.currentToolID]
-			d.mu.Unlock()
+	case copilot.SessionEventTypeToolExecutionProgress:
+		if data, ok := event.Data.(*copilot.ToolExecutionProgressData); ok {
+			if data.ProgressMessage != "" {
+				d.mu.Lock()
+				ts := d.activeTools[d.currentToolID]
+				d.mu.Unlock()
 
-			if ts != nil {
-				text := fmt.Sprintf("Running %s", color.MagentaString(ts.name))
-				text += " — " + color.HiBlackString(*event.Data.ProgressMessage)
-				d.spinner.UpdateText(text)
+				if ts != nil {
+					text := fmt.Sprintf("Running %s", color.MagentaString(ts.name))
+					text += " — " + color.HiBlackString(data.ProgressMessage)
+					d.spinner.UpdateText(text)
+				}
 			}
 		}
 
-	case copilot.ToolExecutionComplete:
-		toolID := ""
-		if event.Data.ToolCallID != nil {
-			toolID = *event.Data.ToolCallID
+	case copilot.SessionEventTypeToolExecutionComplete:
+		data, ok := event.Data.(*copilot.ToolExecutionCompleteData)
+		if !ok {
+			return
 		}
+		toolID := data.ToolCallID
 
 		d.mu.Lock()
-		// If no toolCallID, try to find by tool name (fallback for SDK versions without IDs)
-		if toolID == "" {
-			toolName := derefStr(event.Data.ToolName)
-			for id, ts := range d.activeTools {
-				if ts.name == toolName {
-					toolID = id
-					break
-				}
-			}
-		}
 		ts := d.activeTools[toolID]
 		if ts != nil {
-			ts.failed = event.Data.Error != nil
-			if event.Data.Error != nil {
-				if event.Data.Error.ErrorClass != nil {
-					ts.errorMsg = event.Data.Error.ErrorClass.Message
-				} else if event.Data.Error.String != nil {
-					ts.errorMsg = *event.Data.Error.String
-				}
+			ts.failed = data.Error != nil
+			if data.Error != nil {
+				ts.errorMsg = data.Error.Message
 			}
 		}
 		d.mu.Unlock()
@@ -467,10 +470,10 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 			d.spinner.UpdateText("Thinking...")
 		}
 
-	case copilot.SessionError:
+	case copilot.SessionEventTypeSessionError:
 		msg := "unknown error"
-		if event.Data.Message != nil {
-			msg = *event.Data.Message
+		if data, ok := event.Data.(*copilot.SessionErrorData); ok {
+			msg = data.Message
 		}
 		log.Printf("[copilot] Session error: %s", msg)
 		d.canvas.Clear()
@@ -481,101 +484,110 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 		default:
 		}
 
-	case copilot.SessionWarning:
-		if event.Data.Message != nil {
+	case copilot.SessionEventTypeSessionWarning:
+		if data, ok := event.Data.(*copilot.SessionWarningData); ok {
 			d.canvas.Clear()
-			d.printSeparated(output.WithWarningFormat("Warning: %s", *event.Data.Message))
+			d.printSeparated(output.WithWarningFormat("Warning: %s", data.Message))
 		}
 
-	case copilot.SkillInvoked:
-		name := derefStr(event.Data.Name)
-		if name != "" {
-			d.canvas.Clear()
-			msg := color.CyanString("◇ Using skill: %s", name)
-			pluginName := derefStr(event.Data.PluginName)
-			pluginVersion := derefStr(event.Data.PluginVersion)
-			if pluginName != "" {
-				origin := pluginName
-				if pluginVersion != "" {
-					origin += "@" + pluginVersion
+	case copilot.SessionEventTypeSkillInvoked:
+		if data, ok := event.Data.(*copilot.SkillInvokedData); ok {
+			if data.Name != "" {
+				d.canvas.Clear()
+				msg := color.CyanString("◇ Using skill: %s", data.Name)
+				pluginName := ""
+				if data.PluginName != nil {
+					pluginName = *data.PluginName
 				}
-				msg += color.HiBlackString(" from %s", origin)
+				pluginVersion := ""
+				if data.PluginVersion != nil {
+					pluginVersion = *data.PluginVersion
+				}
+				if pluginName != "" {
+					origin := pluginName
+					if pluginVersion != "" {
+						origin += "@" + pluginVersion
+					}
+					msg += color.HiBlackString(" from %s", origin)
+				}
+				d.printSeparated(msg)
 			}
-			d.printSeparated(msg)
 		}
 
-	case copilot.SubagentStarted:
-		displayName := derefStr(event.Data.AgentDisplayName)
-		if displayName == "" {
-			displayName = derefStr(event.Data.AgentName)
-		}
-		agentDesc := derefStr(event.Data.AgentDescription)
-
-		d.mu.Lock()
-		d.activeSubagent = displayName
-		d.inSubagent = true
-		d.mu.Unlock()
-
-		if displayName != "" {
-			d.canvas.Clear()
-			msg := color.MagentaString("◆ %s", displayName)
-			if agentDesc != "" {
-				msg += "\n" + fmt.Sprintf("  %s %s", color.HiBlackString("└"), color.HiBlackString(agentDesc))
+	case copilot.SessionEventTypeSubagentStarted:
+		if data, ok := event.Data.(*copilot.SubagentStartedData); ok {
+			displayName := data.AgentDisplayName
+			if displayName == "" {
+				displayName = data.AgentName
 			}
-			d.printSeparated(msg)
+			agentDesc := data.AgentDescription
+
+			d.mu.Lock()
+			d.activeSubagent = displayName
+			d.inSubagent = true
+			d.mu.Unlock()
+
+			if displayName != "" {
+				d.canvas.Clear()
+				msg := color.MagentaString("◆ %s", displayName)
+				if agentDesc != "" {
+					msg += "\n" + fmt.Sprintf("  %s %s", color.HiBlackString("└"), color.HiBlackString(agentDesc))
+				}
+				d.printSeparated(msg)
+			}
 		}
 
-	case copilot.SubagentCompleted:
-		displayName := derefStr(event.Data.AgentDisplayName)
-		if displayName == "" {
-			displayName = derefStr(event.Data.AgentName)
+	case copilot.SessionEventTypeSubagentCompleted:
+		if data, ok := event.Data.(*copilot.SubagentCompletedData); ok {
+			displayName := data.AgentDisplayName
+			if displayName == "" {
+				displayName = data.AgentName
+			}
+
+			d.flushActiveTools()
+
+			d.mu.Lock()
+			d.activeSubagent = ""
+			d.inSubagent = false
+			d.mu.Unlock()
+
+			if displayName != "" {
+				d.canvas.Clear()
+				msg := fmt.Sprintf("%s %s completed", color.GreenString("✔︎"), color.MagentaString(displayName))
+				d.printSeparated(msg)
+			}
 		}
-		summary := derefStr(event.Data.Summary)
 
-		d.flushActiveTools()
+	case copilot.SessionEventTypeSubagentFailed:
+		if data, ok := event.Data.(*copilot.SubagentFailedData); ok {
+			displayName := data.AgentDisplayName
+			if displayName == "" {
+				displayName = data.AgentName
+			}
+			errMsg := data.Error
 
+			d.mu.Lock()
+			d.activeSubagent = ""
+			d.inSubagent = false
+			d.mu.Unlock()
+
+			if displayName != "" {
+				d.canvas.Clear()
+				d.printSeparated(output.WithErrorFormat("✖ %s failed: %s", displayName, errMsg))
+			}
+		}
+
+	case copilot.SessionEventTypeSubagentDeselected:
 		d.mu.Lock()
 		d.activeSubagent = ""
 		d.inSubagent = false
 		d.mu.Unlock()
 
-		if displayName != "" {
-			d.canvas.Clear()
-			msg := fmt.Sprintf("%s %s completed", color.GreenString("✔︎"), color.MagentaString(displayName))
-			if summary != "" {
-				msg += "\n" + fmt.Sprintf("  %s %s", color.HiBlackString("└"), color.HiBlackString(summary))
-			}
-			d.printSeparated(msg)
-		}
-
-	case copilot.SubagentFailed:
-		displayName := derefStr(event.Data.AgentDisplayName)
-		if displayName == "" {
-			displayName = derefStr(event.Data.AgentName)
-		}
-		errMsg := derefStr(event.Data.Message)
-
-		d.mu.Lock()
-		d.activeSubagent = ""
-		d.inSubagent = false
-		d.mu.Unlock()
-
-		if displayName != "" {
-			d.canvas.Clear()
-			d.printSeparated(output.WithErrorFormat("✖ %s failed: %s", displayName, errMsg))
-		}
-
-	case copilot.SubagentDeselected:
-		d.mu.Lock()
-		d.activeSubagent = ""
-		d.inSubagent = false
-		d.mu.Unlock()
-
-	case copilot.AssistantTurnEnd:
+	case copilot.SessionEventTypeAssistantTurnEnd:
 		d.flushActiveTools()
 		d.flushReasoning()
 
-	case copilot.SessionIdle:
+	case copilot.SessionEventTypeSessionIdle:
 		d.mu.Lock()
 		hasMessage := d.messageReceived
 		if !hasMessage {
@@ -596,7 +608,7 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 			log.Println("[copilot-display] session.idle deferred (no message yet)")
 		}
 
-	case copilot.SessionTaskComplete:
+	case copilot.SessionEventTypeSessionTaskComplete:
 		// Also signal completion on task_complete
 		log.Printf("[copilot-display] %s received, signaling completion", event.Type)
 		select {
@@ -1063,13 +1075,6 @@ func toRelativePath(p string) string {
 	}
 
 	return p
-}
-
-func derefStr(s *string) string {
-	if s == nil {
-		return ""
-	}
-	return *s
 }
 
 // extractIntentFromArgs extracts the intent text from report_intent tool arguments.

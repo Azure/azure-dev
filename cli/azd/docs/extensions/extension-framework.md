@@ -22,6 +22,7 @@ Table of Contents
     - [Compose Service](#compose-service)
     - [Workflow Service](#workflow-service)
     - [Copilot Service](#copilot-service)
+- [Registry Schema Versioning](#registry-schema-versioning)
 
 ### Related Guides
 
@@ -65,13 +66,14 @@ azd extension source add -n azd -t url -l "https://aka.ms/azd/extensions/registr
 
 > **Note:** When the `registry.json` file is modified, CI automatically runs snapshot tests to ensure extension commands are properly documented in CLI help output and VS Code IntelliSense. See [Snapshot Testing for Extensions](#snapshot-testing-for-extensions) for details.
 
-#### Development Registry
+#### Dev (Experimental) Registry
 
 > [!CAUTION]
-> Extensions hosted in the dev registry DO NOT contain signed binaries at the moment.
+> Extensions hosted in the dev registry are unsigned. They come with **no stability guarantees** and are **not covered by Azure support**. Expect breaking changes, rough edges, and possible removal without notice.
 
 A shared development registry can be added to your `azd` configuration.
-This registry contains extensions that are experiments and also used for internal testing before shipping official extensions.
+This registry contains experimental extensions, community contributions not yet vetted, pre-release builds, and extensions used for internal testing before shipping to the official registry.
+The registry is hosted in the [`azd` GitHub repo](https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/registry.dev.json).
 
 To opt-in for the development registry run the following command:
 
@@ -79,6 +81,8 @@ To opt-in for the development registry run the following command:
 # Add a new extension source name 'dev' to your `azd` configuration.
 azd extension source add -n dev -t url -l "https://aka.ms/azd/extensions/registry/dev"
 ```
+
+Extensions installed from the dev registry are automatically promoted to the main registry when a newer version becomes available there. See the [Dev/Experimental Extension Registry](./extension-resolution-and-versioning.md#devexperimental-extension-registry) section for full details on stability expectations, submission guidelines, promotion behavior, and troubleshooting.
 
 #### `azd extension source list`
 
@@ -481,6 +485,89 @@ The build process automatically creates binaries for multiple platforms and arch
 > [!NOTE]
 > Build times may vary depending on your hardware and extension complexity.
 
+### Building a Root Command
+
+Go extensions should build their cobra root command using `azdext.NewExtensionRootCommand`. The helper registers the flags and environment-variable handling that `azd` standardizes across all extensions, so extension authors do not need to declare them manually (and avoid name collisions with `azd`'s reserved global flags).
+
+```go
+import "github.com/azure/azure-dev/cli/azd/pkg/azdext"
+
+func NewRootCommand() *cobra.Command {
+  rootCmd, extCtx := azdext.NewExtensionRootCommand(azdext.ExtensionCommandOptions{
+    Name:  "agent",
+    Use:   "agent <command> [options]",
+    Short: "Manage AI agents.",
+  })
+
+  rootCmd.AddCommand(newShowCommand(extCtx))
+  // ... other subcommands
+  return rootCmd
+}
+```
+
+`NewExtensionRootCommand` automatically:
+
+- Registers the standard persistent flags: `--debug`, `--no-prompt`, `-C/--cwd`, `-e/--environment`, `-o/--output`, plus the hidden `--trace-log-file` / `--trace-log-url` flags.
+- Reads the matching `AZD_DEBUG`, `AZD_NO_PROMPT`, `AZD_CWD`, and `AZD_ENVIRONMENT` environment variables that `azd` sets when launching the extension, and applies them when the corresponding flag was not passed explicitly.
+- Honors `--cwd`/`AZD_CWD` by changing the process working directory before the command runs.
+- Extracts W3C trace context from `TRACEPARENT` / `TRACESTATE` and calls `azdext.WithAccessToken` so the command's `cmd.Context()` is ready to use with the gRPC client.
+
+The returned `*ExtensionContext` is the recommended way to read these values inside subcommand `RunE` handlers — do not redeclare any of the standard flags on subcommands.
+
+```go
+type ExtensionContext struct {
+  Debug        bool
+  NoPrompt     bool
+  Cwd          string
+  Environment  string
+  OutputFormat string
+}
+```
+
+Pass `extCtx` into each subcommand factory and read from it inside `RunE`:
+
+```go
+func newShowCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
+  cmd := &cobra.Command{
+    Use: "show",
+    RunE: func(cmd *cobra.Command, args []string) error {
+      if extCtx.NoPrompt {
+        // skip interactive prompts
+      }
+      // use extCtx.Environment, extCtx.OutputFormat, etc.
+      return nil
+    },
+  }
+  return cmd
+}
+```
+
+#### Per-Subcommand Flag Options
+
+The persistent `-o/--output` flag is shared across the whole command tree, but different subcommands often support different output formats (for example a `list` subcommand may support `json` and `table`, while a `version` subcommand only supports `json`). Use `azdext.RegisterFlagOptions` to declare the allowed values and per-command default for any inherited persistent flag without redeclaring it:
+
+```go
+listCmd := &cobra.Command{
+  Use:  "list",
+  RunE: runList,
+}
+azdext.RegisterFlagOptions(listCmd, azdext.FlagOptions{
+  Name:          "output",
+  AllowedValues: []string{"json", "table"},
+  Default:       "json",
+})
+```
+
+A single `RegisterFlagOptions` declaration drives all of the following:
+
+- **Help text.** `myext list --help` renders the flag as `-o, --output string   The output format (supported: json, table) (default "json")`.
+- **Metadata.** `azd ext metadata` (and the JSON snapshot extensions ship in their package) populates `flag.validValues` and `flag.default` for the subcommand from the same declaration.
+- **Parse-time validation.** Invocations that pass an unsupported value (e.g. `myext list --output yaml`) are rejected by the SDK with a descriptive error before `RunE` runs.
+- **Shell completion.** Tab-completing `myext list --output ` offers the registered allowed values.
+- **Default substitution.** When the user does not pass `--output`, the SDK writes the per-command default into `extCtx.OutputFormat` before `RunE` runs, so subcommands can read `extCtx.OutputFormat` directly without their own resolution logic.
+
+Sibling and parent commands continue to render the SDK default help text and behavior. The helper generalizes to any inherited persistent flag (passing the flag name as the second argument); it is most commonly used for `--output`.
+
 ### Distributed Tracing
 
 `azd` uses OpenTelemetry and W3C Trace Context for distributed tracing. `azd` sets `TRACEPARENT` in the environment when it launches the extension process.
@@ -518,7 +605,7 @@ The easiest way to get started building extensions is to install the `azd` Devel
 > [!IMPORTANT]
 > Ensure you have added the `dev` extension source to your `azd` configuration
 >
-> [Configure dev extension source](#development-registry)
+> [Configure dev extension source](#dev-experimental-registry)
 
 ```bash
 # Install the `azd` developer extension
@@ -907,7 +994,7 @@ Once PR has been merged the extension updates are now live in the official `azd`
 
 Each extension must declare an `extension.yaml` file that describes the metadata for the extension and the capabilities that it supports. This metadata is used within the extension registry to provide details to developers when searching for and installing extensions.
 
-A [JSON schema](../extensions/extension.schema.json) is available to support authoring extension manifests.
+A [JSON schema](../../extensions/extension.schema.json) is available to support authoring extension manifests.
 
 #### Schema Properties
 
@@ -1097,7 +1184,7 @@ examples:
     usage: azd demo prompt
 ```
 
-The following is an example of an [extension manifest](../extensions/microsoft.azd.demo/extension.yaml).
+The following is an example of an [extension manifest](../../extensions/microsoft.azd.demo/extension.yaml).
 
 ```yaml
 # yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/refs/heads/main/cli/azd/extensions/extension.schema.json
@@ -1215,7 +1302,7 @@ For extensions built using Go, the `azdext` package provides an `AzdClient` whic
 
 #### Other Languages
 
-For extensions authored in other programming languages, the [gRPC proto files](../grpc/proto/) can be used to generate clients in your preferred language.
+For extensions authored in other programming languages, the [gRPC proto files](../../grpc/proto/) can be used to generate clients in your preferred language.
 
 ### How to set `azd` access token on requests
 
@@ -1350,9 +1437,9 @@ if err := host.Run(ctx); err != nil {
 
 `azd` leverages gRPC for the communication protocol between Core `azd` and extensions. gRPC client & server components are automatically generated from profile files.
 
-- Proto files @ [grpc/proto](../grpc/proto/)
-- Generated files @ [pkg/azdext](../pkg/azdext)
-- Make file @ [Makefile](../Makefile)
+- Proto files @ [grpc/proto](../../grpc/proto/)
+- Generated files @ [pkg/azdext](../../pkg/azdext)
+- Make file @ [Makefile](../../Makefile)
 
 To re-generate gRPC clients:
 
@@ -1389,7 +1476,7 @@ The following are a list of available gRPC services for extension developer to i
 
 This service manages project configuration retrieval and related operations, including project and service-level configuration management.
 
-> See [project.proto](../grpc/proto/project.proto) for more details.
+> See [project.proto](../../grpc/proto/project.proto) for more details.
 
 #### Get
 
@@ -1521,7 +1608,7 @@ Removes a service configuration value or section at the specified path from serv
 
 This service handles environment management including retrieval, selection, and key-value operations.
 
-> See [environment.proto](../grpc/proto/environment.proto) for more details.
+> See [environment.proto](../../grpc/proto/environment.proto) for more details.
 
 #### GetCurrent
 
@@ -1643,7 +1730,7 @@ Removes a config value at a given path.
 
 This service manages user-specific configuration retrieval and updates.
 
-> See [user_config.proto](../grpc/proto/user_config.proto) for more details.
+> See [user_config.proto](../../grpc/proto/user_config.proto) for more details.
 
 #### Get
 
@@ -1705,7 +1792,7 @@ Removes a user configuration value.
 
 This service provides operations for deployment retrieval and context management.
 
-> See [deployment.proto](../grpc/proto/deployment.proto) for more details.
+> See [deployment.proto](../../grpc/proto/deployment.proto) for more details.
 
 #### GetDeployment
 
@@ -1743,7 +1830,7 @@ Retrieves the current deployment context.
 
 This service manages user prompt interactions for subscriptions, locations, resources, and confirmations.
 
-> See [prompt.proto](../grpc/proto/prompt.proto) for more details.
+> See [prompt.proto](../../grpc/proto/prompt.proto) for more details.
 
 #### PromptSubscription
 
@@ -1801,6 +1888,7 @@ Prompts the user for text input.
     - `defaultValue` (string)
     - `clear_on_completion` (bool)
     - `ignore_hint_keys` (bool)
+    - `secret` (bool): When true, the typed value is masked as `*` in the terminal and `?` is treated as an input character (so it can be part of the secret) instead of triggering the help message; the auto-generated `[Type ? for hint]` affordance is therefore not shown. Use this for passwords, API keys, and other sensitive input.
 - **Response:** _PromptResponse_
   - Contains `value` (string)
 
@@ -1968,7 +2056,7 @@ Prompts the user to select a location for a specific model and shows quota avail
 
 This service provides non-interactive AI catalog, deployment resolution, and quota usage primitives.
 
-> See [ai_model.proto](../grpc/proto/ai_model.proto) for more details.
+> See [ai_model.proto](../../grpc/proto/ai_model.proto) for more details.
 
 #### ListModels
 
@@ -2133,7 +2221,7 @@ Clients can subscribe to events and receive notifications via a bidirectional st
   - Invoke event handlers.
   - Send status updates regarding event processing.
 
-> See [event.proto](../grpc/proto/event.proto) for more details.
+> See [event.proto](../../grpc/proto/event.proto) for more details.
 
 #### Message Types
 
@@ -2264,7 +2352,7 @@ host := azdext.NewExtensionHost(azdClient).
 
 This service provides container build, package, and publish operations for extensions that need to work with containers but don't want to implement the full complexity of Docker CLI integration, registry authentication, etc.
 
-> See [container.proto](../grpc/proto/container.proto) for more details.
+> See [container.proto](../../grpc/proto/container.proto) for more details.
 
 #### Build
 
@@ -2378,7 +2466,7 @@ fmt.Printf("Container published successfully with %d artifacts\n", len(publishRe
 
 This service handles language and framework-specific operations like restore, build, and package for services. Extensions can register framework service providers to handle custom languages or override default behavior.
 
-> See [framework_service.proto](../grpc/proto/framework_service.proto) for more details.
+> See [framework_service.proto](../../grpc/proto/framework_service.proto) for more details.
 
 #### Provider Interface
 
@@ -2500,7 +2588,7 @@ func main() {
 
 This service handles the full deployment lifecycle for services, including packaging, publishing, and deploying to Azure resources. Extensions can register service target providers for custom deployment scenarios.
 
-> See [service_target.proto](../grpc/proto/service_target.proto) for more details.
+> See [service_target.proto](../../grpc/proto/service_target.proto) for more details.
 
 #### Provider Interface
 
@@ -2616,7 +2704,7 @@ func main() {
 
 This service manages composability resources in an azd project.
 
-> See [compose.proto](../grpc/proto/compose.proto) for more details.
+> See [compose.proto](../../grpc/proto/compose.proto) for more details.
 
 #### ListResources
 
@@ -2673,7 +2761,7 @@ Adds a new composability resource to the project.
 
 This service executes workflows defined within the project.
 
-> See [workflow.proto](../grpc/proto/workflow.proto) for more details.
+> See [workflow.proto](../../grpc/proto/workflow.proto) for more details.
 
 #### Run
 
@@ -2690,7 +2778,7 @@ Executes a workflow consisting of sequential steps.
 
 This service provides information about the currently logged-in user or identity.
 
-> See [account.proto](../grpc/proto/account.proto) for more details.
+> See [account.proto](../../grpc/proto/account.proto) for more details.
 
 #### ListSubscriptions
 
@@ -2828,7 +2916,7 @@ func getSubscriptionDetails(ctx context.Context, azdClient *azdext.AzdClient, su
 
 This service provides Copilot agent capabilities to extensions. Sessions are created lazily on the first `SendMessage` call and can be reused across multiple calls. Sessions run in headless/autopilot mode by default when invoked via gRPC, suppressing all console output.
 
-> See [copilot.proto](../grpc/proto/copilot.proto) for more details.
+> See [copilot.proto](../../grpc/proto/copilot.proto) for more details.
 
 #### Initialize
 
@@ -3010,3 +3098,51 @@ if err != nil {
 - Build interactive AI-assisted tools powered by Copilot
 - Track token consumption and file modifications during AI-driven operations
 - Resume previous sessions for iterative, multi-step tasks
+
+## Registry Schema Versioning
+
+The extension registry format includes a `schemaVersion` field that enables
+forward-compatible evolution of the registry schema.
+
+### Version Format
+
+Registry schema versions use `major.minor` format (e.g. `"1.0"`, `"1.1"`, `"2.0"`).
+
+```json
+{
+  "schemaVersion": "1.0",
+  "extensions": [ ... ]
+}
+```
+
+### Compatibility Rules
+
+| Scenario | Behavior |
+|----------|----------|
+| Missing `schemaVersion` | Treated as `"1.0"` for backward compatibility |
+| Same major, newer minor (e.g. `"1.1"`) | Accepted silently — minor bumps are backward compatible |
+| Newer major (e.g. `"2.0"`) | Rejected with an error and upgrade guidance |
+| `0.x` (e.g. `"0.1"`) | Accepted — pre-release schema versions are valid |
+| Malformed version string | Rejected with a descriptive parse error |
+
+### Upgrade Guidance
+
+When azd encounters a registry with a schema version it cannot support, it will
+display an error with a suggestion to upgrade:
+
+```
+ERROR: registry schema version 2.0 is not supported (max supported: 1.0)
+
+Suggestion: Upgrade azd to the latest version to use this registry
+  https://aka.ms/azd/install
+```
+
+### For Registry Authors
+
+When publishing a third-party registry:
+
+1. **Include `schemaVersion`**: Add `"schemaVersion": "1.0"` at the top level of your registry JSON.
+   Omitting it works but triggers a validation warning.
+2. **Use the JSON schema**: Reference `extensions/registry.schema.json` for the full format specification.
+3. **Minor version bumps** add optional fields that older azd versions can safely ignore.
+4. **Major version bumps** indicate breaking changes that require a newer azd version.

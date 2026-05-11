@@ -39,7 +39,7 @@ func NewGitHubCli(console input.Console, commandRunner exec.CommandRunner) *Cli 
 
 // Version is the minimum version of GitHub cli that we require (and the one we fetch when we fetch gh on
 // behalf of a user).
-var Version semver.Version = semver.MustParse("2.89.0")
+var Version semver.Version = semver.MustParse("2.92.0")
 
 // newGitHubCliImplementation is like NewGitHubCli but allows providing a custom transport for testing.
 func newGitHubCliImplementation(
@@ -232,7 +232,11 @@ func (cli *Cli) ApiCall(ctx context.Context, hostname, path string, options ApiC
 	runArgs := cli.newRunArgs(args...)
 	result, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return "", fmt.Errorf("failed running gh api: %s: %w", url, err)
+		// Build a typed *ApiError from the captured stdout (GitHub's JSON
+		// error envelope) and stderr. Callers can branch on HTTP status,
+		// SAML enforcement, and rate-limit conditions without sniffing
+		// error strings. The original error is preserved via Unwrap().
+		return "", parseApiError(url, result.Stdout, result.Stderr, err)
 	}
 
 	return result.Stdout, nil
@@ -679,7 +683,7 @@ func downloadGh(
 		return fmt.Errorf("unsupported platform")
 	}
 
-	// example: https://github.com/cli/cli/releases/download/v2.89.0/gh_2.89.0_linux_arm64.tar.gz
+	// example: https://github.com/cli/cli/releases/download/v2.92.0/gh_2.92.0_linux_arm64.tar.gz
 	ghReleaseUrl := fmt.Sprintf("https://github.com/cli/cli/releases/download/v%s/%s", ghVersion, releaseName)
 
 	log.Printf("downloading github cli release %s -> %s", ghReleaseUrl, releaseName)

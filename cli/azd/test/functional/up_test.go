@@ -492,7 +492,7 @@ func Test_CLI_Up_ResourceGroupScope(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	_, err = rgClient.CreateOrUpdate(context.Background(), resourceGroupName, armresources.ResourceGroup{
+	_, err = rgClient.CreateOrUpdate(t.Context(), resourceGroupName, armresources.ResourceGroup{
 		Name:     new(resourceGroupName),
 		Location: new("eastus2"),
 		Tags: map[string]*string{

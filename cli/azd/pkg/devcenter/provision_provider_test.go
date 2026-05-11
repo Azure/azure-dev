@@ -4,7 +4,6 @@
 package devcenter
 
 import (
-	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -28,7 +27,7 @@ import (
 
 func Test_ProvisionProvider_Initialize(t *testing.T) {
 	t.Run("AllValuesSet", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		config := &Config{
 			Name:                  "DEV_CENTER_01",
 			Catalog:               "SampleCatalog",
@@ -48,7 +47,7 @@ func Test_ProvisionProvider_Initialize(t *testing.T) {
 	})
 
 	t.Run("PromptMissingEnvironmentType", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		config := &Config{
 			Name:                  "DEV_CENTER_01",
 			Catalog:               "SampleCatalog",
@@ -82,7 +81,7 @@ func Test_ProvisionProvider_Initialize(t *testing.T) {
 
 func Test_ProvisionProvider_Deploy(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		config := &Config{
 			Name:                  "DEV_CENTER_01",
 			Catalog:               "SampleCatalog",
@@ -140,7 +139,7 @@ func Test_ProvisionProvider_Deploy(t *testing.T) {
 	})
 
 	t.Run("SuccessWithPrompts", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		selectedEnvironmentTypeIndex := 2
 
 		mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
@@ -216,7 +215,7 @@ func Test_ProvisionProvider_Deploy(t *testing.T) {
 	})
 
 	t.Run("FailedCreatingEnvironment", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		config := &Config{
 			Name:                  "DEV_CENTER_01",
 			Catalog:               "SampleCatalog",
@@ -260,7 +259,7 @@ func Test_ProvisionProvider_Deploy(t *testing.T) {
 
 func Test_ProvisionProvider_State(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		config := &Config{
 			Name:                  "DEV_CENTER_01",
 			Catalog:               "SampleCatalog",
@@ -297,7 +296,7 @@ func Test_ProvisionProvider_State(t *testing.T) {
 	})
 
 	t.Run("EnvironmentNotFound", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		config := &Config{
 			Name:                  "DEV_CENTER_01",
 			Catalog:               "SampleCatalog",
@@ -318,7 +317,7 @@ func Test_ProvisionProvider_State(t *testing.T) {
 	})
 
 	t.Run("NoDeploymentOutputs", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		config := &Config{
 			Name:                  "DEV_CENTER_01",
 			Catalog:               "SampleCatalog",
@@ -349,7 +348,7 @@ func Test_ProvisionProvider_State(t *testing.T) {
 
 func Test_ProvisionProvider_Destroy(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		config := &Config{
 			Name:                  "DEV_CENTER_01",
 			Catalog:               "SampleCatalog",
@@ -403,7 +402,7 @@ func Test_ProvisionProvider_Destroy(t *testing.T) {
 	})
 
 	t.Run("DeploymentNotFound", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		config := &Config{
 			Name:                  "DEV_CENTER_01",
 			Catalog:               "SampleCatalog",
@@ -427,7 +426,7 @@ func Test_ProvisionProvider_Destroy(t *testing.T) {
 }
 
 func Test_ProvisionProvider_Preview(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	config := &Config{
 		Name:                  "DEV_CENTER_01",
 		Catalog:               "SampleCatalog",

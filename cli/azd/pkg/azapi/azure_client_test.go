@@ -17,7 +17,7 @@ import (
 )
 
 func TestAZCLIWithUserAgent(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet && request.URL.Path == "/RESOURCE_ID"
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
@@ -52,7 +52,7 @@ func TestAZCLIWithUserAgent(t *testing.T) {
 }
 
 func Test_AzSdk_User_Agent_Policy(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet && request.URL.Path == "/RESOURCE_ID"
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {

@@ -64,7 +64,7 @@ func TestPager_SinglePage(t *testing.T) {
 		t.Fatal("expected More() = true before first page")
 	}
 
-	page, err := pager.NextPage(context.Background())
+	page, err := pager.NextPage(t.Context())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -111,7 +111,7 @@ func TestPager_MultiplePages(t *testing.T) {
 
 	pager := NewPager[int](doer, "https://example.com/api?page=1", nil)
 
-	all, err := pager.Collect(context.Background())
+	all, err := pager.Collect(t.Context())
 	if err != nil {
 		t.Fatalf("Collect failed: %v", err)
 	}
@@ -144,7 +144,7 @@ func TestPager_EmptyPage(t *testing.T) {
 
 	pager := NewPager[string](doer, "https://example.com/api", nil)
 
-	page, err := pager.NextPage(context.Background())
+	page, err := pager.NextPage(t.Context())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -173,7 +173,7 @@ func TestPager_HTTPError(t *testing.T) {
 
 	pager := NewPager[string](doer, "https://example.com/api", nil)
 
-	_, err := pager.NextPage(context.Background())
+	_, err := pager.NextPage(t.Context())
 	if err == nil {
 		t.Fatal("expected error for HTTP 403")
 	}
@@ -199,7 +199,7 @@ func TestPager_NetworkError(t *testing.T) {
 
 	pager := NewPager[string](doer, "https://example.com/api", nil)
 
-	_, err := pager.NextPage(context.Background())
+	_, err := pager.NextPage(t.Context())
 	if err == nil {
 		t.Fatal("expected error for network failure")
 	}
@@ -220,7 +220,7 @@ func TestPager_InvalidJSON(t *testing.T) {
 
 	pager := NewPager[string](doer, "https://example.com/api", nil)
 
-	_, err := pager.NextPage(context.Background())
+	_, err := pager.NextPage(t.Context())
 	if err == nil {
 		t.Fatal("expected error for invalid JSON")
 	}
@@ -243,9 +243,9 @@ func TestPager_NoMorePages(t *testing.T) {
 
 	pager := NewPager[string](doer, "https://example.com/api", nil)
 
-	_, _ = pager.NextPage(context.Background())
+	_, _ = pager.NextPage(t.Context())
 
-	_, err := pager.NextPage(context.Background())
+	_, err := pager.NextPage(t.Context())
 	if err == nil {
 		t.Fatal("expected error when calling NextPage after last page")
 	}
@@ -289,7 +289,7 @@ func TestPager_StructType(t *testing.T) {
 
 	pager := NewPager[testStruct](doer, "https://example.com/api", nil)
 
-	page, err := pager.NextPage(context.Background())
+	page, err := pager.NextPage(t.Context())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -325,7 +325,7 @@ func TestPager_CollectPartialError(t *testing.T) {
 
 	pager := NewPager[string](doer, "https://example.com/api?page=1", nil)
 
-	all, err := pager.Collect(context.Background())
+	all, err := pager.Collect(t.Context())
 	if err == nil {
 		t.Fatal("expected error from second page")
 	}
@@ -354,7 +354,7 @@ func TestPager_NilClient(t *testing.T) {
 	t.Parallel()
 
 	pager := NewPager[string](nil, "https://example.com/api", nil)
-	_, err := pager.NextPage(context.Background())
+	_, err := pager.NextPage(t.Context())
 	if err == nil {
 		t.Fatal("expected error for nil client")
 	}
@@ -381,7 +381,7 @@ func TestPager_NextLinkSSRF_DifferentHost(t *testing.T) {
 
 	pager := NewPager[string](doer, "https://example.com/api", nil)
 
-	page, err := pager.NextPage(context.Background())
+	page, err := pager.NextPage(t.Context())
 	if err == nil {
 		t.Fatal("expected error for nextLink to different host")
 	}
@@ -418,7 +418,7 @@ func TestPager_NextLinkHTTP(t *testing.T) {
 
 	pager := NewPager[string](doer, "https://example.com/api", nil)
 
-	_, err := pager.NextPage(context.Background())
+	_, err := pager.NextPage(t.Context())
 	if err == nil {
 		t.Fatal("expected error for HTTP nextLink")
 	}
@@ -445,7 +445,7 @@ func TestPager_NextLinkUserCredentials(t *testing.T) {
 
 	pager := NewPager[string](doer, "https://example.com/api", nil)
 
-	_, err := pager.NextPage(context.Background())
+	_, err := pager.NextPage(t.Context())
 	if err == nil {
 		t.Fatal("expected error for nextLink with user credentials")
 	}
@@ -472,7 +472,7 @@ func TestPager_CollectWithSSRFError(t *testing.T) {
 
 	pager := NewPager[string](doer, "https://example.com/api", nil)
 
-	all, err := pager.Collect(context.Background())
+	all, err := pager.Collect(t.Context())
 	if err == nil {
 		t.Fatal("expected error from SSRF nextLink")
 	}
@@ -506,7 +506,7 @@ func TestPager_CollectTruncatedByMaxPages(t *testing.T) {
 
 	pager := NewPager[int](doer, "https://example.com/api", &PagerOptions{MaxPages: 1})
 
-	all, err := pager.Collect(context.Background())
+	all, err := pager.Collect(t.Context())
 	if err != nil {
 		t.Fatalf("Collect failed: %v", err)
 	}
@@ -541,7 +541,7 @@ func TestPager_CollectMaxPages(t *testing.T) {
 	doer := &mockDoer{responses: responses}
 	pager := NewPager[int](doer, "https://example.com/api?page=1", &PagerOptions{MaxPages: 3})
 
-	all, err := pager.Collect(context.Background())
+	all, err := pager.Collect(t.Context())
 	if err != nil {
 		t.Fatalf("Collect failed: %v", err)
 	}
@@ -580,7 +580,7 @@ func TestPager_CollectMaxItems(t *testing.T) {
 	doer := &mockDoer{responses: responses}
 	pager := NewPager[int](doer, "https://example.com/api?page=1", &PagerOptions{MaxItems: 5})
 
-	all, err := pager.Collect(context.Background())
+	all, err := pager.Collect(t.Context())
 	if err != nil {
 		t.Fatalf("Collect failed: %v", err)
 	}
@@ -612,7 +612,7 @@ func TestPager_TruncatedByMaxPages(t *testing.T) {
 	doer := &mockDoer{responses: responses}
 	pager := NewPager[int](doer, "https://example.com/api?page=1", &PagerOptions{MaxPages: 3})
 
-	all, err := pager.Collect(context.Background())
+	all, err := pager.Collect(t.Context())
 	if err != nil {
 		t.Fatalf("Collect failed: %v", err)
 	}
@@ -649,7 +649,7 @@ func TestPager_TruncatedByMaxItems(t *testing.T) {
 	doer := &mockDoer{responses: responses}
 	pager := NewPager[int](doer, "https://example.com/api?page=1", &PagerOptions{MaxItems: 5})
 
-	all, err := pager.Collect(context.Background())
+	all, err := pager.Collect(t.Context())
 	if err != nil {
 		t.Fatalf("Collect failed: %v", err)
 	}
@@ -678,7 +678,7 @@ func TestPager_NotTruncatedOnNaturalEnd(t *testing.T) {
 	}
 
 	pager := NewPager[int](doer, "https://example.com/api?page=1", &PagerOptions{MaxPages: 1})
-	all, err := pager.Collect(context.Background())
+	all, err := pager.Collect(t.Context())
 	if err != nil {
 		t.Fatalf("Collect failed: %v", err)
 	}
@@ -706,7 +706,7 @@ func TestPager_CollectTruncatedByMaxItems(t *testing.T) {
 	}
 
 	pager := NewPager[string](doer, "https://example.com/api", &PagerOptions{MaxItems: 2})
-	all, err := pager.Collect(context.Background())
+	all, err := pager.Collect(t.Context())
 	if err != nil {
 		t.Fatalf("Collect failed: %v", err)
 	}
@@ -734,7 +734,7 @@ func TestPager_CollectNotTruncated(t *testing.T) {
 	}
 
 	pager := NewPager[string](doer, "https://example.com/api", &PagerOptions{MaxPages: 10, MaxItems: 10})
-	all, err := pager.Collect(context.Background())
+	all, err := pager.Collect(t.Context())
 	if err != nil {
 		t.Fatalf("Collect failed: %v", err)
 	}

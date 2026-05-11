@@ -23,7 +23,7 @@ func (m *mockCommandRunner) ExecuteContext(ctx context.Context, args []string) e
 }
 
 func TestRunner_Run_StopsOnErrAbortedByUser(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	stepsCalled := []string{}
 
@@ -55,7 +55,7 @@ func TestRunner_Run_StopsOnErrAbortedByUser(t *testing.T) {
 }
 
 func TestRunner_Run_ErrAbortedByUser_NotWrapped(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	runner := NewRunner(&mockCommandRunner{
 		execFn: func(ctx context.Context, args []string) error {
@@ -78,7 +78,7 @@ func TestRunner_Run_ErrAbortedByUser_NotWrapped(t *testing.T) {
 }
 
 func TestRunner_Run_OtherErrors_AreWrapped(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	originalErr := errors.New("some deployment error")
 
 	runner := NewRunner(&mockCommandRunner{
@@ -102,7 +102,7 @@ func TestRunner_Run_OtherErrors_AreWrapped(t *testing.T) {
 }
 
 func TestRunner_Run_AllStepsSucceed(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	stepsCalled := []string{}
 
 	runner := NewRunner(&mockCommandRunner{
@@ -128,7 +128,7 @@ func TestRunner_Run_AllStepsSucceed(t *testing.T) {
 }
 
 func TestRunner_Run_WrappedErrAbortedByUser(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	runner := NewRunner(&mockCommandRunner{
 		execFn: func(ctx context.Context, args []string) error {

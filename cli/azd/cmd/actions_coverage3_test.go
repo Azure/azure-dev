@@ -74,7 +74,7 @@ func Test_NewUpAction_Constructor(t *testing.T) {
 	t.Parallel()
 	flags := &upFlags{}
 	console := mockinput.NewMockConsole()
-	a := newUpAction(flags, console, nil, nil, nil, nil, nil, nil, nil)
+	a := newUpAction(flags, console, nil, nil, nil, nil, nil, nil, nil, nil)
 	ua := a.(*upAction)
 	require.Same(t, flags, ua.flags)
 }

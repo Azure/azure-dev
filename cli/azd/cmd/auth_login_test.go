@@ -4,7 +4,6 @@
 package cmd
 
 import (
-	"context"
 	"errors"
 	"testing"
 
@@ -47,7 +46,7 @@ func TestRunningOnCodespacesBrowser(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			mockContext := mocks.NewMockContext(context.Background())
+			mockContext := mocks.NewMockContext(t.Context())
 
 			if tt.runErr != nil {
 				mockContext.CommandRunner.When(func(args exec.RunArgs, commandName string) bool {
@@ -100,7 +99,7 @@ func TestParseUseDeviceCode(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			mockContext := mocks.NewMockContext(context.Background())
+			mockContext := mocks.NewMockContext(t.Context())
 
 			// Mock code --status to return non-browser env
 			mockContext.CommandRunner.When(func(args exec.RunArgs, commandName string) bool {

@@ -18,6 +18,8 @@ words:
   - Canonicalize
   - Chans
   - chinacloudapi
+  - ojson
+  - otable
   - cmds
   - Codespace
   - Codespaces
@@ -25,6 +27,7 @@ words:
   - cooldown
   - customtype
   - devcontainers
+  - errchain
   - errgroup
   - errorhandler
   - extendee
@@ -32,6 +35,8 @@ words:
   # CDN host name
   - gfgac2cmf7b8cuay
   - Getenv
+  - GOWORK
+  - Gowork
   - goversioninfo
   - OPENCODE
   - opencode
@@ -59,6 +64,7 @@ words:
   - syncmap
   - syscall
   - tsx
+  - triaging
   - Retryable
   - runcontext
   - surveyterm
@@ -107,9 +113,11 @@ words:
   - mintty
   - dockerenv
   - dedup
+  - delisted
   - exfiltration
   - Fprintf
   - gocritic
+  - gocyclo
   - gradlew
   - IMDS
   - managedhsm
@@ -143,6 +151,10 @@ overrides:
     words:
       - compatResult
       - compatCopy
+      - Incompat
+  - filename: pkg/output/pretty_table.go
+    words:
+      - runewidth
   - filename: pkg/azdext/config_helper.go
     words:
       - myext
@@ -435,6 +447,20 @@ overrides:
       - VISIO
       - WEBREFERENCES
       - sharepointonline
+  - filename: pkg/tool/manifest.go
+    words:
+      - azureresourcegroups
+  - filename: pkg/tool/installer.go
+    words:
+      - filesystems
+      - redirections
+  - filename: internal/agent/copilot/session_config.go
+    words:
+      - MCPHTTP
+  - filename: pkg/tool/version_provider.go
+    words:
+      - extensionquery
+      - bitmask
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

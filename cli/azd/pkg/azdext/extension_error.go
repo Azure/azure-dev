@@ -7,6 +7,7 @@ import (
 	"errors"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -24,6 +25,8 @@ type ServiceError struct {
 	ServiceName string
 	// Suggestion contains optional user-facing remediation guidance.
 	Suggestion string
+	// Links contains optional reference links rendered alongside the suggestion.
+	Links []errorhandler.ErrorLink
 }
 
 // LocalError represents non-service extension errors, such as validation/config failures.
@@ -37,6 +40,8 @@ type LocalError struct {
 	Category LocalErrorCategory
 	// Suggestion contains optional user-facing remediation guidance.
 	Suggestion string
+	// Links contains optional reference links rendered alongside the suggestion.
+	Links []errorhandler.ErrorLink
 }
 
 // Error implements the error interface.
@@ -56,7 +61,7 @@ func (e *ServiceError) Error() string {
 // The function applies detection in priority order:
 //  1. [ServiceError] / [LocalError] — already structured by extension code (highest specificity)
 //  2. [azcore.ResponseError] — Azure SDK HTTP errors
-//  3. gRPC Unauthenticated — auto-classified as auth category (safety net)
+//  3. gRPC status — host-originated errors carrying ActionableErrorDetail and/or auth ErrorInfo
 //  4. Fallback — unclassified error with original message
 //
 // The counterpart [UnwrapError] is called from the azd host to deserialize
@@ -75,6 +80,7 @@ func WrapError(err error) *ExtensionError {
 	if extServiceErr, ok := errors.AsType[*ServiceError](err); ok {
 		extErr.Message = extServiceErr.Message
 		extErr.Suggestion = extServiceErr.Suggestion
+		extErr.Links = WrapErrorLinks(extServiceErr.Links)
 		extErr.Origin = ErrorOrigin_ERROR_ORIGIN_SERVICE
 		extErr.Source = &ExtensionError_ServiceError{
 			ServiceError: &ServiceErrorDetail{
@@ -91,6 +97,7 @@ func WrapError(err error) *ExtensionError {
 		normalizedCategory := NormalizeLocalErrorCategory(extLocalErr.Category)
 		extErr.Message = extLocalErr.Message
 		extErr.Suggestion = extLocalErr.Suggestion
+		extErr.Links = WrapErrorLinks(extLocalErr.Links)
 		extErr.Origin = ErrorOrigin_ERROR_ORIGIN_LOCAL
 		extErr.Source = &ExtensionError_LocalError{
 			LocalError: &LocalErrorDetail{
@@ -119,28 +126,107 @@ func WrapError(err error) *ExtensionError {
 		return extErr
 	}
 
-	// Detect gRPC Unauthenticated errors as an auth safety net.
-	// If the extension didn't already classify the error, this ensures auth failures
-	// from azd host calls are reported with the correct category in telemetry.
-	// Use errors.AsType to detect gRPC status errors even when wrapped by fmt.Errorf.
-	if grpcErr, ok := errors.AsType[interface {
-		error
-		GRPCStatus() *status.Status
-	}](err); ok {
-		if st := grpcErr.GRPCStatus(); st.Code() == codes.Unauthenticated {
-			extErr.Origin = ErrorOrigin_ERROR_ORIGIN_LOCAL
-			extErr.Message = st.Message()
-			extErr.Source = &ExtensionError_LocalError{
-				LocalError: &LocalErrorDetail{
-					Code:     "auth_failed",
-					Category: string(LocalErrorCategoryAuth),
-				},
-			}
-			return extErr
-		}
+	if st, ok := GRPCStatusFromError(err); ok {
+		populateExtensionErrorFromStatus(extErr, st)
 	}
 
 	return extErr
+}
+
+// populateExtensionErrorFromStatus shapes extErr from a host-originated gRPC status.
+// It computes (message, suggestion, links, origin, source) in a single pass without
+// the string-equality fallbacks that earlier versions used.
+func populateExtensionErrorFromStatus(extErr *ExtensionError, st *status.Status) {
+	actionable := ActionableErrorDetailFromStatus(st)
+	isAuth := st.Code() == codes.Unauthenticated
+
+	if actionable == nil && !isAuth {
+		// Plain gRPC error with no host metadata; leave extErr as-is so the caller
+		// surfaces the original message via the unspecified origin path.
+		return
+	}
+
+	// status.Message is the canonical user-facing payload for host errors.
+	extErr.Message = st.Message()
+	if actionable != nil {
+		extErr.Suggestion = actionable.GetSuggestion()
+		extErr.Links = actionable.GetLinks()
+	}
+
+	switch {
+	case isAuth:
+		// Auth safety net: classify as auth even when the extension didn't pre-classify.
+		// Preserves the AAD-originated reason (or AUTH_* azd-local reason) via authLocalErrorCode.
+		extErr.Origin = ErrorOrigin_ERROR_ORIGIN_LOCAL
+		extErr.Source = &ExtensionError_LocalError{
+			LocalError: &LocalErrorDetail{
+				Code:     authLocalErrorCode(st),
+				Category: string(LocalErrorCategoryAuth),
+			},
+		}
+	default:
+		// Non-auth host-originated actionable error.
+		extErr.Origin = ErrorOrigin_ERROR_ORIGIN_LOCAL
+		extErr.Source = &ExtensionError_LocalError{
+			LocalError: &LocalErrorDetail{
+				Category: string(LocalErrorCategoryLocal),
+			},
+		}
+	}
+}
+
+// GRPCStatusFromError extracts a *status.Status from err's chain when one is present.
+// Returns (nil, false) if err does not carry a gRPC status.
+func GRPCStatusFromError(err error) (*status.Status, bool) {
+	grpcErr, ok := errors.AsType[interface {
+		error
+		GRPCStatus() *status.Status
+	}](err)
+	if !ok {
+		return nil, false
+	}
+
+	st := grpcErr.GRPCStatus()
+	return st, st != nil
+}
+
+// ActionableErrorDetailFromError extracts host-originated actionable guidance from a gRPC status error.
+func ActionableErrorDetailFromError(err error) *ActionableErrorDetail {
+	st, ok := GRPCStatusFromError(err)
+	if !ok {
+		return nil
+	}
+
+	return ActionableErrorDetailFromStatus(st)
+}
+
+// ActionableErrorDetailFromStatus extracts host-originated actionable guidance from a gRPC status.
+func ActionableErrorDetailFromStatus(st *status.Status) *ActionableErrorDetail {
+	if st == nil {
+		return nil
+	}
+
+	for _, detail := range st.Details() {
+		if actionable, ok := detail.(*ActionableErrorDetail); ok {
+			return actionable
+		}
+	}
+
+	return nil
+}
+
+func authLocalErrorCode(st *status.Status) string {
+	switch AuthErrorReason(st) {
+	case AuthErrorReasonNotLoggedIn:
+		return "not_logged_in"
+	case AuthErrorReasonLoginRequired:
+		return "login_required"
+	}
+
+	// All other reasons (including AAD-originated codes like "AADSTS530084") collapse to a
+	// generic "auth_failed" label. Extensions that need per-AAD-code granularity can read the
+	// raw reason directly from the gRPC ErrorInfo via AuthErrorReason.
+	return "auth_failed"
 }
 
 // UnwrapError converts an ExtensionError proto back to a typed Go error.
@@ -149,9 +235,11 @@ func WrapError(err error) *ExtensionError {
 // for telemetry classification and error handling.
 // It returns the appropriate error type based on the origin field.
 func UnwrapError(msg *ExtensionError) error {
-	if msg == nil || msg.GetMessage() == "" {
+	if msg == nil {
 		return nil
 	}
+
+	links := UnwrapErrorLinks(msg.GetLinks())
 
 	// Check for service error details
 	if svcErr := msg.GetServiceError(); svcErr != nil {
@@ -161,6 +249,7 @@ func UnwrapError(msg *ExtensionError) error {
 			StatusCode:  int(svcErr.GetStatusCode()),
 			ServiceName: svcErr.GetServiceName(),
 			Suggestion:  msg.GetSuggestion(),
+			Links:       links,
 		}
 	}
 
@@ -171,6 +260,7 @@ func UnwrapError(msg *ExtensionError) error {
 			Code:       localErr.GetCode(),
 			Category:   normalizedCategory,
 			Suggestion: msg.GetSuggestion(),
+			Links:      links,
 		}
 	}
 
@@ -179,6 +269,7 @@ func UnwrapError(msg *ExtensionError) error {
 			Message:    msg.GetMessage(),
 			Category:   LocalErrorCategoryLocal,
 			Suggestion: msg.GetSuggestion(),
+			Links:      links,
 		}
 	}
 
@@ -186,6 +277,7 @@ func UnwrapError(msg *ExtensionError) error {
 		return &ServiceError{
 			Message:    msg.GetMessage(),
 			Suggestion: msg.GetSuggestion(),
+			Links:      links,
 		}
 	}
 
@@ -193,5 +285,44 @@ func UnwrapError(msg *ExtensionError) error {
 		Message:    msg.GetMessage(),
 		Category:   LocalErrorCategoryLocal,
 		Suggestion: msg.GetSuggestion(),
+		Links:      links,
 	}
+}
+
+// WrapErrorLinks converts errorhandler.ErrorLink values into proto ErrorLink messages.
+func WrapErrorLinks(links []errorhandler.ErrorLink) []*ErrorLink {
+	if len(links) == 0 {
+		return nil
+	}
+
+	protoLinks := make([]*ErrorLink, len(links))
+	for i, link := range links {
+		protoLinks[i] = &ErrorLink{
+			Url:   link.URL,
+			Title: link.Title,
+		}
+	}
+
+	return protoLinks
+}
+
+// UnwrapErrorLinks converts proto ErrorLink messages back into errorhandler.ErrorLink values.
+func UnwrapErrorLinks(links []*ErrorLink) []errorhandler.ErrorLink {
+	if len(links) == 0 {
+		return nil
+	}
+
+	unwrapped := make([]errorhandler.ErrorLink, len(links))
+	for i, link := range links {
+		if link == nil {
+			continue
+		}
+
+		unwrapped[i] = errorhandler.ErrorLink{
+			URL:   link.GetUrl(),
+			Title: link.GetTitle(),
+		}
+	}
+
+	return unwrapped
 }

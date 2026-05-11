@@ -30,6 +30,8 @@ func TestUsage(t *testing.T) {
 	configDir := t.TempDir()
 	t.Setenv("AZD_CONFIG_DIR", configDir)
 	t.Setenv("AZURE_DEV_COLLECT_TELEMETRY", "no")
+	t.Setenv("AZD_SKIP_FIRST_RUN", "true")
+	t.Setenv("AZD_ALPHA_ENABLE_TOOL", "true")
 
 	cli := azdcli.NewCLI(t)
 

@@ -45,7 +45,7 @@ func TestOpenAIProvider_UploadFile_Validation(t *testing.T) {
 	provider := NewOpenAIProvider(nil)
 
 	t.Run("EmptyPath_ReturnsError", func(t *testing.T) {
-		fileID, err := provider.UploadFile(context.Background(), "")
+		fileID, err := provider.UploadFile(t.Context(), "")
 
 		require.Error(t, err)
 		require.Empty(t, fileID)
@@ -53,7 +53,7 @@ func TestOpenAIProvider_UploadFile_Validation(t *testing.T) {
 	})
 
 	t.Run("WhitespaceOnlyPath_ReturnsError", func(t *testing.T) {
-		fileID, err := provider.UploadFile(context.Background(), "   ")
+		fileID, err := provider.UploadFile(t.Context(), "   ")
 
 		// Note: Current implementation doesn't trim whitespace, so this tests actual behavior
 		// which attempts to open a whitespace filename (will fail at file open)
@@ -62,7 +62,7 @@ func TestOpenAIProvider_UploadFile_Validation(t *testing.T) {
 	})
 
 	t.Run("NonExistentFile_ReturnsError", func(t *testing.T) {
-		fileID, err := provider.UploadFile(context.Background(), "/nonexistent/path/to/file.jsonl")
+		fileID, err := provider.UploadFile(t.Context(), "/nonexistent/path/to/file.jsonl")
 
 		require.Error(t, err)
 		require.Empty(t, fileID)

@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
@@ -128,6 +129,10 @@ func (st *appServiceTarget) Deploy(
 		return nil, fmt.Errorf("determining deployment targets: %w", err)
 	}
 
+	// Check if runtime status tracking should be skipped for this service
+	skipStatusCheckEnvVar := skipStatusCheckEnvVarNameForService(serviceConfig.Name)
+	skipStatusCheck, _ := strconv.ParseBool(st.env.Getenv(skipStatusCheckEnvVar))
+
 	// Deploy to each target
 	hasSlots := len(deployTargets) > 1 || (len(deployTargets) == 1 && deployTargets[0].SlotName != "")
 
@@ -157,6 +162,7 @@ func (st *appServiceTarget) Deploy(
 				targetResource.ResourceName(),
 				zipFile,
 				func(logProgress string) { progress.SetProgress(NewServiceProgress(logProgress)) },
+				skipStatusCheck,
 			)
 		} else {
 			progressMsg := fmt.Sprintf("Uploading deployment package to slot '%s'", target.SlotName)
@@ -342,6 +348,15 @@ func (st *appServiceTarget) determineDeploymentTargets(
 // is normalized via environment.Key (uppercase, spaces/hyphens → underscores).
 func slotEnvVarNameForService(serviceName string) string {
 	return fmt.Sprintf("AZD_DEPLOY_%s_SLOT_NAME", environment.Key(serviceName))
+}
+
+// skipStatusCheckEnvVarNameForService returns the environment variable name for skipping
+// deployment status tracking for a given service. The format is
+// AZD_DEPLOY_{SERVICE_NAME}_SKIP_STATUS_CHECK where the service name
+// is uppercase and any hyphens are replaced with underscores.
+func skipStatusCheckEnvVarNameForService(serviceName string) string {
+	normalizedName := strings.ToUpper(strings.ReplaceAll(serviceName, "-", "_"))
+	return fmt.Sprintf("AZD_DEPLOY_%s_SKIP_STATUS_CHECK", normalizedName)
 }
 
 // Gets the exposed endpoints for the App Service, including any deployment slots

@@ -19,6 +19,14 @@ type Source interface {
 	GetExtension(ctx context.Context, extensionId string) (*ExtensionMetadata, error)
 }
 
+// RegistryProvider is an optional interface that a Source may implement
+// to expose the full Registry object, including registry-level fields
+// like SchemaVersion.
+type RegistryProvider interface {
+	// GetRegistry returns the underlying registry for the source.
+	GetRegistry() *Registry
+}
+
 type registrySource struct {
 	name     string
 	registry *Registry
@@ -34,6 +42,11 @@ func newRegistrySource(name string, registry *Registry) (Source, error) {
 
 func (ts *registrySource) Name() string {
 	return ts.name
+}
+
+// GetRegistry returns the underlying registry for the source.
+func (s *registrySource) GetRegistry() *Registry {
+	return s.registry
 }
 
 // ListTemplates returns a list of templates from the extension source.

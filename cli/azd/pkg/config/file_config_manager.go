@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
@@ -33,6 +34,7 @@ func NewFileConfigManager(configManager Manager) FileConfigManager {
 }
 
 type fileConfigManager struct {
+	mu      sync.Mutex
 	manager Manager
 }
 
@@ -75,6 +77,16 @@ func (m *fileConfigManager) Load(filePath string) (Config, error) {
 }
 
 func (m *fileConfigManager) Save(c Config, filePath string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	return m.saveLocked(c, filePath)
+}
+
+// saveLocked performs the actual save logic. It must be called while m.mu is held.
+// This is separated from Save to allow the recursive vault save without deadlocking
+// on the non-reentrant mutex.
+func (m *fileConfigManager) saveLocked(c Config, filePath string) error {
 	folderPath := filepath.Dir(filePath)
 	if err := os.MkdirAll(folderPath, osutil.PermissionDirectory); err != nil {
 		return fmt.Errorf("failed creating config directory: %w", err)
@@ -82,13 +94,12 @@ func (m *fileConfigManager) Save(c Config, filePath string) error {
 
 	file, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, osutil.PermissionFile)
 	if err != nil {
-		return fmt.Errorf("failed creating config directory: %w", err)
+		return fmt.Errorf("saving file config: %w", err)
 	}
 	defer file.Close()
 
-	err = m.manager.Save(c, file)
-	if err != nil {
-		return err
+	if err := m.manager.Save(c, file); err != nil {
+		return fmt.Errorf("saving file config: %w", err)
 	}
 
 	baseConfig, ok := c.(*config)
@@ -108,7 +119,7 @@ func (m *fileConfigManager) Save(c Config, filePath string) error {
 			return fmt.Errorf("failed creating vaults directory: %w", err)
 		}
 
-		return m.Save(baseConfig.vault, vaultPath)
+		return m.saveLocked(baseConfig.vault, vaultPath)
 	}
 
 	return nil

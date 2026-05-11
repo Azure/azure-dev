@@ -718,7 +718,7 @@ func (a *CopilotAgent) createPermissionHandler() copilot.PermissionHandlerFunc {
 		if a.headless {
 			log.Printf("[copilot] PermissionRequest (headless auto-approve): kind=%s", req.Kind)
 			a.consentApprovedCount++
-			return copilot.PermissionRequestResult{Kind: "approved"}, nil
+			return copilot.PermissionRequestResult{Kind: copilot.PermissionRequestResultKindApproved}, nil
 		}
 
 		server, tool, readOnly := permissionToConsentTarget(req)
@@ -739,12 +739,12 @@ func (a *CopilotAgent) createPermissionHandler() copilot.PermissionHandlerFunc {
 		if err != nil {
 			log.Printf("[copilot] Consent check error for %s: %v, denying", toolID, err)
 			a.consentDeniedCount++
-			return copilot.PermissionRequestResult{Kind: "denied-by-rules"}, nil
+			return copilot.PermissionRequestResult{Kind: copilot.PermissionRequestResultKindUserNotAvailable}, nil
 		}
 
 		if decision.Allowed {
 			a.consentApprovedCount++
-			return copilot.PermissionRequestResult{Kind: "approved"}, nil
+			return copilot.PermissionRequestResult{Kind: copilot.PermissionRequestResultKindApproved}, nil
 		}
 
 		if decision.RequiresPrompt {
@@ -767,30 +767,30 @@ func (a *CopilotAgent) createPermissionHandler() copilot.PermissionHandlerFunc {
 				if errors.Is(promptErr, consent.ErrToolExecutionSkipped) {
 					// Skip — deny this tool but let the agent continue
 					a.consentDeniedCount++
-					return copilot.PermissionRequestResult{Kind: "denied-by-rules"}, nil
+					return copilot.PermissionRequestResult{Kind: copilot.PermissionRequestResultKindRejected}, nil
 				}
 				if errors.Is(promptErr, consent.ErrToolExecutionDenied) {
 					// Deny — block and exit the interaction
 					a.consentDeniedCount++
-					return copilot.PermissionRequestResult{Kind: "denied-interactively-by-user"}, nil
+					return copilot.PermissionRequestResult{Kind: copilot.PermissionRequestResultKindRejected}, nil
 				}
 				log.Printf("[copilot] Consent grant error for %s: %v", toolID, promptErr)
 				a.consentDeniedCount++
-				return copilot.PermissionRequestResult{Kind: "denied-by-rules"}, nil
+				return copilot.PermissionRequestResult{Kind: copilot.PermissionRequestResultKindUserNotAvailable}, nil
 			}
 			a.consentApprovedCount++
-			return copilot.PermissionRequestResult{Kind: "approved"}, nil
+			return copilot.PermissionRequestResult{Kind: copilot.PermissionRequestResultKindApproved}, nil
 		}
 
 		a.consentDeniedCount++
-		return copilot.PermissionRequestResult{Kind: "denied-by-rules"}, nil
+		return copilot.PermissionRequestResult{Kind: copilot.PermissionRequestResultKindRejected}, nil
 	}
 }
 
 // permissionToConsentTarget maps a PermissionRequest to consent server/tool/readOnly.
 func permissionToConsentTarget(req copilot.PermissionRequest) (server, tool string, readOnly bool) {
 	switch req.Kind {
-	case copilot.MCP:
+	case copilot.PermissionRequestKindMcp:
 		server = "copilot"
 		if req.ServerName != nil {
 			server = *req.ServerName
@@ -801,32 +801,32 @@ func permissionToConsentTarget(req copilot.PermissionRequest) (server, tool stri
 		}
 		readOnly = req.ReadOnly != nil && *req.ReadOnly
 
-	case copilot.KindShell:
+	case copilot.PermissionRequestKindShell:
 		server = "copilot"
 		tool = "shell"
 		readOnly = false
 
-	case copilot.Write:
+	case copilot.PermissionRequestKindWrite:
 		server = "copilot"
 		tool = "write"
 		readOnly = false
 
-	case copilot.Read:
+	case copilot.PermissionRequestKindRead:
 		server = "copilot"
 		tool = "read"
 		readOnly = true
 
-	case copilot.URL:
+	case copilot.PermissionRequestKindURL:
 		server = "copilot"
 		tool = "url"
 		readOnly = true
 
-	case copilot.Memory:
+	case copilot.PermissionRequestKindMemory:
 		server = "copilot"
 		tool = "memory"
 		readOnly = false
 
-	case copilot.CustomTool:
+	case copilot.PermissionRequestKindCustomTool:
 		server = "copilot"
 		tool = "custom-tool"
 		if req.ToolName != nil {
@@ -862,23 +862,23 @@ func buildPermissionDescription(req copilot.PermissionRequest) string {
 
 	// Context-specific details
 	switch req.Kind {
-	case copilot.KindShell:
+	case copilot.PermissionRequestKindShell:
 		if req.FullCommandText != nil && *req.FullCommandText != "" {
 			parts = append(parts, fmt.Sprintf("Command: %s", *req.FullCommandText))
 		}
-	case copilot.Write:
+	case copilot.PermissionRequestKindWrite:
 		if req.FileName != nil && *req.FileName != "" {
 			parts = append(parts, fmt.Sprintf("File: %s", *req.FileName))
 		}
-	case copilot.Read:
+	case copilot.PermissionRequestKindRead:
 		if req.Path != nil && *req.Path != "" {
 			parts = append(parts, fmt.Sprintf("Path: %s", *req.Path))
 		}
-	case copilot.URL:
+	case copilot.PermissionRequestKindURL:
 		if req.URL != nil && *req.URL != "" {
 			parts = append(parts, fmt.Sprintf("URL: %s", *req.URL))
 		}
-	case copilot.Memory:
+	case copilot.PermissionRequestKindMemory:
 		if req.Subject != nil && *req.Subject != "" {
 			parts = append(parts, fmt.Sprintf("Subject: %s", *req.Subject))
 		}
@@ -899,7 +899,7 @@ func buildPermissionDescription(req copilot.PermissionRequest) string {
 // permissionDisplayName returns a user-friendly display name for the consent prompt.
 func permissionDisplayName(req copilot.PermissionRequest) string {
 	switch req.Kind {
-	case copilot.KindShell:
+	case copilot.PermissionRequestKindShell:
 		if req.FullCommandText != nil && *req.FullCommandText != "" {
 			cmd := *req.FullCommandText
 			if len(cmd) > 80 {
@@ -908,17 +908,17 @@ func permissionDisplayName(req copilot.PermissionRequest) string {
 			return fmt.Sprintf("shell command: %s", cmd)
 		}
 		return "shell command"
-	case copilot.Write:
+	case copilot.PermissionRequestKindWrite:
 		if req.FileName != nil && *req.FileName != "" {
 			return fmt.Sprintf("write to %s", relativePath(*req.FileName))
 		}
 		return "file write"
-	case copilot.Read:
+	case copilot.PermissionRequestKindRead:
 		if req.Path != nil && *req.Path != "" {
 			return fmt.Sprintf("read %s", relativePath(*req.Path))
 		}
 		return "file read"
-	case copilot.URL:
+	case copilot.PermissionRequestKindURL:
 		if req.URL != nil && *req.URL != "" {
 			u := *req.URL
 			if len(u) > 60 {
@@ -927,7 +927,7 @@ func permissionDisplayName(req copilot.PermissionRequest) string {
 			return fmt.Sprintf("fetch %s", u)
 		}
 		return "URL access"
-	case copilot.MCP:
+	case copilot.PermissionRequestKindMcp:
 		name := "tool"
 		if req.ToolName != nil {
 			name = *req.ToolName

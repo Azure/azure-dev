@@ -1,7 +1,9 @@
 aaronpowell
 adam-lavrik
+adamra
 AlecAivazis
 alexandair
+antriksh
 benbjohnson
 blang
 bmatcuk
@@ -31,6 +33,7 @@ Menghua1
 mikekistler
 Mstiekema
 multierr
+Nathandrake
 nicksnyder
 otiai10
 pamelafox

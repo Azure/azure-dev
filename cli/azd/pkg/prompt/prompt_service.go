@@ -15,7 +15,6 @@ import (
 	"dario.cat/mergo"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
-	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -192,7 +191,6 @@ type promptService struct {
 	userConfigManager   config.UserConfigManager
 	resourceService     ResourceService
 	subscriptionManager SubscriptionManager
-	globalOptions       *internal.GlobalCommandOptions
 }
 
 // NewPromptService creates a new prompt service.
@@ -202,7 +200,6 @@ func NewPromptService(
 	userConfigManager config.UserConfigManager,
 	subscriptionManager SubscriptionManager,
 	resourceService ResourceService,
-	globalOptions *internal.GlobalCommandOptions,
 ) PromptService {
 	return &promptService{
 		authManager:         authManager,
@@ -210,7 +207,6 @@ func NewPromptService(
 		userConfigManager:   userConfigManager,
 		subscriptionManager: subscriptionManager,
 		resourceService:     resourceService,
-		globalOptions:       globalOptions,
 	}
 }
 
@@ -250,54 +246,6 @@ func (ps *promptService) PromptSubscription(
 	}
 
 	hideId := isDemoModeEnabled()
-
-	// Handle --no-prompt mode
-	if ps.globalOptions.NoPrompt {
-		// Load subscriptions for both default lookup and auto-selection
-		subscriptionList, err := ps.subscriptionManager.GetSubscriptions(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load subscriptions: %w", err)
-		}
-
-		// If a default subscription is configured, use it
-		if defaultSubscriptionId != "" {
-			for _, subscription := range subscriptionList {
-				if strings.EqualFold(subscription.Id, defaultSubscriptionId) {
-					return &subscription, nil
-				}
-			}
-
-			if hideId {
-				return nil, fmt.Errorf(
-					"default subscription not found. " +
-						"Update your default subscription using " +
-						"'azd config set defaults.subscription <subscription-id>'")
-			}
-
-			return nil, fmt.Errorf(
-				"default subscription '%s' not found. "+
-					"Update your default subscription using "+
-					"'azd config set defaults.subscription <subscription-id>'",
-				defaultSubscriptionId)
-		}
-
-		// No default configured — try auto-selecting if exactly one subscription exists
-		switch len(subscriptionList) {
-		case 0:
-			return nil, fmt.Errorf(
-				"no Azure subscriptions found for the current account. " +
-					"Verify that you're logged into the correct Azure account and tenant, " +
-					"and that your account has one or more active subscriptions. " +
-					"If needed, run 'azd auth login' to sign in.")
-		case 1:
-			ps.console.Message(ctx, formatAutoSelectedSubscriptionMessage(&subscriptionList[0], hideId))
-			return &subscriptionList[0], nil
-		default:
-			return nil, fmt.Errorf(
-				"multiple Azure subscriptions found but running in non-interactive mode. " +
-					"Set a default subscription using 'azd config set defaults.subscription <subscription-id>'")
-		}
-	}
 
 	return PromptCustomResource(ctx, CustomResourceOptions[account.Subscription]{
 		SelectorOptions: mergedOptions,
@@ -366,36 +314,6 @@ func (ps *promptService) PromptLocation(
 		if exists && userLocation != "" {
 			defaultLocation = userLocation
 		}
-	}
-
-	// Handle --no-prompt mode
-	if ps.globalOptions.NoPrompt {
-		// Default location always exists (fallback to eastus2), so we can use it
-		// Load locations and find the default
-		locationList, err := ps.subscriptionManager.GetLocations(
-			ctx,
-			azureContext.Scope.SubscriptionId,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load locations: %w", err)
-		}
-
-		locationList = filterLocationOptions(locationList, mergedOptions.AllowedValues)
-
-		for _, location := range locationList {
-			if strings.EqualFold(location.Name, defaultLocation) {
-				return &account.Location{
-					Name:                location.Name,
-					DisplayName:         location.DisplayName,
-					RegionalDisplayName: location.RegionalDisplayName,
-				}, nil
-			}
-		}
-
-		return nil, fmt.Errorf(
-			"default location '%s' not found in the available location options. "+
-				"Update your default location using 'azd config set defaults.location <location-name>'",
-			defaultLocation)
 	}
 
 	return PromptCustomResource(ctx, CustomResourceOptions[account.Location]{
@@ -506,35 +424,6 @@ func (ps *promptService) PromptResourceGroup(
 		return nil, err
 	}
 
-	// Handle --no-prompt mode
-	if ps.globalOptions.NoPrompt {
-		if azureContext.Scope.ResourceGroup == "" {
-			return nil, fmt.Errorf(
-				"resource group selection required but cannot prompt in --no-prompt mode. " +
-					"Specify a resource group explicitly in your configuration or environment")
-		}
-
-		// Load resource groups and find the one specified in context
-		resourceGroupList, err := ps.resourceService.ListResourceGroup(ctx, azureContext.Scope.SubscriptionId, nil)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load resource groups: %w", err)
-		}
-
-		for _, resourceGroup := range resourceGroupList {
-			if resourceGroup.Name == azureContext.Scope.ResourceGroup {
-				return &azapi.ResourceGroup{
-					Id:       resourceGroup.Id,
-					Name:     resourceGroup.Name,
-					Location: resourceGroup.Location,
-				}, nil
-			}
-		}
-
-		return nil, fmt.Errorf(
-			"resource group '%s' not found in subscription",
-			azureContext.Scope.ResourceGroup)
-	}
-
 	return PromptCustomResource(ctx, CustomResourceOptions[azapi.ResourceGroup]{
 		NewResourceValue: azapi.ResourceGroup{Id: "new"},
 		SelectorOptions:  mergedSelectorOptions,
@@ -636,14 +525,6 @@ func (ps *promptService) PromptSubscriptionResource(
 
 	if err := mergo.Merge(mergedSelectorOptions, defaultSelectorOptions, mergo.WithoutDereference); err != nil {
 		return nil, err
-	}
-
-	// Handle --no-prompt mode
-	if ps.globalOptions.NoPrompt {
-		return nil, fmt.Errorf(
-			"%s selection required but cannot prompt in --no-prompt mode. "+
-				"Please specify the resource using an environment variable or configuration file",
-			resourceName)
 	}
 
 	allowNewResource := mergedSelectorOptions.AllowNewResource != nil && *mergedSelectorOptions.AllowNewResource
@@ -782,14 +663,6 @@ func (ps *promptService) PromptResourceGroupResource(
 
 	if err := mergo.Merge(mergedSelectorOptions, defaultSelectorOptions, mergo.WithoutDereference); err != nil {
 		return nil, err
-	}
-
-	// Handle --no-prompt mode
-	if ps.globalOptions.NoPrompt {
-		return nil, fmt.Errorf(
-			"%s selection required but cannot prompt in --no-prompt mode. "+
-				"Please specify the resource using an environment variable or configuration file",
-			resourceName)
 	}
 
 	allowNewResource := mergedSelectorOptions.AllowNewResource != nil && *mergedSelectorOptions.AllowNewResource

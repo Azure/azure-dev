@@ -47,7 +47,7 @@ func Test_BuildAndRunSimpleCommand(t *testing.T) {
 
 	// Disable args processing from os:args
 	cmd.SetArgs([]string{})
-	err = cmd.ExecuteContext(context.Background())
+	err = cmd.ExecuteContext(t.Context())
 
 	require.NoError(t, err)
 	require.True(t, ran)
@@ -70,7 +70,7 @@ func Test_BuildAndRunSimpleAction(t *testing.T) {
 	require.NoError(t, err)
 
 	cmd.SetArgs([]string{"-r"})
-	err = cmd.ExecuteContext(context.Background())
+	err = cmd.ExecuteContext(t.Context())
 
 	require.NoError(t, err)
 }
@@ -94,7 +94,7 @@ func Test_BuildAndRunSimpleActionWithMiddleware(t *testing.T) {
 	actionRan := false
 	middlewareRan := false
 
-	ctx := context.Background()
+	ctx := t.Context()
 	ctx = context.WithValue(ctx, actionName, &actionRan)
 	ctx = context.WithValue(ctx, middlewareAName, &middlewareRan)
 
@@ -129,7 +129,7 @@ func Test_BuildAndRunActionWithNestedMiddleware(t *testing.T) {
 	middlewareARan := false
 	middlewareBRan := false
 
-	ctx := context.Background()
+	ctx := t.Context()
 	ctx = context.WithValue(ctx, actionName, &actionRan)
 	ctx = context.WithValue(ctx, middlewareAName, &middlewareARan)
 	ctx = context.WithValue(ctx, middlewareBName, &middlewareBRan)
@@ -172,7 +172,7 @@ func Test_BuildAndRunActionWithNestedAndConditionalMiddleware(t *testing.T) {
 	middlewareARan := false
 	middlewareBRan := false
 
-	ctx := context.Background()
+	ctx := t.Context()
 	ctx = context.WithValue(ctx, actionName, &actionRan)
 	ctx = context.WithValue(ctx, middlewareAName, &middlewareARan)
 	ctx = context.WithValue(ctx, middlewareBName, &middlewareBRan)
@@ -229,7 +229,7 @@ func Test_BuildCommandsWithAutomaticHelpAndOutputFlags(t *testing.T) {
 func Test_RunDocsFlow(t *testing.T) {
 	t.Parallel()
 	container := ioc.NewNestedContainer(nil)
-	testCtx := mocks.NewMockContext(context.Background())
+	testCtx := mocks.NewMockContext(t.Context())
 	container.MustRegisterSingleton(func() input.Console {
 		return testCtx.Console
 	})
@@ -264,7 +264,7 @@ func Test_RunDocsFlow(t *testing.T) {
 func Test_RunDocsAndHelpFlow(t *testing.T) {
 	t.Parallel()
 	container := ioc.NewNestedContainer(nil)
-	testCtx := mocks.NewMockContext(context.Background())
+	testCtx := mocks.NewMockContext(t.Context())
 	container.MustRegisterSingleton(func() input.Console {
 		return testCtx.Console
 	})

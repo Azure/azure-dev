@@ -4,7 +4,6 @@
 package project
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -34,7 +33,7 @@ func Test_MavenProject(t *testing.T) {
 	t.Run("Restore", func(t *testing.T) {
 		var runArgs exec.RunArgs
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.
 			When(func(args exec.RunArgs, command string) bool {
 				return strings.Contains(command, fmt.Sprintf("%s dependency:resolve", getMvnwCmd()))
@@ -71,7 +70,7 @@ func Test_MavenProject(t *testing.T) {
 	t.Run("Build", func(t *testing.T) {
 		var runArgs exec.RunArgs
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.
 			When(func(args exec.RunArgs, command string) bool {
 				return strings.Contains(command, fmt.Sprintf("%s compile", getMvnwCmd()))
@@ -108,7 +107,7 @@ func Test_MavenProject(t *testing.T) {
 	t.Run("Package", func(t *testing.T) {
 		var runArgs exec.RunArgs
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.
 			When(func(args exec.RunArgs, command string) bool {
 				return strings.Contains(command, fmt.Sprintf("%s package", getMvnwCmd()))
@@ -266,7 +265,7 @@ func Test_MavenProject_AppService_Package(t *testing.T) {
 			require.NoError(t, err)
 
 			var runArgs exec.RunArgs
-			mockContext := mocks.NewMockContext(context.Background())
+			mockContext := mocks.NewMockContext(t.Context())
 			mockContext.CommandRunner.
 				When(func(args exec.RunArgs, command string) bool {
 					return strings.Contains(command, fmt.Sprintf("%s package", getMvnwCmd()))
@@ -344,7 +343,7 @@ func Test_MavenProject_FuncApp_Package(t *testing.T) {
 	err := os.WriteFile(getMvnwCmd(), nil, osutil.PermissionExecutableFile)
 	require.NoError(t, err)
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.CommandRunner.
 		When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, getMvnwCmd()+" package")
@@ -379,7 +378,7 @@ func Test_MavenProject_FuncApp_Package(t *testing.T) {
 
 	t.Run("uses maven property functionAppName", func(t *testing.T) {
 		mvnFuncAppNameProperty = "my-function-app"
-		svc := *serviceConfig //nolint:govet // copylocks: test-local copy, mutex is zero-valued
+		svc := *serviceConfig
 
 		err = os.RemoveAll(filepath.Join(svc.Path(), "target", "azure-functions"))
 		require.NoError(t, err)
@@ -422,7 +421,7 @@ func Test_MavenProject_FuncApp_Package(t *testing.T) {
 
 	t.Run("uses target/azure-functions when maven property functionAppName not available", func(t *testing.T) {
 		mvnFuncAppNameProperty = ""
-		svc := *serviceConfig //nolint:govet // copylocks: test-local copy, mutex is zero-valued
+		svc := *serviceConfig
 
 		err = os.RemoveAll(filepath.Join(svc.Path(), "target", "azure-functions"))
 		require.NoError(t, err)
@@ -490,7 +489,7 @@ func Test_MavenProject_FuncApp_Package(t *testing.T) {
 
 	t.Run("uses dist specified", func(t *testing.T) {
 		mvnFuncAppNameProperty = ""
-		svc := *serviceConfig //nolint:govet // copylocks: test-local copy, mutex is zero-valued
+		svc := *serviceConfig
 
 		svc.OutputPath = "my-custom-dir"
 		result, err := logProgress(t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {

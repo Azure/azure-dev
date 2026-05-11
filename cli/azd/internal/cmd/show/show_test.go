@@ -4,7 +4,6 @@
 package show
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -89,7 +88,7 @@ func Test_showContainerAppJob_SingleContainer(t *testing.T) {
 		},
 	}
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockJobGetResponse(mockContext, jobName, job)
 
 	id := newJobResourceID(jobName)
@@ -117,7 +116,7 @@ func Test_showContainerAppJob_NilProperties(t *testing.T) {
 		Properties: nil,
 	}
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockJobGetResponse(mockContext, jobName, job)
 
 	id := newJobResourceID(jobName)
@@ -167,7 +166,7 @@ func Test_showContainerAppJob_MultiContainer_MatchByName(t *testing.T) {
 		},
 	}
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockJobGetResponse(mockContext, jobName, job)
 
 	id := newJobResourceID(jobName)
@@ -206,7 +205,7 @@ func Test_showContainerAppJob_MultiContainer_NoMatch(t *testing.T) {
 		},
 	}
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockJobGetResponse(mockContext, jobName, job)
 
 	id := newJobResourceID(jobName)
@@ -246,7 +245,7 @@ func Test_showContainerAppJob_NilContainerElement(t *testing.T) {
 		},
 	}
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockJobGetResponse(mockContext, jobName, job)
 
 	id := newJobResourceID(jobName)
@@ -275,7 +274,7 @@ func Test_showContainerAppJob_SingleNilContainer(t *testing.T) {
 		},
 	}
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockJobGetResponse(mockContext, jobName, job)
 
 	id := newJobResourceID(jobName)

@@ -107,25 +107,35 @@ func TestGetUsageMetrics(t *testing.T) {
 		idleCh: make(chan struct{}, 1),
 	}
 
+	inputTokens1 := float64(1000)
+	outputTokens1 := float64(500)
+	cost1 := float64(1.0)
+	duration1 := float64(5000)
+
 	// Simulate usage events
 	d.HandleEvent(copilot.SessionEvent{
-		Type: copilot.AssistantUsage,
-		Data: copilot.Data{
-			InputTokens:  new(float64(1000)),
-			OutputTokens: new(float64(500)),
-			Cost:         new(1.0),
-			Duration:     new(float64(5000)),
-			Model:        new("gpt-4.1"),
+		Type: copilot.SessionEventTypeAssistantUsage,
+		Data: &copilot.AssistantUsageData{
+			InputTokens:  &inputTokens1,
+			OutputTokens: &outputTokens1,
+			Cost:         &cost1,
+			Duration:     &duration1,
+			Model:        "gpt-4.1",
 		},
 	})
 
+	inputTokens2 := float64(2000)
+	outputTokens2 := float64(800)
+	cost2 := float64(1.0)
+	duration2 := float64(3000)
+
 	d.HandleEvent(copilot.SessionEvent{
-		Type: copilot.AssistantUsage,
-		Data: copilot.Data{
-			InputTokens:  new(float64(2000)),
-			OutputTokens: new(float64(800)),
-			Cost:         new(1.0),
-			Duration:     new(float64(3000)),
+		Type: copilot.SessionEventTypeAssistantUsage,
+		Data: &copilot.AssistantUsageData{
+			InputTokens:  &inputTokens2,
+			OutputTokens: &outputTokens2,
+			Cost:         &cost2,
+			Duration:     &duration2,
 		},
 	})
 

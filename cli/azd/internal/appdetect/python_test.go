@@ -4,7 +4,6 @@
 package appdetect
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -138,7 +137,7 @@ func TestDetectPythonProject(t *testing.T) {
 			require.NoError(t, err)
 
 			detector := &pythonDetector{}
-			project, err := detector.DetectProject(context.Background(), dir, entries)
+			project, err := detector.DetectProject(t.Context(), dir, entries)
 			require.NoError(t, err)
 
 			if tt.wantNil {

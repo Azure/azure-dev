@@ -14,9 +14,18 @@ type GlobalCommandOptions struct {
 	// launched tools. It's enabled with `--debug`, for any command.
 	EnableDebugLogging bool
 
-	// NoPrompt controls non-interactive mode. When true, interactive prompts should behave as
-	// if the user selected the default value. If there is no default value the prompt returns
-	// an error.
+	// NoPrompt mode disables interactive input.
+	//
+	// Instead of prompting for missing or unclear information, the operation fails.
+	//
+	// Value resolution follows the standard process (e.g., CLI flags, environment
+	// variables, configuration, or deterministic defaults), shared with interactive
+	// mode.
+	//
+	// Execution fails if any of the following conditions occur:
+	//   - Missing: a required value cannot be resolved from any source
+	//   - Ambiguous: multiple candidate values exist with no deterministic selection
+	//   - Undecidable: a prompt requires user input and has no predefined default
 	//
 	// Can be enabled via:
 	//   - --no-prompt flag

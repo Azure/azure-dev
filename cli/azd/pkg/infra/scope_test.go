@@ -5,7 +5,6 @@ package infra
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -65,7 +64,7 @@ func TestScopeGetDeployment(t *testing.T) {
 	}
 
 	t.Run("SubscriptionScopeSuccess", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		deploymentService := mockazapi.NewDeploymentsServiceFromMockContext(mockContext)
 
 		subscriptionId := "SUBSCRIPTION_ID"
@@ -102,7 +101,7 @@ func TestScopeGetDeployment(t *testing.T) {
 	})
 
 	t.Run("ResourceGroupScopeSuccess", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		deploymentService := mockazapi.NewDeploymentsServiceFromMockContext(mockContext)
 
 		subscriptionId := "SUBSCRIPTION_ID"
@@ -155,7 +154,7 @@ var deploymentExtended = armresources.DeploymentExtended{
 
 func TestScopeDeploy(t *testing.T) {
 	t.Run("SubscriptionScopeSuccess", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		deploymentService := mockazapi.NewDeploymentsServiceFromMockContext(mockContext)
 
 		mockContext.HttpClient.When(func(request *http.Request) bool {
@@ -185,7 +184,7 @@ func TestScopeDeploy(t *testing.T) {
 	})
 
 	t.Run("ResourceGroupScopeSuccess", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		deploymentService := mockazapi.NewDeploymentsServiceFromMockContext(mockContext)
 
 		mockContext.HttpClient.When(func(request *http.Request) bool {
@@ -237,7 +236,7 @@ var deploymentOperationsListResult = armresources.DeploymentOperationsListResult
 
 func TestScopeGetResourceOperations(t *testing.T) {
 	t.Run("SubscriptionScopeSuccess", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		deploymentService := mockazapi.NewDeploymentsServiceFromMockContext(mockContext)
 
 		mockContext.HttpClient.When(func(request *http.Request) bool {
@@ -267,7 +266,7 @@ func TestScopeGetResourceOperations(t *testing.T) {
 	})
 
 	t.Run("ResourceGroupScopeSuccess", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		deploymentService := mockazapi.NewDeploymentsServiceFromMockContext(mockContext)
 
 		mockContext.HttpClient.When(func(request *http.Request) bool {
@@ -294,6 +293,66 @@ func TestScopeGetResourceOperations(t *testing.T) {
 		operations, err := target.Operations(*mockContext.Context)
 		require.NoError(t, err)
 		require.Len(t, operations, 1)
+	})
+}
+
+func TestScopeCancel(t *testing.T) {
+	t.Run("SubscriptionScopeSuccess", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(t.Context())
+		deploymentService := mockazapi.NewDeploymentsServiceFromMockContext(mockContext)
+
+		called := false
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.Method == http.MethodPost && strings.Contains(
+				request.URL.Path,
+				"/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/DEPLOYMENT_NAME/cancel",
+			)
+		}).RespondFn(func(request *http.Request) (*http.Response, error) {
+			called = true
+			return mocks.CreateEmptyHttpResponse(request, http.StatusNoContent)
+		})
+
+		scope := newSubscriptionScope(deploymentService, "SUBSCRIPTION_ID", "eastus2")
+		target := NewSubscriptionDeployment(scope, "DEPLOYMENT_NAME")
+		require.NoError(t, target.Cancel(*mockContext.Context))
+		require.True(t, called, "expected ARM cancel endpoint to be called")
+	})
+
+	t.Run("ResourceGroupScopeSuccess", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(t.Context())
+		deploymentService := mockazapi.NewDeploymentsServiceFromMockContext(mockContext)
+
+		called := false
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.Method == http.MethodPost && strings.Contains(
+				request.URL.Path,
+				//nolint:lll
+				"/subscriptions/SUBSCRIPTION_ID/resourcegroups/RESOURCE_GROUP/providers/Microsoft.Resources/deployments/DEPLOYMENT_NAME/cancel",
+			)
+		}).RespondFn(func(request *http.Request) (*http.Response, error) {
+			called = true
+			return mocks.CreateEmptyHttpResponse(request, http.StatusNoContent)
+		})
+
+		scope := newResourceGroupScope(deploymentService, "SUBSCRIPTION_ID", "RESOURCE_GROUP")
+		target := NewResourceGroupDeployment(scope, "DEPLOYMENT_NAME")
+		require.NoError(t, target.Cancel(*mockContext.Context))
+		require.True(t, called, "expected ARM cancel endpoint to be called")
+	})
+
+	t.Run("PropagatesError", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(t.Context())
+		deploymentService := mockazapi.NewDeploymentsServiceFromMockContext(mockContext)
+
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.Method == http.MethodPost && strings.Contains(request.URL.Path, "/cancel")
+		}).RespondFn(func(request *http.Request) (*http.Response, error) {
+			return mocks.CreateEmptyHttpResponse(request, http.StatusConflict)
+		})
+
+		scope := newSubscriptionScope(deploymentService, "SUBSCRIPTION_ID", "eastus2")
+		target := NewSubscriptionDeployment(scope, "DEPLOYMENT_NAME")
+		require.Error(t, target.Cancel(*mockContext.Context))
 	})
 }
 

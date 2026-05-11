@@ -3,7 +3,6 @@
 package azapi
 
 import (
-	"context"
 	"net/http"
 	"strings"
 	"testing"
@@ -16,7 +15,7 @@ import (
 
 func Test_GetStaticWebAppProperties(t *testing.T) {
 	t.Run("NoErrors", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		azCli := newAzureClientFromMockContext(mockContext)
 		ran := false
 
@@ -43,7 +42,7 @@ func Test_GetStaticWebAppProperties(t *testing.T) {
 	})
 
 	t.Run("Error", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		azCli := newAzureClientFromMockContext(mockContext)
 		ran := false
 
@@ -64,7 +63,7 @@ func Test_GetStaticWebAppProperties(t *testing.T) {
 
 func Test_GetStaticWebAppEnvironmentProperties(t *testing.T) {
 	t.Run("NoErrors", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		azCli := newAzureClientFromMockContext(mockContext)
 		ran := false
 
@@ -99,7 +98,7 @@ func Test_GetStaticWebAppEnvironmentProperties(t *testing.T) {
 	})
 
 	t.Run("Error", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		azCli := newAzureClientFromMockContext(mockContext)
 		ran := false
 
@@ -126,7 +125,7 @@ func Test_GetStaticWebAppEnvironmentProperties(t *testing.T) {
 
 func Test_GetStaticWebAppApiKey(t *testing.T) {
 	t.Run("NoErrors", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		azCli := newAzureClientFromMockContext(mockContext)
 		ran := false
 
@@ -154,7 +153,7 @@ func Test_GetStaticWebAppApiKey(t *testing.T) {
 	})
 
 	t.Run("Error", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		azCli := newAzureClientFromMockContext(mockContext)
 		ran := false
 

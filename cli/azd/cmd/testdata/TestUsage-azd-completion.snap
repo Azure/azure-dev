@@ -17,7 +17,7 @@ Global Flags
         --docs               	: Opens the documentation for azd completion in your web browser.
     -e, --environment string 	: The name of the environment to use.
     -h, --help               	: Gets help for completion.
-        --no-prompt          	: Accepts the default value instead of prompting, or it fails if there is no default.
+        --no-prompt          	: Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
 
 Use azd completion [command] --help to view examples and more information about a specific command.
 

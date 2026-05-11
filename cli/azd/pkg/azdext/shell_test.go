@@ -4,7 +4,6 @@
 package azdext
 
 import (
-	"context"
 	"os"
 	"runtime"
 	"testing"
@@ -147,7 +146,7 @@ func TestDetectShell_ComSpec(t *testing.T) {
 
 func TestShellCommandWith_Bash(t *testing.T) {
 	info := ShellInfo{Type: ShellTypeBash, Path: "/bin/bash"}
-	cmd, err := ShellCommandWith(context.Background(), info, "echo hello")
+	cmd, err := ShellCommandWith(t.Context(), info, "echo hello")
 	if err != nil {
 		t.Fatalf("ShellCommandWith(bash) error: %v", err)
 	}
@@ -168,7 +167,7 @@ func TestShellCommandWith_Bash(t *testing.T) {
 
 func TestShellCommandWith_Cmd(t *testing.T) {
 	info := ShellInfo{Type: ShellTypeCmd, Path: "cmd.exe"}
-	cmd, err := ShellCommandWith(context.Background(), info, "echo hello")
+	cmd, err := ShellCommandWith(t.Context(), info, "echo hello")
 	if err != nil {
 		t.Fatalf("ShellCommandWith(cmd) error: %v", err)
 	}
@@ -190,7 +189,7 @@ func TestShellCommandWith_Cmd(t *testing.T) {
 
 func TestShellCommandWith_PowerShell(t *testing.T) {
 	info := ShellInfo{Type: ShellTypePowerShell, Path: "pwsh"}
-	cmd, err := ShellCommandWith(context.Background(), info, "Write-Host hello")
+	cmd, err := ShellCommandWith(t.Context(), info, "Write-Host hello")
 	if err != nil {
 		t.Fatalf("ShellCommandWith(powershell) error: %v", err)
 	}
@@ -216,7 +215,7 @@ func TestShellCommandWith_PowerShell(t *testing.T) {
 func TestShellCommandWith_Unknown(t *testing.T) {
 	// Unknown shell should fall back to platform default.
 	info := ShellInfo{Type: ShellTypeUnknown}
-	cmd, err := ShellCommandWith(context.Background(), info, "echo test")
+	cmd, err := ShellCommandWith(t.Context(), info, "echo test")
 	if err != nil {
 		t.Fatalf("ShellCommandWith(unknown) error: %v", err)
 	}

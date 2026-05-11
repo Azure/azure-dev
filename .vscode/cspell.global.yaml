@@ -15,6 +15,14 @@ words:
     - azdo
     - choco
     - winget
+    - bicepparam
+    - cmdhook
+    - containerapp
+    - containerapps
+    - Exegraph
+    - exegraph
+    - GOMAXPROCS
+    - unrecovered
 ignoreWords:
     - AADSTS
     - afwp

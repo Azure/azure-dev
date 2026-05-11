@@ -6,13 +6,10 @@ package grpcserver
 import (
 	"context"
 	"crypto/rand"
-	"errors"
 	"fmt"
 	"log"
 	"net"
 
-	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"google.golang.org/grpc"
@@ -158,9 +155,9 @@ func (s *Server) Stop() error {
 	return nil
 }
 
-// errorWrappingInterceptor wraps ErrorWithSuggestion errors to include their suggestion text
-// in the error message. This ensures that helpful suggestions (like "run azd auth login")
-// are preserved when errors are transmitted over gRPC, where only the error message string is sent.
+// errorWrappingInterceptor maps host errors into gRPC status errors with structured details
+// (auth ErrorInfo, ActionableErrorDetail) so extensions can preserve actionable guidance
+// without parsing status message text. See [mapHostError] for the contract.
 func (s *Server) errorWrappingInterceptor() grpc.UnaryServerInterceptor {
 	return func(
 		ctx context.Context,
@@ -170,15 +167,13 @@ func (s *Server) errorWrappingInterceptor() grpc.UnaryServerInterceptor {
 	) (any, error) {
 		resp, err := handler(ctx, req)
 		if err != nil {
-			err = wrapErrorWithSuggestion(err)
+			err = mapHostError(err)
 		}
 		return resp, err
 	}
 }
 
 // errorWrappingStreamInterceptor is the streaming counterpart of errorWrappingInterceptor.
-// It wraps ErrorWithSuggestion errors from stream handlers so that actionable suggestions
-// are preserved in gRPC stream error responses.
 func (s *Server) errorWrappingStreamInterceptor() grpc.StreamServerInterceptor {
 	return func(
 		srv any,
@@ -188,7 +183,7 @@ func (s *Server) errorWrappingStreamInterceptor() grpc.StreamServerInterceptor {
 	) error {
 		err := handler(srv, ss)
 		if err != nil {
-			err = wrapErrorWithSuggestion(err)
+			err = mapHostError(err)
 		}
 		return err
 	}
@@ -265,36 +260,6 @@ type authenticatedStream struct {
 
 func (s *authenticatedStream) Context() context.Context {
 	return s.ctx
-}
-
-// wrapErrorWithSuggestion checks if the error contains an ErrorWithSuggestion and if so,
-// returns a new error that includes the suggestion text in the error message.
-// This ensures that helpful suggestions (like "run azd auth login") are preserved
-// when errors are transmitted over gRPC, where only the error message string is sent.
-//
-// Auth-related errors (ReLoginRequiredError, ErrNoCurrentUser) are returned with
-// codes.Unauthenticated so that extensions can detect auth failures via gRPC status code.
-func wrapErrorWithSuggestion(err error) error {
-	if err == nil {
-		return nil
-	}
-
-	_, loginErr := errors.AsType[*auth.ReLoginRequiredError](err)
-	isAuthErr := errors.Is(err, auth.ErrNoCurrentUser) || loginErr
-
-	if suggestionErr, ok := errors.AsType[*internal.ErrorWithSuggestion](err); ok {
-		msg := fmt.Sprintf("%s\n%s", err.Error(), suggestionErr.Suggestion)
-		if isAuthErr {
-			return status.Error(codes.Unauthenticated, msg)
-		}
-		return fmt.Errorf("%w\n%s", err, suggestionErr.Suggestion)
-	}
-
-	if isAuthErr {
-		return status.Error(codes.Unauthenticated, err.Error())
-	}
-
-	return err
 }
 
 func generateSigningKey() ([]byte, error) {

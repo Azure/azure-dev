@@ -132,7 +132,7 @@ func mockAzDeploymentShow(t *testing.T, m mocks.MockContext) {
 }
 
 func TestReportProgress(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	deploymentService := mockazapi.NewDeploymentsServiceFromMockContext(mockContext)
 
 	scope := newSubscriptionScope(deploymentService, "SUBSCRIPTION_ID", "eastus2")
@@ -209,7 +209,7 @@ func (mock *walkSkipAwareResourceManager) FindResourceGroupForEnvironment(
 }
 
 func TestReportProgressSkipsExpansionAfterTwoTerminalPolls(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	deploymentService := mockazapi.NewDeploymentsServiceFromMockContext(mockContext)
 
 	scope := newSubscriptionScope(deploymentService, "SUBSCRIPTION_ID", "eastus2")

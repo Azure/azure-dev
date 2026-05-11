@@ -57,19 +57,19 @@ func Test_EnsureInstalled(t *testing.T) {
 	}
 
 	t.Run("HaveAll", func(t *testing.T) {
-		err := EnsureInstalled(context.Background(), installedToolOne, installedToolTwo)
+		err := EnsureInstalled(t.Context(), installedToolOne, installedToolTwo)
 		assert.NoError(t, err)
 	})
 
 	t.Run("MissingOne", func(t *testing.T) {
-		err := EnsureInstalled(context.Background(), installedToolOne, missingToolOne)
+		err := EnsureInstalled(t.Context(), installedToolOne, missingToolOne)
 		assert.Error(t, err)
 		assert.Regexp(t, regexp.MustCompile(regexp.QuoteMeta(missingToolOne.Name())), err.Error())
 		assert.Regexp(t, regexp.MustCompile(regexp.QuoteMeta(missingToolOne.InstallUrl())), err.Error())
 	})
 
 	t.Run("MissingMany", func(t *testing.T) {
-		err := EnsureInstalled(context.Background(), installedToolOne, missingToolOne, missingToolTwo)
+		err := EnsureInstalled(t.Context(), installedToolOne, missingToolOne, missingToolTwo)
 		assert.Error(t, err)
 		assert.Regexp(t, regexp.MustCompile(regexp.QuoteMeta(missingToolOne.Name())), err.Error())
 		assert.Regexp(t, regexp.MustCompile(regexp.QuoteMeta(missingToolOne.InstallUrl())), err.Error())

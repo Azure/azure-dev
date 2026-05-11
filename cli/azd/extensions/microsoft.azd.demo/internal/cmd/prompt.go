@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -39,6 +41,30 @@ func newPromptCommand() *cobra.Command {
 				}
 				return fmt.Errorf("failed waiting for debugger: %w", err)
 			}
+
+			// Demonstrate the Secret prompt option: typed characters are
+			// masked as asterisks in the terminal.
+			apiKeyResponse, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+				Options: &azdext.PromptOptions{
+					Message:     "API key (leave blank to skip)",
+					Placeholder: "<masked>",
+					Secret:      true,
+				},
+			})
+			if err != nil {
+				return err
+			}
+
+			// For demo purposes only — print the captured value with only the
+			// first and last characters revealed so reviewers can confirm the
+			// masked prompt received the typed input. Real extensions should
+			// never echo any portion of secret values to the terminal.
+			if apiKeyResponse.Value == "" {
+				color.HiBlack("API key: (not provided)")
+			} else {
+				color.HiWhite("API key (partially masked, for demo only): %s", maskSecret(apiKeyResponse.Value))
+			}
+			fmt.Println()
 
 			_, err = azdClient.Prompt().MultiSelect(ctx, &azdext.MultiSelectRequest{
 				Options: &azdext.MultiSelectOptions{
@@ -287,4 +313,16 @@ func newPromptCommand() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+// maskSecret returns a partially masked representation of value with only the
+// first and last runes revealed. Values shorter than 3 runes are fully masked.
+func maskSecret(value string) string {
+	count := utf8.RuneCountInString(value)
+	if count < 3 {
+		return strings.Repeat("*", count)
+	}
+
+	runes := []rune(value)
+	return string(runes[0]) + strings.Repeat("*", count-2) + string(runes[count-1])
 }

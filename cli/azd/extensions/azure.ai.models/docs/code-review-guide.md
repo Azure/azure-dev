@@ -193,7 +193,7 @@ func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
 ### Check: Referenced commands exist
 ```go
 // ❌ FLAGGED: Suggests command that doesn't exist
-fmt.Printf("  azd ai models custom register --name %s\n", name)
+fmt.Printf("  azd ai models register --name %s\n", name)
 ```
 
 **Review Comment Template:**

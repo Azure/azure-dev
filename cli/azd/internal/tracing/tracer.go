@@ -5,14 +5,14 @@ package tracing
 
 import (
 	"context"
-	"reflect"
-	"strings"
-
-	"github.com/azure/azure-dev/cli/azd/internal/tracing/baggage"
-	"go.opentelemetry.io/otel/codes"
 
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/baggage"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/errchain"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 )
 
 // It is often valuable to extend functionality of 3rd-party library types.
@@ -107,7 +107,13 @@ func (s *wrapperSpan) End(options ...trace.SpanEndOption) {
 
 func (s *wrapperSpan) EndWithStatus(err error, options ...trace.SpanEndOption) {
 	if err != nil {
-		s.span.SetStatus(codes.Error, "internal."+errorDescription(err))
+		// Sub-spans don't run the full typed/sentinel ladder — that
+		// lives at the command boundary in internal/cmd.MapError to
+		// avoid pulling auth/azapi/exec/extensions into a low-level
+		// package. Emit the chain plus a deepest-named description
+		// here so engineers still see the underlying error shape.
+		s.span.SetAttributes(fields.ErrChainTypes.StringSlice(errchain.Types(err)))
+		s.span.SetStatus(codes.Error, subSpanErrorDescription(err))
 	} else {
 		s.span.SetStatus(codes.Ok, "")
 	}
@@ -152,41 +158,11 @@ func (s *wrapperSpan) TracerProvider() trace.TracerProvider {
 	return s.span.TracerProvider()
 }
 
-// errorDescription returns a description for the error suitable for use as a span status description.
-// It unwraps errors to find the root cause type, producing values like "errors_errorString" or
-// "azcore_ResponseError". For joined errors (Unwrap() []error), it returns comma-separated type names.
-func errorDescription(err error) string {
-	if err == nil {
-		return "<nil>"
+func subSpanErrorDescription(err error) string {
+	deepest := errchain.DeepestNamedType(err)
+	if deepest == "" || errchain.IsGenericWrapper(deepest) {
+		return "internal.unclassified"
 	}
 
-	//nolint:errorlint // Type switch is intentionally used to check for Unwrap() methods
-	for {
-		switch x := err.(type) {
-		case interface{ Unwrap() error }:
-			inner := x.Unwrap()
-			if inner == nil {
-				return sanitizeTypeName(reflect.TypeOf(x).String())
-			}
-			err = inner
-		case interface{ Unwrap() []error }:
-			result := ""
-			for _, e := range x.Unwrap() {
-				if e == nil {
-					continue
-				}
-				if result != "" {
-					result += ","
-				}
-				result += sanitizeTypeName(reflect.TypeOf(e).String())
-			}
-			return result
-		default:
-			return sanitizeTypeName(reflect.TypeOf(x).String())
-		}
-	}
-}
-
-func sanitizeTypeName(name string) string {
-	return strings.ReplaceAll(strings.ReplaceAll(name, ".", "_"), "*", "")
+	return "internal." + errchain.SanitizeTypeName(deepest)
 }

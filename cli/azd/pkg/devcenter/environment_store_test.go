@@ -4,7 +4,6 @@
 package devcenter
 
 import (
-	"context"
 	"fmt"
 	"testing"
 
@@ -67,7 +66,7 @@ var mockEnvironments []*devcentersdk.Environment = []*devcentersdk.Environment{
 }
 
 func Test_EnvironmentStore_List(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockdevcentersdk.MockDevCenterGraphQuery(mockContext, mockDevCenterList)
 	mockdevcentersdk.MockListEnvironmentsByProject(mockContext, "Project1", mockEnvironments)
 
@@ -124,7 +123,7 @@ func Test_EnvironmentStore_List(t *testing.T) {
 }
 
 func Test_EnvironmentStore_Get(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockdevcentersdk.MockDevCenterGraphQuery(mockContext, mockDevCenterList)
 	mockdevcentersdk.MockListEnvironmentsByProject(mockContext, "Project1", mockEnvironments)
 
@@ -201,7 +200,7 @@ func Test_EnvironmentStore_Get(t *testing.T) {
 }
 
 func Test_EnvironmentStore_GetEnvPath(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	config := &Config{
 		Name:                  "DEV_CENTER_01",
@@ -282,7 +281,7 @@ func Test_EnvironmentStore_Save(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			mockContext := mocks.NewMockContext(context.Background())
+			mockContext := mocks.NewMockContext(t.Context())
 			store := newEnvironmentStoreForTest(t, mockContext, test.config, nil)
 			err := store.Save(*mockContext.Context, test.env, &environment.SaveOptions{IsNew: test.isNew})
 			require.NoError(t, err)

@@ -137,7 +137,7 @@ func TestValidateLocalContainerAgentCopy_AllowsReinitInPlace(t *testing.T) {
 	// InitAction with nil azdClient is safe here because isSamePath returns early
 	// before any prompting code is reached.
 	a := &InitAction{}
-	if err := a.validateLocalContainerAgentCopy(context.Background(), manifestPointer, dir); err != nil {
+	if err := a.validateLocalContainerAgentCopy(t.Context(), manifestPointer, dir); err != nil {
 		t.Fatalf("expected no error for re-init in place: %v", err)
 	}
 }
@@ -775,34 +775,6 @@ func TestInjectToolboxEnvVarsIntoDefinition_NoopForNilManifest(t *testing.T) {
 	}
 }
 
-func TestInjectToolboxEnvVarsIntoDefinition_NoopForPromptAgent(t *testing.T) {
-	t.Parallel()
-
-	manifest := &agent_yaml.AgentManifest{
-		Template: agent_yaml.PromptAgent{
-			AgentDefinition: agent_yaml.AgentDefinition{
-				Kind: agent_yaml.AgentKindPrompt,
-				Name: "prompt-agent",
-			},
-		},
-		Resources: []any{
-			agent_yaml.ToolboxResource{
-				Resource: agent_yaml.Resource{Name: "tools", Kind: agent_yaml.ResourceKindToolbox},
-				Tools:    []any{map[string]any{"type": "bing_grounding"}},
-			},
-		},
-	}
-
-	if err := injectToolboxEnvVarsIntoDefinition(manifest); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	// Template should be unchanged (still a PromptAgent, no EnvironmentVariables field)
-	if _, ok := manifest.Template.(agent_yaml.PromptAgent); !ok {
-		t.Error("Expected template to remain a PromptAgent")
-	}
-}
-
 func TestInjectToolboxEnvVarsIntoDefinition_NoopWithoutToolboxes(t *testing.T) {
 	t.Parallel()
 
@@ -1067,14 +1039,6 @@ func TestManifestHasModelResources(t *testing.T) {
 		expected bool
 	}{
 		{
-			name: "prompt agent always has model resources",
-			manifest: &agent_yaml.AgentManifest{
-				Name:     "test-prompt",
-				Template: agent_yaml.PromptAgent{},
-			},
-			expected: true,
-		},
-		{
 			name: "hosted agent with model resource",
 			manifest: &agent_yaml.AgentManifest{
 				Name:     "test-hosted",
@@ -1195,11 +1159,6 @@ func TestResolvePositionalArg(t *testing.T) {
 			isManifest: true,
 		},
 		{
-			name:       "azureml registry URL is manifest",
-			arg:        "azureml://registries/myReg/agentmanifests/myManifest",
-			isManifest: true,
-		},
-		{
 			name:       "custom scheme URL is manifest",
 			arg:        "custom://some/resource",
 			isManifest: true,
@@ -1256,7 +1215,7 @@ func TestApplyPositionalArg_ConflictWithManifestFlag(t *testing.T) {
 		t.Fatalf("failed to create test manifest: %v", err)
 	}
 
-	flags := &initFlags{rootFlagsDefinition: &rootFlagsDefinition{}}
+	flags := &initFlags{}
 	cmd := &cobra.Command{}
 	cmd.Flags().StringVarP(&flags.manifestPointer, "manifest", "m", "", "")
 	// Simulate the user having set --manifest explicitly
@@ -1286,7 +1245,7 @@ func TestApplyPositionalArg_ConflictWithSrcFlag(t *testing.T) {
 
 	tmpDir := t.TempDir()
 
-	flags := &initFlags{rootFlagsDefinition: &rootFlagsDefinition{}}
+	flags := &initFlags{}
 	cmd := &cobra.Command{}
 	cmd.Flags().StringVarP(&flags.src, "src", "s", "", "")
 	cmd.Flags().StringVarP(&flags.manifestPointer, "manifest", "m", "", "")
@@ -1320,7 +1279,7 @@ func TestApplyPositionalArg_SetsManifestPointer(t *testing.T) {
 		t.Fatalf("failed to create test manifest: %v", err)
 	}
 
-	flags := &initFlags{rootFlagsDefinition: &rootFlagsDefinition{}}
+	flags := &initFlags{}
 	cmd := &cobra.Command{}
 	cmd.Flags().StringVarP(&flags.manifestPointer, "manifest", "m", "", "")
 	cmd.Flags().StringVarP(&flags.src, "src", "s", "", "")
@@ -1338,7 +1297,7 @@ func TestApplyPositionalArg_SetsSrcDir(t *testing.T) {
 
 	tmpDir := t.TempDir()
 
-	flags := &initFlags{rootFlagsDefinition: &rootFlagsDefinition{}}
+	flags := &initFlags{}
 	cmd := &cobra.Command{}
 	cmd.Flags().StringVarP(&flags.manifestPointer, "manifest", "m", "", "")
 	cmd.Flags().StringVarP(&flags.src, "src", "s", "", "")
@@ -1356,7 +1315,7 @@ func TestApplyPositionalArg_NonExistentDirSetsSrc(t *testing.T) {
 
 	newDir := filepath.Join(t.TempDir(), "new-project")
 
-	flags := &initFlags{rootFlagsDefinition: &rootFlagsDefinition{}}
+	flags := &initFlags{}
 	cmd := &cobra.Command{}
 	cmd.Flags().StringVarP(&flags.manifestPointer, "manifest", "m", "", "")
 	cmd.Flags().StringVarP(&flags.src, "src", "s", "", "")
@@ -1374,7 +1333,7 @@ func TestApplyPositionalArg_NonExistentYamlSetsManifest(t *testing.T) {
 
 	yamlPath := filepath.Join(t.TempDir(), "agent.yaml")
 
-	flags := &initFlags{rootFlagsDefinition: &rootFlagsDefinition{}}
+	flags := &initFlags{}
 	cmd := &cobra.Command{}
 	cmd.Flags().StringVarP(&flags.manifestPointer, "manifest", "m", "", "")
 	cmd.Flags().StringVarP(&flags.src, "src", "s", "", "")
@@ -1662,7 +1621,7 @@ func TestResolveCollisions_NoCollision(t *testing.T) {
 	t.Chdir(tmpDir)
 
 	action := &InitAction{
-		flags: &initFlags{rootFlagsDefinition: &rootFlagsDefinition{}},
+		flags: &initFlags{},
 	}
 
 	dir, svc, err := action.resolveCollisions(
@@ -1739,9 +1698,7 @@ func TestResolveCollisions_NoPrompt(t *testing.T) {
 			action := &InitAction{
 				projectConfig: projectCfg,
 				flags: &initFlags{
-					rootFlagsDefinition: &rootFlagsDefinition{
-						NoPrompt: true,
-					},
+					noPrompt: true,
 				},
 			}
 

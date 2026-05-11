@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"path/filepath"
 	"testing"
@@ -65,7 +64,7 @@ func TestConfigShowAction_NoneFormat(t *testing.T) {
 
 func TestConfigListAction_DelegatesAndShowsWarning(t *testing.T) {
 	buf := &bytes.Buffer{}
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	userConfigManager := newTestUserConfigManager(t)
 
 	showAction := &configShowAction{
@@ -165,7 +164,7 @@ func TestConfigUnsetAction(t *testing.T) {
 }
 
 func TestConfigResetAction_WithForce(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	userConfigManager := newTestUserConfigManager(t)
 
 	// Set a value first
@@ -196,7 +195,7 @@ func TestConfigResetAction_WithForce(t *testing.T) {
 }
 
 func TestConfigResetAction_UserDeclines(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	userConfigManager := newTestUserConfigManager(t)
 
 	mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
@@ -231,7 +230,7 @@ func TestConfigResetAction_UserDeclines(t *testing.T) {
 }
 
 func TestConfigListAlphaAction_Run(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	featureManager := alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig())
 	action := newConfigListAlphaAction(featureManager, mockContext.Console, []string{})

@@ -11,6 +11,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -32,19 +33,19 @@ func TestAuthenticatedStream_Context(t *testing.T) {
 	require.Equal(t, "value", got.Value(struct{ key string }{key: "test"}))
 }
 
-func TestWrapErrorWithSuggestion_Nil(t *testing.T) {
+func TestMapHostError_Nil(t *testing.T) {
 	t.Parallel()
-	require.Nil(t, wrapErrorWithSuggestion(nil))
+	require.Nil(t, mapHostError(nil))
 }
 
-func TestWrapErrorWithSuggestion_PlainError(t *testing.T) {
+func TestMapHostError_PlainError(t *testing.T) {
 	t.Parallel()
 	err := errors.New("something failed")
-	wrapped := wrapErrorWithSuggestion(err)
+	wrapped := mapHostError(err)
 	require.Equal(t, err, wrapped)
 }
 
-func TestWrapErrorWithSuggestion_WithSuggestion(t *testing.T) {
+func TestMapHostError_WithSuggestion(t *testing.T) {
 	t.Parallel()
 	inner := errors.New("login required")
 	err := &internal.ErrorWithSuggestion{
@@ -52,32 +53,67 @@ func TestWrapErrorWithSuggestion_WithSuggestion(t *testing.T) {
 		Suggestion: "run azd auth login",
 	}
 
-	wrapped := wrapErrorWithSuggestion(err)
-	require.Contains(t, wrapped.Error(), "run azd auth login")
+	wrapped := mapHostError(err)
+	require.Contains(t, wrapped.Error(), "login required")
+	require.NotContains(t, wrapped.Error(), "run azd auth login",
+		"suggestion text must not be concatenated into status.Message")
+
+	st, ok := status.FromError(wrapped)
+	require.True(t, ok)
+	actionable := azdext.ActionableErrorDetailFromStatus(st)
+	require.NotNil(t, actionable)
+	require.Equal(t, "run azd auth login", actionable.GetSuggestion())
 }
 
-func TestWrapErrorWithSuggestion_AuthError(t *testing.T) {
+func TestMapHostError_AuthError(t *testing.T) {
 	t.Parallel()
 	err := auth.ErrNoCurrentUser
-	wrapped := wrapErrorWithSuggestion(err)
+	wrapped := mapHostError(err)
 
 	st, ok := status.FromError(wrapped)
 	require.True(t, ok)
 	require.Equal(t, codes.Unauthenticated, st.Code())
 }
 
-func TestWrapErrorWithSuggestion_ReLoginRequired(t *testing.T) {
+func TestMapHostError_ReLoginRequired(t *testing.T) {
 	t.Parallel()
 	// ReLoginRequiredError has unexported fields; use a simple error wrapping
 	err := fmt.Errorf("re-login: %w", &auth.ReLoginRequiredError{})
 
-	wrapped := wrapErrorWithSuggestion(err)
+	wrapped := mapHostError(err)
 	st, ok := status.FromError(wrapped)
 	require.True(t, ok)
 	require.Equal(t, codes.Unauthenticated, st.Code())
 }
 
-func TestWrapErrorWithSuggestion_AuthErrorWithSuggestion(t *testing.T) {
+func TestMapHostError_TokenProtectionBlocked(t *testing.T) {
+	t.Parallel()
+	authFailed := &auth.AuthFailedError{
+		Parsed: &auth.AadErrorResponse{
+			Error:      "invalid_grant",
+			ErrorCodes: []int{530084},
+		},
+	}
+	// In production the wrapper is built by newActionableAuthError; mirror that shape here so
+	// mapHostError classifies the wrapped *AuthFailedError as an auth interaction.
+	err := fmt.Errorf("token protection: %w", &internal.ErrorWithSuggestion{
+		Err:        authFailed,
+		Suggestion: "Contact your IT administrator or request a policy exception.",
+	})
+
+	wrapped := mapHostError(err)
+	st, ok := status.FromError(wrapped)
+	require.True(t, ok)
+	require.Equal(t, codes.Unauthenticated, st.Code())
+	info := requireAuthErrorInfo(t, st)
+	require.Equal(t, azdext.AuthErrorDomain, info.Domain)
+	require.Equal(t, "AADSTS530084", info.Reason)
+	actionable := azdext.ActionableErrorDetailFromStatus(st)
+	require.NotNil(t, actionable)
+	require.Equal(t, "Contact your IT administrator or request a policy exception.", actionable.GetSuggestion())
+}
+
+func TestMapHostError_AuthErrorWithSuggestion(t *testing.T) {
 	t.Parallel()
 	inner := auth.ErrNoCurrentUser
 	err := &internal.ErrorWithSuggestion{
@@ -85,11 +121,15 @@ func TestWrapErrorWithSuggestion_AuthErrorWithSuggestion(t *testing.T) {
 		Suggestion: "run azd auth login",
 	}
 
-	wrapped := wrapErrorWithSuggestion(err)
+	wrapped := mapHostError(err)
 	st, ok := status.FromError(wrapped)
 	require.True(t, ok)
 	require.Equal(t, codes.Unauthenticated, st.Code())
-	require.Contains(t, st.Message(), "run azd auth login")
+	require.NotContains(t, st.Message(), "run azd auth login",
+		"suggestion text must not be concatenated into status.Message")
+	actionable := azdext.ActionableErrorDetailFromStatus(st)
+	require.NotNil(t, actionable)
+	require.Equal(t, "run azd auth login", actionable.GetSuggestion())
 }
 
 func TestGenerateSigningKey(t *testing.T) {

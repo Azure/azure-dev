@@ -4,7 +4,6 @@
 package azdext
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -18,9 +17,9 @@ func TestFrameworkServiceEnvelope_GetSetRequestId(t *testing.T) {
 	env := NewFrameworkServiceEnvelope()
 	msg := &FrameworkServiceMessage{RequestId: "req-123"}
 
-	require.Equal(t, "req-123", env.GetRequestId(context.Background(), msg))
+	require.Equal(t, "req-123", env.GetRequestId(t.Context(), msg))
 
-	env.SetRequestId(context.Background(), msg, "req-456")
+	env.SetRequestId(t.Context(), msg, "req-456")
 	require.Equal(t, "req-456", msg.RequestId)
 }
 
@@ -190,9 +189,9 @@ func TestServiceTargetEnvelope_GetSetRequestId(t *testing.T) {
 	env := NewServiceTargetEnvelope()
 	msg := &ServiceTargetMessage{RequestId: "st-123"}
 
-	require.Equal(t, "st-123", env.GetRequestId(context.Background(), msg))
+	require.Equal(t, "st-123", env.GetRequestId(t.Context(), msg))
 
-	env.SetRequestId(context.Background(), msg, "st-456")
+	env.SetRequestId(t.Context(), msg, "st-456")
 	require.Equal(t, "st-456", msg.RequestId)
 }
 
@@ -435,7 +434,7 @@ func TestEventMessageEnvelope_NoOps(t *testing.T) {
 	msg := &EventMessage{}
 
 	// SetRequestId is a no-op
-	env.SetRequestId(context.Background(), msg, "ignored")
+	env.SetRequestId(t.Context(), msg, "ignored")
 
 	// GetError always returns nil
 	require.Nil(t, env.GetError(msg))
@@ -465,6 +464,6 @@ func TestEventMessageEnvelope_GetRequestId_NoContext(t *testing.T) {
 		},
 	}
 
-	id := env.GetRequestId(context.Background(), msg)
+	id := env.GetRequestId(t.Context(), msg)
 	require.Empty(t, id)
 }

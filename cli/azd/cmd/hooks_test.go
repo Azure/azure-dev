@@ -4,7 +4,6 @@
 package cmd
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -30,7 +29,7 @@ func registerHookExecutors(mockCtx *mocks.MockContext) {
 }
 
 func Test_HooksRunAction_RunsLayerHooks(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockContext)
 	env := environment.NewWithValues("test", nil)
 	envManager := &mockenv.MockEnvManager{}
@@ -99,7 +98,7 @@ func Test_HooksRunAction_RunsLayerHooks(t *testing.T) {
 }
 
 func Test_HooksRunAction_FiltersLayerHooks(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockContext)
 	env := environment.NewWithValues("test", nil)
 	envManager := &mockenv.MockEnvManager{}
@@ -166,7 +165,7 @@ func Test_HooksRunAction_FiltersLayerHooks(t *testing.T) {
 }
 
 func Test_HooksRunAction_SetsTelemetryTypeForLayer(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockContext)
 	env := environment.NewWithValues("test", nil)
 	envManager := &mockenv.MockEnvManager{}
@@ -234,13 +233,13 @@ func Test_HooksRunAction_RejectsServiceAndLayerTogether(t *testing.T) {
 		args:  []string{"preprovision"},
 	}
 
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.ErrorContains(t, err, "--service and --layer cannot be used together")
 }
 
 func Test_HooksRunAction_ValidatesLayerHooksRelativeToLayerPath(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	env := environment.NewWithValues("test", nil)
 
 	projectPath := t.TempDir()

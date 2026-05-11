@@ -11,7 +11,6 @@ import (
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
-	"azureaiagent/internal/pkg/agents/registry_api"
 	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -117,7 +116,7 @@ func (a *InitAction) selectFromList(
 		defaultStr = defaultOpt
 	}
 
-	if a.flags.NoPrompt {
+	if a.flags.noPrompt {
 		fmt.Printf("No prompt mode enabled, selecting default %s: %s\n", property, defaultStr)
 		return defaultStr, nil
 	}
@@ -357,7 +356,7 @@ func (a *modelSelector) getModelDetails(ctx context.Context, modelName string) (
 		currentLocation = resolvedLocation
 	}
 
-	if a.flags.NoPrompt {
+	if a.flags.noPrompt {
 		fmt.Println("No prompt mode enabled, automatically selecting a model deployment based on availability and quota...")
 		return resolveModelDeployment(ctx, a.azdClient, a.azureContext, model, currentLocation)
 	}
@@ -621,11 +620,22 @@ func (a *modelSelector) promptForModelLocationMismatch(
 		}
 
 		if selectedChoice == "location" {
+			allowedLocations, err := supportedModelLocations(ctx, currentModel.Locations)
+			if err != nil {
+				if isNoSupportedLocationsError(err) {
+					message = fmt.Sprintf(
+						"Model '%s' is not available in any region supported for hosted agents.",
+						currentModel.Name,
+					)
+					continue
+				}
+				return nil, "", err
+			}
 			locationResp, err := a.azdClient.Prompt().PromptAiModelLocationWithQuota(ctx,
 				&azdext.PromptAiModelLocationWithQuotaRequest{
 					AzureContext:     a.azureContext,
 					ModelName:        currentModel.Name,
-					AllowedLocations: supportedModelLocations(currentModel.Locations),
+					AllowedLocations: allowedLocations,
 					Quota: &azdext.QuotaCheckOptions{
 						MinRemainingCapacity: 1,
 					},
@@ -672,11 +682,23 @@ func (a *modelSelector) promptForModelLocationMismatch(
 			}
 
 			selectedModel := modelResp.Model
+			allowedLocations, err := supportedModelLocations(ctx, selectedModel.Locations)
+			if err != nil {
+				if isNoSupportedLocationsError(err) {
+					currentModel = selectedModel
+					message = fmt.Sprintf(
+						"Model '%s' is not available in any region supported for hosted agents.",
+						selectedModel.Name,
+					)
+					continue
+				}
+				return nil, "", err
+			}
 			locationResp, err := a.azdClient.Prompt().PromptAiModelLocationWithQuota(ctx,
 				&azdext.PromptAiModelLocationWithQuotaRequest{
 					AzureContext:     a.azureContext,
 					ModelName:        selectedModel.Name,
-					AllowedLocations: supportedModelLocations(selectedModel.Locations),
+					AllowedLocations: allowedLocations,
 					Quota: &azdext.QuotaCheckOptions{
 						MinRemainingCapacity: 1,
 					},
@@ -750,17 +772,8 @@ func (a *InitAction) ProcessModels(ctx context.Context, manifest *agent_yaml.Age
 	}
 
 	deploymentDetails := []project.Deployment{}
-	paramValues := registry_api.ParameterValues{}
+	paramValues := agent_yaml.ParameterValues{}
 	switch agentDef.Kind {
-	case agent_yaml.AgentKindPrompt:
-		agentDef := manifest.Template.(agent_yaml.PromptAgent)
-
-		modelDeployment, err := a.getModelDeploymentDetails(ctx, agentDef.Model)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to get model deployment details: %w", err)
-		}
-		deploymentDetails = append(deploymentDetails, *modelDeployment)
-		paramValues["deploymentName"] = modelDeployment.Name
 	case agent_yaml.AgentKindHosted:
 		for _, resource := range manifest.Resources {
 			resourceBytes, err := yaml.Marshal(resource)
@@ -786,7 +799,7 @@ func (a *InitAction) ProcessModels(ctx context.Context, manifest *agent_yaml.Age
 		}
 	}
 
-	updatedManifest, err := registry_api.InjectParameterValuesIntoManifest(manifest, paramValues)
+	updatedManifest, err := agent_yaml.InjectParameterValuesIntoManifest(manifest, paramValues)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to inject deployment names into manifest: %w", err)
 	}

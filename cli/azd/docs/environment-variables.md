@@ -47,11 +47,16 @@ integration.
 | `AZD_FORCE_TTY` | If true, forces `azd` to write terminal-style output. |
 | `AZD_IN_CLOUDSHELL` | If true, `azd` runs with Azure Cloud Shell specific behavior. |
 | `AZD_SKIP_UPDATE_CHECK` | If true, skips the out-of-date update check output that is typically printed at the end of the command. |
+| `AZD_SKIP_FIRST_RUN` | If true, skips the first-run tool setup experience and background tool update checks. Useful for CI/CD pipelines and automated environments. |
 | `AZD_CONTAINER_RUNTIME` | The container runtime to use (e.g., `docker`, `podman`). |
 | `AZD_ALLOW_NON_EMPTY_FOLDER` | If set, allows `azd init` to run in a non-empty directory without prompting. |
 | `AZD_BUILDER_IMAGE` | The builder docker image used to perform Dockerfile-less builds. |
+| `AZD_DEPLOY_CONCURRENCY` | Maximum number of services to deploy in parallel during `azd deploy`. Only takes effect when at least one service declares `uses:` targeting another service; without `uses:` edges, services deploy sequentially in alphabetical order for backward compatibility (see [concurrency model](concurrency-model.md)). Parsed as a positive integer; clamped to a maximum of `64`. When unset, concurrency is unlimited (bounded only by the number of services). |
 | `AZD_DEPLOY_TIMEOUT` | Timeout for deployment operations, parsed as an integer number of seconds (for example, `1200`). Defaults to `1200` seconds (20 minutes). |
+| `AZD_PROVISION_CONCURRENCY` | Maximum number of infrastructure layers to provision in parallel during `azd provision`. Parsed as a positive integer; clamped to a maximum of `64`. When unset, concurrency is unlimited (bounded only by the dependency graph). |
+| `AZD_UP_CONCURRENCY` | Maximum number of steps to run in parallel during `azd up`. Parsed as a positive integer; clamped to a maximum of `64`. Falls back to `AZD_DEPLOY_CONCURRENCY` when unset. When both are unset, concurrency is unlimited. |
 | `AZD_DEPLOY_{SERVICE}_SLOT_NAME` | Sets the App Service deployment slot target for a service. Replace `{SERVICE}` with the uppercase service name (hyphens become underscores). Set to `production` to deploy to the main app, or a slot name (e.g., `staging`). When slots exist and this is not set, `--no-prompt` mode fails with an error listing available targets. |
+| `AZD_DEPLOY_{SERVICE}_SKIP_STATUS_CHECK` | If `true`, skips runtime deployment status tracking for the named Linux App Service after zip deploy. Useful when the target web app is intentionally stopped. Parsed as a boolean (`true`/`false`/`1`/`0`). `{SERVICE}` follows the same naming rules as `AZD_DEPLOY_{SERVICE}_SLOT_NAME`. |
 
 ## Extension Variables
 
@@ -230,13 +235,28 @@ These variables are used by the Terraform provider integration to authenticate w
 ## Test Variables
 
 > **Warning**: Test variables are used by the `azd` test suite only and are not intended for end users.
+>
+> **Tip**: Instead of setting environment variables for every session, you can persist test defaults
+> in your user-level `azd` config. These config keys act as fallbacks when the corresponding
+> environment variable is not set:
+>
+> ```bash
+> azd config set defaults.test.subscription <SUBSCRIPTION_ID>
+> azd config set defaults.test.tenant <TENANT_ID>
+> azd config set defaults.test.location <LOCATION>
+> ```
+>
+> Resolution order: environment variable → `defaults.test.*` → `defaults.*` (global default).
+> Note: `AZD_TEST_TENANT_ID` only falls back to `defaults.test.tenant` (no
+> `defaults.tenant` global fallback). Config fallbacks are only consulted when
+> the `CI` environment variable is unset.
 
-| Variable | Description |
-| --- | --- |
-| `AZD_TEST_CLIENT_ID` | The client ID for test authentication. |
-| `AZD_TEST_TENANT_ID` | The tenant ID for test authentication. |
-| `AZD_TEST_AZURE_SUBSCRIPTION_ID` | The Azure subscription ID for tests. |
-| `AZD_TEST_AZURE_LOCATION` | The Azure location for tests. |
+| Variable | Description | Config Fallback |
+| --- | --- | --- |
+| `AZD_TEST_CLIENT_ID` | The client ID for test authentication. | — |
+| `AZD_TEST_TENANT_ID` | The tenant ID for test authentication. | `defaults.test.tenant` |
+| `AZD_TEST_AZURE_SUBSCRIPTION_ID` | The Azure subscription ID for tests. | `defaults.test.subscription` |
+| `AZD_TEST_AZURE_LOCATION` | The Azure location for tests. | `defaults.test.location` |
 | `AZD_TEST_CLI_VERSION` | Overrides the CLI version reported during tests. |
 | `AZD_TEST_FIXED_CLOCK_UNIX_TIME` | Sets a fixed clock time (Unix epoch) for deterministic tests. |
 | `AZD_TEST_HTTPS_PROXY` | The HTTPS proxy URL for tests. |

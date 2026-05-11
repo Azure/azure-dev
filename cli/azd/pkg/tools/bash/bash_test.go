@@ -4,7 +4,6 @@
 package bash
 
 import (
-	"context"
 	"errors"
 	"os"
 	"runtime"
@@ -27,7 +26,7 @@ func Test_Bash_Execute(t *testing.T) {
 	}
 
 	t.Run("Prepare", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		executor := NewExecutor(mockContext.CommandRunner)
 		execCtx := tools.ExecutionContext{Cwd: workingDir, EnvVars: env}
 		err := executor.Prepare(*mockContext.Context, scriptPath, execCtx)
@@ -35,7 +34,7 @@ func Test_Bash_Execute(t *testing.T) {
 	})
 
 	t.Run("PrepareInlineScript", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		executor := NewExecutor(mockContext.CommandRunner)
 
 		execCtx := tools.ExecutionContext{
@@ -79,7 +78,7 @@ func Test_Bash_Execute(t *testing.T) {
 	})
 
 	t.Run("Success", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return true
@@ -114,7 +113,7 @@ func Test_Bash_Execute(t *testing.T) {
 	})
 
 	t.Run("Error", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return true
@@ -152,7 +151,7 @@ func Test_Bash_Execute(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			mockContext := mocks.NewMockContext(context.Background())
+			mockContext := mocks.NewMockContext(t.Context())
 
 			mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 				return true

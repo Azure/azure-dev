@@ -30,7 +30,7 @@ import (
 )
 
 func Test_CommandHooks_Middleware_WithValidProjectAndMatchingCommand(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockContext)
 	azdContext := createAzdContext(t)
 
@@ -65,7 +65,7 @@ func Test_CommandHooks_Middleware_WithValidProjectAndMatchingCommand(t *testing.
 }
 
 func Test_CommandHooks_Middleware_ValidProjectWithDifferentCommand(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockContext)
 	azdContext := createAzdContext(t)
 
@@ -100,7 +100,7 @@ func Test_CommandHooks_Middleware_ValidProjectWithDifferentCommand(t *testing.T)
 }
 
 func Test_CommandHooks_Middleware_ValidProjectWithNoHooks(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockContext)
 	azdContext := createAzdContext(t)
 
@@ -127,7 +127,7 @@ func Test_CommandHooks_Middleware_ValidProjectWithNoHooks(t *testing.T) {
 }
 
 func Test_CommandHooks_Middleware_PreHookWithError(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockContext)
 	azdContext := createAzdContext(t)
 
@@ -165,7 +165,7 @@ func Test_CommandHooks_Middleware_PreHookWithError(t *testing.T) {
 }
 
 func Test_CommandHooks_Middleware_PreHookWithErrorAndContinue(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockContext)
 	azdContext := createAzdContext(t)
 
@@ -204,7 +204,7 @@ func Test_CommandHooks_Middleware_PreHookWithErrorAndContinue(t *testing.T) {
 }
 
 func Test_CommandHooks_Middleware_WithCmdAlias(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockContext)
 	azdContext := createAzdContext(t)
 
@@ -239,7 +239,7 @@ func Test_CommandHooks_Middleware_WithCmdAlias(t *testing.T) {
 }
 
 func Test_ServiceHooks_Registered(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockContext)
 	azdContext := createAzdContext(t)
 
@@ -302,7 +302,7 @@ func Test_ServiceHooks_Registered(t *testing.T) {
 }
 
 func Test_ServiceHooks_ValidationUsesServicePath(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockContext)
 	azdContext := createAzdContext(t)
 
@@ -523,7 +523,7 @@ services:
 }
 
 func Test_PowerShellWarning_WithPowerShellHooks(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockContext)
 	azdContext := createAzdContext(t)
 
@@ -572,7 +572,7 @@ func Test_PowerShellWarning_WithPowerShellHooks(t *testing.T) {
 }
 
 func Test_PowerShellWarning_WithPs1FileHook(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockContext)
 	azdContext := createAzdContext(t)
 
@@ -619,7 +619,7 @@ func Test_PowerShellWarning_WithPs1FileHook(t *testing.T) {
 }
 
 func Test_PowerShellWarning_WithoutPowerShellHooks(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockContext)
 	azdContext := createAzdContext(t)
 
@@ -698,7 +698,7 @@ func Test_CommandHooks_ChildAction_HooksStillFire(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockContext := mocks.NewMockContext(context.Background())
+			mockContext := mocks.NewMockContext(t.Context())
 			registerHookExecutors(mockContext)
 			azdContext := createAzdContext(t)
 
@@ -738,7 +738,7 @@ func Test_CommandHooks_ChildAction_HooksStillFire(t *testing.T) {
 }
 
 func Test_CommandHooks_ServiceHooks_DoNotDuplicateAcrossParentAndChildRuns(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockContext)
 	projectConfig := createServiceHookProjectConfig(t, "predeploy")
 	runOptions := Options{CommandPath: "azd deploy"}
@@ -776,7 +776,7 @@ func Test_CommandHooks_ServiceHooks_DoNotDuplicateAcrossParentAndChildRuns(t *te
 }
 
 func Test_CommandHooks_ServiceHooks_DoNotDuplicateAcrossRetries(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockContext)
 	projectConfig := createServiceHookProjectConfig(t, "predeploy")
 	runOptions := Options{CommandPath: "azd deploy"}
@@ -809,7 +809,7 @@ func Test_CommandHooks_ServiceHooks_DoNotDuplicateAcrossRetries(t *testing.T) {
 }
 
 func Test_CommandHooks_ServiceHooks_RegisterForChildOnlyWorkflowRuns(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockContext)
 	projectConfig := createServiceHookProjectConfig(t, "predeploy")
 	runOptions := Options{CommandPath: "azd deploy"}
@@ -862,7 +862,7 @@ func Test_CommandHooks_ServiceHooks_RegisterForChildOnlyWorkflowRuns(t *testing.
 // hook validation warnings are suppressed but hooks still execute. This ensures the IsChildAction
 // guard in HooksMiddleware.Run() only affects validation, not hook execution itself.
 func Test_CommandHooks_ChildAction_SkipsValidationOnly(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockContext)
 	azdContext := createAzdContext(t)
 
@@ -919,7 +919,7 @@ func Test_CommandHooks_ChildAction_SkipsValidationOnly(t *testing.T) {
 // action, a failing pre-hook still prevents the action from executing (same behavior as direct
 // command execution).
 func Test_CommandHooks_ChildAction_PreHookError_StopsAction(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockContext)
 	azdContext := createAzdContext(t)
 
@@ -957,7 +957,7 @@ func Test_CommandHooks_ChildAction_PreHookError_StopsAction(t *testing.T) {
 }
 
 func Test_PowerShellWarning_WithPwshAvailable(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockContext)
 	azdContext := createAzdContext(t)
 
@@ -1004,7 +1004,7 @@ func Test_PowerShellWarning_WithPwshAvailable(t *testing.T) {
 }
 
 func Test_PowerShellWarning_WithNoPowerShellInstalled(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	registerHookExecutors(mockContext)
 	azdContext := createAzdContext(t)
 

@@ -284,10 +284,7 @@ func Save(ctx context.Context, projectConfig *ProjectConfig, projectFilePath str
 	copy.Services = make(map[string]*ServiceConfig, len(projectConfig.Services))
 
 	for name, svc := range projectConfig.Services {
-		// Safe: Save() only runs from synchronous command paths (config set, add, gRPC reload)
-		// that never overlap with hook registration, so the mutex is always zero-valued/unlocked.
-		// The copy is ephemeral — used only for path normalization before YAML marshalling.
-		svcCopy := *svc //nolint:govet // copylocks: see above
+		svcCopy := *svc
 		svcCopy.Project = &copy
 		svcCopy.Infra.Path = filepath.ToSlash(svc.Infra.Path)
 		svcCopy.RelativePath = filepath.ToSlash(svc.RelativePath)

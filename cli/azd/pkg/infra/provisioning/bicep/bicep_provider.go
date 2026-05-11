@@ -12,6 +12,7 @@ import (
 	"log"
 	"maps"
 	"math"
+	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -21,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
@@ -41,6 +43,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -51,6 +54,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/password"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
+	"golang.org/x/sync/errgroup"
 )
 
 type bicepFileMode int
@@ -169,6 +173,71 @@ func isReservedNameCheckExempt(resourceType string) bool {
 		if normalized == exemptLower || strings.HasPrefix(normalized, exemptLower+"/") {
 			return true
 		}
+	}
+	return false
+}
+
+// adaptivePoller implements exponential backoff for deployment polling.
+// It starts at a fast interval and backs off when the deployment state is unchanged,
+// resetting to fast polling when new resources complete or fail.
+// It also detects ARM throttling (HTTP 429) and increases polling intervals accordingly.
+type adaptivePoller struct {
+	minInterval          time.Duration
+	maxInterval          time.Duration
+	currentInterval      time.Duration
+	backoffFactor        float64
+	lastResourceCount    int
+	consecutiveThrottles int
+}
+
+func newAdaptivePoller() *adaptivePoller {
+	return &adaptivePoller{
+		minInterval:       1 * time.Second,
+		maxInterval:       10 * time.Second,
+		currentInterval:   1 * time.Second,
+		backoffFactor:     2.0,
+		lastResourceCount: -1,
+	}
+}
+
+// nextInterval returns the next polling interval based on whether the deployment state has changed.
+// When resourceCount changes (new resources completed/failed), the interval resets to the minimum.
+// When unchanged, the interval increases exponentially up to the maximum.
+func (ap *adaptivePoller) nextInterval(resourceCount int) time.Duration {
+	if resourceCount != ap.lastResourceCount {
+		// State changed — reset to fast polling
+		ap.currentInterval = ap.minInterval
+		ap.lastResourceCount = resourceCount
+	} else {
+		// State unchanged — back off
+		next := min(time.Duration(float64(ap.currentInterval)*ap.backoffFactor), ap.maxInterval)
+		ap.currentInterval = next
+	}
+	return ap.currentInterval
+}
+
+// throttleThreshold is the number of consecutive throttle responses after which a visible
+// warning is emitted to the user.
+const throttleThreshold = 5
+
+// recordThrottle records a throttle event and returns true when a visible warning should be
+// emitted (after throttleThreshold consecutive throttles).
+func (ap *adaptivePoller) recordThrottle() bool {
+	ap.consecutiveThrottles++
+	// Force the interval to maximum when throttled.
+	ap.currentInterval = ap.maxInterval
+	return ap.consecutiveThrottles == throttleThreshold
+}
+
+// clearThrottle resets the consecutive throttle counter after a successful response.
+func (ap *adaptivePoller) clearThrottle() {
+	ap.consecutiveThrottles = 0
+}
+
+// isThrottleError checks if an error is an ARM throttling response (HTTP 429).
+func isThrottleError(err error) bool {
+	if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
+		return respErr.StatusCode == http.StatusTooManyRequests
 	}
 	return false
 }
@@ -608,14 +677,23 @@ func (p *BicepProvider) deploymentState(
 	currentParamsHash string,
 ) (*azapi.ResourceDeployment, error) {
 	p.console.ShowSpinner(ctx, "Comparing deployment state", input.Step)
+
+	// Fetch the latest prior deployment first. When there is no prior
+	// deployment (the common cold-start and per-layer initial-deploy paths)
+	// there is no state to compare against, so we can skip the expensive
+	// CalculateTemplateHash ARM call entirely. Under multi-layer fan-out
+	// the unconditional parallel hash call put direct rate-limit pressure
+	// on ARM with zero benefit. The parallel tradeoff is retained only for
+	// the narrow hot path where a comparable prior deployment actually
+	// exists and was successful.
 	prevDeploymentResult, err := p.latestDeploymentResult(ctx, scope)
 	if err != nil {
 		return nil, fmt.Errorf("deployment state error: %w", err)
 	}
 
-	// State is invalid if the last deployment was not succeeded
+	// State is invalid if the last deployment was not succeeded.
 	// This is currently safe because we rely on latestDeploymentResult which
-	// relies on findCompletedDeployments which filters to only Failed and Succeeded
+	// relies on findCompletedDeployments which filters to only Failed and Succeeded.
 	if prevDeploymentResult.ProvisioningState != azapi.DeploymentProvisioningStateSucceeded {
 		return nil, fmt.Errorf("last deployment failed.")
 	}
@@ -624,7 +702,6 @@ func (p *BicepProvider) deploymentState(
 		ctx, p.env.GetSubscriptionId(),
 		planned.RawArmTemplate,
 	)
-
 	if err != nil {
 		return nil, fmt.Errorf("can't get hash from current template: %w", err)
 	}
@@ -752,19 +829,39 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 			// created by the deployment to validate the deployment state.
 			// This handles the scenario of resource group(s) being deleted outside of azd,
 			// which is quite common.
-			// This check adds ~100ms per resource group to the deployment time.
+			// Resource group checks run in parallel to reduce wall-clock time.
+			rgGroup, rgCtx := errgroup.WithContext(ctx)
+			rgGroup.SetLimit(10) // bound parallel ARM calls
 			for _, res := range deploymentState.Resources {
 				if res != nil && res.ID != nil {
 					resId, err := arm.ParseResourceID(*res.ID)
 					if err == nil && resId.ResourceType.Type == arm.ResourceGroupResourceType.Type {
-						exists, err := p.resourceService.CheckExistenceByID(ctx, *resId, apiVersionResourceGroupExistence)
-						if err == nil && !exists {
-							stateErr = fmt.Errorf(
-								"resource group %s no longer exists, invalidating deployment state", resId.ResourceGroupName)
-							break
-						}
+						rgGroup.Go(func() error {
+							exists, checkErr := p.resourceService.CheckExistenceByID(
+								rgCtx, *resId, apiVersionResourceGroupExistence)
+							if checkErr != nil {
+								// Be conservative: if we cannot verify the resource group
+								// still exists (transient ARM failure, throttling, auth
+								// error, etc.), invalidate the cached deployment state so
+								// the caller falls through to a real deployment. Silently
+								// assuming "exists" would skip a deployment that may be
+								// needed to recreate a resource group deleted out-of-band.
+								return fmt.Errorf(
+									"checking resource group %s existence: %w",
+									resId.ResourceGroupName, checkErr)
+							}
+							if !exists {
+								return fmt.Errorf(
+									"resource group %s no longer exists, invalidating deployment state",
+									resId.ResourceGroupName)
+							}
+							return nil
+						})
 					}
 				}
+			}
+			if rgErr := rgGroup.Wait(); rgErr != nil {
+				stateErr = rgErr
 			}
 		}
 
@@ -852,9 +949,12 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 
 		// Report incremental progress
 		progressDisplay := p.deploymentManager.ProgressDisplay(deployment)
-		delay := 3 * time.Second
-		timer := time.NewTimer(delay)
 		queryStartTime := time.Now()
+
+		poller := newAdaptivePoller()
+		delay := poller.minInterval
+
+		timer := time.NewTimer(delay)
 
 		for {
 			select {
@@ -862,11 +962,29 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 				timer.Stop()
 				return
 			case <-timer.C:
-				if err := progressDisplay.ReportProgress(progressCtx, &queryStartTime); err != nil {
+				err := progressDisplay.ReportProgress(progressCtx, &queryStartTime)
+				if err != nil {
 					// We don't want to fail the whole deployment if a progress reporting error occurs
 					log.Printf("error while reporting progress: %v", err)
+
+					// Detect ARM throttling (HTTP 429) and adjust polling accordingly.
+					if isThrottleError(err) {
+						if poller.recordThrottle() {
+							log.Printf(
+								"WARNING: ARM API is throttling requests — "+
+									"deployment progress polling slowed to %s intervals",
+								poller.maxInterval)
+						}
+						delay = poller.maxInterval
+						timer.Reset(delay)
+						continue
+					}
 				}
 
+				if err == nil {
+					poller.clearThrottle()
+				}
+				delay = poller.nextInterval(progressDisplay.DisplayedResourceCount())
 				timer.Reset(delay)
 			}
 		}
@@ -875,17 +993,45 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 	// Start the deployment
 	p.console.ShowSpinner(ctx, "Creating/Updating resources", input.Step)
 
+	deployCtx, interruptStarted, interruptCh, markDeployCompleted, interruptCleanup :=
+		p.installDeploymentInterruptHandler(ctx, deployment, cancelProgress)
+	cleanupOnce := sync.OnceFunc(interruptCleanup)
+	defer cleanupOnce()
+
 	deployResult, err := p.deployModule(
-		ctx,
+		deployCtx,
 		deployment,
 		planned.RawArmTemplate,
 		planned.Parameters,
 		deploymentTags,
 		optionsMap,
 	)
+
+	// Try to atomically claim the "completed" state. If the interrupt
+	// handler already claimed "interrupting", the CAS fails and we must
+	// wait for the handler's outcome so the user's Ctrl+C is never
+	// silently dropped.
+	if !markDeployCompleted() {
+		// Handler has claimed the interrupt — wait for its outcome.
+		<-interruptStarted
+		outcome := <-interruptCh
+		cleanupOnce()
+		tracing.SetUsageAttributes(
+			fields.ProvisionCancellationKey.String(outcome.telemetryValue))
+		return nil, applyInterruptOutcome(outcome, err)
+	}
+
+	// Deploy completed naturally — tear the handler down before
+	// post-processing to avoid resurfacing the cancel/leave prompt over
+	// subsequent output.
+	cleanupOnce()
+
 	if err != nil {
+		tracing.SetUsageAttributes(fields.ProvisionCancellationKey.String("none"))
 		return nil, err
 	}
+
+	tracing.SetUsageAttributes(fields.ProvisionCancellationKey.String("none"))
 
 	result.Outputs = provisioning.OutputParametersFromArmOutputs(
 		planned.Template.Outputs,
@@ -1156,9 +1302,38 @@ func (p *BicepProvider) Destroy(
 
 		p.console.StopSpinner(ctx, "", input.StepDone)
 
-		// Prompt for confirmation before deleting resources
-		if err := p.promptDeletion(ctx, options, groupedResources, len(resourcesToDelete)); err != nil {
-			return nil, err
+		// For resource-group-scoped deployments, check if the resource group was created by azd.
+		// If not, warn the user that deleting the RG will remove ALL resources, including those
+		// not deployed by azd.
+		if targetScope == azure.DeploymentScopeResourceGroup {
+			rgName := p.env.Getenv(environment.ResourceGroupEnvVarName)
+			// warnExternalResourceGroup returns (userAlreadyConfirmed, error).
+			// When true, user confirmed via the external-RG warning so we skip promptDeletion.
+			// When false with nil error, the RG is azd-owned and normal prompt applies.
+			userAlreadyConfirmed, err := p.warnExternalResourceGroup(
+				ctx, options, rgName, groupedResources, len(resourcesToDelete),
+			)
+			if err != nil {
+				return nil, fmt.Errorf("checking resource group ownership: %w", err)
+			}
+
+			// If the external-RG warning was already confirmed, skip the regular
+			// deletion prompt to avoid double-prompting the user.
+			if !userAlreadyConfirmed {
+				// Prompt for confirmation before deleting resources
+				if err := p.promptDeletion(
+					ctx, options, groupedResources, len(resourcesToDelete),
+				); err != nil {
+					return nil, err
+				}
+			}
+		} else {
+			// Prompt for confirmation before deleting resources
+			if err := p.promptDeletion(
+				ctx, options, groupedResources, len(resourcesToDelete),
+			); err != nil {
+				return nil, err
+			}
 		}
 
 		p.console.Message(ctx, output.WithGrayFormat("Deleting your resources can take some time.\n"))
@@ -1368,6 +1543,85 @@ func (p *BicepProvider) promptDeletion(
 	}
 
 	return nil
+}
+
+// warnExternalResourceGroup checks if a resource group was created by azd (has azd-env-name tag
+// matching the current environment). If the RG was not created by azd, it warns the user and asks
+// for explicit confirmation before proceeding with deletion, since deleting the RG will remove ALL
+// resources inside it, including any that were not deployed by azd.
+//
+// Returns (userAlreadyConfirmed=true, nil) if the user confirmed deletion through this warning
+// or if --force is set — the caller should skip promptDeletion to avoid double-prompting.
+// Returns (false, nil) if no warning was needed (RG is azd-owned).
+// Returns (false, error) if the user denied or an error occurred.
+func (p *BicepProvider) warnExternalResourceGroup(
+	ctx context.Context,
+	options provisioning.DestroyOptions,
+	resourceGroupName string,
+	groupedResources map[string][]*azapi.Resource,
+	resourceCount int,
+) (bool, error) {
+	if options.Force() {
+		return true, nil
+	}
+
+	if resourceGroupName == "" {
+		return false, nil
+	}
+
+	rg, err := p.resourceService.GetResourceGroup(ctx, p.env.GetSubscriptionId(), resourceGroupName)
+	if err != nil {
+		// Fail closed: if we can't determine ownership, treat it as external and warn.
+		// This prevents accidental deletion when the API call fails transiently.
+		log.Printf(
+			"warnExternalResourceGroup: failed to get resource group %q, treating as external: %v",
+			resourceGroupName, err,
+		)
+	}
+
+	// If the RG has the azd-env-name tag matching the current environment, azd created it
+	if rg != nil {
+		if envTag, hasTag := rg.Tags[azure.TagKeyAzdEnvName]; hasTag && envTag == p.env.Name() {
+			return false, nil
+		}
+	}
+
+	p.console.MessageUxItem(ctx, &ux.WarningMessage{
+		Description: fmt.Sprintf(
+			"Resource group %s was not created by azd.",
+			output.WithHighLightFormat(resourceGroupName),
+		),
+	})
+	p.console.Message(ctx, fmt.Sprintf(
+		"  Deleting this resource group will remove %s inside it,\n"+
+			"  including any that were not deployed by azd.\n",
+		output.WithErrorFormat("ALL resources"),
+	))
+
+	p.console.MessageUxItem(ctx, &ux.MultilineMessage{
+		Lines: p.generateResourcesToDelete(ctx, groupedResources)},
+	)
+
+	confirmDelete, err := p.console.Confirm(ctx, input.ConsoleOptions{
+		Message: fmt.Sprintf(
+			"Do you still want to delete the entire resource group %s?",
+			output.WithHighLightFormat(resourceGroupName),
+		),
+		DefaultValue: false,
+	})
+	if err != nil {
+		return false, fmt.Errorf("prompting for resource group deletion: %w", err)
+	}
+
+	if !confirmDelete {
+		return false, &errorhandler.ErrorWithSuggestion{
+			Err:        errors.New("user denied delete confirmation"),
+			Message:    "Resource group was not deleted.",
+			Suggestion: "Re-run with --force to skip this check, or delete resources manually in the Azure Portal.",
+		}
+	}
+
+	return true, nil
 }
 
 // destroyDeployment deletes the azure resources within the deployment and voids the deployment state.
@@ -2386,6 +2640,8 @@ func (p *BicepProvider) validatePreflight(
 				IsError:      result.Severity == PreflightCheckError,
 				DiagnosticID: result.DiagnosticID,
 				Message:      result.Message,
+				Suggestion:   result.Suggestion,
+				Links:        result.Links,
 			})
 		}
 		p.console.MessageUxItem(ctx, report)
@@ -2402,8 +2658,7 @@ func (p *BicepProvider) validatePreflight(
 		if report.HasWarnings() {
 			p.console.Message(ctx, "")
 			continueDeployment, promptErr := p.console.Confirm(ctx, input.ConsoleOptions{
-				Message: "Preflight validation found warnings that may cause the " +
-					"deployment to fail. Do you want to continue?",
+				Message:      "Proceed with deployment despite the warnings above?",
 				DefaultValue: true,
 			})
 			if promptErr != nil {
@@ -2501,16 +2756,25 @@ func (p *BicepProvider) checkRoleAssignmentPermissions(
 			Severity:     PreflightCheckWarning,
 			DiagnosticID: "role_assignment_missing",
 			Message: fmt.Sprintf(
-				"the current principal %s does not have permission to create role assignments "+
-					"%s on subscription %s. "+
-					"The deployment includes role assignments and will fail without this permission. "+
-					"Ensure you have the 'Role Based Access Control Administrator', "+
-					"'User Access Administrator', 'Owner', or a custom role with "+
-					"'Microsoft.Authorization/roleAssignments/write' assigned to your account.",
-				output.WithHighLightFormat("(%s)", principalId),
-				output.WithGrayFormat("(Microsoft.Authorization/roleAssignments/write)"),
+				"Principal %s lacks role assignment"+
+					" permissions on subscription %s\n"+
+					"The deployment includes role assignments"+
+					" and will fail without %s permission.",
+				output.WithHighLightFormat(
+					"(%s)", principalId),
 				output.WithHighLightFormat(subscriptionId),
+				output.WithGrayFormat(
+					"Microsoft.Authorization/"+
+						"roleAssignments/write"),
 			),
+			Suggestion: "Ensure you have the" +
+				" 'Role Based Access Control" +
+				" Administrator'," +
+				" 'User Access Administrator'," +
+				" 'Owner', or a custom role with" +
+				" 'Microsoft.Authorization/" +
+				"roleAssignments/write' assigned" +
+				" to your account.",
 		}}, nil
 	}
 
@@ -2519,14 +2783,17 @@ func (p *BicepProvider) checkRoleAssignmentPermissions(
 			Severity:     PreflightCheckWarning,
 			DiagnosticID: "role_assignment_conditional",
 			Message: fmt.Sprintf(
-				"the current principal %s has conditional permission to create role "+
-					"assignments %s on "+
-					"subscription %s. The role assignment that grants this permission "+
-					"has an ABAC condition that may restrict which roles can be assigned. "+
-					"The deployment may fail if the condition does not permit the "+
-					"specific role assignments in the template.",
-				output.WithHighLightFormat("(%s)", principalId),
-				output.WithGrayFormat("(Microsoft.Authorization/roleAssignments/write)"),
+				"Principal %s has conditional role"+
+					" assignment permissions on"+
+					" subscription %s\n"+
+					"An ABAC condition may restrict"+
+					" which roles can be assigned."+
+					" The deployment may fail if the"+
+					" condition does not permit the"+
+					" specific role assignments in"+
+					" the template.",
+				output.WithHighLightFormat(
+					"(%s)", principalId),
 				output.WithHighLightFormat(subscriptionId),
 			),
 		}}, nil
@@ -2551,17 +2818,29 @@ func (p *BicepProvider) checkReservedResourceNames(
 			continue
 		}
 		for _, v := range findReservedResourceNameViolations(resource.Name) {
-			resourceName := output.WithHighLightFormat("%q", resource.Name)
-			resourceType := output.WithGrayFormat("(%s)", resource.Type)
-			link := output.WithLinkFormat(docsLink)
+			resourceName := output.WithHighLightFormat(
+				"%q", resource.Name)
+			resourceType := output.WithGrayFormat(
+				"(%s)", resource.Type)
 
 			results = append(results, PreflightCheckResult{
 				Severity:     PreflightCheckWarning,
 				DiagnosticID: "reserved_resource_name",
 				Message: fmt.Sprintf(
-					"resource %s %s %s the reserved word %q. See %s.",
-					resourceName, resourceType, v.matchType, v.reservedWord, link,
+					"Resource %s %s %s the"+
+						" reserved word %q\n"+
+						"Azure does not allow reserved"+
+						" words in resource names."+
+						" The deployment will fail.",
+					resourceName, resourceType,
+					v.matchType, v.reservedWord,
 				),
+				Links: []ux.PreflightReportLink{
+					{
+						URL:   docsLink,
+						Title: "Reserved resource name errors",
+					},
+				},
 			})
 		}
 	}
@@ -2670,16 +2949,25 @@ func (p *BicepProvider) checkAiModelQuota(
 					Severity:     PreflightCheckWarning,
 					DiagnosticID: "ai_model_not_found",
 					Message: fmt.Sprintf(
-						"model %s%s was not found in the AI model "+
-							"catalog for %s. The deployment may fail "+
-							"if this model is not available. Verify "+
-							"the model name, SKU, and version are "+
-							"correct. See %s for supported models and regions.",
-						output.WithHighLightFormat(fmt.Sprintf("%q", dep.ModelName)),
+						"Model %s%s not found in %s\n"+
+							"Model not found in AI model catalog."+
+							" Provisioning will likely fail.",
+						output.WithHighLightFormat(
+							"%q", dep.ModelName),
 						output.WithGrayFormat(details),
 						output.WithHighLightFormat(loc),
-						output.WithLinkFormat("https://learn.microsoft.com/azure/ai-services/openai/concepts/models"),
 					),
+					Suggestion: "Verify the model name, SKU," +
+						" and version are correct.",
+					Links: []ux.PreflightReportLink{
+						{
+							URL: "https://learn.microsoft.com/" +
+								"azure/ai-services/openai/" +
+								"concepts/models",
+							Title: "Azure OpenAI supported" +
+								" models and regions",
+						},
+					},
 				})
 				continue
 			}
@@ -2714,20 +3002,55 @@ func (p *BicepProvider) checkAiModelQuota(
 			totalRequired := requiredByUsage[r.usageName]
 			if remaining < totalRequired {
 				reportedUsage[r.usageName] = true
+
+				var suggestion string
+				if remaining > 0 {
+					suggestion = fmt.Sprintf(
+						"Reduce the requested capacity"+
+							" to %.0f or change your"+
+							" deployment location via %s."+
+							" You can also request a quota"+
+							" increase in the Azure portal.",
+						remaining,
+						output.WithHighLightFormat(
+							"azd env set"+
+								" AZURE_LOCATION <location>"),
+					)
+				} else {
+					suggestion = fmt.Sprintf(
+						"No quota is available."+
+							" Change your deployment"+
+							" location via %s or request"+
+							" a quota increase in the"+
+							" Azure portal.",
+						output.WithHighLightFormat(
+							"azd env set"+
+								" AZURE_LOCATION <location>"),
+					)
+				}
+
 				results = append(results, PreflightCheckResult{
 					Severity:     PreflightCheckWarning,
 					DiagnosticID: "ai_model_quota_exceeded",
 					Message: fmt.Sprintf(
-						"insufficient quota for model %s %s in %s. "+
-							"Requested capacity: %.0f, remaining quota: %.0f. "+
-							"The deployment may fail. Consider reducing capacity, "+
-							"selecting a different model, or requesting a quota increase.",
-						output.WithHighLightFormat("%q", r.dep.ModelName),
-						output.WithGrayFormat("(SKU: %s)", r.dep.SkuName),
+						"Insufficient quota for model %s %s"+
+							" in %s\n"+
+							"Requested: %.0f · Available: %.0f",
+						output.WithHighLightFormat(
+							"%q", r.dep.ModelName),
+						output.WithGrayFormat(
+							"(SKU: %s)", r.dep.SkuName),
 						output.WithHighLightFormat(loc),
 						totalRequired,
 						remaining,
 					),
+					Suggestion: suggestion,
+					Links: []ux.PreflightReportLink{
+						{
+							URL:   "https://learn.microsoft.com/azure/quotas/quickstart-increase-quota-portal",
+							Title: "Increase Azure subscription quotas",
+						},
+					},
 				})
 			}
 		}

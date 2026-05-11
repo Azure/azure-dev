@@ -454,6 +454,137 @@ var (
 	}
 )
 
+// Provision-related fields
+var (
+	// ProvisionCancellationKey records how a Ctrl+C interrupt during
+	// `azd provision` / `azd up` was handled.
+	//
+	// Example: "none" (no interrupt observed), "leave_running" (user chose to
+	// keep the Azure deployment running), "canceled" (Azure confirmed the
+	// deployment reached the Canceled state), "cancel_timed_out" (cancel was
+	// submitted but azd stopped waiting for the top-level terminal state),
+	// "cancel_timed_out_nested" (top-level was canceled, but one or more
+	// descendant deployments did not reach terminal state within the global
+	// budget), "cancel_raced_succeeded" / "cancel_raced_failed" /
+	// "cancel_raced_deleted" (Azure reached the corresponding terminal state
+	// before the cancel took effect — split from the legacy "cancel_too_late"
+	// so dashboards can answer "how often does cancel race a *successful*
+	// deployment?"), "cancel_too_late" (fallback for unexpected terminal
+	// states), "cancel_failed" (the cancel request itself returned an error).
+	ProvisionCancellationKey = AttributeKey{
+		Key:            attribute.Key("provision.cancellation"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+)
+
+// Execution graph scheduler related fields
+var (
+	// ExeGraphStepCountKey records the total number of steps in the graph.
+	ExeGraphStepCountKey = AttributeKey{
+		Key:            attribute.Key("exegraph.step.count"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
+	}
+
+	// ExeGraphMaxConcurrencyKey records the effective concurrency limit used.
+	ExeGraphMaxConcurrencyKey = AttributeKey{
+		Key:            attribute.Key("exegraph.max_concurrency"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
+
+	// ExeGraphErrorPolicyKey records the error policy (fail_fast or continue_on_error).
+	ExeGraphErrorPolicyKey = AttributeKey{
+		Key:            attribute.Key("exegraph.error_policy"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
+
+	// ExeGraphStepNameKey records the step name within an exegraph.step span.
+	ExeGraphStepNameKey = AttributeKey{
+		Key:            attribute.Key("exegraph.step.name"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
+
+	// ExeGraphStepDepsKey records the dependency list for a step.
+	ExeGraphStepDepsKey = AttributeKey{
+		Key:            attribute.Key("exegraph.step.deps"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
+
+	// ExeGraphStepTagsKey records the tags for a step.
+	ExeGraphStepTagsKey = AttributeKey{
+		Key:            attribute.Key("exegraph.step.tags"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
+
+	// ExeGraphStepTimeoutKey records the per-step timeout if set (in seconds).
+	ExeGraphStepTimeoutKey = AttributeKey{
+		Key:            attribute.Key("exegraph.step.timeout_s"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
+	}
+)
+
+// Multi-layer provision related fields. These power telemetry that lets the
+// azd team measure adoption and safety of `infra.layers[]` parallel
+// provisioning — answering questions like "what fraction of projects use
+// multi-layer?", "how parallel is the typical project?", and "how often
+// does the safe-by-default fallback engage on real templates?".
+var (
+	// ProvisionLayerCountKey records the total number of `infra.layers[]`
+	// declared in `azure.yaml` for the current `azd provision`/`azd up` run.
+	// 0 or 1 means single-layer (the legacy path).
+	ProvisionLayerCountKey = AttributeKey{
+		Key:            attribute.Key("provision.layer.count"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
+	}
+
+	// ProvisionLayerMaxParallelKey records the largest number of layers
+	// scheduled in a single dependency level after static analysis. This
+	// is the maximum *achievable* parallelism for the run — different from
+	// `exegraph.max_concurrency`, which is the configured cap.
+	ProvisionLayerMaxParallelKey = AttributeKey{
+		Key:            attribute.Key("provision.layer.max_parallel"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
+	}
+
+	// ProvisionLayerSafeFallbackCountKey records how many layers triggered
+	// the safe-by-default detector fallback (forced to depend on all
+	// earlier layers because the static analyzer encountered a syntax
+	// pattern it could not resolve to a literal env-var name). A non-zero
+	// value here means that layer's parallelism opportunity was sacrificed
+	// for correctness — useful for sizing future detector improvements.
+	ProvisionLayerSafeFallbackCountKey = AttributeKey{
+		Key:            attribute.Key("provision.layer.safe_fallback_count"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
+	}
+
+	// ProvisionLayerExplicitDependsOnCountKey records how many layers used
+	// the explicit `infra.layers[].dependsOn` schema (the documented
+	// escape hatch for hook-mediated edges that no static analyzer can
+	// infer). Adoption of this field signals that authors are reaching
+	// for the explicit override.
+	ProvisionLayerExplicitDependsOnCountKey = AttributeKey{
+		Key:            attribute.Key("provision.layer.explicit_dependson_count"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
+	}
+)
+
 // The value used for ServiceNameKey
 const ServiceNameAzd = "azd"
 
@@ -480,16 +611,11 @@ var (
 		Purpose:        PerformanceAndHealth,
 	}
 
-	// Inner error.
-	ErrInner = AttributeKey{
-		Key:            attribute.Key("error.inner"),
-		Classification: SystemMetadata,
-		Purpose:        PerformanceAndHealth,
-	}
-
-	// The frame of the error.
-	ErrFrame = AttributeKey{
-		Key:            attribute.Key("error.frame"),
+	// ErrChainTypes records the wrapped-error type chain (outermost
+	// first). Type names are code-defined and PII-free, so they're
+	// emitted as system metadata for triaging the catch-all bucket.
+	ErrChainTypes = AttributeKey{
+		Key:            attribute.Key("error.chain.types"),
 		Classification: SystemMetadata,
 		Purpose:        PerformanceAndHealth,
 	}
@@ -568,6 +694,33 @@ var (
 	// The time spent waiting on user interaction in milliseconds.
 	PerfInteractTime = AttributeKey{
 		Key:            attribute.Key("perf.interact_time"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
+	}
+
+	// PerfProvisionDurationMs is the wall-clock provisioning phase duration in milliseconds.
+	// Measured from the earliest provision step start to the latest provision step end.
+	PerfProvisionDurationMs = AttributeKey{
+		Key:            attribute.Key("perf.provision_duration_ms"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
+	}
+
+	// PerfDeployDurationMs is the wall-clock deploying phase duration in milliseconds.
+	// Measured from the earliest deploy step start to the latest deploy step end.
+	// Package and publish steps are excluded (they run concurrently with provisioning).
+	PerfDeployDurationMs = AttributeKey{
+		Key:            attribute.Key("perf.deploy_duration_ms"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
+	}
+
+	// PerfTotalDurationMs is the total wall-clock duration for the entire up-graph execution.
+	PerfTotalDurationMs = AttributeKey{
+		Key:            attribute.Key("perf.total_duration_ms"),
 		Classification: SystemMetadata,
 		Purpose:        PerformanceAndHealth,
 		IsMeasurement:  true,
@@ -723,6 +876,49 @@ var (
 	// The list of installed extensions, each formatted as "id@version".
 	ExtensionsInstalled = AttributeKey{
 		Key:            attribute.Key("extension.installed"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// ExtensionVersionFrom is the installed version before an upgrade.
+	ExtensionVersionFrom = AttributeKey{
+		Key:            attribute.Key("extension.version.from"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// ExtensionVersionTo is the target version after an upgrade.
+	ExtensionVersionTo = AttributeKey{
+		Key:            attribute.Key("extension.version.to"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// ExtensionSource is the registry source used for the upgrade.
+	ExtensionSource = AttributeKey{
+		Key:            attribute.Key("extension.source"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// ExtensionSourceFrom is the registry source before a promotion.
+	ExtensionSourceFrom = AttributeKey{
+		Key:            attribute.Key("extension.source.from"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// ExtensionSourceTo is the registry source after a promotion.
+	ExtensionSourceTo = AttributeKey{
+		Key:            attribute.Key("extension.source.to"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// ExtensionUpgradeDurationMs is the time in milliseconds for one upgrade.
+	ExtensionUpgradeDurationMs = AttributeKey{
+		Key:            attribute.Key("extension.upgrade.duration_ms"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
+	}
+	// ExtensionUpgradeOutcome is the upgrade result status.
+	ExtensionUpgradeOutcome = AttributeKey{
+		Key:            attribute.Key("extension.upgrade.outcome"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}

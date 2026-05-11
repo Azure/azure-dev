@@ -21,10 +21,12 @@ Commands
     config      	: Manage azd configurations (ex: default Azure subscription, location).
     env         	: Manage environments (ex: default environment, environment variables).
     show        	: Display information about your project and its resources.
+    tool        	: Manage Azure development tools.
     version     	: Print the version number of Azure Developer CLI.
 
   Beta commands
     add         	: Add a component to your project.
+    build       	: Builds the application's code.
     extension   	: Manage azd extensions.
     hooks       	: Develop, test and run hooks for a project.
     infra       	: Manage your Infrastructure as Code (IaC).
@@ -51,7 +53,7 @@ Flags
     -C, --cwd string         	: Sets the current working directory.
         --debug              	: Enables debugging and diagnostics logging.
     -e, --environment string 	: The name of the environment to use.
-        --no-prompt          	: Accepts the default value instead of prompting, or it fails if there is no default.
+        --no-prompt          	: Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
 
 Global Flags
         --docs 	: Opens the documentation for azd in your web browser.

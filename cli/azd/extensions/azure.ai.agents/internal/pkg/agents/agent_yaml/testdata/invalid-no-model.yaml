@@ -1,4 +1,0 @@
-template:
-  kind: prompt
-  name: no-model-agent
-  instructions: Some instructions

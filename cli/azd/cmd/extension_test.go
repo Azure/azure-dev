@@ -6,13 +6,16 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/Masterminds/semver/v3"
-	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
-	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/fatih/color"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/azure/azure-dev/cli/azd/test/mocks"
 )
 
 func TestNamespacesConflictCases(t *testing.T) {
@@ -337,7 +340,7 @@ func TestCurrentAzdSemver(t *testing.T) {
 func TestDisplayValidationResult(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	t.Run("valid_extension", func(t *testing.T) {
 		result := &extensions.RegistryValidationResult{
@@ -397,7 +400,7 @@ func TestDisplayValidationResult(t *testing.T) {
 func TestDisplayExtensionUsageAndExamples(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	version := &extensions.ExtensionVersion{
 		Usage: "azd my-ext [options]",
@@ -414,7 +417,7 @@ func TestDisplayExtensionUsageAndExamples(t *testing.T) {
 func TestDisplayVersionCompatibilityWarning(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	azdVersion, err := semver.NewVersion("1.24.0")
 	require.NoError(t, err)
 
@@ -431,4 +434,233 @@ func TestDisplayVersionCompatibilityWarning(t *testing.T) {
 	// Should not panic
 	displayVersionCompatibilityWarning(
 		t.Context(), mockContext.Console, latestOverall, latestCompatible, azdVersion)
+}
+
+func TestDisplayUpgradeSummary(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		results  []extensions.UpgradeResult
+		wantMsgs []string
+	}{
+		{
+			name: "all_upgraded",
+			results: []extensions.UpgradeResult{
+				{Status: extensions.UpgradeStatusUpgraded},
+				{Status: extensions.UpgradeStatusUpgraded},
+			},
+			wantMsgs: []string{
+				"2 upgraded",
+			},
+		},
+		{
+			name: "mixed_results",
+			results: []extensions.UpgradeResult{
+				{Status: extensions.UpgradeStatusUpgraded},
+				{Status: extensions.UpgradeStatusSkipped},
+				{Status: extensions.UpgradeStatusPromoted},
+				{Status: extensions.UpgradeStatusFailed},
+			},
+			wantMsgs: []string{
+				"1 upgraded",
+				"1 skipped",
+				"1 promoted",
+				"1 failed",
+			},
+		},
+		{
+			name: "failed_shows_retry_suggestion",
+			results: []extensions.UpgradeResult{
+				{Status: extensions.UpgradeStatusFailed},
+			},
+			wantMsgs: []string{
+				"1 failed",
+				"azd extension upgrade <name>",
+			},
+		},
+		{
+			name: "all_skipped_no_retry",
+			results: []extensions.UpgradeResult{
+				{Status: extensions.UpgradeStatusSkipped},
+			},
+			wantMsgs: []string{
+				"1 skipped",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			mockCtx := mocks.NewMockContext(
+				context.Background(),
+			)
+			displayUpgradeSummary(
+				t.Context(), mockCtx.Console, tt.results,
+			)
+			output := mockCtx.Console.Output()
+			var joined strings.Builder
+			for _, line := range output {
+				joined.WriteString(line + "\n")
+			}
+			for _, want := range tt.wantMsgs {
+				assert.Contains(t, joined.String(), want)
+			}
+		})
+	}
+}
+
+func TestDisplayUpgradeSummary_NoRetryWhenNoFailures(
+	t *testing.T,
+) {
+	t.Parallel()
+	mockCtx := mocks.NewMockContext(context.Background())
+	results := []extensions.UpgradeResult{
+		{Status: extensions.UpgradeStatusUpgraded},
+		{Status: extensions.UpgradeStatusSkipped},
+	}
+	displayUpgradeSummary(
+		t.Context(), mockCtx.Console, results,
+	)
+	output := mockCtx.Console.Output()
+	var joined strings.Builder
+	for _, line := range output {
+		joined.WriteString(line + "\n")
+	}
+	assert.NotContains(t, joined.String(), "Retry")
+	assert.NotContains(t, joined.String(), "retry")
+}
+
+func TestUpgradeActionResult(t *testing.T) {
+	t.Parallel()
+
+	t.Run("all_success_returns_nil_error", func(t *testing.T) {
+		t.Parallel()
+		results := []extensions.UpgradeResult{
+			{Status: extensions.UpgradeStatusUpgraded},
+			{Status: extensions.UpgradeStatusSkipped},
+			{Status: extensions.UpgradeStatusPromoted},
+		}
+		actionResult, err := upgradeActionResult(results)
+		require.NoError(t, err)
+		require.NotNil(t, actionResult)
+		assert.Equal(
+			t,
+			"Extensions upgraded successfully",
+			actionResult.Message.Header,
+		)
+	})
+
+	t.Run(
+		"partial_failure_returns_error",
+		func(t *testing.T) {
+			t.Parallel()
+			results := []extensions.UpgradeResult{
+				{Status: extensions.UpgradeStatusUpgraded},
+				{Status: extensions.UpgradeStatusFailed},
+				{Status: extensions.UpgradeStatusFailed},
+			}
+			actionResult, err := upgradeActionResult(results)
+			require.Error(t, err)
+			require.NotNil(t, actionResult)
+			assert.Contains(
+				t, err.Error(),
+				"2 of 3 extensions failed to upgrade",
+			)
+			assert.Contains(
+				t, actionResult.Message.Header,
+				"2 of 3 extensions failed",
+			)
+		},
+	)
+
+	t.Run(
+		"all_failed_returns_error",
+		func(t *testing.T) {
+			t.Parallel()
+			results := []extensions.UpgradeResult{
+				{Status: extensions.UpgradeStatusFailed},
+			}
+			actionResult, err := upgradeActionResult(results)
+			require.Error(t, err)
+			require.NotNil(t, actionResult)
+			assert.Contains(
+				t, err.Error(),
+				"1 of 1 extensions failed",
+			)
+		},
+	)
+}
+
+func TestUpgradeActionResult_EmptyResults(t *testing.T) {
+	t.Parallel()
+	actionResult, err := upgradeActionResult(nil)
+	require.NoError(t, err)
+	require.NotNil(t, actionResult)
+	assert.Equal(
+		t,
+		"Extensions upgraded successfully",
+		actionResult.Message.Header,
+	)
+}
+
+func TestExtensionStatus(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name       string
+		installed  bool
+		update     bool
+		incompat   bool
+		wantStatus string
+	}{
+		{"not installed", false, false, false, statusNotInstall},
+		{"up to date", true, false, false, statusUpToDate},
+		{"update available", true, true, false, statusUpdate},
+		{"incompatible", true, false, true, statusIncompat},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := extensionStatus(tt.installed, tt.update, tt.incompat)
+			assert.Equal(t, tt.wantStatus, got)
+		})
+	}
+}
+
+func TestExtensionStatusSymbol(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		status string
+		want   string
+	}{
+		{statusUpToDate, symbolUpToDate},
+		{statusUpdate, symbolUpdate},
+		{statusIncompat, symbolIncompat},
+		{statusNotInstall, symbolNotInstall},
+	}
+	for _, tt := range tests {
+		t.Run(tt.status, func(t *testing.T) {
+			t.Parallel()
+			got := extensionStatusSymbol(tt.status)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestExtensionStatusColor(t *testing.T) {
+	// Force color output on — fatih/color disables in non-TTY environments.
+	originalNoColor := color.NoColor
+	color.NoColor = false
+	defer func() { color.NoColor = originalNoColor }()
+
+	// Verify no panics and non-empty output for each status (full and symbol forms)
+	for _, s := range []string{
+		statusUpToDate, statusUpdate, statusIncompat, statusNotInstall,
+		symbolUpToDate, symbolUpdate, symbolIncompat, symbolNotInstall,
+	} {
+		result := extensionStatusColor(s)
+		assert.NotEmpty(t, result, "color function should return non-empty for %q", s)
+		assert.Contains(t, result, "\x1b[", "expected ANSI color codes in output for %q", s)
+	}
 }

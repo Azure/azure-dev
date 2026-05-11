@@ -454,6 +454,62 @@ func TestValidateExtension_DependenciesOnly(t *testing.T) {
 	}
 }
 
+func TestValidateRegistry_IncludesExtensionValidation(t *testing.T) {
+	// Verify that ValidateRegistry also runs extension-level
+	// validation (e.g. missing required fields).
+	registry := &Registry{
+		SchemaVersion: "1.0.0",
+		Extensions: []*ExtensionMetadata{
+			{
+				// Missing Id, DisplayName, Description
+				Versions: []ExtensionVersion{{
+					Version:   "1.0.0",
+					Artifacts: validArtifacts(),
+				}},
+			},
+		},
+	}
+
+	result := ValidateRegistry(registry, false)
+	require.False(t, result.Valid)
+	require.Len(t, result.Extensions, 1)
+	require.False(t, result.Extensions[0].Valid)
+
+	// The extension should have errors for the missing fields.
+	msgs := issueMessages(result.Extensions[0].Issues)
+	require.Contains(t, msgs,
+		"missing or empty required field 'id'")
+	require.Contains(t, msgs,
+		"missing or empty required field 'displayName'")
+	require.Contains(t, msgs,
+		"missing or empty required field 'description'")
+}
+
+func TestRegistryProvider_RegistrySource(t *testing.T) {
+	// Verify registrySource satisfies RegistryProvider.
+	registry := &Registry{
+		SchemaVersion: "1.0.0",
+		Extensions:    []*ExtensionMetadata{},
+	}
+	source, err := newRegistrySource("test", registry)
+	require.NoError(t, err)
+
+	rp, ok := source.(RegistryProvider)
+	require.True(t, ok,
+		"registrySource must implement RegistryProvider")
+	require.Same(t, registry, rp.GetRegistry())
+}
+
+// issueMessages extracts message strings from a slice of
+// ValidationIssue values.
+func issueMessages(issues []ValidationIssue) []string {
+	msgs := make([]string, len(issues))
+	for i, issue := range issues {
+		msgs[i] = issue.Message
+	}
+	return msgs
+}
+
 func TestValidateExtensions_NilExtensionEntry(t *testing.T) {
 	result := ValidateExtensions([]*ExtensionMetadata{nil}, false)
 	require.False(t, result.Valid)

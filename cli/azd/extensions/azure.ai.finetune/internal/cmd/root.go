@@ -40,7 +40,8 @@ func NewRootCommand() *cobra.Command {
 		&rootFlags.NoPrompt,
 		"no-prompt",
 		false,
-		"accepts the default value instead of prompting, or fails if there is no default",
+		"Runs without prompts. Uses existing values; "+
+			"fails if any required value or decision cannot be resolved automatically.",
 	)
 
 	// rootCmd.AddCommand(newListenCommand())

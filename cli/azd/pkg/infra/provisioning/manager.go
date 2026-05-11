@@ -122,7 +122,7 @@ func (m *Manager) Deploy(ctx context.Context) (*DeployResult, error) {
 	if !filepath.IsAbs(infraRoot) {
 		infraRoot = filepath.Join(m.projectPath, m.options.Path)
 	}
-	bindMountOperations, err := azdFileShareUploadOperations(infraRoot, *m.env)
+	bindMountOperations, err := azdFileShareUploadOperations(infraRoot, m.env)
 	azdOperationsEnabled := m.alphaFeatureManager.IsEnabled(AzdOperationsFeatureKey)
 	if !azdOperationsEnabled && len(bindMountOperations) > 0 {
 		m.console.Message(ctx, ErrBindMountOperationDisabled.Error())
@@ -132,7 +132,7 @@ func (m *Manager) Deploy(ctx context.Context) (*DeployResult, error) {
 			return nil, fmt.Errorf("looking for azd fileShare upload operations: %w", err)
 		}
 		if err := doBindMountOperation(
-			ctx, bindMountOperations, *m.env, m.console, m.fileShareService, m.cloud.StorageEndpointSuffix); err != nil {
+			ctx, bindMountOperations, m.env, m.console, m.fileShareService, m.cloud.StorageEndpointSuffix); err != nil {
 			return nil, fmt.Errorf("error running bind mount operation: %w", err)
 		}
 	}
@@ -165,7 +165,7 @@ type azdOperationsModel struct {
 	Operations []azdOperation
 }
 
-func azdOperations(infraPath string, env environment.Environment) (azdOperationsModel, error) {
+func azdOperations(infraPath string, env *environment.Environment) (azdOperationsModel, error) {
 	path := filepath.Join(infraPath, azdOperationsFileName)
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -194,7 +194,7 @@ func azdOperations(infraPath string, env environment.Environment) (azdOperations
 	return operations, nil
 }
 
-func azdFileShareUploadOperations(infraPath string, env environment.Environment) ([]azdOperationFileShareUpload, error) {
+func azdFileShareUploadOperations(infraPath string, env *environment.Environment) ([]azdOperationFileShareUpload, error) {
 	model, err := azdOperations(infraPath, env)
 	if err != nil {
 		return nil, err
@@ -233,7 +233,7 @@ var ErrBindMountOperationDisabled = fmt.Errorf(
 func doBindMountOperation(
 	ctx context.Context,
 	fileShareUploadOperations []azdOperationFileShareUpload,
-	env environment.Environment,
+	env *environment.Environment,
 	console input.Console,
 	fileShareService storage.FileShareService,
 	cloudStorageEndpointSuffix string,
@@ -372,6 +372,21 @@ func EnsureSubscriptionAndLocation(
 ) error {
 	subId := env.GetSubscriptionId()
 	if subId == "" {
+		if prompter.IsNoPromptMode() {
+			return &input.PromptRequiredError{
+				Inputs: []input.RequiredInput{
+					{
+						Name: "subscription",
+						Sources: []input.InputSource{
+							{
+								Kind: input.InputSourceEnvironment,
+								Name: environment.SubscriptionIdEnvVarName,
+							},
+						},
+					},
+				},
+			}
+		}
 		subscriptionId, err := prompter.PromptSubscription(ctx, "Select an Azure Subscription to use:")
 		if err != nil {
 			return err
@@ -390,6 +405,21 @@ func EnsureSubscriptionAndLocation(
 
 	location := env.GetLocation()
 	if env.GetLocation() == "" {
+		if prompter.IsNoPromptMode() {
+			return &input.PromptRequiredError{
+				Inputs: []input.RequiredInput{
+					{
+						Name: "location",
+						Sources: []input.InputSource{
+							{
+								Kind: input.InputSourceEnvironment,
+								Name: environment.LocationEnvVarName,
+							},
+						},
+					},
+				},
+			}
+		}
 		loc, err := prompter.PromptLocation(
 			ctx,
 			env.GetSubscriptionId(),
@@ -416,6 +446,21 @@ func EnsureSubscription(
 ) error {
 	subId := env.GetSubscriptionId()
 	if subId == "" {
+		if prompter.IsNoPromptMode() {
+			return &input.PromptRequiredError{
+				Inputs: []input.RequiredInput{
+					{
+						Name: "subscription",
+						Sources: []input.InputSource{
+							{
+								Kind: input.InputSourceEnvironment,
+								Name: environment.SubscriptionIdEnvVarName,
+							},
+						},
+					},
+				},
+			}
+		}
 		subscriptionId, err := prompter.PromptSubscription(ctx, "Select an Azure Subscription to use:")
 		if err != nil {
 			return err

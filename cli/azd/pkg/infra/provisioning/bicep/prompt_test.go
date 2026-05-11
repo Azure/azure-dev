@@ -46,7 +46,7 @@ func TestPromptForParameter(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			mockContext := mocks.NewMockContext(context.Background())
+			mockContext := mocks.NewMockContext(t.Context())
 			prepareBicepMocks(mockContext)
 
 			p := createBicepProvider(t, mockContext)
@@ -178,7 +178,7 @@ func TestPromptForParameterValidation(t *testing.T) {
 		tc := cc
 
 		t.Run(tc.name, func(t *testing.T) {
-			mockContext := mocks.NewMockContext(context.Background())
+			mockContext := mocks.NewMockContext(t.Context())
 			prepareBicepMocks(mockContext)
 
 			p := createBicepProvider(t, mockContext)
@@ -210,7 +210,7 @@ func TestPromptForParameterValidation(t *testing.T) {
 func TestPromptForParameterAllowedValues(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	prepareBicepMocks(mockContext)
 
@@ -244,7 +244,7 @@ func TestPromptForParameterAllowedValues(t *testing.T) {
 func TestPromptForParametersLocation(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	prepareBicepMocks(mockContext)
 
 	env := environment.New("test")
@@ -332,7 +332,7 @@ func (m *mockCurrentPrincipal) CurrentPrincipalType(_ context.Context) (provisio
 func TestPromptForParameterOverrideDefault(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	prepareBicepMocks(mockContext)
 
@@ -361,7 +361,7 @@ func TestPromptForParameterOverrideDefault(t *testing.T) {
 func TestPromptForParameterOverrideDefaultError(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	prepareBicepMocks(mockContext)
 
@@ -381,7 +381,7 @@ func TestPromptForParameterOverrideDefaultError(t *testing.T) {
 func TestPromptForParameterEmptyAllowedValuesError(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	prepareBicepMocks(mockContext)
 
@@ -398,7 +398,7 @@ func TestPromptForParameterEmptyAllowedValuesError(t *testing.T) {
 func TestPromptForParameterBoolDefaultType(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	prepareBicepMocks(mockContext)
 
@@ -425,7 +425,7 @@ func TestPromptForParameterBoolDefaultType(t *testing.T) {
 func TestPromptForParameterBoolDefaultStringType(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	prepareBicepMocks(mockContext)
 
@@ -452,7 +452,7 @@ func TestPromptForParameterBoolDefaultStringType(t *testing.T) {
 func TestPromptForParameterNumberDefaultType(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	prepareBicepMocks(mockContext)
 
@@ -475,7 +475,7 @@ func TestPromptForParameterNumberDefaultType(t *testing.T) {
 func TestPromptForParameterNumberDefaultStringTypeError(t *testing.T) {
 	t.Parallel()
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	prepareBicepMocks(mockContext)
 

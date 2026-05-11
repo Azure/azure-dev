@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -37,14 +38,18 @@ type invokeFlags struct {
 	conversation    string
 	newConversation bool
 	protocol        string
+	agentEndpoint   string
 }
 
 type InvokeAction struct {
-	flags *invokeFlags
+	flags    *invokeFlags
+	noPrompt bool
+	endpoint *parsedAgentEndpoint
 }
 
-func newInvokeCommand() *cobra.Command {
+func newInvokeCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &invokeFlags{}
+	extCtx = ensureExtensionContext(extCtx)
 
 	cmd := &cobra.Command{
 		Use:   "invoke [name] [message]",
@@ -84,12 +89,15 @@ session automatically. Pass --new-session to force a reset.`,
   azd ai agent invoke --local "Hello!"
 
   # Start a new session (discard conversation history)
-  azd ai agent invoke --new-session "Hello!"`,
+  azd ai agent invoke --new-session "Hello!"
+
+  # Invoke a deployed agent from any directory using the endpoint URL shown by 'azd ai agent show'
+  azd ai agent invoke \
+      --agent-endpoint https://<acct>.services.ai.azure.com/api/projects/<proj>/agents/<name>/endpoint/protocols/openai/responses?api-version=2025-11-15-preview \
+      "Hello!"`,
 		Args: cobra.RangeArgs(0, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
-			logCleanup := setupDebugLogging(cmd.Flags())
-			defer logCleanup()
 
 			switch len(args) {
 			case 2:
@@ -104,6 +112,23 @@ session automatically. Pass --new-session to force a reset.`,
 				}
 			case 0:
 				// Only valid when -f is provided
+			}
+
+			action := &InvokeAction{flags: flags, noPrompt: extCtx.NoPrompt}
+
+			// Agent-endpoint structural conflicts are surfaced first so the user sees
+			// the precise reason their invocation cannot proceed.
+			if flags.agentEndpoint != "" {
+				if err := validateAgentEndpointFlags(cmd, flags); err != nil {
+					return err
+				}
+				parsed, err := parseAgentEndpoint(flags.agentEndpoint)
+				if err != nil {
+					return err
+				}
+				flags.protocol = string(parsed.Protocol)
+				flags.name = parsed.AgentName
+				action.endpoint = parsed
 			}
 
 			if flags.inputFile != "" && flags.message != "" {
@@ -130,20 +155,16 @@ session automatically. Pass --new-session to force a reset.`,
 			}
 
 			if flags.protocol != "" {
-				switch agent_api.AgentProtocol(flags.protocol) {
-				case agent_api.AgentProtocolResponses,
-					agent_api.AgentProtocolInvocations:
-					// valid
-				default:
+				p := agent_api.AgentProtocol(flags.protocol)
+				if !p.IsInvocable() {
 					return exterrors.Validation(
 						exterrors.CodeInvalidParameter,
-						fmt.Sprintf("unsupported protocol %q", flags.protocol),
+						fmt.Sprintf("unsupported protocol %q for invocation", flags.protocol),
 						"supported protocols are: responses, invocations",
 					)
 				}
 			}
 
-			action := &InvokeAction{flags: flags}
 			return action.Run(ctx)
 		},
 	}
@@ -157,8 +178,47 @@ session automatically. Pass --new-session to force a reset.`,
 	cmd.Flags().BoolVar(&flags.newSession, "new-session", false, "Force a new session (discard saved one)")
 	cmd.Flags().StringVar(&flags.conversation, "conversation-id", "", "Explicit conversation ID override")
 	cmd.Flags().BoolVar(&flags.newConversation, "new-conversation", false, "Force a new conversation (discard saved one)")
+	cmd.Flags().StringVar(
+		&flags.agentEndpoint,
+		"agent-endpoint",
+		"",
+		"Full endpoint URL of a deployed agent (run 'azd ai agent show' to see it). "+
+			"Invokes without requiring an azd project; protocol is derived from the URL.",
+	)
 
 	return cmd
+}
+
+// validateAgentEndpointFlags rejects flags that have no effect (or conflict) when --agent-endpoint
+// is used. Ephemeral mode has no project, no local persistence, and no localhost target.
+func validateAgentEndpointFlags(cmd *cobra.Command, flags *invokeFlags) error {
+	// Disallowed companion flags for --agent-endpoint, in the order checked.
+	// `set` is true when the flag is meaningfully present on the command line.
+	checks := []struct {
+		name       string
+		set        bool
+		suggestion string
+	}{
+		{"--local", flags.local, "omit --local to invoke the deployed agent at the given URL"},
+		{
+			"a positional agent name",
+			flags.name != "",
+			"the agent name is read from the --agent-endpoint URL; remove the positional argument",
+		},
+		{"--port", cmd.Flags().Changed("port"), "--port targets a local agent; omit it when using --agent-endpoint"},
+		{"--protocol", cmd.Flags().Changed("protocol"), "the protocol is read from the --agent-endpoint URL; omit --protocol"},
+	}
+
+	for _, c := range checks {
+		if c.set {
+			return exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				fmt.Sprintf("--agent-endpoint cannot be combined with %s", c.name),
+				c.suggestion,
+			)
+		}
+	}
+	return nil
 }
 
 func (a *InvokeAction) Run(ctx context.Context) error {
@@ -201,11 +261,11 @@ func (a *InvokeAction) resolveProtocol(
 
 	if a.flags.local {
 		return resolveAgentProtocol(
-			ctx, azdClient, "", rootFlags.NoPrompt,
+			ctx, azdClient, "", a.noPrompt,
 		)
 	}
 	return resolveAgentProtocol(
-		ctx, azdClient, a.flags.name, rootFlags.NoPrompt,
+		ctx, azdClient, a.flags.name, a.noPrompt,
 	)
 }
 
@@ -256,17 +316,23 @@ func (a *InvokeAction) responsesLocal(ctx context.Context) error {
 		defer azdClient.Close()
 	}
 
-	agentKey := resolveLocalAgentKey(ctx, azdClient, a.flags.name, rootFlags.NoPrompt)
+	agentKey := resolveLocalAgentKey(ctx, azdClient, a.flags.name, a.noPrompt)
 
 	// Resolve local session and conversation IDs (always generated locally).
 	var sid, convID string
 	if azdClient != nil {
-		sid, _ = resolveStoredID(
+		sid, err = resolveStoredID(
 			ctx, azdClient, agentKey, a.flags.session, a.flags.newSession, "sessions", true,
 		)
-		convID, _ = resolveStoredID(
+		if err != nil {
+			log.Printf("invoke local: failed to resolve session ID: %v", err)
+		}
+		convID, err = resolveStoredID(
 			ctx, azdClient, agentKey, a.flags.conversation, a.flags.newConversation, "conversations", true,
 		)
+		if err != nil {
+			log.Printf("invoke local: failed to resolve conversation ID: %v", err)
+		}
 	}
 
 	fmt.Printf("Target:       localhost:%d (local)\n", port)
@@ -332,32 +398,138 @@ func (a *InvokeAction) responsesLocal(ctx context.Context) error {
 	return printAgentResponse(result, "local")
 }
 
-func (a *InvokeAction) responsesRemote(ctx context.Context) error {
+// remoteContext holds the resolved inputs for a remote (Foundry) invoke.
+// In ephemeral mode (--agent-endpoint) the project endpoint / agent name /
+// api-version come from the parsed URL.
+//
+// agentKey is the persistence key used by the global UserConfig store. It is
+// non-empty whenever session/conversation IDs should be saved or resumed:
+//   - project mode: derived from AGENT_{SVC}_ENDPOINT
+//   - ephemeral mode: derived from the parsed --agent-endpoint URL
+//     (independent of api-version / trailing slash / fragment)
+//
+// In standalone mode (no parent azd daemon, e.g. running the extension binary
+// directly outside an azd command) azdClient is nil and persistence helpers
+// no-op. agentKey may still be non-empty in that case.
+type remoteContext struct {
+	name            string
+	agentKey        string
+	projectEndpoint string
+	apiVersion      string
+	azdClient       *azdext.AzdClient
+	bearerToken     string
+}
+
+// resolveRemoteContext returns the inputs required to invoke a remote agent.
+// In project mode it opens an azd client and reads the environment; in ephemeral
+// mode (--agent-endpoint) it skips both. Auth token acquisition is intentionally
+// deferred to acquireBearerToken so callers can validate the request body first
+// and avoid unnecessary token round-trips on invalid input. Callers must close
+// rc.azdClient when non-nil.
+func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext, error) {
+	rc := &remoteContext{apiVersion: DefaultAgentAPIVersion}
+
+	if a.endpoint != nil {
+		rc.name = a.endpoint.AgentName
+		rc.projectEndpoint = a.endpoint.ProjectEndpoint
+		if a.endpoint.APIVersion != "" {
+			rc.apiVersion = a.endpoint.APIVersion
+		}
+		rc.agentKey = buildAgentKey(a.endpoint.ProjectEndpoint, a.endpoint.AgentName, "", false)
+		// Best-effort attach to the parent azd daemon so session/conversation IDs
+		// persist across invokes via global UserConfig. When running the extension
+		// binary directly (standalone), this fails and we proceed without persistence.
+		if azdClient, err := azdext.NewAzdClient(); err == nil {
+			rc.azdClient = azdClient
+		}
+		return rc, nil
+	}
+
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
-		return fmt.Errorf("failed to create azd client: %w", err)
+		return nil, fmt.Errorf("failed to create azd client: %w", err)
 	}
-	defer azdClient.Close()
+	rc.azdClient = azdClient
 
-	name := a.flags.name
-
-	// Auto-resolve agent name from azure.yaml
-	if info, err := resolveAgentServiceFromProject(ctx, azdClient, name, rootFlags.NoPrompt); err == nil {
-		if name == "" && info.AgentName != "" {
-			name = info.AgentName
+	rc.name = a.flags.name
+	if info, err := resolveAgentServiceFromProject(ctx, azdClient, rc.name, a.noPrompt); err == nil {
+		if rc.name == "" && info.AgentName != "" {
+			rc.name = info.AgentName
+		}
+		if info.AgentEndpoint != "" {
+			rc.agentKey = buildRemoteAgentKeyFromEndpoint(info.AgentEndpoint)
 		}
 	}
-
-	if name == "" {
-		return fmt.Errorf("agent name is required; provide as the first argument or define an azure.ai.agent service in azure.yaml")
+	if rc.name == "" {
+		azdClient.Close()
+		return nil, fmt.Errorf(
+			"agent name is required; provide as the first argument or " +
+				"define an azure.ai.agent service in azure.yaml",
+		)
 	}
 
-	projectEndpoint, err := resolveAgentEndpoint(ctx, "", "")
+	ep, err := resolveAgentEndpoint(ctx, "", "")
+	if err != nil {
+		azdClient.Close()
+		return nil, err
+	}
+	rc.projectEndpoint = ep
+	return rc, nil
+}
+
+// acquireBearerToken obtains a Foundry bearer token. Called after request body
+// validation so that local errors (e.g., a missing --input-file) are surfaced
+// before any auth round-trip is attempted.
+func (a *InvokeAction) acquireBearerToken(ctx context.Context) (string, error) {
+	credential, err := newAgentCredential()
+	if err != nil {
+		return "", err
+	}
+	token, err := credential.GetToken(ctx, policy.TokenRequestOptions{
+		Scopes: []string{"https://ai.azure.com/.default"},
+	})
+	if err != nil {
+		return "", ephemeralAuthError(a.endpoint != nil, err)
+	}
+	return token.Token, nil
+}
+
+// ephemeralAuthError wraps a token-acquisition failure with a login suggestion when
+// the user is invoking outside an azd project (where mis-configured credentials are common).
+func ephemeralAuthError(ephemeral bool, err error) error {
+	if !ephemeral {
+		return fmt.Errorf("failed to get auth token: %w", err)
+	}
+	return exterrors.Auth(
+		exterrors.CodeAuthFailed,
+		fmt.Sprintf("failed to get auth token: %v", err),
+		"run `azd auth login` and try again",
+	)
+}
+
+func (a *InvokeAction) responsesRemote(ctx context.Context) error {
+	rc, err := a.resolveRemoteContext(ctx)
+	if err != nil {
+		return err
+	}
+	if rc.azdClient != nil {
+		defer rc.azdClient.Close()
+	}
+
+	body, bodyLabel, err := a.resolveBody()
 	if err != nil {
 		return err
 	}
 
-	body, bodyLabel, err := a.resolveBody()
+	agentKey := rc.agentKey
+	if agentKey == "" && rc.azdClient != nil {
+		log.Printf("warning: agent endpoint not available, session state will not be persisted")
+	}
+
+	// Acquire the bearer token after body validation so a local input error
+	// (e.g., unreadable --input-file) does not pay an unnecessary auth round-trip
+	// and is surfaced before any auth failure.
+	rc.bearerToken, err = a.acquireBearerToken(ctx)
 	if err != nil {
 		return err
 	}
@@ -372,43 +544,50 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 
 	// Session ID — routes to the same microVM container instance.
 	// When empty, let the server assign one.
-	sid, err := resolveStoredID(ctx, azdClient, name, a.flags.session, a.flags.newSession, "sessions", false)
-	if err != nil {
-		return err
+	var sid string
+	if agentKey != "" && rc.azdClient != nil {
+		sid, err = resolveStoredID(
+			ctx, rc.azdClient, agentKey, a.flags.session, a.flags.newSession, "sessions", false,
+			legacyKeysForRemote(rc.name)...,
+		)
+		if err != nil {
+			return err
+		}
+	} else {
+		sid = a.flags.session
 	}
 	if sid != "" {
 		reqBody["session_id"] = sid
 	}
 
-	// Acquire credential and token — used for both conversation creation and the invoke request
-	credential, err := newAgentCredential()
-	if err != nil {
-		return err
-	}
-
-	token, err := credential.GetToken(ctx, policy.TokenRequestOptions{
-		Scopes: []string{"https://ai.azure.com/.default"},
-	})
-	if err != nil {
-		return fmt.Errorf("failed to get auth token: %w", err)
-	}
-
-	// Conversation ID — enables multi-turn memory via Foundry Conversations API
-	convID, err := resolveConversationID(
-		ctx,
-		azdClient,
-		name,
-		a.flags.conversation,
-		a.flags.newConversation,
-		projectEndpoint,
-		token.Token,
-	)
-	if err != nil {
-		return err
+	// Conversation ID — enables multi-turn memory via Foundry Conversations API.
+	var convID string
+	if agentKey != "" && rc.azdClient != nil {
+		convID, err = resolveConversationID(
+			ctx,
+			rc.azdClient,
+			agentKey,
+			a.flags.conversation,
+			a.flags.newConversation,
+			rc.projectEndpoint,
+			rc.bearerToken,
+			rc.name,
+			legacyKeysForRemote(rc.name)...,
+		)
+		if err != nil {
+			return err
+		}
+	} else if a.flags.conversation != "" {
+		convID = a.flags.conversation
+	} else {
+		convID, err = createConversation(ctx, rc.projectEndpoint, rc.name, rc.bearerToken)
+		if err != nil {
+			return err
+		}
 	}
 	reqBody["conversation"] = map[string]string{"id": convID}
 
-	fmt.Printf("Agent:        %s (remote)\n", name)
+	fmt.Printf("Agent:        %s (remote)\n", rc.name)
 	fmt.Printf("Message:      %s\n", bodyLabel)
 	printSessionStatus("Session:      ", sid)
 	fmt.Printf("Conversation: %s\n", convID)
@@ -419,21 +598,19 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	url := fmt.Sprintf(
-		"%s/agents/%s/endpoint/protocols/openai/responses?api-version=%s",
-		projectEndpoint, name, DefaultAgentAPIVersion,
-	)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
+	respURL := buildResponsesURL(rc.projectEndpoint, rc.name, rc.apiVersion)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, respURL, bytes.NewReader(payload))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+token.Token)
+	req.Header.Set("Authorization", "Bearer "+rc.bearerToken)
 
 	client := &http.Client{Timeout: a.httpTimeout()}
-	resp, err := client.Do(req) //nolint:gosec // G704: endpoint is resolved from azd environment configuration
+	//nolint:gosec // G704: URL is built from a validated Foundry endpoint (env or --agent-endpoint)
+	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("POST %s failed: %w", url, err)
+		return fmt.Errorf("POST %s failed: %w", respURL, err)
 	}
 	defer resp.Body.Close()
 
@@ -442,15 +619,22 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 		fmt.Printf("Trace ID: %s\n", requestID)
 	}
 
-	captureResponseSession(ctx, azdClient, name, sid, resp, "Session:      ")
+	captureResponseSession(ctx, rc.azdClient, agentKey, sid, resp, "Session:      ")
 
 	if resp.StatusCode >= 400 {
 		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("POST %s failed with HTTP %d: %s\n%s", url, resp.StatusCode, resp.Status, string(respBody))
+		return fmt.Errorf("POST %s failed with HTTP %d: %s\n%s", respURL, resp.StatusCode, resp.Status, string(respBody))
 	}
 
 	// Parse SSE stream for agent output
-	return readSSEStream(resp.Body, name)
+	if err := readSSEStream(resp.Body, rc.name); err != nil {
+		return err
+	}
+
+	if agentKey != "" && rc.azdClient != nil {
+		fmt.Println("\n(tip: pass --new-session or --new-conversation to reset; see `azd ai agent invoke --help`)")
+	}
+	return nil
 }
 
 func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
@@ -467,14 +651,17 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 		defer azdClient.Close()
 	}
 
-	agentKey := resolveLocalAgentKey(ctx, azdClient, a.flags.name, rootFlags.NoPrompt)
+	agentKey := resolveLocalAgentKey(ctx, azdClient, a.flags.name, a.noPrompt)
 
 	// Resolve local session ID (generated locally, not server-assigned).
 	var sid string
 	if azdClient != nil {
-		sid, _ = resolveStoredID(
+		sid, err = resolveStoredID(
 			ctx, azdClient, agentKey, a.flags.session, a.flags.newSession, "sessions", true,
 		)
+		if err != nil {
+			log.Printf("invoke local: failed to resolve session ID: %v", err)
+		}
 	}
 
 	fmt.Printf("Target:   localhost:%d (local, invocations protocol)\n", port)
@@ -510,9 +697,9 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 	}
 	defer resp.Body.Close()
 
-	// Persist the most recent invocation ID for this agent (best-effort).
-	if invID := resp.Header.Get("x-agent-invocation-id"); invID != "" && azdClient != nil {
-		saveContextValue(ctx, azdClient, agentKey, invID, "invocations")
+	// Print the invocation ID if the agent returned one.
+	if invID := resp.Header.Get("x-agent-invocation-id"); invID != "" {
+		fmt.Printf("Invocation:   %s\n", invID)
 	}
 
 	return handleInvocationResponse(ctx, resp, "", "", agentKey, a.httpTimeout())
@@ -521,30 +708,23 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 // invocationsRemote sends the user's message to Foundry using
 // the invocations protocol (POST /agents/{name}/endpoint/protocols/invocations).
 func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
-	azdClient, err := azdext.NewAzdClient()
-	if err != nil {
-		return fmt.Errorf("failed to create azd client: %w", err)
-	}
-	defer azdClient.Close()
-
-	name := a.flags.name
-
-	// Auto-resolve agent name from azure.yaml / azd environment
-	if info, err := resolveAgentServiceFromProject(ctx, azdClient, name, rootFlags.NoPrompt); err == nil {
-		if name == "" && info.AgentName != "" {
-			name = info.AgentName
-		}
-	}
-
-	if name == "" {
-		return fmt.Errorf(
-			"agent name is required; provide as the first argument or define an azure.ai.agent service in azure.yaml",
-		)
-	}
-
-	endpoint, err := resolveAgentEndpoint(ctx, "", "")
+	rc, err := a.resolveRemoteContext(ctx)
 	if err != nil {
 		return err
+	}
+	if rc.azdClient != nil {
+		defer rc.azdClient.Close()
+	}
+
+	agentKey := rc.agentKey
+	if agentKey == "" && rc.azdClient != nil {
+		log.Printf("warning: agent endpoint not available, session state will not be persisted")
+	}
+
+	if a.flags.newConversation {
+		fmt.Fprintln(os.Stderr,
+			"note: --new-conversation has no effect for the invocations protocol "+
+				"(memory is bound to the session; use --new-session to reset).")
 	}
 
 	body, bodyLabel, err := a.resolveBody()
@@ -552,62 +732,78 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 		return err
 	}
 
-	// Session ID — routes to the same container instance
-	sid, err := resolveStoredID(ctx, azdClient, name, a.flags.session, a.flags.newSession, "sessions", false)
+	// Acquire the bearer token after body validation so a local input error
+	// (e.g., unreadable --input-file) does not pay an unnecessary auth round-trip
+	// and is surfaced before any auth failure.
+	rc.bearerToken, err = a.acquireBearerToken(ctx)
 	if err != nil {
 		return err
 	}
 
-	// Acquire credential and token
-	credential, err := newAgentCredential()
-	if err != nil {
-		return err
+	// Session ID — routes to the same container instance.
+	var sid string
+	if agentKey != "" && rc.azdClient != nil {
+		sid, err = resolveStoredID(
+			ctx, rc.azdClient, agentKey, a.flags.session, a.flags.newSession, "sessions", false,
+			legacyKeysForRemote(rc.name)...,
+		)
+		if err != nil {
+			return err
+		}
+	} else {
+		sid = a.flags.session
 	}
 
-	token, err := credential.GetToken(ctx, policy.TokenRequestOptions{
-		Scopes: []string{"https://ai.azure.com/.default"},
-	})
-	if err != nil {
-		return fmt.Errorf("failed to get auth token: %w", err)
-	}
-
-	fmt.Printf("Agent:    %s (remote, invocations protocol)\n", name)
+	fmt.Printf("Agent:    %s (remote, invocations protocol)\n", rc.name)
 	fmt.Printf("Input:    %s\n", bodyLabel)
 	printSessionStatus("Session:  ", sid)
 	fmt.Println()
 
-	remoteBaseURL := fmt.Sprintf("%s/agents/%s/endpoint/protocols", endpoint, name)
+	remoteBaseURL := fmt.Sprintf("%s/agents/%s/endpoint/protocols", rc.projectEndpoint, rc.name)
 
-	// Fetch and cache the agent's OpenAPI spec (skip if already cached).
-	fetchOpenAPISpec(ctx, azdClient, remoteBaseURL, name, "remote", token.Token, false)
-
-	invURL := fmt.Sprintf("%s/invocations?api-version=%s", remoteBaseURL, DefaultAgentAPIVersion)
-	if sid != "" {
-		invURL += "&agent_session_id=" + url.QueryEscape(sid)
+	// Fetch and cache the agent's OpenAPI spec only in project mode. In ephemeral
+	// mode (--agent-endpoint) we deliberately avoid the on-disk side effect since
+	// the user is one-off targeting a remote endpoint.
+	if rc.azdClient != nil && a.endpoint == nil {
+		fetchOpenAPISpec(ctx, rc.azdClient, remoteBaseURL, rc.name, "remote", rc.bearerToken, false)
 	}
+
+	invURL := buildInvocationsURL(rc.projectEndpoint, rc.name, rc.apiVersion, sid)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, invURL, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", contentTypeForBody(body))
-	req.Header.Set("Authorization", "Bearer "+token.Token)
+	req.Header.Set("Authorization", "Bearer "+rc.bearerToken)
 
 	client := &http.Client{Timeout: a.httpTimeout()}
-	resp, err := client.Do(req) //nolint:gosec // G704: endpoint is resolved from azd environment configuration
+	//nolint:gosec // G704: URL is built from a validated Foundry endpoint (env or --agent-endpoint)
+	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("POST %s failed: %w", invURL, err)
 	}
 	defer resp.Body.Close()
 
-	// Persist the most recent invocation ID for this agent.
+	// Print the invocation ID if the agent returned one. We do not persist it
+	// to the per-user config: the config store only supports the "sessions"
+	// and "conversations" maps (see validateStoreField), and invocation IDs
+	// are not used to drive any subsequent invoke — they are emitted purely
+	// for trace correlation.
 	if invID := resp.Header.Get("x-agent-invocation-id"); invID != "" {
-		saveContextValue(ctx, azdClient, name, invID, "invocations")
+		fmt.Printf("Invocation:   %s\n", invID)
 	}
 
-	captureResponseSession(ctx, azdClient, name, sid, resp, "Session:  ")
+	captureResponseSession(ctx, rc.azdClient, agentKey, sid, resp, "Session:  ")
 
-	return handleInvocationResponse(ctx, resp, endpoint, token.Token, name, a.httpTimeout())
+	if err := handleInvocationResponse(ctx, resp, rc.projectEndpoint, rc.bearerToken, rc.name, a.httpTimeout()); err != nil {
+		return err
+	}
+
+	if agentKey != "" && rc.azdClient != nil {
+		fmt.Println("\n(tip: pass --new-session to reset; see `azd ai agent invoke --help`)")
+	}
+	return nil
 }
 
 // handleInvocationResponse dispatches the response from a POST /invocations call
@@ -890,11 +1086,11 @@ func handleInvocationLRO(
 
 // createConversation creates a new Foundry conversation for multi-turn memory.
 func createConversation(ctx context.Context, projectEndpoint, agentName, bearerToken string) (string, error) {
-	url := fmt.Sprintf(
+	convURL := fmt.Sprintf(
 		"%s/agents/%s/endpoint/protocols/openai/conversations?api-version=%s",
 		projectEndpoint, agentName, ConversationsAPIVersion,
 	)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader([]byte("{}")))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, convURL, bytes.NewReader([]byte("{}")))
 	if err != nil {
 		return "", err
 	}
@@ -904,13 +1100,13 @@ func createConversation(ctx context.Context, projectEndpoint, agentName, bearerT
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req) //nolint:gosec // G704: endpoint is resolved from azd environment configuration
 	if err != nil {
-		return "", fmt.Errorf("POST %s failed: %w", url, err)
+		return "", fmt.Errorf("POST %s failed: %w", convURL, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
 		respBody, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("POST %s failed with HTTP %d: %s\n%s", url, resp.StatusCode, resp.Status, string(respBody))
+		return "", fmt.Errorf("POST %s failed with HTTP %d: %s\n%s", convURL, resp.StatusCode, resp.Status, string(respBody))
 	}
 
 	body, err := io.ReadAll(resp.Body)

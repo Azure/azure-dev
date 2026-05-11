@@ -27,7 +27,7 @@ Global Flags
         --docs               	: Opens the documentation for azd env in your web browser.
     -e, --environment string 	: The name of the environment to use.
     -h, --help               	: Gets help for env.
-        --no-prompt          	: Accepts the default value instead of prompting, or it fails if there is no default.
+        --no-prompt          	: Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
 
 Use azd env [command] --help to view examples and more information about a specific command.
 

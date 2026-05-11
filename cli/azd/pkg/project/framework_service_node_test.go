@@ -4,7 +4,6 @@
 package project
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,7 +22,7 @@ import (
 func Test_NpmProject_Restore(t *testing.T) {
 	var runArgs exec.RunArgs
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.CommandRunner.
 		When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "npm install")
@@ -56,7 +55,7 @@ func Test_NpmProject_Restore(t *testing.T) {
 func Test_NpmProject_Build(t *testing.T) {
 	var runArgs exec.RunArgs
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.CommandRunner.
 		When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "npm run build")
@@ -92,7 +91,7 @@ func Test_NpmProject_Package(t *testing.T) {
 
 	var runArgs exec.RunArgs
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.CommandRunner.
 		When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "npm run build")
@@ -144,7 +143,7 @@ func Test_NpmProject_Package(t *testing.T) {
 func Test_NpmProject_ConfigOverride_Pnpm(t *testing.T) {
 	var runArgs exec.RunArgs
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.CommandRunner.
 		When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "pnpm install")
@@ -172,7 +171,7 @@ func Test_NpmProject_ConfigOverride_Pnpm(t *testing.T) {
 }
 
 func Test_NpmProject_ConfigOverride_InvalidValue(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	env := environment.New("test")
 	npmCli := node.NewCli(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageTypeScript)
@@ -194,7 +193,7 @@ func Test_NpmProject_ConfigOverride_BeatsDetection(t *testing.T) {
 
 	var runArgs exec.RunArgs
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.CommandRunner.
 		When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "yarn")

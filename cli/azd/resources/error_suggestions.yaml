@@ -545,6 +545,16 @@ rules:
         title: "azure.yaml schema reference"
 
   # ============================================================================
+  # GitHub API Errors (gh api)
+  # Suggestions for *github.ApiError (SAML/rate-limit/401/403) and
+  # *RepoNotAccessibleError are emitted directly as *internal.ErrorWithSuggestion
+  # by pkg/templates/gh_errors.go, so they don't need YAML rules here. This
+  # keeps the suggestion text co-located with the code that classifies the
+  # failure and lets the actionable text survive boundaries (e.g., gRPC) where
+  # the YAML pipeline doesn't run.
+  # ============================================================================
+
+  # ============================================================================
   # Text Pattern Rules — Specific patterns first
   # These are fallbacks for errors without typed Go structs.
   # ============================================================================
@@ -575,6 +585,20 @@ rules:
     links:
       - url: "https://learn.microsoft.com/azure/azure-resource-manager/bicep/bicep-error-codes"
         title: "Bicep error codes reference"
+
+  # ============================================================================
+  # Extension Registry Errors
+  # ============================================================================
+
+  # NOTE: The primary path wraps ErrUnsupportedRegistrySchema in ErrorWithSuggestion
+  # directly (manager.go), which bypasses this YAML pipeline. This rule serves as a
+  # catch-all for any alternative code paths where the error surfaces unwrapped.
+  - errorType: "ErrUnsupportedRegistrySchema"
+    message: "The extension registry uses a schema version not supported by this version of azd."
+    suggestion: "Upgrade azd to the latest version to use this registry."
+    links:
+      - url: "https://aka.ms/azd/install"
+        title: "Install/upgrade azd"
 
   # ============================================================================
   # Text Pattern Rules — Broad/generic patterns (least specific, must be last)

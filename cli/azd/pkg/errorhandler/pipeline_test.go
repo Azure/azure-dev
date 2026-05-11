@@ -28,7 +28,7 @@ func TestPipeline_PatternMatching(t *testing.T) {
 		matcher: NewPatternMatcher(),
 	}
 
-	result := pipeline.Process(context.Background(), errors.New("deployment failed: quota exceeded"))
+	result := pipeline.Process(t.Context(), errors.New("deployment failed: quota exceeded"))
 	require.NotNil(t, result)
 	assert.Equal(t, "Quota limit reached.", result.Message)
 	assert.Equal(t, "Request a quota increase.", result.Suggestion)
@@ -47,7 +47,7 @@ func TestPipeline_ErrorTypeMatching(t *testing.T) {
 	}
 
 	err := &testDeploymentError{Title: "test"}
-	result := pipeline.Process(context.Background(), err)
+	result := pipeline.Process(t.Context(), err)
 	require.NotNil(t, result)
 	assert.Equal(t, "Deployment failed.", result.Message)
 }
@@ -75,7 +75,7 @@ func TestPipeline_ErrorTypeWithProperties(t *testing.T) {
 	err1 := &testDeploymentError{
 		Details: &testErrorDetails{Code: "InsufficientQuota"},
 	}
-	result1 := pipeline.Process(context.Background(), err1)
+	result1 := pipeline.Process(t.Context(), err1)
 	require.NotNil(t, result1)
 	assert.Equal(t, "Quota insufficient.", result1.Message)
 
@@ -83,7 +83,7 @@ func TestPipeline_ErrorTypeWithProperties(t *testing.T) {
 	err2 := &testDeploymentError{
 		Details: &testErrorDetails{Code: "AuthorizationFailed"},
 	}
-	result2 := pipeline.Process(context.Background(), err2)
+	result2 := pipeline.Process(t.Context(), err2)
 	require.NotNil(t, result2)
 	assert.Equal(t, "Auth failed.", result2.Message)
 
@@ -91,7 +91,7 @@ func TestPipeline_ErrorTypeWithProperties(t *testing.T) {
 	err3 := &testDeploymentError{
 		Details: &testErrorDetails{Code: "SomethingElse"},
 	}
-	result3 := pipeline.Process(context.Background(), err3)
+	result3 := pipeline.Process(t.Context(), err3)
 	assert.Nil(t, result3)
 }
 
@@ -110,17 +110,17 @@ func TestPipeline_ErrorTypeWithPatterns(t *testing.T) {
 
 	// Matches: correct type AND message contains pattern
 	err1 := &testDeploymentError{Title: "soft delete conflict"}
-	result1 := pipeline.Process(context.Background(), err1)
+	result1 := pipeline.Process(t.Context(), err1)
 	require.NotNil(t, result1)
 	assert.Equal(t, "Soft-deleted resource conflict.", result1.Message)
 
 	// No match: correct type but wrong message
 	err2 := &testDeploymentError{Title: "quota issue"}
-	result2 := pipeline.Process(context.Background(), err2)
+	result2 := pipeline.Process(t.Context(), err2)
 	assert.Nil(t, result2)
 
 	// No match: wrong type
-	result3 := pipeline.Process(context.Background(), errors.New("soft delete error"))
+	result3 := pipeline.Process(t.Context(), errors.New("soft delete error"))
 	assert.Nil(t, result3)
 }
 
@@ -141,7 +141,7 @@ func TestPipeline_WrappedErrorType(t *testing.T) {
 	innerErr := &testAuthError{ErrorCode: "AUTH001"}
 	wrappedErr := &testWrappedError{msg: "outer error", inner: innerErr}
 
-	result := pipeline.Process(context.Background(), wrappedErr)
+	result := pipeline.Process(t.Context(), wrappedErr)
 	require.NotNil(t, result)
 	assert.Equal(t, "Auth error.", result.Message)
 }
@@ -176,7 +176,7 @@ func TestPipeline_Handler(t *testing.T) {
 	}
 
 	err := &testDeploymentError{Title: "test"}
-	result := pipeline.Process(context.Background(), err)
+	result := pipeline.Process(t.Context(), err)
 	require.NotNil(t, result)
 	assert.True(t, handlerCalled)
 	assert.Equal(t, "Dynamic message", result.Message)
@@ -198,7 +198,7 @@ func TestPipeline_HandlerNotFound(t *testing.T) {
 	}
 
 	err := &testDeploymentError{Title: "test"}
-	result := pipeline.Process(context.Background(), err)
+	result := pipeline.Process(t.Context(), err)
 	// Handler not found → no suggestion, moves to next rule
 	assert.Nil(t, result)
 }
@@ -220,7 +220,7 @@ func TestPipeline_FirstMatchWins(t *testing.T) {
 		matcher: NewPatternMatcher(),
 	}
 
-	result := pipeline.Process(context.Background(), errors.New("some error"))
+	result := pipeline.Process(t.Context(), errors.New("some error"))
 	require.NotNil(t, result)
 	assert.Equal(t, "First match", result.Message)
 }
@@ -237,7 +237,7 @@ func TestPipeline_NoMatch(t *testing.T) {
 		matcher: NewPatternMatcher(),
 	}
 
-	result := pipeline.Process(context.Background(), errors.New("completely unrelated error"))
+	result := pipeline.Process(t.Context(), errors.New("completely unrelated error"))
 	assert.Nil(t, result)
 }
 
@@ -253,7 +253,7 @@ func TestPipeline_NoConditionsSkipped(t *testing.T) {
 		matcher: NewPatternMatcher(),
 	}
 
-	result := pipeline.Process(context.Background(), errors.New("any error"))
+	result := pipeline.Process(t.Context(), errors.New("any error"))
 	assert.Nil(t, result)
 }
 
@@ -270,7 +270,7 @@ func TestPipeline_PropertiesWithoutErrorTypeSkipped(t *testing.T) {
 		matcher: NewPatternMatcher(),
 	}
 
-	result := pipeline.Process(context.Background(), errors.New("any error"))
+	result := pipeline.Process(t.Context(), errors.New("any error"))
 	assert.Nil(t, result)
 }
 
@@ -305,7 +305,7 @@ func TestPipeline_HandlerWithConditions(t *testing.T) {
 	err1 := &testDeploymentError{
 		Details: &testErrorDetails{Code: "SkuNotAvailable"},
 	}
-	result1 := pipeline.Process(context.Background(), err1)
+	result1 := pipeline.Process(t.Context(), err1)
 	require.NotNil(t, result1)
 	assert.True(t, handlerCalled)
 
@@ -314,7 +314,7 @@ func TestPipeline_HandlerWithConditions(t *testing.T) {
 	err2 := &testDeploymentError{
 		Details: &testErrorDetails{Code: "OtherCode"},
 	}
-	result2 := pipeline.Process(context.Background(), err2)
+	result2 := pipeline.Process(t.Context(), err2)
 	assert.Nil(t, result2)
 	assert.False(t, handlerCalled)
 }
@@ -349,7 +349,7 @@ func TestPipeline_ResponseError_MatchesByErrorCode(t *testing.T) {
 
 	pipeline := NewErrorHandlerPipeline(nil)
 	result := pipeline.ProcessWithRules(
-		context.Background(),
+		t.Context(),
 		wrappedErr,
 		[]ErrorSuggestionRule{
 			{
@@ -381,7 +381,7 @@ func TestPipeline_ContainerAppSecretInvalid(t *testing.T) {
 	}
 
 	result := pipeline.ProcessWithRules(
-		context.Background(),
+		t.Context(),
 		err,
 		[]ErrorSuggestionRule{
 			{
@@ -409,7 +409,7 @@ func TestPipeline_ContainerAppOperationError_ImagePull(t *testing.T) {
 	}
 
 	result := pipeline.ProcessWithRules(
-		context.Background(),
+		t.Context(),
 		err,
 		[]ErrorSuggestionRule{
 			{
@@ -446,7 +446,7 @@ func TestPipeline_ContainerAppOperationError_Generic(t *testing.T) {
 	}
 
 	result := pipeline.ProcessWithRules(
-		context.Background(),
+		t.Context(),
 		err,
 		[]ErrorSuggestionRule{
 			{
@@ -484,7 +484,7 @@ func TestPipeline_ContainerAppInvalidParam(t *testing.T) {
 	}
 
 	result := pipeline.ProcessWithRules(
-		context.Background(),
+		t.Context(),
 		err,
 		[]ErrorSuggestionRule{
 			{
@@ -555,7 +555,7 @@ func TestPipeline_RBACErrors(t *testing.T) {
 			}
 
 			result := pipeline.ProcessWithRules(
-				context.Background(),
+				t.Context(),
 				err,
 				[]ErrorSuggestionRule{
 					{
@@ -576,7 +576,7 @@ func TestPipeline_NoSubscriptionsFound(t *testing.T) {
 	pipeline := NewErrorHandlerPipeline(nil)
 
 	err := errors.New("no subscriptions found")
-	result := pipeline.Process(context.Background(), err)
+	result := pipeline.Process(t.Context(), err)
 	require.NotNil(t, result, "Should match 'no subscriptions found' pattern")
 	assert.Equal(t, "No Azure subscriptions were found for your account.", result.Message)
 	assert.Contains(t, result.Suggestion, "azd auth login --tenant-id")
@@ -595,7 +595,7 @@ func TestPipeline_InvalidTemplateDeployment_ContainerApp(t *testing.T) {
 	}
 
 	result := pipeline.ProcessWithRules(
-		context.Background(),
+		t.Context(),
 		err,
 		[]ErrorSuggestionRule{
 			{
@@ -619,7 +619,7 @@ func TestPipeline_InvalidTemplateDeployment_ContainerApp(t *testing.T) {
 	}
 
 	resultNonCA := pipeline.ProcessWithRules(
-		context.Background(),
+		t.Context(),
 		errNonCA,
 		[]ErrorSuggestionRule{
 			{
@@ -645,7 +645,7 @@ func TestPipeline_InvalidResourceGroupLocation(t *testing.T) {
 	}
 
 	result := pipeline.ProcessWithRules(
-		context.Background(),
+		t.Context(),
 		err,
 		[]ErrorSuggestionRule{
 			{

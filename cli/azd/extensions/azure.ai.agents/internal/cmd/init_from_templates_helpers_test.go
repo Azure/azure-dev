@@ -4,10 +4,7 @@
 package cmd
 
 import (
-	"context"
 	"encoding/json"
-	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -86,28 +83,196 @@ func TestEffectiveType(t *testing.T) {
 	}
 }
 
+func TestIsFeatured(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		tags     []string
+		expected bool
+	}{
+		{name: "tagged featured", tags: []string{"featured", "Responses Protocol"}, expected: true},
+		{name: "not tagged featured", tags: []string{"MCP", "Responses Protocol"}, expected: false},
+		{name: "nil tags", tags: nil, expected: false},
+		{name: "empty tags", tags: []string{}, expected: false},
+		{name: "featured only", tags: []string{"featured"}, expected: true},
+		{name: "example tag is not featured", tags: []string{"example"}, expected: false},
+		{name: "template tag is not featured", tags: []string{"template"}, expected: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			tmpl := &AgentTemplate{ExtensionTags: tt.tags}
+			require.Equal(t, tt.expected, tmpl.isFeatured())
+		})
+	}
+}
+
+func TestIsRecommended(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		tags     []string
+		expected bool
+	}{
+		{name: "tagged recommended", tags: []string{"featured", "recommended"}, expected: true},
+		{name: "not tagged recommended", tags: []string{"featured"}, expected: false},
+		{name: "nil tags", tags: nil, expected: false},
+		{name: "empty tags", tags: []string{}, expected: false},
+		{name: "recommended without featured", tags: []string{"recommended"}, expected: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			tmpl := &AgentTemplate{ExtensionTags: tt.tags}
+			require.Equal(t, tt.expected, tmpl.isRecommended())
+		})
+	}
+}
+
+func TestPartitionFeatured(t *testing.T) {
+	t.Parallel()
+
+	templates := []AgentTemplate{
+		{Title: "MCP Tools Agent", ExtensionTags: []string{"MCP"}},
+		{Title: "Basic Agent", ExtensionTags: []string{"featured"}},
+		{Title: "Workflow Agent", ExtensionTags: []string{"workflows"}},
+		{Title: "Hello World", ExtensionTags: []string{"featured"}},
+	}
+
+	featured, rest := partitionFeatured(templates)
+
+	require.Len(t, featured, 2)
+	require.Equal(t, "Basic Agent", featured[0].Title)
+	require.Equal(t, "Hello World", featured[1].Title)
+
+	require.Len(t, rest, 2)
+	require.Equal(t, "MCP Tools Agent", rest[0].Title)
+	require.Equal(t, "Workflow Agent", rest[1].Title)
+}
+
+func TestPartitionFeaturedAllFeatured(t *testing.T) {
+	t.Parallel()
+
+	templates := []AgentTemplate{
+		{Title: "B Agent", ExtensionTags: []string{"featured"}},
+		{Title: "A Agent", ExtensionTags: []string{"featured"}},
+	}
+
+	featured, rest := partitionFeatured(templates)
+
+	require.Len(t, featured, 2)
+	require.Equal(t, "A Agent", featured[0].Title)
+	require.Equal(t, "B Agent", featured[1].Title)
+	require.Empty(t, rest)
+}
+
+func TestPartitionFeaturedEmpty(t *testing.T) {
+	t.Parallel()
+
+	featured, rest := partitionFeatured(nil)
+	require.Empty(t, featured)
+	require.Empty(t, rest)
+
+	featured2, rest2 := partitionFeatured([]AgentTemplate{})
+	require.Empty(t, featured2)
+	require.Empty(t, rest2)
+}
+
+func TestPartitionFeaturedNoneFeatured(t *testing.T) {
+	t.Parallel()
+
+	templates := []AgentTemplate{
+		{Title: "MCP Tools Agent", ExtensionTags: []string{"MCP"}},
+		{Title: "Workflow Agent", ExtensionTags: []string{"workflows"}},
+	}
+
+	featured, rest := partitionFeatured(templates)
+
+	require.Empty(t, featured)
+	require.Len(t, rest, 2)
+}
+
+func TestFindRecommendedIndex(t *testing.T) {
+	t.Parallel()
+
+	t.Run("finds recommended tag", func(t *testing.T) {
+		t.Parallel()
+		templates := []AgentTemplate{
+			{Title: "Hello World", ExtensionTags: []string{"featured"}},
+			{Title: "Basic Agent", ExtensionTags: []string{"featured", "recommended"}},
+			{Title: "MCP Agent", ExtensionTags: []string{"featured"}},
+		}
+		require.Equal(t, int32(1), findRecommendedIndex(templates))
+	})
+
+	t.Run("returns first when multiple recommended", func(t *testing.T) {
+		t.Parallel()
+		templates := []AgentTemplate{
+			{Title: "Hello World", ExtensionTags: []string{"featured"}},
+			{Title: "Agent A", ExtensionTags: []string{"featured", "recommended"}},
+			{Title: "Agent B", ExtensionTags: []string{"featured", "recommended"}},
+		}
+		require.Equal(t, int32(1), findRecommendedIndex(templates))
+	})
+
+	t.Run("returns 0 when no recommended tag", func(t *testing.T) {
+		t.Parallel()
+		templates := []AgentTemplate{
+			{Title: "Hello World", ExtensionTags: []string{"featured"}},
+			{Title: "Basic Agent", ExtensionTags: []string{"featured"}},
+		}
+		require.Equal(t, int32(0), findRecommendedIndex(templates))
+	})
+
+	t.Run("returns 0 for empty list", func(t *testing.T) {
+		t.Parallel()
+		require.Equal(t, int32(0), findRecommendedIndex(nil))
+		require.Equal(t, int32(0), findRecommendedIndex([]AgentTemplate{}))
+	})
+}
+
 func TestFetchAgentTemplates(t *testing.T) {
 	t.Parallel()
 
-	t.Run("success", func(t *testing.T) {
+	t.Run("success filters by templateType", func(t *testing.T) {
 		t.Parallel()
 
-		templates := []AgentTemplate{
+		// Manifest mixes gallery entries (no templateType / wrong templateType)
+		// with agent-init entries. Only the latter should survive.
+		manifest := []map[string]any{
 			{
-				Title:     "Echo Agent",
-				Language:  "python",
-				Framework: "Agent Framework",
-				Source:    "https://github.com/org/repo/blob/main/echo-agent/agent.yaml",
+				"title":              "Echo Agent",
+				"languages":          []string{"python"},
+				"extensionFramework": "Agent Framework",
+				"source":             "https://github.com/org/repo/blob/main/echo-agent/agent.yaml",
+				"templateType":       "extension.ai.agent",
 			},
 			{
-				Title:     "Calculator Agent",
-				Language:  "csharp",
-				Framework: "LangGraph",
-				Source:    "Azure-Samples/calculator-agent",
+				"title":              "Calculator Agent",
+				"languages":          []string{"dotnetCsharp"},
+				"extensionFramework": "LangGraph",
+				"source":             "Azure-Samples/calculator-agent",
+				"templateType":       "extension.ai.agent",
+			},
+			{
+				"title":     "Some gallery template",
+				"languages": []string{"python"},
+				"source":    "Azure-Samples/some-template",
+				// no templateType -> standard awesome-azd gallery entry
+			},
+			{
+				"title":        "Future extension category",
+				"languages":    []string{"python"},
+				"source":       "Azure-Samples/some-other-extension",
+				"templateType": "extension.something.else",
 			},
 		}
 
-		data, err := json.Marshal(templates)
+		data, err := json.Marshal(manifest)
 		require.NoError(t, err)
 
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -117,14 +282,15 @@ func TestFetchAgentTemplates(t *testing.T) {
 		}))
 		defer server.Close()
 
-		// Use a custom URL by overriding the HTTP client to redirect
 		result, err := fetchAgentTemplatesFromURL(t.Context(), server.Client(), server.URL)
 		require.NoError(t, err)
 		require.Len(t, result, 2)
 		require.Equal(t, "Echo Agent", result[0].Title)
-		require.Equal(t, "python", result[0].Language)
+		require.Equal(t, []string{"python"}, result[0].Languages)
+		require.Equal(t, "Agent Framework", result[0].ExtensionFramework)
+		require.Equal(t, "extension.ai.agent", result[0].TemplateType)
 		require.Equal(t, "Calculator Agent", result[1].Title)
-		require.Equal(t, "csharp", result[1].Language)
+		require.Equal(t, []string{"dotnetCsharp"}, result[1].Languages)
 	})
 
 	t.Run("HTTP error", func(t *testing.T) {
@@ -167,41 +333,32 @@ func TestFetchAgentTemplates(t *testing.T) {
 		require.NoError(t, err)
 		require.Empty(t, result)
 	})
-}
 
-// fetchAgentTemplatesFromURL is a test helper that fetches templates from a custom URL.
-func fetchAgentTemplatesFromURL(
-	ctx context.Context,
-	httpClient *http.Client,
-	url string,
-) ([]AgentTemplate, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
-	}
+	t.Run("manifest with only gallery entries returns error", func(t *testing.T) {
+		t.Parallel()
 
-	//nolint:gosec // URL points to a local httptest server, not user input
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
+		manifest := []map[string]any{
+			{
+				"title":     "Some gallery template",
+				"languages": []string{"python"},
+				"source":    "Azure-Samples/some-template",
+			},
+		}
+		data, err := json.Marshal(manifest)
+		require.NoError(t, err)
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to fetch agent templates: HTTP %d", resp.StatusCode)
-	}
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(data)
+		}))
+		defer server.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	var templates []AgentTemplate
-	if err := json.Unmarshal(body, &templates); err != nil {
-		return nil, fmt.Errorf("failed to parse agent templates: %w", err)
-	}
-
-	return templates, nil
+		result, err := fetchAgentTemplatesFromURL(t.Context(), server.Client(), server.URL)
+		require.Error(t, err)
+		require.Nil(t, result)
+		require.Contains(t, err.Error(), "extension.ai.agent")
+		require.Contains(t, err.Error(), "1 entries")
+	})
 }
 
 func TestFindAgentManifest(t *testing.T) {

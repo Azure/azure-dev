@@ -229,12 +229,14 @@ func (em *EventManager) onInvokeProjectHandler(
 
 	handlerStatus := "completed"
 	handlerMessage := ""
+	var handlerError *ExtensionError
 
 	// Call the project event handler
 	err := handler(ctx, args)
 	if err != nil {
 		handlerStatus = "failed"
 		handlerMessage = err.Error()
+		handlerError = WrapError(err)
 		log.Printf("invokeProjectHandler error for event %s: %v", req.EventName, err)
 	}
 
@@ -245,6 +247,7 @@ func (em *EventManager) onInvokeProjectHandler(
 				EventName: req.EventName,
 				Status:    handlerStatus,
 				Message:   handlerMessage,
+				Error:     handlerError,
 			},
 		},
 	}, nil
@@ -278,12 +281,14 @@ func (em *EventManager) onInvokeServiceHandler(
 
 	handlerStatus := "completed"
 	handlerMessage := ""
+	var handlerError *ExtensionError
 
 	// Call the service event handler
 	err := handler(ctx, args)
 	if err != nil {
 		handlerStatus = "failed"
 		handlerMessage = err.Error()
+		handlerError = WrapError(err)
 		log.Printf("invokeServiceHandler error for event %s: %v", req.EventName, err)
 	}
 
@@ -295,6 +300,7 @@ func (em *EventManager) onInvokeServiceHandler(
 				ServiceName: req.Service.Name,
 				Status:      handlerStatus,
 				Message:     handlerMessage,
+				Error:       handlerError,
 			},
 		},
 	}, nil

@@ -41,7 +41,7 @@ func Test_ContainerApp_GetIngressConfiguration(t *testing.T) {
 		},
 	}
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockRequest := mockazsdk.MockContainerAppGet(mockContext, subscriptionId, resourceGroup, appName, containerApp)
 
 	cas := NewContainerAppService(
@@ -107,7 +107,7 @@ func Test_ContainerApp_AddRevision(t *testing.T) {
 		},
 	}
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	_ = mockazsdk.MockContainerAppGet(mockContext, subscriptionId, resourceGroup, appName, containerApp)
 	_ = mockazsdk.MockContainerAppSecretsList(mockContext, subscriptionId, resourceGroup, appName, secrets)
 	updateContainerAppRequest := mockazsdk.MockContainerAppUpdate(
@@ -177,7 +177,7 @@ func Test_ContainerApp_AddRevision_MultipleRevisionMode(t *testing.T) {
 		},
 	}
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	_ = mockazsdk.MockContainerAppGet(mockContext, subscriptionId, resourceGroup, appName, containerApp)
 	_ = mockazsdk.MockContainerAppSecretsList(mockContext, subscriptionId, resourceGroup, appName, secrets)
 
@@ -261,7 +261,7 @@ func Test_ContainerApp_AddRevision_WithEnvVars(t *testing.T) {
 		},
 	}
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	_ = mockazsdk.MockContainerAppGet(mockContext, subscriptionId, resourceGroup, appName, containerApp)
 	updateContainerAppRequest := mockazsdk.MockContainerAppUpdate(
 		mockContext,
@@ -304,7 +304,7 @@ func Test_ContainerApp_AddRevision_WithEnvVars(t *testing.T) {
 }
 
 func Test_ContainerApp_DeployYaml(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	subscriptionId := "SUBSCRIPTION_ID"
 	location := "eastus2"
@@ -414,7 +414,7 @@ func Test_ContainerAppJob_Get(t *testing.T) {
 		},
 	}
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockRequest := mockazsdk.MockContainerAppJobGet(
 		mockContext, subscriptionId, resourceGroup, jobName, job,
 	)
@@ -465,7 +465,7 @@ func Test_ContainerAppJob_UpdateImage(t *testing.T) {
 		},
 	}
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	_ = mockazsdk.MockContainerAppJobGet(
 		mockContext, subscriptionId, resourceGroup, jobName, job,
 	)
@@ -506,7 +506,7 @@ func Test_ContainerAppJob_UpdateImage_NilContainers(t *testing.T) {
 		Properties: nil,
 	}
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	_ = mockazsdk.MockContainerAppJobGet(
 		mockContext, subscriptionId, resourceGroup, jobName, job,
 	)
@@ -550,7 +550,7 @@ func Test_ContainerAppJob_CreateJobsClient_CacheHit(t *testing.T) {
 		},
 	}
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	_ = mockazsdk.MockContainerAppJobGet(
 		mockContext, subscriptionId, resourceGroup, jobName, job,
 	)
@@ -582,7 +582,7 @@ func Test_ContainerAppJob_CreateJobsClient_CacheHit(t *testing.T) {
 }
 
 func Test_ContainerAppJob_Get_CredentialError(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	credErr := fmt.Errorf("credential unavailable")
 	failingProvider := mockaccount.SubscriptionCredentialProviderFunc(
@@ -612,7 +612,7 @@ func Test_ContainerAppJob_Get_Error(t *testing.T) {
 	resourceGroup := "RESOURCE_GROUP"
 	jobName := "MISSING_JOB"
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet &&
@@ -652,7 +652,7 @@ func Test_ContainerAppJob_UpdateImage_GetError(t *testing.T) {
 	resourceGroup := "RESOURCE_GROUP"
 	jobName := "MISSING_JOB"
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	// Mock GET to return 404 so the internal GetContainerAppJob
 	// call inside UpdateContainerAppJobImage fails.
@@ -715,7 +715,7 @@ func Test_ContainerAppJob_UpdateImage_CustomApiVersion(t *testing.T) {
 		},
 	}
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	// Custom mock for GET that verifies the custom api-version
 	// query parameter is set.
@@ -793,7 +793,7 @@ func Test_ContainerAppJob_UpdateImage_EmptyImage(t *testing.T) {
 	resourceGroup := "RESOURCE_GROUP"
 	jobName := "MY_JOB"
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	cas := NewContainerAppService(
 		mockContext.SubscriptionCredentialProvider,
@@ -826,7 +826,7 @@ func Test_ContainerAppJob_UpdateImage_NilContainerElement(t *testing.T) {
 		},
 	}
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	_ = mockazsdk.MockContainerAppJobGet(
 		mockContext, subscriptionId, resourceGroup, jobName, job,
 	)
@@ -853,7 +853,7 @@ func Test_ContainerAppJob_UpdateImage_NilContainerElement(t *testing.T) {
 // Dapr configuration, any existing Dapr configuration on the container app is preserved.
 // This ensures that Dapr configuration set externally (e.g. via Terraform) is not removed on deploy.
 func Test_ContainerApp_DeployYaml_PreservesDaprConfig(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	subscriptionId := "SUBSCRIPTION_ID"
 	location := "eastus2"
@@ -924,7 +924,7 @@ properties:
 // Test_ContainerApp_DeployYaml_YamlDaprConfigNotOverridden verifies that when a deployment YAML already
 // includes Dapr configuration, the YAML's Dapr configuration is used (not the existing app's configuration).
 func Test_ContainerApp_DeployYaml_YamlDaprConfigNotOverridden(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	subscriptionId := "SUBSCRIPTION_ID"
 	location := "eastus2"
@@ -998,7 +998,7 @@ properties:
 // Test_ContainerApp_DeployYaml_FirstDeploy_NoDaprInjected verifies that on first deploy (GET returns 404),
 // no Dapr configuration is injected into the deployment payload.
 func Test_ContainerApp_DeployYaml_FirstDeploy_NoDaprInjected(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	subscriptionId := "SUBSCRIPTION_ID"
 	resourceGroup := "RESOURCE_GROUP"

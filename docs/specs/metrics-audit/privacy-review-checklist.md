@@ -73,7 +73,7 @@ Classifications are defined in `cli/azd/internal/tracing/fields/fields.go`.
 |----------------|-------------|----------|-----------|
 | **PublicPersonalData** | Data the user has intentionally made public | GitHub username | Standard |
 | **SystemMetadata** | Non-personal metadata about the system or environment | OS type, Go version, feature flags | Standard |
-| **CallstackOrException** | Stack traces, panic details, error frames | `error.frame` | Reduced |
+| **CallstackOrException** | Stack traces, panic details, error frames | Panic stack trace | Reduced |
 | **CustomerContent** | Content created by the user | File contents, messages | Highest restriction — avoid in telemetry |
 | **EndUserPseudonymizedInformation** | User identifiers that have been pseudonymized | Hashed MAC address (`machine.id`), SQM User ID | Standard |
 | **OrganizationalIdentifiableInformation** | Identifiers scoped to an organization | Azure subscription ID, tenant ID | Standard |

@@ -4,7 +4,6 @@
 package kustomize
 
 import (
-	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -21,7 +20,7 @@ func Test_Edit(t *testing.T) {
 		ran := false
 		var runArgs exec.RunArgs
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.
 			When(func(args exec.RunArgs, command string) bool {
 				return strings.Contains(command, "kustomize edit")
@@ -49,7 +48,7 @@ func Test_Edit(t *testing.T) {
 		ran := false
 		var runArgs exec.RunArgs
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.
 			When(func(args exec.RunArgs, command string) bool {
 				return strings.Contains(command, "kustomize edit")
@@ -79,7 +78,7 @@ func Test_Edit(t *testing.T) {
 	t.Run("Failure", func(t *testing.T) {
 		ran := false
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.
 			When(func(args exec.RunArgs, command string) bool {
 				return strings.Contains(command, "kustomize edit")

@@ -6,6 +6,8 @@ package copilot
 import (
 	"testing"
 
+	copilot "github.com/github/copilot-sdk/go"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/stretchr/testify/require"
 )
@@ -80,10 +82,9 @@ func TestGetUserMCPServers(t *testing.T) {
 		})
 		result := getUserMCPServers(c)
 		require.Len(t, result, 1)
-		require.Equal(t, "http", result["myServer"]["type"])
-		require.Equal(
-			t, "https://example.com", result["myServer"]["url"],
-		)
+		httpCfg, ok := result["myServer"].(copilot.MCPHTTPServerConfig)
+		require.True(t, ok)
+		require.Equal(t, "https://example.com", httpCfg.URL)
 	})
 
 	t.Run("EmptyMap", func(t *testing.T) {

@@ -4,7 +4,6 @@
 package kubectl
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -26,7 +25,7 @@ func Test_Cli_InstallUrl(t *testing.T) {
 }
 
 func Test_Cli_SetEnv(t *testing.T) {
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	var capturedArgs exec.RunArgs
 	mockCtx.CommandRunner.When(
 		func(args exec.RunArgs, cmd string) bool {
@@ -48,7 +47,7 @@ func Test_Cli_SetEnv(t *testing.T) {
 }
 
 func Test_Cli_SetEnv_MergesValues(t *testing.T) {
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	var capturedArgs exec.RunArgs
 	mockCtx.CommandRunner.When(
 		func(args exec.RunArgs, cmd string) bool {
@@ -70,7 +69,7 @@ func Test_Cli_SetEnv_MergesValues(t *testing.T) {
 }
 
 func Test_Cli_SetKubeConfig(t *testing.T) {
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	var capturedArgs exec.RunArgs
 	mockCtx.CommandRunner.When(
 		func(args exec.RunArgs, cmd string) bool {
@@ -92,7 +91,7 @@ func Test_Cli_SetKubeConfig(t *testing.T) {
 }
 
 func Test_Cli_Cwd(t *testing.T) {
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	var capturedArgs exec.RunArgs
 	mockCtx.CommandRunner.When(
 		func(args exec.RunArgs, cmd string) bool {
@@ -112,7 +111,7 @@ func Test_Cli_Cwd(t *testing.T) {
 }
 
 func Test_Cli_Exec_NilFlags(t *testing.T) {
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	var capturedArgs exec.RunArgs
 	mockCtx.CommandRunner.When(
 		func(args exec.RunArgs, cmd string) bool {
@@ -131,7 +130,7 @@ func Test_Cli_Exec_NilFlags(t *testing.T) {
 }
 
 func Test_Cli_Exec_AllFlags(t *testing.T) {
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	var capturedArgs exec.RunArgs
 	mockCtx.CommandRunner.When(
 		func(args exec.RunArgs, cmd string) bool {
@@ -160,7 +159,7 @@ func Test_Cli_Exec_AllFlags(t *testing.T) {
 }
 
 func Test_Cli_ApplyWithKustomize(t *testing.T) {
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	var capturedArgs exec.RunArgs
 	mockCtx.CommandRunner.When(
 		func(args exec.RunArgs, cmd string) bool {
@@ -184,7 +183,7 @@ func Test_Cli_ApplyWithKustomize(t *testing.T) {
 }
 
 func Test_Cli_ApplyWithKustomize_Error(t *testing.T) {
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	mockCtx.CommandRunner.When(
 		func(args exec.RunArgs, cmd string) bool {
 			return strings.Contains(cmd, "kubectl apply -k")
@@ -202,7 +201,7 @@ func Test_Cli_ApplyWithKustomize_Error(t *testing.T) {
 }
 
 func Test_Cli_CheckInstalled_Success(t *testing.T) {
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	mockCtx.CommandRunner.MockToolInPath("kubectl", nil)
 	mockCtx.CommandRunner.When(
 		func(args exec.RunArgs, cmd string) bool {
@@ -219,7 +218,7 @@ func Test_Cli_CheckInstalled_Success(t *testing.T) {
 }
 
 func Test_Cli_CheckInstalled_NotInPath(t *testing.T) {
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	mockCtx.CommandRunner.MockToolInPath(
 		"kubectl", errors.New("not found"),
 	)
@@ -230,7 +229,7 @@ func Test_Cli_CheckInstalled_NotInPath(t *testing.T) {
 }
 
 func Test_Cli_CheckInstalled_VersionError(t *testing.T) {
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	mockCtx.CommandRunner.MockToolInPath("kubectl", nil)
 	mockCtx.CommandRunner.When(
 		func(args exec.RunArgs, cmd string) bool {
@@ -248,7 +247,7 @@ func Test_Cli_CheckInstalled_VersionError(t *testing.T) {
 }
 
 func Test_Cli_GetClientVersion(t *testing.T) {
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	mockCtx.CommandRunner.When(
 		func(args exec.RunArgs, cmd string) bool {
 			return strings.Contains(cmd, "kubectl version")
@@ -265,7 +264,7 @@ func Test_Cli_GetClientVersion(t *testing.T) {
 }
 
 func Test_Cli_GetClientVersion_BadJSON(t *testing.T) {
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	mockCtx.CommandRunner.When(
 		func(args exec.RunArgs, cmd string) bool {
 			return strings.Contains(cmd, "kubectl version")
@@ -281,7 +280,7 @@ func Test_Cli_GetClientVersion_BadJSON(t *testing.T) {
 }
 
 func Test_Cli_ConfigUseContext_Error(t *testing.T) {
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	mockCtx.CommandRunner.When(
 		func(args exec.RunArgs, cmd string) bool {
 			return strings.Contains(cmd, "kubectl config")
@@ -300,7 +299,7 @@ func Test_Cli_ConfigUseContext_Error(t *testing.T) {
 }
 
 func Test_Cli_CreateNamespace_Error(t *testing.T) {
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	mockCtx.CommandRunner.When(
 		func(args exec.RunArgs, cmd string) bool {
 			return strings.Contains(cmd, "kubectl create namespace")
@@ -319,7 +318,7 @@ func Test_Cli_CreateNamespace_Error(t *testing.T) {
 }
 
 func Test_Cli_RolloutStatus_Error(t *testing.T) {
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	mockCtx.CommandRunner.When(
 		func(args exec.RunArgs, cmd string) bool {
 			return strings.Contains(cmd, "kubectl rollout")
@@ -338,7 +337,7 @@ func Test_Cli_RolloutStatus_Error(t *testing.T) {
 }
 
 func Test_Cli_ApplyWithStdIn_Error(t *testing.T) {
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	mockCtx.CommandRunner.When(
 		func(args exec.RunArgs, cmd string) bool {
 			return strings.Contains(cmd, "kubectl apply -f -")
@@ -357,7 +356,7 @@ func Test_Cli_ApplyWithStdIn_Error(t *testing.T) {
 }
 
 func Test_Cli_ApplyWithFile_Error(t *testing.T) {
-	mockCtx := mocks.NewMockContext(context.Background())
+	mockCtx := mocks.NewMockContext(t.Context())
 	mockCtx.CommandRunner.When(
 		func(args exec.RunArgs, cmd string) bool {
 			return strings.Contains(cmd, "kubectl apply -f")
@@ -396,7 +395,7 @@ users:
       token: my-token
 preferences: {}`)
 
-	cfg, err := ParseKubeConfig(context.Background(), raw)
+	cfg, err := ParseKubeConfig(t.Context(), raw)
 	require.NoError(t, err)
 	require.Equal(t, "v1", cfg.ApiVersion)
 	require.Equal(t, "Config", cfg.Kind)
@@ -417,13 +416,13 @@ preferences: {}`)
 
 func Test_ParseKubeConfig_InvalidYaml(t *testing.T) {
 	raw := []byte(":\tbad yaml\n\t:")
-	_, err := ParseKubeConfig(context.Background(), raw)
+	_, err := ParseKubeConfig(t.Context(), raw)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "failed unmarshalling")
 }
 
 func Test_ParseKubeConfig_Empty(t *testing.T) {
-	cfg, err := ParseKubeConfig(context.Background(), []byte(""))
+	cfg, err := ParseKubeConfig(t.Context(), []byte(""))
 	require.NoError(t, err)
 	require.NotNil(t, cfg)
 	require.Empty(t, cfg.Clusters)

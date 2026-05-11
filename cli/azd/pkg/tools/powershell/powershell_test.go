@@ -4,7 +4,6 @@
 package powershell
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -23,7 +22,7 @@ func Test_Powershell_Prepare(t *testing.T) {
 	emptyCtx := tools.ExecutionContext{}
 
 	t.Run("PwshAvailable", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.MockToolInPath("pwsh", nil)
 
 		ps := NewExecutor(mockContext.CommandRunner)
@@ -37,7 +36,7 @@ func Test_Powershell_Prepare(t *testing.T) {
 			t.Skip("pwsh fallback to powershell is only for Windows")
 		}
 
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.MockToolInPath(
 			"pwsh", fmt.Errorf("pwsh: command not found"),
 		)
@@ -50,7 +49,7 @@ func Test_Powershell_Prepare(t *testing.T) {
 	})
 
 	t.Run("NoPowerShellInstalled", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.MockToolInPath(
 			"pwsh", errors.New("pwsh: command not found"),
 		)
@@ -68,7 +67,7 @@ func Test_Powershell_Prepare(t *testing.T) {
 	})
 
 	t.Run("PrepareInlineScript", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.MockToolInPath("pwsh", nil)
 
 		execCtx := tools.ExecutionContext{
@@ -119,7 +118,7 @@ func Test_Powershell_Execute(t *testing.T) {
 	}
 
 	t.Run("Success", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.MockToolInPath("pwsh", nil)
 
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -149,7 +148,7 @@ func Test_Powershell_Execute(t *testing.T) {
 	})
 
 	t.Run("Error", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.MockToolInPath("pwsh", nil)
 
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -187,7 +186,7 @@ func Test_Powershell_Execute(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			mockContext := mocks.NewMockContext(context.Background())
+			mockContext := mocks.NewMockContext(t.Context())
 			mockContext.CommandRunner.MockToolInPath("pwsh", nil)
 
 			mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {

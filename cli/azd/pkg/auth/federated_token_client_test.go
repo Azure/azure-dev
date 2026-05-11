@@ -5,7 +5,6 @@ package auth
 
 import (
 	"bytes"
-	"context"
 	"io"
 	"net/http"
 	"testing"
@@ -16,7 +15,7 @@ import (
 )
 
 func TestTokenForAudience(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	var req http.Request
 	mockContext.HttpClient.When(func(request *http.Request) bool {
@@ -34,7 +33,7 @@ func TestTokenForAudience(t *testing.T) {
 			Transport: mockContext.HttpClient,
 		})
 
-	token, err := client.TokenForAudience(context.Background(), "api://AzureADTokenExchange")
+	token, err := client.TokenForAudience(t.Context(), "api://AzureADTokenExchange")
 	require.NoError(t, err)
 
 	require.Equal(t, "abc", token)
@@ -43,7 +42,7 @@ func TestTokenForAudience(t *testing.T) {
 }
 
 func TestTokenForAudienceDefault(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	var req http.Request
 	mockContext.HttpClient.When(func(request *http.Request) bool {
@@ -61,7 +60,7 @@ func TestTokenForAudienceDefault(t *testing.T) {
 			Transport: mockContext.HttpClient,
 		})
 
-	token, err := client.TokenForAudience(context.Background(), "")
+	token, err := client.TokenForAudience(t.Context(), "")
 	require.NoError(t, err)
 
 	require.Equal(t, "abc", token)
@@ -70,7 +69,7 @@ func TestTokenForAudienceDefault(t *testing.T) {
 }
 
 func TestTokenForAudienceFailure(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return true
@@ -86,6 +85,6 @@ func TestTokenForAudienceFailure(t *testing.T) {
 			Transport: mockContext.HttpClient,
 		})
 
-	_, err := client.TokenForAudience(context.Background(), "api://AzureADTokenExchange")
+	_, err := client.TokenForAudience(t.Context(), "api://AzureADTokenExchange")
 	require.Error(t, err)
 }

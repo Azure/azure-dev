@@ -9,7 +9,9 @@ import (
 	"regexp"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
 )
 
 func TestErrorSuggestion(t *testing.T) {
@@ -74,6 +76,13 @@ func TestErrorSuggestion(t *testing.T) {
 			}),
 			expected: "Request a quota increase",
 		},
+		{
+			name: "GrpcActionableError",
+			err: mustStatusErrorWithDetails(codes.InvalidArgument, "invalid config", &ActionableErrorDetail{
+				Suggestion: "Fix the extension config and retry.",
+			}),
+			expected: "Fix the extension config and retry.",
+		},
 	}
 
 	for _, tt := range tests {
@@ -135,6 +144,14 @@ func TestErrorMessage(t *testing.T) {
 			}),
 			expected: "wrapped service",
 		},
+		{
+			name: "GrpcActionableError",
+			err: mustStatusErrorWithDetails(codes.InvalidArgument, "The extension configuration is invalid.",
+				&ActionableErrorDetail{
+					Suggestion: "Fix the extension config and retry.",
+				}),
+			expected: "The extension configuration is invalid.",
+		},
 	}
 
 	for _, tt := range tests {
@@ -143,6 +160,71 @@ func TestErrorMessage(t *testing.T) {
 			require.Equal(t, tt.expected, result)
 		})
 	}
+}
+
+func TestErrorLinks(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		expected []errorhandler.ErrorLink
+	}{
+		{
+			name: "LocalErrorWithLinks",
+			err: &LocalError{
+				Links: []errorhandler.ErrorLink{{
+					URL:   "https://aka.ms/azd-errors#local",
+					Title: "Local error help",
+				}},
+			},
+			expected: []errorhandler.ErrorLink{{
+				URL:   "https://aka.ms/azd-errors#local",
+				Title: "Local error help",
+			}},
+		},
+		{
+			name: "WrappedServiceErrorWithLinks",
+			err: fmt.Errorf("op: %w", &ServiceError{
+				Links: []errorhandler.ErrorLink{{
+					URL: "https://aka.ms/azd-errors#service",
+				}},
+			}),
+			expected: []errorhandler.ErrorLink{{
+				URL: "https://aka.ms/azd-errors#service",
+			}},
+		},
+		{
+			name:     "GenericError",
+			err:      errors.New("generic"),
+			expected: nil,
+		},
+		{
+			name: "GrpcActionableError",
+			err: mustStatusErrorWithDetails(codes.InvalidArgument, "invalid config", &ActionableErrorDetail{
+				Links: []*ErrorLink{{
+					Url:   "https://aka.ms/azd-errors#invalid-config",
+					Title: "Invalid config reference",
+				}},
+			}),
+			expected: []errorhandler.ErrorLink{{
+				URL:   "https://aka.ms/azd-errors#invalid-config",
+				Title: "Invalid config reference",
+			}},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.expected, ErrorLinks(tt.err))
+		})
+	}
+}
+
+func TestIsStructuredError(t *testing.T) {
+	require.True(t, IsStructuredError(&LocalError{}))
+	require.True(t, IsStructuredError(&ServiceError{}))
+	require.True(t, IsStructuredError(fmt.Errorf("wrapped: %w", &LocalError{})))
+	require.False(t, IsStructuredError(errors.New("plain")))
+	require.False(t, IsStructuredError(nil))
 }
 
 func TestVersion_IsSet(t *testing.T) {

@@ -4,11 +4,89 @@
 
 ### Features Added
 
+
 ### Breaking Changes
 
 ### Bugs Fixed
 
+
 ### Other Changes
+
+
+## 1.25.0 (2026-05-08)
+
+### Features Added
+
+- [[#7450]](https://github.com/Azure/azure-dev/pull/7450) Add `azd tool` command group for discovering, installing, checking, and upgrading Azure development tools, including first-run tooling guidance in core workflows.
+- [[#7982]](https://github.com/Azure/azure-dev/pull/7982) Add `Secret` prompt option in core azd and extension gRPC prompts so sensitive values are masked during input.
+- [[#8071]](https://github.com/Azure/azure-dev/pull/8071) `azd show -o json` now includes the deployed ingress URL for each service. The value is emitted under both `ingresUrl` (preserved for back-compat with existing consumers) and `ingressUrl` (correctly spelled, preferred going forward). Both keys are omitted when no ingress URL is available (e.g. for Container App Jobs).
+- [[#8085]](https://github.com/Azure/azure-dev/pull/8085) Improve `azd tool check` to detect update availability by querying package managers, extension registries, and the VS Code Marketplace instead of relying only on cached values.
+- [[#7776]](https://github.com/Azure/azure-dev/pull/7776) Layer dependency analysis for `infra.layers` is now safe-by-default: when the static analyzer encounters a syntax pattern it cannot resolve to a literal env-var name (non-literal `readEnvironmentVariable(varName)` in `.bicepparam`, ARM template expressions like `[parameters('foo')]` in `.parameters.json`, or `param x = readEnvironmentVariable('Y')` defaults inside `.bicep`), the consuming layer is forced to depend on all earlier layers. This trades parallelism for correctness on under-analyzed inputs.
+- [[#7776]](https://github.com/Azure/azure-dev/pull/7776) New `infra.layers[].dependsOn` field in `azure.yaml` lets authors declare hook-mediated edges (for example, when a postprovision hook in another layer writes an env var that this layer's bicepparam reads at provision time) that no static analyzer can infer from `.bicep` / `.bicepparam` / `.parameters.json` contents alone. Explicit edges union with detected edges and are validated for unknown layer names, self-references, and cycles.
+- [[#7776]](https://github.com/Azure/azure-dev/pull/7776) Add `provision.layer.*` telemetry attributes (`count`, `max_parallel`, `safe_fallback_count`, `explicit_dependson_count`) on the ambient command span for multi-layer `azd provision` / `azd up` runs so the team can measure adoption and detect when the safe-by-default detector fallback engages on real templates.
+
+### Bugs Fixed
+
+- [[#7998]](https://github.com/Azure/azure-dev/pull/7998) Add a safeguard prompt before `azd down` deletes a resource group that was not created by azd; `--no-prompt` now fails closed for this scenario unless `--force` is supplied.
+- [[#8074]](https://github.com/Azure/azure-dev/pull/8074) Fix `azd up` rendering an empty deploy progress summary when provisioning fails before deploy starts.
+- [[#8084]](https://github.com/Azure/azure-dev/pull/8084) Fix first-run tool checks recursively re-invoking `azd extension list` and leaking ANSI output into JSON command output.
+- [[#8086]](https://github.com/Azure/azure-dev/pull/8086) Fix `azd tool` Copilot metadata to use the current VS Code extension and up-to-date Copilot CLI install documentation links.
+- [[#7776]](https://github.com/Azure/azure-dev/pull/7776) Fix `concurrent map writes` panics when running `azd up` or `azd deploy` against multi-service projects: `*environment.Environment` now serializes all `dotenv` map access with an internal `sync.RWMutex`, the environment manager serializes `Save`/`Reload` calls, the singleton `kubectl.Cli` and `kustomize.Cli` are concurrency-safe, and AKS service publish/deploy updates to `SERVICE_<name>_IMAGE_NAME`/`ENDPOINT_URL` are wrapped in a package-level mutex (mirroring the Container Apps pattern).
+- [[#7776]](https://github.com/Azure/azure-dev/pull/7776) Restore intra-phase progress detail (e.g. `"Pushing image"`, `"Updating container app"`) in the per-service progress tracker during `azd deploy` and `azd up`. The graph-driven engine previously dropped sub-phase `ServiceProgress.Message` updates, leaving the tracker's "Detail" column blank between phase transitions.
+- [[#7776]](https://github.com/Azure/azure-dev/pull/7776) Make `x-ms-client-request-id` unique per HTTP request (previously derived from the shared OpenTelemetry trace id, which duplicated the header across every call in a single `azd` invocation). The Azure ARM common-types spec requires this header to be unique per request so Azure services can use it as a deduplication / idempotency / log-correlation key for individual calls — a shared value broke that contract and could cause collisions in parallel deploy / provision scheduling. Microsoft Graph's `client-request-id` header now uses the same per-request UUID for the same reason.
+- [[#7776]](https://github.com/Azure/azure-dev/pull/7776) Fix cross-service image contamination when publishing multiple Container Apps in parallel via ACR remote build (`docker.remoteBuild: true`). ACR's `GetBuildSourceUploadURL` derives the relative blob path it hands back (`tasks-source/<yyyymmdd>/<correlationId>.tar.gz`) from the caller's `x-ms-correlation-request-id` header, and azd was sending the same correlation id — the root OpenTelemetry trace id shared across every request in a command — on every parallel upload. Each upload overwrote the previous service's source tarball before either build consumed it, so every Container App ended up running the last-uploaded service's image content under its own repository name. ACR source uploads now override `x-ms-correlation-request-id` with a freshly generated UUID per HTTP request so each parallel upload lands in a distinct blob.
+
+### Other Changes
+
+- [[#8050]](https://github.com/Azure/azure-dev/pull/8050) Add per-phase timing breakdown to the `azd up` success output and sanitize deploy progress service names to prevent terminal escape-sequence injection in rendered output.
+- [[#8087]](https://github.com/Azure/azure-dev/pull/8087) Improve error telemetry classification by including wrapped error-chain type metadata and using a shared classifier path for diagnostics.
+- [[#8091]](https://github.com/Azure/azure-dev/pull/8091) Improve `azd ext list` readability with responsive table/card layouts and clearer status indicators across terminal widths.
+- [[#7776]](https://github.com/Azure/azure-dev/pull/7776) **Security:** environment `.env` files are now persisted with mode `0600` (owner read/write only) on Unix-like systems. Previously they inherited the process umask (typically `0644`). The change tightens default permissions for files that may contain subscription IDs and values written via `azd env set`.
+- [[#7776]](https://github.com/Azure/azure-dev/pull/7776) `azd up` now emits a single `"Provisioning and deploying (azd up)"` title and consolidated final message instead of the legacy `"Packaging services (azd package)"` / `"Provisioning Azure resources (azd provision)"` / `"Deploying services (azd deploy)"` banners and the `"Your up workflow to provision and deploy to Azure completed in …"` footer. CI/automation that grep-matches the legacy strings on stdout will need to update its expected output.
+- [[#7776]](https://github.com/Azure/azure-dev/pull/7776) `azd up` honors `AZD_DEPLOY_CONCURRENCY` as a fallback when `AZD_UP_CONCURRENCY` is unset, so existing deploy-tuning configurations carry over to the unified up workflow.
+- [[#7776]](https://github.com/Azure/azure-dev/pull/7776) `FailFast` semantics in the parallel scheduler: when a step fails, the scheduler cancels the run context to interrupt in-flight work, but steps that don't honor context cancellation (e.g., long-running ARM operations) will run to completion before the run returns. This is a behavior change versus the previous strictly-sequential `azd up`, which never started a later step after a prior failure.
+
+## 1.24.3 (2026-05-01)
+
+### Features Added
+
+- [[#7795]](https://github.com/Azure/azure-dev/pull/7795) Add interactive cancel prompt when Ctrl+C is pressed during `azd provision`/`azd up` with Bicep; choose to leave the Azure deployment running or cancel it via the ARM Cancel API with status feedback; non-interactive mode defaults to leaving the deployment running.
+- [[#7852]](https://github.com/Azure/azure-dev/pull/7852) Improve `azd extension upgrade --all` with continue-on-error batch orchestration: per-extension status display (Upgraded/Skipped/Promoted/Failed) with before→after version, a batch summary line, and `--output json` for machine-readable CI output.
+- [[#7826]](https://github.com/Azure/azure-dev/pull/7826) Add `RegisterFlagOptions` to the extension SDK for declaring per-subcommand allowed values, defaults, and validation for inherited persistent flags; drives help text, shell completion, and parse-time validation automatically.
+- [[#7837]](https://github.com/Azure/azure-dev/pull/7837) Add extension registry schema versioning: extension registries now carry a `schemaVersion` field and azd shows a clear upgrade-required message when an incompatible registry schema version is encountered.
+
+### Bugs Fixed
+
+- [[#7705]](https://github.com/Azure/azure-dev/pull/7705) Fix `azd pipeline config` always using the default OIDC subject format when creating GitHub federated credentials, causing `AADSTS700213` mismatches for organizations with customized OIDC subject claims; azd now queries the GitHub OIDC customization API and constructs the correct subject string.
+- [[#7773]](https://github.com/Azure/azure-dev/pull/7773) Fix `azd deploy` polling indefinitely when deploying to a stopped Linux web app; after 3 consecutive polls with zero running instances, the deployment is treated as complete.
+- [[#7922]](https://github.com/Azure/azure-dev/pull/7922) Fix GitHub URL resolution surfacing a misleading "could not find a valid branch" error for SAML SSO blocks, rate limiting, private repos, and server errors; azd now identifies the actual failure mode and shows actionable suggestions with relevant documentation links.
+- [[#7948]](https://github.com/Azure/azure-dev/pull/7948) Fix `-ojson`/`-otable` (short `-o` flag with attached value) being rejected with a confusing error; fix pre-cobra parse errors showing nothing on stderr.
+- [[#7997]](https://github.com/Azure/azure-dev/pull/7997) Fix `buildArgs` and `buildEnv` in `azure.yaml` being silently dropped when `docker.remoteBuild: true`; build arguments are now forwarded to the ACR remote build task.
+- [[#8004]](https://github.com/Azure/azure-dev/pull/8004) Fix `azd auth status` (and provisioning commands) reporting "not logged in" when `AZD_AUTH_ENDPOINT`/`AZD_AUTH_KEY` external auth is active but `azd auth logout` was previously run.
+
+### Other Changes
+
+- [[#7853]](https://github.com/Azure/azure-dev/pull/7853) Improve `azd extension upgrade` edge case handling: delisted extensions report "no longer available" and continue the batch; network failures show actionable retry guidance; extension config writes are now atomic to prevent corruption if interrupted.
+- [[#7919]](https://github.com/Azure/azure-dev/pull/7919) Improve extension SDK gRPC error transport: host-returned errors now carry structured suggestion and link data via `ActionableErrorDetail`, so extensions can surface the full error-suggestion UX to users.
+- [[#7946]](https://github.com/Azure/azure-dev/pull/7946) Update bundled GitHub CLI to v2.92.0.
+
+## 1.24.2 (2026-04-24)
+
+### Features Added
+
+- [[#7482]](https://github.com/Azure/azure-dev/pull/7482) Add custom provisioning provider support to the extension framework; extension authors can register alternative infrastructure providers via `WithProvisioningProvider("name", factory)` on the `ExtensionHost`, and users set `infra: { provider: name }` in `azure.yaml` to use them.
+- [[#7841]](https://github.com/Azure/azure-dev/pull/7841) Improve `azd extension upgrade` with intelligent registry source resolution: extensions upgrade from their installed source by default, are auto-promoted from a dev registry to the main registry when a newer version is available there, and `--all` or `--no-prompt` batch upgrades proceed non-interactively without prompts.
+- [[#7825]](https://github.com/Azure/azure-dev/pull/7825) Standardize `--no-prompt` behavior to consistently fail with a structured error when required input (subscription, location, or resource group) cannot be resolved automatically, enabling reliable non-interactive use in CI pipelines and AI agents.
+
+### Bugs Fixed
+
+- [[#7797]](https://github.com/Azure/azure-dev/pull/7797) Fix error handling for `AADSTS530084` token protection errors to display clear guidance and documentation links instead of an opaque authentication failure message.
+- [[#7819]](https://github.com/Azure/azure-dev/pull/7819) Fix local Bicep preflight reserved-name check to skip ARM-allow-listed resource types (e.g., Private Link DNS zones, resource groups, role assignments) that accept reserved names server-side, and fix compound child resource names generating duplicate warnings.
+- [[#7723]](https://github.com/Azure/azure-dev/pull/7723) Fix service names containing spaces in `azure.yaml` generating invalid environment variable names (e.g., `SERVICE_API AND FRONTEND_IMAGE_NAME` → `SERVICE_API_AND_FRONTEND_IMAGE_NAME`). Thanks @spboyer for the contribution!
+
+### Other Changes
+
+- [[#7767]](https://github.com/Azure/azure-dev/pull/7767) Update the "update available" banner to a shorter, more actionable format that includes a link to release notes (stable channel) or recent changes (daily channel).
 
 ## 1.24.1 (2026-04-17)
 

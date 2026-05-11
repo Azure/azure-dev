@@ -75,6 +75,10 @@ When writing tests, prefer table-driven tests. Use testify/mock for mocking.
 
 > **Tip**: The `/azd-preflight` Copilot skill runs all these checks and auto-fixes issues. See `.github/skills/azd-preflight/`.
 
+Additional mage targets:
+
+- `mage record` — re-record functional test cassettes against a live Azure subscription. Accepts an optional `-filter=TestName` flag to re-record specific tests. Typically only core maintainers need to run this; external contributors can rely on playback mode (the default) which requires no Azure access. Requires `azd auth login` and a configured test subscription (see `docs/recording-functional-tests-guide.md`).
+
 ```bash
 gofmt -s -w .
 go fix ./...
@@ -203,6 +207,14 @@ This file is the authoritative reference for core azd terminal UX patterns inclu
 - **`ProjectManager` is target-agnostic**: `project_manager.go` should not contain service-target-specific logic (e.g., Container Apps details, Docker checks). Target-specific behavior belongs in the target implementations (e.g., `service_target_containerapp.go`) or in the `error_suggestions.yaml` pipeline. The project manager is an interface for service management and should not make assumptions about which target is running
 - **Extension-specific documentation**: Keep extension-specific environment variables and configuration documented in the extension's own docs, not in core azd reference docs, unless they are consumed by the core CLI itself
 - **Verify env vars against source**: When documenting environment variables, verify the actual parsing method in code — `os.LookupEnv` (presence-only) vs `strconv.ParseBool` (true/false) vs `time.ParseDuration` vs integer seconds. Document the expected format and default value accurately
+
+### Concurrency
+
+The graph-driven `up`/`provision`/`deploy` engine runs multiple service steps and (when `infra.layers[]` is configured) multiple layer provision steps in parallel. Several long-lived types now have explicit locking contracts that you MUST honor when adding new methods or write paths.
+
+See [docs/concurrency-model.md](./docs/concurrency-model.md) for the full list — `environment.Environment`, `environment.Manager`, `kubectl.Cli`, `containerAppTarget`/`aksTarget`, and `serviceManager` — and the rules for adding new concurrent state.
+
+When adding a method that mutates one of these types: take the documented lock, hold it across the full read-modify-write, and run `go test -race` to catch missed locks (single-goroutine tests will not).
 
 ### Path Safety
 

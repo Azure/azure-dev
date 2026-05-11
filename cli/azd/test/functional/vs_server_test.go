@@ -161,7 +161,7 @@ func Test_CLI_VsServer(t *testing.T) {
 	testDir := filepath.Join("testdata", "vs-server", "tests")
 	// List all tests
 	var stdout, stderr bytes.Buffer
-	cmd := exec.CommandContext(context.Background(), "dotnet", "test", "--list-tests")
+	cmd := exec.CommandContext(t.Context(), "dotnet", "test", "--list-tests")
 	cmd.Dir = testDir
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -198,7 +198,7 @@ func Test_CLI_VsServer(t *testing.T) {
 
 	stdout.Reset()
 	stderr.Reset()
-	cmd = exec.CommandContext(context.Background(), "dotnet", "build")
+	cmd = exec.CommandContext(t.Context(), "dotnet", "build")
 	cmd.Dir = testDir
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -279,8 +279,7 @@ func Test_CLI_VsServer(t *testing.T) {
 			}
 
 			/* #nosec G204 - Subprocess launched with a potential tainted input or cmd arguments false positive */
-			cmd = exec.CommandContext(context.Background(),
-				"dotnet", "test",
+			cmd = exec.CommandContext(t.Context(), "dotnet", "test",
 				"--no-build",
 				"--no-restore",
 				"--filter", "Name="+tt.Name)

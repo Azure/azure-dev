@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"strconv"
 	"strings"
@@ -12,7 +13,9 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -182,7 +185,7 @@ func TestDeployActionRunAppliesResolvedTimeout(t *testing.T) {
 			action, serviceManager := newDeployActionForTimeoutTest(t, tt.flagTimeout, deployErr, false)
 			startTime := time.Now()
 
-			_, err := action.Run(context.Background())
+			_, err := action.Run(t.Context())
 			require.ErrorIs(t, err, deployErr)
 
 			require.True(t, serviceManager.deployHasDeadline, "deploy should run with a deadline")
@@ -196,7 +199,7 @@ func TestDeployActionRunTimeoutWarningAndErrorMessage(t *testing.T) {
 	t.Parallel()
 	action, serviceManager := newDeployActionForTimeoutTest(t, new(1), nil, true)
 
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.EqualError(
 		t,
 		err,
@@ -213,15 +216,15 @@ func TestDeployActionRunTimeoutWarningAndErrorMessage(t *testing.T) {
 		t,
 		output,
 		"WARNING: Deployment of service 'api'"+
-			" exceeded the azd wait timeout.",
+			" exceeded the azd wait timeout (1s).",
 	)
 	require.Contains(
 		t, output,
 		"Check the Azure Portal for current deployment status.",
 	)
-	require.Contains(
-		t, output,
-		"Increase timeout with --timeout flag or AZD_DEPLOY_TIMEOUT env var.",
+	require.Contains(t, output,
+		"Increase timeout with --timeout flag (e.g. azd deploy --timeout 2)"+
+			" or AZD_DEPLOY_TIMEOUT env var (e.g. AZD_DEPLOY_TIMEOUT=2).",
 	)
 	serviceManager.AssertExpectations(t)
 }
@@ -230,9 +233,10 @@ func TestDeployActionRunDoesNotTreatInternalDeadlineExceededAsDeployTimeout(t *t
 	t.Parallel()
 	action, serviceManager := newDeployActionForTimeoutTest(t, new(30), context.DeadlineExceeded, false)
 
-	_, err := action.Run(context.Background())
+	_, err := action.Run(t.Context())
 	require.ErrorIs(t, err, context.DeadlineExceeded)
-	require.Equal(t, context.DeadlineExceeded, err)
+	// Verify the error is NOT the deploy-timeout message (it's an internal SDK timeout).
+	require.NotContains(t, err.Error(), "timed out after")
 	serviceManager.AssertExpectations(t)
 }
 
@@ -431,13 +435,14 @@ func newDeployTimeoutAction(t *testing.T, flagTimeout *int) *DeployAction {
 	env.SetSubscriptionId("subscription-id")
 
 	return &DeployAction{
-		flags:         flags,
-		projectConfig: projectConfig,
-		env:           env,
-		importManager: project.NewImportManager(nil),
-		console:       mockinput.NewMockConsole(),
-		formatter:     &output.NoneFormatter{},
-		writer:        io.Discard,
+		flags:               flags,
+		projectConfig:       projectConfig,
+		env:                 env,
+		importManager:       project.NewImportManager(nil),
+		console:             mockinput.NewMockConsole(),
+		formatter:           &output.NoneFormatter{},
+		writer:              io.Discard,
+		alphaFeatureManager: alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
 	}
 }
 
@@ -447,7 +452,7 @@ func deployTimeoutTestProjectConfig(t *testing.T) *project.ProjectConfig {
 	projectYaml := "name: test-proj\nservices:\n  api:\n    project: src/api\n    language: js\n    host: containerapp\n"
 
 	projectConfig, err := project.Parse(
-		context.Background(),
+		t.Context(),
 		projectYaml,
 	)
 	require.NoError(t, err)
@@ -469,4 +474,52 @@ type mockDeployError struct {
 
 func (e *mockDeployError) Error() string {
 	return e.name
+}
+
+func TestDeploymentResultJSON(t *testing.T) {
+	result := DeploymentResult{
+		Timestamp: time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC),
+		Services: map[string]*project.ServiceDeployResult{
+			"api": {},
+			"web": {},
+		},
+	}
+
+	data, err := json.Marshal(result)
+	require.NoError(t, err)
+
+	var parsed map[string]any
+	err = json.Unmarshal(data, &parsed)
+	require.NoError(t, err)
+
+	services, ok := parsed["services"].(map[string]any)
+	require.True(t, ok, "services should be a map")
+	require.Len(t, services, 2)
+}
+
+func TestResolveDAGConcurrency(t *testing.T) {
+	tests := []struct {
+		name     string
+		envVal   string
+		setEnv   bool
+		expected int
+	}{
+		{"Unset", "", false, 0},
+		{"Valid", "4", true, 4},
+		{"ClampedTo64", "100", true, 64},
+		{"ExactlyMax", "64", true, 64},
+		{"Invalid", "abc", true, 0},
+		{"Zero", "0", true, 0},
+		{"Negative", "-1", true, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.setEnv {
+				t.Setenv("AZD_DEPLOY_CONCURRENCY", tt.envVal)
+			}
+			da := &DeployAction{}
+			got := da.resolveDAGConcurrency()
+			require.Equal(t, tt.expected, got)
+		})
+	}
 }

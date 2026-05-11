@@ -4,8 +4,9 @@
 package copilot
 
 import (
-	"context"
 	"testing"
+
+	copilot "github.com/github/copilot-sdk/go"
 
 	"github.com/azure/azure-dev/cli/azd/internal/mcp"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -19,7 +20,7 @@ func TestSessionConfigBuilder_Build(t *testing.T) {
 		}
 		builder := NewSessionConfigBuilder(ucm)
 
-		cfg, err := builder.Build(context.Background(), nil)
+		cfg, err := builder.Build(t.Context(), nil)
 		require.NoError(t, err)
 		require.NotNil(t, cfg)
 		require.True(t, cfg.Streaming)
@@ -33,7 +34,7 @@ func TestSessionConfigBuilder_Build(t *testing.T) {
 		ucm := &mockUserConfigManager{config: c}
 		builder := NewSessionConfigBuilder(ucm)
 
-		cfg, err := builder.Build(context.Background(), nil)
+		cfg, err := builder.Build(t.Context(), nil)
 		require.NoError(t, err)
 		require.Equal(t, "gpt-4.1", cfg.Model)
 	})
@@ -45,7 +46,7 @@ func TestSessionConfigBuilder_Build(t *testing.T) {
 		ucm := &mockUserConfigManager{config: c}
 		builder := NewSessionConfigBuilder(ucm)
 
-		cfg, err := builder.Build(context.Background(), nil)
+		cfg, err := builder.Build(t.Context(), nil)
 		require.NoError(t, err)
 		require.NotNil(t, cfg.SystemMessage)
 		require.Equal(t, "append", cfg.SystemMessage.Mode)
@@ -61,7 +62,7 @@ func TestSessionConfigBuilder_Build(t *testing.T) {
 		ucm := &mockUserConfigManager{config: c}
 		builder := NewSessionConfigBuilder(ucm)
 
-		cfg, err := builder.Build(context.Background(), nil)
+		cfg, err := builder.Build(t.Context(), nil)
 		require.NoError(t, err)
 		require.Equal(t, []string{"read_file", "write_file"}, cfg.AvailableTools)
 		require.Equal(t, []string{"execute_command"}, cfg.ExcludedTools)
@@ -80,7 +81,7 @@ func TestSessionConfigBuilder_Build(t *testing.T) {
 			},
 		}
 
-		cfg, err := builder.Build(context.Background(), builtIn)
+		cfg, err := builder.Build(t.Context(), builtIn)
 		require.NoError(t, err)
 		require.Contains(t, cfg.MCPServers, "azd")
 		// Also includes Azure plugin MCP servers if installed
@@ -112,17 +113,20 @@ func TestSessionConfigBuilder_Build(t *testing.T) {
 			},
 		}
 
-		cfg, err := builder.Build(context.Background(), builtIn)
+		cfg, err := builder.Build(t.Context(), builtIn)
 		require.NoError(t, err)
 		require.GreaterOrEqual(t, len(cfg.MCPServers), 2)
 
 		// User config overrides built-in "azd"
 		azdServer := cfg.MCPServers["azd"]
-		require.Equal(t, "/custom/azd", azdServer["command"])
+		azdStdio, ok := azdServer.(copilot.MCPStdioServerConfig)
+		require.True(t, ok)
+		require.Equal(t, "/custom/azd", azdStdio.Command)
 
 		// User adds new "custom" server
 		customServer := cfg.MCPServers["custom"]
-		require.Equal(t, "http", customServer["type"])
+		_, ok = customServer.(copilot.MCPHTTPServerConfig)
+		require.True(t, ok)
 	})
 }
 
@@ -136,15 +140,13 @@ func TestConvertServerConfig(t *testing.T) {
 		}
 
 		result := convertServerConfig(srv)
-		require.Equal(t, "local", result["type"])
-		require.Equal(t, "npx", result["command"])
-		require.Equal(t, []string{"-y", "@azure/mcp@latest"}, result["args"])
-		require.Equal(t, []string{"*"}, result["tools"])
-
-		envMap, ok := result["env"].(map[string]string)
+		stdioResult, ok := result.(copilot.MCPStdioServerConfig)
 		require.True(t, ok)
-		require.Equal(t, "VALUE", envMap["KEY"])
-		require.Equal(t, "test", envMap["OTHER"])
+		require.Equal(t, "npx", stdioResult.Command)
+		require.Equal(t, []string{"-y", "@azure/mcp@latest"}, stdioResult.Args)
+		require.Equal(t, []string{"*"}, stdioResult.Tools)
+		require.Equal(t, "VALUE", stdioResult.Env["KEY"])
+		require.Equal(t, "test", stdioResult.Env["OTHER"])
 	})
 
 	t.Run("HttpServer", func(t *testing.T) {
@@ -154,8 +156,9 @@ func TestConvertServerConfig(t *testing.T) {
 		}
 
 		result := convertServerConfig(srv)
-		require.Equal(t, "http", result["type"])
-		require.Equal(t, "https://example.com/mcp", result["url"])
+		httpResult, ok := result.(copilot.MCPHTTPServerConfig)
+		require.True(t, ok)
+		require.Equal(t, "https://example.com/mcp", httpResult.URL)
 	})
 }
 

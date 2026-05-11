@@ -1399,8 +1399,30 @@ type LogInDetails struct {
 // LogInDetails contains information about the currently logged in user.
 // It provides details about the type of login (email-based or client ID-based)
 // and the account identifier. When legacy authentication is used, it will
-// return the account name from the az CLI.
+// return the account name from the az CLI. When external authentication is
+// configured, it will acquire a token from the external auth endpoint (an
+// outbound HTTP call) and derive the account identifier from the token claims.
 func (m *Manager) LogInDetails(ctx context.Context) (*LogInDetails, error) {
+	if m.UseExternalAuth() {
+		claims, err := m.ClaimsForCurrentUser(ctx, nil)
+		if err != nil {
+			return nil, fmt.Errorf("fetching claims for external auth: %w", err)
+		}
+
+		accountName := strings.TrimSpace(claims.DisplayUsername())
+		if accountName == "" {
+			return nil, fmt.Errorf("external auth token did not contain a usable account identifier: %w", ErrNoCurrentUser)
+		}
+
+		// TODO: External auth could theoretically serve service principal tokens, but we always
+		// report EmailLoginType here. CurrentPrincipalType() maps this to UserType, which matches
+		// the existing assumption that external auth represents a user identity.
+		return &LogInDetails{
+			LoginType: EmailLoginType,
+			Account:   accountName,
+		}, nil
+	}
+
 	userConfig, err := m.userConfigManager.Load()
 	if err != nil {
 		return nil, fmt.Errorf("reading user config: %w", err)

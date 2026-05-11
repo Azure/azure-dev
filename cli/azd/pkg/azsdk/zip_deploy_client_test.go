@@ -15,13 +15,15 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice/v2"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
 
 func TestZipDeploy(t *testing.T) {
 	t.Run("WithPollingSuccess", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		registerDeployMocks(mockContext)
 		registerPollingMocks(mockContext)
 
@@ -42,7 +44,7 @@ func TestZipDeploy(t *testing.T) {
 	})
 
 	t.Run("WithPollingError", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		registerDeployMocks(mockContext)
 		registerPollingErrorMocks(mockContext)
 
@@ -63,7 +65,7 @@ func TestZipDeploy(t *testing.T) {
 	})
 
 	t.Run("WithInitialError", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
+		mockContext := mocks.NewMockContext(t.Context())
 		registerConflictMocks(mockContext)
 
 		client, err := NewZipDeployClient("HOSTNAME", &mocks.MockCredentials{}, mockContext.ArmClientOptions)
@@ -349,4 +351,111 @@ func TestIsScmReady(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestLogWebAppDeploymentStatus(t *testing.T) {
+	noop := func(string) {}
+
+	t.Run("RuntimeStartingWithZeroInstances", func(t *testing.T) {
+		res := armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse{
+			CsmDeploymentStatus: armappservice.CsmDeploymentStatus{
+				Properties: &armappservice.CsmDeploymentStatusProperties{
+					Status:                      to.Ptr(armappservice.DeploymentBuildStatusRuntimeStarting),
+					NumberOfInstancesInProgress: new(int32),
+					NumberOfInstancesSuccessful: new(int32),
+					NumberOfInstancesFailed:     new(int32),
+				},
+			},
+		}
+
+		result := logWebAppDeploymentStatus(res, "", noop)
+		require.NoError(t, result.err)
+	})
+
+	t.Run("RuntimeStartingWithInstances", func(t *testing.T) {
+		res := armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse{
+			CsmDeploymentStatus: armappservice.CsmDeploymentStatus{
+				Properties: &armappservice.CsmDeploymentStatusProperties{
+					Status:                      to.Ptr(armappservice.DeploymentBuildStatusRuntimeStarting),
+					NumberOfInstancesInProgress: new(int32(1)),
+					NumberOfInstancesSuccessful: new(int32),
+					NumberOfInstancesFailed:     new(int32),
+				},
+			},
+		}
+
+		result := logWebAppDeploymentStatus(res, "", noop)
+		require.NoError(t, result.err)
+	})
+
+	t.Run("RuntimeSuccessful", func(t *testing.T) {
+		res := armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse{
+			CsmDeploymentStatus: armappservice.CsmDeploymentStatus{
+				Properties: &armappservice.CsmDeploymentStatusProperties{
+					Status:                      to.Ptr(armappservice.DeploymentBuildStatusRuntimeSuccessful),
+					NumberOfInstancesInProgress: new(int32),
+					NumberOfInstancesSuccessful: new(int32(1)),
+					NumberOfInstancesFailed:     new(int32),
+				},
+			},
+		}
+
+		result := logWebAppDeploymentStatus(res, "", noop)
+		require.NoError(t, result.err)
+	})
+
+	t.Run("RuntimeFailed", func(t *testing.T) {
+		res := armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse{
+			CsmDeploymentStatus: armappservice.CsmDeploymentStatus{
+				Properties: &armappservice.CsmDeploymentStatusProperties{
+					Status:                      to.Ptr(armappservice.DeploymentBuildStatusRuntimeFailed),
+					NumberOfInstancesInProgress: new(int32),
+					NumberOfInstancesSuccessful: new(int32),
+					NumberOfInstancesFailed:     new(int32(1)),
+				},
+			},
+		}
+
+		result := logWebAppDeploymentStatus(res, "", noop)
+		require.Error(t, result.err)
+	})
+
+	t.Run("EmptyResponse", func(t *testing.T) {
+		res := armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse{}
+
+		result := logWebAppDeploymentStatus(res, "", noop)
+		require.Error(t, result.err)
+		require.Contains(t, result.err.Error(), "response or its properties are empty")
+	})
+
+	t.Run("NilStatus", func(t *testing.T) {
+		res := armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse{
+			CsmDeploymentStatus: armappservice.CsmDeploymentStatus{
+				Properties: &armappservice.CsmDeploymentStatusProperties{
+					Status: nil,
+				},
+			},
+		}
+
+		result := logWebAppDeploymentStatus(res, "", noop)
+		require.Error(t, result.err)
+		require.Contains(t, result.err.Error(), "response or its properties are empty")
+	})
+
+	t.Run("NilInstanceCounters", func(t *testing.T) {
+		// When instance counters are nil, should not panic
+		res := armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse{
+			CsmDeploymentStatus: armappservice.CsmDeploymentStatus{
+				Properties: &armappservice.CsmDeploymentStatusProperties{
+					Status:                      to.Ptr(armappservice.DeploymentBuildStatusRuntimeStarting),
+					NumberOfInstancesInProgress: nil,
+					NumberOfInstancesSuccessful: nil,
+					NumberOfInstancesFailed:     nil,
+				},
+			},
+		}
+
+		result := logWebAppDeploymentStatus(res, "", noop)
+		require.NoError(t, result.err)
+	})
 }

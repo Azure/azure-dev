@@ -314,10 +314,12 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		// We print any non-setup related errors to stderr.
 		// We always return a zero exit code.
 		token, err := la.verifyLoggedIn(ctx)
-		_, loginExpiryError := errors.AsType[*auth.ReLoginRequiredError](err)
+		// An *internal.ErrorWithSuggestion already carries actionable, user-facing guidance
+		// surfaced through the login result; avoid double-printing the raw error.
+		_, hasSuggestion := errors.AsType[*internal.ErrorWithSuggestion](err)
 		if err != nil &&
 			!errors.Is(err, auth.ErrNoCurrentUser) &&
-			!loginExpiryError {
+			!hasSuggestion {
 			fmt.Fprintln(la.console.Handles().Stderr, err.Error())
 		}
 

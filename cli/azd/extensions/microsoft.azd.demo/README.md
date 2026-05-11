@@ -58,6 +58,10 @@ Displays a list of Azure resources based on the current logged in user, and subs
 
 Displays a list of Azure resources based on the current logged in user, subscription and resource group filtered by resource type and kind.
 
+#### Secret prompt
+
+The first prompt in the flow is an optional API key with `Secret: true` set on `PromptOptions`. The typed value is rendered as asterisks in the terminal and hint keys (`?` / escape) are accepted as regular input characters so they can be part of the secret.
+
 ### `ai`
 
 The `ai` command demonstrates AI model catalog, deployment selection, and quota capabilities through interactive flows.

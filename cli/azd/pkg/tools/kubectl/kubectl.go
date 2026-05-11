@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"text/template"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -56,8 +57,14 @@ type templateRoot struct {
 
 type Cli struct {
 	commandRunner exec.CommandRunner
-	env           map[string]string
-	cwd           string
+	// mu guards env and cwd. The Cli is registered as a singleton in the IoC
+	// container, so parallel AKS service deploys would otherwise race on
+	// SetEnv/SetKubeConfig/Cwd writes (which are unprotected map mutations
+	// and fatal `concurrent map writes` panics under the race detector) and
+	// on subsequent reads from Exec/applyTemplate.
+	mu  sync.Mutex
+	env map[string]string
+	cwd string
 }
 
 // Creates a new K8s CLI instance
@@ -117,17 +124,32 @@ func (cli *Cli) Name() string {
 
 // Sets the env vars available to the CLI
 func (cli *Cli) SetEnv(envValues map[string]string) {
+	cli.mu.Lock()
+	defer cli.mu.Unlock()
 	maps.Copy(cli.env, envValues)
 }
 
 // Sets the KUBECONFIG environment variable
 func (cli *Cli) SetKubeConfig(kubeConfig string) {
+	cli.mu.Lock()
+	defer cli.mu.Unlock()
 	cli.env[KubeConfigEnvVarName] = kubeConfig
 }
 
 // Sets the current working directory
 func (cli *Cli) Cwd(cwd string) {
+	cli.mu.Lock()
+	defer cli.mu.Unlock()
 	cli.cwd = cwd
+}
+
+// snapshotState returns a copy of the env map and the current cwd under the
+// instance lock, so callers can perform exec/template operations against a
+// stable view without holding the lock for the duration of those operations.
+func (cli *Cli) snapshotState() (map[string]string, string) {
+	cli.mu.Lock()
+	defer cli.mu.Unlock()
+	return maps.Clone(cli.env), cli.cwd
 }
 
 // Sets the k8s context to use for future CLI commands
@@ -258,7 +280,8 @@ func (cli *Cli) applyTemplate(ctx context.Context, filePath string, flags *KubeC
 	}
 
 	builder := strings.Builder{}
-	err = k8sTemplate.Execute(&builder, templateRoot{Env: cli.env})
+	envSnapshot, _ := cli.snapshotState()
+	err = k8sTemplate.Execute(&builder, templateRoot{Env: envSnapshot})
 	if err != nil {
 		return nil, fmt.Errorf("failed executing template file '%s', %w", filePath, err)
 	}
@@ -321,11 +344,12 @@ func (cli *Cli) executeCommandWithArgs(
 	args exec.RunArgs,
 	flags *KubeCliFlags,
 ) (exec.RunResult, error) {
-	if cli.cwd != "" {
-		args = args.WithCwd(cli.cwd)
+	envSnapshot, cwd := cli.snapshotState()
+	if cwd != "" {
+		args = args.WithCwd(cwd)
 	}
 
-	args = args.WithEnv(environ(cli.env))
+	args = args.WithEnv(environ(envSnapshot))
 
 	if flags != nil {
 		if flags.DryRun != "" {

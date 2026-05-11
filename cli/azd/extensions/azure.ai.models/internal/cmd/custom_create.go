@@ -29,6 +29,7 @@ type customCreateFlags struct {
 	SourceFile  string
 	Description string
 	BaseModel   string
+	WeightType  string
 	Publisher   string
 	AzcopyPath  string
 	NoWait      bool
@@ -86,7 +87,8 @@ provide a file containing the URL instead.`,
 	cmd.Flags().StringVar(&flags.Version, "version", "1", "Model version")
 	cmd.Flags().StringVar(&flags.Description, "description", "", "Model description")
 	cmd.Flags().StringVar(&flags.BaseModel, "base-model", "", "Base model identifier (e.g., FW-GPT-OSS-120B or full azureml:// URI)")
-	cmd.Flags().StringVar(&flags.Publisher, "publisher", "Fireworks", "Model publisher ID for catalog info")
+	cmd.Flags().StringVar(&flags.WeightType, "weight-type", "FullWeight", "Weight type (e.g., FullWeight, LoRA)")
+	cmd.Flags().StringVar(&flags.Publisher, "publisher", "", "Model publisher ID for catalog info (e.g., Fireworks)")
 	cmd.Flags().StringVar(&flags.AzcopyPath, "azcopy-path", "", "Path to azcopy binary (auto-detected if not provided)")
 	cmd.Flags().BoolVar(&flags.NoWait, "no-wait", false, "Start async registration and return immediately with the operation URL")
 
@@ -145,17 +147,18 @@ func runCustomCreate(ctx context.Context, parentFlags *customFlags, flags *custo
 	fmt.Println()
 
 	if err != nil {
-		if strings.Contains(err.Error(), "409") || strings.Contains(err.Error(), "already exists") {
+		var apiErr *client.APIError
+		if errors.As(err, &apiErr) && apiErr.StatusCode == 409 {
 			fmt.Println()
 			color.Red("✗ Model '%s' version '%s' already exists.", flags.Name, flags.Version)
 			fmt.Println()
 			color.Yellow("To fetch the latest version, use show without --version:")
-			fmt.Printf("  azd ai models custom show --name %s\n\n", flags.Name)
+			fmt.Printf("  azd ai models show --name %s\n\n", flags.Name)
 			color.Yellow("Then create with a new version:")
-			fmt.Printf("  azd ai models custom create --name %s --version <next-version> ...\n", flags.Name)
+			fmt.Printf("  azd ai models create --name %s --version <next-version> ...\n", flags.Name)
 			return fmt.Errorf("model version already exists")
 		}
-		if strings.Contains(err.Error(), "403") {
+		if errors.As(err, &apiErr) && apiErr.StatusCode == 403 {
 			fmt.Println()
 			color.Red("✗ Permission denied: you do not have the required role to upload custom models.")
 			fmt.Println()
@@ -213,20 +216,28 @@ func runCustomCreate(ctx context.Context, parentFlags *customFlags, flags *custo
 		fmt.Printf("failed to start spinner: %v\n", err)
 	}
 
-	derivedURI := buildDerivedModelURI(flags.BaseModel)
 	regReq := &models.RegisterModelRequest{
 		BlobURI:     blob.BlobURI,
+		WeightType:  flags.WeightType,
 		Description: flags.Description,
-		CatalogInfo: &models.CatalogInfo{
-			PublisherID: flags.Publisher,
-		},
-		DerivedModelInformation: &models.DerivedModelInformation{
-			BaseModel: &derivedURI,
-		},
 	}
 
-	regReq.Tags = map[string]string{
-		"baseArchitecture": extractBaseModelName(flags.BaseModel),
+	if flags.BaseModel != "" {
+		derivedURI := buildDerivedModelURI(flags.BaseModel)
+		regReq.DerivedModelInformation = &models.DerivedModelInformation{
+			BaseModel: &derivedURI,
+		}
+		regReq.Tags = map[string]string{
+			"baseArchitecture": extractBaseModelName(flags.BaseModel),
+		}
+	} else {
+		regReq.Tags = map[string]string{}
+	}
+
+	if flags.Publisher != "" {
+		regReq.CatalogInfo = &models.CatalogInfo{
+			PublisherID: flags.Publisher,
+		}
 	}
 
 	operationURL, err := foundryClient.RegisterModelAsync(ctx, flags.Name, flags.Version, regReq)

@@ -137,6 +137,10 @@ func (m *mockPrompter) PromptResourceGroupFrom(
 	return args.String(0), args.Error(1)
 }
 
+func (m *mockPrompter) IsNoPromptMode() bool {
+	return false
+}
+
 type mockEnvSetSecretSubscriptionResolver struct {
 	mock.Mock
 }
@@ -1004,7 +1008,7 @@ func Test_EnvSetSecretAction_UsesResourceTenantForKeyVaultAndPrincipalId(t *test
 		"secret-value",
 	).Return(nil)
 
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	userProfileService := azapi.NewUserProfileService(
 		&mocks.MockMultiTenantCredentialProvider{
 			TokenMap: map[string]mocks.MockCredentials{

@@ -183,12 +183,22 @@ func ValidateScriptName(name string) error {
 // Container environment detection
 // ---------------------------------------------------------------------------
 
-// containerEnvVars maps environment variables to the container runtime they indicate.
-var containerEnvVars = map[string]string{
-	"CODESPACES":              "codespaces",
-	"KUBERNETES_SERVICE_HOST": "kubernetes",
-	"REMOTE_CONTAINERS":       "devcontainer",
-	"REMOTE_CONTAINERS_IPC":   "devcontainer",
+// containerEnvVar associates an environment variable with the container
+// runtime it indicates. Order matters: when multiple variables are present
+// (e.g., a Codespace running inside a devcontainer), entries earlier in the
+// list take precedence so detection is deterministic.
+type containerEnvVar struct {
+	envKey  string
+	runtime string
+}
+
+// containerEnvVars lists the environment variables checked for container
+// detection, in priority order.
+var containerEnvVars = []containerEnvVar{
+	{"CODESPACES", "codespaces"},
+	{"KUBERNETES_SERVICE_HOST", "kubernetes"},
+	{"REMOTE_CONTAINERS", "devcontainer"},
+	{"REMOTE_CONTAINERS_IPC", "devcontainer"},
 }
 
 // IsContainerEnvironment reports whether the current process is running inside
@@ -203,8 +213,8 @@ var containerEnvVars = map[string]string{
 // security decisions.
 func IsContainerEnvironment() bool {
 	// Check well-known environment variables.
-	for envKey := range containerEnvVars {
-		if v := os.Getenv(envKey); v != "" {
+	for _, e := range containerEnvVars {
+		if v := os.Getenv(e.envKey); v != "" {
 			return true
 		}
 	}
@@ -218,13 +228,15 @@ func IsContainerEnvironment() bool {
 }
 
 // ContainerRuntime returns the detected container runtime name, or an empty
-// string if no container environment is detected.
+// string if no container environment is detected. When multiple container
+// environment variables are set, the first match in containerEnvVars order
+// wins, ensuring deterministic results.
 //
 // Possible return values: "codespaces", "kubernetes", "devcontainer", "docker", "".
 func ContainerRuntime() string {
-	for envKey, runtime := range containerEnvVars {
-		if v := os.Getenv(envKey); v != "" {
-			return runtime
+	for _, e := range containerEnvVars {
+		if v := os.Getenv(e.envKey); v != "" {
+			return e.runtime
 		}
 	}
 

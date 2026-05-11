@@ -7,7 +7,32 @@ import (
 	"testing"
 
 	"azureaiagent/internal/project"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
+
+// TestPostdeployHandler_NoAgentService_NoOp verifies postdeployHandler returns nil
+// without any RPC calls when the project has no hosted agent services. Regression
+// guard for #7373.
+func TestPostdeployHandler_NoAgentService_NoOp(t *testing.T) {
+	t.Parallel()
+
+	// Use a temp dir + explicit RelativePath so isHostedAgentService deterministically
+	// returns false (no agent.yaml present) regardless of the test working directory.
+	args := &azdext.ProjectEventArgs{
+		Project: &azdext.ProjectConfig{
+			Path: t.TempDir(),
+			Services: map[string]*azdext.ServiceConfig{
+				"teams-bot": {Name: "teams-bot", Host: "containerapp", RelativePath: "."},
+			},
+		},
+	}
+
+	// nil azdClient — the early return must fire before any RPC call.
+	if err := postdeployHandler(t.Context(), nil, args); err != nil {
+		t.Fatalf("expected no error for project without agent services, got: %v", err)
+	}
+}
 
 func TestParseConnectionIDs(t *testing.T) {
 	t.Parallel()
@@ -112,6 +137,51 @@ func TestResolveToolboxConnectionIDs(t *testing.T) {
 	if toolbox.Tools[3]["project_connection_id"] != "/subscriptions/123/connections/github_mcp_connection" {
 		t.Errorf("tool 3 project_connection_id = %v, want ARM ID",
 			toolbox.Tools[3]["project_connection_id"])
+	}
+}
+
+func TestEnrichToolboxFromConnectionsUsesAllConnectionTypes(t *testing.T) {
+	t.Parallel()
+
+	config := &project.ServiceTargetAgentConfig{
+		Connections: []project.Connection{
+			{
+				Name:   "shared-mcp",
+				Target: "https://shared.example.com/mcp/",
+			},
+		},
+		ToolConnections: []project.ToolConnection{
+			{
+				Name:   "tool-mcp",
+				Target: "https://tool.example.com/mcp/",
+			},
+		},
+	}
+	testToolbox := project.Toolbox{
+		Name: "test",
+		Tools: []map[string]any{
+			{"type": "mcp", "project_connection_id": "shared-mcp"},
+			{"type": "mcp", "project_connection_id": "tool-mcp"},
+			{"type": "mcp", "project_connection_id": "missing-mcp"},
+		},
+	}
+
+	enrichToolboxFromConnections(&testToolbox, toolboxConnectionsByName(config))
+
+	if testToolbox.Tools[0]["server_url"] != "https://shared.example.com/mcp/" {
+		t.Errorf("tool 0 server_url = %v", testToolbox.Tools[0]["server_url"])
+	}
+	if testToolbox.Tools[0]["server_label"] != "shared-mcp" {
+		t.Errorf("tool 0 server_label = %v", testToolbox.Tools[0]["server_label"])
+	}
+	if testToolbox.Tools[1]["server_url"] != "https://tool.example.com/mcp/" {
+		t.Errorf("tool 1 server_url = %v", testToolbox.Tools[1]["server_url"])
+	}
+	if testToolbox.Tools[1]["server_label"] != "tool-mcp" {
+		t.Errorf("tool 1 server_label = %v", testToolbox.Tools[1]["server_label"])
+	}
+	if _, has := testToolbox.Tools[2]["server_url"]; has {
+		t.Errorf("tool 2 should not have server_url")
 	}
 }
 

@@ -66,6 +66,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/state"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
+	"github.com/azure/azure-dev/cli/azd/pkg/tool"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/az"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bash"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
@@ -578,6 +579,11 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterScoped(project.NewImportManager)
 	container.MustRegisterScoped(project.NewServiceManager)
 
+	// Unified up action: the exegraph-backed `azd up` entry point that
+	// collapses provision + package + publish + deploy (and project command
+	// hooks) into a single DAG.
+	container.MustRegisterScoped(cmd.NewUpGraphAction)
+
 	// Even though the service manager is scoped based on its use of environment we can still
 	// register its internal cache as a singleton to ensure operation caching is consistent across all instances
 	container.MustRegisterSingleton(func() project.ServiceOperationCache {
@@ -955,6 +961,44 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		})
 	})
 
+	// Tool management
+	container.MustRegisterSingleton(func(commandRunner exec.CommandRunner) *tool.PlatformDetector {
+		return tool.NewPlatformDetector(commandRunner)
+	})
+	container.MustRegisterSingleton(func(commandRunner exec.CommandRunner) tool.Detector {
+		return tool.NewDetector(commandRunner)
+	})
+	container.MustRegisterSingleton(func(
+		commandRunner exec.CommandRunner,
+		platformDetector *tool.PlatformDetector,
+		detector tool.Detector,
+	) tool.Installer {
+		return tool.NewInstaller(commandRunner, platformDetector, detector)
+	})
+	container.MustRegisterSingleton(func(
+		configManager config.UserConfigManager,
+		detector tool.Detector,
+		commandRunner exec.CommandRunner,
+	) *tool.UpdateChecker {
+		providers := tool.SelectVersionProviders(
+			tool.BuiltInTools(),
+			commandRunner,
+			tryNewRegistryCacheManager(),
+			http.DefaultClient,
+		)
+		return tool.NewUpdateChecker(
+			configManager, detector,
+			config.GetUserConfigDir, providers,
+		)
+	})
+	container.MustRegisterSingleton(func(
+		detector tool.Detector,
+		installer tool.Installer,
+		updateChecker *tool.UpdateChecker,
+	) *tool.Manager {
+		return tool.NewManager(detector, installer, updateChecker)
+	})
+
 	// gRPC Server
 	container.MustRegisterScoped(grpcserver.NewServer)
 	container.MustRegisterScoped(grpcserver.NewProjectService)
@@ -1057,4 +1101,18 @@ func (r *lazyEnvironmentResolver) Getenv(key string) string {
 		return ""
 	}
 	return env.Getenv(key)
+}
+
+// tryNewRegistryCacheManager attempts to create an extension registry
+// cache manager, returning nil on failure. This avoids blocking the
+// UpdateChecker when the extension registry is unavailable.
+func tryNewRegistryCacheManager() *extensions.RegistryCacheManager {
+	mgr, err := extensions.NewRegistryCacheManager()
+	if err != nil {
+		log.Printf(
+			"tool: skipping extension registry provider: %v", err,
+		)
+		return nil
+	}
+	return mgr
 }

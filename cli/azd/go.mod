@@ -44,7 +44,7 @@ require (
 	github.com/drone/envsubst v1.0.3
 	github.com/fatih/color v1.18.0
 	github.com/fsnotify/fsnotify v1.9.0
-	github.com/github/copilot-sdk/go v0.1.32
+	github.com/github/copilot-sdk/go v0.3.0
 	github.com/gofrs/flock v0.12.1
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/golobby/container/v3 v3.3.2
@@ -57,6 +57,7 @@ require (
 	github.com/mark3labs/mcp-go v0.41.1
 	github.com/mattn/go-colorable v0.1.14
 	github.com/mattn/go-isatty v0.0.20
+	github.com/mattn/go-runewidth v0.0.19
 	github.com/microsoft/ApplicationInsights-Go v0.4.4
 	github.com/microsoft/azure-devops-go-api/azuredevops/v7 v7.1.0
 	github.com/microsoft/go-deviceid v1.0.0
@@ -81,6 +82,7 @@ require (
 	go.uber.org/atomic v1.11.0
 	go.uber.org/multierr v1.11.0
 	go.yaml.in/yaml/v3 v3.0.4
+	golang.org/x/sync v0.20.0
 	golang.org/x/sys v0.42.0
 	golang.org/x/term v0.41.0
 	golang.org/x/time v0.9.0
@@ -121,7 +123,6 @@ require (
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/lucasb-eyer/go-colorful v1.3.0 // indirect
 	github.com/mailru/easyjson v0.9.1 // indirect
-	github.com/mattn/go-runewidth v0.0.19 // indirect
 	github.com/mgutz/ansi v0.0.0-20200706080929-d51e80ef957d // indirect
 	github.com/microcosm-cc/bluemonday v1.0.27 // indirect
 	github.com/muesli/reflow v0.3.0 // indirect
@@ -148,7 +149,6 @@ require (
 	golang.org/x/crypto v0.49.0 // indirect
 	golang.org/x/exp v0.0.0-20250911091902-df9299821621 // indirect
 	golang.org/x/net v0.52.0 // indirect
-	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/text v0.35.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260401024825-9d38bb4040a9 // indirect
 )

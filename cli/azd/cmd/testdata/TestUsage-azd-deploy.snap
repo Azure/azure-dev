@@ -19,7 +19,7 @@ Global Flags
         --debug      	: Enables debugging and diagnostics logging.
         --docs       	: Opens the documentation for azd deploy in your web browser.
     -h, --help       	: Gets help for deploy.
-        --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
+        --no-prompt  	: Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
 
 Examples
   Deploy all services in the current project to Azure.

@@ -4,7 +4,6 @@
 package kubectl
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -16,7 +15,7 @@ import (
 )
 
 func Test_GetResource_JsonOutput(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	deployment := Deployment{
 		Resource: Resource{
 			ApiVersion: "apps/v1",
@@ -52,7 +51,7 @@ func Test_GetResource_JsonOutput(t *testing.T) {
 }
 
 func Test_GetResource_ExplicitJsonFlag(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	svcJSON := `{
 		"apiVersion":"v1","kind":"Service",
 		"metadata":{"name":"my-svc","namespace":"ns"},
@@ -81,7 +80,7 @@ func Test_GetResource_ExplicitJsonFlag(t *testing.T) {
 }
 
 func Test_GetResource_UnsupportedOutputFormat(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.CommandRunner.When(
 		func(args exec.RunArgs, cmd string) bool {
 			return strings.Contains(cmd, "kubectl get")
@@ -101,7 +100,7 @@ func Test_GetResource_UnsupportedOutputFormat(t *testing.T) {
 }
 
 func Test_GetResource_ExecError(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.CommandRunner.When(
 		func(args exec.RunArgs, cmd string) bool {
 			return strings.Contains(cmd, "kubectl get")
@@ -121,7 +120,7 @@ func Test_GetResource_ExecError(t *testing.T) {
 }
 
 func Test_GetResource_InvalidJson(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.CommandRunner.When(
 		func(args exec.RunArgs, cmd string) bool {
 			return strings.Contains(cmd, "kubectl get")
@@ -140,7 +139,7 @@ func Test_GetResource_InvalidJson(t *testing.T) {
 }
 
 func Test_GetResources_JsonOutput(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	listJSON := `{
 		"apiVersion":"v1","kind":"DeploymentList",
 		"items":[
@@ -173,7 +172,7 @@ func Test_GetResources_JsonOutput(t *testing.T) {
 }
 
 func Test_GetResources_UnsupportedFormat(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.CommandRunner.When(
 		func(args exec.RunArgs, cmd string) bool {
 			return strings.Contains(cmd, "kubectl get")
@@ -192,7 +191,7 @@ func Test_GetResources_UnsupportedFormat(t *testing.T) {
 }
 
 func Test_GetResources_ExecError(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.CommandRunner.When(
 		func(args exec.RunArgs, cmd string) bool {
 			return strings.Contains(cmd, "kubectl get")
@@ -210,7 +209,7 @@ func Test_GetResources_ExecError(t *testing.T) {
 }
 
 func Test_GetResources_InvalidJson(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.CommandRunner.When(
 		func(args exec.RunArgs, cmd string) bool {
 			return strings.Contains(cmd, "kubectl get")
@@ -254,7 +253,7 @@ func Test_Environ(t *testing.T) {
 }
 
 func Test_GetResource_YamlOutput(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	yamlOutput := `apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -286,7 +285,7 @@ status:
 }
 
 func Test_GetResources_YamlOutput(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	yamlOutput := `apiVersion: v1
 kind: DeploymentList
 items:
@@ -318,7 +317,7 @@ items:
 }
 
 func Test_GetResource_YamlInvalidOutput(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.CommandRunner.When(
 		func(args exec.RunArgs, cmd string) bool {
 			return strings.Contains(cmd, "kubectl get")
@@ -338,7 +337,7 @@ func Test_GetResource_YamlInvalidOutput(t *testing.T) {
 }
 
 func Test_GetResources_YamlInvalidOutput(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockContext.CommandRunner.When(
 		func(args exec.RunArgs, cmd string) bool {
 			return strings.Contains(cmd, "kubectl get")

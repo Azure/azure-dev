@@ -4,7 +4,6 @@
 package templates
 
 import (
-	"context"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -29,7 +28,7 @@ func addGhMocks(mockContext *mocks.MockContext) {
 }
 
 func Test_sourceManager_List(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	configManager := &mockUserConfigManager{}
 	addGhMocks(mockContext)
 	sm := NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient)
@@ -52,7 +51,7 @@ func Test_sourceManager_List(t *testing.T) {
 
 // Test simulates an experience where user has explicitly removed all azd template sources
 func Test_sourceManager_List_EmptySources(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	configManager := &mockUserConfigManager{}
 	addGhMocks(mockContext)
 	sm := NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient)
@@ -70,7 +69,7 @@ func Test_sourceManager_List_EmptySources(t *testing.T) {
 
 // Test simulates a first run experience where `template.sources` is not defined in the azd config
 func Test_sourceManager_List_UndefinedSources(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	configManager := &mockUserConfigManager{}
 	addGhMocks(mockContext)
 	sm := NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient)
@@ -88,7 +87,7 @@ func Test_sourceManager_List_UndefinedSources(t *testing.T) {
 }
 
 func Test_sourceManager_Get(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	configManager := &mockUserConfigManager{}
 	addGhMocks(mockContext)
 	sm := NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient)
@@ -110,7 +109,7 @@ func Test_sourceManager_Get(t *testing.T) {
 }
 
 func Test_sourceManager_Add(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	configManager := &mockUserConfigManager{}
 	addGhMocks(mockContext)
 	sm := NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient)
@@ -129,7 +128,7 @@ func Test_sourceManager_Add(t *testing.T) {
 }
 
 func Test_sourceManager_Add_DuplicateKey(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	configManager := &mockUserConfigManager{}
 	addGhMocks(mockContext)
 	sm := NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient)
@@ -149,7 +148,7 @@ func Test_sourceManager_Add_DuplicateKey(t *testing.T) {
 }
 
 func Test_sourceManager_Remove(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	configManager := &mockUserConfigManager{}
 	addGhMocks(mockContext)
 	sm := NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient)
@@ -165,7 +164,7 @@ func Test_sourceManager_Remove(t *testing.T) {
 }
 
 func Test_sourceManager_Remove_SourceNotFound(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	configManager := &mockUserConfigManager{}
 	addGhMocks(mockContext)
 	sm := NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient)
@@ -180,7 +179,7 @@ func Test_sourceManager_Remove_SourceNotFound(t *testing.T) {
 }
 
 func Test_sourceManager_CreateSource(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	mockContext := mocks.NewMockContext(t.Context())
 	mockAwesomeAzdTemplateSource(mockContext)
 
 	configManager := &mockUserConfigManager{}

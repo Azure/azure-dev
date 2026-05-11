@@ -5,7 +5,6 @@ package telemetry
 
 import (
 	"cmp"
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -376,7 +375,7 @@ func TestStorageQueue_Cleanup(t *testing.T) {
 			if !tt.cleanupTime.IsZero() {
 				mockClock.Set(tt.cleanupTime)
 			}
-			storage.Cleanup(context.Background(), make(chan struct{}, 1))
+			storage.Cleanup(t.Context(), make(chan struct{}, 1))
 
 			remainingFiles, err := os.ReadDir(storage.folder)
 			assert.NoError(t, err)

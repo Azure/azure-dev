@@ -8,7 +8,6 @@
 package grpcserver
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"testing"
@@ -16,8 +15,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -65,7 +66,7 @@ func Test_Server_Start(t *testing.T) {
 		accessToken, err := GenerateExtensionToken(extension, serverInfo)
 		require.NoError(t, err)
 
-		ctx := azdext.WithAccessToken(context.Background(), accessToken)
+		ctx := azdext.WithAccessToken(t.Context(), accessToken)
 		client, err := azdext.NewAzdClient(azdext.WithAddress(serverInfo.Address))
 		require.NoError(t, err)
 
@@ -87,7 +88,7 @@ func Test_Server_Start(t *testing.T) {
 		accessToken, err := GenerateExtensionToken(extension, invalidServerInfo)
 		require.NoError(t, err)
 
-		ctx := azdext.WithAccessToken(context.Background(), accessToken)
+		ctx := azdext.WithAccessToken(t.Context(), accessToken)
 		client, err := azdext.NewAzdClient(azdext.WithAddress(serverInfo.Address))
 		require.NoError(t, err)
 
@@ -99,7 +100,7 @@ func Test_Server_Start(t *testing.T) {
 
 	t.Run("MissingToken", func(t *testing.T) {
 		// Test for missing authentication token: expect Unauthenticated error.
-		ctx := context.Background()
+		ctx := t.Context()
 		client, err := azdext.NewAzdClient(azdext.WithAddress(serverInfo.Address))
 		require.NoError(t, err)
 
@@ -152,7 +153,7 @@ func Test_Server_StreamInterceptor(t *testing.T) {
 		accessToken, err := GenerateExtensionToken(extension, serverInfo)
 		require.NoError(t, err)
 
-		ctx := azdext.WithAccessToken(context.Background(), accessToken)
+		ctx := azdext.WithAccessToken(t.Context(), accessToken)
 		client, err := azdext.NewAzdClient(azdext.WithAddress(serverInfo.Address))
 		require.NoError(t, err)
 		defer client.Close()
@@ -181,7 +182,7 @@ func Test_Server_StreamInterceptor(t *testing.T) {
 	})
 
 	t.Run("MissingToken", func(t *testing.T) {
-		ctx := context.Background()
+		ctx := t.Context()
 		client, err := azdext.NewAzdClient(azdext.WithAddress(serverInfo.Address))
 		require.NoError(t, err)
 		defer client.Close()
@@ -210,7 +211,7 @@ func Test_Server_StreamInterceptor(t *testing.T) {
 		accessToken, err := GenerateExtensionToken(extension, invalidServerInfo)
 		require.NoError(t, err)
 
-		ctx := azdext.WithAccessToken(context.Background(), accessToken)
+		ctx := azdext.WithAccessToken(t.Context(), accessToken)
 		client, err := azdext.NewAzdClient(azdext.WithAddress(serverInfo.Address))
 		require.NoError(t, err)
 		defer client.Close()
@@ -231,14 +232,20 @@ func Test_Server_StreamInterceptor(t *testing.T) {
 	})
 }
 
-func Test_wrapErrorWithSuggestion(t *testing.T) {
+func Test_mapHostError(t *testing.T) {
 	tests := []struct {
 		name             string
 		err              error
 		wantNil          bool
 		wantContain      string
+		wantNotContain   string
 		wantSameInstance bool
 		wantGrpcCode     codes.Code
+		wantAuthReason   string
+		wantSuggestion   string
+		wantLinks        int
+		wantLinkURL      string
+		wantLinkTitle    string
 	}{
 		{
 			name:    "nil error returns nil",
@@ -252,53 +259,92 @@ func Test_wrapErrorWithSuggestion(t *testing.T) {
 			wantSameInstance: true,
 		},
 		{
-			name: "error with suggestion includes suggestion text",
+			name: "error with suggestion preserves suggestion structurally, not in message",
 			err: &internal.ErrorWithSuggestion{
 				Err:        errors.New("authentication failed"),
 				Suggestion: "run `azd auth login` to acquire a new token.",
 			},
-			wantContain: "azd auth login",
+			wantContain:    "authentication failed",
+			wantNotContain: "azd auth login",
+			wantSuggestion: "run `azd auth login` to acquire a new token.",
 		},
 		{
-			name: "wrapped error with suggestion includes suggestion text",
+			name: "wrapped error with suggestion preserves suggestion structurally, not in message",
 			err: fmt.Errorf("failed to prompt: %w", &internal.ErrorWithSuggestion{
 				Err:        errors.New("token expired"),
 				Suggestion: "login expired, run `azd auth login` to acquire a new token.",
 			}),
-			wantContain: "azd auth login",
+			wantContain:    "token expired",
+			wantNotContain: "azd auth login",
+			wantSuggestion: "login expired, run `azd auth login` to acquire a new token.",
 		},
 		{
-			name:         "ErrNoCurrentUser returns Unauthenticated",
-			err:          auth.ErrNoCurrentUser,
-			wantContain:  "not logged in",
-			wantGrpcCode: codes.Unauthenticated,
+			name:           "ErrNoCurrentUser returns Unauthenticated",
+			err:            auth.ErrNoCurrentUser,
+			wantContain:    "not logged in",
+			wantGrpcCode:   codes.Unauthenticated,
+			wantAuthReason: azdext.AuthErrorReasonNotLoggedIn,
 		},
 		{
-			name:         "wrapped ErrNoCurrentUser returns Unauthenticated",
-			err:          fmt.Errorf("failed to list subscriptions: %w", auth.ErrNoCurrentUser),
-			wantContain:  "not logged in",
-			wantGrpcCode: codes.Unauthenticated,
+			name:           "wrapped ErrNoCurrentUser returns Unauthenticated",
+			err:            fmt.Errorf("failed to list subscriptions: %w", auth.ErrNoCurrentUser),
+			wantContain:    "not logged in",
+			wantGrpcCode:   codes.Unauthenticated,
+			wantAuthReason: azdext.AuthErrorReasonNotLoggedIn,
 		},
 		{
 			name: "ReLoginRequiredError with suggestion returns Unauthenticated",
 			err: &internal.ErrorWithSuggestion{
 				Err:        &auth.ReLoginRequiredError{},
+				Message:    "Re-authentication required.",
 				Suggestion: "login expired, run `azd auth login` to acquire a new token.",
 			},
-			wantContain:  "azd auth login",
-			wantGrpcCode: codes.Unauthenticated,
+			wantContain:    "Re-authentication required.",
+			wantNotContain: "azd auth login",
+			wantGrpcCode:   codes.Unauthenticated,
+			wantAuthReason: azdext.AuthErrorReasonLoginRequired,
+			wantSuggestion: "login expired, run `azd auth login` to acquire a new token.",
+		},
+		{
+			name: "TokenProtectionBlockedError with suggestion returns Unauthenticated",
+			err: &internal.ErrorWithSuggestion{
+				Err: &auth.AuthFailedError{
+					Parsed: &auth.AadErrorResponse{
+						Error:      "invalid_grant",
+						ErrorCodes: []int{530084},
+					},
+				},
+				Message:    "A Conditional Access token protection policy blocked this token request.",
+				Suggestion: "Contact your IT administrator or request a policy exception.",
+				Links: []errorhandler.ErrorLink{{
+					URL:   "https://aka.ms/TokenProtectionFAQ#troubleshooting",
+					Title: "Token protection FAQ",
+				}},
+			},
+			wantContain:    "Conditional Access",
+			wantNotContain: "policy exception",
+			wantGrpcCode:   codes.Unauthenticated,
+			wantAuthReason: "AADSTS530084",
+			wantSuggestion: "Contact your IT administrator or request a policy exception.",
+			wantLinks:      1,
+			wantLinkURL:    "https://aka.ms/TokenProtectionFAQ#troubleshooting",
+			wantLinkTitle:  "Token protection FAQ",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := wrapErrorWithSuggestion(tt.err)
+			result := mapHostError(tt.err)
 			if tt.wantNil {
 				require.Nil(t, result)
 				return
 			}
 			require.NotNil(t, result)
 			require.Contains(t, result.Error(), tt.wantContain)
+			if tt.wantNotContain != "" {
+				require.NotContains(t, result.Error(), tt.wantNotContain,
+					"suggestion text must not be concatenated into status.Message")
+			}
 			if tt.wantSameInstance {
 				require.Same(t, tt.err, result, "expected error to be returned unchanged (same instance)")
 			}
@@ -306,7 +352,37 @@ func Test_wrapErrorWithSuggestion(t *testing.T) {
 				st, ok := status.FromError(result)
 				require.True(t, ok, "expected gRPC status error")
 				require.Equal(t, tt.wantGrpcCode, st.Code())
+				if tt.wantAuthReason != "" {
+					info := requireAuthErrorInfo(t, st)
+					require.Equal(t, azdext.AuthErrorDomain, info.Domain)
+					require.Equal(t, tt.wantAuthReason, info.Reason)
+				}
+			}
+			if tt.wantSuggestion != "" {
+				st, ok := status.FromError(result)
+				require.True(t, ok, "expected gRPC status error")
+				actionable := azdext.ActionableErrorDetailFromStatus(st)
+				require.NotNil(t, actionable, "expected ActionableErrorDetail")
+				require.Equal(t, tt.wantSuggestion, actionable.GetSuggestion())
+				require.Len(t, actionable.GetLinks(), tt.wantLinks)
+				if tt.wantLinkURL != "" {
+					require.Equal(t, tt.wantLinkURL, actionable.GetLinks()[0].GetUrl())
+					require.Equal(t, tt.wantLinkTitle, actionable.GetLinks()[0].GetTitle())
+				}
 			}
 		})
 	}
+}
+
+func requireAuthErrorInfo(t *testing.T, st *status.Status) *errdetails.ErrorInfo {
+	t.Helper()
+
+	for _, detail := range st.Details() {
+		if info, ok := detail.(*errdetails.ErrorInfo); ok {
+			return info
+		}
+	}
+
+	require.FailNow(t, "expected ErrorInfo detail")
+	return nil
 }

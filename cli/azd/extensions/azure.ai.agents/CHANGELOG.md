@@ -1,5 +1,34 @@
 # Release History
 
+## 0.1.31-preview (2026-05-07)
+
+- [[#8096]](https://github.com/Azure/azure-dev/pull/8096) Fix for bug introduced with #8034. Properly storing root agent endpoint since sessions are independent of protocol.
+- [[#8038]](https://github.com/Azure/azure-dev/pull/8038) Fix MCP tool field mapping to correctly include `url` values from tool definitions. Fixes mapping for toolbox tools to connections.
+
+## 0.1.30-preview (2026-05-06)
+
+- [[#8028]](https://github.com/Azure/azure-dev/pull/8028) Add `--agent-endpoint` flag to `azd ai agent invoke` to invoke a deployed agent from any directory without needing an azd project or environment. Thanks @antriksh30 for the contribution!
+- [[#7999]](https://github.com/Azure/azure-dev/pull/7999) Add A2A endpoint protocol and agent card metadata support for agent deployments. Thanks @adamra-msft for the contribution!
+- [[#8027]](https://github.com/Azure/azure-dev/pull/8027) Add playground URL and per-protocol endpoint URLs to `azd ai agent show` output. Thanks @Nathandrake229 for the contribution!
+- [[#8034]](https://github.com/Azure/azure-dev/pull/8034) Move session and conversation ID tracking to the global azd user config, enabling session state to persist across directories and project relocations.
+- [[#7947]](https://github.com/Azure/azure-dev/pull/7947) Fix `flag redefined` panics on `azd ai agent show`, `azd ai agent files list`, and `azd ai agent files stat` caused by duplicate `--output`/`-o` flag registration.
+- [[#7968]](https://github.com/Azure/azure-dev/pull/7968) Fix agent templates URL used by `azd ai agent init` to use the correct `aka.ms` redirect after release.
+
+### Breaking Changes
+
+- [[#8040]](https://github.com/Azure/azure-dev/pull/8040) Remove prompt agent and `azureml://` registry support; prompt agent configurations in `azure.yaml` are no longer recognized.
+
+## 0.1.29-preview (2026-04-30)
+
+- [[#7984]](https://github.com/Azure/azure-dev/pull/7984) Fix `postdeployHandler` to skip post-deploy processing when the project has no hosted agent services, preventing errors on non-agent projects.
+- [[#7974]](https://github.com/Azure/azure-dev/pull/7974) Update post-deploy output to display the agent invocation endpoint URL.
+- [[#7966]](https://github.com/Azure/azure-dev/pull/7966) Update the `aka.ms` redirect URL used to fetch the agent templates list.
+- [[#7921]](https://github.com/Azure/azure-dev/pull/7921) Update `azd ai agent init` to load agent templates from the unified awesome-azd `templates.json` manifest, filtered by the `extension.ai.agent` type discriminator.
+
+## 0.1.28-preview (2026-04-28)
+
+- [[#7930]](https://github.com/Azure/azure-dev/pull/7930) Fetch the hosted-agent supported regions list at runtime from a remote JSON manifest with an embedded fallback, replacing the hardcoded list; region data can now be updated without cutting an extension release.
+
 ## 0.1.27-preview (2026-04-22)
 
 - [[#7880]](https://github.com/Azure/azure-dev/pull/7880) Remove ACR endpoint pre-check from the package step; packaging no longer fails early when `AZURE_CONTAINER_REGISTRY_ENDPOINT` is absent, allowing provisioning to create the registry first for new projects.

@@ -29,11 +29,9 @@ type GitHubUrlInfo struct {
 // scaffoldTrainingProject materializes a training project's job definition
 // into workingDir based on the user's --template input.
 //
-//   - If template is empty: prompt for compute + environment (no defaults
-//     for either since both are environment-specific) and write a minimal
-//     hello-world job.yaml at <workingDir>/config/job.yaml. Skips writing
-//     if the file already exists so re-running 'init' doesn't clobber
-//     user edits.
+//   - If template is empty: write a starter job.yaml with <user to add>
+//     placeholders at <workingDir>/config/job.yaml. Skips writing if the
+//     file already exists so re-running 'init' doesn't clobber user edits.
 //   - If template is a GitHub URL: download the parent directory of the
 //     referenced file into workingDir using the gh CLI.
 //   - If template is a local path: recursively copy that directory into
@@ -53,7 +51,7 @@ func scaffoldTrainingProject(
 	}
 
 	if template == "" {
-		return scaffoldDefaultJobYaml(ctx, azdClient, workingDir)
+		return scaffoldDefaultJobYaml(workingDir)
 	}
 
 	if isGitHubUrl(template) {
@@ -63,14 +61,36 @@ func scaffoldTrainingProject(
 	return scaffoldFromLocalPath(template, workingDir)
 }
 
-// scaffoldDefaultJobYaml writes a minimal hello-world commandJob to
-// <workingDir>/config/job.yaml after prompting for compute + environment.
-// No-op (with a notice) if the file already exists.
-func scaffoldDefaultJobYaml(
-	ctx context.Context,
-	azdClient *azdext.AzdClient,
-	workingDir string,
-) error {
+// defaultJobYamlContent is the starter commandJob template written when the
+// user runs 'init' without --template. User-supplied fields use <user to add>
+// placeholders; the user is expected to edit these before submitting.
+const defaultJobYamlContent = `$schema: https://azuremlschemas.azureedge.net/latest/commandJob.schema.json
+type: command
+
+display_name: cli-hello-world-sample
+description: Sample job created by 'azd ai training init'
+
+command: echo "hello world"
+environment: <user to add>
+compute: <user to add>
+resources:
+  instance_count: 1
+  instance_type: <user to add>
+  properties:
+    AISuperComputer:
+      imageVersion: ""
+      slaTier: <user to add>
+      priority: <user to add>
+`
+
+// scaffoldDefaultJobYaml writes a starter commandJob template to
+// <workingDir>/config/job.yaml. The template contains <user to add>
+// placeholders for fields that are environment-specific (compute,
+// environment image, instance_type, slaTier, priority); the user is
+// expected to edit these before running 'job submit'. No-op (with a
+// notice) if the file already exists, so re-running 'init' doesn't
+// clobber user edits.
+func scaffoldDefaultJobYaml(workingDir string) error {
 	yamlPath := filepath.Join(workingDir, "config", "job.yaml")
 
 	if _, err := os.Stat(yamlPath); err == nil {
@@ -78,55 +98,17 @@ func scaffoldDefaultJobYaml(
 		return nil
 	}
 
-	envResp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-		Options: &azdext.PromptOptions{
-			Message:        "Enter the container image (ACR or MCR URI) to use as the job environment",
-			IgnoreHintKeys: true,
-		},
-	})
-	if err != nil {
-		return fmt.Errorf("failed to prompt for environment: %w", err)
-	}
-	environment := strings.TrimSpace(envResp.Value)
-	if environment == "" {
-		return fmt.Errorf("environment is required")
-	}
-
-	computeResp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-		Options: &azdext.PromptOptions{
-			Message:        "Enter the compute target (cluster name or full ARM resource ID)",
-			IgnoreHintKeys: true,
-		},
-	})
-	if err != nil {
-		return fmt.Errorf("failed to prompt for compute: %w", err)
-	}
-	compute := strings.TrimSpace(computeResp.Value)
-	if compute == "" {
-		return fmt.Errorf("compute is required")
-	}
-
-	yamlContent := fmt.Sprintf(`$schema: https://azuremlschemas.azureedge.net/latest/commandJob.schema.json
-type: command
-
-display_name: cli-hello-world
-description: Sample job created by 'azd ai training init'
-
-command: echo "hello world"
-environment: %s
-compute: %s
-`, environment, compute)
-
 	//nolint:gosec // project config directory should be readable and traversable
 	if err := os.MkdirAll(filepath.Dir(yamlPath), 0755); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 	//nolint:gosec // generated config file should be readable by project tooling
-	if err := os.WriteFile(yamlPath, []byte(yamlContent), 0644); err != nil {
+	if err := os.WriteFile(yamlPath, []byte(defaultJobYamlContent), 0644); err != nil {
 		return fmt.Errorf("failed to write job.yaml: %w", err)
 	}
 
 	fmt.Printf("Created training job template at: %s\n", yamlPath)
+	fmt.Println("Edit the file and replace each '<user to add>' before running 'azd ai training job submit'.")
 	return nil
 }
 

@@ -11,6 +11,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -325,6 +326,8 @@ func captureResponseSession(
 // fetchOpenAPISpec fetches the OpenAPI spec from a running agent and caches it on disk.
 // baseURL is the root URL (e.g., "http://localhost:8088" or "{endpoint}/agents/{name}/endpoint/protocols").
 // suffix is "local" or "remote", used in the cached filename.
+// apiVersion, when non-empty, is appended as the "?api-version=<v>" query parameter.
+// Local agents do not require this; remote Foundry endpoints reject requests without it.
 // If forceRefresh is false and the file already exists, the fetch is skipped.
 //
 // Returns the on-disk path to the cached spec on success (whether freshly
@@ -340,6 +343,7 @@ func fetchOpenAPISpec(
 	agentName string,
 	suffix string,
 	bearerToken string,
+	apiVersion string,
 	forceRefresh bool,
 ) (string, bool) {
 	configPath, err := resolveConfigPath(ctx, azdClient)
@@ -362,6 +366,9 @@ func fetchOpenAPISpec(
 	}
 
 	specURL := baseURL + "/invocations/docs/openapi.json"
+	if apiVersion != "" {
+		specURL += "?api-version=" + url.QueryEscape(apiVersion)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, specURL, nil)
 	if err != nil {
 		return "", false

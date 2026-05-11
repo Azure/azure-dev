@@ -629,7 +629,7 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 
 	// Fetch and cache the agent's OpenAPI spec (always refresh for local).
 	if azdClient != nil {
-		if path, fresh := fetchOpenAPISpec(ctx, azdClient, localBaseURL, agentName, "local", "", true); fresh {
+		if path, fresh := fetchOpenAPISpec(ctx, azdClient, localBaseURL, agentName, "local", "", "", true); fresh {
 			fmt.Printf("OpenAPI spec saved to %s\n", path)
 		}
 	}
@@ -754,7 +754,9 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	remoteBaseURL := fmt.Sprintf("%s/agents/%s/endpoint/protocols", endpoint, name)
 
 	// Fetch and cache the agent's OpenAPI spec (skip if already cached).
-	if path, fresh := fetchOpenAPISpec(ctx, azdClient, remoteBaseURL, name, "remote", token.Token, false); fresh {
+	if path, fresh := fetchOpenAPISpec(
+		ctx, azdClient, remoteBaseURL, name, "remote", token.Token, DefaultAgentAPIVersion, false,
+	); fresh {
 		fmt.Printf("OpenAPI spec saved to %s\n", path)
 	}
 

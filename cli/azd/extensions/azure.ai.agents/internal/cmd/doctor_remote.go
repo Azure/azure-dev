@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
@@ -70,77 +71,99 @@ type remotePreconditions struct {
 // Cross-check sequencing (the design's dependency matrix):
 //
 //   - check 7  (auth)            gates 8, 10, 11, 12
-//   - check 8  (reachability)    gates 9, 11
-//   - check 11 (agent status)    gates 12
+//   - check 8  (reachability)    gates 9, 11, 12
 //
-// R2-D extends the runner to checks 9 (model deployments) and 11 (agent
-// status). Each downstream check inspects the prior results to decide
-// Pass / Skip / Warn / Fail; we do not short-circuit the loop, so a
-// failed reachability still surfaces explicit Skip rows for the
-// dependent checks.
+// R2-G runs the checks in three phases to shorten wall time:
+//
+//  1. Phase 1 (sequential): check 7. Captures bearer token + auth row.
+//  2. Phase 2 (parallel):   check 8 || check 10. Reachability uses the
+//     Foundry data plane while user-RBAC hits ARM, so they share no
+//     state beyond the read-only auth result.
+//  3. Phase 3 (parallel):   check 9 || check 11 || check 12. Each
+//     per-service check produces its own []doctorResult slice; nothing
+//     is mutated across goroutines.
+//
+// The output slice is assembled in the same deterministic order the
+// earlier sequential version produced — `[7, 8, …9, 10, …11, …12]` —
+// so JSON/text renderings and snapshot tests are stable across the
+// refactor. Per-check timeouts already live inside each check
+// function (via [context.WithTimeout] around the ARM/data-plane call),
+// so a hung backend never blocks the whole run.
 func (a *doctorAction) runRemoteChecks(ctx context.Context, pre remotePreconditions) []doctorResult {
 	if a.flags != nil && a.flags.localOnly {
 		return remoteSkipRows("skipped: --local-only")
 	}
 
-	out := make([]doctorResult, 0, 4)
-
-	// Check 7 — Authentication. Captures the auth result (and bearer
-	// token) so check 8 can either reuse the token or Skip with a clean
-	// reason. The actual GetToken round-trip is wrapped in timed() so
-	// the JSON envelope's duration matches wall-clock time.
+	// Phase 1 — check 7 (auth). Captures the bearer token so phase 2
+	// can hand it to the reachability probe.
 	var authResult doctorResult
 	var bearerToken string
-	out = append(out, timed(func() doctorResult {
+	authRow := timed(func() doctorResult {
 		token, res := a.checkAuth(ctx)
 		bearerToken = token
 		authResult = res
 		return res
-	}))
+	})
 
-	// Check 8 — Foundry project reachability. Inspects authResult and
-	// the precondition struct to either skip cleanly or fire the probe.
+	// Phase 2 — checks 8 (reachability) and 10 (user RBAC) in parallel.
+	// Reachability captures its row in `reachabilityResult` so phase 3
+	// can read the status; the parallel goroutines never write to the
+	// same memory.
+	var reachRow, rbacRow doctorResult
 	var reachabilityResult doctorResult
-	out = append(out, timed(func() doctorResult {
-		reachabilityResult = a.checkReachability(ctx, pre, authResult.Status, bearerToken)
-		return reachabilityResult
-	}))
+	var wgPhase2 sync.WaitGroup
+	wgPhase2.Go(func() {
+		reachRow = timed(func() doctorResult {
+			reachabilityResult = a.checkReachability(ctx, pre, authResult.Status, bearerToken)
+			return reachabilityResult
+		})
+	})
+	wgPhase2.Go(func() {
+		rbacRow = timed(func() doctorResult {
+			return a.checkUserRBAC(ctx, pre, authResult.Status)
+		})
+	})
+	wgPhase2.Wait()
 
-	// Check 9 — Model deployments (per service). Depends on check 6
-	// (manifest valid) AND check 8 (reachability). The helper iterates
-	// pre.agentServices and emits one row per service; each row is
-	// re-wrapped through timed() so durations reflect per-service work.
-	for _, row := range a.checkModelDeployments(ctx, pre, reachabilityResult.Status) {
+	// Phase 3 — per-service checks 9 (model deployments), 11 (agent
+	// status), 12 (agent identity role assignments) in parallel. Each
+	// helper writes into its own result slice; nothing is shared.
+	var modelsRows, statusRows, agentRBACRows []doctorResult
+	var wgPhase3 sync.WaitGroup
+	wgPhase3.Go(func() {
+		modelsRows = a.checkModelDeployments(ctx, pre, reachabilityResult.Status)
+	})
+	wgPhase3.Go(func() {
+		statusRows = a.checkAgentStatus(
+			ctx, pre, authResult.Status, reachabilityResult.Status, bearerToken)
+	})
+	wgPhase3.Go(func() {
+		agentRBACRows = a.checkAgentIdentityRBAC(
+			ctx, pre, authResult.Status, reachabilityResult.Status)
+	})
+	wgPhase3.Wait()
+
+	// Assemble in deterministic order so renderers + snapshot tests
+	// stay stable: [check7, check8, ...check9, check10, ...check11,
+	// ...check12]. The per-service rows are re-wrapped through
+	// timed() to preserve the existing DurationMs population (the
+	// inner closure is a no-op timer because the row is already
+	// computed).
+	out := make([]doctorResult, 0, 4+len(modelsRows)+len(statusRows)+len(agentRBACRows))
+	out = append(out, authRow, reachRow)
+	for _, row := range modelsRows {
 		r := row
 		out = append(out, timed(func() doctorResult { return r }))
 	}
-
-	// Check 10 — User RBAC. Depends on check 7 (auth) only — RBAC
-	// listing uses ARM, not the Foundry data plane, so it does not
-	// require check 8 to have passed.
-	out = append(out, timed(func() doctorResult {
-		return a.checkUserRBAC(ctx, pre, authResult.Status)
-	}))
-
-	// Check 11 — Agent status (per service). Depends on check 7 (auth)
-	// AND check 8 (reachability). Same per-service row pattern as
-	// check 9.
-	for _, row := range a.checkAgentStatus(ctx, pre, authResult.Status, reachabilityResult.Status, bearerToken) {
+	out = append(out, rbacRow)
+	for _, row := range statusRows {
 		r := row
 		out = append(out, timed(func() doctorResult { return r }))
 	}
-
-	// Check 12 — Agent identity role assignments (per service).
-	// Depends on check 7 (auth) AND check 8 (reachability). Issues a
-	// GetAgentVersion call per service to resolve the MI principal ID,
-	// then lists role assignments at the project scope and buckets
-	// them across project / account / resource-group scopes. Rendered
-	// as INFO by default since the value is mostly informational.
-	for _, row := range a.checkAgentIdentityRBAC(ctx, pre, authResult.Status, reachabilityResult.Status) {
+	for _, row := range agentRBACRows {
 		r := row
 		out = append(out, timed(func() doctorResult { return r }))
 	}
-
 	return out
 }
 

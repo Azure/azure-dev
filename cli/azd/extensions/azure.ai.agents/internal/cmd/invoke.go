@@ -348,6 +348,18 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 // below makes the same choice — see its doc for the resolver-side
 // rationale that justifies skipping AssembleState even on failure today.
 //
+// Caller contract for `agentName`: pass the azure.yaml service name, NOT
+// the deployed Foundry agent name. The resolver embeds this verbatim
+// into the suggested `azd ai agent show <agentName>`, and `show` keys on
+// `s.Name` from azure.yaml (helpers.go:resolveAgentService). The remote
+// invoke functions translate `name` in place from service name to
+// Foundry name for the URL path; they MUST capture the service name
+// separately and pass that here. See `responsesRemote` /
+// `invocationsRemote` for the `serviceName` tracking pattern. The
+// resolver-level contract is locked by
+// TestResolveAfterInvoke_Success / "remote success with agent name →
+// show <agent> + monitor" in `nextstep/resolver_test.go`.
+//
 // Output is gated on a TTY stdout per the nextstep call-site contract
 // (`nextstep/types.go`, `nextstep/format.go`, `helpers.go:isTerminal`):
 // the package never inspects TTY state, so callers must. Without the gate,

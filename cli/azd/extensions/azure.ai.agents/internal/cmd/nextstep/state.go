@@ -172,9 +172,11 @@ func AssembleState(
 }
 
 // AssembleStateFromSource is the Source-injecting variant of AssembleState.
-// Production callers use AssembleState; tests use this to inject a fake
-// Source and exercise the resolver wiring without spinning up a real
-// azd gRPC client.
+// Production reaches this via show.go's `resolveNextStepFromSource`, which
+// constructs a Source explicitly so it can later be swapped for a fake in
+// tests. Use AssembleState directly when constructing from a real
+// *azdext.AzdClient; use this when you already have a Source (production
+// or test fake).
 func AssembleStateFromSource(
 	ctx context.Context,
 	src Source,

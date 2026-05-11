@@ -255,50 +255,6 @@ func TestResolveAfterInvoke_Failure(t *testing.T) {
 	})
 }
 
-// TestResolveAfterInvoke_DivergentNames locks the contract that the
-// resolver embeds whatever name it is given verbatim into the
-// "azd ai agent show <name>" suggestion, without applying any
-// translation of its own. The invoke.go call sites pass the
-// azure.yaml service name (not the deployed Foundry agent name) so
-// the suggested follow-up is always runnable against `azd ai agent
-// show`, which keys on s.Name in azure.yaml. Mirrors the contract
-// established by TestResolveAfterShow_DivergentNames for the
-// opposite direction (show → invoke).
-func TestResolveAfterInvoke_DivergentNames(t *testing.T) {
-	t.Parallel()
-
-	t.Run("remote success embeds service name verbatim", func(t *testing.T) {
-		t.Parallel()
-		// invoke.go passes serviceName (e.g. "echo") here, even when
-		// the deployed Foundry name diverges (e.g. "echo-deployed-x7q9").
-		// The user can copy-paste `azd ai agent show echo` and it works
-		// because show resolves by azure.yaml service name.
-		out := ResolveAfterInvoke(&State{}, InvokeRemote, "echo", nil)
-		require.Len(t, out, 2)
-		assert.Equal(
-			t,
-			"azd ai agent show echo",
-			out[0].Command,
-			"resolver must embed the passed name verbatim; "+
-				"invoke.go is responsible for passing the service name (not the deployed Foundry name)",
-		)
-	})
-
-	t.Run("remote success with deployed-name input would emit broken show", func(t *testing.T) {
-		t.Parallel()
-		// This subcase documents the failure mode the G4 fix prevents:
-		// if invoke.go ever regresses to passing the deployed Foundry
-		// name here, the resolver will embed it verbatim and the
-		// suggested `azd ai agent show <FoundryName>` will fail
-		// because show keys on azure.yaml service names. The resolver
-		// itself has no way to detect divergence; the contract is
-		// enforced upstream at the invoke.go call sites.
-		out := ResolveAfterInvoke(&State{}, InvokeRemote, "echo-deployed-x7q9", nil)
-		require.Len(t, out, 2)
-		assert.Equal(t, "azd ai agent show echo-deployed-x7q9", out[0].Command)
-	})
-}
-
 func TestResolveAfterShow(t *testing.T) {
 	t.Parallel()
 

@@ -448,3 +448,247 @@ func TestAssembleState_PopulatesProtocolFromAgentYaml(t *testing.T) {
 	require.Len(t, state.Services, 1)
 	assert.Equal(t, ProtocolInvocations, state.Services[0].Protocol)
 }
+
+func TestExtractAgentYamlEnvRefs(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		manifest string
+		want     []string
+	}{
+		{
+			name: "single bare reference",
+			manifest: `kind: hostedAgent
+environment_variables:
+  - name: ENDPOINT
+    value: ${AZURE_AI_PROJECT_ENDPOINT}
+`,
+			want: []string{"AZURE_AI_PROJECT_ENDPOINT"},
+		},
+		{
+			name: "reference with default tail captured as bare name",
+			manifest: `kind: hostedAgent
+environment_variables:
+  - name: MODEL
+    value: ${AZURE_AI_MODEL_DEPLOYMENT_NAME:-gpt-4o-mini}
+`,
+			want: []string{"AZURE_AI_MODEL_DEPLOYMENT_NAME"},
+		},
+		{
+			name: "multiple references in one value",
+			manifest: `kind: hostedAgent
+environment_variables:
+  - name: CONN
+    value: postgresql://${DB_HOST}:5432/${DB_NAME}
+`,
+			want: []string{"DB_HOST", "DB_NAME"},
+		},
+		{
+			name: "duplicate references deduplicated by first appearance",
+			manifest: `kind: hostedAgent
+environment_variables:
+  - name: A
+    value: ${X}-${X}
+  - name: B
+    value: ${X}
+`,
+			want: []string{"X"},
+		},
+		{
+			name: "no environment_variables block",
+			manifest: `kind: hostedAgent
+protocols:
+  - protocol: responses
+    version: "1.0.0"
+`,
+			want: nil,
+		},
+		{
+			name: "literal value with no ${} reference",
+			manifest: `kind: hostedAgent
+environment_variables:
+  - name: STATIC
+    value: hardcoded
+`,
+			want: nil,
+		},
+		{
+			name:     "malformed yaml returns nil",
+			manifest: "this: is: not: valid: yaml: at: all: [",
+			want:     nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			projectRoot := t.TempDir()
+			svcDir := filepath.Join(projectRoot, "echo")
+			require.NoError(t, os.MkdirAll(svcDir, 0o750))
+			require.NoError(t, os.WriteFile(
+				filepath.Join(svcDir, "agent.yaml"),
+				[]byte(tt.manifest),
+				0o600,
+			))
+			got := extractAgentYamlEnvRefs(projectRoot, "echo")
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestExtractAgentYamlEnvRefs_MissingFileOrArgs(t *testing.T) {
+	t.Parallel()
+
+	assert.Nil(t, extractAgentYamlEnvRefs("", "echo"))
+	assert.Nil(t, extractAgentYamlEnvRefs(t.TempDir(), ""))
+	assert.Nil(t, extractAgentYamlEnvRefs(t.TempDir(), "missing"))
+}
+
+func TestAssembleState_PopulatesMissingVars(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "echo"), 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectRoot, "echo", "agent.yaml"),
+		[]byte(`kind: hostedAgent
+environment_variables:
+  - name: ENDPOINT
+    value: ${AZURE_AI_PROJECT_ENDPOINT}
+  - name: MODEL
+    value: ${AZURE_AI_MODEL_DEPLOYMENT_NAME}
+  - name: KEY
+    value: ${MY_API_KEY}
+  - name: STATIC
+    value: hardcoded
+`),
+		0o600,
+	))
+
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{
+			Path: projectRoot,
+			Services: map[string]*azdext.ServiceConfig{
+				"echo": {Name: "echo", Host: agentHost, RelativePath: "echo"},
+			},
+		},
+		values: map[string]string{
+			// AZURE_AI_MODEL_DEPLOYMENT_NAME is set; the other two are not.
+			"dev/AZURE_AI_MODEL_DEPLOYMENT_NAME": "gpt-4o-mini",
+		},
+	}
+
+	state, errs := assembleState(context.Background(), src)
+	require.Empty(t, errs)
+	assert.Equal(t, []string{"AZURE_AI_PROJECT_ENDPOINT"}, state.MissingInfraVars)
+	assert.Equal(t, []string{"MY_API_KEY"}, state.MissingManualVars)
+}
+
+func TestAssembleState_MissingVarsDedupedAcrossServices(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	manifest := []byte(`kind: hostedAgent
+environment_variables:
+  - name: ENDPOINT
+    value: ${AZURE_AI_PROJECT_ENDPOINT}
+  - name: KEY
+    value: ${MY_API_KEY}
+`)
+	for _, rel := range []string{"echo", "ping"} {
+		require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, rel), 0o750))
+		require.NoError(t, os.WriteFile(
+			filepath.Join(projectRoot, rel, "agent.yaml"),
+			manifest,
+			0o600,
+		))
+	}
+
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{
+			Path: projectRoot,
+			Services: map[string]*azdext.ServiceConfig{
+				"echo": {Name: "echo", Host: agentHost, RelativePath: "echo"},
+				"ping": {Name: "ping", Host: agentHost, RelativePath: "ping"},
+			},
+		},
+	}
+
+	state, errs := assembleState(context.Background(), src)
+	require.Empty(t, errs)
+	assert.Equal(t, []string{"AZURE_AI_PROJECT_ENDPOINT"}, state.MissingInfraVars)
+	assert.Equal(t, []string{"MY_API_KEY"}, state.MissingManualVars)
+}
+
+func TestAssembleState_AllVarsSetLeavesMissingEmpty(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "echo"), 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectRoot, "echo", "agent.yaml"),
+		[]byte(`kind: hostedAgent
+environment_variables:
+  - name: ENDPOINT
+    value: ${AZURE_AI_PROJECT_ENDPOINT}
+  - name: KEY
+    value: ${MY_API_KEY}
+`),
+		0o600,
+	))
+
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{
+			Path: projectRoot,
+			Services: map[string]*azdext.ServiceConfig{
+				"echo": {Name: "echo", Host: agentHost, RelativePath: "echo"},
+			},
+		},
+		values: map[string]string{
+			"dev/AZURE_AI_PROJECT_ENDPOINT": "https://x.services.ai.azure.com",
+			"dev/MY_API_KEY":                "sk-abc",
+		},
+	}
+
+	state, errs := assembleState(context.Background(), src)
+	require.Empty(t, errs)
+	assert.Empty(t, state.MissingInfraVars)
+	assert.Empty(t, state.MissingManualVars)
+}
+
+func TestAssembleState_MissingVarTransportErrorSurfaced(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "echo"), 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectRoot, "echo", "agent.yaml"),
+		[]byte(`kind: hostedAgent
+environment_variables:
+  - name: KEY
+    value: ${MY_API_KEY}
+`),
+		0o600,
+	))
+
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{
+			Path: projectRoot,
+			Services: map[string]*azdext.ServiceConfig{
+				"echo": {Name: "echo", Host: agentHost, RelativePath: "echo"},
+			},
+		},
+		valueErr: errors.New("gRPC unavailable"),
+	}
+
+	state, errs := assembleState(context.Background(), src)
+	// One error for AZURE_AI_PROJECT_ENDPOINT + AGENT_ECHO_VERSION + MY_API_KEY.
+	assert.Len(t, errs, 3)
+	assert.Empty(t, state.MissingInfraVars)
+	assert.Empty(t, state.MissingManualVars)
+}

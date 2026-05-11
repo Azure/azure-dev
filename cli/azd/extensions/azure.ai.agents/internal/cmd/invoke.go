@@ -191,9 +191,9 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 //
 // State is intentionally nil: ResolveAfterInvoke's success branches don't
 // inspect State (`resolver.go:resolveInvokeSuccess`), and the gRPC cost of
-// AssembleState is wasted when the result isn't used. The companion
-// follow-up commit that wires invoke-failure paths will assemble state at
-// the failure call site, where it IS consumed.
+// AssembleState is wasted when the result isn't used. The failure helper
+// below makes the same choice — see its doc for the resolver-side
+// rationale that justifies skipping AssembleState even on failure today.
 //
 // Output is gated on a TTY stdout per the nextstep call-site contract
 // (`nextstep/types.go`, `nextstep/format.go`, `helpers.go:isTerminal`):
@@ -208,6 +208,44 @@ func (a *InvokeAction) emitInvokeSuccessNextStep(mode nextstep.InvokeMode, agent
 	_ = nextstep.PrintNext(
 		os.Stdout,
 		nextstep.ResolveAfterInvoke(nil, mode, agentName, nil),
+	)
+}
+
+// emitInvokeFailureNextStep prints the resolver-driven Next: block when
+// an invoke fails. sessionCode is the value of the `x-adc-response-details`
+// response header (or empty when the failure has no platform-classified
+// session error code — e.g. local-server failures, connect errors, or
+// any 4xx/5xx that didn't carry the header). Local-invoke failures pass
+// the empty string and get a generic "see local server output" line per
+// the resolver's InvokeLocal branch.
+//
+// State is intentionally nil with the same rationale as the success
+// helper: today `resolveInvokeFailure(_ *State, mode, _ string, failure)`
+// ignores State entirely (the `_` in the signature is load-bearing), and
+// AssembleState costs an extra gRPC roundtrip the user pays for at the
+// exact moment they're staring at an error message. If a future failure
+// branch grows state-aware behavior, this is the single line to update.
+//
+// Output is TTY-gated for the same reason the success helper is — piped
+// or redirected stdout must receive only the agent's reply (or the
+// terminal error message via the host), never the human-only Next: block.
+//
+// Output ordering: the Next: block prints BEFORE the error message
+// (which the host renders after this function returns). This is the
+// "hint: ... error: ..." pattern git uses — acceptable for an
+// interactive command, and avoids the sentinel-error / silent-stderr
+// gymnastics that would be needed to flip the order. Revisit if user
+// feedback says the block should print after the error.
+func (a *InvokeAction) emitInvokeFailureNextStep(mode nextstep.InvokeMode, agentName, sessionCode string) {
+	if !isTerminal(os.Stdout.Fd()) {
+		return
+	}
+	failure := &nextstep.InvokeFailure{
+		SessionCode: nextstep.SessionErrorCode(sessionCode),
+	}
+	_ = nextstep.PrintNext(
+		os.Stdout,
+		nextstep.ResolveAfterInvoke(nil, mode, agentName, failure),
 	)
 }
 
@@ -350,6 +388,7 @@ func (a *InvokeAction) responsesLocal(ctx context.Context) error {
 		if requestID != "" {
 			fmt.Printf("Trace ID: %s\n", requestID)
 		}
+		a.emitInvokeFailureNextStep(nextstep.InvokeLocal, "", "")
 		return fmt.Errorf(
 			"POST %s failed with HTTP %d: %s\n%s",
 			reqURL, resp.StatusCode, resp.Status, string(respBody),
@@ -506,6 +545,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 
 	if resp.StatusCode >= 400 {
 		respBody, _ := io.ReadAll(resp.Body)
+		a.emitInvokeFailureNextStep(nextstep.InvokeRemote, name, resp.Header.Get("x-adc-response-details"))
 		return fmt.Errorf("POST %s failed with HTTP %d: %s\n%s", url, resp.StatusCode, resp.Status, string(respBody))
 	}
 
@@ -597,6 +637,7 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 	}
 
 	if err := handleInvocationResponse(ctx, resp, "", "", agentKey, a.httpTimeout()); err != nil {
+		a.emitInvokeFailureNextStep(nextstep.InvokeLocal, agentName, "")
 		return err
 	}
 	a.emitInvokeSuccessNextStep(nextstep.InvokeLocal, agentName)
@@ -708,7 +749,9 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 
 	captureResponseSession(ctx, azdClient, agentKey, sid, resp, "Session:  ")
 
+	sessionCode := resp.Header.Get("x-adc-response-details")
 	if err := handleInvocationResponse(ctx, resp, endpoint, token.Token, name, a.httpTimeout()); err != nil {
+		a.emitInvokeFailureNextStep(nextstep.InvokeRemote, name, sessionCode)
 		return err
 	}
 	a.emitInvokeSuccessNextStep(nextstep.InvokeRemote, name)

@@ -388,8 +388,9 @@ func invokeCommandFor(agentName, protocol string) string {
 // shellEscapeSingleQuoted wraps s in single quotes for POSIX shells.
 // Each embedded apostrophe is replaced with the four-character POSIX
 // escape sequence formed by: close the single-quoted string, emit a
-// backslash-escaped literal apostrophe, then reopen. See line 397 for
-// the exact byte pattern this produces.
+// backslash-escaped literal apostrophe, then reopen. The implementation
+// below uses a Go raw string for that sequence so its byte pattern is
+// stable across edits.
 //
 // The extracted OpenAPI payload originates from json.Marshal, which
 // does not escape apostrophes, so a sample like {"q":"don't"} would

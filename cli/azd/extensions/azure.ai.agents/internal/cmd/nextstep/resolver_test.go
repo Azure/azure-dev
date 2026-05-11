@@ -1,0 +1,356 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package nextstep
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestResolveAfterInit(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name              string
+		state             *State
+		wantPrimaryHas    string
+		wantManualVarKeys []string
+		wantTrailing      string
+	}{
+		{
+			name:           "happy path → run locally",
+			state:          &State{},
+			wantPrimaryHas: "azd ai agent run",
+			wantTrailing:   "azd deploy",
+		},
+		{
+			name:           "infra vars missing → provision",
+			state:          &State{MissingInfraVars: []string{"AZURE_AI_FOO"}},
+			wantPrimaryHas: "azd provision",
+			wantTrailing:   "azd deploy",
+		},
+		{
+			name: "manual vars missing → up to 3 env set lines, sorted",
+			state: &State{
+				MissingManualVars: []string{"DELTA", "ALPHA", "ECHO", "BRAVO"},
+			},
+			wantManualVarKeys: []string{"ALPHA", "BRAVO", "DELTA"},
+			wantTrailing:      "azd deploy",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			out := ResolveAfterInit(tt.state)
+			require.NotEmpty(t, out)
+
+			// The trailing line is always present, regardless of branch.
+			assert.Equal(t, tt.wantTrailing, out[len(out)-1].Command)
+
+			if len(tt.wantManualVarKeys) > 0 {
+				assert.Len(t, out, len(tt.wantManualVarKeys)+1)
+				for i, key := range tt.wantManualVarKeys {
+					assert.True(t,
+						strings.HasPrefix(out[i].Command, "azd env set "+key+" "),
+						"got %q", out[i].Command)
+				}
+			} else {
+				assert.Contains(t, out[0].Command, tt.wantPrimaryHas)
+			}
+		})
+	}
+}
+
+func TestResolveAfterInit_ManualVarsCapAtThree(t *testing.T) {
+	t.Parallel()
+
+	state := &State{MissingManualVars: []string{"V1", "V2", "V3", "V4", "V5"}}
+	out := ResolveAfterInit(state)
+	// 3 manual + 1 trailing.
+	require.Len(t, out, 4)
+	assert.Equal(t, "azd deploy", out[3].Command)
+}
+
+func TestResolveAfterInit_NilState(t *testing.T) {
+	t.Parallel()
+	assert.Nil(t, ResolveAfterInit(nil))
+}
+
+func TestResolveAfterRun(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		state       *State
+		serviceName string
+		want        []string // expected substrings, one per emitted command
+	}{
+		{
+			name: "OpenAPI payload extracted → invoke with payload, no tip",
+			state: &State{
+				HasOpenAPI:     true,
+				OpenAPIPayload: `{"message":"hello"}`,
+				Services:       []ServiceState{{Name: "echo", Protocol: ProtocolInvocations}},
+			},
+			serviceName: "echo",
+			want: []string{
+				`azd ai agent invoke --local '{"message":"hello"}'`,
+			},
+		},
+		{
+			name: "invocations protocol, no spec → default JSON payload + tip",
+			state: &State{
+				Services: []ServiceState{{Name: "echo", Protocol: ProtocolInvocations}},
+			},
+			serviceName: "echo",
+			want: []string{
+				`azd ai agent invoke --local '{"message": "Hello!"}'`,
+				`curl http://localhost:<port>/invocations/docs/openapi.json`,
+			},
+		},
+		{
+			name: "responses protocol, no spec → Hello! string + tip",
+			state: &State{
+				Services: []ServiceState{{Name: "echo", Protocol: ProtocolResponses}},
+			},
+			serviceName: "echo",
+			want: []string{
+				`azd ai agent invoke --local "Hello!"`,
+				`curl http://localhost:<port>/invocations/docs/openapi.json`,
+			},
+		},
+		{
+			name: "unknown protocol falls back to responses default",
+			state: &State{
+				Services: []ServiceState{{Name: "echo", Protocol: ""}},
+			},
+			serviceName: "echo",
+			want: []string{
+				`azd ai agent invoke --local "Hello!"`,
+				`curl http://localhost:<port>/invocations/docs/openapi.json`,
+			},
+		},
+		{
+			name: "service name omitted, single-service project picks that one",
+			state: &State{
+				Services: []ServiceState{{Name: "only", Protocol: ProtocolInvocations}},
+			},
+			serviceName: "",
+			want: []string{
+				`azd ai agent invoke --local '{"message": "Hello!"}'`,
+				`curl http://localhost:<port>/invocations/docs/openapi.json`,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			out := ResolveAfterRun(tt.state, tt.serviceName)
+			require.Len(t, out, len(tt.want))
+			for i, snippet := range tt.want {
+				assert.Contains(t, out[i].Command, snippet)
+			}
+		})
+	}
+}
+
+func TestResolveAfterRun_NilState(t *testing.T) {
+	t.Parallel()
+	assert.Nil(t, ResolveAfterRun(nil, ""))
+}
+
+func TestResolveAfterInvoke_Success(t *testing.T) {
+	t.Parallel()
+
+	t.Run("local success → ship it", func(t *testing.T) {
+		t.Parallel()
+		out := ResolveAfterInvoke(&State{}, InvokeLocal, "", nil)
+		require.Len(t, out, 1)
+		assert.Equal(t, "azd deploy", out[0].Command)
+	})
+
+	t.Run("remote success with agent name → show <agent> + monitor", func(t *testing.T) {
+		t.Parallel()
+		out := ResolveAfterInvoke(&State{}, InvokeRemote, "echo", nil)
+		require.Len(t, out, 2)
+		assert.Equal(t, "azd ai agent show echo", out[0].Command)
+		assert.Equal(t, "azd ai agent monitor --follow", out[1].Command)
+	})
+
+	t.Run("remote success without agent name → show only", func(t *testing.T) {
+		t.Parallel()
+		out := ResolveAfterInvoke(&State{}, InvokeRemote, "", nil)
+		require.Len(t, out, 2)
+		assert.Equal(t, "azd ai agent show", out[0].Command)
+	})
+}
+
+func TestResolveAfterInvoke_Failure(t *testing.T) {
+	t.Parallel()
+
+	t.Run("local failure → see local server output", func(t *testing.T) {
+		t.Parallel()
+		out := ResolveAfterInvoke(&State{}, InvokeLocal, "", &InvokeFailure{})
+		require.Len(t, out, 1)
+		assert.Contains(t, out[0].Command, "local server output")
+	})
+
+	t.Run("remote failure, no session code → generic monitor", func(t *testing.T) {
+		t.Parallel()
+		out := ResolveAfterInvoke(&State{}, InvokeRemote, "echo", &InvokeFailure{})
+		require.Len(t, out, 1)
+		assert.Equal(t, "azd ai agent monitor --tail 100", out[0].Command)
+	})
+
+	t.Run("remote failure with classified code → branched remediation", func(t *testing.T) {
+		t.Parallel()
+		out := ResolveAfterInvoke(&State{}, InvokeRemote, "echo", &InvokeFailure{
+			SessionCode: SessionQuotaExceeded,
+		})
+		require.Len(t, out, 1)
+		assert.Equal(t, "azd ai agent session list", out[0].Command)
+	})
+
+	t.Run("remote failure with secondary action → both lines, ordered priority", func(t *testing.T) {
+		t.Parallel()
+		out := ResolveAfterInvoke(&State{}, InvokeRemote, "echo", &InvokeFailure{
+			SessionCode: SessionReadinessTimeout,
+		})
+		require.Len(t, out, 2)
+		assert.Equal(t, "azd ai agent invoke", out[0].Command)
+		assert.Less(t, out[0].Priority, out[1].Priority)
+	})
+
+	t.Run("unrecognized session code → fallback with code in description", func(t *testing.T) {
+		t.Parallel()
+		out := ResolveAfterInvoke(&State{}, InvokeRemote, "echo", &InvokeFailure{
+			SessionCode: SessionErrorCode("MysteryCode"),
+		})
+		require.Len(t, out, 1)
+		assert.Contains(t, out[0].Description, "MysteryCode")
+	})
+}
+
+func TestResolveAfterShow(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		status     AgentVersionStatus
+		agentName  string
+		wantCmdHas string
+	}{
+		{"Active → invoke prompt", AgentVersionActive, "echo", "azd ai agent invoke echo"},
+		{"Creating → monitor system", AgentVersionCreating, "echo", "azd ai agent monitor --type system --follow"},
+		{"Failed → monitor tail", AgentVersionFailed, "echo", "azd ai agent monitor --tail 100"},
+		{"Deleting → redeploy", AgentVersionDeleting, "echo", "azd deploy"},
+		{"Deleted → redeploy", AgentVersionDeleted, "echo", "azd deploy"},
+		{"empty status → re-check show", "", "echo", "azd ai agent show echo"},
+		{"unknown status → re-check show", "Transitioning", "echo", "azd ai agent show echo"},
+		{"unknown status without agent name → bare show", "Transitioning", "", "azd ai agent show"},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			out := ResolveAfterShow(&State{AgentStatus: string(tt.status)}, tt.agentName)
+			require.NotEmpty(t, out)
+			assert.Contains(t, out[0].Command, tt.wantCmdHas)
+		})
+	}
+}
+
+func TestResolveAfterShow_NilState(t *testing.T) {
+	t.Parallel()
+	assert.Nil(t, ResolveAfterShow(nil, "echo"))
+}
+
+func TestResolveAfterDeploy(t *testing.T) {
+	t.Parallel()
+
+	t.Run("single agent, cached payload available → 2 lines, no README hint", func(t *testing.T) {
+		t.Parallel()
+		state := &State{Services: []ServiceState{{Name: "echo", RelativePath: "./src/echo"}}}
+		cached := func(_ string) string { return `{"q":"x"}` }
+		out := ResolveAfterDeploy(state, cached, nil)
+		require.Len(t, out, 2)
+		assert.Equal(t, "azd ai agent show", out[0].Command)
+		assert.Equal(t, `azd ai agent invoke '{"q":"x"}'`, out[1].Command)
+	})
+
+	t.Run("single agent, no cached payload, README on disk → 3 lines with README pointer", func(t *testing.T) {
+		t.Parallel()
+		state := &State{Services: []ServiceState{{Name: "echo", RelativePath: "./src/echo", Protocol: ProtocolResponses}}}
+		readme := func(p string) bool { return p == "./src/echo" }
+		out := ResolveAfterDeploy(state, nil, readme)
+		require.Len(t, out, 3)
+		assert.Equal(t, "azd ai agent show", out[0].Command)
+		assert.Equal(t, `azd ai agent invoke "Hello!"`, out[1].Command)
+		assert.Contains(t, out[2].Command, "src/echo/README.md")
+	})
+
+	t.Run("multi-agent → one show/invoke pair per agent, named", func(t *testing.T) {
+		t.Parallel()
+		state := &State{Services: []ServiceState{
+			{Name: "alpha", Protocol: ProtocolInvocations},
+			{Name: "beta", Protocol: ProtocolResponses},
+		}}
+		out := ResolveAfterDeploy(state, nil, nil)
+		require.Len(t, out, 4)
+		assert.Equal(t, "azd ai agent show alpha", out[0].Command)
+		assert.Equal(t, `azd ai agent invoke alpha '{"message": "Hello!"}'`, out[1].Command)
+		assert.Equal(t, "azd ai agent show beta", out[2].Command)
+		assert.Equal(t, `azd ai agent invoke beta "Hello!"`, out[3].Command)
+	})
+
+	t.Run("README hint skipped when cached payload is present", func(t *testing.T) {
+		t.Parallel()
+		state := &State{Services: []ServiceState{{Name: "echo", RelativePath: "./src/echo"}}}
+		cached := func(_ string) string { return `{"q":"x"}` }
+		readme := func(_ string) bool { return true }
+		out := ResolveAfterDeploy(state, cached, readme)
+		assert.Len(t, out, 2)
+	})
+
+	t.Run("no services → nil", func(t *testing.T) {
+		t.Parallel()
+		assert.Nil(t, ResolveAfterDeploy(&State{}, nil, nil))
+	})
+
+	t.Run("nil state → nil", func(t *testing.T) {
+		t.Parallel()
+		assert.Nil(t, ResolveAfterDeploy(nil, nil, nil))
+	})
+}
+
+func TestFindService(t *testing.T) {
+	t.Parallel()
+
+	state := &State{Services: []ServiceState{
+		{Name: "alpha"},
+		{Name: "beta"},
+	}}
+
+	assert.Equal(t, "alpha", findService(state, "alpha").Name)
+	assert.Equal(t, "beta", findService(state, "beta").Name)
+	assert.Nil(t, findService(state, "missing"))
+
+	// Empty name + single service → that one.
+	single := &State{Services: []ServiceState{{Name: "only"}}}
+	assert.Equal(t, "only", findService(single, "").Name)
+
+	// Empty name + multiple → nil.
+	assert.Nil(t, findService(state, ""))
+
+	// Nil state.
+	assert.Nil(t, findService(nil, "alpha"))
+}

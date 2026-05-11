@@ -379,8 +379,11 @@ func (a *doctorAction) runChecks(ctx context.Context) []doctorResult {
 	}))
 
 	// 5. AZURE_AI_PROJECT_ENDPOINT set.
+	var endpointValue string
 	out = append(out, timed(func() doctorResult {
-		return a.checkProjectEndpoint(ctx, envName)
+		ep, res := a.checkProjectEndpoint(ctx, envName)
+		endpointValue = ep
+		return res
 	}))
 
 	// 6. Local agent.yaml validity for each detected service.
@@ -391,8 +394,15 @@ func (a *doctorAction) runChecks(ctx context.Context) []doctorResult {
 		out = append(out, timed(func() doctorResult { return m }))
 	}
 
-	// Remote checks 7–12 will land here once the runner switches them on
-	// (gated by !a.flags.localOnly). Until then, --local-only is a no-op.
+	// Remote checks 7–12. Gated by --local-only. When the flag is set, the
+	// runner emits explicit Skip rows so users see why remote checks didn't
+	// run — "never quietly drop a check" per the design.
+	out = append(out, a.runRemoteChecks(ctx, remotePreconditions{
+		endpointSet:   endpointValue != "",
+		endpoint:      endpointValue,
+		envName:       envName,
+		agentServices: agentServices,
+	})...)
 
 	return out
 }
@@ -489,9 +499,9 @@ func (a *doctorAction) checkAgentService(ctx context.Context) ([]*azdext.Service
 	}
 }
 
-func (a *doctorAction) checkProjectEndpoint(ctx context.Context, envName string) doctorResult {
+func (a *doctorAction) checkProjectEndpoint(ctx context.Context, envName string) (string, doctorResult) {
 	if envName == "" {
-		return doctorResult{
+		return "", doctorResult{
 			ID:     "local.project-endpoint",
 			Title:  "AZURE_AI_PROJECT_ENDPOINT is set",
 			Status: doctorSkip,
@@ -503,7 +513,7 @@ func (a *doctorAction) checkProjectEndpoint(ctx context.Context, envName string)
 		Key:     "AZURE_AI_PROJECT_ENDPOINT",
 	})
 	if err != nil || resp == nil || resp.Value == "" {
-		return doctorResult{
+		return "", doctorResult{
 			ID:     "local.project-endpoint",
 			Title:  "AZURE_AI_PROJECT_ENDPOINT is set",
 			Status: doctorFail,
@@ -512,7 +522,7 @@ func (a *doctorAction) checkProjectEndpoint(ctx context.Context, envName string)
 			Reason: "deploy Azure resources to populate AZURE_AI_PROJECT_ENDPOINT",
 		}
 	}
-	return doctorResult{
+	return resp.Value, doctorResult{
 		ID:     "local.project-endpoint",
 		Title:  "AZURE_AI_PROJECT_ENDPOINT is set",
 		Status: doctorOK,

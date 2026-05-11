@@ -592,7 +592,7 @@ func (p *AgentServiceTargetProvider) loadContainerAgentDefinition() (agent_yaml.
 		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
 			fmt.Sprintf("invalid container image reference in agent.yaml: %q", agentDef.Image),
-			"use a valid image reference, e.g. 'myregistry.azurecr.io/myimage:v1'",
+			"use a valid image reference, e.g. 'myregistry.azurecr.io/image:v1'",
 		)
 	}
 

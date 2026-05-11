@@ -103,3 +103,13 @@ overrides:
           - Buildpacks
           - containerapp
           - staticwebapp
+    - filename: .github/skills/hotfix-release/**/*.md
+      words:
+          - azdext
+    - filename: .github/skills/issue-cleanup/**/*.md
+      words:
+          - engsys
+          - fabricbot
+    - filename: .github/skills/sprint-check/**/*.md
+      words:
+          - engsys

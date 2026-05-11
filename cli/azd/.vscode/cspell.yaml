@@ -403,6 +403,14 @@ overrides:
   - filename: "**/extensions/azure.ai.agents/internal/cmd/doctor/types.go"
     words:
       - nextsteps
+  - filename: "**/extensions/azure.ai.agents/internal/cmd/doctor.go"
+    words:
+      - nextsteps
+      - undeployed
+  - filename: "**/extensions/azure.ai.agents/internal/cmd/doctor_format.go"
+    words:
+      - nextsteps
+      - UNKN
   - filename: docs/code-coverage-guide.md
     words:
       - covdata

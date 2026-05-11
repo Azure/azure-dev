@@ -80,6 +80,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newMonitorCommand())
 	rootCmd.AddCommand(newFilesCommand())
 	rootCmd.AddCommand(newSessionCommand())
+	rootCmd.AddCommand(newDoctorCommand())
 
 	return rootCmd
 }

@@ -22,6 +22,8 @@ import (
 	"syscall"
 	"time"
 
+	"azureaiagent/internal/cmd/nextstep"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc/codes"
@@ -194,6 +196,14 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 	}
 
 	url := fmt.Sprintf("http://localhost:%d", flags.port)
+
+	// Resolver picks a protocol-appropriate invoke payload (and reuses
+	// the cached OpenAPI sample from a prior `invoke`, when present).
+	// State assembly errors are intentionally ignored — the resolver
+	// degrades gracefully on partial state per the design spec.
+	state, _ := nextstep.AssembleState(ctx, azdClient,
+		nextstep.WithOpenAPIProbe(runCtx.ServiceName, "local"))
+	_ = nextstep.PrintNext(os.Stdout, nextstep.ResolveAfterRun(state, runCtx.ServiceName))
 	fmt.Printf("\nStarting agent on %s (Ctrl+C to stop)\n\n", url)
 
 	// Create command with stdout/stderr piped to terminal

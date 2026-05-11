@@ -14,6 +14,12 @@ import (
 )
 
 const (
+	// agentHost matches the value set in azure.yaml for an azure.ai.agent
+	// service. Duplicated here (rather than imported from the parent cmd
+	// package) so nextstep stays free of upward dependencies; Phase 2 will
+	// wire cmd → nextstep, so the reverse import would close a cycle.
+	agentHost = "azure.ai.agent"
+
 	// agentVersionVarFormat is the env-var name that signals a deployed
 	// agent service. Filled with the upper-cased service key.
 	agentVersionVarFormat = "AGENT_%s_VERSION"
@@ -174,7 +180,7 @@ func collectServices(
 
 	services := make([]ServiceState, 0, len(project.Services))
 	for _, svc := range project.Services {
-		if svc == nil {
+		if svc == nil || svc.Host != agentHost {
 			continue
 		}
 		services = append(services, ServiceState{

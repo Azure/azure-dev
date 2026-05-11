@@ -77,7 +77,7 @@ func TestAssembleState(t *testing.T) {
 				envName: "dev",
 				project: &azdext.ProjectConfig{
 					Services: map[string]*azdext.ServiceConfig{
-						"echo": {Name: "echo", Host: "agent", RelativePath: "./src/echo"},
+						"echo": {Name: "echo", Host: agentHost, RelativePath: "./src/echo"},
 					},
 				},
 				values: map[string]string{},
@@ -86,7 +86,7 @@ func TestAssembleState(t *testing.T) {
 				assert.False(t, state.HasProjectEndpoint)
 				require.Len(t, state.Services, 1)
 				assert.Equal(t, "echo", state.Services[0].Name)
-				assert.Equal(t, "agent", state.Services[0].Host)
+				assert.Equal(t, agentHost, state.Services[0].Host)
 				assert.Equal(t, "./src/echo", state.Services[0].RelativePath)
 				assert.False(t, state.Services[0].IsDeployed)
 			},
@@ -97,9 +97,9 @@ func TestAssembleState(t *testing.T) {
 				envName: "prod",
 				project: &azdext.ProjectConfig{
 					Services: map[string]*azdext.ServiceConfig{
-						"chat-bot":   {Name: "chat-bot", Host: "agent"},
-						"echo":       {Name: "echo", Host: "agent"},
-						"my service": {Name: "my service", Host: "agent"},
+						"chat-bot":   {Name: "chat-bot", Host: agentHost},
+						"echo":       {Name: "echo", Host: agentHost},
+						"my service": {Name: "my service", Host: agentHost},
 					},
 				},
 				values: map[string]string{
@@ -119,10 +119,34 @@ func TestAssembleState(t *testing.T) {
 			},
 		},
 		{
+			name: "non-agent services are filtered out",
+			src: &fakeSource{
+				envName: "dev",
+				project: &azdext.ProjectConfig{
+					Services: map[string]*azdext.ServiceConfig{
+						"echo":   {Name: "echo", Host: agentHost},
+						"web":    {Name: "web", Host: "appservice"},
+						"worker": {Name: "worker", Host: "containerapp"},
+					},
+				},
+				values: map[string]string{
+					"dev/AGENT_ECHO_VERSION": "1",
+				},
+			},
+			assert: func(t *testing.T, state *State, _ []error) {
+				require.Len(t, state.Services, 1)
+				assert.Equal(t, "echo", state.Services[0].Name)
+				assert.Equal(t, agentHost, state.Services[0].Host)
+				assert.True(t, state.Services[0].IsDeployed)
+			},
+		},
+		{
 			name: "transport error on env-value read does not abort assembly",
 			src: &fakeSource{
-				envName:  "dev",
-				project:  &azdext.ProjectConfig{Services: map[string]*azdext.ServiceConfig{"echo": {Name: "echo"}}},
+				envName: "dev",
+				project: &azdext.ProjectConfig{
+					Services: map[string]*azdext.ServiceConfig{"echo": {Name: "echo", Host: agentHost}},
+				},
 				valueErr: errors.New("gRPC unavailable"),
 			},
 			assert: func(t *testing.T, state *State, _ []error) {
@@ -154,7 +178,7 @@ func TestAssembleState_NilServiceEntriesAreIgnored(t *testing.T) {
 		envName: "dev",
 		project: &azdext.ProjectConfig{
 			Services: map[string]*azdext.ServiceConfig{
-				"good": {Name: "good"},
+				"good": {Name: "good", Host: agentHost},
 				"nil":  nil,
 			},
 		},
@@ -164,6 +188,14 @@ func TestAssembleState_NilServiceEntriesAreIgnored(t *testing.T) {
 	assert.Empty(t, errs)
 	require.Len(t, state.Services, 1)
 	assert.Equal(t, "good", state.Services[0].Name)
+}
+
+func TestAgentHostConstant(t *testing.T) {
+	t.Parallel()
+	// agentHost must remain in sync with cmd.AiAgentHost ("azure.ai.agent").
+	// Pinning the literal here guards against accidental drift while the
+	// duplication exists; Phase 2's nextstep wiring should retire it.
+	assert.Equal(t, "azure.ai.agent", agentHost)
 }
 
 func TestServiceKey(t *testing.T) {

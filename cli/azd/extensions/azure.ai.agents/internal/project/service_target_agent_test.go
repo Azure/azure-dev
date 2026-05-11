@@ -8,8 +8,10 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 
@@ -495,4 +497,211 @@ func TestAgentPlaygroundURL_AccountLevelID(t *testing.T) {
 	_, err := AgentPlaygroundURL(resourceID, "agent", "1")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "missing parent account")
+}
+
+func TestAugmentDeployNote_NoReadme_AppendsBelowAkaMsLink(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+	// No README written; readmeExists closure should return false.
+
+	state := &nextstep.State{
+		Services: []nextstep.ServiceState{
+			{
+				Name:         "echo",
+				RelativePath: "src/echo",
+				Protocol:     "invocations",
+				IsDeployed:   true,
+			},
+		},
+	}
+
+	artifact := &azdext.Artifact{
+		Kind: azdext.ArtifactKind_ARTIFACT_KIND_ENDPOINT,
+		Metadata: map[string]string{
+			"label": "Agent endpoint (invocations)",
+			"note":  "static aka.ms link",
+		},
+	}
+
+	augmentDeployNote(state, []*azdext.Artifact{artifact}, tmp, "" /* no configDir → cache lookup is a no-op */)
+
+	got := artifact.Metadata["note"]
+	require.Contains(t, got, "static aka.ms link", "aka.ms link should be preserved when no README is present")
+	require.Contains(t, got, "Next:", "Next: block should be appended")
+	require.Contains(t, got, "azd ai agent invoke ", "should suggest invoking the deployed agent")
+	require.Equal(t, 1, strings.Count(got, "Next:"), "Next: header should appear exactly once")
+}
+
+func TestAugmentDeployNote_WithReadme_ReplacesAkaMsLink(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+	servicePath := filepath.Join(tmp, "src", "echo")
+	require.NoError(t, os.MkdirAll(servicePath, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(servicePath, "README.md"), []byte("sample"), 0o600))
+
+	state := &nextstep.State{
+		Services: []nextstep.ServiceState{
+			{
+				Name:         "echo",
+				RelativePath: "src/echo",
+				Protocol:     "invocations",
+				IsDeployed:   true,
+			},
+		},
+	}
+
+	artifact := &azdext.Artifact{
+		Kind: azdext.ArtifactKind_ARTIFACT_KIND_ENDPOINT,
+		Metadata: map[string]string{
+			"label": "Agent endpoint (invocations)",
+			"note":  "static aka.ms link",
+		},
+	}
+
+	augmentDeployNote(state, []*azdext.Artifact{artifact}, tmp, "")
+
+	got := artifact.Metadata["note"]
+	require.NotContains(t, got, "static aka.ms link",
+		"aka.ms line must be replaced when a local README provides richer guidance")
+	require.Contains(t, got, "Next:", "Next: block should be present")
+	require.Contains(t, got, "see src/echo/README.md", "README pointer should be present")
+}
+
+func TestAugmentDeployNote_CachedSpecYieldsPayloadOverride(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+	configDir := filepath.Join(tmp, ".azure", "dev")
+	require.NoError(t, os.MkdirAll(configDir, 0o750))
+	// ReadCachedOpenAPISpec / sanitizeAgentName: the filename uses the agent
+	// name verbatim when it contains only safe characters.
+	spec := `{
+  "paths": {
+    "/invocations": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {"prompt": "from cache"}
+            }
+          }
+        }
+      }
+    }
+  }
+}`
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "openapi-echo-local.json"), []byte(spec), 0o600))
+
+	state := &nextstep.State{
+		Services: []nextstep.ServiceState{
+			{
+				Name:         "echo",
+				RelativePath: "src/echo",
+				Protocol:     "invocations",
+				IsDeployed:   true,
+			},
+		},
+	}
+
+	artifact := &azdext.Artifact{
+		Kind: azdext.ArtifactKind_ARTIFACT_KIND_ENDPOINT,
+		Metadata: map[string]string{
+			"label": "Agent endpoint (invocations)",
+			"note":  "static aka.ms link",
+		},
+	}
+
+	augmentDeployNote(state, []*azdext.Artifact{artifact}, tmp, configDir)
+
+	got := artifact.Metadata["note"]
+	require.Contains(t, got, `"prompt":"from cache"`,
+		"cached OpenAPI example should drive the suggested invoke payload")
+}
+
+func TestAugmentDeployNote_NoteAttachedToLastEndpoint(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+
+	state := &nextstep.State{
+		Services: []nextstep.ServiceState{
+			{
+				Name:         "echo",
+				RelativePath: "src/echo",
+				Protocol:     "invocations",
+				IsDeployed:   true,
+			},
+		},
+	}
+
+	playground := &azdext.Artifact{
+		Kind:     azdext.ArtifactKind_ARTIFACT_KIND_ENDPOINT,
+		Metadata: map[string]string{"label": "Agent playground (portal)"},
+	}
+	first := &azdext.Artifact{
+		Kind:     azdext.ArtifactKind_ARTIFACT_KIND_ENDPOINT,
+		Metadata: map[string]string{"label": "Agent endpoint (responses)"},
+	}
+	last := &azdext.Artifact{
+		Kind: azdext.ArtifactKind_ARTIFACT_KIND_ENDPOINT,
+		Metadata: map[string]string{
+			"label": "Agent endpoint (invocations)",
+			"note":  "static aka.ms link",
+		},
+	}
+
+	augmentDeployNote(state, []*azdext.Artifact{playground, first, last}, tmp, "")
+
+	require.NotContains(t, playground.Metadata["note"], "Next:", "playground artifact must remain untouched")
+	require.NotContains(t, first.Metadata["note"], "Next:", "non-note endpoint must remain untouched")
+	require.Contains(t, last.Metadata["note"], "Next:", "augmentation must target the last note-bearing artifact")
+}
+
+func TestAugmentDeployNote_NilStateIsNoOp(t *testing.T) {
+	t.Parallel()
+
+	artifact := &azdext.Artifact{
+		Kind: azdext.ArtifactKind_ARTIFACT_KIND_ENDPOINT,
+		Metadata: map[string]string{
+			"label": "Agent endpoint (invocations)",
+			"note":  "static aka.ms link",
+		},
+	}
+	augmentDeployNote(nil, []*azdext.Artifact{artifact}, "/tmp", "")
+	require.Equal(t, "static aka.ms link", artifact.Metadata["note"], "nil state must leave the static note intact")
+}
+
+func TestAugmentDeployNote_NoNoteBearingArtifactIsNoOp(t *testing.T) {
+	t.Parallel()
+
+	state := &nextstep.State{
+		Services: []nextstep.ServiceState{
+			{Name: "echo", RelativePath: "src/echo", Protocol: "invocations", IsDeployed: true},
+		},
+	}
+	playground := &azdext.Artifact{
+		Kind:     azdext.ArtifactKind_ARTIFACT_KIND_ENDPOINT,
+		Metadata: map[string]string{"label": "Agent playground (portal)"},
+	}
+	augmentDeployNote(state, []*azdext.Artifact{playground}, "/tmp", "")
+	require.Empty(t, playground.Metadata["note"], "no note-bearing artifact → nothing to augment")
+}
+
+// TestAugmentDeployNote_NoServicesIsNoOp covers a partial-state branch:
+// ResolveAfterDeploy short-circuits on len(state.Services) == 0, so the
+// existing static note must survive unchanged.
+func TestAugmentDeployNote_NoServicesIsNoOp(t *testing.T) {
+	t.Parallel()
+
+	artifact := &azdext.Artifact{
+		Kind: azdext.ArtifactKind_ARTIFACT_KIND_ENDPOINT,
+		Metadata: map[string]string{
+			"label": "Agent endpoint (invocations)",
+			"note":  "static aka.ms link",
+		},
+	}
+	augmentDeployNote(&nextstep.State{}, []*azdext.Artifact{artifact}, "/tmp", "")
+	require.Equal(t, "static aka.ms link", artifact.Metadata["note"])
 }

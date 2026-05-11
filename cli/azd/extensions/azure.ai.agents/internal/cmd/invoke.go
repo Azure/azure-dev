@@ -970,7 +970,7 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 
 	// Fetch and cache the agent's OpenAPI spec (always refresh for local).
 	if azdClient != nil {
-		if path, fresh := fetchOpenAPISpec(ctx, azdClient, localBaseURL, agentName, "local", "", true); fresh {
+		if path, fresh := fetchOpenAPISpec(ctx, azdClient, localBaseURL, agentName, "local", "", "", true); fresh {
 			fmt.Printf("OpenAPI spec saved to %s\n", path)
 		}
 	}
@@ -1067,7 +1067,7 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	// mode (--agent-endpoint) we deliberately avoid the on-disk side effect since
 	// the user is one-off targeting a remote endpoint.
 	if rc.azdClient != nil && a.endpoint == nil {
-		fetchOpenAPISpec(ctx, rc.azdClient, remoteBaseURL, rc.name, "remote", rc.bearerToken, false)
+		fetchOpenAPISpec(ctx, rc.azdClient, remoteBaseURL, rc.name, "remote", rc.bearerToken, rc.apiVersion, false)
 	}
 
 	invURL := buildInvocationsURL(rc.projectEndpoint, rc.name, rc.apiVersion, sid)

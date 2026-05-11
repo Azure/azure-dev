@@ -101,8 +101,12 @@ func (s *clientSource) EnvValue(ctx context.Context, envName, key string) (strin
 type Option func(*config)
 
 type config struct {
-	authProbe    bool
-	openAPIProbe bool
+	authProbe bool
+
+	// openAPIAgent and openAPISuffix together enable a cache-only OpenAPI
+	// payload lookup. The zero value (empty strings) disables the probe.
+	openAPIAgent  string
+	openAPISuffix string
 }
 
 // WithAuthProbe enables a token-introspection step that populates
@@ -113,11 +117,22 @@ func WithAuthProbe(enabled bool) Option {
 	return func(c *config) { c.authProbe = enabled }
 }
 
-// WithOpenAPIProbe enables fetching the agent's OpenAPI spec to populate
-// State.OpenAPIPayload with a sample invoke payload. Default false. Only
-// the `run` command and the doctor full-sweep should enable this.
-func WithOpenAPIProbe(enabled bool) Option {
-	return func(c *config) { c.openAPIProbe = enabled }
+// WithOpenAPIProbe enables a cache-only OpenAPI lookup that populates
+// State.OpenAPIPayload with a sample invoke payload extracted from the most
+// recent on-disk cache for (agentName, suffix). suffix is "local" or
+// "remote", matching fetchOpenAPISpec's filename convention.
+//
+// When agentName or suffix is empty the probe is disabled (the zero value).
+// The probe is strictly cache-only: it never contacts the network. The
+// cache is produced by `azd ai agent invoke` (and future `run` callers)
+// when they fetch the agent's OpenAPI spec. On cache miss, malformed
+// spec, or any read error the probe leaves State.HasOpenAPI false and
+// the resolver falls back to the protocol-generic <payload> literal.
+func WithOpenAPIProbe(agentName, suffix string) Option {
+	return func(c *config) {
+		c.openAPIAgent = agentName
+		c.openAPISuffix = suffix
+	}
 }
 
 // AssembleState builds a State snapshot for the current azd environment.
@@ -164,12 +179,37 @@ func assembleState(ctx context.Context, src Source, opts ...Option) (*State, []e
 
 	state.Services = collectServices(ctx, src, envName, project, &errs)
 
-	// authProbe and openAPIProbe land in later commits; the flags are
-	// already plumbed so call sites and tests can be written against the
-	// final API.
-	_ = cfg
+	if project != nil && envName != "" {
+		populateOpenAPIPayload(cfg, project.Path, envName, state)
+	}
+
+	// authProbe lands in a later commit; the flag is already plumbed so
+	// call sites and tests can be written against the final API.
+	_ = cfg.authProbe
 
 	return state, errs
+}
+
+// populateOpenAPIPayload reads the on-disk OpenAPI cache produced by
+// fetchOpenAPISpec and extracts a sample invoke payload. All failure
+// modes (probe disabled, cache miss, malformed spec, no extractable
+// payload) leave state.HasOpenAPI false so the resolver can fall back
+// to the protocol-generic literal.
+func populateOpenAPIPayload(cfg *config, projectPath, envName string, state *State) {
+	if cfg.openAPIAgent == "" || cfg.openAPISuffix == "" {
+		return
+	}
+	configDir := filepath.Join(projectPath, ".azure", envName)
+	specBytes, err := ReadCachedOpenAPISpec(configDir, cfg.openAPIAgent, cfg.openAPISuffix)
+	if err != nil || len(specBytes) == 0 {
+		return
+	}
+	payload := ExtractInvokeExample(specBytes)
+	if payload == "" {
+		return
+	}
+	state.HasOpenAPI = true
+	state.OpenAPIPayload = payload
 }
 
 func collectServices(

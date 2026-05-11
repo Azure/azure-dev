@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
@@ -1593,18 +1594,18 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		"\nAdded your agent as a service entry named '%s' under the file azure.yaml.\n",
 		a.serviceNameOverride,
 	)
-	if projectID, _ := a.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-		EnvName: a.environment.Name,
-		Key:     "AZURE_AI_PROJECT_ID",
-	}); projectID != nil && projectID.Value != "" {
-		fmt.Printf("To deploy your agent, use %s.\n",
-			color.HiBlueString("azd deploy %s", a.serviceNameOverride))
-	} else {
-		fmt.Printf(
-			"To provision and deploy the whole solution, use %s.\n",
-			color.HiBlueString("azd up"),
-		)
-	}
+
+	// Replace the legacy hardcoded `azd up` / `azd deploy` hint with the
+	// shared nextstep resolver. The resolver inspects the current azd
+	// environment plus each azure.ai.agent service's agent.yaml and emits
+	// context-aware guidance: `azd provision` when infra outputs are
+	// unset, `azd env set <KEY> <value>` lines when agent.yaml references
+	// user-supplied variables that are unset, or `azd ai agent run` when
+	// everything is configured. All paths append the deploy hint as the
+	// trailing line. State-assembly errors are intentionally ignored: the
+	// resolver degrades gracefully on partial state per the design spec.
+	state, _ := nextstep.AssembleState(ctx, a.azdClient)
+	_ = nextstep.PrintNext(os.Stdout, nextstep.ResolveAfterInit(state))
 	return nil
 }
 

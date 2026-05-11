@@ -129,7 +129,8 @@ func (s *rpcSession) route(method string, params json.RawMessage) (any, error) {
 }
 
 func (s *rpcSession) handleNotification(method string, params json.RawMessage) {
-	if method == "setViewReady" {
+	switch method {
+	case "setViewReady":
 		// SPA has mounted; tell it which agent port to target.
 		payload := map[string]any{
 			"port":          s.cfg.AgentPort,
@@ -138,7 +139,25 @@ func (s *rpcSession) handleNotification(method string, params json.RawMessage) {
 		if err := s.sendRequest("navigateToStep", "testTool", payload); err != nil {
 			s.logger.Printf("send navigateToStep: %v", err)
 		}
+	case "inspector/fixRequested":
+		s.handleFixRequested(params)
 	}
+}
+
+// handleFixRequested logs the user's intent to get AI assistance with an
+// error. In VS Code this would launch a Copilot chat; in standalone azd
+// mode there is no Copilot, so we surface the request in the CLI log as a
+// signal that the user wanted help.
+func (s *rpcSession) handleFixRequested(raw json.RawMessage) {
+	var p struct {
+		Source       string `json:"source"`
+		ErrorSummary string `json:"errorSummary"`
+	}
+	if err := json.Unmarshal(unwrapSingleArray(raw), &p); err != nil {
+		s.logger.Printf("fixRequested: bad params: %v", err)
+		return
+	}
+	s.logger.Printf("there is an error and user want AI to fix (source=%s): %s", p.Source, p.ErrorSummary)
 }
 
 func (s *rpcSession) sendResult(id json.RawMessage, result any) {

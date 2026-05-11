@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 
@@ -184,6 +185,22 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 	return a.responsesRemote(ctx)
 }
 
+// emitInvokeSuccessNextStep prints the resolver-driven Next: block after a
+// successful invoke. Each of invoke's four success paths funnels through
+// this helper so policy lives in `nextstep`, not in the command handler.
+//
+// State is intentionally nil: ResolveAfterInvoke's success branches don't
+// inspect State (`resolver.go:resolveInvokeSuccess`), and the gRPC cost of
+// AssembleState is wasted when the result isn't used. The companion
+// follow-up commit that wires invoke-failure paths will assemble state at
+// the failure call site, where it IS consumed.
+func (a *InvokeAction) emitInvokeSuccessNextStep(mode nextstep.InvokeMode, agentName string) {
+	_ = nextstep.PrintNext(
+		os.Stdout,
+		nextstep.ResolveAfterInvoke(nil, mode, agentName, nil),
+	)
+}
+
 // resolveProtocol returns the protocol to use for this invocation.
 // The explicit --protocol flag takes priority; otherwise the protocol
 // is auto-detected from agent.yaml (local or remote).
@@ -333,10 +350,15 @@ func (a *InvokeAction) responsesLocal(ctx context.Context) error {
 	if err := json.Unmarshal(respBody, &result); err != nil {
 		// Not JSON — just print raw response
 		fmt.Println(string(respBody))
+		a.emitInvokeSuccessNextStep(nextstep.InvokeLocal, "")
 		return nil
 	}
 
-	return printAgentResponse(result, "local")
+	if err := printAgentResponse(result, "local"); err != nil {
+		return err
+	}
+	a.emitInvokeSuccessNextStep(nextstep.InvokeLocal, "")
+	return nil
 }
 
 func (a *InvokeAction) responsesRemote(ctx context.Context) error {
@@ -478,7 +500,11 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	}
 
 	// Parse SSE stream for agent output
-	return readSSEStream(resp.Body, name)
+	if err := readSSEStream(resp.Body, name); err != nil {
+		return err
+	}
+	a.emitInvokeSuccessNextStep(nextstep.InvokeRemote, name)
+	return nil
 }
 
 func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
@@ -560,7 +586,11 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 		fmt.Printf("Invocation:   %s\n", invID)
 	}
 
-	return handleInvocationResponse(ctx, resp, "", "", agentKey, a.httpTimeout())
+	if err := handleInvocationResponse(ctx, resp, "", "", agentKey, a.httpTimeout()); err != nil {
+		return err
+	}
+	a.emitInvokeSuccessNextStep(nextstep.InvokeLocal, agentName)
+	return nil
 }
 
 // invocationsRemote sends the user's message to Foundry using
@@ -668,7 +698,11 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 
 	captureResponseSession(ctx, azdClient, agentKey, sid, resp, "Session:  ")
 
-	return handleInvocationResponse(ctx, resp, endpoint, token.Token, name, a.httpTimeout())
+	if err := handleInvocationResponse(ctx, resp, endpoint, token.Token, name, a.httpTimeout()); err != nil {
+		return err
+	}
+	a.emitInvokeSuccessNextStep(nextstep.InvokeRemote, name)
+	return nil
 }
 
 // handleInvocationResponse dispatches the response from a POST /invocations call

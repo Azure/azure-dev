@@ -701,6 +701,12 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 	// aka.ms link emitted by deployArtifacts is preserved when the
 	// enrichment is skipped or short-circuits.
 	if state, _ := nextstep.AssembleState(ctx, p.azdClient); state != nil {
+		// Scope to the service just deployed. ResolveAfterDeploy renders a
+		// show/invoke pair per state.Services entry; without this filter a
+		// multi-agent project would attach guidance for other services to
+		// this artifact's note.
+		state.Services = filterServicesByName(state.Services, serviceConfig.Name)
+
 		projectRoot := ""
 		if proj, err := p.azdClient.Project().Get(ctx, nil); err == nil && proj.Project != nil {
 			projectRoot = proj.Project.Path
@@ -816,12 +822,13 @@ func augmentDeployNote(state *nextstep.State, artifacts []*azdext.Artifact, proj
 		if projectRoot == "" || relativePath == "" {
 			return false
 		}
-		for _, name := range []string{"README.md", "readme.md", "README.MD"} {
-			if _, err := os.Stat(filepath.Join(projectRoot, relativePath, name)); err == nil {
-				return true
-			}
-		}
-		return false
+		// Only consider the canonical casing — ResolveAfterDeploy emits
+		// "see <relPath>/README.md" verbatim. Accepting other casings here
+		// would yield a broken pointer on case-sensitive filesystems and,
+		// because suggestionsIncludeReadme triggers the replace branch,
+		// would silently discard the working aka.ms fallback.
+		_, err := os.Stat(filepath.Join(projectRoot, relativePath, "README.md"))
+		return err == nil
 	}
 
 	suggestions := nextstep.ResolveAfterDeploy(state, cachedPayload, readmeExists)
@@ -875,6 +882,22 @@ func suggestionsIncludeReadme(suggestions []nextstep.Suggestion) bool {
 		}
 	}
 	return false
+}
+
+// filterServicesByName narrows the assembled state's service slice to a
+// single entry by name. Used by the deploy hook so the rendered "Next:"
+// block reflects only the service whose artifact note is being augmented,
+// not every agent service in the project.
+func filterServicesByName(services []nextstep.ServiceState, name string) []nextstep.ServiceState {
+	if name == "" {
+		return services
+	}
+	for i := range services {
+		if services[i].Name == name {
+			return services[i : i+1]
+		}
+	}
+	return nil
 }
 
 // protocolEndpointInfo holds a displayable protocol label and its invocation URL.

@@ -99,10 +99,7 @@ func (s *rpcSession) proxyInvoke(raw json.RawMessage) (any, error) {
 		return nil, fmt.Errorf("invalid params: %w", err)
 	}
 
-	isResponses := strings.Contains(p.URL, "/responses")
-	if isResponses {
-		s.logger.Printf("invoke [%s] POST %s body: %s", p.RequestID, p.URL, p.Body)
-	}
+	s.logger.Printf("invoke [%s] POST %s body: %s", p.RequestID, p.URL, p.Body)
 
 	var bodyReader io.Reader
 	if p.Body != "" {
@@ -126,7 +123,7 @@ func (s *rpcSession) proxyInvoke(raw json.RawMessage) (any, error) {
 	headers := flattenHeaders(resp.Header)
 
 	if strings.Contains(contentType, "text/event-stream") {
-		go s.pumpSSE(p.RequestID, resp, isResponses)
+		go s.pumpSSE(p.RequestID, resp, true)
 		return proxyInvokeResult{
 			Status:     resp.StatusCode,
 			StatusText: resp.Status,
@@ -140,8 +137,10 @@ func (s *rpcSession) proxyInvoke(raw json.RawMessage) (any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
 	}
-	if isResponses {
+	if isResponses := strings.Contains(p.URL, "/responses"); isResponses {
 		s.logger.Printf("invoke [%s] response %d: %s", p.RequestID, resp.StatusCode, string(body))
+	} else {
+		s.logger.Printf("invoke [%s] response %d (%d bytes)", p.RequestID, resp.StatusCode, len(body))
 	}
 	return proxyInvokeResult{
 		Status:     resp.StatusCode,

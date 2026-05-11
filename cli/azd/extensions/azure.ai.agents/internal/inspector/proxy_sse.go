@@ -66,7 +66,7 @@ func (s *rpcSession) proxyFetchSSE(raw json.RawMessage) {
 		}
 		defer resp.Body.Close()
 
-		s.streamSSELines(streamCtx, p.RequestID, resp.Body, false)
+		s.streamSSELines(streamCtx, p.RequestID, resp.Body, true)
 	}()
 }
 

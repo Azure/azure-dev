@@ -147,6 +147,18 @@ func TestResolveAfterRun(t *testing.T) {
 				`curl http://localhost:<port>/invocations/docs/openapi.json`,
 			},
 		},
+		{
+			name: "OpenAPI payload with apostrophe → POSIX-escaped wrap, no tip",
+			state: &State{
+				HasOpenAPI:     true,
+				OpenAPIPayload: `{"q":"don't"}`,
+				Services:       []ServiceState{{Name: "echo", Protocol: ProtocolInvocations}},
+			},
+			serviceName: "echo",
+			want: []string{
+				`azd ai agent invoke --local '{"q":"don'\''t"}'`,
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -248,7 +260,7 @@ func TestResolveAfterShow(t *testing.T) {
 		agentName  string
 		wantCmdHas string
 	}{
-		{"Active → invoke prompt", AgentVersionActive, "echo", "azd ai agent invoke echo"},
+		{"Active without service in state → responses payload", AgentVersionActive, "echo", `azd ai agent invoke echo "Hello!"`},
 		{"Creating → monitor system", AgentVersionCreating, "echo", "azd ai agent monitor --type system --follow"},
 		{"Failed → monitor tail", AgentVersionFailed, "echo", "azd ai agent monitor --tail 100"},
 		{"Deleting → redeploy", AgentVersionDeleting, "echo", "azd deploy"},
@@ -267,6 +279,43 @@ func TestResolveAfterShow(t *testing.T) {
 			assert.Contains(t, out[0].Command, tt.wantCmdHas)
 		})
 	}
+}
+
+func TestResolveAfterShow_ActiveHonorsServiceProtocol(t *testing.T) {
+	t.Parallel()
+
+	t.Run("invocations protocol → JSON payload", func(t *testing.T) {
+		t.Parallel()
+		state := &State{
+			AgentStatus: string(AgentVersionActive),
+			Services:    []ServiceState{{Name: "echo", Protocol: ProtocolInvocations}},
+		}
+		out := ResolveAfterShow(state, "echo")
+		require.Len(t, out, 1)
+		assert.Equal(t, `azd ai agent invoke echo '{"message": "Hello!"}'`, out[0].Command)
+	})
+
+	t.Run("responses protocol → bare string payload", func(t *testing.T) {
+		t.Parallel()
+		state := &State{
+			AgentStatus: string(AgentVersionActive),
+			Services:    []ServiceState{{Name: "echo", Protocol: ProtocolResponses}},
+		}
+		out := ResolveAfterShow(state, "echo")
+		require.Len(t, out, 1)
+		assert.Equal(t, `azd ai agent invoke echo "Hello!"`, out[0].Command)
+	})
+
+	t.Run("service name not present in state → responses fallback", func(t *testing.T) {
+		t.Parallel()
+		state := &State{
+			AgentStatus: string(AgentVersionActive),
+			Services:    []ServiceState{{Name: "other", Protocol: ProtocolInvocations}},
+		}
+		out := ResolveAfterShow(state, "echo")
+		require.Len(t, out, 1)
+		assert.Equal(t, `azd ai agent invoke echo "Hello!"`, out[0].Command)
+	})
 }
 
 func TestResolveAfterShow_NilState(t *testing.T) {
@@ -329,6 +378,15 @@ func TestResolveAfterDeploy(t *testing.T) {
 	t.Run("nil state → nil", func(t *testing.T) {
 		t.Parallel()
 		assert.Nil(t, ResolveAfterDeploy(nil, nil, nil))
+	})
+
+	t.Run("cached payload containing apostrophe → POSIX-escaped", func(t *testing.T) {
+		t.Parallel()
+		state := &State{Services: []ServiceState{{Name: "echo", RelativePath: "./src/echo"}}}
+		cached := func(_ string) string { return `{"q":"don't"}` }
+		out := ResolveAfterDeploy(state, cached, nil)
+		require.Len(t, out, 2)
+		assert.Equal(t, `azd ai agent invoke '{"q":"don'\''t"}'`, out[1].Command)
 	})
 }
 

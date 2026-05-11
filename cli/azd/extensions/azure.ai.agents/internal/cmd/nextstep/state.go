@@ -7,10 +7,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 
+	"azureaiagent/internal/pkg/agents/agent_yaml"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"go.yaml.in/yaml/v3"
 )
 
 const (
@@ -187,6 +192,7 @@ func collectServices(
 			Name:         svc.Name,
 			Host:         svc.Host,
 			RelativePath: svc.RelativePath,
+			Protocol:     loadServiceProtocol(project.Path, svc.RelativePath),
 			IsDeployed:   isDeployed(ctx, src, envName, svc.Name, errs),
 		})
 	}
@@ -195,6 +201,43 @@ func collectServices(
 		return strings.Compare(a.Name, b.Name)
 	})
 	return services
+}
+
+// loadServiceProtocol returns the protocol the service's agent.yaml declares
+// for next-step hint purposes. The lookup is best-effort: missing or
+// malformed manifests, empty protocols sections, or any I/O error all return
+// an empty string, and the resolver falls back to ProtocolResponses. When the
+// manifest declares multiple protocols, ProtocolResponses wins over
+// ProtocolInvocations so the suggested payload works on the broadest set of
+// agents.
+func loadServiceProtocol(projectPath, relativePath string) string {
+	if projectPath == "" || relativePath == "" {
+		return ""
+	}
+	manifestPath := filepath.Join(projectPath, relativePath, "agent.yaml")
+	//nolint:gosec // G304: path constructed from azd project root, not user input.
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return ""
+	}
+	var hosted agent_yaml.ContainerAgent
+	if err := yaml.Unmarshal(data, &hosted); err != nil {
+		return ""
+	}
+
+	sawInvocations := false
+	for _, p := range hosted.Protocols {
+		switch strings.TrimSpace(p.Protocol) {
+		case ProtocolResponses:
+			return ProtocolResponses
+		case ProtocolInvocations:
+			sawInvocations = true
+		}
+	}
+	if sawInvocations {
+		return ProtocolInvocations
+	}
+	return ""
 }
 
 func isDeployed(

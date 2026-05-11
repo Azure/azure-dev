@@ -101,7 +101,7 @@ func ResolveAfterRun(state *State, serviceName string) []Suggestion {
 	svc := findService(state, serviceName)
 	payload := defaultInvokePayload(svc)
 	if state.HasOpenAPI && state.OpenAPIPayload != "" {
-		payload = "'" + state.OpenAPIPayload + "'"
+		payload = shellEscapeSingleQuoted(state.OpenAPIPayload)
 	}
 
 	out := []Suggestion{{
@@ -229,8 +229,12 @@ func ResolveAfterShow(state *State, agentName string) []Suggestion {
 
 	switch AgentVersionStatus(state.AgentStatus) {
 	case AgentVersionActive:
+		protocol := ProtocolResponses
+		if svc := findService(state, agentName); svc != nil && svc.Protocol != "" {
+			protocol = svc.Protocol
+		}
 		return []Suggestion{{
-			Command:     invokeCommandFor(agentName, ProtocolResponses),
+			Command:     invokeCommandFor(agentName, protocol),
 			Description: "the agent is ready — send it a sample request",
 			Priority:    10,
 		}}
@@ -310,7 +314,7 @@ func ResolveAfterDeploy(
 		}
 		invokeArg := defaultInvokePayload(&svc)
 		if payload != "" {
-			invokeArg = "'" + payload + "'"
+			invokeArg = shellEscapeSingleQuoted(payload)
 		}
 
 		invokeCmd := fmt.Sprintf("azd ai agent invoke %s", invokeArg)
@@ -379,4 +383,16 @@ func invokeCommandFor(agentName, protocol string) string {
 		return fmt.Sprintf("azd ai agent invoke %s", payload)
 	}
 	return fmt.Sprintf("azd ai agent invoke %s %s", agentName, payload)
+}
+
+// shellEscapeSingleQuoted wraps s in single quotes for POSIX shells,
+// escaping embedded single quotes via the standard `'\”` idiom. The
+// extracted OpenAPI payload originates from json.Marshal, which does
+// not escape apostrophes, so a sample like {"q":"don't"} would otherwise
+// terminate the surrounding single-quoted argument and break the
+// suggested command. PowerShell users will need to convert any embedded
+// `'\”` sequences to `”` manually; the suggestions are otherwise
+// portable.
+func shellEscapeSingleQuoted(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }

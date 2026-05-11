@@ -6,6 +6,8 @@ package nextstep
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -221,4 +223,127 @@ func TestOptionsApplyCleanly(t *testing.T) {
 	WithOpenAPIProbe(true)(cfg)
 	assert.True(t, cfg.authProbe)
 	assert.True(t, cfg.openAPIProbe)
+}
+
+func TestLoadServiceProtocol(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		manifest    string // raw agent.yaml content; empty string means "do not write the file"
+		manifestRel string // override relativePath in the call (for missing-dir cases)
+		want        string
+	}{
+		{
+			name: "single responses protocol",
+			manifest: `kind: hostedAgent
+protocols:
+  - protocol: responses
+    version: "1.0.0"
+`,
+			want: ProtocolResponses,
+		},
+		{
+			name: "single invocations protocol",
+			manifest: `kind: hostedAgent
+protocols:
+  - protocol: invocations
+    version: "1.0.0"
+`,
+			want: ProtocolInvocations,
+		},
+		{
+			name: "responses wins when both declared",
+			manifest: `kind: hostedAgent
+protocols:
+  - protocol: invocations
+    version: "1.0.0"
+  - protocol: responses
+    version: "1.0.0"
+`,
+			want: ProtocolResponses,
+		},
+		{
+			name: "empty protocols section",
+			manifest: `kind: hostedAgent
+protocols: []
+`,
+			want: "",
+		},
+		{
+			name: "unknown protocol value silently ignored",
+			manifest: `kind: hostedAgent
+protocols:
+  - protocol: pigeon-mail
+    version: "1.0.0"
+`,
+			want: "",
+		},
+		{
+			name:     "malformed yaml returns empty",
+			manifest: "this: is: not: valid: yaml: at: all: [",
+			want:     "",
+		},
+		{
+			name:        "missing file returns empty",
+			manifestRel: "does-not-exist",
+			want:        "",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			projectRoot := t.TempDir()
+			relPath := "echo"
+			if tt.manifestRel != "" {
+				relPath = tt.manifestRel
+			} else {
+				svcDir := filepath.Join(projectRoot, relPath)
+				require.NoError(t, os.MkdirAll(svcDir, 0o750))
+				require.NoError(t, os.WriteFile(
+					filepath.Join(svcDir, "agent.yaml"),
+					[]byte(tt.manifest),
+					0o600,
+				))
+			}
+			got := loadServiceProtocol(projectRoot, relPath)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestLoadServiceProtocol_EmptyArgs(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "", loadServiceProtocol("", "echo"))
+	assert.Equal(t, "", loadServiceProtocol("/some/path", ""))
+}
+
+func TestAssembleState_PopulatesProtocolFromAgentYaml(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "echo"), 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectRoot, "echo", "agent.yaml"),
+		[]byte("kind: hostedAgent\nprotocols:\n  - protocol: invocations\n    version: \"1.0.0\"\n"),
+		0o600,
+	))
+
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{
+			Path: projectRoot,
+			Services: map[string]*azdext.ServiceConfig{
+				"echo": {Name: "echo", Host: agentHost, RelativePath: "echo"},
+			},
+		},
+	}
+
+	state, errs := assembleState(context.Background(), src)
+	require.Empty(t, errs)
+	require.Len(t, state.Services, 1)
+	assert.Equal(t, ProtocolInvocations, state.Services[0].Protocol)
 }

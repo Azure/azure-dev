@@ -83,10 +83,12 @@ func TestPrintNext(t *testing.T) {
 			want: "\nNext:  azd deploy  -- when ready\n",
 		},
 		{
-			name: "multiple Trailing entries collapse to the lowest-priority one",
+			name: "multiple Trailing entries collapse to the highest-priority one",
 			// Defensive: resolvers should emit at most one Trailing entry,
-			// but if more are passed in, only the lowest-priority one is
-			// rendered to keep the footer single-line.
+			// but if more are passed in, only the highest-Priority one
+			// is rendered — the most-deferred footer wins, protecting
+			// the intended `azd deploy` slot from accidental
+			// lower-Priority Trailing flags.
 			suggestions: []Suggestion{
 				{Command: "primary", Description: "primary", Priority: 10},
 				{Command: "tail-a", Description: "tail a", Priority: 80, Trailing: true},
@@ -94,7 +96,7 @@ func TestPrintNext(t *testing.T) {
 			},
 			want: "\n" +
 				"Next:  primary  -- primary\n" +
-				"       tail-a   -- tail a\n",
+				"       tail-b   -- tail b\n",
 		},
 		{
 			name: "stable sort preserves input order on equal priorities",

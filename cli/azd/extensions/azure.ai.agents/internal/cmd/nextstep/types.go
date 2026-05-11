@@ -31,7 +31,9 @@ package nextstep
 // the visible block. Used for follow-up nudges (e.g., the `azd deploy`
 // line that ResolveAfterInit appends after the primary action) so the
 // follow-up survives truncation. At most one trailing entry is rendered
-// per block; additional Trailing-flagged entries are dropped.
+// per block; when multiple Trailing-flagged entries are passed, the
+// entry with the highest Priority wins — by convention footers are the
+// most-deferred entries, so the most-deferred survives.
 type Suggestion struct {
 	Command     string
 	Description string

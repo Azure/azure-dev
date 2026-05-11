@@ -126,6 +126,7 @@ overrides:
           - containerapp
           - dcount
           - devdeviceid
+          - Entra
           - Errorf
           - exegraph
           - kqlx

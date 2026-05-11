@@ -39,6 +39,8 @@ type invokeFlags struct {
 	newConversation bool
 	protocol        string
 	agentEndpoint   string
+	inspector       bool
+	inspectorPort   int
 }
 
 type InvokeAction struct {
@@ -87,6 +89,9 @@ session automatically. Pass --new-session to force a reset.`,
 
   # Invoke locally (agent must be running via 'azd ai agent run')
   azd ai agent invoke --local "Hello!"
+
+  # Launch the Agent Inspector UI in a browser, pointed at the local agent
+  azd ai agent invoke --local --inspector
 
   # Start a new session (discard conversation history)
   azd ai agent invoke --new-session "Hello!"
@@ -138,7 +143,30 @@ session automatically. Pass --new-session to force a reset.`,
 					"provide either a message argument or --input-file, not both",
 				)
 			}
-			if flags.inputFile == "" && flags.message == "" {
+
+			if flags.inspector {
+				if !flags.local {
+					return exterrors.Validation(
+						exterrors.CodeInvalidParameter,
+						"--inspector currently only supports --local",
+						"add --local to launch the inspector against a local agent (start it with: azd ai agent run)",
+					)
+				}
+				if flags.inputFile != "" {
+					return exterrors.Validation(
+						exterrors.CodeInvalidParameter,
+						"--inspector cannot be combined with --input-file",
+						"the inspector UI provides its own input; remove --input-file",
+					)
+				}
+				if flags.message != "" {
+					return exterrors.Validation(
+						exterrors.CodeInvalidParameter,
+						"--inspector cannot be combined with a positional message",
+						"the inspector UI provides its own input; remove the message argument",
+					)
+				}
+			} else if flags.inputFile == "" && flags.message == "" {
 				return exterrors.Validation(
 					exterrors.CodeInvalidParameter,
 					"a message argument or --input-file is required",
@@ -185,6 +213,19 @@ session automatically. Pass --new-session to force a reset.`,
 		"Full endpoint URL of a deployed agent (run 'azd ai agent show' to see it). "+
 			"Invokes without requiring an azd project; protocol is derived from the URL.",
 	)
+	cmd.Flags().BoolVar(
+		&flags.inspector,
+		"inspector",
+		false,
+		"Launch the Agent Inspector UI in a browser instead of streaming the response to the terminal. "+
+			"Only supported with --local in this preview.",
+	)
+	cmd.Flags().IntVar(
+		&flags.inspectorPort,
+		"inspector-port",
+		8087,
+		"Port the Agent Inspector UI listens on (default: 8087)",
+	)
 
 	return cmd
 }
@@ -222,6 +263,11 @@ func validateAgentEndpointFlags(cmd *cobra.Command, flags *invokeFlags) error {
 }
 
 func (a *InvokeAction) Run(ctx context.Context) error {
+	if a.flags.inspector {
+		// Validation has already enforced --local + no message/input-file.
+		return a.runInspector(ctx)
+	}
+
 	protocol, err := a.resolveProtocol(ctx)
 	if err != nil {
 		return err

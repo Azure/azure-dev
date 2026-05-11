@@ -37,6 +37,10 @@ type fakeEnvironmentServer struct {
 	azdext.UnimplementedEnvironmentServiceServer
 	resp *azdext.EnvironmentResponse
 	err  error
+
+	// GetValue stub fields (Phase 4.3).
+	valueResp *azdext.KeyValueResponse
+	valueErr  error
 }
 
 func (s *fakeEnvironmentServer) GetCurrent(
@@ -46,6 +50,15 @@ func (s *fakeEnvironmentServer) GetCurrent(
 		return nil, s.err
 	}
 	return s.resp, nil
+}
+
+func (s *fakeEnvironmentServer) GetValue(
+	context.Context, *azdext.GetEnvRequest,
+) (*azdext.KeyValueResponse, error) {
+	if s.valueErr != nil {
+		return nil, s.valueErr
+	}
+	return s.valueResp, nil
 }
 
 // newTestAzdClient spins up an in-process gRPC server with the supplied
@@ -430,7 +443,7 @@ func TestNewLocalChecks_OrderAndIDs(t *testing.T) {
 	t.Parallel()
 
 	checks := NewLocalChecks(Dependencies{})
-	require.Len(t, checks, 3)
+	require.Len(t, checks, 6)
 
 	want := []struct {
 		id     string
@@ -440,6 +453,9 @@ func TestNewLocalChecks_OrderAndIDs(t *testing.T) {
 		{"local.grpc-extension", "azd extension reachable", false},
 		{"local.azure-yaml", "azure.yaml present and parseable", false},
 		{"local.environment-selected", "azd environment selected", false},
+		{"local.agent-service-detected", "agent service in azure.yaml", false},
+		{"local.project-endpoint-set", "AZURE_AI_PROJECT_ENDPOINT set", false},
+		{"local.agent-yaml-valid", "agent.yaml valid (per service)", false},
 	}
 	for i, w := range want {
 		require.Equal(t, w.id, checks[i].ID, "index %d", i)

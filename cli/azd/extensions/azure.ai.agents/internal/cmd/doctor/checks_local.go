@@ -42,13 +42,17 @@ type Dependencies struct {
 }
 
 // NewLocalChecks returns the canonical sequence of local doctor checks
-// in execution order. Phase 4.2 covers checks 1-3; phase 4.3 will append
-// checks 4-6 (agent service, project endpoint, agent.yaml).
+// in execution order. Phase 4.2 covered checks 1-3; Phase 4.3 adds
+// checks 4-6 (agent service detected, project endpoint set, agent.yaml
+// valid).
 func NewLocalChecks(deps Dependencies) []Check {
 	return []Check{
 		newCheckGRPCAndVersion(deps),
 		newCheckProjectConfig(deps),
 		newCheckEnvironmentSelected(deps),
+		newCheckAgentServiceDetected(deps),
+		newCheckProjectEndpointSet(deps),
+		newCheckAgentYAMLValid(deps),
 	}
 }
 

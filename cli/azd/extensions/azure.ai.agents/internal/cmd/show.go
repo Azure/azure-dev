@@ -207,16 +207,13 @@ func printShowResult(result *showResult, output string, suggestions []nextstep.S
 }
 
 // resolveNextStep assembles state and asks the resolver for the post-show
-// guidance block. Returns nil when state assembly fully fails so callers
-// can short-circuit (the resolver itself also returns nil for nil state).
+// guidance block. AssembleState always returns a non-nil partial state per
+// its documented contract, so no nil check is needed here.
 func (a *ShowAction) resolveNextStep(ctx context.Context, status string) []nextstep.Suggestion {
 	if a.azdClient == nil {
 		return nil
 	}
 	state, _ := nextstep.AssembleState(ctx, a.azdClient)
-	if state == nil {
-		return nil
-	}
 	state.AgentStatus = status
 	return nextstep.ResolveAfterShow(state, a.serviceName)
 }
@@ -354,9 +351,10 @@ func printShowResultTable(result *showResult, suggestions []nextstep.Suggestion)
 	// Next: guidance is human-only on the table path; the JSON envelope
 	// carries the same data for machines. Suppress on non-TTY (pipes,
 	// file redirection) so scripted consumers of the table output don't
-	// see surprise trailing lines.
+	// see surprise trailing lines. PrintNext owns the leading blank-line
+	// separator (see nextstep/format.go renderBlock), so we don't
+	// pre-emit one here.
 	if len(suggestions) > 0 && isTerminal(os.Stdout.Fd()) {
-		fmt.Println()
 		_ = nextstep.PrintNext(os.Stdout, suggestions)
 	}
 

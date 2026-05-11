@@ -179,6 +179,28 @@ func TestCheckProjectEndpointSet_PriorEnvFailed_Skips(t *testing.T) {
 	require.Contains(t, got.Message, "environment check failed")
 }
 
+func TestCheckProjectEndpointSet_PriorEnvSkipped_AlsoSkips(t *testing.T) {
+	// Covers the cascade: azure-yaml fails -> environment-selected skips ->
+	// project-endpoint-set must also skip. Without this propagation, check 5
+	// would run against an unloaded env and surface misleading remediation
+	// for the wrong root cause.
+	t.Parallel()
+
+	client := newTestAzdClient(t,
+		&fakeProjectServer{},
+		// If the check incorrectly proceeds past the guard it would call
+		// GetValue; set valueErr so we'd see the wrong-path Fail in the
+		// assertion instead of a quiet Skip.
+		&fakeEnvironmentServer{valueErr: errors.New("should not be called")})
+	check := newCheckProjectEndpointSet(Dependencies{AzdClient: client})
+
+	prior := []Result{{ID: "local.environment-selected", Status: StatusSkip}}
+	got := check.Fn(t.Context(), Options{}, prior)
+
+	require.Equal(t, StatusSkip, got.Status)
+	require.Contains(t, got.Message, "environment check failed or skipped")
+}
+
 func TestCheckProjectEndpointSet_GRPCError_Fails(t *testing.T) {
 	t.Parallel()
 
@@ -287,6 +309,26 @@ func TestCheckAgentYAMLValid_PriorAgentDetectionFailed_Skips(t *testing.T) {
 	require.Contains(t, got.Message, "no agent services detected")
 }
 
+func TestCheckAgentYAMLValid_PriorAgentDetectionSkipped_AlsoSkips(t *testing.T) {
+	// Covers the cascade: azure-yaml fails -> agent-service-detected skips ->
+	// agent-yaml-valid must also skip. Without this propagation, check 6
+	// would re-fetch the project (failing identically to check 2) and
+	// surface a duplicate failure for the same root cause.
+	t.Parallel()
+
+	client := newTestAzdClient(t,
+		// Server set up to fail if reached, to ensure the guard short-circuits.
+		&fakeProjectServer{err: errors.New("should not be called")},
+		&fakeEnvironmentServer{})
+	check := newCheckAgentYAMLValid(Dependencies{AzdClient: client})
+
+	prior := []Result{{ID: "local.agent-service-detected", Status: StatusSkip}}
+	got := check.Fn(t.Context(), Options{}, prior)
+
+	require.Equal(t, StatusSkip, got.Status)
+	require.Contains(t, got.Message, "no agent services detected or upstream check blocked")
+}
+
 func TestCheckAgentYAMLValid_GRPCError_Fails(t *testing.T) {
 	t.Parallel()
 
@@ -321,6 +363,7 @@ func TestCheckAgentYAMLValid_OneServiceValid_Passes(t *testing.T) {
 	projectPath := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(projectPath, "src", "agent"), 0o750))
 	writeYAML(t, projectPath, "src/agent/agent.yaml", `
+kind: hosted
 name: echo-agent
 language: python
 entrypoint: main.py
@@ -352,7 +395,7 @@ func TestCheckAgentYAMLValid_NonAgentServicesIgnored(t *testing.T) {
 
 	projectPath := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(projectPath, "src", "agent"), 0o750))
-	writeYAML(t, projectPath, "src/agent/agent.yaml", "name: echo\nlanguage: python\n")
+	writeYAML(t, projectPath, "src/agent/agent.yaml", "kind: hosted\nname: echo\nlanguage: python\n")
 
 	client := newTestAzdClient(t,
 		&fakeProjectServer{resp: &azdext.GetProjectResponse{
@@ -438,7 +481,7 @@ func TestCheckAgentYAMLValid_MixedValidAndInvalid_Fails(t *testing.T) {
 	projectPath := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(projectPath, "src", "ok"), 0o750))
 	require.NoError(t, os.MkdirAll(filepath.Join(projectPath, "src", "bad"), 0o750))
-	writeYAML(t, projectPath, "src/ok/agent.yaml", "name: ok-agent\nlanguage: python\n")
+	writeYAML(t, projectPath, "src/ok/agent.yaml", "kind: hosted\nname: ok-agent\nlanguage: python\n")
 	// bad: malformed yaml (mapping key with no value, broken indent).
 	writeYAML(t, projectPath, "src/bad/agent.yaml", "name: bad\n  : nope\n\t- tabs-here\n")
 
@@ -471,9 +514,9 @@ func TestCheckAgentYAMLValid_MixedValidAndInvalid_Fails(t *testing.T) {
 	require.Len(t, validated, 1)
 }
 
-// ---- helper: priorFailed ----
+// ---- helper: priorBlocked ----
 
-func TestPriorFailed(t *testing.T) {
+func TestPriorBlocked(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
@@ -485,20 +528,119 @@ func TestPriorFailed(t *testing.T) {
 		{"empty prior", nil, "x", false},
 		{"matching fail", []Result{{ID: "x", Status: StatusFail}}, "x", true},
 		{"matching pass", []Result{{ID: "x", Status: StatusPass}}, "x", false},
-		{"matching skip", []Result{{ID: "x", Status: StatusSkip}}, "x", false},
+		// Skip propagates blocking: if upstream skipped (because *its* upstream failed),
+		// downstream checks must also skip rather than run on broken assumptions.
+		{"matching skip", []Result{{ID: "x", Status: StatusSkip}}, "x", true},
 		{"matching warn", []Result{{ID: "x", Status: StatusWarn}}, "x", false},
 		{"different id fail", []Result{{ID: "y", Status: StatusFail}}, "x", false},
-		{"id matches middle entry", []Result{
+		{"different id skip", []Result{{ID: "y", Status: StatusSkip}}, "x", false},
+		{"id matches middle entry fail", []Result{
 			{ID: "a", Status: StatusPass},
 			{ID: "x", Status: StatusFail},
+			{ID: "c", Status: StatusPass},
+		}, "x", true},
+		{"id matches middle entry skip", []Result{
+			{ID: "a", Status: StatusPass},
+			{ID: "x", Status: StatusSkip},
 			{ID: "c", Status: StatusPass},
 		}, "x", true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			require.Equal(t, tc.want, priorFailed(tc.prior, tc.id))
+			require.Equal(t, tc.want, priorBlocked(tc.prior, tc.id))
 		})
 	}
+}
+
+func TestCheckAgentYAMLValid_MissingKind_Fails(t *testing.T) {
+	// Without explicit `kind:`, ValidateAgentDefinition rejects the manifest
+	// because kind is required. Doctor must catch this pre-flight rather
+	// than letting deploy be the first place that surfaces it.
+	t.Parallel()
+
+	projectPath := t.TempDir()
+	writeYAML(t, projectPath, "src/agent/agent.yaml", "name: echo-agent\nlanguage: python\n")
+
+	client := newTestAzdClient(t,
+		&fakeProjectServer{resp: &azdext.GetProjectResponse{
+			Project: &azdext.ProjectConfig{
+				Path: projectPath,
+				Services: map[string]*azdext.ServiceConfig{
+					"echo-agent": {Name: "echo-agent", Host: agentHost, RelativePath: "src/agent"},
+				},
+			},
+		}},
+		&fakeEnvironmentServer{})
+	check := newCheckAgentYAMLValid(Dependencies{AzdClient: client})
+
+	got := check.Fn(t.Context(), Options{}, nil)
+
+	require.Equal(t, StatusFail, got.Status)
+	require.Contains(t, got.Message, "echo-agent")
+	failures, ok := got.Details["failures"].([]string)
+	require.True(t, ok)
+	require.Len(t, failures, 1)
+	require.Contains(t, failures[0], "kind")
+}
+
+func TestCheckAgentYAMLValid_InvalidKind_Fails(t *testing.T) {
+	// A `kind` that isn't in ValidAgentKinds() (hosted/workflow) must be
+	// rejected. Bare yaml.Unmarshal would silently accept this; the
+	// production deploy path rejects it via ValidateAgentDefinition.
+	t.Parallel()
+
+	projectPath := t.TempDir()
+	writeYAML(t, projectPath, "src/agent/agent.yaml", "kind: nonsense\nname: echo-agent\nlanguage: python\n")
+
+	client := newTestAzdClient(t,
+		&fakeProjectServer{resp: &azdext.GetProjectResponse{
+			Project: &azdext.ProjectConfig{
+				Path: projectPath,
+				Services: map[string]*azdext.ServiceConfig{
+					"echo-agent": {Name: "echo-agent", Host: agentHost, RelativePath: "src/agent"},
+				},
+			},
+		}},
+		&fakeEnvironmentServer{})
+	check := newCheckAgentYAMLValid(Dependencies{AzdClient: client})
+
+	got := check.Fn(t.Context(), Options{}, nil)
+
+	require.Equal(t, StatusFail, got.Status)
+	failures, ok := got.Details["failures"].([]string)
+	require.True(t, ok)
+	require.Len(t, failures, 1)
+	require.Contains(t, failures[0], "kind")
+}
+
+func TestCheckAgentYAMLValid_InvalidName_Fails(t *testing.T) {
+	// Agent name must match `^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$`
+	// (DNS-style). An underscore is invalid for deployable agent names.
+	// Doctor must surface this before deploy, not after.
+	t.Parallel()
+
+	projectPath := t.TempDir()
+	writeYAML(t, projectPath, "src/agent/agent.yaml", "kind: hosted\nname: My_Agent\nlanguage: python\n")
+
+	client := newTestAzdClient(t,
+		&fakeProjectServer{resp: &azdext.GetProjectResponse{
+			Project: &azdext.ProjectConfig{
+				Path: projectPath,
+				Services: map[string]*azdext.ServiceConfig{
+					"my-agent": {Name: "my-agent", Host: agentHost, RelativePath: "src/agent"},
+				},
+			},
+		}},
+		&fakeEnvironmentServer{})
+	check := newCheckAgentYAMLValid(Dependencies{AzdClient: client})
+
+	got := check.Fn(t.Context(), Options{}, nil)
+
+	require.Equal(t, StatusFail, got.Status)
+	failures, ok := got.Details["failures"].([]string)
+	require.True(t, ok)
+	require.Len(t, failures, 1)
+	require.Contains(t, failures[0], "name")
 }
 
 // writeYAML is a tiny test helper that writes the given content to

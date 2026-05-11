@@ -146,6 +146,49 @@ func TestRunner_Run_EmptyStatus_NormalizedToFail(t *testing.T) {
 		"empty status must be normalized to Fail so the bug is visible in the report")
 }
 
+func TestRunner_Run_UnknownStatus_NormalizedToFail(t *testing.T) {
+	t.Parallel()
+
+	runner := &Runner{
+		Checks: []Check{
+			{ID: "1", Name: "typo-status", Fn: func(_ context.Context, _ Options, _ []Result) Result {
+				// Status is `type Status string`, not a closed enum at the type-system level.
+				// A typo (or any non-canonical value) must be normalized so it isn't dropped
+				// from Summary aggregation and the exit code.
+				return Result{Status: Status("passed"), Message: "real check would have meant pass"}
+			}},
+		},
+	}
+
+	report := runner.Run(t.Context(), Options{})
+
+	require.Len(t, report.Checks, 1)
+	require.Equal(t, StatusFail, report.Checks[0].Status, "non-canonical status must be normalized to Fail")
+	require.Equal(t, "real check would have meant pass", report.Checks[0].Message,
+		"existing non-empty Message must be preserved (the bug is in Status, not Message)")
+	require.Equal(t, 1, report.Summary.Fail, "the normalized fail must count toward Summary")
+	require.Equal(t, 1, ExitCode(report), "a single normalized fail must drive exit code 1")
+}
+
+func TestRunner_Run_UnknownStatus_EmptyMessage_AnnotatedWithInternalError(t *testing.T) {
+	t.Parallel()
+
+	runner := &Runner{
+		Checks: []Check{
+			{ID: "1", Name: "typo-status", Fn: func(_ context.Context, _ Options, _ []Result) Result {
+				return Result{Status: Status("ok")}
+			}},
+		},
+	}
+
+	report := runner.Run(t.Context(), Options{})
+
+	require.Equal(t, StatusFail, report.Checks[0].Status)
+	require.Contains(t, report.Checks[0].Message, "internal error")
+	require.Contains(t, report.Checks[0].Message, "ok",
+		"the offending value should appear in the error message so the bug is debuggable from the report alone")
+}
+
 func TestRunner_Run_ContextCancelled_RemainingChecksSkipped(t *testing.T) {
 	t.Parallel()
 
@@ -181,14 +224,11 @@ func TestRunner_Run_SummaryAggregation(t *testing.T) {
 	statuses := []Status{StatusPass, StatusPass, StatusWarn, StatusFail, StatusSkip}
 	checks := make([]Check, 0, len(statuses))
 	for i, s := range statuses {
-		s := s
 		checks = append(checks, Check{
-			ID:   "x",
+			ID:   string(rune('a' + i)),
 			Name: "x",
 			Fn:   func(_ context.Context, _ Options, _ []Result) Result { return Result{Status: s, Message: "x"} },
 		})
-		// Distinct IDs so the runner doesn't trip a sanity invariant.
-		checks[i].ID = string(rune('a' + i))
 	}
 
 	runner := &Runner{Checks: checks}
@@ -238,12 +278,28 @@ func TestExitCode(t *testing.T) {
 			want: 0,
 		},
 		{
-			name: "warn alone yields 0",
+			name: "pass + warn yields 0",
 			report: Report{
 				Checks:  []Result{{Status: StatusPass}, {Status: StatusWarn}},
 				Summary: Summary{Pass: 1, Warn: 1},
 			},
 			want: 0,
+		},
+		{
+			name: "warn-only yields 2",
+			report: Report{
+				Checks:  []Result{{Status: StatusWarn}},
+				Summary: Summary{Warn: 1},
+			},
+			want: 2,
+		},
+		{
+			name: "warn + skip without pass yields 2",
+			report: Report{
+				Checks:  []Result{{Status: StatusWarn}, {Status: StatusSkip}},
+				Summary: Summary{Warn: 1, Skip: 1},
+			},
+			want: 2,
 		},
 	}
 

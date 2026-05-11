@@ -10,6 +10,11 @@ import "context"
 // list of Results produced by prior checks (for downstream checks that
 // want to short-circuit when an upstream dependency failed).
 //
+// The prior slice must be treated as read-only — the Runner passes its
+// live append target, and mutating elements would silently corrupt the
+// final Report. Read-only inspection of prior[i].Status, .ID, .Name is
+// the supported use case.
+//
 // Returning StatusSkip in response to a missing precondition is preferred
 // over StatusFail — the user should not see a "fail" cascade when the
 // root cause is a single upstream issue.
@@ -91,10 +96,26 @@ func (r *Runner) Run(ctx context.Context, opts Options) Report {
 		// able to drift from it.
 		result.ID = check.ID
 		result.Name = check.Name
-		if result.Status == "" {
+		// Normalize the returned Status. The Status type is `type Status
+		// string`, which is *not* a closed enum at the Go type system
+		// level: a check could return Status("passed") (a typo) or any
+		// other string. We coerce any non-canonical value (including
+		// empty) to StatusFail so the report is honest about the
+		// internal error and the failed check is visible in summary +
+		// exit code, rather than silently dropped.
+		switch result.Status {
+		case StatusPass, StatusWarn, StatusFail, StatusSkip:
+			// canonical — keep as-is
+		case "":
 			result.Status = StatusFail
 			if result.Message == "" {
 				result.Message = "internal error: check returned empty status"
+			}
+		default:
+			invalid := string(result.Status)
+			result.Status = StatusFail
+			if result.Message == "" {
+				result.Message = "internal error: check returned invalid status: " + invalid
 			}
 		}
 		report.Checks = append(report.Checks, result)
@@ -108,9 +129,10 @@ func (r *Runner) Run(ctx context.Context, opts Options) Report {
 	return report
 }
 
-// summarize counts results by status. Unknown statuses (which the type
-// system prevents in-process, but a malformed input or future schema
-// extension could still produce) are silently ignored from the totals.
+// summarize counts results by status. Unknown statuses are not expected
+// here — the runner normalizes any non-canonical status to StatusFail
+// before append — but we still ignore them defensively to keep the
+// function robust against an externally-constructed Report.
 func summarize(checks []Result) Summary {
 	var s Summary
 	for _, c := range checks {
@@ -134,8 +156,9 @@ func summarize(checks []Result) Summary {
 //   - 0 — at least one Pass and no Fail (Warn does not raise the exit
 //     code; Skip does not lower the exit code below 0).
 //   - 1 — any Fail (precedence over everything else).
-//   - 2 — all checks were Skip (no useful diagnostic could run; the user
-//     needs to fix preconditions and re-run).
+//   - 2 — no useful diagnostic completed (empty report, all-skip,
+//     warn-only, or any combination of skip + warn without a single
+//     pass). The user needs to fix preconditions and re-run.
 //
 // A report with zero checks (which Run never produces but a caller might
 // synthesize) yields exit code 2 — the "nothing ran" semantics match the
@@ -144,8 +167,7 @@ func ExitCode(report Report) int {
 	if report.Summary.Fail > 0 {
 		return 1
 	}
-	total := len(report.Checks)
-	if total == 0 || report.Summary.Skip == total {
+	if report.Summary.Pass == 0 {
 		return 2
 	}
 	return 0

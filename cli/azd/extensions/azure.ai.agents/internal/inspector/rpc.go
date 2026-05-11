@@ -6,8 +6,10 @@ package inspector
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"sync"
 
 	"github.com/gorilla/websocket"
@@ -146,8 +148,10 @@ func (s *rpcSession) handleNotification(method string, params json.RawMessage) {
 
 // handleFixRequested logs the user's intent to get AI assistance with an
 // error. In VS Code this would launch a Copilot chat; in standalone azd
-// mode there is no Copilot, so we surface the request in the CLI log as a
-// signal that the user wanted help.
+// mode there is no Copilot, so we surface the request in the CLI as a
+// signal that the user wanted help. Written directly to stderr (in
+// addition to the regular logger) so it always shows in the terminal,
+// regardless of whether --debug redirects log.Default() to a file.
 func (s *rpcSession) handleFixRequested(raw json.RawMessage) {
 	var p struct {
 		Source       string `json:"source"`
@@ -157,7 +161,9 @@ func (s *rpcSession) handleFixRequested(raw json.RawMessage) {
 		s.logger.Printf("fixRequested: bad params: %v", err)
 		return
 	}
-	s.logger.Printf("there is an error and user want AI to fix (source=%s): %s", p.Source, p.ErrorSummary)
+	msg := fmt.Sprintf("there is an error and user want AI to fix (source=%s): %s", p.Source, p.ErrorSummary)
+	fmt.Fprintln(os.Stderr, "[inspector] "+msg)
+	s.logger.Print(msg)
 }
 
 func (s *rpcSession) sendResult(id json.RawMessage, result any) {

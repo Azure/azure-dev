@@ -102,11 +102,11 @@ func TestErrorCodeWireValues(t *testing.T) {
 		"RegionalQuotaExceeded":          string(SessionRegionalQuotaExceeded),
 		"AgentVersionNotReady":           string(SessionAgentVersionNotReady),
 		"AgentVersionProvisioningFailed": string(SessionAgentVersionProvisioningFailed),
-		"Creating":                       string(AgentVersionCreating),
-		"Active":                         string(AgentVersionActive),
-		"Failed":                         string(AgentVersionFailed),
-		"Deleting":                       string(AgentVersionDeleting),
-		"Deleted":                        string(AgentVersionDeleted),
+		"creating":                       string(AgentVersionCreating),
+		"active":                         string(AgentVersionActive),
+		"failed":                         string(AgentVersionFailed),
+		"deleting":                       string(AgentVersionDeleting),
+		"deleted":                        string(AgentVersionDeleted),
 	}
 
 	for expected, actual := range cases {

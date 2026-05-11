@@ -607,7 +607,11 @@ func printDoctorReport(w io.Writer, results []doctorResult, state *nextstep.Stat
 	for _, r := range results {
 		fmt.Fprintf(w, "  %s  %s\n", r.Status.badge(), r.Title)
 		if r.Detail != "" {
-			fmt.Fprintf(w, "          %s\n", color.HiBlackString(redactDoctorString(r.Detail, redacted)))
+			detail := redactDoctorString(r.Detail, redacted)
+			// Multi-line details (e.g. agent-RBAC summary) need each
+			// continuation line indented to align under the first one.
+			detail = strings.ReplaceAll(detail, "\n", "\n          ")
+			fmt.Fprintf(w, "          %s\n", color.HiBlackString(detail))
 		}
 	}
 

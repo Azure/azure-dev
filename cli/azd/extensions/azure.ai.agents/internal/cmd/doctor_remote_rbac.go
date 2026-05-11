@@ -6,12 +6,15 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v3"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
+
+	"azureaiagent/internal/pkg/agents/agent_api"
 )
 
 // Role definition GUIDs we recognize for doctor check 10. Centralised
@@ -391,4 +394,384 @@ func listAssignedRoleIDs(
 		}
 	}
 	return present, nil
+}
+
+// scopeBucket categorizes a role-assignment scope ARN into one of the
+// three buckets doctor check 12 renders (project / account /
+// resource-group). Everything else (subscription, management-group,
+// individual resources) lands in "other". Comparison is suffix-based
+// because role-assignment scopes use the same path syntax as the
+// resource IDs we parsed from AZURE_AI_PROJECT_ID.
+type scopeBucket int
+
+const (
+	scopeBucketProject scopeBucket = iota
+	scopeBucketAccount
+	scopeBucketResourceGroup
+	scopeBucketOther
+)
+
+// agentRoleSummary groups the role-definition GUIDs found at each
+// bucket for a single agent. Each bucket's slice is deduplicated and
+// retains friendly role names where the renderer can show them.
+type agentRoleSummary struct {
+	project       []string
+	account       []string
+	resourceGroup []string
+	other         []string
+}
+
+// classifyAgentRoleSummary maps the summary into the design's three
+// outcomes:
+//
+//   - Pass — assignments at project scope AND at account or
+//     resource-group scope. Rendered as `doctorInfo` since the value
+//     is mostly informational (there is nothing actionable to flag).
+//   - Warn — has some assignments but the shape is suspicious (project
+//     only with nothing at account/RG, OR account/RG only without
+//     project). The renderer surfaces the list with a hint.
+//   - Fail — zero role assignments at any of the three buckets. This
+//     is the smoking-gun pattern for "deploy succeeded but every
+//     tool-call 403s at runtime."
+func classifyAgentRoleSummary(s agentRoleSummary) doctorStatus {
+	hasProject := len(s.project) > 0
+	hasParent := len(s.account) > 0 || len(s.resourceGroup) > 0
+
+	switch {
+	case !hasProject && !hasParent && len(s.other) == 0:
+		return doctorFail
+	case hasProject && hasParent:
+		return doctorInfo
+	default:
+		return doctorWarn
+	}
+}
+
+// renderAgentRoleSummary formats the per-scope role list into the
+// Detail string the renderer surfaces below the check title. Lines are
+// fixed-order (project → account → resource-group) so output is
+// deterministic between runs.
+func renderAgentRoleSummary(agentName, principalID string, s agentRoleSummary) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "agent: %s\nprincipal: %s\n", agentName, principalID)
+	fmt.Fprintf(&b, "project scope:\n%s\n", renderScopeBucket(s.project))
+	fmt.Fprintf(&b, "account scope:\n%s\n", renderScopeBucket(s.account))
+	fmt.Fprintf(&b, "resource-group scope:\n%s", renderScopeBucket(s.resourceGroup))
+	if len(s.other) > 0 {
+		fmt.Fprintf(&b, "\nother scope:\n%s", renderScopeBucket(s.other))
+	}
+	return b.String()
+}
+
+// renderScopeBucket renders a single bucket as a bulleted list, or
+// `  - (none)` when the bucket is empty.
+func renderScopeBucket(roles []string) string {
+	if len(roles) == 0 {
+		return "  - (none)"
+	}
+	var b strings.Builder
+	for i, r := range roles {
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		fmt.Fprintf(&b, "  - %s", r)
+	}
+	return b.String()
+}
+
+// roleLabelForID returns the friendly name for a known role
+// definition; for unknown roles, the raw GUID is returned so the
+// renderer always has *something* to display rather than a blank line.
+func roleLabelForID(id string) string {
+	if name, ok := roleNamesByID[id]; ok {
+		return name
+	}
+	return id
+}
+
+// bucketScope categorizes a role-assignment scope ARN against the
+// three project info scopes. Comparison is case-insensitive — ARM
+// occasionally normalizes scope casing differently from the input
+// resource ID.
+func bucketScope(scope string, info *doctorProjectInfo) scopeBucket {
+	s := strings.ToLower(scope)
+	switch {
+	case s == strings.ToLower(info.projectScope):
+		return scopeBucketProject
+	case s == strings.ToLower(info.accountScope):
+		return scopeBucketAccount
+	case s == strings.ToLower(rgScope(info)):
+		return scopeBucketResourceGroup
+	default:
+		return scopeBucketOther
+	}
+}
+
+// rgScope derives the resource-group scope ARN from the parsed
+// project info. Kept as a free function so test cases can build the
+// expected scope without going through parseDoctorProjectID.
+func rgScope(info *doctorProjectInfo) string {
+	return fmt.Sprintf(
+		"/subscriptions/%s/resourceGroups/%s",
+		info.subscriptionID, info.resourceGroup,
+	)
+}
+
+// listAgentRoleSummary lists every role assignment for the agent MI
+// across the project scope (which includes inherited assignments from
+// the account, resource group, and subscription scopes via the
+// `assignedTo()` filter semantics), then buckets the results.
+//
+// Returned slices are deterministic (sorted by friendly role name) so
+// the renderer's output is stable between runs.
+func listAgentRoleSummary(
+	ctx context.Context,
+	cred *azidentity.AzureDeveloperCLICredential,
+	info *doctorProjectInfo,
+	principalID string,
+) (agentRoleSummary, error) {
+	var summary agentRoleSummary
+
+	client, err := armauthorization.NewRoleAssignmentsClient(info.subscriptionID, cred, nil)
+	if err != nil {
+		return summary, fmt.Errorf("failed to create role assignments client: %w", err)
+	}
+
+	filter := fmt.Sprintf("assignedTo('%s')", principalID)
+	pager := client.NewListForScopePager(info.projectScope, &armauthorization.RoleAssignmentsClientListForScopeOptions{
+		Filter: &filter,
+	})
+
+	// Use sets to deduplicate before sorting — multiple assignments of
+	// the same role at the same scope show up in pager output (e.g.,
+	// distinct assignment IDs but identical role/scope pairs).
+	buckets := map[scopeBucket]map[string]bool{
+		scopeBucketProject:       {},
+		scopeBucketAccount:       {},
+		scopeBucketResourceGroup: {},
+		scopeBucketOther:         {},
+	}
+
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return summary, fmt.Errorf("failed to list role assignments for agent identity: %w", err)
+		}
+		for _, a := range page.Value {
+			if a == nil || a.Properties == nil ||
+				a.Properties.RoleDefinitionID == nil || a.Properties.Scope == nil {
+				continue
+			}
+			roleID := *a.Properties.RoleDefinitionID
+			if idx := strings.LastIndex(roleID, "/"); idx >= 0 && idx+1 < len(roleID) {
+				roleID = roleID[idx+1:]
+			}
+			bucket := bucketScope(*a.Properties.Scope, info)
+			buckets[bucket][roleLabelForID(roleID)] = true
+		}
+	}
+
+	summary.project = sortedKeys(buckets[scopeBucketProject])
+	summary.account = sortedKeys(buckets[scopeBucketAccount])
+	summary.resourceGroup = sortedKeys(buckets[scopeBucketResourceGroup])
+	summary.other = sortedKeys(buckets[scopeBucketOther])
+	return summary, nil
+}
+
+// sortedKeys returns the keys of a set sorted alphabetically. Used to
+// make the renderer's role list stable across runs.
+func sortedKeys(set map[string]bool) []string {
+	if len(set) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(set))
+	for k := range set {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// checkAgentIdentityRBAC performs doctor check 12 — for each agent
+// service, resolves the agent MI principal ID via GetAgentVersion and
+// lists the role assignments it carries. Renders results as INFO when
+// the shape matches expectations, Warn when it looks under-privileged,
+// and Fail when the agent has zero assignments.
+//
+// Dependency matrix:
+//
+//   - skip when check 7 (auth) is Fail/Skip
+//   - skip when check 8 (reachability) is Fail/Skip
+//   - skip per-service when AGENT_<SVC>_NAME or AGENT_<SVC>_VERSION
+//     is empty (service has not been deployed yet)
+//   - skip per-service when InstanceIdentity.PrincipalID is empty
+//     (Foundry agent has no managed identity assigned)
+//
+// Reuses the same Foundry data-plane client + ARM credential factory
+// as checks 10 / 11, so a doctor invocation makes O(N) Foundry calls
+// (one per service) plus O(N) ARM list calls.
+func (a *doctorAction) checkAgentIdentityRBAC(
+	ctx context.Context,
+	pre remotePreconditions,
+	authStatus, reachabilityStatus doctorStatus,
+) []doctorResult {
+	if authStatus != doctorOK && authStatus != doctorWarn {
+		return []doctorResult{{
+			ID:     "remote.agent-rbac",
+			Title:  "Agent identity roles",
+			Status: doctorSkip,
+			Detail: "skipped: authentication check did not pass",
+		}}
+	}
+	if reachabilityStatus != doctorOK && reachabilityStatus != doctorWarn {
+		return []doctorResult{{
+			ID:     "remote.agent-rbac",
+			Title:  "Agent identity roles",
+			Status: doctorSkip,
+			Detail: "skipped: reachability check did not pass",
+		}}
+	}
+	if !pre.endpointSet {
+		return []doctorResult{{
+			ID:     "remote.agent-rbac",
+			Title:  "Agent identity roles",
+			Status: doctorSkip,
+			Detail: "skipped: AZURE_AI_PROJECT_ENDPOINT not set",
+		}}
+	}
+	if len(pre.agentServices) == 0 {
+		return []doctorResult{{
+			ID:     "remote.agent-rbac",
+			Title:  "Agent identity roles",
+			Status: doctorSkip,
+			Detail: "skipped: no agent services detected",
+		}}
+	}
+
+	projectID := a.getEnvValue(ctx, pre.envName, "AZURE_AI_PROJECT_ID")
+	if projectID == "" {
+		return []doctorResult{{
+			ID:     "remote.agent-rbac",
+			Title:  "Agent identity roles",
+			Status: doctorSkip,
+			Detail: "skipped: AZURE_AI_PROJECT_ID not set in azd environment",
+			Fix:    "azd provision",
+		}}
+	}
+	info, err := parseDoctorProjectID(projectID)
+	if err != nil {
+		return []doctorResult{{
+			ID:     "remote.agent-rbac",
+			Title:  "Agent identity roles",
+			Status: doctorSkip,
+			Detail: fmt.Sprintf("skipped: %v", err),
+		}}
+	}
+
+	// Resolve tenant + credential (same pattern as check 10 — the
+	// LookupTenant call uses the user-access tenant ID so multi-tenant
+	// guest setups resolve correctly).
+	tenantResp, err := a.azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
+		SubscriptionId: info.subscriptionID,
+	})
+	if err != nil {
+		return []doctorResult{{
+			ID:     "remote.agent-rbac",
+			Title:  "Agent identity roles",
+			Status: doctorSkip,
+			Detail: fmt.Sprintf("skipped: failed to resolve tenant for %s: %v", info.subscriptionID, err),
+		}}
+	}
+
+	cred, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
+		TenantID:                   tenantResp.TenantId,
+		AdditionallyAllowedTenants: []string{"*"},
+	})
+	if err != nil {
+		return []doctorResult{{
+			ID:     "remote.agent-rbac",
+			Title:  "Agent identity roles",
+			Status: doctorFail,
+			Detail: fmt.Sprintf("failed to create credential for tenant %s: %v", tenantResp.TenantId, err),
+			Fix:    "azd auth login",
+		}}
+	}
+
+	client := agent_api.NewAgentClient(pre.endpoint, cred)
+
+	out := make([]doctorResult, 0, len(pre.agentServices))
+	for _, svc := range pre.agentServices {
+		id := fmt.Sprintf("remote.agent-rbac.%s", svc.Name)
+		title := fmt.Sprintf("Agent identity roles for %q", svc.Name)
+		serviceKey := toServiceKey(svc.Name)
+
+		agentName := a.getEnvValue(ctx, pre.envName, fmt.Sprintf("AGENT_%s_NAME", serviceKey))
+		agentVersion := a.getEnvValue(ctx, pre.envName, fmt.Sprintf("AGENT_%s_VERSION", serviceKey))
+		if agentName == "" || agentVersion == "" {
+			out = append(out, doctorResult{
+				ID:     id,
+				Title:  title,
+				Status: doctorSkip,
+				Detail: fmt.Sprintf("skipped: AGENT_%s_NAME/_VERSION not set (deploy this service first)", serviceKey),
+				Fix:    "azd deploy",
+			})
+			continue
+		}
+
+		reqCtx, cancelReq := context.WithTimeout(ctx, doctorRemoteTimeout)
+		version, getErr := client.GetAgentVersion(reqCtx, agentName, agentVersion, DefaultAgentAPIVersion)
+		cancelReq()
+		if getErr != nil {
+			out = append(out, doctorResult{
+				ID:     id,
+				Title:  title,
+				Status: doctorFail,
+				Detail: fmt.Sprintf("failed to fetch agent %s/%s: %v", agentName, agentVersion, getErr),
+				Fix:    "azd ai agent monitor " + svc.Name + " --follow",
+			})
+			continue
+		}
+
+		if version == nil || version.InstanceIdentity == nil || version.InstanceIdentity.PrincipalID == "" {
+			out = append(out, doctorResult{
+				ID:     id,
+				Title:  title,
+				Status: doctorSkip,
+				Detail: fmt.Sprintf("skipped: agent %s/%s has no managed identity", agentName, agentVersion),
+			})
+			continue
+		}
+		principalID := version.InstanceIdentity.PrincipalID
+
+		listCtx, cancelList := context.WithTimeout(ctx, doctorRemoteTimeout)
+		summary, listErr := listAgentRoleSummary(listCtx, cred, info, principalID)
+		cancelList()
+		if listErr != nil {
+			out = append(out, doctorResult{
+				ID:     id,
+				Title:  title,
+				Status: doctorFail,
+				Detail: fmt.Sprintf("failed to list role assignments for %s: %v", principalID, listErr),
+				Reason: "verify Reader access to the subscription and try again",
+			})
+			continue
+		}
+
+		res := doctorResult{
+			ID:     id,
+			Title:  title,
+			Status: classifyAgentRoleSummary(summary),
+			Detail: renderAgentRoleSummary(agentName, principalID, summary),
+		}
+		switch res.Status {
+		case doctorWarn:
+			res.Reason = "agent identity has assignments but the scope coverage looks limited; verify it matches your agent's needs"
+			res.Fix = roleAssignCommand(principalID, "Cognitive Services User", info.accountScope)
+		case doctorFail:
+			res.Reason = "agent identity has no role assignments — runtime tool calls will likely 403"
+			res.Fix = roleAssignCommand(principalID, "Cognitive Services User", info.accountScope)
+		}
+		out = append(out, res)
+	}
+	return out
 }

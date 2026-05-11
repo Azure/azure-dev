@@ -241,6 +241,203 @@ func TestCheckUserRBAC_SkipsWhenAuthDidNotPass(t *testing.T) {
 	}
 }
 
+func testProjectInfo() *doctorProjectInfo {
+	return &doctorProjectInfo{
+		subscriptionID: "00000000-0000-0000-0000-000000000001",
+		resourceGroup:  "rg-foundry",
+		accountName:    "acct",
+		projectName:    "proj",
+		projectScope: "/subscriptions/00000000-0000-0000-0000-000000000001" +
+			"/resourceGroups/rg-foundry/providers/Microsoft.CognitiveServices/" +
+			"accounts/acct/projects/proj",
+		accountScope: "/subscriptions/00000000-0000-0000-0000-000000000001" +
+			"/resourceGroups/rg-foundry/providers/Microsoft.CognitiveServices/accounts/acct",
+	}
+}
+
+func TestRgScope(t *testing.T) {
+	got := rgScope(testProjectInfo())
+	want := "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-foundry"
+	if got != want {
+		t.Fatalf("rgScope = %q, want %q", got, want)
+	}
+}
+
+func TestBucketScope(t *testing.T) {
+	info := testProjectInfo()
+	cases := []struct {
+		name  string
+		scope string
+		want  scopeBucket
+	}{
+		{"project", info.projectScope, scopeBucketProject},
+		{"account", info.accountScope, scopeBucketAccount},
+		{"resource_group", rgScope(info), scopeBucketResourceGroup},
+		{"subscription", "/subscriptions/00000000-0000-0000-0000-000000000001", scopeBucketOther},
+		{"random_resource", "/subscriptions/.../resourceGroups/other/providers/X/Y", scopeBucketOther},
+		{"case_insensitive_project", strings.ToUpper(info.projectScope), scopeBucketProject},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := bucketScope(tc.scope, info); got != tc.want {
+				t.Fatalf("bucketScope(%q) = %v, want %v", tc.scope, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSortedKeys(t *testing.T) {
+	got := sortedKeys(map[string]bool{"Owner": true, "Cognitive Services User": true, "Reader": true})
+	want := []string{"Cognitive Services User", "Owner", "Reader"}
+	if !slicesEqual(got, want) {
+		t.Fatalf("got = %v, want %v", got, want)
+	}
+	if sortedKeys(nil) != nil {
+		t.Errorf("sortedKeys(nil) should return nil")
+	}
+	if sortedKeys(map[string]bool{}) != nil {
+		t.Errorf("sortedKeys({}) should return nil")
+	}
+}
+
+func TestRoleLabelForID(t *testing.T) {
+	if got := roleLabelForID(doctorRoleOwner); got != "Owner" {
+		t.Errorf("Owner GUID -> %q, want Owner", got)
+	}
+	if got := roleLabelForID("not-a-known-guid"); got != "not-a-known-guid" {
+		t.Errorf("unknown GUID should pass through, got %q", got)
+	}
+}
+
+func TestRenderScopeBucket(t *testing.T) {
+	if got := renderScopeBucket(nil); got != "  - (none)" {
+		t.Errorf("empty bucket = %q, want '  - (none)'", got)
+	}
+	got := renderScopeBucket([]string{"Owner", "Reader"})
+	want := "  - Owner\n  - Reader"
+	if got != want {
+		t.Errorf("two-role bucket = %q, want %q", got, want)
+	}
+}
+
+func TestRenderAgentRoleSummary(t *testing.T) {
+	got := renderAgentRoleSummary(
+		"research-bot",
+		"33333333-3333-3333-3333-333333333333",
+		agentRoleSummary{
+			project:       []string{"Cognitive Services User"},
+			account:       nil,
+			resourceGroup: []string{"Storage Blob Data Reader"},
+		},
+	)
+	if !strings.Contains(got, "agent: research-bot") {
+		t.Errorf("missing agent name: %q", got)
+	}
+	if !strings.Contains(got, "principal: 33333333-3333-3333-3333-333333333333") {
+		t.Errorf("missing principal: %q", got)
+	}
+	if !strings.Contains(got, "project scope:\n  - Cognitive Services User") {
+		t.Errorf("missing project scope list: %q", got)
+	}
+	if !strings.Contains(got, "account scope:\n  - (none)") {
+		t.Errorf("missing empty account placeholder: %q", got)
+	}
+	if !strings.Contains(got, "resource-group scope:\n  - Storage Blob Data Reader") {
+		t.Errorf("missing resource-group list: %q", got)
+	}
+}
+
+func TestClassifyAgentRoleSummary(t *testing.T) {
+	cases := []struct {
+		name string
+		in   agentRoleSummary
+		want doctorStatus
+	}{
+		{"fail_all_empty", agentRoleSummary{}, doctorFail},
+		{
+			"info_project_and_account",
+			agentRoleSummary{
+				project: []string{"Cognitive Services User"},
+				account: []string{"Reader"},
+			},
+			doctorInfo,
+		},
+		{
+			"info_project_and_rg",
+			agentRoleSummary{
+				project:       []string{"Cognitive Services User"},
+				resourceGroup: []string{"Storage Blob Data Reader"},
+			},
+			doctorInfo,
+		},
+		{
+			"warn_project_only",
+			agentRoleSummary{
+				project: []string{"Cognitive Services User"},
+			},
+			doctorWarn,
+		},
+		{
+			"warn_account_only",
+			agentRoleSummary{
+				account: []string{"Reader"},
+			},
+			doctorWarn,
+		},
+		{
+			"warn_other_only",
+			agentRoleSummary{
+				other: []string{"Reader"},
+			},
+			doctorWarn,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := classifyAgentRoleSummary(tc.in); got != tc.want {
+				t.Fatalf("classifyAgentRoleSummary = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestCheckAgentIdentityRBAC_SkipsWhenAuthDidNotPass(t *testing.T) {
+	a := &doctorAction{}
+	results := a.checkAgentIdentityRBAC(t.Context(), remotePreconditions{}, doctorFail, doctorOK)
+	if len(results) != 1 {
+		t.Fatalf("len = %d, want 1", len(results))
+	}
+	if results[0].Status != doctorSkip {
+		t.Fatalf("status = %v, want skip", results[0].Status)
+	}
+	if results[0].ID != "remote.agent-rbac" {
+		t.Errorf("ID = %q, want remote.agent-rbac", results[0].ID)
+	}
+}
+
+func TestCheckAgentIdentityRBAC_SkipsWhenReachabilityDidNotPass(t *testing.T) {
+	a := &doctorAction{}
+	results := a.checkAgentIdentityRBAC(t.Context(), remotePreconditions{}, doctorOK, doctorFail)
+	if len(results) != 1 || results[0].Status != doctorSkip {
+		t.Fatalf("expected single skip row, got %+v", results)
+	}
+	if !strings.Contains(results[0].Detail, "reachability") {
+		t.Errorf("detail = %q, want mention of reachability", results[0].Detail)
+	}
+}
+
+func TestCheckAgentIdentityRBAC_SkipsWhenEndpointMissing(t *testing.T) {
+	a := &doctorAction{}
+	pre := remotePreconditions{endpointSet: false}
+	results := a.checkAgentIdentityRBAC(t.Context(), pre, doctorOK, doctorOK)
+	if len(results) != 1 || results[0].Status != doctorSkip {
+		t.Fatalf("expected single skip row, got %+v", results)
+	}
+	if !strings.Contains(results[0].Detail, "AZURE_AI_PROJECT_ENDPOINT") {
+		t.Errorf("detail = %q, want mention of AZURE_AI_PROJECT_ENDPOINT", results[0].Detail)
+	}
+}
+
 // slicesEqual is a tiny helper local to this test file — avoids pulling
 // reflect or slices.Equal into the doctor test surface for what is a
 // 3-line check.

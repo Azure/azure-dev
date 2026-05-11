@@ -130,12 +130,22 @@ func (a *doctorAction) runRemoteChecks(ctx context.Context, pre remotePreconditi
 		out = append(out, timed(func() doctorResult { return r }))
 	}
 
+	// Check 12 — Agent identity role assignments (per service).
+	// Depends on check 7 (auth) AND check 8 (reachability). Issues a
+	// GetAgentVersion call per service to resolve the MI principal ID,
+	// then lists role assignments at the project scope and buckets
+	// them across project / account / resource-group scopes. Rendered
+	// as INFO by default since the value is mostly informational.
+	for _, row := range a.checkAgentIdentityRBAC(ctx, pre, authResult.Status, reachabilityResult.Status) {
+		r := row
+		out = append(out, timed(func() doctorResult { return r }))
+	}
+
 	return out
 }
 
 // remoteSkipRows returns the design's remote-check Skip placeholders
-// pre-filled with `reason`. R2-E ships rows for checks 7, 8, 9, 10, 11;
-// R2-F will extend the slice when check 12 lands.
+// pre-filled with `reason`. R2-F ships rows for checks 7-12.
 func remoteSkipRows(reason string) []doctorResult {
 	return []doctorResult{
 		{
@@ -165,6 +175,12 @@ func remoteSkipRows(reason string) []doctorResult {
 		{
 			ID:     "remote.agent-status",
 			Title:  "Agent status",
+			Status: doctorSkip,
+			Detail: reason,
+		},
+		{
+			ID:     "remote.agent-rbac",
+			Title:  "Agent identity roles",
 			Status: doctorSkip,
 			Detail: reason,
 		},

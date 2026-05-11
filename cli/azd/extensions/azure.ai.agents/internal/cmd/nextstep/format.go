@@ -40,17 +40,53 @@ func PrintNext(w io.Writer, suggestions []Suggestion) error {
 	return err
 }
 
+// FormatNextForNote renders a "Next:" block as a string suitable for
+// embedding in an artifact's Metadata["note"]. Unlike PrintNext it does
+// not truncate the block (the artifact note is a contained region, not
+// interleaved with command output) and does not include a leading or
+// trailing newline (the artifact renderer adds its own line break).
+//
+// Lines 2+ are pre-indented by 4 spaces so the command column stays
+// aligned with line 1 when core azd's artifact renderer (which only
+// indents the first line of the note) is called with the typical caller
+// indent of two spaces — see cli/azd/pkg/project/artifact.go, which
+// writes "\n%s  %s" with the caller's indent on line 1 only. Under
+// deeper or shallower caller indents the lines drift slightly but the
+// note remains readable in both cases.
+//
+// Empty input returns an empty string.
+func FormatNextForNote(suggestions []Suggestion) string {
+	body := renderRows(suggestions, 0)
+	if body == "" {
+		return ""
+	}
+	return strings.ReplaceAll(strings.TrimSuffix(body, "\n"), "\n", "\n    ")
+}
+
 // renderBlock returns the formatted "Next:" block (with a leading blank
 // line and trailing newline) or an empty string when there is nothing to
-// render.
+// render. The block is capped at maxRendered visible lines.
+func renderBlock(suggestions []Suggestion) string {
+	body := renderRows(suggestions, maxRendered)
+	if body == "" {
+		return ""
+	}
+	// Leading blank line separates the block from preceding output.
+	return "\n" + body
+}
+
+// renderRows returns the formatted suggestion lines (one per line,
+// terminated with "\n") with no leading blank line. limit caps the
+// number of visible suggestions; limit <= 0 means render every
+// suggestion.
 //
 // Truncation is partitioned: at most one Suggestion.Trailing entry is
 // reserved for the final visible slot, with remaining slots filled by
 // primary (non-trailing) entries in ascending Priority order. The
 // trailing reservation lets resolvers emit follow-up nudges (e.g., the
 // post-action `azd deploy` line) without having those nudges silently
-// dropped when primary suggestions outnumber maxRendered.
-func renderBlock(suggestions []Suggestion) string {
+// dropped when primary suggestions outnumber the cap.
+func renderRows(suggestions []Suggestion, limit int) string {
 	if len(suggestions) == 0 {
 		return ""
 	}
@@ -76,8 +112,8 @@ func renderBlock(suggestions []Suggestion) string {
 	}
 
 	var rendered []Suggestion
-	if trailing != nil {
-		budget := maxRendered - 1
+	if limit > 0 && trailing != nil {
+		budget := limit - 1
 		if budget < 0 {
 			budget = 0
 		}
@@ -85,11 +121,16 @@ func renderBlock(suggestions []Suggestion) string {
 			primary = primary[:budget]
 		}
 		rendered = append(primary, *trailing)
-	} else {
-		if len(primary) > maxRendered {
-			primary = primary[:maxRendered]
+	} else if limit > 0 {
+		if len(primary) > limit {
+			primary = primary[:limit]
 		}
 		rendered = primary
+	} else {
+		rendered = primary
+		if trailing != nil {
+			rendered = append(rendered, *trailing)
+		}
 	}
 
 	if len(rendered) == 0 {
@@ -104,8 +145,6 @@ func renderBlock(suggestions []Suggestion) string {
 	}
 
 	var b strings.Builder
-	// Leading blank line separates the block from preceding output.
-	b.WriteByte('\n')
 	for i, s := range rendered {
 		if i == 0 {
 			b.WriteString(primaryPrefix)

@@ -19,13 +19,12 @@
 // can be unit-tested without a process-level shim.
 package doctor
 
-// CurrentSchemaVersion is the version stamped onto the JSON envelope. Bump
-// when the JSON shape changes in a non-additive way; additive changes
-// (new optional fields, new status values that consumers can ignore) do
-// not require a bump. Consumers should treat unknown statuses as "pass"
-// for the purposes of summary aggregation only when this version equals
-// the one they were built against.
-const CurrentSchemaVersion = "1"
+// CurrentSchemaVersion is the version stamped onto the JSON envelope. The
+// value matches the design spec (`docs/design/azd-ai-agent-nextsteps.md`,
+// "Exit codes & JSON output" section). Bump on non-additive shape changes;
+// additive changes (new optional fields, new status values) do not require
+// a bump.
+const CurrentSchemaVersion = "1.0"
 
 // Status is the outcome of a single check. The set is closed; runners and
 // formatters branch exhaustively on these four values.
@@ -49,21 +48,30 @@ const (
 
 // Result captures the outcome of one check.
 //
-// ID is a stable identifier (the design pins these to "1".."12"). Name is
-// a short human-readable title for the text formatter; Message is the
-// one-line summary that always renders. Details and Suggestion are
-// optional — Details is a structured map for machine consumers (the JSON
-// formatter emits it as an object; the text formatter renders each
-// key-value pair on an indented line), Suggestion is a single actionable
-// command or instruction (the text formatter renders it on its own line
-// prefixed with "→ ").
+// ID is a stable namespaced identifier (`local.azure-yaml`,
+// `remote.rbac`, etc.). Name is a short human-readable title; Message is
+// the one-line summary that always renders. Suggestion is a single
+// actionable command or instruction (the text formatter renders it after
+// the message, indented). Links is an optional slice of URLs (TSG pages,
+// learn.microsoft.com docs) that the formatter renders below the
+// suggestion. DurationMs is populated by the Runner per check.
+//
+// JSON tags are extension-owned: the wire shape includes `links` and
+// `durationMs` (matching the design spec at
+// `docs/design/azd-ai-agent-nextsteps.md`) plus a `details` extension
+// field (omitted from the design's example but required for Phase 5
+// remote checks that surface structured payload — role lists, scope
+// ARNs). `details` is `omitempty`, so consumers built against the
+// design's schema ignore the extra field and remain compatible.
 type Result struct {
 	ID         string         `json:"id"`
 	Name       string         `json:"name"`
 	Status     Status         `json:"status"`
 	Message    string         `json:"message,omitempty"`
-	Details    map[string]any `json:"details,omitempty"`
 	Suggestion string         `json:"suggestion,omitempty"`
+	Links      []string       `json:"links,omitempty"`
+	DurationMs int64          `json:"durationMs,omitempty"`
+	Details    map[string]any `json:"details,omitempty"`
 }
 
 // Summary is the aggregate count of results by status. Computed by the
@@ -81,12 +89,17 @@ type Summary struct {
 // checks are wired. Redacted is the inverse of the --unredacted flag and
 // indicates whether the formatter scrubbed identifiers in user-facing
 // strings.
+//
+// Summary is computed by the Runner for ExitCode and the text formatter,
+// but is excluded from the JSON envelope (consumers iterate Checks if they
+// need totals). Excluding it keeps the wire shape aligned with the design
+// spec.
 type Report struct {
 	SchemaVersion string   `json:"schemaVersion"`
 	Remote        bool     `json:"remote"`
 	Redacted      bool     `json:"redacted"`
 	Checks        []Result `json:"checks"`
-	Summary       Summary  `json:"summary"`
+	Summary       Summary  `json:"-"`
 }
 
 // Options are the runtime flags that influence the runner. LocalOnly

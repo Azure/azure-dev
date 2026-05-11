@@ -6,6 +6,7 @@ package doctor
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -321,4 +322,20 @@ func TestRunner_Run_UnredactedFlipsRedacted(t *testing.T) {
 	report := runner.Run(t.Context(), Options{Unredacted: true})
 
 	require.False(t, report.Redacted, "Unredacted true should flip Redacted to false")
+}
+
+func TestRunner_Run_DurationMsIsPopulated(t *testing.T) {
+	t.Parallel()
+
+	runner := &Runner{Checks: []Check{{ID: "1", Name: "x", Fn: func(_ context.Context, _ Options, _ []Result) Result {
+		// Sleep long enough that even a millisecond-resolution clock observes a tick.
+		time.Sleep(5 * time.Millisecond)
+		return Result{Status: StatusPass, Message: "ok"}
+	}}}}
+
+	report := runner.Run(t.Context(), Options{})
+
+	require.Len(t, report.Checks, 1)
+	require.GreaterOrEqual(t, report.Checks[0].DurationMs, int64(1),
+		"runner must time each check and stamp DurationMs (got %d)", report.Checks[0].DurationMs)
 }

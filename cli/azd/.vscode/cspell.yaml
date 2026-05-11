@@ -42,6 +42,7 @@ words:
   - opencode
   - grpcbroker
   - msiexec
+  - nextstep
   - nosec
   - npx
   - oneof

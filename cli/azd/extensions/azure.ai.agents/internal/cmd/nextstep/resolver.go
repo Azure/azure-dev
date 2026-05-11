@@ -77,6 +77,7 @@ func ResolveAfterInit(state *State) []Suggestion {
 		Command:     "azd deploy",
 		Description: "when ready to deploy to Azure",
 		Priority:    90,
+		Trailing:    true,
 	})
 
 	return out

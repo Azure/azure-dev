@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // MinNewBackendVersion is the floor extension version required to talk to
@@ -73,7 +75,7 @@ func newCheckGRPCAndVersion(deps Dependencies) Check {
 				return Result{
 					Status:     StatusFail,
 					Message:    msg,
-					Suggestion: "Run the extension via `azd ai agent doctor` (not the extension binary directly) and ensure azd is at least 1.24.0.",
+					Suggestion: "Run the extension via `azd ai agent doctor` rather than launching the extension binary directly.",
 				}
 			}
 
@@ -82,6 +84,23 @@ func newCheckGRPCAndVersion(deps Dependencies) Check {
 				return Result{
 					Status:  StatusPass,
 					Message: fmt.Sprintf("azd extension reachable (version: %s).", coalesce(ver, "unknown")),
+				}
+			}
+
+			// If the version string is non-empty/non-"dev" but still can't be parsed
+			// (e.g. a build label like "canary" or an unexpected future format),
+			// surface Pass but mark the floor check as skipped rather than silently
+			// claiming the floor was verified.
+			if _, ok := parseMainVersion(ver); !ok {
+				return Result{
+					Status: StatusPass,
+					Message: fmt.Sprintf(
+						"azd extension reachable (version %s; floor check skipped: version string not parseable).",
+						ver),
+					Details: map[string]any{
+						"extensionVersion": ver,
+						"floorChecked":     false,
+					},
 				}
 			}
 
@@ -132,10 +151,19 @@ func newCheckProjectConfig(deps Dependencies) Check {
 
 			resp, err := deps.AzdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 			if err != nil {
+				suggestion := "Run from a directory containing `azure.yaml`, or initialize one with `azd init`."
+				if isTransportFailure(err) {
+					// `azdext.NewAzdClient` constructs a lazy gRPC channel, so the
+					// nil-client check above cannot detect a stale/unreachable
+					// `AZD_SERVER` endpoint. The transport failure surfaces here on
+					// the first RPC — swap the suggestion so the user looks at the
+					// channel, not at `azure.yaml`.
+					suggestion = "Re-run via `azd ai agent doctor`; the extension cannot reach azd's gRPC channel."
+				}
 				return Result{
 					Status:     StatusFail,
 					Message:    fmt.Sprintf("failed to get project config: %v", err),
-					Suggestion: "Run from a directory containing `azure.yaml`, or initialize one with `azd init`.",
+					Suggestion: suggestion,
 				}
 			}
 			if resp == nil || resp.Project == nil {
@@ -188,10 +216,14 @@ func newCheckEnvironmentSelected(deps Dependencies) Check {
 
 			resp, err := deps.AzdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
 			if err != nil {
+				suggestion := "Create one with `azd env new <name>` or select an existing one with `azd env select <name>`."
+				if isTransportFailure(err) {
+					suggestion = "Re-run via `azd ai agent doctor`; the extension cannot reach azd's gRPC channel."
+				}
 				return Result{
 					Status:     StatusFail,
 					Message:    fmt.Sprintf("failed to get current environment: %v", err),
-					Suggestion: "Create one with `azd env new <name>` or select an existing one with `azd env select <name>`.",
+					Suggestion: suggestion,
 				}
 			}
 			if resp == nil || resp.Environment == nil || resp.Environment.Name == "" {
@@ -211,6 +243,26 @@ func newCheckEnvironmentSelected(deps Dependencies) Check {
 			}
 		},
 	}
+}
+
+// isTransportFailure reports whether err is a gRPC transport-class failure
+// (channel unreachable, deadline exceeded) as opposed to a server-side
+// application error. Used by downstream checks to swap the user-facing
+// suggestion when an RPC fails because the channel itself is broken,
+// rather than because the project/environment is misconfigured.
+func isTransportFailure(err error) bool {
+	if err == nil {
+		return false
+	}
+	st, ok := status.FromError(err)
+	if !ok {
+		return false
+	}
+	switch st.Code() {
+	case codes.Unavailable, codes.DeadlineExceeded:
+		return true
+	}
+	return false
 }
 
 // coalesce returns the first non-empty string in values, or "" if all

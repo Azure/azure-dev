@@ -4,7 +4,7 @@ license: MIT
 metadata:
   version: "1.0"
 description: >-
-  Generate weekly executive reports for the azd team. Pulls PR/issue/release
+  **WORKFLOW SKILL** — Generate weekly executive reports for the azd team. Pulls PR/issue/release
   data from GitHub, reads changelogs, combines with team notes, and produces
   a polished markdown report.
 

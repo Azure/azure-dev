@@ -4,7 +4,7 @@ license: MIT
 metadata:
   version: "1.0"
 description: >-
-  Generate narrated weekly demo videos for azd features. Pulls latest commits,
+  **WORKFLOW SKILL** — Generate narrated weekly demo videos for azd features. Pulls latest commits,
   identifies demo-worthy features, researches PRs, and produces MP4 videos with
   dark-themed slides and neural TTS narration.
 

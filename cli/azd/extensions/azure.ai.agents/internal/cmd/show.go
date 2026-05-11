@@ -13,6 +13,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	projectpkg "azureaiagent/internal/project"
 
@@ -31,6 +32,9 @@ type ShowAction struct {
 	flags     *showFlags
 	azdClient *azdext.AzdClient
 	envName   string
+	// serviceName is the azure.yaml service name (used to match
+	// state.Services[].Name for protocol-aware Next: guidance).
+	serviceName string
 	// serviceKey is the uppercase/underscored form of the service name,
 	// used to look up per-service env vars (e.g. AGENT_{KEY}_RESPONSES_ENDPOINT).
 	serviceKey string
@@ -106,6 +110,7 @@ configuration and the current azd environment. Optionally specify the service na
 				flags:        flags,
 				azdClient:    azdClient,
 				envName:      envName,
+				serviceName:  info.ServiceName,
 				serviceKey:   toServiceKey(info.ServiceName),
 			}
 
@@ -123,6 +128,34 @@ type showResult struct {
 	*agent_api.AgentVersionObject
 	PlaygroundURL string            `json:"playground_url,omitempty"`
 	Endpoints     map[string]string `json:"agent_endpoints,omitempty"`
+	NextStep      *nextStepEnvelope `json:"next_step,omitempty"`
+}
+
+// nextStepEnvelope is the JSON shape for context-aware guidance attached to
+// `azd ai agent show --output json`. Mirrors []nextstep.Suggestion but
+// omits the internal Priority/Trailing renderer hints — JSON consumers
+// only need the command + description.
+type nextStepEnvelope struct {
+	Suggestions []nextStepSuggestion `json:"suggestions"`
+}
+
+type nextStepSuggestion struct {
+	Command     string `json:"command"`
+	Description string `json:"description"`
+}
+
+func toNextStepEnvelope(suggestions []nextstep.Suggestion) *nextStepEnvelope {
+	if len(suggestions) == 0 {
+		return nil
+	}
+	out := &nextStepEnvelope{Suggestions: make([]nextStepSuggestion, 0, len(suggestions))}
+	for _, s := range suggestions {
+		out.Suggestions = append(out.Suggestions, nextStepSuggestion{
+			Command:     s.Command,
+			Description: s.Description,
+		})
+	}
+	return out
 }
 
 // Run executes the show command logic.
@@ -147,12 +180,34 @@ func (a *ShowAction) Run(ctx context.Context) error {
 	// Resolve deployed endpoint URLs from env vars (best-effort)
 	result.Endpoints = a.resolveEndpointURLs(ctx)
 
+	// Resolve context-aware next-step guidance (best-effort: assembly
+	// errors are tolerated; the resolver degrades gracefully on partial
+	// state per cli/azd/extensions/azure.ai.agents/internal/cmd/nextstep
+	// State assembly docs).
+	suggestions := a.resolveNextStep(ctx, version.Status)
+
 	switch a.flags.output {
 	case "table":
-		return printShowResultTable(result)
+		return printShowResultTable(result, suggestions)
 	default:
+		result.NextStep = toNextStepEnvelope(suggestions)
 		return printShowResultJSON(result)
 	}
+}
+
+// resolveNextStep assembles state and asks the resolver for the post-show
+// guidance block. Returns nil when state assembly fully fails so callers
+// can short-circuit (the resolver itself also returns nil for nil state).
+func (a *ShowAction) resolveNextStep(ctx context.Context, status string) []nextstep.Suggestion {
+	if a.azdClient == nil {
+		return nil
+	}
+	state, _ := nextstep.AssembleState(ctx, a.azdClient)
+	if state == nil {
+		return nil
+	}
+	state.AgentStatus = status
+	return nextstep.ResolveAfterShow(state, a.serviceName)
 }
 
 // resolvePlaygroundURL reads AZURE_AI_PROJECT_ID from the azd environment
@@ -234,7 +289,7 @@ func printShowResultJSON(result *showResult) error {
 	return nil
 }
 
-func printShowResultTable(result *showResult) error {
+func printShowResultTable(result *showResult, suggestions []nextstep.Suggestion) error {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "FIELD\tVALUE")
 	fmt.Fprintln(w, "-----\t-----")
@@ -281,5 +336,18 @@ func printShowResultTable(result *showResult) error {
 		fmt.Fprintf(w, "Endpoint (%s)\t%s\n", label, result.Endpoints[label])
 	}
 
-	return w.Flush()
+	if err := w.Flush(); err != nil {
+		return err
+	}
+
+	// Next: guidance is human-only on the table path; the JSON envelope
+	// carries the same data for machines. Suppress on non-TTY (pipes,
+	// file redirection) so scripted consumers of the table output don't
+	// see surprise trailing lines.
+	if len(suggestions) > 0 && isTerminal(os.Stdout.Fd()) {
+		fmt.Println()
+		_ = nextstep.PrintNext(os.Stdout, suggestions)
+	}
+
+	return nil
 }

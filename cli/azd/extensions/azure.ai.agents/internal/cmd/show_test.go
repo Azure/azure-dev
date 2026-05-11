@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/pkg/agents/agent_api"
 
 	"github.com/stretchr/testify/assert"
@@ -177,6 +178,55 @@ func TestPrintAgentVersionJSON_NoLinks(t *testing.T) {
 	assert.False(t, hasPlayground, "playground_url should be omitted when empty")
 	_, hasEndpoints := raw["agent_endpoints"]
 	assert.False(t, hasEndpoints, "agent_endpoints should be omitted when nil")
+	_, hasNextStep := raw["next_step"]
+	assert.False(t, hasNextStep, "next_step should be omitted when nil")
+}
+
+func TestShowResultJSON_NextStepEnvelope(t *testing.T) {
+	version := &agent_api.AgentVersionObject{
+		Object:  "agent.version",
+		ID:      "ver-999",
+		Name:    "my-agent",
+		Version: "1",
+		Status:  "active",
+	}
+
+	result := &showResult{
+		AgentVersionObject: version,
+		NextStep: toNextStepEnvelope([]nextstep.Suggestion{
+			{
+				Command:     `azd ai agent invoke my-agent "Hello!"`,
+				Description: "the agent is ready — send it a sample request",
+				Priority:    10,
+			},
+		}),
+	}
+
+	jsonBytes, err := json.MarshalIndent(result, "", "  ")
+	require.NoError(t, err)
+
+	var raw map[string]any
+	err = json.Unmarshal(jsonBytes, &raw)
+	require.NoError(t, err)
+
+	nextStep, ok := raw["next_step"].(map[string]any)
+	require.True(t, ok, "next_step should be present and an object")
+	suggestions, ok := nextStep["suggestions"].([]any)
+	require.True(t, ok, "next_step.suggestions should be an array")
+	require.Len(t, suggestions, 1)
+	first := suggestions[0].(map[string]any)
+	assert.Equal(t, `azd ai agent invoke my-agent "Hello!"`, first["command"])
+	assert.Equal(t, "the agent is ready — send it a sample request", first["description"])
+	// Internal renderer hints (priority, trailing) must not leak into JSON.
+	_, hasPriority := first["priority"]
+	assert.False(t, hasPriority, "priority must not appear in JSON envelope")
+	_, hasTrailing := first["trailing"]
+	assert.False(t, hasTrailing, "trailing must not appear in JSON envelope")
+}
+
+func TestToNextStepEnvelope_EmptyReturnsNil(t *testing.T) {
+	assert.Nil(t, toNextStepEnvelope(nil))
+	assert.Nil(t, toNextStepEnvelope([]nextstep.Suggestion{}))
 }
 
 func TestPrintAgentVersionTable(t *testing.T) {
@@ -213,7 +263,7 @@ func TestPrintAgentVersionTable(t *testing.T) {
 		},
 	}
 
-	err := printShowResultTable(result)
+	err := printShowResultTable(result, nil)
 	require.NoError(t, err)
 }
 
@@ -226,6 +276,6 @@ func TestPrintAgentVersionTable_MinimalFields(t *testing.T) {
 	}
 
 	result := &showResult{AgentVersionObject: version}
-	err := printShowResultTable(result)
+	err := printShowResultTable(result, nil)
 	require.NoError(t, err)
 }

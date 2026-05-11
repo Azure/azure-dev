@@ -39,9 +39,12 @@ type ShowAction struct {
 	serviceName string
 	// agentName is the deployed Foundry agent name (from the azd env
 	// `AGENT_<KEY>_NAME` value). Differs from serviceName when deploy
-	// appends a suffix; it is what gets baked into the suggested
-	// `azd ai agent invoke <agentName> ...` command so the URL path
-	// matches Foundry's expectation.
+	// appends a suffix. Used for (a) constructing the Foundry API
+	// client via newAgentContext and (b) keying the OpenAPI cache
+	// lookup via WithOpenAPIProbe(agentName, "remote"). The suggested
+	// invoke command, however, uses serviceName (not agentName) —
+	// invoke keys on azure.yaml s.Name, so the copy-pasted command
+	// must carry the service name. See `helpers.go:resolveAgentService`.
 	agentName string
 	// serviceKey is the uppercase/underscored form of the service name,
 	// used to look up per-service env vars (e.g. AGENT_{KEY}_RESPONSES_ENDPOINT).
@@ -205,12 +208,13 @@ func (a *ShowAction) Run(ctx context.Context) error {
 }
 
 // resolveNextStep assembles state and asks the resolver for the post-show
-// guidance block. AssembleState always returns a non-nil partial state per
-// its documented contract, so no nil check is needed here. The OpenAPI
-// probe is enabled so the Active-branch invoke suggestion can pull a
-// schema-correct payload from the cache (populated by prior `azd ai
-// agent invoke` runs) when available; when the cache is empty the
-// resolver falls back to a protocol-generic literal.
+// guidance block. The actual work happens in resolveNextStepFromSource —
+// this is just the entry point that constructs a real Source from the
+// azd gRPC client. The OpenAPI probe is enabled so the Active-branch
+// invoke suggestion can pull a schema-correct payload from the cache
+// (populated by prior `azd ai agent invoke` runs) when available; when
+// the cache is empty the resolver falls back to a protocol-generic
+// literal.
 func (a *ShowAction) resolveNextStep(ctx context.Context, status string) []nextstep.Suggestion {
 	if a.azdClient == nil {
 		return nil
@@ -220,7 +224,10 @@ func (a *ShowAction) resolveNextStep(ctx context.Context, status string) []nexts
 
 // resolveNextStepFromSource is the source-injecting core of resolveNextStep,
 // extracted so tests can drive the resolver end-to-end with a fake Source
-// without spinning up a real azd gRPC client.
+// without spinning up a real azd gRPC client. AssembleStateFromSource
+// always returns a non-nil partial state per its documented contract
+// (`nextstep/state.go:AssembleStateFromSource`), so no nil check is
+// needed here even when len(errs) > 0.
 func resolveNextStepFromSource(
 	ctx context.Context,
 	src nextstep.Source,

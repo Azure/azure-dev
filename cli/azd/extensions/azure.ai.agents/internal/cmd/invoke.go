@@ -625,6 +625,11 @@ func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext
 	rc.azdClient = azdClient
 
 	rc.name = a.flags.name
+	// Auto-resolve agent name and version from azure.yaml. Track the
+	// azure.yaml service name separately from the deployed Foundry name
+	// so post-success next-step suggestions emit the service name; show
+	// keys on s.Name in azure.yaml and would 404 on the deployed Foundry
+	// name in the divergent case.
 	if info, err := resolveAgentServiceFromProject(ctx, azdClient, rc.name, a.noPrompt); err == nil {
 		rc.serviceName = info.ServiceName
 		if info.AgentName != "" {

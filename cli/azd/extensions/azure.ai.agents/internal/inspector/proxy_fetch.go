@@ -137,11 +137,7 @@ func (s *rpcSession) proxyInvoke(raw json.RawMessage) (any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
 	}
-	if isResponses := strings.Contains(p.URL, "/responses"); isResponses {
-		s.logger.Printf("invoke [%s] response %d: %s", p.RequestID, resp.StatusCode, string(body))
-	} else {
-		s.logger.Printf("invoke [%s] response %d (%d bytes)", p.RequestID, resp.StatusCode, len(body))
-	}
+	s.logger.Printf("invoke [%s] response %d: %s", p.RequestID, resp.StatusCode, string(body))
 	return proxyInvokeResult{
 		Status:     resp.StatusCode,
 		StatusText: resp.Status,

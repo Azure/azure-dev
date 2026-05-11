@@ -182,7 +182,7 @@ extends:
           StageName: CLI_BuildAndTest
           StageDependsOn:
             - Detect
-          StageCondition: and(not(canceled()), eq(stageDependencies.Detect.DiffAnalysis.outputs['diff.RunCli'], 'true'))
+          StageCondition: and(not(canceled()), eq(dependencies.Detect.outputs['DiffAnalysis.diff.RunCli'], 'true'))
           AzureRecordMode: playback
           BuildMatrix:
             Windows:
@@ -251,7 +251,7 @@ extends:
           StageName: Notice_BuildAndTest
           StageDependsOn:
             - Detect
-          StageCondition: and(not(canceled()), eq(stageDependencies.Detect.DiffAnalysis.outputs['diff.RunNotice'], 'true'))
+          StageCondition: and(not(canceled()), eq(dependencies.Detect.outputs['DiffAnalysis.diff.RunNotice'], 'true'))
 
       # ================================================================
       # Leg: VS Code extension
@@ -261,7 +261,7 @@ extends:
           StageName: VSCode_BuildAndTest
           StageDependsOn:
             - Detect
-          StageCondition: and(not(canceled()), eq(stageDependencies.Detect.DiffAnalysis.outputs['diff.RunVscode'], 'true'))
+          StageCondition: and(not(canceled()), eq(dependencies.Detect.outputs['DiffAnalysis.diff.RunVscode'], 'true'))
 
       # ================================================================
       # Leg: Azure DevOps extension
@@ -271,7 +271,7 @@ extends:
           StageName: AzDevOps_BuildAndTest
           StageDependsOn:
             - Detect
-          StageCondition: and(not(canceled()), eq(stageDependencies.Detect.DiffAnalysis.outputs['diff.RunAzDevOps'], 'true'))
+          StageCondition: and(not(canceled()), eq(dependencies.Detect.outputs['DiffAnalysis.diff.RunAzDevOps'], 'true'))
 
       # ================================================================
       # Leg: Extension — azure.ai.agents
@@ -281,7 +281,7 @@ extends:
           StageName: Ext_AzureAiAgents_BuildAndTest
           StageDependsOn:
             - Detect
-          StageCondition: and(not(canceled()), eq(stageDependencies.Detect.DiffAnalysis.outputs['diff.RunExt_AzureAiAgents'], 'true'))
+          StageCondition: and(not(canceled()), eq(dependencies.Detect.outputs['DiffAnalysis.diff.RunExt_AzureAiAgents'], 'true'))
           AzdExtensionId: azure.ai.agents
           SanitizedExtensionId: azure-ai-agents
           AzdExtensionDirectory: cli/azd/extensions/azure.ai.agents
@@ -294,7 +294,7 @@ extends:
           StageName: Ext_AzureAiFinetune_BuildAndTest
           StageDependsOn:
             - Detect
-          StageCondition: and(not(canceled()), eq(stageDependencies.Detect.DiffAnalysis.outputs['diff.RunExt_AzureAiFinetune'], 'true'))
+          StageCondition: and(not(canceled()), eq(dependencies.Detect.outputs['DiffAnalysis.diff.RunExt_AzureAiFinetune'], 'true'))
           AzdExtensionId: azure.ai.finetune
           SanitizedExtensionId: azure-ai-finetune
           AzdExtensionDirectory: cli/azd/extensions/azure.ai.finetune
@@ -307,7 +307,7 @@ extends:
           StageName: Ext_AzureAiModels_BuildAndTest
           StageDependsOn:
             - Detect
-          StageCondition: and(not(canceled()), eq(stageDependencies.Detect.DiffAnalysis.outputs['diff.RunExt_AzureAiModels'], 'true'))
+          StageCondition: and(not(canceled()), eq(dependencies.Detect.outputs['DiffAnalysis.diff.RunExt_AzureAiModels'], 'true'))
           AzdExtensionId: azure.ai.models
           SanitizedExtensionId: azure-ai-models
           AzdExtensionDirectory: cli/azd/extensions/azure.ai.models
@@ -320,7 +320,7 @@ extends:
           StageName: Ext_AzureAppservice_BuildAndTest
           StageDependsOn:
             - Detect
-          StageCondition: and(not(canceled()), eq(stageDependencies.Detect.DiffAnalysis.outputs['diff.RunExt_AzureAppservice'], 'true'))
+          StageCondition: and(not(canceled()), eq(dependencies.Detect.outputs['DiffAnalysis.diff.RunExt_AzureAppservice'], 'true'))
           AzdExtensionId: azure.appservice
           SanitizedExtensionId: azure-appservice
           AzdExtensionDirectory: cli/azd/extensions/azure.appservice
@@ -333,7 +333,7 @@ extends:
           StageName: Ext_AzureCodingAgent_BuildAndTest
           StageDependsOn:
             - Detect
-          StageCondition: and(not(canceled()), eq(stageDependencies.Detect.DiffAnalysis.outputs['diff.RunExt_AzureCodingAgent'], 'true'))
+          StageCondition: and(not(canceled()), eq(dependencies.Detect.outputs['DiffAnalysis.diff.RunExt_AzureCodingAgent'], 'true'))
           AzdExtensionId: azure.coding-agent
           SanitizedExtensionId: azure-coding-agent
           AzdExtensionDirectory: cli/azd/extensions/azure.coding-agent
@@ -346,7 +346,7 @@ extends:
           StageName: Ext_MsAzdAiBuilder_BuildAndTest
           StageDependsOn:
             - Detect
-          StageCondition: and(not(canceled()), eq(stageDependencies.Detect.DiffAnalysis.outputs['diff.RunExt_MsAzdAiBuilder'], 'true'))
+          StageCondition: and(not(canceled()), eq(dependencies.Detect.outputs['DiffAnalysis.diff.RunExt_MsAzdAiBuilder'], 'true'))
           AzdExtensionId: microsoft.azd.ai.builder
           SanitizedExtensionId: microsoft-azd-ai-builder
           AzdExtensionDirectory: cli/azd/extensions/microsoft.azd.ai.builder
@@ -359,7 +359,7 @@ extends:
           StageName: Ext_MsAzdConcurx_BuildAndTest
           StageDependsOn:
             - Detect
-          StageCondition: and(not(canceled()), eq(stageDependencies.Detect.DiffAnalysis.outputs['diff.RunExt_MsAzdConcurx'], 'true'))
+          StageCondition: and(not(canceled()), eq(dependencies.Detect.outputs['DiffAnalysis.diff.RunExt_MsAzdConcurx'], 'true'))
           AzdExtensionId: microsoft.azd.concurx
           SanitizedExtensionId: microsoft-azd-concurx
           AzdExtensionDirectory: cli/azd/extensions/microsoft.azd.concurx
@@ -372,7 +372,7 @@ extends:
           StageName: Ext_MsAzdDemo_BuildAndTest
           StageDependsOn:
             - Detect
-          StageCondition: and(not(canceled()), eq(stageDependencies.Detect.DiffAnalysis.outputs['diff.RunExt_MsAzdDemo'], 'true'))
+          StageCondition: and(not(canceled()), eq(dependencies.Detect.outputs['DiffAnalysis.diff.RunExt_MsAzdDemo'], 'true'))
           AzdExtensionId: microsoft.azd.demo
           SanitizedExtensionId: microsoft-azd-demo
           AzdExtensionDirectory: cli/azd/extensions/microsoft.azd.demo
@@ -385,7 +385,7 @@ extends:
           StageName: Ext_MsAzdExtensions_BuildAndTest
           StageDependsOn:
             - Detect
-          StageCondition: and(not(canceled()), eq(stageDependencies.Detect.DiffAnalysis.outputs['diff.RunExt_MsAzdExtensions'], 'true'))
+          StageCondition: and(not(canceled()), eq(dependencies.Detect.outputs['DiffAnalysis.diff.RunExt_MsAzdExtensions'], 'true'))
           AzdExtensionId: microsoft.azd.extensions
           SanitizedExtensionId: microsoft-azd-extensions
           AzdExtensionDirectory: cli/azd/extensions/microsoft.azd.extensions

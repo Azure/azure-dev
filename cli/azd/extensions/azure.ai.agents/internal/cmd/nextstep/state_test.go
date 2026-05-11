@@ -220,9 +220,110 @@ func TestOptionsApplyCleanly(t *testing.T) {
 
 	cfg := &config{}
 	WithAuthProbe(true)(cfg)
-	WithOpenAPIProbe(true)(cfg)
+	WithOpenAPIProbe("echo", "local")(cfg)
 	assert.True(t, cfg.authProbe)
-	assert.True(t, cfg.openAPIProbe)
+	assert.Equal(t, "echo", cfg.openAPIAgent)
+	assert.Equal(t, "local", cfg.openAPISuffix)
+}
+
+func TestWithOpenAPIProbe_EmptyArgsDisableProbe(t *testing.T) {
+	t.Parallel()
+
+	cfg := &config{}
+	WithOpenAPIProbe("", "")(cfg)
+	assert.Empty(t, cfg.openAPIAgent)
+	assert.Empty(t, cfg.openAPISuffix)
+}
+
+func TestAssembleState_WithOpenAPIProbe_PopulatesPayloadFromCache(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	configDir := filepath.Join(projectRoot, ".azure", "dev")
+	require.NoError(t, os.MkdirAll(configDir, 0o750))
+
+	spec := `{
+		"paths": {
+			"/invocations": {
+				"post": {
+					"requestBody": {
+						"content": {
+							"application/json": {
+								"example": {"message": "ping"}
+							}
+						}
+					}
+				}
+			}
+		}
+	}`
+	require.NoError(t, os.WriteFile(
+		filepath.Join(configDir, "openapi-echo-local.json"),
+		[]byte(spec),
+		0o600,
+	))
+
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{
+			Path: projectRoot,
+			Services: map[string]*azdext.ServiceConfig{
+				"echo": {Name: "echo", Host: agentHost},
+			},
+		},
+	}
+
+	state, errs := assembleState(context.Background(), src, WithOpenAPIProbe("echo", "local"))
+	require.Empty(t, errs)
+	assert.True(t, state.HasOpenAPI)
+	assert.Equal(t, `{"message":"ping"}`, state.OpenAPIPayload)
+}
+
+func TestAssembleState_WithOpenAPIProbe_MissingCacheLeavesPayloadUnset(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, ".azure", "dev"), 0o750))
+
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{
+			Path: projectRoot,
+			Services: map[string]*azdext.ServiceConfig{
+				"echo": {Name: "echo", Host: agentHost},
+			},
+		},
+	}
+
+	state, errs := assembleState(context.Background(), src, WithOpenAPIProbe("echo", "local"))
+	require.Empty(t, errs)
+	assert.False(t, state.HasOpenAPI)
+	assert.Empty(t, state.OpenAPIPayload)
+}
+
+func TestAssembleState_WithOpenAPIProbe_DisabledWhenAgentEmpty(t *testing.T) {
+	t.Parallel()
+
+	// Lay down a spec that would otherwise be picked up — empty agentName
+	// must disable the probe so this cache is ignored.
+	projectRoot := t.TempDir()
+	configDir := filepath.Join(projectRoot, ".azure", "dev")
+	require.NoError(t, os.MkdirAll(configDir, 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(configDir, "openapi-echo-local.json"),
+		[]byte(`{"paths":{"/invocations":{"post":{"requestBody":{"content":{"application/json":{"example":{"x":1}}}}}}}}`),
+		0o600,
+	))
+
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{Path: projectRoot},
+	}
+
+	state, errs := assembleState(context.Background(), src, WithOpenAPIProbe("", "local"))
+	require.Empty(t, errs)
+	assert.False(t, state.HasOpenAPI)
+	assert.Empty(t, state.OpenAPIPayload)
 }
 
 func TestLoadServiceProtocol(t *testing.T) {

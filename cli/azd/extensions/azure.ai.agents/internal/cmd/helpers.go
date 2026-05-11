@@ -313,7 +313,13 @@ func captureResponseSession(
 // baseURL is the root URL (e.g., "http://localhost:8088" or "{endpoint}/agents/{name}/endpoint/protocols").
 // suffix is "local" or "remote", used in the cached filename.
 // If forceRefresh is false and the file already exists, the fetch is skipped.
-// Failures are non-fatal and silently ignored.
+//
+// Returns the on-disk path to the cached spec on success (whether freshly
+// written or already cached), plus a fresh flag that is true only when this
+// call actually wrote the file. Callers that want to surface the "OpenAPI
+// spec saved to ..." line gate on the fresh flag; callers that just need the
+// path (or want silence) ignore it. Returns ("", false) on any failure;
+// errors are silently swallowed because the spec is best-effort.
 func fetchOpenAPISpec(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -322,10 +328,10 @@ func fetchOpenAPISpec(
 	suffix string,
 	bearerToken string,
 	forceRefresh bool,
-) {
+) (string, bool) {
 	configPath, err := resolveConfigPath(ctx, azdClient)
 	if err != nil {
-		return
+		return "", false
 	}
 	configDir := filepath.Dir(configPath)
 
@@ -338,14 +344,14 @@ func fetchOpenAPISpec(
 
 	if !forceRefresh {
 		if _, err := os.Stat(specFile); err == nil {
-			return // file exists, skip fetch
+			return specFile, false // already cached; surface the path without re-fetching
 		}
 	}
 
 	specURL := baseURL + "/invocations/docs/openapi.json"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, specURL, nil)
 	if err != nil {
-		return
+		return "", false
 	}
 	if bearerToken != "" {
 		req.Header.Set("Authorization", "Bearer "+bearerToken)
@@ -354,24 +360,24 @@ func fetchOpenAPISpec(
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req) //nolint:gosec // G704: URL constructed from azd environment or localhost
 	if err != nil {
-		return
+		return "", false
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return
+		return "", false
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return
+		return "", false
 	}
 
 	if err := os.WriteFile(specFile, body, 0600); err != nil {
-		return
+		return "", false
 	}
 
-	fmt.Printf("OpenAPI spec saved to %s\n", specFile)
+	return specFile, true
 }
 
 // resolveConversationID resolves a Foundry conversation ID.

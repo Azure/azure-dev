@@ -1277,3 +1277,106 @@ func TestAugmentDeployNote_NoServicesIsNoOp(t *testing.T) {
 	augmentDeployNote(&nextstep.State{}, []*azdext.Artifact{artifact}, "/tmp", "")
 	require.Equal(t, "static aka.ms link", artifact.Metadata["note"])
 }
+
+// TestAugmentDeployNote_LowercaseReadme_DoesNotReplaceFallback locks the
+// casing-mismatch guard: when only a lowercase readme.md exists on a
+// case-sensitive filesystem, the resolver would still emit a literal
+// "README.md" pointer that does not resolve on disk  and the aka.ms
+// fallback would be lost. The fix tightens readmeExists to the canonical
+// casing so the append branch fires and the static link is preserved.
+func TestAugmentDeployNote_LowercaseReadme_DoesNotReplaceFallback(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+	// Detect case-sensitivity at runtime; the fix is meaningful only on
+	// case-sensitive filesystems (Linux, WSL). On Windows NTFS and default
+	// macOS APFS the OS resolves "README.md" → "readme.md" transparently,
+	// which would make readmeExists return true even after the fix.
+	probe := filepath.Join(tmp, "case-probe.txt")
+	require.NoError(t, os.WriteFile(probe, nil, 0o600))
+	if _, err := os.Stat(filepath.Join(tmp, "CASE-PROBE.TXT")); err == nil {
+		t.Skip("case-insensitive filesystem — readmeExists casing guard is a no-op here")
+	}
+
+	servicePath := filepath.Join(tmp, "src", "echo")
+	require.NoError(t, os.MkdirAll(servicePath, 0o750))
+	// Only lowercase readme.md exists; canonical README.md does not.
+	require.NoError(t, os.WriteFile(filepath.Join(servicePath, "readme.md"), []byte("sample"), 0o600))
+
+	state := &nextstep.State{
+		Services: []nextstep.ServiceState{
+			{
+				Name:         "echo",
+				RelativePath: "src/echo",
+				Protocol:     "invocations",
+				IsDeployed:   true,
+			},
+		},
+	}
+
+	artifact := &azdext.Artifact{
+		Kind: azdext.ArtifactKind_ARTIFACT_KIND_ENDPOINT,
+		Metadata: map[string]string{
+			"label": "Agent endpoint (invocations)",
+			"note":  "static aka.ms link",
+		},
+	}
+
+	augmentDeployNote(state, []*azdext.Artifact{artifact}, tmp, "")
+
+	got := artifact.Metadata["note"]
+	require.Contains(t, got, "static aka.ms link",
+		"aka.ms fallback must survive when only lowercase readme.md exists on disk")
+	require.NotContains(t, got, "see src/echo/README.md",
+		"resolver must not emit a README pointer that does not match what is on disk")
+}
+
+// TestAugmentDeployNote_MultiServiceState_ScopedToDeployedService locks
+// the deploy-hook contract that the rendered Next: block reflects only
+// the service whose artifact note is being augmented. The hook applies
+// filterServicesByName to the assembled state before invoking the
+// resolver.
+func TestAugmentDeployNote_MultiServiceState_ScopedToDeployedService(t *testing.T) {
+	t.Parallel()
+
+	state := &nextstep.State{
+		Services: []nextstep.ServiceState{
+			{Name: "alpha", RelativePath: "src/alpha", Protocol: "invocations", IsDeployed: true},
+			{Name: "beta", RelativePath: "src/beta", Protocol: "invocations", IsDeployed: true},
+		},
+	}
+	state.Services = filterServicesByName(state.Services, "alpha")
+
+	artifact := &azdext.Artifact{
+		Kind: azdext.ArtifactKind_ARTIFACT_KIND_ENDPOINT,
+		Metadata: map[string]string{
+			"label": "Agent endpoint (invocations)",
+			"note":  "static aka.ms link",
+		},
+	}
+
+	augmentDeployNote(state, []*azdext.Artifact{artifact}, "/tmp", "")
+
+	got := artifact.Metadata["note"]
+	require.NotContains(t, got, "beta",
+		"other-service guidance must not leak into the deployed service's note")
+	require.Contains(t, got, "Next:", "Next: block should be present for the deployed service")
+}
+
+// TestFilterServicesByName covers the helper used at the deploy-hook call site.
+func TestFilterServicesByName(t *testing.T) {
+	t.Parallel()
+
+	services := []nextstep.ServiceState{
+		{Name: "alpha"},
+		{Name: "beta"},
+		{Name: "gamma"},
+	}
+
+	require.Equal(t, []nextstep.ServiceState{{Name: "beta"}}, filterServicesByName(services, "beta"),
+		"match returns single-element slice")
+	require.Nil(t, filterServicesByName(services, "missing"),
+		"no match returns nil  caller short-circuits on empty Services")
+	require.Equal(t, services, filterServicesByName(services, ""),
+		"empty name returns input unchanged (defensive)")
+}

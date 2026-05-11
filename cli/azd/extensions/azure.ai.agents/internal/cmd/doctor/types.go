@@ -52,17 +52,18 @@ const (
 // ID is a stable identifier (the design pins these to "1".."12"). Name is
 // a short human-readable title for the text formatter; Message is the
 // one-line summary that always renders. Details and Suggestion are
-// optional — Details is for verbose context (multi-line OK; the text
-// formatter indents it), Suggestion is a single actionable command or
-// instruction (the text formatter renders it on its own line prefixed
-// with "→ ").
+// optional — Details is a structured map for machine consumers (the JSON
+// formatter emits it as an object; the text formatter renders each
+// key-value pair on an indented line), Suggestion is a single actionable
+// command or instruction (the text formatter renders it on its own line
+// prefixed with "→ ").
 type Result struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	Status     Status `json:"status"`
-	Message    string `json:"message,omitempty"`
-	Details    string `json:"details,omitempty"`
-	Suggestion string `json:"suggestion,omitempty"`
+	ID         string         `json:"id"`
+	Name       string         `json:"name"`
+	Status     Status         `json:"status"`
+	Message    string         `json:"message,omitempty"`
+	Details    map[string]any `json:"details,omitempty"`
+	Suggestion string         `json:"suggestion,omitempty"`
 }
 
 // Summary is the aggregate count of results by status. Computed by the

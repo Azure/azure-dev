@@ -418,10 +418,18 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	defer azdClient.Close()
 
 	name := a.flags.name
-	var agentEndpoint string
+	var (
+		agentEndpoint string
+		serviceName   string
+	)
 
-	// Auto-resolve agent name and version from azure.yaml
+	// Auto-resolve agent name and version from azure.yaml. Track the
+	// azure.yaml service name separately from the deployed Foundry name
+	// so the post-success next-step suggestion (`azd ai agent show ...`)
+	// emits the service name — show keys on s.Name in azure.yaml and
+	// would 404 on the deployed Foundry name in the divergent case.
 	if info, err := resolveAgentServiceFromProject(ctx, azdClient, name, rootFlags.NoPrompt); err == nil {
+		serviceName = info.ServiceName
 		if info.AgentName != "" {
 			name = info.AgentName
 		}
@@ -553,7 +561,11 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	if err := readSSEStream(resp.Body, name); err != nil {
 		return err
 	}
-	a.emitInvokeSuccessNextStep(nextstep.InvokeRemote, name)
+	nextName := serviceName
+	if nextName == "" {
+		nextName = name
+	}
+	a.emitInvokeSuccessNextStep(nextstep.InvokeRemote, nextName)
 	return nil
 }
 
@@ -657,10 +669,18 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	defer azdClient.Close()
 
 	name := a.flags.name
-	var agentEndpoint string
+	var (
+		agentEndpoint string
+		serviceName   string
+	)
 
-	// Auto-resolve agent name from azure.yaml / azd environment
+	// Auto-resolve agent name from azure.yaml / azd environment. Track
+	// the azure.yaml service name separately from the deployed Foundry
+	// name so the post-success next-step suggestion (`azd ai agent show
+	// ...`) emits the service name — show keys on s.Name in azure.yaml
+	// and would 404 on the deployed Foundry name in the divergent case.
 	if info, err := resolveAgentServiceFromProject(ctx, azdClient, name, rootFlags.NoPrompt); err == nil {
+		serviceName = info.ServiceName
 		if info.AgentName != "" {
 			name = info.AgentName
 		}
@@ -766,7 +786,11 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 		}
 		return err
 	}
-	a.emitInvokeSuccessNextStep(nextstep.InvokeRemote, name)
+	nextName := serviceName
+	if nextName == "" {
+		nextName = name
+	}
+	a.emitInvokeSuccessNextStep(nextstep.InvokeRemote, nextName)
 	return nil
 }
 

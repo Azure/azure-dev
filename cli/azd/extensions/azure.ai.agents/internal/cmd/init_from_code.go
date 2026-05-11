@@ -140,8 +140,8 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 			}
 			hint = fmt.Sprintf("See %s for a sample payload appropriate for this agent.", readmePath)
 		}
-		nextstep.PrintNextWithHint(
-			os.Stdout, nextstep.ResolveAfterInit(state, localDefinition.Name), hint)
+		printNextWithHintIfInteractive(
+			"", hint, nextstep.ResolveAfterInit(state, localDefinition.Name))
 	}
 
 	return nil

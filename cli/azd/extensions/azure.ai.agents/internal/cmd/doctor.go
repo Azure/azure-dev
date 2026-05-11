@@ -262,18 +262,6 @@ func shouldRedactDoctorJSON(flags *doctorFlags) bool {
 	return !flags.unredacted
 }
 
-// isTerminalStdout reports whether os.Stdout is connected to a terminal.
-// Pulled into a small helper so tests can lean on os.Stdout's state without
-// introducing a heavier abstraction. Mirrors the design's directive that
-// every TTY-aware decision route through a single helper.
-func isTerminalStdout() bool {
-	fi, err := os.Stdout.Stat()
-	if err != nil {
-		return false
-	}
-	return (fi.Mode() & os.ModeCharDevice) != 0
-}
-
 // runChecks executes the diagnostic checks. The order is stable so output
 // is deterministic — earlier checks gate later ones where it makes sense
 // (e.g., environment must exist before reading AZURE_AI_PROJECT_ENDPOINT).

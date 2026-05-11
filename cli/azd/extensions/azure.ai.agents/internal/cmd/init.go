@@ -1602,8 +1602,8 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		hint = fmt.Sprintf("See %s for a sample payload appropriate for this agent.",
 			filepath.ToSlash(filepath.Join(targetDir, "README.md")))
 	}
-	nextstep.PrintNextWithHint(
-		os.Stdout, nextstep.ResolveAfterInit(state, a.serviceNameOverride), hint)
+	printNextWithHintIfInteractive(
+		"", hint, nextstep.ResolveAfterInit(state, a.serviceNameOverride))
 	return nil
 }
 

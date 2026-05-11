@@ -273,7 +273,7 @@ func (a *InvokeAction) printNextSteps(ctx context.Context) {
 	} else {
 		suggestions = nextstep.ResolveAfterInvokeRemote(state, a.flags.name)
 	}
-	nextstep.PrintNext(os.Stdout, suggestions)
+	printNextIfInteractive("", suggestions)
 }
 
 // resolveProtocol returns the protocol to use for this invocation.

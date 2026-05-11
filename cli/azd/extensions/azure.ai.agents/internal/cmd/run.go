@@ -165,9 +165,11 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 	url := fmt.Sprintf("http://localhost:%d", flags.port)
 	example, _ := nextstep.LoadInvokeExample(ctx, azdClient, runCtx.ServiceName, "local")
 	state, _ := nextstep.AssembleState(ctx, azdClient)
-	fmt.Println()
-	fmt.Println("After startup, in another terminal, try:")
-	nextstep.PrintNext(os.Stdout, nextstep.ResolveAfterRun(state, runCtx.ServiceName, example))
+	if isTerminalStdout() {
+		fmt.Println()
+		fmt.Println("After startup, in another terminal, try:")
+		nextstep.PrintNext(os.Stdout, nextstep.ResolveAfterRun(state, runCtx.ServiceName, example))
+	}
 	fmt.Printf("Starting agent on %s (Ctrl+C to stop)\n\n", url)
 
 	// Create command with stdout/stderr piped to terminal

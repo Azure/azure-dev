@@ -112,3 +112,49 @@ func (s *State) PrimaryAgent() *ServiceState {
 func (s *State) HasMultipleAgents() bool {
 	return s != nil && len(s.AgentServices) > 1
 }
+
+// JSON is the structured shape for the optional `nextStep` field that
+// commands include in their `--output json` envelope. It mirrors the
+// human-readable Next: block: a primary suggestion is always rendered,
+// secondary is optional and used for the aligned second line, and note
+// captures the dim hint (e.g., "Tip: enable shell completion ...").
+//
+// When suggestions is empty, BuildJSON returns nil so the field is
+// omitted from JSON output entirely.
+type JSON struct {
+	Primary   *JSONSuggestion `json:"primary"`
+	Secondary *JSONSuggestion `json:"secondary,omitempty"`
+	Note      string          `json:"note,omitempty"`
+}
+
+// JSONSuggestion is the per-line shape inside JSON. It mirrors
+// Suggestion but uses snake_case field names for the JSON envelope so
+// it composes cleanly with the rest of the extension's command output.
+type JSONSuggestion struct {
+	Command     string `json:"command"`
+	Description string `json:"description,omitempty"`
+}
+
+// BuildJSON converts a resolver's []Suggestion + optional hint into the
+// `nextStep` envelope used by --output json paths. Returns nil when
+// there is no primary suggestion so callers can omit the field via
+// `omitempty`.
+func BuildJSON(suggestions []Suggestion, note string) *JSON {
+	if len(suggestions) == 0 {
+		return nil
+	}
+	out := &JSON{
+		Primary: &JSONSuggestion{
+			Command:     suggestions[0].Command,
+			Description: suggestions[0].Description,
+		},
+		Note: note,
+	}
+	if len(suggestions) > 1 {
+		out.Secondary = &JSONSuggestion{
+			Command:     suggestions[1].Command,
+			Description: suggestions[1].Description,
+		}
+	}
+	return out
+}

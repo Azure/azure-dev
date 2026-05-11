@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
@@ -833,4 +834,49 @@ func multiProtocolError(
 			strings.Join(supported, ", "),
 		),
 	)
+}
+
+// isTerminalStdout reports whether stdout is attached to an interactive
+// terminal. It is the single source of truth used across this package to
+// gate human-facing decorations (the Next: block, colored hints, banners,
+// redaction routing in doctor). Detection is based on os.Stdout.Stat()
+// and the os.ModeCharDevice bit so the helper has no extra dependencies
+// and behaves the same on POSIX and Windows when stdout is piped or
+// redirected to a file.
+func isTerminalStdout() bool {
+	fi, err := os.Stdout.Stat()
+	if err != nil {
+		return false
+	}
+	return (fi.Mode() & os.ModeCharDevice) != 0
+}
+
+// printNextIfInteractive emits the human-readable Next: block to stdout
+// only when output is interactive AND the command's --output flag is not
+// "json". All success-path commands (init, run, invoke, show) route their
+// nextstep.PrintNext calls through this helper so the human Next: block
+// follows a single output policy: never printed when piped/redirected,
+// never printed under structured output. Pass an empty outputFormat for
+// commands that have no --output flag (e.g. init, run).
+func printNextIfInteractive(outputFormat string, suggestions []nextstep.Suggestion) {
+	if outputFormat == "json" {
+		return
+	}
+	if !isTerminalStdout() {
+		return
+	}
+	nextstep.PrintNext(os.Stdout, suggestions)
+}
+
+// printNextWithHintIfInteractive is the PrintNextWithHint counterpart of
+// printNextIfInteractive. It applies the same TTY + --output policy and
+// then prints the dim trailing hint line under the Next: block.
+func printNextWithHintIfInteractive(outputFormat, hint string, suggestions []nextstep.Suggestion) {
+	if outputFormat == "json" {
+		return
+	}
+	if !isTerminalStdout() {
+		return
+	}
+	nextstep.PrintNextWithHint(os.Stdout, suggestions, hint)
 }

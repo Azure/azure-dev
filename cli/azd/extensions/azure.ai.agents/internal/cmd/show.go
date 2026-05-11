@@ -129,6 +129,7 @@ type showResult struct {
 	*agent_api.AgentVersionObject
 	PlaygroundURL string            `json:"playground_url,omitempty"`
 	Endpoints     map[string]string `json:"agent_endpoints,omitempty"`
+	NextStep      *nextstep.JSON    `json:"nextStep,omitempty"`
 }
 
 // Run executes the show command logic.
@@ -161,6 +162,7 @@ func (a *ShowAction) Run(ctx context.Context) error {
 		a.printNextSteps(ctx, version)
 		return nil
 	default:
+		result.NextStep = a.buildNextStepJSON(ctx, version)
 		return printShowResultJSON(result)
 	}
 }
@@ -177,7 +179,23 @@ func (a *ShowAction) printNextSteps(ctx context.Context, version *agent_api.Agen
 		return
 	}
 	suggestions := nextstep.ResolveAfterShow(state, a.Name, version.Status)
-	nextstep.PrintNext(os.Stdout, suggestions)
+	printNextIfInteractive(a.flags.output, suggestions)
+}
+
+// buildNextStepJSON resolves the same suggestion list as the human Next:
+// block and returns the structured envelope used when --output is json.
+// Returns nil on any error or when there are no suggestions so the
+// `nextStep` field is omitted from the JSON envelope.
+func (a *ShowAction) buildNextStepJSON(ctx context.Context, version *agent_api.AgentVersionObject) *nextstep.JSON {
+	if a.azdClient == nil || version == nil {
+		return nil
+	}
+	state, err := nextstep.AssembleState(ctx, a.azdClient)
+	if err != nil {
+		return nil
+	}
+	suggestions := nextstep.ResolveAfterShow(state, a.Name, version.Status)
+	return nextstep.BuildJSON(suggestions, "")
 }
 
 // resolvePlaygroundURL reads AZURE_AI_PROJECT_ID from the azd environment

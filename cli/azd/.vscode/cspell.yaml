@@ -42,6 +42,7 @@ words:
   - grpcbroker
   - msiexec
   - nextstep
+  - hostedagents
   - nosec
   - npx
   - oneof

@@ -385,14 +385,21 @@ func invokeCommandFor(agentName, protocol string) string {
 	return fmt.Sprintf("azd ai agent invoke %s %s", agentName, payload)
 }
 
-// shellEscapeSingleQuoted wraps s in single quotes for POSIX shells,
-// escaping embedded single quotes via the standard `'\”` idiom. The
-// extracted OpenAPI payload originates from json.Marshal, which does
-// not escape apostrophes, so a sample like {"q":"don't"} would otherwise
-// terminate the surrounding single-quoted argument and break the
-// suggested command. PowerShell users will need to convert any embedded
-// `'\”` sequences to `”` manually; the suggestions are otherwise
-// portable.
+// shellEscapeSingleQuoted wraps s in single quotes for POSIX shells.
+// Each embedded apostrophe is replaced with the four-character POSIX
+// escape sequence formed by: close the single-quoted string, emit a
+// backslash-escaped literal apostrophe, then reopen. See line 397 for
+// the exact byte pattern this produces.
+//
+// The extracted OpenAPI payload originates from json.Marshal, which
+// does not escape apostrophes, so a sample like {"q":"don't"} would
+// otherwise terminate the surrounding single-quoted argument and break
+// the suggested command.
+//
+// PowerShell users running these suggestions must adapt the escape
+// sequence manually — in PowerShell a literal apostrophe inside a
+// single-quoted string is represented by two consecutive apostrophes
+// instead. The suggestions are otherwise portable.
 func shellEscapeSingleQuoted(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }

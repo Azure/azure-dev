@@ -62,23 +62,28 @@ const (
 )
 
 // AgentVersionStatus mirrors the platform's lifecycle states for a
-// deployed agent version.
+// deployed agent version. Wire values are lowercase — they match the
+// serialization the Hosted Agents API returns in
+// AgentVersionObject.Status (see pkg/agents/agent_api/models.go).
+// Empirical verification: `azd ai agent show` returns "active" for a
+// ready agent. The design-spec table uses title-case for readability
+// only; the canonical surface is lowercase.
 type AgentVersionStatus string
 
 const (
 	// AgentVersionCreating indicates the deploy is still in progress.
-	AgentVersionCreating AgentVersionStatus = "Creating"
+	AgentVersionCreating AgentVersionStatus = "creating"
 	// AgentVersionActive indicates the deploy succeeded and the agent is
 	// ready to receive invocations.
-	AgentVersionActive AgentVersionStatus = "Active"
+	AgentVersionActive AgentVersionStatus = "active"
 	// AgentVersionFailed indicates the deploy failed; the error payload
 	// carries the structured reason.
-	AgentVersionFailed AgentVersionStatus = "Failed"
+	AgentVersionFailed AgentVersionStatus = "failed"
 	// AgentVersionDeleting indicates a delete is in flight.
-	AgentVersionDeleting AgentVersionStatus = "Deleting"
+	AgentVersionDeleting AgentVersionStatus = "deleting"
 	// AgentVersionDeleted indicates the version has been removed; a
 	// follow-up `azd deploy` is needed to redeploy.
-	AgentVersionDeleted AgentVersionStatus = "Deleted"
+	AgentVersionDeleted AgentVersionStatus = "deleted"
 )
 
 // RemediationForUserErrorCode returns the suggestion to surface alongside

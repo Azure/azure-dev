@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 
 	"github.com/gorilla/websocket"
@@ -161,9 +162,20 @@ func (s *rpcSession) handleFixRequested(raw json.RawMessage) {
 		s.logger.Printf("fixRequested: bad params: %v", err)
 		return
 	}
-	msg := fmt.Sprintf("there is an error and user want AI to fix (source=%s): %s", p.Source, p.ErrorSummary)
-	fmt.Fprintln(os.Stderr, "[inspector] "+msg)
-	s.logger.Print(msg)
+	prefix := "[inspector] [fix-with-ai] "
+	summary := strings.TrimSpace(p.ErrorSummary)
+	if summary == "" {
+		summary = "(no error details provided)"
+	}
+	// Indent multi-line summaries so the prefix only appears on the
+	// first line and continuation lines align under it.
+	lines := strings.Split(summary, "\n")
+	indent := strings.Repeat(" ", len(prefix))
+	fmt.Fprintln(os.Stderr, prefix+lines[0])
+	for _, line := range lines[1:] {
+		fmt.Fprintln(os.Stderr, indent+line)
+	}
+	s.logger.Printf("fix-with-ai: %s", summary)
 }
 
 func (s *rpcSession) sendResult(id json.RawMessage, result any) {

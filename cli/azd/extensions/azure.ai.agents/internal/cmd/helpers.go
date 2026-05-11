@@ -25,6 +25,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/google/uuid"
 	"go.yaml.in/yaml/v3"
+	"golang.org/x/term"
 )
 
 const (
@@ -785,4 +786,11 @@ func protocolFromAgentYaml(
 			"use --protocol to specify which protocol to use",
 		)
 	}
+}
+
+// isTerminal reports whether fd refers to an interactive terminal.
+// Used to gate human-only output such as the next-step guidance block.
+func isTerminal(fd uintptr) bool {
+	//nolint:gosec // file descriptors fit in int on all supported platforms
+	return term.IsTerminal(int(fd))
 }

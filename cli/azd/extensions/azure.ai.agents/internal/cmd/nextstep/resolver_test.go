@@ -50,8 +50,11 @@ func TestResolveAfterInit(t *testing.T) {
 			out := ResolveAfterInit(tt.state)
 			require.NotEmpty(t, out)
 
-			// The trailing line is always present, regardless of branch.
-			assert.Equal(t, tt.wantTrailing, out[len(out)-1].Command)
+			// The trailing line is always present and flagged Trailing so
+			// the renderer reserves a slot for it during truncation.
+			last := out[len(out)-1]
+			assert.Equal(t, tt.wantTrailing, last.Command)
+			assert.True(t, last.Trailing, "last suggestion must be flagged Trailing")
 
 			if len(tt.wantManualVarKeys) > 0 {
 				assert.Len(t, out, len(tt.wantManualVarKeys)+1)
@@ -75,6 +78,7 @@ func TestResolveAfterInit_ManualVarsCapAtThree(t *testing.T) {
 	// 3 manual + 1 trailing.
 	require.Len(t, out, 4)
 	assert.Equal(t, "azd deploy", out[3].Command)
+	assert.True(t, out[3].Trailing, "deploy footer must be Trailing")
 }
 
 func TestResolveAfterInit_NilState(t *testing.T) {

@@ -25,10 +25,18 @@ package nextstep
 // Suggestion is a single line of next-step guidance: a command to run plus
 // a one-line description. Suggestions are sorted ascending by Priority
 // before rendering (lower = earlier; ties preserve input order).
+//
+// Trailing flags a "footer" suggestion that the renderer reserves a slot
+// for even when higher-priority primary suggestions would otherwise fill
+// the visible block. Used for follow-up nudges (e.g., the `azd deploy`
+// line that ResolveAfterInit appends after the primary action) so the
+// follow-up survives truncation. At most one trailing entry is rendered
+// per block; additional Trailing-flagged entries are dropped.
 type Suggestion struct {
 	Command     string
 	Description string
 	Priority    int
+	Trailing    bool
 }
 
 // AuthState captures whether a doctor-style auth probe has been run and

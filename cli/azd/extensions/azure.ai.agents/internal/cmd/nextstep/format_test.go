@@ -59,6 +59,44 @@ func TestPrintNext(t *testing.T) {
 				"       b  -- second\n",
 		},
 		{
+			name: "trailing suggestion survives truncation when primaries fill the block",
+			// Three primary suggestions would normally fill maxRendered (2)
+			// and drop the highest-priority trailing entry. The renderer
+			// must instead reserve the last slot for the Trailing footer so
+			// resolver-emitted follow-up nudges (e.g., `azd deploy`) are
+			// always visible.
+			suggestions: []Suggestion{
+				{Command: "azd env set BAR <value>", Description: "supply BAR", Priority: 20},
+				{Command: "azd env set FOO <value>", Description: "supply FOO", Priority: 21},
+				{Command: "azd env set BAZ <value>", Description: "supply BAZ", Priority: 22},
+				{Command: "azd deploy", Description: "when ready", Priority: 90, Trailing: true},
+			},
+			want: "\n" +
+				"Next:  azd env set BAR <value>  -- supply BAR\n" +
+				"       azd deploy               -- when ready\n",
+		},
+		{
+			name: "trailing-only block renders as the single line",
+			suggestions: []Suggestion{
+				{Command: "azd deploy", Description: "when ready", Priority: 90, Trailing: true},
+			},
+			want: "\nNext:  azd deploy  -- when ready\n",
+		},
+		{
+			name: "multiple Trailing entries collapse to the lowest-priority one",
+			// Defensive: resolvers should emit at most one Trailing entry,
+			// but if more are passed in, only the lowest-priority one is
+			// rendered to keep the footer single-line.
+			suggestions: []Suggestion{
+				{Command: "primary", Description: "primary", Priority: 10},
+				{Command: "tail-a", Description: "tail a", Priority: 80, Trailing: true},
+				{Command: "tail-b", Description: "tail b", Priority: 90, Trailing: true},
+			},
+			want: "\n" +
+				"Next:  primary  -- primary\n" +
+				"       tail-a   -- tail a\n",
+		},
+		{
 			name: "stable sort preserves input order on equal priorities",
 			suggestions: []Suggestion{
 				{Command: "first", Description: "f"},

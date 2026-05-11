@@ -43,6 +43,13 @@ func PrintNext(w io.Writer, suggestions []Suggestion) error {
 // renderBlock returns the formatted "Next:" block (with a leading blank
 // line and trailing newline) or an empty string when there is nothing to
 // render.
+//
+// Truncation is partitioned: at most one Suggestion.Trailing entry is
+// reserved for the final visible slot, with remaining slots filled by
+// primary (non-trailing) entries in ascending Priority order. The
+// trailing reservation lets resolvers emit follow-up nudges (e.g., the
+// post-action `azd deploy` line) without having those nudges silently
+// dropped when primary suggestions outnumber maxRendered.
 func renderBlock(suggestions []Suggestion) string {
 	if len(suggestions) == 0 {
 		return ""
@@ -52,12 +59,42 @@ func renderBlock(suggestions []Suggestion) string {
 	slices.SortStableFunc(sorted, func(a, b Suggestion) int {
 		return a.Priority - b.Priority
 	})
-	if len(sorted) > maxRendered {
-		sorted = sorted[:maxRendered]
+
+	var primary []Suggestion
+	var trailing *Suggestion
+	for i := range sorted {
+		if sorted[i].Trailing {
+			if trailing == nil {
+				trailing = &sorted[i]
+			}
+			continue
+		}
+		primary = append(primary, sorted[i])
+	}
+
+	var rendered []Suggestion
+	if trailing != nil {
+		budget := maxRendered - 1
+		if budget < 0 {
+			budget = 0
+		}
+		if len(primary) > budget {
+			primary = primary[:budget]
+		}
+		rendered = append(primary, *trailing)
+	} else {
+		if len(primary) > maxRendered {
+			primary = primary[:maxRendered]
+		}
+		rendered = primary
+	}
+
+	if len(rendered) == 0 {
+		return ""
 	}
 
 	cmdWidth := 0
-	for _, s := range sorted {
+	for _, s := range rendered {
 		if n := len(s.Command); n > cmdWidth {
 			cmdWidth = n
 		}
@@ -66,7 +103,7 @@ func renderBlock(suggestions []Suggestion) string {
 	var b strings.Builder
 	// Leading blank line separates the block from preceding output.
 	b.WriteByte('\n')
-	for i, s := range sorted {
+	for i, s := range rendered {
 		if i == 0 {
 			b.WriteString(primaryPrefix)
 		} else {

@@ -841,13 +841,19 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 		defer azdClient.Close()
 	}
 
-	agentKey := resolveLocalAgentKey(ctx, azdClient, a.flags.name, a.noPrompt)
-	// The OpenAPI cache filename uses the plain agent name (not the composite
-	// agentKey) so that `nextstep.ReadCachedOpenAPISpec` — which only knows
-	// the azure.yaml service name — can find the spec. The cache file lives
-	// inside `.azure/<envName>/` which is already project-isolated; embedding
-	// port + projectHash into the filename would only break the reader.
+	// Resolve the agent service ONCE. The same plain name feeds both:
+	//   - agentKey (composite, port + project + name) for the session
+	//     and conversation store, where the wider scope is needed to
+	//     avoid cross-project collisions in the shared config store.
+	//   - agentName (plain) for the OpenAPI cache filename, which lives
+	//     inside .azure/<envName>/ (already project-isolated) and must
+	//     match `nextstep.ReadCachedOpenAPISpec`'s reader, which only
+	//     knows the azure.yaml service name.
+	// Resolving twice would re-prompt the user on multi-agent projects
+	// AND risk picking different services for the two values (silent
+	// state corruption: session under A, cache under B).
 	agentName := resolveLocalAgentName(ctx, azdClient, a.flags.name, a.noPrompt)
+	agentKey := buildLocalAgentKey(DefaultPort, agentName, "", resolveProjectPath(ctx, azdClient))
 
 	// Resolve local session ID (generated locally, not server-assigned).
 	var sid string

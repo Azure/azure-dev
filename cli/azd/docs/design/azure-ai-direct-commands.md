@@ -268,18 +268,24 @@ environment_variables:
     value: "${{connections.my-test-conn.credentials.x-api-key}}"
 ```
 
-**Implementation**: The `credentialReferences` field is generated from the connection name + each key in the credentials map. For connections with `authType: ApiKey`, the key name is always `key`. For `CustomKeys`, the key names come from the credential keys map (e.g., `x-api-key`). For `None`, no references are generated.
+**Implementation**: The `credentialReferences` field is generated from the connection name + credential keys returned by the data-plane `getConnectionWithCredentials` API. For connections with `authType: ApiKey`, the key name is `key`. For `CustomKeys`, the key names come from the custom keys map (e.g., `x-api-key`). For `authType: None` or `AAD`, no credential references are generated.
 
 ```go
 // buildCredentialReferences generates ${{connections.<name>.credentials.<key>}}
 // strings for each credential key on a connection.
-func buildCredentialReferences(connName, authType string, credentials map[string]string) map[string]string {
-    if len(credentials) == 0 {
+func buildCredentialReferences(connName string, creds *ConnectionCredentials) map[string]string {
+    if creds == nil {
         return nil
     }
-    refs := make(map[string]string, len(credentials))
-    for key := range credentials {
-        refs[key] = fmt.Sprintf("${{connections.%s.credentials.%s}}", connName, key)
+    refs := map[string]string{}
+    if creds.Key != "" {
+        refs["key"] = fmt.Sprintf("${{connections.%s.credentials.key}}", connName)
+    }
+    for k := range creds.CustomKeys {
+        refs[k] = fmt.Sprintf("${{connections.%s.credentials.%s}}", connName, k)
+    }
+    if len(refs) == 0 {
+        return nil
     }
     return refs
 }
@@ -302,16 +308,16 @@ environment_variables:
 
 At `azd ai agent run` time, the extension:
 1. Reads the manifest, finds `${{connections.my-test-conn.credentials.x-api-key}}`
-2. Calls `GET .../connections/my-test-conn/getConnectionWithCredentials`
-3. Extracts `x-api-key` from the response
+2. Calls `POST .../connections/my-test-conn/getConnectionWithCredentials` (data-plane POST, not GET)
+3. Extracts `x-api-key` from the response credentials
 4. Sets `TAVILY_API_KEY=tvly-abc123...` in the spawned process environment
 
-**Implementation location**: In `run.go`, after the existing `appendFoundryEnvVars()` call (line 160), add a new `resolveConnectionReferences()` step that scans env vars for `${{connections...}}` patterns and resolves them.
+**Implementation location**: In `run.go`, after the existing `appendFoundryEnvVars()` call (line 160), add a new `resolveConnectionReferences()` step that scans env vars for `${{connections...}}` patterns and resolves them. Each env var value supports at most one connection reference (the entire value is the reference string).
 
 ```go
 // resolveConnectionReferences scans environment variable values for
 // ${{connections.<name>.credentials.<key>}} patterns and resolves them
-// by fetching credentials from the Foundry data plane.
+// by fetching credentials from the Foundry data plane via POST.
 func resolveConnectionReferences(
     ctx context.Context,
     env []string,
@@ -321,7 +327,8 @@ func resolveConnectionReferences(
     re := regexp.MustCompile(`\$\{\{connections\.([^.]+)\.credentials\.([^}]+)\}\}`)
 
     // Cache fetched connections to avoid redundant API calls
-    connCache := map[string]*Connection{}
+    connCache := map[string]*ConnectionCredentials{}
+    dpClient := NewDataClient(endpoint, cred)
 
     var result []string
     for _, entry := range env {
@@ -336,26 +343,28 @@ func resolveConnectionReferences(
         credKey := matches[2]
 
         // Fetch connection credentials (cached)
-        conn, ok := connCache[connName]
+        creds, ok := connCache[connName]
         if !ok {
-            dpClient := NewDataClient(endpoint, cred)
-            fetched, err := dpClient.GetConnectionWithCredentials(ctx, connName)
+            conn, err := dpClient.GetConnectionWithCredentials(ctx, connName)
             if err != nil {
                 return nil, fmt.Errorf("failed to resolve %s: %w", value, err)
             }
-            conn = fetched
-            connCache[connName] = conn
+            creds = conn.Credentials
+            connCache[connName] = creds
         }
 
         // Look up the specific credential key
-        credValue, exists := conn.Credentials[credKey]
-        if !exists {
+        credValue := ""
+        if credKey == "key" && creds.Key != "" {
+            credValue = creds.Key
+        } else if v, exists := creds.CustomKeys[credKey]; exists {
+            credValue = v
+        } else {
             return nil, fmt.Errorf(
                 "credential key %q not found on connection %q", credKey, connName)
         }
 
-        resolved := re.ReplaceAllString(value, credValue)
-        result = append(result, fmt.Sprintf("%s=%s", key, resolved))
+        result = append(result, fmt.Sprintf("%s=%s", key, credValue))
         log.Printf("Resolved connection credential: %s (connection: %s, key: %s)", key, connName, credKey)
     }
 
@@ -635,6 +644,7 @@ requiredAzdVersion: ">1.23.13"
 language: go
 capabilities:
   - custom-commands
+  - metadata
 examples:
   - name: create
     description: Create a new connection.
@@ -793,7 +803,7 @@ Use --force to replace an existing connection with the same name.`,
                 return err
             }
 
-            endpoint, err := resolveProjectEndpoint(cmd)
+            endpoint, err := resolveProjectEndpoint(ctx, cmd)
             if err != nil {
                 return err
             }
@@ -927,38 +937,55 @@ func newConnectionDeleteCommand(extCtx *azdext.ExtensionContext) *cobra.Command 
         Args:  cobra.ExactArgs(1),
         RunE: func(cmd *cobra.Command, args []string) error {
             name := args[0]
+            ctx := azdext.WithAccessToken(cmd.Context())
 
-            if !force && !extCtx.NoPrompt {
-                // Interactive confirmation
-                fmt.Printf("Delete connection %q? [y/N] ", name)
-                var response string
-                fmt.Scanln(&response)
-                if response != "y" && response != "Y" {
+            connCtx, err := resolveConnectionContext(ctx, cmd)
+            if err != nil {
+                return err
+            }
+
+            // GET to confirm it exists and show details
+            conn, err := connCtx.armClient.Get(ctx, name)
+            if err != nil {
+                return exterrors.ServiceFromAzure(err, OpGetConnection)
+            }
+
+            // Show what will be deleted
+            fmt.Printf("Connection: %s\n", name)
+            fmt.Printf("Target:     %s\n", getTarget(conn))
+
+            // Confirm unless --force
+            if !force {
+                if extCtx.NoPrompt {
+                    return exterrors.Validation(
+                        CodeMissingForceFlag,
+                        fmt.Sprintf("Deleting %q requires confirmation.", name),
+                        "Use --force to skip confirmation in non-interactive mode.",
+                    )
+                }
+
+                azdClient, err := azdext.NewAzdClient()
+                if err != nil {
+                    return fmt.Errorf("failed to create azd client: %w", err)
+                }
+                defer azdClient.Close()
+
+                confirmResp, err := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+                    Options: &azdext.ConfirmOptions{
+                        Message:      "Are you sure you want to delete this connection?",
+                        DefaultValue: new(false),
+                    },
+                })
+                if err != nil {
+                    return err
+                }
+                if !*confirmResp.Value {
                     fmt.Println("Cancelled.")
                     return nil
                 }
-            } else if !force && extCtx.NoPrompt {
-                return exterrors.Validation(
-                    CodeMissingForceFlag,
-                    fmt.Sprintf("Deleting %q requires confirmation.", name),
-                    "Use --force to skip confirmation in non-interactive mode.",
-                )
             }
 
-            endpoint, err := resolveProjectEndpoint(cmd)
-            if err != nil {
-                return err
-            }
-
-            cred, err := newCredential()
-            if err != nil {
-                return err
-            }
-
-            client := connections.NewARMClient(endpoint, cred)
-            ctx := azdext.WithAccessToken(cmd.Context())
-
-            if err := client.Delete(ctx, name); err != nil {
+            if err := connCtx.armClient.Delete(ctx, name); err != nil {
                 return exterrors.ServiceFromAzure(err, OpDeleteConnection)
             }
 
@@ -1106,13 +1133,16 @@ func printOutput(v any, format string) error {
     }
 }
 
-func parseKeyValuePairs(pairs []string) map[string]string {
+func parseKeyValuePairs(pairs []string) (map[string]string, error) {
     result := make(map[string]string, len(pairs))
     for _, pair := range pairs {
-        k, v, _ := strings.Cut(pair, "=")
+        k, v, ok := strings.Cut(pair, "=")
+        if !ok || k == "" {
+            return nil, fmt.Errorf("invalid key=value pair: %q", pair)
+        }
         result[k] = v
     }
-    return result
+    return result, nil
 }
 ```
 
@@ -1126,19 +1156,25 @@ package connections
 
 // Connection represents a Foundry project connection.
 type Connection struct {
-    Name        string            `json:"name"`
-    Kind        string            `json:"kind"`
-    Target      string            `json:"target"`
-    AuthType    string            `json:"authType"`
-    Metadata    map[string]string `json:"metadata,omitempty"`
-    Credentials *Credentials      `json:"credentials,omitempty"`
-    Tags        map[string]string `json:"tags,omitempty"`
+    Name        string               `json:"name"`
+    ID          string               `json:"id"`
+    Kind        string               `json:"type"`
+    Target      string               `json:"target"`
+    AuthType    string               `json:"authType,omitempty"`
+    IsDefault   bool                 `json:"isDefault"`
+    Metadata    map[string]string    `json:"metadata,omitempty"`
+    Credentials *ConnectionCredentials `json:"credentials,omitempty"`
 }
 
-// Credentials holds credential values returned by the data plane.
-type Credentials struct {
+// ConnectionCredentials holds credential values returned by the data-plane
+// getConnectionWithCredentials endpoint. The shape varies by auth type:
+//   - ApiKey:     Key is populated (e.g., "abc123")
+//   - CustomKeys: CustomKeys map is populated (e.g., {"x-api-key": "tvly-..."})
+//   - AAD/None:   Only Type is populated, no secret values
+type ConnectionCredentials struct {
+    Type       string            `json:"type"`
     Key        string            `json:"key,omitempty"`
-    CustomKeys map[string]string `json:"customKeys,omitempty"`
+    CustomKeys map[string]string `json:"keys,omitempty"`
 }
 
 // CreateRequest is the input for creating a connection.

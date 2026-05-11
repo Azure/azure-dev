@@ -136,6 +136,7 @@ const (
 	CodeCognitiveServicesClientFailed = "cognitiveservices_client_failed"
 	CodeContainerStartFailed          = "container_start_failed"
 	CodeContainerStartTimeout         = "container_start_timeout"
+	CodeAgentCreateFailed             = "agent_create_failed"
 )
 
 // Operation names for [ServiceFromAzure] errors.

@@ -340,10 +340,6 @@ func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentB
 		}
 	}
 
-	if imageURL == "" {
-		return nil, fmt.Errorf("image URL is required for hosted agents - use WithImageURL build option or specify in container.image")
-	}
-
 	// Map protocol versions from the hosted agent definition
 	protocolVersions := make([]agent_api.ProtocolVersionRecord, 0)
 	if len(hostedAgent.Protocols) > 0 {
@@ -358,6 +354,38 @@ func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentB
 		protocolVersions = []agent_api.ProtocolVersionRecord{
 			{Protocol: agent_api.AgentProtocolResponses, Version: "1.0.0"},
 		}
+	}
+
+	// Code deploy path: use CodeBasedHostedAgentDefinition
+	if hostedAgent.CodeConfiguration != nil {
+		entryPoint := []string{"python", hostedAgent.CodeConfiguration.EntryPoint}
+		depRes := ""
+		if hostedAgent.CodeConfiguration.DependencyResolution != nil {
+			depRes = *hostedAgent.CodeConfiguration.DependencyResolution
+		}
+
+		codeDef := agent_api.CodeBasedHostedAgentDefinition{
+			AgentDefinition: agent_api.AgentDefinition{
+				Kind: agent_api.AgentKindHosted,
+			},
+			ProtocolVersions:     protocolVersions,
+			CPU:                  cpu,
+			Memory:               memory,
+			EnvironmentVariables: envVars,
+			CodeConfiguration: agent_api.CodeConfigurationAPI{
+				Runtime:              hostedAgent.CodeConfiguration.Runtime,
+				EntryPoint:           entryPoint,
+				DependencyResolution: depRes,
+			},
+		}
+
+		return createAgentAPIRequest(hostedAgent.AgentDefinition, codeDef,
+			hostedAgent.AgentEndpoint, hostedAgent.AgentCard)
+	}
+
+	// Container/image deploy path (existing)
+	if imageURL == "" {
+		return nil, fmt.Errorf("image URL is required for hosted agents - use WithImageURL build option or specify in container.image")
 	}
 
 	hostedDef := agent_api.HostedAgentDefinition{

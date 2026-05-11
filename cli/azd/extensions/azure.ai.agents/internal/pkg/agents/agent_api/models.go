@@ -121,6 +121,24 @@ type ImageBasedHostedAgentDefinition struct {
 	Image string `json:"image"`
 }
 
+// CodeConfigurationAPI represents the code_configuration block in the API request
+type CodeConfigurationAPI struct {
+	Runtime              string   `json:"runtime"`
+	EntryPoint           []string `json:"entry_point"`
+	DependencyResolution string   `json:"dependency_resolution,omitempty"`
+}
+
+// CodeBasedHostedAgentDefinition represents a code-deploy hosted agent.
+// Uses protocol_versions (not container_protocol_versions).
+type CodeBasedHostedAgentDefinition struct {
+	AgentDefinition
+	ProtocolVersions     []ProtocolVersionRecord `json:"protocol_versions"`
+	CPU                  string                  `json:"cpu"`
+	Memory               string                  `json:"memory"`
+	EnvironmentVariables map[string]string       `json:"environment_variables,omitempty"`
+	CodeConfiguration    CodeConfigurationAPI    `json:"code_configuration"`
+}
+
 // CreateAgentVersionRequest represents a request to create an agent version
 type CreateAgentVersionRequest struct {
 	Description *string           `json:"description,omitempty"`

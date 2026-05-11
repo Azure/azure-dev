@@ -169,6 +169,15 @@ type ContainerResources struct {
 	Memory string `json:"memory" yaml:"memory"`
 }
 
+// CodeConfiguration represents the code deploy configuration for a hosted agent.
+// When present in a ContainerAgent, it signals code deploy mode (ZIP upload)
+// instead of container/image-based deploy.
+type CodeConfiguration struct {
+	Runtime              string  `json:"runtime" yaml:"runtime"`
+	EntryPoint           string  `json:"entryPoint" yaml:"entry_point"`
+	DependencyResolution *string `json:"dependencyResolution,omitempty" yaml:"dependency_resolution,omitempty"`
+}
+
 // ContainerAgent This represents a container based agent hosted by the provider/publisher.
 // The intent is to represent a container application that the user wants to run
 // in a hosted environment that the provider manages.
@@ -179,6 +188,7 @@ type ContainerAgent struct {
 	EnvironmentVariables *[]EnvironmentVariable  `json:"environmentVariables,omitempty" yaml:"environment_variables,omitempty"`
 	AgentEndpoint        *AgentEndpoint          `json:"agentEndpoint,omitempty" yaml:"agentEndpoint,omitempty"`
 	AgentCard            *AgentCard              `json:"agentCard,omitempty" yaml:"agentCard,omitempty"`
+	CodeConfiguration    *CodeConfiguration      `json:"codeConfiguration,omitempty" yaml:"code_configuration,omitempty"`
 }
 
 // AgentManifest The following represents a manifest that can be used to create agents dynamically.

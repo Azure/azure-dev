@@ -80,26 +80,74 @@ overrides:
     - filename: docs/architecture/**/*.md
       words:
           - azapi
+          - azext
+          - appinsights
+          - coreai
+          - devcliapprequests
+          - devdiv
+          - dmitryr
           - Errorf
+          - GDPRAPI
           - grpcbroker
+          - KQLX
+          - Kusto
+          - Pseudonymized
+          - Thhmmss
+          - unhashed
           - vsrpc
     - filename: docs/guides/**/*.md
       words:
+          - azdext
+          - dcount
+          - devcliapprequests
           - errorlint
           - Errorf
           - gofmt
           - golangci
           - gosec
           - jaegertracing
+          - Kusto
           - mycommand
+          - myfeature
           - mypackage
           - pflag
+          - Pseudonymized
           - staticcheck
           - stdlib
+          - tostring
+          - unhashed
           - vsrpc
     - filename: docs/reference/**/*.md
       words:
+          - appinit
           - appservice
           - Buildpacks
+          - Ccids
           - containerapp
+          - dcount
+          - devdeviceid
+          - Errorf
+          - exegraph
+          - kqlx
+          - Kusto
+          - oneauth
+          - paas
+          - PBIP
+          - pbip
+          - postprovision
+          - preprovision
+          - postdeploy
+          - pseudonymized
+          - remotebuild
+          - resourcegroup
+          - rollups
+          - startswith
           - staticwebapp
+          - toreal
+          - toscalar
+          - tostring
+          - Tpid
+          - TPID
+          - unhashed
+          - vsrpc
+          - whatif

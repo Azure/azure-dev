@@ -44,11 +44,16 @@ const (
 )
 
 // envVarRefPattern captures ${VAR} references inside YAML string values.
-// The optional non-capturing tail (`(?::-[^}]*)?`) tolerates POSIX-style
-// default values (`${VAR:-default}`) without including them in the match.
+// Group 1 is the variable name. Group 2 captures the optional default
+// tail `:-fallback`; when group 2 is non-empty the agent.yaml author
+// explicitly opted into a fallback and the variable is therefore not
+// required at deploy time (the runtime expander `drone/envsubst` honors
+// `:-` semantics). `extractAgentYamlEnvRefs` skips refs with a non-empty
+// group 2 so they never surface in the missing-vars hints; the variable
+// is reported as missing only when authored as the bare `${VAR}` form.
 // Variable names follow the standard shell convention: leading letter or
 // underscore, then alphanumeric or underscore.
-var envVarRefPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-[^}]*)?\}`)
+var envVarRefPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)(:-[^}]*)?\}`)
 
 // Source is the read-only view of azd that AssembleState needs.
 //
@@ -303,6 +308,12 @@ func loadServiceProtocol(projectPath, relativePath string) string {
 // section, extracts ${VAR} references, and partitions the unset names
 // into infra-output and manual-input lists.
 //
+// Only bare-form refs (`${VAR}`) participate: when the agent.yaml author
+// supplies an explicit fallback via `${VAR:-default}`, the deploy-time
+// resolver substitutes the fallback and the variable is not required.
+// `extractAgentYamlEnvRefs` filters defaulted refs out before they reach
+// the classification step.
+//
 // Classification heuristic: variable names starting with "AZURE_" are
 // treated as `azd provision` outputs (the AI Foundry templates produce
 // names like AZURE_AI_PROJECT_ENDPOINT, AZURE_OPENAI_ENDPOINT, etc.);
@@ -362,10 +373,14 @@ func detectMissingVars(
 	return infra, manual
 }
 
-// extractAgentYamlEnvRefs returns the unique ${VAR} names referenced in
-// the service's agent.yaml environment_variables block. Order matches
-// first appearance in the file. Missing or malformed manifests return
-// nil — consistent with loadServiceProtocol's best-effort contract.
+// extractAgentYamlEnvRefs returns the unique bare-form ${VAR} names
+// referenced in the service's agent.yaml environment_variables block.
+// Refs that supply a fallback via `${VAR:-default}` are skipped — the
+// deploy-time expander honors the default, so the variable is not
+// required and never warrants a missing-var hint. Order matches first
+// bare-form appearance in the file. Missing or malformed manifests
+// return nil — consistent with loadServiceProtocol's best-effort
+// contract.
 func extractAgentYamlEnvRefs(projectPath, relativePath string) []string {
 	if projectPath == "" || relativePath == "" {
 		return nil
@@ -388,6 +403,13 @@ func extractAgentYamlEnvRefs(projectPath, relativePath string) []string {
 	var out []string
 	for _, ev := range *hosted.EnvironmentVariables {
 		for _, m := range envVarRefPattern.FindAllStringSubmatch(ev.Value, -1) {
+			if m[2] != "" {
+				// Variable carries an explicit `:-fallback` default; the
+				// deploy-time resolver honors it, so the user does not need
+				// to set the var. Skipping here keeps the next-step hint
+				// honest: only bare-form refs become missing-var prompts.
+				continue
+			}
 			name := m[1]
 			if _, ok := seen[name]; ok {
 				continue

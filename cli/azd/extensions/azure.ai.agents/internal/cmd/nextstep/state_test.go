@@ -467,13 +467,24 @@ environment_variables:
 			want: []string{"AZURE_AI_PROJECT_ENDPOINT"},
 		},
 		{
-			name: "reference with default tail captured as bare name",
+			name: "reference with default tail is skipped",
 			manifest: `kind: hostedAgent
 environment_variables:
   - name: MODEL
     value: ${AZURE_AI_MODEL_DEPLOYMENT_NAME:-gpt-4o-mini}
 `,
-			want: []string{"AZURE_AI_MODEL_DEPLOYMENT_NAME"},
+			want: nil,
+		},
+		{
+			name: "bare ref alongside defaulted ref returns only the bare one",
+			manifest: `kind: hostedAgent
+environment_variables:
+  - name: ENDPOINT
+    value: ${AZURE_AI_PROJECT_ENDPOINT}
+  - name: MODEL
+    value: ${AZURE_AI_MODEL_DEPLOYMENT_NAME:-gpt-4o-mini}
+`,
+			want: []string{"AZURE_AI_PROJECT_ENDPOINT"},
 		},
 		{
 			name: "multiple references in one value",
@@ -657,6 +668,47 @@ environment_variables:
 	state, errs := assembleState(context.Background(), src)
 	require.Empty(t, errs)
 	assert.Empty(t, state.MissingInfraVars)
+	assert.Empty(t, state.MissingManualVars)
+}
+
+func TestAssembleState_DefaultedRefsAreExcludedFromMissingVars(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "echo"), 0o750))
+	// Both refs use POSIX ${VAR:-default} syntax; the deploy-time expander
+	// honors the default so neither variable is required. The bare-form
+	// ENDPOINT ref is unset and IS required, so it still surfaces.
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectRoot, "echo", "agent.yaml"),
+		[]byte(`kind: hostedAgent
+environment_variables:
+  - name: ENDPOINT
+    value: ${AZURE_AI_PROJECT_ENDPOINT}
+  - name: MODEL
+    value: ${AZURE_AI_MODEL_DEPLOYMENT_NAME:-gpt-4o-mini}
+  - name: KEY
+    value: ${MY_API_KEY:-dev-fallback}
+`),
+		0o600,
+	))
+
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{
+			Path: projectRoot,
+			Services: map[string]*azdext.ServiceConfig{
+				"echo": {Name: "echo", Host: agentHost, RelativePath: "echo"},
+			},
+		},
+		// Intentionally leave AZURE_AI_MODEL_DEPLOYMENT_NAME and MY_API_KEY
+		// unset; defaulted refs must not surface them as missing.
+		values: map[string]string{},
+	}
+
+	state, errs := assembleState(context.Background(), src)
+	require.Empty(t, errs)
+	assert.Equal(t, []string{"AZURE_AI_PROJECT_ENDPOINT"}, state.MissingInfraVars)
 	assert.Empty(t, state.MissingManualVars)
 }
 

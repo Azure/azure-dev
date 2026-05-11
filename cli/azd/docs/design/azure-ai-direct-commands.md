@@ -232,6 +232,137 @@ azd ai agent run [name]
 
 All three are **repeatable** — can be specified multiple times. Resolved secrets are injected as environment variables into the spawned agent process.
 
+### 3.3 Credential Reference Strings in `list` and `show` Output
+
+When `list` or `show` displays a connection, the output includes ready-to-paste **AgentSchema credential reference strings** for each credential key. These use the `${{connections.<name>.credentials.<key>}}` interpolation syntax that `agent.yaml` consumes.
+
+**Example — `azd ai connection show my-test-conn --show-credentials --output json`**:
+```json
+{
+  "name": "my-test-conn",
+  "kind": "RemoteTool",
+  "target": "https://mcp.tavily.com/mcp",
+  "authType": "CustomKeys",
+  "credentials": {
+    "x-api-key": "tvly-abc123..."
+  },
+  "credentialReferences": {
+    "x-api-key": "${{connections.my-test-conn.credentials.x-api-key}}"
+  }
+}
+```
+
+**Example — `azd ai connection list --output table`**:
+```
+Name              Kind         Auth Type    Target                        Credential References
+----              ----         ---------    ------                        ---------------------
+my-test-conn      RemoteTool   CustomKeys   https://mcp.tavily.com/mcp    ${{connections.my-test-conn.credentials.x-api-key}}
+prod-search       ApiKey       ApiKey       https://my-search.search...   ${{connections.prod-search.credentials.key}}
+learn-mcp         RemoteTool   None         https://learn.microsoft...    (none)
+```
+
+The developer can copy the reference string directly into their `agent.yaml`:
+```yaml
+environment_variables:
+  - name: TAVILY_API_KEY
+    value: "${{connections.my-test-conn.credentials.x-api-key}}"
+```
+
+**Implementation**: The `credentialReferences` field is generated from the connection name + each key in the credentials map. For connections with `authType: ApiKey`, the key name is always `key`. For `CustomKeys`, the key names come from the credential keys map (e.g., `x-api-key`). For `None`, no references are generated.
+
+```go
+// buildCredentialReferences generates ${{connections.<name>.credentials.<key>}}
+// strings for each credential key on a connection.
+func buildCredentialReferences(connName, authType string, credentials map[string]string) map[string]string {
+    if len(credentials) == 0 {
+        return nil
+    }
+    refs := make(map[string]string, len(credentials))
+    for key := range credentials {
+        refs[key] = fmt.Sprintf("${{connections.%s.credentials.%s}}", connName, key)
+    }
+    return refs
+}
+```
+
+### 3.4 `azd ai agent run` — Credential Reference Resolution
+
+When `azd ai agent run` starts a local agent process, it resolves `${{connections.<name>.credentials.<key>}}` references found in the agent manifest's `environment_variables` section. For each reference:
+
+1. Parse the connection name and credential key from the reference string
+2. Call the data-plane `getConnectionWithCredentials` API to fetch the actual secret value
+3. Inject the resolved value as an environment variable into the spawned agent process
+
+**Example**: Given this `agent.yaml`:
+```yaml
+environment_variables:
+  - name: TAVILY_API_KEY
+    value: "${{connections.my-test-conn.credentials.x-api-key}}"
+```
+
+At `azd ai agent run` time, the extension:
+1. Reads the manifest, finds `${{connections.my-test-conn.credentials.x-api-key}}`
+2. Calls `GET .../connections/my-test-conn/getConnectionWithCredentials`
+3. Extracts `x-api-key` from the response
+4. Sets `TAVILY_API_KEY=tvly-abc123...` in the spawned process environment
+
+**Implementation location**: In `run.go`, after the existing `appendFoundryEnvVars()` call (line 160), add a new `resolveConnectionReferences()` step that scans env vars for `${{connections...}}` patterns and resolves them.
+
+```go
+// resolveConnectionReferences scans environment variable values for
+// ${{connections.<name>.credentials.<key>}} patterns and resolves them
+// by fetching credentials from the Foundry data plane.
+func resolveConnectionReferences(
+    ctx context.Context,
+    env []string,
+    endpoint string,
+    cred azcore.TokenCredential,
+) ([]string, error) {
+    re := regexp.MustCompile(`\$\{\{connections\.([^.]+)\.credentials\.([^}]+)\}\}`)
+
+    // Cache fetched connections to avoid redundant API calls
+    connCache := map[string]*Connection{}
+
+    var result []string
+    for _, entry := range env {
+        key, value, _ := strings.Cut(entry, "=")
+        matches := re.FindStringSubmatch(value)
+        if matches == nil {
+            result = append(result, entry)
+            continue
+        }
+
+        connName := matches[1]
+        credKey := matches[2]
+
+        // Fetch connection credentials (cached)
+        conn, ok := connCache[connName]
+        if !ok {
+            dpClient := NewDataClient(endpoint, cred)
+            fetched, err := dpClient.GetConnectionWithCredentials(ctx, connName)
+            if err != nil {
+                return nil, fmt.Errorf("failed to resolve %s: %w", value, err)
+            }
+            conn = fetched
+            connCache[connName] = conn
+        }
+
+        // Look up the specific credential key
+        credValue, exists := conn.Credentials[credKey]
+        if !exists {
+            return nil, fmt.Errorf(
+                "credential key %q not found on connection %q", credKey, connName)
+        }
+
+        resolved := re.ReplaceAllString(value, credValue)
+        result = append(result, fmt.Sprintf("%s=%s", key, resolved))
+        log.Printf("Resolved connection credential: %s (connection: %s, key: %s)", key, connName, credKey)
+    }
+
+    return result, nil
+}
+```
+
 ---
 
 ## 4. Endpoint Resolution & ARM Resource ID Discovery

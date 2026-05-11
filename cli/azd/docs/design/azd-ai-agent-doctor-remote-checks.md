@@ -1,3 +1,5 @@
+<!-- cspell:ignore nextsteps unredacted walltime -->
+
 # Design: `azd ai agent doctor` — Remote Checks (7–12)
 
 ## Status
@@ -57,7 +59,7 @@ These all require live calls and credentials, which is why they're carved out in
 cli/azd/extensions/azure.ai.agents/internal/cmd/
 └── doctor/
     ├── checks_local.go       ← (MVP) checks 1–6
-    ├── checks_remote.go      ← NEW: checks 7–11
+    ├── checks_remote.go      ← NEW: checks 7–12
     ├── runner.go             ← orchestrates ordered execution
     └── types.go              ← Check, Result, Severity
 ```
@@ -145,7 +147,7 @@ The single-shot probe avoids paging and works on tiny test projects. Timeout: 10
 
 **What it does:** parses each service's `agent.yaml` for model references, then queries the Foundry project's deployments list once and matches names locally.
 
-> **Tracking note ([#7962](https://github.com/Azure/azure-dev/issues/7962)).** Once the `agent.yaml` → `azure.yaml` unification lands, this check (and any other reference to `agent.yaml` in this doc) reads model refs from `azure.yaml` instead. Syncing with @trangevi on timing.
+> **Tracking note ([#7962](https://github.com/Azure/azure-dev/issues/7962)).** Once the `agent.yaml` → `azure.yaml` unification lands, this check (and any other reference to `agent.yaml` in this doc) reads model refs from `azure.yaml` instead.
 
 **Pass:** "all <N> referenced models present"
 **Fail:** "missing: <model-name> (referenced by <service>)" → `azd provision` (or in the rare case the user deleted a deployment manually, "redeploy via Foundry portal" with link).

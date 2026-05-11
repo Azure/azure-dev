@@ -1,3 +1,5 @@
+<!-- cspell:ignore exterrors nextstep relpath unredacted Chdir NEXTSTEPS prereqs -->
+
 # Design: Context-Aware Next-Step Guidance for `azd ai agent`
 
 ## Status
@@ -16,9 +18,14 @@ Non-goals:
 - Sample-author hooks, README markers, or YAML-declared hints — out of scope for this design.
 - Authoring or editing core azd packages (`cli/azd/pkg/...`, `cli/azd/cmd/...`). The design only *consumes* the existing `Metadata["note"]` rendering contract.
 
-## Assumptions
+## Configuration sources
 
-This design assumes the unified-`azure.yaml` proposal in [#7975](https://github.com/Azure/azure-dev/issues/7975) has landed: a single `azure.yaml` is the canonical config; `agent.yaml` and `agent.manifest.yaml` no longer exist as separate files. References to `agent.yaml` in the doctor checks and decision trees below are placeholders for the equivalent fields in the unified `services.<name>` stanza. If the extension ships before unification, each `agent.yaml` reference should be read as the corresponding fields under `services.<name>` in `azure.yaml`. The `AssembleState` function abstracts the source split, so resolvers are insulated from the migration — only the state-assembly code needs to change.
+This design ships against today's two-file split; the unified `azure.yaml` proposal in [#7975](https://github.com/Azure/azure-dev/issues/7975) is not a prerequisite:
+
+- `azure.yaml` — service registration (`services.<name>.host: azure.ai.agent`), language, source path.
+- `agent.yaml` — agent definition: protocol, models, tools, `config.env` references.
+
+`AssembleState` reads from both: structural fields (host, language, source) come from `azure.yaml`; agent-runtime fields (protocol, env refs) come from `agent.yaml`. When unification eventually lands, only `AssembleState` changes — every resolver above it sees the same `State` shape. References to `agent.yaml` in the decision trees and doctor checks below are literal, not placeholders.
 
 The extension's authentication remains `azidentity.NewAzureDeveloperCLICredential` (see [`agent_context.go`](../../extensions/azure.ai.agents/internal/cmd/agent_context.go)). User-facing fix commands therefore say `azd auth login`, not `az login`.
 
@@ -92,7 +99,7 @@ One package owns *all* policy. Each command is a thin caller — it knows when i
 └────────────────────────────────────────────────────────────────────┘
 ```
 
-`deploy` is the special case: an extension's `Deploy()` returns `[]*azdext.Artifact` and that is the extension's only output channel after the call returns. We populate the artifact's note field with the formatted Next: block — exactly the same mechanism `service_target_agent.go` already uses today to print endpoint URLs. Everywhere else, the extension writes directly to stdout (or stderr when piped — see [Output Discipline](#output-discipline)).
+`deploy` is the special case: an extension's `Deploy()` returns `[]*azdext.Artifact` and that is the extension's only output channel after the call returns. We populate the artifact's note field with the formatted Next: block — exactly the same mechanism `service_target_agent.go` already uses today to print endpoint URLs. Everywhere else, the extension writes directly to stdout, and only on a TTY — non-TTY runs suppress the block entirely (see [Output Discipline](#output-discipline)).
 
 ## State Model
 
@@ -144,10 +151,20 @@ The resolver works with whatever's available — partial state never silences gu
 |---|---|---|
 | 1 | Explicit CLI flags (`--project-endpoint`, `--agent`) | Highest |
 | 2 | Live runtime probes (OpenAPI, Foundry status) | Override env vars |
-| 3 | `azure.yaml` services, protocols, `config.env` refs | Structural truth |
+| 3 | `azure.yaml` (services, language) + `agent.yaml` (protocol, `config.env` refs) | Structural truth |
 | 4 | azd env vars | Resolution truth |
 
-If the azd environment is missing or stale (a real scenario for brownfield users), the resolver should still produce useful output from layers 1–3.
+If the azd environment is missing or stale, the resolver should still produce useful output from layers 1–3.
+
+**"Stale" definition.** An env var is stale when any of the following holds:
+
+1. **Missing** — the key is not present in the current `.azure/<env>/.env` file but layer 3 expects it (e.g., `agent.yaml` declares `config.env: AGENT_FOO_ENDPOINT` and the env file has no entry).
+2. **Empty** — the key is present but its value is the empty string.
+3. **Drift** — the key is present and non-empty, but a higher-priority layer disagrees with it. The resolver detects two concrete drift cases:
+   - The corresponding `agent.yaml` field changed (e.g., agent renamed in `azure.yaml` while the env still holds the old `AGENT_<OLD>_ENDPOINT`).
+   - The OpenAPI/Foundry probe (layer 2) returned a different endpoint than the env value.
+
+Drift is *informational* — the resolver still emits a Next: line ("env appears stale; re-run `azd provision` or `azd env refresh`") rather than blocking. The resolver does not call ARM to confirm whether the recorded endpoint still resolves; that's doctor's responsibility.
 
 ## Decision Tree (per command)
 
@@ -234,12 +251,12 @@ Ground rules:
 | Scenario | Destination |
 |---|---|
 | Interactive TTY | `stdout` |
-| Piped output / CI (detected via `isTerminal`) | `stderr` so it doesn't pollute parsable output |
-| `--output json` (success-path commands) | `Next:` block suppressed entirely |
-| `azd ai agent doctor --output json` | **Not** the suppression rule — emits the structured check-result array (see [Exit codes & JSON output](#exit-codes--json-output)). Human-readable `Next:` lines are still suppressed; redacted/non-redacted RBAC details appear there with an explicit `redacted` flag |
-| Inside `azd deploy` | Attached to the returned `azdext.Artifact` (`Metadata["note"]` on an `ArtifactKindEndpoint` artifact — same path used today for endpoint URLs in `service_target_agent.go`) |
+| Piped output / CI (detected via `isTerminal`) | **Suppressed.** The human `Next:` block is a TTY-only affordance. Writing it to stdout would pollute parsable command output; writing it to stderr would be misread as a warning or failure by callers grepping stderr. Machine consumers opt into structured guidance via `--output json`. |
+| `--output json` (success-path commands) | Human `Next:` block suppressed; the same guidance is exposed as an optional `nextStep: { primary, secondary?, note? }` field on the existing JSON envelope. |
+| `azd ai agent doctor --output json` | Structured check-result array (see [Exit codes & JSON output](#exit-codes--json-output)). Human-readable `Next:` lines are suppressed; redacted/non-redacted RBAC details appear there with an explicit `redacted` flag. |
+| Inside `azd deploy` | Attached to the returned `azdext.Artifact` (`Metadata["note"]` on an `ArtifactKindEndpoint` artifact — same path used today for endpoint URLs in `service_target_agent.go`). |
 
-The `isTerminal` check uses the existing helper in `internal/cmd/helpers.go` (which wraps `golang.org/x/term.IsTerminal`). All other extension code that needs to detect interactive vs. non-interactive output should call the same helper to keep the source of truth singular.
+The `isTerminal` check uses the existing helper in `internal/cmd/helpers.go` (which wraps `golang.org/x/term.IsTerminal`). All other extension code that needs to detect interactive vs. non-interactive output calls the same helper to keep the source of truth singular.
 
 ### Multi-line note pre-indentation
 
@@ -247,14 +264,16 @@ The `azdext.Artifact` SDK field used here renders only the **first line** at the
 
 ## Hook Points
 
+Wherever possible, hooks fire at the **end of `runE`** — the same call site every command uses for cleanup — so all next-step emission flows through one helper, `nextstep.PrintNext`. Two commands cannot use that hook; both deviations are documented in the table below.
+
 | Command | Trigger | Mechanism |
 |---|---|---|
 | `init` | end of `runE` after success message | direct `nextstep.PrintNext(w, …)` |
-| `run` | "agent is listening" callback | direct print before `Press Ctrl+C` line |
 | `invoke --local` / `invoke` | end of `runE` on success | direct print |
-| `show` | end of table render | direct print |
-| `doctor` | after rendering check report | direct print |
-| `deploy` | inside `Deploy()` return path | populate `Metadata["note"]` on the existing `ArtifactKindEndpoint` artifact returned by `service_target_agent.go` (~line 720). `pkg/project/artifact.go` (`ToString`, ~line 128) renders the value as a continuation line under the artifact bullet, gated on `Kind == ArtifactKindEndpoint`. We do **not** introduce a new artifact kind. |
+| `show` | end of `runE` (after table render returns) | direct print |
+| `doctor` | end of `runE` (after report renders, before `os.Exit`) | direct print |
+| `run` | "agent is listening" callback (**not** end of `runE`) | direct print before `Press Ctrl+C` line. `run` blocks until SIGINT, so end-of-`runE` would print on shutdown — too late to be useful. |
+| `deploy` | inside `Deploy()` return path (**not** the deploy command's `runE`, which lives in core azd) | populate `Metadata["note"]` on the existing `ArtifactKindEndpoint` artifact returned by `service_target_agent.go` (~line 720). `pkg/project/artifact.go` (`ToString`, ~line 128) renders the value as a continuation line under the artifact bullet, gated on `Kind == ArtifactKindEndpoint`. We do **not** introduce a new artifact kind. |
 
 The deploy hook returns its Next: block through the same `azdext.Artifact` SDK field that `service_target_agent.go` already uses for endpoint URLs. No new APIs, no edits outside the extension. Everywhere else, the extension owns its terminal directly.
 
@@ -298,7 +317,7 @@ All failures are silent. The fetch itself is best-effort and already cached — 
 | 3 | azd environment selected | "<env-name>" | `azd env new` / `azd env select` |
 | 4 | Agent service in `azure.yaml` | service count + names | `azd ai agent init` |
 | 5 | `AZURE_AI_PROJECT_ENDPOINT` set | URL value | `azd provision` |
-| 6 | `agent.yaml` per service is valid (placeholder for unified-schema service stanza) | path | fix YAML |
+| 6 | `agent.yaml` per service is valid | path | fix YAML |
 | 7 (post-MVP) | Authentication via `azidentity.NewAzureDeveloperCLICredential` (the credential `agent_context.go` already uses) | signed-in user + token validity | `azd auth login` |
 | 8 (post-MVP) | Foundry project reachable | endpoint probe OK | network/firewall |
 | 9 (post-MVP) | Model deployments exist | name + version | `azd provision` |
@@ -370,7 +389,7 @@ The `redacted` field is `true` when `--output json` is combined with non-interac
 | Layer | What | How |
 |---|---|---|
 | `nextstep/format` | indentation, blank-line rules, secondary suppression, empty-suggestions early return | table-driven unit tests |
-| `nextstep/format` | TTY vs piped routing (stdout vs stderr); `--output json` suppression of the human `Next:` block | snapshot tests with stub `isTerminal` and a fake `OutputFormat` flag |
+| `nextstep/format` | TTY vs non-TTY routing (stdout vs suppressed); `--output json` suppression of the human `Next:` block | snapshot tests with stub `isTerminal` and a fake `OutputFormat` flag |
 | `nextstep/resolver` | every branch of every per-command tree | table-driven, fake `State` |
 | `nextstep/resolver` | non-interactive auth handling — when `IsAuthenticated == AuthUnknown`, no auth-conditional advice (no "azd auth login" appears in `Next:`) | dedicated table cases |
 | `nextstep/openapi` | each extraction path + corruption / empty fallback / unresolved `$ref` → `""` | golden specs in `testdata/` |
@@ -390,7 +409,7 @@ The Next: block is purely additive; no existing exit code, error type, or stdout
 - The deploy hook adds a `Metadata["note"]` value to artifacts that already exist; the artifact `Kind` stays `ArtifactKindEndpoint`. Tools parsing artifacts by kind see no change.
 - `azd ai agent doctor` is a new command — its addition cannot break existing scripts. The new `--local-only` and `--output json` flags are opt-in.
 - `nextstep` and `doctor` are new internal packages under the extension. No public Go API surface is added.
-- Existing extension-side env vars and behaviors (e.g., `AZD_AGENT_NO_NEXTSTEPS`, if shipped — see Open Questions) are documented in `cli/azd/docs/environment-variables.md` per repo convention.
+- No new environment variables are introduced. The Next: block is always rendered when output discipline allows it; there is no opt-out env var.
 
 If any future change to the `Metadata["note"]` rendering behavior in `pkg/project/artifact.go` ships, the regression test pinned in this design's [Output Discipline](#output-discipline) section will break loudly. The fix is extension-side reformatting; no core edits.
 
@@ -409,7 +428,7 @@ If any future change to the `Metadata["note"]` rendering behavior in `pkg/projec
 
 ## Deferred follow-ups
 
-The reviewer surfaced three additional concerns that are out of scope for this design pass and will be handled separately:
+Three additional concerns are out of scope for this design pass and will be handled separately:
 
 - **User personas / target audiences.** Not standard in design docs in this repo (see `cli/azd/docs/design/`); we treat "developers building with the agents extension" as the implicit audience.
 - **Success metrics / KPIs.** Same rationale; metrics will be wired up alongside telemetry in the follow-up design once we have something concrete to measure.
@@ -421,7 +440,7 @@ The reviewer surfaced three additional concerns that are out of scope for this d
 |---|---|
 | Resolver guidance contradicts what the command actually did (false advice) | Each resolver receives the *post-execution* state. Tests cover deployed / not-deployed / partial-env permutations. |
 | OpenAPI fetch slows down `run` startup | Already capped + cached + silent on failure. We do not block the listening notice on the fetch. |
-| Output noise: every command grows by 3 lines | One primary + ≤1 secondary; suppressed under `--output json` and on piped stderr; user can ignore. |
+| Output noise: every command grows by 3 lines | One primary + ≤1 secondary; suppressed under `--output json` and on non-TTY output; user can ignore. |
 | Decision tree drifts from sample reality | All trees are table-driven and unit-tested per branch. Sample contract changes go through the same review. |
 | Artifact-note rendering behavior could shift in a future SDK update | Pin the indentation contract with an extension-side regression test that constructs an artifact and asserts the formatted string. If the SDK changes shape, the test breaks loudly and we adapt formatting — still no edits required outside the extension. |
 | Multi-agent projects produce wall-of-text Next: blocks | `ResolveAfterDeploy` produces one `show <name>` and one `invoke <name>` line per agent. Multi-agent walls remain readable for the project sizes we expect (≤ ~10). If the wall becomes a real problem in practice, fall back to a single `azd ai agent show` (no args, lists all) line; this can be tuned in a follow-up without changing the resolver contract. |
@@ -432,7 +451,7 @@ The reviewer surfaced three additional concerns that are out of scope for this d
 2. **Wire success paths** — `init`, `run`, `invoke`, `show`. Resolver per command.
 3. **Deploy hook** — attach Next: block to the returned `azdext.Artifact` (same SDK field already used for endpoint URLs in `service_target_agent.go`). README-on-disk verification.
 4. **`doctor` command** — checks 1–6 (local-only). Wire trailing Next: through resolver.
-5. **(Follow-up)** Doctor checks 7–11 (auth, reachability, RBAC, deployments, agent status). See [`azd-ai-agent-doctor-remote-checks.md`](./azd-ai-agent-doctor-remote-checks.md).
+5. **(Follow-up)** Doctor checks 7–12 (auth, reachability, model deployments, RBAC, agent status, end-to-end probe). See [`azd-ai-agent-doctor-remote-checks.md`](./azd-ai-agent-doctor-remote-checks.md).
 
 Each phase is independently shippable and reviewable. Phases 1–4 are the MVP for #7975.
 

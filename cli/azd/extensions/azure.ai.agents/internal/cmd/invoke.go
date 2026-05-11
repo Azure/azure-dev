@@ -194,7 +194,17 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 // AssembleState is wasted when the result isn't used. The companion
 // follow-up commit that wires invoke-failure paths will assemble state at
 // the failure call site, where it IS consumed.
+//
+// Output is gated on a TTY stdout per the nextstep call-site contract
+// (`nextstep/types.go`, `nextstep/format.go`, `helpers.go:isTerminal`):
+// the package never inspects TTY state, so callers must. Without the gate,
+// piped or redirected stdout (`invoke > out.txt`, `invoke | tee log`,
+// CI capture) would receive the human-only guidance block mixed in with
+// the agent's reply.
 func (a *InvokeAction) emitInvokeSuccessNextStep(mode nextstep.InvokeMode, agentName string) {
+	if !isTerminal(os.Stdout.Fd()) {
+		return
+	}
 	_ = nextstep.PrintNext(
 		os.Stdout,
 		nextstep.ResolveAfterInvoke(nil, mode, agentName, nil),

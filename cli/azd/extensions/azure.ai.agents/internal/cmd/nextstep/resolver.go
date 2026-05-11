@@ -224,21 +224,23 @@ func resolveInvokeFailure(_ *State, mode InvokeMode, _ string, failure *InvokeFa
 // successful `azd ai agent show`. Branches on State.AgentStatus per the
 // platform's `AgentVersionStatus` vocabulary.
 //
-// serviceName is the azure.yaml service name (used to look up
-// State.Services[].Protocol for protocol-aware payloads and to drive
-// the unknown-status re-check fallback, where the user re-runs
-// `azd ai agent show <serviceName>`).
+// serviceName is the azure.yaml service name. It is used end-to-end:
+// (1) to look up State.Services[].Protocol for the protocol-aware
+// payload, (2) as the positional in the suggested
+// `azd ai agent invoke <serviceName> ...` command, and (3) as the
+// positional in the unknown-status `azd ai agent show <serviceName>`
+// re-check fallback.
 //
-// agentName is the deployed Foundry agent name (from AGENT_<KEY>_NAME).
-// It is what gets emitted into the suggested `azd ai agent invoke
-// <agentName> ...` command. For the common case where azure.yaml's
-// service name matches the deployed agent name the two are equal and
-// callers can pass the same value twice; on divergent-name configs
-// (typical when deploy appends a suffix) the split matters: the
-// suggested invoke command must use the Foundry name because invoke's
-// remote URL path embeds it verbatim (see invoke.go remote paths) —
-// passing the service name there yields a 404 from Foundry.
-func ResolveAfterShow(state *State, serviceName, agentName string) []Suggestion {
+// Critically, the invoke suggestion intentionally uses the azure.yaml
+// service name rather than the deployed Foundry agent name. invoke's
+// protocol/service resolution keys on azure.yaml service names; the
+// invocations/responses remote paths then translate to the deployed
+// agent name internally before constructing the Foundry URL (see
+// invoke.go gates inside invocationsRemote/responsesRemote). Emitting
+// the deployed Foundry name here would fail upstream in
+// resolveAgentProtocol with "no azure.ai.agent service named …
+// found".
+func ResolveAfterShow(state *State, serviceName string) []Suggestion {
 	if state == nil {
 		return nil
 	}
@@ -250,7 +252,7 @@ func ResolveAfterShow(state *State, serviceName, agentName string) []Suggestion 
 			protocol = svc.Protocol
 		}
 		return []Suggestion{{
-			Command:     invokeCommandFor(agentName, protocol, state),
+			Command:     invokeCommandFor(serviceName, protocol, state),
 			Description: "the agent is ready — send it a sample request",
 			Priority:    10,
 		}}
@@ -393,7 +395,11 @@ func defaultInvokePayload(svc *ServiceState) string {
 // payload (HasOpenAPI == true), the cached sample is preferred over the
 // protocol-generic literal so the suggestion matches the agent's actual
 // schema. state may be nil — the lookup is a no-op in that case.
-func invokeCommandFor(agentName, protocol string, state *State) string {
+//
+// `name` is the value placed verbatim into the emitted command. For the
+// ResolveAfterShow flow this is the azure.yaml service name (see that
+// function's contract for the rationale).
+func invokeCommandFor(name, protocol string, state *State) string {
 	payload := invokeResponsesPayload
 	if protocol == ProtocolInvocations {
 		payload = invokeInvocationsPayload
@@ -401,10 +407,10 @@ func invokeCommandFor(agentName, protocol string, state *State) string {
 	if state != nil && state.HasOpenAPI && state.OpenAPIPayload != "" {
 		payload = shellEscapeSingleQuoted(state.OpenAPIPayload)
 	}
-	if agentName == "" {
+	if name == "" {
 		return fmt.Sprintf("azd ai agent invoke %s", payload)
 	}
-	return fmt.Sprintf("azd ai agent invoke %s %s", agentName, payload)
+	return fmt.Sprintf("azd ai agent invoke %s %s", name, payload)
 }
 
 // shellEscapeSingleQuoted wraps s in single quotes for POSIX shells.

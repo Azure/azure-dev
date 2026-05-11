@@ -342,9 +342,10 @@ protocols:
 	out := resolveNextStepFromSource(t.Context(), src, "echo-svc", "echo-deployed-x7q9", "active")
 	require.Len(t, out, 1)
 	assert.Equal(t,
-		`azd ai agent invoke echo-deployed-x7q9 '{"message": "Hello!"}'`,
+		`azd ai agent invoke echo-svc '{"message": "Hello!"}'`,
 		out[0].Command,
-		"Active branch should emit protocol-aware invoke command with the Foundry agent name (not service name)")
+		"Active branch should emit protocol-aware invoke command using the azure.yaml service name "+
+			"(invoke.go translates to the deployed agent name internally)")
 }
 
 // TestResolveNextStepFromSource_UnknownStatusFallsBackToServiceName locks

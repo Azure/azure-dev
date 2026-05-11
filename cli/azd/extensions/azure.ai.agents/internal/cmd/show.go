@@ -232,7 +232,7 @@ func resolveNextStepFromSource(
 	}
 	state, _ := nextstep.AssembleStateFromSource(ctx, src, opts...)
 	state.AgentStatus = status
-	return nextstep.ResolveAfterShow(state, serviceName, agentName)
+	return nextstep.ResolveAfterShow(state, serviceName)
 }
 
 // resolvePlaygroundURL reads AZURE_AI_PROJECT_ID from the azd environment

@@ -422,7 +422,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 
 	// Auto-resolve agent name and version from azure.yaml
 	if info, err := resolveAgentServiceFromProject(ctx, azdClient, name, rootFlags.NoPrompt); err == nil {
-		if name == "" && info.AgentName != "" {
+		if info.AgentName != "" {
 			name = info.AgentName
 		}
 		agentEndpoint = info.AgentEndpoint
@@ -661,7 +661,7 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 
 	// Auto-resolve agent name from azure.yaml / azd environment
 	if info, err := resolveAgentServiceFromProject(ctx, azdClient, name, rootFlags.NoPrompt); err == nil {
-		if name == "" && info.AgentName != "" {
+		if info.AgentName != "" {
 			name = info.AgentName
 		}
 		agentEndpoint = info.AgentEndpoint

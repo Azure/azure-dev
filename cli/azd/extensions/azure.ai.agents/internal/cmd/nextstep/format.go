@@ -64,9 +64,12 @@ func renderBlock(suggestions []Suggestion) string {
 	var trailing *Suggestion
 	for i := range sorted {
 		if sorted[i].Trailing {
-			if trailing == nil {
-				trailing = &sorted[i]
-			}
+			// Always overwrite: because sorted is ascending by Priority,
+			// the last Trailing entry encountered has the highest
+			// Priority — i.e. the most-deferred footer wins on
+			// collision, defending the intended `azd deploy` slot from
+			// accidental lower-Priority Trailing flags.
+			trailing = &sorted[i]
 			continue
 		}
 		primary = append(primary, sorted[i])

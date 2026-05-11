@@ -637,7 +637,10 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 	}
 
 	if err := handleInvocationResponse(ctx, resp, "", "", agentKey, a.httpTimeout()); err != nil {
-		a.emitInvokeFailureNextStep(nextstep.InvokeLocal, agentName, "")
+		// See invocationsRemote for the status-code rationale.
+		if resp.StatusCode >= 400 {
+			a.emitInvokeFailureNextStep(nextstep.InvokeLocal, agentName, "")
+		}
 		return err
 	}
 	a.emitInvokeSuccessNextStep(nextstep.InvokeLocal, agentName)
@@ -751,7 +754,16 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 
 	sessionCode := resp.Header.Get("x-adc-response-details")
 	if err := handleInvocationResponse(ctx, resp, endpoint, token.Token, name, a.httpTimeout()); err != nil {
-		a.emitInvokeFailureNextStep(nextstep.InvokeRemote, name, sessionCode)
+		// Only emit failure Next: for platform HTTP failures.
+		// 200 OK with an agent-error envelope (handleInvocationSync /
+		// handleInvocationSSE returning fmt.Errorf("agent error...")) is
+		// an agent-level error; the platform's SessionErrorCode vocabulary
+		// doesn't apply, and the responses protocol's equivalent
+		// (printAgentResponse / readSSEStream agent errors) is also
+		// not wired. Keeps the two protocols' UX consistent.
+		if resp.StatusCode >= 400 {
+			a.emitInvokeFailureNextStep(nextstep.InvokeRemote, name, sessionCode)
+		}
 		return err
 	}
 	a.emitInvokeSuccessNextStep(nextstep.InvokeRemote, name)

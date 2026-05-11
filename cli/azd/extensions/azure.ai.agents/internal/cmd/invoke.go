@@ -842,6 +842,12 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 	}
 
 	agentKey := resolveLocalAgentKey(ctx, azdClient, a.flags.name, a.noPrompt)
+	// The OpenAPI cache filename uses the plain agent name (not the composite
+	// agentKey) so that `nextstep.ReadCachedOpenAPISpec` — which only knows
+	// the azure.yaml service name — can find the spec. The cache file lives
+	// inside `.azure/<envName>/` which is already project-isolated; embedding
+	// port + projectHash into the filename would only break the reader.
+	agentName := resolveLocalAgentName(ctx, azdClient, a.flags.name, a.noPrompt)
 
 	// Resolve local session ID (generated locally, not server-assigned).
 	var sid string
@@ -863,7 +869,7 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 
 	// Fetch and cache the agent's OpenAPI spec (always refresh for local).
 	if azdClient != nil {
-		if path, fresh := fetchOpenAPISpec(ctx, azdClient, localBaseURL, agentKey, "local", "", true); fresh {
+		if path, fresh := fetchOpenAPISpec(ctx, azdClient, localBaseURL, agentName, "local", "", true); fresh {
 			fmt.Printf("OpenAPI spec saved to %s\n", path)
 		}
 	}

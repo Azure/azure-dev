@@ -150,16 +150,15 @@ func saveContextValue(
 	setContextValueSafe(ctx, azdClient, storeField, agentKey, value)
 }
 
-// resolveLocalAgentKey builds the storage key for local mode from the azd project config.
-// Returns the new structured key format: localhost:<port>/<projectHash>/agents/<name>/versions/latest/local
-func resolveLocalAgentKey(ctx context.Context, azdClient *azdext.AzdClient, name string, noPrompt bool) string {
-	return resolveLocalAgentKeyWithPort(ctx, azdClient, name, noPrompt, DefaultPort)
-}
-
-// resolveLocalAgentKeyWithPort builds the local storage key with a specific port.
-func resolveLocalAgentKeyWithPort(
-	ctx context.Context, azdClient *azdext.AzdClient, name string, noPrompt bool, port int,
-) string {
+// resolveLocalAgentName resolves the plain agent name used for local mode,
+// without composing any port/project/version disambiguation into it. Use this
+// when you need just a stable, file-system-safe identifier for the agent —
+// for example, when naming the cached OpenAPI spec file shared with the
+// `nextstep.ReadCachedOpenAPISpec` reader.
+//
+// For the structured config-store key (which DOES need port + project hash
+// to avoid cross-project collisions), use `resolveLocalAgentKey` instead.
+func resolveLocalAgentName(ctx context.Context, azdClient *azdext.AzdClient, name string, noPrompt bool) string {
 	agentName := name
 
 	if azdClient != nil {
@@ -175,6 +174,20 @@ func resolveLocalAgentKeyWithPort(
 		agentName = "local"
 	}
 
+	return agentName
+}
+
+// resolveLocalAgentKey builds the storage key for local mode from the azd project config.
+// Returns the new structured key format: localhost:<port>/<projectHash>/agents/<name>/versions/latest/local
+func resolveLocalAgentKey(ctx context.Context, azdClient *azdext.AzdClient, name string, noPrompt bool) string {
+	return resolveLocalAgentKeyWithPort(ctx, azdClient, name, noPrompt, DefaultPort)
+}
+
+// resolveLocalAgentKeyWithPort builds the local storage key with a specific port.
+func resolveLocalAgentKeyWithPort(
+	ctx context.Context, azdClient *azdext.AzdClient, name string, noPrompt bool, port int,
+) string {
+	agentName := resolveLocalAgentName(ctx, azdClient, name, noPrompt)
 	projectPath := resolveProjectPath(ctx, azdClient)
 	return buildLocalAgentKey(port, agentName, "", projectPath)
 }

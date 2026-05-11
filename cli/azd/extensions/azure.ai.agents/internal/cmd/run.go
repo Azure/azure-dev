@@ -171,6 +171,12 @@ func runRun(ctx context.Context, flags *runFlags) error {
 	// degrades gracefully on partial state per the design spec.
 	state, _ := nextstep.AssembleState(ctx, azdClient,
 		nextstep.WithOpenAPIProbe(runCtx.ServiceName, "local"))
+	// `run` holds the foreground TTY for the agent process, so its `Next:`
+	// block is a "wait + new terminal" sequence — unlike `init`, which exits
+	// and hands the prompt back. Spell that out explicitly to avoid the
+	// common trap where a user pastes the suggested invoke into the same
+	// terminal and Ctrl+Cs the agent to get their prompt back.
+	fmt.Println("After startup, in another terminal, try:")
 	_ = nextstep.PrintNext(os.Stdout, nextstep.ResolveAfterRun(state, runCtx.ServiceName))
 	fmt.Printf("\nStarting agent on %s (Ctrl+C to stop)\n\n", url)
 

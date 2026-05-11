@@ -107,6 +107,9 @@ func TestCheckGRPCAndVersion_NoClient_Fails(t *testing.T) {
 	require.Contains(t, got.Message, "gRPC channel to azd unavailable")
 	require.Contains(t, got.Message, "connection refused")
 	require.NotEmpty(t, got.Suggestion)
+	// Suggestion should be version-agnostic — the extension declares its
+	// own required azd floor in extension.yaml; doctor must not duplicate it.
+	require.NotContains(t, got.Suggestion, "1.24.0")
 }
 
 func TestCheckGRPCAndVersion_NoClient_NilErr_StillFails(t *testing.T) {
@@ -184,6 +187,34 @@ func TestCheckGRPCAndVersion_AboveFloor_Passes(t *testing.T) {
 	require.Equal(t, StatusPass, got.Status)
 }
 
+// TestCheckGRPCAndVersion_UnparseableVersion_PassesButFlagsFloorSkipped
+// pins the contract for non-empty/non-"dev" version strings that fail to
+// parse (e.g. "canary", "preview-beta-1"). The check must still Pass — the
+// gRPC channel is healthy — but the message must distinguish "above floor"
+// from "couldn't verify floor", and Details["floorChecked"] must be false
+// so downstream consumers (e.g. JSON output) can tell the difference.
+func TestCheckGRPCAndVersion_UnparseableVersion_PassesButFlagsFloorSkipped(t *testing.T) {
+	t.Parallel()
+
+	client := newTestAzdClient(t, &fakeProjectServer{}, &fakeEnvironmentServer{})
+
+	for _, ver := range []string{"canary", "preview-beta-1", "1.2"} {
+		check := newCheckGRPCAndVersion(Dependencies{
+			AzdClient:        client,
+			ExtensionVersion: ver,
+		})
+		got := check.Fn(t.Context(), Options{}, nil)
+
+		require.Equalf(t, StatusPass, got.Status, "ver=%q", ver)
+		require.Containsf(t, got.Message, ver, "ver=%q: message should echo the version", ver)
+		require.Containsf(t, got.Message, "floor check skipped", "ver=%q", ver)
+		require.NotContainsf(t, got.Message, "older than", "ver=%q must not claim below-floor", ver)
+		require.Emptyf(t, got.Suggestion, "ver=%q: unparseable version should not nag", ver)
+		require.Equalf(t, false, got.Details["floorChecked"], "ver=%q", ver)
+		require.Equalf(t, ver, got.Details["extensionVersion"], "ver=%q", ver)
+	}
+}
+
 // ---- Check `local.azure-yaml` ----
 
 func TestCheckProjectConfig_NoClient_Skips(t *testing.T) {
@@ -244,6 +275,42 @@ func TestCheckProjectConfig_Pass(t *testing.T) {
 	require.Contains(t, got.Message, "my-agent")
 	require.Equal(t, "/abs/path", got.Details["projectPath"])
 	require.Equal(t, "my-agent", got.Details["projectName"])
+}
+
+// TestCheckProjectConfig_TransportError_SwapsSuggestion locks the
+// transport-aware suggestion swap. `azdext.NewAzdClient` constructs the
+// gRPC channel lazily, so a non-nil client can still fail on the first
+// RPC if AZD_SERVER is stale or unreachable. When the resulting error
+// carries a transport-class gRPC code, the suggestion must point the
+// user at the channel rather than at `azure.yaml`.
+func TestCheckProjectConfig_TransportError_SwapsSuggestion(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		code codes.Code
+	}{
+		{"Unavailable", codes.Unavailable},
+		{"DeadlineExceeded", codes.DeadlineExceeded},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			client := newTestAzdClient(t,
+				&fakeProjectServer{err: status.Error(tc.code, "transport boom")},
+				&fakeEnvironmentServer{},
+			)
+			check := newCheckProjectConfig(Dependencies{AzdClient: client})
+			got := check.Fn(t.Context(), Options{}, nil)
+
+			require.Equal(t, StatusFail, got.Status)
+			require.Contains(t, got.Message, "failed to get project config")
+			require.Contains(t, got.Suggestion, "azd ai agent doctor")
+			require.Contains(t, got.Suggestion, "gRPC channel")
+			// And explicitly *not* the misleading "azd init" path.
+			require.NotContains(t, got.Suggestion, "azd init")
+		})
+	}
 }
 
 // ---- Check `local.environment-selected` ----
@@ -336,6 +403,27 @@ func TestCheckEnvironmentSelected_Pass(t *testing.T) {
 	require.Equal(t, "staging", got.Details["environmentName"])
 }
 
+// TestCheckEnvironmentSelected_TransportError_SwapsSuggestion is the
+// `local.environment-selected` sibling of the project-config transport
+// test. Same rationale: a transport-class gRPC code means the channel is
+// the root cause, not the absence of an environment.
+func TestCheckEnvironmentSelected_TransportError_SwapsSuggestion(t *testing.T) {
+	t.Parallel()
+
+	client := newTestAzdClient(t,
+		&fakeProjectServer{},
+		&fakeEnvironmentServer{err: status.Error(codes.Unavailable, "transport boom")},
+	)
+	check := newCheckEnvironmentSelected(Dependencies{AzdClient: client})
+	got := check.Fn(t.Context(), Options{}, nil)
+
+	require.Equal(t, StatusFail, got.Status)
+	require.Contains(t, got.Message, "failed to get current environment")
+	require.Contains(t, got.Suggestion, "azd ai agent doctor")
+	require.Contains(t, got.Suggestion, "gRPC channel")
+	require.NotContains(t, got.Suggestion, "azd env new")
+}
+
 // ---- NewLocalChecks ordering / IDs ----
 
 func TestNewLocalChecks_OrderAndIDs(t *testing.T) {
@@ -423,4 +511,34 @@ func TestCoalesce(t *testing.T) {
 	require.Equal(t, "second", coalesce("", "second"))
 	require.Equal(t, "", coalesce("", "", ""))
 	require.Equal(t, "", coalesce())
+}
+
+// ---- transport-failure helper ----
+
+func TestIsTransportFailure(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"nil error", nil, false},
+		{"plain error (not a status)", errors.New("boom"), false},
+		{"Unavailable", status.Error(codes.Unavailable, "x"), true},
+		{"DeadlineExceeded", status.Error(codes.DeadlineExceeded, "x"), true},
+		// Server-side errors must NOT swap the suggestion: the project / env
+		// check then reports the real domain failure with its own wording.
+		{"NotFound", status.Error(codes.NotFound, "x"), false},
+		{"Internal", status.Error(codes.Internal, "x"), false},
+		{"InvalidArgument", status.Error(codes.InvalidArgument, "x"), false},
+		// Canceled is user-initiated, not a transport issue.
+		{"Canceled", status.Error(codes.Canceled, "x"), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tc.want, isTransportFailure(tc.err))
+		})
+	}
 }

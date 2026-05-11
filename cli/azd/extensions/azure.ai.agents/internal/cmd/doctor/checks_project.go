@@ -14,7 +14,6 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"gopkg.in/yaml.v3"
 )
 
 // agentHost is the value used in azure.yaml for an azure.ai.agent service.
@@ -43,7 +42,7 @@ func newCheckAgentServiceDetected(deps Dependencies) Check {
 			if deps.AzdClient == nil {
 				return Result{Status: StatusSkip, Message: "skipped: azd extension not reachable"}
 			}
-			if priorFailed(prior, "local.azure-yaml") {
+			if priorBlocked(prior, "local.azure-yaml") {
 				return Result{Status: StatusSkip, Message: "skipped: azure.yaml check failed"}
 			}
 
@@ -115,8 +114,8 @@ func newCheckProjectEndpointSet(deps Dependencies) Check {
 			if deps.AzdClient == nil {
 				return Result{Status: StatusSkip, Message: "skipped: azd extension not reachable"}
 			}
-			if priorFailed(prior, "local.environment-selected") {
-				return Result{Status: StatusSkip, Message: "skipped: environment check failed"}
+			if priorBlocked(prior, "local.environment-selected") {
+				return Result{Status: StatusSkip, Message: "skipped: environment check failed or skipped"}
 			}
 
 			resp, err := deps.AzdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
@@ -173,8 +172,8 @@ func newCheckAgentYAMLValid(deps Dependencies) Check {
 			if deps.AzdClient == nil {
 				return Result{Status: StatusSkip, Message: "skipped: azd extension not reachable"}
 			}
-			if priorFailed(prior, "local.agent-service-detected") {
-				return Result{Status: StatusSkip, Message: "skipped: no agent services detected"}
+			if priorBlocked(prior, "local.agent-service-detected") {
+				return Result{Status: StatusSkip, Message: "skipped: no agent services detected or upstream check blocked"}
 			}
 
 			resp, err := deps.AzdClient.Project().Get(ctx, &azdext.EmptyRequest{})
@@ -251,27 +250,32 @@ func newCheckAgentYAMLValid(deps Dependencies) Check {
 	}
 }
 
-// validateAgentYAML reads the file at path and ensures it parses as a
-// ContainerAgent. Returns the underlying read/parse error verbatim so
-// the caller can attribute it to the offending service.
+// validateAgentYAML reads the file at path and runs the same validation
+// (`agent_yaml.ValidateAgentDefinition`) that the deploy path uses, so a
+// PASS here implies the manifest will not be rejected by deploy for any
+// of: missing/invalid `kind`, missing/invalid `name`, or kind-specific
+// structural problems. Returns the underlying read/validate error
+// verbatim so the caller can attribute it to the offending service.
 func validateAgentYAML(path string) error {
 	data, err := os.ReadFile(path) //nolint:gosec // G304: path is constructed from azd-resolved project root + service-relative path
 	if err != nil {
 		return fmt.Errorf("read %s: %w", path, err)
 	}
-	var parsed agent_yaml.ContainerAgent
-	if err := yaml.Unmarshal(data, &parsed); err != nil {
-		return fmt.Errorf("parse %s: %w", path, err)
+	if err := agent_yaml.ValidateAgentDefinition(data); err != nil {
+		return fmt.Errorf("validate %s: %w", path, err)
 	}
 	return nil
 }
 
-// priorFailed reports whether the prior results contain a Fail entry
-// for the given check ID. Used for skip-cascade decisions across the
-// local-checks chain.
-func priorFailed(prior []Result, id string) bool {
+// priorBlocked reports whether the prior results contain a Fail or Skip
+// entry for the given check ID. Used for skip-cascade decisions across
+// the local-checks chain: when an upstream check is skipped (e.g.
+// because *its* upstream failed), downstream checks must also skip
+// rather than running on a broken-state assumption — otherwise users
+// see misleading remediation for the wrong root cause.
+func priorBlocked(prior []Result, id string) bool {
 	for _, p := range prior {
-		if p.ID == id && p.Status == StatusFail {
+		if p.ID == id && (p.Status == StatusFail || p.Status == StatusSkip) {
 			return true
 		}
 	}

@@ -43,8 +43,10 @@ words:
   - mcpservertoolneverrequireapprovalmode
   - mcpservertoolspecifyapprovalmode
   - myregistry
+  - nextstep
   - normalises
   - openapitool
+  - pasteable
   - posixpath
   - projectpkg
   - protocolversionrecord

@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -29,11 +30,41 @@ const (
 	doctorWarn
 	doctorFail
 	doctorSkip
+	// doctorInfo is a 5th status used only by check 12 (agent identity
+	// roles) when there is nothing actionable to flag — the user inspects
+	// the rendered role list to confirm it matches their mental model.
+	// Warn / Fail variants of the same check surface only the actionable
+	// cases. Renders as `ⓘ INFO`; exit code is treated as a pass.
+	doctorInfo
 )
 
 // doctorReportSchemaVersion is the version of the JSON envelope emitted by
 // `azd ai agent doctor --output json`. Bump on any breaking schema change.
 const doctorReportSchemaVersion = "1.0"
+
+// Redaction patterns used by [redactDoctorString]. Centralized here so a
+// single change applies to every render path (text + JSON).
+//
+// The patterns are deliberately broad — false positives just print more
+// `<redacted>` markers, false negatives leak identifiers into CI logs.
+//
+//nolint:lll // patterns benefit from being on a single line for readability
+var (
+	// GUIDs in any string field. Matches Azure principal IDs, object IDs,
+	// tenant IDs, role-definition IDs, and resource GUIDs.
+	doctorGUIDRegex = regexp.MustCompile(`[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}`)
+
+	// ARM scope ARNs starting with /subscriptions/.... Replaced wholesale
+	// because the GUID inside the subscription segment is already covered
+	// by [doctorGUIDRegex] but the full ARN still reveals resource group +
+	// resource names.
+	doctorScopeARNRegex = regexp.MustCompile(`/subscriptions/[^\s'"]+`)
+
+	// UPNs / email-shaped identifiers. The trailing `[^\s/'"]+` is
+	// conservative so we don't accidentally redact URL hosts like
+	// `eastus.api.azureml.ms` — only `local-part@domain` shapes match.
+	doctorUPNRegex = regexp.MustCompile(`[A-Za-z0-9_.+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}`)
+)
 
 func (s doctorStatus) badge() string {
 	switch s {
@@ -45,6 +76,8 @@ func (s doctorStatus) badge() string {
 		return color.RedString("✗ FAIL")
 	case doctorSkip:
 		return color.HiBlackString("- SKIP")
+	case doctorInfo:
+		return color.CyanString("ⓘ INFO")
 	}
 	return "?"
 }
@@ -60,6 +93,8 @@ func (s doctorStatus) String() string {
 		return "fail"
 	case doctorSkip:
 		return "skip"
+	case doctorInfo:
+		return "info"
 	}
 	return "unknown"
 }
@@ -181,7 +216,7 @@ func (a *doctorAction) run(ctx context.Context) error {
 			return err
 		}
 	} else {
-		printDoctorReport(a.out, results, state)
+		printDoctorReport(a.out, results, state, a.flags)
 	}
 
 	exitCode := computeDoctorExitCode(results)
@@ -216,19 +251,25 @@ func computeDoctorExitCode(results []doctorResult) int {
 	}
 }
 
-// writeDoctorJSON renders the design's JSON envelope. Redaction is applied
-// in non-interactive contexts unless --unredacted is explicitly set; today
-// no fields contain sensitive values (the local checks only surface paths
-// and config keys), so the flag is a no-op until remote checks 10 and 12
-// land. Wiring the surface now keeps the schema stable across releases.
+// writeDoctorJSON renders the design's JSON envelope. When the report is
+// marked redacted (stdout is non-TTY, or interactive without `--unredacted`),
+// every `detail` and `fix` field is rewritten through [redactDoctorString]
+// so principal IDs, scope ARNs, and full UPNs are replaced with
+// `<redacted>` before serialization. The `redacted` field on the envelope
+// signals to consumers which mode they are getting.
 func writeDoctorJSON(w io.Writer, results []doctorResult, flags *doctorFlags) error {
+	redacted := shouldRedactDoctorJSON(flags)
+	// Defensive: nil flags is treated as "default invocation" — no
+	// --local-only, no --unredacted. Keeps any future internal caller that
+	// reuses this writer (e.g., tests) from panicking.
+	remoteAttempted := flags == nil || !flags.localOnly
 	report := doctorJSONReport{
 		SchemaVersion: doctorReportSchemaVersion,
 		// Remote reflects whether remote checks were *attempted*. With
 		// --local-only the runner skips them; otherwise it would have run
 		// them (even if 0 are implemented today).
-		Remote:   !flags.localOnly,
-		Redacted: shouldRedactDoctorJSON(flags),
+		Remote:   remoteAttempted,
+		Redacted: redacted,
 		Checks:   make([]doctorJSONCheck, 0, len(results)),
 	}
 	for _, r := range results {
@@ -236,8 +277,8 @@ func writeDoctorJSON(w io.Writer, results []doctorResult, flags *doctorFlags) er
 			ID:         r.ID,
 			Title:      r.Title,
 			Status:     r.Status.String(),
-			Detail:     r.Detail,
-			Fix:        r.Fix,
+			Detail:     redactDoctorString(r.Detail, redacted),
+			Fix:        redactDoctorString(r.Fix, redacted),
 			DurationMs: r.DurationMs,
 		})
 	}
@@ -251,15 +292,42 @@ func writeDoctorJSON(w io.Writer, results []doctorResult, flags *doctorFlags) er
 // caller is on a TTY but did not pass --unredacted. Interactive users can
 // opt in to raw values; CI / piped output is always redacted.
 //
-// Today no fields are actually rewritten because the local checks don't
-// surface principal IDs or RBAC scope ARNs — those land with remote
-// checks 10 and 12. Keeping the flag wired now means consumers can rely
-// on a stable schema.
+// The fields rewritten by [redactDoctorString] are principal IDs (GUIDs),
+// scope ARNs (`/subscriptions/...`), and full UPNs in `Detail` / `Fix`.
+// Local checks don't surface those today; remote checks 10 and 12 do.
 func shouldRedactDoctorJSON(flags *doctorFlags) bool {
+	// Defensive: a nil flags value defaults to "redact". Any future internal
+	// caller that forgets to thread flags through gets the safe behavior.
+	if flags == nil {
+		return true
+	}
 	if !isTerminalStdout() {
 		return true
 	}
 	return !flags.unredacted
+}
+
+// redactDoctorString rewrites sensitive identifiers to the literal
+// `<redacted>` so check results can be safely piped into CI logs. Today
+// it covers:
+//
+//   - principal/object IDs (GUIDs like 8eb8d4f6-1d4f-4f1a-9a7d-8b6e2c8b0e1d)
+//   - ARM scope ARNs (`/subscriptions/<guid>/...`)
+//   - full UPNs (anything containing an `@` outside of a URL host)
+//
+// The function intentionally over-redacts when the caller is unsure:
+// false positives just leak more `<redacted>` placeholders in output;
+// false negatives leak real identifiers into CI. When `redacted` is
+// false the input is returned unchanged.
+func redactDoctorString(s string, redacted bool) string {
+	if !redacted || s == "" {
+		return s
+	}
+	out := s
+	out = doctorGUIDRegex.ReplaceAllString(out, "<redacted>")
+	out = doctorScopeARNRegex.ReplaceAllString(out, "<redacted>")
+	out = doctorUPNRegex.ReplaceAllString(out, "<redacted>")
+	return out
 }
 
 // runChecks executes the diagnostic checks. The order is stable so output
@@ -506,7 +574,7 @@ func (a *doctorAction) checkAgentManifest(projectPath string, services []*azdext
 //	azd ai agent doctor
 //	  ✓ PASS  azd CLI is installed and reachable
 //	  ✓ PASS  Project loaded from azure.yaml
-//	          /home/me/myproject
+//	          /home/me/agent-project
 //	  ✗ FAIL  AZURE_AI_PROJECT_ENDPOINT is set
 //	          value missing — agent cannot reach Foundry
 //
@@ -517,12 +585,18 @@ func (a *doctorAction) checkAgentManifest(projectPath string, services []*azdext
 // reusing the nextstep formatter for visual consistency. When every
 // check passes, the Next: block falls back to the post-init resolver so
 // the user always sees the next logical action (run/invoke/deploy).
-func printDoctorReport(w io.Writer, results []doctorResult, state *nextstep.State) {
+//
+// Redaction applies to non-TTY stdout unless the user opted in with
+// `--unredacted` — same rule as the JSON envelope. The text renderer
+// uses the same predicate as `shouldRedactDoctorJSON` so interactive
+// and piped output stay in lockstep.
+func printDoctorReport(w io.Writer, results []doctorResult, state *nextstep.State, flags *doctorFlags) {
+	redacted := shouldRedactDoctorJSON(flags)
 	fmt.Fprintln(w, color.New(color.Bold).Sprint("azd ai agent doctor"))
 	for _, r := range results {
 		fmt.Fprintf(w, "  %s  %s\n", r.Status.badge(), r.Title)
 		if r.Detail != "" {
-			fmt.Fprintf(w, "          %s\n", color.HiBlackString(r.Detail))
+			fmt.Fprintf(w, "          %s\n", color.HiBlackString(redactDoctorString(r.Detail, redacted)))
 		}
 	}
 
@@ -536,7 +610,7 @@ func printDoctorReport(w io.Writer, results []doctorResult, state *nextstep.Stat
 			desc = r.Title
 		}
 		suggestions = append(suggestions, nextstep.Suggestion{
-			Command:     r.Fix,
+			Command:     redactDoctorString(r.Fix, redacted),
 			Description: desc,
 		})
 	}

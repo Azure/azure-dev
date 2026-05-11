@@ -10,9 +10,15 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
+	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/pkg/agents/agent_yaml"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
@@ -44,6 +50,10 @@ type remotePreconditions struct {
 	// envName is the active azd environment name (check 3). Empty when
 	// no environment is selected.
 	envName string
+	// projectPath is the absolute path to the loaded azd project root
+	// (check 2). Used by per-service checks (e.g., check 9) that need
+	// to read agent.yaml files from each service's source directory.
+	projectPath string
 	// agentServices is the list of services with host:azure.ai.agent /
 	// azure.ai.toolbox from check 4. Populated even if zero services
 	// matched; remote checks that need a service iterate over the slice.
@@ -59,19 +69,21 @@ type remotePreconditions struct {
 //
 // Cross-check sequencing (the design's dependency matrix):
 //
-//   - check 7 (auth) gates 8, 10, 11, 12
-//   - check 8 (reachability) gates 9, 11
-//   - check 11 (agent status) gates 12
+//   - check 7  (auth)            gates 8, 10, 11, 12
+//   - check 8  (reachability)    gates 9, 11
+//   - check 11 (agent status)    gates 12
 //
-// R2-C ships only checks 7 + 8. Later phases append 9 / 10 / 11 / 12 to
-// the slice in dependency order; each check inspects the prior results
-// to decide Pass vs Skip.
+// R2-D extends the runner to checks 9 (model deployments) and 11 (agent
+// status). Each downstream check inspects the prior results to decide
+// Pass / Skip / Warn / Fail; we do not short-circuit the loop, so a
+// failed reachability still surfaces explicit Skip rows for the
+// dependent checks.
 func (a *doctorAction) runRemoteChecks(ctx context.Context, pre remotePreconditions) []doctorResult {
 	if a.flags != nil && a.flags.localOnly {
 		return remoteSkipRows("skipped: --local-only")
 	}
 
-	out := make([]doctorResult, 0, 2)
+	out := make([]doctorResult, 0, 4)
 
 	// Check 7 — Authentication. Captures the auth result (and bearer
 	// token) so check 8 can either reuse the token or Skip with a clean
@@ -88,16 +100,35 @@ func (a *doctorAction) runRemoteChecks(ctx context.Context, pre remotePreconditi
 
 	// Check 8 — Foundry project reachability. Inspects authResult and
 	// the precondition struct to either skip cleanly or fire the probe.
+	var reachabilityResult doctorResult
 	out = append(out, timed(func() doctorResult {
-		return a.checkReachability(ctx, pre, authResult.Status, bearerToken)
+		reachabilityResult = a.checkReachability(ctx, pre, authResult.Status, bearerToken)
+		return reachabilityResult
 	}))
+
+	// Check 9 — Model deployments (per service). Depends on check 6
+	// (manifest valid) AND check 8 (reachability). The helper iterates
+	// pre.agentServices and emits one row per service; each row is
+	// re-wrapped through timed() so durations reflect per-service work.
+	for _, row := range a.checkModelDeployments(ctx, pre, reachabilityResult.Status) {
+		r := row
+		out = append(out, timed(func() doctorResult { return r }))
+	}
+
+	// Check 11 — Agent status (per service). Depends on check 7 (auth)
+	// AND check 8 (reachability). Same per-service row pattern as
+	// check 9.
+	for _, row := range a.checkAgentStatus(ctx, pre, authResult.Status, reachabilityResult.Status, bearerToken) {
+		r := row
+		out = append(out, timed(func() doctorResult { return r }))
+	}
 
 	return out
 }
 
-// remoteSkipRows returns the design's six remote-check Skip placeholders
-// pre-filled with `reason`. R2-C only owns 7 + 8; later phases will
-// extend the slice as the matching checks land.
+// remoteSkipRows returns the design's remote-check Skip placeholders
+// pre-filled with `reason`. R2-D ships rows for checks 7, 8, 9, 11;
+// later phases will extend the slice as checks 10 and 12 land.
 func remoteSkipRows(reason string) []doctorResult {
 	return []doctorResult{
 		{
@@ -109,6 +140,18 @@ func remoteSkipRows(reason string) []doctorResult {
 		{
 			ID:     "remote.reachability",
 			Title:  "Foundry project reachability",
+			Status: doctorSkip,
+			Detail: reason,
+		},
+		{
+			ID:     "remote.models",
+			Title:  "Model deployments",
+			Status: doctorSkip,
+			Detail: reason,
+		},
+		{
+			ID:     "remote.agent-status",
+			Title:  "Agent status",
 			Status: doctorSkip,
 			Detail: reason,
 		},
@@ -375,4 +418,356 @@ func extractUPNFromJWT(token string) string {
 		return claims.UniqueName
 	}
 	return claims.PreferredUsername
+}
+
+// checkModelDeployments performs doctor check 9. For each agent service
+// in pre.agentServices, the helper parses the service's agent.yaml,
+// extracts referenced model deployments, and verifies each is present
+// in the Foundry account via the ARM cognitive-services Deployments
+// API. Emits one row per service.
+//
+// Dependency matrix:
+//
+//   - skip when check 8 (reachability) is Fail/Skip — we cannot trust
+//     the project endpoint enough to bother with ARM either
+//   - skip per-service when the service's agent.yaml is unreadable
+//     (check 6 already flagged this; do not duplicate the fail)
+//   - skip the whole check when AZURE_SUBSCRIPTION_ID /
+//     AZURE_RESOURCE_GROUP / AZURE_AI_ACCOUNT_NAME are missing — those
+//     are written by `azd provision`, so the right action is to provision
+//
+// The ARM Deployments list is fetched once and shared across services
+// to avoid N round-trips when multiple services reference the same
+// model deployments.
+func (a *doctorAction) checkModelDeployments(
+	ctx context.Context,
+	pre remotePreconditions,
+	reachabilityStatus doctorStatus,
+) []doctorResult {
+	// Reachability gate. We treat Warn (5xx) as "good enough to try"
+	// because ARM and the Foundry data plane fail independently.
+	if reachabilityStatus != doctorOK && reachabilityStatus != doctorWarn {
+		return []doctorResult{{
+			ID:     "remote.models",
+			Title:  "Model deployments",
+			Status: doctorSkip,
+			Detail: "skipped: reachability check did not pass",
+		}}
+	}
+	if len(pre.agentServices) == 0 {
+		return []doctorResult{{
+			ID:     "remote.models",
+			Title:  "Model deployments",
+			Status: doctorSkip,
+			Detail: "skipped: no agent services detected",
+		}}
+	}
+
+	// Resolve sub / rg / account from azd env. These are written by
+	// `azd provision`. If any is missing, the user needs to provision
+	// before this check can run.
+	sub := a.getEnvValue(ctx, pre.envName, "AZURE_SUBSCRIPTION_ID")
+	rg := a.getEnvValue(ctx, pre.envName, "AZURE_RESOURCE_GROUP")
+	account := a.getEnvValue(ctx, pre.envName, "AZURE_AI_ACCOUNT_NAME")
+	if sub == "" || rg == "" || account == "" {
+		return []doctorResult{{
+			ID:     "remote.models",
+			Title:  "Model deployments",
+			Status: doctorSkip,
+			Detail: "skipped: missing AZURE_SUBSCRIPTION_ID / AZURE_RESOURCE_GROUP / AZURE_AI_ACCOUNT_NAME",
+			Fix:    "azd provision",
+			Reason: "provision the Foundry project to populate the required environment variables",
+		}}
+	}
+
+	cred, err := newAgentCredential()
+	if err != nil {
+		return []doctorResult{{
+			ID:     "remote.models",
+			Title:  "Model deployments",
+			Status: doctorFail,
+			Detail: fmt.Sprintf("failed to create Azure credential: %v", err),
+			Fix:    "azd auth login",
+		}}
+	}
+
+	listCtx, cancel := context.WithTimeout(ctx, doctorRemoteTimeout)
+	defer cancel()
+	deployments, err := listProjectDeployments(listCtx, cred, sub, rg, account)
+	if err != nil {
+		return []doctorResult{{
+			ID:     "remote.models",
+			Title:  "Model deployments",
+			Status: doctorFail,
+			Detail: fmt.Sprintf("failed to list deployments for %s/%s/%s: %v", sub, rg, account, err),
+			Reason: "verify the Foundry account exists and that you have Reader access",
+		}}
+	}
+	deployed := make(map[string]bool, len(deployments))
+	for _, d := range deployments {
+		if d.Name != "" {
+			deployed[d.Name] = true
+		}
+	}
+
+	out := make([]doctorResult, 0, len(pre.agentServices))
+	for _, svc := range pre.agentServices {
+		id := fmt.Sprintf("remote.models.%s", svc.Name)
+		title := fmt.Sprintf("Model deployments for %q", svc.Name)
+
+		manifestPath := filepath.Join(pre.projectPath, svc.RelativePath, "agent.yaml")
+		data, err := os.ReadFile(manifestPath) //nolint:gosec // G304: path constructed from azd project root
+		if err != nil {
+			out = append(out, doctorResult{
+				ID:     id,
+				Title:  title,
+				Status: doctorSkip,
+				Detail: fmt.Sprintf("skipped: failed to read %s: %v", manifestPath, err),
+			})
+			continue
+		}
+		resources, err := agent_yaml.ExtractResourceDefinitions(data)
+		if err != nil {
+			out = append(out, doctorResult{
+				ID:     id,
+				Title:  title,
+				Status: doctorSkip,
+				Detail: fmt.Sprintf("skipped: failed to parse %s: %v", manifestPath, err),
+			})
+			continue
+		}
+
+		var modelRefs []string
+		for _, r := range resources {
+			if m, ok := r.(agent_yaml.ModelResource); ok && m.Id != "" {
+				modelRefs = append(modelRefs, m.Id)
+			}
+		}
+
+		if len(modelRefs) == 0 {
+			out = append(out, doctorResult{
+				ID:     id,
+				Title:  title,
+				Status: doctorOK,
+				Detail: "no model references in agent.yaml",
+			})
+			continue
+		}
+
+		var missing []string
+		for _, m := range modelRefs {
+			if !deployed[m] {
+				missing = append(missing, m)
+			}
+		}
+		if len(missing) > 0 {
+			out = append(out, doctorResult{
+				ID:     id,
+				Title:  title,
+				Status: doctorFail,
+				Detail: fmt.Sprintf("missing: %s", strings.Join(missing, ", ")),
+				Fix:    "azd provision",
+				Reason: "re-provision to create the missing model deployment(s)",
+			})
+			continue
+		}
+		out = append(out, doctorResult{
+			ID:     id,
+			Title:  title,
+			Status: doctorOK,
+			Detail: fmt.Sprintf("all %d referenced model(s) present", len(modelRefs)),
+		})
+	}
+	return out
+}
+
+// checkAgentStatus performs doctor check 11. For each agent service in
+// pre.agentServices, the helper resolves AGENT_<SVC>_NAME from the azd
+// environment, calls GET /agents/<name> on the Foundry endpoint, and
+// classifies the returned status string.
+//
+// Dependency matrix:
+//
+//   - skip when check 7 (auth) is Fail/Skip
+//   - skip when check 8 (reachability) is Fail/Skip
+//   - skip per-service when AGENT_<SVC>_NAME is empty (i.e., service
+//     has not been deployed yet)
+//
+// Status string classification is intentionally lenient: Foundry can
+// emit free-form status strings, so we do a case-insensitive prefix /
+// substring match against the small set of values we know about.
+func (a *doctorAction) checkAgentStatus(
+	ctx context.Context,
+	pre remotePreconditions,
+	authStatus, reachabilityStatus doctorStatus,
+	bearerToken string,
+) []doctorResult {
+	if authStatus != doctorOK && authStatus != doctorWarn {
+		return []doctorResult{{
+			ID:     "remote.agent-status",
+			Title:  "Agent status",
+			Status: doctorSkip,
+			Detail: "skipped: authentication check did not pass",
+		}}
+	}
+	if reachabilityStatus != doctorOK && reachabilityStatus != doctorWarn {
+		return []doctorResult{{
+			ID:     "remote.agent-status",
+			Title:  "Agent status",
+			Status: doctorSkip,
+			Detail: "skipped: reachability check did not pass",
+		}}
+	}
+	if !pre.endpointSet {
+		return []doctorResult{{
+			ID:     "remote.agent-status",
+			Title:  "Agent status",
+			Status: doctorSkip,
+			Detail: "skipped: AZURE_AI_PROJECT_ENDPOINT not set",
+		}}
+	}
+	if len(pre.agentServices) == 0 {
+		return []doctorResult{{
+			ID:     "remote.agent-status",
+			Title:  "Agent status",
+			Status: doctorSkip,
+			Detail: "skipped: no agent services detected",
+		}}
+	}
+
+	cred, err := newAgentCredential()
+	if err != nil {
+		return []doctorResult{{
+			ID:     "remote.agent-status",
+			Title:  "Agent status",
+			Status: doctorFail,
+			Detail: fmt.Sprintf("failed to create Azure credential: %v", err),
+			Fix:    "azd auth login",
+		}}
+	}
+	_ = bearerToken // reserved for future reuse; AgentClient handles its own auth pipeline
+	client := agent_api.NewAgentClient(pre.endpoint, cred)
+
+	out := make([]doctorResult, 0, len(pre.agentServices))
+	for _, svc := range pre.agentServices {
+		id := fmt.Sprintf("remote.agent-status.%s", svc.Name)
+		title := fmt.Sprintf("Agent status for %q", svc.Name)
+
+		serviceKey := toServiceKey(svc.Name)
+		agentName := a.getEnvValue(ctx, pre.envName, fmt.Sprintf("AGENT_%s_NAME", serviceKey))
+		if agentName == "" {
+			out = append(out, doctorResult{
+				ID:     id,
+				Title:  title,
+				Status: doctorSkip,
+				Detail: fmt.Sprintf("skipped: AGENT_%s_NAME not set (deploy this service first)", serviceKey),
+				Fix:    "azd deploy",
+			})
+			continue
+		}
+
+		reqCtx, cancelReq := context.WithTimeout(ctx, doctorRemoteTimeout)
+		agent, getErr := client.GetAgent(reqCtx, agentName, DefaultAgentAPIVersion)
+		cancelReq()
+		if getErr != nil {
+			out = append(out, classifyAgentGetError(id, title, agentName, getErr))
+			continue
+		}
+
+		out = append(out, classifyAgentStatus(id, title, agentName, agent))
+	}
+	return out
+}
+
+// classifyAgentGetError maps an error from AgentClient.GetAgent into a
+// doctorResult. 404 → Fail with `azd deploy` fix; everything else is a
+// generic Fail surfaced with the raw error so the user can diagnose.
+func classifyAgentGetError(id, title, agentName string, err error) doctorResult {
+	var respErr *azcore.ResponseError
+	if errors.As(err, &respErr) && respErr.StatusCode == http.StatusNotFound {
+		return doctorResult{
+			ID:     id,
+			Title:  title,
+			Status: doctorFail,
+			Detail: fmt.Sprintf("%s: not found (HTTP 404)", agentName),
+			Fix:    "azd deploy",
+			Reason: "the agent has not been deployed to this Foundry project yet",
+		}
+	}
+	return doctorResult{
+		ID:     id,
+		Title:  title,
+		Status: doctorFail,
+		Detail: fmt.Sprintf("%s: GetAgent failed: %v", agentName, err),
+	}
+}
+
+// classifyAgentStatus maps the free-form Status field on the latest
+// agent version into a doctorResult. The Foundry contract is loose
+// (status is `string,omitempty`), so we do case-insensitive comparisons
+// against the small set of values seen in practice.
+//
+// Mapping:
+//
+//   - empty / "succeeded" / "active" / "ready" → Pass
+//   - "deploying" / "provisioning" / "updating" / "creating" /
+//     "inprogress" / contains "progress" → Warn
+//   - anything else → Fail (status surfaced raw)
+func classifyAgentStatus(id, title, agentName string, agent *agent_api.AgentObject) doctorResult {
+	latest := agent.Versions.Latest
+	status := strings.TrimSpace(strings.ToLower(latest.Status))
+	versionLabel := latest.Version
+	if versionLabel == "" {
+		versionLabel = "(unknown version)"
+	}
+
+	switch {
+	case status == "" || status == "succeeded" || status == "active" || status == "ready":
+		return doctorResult{
+			ID:     id,
+			Title:  title,
+			Status: doctorOK,
+			Detail: fmt.Sprintf("%s: active (v%s)", agentName, versionLabel),
+		}
+	case status == "deploying" ||
+		status == "provisioning" ||
+		status == "updating" ||
+		status == "creating" ||
+		status == "inprogress" ||
+		strings.Contains(status, "progress"):
+		return doctorResult{
+			ID:     id,
+			Title:  title,
+			Status: doctorWarn,
+			Detail: fmt.Sprintf("%s: %s (v%s)", agentName, latest.Status, versionLabel),
+			Fix:    fmt.Sprintf("azd ai agent monitor %s --follow", agentName),
+			Reason: "deployment in progress; monitor until it completes",
+		}
+	default:
+		return doctorResult{
+			ID:     id,
+			Title:  title,
+			Status: doctorFail,
+			Detail: fmt.Sprintf("%s: %s (v%s)", agentName, latest.Status, versionLabel),
+			Fix:    fmt.Sprintf("azd ai agent monitor %s", agentName),
+			Reason: "the latest version is not in a healthy state; inspect logs and redeploy",
+		}
+	}
+}
+
+// getEnvValue fetches a single value from the active azd environment.
+// Returns the empty string for any error or empty value so callers can
+// use plain `if v == "" { … }` skip semantics.
+func (a *doctorAction) getEnvValue(ctx context.Context, envName, key string) string {
+	if a.azdClient == nil {
+		return ""
+	}
+	v, err := a.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envName,
+		Key:     key,
+	})
+	if err != nil || v == nil {
+		return ""
+	}
+	return v.Value
 }

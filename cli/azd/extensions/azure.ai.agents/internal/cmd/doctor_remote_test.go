@@ -8,8 +8,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
+
+	"azureaiagent/internal/pkg/agents/agent_api"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 )
 
 // fakeJWT builds a JWT-shaped string with the provided claims payload.
@@ -226,10 +231,15 @@ func TestCheckReachability_HitsFakeServer(t *testing.T) {
 func TestRunRemoteChecks_LocalOnlyEmitsSkipRows(t *testing.T) {
 	a := &doctorAction{flags: &doctorFlags{localOnly: true}}
 	results := a.runRemoteChecks(t.Context(), remotePreconditions{})
-	if len(results) != 2 {
-		t.Fatalf("len(results) = %d, want 2", len(results))
+	if len(results) != 4 {
+		t.Fatalf("len(results) = %d, want 4", len(results))
 	}
-	wantIDs := []string{"remote.auth", "remote.reachability"}
+	wantIDs := []string{
+		"remote.auth",
+		"remote.reachability",
+		"remote.models",
+		"remote.agent-status",
+	}
 	for i, want := range wantIDs {
 		if results[i].ID != want {
 			t.Fatalf("results[%d].ID = %q, want %q", i, results[i].ID, want)
@@ -246,11 +256,19 @@ func TestRunRemoteChecks_LocalOnlyEmitsSkipRows(t *testing.T) {
 
 func TestRemoteSkipRows_OrderAndIDs(t *testing.T) {
 	rows := remoteSkipRows("custom reason")
-	if len(rows) != 2 {
-		t.Fatalf("len = %d, want 2", len(rows))
+	if len(rows) != 4 {
+		t.Fatalf("len = %d, want 4", len(rows))
 	}
-	if rows[0].ID != "remote.auth" || rows[1].ID != "remote.reachability" {
-		t.Fatalf("unexpected IDs: %q, %q", rows[0].ID, rows[1].ID)
+	wantIDs := []string{
+		"remote.auth",
+		"remote.reachability",
+		"remote.models",
+		"remote.agent-status",
+	}
+	for i, want := range wantIDs {
+		if rows[i].ID != want {
+			t.Fatalf("rows[%d].ID = %q, want %q", i, rows[i].ID, want)
+		}
 	}
 	for _, r := range rows {
 		if r.Status != doctorSkip {
@@ -283,3 +301,110 @@ func TestAuthFailResult_PointsAtAzdAuthLogin(t *testing.T) {
 type stringError string
 
 func (e stringError) Error() string { return string(e) }
+
+func TestClassifyAgentStatus(t *testing.T) {
+	tests := []struct {
+		name      string
+		status    string
+		want      doctorStatus
+		wantInFix string
+	}{
+		{"empty is pass", "", doctorOK, ""},
+		{"succeeded is pass", "Succeeded", doctorOK, ""},
+		{"active is pass", "Active", doctorOK, ""},
+		{"ready is pass", "Ready", doctorOK, ""},
+		{"deploying is warn", "Deploying", doctorWarn, "monitor"},
+		{"provisioning is warn", "Provisioning", doctorWarn, "monitor"},
+		{"updating is warn", "Updating", doctorWarn, "monitor"},
+		{"creating is warn", "Creating", doctorWarn, "monitor"},
+		{"inprogress is warn", "InProgress", doctorWarn, "monitor"},
+		{"contains-progress is warn", "ApplyInProgress", doctorWarn, "monitor"},
+		{"failed is fail", "Failed", doctorFail, "monitor"},
+		{"unknown is fail", "Quarantined", doctorFail, "monitor"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			obj := newAgentObject("my-agent", "3", tt.status)
+			res := classifyAgentStatus("remote.agent-status.svc", "Agent status for \"svc\"", "my-agent", obj)
+			if res.Status != tt.want {
+				t.Fatalf("Status = %v, want %v (detail=%q)", res.Status, tt.want, res.Detail)
+			}
+			if tt.wantInFix != "" && !strings.Contains(res.Fix, tt.wantInFix) {
+				t.Fatalf("Fix = %q, want it to contain %q", res.Fix, tt.wantInFix)
+			}
+			if !strings.Contains(res.Detail, "my-agent") {
+				t.Fatalf("Detail = %q, want it to mention the agent name", res.Detail)
+			}
+		})
+	}
+}
+
+func TestClassifyAgentStatus_MissingVersion(t *testing.T) {
+	obj := newAgentObject("my-agent", "", "")
+	res := classifyAgentStatus("remote.agent-status.svc", "Agent status", "my-agent", obj)
+	if res.Status != doctorOK {
+		t.Fatalf("Status = %v, want OK", res.Status)
+	}
+	if !strings.Contains(res.Detail, "unknown version") {
+		t.Fatalf("Detail = %q, want fallback version label", res.Detail)
+	}
+}
+
+// newAgentObject is a test helper to build an AgentObject with the
+// minimal fields classifyAgentStatus inspects.
+func newAgentObject(name, version, status string) *agent_api.AgentObject {
+	obj := &agent_api.AgentObject{Name: name}
+	obj.Versions.Latest = agent_api.AgentVersionObject{
+		Name:    name,
+		Version: version,
+		Status:  status,
+	}
+	return obj
+}
+
+func TestClassifyAgentGetError_404FailsWithDeployFix(t *testing.T) {
+	// Build a real *azcore.ResponseError pointing at a 404 response.
+	// Using runtime.NewResponseError to mirror what AgentClient.GetAgent
+	// returns from the SDK pipeline.
+	resp := &http.Response{
+		StatusCode: http.StatusNotFound,
+		Status:     "404 Not Found",
+		Header:     http.Header{},
+		Body:       http.NoBody,
+		Request:    &http.Request{Method: http.MethodGet, URL: mustParseURL(t, "https://example/agents/foo")},
+	}
+	err := runtime.NewResponseError(resp)
+	res := classifyAgentGetError("remote.agent-status.svc", "Agent status", "my-agent", err)
+	if res.Status != doctorFail {
+		t.Fatalf("Status = %v, want fail", res.Status)
+	}
+	if res.Fix != "azd deploy" {
+		t.Fatalf("Fix = %q, want %q", res.Fix, "azd deploy")
+	}
+	if !strings.Contains(res.Detail, "not found") {
+		t.Fatalf("Detail = %q, want it to say not found", res.Detail)
+	}
+}
+
+func TestClassifyAgentGetError_OtherErrorIsGenericFail(t *testing.T) {
+	res := classifyAgentGetError("remote.agent-status.svc", "Agent status", "my-agent",
+		stringError("connection reset"))
+	if res.Status != doctorFail {
+		t.Fatalf("Status = %v, want fail", res.Status)
+	}
+	if res.Fix != "" {
+		t.Fatalf("Fix = %q, want empty (no actionable fix for generic error)", res.Fix)
+	}
+	if !strings.Contains(res.Detail, "connection reset") {
+		t.Fatalf("Detail = %q, want underlying error wrapped", res.Detail)
+	}
+}
+
+func mustParseURL(t *testing.T, raw string) *url.URL {
+	t.Helper()
+	u, err := url.Parse(raw)
+	if err != nil {
+		t.Fatalf("url.Parse(%q) failed: %v", raw, err)
+	}
+	return u
+}

@@ -401,6 +401,7 @@ func (a *doctorAction) runChecks(ctx context.Context) []doctorResult {
 		endpointSet:   endpointValue != "",
 		endpoint:      endpointValue,
 		envName:       envName,
+		projectPath:   projectPath,
 		agentServices: agentServices,
 	})...)
 

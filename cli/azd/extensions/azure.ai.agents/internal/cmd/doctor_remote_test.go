@@ -231,13 +231,14 @@ func TestCheckReachability_HitsFakeServer(t *testing.T) {
 func TestRunRemoteChecks_LocalOnlyEmitsSkipRows(t *testing.T) {
 	a := &doctorAction{flags: &doctorFlags{localOnly: true}}
 	results := a.runRemoteChecks(t.Context(), remotePreconditions{})
-	if len(results) != 4 {
-		t.Fatalf("len(results) = %d, want 4", len(results))
+	if len(results) != 5 {
+		t.Fatalf("len(results) = %d, want 5", len(results))
 	}
 	wantIDs := []string{
 		"remote.auth",
 		"remote.reachability",
 		"remote.models",
+		"remote.rbac",
 		"remote.agent-status",
 	}
 	for i, want := range wantIDs {
@@ -256,13 +257,14 @@ func TestRunRemoteChecks_LocalOnlyEmitsSkipRows(t *testing.T) {
 
 func TestRemoteSkipRows_OrderAndIDs(t *testing.T) {
 	rows := remoteSkipRows("custom reason")
-	if len(rows) != 4 {
-		t.Fatalf("len = %d, want 4", len(rows))
+	if len(rows) != 5 {
+		t.Fatalf("len = %d, want 5", len(rows))
 	}
 	wantIDs := []string{
 		"remote.auth",
 		"remote.reachability",
 		"remote.models",
+		"remote.rbac",
 		"remote.agent-status",
 	}
 	for i, want := range wantIDs {

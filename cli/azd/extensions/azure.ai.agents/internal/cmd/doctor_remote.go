@@ -115,6 +115,13 @@ func (a *doctorAction) runRemoteChecks(ctx context.Context, pre remotePreconditi
 		out = append(out, timed(func() doctorResult { return r }))
 	}
 
+	// Check 10 — User RBAC. Depends on check 7 (auth) only — RBAC
+	// listing uses ARM, not the Foundry data plane, so it does not
+	// require check 8 to have passed.
+	out = append(out, timed(func() doctorResult {
+		return a.checkUserRBAC(ctx, pre, authResult.Status)
+	}))
+
 	// Check 11 — Agent status (per service). Depends on check 7 (auth)
 	// AND check 8 (reachability). Same per-service row pattern as
 	// check 9.
@@ -127,8 +134,8 @@ func (a *doctorAction) runRemoteChecks(ctx context.Context, pre remotePreconditi
 }
 
 // remoteSkipRows returns the design's remote-check Skip placeholders
-// pre-filled with `reason`. R2-D ships rows for checks 7, 8, 9, 11;
-// later phases will extend the slice as checks 10 and 12 land.
+// pre-filled with `reason`. R2-E ships rows for checks 7, 8, 9, 10, 11;
+// R2-F will extend the slice when check 12 lands.
 func remoteSkipRows(reason string) []doctorResult {
 	return []doctorResult{
 		{
@@ -146,6 +153,12 @@ func remoteSkipRows(reason string) []doctorResult {
 		{
 			ID:     "remote.models",
 			Title:  "Model deployments",
+			Status: doctorSkip,
+			Detail: reason,
+		},
+		{
+			ID:     "remote.rbac",
+			Title:  "User RBAC",
 			Status: doctorSkip,
 			Detail: reason,
 		},

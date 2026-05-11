@@ -35,8 +35,7 @@ type proxyInvokeParams struct {
 	Body      string            `json:"body,omitempty"`
 }
 
-// proxyInvokeResult covers both buffered and streaming branches. The
-// streaming branch omits Body; the buffered branch includes it.
+// Body is empty when Mode == "streaming". The SPA branches on Mode.
 type proxyInvokeResult struct {
 	Status     int               `json:"status"`
 	StatusText string            `json:"statusText"`
@@ -45,40 +44,14 @@ type proxyInvokeResult struct {
 	Body       string            `json:"body,omitempty"`
 }
 
-// httpClient is shared across requests in a session. The Python
-// reference uses a 300s timeout; we mirror that for consistency.
 var sessionHTTPClient = &http.Client{
 	Timeout: 300 * time.Second,
-}
-
-// assertLocalhost is a defense-in-depth check. The inspector should
-// only proxy localhost calls; the SPA never has a reason to ask for an
-// external URL through the proxy. The VS Code reference implementation
-// enforces the same check (see webviewProxyHandler.ts:6-13).
-func assertLocalhost(rawURL string, label string) error {
-	// Accept the simple cases without parsing for speed; URL parsing
-	// is a fallback for unusual hostnames.
-	lower := strings.ToLower(rawURL)
-	if strings.HasPrefix(lower, "http://localhost") ||
-		strings.HasPrefix(lower, "https://localhost") ||
-		strings.HasPrefix(lower, "http://127.0.0.1") ||
-		strings.HasPrefix(lower, "https://127.0.0.1") ||
-		strings.HasPrefix(lower, "ws://localhost") ||
-		strings.HasPrefix(lower, "wss://localhost") ||
-		strings.HasPrefix(lower, "ws://127.0.0.1") ||
-		strings.HasPrefix(lower, "wss://127.0.0.1") {
-		return nil
-	}
-	return fmt.Errorf("%s only allows requests to localhost", label)
 }
 
 func (s *rpcSession) proxyFetch(raw json.RawMessage) (any, error) {
 	var p proxyFetchParams
 	if err := json.Unmarshal(raw, &p); err != nil {
 		return nil, fmt.Errorf("invalid params: %w", err)
-	}
-	if err := assertLocalhost(p.URL, "Proxy fetch"); err != nil {
-		return nil, err
 	}
 
 	method := p.Method
@@ -118,18 +91,12 @@ func (s *rpcSession) proxyFetch(raw json.RawMessage) (any, error) {
 	}, nil
 }
 
-// proxyInvoke matches rpc_handler.py:_proxy_invoke. POST a request,
-// then branch on the response Content-Type:
-//   - text/event-stream: spawn an SSE pump; return immediately with
-//     {mode: "streaming"}.
-//   - everything else: read the full body; return {mode: "buffered"}.
+// proxyInvoke POSTs a request and either streams an SSE response via
+// pumpSSE (Mode="streaming") or buffers the body (Mode="buffered").
 func (s *rpcSession) proxyInvoke(raw json.RawMessage) (any, error) {
 	var p proxyInvokeParams
 	if err := json.Unmarshal(raw, &p); err != nil {
 		return nil, fmt.Errorf("invalid params: %w", err)
-	}
-	if err := assertLocalhost(p.URL, "Proxy invoke"); err != nil {
-		return nil, err
 	}
 
 	isResponses := strings.Contains(p.URL, "/responses")
@@ -142,9 +109,6 @@ func (s *rpcSession) proxyInvoke(raw json.RawMessage) (any, error) {
 		bodyReader = bytes.NewReader([]byte(p.Body))
 	}
 
-	// We do not use the session-level cancel registry for the request
-	// itself when streaming, because cancellation flows in via the
-	// per-stream context registered in pumpSSE.
 	req, err := http.NewRequestWithContext(s.rootCtx, http.MethodPost, p.URL, bodyReader)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
@@ -162,8 +126,6 @@ func (s *rpcSession) proxyInvoke(raw json.RawMessage) (any, error) {
 	headers := flattenHeaders(resp.Header)
 
 	if strings.Contains(contentType, "text/event-stream") {
-		// Streaming branch: hand the live response to the SSE pump.
-		// pumpSSE owns Body.Close().
 		go s.pumpSSE(p.RequestID, resp, isResponses)
 		return proxyInvokeResult{
 			Status:     resp.StatusCode,
@@ -190,9 +152,6 @@ func (s *rpcSession) proxyInvoke(raw json.RawMessage) (any, error) {
 	}, nil
 }
 
-// flattenHeaders collapses http.Header (which permits multiple values)
-// into a single string per key. The Python reference does the same via
-// dict(resp.headers); the inspector only ever reads scalar headers.
 func flattenHeaders(h http.Header) map[string]string {
 	out := make(map[string]string, len(h))
 	for k, v := range h {

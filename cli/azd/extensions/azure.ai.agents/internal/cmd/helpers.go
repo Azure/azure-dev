@@ -34,6 +34,9 @@ const (
 
 	// DefaultPort is the default port for local agent servers.
 	DefaultPort = 8088
+
+	// DefaultInspectorPort is the default port for the Agent Inspector UI.
+	DefaultInspectorPort = 8087
 )
 
 // AgentLocalContext holds local state persisted in UserConfig.

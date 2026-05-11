@@ -6,24 +6,18 @@ package inspector
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+	"log"
 	"net/http"
 	"sync"
 
 	"github.com/gorilla/websocket"
 )
 
-// rpcMessage is the shared envelope for JSON-RPC 2.0 over a single
-// WebSocket. The Python reference (rpc_handler.py) emits both requests
-// and notifications with this shape; vscode-jsonrpc on the client
-// interprets the absence of `id` as a notification.
-//
-// Important quirks to preserve from the reference:
-//   - Inbound request `params` arrive as a single-element array. Unwrap
-//     before dispatch.
-//   - Outbound notification `params` are wrapped in a one-element array
-//     so vscode-jsonrpc's NotificationType handlers see a single arg.
-//   - Outbound request `params` are a positional array.
+// rpcMessage is the JSON-RPC 2.0 envelope used over the WebSocket.
+// Quirks preserved from the Python reference:
+//   - Inbound request params arrive as a single-element array (unwrap before dispatch).
+//   - Outbound notification params are wrapped in a one-element array.
+//   - Outbound request params are a positional array.
 type rpcMessage struct {
 	JSONRPC string          `json:"jsonrpc"`
 	ID      json.RawMessage `json:"id,omitempty"`
@@ -38,28 +32,22 @@ type rpcError struct {
 	Message string `json:"message"`
 }
 
-// rpcSession owns a single WebSocket connection. All methods that send
-// frames acquire writeMu; gorilla/websocket requires single-writer
-// discipline.
+// rpcSession owns one WebSocket. writeMu enforces gorilla/websocket's
+// single-writer requirement.
 type rpcSession struct {
 	cfg    Config
 	conn   *websocket.Conn
-	logger interface{ Printf(string, ...any) }
+	logger *log.Logger
 
 	writeMu sync.Mutex
 
-	// streams tracks active SSE pumps so that fetchSSE/cancel and
-	// connection teardown can stop them cleanly.
 	streamsMu sync.Mutex
 	streams   map[string]context.CancelFunc
 
-	// nextRequestID seeds server→client request IDs. The Python
-	// reference starts at 1 and increments per outgoing request.
 	idMu          sync.Mutex
 	nextRequestID int
 
-	// rootCtx is cancelled when the WebSocket disconnects so that all
-	// in-flight goroutines (SSE pumps) can wind down.
+	// rootCtx is cancelled on disconnect to wind down SSE pumps.
 	rootCtx    context.Context
 	rootCancel context.CancelFunc
 }
@@ -97,22 +85,18 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		// Fire-and-forget: streaming methods would block the read loop
-		// otherwise and we'd miss subsequent client messages (incl.
-		// fetchSSE/cancel).
+		// Dispatch off the read loop so streaming methods don't block
+		// subsequent client messages (e.g. fetchSSE/cancel).
 		go sess.handleMessage(&msg)
 	}
 }
 
 func (s *rpcSession) handleMessage(msg *rpcMessage) {
-	// Notification: no id, no response required.
 	if len(msg.ID) == 0 {
 		s.handleNotification(msg.Method, msg.Params)
 		return
 	}
 
-	// Unwrap a single-element array, matching vscode-jsonrpc's
-	// RequestType1 convention used throughout the reference handler.
 	param := unwrapSingleArray(msg.Params)
 
 	result, err := s.route(msg.Method, param)
@@ -136,23 +120,17 @@ func (s *rpcSession) route(method string, params json.RawMessage) (any, error) {
 		s.cancelStream(params)
 		return nil, nil
 	case "getThemeRequest":
-		// TODO(inspector): theme is hardcoded for the preview. Detect
-		// from the OS / browser (prefers-color-scheme on the SPA side)
-		// or expose a CLI flag once the inspector ships GA.
+		// TODO(inspector): hardcoded for preview; detect from prefers-color-scheme later.
 		return "light", nil
 	default:
-		// Unimplemented methods (including webviewProxy/ws/*, which the
-		// SPA does not currently use against the standalone backend)
-		// fall through to null, matching the Python reference's default.
+		s.logger.Printf("rpc: unhandled method %q", method)
 		return nil, nil
 	}
 }
 
 func (s *rpcSession) handleNotification(method string, params json.RawMessage) {
 	if method == "setViewReady" {
-		// The SPA signals it has mounted; reply with a navigateToStep
-		// request carrying the agent port so the inspector knows where
-		// to send proxied calls.
+		// SPA has mounted; tell it which agent port to target.
 		payload := map[string]any{
 			"port":          s.cfg.AgentPort,
 			"triggeredFrom": "standalone",
@@ -163,19 +141,7 @@ func (s *rpcSession) handleNotification(method string, params json.RawMessage) {
 	}
 }
 
-// ──────────────────────────── outbound ────────────────────────────
-
 func (s *rpcSession) sendResult(id json.RawMessage, result any) {
-	if result == nil {
-		// JSON-RPC requires the result key to be present. Use an
-		// explicit JSON null to keep the wire shape consistent.
-		s.sendRaw(map[string]any{
-			"jsonrpc": "2.0",
-			"id":      json.RawMessage(id),
-			"result":  nil,
-		})
-		return
-	}
 	s.sendRaw(map[string]any{
 		"jsonrpc": "2.0",
 		"id":      json.RawMessage(id),
@@ -188,15 +154,14 @@ func (s *rpcSession) sendError(id json.RawMessage, err error) {
 		"jsonrpc": "2.0",
 		"id":      json.RawMessage(id),
 		"error": map[string]any{
-			"code":    -1,
-			"message": fmt.Sprintf("%T: %v", err, err),
+			"code":    -32603,
+			"message": err.Error(),
 		},
 	})
 }
 
-// sendNotification matches rpc_handler.py: params is wrapped in a
-// one-element array so vscode-jsonrpc's NotificationType1 handlers see
-// the object as their first (and only) argument.
+// sendNotification wraps params in a one-element array to match
+// vscode-jsonrpc's NotificationType1 convention.
 func (s *rpcSession) sendNotification(method string, payload any) {
 	s.sendRaw(map[string]any{
 		"jsonrpc": "2.0",
@@ -205,10 +170,6 @@ func (s *rpcSession) sendNotification(method string, payload any) {
 	})
 }
 
-// sendRequest sends a server→client request with a fresh id. params
-// are positional, matching vscode-jsonrpc RequestType conventions.
-// The current implementation does not await responses; the inspector
-// does not return values for the requests we send (e.g. navigateToStep).
 func (s *rpcSession) sendRequest(method string, params ...any) error {
 	s.idMu.Lock()
 	id := s.nextRequestID
@@ -238,8 +199,6 @@ func (s *rpcSession) sendRaw(payload any) error {
 	return nil
 }
 
-// ──────────────────────────── lifecycle ────────────────────────────
-
 func (s *rpcSession) registerStream(id string, cancel context.CancelFunc) {
 	s.streamsMu.Lock()
 	defer s.streamsMu.Unlock()
@@ -253,8 +212,6 @@ func (s *rpcSession) unregisterStream(id string) {
 }
 
 func (s *rpcSession) cancelStream(params json.RawMessage) {
-	// fetchSSE/cancel arrives as the bare requestId string (positional
-	// arg unwrapped from the single-element array).
 	var id string
 	if err := json.Unmarshal(params, &id); err != nil {
 		s.logger.Printf("cancel: bad params: %v", err)
@@ -282,11 +239,8 @@ func (s *rpcSession) cleanup() {
 	_ = s.conn.Close()
 }
 
-// ──────────────────────────── helpers ────────────────────────────
-
-// unwrapSingleArray converts `[obj]` → `obj`. vscode-jsonrpc sends
-// RequestType1 params wrapped in a one-element array; without this we
-// would have to teach every handler the wrapping convention.
+// unwrapSingleArray converts `[obj]` → `obj`, matching vscode-jsonrpc's
+// RequestType1 wire format.
 func unwrapSingleArray(raw json.RawMessage) json.RawMessage {
 	if len(raw) == 0 {
 		return raw

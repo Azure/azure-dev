@@ -145,26 +145,8 @@ session automatically. Pass --new-session to force a reset.`,
 			}
 
 			if flags.inspector {
-				if !flags.local {
-					return exterrors.Validation(
-						exterrors.CodeInvalidParameter,
-						"--inspector currently only supports --local",
-						"add --local to launch the inspector against a local agent (start it with: azd ai agent run)",
-					)
-				}
-				if flags.inputFile != "" {
-					return exterrors.Validation(
-						exterrors.CodeInvalidParameter,
-						"--inspector cannot be combined with --input-file",
-						"the inspector UI provides its own input; remove --input-file",
-					)
-				}
-				if flags.message != "" {
-					return exterrors.Validation(
-						exterrors.CodeInvalidParameter,
-						"--inspector cannot be combined with a positional message",
-						"the inspector UI provides its own input; remove the message argument",
-					)
+				if err := validateInspectorFlags(flags); err != nil {
+					return err
 				}
 			} else if flags.inputFile == "" && flags.message == "" {
 				return exterrors.Validation(
@@ -223,11 +205,29 @@ session automatically. Pass --new-session to force a reset.`,
 	cmd.Flags().IntVar(
 		&flags.inspectorPort,
 		"inspector-port",
-		8087,
-		"Port the Agent Inspector UI listens on (default: 8087)",
+		DefaultInspectorPort,
+		fmt.Sprintf("Port the Agent Inspector UI listens on (default: %d)", DefaultInspectorPort),
 	)
 
 	return cmd
+}
+
+func validateInspectorFlags(flags *invokeFlags) error {
+	if !flags.local {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--inspector currently only supports --local",
+			"add --local to launch the inspector against a local agent (start it with: azd ai agent run)",
+		)
+	}
+	if flags.inputFile != "" || flags.message != "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--inspector cannot be combined with a message or --input-file",
+			"the inspector UI provides its own input; remove the message argument and --input-file",
+		)
+	}
+	return nil
 }
 
 // validateAgentEndpointFlags rejects flags that have no effect (or conflict) when --agent-endpoint
@@ -264,7 +264,6 @@ func validateAgentEndpointFlags(cmd *cobra.Command, flags *invokeFlags) error {
 
 func (a *InvokeAction) Run(ctx context.Context) error {
 	if a.flags.inspector {
-		// Validation has already enforced --local + no message/input-file.
 		return a.runInspector(ctx)
 	}
 

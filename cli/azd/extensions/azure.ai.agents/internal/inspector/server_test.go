@@ -8,14 +8,14 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 )
 
-// TestServerStartServesIndex spins up the server on an ephemeral port and
-// asserts that /, /index.html, and an unknown SPA route all return 200
-// with the embedded index.html bytes.
+// TestServerStartServesIndex asserts /, /index.html, and unknown SPA
+// routes all return the embedded index.html.
 func TestServerStartServesIndex(t *testing.T) {
 	port := pickFreePort(t)
 
@@ -24,14 +24,19 @@ func TestServerStartServesIndex(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	ready := make(chan struct{})
 	done := make(chan error, 1)
-	go func() { done <- srv.Start(ctx) }()
+	go func() { done <- srv.Start(ctx, ready) }()
 
-	waitForPort(t, port, 2*time.Second)
+	select {
+	case <-ready:
+	case <-time.After(2 * time.Second):
+		t.Fatal("server did not become ready in time")
+	}
 
 	for _, path := range []string{"/", "/index.html", "/some/spa/route"} {
 		t.Run(path, func(t *testing.T) {
-			resp, err := http.Get("http://127.0.0.1:" + itoa(port) + path)
+			resp, err := http.Get("http://127.0.0.1:" + strconv.Itoa(port) + path)
 			if err != nil {
 				t.Fatalf("GET %s: %v", path, err)
 			}
@@ -66,36 +71,6 @@ func pickFreePort(t *testing.T) int {
 	port := ln.Addr().(*net.TCPAddr).Port
 	_ = ln.Close()
 	return port
-}
-
-func waitForPort(t *testing.T, port int, timeout time.Duration) {
-	t.Helper()
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		conn, err := net.DialTimeout("tcp", "127.0.0.1:"+itoa(port), 100*time.Millisecond)
-		if err == nil {
-			_ = conn.Close()
-			return
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	t.Fatalf("port %d did not open within %s", port, timeout)
-}
-
-func itoa(i int) string {
-	// Local helper to avoid pulling strconv into the test file's mental model.
-	const digits = "0123456789"
-	if i == 0 {
-		return "0"
-	}
-	var buf [11]byte
-	pos := len(buf)
-	for i > 0 {
-		pos--
-		buf[pos] = digits[i%10]
-		i /= 10
-	}
-	return string(buf[pos:])
 }
 
 func truncate(b []byte, n int) string {

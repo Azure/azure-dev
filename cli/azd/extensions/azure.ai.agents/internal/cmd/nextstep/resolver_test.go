@@ -279,9 +279,11 @@ func TestResolveAfterShow(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			// Same-name case: service and agent names align (common when deploy
-			// doesn't append a suffix). Divergent-name cases are covered by
-			// TestResolveAfterShow_DivergentNames below.
-			out := ResolveAfterShow(&State{AgentStatus: string(tt.status)}, tt.agentName, tt.agentName)
+			// doesn't append a suffix). Divergent-name behavior is exercised by
+			// TestResolveAfterShow_DivergentNames below — the resolver always
+			// emits the service name; invoke.go translates to the deployed
+			// agent name internally.
+			out := ResolveAfterShow(&State{AgentStatus: string(tt.status)}, tt.agentName)
 			require.NotEmpty(t, out)
 			assert.Contains(t, out[0].Command, tt.wantCmdHas)
 		})
@@ -297,7 +299,7 @@ func TestResolveAfterShow_ActiveHonorsServiceProtocol(t *testing.T) {
 			AgentStatus: string(AgentVersionActive),
 			Services:    []ServiceState{{Name: "echo", Protocol: ProtocolInvocations}},
 		}
-		out := ResolveAfterShow(state, "echo", "echo")
+		out := ResolveAfterShow(state, "echo")
 		require.Len(t, out, 1)
 		assert.Equal(t, `azd ai agent invoke echo '{"message": "Hello!"}'`, out[0].Command)
 	})
@@ -308,7 +310,7 @@ func TestResolveAfterShow_ActiveHonorsServiceProtocol(t *testing.T) {
 			AgentStatus: string(AgentVersionActive),
 			Services:    []ServiceState{{Name: "echo", Protocol: ProtocolResponses}},
 		}
-		out := ResolveAfterShow(state, "echo", "echo")
+		out := ResolveAfterShow(state, "echo")
 		require.Len(t, out, 1)
 		assert.Equal(t, `azd ai agent invoke echo "Hello!"`, out[0].Command)
 	})
@@ -319,34 +321,37 @@ func TestResolveAfterShow_ActiveHonorsServiceProtocol(t *testing.T) {
 			AgentStatus: string(AgentVersionActive),
 			Services:    []ServiceState{{Name: "other", Protocol: ProtocolInvocations}},
 		}
-		out := ResolveAfterShow(state, "echo", "echo")
+		out := ResolveAfterShow(state, "echo")
 		require.Len(t, out, 1)
 		assert.Equal(t, `azd ai agent invoke echo "Hello!"`, out[0].Command)
 	})
 }
 
-// TestResolveAfterShow_DivergentNames locks the G1 behavior: when the
-// azure.yaml service name and the deployed Foundry agent name differ,
-// protocol lookup keys on serviceName but the emitted invoke command
-// embeds agentName (because invoke's remote URL path embeds the agent
-// name verbatim and Foundry would 404 on the service name).
+// TestResolveAfterShow_DivergentNames locks the divergent-name contract:
+// when the azure.yaml service name and the deployed Foundry agent name
+// differ, the emitted invoke suggestion always uses the SERVICE name as
+// the positional. invoke's own protocol/service resolution keys on
+// service names, and its invocationsRemote/responsesRemote gates then
+// translate to the deployed agent name before constructing the Foundry
+// URL. Emitting the deployed name here would fail upstream at
+// resolveAgentProtocol with "no azure.ai.agent service named …".
 func TestResolveAfterShow_DivergentNames(t *testing.T) {
 	t.Parallel()
 
-	t.Run("Active branch: protocol from service, name from agent", func(t *testing.T) {
+	t.Run("Active branch: command uses service name (not deployed agent name)", func(t *testing.T) {
 		t.Parallel()
 		state := &State{
 			AgentStatus: string(AgentVersionActive),
 			Services:    []ServiceState{{Name: "svc-echo", Protocol: ProtocolInvocations}},
 		}
-		out := ResolveAfterShow(state, "svc-echo", "echo-suffix-abc123")
+		out := ResolveAfterShow(state, "svc-echo")
 		require.Len(t, out, 1)
-		assert.Equal(t, `azd ai agent invoke echo-suffix-abc123 '{"message": "Hello!"}'`, out[0].Command)
+		assert.Equal(t, `azd ai agent invoke svc-echo '{"message": "Hello!"}'`, out[0].Command)
 	})
 
-	t.Run("unknown status: re-check uses serviceName", func(t *testing.T) {
+	t.Run("unknown status: re-check uses service name", func(t *testing.T) {
 		t.Parallel()
-		out := ResolveAfterShow(&State{AgentStatus: "Transitioning"}, "svc-echo", "echo-suffix-abc123")
+		out := ResolveAfterShow(&State{AgentStatus: "Transitioning"}, "svc-echo")
 		require.Len(t, out, 1)
 		assert.Equal(t, "azd ai agent show svc-echo", out[0].Command)
 	})
@@ -368,7 +373,7 @@ func TestResolveAfterShow_ActiveConsumesOpenAPICache(t *testing.T) {
 			HasOpenAPI:     true,
 			OpenAPIPayload: `{"prompt": "hi", "max_tokens": 32}`,
 		}
-		out := ResolveAfterShow(state, "echo", "echo")
+		out := ResolveAfterShow(state, "echo")
 		require.Len(t, out, 1)
 		assert.Equal(t,
 			`azd ai agent invoke echo '{"prompt": "hi", "max_tokens": 32}'`,
@@ -383,7 +388,7 @@ func TestResolveAfterShow_ActiveConsumesOpenAPICache(t *testing.T) {
 			HasOpenAPI:     true,
 			OpenAPIPayload: `{"greeting": "it's me"}`,
 		}
-		out := ResolveAfterShow(state, "echo", "echo")
+		out := ResolveAfterShow(state, "echo")
 		require.Len(t, out, 1)
 		assert.Equal(t,
 			`azd ai agent invoke echo '{"greeting": "it'\''s me"}'`,
@@ -398,7 +403,7 @@ func TestResolveAfterShow_ActiveConsumesOpenAPICache(t *testing.T) {
 			HasOpenAPI:     true,
 			OpenAPIPayload: "",
 		}
-		out := ResolveAfterShow(state, "echo", "echo")
+		out := ResolveAfterShow(state, "echo")
 		require.Len(t, out, 1)
 		assert.Equal(t, `azd ai agent invoke echo '{"message": "Hello!"}'`, out[0].Command)
 	})
@@ -406,7 +411,7 @@ func TestResolveAfterShow_ActiveConsumesOpenAPICache(t *testing.T) {
 
 func TestResolveAfterShow_NilState(t *testing.T) {
 	t.Parallel()
-	assert.Nil(t, ResolveAfterShow(nil, "echo", "echo"))
+	assert.Nil(t, ResolveAfterShow(nil, "echo"))
 }
 
 func TestResolveAfterDeploy(t *testing.T) {

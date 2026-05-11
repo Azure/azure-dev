@@ -577,12 +577,20 @@ func (a *InvokeAction) responsesLocal(ctx context.Context) error {
 // no-op. agentKey may still be non-empty in that case.
 type remoteContext struct {
 	name            string
+	serviceName     string
 	agentKey        string
 	projectEndpoint string
 	apiVersion      string
 	version         string
 	azdClient       *azdext.AzdClient
 	bearerToken     string
+}
+
+func (rc *remoteContext) nextStepName() string {
+	if rc.serviceName != "" {
+		return rc.serviceName
+	}
+	return rc.name
 }
 
 // resolveRemoteContext returns the inputs required to invoke a remote agent.
@@ -618,7 +626,8 @@ func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext
 
 	rc.name = a.flags.name
 	if info, err := resolveAgentServiceFromProject(ctx, azdClient, rc.name, a.noPrompt); err == nil {
-		if rc.name == "" && info.AgentName != "" {
+		rc.serviceName = info.ServiceName
+		if info.AgentName != "" {
 			rc.name = info.AgentName
 		}
 		if info.AgentEndpoint != "" {
@@ -884,7 +893,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 
 	if resp.StatusCode >= 400 {
 		respBody, _ := io.ReadAll(resp.Body)
-		a.emitInvokeFailureNextStep(nextstep.InvokeRemote, rc.name, resp.Header.Get("x-adc-response-details"))
+		a.emitInvokeFailureNextStep(nextstep.InvokeRemote, rc.nextStepName(), resp.Header.Get("x-adc-response-details"))
 		return fmt.Errorf("POST %s failed with HTTP %d: %s\n%s", respURL, resp.StatusCode, resp.Status, string(respBody))
 	}
 
@@ -892,7 +901,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	if err := readSSEStream(resp.Body, rc.name); err != nil {
 		return err
 	}
-	a.emitInvokeSuccessNextStep(nextstep.InvokeRemote, rc.name)
+	a.emitInvokeSuccessNextStep(nextstep.InvokeRemote, rc.nextStepName())
 	return nil
 }
 
@@ -1091,11 +1100,11 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 		// (printAgentResponse / readSSEStream agent errors) is also
 		// not wired. Keeps the two protocols' UX consistent.
 		if resp.StatusCode >= 400 {
-			a.emitInvokeFailureNextStep(nextstep.InvokeRemote, rc.name, sessionCode)
+			a.emitInvokeFailureNextStep(nextstep.InvokeRemote, rc.nextStepName(), sessionCode)
 		}
 		return err
 	}
-	a.emitInvokeSuccessNextStep(nextstep.InvokeRemote, rc.name)
+	a.emitInvokeSuccessNextStep(nextstep.InvokeRemote, rc.nextStepName())
 	return nil
 }
 

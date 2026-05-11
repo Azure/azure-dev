@@ -400,6 +400,9 @@ overrides:
   - filename: extensions/azure.ai.agents/internal/cmd/init_locations.go
     words:
       - swedencentral
+  - filename: "**/extensions/azure.ai.agents/internal/cmd/doctor/types.go"
+    words:
+      - nextsteps
   - filename: docs/code-coverage-guide.md
     words:
       - covdata

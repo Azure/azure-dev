@@ -3,7 +3,10 @@
 
 package doctor
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // CheckFunc is the signature every check satisfies. Checks are invoked
 // sequentially by the Runner; each receives the immutable Options and the
@@ -90,7 +93,9 @@ func (r *Runner) Run(ctx context.Context, opts Options) Report {
 			continue
 		}
 
+		start := time.Now()
 		result := check.Fn(ctx, opts, report.Checks)
+		result.DurationMs = time.Since(start).Milliseconds()
 		// Pin the ID + Name at the runner — the design's table is the
 		// source of truth, and individual check functions should not be
 		// able to drift from it.

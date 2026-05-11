@@ -33,8 +33,16 @@ type ShowAction struct {
 	azdClient *azdext.AzdClient
 	envName   string
 	// serviceName is the azure.yaml service name (used to match
-	// state.Services[].Name for protocol-aware Next: guidance).
+	// state.Services[].Name for protocol-aware Next: guidance and the
+	// unknown-status re-check fallback that suggests `azd ai agent
+	// show <serviceName>`).
 	serviceName string
+	// agentName is the deployed Foundry agent name (from the azd env
+	// `AGENT_<KEY>_NAME` value). Differs from serviceName when deploy
+	// appends a suffix; it is what gets baked into the suggested
+	// `azd ai agent invoke <agentName> ...` command so the URL path
+	// matches Foundry's expectation.
+	agentName string
 	// serviceKey is the uppercase/underscored form of the service name,
 	// used to look up per-service env vars (e.g. AGENT_{KEY}_RESPONSES_ENDPOINT).
 	serviceKey string
@@ -112,6 +120,7 @@ configuration and the current azd environment. Optionally specify the service na
 				azdClient:    azdClient,
 				envName:      envName,
 				serviceName:  info.ServiceName,
+				agentName:    info.AgentName,
 				serviceKey:   toServiceKey(info.ServiceName),
 			}
 
@@ -208,14 +217,33 @@ func printShowResult(result *showResult, output string, suggestions []nextstep.S
 
 // resolveNextStep assembles state and asks the resolver for the post-show
 // guidance block. AssembleState always returns a non-nil partial state per
-// its documented contract, so no nil check is needed here.
+// its documented contract, so no nil check is needed here. The OpenAPI
+// probe is enabled so the Active-branch invoke suggestion can pull a
+// schema-correct payload from the cache (populated by prior `azd ai
+// agent invoke` runs) when available; when the cache is empty the
+// resolver falls back to a protocol-generic literal.
 func (a *ShowAction) resolveNextStep(ctx context.Context, status string) []nextstep.Suggestion {
 	if a.azdClient == nil {
 		return nil
 	}
-	state, _ := nextstep.AssembleState(ctx, a.azdClient)
+	return resolveNextStepFromSource(ctx, nextstep.NewSource(a.azdClient), a.serviceName, a.agentName, status)
+}
+
+// resolveNextStepFromSource is the source-injecting core of resolveNextStep,
+// extracted so tests can drive the resolver end-to-end with a fake Source
+// without spinning up a real azd gRPC client.
+func resolveNextStepFromSource(
+	ctx context.Context,
+	src nextstep.Source,
+	serviceName, agentName, status string,
+) []nextstep.Suggestion {
+	var opts []nextstep.Option
+	if agentName != "" {
+		opts = append(opts, nextstep.WithOpenAPIProbe(agentName, "remote"))
+	}
+	state, _ := nextstep.AssembleStateFromSource(ctx, src, opts...)
 	state.AgentStatus = status
-	return nextstep.ResolveAfterShow(state, a.serviceName)
+	return nextstep.ResolveAfterShow(state, serviceName, agentName)
 }
 
 // resolvePlaygroundURL reads AZURE_AI_PROJECT_ID from the azd environment

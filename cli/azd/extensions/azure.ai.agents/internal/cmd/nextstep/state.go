@@ -171,6 +171,18 @@ func AssembleState(
 	return assembleState(ctx, NewSource(client), opts...)
 }
 
+// AssembleStateFromSource is the Source-injecting variant of AssembleState.
+// Production callers use AssembleState; tests use this to inject a fake
+// Source and exercise the resolver wiring without spinning up a real
+// azd gRPC client.
+func AssembleStateFromSource(
+	ctx context.Context,
+	src Source,
+	opts ...Option,
+) (*State, []error) {
+	return assembleState(ctx, src, opts...)
+}
+
 func assembleState(ctx context.Context, src Source, opts ...Option) (*State, []error) {
 	cfg := &config{}
 	for _, opt := range opts {

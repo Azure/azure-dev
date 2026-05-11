@@ -223,7 +223,22 @@ func resolveInvokeFailure(_ *State, mode InvokeMode, _ string, failure *InvokeFa
 // ResolveAfterShow produces the Next: block printed at the end of a
 // successful `azd ai agent show`. Branches on State.AgentStatus per the
 // platform's `AgentVersionStatus` vocabulary.
-func ResolveAfterShow(state *State, agentName string) []Suggestion {
+//
+// serviceName is the azure.yaml service name (used to look up
+// State.Services[].Protocol for protocol-aware payloads and to drive
+// the unknown-status re-check fallback, where the user re-runs
+// `azd ai agent show <serviceName>`).
+//
+// agentName is the deployed Foundry agent name (from AGENT_<KEY>_NAME).
+// It is what gets emitted into the suggested `azd ai agent invoke
+// <agentName> ...` command. For the common case where azure.yaml's
+// service name matches the deployed agent name the two are equal and
+// callers can pass the same value twice; on divergent-name configs
+// (typical when deploy appends a suffix) the split matters: the
+// suggested invoke command must use the Foundry name because invoke's
+// remote URL path embeds it verbatim (see invoke.go remote paths) —
+// passing the service name there yields a 404 from Foundry.
+func ResolveAfterShow(state *State, serviceName, agentName string) []Suggestion {
 	if state == nil {
 		return nil
 	}
@@ -231,11 +246,11 @@ func ResolveAfterShow(state *State, agentName string) []Suggestion {
 	switch AgentVersionStatus(state.AgentStatus) {
 	case AgentVersionActive:
 		protocol := ProtocolResponses
-		if svc := findService(state, agentName); svc != nil && svc.Protocol != "" {
+		if svc := findService(state, serviceName); svc != nil && svc.Protocol != "" {
 			protocol = svc.Protocol
 		}
 		return []Suggestion{{
-			Command:     invokeCommandFor(agentName, protocol),
+			Command:     invokeCommandFor(agentName, protocol, state),
 			Description: "the agent is ready — send it a sample request",
 			Priority:    10,
 		}}
@@ -261,8 +276,8 @@ func ResolveAfterShow(state *State, agentName string) []Suggestion {
 
 	// Unknown / transitional / empty — re-check.
 	primary := "azd ai agent show"
-	if agentName != "" {
-		primary = fmt.Sprintf("azd ai agent show %s", agentName)
+	if serviceName != "" {
+		primary = fmt.Sprintf("azd ai agent show %s", serviceName)
 	}
 	return []Suggestion{{
 		Command:     primary,
@@ -374,11 +389,17 @@ func defaultInvokePayload(svc *ServiceState) string {
 }
 
 // invokeCommandFor returns `azd ai agent invoke [name] <payload>` for the
-// protocol, omitting the name when empty.
-func invokeCommandFor(agentName, protocol string) string {
+// protocol, omitting the name when empty. When state carries an OpenAPI
+// payload (HasOpenAPI == true), the cached sample is preferred over the
+// protocol-generic literal so the suggestion matches the agent's actual
+// schema. state may be nil — the lookup is a no-op in that case.
+func invokeCommandFor(agentName, protocol string, state *State) string {
 	payload := invokeResponsesPayload
 	if protocol == ProtocolInvocations {
 		payload = invokeInvocationsPayload
+	}
+	if state != nil && state.HasOpenAPI && state.OpenAPIPayload != "" {
+		payload = shellEscapeSingleQuoted(state.OpenAPIPayload)
 	}
 	if agentName == "" {
 		return fmt.Sprintf("azd ai agent invoke %s", payload)

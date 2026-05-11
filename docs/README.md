@@ -22,6 +22,8 @@ Task-oriented how-tos for common contributor workflows.
 - [Adding a New Command](guides/adding-a-new-command.md) — End-to-end walkthrough for new CLI commands
 - [Creating an Extension](guides/creating-an-extension.md) — How to build and publish an azd extension
 - [Observability and Tracing](guides/observability.md) — Adding telemetry, traces, and debugging
+- [Feature Telemetry Guide](guides/feature-telemetry.md) — End-to-end guide for instrumenting telemetry in new features
+- [Telemetry Overview](guides/telemetry-overview.md) — Product-facing overview of azd telemetry metrics and dashboards
 
 ## Reference
 
@@ -30,6 +32,8 @@ Schemas, flags, environment variables, and configuration details.
 - [Environment Variables](reference/environment-variables.md) — All environment variables that configure azd behavior
 - [azure.yaml Schema](reference/azure-yaml-schema.md) — Project configuration file reference
 - [Feature Status](reference/feature-status.md) — Current maturity status of all features
+- [Telemetry Data Reference](reference/telemetry-data.md) — Complete schema of all telemetry events, fields, and query patterns
+- [Telemetry Dashboards & Reports](reference/telemetry-dashboards.md) — Power BI reports, Kusto functions, and analysis tools
 
 ## Architecture
 
@@ -39,6 +43,7 @@ System overviews, design context, and decision records.
 - [Command Execution Model](architecture/command-execution-model.md) — How commands are registered, resolved, and run
 - [Extension Framework](architecture/extension-framework.md) — gRPC-based extension system architecture
 - [Provisioning Pipeline](architecture/provisioning-pipeline.md) — How infrastructure provisioning works
+- [Telemetry Architecture](architecture/telemetry.md) — End-to-end telemetry pipeline across 3 repositories
 - [ADR Template](architecture/adr-template.md) — Template for lightweight architecture decision records
 
 ---

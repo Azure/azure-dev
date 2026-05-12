@@ -35,16 +35,16 @@ const (
 	// endpoint URL produced by `azd ai agent init`.
 	projectEndpointVar = "AZURE_AI_PROJECT_ENDPOINT"
 
-	// useExistingAIProjectVar records the user's choice in the
-	// `azd ai agent init` model-configuration step. "true" means the
-	// user selected an existing Foundry project (init populated
-	// AZURE_AI_PROJECT_ENDPOINT and related vars immediately from that
-	// project); "false" means the user opted to create a new Foundry
-	// project, which requires `azd provision` to run before any
-	// AZURE_AI_PROJECT_ENDPOINT value reflects reality. The variable
-	// also drives Bicep's "skip project creation" branch — see
-	// USE_EXISTING_AI_PROJECT in CHANGELOG.md entry for PR #7843.
-	useExistingAIProjectVar = "USE_EXISTING_AI_PROJECT"
+	// useExistingAIProjectVar was removed in 4.13. The
+	// USE_EXISTING_AI_PROJECT env var is still written by `azd ai
+	// agent init` for Bicep's "skip project creation" branch, but
+	// the resolver no longer consumes it directly — the
+	// equivalent "project not yet provisioned" signal is now
+	// expressed via the "project" tag in AI_AGENT_PENDING_PROVISION
+	// (see pendingProvisionVar below and pending_provision.go in
+	// the cmd package). Single source of truth keeps the producer
+	// (init.go) and consumer (this resolver) in lock-step without a
+	// second env-var contract to maintain.
 
 	// pendingProvisionVar names the extension-owned env var that
 	// lists resource-class tags init configured but provision has
@@ -236,23 +236,6 @@ func assembleState(ctx context.Context, src Source, opts ...Option) (*State, []e
 			errs = append(errs, fmt.Errorf("read %s: %w", projectEndpointVar, err))
 		}
 		state.HasProjectEndpoint = endpoint != ""
-
-		// USE_EXISTING_AI_PROJECT is the explicit signal `azd ai agent
-		// init` writes to record the user's deploy-vs-existing choice.
-		// When the user just selected "Deploy new model(s)" (value
-		// "false"), the Foundry project does not exist yet — any
-		// AZURE_AI_PROJECT_ENDPOINT value carried over from a prior
-		// init run or a sibling environment is stale and must not let
-		// the post-init resolver mistake the state for "ready to run
-		// or deploy". The flag is only set for the literal string
-		// "false"; an unset variable (no init yet) or "true" both
-		// leave the flag false so existing resolver heuristics drive
-		// the decision.
-		useExisting, err := src.EnvValue(ctx, envName, useExistingAIProjectVar)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("read %s: %w", useExistingAIProjectVar, err))
-		}
-		state.NeedsAIProjectProvision = useExisting == "false"
 
 		// PendingProvisionReasons is the generalized "init configured
 		// something provision still has to materialize" signal that

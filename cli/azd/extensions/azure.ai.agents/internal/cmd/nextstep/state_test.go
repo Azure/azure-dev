@@ -155,74 +155,12 @@ func TestAssembleState(t *testing.T) {
 				require.Len(t, state.Services, 1)
 				assert.False(t, state.Services[0].IsDeployed)
 				assert.False(t, state.HasProjectEndpoint)
-				assert.False(t, state.NeedsAIProjectProvision)
 				assert.Empty(t, state.PendingProvisionReasons)
 			},
-			// One error each for AZURE_AI_PROJECT_ENDPOINT, USE_EXISTING_AI_PROJECT,
-			// AI_AGENT_PENDING_PROVISION + one per service lookup (AGENT_ECHO_VERSION) = 4.
-			errCount: 4,
-		},
-		{
-			name: "USE_EXISTING_AI_PROJECT unset: NeedsAIProjectProvision stays false",
-			src: &fakeSource{
-				envName: "dev",
-				project: &azdext.ProjectConfig{Name: "demo"},
-				values:  map[string]string{"dev/AZURE_AI_PROJECT_ENDPOINT": "https://x.services.ai.azure.com"},
-			},
-			assert: func(t *testing.T, state *State, _ []error) {
-				assert.True(t, state.HasProjectEndpoint)
-				assert.False(t, state.NeedsAIProjectProvision)
-			},
-		},
-		{
-			name: "USE_EXISTING_AI_PROJECT=true: existing-project path, NeedsAIProjectProvision stays false",
-			src: &fakeSource{
-				envName: "dev",
-				project: &azdext.ProjectConfig{Name: "demo"},
-				values: map[string]string{
-					"dev/AZURE_AI_PROJECT_ENDPOINT": "https://x.services.ai.azure.com",
-					"dev/USE_EXISTING_AI_PROJECT":   "true",
-				},
-			},
-			assert: func(t *testing.T, state *State, _ []error) {
-				assert.True(t, state.HasProjectEndpoint)
-				assert.False(t, state.NeedsAIProjectProvision)
-			},
-		},
-		{
-			name: "USE_EXISTING_AI_PROJECT=false: deploy-new path, NeedsAIProjectProvision is true",
-			src: &fakeSource{
-				envName: "dev",
-				project: &azdext.ProjectConfig{Name: "demo"},
-				values: map[string]string{
-					// Stale endpoint from a prior init carried over. The
-					// NeedsAIProjectProvision flag is the explicit signal
-					// the resolver needs to suggest `azd provision`
-					// despite the endpoint check independently passing.
-					"dev/AZURE_AI_PROJECT_ENDPOINT": "https://stale.services.ai.azure.com",
-					"dev/USE_EXISTING_AI_PROJECT":   "false",
-				},
-			},
-			assert: func(t *testing.T, state *State, _ []error) {
-				assert.True(t, state.HasProjectEndpoint)
-				assert.True(t, state.NeedsAIProjectProvision)
-			},
-		},
-		{
-			name: "USE_EXISTING_AI_PROJECT unrecognized value: NeedsAIProjectProvision stays false",
-			src: &fakeSource{
-				envName: "dev",
-				project: &azdext.ProjectConfig{Name: "demo"},
-				values: map[string]string{
-					"dev/AZURE_AI_PROJECT_ENDPOINT": "https://x.services.ai.azure.com",
-					"dev/USE_EXISTING_AI_PROJECT":   "maybe",
-				},
-			},
-			assert: func(t *testing.T, state *State, _ []error) {
-				assert.True(t, state.HasProjectEndpoint)
-				// Only literal "false" enables the flag.
-				assert.False(t, state.NeedsAIProjectProvision)
-			},
+			// One error each for AZURE_AI_PROJECT_ENDPOINT,
+			// AI_AGENT_PENDING_PROVISION + one per service lookup
+			// (AGENT_ECHO_VERSION) = 3.
+			errCount: 3,
 		},
 		{
 			name: "AI_AGENT_PENDING_PROVISION unset: PendingProvisionReasons stays empty",
@@ -952,9 +890,9 @@ environment_variables:
 	}
 
 	state, errs := assembleState(context.Background(), src)
-	// One error each for AZURE_AI_PROJECT_ENDPOINT + USE_EXISTING_AI_PROJECT
-	// + AI_AGENT_PENDING_PROVISION + AGENT_ECHO_VERSION + MY_API_KEY = 5.
-	assert.Len(t, errs, 5)
+	// One error each for AZURE_AI_PROJECT_ENDPOINT +
+	// AI_AGENT_PENDING_PROVISION + AGENT_ECHO_VERSION + MY_API_KEY = 4.
+	assert.Len(t, errs, 4)
 	assert.Empty(t, state.MissingInfraVars)
 	assert.Empty(t, state.MissingManualVars)
 }

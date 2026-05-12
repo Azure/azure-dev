@@ -238,3 +238,35 @@ func updatePendingModelDeploymentSignal(
 	_, err := removePendingProvisionReason(ctx, azdClient, envName, pendingReasonModelDeployment)
 	return err
 }
+
+// updatePendingProjectSignal centralizes the decision rule for the
+// "project" tag in AI_AGENT_PENDING_PROVISION. It is called from every
+// init.go branch that writes the USE_EXISTING_AI_PROJECT env var so
+// the producer of the Bicep "skip project creation" signal and the
+// producer of the trailer "needs provision" signal stay in sync.
+//
+// Rules:
+//   - useExisting=true → remove "project". The user picked an
+//     existing Foundry project; its endpoint and related vars were
+//     populated immediately at init time, so a prior init run's
+//     "project" hint (if any) is now stale.
+//   - useExisting=false → add "project". The user opted to create a
+//     new Foundry project, which requires `azd provision` to run
+//     before AZURE_AI_PROJECT_ENDPOINT reflects a real resource.
+//
+// Errors are surfaced for callers to log; this helper does not log
+// directly so each call site can attach its own context. The signal
+// is best-effort by design.
+func updatePendingProjectSignal(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	envName string,
+	useExisting bool,
+) error {
+	if useExisting {
+		_, err := removePendingProvisionReason(ctx, azdClient, envName, pendingReasonProject)
+		return err
+	}
+	_, err := addPendingProvisionReason(ctx, azdClient, envName, pendingReasonProject)
+	return err
+}

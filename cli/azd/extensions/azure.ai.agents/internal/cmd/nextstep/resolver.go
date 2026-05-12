@@ -40,8 +40,8 @@ const (
 //     are deploy-time landmines: the literal `{{NAME}}` would otherwise
 //     land in the container. They never reach `azd env set` because the
 //     value lives in agent.yaml itself, not the azd environment.
-//   - NeedsAIProjectProvision OR !HasProjectEndpoint OR MissingInfraVars
-//     → `azd provision`
+//   - NeedsAIProjectProvision OR len(PendingProvisionReasons) > 0 OR
+//     !HasProjectEndpoint OR MissingInfraVars → `azd provision`
 //     The project endpoint is the canonical "provision finished"
 //     marker — it is set by `azd provision` as a Bicep output, or by
 //     `azd ai agent init` when the user selects an existing Foundry
@@ -59,6 +59,11 @@ const (
 //     prior init or environment is stale and must not let the resolver
 //     mistake the state for "ready to run or deploy". See
 //     state.NeedsAIProjectProvision for the env-var contract.
+//     PendingProvisionReasons generalizes the same idea to any
+//     resource class — model deployments, ACR, App Insights, etc. —
+//     so this branch fires whenever init recorded *any* tag the
+//     postprovision handler has not yet cleared. See
+//     state.PendingProvisionReasons for the env-var contract.
 //   - MissingManualVars  → one `azd env set <KEY> <value>` per missing var
 //     (up to maxFixupLines)
 //   - Otherwise          → `azd ai agent run`
@@ -94,7 +99,10 @@ func ResolveAfterInit(state *State) []Suggestion {
 	}
 
 	switch {
-	case state.NeedsAIProjectProvision || !state.HasProjectEndpoint || len(state.MissingInfraVars) > 0:
+	case state.NeedsAIProjectProvision ||
+		len(state.PendingProvisionReasons) > 0 ||
+		!state.HasProjectEndpoint ||
+		len(state.MissingInfraVars) > 0:
 		out = append(out, Suggestion{
 			Command:     "azd provision",
 			Description: "set up your Foundry project, models, and connections",

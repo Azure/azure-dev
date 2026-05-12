@@ -360,6 +360,16 @@ func TestUpdatePendingProjectSignal(t *testing.T) {
 			useExisting: false,
 			wantValue:   "project",
 		},
+		{
+			// Drains the only remaining tag. The helper writes "" to the env
+			// var (key present in the map with empty value); it does NOT
+			// delete the key. Both forms parse to an empty reason set, but
+			// the assertion shape differs from the empty-seed cases above.
+			name:        "existing project + tag is sole occupant: tag removed, env var emptied",
+			seed:        "project",
+			useExisting: true,
+			wantValue:   "",
+		},
 	}
 
 	for _, tc := range tests {
@@ -433,6 +443,14 @@ func TestUpdatePendingACRSignal(t *testing.T) {
 			present:   false,
 			wantValue: "acr",
 		},
+		{
+			// Drains the only remaining tag. Helper writes "" to env var
+			// (key present, empty value) rather than deleting it.
+			name:      "existing ACR + tag is sole occupant: tag removed, env var emptied",
+			seed:      "acr",
+			present:   true,
+			wantValue: "",
+		},
 	}
 
 	for _, tc := range tests {
@@ -505,6 +523,14 @@ func TestUpdatePendingAppInsightsSignal(t *testing.T) {
 			seed:      "app_insights",
 			present:   false,
 			wantValue: "app_insights",
+		},
+		{
+			// Drains the only remaining tag. Helper writes "" to env var
+			// (key present, empty value) rather than deleting it.
+			name:      "existing AppInsights + tag is sole occupant: tag removed, env var emptied",
+			seed:      "app_insights",
+			present:   true,
+			wantValue: "",
 		},
 	}
 

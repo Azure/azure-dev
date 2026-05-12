@@ -2,11 +2,6 @@
 
 # Design Spec: `azd ai agent project` Context Commands + Shared Endpoint Resolution
 
-- Feature spec: `azd ai` Direct Commands (CLI Surface for Foundry)
-- Tracking issue: [Azure/azure-dev#8124](https://github.com/Azure/azure-dev/issues/8124)
-- Owner: @huimiu
-- Status: Draft
-
 ## 1. Summary
 
 This spec covers the workspace-level project-context commands:
@@ -50,7 +45,7 @@ The 5-level cascade (matches feature spec § "AZD Environment Scoping"):
 
 Only `FOUNDRY_PROJECT_ENDPOINT` is honored as a host env var — no aliases. `AZURE_AI_PROJECT_ENDPOINT` is read **only** from the azd env, not from the host environment, to avoid silent precedence ambiguity.
 
-> **Flag scope.** Level 1 (`-p` / `--project-endpoint`) applies to the new `project` subcommands and future resource commands (`connection`, `toolbox`, `skill`). It is **not** added to existing `agent` commands (`show`, `invoke`, `monitor`, `files`, `session`), which already have their own endpoint overrides (`--account-name` + `--project-name`, `--agent-endpoint`). The existing agent commands benefit from levels 2–5 via the widened `resolveAgentEndpoint` body. Note: `-p` as a short flag is already taken on `agent run` (`--port`) and `agent invoke` (`--protocol`), so the long form `--project-endpoint` is the stable cross-command flag name.
+> **Flag scope.** `--project-endpoint` (short: `-p`) is only available on the `project` subcommands. Existing `agent` commands keep their own endpoint flags (`--account-name` / `--project-name`, `--agent-endpoint`) and pick up levels 2–5 automatically. The short form `-p` is already taken on `agent run` and `agent invoke`, so `--project-endpoint` is the canonical name.
 
 ### 4.2 Endpoint Validation
 
@@ -216,15 +211,12 @@ The proposal: route this existing resolver through the new 5-level chain. The `-
 | `FOUNDRY_PROJECT_ENDPOINT` set, nothing else                                  | Error               | **Uses env var**                            |
 | Nothing resolvable                                                            | Error (old message) | Error (new structured message + suggestion) |
 
-Implications:
+Key points:
 
-- **Back-compat is preserved**: every input combination that produced a valid endpoint today produces the same endpoint after the change.
-- **Error message changes** when nothing resolves. The old text ("Provide `--account-name` and `--project-name` flags, or run `azd init`...") is replaced by the structured error in §4.3, which is the right surface for both `agent` commands and the new `project` commands.
-- **`azd ai agent` commands now work in more situations than before** — specifically, when only global config or `FOUNDRY_PROJECT_ENDPOINT` is set. This is a strict expansion, not a regression. The practical impact varies by command:
-  - **`show`, `monitor`, `files`, `session`** — these call `resolveAgentServiceFromProject` *before* the endpoint resolver, which requires `azure.yaml` and a deployed agent. Widening the endpoint resolver alone does not make them standalone; they still fail without an azd project.
-  - **`run`** — requires `azure.yaml` for the service source directory and startup command. Still not standalone.
-  - **`invoke`** (without `--agent-endpoint`) — when a positional agent name is provided, `resolveAgentServiceFromProject` failure is best-effort (the name comes from the argument). After this change, `azd ai agent invoke my-agent "hi"` can succeed outside an azd project if global config or `FOUNDRY_PROJECT_ENDPOINT` resolves. This is an intentional expansion, consistent with the existing `--agent-endpoint` standalone path, and acceptable because the feature spec's "agent commands require an azd project" constraint applies to `run | eval | optimize` (which need `azure.yaml` for service config), not to one-shot invocations where the user supplies both agent name and endpoint.
-- **No call-site signature change required.** `resolveAgentEndpoint(ctx, accountName, projectName)` keeps its current signature. The new global-config and env-var levels are self-contained lookups added to the function body (reading `UserConfig` and `os.Getenv`), so callers do not need to pass additional parameters. `newAgentContext` is similarly unchanged. Existing tests in `show_test.go` continue to pass for the explicit-flag and partial-flag cases; new tests cover the additive levels.
+- **Back-compat preserved.** Every input combination that resolved before produces the same endpoint after the change.
+- **Error message updated.** The "nothing resolved" message now uses the structured error from §4.3 instead of the old text.
+- **Existing commands gain fallback sources.** `show`, `monitor`, `files`, `session`, and `run` still require `azure.yaml`, so global config / env var alone won't make them standalone. `invoke` with a positional agent name *can* now work outside an azd project — this is intentional and consistent with the existing `--agent-endpoint` path.
+- **No call-site changes.** `resolveAgentEndpoint` keeps its current signature; the new levels are internal lookups (`UserConfig`, `os.Getenv`).
 
 Out of scope for this change (called out so they aren't surprised later):
 
@@ -254,10 +246,8 @@ No PII; endpoints are hashed.
 
 ## 12. Open Questions
 
-| #   | Question                                                                                                                                                                                                                                                                      | Owner   |
-| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| 1   | Should the inside-azd-project warning on `project set` be suppressible via a flag (e.g. `--quiet`) or always-on? Current proposal: always-on, auto-suppressed when `--output json` + `--no-prompt`.                                                                           | @huimiu |
-| 2   | Should `project show` also accept `-p` as an override (useful for "what would I resolve to if I passed this flag?"), or is that semantically odd? Current proposal: yes, accept it — keeps the resolver pure and aids debugging via coding agents.                            | @huimiu |
+1. Should the inside-azd-project warning on `project set` be suppressible via a flag (e.g. `--quiet`) or always-on? Current proposal: always-on, auto-suppressed when `--output json` + `--no-prompt`.
+2. Should `project show` also accept `-p` as an override (useful for "what would I resolve to if I passed this flag?"), or is that semantically odd? Current proposal: yes, accept it — keeps the resolver pure and aids debugging via coding agents.
 
 ## 13. Reference: Command Summary
 

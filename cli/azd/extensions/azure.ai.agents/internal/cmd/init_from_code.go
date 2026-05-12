@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
@@ -141,16 +142,21 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 		validatePostInit(srcDir, localDefinition.CodeConfiguration)
 
 		fmt.Println("\nYou can customize environment variables and other settings in the agent.yaml.")
-		if projectID, _ := a.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-			EnvName: a.environment.Name,
-			Key:     "AZURE_AI_PROJECT_ID",
-		}); projectID != nil && projectID.Value != "" && !a.needsProvision {
-			fmt.Printf("Next steps: Run %s to deploy your agent to Microsoft Foundry.\n",
-				color.HiBlueString("azd deploy %s", localDefinition.Name))
-		} else {
-			fmt.Printf("Next steps: Run %s to deploy your agent to Microsoft Foundry.\n",
-				color.HiBlueString("azd up"))
-		}
+
+		// Delegate the trailing Next: block to the shared nextstep
+		// resolver — the same path used by the manifest-driven init
+		// flow (see InitAction.addToProject). The resolver inspects
+		// the current azd environment, the pending-provision signal,
+		// each agent.yaml's references to user-supplied variables,
+		// and emits context-aware guidance (`azd provision` when infra
+		// outputs are unset or pending, `azd env set <KEY>` lines when
+		// agent.yaml references unset user-supplied variables, or
+		// `azd ai agent run` when everything is configured). All paths
+		// terminate with the deploy hint. State-assembly errors are
+		// intentionally ignored: the resolver degrades gracefully on
+		// partial state per the design spec.
+		state, _ := nextstep.AssembleState(ctx, a.azdClient)
+		_ = nextstep.PrintAllNext(os.Stdout, nextstep.ResolveAfterInit(state))
 	}
 
 	return nil

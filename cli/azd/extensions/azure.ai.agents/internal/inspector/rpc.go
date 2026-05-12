@@ -162,19 +162,13 @@ func (s *rpcSession) handleFixRequested(raw json.RawMessage) {
 		s.logger.Printf("fixRequested: bad params: %v", err)
 		return
 	}
-	prefix := "[inspector] [fix-with-ai] "
 	summary := strings.TrimSpace(p.ErrorSummary)
 	if summary == "" {
 		summary = "(no error details provided)"
 	}
-	// Indent multi-line summaries so the prefix only appears on the
-	// first line and continuation lines align under it.
-	lines := strings.Split(summary, "\n")
-	indent := strings.Repeat(" ", len(prefix))
-	fmt.Fprintln(os.Stderr, prefix+lines[0])
-	for _, line := range lines[1:] {
-		fmt.Fprintln(os.Stderr, indent+line)
-	}
+	// Collapse newlines/tabs/runs of spaces so the summary fits on one line.
+	summary = strings.Join(strings.Fields(summary), " ")
+	fmt.Fprintln(os.Stderr, "[inspector] [fix-with-ai] "+summary)
 	s.logger.Printf("fix-with-ai: %s", summary)
 }
 

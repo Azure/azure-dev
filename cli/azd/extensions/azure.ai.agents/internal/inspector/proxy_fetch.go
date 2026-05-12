@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 )
@@ -156,4 +157,27 @@ func flattenHeaders(h http.Header) map[string]string {
 		out[strings.ToLower(k)] = v[0]
 	}
 	return out
+}
+
+// printUserInput echoes the user's text from a Responses API request body.
+// The SPA sends `input` as message items: [{content:[{type:"input_text", text:"..."}]}].
+func printUserInput(body string) {
+	var p struct {
+		Input []struct {
+			Content []struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"input"`
+	}
+	if json.Unmarshal([]byte(body), &p) != nil {
+		return
+	}
+	for _, item := range p.Input {
+		for _, c := range item.Content {
+			if c.Type == "input_text" && c.Text != "" {
+				fmt.Fprintf(os.Stderr, "[user] %s\n", c.Text)
+			}
+		}
+	}
 }

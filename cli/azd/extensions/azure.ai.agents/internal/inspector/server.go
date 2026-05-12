@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"net"
@@ -26,6 +27,10 @@ type Config struct {
 
 	// Logger receives RPC logging. If nil, a default prefixed logger is used.
 	Logger *log.Logger
+
+	// SSESink, if non-nil, receives the raw bytes of each proxied SSE
+	// response so the caller can render it (e.g. echo to the terminal).
+	SSESink func(io.Reader)
 }
 
 type Server struct {

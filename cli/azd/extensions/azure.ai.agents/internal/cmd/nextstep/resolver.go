@@ -49,9 +49,10 @@ const (
 //     populated the infra outputs (typical path: user selected
 //     "Deploy new models from the catalog" in init), so `azd
 //     provision` is the next step regardless of whether agent.yaml
-//     directly references any AZURE_* variables. MissingInfraVars is
-//     still consulted to cover the post-provision re-provision case
-//     (a new ${AZURE_*} reference was added to agent.yaml after the
+//     directly references any Bicep-output variables.
+//     MissingInfraVars is still consulted to cover the
+//     post-provision re-provision case (a new `${VAR}` reference
+//     mapping to a Bicep output was added to agent.yaml after the
 //     last provision run). PendingProvisionReasons is the explicit
 //     "init configured something provision still has to materialize"
 //     signal — every reason tag (project, model_deployment, acr,

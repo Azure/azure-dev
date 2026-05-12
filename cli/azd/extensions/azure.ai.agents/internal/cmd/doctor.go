@@ -103,8 +103,15 @@ Exit codes:
 			// and any non-nil return to exit 1, which collapses our
 			// three-state contract into a two-state one. We call
 			// os.Exit directly to preserve the 0/1/2 distinction.
-			// Defers above run via the explicit Close + flushed
-			// stdout writer; nothing else needs cleanup before exit.
+			//
+			// os.Exit does NOT run deferred functions. The deferred
+			// logCleanup and azdClient.Close above will not execute on
+			// the non-zero path. This is acceptable today because the
+			// process exits immediately and the OS reclaims the gRPC
+			// socket and (in --debug mode) the log fd; neither defer
+			// has on-disk state to flush. Do NOT add cleanup-critical
+			// defers to this RunE — call them explicitly before
+			// os.Exit instead.
 			code := doctor.ExitCode(report)
 			if code == 0 {
 				return nil
@@ -211,11 +218,25 @@ func resolveDoctorTrailing(ctx context.Context, azdClient *azdext.AzdClient) []n
 	}
 
 	if anyServiceDeployed(state.Services) {
+		// Capture the total agent-service count BEFORE filtering. The
+		// resolver's `len(state.Services) == 1` heuristic ordinarily
+		// keys "should I emit no-arg show/invoke commands?" off the
+		// total count of agent services in azure.yaml. Once we filter
+		// to deployed-only, that heuristic breaks: a 2-service project
+		// with 1 deployed would emit `azd ai agent show` (no name),
+		// but runtime `resolveAgentService` still sees both services
+		// in azure.yaml and would either prompt or error. Forcing
+		// qualified suggestions whenever azure.yaml has multiple
+		// services preserves copy-paste correctness in the partial-
+		// deploy case and is a no-op when all services are deployed
+		// (the resolver naturally qualifies len > 1 anyway).
+		totalServices := len(state.Services)
 		filtered := filterDeployedServices(state)
 		return nextstep.ResolveAfterDeploy(
 			filtered,
 			doctorCachedPayload(ctx, azdClient),
 			doctorReadmeExists(ctx, azdClient),
+			nextstep.AfterDeployOpts{ForceQualified: totalServices > 1},
 		)
 	}
 
@@ -260,7 +281,28 @@ func filterDeployedServices(state *nextstep.State) *nextstep.State {
 // for the deployed agent (`azd ai agent invoke <agent>`); the local
 // cache (suffix "local") is from `azd ai agent invoke --local` and is
 // not appropriate here.
+//
+// Key resolution: the on-disk cache is keyed by the deployed Foundry
+// agent name (see invoke.go:694-758 — invoke rewrites `name` to
+// `info.AgentName` BEFORE caching). That can differ from the azure.yaml
+// service name when deploy appends a suffix (documented in
+// show.go:40-46). The closure first tries the deployed name via the
+// `AGENT_<SERVICE>_NAME` env var, then falls back to the service name
+// when the env value is absent (e.g., never-deployed service, or older
+// deploys that did not populate the var). The fallback also covers the
+// non-divergent case where the two names are identical.
 func doctorCachedPayload(ctx context.Context, azdClient *azdext.AzdClient) func(string) string {
+	// Resolve the active env name once for the closure's lifetime.
+	// A nil/error response leaves envName empty, which short-circuits
+	// the deployed-name lookup path inside the closure.
+	var envName string
+	if azdClient != nil {
+		if envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{}); err == nil &&
+			envResp != nil && envResp.Environment != nil {
+			envName = envResp.Environment.Name
+		}
+	}
+
 	return func(serviceName string) string {
 		if azdClient == nil || serviceName == "" {
 			return ""
@@ -269,7 +311,27 @@ func doctorCachedPayload(ctx context.Context, azdClient *azdext.AzdClient) func(
 		if err != nil {
 			return ""
 		}
-		spec, err := nextstep.ReadCachedOpenAPISpec(filepath.Dir(configPath), serviceName, "remote")
+		configDir := filepath.Dir(configPath)
+
+		// Try the deployed agent name first.
+		if envName != "" {
+			nameKey := fmt.Sprintf("AGENT_%s_NAME", toServiceKey(serviceName))
+			if v, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+				EnvName: envName,
+				Key:     nameKey,
+			}); err == nil && v != nil && v.Value != "" && v.Value != serviceName {
+				if spec, err := nextstep.ReadCachedOpenAPISpec(configDir, v.Value, "remote"); err == nil {
+					if payload := nextstep.ExtractInvokeExample(spec); payload != "" {
+						return payload
+					}
+				}
+			}
+		}
+
+		// Fall back to service-name keyed cache for the non-divergent
+		// case (and for projects whose AGENT_<SERVICE>_NAME var is
+		// absent for any reason).
+		spec, err := nextstep.ReadCachedOpenAPISpec(configDir, serviceName, "remote")
 		if err != nil {
 			return ""
 		}

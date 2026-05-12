@@ -288,6 +288,22 @@ func ResolveAfterShow(state *State, serviceName string) []Suggestion {
 	}}
 }
 
+// AfterDeployOpts configures ResolveAfterDeploy. Optional — the
+// zero-value matches the historical post-deploy call site behavior.
+type AfterDeployOpts struct {
+	// ForceQualified, when true, makes ResolveAfterDeploy emit
+	// service-qualified `azd ai agent show <name>` / `invoke <name> ...`
+	// commands even when len(state.Services) == 1.
+	//
+	// Use this when the input State has been filtered down from a
+	// larger multi-agent project (e.g., doctor showing only deployed
+	// services). The default `len(state.Services) == 1` heuristic
+	// would otherwise emit no-arg commands that ambiguity-prompt or
+	// error at runtime because resolveAgentService sees ALL azure.yaml
+	// services, not just the filtered subset.
+	ForceQualified bool
+}
+
 // ResolveAfterDeploy produces the Next: block embedded in the post-deploy
 // artifact note. The block is rendered per agent service: one
 // `azd ai agent show <name>` plus one `azd ai agent invoke '<payload>'`
@@ -301,17 +317,26 @@ func ResolveAfterShow(state *State, serviceName string) []Suggestion {
 // readmeExists, also injected, controls whether the "See <relPath>/README.md
 // for a sample payload" line is appended. The resolver does not touch the
 // filesystem directly.
+//
+// opts is variadic for backward compatibility. Only the first element is
+// consulted; additional elements are ignored.
 func ResolveAfterDeploy(
 	state *State,
 	cachedPayload func(serviceName string) string,
 	readmeExists func(relativePath string) bool,
+	opts ...AfterDeployOpts,
 ) []Suggestion {
 	if state == nil || len(state.Services) == 0 {
 		return nil
 	}
 
+	var forceQualified bool
+	if len(opts) > 0 {
+		forceQualified = opts[0].ForceQualified
+	}
+
 	out := make([]Suggestion, 0, len(state.Services)*3)
-	singleAgent := len(state.Services) == 1
+	singleAgent := !forceQualified && len(state.Services) == 1
 	priority := 10
 
 	for _, svc := range state.Services {

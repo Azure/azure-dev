@@ -22,28 +22,89 @@ func ProcessManifestParameters(
 	manifest *AgentManifest,
 	azdClient *azdext.AzdClient,
 	noPrompt bool) (*AgentManifest, error) {
-	// If no parameters are defined, return the manifest as-is
+	result := manifest
+
 	if len(manifest.Parameters.Properties) == 0 {
+		// No declared parameters — nothing to prompt for. The warning at
+		// the end still runs in case the manifest contains literal
+		// `{{NAME}}` tokens that the author forgot to declare under
+		// `parameters:` (typo / drift); we want to surface those.
 		log.Print("The manifest does not contain parameters that need to be configured.")
-		return manifest, nil
+	} else {
+		fmt.Println("The manifest contains parameters that need to be configured:")
+		fmt.Println()
+
+		// Collect parameter values from user
+		paramValues, err := promptForYamlParameterValues(ctx, manifest.Parameters, azdClient, noPrompt)
+		if err != nil {
+			return nil, fmt.Errorf("failed to collect parameter values: %w", err)
+		}
+
+		// Inject parameter values into the manifest
+		processedManifest, err := InjectParameterValuesIntoManifest(manifest, paramValues)
+		if err != nil {
+			return nil, fmt.Errorf("failed to inject parameter values into manifest: %w", err)
+		}
+		result = processedManifest
 	}
 
-	fmt.Println("The manifest contains parameters that need to be configured:")
-	fmt.Println()
+	// Surface a warning for any placeholders that survive substitution.
+	//
+	// This is the right call site for the warning because all declared
+	// parameters have just been prompted-for and substituted, and
+	// model-resource placeholders were already substituted earlier by
+	// `ProcessModels` (init.go calls configureModelChoice before
+	// ProcessManifestParameters). Any `{{NAME}}` still present here is
+	// either a parameter the manifest author forgot to declare under
+	// `parameters:` (typo / drift) or a literal `{{...}}` token the
+	// author intends to ship as-is. Either case warrants the warning,
+	// and the `Edit agent.yaml` advice is actionable from this point
+	// onward (the caller will write agent.yaml to disk moments later).
+	//
+	// Earlier call sites of `InjectParameterValuesIntoManifest` (notably
+	// `ProcessModels` in init_models.go which substitutes only model
+	// deployment names) must NOT warn — at those points, user-configurable
+	// placeholders are expected to still be present and are about to be
+	// prompted-for here in `ProcessManifestParameters`.
+	if err := warnUnresolvedManifestPlaceholders(result); err != nil {
+		// Non-fatal: the manifest was either passed in by the caller
+		// or just successfully re-loaded by InjectParameterValuesIntoManifest,
+		// so a marshal failure here would be surprising. Log it and continue.
+		log.Printf("failed to scan manifest for unresolved placeholders: %v", err)
+	}
 
-	// Collect parameter values from user
-	paramValues, err := promptForYamlParameterValues(ctx, manifest.Parameters, azdClient, noPrompt)
+	return result, nil
+}
+
+// warnUnresolvedManifestPlaceholders re-marshals the template that will be
+// written to agent.yaml and prints a stdout warning naming any surviving
+// `{{NAME}}` placeholders. The nextstep guidance system uses the same
+// `PlaceholderPattern` so the warning names and the post-init `Next:` block
+// stay aligned (a placeholder reported in the warning must show up in the
+// Next: block, and vice versa).
+//
+// Scans only `manifest.Template` because that's what `writeAgentDefinitionFile`
+// marshals to agent.yaml; placeholders in other manifest sections (parameters,
+// resources) never reach the on-disk file, so naming them in an
+// "Edit agent.yaml" warning would mislead the user.
+func warnUnresolvedManifestPlaceholders(manifest *AgentManifest) error {
+	templateBytes, err := yaml.Marshal(manifest.Template)
 	if err != nil {
-		return nil, fmt.Errorf("failed to collect parameter values: %w", err)
+		return fmt.Errorf("failed to marshal template for placeholder scan: %w", err)
 	}
 
-	// Inject parameter values into the manifest
-	processedManifest, err := InjectParameterValuesIntoManifest(manifest, paramValues)
-	if err != nil {
-		return nil, fmt.Errorf("failed to inject parameter values into manifest: %w", err)
+	remaining := ExtractUnresolvedPlaceholders(string(templateBytes))
+	if len(remaining) == 0 {
+		return nil
 	}
 
-	return processedManifest, nil
+	fmt.Printf(
+		"Warning: agent.yaml has %d unresolved placeholder(s): %s. "+
+			"Edit agent.yaml and replace each `{{NAME}}` with the actual value before deploying.\n",
+		len(remaining),
+		strings.Join(remaining, ", "),
+	)
+	return nil
 }
 
 // promptForYamlParameterValues prompts the user for values for each YAML parameter
@@ -231,15 +292,21 @@ func promptForTextValue(
 	return resp.Value, nil
 }
 
-// injectParameterValues replaces parameter placeholders in the template with actual values.
+// injectParameterValues replaces parameter placeholders in the template with
+// actual values. Both compact (`{{NAME}}`) and spaced (`{{ NAME }}`) forms
+// are substituted.
 //
-// Any placeholders that remain after substitution are surfaced via a
-// stdout warning that names them, plus the nextstep guidance system
-// surfaces a concrete `edit agent.yaml: replace {{NAME}} with the
-// actual value` line in the post-init `Next:` block. The warning and
-// the next-step guidance use the same `PlaceholderPattern` so the two
-// stay aligned (a placeholder reported in the warning must show up
-// in the Next: block, and vice versa).
+// This helper is intentionally silent about any placeholders that remain
+// unresolved after substitution. It is called from two paths during init —
+// `ProcessModels` (which substitutes only model-deployment-name parameters
+// and intentionally leaves user-configurable placeholders for later) and
+// `ProcessManifestParameters` (which substitutes user parameters and is
+// the final substitution step before the manifest is written to disk).
+// Emitting a "you have unresolved placeholders" warning here would
+// false-positive from the `ProcessModels` path with names that are about
+// to be prompted-for in `ProcessManifestParameters`. The warning therefore
+// lives in `warnUnresolvedManifestPlaceholders`, which is called only from
+// `ProcessManifestParameters` after both substitution steps complete.
 func injectParameterValues(template string, paramValues ParameterValues) ([]byte, error) {
 	for paramName, paramValue := range paramValues {
 		placeholder := fmt.Sprintf("{{%s}}", paramName)
@@ -248,15 +315,6 @@ func injectParameterValues(template string, paramValues ParameterValues) ([]byte
 
 		placeholder = fmt.Sprintf("{{ %s }}", paramName)
 		template = strings.ReplaceAll(template, placeholder, valueStr)
-	}
-
-	if remaining := ExtractUnresolvedPlaceholders(template); len(remaining) > 0 {
-		fmt.Printf(
-			"Warning: agent.yaml has %d unresolved placeholder(s): %s. "+
-				"Edit agent.yaml and replace each `{{NAME}}` with the actual value before deploying.\n",
-			len(remaining),
-			strings.Join(remaining, ", "),
-		)
 	}
 
 	return []byte(template), nil

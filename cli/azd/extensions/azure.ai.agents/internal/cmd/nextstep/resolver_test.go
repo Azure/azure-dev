@@ -107,6 +107,120 @@ func TestResolveAfterInit_NilState(t *testing.T) {
 	assert.Nil(t, ResolveAfterInit(nil))
 }
 
+func TestResolveAfterInit_UnresolvedPlaceholders(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name             string
+		state            *State
+		wantPlaceholders []string // expected `{{NAME}}` names in order
+		wantMiddle       string   // expected non-trailing, non-placeholder primary (e.g., "azd provision", "azd env set FOO", or "" if none)
+		wantHasRun       bool     // expect `azd ai agent run` to appear?
+		wantHasDeploy    bool     // expect `azd deploy` trailing?
+	}{
+		{
+			name: "placeholders alone → edit lines + deploy, no run",
+			state: &State{
+				HasProjectEndpoint:     true,
+				UnresolvedPlaceholders: []string{"TOOLBOX_ENDPOINT"},
+			},
+			wantPlaceholders: []string{"TOOLBOX_ENDPOINT"},
+			wantHasRun:       false,
+			wantHasDeploy:    true,
+		},
+		{
+			name: "placeholders + missing manual vars → both surfaced, no run",
+			state: &State{
+				HasProjectEndpoint:     true,
+				UnresolvedPlaceholders: []string{"TOOLBOX_ENDPOINT"},
+				MissingManualVars:      []string{"TOOLBOX_MCP_ENDPOINT"},
+			},
+			wantPlaceholders: []string{"TOOLBOX_ENDPOINT"},
+			wantMiddle:       "azd env set TOOLBOX_MCP_ENDPOINT",
+			wantHasRun:       false,
+			wantHasDeploy:    true,
+		},
+		{
+			name: "placeholders + project endpoint missing → placeholders + provision",
+			state: &State{
+				HasProjectEndpoint:     false,
+				UnresolvedPlaceholders: []string{"TOOLBOX_ENDPOINT"},
+			},
+			wantPlaceholders: []string{"TOOLBOX_ENDPOINT"},
+			wantMiddle:       "azd provision",
+			wantHasRun:       false,
+			wantHasDeploy:    true,
+		},
+		{
+			name: "multiple placeholders sorted ascending",
+			state: &State{
+				HasProjectEndpoint:     true,
+				UnresolvedPlaceholders: []string{"CHARLIE", "ALPHA", "BRAVO"},
+			},
+			wantPlaceholders: []string{"ALPHA", "BRAVO", "CHARLIE"},
+			wantHasRun:       false,
+			wantHasDeploy:    true,
+		},
+		{
+			name: "more than three placeholders capped at three",
+			state: &State{
+				HasProjectEndpoint:     true,
+				UnresolvedPlaceholders: []string{"P1", "P2", "P3", "P4", "P5"},
+			},
+			wantPlaceholders: []string{"P1", "P2", "P3"},
+			wantHasRun:       false,
+			wantHasDeploy:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			out := ResolveAfterInit(tt.state)
+			require.NotEmpty(t, out)
+
+			// Walk the output:
+			//   1. leading run of placeholder fix-ups (one per wantPlaceholders[i])
+			//   2. optional middle command (provision / env set)
+			//   3. optional `azd ai agent run`
+			//   4. trailing `azd deploy`
+			for i, name := range tt.wantPlaceholders {
+				require.Less(t, i, len(out))
+				assert.Equal(t,
+					"edit agent.yaml: replace {{"+name+"}} with the actual value",
+					out[i].Command,
+				)
+			}
+
+			// The middle (if any) sits just past the placeholders.
+			if tt.wantMiddle != "" {
+				idx := len(tt.wantPlaceholders)
+				require.Less(t, idx, len(out))
+				assert.True(t,
+					strings.HasPrefix(out[idx].Command, tt.wantMiddle),
+					"middle suggestion %q does not have prefix %q",
+					out[idx].Command, tt.wantMiddle,
+				)
+			}
+
+			hasRun := false
+			hasDeploy := false
+			for _, s := range out {
+				switch {
+				case s.Command == "azd ai agent run":
+					hasRun = true
+				case s.Command == "azd deploy" && s.Trailing:
+					hasDeploy = true
+				}
+			}
+			assert.Equal(t, tt.wantHasRun, hasRun,
+				"presence of `azd ai agent run` mismatched")
+			assert.Equal(t, tt.wantHasDeploy, hasDeploy,
+				"presence of trailing `azd deploy` mismatched")
+		})
+	}
+}
+
 func TestResolveAfterRun(t *testing.T) {
 	t.Parallel()
 

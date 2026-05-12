@@ -55,6 +55,18 @@ const (
 // underscore, then alphanumeric or underscore.
 var envVarRefPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)(:-[^}]*)?\}`)
 
+// placeholderPattern captures {{NAME}} Mustache-style placeholders that
+// agent.manifest.yaml's parameter substitution (parameters.go's
+// injectParameterValues) is supposed to replace before producing the
+// final agent.yaml. Surviving placeholders in agent.yaml's
+// environment_variables values are deploy-time landmines: the value will
+// land in the container literally as `{{NAME}}`, breaking the agent.
+//
+// Allows optional internal whitespace (`{{ NAME }}`) because parameters.go
+// substitutes both forms. Names follow the same convention as env vars
+// (leading letter or underscore, then alphanumeric or underscore).
+var placeholderPattern = regexp.MustCompile(`\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}`)
+
 // Source is the read-only view of azd that AssembleState needs.
 //
 // The production implementation wraps an *azdext.AzdClient via NewSource;
@@ -215,7 +227,7 @@ func assembleState(ctx context.Context, src Source, opts ...Option) (*State, []e
 	state.Services = collectServices(ctx, src, envName, project, &errs)
 
 	if project != nil && envName != "" {
-		state.MissingInfraVars, state.MissingManualVars = detectMissingVars(
+		state.MissingInfraVars, state.MissingManualVars, state.UnresolvedPlaceholders = detectMissingVars(
 			ctx, src, envName, project.Path, state.Services, &errs,
 		)
 		populateOpenAPIPayload(cfg, project.Path, envName, state)
@@ -319,28 +331,36 @@ func loadServiceProtocol(projectPath, relativePath string) string {
 }
 
 // detectMissingVars walks each service's agent.yaml environment_variables
-// section, extracts ${VAR} references, and partitions the unset names
-// into infra-output and manual-input lists.
+// section and partitions the trouble-spots into three lists:
 //
-// Only bare-form refs (`${VAR}`) participate: when the agent.yaml author
-// supplies an explicit fallback via `${VAR:-default}`, the deploy-time
-// resolver substitutes the fallback and the variable is not required.
-// `extractAgentYamlEnvRefs` filters defaulted refs out before they reach
-// the classification step.
+//  1. infra:        unset ${VAR} refs starting with AZURE_ (provision outputs)
+//  2. manual:       unset ${VAR} refs not starting with AZURE_ (user inputs)
+//  3. placeholders: surviving {{NAME}} Mustache placeholders (init failed
+//     to substitute these from agent.manifest.yaml's parameters block)
 //
-// Classification heuristic: variable names starting with "AZURE_" are
-// treated as `azd provision` outputs (the AI Foundry templates produce
-// names like AZURE_AI_PROJECT_ENDPOINT, AZURE_OPENAI_ENDPOINT, etc.);
-// everything else is treated as a user-supplied manual variable. The
-// heuristic is deliberately coarse — over-classifying a manual variable
-// as infra at worst points the user at `azd provision` instead of
-// `azd env set`, and the inverse misclassification still yields a
-// usable hint.
+// Only bare-form ${VAR} refs participate in (1) and (2): when the
+// agent.yaml author supplies an explicit fallback via `${VAR:-default}`,
+// the deploy-time resolver substitutes the fallback and the variable is
+// not required. `extractAgentYamlEnvRefs` filters defaulted refs out.
 //
-// Both result lists are deduplicated and sorted ascending. Read errors
-// on individual agent.yaml files are silent: the resolver should fall
-// back to the default branch rather than emit guidance that mentions
-// variables we cannot prove are needed. Transport errors from
+// Classification heuristic for ${VAR}: variable names starting with
+// "AZURE_" are treated as `azd provision` outputs (the AI Foundry
+// templates produce names like AZURE_AI_PROJECT_ENDPOINT,
+// AZURE_OPENAI_ENDPOINT, etc.); everything else is treated as a
+// user-supplied manual variable. The heuristic is deliberately coarse —
+// over-classifying a manual variable as infra at worst points the user
+// at `azd provision` instead of `azd env set`, and the inverse
+// misclassification still yields a usable hint.
+//
+// {{NAME}} placeholders are reported separately because the user cannot
+// fix them with `azd env set` — the placeholder is literally inside
+// agent.yaml and would land in the container as `{{NAME}}` at deploy
+// time. The resolver surfaces an "edit agent.yaml" suggestion for each.
+//
+// All three result lists are deduplicated and sorted ascending. Read
+// errors on individual agent.yaml files are silent: the resolver should
+// fall back to the default branch rather than emit guidance that
+// mentions variables we cannot prove are needed. Transport errors from
 // src.EnvValue are appended to errs so AssembleState's caller can
 // surface them in --debug logs without aborting the snapshot.
 func detectMissingVars(
@@ -349,16 +369,17 @@ func detectMissingVars(
 	envName, projectPath string,
 	services []ServiceState,
 	errs *[]error,
-) (infra, manual []string) {
+) (infra, manual, placeholders []string) {
 	if envName == "" || projectPath == "" || len(services) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	seenInfra := make(map[string]struct{})
 	seenManual := make(map[string]struct{})
+	seenPlaceholder := make(map[string]struct{})
 
 	for _, svc := range services {
-		refs := extractAgentYamlEnvRefs(projectPath, svc.RelativePath)
+		refs, phs := extractAgentYamlEnvRefs(projectPath, svc.RelativePath)
 		for _, name := range refs {
 			if _, ok := seenInfra[name]; ok {
 				continue
@@ -380,41 +401,51 @@ func detectMissingVars(
 				seenManual[name] = struct{}{}
 			}
 		}
+		for _, name := range phs {
+			seenPlaceholder[name] = struct{}{}
+		}
 	}
 
 	infra = slices.Sorted(maps.Keys(seenInfra))
 	manual = slices.Sorted(maps.Keys(seenManual))
-	return infra, manual
+	placeholders = slices.Sorted(maps.Keys(seenPlaceholder))
+	return infra, manual, placeholders
 }
 
-// extractAgentYamlEnvRefs returns the unique bare-form ${VAR} names
-// referenced in the service's agent.yaml environment_variables block.
-// Refs that supply a fallback via `${VAR:-default}` are skipped — the
-// deploy-time expander honors the default, so the variable is not
-// required and never warrants a missing-var hint. Order matches first
-// bare-form appearance in the file. Missing or malformed manifests
-// return nil — consistent with loadServiceProtocol's best-effort
-// contract.
-func extractAgentYamlEnvRefs(projectPath, relativePath string) []string {
+// extractAgentYamlEnvRefs returns two lists from the service's
+// agent.yaml environment_variables block:
+//
+//  1. refs: unique bare-form ${VAR} names. Refs that supply a fallback
+//     via `${VAR:-default}` are skipped — the deploy-time expander
+//     honors the default, so the variable is not required and never
+//     warrants a missing-var hint.
+//  2. placeholders: unique {{NAME}} Mustache-style placeholders that
+//     init's manifest processing failed to substitute. These would land
+//     in the container literally as `{{NAME}}` at deploy time.
+//
+// Order matches first appearance in the file. Missing or malformed
+// manifests return nil for both — consistent with loadServiceProtocol's
+// best-effort contract.
+func extractAgentYamlEnvRefs(projectPath, relativePath string) (refs, placeholders []string) {
 	if projectPath == "" || relativePath == "" {
-		return nil
+		return nil, nil
 	}
 	manifestPath := filepath.Join(projectPath, relativePath, "agent.yaml")
 	//nolint:gosec // G304: path constructed from azd project root, not user input.
 	data, err := os.ReadFile(manifestPath)
 	if err != nil {
-		return nil
+		return nil, nil
 	}
 	var hosted agent_yaml.ContainerAgent
 	if err := yaml.Unmarshal(data, &hosted); err != nil {
-		return nil
+		return nil, nil
 	}
 	if hosted.EnvironmentVariables == nil {
-		return nil
+		return nil, nil
 	}
 
-	seen := make(map[string]struct{})
-	var out []string
+	seenRef := make(map[string]struct{})
+	seenPh := make(map[string]struct{})
 	for _, ev := range *hosted.EnvironmentVariables {
 		for _, m := range envVarRefPattern.FindAllStringSubmatch(ev.Value, -1) {
 			if m[2] != "" {
@@ -425,14 +456,22 @@ func extractAgentYamlEnvRefs(projectPath, relativePath string) []string {
 				continue
 			}
 			name := m[1]
-			if _, ok := seen[name]; ok {
+			if _, ok := seenRef[name]; ok {
 				continue
 			}
-			seen[name] = struct{}{}
-			out = append(out, name)
+			seenRef[name] = struct{}{}
+			refs = append(refs, name)
+		}
+		for _, m := range placeholderPattern.FindAllStringSubmatch(ev.Value, -1) {
+			name := m[1]
+			if _, ok := seenPh[name]; ok {
+				continue
+			}
+			seenPh[name] = struct{}{}
+			placeholders = append(placeholders, name)
 		}
 	}
-	return out
+	return refs, placeholders
 }
 
 func isDeployed(

@@ -453,9 +453,10 @@ func TestExtractAgentYamlEnvRefs(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name     string
-		manifest string
-		want     []string
+		name             string
+		manifest         string
+		wantRefs         []string
+		wantPlaceholders []string
 	}{
 		{
 			name: "single bare reference",
@@ -464,7 +465,7 @@ environment_variables:
   - name: ENDPOINT
     value: ${AZURE_AI_PROJECT_ENDPOINT}
 `,
-			want: []string{"AZURE_AI_PROJECT_ENDPOINT"},
+			wantRefs: []string{"AZURE_AI_PROJECT_ENDPOINT"},
 		},
 		{
 			name: "reference with default tail is skipped",
@@ -473,7 +474,7 @@ environment_variables:
   - name: MODEL
     value: ${AZURE_AI_MODEL_DEPLOYMENT_NAME:-gpt-4o-mini}
 `,
-			want: nil,
+			wantRefs: nil,
 		},
 		{
 			name: "bare ref alongside defaulted ref returns only the bare one",
@@ -484,7 +485,7 @@ environment_variables:
   - name: MODEL
     value: ${AZURE_AI_MODEL_DEPLOYMENT_NAME:-gpt-4o-mini}
 `,
-			want: []string{"AZURE_AI_PROJECT_ENDPOINT"},
+			wantRefs: []string{"AZURE_AI_PROJECT_ENDPOINT"},
 		},
 		{
 			name: "multiple references in one value",
@@ -493,7 +494,7 @@ environment_variables:
   - name: CONN
     value: postgresql://${DB_HOST}:5432/${DB_NAME}
 `,
-			want: []string{"DB_HOST", "DB_NAME"},
+			wantRefs: []string{"DB_HOST", "DB_NAME"},
 		},
 		{
 			name: "duplicate references deduplicated by first appearance",
@@ -504,7 +505,7 @@ environment_variables:
   - name: B
     value: ${X}
 `,
-			want: []string{"X"},
+			wantRefs: []string{"X"},
 		},
 		{
 			name: "no environment_variables block",
@@ -513,7 +514,7 @@ protocols:
   - protocol: responses
     version: "1.0.0"
 `,
-			want: nil,
+			wantRefs: nil,
 		},
 		{
 			name: "literal value with no ${} reference",
@@ -522,12 +523,53 @@ environment_variables:
   - name: STATIC
     value: hardcoded
 `,
-			want: nil,
+			wantRefs: nil,
 		},
 		{
 			name:     "malformed yaml returns nil",
 			manifest: "this: is: not: valid: yaml: at: all: [",
-			want:     nil,
+			wantRefs: nil,
+		},
+		{
+			name: "mustache placeholder surfaced separately",
+			manifest: `kind: hostedAgent
+environment_variables:
+  - name: TOOLBOX_ENDPOINT
+    value: '{{TOOLBOX_ENDPOINT}}'
+`,
+			wantPlaceholders: []string{"TOOLBOX_ENDPOINT"},
+		},
+		{
+			name: "mustache placeholder with internal whitespace",
+			manifest: `kind: hostedAgent
+environment_variables:
+  - name: KEY
+    value: '{{ MY_KEY }}'
+`,
+			wantPlaceholders: []string{"MY_KEY"},
+		},
+		{
+			name: "duplicate placeholders deduplicated",
+			manifest: `kind: hostedAgent
+environment_variables:
+  - name: A
+    value: '{{X}}-{{X}}'
+  - name: B
+    value: '{{X}}'
+`,
+			wantPlaceholders: []string{"X"},
+		},
+		{
+			name: "ref and placeholder coexist in same manifest",
+			manifest: `kind: hostedAgent
+environment_variables:
+  - name: TOOLBOX_ENDPOINT
+    value: '{{TOOLBOX_ENDPOINT}}'
+  - name: MCP_ENDPOINT
+    value: ${TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT}
+`,
+			wantRefs:         []string{"TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT"},
+			wantPlaceholders: []string{"TOOLBOX_ENDPOINT"},
 		},
 	}
 
@@ -542,8 +584,9 @@ environment_variables:
 				[]byte(tt.manifest),
 				0o600,
 			))
-			got := extractAgentYamlEnvRefs(projectRoot, "echo")
-			assert.Equal(t, tt.want, got)
+			gotRefs, gotPlaceholders := extractAgentYamlEnvRefs(projectRoot, "echo")
+			assert.Equal(t, tt.wantRefs, gotRefs, "refs")
+			assert.Equal(t, tt.wantPlaceholders, gotPlaceholders, "placeholders")
 		})
 	}
 }
@@ -551,9 +594,15 @@ environment_variables:
 func TestExtractAgentYamlEnvRefs_MissingFileOrArgs(t *testing.T) {
 	t.Parallel()
 
-	assert.Nil(t, extractAgentYamlEnvRefs("", "echo"))
-	assert.Nil(t, extractAgentYamlEnvRefs(t.TempDir(), ""))
-	assert.Nil(t, extractAgentYamlEnvRefs(t.TempDir(), "missing"))
+	for _, args := range [][2]string{
+		{"", "echo"},
+		{t.TempDir(), ""},
+		{t.TempDir(), "missing"},
+	} {
+		refs, placeholders := extractAgentYamlEnvRefs(args[0], args[1])
+		assert.Nil(t, refs)
+		assert.Nil(t, placeholders)
+	}
 }
 
 func TestAssembleState_PopulatesMissingVars(t *testing.T) {
@@ -743,4 +792,75 @@ environment_variables:
 	assert.Len(t, errs, 3)
 	assert.Empty(t, state.MissingInfraVars)
 	assert.Empty(t, state.MissingManualVars)
+}
+
+func TestAssembleState_PopulatesUnresolvedPlaceholders(t *testing.T) {
+	t.Parallel()
+
+	// Reproduces the toolbox-sample bug: agent.manifest.yaml processing
+	// leaves a {{NAME}} placeholder behind in agent.yaml, while a separate
+	// env var ref is also unset. The resolver should see both.
+	projectRoot := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "echo"), 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectRoot, "echo", "agent.yaml"),
+		[]byte(`kind: hostedAgent
+environment_variables:
+  - name: TOOLBOX_ENDPOINT
+    value: '{{TOOLBOX_ENDPOINT}}'
+  - name: MCP_ENDPOINT
+    value: ${TOOLBOX_MCP_ENDPOINT}
+`),
+		0o600,
+	))
+
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{
+			Path: projectRoot,
+			Services: map[string]*azdext.ServiceConfig{
+				"echo": {Name: "echo", Host: agentHost, RelativePath: "echo"},
+			},
+		},
+	}
+
+	state, errs := assembleState(context.Background(), src)
+	require.Empty(t, errs)
+	assert.Empty(t, state.MissingInfraVars)
+	assert.Equal(t, []string{"TOOLBOX_MCP_ENDPOINT"}, state.MissingManualVars)
+	assert.Equal(t, []string{"TOOLBOX_ENDPOINT"}, state.UnresolvedPlaceholders)
+}
+
+func TestAssembleState_PlaceholdersDedupedAcrossServices(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	manifest := []byte(`kind: hostedAgent
+environment_variables:
+  - name: A
+    value: '{{SHARED_PLACEHOLDER}}'
+`)
+	for _, rel := range []string{"echo", "ping"} {
+		require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, rel), 0o750))
+		require.NoError(t, os.WriteFile(
+			filepath.Join(projectRoot, rel, "agent.yaml"),
+			manifest,
+			0o600,
+		))
+	}
+
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{
+			Path: projectRoot,
+			Services: map[string]*azdext.ServiceConfig{
+				"echo": {Name: "echo", Host: agentHost, RelativePath: "echo"},
+				"ping": {Name: "ping", Host: agentHost, RelativePath: "ping"},
+			},
+		},
+	}
+
+	state, errs := assembleState(context.Background(), src)
+	require.Empty(t, errs)
+	assert.Equal(t, []string{"SHARED_PLACEHOLDER"}, state.UnresolvedPlaceholders)
 }

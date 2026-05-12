@@ -270,3 +270,68 @@ func updatePendingProjectSignal(
 	_, err := addPendingProvisionReason(ctx, azdClient, envName, pendingReasonProject)
 	return err
 }
+
+// updatePendingACRSignal centralizes the decision rule for the "acr"
+// tag in AI_AGENT_PENDING_PROVISION. It is called from each branch
+// of configureAcrConnection so the trailer correctly tracks whether
+// the ACR will be provisioned by `azd provision` or already exists.
+//
+// Rules:
+//   - present=true → remove "acr". The user either selected an
+//     existing ACR connection from the Foundry project or typed an
+//     existing login server at the empty-connections prompt; the
+//     resulting AZURE_CONTAINER_REGISTRY_* env vars point at a real
+//     resource so any prior init's "acr" hint is now stale.
+//   - present=false → add "acr". The user accepted the
+//     create-on-provision fallback (empty input at the
+//     empty-connections prompt); main.bicep will create the ACR
+//     when `azd provision` runs.
+//
+// Errors are surfaced for callers to log; this helper does not log
+// directly. The signal is best-effort by design.
+func updatePendingACRSignal(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	envName string,
+	present bool,
+) error {
+	if present {
+		_, err := removePendingProvisionReason(ctx, azdClient, envName, pendingReasonACR)
+		return err
+	}
+	_, err := addPendingProvisionReason(ctx, azdClient, envName, pendingReasonACR)
+	return err
+}
+
+// updatePendingAppInsightsSignal centralizes the decision rule for
+// the "app_insights" tag in AI_AGENT_PENDING_PROVISION. It is called
+// from each branch of configureAppInsightsConnection so the trailer
+// correctly tracks whether Application Insights will be provisioned
+// by `azd provision` or already exists.
+//
+// Rules:
+//   - present=true → remove "app_insights". The user either selected
+//     an existing AppInsights connection from the Foundry project or
+//     typed an existing resource ID at the empty-connections prompt;
+//     the resulting APPLICATIONINSIGHTS_* env vars point at a real
+//     resource so any prior init's "app_insights" hint is now stale.
+//   - present=false → add "app_insights". The user accepted the
+//     create-on-provision fallback (empty input at the
+//     empty-connections prompt); main.bicep will create the
+//     Application Insights resource when `azd provision` runs.
+//
+// Errors are surfaced for callers to log; this helper does not log
+// directly. The signal is best-effort by design.
+func updatePendingAppInsightsSignal(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	envName string,
+	present bool,
+) error {
+	if present {
+		_, err := removePendingProvisionReason(ctx, azdClient, envName, pendingReasonAppInsights)
+		return err
+	}
+	_, err := addPendingProvisionReason(ctx, azdClient, envName, pendingReasonAppInsights)
+	return err
+}

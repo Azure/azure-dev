@@ -17,7 +17,7 @@ It also defines the endpoint-resolution behavior these commands rely on.
 In scope:
 
 - The three `project` subcommands above.
-- The 5-level endpoint-resolution chain used by these commands.
+- The 5-level endpoint-resolution cascade used by these commands.
 - Cross-cutting flags (`--output table|json`, `--no-prompt`, `--debug`, `-p` / `--project-endpoint`) on the new commands.
 
 Out of scope:
@@ -27,7 +27,7 @@ Out of scope:
 
 ## 3. Extension Placement
 
-The `project` subtree is added under the existing `azure.ai.agents` extension, in clearly-separated files so it can later be lifted into a dedicated extension without rewrite. No new module and no change to `registry.json`.
+The `project` subtree is added under the existing `azure.ai.agents` extension. No new module and no change to `registry.json`.
 
 > **Command surface.** The existing agents extension registers its root as `agent`, so the `project` commands surface as **`azd ai agent project set | unset | show`**. The command names and config layout are chosen so a future move to a standalone `azd ai project …` extension is a registration-only change with no behavior diff.
 
@@ -69,8 +69,6 @@ Suggestion: Run `azd ai agent project set <endpoint>` to set one,
             or pass `--project-endpoint <url>` on this command,
             or set the FOUNDRY_PROJECT_ENDPOINT environment variable.
 ```
-
-
 
 With `--output json`, the same information is emitted as a structured error envelope so coding agents can parse it.
 
@@ -121,7 +119,7 @@ Behavior:
    warning: an active azd environment is present; its AZURE_AI_PROJECT_ENDPOINT takes precedence over global context.
    ```
 
-   Informational, not an error. Suppressed when `--output json` and `--no-prompt` are both set.
+   Informational, not an error. Suppressed when `--output json` or `--no-prompt` is set.
 
 4. Confirmation:
    - Table: `Project endpoint set: <endpoint>`
@@ -170,10 +168,7 @@ Behavior:
      }
      ```
 
-### 6.4 Output Formatting
-
-- Default is `table` (human-readable). JSON is opt-in.
-- The JSON shapes above are part of the public contract and must not change without a deprecation.
+> The JSON shapes above are part of the public contract and must not change without a deprecation.
 
 ## 7. Test Plan
 
@@ -196,8 +191,6 @@ Today, the agents extension already has a 2-level endpoint resolver (`resolveAge
 - `azd ai agent monitor`
 - `azd ai agent files`
 - `azd ai agent session`
-
-(Plus the deployment path `service_target_agent.go`, which reads `AZURE_AI_PROJECT_ENDPOINT` directly from the azd env and is **not** in scope for this change.)
 
 The proposal: route this existing resolver through the new 5-level chain. The `--account-name` / `--project-name` path is unchanged (still wins, still validated together), and the azd-env path is unchanged. The new behavior is purely additive at the tail of the cascade:
 
@@ -223,12 +216,7 @@ Out of scope for this change (called out so they aren't surprised later):
 - `service_target_agent.go` still reads `AZURE_AI_PROJECT_ENDPOINT` directly from the azd env at deploy time. Reconciling that with the broader cascade is a separate decision tied to the orchestrated (`azd up`) model.
 - No flag deprecations. `--account-name` / `--project-name` remain supported on the agent commands that accept them today.
 
-## 9. Migration / Back-Compat
-
-- No config-schema migration required: the `extensions.ai-agents.context` subtree is created on first `project set`. Absence is the v0 state.
-- The new resolution chain is additive — a user who never runs `project set` and has no `FOUNDRY_PROJECT_ENDPOINT` set behaves exactly as today.
-
-## 10. Telemetry
+## 9. Telemetry
 
 One event per command, reusing the extension's existing telemetry surface:
 
@@ -238,18 +226,18 @@ One event per command, reusing the extension's existing telemetry surface:
 
 No PII; endpoints are hashed.
 
-## 11. Security Considerations
+## 10. Security Considerations
 
 - The endpoint URL is not a credential. No secret material is written to or read from this config path.
 - File permissions on `~/.azd/config.json` are managed by azd core; no change.
 - The validator rejects non-`https` schemes and non-Foundry hostnames, preventing accidental persistence of arbitrary URLs.
 
-## 12. Open Questions
+## 11. Open Questions
 
 1. Should the inside-azd-project warning on `project set` be suppressible via a flag (e.g. `--quiet`) or always-on? Current proposal: always-on, auto-suppressed when `--output json` + `--no-prompt`.
 2. Should `project show` also accept `-p` as an override (useful for "what would I resolve to if I passed this flag?"), or is that semantically odd? Current proposal: yes, accept it — keeps the resolver pure and aids debugging via coding agents.
 
-## 13. Reference: Command Summary
+## 12. Reference: Command Summary
 
 ```bash
 azd ai agent project set <endpoint>     [--output table|json] [--no-prompt] [--debug]

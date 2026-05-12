@@ -33,8 +33,18 @@ const (
 // successful `azd ai agent init`. Pure function over *State.
 //
 // Decision tree:
-//   - MissingInfraVars   → `azd provision` (then "run `azd ai agent run` to
-//     start locally" tail line)
+//   - !HasProjectEndpoint OR MissingInfraVars → `azd provision`
+//     The project endpoint is the canonical "provision finished"
+//     marker — it is set by `azd provision` as a Bicep output, or by
+//     `azd ai agent init` when the user selects an existing Foundry
+//     project. When the endpoint is empty, provision has not yet
+//     populated the infra outputs (typical path: user selected
+//     "Deploy new models from the catalog" in init), so `azd
+//     provision` is the next step regardless of whether agent.yaml
+//     directly references any AZURE_* variables. MissingInfraVars is
+//     still consulted to cover the post-provision re-provision case
+//     (a new ${AZURE_*} reference was added to agent.yaml after the
+//     last provision run).
 //   - MissingManualVars  → one `azd env set <KEY> <value>` per missing var
 //     (up to maxManualVarLines)
 //   - Otherwise          → `azd ai agent run`
@@ -48,7 +58,7 @@ func ResolveAfterInit(state *State) []Suggestion {
 	out := make([]Suggestion, 0, 4)
 
 	switch {
-	case len(state.MissingInfraVars) > 0:
+	case !state.HasProjectEndpoint || len(state.MissingInfraVars) > 0:
 		out = append(out, Suggestion{
 			Command:     "azd provision",
 			Description: "set up your Foundry project, models, and connections",

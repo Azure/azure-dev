@@ -22,24 +22,42 @@ func TestResolveAfterInit(t *testing.T) {
 		wantTrailing      string
 	}{
 		{
-			name:           "happy path → run locally",
-			state:          &State{},
+			name:           "happy path (provisioned) → run locally",
+			state:          &State{HasProjectEndpoint: true},
 			wantPrimaryHas: "azd ai agent run",
 			wantTrailing:   "azd deploy",
 		},
 		{
-			name:           "infra vars missing → provision",
-			state:          &State{MissingInfraVars: []string{"AZURE_AI_FOO"}},
+			name:           "project endpoint not yet set → provision",
+			state:          &State{},
+			wantPrimaryHas: "azd provision",
+			wantTrailing:   "azd deploy",
+		},
+		{
+			name: "infra vars missing post-provision → provision (re-provision)",
+			state: &State{
+				HasProjectEndpoint: true,
+				MissingInfraVars:   []string{"AZURE_AI_FOO"},
+			},
 			wantPrimaryHas: "azd provision",
 			wantTrailing:   "azd deploy",
 		},
 		{
 			name: "manual vars missing → up to 3 env set lines, sorted",
 			state: &State{
-				MissingManualVars: []string{"DELTA", "ALPHA", "ECHO", "BRAVO"},
+				HasProjectEndpoint: true,
+				MissingManualVars:  []string{"DELTA", "ALPHA", "ECHO", "BRAVO"},
 			},
 			wantManualVarKeys: []string{"ALPHA", "BRAVO", "DELTA"},
 			wantTrailing:      "azd deploy",
+		},
+		{
+			name: "project endpoint missing wins over manual vars (provision unblocks both)",
+			state: &State{
+				MissingManualVars: []string{"USER_API_KEY"},
+			},
+			wantPrimaryHas: "azd provision",
+			wantTrailing:   "azd deploy",
 		},
 	}
 
@@ -73,7 +91,10 @@ func TestResolveAfterInit(t *testing.T) {
 func TestResolveAfterInit_ManualVarsCapAtThree(t *testing.T) {
 	t.Parallel()
 
-	state := &State{MissingManualVars: []string{"V1", "V2", "V3", "V4", "V5"}}
+	state := &State{
+		HasProjectEndpoint: true,
+		MissingManualVars:  []string{"V1", "V2", "V3", "V4", "V5"},
+	}
 	out := ResolveAfterInit(state)
 	// 3 manual + 1 trailing.
 	require.Len(t, out, 4)

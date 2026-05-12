@@ -316,6 +316,225 @@ func TestUpdatePendingModelDeploymentSignal(t *testing.T) {
 	}
 }
 
+func TestUpdatePendingProjectSignal(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		seed        string
+		useExisting bool
+		wantValue   string
+		wantUnset   bool
+	}{
+		{
+			name:        "existing project + empty seed: stays empty",
+			useExisting: true,
+			wantUnset:   true,
+		},
+		{
+			name:        "existing project + tag present: tag removed",
+			seed:        "model_deployment,project",
+			useExisting: true,
+			wantValue:   "model_deployment",
+		},
+		{
+			name:        "existing project + tag absent: no-op",
+			seed:        "model_deployment",
+			useExisting: true,
+			wantValue:   "model_deployment",
+		},
+		{
+			name:        "new project + empty seed: tag added",
+			useExisting: false,
+			wantValue:   "project",
+		},
+		{
+			name:        "new project + existing tags: tag added without disturbing others",
+			seed:        "model_deployment",
+			useExisting: false,
+			wantValue:   "model_deployment,project",
+		},
+		{
+			name:        "new project + tag already present: idempotent",
+			seed:        "project",
+			useExisting: false,
+			wantValue:   "project",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			envServer := &testEnvironmentServiceServer{
+				environments: map[string]*azdext.Environment{"test-env": {Name: "test-env"}},
+			}
+			if tc.seed != "" {
+				envServer.values = map[string]map[string]string{
+					"test-env": {pendingProvisionEnvVar: tc.seed},
+				}
+			}
+			azdClient := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+
+			err := updatePendingProjectSignal(context.Background(), azdClient, "test-env", tc.useExisting)
+			require.NoError(t, err)
+
+			if tc.wantUnset {
+				_, hit := envServer.values["test-env"][pendingProvisionEnvVar]
+				require.False(t, hit, "expected env var to remain unset")
+				return
+			}
+			require.Equal(t, tc.wantValue, envServer.values["test-env"][pendingProvisionEnvVar])
+		})
+	}
+}
+
+func TestUpdatePendingACRSignal(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		seed      string
+		present   bool
+		wantValue string
+		wantUnset bool
+	}{
+		{
+			name:      "existing ACR + empty seed: stays empty",
+			present:   true,
+			wantUnset: true,
+		},
+		{
+			name:      "existing ACR + tag present: tag removed",
+			seed:      "acr,project",
+			present:   true,
+			wantValue: "project",
+		},
+		{
+			name:      "existing ACR + tag absent: no-op",
+			seed:      "project",
+			present:   true,
+			wantValue: "project",
+		},
+		{
+			name:      "no ACR + empty seed: tag added",
+			present:   false,
+			wantValue: "acr",
+		},
+		{
+			name:      "no ACR + existing tags: tag added alongside",
+			seed:      "model_deployment,project",
+			present:   false,
+			wantValue: "acr,model_deployment,project",
+		},
+		{
+			name:      "no ACR + tag already present: idempotent",
+			seed:      "acr",
+			present:   false,
+			wantValue: "acr",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			envServer := &testEnvironmentServiceServer{
+				environments: map[string]*azdext.Environment{"test-env": {Name: "test-env"}},
+			}
+			if tc.seed != "" {
+				envServer.values = map[string]map[string]string{
+					"test-env": {pendingProvisionEnvVar: tc.seed},
+				}
+			}
+			azdClient := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+
+			err := updatePendingACRSignal(context.Background(), azdClient, "test-env", tc.present)
+			require.NoError(t, err)
+
+			if tc.wantUnset {
+				_, hit := envServer.values["test-env"][pendingProvisionEnvVar]
+				require.False(t, hit, "expected env var to remain unset")
+				return
+			}
+			require.Equal(t, tc.wantValue, envServer.values["test-env"][pendingProvisionEnvVar])
+		})
+	}
+}
+
+func TestUpdatePendingAppInsightsSignal(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		seed      string
+		present   bool
+		wantValue string
+		wantUnset bool
+	}{
+		{
+			name:      "existing AppInsights + empty seed: stays empty",
+			present:   true,
+			wantUnset: true,
+		},
+		{
+			name:      "existing AppInsights + tag present: tag removed",
+			seed:      "app_insights,project",
+			present:   true,
+			wantValue: "project",
+		},
+		{
+			name:      "existing AppInsights + tag absent: no-op",
+			seed:      "project",
+			present:   true,
+			wantValue: "project",
+		},
+		{
+			name:      "no AppInsights + empty seed: tag added",
+			present:   false,
+			wantValue: "app_insights",
+		},
+		{
+			name:      "no AppInsights + existing tags: tag added alongside",
+			seed:      "acr,model_deployment,project",
+			present:   false,
+			wantValue: "acr,app_insights,model_deployment,project",
+		},
+		{
+			name:      "no AppInsights + tag already present: idempotent",
+			seed:      "app_insights",
+			present:   false,
+			wantValue: "app_insights",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			envServer := &testEnvironmentServiceServer{
+				environments: map[string]*azdext.Environment{"test-env": {Name: "test-env"}},
+			}
+			if tc.seed != "" {
+				envServer.values = map[string]map[string]string{
+					"test-env": {pendingProvisionEnvVar: tc.seed},
+				}
+			}
+			azdClient := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+
+			err := updatePendingAppInsightsSignal(context.Background(), azdClient, "test-env", tc.present)
+			require.NoError(t, err)
+
+			if tc.wantUnset {
+				_, hit := envServer.values["test-env"][pendingProvisionEnvVar]
+				require.False(t, hit, "expected env var to remain unset")
+				return
+			}
+			require.Equal(t, tc.wantValue, envServer.values["test-env"][pendingProvisionEnvVar])
+		})
+	}
+}
+
 func TestPendingProvisionRoundTrip(t *testing.T) {
 	t.Parallel()
 

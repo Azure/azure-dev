@@ -40,7 +40,8 @@ const (
 //     are deploy-time landmines: the literal `{{NAME}}` would otherwise
 //     land in the container. They never reach `azd env set` because the
 //     value lives in agent.yaml itself, not the azd environment.
-//   - !HasProjectEndpoint OR MissingInfraVars → `azd provision`
+//   - NeedsAIProjectProvision OR !HasProjectEndpoint OR MissingInfraVars
+//     → `azd provision`
 //     The project endpoint is the canonical "provision finished"
 //     marker — it is set by `azd provision` as a Bicep output, or by
 //     `azd ai agent init` when the user selects an existing Foundry
@@ -51,7 +52,13 @@ const (
 //     directly references any AZURE_* variables. MissingInfraVars is
 //     still consulted to cover the post-provision re-provision case
 //     (a new ${AZURE_*} reference was added to agent.yaml after the
-//     last provision run).
+//     last provision run). NeedsAIProjectProvision adds an explicit
+//     override for the deploy-new path: USE_EXISTING_AI_PROJECT=false
+//     means the user just committed to creating a new Foundry project
+//     via Bicep, so any AZURE_AI_PROJECT_ENDPOINT carried over from a
+//     prior init or environment is stale and must not let the resolver
+//     mistake the state for "ready to run or deploy". See
+//     state.NeedsAIProjectProvision for the env-var contract.
 //   - MissingManualVars  → one `azd env set <KEY> <value>` per missing var
 //     (up to maxFixupLines)
 //   - Otherwise          → `azd ai agent run`
@@ -87,7 +94,7 @@ func ResolveAfterInit(state *State) []Suggestion {
 	}
 
 	switch {
-	case !state.HasProjectEndpoint || len(state.MissingInfraVars) > 0:
+	case state.NeedsAIProjectProvision || !state.HasProjectEndpoint || len(state.MissingInfraVars) > 0:
 		out = append(out, Suggestion{
 			Command:     "azd provision",
 			Description: "set up your Foundry project, models, and connections",

@@ -59,6 +59,38 @@ func TestResolveAfterInit(t *testing.T) {
 			wantPrimaryHas: "azd provision",
 			wantTrailing:   "azd deploy",
 		},
+		{
+			// User selected "Deploy new model(s)" in init. The Foundry
+			// project does not exist yet, but a stale
+			// AZURE_AI_PROJECT_ENDPOINT carried over from a prior init
+			// or sibling environment sets HasProjectEndpoint=true.
+			// Without the explicit NeedsAIProjectProvision signal the
+			// resolver would default to `azd ai agent run` and
+			// mislead the user into running a local invoke against a
+			// project that has not been provisioned.
+			name: "deploy-new chosen but stale endpoint → provision (override)",
+			state: &State{
+				HasProjectEndpoint:      true,
+				NeedsAIProjectProvision: true,
+			},
+			wantPrimaryHas: "azd provision",
+			wantTrailing:   "azd deploy",
+		},
+		{
+			// Existing-project init path. USE_EXISTING_AI_PROJECT=true
+			// leaves NeedsAIProjectProvision=false at state assembly,
+			// so the legacy heuristic continues to drive: endpoint
+			// set + no missing vars ⇒ `azd ai agent run`. This case
+			// locks the no-regression contract for the existing
+			// path.
+			name: "existing project chosen, all vars set → run locally (no override)",
+			state: &State{
+				HasProjectEndpoint:      true,
+				NeedsAIProjectProvision: false,
+			},
+			wantPrimaryHas: "azd ai agent run",
+			wantTrailing:   "azd deploy",
+		},
 	}
 
 	for _, tt := range tests {

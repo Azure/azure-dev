@@ -55,13 +55,6 @@ const (
 	// because nextstep is a leaf package with no dependency on cmd
 	// — both packages share the same string literal contract.
 	pendingProvisionVar = "AI_AGENT_PENDING_PROVISION"
-
-	// azureInfraPrefix tags an env-var name as an azd-infra output rather
-	// than a user-supplied manual variable. Outputs of `azd provision`
-	// in the AI Foundry templates uniformly start with this prefix
-	// (AZURE_AI_PROJECT_*, AZURE_OPENAI_*, AZURE_SUBSCRIPTION_*, etc.),
-	// so the prefix doubles as the classification heuristic.
-	azureInfraPrefix = "AZURE_"
 )
 
 // envVarRefPattern captures ${VAR} references inside YAML string values.
@@ -369,8 +362,10 @@ func loadServiceProtocol(projectPath, relativePath string) string {
 // detectMissingVars walks each service's agent.yaml environment_variables
 // section and partitions the trouble-spots into three lists:
 //
-//  1. infra:        unset ${VAR} refs starting with AZURE_ (provision outputs)
-//  2. manual:       unset ${VAR} refs not starting with AZURE_ (user inputs)
+//  1. infra:        unset ${VAR} refs that name a top-level output of
+//     <projectPath>/infra/main.bicep (provision outputs)
+//  2. manual:       unset ${VAR} refs that do NOT name a Bicep output
+//     (user inputs the user must `azd env set`)
 //  3. placeholders: surviving {{NAME}} Mustache placeholders (init failed
 //     to substitute these from agent.manifest.yaml's parameters block)
 //
@@ -379,14 +374,26 @@ func loadServiceProtocol(projectPath, relativePath string) string {
 // the deploy-time resolver substitutes the fallback and the variable is
 // not required. `extractAgentYamlEnvRefs` filters defaulted refs out.
 //
-// Classification heuristic for ${VAR}: variable names starting with
-// "AZURE_" are treated as `azd provision` outputs (the AI Foundry
-// templates produce names like AZURE_AI_PROJECT_ENDPOINT,
-// AZURE_OPENAI_ENDPOINT, etc.); everything else is treated as a
-// user-supplied manual variable. The heuristic is deliberately coarse —
-// over-classifying a manual variable as infra at worst points the user
-// at `azd provision` instead of `azd env set`, and the inverse
-// misclassification still yields a usable hint.
+// Classification rule for ${VAR}: a variable is an infra var iff its
+// name is declared as a top-level `output` in `<projectPath>/infra/
+// main.bicep`. azd's Bicep provider writes those output names verbatim
+// into `.azure/<env>/.env` after `azd provision` succeeds (see
+// cli/azd/pkg/infra/provisioning/bicep/bicep_provider.go around the
+// `outputs[key] = ...` write and pkg/infra/provisioning/manager.go's
+// `UpdateEnvironment` → `env.DotenvSet(key, ...)`), so set membership
+// is a precise signal of "this variable is provided by `azd provision`."
+// Everything else is treated as a user-supplied manual variable that
+// the user must set via `azd env set`. This mirrors the spec wording in
+// issue #7975 ("Walk azure.yaml service configs; collect ${...}
+// references that map to known Bicep outputs").
+//
+// When `infra/main.bicep` is missing or declares no outputs, the
+// Bicep-output set is empty and every unresolved bare ref lands in the
+// manual bucket. This is the conservative answer: the resolver will
+// emit `azd env set <NAME> <value>` hints, which a user can always
+// follow. If the project is actually backed by a Bicep template whose
+// outputs are not yet declared, the fix is to declare the missing
+// output — not to guess based on the variable name.
 //
 // {{NAME}} placeholders are reported separately because the user cannot
 // fix them with `azd env set` — the placeholder is literally inside
@@ -410,6 +417,7 @@ func detectMissingVars(
 		return nil, nil, nil
 	}
 
+	bicepOutputs := bicepOutputSet(projectPath)
 	seenInfra := make(map[string]struct{})
 	seenManual := make(map[string]struct{})
 	seenPlaceholder := make(map[string]struct{})
@@ -431,7 +439,7 @@ func detectMissingVars(
 			if value != "" {
 				continue
 			}
-			if strings.HasPrefix(name, azureInfraPrefix) {
+			if _, isBicepOutput := bicepOutputs[name]; isBicepOutput {
 				seenInfra[name] = struct{}{}
 			} else {
 				seenManual[name] = struct{}{}
@@ -446,6 +454,20 @@ func detectMissingVars(
 	manual = slices.Sorted(maps.Keys(seenManual))
 	placeholders = slices.Sorted(maps.Keys(seenPlaceholder))
 	return infra, manual, placeholders
+}
+
+// bicepOutputSet returns the Bicep-output names declared by
+// <projectPath>/infra/main.bicep as a lookup set. Best-effort: a
+// missing file, malformed content, or zero outputs return an empty
+// (but non-nil) map so callers can use the idiomatic `_, ok := set[k]`
+// form without nil-guarding.
+func bicepOutputSet(projectPath string) map[string]struct{} {
+	names := discoverBicepOutputs(projectPath)
+	set := make(map[string]struct{}, len(names))
+	for _, n := range names {
+		set[n] = struct{}{}
+	}
+	return set
 }
 
 // extractAgentYamlEnvRefs returns two lists from the service's

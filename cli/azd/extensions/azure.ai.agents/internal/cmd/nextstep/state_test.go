@@ -727,6 +727,17 @@ environment_variables:
 `),
 		0o600,
 	))
+	// infra/main.bicep declares both AZURE_* names as outputs, so they
+	// route to MissingInfraVars when unset. MY_API_KEY has no Bicep
+	// output and routes to MissingManualVars.
+	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "infra"), 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectRoot, "infra", "main.bicep"),
+		[]byte(`output AZURE_AI_PROJECT_ENDPOINT string = ''
+output AZURE_AI_MODEL_DEPLOYMENT_NAME string = ''
+`),
+		0o600,
+	))
 
 	src := &fakeSource{
 		envName: "dev",
@@ -767,6 +778,13 @@ environment_variables:
 			0o600,
 		))
 	}
+	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "infra"), 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectRoot, "infra", "main.bicep"),
+		[]byte(`output AZURE_AI_PROJECT_ENDPOINT string = ''
+`),
+		0o600,
+	))
 
 	src := &fakeSource{
 		envName: "dev",
@@ -840,6 +858,13 @@ environment_variables:
     value: ${AZURE_AI_MODEL_DEPLOYMENT_NAME:-gpt-4o-mini}
   - name: KEY
     value: ${MY_API_KEY:-dev-fallback}
+`),
+		0o600,
+	))
+	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "infra"), 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectRoot, "infra", "main.bicep"),
+		[]byte(`output AZURE_AI_PROJECT_ENDPOINT string = ''
 `),
 		0o600,
 	))
@@ -966,4 +991,187 @@ environment_variables:
 	state, errs := assembleState(context.Background(), src)
 	require.Empty(t, errs)
 	assert.Equal(t, []string{"SHARED_PLACEHOLDER"}, state.UnresolvedPlaceholders)
+}
+
+// TestAssembleState_NonAzurePrefixBicepOutputIsInfra is the B1 fix proof.
+// It locks issue #7975 State Inputs line 74 ("HasUnresolvedInfraVars =
+// agent.yaml ${VAR} refs that map to known Bicep outputs are unset in
+// azd env"). Pre-C1, the resolver split on the AZURE_ prefix; this
+// test guarantees the new classifier is set-membership based and
+// correctly routes a non-AZURE_ Bicep output to MissingInfraVars.
+func TestAssembleState_NonAzurePrefixBicepOutputIsInfra(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "echo"), 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectRoot, "echo", "agent.yaml"),
+		[]byte(`kind: hostedAgent
+environment_variables:
+  - name: TOOLBOX
+    value: ${TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT}
+  - name: BING
+    value: ${BING_GROUNDING_CONNECTION_ID}
+  - name: KEY
+    value: ${MY_API_KEY}
+`),
+		0o600,
+	))
+	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "infra"), 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectRoot, "infra", "main.bicep"),
+		[]byte(`output TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT string = ''
+output BING_GROUNDING_CONNECTION_ID string = ''
+`),
+		0o600,
+	))
+
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{
+			Path: projectRoot,
+			Services: map[string]*azdext.ServiceConfig{
+				"echo": {Name: "echo", Host: agentHost, RelativePath: "echo"},
+			},
+		},
+	}
+
+	state, errs := assembleState(context.Background(), src)
+	require.Empty(t, errs)
+	assert.Equal(
+		t,
+		[]string{"BING_GROUNDING_CONNECTION_ID", "TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT"},
+		state.MissingInfraVars,
+	)
+	assert.Equal(t, []string{"MY_API_KEY"}, state.MissingManualVars)
+}
+
+// TestAssembleState_NoBicepFileEverythingManual locks the conservative
+// fallback: when infra/main.bicep is missing, every unset ref lands in
+// MissingManualVars. Notably this includes AZURE_*-prefixed names —
+// without the prefix shortcut, AZURE_ has no special meaning anymore.
+func TestAssembleState_NoBicepFileEverythingManual(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "echo"), 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectRoot, "echo", "agent.yaml"),
+		[]byte(`kind: hostedAgent
+environment_variables:
+  - name: ENDPOINT
+    value: ${AZURE_AI_PROJECT_ENDPOINT}
+  - name: TOOLBOX
+    value: ${TOOLBOX_MCP_ENDPOINT}
+  - name: KEY
+    value: ${MY_API_KEY}
+`),
+		0o600,
+	))
+
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{
+			Path: projectRoot,
+			Services: map[string]*azdext.ServiceConfig{
+				"echo": {Name: "echo", Host: agentHost, RelativePath: "echo"},
+			},
+		},
+	}
+
+	state, errs := assembleState(context.Background(), src)
+	require.Empty(t, errs)
+	assert.Empty(t, state.MissingInfraVars)
+	assert.Equal(
+		t,
+		[]string{"AZURE_AI_PROJECT_ENDPOINT", "MY_API_KEY", "TOOLBOX_MCP_ENDPOINT"},
+		state.MissingManualVars,
+	)
+}
+
+// TestAssembleState_DeclaredAndSetBicepOutputNotSurfaced locks the
+// sanity case: a ref that maps to a Bicep output AND is set in the
+// current env is not missing from either bucket.
+func TestAssembleState_DeclaredAndSetBicepOutputNotSurfaced(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "echo"), 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectRoot, "echo", "agent.yaml"),
+		[]byte(`kind: hostedAgent
+environment_variables:
+  - name: TOOLBOX
+    value: ${TOOLBOX_MCP_ENDPOINT}
+`),
+		0o600,
+	))
+	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "infra"), 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectRoot, "infra", "main.bicep"),
+		[]byte(`output TOOLBOX_MCP_ENDPOINT string = ''
+`),
+		0o600,
+	))
+
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{
+			Path: projectRoot,
+			Services: map[string]*azdext.ServiceConfig{
+				"echo": {Name: "echo", Host: agentHost, RelativePath: "echo"},
+			},
+		},
+		values: map[string]string{
+			"dev/TOOLBOX_MCP_ENDPOINT": "https://mcp.example/x",
+		},
+	}
+
+	state, errs := assembleState(context.Background(), src)
+	require.Empty(t, errs)
+	assert.Empty(t, state.MissingInfraVars)
+	assert.Empty(t, state.MissingManualVars)
+}
+
+// TestAssembleState_UndeclaredRefIsManualEvenWithBicepFile locks the
+// other half of set-membership classification: when infra/main.bicep
+// exists but does NOT declare a ref'd var, the var lands in
+// MissingManualVars (not MissingInfraVars).
+func TestAssembleState_UndeclaredRefIsManualEvenWithBicepFile(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "echo"), 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectRoot, "echo", "agent.yaml"),
+		[]byte(`kind: hostedAgent
+environment_variables:
+  - name: KEY
+    value: ${MY_API_KEY}
+`),
+		0o600,
+	))
+	// Bicep file exists but doesn't declare MY_API_KEY → manual.
+	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "infra"), 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectRoot, "infra", "main.bicep"),
+		[]byte(`output AZURE_AI_PROJECT_ENDPOINT string = ''
+`),
+		0o600,
+	))
+
+	src := &fakeSource{
+		envName: "dev",
+		project: &azdext.ProjectConfig{
+			Path: projectRoot,
+			Services: map[string]*azdext.ServiceConfig{
+				"echo": {Name: "echo", Host: agentHost, RelativePath: "echo"},
+			},
+		},
+	}
+
+	state, errs := assembleState(context.Background(), src)
+	require.Empty(t, errs)
+	assert.Empty(t, state.MissingInfraVars)
+	assert.Equal(t, []string{"MY_API_KEY"}, state.MissingManualVars)
 }

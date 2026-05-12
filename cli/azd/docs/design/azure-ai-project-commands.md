@@ -1,6 +1,6 @@
 <!-- cspell:ignore foundry huimiu exterrors -->
 
-# Design Spec: `azd ai project` Context Commands + Shared Endpoint Resolution
+# Design Spec: `azd ai agent project` Context Commands + Shared Endpoint Resolution
 
 - Feature spec: `azd ai` Direct Commands (CLI Surface for Foundry)
 - Tracking issue: [Azure/azure-dev#8124](https://github.com/Azure/azure-dev/issues/8124)
@@ -11,9 +11,9 @@
 
 This spec covers the workspace-level project-context commands:
 
-- `azd ai project set <endpoint>` — persist an active Foundry project endpoint in azd global config.
-- `azd ai project unset` — clear the persisted endpoint.
-- `azd ai project show` — display the currently resolved endpoint and the source that provided it.
+- `azd ai agent project set <endpoint>` — persist an active Foundry project endpoint in azd global config.
+- `azd ai agent project unset` — clear the persisted endpoint.
+- `azd ai agent project show` — display the currently resolved endpoint and the source that provided it.
 
 It also defines the endpoint-resolution behavior these commands rely on.
 
@@ -34,7 +34,7 @@ Out of scope:
 
 The `project` subtree is added under the existing `azure.ai.agents` extension, in clearly-separated files so it can later be lifted into a dedicated extension without rewrite. No new module and no change to `registry.json`.
 
-> **Command surface note.** The existing agents extension registers its root as `agent`, so commands surface as `azd ai agent …`. The feature spec uses the unprefixed form `azd ai project …`. Because we are not creating a new extension yet, the v1 implementation will surface as **`azd ai agent project set | unset | show`**. The command names and config layout are chosen so a future move to `azd ai project …` is a registration-only change with no behavior diff. See Open Question 1.
+> **Command surface.** The existing agents extension registers its root as `agent`, so the `project` commands surface as **`azd ai agent project set | unset | show`**. The command names and config layout are chosen so a future move to a standalone `azd ai project …` extension is a registration-only change with no behavior diff.
 
 ## 4. Endpoint Resolution
 
@@ -75,7 +75,7 @@ Suggestion: Run `azd ai agent project set <endpoint>` to set one,
             or set the FOUNDRY_PROJECT_ENDPOINT environment variable.
 ```
 
-> The suggestion text uses the v1 surface form (`azd ai agent project set`). When the command moves to `azd ai project set` (see Open Question 1), update the suggestion accordingly.
+
 
 With `--output json`, the same information is emitted as a structured error envelope so coding agents can parse it.
 
@@ -105,7 +105,7 @@ The persisted state lives in azd user config (`~/.azd/config.json`) under the pr
 
 ## 6. Command Behavior
 
-### 6.1 `azd ai project set <endpoint>`
+### 6.1 `azd ai agent project set <endpoint>`
 
 Flags:
 
@@ -134,7 +134,7 @@ Behavior:
 
 Exit code `0` on success.
 
-### 6.2 `azd ai project unset`
+### 6.2 `azd ai agent project unset`
 
 Flags: `--output`, `--no-prompt`, `--debug`.
 
@@ -146,7 +146,7 @@ Behavior:
    - Table: `Project endpoint cleared.`
    - JSON: `{ "cleared": true, "previousEndpoint": "..." }`
 
-### 6.3 `azd ai project show`
+### 6.3 `azd ai agent project show`
 
 Flags: `-p` / `--project-endpoint`, `--output`, `--no-prompt`, `--debug`.
 
@@ -256,16 +256,15 @@ No PII; endpoints are hashed.
 
 | #   | Question                                                                                                                                                                                                                                                                      | Owner   |
 | --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| 1   | Surface form: `azd ai agent project …` (v1, no new extension) vs. `azd ai project …` (requires either a top-level passthrough in azd core or a new `azure.ai.project` extension). Decision affects only command-tree registration; everything else in this spec is invariant. | TBD     |
-| 2   | Should the inside-azd-project warning on `project set` be suppressible via a flag (e.g. `--quiet`) or always-on? Current proposal: always-on, auto-suppressed when `--output json` + `--no-prompt`.                                                                           | @huimiu |
-| 3   | Should `project show` also accept `-p` as an override (useful for "what would I resolve to if I passed this flag?"), or is that semantically odd? Current proposal: yes, accept it — keeps the resolver pure and aids debugging via coding agents.                            | @huimiu |
+| 1   | Should the inside-azd-project warning on `project set` be suppressible via a flag (e.g. `--quiet`) or always-on? Current proposal: always-on, auto-suppressed when `--output json` + `--no-prompt`.                                                                           | @huimiu |
+| 2   | Should `project show` also accept `-p` as an override (useful for "what would I resolve to if I passed this flag?"), or is that semantically odd? Current proposal: yes, accept it — keeps the resolver pure and aids debugging via coding agents.                            | @huimiu |
 
 ## 13. Reference: Command Summary
 
 ```bash
-azd ai [agent] project set <endpoint>     [--output table|json] [--no-prompt] [--debug]
-azd ai [agent] project unset              [--output table|json] [--no-prompt] [--debug]
-azd ai [agent] project show               [-p <url>] [--output table|json] [--no-prompt] [--debug]
+azd ai agent project set <endpoint>     [--output table|json] [--no-prompt] [--debug]
+azd ai agent project unset              [--output table|json] [--no-prompt] [--debug]
+azd ai agent project show               [-p <url>] [--output table|json] [--no-prompt] [--debug]
 ```
 
 Resolution cascade: `-p` flag → azd env (`AZURE_AI_PROJECT_ENDPOINT`) → `~/.azd/config.json` (`extensions.ai-agents.context.endpoint`) → `FOUNDRY_PROJECT_ENDPOINT` → structured error.

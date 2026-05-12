@@ -811,8 +811,8 @@ func (p *AgentServiceTargetProvider) packageCodeDeploy(serviceConfig *azdext.Ser
 	success := false
 	defer func() {
 		if !success {
-			tmpFile.Close()
-			os.Remove(tmpPath)
+			_ = tmpFile.Close()
+			_ = os.Remove(tmpPath)
 		}
 	}()
 

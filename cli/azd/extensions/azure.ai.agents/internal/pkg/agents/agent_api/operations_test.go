@@ -305,7 +305,7 @@ func (c *capturingTransport) Do(req *http.Request) (*http.Response, error) {
 	if req.Body != nil {
 		body, _ := io.ReadAll(req.Body)
 		c.lastBody = body
-		req.Body.Close()
+		_ = req.Body.Close()
 	}
 	return &http.Response{
 		StatusCode: c.statusCode,

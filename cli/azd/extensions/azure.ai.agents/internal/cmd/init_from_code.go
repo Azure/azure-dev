@@ -854,7 +854,7 @@ func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string,
 	} else {
 		// For code deploy, auto-derive startupCommand from entry point in agent.yaml
 		agentYamlPath := filepath.Join(a.projectConfig.Path, targetDir, "agent.yaml")
-		if data, err := os.ReadFile(agentYamlPath); err == nil {
+		if data, err := os.ReadFile(agentYamlPath); err == nil { //nolint:gosec // path is constructed from project config
 			var agentDef agent_yaml.ContainerAgent
 			if err := yaml.Unmarshal(data, &agentDef); err == nil && agentDef.CodeConfiguration != nil {
 				agentConfig.StartupCommand = "python " + agentDef.CodeConfiguration.EntryPoint

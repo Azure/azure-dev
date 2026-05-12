@@ -479,6 +479,66 @@ func TestResolveAfterDeploy(t *testing.T) {
 		require.Len(t, out, 2)
 		assert.Equal(t, `azd ai agent invoke '{"q":"don'\''t"}'`, out[1].Command)
 	})
+
+	t.Run("ForceQualified=true on len==1 → service-qualified commands", func(t *testing.T) {
+		t.Parallel()
+		state := &State{Services: []ServiceState{
+			{Name: "echo", RelativePath: "./src/echo", Protocol: ProtocolInvocations},
+		}}
+		out := ResolveAfterDeploy(state, nil, nil, AfterDeployOpts{ForceQualified: true})
+		require.Len(t, out, 2)
+		assert.Equal(t, "azd ai agent show echo", out[0].Command)
+		assert.Equal(t, `azd ai agent invoke echo '{"message": "Hello!"}'`, out[1].Command)
+	})
+
+	t.Run("ForceQualified=false on len==1 → unqualified (matches default)", func(t *testing.T) {
+		t.Parallel()
+		state := &State{Services: []ServiceState{
+			{Name: "echo", RelativePath: "./src/echo", Protocol: ProtocolInvocations},
+		}}
+		out := ResolveAfterDeploy(state, nil, nil, AfterDeployOpts{ForceQualified: false})
+		require.Len(t, out, 2)
+		assert.Equal(t, "azd ai agent show", out[0].Command)
+		assert.Equal(t, `azd ai agent invoke '{"message": "Hello!"}'`, out[1].Command)
+	})
+
+	t.Run("ForceQualified=true with cached payload → qualified invoke uses payload", func(t *testing.T) {
+		t.Parallel()
+		state := &State{Services: []ServiceState{{Name: "echo", RelativePath: "./src/echo"}}}
+		cached := func(_ string) string { return `{"q":"x"}` }
+		out := ResolveAfterDeploy(state, cached, nil, AfterDeployOpts{ForceQualified: true})
+		require.Len(t, out, 2)
+		assert.Equal(t, "azd ai agent show echo", out[0].Command)
+		assert.Equal(t, `azd ai agent invoke echo '{"q":"x"}'`, out[1].Command)
+	})
+
+	t.Run("ForceQualified=true on multi-agent → qualified (already-qualified case unaffected)", func(t *testing.T) {
+		t.Parallel()
+		state := &State{Services: []ServiceState{
+			{Name: "alpha", Protocol: ProtocolInvocations},
+			{Name: "beta", Protocol: ProtocolResponses},
+		}}
+		out := ResolveAfterDeploy(state, nil, nil, AfterDeployOpts{ForceQualified: true})
+		require.Len(t, out, 4)
+		assert.Equal(t, "azd ai agent show alpha", out[0].Command)
+		assert.Equal(t, `azd ai agent invoke alpha '{"message": "Hello!"}'`, out[1].Command)
+		assert.Equal(t, "azd ai agent show beta", out[2].Command)
+		assert.Equal(t, `azd ai agent invoke beta "Hello!"`, out[3].Command)
+	})
+
+	t.Run("extra opts elements beyond [0] are ignored", func(t *testing.T) {
+		t.Parallel()
+		state := &State{Services: []ServiceState{
+			{Name: "echo", RelativePath: "./src/echo", Protocol: ProtocolInvocations},
+		}}
+		out := ResolveAfterDeploy(
+			state, nil, nil,
+			AfterDeployOpts{ForceQualified: true},
+			AfterDeployOpts{ForceQualified: false}, // should be ignored
+		)
+		require.Len(t, out, 2)
+		assert.Equal(t, "azd ai agent show echo", out[0].Command)
+	})
 }
 
 func TestFindService(t *testing.T) {

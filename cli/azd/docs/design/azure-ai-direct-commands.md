@@ -1,6 +1,6 @@
-# Design Spec: `azd ai connection` Direct Commands + Agent Run Secrets
+# Design Spec: `azd ai connection` Direct Commands + Agent Run Credential References
 
-<!-- cspell:ignore foundry toolbox toolboxes cognitiveservices azidentity keyvault -->
+<!-- cspell:ignore foundry toolbox toolboxes cognitiveservices azidentity keyvault exterrors tvly tavily ncus bugbash northcentralus finetuning azureaiconnection tabwriter gopkg Submatch Angevine armcognitiveservices -->
 
 **Spec Source**: [PR #165 – azd ai Direct Commands spec](https://github.com/coreai-microsoft/foundrysdk_specs/pull/165)
 **CLI / Engineering Owner**: Travis Angevine
@@ -11,10 +11,10 @@
 
 ## 1. Overview
 
-This document describes the design and code changes for two features:
+This document describes the design and code changes for two related areas:
 
 1. **`azd ai connection`** — A new first-party extension (`azure.ai.connection`) providing direct commands for connection CRUD, metadata management, and credential key management against the Foundry platform.
-2. **`azd ai agent run` secrets** — Enhancements to the existing `azure.ai.agents` extension to inject secrets into locally running agents.
+2. **`azd ai agent run` credential reference resolution** — Enhancements to the existing `azure.ai.agents` extension so `${{connections...}}` references in agent manifests resolve to connection-backed secrets at local run time.
 
 ### 1.1 Goals
 
@@ -29,6 +29,7 @@ From the spec's success criteria (lines 25–28):
 - `azd ai project set/unset`, `azd ai show` (project context — separate work item)
 - `azd ai agent optimize` (tracked in optimization spec)
 - Config-driven orchestration / `azd up` for connections (targets Ignite)
+- Agent run `--secret`, `--secret-from-env`, `--secret-from-keyvault` flags (connections are the recommended secret store; use `${{connections...}}` references instead)
 - Changing auth type after creation (delete-and-recreate per spec line 321)
 
 ---
@@ -119,9 +120,9 @@ CustomKeys:
 }
 ```
 
-### 2.3 Agent Run Secrets (existing extension)
+### 2.3 Agent Run Credential References (existing extension)
 
-Pure local operation — no API calls. Secrets are injected as environment variables into the `exec.Command` process that `azd ai agent run` already spawns (see `run.go:148-175`).
+The `azd ai agent run` enhancement in this spec resolves `${{connections.<name>.credentials.<key>}}` references found in the agent manifest's `environment_variables` section. Resolution uses the Foundry data plane (`getConnectionWithCredentials`) to fetch the secret value, then injects the resolved value as an environment variable into the spawned `exec.Command` process.
 
 ---
 
@@ -166,6 +167,8 @@ azd ai connection key set <connection-name> <key=value>
 azd ai connection key remove <connection-name> <key>
 azd ai connection key list <connection-name>
 ```
+
+Note: The ARM API does not support server-side filtering by kind. Filtering is applied client-side after fetching all connections. This may need API confirmation.
 
 #### 3.1.1 `--from-file` Mutual Exclusivity
 
@@ -217,20 +220,6 @@ var validAuthTypes = []string{"api-key", "custom-keys", "none"}
 Casing convention (spec Terminology, line 124): lowercase single-word, kebab-case multi-word.
 
 Implementation: validate against known set, **warn** (not error) for unknown values to allow forward compatibility until the enum is finalized.
-
-### 3.2 Agent Run Secret Flags
-
-Added to the existing `azd ai agent run` command:
-
-```
-azd ai agent run [name]
-    --secret KEY=VALUE                          # Literal secret (repeatable)
-    --secret-from-env KEY                       # Read from host env (repeatable)
-    --secret-from-keyvault KEY=<vault-url>      # Fetch from Key Vault (repeatable)
-    # ... existing flags (--port, --start-command) unchanged
-```
-
-All three are **repeatable** — can be specified multiple times. Resolved secrets are injected as environment variables into the spawned agent process.
 
 ### 3.3 Credential Reference Strings in `list` and `show` Output
 
@@ -388,6 +377,8 @@ Per the spec (AZD Environment Scoping, lines 289–294), the resolution cascade 
 5. Structured error                          ← "No Foundry project endpoint resolved. Run azd ai project set..."
 ```
 
+**Note on divergence from existing pattern**: The existing `resolveAgentEndpoint` in `azure.ai.agents` uses a 2-level fallback (explicit flags then azd env). This 5-level cascade is intentionally broader to support standalone usability — running connection commands outside an azd project directory, which is a core requirement of the spec (line 95: 'Standalone usability for project-scoped resource commands').
+
 The `-p`/`--project-endpoint` flag is registered as a **persistent flag** on the extension root command so every subcommand inherits it.
 
 Steps 2 and 3 use the `azdext` gRPC client to communicate with the azd host:
@@ -422,6 +413,8 @@ GET {endpoint}/connections?api-version=2025-11-15-preview
 Parse the ARM path → extract `subscriptionId` and `resourceGroup` → use for ARM SDK calls.
 
 **Edge case — empty project (zero connections)**: Unlikely in practice (new Foundry projects always have default connections), but if it occurs, the extension can fall back to prompting for subscription/rg or using a project metadata API.
+
+**Performance optimization**: To avoid the bootstrap `ListConnections` call on every invocation, the discovered ARM context (subscription, resource group) should be cached in azd global config keyed by the project endpoint URL hash. The agents extension already uses this pattern in `config_store.go` for per-endpoint state. On subsequent calls with the same endpoint, the cached ARM context is used directly, falling back to a fresh discovery call only if the cache miss occurs or the cached data fails validation.
 
 ### 4.3 Implementation
 
@@ -803,17 +796,12 @@ Use --force to replace an existing connection with the same name.`,
                 return err
             }
 
-            endpoint, err := resolveProjectEndpoint(ctx, cmd)
+            ctx := azdext.WithAccessToken(cmd.Context())
+
+            connCtx, err := resolveConnectionContext(ctx, cmd)
             if err != nil {
                 return err
             }
-
-            cred, err := newCredential()
-            if err != nil {
-                return err
-            }
-
-            client := connections.NewARMClient(endpoint, cred)
 
             var req *connections.CreateRequest
             if flags.fromFile != "" {
@@ -834,8 +822,7 @@ Use --force to replace an existing connection with the same name.`,
                 }
             }
 
-            ctx := azdext.WithAccessToken(cmd.Context())
-            conn, err := client.Create(ctx, req, flags.force)
+            conn, err := connCtx.armClient.Create(ctx, req, flags.force)
             if err != nil {
                 return exterrors.ServiceFromAzure(err, OpCreateConnection)
             }
@@ -856,7 +843,7 @@ Use --force to replace an existing connection with the same name.`,
     azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
         Name:          "output",
         AllowedValues: []string{"json", "table"},
-        Default:       "json",
+        Default:       "table",
     })
 
     return cmd
@@ -888,20 +875,14 @@ Does not accept --from-file or --auth-type (delete and recreate to change auth t
                 )
             }
 
-            endpoint, err := resolveProjectEndpoint(cmd)
-            if err != nil {
-                return err
-            }
-
-            cred, err := newCredential()
-            if err != nil {
-                return err
-            }
-
-            client := connections.NewARMClient(endpoint, cred)
             ctx := azdext.WithAccessToken(cmd.Context())
 
-            conn, err := client.Update(ctx, name, &connections.UpdateRequest{
+            connCtx, err := resolveConnectionContext(ctx, cmd)
+            if err != nil {
+                return err
+            }
+
+            conn, err := connCtx.armClient.Update(ctx, name, &connections.UpdateRequest{
                 Target: target,
                 Key:    key,
             })
@@ -919,7 +900,7 @@ Does not accept --from-file or --auth-type (delete and recreate to change auth t
     azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
         Name:          "output",
         AllowedValues: []string{"json", "table"},
-        Default:       "json",
+        Default:       "table",
     })
 
     return cmd
@@ -1015,29 +996,22 @@ values from the data plane (requires appropriate permissions).`,
         RunE: func(cmd *cobra.Command, args []string) error {
             name := args[0]
 
-            endpoint, err := resolveProjectEndpoint(cmd)
-            if err != nil {
-                return err
-            }
-
-            cred, err := newCredential()
-            if err != nil {
-                return err
-            }
-
             ctx := azdext.WithAccessToken(cmd.Context())
 
+            connCtx, err := resolveConnectionContext(ctx, cmd)
+            if err != nil {
+                return err
+            }
+
             // Always fetch metadata via ARM
-            armClient := connections.NewARMClient(endpoint, cred)
-            conn, err := armClient.Get(ctx, name)
+            conn, err := connCtx.armClient.Get(ctx, name)
             if err != nil {
                 return exterrors.ServiceFromAzure(err, OpGetConnection)
             }
 
             // Optionally fetch credentials via data plane
             if showCredentials {
-                dataClient := connections.NewDataClient(endpoint, cred)
-                creds, err := dataClient.GetCredentials(ctx, name)
+                creds, err := connCtx.dpClient.GetCredentials(ctx, name)
                 if err != nil {
                     return exterrors.ServiceFromAzure(err, OpGetConnectionCredentials)
                 }
@@ -1054,7 +1028,7 @@ values from the data plane (requires appropriate permissions).`,
     azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
         Name:          "output",
         AllowedValues: []string{"json", "table"},
-        Default:       "json",
+        Default:       "table",
     })
 
     return cmd
@@ -1070,20 +1044,14 @@ func newConnectionListCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
         Short: "List connections.",
         Args:  cobra.NoArgs,
         RunE: func(cmd *cobra.Command, args []string) error {
-            endpoint, err := resolveProjectEndpoint(cmd)
-            if err != nil {
-                return err
-            }
-
-            cred, err := newCredential()
-            if err != nil {
-                return err
-            }
-
-            client := connections.NewARMClient(endpoint, cred)
             ctx := azdext.WithAccessToken(cmd.Context())
 
-            conns, err := client.List(ctx, &connections.ListOptions{Kind: kind})
+            connCtx, err := resolveConnectionContext(ctx, cmd)
+            if err != nil {
+                return err
+            }
+
+            conns, err := connCtx.armClient.List(ctx, &connections.ListOptions{Kind: kind})
             if err != nil {
                 return exterrors.ServiceFromAzure(err, OpListConnections)
             }
@@ -1097,7 +1065,7 @@ func newConnectionListCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
     azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
         Name:          "output",
         AllowedValues: []string{"json", "table"},
-        Default:       "json",
+        Default:       "table",
     })
 
     return cmd
@@ -1422,169 +1390,6 @@ const (
 
 ---
 
-## 6. Code Changes — Agent Run Secrets (`azure.ai.agents`)
-
-### 6.1 Modified: `internal/cmd/run.go`
-
-Add three new flags to the existing `runFlags` struct and inject them into the spawned process environment:
-
-```go
-// Additions to runFlags struct
-type runFlags struct {
-    port              int
-    name              string
-    startCommand      string
-    secrets           []string  // NEW: --secret KEY=VALUE (repeatable)
-    secretsFromEnv    []string  // NEW: --secret-from-env KEY (repeatable)
-    secretsFromKV     []string  // NEW: --secret-from-keyvault KEY=<vault-url> (repeatable)
-}
-
-// Additions to newRunCommand flag registration
-cmd.Flags().StringArrayVar(&flags.secrets, "secret", nil,
-    "Inject secret as KEY=VALUE into agent env (repeatable)")
-cmd.Flags().StringArrayVar(&flags.secretsFromEnv, "secret-from-env", nil,
-    "Read KEY from host env and inject into agent env (repeatable)")
-cmd.Flags().StringArrayVar(&flags.secretsFromKV, "secret-from-keyvault", nil,
-    "Fetch KEY=<vault-url>/secrets/<name> from Key Vault and inject (repeatable)")
-```
-
-In `runRun()`, after `env = appendFoundryEnvVars(...)` (line 160), add secret resolution:
-
-```go
-    // Resolve and inject secrets into the agent process environment
-    secretEnv, err := resolveSecrets(ctx, flags.secrets, flags.secretsFromEnv, flags.secretsFromKV)
-    if err != nil {
-        return fmt.Errorf("failed to resolve secrets: %w", err)
-    }
-    env = append(env, secretEnv...)
-```
-
-### 6.2 New: `internal/cmd/secrets.go`
-
-```go
-// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT License.
-
-package cmd
-
-import (
-    "context"
-    "fmt"
-    "os"
-    "strings"
-
-    "github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-    "github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets"
-)
-
-// resolveSecrets resolves all secret sources into KEY=VALUE environment variable strings.
-func resolveSecrets(
-    ctx context.Context,
-    literals []string,      // --secret KEY=VALUE
-    fromEnv []string,       // --secret-from-env KEY
-    fromKV []string,        // --secret-from-keyvault KEY=<vault-url>/secrets/<name>
-) ([]string, error) {
-    var result []string
-
-    // 1. Literal secrets
-    for _, s := range literals {
-        if !strings.Contains(s, "=") {
-            return nil, fmt.Errorf("invalid --secret format %q: expected KEY=VALUE", s)
-        }
-        result = append(result, s)
-    }
-
-    // 2. Secrets from host environment
-    for _, key := range fromEnv {
-        value, ok := os.LookupEnv(key)
-        if !ok {
-            return nil, fmt.Errorf("--secret-from-env: environment variable %q not set", key)
-        }
-        result = append(result, fmt.Sprintf("%s=%s", key, value))
-    }
-
-    // 3. Secrets from Key Vault
-    if len(fromKV) > 0 {
-        cred, err := azidentity.NewAzureDeveloperCLICredential(
-            &azidentity.AzureDeveloperCLICredentialOptions{},
-        )
-        if err != nil {
-            return nil, fmt.Errorf("failed to create credential for Key Vault: %w", err)
-        }
-
-        for _, spec := range fromKV {
-            key, vaultRef, ok := strings.Cut(spec, "=")
-            if !ok {
-                return nil, fmt.Errorf(
-                    "invalid --secret-from-keyvault format %q: expected KEY=<vault-url>/secrets/<name>",
-                    spec,
-                )
-            }
-
-            value, err := fetchKeyVaultSecret(ctx, cred, vaultRef)
-            if err != nil {
-                return nil, fmt.Errorf("--secret-from-keyvault %s: %w", key, err)
-            }
-
-            result = append(result, fmt.Sprintf("%s=%s", key, value))
-        }
-    }
-
-    return result, nil
-}
-
-// fetchKeyVaultSecret fetches a secret value from Azure Key Vault.
-// vaultRef is a full URL like "https://myvault.vault.azure.net/secrets/mysecret".
-func fetchKeyVaultSecret(ctx context.Context, cred *azidentity.AzureDeveloperCLICredential, vaultRef string) (string, error) {
-    // Parse vault URL and secret name from the reference
-    // Expected format: https://<vault>.vault.azure.net/secrets/<name>
-    vaultURL, secretName, err := parseVaultReference(vaultRef)
-    if err != nil {
-        return "", err
-    }
-
-    client, err := azsecrets.NewClient(vaultURL, cred, nil)
-    if err != nil {
-        return "", fmt.Errorf("failed to create Key Vault client: %w", err)
-    }
-
-    resp, err := client.GetSecret(ctx, secretName, "", nil)
-    if err != nil {
-        return "", fmt.Errorf("failed to get secret %q: %w", secretName, err)
-    }
-
-    if resp.Value == nil {
-        return "", fmt.Errorf("secret %q has no value", secretName)
-    }
-
-    return *resp.Value, nil
-}
-
-// parseVaultReference splits "https://myvault.vault.azure.net/secrets/mysecret"
-// into vault URL and secret name.
-func parseVaultReference(ref string) (vaultURL, secretName string, err error) {
-    // Find "/secrets/" in the URL
-    idx := strings.Index(ref, "/secrets/")
-    if idx == -1 {
-        return "", "", fmt.Errorf(
-            "invalid vault reference %q: expected format https://<vault>.vault.azure.net/secrets/<name>",
-            ref,
-        )
-    }
-
-    vaultURL = ref[:idx]
-    secretName = ref[idx+len("/secrets/"):]
-
-    if secretName == "" {
-        return "", "", fmt.Errorf("invalid vault reference %q: secret name is empty", ref)
-    }
-
-    return vaultURL, secretName, nil
-}
-```
-
----
-
 ## 7. Error Handling
 
 Following the `azure.ai.agents` extension pattern (see `AGENTS.md`):
@@ -1615,7 +1420,7 @@ Following the existing pattern from `azure.ai.agents/internal/cmd/show.go:117-12
 azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
     Name:          "output",
     AllowedValues: []string{"json", "table"},
-    Default:       "json",
+    Default:       "table",
 })
 ```
 
@@ -1632,17 +1437,23 @@ After the extension is built and published, add to `cli/azd/extensions/registry.
 
 ```json
 {
-  "azure.ai.connection": {
-    "displayName": "Foundry connections (Preview)",
-    "namespace": "ai.connection",
-    "description": "Manage Foundry project connections from your terminal.",
-    "versions": {
-      "0.1.0-preview": {
-        "requiredAzdVersion": ">1.23.13",
-        ...
-      }
+  "schemaVersion": "1.0",
+  "extensions": [
+    {
+      "id": "azure.ai.connection",
+      "namespace": "ai.connection",
+      "displayName": "Foundry connections (Preview)",
+      "description": "Manage Foundry project connections from your terminal.",
+      "versions": [
+        {
+          "version": "0.1.0-preview",
+          "requiredAzdVersion": ">1.23.13",
+          "capabilities": ["custom-commands", "metadata"],
+          "usage": "azd ai connection <command> [options]"
+        }
+      ]
     }
-  }
+  ]
 }
 ```
 
@@ -1660,5 +1471,4 @@ The actual entry is generated by `azd x publish` against published release artif
 | 4 | Final auth-type enum | Open Q #2 | No — committed set known |
 | 5 | `--from-file` schema version pinning | Open Q #6 | No — accept any initially |
 | 6 | Telemetry for coding agents | Open Q #7 | No — follow existing pattern |
-| 7 | Key Vault SDK dependency for `--secret-from-keyvault` | Dependencies line 338 | May need 2-PR approach |
-| 8 | Resolution order contradiction (Terminology vs AZD Env Scoping) | Lines 127 vs 289 | Flag to spec authors |
+| 7 | Resolution order contradiction (Terminology vs AZD Env Scoping) | Lines 127 vs 289 | Flag to spec authors |

@@ -65,29 +65,6 @@ type State struct {
 	// (and non-empty) in the active azd environment.
 	HasProjectEndpoint bool
 
-	// NeedsAIProjectProvision is true when `azd ai agent init` recorded
-	// `USE_EXISTING_AI_PROJECT=false` — i.e., the user selected
-	// "Deploy new model(s)" rather than picking an existing Foundry
-	// project. In that mode the Foundry project does not yet exist and
-	// `azd provision` is required before `azd ai agent run` or
-	// `azd deploy` can succeed. The flag exists alongside
-	// HasProjectEndpoint because a stale AZURE_AI_PROJECT_ENDPOINT
-	// from a prior init or a sibling environment can otherwise satisfy
-	// the existing "endpoint set ⇒ provisioned" check and mislead the
-	// post-init trailer into recommending `azd ai agent run`. Treat
-	// this flag as an OR-contributor to "needs provision" in
-	// resolvers: when true, suggest `azd provision` even if the
-	// endpoint check independently passes. The flag is false when the
-	// variable is unset (no prior init) or "true" (existing path) so
-	// the existing heuristic continues to drive those cases.
-	//
-	// NOTE: Slated for removal in a follow-up commit (commit C) once
-	// init.go is migrated to call addPendingProvisionReason("project")
-	// directly. The replacement signal is PendingProvisionReasons
-	// below; both fields are read by the resolver in the interim so
-	// the migration can land in small, independently reviewable steps.
-	NeedsAIProjectProvision bool
-
 	// PendingProvisionReasons lists the resource-class tags that
 	// `azd ai agent init` configured but Azure has not yet
 	// materialized. Init code paths append a tag — e.g.

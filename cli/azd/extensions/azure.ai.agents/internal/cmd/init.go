@@ -1200,6 +1200,11 @@ func (a *InitAction) configureModelChoice(
 			); err != nil {
 				return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
 			}
+			if err := updatePendingProjectSignal(
+				ctx, a.azdClient, a.environment.Name, true,
+			); err != nil {
+				log.Printf("warning: failed to update project provision signal: %v", err)
+			}
 		} else {
 			// Prompt user to pick an existing Foundry project or create new resources
 			projectChoices := []*azdext.SelectChoice{
@@ -1252,6 +1257,11 @@ func (a *InitAction) configureModelChoice(
 					); err != nil {
 						return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
 					}
+					if err := updatePendingProjectSignal(
+						ctx, a.azdClient, a.environment.Name, false,
+					); err != nil {
+						log.Printf("warning: failed to update project provision signal: %v", err)
+					}
 					if err := ensureLocation(ctx, a.azdClient, a.azureContext, a.environment.Name); err != nil {
 						return nil, err
 					}
@@ -1261,6 +1271,11 @@ func (a *InitAction) configureModelChoice(
 						ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "true",
 					); err != nil {
 						return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
+					}
+					if err := updatePendingProjectSignal(
+						ctx, a.azdClient, a.environment.Name, true,
+					); err != nil {
+						log.Printf("warning: failed to update project provision signal: %v", err)
 					}
 				}
 			default:
@@ -1278,6 +1293,11 @@ func (a *InitAction) configureModelChoice(
 					ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false",
 				); err != nil {
 					return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
+				}
+				if err := updatePendingProjectSignal(
+					ctx, a.azdClient, a.environment.Name, false,
+				); err != nil {
+					log.Printf("warning: failed to update project provision signal: %v", err)
 				}
 			}
 		}
@@ -1311,6 +1331,11 @@ func (a *InitAction) configureModelChoice(
 				ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "true",
 			); err != nil {
 				return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
+			}
+			if err := updatePendingProjectSignal(
+				ctx, a.azdClient, a.environment.Name, true,
+			); err != nil {
+				log.Printf("warning: failed to update project provision signal: %v", err)
 			}
 		} else {
 			return nil, fmt.Errorf("specified foundry project was not found or is not eligible for the current configuration: %s", a.flags.projectResourceId)
@@ -1392,6 +1417,14 @@ func (a *InitAction) configureModelChoice(
 				ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false",
 			); err != nil {
 				return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
+			}
+			if err := updatePendingProjectSignal(
+				ctx, a.azdClient, a.environment.Name, false,
+			); err != nil {
+				log.Printf("warning: failed to update project provision signal: %v", err)
+			}
+			if err := ensureLocation(ctx, a.azdClient, a.azureContext, a.environment.Name); err != nil {
+				return nil, err
 			}
 		}
 	}

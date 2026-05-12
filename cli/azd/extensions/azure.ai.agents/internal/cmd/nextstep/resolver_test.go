@@ -64,29 +64,28 @@ func TestResolveAfterInit(t *testing.T) {
 			// project does not exist yet, but a stale
 			// AZURE_AI_PROJECT_ENDPOINT carried over from a prior init
 			// or sibling environment sets HasProjectEndpoint=true.
-			// Without the explicit NeedsAIProjectProvision signal the
-			// resolver would default to `azd ai agent run` and
+			// Without the explicit "project" pending-provision tag
+			// the resolver would default to `azd ai agent run` and
 			// mislead the user into running a local invoke against a
 			// project that has not been provisioned.
 			name: "deploy-new chosen but stale endpoint → provision (override)",
 			state: &State{
 				HasProjectEndpoint:      true,
-				NeedsAIProjectProvision: true,
+				PendingProvisionReasons: []string{"project"},
 			},
 			wantPrimaryHas: "azd provision",
 			wantTrailing:   "azd deploy",
 		},
 		{
 			// Existing-project init path. USE_EXISTING_AI_PROJECT=true
-			// leaves NeedsAIProjectProvision=false at state assembly,
-			// so the legacy heuristic continues to drive: endpoint
-			// set + no missing vars ⇒ `azd ai agent run`. This case
-			// locks the no-regression contract for the existing
-			// path.
+			// in the env var leaves PendingProvisionReasons empty at
+			// state assembly, so the legacy heuristic continues to
+			// drive: endpoint set + no missing vars ⇒ `azd ai agent
+			// run`. This case locks the no-regression contract for
+			// the existing path.
 			name: "existing project chosen, all vars set → run locally (no override)",
 			state: &State{
-				HasProjectEndpoint:      true,
-				NeedsAIProjectProvision: false,
+				HasProjectEndpoint: true,
 			},
 			wantPrimaryHas: "azd ai agent run",
 			wantTrailing:   "azd deploy",
@@ -94,14 +93,12 @@ func TestResolveAfterInit(t *testing.T) {
 		{
 			// Init configured a new model deployment in an existing
 			// Foundry project: HasProjectEndpoint=true (existing
-			// project), NeedsAIProjectProvision=false (existing
 			// project), but PendingProvisionReasons contains
 			// "model_deployment". The resolver must still suggest
 			// `azd provision` so Bicep creates the new deployment.
 			name: "new model deployment in existing project → provision (PendingProvisionReasons override)",
 			state: &State{
 				HasProjectEndpoint:      true,
-				NeedsAIProjectProvision: false,
 				PendingProvisionReasons: []string{"model_deployment"},
 			},
 			wantPrimaryHas: "azd provision",

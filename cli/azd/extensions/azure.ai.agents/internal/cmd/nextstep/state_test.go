@@ -571,6 +571,52 @@ environment_variables:
 			wantRefs:         []string{"TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT"},
 			wantPlaceholders: []string{"TOOLBOX_ENDPOINT"},
 		},
+		{
+			// Manifest parameter names are not constrained to env-var
+			// identifier shape — parameters.go:injectParameterValues
+			// substitutes the raw YAML key without validating it.
+			// A surviving `{{toolbox-endpoint}}` (hyphen) must therefore
+			// still be flagged or the user gets no Next: hint.
+			name: "mustache placeholder with hyphen in name",
+			manifest: `kind: hostedAgent
+environment_variables:
+  - name: TOOLBOX_ENDPOINT
+    value: '{{toolbox-endpoint}}'
+`,
+			wantPlaceholders: []string{"toolbox-endpoint"},
+		},
+		{
+			name: "mustache placeholder with dot in name",
+			manifest: `kind: hostedAgent
+environment_variables:
+  - name: COMPONENT
+    value: '{{my.component.id}}'
+`,
+			wantPlaceholders: []string{"my.component.id"},
+		},
+		{
+			// Empty placeholder body must not be flagged — it cannot
+			// correspond to a manifest parameter and is more likely
+			// stray literal text.
+			name: "empty mustache braces are ignored",
+			manifest: `kind: hostedAgent
+environment_variables:
+  - name: NOISE
+    value: 'preamble {{}} suffix'
+`,
+			wantPlaceholders: nil,
+		},
+		{
+			// Whitespace-only placeholder body is similarly garbage —
+			// must not be flagged.
+			name: "whitespace-only mustache braces are ignored",
+			manifest: `kind: hostedAgent
+environment_variables:
+  - name: NOISE
+    value: 'preamble {{   }} suffix'
+`,
+			wantPlaceholders: nil,
+		},
 	}
 
 	for _, tt := range tests {

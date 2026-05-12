@@ -144,6 +144,116 @@ func TestPrintNext_EmptyInputSkipsWrite(t *testing.T) {
 	require.NoError(t, PrintNext(failingWriter{}, nil))
 }
 
+func TestPrintAllNext(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		suggestions []Suggestion
+		want        string
+	}{
+		{
+			name:        "empty input produces no output",
+			suggestions: nil,
+			want:        "",
+		},
+		{
+			name: "single suggestion renders identically to PrintNext",
+			suggestions: []Suggestion{
+				{Command: "azd provision", Description: "set up Foundry"},
+			},
+			want: "\nNext:  azd provision  -- set up Foundry\n",
+		},
+		{
+			name: "G1 regression repro: placeholder + manual var + trailing deploy all render (no cap)",
+			// This is the toolbox-sample state that motivated commit 2194327e8.
+			// PrintNext (capped at 2 with trailing reservation) would render
+			// only [placeholder, deploy] and drop the env-set line, leaving
+			// the user thinking they only need to fix the placeholder before
+			// deploying. PrintAllNext must surface all three.
+			suggestions: []Suggestion{
+				{
+					Command:     "edit agent.yaml: replace {{TOOLBOX_ENDPOINT}} with the actual value",
+					Description: "agent.yaml has unresolved manifest placeholders",
+					Priority:    5,
+				},
+				{
+					Command:     "azd env set TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT <value>",
+					Description: "supply the agent.yaml variable",
+					Priority:    6,
+				},
+				{
+					Command:     "azd deploy",
+					Description: "when ready to deploy to Azure",
+					Priority:    90,
+					Trailing:    true,
+				},
+			},
+			want: "\n" +
+				"Next:  edit agent.yaml: replace {{TOOLBOX_ENDPOINT}} with the actual value  -- agent.yaml has unresolved manifest placeholders\n" +
+				"       azd env set TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT <value>            -- supply the agent.yaml variable\n" +
+				"       azd deploy                                                           -- when ready to deploy to Azure\n",
+		},
+		{
+			name: "renders well beyond maxRendered (3 placeholders + 3 manual vars + trailing = 7 lines)",
+			// Worst-case shape from ResolveAfterInit when both
+			// maxFixupLines caps are saturated.
+			suggestions: []Suggestion{
+				{Command: "edit agent.yaml: replace {{A}} with the actual value", Description: "p1", Priority: 5},
+				{Command: "edit agent.yaml: replace {{B}} with the actual value", Description: "p1", Priority: 6},
+				{Command: "edit agent.yaml: replace {{C}} with the actual value", Description: "p1", Priority: 7},
+				{Command: "azd env set FOO <value>", Description: "p2", Priority: 8},
+				{Command: "azd env set BAR <value>", Description: "p2", Priority: 9},
+				{Command: "azd env set BAZ <value>", Description: "p2", Priority: 10},
+				{Command: "azd deploy", Description: "p3", Priority: 90, Trailing: true},
+			},
+			want: "\n" +
+				"Next:  edit agent.yaml: replace {{A}} with the actual value  -- p1\n" +
+				"       edit agent.yaml: replace {{B}} with the actual value  -- p1\n" +
+				"       edit agent.yaml: replace {{C}} with the actual value  -- p1\n" +
+				"       azd env set FOO <value>                               -- p2\n" +
+				"       azd env set BAR <value>                               -- p2\n" +
+				"       azd env set BAZ <value>                               -- p2\n" +
+				"       azd deploy                                            -- p3\n",
+		},
+		{
+			name: "trailing entry still rendered last regardless of input order",
+			suggestions: []Suggestion{
+				{Command: "azd deploy", Description: "when ready", Priority: 90, Trailing: true},
+				{Command: "first", Description: "f", Priority: 5},
+				{Command: "second", Description: "s", Priority: 6},
+			},
+			want: "\n" +
+				"Next:  first       -- f\n" +
+				"       second      -- s\n" +
+				"       azd deploy  -- when ready\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var buf bytes.Buffer
+			require.NoError(t, PrintAllNext(&buf, tt.suggestions))
+			assert.Equal(t, tt.want, buf.String())
+		})
+	}
+}
+
+func TestPrintAllNext_PropagatesWriteError(t *testing.T) {
+	t.Parallel()
+
+	err := PrintAllNext(failingWriter{}, []Suggestion{{Command: "x", Description: "y"}})
+	require.ErrorIs(t, err, io.ErrUnexpectedEOF)
+}
+
+func TestPrintAllNext_EmptyInputSkipsWrite(t *testing.T) {
+	t.Parallel()
+
+	require.NoError(t, PrintAllNext(failingWriter{}, nil))
+}
+
 func TestFormatNextForNote(t *testing.T) {
 	t.Parallel()
 

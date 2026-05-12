@@ -62,10 +62,18 @@ var envVarRefPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)(:-[^}]*)
 // environment_variables values are deploy-time landmines: the value will
 // land in the container literally as `{{NAME}}`, breaking the agent.
 //
-// Allows optional internal whitespace (`{{ NAME }}`) because parameters.go
-// substitutes both forms. Names follow the same convention as env vars
-// (leading letter or underscore, then alphanumeric or underscore).
-var placeholderPattern = regexp.MustCompile(`\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}`)
+// The capture group accepts any run of non-brace characters (allowing
+// internal whitespace as long as the name starts with a non-whitespace,
+// non-brace char) because parameters.go substitutes the raw manifest
+// parameter key without validating its shape (`strings.ReplaceAll` of
+// `{{<paramName>}}` and `{{ <paramName> }}`). A legitimate manifest
+// parameter named `toolbox-endpoint` (hyphen), `my.param` (dot), or
+// even `"my key"` (quoted YAML key with whitespace) would otherwise
+// slip past detection. Allows optional surrounding whitespace inside
+// the braces — matches both `{{NAME}}` and `{{ NAME }}` (the two
+// forms parameters.go knows how to substitute) plus more liberal
+// spacing for forgiving detection.
+var placeholderPattern = regexp.MustCompile(`\{\{\s*([^\s{}][^{}]*?)\s*\}\}`)
 
 // Source is the read-only view of azd that AssembleState needs.
 //

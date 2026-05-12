@@ -31,8 +31,34 @@ const (
 // PrintNext does not inspect TTY state or output-format flags — those
 // decisions live at the call site so the same renderer can serve both
 // interactive stdout writes and string capture for tests / JSON envelopes.
+//
+// Use PrintAllNext when the resolver produces multiple REQUIRED follow-up
+// actions (init / doctor fix-ups) where silently dropping any of them
+// would mislead the user.
 func PrintNext(w io.Writer, suggestions []Suggestion) error {
-	block := renderBlock(suggestions)
+	block := renderBlock(suggestions, maxRendered)
+	if block == "" {
+		return nil
+	}
+	_, err := io.WriteString(w, block)
+	return err
+}
+
+// PrintAllNext writes a "Next:" guidance block to w like PrintNext but
+// renders every suggestion (no two-line cap). Use this for flows where
+// the suggestions are all REQUIRED follow-up actions rather than
+// alternatives — the post-init flow can surface unresolved manifest
+// placeholders, missing `azd env set` keys, AND the trailing
+// `azd deploy` reminder simultaneously, and the user has to act on each
+// one. Dropping any of them silently leaves the user thinking they are
+// ready to deploy when they are not.
+//
+// Suggestions are still stable-sorted by Priority (ties preserve input
+// order), the Trailing entry is still rendered last, and framing
+// (leading blank line + trailing newline) matches PrintNext. Empty
+// input is a no-op.
+func PrintAllNext(w io.Writer, suggestions []Suggestion) error {
+	block := renderBlock(suggestions, 0)
 	if block == "" {
 		return nil
 	}
@@ -65,9 +91,11 @@ func FormatNextForNote(suggestions []Suggestion) string {
 
 // renderBlock returns the formatted "Next:" block (with a leading blank
 // line and trailing newline) or an empty string when there is nothing to
-// render. The block is capped at maxRendered visible lines.
-func renderBlock(suggestions []Suggestion) string {
-	body := renderRows(suggestions, maxRendered)
+// render. limit is forwarded to renderRows: a positive value caps the
+// block at that many visible lines (PrintNext default), while limit <= 0
+// renders every suggestion (PrintAllNext).
+func renderBlock(suggestions []Suggestion, limit int) string {
+	body := renderRows(suggestions, limit)
 	if body == "" {
 		return ""
 	}

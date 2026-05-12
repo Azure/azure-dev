@@ -118,6 +118,7 @@ func filterByTenantEnvVar(subscriptions []account.Subscription) []account.Subscr
 	// If filtering produces no results, fall back to showing all subscriptions
 	// rather than erroring out — the tenant ID may be stale
 	if len(filtered) == 0 {
+		log.Printf("AZURE_TENANT_ID=%s did not match any subscription tenants, showing all subscriptions", tenantId)
 		return subscriptions
 	}
 

@@ -197,3 +197,44 @@ func mutatePendingProvisionReasons(
 	}
 	return next, nil
 }
+
+// updatePendingModelDeploymentSignal centralizes the decision rule
+// for the "model_deployment" tag in AI_AGENT_PENDING_PROVISION.
+// It is called from both ProcessModels (manifest-driven init path)
+// and init_from_code (code-discovery init path) so the signal
+// semantics stay in one place.
+//
+// Rules:
+//   - anyModelProcessed=false → no-op. A flow that did not configure
+//     any model resources should not touch the signal (other tags,
+//     other init runs, or doctor's manual env edits must be
+//     preserved).
+//   - anyModelProcessed=true, anyNew=true → add "model_deployment".
+//     At least one configured model needs Azure to provision a new
+//     deployment.
+//   - anyModelProcessed=true, anyNew=false → remove "model_deployment".
+//     Every configured model points at an existing Azure deployment,
+//     so any prior "needs provision" hint from a previous init is
+//     stale.
+//
+// Errors are surfaced for callers to log; this function does not log
+// directly so callers can adapt the message to their context (the
+// interactive init flows currently use `log.Printf` with a "warning:"
+// prefix). The signal is best-effort by design.
+func updatePendingModelDeploymentSignal(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	envName string,
+	anyModelProcessed bool,
+	anyNew bool,
+) error {
+	if !anyModelProcessed {
+		return nil
+	}
+	if anyNew {
+		_, err := addPendingProvisionReason(ctx, azdClient, envName, pendingReasonModelDeployment)
+		return err
+	}
+	_, err := removePendingProvisionReason(ctx, azdClient, envName, pendingReasonModelDeployment)
+	return err
+}

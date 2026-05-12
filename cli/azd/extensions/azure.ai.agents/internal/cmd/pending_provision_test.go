@@ -220,6 +220,102 @@ func TestClearPendingProvisionReasons(t *testing.T) {
 	require.Equal(t, "", envServer.values["test-env"][pendingProvisionEnvVar])
 }
 
+func TestUpdatePendingModelDeploymentSignal(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name              string
+		seed              string // initial AI_AGENT_PENDING_PROVISION value
+		anyModelProcessed bool
+		anyNew            bool
+		wantValue         string // expected post-call value; "" with wantUnset=true means key absent
+		wantUnset         bool
+	}{
+		{
+			name:              "no models processed: signal untouched (unset stays unset)",
+			anyModelProcessed: false,
+			anyNew:            false,
+			wantUnset:         true,
+		},
+		{
+			name:              "no models processed: signal untouched (existing value preserved)",
+			seed:              "project,acr",
+			anyModelProcessed: false,
+			anyNew:            false,
+			wantValue:         "project,acr",
+		},
+		{
+			name:              "any new deployment: tag added",
+			anyModelProcessed: true,
+			anyNew:            true,
+			wantValue:         "model_deployment",
+		},
+		{
+			name:              "any new + existing tags: tag added without disturbing others",
+			seed:              "project",
+			anyModelProcessed: true,
+			anyNew:            true,
+			wantValue:         "model_deployment,project",
+		},
+		{
+			name:              "any new + already-present tag: idempotent no rewrite",
+			seed:              "model_deployment",
+			anyModelProcessed: true,
+			anyNew:            true,
+			wantValue:         "model_deployment",
+		},
+		{
+			name:              "all existing models: tag removed (was present)",
+			seed:              "acr,model_deployment,project",
+			anyModelProcessed: true,
+			anyNew:            false,
+			wantValue:         "acr,project",
+		},
+		{
+			name:              "all existing models: tag-not-present is no-op",
+			seed:              "project",
+			anyModelProcessed: true,
+			anyNew:            false,
+			wantValue:         "project",
+		},
+		{
+			name:              "all existing models: empty start stays empty",
+			anyModelProcessed: true,
+			anyNew:            false,
+			wantUnset:         true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			envServer := &testEnvironmentServiceServer{
+				environments: map[string]*azdext.Environment{"test-env": {Name: "test-env"}},
+			}
+			if tc.seed != "" {
+				envServer.values = map[string]map[string]string{
+					"test-env": {pendingProvisionEnvVar: tc.seed},
+				}
+			}
+			azdClient := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+
+			err := updatePendingModelDeploymentSignal(
+				context.Background(), azdClient, "test-env",
+				tc.anyModelProcessed, tc.anyNew,
+			)
+			require.NoError(t, err)
+
+			if tc.wantUnset {
+				_, hit := envServer.values["test-env"][pendingProvisionEnvVar]
+				require.False(t, hit, "expected env var to remain unset")
+				return
+			}
+			require.Equal(t, tc.wantValue, envServer.values["test-env"][pendingProvisionEnvVar])
+		})
+	}
+}
+
 func TestPendingProvisionRoundTrip(t *testing.T) {
 	t.Parallel()
 

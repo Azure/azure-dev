@@ -1092,6 +1092,25 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 		}
 	}
 
+	// Patch agent-level fields (agent_endpoint, agent_card) if present.
+	// These are agent-level properties, not version-level, so they require
+	// a separate PatchAgent call after version creation.
+	if request.AgentEndpoint != nil || request.AgentCard != nil {
+		patchRequest := &agent_api.PatchAgentRequest{
+			AgentEndpoint: request.AgentEndpoint,
+			AgentCard:     request.AgentCard,
+		}
+
+		_, err := agentClient.PatchAgent(ctx, agentDef.Name, patchRequest, agentAPIVersion)
+		if err != nil {
+			fmt.Fprintf(os.Stderr,
+				"WARNING: Agent was created/updated, but patching agent endpoint/card failed: %s\n", err,
+			)
+			return nil, exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
+		}
+		fmt.Fprintf(os.Stderr, "Agent endpoint/card updated.\n")
+	}
+
 	// Register environment variables
 	progress("Registering agent environment variables")
 	protocols := agentDef.Protocols

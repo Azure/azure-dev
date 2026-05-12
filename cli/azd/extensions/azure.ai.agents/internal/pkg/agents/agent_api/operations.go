@@ -11,6 +11,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"net/url"
 	"strconv"
 	"time"
@@ -409,7 +410,10 @@ func (c *AgentClient) zipDeployRequest(
 		return nil, fmt.Errorf("failed to marshal metadata: %w", err)
 	}
 
-	metadataPart, err := writer.CreateFormField("metadata")
+	metadataPart, err := writer.CreatePart(textproto.MIMEHeader{
+		"Content-Disposition": {`form-data; name="metadata"`},
+		"Content-Type":        {"application/json"},
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create metadata part: %w", err)
 	}

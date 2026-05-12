@@ -156,10 +156,11 @@ func TestAssembleState(t *testing.T) {
 				assert.False(t, state.Services[0].IsDeployed)
 				assert.False(t, state.HasProjectEndpoint)
 				assert.False(t, state.NeedsAIProjectProvision)
+				assert.Empty(t, state.PendingProvisionReasons)
 			},
-			// One error for AZURE_AI_PROJECT_ENDPOINT + one for USE_EXISTING_AI_PROJECT
-			// + one per service lookup (AGENT_ECHO_VERSION) = 3.
-			errCount: 3,
+			// One error each for AZURE_AI_PROJECT_ENDPOINT, USE_EXISTING_AI_PROJECT,
+			// AI_AGENT_PENDING_PROVISION + one per service lookup (AGENT_ECHO_VERSION) = 4.
+			errCount: 4,
 		},
 		{
 			name: "USE_EXISTING_AI_PROJECT unset: NeedsAIProjectProvision stays false",
@@ -221,6 +222,59 @@ func TestAssembleState(t *testing.T) {
 				assert.True(t, state.HasProjectEndpoint)
 				// Only literal "false" enables the flag.
 				assert.False(t, state.NeedsAIProjectProvision)
+			},
+		},
+		{
+			name: "AI_AGENT_PENDING_PROVISION unset: PendingProvisionReasons stays empty",
+			src: &fakeSource{
+				envName: "dev",
+				project: &azdext.ProjectConfig{Name: "demo"},
+				values:  map[string]string{"dev/AZURE_AI_PROJECT_ENDPOINT": "https://x.services.ai.azure.com"},
+			},
+			assert: func(t *testing.T, state *State, _ []error) {
+				assert.Empty(t, state.PendingProvisionReasons)
+			},
+		},
+		{
+			name: "AI_AGENT_PENDING_PROVISION single tag: PendingProvisionReasons populated",
+			src: &fakeSource{
+				envName: "dev",
+				project: &azdext.ProjectConfig{Name: "demo"},
+				values: map[string]string{
+					"dev/AZURE_AI_PROJECT_ENDPOINT":  "https://x.services.ai.azure.com",
+					"dev/AI_AGENT_PENDING_PROVISION": "model_deployment",
+				},
+			},
+			assert: func(t *testing.T, state *State, _ []error) {
+				assert.Equal(t, []string{"model_deployment"}, state.PendingProvisionReasons)
+			},
+		},
+		{
+			name: "AI_AGENT_PENDING_PROVISION multiple tags: parsed sorted dedup",
+			src: &fakeSource{
+				envName: "dev",
+				project: &azdext.ProjectConfig{Name: "demo"},
+				values: map[string]string{
+					"dev/AZURE_AI_PROJECT_ENDPOINT":  "https://x.services.ai.azure.com",
+					"dev/AI_AGENT_PENDING_PROVISION": "project,acr,project,model_deployment",
+				},
+			},
+			assert: func(t *testing.T, state *State, _ []error) {
+				assert.Equal(t, []string{"acr", "model_deployment", "project"}, state.PendingProvisionReasons)
+			},
+		},
+		{
+			name: "AI_AGENT_PENDING_PROVISION malformed value: best-effort normalize",
+			src: &fakeSource{
+				envName: "dev",
+				project: &azdext.ProjectConfig{Name: "demo"},
+				values: map[string]string{
+					"dev/AZURE_AI_PROJECT_ENDPOINT":  "https://x.services.ai.azure.com",
+					"dev/AI_AGENT_PENDING_PROVISION": "  ,, project ,, acr , ",
+				},
+			},
+			assert: func(t *testing.T, state *State, _ []error) {
+				assert.Equal(t, []string{"acr", "project"}, state.PendingProvisionReasons)
 			},
 		},
 	}
@@ -899,8 +953,8 @@ environment_variables:
 
 	state, errs := assembleState(context.Background(), src)
 	// One error each for AZURE_AI_PROJECT_ENDPOINT + USE_EXISTING_AI_PROJECT
-	// + AGENT_ECHO_VERSION + MY_API_KEY.
-	assert.Len(t, errs, 4)
+	// + AI_AGENT_PENDING_PROVISION + AGENT_ECHO_VERSION + MY_API_KEY = 5.
+	assert.Len(t, errs, 5)
 	assert.Empty(t, state.MissingInfraVars)
 	assert.Empty(t, state.MissingManualVars)
 }

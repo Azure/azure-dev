@@ -80,7 +80,33 @@ type State struct {
 	// endpoint check independently passes. The flag is false when the
 	// variable is unset (no prior init) or "true" (existing path) so
 	// the existing heuristic continues to drive those cases.
+	//
+	// NOTE: Slated for removal in a follow-up commit (commit C) once
+	// init.go is migrated to call addPendingProvisionReason("project")
+	// directly. The replacement signal is PendingProvisionReasons
+	// below; both fields are read by the resolver in the interim so
+	// the migration can land in small, independently reviewable steps.
 	NeedsAIProjectProvision bool
+
+	// PendingProvisionReasons lists the resource-class tags that
+	// `azd ai agent init` configured but Azure has not yet
+	// materialized. Init code paths append a tag — e.g.
+	// "model_deployment" when a new model deployment is configured in
+	// an existing project, "project" when a new Foundry project is
+	// selected, "acr"/"app_insights" when the user leaves those
+	// inputs blank — and the postprovisionHandler clears the list on
+	// successful provision. The resolver fires `azd provision`
+	// whenever the list is non-empty; doctor can surface the specific
+	// reasons for richer diagnostics.
+	//
+	// The signal is stored in the AI_AGENT_PENDING_PROVISION env var
+	// (extension-owned namespace, not AZURE_*) as a comma-separated,
+	// sorted, deduplicated string. Unknown tags are tolerated by the
+	// resolver for forward-compatibility, so new init sites can
+	// introduce new tags without coordinating with this package. See
+	// pending_provision.go for the read/write helpers and the
+	// reason-tag taxonomy.
+	PendingProvisionReasons []string
 
 	// MissingInfraVars names ${...} references in agent.yaml that map to
 	// Bicep outputs not yet present in the azd environment (i.e.,

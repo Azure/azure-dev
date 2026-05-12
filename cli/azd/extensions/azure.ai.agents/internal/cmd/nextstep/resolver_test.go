@@ -91,6 +91,35 @@ func TestResolveAfterInit(t *testing.T) {
 			wantPrimaryHas: "azd ai agent run",
 			wantTrailing:   "azd deploy",
 		},
+		{
+			// Init configured a new model deployment in an existing
+			// Foundry project: HasProjectEndpoint=true (existing
+			// project), NeedsAIProjectProvision=false (existing
+			// project), but PendingProvisionReasons contains
+			// "model_deployment". The resolver must still suggest
+			// `azd provision` so Bicep creates the new deployment.
+			name: "new model deployment in existing project → provision (PendingProvisionReasons override)",
+			state: &State{
+				HasProjectEndpoint:      true,
+				NeedsAIProjectProvision: false,
+				PendingProvisionReasons: []string{"model_deployment"},
+			},
+			wantPrimaryHas: "azd provision",
+			wantTrailing:   "azd deploy",
+		},
+		{
+			// Multiple pending reasons collected during init —
+			// e.g. user left ACR blank and configured a new model.
+			// Still single `azd provision` suggestion (resolver
+			// treats the list as opaque non-emptiness).
+			name: "multiple pending reasons → single provision suggestion",
+			state: &State{
+				HasProjectEndpoint:      true,
+				PendingProvisionReasons: []string{"acr", "model_deployment"},
+			},
+			wantPrimaryHas: "azd provision",
+			wantTrailing:   "azd deploy",
+		},
 	}
 
 	for _, tt := range tests {

@@ -104,10 +104,12 @@ func postprovisionHandler(
 	azdClient *azdext.AzdClient,
 	args *azdext.ProjectEventArgs,
 ) error {
+	hasAgent := false
 	for _, svc := range args.Project.Services {
 		if svc.Host != AiAgentHost {
 			continue
 		}
+		hasAgent = true
 
 		if err := provisionToolboxes(ctx, azdClient, svc); err != nil {
 			return fmt.Errorf(
@@ -117,7 +119,62 @@ func postprovisionHandler(
 		}
 	}
 
+	// Clear the AI_AGENT_PENDING_PROVISION signal now that provision has
+	// finished successfully. Init writes resource-class tags into this
+	// variable when it configures non-existent infra (a new model
+	// deployment, a new Foundry project, a blank ACR/AppInsights input)
+	// so the post-init trailer and `azd ai agent doctor` can recommend
+	// `azd provision`. Once provision returns success the signal is
+	// stale: subsequent runs of doctor/init/run/show/deploy should rely
+	// on the canonical post-provision env vars (AZURE_AI_PROJECT_ENDPOINT
+	// and friends) and the agent.yaml-vs-env diff. The clear is gated on
+	// the presence of at least one azure.ai.agent service so toolbox-only
+	// or non-agent provisions don't write to a variable they don't own.
+	// Best-effort: a transport failure here is logged but not returned —
+	// the user's provision DID succeed and surfacing a clear-time error
+	// would be confusing. The next init/doctor run will simply re-emit
+	// the suggestion until the variable is cleared by a future
+	// successful provision (or by the user via `azd env set ... ""`).
+	if hasAgent {
+		envName, err := currentEnvName(ctx, azdClient)
+		switch {
+		case err != nil:
+			log.Printf(
+				"warning: failed to look up current environment to clear %s: %v",
+				pendingProvisionEnvVar, err,
+			)
+		case envName == "":
+			log.Printf(
+				"warning: no current environment selected; skipping clear of %s",
+				pendingProvisionEnvVar,
+			)
+		default:
+			if clearErr := clearPendingProvisionReasons(ctx, azdClient, envName); clearErr != nil {
+				log.Printf(
+					"warning: failed to clear %s after provision: %v",
+					pendingProvisionEnvVar, clearErr,
+				)
+			}
+		}
+	}
+
 	return nil
+}
+
+// currentEnvName returns the name of the currently selected azd
+// environment, or empty string + error when no environment is
+// selected. Wraps Environment().GetCurrent so callers (notably
+// postprovisionHandler) can read the current env name without
+// duplicating the request shape.
+func currentEnvName(ctx context.Context, azdClient *azdext.AzdClient) (string, error) {
+	resp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return "", err
+	}
+	if resp == nil || resp.Environment == nil {
+		return "", nil
+	}
+	return resp.Environment.Name, nil
 }
 
 func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {

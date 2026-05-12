@@ -46,6 +46,16 @@ const (
 	// USE_EXISTING_AI_PROJECT in CHANGELOG.md entry for PR #7843.
 	useExistingAIProjectVar = "USE_EXISTING_AI_PROJECT"
 
+	// pendingProvisionVar names the extension-owned env var that
+	// lists resource-class tags init configured but provision has
+	// not yet materialized. See State.PendingProvisionReasons for
+	// the full semantics and pending_provision.go in the cmd package
+	// for the read/write helpers and the reason-tag taxonomy. The
+	// constant is duplicated here (rather than imported from cmd)
+	// because nextstep is a leaf package with no dependency on cmd
+	// — both packages share the same string literal contract.
+	pendingProvisionVar = "AI_AGENT_PENDING_PROVISION"
+
 	// azureInfraPrefix tags an env-var name as an azd-infra output rather
 	// than a user-supplied manual variable. Outputs of `azd provision`
 	// in the AI Foundry templates uniformly start with this prefix
@@ -243,6 +253,23 @@ func assembleState(ctx context.Context, src Source, opts ...Option) (*State, []e
 			errs = append(errs, fmt.Errorf("read %s: %w", useExistingAIProjectVar, err))
 		}
 		state.NeedsAIProjectProvision = useExisting == "false"
+
+		// PendingProvisionReasons is the generalized "init configured
+		// something provision still has to materialize" signal that
+		// the model-deployment / ACR / App-Insights blank-input
+		// branches write into. Read here so the resolver and doctor
+		// share one snapshot. Unknown tags are kept verbatim — the
+		// resolver only checks for non-emptiness, and downstream
+		// readers may interpret tags they recognize. Transport
+		// errors are surfaced into errs but do not abort assembly;
+		// the field is best-effort and the resolver tolerates an
+		// empty list (it falls back to legacy heuristics in that
+		// case).
+		pending, err := src.EnvValue(ctx, envName, pendingProvisionVar)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("read %s: %w", pendingProvisionVar, err))
+		}
+		state.PendingProvisionReasons = parsePendingProvisionReasons(pending)
 	}
 
 	project, err := src.Project(ctx)
@@ -525,4 +552,34 @@ func serviceKey(name string) string {
 	k := strings.ReplaceAll(name, " ", "_")
 	k = strings.ReplaceAll(k, "-", "_")
 	return strings.ToUpper(k)
+}
+
+// parsePendingProvisionReasons splits the AI_AGENT_PENDING_PROVISION
+// env-var value into a sorted, deduplicated, whitespace-trimmed list of
+// reason tags. Empty input or input containing only separators returns
+// nil. Malformed input is best-effort normalized — the env var is a
+// hint signal and parse trouble should not abort state assembly. This
+// helper mirrors cmd.parsePendingProvisionReasons; the duplication is
+// intentional to keep nextstep a leaf package with no dependency on cmd.
+func parsePendingProvisionReasons(value string) []string {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	seen := make(map[string]struct{})
+	for _, raw := range strings.Split(value, ",") {
+		tag := strings.TrimSpace(raw)
+		if tag == "" {
+			continue
+		}
+		seen[tag] = struct{}{}
+	}
+	if len(seen) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(seen))
+	for tag := range seen {
+		out = append(out, tag)
+	}
+	slices.Sort(out)
+	return out
 }

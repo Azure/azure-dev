@@ -75,6 +75,16 @@ type State struct {
 	// variables which are not set in the azd environment.
 	MissingManualVars []string
 
+	// UnresolvedPlaceholders names {{NAME}} Mustache-style placeholders
+	// still present (literally) inside agent.yaml's environment_variables
+	// values. These are left over from init's manifest processing when
+	// agent.manifest.yaml declares a placeholder without a matching
+	// parameter (or the user skipped the prompt). Unlike Missing*Vars,
+	// these cannot be supplied via `azd env set` — the literal `{{X}}`
+	// would still be in agent.yaml at deploy time. The resolver surfaces
+	// a distinct "edit agent.yaml" suggestion for each.
+	UnresolvedPlaceholders []string
+
 	// Services is the per-service snapshot derived from azure.yaml plus
 	// the azd environment (for IsDeployed).
 	Services []ServiceState

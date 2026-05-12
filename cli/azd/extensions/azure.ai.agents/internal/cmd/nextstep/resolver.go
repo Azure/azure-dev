@@ -23,16 +23,23 @@ const (
 	invokeInvocationsPayload = `'{"message": "Hello!"}'`
 	invokeResponsesPayload   = `"Hello!"`
 
-	// maxManualVarLines caps the number of `azd env set` hints emitted by
-	// ResolveAfterInit so the block stays scannable even when an agent
-	// declares many manual variables.
-	maxManualVarLines = 3
+	// maxFixupLines caps the number of `azd env set` / `edit agent.yaml`
+	// hints emitted by ResolveAfterInit per missing-input category so the
+	// block stays scannable even when an agent declares many manual
+	// variables or unresolved placeholders.
+	maxFixupLines = 3
 )
 
 // ResolveAfterInit produces the Next: block printed at the end of a
 // successful `azd ai agent init`. Pure function over *State.
 //
 // Decision tree:
+//   - UnresolvedPlaceholders (always shown first when present, regardless
+//     of other branches) → one "edit agent.yaml: replace {{NAME}}" line
+//     per unresolved Mustache placeholder (up to maxFixupLines). These
+//     are deploy-time landmines: the literal `{{NAME}}` would otherwise
+//     land in the container. They never reach `azd env set` because the
+//     value lives in agent.yaml itself, not the azd environment.
 //   - !HasProjectEndpoint OR MissingInfraVars → `azd provision`
 //     The project endpoint is the canonical "provision finished"
 //     marker — it is set by `azd provision` as a Bicep output, or by
@@ -46,8 +53,10 @@ const (
 //     (a new ${AZURE_*} reference was added to agent.yaml after the
 //     last provision run).
 //   - MissingManualVars  → one `azd env set <KEY> <value>` per missing var
-//     (up to maxManualVarLines)
+//     (up to maxFixupLines)
 //   - Otherwise          → `azd ai agent run`
+//     Skipped when only UnresolvedPlaceholders are present, because
+//     running locally with literal `{{NAME}}` values is broken too.
 //
 // All paths append the static "When ready to deploy to Azure…" tail.
 func ResolveAfterInit(state *State) []Suggestion {
@@ -56,30 +65,56 @@ func ResolveAfterInit(state *State) []Suggestion {
 	}
 
 	out := make([]Suggestion, 0, 4)
+	priority := 5
+
+	// Placeholder fix-ups always come first when present: they are broken
+	// state in agent.yaml itself and block both `run` and `deploy`. The
+	// user has to edit agent.yaml (or define a matching parameter in
+	// agent.manifest.yaml) — `azd env set` cannot reach them.
+	hasPlaceholders := len(state.UnresolvedPlaceholders) > 0
+	if hasPlaceholders {
+		placeholders := slices.Clone(state.UnresolvedPlaceholders)
+		slices.Sort(placeholders)
+		limit := min(len(placeholders), maxFixupLines)
+		for _, name := range placeholders[:limit] {
+			out = append(out, Suggestion{
+				Command:     fmt.Sprintf("edit agent.yaml: replace {{%s}} with the actual value", name),
+				Description: "agent.yaml has unresolved manifest placeholders",
+				Priority:    priority,
+			})
+			priority++
+		}
+	}
 
 	switch {
 	case !state.HasProjectEndpoint || len(state.MissingInfraVars) > 0:
 		out = append(out, Suggestion{
 			Command:     "azd provision",
 			Description: "set up your Foundry project, models, and connections",
-			Priority:    10,
+			Priority:    priority,
 		})
 	case len(state.MissingManualVars) > 0:
 		manual := slices.Clone(state.MissingManualVars)
 		slices.Sort(manual)
-		limit := min(len(manual), maxManualVarLines)
-		for i, key := range manual[:limit] {
+		limit := min(len(manual), maxFixupLines)
+		for _, key := range manual[:limit] {
 			out = append(out, Suggestion{
 				Command:     fmt.Sprintf("azd env set %s <value>", key),
 				Description: "supply the agent.yaml variable",
-				Priority:    20 + i,
+				Priority:    priority,
 			})
+			priority++
 		}
+	case hasPlaceholders:
+		// Only unresolved placeholders remain — do not emit
+		// `azd ai agent run` because running locally with literal
+		// `{{NAME}}` values produces a broken agent. The placeholder
+		// fix-ups above already tell the user what to do.
 	default:
 		out = append(out, Suggestion{
 			Command:     "azd ai agent run",
 			Description: "start the agent locally",
-			Priority:    10,
+			Priority:    priority,
 		})
 	}
 

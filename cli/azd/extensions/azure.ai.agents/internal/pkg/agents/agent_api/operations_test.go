@@ -358,7 +358,7 @@ func TestZipDeployRequest_MultipartFormat(t *testing.T) {
 	require.Equal(t, "metadata", part1.FormName())
 	require.Equal(t, "application/json", part1.Header.Get("Content-Type"))
 	part1Data, _ := io.ReadAll(part1)
-	var parsedMeta map[string]interface{}
+	var parsedMeta map[string]any
 	require.NoError(t, json.Unmarshal(part1Data, &parsedMeta))
 	require.Equal(t, "test desc", parsedMeta["description"])
 

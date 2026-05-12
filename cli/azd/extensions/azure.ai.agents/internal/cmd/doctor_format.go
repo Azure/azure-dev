@@ -86,9 +86,12 @@ func printDoctorReportJSON(w io.Writer, report doctor.Report) error {
 // Summary line is appended after the per-check block.
 //
 // The trailing Next: block is rendered only when showNext is true.
-// nextstep.PrintNext owns the leading blank-line separator (see
+// nextstep.PrintAllNext owns the leading blank-line separator (see
 // nextstep/format.go renderBlock), so this function does not pre-emit
-// one.
+// one. PrintAllNext (not PrintNext) is used because doctor surfaces
+// the same multi-category fix-up list as `azd ai agent init` — every
+// line is a required action, and silently dropping any of them would
+// hide work the user still has to do.
 func printDoctorReportText(
 	w io.Writer,
 	report doctor.Report,
@@ -113,7 +116,7 @@ func printDoctorReportText(
 	}
 
 	if showNext {
-		if err := nextstep.PrintNext(w, trailing); err != nil {
+		if err := nextstep.PrintAllNext(w, trailing); err != nil {
 			return err
 		}
 	}

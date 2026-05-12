@@ -107,6 +107,35 @@ func TestResolveAfterInit_NilState(t *testing.T) {
 	assert.Nil(t, ResolveAfterInit(nil))
 }
 
+// TestResolveAfterInit_ToolboxReproRendersAllCategories locks the full
+// regression for the toolbox-sample bug end-to-end: the state contains
+// BOTH an unresolved manifest placeholder AND a missing manual env var,
+// and the rendered "Next:" block must surface both fix-up categories
+// plus the trailing `azd deploy` reminder. PrintNext would silently
+// drop one category here because of its 2-line cap; PrintAllNext must
+// not.
+func TestResolveAfterInit_ToolboxReproRendersAllCategories(t *testing.T) {
+	t.Parallel()
+
+	state := &State{
+		HasProjectEndpoint:     true,
+		UnresolvedPlaceholders: []string{"TOOLBOX_ENDPOINT"},
+		MissingManualVars:      []string{"TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT"},
+	}
+
+	var buf strings.Builder
+	require.NoError(t, PrintAllNext(&buf, ResolveAfterInit(state)))
+	rendered := buf.String()
+
+	assert.Contains(t, rendered,
+		"edit agent.yaml: replace {{TOOLBOX_ENDPOINT}} with the actual value",
+		"placeholder fix-up missing")
+	assert.Contains(t, rendered,
+		"azd env set TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT <value>",
+		"manual-var fix-up missing — this is the original toolbox-sample regression")
+	assert.Contains(t, rendered, "azd deploy", "trailing deploy reminder missing")
+}
+
 func TestResolveAfterInit_UnresolvedPlaceholders(t *testing.T) {
 	t.Parallel()
 

@@ -35,6 +35,17 @@ const (
 	// endpoint URL produced by `azd ai agent init`.
 	projectEndpointVar = "AZURE_AI_PROJECT_ENDPOINT"
 
+	// useExistingAIProjectVar records the user's choice in the
+	// `azd ai agent init` model-configuration step. "true" means the
+	// user selected an existing Foundry project (init populated
+	// AZURE_AI_PROJECT_ENDPOINT and related vars immediately from that
+	// project); "false" means the user opted to create a new Foundry
+	// project, which requires `azd provision` to run before any
+	// AZURE_AI_PROJECT_ENDPOINT value reflects reality. The variable
+	// also drives Bicep's "skip project creation" branch — see
+	// USE_EXISTING_AI_PROJECT in CHANGELOG.md entry for PR #7843.
+	useExistingAIProjectVar = "USE_EXISTING_AI_PROJECT"
+
 	// azureInfraPrefix tags an env-var name as an azd-infra output rather
 	// than a user-supplied manual variable. Outputs of `azd provision`
 	// in the AI Foundry templates uniformly start with this prefix
@@ -215,6 +226,23 @@ func assembleState(ctx context.Context, src Source, opts ...Option) (*State, []e
 			errs = append(errs, fmt.Errorf("read %s: %w", projectEndpointVar, err))
 		}
 		state.HasProjectEndpoint = endpoint != ""
+
+		// USE_EXISTING_AI_PROJECT is the explicit signal `azd ai agent
+		// init` writes to record the user's deploy-vs-existing choice.
+		// When the user just selected "Deploy new model(s)" (value
+		// "false"), the Foundry project does not exist yet — any
+		// AZURE_AI_PROJECT_ENDPOINT value carried over from a prior
+		// init run or a sibling environment is stale and must not let
+		// the post-init resolver mistake the state for "ready to run
+		// or deploy". The flag is only set for the literal string
+		// "false"; an unset variable (no init yet) or "true" both
+		// leave the flag false so existing resolver heuristics drive
+		// the decision.
+		useExisting, err := src.EnvValue(ctx, envName, useExistingAIProjectVar)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("read %s: %w", useExistingAIProjectVar, err))
+		}
+		state.NeedsAIProjectProvision = useExisting == "false"
 	}
 
 	project, err := src.Project(ctx)

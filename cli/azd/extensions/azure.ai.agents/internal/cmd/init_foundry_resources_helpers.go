@@ -383,8 +383,10 @@ func configureFoundryProjectEnv(
 		}
 	}
 
-	if err := configureAcrConnection(ctx, azdClient, credential, envName, subscriptionId, acrConnections); err != nil {
-		return err
+	if !skipACR {
+		if err := configureAcrConnection(ctx, azdClient, credential, envName, subscriptionId, acrConnections); err != nil {
+			return err
+		}
 	}
 
 	if err := configureAppInsightsConnection(ctx, azdClient, envName, appInsightsConnections); err != nil {

@@ -1,4 +1,4 @@
-<!-- cspell:ignore foundry -->
+<!-- cspell:ignore foundry huimiu exterrors -->
 
 # Design Spec: `azd ai project` Context Commands + Shared Endpoint Resolution
 

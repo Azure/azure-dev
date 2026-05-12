@@ -499,7 +499,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 	// If code deploy, prompt for code configuration details
 	var codeConfig *agent_yaml.CodeConfiguration
 	if deployMode == "code" {
-		codeConfig, err = a.promptCodeConfiguration(ctx)
+		codeConfig, err = a.promptCodeConfiguration(ctx, a.flags.src)
 		if err != nil {
 			return nil, err
 		}
@@ -902,7 +902,11 @@ func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string,
 }
 
 // promptCodeConfiguration prompts the user for code deploy configuration settings.
-func (a *InitFromCodeAction) promptCodeConfiguration(ctx context.Context) (*agent_yaml.CodeConfiguration, error) {
+func (a *InitFromCodeAction) promptCodeConfiguration(ctx context.Context, srcDir string) (*agent_yaml.CodeConfiguration, error) {
+	if srcDir == "" {
+		srcDir = "."
+	}
+
 	// Prompt for runtime
 	runtimeChoices := []*azdext.SelectChoice{
 		{Label: "Python 3.12", Value: "python_3_12"},
@@ -933,8 +937,8 @@ func (a *InitFromCodeAction) promptCodeConfiguration(ctx context.Context) (*agen
 
 	// Prompt for entry point
 	defaultEntryPoint := "main.py"
-	// Try to detect entry point from common patterns
-	if _, err := os.Stat("app.py"); err == nil {
+	// Try to detect entry point from common patterns in source directory
+	if _, err := os.Stat(filepath.Join(srcDir, "app.py")); err == nil {
 		defaultEntryPoint = "app.py"
 	}
 

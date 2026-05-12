@@ -32,6 +32,7 @@ const (
 	CodeLocationMismatch          = "location_mismatch"
 	CodeTenantMismatch            = "tenant_mismatch"
 	CodeMissingPublishedContainer = "missing_published_container_artifact"
+	CodeMissingCodeZipArtifact    = "missing_code_zip_artifact"
 	CodeModelDeploymentNotFound   = "model_deployment_not_found"
 	CodeConflictingArguments      = "conflicting_arguments"
 	CodeInvalidPositionalArg      = "invalid_positional_arg"

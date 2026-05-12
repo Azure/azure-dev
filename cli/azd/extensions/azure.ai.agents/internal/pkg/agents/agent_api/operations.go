@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -400,7 +401,7 @@ func (c *AgentClient) zipDeployRequest(
 ) (*AgentObject, error) {
 	// Build multipart body
 	var body bytes.Buffer
-	boundary := "----azd-code-deploy-boundary"
+	writer := multipart.NewWriter(&body)
 
 	// Part 1: metadata (JSON)
 	metadataJSON, err := json.Marshal(metadata)
@@ -408,29 +409,33 @@ func (c *AgentClient) zipDeployRequest(
 		return nil, fmt.Errorf("failed to marshal metadata: %w", err)
 	}
 
-	body.WriteString("--" + boundary + "\r\n")
-	body.WriteString("Content-Disposition: form-data; name=\"metadata\"\r\n")
-	body.WriteString("Content-Type: application/json\r\n\r\n")
-	body.Write(metadataJSON)
-	body.WriteString("\r\n")
+	metadataPart, err := writer.CreateFormField("metadata")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create metadata part: %w", err)
+	}
+	if _, err := metadataPart.Write(metadataJSON); err != nil {
+		return nil, fmt.Errorf("failed to write metadata: %w", err)
+	}
 
 	// Part 2: code (ZIP)
-	body.WriteString("--" + boundary + "\r\n")
-	body.WriteString("Content-Disposition: form-data; name=\"code\"; filename=\"agent.zip\"\r\n")
-	body.WriteString("Content-Type: application/zip\r\n\r\n")
-	body.Write(zipData)
-	body.WriteString("\r\n")
+	codePart, err := writer.CreateFormFile("code", "agent.zip")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create code part: %w", err)
+	}
+	if _, err := codePart.Write(zipData); err != nil {
+		return nil, fmt.Errorf("failed to write ZIP data: %w", err)
+	}
 
-	// End boundary
-	body.WriteString("--" + boundary + "--\r\n")
+	if err := writer.Close(); err != nil {
+		return nil, fmt.Errorf("failed to close multipart writer: %w", err)
+	}
 
 	req, err := runtime.NewRequest(ctx, http.MethodPost, reqURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	contentType := "multipart/form-data; boundary=" + boundary
-	if err := req.SetBody(streaming.NopCloser(bytes.NewReader(body.Bytes())), contentType); err != nil {
+	if err := req.SetBody(streaming.NopCloser(bytes.NewReader(body.Bytes())), writer.FormDataContentType()); err != nil {
 		return nil, fmt.Errorf("failed to set request body: %w", err)
 	}
 

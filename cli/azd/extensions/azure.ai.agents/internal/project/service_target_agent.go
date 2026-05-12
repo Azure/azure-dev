@@ -5,13 +5,15 @@ package project
 
 import (
 	"archive/zip"
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"io"
 	"io/fs"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,6 +24,7 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/azure"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
@@ -364,29 +367,16 @@ func (p *AgentServiceTargetProvider) Package(
 	// Code deploy: ZIP the source directory
 	if p.isCodeDeployAgent() {
 		progress("Packaging code")
-		zipData, sha256Hex, err := p.packageCodeDeploy(serviceConfig)
+		zipPath, sha256Hex, err := p.packageCodeDeploy(serviceConfig)
 		if err != nil {
 			return nil, exterrors.Internal(exterrors.OpContainerPackage, fmt.Sprintf("code packaging failed: %s", err))
-		}
-
-		// Store zip data and hash as artifacts via a temp file
-		tmpFile, err := os.CreateTemp("", "azd-code-deploy-*.zip")
-		if err != nil {
-			return nil, fmt.Errorf("failed to create temp file for ZIP: %w", err)
-		}
-		if _, err := tmpFile.Write(zipData); err != nil {
-			_ = tmpFile.Close()
-			return nil, fmt.Errorf("failed to write ZIP to temp file: %w", err)
-		}
-		if err := tmpFile.Close(); err != nil {
-			return nil, fmt.Errorf("failed to close temp file: %w", err)
 		}
 
 		return &azdext.ServicePackageResult{
 			Artifacts: []*azdext.Artifact{
 				{
 					Kind:         azdext.ArtifactKind_ARTIFACT_KIND_ARCHIVE,
-					Location:     tmpFile.Name(),
+					Location:     zipPath,
 					LocationKind: azdext.LocationKind_LOCATION_KIND_LOCAL,
 					Metadata: map[string]string{
 						"type":   "code-zip",
@@ -785,8 +775,9 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 	}, nil
 }
 
-// packageCodeDeploy creates a ZIP archive of the agent source code and computes its SHA-256.
-func (p *AgentServiceTargetProvider) packageCodeDeploy(serviceConfig *azdext.ServiceConfig) ([]byte, string, error) {
+// packageCodeDeploy creates a ZIP archive of the agent source code, writes it to a temp file,
+// and computes its SHA-256. Returns the temp file path and SHA-256 hex string.
+func (p *AgentServiceTargetProvider) packageCodeDeploy(serviceConfig *azdext.ServiceConfig) (string, string, error) {
 	// Source directory is the service's relative path
 	srcDir := filepath.Dir(p.agentDefinitionPath)
 
@@ -799,16 +790,37 @@ func (p *AgentServiceTargetProvider) packageCodeDeploy(serviceConfig *azdext.Ser
 		"node_modules":  true,
 		".mypy_cache":   true,
 		".pytest_cache": true,
+		".azure":        true,
 	}
 	excludeExts := map[string]bool{
 		".pyc": true,
 		".pyo": true,
 	}
+	excludeFiles := map[string]bool{
+		".env": true,
+	}
 
-	var buf bytes.Buffer
-	zipWriter := zip.NewWriter(&buf)
+	// Create temp file and write ZIP directly to it while computing SHA-256
+	tmpFile, err := os.CreateTemp("", "azd-code-deploy-*.zip")
+	if err != nil {
+		return "", "", fmt.Errorf("failed to create temp file for ZIP: %w", err)
+	}
+	tmpPath := tmpFile.Name()
 
-	err := filepath.WalkDir(srcDir, func(path string, d fs.DirEntry, err error) error {
+	// Clean up on error
+	success := false
+	defer func() {
+		if !success {
+			tmpFile.Close()
+			os.Remove(tmpPath)
+		}
+	}()
+
+	hasher := sha256.New()
+	multiWriter := io.MultiWriter(tmpFile, hasher)
+	zipWriter := zip.NewWriter(multiWriter)
+
+	err = filepath.WalkDir(srcDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -835,8 +847,18 @@ func (p *AgentServiceTargetProvider) packageCodeDeploy(serviceConfig *azdext.Ser
 			return nil
 		}
 
+		// Skip symlinks to avoid including files outside the agent directory
+		if d.Type()&fs.ModeSymlink != 0 {
+			return nil
+		}
+
 		// Check file extension exclusions
 		if excludeExts[filepath.Ext(path)] {
+			return nil
+		}
+
+		// Check file name exclusions (.env, .env.*)
+		if excludeFiles[d.Name()] || strings.HasPrefix(d.Name(), ".env.") {
 			return nil
 		}
 
@@ -864,18 +886,21 @@ func (p *AgentServiceTargetProvider) packageCodeDeploy(serviceConfig *azdext.Ser
 	})
 
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to walk source directory: %w", err)
+		return "", "", fmt.Errorf("failed to walk source directory: %w", err)
 	}
 
 	if err := zipWriter.Close(); err != nil {
-		return nil, "", fmt.Errorf("failed to close ZIP: %w", err)
+		return "", "", fmt.Errorf("failed to close ZIP: %w", err)
 	}
 
-	zipData := buf.Bytes()
-	hash := sha256.Sum256(zipData)
-	sha256Hex := hex.EncodeToString(hash[:])
+	if err := tmpFile.Close(); err != nil {
+		return "", "", fmt.Errorf("failed to close temp file: %w", err)
+	}
 
-	return zipData, sha256Hex, nil
+	sha256Hex := hex.EncodeToString(hasher.Sum(nil))
+	success = true
+
+	return tmpPath, sha256Hex, nil
 }
 
 // deployHostedCodeAgent deploys a code-based hosted agent via multipart ZIP upload.
@@ -908,7 +933,7 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 	}
 	if zipPath == "" {
 		return nil, exterrors.Dependency(
-			exterrors.CodeMissingPublishedContainer,
+			exterrors.CodeMissingCodeZipArtifact,
 			"code ZIP artifact not found: no code-zip artifact was found in service package artifacts",
 			"run 'azd deploy' to package and deploy the agent",
 		)
@@ -997,10 +1022,15 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 
 	// Check if agent already exists (GET /agents/{name})
 	progress("Creating agent")
-	_, err = agentClient.GetAgent(ctx, agentDef.Name, agentAPIVersion)
+	_, getErr := agentClient.GetAgent(ctx, agentDef.Name, agentAPIVersion)
 	var agentResp *agent_api.AgentObject
 
-	if err != nil {
+	if getErr != nil {
+		// Only fall back to create on 404; propagate other errors (auth, 5xx, network)
+		var respErr *azcore.ResponseError
+		if !errors.As(getErr, &respErr) || respErr.StatusCode != http.StatusNotFound {
+			return nil, fmt.Errorf("failed to check if agent exists: %w", getErr)
+		}
 		// Agent doesn't exist — create
 		fmt.Fprintf(os.Stderr, "Creating new agent: %s\n", agentDef.Name)
 		agentResp, err = agentClient.CreateAgentFromZip(ctx, agentDef.Name, versionRequest, zipData, sha256Hex, agentAPIVersion)
@@ -1031,7 +1061,11 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 		deadline := time.Now().Add(pollTimeout)
 
 		for time.Now().Before(deadline) {
-			time.Sleep(pollInterval)
+			select {
+			case <-ctx.Done():
+				return nil, fmt.Errorf("deployment cancelled: %w", ctx.Err())
+			case <-time.After(pollInterval):
+			}
 			versionResp, err := agentClient.GetAgentVersion(ctx, agentDef.Name, latestVersion.Version, agentAPIVersion)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: poll failed: %s\n", err)

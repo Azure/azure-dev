@@ -55,25 +55,15 @@ const (
 // underscore, then alphanumeric or underscore.
 var envVarRefPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)(:-[^}]*)?\}`)
 
-// placeholderPattern captures {{NAME}} Mustache-style placeholders that
-// agent.manifest.yaml's parameter substitution (parameters.go's
-// injectParameterValues) is supposed to replace before producing the
-// final agent.yaml. Surviving placeholders in agent.yaml's
-// environment_variables values are deploy-time landmines: the value will
-// land in the container literally as `{{NAME}}`, breaking the agent.
-//
-// The capture group accepts any run of non-brace characters (allowing
-// internal whitespace as long as the name starts with a non-whitespace,
-// non-brace char) because parameters.go substitutes the raw manifest
-// parameter key without validating its shape (`strings.ReplaceAll` of
-// `{{<paramName>}}` and `{{ <paramName> }}`). A legitimate manifest
-// parameter named `toolbox-endpoint` (hyphen), `my.param` (dot), or
-// even `"my key"` (quoted YAML key with whitespace) would otherwise
-// slip past detection. Allows optional surrounding whitespace inside
-// the braces — matches both `{{NAME}}` and `{{ NAME }}` (the two
-// forms parameters.go knows how to substitute) plus more liberal
-// spacing for forgiving detection.
-var placeholderPattern = regexp.MustCompile(`\{\{\s*([^\s{}][^{}]*?)\s*\}\}`)
+// placeholderPattern aliases agent_yaml.PlaceholderPattern. nextstep
+// surfaces the same placeholders that agent_yaml's
+// injectParameterValues warns about, so the two MUST stay in lockstep.
+// Keeping a single shared regex (defined in agent_yaml, where the
+// substitution logic lives) makes that constraint explicit and avoids
+// drift if the placeholder syntax is ever broadened again. See
+// agent_yaml/placeholders.go for the full rationale on the regex
+// shape (hyphens, dots, whitespace in capture group).
+var placeholderPattern = agent_yaml.PlaceholderPattern
 
 // Source is the read-only view of azd that AssembleState needs.
 //

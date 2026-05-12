@@ -231,9 +231,16 @@ func promptForTextValue(
 	return resp.Value, nil
 }
 
-// injectParameterValues replaces parameter placeholders in the template with actual values
+// injectParameterValues replaces parameter placeholders in the template with actual values.
+//
+// Any placeholders that remain after substitution are surfaced via a
+// stdout warning that names them, plus the nextstep guidance system
+// surfaces a concrete `edit agent.yaml: replace {{NAME}} with the
+// actual value` line in the post-init `Next:` block. The warning and
+// the next-step guidance use the same `PlaceholderPattern` so the two
+// stay aligned (a placeholder reported in the warning must show up
+// in the Next: block, and vice versa).
 func injectParameterValues(template string, paramValues ParameterValues) ([]byte, error) {
-	// Replace each parameter placeholder with its value
 	for paramName, paramValue := range paramValues {
 		placeholder := fmt.Sprintf("{{%s}}", paramName)
 		valueStr := fmt.Sprintf("%v", paramValue)
@@ -243,9 +250,13 @@ func injectParameterValues(template string, paramValues ParameterValues) ([]byte
 		template = strings.ReplaceAll(template, placeholder, valueStr)
 	}
 
-	// Check for any remaining unreplaced placeholders
-	if strings.Contains(template, "{{") && strings.Contains(template, "}}") {
-		fmt.Println("Warning: Template contains unresolved placeholders.")
+	if remaining := ExtractUnresolvedPlaceholders(template); len(remaining) > 0 {
+		fmt.Printf(
+			"Warning: agent.yaml has %d unresolved placeholder(s): %s. "+
+				"Edit agent.yaml and replace each `{{NAME}}` with the actual value before deploying.\n",
+			len(remaining),
+			strings.Join(remaining, ", "),
+		)
 	}
 
 	return []byte(template), nil

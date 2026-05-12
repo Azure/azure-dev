@@ -308,6 +308,7 @@ func lookupAcrResourceId(
 
 // configureFoundryProjectEnv sets all Foundry project environment variables and discovers
 // ACR and AppInsights connections. This is the shared implementation used by both init flows.
+// When skipACR is true, ACR connection discovery and configuration is skipped (used for code deploy).
 func configureFoundryProjectEnv(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -315,6 +316,7 @@ func configureFoundryProjectEnv(
 	envName string,
 	project FoundryProjectInfo,
 	subscriptionId string,
+	skipACR bool,
 ) error {
 	resourceId := project.ResourceId
 	if resourceId == "" {
@@ -365,7 +367,9 @@ func configureFoundryProjectEnv(
 	for _, conn := range connections {
 		switch conn.Type {
 		case azure.ConnectionTypeContainerRegistry:
-			acrConnections = append(acrConnections, conn)
+			if !skipACR {
+				acrConnections = append(acrConnections, conn)
+			}
 		case azure.ConnectionTypeAppInsights:
 			connWithCreds, err := foundryClient.GetConnectionWithCredentials(ctx, conn.Name)
 			if err != nil {
@@ -999,6 +1003,7 @@ func selectFoundryProject(
 	envName string,
 	subscriptionId string,
 	projectResourceId string,
+	skipACR bool,
 ) (*FoundryProjectInfo, error) {
 	spinnerText := "Searching for Foundry projects in your subscription..."
 	if projectResourceId != "" {
@@ -1095,7 +1100,7 @@ func selectFoundryProject(
 	}
 
 	// Configure all Foundry project environment variables
-	if err := configureFoundryProjectEnv(ctx, azdClient, credential, envName, selectedProject, subscriptionId); err != nil {
+	if err := configureFoundryProjectEnv(ctx, azdClient, credential, envName, selectedProject, subscriptionId, skipACR); err != nil {
 		return nil, fmt.Errorf("failed to configure Foundry project environment: %w", err)
 	}
 

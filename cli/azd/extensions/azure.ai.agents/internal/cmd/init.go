@@ -74,6 +74,7 @@ type InitAction struct {
 
 	deploymentDetails   []project.Deployment
 	containerSettings   *project.ContainerSettings
+	isCodeDeploy        bool // true when user selects code deploy mode; skips ACR config
 	httpClient          *http.Client
 	serviceNameOverride string // when set, addToProject uses this instead of the manifest name
 }
@@ -570,6 +571,27 @@ func (a *InitAction) Run(ctx context.Context) error {
 			return fmt.Errorf("downloading agent.yaml: %w", err)
 		}
 
+		// Prompt for deploy mode (code vs container) for hosted agents
+		if _, ok := agentManifest.Template.(agent_yaml.ContainerAgent); ok {
+			deployMode, err := promptDeployMode(ctx, a.azdClient, a.flags.noPrompt)
+			if err != nil {
+				return fmt.Errorf("prompting for deploy mode: %w", err)
+			}
+			a.isCodeDeploy = (deployMode == "code")
+
+			if a.isCodeDeploy {
+				// Prompt for code configuration and update the manifest
+				codeConfig, err := promptCodeConfigurationShared(ctx, a.azdClient, targetDir)
+				if err != nil {
+					return fmt.Errorf("prompting for code configuration: %w", err)
+				}
+
+				hostedAgent := agentManifest.Template.(agent_yaml.ContainerAgent)
+				hostedAgent.CodeConfiguration = codeConfig
+				agentManifest.Template = hostedAgent
+			}
+		}
+
 		// Model configuration: prompt user for "use existing" vs "deploy new"
 		agentManifest, err = a.configureModelChoice(ctx, agentManifest)
 		if err != nil {
@@ -792,6 +814,7 @@ func (a *InitAction) configureModelChoice(
 			selectedProject, err := selectFoundryProject(
 				ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
 				a.azureContext.Scope.SubscriptionId, a.flags.projectResourceId,
+				a.isCodeDeploy,
 			)
 			if err != nil {
 				return nil, err
@@ -840,6 +863,7 @@ func (a *InitAction) configureModelChoice(
 				selectedProject, err := selectFoundryProject(
 					ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
 					a.azureContext.Scope.SubscriptionId, "",
+					a.isCodeDeploy,
 				)
 				if err != nil {
 					return nil, err
@@ -932,6 +956,7 @@ func (a *InitAction) configureModelChoice(
 		selectedProject, err := selectFoundryProject(
 			ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
 			a.azureContext.Scope.SubscriptionId, a.flags.projectResourceId,
+			a.isCodeDeploy,
 		)
 		if err != nil {
 			return nil, err
@@ -1558,11 +1583,25 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	}
 
 	// Detect startup command from the project source directory
-	startupCmd, err := resolveStartupCommandForInit(ctx, a.azdClient, a.projectConfig.Path, targetDir, a.flags.noPrompt)
-	if err != nil {
-		return err
+	if a.isCodeDeploy {
+		// For code deploy, auto-derive startupCommand from entry point in agent.yaml
+		agentYamlPath := filepath.Join(a.projectConfig.Path, targetDir, "agent.yaml")
+		if data, readErr := os.ReadFile(agentYamlPath); readErr == nil { //nolint:gosec // path is constructed from project config
+			var containerAgent agent_yaml.ContainerAgent
+			if yamlErr := yaml.Unmarshal(data, &containerAgent); yamlErr == nil && containerAgent.CodeConfiguration != nil {
+				agentConfig.StartupCommand = "python " + containerAgent.CodeConfiguration.EntryPoint
+			}
+		}
+		if agentConfig.StartupCommand == "" {
+			agentConfig.StartupCommand = "python main.py"
+		}
+	} else {
+		startupCmd, err := resolveStartupCommandForInit(ctx, a.azdClient, a.projectConfig.Path, targetDir, a.flags.noPrompt)
+		if err != nil {
+			return err
+		}
+		agentConfig.StartupCommand = startupCmd
 	}
-	agentConfig.StartupCommand = startupCmd
 
 	var agentConfigStruct *structpb.Struct
 	if agentConfigStruct, err = project.MarshalStruct(&agentConfig); err != nil {
@@ -1577,10 +1616,14 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		Config:       agentConfigStruct,
 	}
 
-	// For hosted (container-based) agents, set remoteBuild to true by default
+	// For hosted agents, configure Docker or code deploy settings
 	if agentDef.Kind == agent_yaml.AgentKindHosted {
-		serviceConfig.Docker = &azdext.DockerProjectOptions{
-			RemoteBuild: true,
+		if a.isCodeDeploy {
+			serviceConfig.Language = "python"
+		} else {
+			serviceConfig.Docker = &azdext.DockerProjectOptions{
+				RemoteBuild: true,
+			}
 		}
 	}
 

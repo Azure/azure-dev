@@ -576,7 +576,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 		a.credential = newCred
 
 		// Select a Foundry project
-		selectedProject, err := selectFoundryProject(ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name, a.azureContext.Scope.SubscriptionId, a.flags.projectResourceId)
+		selectedProject, err := selectFoundryProject(ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name, a.azureContext.Scope.SubscriptionId, a.flags.projectResourceId, deployMode == "code")
 		if err != nil {
 			return nil, err
 		}
@@ -1116,4 +1116,112 @@ func knownProtocolNames() string {
 		names = append(names, p.Name)
 	}
 	return strings.Join(names, ", ")
+}
+
+// promptDeployMode asks the user to choose between code deploy and container deploy.
+// When noPrompt is true, defaults to "container" for backward compatibility.
+func promptDeployMode(ctx context.Context, azdClient *azdext.AzdClient, noPrompt bool) (string, error) {
+	deployModeChoices := []*azdext.SelectChoice{
+		{Label: "Code-based (Python source, no Docker/ACR)", Value: "code"},
+		{Label: "Container-based (Dockerfile + ACR)", Value: "container"},
+	}
+
+	if noPrompt {
+		return "container", nil
+	}
+
+	defaultIdx := int32(0)
+	deployModeResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+		Options: &azdext.SelectOptions{
+			Message:       "How would you like to deploy your agent?",
+			Choices:       deployModeChoices,
+			SelectedIndex: &defaultIdx,
+		},
+	})
+	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return "", exterrors.Cancelled("deploy mode selection was cancelled")
+		}
+		return "", fmt.Errorf("failed to prompt for deploy mode: %w", err)
+	}
+	return deployModeChoices[*deployModeResp.Value].Value, nil
+}
+
+// promptCodeConfigurationShared prompts for code deploy configuration (runtime, entry point,
+// dependency resolution). This is the standalone version used by the template init flow.
+func promptCodeConfigurationShared(ctx context.Context, azdClient *azdext.AzdClient, srcDir string) (*agent_yaml.CodeConfiguration, error) {
+	if srcDir == "" {
+		srcDir = "."
+	}
+
+	// Prompt for runtime
+	runtimeChoices := []*azdext.SelectChoice{
+		{Label: "Python 3.12", Value: "python_3_12"},
+		{Label: "Python 3.11", Value: "python_3_11"},
+		{Label: "Python 3.13", Value: "python_3_13"},
+	}
+
+	defaultIdx := int32(0)
+	runtimeResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+		Options: &azdext.SelectOptions{
+			Message:       "Select the runtime for your agent",
+			Choices:       runtimeChoices,
+			SelectedIndex: &defaultIdx,
+		},
+	})
+	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return nil, exterrors.Cancelled("runtime selection was cancelled")
+		}
+		return nil, fmt.Errorf("failed to prompt for runtime: %w", err)
+	}
+	runtime := runtimeChoices[*runtimeResp.Value].Value
+
+	// Prompt for entry point
+	defaultEntryPoint := "main.py"
+	if _, statErr := os.Stat(filepath.Join(srcDir, "app.py")); statErr == nil {
+		defaultEntryPoint = "app.py"
+	}
+
+	entryPointResp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+		Options: &azdext.PromptOptions{
+			Message:      "Enter the entry point file for your agent",
+			DefaultValue: defaultEntryPoint,
+		},
+	})
+	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return nil, exterrors.Cancelled("entry point prompt was cancelled")
+		}
+		return nil, fmt.Errorf("failed to prompt for entry point: %w", err)
+	}
+	entryPoint := entryPointResp.Value
+
+	// Prompt for dependency resolution
+	depResChoices := []*azdext.SelectChoice{
+		{Label: "Remote build (server installs dependencies)", Value: "remote_build"},
+		{Label: "Bundled (pre-install dependencies locally)", Value: "bundled"},
+	}
+
+	depDefaultIdx := int32(0)
+	depResResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+		Options: &azdext.SelectOptions{
+			Message:       "How should dependencies be resolved?",
+			Choices:       depResChoices,
+			SelectedIndex: &depDefaultIdx,
+		},
+	})
+	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return nil, exterrors.Cancelled("dependency resolution selection was cancelled")
+		}
+		return nil, fmt.Errorf("failed to prompt for dependency resolution: %w", err)
+	}
+	depResolution := depResChoices[*depResResp.Value].Value
+
+	return &agent_yaml.CodeConfiguration{
+		Runtime:              runtime,
+		EntryPoint:           entryPoint,
+		DependencyResolution: &depResolution,
+	}, nil
 }

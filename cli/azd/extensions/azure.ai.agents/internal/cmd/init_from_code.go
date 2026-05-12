@@ -832,6 +832,16 @@ func (a *InitFromCodeAction) writeDefinitionToSrcDir(definition *agent_yaml.Cont
 }
 
 func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string, agentName string, isCodeDeploy bool) error {
+	// If targetDir is ".", resolve the actual relative path from the project root to cwd.
+	// This ensures azure.yaml gets the correct "project:" value when init is run from a subdirectory.
+	if targetDir == "." {
+		if cwd, err := os.Getwd(); err == nil && a.projectConfig != nil && a.projectConfig.Path != "" {
+			if relPath, err := filepath.Rel(a.projectConfig.Path, cwd); err == nil && relPath != "." {
+				targetDir = filepath.ToSlash(relPath)
+			}
+		}
+	}
+
 	var agentConfig = project.ServiceTargetAgentConfig{}
 
 	// Both code and container modes need container resources for local run

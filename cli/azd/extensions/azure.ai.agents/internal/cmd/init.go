@@ -1486,6 +1486,16 @@ func writeAgentDefinitionFile(targetDir string, agentManifest *agent_yaml.AgentM
 }
 
 func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentManifest *agent_yaml.AgentManifest) error {
+	// If targetDir is ".", resolve the actual relative path from the project root to cwd.
+	// This ensures azure.yaml gets the correct "project:" value when init is run from a subdirectory.
+	if targetDir == "." {
+		if cwd, err := os.Getwd(); err == nil && a.projectConfig != nil && a.projectConfig.Path != "" {
+			if relPath, err := filepath.Rel(a.projectConfig.Path, cwd); err == nil && relPath != "." {
+				targetDir = filepath.ToSlash(relPath)
+			}
+		}
+	}
+
 	// Convert the template to bytes
 	templateBytes, err := json.Marshal(agentManifest.Template)
 	if err != nil {

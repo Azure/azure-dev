@@ -267,7 +267,8 @@ func TestExecAction_ExitCodePropagation(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		exitBin += ".exe"
 	}
-	buildCmd := exec.Command("go", "build", "-o", exitBin, "testdata/exit42.go") //nolint:gosec // G204: test builds a known fixture
+	//nolint:gosec // G204: test builds a known fixture
+	buildCmd := exec.Command("go", "build", "-o", exitBin, "testdata/exit42.go")
 	buildCmd.Dir = "."
 	out, err := buildCmd.CombinedOutput()
 	require.NoError(t, err, "failed to build exit42: %s", string(out))

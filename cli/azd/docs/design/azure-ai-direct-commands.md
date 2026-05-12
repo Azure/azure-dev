@@ -168,7 +168,7 @@ azd ai connection key remove <connection-name> <key>
 azd ai connection key list <connection-name>
 ```
 
-Note: The ARM API does not support server-side filtering by kind. Filtering is applied client-side after fetching all connections. This may need API confirmation.
+Note: The ARM API **supports** server-side filtering via the `?category=<kind>` query parameter (validated: `?category=RemoteTool` returned 6 results vs 17 unfiltered). The data-plane list API does **not** support filtering — it ignores filter params and always returns all connections. Therefore, `--kind` filtering uses the ARM list endpoint.
 
 #### 3.1.1 `--from-file` Mutual Exclusivity
 
@@ -194,13 +194,22 @@ func validateFromFileExclusivity(cmd *cobra.Command, fromFile string) error {
 }
 ```
 
-#### 3.1.2 `--force` Dual Semantics
+#### 3.1.2 `--force` and Duplicate Create Semantics
 
 Spec (line 134): `--force` means different things on different commands:
 - `create --force` → upsert (ARM PUT replaces existing)
 - `delete --force` → skip confirmation prompt
 
 This is **not** a single shared flag — each command defines its own `--force` with command-specific help text.
+
+**Validated behavior**: ARM PUT is an unconditional upsert — it always succeeds and silently replaces an existing connection with the same name (confirmed via live testing: PUT with a different body overwrites target, metadata, and credentials without error).
+
+Therefore, `create` **without** `--force` must do a **pre-check GET** to detect an existing connection and error with a suggestion:
+```
+Connection 'my-conn' already exists. Use --force to replace it.
+```
+
+`create --force` skips the pre-check and does a direct PUT (upsert).
 
 #### 3.1.3 Enums
 
@@ -803,6 +812,19 @@ Use --force to replace an existing connection with the same name.`,
                 return err
             }
 
+            // Pre-check: if --force is not set, verify the connection doesn't already exist.
+            // ARM PUT is an unconditional upsert — it silently overwrites without error.
+            if !flags.force {
+                if _, err := connCtx.armClient.Get(ctx, name); err == nil {
+                    return exterrors.Validation(
+                        CodeConnectionAlreadyExists,
+                        fmt.Sprintf("Connection %q already exists.", name),
+                        "Use --force to replace the existing connection.",
+                    )
+                }
+                // If Get returns an error (404), the connection doesn't exist — proceed.
+            }
+
             var req *connections.CreateRequest
             if flags.fromFile != "" {
                 req, err = parseConnectionFromFile(flags.fromFile)
@@ -1251,9 +1273,14 @@ func (c *ARMClient) Get(ctx context.Context, name string) (*armcognitiveservices
     return &resp.ConnectionModel, nil
 }
 
-// List lists all connections via ARM, with optional type filter (client-side).
+// List lists all connections via ARM, with optional server-side category filter.
+// ARM supports ?category=<kind> query parameter (validated).
 func (c *ARMClient) List(ctx context.Context, filterKind string) ([]*armcognitiveservices.ConnectionModel, error) {
-    pager := c.inner.NewListPager(c.rg, c.account, c.project, nil)
+    opts := &armcognitiveservices.ProjectConnectionsClientListOptions{}
+    if filterKind != "" {
+        opts.Category = &filterKind
+    }
+    pager := c.inner.NewListPager(c.rg, c.account, c.project, opts)
     var result []*armcognitiveservices.ConnectionModel
     for pager.More() {
         page, err := pager.NextPage(ctx)
@@ -1261,9 +1288,7 @@ func (c *ARMClient) List(ctx context.Context, filterKind string) ([]*armcognitiv
             return nil, err
         }
         for _, conn := range page.Value {
-            if filterKind == "" || matchesKind(conn, filterKind) {
-                result = append(result, conn)
-            }
+            result = append(result, conn)
         }
     }
     return result, nil
@@ -1355,12 +1380,13 @@ package exterrors
 
 // Error codes for connection validation.
 const (
-    CodeConflictingArguments   = "conflicting_arguments"
+    CodeConflictingArguments    = "conflicting_arguments"
     CodeMissingConnectionField = "missing_connection_field"
     CodeInvalidConnectionKind  = "invalid_connection_kind"
     CodeInvalidAuthType        = "invalid_auth_type"
     CodeInvalidFromFile        = "invalid_from_file"
     CodeMissingForceFlag       = "missing_force_flag"
+    CodeConnectionAlreadyExists = "connection_already_exists"
 )
 
 // Error codes for endpoint resolution.

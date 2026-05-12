@@ -860,6 +860,17 @@ func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string,
 	language := "python"
 	if !isCodeDeploy {
 		language = "docker"
+	} else {
+		// Detect language from agent.yaml runtime
+		agentYamlPath2 := filepath.Join(a.projectConfig.Path, targetDir, "agent.yaml")
+		if data, err := os.ReadFile(agentYamlPath2); err == nil { //nolint:gosec // path from project config
+			var agentDef2 agent_yaml.ContainerAgent
+			if err := yaml.Unmarshal(data, &agentDef2); err == nil &&
+				agentDef2.CodeConfiguration != nil &&
+				strings.HasPrefix(agentDef2.CodeConfiguration.Runtime, "dotnet_") {
+				language = "csharp"
+			}
+		}
 	}
 
 	serviceConfig := &azdext.ServiceConfig{
@@ -899,7 +910,11 @@ func deriveStartupCommand(projectPath, targetDir string) string {
 	if data, err := os.ReadFile(agentYamlPath); err == nil { //nolint:gosec // path is constructed from project config
 		var agentDef agent_yaml.ContainerAgent
 		if err := yaml.Unmarshal(data, &agentDef); err == nil && agentDef.CodeConfiguration != nil {
-			return "python " + agentDef.CodeConfiguration.EntryPoint
+			cmdPrefix := "python"
+			if strings.HasPrefix(agentDef.CodeConfiguration.Runtime, "dotnet_") {
+				cmdPrefix = "dotnet"
+			}
+			return cmdPrefix + " " + agentDef.CodeConfiguration.EntryPoint
 		}
 	}
 	return "python main.py"
@@ -1062,6 +1077,28 @@ func promptDeployMode(ctx context.Context, azdClient *azdext.AzdClient, noPrompt
 	return deployModeChoices[*deployModeResp.Value].Value, nil
 }
 
+// detectDefaultEntryPoint returns a sensible default entry point based on the runtime and source directory.
+func detectDefaultEntryPoint(srcDir, runtime string) string {
+	if strings.HasPrefix(runtime, "dotnet_") {
+		// Look for .csproj file and derive DLL name
+		entries, err := os.ReadDir(srcDir)
+		if err == nil {
+			for _, e := range entries {
+				if !e.IsDir() && strings.HasSuffix(e.Name(), ".csproj") {
+					return strings.TrimSuffix(e.Name(), ".csproj") + ".dll"
+				}
+			}
+		}
+		return "App.dll"
+	}
+
+	// Python default
+	if _, err := os.Stat(filepath.Join(srcDir, "app.py")); err == nil {
+		return "app.py"
+	}
+	return "main.py"
+}
+
 // promptCodeConfig prompts for code deploy configuration (runtime, entry point,
 // dependency resolution). When noPrompt is true, defaults are used without prompting.
 func promptCodeConfig(ctx context.Context, azdClient *azdext.AzdClient, srcDir string, noPrompt bool) (*agent_yaml.CodeConfiguration, error) {
@@ -1074,6 +1111,9 @@ func promptCodeConfig(ctx context.Context, azdClient *azdext.AzdClient, srcDir s
 		{Label: "Python 3.11", Value: "python_3_11"},
 		{Label: "Python 3.12", Value: "python_3_12"},
 		{Label: "Python 3.13", Value: "python_3_13"},
+		{Label: ".NET 9", Value: "dotnet_9"},
+		{Label: ".NET 8", Value: "dotnet_8"},
+		{Label: ".NET 10", Value: "dotnet_10"},
 	}
 
 	var runtime string
@@ -1098,10 +1138,7 @@ func promptCodeConfig(ctx context.Context, azdClient *azdext.AzdClient, srcDir s
 	}
 
 	// Prompt for entry point
-	defaultEntryPoint := "main.py"
-	if _, statErr := os.Stat(filepath.Join(srcDir, "app.py")); statErr == nil {
-		defaultEntryPoint = "app.py"
-	}
+	defaultEntryPoint := detectDefaultEntryPoint(srcDir, runtime)
 
 	var entryPoint string
 	if noPrompt {

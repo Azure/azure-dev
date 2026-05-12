@@ -357,7 +357,12 @@ func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentB
 
 	// Code deploy path
 	if hostedAgent.CodeConfiguration != nil {
-		entryPoint := []string{"python", hostedAgent.CodeConfiguration.EntryPoint}
+		// Derive the command prefix from the runtime (e.g. "python" for python_3_12, "dotnet" for dotnet_9).
+		cmdPrefix := "python"
+		if strings.HasPrefix(hostedAgent.CodeConfiguration.Runtime, "dotnet_") {
+			cmdPrefix = "dotnet"
+		}
+		entryPoint := []string{cmdPrefix, hostedAgent.CodeConfiguration.EntryPoint}
 		depRes := ""
 		if hostedAgent.CodeConfiguration.DependencyResolution != nil {
 			depRes = *hostedAgent.CodeConfiguration.DependencyResolution

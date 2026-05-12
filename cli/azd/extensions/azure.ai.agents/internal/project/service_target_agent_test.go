@@ -702,7 +702,7 @@ func TestShouldUsePreBuiltImage_SelectsPreBuiltImage(t *testing.T) {
 	require.Len(t, promptStub.lastSelect.Options.Choices, 2)
 	require.NotNil(t, promptStub.lastSelect.Options.SelectedIndex)
 	require.Equal(t, int32(0), *promptStub.lastSelect.Options.SelectedIndex)
-	require.Equal(t, "Build it for me", promptStub.lastSelect.Options.Choices[0].Label)
+	require.Equal(t, "Build a new image for me", promptStub.lastSelect.Options.Choices[0].Label)
 	require.Equal(t, "Create hosted agent from "+imageURL, promptStub.lastSelect.Options.Choices[1].Label)
 }
 
@@ -725,11 +725,12 @@ func TestShouldUsePreBuiltImage_SelectsDockerfileBuild(t *testing.T) {
 	require.Equal(t, int32(1), promptStub.selectCalls.Load())
 }
 
-func TestShouldUsePreBuiltImage_NoPromptDefaultsToBuild(t *testing.T) {
-	// Cannot use t.Parallel() because t.Setenv mutates process env.
-	t.Setenv("AZD_NO_PROMPT", "true")
+func TestShouldUsePreBuiltImage_DefaultIndexIsBuild(t *testing.T) {
+	t.Parallel()
 
-	promptStub := &stubPromptServer{}
+	// Verify that the default selection index points to "build",
+	// so that in --no-prompt mode the framework returns "build" automatically.
+	promptStub := &stubPromptServer{selectedIndex: 0}
 	client := newPromptTestClient(t, promptStub)
 
 	provider := &AgentServiceTargetProvider{
@@ -741,19 +742,11 @@ func TestShouldUsePreBuiltImage_NoPromptDefaultsToBuild(t *testing.T) {
 		agent_yaml.ContainerAgent{Image: "myregistry.azurecr.io/myimage:v1"},
 	)
 	require.NoError(t, err)
-	require.False(t, result, "non-interactive mode should always default to build")
-	require.Equal(t, int32(0), promptStub.selectCalls.Load(), "prompt should not be invoked in --no-prompt mode")
-}
-
-func TestShouldUsePreBuiltImage_NoPromptWithoutImageBuilds(t *testing.T) {
-	// Cannot use t.Parallel() because t.Setenv mutates process env.
-	t.Setenv("AZD_NO_PROMPT", "true")
-
-	provider := &AgentServiceTargetProvider{}
-
-	result, err := provider.shouldUsePreBuiltImage(t.Context(), agent_yaml.ContainerAgent{})
-	require.NoError(t, err)
-	require.False(t, result, "non-interactive mode without image should default to build")
+	require.False(t, result, "default selection (index 0) should mean build from Dockerfile")
+	require.NotNil(t, promptStub.lastSelect)
+	require.NotNil(t, promptStub.lastSelect.Options.SelectedIndex)
+	require.Equal(t, int32(0), *promptStub.lastSelect.Options.SelectedIndex)
+	require.Equal(t, "build", promptStub.lastSelect.Options.Choices[0].Value)
 }
 
 func TestShouldUsePreBuiltImage_PromptErrorCanRetry(t *testing.T) {

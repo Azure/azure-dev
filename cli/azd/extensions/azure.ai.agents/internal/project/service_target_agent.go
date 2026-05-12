@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"azureaiagent/internal/exterrors"
@@ -455,25 +454,12 @@ func (p *AgentServiceTargetProvider) Publish(
 		}, nil
 	}
 
-	agentDef, isContainerAgent, err := p.loadContainerAgentDefinition()
+	_, isContainerAgent, err := p.loadContainerAgentDefinition()
 	if err != nil {
 		return nil, err
 	}
 	if !isContainerAgent {
 		return &azdext.ServicePublishResult{}, nil
-	}
-
-	if !hasContainerArtifact(serviceContext.Package) {
-		usePreBuiltImage, err := p.shouldUsePreBuiltImage(ctx, agentDef)
-		if err != nil {
-			return nil, err
-		}
-		if usePreBuiltImage {
-			progress("Using pre-built container image, skipping publish")
-			return &azdext.ServicePublishResult{
-				Artifacts: []*azdext.Artifact{preBuiltImageArtifact(agentDef.Image)},
-			}, nil
-		}
 	}
 
 	progress("Publishing container")
@@ -663,7 +649,8 @@ func (p *AgentServiceTargetProvider) Deploy(
 //
 // Behavior:
 //   - If no image is configured in agent.yaml, always build from Dockerfile.
-//   - In non-interactive mode (AZD_NO_PROMPT=true), always build from Dockerfile.
+//   - In non-interactive mode (--no-prompt), the prompt returns the default
+//     selection (index 0 = build from Dockerfile) automatically.
 //   - In interactive mode, prompt the user. The default is to build, so users
 //     who happen to have an image in agent.yaml are not silently switched onto
 //     the pre-built path.
@@ -676,14 +663,11 @@ func (p *AgentServiceTargetProvider) shouldUsePreBuiltImage(
 		return false, nil
 	}
 
-	// Non-interactive (CI/CD): always build from Dockerfile.
-	if noPrompt, _ := strconv.ParseBool(os.Getenv("AZD_NO_PROMPT")); noPrompt {
-		return false, nil
-	}
-
-	// Interactive: default to build so the pre-built path requires an explicit choice.
+	// Default to build so the pre-built path requires an explicit choice.
+	// In non-interactive mode (--no-prompt), the framework returns the default
+	// selection (index 0 = build) automatically.
 	choices := []*azdext.SelectChoice{
-		{Value: "build", Label: "Build it for me"},
+		{Value: "build", Label: "Build a new image for me"},
 		{Value: "prebuilt", Label: fmt.Sprintf("Create hosted agent from %s", imageURL)},
 	}
 	defaultIndex := int32(0)

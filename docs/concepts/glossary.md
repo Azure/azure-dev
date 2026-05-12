@@ -64,6 +64,10 @@ A JSON manifest that lists available extensions, their versions, capabilities, a
 
 The set of features an extension provides. Valid capabilities are: `custom-commands`, `lifecycle-events`, `mcp-server`, `service-target-provider`, `framework-service-provider`, `provisioning-provider`, and `metadata`. See [Extension Framework](../architecture/extension-framework.md) for details.
 
+### Provisioning Provider
+
+An extension capability that lets an extension provide a custom infrastructure provisioning experience as an alternative to built-in providers such as Bicep and Terraform.
+
 ## Architecture
 
 ### ActionDescriptor

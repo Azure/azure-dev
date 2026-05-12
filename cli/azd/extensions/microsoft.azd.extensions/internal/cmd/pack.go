@@ -40,6 +40,8 @@ func newPackCommand(outputPath *string) *cobra.Command {
 				"Packages the azd extension project and updates the registry",
 			)
 
+			// For pack, an empty output path means "use the local registry artifacts path".
+			// Only copy the SDK-managed --output value when the user explicitly supplied it.
 			if outputPath != nil && cmd.Flags().Changed("output") {
 				flags.outputPath = *outputPath
 			}

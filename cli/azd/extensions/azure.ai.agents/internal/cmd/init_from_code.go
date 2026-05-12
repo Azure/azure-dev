@@ -471,13 +471,13 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 
 	// Prompt user for deploy mode (container vs code)
 	deployModeChoices := []*azdext.SelectChoice{
-		{Label: "Code (ZIP upload - no Docker required)", Value: "code"},
-		{Label: "Container (Dockerfile + ACR)", Value: "container"},
+		{Label: "Code-based (Python source, no Docker/ACR)", Value: "code"},
+		{Label: "Container-based (Dockerfile + ACR)", Value: "container"},
 	}
 
 	var deployMode string
 	if a.flags.noPrompt {
-		deployMode = "code" // default to code deploy
+		deployMode = "container" // default to container for backward compatibility
 	} else {
 		defaultIdx := int32(0)
 		deployModeResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
@@ -834,24 +834,35 @@ func (a *InitFromCodeAction) writeDefinitionToSrcDir(definition *agent_yaml.Cont
 func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string, agentName string, isCodeDeploy bool) error {
 	var agentConfig = project.ServiceTargetAgentConfig{}
 
-	if !isCodeDeploy {
-		agentConfig.Container = &project.ContainerSettings{
-			Resources: &project.ResourceSettings{
-				Memory: project.DefaultMemory,
-				Cpu:    project.DefaultCpu,
-			},
-		}
+	// Both code and container modes need container resources for local run
+	agentConfig.Container = &project.ContainerSettings{
+		Resources: &project.ResourceSettings{
+			Memory: project.DefaultMemory,
+			Cpu:    project.DefaultCpu,
+		},
 	}
 
 	agentConfig.Deployments = a.deploymentDetails
 
-	// Detect startup command from the project source directory (container mode only)
+	// Detect startup command from the project source directory (container mode only for prompt)
 	if !isCodeDeploy {
 		startupCmd, err := resolveStartupCommandForInit(ctx, a.azdClient, a.projectConfig.Path, targetDir, a.flags.noPrompt)
 		if err != nil {
 			return err
 		}
 		agentConfig.StartupCommand = startupCmd
+	} else {
+		// For code deploy, auto-derive startupCommand from entry point in agent.yaml
+		agentYamlPath := filepath.Join(a.projectConfig.Path, targetDir, "agent.yaml")
+		if data, err := os.ReadFile(agentYamlPath); err == nil {
+			var agentDef agent_yaml.ContainerAgent
+			if err := yaml.Unmarshal(data, &agentDef); err == nil && agentDef.CodeConfiguration != nil {
+				agentConfig.StartupCommand = "python " + agentDef.CodeConfiguration.EntryPoint
+			}
+		}
+		if agentConfig.StartupCommand == "" {
+			agentConfig.StartupCommand = "python main.py"
+		}
 	}
 
 	var agentConfigStruct *structpb.Struct
@@ -894,13 +905,14 @@ func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string,
 func (a *InitFromCodeAction) promptCodeConfiguration(ctx context.Context) (*agent_yaml.CodeConfiguration, error) {
 	// Prompt for runtime
 	runtimeChoices := []*azdext.SelectChoice{
+		{Label: "Python 3.12", Value: "python_3_12"},
 		{Label: "Python 3.11", Value: "python_3_11"},
-		{Label: "Python 3.10", Value: "python_3_10"},
+		{Label: "Python 3.13", Value: "python_3_13"},
 	}
 
 	var runtime string
 	if a.flags.noPrompt {
-		runtime = "python_3_11"
+		runtime = "python_3_12"
 	} else {
 		defaultIdx := int32(0)
 		runtimeResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{

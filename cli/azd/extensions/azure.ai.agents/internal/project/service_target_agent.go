@@ -375,10 +375,12 @@ func (p *AgentServiceTargetProvider) Package(
 			return nil, fmt.Errorf("failed to create temp file for ZIP: %w", err)
 		}
 		if _, err := tmpFile.Write(zipData); err != nil {
-			tmpFile.Close()
+			_ = tmpFile.Close()
 			return nil, fmt.Errorf("failed to write ZIP to temp file: %w", err)
 		}
-		tmpFile.Close()
+		if err := tmpFile.Close(); err != nil {
+			return nil, fmt.Errorf("failed to close temp file: %w", err)
+		}
 
 		return &azdext.ServicePackageResult{
 			Artifacts: []*azdext.Artifact{
@@ -790,12 +792,12 @@ func (p *AgentServiceTargetProvider) packageCodeDeploy(serviceConfig *azdext.Ser
 
 	// Exclusion patterns
 	excludeDirs := map[string]bool{
-		"__pycache__": true,
-		".venv":       true,
-		"venv":        true,
-		".git":        true,
-		"node_modules": true,
-		".mypy_cache": true,
+		"__pycache__":   true,
+		".venv":         true,
+		"venv":          true,
+		".git":          true,
+		"node_modules":  true,
+		".mypy_cache":   true,
 		".pytest_cache": true,
 	}
 	excludeExts := map[string]bool{
@@ -844,7 +846,7 @@ func (p *AgentServiceTargetProvider) packageCodeDeploy(serviceConfig *azdext.Ser
 		}
 
 		// Add file to ZIP
-		fileData, err := os.ReadFile(path)
+		fileData, err := os.ReadFile(path) //nolint:gosec // path is constructed from filepath.WalkDir within the service directory
 		if err != nil {
 			return fmt.Errorf("failed to read %s: %w", relPath, err)
 		}
@@ -912,7 +914,7 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 		)
 	}
 
-	zipData, err := os.ReadFile(zipPath)
+	zipData, err := os.ReadFile(zipPath) //nolint:gosec // zipPath comes from the artifact location set during packaging
 	if err != nil {
 		return nil, fmt.Errorf("failed to read ZIP artifact: %w", err)
 	}

@@ -589,6 +589,14 @@ func (a *InitAction) Run(ctx context.Context) error {
 				hostedAgent := agentManifest.Template.(agent_yaml.ContainerAgent)
 				hostedAgent.CodeConfiguration = codeConfig
 				agentManifest.Template = hostedAgent
+			} else {
+				// Container mode: ensure any pre-existing code_configuration is removed
+				// (e.g. when switching from code deploy back to container)
+				hostedAgent := agentManifest.Template.(agent_yaml.ContainerAgent)
+				if hostedAgent.CodeConfiguration != nil {
+					hostedAgent.CodeConfiguration = nil
+					agentManifest.Template = hostedAgent
+				}
 			}
 		}
 

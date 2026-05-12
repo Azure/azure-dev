@@ -471,15 +471,15 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 
 	// Prompt user for deploy mode (container vs code)
 	deployModeChoices := []*azdext.SelectChoice{
-		{Label: "Code-based (Python source, no Docker/ACR)", Value: "code"},
-		{Label: "Container-based (Dockerfile + ACR)", Value: "container"},
+		{Label: "Container (Docker)", Value: "container"},
+		{Label: "Code deploy (ZIP upload)", Value: "code"},
 	}
 
 	var deployMode string
 	if a.flags.noPrompt {
 		deployMode = "container" // default to container for backward compatibility
 	} else {
-		defaultIdx := int32(0)
+		defaultIdx := int32(0) // Container is the default for backward compatibility
 		deployModeResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 			Options: &azdext.SelectOptions{
 				Message:       "How would you like to deploy your agent?",
@@ -1122,15 +1122,15 @@ func knownProtocolNames() string {
 // When noPrompt is true, defaults to "container" for backward compatibility.
 func promptDeployMode(ctx context.Context, azdClient *azdext.AzdClient, noPrompt bool) (string, error) {
 	deployModeChoices := []*azdext.SelectChoice{
-		{Label: "Code-based (Python source, no Docker/ACR)", Value: "code"},
-		{Label: "Container-based (Dockerfile + ACR)", Value: "container"},
+		{Label: "Container (Docker)", Value: "container"},
+		{Label: "Code deploy (ZIP upload)", Value: "code"},
 	}
 
 	if noPrompt {
 		return "container", nil
 	}
 
-	defaultIdx := int32(0)
+	defaultIdx := int32(0) // Container is the default for backward compatibility
 	deployModeResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
 			Message:       "How would you like to deploy your agent?",

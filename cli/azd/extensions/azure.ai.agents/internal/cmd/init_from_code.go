@@ -470,30 +470,15 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 	agentKind := agent_yaml.AgentKindHosted
 
 	// Prompt user for deploy mode (container vs code)
-	deployModeChoices := []*azdext.SelectChoice{
-		{Label: "Container (Docker)", Value: "container"},
-		{Label: "Code deploy (ZIP upload)", Value: "code"},
+	// Code deploy is only available for Python projects
+	srcDir := a.flags.src
+	if srcDir == "" {
+		srcDir, _ = os.Getwd()
 	}
-
-	var deployMode string
-	if a.flags.noPrompt {
-		deployMode = "container" // default to container for backward compatibility
-	} else {
-		defaultIdx := int32(0) // Container is the default for backward compatibility
-		deployModeResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
-			Options: &azdext.SelectOptions{
-				Message:       "How would you like to deploy your agent?",
-				Choices:       deployModeChoices,
-				SelectedIndex: &defaultIdx,
-			},
-		})
-		if err != nil {
-			if exterrors.IsCancellation(err) {
-				return nil, exterrors.Cancelled("deploy mode selection was cancelled")
-			}
-			return nil, fmt.Errorf("failed to prompt for deploy mode: %w", err)
-		}
-		deployMode = deployModeChoices[*deployModeResp.Value].Value
+	showCodeDeploy := isPythonProject(srcDir)
+	deployMode, err := promptDeployMode(ctx, a.azdClient, a.flags.noPrompt, showCodeDeploy)
+	if err != nil {
+		return nil, err
 	}
 
 	// If code deploy, prompt for code configuration details
@@ -863,16 +848,7 @@ func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string,
 		agentConfig.StartupCommand = startupCmd
 	} else {
 		// For code deploy, auto-derive startupCommand from entry point in agent.yaml
-		agentYamlPath := filepath.Join(a.projectConfig.Path, targetDir, "agent.yaml")
-		if data, err := os.ReadFile(agentYamlPath); err == nil { //nolint:gosec // path is constructed from project config
-			var agentDef agent_yaml.ContainerAgent
-			if err := yaml.Unmarshal(data, &agentDef); err == nil && agentDef.CodeConfiguration != nil {
-				agentConfig.StartupCommand = "python " + agentDef.CodeConfiguration.EntryPoint
-			}
-		}
-		if agentConfig.StartupCommand == "" {
-			agentConfig.StartupCommand = "python main.py"
-		}
+		agentConfig.StartupCommand = deriveStartupCommand(a.projectConfig.Path, targetDir)
 	}
 
 	var agentConfigStruct *structpb.Struct
@@ -913,96 +889,20 @@ func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string,
 
 // promptCodeConfiguration prompts the user for code deploy configuration settings.
 func (a *InitFromCodeAction) promptCodeConfiguration(ctx context.Context, srcDir string) (*agent_yaml.CodeConfiguration, error) {
-	if srcDir == "" {
-		srcDir = "."
-	}
+	return promptCodeConfig(ctx, a.azdClient, srcDir, a.flags.noPrompt)
+}
 
-	// Prompt for runtime
-	runtimeChoices := []*azdext.SelectChoice{
-		{Label: "Python 3.12", Value: "python_3_12"},
-		{Label: "Python 3.11", Value: "python_3_11"},
-		{Label: "Python 3.13", Value: "python_3_13"},
-	}
-
-	var runtime string
-	if a.flags.noPrompt {
-		runtime = "python_3_12"
-	} else {
-		defaultIdx := int32(0)
-		runtimeResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
-			Options: &azdext.SelectOptions{
-				Message:       "Select the runtime for your agent",
-				Choices:       runtimeChoices,
-				SelectedIndex: &defaultIdx,
-			},
-		})
-		if err != nil {
-			if exterrors.IsCancellation(err) {
-				return nil, exterrors.Cancelled("runtime selection was cancelled")
-			}
-			return nil, fmt.Errorf("failed to prompt for runtime: %w", err)
+// deriveStartupCommand derives the startup command for code deploy from the agent.yaml
+// entry point. Falls back to "python main.py" if the entry point cannot be determined.
+func deriveStartupCommand(projectPath, targetDir string) string {
+	agentYamlPath := filepath.Join(projectPath, targetDir, "agent.yaml")
+	if data, err := os.ReadFile(agentYamlPath); err == nil { //nolint:gosec // path is constructed from project config
+		var agentDef agent_yaml.ContainerAgent
+		if err := yaml.Unmarshal(data, &agentDef); err == nil && agentDef.CodeConfiguration != nil {
+			return "python " + agentDef.CodeConfiguration.EntryPoint
 		}
-		runtime = runtimeChoices[*runtimeResp.Value].Value
 	}
-
-	// Prompt for entry point
-	defaultEntryPoint := "main.py"
-	// Try to detect entry point from common patterns in source directory
-	if _, err := os.Stat(filepath.Join(srcDir, "app.py")); err == nil {
-		defaultEntryPoint = "app.py"
-	}
-
-	var entryPoint string
-	if a.flags.noPrompt {
-		entryPoint = defaultEntryPoint
-	} else {
-		entryPointResp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-			Options: &azdext.PromptOptions{
-				Message:      "Enter the entry point file for your agent",
-				DefaultValue: defaultEntryPoint,
-			},
-		})
-		if err != nil {
-			if exterrors.IsCancellation(err) {
-				return nil, exterrors.Cancelled("entry point prompt was cancelled")
-			}
-			return nil, fmt.Errorf("failed to prompt for entry point: %w", err)
-		}
-		entryPoint = entryPointResp.Value
-	}
-
-	// Prompt for dependency resolution
-	depResChoices := []*azdext.SelectChoice{
-		{Label: "Remote build (server installs dependencies)", Value: "remote_build"},
-		{Label: "Bundled (pre-install dependencies locally)", Value: "bundled"},
-	}
-
-	var depResolution string
-	if a.flags.noPrompt {
-		depResolution = "remote_build"
-	} else {
-		defaultIdx := int32(0)
-		depResResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
-			Options: &azdext.SelectOptions{
-				Message:       "How should dependencies be resolved?",
-				Choices:       depResChoices,
-				SelectedIndex: &defaultIdx,
-			},
-		})
-		if err != nil {
-			if exterrors.IsCancellation(err) {
-				return nil, exterrors.Cancelled("dependency resolution selection was cancelled")
-			}
-			return nil, fmt.Errorf("failed to prompt for dependency resolution: %w", err)
-		}
-		depResolution = depResChoices[*depResResp.Value].Value
-	}
-
-	return &agent_yaml.CodeConfiguration{
-		Runtime:              runtime,
-		EntryPoint:           entryPoint,
-		DependencyResolution: &depResolution,
-	}, nil
+	return "python main.py"
 }
 
 // protocolInfo pairs a protocol name with the default version used when generating agent.yaml.
@@ -1130,10 +1030,15 @@ func knownProtocolNames() string {
 
 // promptDeployMode asks the user to choose between code deploy and container deploy.
 // When noPrompt is true, defaults to "container" for backward compatibility.
-func promptDeployMode(ctx context.Context, azdClient *azdext.AzdClient, noPrompt bool) (string, error) {
+// When showCodeDeploy is false, code deploy is not offered (e.g. for non-Python languages).
+func promptDeployMode(ctx context.Context, azdClient *azdext.AzdClient, noPrompt bool, showCodeDeploy bool) (string, error) {
+	if !showCodeDeploy {
+		return "container", nil
+	}
+
 	deployModeChoices := []*azdext.SelectChoice{
-		{Label: "Container (Docker)", Value: "container"},
-		{Label: "Code deploy (ZIP upload)", Value: "code"},
+		{Label: "Container Image (Docker)", Value: "container"},
+		{Label: "Source Code (ZIP upload)", Value: "code"},
 	}
 
 	if noPrompt {
@@ -1157,35 +1062,40 @@ func promptDeployMode(ctx context.Context, azdClient *azdext.AzdClient, noPrompt
 	return deployModeChoices[*deployModeResp.Value].Value, nil
 }
 
-// promptCodeConfigurationShared prompts for code deploy configuration (runtime, entry point,
-// dependency resolution). This is the standalone version used by the template init flow.
-func promptCodeConfigurationShared(ctx context.Context, azdClient *azdext.AzdClient, srcDir string) (*agent_yaml.CodeConfiguration, error) {
+// promptCodeConfig prompts for code deploy configuration (runtime, entry point,
+// dependency resolution). When noPrompt is true, defaults are used without prompting.
+func promptCodeConfig(ctx context.Context, azdClient *azdext.AzdClient, srcDir string, noPrompt bool) (*agent_yaml.CodeConfiguration, error) {
 	if srcDir == "" {
 		srcDir = "."
 	}
 
 	// Prompt for runtime
 	runtimeChoices := []*azdext.SelectChoice{
-		{Label: "Python 3.12", Value: "python_3_12"},
 		{Label: "Python 3.11", Value: "python_3_11"},
+		{Label: "Python 3.12", Value: "python_3_12"},
 		{Label: "Python 3.13", Value: "python_3_13"},
 	}
 
-	defaultIdx := int32(0)
-	runtimeResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
-		Options: &azdext.SelectOptions{
-			Message:       "Select the runtime for your agent",
-			Choices:       runtimeChoices,
-			SelectedIndex: &defaultIdx,
-		},
-	})
-	if err != nil {
-		if exterrors.IsCancellation(err) {
-			return nil, exterrors.Cancelled("runtime selection was cancelled")
+	var runtime string
+	if noPrompt {
+		runtime = "python_3_12"
+	} else {
+		defaultIdx := int32(1) // Python 3.12 is the default
+		runtimeResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+			Options: &azdext.SelectOptions{
+				Message:       "Select the runtime for your agent",
+				Choices:       runtimeChoices,
+				SelectedIndex: &defaultIdx,
+			},
+		})
+		if err != nil {
+			if exterrors.IsCancellation(err) {
+				return nil, exterrors.Cancelled("runtime selection was cancelled")
+			}
+			return nil, fmt.Errorf("failed to prompt for runtime: %w", err)
 		}
-		return nil, fmt.Errorf("failed to prompt for runtime: %w", err)
+		runtime = runtimeChoices[*runtimeResp.Value].Value
 	}
-	runtime := runtimeChoices[*runtimeResp.Value].Value
 
 	// Prompt for entry point
 	defaultEntryPoint := "main.py"
@@ -1193,45 +1103,78 @@ func promptCodeConfigurationShared(ctx context.Context, azdClient *azdext.AzdCli
 		defaultEntryPoint = "app.py"
 	}
 
-	entryPointResp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-		Options: &azdext.PromptOptions{
-			Message:      "Enter the entry point file for your agent",
-			DefaultValue: defaultEntryPoint,
-		},
-	})
-	if err != nil {
-		if exterrors.IsCancellation(err) {
-			return nil, exterrors.Cancelled("entry point prompt was cancelled")
+	var entryPoint string
+	if noPrompt {
+		entryPoint = defaultEntryPoint
+	} else {
+		entryPointResp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+			Options: &azdext.PromptOptions{
+				Message:      "Enter the file path for the entry point of the agent",
+				DefaultValue: defaultEntryPoint,
+			},
+		})
+		if err != nil {
+			if exterrors.IsCancellation(err) {
+				return nil, exterrors.Cancelled("entry point prompt was cancelled")
+			}
+			return nil, fmt.Errorf("failed to prompt for entry point: %w", err)
 		}
-		return nil, fmt.Errorf("failed to prompt for entry point: %w", err)
+		entryPoint = entryPointResp.Value
 	}
-	entryPoint := entryPointResp.Value
 
 	// Prompt for dependency resolution
 	depResChoices := []*azdext.SelectChoice{
-		{Label: "Remote build (server installs dependencies)", Value: "remote_build"},
-		{Label: "Bundled (pre-install dependencies locally)", Value: "bundled"},
+		{Label: "Remote build (dependencies installed on server during deployment)", Value: "remote_build"},
+		{Label: "Bundled (dependencies pre-installed locally and included in ZIP)", Value: "bundled"},
 	}
 
-	depDefaultIdx := int32(0)
-	depResResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
-		Options: &azdext.SelectOptions{
-			Message:       "How should dependencies be resolved?",
-			Choices:       depResChoices,
-			SelectedIndex: &depDefaultIdx,
-		},
-	})
-	if err != nil {
-		if exterrors.IsCancellation(err) {
-			return nil, exterrors.Cancelled("dependency resolution selection was cancelled")
+	var depResolution string
+	if noPrompt {
+		depResolution = "remote_build"
+	} else {
+		depDefaultIdx := int32(0)
+		depResResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+			Options: &azdext.SelectOptions{
+				Message:       "How should dependencies be resolved?",
+				Choices:       depResChoices,
+				SelectedIndex: &depDefaultIdx,
+			},
+		})
+		if err != nil {
+			if exterrors.IsCancellation(err) {
+				return nil, exterrors.Cancelled("dependency resolution selection was cancelled")
+			}
+			return nil, fmt.Errorf("failed to prompt for dependency resolution: %w", err)
 		}
-		return nil, fmt.Errorf("failed to prompt for dependency resolution: %w", err)
+		depResolution = depResChoices[*depResResp.Value].Value
 	}
-	depResolution := depResChoices[*depResResp.Value].Value
 
 	return &agent_yaml.CodeConfiguration{
 		Runtime:              runtime,
 		EntryPoint:           entryPoint,
 		DependencyResolution: &depResolution,
 	}, nil
+}
+
+// isPythonProject returns true if the directory appears to be a Python project,
+// determined by the presence of requirements.txt or any .py file.
+func isPythonProject(dir string) bool {
+	if dir == "" {
+		dir = "."
+	}
+	// Check for requirements.txt
+	if _, err := os.Stat(filepath.Join(dir, "requirements.txt")); err == nil {
+		return true
+	}
+	// Check for any .py file (shallow scan)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".py") {
+			return true
+		}
+	}
+	return false
 }

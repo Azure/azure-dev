@@ -878,9 +878,9 @@ func TestCreateHostedAgentAPIRequest_FullConfig(t *testing.T) {
 		t.Errorf("Description mismatch")
 	}
 
-	imgDef, ok := req.Definition.(agent_api.ImageBasedHostedAgentDefinition)
+	imgDef, ok := req.Definition.(agent_api.HostedAgentDefinition)
 	if !ok {
-		t.Fatalf("expected ImageBasedHostedAgentDefinition, got %T", req.Definition)
+		t.Fatalf("expected HostedAgentDefinition, got %T", req.Definition)
 	}
 	if imgDef.Kind != agent_api.AgentKindHosted {
 		t.Errorf("Kind = %q", imgDef.Kind)
@@ -899,14 +899,14 @@ func TestCreateHostedAgentAPIRequest_FullConfig(t *testing.T) {
 	}
 
 	// Verify protocol versions
-	if len(imgDef.ContainerProtocolVersions) != 2 {
-		t.Fatalf("expected 2 protocol versions, got %d", len(imgDef.ContainerProtocolVersions))
+	if len(imgDef.ProtocolVersions) != 2 {
+		t.Fatalf("expected 2 protocol versions, got %d", len(imgDef.ProtocolVersions))
 	}
-	if imgDef.ContainerProtocolVersions[0].Protocol != "responses" {
-		t.Errorf("protocol[0] = %q", imgDef.ContainerProtocolVersions[0].Protocol)
+	if imgDef.ProtocolVersions[0].Protocol != "responses" {
+		t.Errorf("protocol[0] = %q", imgDef.ProtocolVersions[0].Protocol)
 	}
-	if imgDef.ContainerProtocolVersions[0].Version != "2.0.0" {
-		t.Errorf("version[0] = %q", imgDef.ContainerProtocolVersions[0].Version)
+	if imgDef.ProtocolVersions[0].Version != "2.0.0" {
+		t.Errorf("version[0] = %q", imgDef.ProtocolVersions[0].Version)
 	}
 }
 
@@ -925,15 +925,15 @@ func TestCreateHostedAgentAPIRequest_DefaultProtocols(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	imgDef := req.Definition.(agent_api.ImageBasedHostedAgentDefinition)
-	if len(imgDef.ContainerProtocolVersions) != 1 {
-		t.Fatalf("expected 1 default protocol, got %d", len(imgDef.ContainerProtocolVersions))
+	imgDef := req.Definition.(agent_api.HostedAgentDefinition)
+	if len(imgDef.ProtocolVersions) != 1 {
+		t.Fatalf("expected 1 default protocol, got %d", len(imgDef.ProtocolVersions))
 	}
-	if imgDef.ContainerProtocolVersions[0].Protocol != agent_api.AgentProtocolResponses {
-		t.Errorf("default protocol = %q", imgDef.ContainerProtocolVersions[0].Protocol)
+	if imgDef.ProtocolVersions[0].Protocol != agent_api.AgentProtocolResponses {
+		t.Errorf("default protocol = %q", imgDef.ProtocolVersions[0].Protocol)
 	}
-	if imgDef.ContainerProtocolVersions[0].Version != "1.0.0" {
-		t.Errorf("default version = %q", imgDef.ContainerProtocolVersions[0].Version)
+	if imgDef.ProtocolVersions[0].Version != "1.0.0" {
+		t.Errorf("default version = %q", imgDef.ProtocolVersions[0].Version)
 	}
 }
 
@@ -952,7 +952,7 @@ func TestCreateHostedAgentAPIRequest_DefaultCPUAndMemory(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	imgDef := req.Definition.(agent_api.ImageBasedHostedAgentDefinition)
+	imgDef := req.Definition.(agent_api.HostedAgentDefinition)
 	if imgDef.CPU != "1" {
 		t.Errorf("default CPU = %q, want %q", imgDef.CPU, "1")
 	}
@@ -1015,9 +1015,9 @@ func TestCreateAgentAPIRequestFromDefinition_HostedAgent(t *testing.T) {
 		t.Errorf("Name = %q", req.Name)
 	}
 
-	_, ok := req.Definition.(agent_api.ImageBasedHostedAgentDefinition)
+	_, ok := req.Definition.(agent_api.HostedAgentDefinition)
 	if !ok {
-		t.Fatalf("expected ImageBasedHostedAgentDefinition, got %T", req.Definition)
+		t.Fatalf("expected HostedAgentDefinition, got %T", req.Definition)
 	}
 }
 
@@ -1059,7 +1059,7 @@ func TestCreateAgentAPIRequestFromDefinition_HostedWithBuildOptions(t *testing.T
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	imgDef := req.Definition.(agent_api.ImageBasedHostedAgentDefinition)
+	imgDef := req.Definition.(agent_api.HostedAgentDefinition)
 	if imgDef.Image != "myimg:v2" {
 		t.Errorf("Image = %q", imgDef.Image)
 	}

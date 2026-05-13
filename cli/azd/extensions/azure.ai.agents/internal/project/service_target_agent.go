@@ -643,6 +643,130 @@ func (p *AgentServiceTargetProvider) isCodeDeployAgent() bool {
 	return hasCodeConfig
 }
 
+// deployPrepResult holds the common outputs from prepareDeploy, used by both
+// container and code deploy paths.
+type deployPrepResult struct {
+	resolvedEnvVars map[string]string
+	request         *agent_api.CreateAgentRequest
+	protocols       []agent_yaml.ProtocolVersionRecord
+}
+
+// prepareDeploy handles the common pre-deploy logic shared by container and code
+// deploy: endpoint validation, environment variable resolution, service config
+// parsing, and API request building. The caller provides extra build options
+// (e.g. WithImageURL for container, WithCPU/WithMemory for code).
+func (p *AgentServiceTargetProvider) prepareDeploy(
+	serviceConfig *azdext.ServiceConfig,
+	agentDef agent_yaml.ContainerAgent,
+	azdEnv map[string]string,
+	extraOptions []agent_yaml.AgentBuildOption,
+) (*deployPrepResult, error) {
+	if azdEnv["AZURE_AI_PROJECT_ENDPOINT"] == "" {
+		return nil, exterrors.Dependency(
+			exterrors.CodeMissingAiProjectEndpoint,
+			"AZURE_AI_PROJECT_ENDPOINT is required: environment variable was not found in the current azd environment",
+			"run 'azd provision' or connect to an existing project via 'azd ai agent init --project-id <resource-id>'",
+		)
+	}
+
+	fmt.Fprintf(os.Stderr, "Loaded configuration from: %s\n", p.agentDefinitionPath)
+	fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["AZURE_AI_PROJECT_ENDPOINT"])
+	fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentDef.Name)
+
+	// Resolve environment variables from YAML using azd environment values
+	resolvedEnvVars := make(map[string]string)
+	if agentDef.EnvironmentVariables != nil {
+		for _, envVar := range *agentDef.EnvironmentVariables {
+			resolvedEnvVars[envVar.Name] = p.resolveEnvironmentVariables(envVar.Value, azdEnv)
+		}
+	}
+
+	// Parse service config for container resource overrides
+	var foundryAgentConfig *ServiceTargetAgentConfig
+	if err := UnmarshalStruct(serviceConfig.Config, &foundryAgentConfig); err != nil {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("failed to parse foundry agent config: %s", err),
+			"check the service configuration in azure.yaml",
+		)
+	}
+
+	warnDeprecatedScaleSettings(serviceConfig.Config)
+
+	var cpu, memory string
+	if foundryAgentConfig != nil && foundryAgentConfig.Container != nil && foundryAgentConfig.Container.Resources != nil {
+		cpu = foundryAgentConfig.Container.Resources.Cpu
+		memory = foundryAgentConfig.Container.Resources.Memory
+	}
+
+	// Build options: env vars + cpu/memory (if set) + caller-provided extras
+	options := []agent_yaml.AgentBuildOption{
+		agent_yaml.WithEnvironmentVariables(resolvedEnvVars),
+	}
+	if cpu != "" {
+		options = append(options, agent_yaml.WithCPU(cpu))
+	}
+	if memory != "" {
+		options = append(options, agent_yaml.WithMemory(memory))
+	}
+	options = append(options, extraOptions...)
+
+	request, err := agent_yaml.CreateAgentAPIRequestFromDefinition(agentDef, options...)
+	if err != nil {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidAgentRequest,
+			fmt.Sprintf("failed to create agent request from definition: %s", err),
+			"verify the agent.yaml definition is correct",
+		)
+	}
+
+	applyAgentMetadata(request)
+
+	// Default to "responses" protocol when none specified in agent.yaml.
+	protocols := agentDef.Protocols
+	if len(protocols) == 0 {
+		protocols = []agent_yaml.ProtocolVersionRecord{
+			{Protocol: string(agent_api.AgentProtocolResponses), Version: "1.0.0"},
+		}
+	}
+
+	return &deployPrepResult{
+		resolvedEnvVars: resolvedEnvVars,
+		request:         request,
+		protocols:       protocols,
+	}, nil
+}
+
+// finalizeDeploy handles the common post-deploy logic: registering environment
+// variables and building the deploy result artifacts.
+func (p *AgentServiceTargetProvider) finalizeDeploy(
+	ctx context.Context,
+	progress azdext.ProgressReporter,
+	serviceConfig *azdext.ServiceConfig,
+	azdEnv map[string]string,
+	agentVersion *agent_api.AgentVersionObject,
+	protocols []agent_yaml.ProtocolVersionRecord,
+) (*azdext.ServiceDeployResult, error) {
+	progress("Registering agent environment variables")
+
+	err := p.registerAgentEnvironmentVariables(ctx, azdEnv, serviceConfig, agentVersion, protocols)
+	if err != nil {
+		return nil, err
+	}
+
+	artifacts := p.deployArtifacts(
+		agentVersion.Name,
+		agentVersion.Version,
+		azdEnv["AZURE_AI_PROJECT_ID"],
+		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
+		protocols,
+	)
+
+	return &azdext.ServiceDeployResult{
+		Artifacts: artifacts,
+	}, nil
+}
+
 // deployHostedAgent deploys a container-based hosted agent to the Foundry service.
 func (p *AgentServiceTargetProvider) deployHostedAgent(
 	ctx context.Context,
@@ -652,18 +776,9 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 	agentDef agent_yaml.ContainerAgent,
 	azdEnv map[string]string,
 ) (*azdext.ServiceDeployResult, error) {
-	// Check if environment variable is set
-	if azdEnv["AZURE_AI_PROJECT_ENDPOINT"] == "" {
-		return nil, exterrors.Dependency(
-			exterrors.CodeMissingAiProjectEndpoint,
-			"AZURE_AI_PROJECT_ENDPOINT is required: environment variable was not found in the current azd environment",
-			"run 'azd provision' or connect to an existing project via 'azd ai agent init --project-id <resource-id>'",
-		)
-	}
-
 	progress("Deploying hosted agent")
 
-	// Step 1: Build container image
+	// Find container image URL from publish artifacts
 	var fullImageURL string
 	for _, artifact := range serviceContext.Publish {
 		if artifact.Kind == azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER &&
@@ -680,99 +795,24 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		)
 	}
 
-	fmt.Fprintf(os.Stderr, "Loaded configuration from: %s\n", p.agentDefinitionPath)
-	fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["AZURE_AI_PROJECT_ENDPOINT"])
-	fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentDef.Name)
-
-	// Step 2: Resolve environment variables from YAML using azd environment values
-	resolvedEnvVars := make(map[string]string)
-	if agentDef.EnvironmentVariables != nil {
-		for _, envVar := range *agentDef.EnvironmentVariables {
-			resolvedEnvVars[envVar.Name] = p.resolveEnvironmentVariables(envVar.Value, azdEnv)
-		}
-	}
-
-	// Step 3: Create agent request with image URL and resolved environment variables
-	var foundryAgentConfig *ServiceTargetAgentConfig
-	if err := UnmarshalStruct(serviceConfig.Config, &foundryAgentConfig); err != nil {
-		return nil, exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("failed to parse foundry agent config: %s", err),
-			"check the service configuration in azure.yaml",
-		)
-	}
-
-	warnDeprecatedScaleSettings(serviceConfig.Config)
-
-	var cpu, memory string
-	if foundryAgentConfig.Container != nil && foundryAgentConfig.Container.Resources != nil {
-		cpu = foundryAgentConfig.Container.Resources.Cpu
-		memory = foundryAgentConfig.Container.Resources.Memory
-	}
-
-	// Build options list starting with required options
-	options := []agent_yaml.AgentBuildOption{
+	prep, err := p.prepareDeploy(serviceConfig, agentDef, azdEnv, []agent_yaml.AgentBuildOption{
 		agent_yaml.WithImageURL(fullImageURL),
-		agent_yaml.WithEnvironmentVariables(resolvedEnvVars),
-	}
-
-	// Conditionally add CPU and memory options if they're not empty
-	if cpu != "" {
-		options = append(options, agent_yaml.WithCPU(cpu))
-	}
-	if memory != "" {
-		options = append(options, agent_yaml.WithMemory(memory))
-	}
-
-	request, err := agent_yaml.CreateAgentAPIRequestFromDefinition(agentDef, options...)
+	})
 	if err != nil {
-		return nil, exterrors.Validation(
-			exterrors.CodeInvalidAgentRequest,
-			fmt.Sprintf("failed to create agent request from definition: %s", err),
-			"verify the agent.yaml definition is correct",
-		)
+		return nil, err
 	}
-
-	// Set experience metadata on the request
-	applyAgentMetadata(request)
 
 	// Display agent information
-	p.displayAgentInfo(request)
+	p.displayAgentInfo(prep.request)
 
-	// Step 4: Create agent
+	// Create agent
 	progress("Creating agent")
-	agentVersionResponse, err := p.createAgent(ctx, request, azdEnv)
+	agentVersionResponse, err := p.createAgent(ctx, prep.request, azdEnv)
 	if err != nil {
 		return nil, err
 	}
 
-	// Register agent info in environment
-	progress("Registering agent environment variables")
-
-	// Default to "responses" protocol when none specified in agent.yaml.
-	protocols := agentDef.Protocols
-	if len(protocols) == 0 {
-		protocols = []agent_yaml.ProtocolVersionRecord{
-			{Protocol: string(agent_api.AgentProtocolResponses), Version: "1.0.0"},
-		}
-	}
-
-	err = p.registerAgentEnvironmentVariables(ctx, azdEnv, serviceConfig, agentVersionResponse, protocols)
-	if err != nil {
-		return nil, err
-	}
-
-	artifacts := p.deployArtifacts(
-		agentVersionResponse.Name,
-		agentVersionResponse.Version,
-		azdEnv["AZURE_AI_PROJECT_ID"],
-		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
-		protocols,
-	)
-
-	return &azdext.ServiceDeployResult{
-		Artifacts: artifacts,
-	}, nil
+	return p.finalizeDeploy(ctx, progress, serviceConfig, azdEnv, agentVersionResponse, prep.protocols)
 }
 
 // packageCodeDeploy creates a ZIP archive of the agent source code, writes it to a temp file,
@@ -912,15 +952,10 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 	agentDef agent_yaml.ContainerAgent,
 	azdEnv map[string]string,
 ) (*azdext.ServiceDeployResult, error) {
-	if azdEnv["AZURE_AI_PROJECT_ENDPOINT"] == "" {
-		return nil, exterrors.Dependency(
-			exterrors.CodeMissingAiProjectEndpoint,
-			"AZURE_AI_PROJECT_ENDPOINT is required: environment variable was not found in the current azd environment",
-			"run 'azd provision' or connect to an existing project via 'azd ai agent init --project-id <resource-id>'",
-		)
-	}
-
 	progress("Deploying hosted agent (code deploy)")
+
+	// TODO: Add region validation for code deploy — verify that the Foundry project's
+	// region supports code deploy before attempting the upload.
 
 	// Find the ZIP artifact from Package phase
 	var zipPath, sha256Hex string
@@ -935,7 +970,7 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 		return nil, exterrors.Dependency(
 			exterrors.CodeMissingCodeZipArtifact,
 			"code ZIP artifact not found: no code-zip artifact was found in service package artifacts",
-			"run 'azd deploy' to package and deploy the agent",
+			"run 'azd package' to produce the code ZIP artifact",
 		)
 	}
 
@@ -946,72 +981,29 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 	// Clean up temp file
 	defer os.Remove(zipPath)
 
-	fmt.Fprintf(os.Stderr, "Loaded configuration from: %s\n", p.agentDefinitionPath)
-	fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["AZURE_AI_PROJECT_ENDPOINT"])
-	fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentDef.Name)
-	fmt.Fprintf(os.Stderr, "Runtime: %s\n", agentDef.CodeConfiguration.Runtime)
-	fmt.Fprintf(os.Stderr, "Entry Point: [\"python\", \"%s\"]\n", agentDef.CodeConfiguration.EntryPoint)
-	depRes := "bundled"
-	if agentDef.CodeConfiguration.DependencyResolution != nil {
-		depRes = *agentDef.CodeConfiguration.DependencyResolution
-	}
-	fmt.Fprintf(os.Stderr, "Packaging: %s\n", depRes)
-
-	// Resolve environment variables
-	resolvedEnvVars := make(map[string]string)
-	if agentDef.EnvironmentVariables != nil {
-		for _, envVar := range *agentDef.EnvironmentVariables {
-			resolvedEnvVars[envVar.Name] = p.resolveEnvironmentVariables(envVar.Value, azdEnv)
-		}
-	}
-
-	// Parse service config for cpu/memory
-	var foundryAgentConfig *ServiceTargetAgentConfig
-	if err := UnmarshalStruct(serviceConfig.Config, &foundryAgentConfig); err != nil {
-		return nil, exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("failed to parse foundry agent config: %s", err),
-			"check the service configuration in azure.yaml",
-		)
-	}
-
-	cpu := "1"
-	memory := "2Gi"
-	if foundryAgentConfig != nil && foundryAgentConfig.Container != nil && foundryAgentConfig.Container.Resources != nil {
-		if foundryAgentConfig.Container.Resources.Cpu != "" {
-			cpu = foundryAgentConfig.Container.Resources.Cpu
-		}
-		if foundryAgentConfig.Container.Resources.Memory != "" {
-			memory = foundryAgentConfig.Container.Resources.Memory
-		}
-	}
-
-	// Build the API request definition
-	options := []agent_yaml.AgentBuildOption{
-		agent_yaml.WithCPU(cpu),
-		agent_yaml.WithMemory(memory),
-		agent_yaml.WithEnvironmentVariables(resolvedEnvVars),
-	}
-
-	request, err := agent_yaml.CreateAgentAPIRequestFromDefinition(agentDef, options...)
+	prep, err := p.prepareDeploy(serviceConfig, agentDef, azdEnv, nil)
 	if err != nil {
-		return nil, exterrors.Validation(
-			exterrors.CodeInvalidAgentRequest,
-			fmt.Sprintf("failed to create agent request from definition: %s", err),
-			"verify the agent.yaml definition is correct",
-		)
+		return nil, err
 	}
 
-	// Set experience metadata
-	applyAgentMetadata(request)
+	if agentDef.CodeConfiguration != nil {
+		fmt.Fprintf(os.Stderr, "Runtime: %s\n", agentDef.CodeConfiguration.Runtime)
+		fmt.Fprintf(os.Stderr, "Entry Point: [\"python\", \"%s\"]\n", agentDef.CodeConfiguration.EntryPoint)
+		depRes := "bundled"
+		if agentDef.CodeConfiguration.DependencyResolution != nil {
+			depRes = *agentDef.CodeConfiguration.DependencyResolution
+		}
+		fmt.Fprintf(os.Stderr, "Packaging: %s\n", depRes)
+	}
 
-	fmt.Fprintf(os.Stderr, "CPU: %s  Memory: %s\n", cpu, memory)
+	// Display agent information
+	p.displayAgentInfo(prep.request)
 
 	// Build the metadata for multipart upload
 	versionRequest := &agent_api.CreateAgentVersionRequest{
-		Description: request.Description,
-		Metadata:    request.Metadata,
-		Definition:  request.Definition,
+		Description: prep.request.Description,
+		Metadata:    prep.request.Metadata,
+		Definition:  prep.request.Definition,
 	}
 
 	// Create agent client
@@ -1027,8 +1019,7 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 
 	if getErr != nil {
 		// Only fall back to create on 404; propagate other errors (auth, 5xx, network)
-		var respErr *azcore.ResponseError
-		if !errors.As(getErr, &respErr) || respErr.StatusCode != http.StatusNotFound {
+		if respErr, ok := errors.AsType[*azcore.ResponseError](getErr); !ok || respErr.StatusCode != http.StatusNotFound {
 			return nil, fmt.Errorf("failed to check if agent exists: %w", getErr)
 		}
 		// Agent doesn't exist — create
@@ -1054,6 +1045,10 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 
 	// Poll for status if remote build
 	latestVersion := &agentResp.Versions.Latest
+	depRes := "bundled"
+	if agentDef.CodeConfiguration != nil && agentDef.CodeConfiguration.DependencyResolution != nil {
+		depRes = *agentDef.CodeConfiguration.DependencyResolution
+	}
 	if depRes == "remote_build" && latestVersion.Status == "creating" {
 		fmt.Fprintf(os.Stderr, "Waiting for remote build to complete...\n")
 		pollTimeout := 5 * time.Minute
@@ -1093,12 +1088,10 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 	}
 
 	// Patch agent-level fields (agent_endpoint, agent_card) if present.
-	// These are agent-level properties, not version-level, so they require
-	// a separate PatchAgent call after version creation.
-	if request.AgentEndpoint != nil || request.AgentCard != nil {
+	if prep.request.AgentEndpoint != nil || prep.request.AgentCard != nil {
 		patchRequest := &agent_api.PatchAgentRequest{
-			AgentEndpoint: request.AgentEndpoint,
-			AgentCard:     request.AgentCard,
+			AgentEndpoint: prep.request.AgentEndpoint,
+			AgentCard:     prep.request.AgentCard,
 		}
 
 		_, err := agentClient.PatchAgent(ctx, agentDef.Name, patchRequest, agentAPIVersion)
@@ -1111,31 +1104,7 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 		fmt.Fprintf(os.Stderr, "Agent endpoint/card updated.\n")
 	}
 
-	// Register environment variables
-	progress("Registering agent environment variables")
-	protocols := agentDef.Protocols
-	if len(protocols) == 0 {
-		protocols = []agent_yaml.ProtocolVersionRecord{
-			{Protocol: string(agent_api.AgentProtocolResponses), Version: "1.0.0"},
-		}
-	}
-
-	err = p.registerAgentEnvironmentVariables(ctx, azdEnv, serviceConfig, latestVersion, protocols)
-	if err != nil {
-		return nil, err
-	}
-
-	artifacts := p.deployArtifacts(
-		latestVersion.Name,
-		latestVersion.Version,
-		azdEnv["AZURE_AI_PROJECT_ID"],
-		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
-		protocols,
-	)
-
-	return &azdext.ServiceDeployResult{
-		Artifacts: artifacts,
-	}, nil
+	return p.finalizeDeploy(ctx, progress, serviceConfig, azdEnv, latestVersion, prep.protocols)
 }
 
 // deployArtifacts constructs the artifacts list for deployment results.
@@ -1347,11 +1316,13 @@ func (p *AgentServiceTargetProvider) displayAgentInfo(request *agent_api.CreateA
 	fmt.Fprintf(os.Stderr, "Description: %s\n", description)
 
 	// Display agent-specific information
-	if imageHostedDef, ok := request.Definition.(agent_api.ImageBasedHostedAgentDefinition); ok {
-		fmt.Fprintf(os.Stderr, "Image: %s\n", imageHostedDef.Image)
-		fmt.Fprintf(os.Stderr, "CPU: %s\n", imageHostedDef.CPU)
-		fmt.Fprintf(os.Stderr, "Memory: %s\n", imageHostedDef.Memory)
-		fmt.Fprintf(os.Stderr, "Protocol Versions: %+v\n", imageHostedDef.ContainerProtocolVersions)
+	if hostedDef, ok := request.Definition.(agent_api.HostedAgentDefinition); ok {
+		if hostedDef.Image != "" {
+			fmt.Fprintf(os.Stderr, "Image: %s\n", hostedDef.Image)
+		}
+		fmt.Fprintf(os.Stderr, "CPU: %s\n", hostedDef.CPU)
+		fmt.Fprintf(os.Stderr, "Memory: %s\n", hostedDef.Memory)
+		fmt.Fprintf(os.Stderr, "Protocol Versions: %+v\n", hostedDef.ProtocolVersions)
 	}
 	fmt.Fprintln(os.Stderr)
 }

@@ -112,7 +112,7 @@ func TestHostedAgentDefinition_RoundTrip(t *testing.T) {
 
 	original := HostedAgentDefinition{
 		AgentDefinition: AgentDefinition{Kind: AgentKindHosted},
-		ContainerProtocolVersions: []ProtocolVersionRecord{
+		ProtocolVersions: []ProtocolVersionRecord{
 			{Protocol: AgentProtocolResponses, Version: "2024-07-01"},
 		},
 		CPU:                  "1.0",
@@ -142,27 +142,25 @@ func TestHostedAgentDefinition_RoundTrip(t *testing.T) {
 	if got.Kind != AgentKindHosted {
 		t.Errorf("Kind = %q, want %q", got.Kind, AgentKindHosted)
 	}
-	if len(got.ContainerProtocolVersions) != 1 || got.ContainerProtocolVersions[0].Version != "2024-07-01" {
-		t.Error("ContainerProtocolVersions mismatch")
+	if len(got.ProtocolVersions) != 1 || got.ProtocolVersions[0].Version != "2024-07-01" {
+		t.Error("ProtocolVersions mismatch")
 	}
 	if got.EnvironmentVariables["LOG_LEVEL"] != "debug" {
 		t.Error("EnvironmentVariables mismatch")
 	}
 }
 
-func TestImageBasedHostedAgentDefinition_RoundTrip(t *testing.T) {
+func TestHostedAgentDefinition_ContainerImage_RoundTrip(t *testing.T) {
 	t.Parallel()
 
-	original := ImageBasedHostedAgentDefinition{
-		HostedAgentDefinition: HostedAgentDefinition{
-			AgentDefinition: AgentDefinition{Kind: AgentKindHosted},
-			ContainerProtocolVersions: []ProtocolVersionRecord{
-				{Protocol: AgentProtocolActivityProtocol, Version: "1.0"},
-			},
-			CPU:    "0.5",
-			Memory: "1Gi",
+	original := HostedAgentDefinition{
+		AgentDefinition: AgentDefinition{Kind: AgentKindHosted},
+		ProtocolVersions: []ProtocolVersionRecord{
+			{Protocol: AgentProtocolActivityProtocol, Version: "1.0"},
 		},
-		Image: "myregistry.azurecr.io/agent:latest",
+		CPU:    "0.5",
+		Memory: "1Gi",
+		Image:  "myregistry.azurecr.io/agent:latest",
 	}
 
 	data, err := json.Marshal(original)
@@ -174,8 +172,11 @@ func TestImageBasedHostedAgentDefinition_RoundTrip(t *testing.T) {
 	if !strings.Contains(s, `"image"`) {
 		t.Error("expected JSON to contain \"image\"")
 	}
+	if !strings.Contains(s, `"container_protocol_versions"`) {
+		t.Error("expected JSON to contain \"container_protocol_versions\"")
+	}
 
-	var got ImageBasedHostedAgentDefinition
+	var got HostedAgentDefinition
 	if err := json.Unmarshal(data, &got); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}

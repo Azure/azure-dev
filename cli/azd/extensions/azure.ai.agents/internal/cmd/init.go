@@ -571,9 +571,11 @@ func (a *InitAction) Run(ctx context.Context) error {
 			return fmt.Errorf("downloading agent.yaml: %w", err)
 		}
 
-		// Prompt for deploy mode (code vs container) for hosted agents
+		// Prompt for deploy mode (code vs container) for hosted agents.
+		// Code deploy is currently only supported for Python projects.
 		if _, ok := agentManifest.Template.(agent_yaml.ContainerAgent); ok {
-			deployMode, err := promptDeployMode(ctx, a.azdClient, a.flags.noPrompt)
+			isPython := isPythonProject(targetDir)
+			deployMode, err := promptDeployMode(ctx, a.azdClient, a.flags.noPrompt, isPython)
 			if err != nil {
 				return fmt.Errorf("prompting for deploy mode: %w", err)
 			}
@@ -581,7 +583,7 @@ func (a *InitAction) Run(ctx context.Context) error {
 
 			if a.isCodeDeploy {
 				// Prompt for code configuration and update the manifest
-				codeConfig, err := promptCodeConfigurationShared(ctx, a.azdClient, targetDir)
+				codeConfig, err := promptCodeConfig(ctx, a.azdClient, targetDir, a.flags.noPrompt)
 				if err != nil {
 					return fmt.Errorf("prompting for code configuration: %w", err)
 				}
@@ -1603,16 +1605,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	// Detect startup command from the project source directory
 	if a.isCodeDeploy {
 		// For code deploy, auto-derive startupCommand from entry point in agent.yaml
-		agentYamlPath := filepath.Join(a.projectConfig.Path, targetDir, "agent.yaml")
-		if data, readErr := os.ReadFile(agentYamlPath); readErr == nil { //nolint:gosec // path is constructed from project config
-			var containerAgent agent_yaml.ContainerAgent
-			if yamlErr := yaml.Unmarshal(data, &containerAgent); yamlErr == nil && containerAgent.CodeConfiguration != nil {
-				agentConfig.StartupCommand = "python " + containerAgent.CodeConfiguration.EntryPoint
-			}
-		}
-		if agentConfig.StartupCommand == "" {
-			agentConfig.StartupCommand = "python main.py"
-		}
+		agentConfig.StartupCommand = deriveStartupCommand(a.projectConfig.Path, targetDir)
 	} else {
 		startupCmd, err := resolveStartupCommandForInit(ctx, a.azdClient, a.projectConfig.Path, targetDir, a.flags.noPrompt)
 		if err != nil {

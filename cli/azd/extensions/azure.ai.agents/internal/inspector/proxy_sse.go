@@ -59,7 +59,7 @@ func (s *rpcSession) proxyFetchSSE(raw json.RawMessage) {
 			req.Header.Set(k, v)
 		}
 
-		resp, err := sessionHTTPClient.Do(req)
+		resp, err := streamHTTPClient.Do(req)
 		if err != nil {
 			if streamCtx.Err() != nil {
 				return

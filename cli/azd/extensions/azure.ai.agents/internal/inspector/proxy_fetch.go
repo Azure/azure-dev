@@ -45,9 +45,17 @@ type proxyInvokeResult struct {
 	Body       string            `json:"body,omitempty"`
 }
 
+// sessionHTTPClient is for one-shot fetch/invoke calls. The 5-minute timeout
+// is generous for buffered responses but would silently truncate long-lived
+// streams, so streamHTTPClient below has no timeout for SSE pumps.
 var sessionHTTPClient = &http.Client{
 	Timeout: 300 * time.Second,
 }
+
+// streamHTTPClient is used for SSE pumps (proxyFetchSSE / pumpSSE). No
+// Client.Timeout — lifecycle is bound to the per-stream context, so the
+// stream lasts as long as the agent keeps emitting events.
+var streamHTTPClient = &http.Client{}
 
 func (s *rpcSession) proxyFetch(raw json.RawMessage) (any, error) {
 	var p proxyFetchParams
@@ -115,7 +123,10 @@ func (s *rpcSession) proxyInvoke(raw json.RawMessage) (any, error) {
 		req.Header.Set(k, v)
 	}
 
-	resp, err := sessionHTTPClient.Do(req)
+	// Use streamHTTPClient: when the response turns out to be SSE we hand
+	// resp.Body off to pumpSSE which can run for many minutes, longer than
+	// sessionHTTPClient's 5-minute timeout would allow.
+	resp, err := streamHTTPClient.Do(req)
 	if err != nil {
 		return nil, err
 	}

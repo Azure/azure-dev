@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/cli/browser"
 	"github.com/gorilla/websocket"
 )
 
@@ -125,6 +126,12 @@ func (s *rpcSession) route(method string, params json.RawMessage) (any, error) {
 	case "getThemeRequest":
 		// TODO(inspector): hardcoded for preview; detect from prefers-color-scheme later.
 		return "light", nil
+	case "openUrlInBrowser":
+		return s.openUrlInBrowser(params)
+	case "sendTelemetry", "getCurrentStep", "getPlatformSettingsRequest", "executeCommand":
+		// Intentionally unhandled in azd standalone mode — these target the VS Code
+		// extension host. Returning nil keeps the SPA happy without log noise.
+		return nil, nil
 	default:
 		s.logger.Printf("rpc: unhandled method %q", method)
 		return nil, nil
@@ -136,8 +143,10 @@ func (s *rpcSession) handleNotification(method string, params json.RawMessage) {
 	case "setViewReady":
 		// SPA has mounted; tell it which agent port to target.
 		payload := map[string]any{
-			"port":          s.cfg.AgentPort,
-			"triggeredFrom": "standalone",
+			"port":           s.cfg.AgentPort,
+			"triggeredFrom":  "standalone",
+			"sessionId":      s.cfg.SessionID,
+			"conversationId": s.cfg.ConversationID,
 		}
 		if err := s.sendRequest("navigateToStep", "testTool", payload); err != nil {
 			s.logger.Printf("send navigateToStep: %v", err)
@@ -170,6 +179,23 @@ func (s *rpcSession) handleFixRequested(raw json.RawMessage) {
 	summary = strings.Join(strings.Fields(summary), " ")
 	fmt.Fprintln(os.Stderr, "[inspector] [fix-with-ai] "+summary)
 	s.logger.Printf("fix-with-ai: %s", summary)
+}
+
+// openUrlInBrowser opens the given URL in the user's default browser.
+// Used by the SPA for OAuth-consent links and external doc links.
+func (s *rpcSession) openUrlInBrowser(raw json.RawMessage) (any, error) {
+	var url string
+	if err := json.Unmarshal(raw, &url); err != nil {
+		return nil, fmt.Errorf("openUrlInBrowser: bad params: %w", err)
+	}
+	if url == "" {
+		return nil, fmt.Errorf("openUrlInBrowser: empty url")
+	}
+	if err := browser.OpenURL(url); err != nil {
+		s.logger.Printf("openUrlInBrowser: %v", err)
+		return nil, err
+	}
+	return nil, nil
 }
 
 func (s *rpcSession) sendResult(id json.RawMessage, result any) {

@@ -28,6 +28,12 @@ type Config struct {
 	// Logger receives RPC logging. If nil, a default prefixed logger is used.
 	Logger *log.Logger
 
+	// SessionID and ConversationID seed the SPA's initial conversation so the
+	// inspector continues whatever chat the CLI was using. Empty strings
+	// mean "no seed available" — the SPA falls back to a fresh UUID.
+	SessionID      string
+	ConversationID string
+
 	// SSESink, if non-nil, receives the raw bytes of each proxied SSE
 	// response so the caller can render it (e.g. echo to the terminal).
 	SSESink func(io.Reader)

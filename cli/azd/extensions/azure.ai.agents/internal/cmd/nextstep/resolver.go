@@ -317,6 +317,16 @@ func resolveInvokeFailure(_ *State, mode InvokeMode, _ string, failure *InvokeFa
 // successful `azd ai agent show`. Branches on State.AgentStatus per the
 // platform's `AgentVersionStatus` vocabulary.
 //
+// Status mapping (issue #7975 lines 208-214):
+//   - active / idle  → `azd ai agent invoke <svc> "Hello!"` (ready to test)
+//   - creating       → `azd ai agent monitor --type system --follow`
+//   - failed / ""    → `azd ai agent monitor --follow` (live log feed,
+//     used to be `--tail 100` pre-C5; spec calls for `--follow` so
+//     the user can watch the next reconcile attempt stream live)
+//   - deleting / deleted → `azd deploy` (redeploy)
+//   - anything else (transitional / genuinely unknown) → `azd ai agent
+//     show <svc>` re-check
+//
 // serviceName is the azure.yaml service name. It is used end-to-end:
 // (1) to look up State.Services[].Protocol for the protocol-aware
 // payload, (2) as the positional in the suggested
@@ -339,7 +349,11 @@ func ResolveAfterShow(state *State, serviceName string) []Suggestion {
 	}
 
 	switch AgentVersionStatus(state.AgentStatus) {
-	case AgentVersionActive:
+	case AgentVersionActive, AgentVersionIdle:
+		// Issue #7975 line 208: `idle` is a defensive synonym for
+		// `active`. The platform's verified enum only emits `active`
+		// today, but if the API ever surfaces `idle` we treat it the
+		// same — both mean "ready to invoke".
 		protocol := ProtocolResponses
 		if svc := findService(state, serviceName); svc != nil && svc.Protocol != "" {
 			protocol = svc.Protocol
@@ -356,9 +370,28 @@ func ResolveAfterShow(state *State, serviceName string) []Suggestion {
 			Priority:    10,
 		}}
 	case AgentVersionFailed:
+		// Issue #7975 line 211: failed status maps to `monitor
+		// --follow`. The historical `--tail 100` was useful for
+		// one-shot CI inspection but the interactive default is the
+		// live tail — by the time `show` surfaces the failure, the
+		// user wants to watch the next reconcile attempt stream
+		// rather than capture a fixed-size window.
 		return []Suggestion{{
-			Command:     "azd ai agent monitor --tail 100",
-			Description: "deploy failed — view the structured error and TSG link above",
+			Command:     "azd ai agent monitor --follow",
+			Description: "stream agent logs to investigate the failure",
+			Priority:    10,
+		}}
+	case "":
+		// Issue #7975 line 210: empty status also routes to `monitor
+		// --follow`, but the framing differs from the Failed arm —
+		// here the platform simply hasn't reported a Status yet (the
+		// `show` table even suppresses the Status row in this case;
+		// see show.go printShowResultTable). The most useful next
+		// view is the live log feed, but we don't presume a failure
+		// occurred.
+		return []Suggestion{{
+			Command:     "azd ai agent monitor --follow",
+			Description: "stream agent logs — status has not been reported yet",
 			Priority:    10,
 		}}
 	case AgentVersionDeleting, AgentVersionDeleted:

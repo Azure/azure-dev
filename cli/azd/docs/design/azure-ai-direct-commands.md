@@ -38,25 +38,60 @@ From the spec's success criteria (lines 25–28):
 
 ### 2.1 Extension Placement
 
-A **new first-party extension** at `cli/azd/extensions/azure.ai.connection/`:
+Connection commands live **inside the existing `azure.ai.agents` extension**, following the pattern established in [PR #8100](https://github.com/Azure/azure-dev/pull/8100). The extension namespace changes from `ai.agent` to `ai`, making it own the entire `azd ai` command surface. Internally, `agent` and `connection` are sibling subcommand groups.
 
 ```
 extension.yaml:
-  id: azure.ai.connection
-  namespace: ai.connection
-  → mounts at: azd ai connection
+  id: azure.ai.agents
+  namespace: ai
+  → mounts at: azd ai
+
+Command tree:
+  azd ai
+  ├── agent       ← existing agent commands (init, run, invoke, show, ...)
+  └── connection  ← NEW connection commands (create, list, show, update, delete, ...)
 ```
 
-This follows the existing multi-extension pattern under the `ai.*` namespace:
+**Code organization** follows Travis's PR #8100 pattern — each command group lives in its own package under `internal/`, keeping code cleanly separated for future extraction:
 
-| Extension | Namespace | Surface |
-|-----------|-----------|---------|
-| `azure.ai.agents` | `ai.agent` | `azd ai agent {init, run, invoke, ...}` |
-| `azure.ai.models` | `ai.models` | `azd ai models ...` |
-| `azure.ai.finetune` | `ai.finetuning` | `azd ai finetuning ...` |
-| **`azure.ai.connection`** | **`ai.connection`** | **`azd ai connection ...`** |
+```
+cli/azd/extensions/azure.ai.agents/
+├── main.go                          # Entry point
+├── extension.yaml                   # namespace: ai
+├── internal/
+│   ├── root.go                      # Top-level root, adds agent + connection as children
+│   ├── agents/                      # Existing agent commands (moved from internal/cmd/)
+│   │   ├── cmd/
+│   │   ├── exterrors/
+│   │   ├── pkg/
+│   │   ├── project/
+│   │   └── version/
+│   └── connections/                 # NEW — connection commands (self-contained)
+│       ├── cmd/
+│       │   ├── root.go              # NewConnectionRootCommand(extCtx)
+│       │   ├── endpoint.go          # Project endpoint resolution
+│       │   ├── connection.go        # CRUD commands
+│       │   ├── connection_metadata.go
+│       │   ├── connection_key.go
+│       │   └── from_file.go         # --from-file parsing
+│       ├── pkg/
+│       │   └── connections/
+│       │       ├── arm_client.go    # ARM SDK client
+│       │       ├── data_client.go   # Data-plane client
+│       │       └── models.go
+│       └── exterrors/
+│           ├── errors.go
+│           └── codes.go
+```
 
-The extension framework auto-creates the shared `azd ai` group command as a routing node (see `cli/azd/cmd/extensions.go:45-87`).
+**Lift-and-shift design**: The `internal/connections/` package is fully self-contained — it has its own `cmd/`, `pkg/`, and `exterrors/` packages with no imports from `internal/agents/`. If a future decision moves connections to a separate extension (option #2 from John's comment), the entire `internal/connections/` directory can be extracted with only a module path change.
+
+**Shared code**: The only shared code between agents and connections is:
+- `azdext` (from azd core — both import it)
+- The top-level `internal/root.go` that wires both subcommand groups
+- Debug logging setup (in root's `PersistentPreRunE`)
+
+No agent-specific code (agent_context, agent_api, agent_yaml, etc.) is used by connection commands.
 
 ### 2.2 API Surfaces — Validated
 
@@ -122,7 +157,15 @@ CustomKeys:
 
 ### 2.3 Agent Run Credential References (existing extension)
 
-The `azd ai agent run` enhancement in this spec resolves `${{connections.<name>.credentials.<key>}}` references found in the agent manifest's `environment_variables` section. Resolution uses the Foundry data plane (`getConnectionWithCredentials`) to fetch the secret value, then injects the resolved value as an environment variable into the spawned `exec.Command` process.
+The `azd ai agent run` enhancement in this spec resolves `${{connections.<name>.credentials.<key>}}` references found in the agent manifest's `environment_variables` section. Resolution uses the Foundry data plane (`POST getConnectionWithCredentials`) to fetch the secret value, then injects the resolved value as an environment variable into the spawned `exec.Command` process.
+
+**Important distinctions**:
+- **Connection CRUD commands do NOT modify any YAML files.** They are pure API operations. The `credentialReferences` field in `list`/`show` output is a display convenience — the developer copies it manually into their `agent.yaml`.
+- **The `run` command reads `agent.yaml` env vars but does NOT write to it.** It scans for `${{connections...}}` patterns, resolves them via the data-plane API, and injects values into the spawned process environment only.
+- **These are additive to existing env var handling.** `run.go` today already injects azd env vars (via `loadAzdEnvironment`) and FOUNDRY_* translations (via `appendFoundryEnvVars`). The connection reference resolution is a new step added after those, and all three coexist without conflict:
+  1. `${VAR}` references (e.g., `${TOOLBOX_AGENT_TOOLS_MCP_ENDPOINT}`) — already handled via azd env injection
+  2. `${{connections.<name>.credentials.<key>}}` — **NEW**, resolved via data-plane API
+  3. Literal values — pass through unchanged
 
 ---
 
@@ -594,71 +637,83 @@ func resolveConnectionContext(ctx context.Context, cmd *cobra.Command) (*connect
 
 ---
 
-## 5. Code Changes — New Extension (`azure.ai.connection`)
+## 5. Code Changes — Inside `azure.ai.agents` Extension
+
+Following the pattern from [PR #8100](https://github.com/Azure/azure-dev/pull/8100), connection code lives inside the existing `azure.ai.agents` extension as a self-contained sibling package.
 
 ### 5.1 File Layout
 
 ```
-cli/azd/extensions/azure.ai.connection/
-├── main.go
-├── go.mod
-├── go.sum
-├── extension.yaml
-├── version.txt
+cli/azd/extensions/azure.ai.agents/
+├── main.go                                    # MODIFIED — imports internal.NewRootCommand()
+├── extension.yaml                             # MODIFIED — namespace: ai
 ├── internal/
-│   ├── cmd/
-│   │   ├── root.go
-│   │   ├── endpoint.go
-│   │   ├── endpoint_test.go
-│   │   ├── from_file.go
-│   │   ├── from_file_test.go
-│   │   ├── connection.go
-│   │   ├── connection_test.go
-│   │   ├── connection_metadata.go
-│   │   ├── connection_metadata_test.go
-│   │   ├── connection_key.go
-│   │   └── connection_key_test.go
-│   ├── pkg/
-│   │   └── connections/
-│   │       ├── arm_client.go
-│   │       ├── arm_client_test.go
-│   │       ├── data_client.go
-│   │       ├── data_client_test.go
-│   │       └── models.go
-│   ├── exterrors/
-│   │   ├── errors.go
-│   │   └── codes.go
-│   └── version/
-│       └── version.go
+│   ├── root.go                                # NEW — top-level root, adds agent + connection
+│   ├── agents/                                # EXISTING — moved from internal/cmd/ per PR #8100
+│   │   ├── cmd/                               # All existing agent files (init, run, invoke, etc.)
+│   │   ├── exterrors/
+│   │   ├── pkg/
+│   │   ├── project/
+│   │   └── version/
+│   └── connections/                           # NEW — all connection code (self-contained)
+│       ├── cmd/
+│       │   ├── root.go                        # NewConnectionRootCommand(extCtx)
+│       │   ├── endpoint.go                    # Project endpoint resolution (5-level cascade)
+│       │   ├── endpoint_test.go
+│       │   ├── from_file.go                   # --from-file YAML parsing + mutual exclusivity
+│       │   ├── from_file_test.go
+│       │   ├── connection.go                  # CRUD commands (create/update/delete/show/list)
+│       │   ├── connection_test.go
+│       │   ├── connection_metadata.go         # metadata {set, remove, list}
+│       │   ├── connection_metadata_test.go
+│       │   ├── connection_key.go              # key {set, remove, list}
+│       │   └── connection_key_test.go
+│       ├── pkg/
+│       │   └── connections/
+│       │       ├── arm_client.go              # ARM SDK client (CRUD)
+│       │       ├── arm_client_test.go
+│       │       ├── data_client.go             # Data-plane client (credentials)
+│       │       ├── data_client_test.go
+│       │       └── models.go                  # Connection, ConnectionCredentials types
+│       └── exterrors/
+│           ├── errors.go                      # Structured error factories
+│           └── codes.go                       # Error codes
 ```
 
-### 5.2 `extension.yaml`
+**Lift-and-shift**: `internal/connections/` is fully self-contained with no imports from `internal/agents/`. If connections move to a separate extension later, the entire directory can be extracted with only a module path change.
+
+### 5.2 `extension.yaml` (MODIFIED)
 
 ```yaml
 # yaml-language-server: $schema=../extension.schema.json
-id: azure.ai.connection
-namespace: ai.connection
-displayName: Foundry connections (Preview)
-description: Manage Foundry project connections from your terminal. (Preview)
-usage: azd ai connection <command> [options]
-version: 0.1.0-preview
+id: azure.ai.agents
+namespace: ai
+displayName: Foundry AI (Preview)
+description: Manage agents and connections in Microsoft Foundry. (Preview)
+usage: azd ai <command> [options]
+version: 0.1.30-preview
 requiredAzdVersion: ">1.23.13"
 language: go
 capabilities:
   - custom-commands
+  - lifecycle-events
+  - mcp-server
+  - service-target-provider
   - metadata
+providers:
+  - name: azure.ai.agent
+    type: service-target
+    description: Deploys agents to the Foundry Agent Service
 examples:
-  - name: create
-    description: Create a new connection.
-    usage: azd ai connection create my-conn --kind api-key --target https://example.com --auth-type api-key --key $KEY
-  - name: list
-    description: List all connections.
+  - name: init
+    description: Initialize a new AI agent project.
+    usage: azd ai agent init
+  - name: connection list
+    description: List all connections in the Foundry project.
     usage: azd ai connection list
 ```
 
-Note: unlike `azure.ai.agents`, this extension only needs `custom-commands` capability — it does not participate in lifecycle events, service targeting, or MCP.
-
-### 5.3 `main.go`
+### 5.3 `main.go` (MODIFIED)
 
 ```go
 // Copyright (c) Microsoft Corporation. All rights reserved.
@@ -667,32 +722,67 @@ Note: unlike `azure.ai.agents`, this extension only needs `custom-commands` capa
 package main
 
 import (
-    "azureaiconnection/internal/cmd"
+    "azureaiagent/internal"
     "github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
 func main() {
-    azdext.Run(cmd.NewRootCommand())
+    azdext.Run(internal.NewRootCommand())
 }
 ```
 
-### 5.4 `go.mod`
+### 5.4 `internal/root.go` (NEW)
 
-```
-module azureaiconnection
+```go
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
-go 1.26
+package internal
 
-require (
-    github.com/azure/azure-dev/cli/azd v1.24.3
-    github.com/Azure/azure-sdk-for-go/sdk/azcore v1.18.0
-    github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.9.0
-    github.com/spf13/cobra v1.9.1
-    gopkg.in/yaml.v3 v3.0.1
+import (
+    "fmt"
+
+    "github.com/azure/azure-dev/cli/azd/pkg/azdext"
+    "github.com/fatih/color"
+    "github.com/spf13/cobra"
+
+    agents "azureaiagent/internal/agents/cmd"
+    connections "azureaiagent/internal/connections/cmd"
 )
+
+func NewRootCommand() *cobra.Command {
+    rootCmd, extCtx := azdext.NewExtensionRootCommand(azdext.ExtensionCommandOptions{
+        Name:  "ai",
+        Use:   "ai <command> [options]",
+        Short: fmt.Sprintf("Manage agents and connections in Microsoft Foundry. %s",
+            color.YellowString("(Preview)")),
+    })
+    rootCmd.SilenceUsage = true
+    rootCmd.SilenceErrors = true
+    rootCmd.CompletionOptions.DisableDefaultCmd = true
+
+    sdkPreRun := rootCmd.PersistentPreRunE
+    rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+        if sdkPreRun != nil {
+            if err := sdkPreRun(cmd, args); err != nil {
+                return err
+            }
+        }
+        setupDebugLogging(cmd.Flags())
+        return nil
+    }
+
+    rootCmd.SetHelpCommand(&cobra.Command{Hidden: true})
+
+    // Sibling command groups — each self-contained, easy to extract later
+    rootCmd.AddCommand(agents.NewAgentRootCommand(extCtx))
+    rootCmd.AddCommand(connections.NewConnectionRootCommand(extCtx))
+
+    return rootCmd
+}
 ```
 
-### 5.5 `internal/cmd/root.go`
+### 5.5 `internal/connections/cmd/root.go` (NEW)
 
 ```go
 // Copyright (c) Microsoft Corporation. All rights reserved.
@@ -705,40 +795,31 @@ import (
     "github.com/spf13/cobra"
 )
 
-func NewRootCommand() *cobra.Command {
-    rootCmd, extCtx := azdext.NewExtensionRootCommand(azdext.ExtensionCommandOptions{
-        Name:  "connection",
+func NewConnectionRootCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
+    cmd := &cobra.Command{
         Use:   "connection <command> [options]",
         Short: "Manage Foundry project connections. (Preview)",
-    })
-    rootCmd.SilenceUsage = true
-    rootCmd.SilenceErrors = true
-    rootCmd.CompletionOptions.DisableDefaultCmd = true
+    }
 
     // Register -p / --project-endpoint as a persistent flag
-    rootCmd.PersistentFlags().StringP("project-endpoint", "p", "",
-        "Foundry project endpoint URL (overrides FOUNDRY_PROJECT_ENDPOINT)")
+    cmd.PersistentFlags().StringP("project-endpoint", "p", "",
+        "Foundry project endpoint URL (overrides env var and config)")
 
-    rootCmd.AddCommand(azdext.NewListenCommand(nil))
-    rootCmd.AddCommand(azdext.NewMetadataCommand("1.0", "azure.ai.connection", func() *cobra.Command {
-        return rootCmd
-    }))
+    cmd.AddCommand(newConnectionCreateCommand(extCtx))
+    cmd.AddCommand(newConnectionUpdateCommand(extCtx))
+    cmd.AddCommand(newConnectionDeleteCommand(extCtx))
+    cmd.AddCommand(newConnectionShowCommand(extCtx))
+    cmd.AddCommand(newConnectionListCommand(extCtx))
+    cmd.AddCommand(newConnectionMetadataCommand(extCtx))
+    cmd.AddCommand(newConnectionKeyCommand(extCtx))
 
-    rootCmd.AddCommand(newConnectionCreateCommand(extCtx))
-    rootCmd.AddCommand(newConnectionUpdateCommand(extCtx))
-    rootCmd.AddCommand(newConnectionDeleteCommand(extCtx))
-    rootCmd.AddCommand(newConnectionShowCommand(extCtx))
-    rootCmd.AddCommand(newConnectionListCommand(extCtx))
-    rootCmd.AddCommand(newConnectionMetadataCommand(extCtx))
-    rootCmd.AddCommand(newConnectionKeyCommand(extCtx))
-
-    return rootCmd
+    return cmd
 }
 ```
 
-### 5.6 `internal/cmd/connection.go` — CRUD Commands
+### 5.6 `internal/connections/cmd/connection.go` — CRUD Commands
 
-Each command follows the pattern established in `azure.ai.agents/internal/cmd/show.go`:
+Each command follows the pattern established in `azure.ai.agents/internal/agents/cmd/show.go`:
 
 ```go
 // Copyright (c) Microsoft Corporation. All rights reserved.
@@ -747,8 +828,8 @@ Each command follows the pattern established in `azure.ai.agents/internal/cmd/sh
 package cmd
 
 import (
-    "azureaiconnection/internal/exterrors"
-    "azureaiconnection/internal/pkg/connections"
+    "azureaiagent/internal/connections/exterrors"
+    "azureaiagent/internal/connections/pkg/connections"
     "encoding/json"
     "fmt"
     "text/tabwriter"
@@ -1307,7 +1388,7 @@ import (
     "context"
     "fmt"
 
-    "azureaiconnection/internal/version"
+    "azureaiagent/internal/connections/version"
 
     "github.com/Azure/azure-sdk-for-go/sdk/azcore"
     "github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -1459,31 +1540,7 @@ Commands that produce no structured output (e.g., `delete`) skip the `--output` 
 
 ## 9. Registry Entry
 
-After the extension is built and published, add to `cli/azd/extensions/registry.json`:
-
-```json
-{
-  "schemaVersion": "1.0",
-  "extensions": [
-    {
-      "id": "azure.ai.connection",
-      "namespace": "ai.connection",
-      "displayName": "Foundry connections (Preview)",
-      "description": "Manage Foundry project connections from your terminal.",
-      "versions": [
-        {
-          "version": "0.1.0-preview",
-          "requiredAzdVersion": ">1.23.13",
-          "capabilities": ["custom-commands", "metadata"],
-          "usage": "azd ai connection <command> [options]"
-        }
-      ]
-    }
-  ]
-}
-```
-
-The actual entry is generated by `azd x publish` against published release artifacts.
+Since connections are part of the `azure.ai.agents` extension (not a separate extension), **no new registry entry is needed**. The existing `azure.ai.agents` entry in `cli/azd/extensions/registry.json` covers both `agent` and `connection` commands. The registry entry will be updated with the new namespace (`ai` instead of `ai.agent`) and updated usage/description when the extension version is bumped.
 
 ---
 
@@ -1498,3 +1555,4 @@ The actual entry is generated by `azd x publish` against published release artif
 | 5 | `--from-file` schema version pinning | Open Q #6 | No — accept any initially |
 | 6 | Telemetry for coding agents | Open Q #7 | No — follow existing pattern |
 | 7 | Resolution order contradiction (Terminology vs AZD Env Scoping) | Lines 127 vs 289 | Flag to spec authors |
+| 8 | Namespace conflict with other `ai.*` extensions | PR #8100 shows `ai` conflicts with `ai.models`, `ai.finetuning`, `ai.builder` | Needs core framework resolution |

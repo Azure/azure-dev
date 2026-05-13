@@ -52,6 +52,7 @@ const (
 	CodeMissingAiProjectId        = "missing_ai_project_id"
 	CodeMissingAzureSubscription  = "missing_azure_subscription_id"
 	CodeMissingAgentEnvVars       = "missing_agent_env_vars"
+	CodeMissingProjectEndpoint   = "missing_project_endpoint"
 	CodeGitHubDownloadFailed      = "github_download_failed"
 	CodeScaffoldTemplateFailed    = "scaffold_template_failed"
 	CodePromptFailed              = "prompt_failed"

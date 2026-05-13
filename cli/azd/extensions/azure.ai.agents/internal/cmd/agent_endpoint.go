@@ -15,6 +15,10 @@ import (
 )
 
 // agentEndpointHostSuffix is the required Foundry host suffix for endpoint URLs.
+// parseAgentEndpoint uses this constant directly; it does not call isFoundryHost.
+// If additional host suffixes are added to foundryHostSuffixes
+// (project_endpoint.go), parseAgentEndpoint must be updated to call isFoundryHost
+// instead so the two validators stay in sync.
 const agentEndpointHostSuffix = ".services.ai.azure.com"
 
 // agentEndpointHint is the suggestion appended to most --agent-endpoint validation errors.
@@ -181,6 +185,4 @@ func buildInvocationsURL(projectEndpoint, agentName, apiVersion, sid string) str
 	return invURL
 }
 
-// (isValidAgentNameSegment was removed — agent name validation now delegates
-// to agent_yaml.ValidateAgentName so --agent-endpoint enforces the same
-// deployable-name format as the rest of the extension.)
+

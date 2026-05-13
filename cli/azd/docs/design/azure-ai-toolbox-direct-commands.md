@@ -18,7 +18,7 @@ In scope:
 
 - The eleven verbs listed in § 1.
 - Cross-cutting flags (`--output table|json`, `--no-prompt`, `--debug`, `--project-endpoint`) on every new command.
-- Extending the existing `FoundryToolboxClient` (`internal/pkg/azure/foundry_toolsets_client.go`) with the additional methods required by this surface (§ 5).
+- A self-contained CLI client at `internal/pkg/toolbox/` that wraps the existing `*azure.FoundryToolboxClient` and adds the methods the CLI surface needs but the agent runtime does not (§ 5). The existing file `internal/pkg/azure/foundry_toolsets_client.go` is not modified — it remains the runtime client used by `internal/cmd/listen.go`.
 
 Out of scope:
 
@@ -35,8 +35,11 @@ The `toolbox` subtree is added under the existing `azure.ai.agents` extension. N
 ### 3.1 Modular Layout
 
 1. All toolbox command files live under `internal/cmd/toolbox*.go`. No toolbox logic is added to existing command files.
-2. All toolbox client code lives in the existing `internal/pkg/azure/foundry_toolsets_client.go` (`FoundryToolboxClient`). New methods needed by this surface (`ListToolboxes`, `GetToolboxVersion`, `ListToolboxVersions`, `DeleteToolboxVersion`, `SetDefaultVersion`, plus the local-state helper `RegisterPending`) are appended to that file. No new internal package is introduced.
-3. Imports are one-way: `cmd/toolbox*.go` → `internal/pkg/azure` (for `FoundryToolboxClient`) → `internal/exterrors`. Shared helpers carry a `// SHARED: <reason>` comment.
+2. All toolbox CLI client code lives under a new self-contained package `internal/pkg/toolbox/` (`client.go`, `models.go`, `errors.go`). The package wraps `*azure.FoundryToolboxClient` (existing) via composition for the verbs already implemented there (`CreateToolboxVersion`, `GetToolbox`, `DeleteToolbox`) and adds new methods the runtime does not need (`ListToolboxes`, `GetToolboxVersion`, `ListToolboxVersions`, `DeleteToolboxVersion`, `SetDefaultVersion`, plus the local-state helper `RegisterPending`). It does **not** import from sibling agent packages such as `internal/pkg/agents/agent_yaml/` or `internal/cmd/listen.go`.
+3. Imports are one-way: `cmd/toolbox*.go` → `internal/pkg/toolbox/` → `internal/pkg/azure` (for the embedded `*FoundryToolboxClient`) → `internal/exterrors`. Shared helpers carry a `// SHARED: <reason>` comment.
+4. The existing `internal/pkg/azure/foundry_toolsets_client.go` is **not modified**. It continues to back the runtime toolbox-materialization flow in `internal/cmd/listen.go` (call site at `listen.go:644-716`).
+
+> **Extraction note.** On a future move to a standalone `azure.ai.toolbox` extension, `internal/pkg/toolbox/` lifts wholesale. The new extension reconstructs the small underlying `FoundryToolboxClient` (or imports it via a future shared module) — but the new package's API stays stable across the move. The agents extension keeps its own copy of `foundry_toolsets_client.go` for the runtime path.
 
 ### 3.2 Shared Code Touchpoints
 
@@ -46,7 +49,7 @@ The `toolbox` subtree is added under the existing `azure.ai.agents` extension. N
 | Confirmation prompt (`azdClient.Prompt().Confirm`) | azd host gRPC, called inline today (see `internal/cmd/init.go`, `internal/cmd/init_copy.go`). This work introduces a shared `confirmDestructive` helper alongside `agent_endpoint.go` and uses it for `toolbox delete` and per-version delete. | Avoids duplicating the prompt block across destructive verbs. |
 | `azdext.ExtensionContext` (`OutputFormat`, `NoPrompt`, `Prompt()`) | azd host gRPC | Standard extension surface. |
 | Credential factory (`azidentity.NewAzureDeveloperCLICredential`) | stdlib wrapper | Same credential used by agent run. |
-| Foundry data-plane pipeline pattern (scope `https://ai.azure.com/.default`, `Foundry-Features: Toolboxes=V1Preview` header per request) | Each client builds its own pipeline today — see `FoundryToolboxClient.NewFoundryToolboxClient` in `internal/pkg/azure/foundry_toolsets_client.go` and `FoundryProjectsClient` in `foundry_projects_client.go`. Extending the existing toolbox client keeps this pattern. | Consistent auth and feature-header handling across toolbox, agent run, and the connection sub-surface. |
+| Foundry data-plane client (`FoundryToolboxClient`) | `internal/pkg/azure/foundry_toolsets_client.go` — already implements `CreateToolboxVersion`, `GetToolbox`, `DeleteToolbox` with the correct pipeline (scope `https://ai.azure.com/.default`, `Foundry-Features: Toolboxes=V1Preview` header). Used today by `internal/cmd/listen.go` for runtime toolbox materialization. | Embedded by the new `internal/pkg/toolbox.Client` via composition; not modified by this PR. |
 | `exterrors` package | `internal/exterrors/` | Shared error model and gRPC classification. |
 
 ## 4. API Surfaces
@@ -282,7 +285,7 @@ Per-endpoint pending-toolbox records live under:
 
 ## 8. Test Plan
 
-Unit tests (table-driven, no network; inject a `toolboxClient` interface that is a subset of `*azure.FoundryToolboxClient`):
+Unit tests (table-driven, no network; inject a `toolboxClient` interface that is a subset of `*toolbox.Client`):
 
 - **`create`** — new name records a pending entry and prints the registered one-liner; existing name does not POST and prints the existing one-liner; description round-trips through the pending record.
 - **`update`** — `--default-version` happy path; missing flag → `CodeInvalidToolbox`.
@@ -322,7 +325,7 @@ None at the command level. The toolbox surface is purely additive:
 
 - `internal/cmd/root.go` registers the new toolbox parent alongside `session`, `files`, and `connection`. No existing command's flags, behavior, or output shape is changed.
 - `internal/exterrors/codes.go` gains new constants (§ 11); existing codes are not touched.
-- `internal/pkg/azure/foundry_toolsets_client.go` gains additional methods (`ListToolboxes`, `GetToolboxVersion`, `ListToolboxVersions`, `DeleteToolboxVersion`, `SetDefaultVersion`, `RegisterPending`). The existing methods are unchanged.
+- `internal/pkg/toolbox/` is a new self-contained package. It wraps the existing `*azure.FoundryToolboxClient` via composition and adds the CLI-only methods. The existing `internal/pkg/azure/foundry_toolsets_client.go` is **not modified**.
 
 ## 10. Telemetry
 

@@ -563,11 +563,12 @@ func TestResolveAfterShow(t *testing.T) {
 		wantCmdHas string
 	}{
 		{"Active without service in state → responses payload", AgentVersionActive, "echo", `azd ai agent invoke echo "Hello!"`},
+		{"Idle (defensive synonym for Active) → invoke", AgentVersionIdle, "echo", `azd ai agent invoke echo "Hello!"`},
 		{"Creating → monitor system", AgentVersionCreating, "echo", "azd ai agent monitor --type system --follow"},
-		{"Failed → monitor tail", AgentVersionFailed, "echo", "azd ai agent monitor --tail 100"},
+		{"Failed → monitor --follow", AgentVersionFailed, "echo", "azd ai agent monitor --follow"},
 		{"Deleting → redeploy", AgentVersionDeleting, "echo", "azd deploy"},
 		{"Deleted → redeploy", AgentVersionDeleted, "echo", "azd deploy"},
-		{"empty status → re-check show", "", "echo", "azd ai agent show echo"},
+		{"empty status → monitor --follow", "", "echo", "azd ai agent monitor --follow"},
 		{"unknown status → re-check show", "Transitioning", "echo", "azd ai agent show echo"},
 		{"unknown status without agent name → bare show", "Transitioning", "", "azd ai agent show"},
 	}

@@ -68,6 +68,10 @@ const (
 // Empirical verification: `azd ai agent show` returns "active" for a
 // ready agent. The design-spec table uses title-case for readability
 // only; the canonical surface is lowercase.
+//
+// One member of this type — AgentVersionIdle — is a defensive
+// synonym not currently observed in the platform's verified enum;
+// see its doc comment for rationale.
 type AgentVersionStatus string
 
 const (
@@ -76,6 +80,12 @@ const (
 	// AgentVersionActive indicates the deploy succeeded and the agent is
 	// ready to receive invocations.
 	AgentVersionActive AgentVersionStatus = "active"
+	// AgentVersionIdle is a defensive synonym for "active" — the issue
+	// #7975 spec lists `idle` alongside `active` as a "ready" state
+	// (lines 208-209), although the platform's verified enum only emits
+	// `active` today. Treat any `idle` value the API may surface in the
+	// future the same as `active` (route to the invoke suggestion).
+	AgentVersionIdle AgentVersionStatus = "idle"
 	// AgentVersionFailed indicates the deploy failed; the error payload
 	// carries the structured reason.
 	AgentVersionFailed AgentVersionStatus = "failed"

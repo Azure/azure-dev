@@ -450,7 +450,8 @@ func TestResolveNextStepFromSource_NonActiveBranches(t *testing.T) {
 		want   string
 	}{
 		{"creating", "azd ai agent monitor --type system --follow"},
-		{"failed", "azd ai agent monitor --tail 100"},
+		{"failed", "azd ai agent monitor --follow"},
+		{"", "azd ai agent monitor --follow"},
 		{"deleting", "azd deploy"},
 		{"deleted", "azd deploy"},
 	}

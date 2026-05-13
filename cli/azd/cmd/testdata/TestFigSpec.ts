@@ -239,37 +239,6 @@ const completionSpec: Fig.Spec = {
 												},
 											],
 										},
-										{
-											name: ['--file', '-f'],
-											description: 'Remote file or directory path to delete',
-											args: [
-												{
-													name: 'file',
-												},
-											],
-										},
-										{
-											name: ['--output', '-o'],
-											description: 'The output format',
-											args: [
-												{
-													name: 'output',
-												},
-											],
-										},
-										{
-											name: ['--recursive'],
-											description: 'Recursively delete directories and their contents',
-										},
-										{
-											name: ['--session-id', '-s'],
-											description: 'Session ID override (defaults to last invoke session)',
-											args: [
-												{
-													name: 'session-id',
-												},
-											],
-										},
 									],
 								},
 								{

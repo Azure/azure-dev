@@ -727,40 +727,6 @@ func (p *AgentServiceTargetProvider) shouldUsePreBuiltImage(
 	return resp.Value != nil && choices[*resp.Value].Value == "prebuilt", nil
 }
 
-// isContainerAgent checks if the agent.yaml describes a container-based hosted agent.
-func (p *AgentServiceTargetProvider) isContainerAgent() bool {
-	data, err := os.ReadFile(p.agentDefinitionPath)
-	if err != nil {
-		return false
-	}
-
-	err = agent_yaml.ValidateAgentDefinition(data)
-	if err != nil {
-		return false
-	}
-
-	var genericTemplate map[string]any
-	if err := yaml.Unmarshal(data, &genericTemplate); err != nil {
-		return false
-	}
-
-	kind, ok := genericTemplate["kind"].(string)
-	if !ok {
-		return false
-	}
-
-	if kind != string(agent_yaml.AgentKindHosted) {
-		return false
-	}
-
-	// If code_configuration is present, this is a code deploy agent (not container)
-	if _, hasCodeConfig := genericTemplate["code_configuration"]; hasCodeConfig {
-		return false
-	}
-
-	return true
-}
-
 // isCodeDeployAgent returns true if the agent.yaml has code_configuration (code deploy mode)
 func (p *AgentServiceTargetProvider) isCodeDeployAgent() bool {
 	data, err := os.ReadFile(p.agentDefinitionPath)

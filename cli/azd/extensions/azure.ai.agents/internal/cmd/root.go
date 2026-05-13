@@ -6,43 +6,67 @@ package cmd
 import (
 	"fmt"
 
+	connectioncmd "azureaiagent/internal/connections/cmd"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
-// NewAgentRootCommand creates the "agent" subcommand group under "azd ai".
-// It registers all agent-specific commands (init, run, invoke, show, etc.).
-func NewAgentRootCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
-	extCtx = ensureExtensionContext(extCtx)
-
-	cmd := &cobra.Command{
+func NewRootCommand() *cobra.Command {
+	rootCmd, extCtx := azdext.NewExtensionRootCommand(azdext.ExtensionCommandOptions{
+		Name:  "agent",
 		Use:   "agent <command> [options]",
 		Short: fmt.Sprintf("Ship agents with Microsoft Foundry from your terminal. %s", color.YellowString("(Preview)")),
+	})
+	rootCmd.SilenceUsage = true
+	rootCmd.SilenceErrors = true
+	rootCmd.CompletionOptions.DisableDefaultCmd = true
+
+	// Configure debug logging once on the root command so every subcommand
+	// inherits it (cobra.EnableTraverseRunHooks, set by the SDK, ensures this
+	// runs alongside any subcommand pre-runs). The cleanup func is intentionally
+	// discarded: log writes are unbuffered and the OS closes the file on exit.
+	sdkPreRun := rootCmd.PersistentPreRunE
+	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		if sdkPreRun != nil {
+			if err := sdkPreRun(cmd, args); err != nil {
+				return err
+			}
+		}
+		setupDebugLogging(cmd.Flags())
+		return nil
 	}
 
-	// Show the ASCII art banner above the default help text for the agent command
-	defaultHelp := cmd.HelpFunc()
-	cmd.SetHelpFunc(func(c *cobra.Command, args []string) {
-		if c == cmd {
-			printBanner(c.OutOrStdout())
+	// Show the ASCII art banner above the default help text for the root command
+	defaultHelp := rootCmd.HelpFunc()
+	rootCmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
+		if cmd == rootCmd {
+			printBanner(cmd.OutOrStdout())
 		}
-		defaultHelp(c, args)
+		defaultHelp(cmd, args)
 	})
 
-	cmd.AddCommand(azdext.NewListenCommand(configureExtensionHost))
-	cmd.AddCommand(newVersionCommand())
-	cmd.AddCommand(newInitCommand(extCtx))
-	cmd.AddCommand(newRunCommand(extCtx))
-	cmd.AddCommand(newInvokeCommand(extCtx))
-	cmd.AddCommand(newMcpCommand())
-	cmd.AddCommand(azdext.NewMetadataCommand("1.0", "azure.ai.agents", func() *cobra.Command {
-		return cmd
-	}))
-	cmd.AddCommand(newShowCommand(extCtx))
-	cmd.AddCommand(newMonitorCommand(extCtx))
-	cmd.AddCommand(newFilesCommand(extCtx))
-	cmd.AddCommand(newSessionCommand(extCtx))
+	rootCmd.SetHelpCommand(&cobra.Command{Hidden: true})
 
-	return cmd
+	rootCmd.AddCommand(azdext.NewListenCommand(configureExtensionHost))
+	rootCmd.AddCommand(newVersionCommand())
+	rootCmd.AddCommand(newInitCommand(extCtx))
+	rootCmd.AddCommand(newRunCommand(extCtx))
+	rootCmd.AddCommand(newInvokeCommand(extCtx))
+	rootCmd.AddCommand(newMcpCommand())
+	rootCmd.AddCommand(azdext.NewMetadataCommand("1.0", "azure.ai.agents", func() *cobra.Command {
+		return rootCmd
+	}))
+	rootCmd.AddCommand(newShowCommand(extCtx))
+	rootCmd.AddCommand(newMonitorCommand(extCtx))
+	rootCmd.AddCommand(newFilesCommand(extCtx))
+	rootCmd.AddCommand(newSessionCommand(extCtx))
+
+	// Connection commands — in separate package for easy lift-and-shift later.
+	// When the azd core namespace change lands, move this AddCommand call
+	// to the new root and update the import path.
+	rootCmd.AddCommand(connectioncmd.NewConnectionRootCommand(extCtx))
+
+	return rootCmd
 }

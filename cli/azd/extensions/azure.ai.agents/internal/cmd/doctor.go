@@ -88,6 +88,7 @@ Exit codes:
 				AzdClient:        azdClient,
 				AzdClientErr:     clientErr,
 				ExtensionVersion: version.Version,
+				AgentAPIVersion:  DefaultAgentAPIVersion,
 			}
 
 			opts := doctor.Options{

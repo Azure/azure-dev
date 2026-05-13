@@ -12,22 +12,28 @@ import (
 
 // ---- NewRemoteChecks contract ----
 
-// TestNewRemoteChecks_HasAuthOnly pins the current shape of the remote
-// chain: exactly one check, `remote.auth`, with Remote=true. When
-// C12 / C16 / C17 land, update this test to reflect the new order +
-// IDs — the assertion is precise on purpose so adding a check anywhere
-// requires touching this single test instead of silently expanding
-// the chain.
-func TestNewRemoteChecks_HasAuthOnly(t *testing.T) {
+// TestNewRemoteChecks_HasAuthAndFoundryEndpoint pins the current
+// shape of the remote chain: exactly two checks, in the order
+// `remote.auth` → `remote.foundry-endpoint`, both with Remote=true.
+// The ordering matters because `remote.foundry-endpoint` skip-
+// cascades against `remote.auth`'s prior Result, so any future
+// re-ordering or insertion has to come through this assertion.
+// Update this test when C16 / C17 land.
+func TestNewRemoteChecks_HasAuthAndFoundryEndpoint(t *testing.T) {
 	t.Parallel()
 
 	got := NewRemoteChecks(Dependencies{})
 
-	require.Len(t, got, 1, "NewRemoteChecks should contain exactly the auth check today")
+	require.Len(t, got, 2,
+		"NewRemoteChecks should contain exactly auth and foundry-endpoint today")
 	require.Equal(t, "remote.auth", got[0].ID)
 	require.Equal(t, "authentication", got[0].Name)
 	require.True(t, got[0].Remote, "remote.auth must declare Remote=true")
 	require.NotNil(t, got[0].Fn, "remote.auth must have a non-nil Fn")
+	require.Equal(t, "remote.foundry-endpoint", got[1].ID)
+	require.Equal(t, "Foundry project endpoint reachable", got[1].Name)
+	require.True(t, got[1].Remote, "remote.foundry-endpoint must declare Remote=true")
+	require.NotNil(t, got[1].Fn, "remote.foundry-endpoint must have a non-nil Fn")
 }
 
 // TestNewLocalAndRemoteChecks_ProductionCompositionLocalsFirst pins the

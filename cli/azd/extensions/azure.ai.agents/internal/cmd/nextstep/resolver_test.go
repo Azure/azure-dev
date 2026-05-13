@@ -133,12 +133,22 @@ func TestResolveAfterInit(t *testing.T) {
 			assert.True(t, last.Trailing, "last suggestion must be flagged Trailing")
 
 			if len(tt.wantManualVarKeys) > 0 {
-				assert.Len(t, out, len(tt.wantManualVarKeys)+1)
+				// N env-set lines + 1 `azd ai agent run` follow-up + 1
+				// trailing `azd deploy`.
+				assert.Len(t, out, len(tt.wantManualVarKeys)+2)
 				for i, key := range tt.wantManualVarKeys {
 					assert.True(t,
 						strings.HasPrefix(out[i].Command, "azd env set "+key+" "),
 						"got %q", out[i].Command)
 				}
+				// The slot immediately after the env-set lines is the
+				// run follow-up — see ResolveAfterInit's MissingManualVars
+				// branch (issue #7975 manual-vars example).
+				followUp := out[len(tt.wantManualVarKeys)]
+				assert.Equal(t, "azd ai agent run", followUp.Command,
+					"expected `azd ai agent run` follow-up after env-set lines")
+				assert.False(t, followUp.Trailing,
+					"run follow-up must be a primary suggestion, not Trailing")
 			} else {
 				assert.Contains(t, out[0].Command, tt.wantPrimaryHas)
 			}
@@ -154,15 +164,53 @@ func TestResolveAfterInit_ManualVarsCapAtThree(t *testing.T) {
 		MissingManualVars:  []string{"V1", "V2", "V3", "V4", "V5"},
 	}
 	out := ResolveAfterInit(state)
-	// 3 manual + 1 trailing.
-	require.Len(t, out, 4)
-	assert.Equal(t, "azd deploy", out[3].Command)
-	assert.True(t, out[3].Trailing, "deploy footer must be Trailing")
+	// 3 env-set lines (capped) + 1 `azd ai agent run` follow-up + 1
+	// trailing `azd deploy`.
+	require.Len(t, out, 5)
+	for i := range 3 {
+		assert.True(t, strings.HasPrefix(out[i].Command, "azd env set "),
+			"slot %d should be an env-set line, got %q", i, out[i].Command)
+	}
+	assert.Equal(t, "azd ai agent run", out[3].Command,
+		"slot 3 should be the run follow-up")
+	assert.Equal(t, "azd deploy", out[4].Command)
+	assert.True(t, out[4].Trailing, "deploy footer must be Trailing")
 }
 
 func TestResolveAfterInit_NilState(t *testing.T) {
 	t.Parallel()
 	assert.Nil(t, ResolveAfterInit(nil))
+}
+
+// TestResolveAfterInit_ManualVarsSingleEmitsEnrichedShape locks the
+// single-missing-manual-var case end-to-end. Three asserts: the env-set
+// line has the enriched "referenced by agent.yaml but not set in azd
+// env" description, the `azd ai agent run` follow-up immediately follows
+// the env-set lines, and the trailing `azd deploy` reminder is preserved.
+// This is the canonical B2 fix shape from issue #7975's "Example output
+// (project ready, but manual config values missing)".
+func TestResolveAfterInit_ManualVarsSingleEmitsEnrichedShape(t *testing.T) {
+	t.Parallel()
+
+	state := &State{
+		HasProjectEndpoint: true,
+		MissingManualVars:  []string{"MY_API_KEY"},
+	}
+	out := ResolveAfterInit(state)
+	// 1 env-set + 1 run follow-up + 1 trailing.
+	require.Len(t, out, 3)
+
+	assert.Equal(t, "azd env set MY_API_KEY <value>", out[0].Command)
+	assert.Equal(t, "referenced by agent.yaml but not set in azd env", out[0].Description,
+		"enriched description must explain WHY the env-set is needed")
+	assert.False(t, out[0].Trailing)
+
+	assert.Equal(t, "azd ai agent run", out[1].Command)
+	assert.Equal(t, "start the agent locally once the values above are set", out[1].Description)
+	assert.False(t, out[1].Trailing, "run follow-up must be a primary suggestion")
+
+	assert.Equal(t, "azd deploy", out[2].Command)
+	assert.True(t, out[2].Trailing)
 }
 
 // TestResolveAfterInit_ToolboxReproRendersAllCategories locks the full
@@ -191,6 +239,13 @@ func TestResolveAfterInit_ToolboxReproRendersAllCategories(t *testing.T) {
 	assert.Contains(t, rendered,
 		"azd env set TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT <value>",
 		"manual-var fix-up missing — this is the original toolbox-sample regression")
+	// `azd ai agent run` follow-up is intentionally suppressed when
+	// UnresolvedPlaceholders are also present: running locally with
+	// literal `{{NAME}}` values produces a broken agent. The user
+	// must fix the placeholder first; the trailing `azd deploy`
+	// still applies.
+	assert.NotContains(t, rendered, "start the agent locally once the values above are set",
+		"run follow-up should be suppressed while placeholders are unresolved")
 	assert.Contains(t, rendered, "azd deploy", "trailing deploy reminder missing")
 }
 

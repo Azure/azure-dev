@@ -62,7 +62,12 @@ const (
 //     suggesting `azd ai agent run`. See state.PendingProvisionReasons
 //     for the env-var contract.
 //   - MissingManualVars  → one `azd env set <KEY> <value>` per missing var
-//     (up to maxFixupLines)
+//     (up to maxFixupLines) plus an `azd ai agent run` follow-up so
+//     the user knows what to do after supplying the values. Matches
+//     issue #7975's "Then run 'azd ai agent run' to start locally"
+//     manual-vars example. The run follow-up is suppressed when
+//     UnresolvedPlaceholders are also present, since literal
+//     `{{NAME}}` values would still break the local agent.
 //   - Otherwise          → `azd ai agent run`
 //     Skipped when only UnresolvedPlaceholders are present, because
 //     running locally with literal `{{NAME}}` values is broken too.
@@ -111,10 +116,27 @@ func ResolveAfterInit(state *State) []Suggestion {
 		for _, key := range manual[:limit] {
 			out = append(out, Suggestion{
 				Command:     fmt.Sprintf("azd env set %s <value>", key),
-				Description: "supply the agent.yaml variable",
+				Description: "referenced by agent.yaml but not set in azd env",
 				Priority:    priority,
 			})
 			priority++
+		}
+		// Follow-up: once the user supplies the values above, the next
+		// productive command is `azd ai agent run`. Without this hint
+		// the post-init Next: block stops at the env-set lines and the
+		// user has to remember the run step themselves — that's the
+		// "Then run 'azd ai agent run' to start locally" line in
+		// issue #7975's manual-vars example output. Suppressed when
+		// placeholders are also unresolved — running locally with
+		// literal `{{NAME}}` values produces a broken agent, so the
+		// user must finish the placeholder fix-ups first; the
+		// trailing `azd deploy` reminder still applies.
+		if !hasPlaceholders {
+			out = append(out, Suggestion{
+				Command:     "azd ai agent run",
+				Description: "start the agent locally once the values above are set",
+				Priority:    priority,
+			})
 		}
 	case hasPlaceholders:
 		// Only unresolved placeholders remain — do not emit

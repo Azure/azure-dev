@@ -135,5 +135,6 @@ stages:
               CommitMsg: "[${{ parameters.AzdExtensionId }}] Registry update for $(EXT_VERSION)"
               PRTitle: "[${{ parameters.AzdExtensionId }}] Registry update for $(EXT_VERSION)"
               PRBody: >-
-                Registry update for
-                [`azd-ext-${{ parameters.SanitizedExtensionId }}_$(EXT_VERSION)`](https://github.com/$(Build.Repository.Name)/releases/tag/azd-ext-${{ parameters.SanitizedExtensionId }}_$(EXT_VERSION)).
+                Registry update for the
+                [azd-ext-${{ parameters.SanitizedExtensionId }}_$(EXT_VERSION)](https://github.com/$(Build.Repository.Name)/releases/tag/azd-ext-${{ parameters.SanitizedExtensionId }}_$(EXT_VERSION))
+                release.

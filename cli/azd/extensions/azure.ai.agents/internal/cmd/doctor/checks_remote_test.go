@@ -12,20 +12,23 @@ import (
 
 // ---- NewRemoteChecks contract ----
 
-// TestNewRemoteChecks_HasAuthAndFoundryEndpoint pins the current
-// shape of the remote chain: exactly two checks, in the order
-// `remote.auth` → `remote.foundry-endpoint`, both with Remote=true.
-// The ordering matters because `remote.foundry-endpoint` skip-
-// cascades against `remote.auth`'s prior Result, so any future
-// re-ordering or insertion has to come through this assertion.
-// Update this test when C16 / C17 land.
-func TestNewRemoteChecks_HasAuthAndFoundryEndpoint(t *testing.T) {
+// TestNewRemoteChecks_HasAuthFoundryEndpointAndRBAC pins the current
+// shape of the remote chain: exactly three checks, in the order
+// `remote.auth` → `remote.foundry-endpoint` → `remote.rbac`, all
+// with Remote=true. The ordering matters because
+// `remote.foundry-endpoint` skip-cascades against `remote.auth`'s
+// prior Result and `remote.rbac` skip-cascades against
+// `remote.auth` (but NOT `remote.foundry-endpoint`, per the design's
+// dependency matrix line 115 — RBAC reads ARM, not the data plane).
+// Any future re-ordering or insertion has to come through this
+// assertion. Update this test when C17 lands.
+func TestNewRemoteChecks_HasAuthFoundryEndpointAndRBAC(t *testing.T) {
 	t.Parallel()
 
 	got := NewRemoteChecks(Dependencies{})
 
-	require.Len(t, got, 2,
-		"NewRemoteChecks should contain exactly auth and foundry-endpoint today")
+	require.Len(t, got, 3,
+		"NewRemoteChecks should contain auth, foundry-endpoint, and rbac today")
 	require.Equal(t, "remote.auth", got[0].ID)
 	require.Equal(t, "authentication", got[0].Name)
 	require.True(t, got[0].Remote, "remote.auth must declare Remote=true")
@@ -34,6 +37,10 @@ func TestNewRemoteChecks_HasAuthAndFoundryEndpoint(t *testing.T) {
 	require.Equal(t, "Foundry project endpoint reachable", got[1].Name)
 	require.True(t, got[1].Remote, "remote.foundry-endpoint must declare Remote=true")
 	require.NotNil(t, got[1].Fn, "remote.foundry-endpoint must have a non-nil Fn")
+	require.Equal(t, "remote.rbac", got[2].ID)
+	require.Equal(t, "Developer has required role on Foundry project", got[2].Name)
+	require.True(t, got[2].Remote, "remote.rbac must declare Remote=true")
+	require.NotNil(t, got[2].Fn, "remote.rbac must have a non-nil Fn")
 }
 
 // TestNewLocalAndRemoteChecks_ProductionCompositionLocalsFirst pins the

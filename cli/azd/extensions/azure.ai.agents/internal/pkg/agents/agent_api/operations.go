@@ -392,6 +392,9 @@ func (c *AgentClient) UpdateAgentFromZip(
 }
 
 // zipDeployRequest performs the multipart ZIP deploy request (shared by create and update).
+// TODO: Stream the ZIP file directly from disk instead of buffering zipData []byte in memory
+// to reduce memory usage for large agent projects. The 250MB ZIP limit makes OOM unlikely
+// in practice, but streaming would halve peak memory consumption.
 func (c *AgentClient) zipDeployRequest(
 	ctx context.Context,
 	reqURL string,

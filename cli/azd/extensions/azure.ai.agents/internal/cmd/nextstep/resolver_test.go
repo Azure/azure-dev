@@ -463,11 +463,32 @@ func TestResolveAfterRun_NilState(t *testing.T) {
 func TestResolveAfterInvoke_Success(t *testing.T) {
 	t.Parallel()
 
-	t.Run("local success → ship it", func(t *testing.T) {
+	t.Run("local success → deploy + monitor", func(t *testing.T) {
 		t.Parallel()
 		out := ResolveAfterInvoke(&State{}, InvokeLocal, "", nil)
-		require.Len(t, out, 1)
+		// Issue #7975 lines 168-181: local-invoke success surfaces
+		// both `azd deploy` (ship to Azure) and the live-log monitor
+		// follow-up (verify the deployed copy is healthy).
+		require.Len(t, out, 2)
+
 		assert.Equal(t, "azd deploy", out[0].Command)
+		assert.Equal(t, "deploy the agent to Azure", out[0].Description)
+		assert.False(t, out[0].Trailing,
+			"primary suggestion must not be Trailing")
+
+		assert.Equal(t, "azd ai agent monitor --follow", out[1].Command)
+		assert.Equal(t, "view logs after deploying", out[1].Description)
+		assert.False(t, out[1].Trailing,
+			"secondary suggestion must not be Trailing")
+
+		// Priority ordering matters: PrintNext / PrintAllNext stable-sort
+		// by Priority ascending, so the slice position alone does NOT
+		// guarantee the rendered order. Locking priorities here prevents
+		// a future edit from accidentally inverting the values and
+		// making `monitor --follow` render before `azd deploy`. Mirrors
+		// the failure-path pattern on the remote-failure test below.
+		assert.Less(t, out[0].Priority, out[1].Priority,
+			"deploy must sort before monitor --follow")
 	})
 
 	t.Run("remote success with agent name → show <agent> + monitor", func(t *testing.T) {

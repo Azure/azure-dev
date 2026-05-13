@@ -220,7 +220,9 @@ type InvokeFailure struct {
 // ResolveAfterInvoke produces the Next: block for a completed invoke.
 //
 // Success paths:
-//   - InvokeLocal  → `azd deploy` (the natural next step is to ship)
+//   - InvokeLocal  → `azd deploy` + `azd ai agent monitor --follow`
+//     (the local invoke worked, so the next loop is "ship to Azure
+//     then watch the live logs". Spec: issue #7975 lines 168-181.)
 //   - InvokeRemote → `azd ai agent show <agent>` + monitor secondary
 //
 // Failure paths:
@@ -237,11 +239,24 @@ func ResolveAfterInvoke(state *State, mode InvokeMode, agentName string, failure
 
 func resolveInvokeSuccess(mode InvokeMode, agentName string) []Suggestion {
 	if mode == InvokeLocal {
-		return []Suggestion{{
-			Command:     "azd deploy",
-			Description: "the local invoke worked — ship it to Azure",
-			Priority:    10,
-		}}
+		// Issue #7975 lines 168-181: local-invoke success has run to
+		// completion against a local `azd ai agent run` process, so
+		// the user has already provisioned (dependencies exist) and
+		// the agent code itself works. The natural next step is to
+		// ship to Azure with `azd deploy`, and once it's running
+		// there, `monitor --follow` is the live-log feed.
+		return []Suggestion{
+			{
+				Command:     "azd deploy",
+				Description: "deploy the agent to Azure",
+				Priority:    10,
+			},
+			{
+				Command:     "azd ai agent monitor --follow",
+				Description: "view logs after deploying",
+				Priority:    20,
+			},
+		}
 	}
 
 	primary := "azd ai agent show"

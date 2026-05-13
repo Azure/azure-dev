@@ -18,7 +18,7 @@ In scope:
 
 - The eleven verbs listed in § 1.
 - Cross-cutting flags (`--output table|json`, `--no-prompt`, `--debug`, `--project-endpoint`) on every new command.
-- A self-contained CLI client at `internal/pkg/toolbox/` that wraps the existing `*azure.FoundryToolboxClient` and adds the methods the CLI surface needs but the agent runtime does not (§ 5). The existing file `internal/pkg/azure/foundry_toolsets_client.go` is not modified — it remains the runtime client used by `internal/cmd/listen.go`.
+- A self-contained CLI client at `cli/azd/extensions/azure.ai.agents/internal/pkg/toolbox/` that wraps the existing `*azure.FoundryToolboxClient` and adds the methods the CLI surface needs but the agent runtime does not (§ 5). The existing file `cli/azd/extensions/azure.ai.agents/internal/pkg/azure/foundry_toolsets_client.go` is not modified — it remains the runtime client used by `internal/cmd/listen.go`.
 
 Out of scope:
 
@@ -34,6 +34,8 @@ The `toolbox` subtree is added under the existing `azure.ai.agents` extension. N
 
 ### 3.1 Modular Layout
 
+All `internal/...` paths in §§ 3, 5, 8, 9, and 11 are inside `cli/azd/extensions/azure.ai.agents/`.
+
 1. All toolbox command files live under `internal/cmd/toolbox*.go`. No toolbox logic is added to existing command files.
 2. All toolbox CLI client code lives under a new self-contained package `internal/pkg/toolbox/` (`client.go`, `models.go`, `errors.go`). The package wraps `*azure.FoundryToolboxClient` (existing) via composition for the verbs already implemented there (`CreateToolboxVersion`, `GetToolbox`, `DeleteToolbox`) and adds new methods the runtime does not need (`ListToolboxes`, `GetToolboxVersion`, `ListToolboxVersions`, `DeleteToolboxVersion`, `SetDefaultVersion`, plus the local-state helper `RegisterPending`). It does **not** import from sibling agent packages such as `internal/pkg/agents/agent_yaml/` or `internal/cmd/listen.go`.
 3. Imports are one-way: `cmd/toolbox*.go` → `internal/pkg/toolbox/` → `internal/pkg/azure` (for the embedded `*FoundryToolboxClient`) → `internal/exterrors`. Shared helpers carry a `// SHARED: <reason>` comment.
@@ -45,11 +47,11 @@ The `toolbox` subtree is added under the existing `azure.ai.agents` extension. N
 
 | Shared piece | Location | Reason |
 | --- | --- | --- |
-| Endpoint resolver (`resolveAgentEndpoint`) | `internal/cmd/agent_endpoint.go` (existing 2-level resolver; PR #8152 expands it to the 5-level cascade) | Used by every agent command and by toolbox commands. |
-| Confirmation prompt (`azdClient.Prompt().Confirm`) | azd host gRPC, called inline today (see `internal/cmd/init.go`, `internal/cmd/init_copy.go`). This work introduces a shared `confirmDestructive` helper alongside `agent_endpoint.go` and uses it for `toolbox delete` and per-version delete. | Avoids duplicating the prompt block across destructive verbs. |
+| Endpoint resolver (`resolveAgentEndpoint`) | `cli/azd/extensions/azure.ai.agents/internal/cmd/agent_context.go` (existing 2-level resolver; PR #8152 expands it to the 5-level cascade) | Used by every agent command and by toolbox commands. |
+| Confirmation prompt (`azdClient.Prompt().Confirm`) | azd host gRPC, called inline today (see `internal/cmd/init.go`, `internal/cmd/init_copy.go`). This work introduces a shared `confirmDestructive` helper in `internal/cmd/` and uses it for `toolbox delete` and per-version delete. | Avoids duplicating the prompt block across destructive verbs. |
 | `azdext.ExtensionContext` (`OutputFormat`, `NoPrompt`, `Prompt()`) | azd host gRPC | Standard extension surface. |
 | Credential factory (`azidentity.NewAzureDeveloperCLICredential`) | stdlib wrapper | Same credential used by agent run. |
-| Foundry data-plane client (`FoundryToolboxClient`) | `internal/pkg/azure/foundry_toolsets_client.go` — already implements `CreateToolboxVersion`, `GetToolbox`, `DeleteToolbox` with the correct pipeline (scope `https://ai.azure.com/.default`, `Foundry-Features: Toolboxes=V1Preview` header). Used today by `internal/cmd/listen.go` for runtime toolbox materialization. | Embedded by the new `internal/pkg/toolbox.Client` via composition; not modified by this PR. |
+| Foundry data-plane client (`FoundryToolboxClient`) | `cli/azd/extensions/azure.ai.agents/internal/pkg/azure/foundry_toolsets_client.go` — already implements `CreateToolboxVersion`, `GetToolbox`, `DeleteToolbox` with the correct pipeline (scope `https://ai.azure.com/.default`, `Foundry-Features: Toolboxes=V1Preview` header). Used today by `internal/cmd/listen.go` for runtime toolbox materialization. | Embedded by the new `internal/pkg/toolbox.Client` via composition; not modified by this PR. |
 | `exterrors` package | `internal/exterrors/` | Shared error model and gRPC classification. |
 
 ## 4. API Surfaces
@@ -244,7 +246,7 @@ Flags on all three: `--project-endpoint`, `--output`, `--no-prompt`, `--debug`.
 
 ## 6. Endpoint Resolution
 
-The toolbox commands consume the 5-level cascade defined by the project-context spec (`azure-ai-project-commands.md` § 4 — introduced in [PR #8152](https://github.com/Azure/azure-dev/pull/8152)):
+The toolbox commands consume the 5-level cascade defined by the project-context spec ([PR #8152](https://github.com/Azure/azure-dev/pull/8152), to land at `cli/azd/docs/design/azure-ai-project-commands.md` § 4):
 
 1. `--project-endpoint` flag on the invoked command.
 2. Active azd env value (`AZURE_AI_PROJECT_ENDPOINT`) when inside an azd project.
@@ -378,7 +380,7 @@ OpResolveProjectConnection
 
 ## 13. Open Questions
 
-1. Should `create` also accept an optional `--connection <name>` flag to publish v1 immediately, skipping the pending-record step? Current proposal: no — the pending-record model keeps `create` non-network and matches the "one command, one action" principle from the umbrella spec.
+1. Should `create` also accept an optional `--connection <name>` flag to publish v1 immediately, skipping the pending-record step? Current proposal: no — the pending-record model keeps `create` free of toolbox-write calls (it only reads `GET /toolboxes/{name}` to decide between the registered / existing one-liner) and matches the "one command, one action" principle from the umbrella spec.
 2. Should `toolbox list` surface every version's tool count, or just the default-version's count? Current proposal: just the default — matches what `show` displays by default and keeps the list call to a single GET per toolbox.
 3. Should `connection add` accept `--as <alias>` to decouple the tool entry's `name` from the connection name? Current proposal: no — defer until users ask.
 
@@ -396,7 +398,7 @@ azd ai agent toolbox connection remove <toolbox> <connection>                   
 azd ai agent toolbox connection list   <toolbox>                                                         [--project-endpoint <url>] [--output table|json] [--no-prompt] [--debug]
 
 azd ai agent toolbox tag set    <toolbox> KEY=VALUE [KEY=VALUE …]                                        [--project-endpoint <url>] [--output table|json] [--no-prompt] [--debug]
-azd ai agent toolbox tag remove <toolbox> KEY [KEY …]                                                    [--project-endpoint <url>] [--no-prompt] [--debug]
+azd ai agent toolbox tag remove <toolbox> KEY [KEY …]                                                    [--project-endpoint <url>] [--output table|json] [--no-prompt] [--debug]
 azd ai agent toolbox tag list   <toolbox>                                                                [--project-endpoint <url>] [--output table|json] [--no-prompt] [--debug]
 ```
 

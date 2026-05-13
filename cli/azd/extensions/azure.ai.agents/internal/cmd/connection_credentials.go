@@ -16,6 +16,7 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"gopkg.in/yaml.v3"
 )
 
 // connectionRefPattern matches ${{connections.<name>.credentials.<key>}} references
@@ -55,15 +56,27 @@ func resolveConnectionCredentials(
 		return nil, nil
 	}
 
+	// Try parsing as AgentManifest (agent.manifest.yaml — has "template:" wrapper)
+	var envVars []agent_yaml.EnvironmentVariable
+
 	manifest, err := agent_yaml.LoadAndValidateAgentManifest(manifestBytes)
-	if err != nil {
-		log.Printf("run: could not parse manifest %s: %v", manifestPath, err)
-		return nil, nil
+	if err == nil {
+		if containerAgent, ok := manifest.Template.(agent_yaml.ContainerAgent); ok &&
+			containerAgent.EnvironmentVariables != nil {
+			envVars = *containerAgent.EnvironmentVariables
+		}
 	}
 
-	// Extract environment variables from the manifest
-	containerAgent, ok := manifest.Template.(agent_yaml.ContainerAgent)
-	if !ok || containerAgent.EnvironmentVariables == nil {
+	// Fall back to parsing as ContainerAgent directly (agent.yaml — no wrapper)
+	if len(envVars) == 0 {
+		var agentDef agent_yaml.ContainerAgent
+		if yamlErr := yaml.Unmarshal(manifestBytes, &agentDef); yamlErr == nil &&
+			agentDef.EnvironmentVariables != nil {
+			envVars = *agentDef.EnvironmentVariables
+		}
+	}
+
+	if len(envVars) == 0 {
 		return nil, nil
 	}
 
@@ -75,7 +88,7 @@ func resolveConnectionCredentials(
 	}
 
 	var refs []connRef
-	for _, ev := range *containerAgent.EnvironmentVariables {
+	for _, ev := range envVars {
 		matches := connectionRefPattern.FindStringSubmatch(ev.Value)
 		if matches != nil {
 			refs = append(refs, connRef{
@@ -147,8 +160,9 @@ func resolveConnectionCredentials(
 	return result, nil
 }
 
-// findManifestInDir looks for an agent manifest file in the given directory.
+// findManifestInDir looks for an agent manifest or definition file in the given directory.
 // Checks: agent.manifest.yaml, agent.yaml, agent.manifest.yml, agent.yml
+// Returns the first file that exists and contains environment_variables.
 func findManifestInDir(dir string) string {
 	candidates := []string{
 		"agent.manifest.yaml",
@@ -159,9 +173,8 @@ func findManifestInDir(dir string) string {
 	for _, name := range candidates {
 		path := filepath.Join(dir, name)
 		if _, err := os.Stat(path); err == nil {
-			// Quick check: must contain "template" key to be a manifest
 			data, err := os.ReadFile(path)
-			if err == nil && strings.Contains(string(data), "template:") {
+			if err == nil && strings.Contains(string(data), "environment_variables") {
 				return path
 			}
 		}

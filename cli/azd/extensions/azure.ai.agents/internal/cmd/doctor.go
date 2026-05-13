@@ -19,20 +19,23 @@ import (
 
 // doctorFlags are the Cobra-bound flags for `azd ai agent doctor`.
 //
-// localOnly is exposed today as a no-op: every shipped check is local
-// (Phase 4 covers checks 1–6). The Cobra surface is locked early so the
-// Phase 5 follow-up that adds remote checks does not need to introduce
-// the flag in the same commit as the new check implementations.
+// localOnly skips remote (network-dependent) checks. The runner gates
+// remote checks via the Check.Remote field (see runner.go); doctor
+// remains responsive when network is unreachable, behind a proxy, or
+// the user just wants a fast local triage. Today the remote-checks
+// factory returns an empty slice, so the flag has no observable
+// effect — but the wire is fully exercised so the remote checks land
+// transparently.
 //
 // output selects the rendering path: "text" (default, human-readable
 // with a trailing Next: block on success) or "json" (structured envelope
 // for scripted consumers).
 //
-// unredacted is reserved for Phase 5 — once remote checks surface
-// principal IDs, scope ARNs, and UPNs, this flag will toggle the
-// redaction layer. It is bound today and threaded into doctor.Options
-// so that callers (and tests) can already exercise the wire without
-// the future Phase 5 fix-up touching the Cobra surface.
+// unredacted toggles the redaction of principal IDs, scope ARNs, and
+// UPNs in the report. The flag is surfaced today and threaded into
+// doctor.Options so remote checks can read `opts.Unredacted` from
+// their CheckFunc signature; the redaction layer itself lands with
+// the first check that produces sensitive identifiers.
 type doctorFlags struct {
 	localOnly  bool
 	output     string
@@ -123,8 +126,8 @@ Exit codes:
 
 	cmd.Flags().BoolVar(
 		&flags.localOnly, "local-only", false,
-		"Run only local checks (no network calls). "+
-			"All checks are local today; this flag is reserved for an upcoming remote-checks pass.",
+		"Skip remote (network-dependent) checks. "+
+			"Useful when offline, behind a proxy, or for a fast local triage.",
 	)
 	cmd.Flags().StringVarP(
 		&flags.output, "output", "o", "text",
@@ -133,7 +136,7 @@ Exit codes:
 	cmd.Flags().BoolVar(
 		&flags.unredacted, "unredacted", false,
 		"Show raw principal IDs, scope ARNs, and UPNs in the report. "+
-			"Reserved for the upcoming remote-checks pass (no-op today).",
+			"Has no effect today; takes effect when remote checks are added.",
 	)
 
 	return cmd
@@ -171,7 +174,14 @@ func runDoctor(
 	opts doctor.Options,
 	azdClient *azdext.AzdClient,
 ) (doctor.Report, []nextstep.Suggestion) {
-	runner := doctor.Runner{Checks: doctor.NewLocalChecks(deps)}
+	// Local checks run first so their Results are available to
+	// remote checks' skip-cascade guards (each remote check inspects
+	// `prior []Result` via `priorBlocked` to decide whether to skip
+	// when an upstream local precondition failed). The slice order
+	// here is the source of truth for that contract — do not
+	// reorder.
+	checks := append(doctor.NewLocalChecks(deps), doctor.NewRemoteChecks(deps)...)
+	runner := doctor.Runner{Checks: checks}
 	report := runner.Run(ctx, opts)
 
 	// Trailing Next: block is only meaningful when checks all pass

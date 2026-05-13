@@ -42,6 +42,16 @@ type Dependencies struct {
 	AzdClientErr     error
 	ExtensionVersion string
 
+	// AgentAPIVersion is the Foundry Agents api-version the remote
+	// probes target. The doctor command's Cobra wiring populates this
+	// with the package-level DefaultAgentAPIVersion constant so the
+	// design's "single source of truth" requirement is honored — both
+	// the runtime invoke flow (init, invoke, listen, monitor,
+	// session, show) and the doctor probe pin against the same
+	// constant. Tests can override per-call to assert URL composition
+	// without coupling to the production value.
+	AgentAPIVersion string
+
 	// assembleState is a test seam: when non-nil it replaces the
 	// production `nextstep.AssembleState` call inside the
 	// `local.manual-env-vars` check, letting unit tests inject a
@@ -57,6 +67,16 @@ type Dependencies struct {
 	// without invoking `azd auth token`. Lowercase so external
 	// packages cannot reach it; production wiring leaves it nil.
 	probeAuth func(ctx context.Context) authProbeResult
+
+	// probeFoundryEndpoint is a test seam: when non-nil it replaces
+	// the production `realProbeFoundryEndpoint` call inside the
+	// `remote.foundry-endpoint` check, letting unit tests assert each
+	// HTTP-status branch (200/401/403/404/5xx/network) without
+	// standing up a live Foundry service. The probe receives the
+	// `AZURE_AI_PROJECT_ENDPOINT` value resolved by the upstream
+	// `local.project-endpoint-set` check; production wiring leaves
+	// this field nil.
+	probeFoundryEndpoint func(ctx context.Context, endpoint string) foundryProbeResult
 }
 
 // NewLocalChecks returns the canonical sequence of local doctor checks

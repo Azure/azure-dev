@@ -103,12 +103,13 @@ type Report struct {
 }
 
 // Options are the runtime flags that influence the runner. LocalOnly
-// excludes any check whose Remote field is true (no-op in phase 4 — no
-// remote checks are wired yet; the field is exposed early so the Cobra
-// surface can be locked without churn when phase 5 lands). Unredacted
-// inverts Redacted on the produced Report; it is also surfaced to checks
-// that decide whether to include identifiers in their Message / Details
-// strings.
+// excludes any check whose Remote field is true. Today the remote-
+// checks factory (doctor.NewRemoteChecks) returns an empty slice, so
+// the flag has no observable effect; the wire is fully exercised in
+// the runner and tests so C11+ remote checks land transparently.
+// Unredacted inverts Redacted on the produced Report; it is also
+// surfaced to checks that decide whether to include identifiers in
+// their Message / Details strings.
 type Options struct {
 	LocalOnly  bool
 	Unredacted bool

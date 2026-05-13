@@ -18,6 +18,16 @@ import (
 
 var connectionStringJSONRegex = regexp.MustCompile(`("[\w]*(?:CONNECTION_STRING|ConnectionString)":\s*)"[^"]*"`)
 
+// SetupDebugLogging configures debug logging for the extension (exported for root.go).
+// By default Go's standard log package writes to stderr, which causes internal
+// messages (e.g. from the command runner and GitHub CLI wrapper) to appear as
+// noisy user-facing output. This function silences those logs unless debug mode
+// is enabled, and additionally configures the Azure SDK logger when debugging.
+// Returns a cleanup function that should be deferred by the caller.
+func SetupDebugLogging(flags *pflag.FlagSet) func() {
+	return setupDebugLogging(flags)
+}
+
 // setupDebugLogging configures debug logging for the extension.
 // By default Go's standard log package writes to stderr, which causes internal
 // messages (e.g. from the command runner and GitHub CLI wrapper) to appear as

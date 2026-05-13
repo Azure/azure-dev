@@ -24,6 +24,10 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// codeDeployRegions lists the regions that currently support code deploy (ZIP upload).
+// Projects outside these regions are filtered out when code deploy mode is selected.
+var codeDeployRegions = []string{"westus2", "canadacentral", "northcentralus"}
+
 // FoundryProjectInfo holds information about a discovered or parsed Foundry project.
 // This is the unified type used by both init flows.
 type FoundryProjectInfo struct {
@@ -1041,6 +1045,13 @@ func selectFoundryProject(
 			return nil, err
 		}
 		return nil, fmt.Errorf("failed to list Foundry projects: %w", err)
+	}
+
+	// When code deploy is selected, restrict to regions that support it.
+	if skipACR {
+		projects = slices.DeleteFunc(projects, func(p FoundryProjectInfo) bool {
+			return !locationAllowed(p.Location, codeDeployRegions)
+		})
 	}
 
 	if len(projects) == 0 {

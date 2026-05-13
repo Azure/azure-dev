@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -1080,8 +1081,20 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 ) (*azdext.ServiceDeployResult, error) {
 	progress("Deploying hosted agent (code deploy)")
 
-	// TODO: Add region validation for code deploy — verify that the Foundry project's
-	// region supports code deploy before attempting the upload.
+	// Validate that the Foundry project's region supports code deploy.
+	codeDeployRegions := []string{"westus2", "canadacentral", "northcentralus"}
+	projectLocation := strings.ToLower(strings.TrimSpace(azdEnv["AZURE_LOCATION"]))
+	if !slices.Contains(codeDeployRegions, projectLocation) {
+		return nil, exterrors.Dependency(
+			exterrors.CodeAgentCreateFailed,
+			fmt.Sprintf(
+				"code deploy is not supported in region %q; supported regions: %s",
+				azdEnv["AZURE_LOCATION"],
+				strings.Join(codeDeployRegions, ", "),
+			),
+			"select a Foundry project in a supported region or use container deploy instead",
+		)
+	}
 
 	// Find the ZIP artifact from Package phase
 	var zipPath, sha256Hex string
@@ -1115,7 +1128,7 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 	if agentDef.CodeConfiguration != nil {
 		fmt.Fprintf(os.Stderr, "Runtime: %s\n", agentDef.CodeConfiguration.Runtime)
 		fmt.Fprintf(os.Stderr, "Entry Point: [\"python\", \"%s\"]\n", agentDef.CodeConfiguration.EntryPoint)
-		depRes := "bundled"
+		depRes := "remote_build"
 		if agentDef.CodeConfiguration.DependencyResolution != nil {
 			depRes = *agentDef.CodeConfiguration.DependencyResolution
 		}
@@ -1171,7 +1184,7 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 
 	// Poll for status if remote build
 	latestVersion := &agentResp.Versions.Latest
-	depRes := "bundled"
+	depRes := "remote_build"
 	if agentDef.CodeConfiguration != nil && agentDef.CodeConfiguration.DependencyResolution != nil {
 		depRes = *agentDef.CodeConfiguration.DependencyResolution
 	}

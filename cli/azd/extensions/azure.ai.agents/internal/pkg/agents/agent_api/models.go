@@ -233,10 +233,19 @@ type AgentVersionObject struct {
 	CreatedAt          int64               `json:"created_at"`
 	Definition         any                 `json:"definition"` // Can be any of the agent definition types
 	Status             string              `json:"status,omitempty"`
+	Error              *AgentVersionError  `json:"error,omitempty"`
 	InstanceIdentity   *AgentIdentityInfo  `json:"instance_identity,omitempty"`
 	Blueprint          *BlueprintInfo      `json:"blueprint,omitempty"`
 	BlueprintReference *BlueprintReference `json:"blueprint_reference,omitempty"`
 	AgentGUID          string              `json:"agent_guid,omitempty"`
+	// RequestID is populated from the x-request-id response header (not from JSON).
+	RequestID string `json:"-"`
+}
+
+// AgentVersionError represents an error returned by the service for a failed agent version.
+type AgentVersionError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
 }
 
 // AgentObject represents an agent

@@ -505,6 +505,11 @@ func (c *AgentClient) GetAgentVersion(ctx context.Context, agentName, agentVersi
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
+	// Capture request ID from response header for diagnostics.
+	if reqID := resp.Header.Get("x-request-id"); reqID != "" {
+		version.RequestID = reqID
+	}
+
 	return &version, nil
 }
 

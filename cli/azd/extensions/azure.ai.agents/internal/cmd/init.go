@@ -1891,7 +1891,7 @@ func (a *InitAction) populateContainerSettings(
 
 	resp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
-			Message:       "Select container resource allocation (CPU and Memory) for your agent. You can adjust these settings later in the azure.yaml file if needed.",
+			Message:       "Select resources (CPU and Memory) for your agent. You can adjust these settings later in the azure.yaml file if needed.",
 			Choices:       choices,
 			SelectedIndex: &defaultIndex,
 		},

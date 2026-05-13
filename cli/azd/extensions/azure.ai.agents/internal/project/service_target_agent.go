@@ -1216,9 +1216,16 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 				fmt.Fprintf(os.Stderr, "Agent is active!\n")
 				break
 			} else if versionResp.Status == "failed" {
+				errMsg := "agent deployment failed during remote build; check agent logs or try local packaging (dependency_resolution: bundled)"
+				if versionResp.Error != nil {
+					errMsg = fmt.Sprintf("agent deployment failed: [%s] %s", versionResp.Error.Code, versionResp.Error.Message)
+				}
+				if versionResp.RequestID != "" {
+					errMsg += fmt.Sprintf(" (request-id: %s)", versionResp.RequestID)
+				}
 				return nil, exterrors.Internal(
 					exterrors.CodeAgentCreateFailed,
-					"agent deployment failed during remote build; check agent logs or try local packaging (dependency_resolution: bundled)",
+					errMsg,
 				)
 			}
 			fmt.Fprintf(os.Stderr, "  Status: %s...\n", versionResp.Status)

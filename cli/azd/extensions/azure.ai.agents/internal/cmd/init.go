@@ -572,10 +572,10 @@ func (a *InitAction) Run(ctx context.Context) error {
 		}
 
 		// Prompt for deploy mode (code vs container) for hosted agents.
-		// Code deploy is currently only supported for Python projects.
+		// Code deploy is supported for Python and .NET projects.
 		if _, ok := agentManifest.Template.(agent_yaml.ContainerAgent); ok {
-			isPython := isPythonProject(targetDir)
-			deployMode, err := promptDeployMode(ctx, a.azdClient, a.flags.noPrompt, isPython)
+			showCodeDeploy := isPythonProject(targetDir) || isDotnetProject(targetDir)
+			deployMode, err := promptDeployMode(ctx, a.azdClient, a.flags.noPrompt, showCodeDeploy)
 			if err != nil {
 				return fmt.Errorf("prompting for deploy mode: %w", err)
 			}
@@ -1631,6 +1631,12 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	if agentDef.Kind == agent_yaml.AgentKindHosted {
 		if a.isCodeDeploy {
 			serviceConfig.Language = "python"
+			// If the agent uses a dotnet runtime, set language to csharp
+			if ca, ok := agentManifest.Template.(agent_yaml.ContainerAgent); ok &&
+				ca.CodeConfiguration != nil &&
+				strings.HasPrefix(ca.CodeConfiguration.Runtime, "dotnet_") {
+				serviceConfig.Language = "csharp"
+			}
 		} else {
 			serviceConfig.Docker = &azdext.DockerProjectOptions{
 				RemoteBuild: true,

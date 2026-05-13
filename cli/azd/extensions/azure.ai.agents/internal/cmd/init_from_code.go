@@ -470,12 +470,12 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 	agentKind := agent_yaml.AgentKindHosted
 
 	// Prompt user for deploy mode (container vs code)
-	// Code deploy is only available for Python projects
+	// Code deploy is available for Python and .NET projects
 	srcDir := a.flags.src
 	if srcDir == "" {
 		srcDir, _ = os.Getwd()
 	}
-	showCodeDeploy := isPythonProject(srcDir)
+	showCodeDeploy := isPythonProject(srcDir) || isDotnetProject(srcDir)
 	deployMode, err := promptDeployMode(ctx, a.azdClient, a.flags.noPrompt, showCodeDeploy)
 	if err != nil {
 		return nil, err
@@ -1106,21 +1106,47 @@ func promptCodeConfig(ctx context.Context, azdClient *azdext.AzdClient, srcDir s
 		srcDir = "."
 	}
 
-	// Prompt for runtime
-	runtimeChoices := []*azdext.SelectChoice{
-		{Label: "Python 3.11", Value: "python_3_11"},
-		{Label: "Python 3.12", Value: "python_3_12"},
-		{Label: "Python 3.13", Value: "python_3_13"},
-		{Label: ".NET 9", Value: "dotnet_9"},
-		{Label: ".NET 8", Value: "dotnet_8"},
-		{Label: ".NET 10", Value: "dotnet_10"},
+	// Prompt for runtime — filter choices based on detected project type
+	var runtimeChoices []*azdext.SelectChoice
+	isDotnet := isDotnetProject(srcDir)
+	isPython := isPythonProject(srcDir)
+
+	if isDotnet && !isPython {
+		runtimeChoices = []*azdext.SelectChoice{
+			{Label: ".NET 9", Value: "dotnet_9"},
+			{Label: ".NET 8", Value: "dotnet_8"},
+			{Label: ".NET 10", Value: "dotnet_10"},
+		}
+	} else if isPython && !isDotnet {
+		runtimeChoices = []*azdext.SelectChoice{
+			{Label: "Python 3.11", Value: "python_3_11"},
+			{Label: "Python 3.12", Value: "python_3_12"},
+			{Label: "Python 3.13", Value: "python_3_13"},
+		}
+	} else {
+		// Mixed or unknown — show all options
+		runtimeChoices = []*azdext.SelectChoice{
+			{Label: "Python 3.11", Value: "python_3_11"},
+			{Label: "Python 3.12", Value: "python_3_12"},
+			{Label: "Python 3.13", Value: "python_3_13"},
+			{Label: ".NET 9", Value: "dotnet_9"},
+			{Label: ".NET 8", Value: "dotnet_8"},
+			{Label: ".NET 10", Value: "dotnet_10"},
+		}
 	}
 
 	var runtime string
 	if noPrompt {
-		runtime = "python_3_12"
+		if isDotnet {
+			runtime = "dotnet_9"
+		} else {
+			runtime = "python_3_12"
+		}
 	} else {
-		defaultIdx := int32(1) // Python 3.12 is the default
+		defaultIdx := int32(0) // First item in the filtered list
+		if isPython && !isDotnet {
+			defaultIdx = 1 // Python 3.12
+		}
 		runtimeResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 			Options: &azdext.SelectOptions{
 				Message:       "Select the runtime for your agent",
@@ -1210,6 +1236,23 @@ func isPythonProject(dir string) bool {
 	}
 	for _, e := range entries {
 		if !e.IsDir() && strings.HasSuffix(e.Name(), ".py") {
+			return true
+		}
+	}
+	return false
+}
+
+// isDotnetProject returns true if the directory contains a .csproj or .fsproj file.
+func isDotnetProject(dir string) bool {
+	if dir == "" {
+		dir = "."
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if !e.IsDir() && (strings.HasSuffix(e.Name(), ".csproj") || strings.HasSuffix(e.Name(), ".fsproj")) {
 			return true
 		}
 	}

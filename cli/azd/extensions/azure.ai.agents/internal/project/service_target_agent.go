@@ -5,6 +5,7 @@ package project
 
 import (
 	"archive/zip"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
@@ -1140,10 +1141,11 @@ func (p *AgentServiceTargetProvider) packageDotnetBundled(srcDir string) (string
 		"-o", publishDir,
 	)
 	cmd.Dir = srcDir
-	cmd.Stdout = os.Stderr
-	cmd.Stderr = os.Stderr
+	var publishOutput bytes.Buffer
+	cmd.Stdout = io.MultiWriter(os.Stderr, &publishOutput)
+	cmd.Stderr = io.MultiWriter(os.Stderr, &publishOutput)
 	if err := cmd.Run(); err != nil {
-		return "", "", fmt.Errorf("dotnet publish failed: %w", err)
+		return "", "", fmt.Errorf("dotnet publish failed: %w\nOutput:\n%s", err, publishOutput.String())
 	}
 
 	// ZIP the publish output

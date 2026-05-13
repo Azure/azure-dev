@@ -251,4 +251,3 @@ func TestResolveProjectEndpoint_FoundryEnvNormalized(t *testing.T) {
 	assert.Equal(t, "https://x.services.ai.azure.com/api/projects/p", result.Endpoint)
 	assert.Equal(t, SourceFoundryEnv, result.Source)
 }
-

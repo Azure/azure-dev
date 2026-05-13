@@ -184,5 +184,3 @@ func buildInvocationsURL(projectEndpoint, agentName, apiVersion, sid string) str
 	}
 	return invURL
 }
-
-

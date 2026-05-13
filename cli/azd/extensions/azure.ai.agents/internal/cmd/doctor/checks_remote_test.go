@@ -12,23 +12,22 @@ import (
 
 // ---- NewRemoteChecks contract ----
 
-func TestNewRemoteChecks_EmptyTodayButCallable(t *testing.T) {
-	// Today the function returns an empty slice — remote checks land
-	// in P5 commits C11-C17. This test pins the contract so a future
-	// reviewer can immediately see that an empty result is intentional
-	// (not an accidental wipe) and so that the production wiring in
-	// doctor.go can build the runner unconditionally without a nil
-	// check. A panic in NewRemoteChecks would also fail this test (the
-	// direct call below has no recover); no separate panic-guard test
-	// is needed.
+// TestNewRemoteChecks_HasAuthOnly pins the current shape of the remote
+// chain: exactly one check, `remote.auth`, with Remote=true. When
+// C12 / C16 / C17 land, update this test to reflect the new order +
+// IDs — the assertion is precise on purpose so adding a check anywhere
+// requires touching this single test instead of silently expanding
+// the chain.
+func TestNewRemoteChecks_HasAuthOnly(t *testing.T) {
 	t.Parallel()
 
 	got := NewRemoteChecks(Dependencies{})
 
-	require.NotNil(t, got, "NewRemoteChecks must return a non-nil slice "+
-		"(empty is allowed) so doctor.go can append unconditionally")
-	require.Empty(t, got, "NewRemoteChecks must return zero checks "+
-		"until the first remote check lands in P5 C11+")
+	require.Len(t, got, 1, "NewRemoteChecks should contain exactly the auth check today")
+	require.Equal(t, "remote.auth", got[0].ID)
+	require.Equal(t, "authentication", got[0].Name)
+	require.True(t, got[0].Remote, "remote.auth must declare Remote=true")
+	require.NotNil(t, got[0].Fn, "remote.auth must have a non-nil Fn")
 }
 
 // TestNewLocalAndRemoteChecks_ProductionCompositionLocalsFirst pins the

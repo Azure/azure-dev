@@ -50,15 +50,18 @@ package doctor
 // the order of `Runner.Checks`, so appending remote-after-local is
 // sufficient.
 func NewRemoteChecks(deps Dependencies) []Check {
-	// Phase 5 commits C11-C17 will append entries here:
-	//   - C11: auth probe (`remote.auth`)
-	//   - C12: foundry project endpoint reachability (`remote.foundry-endpoint`)
-	//   - C16: RBAC permissions (`remote.rbac`)
-	//   - C17: agent status on backend (`remote.agent-status`)
-	// Until those land the slice is empty; the framework is fully
-	// exercised by tests using injected fake remote checks. `deps` is
-	// named (rather than `_`) so the production call site reads
-	// naturally and future contributors see the param contract; Go
-	// does not flag unused function parameters.
-	return []Check{}
+	// Phase 5 commits append entries here:
+	//   - C11 (landed): auth probe (`remote.auth`)
+	//   - C12 (planned): foundry project endpoint reachability
+	//     (`remote.foundry-endpoint`)
+	//   - C16 (planned): RBAC permissions (`remote.rbac`)
+	//   - C17 (planned): agent status on backend (`remote.agent-status`)
+	// Ordering matters for skip-cascade: each entry reads `prior
+	// []Result` produced by every check earlier in the combined
+	// local-then-remote sequence. Append checks in the order their
+	// preconditions resolve so a downstream check can short-circuit
+	// when an upstream check fails.
+	return []Check{
+		newCheckAuth(deps),
+	}
 }

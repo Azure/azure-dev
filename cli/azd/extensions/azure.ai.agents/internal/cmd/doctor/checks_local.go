@@ -49,6 +49,14 @@ type Dependencies struct {
 	// Lowercase so external packages cannot reach it. Production code
 	// (NewLocalChecks via the Cobra wiring) leaves it nil.
 	assembleState func(ctx context.Context, client *azdext.AzdClient) (*nextstep.State, []error)
+
+	// probeAuth is a test seam: when non-nil it replaces the
+	// production `realProbeAuth` call inside the `remote.auth` check,
+	// letting unit tests inject controlled token-acquisition outcomes
+	// (error, expired, near-expiry, pass-with-UPN, pass-without-UPN)
+	// without invoking `azd auth token`. Lowercase so external
+	// packages cannot reach it; production wiring leaves it nil.
+	probeAuth func(ctx context.Context) authProbeResult
 }
 
 // NewLocalChecks returns the canonical sequence of local doctor checks

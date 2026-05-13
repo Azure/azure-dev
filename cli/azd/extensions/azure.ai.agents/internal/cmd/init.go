@@ -12,7 +12,6 @@ import (
 	"io"
 	"log"
 	"maps"
-	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -1830,7 +1829,7 @@ func (a *InitAction) populateContainerSettings(
 	if manifestResources != nil {
 		for i, t := range project.ResourceTiers {
 			if t.Cpu == manifestResources.Cpu && t.Memory == manifestResources.Memory {
-				defaultIndex = int32(min(i, math.MaxInt32)) //nolint:gosec // index bounded by small ResourceTiers slice
+				defaultIndex = int32(i)
 				break
 			}
 		}

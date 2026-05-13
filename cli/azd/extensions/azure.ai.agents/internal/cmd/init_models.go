@@ -6,7 +6,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"math"
 	"slices"
 	"strings"
 
@@ -130,7 +129,7 @@ func (a *InitAction) selectFromList(
 			Label: val,
 		}
 		if val == defaultStr {
-			defaultIndex = int32(min(i, math.MaxInt32)) //nolint:gosec // index bounded by small options slice
+			defaultIndex = int32(i)
 		}
 	}
 	resp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{

@@ -1,4 +1,4 @@
-<!-- cspell:ignore foundry toolbox toolboxes exterrors -->
+<!-- cspell:ignore foundry toolbox toolboxes exterrors retarget touchpoints -->
 
 # Design Spec: `azd ai agent toolbox` Direct Commands
 

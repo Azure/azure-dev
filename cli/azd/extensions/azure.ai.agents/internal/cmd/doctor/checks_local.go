@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"azureaiagent/internal/cmd/nextstep"
+	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"google.golang.org/grpc/codes"
@@ -77,6 +78,31 @@ type Dependencies struct {
 	// `local.project-endpoint-set` check; production wiring leaves
 	// this field nil.
 	probeFoundryEndpoint func(ctx context.Context, endpoint string) foundryProbeResult
+
+	// probeDeveloperRBAC is a test seam: when non-nil it replaces
+	// the production `project.QueryDeveloperRBAC` call inside the
+	// `remote.rbac` check, letting unit tests cover the Pass / Fail /
+	// transient-error branches without spinning up Graph + ARM
+	// fakes. The signature mirrors `project.QueryDeveloperRBAC`
+	// exactly so the wiring inside `newCheckRBAC` is a single
+	// `if probe == nil { probe = project.QueryDeveloperRBAC }`
+	// substitution.
+	probeDeveloperRBAC func(
+		ctx context.Context,
+		azdClient *azdext.AzdClient,
+		projectResourceID string,
+	) (*project.DeveloperRBACResult, error)
+
+	// readProjectResourceIDFn is a test seam: when non-nil it
+	// replaces the production `readProjectResourceID` call inside
+	// the `remote.rbac` check, letting unit tests exercise the
+	// downstream probe-injection paths (Pass / Fail / cascade)
+	// without instantiating a real gRPC AzdClient just to read one
+	// env var. Production wiring leaves this nil.
+	readProjectResourceIDFn func(
+		ctx context.Context,
+		azdClient *azdext.AzdClient,
+	) (string, error)
 }
 
 // NewLocalChecks returns the canonical sequence of local doctor checks

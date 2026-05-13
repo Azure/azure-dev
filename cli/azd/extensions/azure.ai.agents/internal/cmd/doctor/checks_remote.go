@@ -5,13 +5,13 @@ package doctor
 
 // NewRemoteChecks returns the canonical sequence of remote (network-
 // dependent) doctor checks in execution order. The slice today
-// contains two entries — `remote.auth` (P5.1 C11) and
-// `remote.foundry-endpoint` (P5.1 C12) — and is wired through
-// `--local-only`, the runner's `Remote: true` gating
-// (runner.go:74-82), and `report.Remote` (set when any executed
-// check is Remote) so that downstream commits (P5 C16 / C17) can
-// append individual checks without touching the doctor command's
-// Cobra wiring.
+// contains three entries — `remote.auth` (P5.1 C11),
+// `remote.foundry-endpoint` (P5.1 C12), and `remote.rbac` (P5.1
+// C16) — and is wired through `--local-only`, the runner's
+// `Remote: true` gating (runner.go:74-82), and `report.Remote` (set
+// when any executed check is Remote) so that downstream commits
+// (P5 C17) can append individual checks without touching the doctor
+// command's Cobra wiring.
 //
 // # Conventions for remote checks added in C11+
 //
@@ -56,7 +56,8 @@ func NewRemoteChecks(deps Dependencies) []Check {
 	//   - C11 (landed): auth probe (`remote.auth`)
 	//   - C12 (landed): foundry project endpoint reachability
 	//     (`remote.foundry-endpoint`)
-	//   - C16 (planned): RBAC permissions (`remote.rbac`)
+	//   - C16 (landed): developer RBAC on the Foundry project
+	//     (`remote.rbac`)
 	//   - C17 (planned): agent status on backend (`remote.agent-status`)
 	// Ordering matters for skip-cascade: each entry reads `prior
 	// []Result` produced by every check earlier in the combined
@@ -66,5 +67,6 @@ func NewRemoteChecks(deps Dependencies) []Check {
 	return []Check{
 		newCheckAuth(deps),
 		newCheckFoundryEndpoint(deps),
+		newCheckRBAC(deps),
 	}
 }

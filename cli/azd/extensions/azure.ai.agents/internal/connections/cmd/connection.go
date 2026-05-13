@@ -111,8 +111,8 @@ func newConnectionShowCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 				dpConn, dpErr := connCtx.dpClient.GetConnectionWithCredentials(ctx, name)
 				if dpErr != nil {
 					fmt.Fprintf(os.Stderr, "Warning: could not fetch credentials: %s\n", dpErr)
-				} else {
-					result.Credentials = dpConn.Credentials
+				} else if dpConn.Credentials != nil {
+					result.Credentials = dpConn.Credentials.RawFields
 					result.CredentialRefs = buildCredentialReferences(name, dpConn.Credentials)
 				}
 			}
@@ -289,13 +289,13 @@ type connectionListItem struct {
 }
 
 type connectionDetailResult struct {
-	Name           string                            `json:"name"`
-	Kind           string                            `json:"kind"`
-	AuthType       string                            `json:"authType"`
-	Target         string                            `json:"target"`
-	Metadata       map[string]*string                `json:"metadata,omitempty"`
-	Credentials    *connections.ConnectionCredentials `json:"credentials,omitempty"`
-	CredentialRefs map[string]string                 `json:"credentialReferences,omitempty"`
+	Name           string             `json:"name"`
+	Kind           string             `json:"kind"`
+	AuthType       string             `json:"authType"`
+	Target         string             `json:"target"`
+	Metadata       map[string]*string `json:"metadata,omitempty"`
+	Credentials    map[string]string  `json:"credentials,omitempty"`
+	CredentialRefs map[string]string  `json:"credentialReferences,omitempty"`
 }
 
 func buildCredentialReferences(
@@ -400,12 +400,9 @@ func printDetail(result connectionDetailResult, format string) error {
 	fmt.Printf("Kind:      %s\n", result.Kind)
 	fmt.Printf("Auth Type: %s\n", result.AuthType)
 	fmt.Printf("Target:    %s\n", result.Target)
-	if result.Credentials != nil {
+	if len(result.Credentials) > 0 {
 		fmt.Println("\nCredentials:")
-		if result.Credentials.Key != "" {
-			fmt.Printf("  key: %s\n", result.Credentials.Key)
-		}
-		for k, v := range result.Credentials.CustomKeys {
+		for k, v := range result.Credentials {
 			fmt.Printf("  %s: %s\n", k, v)
 		}
 	}

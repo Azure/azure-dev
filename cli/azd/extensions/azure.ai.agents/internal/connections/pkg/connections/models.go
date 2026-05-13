@@ -15,14 +15,54 @@ type Connection struct {
 }
 
 // ConnectionCredentials holds credential values returned by the data-plane
-// getConnectionWithCredentials endpoint. The shape varies by auth type:
-//   - ApiKey:     Key is populated
-//   - CustomKeys: CustomKeys map is populated
-//   - AAD/None:   Only Type is populated, no secret values
+// getConnectionWithCredentials endpoint.
+//
+// The API returns credentials as a flat JSON object where "type" identifies
+// the auth type and all other fields are credential key-value pairs:
+//
+//	ApiKey:     {"type": "ApiKey", "key": "abc123"}
+//	CustomKeys: {"type": "CustomKeys", "my-secret": "val", "x-api-key": "val"}
+//	AAD/None:  {"type": "AAD"} or {"type": "None"} — no secret fields
 type ConnectionCredentials struct {
-	Type       string            `json:"type"`
-	Key        string            `json:"key,omitempty"`
-	CustomKeys map[string]string `json:"keys,omitempty"`
+	Type       string            `json:"-"`
+	Key        string            `json:"-"`
+	CustomKeys map[string]string `json:"-"`
+	// RawFields holds all fields from the JSON response for flexible access.
+	RawFields map[string]string `json:"credentials,omitempty"`
+}
+
+// ParseCredentials parses a raw credentials JSON object into a typed struct.
+// The "type" field is extracted and remaining fields become either Key (for ApiKey)
+// or CustomKeys entries.
+func ParseCredentials(raw map[string]any) *ConnectionCredentials {
+	if raw == nil {
+		return nil
+	}
+
+	creds := &ConnectionCredentials{
+		CustomKeys: make(map[string]string),
+		RawFields:  make(map[string]string),
+	}
+
+	for k, v := range raw {
+		strVal, ok := v.(string)
+		if !ok {
+			continue
+		}
+
+		switch k {
+		case "type":
+			creds.Type = strVal
+		case "key":
+			creds.Key = strVal
+			creds.RawFields[k] = strVal
+		default:
+			creds.CustomKeys[k] = strVal
+			creds.RawFields[k] = strVal
+		}
+	}
+
+	return creds
 }
 
 // PagedConnection represents a paged collection of connections.

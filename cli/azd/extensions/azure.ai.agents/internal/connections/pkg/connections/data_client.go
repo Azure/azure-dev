@@ -113,10 +113,28 @@ func (c *DataClient) GetConnectionWithCredentials(
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	var conn Connection
-	if err := json.Unmarshal(body, &conn); err != nil {
+	var raw struct {
+		Name        string         `json:"name"`
+		ID          string         `json:"id"`
+		Type        string         `json:"type"`
+		Target      string         `json:"target"`
+		IsDefault   bool           `json:"isDefault"`
+		Credentials map[string]any `json:"credentials"`
+		Metadata    map[string]string `json:"metadata"`
+	}
+	if err := json.Unmarshal(body, &raw); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal connection: %w", err)
 	}
 
-	return &conn, nil
+	conn := &Connection{
+		Name:        raw.Name,
+		ID:          raw.ID,
+		Type:        raw.Type,
+		Target:      raw.Target,
+		IsDefault:   raw.IsDefault,
+		Credentials: ParseCredentials(raw.Credentials),
+		Metadata:    raw.Metadata,
+	}
+
+	return conn, nil
 }

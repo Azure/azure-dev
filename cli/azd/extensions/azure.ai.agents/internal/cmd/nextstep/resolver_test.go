@@ -213,6 +213,94 @@ func TestResolveAfterInit_ManualVarsSingleEmitsEnrichedShape(t *testing.T) {
 	assert.True(t, out[2].Trailing)
 }
 
+// TestResolveAfterInit_EverythingReady_EmitsInvokeLocalSecondary locks
+// the spec-mandated two-line "everything ready" shape from issue #7975
+// lines 96-103: after `azd ai agent run`, append
+// `azd ai agent invoke --local <payload>` so the user knows what to
+// try in another terminal. Also verifies protocol-aware payload selection
+// (single-service state) and the priority ordering (run before invoke).
+func TestResolveAfterInit_EverythingReady_EmitsInvokeLocalSecondary(t *testing.T) {
+	t.Parallel()
+
+	t.Run("zero services → unqualified invoke with responses payload", func(t *testing.T) {
+		t.Parallel()
+		state := &State{HasProjectEndpoint: true}
+		out := ResolveAfterInit(state)
+		// run + invoke --local + trailing.
+		require.Len(t, out, 3)
+		assert.Equal(t, "azd ai agent run", out[0].Command)
+		assert.Equal(t, "start the agent locally", out[0].Description)
+		assert.Equal(t, `azd ai agent invoke --local "Hello!"`, out[1].Command)
+		assert.Equal(t, "test it in another terminal", out[1].Description)
+		assert.Less(t, out[0].Priority, out[1].Priority,
+			"run must precede invoke --local; the renderer sorts by Priority")
+		assert.Equal(t, "azd deploy", out[2].Command)
+		assert.True(t, out[2].Trailing)
+	})
+
+	t.Run("single-agent responses protocol → invoke uses \"Hello!\"", func(t *testing.T) {
+		t.Parallel()
+		state := &State{
+			HasProjectEndpoint: true,
+			Services:           []ServiceState{{Name: "echo", Protocol: ProtocolResponses}},
+		}
+		out := ResolveAfterInit(state)
+		require.Len(t, out, 3)
+		assert.Equal(t, "azd ai agent run", out[0].Command)
+		assert.Equal(t, `azd ai agent invoke --local "Hello!"`, out[1].Command)
+	})
+
+	t.Run("single-agent invocations protocol → invoke uses JSON envelope", func(t *testing.T) {
+		t.Parallel()
+		state := &State{
+			HasProjectEndpoint: true,
+			Services:           []ServiceState{{Name: "echo", Protocol: ProtocolInvocations}},
+		}
+		out := ResolveAfterInit(state)
+		require.Len(t, out, 3)
+		assert.Equal(t, "azd ai agent run", out[0].Command)
+		assert.Equal(t, `azd ai agent invoke --local '{"message": "Hello!"}'`, out[1].Command)
+	})
+
+	t.Run("multi-agent → invoke stays unqualified, defaults to responses payload", func(t *testing.T) {
+		t.Parallel()
+		state := &State{
+			HasProjectEndpoint: true,
+			Services: []ServiceState{
+				{Name: "alpha", Protocol: ProtocolInvocations},
+				{Name: "beta", Protocol: ProtocolResponses},
+			},
+		}
+		out := ResolveAfterInit(state)
+		require.Len(t, out, 3)
+		assert.Equal(t, "azd ai agent run", out[0].Command)
+		// Multi-agent: the unqualified `invoke --local` doesn't know
+		// which service the user will pick at runtime, so use the
+		// safest generic payload (responses-style "Hello!") instead
+		// of picking one service's protocol arbitrarily.
+		assert.Equal(t, `azd ai agent invoke --local "Hello!"`, out[1].Command)
+	})
+
+	t.Run("placeholders present → invoke-local secondary suppressed (with run)", func(t *testing.T) {
+		// Placeholders block local run entirely — the spec's default
+		// branch is gated on !hasPlaceholders, so neither `run` nor
+		// the invoke-local follow-up should appear when literal
+		// {{NAME}} values would land in the running container.
+		t.Parallel()
+		state := &State{
+			HasProjectEndpoint:     true,
+			UnresolvedPlaceholders: []string{"FOO"},
+		}
+		out := ResolveAfterInit(state)
+		for _, s := range out {
+			assert.NotContains(t, s.Command, "azd ai agent invoke --local",
+				"invoke --local must not be emitted while placeholders are unresolved")
+			assert.NotEqual(t, "azd ai agent run", s.Command,
+				"azd ai agent run must not be emitted while placeholders are unresolved")
+		}
+	})
+}
+
 // TestResolveAfterInit_ToolboxReproRendersAllCategories locks the full
 // regression for the toolbox-sample bug end-to-end: the state contains
 // BOTH an unresolved manifest placeholder AND a missing manual env var,

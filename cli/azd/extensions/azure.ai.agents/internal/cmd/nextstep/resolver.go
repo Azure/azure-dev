@@ -68,9 +68,20 @@ const (
 //     manual-vars example. The run follow-up is suppressed when
 //     UnresolvedPlaceholders are also present, since literal
 //     `{{NAME}}` values would still break the local agent.
-//   - Otherwise          → `azd ai agent run`
-//     Skipped when only UnresolvedPlaceholders are present, because
-//     running locally with literal `{{NAME}}` values is broken too.
+//   - Otherwise          → `azd ai agent run` + `azd ai agent invoke
+//     --local <payload>` secondary
+//     Spec: issue #7975 lines 96-103. The invoke-local secondary
+//     lets the user test the agent in another terminal once it's
+//     running. Payload is protocol-aware when the project has
+//     exactly one service in state (the unqualified `invoke --local`
+//     resolves to that service). For multi-agent projects the
+//     payload defaults to the responses-style `"Hello!"` and the
+//     command is left unqualified — the user picks the target at
+//     runtime via the interactive prompt or `--service` flag, the
+//     same shape the spec example uses.
+//     Both lines are skipped when only UnresolvedPlaceholders are
+//     present, because running locally with literal `{{NAME}}`
+//     values is broken.
 //
 // All paths append the static "When ready to deploy to Azure…" tail.
 func ResolveAfterInit(state *State) []Suggestion {
@@ -147,6 +158,27 @@ func ResolveAfterInit(state *State) []Suggestion {
 		out = append(out, Suggestion{
 			Command:     "azd ai agent run",
 			Description: "start the agent locally",
+			Priority:    priority,
+		})
+		priority++
+		// Invoke-local secondary (issue #7975 lines 99-100). The
+		// spec's "everything ready" example shows the user a second
+		// command to try once the agent is running:
+		//   azd ai agent invoke --local "Hello!"  -- test it in another terminal
+		// Single-agent projects get a protocol-aware payload (matches
+		// the protocol the agent's `/invocations` or `/responses`
+		// endpoint expects). Multi-agent projects fall back to the
+		// responses-style "Hello!" literal because the unqualified
+		// command shape doesn't know which service the user will
+		// pick at runtime — mirroring the spec example which also
+		// uses the unqualified form.
+		invokePayload := invokeResponsesPayload
+		if len(state.Services) == 1 {
+			invokePayload = defaultInvokePayload(&state.Services[0])
+		}
+		out = append(out, Suggestion{
+			Command:     fmt.Sprintf("azd ai agent invoke --local %s", invokePayload),
+			Description: "test it in another terminal",
 			Priority:    priority,
 		})
 	}

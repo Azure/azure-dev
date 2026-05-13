@@ -415,37 +415,59 @@ func ResolveAfterShow(state *State, serviceName string) []Suggestion {
 }
 
 // AfterDeployOpts configures ResolveAfterDeploy. Optional — the
-// zero-value matches the historical post-deploy call site behavior.
+// zero-value matches the post-deploy call site behavior.
 type AfterDeployOpts struct {
-	// ForceQualified, when true, makes ResolveAfterDeploy emit
-	// service-qualified `azd ai agent show <name>` / `invoke <name> ...`
-	// commands even when len(state.Services) == 1.
+	// ForceQualified is retained for backward compatibility but is
+	// effectively a no-op as of issue #7975 fix B9: ResolveAfterDeploy
+	// now always emits service-qualified
+	// `azd ai agent show <name>` / `invoke <name> ...` commands
+	// regardless of how many services are in state.
 	//
-	// Use this when the input State has been filtered down from a
-	// larger multi-agent project (e.g., doctor showing only deployed
-	// services). The default `len(state.Services) == 1` heuristic
-	// would otherwise emit no-arg commands that ambiguity-prompt or
-	// error at runtime because resolveAgentService sees ALL azure.yaml
-	// services, not just the filtered subset.
+	// Pre-B9 callers passed ForceQualified=true to override a
+	// "single-agent → unqualified command" heuristic that no longer
+	// exists. The flag is preserved so existing callers compile and
+	// run identically; new callers may simply omit it.
 	ForceQualified bool
 }
 
 // ResolveAfterDeploy produces the Next: block embedded in the post-deploy
-// artifact note. The block is rendered per agent service: one
-// `azd ai agent show <name>` plus one `azd ai agent invoke '<payload>'`
-// line, where the payload is taken from the cached OpenAPI spec when the
-// `cachedPayload` lookup yields a non-empty string for the agent.
+// artifact note. Issue #7975 fix B9 spec (lines 228-242):
+//
+//   - Single-agent project: emit one `azd ai agent show <name>` line
+//     followed by one `azd ai agent invoke <name> '<payload>'` line.
+//     Descriptions are "verify it's running" / "test the deployment".
+//   - Multi-agent project: emit all `show <name>` lines first (one
+//     per service, in declaration order), then all `invoke <name>`
+//     lines. Descriptions include the agent name —
+//     "verify <name> is running" / "test <name>" — so the user can
+//     identify which row maps to which agent at a glance.
+//
+// In both cases commands are always service-qualified (B9). Pre-B9
+// behavior would strip the name when len(state.Services) == 1, which
+// produced ambiguous `azd ai agent show` lines in artifact notes that
+// users couldn't run directly when copy-pasted into a multi-agent
+// project later. The qualified form is unambiguous and copy-paste
+// safe in either project shape.
 //
 // cachedPayload is injected by the caller (typically a closure over
 // ReadCachedOpenAPISpec + ExtractInvokeExample) so the resolver itself
-// stays pure and unit-testable.
+// stays pure and unit-testable. The cached sample is used verbatim
+// (POSIX-escaped) when present; otherwise the protocol-appropriate
+// fallback from defaultInvokePayload is used.
 //
-// readmeExists, also injected, controls whether the "See <relPath>/README.md
-// for a sample payload" line is appended. The resolver does not touch the
-// filesystem directly.
+// readmeExists, also injected, controls whether the
+// "See <relPath>/README.md for a sample payload" line is appended
+// for a given service. The hint is emitted only when:
+// (1) no cached payload was available for that service,
+// (2) the service has a RelativePath, and
+// (3) readmeExists reports a README on disk at that path.
+// In the multi-agent layout each service's README hint is rendered
+// immediately after that service's invoke line so users can scan
+// rows top-to-bottom and find each agent's hint in context.
 //
-// opts is variadic for backward compatibility. Only the first element is
-// consulted; additional elements are ignored.
+// opts is variadic for backward compatibility but is no longer
+// consulted — every field of AfterDeployOpts is now a no-op post-B9.
+// See AfterDeployOpts.ForceQualified for the historical context.
 func ResolveAfterDeploy(
 	state *State,
 	cachedPayload func(serviceName string) string,
@@ -456,27 +478,28 @@ func ResolveAfterDeploy(
 		return nil
 	}
 
-	var forceQualified bool
-	if len(opts) > 0 {
-		forceQualified = opts[0].ForceQualified
-	}
-
+	singleAgent := len(state.Services) == 1
 	out := make([]Suggestion, 0, len(state.Services)*3)
-	singleAgent := !forceQualified && len(state.Services) == 1
 	priority := 10
 
+	// Pass 1: all `azd ai agent show <name>` lines, in service order.
 	for _, svc := range state.Services {
-		showCmd := "azd ai agent show"
-		if !singleAgent {
-			showCmd = fmt.Sprintf("azd ai agent show %s", svc.Name)
+		desc := fmt.Sprintf("verify %s is running", svc.Name)
+		if singleAgent {
+			desc = "verify it's running"
 		}
 		out = append(out, Suggestion{
-			Command:     showCmd,
-			Description: "verify the deployed agent is running",
+			Command:     fmt.Sprintf("azd ai agent show %s", svc.Name),
+			Description: desc,
 			Priority:    priority,
 		})
 		priority++
+	}
 
+	// Pass 2: all `azd ai agent invoke <name> <payload>` lines, each
+	// followed by its README hint when applicable. Grouping invokes
+	// after shows matches the spec example output (lines 238-241).
+	for _, svc := range state.Services {
 		payload := ""
 		if cachedPayload != nil {
 			payload = cachedPayload(svc.Name)
@@ -486,13 +509,13 @@ func ResolveAfterDeploy(
 			invokeArg = shellEscapeSingleQuoted(payload)
 		}
 
-		invokeCmd := fmt.Sprintf("azd ai agent invoke %s", invokeArg)
-		if !singleAgent {
-			invokeCmd = fmt.Sprintf("azd ai agent invoke %s %s", svc.Name, invokeArg)
+		desc := fmt.Sprintf("test %s", svc.Name)
+		if singleAgent {
+			desc = "test the deployment"
 		}
 		out = append(out, Suggestion{
-			Command:     invokeCmd,
-			Description: "send a sample request to the deployed agent",
+			Command:     fmt.Sprintf("azd ai agent invoke %s %s", svc.Name, invokeArg),
+			Description: desc,
 			Priority:    priority,
 		})
 		priority++

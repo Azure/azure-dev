@@ -1,4 +1,4 @@
-<!-- cspell:ignore foundry toolbox toolboxes exterrors retarget touchpoints -->
+<!-- cspell:ignore foundry toolbox toolboxes toolsets exterrors retarget touchpoints -->
 
 # Design Spec: `azd ai agent toolbox` Direct Commands
 
@@ -18,7 +18,7 @@ In scope:
 
 - The eleven verbs listed in § 1.
 - Cross-cutting flags (`--output table|json`, `--no-prompt`, `--debug`, `--project-endpoint`) on every new command.
-- A self-contained data-plane client at `internal/pkg/toolbox/`.
+- Extending the existing `FoundryToolboxClient` (`internal/pkg/azure/foundry_toolsets_client.go`) with the additional methods required by this surface (§ 5).
 
 Out of scope:
 
@@ -35,18 +35,18 @@ The `toolbox` subtree is added under the existing `azure.ai.agents` extension. N
 ### 3.1 Modular Layout
 
 1. All toolbox command files live under `internal/cmd/toolbox*.go`. No toolbox logic is added to existing command files.
-2. All toolbox client code lives under `internal/pkg/toolbox/` (client, models, errors). It does **not** import from sibling agent packages such as `internal/pkg/agent_yaml/` or `internal/pkg/agent_runtime/`.
-3. Imports are one-way: `cmd/toolbox*.go` → `internal/pkg/toolbox/` and a small set of shared helpers, each annotated with `// SHARED: <reason>`.
+2. All toolbox client code lives in the existing `internal/pkg/azure/foundry_toolsets_client.go` (`FoundryToolboxClient`). New methods needed by this surface (`ListToolboxes`, `GetToolboxVersion`, `ListToolboxVersions`, `DeleteToolboxVersion`, `SetDefaultVersion`, plus the local-state helper `RegisterPending`) are appended to that file. No new internal package is introduced.
+3. Imports are one-way: `cmd/toolbox*.go` → `internal/pkg/azure` (for `FoundryToolboxClient`) → `internal/exterrors`. Shared helpers carry a `// SHARED: <reason>` comment.
 
 ### 3.2 Shared Code Touchpoints
 
 | Shared piece | Location | Reason |
 | --- | --- | --- |
-| Endpoint resolver | `internal/cmd/endpoint.go` | 5-level cascade defined by the project-context spec. |
-| Confirmation prompt helper (`confirmDestructive`) | `internal/cmd/confirm.go` | Reused by `toolbox delete` and per-version delete. |
+| Endpoint resolver (`resolveAgentEndpoint`) | `internal/cmd/agent_endpoint.go` (existing 2-level resolver; PR #8152 expands it to the 5-level cascade) | Used by every agent command and by toolbox commands. |
+| Confirmation prompt (`azdClient.Prompt().Confirm`) | azd host gRPC, called inline today (see `internal/cmd/init.go`, `internal/cmd/init_copy.go`). This work introduces a shared `confirmDestructive` helper alongside `agent_endpoint.go` and uses it for `toolbox delete` and per-version delete. | Avoids duplicating the prompt block across destructive verbs. |
 | `azdext.ExtensionContext` (`OutputFormat`, `NoPrompt`, `Prompt()`) | azd host gRPC | Standard extension surface. |
 | Credential factory (`azidentity.NewAzureDeveloperCLICredential`) | stdlib wrapper | Same credential used by agent run. |
-| Foundry data-plane pipeline factory (scope `https://ai.azure.com/.default`, `Foundry-Features` header) | `internal/pkg/azure/foundry_client.go` | Shared with agent run and the connection sub-surface. |
+| Foundry data-plane pipeline pattern (scope `https://ai.azure.com/.default`, `Foundry-Features: Toolboxes=V1Preview` header per request) | Each client builds its own pipeline today — see `FoundryToolboxClient.NewFoundryToolboxClient` in `internal/pkg/azure/foundry_toolsets_client.go` and `FoundryProjectsClient` in `foundry_projects_client.go`. Extending the existing toolbox client keeps this pattern. | Consistent auth and feature-header handling across toolbox, agent run, and the connection sub-surface. |
 | `exterrors` package | `internal/exterrors/` | Shared error model and gRPC classification. |
 
 ## 4. API Surfaces
@@ -65,7 +65,7 @@ Data plane: scope `https://ai.azure.com/.default`, header `Foundry-Features: Too
 | `PATCH /toolboxes/{name}` | 200 | Only `default_version` is patchable (`{"default_version":"<n>"}`); other fields → 400. Used to flip the active version after publishing a new one. |
 | `DELETE /toolboxes/{name}` | 204 / 404 | Cascades to all versions. Not idempotent — 404 on missing; CLI swallows 404. |
 | `DELETE /toolboxes/{name}/versions/{version}` | 204 / 400 | Refuses to delete `default_version` when other versions exist (returns 400 with `bad_request`). If the default is the only remaining version, the service deletes it and cascades — the parent toolbox is removed. |
-| `{endpoint}/toolboxes/{name}/mcp?api-version=v1` | n/a | MCP server exposed by the service for runtime tool consumption. The CLI does not call this URL; it surfaces the computed path on `show` (§ 5.4). |
+| `{endpoint}/toolboxes/{name}/versions/{version}/mcp?api-version=v1` | n/a | MCP server exposed by the service for runtime tool consumption, scoped to a specific version. The CLI does not call this URL; it surfaces the computed path on `show` (§ 5.4). Matches the URL pattern the agents extension already constructs (`internal/cmd/listen.go`). |
 
 ### 4.2 Request-Body Validation (POST `/toolboxes/{name}/versions`)
 
@@ -162,7 +162,7 @@ Behavior:
 
 1. `GET /toolboxes/{name}` for `default_version`.
 2. `GET /toolboxes/{name}/versions/{version}` (or `default_version` when `--version` is absent) for the body.
-3. Compute the toolbox's MCP consumption URL as `{projectEndpoint}/toolboxes/{name}/mcp?api-version=v1`.
+3. Compute the toolbox's MCP consumption URL as `{projectEndpoint}/toolboxes/{name}/versions/{shown_version}/mcp?api-version=v1`, where `shown_version` is the `--version` arg or the server's `default_version`. This matches the versioned URL the agents extension already constructs in `internal/cmd/listen.go`.
 4. Output:
    - Table: `Name`, `Default version`, `Shown version`, `Description`, `Endpoint`, `Tools` (count + list with `(builtin)` / `(connection:<id>)` annotation).
    - JSON: `{ "toolbox": <ToolboxObject>, "version": <ToolboxVersionObject>, "endpoint": "<mcp-url>" }`.
@@ -241,7 +241,7 @@ Flags on all three: `--project-endpoint`, `--output`, `--no-prompt`, `--debug`.
 
 ## 6. Endpoint Resolution
 
-The toolbox commands consume the 5-level cascade defined by the project-context spec (`azure-ai-project-commands.md` § 4):
+The toolbox commands consume the 5-level cascade defined by the project-context spec (`azure-ai-project-commands.md` § 4 — introduced in [PR #8152](https://github.com/Azure/azure-dev/pull/8152)):
 
 1. `--project-endpoint` flag on the invoked command.
 2. Active azd env value (`AZURE_AI_PROJECT_ENDPOINT`) when inside an azd project.
@@ -282,11 +282,11 @@ Per-endpoint pending-toolbox records live under:
 
 ## 8. Test Plan
 
-Unit tests (table-driven, no network; inject a `toolboxClient` interface that is a subset of `*toolbox.Client`):
+Unit tests (table-driven, no network; inject a `toolboxClient` interface that is a subset of `*azure.FoundryToolboxClient`):
 
 - **`create`** — new name records a pending entry and prints the registered one-liner; existing name does not POST and prints the existing one-liner; description round-trips through the pending record.
 - **`update`** — `--default-version` happy path; missing flag → `CodeInvalidToolbox`.
-- **`show`** — `default_version` path; explicit `--version`; table and JSON snapshots; 404 surfaces `ErrToolboxNotFound`; `endpoint` field in JSON output is exactly `{projectEndpoint}/toolboxes/<name>/mcp?api-version=v1` and is stable across `--version` changes.
+- **`show`** — `default_version` path; explicit `--version`; table and JSON snapshots; 404 surfaces `ErrToolboxNotFound`; `endpoint` field in JSON output is exactly `{projectEndpoint}/toolboxes/<name>/versions/<shown_version>/mcp?api-version=v1` and changes when `--version` is supplied.
 - **`list`** — pagination across two pages; pending records merged and tagged `(pending)`; pending records for a different endpoint are not surfaced.
 - **`delete`** —
   - Toolbox path: 204 happy path; 404 swallowed.
@@ -322,7 +322,7 @@ None at the command level. The toolbox surface is purely additive:
 
 - `internal/cmd/root.go` registers the new toolbox parent alongside `session`, `files`, and `connection`. No existing command's flags, behavior, or output shape is changed.
 - `internal/exterrors/codes.go` gains new constants (§ 11); existing codes are not touched.
-- `internal/pkg/toolbox/` is a new directory; no existing package imports it.
+- `internal/pkg/azure/foundry_toolsets_client.go` gains additional methods (`ListToolboxes`, `GetToolboxVersion`, `ListToolboxVersions`, `DeleteToolboxVersion`, `SetDefaultVersion`, `RegisterPending`). The existing methods are unchanged.
 
 ## 10. Telemetry
 

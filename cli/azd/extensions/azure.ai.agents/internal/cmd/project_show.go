@@ -49,8 +49,7 @@ that provided it. Useful for debugging which endpoint agent commands will use.`,
 			if err != nil {
 				// project show exposes -p / --project-endpoint, so prepend that as the
 				// first suggestion bullet to the generic missing-endpoint error.
-				var localErr *azdext.LocalError
-				if errors.As(err, &localErr) &&
+				if localErr, ok := errors.AsType[*azdext.LocalError](err); ok &&
 					localErr.Code == exterrors.CodeMissingProjectEndpoint {
 					return exterrors.Dependency(
 						exterrors.CodeMissingProjectEndpoint,

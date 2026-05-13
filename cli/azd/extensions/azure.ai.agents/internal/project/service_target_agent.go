@@ -1086,6 +1086,19 @@ func (p *AgentServiceTargetProvider) packageCodeDeploy(serviceConfig *azdext.Ser
 		return "", "", fmt.Errorf("failed to close temp file: %w", err)
 	}
 
+	// Enforce maximum ZIP size (250 MB)
+	const maxZipSize = 250 * 1024 * 1024
+	fi, err := os.Stat(tmpPath)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to stat ZIP file: %w", err)
+	}
+	if fi.Size() > maxZipSize {
+		return "", "", fmt.Errorf(
+			"code package too large: %d MB (max 250 MB). Reduce package size by excluding unnecessary files or using remote_build for dependency resolution",
+			fi.Size()/(1024*1024),
+		)
+	}
+
 	sha256Hex := hex.EncodeToString(hasher.Sum(nil))
 	success = true
 

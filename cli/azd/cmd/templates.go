@@ -81,6 +81,19 @@ func newTemplateListCmd() *cobra.Command {
 	}
 }
 
+// templateListItem is the display struct for template list table rendering.
+// DisplayTags is pre-computed from Tags since Go text/template has no join function.
+type templateListItem struct {
+	Name           string   `json:"name"`
+	Title          string   `json:"title,omitempty"`
+	Source         string   `json:"-"`
+	RepoSource     string   `json:"source,omitempty"`
+	Description    string   `json:"description,omitempty"`
+	RepositoryPath string   `json:"repositoryPath"`
+	Tags           []string `json:"tags"`
+	DisplayTags    string   `json:"-"`
+}
+
 type templateListAction struct {
 	flags           *templateListFlags
 	formatter       output.Formatter
@@ -113,24 +126,55 @@ func (tl *templateListAction) Run(ctx context.Context) (*actions.ActionResult, e
 	}
 
 	if tl.formatter.Kind() == output.TableFormat {
-		columns := []output.Column{
+		rows := make([]templateListItem, 0, len(listedTemplates))
+		for _, t := range listedTemplates {
+			rows = append(rows, templateListItem{
+				Name:           t.Name,
+				Title:          t.Title,
+				Source:         t.Source,
+				RepoSource:     t.RepoSource,
+				Description:    t.Description,
+				RepositoryPath: t.RepositoryPath,
+				Tags:           t.Tags,
+				DisplayTags:    strings.Join(t.Tags, ", "),
+			})
+		}
+
+		prettyFormatter := &output.PrettyTableFormatter{}
+		columns := []output.PrettyColumn{
 			{
-				Heading:       "Name",
-				ValueTemplate: `{{if ne .Name ""}}{{.Name}}{{else}}{{.Title}}{{end}}`,
+				Column: output.Column{
+					Heading:       "NAME",
+					ValueTemplate: `{{if ne .Name ""}}{{.Name}}{{else}}{{.Title}}{{end}}`,
+				},
+				Priority: 1,
 			},
 			{
-				Heading:       "Source",
-				ValueTemplate: "{{.Source}}",
+				Column:   output.Column{Heading: "SOURCE", ValueTemplate: "{{.Source}}"},
+				Priority: 1,
 			},
 			{
-				Heading:       "Repository Path",
-				ValueTemplate: `{{if ne .RepositoryPath ""}}{{.RepositoryPath}}{{else}}{{.RepoSource}}{{end}}`,
-				Transformer:   templates.Hyperlink,
+				Column:   output.Column{Heading: "TAGS", ValueTemplate: "{{.DisplayTags}}"},
+				Priority: 2,
+			},
+			{
+				Column:   output.Column{Heading: "DESCRIPTION", ValueTemplate: "{{.Description}}"},
+				Priority: 3,
+			},
+			{
+				Column: output.Column{
+					Heading: "REPOSITORY PATH",
+					ValueTemplate: `{{if ne .RepositoryPath ""}}` +
+						`{{.RepositoryPath}}{{else}}{{.RepoSource}}{{end}}`,
+					Transformer: templates.Hyperlink,
+				},
+				Priority: 3,
 			},
 		}
 
-		err = tl.formatter.Format(listedTemplates, tl.writer, output.TableFormatterOptions{
-			Columns: columns,
+		err = prettyFormatter.Format(rows, tl.writer, output.PrettyTableFormatterOptions{
+			Columns:         columns,
+			CardGroupColumn: "SOURCE",
 		})
 
 		if err == nil {
@@ -327,27 +371,29 @@ func (a *templateSourceListAction) Run(ctx context.Context) (*actions.ActionResu
 	}
 
 	if a.formatter.Kind() == output.TableFormat {
-		columns := []output.Column{
+		prettyFormatter := &output.PrettyTableFormatter{}
+		columns := []output.PrettyColumn{
 			{
-				Heading:       "Key",
-				ValueTemplate: "{{.Key}}",
+				Column:   output.Column{Heading: "KEY", ValueTemplate: "{{.Key}}"},
+				Priority: 1,
 			},
 			{
-				Heading:       "Name",
-				ValueTemplate: "{{.Name}}",
+				Column:   output.Column{Heading: "TYPE", ValueTemplate: "{{.Type}}"},
+				Priority: 1,
 			},
 			{
-				Heading:       "Type",
-				ValueTemplate: "{{.Type}}",
+				Column:   output.Column{Heading: "NAME", ValueTemplate: "{{.Name}}"},
+				Priority: 2,
 			},
 			{
-				Heading:       "Location",
-				ValueTemplate: "{{.Location}}",
+				Column:   output.Column{Heading: "LOCATION", ValueTemplate: "{{.Location}}"},
+				Priority: 3,
 			},
 		}
 
-		err = a.formatter.Format(sourceConfigs, a.writer, output.TableFormatterOptions{
-			Columns: columns,
+		err = prettyFormatter.Format(sourceConfigs, a.writer, output.PrettyTableFormatterOptions{
+			Columns:         columns,
+			CardGroupColumn: "TYPE",
 		})
 	} else {
 		err = a.formatter.Format(sourceConfigs, a.writer, nil)

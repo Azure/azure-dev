@@ -199,6 +199,7 @@ func newRootCmd(
 	hooksActions(root)
 	mcpActions(root)
 	copilotActions(root)
+	execActions(root)
 
 	// Create a FeatureManager for command-tree gating.
 	// User config is loaded best-effort; env vars (AZD_ALPHA_ENABLE_TOOL) always work.

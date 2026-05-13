@@ -16,6 +16,16 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 )
 
+// isBicepLayer reports whether a layer uses the Bicep provider (or defaults
+// to it). Non-Bicep layers (Terraform, Pulumi, etc.) are opaque to the
+// static Bicep analyzer: they produce no discoverable outputs and have no
+// .bicep/.bicepparam/.parameters.json files to scan. Those layers still
+// participate in the dependency graph via explicit dependsOn edges.
+func isBicepLayer(layer provisioning.Options) bool {
+	return layer.Provider == provisioning.NotSpecified ||
+		layer.Provider == provisioning.Bicep
+}
+
 // Package-level compiled regexes for output and env-var reference extraction.
 var (
 	bicepOutputRe   = regexp.MustCompile(`(?m)^\s*output\s+(\w+)\s+`)
@@ -130,10 +140,15 @@ func AnalyzeLayerDependencies(
 	}
 
 	// Phase 1 — Discover outputs from each layer's Bicep file.
+	// Non-Bicep layers (Terraform, Pulumi, etc.) are skipped: they have
+	// no .bicep file and their outputs cannot be statically discovered.
 	// Iterate layers (not resolved) so the loop index i is clearly bounded by
 	// len(layers) for static analyzers; resolved has the same length by
 	// construction above.
 	for i, layer := range layers {
+		if !isBicepLayer(layer) {
+			continue
+		}
 		opts := resolved[i]
 		bicepPath := resolveBicepPath(opts, projectPath)
 		outputs, err := extractBicepOutputs(ctx, bicepPath)
@@ -164,9 +179,15 @@ func AnalyzeLayerDependencies(
 	}
 
 	// Phase 2 — Discover input env-var references and build edges.
+	// Non-Bicep layers are skipped: they have no .bicep/.bicepparam/
+	// .parameters.json files to scan for env-var references. Their
+	// dependencies must be declared via explicit dependsOn in azure.yaml.
 	var safeFallback []int
-	for i, opts := range resolved {
-		refs, hasUnknown := discoverParamEnvRefs(ctx, opts, projectPath)
+	for i, layer := range layers {
+		if !isBicepLayer(layer) {
+			continue
+		}
+		refs, hasUnknown := discoverParamEnvRefs(ctx, resolved[i], projectPath)
 		for _, ref := range refs {
 			if provider, ok := g.outputProviders[ref]; ok && provider != i {
 				// Always keep intra-graph edges, even when the ref is

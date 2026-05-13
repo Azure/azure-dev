@@ -319,8 +319,7 @@ func convertFloat64ToFloat32(f64 *float64) *float32 {
 
 // CreateHostedAgentAPIRequest creates a CreateAgentRequest for hosted agents
 func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentBuildConfig) (*agent_api.CreateAgentRequest, error) {
-	// Check if we have an image URL set via the build config
-	imageURL := ""
+	imageURL := hostedAgent.Image
 	cpu := "1"      // Default CPU
 	memory := "2Gi" // Default memory
 	envVars := make(map[string]string)

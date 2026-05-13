@@ -85,8 +85,18 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 		return nil, fmt.Errorf("parsing project %s: %w", projectConfig.Name, err)
 	}
 
-	for _, layer := range projectConfig.Infra.Layers {
-		layer.Provider = projectConfig.Infra.Provider
+	for i := range projectConfig.Infra.Layers {
+		projectConfig.Infra.Layers[i].Provider, err = provisioning.ParseProvider(
+			projectConfig.Infra.Layers[i].Provider,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("parsing layer %q provider: %w",
+				projectConfig.Infra.Layers[i].Name, err)
+		}
+
+		if projectConfig.Infra.Layers[i].Provider == provisioning.NotSpecified {
+			projectConfig.Infra.Layers[i].Provider = projectConfig.Infra.Provider
+		}
 	}
 
 	if strings.Contains(projectConfig.Infra.Path, "\\") && !strings.Contains(projectConfig.Infra.Path, "/") {

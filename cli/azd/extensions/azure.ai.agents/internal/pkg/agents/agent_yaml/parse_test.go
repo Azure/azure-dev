@@ -110,6 +110,43 @@ template:
 	}
 }
 
+// TestExtractAgentDefinition_WithImage tests that image is parsed and round-tripped.
+func TestExtractAgentDefinition_WithImage(t *testing.T) {
+	yamlContent := []byte(`
+name: image-agent
+template:
+  kind: hosted
+  name: image-agent
+  image: myregistry.azurecr.io/myimage:v1
+  protocols:
+    - protocol: invocations
+      version: 1.0.0
+`)
+
+	agent, err := ExtractAgentDefinition(yamlContent)
+	if err != nil {
+		t.Fatalf("ExtractAgentDefinition failed: %v", err)
+	}
+
+	containerAgent, ok := agent.(ContainerAgent)
+	if !ok {
+		t.Fatalf("Expected ContainerAgent, got %T", agent)
+	}
+
+	if containerAgent.Image != "myregistry.azurecr.io/myimage:v1" {
+		t.Errorf("Expected image 'myregistry.azurecr.io/myimage:v1', got '%s'", containerAgent.Image)
+	}
+
+	marshaled, err := yaml.Marshal(containerAgent)
+	if err != nil {
+		t.Fatalf("Failed to marshal ContainerAgent: %v", err)
+	}
+
+	if !strings.Contains(string(marshaled), "myregistry.azurecr.io/myimage:v1") {
+		t.Errorf("Marshaled YAML should contain image value, got:\n%s", string(marshaled))
+	}
+}
+
 // TestExtractAgentDefinition_WithoutResources tests that ContainerAgent without resources still parses
 func TestExtractAgentDefinition_WithoutResources(t *testing.T) {
 	yamlContent := []byte(`

@@ -586,3 +586,46 @@ resources:
 	require.Equal(t, "FOO", cap.Env[0].Name)
 	require.Equal(t, "BAR", cap.Env[0].Value)
 }
+
+func TestProjectConfigLayerProviderInheritance(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+
+	t.Run("root provider propagates to layers without explicit provider", func(t *testing.T) {
+		const proj = `
+name: test-proj
+infra:
+  provider: terraform
+  layers:
+    - name: backend
+      path: ./infra/backend
+    - name: resources
+      path: ./infra/resources
+`
+		cfg, err := Parse(*mockContext.Context, proj)
+		require.NoError(t, err)
+		for _, layer := range cfg.Infra.Layers {
+			require.Equal(t, "terraform", string(layer.Provider),
+				"layer %q should inherit root provider", layer.Name)
+		}
+	})
+
+	t.Run("per-layer provider overrides root", func(t *testing.T) {
+		const proj = `
+name: test-proj
+infra:
+  provider: terraform
+  layers:
+    - name: backend
+      path: ./infra/backend
+      provider: bicep
+    - name: resources
+      path: ./infra/resources
+`
+		cfg, err := Parse(*mockContext.Context, proj)
+		require.NoError(t, err)
+		require.Equal(t, "bicep", string(cfg.Infra.Layers[0].Provider),
+			"layer with explicit provider should keep it")
+		require.Equal(t, "terraform", string(cfg.Infra.Layers[1].Provider),
+			"layer without explicit provider should inherit root")
+	})
+}

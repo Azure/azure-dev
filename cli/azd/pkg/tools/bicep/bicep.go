@@ -30,7 +30,7 @@ import (
 
 // Version is the minimum version of bicep that we require (and the one we fetch when we fetch bicep on behalf of a
 // user).
-var Version semver.Version = semver.MustParse("0.42.1")
+var Version semver.Version = semver.MustParse("0.43.8")
 
 // Cli is a wrapper around the bicep CLI.
 // The CLI automatically ensures bicep is installed before executing commands.

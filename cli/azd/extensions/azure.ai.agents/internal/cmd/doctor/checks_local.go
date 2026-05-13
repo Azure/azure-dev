@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 
+	"azureaiagent/internal/cmd/nextstep"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -39,12 +41,23 @@ type Dependencies struct {
 	AzdClient        *azdext.AzdClient
 	AzdClientErr     error
 	ExtensionVersion string
+
+	// assembleState is a test seam: when non-nil it replaces the
+	// production `nextstep.AssembleState` call inside the
+	// `local.manual-env-vars` check, letting unit tests inject a
+	// pre-computed State without standing up a temp project on disk.
+	// Lowercase so external packages cannot reach it. Production code
+	// (NewLocalChecks via the Cobra wiring) leaves it nil.
+	assembleState func(ctx context.Context, client *azdext.AzdClient) (*nextstep.State, []error)
 }
 
 // NewLocalChecks returns the canonical sequence of local doctor checks
-// in execution order. Phase 4.2 covered checks 1-3; Phase 4.3 adds
+// in execution order. Phase 4.2 covered checks 1-3; Phase 4.3 added
 // checks 4-6 (agent service detected, project endpoint set, agent.yaml
-// valid).
+// valid). Phase 5 C9 appends check 7 (manual env vars set) — local
+// check #9 in the design's numbered table (renumbered here because
+// remote checks 7-8 are gated behind --local-only until the runner
+// refactor lands in C10).
 func NewLocalChecks(deps Dependencies) []Check {
 	return []Check{
 		newCheckGRPCAndVersion(deps),
@@ -53,6 +66,7 @@ func NewLocalChecks(deps Dependencies) []Check {
 		newCheckAgentServiceDetected(deps),
 		newCheckProjectEndpointSet(deps),
 		newCheckAgentYAMLValid(deps),
+		newCheckManualEnvVars(deps),
 	}
 }
 

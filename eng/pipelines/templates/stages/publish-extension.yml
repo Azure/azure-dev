@@ -124,8 +124,10 @@ stages:
               set -euo pipefail
               cd cli/azd
               go build .
-              UPDATE_SNAPSHOTS=true go test ./cmd -run 'TestFigSpec|TestUsage'
+              go test ./cmd -run 'TestFigSpec|TestUsage'
             displayName: Refresh Fig/Usage snapshots
+            env:
+              UPDATE_SNAPSHOTS: "true"
 
           - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
             parameters:

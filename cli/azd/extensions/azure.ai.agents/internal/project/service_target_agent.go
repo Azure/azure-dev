@@ -1133,7 +1133,7 @@ func (p *AgentServiceTargetProvider) packageDotnetBundled(srcDir string) (string
 
 	// Run dotnet publish targeting linux (hosted agents run on linux)
 	fmt.Fprintf(os.Stderr, "Running 'dotnet publish' for bundled packaging...\n")
-	cmd := exec.Command("dotnet", "publish", csprojPath,
+	cmd := exec.Command("dotnet", "publish", csprojPath, //nolint:gosec // csprojPath is derived from user's project directory
 		"-c", "Release",
 		"-r", "linux-x64",
 		"--self-contained", "false",

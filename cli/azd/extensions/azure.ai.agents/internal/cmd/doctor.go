@@ -218,25 +218,16 @@ func resolveDoctorTrailing(ctx context.Context, azdClient *azdext.AzdClient) []n
 	}
 
 	if anyServiceDeployed(state.Services) {
-		// Capture the total agent-service count BEFORE filtering. The
-		// resolver's `len(state.Services) == 1` heuristic ordinarily
-		// keys "should I emit no-arg show/invoke commands?" off the
-		// total count of agent services in azure.yaml. Once we filter
-		// to deployed-only, that heuristic breaks: a 2-service project
-		// with 1 deployed would emit `azd ai agent show` (no name),
-		// but runtime `resolveAgentService` still sees both services
-		// in azure.yaml and would either prompt or error. Forcing
-		// qualified suggestions whenever azure.yaml has multiple
-		// services preserves copy-paste correctness in the partial-
-		// deploy case and is a no-op when all services are deployed
-		// (the resolver naturally qualifies len > 1 anyway).
-		totalServices := len(state.Services)
-		filtered := filterDeployedServices(state)
+		// ResolveAfterDeploy always emits service-qualified
+		// `azd ai agent show <name>` / `invoke <name> ...` commands
+		// post-B9 (issue #7975), so it's safe to pass a filtered
+		// (deployed-only) State directly — the suggestions remain
+		// copy-paste correct even when azure.yaml has additional
+		// undeployed services that are absent from the filtered set.
 		return nextstep.ResolveAfterDeploy(
-			filtered,
+			filterDeployedServices(state),
 			doctorCachedPayload(ctx, azdClient),
 			doctorReadmeExists(ctx, azdClient),
-			nextstep.AfterDeployOpts{ForceQualified: totalServices > 1},
 		)
 	}
 

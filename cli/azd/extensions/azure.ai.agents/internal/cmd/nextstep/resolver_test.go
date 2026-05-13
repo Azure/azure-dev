@@ -716,28 +716,35 @@ func TestResolveAfterShow_NilState(t *testing.T) {
 func TestResolveAfterDeploy(t *testing.T) {
 	t.Parallel()
 
-	t.Run("single agent, cached payload available → 2 lines, no README hint", func(t *testing.T) {
+	t.Run("single agent, cached payload available → 2 qualified lines, no README hint", func(t *testing.T) {
 		t.Parallel()
 		state := &State{Services: []ServiceState{{Name: "echo", RelativePath: "./src/echo"}}}
 		cached := func(_ string) string { return `{"q":"x"}` }
 		out := ResolveAfterDeploy(state, cached, nil)
 		require.Len(t, out, 2)
-		assert.Equal(t, "azd ai agent show", out[0].Command)
-		assert.Equal(t, `azd ai agent invoke '{"q":"x"}'`, out[1].Command)
+		assert.Equal(t, "azd ai agent show echo", out[0].Command)
+		assert.Equal(t, "verify it's running", out[0].Description)
+		assert.Equal(t, `azd ai agent invoke echo '{"q":"x"}'`, out[1].Command)
+		assert.Equal(t, "test the deployment", out[1].Description)
 	})
 
-	t.Run("single agent, no cached payload, README on disk → 3 lines with README pointer", func(t *testing.T) {
+	t.Run("single agent, no cached payload, README on disk → 3 lines with qualified commands", func(t *testing.T) {
 		t.Parallel()
 		state := &State{Services: []ServiceState{{Name: "echo", RelativePath: "./src/echo", Protocol: ProtocolResponses}}}
 		readme := func(p string) bool { return p == "./src/echo" }
 		out := ResolveAfterDeploy(state, nil, readme)
 		require.Len(t, out, 3)
-		assert.Equal(t, "azd ai agent show", out[0].Command)
-		assert.Equal(t, `azd ai agent invoke "Hello!"`, out[1].Command)
+		assert.Equal(t, "azd ai agent show echo", out[0].Command)
+		assert.Equal(t, "verify it's running", out[0].Description)
+		assert.Equal(t, `azd ai agent invoke echo "Hello!"`, out[1].Command)
+		assert.Equal(t, "test the deployment", out[1].Description)
 		assert.Contains(t, out[2].Command, "src/echo/README.md")
 	})
 
-	t.Run("multi-agent → one show/invoke pair per agent, named", func(t *testing.T) {
+	t.Run("multi-agent → all shows first, then all invokes, with per-agent descriptions", func(t *testing.T) {
+		// Spec source: issue #7975 lines 238-241 — multi-agent layout
+		// groups shows before invokes (not interleaved) and bakes the
+		// agent name into the description so users can scan vertically.
 		t.Parallel()
 		state := &State{Services: []ServiceState{
 			{Name: "alpha", Protocol: ProtocolInvocations},
@@ -746,9 +753,30 @@ func TestResolveAfterDeploy(t *testing.T) {
 		out := ResolveAfterDeploy(state, nil, nil)
 		require.Len(t, out, 4)
 		assert.Equal(t, "azd ai agent show alpha", out[0].Command)
-		assert.Equal(t, `azd ai agent invoke alpha '{"message": "Hello!"}'`, out[1].Command)
-		assert.Equal(t, "azd ai agent show beta", out[2].Command)
+		assert.Equal(t, "verify alpha is running", out[0].Description)
+		assert.Equal(t, "azd ai agent show beta", out[1].Command)
+		assert.Equal(t, "verify beta is running", out[1].Description)
+		assert.Equal(t, `azd ai agent invoke alpha '{"message": "Hello!"}'`, out[2].Command)
+		assert.Equal(t, "test alpha", out[2].Description)
 		assert.Equal(t, `azd ai agent invoke beta "Hello!"`, out[3].Command)
+		assert.Equal(t, "test beta", out[3].Description)
+	})
+
+	t.Run("multi-agent README hint placement → after the corresponding invoke line", func(t *testing.T) {
+		t.Parallel()
+		state := &State{Services: []ServiceState{
+			{Name: "alpha", RelativePath: "./src/alpha", Protocol: ProtocolResponses},
+			{Name: "beta", Protocol: ProtocolResponses},
+		}}
+		readme := func(p string) bool { return p == "./src/alpha" }
+		out := ResolveAfterDeploy(state, nil, readme)
+		// 2 shows + 2 invokes + 1 README hint for alpha = 5 entries.
+		require.Len(t, out, 5)
+		assert.Equal(t, "azd ai agent show alpha", out[0].Command)
+		assert.Equal(t, "azd ai agent show beta", out[1].Command)
+		assert.Equal(t, `azd ai agent invoke alpha "Hello!"`, out[2].Command)
+		assert.Contains(t, out[3].Command, "src/alpha/README.md")
+		assert.Equal(t, `azd ai agent invoke beta "Hello!"`, out[4].Command)
 	})
 
 	t.Run("README hint skipped when cached payload is present", func(t *testing.T) {
@@ -770,35 +798,41 @@ func TestResolveAfterDeploy(t *testing.T) {
 		assert.Nil(t, ResolveAfterDeploy(nil, nil, nil))
 	})
 
-	t.Run("cached payload containing apostrophe → POSIX-escaped", func(t *testing.T) {
+	t.Run("cached payload containing apostrophe → POSIX-escaped on qualified invoke", func(t *testing.T) {
 		t.Parallel()
 		state := &State{Services: []ServiceState{{Name: "echo", RelativePath: "./src/echo"}}}
 		cached := func(_ string) string { return `{"q":"don't"}` }
 		out := ResolveAfterDeploy(state, cached, nil)
 		require.Len(t, out, 2)
-		assert.Equal(t, `azd ai agent invoke '{"q":"don'\''t"}'`, out[1].Command)
+		assert.Equal(t, `azd ai agent invoke echo '{"q":"don'\''t"}'`, out[1].Command)
 	})
 
-	t.Run("ForceQualified=true on len==1 → service-qualified commands", func(t *testing.T) {
+	t.Run("ForceQualified=true on len==1 → no-op, output identical to default", func(t *testing.T) {
+		// Backward-compat assertion: B9 makes all output qualified by
+		// default; ForceQualified is preserved as a no-op for callers
+		// (e.g., doctor) that still pass it. Result must match the
+		// "no opts" call exactly.
 		t.Parallel()
 		state := &State{Services: []ServiceState{
 			{Name: "echo", RelativePath: "./src/echo", Protocol: ProtocolInvocations},
 		}}
 		out := ResolveAfterDeploy(state, nil, nil, AfterDeployOpts{ForceQualified: true})
+		baseline := ResolveAfterDeploy(state, nil, nil)
+		require.Equal(t, baseline, out)
 		require.Len(t, out, 2)
 		assert.Equal(t, "azd ai agent show echo", out[0].Command)
 		assert.Equal(t, `azd ai agent invoke echo '{"message": "Hello!"}'`, out[1].Command)
 	})
 
-	t.Run("ForceQualified=false on len==1 → unqualified (matches default)", func(t *testing.T) {
+	t.Run("ForceQualified=false on len==1 → no-op, also qualified", func(t *testing.T) {
 		t.Parallel()
 		state := &State{Services: []ServiceState{
 			{Name: "echo", RelativePath: "./src/echo", Protocol: ProtocolInvocations},
 		}}
 		out := ResolveAfterDeploy(state, nil, nil, AfterDeployOpts{ForceQualified: false})
 		require.Len(t, out, 2)
-		assert.Equal(t, "azd ai agent show", out[0].Command)
-		assert.Equal(t, `azd ai agent invoke '{"message": "Hello!"}'`, out[1].Command)
+		assert.Equal(t, "azd ai agent show echo", out[0].Command)
+		assert.Equal(t, `azd ai agent invoke echo '{"message": "Hello!"}'`, out[1].Command)
 	})
 
 	t.Run("ForceQualified=true with cached payload → qualified invoke uses payload", func(t *testing.T) {
@@ -811,7 +845,7 @@ func TestResolveAfterDeploy(t *testing.T) {
 		assert.Equal(t, `azd ai agent invoke echo '{"q":"x"}'`, out[1].Command)
 	})
 
-	t.Run("ForceQualified=true on multi-agent → qualified (already-qualified case unaffected)", func(t *testing.T) {
+	t.Run("ForceQualified=true on multi-agent → identical to default multi-agent layout", func(t *testing.T) {
 		t.Parallel()
 		state := &State{Services: []ServiceState{
 			{Name: "alpha", Protocol: ProtocolInvocations},
@@ -820,8 +854,8 @@ func TestResolveAfterDeploy(t *testing.T) {
 		out := ResolveAfterDeploy(state, nil, nil, AfterDeployOpts{ForceQualified: true})
 		require.Len(t, out, 4)
 		assert.Equal(t, "azd ai agent show alpha", out[0].Command)
-		assert.Equal(t, `azd ai agent invoke alpha '{"message": "Hello!"}'`, out[1].Command)
-		assert.Equal(t, "azd ai agent show beta", out[2].Command)
+		assert.Equal(t, "azd ai agent show beta", out[1].Command)
+		assert.Equal(t, `azd ai agent invoke alpha '{"message": "Hello!"}'`, out[2].Command)
 		assert.Equal(t, `azd ai agent invoke beta "Hello!"`, out[3].Command)
 	})
 

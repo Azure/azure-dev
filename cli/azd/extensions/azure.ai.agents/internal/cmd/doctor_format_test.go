@@ -326,3 +326,32 @@ func TestFilterDeployedServices(t *testing.T) {
 		assert.Len(t, state.Services, 2, "clone must not modify input")
 	})
 }
+
+// TestFilterDeployedServices_ChainedIntoResolveAfterDeploy locks in the
+// end-to-end contract for doctor's post-deploy guidance block: when the
+// project has multiple agent services but only one is deployed, the
+// filtered state flowed through ResolveAfterDeploy must still emit a
+// service-qualified command — i.e. the user sees `azd ai agent show
+// <name>` rather than `azd ai agent show` (no arg). Pre-B9 this
+// invariant was enforced via AfterDeployOpts.ForceQualified at the
+// caller; post-B9 the resolver always qualifies. This test would have
+// caught a future regression that reintroduces an unqualified branch
+// keyed on len(state.Services) == 1.
+func TestFilterDeployedServices_ChainedIntoResolveAfterDeploy(t *testing.T) {
+	t.Parallel()
+
+	state := &nextstep.State{
+		Services: []nextstep.ServiceState{
+			{Name: "alpha", IsDeployed: true, Protocol: nextstep.ProtocolResponses},
+			{Name: "beta", IsDeployed: false, Protocol: nextstep.ProtocolResponses},
+		},
+	}
+
+	out := nextstep.ResolveAfterDeploy(filterDeployedServices(state), nil, nil)
+
+	require.Len(t, out, 2, "filtered state has one deployed service → show + invoke")
+	assert.Equal(t, "azd ai agent show alpha", out[0].Command,
+		"command must be service-qualified even when filtered list has len==1")
+	assert.Equal(t, `azd ai agent invoke alpha "Hello!"`, out[1].Command,
+		"invoke command must also be service-qualified")
+}

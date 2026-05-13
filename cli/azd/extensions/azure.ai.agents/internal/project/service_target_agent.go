@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"azureaiagent/internal/exterrors"
@@ -81,6 +82,17 @@ type AgentServiceTargetProvider struct {
 	env                 *azdext.Environment
 	foundryProject      *arm.ResourceID
 }
+
+const (
+	preBuiltImageArtifactSourceKey = "azure.ai.agents.imageSource"
+	preBuiltImageArtifactSource    = "agent.yaml"
+)
+
+// containerImageRefRe is a basic pattern for container image references:
+// [registry/]repository[:tag|@digest]
+var containerImageRefRe = regexp.MustCompile(
+	`^[a-zA-Z0-9]([a-zA-Z0-9._-]*/)*[a-zA-Z0-9][a-zA-Z0-9._-]*(:[a-zA-Z0-9._-]+|@sha256:[0-9a-fA-F]{64})?$`,
+)
 
 // NewAgentServiceTargetProvider creates a new AgentServiceTargetProvider instance
 func NewAgentServiceTargetProvider(azdClient *azdext.AzdClient) azdext.ServiceTargetProvider {
@@ -355,8 +367,23 @@ func (p *AgentServiceTargetProvider) Package(
 	serviceContext *azdext.ServiceContext,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePackageResult, error) {
-	if !p.isContainerAgent() {
+	agentDef, isContainerAgent, err := p.loadContainerAgentDefinition()
+	if err != nil {
+		return nil, err
+	}
+	if !isContainerAgent {
 		return &azdext.ServicePackageResult{}, nil
+	}
+
+	usePreBuiltImage, err := p.shouldUsePreBuiltImage(ctx, agentDef)
+	if err != nil {
+		return nil, err
+	}
+	if usePreBuiltImage {
+		progress("Using pre-built container image, skipping package")
+		return &azdext.ServicePackageResult{
+			Artifacts: []*azdext.Artifact{preBuiltImageArtifact(agentDef.Image)},
+		}, nil
 	}
 
 	var packageArtifact *azdext.Artifact
@@ -420,7 +447,18 @@ func (p *AgentServiceTargetProvider) Publish(
 	publishOptions *azdext.PublishOptions,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePublishResult, error) {
-	if !p.isContainerAgent() {
+	if preBuiltArtifact := findPreBuiltImageArtifact(serviceContext.Package); preBuiltArtifact != nil {
+		progress("Using pre-built container image, skipping publish")
+		return &azdext.ServicePublishResult{
+			Artifacts: []*azdext.Artifact{preBuiltArtifact},
+		}, nil
+	}
+
+	_, isContainerAgent, err := p.loadContainerAgentDefinition()
+	if err != nil {
+		return nil, err
+	}
+	if !isContainerAgent {
 		return &azdext.ServicePublishResult{}, nil
 	}
 
@@ -439,6 +477,112 @@ func (p *AgentServiceTargetProvider) Publish(
 	return &azdext.ServicePublishResult{
 		Artifacts: publishResponse.Result.Artifacts,
 	}, nil
+}
+
+func preBuiltImageArtifact(imageURL string) *azdext.Artifact {
+	return &azdext.Artifact{
+		Kind:         azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER,
+		Location:     imageURL,
+		LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
+		Metadata: map[string]string{
+			preBuiltImageArtifactSourceKey: preBuiltImageArtifactSource,
+		},
+	}
+}
+
+func findPreBuiltImageArtifact(artifacts []*azdext.Artifact) *azdext.Artifact {
+	for _, artifact := range artifacts {
+		if artifact.Kind == azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER &&
+			artifact.LocationKind == azdext.LocationKind_LOCATION_KIND_REMOTE &&
+			artifact.Location != "" &&
+			artifact.Metadata[preBuiltImageArtifactSourceKey] == preBuiltImageArtifactSource {
+			return artifact
+		}
+	}
+
+	return nil
+}
+
+func findPreBuiltImageArtifactInContext(serviceContext *azdext.ServiceContext) *azdext.Artifact {
+	if serviceContext == nil {
+		return nil
+	}
+
+	if artifact := findPreBuiltImageArtifact(serviceContext.Publish); artifact != nil {
+		return artifact
+	}
+
+	return findPreBuiltImageArtifact(serviceContext.Package)
+}
+
+func hasContainerArtifact(artifacts []*azdext.Artifact) bool {
+	for _, artifact := range artifacts {
+		if artifact.Kind == azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (p *AgentServiceTargetProvider) loadContainerAgentDefinition() (agent_yaml.ContainerAgent, bool, error) {
+	data, err := os.ReadFile(p.agentDefinitionPath)
+	if err != nil {
+		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("failed to read agent manifest file: %s", err),
+			"verify the agent.yaml file exists and is readable",
+		)
+	}
+
+	if err := agent_yaml.ValidateAgentDefinition(data); err != nil {
+		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("agent.yaml is not valid: %s", err),
+			"fix the agent.yaml file according to the schema",
+		)
+	}
+
+	var genericTemplate map[string]any
+	if err := yaml.Unmarshal(data, &genericTemplate); err != nil {
+		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("YAML content is not valid: %s", err),
+			"verify the agent.yaml has valid YAML syntax",
+		)
+	}
+
+	kind, ok := genericTemplate["kind"].(string)
+	if !ok {
+		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
+			exterrors.CodeMissingAgentKind,
+			"kind field is missing or not a valid string in agent.yaml",
+			"add a valid 'kind' field (e.g., 'hosted') to agent.yaml",
+		)
+	}
+
+	if kind != string(agent_yaml.AgentKindHosted) {
+		return agent_yaml.ContainerAgent{}, false, nil
+	}
+
+	var agentDef agent_yaml.ContainerAgent
+	if err := yaml.Unmarshal(data, &agentDef); err != nil {
+		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("YAML content is not valid for hosted agent: %s", err),
+			"fix the agent.yaml to match the hosted agent schema",
+		)
+	}
+
+	if agentDef.Image != "" && !containerImageRefRe.MatchString(agentDef.Image) {
+		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("invalid container image reference in agent.yaml: %q", agentDef.Image),
+			"use a valid image reference, e.g. 'myregistry.azurecr.io/image:v1'",
+		)
+	}
+
+	return agentDef, true, nil
 }
 
 // Deploy performs the deployment operation for the agent service
@@ -486,86 +630,59 @@ func (p *AgentServiceTargetProvider) Deploy(
 
 	warnDeprecatedScaleSettings(serviceConfig.Config)
 
-	// Load and validate the agent manifest
-	data, err := os.ReadFile(p.agentDefinitionPath)
+	agentDef, isContainerAgent, err := p.loadContainerAgentDefinition()
 	if err != nil {
-		return nil, exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("failed to read agent manifest file: %s", err),
-			"verify the agent.yaml file exists and is readable",
-		)
+		return nil, err
 	}
-
-	err = agent_yaml.ValidateAgentDefinition(data)
-	if err != nil {
-		return nil, exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("agent.yaml is not valid: %s", err),
-			"fix the agent.yaml file according to the schema",
-		)
-	}
-
-	var genericTemplate map[string]any
-	if err := yaml.Unmarshal(data, &genericTemplate); err != nil {
-		return nil, exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("YAML content is not valid for deploy: %s", err),
-			"verify the agent.yaml has valid YAML syntax",
-		)
-	}
-
-	kind, ok := genericTemplate["kind"].(string)
-	if !ok {
-		return nil, exterrors.Validation(
-			exterrors.CodeMissingAgentKind,
-			"kind field is missing or not a valid string in agent.yaml",
-			"add a valid 'kind' field (e.g., 'hosted') to agent.yaml",
-		)
-	}
-
-	switch kind {
-	case string(agent_yaml.AgentKindHosted):
-		var agentDef agent_yaml.ContainerAgent
-		if err := yaml.Unmarshal(data, &agentDef); err != nil {
-			return nil, exterrors.Validation(
-				exterrors.CodeInvalidAgentManifest,
-				fmt.Sprintf("YAML content is not valid for hosted agent deploy: %s", err),
-				"fix the agent.yaml to match the hosted agent schema",
-			)
-		}
-		return p.deployHostedAgent(ctx, serviceConfig, serviceContext, progress, agentDef, azdEnv)
-	default:
+	if !isContainerAgent {
 		return nil, exterrors.Validation(
 			exterrors.CodeUnsupportedAgentKind,
-			fmt.Sprintf("unsupported agent kind: %s", kind),
+			"unsupported agent kind in agent.yaml",
 			"use a supported kind: 'hosted'",
 		)
 	}
+
+	return p.deployHostedAgent(ctx, serviceConfig, serviceContext, progress, agentDef, azdEnv)
 }
 
-func (p *AgentServiceTargetProvider) isContainerAgent() bool {
-	// Load and validate the agent manifest
-	data, err := os.ReadFile(p.agentDefinitionPath)
+// shouldUsePreBuiltImage determines whether to use a pre-built image.
+//
+// Behavior:
+//   - If no image is configured in agent.yaml, always build from Dockerfile.
+//   - In non-interactive mode (--no-prompt), the prompt returns the default
+//     selection (index 0 = build from Dockerfile) automatically.
+//   - In interactive mode, prompt the user. The default is to build, so users
+//     who happen to have an image in agent.yaml are not silently switched onto
+//     the pre-built path.
+func (p *AgentServiceTargetProvider) shouldUsePreBuiltImage(
+	ctx context.Context,
+	agentDef agent_yaml.ContainerAgent,
+) (bool, error) {
+	imageURL := agentDef.Image
+	if imageURL == "" {
+		return false, nil
+	}
+
+	// Default to build so the pre-built path requires an explicit choice.
+	// In non-interactive mode (--no-prompt), the framework returns the default
+	// selection (index 0 = build) automatically.
+	choices := []*azdext.SelectChoice{
+		{Value: "build", Label: "Build a new image for me"},
+		{Value: "prebuilt", Label: fmt.Sprintf("Create hosted agent from %s", imageURL)},
+	}
+	defaultIndex := int32(0)
+	resp, err := p.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+		Options: &azdext.SelectOptions{
+			Message:       "A container image is configured. How would you like to deploy?",
+			Choices:       choices,
+			SelectedIndex: &defaultIndex,
+		},
+	})
 	if err != nil {
-		return false
+		return false, exterrors.FromPrompt(err, "failed to select hosted agent container image source")
 	}
 
-	err = agent_yaml.ValidateAgentDefinition(data)
-	if err != nil {
-		return false
-	}
-
-	var genericTemplate map[string]any
-	if err := yaml.Unmarshal(data, &genericTemplate); err != nil {
-		return false
-	}
-
-	kind, ok := genericTemplate["kind"].(string)
-	if !ok {
-		return false
-	}
-
-	return kind == string(agent_yaml.AgentKindHosted)
+	return resp.Value != nil && choices[*resp.Value].Value == "prebuilt", nil
 }
 
 // deployHostedAgent deploys a container-based hosted agent to the Foundry service.
@@ -588,21 +705,38 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 
 	progress("Deploying hosted agent")
 
-	// Step 1: Build container image
-	var fullImageURL string
-	for _, artifact := range serviceContext.Publish {
-		if artifact.Kind == azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER &&
-			artifact.LocationKind == azdext.LocationKind_LOCATION_KIND_REMOTE {
-			fullImageURL = artifact.Location
-			break
+	fullImageURL := ""
+	if preBuiltArtifact := findPreBuiltImageArtifactInContext(serviceContext); preBuiltArtifact != nil {
+		fullImageURL = preBuiltArtifact.Location
+	} else if !hasContainerArtifact(serviceContext.Publish) {
+		usePreBuiltImage, err := p.shouldUsePreBuiltImage(ctx, agentDef)
+		if err != nil {
+			return nil, err
+		}
+		if usePreBuiltImage {
+			fullImageURL = agentDef.Image
 		}
 	}
-	if fullImageURL == "" {
-		return nil, exterrors.Dependency(
-			exterrors.CodeMissingPublishedContainer,
-			"published container artifact not found: no remote container artifact was found in service publish artifacts",
-			"run 'azd package' and 'azd publish' (or 'azd deploy') to produce container artifacts",
-		)
+
+	if fullImageURL != "" {
+		progress(fmt.Sprintf("Using pre-built container image: %s", fullImageURL))
+	} else {
+		for _, artifact := range serviceContext.Publish {
+			if artifact.Kind == azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER &&
+				artifact.LocationKind == azdext.LocationKind_LOCATION_KIND_REMOTE {
+				fullImageURL = artifact.Location
+				break
+			}
+		}
+		if fullImageURL == "" {
+			return nil, exterrors.Dependency(
+				exterrors.CodeMissingPublishedContainer,
+				"published container artifact not found: no remote container artifact was found in service "+
+					"publish artifacts and no pre-built image was specified",
+				"either set 'image' in agent.yaml, "+
+					"or run 'azd package' and 'azd publish' to build from a Dockerfile",
+			)
+		}
 	}
 
 	fmt.Fprintf(os.Stderr, "Loaded configuration from: %s\n", p.agentDefinitionPath)

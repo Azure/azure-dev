@@ -20,6 +20,19 @@ type PreflightReportItem struct {
 	DiagnosticID string
 	// Message describes the finding.
 	Message string
+	// Suggestion is an optional actionable recommendation for resolving the issue.
+	Suggestion string
+	// Links is an optional list of reference links related to the finding.
+	Links []PreflightReportLink
+}
+
+// PreflightReportLink represents a reference link attached to a preflight report item.
+type PreflightReportLink struct {
+	// URL is the link target.
+	URL string
+	// Title is the display text for terminal hyperlinks (optional).
+	// In non-terminal output the URL is shown regardless of Title.
+	Title string
 }
 
 // PreflightReport displays the results of local preflight validation.
@@ -40,7 +53,7 @@ func (r *PreflightReport) ToString(currentIndentation string) string {
 		if i > 0 {
 			sb.WriteString("\n")
 		}
-		sb.WriteString(fmt.Sprintf("%s%s %s", currentIndentation, warningPrefix, w.Message))
+		writeItem(&sb, currentIndentation, warningPrefix, w)
 	}
 
 	if len(warnings) > 0 && len(errors) > 0 {
@@ -51,10 +64,44 @@ func (r *PreflightReport) ToString(currentIndentation string) string {
 		if i > 0 {
 			sb.WriteString("\n")
 		}
-		sb.WriteString(fmt.Sprintf("%s%s %s", currentIndentation, failedPrefix, e.Message))
+		writeItem(&sb, currentIndentation, failedPrefix, e)
 	}
 
 	return sb.String()
+}
+
+// writeItem renders a single report item with multi-line support.
+// The first line is prefixed with the status indicator (e.g. "(!) Warning:").
+// Continuation lines in the message are indented at the same level as the prefix.
+func writeItem(
+	sb *strings.Builder, indent string, prefix string, item PreflightReportItem,
+) {
+	if item.Message == "" {
+		return
+	}
+	lines := strings.Split(item.Message, "\n")
+	sb.WriteString(fmt.Sprintf("%s%s %s", indent, prefix, lines[0]))
+	for _, line := range lines[1:] {
+		sb.WriteString(fmt.Sprintf("\n%s%s", indent, line))
+	}
+
+	if item.Suggestion != "" {
+		sb.WriteString(fmt.Sprintf("\n%s%s %s",
+			indent,
+			output.WithHighLightFormat("Suggestion:"),
+			item.Suggestion))
+	}
+	for _, link := range item.Links {
+		if link.Title != "" {
+			sb.WriteString(fmt.Sprintf("\n%s• %s",
+				indent,
+				output.WithHyperlink(link.URL, link.Title)))
+		} else {
+			sb.WriteString(fmt.Sprintf("\n%s• %s",
+				indent,
+				output.WithLinkFormat(link.URL)))
+		}
+	}
 }
 
 func (r *PreflightReport) MarshalJSON() ([]byte, error) {

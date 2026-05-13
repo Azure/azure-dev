@@ -961,6 +961,51 @@ func TestCreateHostedAgentAPIRequest_DefaultCPUAndMemory(t *testing.T) {
 	}
 }
 
+func TestCreateHostedAgentAPIRequest_UsesAgentImage(t *testing.T) {
+	t.Parallel()
+	agent := ContainerAgent{
+		AgentDefinition: AgentDefinition{
+			Kind: AgentKindHosted,
+			Name: "agent-image",
+		},
+		Image: "myregistry.azurecr.io/agent-image:v1",
+	}
+
+	req, err := CreateHostedAgentAPIRequest(agent, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	imgDef := req.Definition.(agent_api.ImageBasedHostedAgentDefinition)
+	if imgDef.Image != "myregistry.azurecr.io/agent-image:v1" {
+		t.Errorf("Image = %q", imgDef.Image)
+	}
+}
+
+func TestCreateHostedAgentAPIRequest_BuildConfigImageOverridesAgentImage(t *testing.T) {
+	t.Parallel()
+	agent := ContainerAgent{
+		AgentDefinition: AgentDefinition{
+			Kind: AgentKindHosted,
+			Name: "agent-image",
+		},
+		Image: "myregistry.azurecr.io/prebuilt:v1",
+	}
+
+	req, err := CreateHostedAgentAPIRequest(
+		agent,
+		&AgentBuildConfig{ImageURL: "myregistry.azurecr.io/published:v2"},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	imgDef := req.Definition.(agent_api.ImageBasedHostedAgentDefinition)
+	if imgDef.Image != "myregistry.azurecr.io/published:v2" {
+		t.Errorf("Image = %q", imgDef.Image)
+	}
+}
+
 func TestCreateHostedAgentAPIRequest_MissingImageURL(t *testing.T) {
 	t.Parallel()
 	agent := ContainerAgent{

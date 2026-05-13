@@ -45,14 +45,16 @@ The 5-level cascade (matches feature spec § "AZD Environment Scoping"):
 
 Only `FOUNDRY_PROJECT_ENDPOINT` is honored as a host env var — no aliases. `AZURE_AI_PROJECT_ENDPOINT` is read **only** from the azd env, not from the host environment, to avoid silent precedence ambiguity.
 
-> **Flag scope.** `--project-endpoint` (short: `-p`) is only available on the `project` subcommands. Existing `agent` commands keep their own endpoint flags (`--account-name` / `--project-name`, `--agent-endpoint`) and pick up levels 2–5 automatically. The short form `-p` is already taken on `agent run` and `agent invoke`, so `--project-endpoint` is the canonical name.
+> **Flag scope.** `--project-endpoint` (short: `-p`) is added only on the new `project` subcommands. Existing `agent` commands are **not** given a new `--project-endpoint` flag in this change; they keep the per-command overrides they have today (e.g. `--agent-endpoint` on `agent invoke`) and pick up levels 2–5 automatically through the widened resolver. The short form `-p` is already taken on `agent run` (`--port`) and `agent invoke` (`--protocol`), so `--project-endpoint` is the canonical long name.
+
+> **Implementation note.** `FOUNDRY_PROJECT_ENDPOINT` already appears in the agents extension (`run.go` bridges `AZURE_AI_PROJECT_ENDPOINT` → `FOUNDRY_PROJECT_ENDPOINT` for the launched local-agent process), but it is not yet documented as an azd-recognized environment variable. The implementation PR must add it to [`cli/azd/docs/environment-variables.md`](../environment-variables.md) per the AGENTS.md guideline for new env vars.
 
 ### 4.2 Endpoint Validation
 
 All five sources go through the same validator:
 
 - Must parse as an absolute `https://` URL.
-- Hostname must end with the Foundry suffix `.services.ai.azure.com`.
+- Hostname must end with the recognized Foundry suffix `.services.ai.azure.com` — the shape produced by the existing `buildAgentEndpoint` in `agent_context.go` and used everywhere else in the codebase (CHANGELOG, `models`/`finetune` extensions, `AZURE_AI_PROJECT_ENDPOINT` value). The accepted-suffix list is kept centralized so additional canonical Foundry hostnames can be added in one place if Foundry ever introduces a new official surface.
 - Path is expected to look like `/api/projects/<proj>`. Absence is a warning, not a hard failure, to leave room for future host shapes.
 - Whitespace trimmed; trailing `/` stripped before persistence.
 
@@ -60,15 +62,18 @@ All five sources go through the same validator:
 
 ### 4.3 Error Shape
 
-When nothing resolves, the resolver returns a structured validation error. Human-readable form:
+When nothing resolves, the resolver returns a structured validation error. The human-readable form uses a suggestion list that does not reference per-command flags, so it is valid whether the caller exposes `--project-endpoint` or not:
 
 ```text
 Error: No Foundry project endpoint resolved.
 
-Suggestion: Run `azd ai agent project set <endpoint>` to set one,
-            or pass `--project-endpoint <url>` on this command,
-            or set the FOUNDRY_PROJECT_ENDPOINT environment variable.
+Suggestion:
+  • Persist a workspace default with `azd ai agent project set <endpoint>`.
+  • Set `AZURE_AI_PROJECT_ENDPOINT` in the active azd environment.
+  • Export `FOUNDRY_PROJECT_ENDPOINT` in your shell.
 ```
+
+When the calling command exposes `--project-endpoint` (the `project` subcommands), an extra leading bullet — `Pass --project-endpoint <url> on this command.` — is prepended by the command, not by the resolver. Existing `agent` commands, which do not have that flag, never produce that line.
 
 With `--output json`, the same information is emitted as a structured error envelope so coding agents can parse it.
 
@@ -78,21 +83,21 @@ Implementation: the structured error uses `exterrors.Dependency` with a new code
 
 The persisted state lives in azd user config (`~/.azd/config.json`) under the prefix `extensions.ai-agents.context`:
 
-```jsonc
+```json
 {
   "extensions": {
     "ai-agents": {
       "context": {
         "endpoint": "https://my-project.services.ai.azure.com/api/projects/my-project",
-        "setAt": "2026-05-12T10:23:00Z",
-      },
-    },
-  },
+        "setAt": "2026-05-12T10:23:00Z"
+      }
+    }
+  }
 }
 ```
 
 - `endpoint` — the normalized URL written by `project set`.
-- `setAt` — RFC3339 UTC timestamp, written for diagnostics. Surfaced only in `project show --output json`.
+- `setAt` — RFC3339 UTC timestamp, written for diagnostics. Surfaced by `project show` in both table (as a `Set at:` line) and JSON output when the resolved source is the global config; see §6.3.
 
 `project unset` removes the `context` subtree but leaves other sibling keys under `extensions.ai-agents` untouched.
 
@@ -123,7 +128,9 @@ Behavior:
 
 4. Confirmation:
    - Table: `Project endpoint set: <endpoint>`
-   - JSON: `{ "endpoint": "...", "source": "global config (~/.azd/config.json)", "setAt": "..." }`
+   - JSON: `{ "endpoint": "...", "source": "globalConfig", "sourceDetail": "~/.azd/config.json", "setAt": "..." }`
+
+   The `source` / `sourceDetail` shape matches `project show` (see §6.3) so consumers can parse a single contract.
 
 Exit code `0` on success.
 
@@ -153,9 +160,10 @@ Behavior:
      ```text
      Project endpoint:  https://my-project.services.ai.azure.com/api/projects/my-project
      Source:            global config (~/.azd/config.json)
+     Set at:            2026-05-12T10:23:00Z
      ```
 
-     When the source is the azd env, the source line includes the env name, e.g. `azd env (dev)`.
+     When the source is the azd env, the source line includes the env name, e.g. `azd env (dev)`, and the `Set at` line is omitted (it is only meaningful for the global-config source).
 
    - JSON:
 
@@ -164,11 +172,14 @@ Behavior:
        "endpoint": "https://...",
        "source": "globalConfig",
        "sourceDetail": "~/.azd/config.json",
-       "azdEnv": ""
+       "azdEnv": "",
+       "setAt": "2026-05-12T10:23:00Z"
      }
      ```
 
 > The JSON shapes above are part of the public contract and must not change without a deprecation.
+
+> **Diagnosing stale context.** Because `project set` is workspace-global, a user who switches between projects can silently resolve to the wrong endpoint until they re-run `project set`. `project show` is the documented debugging tool for this scenario: it prints both the resolved endpoint and the source, and surfaces `setAt` in the table output as a staleness hint. A time-based warning threshold (e.g., 30 days) is intentionally not added in v1 to keep the resolver behavior deterministic; revisit if user feedback indicates it is needed.
 
 ## 7. Test Plan
 
@@ -184,19 +195,21 @@ E2E:
 
 ## 8. Impact on Existing Commands
 
-Today, the agents extension already has a 2-level endpoint resolver (`resolveAgentEndpoint`): explicit `--account-name` + `--project-name` flags first, then the active azd env's `AZURE_AI_PROJECT_ENDPOINT`. This resolver is called by the existing commands:
+Today, the agents extension already has a 2-level endpoint resolver (`resolveAgentEndpoint`): explicit `accountName` + `projectName` parameters first (passed in by callers — note these are **not** exposed as cobra flags on `agent` today; the only call sites pass `"", ""`), then the active azd env's `AZURE_AI_PROJECT_ENDPOINT`. This resolver is called by the existing commands:
 
-- `azd ai agent show`
+- `azd ai agent show` (via `newAgentContext`)
 - `azd ai agent invoke`
-- `azd ai agent monitor`
+- `azd ai agent monitor` (via `newAgentContext`)
 - `azd ai agent files`
-- `azd ai agent session`
+- `azd ai agent sessions`
 
-The proposal: route this existing resolver through the new 5-level chain. The `--account-name` / `--project-name` path is unchanged (still wins, still validated together), and the azd-env path is unchanged. The new behavior is purely additive at the tail of the cascade:
+`azd ai agent run` does not call `resolveAgentEndpoint`; it reads `AZURE_AI_PROJECT_ENDPOINT` from the active azd env and bridges it to `FOUNDRY_PROJECT_ENDPOINT` for the spawned local-agent process. It is therefore *not* affected by this change.
+
+The proposal: route this existing resolver through the new 5-level chain. The flag-parameter path is unchanged (still wins, still validated together), and the azd-env path is unchanged. The new behavior is purely additive at the tail of the cascade:
 
 | Scenario                                                                      | Before              | After                                       |
 | ----------------------------------------------------------------------------- | ------------------- | ------------------------------------------- |
-| `--account-name` + `--project-name` provided                                  | Used                | Used (unchanged)                            |
+| Explicit `accountName` + `projectName` parameters provided                    | Used                | Used (unchanged)                            |
 | Only one of the two provided                                                  | Error               | Error (unchanged)                           |
 | Inside azd project, `AZURE_AI_PROJECT_ENDPOINT` set                           | Used                | Used (unchanged)                            |
 | Inside azd project, `AZURE_AI_PROJECT_ENDPOINT` unset, **`project set` done** | Error               | **Uses global config**                      |
@@ -208,13 +221,13 @@ Key points:
 
 - **Back-compat preserved.** Every input combination that resolved before produces the same endpoint after the change.
 - **Error message updated.** The "nothing resolved" message now uses the structured error from §4.3 instead of the old text.
-- **Existing commands gain fallback sources.** `show`, `monitor`, `files`, `session`, and `run` still require `azure.yaml`, so global config / env var alone won't make them standalone. `invoke` with a positional agent name *can* now work outside an azd project — this is intentional and consistent with the existing `--agent-endpoint` path.
+- **Existing commands gain fallback sources.** `show`, `monitor`, `files`, and `sessions` still call `resolveAgentServiceFromProject` *before* the endpoint resolver, which requires `azure.yaml` and a deployed agent, so widening the endpoint resolver alone does not make them standalone. `invoke` with a positional agent name *can* now work outside an azd project — this is intentional and consistent with the existing `--agent-endpoint` path.
 - **No call-site changes.** `resolveAgentEndpoint` keeps its current signature; the new levels are internal lookups (`UserConfig`, `os.Getenv`).
 
 Out of scope for this change (called out so they aren't surprised later):
 
 - `service_target_agent.go` still reads `AZURE_AI_PROJECT_ENDPOINT` directly from the azd env at deploy time. Reconciling that with the broader cascade is a separate decision tied to the orchestrated (`azd up`) model.
-- No flag deprecations. `--account-name` / `--project-name` remain supported on the agent commands that accept them today.
+- No new cobra flags on existing `agent` commands. The `accountName` / `projectName` parameter path through `resolveAgentEndpoint` remains as-is for callers that already pass them.
 
 ## 9. Telemetry
 

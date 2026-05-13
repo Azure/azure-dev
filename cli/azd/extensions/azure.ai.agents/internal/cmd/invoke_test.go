@@ -1054,6 +1054,26 @@ func TestResponseTraceID(t *testing.T) {
 			headers: map[string]string{"X-Request-ID": "trace-only"},
 			want:    "trace-only",
 		},
+		{
+			name:    "deduplicates comma-folded x-request-id",
+			headers: map[string]string{"X-Request-ID": "trace-abc,trace-abc"},
+			want:    "trace-abc",
+		},
+		{
+			name:    "returns first token when x-request-id is comma-list",
+			headers: map[string]string{"X-Request-ID": "trace-first, trace-second"},
+			want:    "trace-first",
+		},
+		{
+			name:    "skips leading empty token in comma-folded x-request-id",
+			headers: map[string]string{"X-Request-ID": ", trace-second"},
+			want:    "trace-second",
+		},
+		{
+			name:    "deduplicates comma-folded apim-request-id fallback",
+			headers: map[string]string{"apim-request-id": "apim-xyz, apim-xyz"},
+			want:    "apim-xyz",
+		},
 	}
 
 	for _, tt := range tests {

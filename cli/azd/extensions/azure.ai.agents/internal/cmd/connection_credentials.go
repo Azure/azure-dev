@@ -161,20 +161,21 @@ func resolveConnectionCredentials(
 }
 
 // findManifestInDir looks for an agent manifest or definition file in the given directory.
-// Checks: agent.manifest.yaml, agent.yaml, agent.manifest.yml, agent.yml
-// Returns the first file that exists and contains environment_variables.
+// Checks agent.yaml first (the definition the agent app uses), then agent.manifest.yaml.
+// Returns the first file that exists and contains environment_variables with connection references.
 func findManifestInDir(dir string) string {
+	// Check agent.yaml first — this is the file the agent app code references
 	candidates := []string{
-		"agent.manifest.yaml",
 		"agent.yaml",
-		"agent.manifest.yml",
+		"agent.manifest.yaml",
 		"agent.yml",
+		"agent.manifest.yml",
 	}
 	for _, name := range candidates {
 		path := filepath.Join(dir, name)
 		if _, err := os.Stat(path); err == nil {
 			data, err := os.ReadFile(path)
-			if err == nil && strings.Contains(string(data), "environment_variables") {
+			if err == nil && strings.Contains(string(data), "${{connections.") {
 				return path
 			}
 		}

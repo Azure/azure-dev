@@ -33,4 +33,6 @@ const (
 	OpGetConnection            = "get_connection"
 	OpGetConnectionCredentials = "get_connection_credentials"
 	OpListConnections          = "list_connections"
+	OpSetConnectionMetadata    = "set_connection_metadata"
+	OpRemoveConnectionMetadata = "remove_connection_metadata"
 )

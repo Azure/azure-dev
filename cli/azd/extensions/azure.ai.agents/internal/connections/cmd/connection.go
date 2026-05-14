@@ -205,6 +205,106 @@ func newConnectionCreateCommand(extCtx *azdext.ExtensionContext) *cobra.Command 
 	return cmd
 }
 
+// --- UPDATE ---
+
+func newConnectionUpdateCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
+	var (
+		target     string
+		key        string
+		customKeys []string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "update <name>",
+		Short: "Update a connection's target or credentials.",
+		Long: `Update a connection's target URL or credential values.
+
+Only the specified flags are changed; all other fields are preserved.
+Does not accept --auth-type (delete and recreate to change auth type).
+For metadata changes, use the 'metadata' subcommand.`,
+		Example: `  azd ai agent connection update prod-search --key "$NEW_SEARCH_KEY"
+  azd ai agent connection update my-conn --target https://new-endpoint.com
+  azd ai agent connection update my-mcp --custom-key "x-api-key=new-key"`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name := args[0]
+			ctx := azdext.WithAccessToken(cmd.Context())
+
+			if !cmd.Flags().Changed("target") && !cmd.Flags().Changed("key") &&
+				!cmd.Flags().Changed("custom-key") {
+				return exterrors.Validation(
+					exterrors.CodeMissingConnectionField,
+					"No fields to update.",
+					"Specify --target, --key, or --custom-key.",
+				)
+			}
+
+			connCtx, err := resolveConnectionContext(ctx, cmd)
+			if err != nil {
+				return err
+			}
+
+			// GET current connection
+			current, err := connCtx.armClient.Get(
+				ctx, connCtx.rg, connCtx.account, connCtx.project, name, nil,
+			)
+			if err != nil {
+				return exterrors.ServiceFromAzure(err, exterrors.OpGetConnection)
+			}
+
+			// Merge changes into the existing properties
+			props := current.Properties.GetConnectionPropertiesV2()
+			if cmd.Flags().Changed("target") {
+				props.Target = &target
+			}
+
+			// For credential updates, we need to rebuild the properties
+			// with the updated credential values. The ARM API requires a full PUT.
+			if cmd.Flags().Changed("key") || cmd.Flags().Changed("custom-key") {
+				// Fetch current credentials from data-plane to merge
+				dpConn, dpErr := connCtx.dpClient.GetConnectionWithCredentials(ctx, name)
+				if dpErr != nil {
+					return fmt.Errorf("failed to fetch current credentials for merge: %w", dpErr)
+				}
+
+				if cmd.Flags().Changed("key") && dpConn.Credentials != nil {
+					dpConn.Credentials.Key = key
+				}
+				if cmd.Flags().Changed("custom-key") && dpConn.Credentials != nil {
+					for _, kv := range customKeys {
+						for i := range len(kv) {
+							if kv[i] == '=' {
+								dpConn.Credentials.CustomKeys[kv[:i]] = kv[i+1:]
+								break
+							}
+						}
+					}
+				}
+			}
+
+			// PUT back the full connection
+			_, err = connCtx.armClient.Create(
+				ctx, connCtx.rg, connCtx.account, connCtx.project, name,
+				&armcognitiveservices.ProjectConnectionsClientCreateOptions{
+					Connection: &current.ConnectionPropertiesV2BasicResource,
+				},
+			)
+			if err != nil {
+				return exterrors.ServiceFromAzure(err, exterrors.OpUpdateConnection)
+			}
+
+			fmt.Printf("Connection %q updated.\n", name)
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&target, "target", "", "New target URL or ARM resource ID")
+	cmd.Flags().StringVar(&key, "key", "", "New API key value (for api-key auth)")
+	cmd.Flags().StringArrayVar(&customKeys, "custom-key", nil,
+		"Update custom key=value (repeatable, for custom-keys auth)")
+	return cmd
+}
+
 // --- DELETE ---
 
 func newConnectionDeleteCommand(extCtx *azdext.ExtensionContext) *cobra.Command {

@@ -29,7 +29,10 @@ and optional metadata.`,
 	cmd.AddCommand(newConnectionListCommand(extCtx))
 	cmd.AddCommand(newConnectionShowCommand(extCtx))
 	cmd.AddCommand(newConnectionCreateCommand(extCtx))
+	cmd.AddCommand(newConnectionUpdateCommand(extCtx))
 	cmd.AddCommand(newConnectionDeleteCommand(extCtx))
+	cmd.AddCommand(newConnectionMetadataCommand(extCtx))
+	cmd.AddCommand(newConnectionKeyCommand(extCtx))
 
 	return cmd
 }

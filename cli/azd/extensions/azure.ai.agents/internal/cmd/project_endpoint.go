@@ -28,10 +28,9 @@ const (
 	SourceFoundryEnv EndpointSource = "foundryEnv"
 )
 
-// foundryHostSuffixes is the centralized list of accepted Foundry host suffixes
-// used by validateProjectEndpoint / isFoundryHost. Note: parseAgentEndpoint in
-// agent_endpoint.go has its own agentEndpointHostSuffix constant and must be
-// updated separately if new suffixes are added here.
+// foundryHostSuffixes is the authoritative list of accepted Foundry host suffixes.
+// isFoundryHost checks this list; both validateProjectEndpoint and parseAgentEndpoint
+// (agent_endpoint.go) call isFoundryHost, so all validators stay in sync automatically.
 var foundryHostSuffixes = []string{
 	".services.ai.azure.com",
 }

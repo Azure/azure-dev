@@ -75,10 +75,6 @@ type resolvedEndpoint struct {
 	SetAt      string // RFC3339 timestamp, only meaningful when Source == SourceGlobalConfig
 }
 
-// lookupEnvFunc is the function used to read host environment variables.
-// It is a package-level variable so tests can override it without OS state.
-var lookupEnvFunc = os.Getenv
-
 // azdHostedSources holds the values that the resolver reads from azd-managed
 // sources (the active azd environment and ~/.azd/config.json). It is returned
 // as a single struct so that tests can stub the whole lookup via
@@ -147,6 +143,7 @@ func readAzdHostedSources(ctx context.Context) (azdHostedSources, error) {
 // containsGRPCCode walks the error chain looking for a gRPC status with the
 // specified code. Because fmt.Errorf("%w", ...) wraps errors without forwarding
 // the GRPCStatus() method, we must unwrap manually.
+// Note: only follows errors.Unwrap chains; errors.Join multi-wraps are not traversed.
 func containsGRPCCode(err error, code codes.Code) bool {
 	for ; err != nil; err = errors.Unwrap(err) {
 		if st, ok := status.FromError(err); ok && st.Code() == code {
@@ -215,7 +212,7 @@ func resolveProjectEndpoint(
 	}
 
 	// Level 4: host environment variable FOUNDRY_PROJECT_ENDPOINT.
-	if envVal := lookupEnvFunc("FOUNDRY_PROJECT_ENDPOINT"); envVal != "" {
+	if envVal := os.Getenv("FOUNDRY_PROJECT_ENDPOINT"); envVal != "" {
 		normalized, _, err := validateProjectEndpoint(envVal)
 		if err != nil {
 			return nil, err

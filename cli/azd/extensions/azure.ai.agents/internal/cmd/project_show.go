@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,6 +17,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
+type projectShowFlags struct {
+	outputFmt string
+}
+
 type projectShowResult struct {
 	Endpoint     string `json:"endpoint"`
 	Source       string `json:"source"`
@@ -24,9 +29,14 @@ type projectShowResult struct {
 	SetAt        string `json:"setAt,omitempty"`
 }
 
+// ProjectShowAction is the action for the `project show` command.
+type ProjectShowAction struct {
+	flags *projectShowFlags
+}
+
 func newProjectShowCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	extCtx = ensureExtensionContext(extCtx)
-	var flagEndpoint string
+	flags := &projectShowFlags{}
 
 	cmd := &cobra.Command{
 		Use:   "show",
@@ -34,62 +44,15 @@ func newProjectShowCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Long: `Display the currently resolved Foundry project endpoint and the source
 that provided it. Useful for debugging which endpoint agent commands will use.`,
 		Example: `  # Show the resolved endpoint
-  azd ai agent project show
-
-  # Check what a specific endpoint would resolve to
-  azd ai agent project show -p https://my-project.services.ai.azure.com/api/projects/my-project`,
+  azd ai agent project show`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			outputFmt := extCtx.OutputFormat
-			ctx := cmd.Context()
+			flags.outputFmt = extCtx.OutputFormat
 
-			result, err := resolveProjectEndpoint(ctx, resolveProjectEndpointOpts{
-				FlagValue: flagEndpoint,
-			})
-			if err != nil {
-				// project show exposes -p / --project-endpoint, so prepend that as the
-				// first suggestion bullet to the generic missing-endpoint error.
-				if localErr, ok := errors.AsType[*azdext.LocalError](err); ok &&
-					localErr.Code == exterrors.CodeMissingProjectEndpoint {
-					return exterrors.Dependency(
-						exterrors.CodeMissingProjectEndpoint,
-						localErr.Message,
-						"pass --project-endpoint <url> on this command, or "+localErr.Suggestion,
-					)
-				}
-				return err
-			}
-
-			sourceDetail := humanSourceDetail(result.Source, result.AzdEnvName)
-
-			switch outputFmt {
-			case "json":
-				out := projectShowResult{
-					Endpoint:     result.Endpoint,
-					Source:       string(result.Source),
-					SourceDetail: jsonSourceDetail(result.Source),
-					AzdEnv:       result.AzdEnvName,
-					SetAt:        result.SetAt,
-				}
-				enc := json.NewEncoder(os.Stdout)
-				enc.SetIndent("", "  ")
-				return enc.Encode(out)
-			default:
-				w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-				fmt.Fprintf(w, "Project endpoint:\t%s\n", result.Endpoint)
-				fmt.Fprintf(w, "Source:\t%s\n", sourceDetail)
-				if result.Source == SourceGlobalConfig && result.SetAt != "" {
-					fmt.Fprintf(w, "Set at:\t%s\n", result.SetAt)
-				}
-				return w.Flush()
-			}
+			action := &ProjectShowAction{flags: flags}
+			return action.Run(cmd.Context())
 		},
 	}
-
-	cmd.Flags().StringVarP(
-		&flagEndpoint, "project-endpoint", "p", "",
-		"Override the endpoint for this command (useful for debugging)",
-	)
 
 	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
 		Name:          "output",
@@ -98,6 +61,47 @@ that provided it. Useful for debugging which endpoint agent commands will use.`,
 	})
 
 	return cmd
+}
+
+// Run resolves and displays the current project endpoint and its source.
+func (a *ProjectShowAction) Run(ctx context.Context) error {
+	result, err := resolveProjectEndpoint(ctx, resolveProjectEndpointOpts{})
+	if err != nil {
+		// Re-wrap missing-endpoint errors to surface `project set` as the fix.
+		if localErr, ok := errors.AsType[*azdext.LocalError](err); ok &&
+			localErr.Code == exterrors.CodeMissingProjectEndpoint {
+			return exterrors.Dependency(
+				exterrors.CodeMissingProjectEndpoint,
+				localErr.Message,
+				"run `azd ai agent project set <endpoint>` to persist a default, or "+localErr.Suggestion,
+			)
+		}
+		return err
+	}
+
+	sourceDetail := humanSourceDetail(result.Source, result.AzdEnvName)
+
+	switch a.flags.outputFmt {
+	case "json":
+		out := projectShowResult{
+			Endpoint:     result.Endpoint,
+			Source:       string(result.Source),
+			SourceDetail: jsonSourceDetail(result.Source),
+			AzdEnv:       result.AzdEnvName,
+			SetAt:        result.SetAt,
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(out)
+	default:
+		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+		fmt.Fprintf(w, "Project endpoint:\t%s\n", result.Endpoint)
+		fmt.Fprintf(w, "Source:\t%s\n", sourceDetail)
+		if result.Source == SourceGlobalConfig && result.SetAt != "" {
+			fmt.Fprintf(w, "Set at:\t%s\n", result.SetAt)
+		}
+		return w.Flush()
+	}
 }
 
 // humanSourceDetail returns a human-readable label for the endpoint source.

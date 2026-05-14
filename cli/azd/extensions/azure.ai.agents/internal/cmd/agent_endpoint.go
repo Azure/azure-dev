@@ -14,12 +14,9 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 )
 
-// agentEndpointHostSuffix is the required Foundry host suffix for endpoint URLs.
-// parseAgentEndpoint uses this constant directly; it does not call isFoundryHost.
-// If additional host suffixes are added to foundryHostSuffixes
-// (project_endpoint.go), parseAgentEndpoint must be updated to call isFoundryHost
-// instead so the two validators stay in sync.
-const agentEndpointHostSuffix = ".services.ai.azure.com"
+// agentEndpointHostHint is the example Foundry host suffix shown in validation
+// error messages. Actual host membership is checked via isFoundryHost (project_endpoint.go).
+const agentEndpointHostHint = ".services.ai.azure.com"
 
 // agentEndpointHint is the suggestion appended to most --agent-endpoint validation errors.
 // `azd ai agent show` persistently prints the agent endpoint URL, so it's the right
@@ -81,10 +78,10 @@ func parseAgentEndpoint(rawURL string) (*parsedAgentEndpoint, error) {
 	}
 
 	host := strings.ToLower(u.Hostname())
-	if host == "" || !strings.HasSuffix(host, agentEndpointHostSuffix) {
+	if host == "" || !isFoundryHost(host) {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidParameter,
-			fmt.Sprintf("--agent-endpoint host %q is not a Foundry host (*%s)", u.Hostname(), agentEndpointHostSuffix),
+			fmt.Sprintf("--agent-endpoint host %q is not a Foundry host (*%s)", u.Hostname(), agentEndpointHostHint),
 			agentEndpointHint,
 		)
 	}

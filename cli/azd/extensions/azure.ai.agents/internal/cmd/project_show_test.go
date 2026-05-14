@@ -27,12 +27,12 @@ func TestProjectShowCommand_DefaultOutputFormat(t *testing.T) {
 	assertOutputFlagOptions(t, cmd, "table", []string{"json", "table"})
 }
 
-func TestProjectShowCommand_HasProjectEndpointFlag(t *testing.T) {
+func TestProjectShowCommand_HasNoProjectEndpointFlag(t *testing.T) {
 	t.Parallel()
 	cmd := newProjectShowCommand(nil)
-	f := cmd.Flags().Lookup("project-endpoint")
-	assert.NotNil(t, f, "--project-endpoint flag should be registered")
-	assert.Equal(t, "p", f.Shorthand)
+	assert.Nil(t, cmd.Flags().Lookup("project-endpoint"),
+		"--project-endpoint flag should not be registered on `project show`; "+
+			"it adds no value over echoing back the user-provided URL")
 }
 
 func TestHumanSourceDetail(t *testing.T) {

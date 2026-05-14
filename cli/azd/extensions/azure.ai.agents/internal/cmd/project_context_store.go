@@ -12,7 +12,7 @@ import (
 )
 
 // projectContextConfigPath is the UserConfig path for the persisted project context.
-const projectContextConfigPath = configPathPrefix + ".context"
+const projectContextConfigPath = configPathPrefix + ".project.context"
 
 // projectContextState is the JSON shape stored at extensions.ai-agents.context
 // in ~/.azd/config.json.

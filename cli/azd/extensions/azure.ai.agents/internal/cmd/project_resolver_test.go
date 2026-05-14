@@ -26,14 +26,6 @@ func stubAzdHostedSources(t *testing.T, sources azdHostedSources, err error) {
 	t.Cleanup(func() { readAzdHostedSourcesFunc = orig })
 }
 
-// stubLookupEnv replaces lookupEnvFunc for the duration of the test.
-func stubLookupEnv(t *testing.T, fn func(string) string) {
-	t.Helper()
-	orig := lookupEnvFunc
-	lookupEnvFunc = fn
-	t.Cleanup(func() { lookupEnvFunc = orig })
-}
-
 // isolateFromAzdDaemon makes the test independent of any azd daemon that
 // might be reachable on the developer machine via AZD_SERVER. It does two
 // things:
@@ -50,12 +42,7 @@ func isolateFromAzdDaemon(t *testing.T) {
 
 func TestResolveProjectEndpoint_FlagWins(t *testing.T) {
 	// Even with FOUNDRY_PROJECT_ENDPOINT and azd-hosted sources set, the flag should win.
-	stubLookupEnv(t, func(key string) string {
-		if key == "FOUNDRY_PROJECT_ENDPOINT" {
-			return "https://env.services.ai.azure.com/api/projects/env-proj"
-		}
-		return ""
-	})
+	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "https://env.services.ai.azure.com/api/projects/env-proj")
 	stubAzdHostedSources(t, azdHostedSources{
 		EnvValue: "https://azdenv.services.ai.azure.com/api/projects/p",
 		EnvName:  "dev",
@@ -72,12 +59,7 @@ func TestResolveProjectEndpoint_FlagWins(t *testing.T) {
 func TestResolveProjectEndpoint_AzdEnvResolves(t *testing.T) {
 	// Level 2: AZURE_AI_PROJECT_ENDPOINT from the active azd env wins over
 	// global config and FOUNDRY_PROJECT_ENDPOINT.
-	stubLookupEnv(t, func(key string) string {
-		if key == "FOUNDRY_PROJECT_ENDPOINT" {
-			return "https://foundry.services.ai.azure.com/api/projects/p"
-		}
-		return ""
-	})
+	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "https://foundry.services.ai.azure.com/api/projects/p")
 	stubAzdHostedSources(t, azdHostedSources{
 		EnvValue: "  HTTPS://Azdenv.Services.AI.Azure.com/api/projects/p/  ",
 		EnvName:  "dev",
@@ -97,13 +79,8 @@ func TestResolveProjectEndpoint_AzdEnvResolves(t *testing.T) {
 
 func TestResolveProjectEndpoint_AzdEnvInvalidRejected(t *testing.T) {
 	// Level 2 invalid values are hard errors (no silent fallback to lower levels).
-	stubLookupEnv(t, func(key string) string {
-		if key == "FOUNDRY_PROJECT_ENDPOINT" {
-			// Set, but resolver must NOT fall through to this when level 2 is invalid.
-			return "https://foundry.services.ai.azure.com/api/projects/p"
-		}
-		return ""
-	})
+	// FOUNDRY_PROJECT_ENDPOINT is set, but resolver must NOT fall through to it.
+	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "https://foundry.services.ai.azure.com/api/projects/p")
 	stubAzdHostedSources(t, azdHostedSources{
 		EnvValue: "http://not-https.services.ai.azure.com/api/projects/p",
 		EnvName:  "dev",
@@ -119,12 +96,7 @@ func TestResolveProjectEndpoint_AzdEnvInvalidRejected(t *testing.T) {
 
 func TestResolveProjectEndpoint_GlobalConfigResolves(t *testing.T) {
 	// Level 3: global config wins over FOUNDRY_PROJECT_ENDPOINT when no azd env value is set.
-	stubLookupEnv(t, func(key string) string {
-		if key == "FOUNDRY_PROJECT_ENDPOINT" {
-			return "https://foundry.services.ai.azure.com/api/projects/p"
-		}
-		return ""
-	})
+	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "https://foundry.services.ai.azure.com/api/projects/p")
 	stubAzdHostedSources(t, azdHostedSources{
 		CfgState: projectContextState{
 			Endpoint: "  HTTPS://Cfg.Services.AI.Azure.com/api/projects/p/  ",
@@ -142,12 +114,7 @@ func TestResolveProjectEndpoint_GlobalConfigResolves(t *testing.T) {
 
 func TestResolveProjectEndpoint_GlobalConfigInvalidRejected(t *testing.T) {
 	// Level 3 invalid values are hard errors (no silent fallback to level 4).
-	stubLookupEnv(t, func(key string) string {
-		if key == "FOUNDRY_PROJECT_ENDPOINT" {
-			return "https://foundry.services.ai.azure.com/api/projects/p"
-		}
-		return ""
-	})
+	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "https://foundry.services.ai.azure.com/api/projects/p")
 	stubAzdHostedSources(t, azdHostedSources{
 		CfgState: projectContextState{
 			Endpoint: "http://not-https.services.ai.azure.com/api/projects/p",
@@ -167,12 +134,7 @@ func TestResolveProjectEndpoint_GlobalConfigInvalidRejected(t *testing.T) {
 func TestResolveProjectEndpoint_HostedSourcesErrorPropagates(t *testing.T) {
 	// Non-recoverable errors from the hosted-source lookup (e.g. config parse
 	// failure) must be surfaced and must not silently fall through to level 4.
-	stubLookupEnv(t, func(key string) string {
-		if key == "FOUNDRY_PROJECT_ENDPOINT" {
-			return "https://foundry.services.ai.azure.com/api/projects/p"
-		}
-		return ""
-	})
+	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "https://foundry.services.ai.azure.com/api/projects/p")
 	sentinel := errors.New("boom")
 	stubAzdHostedSources(t, azdHostedSources{}, sentinel)
 
@@ -183,12 +145,7 @@ func TestResolveProjectEndpoint_HostedSourcesErrorPropagates(t *testing.T) {
 func TestResolveProjectEndpoint_FoundryEnvFallback(t *testing.T) {
 	// No flag, no azd-hosted sources → falls back to FOUNDRY_PROJECT_ENDPOINT.
 	isolateFromAzdDaemon(t)
-	stubLookupEnv(t, func(key string) string {
-		if key == "FOUNDRY_PROJECT_ENDPOINT" {
-			return "https://env.services.ai.azure.com/api/projects/env-proj"
-		}
-		return ""
-	})
+	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "https://env.services.ai.azure.com/api/projects/env-proj")
 
 	result, err := resolveProjectEndpoint(t.Context(), resolveProjectEndpointOpts{})
 	require.NoError(t, err)
@@ -198,7 +155,7 @@ func TestResolveProjectEndpoint_FoundryEnvFallback(t *testing.T) {
 
 func TestResolveProjectEndpoint_NothingResolvable(t *testing.T) {
 	isolateFromAzdDaemon(t)
-	stubLookupEnv(t, func(string) string { return "" })
+	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "")
 
 	_, err := resolveProjectEndpoint(t.Context(), resolveProjectEndpointOpts{})
 	require.Error(t, err)
@@ -222,12 +179,7 @@ func TestResolveProjectEndpoint_InvalidFlagRejected(t *testing.T) {
 
 func TestResolveProjectEndpoint_InvalidFoundryEnvRejected(t *testing.T) {
 	isolateFromAzdDaemon(t)
-	stubLookupEnv(t, func(key string) string {
-		if key == "FOUNDRY_PROJECT_ENDPOINT" {
-			return "http://bad.services.ai.azure.com/api/projects/p"
-		}
-		return ""
-	})
+	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "http://bad.services.ai.azure.com/api/projects/p")
 
 	_, err := resolveProjectEndpoint(t.Context(), resolveProjectEndpointOpts{})
 	require.Error(t, err)
@@ -239,12 +191,7 @@ func TestResolveProjectEndpoint_InvalidFoundryEnvRejected(t *testing.T) {
 
 func TestResolveProjectEndpoint_FoundryEnvNormalized(t *testing.T) {
 	isolateFromAzdDaemon(t)
-	stubLookupEnv(t, func(key string) string {
-		if key == "FOUNDRY_PROJECT_ENDPOINT" {
-			return "  https://X.SERVICES.AI.AZURE.COM/api/projects/p/  "
-		}
-		return ""
-	})
+	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "  https://X.SERVICES.AI.AZURE.COM/api/projects/p/  ")
 
 	result, err := resolveProjectEndpoint(t.Context(), resolveProjectEndpointOpts{})
 	require.NoError(t, err)

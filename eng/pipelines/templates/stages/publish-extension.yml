@@ -131,7 +131,7 @@ stages:
 
           - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
             parameters:
-              PRBranchName: ext-registry-update/${{ parameters.SanitizedExtensionId }}/$(EXT_VERSION)
+              PRBranchName: ext-registry-update/${{ parameters.SanitizedExtensionId }}/$(EXT_VERSION)-$(Build.BuildId)
               CommitMsg: "[${{ parameters.AzdExtensionId }}] Registry update for $(EXT_VERSION)"
               PRTitle: "[${{ parameters.AzdExtensionId }}] Registry update for $(EXT_VERSION)"
               PRBody: >-

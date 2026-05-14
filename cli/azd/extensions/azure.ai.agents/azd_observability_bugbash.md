@@ -189,6 +189,39 @@ Results:
 
 The ★ marks the best candidate. Copy the deploy command from the output to promote it.
 
+#### Customizing optimization options in `eval.yaml`
+
+You can fine-tune optimization behavior by adding or modifying the `options:` section in your `eval.yaml`. Below are all available fields, their types, and defaults:
+
+```yaml
+options:
+  eval_model: "gpt-4o"                          # (string) Model used for evaluation. Default: "gpt-4o"
+  mode: "optimize"                               # (string) Run mode. Default: "optimize"
+  strategies:                                    # ([]string) Optimization strategies to try.
+    - instruction                                #   Default: ["instruction", "skill", "agents-optimization-job"]
+    - skill
+    - agents-optimization-job
+  budget: 5                                      # (int) Max optimization budget (number of candidates). Default: 5
+  max_iterations: 2                              # (int) Max iterations per strategy. Default: 2 (when strategies are default)
+  min_improvement: 0.0                           # (float) Minimum score improvement to accept a candidate. Default: 0 (not set)
+  improvement_threshold: 0.0                     # (float) Threshold for incremental improvement. Default: 0 (not set)
+  pass_threshold: 0.0                            # (float) Minimum passing score. Default: 0 (not set)
+  keep_versions: false                           # (bool) Keep all intermediate agent versions. Default: false
+  tasks_per_iteration: 0                         # (int) Number of tasks per iteration. Default: 0 (server decides)
+  reflection_model: ""                           # (string) Model for reflection steps. Default: "" (uses eval_model)
+```
+
+For example, to increase the budget and use a different eval model:
+
+```yaml
+options:
+  eval_model: "gpt-4.1"
+  budget: 10
+  max_iterations: 3
+```
+
+Fields you omit will use the defaults above. The `strategies` field defaults to all three strategies if not specified.
+
 ### 6e. Monitor optimization jobs
 
 ```bash

@@ -153,6 +153,7 @@ func (a *OptimizeAction) Run(ctx context.Context, cmd *cobra.Command) error {
 
 	var cfg *OptimizeConfig
 	configSource := "" // tracks where the config came from for user messaging
+	hasProject := false
 
 	if a.flags.configFile != "" {
 		cfg, err = LoadOptimizeConfig(a.flags.configFile)
@@ -165,6 +166,7 @@ func (a *OptimizeAction) Run(ctx context.Context, cmd *cobra.Command) error {
 		if err != nil {
 			return err
 		}
+		hasProject = resolved.agentProject != ""
 
 		// Check if eval.yaml exists in the agent project and offer to use it
 		if resolved.agentProject != "" {
@@ -245,7 +247,7 @@ func (a *OptimizeAction) Run(ctx context.Context, cmd *cobra.Command) error {
 		if err != nil {
 			return err
 		}
-		printOptimizeResults(out, finalStatus)
+		printOptimizeResults(out, finalStatus, hasProject)
 	}
 
 	return nil
@@ -298,7 +300,7 @@ func pollOptimizeJob(
 	return finalStatus, nil
 }
 
-func printOptimizeResults(out io.Writer, status *optimize_api.OptimizeJobStatus) {
+func printOptimizeResults(out io.Writer, status *optimize_api.OptimizeJobStatus, hasProject bool) {
 	if status.Error != nil {
 		fmt.Fprintf(out, "\n  %s %s\n", color.RedString("Error:"), status.Error.Message)
 	}
@@ -352,15 +354,21 @@ func printOptimizeResults(out io.Writer, status *optimize_api.OptimizeJobStatus)
 		}
 	}
 
-	// Print deploy command for best candidate
+	// Print next-step commands for best candidate
 	if status.Best != nil && status.Best.CandidateID != "" {
 		agentName := ""
 		if status.Agent != nil {
 			agentName = status.Agent.AgentName
 		}
-		fmt.Fprintf(out, "\n  Deploy the best candidate:\n")
-		fmt.Fprintf(out, "    azd ai agent optimize deploy --candidate %s --agent %s\n",
-			status.Best.CandidateID, agentName)
+		if hasProject {
+			fmt.Fprintf(out, "\n  Apply the best candidate locally, then deploy:\n")
+			fmt.Fprintf(out, "    azd ai agent optimize apply --candidate %s\n", status.Best.CandidateID)
+			fmt.Fprintf(out, "    azd deploy\n")
+		} else {
+			fmt.Fprintf(out, "\n  Deploy the best candidate:\n")
+			fmt.Fprintf(out, "    azd ai agent optimize deploy --candidate %s --agent %s\n",
+				status.Best.CandidateID, agentName)
+		}
 	}
 	fmt.Fprintln(out)
 }

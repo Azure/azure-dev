@@ -88,9 +88,9 @@ func runOptimizeStatus(cmd *cobra.Command, flags *optimizeStatusFlags, operation
 		if err != nil {
 			return err
 		}
-		printOptimizeResults(out, finalStatus)
+		printOptimizeResults(out, finalStatus, false)
 	} else if len(status.Candidates) > 0 {
-		printOptimizeResults(out, status)
+		printOptimizeResults(out, status, false)
 	}
 
 	if status.Error != nil {

@@ -61,12 +61,9 @@ func submitDatasetGeneration(
 	resolved *evalResolvedContext,
 	flags *evalInitFlags,
 ) (*eval_api.GenerationJob, error) {
-	var traces *eval_api.TraceOptions
-	if flags.traceDays > 0 {
-		traces = &eval_api.TraceOptions{Days: flags.traceDays}
-	}
+	// Traces are only supported for evaluator generation, not dataset generation.
 	sources := eval_api.BuildGenerationSources(
-		string(resolved.agentKind), resolved.agentName, resolved.version, flags.genInstruction, traces,
+		string(resolved.agentKind), resolved.agentName, resolved.version, flags.genInstruction, nil,
 	)
 	request := eval_api.NewDataGenerationJobRequest(
 		resolveEvalName(flags), flags.evalModel, flags.maxSamples, sources,

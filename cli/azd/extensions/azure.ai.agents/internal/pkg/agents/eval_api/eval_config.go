@@ -125,7 +125,7 @@ func (c *EvalConfig) ToAgentTargetAdaptableEvalGroupRequest() *CreateOpenAIEvalR
 			Name:          evaluator,
 			EvaluatorName: evaluator,
 			DataMapping: map[string]string{
-				"messages": "{{item.messages}}",
+				//"messages": "{{item.messages}}",
 				"query":    "{{item.query}}",
 				"response": "{{sample.output_text}}",
 			},

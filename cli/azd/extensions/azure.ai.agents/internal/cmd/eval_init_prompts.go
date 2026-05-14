@@ -90,40 +90,39 @@ func promptEvalInitOptions(ctx context.Context, resolved *evalResolvedContext, f
 		}
 	}
 
-	// TODO: Re-enable trace prompt once trace support is ready.
-	// // Ask whether to include traces, unless already set via flags.
-	// if flags.traceDays == 0 && needsGeneration {
-	// 	confirmResp, err := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
-	// 		Options: &azdext.ConfirmOptions{
-	// 			Message:      "Include agent traces for evaluation?",
-	// 			DefaultValue: new(bool), // default false
-	// 		},
-	// 	})
-	// 	if err != nil {
-	// 		return fmt.Errorf("prompting for trace inclusion: %w", err)
-	// 	}
-	// 	if confirmResp.GetValue() {
-	// 		rangeChoices := []*azdext.SelectChoice{
-	// 			{Label: "Last Day", Value: "1"},
-	// 			{Label: "Last 7 Days", Value: "7"},
-	// 			{Label: "Last 30 Days", Value: "30"},
-	// 			{Label: "Last 90 Days", Value: "90"},
-	// 		}
-	// 		defaultRangeIdx := int32(1) // 7 days
-	// 		rangeResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
-	// 			Options: &azdext.SelectOptions{
-	// 				Message:       "Select trace time range",
-	// 				Choices:       rangeChoices,
-	// 				SelectedIndex: &defaultRangeIdx,
-	// 			},
-	// 		})
-	// 		if err != nil {
-	// 			return fmt.Errorf("prompting for trace time range: %w", err)
-	// 		}
-	// 		days, _ := strconv.Atoi(rangeChoices[int(*rangeResp.Value)].Value)
-	// 		flags.traceDays = days
-	// 	}
-	// }
+	// Ask whether to include traces for evaluator generation, unless already set via flags.
+	if flags.traceDays == 0 && needsGeneration {
+		confirmResp, err := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+			Options: &azdext.ConfirmOptions{
+				Message:      "Include agent traces for evaluator generation?",
+				DefaultValue: new(bool), // default false
+			},
+		})
+		if err != nil {
+			return fmt.Errorf("prompting for trace inclusion: %w", err)
+		}
+		if confirmResp.GetValue() {
+			rangeChoices := []*azdext.SelectChoice{
+				{Label: "Last Day", Value: "1"},
+				{Label: "Last 7 Days", Value: "7"},
+				{Label: "Last 30 Days", Value: "30"},
+				{Label: "Last 90 Days", Value: "90"},
+			}
+			defaultRangeIdx := int32(1) // 7 days
+			rangeResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+				Options: &azdext.SelectOptions{
+					Message:       "Select trace time range",
+					Choices:       rangeChoices,
+					SelectedIndex: &defaultRangeIdx,
+				},
+			})
+			if err != nil {
+				return fmt.Errorf("prompting for trace time range: %w", err)
+			}
+			days, _ := strconv.Atoi(rangeChoices[int(*rangeResp.Value)].Value)
+			flags.traceDays = days
+		}
+	}
 
 	if !needsGeneration {
 		return nil

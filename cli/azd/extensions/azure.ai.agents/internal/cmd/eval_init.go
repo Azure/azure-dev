@@ -79,8 +79,7 @@ the agent project root. Use --no-wait to write pending operation IDs and return.
 	cmd.Flags().IntVar(&flags.maxSamples, "max-samples", defaultEvalSamples, "Maximum number of samples to generate")
 	cmd.Flags().StringArrayVar(&flags.evaluators, "evaluator", nil, "Built-in or custom evaluator name")
 	cmd.Flags().StringVarP(&flags.output, "out-file", "O", defaultEvalConfigName, "Eval config path")
-	cmd.Flags().IntVar(&flags.traceDays, "trace-days", 0, "Include agent traces from the last N days (0 = no traces)")
-	_ = cmd.Flags().MarkHidden("trace-days")
+	cmd.Flags().IntVar(&flags.traceDays, "trace-days", 0, "Include agent traces from the last N days for evaluator generation (0 = no traces)")
 	cmd.Flags().BoolVar(&flags.resetDefaults, "reset-defaults", false, "Overwrite an existing eval config")
 
 	return cmd
@@ -117,6 +116,10 @@ func runEvalInit(ctx context.Context, flags *evalInitFlags, noPrompt bool) error
 	existingCfg, hasExisting := tryLoadExistingEvalConfig(configPath)
 	isRegenerate := false
 	var builtinEvals []string
+
+	if flags.resetDefaults && resolved.envName != "" {
+		clearEvalState(ctx, resolved.azdClient, resolved.envName)
+	}
 
 	if hasExisting && !flags.resetDefaults {
 		if noPrompt {

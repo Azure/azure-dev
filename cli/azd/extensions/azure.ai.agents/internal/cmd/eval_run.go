@@ -24,7 +24,7 @@ type evalRunFlags struct {
 	config string
 }
 
-func newEvalRunCommand() *cobra.Command {
+func newEvalRunCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &evalRunFlags{config: defaultEvalConfigName}
 	cmd := &cobra.Command{
 		Use:   "run",
@@ -34,14 +34,14 @@ func newEvalRunCommand() *cobra.Command {
 			ctx := azdext.WithAccessToken(cmd.Context())
 			logCleanup := setupDebugLogging(cmd.Flags())
 			defer logCleanup()
-			return runEvalRun(ctx, flags)
+			return runEvalRun(ctx, flags, extCtx.NoPrompt)
 		},
 	}
 	cmd.Flags().StringVar(&flags.config, "config", defaultEvalConfigName, "Local eval config YAML")
 	return cmd
 }
 
-func runEvalRun(ctx context.Context, flags *evalRunFlags) error {
+func runEvalRun(ctx context.Context, flags *evalRunFlags, noPrompt bool) error {
 	resolved, err := resolveEvalContext(ctx, evalContextOptions{})
 	if err != nil {
 		return err
@@ -69,6 +69,19 @@ func runEvalRun(ctx context.Context, flags *evalRunFlags) error {
 	}
 
 	evalID := state.EvalID
+	if evalID != "" && !noPrompt {
+		// Ask whether to reuse the existing eval or create a new one.
+		resp, promptErr := resolved.azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+			Options: &azdext.ConfirmOptions{
+				Message:      fmt.Sprintf("Found existing eval %s. Reuse it?", evalID),
+				DefaultValue: new(false),
+			},
+		})
+		if promptErr == nil && resp.Value != nil && !*resp.Value {
+			evalID = "" // user chose to create a new eval
+		}
+	}
+
 	if evalID == "" {
 		created, err := resolved.evalClient.CreateOpenAIEval(
 			ctx, buildOpenAIEvalRequest(evalCfg), DefaultAgentAPIVersion,

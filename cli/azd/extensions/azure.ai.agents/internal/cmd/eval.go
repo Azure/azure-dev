@@ -97,7 +97,7 @@ Use eval init to generate an eval config, then eval run to execute it.`,
 	}
 
 	cmd.AddCommand(newEvalInitCommand(extCtx))
-	cmd.AddCommand(newEvalRunCommand())
+	cmd.AddCommand(newEvalRunCommand(extCtx))
 	cmd.AddCommand(newEvalListCommand())
 	cmd.AddCommand(newEvalShowCommand())
 

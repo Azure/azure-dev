@@ -46,6 +46,10 @@ bin/
 node_modules/
 test-results/
 
+# Downloaded by extension-set-metadata-variables.yml during the release
+# pipeline; must not be committed by automation jobs (e.g. Update_Registry).
+/release-metadata/
+
 # terraform .tfstate files
 **/.terraform
 *.tfstate*

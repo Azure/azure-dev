@@ -5,6 +5,7 @@ package tool
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -254,6 +255,141 @@ func TestManager_InstallTools(t *testing.T) {
 
 		require.Error(t, err)
 		assert.Nil(t, results)
+	})
+}
+
+func TestManager_InstallToolsDependencyResolution(t *testing.T) {
+	t.Parallel()
+
+	// Two synthetic tools: "dependent" requires "base".
+	baseTool := func() *ToolDefinition {
+		return &ToolDefinition{Id: "base"}
+	}
+	dependentTool := func() *ToolDefinition {
+		return &ToolDefinition{
+			Id:           "dependent",
+			Dependencies: []string{"base"},
+		}
+	}
+
+	// newMgr builds a Manager whose manifest contains only the
+	// synthetic tools so the test is isolated from BuiltInTools().
+	newMgr := func(det Detector, inst Installer) *Manager {
+		return &Manager{
+			manifest:  []*ToolDefinition{baseTool(), dependentTool()},
+			detector:  det,
+			installer: inst,
+		}
+	}
+
+	t.Run("ResolvesUninstalledDependencies", func(t *testing.T) {
+		t.Parallel()
+
+		var installedIDs []string
+		inst := &mockInstaller{
+			installFn: func(
+				_ context.Context,
+				tool *ToolDefinition,
+			) (*InstallResult, error) {
+				installedIDs = append(installedIDs, tool.Id)
+				return &InstallResult{Tool: tool, Success: true}, nil
+			},
+		}
+
+		// "base" is not installed, triggering dependency resolution.
+		det := &mockDetector{
+			detectToolFn: func(
+				_ context.Context,
+				tool *ToolDefinition,
+			) (*ToolStatus, error) {
+				return &ToolStatus{
+					Tool:      tool,
+					Installed: tool.Id != "base",
+				}, nil
+			},
+		}
+
+		mgr := newMgr(det, inst)
+		results, err := mgr.InstallTools(t.Context(), []string{"dependent"})
+
+		require.NoError(t, err)
+		require.Len(t, results, 2, "should install dep + requested tool")
+		assert.Equal(t, []string{"base", "dependent"}, installedIDs,
+			"dependency must be installed first")
+	})
+
+	t.Run("SkipsDependencyAlreadyInstalled", func(t *testing.T) {
+		t.Parallel()
+
+		var installedIDs []string
+		inst := &mockInstaller{
+			installFn: func(
+				_ context.Context,
+				tool *ToolDefinition,
+			) (*InstallResult, error) {
+				installedIDs = append(installedIDs, tool.Id)
+				return &InstallResult{Tool: tool, Success: true}, nil
+			},
+		}
+
+		// Everything already installed; dependency must be skipped.
+		det := &mockDetector{
+			detectToolFn: func(
+				_ context.Context,
+				tool *ToolDefinition,
+			) (*ToolStatus, error) {
+				return &ToolStatus{Tool: tool, Installed: true}, nil
+			},
+		}
+
+		mgr := newMgr(det, inst)
+		results, err := mgr.InstallTools(t.Context(), []string{"dependent"})
+
+		require.NoError(t, err)
+		require.Len(t, results, 1, "dep should be skipped")
+		assert.Equal(t, "dependent", results[0].Tool.Id)
+	})
+
+	t.Run("FailedDependencySkipsDependent", func(t *testing.T) {
+		t.Parallel()
+
+		inst := &mockInstaller{
+			installFn: func(
+				_ context.Context,
+				tool *ToolDefinition,
+			) (*InstallResult, error) {
+				if tool.Id == "base" {
+					return &InstallResult{
+						Tool:    tool,
+						Success: false,
+						Error:   errors.New("install failed"),
+					}, nil
+				}
+				return &InstallResult{Tool: tool, Success: true}, nil
+			},
+		}
+
+		det := &mockDetector{
+			detectToolFn: func(
+				_ context.Context,
+				tool *ToolDefinition,
+			) (*ToolStatus, error) {
+				return &ToolStatus{
+					Tool:      tool,
+					Installed: tool.Id != "base",
+				}, nil
+			},
+		}
+
+		mgr := newMgr(det, inst)
+		results, err := mgr.InstallTools(t.Context(), []string{"dependent"})
+
+		require.NoError(t, err)
+		require.Len(t, results, 2)
+		// Dep result records the install failure; dependent is skipped.
+		assert.Error(t, results[0].Error)
+		assert.Error(t, results[1].Error)
+		assert.Contains(t, results[1].Error.Error(), "dependency")
 	})
 }
 

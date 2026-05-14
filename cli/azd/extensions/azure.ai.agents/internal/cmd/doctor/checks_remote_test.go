@@ -12,25 +12,29 @@ import (
 
 // ---- NewRemoteChecks contract ----
 
-// TestNewRemoteChecks_HasAuthFoundryEndpointRBACAndAgentStatus pins
-// the current shape of the remote chain: exactly four checks, in
+// TestNewRemoteChecks_HasAuthFoundryEndpointRBACAgentStatusAndIdentityRoles
+// pins the current shape of the remote chain: exactly five checks, in
 // the order `remote.auth` → `remote.foundry-endpoint` →
-// `remote.rbac` → `remote.agent-status`, all with Remote=true. The
-// ordering matters because `remote.foundry-endpoint` skip-cascades
-// against `remote.auth`'s prior Result, `remote.rbac` skip-cascades
-// against `remote.auth` (but NOT `remote.foundry-endpoint`, per the
-// design's dependency matrix line 115 — RBAC reads ARM, not the
-// data plane), and `remote.agent-status` skip-cascades against
-// `remote.auth` + `remote.foundry-endpoint` (Reader-level Foundry
-// call, deliberately bypasses RBAC). Any future re-ordering or
-// insertion has to come through this assertion.
-func TestNewRemoteChecks_HasAuthFoundryEndpointRBACAndAgentStatus(t *testing.T) {
+// `remote.rbac` → `remote.agent-status` → `remote.agent-identity-roles`,
+// all with Remote=true. The ordering matters because
+// `remote.foundry-endpoint` skip-cascades against `remote.auth`'s
+// prior Result, `remote.rbac` skip-cascades against `remote.auth`
+// (but NOT `remote.foundry-endpoint`, per the design's dependency
+// matrix line 115 — RBAC reads ARM, not the data plane),
+// `remote.agent-status` skip-cascades against `remote.auth` +
+// `remote.foundry-endpoint` (Reader-level Foundry call, deliberately
+// bypasses RBAC), and `remote.agent-identity-roles` cascades against
+// `remote.agent-status` Pass so the per-agent role enumeration only
+// runs against agents the previous check confirmed active. Any
+// future re-ordering or insertion has to come through this
+// assertion.
+func TestNewRemoteChecks_HasAuthFoundryEndpointRBACAgentStatusAndIdentityRoles(t *testing.T) {
 	t.Parallel()
 
 	got := NewRemoteChecks(Dependencies{})
 
-	require.Len(t, got, 4,
-		"NewRemoteChecks should contain auth, foundry-endpoint, rbac, and agent-status today")
+	require.Len(t, got, 5,
+		"NewRemoteChecks should contain auth, foundry-endpoint, rbac, agent-status, and agent-identity-roles today")
 	require.Equal(t, "remote.auth", got[0].ID)
 	require.Equal(t, "authentication", got[0].Name)
 	require.True(t, got[0].Remote, "remote.auth must declare Remote=true")
@@ -47,6 +51,10 @@ func TestNewRemoteChecks_HasAuthFoundryEndpointRBACAndAgentStatus(t *testing.T) 
 	require.Equal(t, "Hosted agents are active", got[3].Name)
 	require.True(t, got[3].Remote, "remote.agent-status must declare Remote=true")
 	require.NotNil(t, got[3].Fn, "remote.agent-status must have a non-nil Fn")
+	require.Equal(t, "remote.agent-identity-roles", got[4].ID)
+	require.Equal(t, "Agent identity role assignments", got[4].Name)
+	require.True(t, got[4].Remote, "remote.agent-identity-roles must declare Remote=true")
+	require.NotNil(t, got[4].Fn, "remote.agent-identity-roles must have a non-nil Fn")
 }
 
 // TestNewLocalAndRemoteChecks_ProductionCompositionLocalsFirst pins the

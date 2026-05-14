@@ -169,6 +169,12 @@ func statusGlyphAndLabel(s doctor.Status) (string, string) {
 		return "✗", "FAIL"
 	case doctor.StatusSkip:
 		return "-", "SKIP"
+	case doctor.StatusInfo:
+		// ⓘ (U+24D8) carries strong "informational, no action" semantic in
+		// monospace terminal output and matches the design's example
+		// (azd-ai-agent-doctor-remote-checks.md:209). The 4-char label
+		// keeps column alignment with the four pre-existing statuses.
+		return "ⓘ", "INFO"
 	default:
 		return "?", "UNKN"
 	}
@@ -178,14 +184,26 @@ func statusGlyphAndLabel(s doctor.Status) (string, string) {
 // "Summary: N passed, N failed, N skipped, N warned" with categories
 // elided when their count is zero (except the very common "0 failed
 // 0 warned" combo, which we keep visible so users see the all-clean
-// picture at a glance).
+// picture at a glance). An optional ", N info" suffix is appended
+// only when at least one check produced an informational result —
+// this keeps the line concise for the common case (zero-info checks)
+// and preserves backwards-compat with consumers asserting the
+// four-category form.
 //
 // When every category is zero (an empty Report — runtime should never
 // produce this but a caller might synthesize it) we render "Summary:
 // no checks executed" so the output is not just "Summary: ".
 func writeSummaryLine(w io.Writer, s doctor.Summary) error {
-	if s.Pass == 0 && s.Warn == 0 && s.Fail == 0 && s.Skip == 0 {
+	if s.Pass == 0 && s.Warn == 0 && s.Fail == 0 && s.Skip == 0 && s.Info == 0 {
 		_, err := fmt.Fprintln(w, "Summary: no checks executed")
+		return err
+	}
+	if s.Info > 0 {
+		_, err := fmt.Fprintf(
+			w,
+			"Summary: %d passed, %d failed, %d skipped, %d warned, %d info\n",
+			s.Pass, s.Fail, s.Skip, s.Warn, s.Info,
+		)
 		return err
 	}
 	_, err := fmt.Fprintf(

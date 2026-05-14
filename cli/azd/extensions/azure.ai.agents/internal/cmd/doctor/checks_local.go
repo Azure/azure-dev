@@ -131,6 +131,34 @@ type Dependencies struct {
 		azdClient *azdext.AzdClient,
 		serviceName string,
 	) (name string, version string, err error)
+
+	// probeAgentPrincipal is a test seam for the
+	// `remote.agent-identity-roles` check (Phase 5 C12). It returns
+	// the agent's managed-identity principal ID by calling
+	// GetAgentVersion and reading `instance_identity.principal_id`.
+	// Production wiring leaves this nil; the check substitutes
+	// `makeRealProbeAgentPrincipal(deps.AgentAPIVersion)` when nil.
+	probeAgentPrincipal func(
+		ctx context.Context,
+		endpoint, agentName, agentVersion string,
+	) agentIdentityProbeResult
+
+	// queryAgentIdentityRoles is a test seam for the
+	// `remote.agent-identity-roles` check (Phase 5 C12). When
+	// non-nil it replaces the production
+	// `project.QueryAgentIdentityRoles` call inside the check,
+	// letting unit tests exercise per-agent classification
+	// (fine / underscoped / empty / unknown) and aggregate folding
+	// without instantiating real ARM clients. Signature mirrors
+	// `project.QueryAgentIdentityRoles` exactly so the wiring is a
+	// single `if query == nil { query = project.QueryAgentIdentityRoles }`
+	// substitution. Production wiring leaves this nil.
+	queryAgentIdentityRoles func(
+		ctx context.Context,
+		azdClient *azdext.AzdClient,
+		projectResourceID string,
+		principals []project.AgentPrincipal,
+	) (*project.AgentIdentityRolesResult, error)
 }
 
 // NewLocalChecks returns the canonical sequence of local doctor checks

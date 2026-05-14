@@ -60,6 +60,9 @@ func NewRemoteChecks(deps Dependencies) []Check {
 	//     (`remote.rbac`)
 	//   - C17 (landed): per-service agent version status
 	//     (`remote.agent-status`)
+	//   - C12 (this commit): per-agent managed-identity role
+	//     listing across project/account/RG scopes
+	//     (`remote.agent-identity-roles`)
 	// Ordering matters for skip-cascade: each entry reads `prior
 	// []Result` produced by every check earlier in the combined
 	// local-then-remote sequence. Append checks in the order their
@@ -70,5 +73,6 @@ func NewRemoteChecks(deps Dependencies) []Check {
 		newCheckFoundryEndpoint(deps),
 		newCheckRBAC(deps),
 		newCheckAgentStatus(deps),
+		newCheckAgentIdentityRoles(deps),
 	}
 }

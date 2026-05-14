@@ -44,6 +44,13 @@ const (
 	// to a non-zero exit code on its own; a report consisting entirely of
 	// skips yields exit code 2.
 	StatusSkip Status = "skip"
+	// StatusInfo — the check completed cleanly but the result is
+	// primarily informational (no action required, no problem detected).
+	// Used by checks whose value is the listing they produce rather than
+	// a pass/fail verdict — e.g., `remote.agent-identity-roles` renders
+	// the agent's role assignments so the user can confirm they match
+	// their mental model. Does NOT contribute to a non-zero exit code.
+	StatusInfo Status = "info"
 )
 
 // Result captures the outcome of one check.
@@ -81,6 +88,7 @@ type Summary struct {
 	Warn int `json:"warn"`
 	Fail int `json:"fail"`
 	Skip int `json:"skip"`
+	Info int `json:"info"`
 }
 
 // Report is the full structured output of a doctor run. SchemaVersion is

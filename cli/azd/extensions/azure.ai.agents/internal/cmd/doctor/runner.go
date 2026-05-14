@@ -109,7 +109,7 @@ func (r *Runner) Run(ctx context.Context, opts Options) Report {
 		// internal error and the failed check is visible in summary +
 		// exit code, rather than silently dropped.
 		switch result.Status {
-		case StatusPass, StatusWarn, StatusFail, StatusSkip:
+		case StatusPass, StatusWarn, StatusFail, StatusSkip, StatusInfo:
 			// canonical — keep as-is
 		case "":
 			result.Status = StatusFail
@@ -150,6 +150,8 @@ func summarize(checks []Result) Summary {
 			s.Fail++
 		case StatusSkip:
 			s.Skip++
+		case StatusInfo:
+			s.Info++
 		}
 	}
 	return s
@@ -158,12 +160,13 @@ func summarize(checks []Result) Summary {
 // ExitCode maps a Report onto the process exit code the doctor command
 // should yield:
 //
-//   - 0 — at least one Pass and no Fail (Warn does not raise the exit
-//     code; Skip does not lower the exit code below 0).
+//   - 0 — at least one Pass or Info and no Fail (Warn does not raise the
+//     exit code; Skip does not lower the exit code below 0; Info counts
+//     as "a useful diagnostic completed" alongside Pass).
 //   - 1 — any Fail (precedence over everything else).
 //   - 2 — no useful diagnostic completed (empty report, all-skip,
 //     warn-only, or any combination of skip + warn without a single
-//     pass). The user needs to fix preconditions and re-run.
+//     pass or info). The user needs to fix preconditions and re-run.
 //
 // A report with zero checks (which Run never produces but a caller might
 // synthesize) yields exit code 2 — the "nothing ran" semantics match the
@@ -172,7 +175,7 @@ func ExitCode(report Report) int {
 	if report.Summary.Fail > 0 {
 		return 1
 	}
-	if report.Summary.Pass == 0 {
+	if report.Summary.Pass == 0 && report.Summary.Info == 0 {
 		return 2
 	}
 	return 0

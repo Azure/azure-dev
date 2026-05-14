@@ -289,6 +289,10 @@ func assembleState(ctx context.Context, src Source, opts ...Option) (*State, []e
 		populateOpenAPIPayload(ctx, cfg, project.Path, envName, state)
 	}
 
+	if project != nil && len(state.Services) > 0 {
+		populateManifestResources(project.Path, state)
+	}
+
 	// authProbe lands in a later commit; the flag is already plumbed so
 	// call sites and tests can be written against the final API.
 	_ = cfg.authProbe

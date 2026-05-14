@@ -129,6 +129,64 @@ type State struct {
 	// auth-conditional suggestions as "skip" rather than "tell user to
 	// log in".
 	IsAuthenticated AuthState
+
+	// HasModels, HasToolboxes, HasConnections are aggregate flags
+	// derived from each azure.ai.agent service's agent.manifest.yaml
+	// (when present). They are true when at least one resource of the
+	// matching kind is declared across all services. Doctor checks that
+	// only make sense in the presence of these resources gate-skip
+	// themselves on the matching Has* flag; resolvers can use them to
+	// tailor remediation suggestions.
+	//
+	// All three flags are false when the manifest file is missing,
+	// malformed, or declares no resources — the walker is deliberately
+	// silent on those failure modes so a missing/in-flight manifest
+	// never blocks the rest of state assembly.
+	HasModels      bool
+	HasToolboxes   bool
+	HasConnections bool
+
+	// ModelRefs, Toolboxes, Connections list every resource of the
+	// matching kind found across all services' agent.manifest.yaml
+	// files. Entries are sorted by Name (ties broken by ServiceName)
+	// and deduplicated on (ServiceName, Name) so callers can render
+	// them deterministically. The slices are nil when the matching
+	// Has* flag is false.
+	ModelRefs   []ResourceRef
+	Toolboxes   []ResourceRef
+	Connections []ResourceRef
+}
+
+// ResourceRef is a slim summary of a manifest resource that the
+// nextstep package surfaces to doctor checks and resolvers. The
+// shape intentionally elides agent_yaml.ModelResource /
+// ToolboxResource / ConnectionResource details that doctor checks
+// don't consume today — keeping the surface small so future
+// manifest schema changes don't ripple through the resolver / doctor
+// boundary. Add fields here only when a doctor check or resolver
+// branch needs them.
+type ResourceRef struct {
+	// Name is the resource's manifest-declared name (the `name:`
+	// field on the manifest's `resources[]` entry). Doctor checks
+	// match by this name when looking up Foundry deployments /
+	// connections / toolboxes.
+	Name string
+
+	// ServiceName is the azd service that declared the resource (the
+	// service entry under `services:` in azure.yaml whose
+	// agent.manifest.yaml contains this entry). When the same logical
+	// resource is declared by multiple services they appear as
+	// separate entries — doctor checks key on (ServiceName, Name) so
+	// per-service failures are surfaced individually.
+	ServiceName string
+
+	// Detail carries a kind-specific identifier:
+	//   - models:      ModelResource.Id (e.g., "azureml://...gpt-4o...")
+	//   - connections: <Category> | <Target>
+	//   - toolboxes:   empty (no identifier beyond Name today)
+	// Doctor remediation messages render Detail verbatim, so changes
+	// here must match the doctor-message contract.
+	Detail string
 }
 
 // ServiceState mirrors one entry from the project's services map, plus a

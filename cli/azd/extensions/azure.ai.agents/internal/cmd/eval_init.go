@@ -209,7 +209,7 @@ func runEvalInit(ctx context.Context, flags *evalInitFlags, noPrompt bool) error
 		}
 	} else {
 		needDatasetGen = flags.dataset == ""
-		needEvalGen = len(flags.evaluators) == 0
+		needEvalGen = true // always generate adaptive evaluator
 		if !needDatasetGen {
 			// User provided a local dataset file — use it directly.
 			datasetPath, err := resolveLocalDatasetFile(flags.dataset, resolved.agentProject)
@@ -218,8 +218,9 @@ func runEvalInit(ctx context.Context, flags *evalInitFlags, noPrompt bool) error
 			}
 			evalCfg.DatasetFile = datasetPath
 		}
-		if !needEvalGen {
-			evalCfg.Evaluators = evaluatorsFromFlags(flags.evaluators)
+		// --evaluator values are merged with the generated adaptive evaluator.
+		if len(flags.evaluators) > 0 {
+			builtinEvals = evaluatorsFromFlags(flags.evaluators)
 		}
 	}
 

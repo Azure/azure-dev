@@ -178,7 +178,7 @@ type TestingCriterion struct {
 	Type                     string            `json:"type"`
 	Name                     string            `json:"name"`
 	EvaluatorName            string            `json:"evaluator_name"`
-	InitializationParameters map[string]string `json:"initialization_parameters,omitempty"`
+	InitializationParameters map[string]any    `json:"initialization_parameters,omitempty"`
 	DataMapping              map[string]string `json:"data_mapping,omitempty"`
 }
 

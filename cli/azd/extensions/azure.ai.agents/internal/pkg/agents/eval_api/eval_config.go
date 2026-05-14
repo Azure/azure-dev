@@ -96,19 +96,14 @@ func (c *EvalConfig) ToAgentTargetAdaptableEvalGroupRequest() *CreateOpenAIEvalR
 		DataSourceConfig: &DataSourceConfig{
 			Type:                "custom",
 			ItemSchema:          map[string]any{},
-			IncludeSampleSchema: true,
+			IncludeSampleSchema: false,
 			Schema: &DataSourceSchema{
 				Item: map[string]any{
 					"type": "object",
 					"properties": map[string]any{
 						"query": map[string]any{"type": "string"},
 					},
-				},
-				Sample: map[string]any{
-					"type": "object",
-					"properties": map[string]any{
-						"output_text": map[string]any{"type": "string"},
-					},
+					"required": []string{},
 				},
 			},
 		},
@@ -127,13 +122,14 @@ func (c *EvalConfig) ToAgentTargetAdaptableEvalGroupRequest() *CreateOpenAIEvalR
 			DataMapping: map[string]string{
 				//"messages": "{{item.messages}}",
 				"query":    "{{item.query}}",
-				"response": "{{sample.output_text}}",
+				"response": "{{sample.output_items}}",
 			},
 		}
 		if evalModel != "" {
-			criterion.InitializationParameters = map[string]string{
+			criterion.InitializationParameters = map[string]any{
 				"model":           evalModel,
 				"deployment_name": evalModel,
+				"threshold":       3,
 			}
 		}
 		request.TestingCriteria = append(request.TestingCriteria, criterion)

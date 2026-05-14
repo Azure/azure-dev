@@ -204,6 +204,8 @@ azd ai agent optimize cancel <operation-id>
 
 ### 6f. Deploy the winning candidate
 
+> **⚠️ Known Issue:** Due to a FAOS CANDIDATE API issue, `optimize deploy` and `optimize apply` cannot fetch candidate config at this time. This step is blocked until the API issue is resolved.
+
 The optimize output includes a ready-to-use deploy command:
 
 ```bash
@@ -215,6 +217,8 @@ config (instructions, model, temperature). The agent SDK's `load_config()` reads
 at startup and applies the optimized settings.
 
 ### 6g. Verify the optimized agent
+
+> **⚠️ Blocked:** This step depends on 6f, which is currently blocked by the FAOS CANDIDATE API issue.
 
 ```bash
 azd ai agent invoke "Hello!"
@@ -276,8 +280,7 @@ azd ai agent eval init --dataset ./data.jsonl --reset-defaults
 # Expected: overwrites eval.yaml without prompting about existing config
 
 # A11. Non-interactive mode (no prompts)
-$env:AZD_FORCE_TTY = "false"   # PowerShell
-azd ai agent eval init --dataset ./data.jsonl
+azd ai agent eval init --dataset ./data.jsonl --no-prompt
 # Expected: uses defaults without prompting. Full regeneration if eval.yaml exists.
 # Clean up: Remove-Item env:\AZD_FORCE_TTY
 
@@ -602,6 +605,8 @@ azd ai agent optimize cancel
 ---
 
 ### I. `azd ai agent optimize apply` (inside azd project only)
+
+> **⚠️ Known Issue:** Due to a FAOS CANDIDATE API issue, `optimize apply` and `optimize deploy` cannot apply the optimized result at this time. These commands will fail when trying to fetch candidate config.
 
 ```bash
 # I1. Apply candidate config to agent.yaml

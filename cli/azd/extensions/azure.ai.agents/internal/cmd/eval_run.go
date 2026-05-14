@@ -140,8 +140,10 @@ func runEvalRun(ctx context.Context, flags *evalRunFlags, noPrompt bool) error {
 	if run.ID != "" {
 		fmt.Printf("   Run:  %s\n", run.ID)
 	}
-	if run.ReportURL != "" {
-		fmt.Printf("   Report: %s\n", run.ReportURL)
+
+	reportURL := buildEvalReportURL(ctx, resolved.azdClient, resolved.envName, evalID, run.ID)
+	if reportURL != "" {
+		fmt.Printf("   Report: %s\n", color.CyanString(reportURL))
 	}
 	return nil
 }

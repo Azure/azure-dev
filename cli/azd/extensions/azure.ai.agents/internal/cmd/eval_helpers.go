@@ -5,15 +5,21 @@ package cmd
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"azureaiagent/internal/pkg/agents/dataset_api"
 	"azureaiagent/internal/pkg/agents/eval_api"
 	"azureaiagent/internal/pkg/agents/opteval"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/google/uuid"
 )
 
 // foundryBaseDir is the base directory for eval artifacts under the project root.
@@ -193,6 +199,68 @@ func writeJSONFile(path string, v any) error {
 		return fmt.Errorf("marshalling JSON: %w", err)
 	}
 	return os.WriteFile(path, data, 0600)
+}
+
+// buildEvalReportURL constructs the Foundry portal URL for an eval run report.
+// It reads AZURE_AI_PROJECT_ID from the azd environment and encodes the subscription ID.
+// Returns empty string on any failure.
+func buildEvalReportURL(ctx context.Context, azdClient *azdext.AzdClient, envName, evalID, runID string) string {
+	if azdClient == nil || envName == "" || evalID == "" || runID == "" {
+		return ""
+	}
+	v, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envName,
+		Key:     "AZURE_AI_PROJECT_ID",
+	})
+	if err != nil || v.Value == "" {
+		log.Printf("[debug] could not read AZURE_AI_PROJECT_ID: %v", err)
+		return ""
+	}
+	reportURL, err := evalReportURL(v.Value, evalID, runID)
+	if err != nil {
+		log.Printf("[debug] failed to build eval report URL: %v", err)
+		return ""
+	}
+	return reportURL
+}
+
+// evalReportURL constructs a URL to the eval run report in the Foundry portal.
+// It parses the ARM resource ID to extract subscription, resource group, account, and project info.
+func evalReportURL(projectResourceID, evalID, runID string) (string, error) {
+	resourceID, err := arm.ParseResourceID(projectResourceID)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse project resource ID: %w", err)
+	}
+
+	encodedSub, err := encodeSubscriptionForURL(resourceID.SubscriptionID)
+	if err != nil {
+		return "", fmt.Errorf("failed to encode subscription ID: %w", err)
+	}
+
+	if resourceID.Parent == nil ||
+		!strings.Contains(string(resourceID.ResourceType.Type), "/") {
+		return "", fmt.Errorf(
+			"resource ID does not represent a Foundry project (missing parent account): %s",
+			projectResourceID,
+		)
+	}
+
+	return fmt.Sprintf(
+		"https://ai.azure.com/nextgen/r/%s,%s,,%s,%s/build/evaluations/%s/run/%s",
+		encodedSub, resourceID.ResourceGroupName,
+		resourceID.Parent.Name, resourceID.Name,
+		evalID, runID,
+	), nil
+}
+
+// encodeSubscriptionForURL encodes a subscription ID GUID as base64 without padding.
+func encodeSubscriptionForURL(subscriptionID string) (string, error) {
+	guid, err := uuid.Parse(subscriptionID)
+	if err != nil {
+		return "", fmt.Errorf("invalid subscription ID format: %w", err)
+	}
+	guidBytes, _ := guid.MarshalBinary()
+	return strings.TrimRight(base64.URLEncoding.EncodeToString(guidBytes), "="), nil
 }
 
 // formatAny converts any value to a string for display.

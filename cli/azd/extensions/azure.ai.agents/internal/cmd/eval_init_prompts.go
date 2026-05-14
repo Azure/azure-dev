@@ -38,7 +38,8 @@ func promptEvalInitOptions(ctx context.Context, resolved *evalResolvedContext, f
 		}
 	}
 
-	needsGeneration := flags.dataset == "" || len(flags.evaluators) == 0
+	needsGeneration := true // adaptive evaluator is always generated
+	needsEvalGen := true
 
 	if flags.genInstruction == "" && needsGeneration && resolved.agentKind != agent_yaml.AgentKindPrompt {
 		// Let the user choose between inline text or loading from a file.
@@ -91,7 +92,7 @@ func promptEvalInitOptions(ctx context.Context, resolved *evalResolvedContext, f
 	}
 
 	// Ask whether to include traces for evaluator generation, unless already set via flags.
-	if flags.traceDays == 0 && needsGeneration {
+	if flags.traceDays == 0 && needsEvalGen {
 		confirmResp, err := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
 			Options: &azdext.ConfirmOptions{
 				Message:      "Include agent traces for evaluator generation?",

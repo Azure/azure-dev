@@ -955,7 +955,7 @@ func (p *AgentServiceTargetProvider) packageCodeDeploy(serviceConfig *azdext.Ser
 		var agentDef agent_yaml.ContainerAgent
 		if err := yaml.Unmarshal(data, &agentDef); err == nil && agentDef.CodeConfiguration != nil {
 			isDotnet := strings.HasPrefix(agentDef.CodeConfiguration.Runtime, "dotnet_")
-			isBundled := true // default is bundled
+			isBundled := false // default is remote_build (matches promptCodeConfig and deployHostedCodeAgent defaults)
 			if agentDef.CodeConfiguration.DependencyResolution != nil {
 				isBundled = *agentDef.CodeConfiguration.DependencyResolution == "bundled"
 			}
@@ -966,6 +966,7 @@ func (p *AgentServiceTargetProvider) packageCodeDeploy(serviceConfig *azdext.Ser
 	}
 
 	// Exclusion patterns
+	// TODO: support a .azdignore or similar ignore file for user-configurable exclusions.
 	excludeDirs := map[string]bool{
 		"__pycache__":   true,
 		".venv":         true,
@@ -1216,6 +1217,15 @@ func (p *AgentServiceTargetProvider) packageDotnetBundled(srcDir string) (string
 		return "", "", fmt.Errorf("failed to close temp file: %w", err)
 	}
 
+	// Enforce maximum ZIP size (250 MB) — same limit as packageCodeDeploy
+	const maxZipSizeBundled = 250 * 1024 * 1024
+	if fi, statErr := os.Stat(tmpPath); statErr == nil && fi.Size() > maxZipSizeBundled {
+		return "", "", fmt.Errorf(
+			"bundled package too large: %d MB (max 250 MB). Consider using remote_build for dependency resolution",
+			fi.Size()/(1024*1024),
+		)
+	}
+
 	sha256Hex := hex.EncodeToString(hasher.Sum(nil))
 	success = true
 
@@ -1285,10 +1295,7 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 
 	if agentDef.CodeConfiguration != nil {
 		fmt.Fprintf(os.Stderr, "Runtime: %s\n", agentDef.CodeConfiguration.Runtime)
-		cmdPrefix := "python"
-		if strings.HasPrefix(agentDef.CodeConfiguration.Runtime, "dotnet_") {
-			cmdPrefix = "dotnet"
-		}
+		cmdPrefix := agent_yaml.RuntimeCmdPrefix(agentDef.CodeConfiguration.Runtime)
 		fmt.Fprintf(os.Stderr, "Entry Point: [\"%s\", \"%s\"]\n", cmdPrefix, agentDef.CodeConfiguration.EntryPoint)
 		depRes := "remote_build"
 		if agentDef.CodeConfiguration.DependencyResolution != nil {

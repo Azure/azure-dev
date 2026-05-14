@@ -862,12 +862,13 @@ func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string,
 		language = "docker"
 	} else {
 		// Detect language from agent.yaml runtime
-		agentYamlPath2 := filepath.Join(a.projectConfig.Path, targetDir, "agent.yaml")
-		if data, err := os.ReadFile(agentYamlPath2); err == nil { //nolint:gosec // path from project config
-			var agentDef2 agent_yaml.ContainerAgent
-			if err := yaml.Unmarshal(data, &agentDef2); err == nil &&
-				agentDef2.CodeConfiguration != nil &&
-				strings.HasPrefix(agentDef2.CodeConfiguration.Runtime, "dotnet_") {
+		// Re-read agent.yaml to detect the language for azure.yaml service config
+		langDetectPath := filepath.Join(a.projectConfig.Path, targetDir, "agent.yaml")
+		if data, err := os.ReadFile(langDetectPath); err == nil { //nolint:gosec // path from project config
+			var langDef agent_yaml.ContainerAgent
+			if err := yaml.Unmarshal(data, &langDef); err == nil &&
+				langDef.CodeConfiguration != nil &&
+				strings.HasPrefix(langDef.CodeConfiguration.Runtime, "dotnet_") {
 				language = "csharp"
 			}
 		}
@@ -910,11 +911,7 @@ func deriveStartupCommand(projectPath, targetDir string) string {
 	if data, err := os.ReadFile(agentYamlPath); err == nil { //nolint:gosec // path is constructed from project config
 		var agentDef agent_yaml.ContainerAgent
 		if err := yaml.Unmarshal(data, &agentDef); err == nil && agentDef.CodeConfiguration != nil {
-			cmdPrefix := "python"
-			if strings.HasPrefix(agentDef.CodeConfiguration.Runtime, "dotnet_") {
-				cmdPrefix = "dotnet"
-			}
-			return cmdPrefix + " " + agentDef.CodeConfiguration.EntryPoint
+			return agent_yaml.RuntimeCmdPrefix(agentDef.CodeConfiguration.Runtime) + " " + agentDef.CodeConfiguration.EntryPoint
 		}
 	}
 	return "python main.py"
@@ -1078,14 +1075,23 @@ func promptDeployMode(ctx context.Context, azdClient *azdext.AzdClient, noPrompt
 }
 
 // detectDefaultEntryPoint returns a sensible default entry point based on the runtime and source directory.
+// TODO: reuse this logic in the `run` command (tracked as future work item).
 func detectDefaultEntryPoint(srcDir, runtime string) string {
 	if strings.HasPrefix(runtime, "dotnet_") {
-		// Look for .csproj file and derive DLL name
+		// Look for .csproj file and derive DLL name from <AssemblyName> or project filename
 		entries, err := os.ReadDir(srcDir)
 		if err == nil {
 			for _, e := range entries {
 				if !e.IsDir() && strings.HasSuffix(e.Name(), ".csproj") {
-					return strings.TrimSuffix(e.Name(), ".csproj") + ".dll"
+					dllName := strings.TrimSuffix(e.Name(), ".csproj") + ".dll"
+					// Try to parse <AssemblyName> from the csproj
+					csprojPath := filepath.Join(srcDir, e.Name())
+					if data, readErr := os.ReadFile(csprojPath); readErr == nil { //nolint:gosec // path from user project
+						if asmName := extractAssemblyName(string(data)); asmName != "" {
+							dllName = asmName + ".dll"
+						}
+					}
+					return dllName
 				}
 			}
 		}
@@ -1097,6 +1103,28 @@ func detectDefaultEntryPoint(srcDir, runtime string) string {
 		return "app.py"
 	}
 	return "main.py"
+}
+
+// extractAssemblyName parses the <AssemblyName> property from a .csproj file content.
+// Returns empty string if not found.
+func extractAssemblyName(csprojContent string) string {
+	const startTag = "<AssemblyName>"
+	const endTag = "</AssemblyName>"
+	start := strings.Index(csprojContent, startTag)
+	if start < 0 {
+		return ""
+	}
+	start += len(startTag)
+	end := strings.Index(csprojContent[start:], endTag)
+	if end < 0 {
+		return ""
+	}
+	name := strings.TrimSpace(csprojContent[start : start+end])
+	if name == "" || strings.ContainsAny(name, "$()") {
+		// Skip MSBuild property references like $(MSBuildProjectName)
+		return ""
+	}
+	return name
 }
 
 // promptCodeConfig prompts for code deploy configuration (runtime, entry point,
@@ -1137,10 +1165,10 @@ func promptCodeConfig(ctx context.Context, azdClient *azdext.AzdClient, srcDir s
 
 	var runtime string
 	if noPrompt {
-		if isDotnet {
+		if isDotnet && !isPython {
 			runtime = "dotnet_9"
 		} else {
-			runtime = "python_3_12"
+			runtime = "python_3_12" // default to python for backward compatibility (including mixed repos)
 		}
 	} else {
 		defaultIdx := int32(0) // First item in the filtered list
@@ -1243,6 +1271,8 @@ func isPythonProject(dir string) bool {
 }
 
 // isDotnetProject returns true if the directory contains a .csproj or .fsproj file.
+// isDotnetProject returns true if the directory contains a .csproj file.
+// NOTE: .fsproj (F#) is not yet supported by the packaging path (packageDotnetBundled/detectDefaultEntryPoint).
 func isDotnetProject(dir string) bool {
 	if dir == "" {
 		dir = "."
@@ -1252,7 +1282,7 @@ func isDotnetProject(dir string) bool {
 		return false
 	}
 	for _, e := range entries {
-		if !e.IsDir() && (strings.HasSuffix(e.Name(), ".csproj") || strings.HasSuffix(e.Name(), ".fsproj")) {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".csproj") {
 			return true
 		}
 	}

@@ -16,6 +16,7 @@ type AgentKind string
 const (
 	AgentKindHosted   AgentKind = "hosted"
 	AgentKindWorkflow AgentKind = "workflow"
+	AgentKindPrompt   AgentKind = "prompt"
 )
 
 // IsValidAgentKind checks if the provided AgentKind is valid
@@ -28,6 +29,7 @@ func ValidAgentKinds() []AgentKind {
 	return []AgentKind{
 		AgentKindHosted,
 		AgentKindWorkflow,
+		AgentKindPrompt,
 	}
 }
 

@@ -136,6 +136,21 @@ func TestCheckModelDeployments_SkipsWhenNoManifestModels(t *testing.T) {
 	require.Contains(t, res.Message, "no model resources declared")
 }
 
+func TestCheckModelDeployments_FailsWhenAssemblerReturnsNilState(t *testing.T) {
+	t.Parallel()
+	deps := Dependencies{
+		assembleState: func(_ context.Context, _ *azdext.AzdClient) (*nextstep.State, []error) {
+			return nil, []error{errors.New("manifest.walker: i/o timeout")}
+		},
+		probeModelDeployments: fixedDeploymentProbe(nil, nil, nil),
+	}
+	res := runModelDeploymentsCheck(t, deps, healthyModelPrior())
+	require.Equal(t, StatusFail, res.Status)
+	require.Contains(t, res.Message, "failed to assemble agent state")
+	require.Contains(t, res.Message, "i/o timeout",
+		"assembler errs[0] should surface in the Fail message")
+}
+
 func TestCheckModelDeployments_SkipsWhenProjectIDUnset(t *testing.T) {
 	t.Parallel()
 	state := &nextstep.State{

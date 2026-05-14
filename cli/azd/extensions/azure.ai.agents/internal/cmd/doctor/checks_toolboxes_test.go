@@ -120,14 +120,30 @@ func TestCheckToolboxes_SkipsWhenNoToolboxesDeclared(t *testing.T) {
 	require.Contains(t, res.Message, "no toolbox resources")
 }
 
-func TestCheckToolboxes_SkipsWhenAssemblerReturnsNil(t *testing.T) {
+func TestCheckToolboxes_FailsWhenAssemblerReturnsNilState(t *testing.T) {
 	t.Parallel()
 	deps := Dependencies{
 		AzdClient:     &azdext.AzdClient{},
 		assembleState: fixedAssembler(nil),
 	}
 	res := runToolboxesCheck(t, deps, nil)
-	require.Equal(t, StatusSkip, res.Status)
+	require.Equal(t, StatusFail, res.Status)
+	require.Contains(t, res.Message, "failed to assemble agent state")
+}
+
+func TestCheckToolboxes_FailSurfacesAssemblerErrCause(t *testing.T) {
+	t.Parallel()
+	cause := errors.New("manifest.walker: open agent.manifest.yaml: permission denied")
+	deps := Dependencies{
+		AzdClient: &azdext.AzdClient{},
+		assembleState: func(_ context.Context, _ *azdext.AzdClient) (*nextstep.State, []error) {
+			return nil, []error{cause}
+		},
+	}
+	res := runToolboxesCheck(t, deps, nil)
+	require.Equal(t, StatusFail, res.Status)
+	require.Contains(t, res.Message, "permission denied",
+		"first errs entry should be surfaced in the Fail message")
 }
 
 // ---- Classification: all-present / partial / all-missing ----
@@ -247,33 +263,33 @@ func TestCheckToolboxes_dedupsSameToolboxAcrossServices(t *testing.T) {
 	require.Equal(t, 1, res.Details["matchedCount"])
 }
 
-// ---- normalizeToolboxName / toolboxEndpointKey table ----
+// ---- envkey integration (canonical key alignment) ----
+//
+// `normalizeToolboxName`/`toolboxEndpointKey` were folded into the
+// shared `internal/pkg/envkey` package so the doctor and the
+// provisioning helpers in `internal/cmd/{init,listen}.go` compute
+// identical keys. The exhaustive corner-case table lives in
+// `internal/pkg/envkey/envkey_test.go`; this thin pin test asserts
+// the renderer-facing helper here still routes through it (so a
+// future refactor that introduces a local copy in the doctor package
+// trips this test).
 
-func TestNormalizeToolboxName_Table(t *testing.T) {
+func TestDedupToolboxKeys_RoutesThroughSharedHelper(t *testing.T) {
 	t.Parallel()
-	cases := []struct {
-		in, want string
-	}{
-		{"web-search-tools", "WEB_SEARCH_TOOLS"},
-		{"WebSearchTools", "WEBSEARCHTOOLS"},
-		{"my.toolbox.v2", "MY_TOOLBOX_V2"},
-		{"my toolbox", "MY_TOOLBOX"},
-		{"alreadyUPPER_NAME", "ALREADYUPPER_NAME"},
-		{"mixed-Case.NAME-1", "MIXED_CASE_NAME_1"},
-		{"", ""},
+	refs := []nextstep.ResourceRef{
+		{Name: "web-search-tools", ServiceName: "svc"},
+		// A name with characters that the previous local normalizer
+		// would have rendered verbatim ('+', ':', '--'); only the
+		// shared `envkey.ToolboxMCPEndpoint` collapses them.
+		{Name: "my+tool", ServiceName: "svc"},
+		{Name: "my:tool", ServiceName: "svc"},
+		{Name: "my--tool", ServiceName: "svc"},
 	}
-	for _, tc := range cases {
-		require.Equal(t, tc.want, normalizeToolboxName(tc.in), "input=%q", tc.in)
-	}
-}
-
-func TestToolboxEndpointKey_WrapsNormalizedName(t *testing.T) {
-	t.Parallel()
-	require.Equal(
-		t,
+	got := dedupToolboxKeys(refs)
+	require.Equal(t, []string{
+		"TOOLBOX_MY_TOOL_MCP_ENDPOINT",
 		"TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT",
-		toolboxEndpointKey("web-search-tools"),
-	)
+	}, got)
 }
 
 // ---- dedupToolboxKeys helper ----

@@ -39,6 +39,7 @@ words:
   - CLIENTSECRET
   - curr
   - dataagent
+  - envkey
   - exterrors
   - helloworld
   - hostedagent

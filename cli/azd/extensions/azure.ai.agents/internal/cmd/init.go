@@ -26,6 +26,7 @@ import (
 	"azureaiagent/internal/pkg/agents"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -2895,7 +2896,7 @@ func injectToolboxEnvVarsIntoDefinition(manifest *agent_yaml.AgentManifest) erro
 	}
 
 	for _, tbName := range toolboxNames {
-		envKey := toolboxMCPEndpointEnvKey(tbName)
+		envKey := envkey.ToolboxMCPEndpoint(tbName)
 		if existingNames[envKey] {
 			return fmt.Errorf(
 				"duplicate toolbox environment variable %q (from toolbox %q)",

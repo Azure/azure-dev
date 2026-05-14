@@ -121,8 +121,19 @@ func newCheckConnections(deps Dependencies) Check {
 					return nextstep.AssembleState(c, client)
 				}
 			}
-			state, _ := assembler(ctx, deps.AzdClient)
-			if state == nil || !state.HasConnections {
+			state, errs := assembler(ctx, deps.AzdClient)
+			if state == nil {
+				cause := "unknown error"
+				if len(errs) > 0 {
+					cause = errs[0].Error()
+				}
+				return Result{
+					Status:     StatusFail,
+					Message:    fmt.Sprintf("failed to assemble agent state: %s", cause),
+					Suggestion: "Re-run `azd ai agent doctor`; the state assembly returned nil unexpectedly.",
+				}
+			}
+			if !state.HasConnections {
 				return Result{
 					Status:  StatusSkip,
 					Message: "skipped: no connection resources declared in any service's agent.manifest.yaml.",

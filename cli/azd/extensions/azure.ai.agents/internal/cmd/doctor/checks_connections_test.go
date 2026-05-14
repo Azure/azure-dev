@@ -100,6 +100,21 @@ func TestCheckConnections_SkipsWhenNoManifestConnections(t *testing.T) {
 	require.Contains(t, res.Message, "no connection resources declared")
 }
 
+func TestCheckConnections_FailsWhenAssemblerReturnsNilState(t *testing.T) {
+	t.Parallel()
+	deps := Dependencies{
+		assembleState: func(_ context.Context, _ *azdext.AzdClient) (*nextstep.State, []error) {
+			return nil, []error{errors.New("manifest.walker: parse error")}
+		},
+		probeFoundryConnections: fixedConnectionsProbe(nil, nil, nil),
+	}
+	res := runConnectionsCheck(t, deps, healthyConnectionsPrior())
+	require.Equal(t, StatusFail, res.Status)
+	require.Contains(t, res.Message, "failed to assemble agent state")
+	require.Contains(t, res.Message, "parse error",
+		"assembler errs[0] should surface in the Fail message")
+}
+
 func TestCheckConnections_SkipsWhenProjectIDUnset(t *testing.T) {
 	t.Parallel()
 	state := &nextstep.State{

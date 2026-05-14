@@ -11,25 +11,10 @@ import (
 	"strings"
 
 	"azureaiagent/internal/cmd/nextstep"
+	"azureaiagent/internal/pkg/envkey"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
-
-// toolboxEndpointSuffix is the canonical Bicep-output suffix for a
-// hosted toolbox's MCP endpoint URL. The full convention is
-// `TOOLBOX_<NORMALIZED_TOOLBOX_NAME>_MCP_ENDPOINT`, where the toolbox
-// name is upper-snake-cased (e.g. `web-search-tools` →
-// `WEB_SEARCH_TOOLS`). The suffix is pinned in code because the
-// doctor needs to know what env var to expect even before the user
-// looks at their own Bicep template; emitting the canonical name in
-// the Fail Message lets the user grep their template for the exact
-// string the doctor is checking.
-const toolboxEndpointSuffix = "_MCP_ENDPOINT"
-
-// toolboxEndpointPrefix mirrors the same convention. It is split out
-// from toolboxEndpointSuffix purely for readability at the call site
-// (`toolboxEndpointPrefix + name + toolboxEndpointSuffix`).
-const toolboxEndpointPrefix = "TOOLBOX_"
 
 // toolboxEnvLookupFn is the seam-friendly signature for reading one
 // env var from the active azd environment. The Doctor's existing
@@ -116,8 +101,23 @@ func newCheckToolboxes(deps Dependencies) Check {
 					return nextstep.AssembleState(c, client)
 				}
 			}
-			state, _ := assembler(ctx, deps.AzdClient)
-			if state == nil || !state.HasToolboxes {
+			state, errs := assembler(ctx, deps.AzdClient)
+			if state == nil {
+				// AssembleState always returns a non-nil State even when errs
+				// is non-empty (state.go), but defend against a future contract
+				// change so the check surfaces the real cause instead of a
+				// misleading "no toolboxes declared" Skip.
+				cause := "unknown error"
+				if len(errs) > 0 {
+					cause = errs[0].Error()
+				}
+				return Result{
+					Status:     StatusFail,
+					Message:    fmt.Sprintf("failed to assemble agent state: %s", cause),
+					Suggestion: "Re-run `azd ai agent doctor`; the state assembly returned nil unexpectedly.",
+				}
+			}
+			if !state.HasToolboxes {
 				return Result{
 					Status:  StatusSkip,
 					Message: "skipped: no toolbox resources declared in any service's agent.manifest.yaml.",
@@ -134,38 +134,8 @@ func newCheckToolboxes(deps Dependencies) Check {
 	}
 }
 
-// normalizeToolboxName converts a manifest toolbox name (e.g.
-// "web-search-tools") into the upper-snake form Bicep templates use
-// for the corresponding output (`TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT`).
-// Hyphens and dots are normalized to underscores; all other
-// characters are upper-cased verbatim. The function is deliberately
-// lossy on characters that azd / Bicep do not permit in output
-// identifiers (for example whitespace becomes a single underscore)
-// to maximize the chance of a match against the actual env var name.
-func normalizeToolboxName(name string) string {
-	var sb strings.Builder
-	sb.Grow(len(name))
-	for _, r := range name {
-		switch {
-		case r == '-' || r == '.' || r == ' ':
-			sb.WriteByte('_')
-		default:
-			if r >= 'a' && r <= 'z' {
-				r = r - 'a' + 'A'
-			}
-			sb.WriteRune(r)
-		}
-	}
-	return sb.String()
-}
-
-// toolboxEndpointKey returns the canonical env var name for a
-// toolbox's MCP endpoint URL, formed by sandwiching the normalized
-// toolbox name between the fixed prefix and suffix. The convention
-// matches the Bicep templates emitted by azd's toolbox samples.
-func toolboxEndpointKey(name string) string {
-	return toolboxEndpointPrefix + normalizeToolboxName(name) + toolboxEndpointSuffix
-}
+// normalizeToolboxName / toolboxEndpointKey have been replaced by the
+// shared `internal/pkg/envkey` package. See envkey.ToolboxMCPEndpoint.
 
 // classifyToolboxEndpoints joins state.Toolboxes to the active azd
 // env. Each toolbox produces one env lookup; the first transport
@@ -194,7 +164,7 @@ func classifyToolboxEndpoints(
 	matched := 0
 
 	for _, t := range toolboxes {
-		key := toolboxEndpointKey(t.Name)
+		key := envkey.ToolboxMCPEndpoint(t.Name)
 		if _, dup := seen[key]; dup {
 			continue
 		}
@@ -289,7 +259,7 @@ func dedupToolboxKeys(toolboxes []nextstep.ResourceRef) []string {
 	seen := make(map[string]struct{}, len(toolboxes))
 	keys := make([]string, 0, len(toolboxes))
 	for _, t := range toolboxes {
-		key := toolboxEndpointKey(t.Name)
+		key := envkey.ToolboxMCPEndpoint(t.Name)
 		if _, ok := seen[key]; ok {
 			continue
 		}

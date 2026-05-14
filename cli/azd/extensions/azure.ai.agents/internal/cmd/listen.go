@@ -11,13 +11,13 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/azure"
+	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -26,10 +26,6 @@ import (
 	"github.com/drone/envsubst"
 	"google.golang.org/protobuf/types/known/structpb"
 )
-
-// nonAlphanumEnvKeyRe matches any character that is not an uppercase letter or
-// digit, used to sanitize environment variable key segments.
-var nonAlphanumEnvKeyRe = regexp.MustCompile(`[^A-Z0-9]+`)
 
 // configureExtensionHost wires the service target and event handlers on the
 // supplied [azdext.ExtensionHost]. It is passed to [azdext.NewListenCommand]
@@ -787,7 +783,7 @@ func registerToolboxEnvVars(
 	toolboxName string,
 	toolboxVersion string,
 ) error {
-	envKey := toolboxMCPEndpointEnvKey(toolboxName)
+	envKey := envkey.ToolboxMCPEndpoint(toolboxName)
 
 	endpoint := strings.TrimRight(projectEndpoint, "/")
 	mcpEndpoint := fmt.Sprintf(
@@ -798,13 +794,6 @@ func registerToolboxEnvVars(
 	return setEnvVar(
 		ctx, azdClient, envName, envKey, mcpEndpoint,
 	)
-}
-
-// toolboxMCPEndpointEnvKey builds the TOOLBOX_{NAME}_MCP_ENDPOINT env var key.
-// Non-alphanumeric characters are replaced with underscores for a valid env key.
-func toolboxMCPEndpointEnvKey(toolboxName string) string {
-	sanitized := nonAlphanumEnvKeyRe.ReplaceAllString(strings.ToUpper(toolboxName), "_")
-	return fmt.Sprintf("TOOLBOX_%s_MCP_ENDPOINT", sanitized)
 }
 
 // resolveToolboxEnvVars resolves ${VAR} references in toolbox name, description,

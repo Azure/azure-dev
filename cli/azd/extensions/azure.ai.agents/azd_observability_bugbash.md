@@ -238,7 +238,7 @@ azd ai agent optimize cancel <operation-id>
 ### 6f. Deploy the winning candidate
 
 > **⚠️ Known Issue:** Due to a FAOS CANDIDATE API issue, `optimize deploy` and `optimize apply` cannot fetch candidate config at this time. This step is blocked until the API issue is resolved.
-But you can check agent optimization job in foundry UI with `azd ai agent optimize`
+But you can check agent optimization job in foundry UI with `?flight=enable_faos_read_ui`
 
 The optimize output includes a ready-to-use deploy command:
 

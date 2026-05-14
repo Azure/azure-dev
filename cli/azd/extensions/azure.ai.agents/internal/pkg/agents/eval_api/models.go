@@ -161,10 +161,9 @@ type Dataset struct {
 
 // DataSourceConfig describes the data source for an OpenAI eval.
 type DataSourceConfig struct {
-	Type                string            `json:"type"`
-	ItemSchema          map[string]any    `json:"item_schema"`
-	IncludeSampleSchema bool              `json:"include_sample_schema"`
-	Schema              *DataSourceSchema `json:"schema,omitempty"`
+	Type                string         `json:"type"`
+	ItemSchema          map[string]any `json:"item_schema"`
+	IncludeSampleSchema bool           `json:"include_sample_schema"`
 }
 
 // DataSourceSchema defines the item and sample schemas for an eval data source.
@@ -256,15 +255,9 @@ type EvalRunInputMessages struct {
 
 // EvalRunMessageTemplate describes a single message in the input template.
 type EvalRunMessageTemplate struct {
-	Role    string                 `json:"role"`
-	Content *EvalRunMessageContent `json:"content"`
-	Type    string                 `json:"type"`
-}
-
-// EvalRunMessageContent describes the content of a template message.
-type EvalRunMessageContent struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
+	Role    string `json:"role"`
+	Content string `json:"content"`
+	Type    string `json:"type"`
 }
 
 // EvalRunTarget describes the agent target for completions.
@@ -291,12 +284,9 @@ func NewAgentTargetDataSource(agentName string, agentVersion *string) *EvalRunDa
 			Type: "template",
 			Template: []EvalRunMessageTemplate{
 				{
-					Role: "user",
-					Content: &EvalRunMessageContent{
-						Type: "input_text",
-						Text: "{{item.query}}",
-					},
-					Type: "message",
+					Role:    "user",
+					Content: "{{item.query}}",
+					Type:    "message",
 				},
 			},
 		},

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"azureaiagent/internal/pkg/agents/opteval"
 
@@ -95,15 +96,11 @@ func (c *EvalConfig) ToAgentTargetAdaptableEvalGroupRequest() *CreateOpenAIEvalR
 		},
 		DataSourceConfig: &DataSourceConfig{
 			Type:                "custom",
-			ItemSchema:          map[string]any{},
-			IncludeSampleSchema: false,
-			Schema: &DataSourceSchema{
-				Item: map[string]any{
-					"type": "object",
-					"properties": map[string]any{
-						"query": map[string]any{"type": "string"},
-					},
-					"required": []string{},
+			IncludeSampleSchema: true,
+			ItemSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"query": map[string]any{"type": "string"},
 				},
 			},
 		},
@@ -115,21 +112,23 @@ func (c *EvalConfig) ToAgentTargetAdaptableEvalGroupRequest() *CreateOpenAIEvalR
 		evalModel = c.Options.EvalModel
 	}
 	for _, evaluator := range c.Evaluators {
+		apiName := strings.TrimPrefix(evaluator, "builtin.")
 		criterion := TestingCriterion{
 			Type:          "azure_ai_evaluator",
-			Name:          evaluator,
+			Name:          apiName,
 			EvaluatorName: evaluator,
 			DataMapping: map[string]string{
 				//"messages": "{{item.messages}}",
-				"query":    "{{item.query}}",
-				"response": "{{sample.output_items}}",
+				"query":            "{{item.query}}",
+				"response":         "{{sample.output_items}}",
+				"tool_calls":       "{{sample.tool_calls}}",
+				"tool_definitions": "{{sample.tool_definitions}}",
 			},
 		}
 		if evalModel != "" {
 			criterion.InitializationParameters = map[string]any{
 				"model":           evalModel,
 				"deployment_name": evalModel,
-				"threshold":       3,
 			}
 		}
 		request.TestingCriteria = append(request.TestingCriteria, criterion)

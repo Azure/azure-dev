@@ -816,7 +816,7 @@ func TestResolveAfterDeploy(t *testing.T) {
 		assert.Equal(t, "test the deployment", out[1].Description)
 	})
 
-	t.Run("single agent, no cached payload, README on disk → 3 lines with qualified commands", func(t *testing.T) {
+	t.Run("single agent, no cached payload, README on disk → README then placeholder invoke", func(t *testing.T) {
 		t.Parallel()
 		state := &State{Services: []ServiceState{{Name: "echo", RelativePath: "./src/echo", Protocol: ProtocolResponses}}}
 		readme := func(p string) bool { return p == "./src/echo" }
@@ -824,9 +824,10 @@ func TestResolveAfterDeploy(t *testing.T) {
 		require.Len(t, out, 3)
 		assert.Equal(t, "azd ai agent show echo", out[0].Command)
 		assert.Equal(t, "verify it's running", out[0].Description)
-		assert.Equal(t, `azd ai agent invoke echo "Hello!"`, out[1].Command)
-		assert.Equal(t, "test the deployment", out[1].Description)
-		assert.Contains(t, out[2].Command, "src/echo/README.md")
+		assert.Equal(t, "see src/echo/README.md", out[1].Command)
+		assert.Equal(t, "find the sample-specific payload", out[1].Description)
+		assert.Equal(t, `azd ai agent invoke echo '<payload>'`, out[2].Command)
+		assert.Equal(t, "test with the sample-specific payload", out[2].Description)
 	})
 
 	t.Run("multi-agent → all shows first, then all invokes, with per-agent descriptions", func(t *testing.T) {
@@ -845,12 +846,12 @@ func TestResolveAfterDeploy(t *testing.T) {
 		assert.Equal(t, "azd ai agent show beta", out[1].Command)
 		assert.Equal(t, "verify beta is running", out[1].Description)
 		assert.Equal(t, `azd ai agent invoke alpha '{"message": "Hello!"}'`, out[2].Command)
-		assert.Equal(t, "test alpha", out[2].Description)
+		assert.Equal(t, "test alpha with a generic payload", out[2].Description)
 		assert.Equal(t, `azd ai agent invoke beta "Hello!"`, out[3].Command)
-		assert.Equal(t, "test beta", out[3].Description)
+		assert.Equal(t, "test beta with a generic payload", out[3].Description)
 	})
 
-	t.Run("multi-agent README hint placement → after the corresponding invoke line", func(t *testing.T) {
+	t.Run("multi-agent README hint placement → before the corresponding placeholder invoke", func(t *testing.T) {
 		t.Parallel()
 		state := &State{Services: []ServiceState{
 			{Name: "alpha", RelativePath: "./src/alpha", Protocol: ProtocolResponses},
@@ -862,9 +863,12 @@ func TestResolveAfterDeploy(t *testing.T) {
 		require.Len(t, out, 5)
 		assert.Equal(t, "azd ai agent show alpha", out[0].Command)
 		assert.Equal(t, "azd ai agent show beta", out[1].Command)
-		assert.Equal(t, `azd ai agent invoke alpha "Hello!"`, out[2].Command)
-		assert.Contains(t, out[3].Command, "src/alpha/README.md")
+		assert.Equal(t, "see src/alpha/README.md", out[2].Command)
+		assert.Equal(t, "find the sample-specific payload", out[2].Description)
+		assert.Equal(t, `azd ai agent invoke alpha '<payload>'`, out[3].Command)
+		assert.Equal(t, "test alpha with the sample-specific payload", out[3].Description)
 		assert.Equal(t, `azd ai agent invoke beta "Hello!"`, out[4].Command)
+		assert.Equal(t, "test beta with a generic payload", out[4].Description)
 	})
 
 	t.Run("README hint skipped when cached payload is present", func(t *testing.T) {

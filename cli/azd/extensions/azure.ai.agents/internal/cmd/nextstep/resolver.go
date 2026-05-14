@@ -466,8 +466,9 @@ type AfterDeployOpts struct {
 // artifact note. Issue #7975 fix B9 spec (lines 228-242):
 //
 //   - Single-agent project: emit one `azd ai agent show <name>` line
-//     followed by one `azd ai agent invoke <name> '<payload>'` line.
-//     Descriptions are "verify it's running" / "test the deployment".
+//     followed by one `azd ai agent invoke <name> '<payload>'` line
+//     or, when no cached payload is available but a README exists, a
+//     README pointer followed by a placeholder invoke command.
 //   - Multi-agent project: emit all `show <name>` lines first (one
 //     per service, in declaration order), then all `invoke <name>`
 //     lines. Descriptions include the agent name —
@@ -484,18 +485,20 @@ type AfterDeployOpts struct {
 // cachedPayload is injected by the caller (typically a closure over
 // ReadCachedOpenAPISpec + ExtractInvokeExample) so the resolver itself
 // stays pure and unit-testable. The cached sample is used verbatim
-// (POSIX-escaped) when present; otherwise the protocol-appropriate
-// fallback from defaultInvokePayload is used.
+// (POSIX-escaped) when present. When no cached payload is available,
+// services with a README get a README pointer first and an explicit
+// '<payload>' placeholder instead of a concrete generic payload that
+// may not match the agent's schema.
 //
 // readmeExists, also injected, controls whether the
-// "See <relPath>/README.md for a sample payload" line is appended
+// "See <relPath>/README.md for a sample payload" line is emitted
 // for a given service. The hint is emitted only when:
 // (1) no cached payload was available for that service,
 // (2) the service has a RelativePath, and
 // (3) readmeExists reports a README on disk at that path.
 // In the multi-agent layout each service's README hint is rendered
-// immediately after that service's invoke line so users can scan
-// rows top-to-bottom and find each agent's hint in context.
+// immediately before that service's placeholder invoke line so users
+// can find the sample-specific payload before running the command.
 //
 // opts is variadic for backward compatibility but is no longer
 // consulted — every field of AfterDeployOpts is now a no-op post-B9.
@@ -529,37 +532,56 @@ func ResolveAfterDeploy(
 	}
 
 	// Pass 2: all `azd ai agent invoke <name> <payload>` lines, each
-	// followed by its README hint when applicable. Grouping invokes
+	// preceded by its README hint when applicable. Grouping invokes
 	// after shows matches the spec example output (lines 238-241).
 	for _, svc := range state.Services {
 		payload := ""
 		if cachedPayload != nil {
 			payload = cachedPayload(svc.Name)
 		}
+		hasReadme := payload == "" &&
+			svc.RelativePath != "" &&
+			readmeExists != nil &&
+			readmeExists(svc.RelativePath)
+
 		invokeArg := defaultInvokePayload(&svc)
 		if payload != "" {
 			invokeArg = shellEscapeSingleQuoted(payload)
+		} else if hasReadme {
+			invokeArg = "'<payload>'"
 		}
 
 		desc := fmt.Sprintf("test %s", svc.Name)
 		if singleAgent {
 			desc = "test the deployment"
 		}
+
+		if payload == "" {
+			if hasReadme {
+				desc = fmt.Sprintf("test %s with the sample-specific payload", svc.Name)
+				if singleAgent {
+					desc = "test with the sample-specific payload"
+				}
+				out = append(out, Suggestion{
+					Command:     fmt.Sprintf("see %s/README.md", strings.TrimPrefix(svc.RelativePath, "./")),
+					Description: "find the sample-specific payload",
+					Priority:    priority,
+				})
+				priority++
+			} else {
+				desc = fmt.Sprintf("test %s with a generic payload", svc.Name)
+				if singleAgent {
+					desc = "test with a generic payload"
+				}
+			}
+		}
+
 		out = append(out, Suggestion{
 			Command:     fmt.Sprintf("azd ai agent invoke %s %s", svc.Name, invokeArg),
 			Description: desc,
 			Priority:    priority,
 		})
 		priority++
-
-		if payload == "" && svc.RelativePath != "" && readmeExists != nil && readmeExists(svc.RelativePath) {
-			out = append(out, Suggestion{
-				Command:     fmt.Sprintf("see %s/README.md", strings.TrimPrefix(svc.RelativePath, "./")),
-				Description: "sample payload appropriate for this agent",
-				Priority:    priority,
-			})
-			priority++
-		}
 	}
 
 	return out

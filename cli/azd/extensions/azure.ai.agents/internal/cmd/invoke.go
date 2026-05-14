@@ -180,7 +180,7 @@ session automatically. Pass --new-session to force a reset.`,
 		"timeout",
 		"t",
 		defaultInvokeTimeoutSeconds,
-		fmt.Sprintf("Request timeout in seconds (0 for no timeout; default: %d)", defaultInvokeTimeoutSeconds),
+		"Request timeout in seconds (0 for no timeout)",
 	)
 	cmd.Flags().StringVarP(&flags.session, "session-id", "s", "", "Explicit session ID override")
 	cmd.Flags().BoolVar(&flags.newSession, "new-session", false, "Force a new session (discard saved one)")

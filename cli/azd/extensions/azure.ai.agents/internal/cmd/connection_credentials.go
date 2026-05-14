@@ -53,7 +53,7 @@ func resolveConnectionCredentials(
 		return nil, nil
 	}
 
-	manifestBytes, err := os.ReadFile(manifestPath)
+	manifestBytes, err := os.ReadFile(manifestPath) //nolint:gosec // G304: path is from findManifestInDir which only checks known filenames in the project directory
 	if err != nil {
 		log.Printf("run: could not read manifest %s: %v", manifestPath, err)
 		return nil, nil
@@ -177,7 +177,7 @@ func findManifestInDir(dir string) string {
 	for _, name := range candidates {
 		path := filepath.Join(dir, name)
 		if _, err := os.Stat(path); err == nil {
-			data, err := os.ReadFile(path)
+			data, err := os.ReadFile(path) //nolint:gosec // G304: path is constructed from known candidate filenames joined with the project directory
 			if err == nil && strings.Contains(string(data), "${{connections.") {
 				return path
 			}
